@@ -1,0 +1,9 @@
+.git
+.local
+target
+node_modules
+**/node_modules
+**/dist
+docs
+test-results
+playwright-report

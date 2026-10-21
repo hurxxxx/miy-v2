@@ -1,0 +1,43 @@
+name: miy-v2-validation
+services:
+  postgres:
+    image: postgres:18.3@sha256:7e32e9833a6fb1c92c32552794cb6ed569d51b445a54907d35fc112ef39684db
+    environment:
+      POSTGRES_PASSWORD: ${MIY_PG_ADMIN_PASSWORD:?run scripts/bootstrap.py}
+    ports: ["127.0.0.1:15432:5432"]
+    volumes:
+      - pgdata:/var/lib/postgresql
+      - ./.local/init.sql:/docker-entrypoint-initdb.d/10-miy.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 2s
+      timeout: 3s
+      retries: 40
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.8.1@sha256:79c623a22abacf3fe6c00a5fb30f5b7843d717b234033b80995891c06116d244
+    command: ["start", "--import-realm", "--features=resource-indicators"]
+    environment:
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://postgres:5432/miy_identity
+      KC_DB_USERNAME: miy_identity
+      KC_DB_PASSWORD: ${MIY_IDENTITY_PASSWORD:?}
+      KC_HTTP_ENABLED: "true"
+      KC_HTTP_RELATIVE_PATH: /identity
+      KC_HOSTNAME: https://localhost:18443/identity
+      KC_PROXY_HEADERS: xforwarded
+      KC_BOOTSTRAP_ADMIN_USERNAME: bootstrap
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${MIY_IDENTITY_ADMIN_PASSWORD:?}
+      KC_HEALTH_ENABLED: "true"
+    volumes: ["./.local/realm.json:/opt/keycloak/data/import/miy-realm.json:ro"]
+    depends_on:
+      postgres: {condition: service_healthy}
+  proxy:
+    image: caddy:2.11.2@sha256:25cdc846626b62d05f6b633b9b40c2c9f6ef89b515dc76133cefd920f7dbe562
+    ports: ["127.0.0.1:18443:18443"]
+    volumes:
+      - ./ops/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./.local/caddy:/data
+      - ./web/platform/dist:/srv/platform:ro
+    depends_on: [keycloak]
+volumes:
+  pgdata:

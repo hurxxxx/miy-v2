@@ -1,0 +1,18 @@
+{
+  "name": "miy-workspace",
+  "private": true,
+  "packageManager": "pnpm@10.34.5",
+  "scripts": {
+    "build": "pnpm --filter @miy/platform build && pnpm --filter @miy/fixtures build",
+    "typecheck": "tsc --noEmit",
+    "test:e2e": "playwright test",
+    "check": "bash scripts/check.sh"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.64.1",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "prettier": "3.6.2",
+    "typescript": "7.0.2"
+  }
+}

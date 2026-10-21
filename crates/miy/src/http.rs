@@ -1,0 +1,380 @@
+use crate::{State, auth::Principal, contract, domain};
+use axum::{
+    Json, Router,
+    extract::{Path, Query, Request, State as S},
+    http::{HeaderMap, StatusCode, header},
+    middleware::{self, Next},
+    response::{IntoResponse, Redirect, Response},
+};
+use serde::Deserialize;
+use serde_json::{Value, json};
+use tower_http::services::ServeDir;
+use uuid::Uuid;
+
+pub type ApiResult<T> = Result<T, ApiError>;
+#[derive(Debug)]
+pub struct ApiError {
+    pub status: StatusCode,
+    pub code: String,
+}
+impl ApiError {
+    pub fn bad(code: &str) -> Self {
+        Self {
+            status: StatusCode::BAD_REQUEST,
+            code: code.into(),
+        }
+    }
+    pub fn bad_owned(code: String) -> Self {
+        Self {
+            status: StatusCode::BAD_REQUEST,
+            code,
+        }
+    }
+    pub fn unauthorized() -> Self {
+        Self {
+            status: StatusCode::UNAUTHORIZED,
+            code: "unauthorized".into(),
+        }
+    }
+    pub fn forbidden() -> Self {
+        Self {
+            status: StatusCode::FORBIDDEN,
+            code: "forbidden".into(),
+        }
+    }
+    pub fn not_found() -> Self {
+        Self {
+            status: StatusCode::NOT_FOUND,
+            code: "not_found".into(),
+        }
+    }
+    pub fn unavailable(code: &str) -> Self {
+        Self {
+            status: StatusCode::SERVICE_UNAVAILABLE,
+            code: code.into(),
+        }
+    }
+    pub fn conflict(code: &str) -> Self {
+        Self {
+            status: StatusCode::CONFLICT,
+            code: code.into(),
+        }
+    }
+}
+impl From<anyhow::Error> for ApiError {
+    fn from(_: anyhow::Error) -> Self {
+        Self {
+            status: StatusCode::INTERNAL_SERVER_ERROR,
+            code: "internal_error".into(),
+        }
+    }
+}
+impl From<std::io::Error> for ApiError {
+    fn from(_: std::io::Error) -> Self {
+        Self::bad("artifact_unavailable")
+    }
+}
+impl From<serde_json::Error> for ApiError {
+    fn from(_: serde_json::Error) -> Self {
+        Self::bad("invalid_json")
+    }
+}
+impl From<url::ParseError> for ApiError {
+    fn from(_: url::ParseError) -> Self {
+        Self::bad("invalid_url")
+    }
+}
+impl From<sqlx::Error> for ApiError {
+    fn from(e: sqlx::Error) -> Self {
+        if let Some(db) = e.as_database_error() {
+            if db.is_unique_violation() {
+                return Self::conflict("already_exists");
+            }
+            if db.is_foreign_key_violation() {
+                return Self::bad("unknown_reference");
+            }
+        }
+        tracing::error!(event = "database_operation_failed");
+        Self {
+            status: StatusCode::INTERNAL_SERVER_ERROR,
+            code: "database_error".into(),
+        }
+    }
+}
+impl IntoResponse for ApiError {
+    fn into_response(self) -> Response {
+        let id = Uuid::new_v4().to_string();
+        (self.status,[("x-request-id",id.clone())],Json(json!({"error":{"code":self.code,"requestId":id,"message":"Check the requested contract, permissions and resource state."}}))).into_response()
+    }
+}
+
+pub fn router(state: State) -> Router {
+    let api = Router::new()
+        .route("/me", axum::routing::get(me))
+        .route("/apps", axum::routing::post(create_app))
+        .route("/apps/{app}/releases", axum::routing::post(create_release))
+        .route(
+            "/installations",
+            axum::routing::get(installations).post(create_installation),
+        )
+        .route("/grants", axum::routing::put(grant))
+        .route("/contracts", axum::routing::get(get_contract))
+        .route(
+            "/contracts/validate",
+            axum::routing::post(validate_manifest),
+        )
+        .route("/catalog", axum::routing::get(catalog))
+        .route("/openapi.json", axum::routing::get(openapi))
+        .route("/database/prepare", axum::routing::post(prepare))
+        .route("/jobs/{id}", axum::routing::get(get_job))
+        .route_layer(middleware::from_fn_with_state(state.clone(), session_guard));
+    let artifacts = state.artifacts.clone();
+    Router::new()
+        .nest("/api/v1", api)
+        .route("/auth/login", axum::routing::get(login))
+        .route("/auth/callback", axum::routing::get(callback))
+        .route("/auth/logout", axum::routing::post(logout))
+        .route(
+            "/.well-known/oauth-protected-resource",
+            axum::routing::get(metadata),
+        )
+        .route(
+            "/.well-known/oauth-protected-resource/mcp",
+            axum::routing::get(metadata),
+        )
+        .route(
+            "/api/health",
+            axum::routing::get(|| async { Json(json!({"status":"ok"})) }),
+        )
+        .merge(crate::mcp::router(state.clone()))
+        .nest_service("/artifacts", ServeDir::new(artifacts))
+        .with_state(state)
+}
+async fn session_guard(S(state): S<State>, mut request: Request, next: Next) -> Response {
+    let result = state.auth.session(&state, request.headers()).await;
+    match result {
+        Ok(p) => {
+            if !matches!(
+                *request.method(),
+                axum::http::Method::GET | axum::http::Method::HEAD | axum::http::Method::OPTIONS
+            ) && (request
+                .headers()
+                .get("x-miy-csrf")
+                .and_then(|v| v.to_str().ok())
+                != p.csrf.as_deref()
+                || request
+                    .headers()
+                    .get("origin")
+                    .and_then(|v| v.to_str().ok())
+                    != Some(state.auth.origin.as_str()))
+            {
+                return ApiError::forbidden().into_response();
+            }
+            let actor = p.id.clone();
+            let path = request.uri().path().to_owned();
+            let method = request.method().to_string();
+            request.extensions_mut().insert(p);
+            let mut response = next.run(request).await;
+            let id = response
+                .headers()
+                .get("x-request-id")
+                .and_then(|v| v.to_str().ok())
+                .map(str::to_owned)
+                .unwrap_or_else(|| Uuid::new_v4().to_string());
+            response
+                .headers_mut()
+                .insert("x-request-id", id.parse().unwrap());
+            tracing::info!(event="api_request",request_id=%id,actor=%actor,method=%method,path=%path,status=response.status().as_u16());
+            if method != "GET"
+                && sqlx::query(
+                    "INSERT INTO audit(actor,action,target,request_id) VALUES($1,$2,$3,$4)",
+                )
+                .bind(actor)
+                .bind(format!("{method}:{}", response.status().as_u16()))
+                .bind(path)
+                .bind(id)
+                .execute(&state.pool)
+                .await
+                .is_err()
+            {
+                tracing::error!(event = "audit_write_failed");
+            }
+            response
+        }
+        Err(e) => e.into_response(),
+    }
+}
+type P = axum::Extension<Principal>;
+async fn me(S(s): S<State>, axum::Extension(p): P) -> ApiResult<Json<Value>> {
+    Ok(Json(domain::me(&s, &p).await?))
+}
+async fn create_app(
+    S(s): S<State>,
+    axum::Extension(p): P,
+    Json(v): Json<domain::NewApp>,
+) -> ApiResult<Json<Value>> {
+    Ok(Json(domain::create_app(&s, &p, v).await?))
+}
+async fn create_release(
+    S(s): S<State>,
+    axum::Extension(p): P,
+    Path(app): Path<String>,
+    Json(v): Json<domain::NewRelease>,
+) -> ApiResult<Json<Value>> {
+    Ok(Json(domain::create_release(&s, &p, &app, v).await?))
+}
+async fn installations(S(s): S<State>, axum::Extension(p): P) -> ApiResult<Json<Value>> {
+    Ok(Json(domain::installations(&s, &p).await?))
+}
+async fn create_installation(
+    S(s): S<State>,
+    axum::Extension(p): P,
+    Json(v): Json<domain::NewInstallation>,
+) -> ApiResult<Json<Value>> {
+    Ok(Json(domain::create_installation(&s, &p, v).await?))
+}
+async fn grant(
+    S(s): S<State>,
+    axum::Extension(p): P,
+    Json(v): Json<domain::Grant>,
+) -> ApiResult<Json<Value>> {
+    Ok(Json(domain::grant(&s, &p, v).await?))
+}
+async fn get_contract() -> Json<Value> {
+    Json(domain::get_contract())
+}
+async fn catalog() -> Json<Value> {
+    Json(domain::catalog())
+}
+async fn validate_manifest(Json(v): Json<Value>) -> ApiResult<Json<Value>> {
+    let m: contract::Manifest = serde_json::from_value(v)?;
+    contract::validate(&m).map_err(ApiError::bad_owned)?;
+    Ok(Json(json!({"valid":true})))
+}
+async fn prepare(
+    S(s): S<State>,
+    axum::Extension(p): P,
+    Json(v): Json<domain::Prepare>,
+) -> ApiResult<Json<Value>> {
+    Ok(Json(domain::prepare(&s, &p, v).await?))
+}
+async fn get_job(
+    S(s): S<State>,
+    axum::Extension(p): P,
+    Path(id): Path<Uuid>,
+) -> ApiResult<Json<Value>> {
+    Ok(Json(domain::get_job(&s, &p, id).await?))
+}
+async fn login(S(s): S<State>) -> ApiResult<Response> {
+    let (url, value) = s.auth.login(&s).await?;
+    let mut r = Redirect::to(&url).into_response();
+    r.headers_mut().append(
+        header::SET_COOKIE,
+        format!("miy_login={value}; HttpOnly; Secure; SameSite=Lax; Path=/auth; Max-Age=300")
+            .parse()
+            .unwrap(),
+    );
+    Ok(r)
+}
+#[derive(Deserialize)]
+struct Callback {
+    code: Option<String>,
+    state: String,
+    error: Option<String>,
+}
+async fn callback(
+    S(s): S<State>,
+    headers: HeaderMap,
+    Query(v): Query<Callback>,
+) -> ApiResult<Response> {
+    if v.error.is_some() {
+        return Err(ApiError::unauthorized());
+    }
+    let code = v.code.ok_or_else(ApiError::unauthorized)?;
+    let session = s.auth.callback(&s, &code, &v.state, &headers).await?;
+    let mut r = Redirect::to("/").into_response();
+    r.headers_mut().append(
+        header::SET_COOKIE,
+        format!("miy_session={session}; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=28800")
+            .parse()
+            .unwrap(),
+    );
+    r.headers_mut().append(
+        header::SET_COOKIE,
+        "miy_login=; HttpOnly; Secure; SameSite=Lax; Path=/auth; Max-Age=0"
+            .parse()
+            .unwrap(),
+    );
+    Ok(r)
+}
+async fn logout(S(s): S<State>, headers: HeaderMap) -> ApiResult<Response> {
+    let p = s.auth.session(&s, &headers).await?;
+    if headers.get("x-miy-csrf").and_then(|v| v.to_str().ok()) != p.csrf.as_deref()
+        || headers.get("origin").and_then(|v| v.to_str().ok()) != Some(s.auth.origin.as_str())
+    {
+        return Err(ApiError::forbidden());
+    }
+    let url = s.auth.logout(&s, &headers).await?;
+    let mut r = Json(json!({"redirect":url})).into_response();
+    r.headers_mut().append(
+        header::SET_COOKIE,
+        "miy_session=; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=0"
+            .parse()
+            .unwrap(),
+    );
+    Ok(r)
+}
+async fn metadata(S(s): S<State>) -> Json<Value> {
+    Json(
+        json!({"resource":format!("{}/mcp",s.auth.origin),"authorization_servers":[s.auth.issuer],"scopes_supported":["miy.read","miy.dev"],"bearer_methods_supported":["header"]}),
+    )
+}
+async fn openapi() -> Json<Value> {
+    let mut paths = serde_json::Map::new();
+    for item in domain::catalog().as_array().unwrap() {
+        let method = item["method"].as_str().unwrap().to_lowercase();
+        let path = item["path"].as_str().unwrap();
+        let mut operation = json!({"operationId":item["id"],"summary":item["description"],"security":[{"session":[]}],"responses":{"200":{"description":"Success","content":{"application/json":{"schema":{}}}},"400":{"description":"Invalid contract/input"},"401":{"description":"Authentication required"},"403":{"description":"Permission denied"},"409":{"description":"Conflict"}}});
+        if !item["input"].is_null() {
+            operation["requestBody"] =
+                json!({"required":true,"content":{"application/json":{"schema":item["input"]}}});
+        }
+        let parameters=path.split('/').filter(|p|p.starts_with('{')).map(|p|json!({"name":p.trim_matches(&['{','}'][..]),"in":"path","required":true,"schema":{"type":"string"}})).collect::<Vec<_>>();
+        if !parameters.is_empty() {
+            operation["parameters"] = json!(parameters);
+        }
+        paths.entry(path.to_owned()).or_insert_with(|| json!({}))[method] = operation;
+    }
+    // Each request embeds a standalone JSON Schema. Move local definitions to
+    // OpenAPI components and rewrite references so generated clients resolve them.
+    let mut definitions = serde_json::Map::new();
+    fn normalize(value: &mut Value, definitions: &mut serde_json::Map<String, Value>) {
+        match value {
+            Value::Object(obj) => {
+                obj.remove("$schema");
+                if let Some(Value::Object(defs)) = obj.remove("$defs") {
+                    for (k, mut v) in defs {
+                        normalize(&mut v, definitions);
+                        definitions.insert(k, v);
+                    }
+                }
+                if let Some(Value::String(r)) = obj.get_mut("$ref") {
+                    *r = r.replace("#/$defs/", "#/components/schemas/");
+                }
+                for v in obj.values_mut() {
+                    normalize(v, definitions);
+                }
+            }
+            Value::Array(a) => {
+                for v in a {
+                    normalize(v, definitions);
+                }
+            }
+            _ => {}
+        }
+    }
+    let mut doc = json!({"openapi":"3.1.0","info":{"title":"miy V0-V1 validation API","version":"0.1.0"},"paths":paths});
+    normalize(&mut doc, &mut definitions);
+    doc["components"] = json!({"schemas":definitions,"securitySchemes":{"session":{"type":"apiKey","in":"cookie","name":"miy_session"}}});
+    Json(doc)
+}

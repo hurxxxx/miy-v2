@@ -8,11 +8,15 @@ CLI로 앱의 기본 구조를 만들고, 자신의 개발 에이전트를 MCP�
 
 ## 현재 단계
 
-현재 작업 범위는 **계획 문서 작성과 정리**다. 제품 요구사항, 기술 후보, 인수 조건을 구체화하며 코드 구현·인프라 구성·배포는 후속 작업이다.
+현재는 **V0~V1 최소 구현과 통합 검증을 통과한 단계**다. Rust 코어·MCP·OAuth·앱별 DB와 라우터 기반 UI 모듈을 연결했다. 전체 제품과 OCI 앱 배포는 후속 검증 단계에서 구현한다.
 
 다음 우선 작업은 [핵심 개발·배포 흐름의 집중 검증](docs/VALIDATION.md)이다. 최소 플랫폼·API/MCP·DB → CLI·하네스 → Codex 앱 개발 → 통합 빌드·Docker 배포 → DB 관리·라우터 기반 UI 실행 → 업데이트·실패 복구 순서로 통과 조건을 확인한다.
 
 첫 구현 범위와 확정한 실행 방식은 [V0~V1 구현 계획](docs/IMPLEMENTATION.md)을 따른다. 로컬 Docker에서 UI 런타임 통합, 웹·MCP OAuth, 앱별 DB와 작업 실행기를 검증한다.
+
+로컬 기동은 `bash scripts/up.sh`, 전체 인수 검사는 `bash scripts/check.sh`다. 준비 조건·CA·검증 계정·결과 경로는 [실행 안내](docs/RUNNING.md)를 따른다. 구현 전 문서 체크포인트는 Git 커밋 `3cecbe1`이다.
+
+구현 범위와 확인한 동작은 [V0~V1 검증 결과](docs/IMPLEMENTATION-RESULTS.md)에 정리한다.
 
 ## 합의한 방향
 

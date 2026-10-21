@@ -1,0 +1,9 @@
+.app {
+  max-width: 960px;
+}
+.app h3 {
+  color: #274cc7;
+}
+.app p {
+  overflow-wrap: anywhere;
+}

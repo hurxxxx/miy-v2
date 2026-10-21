@@ -1,0 +1,22 @@
+{
+  "name": "@miy/platform",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "vite build",
+    "dev": "vite"
+  },
+  "dependencies": {
+    "@miy/sdk": "workspace:*",
+    "@miy/ui": "workspace:*",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
+    "@tanstack/react-router": "1.170.45",
+    "@module-federation/enhanced": "2.9.2"
+  },
+  "devDependencies": {
+    "vite": "8.3.5",
+    "@vitejs/plugin-react": "6.1.2",
+    "@module-federation/vite": "1.23.5"
+  }
+}
