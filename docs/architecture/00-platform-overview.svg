@@ -1,0 +1,166 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="2400" height="1500" viewBox="0 0 2400 1500" role="img" aria-labelledby="title desc">
+<title id="title">miy 플랫폼 전체 구조: 개발·배포·운영과 서비스 제공 방식</title><desc id="desc">고객사, 개발사, 유지관리 파트너와 도메인 전문가가 기업별 miy에 참여한다. 사내 또는 클라우드 설치와 직접·대행·공동 운영을 선택한다. CLI·MCP 기반 개발, 개발 영역 평가와 커밋 릴리스 승격, 격리 앱·작업 큐, 내장 Hermes, 공통 권한과 데이터 연결, 코어 업데이트·복구를 한 장으로 표현한다.</desc>
+<defs>
+<marker id="a-blue" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10Z" fill="#2363A1"/></marker>
+<marker id="a-teal" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10Z" fill="#087F79"/></marker>
+<marker id="a-purple" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10Z" fill="#7250A3"/></marker>
+<marker id="a-gold" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10Z" fill="#9E691A"/></marker>
+<marker id="a-muted" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10Z" fill="#536B7C"/></marker>
+</defs><style>text{font-family:"Apple SD Gothic Neo","Noto Sans KR","Malgun Gothic",sans-serif;font-kerning:normal}</style>
+<rect x="0" y="0" width="2400" height="1500" rx="0" fill="white" stroke="white" stroke-width="2"/>
+<text x="48" y="57" font-size="32" fill="#087F79" font-weight="800" text-anchor="start">miy</text>
+<text x="2352" y="55" font-size="23" fill="#536B7C" font-weight="500" text-anchor="end">통합 개요 · PRD 0.3</text>
+<text x="48" y="116" font-size="52" fill="#153049" font-weight="700" text-anchor="start">기업용 AI 앱 개발·배포·운영 플랫폼</text>
+<text x="48" y="153" font-size="25" fill="#536B7C" font-weight="400" text-anchor="start">역할과 설치 선택부터 앱 개발·배포, 업무 실행과 유지관리까지</text>
+<rect x="488" y="186" width="1400" height="1220" rx="7" fill="#FBFDFE" stroke="#CBD9E3" stroke-width="2"/>
+<text x="528" y="233" font-size="34" fill="#153049" font-weight="700" text-anchor="start">기업별 miy 플랫폼</text>
+<rect x="1196" y="201" width="652" height="49" rx="5" fill="#EFF5FC" stroke="#EFF5FC" stroke-width="0"/>
+<text x="1522" y="234" font-size="25" fill="#2363A1" font-weight="600" text-anchor="middle">사내 서버·VM  또는  클라우드 서버·VM</text>
+<rect x="528" y="270" width="1320" height="48" rx="3" fill="white" stroke="#CBD9E3" stroke-width="1.4"/>
+<text x="548" y="302" font-size="23" fill="#2363A1" font-weight="700" text-anchor="start">운영 방식</text>
+<text x="685" y="302" font-size="24" fill="#153049" font-weight="500" text-anchor="start">고객사 직접 운영  /  개발사·파트너 대행  /  공동 운영</text>
+<text x="1826" y="302" font-size="21" fill="#536B7C" font-weight="400" text-anchor="end">설치 위치와 별도 선택</text>
+<text x="48" y="302" font-size="27" fill="#536B7C" font-weight="700" text-anchor="start">이용·개발·운영 주체</text>
+<text x="1976" y="302" font-size="27" fill="#536B7C" font-weight="700" text-anchor="start">연결 시스템·자산</text>
+<polyline points="960,424 960,448" fill="none" stroke="#2363A1" stroke-width="2.6" stroke-linejoin="round" marker-end="url(#a-blue)" marker-start="url(#a-blue)"/>
+<polyline points="528,485 510,485 510,832 528,832" fill="none" stroke="#087F79" stroke-width="2.6" stroke-linejoin="round" marker-end="url(#a-teal)" marker-start="url(#a-teal)"/>
+<polyline points="1848,485 1870,485 1870,832 1848,832" fill="none" stroke="#7250A3" stroke-width="2.6" stroke-linejoin="round" marker-end="url(#a-purple)" marker-start="url(#a-purple)"/>
+<polyline points="1188,522 1188,554" fill="none" stroke="#2363A1" stroke-width="2.6" stroke-linejoin="round" marker-end="url(#a-blue)"/>
+<polyline points="840,744 840,794" fill="none" stroke="#2363A1" stroke-width="2.6" stroke-linejoin="round" marker-end="url(#a-blue)"/>
+<text x="875" y="777" font-size="20" fill="#2363A1" font-weight="500" text-anchor="middle">배포</text>
+<polyline points="838,1012 838,1048" fill="none" stroke="#087F79" stroke-width="2.6" stroke-linejoin="round" marker-end="url(#a-teal)" marker-start="url(#a-teal)"/>
+<polyline points="1516,1012 1516,1048" fill="none" stroke="#7250A3" stroke-width="2.6" stroke-linejoin="round" marker-end="url(#a-purple)" marker-start="url(#a-purple)"/>
+<polyline points="1188,1124 1188,1160" fill="none" stroke="#087F79" stroke-width="2.6" stroke-linejoin="round" marker-end="url(#a-teal)" marker-start="url(#a-teal)"/>
+<rect x="48" y="338" width="360" height="168" rx="5" fill="white" stroke="#087F79" stroke-width="2"/>
+<text x="72" y="379" font-size="30" fill="#087F79" font-weight="700" text-anchor="start">고객사</text>
+<text x="72" y="417" font-size="23" fill="#536B7C" font-weight="400" text-anchor="start">직원 · 업무 담당자 · 책임자</text>
+<text x="72" y="451" font-size="22" fill="#536B7C" font-weight="400" text-anchor="start">업무 요구·앱 평가·서비스 사용</text>
+<text x="72" y="485" font-size="22" fill="#536B7C" font-weight="400" text-anchor="start">수행자 선정·작업 범위 위임</text>
+<polyline points="408,381 528,381" fill="none" stroke="#087F79" stroke-width="2.6" stroke-linejoin="round" marker-end="url(#a-teal)" marker-start="url(#a-teal)"/>
+<text x="468" y="365" font-size="19" fill="#087F79" font-weight="500" text-anchor="middle">사용·평가</text>
+<rect x="528" y="338" width="1320" height="86" rx="5" fill="#ECF8F5" stroke="#087F79" stroke-width="2"/>
+<text x="552" y="376" font-size="29" fill="#087F79" font-weight="700" text-anchor="start">miy 웹 서비스</text>
+<text x="552" y="409" font-size="24" fill="#153049" font-weight="400" text-anchor="start">업무 앱 포털  ·  관리 화면  ·  사이트 내장 챗봇</text>
+<text x="1824" y="390" font-size="23" fill="#536B7C" font-weight="400" text-anchor="end">허용된 앱과 데이터를 한 곳에서 사용</text>
+<rect x="528" y="448" width="1320" height="74" rx="5" fill="#EFF5FC" stroke="#2363A1" stroke-width="2"/>
+<text x="552" y="480" font-size="27" fill="#2363A1" font-weight="700" text-anchor="start">플랫폼 API · MCP · SDK</text>
+<text x="552" y="509" font-size="23" fill="#153049" font-weight="400" text-anchor="start">인증·권한·정책  /  앱 요청 라우팅  /  개발·배포 관리  /  대화·실행 상태와 이벤트</text>
+<rect x="48" y="554" width="360" height="228" rx="5" fill="white" stroke="#2363A1" stroke-width="2"/>
+<text x="72" y="594" font-size="29" fill="#2363A1" font-weight="700" text-anchor="start">앱 제작자</text>
+<text x="72" y="632" font-size="22" fill="#536B7C" font-weight="400" text-anchor="start">개발사·파트너·도메인 전문가</text>
+<text x="72" y="665" font-size="21" fill="#536B7C" font-weight="400" text-anchor="start">고객사 개발자도 같은 계약 사용</text>
+<text x="72" y="706" font-size="22" fill="#2363A1" font-weight="500" text-anchor="start">CLI·SDK·UI 템플릿·지침</text>
+<text x="72" y="738" font-size="23" fill="#2363A1" font-weight="500" text-anchor="start">개발 에이전트 + MCP</text>
+<text x="72" y="768" font-size="21" fill="#536B7C" font-weight="400" text-anchor="start">로컬 실행·수정·계약 검사</text>
+<polyline points="408,666 528,666" fill="none" stroke="#2363A1" stroke-width="2.6" stroke-linejoin="round" marker-end="url(#a-blue)" marker-start="url(#a-blue)"/>
+<text x="468" y="648" font-size="18" fill="#2363A1" font-weight="500" text-anchor="middle">제출·피드백</text>
+<rect x="528" y="554" width="1320" height="190" rx="5" fill="#EFF5FC" stroke="#2363A1" stroke-width="2"/>
+<text x="552" y="590" font-size="28" fill="#2363A1" font-weight="700" text-anchor="start">앱·소스·릴리스 관리 (Rust 코어)</text>
+<text x="1824" y="590" font-size="23" fill="#536B7C" font-weight="500" text-anchor="end">내장 Git / 외부 Git 연계</text>
+<rect x="552" y="624" width="240" height="72" rx="3" fill="white" stroke="#2363A1" stroke-width="1.7"/>
+<text x="672" y="654" font-size="25" fill="#2363A1" font-weight="600" text-anchor="middle">작업본 제출</text>
+<text x="672" y="684" font-size="20" fill="#536B7C" font-weight="400" text-anchor="middle">커밋 전 업로드 가능</text>
+<polyline points="792,660 810,660" fill="none" stroke="#2363A1" stroke-width="2.6" stroke-linejoin="round" marker-end="url(#a-blue)"/>
+<rect x="810" y="624" width="240" height="72" rx="3" fill="white" stroke="#2363A1" stroke-width="1.7"/>
+<text x="930" y="654" font-size="25" fill="#2363A1" font-weight="600" text-anchor="middle">개발 영역 평가</text>
+<text x="930" y="684" font-size="20" fill="#536B7C" font-weight="400" text-anchor="middle">고객사 미리보기·평가</text>
+<polyline points="1050,660 1068,660" fill="none" stroke="#2363A1" stroke-width="2.6" stroke-linejoin="round" marker-end="url(#a-blue)"/>
+<rect x="1068" y="624" width="240" height="72" rx="3" fill="white" stroke="#2363A1" stroke-width="1.7"/>
+<text x="1188" y="654" font-size="25" fill="#2363A1" font-weight="600" text-anchor="middle">Git 커밋·빌드</text>
+<text x="1188" y="684" font-size="20" fill="#536B7C" font-weight="400" text-anchor="middle">불변 산출물 생성</text>
+<polyline points="1308,660 1326,660" fill="none" stroke="#2363A1" stroke-width="2.6" stroke-linejoin="round" marker-end="url(#a-blue)"/>
+<rect x="1326" y="624" width="240" height="72" rx="3" fill="white" stroke="#2363A1" stroke-width="1.7"/>
+<text x="1446" y="654" font-size="25" fill="#2363A1" font-weight="600" text-anchor="middle">릴리스 재검증</text>
+<text x="1446" y="684" font-size="20" fill="#536B7C" font-weight="400" text-anchor="middle">개발 영역에서 검증</text>
+<polyline points="1566,660 1584,660" fill="none" stroke="#2363A1" stroke-width="2.6" stroke-linejoin="round" marker-end="url(#a-blue)"/>
+<rect x="1584" y="624" width="240" height="72" rx="3" fill="white" stroke="#2363A1" stroke-width="1.7"/>
+<text x="1704" y="654" font-size="25" fill="#2363A1" font-weight="600" text-anchor="middle">운영 활성화</text>
+<text x="1704" y="684" font-size="20" fill="#536B7C" font-weight="400" text-anchor="middle">배포 권한 확인·승격</text>
+<text x="552" y="729" font-size="22" fill="#153049" font-weight="400" text-anchor="start">평가·수정 반복  ·  검증한 동일 산출물 승격  ·  개발·운영 데이터와 비밀값 분리</text>
+<text x="1976" y="366" font-size="23" fill="#536B7C" font-weight="400" text-anchor="start">기존 기업 자산과 선택한 모델을</text>
+<text x="1976" y="400" font-size="23" fill="#536B7C" font-weight="400" text-anchor="start">허용된 정책과 연결로 활용</text>
+<rect x="1976" y="554" width="376" height="190" rx="5" fill="white" stroke="#2363A1" stroke-width="2"/>
+<text x="2000" y="599" font-size="28" fill="#2363A1" font-weight="700" text-anchor="start">외부 소스 저장소</text>
+<text x="2000" y="645" font-size="25" fill="#153049" font-weight="400" text-anchor="start">GitHub · GitLab</text>
+<text x="2000" y="686" font-size="23" fill="#536B7C" font-weight="400" text-anchor="start">앱별 기준 저장소·커밋</text>
+<text x="2000" y="723" font-size="22" fill="#536B7C" font-weight="400" text-anchor="start">소스와 릴리스 이력 연결</text>
+<polyline points="1848,666 1976,666" fill="none" stroke="#2363A1" stroke-width="2.6" stroke-linejoin="round" marker-end="url(#a-blue)" marker-start="url(#a-blue)"/>
+<text x="1912" y="648" font-size="19" fill="#2363A1" font-weight="500" text-anchor="middle">소스 연계</text>
+<rect x="528" y="794" width="620" height="218" rx="5" fill="#ECF8F5" stroke="#087F79" stroke-width="2"/>
+<text x="550" y="834" font-size="29" fill="#087F79" font-weight="700" text-anchor="start">격리된 앱 실행</text>
+<text x="550" y="869" font-size="23" fill="#536B7C" font-weight="400" text-anchor="start">독립 앱 패키지 · 웹앱·API·예약 작업</text>
+<rect x="550" y="889" width="235" height="48" rx="3" fill="white" stroke="#087F79" stroke-width="1.6"/>
+<rect x="891" y="889" width="235" height="48" rx="3" fill="white" stroke="#087F79" stroke-width="1.6"/>
+<text x="667.5" y="921" font-size="24" fill="#153049" font-weight="600" text-anchor="middle">업무 앱 A</text>
+<text x="1008.5" y="921" font-size="24" fill="#153049" font-weight="600" text-anchor="middle">업무 앱 B</text>
+<polyline points="785,918 891,918" fill="none" stroke="#087F79" stroke-width="2.6" stroke-linejoin="round" marker-end="url(#a-teal)"/>
+<text x="838" y="906" font-size="18" fill="#087F79" font-weight="500" text-anchor="middle">공개 API</text>
+<text x="838" y="984" font-size="24" fill="#087F79" font-weight="500" text-anchor="middle">스케줄러 → 작업 큐 → 격리 워커</text>
+<rect x="1184" y="794" width="664" height="218" rx="5" fill="#F4EFFA" stroke="#7250A3" stroke-width="2"/>
+<text x="1206" y="834" font-size="29" fill="#7250A3" font-weight="700" text-anchor="start">사이트 내장 Hermes 실행 엔진</text>
+<text x="1206" y="869" font-size="22" fill="#536B7C" font-weight="400" text-anchor="start">miy 대화·실행 관리 · 사용자 확인 후 업무 변경</text>
+<rect x="1206" y="889" width="180" height="48" rx="3" fill="white" stroke="#7250A3" stroke-width="1.6"/>
+<text x="1296" y="921" font-size="24" fill="#7250A3" font-weight="600" text-anchor="middle">모델 호출</text>
+<rect x="1426" y="889" width="180" height="48" rx="3" fill="white" stroke="#7250A3" stroke-width="1.6"/>
+<text x="1516" y="921" font-size="24" fill="#7250A3" font-weight="600" text-anchor="middle">도구 요청</text>
+<rect x="1646" y="889" width="180" height="48" rx="3" fill="white" stroke="#7250A3" stroke-width="1.6"/>
+<text x="1736" y="921" font-size="24" fill="#7250A3" font-weight="600" text-anchor="middle">결과 반영</text>
+<polyline points="1386,913 1426,913" fill="none" stroke="#7250A3" stroke-width="2.6" stroke-linejoin="round" marker-end="url(#a-purple)"/>
+<polyline points="1606,913 1646,913" fill="none" stroke="#7250A3" stroke-width="2.6" stroke-linejoin="round" marker-end="url(#a-purple)"/>
+<polyline points="1736,937 1736,957 1296,957 1296,937" fill="none" stroke="#7250A3" stroke-width="2.6" stroke-linejoin="round" marker-end="url(#a-purple)"/>
+<text x="1516" y="991" font-size="22" fill="#7250A3" font-weight="500" text-anchor="middle">반복 실행 → 진행·답변을 사이트 챗봇으로 반환</text>
+<rect x="1976" y="794" width="376" height="218" rx="5" fill="white" stroke="#7250A3" stroke-width="2"/>
+<text x="2000" y="840" font-size="28" fill="#7250A3" font-weight="700" text-anchor="start">AI 모델 연결</text>
+<text x="2000" y="887" font-size="24" fill="#153049" font-weight="400" text-anchor="start">사내 모델 / 외부 모델</text>
+<text x="2000" y="933" font-size="23" fill="#536B7C" font-weight="400" text-anchor="start">데이터별 외부 전달 정책</text>
+<text x="2000" y="977" font-size="22" fill="#536B7C" font-weight="400" text-anchor="start">허용된 모델·데이터만 사용</text>
+<polyline points="1848,913 1976,913" fill="none" stroke="#7250A3" stroke-width="2.6" stroke-linejoin="round" marker-end="url(#a-purple)" marker-start="url(#a-purple)"/>
+<text x="1912" y="895" font-size="19" fill="#7250A3" font-weight="500" text-anchor="middle">모델 호출</text>
+<rect x="48" y="830" width="360" height="298" rx="5" fill="#F8FAFC" stroke="#CBD9E3" stroke-width="2"/>
+<text x="72" y="871" font-size="27" fill="#153049" font-weight="700" text-anchor="start">위임과 책임</text>
+<text x="72" y="916" font-size="23" fill="#2363A1" font-weight="500" text-anchor="start">앱 개발 · 운영 배포</text>
+<text x="72" y="949" font-size="21" fill="#2363A1" font-weight="500" text-anchor="start">코어·서버 유지관리 권한 구분</text>
+<text x="72" y="995" font-size="21" fill="#536B7C" font-weight="400" text-anchor="start">고객사별 계정·작업 범위 지정</text>
+<text x="72" y="1032" font-size="21" fill="#536B7C" font-weight="400" text-anchor="start">사용자·앱별 데이터 접근 제한</text>
+<text x="72" y="1069" font-size="22" fill="#536B7C" font-weight="400" text-anchor="start">활동 기록과 위임·회수 관리</text>
+<text x="72" y="1106" font-size="21" fill="#536B7C" font-weight="400" text-anchor="start">수행자 변경 시 소스·운영 인계</text>
+<rect x="528" y="1048" width="1320" height="76" rx="5" fill="#ECF8F5" stroke="#087F79" stroke-width="2"/>
+<text x="552" y="1080" font-size="27" fill="#087F79" font-weight="700" text-anchor="start">공개 기능·데이터 연결</text>
+<text x="552" y="1111" font-size="23" fill="#153049" font-weight="400" text-anchor="start">사용자·앱·환경·리소스 정책  /  앱 간 공개 API  /  환경별 연결·서버 보관 자격증명</text>
+<rect x="1976" y="1048" width="376" height="168" rx="5" fill="white" stroke="#087F79" stroke-width="2"/>
+<text x="2000" y="1091" font-size="27" fill="#087F79" font-weight="700" text-anchor="start">기업 데이터·시스템</text>
+<text x="2000" y="1130" font-size="22" fill="#536B7C" font-weight="400" text-anchor="start">문서·파일·기존 PostgreSQL</text>
+<text x="2000" y="1166" font-size="22" fill="#536B7C" font-weight="400" text-anchor="start">사내 서비스·업무 HTTP API</text>
+<text x="2000" y="1201" font-size="21" fill="#536B7C" font-weight="400" text-anchor="start">허용된 연결과 작업만 사용</text>
+<polyline points="1848,1086 1976,1086" fill="none" stroke="#087F79" stroke-width="2.6" stroke-linejoin="round" marker-end="url(#a-teal)" marker-start="url(#a-teal)"/>
+<text x="1912" y="1069" font-size="18" fill="#087F79" font-weight="500" text-anchor="middle">데이터 연계</text>
+<rect x="528" y="1160" width="1320" height="56" rx="0" fill="white" stroke="#CBD9E3" stroke-width="1.6"/>
+<polyline points="968,1172 968,1204" fill="none" stroke="#536B7C" stroke-width="2.6" stroke-linejoin="round"/>
+<polyline points="1408,1172 1408,1204" fill="none" stroke="#536B7C" stroke-width="2.6" stroke-linejoin="round"/>
+<text x="748" y="1196" font-size="22" fill="#153049" font-weight="500" text-anchor="middle">플랫폼 설정·감사·실행 이력</text>
+<text x="1188" y="1196" font-size="22" fill="#153049" font-weight="500" text-anchor="middle">소스·불변 배포 산출물</text>
+<text x="1628" y="1196" font-size="22" fill="#153049" font-weight="500" text-anchor="middle">앱·환경별 DB·파일</text>
+<rect x="48" y="1224" width="360" height="164" rx="5" fill="white" stroke="#9E691A" stroke-width="2"/>
+<text x="72" y="1265" font-size="26" fill="#9E691A" font-weight="700" text-anchor="start">코어·서버 유지관리</text>
+<text x="72" y="1304" font-size="22" fill="#536B7C" font-weight="400" text-anchor="start">개발사·유지관리 파트너</text>
+<text x="72" y="1339" font-size="22" fill="#536B7C" font-weight="400" text-anchor="start">또는 고객사 운영 담당자</text>
+<text x="72" y="1374" font-size="21" fill="#536B7C" font-weight="400" text-anchor="start">위임 범위에서 적용·검증·복구</text>
+<rect x="528" y="1254" width="1320" height="126" rx="5" fill="#FFF8EC" stroke="#9E691A" stroke-width="2"/>
+<text x="552" y="1289" font-size="28" fill="#9E691A" font-weight="700" text-anchor="start">코어 업데이트와 공통 운영</text>
+<text x="552" y="1328" font-size="24" fill="#153049" font-weight="400" text-anchor="start">개발사 업데이트 제공 → 호환성·백업 확인 → 적용 → 플랫폼·앱 동작 확인·복구</text>
+<text x="552" y="1364" font-size="22" fill="#536B7C" font-weight="400" text-anchor="start">모니터링·로그·감사·자원 한도·백업·복원  /  앱 릴리스와 코어 버전은 별도 관리</text>
+<polyline points="408,1317 528,1317" fill="none" stroke="#9E691A" stroke-width="2.6" stroke-linejoin="round" marker-end="url(#a-gold)" marker-start="url(#a-gold)"/>
+<text x="468" y="1299" font-size="19" fill="#9E691A" font-weight="500" text-anchor="middle">유지관리</text>
+<text x="1976" y="1271" font-size="23" fill="#536B7C" font-weight="600" text-anchor="start">흐름 구분</text>
+<polyline points="1976,1295 2012,1295" fill="none" stroke="#2363A1" stroke-width="2.6" stroke-linejoin="round" marker-end="url(#a-blue)"/>
+<text x="2025" y="1301" font-size="20" fill="#2363A1" font-weight="400" text-anchor="start">개발·관리·배포</text>
+<polyline points="1976,1323 2012,1323" fill="none" stroke="#087F79" stroke-width="2.6" stroke-linejoin="round" marker-end="url(#a-teal)"/>
+<text x="2025" y="1329" font-size="20" fill="#087F79" font-weight="400" text-anchor="start">업무·데이터</text>
+<polyline points="1976,1351 2012,1351" fill="none" stroke="#7250A3" stroke-width="2.6" stroke-linejoin="round" marker-end="url(#a-purple)"/>
+<text x="2025" y="1357" font-size="20" fill="#7250A3" font-weight="400" text-anchor="start">내장 챗봇·모델</text>
+<polyline points="1976,1379 2012,1379" fill="none" stroke="#9E691A" stroke-width="2.6" stroke-linejoin="round" marker-end="url(#a-gold)"/>
+<text x="2025" y="1385" font-size="20" fill="#9E691A" font-weight="400" text-anchor="start">코어·서버 유지관리</text>
+<polyline points="48,1430 2352,1430" fill="none" stroke="#536B7C" stroke-width="2.6" stroke-linejoin="round"/>
+<text x="48" y="1468" font-size="22" fill="#536B7C" font-weight="400" text-anchor="start">앱 추가·업데이트에 코어 코드 수정 없음  ·  기업별 독립 환경  ·  그림은 기획된 논리 구조이며 실제 서버·프로세스 수를 뜻하지 않음</text>
+<text x="2352" y="1468" font-size="21" fill="#536B7C" font-weight="400" text-anchor="end">2026.10.20</text>
+</svg>

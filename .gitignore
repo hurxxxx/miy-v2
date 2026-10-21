@@ -1,0 +1,9 @@
+.DS_Store
+.local/
+target/
+node_modules/
+dist/
+test-results/
+playwright-report/
+.env
+*.log
