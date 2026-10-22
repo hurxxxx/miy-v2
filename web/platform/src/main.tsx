@@ -32,6 +32,71 @@ import { Button, Panel } from "@miy/ui";
 import "./style.css";
 
 type User = { id: string; name: string; admin: boolean; csrf: string };
+type LoginOptions = {
+  developmentLogin: boolean;
+  accounts: { account: string; label: string; description: string }[];
+  oauthUrl: string;
+};
+function Login() {
+  const [options, setOptions] = useState<LoginOptions>();
+  const [busy, setBusy] = useState<string>();
+  const [error, setError] = useState("");
+  useEffect(() => {
+    request<LoginOptions>("/auth/options")
+      .then(setOptions)
+      .catch(() => setError("로그인 정보를 불러올 수 없습니다."));
+  }, []);
+  async function enter(account: string) {
+    setBusy(account);
+    setError("");
+    try {
+      const result = await request<{ redirect: string }>(
+        "/auth/development",
+        undefined,
+        { method: "POST", body: JSON.stringify({ account }) },
+      );
+      window.location.assign(result.redirect);
+    } catch {
+      setError("로그인하지 못했습니다. 다시 시도해 주세요.");
+      setBusy(undefined);
+    }
+  }
+  return (
+    <main className="login">
+      <h1>miy</h1>
+      <p>
+        {options?.developmentLogin
+          ? "개발 계정을 선택하면 바로 시작합니다."
+          : "업무 앱과 데이터를 한곳에서"}
+      </p>
+      {options?.developmentLogin && (
+        <div className="quick-accounts">
+          {options.accounts.map((account, index) => (
+            <button
+              type="button"
+              key={account.account}
+              className={`account-button ${index === 0 ? "primary" : ""}`}
+              disabled={!!busy}
+              onClick={() => enter(account.account)}
+            >
+              <strong>
+                {busy === account.account ? "접속 중…" : account.label}
+              </strong>
+              <span>{account.description}</span>
+            </button>
+          ))}
+        </div>
+      )}
+      {error && <p role="alert">{error}</p>}
+      <a
+        className={options?.developmentLogin ? "oauth-link" : ""}
+        href={options?.oauthUrl || "/auth/login"}
+      >
+        {options?.developmentLogin ? "OAuth로 로그인" : "로그인"}
+      </a>
+    </main>
+  );
+}
 function useSession() {
   const [user, setUser] = useState<User | null | undefined>(undefined);
   useEffect(() => {
@@ -52,14 +117,7 @@ function Shell() {
         .catch(() => setApps([]));
   }, [user, location.pathname]);
   if (user === undefined) return <main>불러오는 중…</main>;
-  if (!user)
-    return (
-      <main className="login">
-        <h1>miy</h1>
-        <p>업무 앱과 데이터를 한곳에서</p>
-        <a href="/auth/login">로그인</a>
-      </main>
-    );
+  if (!user) return <Login />;
   async function logout() {
     const data = await request<{ redirect: string }>(
       "/auth/logout",
@@ -102,8 +160,14 @@ function Shell() {
 }
 function Home() {
   const [apps, setApps] = useState<Installation[]>([]);
+  const user = useSession();
+  function refresh() {
+    void request<Installation[]>("/api/v1/installations").then(setApps);
+  }
   useEffect(() => {
-    request<Installation[]>("/api/v1/installations").then(setApps);
+    refresh();
+    const timer = setInterval(refresh, 3000);
+    return () => clearInterval(timer);
   }, []);
   return (
     <>
@@ -116,11 +180,105 @@ function Home() {
             <Panel key={a.id} title={a.name}>
               <p>데이터베이스: {a.dbStatus}</p>
               <p>실행 환경: {a.environment}</p>
-              <Link to={("/apps/" + a.appId) as "/"}>앱 열기 →</Link>
+              {a.kind === "docker_app" && <p>Docker: {a.runtimeStatus}</p>}
+              {(a.kind !== "docker_app" || a.runtimeStatus === "running") && (
+                <Link to={("/apps/" + a.appId) as "/"}>앱 열기 →</Link>
+              )}
+              {a.kind === "docker_app" && a.canManage && user && (
+                <RuntimeControls app={a} csrf={user.csrf} refresh={refresh} />
+              )}
             </Panel>
           ))}
       </div>
     </>
+  );
+}
+function RuntimeControls({
+  app,
+  csrf,
+  refresh,
+}: {
+  app: Installation;
+  csrf: string;
+  refresh: () => void;
+}) {
+  const [busy, setBusy] = useState("");
+  const [error, setError] = useState("");
+  async function control(action: string) {
+    setBusy(action);
+    setError("");
+    try {
+      const job = await request<{ id: string }>(
+        `/api/v1/apps/${app.appId}/runtime`,
+        csrf,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            action,
+            environment: app.environment,
+            idempotencyKey: crypto.randomUUID(),
+          }),
+        },
+      );
+      for (let i = 0; i < 240; i++) {
+        const state = await request<{
+          status: string;
+          step: string;
+          errorCode?: string;
+        }>(`/api/v1/runtime/jobs/${job.id}`);
+        if (state.status === "failed")
+          throw new Error(state.errorCode || "작업 실패");
+        if (state.status === "succeeded") {
+          refresh();
+          return;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 500));
+      }
+      throw new Error(
+        "작업이 지연되고 있습니다. 새로고침해 상태를 확인하세요.",
+      );
+    } catch (error) {
+      setError(
+        error instanceof Error ? error.message : "작업을 완료하지 못했습니다.",
+      );
+    } finally {
+      setBusy("");
+      refresh();
+    }
+  }
+  if (app.runtimeStatus === "removed")
+    return (
+      <p>
+        앱 실행 환경이 제거됐습니다. DB는 보존됩니다. CLI에서 다시 배포할 수
+        있습니다.
+      </p>
+    );
+  return (
+    <div className="runtime-controls">
+      <p>{app.imageId?.slice(0, 22)}…</p>
+      <div>
+        {(app.runtimeStatus === "running"
+          ? ["stop", "restart", "remove"]
+          : ["start", "remove"]
+        ).map((action) => (
+          <Button
+            key={action}
+            disabled={!!busy}
+            onClick={() => control(action)}
+          >
+            {action === "start"
+              ? "시작"
+              : action === "stop"
+                ? "중지"
+                : action === "restart"
+                  ? "재시작"
+                  : "앱 제거(DB 보존)"}
+          </Button>
+        ))}
+      </div>
+      {busy && <p role="status">Docker 작업을 처리하고 있습니다…</p>}
+      {error && <p role="alert">{error}</p>}
+    </div>
   );
 }
 class Boundary extends Component<
@@ -171,6 +329,7 @@ function remote(app: Installation) {
   return modules.get(key)!;
 }
 function AppView() {
+  const user = useSession();
   const location = useLocation();
   const appId = location.pathname.split("/")[2];
   const [app, setApp] = useState<Installation | null>();
@@ -200,7 +359,12 @@ function AppView() {
       request<Installation[]>("/api/v1/installations")
         .then((items) => {
           const current = items.find((a) => a.id === app.id);
-          if (!current || current.releaseId !== app.releaseId) setUpdated(true);
+          if (
+            !current ||
+            current.releaseId !== app.releaseId ||
+            current.runtimeStatus !== app.runtimeStatus
+          )
+            setUpdated(true);
         })
         .catch(() => setUpdated(true));
     }, 3000);
@@ -231,6 +395,8 @@ function AppView() {
               if (updated) throw new Error("release_changed_reload_required");
               if (app.runtimeStatus === "not_deployed")
                 throw new Error("app_runtime_not_deployed");
+              if (app.runtimeStatus !== "running")
+                throw new Error("app_runtime_not_running");
               if (
                 !path.startsWith("/") ||
                 path.startsWith("//") ||
@@ -239,20 +405,39 @@ function AppView() {
                 throw new Error("invalid_api_path");
               return request<T>(
                 "/api/v1/installations/" + app.id + "/api" + path,
-                undefined,
-                init,
+                user?.csrf,
+                {
+                  ...init,
+                  headers: { ...init?.headers, "x-miy-release": app.releaseId },
+                },
               );
             },
             theme: "light",
           }
         : null,
-    [app, location.pathname, location.searchStr, location.hash, updated],
+    [
+      app,
+      location.pathname,
+      location.searchStr,
+      location.hash,
+      updated,
+      user?.csrf,
+    ],
   );
   if (app === undefined) return <p>앱을 불러오는 중…</p>;
   if (!app || !runtime)
     return (
       <Panel title="앱에 접근할 수 없습니다">
         <p>앱이 없거나 접근 권한이 없습니다.</p>
+      </Panel>
+    );
+  if (app.kind === "docker_app" && app.runtimeStatus !== "running")
+    return (
+      <Panel title="앱이 실행 중이 아닙니다">
+        <p>
+          현재 상태: {app.runtimeStatus}. 홈의 앱 관리에서 시작할 수 있습니다.
+        </p>
+        <Link to="/">홈으로</Link>
       </Panel>
     );
   let View: ReturnType<typeof remote>;

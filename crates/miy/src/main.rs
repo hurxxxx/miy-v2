@@ -1,10 +1,15 @@
+mod app_cli;
 mod auth;
+mod bundle;
 mod contract;
+mod dev_tools;
 mod domain;
 mod http;
 #[cfg(test)]
 mod integration;
 mod mcp;
+mod registration;
+mod runtime;
 mod worker;
 
 use anyhow::Result;
@@ -19,6 +24,10 @@ struct Args {
 }
 #[derive(Subcommand)]
 enum Command {
+    App {
+        #[command(subcommand)]
+        command: app_cli::AppCommand,
+    },
     Serve,
     Worker,
     Migrate,
@@ -39,6 +48,16 @@ async fn main() -> Result<()> {
         .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
         .init();
     let args = Args::parse();
+    if let Command::App { command } = args.command {
+        if let Err(error) = app_cli::execute(command).await {
+            eprintln!(
+                "{}",
+                serde_json::json!({"error":{"message":format!("{error:#}")}})
+            );
+            std::process::exit(1);
+        }
+        return Ok(());
+    }
     let pool = PgPoolOptions::new()
         .max_connections(10)
         .connect(&std::env::var("DATABASE_URL")?)

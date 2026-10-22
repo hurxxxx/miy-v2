@@ -26,9 +26,9 @@ else
 fi
 ready=false
 for attempt in {1..60}; do
-  if curl --cacert "$ca" -fsS https://localhost:18443/api/health >/dev/null 2>&1 && curl -fsS http://127.0.0.1:19222/json/version >/dev/null 2>&1; then ready=true;break;fi
+  if curl -fsS http://localhost:18000/api/health >/dev/null 2>&1 && curl --cacert "$ca" -fsS https://localhost:18443/api/health >/dev/null 2>&1 && curl -fsS http://127.0.0.1:19222/json/version >/dev/null 2>&1; then ready=true;break;fi
   sleep 1
 done
 if [ "$ready" != true ];then echo 'Core or browser did not become ready' >&2;exit 1;fi
-echo 'Validation services ready: https://localhost:18443'
-echo 'Local CA: .local/caddy/caddy/pki/authorities/local/root.crt; credentials: .local/credentials.json (private).'
+echo 'Development ready: http://localhost:18000 — click an account button to sign in.'
+echo 'OAuth/MCP validation: https://localhost:18443; private configuration: .local/'

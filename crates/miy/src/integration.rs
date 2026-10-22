@@ -137,6 +137,7 @@ async fn real_database_isolation_migrations_and_crash_recovery() -> Result<()> {
         id: "00000000-0000-4000-8000-000000000001".into(),
         scopes: vec!["miy.dev".into()],
         csrf: None,
+        development: false,
     };
     let app = format!("dbcheck-{}", &Uuid::new_v4().simple().to_string()[..12]);
     domain::create_app(

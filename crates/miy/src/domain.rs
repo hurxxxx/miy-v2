@@ -11,10 +11,11 @@ use uuid::Uuid;
 
 pub async fn seed(pool: &sqlx::PgPool) -> anyhow::Result<()> {
     for (i, n) in ["admin", "developer", "alice", "bob"].iter().enumerate() {
-        sqlx::query("INSERT INTO users VALUES($1,$2,$3) ON CONFLICT DO NOTHING")
+        sqlx::query("INSERT INTO users(id,name,admin,can_develop) VALUES($1,$2,$3,$4) ON CONFLICT DO NOTHING")
             .bind(format!("00000000-0000-4000-8000-{:012}", i + 1))
             .bind(n)
             .bind(i == 0)
+            .bind(i == 1)
             .execute(pool)
             .await?;
     }
@@ -62,7 +63,7 @@ pub async fn me(state: &State, p: &Principal) -> ApiResult<Value> {
     let grants:Vec<Value>=sqlx::query_scalar("SELECT jsonb_build_object('appId',app_id,'environment',environment,'permission',permission) FROM grants WHERE user_id=$1")
         .bind(&p.id).fetch_all(&state.pool).await?;
     Ok(
-        json!({"id":p.id,"name":row.get::<String,_>("name"),"admin":row.get::<bool,_>("admin"),"grants":grants,"csrf":p.csrf}),
+        json!({"id":p.id,"name":row.get::<String,_>("name"),"admin":row.get::<bool,_>("admin"),"grants":grants,"csrf":p.csrf,"development":p.development}),
     )
 }
 #[derive(Deserialize, schemars::JsonSchema)]
@@ -157,7 +158,7 @@ pub async fn create_installation(
     )
 }
 pub async fn installations(state: &State, p: &Principal) -> ApiResult<Value> {
-    let rows=sqlx::query("SELECT i.*,a.name,r.artifact_hash,r.manifest FROM installations i JOIN apps a ON a.id=i.app_id JOIN releases r ON r.id=i.release_id ORDER BY a.name,i.environment")
+    let rows=sqlx::query("SELECT i.*,a.name,r.artifact_hash,r.manifest,r.image_id,r.source_commit FROM installations i JOIN apps a ON a.id=i.app_id JOIN releases r ON r.id=i.release_id ORDER BY a.name,i.environment")
         .fetch_all(&state.pool).await?;
     let mut out = vec![];
     for r in rows {
@@ -167,9 +168,11 @@ pub async fn installations(state: &State, p: &Principal) -> ApiResult<Value> {
             continue;
         }
         let m: Manifest = serde_json::from_value(r.get("manifest"))?;
-        out.push(json!({"id":r.get::<Uuid,_>("id"),"appId":app,"name":r.get::<String,_>("name"),"environment":env,"releaseId":r.get::<Uuid,_>("release_id"),
+        out.push(json!({"id":r.get::<Uuid,_>("id"),"appId":app,"name":r.get::<String,_>("name"),"version":m.version,"environment":env,"releaseId":r.get::<Uuid,_>("release_id"),
             "dbStatus":r.get::<String,_>("db_status"),"runtimeStatus":r.get::<String,_>("runtime_status"),"desiredState":r.get::<String,_>("desired_state"),
-            "ui":{"entry":format!("/artifacts/{}/ui/{}",r.get::<String,_>("artifact_hash"),m.ui.module_entry),"export":m.ui.module_export,"contractVersion":m.ui.contract_version},"kind":"validation_fixture"}));
+            "canManage":authorize(state,p,&app,&env,true).await.is_ok(),
+            "imageId":r.get::<Option<String>,_>("image_id"),"sourceCommit":r.get::<Option<String>,_>("source_commit"),
+            "ui":{"entry":format!("/artifacts/{}/ui/{}",r.get::<String,_>("artifact_hash"),m.ui.module_entry),"export":m.ui.module_export,"contractVersion":m.ui.contract_version},"kind":if r.get::<Option<String>,_>("image_id").is_some(){"docker_app"}else{"validation_fixture"}}));
     }
     Ok(json!(out))
 }
@@ -196,6 +199,9 @@ pub struct Prepare {
 }
 pub async fn prepare(state: &State, p: &Principal, v: Prepare) -> ApiResult<Value> {
     let inst = installation(state, p, v.installation_id, true).await?;
+    if inst.get::<Option<String>, _>("runtime_image").is_some() {
+        return Err(ApiError::conflict("deploy_image_for_database_changes"));
+    }
     if v.idempotency_key.is_empty() || v.idempotency_key.len() > 128 {
         return Err(ApiError::bad("invalid_idempotency_key"));
     }
@@ -263,10 +269,14 @@ pub async fn grant(state: &State, p: &Principal, v: Grant) -> ApiResult<Value> {
     Ok(json!({"updated":true}))
 }
 pub fn get_contract() -> Value {
-    json!({"version":contract::VERSION,"uiVersion":"miy.ui/v1alpha1","manifestSchema":schemars::schema_for!(Manifest),"guidance":"Expose ./AppRoot; use SDK navigation. Declare permissions; actual grants are checked on the server. DB migrations belong to one immutable release. No access to core or other app databases.","sdkExample":"export default function AppRoot({runtime}) { return <button onClick={() => runtime.navigate('/detail/1')}>Open</button>; }"})
+    json!({"version":contract::VERSION,"bundleVersion":crate::bundle::VERSION,"uiVersion":"miy.ui/v1alpha1","manifestSchema":schemars::schema_for!(Manifest),"guidance":crate::bundle::GUIDANCE,"agentGuidance":crate::bundle::AGENT_GUIDANCE,"protectedFiles":crate::bundle::protected_hashes(),"sdkExample":"export default function AppRoot({runtime}) { return <button onClick={() => runtime.navigate('/detail/1')}>Open</button>; }"})
 }
 pub fn catalog() -> Value {
     json!([
+        {"id":"request_registration","method":"POST","path":"/api/v1/app-registrations","permission":"provisioned developer or admin","description":"Request an app registration; no access until administrator approval","input":schemars::schema_for!(NewApp)},
+        {"id":"list_registrations","method":"GET","path":"/api/v1/app-registrations","permission":"requester sees own, admin sees all","description":"List registration requests"},
+        {"id":"decide_registration","method":"POST","path":"/api/v1/app-registrations/{id}/decision","permission":"admin","description":"Approve and grant requester develop access in dev, or reject","input":schemars::schema_for!(crate::registration::Decision)},
+        {"id":"list_users","method":"GET","path":"/api/v1/users","permission":"admin","description":"List user IDs for permission management"},
         {"id":"create_app","method":"POST","path":"/api/v1/apps","permission":"admin","description":"Register an application","input":schemars::schema_for!(NewApp)},
         {"id":"create_release","method":"POST","path":"/api/v1/apps/{app}/releases","permission":"develop on app/dev","description":"Register a hash-verified immutable validation artifact","input":schemars::schema_for!(NewRelease)},
         {"id":"create_installation","method":"POST","path":"/api/v1/installations","permission":"develop on app/environment","description":"Create an app/environment installation; runtime remains not_deployed","input":schemars::schema_for!(NewInstallation)},
@@ -278,6 +288,12 @@ pub fn catalog() -> Value {
         {"id":"installations","method":"GET","path":"/api/v1/installations","permission":"use or develop","description":"Visible app installations and runtime UI metadata"},
         {"id":"validate_manifest","method":"POST","path":"/api/v1/contracts/validate","permission":"authenticated","description":"Validate manifest against pinned contract","input":schemars::schema_for!(Manifest)},
         {"id":"prepare_database","method":"POST","path":"/api/v1/database/prepare","permission":"develop on installation","description":"Prepare one installation DB and apply a registered release's migrations","input":schemars::schema_for!(Prepare)},
-        {"id":"get_job","method":"GET","path":"/api/v1/jobs/{id}","permission":"use or develop on installation","description":"Read persistent database job state"}
+        {"id":"get_job","method":"GET","path":"/api/v1/jobs/{id}","permission":"use or develop on installation","description":"Read persistent database job state"},
+        {"id":"runtime_request","method":"POST","path":"/api/v1/apps/{app}/runtime","permission":"develop on app/environment","description":"Deploy an immutable local Docker image ID, or start/stop/restart/remove an app. Runner extracts the image UI and migrations, prepares its DB and starts the constrained container. Remove preserves database.","input":schemars::schema_for!(crate::runtime::RuntimeRequest)},
+        {"id":"runtime_job","method":"GET","path":"/api/v1/runtime/jobs/{id}","permission":"use or develop on app/environment","description":"Read deployment or lifecycle job state"},
+        {"id":"app_api_get","method":"GET","path":"/api/v1/installations/{id}/api/{path}","permission":"use or develop on installation","description":"Forward app-relative API path with verified signed identity. App enforces record ownership."},
+        {"id":"app_api_post","method":"POST","path":"/api/v1/installations/{id}/api/{path}","permission":"use or develop on installation","description":"Forward mutation with CSRF and x-miy-release header matching active release"},
+        {"id":"app_api_patch","method":"PATCH","path":"/api/v1/installations/{id}/api/{path}","permission":"use or develop on installation","description":"Forward app record update with CSRF and current release"},
+        {"id":"app_api_delete","method":"DELETE","path":"/api/v1/installations/{id}/api/{path}","permission":"use or develop on installation","description":"Forward app record deletion with CSRF and current release"}
     ])
 }

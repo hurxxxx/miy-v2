@@ -8,7 +8,10 @@ export interface Installation {
   dbStatus: string;
   runtimeStatus: string;
   desiredState: string;
-  kind: "validation_fixture";
+  kind: "validation_fixture" | "docker_app";
+  canManage?: boolean;
+  imageId?: string;
+  sourceCommit?: string;
   ui: { entry: string; export: "./AppRoot"; contractVersion: string };
 }
 export interface AppRuntime {

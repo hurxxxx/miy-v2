@@ -15,6 +15,7 @@ pub async fn run(pool: sqlx::PgPool) -> Result<()> {
         .execute(&pool)
         .await?;
     tracing::info!(event = "db_runner_ready");
+    crate::runtime::recover(&pool).await?;
     loop {
         let row =
             sqlx::query("SELECT * FROM jobs WHERE status='queued' ORDER BY created_at,id LIMIT 1")
@@ -59,7 +60,7 @@ pub async fn run(pool: sqlx::PgPool) -> Result<()> {
                 .bind(installation.to_string())
                 .execute(&mut *lock)
                 .await?;
-        } else {
+        } else if !crate::runtime::tick(&pool).await? {
             tokio::time::sleep(std::time::Duration::from_millis(300)).await;
         }
         // The connection must remain live for the entire runner lifetime.
@@ -74,7 +75,12 @@ async fn step(pool: &sqlx::PgPool, id: Uuid, name: &str) -> Result<()> {
         .await?;
     Ok(())
 }
-async fn prepare(pool: &sqlx::PgPool, job: Uuid, installation: Uuid, release: Uuid) -> Result<()> {
+pub(crate) async fn prepare(
+    pool: &sqlx::PgPool,
+    job: Uuid,
+    installation: Uuid,
+    release: Uuid,
+) -> Result<()> {
     let row = sqlx::query("SELECT artifact_hash,manifest FROM releases WHERE id=$1")
         .bind(release)
         .fetch_one(pool)
@@ -84,18 +90,7 @@ async fn prepare(pool: &sqlx::PgPool, job: Uuid, installation: Uuid, release: Uu
     let m: contract::Manifest = serde_json::from_value(row.get("manifest"))?;
     contract::validate(&m).map_err(anyhow::Error::msg)?;
     let migrations = artifact.join(&m.migrations.directory);
-    for ent in std::fs::read_dir(&migrations)? {
-        let p = ent?.path();
-        anyhow::ensure!(
-            p.extension().and_then(|e| e.to_str()) == Some("sql"),
-            "invalid_migration_file"
-        );
-        let sql = std::fs::read_to_string(p)?;
-        anyhow::ensure!(
-            !sql.contains("-- no-transaction"),
-            "nontransactional_migration_unsupported"
-        );
-    }
+    crate::bundle::migrations(&migrations)?;
     let suffix = installation.simple().to_string();
     let db = format!("miy_app_{suffix}");
     let owner = format!("miy_o_{suffix}");

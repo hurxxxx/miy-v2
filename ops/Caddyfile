@@ -1,11 +1,7 @@
 {
   auto_https disable_redirects
 }
-https://localhost:18443 {
-  tls internal
-  handle /identity/* {
-    reverse_proxy keycloak:8080
-  }
+(platform) {
   handle /api/* {
     reverse_proxy host.docker.internal:18080
   }
@@ -26,4 +22,14 @@ https://localhost:18443 {
     try_files {path} /index.html
     file_server
   }
+}
+https://localhost:18443 {
+  tls internal
+  handle /identity/* {
+    reverse_proxy keycloak:8080
+  }
+  import platform
+}
+http://localhost:18000 {
+  import platform
 }

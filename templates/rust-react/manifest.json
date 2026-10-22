@@ -1,0 +1,6 @@
+{
+  "contractVersion":"miy.app/v1alpha1","id":"{{APP_ID}}","name":"{{APP_NAME}}","version":"0.1.0",
+  "runtime":{"profile":"rust-web-v1"},
+  "ui":{"delivery":"module","moduleEntry":"mf-manifest.json","moduleExport":"./AppRoot","contractVersion":"miy.ui/v1alpha1"},
+  "resources":{"database":"postgresql"},"migrations":{"directory":"migrations"},"requestedPermissions":["database"]
+}

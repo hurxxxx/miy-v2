@@ -1,0 +1,7 @@
+/target/
+/node_modules/
+/dist/
+/.miy/
+/.miy-tools/
+*.log
+/.pnpm-store/

@@ -211,9 +211,7 @@ test("runtime modules, OAuth session, permissions and DB preparation", async ({
   if (await alicePage.locator("#kc-logout").count())
     await alicePage.locator("#kc-logout").click();
   await alicePage.waitForURL(origin + "/");
-  await expect(
-    alicePage.getByRole("link", { name: "로그인", exact: true }),
-  ).toBeVisible();
+  await expect(alicePage.getByRole("link", { name: /로그인/ })).toBeVisible();
   await expect
     .poll(async () => (await alice.request.get(origin + "/api/v1/me")).status())
     .toBe(401);

@@ -20,6 +20,7 @@ pub struct Principal {
     pub id: String,
     pub scopes: Vec<String>,
     pub csrf: Option<String>,
+    pub development: bool,
 }
 #[derive(Deserialize)]
 struct Discovery {
@@ -54,6 +55,8 @@ struct Introspection {
 pub struct Auth {
     pub origin: String,
     pub issuer: String,
+    pub development_origin: String,
+    pub development_login: bool,
     client: reqwest::Client,
     discovery: Discovery,
     web_secret: String,
@@ -99,6 +102,26 @@ pub fn cookie(headers: &HeaderMap, name: &str) -> Option<String> {
             (k == name).then(|| v.to_string())
         })
 }
+pub fn development_profile(flag: Option<&str>, origin: &str, development_origin: &str) -> bool {
+    fn local_origin(value: &str) -> bool {
+        let Ok(url) = Url::parse(value) else {
+            return false;
+        };
+        matches!(url.scheme(), "http" | "https")
+            && url.username().is_empty()
+            && url.password().is_none()
+            && url.path() == "/"
+            && url.query().is_none()
+            && url.fragment().is_none()
+            && match url.host() {
+                Some(url::Host::Domain("localhost")) => true,
+                Some(url::Host::Ipv4(ip)) => ip.is_loopback(),
+                Some(url::Host::Ipv6(ip)) => ip.is_loopback(),
+                _ => false,
+            }
+    }
+    flag == Some("1") && local_origin(origin) && local_origin(development_origin)
+}
 impl Auth {
     pub async fn new() -> anyhow::Result<Self> {
         let cert = reqwest::Certificate::from_pem(&std::fs::read(std::env::var("MIY_CA_FILE")?)?)?;
@@ -122,8 +145,18 @@ impl Auth {
             .error_for_status()?
             .json()
             .await?;
+        let origin = std::env::var("MIY_ORIGIN")?;
+        let development_origin =
+            std::env::var("MIY_DEV_ORIGIN").unwrap_or_else(|_| "http://localhost:18000".into());
+        let development_login = development_profile(
+            std::env::var("MIY_DEV_LOGIN").ok().as_deref(),
+            &origin,
+            &development_origin,
+        );
         Ok(Self {
-            origin: std::env::var("MIY_ORIGIN")?,
+            origin,
+            development_origin,
+            development_login,
             issuer,
             client,
             discovery,
@@ -194,6 +227,7 @@ impl Auth {
             id: c.sub,
             scopes,
             csrf: None,
+            development: false,
         })
     }
     pub async fn login(&self, state: &State) -> ApiResult<(String, String)> {
@@ -287,6 +321,18 @@ impl Auth {
         r.json().await.map_err(|_| ApiError::unauthorized())
     }
     pub async fn session(&self, state: &State, headers: &HeaderMap) -> ApiResult<Principal> {
+        if self.development_login
+            && let Some(session) = cookie(headers, "miy_development")
+        {
+            let row = sqlx::query("SELECT user_id,csrf FROM development_sessions WHERE id_hash=$1 AND expires_at>now()")
+                .bind(hash(session)).fetch_optional(&state.pool).await?.ok_or_else(ApiError::unauthorized)?;
+            return Ok(Principal {
+                id: row.get("user_id"),
+                scopes: vec!["miy.read".into(), "miy.dev".into()],
+                csrf: Some(row.get("csrf")),
+                development: true,
+            });
+        }
         let session = cookie(headers, "miy_session").ok_or_else(ApiError::unauthorized)?;
         let mut tx = state.pool.begin().await?;
         let row=sqlx::query("SELECT * FROM sessions WHERE id_hash=$1 AND created_at>now()-interval '8 hours' FOR UPDATE")
@@ -312,14 +358,25 @@ impl Auth {
             id,
             scopes: vec!["miy.read".into(), "miy.dev".into()],
             csrf: Some(row.get("csrf")),
+            development: false,
         })
     }
     pub async fn logout(&self, state: &State, headers: &HeaderMap) -> ApiResult<String> {
+        let development = self.development_login && cookie(headers, "miy_development").is_some();
+        if let Some(session) = cookie(headers, "miy_development") {
+            sqlx::query("DELETE FROM development_sessions WHERE id_hash=$1")
+                .bind(hash(session))
+                .execute(&state.pool)
+                .await?;
+        }
         if let Some(session) = cookie(headers, "miy_session") {
             sqlx::query("DELETE FROM sessions WHERE id_hash=$1")
                 .bind(hash(session))
                 .execute(&state.pool)
                 .await?;
+        }
+        if development {
+            return Ok(format!("{}/", self.development_origin));
         }
         let mut url = Url::parse(&self.discovery.end_session_endpoint)?;
         url.query_pairs_mut().extend_pairs([
@@ -328,5 +385,66 @@ impl Auth {
         ]);
         Ok(url.into())
     }
+    pub fn allowed_origin(&self, headers: &HeaderMap, development: bool) -> bool {
+        let origin = headers.get("origin").and_then(|v| v.to_str().ok());
+        origin == Some(self.origin.as_str())
+            || (development
+                && self.development_login
+                && origin == Some(self.development_origin.as_str()))
+    }
+    pub async fn development_session(&self, state: &State, account: &str) -> ApiResult<String> {
+        if !self.development_login {
+            return Err(ApiError::not_found());
+        }
+        if !["admin", "developer", "alice", "bob"].contains(&account) {
+            return Err(ApiError::bad("unknown_development_account"));
+        }
+        let id: String = sqlx::query_scalar("SELECT id FROM users WHERE name=$1")
+            .bind(account)
+            .fetch_optional(&state.pool)
+            .await?
+            .ok_or_else(ApiError::not_found)?;
+        sqlx::query("DELETE FROM development_sessions WHERE expires_at<now()")
+            .execute(&state.pool)
+            .await?;
+        let session = random();
+        sqlx::query("INSERT INTO development_sessions VALUES($1,$2,$3,$4)")
+            .bind(hash(&session))
+            .bind(&id)
+            .bind(random())
+            .bind(Utc::now() + Duration::hours(8))
+            .execute(&state.pool)
+            .await?;
+        tracing::info!(event = "development_login", account);
+        Ok(session)
+    }
 }
 use sha2::Digest;
+
+#[cfg(test)]
+mod tests {
+    use super::development_profile;
+    #[test]
+    fn development_login_requires_explicit_local_profile() {
+        assert!(!development_profile(
+            None,
+            "https://localhost:18443",
+            "http://localhost:18000"
+        ));
+        assert!(!development_profile(
+            Some("1"),
+            "https://miy.example.com",
+            "http://localhost:18000"
+        ));
+        assert!(!development_profile(
+            Some("1"),
+            "https://localhost:18443",
+            "http://localhost.evil.example:18000"
+        ));
+        assert!(development_profile(
+            Some("1"),
+            "https://localhost:18443",
+            "http://localhost:18000"
+        ));
+    }
+}

@@ -75,6 +75,7 @@ pub fn validate(m: &Manifest) -> Result<(), String> {
     if m.ui.delivery != "module"
         || m.ui.module_export != "./AppRoot"
         || !safe_relative(&m.ui.module_entry)
+        || m.ui.module_entry != "mf-manifest.json"
         || m.resources.database != "postgresql"
         || m.migrations.directory != "migrations"
     {
@@ -151,5 +152,16 @@ mod tests {
         let h = artifact_hash(d.path()).unwrap();
         std::fs::write(d.path().join("a"), "two").unwrap();
         assert_ne!(h, artifact_hash(d.path()).unwrap());
+    }
+    #[test]
+    fn ui_registration_requires_federation_manifest() {
+        let mut value: serde_json::Value =
+            serde_json::from_str(include_str!("../../../templates/rust-react/manifest.json"))
+                .unwrap();
+        value["id"] = serde_json::json!("example-app");
+        let mut manifest: Manifest = serde_json::from_value(value).unwrap();
+        assert!(validate(&manifest).is_ok());
+        manifest.ui.module_entry = "remoteEntry.js".into();
+        assert_eq!(validate(&manifest).unwrap_err(), "invalid_manifest");
     }
 }

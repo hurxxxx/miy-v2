@@ -23,6 +23,7 @@ origin = 'https://localhost:18443'
     'DATABASE_URL=postgres://miy_core:'+s['core']+'@127.0.0.1:15432/miy_core',
     'PROVISION_DATABASE_URL=postgres://postgres:'+s['pg_admin']+'@127.0.0.1:15432/postgres',
     'MIY_ORIGIN='+origin, 'MIY_ISSUER='+origin+'/identity/realms/miy',
+    'MIY_DEV_LOGIN=1', 'MIY_DEV_ORIGIN=http://localhost:18000',
     'MIY_WEB_SECRET='+s['web_client'], 'MIY_RESOURCE_SECRET='+s['resource_client'],
     'MIY_ENCRYPTION_KEY='+s['encryption_key'],
     'MIY_CA_FILE='+str(LOCAL/'caddy/caddy/pki/authorities/local/root.crt'),

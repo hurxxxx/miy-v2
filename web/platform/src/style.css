@@ -35,7 +35,7 @@ button {
   display: flex;
   min-height: 100vh;
 }
-aside {
+.shell > aside {
   width: 240px;
   padding: 32px 24px;
   background: #fff;
@@ -51,22 +51,22 @@ aside {
   letter-spacing: 1.5px;
   margin-top: 40px;
 }
-nav {
+.shell > aside nav {
   display: grid;
   gap: 8px;
 }
-nav a {
+.shell > aside nav a {
   padding: 12px;
   border-radius: 8px;
 }
-nav a:hover {
+.shell > aside nav a:hover {
   background: #edf2f7;
 }
 .workspace {
   flex: 1;
   min-width: 0;
 }
-header {
+.workspace > header {
   height: 80px;
   padding: 0 40px;
   border-bottom: 1px solid #e2e8ef;
@@ -75,7 +75,7 @@ header {
   justify-content: space-between;
   background: white;
 }
-main {
+.workspace > main {
   padding: 36px 40px;
 }
 .grid {
@@ -84,6 +84,7 @@ main {
   gap: 20px;
 }
 .login {
+  padding: 36px 40px;
   max-width: 500px;
   margin: 12vh auto;
 }
@@ -93,4 +94,57 @@ main {
   background: #244bff;
   color: white;
   border-radius: 8px;
+}
+.quick-accounts {
+  display: grid;
+  gap: 10px;
+  margin: 28px 0 16px;
+}
+.account-button {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 5px;
+  padding: 18px 22px;
+  border: 1px solid var(--miy-border);
+  border-radius: 12px;
+  background: white;
+  color: var(--miy-text);
+  cursor: pointer;
+  text-align: left;
+}
+.account-button strong {
+  font-size: 16px;
+}
+.account-button span {
+  font-size: 13px;
+  opacity: 0.75;
+}
+.account-button.primary {
+  background: var(--miy-accent);
+  color: white;
+  border-color: var(--miy-accent);
+}
+.account-button:hover {
+  filter: brightness(0.97);
+}
+.account-button:disabled {
+  cursor: wait;
+  opacity: 0.6;
+}
+.login a.oauth-link {
+  padding: 8px 0;
+  background: transparent;
+  color: #566578;
+  font-size: 13px;
+}
+.runtime-controls {
+  margin-top: 16px;
+  font-size: 13px;
+  color: #53677d;
+}
+.runtime-controls > div {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
 }

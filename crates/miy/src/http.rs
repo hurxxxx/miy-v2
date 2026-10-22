@@ -112,6 +112,15 @@ pub fn router(state: State) -> Router {
     let api = Router::new()
         .route("/me", axum::routing::get(me))
         .route("/apps", axum::routing::post(create_app))
+        .route(
+            "/app-registrations",
+            axum::routing::get(registrations).post(request_registration),
+        )
+        .route(
+            "/app-registrations/{id}/decision",
+            axum::routing::post(decide_registration),
+        )
+        .route("/users", axum::routing::get(users))
         .route("/apps/{app}/releases", axum::routing::post(create_release))
         .route(
             "/installations",
@@ -127,11 +136,19 @@ pub fn router(state: State) -> Router {
         .route("/openapi.json", axum::routing::get(openapi))
         .route("/database/prepare", axum::routing::post(prepare))
         .route("/jobs/{id}", axum::routing::get(get_job))
+        .route("/apps/{app}/runtime", axum::routing::post(runtime_request))
+        .route("/runtime/jobs/{id}", axum::routing::get(runtime_job))
+        .route(
+            "/installations/{id}/api/{*path}",
+            axum::routing::any(crate::runtime::proxy),
+        )
         .route_layer(middleware::from_fn_with_state(state.clone(), session_guard));
     let artifacts = state.artifacts.clone();
     Router::new()
         .nest("/api/v1", api)
         .route("/auth/login", axum::routing::get(login))
+        .route("/auth/options", axum::routing::get(login_options))
+        .route("/auth/development", axum::routing::post(development_login))
         .route("/auth/callback", axum::routing::get(callback))
         .route("/auth/logout", axum::routing::post(logout))
         .route(
@@ -162,11 +179,7 @@ async fn session_guard(S(state): S<State>, mut request: Request, next: Next) -> 
                 .get("x-miy-csrf")
                 .and_then(|v| v.to_str().ok())
                 != p.csrf.as_deref()
-                || request
-                    .headers()
-                    .get("origin")
-                    .and_then(|v| v.to_str().ok())
-                    != Some(state.auth.origin.as_str()))
+                || !state.auth.allowed_origin(request.headers(), p.development))
             {
                 return ApiError::forbidden().into_response();
             }
@@ -205,6 +218,42 @@ async fn session_guard(S(state): S<State>, mut request: Request, next: Next) -> 
     }
 }
 type P = axum::Extension<Principal>;
+async fn registrations(S(s): S<State>, axum::Extension(p): P) -> ApiResult<Json<Value>> {
+    Ok(Json(crate::registration::list(&s, &p).await?))
+}
+async fn request_registration(
+    S(s): S<State>,
+    axum::Extension(p): P,
+    Json(v): Json<domain::NewApp>,
+) -> ApiResult<Json<Value>> {
+    Ok(Json(crate::registration::request(&s, &p, v).await?))
+}
+async fn decide_registration(
+    S(s): S<State>,
+    axum::Extension(p): P,
+    Path(id): Path<Uuid>,
+    Json(v): Json<crate::registration::Decision>,
+) -> ApiResult<Json<Value>> {
+    Ok(Json(crate::registration::decide(&s, &p, id, v).await?))
+}
+async fn users(S(s): S<State>, axum::Extension(p): P) -> ApiResult<Json<Value>> {
+    Ok(Json(crate::registration::users(&s, &p).await?))
+}
+async fn runtime_request(
+    S(s): S<State>,
+    axum::Extension(p): P,
+    Path(app): Path<String>,
+    Json(v): Json<crate::runtime::RuntimeRequest>,
+) -> ApiResult<Json<Value>> {
+    Ok(Json(crate::runtime::request(&s, &p, &app, v).await?))
+}
+async fn runtime_job(
+    S(s): S<State>,
+    axum::Extension(p): P,
+    Path(id): Path<Uuid>,
+) -> ApiResult<Json<Value>> {
+    Ok(Json(crate::runtime::job(&s, &p, id).await?))
+}
 async fn me(S(s): S<State>, axum::Extension(p): P) -> ApiResult<Json<Value>> {
     Ok(Json(domain::me(&s, &p).await?))
 }
@@ -274,7 +323,57 @@ async fn login(S(s): S<State>) -> ApiResult<Response> {
             .parse()
             .unwrap(),
     );
+    r.headers_mut().append(
+        header::SET_COOKIE,
+        "miy_development=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0"
+            .parse()
+            .unwrap(),
+    );
     Ok(r)
+}
+async fn login_options(S(s): S<State>) -> Json<Value> {
+    let accounts = if s.auth.development_login {
+        json!([
+            {"account":"admin","label":"관리자로 시작","description":"전체 앱과 관리 기능"},
+            {"account":"developer","label":"개발자","description":"앱 개발 권한 확인"},
+            {"account":"alice","label":"사용자 A","description":"일반 사용자 권한 확인"},
+            {"account":"bob","label":"사용자 B","description":"다른 사용자 접근 확인"}
+        ])
+    } else {
+        json!([])
+    };
+    Json(
+        json!({"developmentLogin":s.auth.development_login,"accounts":accounts,"oauthUrl":format!("{}/auth/login",s.auth.origin)}),
+    )
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct DevelopmentLogin {
+    account: String,
+}
+async fn development_login(
+    S(s): S<State>,
+    headers: HeaderMap,
+    Json(v): Json<DevelopmentLogin>,
+) -> ApiResult<Response> {
+    if !s.auth.development_login {
+        return Err(ApiError::not_found());
+    }
+    if !s.auth.allowed_origin(&headers, true) {
+        return Err(ApiError::forbidden());
+    }
+    let session = s.auth.development_session(&s, &v.account).await?;
+    let mut response = Json(json!({"redirect":"/"})).into_response();
+    response
+        .headers_mut()
+        .insert(header::CACHE_CONTROL, "no-store".parse().unwrap());
+    response.headers_mut().append(
+        header::SET_COOKIE,
+        format!("miy_development={session}; HttpOnly; SameSite=Lax; Path=/; Max-Age=28800")
+            .parse()
+            .unwrap(),
+    );
+    Ok(response)
 }
 #[derive(Deserialize)]
 struct Callback {
@@ -310,7 +409,7 @@ async fn callback(
 async fn logout(S(s): S<State>, headers: HeaderMap) -> ApiResult<Response> {
     let p = s.auth.session(&s, &headers).await?;
     if headers.get("x-miy-csrf").and_then(|v| v.to_str().ok()) != p.csrf.as_deref()
-        || headers.get("origin").and_then(|v| v.to_str().ok()) != Some(s.auth.origin.as_str())
+        || !s.auth.allowed_origin(&headers, p.development)
     {
         return Err(ApiError::forbidden());
     }
@@ -319,6 +418,12 @@ async fn logout(S(s): S<State>, headers: HeaderMap) -> ApiResult<Response> {
     r.headers_mut().append(
         header::SET_COOKIE,
         "miy_session=; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=0"
+            .parse()
+            .unwrap(),
+    );
+    r.headers_mut().append(
+        header::SET_COOKIE,
+        "miy_development=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0"
             .parse()
             .unwrap(),
     );

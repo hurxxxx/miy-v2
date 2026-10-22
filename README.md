@@ -8,13 +8,15 @@ CLI로 앱의 기본 구조를 만들고, 자신의 개발 에이전트를 MCP�
 
 ## 현재 단계
 
-현재는 **V0~V1 최소 구현과 통합 검증을 통과한 단계**다. Rust 코어·MCP·OAuth·앱별 DB와 라우터 기반 UI 모듈을 연결했다. 전체 제품과 OCI 앱 배포는 후속 검증 단계에서 구현한다.
+현재는 **V0~V1 통과 후, CLI·Codex·실제 Docker 앱 배포를 로컬에서 연결한 단계**다. 별도 작업공간의 휴가 관리 앱을 실제 Codex가 개발하고 앱 DB·Rust 컨테이너·라우터 기반 React 화면까지 연결했다. [휴가 관리 대장 실증 결과](docs/LEAVE-LEDGER-RESULTS.md)에 접속 주소·소스·검사 결과·보완 과정과 한계를 기록했다. 정식 V2~V7 전체 검증과 제품 전체 구현은 진행 중이다.
+
+후속 bundle 0.3.0에서는 CLI 등록·승인·권한 부여, 강화된 개발 검사, 배포 작업 재개를 추가했다. 고정된 번들로 실제 Codex가 새 앱의 v1/v2를 개발하고 스키마 변경 배포·실패 migration·새 릴리스 복구까지 [개발 과정 검증](docs/IMPLEMENTATION-RESULTS.md#개발등록배포-과정-재검증-bundle-030)을 통과했다. CLI 정식 OAuth와 원격 이미지 전송은 다음 단계다.
 
 다음 우선 작업은 [핵심 개발·배포 흐름의 집중 검증](docs/VALIDATION.md)이다. 최소 플랫폼·API/MCP·DB → CLI·하네스 → Codex 앱 개발 → 통합 빌드·Docker 배포 → DB 관리·라우터 기반 UI 실행 → 업데이트·실패 복구 순서로 통과 조건을 확인한다.
 
 첫 구현 범위와 확정한 실행 방식은 [V0~V1 구현 계획](docs/IMPLEMENTATION.md)을 따른다. 로컬 Docker에서 UI 런타임 통합, 웹·MCP OAuth, 앱별 DB와 작업 실행기를 검증한다.
 
-로컬 기동은 `bash scripts/up.sh`, 전체 인수 검사는 `bash scripts/check.sh`다. 준비 조건·CA·검증 계정·결과 경로는 [실행 안내](docs/RUNNING.md)를 따른다. 구현 전 문서 체크포인트는 Git 커밋 `3cecbe1`이다.
+로컬 기동은 `bash scripts/up.sh`, 전체 인수 검사는 `bash scripts/check.sh`다. 브라우저에서 [http://localhost:18000](http://localhost:18000)을 열고 **관리자로 시작**을 누르면 비밀번호 없이 개발 화면을 사용할 수 있다. 개발자·사용자 계정 버튼도 제공한다. 실제 OAuth·MCP 검증과 준비 조건·결과 경로는 [실행 안내](docs/RUNNING.md)를 따른다. 구현 전 문서 체크포인트는 Git 커밋 `3cecbe1`이다.
 
 구현 범위와 확인한 동작은 [V0~V1 검증 결과](docs/IMPLEMENTATION-RESULTS.md)에 정리한다.
 
