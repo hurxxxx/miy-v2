@@ -73,8 +73,38 @@ test("runtime modules, OAuth session, permissions and DB preparation", async ({
     environment: "prod",
     releaseId: installations[0].releaseId,
   });
-  expect(production.ok()).toBeTruthy();
-  const prod = await production.json();
+  expect(production.status()).toBe(400);
+  expect((await production.json()).error.code).toBe(
+    "use_checked_release_promotion_for_prod",
+  );
+  // Isolated DB-per-environment fixture, not a production deployment. The public
+  // installation endpoint must reject it; Docker promotion is tested separately.
+  const prod = { id: crypto.randomUUID() };
+  execFileSync(
+    "docker",
+    [
+      "exec",
+      "-i",
+      "miy-v2-validation-postgres-1",
+      "psql",
+      "-U",
+      "postgres",
+      "-d",
+      "miy_core",
+      "-v",
+      "ON_ERROR_STOP=1",
+      "-v",
+      `id=${prod.id}`,
+      "-v",
+      `app_id=${appIds[0]}`,
+      "-v",
+      `release_id=${installations[0].releaseId}`,
+    ],
+    {
+      input:
+        "INSERT INTO installations(id,app_id,environment,release_id) VALUES(:'id',:'app_id','prod',:'release_id');\n",
+    },
+  );
   const userIds = {
     developer: "00000000-0000-4000-8000-000000000002",
     alice: "00000000-0000-4000-8000-000000000003",
@@ -108,7 +138,9 @@ test("runtime modules, OAuth session, permissions and DB preparation", async ({
   await page.getByRole("button", { name: "목록으로" }).click();
   await page.goBack();
   await expect(page.getByRole("heading", { name: "분류 상세" })).toBeVisible();
-  await page.locator(`nav a[href="/apps/${appIds[1]}"]`).click();
+  await page
+    .locator(`nav a[href="/environments/dev/apps/${appIds[1]}"]`)
+    .click();
   await expect(page.getByTestId("app-root")).toBeVisible();
   expect(await page.locator("iframe").count()).toBe(0);
   await page.goto(`/apps/${appIds[0]}/crash`);

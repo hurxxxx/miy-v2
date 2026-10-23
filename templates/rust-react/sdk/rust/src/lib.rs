@@ -1,4 +1,4 @@
-//! miy runtime SDK v0.2.0. The platform verifies sessions and signs each forwarded identity.
+//! miy runtime SDK v0.5.0. The platform verifies sessions and signs each forwarded identity.
 use axum::{
     Json, Router,
     extract::Request,

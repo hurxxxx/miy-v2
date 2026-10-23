@@ -1,0 +1,22 @@
+{
+  "bundleVersion": "0.5.0",
+  "protectedFiles": {
+    ".agents/skills/miy-app/SKILL.md": "04bb7db97d4d1ba66494edcebfb6217971ca389448d8d7a3acd153c74cea7419",
+    ".claude/skills/miy-app/SKILL.md": "04bb7db97d4d1ba66494edcebfb6217971ca389448d8d7a3acd153c74cea7419",
+    "AGENTS.md": "d40adb925db78eb6f4ea0d4803267de72d8f150cc59dcf9c9c840bd772d6f373",
+    "CLAUDE.md": "12f4e97ee1fb5886b28a30759eb0acc8c4ca5c9a26f4302ab3eabd09e57a7b15",
+    "Dockerfile": "d1b6720e0a5decb6f1455870bc107af9a29235acc68a8b96e10b7727d80bb6ac",
+    "docs/CLI.md": "52ae20aff489a13e6960ffa9102a04f798336874ec498965d863449f53e271e5",
+    "docs/CONTRACT.md": "fbddebd294aaf7b85acfbd6cc079d528ae1704c521d92bee56ee99224d61c2d6",
+    "migrations/0001_initial.sql": "24948591b41e10398ad4f1a8338bc605e209fffa90bc9dbc283f80083fbca8f3",
+    "miy.components.json": "778bbbd40918d75ecaa9c31fa31cb0965ed220ce673862e72c7256e979fa39b0",
+    "rust-toolchain.toml": "d13306be0ecda81ce779baa290ffb417380d525928477f16200884b5169cca33",
+    "sdk/browser/index.ts": "5f92db6d36062e8a19b5ffd0ec763281ed421abcefb98756412eff42eacc9d9c",
+    "sdk/preview/index.html": "e67ab4d00b4b9635cfe4336cd8fcc7730965fb00fbe0c00e60d4ae06369ba36e",
+    "sdk/preview/main.tsx": "449183426394856b190e5259b34d984e7fad1a39004c478b75b8d75261a64870",
+    "sdk/preview/vite.config.ts": "9d325e06beb5a82dc4659a38baac99687bfdc3ed95b9e46f6fb70f2f44f676cf",
+    "sdk/rust/Cargo.toml": "2f285fed601317a33f3950a3752d16b1a0521a4430b8e5bd65d1299b030073b4",
+    "sdk/rust/src/lib.rs": "d0d209bf6d5275ac17153646318b7dc0577a6400d5b44808c085d0810b09ee58",
+    "sdk/ui/index.tsx": "a5f06713fe2bb331fd3098df77fb9cfb65695c76747ff7bceefd9c4f89ad5319"
+  }
+}

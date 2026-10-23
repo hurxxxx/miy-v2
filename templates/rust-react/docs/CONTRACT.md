@@ -1,4 +1,6 @@
-# miy application bundle v0.3.0
+# miy application bundle v0.6.0
+
+This describes bundle 0.6.0. Existing apps must follow their installed protected SDK and use an explicit bundle upgrade before adopting new SDK methods. Project stdio MCP reports the installed bundle; the server HTTP contract describes the latest bundle.
 
 Backend: Rust 1.99.1, Axum 0.8.9, SQLx 0.8.6. UI: React 19.3.1, Vite 8.3.5, Module Federation.
 Keep manifest.json `miy.app/v1alpha1`, runtime `rust-web-v1`, UI `miy.ui/v1alpha1`, export `./AppRoot`.
@@ -13,11 +15,76 @@ SQLx owns each migration transaction. Do not put explicit BEGIN, COMMIT or ROLLB
 Return JSON; business errors should have `{error:{code,message}}` and the appropriate 4xx status. Do not include DB connection strings in errors.
 Use local CSS modules to avoid host style collisions. UI navigation stays under the app basePath. Server-side permission checks are required even if UI buttons are hidden.
 The image contains `/miy/manifest.json`, `/miy/ui/`, `/miy/migrations/`, `/miy/build.json`, and Rust executable `/usr/local/bin/miy-app`. It listens on 8080 and serves GET /health.
-The evaluator runs one CLI build and deploys its immutable image ID. The server extracts the same image's UI and migrations and checks the manifest before preparing the DB and starting the container. Local validation currently uses the shared Docker Desktop image store, not a remote registry.
+The evaluator runs one CLI build and deploys its immutable image ID. The server extracts the same image's UI and migrations and checks the manifest before preparing the DB and starting the container. The CLI transfers the immutable image archive to the platform; the local and server Docker engines may be separate.
 The bundle and its protected SDK/Dockerfile/toolchain/guidance/initial migration are pinned in miy.bundle.json and verified against the embedded CLI. Use the CLI shipped with this app. Existing bundles are not silently upgraded. This is a reproducibility check, not a security boundary against malicious source code.
 Format app code with `cargo fmt --package miy-app`; `miy app check` also verifies that the shipped SDK already passes rustfmt. Do not fix SDK formatting yourself.
 Registration: developer runs `miy app register`; administrator runs `miy app registrations`, `miy app approve ID`, and optionally `miy app grant --user USER_ID --permission use`. Approval creates the app and grants only its requester develop permission in dev. A request alone grants no access. Use `miy app users` to find IDs as administrator.
-Build: commit source, then `miy app build` (which includes the full check). Deploy: `miy app deploy --environment dev`. A stale build is rejected. The immutable image ID currently must exist in the same Docker Engine as the platform runner; remote transfer/registry is a separate future transport.
+Build: commit source, then `miy app build` (which includes the full check). Deploy: `miy app deploy --environment dev`. A stale build is rejected. The CLI uploads the image archive over the authenticated platform API. Client and runner CPU architectures must match.
 Long jobs: `miy app deploy --no-wait`, then `miy app resume`. Request keys are saved before submission; rerunning an interrupted submission reuses the key. A failed attempt requires explicit `--retry`. Resume never starts a different job. After success, another deploy/control invocation is a new operation.
-CLI login currently uses explicitly enabled localhost development accounts. Real MCP/web OAuth remains separate; CLI OAuth is not implemented by this bundle.
+CLI login uses browser approval and an expiring platform credential. Explicitly enabled loopback development accounts are an optional shortcut. Project stdio MCP shares the CLI login; legacy direct HTTP MCP OAuth is a separate connection.
 Useful commands: `.miy-tools/miy app check`, `.miy-tools/miy app build`, `.miy-tools/miy app deploy`, `.miy-tools/miy app status`, `.miy-tools/miy app resume`.
+
+## Local development and data connections
+
+`miy app dev` builds the current working tree and runs a local Docker backend and PostgreSQL database, with a browser preview on loopback. It does not write into the platform's app database. The preview gateway holds your CLI credential, signs your actual user identity, and proxies authorized calls to the platform's dev environment. Stop with Ctrl-C or `miy app dev-stop`; local database volume is retained.
+
+Declare `platform:directory:read` in requestedPermissions and call `runtime.platformApi("directory")` for the shared user directory (id/name only). Declare `app:TARGET:read` or `app:TARGET:write` and use `runtime.appApi(TARGET,"/path",options)` to call another app in the same environment. The platform also requires the caller's access to that target; declarations do not grant user access. Target backend business authorization still applies. No cross-database credentials are exposed.
+
+The UI executes trusted React code inside the platform's JavaScript context. CSS Modules and runtime helpers avoid accidental interference, but this is not a sandbox for hostile JavaScript. Use local styles, clean up global event listeners/timers in effects, and do not change document/body or platform navigation directly.
+
+## Delivery
+
+`app build` requires committed clean source. `app deploy` uploads the immutable Docker image archive and deploys to dev. Client and server may use separate Docker engines, with matching CPU architecture. Uploaded archives are capped at 1 GiB. The platform is not restarted. Use `app status` to check version, image match and last job; a running old version is not evidence that an update succeeded.
+
+After browser/API testing, `app accept --note "actual checks"` records acceptance for the exact dev release. `app promote --release UUID` deploys that same image to a separate prod installation/database; it does not copy dev data. Only administrators or users granted prod/deploy may promote or control prod. Runtime routes explicitly include environments: `/environments/dev/apps/ID` and `/environments/prod/apps/ID`.
+
+## Component distribution
+
+The SDK protocol remains in the versioned foundation bundle. UI implementations
+come from the platform component registry using protocol `miy.component/v1`.
+The template declares initial defaults in `miy.components.json`; the CLI installs
+them after login with `app components sync`. New component releases do not change
+the CLI binary or any installed app. `platform-components/` is a managed source
+directory with its own version/hash lock. Import `@miy/components/NAME` and keep
+business extensions outside that directory. App check/build verifies both locks.
+
+## Navigation and application lifecycle
+
+Register unsaved input or in-flight work with `runtime.registerNavigationGuard`.
+Return a message while leaving would discard work; otherwise return undefined.
+Register in an effect and return the disposer. Include every state used by the
+callback in effect dependencies, or read it through a current ref. Example:
+
+```tsx
+useEffect(() => runtime.registerNavigationGuard(() =>
+  dirty || saving ? "저장되지 않은 작업이 있습니다. 이동하시겠습니까?" : undefined
+), [runtime.registerNavigationGuard, dirty, saving]);
+```
+
+The platform and local preview apply this to runtime.navigate, host menu links,
+back/forward, and document unload. Browsers use their own unload message and may
+suppress prompts without user interaction. Do not add a second confirm around
+runtime.navigate or manipulate browser history directly. Remove the guard when
+work is saved/discarded; clean it up on unmount. Registration is required: hosts
+cannot infer application draft state. Old apps continue to run, without automatic
+draft protection. When a deployed release changes, the host retains the mounted
+view and blocks stale API calls until the user reloads.
+
+`app dev-stop` requests shutdown of this project's runner, waits for the port and
+lock to be released, and removes its containers. The local DB volume survives.
+During startup it waits for the current build/migration to finish. A timeout is
+reported as pending, never successful. Old CLI runners must first be stopped with
+Ctrl-C in their terminal. Deployment does not stop a local preview automatically.
+
+## Names and acceptance records
+
+The platform display name is administrative metadata. Deployment never renames
+it from manifest.json. Administrators use `app rename --name "Display name"`;
+`app status` reports both names. This changes no source or release metadata.
+
+`app accept --note "summary" --report acceptance.json` records user-attested tests
+for the report's exact releaseId. See docs/ACCEPTANCE.md for the format and
+platform-boundary checklist. The authenticated recorder and test actors are
+separate. Failed tests cannot be submitted as approval; use not_run with a reason
+for explicitly untested scope. Legacy note-only acceptance remains supported and
+is marked unstructured. Neither format automatically proves business correctness.

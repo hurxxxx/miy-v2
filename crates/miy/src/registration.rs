@@ -100,3 +100,28 @@ pub async fn users(s: &State, p: &Principal) -> ApiResult<Value> {
     let rows: Vec<Value> = sqlx::query_scalar("SELECT jsonb_build_object('id',id,'name',name,'admin',admin,'canDevelop',can_develop) FROM users ORDER BY name").fetch_all(&s.pool).await?;
     Ok(json!(rows))
 }
+
+#[derive(Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct DisplayName {
+    pub name: String,
+}
+pub async fn rename(s: &State, p: &Principal, app: &str, v: DisplayName) -> ApiResult<Value> {
+    domain::admin(s, p).await?;
+    let name = v.name.trim();
+    if name.is_empty() || name.len() > 120 {
+        return Err(ApiError::bad("invalid_app_name"));
+    }
+    let changed = sqlx::query("UPDATE apps SET name=$2 WHERE id=$1")
+        .bind(app)
+        .bind(name)
+        .execute(&s.pool)
+        .await?
+        .rows_affected();
+    if changed == 0 {
+        return Err(ApiError::not_found());
+    }
+    Ok(
+        json!({"appId":app,"name":name,"policy":"Platform display name; release manifest and application source are unchanged"}),
+    )
+}

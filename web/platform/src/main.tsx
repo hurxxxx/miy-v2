@@ -21,6 +21,7 @@ import {
   loadRemote,
 } from "@module-federation/enhanced/runtime";
 import {
+  createNavigationGuards,
   appTarget,
   request,
   UI_CONTRACT,
@@ -31,19 +32,37 @@ import {
 import { Button, Panel } from "@miy/ui";
 import "./style.css";
 
+const activeGuards = new Set<ReturnType<typeof createNavigationGuards>>();
+
 type User = { id: string; name: string; admin: boolean; csrf: string };
 type LoginOptions = {
   developmentLogin: boolean;
+  developmentOrigin: string;
   accounts: { account: string; label: string; description: string }[];
   oauthUrl: string;
 };
+function environmentPath(environment: string, app?: string) {
+  return `/environments/${environment}` + (app ? `/apps/${app}` : "");
+}
+function currentEnvironment(path: string) {
+  const parts = path.split("/");
+  if (parts[1] !== "environments") return "dev";
+  return parts[2] === "dev" || parts[2] === "prod" ? parts[2] : "invalid";
+}
 function Login() {
   const [options, setOptions] = useState<LoginOptions>();
   const [busy, setBusy] = useState<string>();
   const [error, setError] = useState("");
   useEffect(() => {
     request<LoginOptions>("/auth/options")
-      .then(setOptions)
+      .then((options) =>
+        setOptions(
+          options.developmentLogin &&
+            options.developmentOrigin !== window.location.origin
+            ? { ...options, developmentLogin: false, accounts: [] }
+            : options,
+        ),
+      )
       .catch(() => setError("로그인 정보를 불러올 수 없습니다."));
   }, []);
   async function enter(account: string) {
@@ -55,7 +74,11 @@ function Login() {
         undefined,
         { method: "POST", body: JSON.stringify({ account }) },
       );
-      window.location.assign(result.redirect);
+      window.location.assign(
+        window.location.pathname.startsWith("/cli/authorize/")
+          ? window.location.href
+          : result.redirect,
+      );
     } catch {
       setError("로그인하지 못했습니다. 다시 시도해 주세요.");
       setBusy(undefined);
@@ -90,6 +113,10 @@ function Login() {
       {error && <p role="alert">{error}</p>}
       <a
         className={options?.developmentLogin ? "oauth-link" : ""}
+        onClick={() => {
+          if (window.location.pathname.startsWith("/cli/authorize/"))
+            sessionStorage.setItem("miy.returnTo", window.location.pathname);
+        }}
         href={options?.oauthUrl || "/auth/login"}
       >
         {options?.developmentLogin ? "OAuth로 로그인" : "로그인"}
@@ -110,6 +137,16 @@ function Shell() {
   const user = useSession();
   const [apps, setApps] = useState<Installation[]>([]);
   const location = useLocation();
+  const environment = currentEnvironment(location.pathname);
+  useEffect(() => {
+    if (user && location.pathname === "/") {
+      const target = sessionStorage.getItem("miy.returnTo");
+      if (target?.startsWith("/cli/authorize/")) {
+        sessionStorage.removeItem("miy.returnTo");
+        window.location.assign(target);
+      }
+    }
+  }, [user, location.pathname]);
   useEffect(() => {
     if (user)
       request<Installation[]>("/api/v1/installations")
@@ -118,12 +155,23 @@ function Shell() {
   }, [user, location.pathname]);
   if (user === undefined) return <main>불러오는 중…</main>;
   if (!user) return <Login />;
+  if (environment === "invalid")
+    return (
+      <main>
+        <Panel title="존재하지 않는 실행 환경입니다">
+          <p>테스트 또는 운영 영역의 주소를 사용하세요.</p>
+          <Link to={environmentPath("dev") as "/"}>테스트 영역으로</Link>
+        </Panel>
+      </main>
+    );
   async function logout() {
+    if ([...activeGuards].some((guards) => !guards.confirmNavigation())) return;
     const data = await request<{ redirect: string }>(
       "/auth/logout",
       user!.csrf,
       { method: "POST" },
     );
+    for (const guards of activeGuards) guards.clear();
     window.location.assign(data.redirect);
   }
   return (
@@ -132,13 +180,23 @@ function Shell() {
         <Link to="/" className="brand">
           miy
         </Link>
-        <p className="label">WORKSPACE · DEV</p>
+        <p className="label">
+          {environment === "prod" ? "운영 · PROD" : "테스트 · DEV"}
+        </p>
+        <nav aria-label="실행 환경">
+          <Link to={environmentPath("dev") as "/"}>테스트 영역</Link>
+          <Link to={environmentPath("prod") as "/"}>운영 영역</Link>
+          {user.admin && <Link to={"/admin" as "/"}>플랫폼 관리</Link>}
+        </nav>
         <nav>
-          <Link to="/">홈</Link>
+          <Link to={environmentPath(environment) as "/"}>홈</Link>
           {apps
-            .filter((a) => a.environment === "dev")
+            .filter((a) => a.environment === environment)
             .map((a) => (
-              <Link key={a.id} to={("/apps/" + a.appId) as "/"}>
+              <Link
+                key={a.id}
+                to={environmentPath(environment, a.appId) as "/"}
+              >
                 {a.name}
               </Link>
             ))}
@@ -161,6 +219,8 @@ function Shell() {
 function Home() {
   const [apps, setApps] = useState<Installation[]>([]);
   const user = useSession();
+  const location = useLocation();
+  const environment = currentEnvironment(location.pathname);
   function refresh() {
     void request<Installation[]>("/api/v1/installations").then(setApps);
   }
@@ -171,18 +231,22 @@ function Home() {
   }, []);
   return (
     <>
-      <h1>앱</h1>
+      <h1>{environment === "prod" ? "운영 앱" : "테스트 앱"}</h1>
       <p>접근할 수 있는 업무 앱을 선택하세요.</p>
       <div className="grid">
         {apps
-          .filter((a) => a.environment === "dev")
+          .filter((a) => a.environment === environment)
           .map((a) => (
             <Panel key={a.id} title={a.name}>
               <p>데이터베이스: {a.dbStatus}</p>
-              <p>실행 환경: {a.environment}</p>
+              <p>
+                실행 환경: {a.environment} · 버전: {a.version || "—"}
+              </p>
               {a.kind === "docker_app" && <p>Docker: {a.runtimeStatus}</p>}
               {(a.kind !== "docker_app" || a.runtimeStatus === "running") && (
-                <Link to={("/apps/" + a.appId) as "/"}>앱 열기 →</Link>
+                <Link to={environmentPath(environment, a.appId) as "/"}>
+                  앱 열기 →
+                </Link>
               )}
               {a.kind === "docker_app" && a.canManage && user && (
                 <RuntimeControls app={a} csrf={user.csrf} refresh={refresh} />
@@ -331,9 +395,30 @@ function remote(app: Installation) {
 function AppView() {
   const user = useSession();
   const location = useLocation();
-  const appId = location.pathname.split("/")[2];
+  const parts = location.pathname.split("/");
+  const environment = currentEnvironment(location.pathname);
+  const appId = parts[1] === "environments" ? parts[4] : parts[2];
+  const basePath =
+    parts[1] === "environments"
+      ? environmentPath(environment, appId)
+      : "/apps/" + appId;
   const [app, setApp] = useState<Installation | null>();
   const [updated, setUpdated] = useState(false);
+  const guards = useMemo(
+    () => createNavigationGuards(),
+    [app?.id, app?.releaseId],
+  );
+  useEffect(() => {
+    activeGuards.add(guards);
+    const unblock = router.history.block({
+      blockerFn: () => !guards.confirmNavigation(),
+      enableBeforeUnload: () => !!guards.message(),
+    });
+    return () => {
+      unblock();
+      activeGuards.delete(guards);
+    };
+  }, [guards]);
   useEffect(() => {
     setApp(undefined);
     setUpdated(false);
@@ -342,8 +427,9 @@ function AppView() {
       .then((items) => {
         if (active)
           setApp(
-            items.find((a) => a.appId === appId && a.environment === "dev") ??
-              null,
+            items.find(
+              (a) => a.appId === appId && a.environment === environment,
+            ) ?? null,
           );
       })
       .catch(() => {
@@ -352,7 +438,7 @@ function AppView() {
     return () => {
       active = false;
     };
-  }, [appId]);
+  }, [appId, environment]);
   useEffect(() => {
     if (!app) return;
     const id = setInterval(() => {
@@ -377,15 +463,14 @@ function AppView() {
             installationId: app.id,
             appId: app.appId,
             releaseId: app.releaseId,
-            basePath: "/apps/" + app.appId,
+            basePath,
             location: {
-              pathname:
-                location.pathname.slice(("/apps/" + app.appId).length) || "/",
+              pathname: location.pathname.slice(basePath.length) || "/",
               search: location.searchStr,
               hash: location.hash,
             },
             navigate: (to, options) => {
-              const href = appTarget("/apps/" + app.appId, to);
+              const href = appTarget(basePath, to);
               void router.navigate({
                 to: href as "/",
                 replace: options?.replace,
@@ -412,11 +497,40 @@ function AppView() {
                 },
               );
             },
+            platformApi: <T,>(resource: "directory") => {
+              if (updated) throw new Error("release_changed_reload_required");
+              return request<T>(
+                `/api/v1/installations/${app.id}/platform/${resource}`,
+                user?.csrf,
+              );
+            },
+            appApi: <T,>(target: string, path: string, init?: RequestInit) => {
+              if (updated) throw new Error("release_changed_reload_required");
+              if (
+                !/^[a-z][a-z0-9-]{0,47}$/.test(target) ||
+                !path.startsWith("/") ||
+                path.startsWith("//") ||
+                path.includes("..") ||
+                path.includes("\\")
+              )
+                throw new Error("invalid_api_path");
+              return request<T>(
+                `/api/v1/installations/${app.id}/connections/${target}/api${path}`,
+                user?.csrf,
+                {
+                  ...init,
+                  headers: { ...init?.headers, "x-miy-release": app.releaseId },
+                },
+              );
+            },
+            registerNavigationGuard: guards.register,
             theme: "light",
           }
         : null,
     [
       app,
+      basePath,
+      guards,
       location.pathname,
       location.searchStr,
       location.hash,
@@ -450,19 +564,199 @@ function AppView() {
       </Panel>
     );
   }
-  if (updated)
+  return (
+    <>
+      {updated && (
+        <Panel title="앱 상태가 변경되었습니다">
+          <p>
+            작성 중인 내용을 확인한 뒤 최신 상태로 다시 열어주세요. 현재 화면의
+            API 호출은 중지됩니다.
+          </p>
+          <Button onClick={() => window.location.reload()}>새로고침</Button>
+        </Panel>
+      )}
+      <Boundary key={app.releaseId}>
+        <Suspense fallback={<p>앱 화면을 불러오는 중…</p>}>
+          <View key={app.id} runtime={runtime} />
+        </Suspense>
+      </Boundary>
+    </>
+  );
+}
+function CliAuthorize() {
+  const user = useSession();
+  const location = useLocation();
+  const id = location.pathname.split("/").at(-1);
+  const [result, setResult] = useState("");
+  const [busy, setBusy] = useState(false);
+  async function approve() {
+    if (!user) return;
+    setBusy(true);
+    try {
+      await request(`/api/v1/cli-authorizations/${id}/approve`, user.csrf, {
+        method: "POST",
+      });
+      setResult("CLI 연결을 승인했습니다. 터미널로 돌아가세요.");
+    } catch (e) {
+      setResult(String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <Panel title="CLI 로그인 승인">
+      <p>
+        {user?.name} 계정으로 CLI가 플랫폼 API를 사용하도록 연결합니다. 권한은
+        이 계정의 앱·환경 권한을 따릅니다.
+      </p>
+      <p>
+        요청 ID: <code>{id}</code>
+      </p>
+      <p>
+        터미널의 요청 ID와 같은지 확인하세요. 연결은 8시간 뒤 만료되며 app
+        logout으로 해제할 수 있습니다.
+      </p>
+      {result ? (
+        <p role="status">{result}</p>
+      ) : (
+        <Button disabled={busy} onClick={approve}>
+          이 CLI 연결 승인
+        </Button>
+      )}
+    </Panel>
+  );
+}
+function Admin() {
+  const user = useSession();
+  const [requests, setRequests] = useState<
+    {
+      id: string;
+      appId: string;
+      name: string;
+      status: string;
+      requester: string;
+    }[]
+  >([]);
+  const [users, setUsers] = useState<{ id: string; name: string }[]>([]);
+  const [apps, setApps] = useState<Installation[]>([]);
+  const [message, setMessage] = useState("");
+  function refresh() {
+    void request<typeof requests>("/api/v1/app-registrations").then(
+      setRequests,
+    );
+    void request<typeof users>("/api/v1/users").then(setUsers);
+    void request<Installation[]>("/api/v1/installations").then(setApps);
+  }
+  useEffect(() => {
+    if (user?.admin) refresh();
+  }, [user?.admin]);
+  if (!user?.admin)
     return (
-      <Panel title="앱 상태가 변경되었습니다">
-        <p>최신 상태로 다시 열어주세요.</p>
-        <Button onClick={() => window.location.reload()}>새로고침</Button>
+      <Panel title="관리자 권한이 필요합니다">
+        <p>관리자로 로그인하세요.</p>
       </Panel>
     );
+  async function decide(id: string, approve: boolean) {
+    try {
+      await request(`/api/v1/app-registrations/${id}/decision`, user!.csrf, {
+        method: "POST",
+        body: JSON.stringify({ approve }),
+      });
+      setMessage(approve ? "앱 등록을 승인했습니다." : "등록을 거절했습니다.");
+      refresh();
+    } catch (e) {
+      setMessage(String(e));
+    }
+  }
+  async function grant(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    const form = new FormData(e.currentTarget);
+    try {
+      await request("/api/v1/grants", user!.csrf, {
+        method: "PUT",
+        body: JSON.stringify({
+          userId: form.get("user"),
+          appId: form.get("app"),
+          environment: form.get("environment"),
+          permission: form.get("permission"),
+          enabled: form.get("enabled") === "true",
+        }),
+      });
+      setMessage("권한을 변경했습니다.");
+    } catch (e) {
+      setMessage(String(e));
+    }
+  }
   return (
-    <Boundary key={app.releaseId}>
-      <Suspense fallback={<p>앱 화면을 불러오는 중…</p>}>
-        <View key={app.id} runtime={runtime} />
-      </Suspense>
-    </Boundary>
+    <>
+      <h1>플랫폼 관리</h1>
+      <Panel title="앱 등록 신청">
+        {requests
+          .filter((r) => r.status === "pending")
+          .map((r) => (
+            <div key={r.id}>
+              <p>
+                {r.name} · {r.appId}
+              </p>
+              <Button onClick={() => decide(r.id, true)}>승인</Button>{" "}
+              <Button onClick={() => decide(r.id, false)}>거절</Button>
+            </div>
+          ))}
+      </Panel>
+      <Panel title="앱·환경 권한">
+        <form onSubmit={grant}>
+          <label>
+            사용자{" "}
+            <select name="user">
+              {users.map((u) => (
+                <option key={u.id} value={u.id}>
+                  {u.name}
+                </option>
+              ))}
+            </select>
+          </label>{" "}
+          <label>
+            앱 ID <input name="app" required pattern="[a-z][a-z0-9-]*" />
+          </label>{" "}
+          <label>
+            환경{" "}
+            <select name="environment">
+              <option value="dev">테스트</option>
+              <option value="prod">운영</option>
+            </select>
+          </label>{" "}
+          <label>
+            권한{" "}
+            <select name="permission">
+              <option value="use">사용</option>
+              <option value="develop">개발 (운영 배포 불가)</option>
+              <option value="deploy">배포 (운영 승인·제어)</option>
+            </select>
+          </label>{" "}
+          <select aria-label="부여 또는 회수" name="enabled">
+            <option value="true">부여</option>
+            <option value="false">회수</option>
+          </select>{" "}
+          <Button type="submit">권한 적용</Button>
+        </form>
+      </Panel>
+      {message && <p role="status">{message}</p>}
+      <div className="grid">
+        {apps
+          .filter((a) => a.kind === "docker_app")
+          .map((a) => (
+            <Panel key={a.id} title={`${a.name} · ${a.environment}`}>
+              <p>
+                {a.version} · {a.runtimeStatus} · DB {a.dbStatus}
+              </p>
+              <Link to={environmentPath(a.environment, a.appId) as "/"}>
+                앱 열기
+              </Link>
+              <RuntimeControls app={a} csrf={user.csrf} refresh={refresh} />
+            </Panel>
+          ))}
+      </div>
+    </>
   );
 }
 const root = createRootRoute({ component: Shell });
@@ -482,7 +776,36 @@ const appIndex = createRoute({
   component: AppView,
 });
 const router = createRouter({
-  routeTree: root.addChildren([home, app, appIndex]),
+  routeTree: root.addChildren([
+    home,
+    app,
+    appIndex,
+    createRoute({
+      getParentRoute: () => root,
+      path: "/environments/$environment",
+      component: Home,
+    }),
+    createRoute({
+      getParentRoute: () => root,
+      path: "/environments/$environment/apps/$appId",
+      component: AppView,
+    }),
+    createRoute({
+      getParentRoute: () => root,
+      path: "/environments/$environment/apps/$appId/$",
+      component: AppView,
+    }),
+    createRoute({
+      getParentRoute: () => root,
+      path: "/cli/authorize/$id",
+      component: CliAuthorize,
+    }),
+    createRoute({
+      getParentRoute: () => root,
+      path: "/admin",
+      component: Admin,
+    }),
+  ]),
 });
 createRoot(document.getElementById("root")!).render(
   <RouterProvider router={router} />,

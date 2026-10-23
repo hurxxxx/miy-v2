@@ -6,11 +6,13 @@
   "packageManager": "pnpm@10.34.5",
   "scripts": {
     "build": "vite build",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "build:preview": "vite build --config sdk/preview/vite.config.ts"
   },
   "dependencies": {
     "react": "19.3.1",
-    "react-dom": "19.3.1"
+    "react-dom": "19.3.1",
+    "@tanstack/history": "1.162.5"
   },
   "devDependencies": {
     "@module-federation/vite": "1.23.5",

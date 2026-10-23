@@ -8,13 +8,17 @@ CLI로 앱의 기본 구조를 만들고, 자신의 개발 에이전트를 MCP�
 
 ## 현재 단계
 
-현재는 **V0~V1 통과 후, CLI·Codex·실제 Docker 앱 배포를 로컬에서 연결한 단계**다. 별도 작업공간의 휴가 관리 앱을 실제 Codex가 개발하고 앱 DB·Rust 컨테이너·라우터 기반 React 화면까지 연결했다. [휴가 관리 대장 실증 결과](docs/LEAVE-LEDGER-RESULTS.md)에 접속 주소·소스·검사 결과·보완 과정과 한계를 기록했다. 정식 V2~V7 전체 검증과 제품 전체 구현은 진행 중이다.
+현재는 **독립 앱 개발·로컬 미리보기·테스트 배포·운영 승격을 연결하고 구조 검증을 수행한 단계**다. 플랫폼과 사용자 앱의 Rust backend, React/Vite UI, Docker, 앱·환경별 DB를 분리한다. CLI 0.4.2 / bundle 0.6.1에서 일반 Codex·Claude Code용 프로젝트 MCP·스킬, 브라우저 승인 CLI 로그인, 인증된 이미지 업로드, 테스트한 릴리스의 운영 승격과 별도 배포 권한을 제공한다.
 
-후속 bundle 0.3.0에서는 CLI 등록·승인·권한 부여, 강화된 개발 검사, 배포 작업 재개를 추가했다. 고정된 번들로 실제 Codex가 새 앱의 v1/v2를 개발하고 스키마 변경 배포·실패 migration·새 릴리스 복구까지 [개발 과정 검증](docs/IMPLEMENTATION-RESULTS.md#개발등록배포-과정-재검증-bundle-030)을 통과했다. CLI 정식 OAuth와 원격 이미지 전송은 다음 단계다.
+[구조 진단과 9개 요건별 결과](docs/IMPLEMENTATION-RESULTS.md#구조-심층-진단과-핵심-9개-요건-개선)를 먼저 읽는다. 개발·운영 라우터, 로컬 DB 격리, 다른 앱 API, 권한 회수, 기존 앱 보존을 실제 검사했다. 신뢰된 UI 코드의 통합이며 악성 JavaScript의 브라우저 격리는 제공하지 않는다. 별도 서버·CPU·배포 바이너리 공개 배포와 제품 전체 완성은 후속 범위다.
 
-다음 우선 작업은 [핵심 개발·배포 흐름의 집중 검증](docs/VALIDATION.md)이다. 최소 플랫폼·API/MCP·DB → CLI·하네스 → Codex 앱 개발 → 통합 빌드·Docker 배포 → DB 관리·라우터 기반 UI 실행 → 업데이트·실패 복구 순서로 통과 조건을 확인한다.
+공용 UI는 CLI 내장 코드에서 분리했다. 플랫폼 컴포넌트 저장소에 새 버전을 게시하면 같은 CLI와 MCP에서 즉시 조회하며, 앱은 명시적인 설치·업데이트 전까지 기존 버전을 유지한다. [설치·갱신 안내](docs/RUNNING.md#공용-컴포넌트-설치와-업데이트)를 따른다.
 
-첫 구현 범위와 확정한 실행 방식은 [V0~V1 구현 계획](docs/IMPLEMENTATION.md)을 따른다. 로컬 Docker에서 UI 런타임 통합, 웹·MCP OAuth, 앱별 DB와 작업 실행기를 검증한다.
+CLI 설치는 `bash scripts/install-cli.sh`, 새 앱 시작은 `miy app init ./my-app --id my-app --name '내 앱'`이다. 로그인·등록 승인·로컬 테스트·배포 순서는 [실행 안내](docs/RUNNING.md)를 따른다. 이전 [휴가 앱 실증](docs/LEAVE-LEDGER-RESULTS.md)과 bundle 0.3 검증은 당시의 보완 과정과 한계가 남아 있는 이력이다.
+
+다음 우선 작업은 별도 Linux 서버 실증과 OS별 CLI 바이너리 배포다. [전체 검증 계획](docs/VALIDATION.md)의 남은 환경·장애·자원 관리 조건을 이어서 확인한다.
+
+최초 V0~V1 구현 범위와 실행 방식은 [V0~V1 구현 계획](docs/IMPLEMENTATION.md)을 따른다. 로컬 Docker에서 UI 런타임 통합, 웹·MCP OAuth, 앱별 DB와 작업 실행기를 검증한다.
 
 로컬 기동은 `bash scripts/up.sh`, 전체 인수 검사는 `bash scripts/check.sh`다. 브라우저에서 [http://localhost:18000](http://localhost:18000)을 열고 **관리자로 시작**을 누르면 비밀번호 없이 개발 화면을 사용할 수 있다. 개발자·사용자 계정 버튼도 제공한다. 실제 OAuth·MCP 검증과 준비 조건·결과 경로는 [실행 안내](docs/RUNNING.md)를 따른다. 구현 전 문서 체크포인트는 Git 커밋 `3cecbe1`이다.
 
@@ -58,3 +62,5 @@ CLI로 앱의 기본 구조를 만들고, 자신의 개발 에이전트를 MCP�
 현재 앱 기본안은 Rust 백엔드와 React 정적 화면을 같은 Docker/OCI 이미지로 배포하고 내부 runner가 수명주기를 관리하는 방식이다. 정적 화면의 Rust 바이너리 내장은 선택안으로 두며 Kubernetes는 초기 구성에 포함하지 않는다.
 
 화면 통합은 신뢰한 앱의 React 모듈을 플랫폼 라우터에서 동적으로 로드하는 방식을 우선 검증한다. 별도 브라우저 격리가 필요한 앱의 실행 방식과 구분한다.
+
+CLI 초기화는 Codex·Claude Code용 `miy-cli` 스킬과 `docs/CLI-REFERENCE.md`도 설치한다. 명령·옵션은 실행 파일의 정의에서 자동 생성하며 CLI 버전별로 잠근다. 전역 CLI 갱신 후 호환 프로젝트에서 `miy app setup`을 실행하면 동봉 CLI·스킬·매뉴얼을 함께 갱신한다. SDK 변경은 `app upgrade`로 구분한다. [운영 방법](docs/RUNNING.md#cli-사용법-스킬과-매뉴얼-동기화)

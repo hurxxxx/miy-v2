@@ -54,7 +54,7 @@ fn settings() -> Result<Settings> {
     Ok(serde_json::from_slice(&std::fs::read(".miy/codex.json").context("codex_not_configured: run app setup-codex --url https://PLATFORM/mcp [--ca-file /path/to/ca.crt]")?)?)
 }
 pub fn doctor() -> Result<Value> {
-    let tools:Vec<_>=["cargo","pnpm","docker","codex"].iter().map(|name|{
+    let tools:Vec<_>=["cargo","pnpm","docker","codex","claude"].iter().map(|name|{
         match executable(name) {
             Ok(path) => match Command::new(&path).arg("--version").env("PATH",tool_path().unwrap_or_default()).output() {
                 Ok(out) => json!({"tool":name,"path":path,"ready":out.status.success(),"version":String::from_utf8_lossy(&out.stdout).trim()}),
@@ -63,12 +63,16 @@ pub fn doctor() -> Result<Value> {
             Err(_) => json!({"tool":name,"ready":false,"hint":"Install this tool and ensure its executable is on PATH."}),
         }
     }).collect();
-    let mcp = match settings() {
-        Ok(s) => {
-            json!({"configured":true,"url":s.url,"caFile":s.ca_file,"authentication":"Run app codex -- mcp login miy_app if not authenticated; configuration alone does not prove authentication."})
-        }
-        Err(_) => {
-            json!({"configured":false,"hint":"Run app setup-codex before starting Codex. app login does not configure MCP OAuth."})
+    let mcp = if Path::new(".codex/config.toml").is_file() && Path::new(".mcp.json").is_file() {
+        json!({"configured":true,"transport":"stdio","clients":["Codex","Claude Code"],"authentication":"CLI login; verify with get_contract"})
+    } else {
+        match settings() {
+            Ok(s) => {
+                json!({"configured":true,"url":s.url,"caFile":s.ca_file,"authentication":"Run app codex -- mcp login miy_app if not authenticated; configuration alone does not prove authentication."})
+            }
+            Err(_) => {
+                json!({"configured":false,"hint":"Run app setup for project Codex/Claude MCP, then app login for authentication."})
+            }
         }
     };
     Ok(
@@ -164,6 +168,15 @@ fn overrides(url: &str) -> Vec<String> {
     ]
 }
 pub fn codex(args: &[String]) -> Result<()> {
+    if Path::new(".codex/config.toml").is_file() {
+        let status = Command::new(executable("codex")?)
+            .arg("--no-daemon")
+            .args(args)
+            .env("PATH", tool_path()?)
+            .status()?;
+        ensure!(status.success(), "codex_failed");
+        return Ok(());
+    }
     let s = settings()?;
     let mut command = Command::new(executable("codex")?);
     // A daemon may predate this project's environment. Keep this launch self-contained.

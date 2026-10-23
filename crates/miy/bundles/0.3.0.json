@@ -1,0 +1,14 @@
+{
+  "bundleVersion": "0.3.0",
+  "protectedFiles": {
+    "AGENTS.md": "e9bfa30c73d5724d19c0590e3c243b3115c2a30c5e8cd6eeb4b12f8193e060ca",
+    "Dockerfile": "d1b6720e0a5decb6f1455870bc107af9a29235acc68a8b96e10b7727d80bb6ac",
+    "docs/CONTRACT.md": "8c3ad22276e3c6b6674b99716a3be4cdbd380501eed0f98cbf809edf65bc25d3",
+    "migrations/0001_initial.sql": "24948591b41e10398ad4f1a8338bc605e209fffa90bc9dbc283f80083fbca8f3",
+    "rust-toolchain.toml": "d13306be0ecda81ce779baa290ffb417380d525928477f16200884b5169cca33",
+    "sdk/browser/index.ts": "ad2a3d0b7cdd2ddaf64538cba99d4ae7150ae704ec136cbc14c26ba28e60df56",
+    "sdk/rust/Cargo.toml": "2f285fed601317a33f3950a3752d16b1a0521a4430b8e5bd65d1299b030073b4",
+    "sdk/rust/src/lib.rs": "23285fa21268094df6842da7809eb3a6a7b37b31a76a1fb7fb8d1e45529507a7",
+    "sdk/ui/index.tsx": "d9c702f833eede8e27b85df0894f14242cb1a0e5682459cfc43021eb52b2c095"
+  }
+}

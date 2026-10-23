@@ -5,3 +5,5 @@
 /.miy-tools/
 *.log
 /.pnpm-store/
+/.codex/config.toml
+/.mcp.json

@@ -81,13 +81,20 @@ pub fn validate(m: &Manifest) -> Result<(), String> {
     {
         return Err("invalid_manifest".into());
     }
-    if m.requested_permissions
-        .iter()
-        .any(|p| !["database"].contains(&p.as_str()))
-    {
+    if m.requested_permissions.iter().any(|p| !valid_permission(p)) {
         return Err("unsupported_permission".into());
     }
     Ok(())
+}
+pub fn valid_permission(p: &str) -> bool {
+    if matches!(p, "database" | "platform:directory:read") {
+        return true;
+    }
+    let parts: Vec<_> = p.split(':').collect();
+    parts.len() == 3
+        && parts[0] == "app"
+        && valid_id(parts[1])
+        && matches!(parts[2], "read" | "write")
 }
 pub fn hash(s: impl AsRef<[u8]>) -> String {
     hex::encode(Sha256::digest(s.as_ref()))

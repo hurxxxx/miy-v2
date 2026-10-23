@@ -1,0 +1,9 @@
+{
+  "protocol": "miy.component/v1",
+  "name": "ui",
+  "version": "1.0.0",
+  "description": "Basic miy Panel and Button components",
+  "uiContract": "miy.ui/v1alpha1",
+  "bundleVersions": ["0.5.0"],
+  "files": ["index.tsx", "README.md"]
+}

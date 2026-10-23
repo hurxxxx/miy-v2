@@ -1,3 +1,4 @@
+export { createNavigationGuards, type NavigationGuard } from "./navigation";
 export const UI_CONTRACT = "miy.ui/v1alpha1" as const;
 export interface Installation {
   id: string;
@@ -5,6 +6,8 @@ export interface Installation {
   name: string;
   environment: "dev" | "prod";
   releaseId: string;
+  version?: string;
+  canPromote?: boolean;
   dbStatus: string;
   runtimeStatus: string;
   desiredState: string;
@@ -19,6 +22,10 @@ export interface AppRuntime {
   location: { pathname: string; search: string; hash: string };
   navigate: (relative: string, options?: { replace?: boolean }) => void;
   api: <T>(path: string, init?: RequestInit) => Promise<T>;
+  platformApi: <T>(resource: "directory") => Promise<T>;
+  appApi: <T>(appId: string, path: string, init?: RequestInit) => Promise<T>;
+  /** Register in an effect and return its disposer. Hosts guard app/shell/history/unload. */
+  registerNavigationGuard: (guard: () => string | undefined) => () => void;
   theme: "light";
 }
 export interface AppProps {

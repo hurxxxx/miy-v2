@@ -46,13 +46,33 @@ pub async fn authorize(
     if admin(state, p).await.is_ok() {
         return Ok(());
     }
-    let yes:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM grants WHERE user_id=$1 AND app_id=$2 AND environment=$3 AND (permission='develop' OR ($4=false AND permission='use')))")
+    if write && env == "prod" {
+        return Err(ApiError::forbidden());
+    }
+    let yes:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM grants WHERE user_id=$1 AND app_id=$2 AND environment=$3 AND (permission='develop' OR ($4=false AND permission IN ('use','deploy'))))")
         .bind(&p.id).bind(app).bind(env).bind(write).fetch_one(&state.pool).await?;
     if yes {
         Ok(())
     } else {
         Err(ApiError::forbidden())
     }
+}
+/// Runtime authority is deliberately distinct from schema development rights.
+pub async fn can_manage(
+    pool: &sqlx::PgPool,
+    actor: &str,
+    app: &str,
+    env: &str,
+) -> Result<bool, sqlx::Error> {
+    sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM users WHERE id=$1 AND admin) OR EXISTS(SELECT 1 FROM grants WHERE user_id=$1 AND app_id=$2 AND environment=$3 AND permission=$4)")
+        .bind(actor).bind(app).bind(env).bind(if env == "prod" { "deploy" } else { "develop" }).fetch_one(pool).await
+}
+pub async fn manage(state: &State, p: &Principal, app: &str, env: &str) -> ApiResult<()> {
+    if !p.scopes.iter().any(|s| s == "miy.dev") || !can_manage(&state.pool, &p.id, app, env).await?
+    {
+        return Err(ApiError::forbidden());
+    }
+    Ok(())
 }
 pub async fn me(state: &State, p: &Principal) -> ApiResult<Value> {
     let row = sqlx::query("SELECT name,admin FROM users WHERE id=$1")
@@ -136,6 +156,9 @@ pub async fn create_installation(
         return Err(ApiError::bad("invalid_environment"));
     }
     authorize(state, p, &v.app_id, &v.environment, true).await?;
+    if v.environment == "prod" {
+        return Err(ApiError::bad("use_checked_release_promotion_for_prod"));
+    }
     let matches: bool =
         sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM releases WHERE id=$1 AND app_id=$2)")
             .bind(v.release_id)
@@ -158,7 +181,7 @@ pub async fn create_installation(
     )
 }
 pub async fn installations(state: &State, p: &Principal) -> ApiResult<Value> {
-    let rows=sqlx::query("SELECT i.*,a.name,r.artifact_hash,r.manifest,r.image_id,r.source_commit FROM installations i JOIN apps a ON a.id=i.app_id JOIN releases r ON r.id=i.release_id ORDER BY a.name,i.environment")
+    let rows=sqlx::query("SELECT i.*,a.name,r.artifact_hash,r.manifest,r.image_id,r.source_commit,(SELECT jsonb_build_object('recordedBy',c.actor,'note',c.note,'checks',c.checks,'structured',jsonb_array_length(c.checks)>0,'checkedAt',c.checked_at) FROM release_checks c WHERE c.release_id=r.id) AS acceptance FROM installations i JOIN apps a ON a.id=i.app_id JOIN releases r ON r.id=i.release_id ORDER BY a.name,i.environment")
         .fetch_all(&state.pool).await?;
     let mut out = vec![];
     for r in rows {
@@ -168,9 +191,9 @@ pub async fn installations(state: &State, p: &Principal) -> ApiResult<Value> {
             continue;
         }
         let m: Manifest = serde_json::from_value(r.get("manifest"))?;
-        out.push(json!({"id":r.get::<Uuid,_>("id"),"appId":app,"name":r.get::<String,_>("name"),"version":m.version,"environment":env,"releaseId":r.get::<Uuid,_>("release_id"),
+        out.push(json!({"id":r.get::<Uuid,_>("id"),"appId":app,"name":r.get::<String,_>("name"),"manifestName":m.name,"version":m.version,"acceptance":if manage(state,p,&app,&env).await.is_ok() {r.get::<Option<Value>,_>("acceptance")} else {None},"environment":env,"releaseId":r.get::<Uuid,_>("release_id"),
             "dbStatus":r.get::<String,_>("db_status"),"runtimeStatus":r.get::<String,_>("runtime_status"),"desiredState":r.get::<String,_>("desired_state"),
-            "canManage":authorize(state,p,&app,&env,true).await.is_ok(),
+            "canManage":manage(state,p,&app,&env).await.is_ok(),"canPromote":manage(state,p,&app,"prod").await.is_ok(),
             "imageId":r.get::<Option<String>,_>("image_id"),"sourceCommit":r.get::<Option<String>,_>("source_commit"),
             "ui":{"entry":format!("/artifacts/{}/ui/{}",r.get::<String,_>("artifact_hash"),m.ui.module_entry),"export":m.ui.module_export,"contractVersion":m.ui.contract_version},"kind":if r.get::<Option<String>,_>("image_id").is_some(){"docker_app"}else{"validation_fixture"}}));
     }
@@ -251,7 +274,7 @@ pub struct Grant {
 pub async fn grant(state: &State, p: &Principal, v: Grant) -> ApiResult<Value> {
     admin(state, p).await?;
     if !["dev", "prod"].contains(&v.environment.as_str())
-        || !["use", "develop"].contains(&v.permission.as_str())
+        || !["use", "develop", "deploy"].contains(&v.permission.as_str())
     {
         return Err(ApiError::bad("invalid_grant"));
     }
@@ -269,10 +292,29 @@ pub async fn grant(state: &State, p: &Principal, v: Grant) -> ApiResult<Value> {
     Ok(json!({"updated":true}))
 }
 pub fn get_contract() -> Value {
-    json!({"version":contract::VERSION,"bundleVersion":crate::bundle::VERSION,"uiVersion":"miy.ui/v1alpha1","manifestSchema":schemars::schema_for!(Manifest),"guidance":crate::bundle::GUIDANCE,"agentGuidance":crate::bundle::AGENT_GUIDANCE,"protectedFiles":crate::bundle::protected_hashes(),"sdkExample":"export default function AppRoot({runtime}) { return <button onClick={() => runtime.navigate('/detail/1')}>Open</button>; }"})
+    json!({"version":contract::VERSION,"bundleVersion":crate::bundle::VERSION,"uiVersion":"miy.ui/v1alpha1","manifestSchema":schemars::schema_for!(Manifest),"guidance":crate::bundle::GUIDANCE,"agentGuidance":crate::bundle::AGENT_GUIDANCE,"cliVersion":crate::cli_guidance::VERSION,"cliGuidance":crate::cli_guidance::manual(),"protectedFiles":crate::bundle::protected_hashes(),"sdkExample":"export default function AppRoot({runtime}) { return <button onClick={() => runtime.navigate('/detail/1')}>Open</button>; }"})
 }
 pub fn catalog() -> Value {
     json!([
+        {"id":"list_components","method":"GET","path":"/api/v1/components","permission":"authenticated","description":"Live versioned component catalog, independent of CLI releases; compatibility and sha256 included"},
+        {"id":"get_component","method":"GET","path":"/api/v1/components/{name}/{version}","permission":"authenticated","description":"Exact immutable component package, usage README and SHA-256; used by CLI and MCP"},
+        {"id":"publish_component","method":"POST","path":"/api/v1/components","permission":"admin","description":"Publish immutable component source (maximum 2 MiB). No install scripts, no implicit app updates, no platform restart.","input":schemars::schema_for!(crate::component_registry::Package)},
+        {"id":"cli_approve","method":"POST","path":"/api/v1/cli-authorizations/{id}/approve","permission":"browser session + CSRF","description":"Explicitly approve a pending CLI login request for the current user"},
+        {"id":"cli_logout","method":"POST","path":"/api/v1/cli/logout","permission":"CLI bearer","description":"Revoke the current CLI credential"},
+        {"id":"accept_release","method":"POST","path":"/api/v1/apps/{app}/test-acceptance","permission":"develop in dev","description":"Record actual test acceptance for the currently healthy dev release; required for production promotion","input":schemars::schema_for!(crate::runtime::ReleaseCheck)},
+        {"id":"upload_image","method":"POST","path":"/api/v1/apps/{app}/images","permission":"develop in dev","description":"Stream a Docker save archive (maximum 1 GiB). Required headers: Content-Length, X-Miy-Image (immutable sha256 ID), X-Miy-Archive-Sha256. Worker imports and verifies the image; poll image_upload_status.","binary":true},
+        {"id":"image_upload_status","method":"GET","path":"/api/v1/image-uploads/{id}","permission":"develop in app/dev","description":"Read bounded archive import state: pending/loading/ready/failed"},
+        {"id":"shared_directory","method":"GET","path":"/api/v1/installations/{id}/platform/directory","permission":"source use and declared platform:directory:read","description":"Shared user directory (id/name only); SDK runtime.platformApi('directory')"},
+        {"id":"connected_app_read","method":"GET","path":"/api/v1/installations/{id}/connections/{target}/api/{path}","permission":"use on source and target; declared app:TARGET:read","description":"SDK runtime.appApi: access another app in the same environment through its authenticated API"},
+        {"id":"connected_app_create","method":"POST","path":"/api/v1/installations/{id}/connections/{target}/api/{path}","permission":"use on source and target; declared app:TARGET:write + CSRF + source release","description":"Create through another app's API; target business authorization still applies"},
+        {"id":"connected_app_update","method":"PATCH","path":"/api/v1/installations/{id}/connections/{target}/api/{path}","permission":"use on source and target; declared app:TARGET:write + CSRF + source release","description":"Update through another app's API in the same environment"},
+        {"id":"connected_app_delete","method":"DELETE","path":"/api/v1/installations/{id}/connections/{target}/api/{path}","permission":"use on source and target; declared app:TARGET:write + CSRF + source release","description":"Delete through another app's API in the same environment"},
+        {"id":"preview_directory","method":"GET","path":"/api/v1/preview/apps/{app}/platform/directory","permission":"develop on source app/dev","description":"Local preview shared directory; browser credentials stay in local CLI gateway"},
+        {"id":"preview_app_read","method":"GET","path":"/api/v1/preview/apps/{app}/connections/{target}/api/{path}","permission":"develop on source/dev and use on target/dev","description":"Authenticated local-preview connection to a dev app API"},
+        {"id":"preview_app_create","method":"POST","path":"/api/v1/preview/apps/{app}/connections/{target}/api/{path}","permission":"develop on source/dev and use on target/dev","description":"Local-preview dev connection; target business authorization applies"},
+        {"id":"preview_app_update","method":"PATCH","path":"/api/v1/preview/apps/{app}/connections/{target}/api/{path}","permission":"develop on source/dev and use on target/dev","description":"Local-preview dev connection; target business authorization applies"},
+        {"id":"preview_app_delete","method":"DELETE","path":"/api/v1/preview/apps/{app}/connections/{target}/api/{path}","permission":"develop on source/dev and use on target/dev","description":"Local-preview dev connection; target business authorization applies"},
+        {"id":"rename_app","method":"POST","path":"/api/v1/apps/{app}/name","permission":"admin","description":"Update platform display name explicitly; deployment never renames apps or changes manifest names","input":schemars::schema_for!(crate::registration::DisplayName)},
         {"id":"request_registration","method":"POST","path":"/api/v1/app-registrations","permission":"provisioned developer or admin","description":"Request an app registration; no access until administrator approval","input":schemars::schema_for!(NewApp)},
         {"id":"list_registrations","method":"GET","path":"/api/v1/app-registrations","permission":"requester sees own, admin sees all","description":"List registration requests"},
         {"id":"decide_registration","method":"POST","path":"/api/v1/app-registrations/{id}/decision","permission":"admin","description":"Approve and grant requester develop access in dev, or reject","input":schemars::schema_for!(crate::registration::Decision)},
@@ -289,7 +331,7 @@ pub fn catalog() -> Value {
         {"id":"validate_manifest","method":"POST","path":"/api/v1/contracts/validate","permission":"authenticated","description":"Validate manifest against pinned contract","input":schemars::schema_for!(Manifest)},
         {"id":"prepare_database","method":"POST","path":"/api/v1/database/prepare","permission":"develop on installation","description":"Prepare one installation DB and apply a registered release's migrations","input":schemars::schema_for!(Prepare)},
         {"id":"get_job","method":"GET","path":"/api/v1/jobs/{id}","permission":"use or develop on installation","description":"Read persistent database job state"},
-        {"id":"runtime_request","method":"POST","path":"/api/v1/apps/{app}/runtime","permission":"develop on app/environment","description":"Deploy an immutable local Docker image ID, or start/stop/restart/remove an app. Runner extracts the image UI and migrations, prepares its DB and starts the constrained container. Remove preserves database.","input":schemars::schema_for!(crate::runtime::RuntimeRequest)},
+        {"id":"runtime_request","method":"POST","path":"/api/v1/apps/{app}/runtime","permission":"dev/develop or prod/deploy; administrator implicit","description":"Deploy uploaded immutable image to dev; promote accepted release unchanged to prod; start/stop/restart/remove without restarting the platform. Remove preserves database.","input":schemars::schema_for!(crate::runtime::RuntimeRequest)},
         {"id":"runtime_job","method":"GET","path":"/api/v1/runtime/jobs/{id}","permission":"use or develop on app/environment","description":"Read deployment or lifecycle job state"},
         {"id":"app_api_get","method":"GET","path":"/api/v1/installations/{id}/api/{path}","permission":"use or develop on installation","description":"Forward app-relative API path with verified signed identity. App enforces record ownership."},
         {"id":"app_api_post","method":"POST","path":"/api/v1/installations/{id}/api/{path}","permission":"use or develop on installation","description":"Forward mutation with CSRF and x-miy-release header matching active release"},

@@ -7,6 +7,7 @@ pub async fn run(pool: sqlx::PgPool) -> Result<()> {
     // A dedicated connection owns this session lock. A second runner cannot
     // reclaim another live runner's jobs. On process death PostgreSQL releases it.
     let mut guard = pool.acquire().await?;
+    guard.close_on_drop();
     let acquired: bool = sqlx::query_scalar("SELECT pg_try_advisory_lock(73490123)")
         .fetch_one(&mut *guard)
         .await?;
@@ -16,7 +17,15 @@ pub async fn run(pool: sqlx::PgPool) -> Result<()> {
         .await?;
     tracing::info!(event = "db_runner_ready");
     crate::runtime::recover(&pool).await?;
+    sqlx::query("UPDATE image_uploads SET status='pending' WHERE status='loading'")
+        .execute(&pool)
+        .await?;
+    let mut last_reconcile = std::time::Instant::now();
     loop {
+        if last_reconcile.elapsed().as_secs() >= 5 {
+            crate::runtime::reconcile(&pool).await?;
+            last_reconcile = std::time::Instant::now();
+        }
         let row =
             sqlx::query("SELECT * FROM jobs WHERE status='queued' ORDER BY created_at,id LIMIT 1")
                 .fetch_optional(&pool)
@@ -26,6 +35,7 @@ pub async fn run(pool: sqlx::PgPool) -> Result<()> {
             let installation: Uuid = row.get("installation_id");
             let release: Uuid = row.get("release_id");
             let mut lock = pool.acquire().await?;
+            lock.close_on_drop();
             sqlx::query("SELECT pg_advisory_lock(hashtextextended($1,0))")
                 .bind(installation.to_string())
                 .execute(&mut *lock)
@@ -34,14 +44,21 @@ pub async fn run(pool: sqlx::PgPool) -> Result<()> {
                 .bind(id)
                 .execute(&pool)
                 .await?;
-            let result = prepare(&pool, id, installation, release).await;
+            let result = async {
+                let authorized:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM users WHERE id=$1 AND admin) OR EXISTS(SELECT 1 FROM installations i JOIN grants g ON g.app_id=i.app_id AND g.environment=i.environment WHERE i.id=$2 AND i.environment='dev' AND g.user_id=$1 AND g.permission='develop')")
+                    .bind(row.get::<String,_>("actor")).bind(installation).fetch_one(&pool).await?;
+                anyhow::ensure!(authorized,"permission_revoked");
+                prepare(&pool, id, installation, release).await
+            }.await;
             match result {
                 Ok(()) => {
                     sqlx::query("UPDATE jobs SET status='succeeded',step='ready',error_code=NULL,updated_at=now() WHERE id=$1").bind(id).execute(&pool).await?;
                 }
                 Err(e) => {
                     let text = format!("{e:#}");
-                    let code = if text.contains("checksum") || text.contains("previously applied") {
+                    let code = if text.contains("permission_revoked") {
+                        "permission_revoked"
+                    } else if text.contains("checksum") || text.contains("previously applied") {
                         "migration_history_mismatch"
                     } else if text.contains("artifact") {
                         "invalid_artifact"
@@ -60,7 +77,7 @@ pub async fn run(pool: sqlx::PgPool) -> Result<()> {
                 .bind(installation.to_string())
                 .execute(&mut *lock)
                 .await?;
-        } else if !crate::runtime::tick(&pool).await? {
+        } else if !crate::delivery::tick(&pool).await? && !crate::runtime::tick(&pool).await? {
             tokio::time::sleep(std::time::Duration::from_millis(300)).await;
         }
         // The connection must remain live for the entire runner lifetime.

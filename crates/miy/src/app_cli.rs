@@ -13,8 +13,58 @@ use std::{
 
 #[derive(Subcommand)]
 pub enum AppCommand {
+    /// Discover, install and explicitly update components from the platform registry.
+    Components {
+        #[command(subcommand)]
+        command: crate::component_cli::ComponentCommand,
+    },
     /// Diagnose local tools and the saved Codex MCP connection.
     Doctor,
+    /// Run the working tree locally with a private local DB and authenticated server connections.
+    Dev {
+        #[arg(long, default_value = "18100")]
+        port: u16,
+        #[arg(long)]
+        no_open: bool,
+    },
+    /// Stop this project's preview gateway and containers, preserving its database volume.
+    DevStop,
+    /// Show the complete agent-readable CLI command reference.
+    Describe {
+        /// JSON for tools, or Markdown for the versioned workflow and full command reference.
+        #[arg(long, default_value="json", value_parser=["json","markdown"])]
+        format: String,
+    },
+    /// Serve read-only development guidance over stdio MCP using the CLI login.
+    Mcp,
+    /// Update this compatible project CLI, skills/manual and Codex/Claude MCP without changing global settings.
+    Setup,
+    /// Upgrade a clean supported SDK bundle to 0.6, preserving business code and SQL.
+    Upgrade,
+    /// Revoke the saved browser-approved CLI credential.
+    Logout,
+    /// Record acceptance of the currently deployed dev release after testing.
+    Accept {
+        #[arg(long)]
+        note: String,
+        /// JSON {releaseId, checks:[{scope,actor,result:passed|not_run,evidence}]}.
+        #[arg(long)]
+        report: Option<PathBuf>,
+    },
+    /// Set the platform display name only (administrator); never changes source/manifest.
+    Rename {
+        #[arg(long)]
+        name: String,
+    },
+    /// Promote an accepted dev release unchanged to prod (requires deploy permission).
+    Promote {
+        #[arg(long)]
+        release: uuid::Uuid,
+        #[arg(long)]
+        no_wait: bool,
+        #[arg(long)]
+        retry: bool,
+    },
     /// Save project-local Codex MCP settings and a trusted CA bundle.
     SetupCodex {
         #[arg(long, default_value = "https://localhost:18443/mcp")]
@@ -34,32 +84,37 @@ pub enum AppCommand {
         id: String,
         #[arg(long)]
         name: String,
-    },
-    /// Sign into the explicitly enabled localhost development profile.
-    Login {
         #[arg(long, default_value = "http://localhost:18000")]
         url: String,
-        #[arg(long, default_value = "developer")]
-        account: String,
+        #[arg(long)]
+        ca_file: Option<PathBuf>,
+    },
+    /// Sign in through the browser. --account is an explicit localhost development shortcut.
+    Login {
+        #[arg(long)]
+        url: Option<String>,
+        #[arg(long)]
+        account: Option<String>,
+        #[arg(long)]
+        ca_file: Option<PathBuf>,
+        #[arg(long)]
+        no_open: bool,
     },
     /// Request registration. An administrator must approve before deployment.
     Register,
     /// List your registration requests (administrators see all requests).
     Registrations,
     /// Approve a registration and grant its requester develop access to dev only.
-    Approve {
-        id: uuid::Uuid,
-    },
-    Reject {
-        id: uuid::Uuid,
-    },
+    Approve { id: uuid::Uuid },
+    /// Reject a pending registration request (administrator only).
+    Reject { id: uuid::Uuid },
     /// List platform user IDs (administrator only).
     Users,
     /// Grant or revoke access to this app (administrator only).
     Grant {
         #[arg(long)]
         user: String,
-        #[arg(long, default_value="use", value_parser=["use","develop"])]
+        #[arg(long, default_value="use", value_parser=["use","develop","deploy"])]
         permission: String,
         #[arg(long, default_value="dev", value_parser=["dev","prod"])]
         environment: String,
@@ -68,6 +123,8 @@ pub enum AppCommand {
     },
     /// Check the manifest, required bundle files and both language toolchains.
     Check,
+    /// Format only the app Rust package using the discovered rustup toolchain.
+    Fmt,
     /// Build UI + Rust backend into one immutable local Docker image.
     Build,
     /// Deploy the built image using the platform's DB and Docker runner.
@@ -82,6 +139,7 @@ pub enum AppCommand {
     },
     /// Reconnect to the last submitted job without creating a deployment.
     Resume,
+    /// Show deployments, versions, image match, acceptance records and the last job.
     Status,
     /// start, stop, restart, or remove (DB is preserved).
     Control {
@@ -95,13 +153,19 @@ pub enum AppCommand {
         retry: bool,
     },
 }
-#[derive(Serialize, Deserialize)]
-struct Session {
-    origin: String,
-    cookie: String,
-    csrf: String,
+#[derive(Serialize, Deserialize, Clone)]
+pub(crate) struct Session {
+    pub origin: String,
+    #[serde(default)]
+    pub cookie: String,
+    #[serde(default)]
+    pub csrf: String,
+    #[serde(default)]
+    pub token: Option<String>,
+    #[serde(default)]
+    pub ca_file: Option<PathBuf>,
 }
-fn run(program: &str, args: &[&str]) -> Result<()> {
+pub(crate) fn run(program: &str, args: &[&str]) -> Result<()> {
     let status = Command::new(crate::dev_tools::executable(program)?)
         .args(args)
         .env("PATH", crate::dev_tools::tool_path()?)
@@ -121,19 +185,19 @@ fn output(program: &str, args: &[&str]) -> Result<String> {
     anyhow::ensure!(out.status.success(), "command_failed: {program}");
     Ok(String::from_utf8(out.stdout)?.trim().to_string())
 }
-fn manifest() -> Result<Manifest> {
+pub(crate) fn manifest() -> Result<Manifest> {
     let m: Manifest = serde_json::from_slice(
         &std::fs::read("manifest.json").context("run_inside_an_app_directory")?,
     )?;
     contract::validate(&m).map_err(anyhow::Error::msg)?;
     Ok(m)
 }
-fn session() -> Result<Session> {
+pub(crate) fn session() -> Result<Session> {
     Ok(serde_json::from_slice(
         &std::fs::read(".miy/session.json").context("run_miy_app_login_first")?,
     )?)
 }
-async fn api(s: &Session, path: &str, body: Option<Value>) -> Result<Value> {
+pub(crate) async fn api(s: &Session, path: &str, body: Option<Value>) -> Result<Value> {
     api_method(
         s,
         path,
@@ -146,23 +210,18 @@ async fn api(s: &Session, path: &str, body: Option<Value>) -> Result<Value> {
     )
     .await
 }
-async fn api_method(
+pub(crate) async fn api_method(
     s: &Session,
     path: &str,
     method: reqwest::Method,
     body: Option<Value>,
 ) -> Result<Value> {
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(20))
-        .build()?;
+    let client = crate::cli_client::client(s.ca_file.as_deref(), 20)?;
     let mut req = client.request(method, format!("{}{path}", s.origin));
     if let Some(body) = body {
         req = req.json(&body);
     }
-    req = req
-        .header("cookie", &s.cookie)
-        .header("origin", &s.origin)
-        .header("x-miy-csrf", &s.csrf);
+    req = crate::cli_client::authenticate(s, req);
     let response = req.send().await?;
     let status = response.status();
     let value: Value = response.json().await?;
@@ -175,7 +234,7 @@ async fn api_method(
     );
     Ok(value)
 }
-fn save(path: &str, value: &Value) -> Result<()> {
+pub(crate) fn save(path: &str, value: &Value) -> Result<()> {
     use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
     if let Some(parent) = Path::new(path).parent() {
         std::fs::create_dir_all(parent)?;
@@ -225,9 +284,11 @@ fn job_hint(code: &str) -> &'static str {
         _ => "Inspect app status and the job error before retrying.",
     }
 }
-fn check() -> Result<Manifest> {
+pub(crate) fn check() -> Result<Manifest> {
     let m = manifest()?;
     bundle::verify(Path::new("."))?;
+    crate::cli_guidance::verify(Path::new("."))?;
+    crate::component_cli::verify(Path::new("."))?;
     for path in [
         "src/main.rs",
         "web/src/AppRoot.tsx",
@@ -294,8 +355,122 @@ async fn submit(
 }
 pub async fn execute(command: AppCommand) -> Result<()> {
     match command {
+        AppCommand::Components { command } => {
+            println!("{}", crate::component_cli::execute(command).await?)
+        }
+        AppCommand::Dev { port, no_open } => crate::preview::run(port, no_open).await?,
+        AppCommand::DevStop => crate::preview::stop().await?,
+        AppCommand::Describe { format } => {
+            if format == "markdown" {
+                print!("{}", crate::cli_guidance::manual());
+            } else {
+                println!("{}", crate::agent_tools::cli_help());
+            }
+        }
+        AppCommand::Mcp => crate::agent_tools::serve().await?,
+        AppCommand::Upgrade => println!("{}", crate::upgrade::run().await?),
+        AppCommand::Setup => println!("{}", crate::agent_tools::setup(Path::new("."))?),
+        AppCommand::Logout => {
+            let s = session()?;
+            if s.token.is_some() {
+                api(&s, "/api/v1/cli/logout", Some(json!({}))).await?;
+            } else {
+                api(&s, "/auth/logout", Some(json!({}))).await?;
+            }
+            std::fs::remove_file(".miy/session.json")?;
+            println!("{}", json!({"signedOut":true}));
+        }
+        AppCommand::Rename { name } => {
+            let m = manifest()?;
+            println!(
+                "{}",
+                api(
+                    &session()?,
+                    &format!("/api/v1/apps/{}/name", m.id),
+                    Some(json!({"name":name}))
+                )
+                .await?
+            );
+        }
+        AppCommand::Accept { note, report } => {
+            let m = manifest()?;
+            let s = session()?;
+            let all = api(&s, "/api/v1/installations", None).await?;
+            let inst = all
+                .as_array()
+                .context("invalid_installations")?
+                .iter()
+                .find(|v| v["appId"] == m.id && v["environment"] == "dev")
+                .context("deploy_to_dev_first")?;
+            let mut body = json!({"releaseId":inst["releaseId"],"note":note});
+            if let Some(path) = report {
+                anyhow::ensure!(
+                    std::fs::metadata(&path)?.len() <= 160_000,
+                    "acceptance_report_too_large"
+                );
+                let report: Value = serde_json::from_slice(&std::fs::read(path)?)?;
+                anyhow::ensure!(
+                    report["releaseId"] == inst["releaseId"],
+                    "acceptance_report_release_mismatch"
+                );
+                anyhow::ensure!(
+                    report["checks"].as_array().is_some_and(|c| !c.is_empty()),
+                    "acceptance_checks_required"
+                );
+                body["checks"] = report["checks"].clone();
+            }
+            println!(
+                "{}",
+                api(
+                    &s,
+                    &format!("/api/v1/apps/{}/test-acceptance", m.id),
+                    Some(body)
+                )
+                .await?
+            );
+        }
+        AppCommand::Promote {
+            release,
+            no_wait,
+            retry,
+        } => {
+            let m = manifest()?;
+            let s = session()?;
+            println!(
+                "{}",
+                submit(
+                    &s,
+                    &m.id,
+                    json!({"action":"promote","environment":"prod","releaseId":release}),
+                    no_wait,
+                    retry
+                )
+                .await?
+            );
+        }
         AppCommand::Doctor => {
-            println!("{}", crate::dev_tools::doctor()?);
+            let mut value = crate::dev_tools::doctor()?;
+            value["cliVersion"] = json!(crate::cli_guidance::VERSION);
+            value["cliGuidance"] = match crate::cli_guidance::verify(Path::new(".")) {
+                Ok(v) => v,
+                Err(e) => {
+                    json!({"valid":false,"reason":e.to_string(),"hint":"Run the intended compatible CLI's app setup; use app upgrade for a different SDK bundle."})
+                }
+            };
+            value["platform"] = match session() {
+                Ok(s) => match api(&s, "/api/v1/contracts", None).await {
+                    Ok(contract) => {
+                        json!({"connected":true,"origin":s.origin,"bundleVersion":contract["bundleVersion"]})
+                    }
+                    Err(_) => {
+                        json!({"connected":false,"hint":"Run app login; verify server URL/CA and connection."})
+                    }
+                },
+                Err(_) => {
+                    json!({"connected":false,"hint":"Run app login; project configuration alone is not authentication."})
+                }
+            };
+            println!("{value}");
         }
         AppCommand::SetupCodex { url, ca_file } => {
             println!("{}", crate::dev_tools::setup(&url, ca_file.as_deref())?);
@@ -303,7 +478,13 @@ pub async fn execute(command: AppCommand) -> Result<()> {
         AppCommand::Codex { args } => {
             crate::dev_tools::codex(&args)?;
         }
-        AppCommand::Init { path, id, name } => {
+        AppCommand::Init {
+            path,
+            id,
+            name,
+            url,
+            ca_file,
+        } => {
             anyhow::ensure!(
                 contract::valid_id(&id) && !name.trim().is_empty(),
                 "invalid_app_identity"
@@ -344,12 +525,36 @@ pub async fn execute(command: AppCommand) -> Result<()> {
             )?;
             std::fs::create_dir_all(path.join(".miy-tools"))?;
             std::fs::copy(std::env::current_exe()?, path.join(".miy-tools/miy"))?;
+            crate::cli_client::configure(&path, &url, ca_file.as_deref())?;
+            crate::agent_tools::setup(&path)?;
             println!(
                 "{}",
-                json!({"created":path.canonicalize()?,"appId":id,"bundleVersion":bundle::VERSION,"next":[".miy-tools/miy app doctor",".miy-tools/miy app setup-codex --ca-file /path/to/platform-ca.crt (local CA only)",".miy-tools/miy app check",".miy-tools/miy app login",".miy-tools/miy app register"]})
+                json!({"created":path.canonicalize()?,"cliVersion":crate::cli_guidance::VERSION,"cliSkill":".agents/skills/miy-cli/SKILL.md","cliManual":"docs/CLI-REFERENCE.md","appId":id,"bundleVersion":bundle::VERSION,"components":"Declared in miy.components.json; fetch after login","next":[".miy-tools/miy app doctor",".miy-tools/miy app login",".miy-tools/miy app components sync", "codex or claude (approve project trust/MCP when prompted)",".miy-tools/miy app check",".miy-tools/miy app register"]})
             );
         }
-        AppCommand::Login { url, account } => {
+        AppCommand::Login {
+            url,
+            account,
+            ca_file,
+            no_open,
+        } => {
+            let saved: Value = std::fs::read(".miy/platform.json")
+                .ok()
+                .and_then(|v| serde_json::from_slice(&v).ok())
+                .unwrap_or(json!({}));
+            let url = url.unwrap_or_else(|| {
+                saved["url"]
+                    .as_str()
+                    .unwrap_or("http://localhost:18000")
+                    .into()
+            });
+            let ca_file = ca_file.or_else(|| saved["caFile"].as_str().map(PathBuf::from));
+            crate::cli_client::configure(Path::new("."), &url, ca_file.as_deref())?;
+            if account.is_none() {
+                crate::cli_client::login(no_open).await?;
+                return Ok(());
+            }
+            let account = account.unwrap();
             let u = url::Url::parse(&url)?;
             anyhow::ensure!(
                 contract::valid_id(&account)
@@ -384,17 +589,20 @@ pub async fn execute(command: AppCommand) -> Result<()> {
                 .await?;
             let session = Session {
                 origin,
+                token: None,
+                ca_file: None,
                 cookie,
                 csrf: me["csrf"].as_str().context("no_csrf")?.into(),
             };
             save(".miy/session.json", &serde_json::to_value(session)?)?;
             println!("{}", json!({"signedIn":me["name"],"development":true}));
         }
+        AppCommand::Fmt => run("cargo", &["fmt", "--package", "miy-app"])?,
         AppCommand::Check => {
             let m = check()?;
             println!(
                 "{}",
-                json!({"valid":true,"appId":m.id,"bundleVersion":bundle::VERSION,"checks":["manifest","bundle-integrity","migration-contract","rust-format","rust-tests","frozen-dependencies","typescript","ui-build","federation-assets"],"browserIntegration":"requires platform acceptance test"})
+                json!({"valid":true,"appId":m.id,"bundleVersion":bundle::VERSION,"checks":["manifest","bundle-integrity","cli-guidance-integrity","component-integrity","migration-contract","rust-format","rust-tests","frozen-dependencies","typescript","ui-build","federation-assets"],"browserIntegration":"requires platform acceptance test"})
             );
         }
         AppCommand::Build => {
@@ -453,6 +661,16 @@ pub async fn execute(command: AppCommand) -> Result<()> {
                     && output("git", &["status", "--porcelain"])?.is_empty(),
                 "stale_build: commit changes and run app build"
             );
+            anyhow::ensure!(
+                environment == "dev",
+                "use_app_accept_then_app_promote_for_prod"
+            );
+            crate::cli_client::upload(
+                &s,
+                &m.id,
+                image["imageId"].as_str().context("missing_image_id")?,
+            )
+            .await?;
             println!(
                 "{}",
                 submit(
@@ -584,7 +802,14 @@ pub async fn execute(command: AppCommand) -> Result<()> {
                 None
             };
             for inst in &mut installations {
-                inst["url"] = json!(format!("{}/apps/{}", s.origin, m.id));
+                inst["localManifestName"] = json!(m.name);
+                inst["displayNameDiffers"] = json!(inst["name"] != m.name);
+                inst["url"] = json!(format!(
+                    "{}/environments/{}/apps/{}",
+                    s.origin,
+                    inst["environment"].as_str().unwrap_or("dev"),
+                    m.id
+                ));
                 if let Some(ref image) = local_image {
                     inst["localBuild"] = json!({"version":image["version"],"sourceCommit":image["sourceCommit"],"imageId":image["imageId"],"matchesRunningImage":image["imageId"]==inst["imageId"] && inst["runtimeStatus"]=="running"});
                 }

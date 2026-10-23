@@ -1,4 +1,5 @@
 // Independent OAuth + MCP acceptance checks, using real Keycloak and Rust API.
+// Run sequentially with web OAuth tests: this script revokes all developer sessions.
 import { chromium } from "@playwright/test";
 import { readFileSync, writeFileSync } from "node:fs";
 import { randomBytes, createHash } from "node:crypto";
@@ -157,6 +158,15 @@ try {
     contract.status === 200 && !contract.body.result?.isError,
     "contract call failed",
   );
+  const components = await rpc(tokens.access_token, "tools/call", {
+    name: "list_components", arguments: { query: "Basic miy" },
+  });
+  check(!components.body.result?.isError && JSON.parse(components.body.result.content[0].text).some(v=>v.name==="ui"&&v.version==="1.0.0"), "live component catalog failed");
+  const component = await rpc(tokens.access_token, "tools/call", {
+    name: "get_component", arguments: { name: "ui", version: "1.0.0" },
+  });
+  check(!component.body.result?.isError && JSON.parse(component.body.result.content[0].text).usage.includes("Panel"), "component guidance failed");
+  passed.push("live-component-catalog", "component-guidance");
   passed.push(
     "metadata-discovery",
     "oauth-pkce-resource-binding",

@@ -21,20 +21,101 @@ use std::{path::PathBuf, time::Duration};
 use tokio::process::Command;
 use uuid::Uuid;
 
+struct RemoveFileOnDrop(std::path::PathBuf);
+impl Drop for RemoveFileOnDrop {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.0);
+    }
+}
+struct RemoveDirectoryOnDrop(std::path::PathBuf);
+impl Drop for RemoveDirectoryOnDrop {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
+}
+
 #[derive(Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct RuntimeRequest {
     pub action: String,
     pub environment: String,
     pub image_id: Option<String>,
+    pub release_id: Option<Uuid>,
     pub idempotency_key: String,
 }
-fn image_id(value: &str) -> bool {
+pub(crate) fn image_id(value: &str) -> bool {
     value.strip_prefix("sha256:").is_some_and(|v| {
         v.len() == 64
             && v.bytes()
                 .all(|c| c.is_ascii_digit() || (b'a'..=b'f').contains(&c))
     })
+}
+#[derive(Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct AcceptanceCheck {
+    pub scope: String,
+    /// Account/role used in the test, not the authenticated acceptance recorder.
+    pub actor: String,
+    pub result: String,
+    pub evidence: String,
+}
+fn validate_checks(checks: &[AcceptanceCheck]) -> ApiResult<()> {
+    if checks.len() > 64
+        || checks.iter().any(|c| {
+            c.scope.trim().is_empty()
+                || c.scope.len() > 120
+                || c.actor.trim().is_empty()
+                || c.actor.len() > 120
+                || c.evidence.trim().is_empty()
+                || c.evidence.len() > 2000
+                || !["passed", "not_run"].contains(&c.result.as_str())
+        })
+        || (!checks.is_empty() && !checks.iter().any(|c| c.result == "passed"))
+    {
+        return Err(ApiError::bad(
+            "invalid_acceptance_checks: use passed/not_run with scope, actor and evidence; unresolved failures cannot be accepted",
+        ));
+    }
+    Ok(())
+}
+#[derive(Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ReleaseCheck {
+    pub release_id: Uuid,
+    pub note: String,
+    #[serde(default)]
+    pub checks: Vec<AcceptanceCheck>,
+}
+pub async fn check_release(
+    state: &State,
+    p: &Principal,
+    app: &str,
+    v: ReleaseCheck,
+) -> ApiResult<Value> {
+    domain::manage(state, p, app, "dev").await?;
+    if v.note.trim().is_empty() || v.note.len() > 2000 {
+        return Err(ApiError::bad("test_note_required"));
+    }
+    validate_checks(&v.checks)?;
+    let row = sqlx::query("SELECT id,runtime_port FROM installations WHERE app_id=$1 AND environment='dev' AND release_id=$2 AND db_status='ready' AND runtime_status='running' AND desired_state='running'")
+        .bind(app).bind(v.release_id).fetch_optional(&state.pool).await?.ok_or_else(||ApiError::conflict("release_not_running_in_dev"))?;
+    healthy(
+        row.get::<Option<i32>, _>("runtime_port")
+            .ok_or_else(|| ApiError::conflict("not_a_docker_release"))?,
+        v.release_id,
+    )
+    .await
+    .map_err(|_| ApiError::conflict("app_health_failed"))?;
+    sqlx::query("INSERT INTO release_checks(release_id,installation_id,actor,note,checks) VALUES($1,$2,$3,$4,$5) ON CONFLICT(release_id) DO UPDATE SET actor=excluded.actor,note=excluded.note,checks=excluded.checks,checked_at=now()")
+        .bind(v.release_id).bind(row.get::<Uuid,_>("id")).bind(&p.id).bind(v.note.trim()).bind(json!(v.checks)).execute(&state.pool).await?;
+    Ok(
+        json!({"releaseId":v.release_id,"tested":true,"recordedBy":p.id,"checks":v.checks,"structured":!v.checks.is_empty(),"note":v.note.trim(),"meaning":"User-recorded test acceptance plus runtime health; not automatic business correctness verification"}),
+    )
+}
+async fn checked_image(pool: &sqlx::PgPool, app: &str, release: Uuid) -> Result<String> {
+    let image: Option<String> = sqlx::query_scalar("SELECT r.image_id FROM releases r JOIN release_checks c ON c.release_id=r.id WHERE r.id=$1 AND r.app_id=$2 AND EXISTS(SELECT 1 FROM runtime_jobs j WHERE j.release_id=r.id AND j.environment='dev' AND j.action='deploy' AND j.status='succeeded')")
+        .bind(release).bind(app).fetch_optional(pool).await?.flatten();
+    image.context("release_not_tested_in_dev")
 }
 pub async fn request(
     state: &State,
@@ -43,7 +124,7 @@ pub async fn request(
     v: RuntimeRequest,
 ) -> ApiResult<Value> {
     if !["dev", "prod"].contains(&v.environment.as_str())
-        || !["deploy", "start", "stop", "restart", "remove"].contains(&v.action.as_str())
+        || !["deploy", "promote", "start", "stop", "restart", "remove"].contains(&v.action.as_str())
         || v.idempotency_key.is_empty()
         || v.idempotency_key.len() > 128
     {
@@ -54,13 +135,25 @@ pub async fn request(
     {
         return Err(ApiError::bad("invalid_image_id"));
     }
-    domain::authorize(state, p, app, &v.environment, true).await?;
-    let input = contract::hash(format!(
-        "{app}:{}:{}:{:?}",
-        v.environment, v.action, v.image_id
-    ));
+    domain::manage(state, p, app, &v.environment).await?;
+    if (v.action == "deploy" && v.environment != "dev")
+        || (v.action == "promote" && (v.environment != "prod" || v.release_id.is_none()))
+        || (v.action != "promote" && v.release_id.is_some())
+    {
+        return Err(ApiError::bad("use_checked_release_promotion_for_prod"));
+    }
+    let image = if v.action == "promote" {
+        Some(
+            checked_image(&state.pool, app, v.release_id.unwrap())
+                .await
+                .map_err(|_| ApiError::conflict("release_not_tested_in_dev"))?,
+        )
+    } else {
+        v.image_id.clone()
+    };
+    let input = contract::hash(format!("{app}:{}:{}:{:?}", v.environment, v.action, image));
     sqlx::query("INSERT INTO runtime_jobs(id,app_id,environment,actor,action,image_id,idempotency_key,input_hash) VALUES($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT(actor,idempotency_key) DO NOTHING")
-        .bind(Uuid::new_v4()).bind(app).bind(&v.environment).bind(&p.id).bind(&v.action).bind(&v.image_id).bind(&v.idempotency_key).bind(&input).execute(&state.pool).await?;
+        .bind(Uuid::new_v4()).bind(app).bind(&v.environment).bind(&p.id).bind(&v.action).bind(&image).bind(&v.idempotency_key).bind(&input).execute(&state.pool).await?;
     let row =
         sqlx::query("SELECT id,input_hash FROM runtime_jobs WHERE actor=$1 AND idempotency_key=$2")
             .bind(&p.id)
@@ -83,7 +176,7 @@ pub async fn job(state: &State, p: &Principal, id: Uuid) -> ApiResult<Value> {
         json!({"id":id,"appId":row.get::<String,_>("app_id"),"environment":row.get::<String,_>("environment"),"action":row.get::<String,_>("action"),"status":row.get::<String,_>("status"),"step":row.get::<String,_>("step"),"errorCode":row.get::<Option<String>,_>("error_code"),"installationId":row.get::<Option<Uuid>,_>("installation_id"),"releaseId":row.get::<Option<Uuid>,_>("release_id")}),
     )
 }
-async fn docker(args: &[&str]) -> Result<String> {
+pub(crate) async fn docker(args: &[&str]) -> Result<String> {
     let child = Command::new("docker")
         .args(args)
         .kill_on_drop(true)
@@ -94,7 +187,7 @@ async fn docker(args: &[&str]) -> Result<String> {
     anyhow::ensure!(out.status.success(), "docker_command_failed");
     Ok(String::from_utf8(out.stdout)?.trim().to_string())
 }
-async fn inspect(name: &str) -> Result<Value> {
+pub(crate) async fn inspect(name: &str) -> Result<Value> {
     let value: Value = serde_json::from_str(&docker(&["inspect", name]).await?)?;
     Ok(value[0].clone())
 }
@@ -133,6 +226,7 @@ pub async fn tick(pool: &sqlx::PgPool) -> Result<bool> {
     let app: String = job.get("app_id");
     let env: String = job.get("environment");
     let mut lock = pool.acquire().await?;
+    lock.close_on_drop();
     let lock_key = format!("runtime:{app}:{env}");
     sqlx::query("SELECT pg_advisory_lock(hashtextextended($1,0))")
         .bind(&lock_key)
@@ -183,9 +277,21 @@ async fn execute(pool: &sqlx::PgPool, job: &sqlx::postgres::PgRow) -> Result<()>
     let env: String = job.get("environment");
     let actor: String = job.get("actor");
     let action: String = job.get("action");
-    let authorized:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM users WHERE id=$1 AND admin) OR EXISTS(SELECT 1 FROM grants WHERE user_id=$1 AND app_id=$2 AND environment=$3 AND permission='develop')").bind(&actor).bind(&app).bind(&env).fetch_one(pool).await?;
-    anyhow::ensure!(authorized, "permission_revoked");
-    if action != "deploy" {
+    anyhow::ensure!(
+        domain::can_manage(pool, &actor, &app, &env).await?,
+        "permission_revoked"
+    );
+    if action == "promote" {
+        let image: String = job.get("image_id");
+        let release: Uuid =
+            sqlx::query_scalar("SELECT id FROM releases WHERE app_id=$1 AND image_id=$2")
+                .bind(&app)
+                .bind(&image)
+                .fetch_one(pool)
+                .await?;
+        checked_image(pool, &app, release).await?;
+    }
+    if action != "deploy" && action != "promote" {
         let inst = sqlx::query("SELECT * FROM installations WHERE app_id=$1 AND environment=$2")
             .bind(&app)
             .bind(&env)
@@ -221,6 +327,16 @@ async fn execute(pool: &sqlx::PgPool, job: &sqlx::postgres::PgRow) -> Result<()>
                     .await?;
             }
             "start" | "restart" => {
+                anyhow::ensure!(
+                    inst.get::<String, _>("db_status") == "ready",
+                    "database_not_ready"
+                );
+                let metadata = owned(&name, installation).await?;
+                anyhow::ensure!(
+                    metadata["Config"]["Labels"]["org.miy.release"]
+                        == inst.get::<Uuid, _>("release_id").to_string(),
+                    "container_release_mismatch_redeploy"
+                );
                 sqlx::query("UPDATE installations SET desired_state='running',runtime_status='starting' WHERE id=$1").bind(installation).execute(pool).await?;
                 let started = async {
                     docker(&[
@@ -279,6 +395,7 @@ async fn execute(pool: &sqlx::PgPool, job: &sqlx::postgres::PgRow) -> Result<()>
         std::fs::remove_dir_all(&temporary)?;
     }
     std::fs::create_dir_all(&temporary)?;
+    let _temporary_cleanup = RemoveDirectoryOnDrop(temporary.clone());
     let extraction = format!("miy-import-{id}");
     if inspect(&extraction).await.is_ok() {
         docker(&["rm", "-f", &extraction]).await?;
@@ -293,6 +410,7 @@ async fn execute(pool: &sqlx::PgPool, job: &sqlx::postgres::PgRow) -> Result<()>
     let removed = docker(&["rm", &extraction]).await;
     copied?;
     removed?;
+    let hash = contract::artifact_hash(&temporary)?; // Reject symlinks before reading any imported file.
     let manifest: Manifest =
         serde_json::from_slice(&std::fs::read(temporary.join("manifest.json"))?)?;
     contract::validate(&manifest).map_err(anyhow::Error::msg)?;
@@ -320,7 +438,6 @@ async fn execute(pool: &sqlx::PgPool, job: &sqlx::postgres::PgRow) -> Result<()>
             && build["version"] == manifest.version,
         "image_manifest_provenance_mismatch"
     );
-    let hash = contract::artifact_hash(&temporary)?;
     let dest = root.join(&hash);
     if dest.exists() {
         contract::verified_artifact(&root, &hash)?;
@@ -359,6 +476,7 @@ async fn execute(pool: &sqlx::PgPool, job: &sqlx::postgres::PgRow) -> Result<()>
         .await?;
     // An installation lock also excludes standalone DB jobs.
     let mut lock = pool.acquire().await?;
+    lock.close_on_drop();
     sqlx::query("SELECT pg_advisory_lock(hashtextextended($1,0))")
         .bind(installation.to_string())
         .execute(&mut *lock)
@@ -444,6 +562,7 @@ async fn deploy_installation(
     // Secrets are passed through a private temporary env file, never Docker argv or job output.
     use std::os::unix::fs::OpenOptionsExt;
     let env_path = std::env::temp_dir().join(format!("miy-runtime-{}.env", Uuid::new_v4()));
+    let _secret_cleanup = RemoveFileOnDrop(env_path.clone());
     let mut env = std::fs::OpenOptions::new()
         .create_new(true)
         .write(true)
@@ -452,12 +571,13 @@ async fn deploy_installation(
     std::io::Write::write_all(&mut env,format!("DATABASE_URL={db_url}\nMIY_GATEWAY_SECRET={secret}\nMIY_INSTALLATION_ID={installation}\nMIY_RELEASE_ID={release}\n").as_bytes())?;
     drop(env);
     step(pool, job, "creating_container").await?;
+    let network = installation_network(installation).await?;
     let created = docker(&[
         "create",
         "--name",
         &name,
         "--network",
-        "miy-v2-app-runtime",
+        &network,
         "--publish",
         "127.0.0.1::8080",
         "--env-file",
@@ -516,7 +636,72 @@ async fn deploy_installation(
     .await?;
     Ok(())
 }
-async fn healthy(port: i32, release: Uuid) -> Result<()> {
+async fn installation_network(installation: Uuid) -> Result<String> {
+    let name = format!("miy-runtime-{}", installation.simple());
+    if let Ok(raw) = docker(&["network", "inspect", &name]).await {
+        let metadata: Value = serde_json::from_str(&raw)?;
+        anyhow::ensure!(
+            metadata[0]["Labels"]["org.miy.installation"] == installation.to_string(),
+            "unmanaged_network"
+        );
+    } else {
+        docker(&[
+            "network",
+            "create",
+            "--label",
+            &format!("org.miy.installation={installation}"),
+            &name,
+        ])
+        .await?;
+    }
+    let database = std::env::var("MIY_DATABASE_CONTAINER")
+        .unwrap_or_else(|_| "miy-v2-validation-postgres-1".into());
+    let meta = inspect(&database).await?;
+    if meta["NetworkSettings"]["Networks"].get(&name).is_none() {
+        docker(&[
+            "network", "connect", "--alias", "postgres", &name, &database,
+        ])
+        .await?;
+    }
+    Ok(name)
+}
+/// Reconcile externally stopped/restarted containers. Database state is not fabricated.
+pub async fn reconcile(pool: &sqlx::PgPool) -> Result<()> {
+    let rows=sqlx::query("SELECT i.* FROM installations i WHERE runtime_container IS NOT NULL AND runtime_status NOT IN ('removed','failed') AND NOT EXISTS(SELECT 1 FROM runtime_jobs j WHERE j.app_id=i.app_id AND j.environment=i.environment AND j.status IN ('queued','running'))").fetch_all(pool).await?;
+    for row in rows {
+        let id: Uuid = row.get("id");
+        let name: String = row.get("runtime_container");
+        match owned(&name, id).await {
+            Ok(meta) if meta["State"]["Running"] == true => {
+                let matching = meta["Image"].as_str()
+                    == row.get::<Option<String>, _>("runtime_image").as_deref()
+                    && meta["Config"]["Labels"]["org.miy.release"]
+                        == row.get::<Uuid, _>("release_id").to_string();
+                if !matching || row.get::<String, _>("desired_state") != "running" {
+                    let _ = docker(&["stop", "--time", "5", &name]).await;
+                    sqlx::query("UPDATE installations SET runtime_status='failed',desired_state='stopped' WHERE id=$1").bind(id).execute(pool).await?;
+                } else {
+                    let port = published_port(&meta)?;
+                    sqlx::query("UPDATE installations SET runtime_port=$2,runtime_status='running' WHERE id=$1").bind(id).bind(port).execute(pool).await?;
+                }
+            }
+            Ok(_) => {
+                sqlx::query("UPDATE installations SET runtime_status='stopped' WHERE id=$1")
+                    .bind(id)
+                    .execute(pool)
+                    .await?;
+            }
+            Err(_) => {
+                sqlx::query("UPDATE installations SET runtime_status='unreachable' WHERE id=$1")
+                    .bind(id)
+                    .execute(pool)
+                    .await?;
+            }
+        }
+    }
+    Ok(())
+}
+pub(crate) async fn healthy(port: i32, release: Uuid) -> Result<()> {
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(2))
         .build()?;
@@ -551,6 +736,29 @@ struct Claims {
     aud: &'static str,
     exp: i64,
 }
+pub(crate) fn sign_identity(
+    user: &str,
+    admin: bool,
+    installation: Uuid,
+    release: Uuid,
+    secret: &str,
+) -> ApiResult<String> {
+    let claims = Claims {
+        sub: user.into(),
+        admin,
+        installation_id: installation,
+        release_id: release,
+        iss: "miy",
+        aud: "miy-app",
+        exp: chrono::Utc::now().timestamp() + 30,
+    };
+    jsonwebtoken::encode(
+        &jsonwebtoken::Header::new(jsonwebtoken::Algorithm::HS256),
+        &claims,
+        &jsonwebtoken::EncodingKey::from_secret(secret.as_bytes()),
+    )
+    .map_err(|_| ApiError::unavailable("gateway_identity_failed"))
+}
 pub async fn proxy(
     S(state): S<State>,
     Extension(p): Extension<Principal>,
@@ -583,21 +791,13 @@ pub async fn proxy(
         inst.get::<Option<&str>, _>("runtime_secret")
             .ok_or_else(ApiError::not_found)?,
     )?;
-    let claims = Claims {
-        sub: p.id.clone(),
-        admin: domain::admin(&state, &p).await.is_ok(),
-        installation_id: id,
-        release_id: release,
-        iss: "miy",
-        aud: "miy-app",
-        exp: chrono::Utc::now().timestamp() + 30,
-    };
-    let token = jsonwebtoken::encode(
-        &jsonwebtoken::Header::new(jsonwebtoken::Algorithm::HS256),
-        &claims,
-        &jsonwebtoken::EncodingKey::from_secret(secret.as_bytes()),
-    )
-    .map_err(|_| ApiError::unavailable("gateway_identity_failed"))?;
+    let token = sign_identity(
+        &p.id,
+        domain::admin(&state, &p).await.is_ok(),
+        id,
+        release,
+        &secret,
+    )?;
     let query = request
         .uri()
         .query()
@@ -654,5 +854,25 @@ mod tests {
         ] {
             assert!(!image_id(value));
         }
+    }
+}
+
+#[cfg(test)]
+mod acceptance_tests {
+    use super::*;
+    #[test]
+    fn acceptance_scope_is_explicit_and_failure_is_not_approval() {
+        let mut checks = vec![AcceptanceCheck {
+            scope: "browser navigation".into(),
+            actor: "developer".into(),
+            result: "passed".into(),
+            evidence: "cancelled shell/back/forward navigation preserved draft".into(),
+        }];
+        assert!(validate_checks(&checks).is_ok());
+        checks[0].result = "failed".into();
+        assert!(validate_checks(&checks).is_err());
+        checks[0].result = "not_run".into();
+        assert!(validate_checks(&checks).is_err());
+        assert!(validate_checks(&[]).is_ok()); // Legacy CLI remains supported, explicitly unstructured.
     }
 }

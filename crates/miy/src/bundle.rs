@@ -6,7 +6,11 @@ use std::{
     collections::{BTreeMap, BTreeSet},
     path::Path,
 };
-pub const VERSION: &str = "0.3.0";
+pub const VERSION: &str = "0.6.1";
+// 0.6.1 changes agent entry-point documentation only; its component API is identical to 0.6.0.
+pub fn component_compatible(version: &str) -> bool {
+    version == VERSION || version == "0.6.0"
+}
 pub const GUIDANCE: &str = include_str!("../../../templates/rust-react/docs/CONTRACT.md");
 pub const AGENT_GUIDANCE: &str = include_str!("../../../templates/rust-react/AGENTS.md");
 include!(concat!(env!("OUT_DIR"), "/template.rs"));
@@ -15,12 +19,18 @@ pub fn template() -> &'static [(&'static str, &'static str)] {
 }
 fn protected(path: &str) -> bool {
     path.starts_with("sdk/")
+        || path.starts_with(".agents/skills/")
+        || path.starts_with(".claude/skills/")
         || matches!(
             path,
             "Dockerfile"
+                | "miy.components.json"
                 | "rust-toolchain.toml"
                 | "AGENTS.md"
+                | "CLAUDE.md"
                 | "docs/CONTRACT.md"
+                | "docs/CLI.md"
+                | "docs/ACCEPTANCE.md"
                 | "migrations/0001_initial.sql"
         )
 }

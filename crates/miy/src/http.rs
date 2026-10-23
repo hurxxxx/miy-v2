@@ -8,7 +8,7 @@ use axum::{
 };
 use serde::Deserialize;
 use serde_json::{Value, json};
-use tower_http::services::ServeDir;
+use sqlx::Row;
 use uuid::Uuid;
 
 pub type ApiResult<T> = Result<T, ApiError>;
@@ -110,8 +110,55 @@ impl IntoResponse for ApiError {
 
 pub fn router(state: State) -> Router {
     let api = Router::new()
+        .route(
+            "/components",
+            axum::routing::get(crate::component_registry::catalog)
+                .post(crate::component_registry::publish)
+                .layer(axum::extract::DefaultBodyLimit::max(
+                    crate::component_registry::MAX_PACKAGE,
+                )),
+        )
+        .route(
+            "/components/{name}/{version}",
+            axum::routing::get(crate::component_registry::get),
+        )
+        .route(
+            "/installations/{id}/platform/directory",
+            axum::routing::get(crate::connections::directory),
+        )
+        .route(
+            "/installations/{id}/connections/{target}/api/{*path}",
+            axum::routing::any(crate::connections::connect),
+        )
+        .route(
+            "/preview/apps/{app}/platform/directory",
+            axum::routing::get(crate::connections::preview_directory),
+        )
+        .route(
+            "/preview/apps/{app}/connections/{target}/api/{*path}",
+            axum::routing::any(crate::connections::preview_connect),
+        )
         .route("/me", axum::routing::get(me))
+        .route(
+            "/cli-authorizations/{id}/approve",
+            axum::routing::post(crate::cli_auth::approve),
+        )
+        .route("/cli/logout", axum::routing::post(crate::cli_auth::revoke))
+        .route(
+            "/apps/{app}/test-acceptance",
+            axum::routing::post(check_release),
+        )
+        .route(
+            "/apps/{app}/images",
+            axum::routing::post(crate::delivery::upload)
+                .layer(axum::extract::DefaultBodyLimit::disable()),
+        )
+        .route(
+            "/image-uploads/{id}",
+            axum::routing::get(crate::delivery::status),
+        )
         .route("/apps", axum::routing::post(create_app))
+        .route("/apps/{app}/name", axum::routing::post(rename_app))
         .route(
             "/app-registrations",
             axum::routing::get(registrations).post(request_registration),
@@ -143,9 +190,19 @@ pub fn router(state: State) -> Router {
             axum::routing::any(crate::runtime::proxy),
         )
         .route_layer(middleware::from_fn_with_state(state.clone(), session_guard));
-    let artifacts = state.artifacts.clone();
+    let artifacts = Router::new()
+        .route("/artifacts/{hash}/ui/{*path}", axum::routing::get(ui_asset))
+        .route_layer(middleware::from_fn_with_state(state.clone(), session_guard));
     Router::new()
         .nest("/api/v1", api)
+        .route(
+            "/auth/cli/start",
+            axum::routing::post(crate::cli_auth::start),
+        )
+        .route(
+            "/auth/cli/exchange",
+            axum::routing::post(crate::cli_auth::exchange),
+        )
         .route("/auth/login", axum::routing::get(login))
         .route("/auth/options", axum::routing::get(login_options))
         .route("/auth/development", axum::routing::post(development_login))
@@ -164,22 +221,86 @@ pub fn router(state: State) -> Router {
             axum::routing::get(|| async { Json(json!({"status":"ok"})) }),
         )
         .merge(crate::mcp::router(state.clone()))
-        .nest_service("/artifacts", ServeDir::new(artifacts))
+        .merge(artifacts)
         .with_state(state)
 }
+async fn ui_asset(
+    S(s): S<State>,
+    axum::Extension(p): axum::Extension<Principal>,
+    Path((hash, path)): Path<(String, String)>,
+) -> ApiResult<Response> {
+    if hash.len() != 64
+        || !hash.bytes().all(|c| c.is_ascii_hexdigit())
+        || !contract::safe_relative(&path)
+    {
+        return Err(ApiError::not_found());
+    }
+    let installations=sqlx::query("SELECT i.app_id,i.environment FROM installations i JOIN releases r ON r.id=i.release_id WHERE r.artifact_hash=$1").bind(&hash).fetch_all(&s.pool).await?;
+    let mut allowed = false;
+    for row in installations {
+        if domain::authorize(&s, &p, row.get("app_id"), row.get("environment"), false)
+            .await
+            .is_ok()
+        {
+            allowed = true;
+            break;
+        }
+    }
+    if !allowed {
+        return Err(ApiError::forbidden());
+    }
+    let file = s.artifacts.join(hash).join("ui").join(path);
+    let bytes = tokio::fs::read(&file)
+        .await
+        .map_err(|_| ApiError::not_found())?;
+    let mime = match file.extension().and_then(|e| e.to_str()).unwrap_or("") {
+        "js" | "mjs" => "text/javascript",
+        "css" => "text/css",
+        "json" => "application/json",
+        "svg" => "image/svg+xml",
+        "png" => "image/png",
+        "jpg" | "jpeg" => "image/jpeg",
+        "woff2" => "font/woff2",
+        "woff" => "font/woff",
+        _ => "application/octet-stream",
+    };
+    Ok((
+        [
+            (header::CONTENT_TYPE, mime),
+            (header::CACHE_CONTROL, "private, no-cache"),
+            (header::X_CONTENT_TYPE_OPTIONS, "nosniff"),
+        ],
+        bytes,
+    )
+        .into_response())
+}
 async fn session_guard(S(state): S<State>, mut request: Request, next: Next) -> Response {
-    let result = state.auth.session(&state, request.headers()).await;
+    let bearer = request
+        .headers()
+        .get("authorization")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.strip_prefix("Bearer "));
+    let result = if let Some(token) = bearer {
+        // CLI credentials cannot be used as a browser cross-origin authentication bypass.
+        if request.headers().contains_key("origin") {
+            return ApiError::forbidden().into_response();
+        }
+        crate::cli_auth::principal(&state, token).await
+    } else {
+        state.auth.session(&state, request.headers()).await
+    };
     match result {
         Ok(p) => {
             if !matches!(
                 *request.method(),
                 axum::http::Method::GET | axum::http::Method::HEAD | axum::http::Method::OPTIONS
-            ) && (request
-                .headers()
-                .get("x-miy-csrf")
-                .and_then(|v| v.to_str().ok())
-                != p.csrf.as_deref()
-                || !state.auth.allowed_origin(request.headers(), p.development))
+            ) && p.csrf.is_some()
+                && (request
+                    .headers()
+                    .get("x-miy-csrf")
+                    .and_then(|v| v.to_str().ok())
+                    != p.csrf.as_deref()
+                    || !state.auth.allowed_origin(request.headers(), p.development))
             {
                 return ApiError::forbidden().into_response();
             }
@@ -238,6 +359,14 @@ async fn decide_registration(
 }
 async fn users(S(s): S<State>, axum::Extension(p): P) -> ApiResult<Json<Value>> {
     Ok(Json(crate::registration::users(&s, &p).await?))
+}
+async fn check_release(
+    S(s): S<State>,
+    axum::Extension(p): P,
+    Path(app): Path<String>,
+    Json(v): Json<crate::runtime::ReleaseCheck>,
+) -> ApiResult<Json<Value>> {
+    Ok(Json(crate::runtime::check_release(&s, &p, &app, v).await?))
 }
 async fn runtime_request(
     S(s): S<State>,
@@ -343,7 +472,7 @@ async fn login_options(S(s): S<State>) -> Json<Value> {
         json!([])
     };
     Json(
-        json!({"developmentLogin":s.auth.development_login,"accounts":accounts,"oauthUrl":format!("{}/auth/login",s.auth.origin)}),
+        json!({"developmentLogin":s.auth.development_login,"developmentOrigin":s.auth.development_origin,"accounts":accounts,"oauthUrl":format!("{}/auth/login",s.auth.origin)}),
     )
 }
 #[derive(Deserialize)]
@@ -444,6 +573,9 @@ async fn openapi() -> Json<Value> {
             operation["requestBody"] =
                 json!({"required":true,"content":{"application/json":{"schema":item["input"]}}});
         }
+        if item["binary"] == true {
+            operation["requestBody"] = json!({"required":true,"content":{"application/x-tar":{"schema":{"type":"string","format":"binary"}}}});
+        }
         let parameters=path.split('/').filter(|p|p.starts_with('{')).map(|p|json!({"name":p.trim_matches(&['{','}'][..]),"in":"path","required":true,"schema":{"type":"string"}})).collect::<Vec<_>>();
         if !parameters.is_empty() {
             operation["parameters"] = json!(parameters);
@@ -482,4 +614,13 @@ async fn openapi() -> Json<Value> {
     normalize(&mut doc, &mut definitions);
     doc["components"] = json!({"schemas":definitions,"securitySchemes":{"session":{"type":"apiKey","in":"cookie","name":"miy_session"}}});
     Json(doc)
+}
+
+async fn rename_app(
+    S(s): S<State>,
+    axum::Extension(p): P,
+    Path(app): Path<String>,
+    Json(v): Json<crate::registration::DisplayName>,
+) -> ApiResult<Json<Value>> {
+    Ok(Json(crate::registration::rename(&s, &p, &app, v).await?))
 }

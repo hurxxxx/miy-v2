@@ -17,14 +17,14 @@ a {
   color: var(--miy-accent);
   text-decoration: none;
 }
-h1 {
+.workspace > main > h1, .login h1 {
   font-size: 30px;
   letter-spacing: -1px;
 }
-h2 {
+.shell > aside h2 {
   font-size: 20px;
 }
-p {
+.workspace > main > p, .shell > aside p, .login p {
   line-height: 1.6;
   color: #566578;
 }

@@ -1,0 +1,4 @@
+{
+  "protocol": "miy.component/v1",
+  "defaults": { "ui": "1.0.1" }
+}

@@ -216,7 +216,7 @@ async fn real_database_isolation_migrations_and_crash_recovery() -> Result<()> {
             "unexpected access to {db}"
         );
     }
-    let i2 = domain::create_installation(
+    let rejected = domain::create_installation(
         &state,
         &actor,
         domain::NewInstallation {
@@ -226,8 +226,19 @@ async fn real_database_isolation_migrations_and_crash_recovery() -> Result<()> {
         },
     )
     .await
-    .map_err(|e| anyhow::anyhow!(e.code))?;
-    let id2: Uuid = serde_json::from_value(i2["id"].clone())?;
+    .unwrap_err();
+    assert_eq!(rejected.code, "use_checked_release_promotion_for_prod");
+    // This test exercises the DB substrate independently of Docker. Production
+    // delivery itself is covered through accepted-image promotion in check-architecture.
+    let id2 = Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO installations(id,app_id,environment,release_id) VALUES($1,$2,'prod',$3)",
+    )
+    .bind(id2)
+    .bind(&app)
+    .bind(v1)
+    .execute(&pool)
+    .await?;
     let job2 = enqueue(&state, &actor, id2, v1, &format!("prod-{id}")).await?;
     wait(&pool, job2, "succeeded").await?;
     let db2: String =

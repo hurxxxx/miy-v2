@@ -1,15 +1,25 @@
+mod agent_tools;
 mod app_cli;
 mod auth;
 mod bundle;
+mod cli_auth;
+mod cli_client;
+mod cli_guidance;
+mod component_cli;
+mod component_registry;
+mod connections;
 mod contract;
+mod delivery;
 mod dev_tools;
 mod domain;
 mod http;
 #[cfg(test)]
 mod integration;
 mod mcp;
+mod preview;
 mod registration;
 mod runtime;
+mod upgrade;
 mod worker;
 
 use anyhow::Result;
@@ -18,6 +28,7 @@ use sqlx::postgres::PgPoolOptions;
 use std::{path::PathBuf, sync::Arc};
 
 #[derive(Parser)]
+#[command(version)]
 struct Args {
     #[command(subcommand)]
     command: Command,
@@ -45,6 +56,7 @@ pub struct State {
 async fn main() -> Result<()> {
     tracing_subscriber::fmt()
         .json()
+        .with_writer(std::io::stderr)
         .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
         .init();
     let args = Args::parse();
@@ -67,7 +79,8 @@ async fn main() -> Result<()> {
         return Ok(());
     }
     if matches!(args.command, Command::Seed) {
-        return domain::seed(&pool).await;
+        domain::seed(&pool).await?;
+        return component_registry::seed(&pool).await;
     }
     if matches!(args.command, Command::Worker) {
         return worker::run(pool).await;

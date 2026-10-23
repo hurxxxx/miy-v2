@@ -48,8 +48,53 @@ struct ApiId {
 struct JobId {
     id: Uuid,
 }
+#[derive(Deserialize, schemars::JsonSchema)]
+struct ComponentId {
+    name: String,
+    version: String,
+}
 #[tool_router]
 impl Mcp {
+    #[tool(
+        description = "Search live component releases and compatibility; this catalog is independent of CLI releases.",
+        annotations(read_only_hint = true)
+    )]
+    async fn list_components(
+        &self,
+        Parameters(v): Parameters<Search>,
+    ) -> Result<CallToolResult, McpError> {
+        result(
+            async {
+                let entries = crate::component_registry::catalog_data(&self.state.pool).await?;
+                Ok(json!(
+                    entries
+                        .as_array()
+                        .unwrap()
+                        .iter()
+                        .filter(|e| e
+                            .to_string()
+                            .to_lowercase()
+                            .contains(&v.query.to_lowercase()))
+                        .collect::<Vec<_>>()
+                ))
+            }
+            .await,
+        )
+    }
+    #[tool(
+        description = "Read an exact component release's usage and install command without installing code.",
+        annotations(read_only_hint = true)
+    )]
+    async fn get_component(
+        &self,
+        Parameters(v): Parameters<ComponentId>,
+    ) -> Result<CallToolResult, McpError> {
+        result(
+            crate::component_registry::get_data(&self.state.pool, &v.name, &v.version)
+                .await
+                .map(crate::component_registry::guidance),
+        )
+    }
     fn new(state: State) -> Self {
         Self {
             state,
@@ -201,10 +246,16 @@ pub fn router(state: State) -> Router<State> {
         StreamableHttpServerConfig, StreamableHttpService, session::local::LocalSessionManager,
     };
     let cloned = state.clone();
+    let origin = url::Url::parse(&state.auth.origin).expect("validated platform origin");
+    let authority = origin[url::Position::BeforeHost..url::Position::AfterPort].to_string();
     let config = StreamableHttpServerConfig::default()
         .with_legacy_session_mode(false)
         .with_json_response(true)
-        .with_allowed_hosts(["localhost:18443", "localhost:18080", "127.0.0.1:18080"])
+        .with_allowed_hosts([
+            authority,
+            "localhost:18080".into(),
+            "127.0.0.1:18080".into(),
+        ])
         .with_allowed_origins([state.auth.origin.clone()]);
     let service = StreamableHttpService::new(
         move || Ok(Mcp::new(cloned.clone())),
