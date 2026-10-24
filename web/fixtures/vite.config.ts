@@ -2,8 +2,18 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import { federation } from "@module-federation/vite";
 export default defineConfig(({ mode }) => {
-  const profile = mode === "diagnosis" ? "diagnosis" : "reference";
-  const entry = profile === "reference" ? "ReferenceApp" : "DiagnosticApp";
+  const profile =
+    mode === "health"
+      ? "health"
+      : mode === "diagnosis"
+        ? "diagnosis"
+        : "reference";
+  const entry =
+    profile === "health"
+      ? "HealthApp"
+      : profile === "reference"
+        ? "ReferenceApp"
+        : "DiagnosticApp";
   return {
     base: "./",
     plugins: [

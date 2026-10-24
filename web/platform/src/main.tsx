@@ -31,6 +31,7 @@ import {
 } from "@miy/sdk";
 import { Button, Panel } from "@miy/ui";
 import "./style.css";
+import { RuntimeHealth } from "./RuntimeHealth";
 
 const activeGuards = new Set<ReturnType<typeof createNavigationGuards>>();
 
@@ -242,7 +243,7 @@ function Home() {
               <p>
                 실행 환경: {a.environment} · 버전: {a.version || "—"}
               </p>
-              {a.kind === "docker_app" && <p>Docker: {a.runtimeStatus}</p>}
+              <RuntimeHealth app={a} />
               {(a.kind !== "docker_app" || a.runtimeStatus === "running") && (
                 <Link to={environmentPath(environment, a.appId) as "/"}>
                   앱 열기 →
@@ -393,7 +394,6 @@ function remote(app: Installation) {
   return modules.get(key)!;
 }
 function AppView() {
-  const user = useSession();
   const location = useLocation();
   const parts = location.pathname.split("/");
   const environment = currentEnvironment(location.pathname);
@@ -402,7 +402,29 @@ function AppView() {
     parts[1] === "environments"
       ? environmentPath(environment, appId)
       : "/apps/" + appId;
+  return (
+    <AppSession
+      key={`${environment}:${appId}`}
+      appId={appId}
+      environment={environment}
+      basePath={basePath}
+    />
+  );
+}
+// A route change creates a new session; observations never replace its pinned release.
+function AppSession({
+  appId,
+  environment,
+  basePath,
+}: {
+  appId: string;
+  environment: string;
+  basePath: string;
+}) {
+  const user = useSession();
+  const location = useLocation();
   const [app, setApp] = useState<Installation | null>();
+  const [health, setHealth] = useState<Installation["health"]>();
   const [updated, setUpdated] = useState(false);
   const guards = useMemo(
     () => createNavigationGuards(),
@@ -423,38 +445,62 @@ function AppView() {
     setApp(undefined);
     setUpdated(false);
     let active = true;
-    request<Installation[]>("/api/v1/installations")
+    const controller = new AbortController();
+    request<Installation[]>("/api/v1/installations", undefined, {
+      signal: controller.signal,
+    })
       .then((items) => {
-        if (active)
-          setApp(
+        if (active) {
+          const found =
             items.find(
               (a) => a.appId === appId && a.environment === environment,
-            ) ?? null,
-          );
+            ) ?? null;
+          setApp(found);
+          setHealth(found?.health);
+        }
       })
       .catch(() => {
         if (active) setApp(null);
       });
     return () => {
       active = false;
+      controller.abort();
     };
   }, [appId, environment]);
   useEffect(() => {
     if (!app) return;
-    const id = setInterval(() => {
-      request<Installation[]>("/api/v1/installations")
-        .then((items) => {
-          const current = items.find((a) => a.id === app.id);
-          if (
-            !current ||
-            current.releaseId !== app.releaseId ||
-            current.runtimeStatus !== app.runtimeStatus
-          )
-            setUpdated(true);
-        })
-        .catch(() => setUpdated(true));
-    }, 3000);
-    return () => clearInterval(id);
+    const session = app;
+    let active = true;
+    let timer: ReturnType<typeof setTimeout>;
+    const controller = new AbortController();
+    async function poll() {
+      try {
+        const items = await request<Installation[]>(
+          "/api/v1/installations",
+          undefined,
+          { signal: controller.signal },
+        );
+        if (!active) return;
+        const current = items.find((a) => a.id === session.id);
+        if (
+          !current ||
+          current.releaseId !== session.releaseId ||
+          current.runtimeStatus !== session.runtimeStatus
+        )
+          setUpdated(true);
+        else setHealth(current.health);
+      } catch {
+        if (active) setUpdated(true);
+      } finally {
+        if (active) timer = setTimeout(poll, 3000);
+      }
+    }
+    timer = setTimeout(poll, 3000);
+    return () => {
+      active = false;
+      clearTimeout(timer);
+      controller.abort();
+    };
   }, [app]);
   const runtime = useMemo<AppRuntime | null>(
     () =>
@@ -575,6 +621,7 @@ function AppView() {
           <Button onClick={() => window.location.reload()}>새로고침</Button>
         </Panel>
       )}
+      <RuntimeHealth app={{ ...app, health }} />
       <Boundary key={app.releaseId}>
         <Suspense fallback={<p>앱 화면을 불러오는 중…</p>}>
           <View key={app.id} runtime={runtime} />
@@ -648,7 +695,10 @@ function Admin() {
     void request<Installation[]>("/api/v1/installations").then(setApps);
   }
   useEffect(() => {
-    if (user?.admin) refresh();
+    if (!user?.admin) return;
+    refresh();
+    const timer = setInterval(refresh, 3000);
+    return () => clearInterval(timer);
   }, [user?.admin]);
   if (!user?.admin)
     return (
@@ -747,11 +797,12 @@ function Admin() {
           .map((a) => (
             <Panel key={a.id} title={`${a.name} · ${a.environment}`}>
               <p>
-                {a.version} · {a.runtimeStatus} · DB {a.dbStatus}
+                {a.version} · DB {a.dbStatus}
               </p>
               <Link to={environmentPath(a.environment, a.appId) as "/"}>
                 앱 열기
               </Link>
+              <RuntimeHealth app={a} />
               <RuntimeControls app={a} csrf={user.csrf} refresh={refresh} />
             </Panel>
           ))}

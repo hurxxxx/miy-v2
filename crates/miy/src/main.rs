@@ -19,6 +19,9 @@ mod mcp;
 mod preview;
 mod registration;
 mod runtime;
+mod runtime_health;
+#[cfg(test)]
+mod runtime_regression;
 mod upgrade;
 mod worker;
 

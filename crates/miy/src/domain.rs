@@ -193,6 +193,7 @@ pub async fn installations(state: &State, p: &Principal) -> ApiResult<Value> {
         let m: Manifest = serde_json::from_value(r.get("manifest"))?;
         out.push(json!({"id":r.get::<Uuid,_>("id"),"appId":app,"name":r.get::<String,_>("name"),"manifestName":m.name,"version":m.version,"acceptance":if manage(state,p,&app,&env).await.is_ok() {r.get::<Option<Value>,_>("acceptance")} else {None},"environment":env,"releaseId":r.get::<Uuid,_>("release_id"),
             "dbStatus":r.get::<String,_>("db_status"),"runtimeStatus":r.get::<String,_>("runtime_status"),"desiredState":r.get::<String,_>("desired_state"),
+            "health":{"status":r.get::<String,_>("health_status"),"consecutiveFailures":r.get::<i32,_>("health_failures"),"checkedAt":r.get::<Option<chrono::DateTime<chrono::Utc>>,_>("health_checked_at"),"errorCode":r.get::<Option<String>,_>("health_error")},
             "canManage":manage(state,p,&app,&env).await.is_ok(),"canPromote":manage(state,p,&app,"prod").await.is_ok(),
             "imageId":r.get::<Option<String>,_>("image_id"),"sourceCommit":r.get::<Option<String>,_>("source_commit"),
             "ui":{"entry":format!("/artifacts/{}/ui/{}",r.get::<String,_>("artifact_hash"),m.ui.module_entry),"export":m.ui.module_export,"contractVersion":m.ui.contract_version},"kind":if r.get::<Option<String>,_>("image_id").is_some(){"docker_app"}else{"validation_fixture"}}));

@@ -10,6 +10,13 @@ export interface Installation {
   canPromote?: boolean;
   dbStatus: string;
   runtimeStatus: string;
+  /** Latest service observation; process state remains in runtimeStatus. */
+  health?: {
+    status: "unknown" | "healthy" | "degraded" | "unhealthy" | "not_applicable";
+    consecutiveFailures: number;
+    checkedAt: string | null;
+    errorCode: string | null;
+  };
   desiredState: string;
   kind: "validation_fixture" | "docker_app";
   canManage?: boolean;

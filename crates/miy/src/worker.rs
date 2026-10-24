@@ -20,6 +20,9 @@ pub async fn run(pool: sqlx::PgPool) -> Result<()> {
     sqlx::query("UPDATE image_uploads SET status='pending' WHERE status='loading'")
         .execute(&pool)
         .await?;
+    // HTTP observations never occupy the deployment/control queue. The task is
+    // aborted before this runner releases its exclusive ownership on shutdown.
+    let _health_monitor = crate::runtime_health::start(pool.clone())?;
     let mut last_reconcile = std::time::Instant::now();
     loop {
         if last_reconcile.elapsed().as_secs() >= 5 {

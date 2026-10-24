@@ -5,6 +5,7 @@ use crate::{
     contract::{self, Manifest},
     domain,
     http::{ApiError, ApiResult},
+    runtime_health::{self, Observation},
 };
 use anyhow::{Context, Result};
 use axum::{
@@ -199,6 +200,39 @@ async fn owned(name: &str, installation: Uuid) -> Result<Value> {
     );
     Ok(value)
 }
+// A successful, exact container listing is the only evidence that absence is safe.
+// Inspect or daemon failures are never treated as "already removed". Use the immutable
+// container ID after ownership validation so a same-name replacement cannot be removed.
+async fn removable_container(name: &str, installation: Uuid) -> Result<Option<Value>> {
+    anyhow::ensure!(
+        name == format!("miy-app-{}", installation.simple()),
+        "unexpected_container_name"
+    );
+    let filter = format!("name=^/{name}$");
+    let id = docker(&[
+        "container",
+        "ls",
+        "--all",
+        "--quiet",
+        "--no-trunc",
+        "--filter",
+        &filter,
+    ])
+    .await?;
+    if id.is_empty() {
+        return Ok(None);
+    }
+    anyhow::ensure!(
+        id.len() == 64 && id.bytes().all(|c| c.is_ascii_hexdigit()),
+        "ambiguous_container_lookup"
+    );
+    let value = owned(&id, installation).await?;
+    anyhow::ensure!(
+        value["Id"] == id && value["Name"] == format!("/{name}"),
+        "container_lookup_mismatch"
+    );
+    Ok(Some(value))
+}
 async fn step(pool: &sqlx::PgPool, id: Uuid, name: &str) -> Result<()> {
     sqlx::query("UPDATE runtime_jobs SET step=$2,updated_at=now() WHERE id=$1")
         .bind(id)
@@ -307,24 +341,35 @@ async fn execute(pool: &sqlx::PgPool, job: &sqlx::postgres::PgRow) -> Result<()>
         let name: String = inst
             .get::<Option<String>, _>("runtime_container")
             .context("not_deployed")?;
+        if action == "remove" {
+            let metadata = removable_container(&name, installation).await?;
+            step(pool, id, "remove").await?;
+            sqlx::query("UPDATE installations SET desired_state='stopped',runtime_status='stopping' WHERE id=$1").bind(installation).execute(pool).await?;
+            if let Some(metadata) = metadata {
+                let container = metadata["Id"].as_str().context("missing_container_id")?;
+                docker(&["stop", "--time", "10", container]).await?;
+                docker(&["rm", container]).await?;
+            }
+            sqlx::query(
+                "UPDATE installations SET runtime_status='removed',runtime_port=NULL WHERE id=$1",
+            )
+            .bind(installation)
+            .execute(pool)
+            .await?;
+            runtime_health::record(pool, installation, Observation::Inactive).await?;
+            return Ok(());
+        }
         owned(&name, installation).await?;
         step(pool, id, &action).await?;
         match action.as_str() {
-            "stop" | "remove" => {
+            "stop" => {
                 sqlx::query("UPDATE installations SET desired_state='stopped',runtime_status='stopping' WHERE id=$1").bind(installation).execute(pool).await?;
                 docker(&["stop", "--time", "10", &name]).await?;
-                if action == "remove" {
-                    docker(&["rm", &name]).await?;
-                }
-                sqlx::query("UPDATE installations SET runtime_status=$2 WHERE id=$1")
+                sqlx::query("UPDATE installations SET runtime_status='stopped' WHERE id=$1")
                     .bind(installation)
-                    .bind(if action == "remove" {
-                        "removed"
-                    } else {
-                        "stopped"
-                    })
                     .execute(pool)
                     .await?;
+                runtime_health::record(pool, installation, Observation::Inactive).await?;
             }
             "start" | "restart" => {
                 anyhow::ensure!(
@@ -368,12 +413,14 @@ async fn execute(pool: &sqlx::PgPool, job: &sqlx::postgres::PgRow) -> Result<()>
                 if let Err(error) = started {
                     let _ = docker(&["stop", "--time", "5", &name]).await;
                     sqlx::query("UPDATE installations SET runtime_status='failed',desired_state='stopped' WHERE id=$1").bind(installation).execute(pool).await?;
+                    runtime_health::record(pool, installation, Observation::Inactive).await?;
                     return Err(error);
                 }
                 sqlx::query("UPDATE installations SET runtime_status='running' WHERE id=$1")
                     .bind(installation)
                     .execute(pool)
                     .await?;
+                runtime_health::record(pool, installation, Observation::Healthy).await?;
             }
             _ => anyhow::bail!("invalid_action"),
         }
@@ -509,6 +556,7 @@ async fn deploy_installation(
     actor: &str,
     inst: &sqlx::postgres::PgRow,
 ) -> Result<()> {
+    runtime_health::record(pool, installation, Observation::Inactive).await?;
     step(pool, job, "stopping_previous").await?;
     sqlx::query(
         "UPDATE installations SET runtime_status='deploying',desired_state='stopped' WHERE id=$1",
@@ -634,6 +682,7 @@ async fn deploy_installation(
     .bind(installation)
     .execute(pool)
     .await?;
+    runtime_health::record(pool, installation, Observation::Healthy).await?;
     Ok(())
 }
 async fn installation_network(installation: Uuid) -> Result<String> {
@@ -680,6 +729,7 @@ pub async fn reconcile(pool: &sqlx::PgPool) -> Result<()> {
                 if !matching || row.get::<String, _>("desired_state") != "running" {
                     let _ = docker(&["stop", "--time", "5", &name]).await;
                     sqlx::query("UPDATE installations SET runtime_status='failed',desired_state='stopped' WHERE id=$1").bind(id).execute(pool).await?;
+                    runtime_health::record(pool, id, Observation::Inactive).await?;
                 } else {
                     let port = published_port(&meta)?;
                     sqlx::query("UPDATE installations SET runtime_port=$2,runtime_status='running' WHERE id=$1").bind(id).bind(port).execute(pool).await?;
@@ -690,11 +740,14 @@ pub async fn reconcile(pool: &sqlx::PgPool) -> Result<()> {
                     .bind(id)
                     .execute(pool)
                     .await?;
+                runtime_health::record(pool, id, Observation::Inactive).await?;
             }
             Err(_) => {
                 sqlx::query("UPDATE installations SET runtime_status='unreachable' WHERE id=$1")
                     .bind(id)
                     .execute(pool)
+                    .await?;
+                runtime_health::record(pool, id, Observation::Unknown("container_unavailable"))
                     .await?;
             }
         }
@@ -702,18 +755,9 @@ pub async fn reconcile(pool: &sqlx::PgPool) -> Result<()> {
     Ok(())
 }
 pub(crate) async fn healthy(port: i32, release: Uuid) -> Result<()> {
-    let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(2))
-        .build()?;
+    let client = runtime_health::client()?;
     for _ in 0..40 {
-        if let Ok(response) = client
-            .get(format!("http://127.0.0.1:{port}/health"))
-            .send()
-            .await
-            && response.status().is_success()
-            && let Ok(value) = response.json::<Value>().await
-            && value["releaseId"] == release.to_string()
-        {
+        if runtime_health::probe(&client, port, release).await.is_ok() {
             return Ok(());
         }
         tokio::time::sleep(Duration::from_millis(500)).await;

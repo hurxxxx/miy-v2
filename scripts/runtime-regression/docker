@@ -1,0 +1,17 @@
+#!/usr/bin/python3
+import os,subprocess,sys,signal,pathlib,json,time
+args=sys.argv[1:]
+root=pathlib.Path(os.environ['MIY_AUDIT_ROOT'])
+if os.environ.get('AUDIT_FAIL_LIST')=='1' and args[:2]==['container','ls']:
+ sys.stderr.write('synthetic Docker transport failure\n');sys.exit(1)
+with (root/'evidence/docker-commands.jsonl').open('a') as f:
+ f.write(json.dumps({'time':time.time(),'args':args})+'\n')
+r=subprocess.run([os.environ['AUDIT_REAL_DOCKER'],*args])
+target=os.environ.get('AUDIT_CRASH_REMOVE')
+if r.returncode==0 and args==['rm',target] and target and len(target)==64 and all(c in '0123456789abcdef' for c in target):
+ expected=int(os.environ.get('AUDIT_WORKER_PID','0'))
+ marker=root/'evidence/remove-crash-triggered.json'
+ if os.getppid()==expected and expected>1 and not marker.exists():
+  marker.write_text(json.dumps({'container':target,'workerPid':expected,'after':'successful docker rm'}))
+  os.kill(expected,signal.SIGKILL)
+sys.exit(r.returncode)
