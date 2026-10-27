@@ -1,6 +1,6 @@
 # miy 앱 개발 흐름과 CLI 계획
 
-2026-10-27 후속 구현 범위는 [CLI 0.5 개선과 Windows 네이티브 지원](CLI-IMPLEMENTATION-PLAN.md)으로 확정했다. 다중 서버 운영, 사람/AI 공통 명령·출력, 사용자 세션 인증, 작업·로그, Windows 11 x64 PowerShell 개발·관리의 상세 계약은 해당 계획을 따른다. 아직 구현 전이며 다른 환경에서 이어갈 작업 순서는 [CLI 개발 인계](CLI-HANDOFF.md)에 있다. 이 문서의 장기 설계 예시와 현재 명령은 구분한다.
+2026-10-27 후속 구현 범위는 [CLI 0.5 개선과 Windows 네이티브 지원](CLI-IMPLEMENTATION-PLAN.md)으로 확정했다. 다중 서버 운영, 사람/AI 공통 명령·출력, 사용자 세션 인증, 작업·로그, Windows 11 x64 PowerShell 개발·관리의 상세 계약은 해당 계획을 따른다. 첫 OS·빌드 기반 구현을 시작했으며 전체 명령·인증·Windows 지원은 미완료다. 다른 환경에서 이어갈 작업 순서는 [CLI 개발 인계](CLI-HANDOFF.md)에 있다. 이 문서의 장기 설계 예시와 현재 명령은 구분한다.
 
 현재 CLI 0.4 / bundle 0.6은 앱의 미저장 상태를 `runtime.registerNavigationGuard`로 등록받아 셸·앱·브라우저 기록 이동을 보호한다. 로컬 preview와 같은 계약이며 앱의 명시적 등록·effect cleanup이 필요하다. 플랫폼 표시 이름은 관리자 메타데이터로 관리하고 배포 이름과 구분한다. 인수 기록은 정확한 릴리스별 검사 범위·실행 계정·결과를 제공한다. 실제 계약·예제는 [번들 계약](../templates/rust-react/docs/CONTRACT.md)과 [검사 기록 형식](../templates/rust-react/docs/ACCEPTANCE.md)을 따른다.
 

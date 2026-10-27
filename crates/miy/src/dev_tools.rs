@@ -2,47 +2,12 @@
 use anyhow::{Context, Result, ensure};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
-use std::{
-    path::{Path, PathBuf},
-    process::Command,
-};
-
-fn cargo_bin() -> Option<PathBuf> {
-    std::env::var_os("CARGO_HOME")
-        .map(PathBuf::from)
-        .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".cargo")))
-        .map(|p| p.join("bin"))
-}
-fn executable_in(program: &str, path: &std::ffi::OsStr, cargo: Option<&Path>) -> Option<PathBuf> {
-    use std::os::unix::fs::PermissionsExt;
-    let executable = |p: &Path| {
-        p.metadata()
-            .is_ok_and(|m| m.is_file() && m.permissions().mode() & 0o111 != 0)
-    };
-    std::env::split_paths(path)
-        .map(|p| p.join(program))
-        .find(|p| executable(p))
-        .or_else(|| {
-            if matches!(program, "cargo" | "rustup" | "rustc") {
-                cargo.map(|p| p.join(program)).filter(|p| executable(p))
-            } else {
-                None
-            }
-        })
-}
+use std::path::{Path, PathBuf};
 pub fn executable(program: &str) -> Result<PathBuf> {
-    executable_in(program,&std::env::var_os("PATH").unwrap_or_default(),cargo_bin().as_deref())
-        .with_context(||format!("missing_tool: {program}; run miy app doctor. Rust: install rustup or add $HOME/.cargo/bin to PATH"))
+    crate::platform::executable(program)
 }
 pub fn tool_path() -> Result<std::ffi::OsString> {
-    let mut paths: Vec<_> =
-        std::env::split_paths(&std::env::var_os("PATH").unwrap_or_default()).collect();
-    if let Some(p) = cargo_bin()
-        && !paths.contains(&p)
-    {
-        paths.insert(0, p);
-    }
-    Ok(std::env::join_paths(paths)?)
+    crate::platform::tool_path()
 }
 #[derive(Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -56,7 +21,7 @@ fn settings() -> Result<Settings> {
 pub fn doctor() -> Result<Value> {
     let tools:Vec<_>=["cargo","pnpm","docker","codex","claude"].iter().map(|name|{
         match executable(name) {
-            Ok(path) => match Command::new(&path).arg("--version").env("PATH",tool_path().unwrap_or_default()).output() {
+            Ok(path) => match crate::platform::command(name, &["--version"]).and_then(|mut command| Ok(command.output()?)) {
                 Ok(out) => json!({"tool":name,"path":path,"ready":out.status.success(),"version":String::from_utf8_lossy(&out.stdout).trim()}),
                 Err(_) => json!({"tool":name,"path":path,"ready":false}),
             },
@@ -80,16 +45,7 @@ pub fn doctor() -> Result<Value> {
     )
 }
 fn private_file(path: &Path, bytes: &[u8]) -> Result<()> {
-    use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
-    let mut f = std::fs::OpenOptions::new()
-        .write(true)
-        .create(true)
-        .truncate(true)
-        .mode(0o600)
-        .open(path)?;
-    f.set_permissions(std::fs::Permissions::from_mode(0o600))?;
-    std::io::Write::write_all(&mut f, bytes)?;
-    Ok(())
+    crate::platform::write_private(path, bytes)
 }
 pub fn setup(url: &str, ca_file: Option<&Path>) -> Result<Value> {
     ensure!(
@@ -128,7 +84,7 @@ pub fn setup(url: &str, ca_file: Option<&Path>) -> Result<Value> {
             "/System/Library/Keychains/SystemRootCertificates.keychain",
             "/Library/Keychains/System.keychain",
         ] {
-            if let Ok(out) = Command::new("security")
+            if let Ok(out) = std::process::Command::new("security")
                 .args(["find-certificate", "-a", "-p", keychain])
                 .output()
                 && out.status.success()
@@ -169,22 +125,23 @@ fn overrides(url: &str) -> Vec<String> {
 }
 pub fn codex(args: &[String]) -> Result<()> {
     if Path::new(".codex/config.toml").is_file() {
-        let status = Command::new(executable("codex")?)
-            .arg("--no-daemon")
-            .args(args)
-            .env("PATH", tool_path()?)
-            .status()?;
+        let mut arguments = vec!["--no-daemon"];
+        arguments.extend(args.iter().map(String::as_str));
+        let status = crate::platform::command("codex", &arguments)?.status()?;
         ensure!(status.success(), "codex_failed");
         return Ok(());
     }
     let s = settings()?;
-    let mut command = Command::new(executable("codex")?);
+    let mut arguments = vec!["--no-daemon".to_owned()];
     // A daemon may predate this project's environment. Keep this launch self-contained.
-    command.arg("--no-daemon");
     for value in overrides(&s.url) {
-        command.args(["-c", &value]);
+        arguments.extend(["-c".into(), value]);
     }
-    command.args(args).env("PATH", tool_path()?);
+    arguments.extend_from_slice(args);
+    let mut command = crate::platform::command(
+        "codex",
+        &arguments.iter().map(String::as_str).collect::<Vec<_>>(),
+    )?;
     if let Some(path) = s.ca_file {
         ensure!(
             path.is_file(),
@@ -204,7 +161,9 @@ pub fn codex(args: &[String]) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(unix)]
     use std::os::unix::fs::PermissionsExt;
+    #[cfg(unix)]
     #[test]
     fn cargo_fallback_works_without_changing_process_environment() {
         let d = tempfile::tempdir().unwrap();
@@ -212,18 +171,20 @@ mod tests {
         std::fs::write(&cargo, "#!/bin/sh\n").unwrap();
         std::fs::set_permissions(&cargo, std::fs::Permissions::from_mode(0o755)).unwrap();
         assert_eq!(
-            executable_in(
+            crate::platform::executable_in(
                 "cargo",
                 std::ffi::OsStr::new("/no/such/directory"),
-                Some(d.path())
+                Some(d.path()),
+                None
             ),
             Some(cargo)
         );
         assert_eq!(
-            executable_in(
+            crate::platform::executable_in(
                 "pnpm",
                 std::ffi::OsStr::new("/no/such/directory"),
-                Some(d.path())
+                Some(d.path()),
+                None
             ),
             None
         );

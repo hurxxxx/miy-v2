@@ -55,7 +55,11 @@ pub fn verify(root: &Path) -> Result<()> {
         "bundle_lock_modified"
     );
     for (path, expected) in protected_hashes() {
-        let actual = root.join(path);
+        let mut actual = root.to_path_buf();
+        for part in path.split('/') {
+            actual.push(part);
+            crate::platform::reject_reparse(&actual)?;
+        }
         ensure!(
             std::fs::symlink_metadata(&actual)?.is_file(),
             "invalid_bundle_file: {path}"

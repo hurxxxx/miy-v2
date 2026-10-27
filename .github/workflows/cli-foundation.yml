@@ -1,0 +1,99 @@
+name: CLI foundation
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  native:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Linux server (default features)
+            id: linux-server
+            os: ubuntu-24.04
+            features: ""
+            target: ""
+            client: false
+          - name: Linux client
+            id: linux-client
+            os: ubuntu-24.04
+            features: --no-default-features
+            target: ""
+            binary: target/debug/miy
+            client: true
+          - name: macOS client
+            id: macos-client
+            os: macos-14
+            features: --no-default-features
+            target: ""
+            binary: target/debug/miy
+            client: true
+          - name: Windows MSVC client
+            id: windows-client
+            os: windows-2022
+            features: --no-default-features
+            target: --target x86_64-pc-windows-msvc
+            binary: target/x86_64-pc-windows-msvc/debug/miy.exe
+            client: true
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install the pinned Rust toolchain
+        run: rustup toolchain install 1.99.1 --profile minimal --component rustfmt --component clippy
+      - name: Check managed source and SQL checkout bytes
+        run: python scripts/check-bundle-portability.py source
+      - name: Check formatting
+        run: cargo +1.99.1 fmt --all -- --check
+      - name: Check this build boundary
+        run: cargo +1.99.1 check --workspace --all-targets --locked ${{ matrix.features }} ${{ matrix.target }}
+      - name: Lint this build boundary
+        run: cargo +1.99.1 clippy --workspace --all-targets --locked ${{ matrix.features }} ${{ matrix.target }} -- -D warnings
+      - name: Run unit tests
+        run: cargo +1.99.1 test --workspace --locked ${{ matrix.features }} ${{ matrix.target }}
+      - name: Build the native client
+        if: matrix.client
+        run: cargo +1.99.1 build --locked ${{ matrix.features }} ${{ matrix.target }}
+      - name: Verify the actual embedded bundle via offline app init
+        if: matrix.client
+        run: python scripts/check-bundle-portability.py check --cli "${{ matrix.binary }}" --output .local/ci/bundle.json
+      - name: Upload the portable bundle manifest
+        if: matrix.client
+        uses: actions/upload-artifact@v4
+        with:
+          name: bundle-${{ matrix.id }}
+          path: .local/ci/bundle.json
+          include-hidden-files: true
+          if-no-files-found: error
+
+  compare-bundles:
+    name: Compare embedded bundle hashes across operating systems
+    needs: native
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: bundle-*-client
+          path: bundle-manifests
+      - name: Compare Linux, macOS and Windows manifests
+        run: python scripts/check-bundle-portability.py compare bundle-manifests/*/bundle.json
+
+# This workflow checks native compilation, unit contracts and offline scaffolding.
+# Windows 11 + PowerShell 5.1/7 + Docker Desktop development/deployment E2E remains
+# a separate release gate; hosted Windows Server runners do not satisfy it.

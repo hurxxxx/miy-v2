@@ -1,7 +1,7 @@
 //! Generic registry client. New component releases do not require a new executable.
 use crate::{
     app_cli::{self, Session},
-    component_registry as registry, contract,
+    component_contract as registry, contract,
 };
 use anyhow::{Context, Result, ensure};
 use clap::Subcommand;
@@ -68,6 +68,7 @@ struct Defaults {
 }
 
 fn regular(path: &Path) -> Result<()> {
+    crate::platform::reject_reparse(path)?;
     ensure!(
         std::fs::symlink_metadata(path)?.is_file(),
         "component_file_must_be_regular: {}",
@@ -91,6 +92,7 @@ fn defaults(root: &Path) -> Result<Defaults> {
 }
 fn load(root: &Path) -> Result<Option<Lock>> {
     let dir = root.join(DIRECTORY);
+    crate::platform::reject_reparse(&dir)?;
     if !dir.try_exists()? {
         return Ok(None);
     }
@@ -137,6 +139,7 @@ fn load(root: &Path) -> Result<Option<Lock>> {
 fn inventory(root: &Path, path: &Path, files: &mut BTreeSet<String>) -> Result<()> {
     for entry in std::fs::read_dir(path)? {
         let entry = entry?;
+        crate::platform::reject_reparse(&entry.path())?;
         let kind = entry.file_type()?;
         if kind.is_dir() {
             inventory(root, &entry.path(), files)?;
@@ -235,6 +238,7 @@ pub fn verify(root: &Path) -> Result<Value> {
 }
 fn operation(root: &Path) -> Result<std::fs::File> {
     let local = root.join(".miy");
+    crate::platform::reject_reparse(&local)?;
     std::fs::create_dir_all(&local)?;
     ensure!(
         std::fs::symlink_metadata(&local)?.is_dir(),
@@ -252,6 +256,7 @@ fn operation(root: &Path) -> Result<std::fs::File> {
     lock.try_lock()
         .context("component_operation_already_running")?;
     let backup = local.join("components-backup");
+    crate::platform::reject_reparse(&backup)?;
     if backup.try_exists()? {
         ensure!(
             std::fs::symlink_metadata(&backup)?.is_dir(),
@@ -518,8 +523,11 @@ mod tests {
         std::fs::remove_file(&file).unwrap();
         assert!(verify(root.path()).is_err());
         assert!(inspect(root.path(), &lock, true).is_ok());
-        std::os::unix::fs::symlink(root.path().join("miy.components.json"), file).unwrap();
-        assert!(inspect(root.path(), &lock, true).is_err());
+        #[cfg(unix)]
+        {
+            std::os::unix::fs::symlink(root.path().join("miy.components.json"), file).unwrap();
+            assert!(inspect(root.path(), &lock, true).is_err());
+        }
     }
     #[test]
     fn interrupted_directory_swap_recovers_and_rejects_concurrent_installers() {

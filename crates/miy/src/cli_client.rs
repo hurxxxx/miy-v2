@@ -54,7 +54,7 @@ pub async fn login(no_open: bool) -> Result<()> {
     let origin = settings["url"].as_str().context("missing_platform_url")?;
     let ca = settings["caFile"].as_str().map(std::path::PathBuf::from);
     let client = client(ca.as_deref(), 20)?;
-    let verifier = crate::auth::random();
+    let verifier = crate::identity::random();
     let flow: Value = client
         .post(format!("{origin}/auth/cli/start"))
         .json(&json!({"challenge":crate::contract::hash(&verifier)}))
@@ -76,15 +76,7 @@ pub async fn login(no_open: bool) -> Result<()> {
         flow["id"]
     );
     if !no_open {
-        #[cfg(target_os = "macos")]
-        let opener = "open";
-        #[cfg(not(target_os = "macos"))]
-        let opener = "xdg-open";
-        let _ = std::process::Command::new(opener)
-            .arg(&url)
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .spawn();
+        let _ = crate::platform::open_browser(&url);
     }
     for _ in 0..150 {
         let value: Value = client
@@ -131,7 +123,7 @@ pub async fn upload(s: &Session, app: &str, image: &str) -> Result<()> {
     let result = async {
         let size = tokio::fs::metadata(&path).await?.len();
         ensure!(
-            size <= crate::delivery::MAX_ARCHIVE,
+            size <= crate::image_contract::MAX_ARCHIVE,
             "image_archive_exceeds_1GiB"
         );
         let mut file = tokio::fs::File::open(&path).await?;

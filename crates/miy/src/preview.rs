@@ -1,9 +1,8 @@
 //! Local preview uses its own PostgreSQL and app container. Server credentials stay in this gateway.
 use crate::{
+    api_error::{ApiError, ApiResult},
     app_cli::{self, Session},
-    auth, contract,
-    http::{ApiError, ApiResult},
-    runtime,
+    contract, docker as runtime, identity as auth,
 };
 use anyhow::{Context, Result, ensure};
 use axum::{
@@ -252,15 +251,7 @@ async fn serve_preview(
         .layer(middleware::from_fn_with_state(state.clone(), guard))
         .with_state(state);
     if !no_open {
-        #[cfg(target_os = "macos")]
-        let opener = "open";
-        #[cfg(not(target_os = "macos"))]
-        let opener = "xdg-open";
-        let _ = std::process::Command::new(opener)
-            .arg(&url)
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .spawn();
+        let _ = crate::platform::open_browser(&url);
     }
     axum::serve(listener, app)
         .with_graceful_shutdown(async move {
@@ -442,15 +433,7 @@ async fn start(
     Ok((port, secret, installation, release))
 }
 fn private_env(path: &std::path::Path, value: &str) -> Result<()> {
-    use std::os::unix::fs::OpenOptionsExt;
-    let mut f = std::fs::OpenOptions::new()
-        .write(true)
-        .create(true)
-        .truncate(true)
-        .mode(0o600)
-        .open(path)?;
-    std::io::Write::write_all(&mut f, value.as_bytes())?;
-    Ok(())
+    crate::platform::write_private(path, value.as_bytes())
 }
 async fn guard(State(s): State<Arc<Preview>>, req: Request, next: Next) -> Response {
     let expected = s.origin.strip_prefix("http://").unwrap();
@@ -534,7 +517,7 @@ async fn backend(
     let user = app_cli::api(&s.session, "/api/v1/me", None)
         .await
         .map_err(|_| ApiError::unauthorized())?;
-    let token = runtime::sign_identity(
+    let token = auth::sign_identity(
         user["id"].as_str().ok_or_else(ApiError::unauthorized)?,
         user["admin"] == true,
         s.installation,

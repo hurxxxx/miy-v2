@@ -1,8 +1,8 @@
 # 구현과 검증 결과
 
-현재 코드 기준은 CLI 0.4.2 / 개발 번들 0.6.1이다. [에이전트 진입 안내 보완](#에이전트-진입-안내-보완-2026-10-23-cli-042--bundle-061)과 [런타임 관찰·앱 실행 경계 보완](#런타임-관찰과-앱-실행-경계-보완-2026-10-24)이 최신 구현 이력이다. 아래 실행 상태와 검증 결과는 각 기록일 기준이며 현재 서버의 가동 상태를 뜻하지 않는다.
+현재 코드 기준은 CLI 0.4.2 / 개발 번들 0.6.1이다. [에이전트 진입 안내 보완](#에이전트-진입-안내-보완-2026-10-23-cli-042--bundle-061)과 [런타임 관찰·앱 실행 경계 보완](#런타임-관찰과-앱-실행-경계-보완-2026-10-24)까지의 구현 이력을 유지하며, 이후 변경은 [CLI 0.5 기반 구현](#cli-05-기반-구현-착수-2026-10-27)에 기록한다. 아래 실행 상태와 검증 결과는 각 기록일 기준이며 현재 서버의 가동 상태를 뜻하지 않는다.
 
-2026-10-27에 합의한 [CLI 0.5·Windows 지원 계획](CLI-IMPLEMENTATION-PLAN.md)은 아직 구현 전이다. 다른 환경에서 이어갈 기준 코드와 기존 검사 결과는 [개발 인계](CLI-HANDOFF.md)를 따른다.
+2026-10-27에 합의한 [CLI 0.5·Windows 지원 계획](CLI-IMPLEMENTATION-PLAN.md)은 첫 OS·빌드 기반 구현에 착수했다. 전체 0.5 기능·Windows 지원은 미완료이며 [기반 구현 기록](#cli-05-기반-구현-착수-2026-10-27)을 따른다. 다른 환경에서 이어갈 기준 코드와 기존 검사 결과는 [개발 인계](CLI-HANDOFF.md)를 따른다.
 
 당시 실행 상태(2026-10-22 플랫폼·CLI 개선 후): 앱 `my-cli-test`는 메모 0.1.1에서 메모·할 일 0.2.0으로 dev 업데이트됐으며 prod 설치는 없다. 아래 [독립 Codex 세션 재검토](#독립-codex-세션-재검토-2026-10-22)와 [할 일 추가 요청 검토](#할-일-추가-요청과-업데이트-배포-검토)에 실제 실행 상태와 보완점을 기록했다. 이후 플랫폼·CLI에 적용한 수정은 [운영 개선 결과](#플랫폼cli-운영-개선-cli-040--bundle-060)를 따른다.
 
@@ -431,3 +431,41 @@ HTTP 상태 검사를 단일 제어 큐에서 분리했다. worker에 종속된 
 - Rust 단위 검사 19개, TypeScript, fmt, Clippy 경고 금지, diff 검사를 통과했다. 기본 Rust 실행에서 제외되는 기존 공유 DB 통합 검사 1개는 재실행하지 않았고, 격리 회귀 및 자식 worker 검사는 전용 실행기로 수행했다.
 
 실제 회귀 증거는 `.local/evidence/runtime-boundaries/miy-runtime-regression-fb87f84_/`의 results.jsonl·cleanup.json이다. UI 증거는 `.local/evidence/runtime-health-ui/results/`에 있다. 기존 실행 서비스와 사용자 앱 소스는 유지했으며 이번 변경을 현재 서버에 재배포하거나 migration 0008을 적용하지 않았다. 재현 명령은 [격리 런타임 회귀 안내](../scripts/runtime-regression/README.md)를 따른다.
+
+
+## CLI 0.5 기반 구현 착수 (2026-10-27)
+
+`9757cc8`의 계획을 코드와 대조한 뒤 사용자 승인으로 문서 보완과 첫 기반 구현을 진행했다. 기준 commit 이후의 작업 트리 변경이며 버전은 CLI 0.4.2 / bundle 0.6.1이다. CLI 0.5 전체 기능이나 Windows 지원 완료를 뜻하지 않는다.
+
+계획에는 새 환경 기준선·별도 Linux 서버 실증, 1A부터 Windows MSVC CI, 생성/업그레이드 앱의 줄바꿈 정책, 파일 교체 복구 설계, retry보다 앞선 preflight/expected-state·타입별 오류 계약을 추가했다. 사용자 비활성화의 원천·세션/작업 차단 전파와 지연을 인증 구현의 선행 확정 항목으로 뒀다. 요청 유실 복구는 이미지 업로드 접수·식별·재조회까지 포함하고, 바이트 범위 전송 재개와 구분했다.
+
+구현한 사항:
+
+- 기본 `server` feature는 기존 Unix 서버 명령과 실행 경로를 유지한다. `--no-default-features` 클라이언트는 서버 상태·인증·라우터·DB 작업 실행 모듈과 네 서버 명령을 제외한다. 공유 HTTP 오류·앱 identity·컴포넌트 계약·Docker 호출·health probe를 추출하여 preview가 코어 모듈에 의존하지 않도록 했다. 로컬 preview의 Axum/SQLx 의존성은 유지한다.
+- `platform.rs`로 실행 파일 탐색·`.exe` 경로·PATHEXT·배치 인수 제한·브라우저 실행·파일 기록/교체를 모았다. Unix 비밀 파일은 0600, Windows는 생성 시 current-user SID 전용 protected DACL을 설정하고 검증한 뒤 내용을 쓴다. 이 Windows 경로는 타입검사만 수행했다. MCP 설정은 다른 서버의 자격증명을 포함할 수 있어 사용자 전용 저장을 사용한다.
+- 템플릿과 산출물 해시의 논리 경로를 `/`로 통일하고 관리 텍스트 LF를 검사한다. 저장소 및 init/setup/upgrade의 관리 `.gitattributes`로 SDK·지침·보호 설정의 checkout 바이트를 고정한다. 기존 SQL과 불변 컴포넌트 스냅샷은 `-text`로 원본 바이트를 보존한다. 사용자 `.gitattributes` 충돌을 덮어쓰지 않는다. 기존 SDK 보호 파일·SQL·컴포넌트 릴리스는 변경하지 않았다.
+- Linux 서버/클라이언트, macOS 클라이언트, Windows MSVC 클라이언트의 빌드·Clippy·단위 검사와 실제 init 결과의 OS 간 해시 비교 CI를 추가했다. CI 설정 추가와 해당 OS에서 실행한 결과는 구분한다.
+
+검증 환경은 Linux x86_64, Rust 1.99.1, Node 22.22.1, pnpm 10.34.5, Docker Engine 29.7.2다. 변경 전 `9757cc8`을 별도 작업본에 추출하여 Rust **19개 통과/3개 ignored**, 실제 Docker/PostgreSQL 격리 회귀 **29개 통과**를 먼저 확인했다.
+
+변경 후 검사:
+
+| 검사 | 결과 |
+| --- | --- |
+| 기본 서버 Rust 단위 검사 | 25개 통과, 전용 실행기가 필요한 기존 검사 3개 ignored |
+| 서버 없는 클라이언트 Rust 단위 검사 | 22개 통과 |
+| fmt / 서버·클라이언트 Clippy `-D warnings` | 통과 |
+| 실제 Docker/PostgreSQL 격리 런타임 회귀 | 29개 통과, 정리 오류 없음, 기존 컨테이너 ID·이미지·시작 시각 보존 |
+| TypeScript / 격리 브라우저 회귀 | 통과 / 4개 통과 |
+| 준비 실패 정리 검사 | 1개 테스트 안의 3개 실패 시나리오 통과 |
+| CLI init/setup/동일 번들 upgrade·stdio MCP | 이전 기준 CLI에서 전환, 업무/보호 파일 보존, 지침 충돌 거부, 다른 MCP 설정·사용자 전용 권한 보존 통과 |
+| 번들·줄바꿈 | 한글·공백 경로의 실제 init 31개 파일·보호 해시 확인, `autocrlf=true` Git clone 후 관리 파일·SQL·CRLF 컴포넌트 바이트 보존 |
+| Windows OS 모듈 | 별도 최소 crate에서 `x86_64-pc-windows-msvc --all-targets` 타입검사 통과; 전체 CLI 링크·실행 결과가 아님 |
+
+기존 CLI 지침 회귀 스크립트는 Linux에서 방금 실행한 fixture 바이너리를 직접 덮어쓸 때 `ETXTBSY`가 발생했다. fixture 준비를 임시 파일 복사 후 rename으로 바꿔 같은 전환 검사를 통과했다. SDK 0.6.0→0.6.1 전환과 플랫폼 로그인이 필요한 전체 앱 check는 이번 지침 검사에서 실행하지 않았다.
+
+전체 Windows 교차 검사는 `ring`의 C 빌드에 필요한 MSVC `lib.exe`가 없어 진행하지 못했다. Windows 네이티브 CI, 실제 Windows 11/PowerShell 5.1·7, macOS 네이티브 실행, 별도 원격 Linux 서버 인증·전송·UI는 미검증이다. Windows 프로세스 Job Object와 setup/upgrade 여러 파일의 staging·중단 복구는 후속 구현이다. CLI 0.5 출력·context·갱신 인증·작업 이벤트·로그·dry-run도 아직 구현하지 않았다.
+
+사용자 요청에 따라 Windows의 준비·빌드·검증·로컬 ZIP/SHA-256 생성 방법과 실행별 기록 양식을 [Windows 전용 안내](WINDOWS-VALIDATION.md)로 분리했다. 실제 Windows 실행은 사용자가 수행하고 결과를 전달한 뒤 문서를 갱신한다. 문서 작성은 Windows 검사 통과를 뜻하지 않으며, 해당 결과를 기다리는 동안 독립적인 다음 구현은 진행한다.
+
+검사 로그와 이전/이후 런타임 results·cleanup 요약은 `.local/evidence/cli-foundation/`에 보관한다. 원본 런타임 증거는 `/tmp/miy-runtime-regression-_dnc26yl/evidence/`(기준 코드), `/tmp/miy-runtime-regression-eunf2qhz/evidence/`(변경 후)에 있다. 이 경로는 현재 환경의 로컬 기록이며 Git으로 전달되지 않는다. 실행 중인 플랫폼·사용자 앱에 배포하거나 기존 서버 DB migration을 적용하지 않았다.

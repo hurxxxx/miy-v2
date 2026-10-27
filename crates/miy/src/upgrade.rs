@@ -46,8 +46,11 @@ pub async fn run() -> Result<Value> {
         for path in ["AGENTS.md", "CLAUDE.md", "miy.bundle.json"] {
             std::fs::copy(path, backup.join(path))?;
         }
-        if Path::new(".miy-tools/miy").is_file() {
-            std::fs::copy(".miy-tools/miy", backup.join("miy-previous"))?;
+        if crate::platform::project_cli(Path::new(".")).is_file() {
+            std::fs::copy(
+                crate::platform::project_cli(Path::new(".")),
+                backup.join("miy-previous"),
+            )?;
         }
         for (path, content) in crate::bundle::template() {
             if matches!(*path, "AGENTS.md" | "CLAUDE.md") {
@@ -170,18 +173,20 @@ pub async fn run() -> Result<Value> {
     if Path::new("pnpm-lock.yaml").exists() {
         std::fs::copy("pnpm-lock.yaml", stage.join("pnpm-lock.yaml"))?;
     }
-    let resolved = std::process::Command::new(crate::dev_tools::executable("pnpm")?)
-        .args([
+    let resolved = crate::platform::command(
+        "pnpm",
+        &[
             "install",
             "--lockfile-only",
             "--ignore-scripts",
             "--ignore-workspace",
-        ])
-        .current_dir(&stage)
-        .env("PATH", crate::dev_tools::tool_path()?)
-        .env("CI", "true")
-        .stdout(std::process::Stdio::from(std::io::stderr()))
-        .status()?;
+        ],
+    )?
+    .current_dir(&stage)
+    .env("PATH", crate::dev_tools::tool_path()?)
+    .env("CI", "true")
+    .stdout(std::process::Stdio::from(std::io::stderr()))
+    .status()?;
     ensure!(
         resolved.success(),
         "upgrade_dependency_resolution_failed: application files unchanged"
@@ -206,8 +211,11 @@ pub async fn run() -> Result<Value> {
         crate::component_cli::initialize(Path::new("."), &session, default_ui)?;
     }
     std::fs::create_dir_all(".miy-tools")?;
-    if Path::new(".miy-tools/miy").is_file() {
-        std::fs::copy(".miy-tools/miy", backup.join("miy-previous"))?;
+    if crate::platform::project_cli(Path::new(".")).is_file() {
+        std::fs::copy(
+            crate::platform::project_cli(Path::new(".")),
+            backup.join("miy-previous"),
+        )?;
     }
     crate::agent_tools::setup(Path::new("."))?;
     Ok(

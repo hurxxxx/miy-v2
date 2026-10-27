@@ -1,4 +1,5 @@
 //! Bounded authenticated archive transfer. Only the worker can load Docker images.
+pub use crate::image_contract::MAX_ARCHIVE;
 use crate::{
     State,
     auth::Principal,
@@ -16,7 +17,6 @@ use sha2::{Digest, Sha256};
 use sqlx::Row;
 use tokio::io::AsyncWriteExt;
 use uuid::Uuid;
-pub const MAX_ARCHIVE: u64 = 1024 * 1024 * 1024;
 fn root() -> anyhow::Result<std::path::PathBuf> {
     Ok(std::path::PathBuf::from(std::env::var("MIY_ARTIFACTS")?).join(".uploads"))
 }

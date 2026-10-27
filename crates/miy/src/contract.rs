@@ -1,5 +1,7 @@
 use serde::{Deserialize, Serialize};
+use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
+#[cfg(any(feature = "server", test))]
 use std::path::{Component, Path};
 
 pub const VERSION: &str = "miy.app/v1alpha1";
@@ -50,9 +52,9 @@ pub fn valid_id(s: &str) -> bool {
 pub fn safe_relative(s: &str) -> bool {
     !s.is_empty()
         && !s.contains('\\')
-        && Path::new(s)
-            .components()
-            .all(|c| matches!(c, Component::Normal(_)))
+        && !s.contains(':')
+        && s.split('/')
+            .all(|p| !p.is_empty() && !matches!(p, "." | ".."))
 }
 pub fn validate(m: &Manifest) -> Result<(), String> {
     if m.contract_version != VERSION
@@ -99,11 +101,13 @@ pub fn valid_permission(p: &str) -> bool {
 pub fn hash(s: impl AsRef<[u8]>) -> String {
     hex::encode(Sha256::digest(s.as_ref()))
 }
+#[cfg(any(feature = "server", test))]
 pub fn artifact_hash(root: &Path) -> anyhow::Result<String> {
     fn visit(root: &Path, path: &Path, out: &mut Vec<(String, String)>) -> anyhow::Result<()> {
         for ent in std::fs::read_dir(path)? {
             let ent = ent?;
             let p = ent.path();
+            crate::platform::reject_reparse(&p)?;
             let meta = std::fs::symlink_metadata(&p)?;
             anyhow::ensure!(!meta.file_type().is_symlink(), "symlink_in_artifact");
             if meta.is_dir() {
@@ -111,9 +115,15 @@ pub fn artifact_hash(root: &Path) -> anyhow::Result<String> {
             } else if meta.is_file() {
                 let rel = p
                     .strip_prefix(root)?
-                    .to_str()
-                    .ok_or_else(|| anyhow::anyhow!("non_utf8_path"))?
-                    .to_string();
+                    .components()
+                    .map(|part| match part {
+                        Component::Normal(name) => name
+                            .to_str()
+                            .ok_or_else(|| anyhow::anyhow!("non_utf8_path")),
+                        _ => anyhow::bail!("invalid_artifact_path"),
+                    })
+                    .collect::<anyhow::Result<Vec<_>>>()?
+                    .join("/");
                 anyhow::ensure!(safe_relative(&rel), "invalid_artifact_path");
                 out.push((rel, hash(std::fs::read(p)?)));
             }
@@ -130,6 +140,7 @@ pub fn artifact_hash(root: &Path) -> anyhow::Result<String> {
             .collect::<String>(),
     ))
 }
+#[cfg(feature = "server")]
 pub fn verified_artifact(root: &Path, id: &str) -> anyhow::Result<std::path::PathBuf> {
     anyhow::ensure!(
         id.len() == 64
@@ -142,12 +153,19 @@ pub fn verified_artifact(root: &Path, id: &str) -> anyhow::Result<std::path::Pat
     anyhow::ensure!(artifact_hash(&path)? == id, "artifact_hash_mismatch");
     Ok(path)
 }
+
+pub fn get_contract() -> Value {
+    json!({"version":VERSION,"bundleVersion":crate::bundle::VERSION,"uiVersion":"miy.ui/v1alpha1","manifestSchema":schemars::schema_for!(Manifest),"guidance":crate::bundle::GUIDANCE,"agentGuidance":crate::bundle::AGENT_GUIDANCE,"cliVersion":crate::cli_guidance::VERSION,"cliGuidance":crate::cli_guidance::manual(),"protectedFiles":crate::bundle::protected_hashes(),"sdkExample":"export default function AppRoot({runtime}) { return <button onClick={() => runtime.navigate('/detail/1')}>Open</button>; }"})
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     #[test]
     fn paths_are_bounded() {
-        for s in ["../x", "/tmp/x", "a/../b", "a\\b", ""] {
+        for s in [
+            "../x", "/tmp/x", "a/../b", "a\\b", "", "C:drive", "a:b", "a//b", "a/./b",
+        ] {
             assert!(!safe_relative(s), "{s}");
         }
         assert!(safe_relative("assets/entry.js"));
@@ -159,6 +177,17 @@ mod tests {
         let h = artifact_hash(d.path()).unwrap();
         std::fs::write(d.path().join("a"), "two").unwrap();
         assert_ne!(h, artifact_hash(d.path()).unwrap());
+    }
+    #[test]
+    fn nested_artifact_hash_uses_logical_paths_and_preserves_sql_bytes() {
+        let root = tempfile::tempdir().unwrap();
+        std::fs::create_dir(root.path().join("migrations")).unwrap();
+        let sql = b"SELECT 1;\r\n";
+        std::fs::write(root.path().join("migrations/0001_initial.sql"), sql).unwrap();
+        assert_eq!(
+            artifact_hash(root.path()).unwrap(),
+            hash(format!("migrations/0001_initial.sql\0{}\n", hash(sql)))
+        );
     }
     #[test]
     fn ui_registration_requires_federation_manifest() {

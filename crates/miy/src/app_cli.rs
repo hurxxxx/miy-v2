@@ -6,10 +6,7 @@ use anyhow::{Context, Result};
 use clap::Subcommand;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
-use std::{
-    path::{Path, PathBuf},
-    process::Command,
-};
+use std::path::{Path, PathBuf};
 
 #[derive(Subcommand)]
 pub enum AppCommand {
@@ -166,9 +163,7 @@ pub(crate) struct Session {
     pub ca_file: Option<PathBuf>,
 }
 pub(crate) fn run(program: &str, args: &[&str]) -> Result<()> {
-    let status = Command::new(crate::dev_tools::executable(program)?)
-        .args(args)
-        .env("PATH", crate::dev_tools::tool_path()?)
+    let status = crate::platform::command(program, args)?
         .env("CI", "true")
         .stdout(std::process::Stdio::from(std::io::stderr()))
         .status()
@@ -181,7 +176,7 @@ pub(crate) fn run(program: &str, args: &[&str]) -> Result<()> {
     Ok(())
 }
 fn output(program: &str, args: &[&str]) -> Result<String> {
-    let out = Command::new(program).args(args).output()?;
+    let out = crate::platform::command(program, args)?.output()?;
     anyhow::ensure!(out.status.success(), "command_failed: {program}");
     Ok(String::from_utf8(out.stdout)?.trim().to_string())
 }
@@ -235,23 +230,7 @@ pub(crate) async fn api_method(
     Ok(value)
 }
 pub(crate) fn save(path: &str, value: &Value) -> Result<()> {
-    use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
-    if let Some(parent) = Path::new(path).parent() {
-        std::fs::create_dir_all(parent)?;
-    }
-    let mut options = std::fs::OpenOptions::new();
-    let temporary = Path::new(path).with_extension(format!("tmp-{}", uuid::Uuid::new_v4()));
-    let mut file = options
-        .write(true)
-        .create(true)
-        .truncate(true)
-        .mode(0o600)
-        .open(&temporary)?;
-    file.set_permissions(std::fs::Permissions::from_mode(0o600))?;
-    std::io::Write::write_all(&mut file, serde_json::to_string_pretty(value)?.as_bytes())?;
-    file.sync_all()?;
-    std::fs::rename(temporary, path)?;
-    Ok(())
+    crate::platform::write_private(Path::new(path), &serde_json::to_vec_pretty(value)?)
 }
 async fn wait(s: &Session, job: Value) -> Result<Value> {
     let id = job["id"].as_str().context("missing_job_id")?;
@@ -524,7 +503,10 @@ pub async fn execute(command: AppCommand) -> Result<()> {
                 )?,
             )?;
             std::fs::create_dir_all(path.join(".miy-tools"))?;
-            std::fs::copy(std::env::current_exe()?, path.join(".miy-tools/miy"))?;
+            crate::platform::install_executable(
+                &std::env::current_exe()?,
+                &crate::platform::project_cli(&path),
+            )?;
             crate::cli_client::configure(&path, &url, ca_file.as_deref())?;
             crate::agent_tools::setup(&path)?;
             println!(
@@ -558,7 +540,7 @@ pub async fn execute(command: AppCommand) -> Result<()> {
             let u = url::Url::parse(&url)?;
             anyhow::ensure!(
                 contract::valid_id(&account)
-                    && crate::auth::development_profile(Some("1"), &url, &url),
+                    && crate::identity::development_profile(Some("1"), &url, &url),
                 "development_login_requires_loopback_origin"
             );
             let origin = u.origin().ascii_serialization();

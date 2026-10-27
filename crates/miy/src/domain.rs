@@ -292,9 +292,7 @@ pub async fn grant(state: &State, p: &Principal, v: Grant) -> ApiResult<Value> {
     }
     Ok(json!({"updated":true}))
 }
-pub fn get_contract() -> Value {
-    json!({"version":contract::VERSION,"bundleVersion":crate::bundle::VERSION,"uiVersion":"miy.ui/v1alpha1","manifestSchema":schemars::schema_for!(Manifest),"guidance":crate::bundle::GUIDANCE,"agentGuidance":crate::bundle::AGENT_GUIDANCE,"cliVersion":crate::cli_guidance::VERSION,"cliGuidance":crate::cli_guidance::manual(),"protectedFiles":crate::bundle::protected_hashes(),"sdkExample":"export default function AppRoot({runtime}) { return <button onClick={() => runtime.navigate('/detail/1')}>Open</button>; }"})
-}
+pub use crate::contract::get_contract;
 pub fn catalog() -> Value {
     json!([
         {"id":"list_components","method":"GET","path":"/api/v1/components","permission":"authenticated","description":"Live versioned component catalog, independent of CLI releases; compatibility and sha256 included"},

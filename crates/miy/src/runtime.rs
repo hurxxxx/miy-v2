@@ -1,4 +1,6 @@
 //! Local single-host image store + persistent Docker deployment runner.
+pub(crate) use crate::docker::{docker, healthy, inspect};
+pub(crate) use crate::identity::sign_identity;
 use crate::{
     State,
     auth::{self, Principal},
@@ -19,7 +21,6 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use sqlx::Row;
 use std::{path::PathBuf, time::Duration};
-use tokio::process::Command;
 use uuid::Uuid;
 
 struct RemoveFileOnDrop(std::path::PathBuf);
@@ -176,21 +177,6 @@ pub async fn job(state: &State, p: &Principal, id: Uuid) -> ApiResult<Value> {
     Ok(
         json!({"id":id,"appId":row.get::<String,_>("app_id"),"environment":row.get::<String,_>("environment"),"action":row.get::<String,_>("action"),"status":row.get::<String,_>("status"),"step":row.get::<String,_>("step"),"errorCode":row.get::<Option<String>,_>("error_code"),"installationId":row.get::<Option<Uuid>,_>("installation_id"),"releaseId":row.get::<Option<Uuid>,_>("release_id")}),
     )
-}
-pub(crate) async fn docker(args: &[&str]) -> Result<String> {
-    let child = Command::new("docker")
-        .args(args)
-        .kill_on_drop(true)
-        .output();
-    let out = tokio::time::timeout(Duration::from_secs(90), child)
-        .await
-        .context("docker_timeout")??;
-    anyhow::ensure!(out.status.success(), "docker_command_failed");
-    Ok(String::from_utf8(out.stdout)?.trim().to_string())
-}
-pub(crate) async fn inspect(name: &str) -> Result<Value> {
-    let value: Value = serde_json::from_str(&docker(&["inspect", name]).await?)?;
-    Ok(value[0].clone())
 }
 async fn owned(name: &str, installation: Uuid) -> Result<Value> {
     let value = inspect(name).await?;
@@ -754,54 +740,11 @@ pub async fn reconcile(pool: &sqlx::PgPool) -> Result<()> {
     }
     Ok(())
 }
-pub(crate) async fn healthy(port: i32, release: Uuid) -> Result<()> {
-    let client = runtime_health::client()?;
-    for _ in 0..40 {
-        if runtime_health::probe(&client, port, release).await.is_ok() {
-            return Ok(());
-        }
-        tokio::time::sleep(Duration::from_millis(500)).await;
-    }
-    anyhow::bail!("app_health_failed")
-}
 fn published_port(meta: &Value) -> Result<i32> {
     Ok(meta["NetworkSettings"]["Ports"]["8080/tcp"][0]["HostPort"]
         .as_str()
         .context("missing_runtime_port")?
         .parse()?)
-}
-#[derive(Serialize)]
-struct Claims {
-    sub: String,
-    admin: bool,
-    installation_id: Uuid,
-    release_id: Uuid,
-    iss: &'static str,
-    aud: &'static str,
-    exp: i64,
-}
-pub(crate) fn sign_identity(
-    user: &str,
-    admin: bool,
-    installation: Uuid,
-    release: Uuid,
-    secret: &str,
-) -> ApiResult<String> {
-    let claims = Claims {
-        sub: user.into(),
-        admin,
-        installation_id: installation,
-        release_id: release,
-        iss: "miy",
-        aud: "miy-app",
-        exp: chrono::Utc::now().timestamp() + 30,
-    };
-    jsonwebtoken::encode(
-        &jsonwebtoken::Header::new(jsonwebtoken::Algorithm::HS256),
-        &claims,
-        &jsonwebtoken::EncodingKey::from_secret(secret.as_bytes()),
-    )
-    .map_err(|_| ApiError::unavailable("gateway_identity_failed"))
 }
 pub async fn proxy(
     S(state): S<State>,

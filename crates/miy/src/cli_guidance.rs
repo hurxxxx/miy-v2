@@ -9,6 +9,24 @@ const PROTOCOL: &str = "miy.cli-guidance/v1";
 const LOCK: &str = "miy.cli.json";
 pub const WORKFLOW: &str = include_str!("../guidance/miy-cli/references/workflow.md");
 const SKILL: &str = include_str!("../guidance/miy-cli/SKILL.md");
+const GIT_ATTRIBUTES: &str = "# Managed by miy app setup. Preserve SQL bytes across operating systems.\n\
+/.gitattributes text eol=lf\n\
+/sdk/** text eol=lf\n\
+/Dockerfile text eol=lf\n\
+/rust-toolchain.toml text eol=lf\n\
+/AGENTS.md text eol=lf\n\
+/CLAUDE.md text eol=lf\n\
+/docs/CONTRACT.md text eol=lf\n\
+/docs/CLI.md text eol=lf\n\
+/docs/ACCEPTANCE.md text eol=lf\n\
+/docs/CLI-REFERENCE.md text eol=lf\n\
+/.agents/skills/** text eol=lf\n\
+/.claude/skills/** text eol=lf\n\
+/platform-components/** -text\n\
+/miy.cli.json text eol=lf\n\
+/miy.bundle.json text eol=lf\n\
+/miy.components.json text eol=lf\n\
+*.sql -text\n";
 
 pub fn command_reference() -> String {
     let help = crate::agent_tools::cli_help();
@@ -37,7 +55,10 @@ pub fn manual() -> String {
     )
 }
 fn files() -> BTreeMap<String, String> {
-    let mut files = BTreeMap::from([("docs/CLI-REFERENCE.md".into(), manual())]);
+    let mut files = BTreeMap::from([
+        ("docs/CLI-REFERENCE.md".into(), manual()),
+        (".gitattributes".into(), GIT_ATTRIBUTES.into()),
+    ]);
     let skill = format!(
         "{SKILL}\nInstalled CLI: {VERSION}. SDK bundle: {}.\n",
         crate::bundle::VERSION
@@ -71,11 +92,12 @@ fn expected(files: &BTreeMap<String, String>) -> Lock {
     }
 }
 // Never follow project-owned symlinks into another project or global agent directory.
-fn safe_target(root: &Path, relative: &str) -> Result<()> {
+pub(crate) fn safe_target(root: &Path, relative: &str) -> Result<()> {
     let mut path = root.to_path_buf();
     let parts: Vec<_> = Path::new(relative).components().collect();
     for (index, part) in parts.iter().enumerate() {
         path.push(part);
+        crate::platform::reject_reparse(&path)?;
         match std::fs::symlink_metadata(&path) {
             Ok(meta) => ensure!(
                 if index + 1 == parts.len() {
@@ -129,18 +151,7 @@ pub fn preflight(root: &Path) -> Result<()> {
     Ok(())
 }
 fn atomic_write(path: &Path, contents: &[u8]) -> Result<()> {
-    if std::fs::read(path).ok().as_deref() == Some(contents) {
-        return Ok(());
-    }
-    std::fs::create_dir_all(path.parent().context("missing_parent")?)?;
-    let temp = path.with_file_name(format!(".miy-guidance-{}", uuid::Uuid::new_v4()));
-    std::fs::write(&temp, contents)?;
-    let result = std::fs::rename(&temp, path);
-    if result.is_err() {
-        let _ = std::fs::remove_file(&temp);
-    }
-    result?;
-    Ok(())
+    crate::platform::atomic_write(path, contents)
 }
 pub fn sync(root: &Path) -> Result<Value> {
     preflight(root)?;
@@ -194,26 +205,37 @@ pub fn operation(root: &Path) -> Result<std::fs::File> {
     Ok(lock)
 }
 pub fn install_binary(root: &Path) -> Result<()> {
-    safe_target(root, ".miy-tools/miy")?;
-    let source = std::env::current_exe()?.canonicalize()?;
-    let target = root.join(".miy-tools/miy");
-    if target.canonicalize().ok().as_ref() == Some(&source) {
-        return Ok(());
-    }
-    std::fs::create_dir_all(target.parent().unwrap())?;
-    let temporary = target.with_file_name(format!(".miy-update-{}", uuid::Uuid::new_v4()));
-    std::fs::copy(source, &temporary)?;
-    let result = std::fs::rename(&temporary, target);
-    if result.is_err() {
-        let _ = std::fs::remove_file(&temporary);
-    }
-    result.context("project_cli_update_failed: close this project's running CLI/MCP processes and retry app setup")?;
-    Ok(())
+    safe_target(root, crate::platform::project_cli_relative())?;
+    crate::platform::install_executable(
+        &std::env::current_exe()?,
+        &crate::platform::project_cli(root),
+    )
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn line_endings_are_managed_without_overwriting_custom_attributes() {
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join(".gitattributes");
+        std::fs::write(&path, "custom attributes\n").unwrap();
+        assert!(preflight(root.path()).is_err());
+        assert_eq!(
+            std::fs::read_to_string(&path).unwrap(),
+            "custom attributes\n"
+        );
+        std::fs::remove_file(&path).unwrap();
+        sync(root.path()).unwrap();
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), GIT_ATTRIBUTES);
+        assert!(
+            load(root.path())
+                .unwrap()
+                .unwrap()
+                .files
+                .contains_key(".gitattributes")
+        );
+    }
     #[test]
     fn guidance_update_checks_integrity_and_recovers_partial_writes() {
         let root = tempfile::tempdir().unwrap();

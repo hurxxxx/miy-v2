@@ -4,9 +4,13 @@ version = "0.4.2"
 edition = "2024"
 rust-version = "1.99"
 
+[features]
+default = ["server"]
+server = ["dep:aes-gcm"]
+
 [dependencies]
 anyhow = "1"
-aes-gcm = "0.10"
+aes-gcm = { version = "0.10", optional = true }
 axum = { version = "=0.8.9", features = ["macros"] }
 base64 = "0.22"
 chrono = { version = "0.4", features = ["serde"] }
@@ -29,6 +33,9 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 url = "2"
 uuid = { version = "1", features = ["v4", "serde"] }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_Security", "Win32_Security_Authorization", "Win32_Storage_FileSystem", "Win32_System_Threading", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging"] }
 
 [dev-dependencies]
 tempfile = "3"

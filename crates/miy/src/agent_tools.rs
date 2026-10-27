@@ -36,10 +36,12 @@ pub fn setup(root: &Path) -> Result<Value> {
         root.join("manifest.json").is_file(),
         "run_inside_an_app_directory"
     );
-    let binary = root.join(".miy-tools/miy");
+    let binary = crate::platform::project_cli(&root);
     crate::bundle::verify(&root)?;
     let _operation = crate::cli_guidance::operation(&root)?;
     crate::cli_guidance::preflight(&root)?;
+    crate::cli_guidance::safe_target(&root, ".codex/config.toml")?;
+    crate::cli_guidance::safe_target(&root, ".mcp.json")?;
     let path = root.join(".codex/config.toml");
     std::fs::create_dir_all(path.parent().unwrap())?;
     let original = if path.exists() {
@@ -80,18 +82,19 @@ pub fn setup(root: &Path) -> Result<Value> {
         .ok_or_else(|| anyhow::anyhow!("invalid_claude_mcp_config"))?;
     if let Some(existing) = servers.get("miy_app") {
         ensure!(
-            existing["command"]
-                .as_str()
-                .is_some_and(|v| v.ends_with("/.miy-tools/miy"))
-                && existing["args"] == json!(["app", "mcp"]),
+            existing["command"].as_str().is_some_and(|v| {
+                let path = v.replace('\\', "/");
+                path.ends_with("/.miy-tools/miy") || path.ends_with("/.miy-tools/miy.exe")
+            }) && existing["args"] == json!(["app", "mcp"]),
             "existing_claude_miy_app_config"
         );
     }
     servers.insert("miy_app".into(),json!({"type":"stdio","command":binary,"args":["app","mcp"],"env":{"MIY_APP_DIRECTORY":root}}));
     crate::cli_guidance::install_binary(&root)?;
     let guidance = crate::cli_guidance::sync(&root)?;
-    std::fs::write(path, changed)?;
-    std::fs::write(claude_path, serde_json::to_vec_pretty(&claude)?)?;
+    // These files can also contain credentials for the user's other MCP servers.
+    crate::platform::write_private(&path, changed.as_bytes())?;
+    crate::platform::write_private(&claude_path, &serde_json::to_vec_pretty(&claude)?)?;
     Ok(
         json!({"cliGuidance":guidance,"cliVersion":crate::cli_guidance::VERSION,"configured":["Codex","Claude Code"],"transport":"stdio MCP using CLI login","next":["miy app login","codex or claude; accept project trust and MCP prompts"],"globalSettingsChanged":false}),
     )
@@ -157,7 +160,7 @@ impl Tools {
         result(
             async {
                 let r = crate::component_cli::select(&session()?, &v.name, v.version).await?;
-                Ok(crate::component_registry::guidance(serde_json::to_value(
+                Ok(crate::component_contract::guidance(serde_json::to_value(
                     r,
                 )?))
             }
@@ -173,7 +176,7 @@ impl Tools {
             async {
                 crate::bundle::verify(Path::new("."))?;
                 let remote = api(&session()?, "/api/v1/contracts", None).await?;
-                let mut local = crate::domain::get_contract();
+                let mut local = crate::contract::get_contract();
                 local["platformBundleVersion"] = remote["bundleVersion"].clone();
                 local["guidanceSource"] = json!(
                     "installed verified bundle; query search_api for live server capabilities"

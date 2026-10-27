@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import {execFileSync,spawn} from 'node:child_process';
 import {createHash} from 'node:crypto';
-import {mkdirSync,readFileSync,writeFileSync,copyFileSync,rmSync,existsSync,openSync,closeSync} from 'node:fs';
+import {mkdirSync,readFileSync,writeFileSync,copyFileSync,renameSync,chmodSync,statSync,rmSync,existsSync,openSync,closeSync} from 'node:fs';
 import {resolve,join} from 'node:path';
 const root=resolve(import.meta.dirname,'..'),out=join(root,'.local/evidence/cli-guidance',Date.now().toString(36));mkdirSync(out,{recursive:true});
 const binary=join(out,'miy');copyFileSync(join(root,'target/debug/miy'),binary);
@@ -41,6 +41,18 @@ const manual=join(app,'docs/CLI-REFERENCE.md'),original=readFileSync(manual);wri
 fails(['check'],app,/cli_guidance_modified/);fails(['setup'],app,/cli_guidance_modified_or_conflict/);assert.equal(readFileSync(manual,'utf8'),'custom local notes');writeFileSync(manual,original);
 rmSync(join(app,'.claude/skills/miy-cli/references/commands.md'));cli(['setup'],app);assert(existsSync(join(app,'.claude/skills/miy-cli/references/commands.md')));
 const before=readFileSync(join(app,'miy.cli.json'));cli(['setup'],app);assert.deepEqual(readFileSync(join(app,'miy.cli.json')),before);ok('edited guidance is refused, missing files recover and repeated setup is idempotent');
+// Existing agent settings can contain credentials for unrelated MCP servers.
+const codexSettings=join(app,'.codex/config.toml'),claudeSettings=join(app,'.mcp.json');
+const originalCodex=readFileSync(codexSettings,'utf8')+'\n# user-owned settings preserved\n';
+writeFileSync(codexSettings,originalCodex);
+const originalClaude=JSON.parse(readFileSync(claudeSettings));originalClaude.mcpServers.other={command:'other-mcp',env:{TOKEN:'test-fixture-only'}};writeFileSync(claudeSettings,JSON.stringify(originalClaude));
+if(process.platform!=='win32'){chmodSync(codexSettings,0o600);chmodSync(claudeSettings,0o600);}
+cli(['setup'],app);
+assert.equal(readFileSync(codexSettings,'utf8'),originalCodex);
+assert.deepEqual(JSON.parse(readFileSync(claudeSettings)).mcpServers.other,originalClaude.mcpServers.other);
+if(process.platform!=='win32')for(const path of [codexSettings,claudeSettings])assert.equal(statSync(path).mode&0o777,0o600);
+ok('setup preserves unrelated agent settings and keeps credential-bearing configuration private');
+
 const oldBinary=process.env.MIY_PREVIOUS_CLI;
 if(oldBinary){
  const old=join(out,'compatible-old');run(oldBinary,['app','init',old,'--id','old-cli-probe','--name','Old CLI probe']);
@@ -53,7 +65,8 @@ if(oldBinary){
  ok('same SDK CLI update preserves dirty business files and old protected docs; unmanaged conflicts never replace the old executable');
  // Same-bundle upgrade must synchronize tooling instead of returning before it does so.
  run('git',['init'],old);run('git',['add','.'],old);run('git',['-c','user.name=MIY probe','-c','user.email=probe@localhost','commit','-m','Local guidance fixture'],old);
- copyFileSync(oldBinary,join(old,'.miy-tools/miy'));const upgraded=cli(['upgrade'],old);assert(upgraded.alreadyCurrent);assert.equal(upgraded.cliVersion,help.cliVersion);assert.equal(run(join(old,'.miy-tools/miy'),['--version'],old),`miy ${help.cliVersion}\n`);ok('same-bundle app upgrade updates project CLI and guidance together');
+ // Replace the fixture through a new inode; direct truncation can return ETXTBSY on Linux.
+ const previous=join(old,'.miy-tools/miy-previous-fixture');copyFileSync(oldBinary,previous);renameSync(previous,join(old,'.miy-tools/miy'));const upgraded=cli(['upgrade'],old);assert(upgraded.alreadyCurrent);assert.equal(upgraded.cliVersion,help.cliVersion);assert.equal(run(join(old,'.miy-tools/miy'),['--version'],old),`miy ${help.cliVersion}\n`);ok('same-bundle app upgrade updates project CLI and guidance together');
 }else console.log('SKIP prior-version transition: set MIY_PREVIOUS_CLI to an older CLI with the same SDK bundle');
 const previousBundleBinary=process.env.MIY_PREVIOUS_BUNDLE_CLI;
 if(previousBundleBinary){

@@ -1,3 +1,4 @@
+pub use crate::identity::{cookie, development_profile, random};
 use crate::{
     State,
     contract::hash,
@@ -64,11 +65,6 @@ pub struct Auth {
     jwks: JwkSet,
 }
 
-pub fn random() -> String {
-    let mut b = [0; 32];
-    OsRng.fill_bytes(&mut b);
-    URL_SAFE_NO_PAD.encode(b)
-}
 pub fn encrypt(value: &str) -> anyhow::Result<String> {
     let key = hex::decode(std::env::var("MIY_ENCRYPTION_KEY")?)?;
     let cipher =
@@ -90,37 +86,6 @@ pub fn decrypt(value: &str) -> anyhow::Result<String> {
         .decrypt(bytes[..12].into(), &bytes[12..])
         .map_err(|_| anyhow::anyhow!("decryption_failed"))?;
     Ok(String::from_utf8(plain)?)
-}
-pub fn cookie(headers: &HeaderMap, name: &str) -> Option<String> {
-    headers
-        .get("cookie")?
-        .to_str()
-        .ok()?
-        .split(';')
-        .find_map(|c| {
-            let (k, v) = c.trim().split_once('=')?;
-            (k == name).then(|| v.to_string())
-        })
-}
-pub fn development_profile(flag: Option<&str>, origin: &str, development_origin: &str) -> bool {
-    fn local_origin(value: &str) -> bool {
-        let Ok(url) = Url::parse(value) else {
-            return false;
-        };
-        matches!(url.scheme(), "http" | "https")
-            && url.username().is_empty()
-            && url.password().is_none()
-            && url.path() == "/"
-            && url.query().is_none()
-            && url.fragment().is_none()
-            && match url.host() {
-                Some(url::Host::Domain("localhost")) => true,
-                Some(url::Host::Ipv4(ip)) => ip.is_loopback(),
-                Some(url::Host::Ipv6(ip)) => ip.is_loopback(),
-                _ => false,
-            }
-    }
-    flag == Some("1") && local_origin(origin) && local_origin(development_origin)
 }
 impl Auth {
     pub async fn new() -> anyhow::Result<Self> {
@@ -420,31 +385,3 @@ impl Auth {
     }
 }
 use sha2::Digest;
-
-#[cfg(test)]
-mod tests {
-    use super::development_profile;
-    #[test]
-    fn development_login_requires_explicit_local_profile() {
-        assert!(!development_profile(
-            None,
-            "https://localhost:18443",
-            "http://localhost:18000"
-        ));
-        assert!(!development_profile(
-            Some("1"),
-            "https://miy.example.com",
-            "http://localhost:18000"
-        ));
-        assert!(!development_profile(
-            Some("1"),
-            "https://localhost:18443",
-            "http://localhost.evil.example:18000"
-        ));
-        assert!(development_profile(
-            Some("1"),
-            "https://localhost:18443",
-            "http://localhost:18000"
-        ));
-    }
-}
