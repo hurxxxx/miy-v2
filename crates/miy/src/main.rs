@@ -229,37 +229,43 @@ async fn main() -> Result<()> {
     let raw = matches!(&args.command, Command::Mcp | Command::Completion { .. });
     let result = match args.command {
         Command::Context { command } => cli_config::execute(command).map(cli_output::Outcome::Data),
-        Command::Auth { command } => cli_login::execute(command)
+        Command::Auth { command } => Box::pin(cli_login::execute(command))
             .await
             .map(cli_output::Outcome::Data),
-        Command::Component { command } => component_cli::execute(command)
+        Command::Component { command } => Box::pin(component_cli::execute(command))
             .await
             .map(cli_output::Outcome::Data),
-        Command::Job { command } => cli_remote::execute_job(command, mode).await,
-        Command::Registration { command } => cli_remote::execute_registration(command).await,
-        Command::User { command } => cli_remote::execute_user(command).await,
-        Command::Grant { command } => cli_remote::execute_grant(command).await,
-        Command::App { command } => app_cli::execute(command).await,
-        Command::Doctor(options) => cli_doctor::inspect(options).await.and_then(|value| {
-            if value["ready"] == true {
-                Ok(cli_output::Outcome::Data(value))
-            } else {
-                Err(CliError::new(
-                    Category::Environment,
-                    "diagnostic_failed",
-                    "Some required conditions are not ready.",
-                )
-                .with_details(value)
-                .into())
-            }
-        }),
+        Command::Job { command } => Box::pin(cli_remote::execute_job(command, mode)).await,
+        Command::Registration { command } => {
+            Box::pin(cli_remote::execute_registration(command)).await
+        }
+        Command::User { command } => Box::pin(cli_remote::execute_user(command)).await,
+        Command::Grant { command } => Box::pin(cli_remote::execute_grant(command)).await,
+        Command::App { command } => Box::pin(app_cli::execute(command)).await,
+        Command::Doctor(options) => {
+            Box::pin(cli_doctor::inspect(options))
+                .await
+                .and_then(|value| {
+                    if value["ready"] == true {
+                        Ok(cli_output::Outcome::Data(value))
+                    } else {
+                        Err(CliError::new(
+                            Category::Environment,
+                            "diagnostic_failed",
+                            "Some required conditions are not ready.",
+                        )
+                        .with_details(value)
+                        .into())
+                    }
+                })
+        }
         Command::Describe(options) => {
             cli_discovery::inspect(options).map(cli_output::Outcome::Data)
         }
         Command::Completion { shell } => {
             cli_discovery::completion(shell).map(|()| cli_output::Outcome::Raw)
         }
-        Command::Mcp => agent_tools::serve()
+        Command::Mcp => Box::pin(agent_tools::serve())
             .await
             .map(|()| cli_output::Outcome::Raw),
         #[cfg(feature = "server")]
@@ -272,7 +278,7 @@ async fn main() -> Result<()> {
                 )
                 .into())
             } else {
-                return run_server(command).await;
+                return Box::pin(run_server(command)).await;
             }
         }
     };

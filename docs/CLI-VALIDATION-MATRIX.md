@@ -93,3 +93,11 @@ PowerShell 개발 검사 증거: `.local/evidence/cli-installer/summary.json`. �
 `34546ae`의 [CI 40458485585](https://github.com/hurxxxx/miy-v2/actions/runs/40458485585)는 Linux 서버/클라이언트를 통과했지만 macOS 임시 경로와 Windows 종료코드 검사에서 실패했다. macOS의 root 소유 `/var → /private/var`, `/tmp → /private/tmp` 시스템 조상 별칭만 허용하고 설정 root·임의 조상·credentials/record 링크 거부를 유지했다. fixture 경로도 정규화했다. Windows Job Object 종료는 특정 종료코드를 보장하지 않으므로, 테스트를 종료 전 생존·소속, 종료 후 제한 시간 내 완료, 별도 Job의 프로세스 생존 확인으로 수정했다. 실패를 성공으로 집계하지 않으며 후보 CI `40458514245`는 해당 수정 후 다시 만들기 위해 취소했다.
 
 보완 후 로컬 서버 단위103개/클라이언트91개, 출력11묶음, 클라이언트 Clippy와 Windows 최소 harness all-targets Clippy를 통과했다. Windows 개발 안내의 `doctor --for develop` 및 선행 `component sync`도 수정했다. 실제 OS 재실행 결과는 다음 CI 기록으로 추가한다.
+
+### Windows debug 스택과 설치기 실증
+
+`021c3b`의 [release Windows CI](https://github.com/hurxxxx/miy-v2/actions/runs/40459450347/job/122040382727)는 Windows Server 2022에서 네이티브 단위87개·출력10개·번들31파일과 PowerShell 5.1.20348.5756/7.6.8 설치기 각각6시나리오를 통과했다. 체크섬 거부, 설치/갱신, 파일 잠금, 손상 backup 거부, 중단 복구, 제거 시 보존을 실제 Windows에서 실행했다. Windows 11/Docker Desktop 인수는 계속 별도다.
+
+같은 코드의 [foundation CI](https://github.com/hurxxxx/miy-v2/actions/runs/40459433715)는 debug CLI 진입 시 Windows 1MiB 스택에서 overflow를 발견했다. Linux 자식 프로세스의 RLIMIT_STACK을 1MiB로 제한해 재현하고, async 명령 dispatch를 heap에 분리하고 업로드 hash buffer도 heap으로 옮겼다. Linux 출력 fixture와 CI의 요청 복구 fixture를 같은 한도로 실행하도록 바꿨다. 변경 후 출력11묶음·복구6묶음 및 서버103/클라이언트91 단위 검사를 통과했다.
+
+병렬 단위 검사에서 컴포넌트 잠금 재획득이 한 번 실패한 것도 기록한다. 자식 생성 시 잠금 descriptor가 일시적으로 남을 수 있어 guard 종료에 명시적 unlock을 추가했고, 기존 동시 설치 거부·중단 복구 검사와 전체 단위 검사를 다시 통과했다. 새 수정의 전체 native/candidate 결과는 뒤의 최종 CI 기록을 따른다.

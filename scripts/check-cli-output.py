@@ -16,6 +16,7 @@ import os
 from pathlib import Path
 import signal
 import subprocess
+import sys
 import tempfile
 import threading
 import uuid
@@ -189,11 +190,18 @@ def check(cli):
         env["MIY_CREDENTIAL_BACKEND"]="file"
         env.pop("MIY_CONTEXT",None)
 
+        def bounded_stack():
+            # Reproduce the Windows main-thread stack budget on Linux, including debug builds.
+            import resource
+            _, hard = resource.getrlimit(resource.RLIMIT_STACK)
+            resource.setrlimit(resource.RLIMIT_STACK, (1024 * 1024, hard))
+
         def run(args, cwd=root, expected=0, command=None):
             result = subprocess.run(
                 [str(cli), *args], cwd=cwd, env=env,
                 stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                 timeout=30, check=False,
+                preexec_fn=bounded_stack if sys.platform.startswith("linux") else None,
             )
             return envelope(result, expected, command)
 

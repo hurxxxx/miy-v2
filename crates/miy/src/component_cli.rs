@@ -246,7 +246,15 @@ fn verify_local(root: &Path) -> Result<Value> {
         json!({"valid":true,"registry":lock.registry,"components":lock.components.iter().map(|(name,e)|json!({"name":name,"version":e.version,"sha256":e.sha256})).collect::<Vec<_>>()}),
     )
 }
-fn operation(root: &Path) -> Result<std::fs::File> {
+struct OperationLock(std::fs::File);
+impl Drop for OperationLock {
+    fn drop(&mut self) {
+        // Release ownership explicitly even while a concurrently spawned Unix
+        // child briefly holds an inherited descriptor before exec closes it.
+        let _ = self.0.unlock();
+    }
+}
+fn operation(root: &Path) -> Result<OperationLock> {
     let local = root.join(".miy");
     crate::platform::reject_reparse(&local)?;
     std::fs::create_dir_all(&local)?;
@@ -265,6 +273,7 @@ fn operation(root: &Path) -> Result<std::fs::File> {
         .open(lock_path)?;
     lock.try_lock()
         .context("component_operation_already_running")?;
+    let lock = OperationLock(lock);
     let backup = local.join("components-backup");
     crate::platform::reject_reparse(&backup)?;
     if backup.try_exists()? {

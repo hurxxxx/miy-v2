@@ -259,7 +259,9 @@ fn selected_app() -> Result<String> {
 }
 pub async fn execute(command: AppCommand) -> Result<Outcome> {
     match command {
-        AppCommand::Remote(command) => return crate::cli_remote::execute_app(command).await,
+        AppCommand::Remote(command) => {
+            return Box::pin(crate::cli_remote::execute_app(command)).await;
+        }
         AppCommand::Login(_) => return removed(&["auth", "login"]),
         AppCommand::Logout(_) => return removed(&["auth", "logout"]),
         AppCommand::Doctor(_) => return removed(&["doctor", "--for", "develop"]),

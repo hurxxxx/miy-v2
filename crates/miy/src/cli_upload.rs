@@ -119,7 +119,8 @@ async fn archive_hash(path: &std::path::Path) -> Result<(u64, String)> {
     let mut file = tokio::fs::File::open(path).await?;
     let mut hash = Sha256::new();
     let mut size = 0u64;
-    let mut buffer = [0u8; 65536];
+    // Keep the archive buffer out of every enclosing command future/stack frame.
+    let mut buffer = vec![0u8; 65536];
     loop {
         let count = file.read(&mut buffer).await?;
         if count == 0 {
