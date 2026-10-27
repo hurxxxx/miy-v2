@@ -1,6 +1,7 @@
 //! Generic registry client. New component releases do not require a new executable.
 use crate::{
     app_cli::{self, Session},
+    cli_error::{self, Category, CliError},
     component_contract as registry, contract,
 };
 use anyhow::{Context, Result, ensure};
@@ -112,7 +113,13 @@ fn load(root: &Path) -> Result<Option<Lock>> {
         lock.protocol == registry::PROTOCOL,
         "unsupported_component_protocol"
     );
-    crate::cli_client::origin(&lock.registry)?;
+    crate::cli_client::origin(&lock.registry).map_err(|_| {
+        CliError::new(
+            Category::Environment,
+            "invalid_component_registry",
+            "The locked component registry origin is invalid.",
+        )
+    })?;
     ensure!(lock.components.len() <= 128, "too_many_components");
     for (name, entry) in &lock.components {
         ensure!(contract::valid_id(name), "invalid_component_name");
@@ -219,6 +226,9 @@ fn materialize(root: &Path, lock: &Lock) -> Result<BTreeMap<String, registry::Re
     Ok(releases)
 }
 pub fn verify(root: &Path) -> Result<Value> {
+    cli_error::validation(verify_local(root), "component_validation_failed")
+}
+fn verify_local(root: &Path) -> Result<Value> {
     ensure!(
         !root.join(".miy/components-backup").exists(),
         "component_update_interrupted: run app components sync"
@@ -333,47 +343,101 @@ fn commit(root: &Path, origin: &str, releases: BTreeMap<String, registry::Releas
     result
 }
 pub async fn fetch(s: &Session, name: &str, version: &str) -> Result<registry::Release> {
-    ensure!(contract::valid_id(name), "invalid_component_name");
-    registry::version(version)?;
+    if !contract::valid_id(name) {
+        return Err(CliError::new(
+            Category::Usage,
+            "invalid_component_name",
+            "Use a valid component identifier.",
+        )
+        .into());
+    }
+    registry::version(version).map_err(|_| {
+        CliError::new(
+            Category::Usage,
+            "invalid_component_version",
+            "Use a component version in major.minor.patch format.",
+        )
+    })?;
     let url = format!("{}/api/v1/components/{name}/{version}", s.origin);
     let client = crate::cli_client::client(s.ca_file.as_deref(), 30)?;
     let mut response = crate::cli_client::authenticate(s, client.get(url))
         .send()
-        .await?;
-    ensure!(
-        response.status().is_success(),
-        "component_download_failed: {}",
-        response.status()
-    );
+        .await
+        .map_err(cli_error::transport)?;
+    if !response.status().is_success() {
+        return match cli_error::response(response).await {
+            Err(error) => Err(error),
+            Ok(_) => Err(CliError::new(
+                Category::Network,
+                "component_download_failed",
+                "The component registry returned an unsuccessful response.",
+            )
+            .into()),
+        };
+    }
     let mut bytes = Vec::new();
-    while let Some(chunk) = response.chunk().await? {
-        ensure!(
-            bytes.len() + chunk.len() <= registry::MAX_PACKAGE + 1024,
-            "component_response_too_large"
-        );
+    while let Some(chunk) = response.chunk().await.map_err(cli_error::transport)? {
+        if bytes.len() + chunk.len() > registry::MAX_PACKAGE + 1024 {
+            return Err(CliError::new(
+                Category::Network,
+                "component_response_too_large",
+                "The component registry response exceeds the package size limit.",
+            )
+            .into());
+        }
         bytes.extend_from_slice(&chunk);
     }
-    let release: registry::Release = serde_json::from_slice(&bytes)?;
-    registry::verify_release(&release)?;
-    ensure!(
-        release.package.name == name && release.package.version == version,
-        "component_identity_mismatch"
-    );
-    ensure!(
-        registry::compatible(&release.package),
-        "incompatible_component: {name}@{version}"
-    );
+    let invalid_response = || {
+        CliError::new(
+            Category::Network,
+            "invalid_component_response",
+            "The registry did not return a valid immutable component release.",
+        )
+    };
+    let release: registry::Release =
+        serde_json::from_slice(&bytes).map_err(|_| invalid_response())?;
+    registry::verify_release(&release).map_err(|_| invalid_response())?;
+    if release.package.name != name || release.package.version != version {
+        return Err(CliError::new(
+            Category::Network,
+            "component_identity_mismatch",
+            "The returned component does not match the requested name and version.",
+        )
+        .into());
+    }
+    if !registry::compatible(&release.package) {
+        return Err(CliError::new(
+            Category::Environment,
+            "incompatible_component",
+            "The requested component is not compatible with this project's bundle.",
+        )
+        .with_details(json!({"name":name,"version":version}))
+        .into());
+    }
     Ok(release)
 }
 pub async fn select(s: &Session, name: &str, v: Option<String>) -> Result<registry::Release> {
-    ensure!(contract::valid_id(name), "invalid_component_name");
+    if !contract::valid_id(name) {
+        return Err(CliError::new(
+            Category::Usage,
+            "invalid_component_name",
+            "Use a valid component identifier.",
+        )
+        .into());
+    }
     let version = if let Some(v) = v {
         v
     } else {
         let catalog = app_cli::api(s, "/api/v1/components", None).await?;
         catalog
             .as_array()
-            .context("invalid_component_catalog")?
+            .ok_or_else(|| {
+                CliError::new(
+                    Category::Network,
+                    "invalid_component_catalog",
+                    "The server returned an invalid component catalog.",
+                )
+            })?
             .iter()
             .filter(|v| {
                 v["name"] == name
@@ -389,38 +453,56 @@ pub async fn select(s: &Session, name: &str, v: Option<String>) -> Result<regist
             })
             .max_by_key(|(key, _)| *key)
             .map(|(_, v)| v)
-            .context("no_compatible_component_release")?
+            .ok_or_else(|| {
+                CliError::new(
+                    Category::Environment,
+                    "no_compatible_component_release",
+                    "No component release is compatible with the current bundle.",
+                )
+                .with_details(json!({"name":name}))
+            })?
     };
     fetch(s, name, &version).await
 }
 pub async fn sync(root: &Path, s: &Session) -> Result<Value> {
-    let _operation = operation(root)?;
-    let lock = load(root)?;
+    let _operation = cli_error::validation(operation(root), "component_validation_failed")?;
+    let lock = cli_error::validation(load(root), "component_validation_failed")?;
     let mut packages = BTreeMap::new();
     if let Some(lock) = lock {
-        ensure!(
-            lock.registry == s.origin,
-            "component_registry_changed: do not mix registries"
-        );
-        inspect(root, &lock, true)?;
+        if lock.registry != s.origin {
+            return Err(CliError::new(Category::Environment, "component_registry_changed", "The locked component registry does not match this project's server. Do not mix registries.").into());
+        }
+        cli_error::validation(inspect(root, &lock, true), "component_validation_failed")?;
         for (name, entry) in lock.components {
             let r = fetch(s, &name, &entry.version).await?;
-            ensure!(
-                r.sha256 == entry.sha256,
-                "locked_component_digest_changed: {name}"
-            );
+            if r.sha256 != entry.sha256 {
+                return Err(CliError::new(
+                    Category::Environment,
+                    "locked_component_digest_changed",
+                    "The component release no longer matches its locked digest.",
+                )
+                .with_details(json!({"name":name}))
+                .into());
+            }
             packages.insert(name, r);
         }
     }
-    for (name, v) in defaults(root)?.defaults {
+    for (name, v) in cli_error::validation(defaults(root), "component_validation_failed")?.defaults
+    {
         if !packages.contains_key(&name) {
             packages.insert(name.clone(), fetch(s, &name, &v).await?);
         }
     }
-    commit(root, &s.origin, packages)?;
+    cli_error::validation(
+        commit(root, &s.origin, packages),
+        "component_validation_failed",
+    )?;
     verify(root)
 }
 pub fn initialize(root: &Path, s: &Session, r: registry::Release) -> Result<Value> {
+    cli_error::validation(initialize_local(root, s, r), "component_validation_failed")
+}
+fn initialize_local(root: &Path, s: &Session, r: registry::Release) -> Result<Value> {
     let _operation = operation(root)?;
     ensure!(load(root)?.is_none(), "component_directory_already_exists");
     commit(
@@ -445,12 +527,15 @@ pub async fn execute(command: ComponentCommand) -> Result<Value> {
             app_cli::api(
                 &s,
                 "/api/v1/components",
-                Some(serde_json::to_value(registry::read_source(&path)?)?),
+                Some(serde_json::to_value(cli_error::validation(
+                    registry::read_source(&path),
+                    "component_validation_failed",
+                )?)?),
             )
             .await
         }
         ComponentCommand::Sync => {
-            crate::bundle::verify(root)?;
+            cli_error::validation(crate::bundle::verify(root), "component_validation_failed")?;
             sync(root, &s).await
         }
         ComponentCommand::Add { name, version } => change(root, &s, &name, version, false).await,
@@ -465,27 +550,94 @@ async fn change(
     version: Option<String>,
     update: bool,
 ) -> Result<Value> {
-    crate::bundle::verify(root)?;
-    let _operation = operation(root)?;
-    let lock = load(root)?.context("run_app_components_sync_first")?;
-    ensure!(lock.registry == s.origin, "component_registry_changed");
-    ensure!(
-        lock.components.contains_key(name) == update,
-        if update {
-            "component_not_installed"
+    cli_error::validation(crate::bundle::verify(root), "component_validation_failed")?;
+    let _operation = cli_error::validation(operation(root), "component_validation_failed")?;
+    let lock =
+        cli_error::validation(load(root), "component_validation_failed")?.ok_or_else(|| {
+            CliError::new(
+                Category::Environment,
+                "components_not_installed",
+                "Run app components sync before modifying installed components.",
+            )
+            .with_recovery("miy", &["app", "components", "sync"])
+        })?;
+    if lock.registry != s.origin {
+        return Err(CliError::new(
+            Category::Environment,
+            "component_registry_changed",
+            "The locked component registry does not match this project's server.",
+        )
+        .into());
+    }
+    if lock.components.contains_key(name) != update {
+        let (code, message) = if update {
+            (
+                "component_not_installed",
+                "The requested component is not installed.",
+            )
         } else {
-            "component_already_installed: use app components update"
-        }
-    );
-    let mut packages = materialize(root, &lock)?;
+            (
+                "component_already_installed",
+                "The component is already installed; use app components update.",
+            )
+        };
+        return Err(CliError::new(Category::Environment, code, message).into());
+    }
+    let mut packages =
+        cli_error::validation(materialize(root, &lock), "component_validation_failed")?;
     packages.insert(name.into(), select(s, name, version).await?);
-    commit(root, &s.origin, packages)?;
+    cli_error::validation(
+        commit(root, &s.origin, packages),
+        "component_validation_failed",
+    )?;
     verify(root)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[tokio::test]
+    async fn registry_failures_preserve_status_without_exposing_response_content() {
+        use axum::{Router, http::StatusCode, routing::get};
+        for (status, body, category) in [
+            (
+                StatusCode::FORBIDDEN,
+                r#"{"error":{"code":"component_denied","message":"https://example.invalid/?token=test-secret"}}"#,
+                Category::Forbidden,
+            ),
+            (
+                StatusCode::OK,
+                "invalid component JSON test-secret",
+                Category::Network,
+            ),
+        ] {
+            let listener = tokio::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0))
+                .await
+                .unwrap();
+            let origin = format!("http://{}", listener.local_addr().unwrap());
+            let app = Router::new().route(
+                "/api/v1/components/ui/1.0.1",
+                get(move || async move { (status, body) }),
+            );
+            let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+            let session = Session {
+                origin,
+                cookie: String::new(),
+                csrf: String::new(),
+                token: None,
+                ca_file: None,
+            };
+            let result = fetch(&session, "ui", "1.0.1").await;
+            server.abort();
+            let _ = server.await;
+            let error = result.unwrap_err();
+            let error = error.downcast_ref::<CliError>().unwrap();
+            assert_eq!(error.category, category);
+            let serialized = serde_json::to_string(error).unwrap();
+            assert!(!serialized.contains("test-secret"));
+            assert!(!serialized.contains("example.invalid"));
+        }
+    }
     fn fixture() -> (tempfile::TempDir, Session, registry::Release) {
         let root = tempfile::tempdir().unwrap();
         std::fs::write(
@@ -515,6 +667,11 @@ mod tests {
         let original = std::fs::read(&file).unwrap();
         std::fs::write(&file, "user changes").unwrap();
         assert!(inspect(root.path(), &lock, true).is_err());
+        let error = verify(root.path()).unwrap_err();
+        let error = error.downcast_ref::<CliError>().unwrap();
+        assert_eq!(error.category, Category::Environment);
+        assert_eq!(error.code, "component_validation_failed");
+        assert!(error.message.contains("component_modified"));
         std::fs::write(&file, original).unwrap();
         let extra = root.path().join(DIRECTORY).join("custom.ts");
         std::fs::write(&extra, "custom code").unwrap();

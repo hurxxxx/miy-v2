@@ -1,5 +1,6 @@
 // CLI guidance regression tests. Creates local templates only; never registers/deploys apps.
 import assert from 'node:assert/strict';
+import {CLI_EXIT,cliData,assertCliFailure} from './lib/cli-result.mjs';
 import {execFileSync,spawn} from 'node:child_process';
 import {createHash} from 'node:crypto';
 import {mkdirSync,readFileSync,writeFileSync,copyFileSync,renameSync,chmodSync,statSync,rmSync,existsSync,openSync,closeSync} from 'node:fs';
@@ -10,9 +11,9 @@ const env={...process.env,PATH:`${process.env.HOME}/.cargo/bin:${process.env.PAT
 let sequence=0;const checks=[];
 const ok=message=>{checks.push(message);console.log('PASS '+message);};
 function run(executable,args,cwd=root){const fd=openSync(join(out,`command-${++sequence}.log`),'w');try{return execFileSync(executable,args,{cwd,env,encoding:'utf8',stdio:['ignore','pipe',fd],maxBuffer:8*1024*1024});}finally{closeSync(fd);}}
-const cli=(args,cwd)=>JSON.parse(run(binary,['app',...args],cwd));
+const cli=(args,cwd)=>cliData(run(binary,['--output','json','app',...args],cwd));
 const hash=path=>createHash('sha256').update(readFileSync(path)).digest('hex');
-function fails(args,cwd,pattern){let failure;try{execFileSync(binary,['app',...args],{cwd,env,stdio:'pipe',encoding:'utf8'});}catch(e){failure=e;}assert(failure);assert.match(failure.stderr,pattern);}
+function fails(args,cwd,expectedExit,pattern){let failure;try{execFileSync(binary,['--output','json','app',...args],{cwd,env,stdio:'pipe',encoding:'utf8'});}catch(e){failure=e;}return assertCliFailure(failure,expectedExit,pattern);}
 async function mcp(cwd){
  const child=spawn(join(cwd,'.miy-tools/miy'),['app','mcp'],{cwd,env,stdio:['pipe','pipe','pipe']});let buffer='',seq=0;const pending=new Map();
  child.stdout.on('data',bytes=>{buffer+=bytes;let n;while((n=buffer.indexOf('\n'))>=0){const line=buffer.slice(0,n);buffer=buffer.slice(n+1);if(line.trim()){const v=JSON.parse(line);if(v.id)pending.get(v.id)?.(v);}}});
@@ -25,6 +26,8 @@ async function mcp(cwd){
 }
 const app=join(out,'fresh');cli(['init',app,'--id','cli-guidance-probe','--name','CLI guidance probe']);
 const help=cli(['describe'],app),lock=JSON.parse(readFileSync(join(app,'miy.cli.json')));
+fails(['deploy','--environment','prod'],app,CLI_EXIT.usage,/invalid_arguments/);
+ok('production deploy is rejected during parsing with a structured usage error');
 assert.equal(lock.cliVersion,help.cliVersion);assert.equal(lock.bundleVersion,help.bundleVersion);
 for(const [path,expected] of Object.entries(lock.files))assert.equal(hash(join(app,path)),expected,path);
 assert.equal(readFileSync(join(app,'.agents/skills/miy-cli/SKILL.md'),'utf8'),readFileSync(join(app,'.claude/skills/miy-cli/SKILL.md'),'utf8'));
@@ -38,7 +41,7 @@ for(const row of help.commands){if(row.command.split(' ').includes('help'))conti
 ok('init installs versioned CLI skill/manual for both clients; generated commands match actual --help');
 await mcp(app);ok('stdio MCP and offline CLI return exactly the same versioned command/workflow reference');
 const manual=join(app,'docs/CLI-REFERENCE.md'),original=readFileSync(manual);writeFileSync(manual,'custom local notes');
-fails(['check'],app,/cli_guidance_modified/);fails(['setup'],app,/cli_guidance_modified_or_conflict/);assert.equal(readFileSync(manual,'utf8'),'custom local notes');writeFileSync(manual,original);
+fails(['check'],app,CLI_EXIT.environment,/cli_guidance_modified/);fails(['setup'],app,CLI_EXIT.environment,/cli_guidance_modified_or_conflict/);assert.equal(readFileSync(manual,'utf8'),'custom local notes');writeFileSync(manual,original);
 rmSync(join(app,'.claude/skills/miy-cli/references/commands.md'));cli(['setup'],app);assert(existsSync(join(app,'.claude/skills/miy-cli/references/commands.md')));
 const before=readFileSync(join(app,'miy.cli.json'));cli(['setup'],app);assert.deepEqual(readFileSync(join(app,'miy.cli.json')),before);ok('edited guidance is refused, missing files recover and repeated setup is idempotent');
 // Existing agent settings can contain credentials for unrelated MCP servers.
@@ -59,7 +62,7 @@ if(oldBinary){
  const foundation=JSON.parse(readFileSync(join(old,'miy.bundle.json')));assert.equal(foundation.bundleVersion,help.bundleVersion,'previous CLI must use same SDK bundle');
  writeFileSync(join(old,'src/main.rs'),readFileSync(join(old,'src/main.rs'),'utf8')+'\n// unsaved business change preserved by CLI setup\n');
  const business=['src/main.rs','web/src/AppRoot.tsx','manifest.json','miy.bundle.json','docs/CLI.md','sdk/browser/index.ts','migrations/0001_initial.sql'];const hashes=business.map(f=>hash(join(old,f))),oldHash=hash(join(old,'.miy-tools/miy'));
- const conflict=join(old,'.agents/skills/miy-cli/SKILL.md');mkdirSync(resolve(conflict,'..'),{recursive:true});writeFileSync(conflict,'custom skill');fails(['setup'],old,/cli_guidance_modified_or_conflict/);assert.equal(hash(join(old,'.miy-tools/miy')),oldHash);rmSync(conflict);
+ const conflict=join(old,'.agents/skills/miy-cli/SKILL.md');mkdirSync(resolve(conflict,'..'),{recursive:true});writeFileSync(conflict,'custom skill');fails(['setup'],old,CLI_EXIT.environment,/cli_guidance_modified_or_conflict/);assert.equal(hash(join(old,'.miy-tools/miy')),oldHash);rmSync(conflict);
  cli(['setup'],old);assert.deepEqual(business.map(f=>hash(join(old,f))),hashes);assert.equal(run(join(old,'.miy-tools/miy'),['--version'],old),`miy ${help.cliVersion}\n`);
  for(const [file,expected] of Object.entries(foundation.protectedFiles))assert.equal(hash(join(old,file)),expected);
  ok('same SDK CLI update preserves dirty business files and old protected docs; unmanaged conflicts never replace the old executable');
@@ -82,10 +85,10 @@ if(previousBundleBinary){
  const tracked=run('git',['ls-files'],old).trim().split('\n');
  const unchanged=tracked.filter(p=>!['AGENTS.md','CLAUDE.md','miy.bundle.json','miy.cli.json','docs/CLI-REFERENCE.md'].includes(p)&&!p.startsWith('.agents/skills/miy-cli/')&&!p.startsWith('.claude/skills/miy-cli/'));
  const before=unchanged.map(p=>hash(join(old,p)));
- fails(['setup'],old,/bundle_version_mismatch/);
+ fails(['setup'],old,CLI_EXIT.environment,/bundle_version_mismatch/);
  const oldManual=readFileSync(join(old,'docs/CLI-REFERENCE.md')),oldExecutable=hash(join(old,'.miy-tools/miy'));
  writeFileSync(join(old,'docs/CLI-REFERENCE.md'),'custom guidance');run('git',['add','.'],old);run('git',['-c','user.name=MIY probe','-c','user.email=probe@localhost','commit','-m','Custom guidance fixture'],old);
- fails(['upgrade'],old,/cli_guidance_modified_or_conflict/);assert.equal(hash(join(old,'.miy-tools/miy')),oldExecutable);assert.deepEqual(JSON.parse(readFileSync(join(old,'miy.bundle.json'))),foundation);
+ fails(['upgrade'],old,CLI_EXIT.environment,/cli_guidance_modified_or_conflict/);assert.equal(hash(join(old,'.miy-tools/miy')),oldExecutable);assert.deepEqual(JSON.parse(readFileSync(join(old,'miy.bundle.json'))),foundation);
  writeFileSync(join(old,'docs/CLI-REFERENCE.md'),oldManual);run('git',['add','.'],old);run('git',['-c','user.name=MIY probe','-c','user.email=probe@localhost','commit','-m','Restore generated guidance'],old);
  const upgraded=cli(['upgrade'],old);assert.equal(upgraded.bundleVersion,help.bundleVersion);assert.equal(upgraded.upgradedFrom,'0.6.0');assert.deepEqual(unchanged.map(p=>hash(join(old,p))),before);
  for(const file of ['AGENTS.md','CLAUDE.md'])assert.equal(readFileSync(join(old,file),'utf8'),readFileSync(join(app,file),'utf8'));

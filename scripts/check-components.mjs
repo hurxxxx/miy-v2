@@ -1,5 +1,6 @@
 // Uses a new synthetic app and new component names; never upgrades existing user apps.
 import assert from "node:assert/strict";
+import { CLI_EXIT, cliData, assertCliFailure } from "./lib/cli-result.mjs";
 import { execFileSync, spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { mkdirSync, readFileSync, writeFileSync, copyFileSync, openSync, closeSync, rmSync, readdirSync } from "node:fs";
@@ -30,11 +31,12 @@ function run(program,args,cwd=root) {
   catch(e){throw Error(`Command ${sequence} failed (${program} ${args[0]}). Inspect private evidence log.`,{cause:e});}
   finally{closeSync(file);}
 }
-const cli=(args,cwd=app)=>JSON.parse(run(binary,["app",...args],cwd));
-const fails=(args,pattern)=>{
-  const result=execFileSync;
-  try{result(binary,["app",...args],{cwd:app,env,stdio:["ignore","pipe","pipe"],encoding:"utf8"});assert.fail("command should fail");}
-  catch(e){assert.match(String(e.stderr),pattern);}
+const cli=(args,cwd=app)=>cliData(run(binary,["--output","json","app",...args],cwd));
+const fails=(args,expectedExit,pattern)=>{
+  let failure;
+  try{execFileSync(binary,["--output","json","app",...args],{cwd:app,env,stdio:["ignore","pipe","pipe"],encoding:"utf8"});}
+  catch(e){failure=e;}
+  return assertCliFailure(failure,expectedExit,pattern);
 };
 async function login(account) {
   const r=await fetch(origin+"/auth/development",{method:"POST",headers:{origin,"content-type":"application/json"},body:JSON.stringify({account})});
@@ -92,7 +94,7 @@ try {
   ok("fresh template declares UI; authenticated CLI fetches the independently stored implementation");
 
   packageSource("1.0.0","badge v1");
-  fails(["components","publish",source],/403/);
+  fails(["components","publish",source],CLI_EXIT.forbidden,/forbidden/);
   cli(["components","publish",source],adminDir);
   cli(["components","publish",source],adminDir); // exact re-publication is idempotent
   const published=cli(["components","show",component,"--version","1.0.0"]);
@@ -109,14 +111,14 @@ try {
   const managed=join(app,"platform-components",component,"index.tsx");
   const original=readFileSync(managed);
   rmSync(managed);
-  fails(["components","check"],/component_file_missing/);
+  fails(["components","check"],CLI_EXIT.environment,/component_file_missing/);
   cli(["components","sync"]);assert.deepEqual(readFileSync(managed),original);
   writeFileSync(managed,"user edit");
-  fails(["components","sync"],/component_modified/);
+  fails(["components","sync"],CLI_EXIT.environment,/component_modified/);
   assert.equal(readFileSync(managed,"utf8"),"user edit");writeFileSync(managed,original);
   const lockFile=join(app,"platform-components/miy.components.lock.json");
   const savedLock=readFileSync(lockFile);const tampered=locked();tampered.components[component].sha256="0".repeat(64);writeFileSync(lockFile,JSON.stringify(tampered));
-  fails(["components","sync"],/locked_component_digest_changed/);writeFileSync(lockFile,savedLock);
+  fails(["components","sync"],CLI_EXIT.environment,/locked_component_digest_changed/);writeFileSync(lockFile,savedLock);
   ok("missing files restored at pinned digest; edits and digest substitution refused without overwriting code");
 
   writeFileSync(join(app,"web/src/AppRoot.tsx"),`import type {AppProps} from "@miy/sdk";\nimport {Panel} from "@miy/ui";\nimport {RegistryBadge} from "@miy/components/${component}";\nexport default function AppRoot({runtime}:AppProps){return <Panel title="Component registry probe"><RegistryBadge/><p>{runtime.location.pathname}</p></Panel>;}\n`);
@@ -133,7 +135,7 @@ try {
   packageSource("1.1.0","badge v2");cli(["components","publish",source],adminDir);
   packageSource("9.0.0","incompatible",["99.0.0"]);cli(["components","publish",source],adminDir);
   const installedBefore=digest(managed);cli(["components","sync"]);assert.equal(digest(managed),installedBefore);assert.equal(locked().components[component].version,"1.0.0");
-  fails(["components","update",component,"--version","9.0.0"],/incompatible_component/);assert.equal(digest(managed),installedBefore);
+  fails(["components","update",component,"--version","9.0.0"],CLI_EXIT.environment,/incompatible_component/);assert.equal(digest(managed),installedBefore);
   cli(["components","update",component]);assert.equal(locked().components[component].version,"1.1.0");
   await page.reload();await page.getByTestId("registry-badge").filter({hasText:"badge v1"}).waitFor();
   const credentials=readFileSync(join(app,".miy/session.json"));

@@ -1,6 +1,7 @@
 // Optional audit recorder around the user's real Codex CLI. No model, auth, trust,
 // approval, sandbox or global configuration overrides. Normal CLI approval still applies.
 import { spawn, execFileSync } from "node:child_process";
+import { cliData } from "./lib/cli-result.mjs";
 import {
   readFileSync,
   existsSync,
@@ -17,11 +18,12 @@ if (!promptPath)
 const prompt = readFileSync(promptPath, "utf8");
 const label = process.argv[4] || "app-codex";
 if (!/^[a-z0-9-]+$/.test(label)) throw Error("Invalid evidence label");
-const cli = join(app, ".miy-tools/miy");
+const cli = join(app, ".miy-tools", process.platform === "win32" ? "miy.exe" : "miy");
 if (!existsSync(cli))
   throw Error("Install miy and run miy app setup in the app directory first.");
-const doctor = JSON.parse(
-  execFileSync(cli, ["app", "doctor"], { cwd: app, encoding: "utf8" }),
+const doctor = cliData(
+  execFileSync(cli, ["--output", "json", "app", "doctor"], { cwd: app, encoding: "utf8" }),
+  "app doctor",
 );
 if (!doctor.mcp.configured || !doctor.platform?.connected)
   throw Error(

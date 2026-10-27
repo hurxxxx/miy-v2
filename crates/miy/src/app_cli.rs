@@ -1,5 +1,7 @@
 use crate::{
     bundle,
+    cli_error::{Category, CliError},
+    cli_output::Outcome,
     contract::{self, Manifest},
 };
 use anyhow::{Context, Result};
@@ -126,7 +128,7 @@ pub enum AppCommand {
     Build,
     /// Deploy the built image using the platform's DB and Docker runner.
     Deploy {
-        #[arg(long, default_value = "dev", value_parser=["dev","prod"])]
+        #[arg(long, default_value = "dev", value_parser=["dev"])]
         environment: String,
         #[arg(long)]
         no_wait: bool,
@@ -170,27 +172,70 @@ pub(crate) fn run(program: &str, args: &[&str]) -> Result<()> {
         .with_context(|| format!("cannot_run_{program}"))?;
     anyhow::ensure!(
         status.success(),
-        "command_failed: {program} {}",
-        args.join(" ")
+        CliError::new(
+            Category::Environment,
+            "command_failed",
+            format!("{program} failed; inspect its diagnostic output.")
+        )
     );
     Ok(())
 }
 fn output(program: &str, args: &[&str]) -> Result<String> {
     let out = crate::platform::command(program, args)?.output()?;
-    anyhow::ensure!(out.status.success(), "command_failed: {program}");
+    anyhow::ensure!(
+        out.status.success(),
+        CliError::new(
+            Category::Environment,
+            "command_failed",
+            format!("{program} failed.")
+        )
+    );
     Ok(String::from_utf8(out.stdout)?.trim().to_string())
 }
 pub(crate) fn manifest() -> Result<Manifest> {
-    let m: Manifest = serde_json::from_slice(
-        &std::fs::read("manifest.json").context("run_inside_an_app_directory")?,
-    )?;
-    contract::validate(&m).map_err(anyhow::Error::msg)?;
+    let m: Manifest = serde_json::from_slice(&std::fs::read("manifest.json").map_err(|_| {
+        CliError::new(
+            Category::Environment,
+            "manifest_unavailable",
+            "Run inside an app directory with a readable manifest.json.",
+        )
+    })?)
+    .map_err(|_| {
+        CliError::new(
+            Category::Environment,
+            "invalid_manifest",
+            "manifest.json must match the application manifest schema.",
+        )
+    })?;
+    contract::validate(&m)
+        .map_err(|message| CliError::new(Category::Environment, "invalid_manifest", message))?;
     Ok(m)
 }
 pub(crate) fn session() -> Result<Session> {
-    Ok(serde_json::from_slice(
-        &std::fs::read(".miy/session.json").context("run_miy_app_login_first")?,
-    )?)
+    let bytes = std::fs::read(".miy/session.json").map_err(|error| {
+        if error.kind() == std::io::ErrorKind::NotFound {
+            CliError::new(
+                Category::Auth,
+                "login_required",
+                "Sign in before using this command.",
+            )
+            .with_recovery("miy", &["app", "login"])
+        } else {
+            CliError::new(
+                Category::Environment,
+                "session_unavailable",
+                "Cannot read the saved session.",
+            )
+        }
+    })?;
+    Ok(serde_json::from_slice(&bytes).map_err(|_| {
+        CliError::new(
+            Category::Environment,
+            "invalid_session",
+            "The saved session is invalid; sign in again.",
+        )
+        .with_recovery("miy", &["app", "login"])
+    })?)
 }
 pub(crate) async fn api(s: &Session, path: &str, body: Option<Value>) -> Result<Value> {
     api_method(
@@ -217,40 +262,62 @@ pub(crate) async fn api_method(
         req = req.json(&body);
     }
     req = crate::cli_client::authenticate(s, req);
-    let response = req.send().await?;
-    let status = response.status();
-    let value: Value = response.json().await?;
-    anyhow::ensure!(
-        status.is_success(),
-        "platform_error {}: {} requestId={}",
-        status,
-        value["error"]["code"],
-        value["error"]["requestId"]
-    );
-    Ok(value)
+    crate::cli_error::response(req.send().await?).await
 }
 pub(crate) fn save(path: &str, value: &Value) -> Result<()> {
     crate::platform::write_private(Path::new(path), &serde_json::to_vec_pretty(value)?)
 }
 async fn wait(s: &Session, job: Value) -> Result<Value> {
-    let id = job["id"].as_str().context("missing_job_id")?;
-    for _ in 0..600 {
-        let value = api(s, &format!("/api/v1/runtime/jobs/{id}"), None).await?;
-        if value["status"] == "succeeded" {
-            return Ok(value);
+    let id = job["id"]
+        .as_str()
+        .and_then(|id| uuid::Uuid::parse_str(id).ok())
+        .ok_or_else(|| {
+            CliError::new(
+                Category::Network,
+                "invalid_job_response",
+                "The platform did not return a valid job ID.",
+            )
+        })?;
+    let polling = async {
+        for _ in 0..600 {
+            let value = api(s, &format!("/api/v1/runtime/jobs/{id}"), None).await?;
+            if value["status"] == "succeeded" {
+                return Ok(value);
+            }
+            if value["status"] == "failed" {
+                let code = value["errorCode"].as_str().unwrap_or("");
+                return Err(CliError::new(Category::RemoteFailure, "deployment_failed", job_hint(code))
+                    .with_details(json!({"jobId":id,"errorCode":safe_job_field(&value["errorCode"]),"step":safe_job_field(&value["step"])}))
+                    .with_recovery("miy", &["app", "status"]).into());
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(500)).await;
         }
-        if value["status"] == "failed" {
-            anyhow::bail!(
-                "deployment_failed: {} (step {}, job {}); {}",
-                value["errorCode"],
-                value["step"],
-                id,
-                job_hint(value["errorCode"].as_str().unwrap_or(""))
-            );
+        Err(CliError::new(
+            Category::Network,
+            "job_wait_timed_out",
+            "Observation timed out. The remote job continues.",
+        )
+        .with_details(json!({"jobId":id}))
+        .with_recovery("miy", &["app", "resume"])
+        .into())
+    };
+    tokio::select! {
+        result = polling => result,
+        signal = tokio::signal::ctrl_c() => {
+            signal?;
+            Err(CliError::new(Category::Interrupted, "observation_interrupted", "Local observation stopped. The remote job continues.")
+                .with_details(json!({"jobId":id})).with_recovery("miy", &["app", "resume"]).into())
         }
-        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
     }
-    anyhow::bail!("job_wait_timed_out: {id}; use miy app resume")
+}
+fn safe_job_field(value: &Value) -> Option<&str> {
+    value.as_str().filter(|value| {
+        !value.is_empty()
+            && value.len() <= 80
+            && value
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || b == b'_')
+    })
 }
 fn job_hint(code: &str) -> &'static str {
     match code {
@@ -265,8 +332,11 @@ fn job_hint(code: &str) -> &'static str {
 }
 pub(crate) fn check() -> Result<Manifest> {
     let m = manifest()?;
-    bundle::verify(Path::new("."))?;
-    crate::cli_guidance::verify(Path::new("."))?;
+    crate::cli_error::validation(bundle::verify(Path::new(".")), "bundle_invalid")?;
+    crate::cli_error::validation(
+        crate::cli_guidance::verify(Path::new(".")),
+        "cli_guidance_invalid",
+    )?;
     crate::component_cli::verify(Path::new("."))?;
     for path in [
         "src/main.rs",
@@ -274,15 +344,25 @@ pub(crate) fn check() -> Result<Manifest> {
         "Cargo.lock",
         "pnpm-lock.yaml",
     ] {
-        anyhow::ensure!(Path::new(path).is_file(), "missing_bundle_file: {path}");
+        anyhow::ensure!(
+            Path::new(path).is_file(),
+            CliError::new(
+                Category::Environment,
+                "missing_bundle_file",
+                format!("missing_bundle_file: {path}")
+            )
+        );
     }
-    bundle::migrations(Path::new("migrations"))?;
+    crate::cli_error::validation(
+        bundle::migrations(Path::new("migrations")),
+        "migration_contract_invalid",
+    )?;
     run("cargo", &["fmt", "--all", "--check"])?;
     run("cargo", &["test", "--locked"])?;
     run("pnpm", &["install", "--frozen-lockfile"])?;
     run("pnpm", &["typecheck"])?;
     run("pnpm", &["build"])?;
-    bundle::ui(Path::new("dist/ui"))?;
+    crate::cli_error::validation(bundle::ui(Path::new("dist/ui")), "ui_invalid")?;
     Ok(m)
 }
 async fn submit(
@@ -308,16 +388,34 @@ async fn submit(
                 Some("failed") => {
                     anyhow::ensure!(
                         retry,
-                        "previous_job_failed: {id}; inspect with app resume, then use --retry"
+                        CliError::new(
+                            Category::Conflict,
+                            "previous_job_failed",
+                            "Inspect the previous failed job before explicitly retrying."
+                        )
+                        .with_details(json!({"jobId":id}))
+                        .with_recovery("miy", &["app", "resume"])
                     );
                     cached = None;
                 }
-                _ => anyhow::ensure!(!retry, "job_still_in_progress: use app resume"),
+                _ => anyhow::ensure!(
+                    !retry,
+                    CliError::new(
+                        Category::Conflict,
+                        "job_still_in_progress",
+                        "Resume observation of the existing job."
+                    )
+                    .with_recovery("miy", &["app", "resume"])
+                ),
             }
         } else {
             anyhow::ensure!(
                 !retry,
-                "submission_status_unknown: rerun without --retry to recover the same request"
+                CliError::new(
+                    Category::Conflict,
+                    "submission_status_unknown",
+                    "Rerun without --retry to recover the same request."
+                )
             );
         }
     }
@@ -332,23 +430,27 @@ async fn submit(
     save(".miy/last-job.json", &entry)?;
     if no_wait { Ok(job) } else { wait(s, job).await }
 }
-pub async fn execute(command: AppCommand) -> Result<()> {
+pub async fn execute(command: AppCommand) -> Result<Outcome> {
     match command {
         AppCommand::Components { command } => {
-            println!("{}", crate::component_cli::execute(command).await?)
+            return Ok(Outcome::Data(crate::component_cli::execute(command).await?));
         }
         AppCommand::Dev { port, no_open } => crate::preview::run(port, no_open).await?,
         AppCommand::DevStop => crate::preview::stop().await?,
         AppCommand::Describe { format } => {
             if format == "markdown" {
                 print!("{}", crate::cli_guidance::manual());
+                return Ok(Outcome::Raw);
             } else {
-                println!("{}", crate::agent_tools::cli_help());
+                return Ok(Outcome::Data(crate::agent_tools::cli_help()));
             }
         }
-        AppCommand::Mcp => crate::agent_tools::serve().await?,
-        AppCommand::Upgrade => println!("{}", crate::upgrade::run().await?),
-        AppCommand::Setup => println!("{}", crate::agent_tools::setup(Path::new("."))?),
+        AppCommand::Mcp => {
+            crate::agent_tools::serve().await?;
+            return Ok(Outcome::Raw);
+        }
+        AppCommand::Upgrade => return Ok(Outcome::Data(crate::upgrade::run().await?)),
+        AppCommand::Setup => return Ok(Outcome::Data(crate::agent_tools::setup(Path::new("."))?)),
         AppCommand::Logout => {
             let s = session()?;
             if s.token.is_some() {
@@ -357,19 +459,18 @@ pub async fn execute(command: AppCommand) -> Result<()> {
                 api(&s, "/auth/logout", Some(json!({}))).await?;
             }
             std::fs::remove_file(".miy/session.json")?;
-            println!("{}", json!({"signedOut":true}));
+            return Ok(Outcome::Data(json!({"signedOut":true})));
         }
         AppCommand::Rename { name } => {
             let m = manifest()?;
-            println!(
-                "{}",
+            return Ok(Outcome::Data(
                 api(
                     &session()?,
                     &format!("/api/v1/apps/{}/name", m.id),
-                    Some(json!({"name":name}))
+                    Some(json!({"name":name})),
                 )
-                .await?
-            );
+                .await?,
+            ));
         }
         AppCommand::Accept { note, report } => {
             let m = manifest()?;
@@ -380,33 +481,57 @@ pub async fn execute(command: AppCommand) -> Result<()> {
                 .context("invalid_installations")?
                 .iter()
                 .find(|v| v["appId"] == m.id && v["environment"] == "dev")
-                .context("deploy_to_dev_first")?;
+                .ok_or_else(|| {
+                    CliError::new(
+                        Category::Environment,
+                        "dev_release_required",
+                        "Deploy to dev before accepting a release.",
+                    )
+                })?;
             let mut body = json!({"releaseId":inst["releaseId"],"note":note});
             if let Some(path) = report {
                 anyhow::ensure!(
                     std::fs::metadata(&path)?.len() <= 160_000,
-                    "acceptance_report_too_large"
+                    CliError::new(
+                        Category::Usage,
+                        "acceptance_report_too_large",
+                        "acceptance_report_too_large"
+                    )
                 );
-                let report: Value = serde_json::from_slice(&std::fs::read(path)?)?;
+                let report: Value =
+                    serde_json::from_slice(&std::fs::read(path)?).map_err(|_| {
+                        CliError::new(
+                            Category::Usage,
+                            "invalid_acceptance_report",
+                            "The acceptance report must contain valid JSON.",
+                        )
+                    })?;
                 anyhow::ensure!(
                     report["releaseId"] == inst["releaseId"],
-                    "acceptance_report_release_mismatch"
+                    CliError::new(
+                        Category::Conflict,
+                        "acceptance_report_release_mismatch",
+                        "acceptance_report_release_mismatch"
+                    )
                 );
                 anyhow::ensure!(
                     report["checks"].as_array().is_some_and(|c| !c.is_empty()),
-                    "acceptance_checks_required"
+                    CliError::new(
+                        Category::Usage,
+                        "acceptance_checks_required",
+                        "acceptance_checks_required"
+                    )
                 );
                 body["checks"] = report["checks"].clone();
             }
-            println!(
-                "{}",
+            return Ok(Outcome::Data(
                 api(
                     &s,
                     &format!("/api/v1/apps/{}/test-acceptance", m.id),
-                    Some(body)
+                    Some(body),
                 )
-                .await?
-            );
+                .await?,
+            ));
         }
         AppCommand::Promote {
             release,
@@ -415,17 +540,16 @@ pub async fn execute(command: AppCommand) -> Result<()> {
         } => {
             let m = manifest()?;
             let s = session()?;
-            println!(
-                "{}",
+            return Ok(Outcome::Data(
                 submit(
                     &s,
                     &m.id,
                     json!({"action":"promote","environment":"prod","releaseId":release}),
                     no_wait,
-                    retry
+                    retry,
                 )
-                .await?
-            );
+                .await?,
+            ));
         }
         AppCommand::Doctor => {
             let mut value = crate::dev_tools::doctor()?;
@@ -449,13 +573,17 @@ pub async fn execute(command: AppCommand) -> Result<()> {
                     json!({"connected":false,"hint":"Run app login; project configuration alone is not authentication."})
                 }
             };
-            println!("{value}");
+            return Ok(Outcome::Data(value));
         }
         AppCommand::SetupCodex { url, ca_file } => {
-            println!("{}", crate::dev_tools::setup(&url, ca_file.as_deref())?);
+            return Ok(Outcome::Data(crate::dev_tools::setup(
+                &url,
+                ca_file.as_deref(),
+            )?));
         }
         AppCommand::Codex { args } => {
             crate::dev_tools::codex(&args)?;
+            return Ok(Outcome::Raw);
         }
         AppCommand::Init {
             path,
@@ -466,11 +594,19 @@ pub async fn execute(command: AppCommand) -> Result<()> {
         } => {
             anyhow::ensure!(
                 contract::valid_id(&id) && !name.trim().is_empty(),
-                "invalid_app_identity"
+                CliError::new(
+                    Category::Usage,
+                    "invalid_app_identity",
+                    "invalid_app_identity"
+                )
             );
             anyhow::ensure!(
                 !path.exists() || std::fs::read_dir(&path)?.next().is_none(),
-                "destination_must_be_empty"
+                CliError::new(
+                    Category::Conflict,
+                    "destination_must_be_empty",
+                    "destination_must_be_empty"
+                )
             );
             std::fs::create_dir_all(&path)?;
             for (relative, content) in bundle::template() {
@@ -509,10 +645,9 @@ pub async fn execute(command: AppCommand) -> Result<()> {
             )?;
             crate::cli_client::configure(&path, &url, ca_file.as_deref())?;
             crate::agent_tools::setup(&path)?;
-            println!(
-                "{}",
-                json!({"created":path.canonicalize()?,"cliVersion":crate::cli_guidance::VERSION,"cliSkill":".agents/skills/miy-cli/SKILL.md","cliManual":"docs/CLI-REFERENCE.md","appId":id,"bundleVersion":bundle::VERSION,"components":"Declared in miy.components.json; fetch after login","next":[".miy-tools/miy app doctor",".miy-tools/miy app login",".miy-tools/miy app components sync", "codex or claude (approve project trust/MCP when prompted)",".miy-tools/miy app check",".miy-tools/miy app register"]})
-            );
+            return Ok(Outcome::Data(
+                json!({"created":path.canonicalize()?,"cliVersion":crate::cli_guidance::VERSION,"cliSkill":".agents/skills/miy-cli/SKILL.md","cliManual":"docs/CLI-REFERENCE.md","appId":id,"bundleVersion":bundle::VERSION,"components":"Declared in miy.components.json; fetch after login","next":[".miy-tools/miy app doctor",".miy-tools/miy app login",".miy-tools/miy app components sync", "codex or claude (approve project trust/MCP when prompted)",".miy-tools/miy app check",".miy-tools/miy app register"]}),
+            ));
         }
         AppCommand::Login {
             url,
@@ -533,15 +668,18 @@ pub async fn execute(command: AppCommand) -> Result<()> {
             let ca_file = ca_file.or_else(|| saved["caFile"].as_str().map(PathBuf::from));
             crate::cli_client::configure(Path::new("."), &url, ca_file.as_deref())?;
             if account.is_none() {
-                crate::cli_client::login(no_open).await?;
-                return Ok(());
+                return Ok(Outcome::Data(crate::cli_client::login(no_open).await?));
             }
             let account = account.unwrap();
             let u = url::Url::parse(&url)?;
             anyhow::ensure!(
                 contract::valid_id(&account)
                     && crate::identity::development_profile(Some("1"), &url, &url),
-                "development_login_requires_loopback_origin"
+                CliError::new(
+                    Category::Usage,
+                    "development_login_requires_loopback_origin",
+                    "development_login_requires_loopback_origin"
+                )
             );
             let origin = u.origin().ascii_serialization();
             let r = reqwest::Client::new()
@@ -550,7 +688,10 @@ pub async fn execute(command: AppCommand) -> Result<()> {
                 .json(&json!({"account":account}))
                 .send()
                 .await?;
-            anyhow::ensure!(r.status().is_success(), "development_login_unavailable");
+            if !r.status().is_success() {
+                crate::cli_error::response(r).await?;
+                unreachable!("failed HTTP responses return an error");
+            }
             let cookie = r
                 .headers()
                 .get(reqwest::header::SET_COOKIE)
@@ -561,14 +702,14 @@ pub async fn execute(command: AppCommand) -> Result<()> {
                 .unwrap()
                 .to_string();
             let client = reqwest::Client::new();
-            let me: Value = client
-                .get(format!("{origin}/api/v1/me"))
-                .header("cookie", &cookie)
-                .send()
-                .await?
-                .error_for_status()?
-                .json()
-                .await?;
+            let me = crate::cli_error::response(
+                client
+                    .get(format!("{origin}/api/v1/me"))
+                    .header("cookie", &cookie)
+                    .send()
+                    .await?,
+            )
+            .await?;
             let session = Session {
                 origin,
                 token: None,
@@ -577,31 +718,44 @@ pub async fn execute(command: AppCommand) -> Result<()> {
                 csrf: me["csrf"].as_str().context("no_csrf")?.into(),
             };
             save(".miy/session.json", &serde_json::to_value(session)?)?;
-            println!("{}", json!({"signedIn":me["name"],"development":true}));
+            return Ok(Outcome::Data(
+                json!({"signedIn":me["name"],"development":true}),
+            ));
         }
         AppCommand::Fmt => run("cargo", &["fmt", "--package", "miy-app"])?,
         AppCommand::Check => {
             let m = check()?;
-            println!(
-                "{}",
-                json!({"valid":true,"appId":m.id,"bundleVersion":bundle::VERSION,"checks":["manifest","bundle-integrity","cli-guidance-integrity","component-integrity","migration-contract","rust-format","rust-tests","frozen-dependencies","typescript","ui-build","federation-assets"],"browserIntegration":"requires platform acceptance test"})
-            );
+            return Ok(Outcome::Data(
+                json!({"valid":true,"appId":m.id,"bundleVersion":bundle::VERSION,"checks":["manifest","bundle-integrity","cli-guidance-integrity","component-integrity","migration-contract","rust-format","rust-tests","frozen-dependencies","typescript","ui-build","federation-assets"],"browserIntegration":"requires platform acceptance test"}),
+            ));
         }
         AppCommand::Build => {
             let m = manifest()?;
             let commit = output("git", &["rev-parse", "HEAD"])?;
             anyhow::ensure!(
                 output("git", &["status", "--porcelain"])?.is_empty(),
-                "commit_source_before_building"
+                CliError::new(
+                    Category::Conflict,
+                    "commit_source_before_building",
+                    "commit_source_before_building"
+                )
             );
             check()?;
             anyhow::ensure!(
                 output("git", &["status", "--porcelain"])?.is_empty(),
-                "check_modified_source: review and commit before building"
+                CliError::new(
+                    Category::Conflict,
+                    "check_modified_source",
+                    "check_modified_source: review and commit before building"
+                )
             );
             anyhow::ensure!(
                 Path::new("dist/ui").join(&m.ui.module_entry).is_file(),
-                "missing_ui_entry"
+                CliError::new(
+                    Category::Environment,
+                    "missing_ui_entry",
+                    "missing_ui_entry"
+                )
             );
             save(
                 "dist/build.json",
@@ -624,7 +778,7 @@ pub async fn execute(command: AppCommand) -> Result<()> {
             let image = output("docker", &["image", "inspect", "--format", "{{.Id}}", &tag])?;
             let value = json!({"imageId":image,"tag":tag,"sourceCommit":commit,"appId":m.id,"version":m.version,"bundleVersion":bundle::VERSION});
             save("dist/image.json", &value)?;
-            println!("{value}");
+            return Ok(Outcome::Data(value));
         }
         AppCommand::Deploy {
             environment,
@@ -633,19 +787,32 @@ pub async fn execute(command: AppCommand) -> Result<()> {
         } => {
             let m = manifest()?;
             let s = session()?;
-            let image: Value = serde_json::from_slice(
-                &std::fs::read("dist/image.json").context("run_miy_app_build_first")?,
-            )?;
+            let image: Value =
+                serde_json::from_slice(&std::fs::read("dist/image.json").map_err(|_| {
+                    CliError::new(
+                        Category::Environment,
+                        "build_required",
+                        "Run miy app build first.",
+                    )
+                })?)?;
             anyhow::ensure!(
                 image["appId"] == m.id
                     && image["version"] == m.version
                     && image["sourceCommit"] == output("git", &["rev-parse", "HEAD"])?
                     && output("git", &["status", "--porcelain"])?.is_empty(),
-                "stale_build: commit changes and run app build"
+                CliError::new(
+                    Category::Conflict,
+                    "stale_build",
+                    "stale_build: commit changes and run app build"
+                )
             );
             anyhow::ensure!(
                 environment == "dev",
-                "use_app_accept_then_app_promote_for_prod"
+                CliError::new(
+                    Category::Usage,
+                    "use_app_accept_then_app_promote_for_prod",
+                    "use_app_accept_then_app_promote_for_prod"
+                )
             );
             crate::cli_client::upload(
                 &s,
@@ -653,17 +820,16 @@ pub async fn execute(command: AppCommand) -> Result<()> {
                 image["imageId"].as_str().context("missing_image_id")?,
             )
             .await?;
-            println!(
-                "{}",
+            return Ok(Outcome::Data(
                 submit(
                     &s,
                     &m.id,
                     json!({"action":"deploy","environment":environment,"imageId":image["imageId"]}),
                     no_wait,
-                    retry
+                    retry,
                 )
-                .await?
-            );
+                .await?,
+            ));
         }
         AppCommand::Control {
             action,
@@ -673,76 +839,82 @@ pub async fn execute(command: AppCommand) -> Result<()> {
         } => {
             let m = manifest()?;
             let s = session()?;
-            println!(
-                "{}",
+            return Ok(Outcome::Data(
                 submit(
                     &s,
                     &m.id,
                     json!({"action":action,"environment":environment}),
                     no_wait,
-                    retry
+                    retry,
                 )
-                .await?
-            );
+                .await?,
+            ));
         }
         AppCommand::Resume => {
             let s = session()?;
-            let entry: Value = serde_json::from_slice(
-                &std::fs::read(".miy/last-job.json").context("no_saved_job")?,
-            )?;
+            let entry: Value =
+                serde_json::from_slice(&std::fs::read(".miy/last-job.json").map_err(|_| {
+                    CliError::new(
+                        Category::NotFound,
+                        "no_saved_job",
+                        "No readable saved job is available.",
+                    )
+                })?)?;
             let me = api(&s, "/api/v1/me", None).await?;
             anyhow::ensure!(
                 entry["origin"] == s.origin && entry["actor"] == me["id"],
-                "job_session_mismatch: sign in as the original requester"
+                CliError::new(
+                    Category::Conflict,
+                    "job_session_mismatch",
+                    "job_session_mismatch: sign in as the original requester"
+                )
             );
             if let Some(id) = entry["jobId"].as_str() {
-                println!("{}", wait(&s, json!({"id":id})).await?);
+                return Ok(Outcome::Data(wait(&s, json!({"id":id})).await?));
             } else {
-                println!(
-                    "{}",
+                return Ok(Outcome::Data(
                     submit(
                         &s,
                         entry["appId"].as_str().context("invalid_saved_job")?,
                         entry["body"].clone(),
                         false,
-                        false
+                        false,
                     )
-                    .await?
-                );
+                    .await?,
+                ));
             }
         }
         AppCommand::Register => {
             let m = manifest()?;
-            println!(
-                "{}",
+            return Ok(Outcome::Data(
                 api(
                     &session()?,
                     "/api/v1/app-registrations",
-                    Some(json!({"id":m.id,"name":m.name}))
+                    Some(json!({"id":m.id,"name":m.name})),
                 )
-                .await?
-            );
+                .await?,
+            ));
         }
         AppCommand::Registrations => {
-            println!(
-                "{}",
-                api(&session()?, "/api/v1/app-registrations", None).await?
-            );
+            return Ok(Outcome::Data(
+                api(&session()?, "/api/v1/app-registrations", None).await?,
+            ));
         }
         AppCommand::Approve { id } | AppCommand::Reject { id } => {
             let approve = matches!(command, AppCommand::Approve { .. });
-            println!(
-                "{}",
+            return Ok(Outcome::Data(
                 api(
                     &session()?,
                     &format!("/api/v1/app-registrations/{id}/decision"),
-                    Some(json!({"approve":approve}))
+                    Some(json!({"approve":approve})),
                 )
-                .await?
-            );
+                .await?,
+            ));
         }
         AppCommand::Users => {
-            println!("{}", api(&session()?, "/api/v1/users", None).await?);
+            return Ok(Outcome::Data(
+                api(&session()?, "/api/v1/users", None).await?,
+            ));
         }
         AppCommand::Grant {
             user,
@@ -751,7 +923,7 @@ pub async fn execute(command: AppCommand) -> Result<()> {
             revoke,
         } => {
             let m = manifest()?;
-            println!("{}",api_method(&session()?,"/api/v1/grants",reqwest::Method::PUT,Some(json!({"userId":user,"appId":m.id,"environment":environment,"permission":permission,"enabled":!revoke}))).await?);
+            return Ok(Outcome::Data(api_method(&session()?,"/api/v1/grants",reqwest::Method::PUT,Some(json!({"userId":user,"appId":m.id,"environment":environment,"permission":permission,"enabled":!revoke}))).await?));
         }
         AppCommand::Status => {
             let m = manifest()?;
@@ -805,8 +977,8 @@ pub async fn execute(command: AppCommand) -> Result<()> {
                     }
                 }
             }
-            println!("{}", json!(installations));
+            return Ok(Outcome::Data(json!(installations)));
         }
     }
-    Ok(())
+    Ok(Outcome::Data(json!({"completed":true})))
 }

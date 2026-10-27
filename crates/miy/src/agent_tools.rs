@@ -24,13 +24,17 @@ pub fn cli_help() -> Value {
             );
         }
     }
-    let c = crate::Args::command();
+    let mut c = crate::Args::command();
+    c.build();
     let app = c.find_subcommand("app").unwrap().clone();
     let mut rows = vec![];
     walk(app, "miy app", &mut rows);
     json!({"cliVersion":crate::cli_guidance::VERSION,"bundleVersion":crate::bundle::VERSION,"workflow":crate::cli_guidance::WORKFLOW,"commands":rows})
 }
 pub fn setup(root: &Path) -> Result<Value> {
+    crate::cli_error::validation(setup_local(root), "setup_failed")
+}
+fn setup_local(root: &Path) -> Result<Value> {
     let root = root.canonicalize()?;
     ensure!(
         root.join("manifest.json").is_file(),

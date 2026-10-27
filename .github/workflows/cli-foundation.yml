@@ -69,6 +69,9 @@ jobs:
       - name: Verify the actual embedded bundle via offline app init
         if: matrix.client
         run: python scripts/check-bundle-portability.py check --cli "${{ matrix.binary }}" --output .local/ci/bundle.json
+      - name: Verify CLI output and exit contracts with a loopback fixture
+        if: matrix.client
+        run: python scripts/check-cli-output.py --cli "${{ matrix.binary }}"
       - name: Upload the portable bundle manifest
         if: matrix.client
         uses: actions/upload-artifact@v4

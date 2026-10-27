@@ -68,7 +68,7 @@ Worker의 제어 큐와 health 관찰은 분리되어 있다. 로그 수집 때�
 
 - [ ] **0 기준선과 Linux 실증**: 현재 환경의 정적·단위·격리 런타임·브라우저 회귀, 서버 코드/migration 확인, 별도 Linux 서버 로그인·업로드·dev 배포·동일 릴리스 prod 승격·UI/API·데이터 보존.
 - [ ] **1A OS와 빌드 — 진행 중**: 서버/클라이언트 경계, Windows MSVC 빌드 CI, 실행 파일·프로세스·경로·권한 계층, 생성/upgrade 앱까지 번들 경로·LF 정책, OS 간 해시 검사, 파일 교체의 staging·중단 복구 설계.
-- [ ] **1B 명령 계약 — 미착수**: 새 명령 체계, 공통 출력·오류·종료 코드, JSON 입력/필드/페이지 계약, describe/completion 생성, develop/operate 진단, 공유 preflight·expected-state·타입별 실패/재시도 계약.
+- [ ] **1B 명령 계약 — 진행 중**: 기존 앱 명령의 공통 출력·오류·종료 코드를 구현 중이다. 새 명령 체계, JSON 입력/필드/페이지 계약, describe/completion 생성, develop/operate 진단, 공유 preflight·expected-state·타입별 실패/재시도 계약은 남아 있다.
 - [ ] **2 인증**: Context 선택·저장, capability 확인, 브라우저/device-code UI/API, 갱신·철회·보안 저장, 사용자 비활성화 원천/전파/최대 지연 확정과 검사, 동시 갱신 및 다중 서버 검사.
 - [ ] **3 운영**: 앱/작업 목록, 이미지 업로드 접수부터 runtime까지 요청 journal·멱등 재조회·응답 유실 복구, transaction 이벤트, watch/resume/retry, 권한이 있는 제한된 로그 조회와 worker 진단 경로.
 - [ ] **4 실행 전 검증**: 공유 preflight, dry-run, 대상/영향 확인, 비TTY 승인 조건, 상태·권한 재검사와 부작용 0건 증명, prod/앱 제거 retry에 같은 확인 정책 적용.
@@ -125,6 +125,17 @@ cargo test --workspace --locked --no-default-features
 python3 scripts/check-bundle-portability.py check --cli target/debug/miy --output .local/ci/bundle.json
 ```
 
-Windows CI는 `--no-default-features --target x86_64-pc-windows-msvc`로 빌드·검사한다. Linux에서 OS 모듈의 Windows 타입검사는 통과했지만 전체 교차 검사는 `ring`의 MSVC `lib.exe` 부재로 실행되지 못했다. 네이티브 CI와 실제 Windows 실행·PowerShell·Docker Desktop E2E는 미검증이다. 1A 완료 체크를 하지 않는다.
+Windows CI는 `--no-default-features --target x86_64-pc-windows-msvc`로 빌드·검사한다. Linux에서 OS 모듈의 Windows 타입검사는 통과했지만 전체 교차 검사는 `ring`의 MSVC `lib.exe` 부재로 실행되지 못했다. 이후 `fbbd087`의 [네이티브 CI](https://github.com/hurxxxx/miy-v2/actions/runs/40446385352)는 Linux 서버/클라이언트, macOS, Windows MSVC와 OS 간 번들 비교를 모두 통과했다. 실제 사용자 Windows 11·PowerShell·Docker Desktop E2E는 미검증이며 1A 전체 완료 체크를 하지 않는다.
 
 Windows 빌드·검증·로컬 ZIP 생성과 결과 기록은 [별도 문서](WINDOWS-VALIDATION.md)로 관리한다. 사용자가 Windows 환경에서 실행한 뒤 결과 업데이트를 요청하면 commit·환경·명령·증거에 맞춰 기록한다. 결과가 오기 전에는 미검증 상태를 유지하며, 독립적인 1B 공통 출력/오류·preflight·expected-state/재시도 타입 구현은 진행한다. Windows/macOS 네이티브 CI, 여러 파일 복구·소유 프로세스 종료 경계와 별도 원격 Linux 서버의 인증·전송·UI 실증도 남아 있다. 이 환경의 격리 Linux 런타임 회귀를 원격 서버 실증으로 대신하지 않는다.
+
+
+## 2026-10-27 공통 출력·오류 계약 첫 구현
+
+기반 commit `fbbd087` 이후 기존 `miy app ...` 명령에 공통 출력 계층을 연결했다. `--output auto|text|json`을 지원하고, 자동 모드는 stdout TTY에서 text·비TTY에서 JSON을 선택한다. JSON 성공 값은 `data`로 이동했으며 실패도 stdout의 단일 `schemaVersion: 1` envelope다. 오류 분류·종료 코드는 구현 계획의 표를 따르고, 임의 오류는 내부 오류 1로 남긴다. 스크립트는 stdout과 실제 종료 코드를 함께 확인한다. 기존 바이너리와 달라진 출력 계약이므로 버전 문자열만으로 구분하지 말고 commit도 확인한다.
+
+help/version, Markdown describe, stdio MCP, legacy Codex 자식 스트림은 원래 형식을 유지한다. JSONL은 이벤트 명령이 생기기 전까지 실행 전에 거부한다. 서버의 serve/worker/migrate/seed는 기존 출력 경로이며 명시적인 `--output`을 거부한다. preview readiness는 stderr와 프로젝트 상태 파일에 기록한다. 원격 작업 관찰의 Ctrl+C는 작업을 취소하지 않고 job ID·복구 argv와 종료 코드 130을 반환한다.
+
+검증 진입점은 `python3 scripts/check-cli-output.py --cli target/debug/miy`, `node --test scripts/lib/cli-result.test.mjs`, `node scripts/check-cli-guidance.mjs`다. 첫 Python 검사는 실제 플랫폼 대신 임시 loopback fixture를 사용하며 CI의 Linux/macOS/Windows 클라이언트에서 실행한다. Windows 콘솔 Ctrl+C는 별도 사용자 검증이다. 실행 증거와 미실행 범위는 [구현 결과](IMPLEMENTATION-RESULTS.md#cli-공통-출력과-오류-계약-2026-10-27)에 기록한다.
+
+다음 구현은 서버/CLI가 공유할 preflight·expected-state와 타입별 원격 실패/재시도 계약이다. 현재의 `retryable`은 전송·관찰 오류에 대한 정보이며 원격 작업의 새 retry API나 실행 승인을 제공하지 않는다. 새 루트 명령, JSON 입력/fields/pagination, context/auth, job 이벤트·로그와 dry-run은 아직 남아 있다. 1B 전체를 완료로 표시하지 않는다.

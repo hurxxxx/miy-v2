@@ -2,6 +2,7 @@
 use crate::{
     api_error::{ApiError, ApiResult},
     app_cli::{self, Session},
+    cli_error::{Category, CliError},
     contract, docker as runtime, identity as auth,
 };
 use anyhow::{Context, Result, ensure};
@@ -15,7 +16,7 @@ use axum::{
 };
 use serde_json::{Value, json};
 use sqlx::{Connection, Executor};
-use std::{path::PathBuf, sync::Arc};
+use std::{future::Future, path::PathBuf, sync::Arc};
 use tower_http::services::{ServeDir, ServeFile};
 use uuid::Uuid;
 
@@ -97,10 +98,11 @@ pub async fn stop() -> Result<()> {
             if lock.try_lock().is_ok() {
                 break;
             }
-            ensure!(
-                tokio::time::Instant::now() < deadline,
-                "preview_shutdown_pending: request saved; startup/build may still be finishing; retry dev-stop or use Ctrl-C in its terminal"
-            );
+            if tokio::time::Instant::now() >= deadline {
+                return Err(CliError::new(Category::Network, "preview_shutdown_pending", "The stop request was saved, but preview startup or cleanup has not finished yet.")
+                    .with_recovery("miy", &["app", "dev-stop"])
+                    .into());
+            }
             tokio::time::sleep(std::time::Duration::from_millis(100)).await;
         }
     }
@@ -125,49 +127,119 @@ struct Preview {
     origin: String,
     cookie_name: String,
 }
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Shutdown {
+    Running,
+    Requested,
+    Interrupted,
+    SignalUnavailable,
+}
+
+async fn shutdown_reason(
+    signal: impl Future<Output = std::io::Result<()>>,
+    requested: impl Future<Output = ()>,
+) -> Shutdown {
+    tokio::select! {
+        result = signal => if result.is_ok() { Shutdown::Interrupted } else { Shutdown::SignalUnavailable },
+        _ = requested => Shutdown::Requested,
+    }
+}
+
 pub async fn run(port: u16, no_open: bool) -> Result<()> {
     let preview_lock = lock_file()?;
-    preview_lock
-        .try_lock()
-        .context("preview_already_running_for_this_project: run miy app dev-stop")?;
+    preview_lock.try_lock().map_err(|_| {
+        CliError::new(
+            Category::Conflict,
+            "preview_already_running_for_this_project",
+            "This project already has an active preview runner.",
+        )
+        .with_recovery("miy", &["app", "dev-stop"])
+    })?;
     remove_state();
     let run = Uuid::new_v4().to_string();
     app_cli::save(
         ".miy/preview-run.json",
         &json!({"protocol":1,"project":prefix()?,"runId":run,"pid":std::process::id()}),
     )?;
-    let (shutdown, rx) = tokio::sync::watch::channel(false);
+    let (shutdown, rx) = tokio::sync::watch::channel(Shutdown::Running);
+    let observed = rx.clone();
     let watcher = tokio::spawn(async move {
-        tokio::select! {
-            _ = tokio::signal::ctrl_c() => {},
-            _ = async { loop {
-                if stop_requested(&run) { break; }
+        let reason = shutdown_reason(tokio::signal::ctrl_c(), async {
+            loop {
+                if stop_requested(&run) {
+                    break;
+                }
                 tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-            }} => {},
-        }
-        let _ = shutdown.send(true);
+            }
+        })
+        .await;
+        let _ = shutdown.send(reason);
     });
     // Startup completes its current build/migration before cleanup, avoiding orphaned children.
     let result = serve_preview(port, no_open, rx).await;
     watcher.abort();
+    let reason = *observed.borrow();
     let cleaned = remove_containers().await;
     remove_state();
+    if reason == Shutdown::Interrupted {
+        if cleaned.is_err() {
+            return Err(CliError::new(
+                Category::Environment,
+                "preview_cleanup_failed",
+                "Preview was interrupted, but its owned containers could not be fully cleaned up.",
+            )
+            .with_details(json!({"interrupted":true,"cleanupComplete":false}))
+            .with_recovery("miy", &["app", "dev-stop"])
+            .into());
+        }
+        return Err(CliError::new(
+            Category::Interrupted,
+            "preview_interrupted",
+            "Local preview was interrupted after its owned resources were cleaned up.",
+        )
+        .with_details(json!({"cleanupComplete":true,"databaseVolumePreserved":true}))
+        .into());
+    }
     result?;
-    cleaned
+    cleaned?;
+    if reason == Shutdown::SignalUnavailable {
+        return Err(CliError::new(
+            Category::Environment,
+            "preview_signal_unavailable",
+            "The preview shutdown signal handler could not be initialized.",
+        )
+        .into());
+    }
+    Ok(())
 }
 async fn serve_preview(
     port: u16,
     no_open: bool,
-    mut shutdown: tokio::sync::watch::Receiver<bool>,
+    mut shutdown: tokio::sync::watch::Receiver<Shutdown>,
 ) -> Result<()> {
     let listener = tokio::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, port))
         .await
-        .context("preview_port_in_use")?;
+        .map_err(|error| {
+            let (category, code, message) = if error.kind() == std::io::ErrorKind::AddrInUse {
+                (
+                    Category::Conflict,
+                    "preview_port_in_use",
+                    "The requested local preview port is already in use.",
+                )
+            } else {
+                (
+                    Category::Environment,
+                    "preview_listener_unavailable",
+                    "The local preview listener could not be opened.",
+                )
+            };
+            CliError::new(category, code, message).with_details(json!({"port":port}))
+        })?;
     let port = listener.local_addr()?.port();
     let session = app_cli::session()?;
     let user = app_cli::api(&session, "/api/v1/me", None).await?;
     let m = app_cli::check()?;
-    if *shutdown.borrow() {
+    if *shutdown.borrow() != Shutdown::Running {
         return Ok(());
     }
     // This endpoint checks developer authority, even when the app has no deployed release yet.
@@ -198,7 +270,7 @@ async fn serve_preview(
             ".",
         ],
     )?;
-    if *shutdown.borrow() {
+    if *shutdown.borrow() != Shutdown::Running {
         return Ok(());
     }
     remove_containers().await?;
@@ -210,7 +282,7 @@ async fn serve_preview(
             return Err(e);
         }
     };
-    if *shutdown.borrow() {
+    if *shutdown.borrow() != Shutdown::Running {
         return Ok(());
     }
     let origin = format!("http://127.0.0.1:{port}");
@@ -233,7 +305,7 @@ async fn serve_preview(
         ".miy/preview.json",
         &json!({"url":url,"appId":m.id,"port":port}),
     )?;
-    println!(
+    eprintln!(
         "{}",
         json!({"url":url,"appId":m.id,"database":"local-only","platformEnvironment":"dev"})
     );
@@ -255,7 +327,9 @@ async fn serve_preview(
     }
     axum::serve(listener, app)
         .with_graceful_shutdown(async move {
-            let _ = shutdown.wait_for(|stopped| *stopped).await;
+            let _ = shutdown
+                .wait_for(|reason| *reason != Shutdown::Running)
+                .await;
         })
         .await?;
     Ok(())
@@ -612,4 +686,30 @@ async fn forward(
         out = out.header(header::CONTENT_TYPE, ct)
     }
     Ok(out.body(Body::from(body)).unwrap())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::future::{pending, ready};
+
+    #[tokio::test]
+    async fn cooperative_stop_and_interrupt_have_distinct_completion_reasons() {
+        assert_eq!(
+            shutdown_reason(pending(), ready(())).await,
+            Shutdown::Requested
+        );
+        assert_eq!(
+            shutdown_reason(ready(Ok(())), pending()).await,
+            Shutdown::Interrupted
+        );
+        assert_eq!(
+            shutdown_reason(
+                ready(Err(std::io::Error::other("signal unavailable"))),
+                pending()
+            )
+            .await,
+            Shutdown::SignalUnavailable
+        );
+    }
 }

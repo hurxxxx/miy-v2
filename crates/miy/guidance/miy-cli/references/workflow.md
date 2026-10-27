@@ -5,6 +5,30 @@ creating a project or explicitly updating its tooling. Exact syntax and options
 are in the generated [command reference](commands.md). `docs/CLI-REFERENCE.md`
 contains this workflow and the same generated reference for people.
 
+## Output and failures
+
+Application commands support `--output auto|text|json`. Auto uses labeled text on
+a terminal and JSON when stdout is redirected. For automation, pass `--output json`
+and read one UTF-8 response with `schemaVersion: 1`, `command`, `ok`, `data`, `error`
+and `meta`. Read successful values from `data`. Failed commands return `data: null`
+and an error with `code`, `message`, `retryable`, `details` and optional `recovery`
+(`executable` plus an argument array). Progress and child-tool diagnostics use stderr.
+
+Exit codes are 0 success, 1 unclassified internal failure, 2 invalid arguments/input,
+3 login required, 4 forbidden, 5 missing target, 6 state conflict, 7 environment or
+validation failure, 8 network/service/observation timeout, 9 failed remote work and
+130 interrupted observation or preview. HTTP error bodies can be malformed without
+changing their status category. A retryable transport failure does not authorize a
+new remote job: recover the saved request first. Typed server retry/preflight
+contracts are still planned.
+
+Help/version, `app describe --format markdown`, stdio MCP and the legacy `app codex`
+child stream keep their own formats. Raw stream startup errors use stderr. JSONL is
+reserved for future event streams and is rejected before executing current commands.
+`app dev` writes readiness to stderr and `.miy/preview.json`; its final result uses
+the selected output. Ctrl-C ends local observation without cancelling a submitted
+remote job; use `app resume` to observe it again.
+
 ## Initialize and connect
 
 Create an empty destination with `miy app init PATH --id APP_ID --name 'Name'

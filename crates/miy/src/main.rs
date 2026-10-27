@@ -13,7 +13,9 @@ mod bundle;
 #[cfg(feature = "server")]
 mod cli_auth;
 mod cli_client;
+mod cli_error;
 mod cli_guidance;
+mod cli_output;
 mod component_cli;
 mod component_contract;
 #[cfg(feature = "server")]
@@ -50,15 +52,21 @@ mod upgrade;
 mod worker;
 
 use anyhow::Result;
-use clap::{Parser, Subcommand};
+use clap::{CommandFactory, FromArgMatches, Parser, Subcommand};
+use cli_error::{Category, CliError};
+use cli_output::OutputMode;
 #[cfg(feature = "server")]
 use sqlx::postgres::PgPoolOptions;
+use std::io::IsTerminal;
 #[cfg(feature = "server")]
 use std::{path::PathBuf, sync::Arc};
 
 #[derive(Parser)]
 #[command(version)]
 struct Args {
+    /// Output for application commands: auto uses text on a terminal and JSON otherwise.
+    #[arg(long, global = true, value_enum, default_value = "auto")]
+    output: OutputMode,
     #[command(subcommand)]
     command: Command,
 }
@@ -93,21 +101,103 @@ async fn main() -> Result<()> {
         .with_writer(std::io::stderr)
         .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
         .init();
-    let args = Args::parse();
+    let argv: Vec<_> = std::env::args_os().collect();
+    let terminal = std::io::stdout().is_terminal();
+    let matches = match Args::command().try_get_matches_from(&argv) {
+        Ok(matches) => matches,
+        Err(error) => {
+            if matches!(
+                error.kind(),
+                clap::error::ErrorKind::DisplayHelp | clap::error::ErrorKind::DisplayVersion
+            ) {
+                error.print()?;
+                return Ok(());
+            }
+            let mode = output_hint(&argv).resolve(terminal);
+            // Clap diagnostics may echo argument values. Return stable, non-secret diagnostics.
+            let result = Err(CliError::new(
+                Category::Usage,
+                "invalid_arguments",
+                "Invalid command arguments. Run miy --help or miy app <command> --help.",
+            )
+            .into());
+            std::process::exit(cli_output::emit(mode, "miy", &result, false)?);
+        }
+    };
+    let command_name = command_name(&matches);
+    let args = Args::from_arg_matches(&matches)?;
+    let mode = args.output.resolve(terminal);
     match args.command {
         Command::App { command } => {
-            if let Err(error) = app_cli::execute(command).await {
-                eprintln!(
-                    "{}",
-                    serde_json::json!({"error":{"message":format!("{error:#}")}})
-                );
-                std::process::exit(1);
+            let raw = matches!(
+                &command,
+                app_cli::AppCommand::Mcp | app_cli::AppCommand::Codex { .. }
+            ) || matches!(&command, app_cli::AppCommand::Describe { format } if format == "markdown");
+            let result = if matches!(mode, OutputMode::Jsonl) {
+                Err(CliError::new(Category::Usage, "unsupported_output", "JSONL requires an event-stream command; no application command currently supports it.").into())
+            } else {
+                app_cli::execute(command).await
+            };
+            let code = cli_output::emit(
+                mode,
+                &command_name,
+                &result,
+                raw && !matches!(mode, OutputMode::Jsonl),
+            )?;
+            if code != 0 {
+                std::process::exit(code);
             }
             Ok(())
         }
         #[cfg(feature = "server")]
-        command => run_server(command).await,
+        command => {
+            if args.output != OutputMode::Auto {
+                let result = Err(CliError::new(
+                    Category::Usage,
+                    "unsupported_output",
+                    "--output is supported by application commands only.",
+                )
+                .into());
+                std::process::exit(cli_output::emit(mode, &command_name, &result, false)?);
+            }
+            run_server(command).await
+        }
     }
+}
+
+fn command_name(matches: &clap::ArgMatches) -> String {
+    let mut names = Vec::new();
+    let mut current = matches;
+    while let Some((name, child)) = current.subcommand() {
+        names.push(name);
+        current = child;
+    }
+    names.join(" ")
+}
+
+// Used only after failed parsing. Stop before child-command passthrough arguments.
+fn output_hint(argv: &[std::ffi::OsString]) -> OutputMode {
+    let mut args = argv.iter().skip(1);
+    let mut mode = OutputMode::Auto;
+    while let Some(arg) = args.next() {
+        if arg == "--" {
+            break;
+        }
+        let value = if arg == "--output" {
+            args.next().and_then(|arg| arg.to_str())
+        } else {
+            arg.to_str().and_then(|arg| arg.strip_prefix("--output="))
+        };
+        if let Some(value) = value {
+            mode = match value {
+                "text" => OutputMode::Text,
+                "json" => OutputMode::Json,
+                "jsonl" => OutputMode::Jsonl,
+                _ => OutputMode::Auto,
+            };
+        }
+    }
+    mode
 }
 
 #[cfg(feature = "server")]
@@ -157,5 +247,22 @@ mod tests {
             );
         }
         assert!(command.find_subcommand("app").is_some());
+    }
+
+    #[test]
+    fn output_hint_stops_at_child_passthrough_boundary() {
+        let argv: Vec<_> = [
+            "miy",
+            "--output=json",
+            "app",
+            "codex",
+            "--",
+            "--output",
+            "text",
+        ]
+        .into_iter()
+        .map(std::ffi::OsString::from)
+        .collect();
+        assert_eq!(output_hint(&argv), OutputMode::Json);
     }
 }

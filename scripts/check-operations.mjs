@@ -1,5 +1,6 @@
 // Platform/CLI regression probe. Creates only uniquely named temporary fixtures and cleans them.
 import assert from 'node:assert/strict';
+import {CLI_EXIT,cliData,assertCliFailure} from './lib/cli-result.mjs';
 import {execFileSync,spawn} from 'node:child_process';
 import {createHash} from 'node:crypto';
 import {mkdirSync,readFileSync,writeFileSync,copyFileSync,openSync,closeSync,existsSync,rmSync} from 'node:fs';
@@ -14,14 +15,14 @@ let sequence=0,preview,local,browser,installation,image;const checks=[];
 const ok=message=>{checks.push(message);console.log('PASS '+message);};
 const hash=file=>createHash('sha256').update(readFileSync(file)).digest('hex');
 function run(program,args,cwd=root){const fd=openSync(join(evidence,`command-${++sequence}.log`),'w');try{return execFileSync(program,args,{cwd,env,encoding:'utf8',stdio:['ignore','pipe',fd],maxBuffer:8*1024*1024});}finally{closeSync(fd);}}
-function cli(args,cwd=app){return JSON.parse(run(binary,['app',...args],cwd));}
-function fails(args,pattern,cwd=app){let error;try{execFileSync(binary,['app',...args],{cwd,env,encoding:'utf8',stdio:['ignore','pipe','pipe']});}catch(e){error=e;}assert(error);assert.match(error.stderr,pattern);}
+function cli(args,cwd=app){return cliData(run(binary,['--output','json','app',...args],cwd));}
+function fails(args,expectedExit,pattern,cwd=app){let error;try{execFileSync(binary,['--output','json','app',...args],{cwd,env,encoding:'utf8',stdio:['ignore','pipe','pipe']});}catch(e){error=e;}return assertCliFailure(error,expectedExit,pattern);}
 async function until(check,message,ms=180000){const end=Date.now()+ms;while(Date.now()<end){if(await check())return;await new Promise(r=>setTimeout(r,100));}throw Error(message);}
 async function login(account){const r=await fetch(origin+'/auth/development',{method:'POST',headers:{origin,'content-type':'application/json'},body:JSON.stringify({account})});assert.equal(r.status,200);const cookie=r.headers.get('set-cookie').split(';')[0];const me=await(await fetch(origin+'/api/v1/me',{headers:{cookie}})).json();return {cookie,csrf:me.csrf};}
 async function api(user,path,body,status=200){const r=await fetch(origin+path,{method:body?'POST':'GET',headers:{cookie:user.cookie,origin,'x-miy-csrf':user.csrf,'content-type':'application/json'},...(body?{body:JSON.stringify(body)}:{})});assert.equal(r.status,status,path);return r.json();}
 function sql(query,database='miy_core'){return execFileSync('docker',['exec','-i','miy-v2-validation-postgres-1','psql','-U','postgres','-d',database,'-At','-v','ON_ERROR_STOP=1'],{input:query,encoding:'utf8',stdio:['pipe','pipe','pipe']}).trim();}
 async function startPreview(){const fd=openSync(join(evidence,`preview-${++sequence}.log`),'w');preview=spawn(binary,['app','dev','--port','18123','--no-open'],{cwd:app,env,stdio:['ignore',fd,fd]});closeSync(fd);await until(()=>{assert.equal(preview.exitCode,null,'preview exited: inspect private log');return existsSync(join(app,'.miy/preview.json'));},'preview startup timeout',240000);return JSON.parse(readFileSync(join(app,'.miy/preview.json')));}
-async function stopPreview(){run(binary,['app','dev-stop'],app);await until(()=>preview.exitCode!==null,'runner did not exit',5000);assert.equal(preview.exitCode,0);assert(!existsSync(join(app,'.miy/preview-run.json')));assert(!existsSync(join(app,'.miy/preview.json')));assert.equal(await fetch('http://127.0.0.1:18123/__miy/context').then(()=>true,()=>false),false);}
+async function stopPreview(){cli(['dev-stop']);await until(()=>preview.exitCode!==null,'runner did not exit',5000);assert.equal(preview.exitCode,0);assert(!existsSync(join(app,'.miy/preview-run.json')));assert(!existsSync(join(app,'.miy/preview.json')));assert.equal(await fetch('http://127.0.0.1:18123/__miy/context').then(()=>true,()=>false),false);}
 async function guards(page,base,shell=false){
  const errors=[];page.on('pageerror',e=>errors.push(e.message));
  let dialogs=0,decision='dismiss';page.on('dialog',async d=>{dialogs++;await d[decision]();});
@@ -60,7 +61,7 @@ try{
 export default function AppRoot({runtime}:AppProps){const [draft,setDraft]=useState('');useEffect(()=>runtime.registerNavigationGuard(()=>draft?'Discard unsaved probe?':undefined),[runtime.registerNavigationGuard,draft]);useEffect(()=>setDraft(''),[runtime.location.pathname]);return <section><h1>Operations probe</h1><p data-testid="path">{runtime.location.pathname}</p><input data-testid="draft" value={draft} onChange={e=>setDraft(e.target.value)}/><button onClick={()=>runtime.navigate('/next')}>Next</button><button onClick={()=>runtime.navigate('/')}>Home</button><button onClick={()=>setDraft('')}>Save</button></section>;}`);
  let info=await startPreview();
  local=await chromium.launch({channel:'chrome',headless:true});const ctx=await local.newContext(),page=await ctx.newPage();await page.goto(info.url);await page.getByTestId('draft').waitFor();await guards(page,`http://127.0.0.1:18123/apps/${appId}`);
- fails(['dev','--port','18124','--no-open'],/preview_already_running/);
+ fails(['dev','--port','18124','--no-open'],CLI_EXIT.conflict,/preview_already_running/);
  const project='miy-preview-'+createHash('sha256').update(app).digest('hex').slice(0,16);
  // Test retention using only this synthetic local DB, not any user's app data.
  execFileSync('docker',['exec',project+'-db','psql','-U','postgres','-d','postgres','-c',"CREATE TABLE lifecycle_probe(value text); INSERT INTO lifecycle_probe VALUES ('retained');"],{stdio:'ignore'});
@@ -71,7 +72,7 @@ export default function AppRoot({runtime}:AppProps){const [draft,setDraft]=useSt
  run('git',['init'],app);run('git',['add','.'],app);run('git',['-c','user.name=MIY probe','-c','user.email=probe@localhost','commit','-m','Synthetic platform operations probe'],app);
  image=cli(['build']).imageId;cli(['deploy']);const status=cli(['status']);installation=status.find(v=>v.environment==='dev');assert(installation.localBuild.matchesRunningImage);
  copyFileSync(join(app,'manifest.json'),join(adminDir,'manifest.json'));
- fails(['rename','--name','denied'],/forbidden/);
+ fails(['rename','--name','denied'],CLI_EXIT.forbidden,/forbidden/);
  cli(['rename','--name','Renamed operations probe'],adminDir);
  let current=cli(['status'])[0];assert.equal(current.name,'Renamed operations probe');assert.equal(current.manifestName,'Operations probe');assert.equal(current.displayNameDiffers,true);
  ok('administrator-only explicit display name; manifest, release and developer rights preserved');
@@ -83,7 +84,7 @@ export default function AppRoot({runtime}:AppProps){const [draft,setDraft]=useSt
  current=cli(['status'])[0];assert.deepEqual(current.acceptance.checks,report.checks);assert(current.acceptance.recordedBy);assert(current.acceptance.checkedAt);
  const failed={...report,checks:[{...report.checks[0],result:'failed'}]};await api(developer,`/api/v1/apps/${appId}/test-acceptance`,{...failed,note:'must reject'},400);
  assert.deepEqual(cli(['status'])[0].acceptance.checks,report.checks);
- writeFileSync(reportPath,JSON.stringify({...report,releaseId:'00000000-0000-4000-8000-000000000000'}));fails(['accept','--note','stale','--report',reportPath],/release_mismatch/);
+ writeFileSync(reportPath,JSON.stringify({...report,releaseId:'00000000-0000-4000-8000-000000000000'}));fails(['accept','--note','stale','--report',reportPath],CLI_EXIT.conflict,/release_mismatch/);
  ok('structured acceptance records exact release/recorder/scopes; rejects failed or stale reports');
  assert.equal(readFileSync(join(root,'.local/serve.pid'),'utf8'),corePid);ok('app deployment required no core restart');
  // Upgrade an independent 0.5 fixture, never the user's app.
@@ -93,12 +94,12 @@ export default function AppRoot({runtime}:AppProps){const [draft,setDraft]=useSt
   run(oldBinary,['app','login','--account','developer'],upgrade);run(oldBinary,['app','components','sync'],upgrade);
   run('git',['init'],upgrade);run('git',['add','.'],upgrade);run('git',['-c','user.name=MIY probe','-c','user.email=probe@localhost','commit','-m','Old bundle fixture'],upgrade);
   const preserved=['src/main.rs','web/src/AppRoot.tsx','manifest.json','migrations/0001_initial.sql'];const before=preserved.map(f=>hash(join(upgrade,f)));
-  fails(['upgrade'],/before_upgrade/,upgrade);assert.equal(JSON.parse(readFileSync(join(upgrade,'miy.bundle.json'))).bundleVersion,'0.5.0');
+  fails(['upgrade'],CLI_EXIT.environment,/before_upgrade/,upgrade);assert.equal(JSON.parse(readFileSync(join(upgrade,'miy.bundle.json'))).bundleVersion,'0.5.0');
   run(oldBinary,['app','components','update','ui','--version','1.0.1'],upgrade);run('git',['add','.'],upgrade);run('git',['-c','user.name=MIY probe','-c','user.email=probe@localhost','commit','-m','Compatible component'],upgrade);
   assert.equal(cli(['upgrade'],upgrade).bundleVersion,cli(['describe']).bundleVersion);assert.deepEqual(preserved.map(f=>hash(join(upgrade,f))),before);cli(['check'],upgrade);ok('0.5 → current bundle explicit upgrade rejects incompatible components, preserves business files and passes full check');
  } else { console.log('SKIP bundle upgrade: set MIY_PREVIOUS_CLI to a bundle 0.5 CLI binary'); }
 }finally{
- if(preview&&preview.exitCode===null){try{run(binary,['app','dev-stop'],app);}catch{} }
+ if(preview&&preview.exitCode===null){try{cli(['dev-stop']);}catch{} }
  if(local)await local.close();if(browser)await browser.close();
  // Only this run's unique fixture may be removed; retain independent users' apps and DBs.
  assert(/^ops-probe-[a-z0-9]+$/.test(appId));

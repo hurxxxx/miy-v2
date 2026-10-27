@@ -1,6 +1,7 @@
 // Run after the real Codex has completed v1 or v2. The evaluator only commits,
 // builds, deploys and injects the explicitly named failed-migration experiment.
 import assert from "node:assert/strict";
+import { CLI_EXIT, cliResult, cliErrorText } from "./lib/cli-result.mjs";
 import { spawn, execFileSync } from "node:child_process";
 import {
   readFileSync,
@@ -25,7 +26,7 @@ function pass(name) {
   console.log("PASS " + name);
 }
 async function cli(args, expected = 0) {
-  const child = spawn(join(app, ".miy-tools/miy"), ["app", ...args], {
+  const child = spawn(join(app, ".miy-tools/miy"), ["--output", "json", "app", ...args], {
     cwd: app,
     env: {
       ...process.env,
@@ -39,15 +40,15 @@ async function cli(args, expected = 0) {
   child.stderr.on("data", (b) => (err += b));
   const code = await new Promise((r, j) => {
     child.on("error", j);
-    child.on("exit", r);
+    child.on("close", r);
   });
   appendFileSync(
     join(evidence, phase + "-commands.log"),
     JSON.stringify({ args, code }) + "\n" + out + err + "\n",
     { mode: 0o600 },
   );
-  assert.equal(code, expected, `${args.join(" ")}: ${err.slice(-2000)}`);
-  return expected === 0 ? JSON.parse(out) : err;
+  const response = cliResult(out, { exitCode: code, expectedExit: expected });
+  return response.ok ? response.data : cliErrorText(response.error);
 }
 function git(...args) {
   return execFileSync("git", args, { cwd: app, encoding: "utf8" }).trim();
@@ -166,7 +167,7 @@ try {
       original = readFileSync(readme);
     try {
       appendFileSync(readme, "\nUncommitted acceptance probe\n");
-      assert.match(await cli(["deploy"], 1), /stale_build/);
+      assert.match(await cli(["deploy"], CLI_EXIT.conflict), /stale_build/);
       pass("stale-build-deploy-rejected");
     } finally {
       writeFileSync(readme, original);
@@ -321,7 +322,7 @@ try {
     );
     commit("test: inject transactional migration failure");
     await cli(["build"]);
-    assert.match(await cli(["deploy"], 1), /migration_failed/);
+    assert.match(await cli(["deploy"], CLI_EXIT.remoteFailure), /migration_failed/);
     const failed = JSON.parse(readFileSync(join(app, ".miy/last-job.json")));
     const inst = await installation();
     assert.equal(inst.runtimeStatus, "failed");
@@ -345,12 +346,12 @@ try {
       "verified",
     );
     pass("failed-migration-rolls-back-ddl-and-preserves-data");
-    assert.match(await cli(["deploy"], 1), /previous_job_failed/);
+    assert.match(await cli(["deploy"], CLI_EXIT.conflict), /previous_job_failed/);
     assert.equal(
       JSON.parse(readFileSync(join(app, ".miy/last-job.json"))).jobId,
       failed.jobId,
     );
-    assert.match(await cli(["resume"], 1), /migration_failed/);
+    assert.match(await cli(["resume"], CLI_EXIT.remoteFailure), /migration_failed/);
     pass("failed-job-is-not-silently-resubmitted");
     // No version 4 migration was applied; correct it in a NEW immutable release.
     manifest.version = "0.1.3";

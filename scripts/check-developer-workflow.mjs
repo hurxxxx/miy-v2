@@ -1,5 +1,6 @@
 // Independent CLI acceptance. All registration/grant writes use the public CLI.
 import assert from "node:assert/strict";
+import { CLI_EXIT, cliResult, cliErrorText } from "./lib/cli-result.mjs";
 import { spawn } from "node:child_process";
 import {
   readFileSync,
@@ -21,7 +22,7 @@ function pass(name) {
   console.log("PASS " + name);
 }
 async function command(cwd, args, expected = 0, env = {}) {
-  const child = spawn(cli, ["app", ...args], {
+  const child = spawn(cli, ["--output", "json", "app", ...args], {
     cwd,
     env: {
       ...process.env,
@@ -36,15 +37,15 @@ async function command(cwd, args, expected = 0, env = {}) {
   child.stderr.on("data", (b) => (err += b));
   const code = await new Promise((r, j) => {
     child.on("error", j);
-    child.on("exit", r);
+    child.on("close", r);
   });
   appendFileSync(
     join(evidence, "commands.log"),
     JSON.stringify({ args, cwd, code }) + "\n" + out + err + "\n",
     { mode: 0o600 },
   );
-  assert.equal(code, expected, `${args.join(" ")}: ${err.slice(-2000)}`);
-  return expected === 0 ? JSON.parse(out) : err;
+  const response = cliResult(out, { exitCode: code, expectedExit: expected });
+  return response.ok ? response.data : cliErrorText(response.error);
 }
 // Check three untouched scaffolds; caches are shared but every source directory is new.
 for (let i = 1; i <= 3; i++) {
@@ -86,7 +87,7 @@ for (let i = 1; i <= 3; i++) {
         original = readFileSync(p, "utf8");
       try {
         writeFileSync(p, change(original));
-        assert.ok((await command(dir, ["check"], 1)).includes(code));
+        assert.ok((await command(dir, ["check"], CLI_EXIT.environment)).includes(code));
         pass("reject-" + code + "-" + path);
       } finally {
         writeFileSync(p, original);
@@ -108,7 +109,7 @@ for (let i = 1; i <= 3; i++) {
       const p = join(dir, "migrations", name);
       try {
         writeFileSync(p, sql);
-        assert.ok((await command(dir, ["check"], 1)).includes(code));
+        assert.ok((await command(dir, ["check"], CLI_EXIT.environment)).includes(code));
         pass("reject-" + code);
       } finally {
         rmSync(p);
@@ -128,18 +129,18 @@ await command(root, [
   "개발·배포 검증 메모",
 ]);
 await command(app, ["login", "--account", "alice"]);
-assert.match(await command(app, ["register"], 1), /forbidden/);
+assert.match(await command(app, ["register"], CLI_EXIT.forbidden), /forbidden/);
 pass("ordinary-user-cannot-request-registration");
 await command(app, ["login", "--account", "developer"]);
 const requested = await command(app, ["register"]);
 assert.equal(requested.status, "pending");
 assert.equal((await command(app, ["register"])).id, requested.id);
 pass("developer-registration-request-idempotent");
-assert.match(await command(app, ["control", "start"], 1), /forbidden/);
+assert.match(await command(app, ["control", "start"], CLI_EXIT.forbidden), /forbidden/);
 pass("pending-request-has-no-deploy-access");
-assert.match(await command(app, ["approve", requested.id], 1), /forbidden/);
+assert.match(await command(app, ["approve", requested.id], CLI_EXIT.forbidden), /forbidden/);
 pass("developer-cannot-self-approve");
-assert.match(await command(app, ["users"], 1), /forbidden/);
+assert.match(await command(app, ["users"], CLI_EXIT.forbidden), /forbidden/);
 pass("developer-cannot-list-all-users");
 await command(app, ["login", "--account", "admin"]);
 assert.ok(
@@ -155,7 +156,7 @@ assert.equal(
 );
 pass("admin-approval-atomic-and-idempotent");
 assert.match(
-  await command(app, ["reject", requested.id], 1),
+  await command(app, ["reject", requested.id], CLI_EXIT.conflict),
   /registration_already_decided/,
 );
 pass("approved-request-cannot-be-reversed-as-rejection");
@@ -169,7 +170,7 @@ for (const name of ["alice", "bob"])
 pass("admin-grants-via-cli");
 await command(app, ["login", "--account", "developer"]);
 assert.match(
-  await command(app, ["control", "start", "--environment", "prod"], 1),
+  await command(app, ["control", "start", "--environment", "prod"], CLI_EXIT.forbidden),
   /forbidden/,
 );
 pass("approval-grants-dev-only");

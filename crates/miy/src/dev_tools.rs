@@ -1,4 +1,5 @@
 //! Project-scoped tooling. No changes to the user's shell, Codex model, or global config.
+use crate::cli_error::{Category, CliError};
 use anyhow::{Context, Result, ensure};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -123,13 +124,43 @@ fn overrides(url: &str) -> Vec<String> {
         "mcp_servers.miy_app.enabled_tools=[\"get_contract\",\"search_api\",\"get_api\",\"validate_manifest\"]".into(),
     ]
 }
+fn codex_command(arguments: &[&str]) -> Result<std::process::Command> {
+    crate::platform::command("codex", arguments).map_err(|_| {
+        CliError::new(
+            Category::Environment,
+            "codex_unavailable",
+            "Codex could not be launched with the requested local arguments.",
+        )
+        .with_recovery("miy", &["app", "doctor"])
+        .into()
+    })
+}
+fn codex_status(command: &mut std::process::Command) -> Result<()> {
+    // Preserve the interactive child's inherited stdout/stderr; no JSON is mixed in.
+    let status = command.status().map_err(|_| {
+        CliError::new(
+            Category::Environment,
+            "codex_launch_failed",
+            "The local Codex process could not be started.",
+        )
+    })?;
+    if !status.success() {
+        return Err(CliError::new(
+            Category::Environment,
+            "codex_failed",
+            "The local Codex process exited unsuccessfully.",
+        )
+        .with_details(json!({"program":"codex","exitCode":status.code()}))
+        .with_recovery("miy", &["app", "doctor"])
+        .into());
+    }
+    Ok(())
+}
 pub fn codex(args: &[String]) -> Result<()> {
     if Path::new(".codex/config.toml").is_file() {
         let mut arguments = vec!["--no-daemon"];
         arguments.extend(args.iter().map(String::as_str));
-        let status = crate::platform::command("codex", &arguments)?.status()?;
-        ensure!(status.success(), "codex_failed");
-        return Ok(());
+        return codex_status(&mut codex_command(&arguments)?);
     }
     let s = settings()?;
     let mut arguments = vec!["--no-daemon".to_owned()];
@@ -138,25 +169,21 @@ pub fn codex(args: &[String]) -> Result<()> {
         arguments.extend(["-c".into(), value]);
     }
     arguments.extend_from_slice(args);
-    let mut command = crate::platform::command(
-        "codex",
-        &arguments.iter().map(String::as_str).collect::<Vec<_>>(),
-    )?;
+    let mut command = codex_command(&arguments.iter().map(String::as_str).collect::<Vec<_>>())?;
     if let Some(path) = s.ca_file {
-        ensure!(
-            path.is_file(),
-            "missing_codex_ca_file: rerun app setup-codex"
-        );
+        if !path.is_file() {
+            return Err(CliError::new(
+                Category::Environment,
+                "missing_codex_ca_file",
+                "The configured Codex CA file is missing; configure the project connection again.",
+            )
+            .into());
+        }
         command
             .env("SSL_CERT_FILE", &path)
             .env("NODE_EXTRA_CA_CERTS", &path);
     }
-    let code = command.status()?.code().unwrap_or(1);
-    ensure!(
-        code == 0,
-        "codex_exit_{code}: check MCP login and environment with app doctor"
-    );
-    Ok(())
+    codex_status(&mut command)
 }
 #[cfg(test)]
 mod tests {

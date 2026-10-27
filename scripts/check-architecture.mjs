@@ -1,5 +1,6 @@
 // Structural acceptance tests use only new synthetic apps. Secrets stay in .local/.miy.
 import assert from "node:assert/strict";
+import { CLI_EXIT, cliData, assertCliFailure } from "./lib/cli-result.mjs";
 import { execFileSync, spawn } from "node:child_process";
 import {
   readFileSync,
@@ -45,10 +46,10 @@ function command(program, args, cwd = root, label = "command") {
   }
 }
 const cli = (app, args, label = args[0]) =>
-  JSON.parse(
+  cliData(
     command(
       join(app.path, ".miy-tools/miy"),
-      ["app", ...args],
+      ["--output", "json", "app", ...args],
       app.path,
       app.id + "-" + label,
     ),
@@ -155,10 +156,10 @@ try {
     const admin = await login("admin");
     const developer = await login("developer");
     for (const app of apps) {
-      JSON.parse(
+      cliData(
         command(
           join(evidence, "bin/miy"),
-          ["app", "init", app.path, "--id", app.id, "--name", app.id],
+          ["--output", "json", "app", "init", app.path, "--id", app.id, "--name", app.id],
           root,
           app.id + "-init",
         ),
@@ -223,7 +224,7 @@ try {
     let stdout = "";
     const child = spawn(
       join(app.path, ".miy-tools/miy"),
-      ["app", "login", "--no-open"],
+      ["--output", "json", "app", "login", "--no-open"],
       { cwd: app.path, env },
     );
     child.stderr.on("data", (b) => (stderr += b));
@@ -246,7 +247,7 @@ try {
       .getByRole("button", { name: "이 CLI 연결 승인", exact: true })
       .click();
     await done;
-    assert.equal(JSON.parse(stdout).signedIn, "developer");
+    assert.equal(cliData(stdout, "app login").signedIn, "developer");
     const session = JSON.parse(
       readFileSync(join(app.path, ".miy/session.json")),
     );
@@ -536,10 +537,10 @@ try {
       const beforeLocal=JSON.parse(await localPage.getByTestId("records").textContent());
       assert.equal(beforeLocal.userId,state.developer);
       assert(!beforeLocal.records.some(r=>r.title==="dev-only-record"));
-      let duplicateBlocked=false;
-      try {execFileSync(join(app.path,".miy-tools/miy"),["app","dev","--port","18101","--no-open"],{cwd:app.path,env,timeout:5000,stdio:["ignore","pipe","pipe"]});}
-      catch(e){duplicateBlocked=String(e.stderr).includes("preview_already_running_for_this_project");}
-      assert(duplicateBlocked);
+      let duplicateFailure;
+      try {execFileSync(join(app.path,".miy-tools/miy"),["--output","json","app","dev","--port","18101","--no-open"],{cwd:app.path,env,timeout:5000,stdio:["ignore","pipe","pipe"]});}
+      catch(e){duplicateFailure=e;}
+      assertCliFailure(duplicateFailure,CLI_EXIT.conflict,/preview_already_running_for_this_project/,"app dev");
       await localPage
         .getByRole("button", { name: "Create record", exact: true })
         .click();
@@ -1084,6 +1085,8 @@ try {
     const child = spawn(
       join(app.path, ".miy-tools/miy"),
       [
+        "--output",
+        "json",
         "app",
         "login",
         "--url",
@@ -1121,7 +1124,7 @@ try {
         .getByRole("button", { name: "이 CLI 연결 승인", exact: true })
         .click();
       await done;
-      assert.equal(JSON.parse(stdout).signedIn, "developer");
+      assert.equal(cliData(stdout, "app login").signedIn, "developer");
       const session = JSON.parse(
         readFileSync(join(app.path, ".miy/session.json")),
       );

@@ -1,4 +1,5 @@
 //! Explicit SDK upgrade; business code and published migrations are preserved.
+use crate::cli_error::{Category, CliError};
 use anyhow::{Context, Result, ensure};
 use serde_json::{Value, json};
 use std::{collections::BTreeMap, path::Path};
@@ -8,11 +9,15 @@ pub async fn run() -> Result<Value> {
         .output()?;
     ensure!(
         status.status.success() && status.stdout.is_empty(),
-        "commit_source_before_bundle_upgrade"
+        CliError::new(
+            Category::Conflict,
+            "commit_source_before_bundle_upgrade",
+            "commit_source_before_bundle_upgrade"
+        )
     );
     let old: Value = serde_json::from_slice(&std::fs::read("miy.bundle.json")?)?;
     if old["bundleVersion"] == crate::bundle::VERSION {
-        crate::bundle::verify(Path::new("."))?;
+        crate::cli_error::validation(crate::bundle::verify(Path::new(".")), "bundle_invalid")?;
         let setup = crate::agent_tools::setup(Path::new("."))?;
         return Ok(
             json!({"alreadyCurrent":true,"bundleVersion":crate::bundle::VERSION,"cliVersion":crate::cli_guidance::VERSION,"setup":setup}),
@@ -23,9 +28,20 @@ pub async fn run() -> Result<Value> {
         Some("0.4.0") => include_str!("../bundles/0.4.0.json"),
         Some("0.5.0") => include_str!("../bundles/0.5.0.json"),
         Some("0.6.0") => include_str!("../bundles/0.6.0.json"),
-        _ => anyhow::bail!("unsupported_old_bundle"),
+        _ => anyhow::bail!(CliError::new(
+            Category::Environment,
+            "unsupported_old_bundle",
+            "unsupported_old_bundle"
+        )),
     })?;
-    ensure!(old == expected, "unsupported_or_modified_old_bundle");
+    ensure!(
+        old == expected,
+        CliError::new(
+            Category::Environment,
+            "unsupported_or_modified_old_bundle",
+            "unsupported_or_modified_old_bundle"
+        )
+    );
     let hashes = old["protectedFiles"]
         .as_object()
         .context("invalid_old_bundle")?;
@@ -33,10 +49,17 @@ pub async fn run() -> Result<Value> {
         ensure!(
             std::fs::symlink_metadata(path)?.is_file()
                 && json!(crate::contract::hash(std::fs::read(path)?)) == *hash,
-            "protected_bundle_modified: {path}"
+            CliError::new(
+                Category::Environment,
+                "protected_bundle_modified",
+                format!("protected_bundle_modified: {path}")
+            )
         );
     }
-    crate::cli_guidance::preflight(Path::new("."))?;
+    crate::cli_error::validation(
+        crate::cli_guidance::preflight(Path::new(".")),
+        "cli_guidance_invalid",
+    )?;
     let protected = crate::bundle::protected_hashes();
     // This patch only changes AGENTS.md/CLAUDE.md. No component download, login,
     // dependency resolution or application configuration change is needed.
@@ -76,7 +99,11 @@ pub async fn run() -> Result<Value> {
         if Path::new(path).exists() && !hashes.contains_key(*path) {
             ensure!(
                 std::fs::read(path)? == content.as_bytes(),
-                "new_bundle_file_conflicts_with_user_file: {path}"
+                CliError::new(
+                    Category::Environment,
+                    "new_bundle_file_conflicts_with_user_file",
+                    format!("new_bundle_file_conflicts_with_user_file: {path}")
+                )
             );
         }
         files.insert((*path).into(), content.as_bytes().to_vec());
@@ -86,13 +113,21 @@ pub async fn run() -> Result<Value> {
     ensure!(
         package["scripts"]["build:preview"].is_null()
             || package["scripts"]["build:preview"] == script,
-        "build_preview_script_conflict"
+        CliError::new(
+            Category::Environment,
+            "build_preview_script_conflict",
+            "build_preview_script_conflict"
+        )
     );
     package["scripts"]["build:preview"] = json!(script);
     ensure!(
         package["dependencies"]["@tanstack/history"].is_null()
             || package["dependencies"]["@tanstack/history"] == "1.162.5",
-        "history_dependency_conflict"
+        CliError::new(
+            Category::Environment,
+            "history_dependency_conflict",
+            "history_dependency_conflict"
+        )
     );
     package["dependencies"]["@tanstack/history"] = json!("1.162.5");
     files.insert("package.json".into(), serde_json::to_vec_pretty(&package)?);
@@ -100,7 +135,11 @@ pub async fn run() -> Result<Value> {
     let alias = &mut ts["compilerOptions"]["paths"]["@miy/components/*"];
     ensure!(
         alias.is_null() || *alias == json!(["./platform-components/*"]),
-        "component_alias_conflict"
+        CliError::new(
+            Category::Environment,
+            "component_alias_conflict",
+            "component_alias_conflict"
+        )
     );
     *alias = json!(["./platform-components/*"]);
     let include = ts["include"]
@@ -118,7 +157,11 @@ pub async fn run() -> Result<Value> {
     if old["bundleVersion"] != "0.5.0" {
         ensure!(
             !vite.contains("@miy/components") && vite.matches(anchor).count() == 1,
-            "custom_vite_config_requires_component_alias_migration"
+            CliError::new(
+                Category::Environment,
+                "custom_vite_config_requires_component_alias_migration",
+                "custom_vite_config_requires_component_alias_migration"
+            )
         );
         files.insert(
             "vite.config.ts".into(),
@@ -150,7 +193,11 @@ pub async fn run() -> Result<Value> {
     } else {
         ensure!(
             !Path::new("platform-components").exists(),
-            "component_directory_conflicts_with_user_files"
+            CliError::new(
+                Category::Environment,
+                "component_directory_conflicts_with_user_files",
+                "component_directory_conflicts_with_user_files"
+            )
         );
     }
     // Fetch and verify before changing any protected SDK or application configuration.
@@ -189,7 +236,11 @@ pub async fn run() -> Result<Value> {
     .status()?;
     ensure!(
         resolved.success(),
-        "upgrade_dependency_resolution_failed: application files unchanged"
+        CliError::new(
+            Category::Environment,
+            "upgrade_dependency_resolution_failed",
+            "upgrade_dependency_resolution_failed: application files unchanged"
+        )
     );
     files.insert(
         "pnpm-lock.yaml".into(),

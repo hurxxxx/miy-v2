@@ -1,6 +1,6 @@
 # 구현과 검증 결과
 
-현재 코드 기준은 CLI 0.4.2 / 개발 번들 0.6.1이다. [에이전트 진입 안내 보완](#에이전트-진입-안내-보완-2026-10-23-cli-042--bundle-061)과 [런타임 관찰·앱 실행 경계 보완](#런타임-관찰과-앱-실행-경계-보완-2026-10-24)까지의 구현 이력을 유지하며, 이후 변경은 [CLI 0.5 기반 구현](#cli-05-기반-구현-착수-2026-10-27)에 기록한다. 아래 실행 상태와 검증 결과는 각 기록일 기준이며 현재 서버의 가동 상태를 뜻하지 않는다.
+현재 코드 기준은 CLI 0.4.2 / 개발 번들 0.6.1이다. [에이전트 진입 안내 보완](#에이전트-진입-안내-보완-2026-10-23-cli-042--bundle-061)과 [런타임 관찰·앱 실행 경계 보완](#런타임-관찰과-앱-실행-경계-보완-2026-10-24)까지의 구현 이력을 유지하며, 이후 변경은 [CLI 0.5 기반 구현](#cli-05-기반-구현-착수-2026-10-27)과 [공통 출력·오류](#cli-공통-출력과-오류-계약-2026-10-27)에 기록한다. 아래 실행 상태와 검증 결과는 각 기록일 기준이며 현재 서버의 가동 상태를 뜻하지 않는다.
 
 2026-10-27에 합의한 [CLI 0.5·Windows 지원 계획](CLI-IMPLEMENTATION-PLAN.md)은 첫 OS·빌드 기반 구현에 착수했다. 전체 0.5 기능·Windows 지원은 미완료이며 [기반 구현 기록](#cli-05-기반-구현-착수-2026-10-27)을 따른다. 다른 환경에서 이어갈 기준 코드와 기존 검사 결과는 [개발 인계](CLI-HANDOFF.md)를 따른다.
 
@@ -435,7 +435,7 @@ HTTP 상태 검사를 단일 제어 큐에서 분리했다. worker에 종속된 
 
 ## CLI 0.5 기반 구현 착수 (2026-10-27)
 
-`9757cc8`의 계획을 코드와 대조한 뒤 사용자 승인으로 문서 보완과 첫 기반 구현을 진행했다. 기준 commit 이후의 작업 트리 변경이며 버전은 CLI 0.4.2 / bundle 0.6.1이다. CLI 0.5 전체 기능이나 Windows 지원 완료를 뜻하지 않는다.
+`9757cc8`의 계획을 코드와 대조한 뒤 사용자 승인으로 문서 보완과 첫 기반 구현을 진행했다. 기반 구현 commit은 `fbbd087`이며 버전은 CLI 0.4.2 / bundle 0.6.1이다. CLI 0.5 전체 기능이나 Windows 지원 완료를 뜻하지 않는다.
 
 계획에는 새 환경 기준선·별도 Linux 서버 실증, 1A부터 Windows MSVC CI, 생성/업그레이드 앱의 줄바꿈 정책, 파일 교체 복구 설계, retry보다 앞선 preflight/expected-state·타입별 오류 계약을 추가했다. 사용자 비활성화의 원천·세션/작업 차단 전파와 지연을 인증 구현의 선행 확정 항목으로 뒀다. 요청 유실 복구는 이미지 업로드 접수·식별·재조회까지 포함하고, 바이트 범위 전송 재개와 구분했다.
 
@@ -469,3 +469,32 @@ HTTP 상태 검사를 단일 제어 큐에서 분리했다. worker에 종속된 
 사용자 요청에 따라 Windows의 준비·빌드·검증·로컬 ZIP/SHA-256 생성 방법과 실행별 기록 양식을 [Windows 전용 안내](WINDOWS-VALIDATION.md)로 분리했다. 실제 Windows 실행은 사용자가 수행하고 결과를 전달한 뒤 문서를 갱신한다. 문서 작성은 Windows 검사 통과를 뜻하지 않으며, 해당 결과를 기다리는 동안 독립적인 다음 구현은 진행한다.
 
 검사 로그와 이전/이후 런타임 results·cleanup 요약은 `.local/evidence/cli-foundation/`에 보관한다. 원본 런타임 증거는 `/tmp/miy-runtime-regression-_dnc26yl/evidence/`(기준 코드), `/tmp/miy-runtime-regression-eunf2qhz/evidence/`(변경 후)에 있다. 이 경로는 현재 환경의 로컬 기록이며 Git으로 전달되지 않는다. 실행 중인 플랫폼·사용자 앱에 배포하거나 기존 서버 DB migration을 적용하지 않았다.
+
+
+## CLI 공통 출력과 오류 계약 (2026-10-27)
+
+Windows 전용 안내와 기반 구현을 `fbbd087`로 커밋·푸시한 뒤, 1B의 첫 작업으로 기존 앱 명령의 공통 출력·오류를 구현했다. CLI 0.4.2 / bundle 0.6.1은 개발 중 버전이며 0.5 릴리스는 아니다. 전체 단계 1B와 Windows 지원 완료를 선언하지 않는다.
+
+- `--output auto|text|json`과 단일 UTF-8 envelope(`schemaVersion: 1`, `command`, `ok`, `data`, `error`, `meta`)를 추가했다. 비TTY 자동 출력은 JSON이다. 인수 오류도 stdout으로 한 응답을 반환하고 임의 인수 값은 오류에 재출력하지 않는다. 현재 지원 명령의 JSONL은 부작용 전에 거부한다.
+- typed 오류에 안정적 code, 메시지, retryable, details와 선택적 실행 파일/argv 복구 안내를 둔다. HTTP 상태를 먼저 분류하여 잘못된 body에도 401/403/404/409/429/5xx의 의미를 유지한다. 임의 서버 오류 메시지·reqwest URL·미분류 오류 chain을 노출하지 않는다. 알려진 로컬 검증은 발생 지점에서 분류하고 미분류 오류는 종료 코드 1로 남긴다.
+- `app deploy --environment prod`는 Clap 단계에서 거부한다. prod는 기존 accept/promote 흐름을 유지한다. 원격 작업 최종 실패는 9, 관찰 중단은 130이며 job ID와 복구 argv를 보존한다. Ctrl+C는 접수된 원격 작업을 취소하지 않는다. 요청 전 멱등성 저장과 요청 후 job ID 저장 순서는 유지했다.
+- help/version, Markdown describe, stdio MCP, legacy Codex 자식 스트림은 원래 형식이다. preview readiness는 stderr·상태 파일에 기록하고 dev-stop 정상 종료와 Ctrl+C를 구분한다. 중단 뒤 소유 자원 정리 실패를 성공으로 표시하지 않는다.
+- 생성 매뉴얼/스킬의 workflow와 7개 CLI 소비 스크립트를 이전했다. 공통 JS 파서는 envelope와 정확한 종료 코드를 검사한다. 이전 CLI fixture는 별도 경로로 실행하며 일반 파서에서 raw JSON을 묵인하지 않는다.
+
+로컬 Linux x86_64의 최종 검사 결과는 다음과 같다. 증거는 `.local/evidence/cli-output/`이며 Git에 포함하지 않는다.
+
+| 검사 | 결과 |
+| --- | --- |
+| Rust fmt, 서버·클라이언트 Clippy `-D warnings` | 통과 |
+| 서버 기본 feature Rust 단위 검사 | 41개 통과, 기존 외부 서비스 검사 3개 ignored |
+| `--no-default-features` 클라이언트 단위 검사·빌드 | 38개 통과, 빌드 성공 |
+| 실제 CLI 출력 블랙박스 | 10개 시나리오 통과; 임시 loopback HTTP, JSON/HTML 오류, 토큰 비노출, 작업 실패·POSIX Ctrl+C·GET-only 확인 |
+| JS 공통 파서 | 4개 테스트 통과; 변경 소비 스크립트 문법 검사 통과 |
+| 지침·MCP·동일 SDK의 이전 CLI 전환 | 7개 검사 통과; `.local/evidence/cli-guidance/mvq5q3tz` |
+| 실제 offline init·Git autocrlf 왕복 | 번들 31개 파일 및 관리/SQL/컴포넌트 31개 파일 보존 |
+
+기반 commit `fbbd087`의 [CI 실행 40446385352](https://github.com/hurxxxx/miy-v2/actions/runs/40446385352)는 Linux 서버/클라이언트, macOS, Windows MSVC, OS 간 번들 비교를 모두 통과했다. 새 출력 블랙박스도 클라이언트 CI에 추가했다. CI 결과는 해당 commit의 증거이며 이후 코드에 자동으로 승계하지 않는다.
+
+이번 출력 변경으로 실제 원격 서버의 전체 로그인·배포·Docker preview 흐름을 다시 실행한 것은 아니다. 지침 검사의 0.6.0 번들 전환과 live app check는 이번에도 미실행이며, 사용자 Windows 11·PowerShell·Docker Desktop 검증은 [Windows 전용 문서](WINDOWS-VALIDATION.md)에 사용자가 실행한 결과로 추가한다. 신호·종료 사유 단위 검사와 POSIX 원격 관찰 실증은 Windows 자식 프로세스 정리 실증을 대신하지 않는다.
+
+다음은 공유 preflight·expected-state와 타입별 원격 실패/재시도 계약이다. 현재 전송/관찰 오류의 retryable 표시를 새 원격 작업 재시도 승인으로 사용하지 않는다. 새 context/auth/job 명령, 입력·필드·페이지 계약, 서버 capability, 작업 이벤트/로그/dry-run, Windows Job Object와 여러 파일 복구, 설치·릴리스는 후속 작업이다.
