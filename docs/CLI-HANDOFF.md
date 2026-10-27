@@ -125,9 +125,9 @@ cargo test --workspace --locked --no-default-features
 python3 scripts/check-bundle-portability.py check --cli target/debug/miy --output .local/ci/bundle.json
 ```
 
-Windows CI는 `--no-default-features --target x86_64-pc-windows-msvc`로 빌드·검사한다. Linux에서 OS 모듈의 Windows 타입검사는 통과했지만 전체 교차 검사는 `ring`의 MSVC `lib.exe` 부재로 실행되지 못했다. 이후 `fbbd087`의 [네이티브 CI](https://github.com/hurxxxx/miy-v2/actions/runs/40446385352)는 Linux 서버/클라이언트, macOS, Windows MSVC와 OS 간 번들 비교를 모두 통과했다. 실제 사용자 Windows 11·PowerShell·Docker Desktop E2E는 미검증이며 1A 전체 완료 체크를 하지 않는다.
+Windows CI는 `--no-default-features --target x86_64-pc-windows-msvc`로 빌드·검사한다. Linux에서 OS 모듈의 Windows 타입검사는 통과했지만 전체 교차 검사는 `ring`의 MSVC `lib.exe` 부재로 실행되지 못했다. 이후 `fbbd087`의 [네이티브 CI](https://github.com/hurxxxx/miy-v2/actions/runs/40446385352)는 Linux 서버/클라이언트, macOS, Windows MSVC와 OS 간 번들 비교를 모두 통과했다. 실제 Windows 11·PowerShell 5.1/7의 release 빌드와 오프라인 기반 검사도 아래 기록대로 통과했으며 Docker Desktop E2E는 미검증이다. 1A 전체 완료 체크를 하지 않는다.
 
-Windows 빌드·검증·로컬 ZIP 생성과 결과 기록은 [별도 문서](WINDOWS-VALIDATION.md)로 관리한다. 사용자가 Windows 환경에서 실행한 뒤 결과 업데이트를 요청하면 commit·환경·명령·증거에 맞춰 기록한다. 결과가 오기 전에는 미검증 상태를 유지하며, 독립적인 1B 공통 출력/오류·preflight·expected-state/재시도 타입 구현은 진행한다. Windows/macOS 네이티브 CI, 여러 파일 복구·소유 프로세스 종료 경계와 별도 원격 Linux 서버의 인증·전송·UI 실증도 남아 있다. 이 환경의 격리 Linux 런타임 회귀를 원격 서버 실증으로 대신하지 않는다.
+Windows 빌드·검증·로컬 ZIP 생성과 결과 기록은 [별도 문서](WINDOWS-VALIDATION.md)로 관리한다. 새 결과는 commit·환경·명령·증거에 맞춰 추가하고 기존 실패 이력을 보존한다. 독립적인 1B 공통 출력/오류·preflight·expected-state/재시도 타입 구현은 진행한다. 여러 파일 복구·소유 프로세스 종료 경계, 실제 Windows Docker Desktop E2E와 별도 원격 Linux 서버의 인증·전송·UI 실증은 남아 있다. 이 환경의 격리 Linux 런타임 회귀를 원격 서버 실증으로 대신하지 않는다.
 
 
 ## 2026-10-27 공통 출력·오류 계약 첫 구현
@@ -139,3 +139,11 @@ help/version, Markdown describe, stdio MCP, legacy Codex 자식 스트림은 원
 검증 진입점은 `python3 scripts/check-cli-output.py --cli target/debug/miy`, `node --test scripts/lib/cli-result.test.mjs`, `node scripts/check-cli-guidance.mjs`다. 첫 Python 검사는 실제 플랫폼 대신 임시 loopback fixture를 사용하며 CI의 Linux/macOS/Windows 클라이언트에서 실행한다. Windows 콘솔 Ctrl+C는 별도 사용자 검증이다. 실행 증거와 미실행 범위는 [구현 결과](IMPLEMENTATION-RESULTS.md#cli-공통-출력과-오류-계약-2026-10-27)에 기록한다.
 
 다음 구현은 서버/CLI가 공유할 preflight·expected-state와 타입별 원격 실패/재시도 계약이다. 현재의 `retryable`은 전송·관찰 오류에 대한 정보이며 원격 작업의 새 retry API나 실행 승인을 제공하지 않는다. 새 루트 명령, JSON 입력/fields/pagination, context/auth, job 이벤트·로그와 dry-run은 아직 남아 있다. 1B 전체를 완료로 표시하지 않는다.
+
+## 2026-10-27 실제 Windows 기반 검증 결과
+
+`fb42b384081afe8b77eab7b2af419f5c1e79c3ec`를 실제 Windows 11 Pro build 26200 x64 일반 사용자 환경에서 검사했다. PowerShell 7.6.5와 Windows PowerShell 5.1.26100.9711에서 각각 fmt·Windows MSVC check·Clippy 경고 금지·단위 검사 **37개**·release build·번들/Git 왕복·공통 출력 블랙박스 **9개**·오프라인 앱 생성/반복 setup·stdio MCP·ZIP/체크섬/압축 해제 실행을 통과했다. 추가 Node CLI 결과 파서 검사 4개도 통과했다. 두 셸은 같은 target을 순차 사용하며 PowerShell 5.1의 build는 최신 산출물을 재사용했다.
+
+Rust 1.99.1/MSVC/SDK는 사용자 승인으로 준비했다. MSVC 설치기의 3010 재부팅 요청 후 이번 검사는 재부팅 없이 수행했다. [실행 기록](WINDOWS-VALIDATION.md#windows-실행-기록)에 환경·명령·종료 코드·로컬 증거 경로·exe/ZIP SHA-256과 미실행 사유가 있다. 원본 로그·바이너리·ZIP은 이 PC의 `.local/`에만 있고 Git에는 결과 문서만 포함한다.
+
+실제 Codex/Claude MCP 승인·세션 유지, Windows 콘솔 Ctrl+C, Docker Desktop 전체 개발·배포, 실제 인증·원격 운영과 재부팅 후 검증은 남아 있다. 이번 commit의 다른 OS manifest가 없어 로컬 OS 간 비교는 수행하지 않았다. 전체 1A/5/6 단계나 정식 지원·릴리스 완료로 체크하지 않는다.

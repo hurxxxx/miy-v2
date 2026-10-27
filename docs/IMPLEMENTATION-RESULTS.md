@@ -500,3 +500,18 @@ Windows 전용 안내와 기반 구현을 `fbbd087`로 커밋·푸시한 뒤, 1B
 이번 출력 변경으로 실제 원격 서버의 전체 로그인·배포·Docker preview 흐름을 다시 실행한 것은 아니다. 지침 검사의 0.6.0 번들 전환과 live app check는 이번에도 미실행이며, 사용자 Windows 11·PowerShell·Docker Desktop 검증은 [Windows 전용 문서](WINDOWS-VALIDATION.md)에 사용자가 실행한 결과로 추가한다. 신호·종료 사유 단위 검사와 POSIX 원격 관찰 실증은 Windows 자식 프로세스 정리 실증을 대신하지 않는다.
 
 다음은 공유 preflight·expected-state와 타입별 원격 실패/재시도 계약이다. 현재 전송/관찰 오류의 retryable 표시를 새 원격 작업 재시도 승인으로 사용하지 않는다. 새 context/auth/job 명령, 입력·필드·페이지 계약, 서버 capability, 작업 이벤트/로그/dry-run, Windows Job Object와 여러 파일 복구, 설치·릴리스는 후속 작업이다.
+
+## 실제 Windows 11 네이티브 기반 검증 (2026-10-27)
+
+사용자 요청으로 `fb42b384081afe8b77eab7b2af419f5c1e79c3ec`의 clean 작업본을 Windows 11 Pro build 26200 / Intel Core i5-14500 x64에서 검사했다. PowerShell **7.6.5 Core**와 **5.1.26100.9711 Desktop**을 일반 사용자 권한으로 각각 실행했다. Rust 1.99.1 MSVC, Cargo 1.99.1, MSVC 14.44.35207, Windows SDK 10.0.26100.0, Git 2.56.0.windows.4, Python 3.12.14를 사용했다. 처음 없던 빌드 도구는 사용자 승인으로 설치했으며 MSVC 설치기의 3010 재부팅 요청 후 자동 재부팅 없이 검사했다.
+
+두 셸에서 각각 다음을 통과했다.
+
+- 소스 LF·추적 SQL 원본 바이트 검사, fmt, Windows MSVC `--no-default-features` 타입 검사, Clippy `-D warnings`, 단위 검사 **37 passed / 0 failed / 0 ignored**, release build.
+- CLI 0.4.2 실행과 클라이언트 도움말의 서버 명령 제외, 내장 템플릿 31개 파일 해시와 한글·공백 경로, `autocrlf=true` Git 왕복의 관리/SQL/컴포넌트 31개 파일 바이트 보존.
+- 실제 플랫폼 없는 loopback 공통 출력·오류·종료 코드 검사 **9개**, 오프라인 앱 생성과 반복 setup, 동봉 CLI JSON describe, stdio MCP initialize·tools/list·get_cli_help·EOF 정상 종료.
+- 로컬 ZIP·SHA-256 생성, 압축 해제 후 exe 해시 일치와 `--version` 실행. 두 셸의 exe SHA-256은 `c5510f56a15674d93b6641c3e73ecb04a54c96359aa67e1d98110b2e5b2262ec`로 같다. PowerShell 5.1의 Cargo 명령은 PowerShell 7에서 만든 공유 target의 최신 산출물을 재사용했다.
+
+추가로 Node 24.19.0의 CLI 결과 파서 검사 4개를 통과했다. 실행한 검사에서 소스 코드 수정은 필요하지 않았다. 결과·환경·명령·종료 코드·체크섬·미실행 사유는 [Windows 실행 기록](WINDOWS-VALIDATION.md#windows-실행-기록)에 남겼다. 원본 증거와 ZIP은 이 PC의 `.local/evidence/windows-validation/20261027-native{,-ps7,-ps5}/`에 보관하며 Git에는 결과 문서만 전달한다.
+
+같은 commit의 Linux/macOS manifest를 확보하지 않아 이번 실행의 OS 간 해시 비교는 `not_run`이다. Windows 콘솔 Ctrl+C, 실제 Codex/Claude MCP 승인·세션 유지, 실제 인증·원격 운영, Docker Desktop 전체 개발·배포, 재부팅 후 검사는 미실행이다. CLI 0.5 전체 기능·설치/갱신/제거·여러 파일 복구·Job Object·정식 Windows 지원 완료로 확대하지 않으며 인계 체크리스트의 전체 단계는 계속 미완료로 둔다.

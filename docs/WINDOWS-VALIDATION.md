@@ -3,7 +3,7 @@
 - 작성일: 2026-10-27
 - 현재 코드 버전: CLI **0.4.2** / 개발 번들 **0.6.1**
 - 대상: Windows 11 x64, Windows PowerShell 5.1과 PowerShell 7
-- 상태: Windows에서 사용자가 직접 빌드·검증하고 결과를 추가할 안내. **사용자 Windows 11 PC의 실행 결과는 아직 없다.** 호스티드 Windows MSVC CI 결과는 아래에 별도로 기록한다.
+- 상태: **2026-10-27 실제 Windows 11 PC의 PowerShell 5.1·7에서 네이티브 release 빌드와 아래 오프라인 기반 검증을 통과했다.** 실행 기록은 문서 끝에 있으며 호스티드 Windows MSVC CI 결과와 구분한다. Docker Desktop·실제 인증·원격 운영 E2E는 미검증이다.
 
 이 문서는 현재 구현된 클라이언트 빌드 경계, OS 유틸리티, 앱 생성·설정과 번들 바이트 보존을 확인한다. [CLI 0.5 구현 계획](CLI-IMPLEMENTATION-PLAN.md)의 전체 기능이나 Windows 정식 지원 완료를 선언하지 않는다. 두 PowerShell 버전에서 아래 절차를 각각 실행하고, 같은 commit이라도 실행 기록은 별도로 남긴다. WSL 결과는 Windows 네이티브 결과로 기록하지 않는다.
 
@@ -350,4 +350,96 @@ Windows 네이티브 빌드·단위 검사·오프라인 생성이 모두 성공
 
 ## Windows 실행 기록
 
-사용자 Windows 11 실행 기록은 아직 없음. 호스티드 CI 증거는 위 1절을 참고하고, Windows에서 직접 실행한 결과는 위 템플릿으로 이어서 추가한다.
+### 공통 실행 환경과 도구 준비 — 2026-10-27
+
+사용자 요청으로 현재 PC에서 Codex가 실행했다. 검증 대상은 `fb42b384081afe8b77eab7b2af419f5c1e79c3ec`이며 두 셸의 검증 시작 시 작업 트리는 clean이었다. 모든 검증을 마친 뒤 결과 문서만 수정했다. WSL이나 호스티드 runner는 사용하지 않았다.
+
+| 항목 | 실제 값 |
+| --- | --- |
+| Windows / CPU | Windows 11 Pro 10.0.26200, build 26200 / Intel Core i5-14500, x64 |
+| 프로세스·권한 | 64-bit, 일반 사용자 (`administrator: false`); 빌드 도구 설치에만 UAC 관리자 승인 사용 |
+| Rust / Cargo / rustup | 1.99.1 (`58cf8f9c3`, 2026-10-13) / 1.99.1 (`5f94df478`) / 1.29.2 |
+| MSVC / Visual Studio Build Tools | 14.44.35207 / 2022 17.14.43 (`17.14.37824.6`) |
+| Windows SDK | 10.0.26100.0 |
+| Git / Python / Node | Git for Windows 2.56.0.windows.4 / Codex 동봉 Python 3.12.14 / Node 24.19.0 |
+| 저장소 / target | `C:\projects\miy-v2` / `target\x86_64-pc-windows-msvc` |
+
+처음에는 Rust·MSVC·SDK가 없었다. 사용자 설치 승인 후 공식 rustup으로 Rust를 `.local\tools\cargo`, `.local\tools\rustup`에 설치했고 시스템 PATH는 변경하지 않았다. Microsoft 서명이 유효한 공식 Build Tools 설치기로 `Microsoft.VisualStudio.Component.VC.Tools.x86.x64`와 `Microsoft.VisualStudio.Component.Windows11SDK.26100`을 설치했다. 설치기는 **3010 (재부팅 필요)**을 반환했으며 자동 재부팅 없이 아래 검증을 마쳤다. 재부팅 후 검증은 이번 기록에 포함하지 않는다.
+
+각 검증 프로세스에서만 Git/Cargo PATH와 `CARGO_HOME`·`RUSTUP_HOME`을 설정했다. `Microsoft.VisualStudio.DevShell.dll`의 `Enter-VsDevShell -SkipAutomaticLocation -DevCmdArguments '-arch=x64 -host_arch=x64'`로 MSVC 환경을 활성화했다. 시스템 인코딩·전역 Git 설정·전역 PowerShell 실행 정책은 변경하지 않았다. PowerShell 5.1 실행의 `-ExecutionPolicy Bypass`는 해당 프로세스에만 적용했다.
+
+두 셸은 같은 `target`을 순차 사용했다. PowerShell 7에서 최초 컴파일하고 PowerShell 5.1에서는 동일한 Cargo 검사·test·release build 명령을 다시 호출하여 최신 빌드 산출물을 재사용했다. 두 번의 별도 clean build 결과로 해석하지 않는다. 실제 실행기와 준비 로그는 이 PC의 `.local\native-validation.ps1` 및 `.local\evidence\windows-validation\20261027-native\`에 있다.
+
+### Windows 실행 기록 — 2026-10-27 / 20261027-native-ps7
+
+- 실행자: 사용자 요청을 수행한 Codex, 일반 사용자 프로세스.
+- commit: `fb42b384081afe8b77eab7b2af419f5c1e79c3ec`; 시작 시 작업 트리 clean.
+- Windows·CPU·도구 버전: 위 공통 실행 환경과 동일; PowerShell **7.6.5 Core**, 64-bit.
+- 완료 시각: **2026-10-27 14:06:43 +09:00**.
+- 증거 보관 위치: `C:\projects\miy-v2\.local\evidence\windows-validation\20261027-native-ps7\` (이 PC 로컬 전용; 원본 로그·바이너리·ZIP은 Git 미포함, 외부 공유 없음).
+- 명령·종료 코드: `commands.jsonl`; 환경: `environment-source.json`, `environment-full.json`, `msvc-environment.json`; 상세 로그: `console-source.txt`, `console-full.txt`; 완료·해시: `completed.json`, `SHA256SUMS`.
+
+| 항목 | 명령 또는 시나리오 | 종료 코드 | 결과 | 증거·범위 |
+| --- | --- | --- | --- | --- |
+| 소스/LF/SQL | `check-bundle-portability.py source` | 0 | success | 템플릿 31개 LF 및 추적 SQL의 index 원본 바이트 보존 |
+| 형식 | `cargo +1.99.1-x86_64-pc-windows-msvc fmt --all -- --check` | 0 | success | `console-full.txt` |
+| Windows MSVC 타입 검사 | `cargo check --workspace --all-targets --locked --no-default-features --target x86_64-pc-windows-msvc --target-dir <repo>/target` | 0 | success | 명시적 1.99.1 MSVC 도구 체인 |
+| Clippy | `cargo clippy` 위 target/feature/lock 조건 및 `--all-targets -- -D warnings` | 0 | success | 경고 금지 |
+| 단위 검사 | `cargo test --workspace` 위 target/feature/lock 조건 | 0 | success | **37 passed / 0 failed / 0 ignored** |
+| 네이티브 release 빌드 | `cargo build --release` 위 target/feature/lock 조건 | 0 | success | `target\x86_64-pc-windows-msvc\release\miy.exe` |
+| 실행/명령 경계 | `miy.exe --version`, `--help`, `app --help` | 모두 0 | success | `miy 0.4.2`; 서버 명령 4개 없음 |
+| 번들·한글/공백·Git 왕복 | `check-bundle-portability.py check --cli <release miy.exe> --output <evidence>/bundle-windows.json` | 0 | success | 내장 31개 파일, `autocrlf=true` 왕복 관리/SQL/컴포넌트 31개 보존 |
+| 공통 출력·오류·종료 코드 | `check-cli-output.py --cli <release miy.exe>` | 0 | success | **9 passed**; 실제 서비스 없는 loopback HTTP fixture, 비밀 비노출·읽기 전용 요청 확인 |
+| OS 간 해시 비교 | 같은 commit의 Linux/macOS manifest와 `compare` | 해당 없음 | not_run | 이 PC에 같은 commit의 다른 OS manifest가 없음 |
+| 앱 생성/반복 setup | 한글·공백 경로에서 `app init`, `app setup` 2회, 동봉 CLI version·JSON describe | 모두 0 | success | `한글 경로\app with spaces`; CLI 0.4.2 / bundle 0.6.1, 전역 설정 변경 없음 |
+| 오프라인 stdio MCP | 문서의 Python probe: initialize, tools/list, get_cli_help, EOF 정상 종료 | 0 | success | `mcp-offline.json`, `mcp-stderr.txt`; 플랫폼 로그인 없음 |
+| 로컬 ZIP/체크섬 | `Compress-Archive`, `Get-FileHash`, `Expand-Archive`, 압축 해제한 exe version | cmdlet 예외 없음; exe 0 | success | 압축 전후 exe SHA-256 일치; `SHA256SUMS` |
+| Windows 콘솔 Ctrl+C | 실제 Windows 콘솔 신호 전달 | 해당 없음 | not_run | Python 출력 검사에서 POSIX 신호 항목을 명시적으로 skip |
+| 실제 Codex/Claude MCP | 실제 에이전트 클라이언트의 승인·세션 유지 | 해당 없음 | not_run | 이번 검사는 Python stdio probe 범위 |
+| Docker Desktop 개발·배포 | 전체 `app check/dev/build/deploy` | 해당 없음 | not_run | 이번 오프라인 기반 검사 범위 밖 |
+| 실제 사용자 인증·원격 운영 | 실제 로그인·원격 서버·UI/API·데이터 보존 | 해당 없음 | not_run | 실제 플랫폼·인증 세션을 사용하지 않음 |
+
+산출물 이름은 `miy-0.4.2-windows-x64-fb42b384081a`이며 SHA-256은 다음과 같다.
+
+```text
+c5510f56a15674d93b6641c3e73ecb04a54c96359aa67e1d98110b2e5b2262ec  miy-0.4.2-windows-x64-fb42b384081a/miy.exe
+d6eaf01714d683031454aa03756ef2a0ef7060f02cd87e6e07e3ebc9fbe091e8  miy-0.4.2-windows-x64-fb42b384081a.zip
+```
+
+### Windows 실행 기록 — 2026-10-27 / 20261027-native-ps5
+
+- 실행자: 사용자 요청을 수행한 Codex, 일반 사용자 프로세스.
+- commit: `fb42b384081afe8b77eab7b2af419f5c1e79c3ec`; 시작 시 작업 트리 clean.
+- Windows·CPU·도구 버전: 위 공통 실행 환경과 동일; Windows PowerShell **5.1.26100.9711 Desktop**, 64-bit, `-NoProfile -ExecutionPolicy Bypass`로 실행.
+- 완료 시각: **2026-10-27 14:07:28 +09:00**.
+- 증거 보관 위치: `C:\projects\miy-v2\.local\evidence\windows-validation\20261027-native-ps5\` (이 PC 로컬 전용; 원본 로그·바이너리·ZIP은 Git 미포함, 외부 공유 없음).
+- 명령·종료 코드: `commands.jsonl`; 환경: `environment-source.json`, `environment-full.json`, `msvc-environment.json`; 상세 로그: `console-source.txt`, `console-full.txt`; 완료·해시: `completed.json`, `SHA256SUMS`.
+
+| 항목 | 명령 또는 시나리오 | 종료 코드 | 결과 | 증거·범위 |
+| --- | --- | --- | --- | --- |
+| 소스/LF/SQL | `check-bundle-portability.py source` | 0 | success | 템플릿 31개 LF 및 추적 SQL의 index 원본 바이트 보존 |
+| 형식 | `cargo +1.99.1-x86_64-pc-windows-msvc fmt --all -- --check` | 0 | success | `console-full.txt` |
+| Windows MSVC 타입 검사 | `cargo check --workspace --all-targets --locked --no-default-features --target x86_64-pc-windows-msvc --target-dir <repo>/target` | 0 | success | 명시적 1.99.1 MSVC 도구 체인 |
+| Clippy | `cargo clippy` 위 target/feature/lock 조건 및 `--all-targets -- -D warnings` | 0 | success | 경고 금지 |
+| 단위 검사 | `cargo test --workspace` 위 target/feature/lock 조건 | 0 | success | **37 passed / 0 failed / 0 ignored** |
+| 네이티브 release 빌드 | `cargo build --release` 위 target/feature/lock 조건 | 0 | success | 공유 target의 최신 release 산출물 사용 |
+| 실행/명령 경계 | `miy.exe --version`, `--help`, `app --help` | 모두 0 | success | `miy 0.4.2`; 서버 명령 4개 없음 |
+| 번들·한글/공백·Git 왕복 | `check-bundle-portability.py check --cli <release miy.exe> --output <evidence>/bundle-windows.json` | 0 | success | 내장 31개 파일, `autocrlf=true` 왕복 관리/SQL/컴포넌트 31개 보존 |
+| 공통 출력·오류·종료 코드 | `check-cli-output.py --cli <release miy.exe>` | 0 | success | **9 passed**; 실제 서비스 없는 loopback HTTP fixture |
+| OS 간 해시 비교 | 같은 commit의 Linux/macOS manifest와 `compare` | 해당 없음 | not_run | 이 PC에 같은 commit의 다른 OS manifest가 없음 |
+| 앱 생성/반복 setup | 한글·공백 경로에서 `app init`, `app setup` 2회, 동봉 CLI version·JSON describe | 모두 0 | success | `한글 경로\app with spaces`; CLI 0.4.2 / bundle 0.6.1, 전역 설정 변경 없음 |
+| 오프라인 stdio MCP | 문서의 Python probe: initialize, tools/list, get_cli_help, EOF 정상 종료 | 0 | success | `mcp-offline.json`, `mcp-stderr.txt`; 플랫폼 로그인 없음 |
+| 로컬 ZIP/체크섬 | `Compress-Archive`, `Get-FileHash`, `Expand-Archive`, 압축 해제한 exe version | cmdlet 예외 없음; exe 0 | success | 압축 전후 exe SHA-256 일치; `SHA256SUMS` |
+| Windows 콘솔 Ctrl+C | 실제 Windows 콘솔 신호 전달 | 해당 없음 | not_run | Python 출력 검사에서 POSIX 신호 항목을 명시적으로 skip |
+| 실제 Codex/Claude MCP | 실제 에이전트 클라이언트의 승인·세션 유지 | 해당 없음 | not_run | 이번 검사는 Python stdio probe 범위 |
+| Docker Desktop 개발·배포 | 전체 `app check/dev/build/deploy` | 해당 없음 | not_run | 이번 오프라인 기반 검사 범위 밖 |
+| 실제 사용자 인증·원격 운영 | 실제 로그인·원격 서버·UI/API·데이터 보존 | 해당 없음 | not_run | 실제 플랫폼·인증 세션을 사용하지 않음 |
+
+SHA-256:
+
+```text
+c5510f56a15674d93b6641c3e73ecb04a54c96359aa67e1d98110b2e5b2262ec  miy-0.4.2-windows-x64-fb42b384081a/miy.exe
+9917751a3a4e749c50a5c13145069997f793e4b45c80b830ee03c66df0c4932a  miy-0.4.2-windows-x64-fb42b384081a.zip
+```
+
+추가로 Windows PowerShell 7에서 `node --test scripts/lib/cli-result.test.mjs` **4개 통과**, 종료 코드 0을 확인했다. 로그는 공통 준비 증거 폴더의 `node-cli-result-tests.txt`에 있다. 두 셸의 성공 기록은 Windows 기반 클라이언트 빌드·오프라인 검사 범위이며, 8절의 미완료 구현이나 CLI 0.5 전체 릴리스를 완료 처리하지 않는다. 실행한 검사에서 코드 수정이 필요한 실패는 없었다.
