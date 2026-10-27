@@ -16,7 +16,7 @@ CLI로 앱의 기본 구조를 만들고, 자신의 개발 에이전트를 MCP�
 
 CLI 설치는 `bash scripts/install-cli.sh`, 새 앱 시작은 `miy app init ./my-app --id my-app --name '내 앱'`이다. 로그인·등록 승인·로컬 테스트·배포 순서는 [실행 안내](docs/RUNNING.md)를 따른다. 이전 [휴가 앱 실증](docs/LEAVE-LEDGER-RESULTS.md)과 bundle 0.3 검증은 당시의 보완 과정과 한계가 남아 있는 이력이다.
 
-다음 우선 작업은 별도 Linux 서버 실증과 OS별 CLI 바이너리 배포다. [전체 검증 계획](docs/VALIDATION.md)의 남은 환경·장애·자원 관리 조건을 이어서 확인한다.
+다음 우선 작업은 [CLI 0.5 개선과 Windows 네이티브 지원](docs/CLI-IMPLEMENTATION-PLAN.md)이다. 사람·AI 공통 명령 계약, 다중 서버 운영, 브라우저/인증 코드 로그인, 작업·로그와 Windows 11 x64의 PowerShell 실행·설치·갱신을 구현한다. 아직 구현 전이며, 다른 환경에서 이어갈 때는 [CLI 개발 인계](docs/CLI-HANDOFF.md)의 코드 위치·작업 순서·기존 검증 결과를 먼저 읽는다. 별도 Linux 서버 실증과 [전체 검증 계획](docs/VALIDATION.md)의 남은 환경·장애·자원 관리 조건도 계속 확인한다.
 
 최초 V0~V1 구현 범위와 실행 방식은 [V0~V1 구현 계획](docs/IMPLEMENTATION.md)을 따른다. 로컬 Docker에서 UI 런타임 통합, 웹·MCP OAuth, 앱별 DB와 작업 실행기를 검증한다.
 
@@ -47,7 +47,9 @@ CLI 설치는 `bash scripts/install-cli.sh`, 새 앱 시작은 `miy app init ./m
 ## 기획 문서
 
 - [PRD 초안](docs/PRD.md): 제품 정의, 합의 사항, 기능 요구사항과 인수 조건의 기준
-- [추진 계획 초안](docs/PLAN.md): 현재 문서화 범위, 다음 설계 과제, 향후 단계별 완료 기준
+- [추진 계획](docs/PLAN.md): 현재 구현 단계, 다음 우선 작업과 제품 전체의 단계별 완료 기준
+- [CLI 0.5 구현 계획](docs/CLI-IMPLEMENTATION-PLAN.md): 사람·AI 공통 CLI, 인증·운영 계약, Windows 지원과 릴리스 조건
+- [CLI 개발 인계](docs/CLI-HANDOFF.md): 다른 환경에서 이어갈 코드 위치, 작업 체크리스트, 재검증 명령과 로컬 환경 경계
 - [핵심 흐름 검증 계획](docs/VALIDATION.md): 최소 구현 범위, Codex·CLI·하네스·MCP 평가, Docker·DB·UI 라우팅의 단계별 통과 조건과 증거
 - [앱 개발 흐름과 CLI 계획](docs/DEVELOPMENT.md): 프로젝트 생성, 개발 계약, 로컬 실행, 개발 영역 검증과 운영 승격
 - [아키텍처 설명과 구성도](docs/architecture/README.md): [전체 구조 한 장](docs/architecture/00-platform-overview.png), 서비스 개념·논리 구조·개발 배포 흐름·권한 접근도와 PDF
