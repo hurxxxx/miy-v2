@@ -17,6 +17,34 @@ pub enum DatabaseMode {
     Local,
 }
 
+pub fn validate_origin(origin: &str) -> Result<()> {
+    let parsed = url::Url::parse(origin)?;
+    let container_local = match parsed.host() {
+        Some(url::Host::Domain(host)) => {
+            let host = host.trim_end_matches('.');
+            host == "localhost" || host.ends_with(".localhost")
+        }
+        Some(url::Host::Ipv4(ip)) => ip.is_loopback() || ip.is_unspecified(),
+        Some(url::Host::Ipv6(ip)) => {
+            ip.is_loopback()
+                || ip.is_unspecified()
+                || ip
+                    .to_ipv4_mapped()
+                    .is_some_and(|ip| ip.is_loopback() || ip.is_unspecified())
+        }
+        None => true,
+    };
+    ensure!(
+        !container_local,
+        CliError::new(
+            Category::Environment,
+            "server_development_origin_unreachable",
+            "Server database development needs a server IP or domain reachable from Docker. Loopback addresses point to the helper container itself. Register a reachable server URL; use --database local only for a separate local database."
+        )
+    );
+    Ok(())
+}
+
 #[derive(Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct Saved {
@@ -104,6 +132,7 @@ impl Remote {
         project: &str,
         cancelled: impl Fn() -> bool,
     ) -> Result<Self> {
+        validate_origin(&session.origin)?;
         let capability = app_cli::api(session, "/api/v1/capabilities", None).await?;
         ensure!(
             capability["features"]
@@ -322,4 +351,38 @@ impl Remote {
 
 async fn helper_image(session: &Session) -> Result<String> {
     crate::helper_image::resolve(session).await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn server_database_requires_a_docker_reachable_address() {
+        for origin in [
+            "http://localhost:18000",
+            "https://localhost.:18443",
+            "http://dev.localhost",
+            "http://127.0.0.1",
+            "http://127.1.2.3",
+            "http://[::1]",
+            "http://[::ffff:127.0.0.1]",
+            "http://0.0.0.0",
+            "http://[::]",
+        ] {
+            let error = validate_origin(origin).unwrap_err();
+            assert_eq!(
+                crate::cli_error::classify(&error).code,
+                "server_development_origin_unreachable"
+            );
+        }
+        for origin in [
+            "http://10.2.3.4:8080",
+            "http://intranet.example",
+            "https://v2.example",
+            "http://[fd00::4]:8080",
+        ] {
+            validate_origin(origin).unwrap();
+        }
+    }
 }

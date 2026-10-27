@@ -259,6 +259,9 @@ async fn serve_preview(
         })?;
     let port = listener.local_addr()?.port();
     let session = app_cli::session()?;
+    if database == DatabaseMode::Server {
+        crate::development_client::validate_origin(&session.origin)?;
+    }
     let user = app_cli::api(&session, "/api/v1/me", None).await?;
     let m = app_cli::check()?;
     if *shutdown.borrow() != Shutdown::Running {

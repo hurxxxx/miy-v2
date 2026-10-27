@@ -40,6 +40,8 @@
 
 DB 연결 helper는 Docker classic/containerd의 서로 다른 로컬 image ID 대신 검증한 config SHA로 동일성을 확인하고, 실행 시에는 검증을 마친 로컬 불변 ID를 사용한다. 실제 containerd export와 두 아카이브 형식·변조 거부 단위 검사를 통과했다. 실제 Windows Docker Desktop 결과는 NOT_RUN이다.
 
+추가 검토에서 발견한 컨테이너 루프백 URL은 서버 DB 모드의 빌드·DB 요청 전에 명확한 오류로 거부하도록 수정했다. 주소 가드 단위 검사에 루프백 IPv4/IPv6·매핑 주소·미지정 주소·localhost 별칭과 정상 사내 IP/도메인을 포함했다. 쿼리 취소·장시간 마이그레이션의 즉시 중단은 지원 범위에서 제외하고 RUNNING에 기록했다.
+
 사용자 테스트의 시작 순서는 [핵심 흐름 테스트](CORE-TESTING.md)를 따른다.
 
 ## 로컬 결과 — 이전 후보와 설치 개선 이력
