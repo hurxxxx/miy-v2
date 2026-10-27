@@ -17,6 +17,15 @@
 
 공통 출력 구현 commit `67d7e429d99df10895b409a267c07849431b6160`의 [CI 실행 40447432789](https://github.com/hurxxxx/miy-v2/actions/runs/40447432789)도 같은 날 전체 job을 통과했다. Windows 네이티브 CLI의 출력 envelope·종료 코드·loopback HTTP 오류 검사가 추가로 통과했다. Windows 콘솔 Ctrl+C는 이 검사에서 제외하며 사용자 PowerShell 검증 완료를 뜻하지 않는다.
 
+최종 CLI 0.5 소스 `0fe94a4b9d851e7cf71dc9c8e91fb469423134e2`의 [기본 CI 40460546995](https://github.com/hurxxxx/miy-v2/actions/runs/40460546995)는 전체 job을 통과했다. Windows job은 Windows Server 2022 Datacenter `10.0.20348`에서 Rust 1.99.1/Python 3.12.10으로 fmt/check/Clippy/debug build, 단위87개, 출력10묶음, 번들/Git31파일을 통과했다. 기존 Windows debug 스택 초과는 수정 후 재검사에 성공했다. Job Object 검사는 소유 프로세스 종료와 다른 Job의 프로세스 보존을 확인한다. 콘솔 Ctrl+C는 출력 fixture에서 SKIP이며 아래 사용자 검사 대상이다.
+
+같은 소스의 [Windows release job](https://github.com/hurxxxx/miy-v2/actions/runs/40460582868/job/122044280821)도 성공했다. 단위87개, 최적화 실행 파일의 출력10묶음·번들/Git31파일과 **PowerShell 5.1.20348.5756 및 7.6.8 각각 설치기6시나리오**를 통과했다. 설치/갱신, 잘못된 체크섬, 사용 중 파일 잠금, 변조 backup, 중단 복구, 제거 시 사용자 파일 보존을 확인했다. 원격 다운로드와 PATH opt-in 변경은 이 fixture의 통과 범위에 포함하지 않는다.
+
+- [Windows 후보 artifact](https://github.com/hurxxxx/miy-v2/actions/runs/40460582868/artifacts/12714358424): Actions artifact의 바깥 ZIP을 먼저 풀면 아래 배포 ZIP과 `.sha256`, provenance를 얻는다. 공개 GitHub Release는 아직 발행하지 않았다.
+- 배포 ZIP: `miy-0.5.0-x86_64-pc-windows-msvc.zip`
+- 배포 ZIP SHA-256: `2d6846d1977b748b79054cc053cafa357340b5864cd14c15b6c32d50acb55247`
+- 내부 `miy.exe` SHA-256: `a6111f4d4a58b9abd679aaef57659bc324e30e3d9a247273c77e30e668d8f3a9`
+
 CLI 0.5에는 루트 `context/auth/job/describe/doctor/component/mcp`와 앱 lifecycle 명령이 구현되어 있다. JSON 성공은 `data`, 실패는 `error`에 있고 `$LASTEXITCODE`로 종료 코드를 확인한다. `job watch --output jsonl`은 이벤트를 한 줄씩 출력한다. `app login/describe/doctor/mcp/resume/control` 같은 이전 이름은 대체 명령을 안내하고 실행을 거부한다.
 
 아래 빌드·오프라인 검사 뒤 10절의 설치/인증/원격/로컬 개발 검사를 수행한다. **검사 절차가 존재하는 것과 사용자 Windows 11 통과는 구분한다.**
@@ -45,11 +54,16 @@ $MiyCheckout = Join-Path $env:USERPROFILE 'miy-windows-validation'
 git clone https://github.com/hurxxxx/miy-v2.git $MiyCheckout
 if ($LASTEXITCODE -ne 0) { throw "git clone failed: $LASTEXITCODE" }
 Set-Location -LiteralPath $MiyCheckout
+$MiyCandidateCommit = '0fe94a4b9d851e7cf71dc9c8e91fb469423134e2'
+git switch --detach $MiyCandidateCommit
+if ($LASTEXITCODE -ne 0) { throw "git switch failed: $LASTEXITCODE" }
 git status --short --branch
 if ($LASTEXITCODE -ne 0) { throw "git status failed: $LASTEXITCODE" }
 git log -5 --oneline
 if ($LASTEXITCODE -ne 0) { throw "git log failed: $LASTEXITCODE" }
 ```
+
+배포 후보와 같은 코드를 검증하도록 위 예제는 소스 commit `0fe94a4`를 고정한다. 이 안내와 실행 결과는 이후 문서 commit에서 갱신되므로, 문서의 최신 commit과 검증 대상 소스 commit을 혼동하지 않는다. 다른 코드를 검사한다면 그 commit을 기록하고 기존 후보의 통과 증거로 합치지 않는다.
 
 Windows PowerShell 5.1에서는 네이티브 실행 파일의 비정상 종료가 `$ErrorActionPreference = 'Stop'`만으로 자동 예외가 되지 않는다. 아래에서는 각 네이티브 명령 직후 `$LASTEXITCODE`를 확인하고 실패하면 중단한다. PowerShell cmdlet은 `$ErrorActionPreference`를 따른다. 종료 코드의 의미는 [Microsoft의 자동 변수 문서](https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.core/about/about_automatic_variables?view=powershell-5.1)를 참고한다.
 

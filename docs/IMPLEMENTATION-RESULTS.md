@@ -533,7 +533,7 @@ Windows 전용 안내와 기반 구현을 `fbbd087`로 커밋·푸시한 뒤, 1B
 | --- | --- |
 | 서버 Rust 단위 / Clippy | 103 passed, 3 ignored / warnings 금지 통과 |
 | 클라이언트 Rust 단위 / Clippy | 91 passed / warnings 금지 통과 |
-| 실제 HTTP/PostgreSQL/Docker/CLI | **52개 PASS**, 140.96초, cleanup errors 0, 기존 실행 컨테이너 ID·이미지·시작 시각 보존 |
+| 실제 HTTP/PostgreSQL/Docker/CLI | **52개 PASS**, 최종 clean commit 재실행 140.33초, cleanup errors 0, 기존 실행 컨테이너 20개 ID·이미지·시작 시각·실행 상태 보존 |
 | 출력/오류/refresh 유실 블랙박스 | 11묶음 PASS; 합성 loopback HTTP, POSIX Ctrl+C 포함 |
 | 업로드/runtime ACK 유실 복구 | 6묶음 PASS; 배포 export/upload POST/runtime POST 각1, lifecycle 새 요청4/preflight4, 원격 취소0 |
 | 브라우저 | Playwright 6개 PASS; 실제 Federation 모듈+fixture API |
@@ -544,7 +544,7 @@ Windows 전용 안내와 기반 구현을 `fbbd087`로 커밋·푸시한 뒤, 1B
 | 공개 게이트 | 부정 시나리오 포함 Python3개 PASS |
 | PowerShell 개발 검사 | Linux PS7.6.9 parser6파일, 실제 journal4시나리오, 비Windows 설치 거부/미생성 PASS; Windows 실증과 구분 |
 
-통합 증거는 `/tmp/miy-runtime-regression-ojcff20t/evidence/`다. source parent `fb42b38` 이후 dirty 작업 트리의 실행 파일 SHA-256 `39f3fbed21bc1acaaa576956a55cf2ced9a48f3ed0edcbe4de56307f707aad5e`를 기록했다. 지침 전환 증거는 `.local/evidence/cli-guidance/mvq9xhg4/result.json`, 번들은 `.local/evidence/cli05/bundle-linux.json`이다. 이 로컬 경로는 Git으로 전달되지 않는다. 원격 CI는 실제 코드 commit에 연결해 아래 별도로 기록한다.
+최종 통합 증거는 `/tmp/miy-runtime-regression-k3bkplo6/evidence/`다. 소스 commit `0fe94a4b9d851e7cf71dc9c8e91fb469423134e2`, `workingTreeDirty=false`, 격리 경로로 복사해 검사한 실행 파일 SHA-256 `f4301fc8b7c787f5d210d66a7c5a32b6e77ccf364383c63e0ea1533701eb4fac`를 기록했다. 앞선 dirty 작업본의 52개 통과 증거 `/tmp/miy-runtime-regression-ojcff20t/evidence/`는 이력으로 보존하며 합산하지 않는다. 지침 전환 증거는 `.local/evidence/cli-guidance/mvq9xhg4/result.json`, 번들은 `.local/evidence/cli05/bundle-linux.json`이다. 이 로컬 경로는 Git으로 전달되지 않는다. 원격 CI는 실제 코드 commit에 연결해 아래 별도로 기록한다.
 
 검증 중 resume 대상 불일치, 불완전 journal 공개, 실패한 lifecycle 영구 차단을 수정하고 실제 CLI 회귀로 재확인했다. 통합 fixture의 API 경로/개발 계정/명시 앱/충돌 종료 코드와 backup 경로 기대값도 수정했다. 앞선 실패 run을 통과 개수에 합치지 않았다.
 
@@ -563,3 +563,9 @@ Windows 전용 안내와 기반 구현을 `fbbd087`로 커밋·푸시한 뒤, 1B
 같은 코드의 [foundation CI](https://github.com/hurxxxx/miy-v2/actions/runs/40459433715)는 debug CLI 진입 시 Windows 1MiB 스택에서 overflow를 발견했다. Linux 자식 프로세스의 RLIMIT_STACK을 1MiB로 제한해 재현하고, async 명령 dispatch를 heap에 분리하고 업로드 hash buffer도 heap으로 옮겼다. Linux 출력 fixture와 CI의 요청 복구 fixture를 같은 한도로 실행하도록 바꿨다. 변경 후 출력11묶음·복구6묶음 및 서버103/클라이언트91 단위 검사를 통과했다.
 
 병렬 단위 검사에서 컴포넌트 잠금 재획득이 한 번 실패한 것도 기록한다. 자식 생성 시 잠금 descriptor가 일시적으로 남을 수 있어 guard 종료에 명시적 unlock을 추가했고, 기존 동시 설치 거부·중단 복구 검사와 전체 단위 검사를 다시 통과했다. 새 수정의 전체 native/candidate 결과는 뒤의 최종 CI 기록을 따른다.
+
+### 최종 코드의 재검증
+
+`0fe94a4b9d851e7cf71dc9c8e91fb469423134e2`의 [기본 CI 40460546995](https://github.com/hurxxxx/miy-v2/actions/runs/40460546995)는 Linux 서버·클라이언트, macOS, Windows MSVC, OS 간 번들 비교 **5개 job 모두 성공**했다. Linux 서버103개(외부3개 ignored), Linux 클라이언트91개, macOS89개, Windows87개 단위 검사를 통과했다. Windows debug 실행·출력10묶음까지 통과해 발견했던 스택 초과를 재확인했다. Linux 출력11묶음과 요청 복구6묶음은 1MiB 스택 제한으로 통과했다. 같은 clean commit의 실제 HTTP/PostgreSQL/Docker/CLI 통합52개 결과와 binary hash는 위 로컬 검사 및 [검증 행렬](CLI-VALIDATION-MATRIX.md)에 기록했다.
+
+같은 소스의 [5개 target release candidate CI 40460582868](https://github.com/hurxxxx/miy-v2/actions/runs/40460582868)도 candidate·native5개·aggregate 모두 성공했다. Linux x64/ARM64 단위 각91개·출력 각11묶음, macOS x64/ARM64 단위 각89개·출력 각11묶음, Windows x64 단위87개·출력10묶음을 통과했다. Windows PS5.1/7 설치기는 각각6시나리오를 통과했고, 다섯 번들의 hash가 일치했다. 아카이브·바이너리 hash, CPU, provenance, 소스 commit은 CI aggregate와 내려받은 파일의 로컬 verifier 양쪽에서 확인했다. [후보 artifact](https://github.com/hurxxxx/miy-v2/actions/runs/40460582868/artifacts/12715067551), [배포물별 SHA-256](releases/cli-0.5.0-candidate.json)을 보존한다. 공개 `publish` job은 명시한 `false`에 따라 SKIP했으며, Windows 11·별도 원격/실제 OIDC·독립 AI 인수는 여전히 미실행이다.

@@ -2,6 +2,12 @@
 
 이 문서는 구현된 배포 도구의 사용법이다. Windows 11·별도 Linux 서버·실제 OIDC·독립 AI 세션의 인수 통과나 공개 릴리스 발행을 의미하지 않는다. 사용자 Windows 실행은 [Windows 검증](WINDOWS-VALIDATION.md), 전체 검증 범위는 [검증 행렬](CLI-VALIDATION-MATRIX.md)에 기록한다.
 
+## 현재 검증한 후보
+
+2026-10-27 소스 `0fe94a4b9d851e7cf71dc9c8e91fb469423134e2`의 [CI 40460582868](https://github.com/hurxxxx/miy-v2/actions/runs/40460582868)가 5개 native build와 aggregate 검사를 모두 통과했다. [전체 후보 artifact](https://github.com/hurxxxx/miy-v2/actions/runs/40460582868/artifacts/12715067551)를 내려받아 Actions의 바깥 ZIP을 풀면 OS/CPU별 아카이브·`.sha256`·`SHA256SUMS`·provenance를 얻는다. [배포물별 SHA-256과 소스 index](releases/cli-0.5.0-candidate.json)도 저장소에 보존한다. 이 index는 공개 승인 증거 JSON이 아니다.
+
+Windows 사용자 검증에는 [Windows 전용 후보 및 실행 안내](WINDOWS-VALIDATION.md)를 사용한다. `publish=false`로 실행했으므로 GitHub Release와 공개 tag를 만들지 않았다. Actions artifact는 보존 기간이 있는 검증용 파일이다.
+
 ## 배포 후보 생성
 
 [CLI release candidate workflow](../.github/workflows/cli-release.yml)는 수동 실행한다. `candidate_commit`에는 전체 40자리 소스 commit, `release_tag`에는 해당 Cargo 버전 앞에 `v`를 붙인 값을 입력한다. `publish=false`가 기본값이다. 버전이 다른 tag, 변경된 checkout, 다른 CPU의 바이너리, 누락된 배포물은 거부한다.

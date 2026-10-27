@@ -4,7 +4,7 @@
 - 코드 버전: CLI 0.5.0 / 번들 0.6.2
 - 범위: [구현 계획](CLI-IMPLEMENTATION-PLAN.md). [전체 V0~V7 인수](VALIDATION.md)는 별도다.
 
-실제 실행 결과와 남은 환경 검사를 구분한다. 아래 Linux 검사는 `fb42b38` 이후 구현 작업 트리에서 실행했다. 커밋된 코드의 OS별 재검사는 CI 링크로 추가한다. `PASS`는 명시한 fixture·환경·assertion 범위에만 적용하고, 실제 장비/IdP/원격 서버/AI 세션을 대신하지 않는다.
+실제 실행 결과와 남은 환경 검사를 구분한다. 초기 Linux 검사는 `fb42b38` 이후 구현 작업 트리에서 실행했고, 최종 통합 검사는 미커밋 변경이 없는 `0fe94a4b9d851e7cf71dc9c8e91fb469423134e2`에서 다시 실행했다. 같은 커밋의 OS별 검사 결과를 아래 CI 기록으로 연결한다. `PASS`는 명시한 fixture·환경·assertion 범위에만 적용하고, 실제 장비/IdP/원격 서버/AI 세션을 대신하지 않는다.
 
 ## 로컬 결과
 
@@ -37,7 +37,9 @@ G1/G2 증거는 `.local/evidence/cli-guidance/mvq9xhg4/result.json`, G3는 `.loc
 | CLI 6개 | 실제 개발 로그인→전역 private vault, 두 프로세스 refresh 1회, flag/env/project/active 우선순위, 프로젝트 밖 운영·typed input, dry-run 및 대상/확인 누락 변경0, 요청 ID 복구·JSONL·logout |
 | Auth 7개 | device pending/slowdown/CSRF/Origin/일회사용/만료/거부, 15분/30일, refresh rotation/reuse/동시 교환, 본인 세션 페이지/철회, Core 비활성화·재활성화·기존 세션 차단, rate limit |
 
-**최종 통합 PASS: 52개 (runtime 33 + operations 6 + CLI 6 + auth 7), 140.96초.** 증거는 `/tmp/miy-runtime-regression-ojcff20t/evidence/`의 `results.jsonl`, `integration.log`, `cli-identity.json`, `cleanup.log`다. 기존 컨테이너 보존 검사와 cleanup errors 0을 확인했다. 검사한 CLI SHA-256은 `39f3fbed21bc1acaaa576956a55cf2ced9a48f3ed0edcbe4de56307f707aad5e`다. Runner는 각 묶음의 개수를 따로 확인하여 새 suite가 빠진 결과를 통과로 인정하지 않는다. `cli-identity.json`에 source commit·dirty 여부·검사한 실행 파일 SHA-256을 남긴다. 검사용 Python 앱 이미지는 실제 사용자 Rust/React 앱과 구분한다.
+**최종 통합 PASS: 52개 (runtime 33 + operations 6 + CLI 6 + auth 7), 140.33초.** `0fe94a4b9d851e7cf71dc9c8e91fb469423134e2`의 clean 작업본에서 실행했으며, 증거는 `/tmp/miy-runtime-regression-k3bkplo6/evidence/`의 `results.jsonl`, `integration.log`, `cli-identity.json`, `cleanup.json`, `cleanup.log`다. 기존 실행 컨테이너 20개의 ID·이미지·시작 시각·실행 상태 보존과 cleanup errors 0을 확인했다. 검사한 CLI SHA-256은 `f4301fc8b7c787f5d210d66a7c5a32b6e77ccf364383c63e0ea1533701eb4fac`다. Runner는 빌드한 CLI를 격리 경로에 복사한 뒤 실행하고, 각 묶음의 개수를 따로 확인하여 새 suite가 빠진 결과를 통과로 인정하지 않는다. `cli-identity.json`의 `workingTreeDirty`는 `false`다. 검사용 Python 앱 이미지는 실제 사용자 Rust/React 앱과 구분한다.
+
+앞선 dirty 작업본의 52개 PASS(140.96초)는 `/tmp/miy-runtime-regression-ojcff20t/evidence/`에 보존한다. 최종 결과와 합산하지 않는다. 위 로컬 증거 경로는 Git으로 전달되지 않는다.
 
 ## 실패를 통해 보완한 부분
 
@@ -101,3 +103,35 @@ PowerShell 개발 검사 증거: `.local/evidence/cli-installer/summary.json`. �
 같은 코드의 [foundation CI](https://github.com/hurxxxx/miy-v2/actions/runs/40459433715)는 debug CLI 진입 시 Windows 1MiB 스택에서 overflow를 발견했다. Linux 자식 프로세스의 RLIMIT_STACK을 1MiB로 제한해 재현하고, async 명령 dispatch를 heap에 분리하고 업로드 hash buffer도 heap으로 옮겼다. Linux 출력 fixture와 CI의 요청 복구 fixture를 같은 한도로 실행하도록 바꿨다. 변경 후 출력11묶음·복구6묶음 및 서버103/클라이언트91 단위 검사를 통과했다.
 
 병렬 단위 검사에서 컴포넌트 잠금 재획득이 한 번 실패한 것도 기록한다. 자식 생성 시 잠금 descriptor가 일시적으로 남을 수 있어 guard 종료에 명시적 unlock을 추가했고, 기존 동시 설치 거부·중단 복구 검사와 전체 단위 검사를 다시 통과했다. 새 수정의 전체 native/candidate 결과는 뒤의 최종 CI 기록을 따른다.
+
+### 최종 커밋의 기본 CI
+
+소스 `0fe94a4b9d851e7cf71dc9c8e91fb469423134e2`의 [CI 40460546995](https://github.com/hurxxxx/miy-v2/actions/runs/40460546995)는 **전체 5개 job 성공**이다. 이전 실패 run의 결과와 합산하지 않는다.
+
+| 환경 | 실제 통과 범위 |
+| --- | --- |
+| Linux 서버 | fmt/check/Clippy, 단위103개·외부 서비스 검사3개 ignored |
+| Linux 클라이언트 | 단위91개, 출력11묶음, 요청 복구6묶음, 1MiB 스택 제한, 번들/Git31파일 |
+| macOS 클라이언트 | 단위89개, 출력11묶음, 시스템 임시 경로 별칭, 번들/Git31파일 |
+| Windows MSVC 클라이언트 | 단위87개, debug 실행·출력10묶음, Job Object 소유 종료, 번들/Git31파일 |
+| OS 간 비교 | Linux/macOS/Windows 내장 번들 해시 일치 |
+
+Windows 환경은 Windows Server 2022 Datacenter `10.0.20348`, runner image `20261022.344.1`, Rust `1.99.1`, Python `3.12.10` x64다. 출력 fixture의 Windows 콘솔 Ctrl+C는 명시적으로 SKIP이며, 외부 실제 서비스는 사용하지 않았다. Windows 11 사용자 인수와 구분한다.
+
+### 최종 5개 배포 후보
+
+같은 소스의 [release candidate CI 40460582868](https://github.com/hurxxxx/miy-v2/actions/runs/40460582868)는 **candidate·5개 native·aggregate job 전부 성공**했고 `publish`는 요청값 `false`에 따라 SKIP했다.
+
+| 대상 | 단위 검사 | 최적화 실행 파일의 검사 |
+| --- | --- | --- |
+| Linux x64 / ARM64 | 각각91개 | 각각 출력11묶음, 내장31파일·Git 왕복31파일 |
+| macOS x64 / ARM64 | 각각89개 | 각각 출력11묶음, 내장31파일·Git 왕복31파일 |
+| Windows x64 MSVC | 87개 | 출력10묶음, 내장31파일·Git 왕복31파일, PS5.1/7 설치기 각6시나리오 |
+
+모든 target의 fmt/check/Clippy 경고 금지와 release build가 통과했다. aggregate는 5개 아카이브의 SHA-256, 내부 바이너리 hash·CPU header·버전·동일 소스 commit·내외부 provenance를 검증하고, 다섯 native build의 내장 bundle/scaffold hash 일치를 확인했다. 최종 artifact를 이 Linux 환경에 내려받아 `python3 scripts/package-cli-release.py verify --directory .local/evidence/cli05/release-0fe94a4`로 아카이브 검증을 다시 통과했다. 다른 OS 바이너리를 Linux에서 실행한 결과는 아니다.
+
+- [전체 후보 artifact](https://github.com/hurxxxx/miy-v2/actions/runs/40460582868/artifacts/12715067551)
+- [커밋한 배포물별 SHA-256·binary hash·source index](releases/cli-0.5.0-candidate.json)
+- Windows Server 설치기 환경과 ZIP hash는 [Windows 안내](WINDOWS-VALIDATION.md)에 별도로 기록했다.
+
+이로써 이번 코드의 로컬 자동 검사·기본 CI·5개 배포 후보 생성 검사를 완료했다. 위 외부 인수의 `NOT_RUN` 상태와 공개 릴리스 미발행 상태는 유지한다. 결과 문서만 수정한 후속 commit을 검증 대상 소스 commit으로 바꿔 기록하지 않는다.

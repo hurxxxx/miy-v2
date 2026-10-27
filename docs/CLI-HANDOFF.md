@@ -4,7 +4,9 @@
 - 코드 버전: CLI **0.5.0** / 개발 번들 **0.6.2**
 - 구현 기준: [구현 계획](CLI-IMPLEMENTATION-PLAN.md). 실행 증거는 [구현 결과](IMPLEMENTATION-RESULTS.md), 세부 요구·검사는 [검증 행렬](CLI-VALIDATION-MATRIX.md).
 
-계획의 코드 구현과 명령·지침 이전을 진행했다. **이번 0.5의 실제 Windows 11 검증과 정식 릴리스 승인은 아직 완료하지 않았다. 기존 0.4.2의 실제 Windows 기반 검사 성공 이력은 문서 끝에 보존한다.** Windows 빌드·운영 검증은 사용자가 [전용 안내](WINDOWS-VALIDATION.md)에 따라 수행한 뒤 결과를 전달하면 문서를 갱신한다. 현재 개발 환경의 기존 플랫폼 서비스는 재배포하거나 migration하지 않았다.
+계획의 코드 구현과 명령·지침 이전을 완료하고 로컬 자동 검사·기본 CI·5개 배포 후보 CI를 통과했다. **이번 0.5의 실제 Windows 11 검증과 정식 릴리스 승인은 아직 완료하지 않았다. 기존 0.4.2의 실제 Windows 기반 검사 성공 이력은 문서 끝에 보존한다.** Windows 빌드·운영 검증은 사용자가 [전용 안내](WINDOWS-VALIDATION.md)에 따라 수행한 뒤 결과를 전달하면 문서를 갱신한다. 현재 개발 환경의 기존 플랫폼 서비스는 재배포하거나 migration하지 않았다.
+
+검증 대상 소스는 `0fe94a4b9d851e7cf71dc9c8e91fb469423134e2`다. clean 작업본의 실제 HTTP/PostgreSQL/Docker/CLI 통합52개, [기본 CI](https://github.com/hurxxxx/miy-v2/actions/runs/40460546995), [5개 target 후보 CI](https://github.com/hurxxxx/miy-v2/actions/runs/40460582868)를 통과했다. [후보 artifact](https://github.com/hurxxxx/miy-v2/actions/runs/40460582868/artifacts/12715067551)와 [파일별 hash](releases/cli-0.5.0-candidate.json)가 준비되어 있다. 검증 결과만 추가한 문서 commit과 이 소스 commit을 구분한다. 공개 릴리스는 발행하지 않았다.
 
 ## 현재 구현
 

@@ -1,0 +1,52 @@
+{
+  "assets": [
+    {
+      "binarySha256": "eb32b58063bf442040e60f0280765560f1c695d36a277b7cfaeece7580c98f54",
+      "commit": "0fe94a4b9d851e7cf71dc9c8e91fb469423134e2",
+      "file": "miy-0.5.0-aarch64-apple-darwin.tar.gz",
+      "schemaVersion": 1,
+      "sha256": "d105678b88ae5c2df797b5bdcd78f74abea5380c4a79c21e60c44dcd1f03afd4",
+      "target": "aarch64-apple-darwin",
+      "version": "0.5.0"
+    },
+    {
+      "binarySha256": "4869bc81b74f7693676e4b367ab391005350ccdfb7c8e73490037548e5fa439e",
+      "commit": "0fe94a4b9d851e7cf71dc9c8e91fb469423134e2",
+      "file": "miy-0.5.0-aarch64-unknown-linux-gnu.tar.gz",
+      "schemaVersion": 1,
+      "sha256": "025068501db93ce7423374406bf31fee25b4b025ea7057815828e1c772175bf3",
+      "target": "aarch64-unknown-linux-gnu",
+      "version": "0.5.0"
+    },
+    {
+      "binarySha256": "5102ff303b161d56d893d84a2d392a672f609d90ac19db9e8595f3e03e7ad8b1",
+      "commit": "0fe94a4b9d851e7cf71dc9c8e91fb469423134e2",
+      "file": "miy-0.5.0-x86_64-apple-darwin.tar.gz",
+      "schemaVersion": 1,
+      "sha256": "14fa44c10b24ab08fcfa66c79304fad530141d5da24a2bc4ef0966e363ae3602",
+      "target": "x86_64-apple-darwin",
+      "version": "0.5.0"
+    },
+    {
+      "binarySha256": "a6111f4d4a58b9abd679aaef57659bc324e30e3d9a247273c77e30e668d8f3a9",
+      "commit": "0fe94a4b9d851e7cf71dc9c8e91fb469423134e2",
+      "file": "miy-0.5.0-x86_64-pc-windows-msvc.zip",
+      "schemaVersion": 1,
+      "sha256": "2d6846d1977b748b79054cc053cafa357340b5864cd14c15b6c32d50acb55247",
+      "target": "x86_64-pc-windows-msvc",
+      "version": "0.5.0"
+    },
+    {
+      "binarySha256": "02540b55330b645c86934f93030725e2d371fbc81ae8f16027d8e980c9339bd5",
+      "commit": "0fe94a4b9d851e7cf71dc9c8e91fb469423134e2",
+      "file": "miy-0.5.0-x86_64-unknown-linux-gnu.tar.gz",
+      "schemaVersion": 1,
+      "sha256": "7fe7984d7c4eb7915540339e56e15202f0d0dbd5b449743610ebcf932f8c1fed",
+      "target": "x86_64-unknown-linux-gnu",
+      "version": "0.5.0"
+    }
+  ],
+  "commit": "0fe94a4b9d851e7cf71dc9c8e91fb469423134e2",
+  "schemaVersion": 1,
+  "version": "0.5.0"
+}
