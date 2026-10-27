@@ -22,11 +22,12 @@ pub async fn seed(pool: &sqlx::PgPool) -> anyhow::Result<()> {
     Ok(())
 }
 pub async fn admin(state: &State, p: &Principal) -> ApiResult<()> {
-    let yes: bool =
-        sqlx::query_scalar("SELECT COALESCE((SELECT admin FROM users WHERE id=$1),false)")
-            .bind(&p.id)
-            .fetch_one(&state.pool)
-            .await?;
+    let yes: bool = sqlx::query_scalar(
+        "SELECT COALESCE((SELECT admin AND enabled FROM users WHERE id=$1),false)",
+    )
+    .bind(&p.id)
+    .fetch_one(&state.pool)
+    .await?;
     if yes {
         Ok(())
     } else {
@@ -40,6 +41,7 @@ pub async fn authorize(
     env: &str,
     write: bool,
 ) -> ApiResult<()> {
+    crate::auth_sessions::ensure_active(&state.pool, &p.id).await?;
     if write && !p.scopes.iter().any(|s| s == "miy.dev") {
         return Err(ApiError::forbidden());
     }
@@ -64,7 +66,7 @@ pub async fn can_manage(
     app: &str,
     env: &str,
 ) -> Result<bool, sqlx::Error> {
-    sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM users WHERE id=$1 AND admin) OR EXISTS(SELECT 1 FROM grants WHERE user_id=$1 AND app_id=$2 AND environment=$3 AND permission=$4)")
+    sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM users WHERE id=$1 AND enabled AND (admin OR EXISTS(SELECT 1 FROM grants WHERE user_id=$1 AND app_id=$2 AND environment=$3 AND permission=$4)))")
         .bind(actor).bind(app).bind(env).bind(if env == "prod" { "deploy" } else { "develop" }).fetch_one(pool).await
 }
 pub async fn manage(state: &State, p: &Principal, app: &str, env: &str) -> ApiResult<()> {
@@ -75,6 +77,7 @@ pub async fn manage(state: &State, p: &Principal, app: &str, env: &str) -> ApiRe
     Ok(())
 }
 pub async fn me(state: &State, p: &Principal) -> ApiResult<Value> {
+    crate::auth_sessions::ensure_active(&state.pool, &p.id).await?;
     let row = sqlx::query("SELECT name,admin FROM users WHERE id=$1")
         .bind(&p.id)
         .fetch_optional(&state.pool)

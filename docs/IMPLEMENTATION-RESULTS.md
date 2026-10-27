@@ -501,6 +501,7 @@ Windows 전용 안내와 기반 구현을 `fbbd087`로 커밋·푸시한 뒤, 1B
 
 다음은 공유 preflight·expected-state와 타입별 원격 실패/재시도 계약이다. 현재 전송/관찰 오류의 retryable 표시를 새 원격 작업 재시도 승인으로 사용하지 않는다. 새 context/auth/job 명령, 입력·필드·페이지 계약, 서버 capability, 작업 이벤트/로그/dry-run, Windows Job Object와 여러 파일 복구, 설치·릴리스는 후속 작업이다.
 
+
 ## 실제 Windows 11 네이티브 기반 검증 (2026-10-27)
 
 사용자 요청으로 `fb42b384081afe8b77eab7b2af419f5c1e79c3ec`의 clean 작업본을 Windows 11 Pro build 26200 / Intel Core i5-14500 x64에서 검사했다. PowerShell **7.6.5 Core**와 **5.1.26100.9711 Desktop**을 일반 사용자 권한으로 각각 실행했다. Rust 1.99.1 MSVC, Cargo 1.99.1, MSVC 14.44.35207, Windows SDK 10.0.26100.0, Git 2.56.0.windows.4, Python 3.12.14를 사용했다. 처음 없던 빌드 도구는 사용자 승인으로 설치했으며 MSVC 설치기의 3010 재부팅 요청 후 자동 재부팅 없이 검사했다.
@@ -515,3 +516,36 @@ Windows 전용 안내와 기반 구현을 `fbbd087`로 커밋·푸시한 뒤, 1B
 추가로 Node 24.19.0의 CLI 결과 파서 검사 4개를 통과했다. 실행한 검사에서 소스 코드 수정은 필요하지 않았다. 결과·환경·명령·종료 코드·체크섬·미실행 사유는 [Windows 실행 기록](WINDOWS-VALIDATION.md#windows-실행-기록)에 남겼다. 원본 증거와 ZIP은 이 PC의 `.local/evidence/windows-validation/20261027-native{,-ps7,-ps5}/`에 보관하며 Git에는 결과 문서만 전달한다.
 
 같은 commit의 Linux/macOS manifest를 확보하지 않아 이번 실행의 OS 간 해시 비교는 `not_run`이다. Windows 콘솔 Ctrl+C, 실제 Codex/Claude MCP 승인·세션 유지, 실제 인증·원격 운영, Docker Desktop 전체 개발·배포, 재부팅 후 검사는 미실행이다. CLI 0.5 전체 기능·설치/갱신/제거·여러 파일 복구·Job Object·정식 Windows 지원 완료로 확대하지 않으며 인계 체크리스트의 전체 단계는 계속 미완료로 둔다.
+
+## CLI 0.5 운영 계약 구현과 상세 검사 (2026-10-27)
+
+사용자 지시에 따라 공통 계약→context/인증→작업/업로드/로그→실행 전 검사→Windows/프로젝트 갱신·배포 준비 순서로 구현했다. 코드 버전은 **CLI 0.5.0 / bundle 0.6.2**다. 기존 서버를 재배포하거나 기존 서비스 DB에 migration을 적용한 결과가 아니다. [인계](CLI-HANDOFF.md), [상세 검증](CLI-VALIDATION-MATRIX.md), [Windows 사용자 실행](WINDOWS-VALIDATION.md), [배포 후보](CLI-RELEASE.md)로 현재 절차를 나눠 관리한다.
+
+- 역할별 루트 명령과 프로젝트 밖 운영, JSON/JSONL envelope, 종료 코드, typed JSON 입력/fields, context·원격 목록 cursor, 선택형 describe/schema/completion/doctor를 연결했다. 이전 명령은 대체 경로를 안내하고 거부한다.
+- device/browser 승인, 전역 context/vault, access 15분·고정 30일 refresh family, 회전·동시 갱신·재사용 철회·logout/self sessions를 구현했다. Core users.enabled가 비활성화 기준이며 Keycloak 상태 자동 전파를 주장하지 않는다. 갱신 결과 유실은 이전 토큰 재사용 대신 재로그인을 요구한다.
+- 공유 preflight/expected-state/타입별 retry, prod·remove 명시 대상/확인, 서버 접수·worker 실행 전 재검사를 구현했다. 업로드부터 작업까지 요청 journal과 멱등 조회를 연결하고 관찰 timeout/Ctrl+C는 원격 취소로 바꾸지 않았다. worker 로그는 독립 경로의 유한 스냅샷, 관리 권한·소유·세대 재검사와 1MiB/1000줄/TTL 제한이다.
+- Windows 소유 프로세스 Job Object와 Credential Manager/DPAPI, 프로젝트 파일 staging/backup/복구, 외부 PowerShell 설치/갱신/제거, 5 native target candidate/checksum 및 실제 인수 증거 기반 공개 게이트를 추가했다.
+- 0.6.1 보호 snapshot을 보존하고 0.6.2 명시 upgrade를 추가했다. 앱 업무 코드·기존 SQL·컴포넌트·의존성 파일을 보존한다. 스크립트·생성 지침·MCP·매뉴얼을 새 명령으로 이전했다.
+
+### 실제 로컬 검사
+
+| 검사 | 결과 |
+| --- | --- |
+| 서버 Rust 단위 / Clippy | 101 passed, 3 ignored / warnings 금지 통과 |
+| 클라이언트 Rust 단위 / Clippy | 89 passed / warnings 금지 통과 |
+| 실제 HTTP/PostgreSQL/Docker/CLI | **52개 PASS**, 140.96초, cleanup errors 0, 기존 실행 컨테이너 ID·이미지·시작 시각 보존 |
+| 출력/오류/refresh 유실 블랙박스 | 11묶음 PASS; 합성 loopback HTTP, POSIX Ctrl+C 포함 |
+| 업로드/runtime ACK 유실 복구 | 6묶음 PASS; 배포 export/upload POST/runtime POST 각1, lifecycle 새 요청4/preflight4, 원격 취소0 |
+| 브라우저 | Playwright 6개 PASS; 실제 Federation 모듈+fixture API |
+| 지침/업그레이드 | 5묶음 PASS, 0.6.1→0.6.2 업무 코드·CRLF SQL·컴포넌트·의존성 hash 보존 |
+| 번들/Git | 내장31파일, autocrlf=true 왕복 관리/SQL/컴포넌트31파일 보존 |
+| 정리 실패 주입 | 1개 테스트 안 3개 실패 시나리오 PASS |
+| 스크립트 | TypeScript, Node result4개, Node10파일 syntax/Python6파일 compile PASS |
+| 공개 게이트 | 부정 시나리오 포함 Python3개 PASS |
+| PowerShell 개발 검사 | Linux PS7.6.9 parser6파일, 실제 journal4시나리오, 비Windows 설치 거부/미생성 PASS; Windows 실증과 구분 |
+
+통합 증거는 `/tmp/miy-runtime-regression-ojcff20t/evidence/`다. source parent `fb42b38` 이후 dirty 작업 트리의 실행 파일 SHA-256 `39f3fbed21bc1acaaa576956a55cf2ced9a48f3ed0edcbe4de56307f707aad5e`를 기록했다. 지침 전환 증거는 `.local/evidence/cli-guidance/mvq9xhg4/result.json`, 번들은 `.local/evidence/cli05/bundle-linux.json`이다. 이 로컬 경로는 Git으로 전달되지 않는다. 원격 CI는 실제 코드 commit에 연결해 아래 별도로 기록한다.
+
+검증 중 resume 대상 불일치, 불완전 journal 공개, 실패한 lifecycle 영구 차단을 수정하고 실제 CLI 회귀로 재확인했다. 통합 fixture의 API 경로/개발 계정/명시 앱/충돌 종료 코드와 backup 경로 기대값도 수정했다. 앞선 실패 run을 통과 개수에 합치지 않았다.
+
+이번 0.5의 사용자 Windows 11 PowerShell 5.1·7/Docker Desktop·실제 Credential Manager/DPAPI·콘솔 Ctrl+C·프로젝트 MCP, 별도 원격 Linux/실제 OIDC, Codex·Claude 독립 새 세션 평가는 **NOT_RUN**이다. 호스티드 CI나 합성 archive/개발 로그인 fixture가 이를 대체하지 않는다. 정식 공개 릴리스와 전체 V2~V7 인수 완료는 별도로 유지한다.

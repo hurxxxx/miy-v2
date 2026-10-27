@@ -48,21 +48,54 @@ pub async fn upload(
         .and_then(|v| v.parse::<u64>().ok())
         .filter(|v| *v > 0 && *v <= MAX_ARCHIVE)
         .ok_or_else(|| ApiError::bad("archive_size_limit_1GiB"))?;
+    let request_id = req
+        .headers()
+        .get("x-miy-request-id")
+        .map(|value| {
+            value
+                .to_str()
+                .ok()
+                .and_then(|v| Uuid::parse_str(v).ok())
+                .ok_or_else(|| ApiError::bad("invalid_upload_request_id"))
+        })
+        .transpose()?;
+    let root = root()?;
+    tokio::fs::create_dir_all(&root).await?;
     let id = Uuid::new_v4();
     let mut tx = s.pool.begin().await?;
     sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))")
         .bind(format!("upload:{}", p.id))
         .execute(&mut *tx)
         .await?;
+    if let Some(request_id) = request_id
+        && let Some(row) =
+            sqlx::query("SELECT * FROM image_uploads WHERE actor=$1 AND request_id=$2")
+                .bind(&p.id)
+                .bind(request_id)
+                .fetch_optional(&mut *tx)
+                .await?
+    {
+        if row.get::<String, _>("app_id") != app
+            || row.get::<String, _>("image_id") != image
+            || row.get::<String, _>("archive_hash") != expected_hash
+            || row.get::<i64, _>("size_bytes") != size as i64
+        {
+            return Err(ApiError::conflict("idempotency_conflict"));
+        }
+        if row.get::<chrono::DateTime<chrono::Utc>, _>("expires_at") <= chrono::Utc::now() {
+            return Err(ApiError::conflict("upload_expired"));
+        }
+        let receipt = view(&row);
+        tx.commit().await?;
+        return Ok(Json(receipt));
+    }
     let pending:i64=sqlx::query_scalar("SELECT count(*) FROM image_uploads WHERE actor=$1 AND status IN ('receiving','pending','loading')").bind(&p.id).fetch_one(&mut *tx).await?;
     if pending >= 2 {
         return Err(ApiError::conflict("finish_pending_uploads_first"));
     }
-    sqlx::query("INSERT INTO image_uploads(id,app_id,actor,image_id,size_bytes,archive_hash,status) VALUES($1,$2,$3,$4,$5,$6,'receiving')")
-        .bind(id).bind(&app).bind(&p.id).bind(&image).bind(size as i64).bind(&expected_hash).execute(&mut *tx).await?;
+    sqlx::query("INSERT INTO image_uploads(id,app_id,actor,image_id,size_bytes,archive_hash,status,request_id) VALUES($1,$2,$3,$4,$5,$6,'receiving',$7)")
+        .bind(id).bind(&app).bind(&p.id).bind(&image).bind(size as i64).bind(&expected_hash).bind(request_id).execute(&mut *tx).await?;
     tx.commit().await?;
-    let root = root()?;
-    tokio::fs::create_dir_all(&root).await?;
     let path = root.join(format!("{id}.tar"));
     let result = async {
         let mut file = tokio::fs::OpenOptions::new()
@@ -105,7 +138,7 @@ pub async fn upload(
         .bind(id)
         .execute(&s.pool)
         .await?;
-    Ok(Json(json!({"id":id,"status":"pending","imageId":image})))
+    status(S(s), axum::Extension(p), Path(id)).await
 }
 pub async fn status(
     S(s): S<State>,
@@ -118,18 +151,43 @@ pub async fn status(
         .await?
         .ok_or_else(ApiError::not_found)?;
     domain::manage(&s, &p, row.get("app_id"), "dev").await?;
-    Ok(Json(
-        json!({"id":id,"imageId":row.get::<String,_>("image_id"),"status":row.get::<String,_>("status"),"errorCode":row.get::<Option<String>,_>("error_code")}),
-    ))
+    if row.get::<String, _>("actor") != p.id {
+        return Err(ApiError::forbidden());
+    }
+    if row.get::<chrono::DateTime<chrono::Utc>, _>("expires_at") <= chrono::Utc::now() {
+        return Err(ApiError::conflict("upload_expired"));
+    }
+    Ok(Json(view(&row)))
 }
+fn view(row: &sqlx::postgres::PgRow) -> Value {
+    json!({"id":row.get::<Uuid,_>("id"),"requestId":row.get::<Option<Uuid>,_>("request_id"),"appId":row.get::<String,_>("app_id"),"imageId":row.get::<String,_>("image_id"),"archiveHash":row.get::<String,_>("archive_hash"),"sizeBytes":row.get::<i64,_>("size_bytes"),"status":row.get::<String,_>("status"),"errorCode":row.get::<Option<String>,_>("error_code"),"expiresAt":row.get::<chrono::DateTime<chrono::Utc>,_>("expires_at")})
+}
+pub async fn by_request(
+    S(s): S<State>,
+    axum::Extension(p): axum::Extension<Principal>,
+    Path((app, request)): Path<(String, Uuid)>,
+) -> ApiResult<Json<Value>> {
+    domain::manage(&s, &p, &app, "dev").await?;
+    let id: Uuid = sqlx::query_scalar(
+        "SELECT id FROM image_uploads WHERE actor=$1 AND request_id=$2 AND app_id=$3",
+    )
+    .bind(&p.id)
+    .bind(request)
+    .bind(app)
+    .fetch_optional(&s.pool)
+    .await?
+    .ok_or_else(ApiError::not_found)?;
+    status(S(s), axum::Extension(p), Path(id)).await
+}
+
 pub async fn tick(pool: &sqlx::PgPool) -> anyhow::Result<bool> {
-    let expired:Vec<Uuid>=sqlx::query_scalar("UPDATE image_uploads SET status='failed',error_code='upload_expired' WHERE status='receiving' AND created_at<now()-interval '6 minutes' RETURNING id").fetch_all(pool).await?;
+    let expired:Vec<Uuid>=sqlx::query_scalar("UPDATE image_uploads SET status='failed',error_code='upload_expired' WHERE (status='receiving' AND created_at<now()-interval '6 minutes') OR (status IN ('receiving','pending') AND expires_at<=clock_timestamp()) RETURNING id").fetch_all(pool).await?;
     for id in expired {
         let _ = tokio::fs::remove_file(root()?.join(format!("{id}.tar"))).await;
     }
 
     let Some(row) = sqlx::query(
-        "SELECT * FROM image_uploads WHERE status='pending' ORDER BY created_at LIMIT 1",
+        "SELECT * FROM image_uploads WHERE status='pending' AND expires_at>clock_timestamp() ORDER BY created_at,id LIMIT 1",
     )
     .fetch_optional(pool)
     .await?
@@ -174,7 +232,11 @@ pub async fn tick(pool: &sqlx::PgPool) -> anyhow::Result<bool> {
             validate_archive(&checked_path, &checked_app, &checked_image)
         })
         .await??;
-        runtime::docker(&["load", "--input", path.to_str().unwrap()]).await?;
+        // Docker addresses images by content: after a worker crash, an already
+        // loaded immutable image is the durable import receipt.
+        if runtime::inspect(&image).await.is_err() {
+            runtime::docker(&["load", "--input", path.to_str().unwrap()]).await?;
+        }
         let meta = runtime::inspect(&image).await?;
         anyhow::ensure!(
             meta["Id"] == image && meta["Config"]["Labels"]["org.miy.app.id"] == app,

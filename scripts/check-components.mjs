@@ -1,3 +1,4 @@
+import { fixtureEnv, workflowArgs, workflowData, fixtureCredential, collectApiPage } from "./lib/cli-workflow.mjs";
 // Uses a new synthetic app and new component names; never upgrades existing user apps.
 import assert from "node:assert/strict";
 import { CLI_EXIT, cliData, assertCliFailure } from "./lib/cli-result.mjs";
@@ -14,7 +15,7 @@ const app = resolve(root,"../miy-apps/component-probe-"+suffix);
 const appId = "component-probe-"+suffix;
 const component = "badge-"+suffix;
 const origin = "http://localhost:18000";
-const env = {...process.env,PATH:`${process.env.HOME}/.cargo/bin:${process.env.PATH}`,CI:"true",CARGO_TARGET_DIR:join(root,".local/components-cargo")};
+const env = fixtureEnv(evidence,{...process.env,PATH:`${process.env.HOME}/.cargo/bin:${process.env.PATH}`,CI:"true",CARGO_TARGET_DIR:join(root,".local/components-cargo")});
 mkdirSync(evidence,{recursive:true});
 const binary = join(evidence,"miy");
 copyFileSync(join(root,"target/debug/miy"),binary);
@@ -31,10 +32,10 @@ function run(program,args,cwd=root) {
   catch(e){throw Error(`Command ${sequence} failed (${program} ${args[0]}). Inspect private evidence log.`,{cause:e});}
   finally{closeSync(file);}
 }
-const cli=(args,cwd=app)=>cliData(run(binary,["--output","json","app",...args],cwd));
+const cli=(args,cwd=app)=>workflowData(cliData(run(binary,workflowArgs(args,cwd,env,binary),cwd)),args);
 const fails=(args,expectedExit,pattern)=>{
   let failure;
-  try{execFileSync(binary,["--output","json","app",...args],{cwd:app,env,stdio:["ignore","pipe","pipe"],encoding:"utf8"});}
+  try{execFileSync(binary,workflowArgs(args,app,env,binary),{cwd:app,env,stdio:["ignore","pipe","pipe"],encoding:"utf8"});}
   catch(e){failure=e;}
   return assertCliFailure(failure,expectedExit,pattern);
 };
@@ -48,16 +49,21 @@ async function login(account) {
 async function api(user,path,body,expected=200) {
   const response=await fetch(origin+path,{method:body?"POST":"GET",headers:{cookie:user.cookie,origin,"x-miy-csrf":user.csrf,"content-type":"application/json"},body:body?JSON.stringify(body):undefined});
   assert.equal(response.status,expected,path);
-  return response.json();
+  const value = await response.json();
+  return body ? value : collectApiPage(value, path, async next => {
+    const response = await fetch(origin + next, { headers: { cookie: user.cookie } });
+    assert.equal(response.status, 200);
+    return response.json();
+  });
 }
 const admin=await login("admin");
 const developer=await login("developer");
 const initial=await api(admin,"/api/v1/installations");
 const baseline=initial.filter(a=>a.kind==="docker_app").map(a=>({id:a.id,image:a.imageId,release:a.releaseId}));
 const adminDir=join(evidence,"admin");mkdirSync(adminDir);
-cli(["login","--account","admin"],adminDir);
+cli(["auth","login","--account","admin"],adminDir);
 const source=join(evidence,"source");mkdirSync(source);
-function packageSource(version,label,bundles=["0.6.0"]) {
+function packageSource(version,label,bundles=[JSON.parse(readFileSync(join(app,"miy.bundle.json"))).bundleVersion]) {
   const meta={protocol:"miy.component/v1",name:component,version,description:"Runtime registry distribution probe",uiContract:"miy.ui/v1alpha1",bundleVersions:bundles,files:["index.tsx","README.md"]};
   writeFileSync(join(source,"component.json"),JSON.stringify(meta,null,2));
   writeFileSync(join(source,"index.tsx"),`export function RegistryBadge(){return <strong data-testid="registry-badge">${label}</strong>;}\n`);
@@ -65,7 +71,7 @@ function packageSource(version,label,bundles=["0.6.0"]) {
 }
 function locked(){return JSON.parse(readFileSync(join(app,"platform-components/miy.components.lock.json")));}
 async function mcp() {
-  const child=spawn(binary,["app","mcp"],{cwd:app,env,stdio:["pipe","pipe","ignore"]});
+  const child=spawn(binary,["mcp"],{cwd:app,env,stdio:["pipe","pipe","ignore"]});
   const messages=[];let buffer="";
   child.stdout.on("data",chunk=>{buffer+=chunk;let i;while((i=buffer.indexOf("\n"))>=0){messages.push(JSON.parse(buffer.slice(0,i)));buffer=buffer.slice(i+1);}});
   const send=x=>child.stdin.write(JSON.stringify({jsonrpc:"2.0",...x})+"\n");
@@ -86,23 +92,23 @@ const browser=await chromium.connectOverCDP("http://127.0.0.1:19222");
 try {
   cli(["init",app,"--id",appId,"--name","공용 컴포넌트 검증"],root);
   assert(!readFileSync(join(app,"sdk/ui/index.tsx"),"utf8").includes("function Panel"));
-  cli(["login","--account","developer"]);
+  cli(["auth","login","--account","developer"]);
   assert.equal((await fetch(origin+"/api/v1/components")).status,401);
-  cli(["components","sync"]);
+  cli(["component","sync"]);
   assert.equal(locked().components.ui.version,"1.0.1");
   assert.equal(digest(join(app,"platform-components/ui/index.tsx")),digest(join(root,"registry/components/ui/1.0.1/index.tsx")));
   ok("fresh template declares UI; authenticated CLI fetches the independently stored implementation");
 
   packageSource("1.0.0","badge v1");
-  fails(["components","publish",source],CLI_EXIT.forbidden,/forbidden/);
-  cli(["components","publish",source],adminDir);
-  cli(["components","publish",source],adminDir); // exact re-publication is idempotent
-  const published=cli(["components","show",component,"--version","1.0.0"]);
+  fails(["component","publish",source],CLI_EXIT.forbidden,/forbidden/);
+  cli(["component","publish",source],adminDir);
+  cli(["component","publish",source],adminDir); // exact re-publication is idempotent
+  const published=cli(["component","show",component,"--version","1.0.0"]);
   await api(admin,"/api/v1/components",{...published.package,description:"changed same version"},409);
   await api(admin,"/api/v1/components",{...published.package,version:"1.0.1",files:{...published.package.files,"../escape.tsx":"bad"}},400);
-  assert(cli(["components","list"]).some(v=>v.name===component));
+  assert(cli(["component","list"]).components.some(v=>v.name===component));
   await mcp();
-  cli(["components","add",component]);
+  cli(["component","add",component]);
   assert.equal(locked().components[component].version,"1.0.0");
   assert.equal(digest(binary),binaryHash);
   assert.equal(digest(join(app,".miy-tools/miy")),binaryHash);
@@ -111,14 +117,14 @@ try {
   const managed=join(app,"platform-components",component,"index.tsx");
   const original=readFileSync(managed);
   rmSync(managed);
-  fails(["components","check"],CLI_EXIT.environment,/component_file_missing/);
-  cli(["components","sync"]);assert.deepEqual(readFileSync(managed),original);
+  fails(["component","check"],CLI_EXIT.environment,/component_file_missing/);
+  cli(["component","sync"]);assert.deepEqual(readFileSync(managed),original);
   writeFileSync(managed,"user edit");
-  fails(["components","sync"],CLI_EXIT.environment,/component_modified/);
+  fails(["component","sync"],CLI_EXIT.environment,/component_modified/);
   assert.equal(readFileSync(managed,"utf8"),"user edit");writeFileSync(managed,original);
   const lockFile=join(app,"platform-components/miy.components.lock.json");
   const savedLock=readFileSync(lockFile);const tampered=locked();tampered.components[component].sha256="0".repeat(64);writeFileSync(lockFile,JSON.stringify(tampered));
-  fails(["components","sync"],CLI_EXIT.environment,/locked_component_digest_changed/);writeFileSync(lockFile,savedLock);
+  fails(["component","sync"],CLI_EXIT.environment,/locked_component_digest_changed/);writeFileSync(lockFile,savedLock);
   ok("missing files restored at pinned digest; edits and digest substitution refused without overwriting code");
 
   writeFileSync(join(app,"web/src/AppRoot.tsx"),`import type {AppProps} from "@miy/sdk";\nimport {Panel} from "@miy/ui";\nimport {RegistryBadge} from "@miy/components/${component}";\nexport default function AppRoot({runtime}:AppProps){return <Panel title="Component registry probe"><RegistryBadge/><p>{runtime.location.pathname}</p></Panel>;}\n`);
@@ -132,14 +138,14 @@ try {
   assert.equal(await page.locator("iframe").count(),0);
   ok("fetched basic UI and new component build into a Docker app and render in the platform router");
 
-  packageSource("1.1.0","badge v2");cli(["components","publish",source],adminDir);
-  packageSource("9.0.0","incompatible",["99.0.0"]);cli(["components","publish",source],adminDir);
-  const installedBefore=digest(managed);cli(["components","sync"]);assert.equal(digest(managed),installedBefore);assert.equal(locked().components[component].version,"1.0.0");
-  fails(["components","update",component,"--version","9.0.0"],CLI_EXIT.environment,/incompatible_component/);assert.equal(digest(managed),installedBefore);
-  cli(["components","update",component]);assert.equal(locked().components[component].version,"1.1.0");
+  packageSource("1.1.0","badge v2");cli(["component","publish",source],adminDir);
+  packageSource("9.0.0","incompatible",["99.0.0"]);cli(["component","publish",source],adminDir);
+  const installedBefore=digest(managed);cli(["component","sync"]);assert.equal(digest(managed),installedBefore);assert.equal(locked().components[component].version,"1.0.0");
+  fails(["component","update",component,"--version","9.0.0"],CLI_EXIT.environment,/incompatible_component/);assert.equal(digest(managed),installedBefore);
+  cli(["component","update",component]);assert.equal(locked().components[component].version,"1.1.0");
   await page.reload();await page.getByTestId("registry-badge").filter({hasText:"badge v1"}).waitFor();
-  const credentials=readFileSync(join(app,".miy/session.json"));
-  rmSync(join(app,".miy/session.json"));assert(cli(["components","check"]).valid);writeFileSync(join(app,".miy/session.json"),credentials,{mode:0o600});
+  const credentialPath=fixtureCredential(app,env).path;const credentials=readFileSync(credentialPath);
+  rmSync(credentialPath);try{assert(cli(["component","check"]).valid);}finally{writeFileSync(credentialPath,credentials,{mode:0o600});}
   ok("publication and sync keep v1 pinned; explicit update selects compatible v2; deployed app stays v1; checks need no login");
   const manifest=JSON.parse(readFileSync(join(app,"manifest.json")));manifest.version="0.1.1";writeFileSync(join(app,"manifest.json"),JSON.stringify(manifest,null,2));
   run("git",["add","."],app);run("git",["commit","-m","test: explicitly deploy component v2"],app);
@@ -159,10 +165,10 @@ try {
     run("git",["clone","--quiet","--no-hardlinks",resolve(root,"../miy-apps",original),clone]);
     assert.equal(JSON.parse(readFileSync(join(clone,"miy.bundle.json"))).bundleVersion,version);
     const before=business(clone);
-    cli(["login","--account","developer"],clone);
-    assert.equal(cli(["upgrade"],clone).bundleVersion,"0.6.0");assert.deepEqual(business(clone),before);
+    cli(["auth","login","--account","developer"],clone);
+    assert.equal(cli(["upgrade"],clone).bundleVersion,JSON.parse(readFileSync(join(app,"miy.bundle.json"))).bundleVersion);assert.deepEqual(business(clone),before);
     assert(cli(["check"],clone).valid);
-    ok(`${version} -> 0.5 upgrade preserves business Rust/React and SQL in a clone; full app check passes`);
+    ok(`${version} -> current bundle upgrade preserves business Rust/React and SQL in a clone; full app check passes`);
   }
   writeFileSync(join(evidence,"result.json"),JSON.stringify({passed,app,appId,url,component,binaryHash,corePid:corePid.trim(),hostHash,checkedAt:new Date().toISOString()},null,2));
   writeFileSync(join(root,".local/evidence/component-registry/latest.json"),JSON.stringify({evidence,app,url},null,2));

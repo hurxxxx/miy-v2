@@ -1,4 +1,7 @@
-use crate::{auth, contract};
+use crate::{
+    auth, contract,
+    runtime_contract::{FailureCode, RuntimeFailure},
+};
 use anyhow::{Context, Result};
 use sqlx::{Connection, Executor, Row};
 use uuid::Uuid;
@@ -22,6 +25,7 @@ pub async fn run(pool: sqlx::PgPool) -> Result<()> {
         .await?;
     // HTTP observations never occupy the deployment/control queue. The task is
     // aborted before this runner releases its exclusive ownership on shutdown.
+    let _log_monitor = crate::runtime_logs::start(pool.clone());
     let _health_monitor = crate::runtime_health::start(pool.clone())?;
     let mut last_reconcile = std::time::Instant::now();
     loop {
@@ -48,9 +52,10 @@ pub async fn run(pool: sqlx::PgPool) -> Result<()> {
                 .execute(&pool)
                 .await?;
             let result = async {
+                crate::auth_sessions::ensure_active(&pool,row.get("actor")).await.map_err(|_| RuntimeFailure::new(FailureCode::UserDisabled))?;
                 let authorized:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM users WHERE id=$1 AND admin) OR EXISTS(SELECT 1 FROM installations i JOIN grants g ON g.app_id=i.app_id AND g.environment=i.environment WHERE i.id=$2 AND i.environment='dev' AND g.user_id=$1 AND g.permission='develop')")
                     .bind(row.get::<String,_>("actor")).bind(installation).fetch_one(&pool).await?;
-                anyhow::ensure!(authorized,"permission_revoked");
+                anyhow::ensure!(authorized, RuntimeFailure::new(FailureCode::PermissionRevoked));
                 prepare(&pool, id, installation, release).await
             }.await;
             match result {
@@ -58,13 +63,16 @@ pub async fn run(pool: sqlx::PgPool) -> Result<()> {
                     sqlx::query("UPDATE jobs SET status='succeeded',step='ready',error_code=NULL,updated_at=now() WHERE id=$1").bind(id).execute(&pool).await?;
                 }
                 Err(e) => {
-                    let text = format!("{e:#}");
-                    let code = if text.contains("permission_revoked") {
-                        "permission_revoked"
-                    } else if text.contains("checksum") || text.contains("previously applied") {
+                    let code = if let Some(failure) = e.downcast_ref::<RuntimeFailure>() {
+                        failure.code()
+                    } else if matches!(
+                        e.downcast_ref::<sqlx::migrate::MigrateError>(),
+                        Some(
+                            sqlx::migrate::MigrateError::VersionMissing(_)
+                                | sqlx::migrate::MigrateError::VersionMismatch(_)
+                        )
+                    ) {
                         "migration_history_mismatch"
-                    } else if text.contains("artifact") {
-                        "invalid_artifact"
                     } else {
                         "database_prepare_failed"
                     };
@@ -106,7 +114,8 @@ pub(crate) async fn prepare(
         .fetch_one(pool)
         .await?;
     let root = std::path::PathBuf::from(std::env::var("MIY_ARTIFACTS")?);
-    let artifact = contract::verified_artifact(&root, row.get("artifact_hash"))?;
+    let artifact = contract::verified_artifact(&root, row.get("artifact_hash"))
+        .map_err(|_| RuntimeFailure::new(FailureCode::InvalidImageContract))?;
     let m: contract::Manifest = serde_json::from_value(row.get("manifest"))?;
     contract::validate(&m).map_err(anyhow::Error::msg)?;
     let migrations = artifact.join(&m.migrations.directory);
@@ -133,7 +142,9 @@ pub(crate) async fn prepare(
     let mp = auth::decrypt(resource.get("migration_secret"))?;
     let rp = auth::decrypt(resource.get("runtime_secret"))?;
     let provision = std::env::var("PROVISION_DATABASE_URL")?;
-    let mut admin = sqlx::PgConnection::connect(&provision).await?;
+    let mut admin = sqlx::PgConnection::connect(&provision)
+        .await
+        .map_err(|_| RuntimeFailure::new(FailureCode::DatabaseUnavailable))?;
     step(pool, job, "provisioning").await?;
     sqlx::query("UPDATE installations SET db_status='provisioning' WHERE id=$1")
         .bind(installation)

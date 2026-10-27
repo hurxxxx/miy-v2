@@ -10,12 +10,16 @@ while [ "$#" -gt 0 ]; do
     *) echo 'Usage: bash scripts/install-cli.sh [--from /path/to/miy] [--prefix ~/.local/bin]' >&2; exit 2 ;;
   esac
 done
+installer_dir="$(cd "$(dirname "$0")" && pwd)"
+if [ -z "$source_binary" ] && [ -f "$installer_dir/release.json" ] && [ -x "$installer_dir/miy" ]; then
+  source_binary="$installer_dir/miy"
+fi
 if [ -z "$source_binary" ]; then
   root="$(cd "$(dirname "$0")/.." && pwd)"
   cargo="$(command -v cargo || true)"
   if [ -z "$cargo" ] && [ -x "$HOME/.cargo/bin/cargo" ]; then cargo="$HOME/.cargo/bin/cargo"; fi
   if [ -z "$cargo" ]; then echo 'Install Rust via https://rustup.rs first, or use --from with a prebuilt miy binary.' >&2; exit 1; fi
-  (cd "$root" && "$cargo" build --release --locked -p miy)
+  (cd "$root" && "$cargo" build --release --locked --no-default-features -p miy)
   source_binary="$root/target/release/miy"
 fi
 [ -x "$source_binary" ] || { echo 'Source must be an executable miy binary for this OS/CPU.' >&2; exit 1; }

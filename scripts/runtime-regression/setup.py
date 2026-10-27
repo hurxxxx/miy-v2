@@ -38,6 +38,11 @@ commit='a'*40
 server='''import http.server,json,os,pathlib
 class H(http.server.BaseHTTPRequestHandler):
  def do_GET(self):
+  if self.path=='/api/audit-log-burst':
+   # Fixture-only finite output for the worker diagnostic byte-limit check.
+   import sys
+   for _ in range(1024): sys.stdout.write('OPERATIONS-FIXTURE-'+('x'*2030)+'\\n')
+   sys.stdout.flush()
   unhealthy=pathlib.Path('/tmp/unhealthy').exists()
   self.send_response(503 if unhealthy and self.path=='/health' else 200);self.send_header('Content-Type','application/json');self.end_headers();self.wfile.write(json.dumps({'releaseId':os.environ.get('MIY_RELEASE_ID'),'version':os.environ.get('AUDIT_VERSION'),'path':self.path}).encode())
  def log_message(self,*args): pass

@@ -3,19 +3,34 @@ compile_error!(
     "The server requires Linux/Unix; build the Windows client with --no-default-features."
 );
 
+mod acceptance_contract;
 mod agent_tools;
 mod api_error;
 mod app_cli;
 mod app_health;
 #[cfg(feature = "server")]
 mod auth;
+#[cfg(feature = "server")]
+mod auth_sessions;
+#[cfg(all(test, feature = "server"))]
+mod auth_sessions_regression;
 mod bundle;
 #[cfg(feature = "server")]
 mod cli_auth;
 mod cli_client;
+mod cli_config;
+mod cli_discovery;
+mod cli_doctor;
 mod cli_error;
 mod cli_guidance;
+mod cli_input;
+mod cli_journal;
+mod cli_login;
 mod cli_output;
+#[cfg(all(test, feature = "server"))]
+mod cli_regression;
+mod cli_remote;
+mod cli_upload;
 mod component_cli;
 mod component_contract;
 #[cfg(feature = "server")]
@@ -23,12 +38,13 @@ mod component_registry;
 #[cfg(feature = "server")]
 mod connections;
 mod contract;
+mod credential_store;
 #[cfg(feature = "server")]
 mod delivery;
-mod dev_tools;
 mod docker;
 #[cfg(feature = "server")]
 mod domain;
+mod file_transaction;
 #[cfg(feature = "server")]
 mod http;
 mod identity;
@@ -36,15 +52,28 @@ mod image_contract;
 #[cfg(all(test, feature = "server"))]
 mod integration;
 #[cfg(feature = "server")]
+mod job_api;
+#[cfg(feature = "server")]
 mod mcp;
+#[cfg(all(test, feature = "server"))]
+mod operations_regression;
+mod owned_process;
 mod platform;
 mod preview;
+#[cfg(feature = "server")]
+mod read_api;
 #[cfg(feature = "server")]
 mod registration;
 #[cfg(feature = "server")]
 mod runtime;
+mod runtime_contract;
 #[cfg(feature = "server")]
 mod runtime_health;
+#[cfg(feature = "server")]
+mod runtime_logs;
+mod runtime_platform;
+#[cfg(feature = "server")]
+mod runtime_preflight;
 #[cfg(all(test, feature = "server"))]
 mod runtime_regression;
 mod upgrade;
@@ -64,6 +93,8 @@ use std::{path::PathBuf, sync::Arc};
 #[derive(Parser)]
 #[command(version)]
 struct Args {
+    #[command(flatten)]
+    options: cli_config::Options,
     /// Output for application commands: auto uses text on a terminal and JSON otherwise.
     #[arg(long, global = true, value_enum, default_value = "auto")]
     output: OutputMode,
@@ -72,6 +103,49 @@ struct Args {
 }
 #[derive(Subcommand)]
 enum Command {
+    /// Manage named server contexts and the active server.
+    Context {
+        #[command(subcommand)]
+        command: cli_config::ContextCommand,
+    },
+    /// Sign in and manage user sessions for the selected context.
+    Auth {
+        #[command(subcommand)]
+        command: cli_login::AuthCommand,
+    },
+    /// Diagnose the requirements for remote operation or local development.
+    Doctor(cli_doctor::DoctorArgs),
+    /// Discover command inputs, outputs, permissions and effects.
+    Describe(cli_discovery::DescribeArgs),
+    /// Generate completion for a supported shell.
+    Completion {
+        #[arg(value_enum)]
+        shell: clap_complete::Shell,
+    },
+    /// Discover and synchronize reusable components.
+    Component {
+        #[command(subcommand)]
+        command: component_cli::ComponentCommand,
+    },
+    /// Inspect and recover remote jobs.
+    Job {
+        #[command(subcommand)]
+        command: cli_remote::JobCommand,
+    },
+    Registration {
+        #[command(subcommand)]
+        command: cli_remote::RegistrationCommand,
+    },
+    User {
+        #[command(subcommand)]
+        command: cli_remote::UserCommand,
+    },
+    Grant {
+        #[command(subcommand)]
+        command: cli_remote::GrantCommand,
+    },
+    /// Serve the project read-only JSON-RPC MCP interface over stdio.
+    Mcp,
     App {
         #[command(subcommand)]
         command: app_cli::AppCommand,
@@ -127,42 +201,86 @@ async fn main() -> Result<()> {
     let command_name = command_name(&matches);
     let args = Args::from_arg_matches(&matches)?;
     let mode = args.output.resolve(terminal);
-    match args.command {
-        Command::App { command } => {
-            let raw = matches!(
-                &command,
-                app_cli::AppCommand::Mcp | app_cli::AppCommand::Codex { .. }
-            ) || matches!(&command, app_cli::AppCommand::Describe { format } if format == "markdown");
-            let result = if matches!(mode, OutputMode::Jsonl) {
-                Err(CliError::new(Category::Usage, "unsupported_output", "JSONL requires an event-stream command; no application command currently supports it.").into())
+    if mode == OutputMode::Jsonl
+        && !matches!(
+            &args.command,
+            Command::Completion { .. }
+                | Command::Job {
+                    command: cli_remote::JobCommand::Watch { .. }
+                }
+        )
+    {
+        let result = Err(CliError::new(
+            Category::Usage,
+            "unsupported_output",
+            "This command does not provide a JSONL event stream.",
+        )
+        .into());
+        std::process::exit(cli_output::emit(mode, &command_name, &result, false)?);
+    }
+    if let Err(error) = cli_config::initialize(args.options) {
+        std::process::exit(cli_output::emit(mode, &command_name, &Err(error), false)?);
+    }
+    if let Some(fields) = &cli_config::options().fields
+        && let Err(error) = cli_input::validate_fields(&command_name, fields)
+    {
+        std::process::exit(cli_output::emit(mode, &command_name, &Err(error), false)?);
+    }
+    let raw = matches!(&args.command, Command::Mcp | Command::Completion { .. });
+    let result = match args.command {
+        Command::Context { command } => cli_config::execute(command).map(cli_output::Outcome::Data),
+        Command::Auth { command } => cli_login::execute(command)
+            .await
+            .map(cli_output::Outcome::Data),
+        Command::Component { command } => component_cli::execute(command)
+            .await
+            .map(cli_output::Outcome::Data),
+        Command::Job { command } => cli_remote::execute_job(command, mode).await,
+        Command::Registration { command } => cli_remote::execute_registration(command).await,
+        Command::User { command } => cli_remote::execute_user(command).await,
+        Command::Grant { command } => cli_remote::execute_grant(command).await,
+        Command::App { command } => app_cli::execute(command).await,
+        Command::Doctor(options) => cli_doctor::inspect(options).await.and_then(|value| {
+            if value["ready"] == true {
+                Ok(cli_output::Outcome::Data(value))
             } else {
-                app_cli::execute(command).await
-            };
-            let code = cli_output::emit(
-                mode,
-                &command_name,
-                &result,
-                raw && !matches!(mode, OutputMode::Jsonl),
-            )?;
-            if code != 0 {
-                std::process::exit(code);
+                Err(CliError::new(
+                    Category::Environment,
+                    "diagnostic_failed",
+                    "Some required conditions are not ready.",
+                )
+                .with_details(value)
+                .into())
             }
-            Ok(())
+        }),
+        Command::Describe(options) => {
+            cli_discovery::inspect(options).map(cli_output::Outcome::Data)
         }
+        Command::Completion { shell } => {
+            cli_discovery::completion(shell).map(|()| cli_output::Outcome::Raw)
+        }
+        Command::Mcp => agent_tools::serve()
+            .await
+            .map(|()| cli_output::Outcome::Raw),
         #[cfg(feature = "server")]
         command => {
             if args.output != OutputMode::Auto {
-                let result = Err(CliError::new(
+                Err(CliError::new(
                     Category::Usage,
                     "unsupported_output",
-                    "--output is supported by application commands only.",
+                    "--output is supported by client commands only.",
                 )
-                .into());
-                std::process::exit(cli_output::emit(mode, &command_name, &result, false)?);
+                .into())
+            } else {
+                return run_server(command).await;
             }
-            run_server(command).await
         }
+    };
+    let code = cli_output::emit(mode, &command_name, &result, raw)?;
+    if code != 0 {
+        std::process::exit(code);
     }
+    Ok(())
 }
 
 fn command_name(matches: &clap::ArgMatches) -> String {

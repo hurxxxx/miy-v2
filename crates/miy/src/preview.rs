@@ -669,7 +669,10 @@ async fn forward(
     request = if let Some(token) = identity {
         request.header("x-miy-identity", token)
     } else {
-        crate::cli_client::authenticate(&s.session, request)
+        let session = crate::cli_login::refreshed(&s.session)
+            .await
+            .map_err(|_| ApiError::unauthorized())?;
+        crate::cli_client::authenticate(&session, request)
     };
     let response = request
         .send()

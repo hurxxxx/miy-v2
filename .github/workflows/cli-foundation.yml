@@ -72,6 +72,9 @@ jobs:
       - name: Verify CLI output and exit contracts with a loopback fixture
         if: matrix.client
         run: python scripts/check-cli-output.py --cli "${{ matrix.binary }}"
+      - name: Verify lost acknowledgements and lifecycle recovery
+        if: matrix.id == 'linux-client'
+        run: python scripts/check-cli-recovery.py --cli "${{ matrix.binary }}"
       - name: Upload the portable bundle manifest
         if: matrix.client
         uses: actions/upload-artifact@v4

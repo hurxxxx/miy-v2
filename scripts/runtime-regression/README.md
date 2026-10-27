@@ -6,7 +6,7 @@ Run from the repository root with Rust 1.99.1, Python 3, OpenSSL, Docker, and ca
 python3 scripts/runtime-regression/run.py
 ```
 
-The runner creates a fresh temporary evidence directory, a PostgreSQL container with a random loopback port and disposable storage, and synthetic app images. It runs the actual runtime/worker code against this isolated database. It never reads `.local/runtime.env` or stops the ordinary platform runner. The test uses fixture identity metadata; it does not verify OAuth or business UI integration.
+The runner creates a fresh temporary evidence directory, a PostgreSQL container with a random loopback port and disposable storage, and synthetic app images. It builds the actual CLI and runs the HTTP router, authentication, runtime and worker code against this isolated database. It never reads `.local/runtime.env` or stops the ordinary platform runner. The test uses fixture identity metadata and the explicit loopback development-account route; it verifies device/session issuance, refresh, revoke and Core user disable but does not verify a real OIDC issuer or business UI integration.
 
 The Docker shim injects an error for container lookup and kills only the test worker immediately after successful removal of its exact test container ID. Tests cover ownership refusal, confirmed absence, retry after interruption, service failure/recovery, manual stop, audit transitions, and existing deployment/data-preservation boundaries. Twelve gated HTTP fixtures also verify that the real worker can start a different app before their responses arrive, uses bounded concurrency, and discards observations from before a same-release lifecycle change. These additional service fixtures use synthetic installation metadata, not twelve deployed app containers.
 
@@ -27,3 +27,13 @@ pnpm exec playwright test --config scripts/runtime-regression/ui.config.ts
 ```
 
 This builds the platform and a real Federation test app into `.local/evidence/runtime-health-ui/` and starts its own preview on `127.0.0.1:18147` (fails if occupied). It does not replace the running platform's build. API requests are intercepted with fixtures. Tests cover health displays, unsaved input and SDK callback stability, release-change API blocking, and late responses across app and environment navigation. It does not send mutations to a platform API.
+
+The CLI 0.5 suites additionally check permission-scoped pagination, atomic event cursors, preflight/expected-state and confirmation rejection, typed retry, idempotent upload receipts, bounded worker logs, concurrent real CLI refresh, typed JSON input and request-ID resume. Two blocked log diagnostics must allow a production start to complete; the owned app prints 2 MiB so collection must truncate to 1 MiB. Neither test reads an unrelated container's logs.
+
+Client transport failures can also be checked without Docker/PostgreSQL:
+
+```sh
+python3 scripts/check-cli-recovery.py --cli target/debug/miy
+```
+
+That separate check uses a synthetic Docker export and loopback HTTP fault fixture; it proves CLI journal/ACK recovery and request counts, not a real image import. Browser fixtures also cover device approval/CSRF and production confirmation/state conflicts.

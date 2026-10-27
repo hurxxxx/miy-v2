@@ -1,3 +1,4 @@
+import { fixtureEnv, workflowArgs, workflowData, collectApiPage } from "./lib/cli-workflow.mjs";
 // Platform/CLI regression probe. Creates only uniquely named temporary fixtures and cleans them.
 import assert from 'node:assert/strict';
 import {CLI_EXIT,cliData,assertCliFailure} from './lib/cli-result.mjs';
@@ -10,16 +11,16 @@ const root=resolve(import.meta.dirname,'..');
 const evidence=join(root,'.local/evidence/operations',Date.now().toString(36));mkdirSync(evidence,{recursive:true});
 const appId='ops-probe-'+Date.now().toString(36),app=join(evidence,'app'),adminDir=join(evidence,'admin');mkdirSync(adminDir);
 const binary=join(evidence,'miy');copyFileSync(join(root,'target/debug/miy'),binary);
-const origin='http://localhost:18000',env={...process.env,PATH:`${process.env.HOME}/.cargo/bin:${process.env.PATH}`,CI:'true',CARGO_TARGET_DIR:join(root,'.local/operations-cargo')};
+const origin='http://localhost:18000',env=fixtureEnv(evidence,{...process.env,PATH:`${process.env.HOME}/.cargo/bin:${process.env.PATH}`,CI:'true',CARGO_TARGET_DIR:join(root,'.local/operations-cargo')});
 let sequence=0,preview,local,browser,installation,image;const checks=[];
 const ok=message=>{checks.push(message);console.log('PASS '+message);};
 const hash=file=>createHash('sha256').update(readFileSync(file)).digest('hex');
 function run(program,args,cwd=root){const fd=openSync(join(evidence,`command-${++sequence}.log`),'w');try{return execFileSync(program,args,{cwd,env,encoding:'utf8',stdio:['ignore','pipe',fd],maxBuffer:8*1024*1024});}finally{closeSync(fd);}}
-function cli(args,cwd=app){return cliData(run(binary,['--output','json','app',...args],cwd));}
-function fails(args,expectedExit,pattern,cwd=app){let error;try{execFileSync(binary,['--output','json','app',...args],{cwd,env,encoding:'utf8',stdio:['ignore','pipe','pipe']});}catch(e){error=e;}return assertCliFailure(error,expectedExit,pattern);}
+function cli(args,cwd=app){return workflowData(cliData(run(binary,workflowArgs(args,cwd,env,binary),cwd)),args);}
+function fails(args,expectedExit,pattern,cwd=app){let error;try{execFileSync(binary,workflowArgs(args,cwd,env,binary),{cwd,env,encoding:'utf8',stdio:['ignore','pipe','pipe']});}catch(e){error=e;}return assertCliFailure(error,expectedExit,pattern);}
 async function until(check,message,ms=180000){const end=Date.now()+ms;while(Date.now()<end){if(await check())return;await new Promise(r=>setTimeout(r,100));}throw Error(message);}
 async function login(account){const r=await fetch(origin+'/auth/development',{method:'POST',headers:{origin,'content-type':'application/json'},body:JSON.stringify({account})});assert.equal(r.status,200);const cookie=r.headers.get('set-cookie').split(';')[0];const me=await(await fetch(origin+'/api/v1/me',{headers:{cookie}})).json();return {cookie,csrf:me.csrf};}
-async function api(user,path,body,status=200){const r=await fetch(origin+path,{method:body?'POST':'GET',headers:{cookie:user.cookie,origin,'x-miy-csrf':user.csrf,'content-type':'application/json'},...(body?{body:JSON.stringify(body)}:{})});assert.equal(r.status,status,path);return r.json();}
+async function api(user,path,body,status=200){const r=await fetch(origin+path,{method:body?'POST':'GET',headers:{cookie:user.cookie,origin,'x-miy-csrf':user.csrf,'content-type':'application/json'},...(body?{body:JSON.stringify(body)}:{})});assert.equal(r.status,status,path);const value=await r.json();return body?value:collectApiPage(value,path,async next=>{const response=await fetch(origin+next,{headers:{cookie:user.cookie}});assert.equal(response.status,200);return response.json();});}
 function sql(query,database='miy_core'){return execFileSync('docker',['exec','-i','miy-v2-validation-postgres-1','psql','-U','postgres','-d',database,'-At','-v','ON_ERROR_STOP=1'],{input:query,encoding:'utf8',stdio:['pipe','pipe','pipe']}).trim();}
 async function startPreview(){const fd=openSync(join(evidence,`preview-${++sequence}.log`),'w');preview=spawn(binary,['app','dev','--port','18123','--no-open'],{cwd:app,env,stdio:['ignore',fd,fd]});closeSync(fd);await until(()=>{assert.equal(preview.exitCode,null,'preview exited: inspect private log');return existsSync(join(app,'.miy/preview.json'));},'preview startup timeout',240000);return JSON.parse(readFileSync(join(app,'.miy/preview.json')));}
 async function stopPreview(){cli(['dev-stop']);await until(()=>preview.exitCode!==null,'runner did not exit',5000);assert.equal(preview.exitCode,0);assert(!existsSync(join(app,'.miy/preview-run.json')));assert(!existsSync(join(app,'.miy/preview.json')));assert.equal(await fetch('http://127.0.0.1:18123/__miy/context').then(()=>true,()=>false),false);}
@@ -52,10 +53,10 @@ const admin=await login('admin'),developer=await login('developer');
 const baseline=(await api(admin,'/api/v1/installations')).map(v=>({id:v.id,release:v.releaseId,image:v.imageId}));
 const corePid=readFileSync(join(root,'.local/serve.pid'),'utf8');
 try{
- cli(['login','--account','admin'],adminDir);
- cli(['components','publish',join(root,'registry/components/ui/1.0.1')],adminDir);
+ cli(['auth','login','--account','admin'],adminDir);
+ cli(['component','publish',join(root,'registry/components/ui/1.0.1')],adminDir);
  cli(['init',app,'--id',appId,'--name','Operations probe'],root);
- cli(['login','--account','developer']);cli(['components','sync']);
+ cli(['auth','login','--account','developer']);cli(['component','sync']);
  const registration=cli(['register']);await api(admin,`/api/v1/app-registrations/${registration.id}/decision`,{approve:true});
  writeFileSync(join(app,'web/src/AppRoot.tsx'),`import {useState,useEffect} from 'react';import type {AppProps} from '@miy/sdk';
 export default function AppRoot({runtime}:AppProps){const [draft,setDraft]=useState('');useEffect(()=>runtime.registerNavigationGuard(()=>draft?'Discard unsaved probe?':undefined),[runtime.registerNavigationGuard,draft]);useEffect(()=>setDraft(''),[runtime.location.pathname]);return <section><h1>Operations probe</h1><p data-testid="path">{runtime.location.pathname}</p><input data-testid="draft" value={draft} onChange={e=>setDraft(e.target.value)}/><button onClick={()=>runtime.navigate('/next')}>Next</button><button onClick={()=>runtime.navigate('/')}>Home</button><button onClick={()=>setDraft('')}>Save</button></section>;}`);
@@ -94,9 +95,10 @@ export default function AppRoot({runtime}:AppProps){const [draft,setDraft]=useSt
   run(oldBinary,['app','login','--account','developer'],upgrade);run(oldBinary,['app','components','sync'],upgrade);
   run('git',['init'],upgrade);run('git',['add','.'],upgrade);run('git',['-c','user.name=MIY probe','-c','user.email=probe@localhost','commit','-m','Old bundle fixture'],upgrade);
   const preserved=['src/main.rs','web/src/AppRoot.tsx','manifest.json','migrations/0001_initial.sql'];const before=preserved.map(f=>hash(join(upgrade,f)));
+  cli(['auth','login','--account','developer'],upgrade);
   fails(['upgrade'],CLI_EXIT.environment,/before_upgrade/,upgrade);assert.equal(JSON.parse(readFileSync(join(upgrade,'miy.bundle.json'))).bundleVersion,'0.5.0');
   run(oldBinary,['app','components','update','ui','--version','1.0.1'],upgrade);run('git',['add','.'],upgrade);run('git',['-c','user.name=MIY probe','-c','user.email=probe@localhost','commit','-m','Compatible component'],upgrade);
-  assert.equal(cli(['upgrade'],upgrade).bundleVersion,cli(['describe']).bundleVersion);assert.deepEqual(preserved.map(f=>hash(join(upgrade,f))),before);cli(['check'],upgrade);ok('0.5 → current bundle explicit upgrade rejects incompatible components, preserves business files and passes full check');
+  assert.equal(cli(['upgrade'],upgrade).bundleVersion,JSON.parse(readFileSync(join(app,'miy.bundle.json'))).bundleVersion);assert.deepEqual(preserved.map(f=>hash(join(upgrade,f))),before);cli(['check'],upgrade);ok('0.5 → current bundle explicit upgrade rejects incompatible components, preserves business files and passes full check');
  } else { console.log('SKIP bundle upgrade: set MIY_PREVIOUS_CLI to a bundle 0.5 CLI binary'); }
 }finally{
  if(preview&&preview.exitCode===null){try{cli(['dev-stop']);}catch{} }
@@ -105,7 +107,7 @@ export default function AppRoot({runtime}:AppProps){const [draft,setDraft]=useSt
  assert(/^ops-probe-[a-z0-9]+$/.test(appId));
  const artifacts=sql(`SELECT artifact_hash FROM releases WHERE app_id='${appId}';`).split('\n').filter(Boolean);
  const ids=sql(`SELECT id FROM installations WHERE app_id='${appId}';`).split('\n').filter(Boolean);
- for(const id of ids){assert(/^[a-f0-9-]{36}$/.test(id));try{cli(['control','remove']);}catch{}const suffix=id.replaceAll('-','');
+ for(const id of ids){assert(/^[a-f0-9-]{36}$/.test(id));try{cli(['remove']);}catch{}const suffix=id.replaceAll('-','');
   sql(`DROP DATABASE IF EXISTS miy_app_${suffix} WITH (FORCE);`,'postgres');
   for(const kind of ['r','m','o'])sql(`DROP ROLE IF EXISTS miy_${kind}_${suffix};`,'postgres');
  }

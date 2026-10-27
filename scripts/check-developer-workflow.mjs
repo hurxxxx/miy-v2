@@ -1,3 +1,4 @@
+import { fixtureEnv, workflowArgs, workflowData, fixtureCredential } from "./lib/cli-workflow.mjs";
 // Independent CLI acceptance. All registration/grant writes use the public CLI.
 import assert from "node:assert/strict";
 import { CLI_EXIT, cliResult, cliErrorText } from "./lib/cli-result.mjs";
@@ -16,17 +17,17 @@ const root = process.cwd(),
 const stamp = Date.now().toString(36),
   evidence = join(root, ".local/evidence/workflow-" + stamp);
 mkdirSync(evidence, { recursive: true });
+const cliEnv = fixtureEnv(evidence,{PATH:process.env.HOME+"/.cargo/bin:"+process.env.PATH});
 const passed = [];
 function pass(name) {
   passed.push(name);
   console.log("PASS " + name);
 }
 async function command(cwd, args, expected = 0, env = {}) {
-  const child = spawn(cli, ["--output", "json", "app", ...args], {
+  const child = spawn(cli, workflowArgs(args,cwd,{...cliEnv,...env},cli), {
     cwd,
     env: {
-      ...process.env,
-      PATH: process.env.HOME + "/.cargo/bin:" + process.env.PATH,
+      ...cliEnv,
       ...env,
     },
     stdio: ["ignore", "pipe", "pipe"],
@@ -45,7 +46,16 @@ async function command(cwd, args, expected = 0, env = {}) {
     { mode: 0o600 },
   );
   const response = cliResult(out, { exitCode: code, expectedExit: expected });
-  return response.ok ? response.data : cliErrorText(response.error);
+  if (!response.ok) return cliErrorText(response.error);
+  const data = workflowData(response.data, args);
+  if (Array.isArray(data) && response.data.nextCursor) {
+    const next = [...args];
+    const previous = next.indexOf("--cursor");
+    if (previous >= 0) next.splice(previous, 2);
+    next.push("--cursor", response.data.nextCursor);
+    return [...data, ...await command(cwd, next, expected, env)];
+  }
+  return data;
 }
 // Check three untouched scaffolds; caches are shared but every source directory is new.
 for (let i = 1; i <= 3; i++) {
@@ -61,7 +71,7 @@ for (let i = 1; i <= 3; i++) {
   const checked = await command(dir, ["check"], 0, {
     CARGO_TARGET_DIR: join(root, ".local/scaffold-target"),
   });
-  assert.equal(checked.bundleVersion, "0.3.0");
+  assert.equal(checked.bundleVersion, JSON.parse(readFileSync(join(dir, "miy.bundle.json"))).bundleVersion);
   assert.ok(checked.checks.includes("federation-assets"));
   pass("fresh-scaffold-" + i + "-format-rust-typescript-federation-build");
   if (i === 1) {
@@ -74,7 +84,7 @@ for (let i = 1; i <= 3; i++) {
       ["Dockerfile", (s) => s + "\n# modified\n", "protected_bundle_modified"],
       [
         "miy.bundle.json",
-        (s) => s.replace("0.3.0", "99.0.0"),
+        (s) => JSON.stringify({ ...JSON.parse(s), bundleVersion: "99.0.0" }),
         "bundle_version_mismatch",
       ],
       [
@@ -128,59 +138,59 @@ await command(root, [
   "--name",
   "개발·배포 검증 메모",
 ]);
-await command(app, ["login", "--account", "alice"]);
+await command(app, ["auth","login", "--account", "alice"]);
 assert.match(await command(app, ["register"], CLI_EXIT.forbidden), /forbidden/);
 pass("ordinary-user-cannot-request-registration");
-await command(app, ["login", "--account", "developer"]);
+await command(app, ["auth","login", "--account", "developer"]);
 const requested = await command(app, ["register"]);
 assert.equal(requested.status, "pending");
 assert.equal((await command(app, ["register"])).id, requested.id);
 pass("developer-registration-request-idempotent");
-assert.match(await command(app, ["control", "start"], CLI_EXIT.forbidden), /forbidden/);
+assert.match(await command(app, ["start"], CLI_EXIT.forbidden), /forbidden/);
 pass("pending-request-has-no-deploy-access");
-assert.match(await command(app, ["approve", requested.id], CLI_EXIT.forbidden), /forbidden/);
+assert.match(await command(app, ["registration","approve", requested.id], CLI_EXIT.forbidden), /forbidden/);
 pass("developer-cannot-self-approve");
-assert.match(await command(app, ["users"], CLI_EXIT.forbidden), /forbidden/);
+assert.match(await command(app, ["user","list"], CLI_EXIT.forbidden), /forbidden/);
 pass("developer-cannot-list-all-users");
-await command(app, ["login", "--account", "admin"]);
+await command(app, ["auth","login", "--account", "admin"]);
 assert.ok(
-  (await command(app, ["registrations"])).some((r) => r.id === requested.id),
+  (await command(app, ["registration","list"])).some((r) => r.id === requested.id),
 );
 assert.equal(
-  (await command(app, ["approve", requested.id])).status,
+  (await command(app, ["registration","approve", requested.id])).status,
   "approved",
 );
 assert.equal(
-  (await command(app, ["approve", requested.id])).status,
+  (await command(app, ["registration","approve", requested.id])).status,
   "approved",
 );
 pass("admin-approval-atomic-and-idempotent");
 assert.match(
-  await command(app, ["reject", requested.id], CLI_EXIT.conflict),
+  await command(app, ["registration","reject", requested.id], CLI_EXIT.conflict),
   /registration_already_decided/,
 );
 pass("approved-request-cannot-be-reversed-as-rejection");
-const users = await command(app, ["users"]);
+const users = await command(app, ["user","list"]);
 for (const name of ["alice", "bob"])
   await command(app, [
-    "grant",
+    "grant", "set", "--permission", "use", "--environment", "dev",
     "--user",
     users.find((u) => u.name === name).id,
   ]);
 pass("admin-grants-via-cli");
-await command(app, ["login", "--account", "developer"]);
+await command(app, ["auth","login", "--account", "developer"]);
 assert.match(
-  await command(app, ["control", "start", "--environment", "prod"], CLI_EXIT.forbidden),
+  await command(app, ["start", "--environment", "prod"], CLI_EXIT.forbidden),
   /forbidden/,
 );
 pass("approval-grants-dev-only");
-const session = JSON.parse(readFileSync(join(app, ".miy/session.json")));
+const session = fixtureCredential(app,cliEnv);
 const contract = await (
   await fetch(session.origin + "/api/v1/contracts", {
-    headers: { cookie: session.cookie },
+    headers: { authorization: "Bearer " + session.token },
   })
 ).json();
-assert.equal(contract.bundleVersion, "0.3.0");
+assert.equal(contract.bundleVersion, JSON.parse(readFileSync(join(app, "miy.bundle.json"))).bundleVersion);
 assert.equal(
   contract.guidance,
   readFileSync(join(app, "docs/CONTRACT.md"), "utf8"),
@@ -197,7 +207,7 @@ pass("cli-and-live-mcp-contract-source-identical");
 writeFileSync(
   join(root, ".local/workflow-app.json"),
   JSON.stringify(
-    { app, appId, evidence, registrationId: requested.id, stamp },
+    { app, appId, evidence, configDir:cliEnv.MIY_CONFIG_DIR, registrationId: requested.id, stamp },
     null,
     2,
   ),

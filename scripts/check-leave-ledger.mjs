@@ -1,3 +1,4 @@
+import { collectApiPage } from "./lib/cli-workflow.mjs";
 // Independent acceptance: this script is outside the Codex app sandbox.
 import assert from "node:assert/strict";
 import { chromium } from "@playwright/test";
@@ -51,9 +52,16 @@ try {
     alice = await login("alice"),
     bob = await login("bob"),
     developer = await login("developer");
-  const installations = await (
-    await admin.context.request.get(origin + "/api/v1/installations")
-  ).json();
+  async function installationList() {
+    const path = "/api/v1/installations";
+    const read = async next => {
+      const response = await admin.context.request.get(origin + next);
+      assert.equal(response.status(), 200);
+      return response.json();
+    };
+    return collectApiPage(await read(path), path, read);
+  }
+  const installations = await installationList();
   const inst = installations.find(
     (i) => i.appId === appId && i.environment === "dev",
   );
@@ -294,6 +302,12 @@ try {
     403,
     "cross-origin-mutation-rejected",
   );
+  const preflightResponse = await admin.context.request.post(origin + `/api/v1/apps/${appId}/runtime/preflight`, {
+    headers: { origin, "x-miy-csrf": admin.me.csrf },
+    data: { target: { appId, environment: "prod" }, action: "start" },
+  });
+  assert.equal(preflightResponse.status(), 200);
+  const preflight = await preflightResponse.json();
   const denied = await developer.context.request.post(
     origin + `/api/v1/apps/${appId}/runtime`,
     {
@@ -301,6 +315,8 @@ try {
       data: {
         action: "start",
         environment: "prod",
+        expectedState: preflight.expectedState,
+        confirmed: true,
         idempotencyKey: crypto.randomUUID(),
       },
     },
@@ -383,9 +399,7 @@ try {
     .locator("..");
   await card.getByRole("button", { name: "중지", exact: true }).click();
   async function runtimeStatus() {
-    const items = await (
-      await admin.context.request.get(origin + "/api/v1/installations")
-    ).json();
+    const items = await installationList();
     return items.find((i) => i.id === inst.id)?.runtimeStatus;
   }
   async function waitStatus(target) {

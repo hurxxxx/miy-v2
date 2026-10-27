@@ -8,7 +8,7 @@ CLI로 앱의 기본 구조를 만들고, 자신의 개발 에이전트를 MCP�
 
 ## 현재 단계
 
-현재는 **독립 앱 개발·로컬 미리보기·테스트 배포·운영 승격을 연결하고 구조 검증을 수행한 단계**다. 플랫폼과 사용자 앱의 Rust backend, React/Vite UI, Docker, 앱·환경별 DB를 분리한다. CLI 0.4.2 / bundle 0.6.1에서 일반 Codex·Claude Code용 프로젝트 MCP·스킬, 브라우저 승인 CLI 로그인, 인증된 이미지 업로드, 테스트한 릴리스의 운영 승격과 별도 배포 권한을 제공한다.
+현재는 **독립 앱 개발·로컬 미리보기·테스트 배포·운영 승격을 연결하고 구조 검증을 수행한 단계**다. 플랫폼과 사용자 앱의 Rust backend, React/Vite UI, Docker, 앱·환경별 DB를 분리한다. CLI 0.5.0 / bundle 0.6.2에서 일반 Codex·Claude Code용 프로젝트 MCP·스킬, 브라우저 승인 CLI 로그인, 인증된 이미지 업로드, 테스트한 릴리스의 운영 승격과 별도 배포 권한을 제공한다.
 
 [구조 진단과 9개 요건별 결과](docs/IMPLEMENTATION-RESULTS.md#구조-심층-진단과-핵심-9개-요건-개선)를 먼저 읽는다. 개발·운영 라우터, 로컬 DB 격리, 다른 앱 API, 권한 회수, 기존 앱 보존을 실제 검사했다. 신뢰된 UI 코드의 통합이며 악성 JavaScript의 브라우저 격리는 제공하지 않는다. 별도 서버·CPU·배포 바이너리 공개 배포와 제품 전체 완성은 후속 범위다.
 
@@ -16,7 +16,7 @@ CLI로 앱의 기본 구조를 만들고, 자신의 개발 에이전트를 MCP�
 
 CLI 설치는 `bash scripts/install-cli.sh`, 새 앱 시작은 `miy app init ./my-app --id my-app --name '내 앱'`이다. 로그인·등록 승인·로컬 테스트·배포 순서는 [실행 안내](docs/RUNNING.md)를 따른다. 이전 [휴가 앱 실증](docs/LEAVE-LEDGER-RESULTS.md)과 bundle 0.3 검증은 당시의 보완 과정과 한계가 남아 있는 이력이다.
 
-다음 우선 작업은 [CLI 0.5 개선과 Windows 네이티브 지원](docs/CLI-IMPLEMENTATION-PLAN.md)이다. 사람·AI 공통 명령 계약, 다중 서버 운영, 브라우저/인증 코드 로그인, 작업·로그와 Windows 11 x64의 PowerShell 실행·설치·갱신을 구현한다. 서버/클라이언트 빌드 분리와 OS 기반 구현을 시작했으며 전체 0.5 기능·Windows 지원은 아직 완료하지 않았다. 다른 환경에서 이어갈 때는 [CLI 개발 인계](docs/CLI-HANDOFF.md)의 코드 위치·작업 순서·기존 검증 결과를 먼저 읽는다. 별도 Linux 서버 실증과 [전체 검증 계획](docs/VALIDATION.md)의 남은 환경·장애·자원 관리 조건도 계속 확인한다.
+[CLI 0.5 개선 계획](docs/CLI-IMPLEMENTATION-PLAN.md)의 context·인증·작업·로그·실행 전 검증과 Windows 설치/갱신 도구를 구현했다. [개발 인계](docs/CLI-HANDOFF.md)와 [세부 검증](docs/CLI-VALIDATION-MATRIX.md)에서 현재 증거와 남은 조건을 확인한다. 사용자 Windows 11/PowerShell/Docker Desktop, 별도 Linux 서버와 독립 AI 검증은 남아 있으며 정식 릴리스 완료로 표시하지 않는다.
 
 최초 V0~V1 구현 범위와 실행 방식은 [V0~V1 구현 계획](docs/IMPLEMENTATION.md)을 따른다. 로컬 Docker에서 UI 런타임 통합, 웹·MCP OAuth, 앱별 DB와 작업 실행기를 검증한다.
 
@@ -49,6 +49,8 @@ CLI 설치는 `bash scripts/install-cli.sh`, 새 앱 시작은 `miy app init ./m
 - [PRD 초안](docs/PRD.md): 제품 정의, 합의 사항, 기능 요구사항과 인수 조건의 기준
 - [추진 계획](docs/PLAN.md): 현재 구현 단계, 다음 우선 작업과 제품 전체의 단계별 완료 기준
 - [CLI 0.5 구현 계획](docs/CLI-IMPLEMENTATION-PLAN.md): 사람·AI 공통 CLI, 인증·운영 계약, Windows 지원과 릴리스 조건
+- [CLI 배포 후보·설치](docs/CLI-RELEASE.md): 5개 OS/CPU artifact, 체크섬, Windows 설치기와 공개 조건
+- [CLI 상세 검증](docs/CLI-VALIDATION-MATRIX.md): 실제 통과 범위와 남은 환경 인수
 - [CLI 개발 인계](docs/CLI-HANDOFF.md): 다른 환경에서 이어갈 코드 위치, 작업 체크리스트, 재검증 명령과 로컬 환경 경계
 - [Windows 빌드·검증 안내](docs/WINDOWS-VALIDATION.md): 사용자 환경의 PowerShell 5.1/7 빌드·검사·ZIP 생성 절차와 실행 결과 기록
 - [핵심 흐름 검증 계획](docs/VALIDATION.md): 최소 구현 범위, Codex·CLI·하네스·MCP 평가, Docker·DB·UI 라우팅의 단계별 통과 조건과 증거

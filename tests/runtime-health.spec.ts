@@ -247,3 +247,59 @@ for (const target of ["app", "environment"] as const) {
     );
   });
 }
+
+test("device approval displays origin/account and sends the typed code with CSRF exactly once", async ({ page }) => {
+  const id="11111111-2222-4333-8444-555555555555";
+  const decisions: unknown[]=[];
+  await page.route("**/api/**",async route=>{
+    const path=new URL(route.request().url()).pathname;
+    if(path==="/api/v1/me") return route.fulfill({json:{id:"fixture-user",name:"승인할 계정",admin:false,csrf:"fixture-csrf"}});
+    if(path===`/api/v1/cli/devices/${id}/decision`){
+      expect(route.request().headers()["x-miy-csrf"]).toBe("fixture-csrf");
+      decisions.push(route.request().postDataJSON());return route.fulfill({json:{approved:true}});
+    }
+    return route.fulfill({json:[]});
+  });
+  await page.goto(`/cli/device/${id}`);
+  await expect(page.getByRole("heading",{name:"CLI 로그인 승인"})).toBeVisible();
+  await expect(page.getByText("승인할 계정",{exact:true})).toBeVisible();
+  await expect(page.getByText("http://127.0.0.1:18147",{exact:true})).toBeVisible();
+  const approve=page.getByRole("button",{name:"이 계정으로 CLI 연결 승인"});
+  await expect(approve).toBeDisabled();
+  await page.getByLabel("인증 코드").fill("ABCDE-FGHJK");
+  await approve.click();
+  await expect(page.getByRole("status")).toContainText("CLI 연결을 승인했습니다");
+  expect(decisions).toEqual([{userCode:"ABCDE-FGHJK",decision:"approve"}]);
+  await expect(approve).toHaveCount(0);
+});
+
+test("production controls confirm the exact target and preserve the inspected expected state", async ({ page }) => {
+  const app={id:"aaaaaaaa-1111-4222-8333-bbbbbbbbbbbb",appId:"confirmed-app",name:"확인 대상",releaseId:"cccccccc-1111-4222-8333-dddddddddddd",environment:"prod",version:"1.0.0",dbStatus:"ready",runtimeStatus:"running",desiredState:"running",kind:"docker_app",canManage:true,health:{status:"healthy",consecutiveFailures:0,checkedAt:new Date().toISOString()},ui:{entry:"/unused",export:"./AppRoot",contractVersion:"miy.ui/v1alpha1"}};
+  const expectedState={target:{appId:app.appId,environment:"prod"},installation:{installationId:app.id,generation:12}};
+  const mutations: Record<string,unknown>[]=[];
+  await page.route("**/api/**",async route=>{
+    const path=new URL(route.request().url()).pathname;
+    if(path==="/api/v1/me")return route.fulfill({json:{id:"fixture",name:"관리자",admin:true,csrf:"fixture-csrf"}});
+    if(path==="/api/v1/installations")return route.fulfill({json:[app]});
+    if(path.endsWith("/runtime/preflight")){
+      expect(route.request().postDataJSON()).toEqual({target:{appId:app.appId,environment:"prod"},action:"stop"});
+      return route.fulfill({json:{canSubmit:true,expectedState,changes:["stop_runtime"]}});
+    }
+    if(path.endsWith("/runtime")){
+      mutations.push(route.request().postDataJSON());
+      return route.fulfill({status:409,json:{error:{code:"state_changed",message:"state_changed"}}});
+    }
+    return route.fulfill({json:[]});
+  });
+  await page.goto("/environments/prod");
+  page.once("dialog",async dialog=>{expect(dialog.message()).toContain("confirmed-app");expect(dialog.message()).toContain("prod");await dialog.dismiss();});
+  await page.getByRole("button",{name:"중지",exact:true}).click();
+  await expect(page.getByRole("button",{name:"중지",exact:true})).toBeEnabled();
+  expect(mutations).toHaveLength(0);
+  page.once("dialog",async dialog=>{await dialog.accept();});
+  await page.getByRole("button",{name:"중지",exact:true}).click();
+  await expect(page.getByRole("alert")).toContainText("state_changed");
+  expect(mutations).toHaveLength(1);
+  expect(mutations[0]).toMatchObject({action:"stop",environment:"prod",expectedState,confirmed:true});
+  await expect(page.getByRole("button",{name:"중지",exact:true})).toBeEnabled();
+});

@@ -150,9 +150,24 @@ pub fn preflight(root: &Path) -> Result<()> {
     }
     Ok(())
 }
+#[cfg(test)]
 fn atomic_write(path: &Path, contents: &[u8]) -> Result<()> {
     crate::platform::atomic_write(path, contents)
 }
+/// Produce the complete guidance/lock update without changing project files.
+/// Setup and SDK upgrade stage this together with their binary and MCP files.
+pub(crate) fn planned_files(root: &Path) -> Result<BTreeMap<String, Vec<u8>>> {
+    preflight(root)?;
+    let files = files();
+    let lock = serde_json::to_vec_pretty(&expected(&files))?;
+    let mut planned: BTreeMap<_, _> = files
+        .into_iter()
+        .map(|(path, content)| (path, content.into_bytes()))
+        .collect();
+    planned.insert(LOCK.into(), lock);
+    Ok(planned)
+}
+#[cfg(test)]
 pub fn sync(root: &Path) -> Result<Value> {
     preflight(root)?;
     let files = files();
@@ -204,14 +219,6 @@ pub fn operation(root: &Path) -> Result<std::fs::File> {
         .context("cli_setup_already_running_for_this_project")?;
     Ok(lock)
 }
-pub fn install_binary(root: &Path) -> Result<()> {
-    safe_target(root, crate::platform::project_cli_relative())?;
-    crate::platform::install_executable(
-        &std::env::current_exe()?,
-        &crate::platform::project_cli(root),
-    )
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

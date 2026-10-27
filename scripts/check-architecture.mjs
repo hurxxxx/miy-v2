@@ -1,3 +1,4 @@
+import { fixtureEnv, workflowArgs, workflowData, fixtureCredential, collectApiPage, contextName, selectContext, checkedRuntimeBody } from "./lib/cli-workflow.mjs";
 // Structural acceptance tests use only new synthetic apps. Secrets stay in .local/.miy.
 import assert from "node:assert/strict";
 import { CLI_EXIT, cliData, assertCliFailure } from "./lib/cli-result.mjs";
@@ -18,12 +19,12 @@ const root = resolve(import.meta.dirname, "..");
 const evidence = join(root, ".local/evidence/structural-audit");
 mkdirSync(evidence, { recursive: true });
 const statePath = join(evidence, "apps.json");
-const env = {
+const env = fixtureEnv(evidence,{
   ...process.env,
   PATH: `${process.env.HOME}/.cargo/bin:${process.env.PATH}`,
   CI: "true",
   CARGO_TARGET_DIR: join(root, ".local/architecture-cargo"),
-};
+});
 const origin = "http://localhost:18000";
 const stage = process.argv[2] || "prepare";
 const passed = [];
@@ -46,14 +47,14 @@ function command(program, args, cwd = root, label = "command") {
   }
 }
 const cli = (app, args, label = args[0]) =>
-  cliData(
+  workflowData(cliData(
     command(
       join(app.path, ".miy-tools/miy"),
-      ["--output", "json", "app", ...args],
+      workflowArgs(args,app.path,env,join(app.path,".miy-tools/miy")),
       app.path,
       app.id + "-" + label,
     ),
-  );
+  ),args);
 async function login(account) {
   const r = await fetch(origin + "/auth/development", {
     method: "POST",
@@ -74,6 +75,14 @@ async function api(
   method = body ? "POST" : "GET",
   expect = 200,
 ) {
+  if (method === "POST" && /^\/api\/v1\/apps\/[^/]+\/runtime$/.test(path)) {
+    // Negative authorization tests still submit a complete mutation contract.
+    // An invalid prod deploy obtains only its snapshot from a valid stop plan.
+    const planner = await login("admin");
+    body = await checkedRuntimeBody(null, path, body, (preflightPath, input) =>
+      api(planner, preflightPath, input.action === "deploy" && input.target.environment === "prod"
+        ? { target: input.target, action: "stop" } : input));
+  }
   const r = await fetch(origin + path, {
     method,
     headers: {
@@ -86,7 +95,11 @@ async function api(
   });
   const v = await r.json();
   assert.equal(r.status, expect, `${path}: ${r.status} ${v.error?.code}`);
-  return v;
+  return method === "GET" ? collectApiPage(v, path, async next => {
+    const response = await fetch(origin + next, { headers: { cookie: user.cookie } });
+    assert.equal(response.status, 200);
+    return response.json();
+  }) : v;
 }
 function baseline() {
   return {
@@ -186,8 +199,8 @@ try {
         app.path,
         app.id + "-fmt",
       );
-      cli(app, ["login", "--account", "developer"]);
-      cli(app, ["components", "sync"]);
+      cli(app, ["auth","login", "--account", "developer"]);
+      cli(app, ["component", "sync"]);
       const request = cli(app, ["register"]);
       await api(admin, `/api/v1/app-registrations/${request.id}/decision`, {
         approve: true,
@@ -200,8 +213,8 @@ try {
         app.path,
         app.id + "-git-commit",
       );
-      const doctor = cli(app, ["doctor"]);
-      assert.equal(doctor.mcp.transport, "stdio");
+      const doctor = cli(app, ["doctor","--for","develop"]);
+      assert(doctor.checks.some(check => check.id === "projectGuidance" && check.status === "pass"));
       cli(app, ["check"]);
       ok(app.id + ": clean independent bundle checks");
     }
@@ -220,41 +233,17 @@ try {
     const app = apps[1];
     const context = await browser.newContext();
     const page = await context.newPage();
-    let stderr = "";
-    let stdout = "";
-    const child = spawn(
-      join(app.path, ".miy-tools/miy"),
-      ["--output", "json", "app", "login", "--no-open"],
-      { cwd: app.path, env },
-    );
-    child.stderr.on("data", (b) => (stderr += b));
-    child.stdout.on("data", (b) => (stdout += b));
-    const done = new Promise((resolve, reject) => {
-      child.on("error", reject);
-      child.on("close", (c) =>
-        c === 0 ? resolve() : reject(Error("CLI browser login failed")),
-      );
-    });
-    for (let i = 0; i < 100 && !stderr.includes("/cli/authorize/"); i++)
-      await new Promise((r) => setTimeout(r, 100));
-    const url = stderr.match(
-      /http:\/\/localhost:18000\/cli\/authorize\/[a-f0-9-]+/,
-    )?.[0];
-    assert(url);
-    await page.goto(url);
+    const pending = cli(app, ["auth", "login", "--no-wait", "--no-open"]);
+    assert.equal(pending.status, "pending");
+    await page.goto(pending.verificationUrl);
     await page.getByRole("button", { name: "개발자", exact: false }).click();
-    await page
-      .getByRole("button", { name: "이 CLI 연결 승인", exact: true })
-      .click();
-    await done;
-    assert.equal(cliData(stdout, "app login").signedIn, "developer");
-    const session = JSON.parse(
-      readFileSync(join(app.path, ".miy/session.json")),
-    );
-    assert.equal(
-      statSync(join(app.path, ".miy/session.json")).mode & 0o777,
-      0o600,
-    );
+    await page.getByLabel("인증 코드", { exact: true }).fill(pending.userCode);
+    await page.getByRole("button", { name: "이 계정으로 CLI 연결 승인", exact: true }).click();
+    await page.getByRole("status").filter({ hasText: "CLI 연결을 승인했습니다" }).waitFor();
+    assert.equal(cli(app, ["auth", "wait", pending.loginId]).status, "authenticated");
+    const session = fixtureCredential(app.path, env);
+    assert.equal(statSync(session.path).mode & 0o777, 0o600);
+    assert.equal(statSync(env.MIY_CONFIG_DIR).mode & 0o777, 0o700);
     const response = await fetch(origin + "/api/v1/me", {
       headers: { authorization: "Bearer " + session.token },
     });
@@ -269,7 +258,7 @@ try {
     ok(
       "actual CLI browser approval and bearer authentication; no browser-origin bearer bypass",
     );
-    const mcp = spawn(join(app.path, ".miy-tools/miy"), ["app", "mcp"], {
+    const mcp = spawn(join(app.path, ".miy-tools/miy"), ["mcp"], {
       cwd: app.path,
       env,
       stdio: ["pipe", "pipe", "pipe"],
@@ -350,17 +339,14 @@ try {
       ),
     );
     assert(codex.transport.command.endsWith(".miy-tools/miy"));
+    assert.deepEqual(codex.transport.args, ["mcp"]);
     const claude = command(
       "claude",
       ["mcp", "get", "miy_app"],
       app.path,
       "claude-project-config",
     );
-    assert(
-      claude.includes("app mcp") ||
-        claude.includes("app, mcp") ||
-        claude.includes("Args: app mcp"),
-    );
+    assert(/Args:\s+mcp(?:\s|$)/.test(claude), "Claude must use the current root MCP command");
     ok("plain Codex and Claude Code read project MCP configuration");
     await context.close();
   }
@@ -709,7 +695,7 @@ try {
       403,
     );
     ok("production connection never falls back to development app data");
-    cli(app, ["control", "stop", "--environment", "prod"]);
+    cli(app, ["stop", "--environment", "prod"]);
     await api(
       developer,
       `/api/v1/installations/${prod.id}/api/records`,
@@ -722,7 +708,7 @@ try {
         .records[0].title,
       "dev-only-record",
     );
-    cli(app, ["control", "start", "--environment", "prod"]);
+    cli(app, ["start", "--environment", "prod"]);
     ok(
       "production lifecycle affects only its installation, development stays available",
     );
@@ -926,7 +912,7 @@ try {
       await new Promise((r) => setTimeout(r, 200));
     }
     assert.equal(stopped.runtimeStatus, "stopped");
-    cli(dataApp, ["control", "start"], "reconciled-start");
+    cli(dataApp, ["start"], "reconciled-start");
     ok(
       "external Docker stop reconciles into platform state; CLI restores only that app",
     );
@@ -966,6 +952,7 @@ try {
     ok(
       "UI assets require app access; migration files are not public artifacts",
     );
+    // Preserve coverage for the supported legacy 0.4 authorization protocol.
     const challenge = createHash("sha256").update("x".repeat(40)).digest("hex");
     const flow = await (
       await fetch(origin + "/auth/cli/start", {
@@ -1073,75 +1060,30 @@ try {
   if (stage === "auth-https") {
     const state = JSON.parse(readFileSync(statePath));
     const app = state.apps[1];
-    const savedSession = readFileSync(join(app.path, ".miy/session.json"));
-    const savedPlatform = readFileSync(join(app.path, ".miy/platform.json"));
-    const secrets = JSON.parse(
-      readFileSync(join(root, ".local/credentials.json")),
-    );
+    const savedContext = contextName(app.path, env);
+    const secrets = JSON.parse(readFileSync(join(root, ".local/credentials.json")));
     const context = await browser.newContext();
     const page = await context.newPage();
-    let stderr = "",
-      stdout = "";
-    const child = spawn(
-      join(app.path, ".miy-tools/miy"),
-      [
-        "--output",
-        "json",
-        "app",
-        "login",
-        "--url",
-        "https://localhost:18443",
-        "--ca-file",
-        join(root, ".local/caddy/caddy/pki/authorities/local/root.crt"),
-        "--no-open",
-      ],
-      { cwd: app.path, env },
-    );
-    child.stderr.on("data", (b) => (stderr += b));
-    child.stdout.on("data", (b) => (stdout += b));
-    const done = new Promise((resolve, reject) => {
-      child.on("error", reject);
-      child.on("close", (c) =>
-        c === 0 ? resolve() : reject(Error("HTTPS CLI login failed")),
-      );
-    });
     try {
-      for (let i = 0; i < 200 && !stderr.includes("/cli/authorize/"); i++)
-        await new Promise((r) => setTimeout(r, 50));
-      const url = stderr.match(
-        /https:\/\/localhost:18443\/cli\/authorize\/[a-f0-9-]+/,
-      )?.[0];
-      assert(url);
-      await page.goto(url);
+      const pending = cli(app, ["auth", "login", "--url", "https://localhost:18443",
+        "--ca-file", join(root, ".local/caddy/caddy/pki/authorities/local/root.crt"),
+        "--no-wait", "--no-open"]);
+      assert.equal(pending.status, "pending");
+      await page.goto(pending.verificationUrl);
       await page.getByRole("link", { name: "로그인", exact: true }).click();
       await page.locator("#username").fill("developer");
       await page.locator("#password").fill(secrets.developer);
       await page.locator("#kc-login").click();
-      await page
-        .getByRole("button", { name: "이 CLI 연결 승인", exact: true })
-        .waitFor();
-      await page
-        .getByRole("button", { name: "이 CLI 연결 승인", exact: true })
-        .click();
-      await done;
-      assert.equal(cliData(stdout, "app login").signedIn, "developer");
-      const session = JSON.parse(
-        readFileSync(join(app.path, ".miy/session.json")),
-      );
-      assert.equal(session.origin, "https://localhost:18443");
-      assert(cli(app, ["doctor"]).platform.connected);
-      cli(app, ["logout"]);
-      ok(
-        "actual Keycloak OIDC browser login -> CLI approval over trusted HTTPS -> authenticated API -> logout",
-      );
+      await page.getByLabel("인증 코드", { exact: true }).fill(pending.userCode);
+      await page.getByRole("button", { name: "이 계정으로 CLI 연결 승인", exact: true }).click();
+      await page.getByRole("status").filter({ hasText: "CLI 연결을 승인했습니다" }).waitFor();
+      assert.equal(cli(app, ["auth", "wait", pending.loginId]).status, "authenticated");
+      assert.equal(fixtureCredential(app.path, env).origin, "https://localhost:18443");
+      assert(cli(app, ["doctor", "--for", "operate"]).ready);
+      cli(app, ["auth", "logout"]);
+      ok("actual Keycloak OIDC browser login -> device-code approval over trusted HTTPS -> authenticated API -> logout");
     } finally {
-      child.kill();
-      writeFileSync(join(app.path, ".miy/session.json"), savedSession, {
-        mode: 0o600,
-      });
-      writeFileSync(join(app.path, ".miy/platform.json"), savedPlatform, {
-        mode: 0o600,
-      });
+      selectContext(app.path, env, savedContext);
       await context.close();
     }
   }

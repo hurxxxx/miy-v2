@@ -76,7 +76,7 @@ function Login() {
         { method: "POST", body: JSON.stringify({ account }) },
       );
       window.location.assign(
-        window.location.pathname.startsWith("/cli/authorize/")
+        (window.location.pathname.startsWith("/cli/authorize/") || window.location.pathname.startsWith("/cli/device/"))
           ? window.location.href
           : result.redirect,
       );
@@ -115,7 +115,7 @@ function Login() {
       <a
         className={options?.developmentLogin ? "oauth-link" : ""}
         onClick={() => {
-          if (window.location.pathname.startsWith("/cli/authorize/"))
+          if ((window.location.pathname.startsWith("/cli/authorize/") || window.location.pathname.startsWith("/cli/device/")))
             sessionStorage.setItem("miy.returnTo", window.location.pathname);
         }}
         href={options?.oauthUrl || "/auth/login"}
@@ -142,7 +142,7 @@ function Shell() {
   useEffect(() => {
     if (user && location.pathname === "/") {
       const target = sessionStorage.getItem("miy.returnTo");
-      if (target?.startsWith("/cli/authorize/")) {
+      if ((target?.startsWith("/cli/authorize/") || target?.startsWith("/cli/device/"))) {
         sessionStorage.removeItem("miy.returnTo");
         window.location.assign(target);
       }
@@ -273,6 +273,14 @@ function RuntimeControls({
     setBusy(action);
     setError("");
     try {
+      const plan = await request<{canSubmit: boolean; expectedState: unknown; changes: unknown}>(
+        `/api/v1/apps/${app.appId}/runtime/preflight`, csrf,
+        {method: "POST", body: JSON.stringify({target: {appId: app.appId, environment: app.environment}, action})},
+      );
+      if (!plan.canSubmit) throw new Error("현재 상태에서 실행할 수 없습니다. 새로고침 후 확인하세요.");
+      if ((app.environment === "prod" || action === "remove") &&
+          !window.confirm(`${app.name} (${app.appId}) / ${app.environment}: ${action} 실행
+실행 중인 앱에 영향을 줍니다. 데이터베이스와 업무 데이터는 보존됩니다. 계속할까요?`)) return;
       const job = await request<{ id: string }>(
         `/api/v1/apps/${app.appId}/runtime`,
         csrf,
@@ -281,6 +289,8 @@ function RuntimeControls({
           body: JSON.stringify({
             action,
             environment: app.environment,
+            expectedState: plan.expectedState,
+            confirmed: app.environment === "prod" || action === "remove",
             idempotencyKey: crypto.randomUUID(),
           }),
         },
@@ -673,6 +683,40 @@ function CliAuthorize() {
     </Panel>
   );
 }
+function CliDeviceApprove() {
+  const user = useSession();
+  const location = useLocation();
+  const id = location.pathname.split("/").at(-1);
+  const [code, setCode] = useState("");
+  const [result, setResult] = useState("");
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+  async function decide(decision: "approve" | "deny") {
+    if (!user || busy) return;
+    setBusy(true); setError("");
+    try {
+      await request(`/api/v1/cli/devices/${id}/decision`, user.csrf, {
+        method: "POST", body: JSON.stringify({ userCode: code, decision }),
+      });
+      setResult(decision === "approve" ? "CLI 연결을 승인했습니다. 터미널로 돌아가세요." : "CLI 연결을 거절했습니다.");
+    } catch {
+      setError("처리하지 못했습니다. 터미널의 코드와 요청 유효 시간을 확인해 주세요.");
+    } finally { setBusy(false); }
+  }
+  return <Panel title="CLI 로그인 승인">
+    <p>서버: <strong>{window.location.origin}</strong></p>
+    <p><strong>{user?.name}</strong> 계정의 권한으로 CLI를 연결합니다.</p>
+    <p>직접 시작한 요청인지 확인하고 터미널에 표시된 코드를 입력하세요. 요청은 5분 동안 유효합니다.</p>
+    <p>요청 ID: <code>{id}</code></p>
+    {result ? <p role="status">{result}</p> : <form onSubmit={event => { event.preventDefault(); void decide("approve"); }}>
+      <label>인증 코드 <input name="userCode" value={code} onChange={event => setCode(event.target.value)} autoComplete="off" spellCheck={false} maxLength={32} required /></label>
+      <Button type="submit" disabled={busy || !code.trim()}>이 계정으로 CLI 연결 승인</Button>
+      <Button type="button" disabled={busy || !code.trim()} onClick={() => void decide("deny")}>거절</Button>
+      {error && <p role="alert">{error}</p>}
+      <p>연결 후에는 CLI의 로그인 세션 관리에서 철회할 수 있습니다.</p>
+    </form>}
+  </Panel>;
+}
 function Admin() {
   const user = useSession();
   const [requests, setRequests] = useState<
@@ -850,6 +894,11 @@ const router = createRouter({
       getParentRoute: () => root,
       path: "/cli/authorize/$id",
       component: CliAuthorize,
+    }),
+    createRoute({
+      getParentRoute: () => root,
+      path: "/cli/device/$id",
+      component: CliDeviceApprove,
     }),
     createRoute({
       getParentRoute: () => root,

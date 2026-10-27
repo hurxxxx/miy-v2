@@ -358,9 +358,10 @@ pub async fn fetch(s: &Session, name: &str, version: &str) -> Result<registry::R
             "Use a component version in major.minor.patch format.",
         )
     })?;
+    let s = crate::cli_login::refreshed(s).await?;
     let url = format!("{}/api/v1/components/{name}/{version}", s.origin);
     let client = crate::cli_client::client(s.ca_file.as_deref(), 30)?;
-    let mut response = crate::cli_client::authenticate(s, client.get(url))
+    let mut response = crate::cli_client::authenticate(&s, client.get(url))
         .send()
         .await
         .map_err(cli_error::transport)?;
@@ -519,7 +520,13 @@ pub async fn execute(command: ComponentCommand) -> Result<Value> {
     }
     let s = app_cli::session()?;
     match command {
-        ComponentCommand::List => app_cli::api(&s, "/api/v1/components", None).await,
+        ComponentCommand::List => {
+            let options = crate::cli_config::options();
+            let scope = component_list_scope(&s);
+            let boundary = component_list_boundary(&scope, options.cursor.as_deref())?;
+            let catalog = app_cli::api(&s, "/api/v1/components", None).await?;
+            component_page(catalog, &scope, options.limit, boundary)
+        }
         ComponentCommand::Show { name, version } => {
             Ok(serde_json::to_value(select(&s, &name, version).await?)?)
         }
@@ -543,6 +550,122 @@ pub async fn execute(command: ComponentCommand) -> Result<Value> {
         ComponentCommand::Check => unreachable!(),
     }
 }
+#[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ComponentCursor {
+    version: u8,
+    scope: String,
+    boundary: (String, String),
+}
+
+fn component_list_scope(session: &Session) -> String {
+    // Legacy cookie sessions have no user ID; bind those cursors to the credential
+    // digest without putting the credential in the cursor or diagnostics.
+    let actor = session
+        .user_id
+        .clone()
+        .unwrap_or_else(|| contract::hash(session.token.as_deref().unwrap_or(&session.cookie)));
+    contract::hash(
+        serde_json::to_vec(&json!([
+            "component list",
+            session.origin,
+            session.context,
+            actor
+        ]))
+        .expect("JSON scalar serialization"),
+    )
+}
+
+fn component_list_boundary(scope: &str, raw: Option<&str>) -> Result<Option<(String, String)>> {
+    use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
+    let Some(raw) = raw else { return Ok(None) };
+    let invalid = || {
+        CliError::new(
+            Category::Usage,
+            "invalid_cursor",
+            "The cursor is invalid for this component list; restart from the first page.",
+        )
+    };
+    if raw.len() > 4096 {
+        return Err(invalid().into());
+    }
+    let cursor: ComponentCursor = URL_SAFE_NO_PAD
+        .decode(raw)
+        .ok()
+        .and_then(|bytes| serde_json::from_slice(&bytes).ok())
+        .ok_or_else(invalid)?;
+    if cursor.version != 1
+        || cursor.scope != scope
+        || !contract::valid_id(&cursor.boundary.0)
+        || registry::version(&cursor.boundary.1).is_err()
+    {
+        return Err(invalid().into());
+    }
+    Ok(Some(cursor.boundary))
+}
+
+fn component_page(
+    catalog: Value,
+    scope: &str,
+    limit: u32,
+    boundary: Option<(String, String)>,
+) -> Result<Value> {
+    use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
+    let limit = if limit == 0 { 50 } else { limit };
+    if limit > 200 {
+        return Err(CliError::new(
+            Category::Usage,
+            "invalid_page_limit",
+            "Use a page limit from 1 to 200.",
+        )
+        .into());
+    }
+    let invalid = || {
+        CliError::new(
+            Category::Network,
+            "invalid_component_response",
+            "The server returned an invalid component catalog.",
+        )
+    };
+    let Value::Array(catalog) = catalog else {
+        return Err(invalid().into());
+    };
+    let mut ordered = BTreeMap::new();
+    for row in catalog {
+        let name = row["name"].as_str().ok_or_else(invalid)?;
+        let version = row["version"].as_str().ok_or_else(invalid)?;
+        if !contract::valid_id(name) || registry::version(version).is_err() {
+            return Err(invalid().into());
+        }
+        if ordered
+            .insert((name.to_owned(), version.to_owned()), row)
+            .is_some()
+        {
+            return Err(invalid().into());
+        }
+    }
+    let mut entries = ordered
+        .into_iter()
+        .filter(|(key, _)| boundary.as_ref().is_none_or(|boundary| key > boundary));
+    let page: Vec<_> = entries.by_ref().take(limit as usize).collect();
+    let next_cursor = if entries.next().is_some() {
+        page.last()
+            .map(|(boundary, _)| {
+                serde_json::to_vec(&ComponentCursor {
+                    version: 1,
+                    scope: scope.to_owned(),
+                    boundary: boundary.clone(),
+                })
+                .map(|bytes| URL_SAFE_NO_PAD.encode(bytes))
+            })
+            .transpose()?
+    } else {
+        None
+    };
+    let components: Vec<_> = page.into_iter().map(|(_, row)| row).collect();
+    Ok(json!({"components":components,"nextCursor":next_cursor}))
+}
+
 async fn change(
     root: &Path,
     s: &Session,
@@ -596,6 +719,86 @@ async fn change(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn component_pages_have_stable_keys_and_exact_end() {
+        let catalog = json!([
+            {"name":"ui","version":"1.0.2"},
+            {"name":"buttons","version":"2.0.0"},
+            {"name":"ui","version":"1.0.1"}
+        ]);
+        let first = component_page(catalog.clone(), "scope", 1, None).unwrap();
+        assert_eq!(
+            first["components"],
+            json!([{"name":"buttons","version":"2.0.0"}])
+        );
+        assert_eq!(
+            crate::cli_input::project(&first, "components.name").unwrap(),
+            json!({"components":[{"name":"buttons"}]})
+        );
+        let boundary = component_list_boundary("scope", first["nextCursor"].as_str()).unwrap();
+        let second = component_page(catalog, "scope", 2, boundary).unwrap();
+        assert_eq!(
+            second["components"],
+            json!([
+                {"name":"ui","version":"1.0.1"}, {"name":"ui","version":"1.0.2"}
+            ])
+        );
+        assert!(second["nextCursor"].is_null());
+        assert!(component_page(json!([]), "scope", 50, None).unwrap()["nextCursor"].is_null());
+    }
+
+    #[test]
+    fn component_cursors_bind_context_origin_and_actor_and_reject_bad_catalogs() {
+        let (_, mut session, _) = fixture();
+        session.context = Some("work".into());
+        session.user_id = Some("alice".into());
+        let scope = component_list_scope(&session);
+        let first = component_page(
+            json!([
+                {"name":"ui","version":"1.0.0"}, {"name":"ui","version":"1.0.1"}
+            ]),
+            &scope,
+            1,
+            None,
+        )
+        .unwrap();
+        let cursor = first["nextCursor"].as_str().unwrap();
+        assert!(component_list_boundary(&scope, Some(cursor)).is_ok());
+        for raw in ["", "not-a-cursor", &"x".repeat(4097)] {
+            assert_eq!(
+                component_list_boundary(&scope, Some(raw))
+                    .unwrap_err()
+                    .downcast_ref::<CliError>()
+                    .unwrap()
+                    .exit(),
+                2
+            );
+        }
+        session.user_id = Some("bob".into());
+        assert!(component_list_boundary(&component_list_scope(&session), Some(cursor)).is_err());
+        session.user_id = Some("alice".into());
+        session.origin = "https://other.example".into();
+        assert!(component_list_boundary(&component_list_scope(&session), Some(cursor)).is_err());
+        session.origin = "http://localhost:18000".into();
+        session.context = Some("other".into());
+        assert!(component_list_boundary(&component_list_scope(&session), Some(cursor)).is_err());
+        for catalog in [
+            json!({}),
+            json!([{"name":"ui"}]),
+            json!([
+                {"name":"ui","version":"1.0.0"}, {"name":"ui","version":"1.0.0"}
+            ]),
+        ] {
+            assert_eq!(
+                component_page(catalog, &scope, 1, None)
+                    .unwrap_err()
+                    .downcast_ref::<CliError>()
+                    .unwrap()
+                    .exit(),
+                8
+            );
+        }
+    }
     #[tokio::test]
     async fn registry_failures_preserve_status_without_exposing_response_content() {
         use axum::{Router, http::StatusCode, routing::get};
@@ -621,6 +824,9 @@ mod tests {
             );
             let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
             let session = Session {
+                context: None,
+                user_id: None,
+                expires_at: None,
                 origin,
                 cookie: String::new(),
                 csrf: String::new(),
@@ -650,6 +856,9 @@ mod tests {
         )
         .unwrap();
         let session = Session {
+            context: None,
+            user_id: None,
+            expires_at: None,
             origin: "http://localhost:18000".into(),
             cookie: String::new(),
             csrf: String::new(),

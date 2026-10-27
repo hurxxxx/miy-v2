@@ -17,6 +17,9 @@ pub fn cli_help() -> Value {
         let mut c = c.bin_name(prefix);
         rows.push(json!({"command":prefix,"help":c.render_long_help().to_string()}));
         for child in c.get_subcommands() {
+            if child.is_hide_set() {
+                continue;
+            }
             walk(
                 child.clone(),
                 &format!("{prefix} {}", child.get_name()),
@@ -26,9 +29,8 @@ pub fn cli_help() -> Value {
     }
     let mut c = crate::Args::command();
     c.build();
-    let app = c.find_subcommand("app").unwrap().clone();
     let mut rows = vec![];
-    walk(app, "miy app", &mut rows);
+    walk(c, "miy", &mut rows);
     json!({"cliVersion":crate::cli_guidance::VERSION,"bundleVersion":crate::bundle::VERSION,"workflow":crate::cli_guidance::WORKFLOW,"commands":rows})
 }
 pub fn setup(root: &Path) -> Result<Value> {
@@ -36,18 +38,26 @@ pub fn setup(root: &Path) -> Result<Value> {
 }
 fn setup_local(root: &Path) -> Result<Value> {
     let root = root.canonicalize()?;
+    let transaction = crate::file_transaction::begin(&root)?;
     ensure!(
         root.join("manifest.json").is_file(),
         "run_inside_an_app_directory"
     );
-    let binary = crate::platform::project_cli(&root);
     crate::bundle::verify(&root)?;
-    let _operation = crate::cli_guidance::operation(&root)?;
+    let receipt = transaction.commit(setup_changes(&root)?)?;
+    let mut result = setup_result(&root)?;
+    result["transaction"] = serde_json::to_value(receipt)?;
+    Ok(result)
+}
+
+pub(crate) fn setup_changes(root: &Path) -> Result<Vec<crate::file_transaction::Change>> {
+    use crate::file_transaction::Change;
+    let root = root.canonicalize()?;
+    let binary = crate::platform::project_cli(&root);
     crate::cli_guidance::preflight(&root)?;
     crate::cli_guidance::safe_target(&root, ".codex/config.toml")?;
     crate::cli_guidance::safe_target(&root, ".mcp.json")?;
     let path = root.join(".codex/config.toml");
-    std::fs::create_dir_all(path.parent().unwrap())?;
     let original = if path.exists() {
         std::fs::read_to_string(&path)?
     } else {
@@ -56,7 +66,7 @@ fn setup_local(root: &Path) -> Result<Value> {
     let start = "# BEGIN MIY MANAGED MCP";
     let end = "# END MIY MANAGED MCP";
     let block = format!(
-        "{start}\n[mcp_servers.miy_app]\ncommand = {}\nargs = [\"app\", \"mcp\"]\ncwd = {}\nrequired = true\n{end}",
+        "{start}\n[mcp_servers.miy_app]\ncommand = {}\nargs = [\"mcp\"]\ncwd = {}\nrequired = true\n{end}",
         json!(binary),
         json!(root)
     );
@@ -89,23 +99,57 @@ fn setup_local(root: &Path) -> Result<Value> {
             existing["command"].as_str().is_some_and(|v| {
                 let path = v.replace('\\', "/");
                 path.ends_with("/.miy-tools/miy") || path.ends_with("/.miy-tools/miy.exe")
-            }) && existing["args"] == json!(["app", "mcp"]),
+            }) && (existing["args"] == json!(["app", "mcp"]) || existing["args"] == json!(["mcp"])),
             "existing_claude_miy_app_config"
         );
     }
-    servers.insert("miy_app".into(),json!({"type":"stdio","command":binary,"args":["app","mcp"],"env":{"MIY_APP_DIRECTORY":root}}));
-    crate::cli_guidance::install_binary(&root)?;
-    let guidance = crate::cli_guidance::sync(&root)?;
+    servers.insert(
+        "miy_app".into(),
+        json!({"type":"stdio","command":binary,"args":["mcp"],"env":{"MIY_APP_DIRECTORY":root}}),
+    );
+    let mut changes: Vec<_> = crate::cli_guidance::planned_files(&root)?
+        .into_iter()
+        .map(|(path, bytes)| Change::new(path, bytes))
+        .collect();
+    let mut executable = Change::new(
+        crate::platform::project_cli_relative(),
+        std::fs::read(std::env::current_exe()?)?,
+    );
+    executable.executable = true;
+    changes.push(executable);
     // These files can also contain credentials for the user's other MCP servers.
-    crate::platform::write_private(&path, changed.as_bytes())?;
-    crate::platform::write_private(&claude_path, &serde_json::to_vec_pretty(&claude)?)?;
+    let mut codex = Change::new(".codex/config.toml", changed.into_bytes());
+    codex.private = true;
+    changes.push(codex);
+    let mut claude = Change::new(".mcp.json", serde_json::to_vec_pretty(&claude)?);
+    claude.private = true;
+    changes.push(claude);
+    changes
+        .into_iter()
+        .map(|change| change.observe(&root))
+        .collect()
+}
+
+pub(crate) fn setup_result(root: &Path) -> Result<Value> {
+    let guidance = crate::cli_guidance::verify(root)?;
     Ok(
-        json!({"cliGuidance":guidance,"cliVersion":crate::cli_guidance::VERSION,"configured":["Codex","Claude Code"],"transport":"stdio MCP using CLI login","next":["miy app login","codex or claude; accept project trust and MCP prompts"],"globalSettingsChanged":false}),
+        json!({"cliGuidance":guidance,"cliVersion":crate::cli_guidance::VERSION,"configured":["Codex","Claude Code"],"transport":"stdio MCP using CLI login","next":["miy auth login","codex or claude; accept project trust and MCP prompts"],"globalSettingsChanged":false}),
     )
 }
 #[derive(Clone)]
 struct Tools {
     tool_router: ToolRouter<Self>,
+}
+#[derive(Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct CliHelpInput {
+    /// One command, for example "app deploy". Omit for a short root command list.
+    command: Option<String>,
+    /// Search command names and descriptions.
+    search: Option<String>,
+    /// Request the complete reference explicitly.
+    #[serde(default)]
+    all: bool,
 }
 fn result(v: Result<Value>) -> Result<CallToolResult, McpError> {
     Ok(match v {
@@ -191,11 +235,20 @@ impl Tools {
         )
     }
     #[tool(
-        description = "Read the installed CLI's command usage, options and deployment workflow.",
+        description = "Discover CLI commands, inspect one typed command contract, or search by keyword. The default returns a short command list; all explicitly requests the full reference.",
         annotations(read_only_hint = true)
     )]
-    async fn get_cli_help(&self) -> Result<CallToolResult, McpError> {
-        result(Ok(cli_help()))
+    async fn get_cli_help(
+        &self,
+        Parameters(input): Parameters<CliHelpInput>,
+    ) -> Result<CallToolResult, McpError> {
+        result(crate::cli_discovery::inspect(
+            crate::cli_discovery::DescribeArgs {
+                command: input.command,
+                search: input.search,
+                all: input.all,
+            },
+        ))
     }
     #[tool(
         description = "Search all implemented platform APIs and permissions by keyword (empty query lists all).",

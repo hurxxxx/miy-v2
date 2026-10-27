@@ -35,7 +35,7 @@ fn req(
     release: Option<Uuid>,
     key: &str,
 ) -> runtime::RuntimeRequest {
-    serde_json::from_value(json!({"action":action,"environment":env,"imageId":image,"releaseId":release,"idempotencyKey":key})).unwrap()
+    serde_json::from_value(json!({"action":action,"environment":env,"imageId":image,"releaseId":release,"idempotencyKey":key,"confirmed":true,"expectedState":{"target":{"appId":"audit-runtime","environment":env},"installation":null}})).unwrap()
 }
 async fn submit(
     s: &State,
@@ -46,7 +46,13 @@ async fn submit(
     release: Option<Uuid>,
     key: &str,
 ) -> Result<Uuid> {
-    let v = runtime::request(s, p, "audit-runtime", req(action, env, image, release, key))
+    let mut request = req(action, env, image, release, key);
+    request.expected_state = Some(
+        crate::runtime_preflight::snapshot(&s.pool, "audit-runtime", env)
+            .await
+            .map_err(|e| anyhow::anyhow!(e.code))?,
+    );
+    let v = runtime::request(s, p, "audit-runtime", request)
         .await
         .map_err(|e| anyhow::anyhow!(e.code))?;
     Ok(serde_json::from_value(v["id"].clone())?)
@@ -299,11 +305,19 @@ async fn isolated_runtime_regression() -> Result<()> {
         std::env::set_var("MIY_WEB_SECRET", "synthetic");
         std::env::set_var("MIY_RESOURCE_SECRET", "synthetic");
     }
+    let api_listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
+    let api_origin = format!("http://{}", api_listener.local_addr()?);
+    unsafe {
+        std::env::set_var("MIY_DEV_LOGIN", "1");
+        std::env::set_var("MIY_DEV_ORIGIN", &api_origin);
+    }
     let s = State {
         pool: pool.clone(),
         auth: Arc::new(auth::Auth::new().await?),
         artifacts: root().join("artifacts"),
     };
+    let api_router = crate::http::router(s.clone());
+    let api_server = tokio::spawn(async move { axum::serve(api_listener, api_router).await });
     let admin = actor("audit-admin");
     let dev = actor("audit-dev");
     let ordinary = actor("audit-user");
@@ -393,6 +407,89 @@ async fn isolated_runtime_regression() -> Result<()> {
             && docker["HostConfig"]["NanoCpus"] == 1000000000_i64
             && docker["HostConfig"]["ReadonlyRootfs"] == true,
         json!({"installation":initial,"memory":docker["HostConfig"]["Memory"],"nanoCpus":docker["HostConfig"]["NanoCpus"],"pidsLimit":docker["HostConfig"]["PidsLimit"],"user":docker["Config"]["User"]}),
+    );
+    // Planning is a read: no runtime/job/installation mutation, and observations do not change a control revision.
+    let before_plan = crate::runtime_preflight::snapshot(&pool, "audit-runtime", "dev")
+        .await
+        .map_err(|e| anyhow::anyhow!(e.code))?;
+    let before_jobs: i64 = sqlx::query_scalar("SELECT count(*) FROM runtime_jobs")
+        .fetch_one(&pool)
+        .await?;
+    let input = serde_json::from_value(
+        json!({"target":{"appId":"audit-runtime","environment":"dev"},"action":"stop"}),
+    )?;
+    let plan = crate::runtime_preflight::inspect(&s, &dev, "audit-runtime", input)
+        .await
+        .map_err(|e| anyhow::anyhow!(e.code))?;
+    let after_jobs: i64 = sqlx::query_scalar("SELECT count(*) FROM runtime_jobs")
+        .fetch_one(&pool)
+        .await?;
+    let after_plan = crate::runtime_preflight::snapshot(&pool, "audit-runtime", "dev")
+        .await
+        .map_err(|e| anyhow::anyhow!(e.code))?;
+    report(
+        "preflight creates no job and changes no installation",
+        before_jobs == after_jobs
+            && serde_json::to_value(&before_plan)? == serde_json::to_value(&after_plan)?,
+        json!({"plan":plan,"jobCount":after_jobs}),
+    );
+    runtime_health::record(&pool, dev_id, runtime_health::Observation::Healthy).await?;
+    let observed = crate::runtime_preflight::snapshot(&pool, "audit-runtime", "dev")
+        .await
+        .map_err(|e| anyhow::anyhow!(e.code))?;
+    report(
+        "health observations do not invalidate a control revision",
+        crate::runtime_contract::compare_expected(&before_plan, &observed).is_ok(),
+        json!({"expected":before_plan,"current":observed}),
+    );
+    sqlx::query("UPDATE installations SET db_status='provisioning' WHERE id=$1")
+        .bind(dev_id)
+        .execute(&pool)
+        .await?;
+    sqlx::query("UPDATE installations SET db_status='ready' WHERE id=$1")
+        .bind(dev_id)
+        .execute(&pool)
+        .await?;
+    let mut stale = req("stop", "dev", None, None, "stale-preflight");
+    stale.expected_state = Some(before_plan);
+    let refused = runtime::request(&s, &dev, "audit-runtime", stale).await;
+    report(
+        "stale preflight is rejected before job creation",
+        refused
+            .as_ref()
+            .err()
+            .is_some_and(|e| e.code == "state_changed")
+            && sqlx::query_scalar::<_, i64>("SELECT count(*) FROM runtime_jobs")
+                .fetch_one(&pool)
+                .await?
+                == after_jobs,
+        json!({"error":refused.err().map(|e|e.code)}),
+    );
+    let mut checked = req("stop", "dev", None, None, "worker-rechecks-state");
+    checked.expected_state = Some(
+        crate::runtime_preflight::snapshot(&pool, "audit-runtime", "dev")
+            .await
+            .map_err(|e| anyhow::anyhow!(e.code))?,
+    );
+    let accepted = runtime::request(&s, &dev, "audit-runtime", checked)
+        .await
+        .map_err(|e| anyhow::anyhow!(e.code))?;
+    sqlx::query("UPDATE installations SET db_status='provisioning' WHERE id=$1")
+        .bind(dev_id)
+        .execute(&pool)
+        .await?;
+    sqlx::query("UPDATE installations SET db_status='ready' WHERE id=$1")
+        .bind(dev_id)
+        .execute(&pool)
+        .await?;
+    let rejected_job = finish(&pool, uuid(&accepted["id"])).await?;
+    let still_running = runtime::inspect(initial["runtimeContainer"].as_str().unwrap()).await?;
+    report(
+        "worker rechecks expected state before container changes",
+        rejected_job["status"] == "failed"
+            && rejected_job["errorCode"] == "state_changed"
+            && still_running["State"]["Running"] == true,
+        json!({"job":rejected_job,"originalContainerRunning":true}),
     );
     let unaccepted = runtime::request(
         &s,
@@ -640,18 +737,20 @@ async fn isolated_runtime_regression() -> Result<()> {
         stopped,
     );
     let a = submit(&s, &dev, "start", "dev", None, None, "start-a").await?;
-    tokio::time::sleep(Duration::from_millis(2)).await;
-    let b = submit(&s, &dev, "stop", "dev", None, None, "stop-b").await?;
+    let blocked = submit(&s, &dev, "stop", "dev", None, None, "stop-b").await;
+    ensure!(blocked.is_err());
     runtime::tick(&pool).await?;
+    let b = submit(&s, &dev, "stop", "dev", None, None, "stop-b").await?;
     runtime::tick(&pool).await?;
     let aj = job(&pool, a).await?;
     let bj = job(&pool, b).await?;
     report(
-        "conflicting queued start-stop requests execute in order",
+        "competing changes require fresh preflight after the pending operation",
         aj["status"] == "succeeded"
             && bj["status"] == "succeeded"
+            && blocked.unwrap_err().to_string() == "operation_in_progress"
             && inst(&pool, "dev").await?["desiredState"] == "stopped",
-        json!({"start":aj,"stop":bj}),
+        json!({"start":aj,"stop":bj,"firstStopAdmission":"operation_in_progress"}),
     );
     let a = submit(&s, &dev, "start", "dev", None, None, "start-for-health").await?;
     ensure!(finish(&pool, a).await?["status"] == "succeeded");
@@ -792,6 +891,32 @@ async fn isolated_runtime_regression() -> Result<()> {
         root().join("evidence/owned-installations.json"),
         serde_json::to_vec_pretty(&installations)?,
     )?;
+    let client = reqwest::Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .timeout(Duration::from_secs(15))
+        .build()?;
+    for name in crate::operations_regression::run(&s, &client, &api_origin).await? {
+        report(
+            &name,
+            true,
+            json!({"suite":"operations","transport":"HTTP","storage":"isolated PostgreSQL","runtime":"owned Docker fixtures"}),
+        );
+    }
+    for name in crate::cli_regression::run(&s, &api_origin).await? {
+        report(
+            &name,
+            true,
+            json!({"suite":"cli","transport":"actual CLI binary and HTTP","storage":"isolated config and PostgreSQL"}),
+        );
+    }
+    for name in crate::auth_sessions_regression::run(&s, &client, &api_origin).await? {
+        report(
+            &name,
+            true,
+            json!({"suite":"auth","transport":"HTTP","storage":"isolated PostgreSQL","identity":"synthetic development account"}),
+        );
+    }
+    api_server.abort();
     oidc.abort();
     let failures = std::fs::read_to_string(root().join("evidence/results.jsonl"))?
         .lines()

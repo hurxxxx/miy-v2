@@ -279,6 +279,7 @@ pub fn write_private(path: &Path, bytes: &[u8]) -> Result<()> {
     write_atomic(path, bytes, true)
 }
 
+#[cfg(test)]
 pub fn atomic_write(path: &Path, bytes: &[u8]) -> Result<()> {
     reject_reparse(path)?;
     if std::fs::read(path).ok().as_deref() == Some(bytes) {

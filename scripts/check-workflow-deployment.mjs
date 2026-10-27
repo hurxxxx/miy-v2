@@ -1,3 +1,4 @@
+import { fixtureEnv, workflowArgs, workflowData, journalEntries } from "./lib/cli-workflow.mjs";
 // Run after the real Codex has completed v1 or v2. The evaluator only commits,
 // builds, deploys and injects the explicitly named failed-migration experiment.
 import assert from "node:assert/strict";
@@ -17,6 +18,8 @@ const root = process.cwd(),
   statePath = join(root, ".local/workflow-app.json");
 const state = JSON.parse(readFileSync(statePath)),
   { app, appId, evidence } = state;
+const cliEnv=fixtureEnv(evidence,{PATH:process.env.HOME+"/.cargo/bin:"+process.env.PATH});
+if(state.configDir) cliEnv.MIY_CONFIG_DIR=state.configDir;
 const phase = process.argv[2];
 assert.ok(["v1", "v2", "failure"].includes(phase));
 const passed = [],
@@ -26,11 +29,10 @@ function pass(name) {
   console.log("PASS " + name);
 }
 async function cli(args, expected = 0) {
-  const child = spawn(join(app, ".miy-tools/miy"), ["--output", "json", "app", ...args], {
+  const child = spawn(join(app, ".miy-tools/miy"), workflowArgs(args,app,cliEnv,join(app,".miy-tools/miy")), {
     cwd: app,
     env: {
-      ...process.env,
-      PATH: process.env.HOME + "/.cargo/bin:" + process.env.PATH,
+      ...cliEnv,
     },
     stdio: ["ignore", "pipe", "pipe"],
   });
@@ -48,7 +50,7 @@ async function cli(args, expected = 0) {
     { mode: 0o600 },
   );
   const response = cliResult(out, { exitCode: code, expectedExit: expected });
-  return response.ok ? response.data : cliErrorText(response.error);
+  return response.ok ? workflowData(response.data,args) : cliErrorText(response.error);
 }
 function git(...args) {
   return execFileSync("git", args, { cwd: app, encoding: "utf8" }).trim();
@@ -153,7 +155,7 @@ function sql(db, text) {
   ).trim();
 }
 try {
-  await cli(["login", "--account", "developer"]);
+  await cli(["auth","login", "--account", "developer"]);
   const alice = await login("alice"),
     bob = await login("bob");
   if (phase === "v1") {
@@ -172,35 +174,34 @@ try {
     } finally {
       writeFileSync(readme, original);
     }
-    // Model a lost POST response by deleting only the locally saved response ID.
-    // The server job is safely queued while the worker is paused.
+    // Upload import needs a running worker. Complete deployment first, then
+    // simulate a lost lifecycle receipt with an immutable saved request.
+    assert.equal((await cli(["deploy"])).status, "succeeded");
+    pass("cli-deploy-completes-upload-and-runtime-job");
     service("stop");
-    let first, second;
+    let first, second, requestId;
     try {
-      first = await cli(["deploy", "--no-wait"]);
+      first = await cli(["stop", "--no-wait"]);
       assert.equal(first.status, "queued");
-      const lastPath = join(app, ".miy/last-job.json");
-      const last = JSON.parse(readFileSync(lastPath));
-      for (const file of readdirSync(join(app, ".miy/jobs"))) {
-        const p = join(app, ".miy/jobs", file);
-        const entry = JSON.parse(readFileSync(p));
-        if (entry.idempotencyKey === last.idempotencyKey) {
-          delete entry.jobId;
-          writeFileSync(p, JSON.stringify(entry));
-        }
-      }
-      delete last.jobId;
-      writeFileSync(lastPath, JSON.stringify(last));
-      second = await cli(["deploy", "--no-wait"]);
+      const saved = journalEntries(cliEnv, appId).find(entry => entry.jobId === first.id);
+      assert(saved, "Queued request must have a private global journal entry");
+      const { path, ...entry } = saved;
+      requestId = entry.requestId;
+      entry.jobId = null;
+      entry.submissionStatus = "sending";
+      writeFileSync(path, JSON.stringify(entry), { mode: 0o600 });
+      second = await cli(["job", "resume", requestId, "--environment", "dev", "--no-wait"]);
       assert.equal(first.id, second.id);
-      pass("lost-response-resubmission-reuses-one-server-job");
+      assert.equal(journalEntries(cliEnv, appId).find(entry => entry.requestId === requestId).jobId, first.id);
+      pass("lost-response-resume-recovers-one-server-job");
     } finally {
       service("start");
     }
-    const done = await cli(["resume"]);
+    const done = await cli(["job", "resume", requestId, "--environment", "dev"]);
     assert.equal(done.id, first.id);
     assert.equal(done.status, "succeeded");
-    pass("cli-resume-completes-original-deployment");
+    assert.equal((await cli(["start"])).status, "succeeded");
+    pass("cli-job-resume-completes-original-stop-and-start-restores-app");
     const inst = await installation();
     assert.equal(inst.runtimeStatus, "running");
     assert.equal(inst.kind, "docker_app");
@@ -246,9 +247,9 @@ try {
     assert.deepEqual(errors, []);
     await page.screenshot({ path: join(evidence, "v1.png"), fullPage: true });
     pass("browser-module-router-create-detail-and-deep-link-reload");
-    await cli(["control", "stop"]);
+    await cli(["stop"]);
     assert.equal((await api(alice, inst, "/notes")).status(), 503);
-    await cli(["control", "start"]);
+    await cli(["start"]);
     assert.deepEqual(
       await (
         await api(
@@ -321,9 +322,11 @@ try {
       "ALTER TABLE app.notes ADD COLUMN recovery_marker text;\nSELECT 1/0;\n",
     );
     commit("test: inject transactional migration failure");
-    await cli(["build"]);
-    assert.match(await cli(["deploy"], CLI_EXIT.remoteFailure), /migration_failed/);
-    const failed = JSON.parse(readFileSync(join(app, ".miy/last-job.json")));
+    const failedBuild = await cli(["build"]);
+    assert.match(await cli(["deploy"], CLI_EXIT.remoteFailure), /remote_job_failed/);
+    const failed = journalEntries(cliEnv, appId).find(entry => entry.intent.action === "deploy" && entry.intent.imageId === failedBuild.imageId && entry.jobId);
+    assert(failed, "Failed deployment must retain its request journal");
+    assert.equal((await cli(["job", "get", failed.jobId])).errorCode, "migration_failed");
     const inst = await installation();
     assert.equal(inst.runtimeStatus, "failed");
     assert.equal(inst.dbStatus, "failed");
@@ -346,13 +349,17 @@ try {
       "verified",
     );
     pass("failed-migration-rolls-back-ddl-and-preserves-data");
-    assert.match(await cli(["deploy"], CLI_EXIT.conflict), /previous_job_failed/);
+    assert.match(await cli(["deploy"], CLI_EXIT.remoteFailure), /remote_job_failed/);
+    const freshFailure = journalEntries(cliEnv, appId).find(entry => entry.intent.action === "deploy" && entry.intent.imageId === failedBuild.imageId && entry.requestId !== failed.requestId && entry.jobId);
+    assert(freshFailure, "An explicit new deploy must retain a distinct checked request");
+    assert.notEqual(freshFailure.jobId, failed.jobId);
     assert.equal(
-      JSON.parse(readFileSync(join(app, ".miy/last-job.json"))).jobId,
+      journalEntries(cliEnv, appId).find(entry => entry.requestId === failed.requestId).jobId,
       failed.jobId,
     );
-    assert.match(await cli(["resume"], CLI_EXIT.remoteFailure), /migration_failed/);
-    pass("failed-job-is-not-silently-resubmitted");
+    assert.match(await cli(["job", "resume", failed.requestId, "--environment", "dev"], CLI_EXIT.remoteFailure), /remote_job_failed/);
+    assert.equal((await cli(["job", "get", failed.jobId])).errorCode, "migration_failed");
+    pass("resume-preserves-failed-job-and-explicit-new-deploy-gets-a-new-request");
     // No version 4 migration was applied; correct it in a NEW immutable release.
     manifest.version = "0.1.3";
     writeFileSync(mPath, JSON.stringify(manifest, null, 2) + "\n");

@@ -1,6 +1,6 @@
-# miy application bundle v0.6.0
+# miy application bundle v0.6.2
 
-This describes bundle 0.6.0. Existing apps must follow their installed protected SDK and use an explicit bundle upgrade before adopting new SDK methods. Project stdio MCP reports the installed bundle; the server HTTP contract describes the latest bundle.
+This describes bundle 0.6.2 and its CLI 0.5 workflow; application runtime protocol versions remain unchanged. Existing apps must follow their installed protected SDK and use an explicit bundle upgrade before adopting new SDK methods. Project stdio MCP reports the installed bundle; the server HTTP contract describes the latest bundle.
 
 Backend: Rust 1.99.1, Axum 0.8.9, SQLx 0.8.6. UI: React 19.3.1, Vite 8.3.5, Module Federation.
 Keep manifest.json `miy.app/v1alpha1`, runtime `rust-web-v1`, UI `miy.ui/v1alpha1`, export `./AppRoot`.
@@ -18,11 +18,11 @@ The image contains `/miy/manifest.json`, `/miy/ui/`, `/miy/migrations/`, `/miy/b
 The evaluator runs one CLI build and deploys its immutable image ID. The server extracts the same image's UI and migrations and checks the manifest before preparing the DB and starting the container. The CLI transfers the immutable image archive to the platform; the local and server Docker engines may be separate.
 The bundle and its protected SDK/Dockerfile/toolchain/guidance/initial migration are pinned in miy.bundle.json and verified against the embedded CLI. Use the CLI shipped with this app. Existing bundles are not silently upgraded. This is a reproducibility check, not a security boundary against malicious source code.
 Format app code with `cargo fmt --package miy-app`; `miy app check` also verifies that the shipped SDK already passes rustfmt. Do not fix SDK formatting yourself.
-Registration: developer runs `miy app register`; administrator runs `miy app registrations`, `miy app approve ID`, and optionally `miy app grant --user USER_ID --permission use`. Approval creates the app and grants only its requester develop permission in dev. A request alone grants no access. Use `miy app users` to find IDs as administrator.
-Build: commit source, then `miy app build` (which includes the full check). Deploy: `miy app deploy --environment dev`. A stale build is rejected. The CLI uploads the image archive over the authenticated platform API. Client and runner CPU architectures must match.
-Long jobs: `miy app deploy --no-wait`, then `miy app resume`. Request keys are saved before submission; rerunning an interrupted submission reuses the key. A failed attempt requires explicit `--retry`. Resume never starts a different job. After success, another deploy/control invocation is a new operation.
-CLI login uses browser approval and an expiring platform credential. Explicitly enabled loopback development accounts are an optional shortcut. Project stdio MCP shares the CLI login; legacy direct HTTP MCP OAuth is a separate connection.
-Useful commands: `.miy-tools/miy app check`, `.miy-tools/miy app build`, `.miy-tools/miy app deploy`, `.miy-tools/miy app status`, `.miy-tools/miy app resume`.
+Registration: developer runs `miy app register`; administrator runs `miy registration list`, `miy registration approve ID`, and optionally `miy grant set --user USER_ID --permission use`. Approval creates the app and grants only its requester develop permission in dev. A request alone grants no access. Use `miy user list` to find IDs as administrator.
+Build: commit source, then `miy app build` (which includes the full check). Deploy: `miy app deploy --environment dev`. A stale build is rejected. The CLI uploads the image archive over the authenticated platform API. The built Linux image platform must match the selected server; choose an explicit build --platform and a working builder when host/engine and server CPUs differ.
+Long jobs: use `miy app deploy --no-wait`, then `miy job watch JOB_ID`. Request and upload receipt IDs are journaled before submission. Use `job resume REQUEST_OR_JOB_ID` to recover the same original input after a lost acknowledgement; it may explicitly retransmit after lookup. No byte-range archive continuation is provided. Use `job retry FAILED_JOB_ID` only when the typed failure permits it, after fresh preflight and confirmation. A running old release is not evidence that an update succeeded.
+CLI login uses a selected context and browser/device approval. `auth login` returns pending instructions outside a TTY; approve the URL/user code and run `auth wait LOGIN_ID`. Access tokens last up to 15 minutes; rotating refresh sessions up to 30 days. Credentials are stored by server/user in the protected credential store. Project stdio MCP uses the same selected session. Explicit HTTP loopback development login is a separate testing shortcut, not evidence of enterprise identity-provider integration.
+Discover commands with `miy describe`, then `miy describe --command "app deploy"`. `doctor --for operate` checks remote access; `doctor --for develop` also checks the app bundle, tools and Docker.
 
 ## Local development and data connections
 
@@ -34,16 +34,16 @@ The UI executes trusted React code inside the platform's JavaScript context. CSS
 
 ## Delivery
 
-`app build` requires committed clean source. `app deploy` uploads the immutable Docker image archive and deploys to dev. Client and server may use separate Docker engines, with matching CPU architecture. Uploaded archives are capped at 1 GiB. The platform is not restarted. Use `app status` to check version, image match and last job; a running old version is not evidence that an update succeeded.
+`app build` requires committed clean source. `app deploy` uploads the immutable Docker image archive and deploys to dev. Client and server may use separate Docker engines. The built Linux image must match the server platform. Uploaded archives are capped at 1 GiB. The platform is not restarted. Use `app status` and `job get ID` to check installation, release, image and terminal job state; a running old version is not evidence that an update succeeded.
 
-After browser/API testing, `app accept --note "actual checks"` records acceptance for the exact dev release. `app promote --release UUID` deploys that same image to a separate prod installation/database; it does not copy dev data. Only administrators or users granted prod/deploy may promote or control prod. Runtime routes explicitly include environments: `/environments/dev/apps/ID` and `/environments/prod/apps/ID`.
+After browser/API testing, `app accept --note "actual checks"` records acceptance for the exact dev release. `miy --context CONTEXT --app APP --yes app promote --environment prod --release UUID` deploys that same image to a separate prod installation/database; it does not copy dev data. Only administrators or users granted prod/deploy may promote or control prod. Runtime routes explicitly include environments: `/environments/dev/apps/ID` and `/environments/prod/apps/ID`.
 
 ## Component distribution
 
 The SDK protocol remains in the versioned foundation bundle. UI implementations
 come from the platform component registry using protocol `miy.component/v1`.
 The template declares initial defaults in `miy.components.json`; the CLI installs
-them after login with `app components sync`. New component releases do not change
+them after login with `component sync`. New component releases do not change
 the CLI binary or any installed app. `platform-components/` is a managed source
 directory with its own version/hash lock. Import `@miy/components/NAME` and keep
 business extensions outside that directory. App check/build verifies both locks.
@@ -80,7 +80,7 @@ Ctrl-C in their terminal. Deployment does not stop a local preview automatically
 
 The platform display name is administrative metadata. Deployment never renames
 it from manifest.json. Administrators use `app rename --name "Display name"`;
-`app status` reports both names. This changes no source or release metadata.
+`app show` reports platform app and installation metadata; manifest.json remains the local source name. This changes no source or release metadata.
 
 `app accept --note "summary" --report acceptance.json` records user-attested tests
 for the report's exact releaseId. See docs/ACCEPTANCE.md for the format and
@@ -88,3 +88,11 @@ platform-boundary checklist. The authenticated recorder and test actors are
 separate. Failed tests cannot be submitted as approval; use not_run with a reason
 for explicitly untested scope. Legacy note-only acceptance remains supported and
 is marked unstructured. Neither format automatically proves business correctness.
+
+## CLI input and runtime control
+
+`app accept --input @FILE` accepts strict `{releaseId,note,checks}` JSON; `grant set --input @FILE` accepts `{userId,appId?,environment,permission}`. Use `-` for explicit stdin. Unknown fields and conflicting field sources are rejected. Discover exact schemas in `describe --command`.
+
+`app start|stop|restart|remove` replaces app control. Prod changes and every app removal require explicit `--context`, `--app`, `--environment` and confirmation (`--yes` for automation). Dry-run uses the same target and returns planned changes/expected state without upload or job creation. Admission and execution recheck state and permissions; app removal preserves the app database. Context removal only affects local configuration.
+
+`app logs --environment dev --tail 100` returns a bounded snapshot with truncation/rotation limits. Resume a known log request with `--request ID`. Do not treat it as retained historical logging.

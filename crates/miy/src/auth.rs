@@ -254,17 +254,20 @@ impl Auth {
         if id.nonce != row.get::<String, _>("nonce") {
             return Err(ApiError::unauthorized());
         }
-        let exists: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM users WHERE id=$1)")
-            .bind(&id.sub)
-            .fetch_one(&state.pool)
-            .await?;
-        if !exists {
+        let mut tx = state.pool.begin().await?;
+        let enabled: Option<bool> =
+            sqlx::query_scalar("SELECT enabled FROM users WHERE id=$1 FOR SHARE")
+                .bind(&id.sub)
+                .fetch_optional(&mut *tx)
+                .await?;
+        if enabled != Some(true) {
             return Err(ApiError::forbidden());
         }
         let session = random();
         sqlx::query("INSERT INTO sessions(id_hash,user_id,access_token,refresh_token,csrf,expires_at) VALUES($1,$2,$3,$4,$5,$6)")
             .bind(hash(&session)).bind(id.sub).bind(encrypt(&tokens.access_token)?).bind(encrypt(tokens.refresh_token.as_deref().unwrap_or(""))?)
-            .bind(random()).bind(Utc::now()+Duration::seconds(tokens.expires_in)).execute(&state.pool).await?;
+            .bind(random()).bind(Utc::now()+Duration::seconds(tokens.expires_in)).execute(&mut *tx).await?;
+        tx.commit().await?;
         Ok(session)
     }
     async fn exchange(&self, values: &[(&str, &str)]) -> ApiResult<Tokens> {
@@ -299,7 +302,20 @@ impl Auth {
             });
         }
         let session = cookie(headers, "miy_session").ok_or_else(ApiError::unauthorized)?;
+        let owner: String = sqlx::query_scalar("SELECT user_id FROM sessions WHERE id_hash=$1")
+            .bind(hash(&session))
+            .fetch_optional(&state.pool)
+            .await?
+            .ok_or_else(ApiError::unauthorized)?;
         let mut tx = state.pool.begin().await?;
+        let enabled: Option<bool> =
+            sqlx::query_scalar("SELECT enabled FROM users WHERE id=$1 FOR SHARE")
+                .bind(&owner)
+                .fetch_optional(&mut *tx)
+                .await?;
+        if enabled != Some(true) {
+            return Err(ApiError::unauthorized());
+        }
         let row=sqlx::query("SELECT * FROM sessions WHERE id_hash=$1 AND created_at>now()-interval '8 hours' FOR UPDATE")
             .bind(hash(&session)).fetch_optional(&mut *tx).await?.ok_or_else(ApiError::unauthorized)?;
         let mut access = decrypt(row.get("access_token"))?;
@@ -364,22 +380,25 @@ impl Auth {
         if !["admin", "developer", "alice", "bob"].contains(&account) {
             return Err(ApiError::bad("unknown_development_account"));
         }
-        let id: String = sqlx::query_scalar("SELECT id FROM users WHERE name=$1")
-            .bind(account)
-            .fetch_optional(&state.pool)
-            .await?
-            .ok_or_else(ApiError::not_found)?;
         sqlx::query("DELETE FROM development_sessions WHERE expires_at<now()")
             .execute(&state.pool)
             .await?;
+        let mut tx = state.pool.begin().await?;
+        let id: String =
+            sqlx::query_scalar("SELECT id FROM users WHERE name=$1 AND enabled FOR SHARE")
+                .bind(account)
+                .fetch_optional(&mut *tx)
+                .await?
+                .ok_or_else(ApiError::unauthorized)?;
         let session = random();
         sqlx::query("INSERT INTO development_sessions VALUES($1,$2,$3,$4)")
             .bind(hash(&session))
             .bind(&id)
             .bind(random())
             .bind(Utc::now() + Duration::hours(8))
-            .execute(&state.pool)
+            .execute(&mut *tx)
             .await?;
+        tx.commit().await?;
         tracing::info!(event = "development_login", account);
         Ok(session)
     }

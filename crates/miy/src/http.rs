@@ -50,6 +50,18 @@ pub fn router(state: State) -> Router {
         )
         .route("/cli/logout", axum::routing::post(crate::cli_auth::revoke))
         .route(
+            "/cli/devices/{id}/decision",
+            axum::routing::post(crate::auth_sessions::approve),
+        )
+        .route(
+            "/cli/sessions",
+            axum::routing::get(crate::auth_sessions::list_sessions),
+        )
+        .route(
+            "/cli/sessions/{id}",
+            axum::routing::delete(crate::auth_sessions::revoke_session),
+        )
+        .route(
             "/apps/{app}/test-acceptance",
             axum::routing::post(check_release),
         )
@@ -62,7 +74,15 @@ pub fn router(state: State) -> Router {
             "/image-uploads/{id}",
             axum::routing::get(crate::delivery::status),
         )
-        .route("/apps", axum::routing::post(create_app))
+        .route(
+            "/apps/{app}/image-uploads/by-request/{request}",
+            axum::routing::get(crate::delivery::by_request),
+        )
+        .route(
+            "/apps",
+            axum::routing::get(crate::read_api::apps).post(create_app),
+        )
+        .route("/apps/{app}", axum::routing::get(crate::read_api::app))
         .route("/apps/{app}/name", axum::routing::post(rename_app))
         .route(
             "/app-registrations",
@@ -73,12 +93,16 @@ pub fn router(state: State) -> Router {
             axum::routing::post(decide_registration),
         )
         .route("/users", axum::routing::get(users))
+        .route("/users/{id}/state", axum::routing::post(set_user_state))
         .route("/apps/{app}/releases", axum::routing::post(create_release))
         .route(
             "/installations",
             axum::routing::get(installations).post(create_installation),
         )
-        .route("/grants", axum::routing::put(grant))
+        .route(
+            "/grants",
+            axum::routing::get(crate::read_api::grants).put(grant),
+        )
         .route("/contracts", axum::routing::get(get_contract))
         .route(
             "/contracts/validate",
@@ -89,7 +113,28 @@ pub fn router(state: State) -> Router {
         .route("/database/prepare", axum::routing::post(prepare))
         .route("/jobs/{id}", axum::routing::get(get_job))
         .route("/apps/{app}/runtime", axum::routing::post(runtime_request))
+        .route(
+            "/apps/{app}/runtime/preflight",
+            axum::routing::post(runtime_preflight),
+        )
+        .route(
+            "/apps/{app}/logs",
+            axum::routing::post(crate::runtime_logs::request),
+        )
+        .route(
+            "/runtime/logs/{id}",
+            axum::routing::get(crate::runtime_logs::get),
+        )
+        .route("/runtime/jobs", axum::routing::get(crate::read_api::jobs))
         .route("/runtime/jobs/{id}", axum::routing::get(runtime_job))
+        .route(
+            "/runtime/jobs/{id}/events",
+            axum::routing::get(crate::job_api::events),
+        )
+        .route(
+            "/runtime/jobs/{id}/retry",
+            axum::routing::post(crate::job_api::retry),
+        )
         .route(
             "/installations/{id}/api/{*path}",
             axum::routing::any(crate::runtime::proxy),
@@ -100,6 +145,19 @@ pub fn router(state: State) -> Router {
         .route_layer(middleware::from_fn_with_state(state.clone(), session_guard));
     Router::new()
         .nest("/api/v1", api)
+        .route("/api/v1/capabilities", axum::routing::get(capabilities))
+        .route(
+            "/auth/cli/device",
+            axum::routing::post(crate::auth_sessions::start),
+        )
+        .route(
+            "/auth/cli/token",
+            axum::routing::post(crate::auth_sessions::token),
+        )
+        .route(
+            "/auth/cli/revoke",
+            axum::routing::post(crate::auth_sessions::revoke),
+        )
         .route(
             "/auth/cli/start",
             axum::routing::post(crate::cli_auth::start),
@@ -196,6 +254,9 @@ async fn session_guard(S(state): S<State>, mut request: Request, next: Next) -> 
     };
     match result {
         Ok(p) => {
+            if let Err(error) = crate::auth_sessions::ensure_active(&state.pool, &p.id).await {
+                return error.into_response();
+            }
             if !matches!(
                 *request.method(),
                 axum::http::Method::GET | axum::http::Method::HEAD | axum::http::Method::OPTIONS
@@ -244,8 +305,71 @@ async fn session_guard(S(state): S<State>, mut request: Request, next: Next) -> 
     }
 }
 type P = axum::Extension<Principal>;
-async fn registrations(S(s): S<State>, axum::Extension(p): P) -> ApiResult<Json<Value>> {
-    Ok(Json(crate::registration::list(&s, &p).await?))
+async fn capabilities() -> Json<Value> {
+    Json(
+        json!({"schemaVersion":1,"cliContractVersion":1,"serverVersion":env!("CARGO_PKG_VERSION"),
+        "runtimePlatform":crate::runtime_platform::server(),
+        "userActivationSource":"core.users.enabled",
+        "userActivationPropagation":"each authenticated request and queued operation; no Keycloak synchronization implied",
+        "features":["runtime.preflight.v1","auth.sessions.v1","auth.device.v1","runtime.jobs.v1","runtime.events.v1","runtime.retry.v1","images.idempotency.v1","runtime.logs.v1","lists.pagination.v1"]}),
+    )
+}
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct UserState {
+    enabled: bool,
+}
+async fn set_user_state(
+    S(s): S<State>,
+    axum::Extension(p): P,
+    Path(id): Path<String>,
+    Json(input): Json<UserState>,
+) -> ApiResult<Json<Value>> {
+    domain::admin(&s, &p).await?;
+    let mut tx = s.pool.begin().await?;
+    sqlx::query("SELECT pg_advisory_xact_lock(73490130)")
+        .execute(&mut *tx)
+        .await?;
+    let target = sqlx::query("SELECT admin,enabled FROM users WHERE id=$1 FOR UPDATE")
+        .bind(&id)
+        .fetch_optional(&mut *tx)
+        .await?
+        .ok_or_else(ApiError::not_found)?;
+    if !input.enabled && target.get::<bool, _>("admin") && target.get::<bool, _>("enabled") {
+        let count: i64 = sqlx::query_scalar("SELECT count(*) FROM users WHERE admin AND enabled")
+            .fetch_one(&mut *tx)
+            .await?;
+        if count <= 1 {
+            return Err(ApiError::conflict("last_enabled_administrator"));
+        }
+    }
+    sqlx::query("UPDATE users SET enabled=$2 WHERE id=$1")
+        .bind(&id)
+        .bind(input.enabled)
+        .execute(&mut *tx)
+        .await?;
+    tx.commit().await?;
+    Ok(Json(
+        json!({"userId":id,"enabled":input.enabled,"source":"core","sessionsRevoked":!input.enabled}),
+    ))
+}
+async fn registrations(
+    S(s): S<State>,
+    axum::Extension(p): P,
+    Query(q): Query<crate::read_api::Page>,
+) -> ApiResult<Json<Value>> {
+    if q.limit.is_some()
+        || q.cursor.is_some()
+        || q.app_id.is_some()
+        || q.environment.is_some()
+        || q.request_id.is_some()
+    {
+        Ok(Json(
+            crate::read_api::page(&s, &p, "registrations", q).await?,
+        ))
+    } else {
+        Ok(Json(crate::registration::list(&s, &p).await?))
+    }
 }
 async fn request_registration(
     S(s): S<State>,
@@ -262,8 +386,21 @@ async fn decide_registration(
 ) -> ApiResult<Json<Value>> {
     Ok(Json(crate::registration::decide(&s, &p, id, v).await?))
 }
-async fn users(S(s): S<State>, axum::Extension(p): P) -> ApiResult<Json<Value>> {
-    Ok(Json(crate::registration::users(&s, &p).await?))
+async fn users(
+    S(s): S<State>,
+    axum::Extension(p): P,
+    Query(q): Query<crate::read_api::Page>,
+) -> ApiResult<Json<Value>> {
+    if q.limit.is_some()
+        || q.cursor.is_some()
+        || q.app_id.is_some()
+        || q.environment.is_some()
+        || q.request_id.is_some()
+    {
+        Ok(Json(crate::read_api::page(&s, &p, "users", q).await?))
+    } else {
+        Ok(Json(crate::registration::users(&s, &p).await?))
+    }
 }
 async fn check_release(
     S(s): S<State>,
@@ -280,6 +417,16 @@ async fn runtime_request(
     Json(v): Json<crate::runtime::RuntimeRequest>,
 ) -> ApiResult<Json<Value>> {
     Ok(Json(crate::runtime::request(&s, &p, &app, v).await?))
+}
+async fn runtime_preflight(
+    S(s): S<State>,
+    axum::Extension(p): P,
+    Path(app): Path<String>,
+    Json(input): Json<crate::runtime_contract::PreflightInput>,
+) -> ApiResult<Json<crate::runtime_contract::PreflightResult>> {
+    Ok(Json(
+        crate::runtime_preflight::inspect(&s, &p, &app, input).await?,
+    ))
 }
 async fn runtime_job(
     S(s): S<State>,
@@ -306,8 +453,23 @@ async fn create_release(
 ) -> ApiResult<Json<Value>> {
     Ok(Json(domain::create_release(&s, &p, &app, v).await?))
 }
-async fn installations(S(s): S<State>, axum::Extension(p): P) -> ApiResult<Json<Value>> {
-    Ok(Json(domain::installations(&s, &p).await?))
+async fn installations(
+    S(s): S<State>,
+    axum::Extension(p): P,
+    Query(q): Query<crate::read_api::Page>,
+) -> ApiResult<Json<Value>> {
+    if q.limit.is_some()
+        || q.cursor.is_some()
+        || q.app_id.is_some()
+        || q.environment.is_some()
+        || q.request_id.is_some()
+    {
+        Ok(Json(
+            crate::read_api::page(&s, &p, "installations", q).await?,
+        ))
+    } else {
+        Ok(Json(domain::installations(&s, &p).await?))
+    }
 }
 async fn create_installation(
     S(s): S<State>,

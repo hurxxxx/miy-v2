@@ -1,3 +1,4 @@
+import { checkedRuntimeBody, collectApiPage } from "./lib/cli-workflow.mjs";
 // Redeploy explicit existing installations unchanged to the current network policy.
 // Data is preserved; each selected app may briefly stop during its redeployment.
 import assert from "node:assert/strict";
@@ -21,6 +22,7 @@ const me = await (
   await fetch(origin + "/api/v1/me", { headers: { cookie } })
 ).json();
 async function api(path, body) {
+  body = await checkedRuntimeBody(api, path, body);
   const r = await fetch(origin + path, {
     method: body ? "POST" : "GET",
     headers: {
@@ -33,7 +35,11 @@ async function api(path, body) {
   });
   const value = await r.json();
   assert(r.ok, value.error?.code);
-  return value;
+  return body ? value : collectApiPage(value, path, async next => {
+    const response = await fetch(origin + next, { headers: { cookie } });
+    assert(response.ok);
+    return response.json();
+  });
 }
 function sql(db, query) {
   return execFileSync(

@@ -4,6 +4,7 @@ use axum::http::HeaderMap;
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use rand::{RngCore, rngs::OsRng};
 use serde::Serialize;
+#[cfg(any(feature = "server", test))]
 use url::Url;
 use uuid::Uuid;
 
@@ -23,6 +24,7 @@ pub fn cookie(headers: &HeaderMap, name: &str) -> Option<String> {
             (k == name).then(|| v.to_string())
         })
 }
+#[cfg(any(feature = "server", test))]
 pub fn development_profile(flag: Option<&str>, origin: &str, development_origin: &str) -> bool {
     fn local_origin(value: &str) -> bool {
         let Ok(url) = Url::parse(value) else {

@@ -1,14 +1,17 @@
 ---
 name: miy-cli
-description: Use and troubleshoot the MIY CLI for project setup, login, local preview, components, checks, builds, deployment, acceptance, promotion, and app lifecycle management. Use for MIY command usage or development/deployment operations; use miy-app for application business code and SDK contracts.
+description: Discover and run MIY CLI commands for contexts, authentication, application development, deployment, jobs, components and troubleshooting. Use miy-app for business code and SDK contracts.
 ---
 
-Use the project's `.miy-tools/miy`. Read [workflow.md](references/workflow.md) for the operation requested and [commands.md](references/commands.md) for exact commands, arguments, defaults and version. The command reference is generated from this CLI's actual parser. `.miy-tools/miy app describe` and MCP `miy_app.get_cli_help` expose the same information without requiring a separate documentation service.
+Use this project's `.miy-tools/miy` (`.miy-tools/miy.exe` on Windows).
 
-Before changing a remote app, identify the configured platform, app and environment from CLI output. Local preview, server dev deployment and production promotion are separate operations. Execute the workflow the user requested; development access alone does not imply production deployment authorization.
+1. Discover with `miy describe` or `miy describe --search WORD`.
+2. Inspect only the needed contract: `miy describe --command "app deploy"`. Read its arguments, input schema, permissions and effects; use `--help` when useful. The installed Clap tree is authoritative.
+3. Execute the user's requested operation. Identify context, app and environment first. Use `--output json` for one structured response; read `data` or `error`, never infer success from submission alone.
+4. On failure, inspect `error.code`, `details` and the recovery executable/argument vector. Resume a saved request before retrying. Only `job retry` creates a retry for a typed retryable runtime failure.
 
-Use `app status` and the completed job's release/image/version to assess deployment. Report failed or untested checks explicitly; neither job submission nor a running previous release proves a new deployment succeeded. Record acceptance only for tests actually performed, following `docs/ACCEPTANCE.md`.
+Use `auth login` and `auth wait LOGIN_ID`; never inspect or print credential storage. Noninteractive login returns public approval instructions. Production operations and app removal require explicit `--context`, `--app`, `--environment` and confirmation (`--yes` for automation). Development permission alone does not authorize production work.
 
-For authentication, use `app login`; never read or print `.miy` credentials. API and component details come from the platform MCP catalog. CLI commands and options come from the installed CLI, which can be older than the platform server.
+Read [workflow.md](references/workflow.md) for the requested workflow; [commands.md](references/commands.md) is the generated complete reference. MCP `get_cli_help` provides the same scoped discovery. Do not load the complete manual for every task.
 
-After installing a compatible global CLI update, run `miy app setup` inside the project to update the project CLI, this skill, its references and the generated manual together. If the SDK bundle differs, use the explicit `miy app upgrade` workflow. Do not hand-edit managed guidance, its lock, protected SDK files or agent global settings. Keep project-specific operational notes in separate files. Refresh the agent session after updating skills so it reads the installed version.
+Report actual checks, release/image IDs and unresolved failures. Acceptance records attest only tests actually performed; follow `docs/ACCEPTANCE.md`. Update compatible project tooling with the intended global `miy app setup`, or use explicit `app upgrade` for a different SDK bundle. Do not edit managed guidance, locks, protected SDK files or global agent settings; reopen the agent session after updates.

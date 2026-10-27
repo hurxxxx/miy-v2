@@ -10,6 +10,8 @@ import argparse
 from contextlib import contextmanager
 from http.server import BaseHTTPRequestHandler, HTTPServer
 import json
+from datetime import datetime, timedelta, timezone
+from urllib.parse import urlsplit, parse_qs
 import os
 from pathlib import Path
 import signal
@@ -19,7 +21,7 @@ import threading
 import uuid
 
 
-SENTINEL = "MIY_PRIVATE_FIXTURE_TOKEN_97b4d2"
+SENTINEL = "miy_access_" + "PRIVATEFIXTURETOKEN97b4d2" * 2
 EXITS = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 130}
 
 
@@ -88,6 +90,12 @@ class Fixture:
         self.job_id = str(uuid.uuid4())
         self.job_status = "failed"
         self.actor = "fixture-user"
+        self.login_id = str(uuid.uuid4())
+        self.sequence = 1
+        self.access_seconds=900
+        self.fail_refresh=False
+        self.refresh_requests=0
+        self.session_id=str(uuid.uuid4())
         self.requests = []
         self.auth_failures = 0
         self.job_observed = threading.Event()
@@ -106,33 +114,50 @@ def fixture_server():
         def log_message(self, *_args):
             pass  # Never log request headers or fixture credentials.
 
-        def do_GET(self):
-            state.requests.append(("GET", self.path))
-            if self.headers.get("Authorization") != f"Bearer {SENTINEL}":
-                state.auth_failures += 1
-            if self.path == "/api/v1/users":
-                status, body = state.status, state.body
-            elif self.path == "/api/v1/me":
-                status, body = 200, json.dumps({"id": state.actor}).encode()
-            elif self.path == f"/api/v1/runtime/jobs/{state.job_id}":
-                status, body = 200, json.dumps({
-                    "id": state.job_id, "status": state.job_status,
-                    "step": "migration", "errorCode": "migration_failed",
-                }).encode()
-            else:
-                status, body = 404, b"{}"
+        def send_json(self,status,body,cookie=False):
+            body=body if isinstance(body,bytes) else json.dumps(body,ensure_ascii=False).encode()
             self.send_response(status)
-            self.send_header("Content-Type", "application/json; charset=utf-8")
-            self.send_header("Content-Length", str(len(body)))
-            self.send_header("x-request-id", state.request_id)
+            self.send_header("Content-Type","application/json; charset=utf-8")
+            self.send_header("Content-Length",str(len(body)))
+            self.send_header("x-request-id",state.request_id)
+            if cookie:self.send_header("Set-Cookie","fixture=synthetic; Path=/; HttpOnly")
             self.end_headers()
-            self.wfile.write(body)
-            if self.path == f"/api/v1/runtime/jobs/{state.job_id}":
-                state.job_observed.set()
+            try:self.wfile.write(body)
+            except (BrokenPipeError,ConnectionResetError):pass
+
+        def job(self):
+            return {"id":state.job_id,"appId":"output-probe","environment":"dev","action":"start",
+                    "status":state.job_status,"step":"migration","errorCode":"migration_failed"}
+
+        def do_GET(self):
+            state.requests.append(("GET",self.path))
+            path=urlsplit(self.path).path
+            if path!="/api/v1/capabilities" and self.headers.get("Cookie")!="fixture=synthetic" and self.headers.get("Authorization")!=f"Bearer {SENTINEL}":state.auth_failures+=1
+            if path=="/api/v1/users":self.send_json(state.status,state.body)
+            elif path=="/api/v1/me":self.send_json(200,{"id":state.actor,"csrf":"fixture-csrf","name":"한글 사용자"})
+            elif path=="/api/v1/capabilities":self.send_json(200,{"schemaVersion":1,"cliContractVersion":1,"runtimePlatform":"linux/amd64","features":["runtime.preflight.v1","auth.sessions.v1","auth.device.v1","runtime.jobs.v1","runtime.events.v1","runtime.retry.v1","images.idempotency.v1","runtime.logs.v1","lists.pagination.v1"]})
+            elif path==f"/api/v1/runtime/jobs/{state.job_id}":
+                self.send_json(200,self.job());state.job_observed.set()
+            elif path==f"/api/v1/runtime/jobs/{state.job_id}/events":
+                after=parse_qs(urlsplit(self.path).query).get('after')
+                events=[] if after else [{"cursor":"fixture-cursor-1","sequence":1,"createdAt":"2026-01-01T00:00:00Z","job":self.job()}]
+                self.send_json(200,{"jobId":state.job_id,"events":events,"nextCursor":"fixture-cursor-1","terminal":state.job_status in ["failed","succeeded"],"status":state.job_status});state.job_observed.set()
+            else:self.send_json(404,{})
 
         def do_POST(self):
-            state.requests.append(("POST", self.path))
-            self.send_error(405)
+            state.requests.append(("POST",self.path))
+            length=int(self.headers.get("Content-Length","0"));request_body=json.loads(self.rfile.read(length) or b"{}")
+            if self.path=="/auth/cli/token" and request_body.get("grantType")=="refresh_token":
+                state.refresh_requests+=1
+                if state.fail_refresh:
+                    self.close_connection=True
+                    return
+            if self.path=="/auth/cli/device":self.send_json(200,{"id":state.login_id,"deviceCode":"miy_device_"+"a"*48,"userCode":"ABCDE-FGHJK","verificationPath":f"/cli/device/{state.login_id}","expiresIn":300,"interval":1})
+            elif self.path=="/auth/development":self.send_json(200,{},cookie=True)
+            elif self.path==f"/api/v1/cli/devices/{state.login_id}/decision":self.send_json(200,{"approved":True})
+            elif self.path=="/auth/cli/token":self.send_json(200,{"status":"approved","sessionId":state.session_id,"userId":state.actor,"accessToken":SENTINEL,"refreshToken":"miy_refresh_"+"r"*48,"tokenType":"Bearer","expiresIn":state.access_seconds,"refreshExpiresAt":(datetime.now(timezone.utc)+timedelta(days=30)).isoformat()})
+            elif self.path=="/auth/cli/revoke":self.send_json(200,{"revoked":True})
+            else:self.send_json(405,{})
 
     server = HTTPServer(("127.0.0.1", 0), Handler)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
@@ -158,6 +183,9 @@ def check(cli):
 
     with tempfile.TemporaryDirectory(prefix="miy-cli-output-") as temporary:
         root = Path(temporary)
+        env["MIY_CONFIG_DIR"]=str(root/"private-config")
+        env["MIY_CREDENTIAL_BACKEND"]="file"
+        env.pop("MIY_CONTEXT",None)
 
         def run(args, cwd=root, expected=0, command=None):
             result = subprocess.run(
@@ -168,16 +196,16 @@ def check(cli):
             return envelope(result, expected, command)
 
         for args in [
-            ["app", "describe"],
-            ["--output", "json", "app", "describe"],
-            ["app", "describe", "--output", "json"],
+            ["describe"],
+            ["--output", "json", "describe"],
+            ["describe", "--output", "json"],
         ]:
-            response = run(args, command="app describe")
+            response = run(args, command="describe")
             require(isinstance(response["data"].get("cliVersion"), str), "Describe must expose CLI version")
         ok("auto nonTTY and global JSON options return one versioned envelope")
 
         text_result = subprocess.run(
-            [str(cli), "app", "describe", "--output", "text"], cwd=root, env=env,
+            [str(cli), "describe", "--output", "text"], cwd=root, env=env,
             stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=30,
         )
         text, stderr = decoded(text_result)
@@ -187,8 +215,8 @@ def check(cli):
 
         for args in [
             [], ["app"],
-            ["--output", "json", "app", "describe", f"--{SENTINEL}"],
-            ["app", "describe", "--format", SENTINEL, "--output", "json"],
+            ["--output", "json", "describe", f"--{SENTINEL}"],
+            ["describe", "--format", SENTINEL, "--output", "json"],
             ["app", "deploy", "--environment", "prod"],
         ]:
             response = run(args, expected=2)
@@ -198,10 +226,12 @@ def check(cli):
         require(not destination.exists(), "Unsupported JSONL mutated the destination")
         ok("parse errors hide argument secrets; unsupported JSONL has no init side effects")
 
-        missing_session = run(["app", "users"], expected=3, command="app users")
-        require(missing_session["error"].get("recovery") == {"executable": "miy", "args": ["app", "login"]}, "Login recovery must use executable and argv")
-        run(["app", "status"], expected=7, command="app status")
-        ok("missing session and manifest have distinct auth/environment exits")
+        run(["user","list"],expected=7,command="user list")
+        for old in ["login","logout","describe","doctor","users","resume","control","components","mcp","codex","setup-codex"]:
+            response=run(["app",old],expected=2)
+            require(response["error"]["code"]=="removed_command","Removed commands must explain replacement")
+            require(response["error"].get("recovery"),"Removed command needs executable/argv recovery")
+        ok("remote commands require a context and removed names return replacement errors")
 
         project = root / "한글 앱 with spaces"
         run(["app", "init", str(project), "--id", "output-probe", "--name", "한글 앱"], command="app init")
@@ -211,28 +241,27 @@ def check(cli):
         before = (project / "miy.cli.json").read_bytes()
         run(["app", "setup"], cwd=project, command="app setup")
         require((project / "miy.cli.json").read_bytes() == before, "Repeated setup changed its lock")
-        markdown = subprocess.run(
-            [str(cli), "--output", "json", "app", "describe", "--format", "markdown"],
-            cwd=project, env=env, stdin=subprocess.DEVNULL,
-            stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=30,
-        )
-        raw, stderr = decoded(markdown)
-        require(markdown.returncode == 0 and not stderr.strip(), "Raw Markdown describe failed")
-        require(raw.startswith("# MIY CLI manual"), "Markdown describe was wrapped in JSON")
-        require(markdown.stdout == (project / "docs" / "CLI-REFERENCE.md").read_bytes(), "Markdown output disagrees with installed manual")
-        ok("UTF-8 scaffold, repeatable setup and raw Markdown contract")
+        require((project/"docs/CLI-REFERENCE.md").read_text().startswith("# MIY CLI manual"),"Generated manual missing")
+        schema=run(["describe","--command","app deploy"])["data"]
+        require(schema["scope"]=="command","Focused discovery must return a command contract")
+        completion=subprocess.run([str(cli),"completion","powershell"],cwd=root,env=env,stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=30)
+        require(completion.returncode==0 and b"Register-ArgumentCompleter" in completion.stdout,"PowerShell completion missing")
+        ok("UTF-8 scaffold, transactional repeatable setup, focused discovery and completion")
 
         remote = root / "remote fixture"
         (remote / ".miy").mkdir(parents=True)
         with fixture_server() as (state, origin):
-            (remote / ".miy" / "session.json").write_text(
-                json.dumps({"origin": origin, "token": SENTINEL}), encoding="utf-8",
-            )
+            run(["context","add","fixture","--url",origin],cwd=remote)
+            missing=run(["user","list"],cwd=remote,expected=3)
+            require(missing["error"].get("recovery")=={"executable":"miy","args":["auth","login"]},"Login recovery must be argv")
+            run(["auth","login","--account","fixture"],cwd=remote)
+            require(not(remote/".miy/session.json").exists(),"New login wrote a project token")
+            state.requests.clear();state.auth_failures=0
             users = [{"id": state.actor, "name": "한글 사용자"}]
-            state.reply(200, users)
-            require(run(["app", "users"], cwd=remote, command="app users")["data"] == users, "Successful API data changed")
+            state.reply(200, {"users":users,"nextCursor":None})
+            require(run(["user", "list"], cwd=remote, command="user list")["data"]["users"] == users, "Successful API data changed")
             state.reply(200, f"invalid JSON {SENTINEL}".encode())
-            run(["app", "users"], cwd=remote, expected=8, command="app users")
+            run(["user", "list"], cwd=remote, expected=8, command="user list")
             ok("authenticated loopback success and malformed successful response")
 
             for status, expected in [(400, 2), (401, 3), (403, 4), (404, 5), (409, 6), (429, 8), (500, 8)]:
@@ -241,29 +270,25 @@ def check(cli):
                     f"<html>{SENTINEL}</html>".encode(),
                 ]:
                     state.reply(status, body)
-                    response = run(["app", "users"], cwd=remote, expected=expected, command="app users")
+                    response = run(["user", "list"], cwd=remote, expected=expected, command="user list")
                     require(response["error"]["details"].get("httpStatus") == status, "HTTP status context missing")
                     require(response["error"]["retryable"] is (expected == 8), "HTTP retryability disagrees with category")
                     if isinstance(body, dict):
                         require(response["error"]["code"] == "fixture_rejected", "Safe server error code was lost")
             state.reply(403, {"error": {"code": f"{SENTINEL}/unsafe", "requestId": f"{SENTINEL}/unsafe"}}, request_id=f"{SENTINEL}/unsafe")
-            run(["app", "users"], cwd=remote, expected=4, command="app users")
+            run(["user", "list"], cwd=remote, expected=4, command="user list")
             ok("HTTP status categories survive JSON/HTML bodies without leaking secrets")
 
             state.request_id = "fixture-job-request"
-            journal = remote / ".miy" / "last-job.json"
-            journal.write_text(json.dumps({"origin": origin, "actor": state.actor, "jobId": state.job_id}), encoding="utf-8")
-            saved = journal.read_bytes()
-            response = run(["app", "resume"], cwd=remote, expected=9, command="app resume")
-            require(response["error"]["details"].get("jobId") == state.job_id, "Failed observation lost its job ID")
-            require(journal.read_bytes() == saved, "Failed observation changed saved job identity")
-            ok("remote terminal failure exits 9 and preserves resumable job identity")
+            response=run(["job","watch",state.job_id],cwd=remote,expected=9,command="job watch")
+            require(response["error"]["details"].get("jobId")==state.job_id,"Failed observation lost its job ID")
+            ok("terminal observation failure exits 9 and retains job/cursor recovery")
 
             if os.name == "posix":
                 state.job_status = "running"
                 state.job_observed.clear()
                 child = subprocess.Popen(
-                    [str(cli), "--output", "json", "app", "resume"], cwd=remote, env=env,
+                    [str(cli), "--output", "json", "job", "watch", state.job_id], cwd=remote, env=env,
                     stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                     start_new_session=True,
                 )
@@ -271,9 +296,8 @@ def check(cli):
                     require(state.job_observed.wait(timeout=10), "CLI never observed the fixture job")
                     child.send_signal(signal.SIGINT)
                     stdout, stderr = child.communicate(timeout=10)
-                    response = envelope(subprocess.CompletedProcess([], child.returncode, stdout, stderr), 130, "app resume")
+                    response = envelope(subprocess.CompletedProcess([], child.returncode, stdout, stderr), 130, "job watch")
                     require(response["error"]["details"].get("jobId") == state.job_id, "Interrupted observation lost its job ID")
-                    require(journal.read_bytes() == saved, "Interrupted observation changed its saved job")
                 finally:
                     if child.poll() is None:
                         child.kill()
@@ -284,6 +308,16 @@ def check(cli):
             require(state.auth_failures == 0, "Fixture requests were not authenticated")
             require(all(method == "GET" for method, _path in state.requests), "Observation issued a mutating request")
             ok("all fixture operations were authenticated reads; no remote cancellation or mutation")
+            state.access_seconds=1
+            run(["auth","login","--account","fixture"],cwd=remote)
+            state.fail_refresh=True
+            response=run(["auth","status"],cwd=remote,expected=3)
+            require(response["error"]["code"]=="refresh_result_unavailable","Lost renewal must require explicit reauthentication")
+            attempts=state.refresh_requests
+            run(["auth","status"],cwd=remote,expected=3)
+            require(state.refresh_requests==attempts==1,"CLI replayed a possibly consumed refresh token")
+            ok("lost refresh response persists uncertain state and prevents automatic token replay")
+
     print(json.dumps({"passed": len(passed), "liveServicesUsed": False, "temporaryProjectsRemoved": True}))
 
 

@@ -4,9 +4,12 @@ use anyhow::{Context, Result, ensure};
 use serde_json::{Value, json};
 use std::{collections::BTreeMap, path::Path};
 pub async fn run() -> Result<Value> {
-    let status = std::process::Command::new("git")
-        .args(["status", "--porcelain"])
-        .output()?;
+    let root = Path::new(".").canonicalize()?;
+    // Recover an interrupted update before old-bundle and clean-tree checks.
+    let transaction = crate::file_transaction::begin(&root)?;
+    let status = crate::owned_process::output(
+        std::process::Command::new("git").args(["status", "--porcelain"]),
+    )?;
     ensure!(
         status.status.success() && status.stdout.is_empty(),
         CliError::new(
@@ -15,12 +18,14 @@ pub async fn run() -> Result<Value> {
             "commit_source_before_bundle_upgrade"
         )
     );
-    let old: Value = serde_json::from_slice(&std::fs::read("miy.bundle.json")?)?;
+    let mut expected_files = BTreeMap::new();
+    let old: Value = serde_json::from_slice(&read_input("miy.bundle.json", &mut expected_files)?)?;
     if old["bundleVersion"] == crate::bundle::VERSION {
         crate::cli_error::validation(crate::bundle::verify(Path::new(".")), "bundle_invalid")?;
-        let setup = crate::agent_tools::setup(Path::new("."))?;
+        let receipt = transaction.commit(crate::agent_tools::setup_changes(&root)?)?;
+        let setup = crate::agent_tools::setup_result(&root)?;
         return Ok(
-            json!({"alreadyCurrent":true,"bundleVersion":crate::bundle::VERSION,"cliVersion":crate::cli_guidance::VERSION,"setup":setup}),
+            json!({"alreadyCurrent":true,"bundleVersion":crate::bundle::VERSION,"cliVersion":crate::cli_guidance::VERSION,"setup":setup,"transaction":receipt}),
         );
     }
     let expected: Value = serde_json::from_str(match old["bundleVersion"].as_str() {
@@ -28,6 +33,7 @@ pub async fn run() -> Result<Value> {
         Some("0.4.0") => include_str!("../bundles/0.4.0.json"),
         Some("0.5.0") => include_str!("../bundles/0.5.0.json"),
         Some("0.6.0") => include_str!("../bundles/0.6.0.json"),
+        Some("0.6.1") => include_str!("../bundles/0.6.1.json"),
         _ => anyhow::bail!(CliError::new(
             Category::Environment,
             "unsupported_old_bundle",
@@ -46,6 +52,7 @@ pub async fn run() -> Result<Value> {
         .as_object()
         .context("invalid_old_bundle")?;
     for (path, hash) in hashes {
+        crate::cli_guidance::safe_target(&root, path)?;
         ensure!(
             std::fs::symlink_metadata(path)?.is_file()
                 && json!(crate::contract::hash(std::fs::read(path)?)) == *hash,
@@ -55,40 +62,79 @@ pub async fn run() -> Result<Value> {
                 format!("protected_bundle_modified: {path}")
             )
         );
+        expected_files.insert(
+            path.clone(),
+            Some(hash.as_str().context("invalid_old_file_hash")?.into()),
+        );
     }
     crate::cli_error::validation(
         crate::cli_guidance::preflight(Path::new(".")),
         "cli_guidance_invalid",
     )?;
     let protected = crate::bundle::protected_hashes();
-    // This patch only changes AGENTS.md/CLAUDE.md. No component download, login,
-    // dependency resolution or application configuration change is needed.
-    if old["bundleVersion"] == "0.6.0" {
-        let backup = Path::new(".miy").join(format!("upgrade-backup-{}", uuid::Uuid::new_v4()));
-        std::fs::create_dir_all(&backup)?;
-        for path in ["AGENTS.md", "CLAUDE.md", "miy.bundle.json"] {
-            std::fs::copy(path, backup.join(path))?;
-        }
-        if crate::platform::project_cli(Path::new(".")).is_file() {
-            std::fs::copy(
-                crate::platform::project_cli(Path::new(".")),
-                backup.join("miy-previous"),
-            )?;
-        }
+    // The 0.6.x transition updates guidance only. Prove runtime/default bytes
+    // stay identical before taking this path; no login/download/lock resolution.
+    if matches!(old["bundleVersion"].as_str(), Some("0.6.0" | "0.6.1")) {
+        let mut changes = crate::agent_tools::setup_changes(&root)?;
         for (path, content) in crate::bundle::template() {
-            if matches!(*path, "AGENTS.md" | "CLAUDE.md") {
-                std::fs::write(path, content)?;
+            if !protected.contains_key(path) {
+                continue;
             }
+            let unchanged = hashes.get(*path).and_then(Value::as_str)
+                == Some(crate::contract::hash(content).as_str());
+            if path.starts_with("sdk/") || path.ends_with(".sql") || *path == "miy.components.json"
+            {
+                ensure!(
+                    unchanged,
+                    CliError::new(
+                        Category::Environment,
+                        "guidance_upgrade_runtime_changed",
+                        "This guidance-only upgrade cannot change SDK, SQL or component defaults."
+                    )
+                );
+            }
+            if unchanged {
+                continue;
+            }
+            ensure!(
+                matches!(*path, "AGENTS.md" | "CLAUDE.md")
+                    || path.starts_with("docs/")
+                    || path.starts_with(".agents/skills/")
+                    || path.starts_with(".claude/skills/"),
+                CliError::new(
+                    Category::Environment,
+                    "guidance_upgrade_runtime_changed",
+                    "This upgrade requires an explicit migration for changed runtime files."
+                )
+            );
+            if !hashes.contains_key(*path) && root.join(path).exists() {
+                ensure!(
+                    read_input(path, &mut expected_files)? == content.as_bytes(),
+                    CliError::new(
+                        Category::Conflict,
+                        "new_bundle_file_conflicts_with_user_file",
+                        "A new managed guidance file conflicts with an existing project file."
+                    )
+                );
+            }
+            changes.push(
+                crate::file_transaction::Change::new(*path, content.as_bytes())
+                    .expecting(expected_files.get(*path).cloned().flatten()),
+            );
         }
-        std::fs::write(
-            "miy.bundle.json",
-            serde_json::to_vec_pretty(
-                &json!({"bundleVersion":crate::bundle::VERSION,"protectedFiles":protected}),
-            )?,
-        )?;
-        let setup = crate::agent_tools::setup(Path::new("."))?;
+        changes.push(
+            crate::file_transaction::Change::new(
+                "miy.bundle.json",
+                serde_json::to_vec_pretty(
+                    &json!({"bundleVersion":crate::bundle::VERSION,"protectedFiles":protected}),
+                )?,
+            )
+            .expecting(expected_files.get("miy.bundle.json").cloned().flatten()),
+        );
+        let receipt = transaction.commit(changes)?;
+        let setup = crate::agent_tools::setup_result(&root)?;
         return Ok(
-            json!({"upgradedFrom":"0.6.0","bundleVersion":crate::bundle::VERSION,"cliVersion":crate::cli_guidance::VERSION,"backup":backup,"changedFiles":["AGENTS.md","CLAUDE.md","miy.bundle.json"],"setup":setup,"next":["review git diff and commit updated guidance","reopen the agent session"]}),
+            json!({"upgradedFrom":old["bundleVersion"],"bundleVersion":crate::bundle::VERSION,"cliVersion":crate::cli_guidance::VERSION,"backup":receipt.backup,"changedFiles":receipt.changed_files,"setup":setup,"next":["review git diff and commit updated guidance","reopen the agent session"]}),
         );
     }
     let mut files: BTreeMap<String, Vec<u8>> = BTreeMap::new();
@@ -97,8 +143,9 @@ pub async fn run() -> Result<Value> {
             continue;
         }
         if Path::new(path).exists() && !hashes.contains_key(*path) {
+            let actual = read_input(path, &mut expected_files)?;
             ensure!(
-                std::fs::read(path)? == content.as_bytes(),
+                actual == content.as_bytes(),
                 CliError::new(
                     Category::Environment,
                     "new_bundle_file_conflicts_with_user_file",
@@ -106,9 +153,11 @@ pub async fn run() -> Result<Value> {
                 )
             );
         }
+        expected_files.entry((*path).into()).or_insert(None);
         files.insert((*path).into(), content.as_bytes().to_vec());
     }
-    let mut package: Value = serde_json::from_slice(&std::fs::read("package.json")?)?;
+    let mut package: Value =
+        serde_json::from_slice(&read_input("package.json", &mut expected_files)?)?;
     let script = "vite build --config sdk/preview/vite.config.ts";
     ensure!(
         package["scripts"]["build:preview"].is_null()
@@ -131,7 +180,7 @@ pub async fn run() -> Result<Value> {
     );
     package["dependencies"]["@tanstack/history"] = json!("1.162.5");
     files.insert("package.json".into(), serde_json::to_vec_pretty(&package)?);
-    let mut ts: Value = serde_json::from_slice(&std::fs::read("tsconfig.json")?)?;
+    let mut ts: Value = serde_json::from_slice(&read_input("tsconfig.json", &mut expected_files)?)?;
     let alias = &mut ts["compilerOptions"]["paths"]["@miy/components/*"];
     ensure!(
         alias.is_null() || *alias == json!(["./platform-components/*"]),
@@ -152,7 +201,7 @@ pub async fn run() -> Result<Value> {
         include.push(json!("platform-components"));
     }
     files.insert("tsconfig.json".into(), serde_json::to_vec_pretty(&ts)?);
-    let vite = std::fs::read_to_string("vite.config.ts")?;
+    let vite = String::from_utf8(read_input("vite.config.ts", &mut expected_files)?)?;
     let anchor = "\"@miy/ui\": resolve(\"sdk/ui/index.tsx\")";
     if old["bundleVersion"] != "0.5.0" {
         ensure!(
@@ -178,7 +227,12 @@ pub async fn run() -> Result<Value> {
     ] {
         files.insert(
             path.into(),
-            format!("{}{}", std::fs::read_to_string(path)?, extra).into_bytes(),
+            format!(
+                "{}{}",
+                String::from_utf8(read_input(path, &mut expected_files)?)?,
+                extra
+            )
+            .into_bytes(),
         );
     }
     files.insert(
@@ -207,33 +261,36 @@ pub async fn run() -> Result<Value> {
     } else {
         Some(crate::component_cli::fetch(&session, "ui", "1.0.1").await?)
     };
-    let backup =
-        std::path::PathBuf::from(".miy").join(format!("upgrade-backup-{}", uuid::Uuid::new_v4()));
-    std::fs::create_dir_all(&backup)?;
     // Resolve the lock before touching any app files. Network/tool failures leave the old bundle usable.
-    let stage = backup.join("dependency-resolution");
+    let stage = transaction.workspace()?.join("dependency-resolution");
     std::fs::create_dir_all(&stage)?;
     std::fs::write(
         stage.join("package.json"),
         files.get("package.json").unwrap(),
     )?;
     if Path::new("pnpm-lock.yaml").exists() {
-        std::fs::copy("pnpm-lock.yaml", stage.join("pnpm-lock.yaml"))?;
+        std::fs::write(
+            stage.join("pnpm-lock.yaml"),
+            read_input("pnpm-lock.yaml", &mut expected_files)?,
+        )?;
+    } else {
+        expected_files.insert("pnpm-lock.yaml".into(), None);
     }
-    let resolved = crate::platform::command(
-        "pnpm",
-        &[
-            "install",
-            "--lockfile-only",
-            "--ignore-scripts",
-            "--ignore-workspace",
-        ],
-    )?
-    .current_dir(&stage)
-    .env("PATH", crate::dev_tools::tool_path()?)
-    .env("CI", "true")
-    .stdout(std::process::Stdio::from(std::io::stderr()))
-    .status()?;
+    let resolved = crate::owned_process::status(
+        crate::platform::command(
+            "pnpm",
+            &[
+                "install",
+                "--lockfile-only",
+                "--ignore-scripts",
+                "--ignore-workspace",
+            ],
+        )?
+        .current_dir(&stage)
+        .env("PATH", crate::platform::tool_path()?)
+        .env("CI", "true")
+        .stdout(std::process::Stdio::from(std::io::stderr())),
+    )?;
     ensure!(
         resolved.success(),
         CliError::new(
@@ -246,30 +303,74 @@ pub async fn run() -> Result<Value> {
         "pnpm-lock.yaml".into(),
         std::fs::read(stage.join("pnpm-lock.yaml"))?,
     );
-    for (path, content) in &files {
-        let target = Path::new(path);
-        let saved = backup.join(path);
-        if target.exists() {
-            std::fs::create_dir_all(saved.parent().unwrap())?;
-            std::fs::copy(target, &saved)?;
-        }
-        if let Some(parent) = target.parent() {
-            std::fs::create_dir_all(parent)?;
-        }
-        std::fs::write(target, content)?;
-    }
     if let Some(default_ui) = default_ui {
-        crate::component_cli::initialize(Path::new("."), &session, default_ui)?;
-    }
-    std::fs::create_dir_all(".miy-tools")?;
-    if crate::platform::project_cli(Path::new(".")).is_file() {
-        std::fs::copy(
-            crate::platform::project_cli(Path::new(".")),
-            backup.join("miy-previous"),
+        let component_stage = transaction.workspace()?.join("component-initialization");
+        std::fs::create_dir_all(&component_stage)?;
+        std::fs::write(
+            component_stage.join("miy.components.json"),
+            files
+                .get("miy.components.json")
+                .context("component_defaults_missing_from_upgrade")?,
+        )?;
+        crate::component_cli::initialize(&component_stage, &session, default_ui)?;
+        collect_component_files(
+            &component_stage,
+            &component_stage.join("platform-components"),
+            &mut files,
         )?;
     }
-    crate::agent_tools::setup(Path::new("."))?;
+    let mut changes = crate::agent_tools::setup_changes(&root)?;
+    changes.extend(files.into_iter().map(|(path, bytes)| {
+        let expected = expected_files.get(&path).cloned().flatten();
+        crate::file_transaction::Change::new(path, bytes).expecting(expected)
+    }));
+    let receipt = transaction.commit(changes)?;
+    crate::agent_tools::setup_result(&root)?;
     Ok(
-        json!({"upgradedFrom":old["bundleVersion"],"cliVersion":crate::cli_guidance::VERSION,"bundleVersion":crate::bundle::VERSION,"backup":backup,"changedFiles":files.keys().collect::<Vec<_>>(),"components":"compatible installed components preserved; older bundles initialize ui 1.0.1","next":["review git diff","miy app check","increment manifest version and commit before deployment"]}),
+        json!({"upgradedFrom":old["bundleVersion"],"cliVersion":crate::cli_guidance::VERSION,"bundleVersion":crate::bundle::VERSION,"backup":receipt.backup,"changedFiles":receipt.changed_files,"components":"compatible installed components preserved; older bundles initialize ui 1.0.1","next":["review git diff","miy app check","increment manifest version and commit before deployment"]}),
     )
+}
+
+fn read_input(path: &str, expected: &mut BTreeMap<String, Option<String>>) -> Result<Vec<u8>> {
+    crate::cli_guidance::safe_target(Path::new("."), path)?;
+    let bytes = std::fs::read(path)?;
+    expected.insert(path.into(), Some(crate::contract::hash(&bytes)));
+    Ok(bytes)
+}
+
+fn collect_component_files(
+    root: &Path,
+    directory: &Path,
+    files: &mut BTreeMap<String, Vec<u8>>,
+) -> Result<()> {
+    crate::platform::reject_reparse(directory)?;
+    for item in std::fs::read_dir(directory)? {
+        let item = item?;
+        let path = item.path();
+        crate::platform::reject_reparse(&path)?;
+        if item.file_type()?.is_dir() {
+            collect_component_files(root, &path, files)?;
+        } else {
+            ensure!(
+                item.file_type()?.is_file(),
+                "component_stage_file_type_invalid"
+            );
+            let logical = path
+                .strip_prefix(root)?
+                .components()
+                .map(|component| {
+                    component
+                        .as_os_str()
+                        .to_str()
+                        .context("component_stage_path_invalid")
+                })
+                .collect::<Result<Vec<_>>>()?
+                .join("/");
+            ensure!(
+                files.insert(logical, std::fs::read(path)?).is_none(),
+                "component_stage_path_conflict"
+            );
+        }
+    }
+    Ok(())
 }

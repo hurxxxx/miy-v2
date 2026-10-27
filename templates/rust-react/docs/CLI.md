@@ -1,70 +1,64 @@
-# App CLI quick reference
+# CLI 0.5 quick reference
 
-Use `.miy-tools/miy` in this app or `miy` from your PATH. `app describe` returns the installed CLI's full command reference as JSON; MCP `get_cli_help` exposes the same reference. `--help` works on every command.
+Use `.miy-tools/miy` in this app (`.miy-tools/miy.exe` on Windows). Start with
+`describe`, then `describe --command "GROUP ACTION"`; `--search` finds candidates
+and `--all` explicitly loads the full reference. Every command supports `--help`.
+The generated [CLI-REFERENCE.md](CLI-REFERENCE.md) contains the installed workflow.
 
-| Step | Command | Meaning |
+| Task | Commands | Contract |
 | --- | --- | --- |
-| Environment | `app doctor`, `app setup` | Check tools; configure project Codex and Claude Code MCP |
-| Login | `app login --url https://PLATFORM` | Open browser, approve matching request ID, save expiring private CLI credential |
-| Local shortcut | `app login --account developer` | Explicit loopback-only validation profile |
-| Registration | `app register`, `app registrations` | Request registration; deployment waits for administrator approval |
-| Administration | `app approve UUID`, `app reject UUID`, `app users`, `app grant --user UUID --permission deploy --environment prod` | Administrator approval and separate app/environment grants |
-| Format | `app fmt` | Format app Rust code even when cargo is absent from the agent PATH |
-| Check | `app check` | Bundle, migration contract, Rust tests/format, TypeScript, UI assets |
-| Local preview | `app dev`, `app dev-stop` | Working tree with its own local DB; actual authenticated dev server API connections |
-| Build | `app build` | Clean committed source to one Docker image; increment manifest version for updates |
-| Test deployment | `app deploy`, `app status` | Upload archive to server, run DB migration and container, inspect actual version/image |
-| Resume | `app deploy --no-wait`, `app resume` | Persisted deployment job; explicit `--retry` only after addressing failure |
-| Test acceptance | `app accept --note 'checks performed'` | Record testing for exact healthy dev release; does not automatically test business behavior |
-| Production | `app promote --release UUID` | Deploy accepted exact image to independent prod DB; requires prod/deploy permission |
-| Lifecycle | `app control start`, `stop`, `restart`, `remove`, with `--environment dev|prod` | Control this app only; removal preserves DB |
-| Sign out | `app logout` | Revoke browser-approved CLI credential |
+| Connect | `context add NAME --url https://PLATFORM`, `context use NAME` | Origin, optional CA and user binding; no credentials in project sources |
+| Sign in | `auth login`, `auth wait LOGIN_ID`, `auth status` | Approve the public URL/user code; noninteractive login returns pending |
+| Diagnose | `doctor --for operate`, `doctor --for develop` | Operations need remote access; development also needs project/tool/Docker checks |
+| Configure agents | `app setup`, then ordinary `codex` or `claude` | Project stdio `mcp`; accept normal trust/MCP prompts |
+| Register | `app register`, `registration list`, `registration approve ID` | Administrator approval grants requester develop access in dev |
+| Permissions | `user list`, `grant list`, `grant set`, `grant revoke` | Administrator grants are scoped to app/environment |
+| Develop | `app fmt`, `app check`, `app dev`, `app dev-stop` | Check executes project tooling; preview has its own local database |
+| Components | `component list/show/add/update/sync/check/publish` | Lock exact sources; publishing needs administrator authority |
+| Build | `app build [--platform linux/amd64]` | Clean committed source; Linux image must match the server platform |
+| Deploy | `app deploy --environment dev --dry-run`, `app deploy --no-wait` | Preflight then image receipt/job journal; no prod deployment shortcut |
+| Observe | `job list/get/watch`, `job resume ID` | Resume the same request; Ctrl-C does not cancel remote work |
+| Retry | `job retry ID` | Only typed retryable terminal failures, with fresh checks/confirmation |
+| Accept | `app accept --note 'observed checks' --report FILE`, `app accept --input @FILE` | Exact release and actual evidence; see [ACCEPTANCE.md](ACCEPTANCE.md) |
+| Promote | `--context NAME --app APP --yes app promote --environment prod --release ID` | Exact accepted image; separate prod DB, no dev-data copy |
+| Lifecycle | `app start/stop/restart/remove --environment dev` | Prod and all removals require explicit target and confirmation; DB is preserved |
+| Logs | `app logs --tail 100 --since RFC3339`, `app logs --request ID` | Bounded snapshot; truncation and rotation may omit data |
+| Sign out | `auth logout`, `auth sessions list/revoke` | Distinguish server revocation from local removal; `--local-only` skips revocation |
 
-`app login` and the standard project stdio MCP share one saved CLI credential. For legacy direct HTTP OAuth MCP configurations, the old `setup-codex` launcher remains separate. Prefer standard project MCP in new apps. Approve the agent client's project trust/MCP prompt normally; no global config or sandbox bypass is required.
+`--context` overrides `MIY_CONTEXT`, project binding and the active context in that
+order. `--project PATH` selects a project; `--app APP` allows operation without
+local source. `context remove` changes local configuration, not remote sessions or
+app data. `--account developer` is an explicit enabled HTTP loopback login shortcut.
+Access tokens last up to 15 minutes and rotating refresh sessions up to 30 days;
+a lost refresh response requires fresh login. Never inspect credential storage.
 
-Local preview and dev deployment are different: local changes must be rebuilt before server deployment. Production promotion never rebuilds or copies dev database rows. The local CLI and server image architecture must match; use an appropriate Docker builder for the server CPU. Current archive limit is 1 GiB.
+Use `--output json` for one UTF-8 envelope. Successful values are under `data`;
+errors include stable code, details and optional recovery executable/argument array.
+`--output jsonl job watch ID` streams event envelopes and supports `--after CURSOR`.
+Read commands support field selection and list pagination, for example
+`--fields apps.id,apps.name,nextCursor app list --limit 20 --cursor CURSOR`.
+Strict `--input @file`/`--input -` documents reject unknown and duplicated fields.
 
-## Components independent of CLI releases
+Prod changes and every app removal require explicit `--context`, `--app` and
+`--environment`, including dry-run and retry. Dry-run skips confirmation and does
+not upload or create work. Other executions confirm interactively or require
+`--yes`. Permission, release acceptance and expected-state checks still apply.
 
-After `app login`, run `app components sync` once before checks or local preview.
-It installs the template's declared default UI from the authenticated platform registry.
+Upload response recovery covers the receipt before the runtime job exists. Only
+explicit resume may retransmit a missing receipt's whole original archive with
+the same request key. It does not continue a partial byte range. Preserve the
+reported request/job ID; inspect a failed receipt before explicitly deploying a
+new archive. Runtime retry uses `job retry`, never deploy `--retry`.
 
-```sh
-.miy-tools/miy app components list
-.miy-tools/miy app components show ui --version 1.0.1
-.miy-tools/miy app components sync
-.miy-tools/miy app components add COMPONENT --version X.Y.Z
-.miy-tools/miy app components update COMPONENT --version X.Y.Z
-.miy-tools/miy app components check
-```
+Import managed UI components from `@miy/components/NAME`; basic UI remains at
+`@miy/ui`. Commit `platform-components/` and its lock, and keep custom code in
+`web/src`. Sync restores pinned releases; update is explicit. Component publication
+does not rebuild or redeploy an app. Current archive size limit is 1 GiB.
 
-`list` and MCP `list_components` query the live registry. `get_component` supplies
-usage and compatibility. The CLI never needs a component-specific command or rebuild.
-`add`/`update` without a version select the latest compatible stable release; sync
-restores pinned releases and never upgrades existing components.
-
-Import new components from `@miy/components/NAME`. Basic Button/Panel remain at
-`@miy/ui`. Commit `platform-components/` including `miy.components.lock.json`.
-The lock records platform origin, exact versions, package digests and file hashes.
-Checks/builds use installed files without contacting the registry. Missing files
-can be restored with sync; modified managed files are refused, not overwritten.
-Keep custom components in `web/src`. Component updates still require app version
-increase, commit, tests, build and deployment to affect running applications.
-
-Administrators may run `app components publish /path/to/component-directory`.
-The source directory has component.json metadata and an explicit file list.
-Only approved trusted source should be published. Packages contain source/docs,
-not install hooks, arbitrary dependency installation or credential configuration.
-Authentication components are not yet part of this registry.
-
-`app dev-stop` releases the gateway, port, project lock and containers; DB data is retained.
-If an older CLI runner is active, stop it with Ctrl-C before starting the updated CLI.
-`app rename --name 'Display name'` is administrator-only platform metadata.
-`app accept --note 'checks' --report acceptance.json` records structured test scope,
-actors and results for the exact release. See [ACCEPTANCE.md](ACCEPTANCE.md).
-
-For bundle 0.5 projects: first use the old bundled CLI to update ui to 1.0.1 and any
-other components to releases supporting 0.6.0, then commit. Run the new global
-`miy app upgrade`, review the diff and lockfile, run `app check`, commit and redeploy
-when desired. Protected SDK files must not be edited by hand. Upgrade does not add
-guard usage to business code; implement the documented SDK registration explicitly.
+Installing a global CLI does not change a pinned project. Use the intended global
+`miy app setup` for compatible tooling, or commit clean source and use explicit
+`miy app upgrade` for a different supported bundle. Review and check changes; do
+not hand-edit protected SDK files, managed guidance or applied SQL. Old CLI names
+such as `app login`, `app resume` and `app control` return migration guidance and
+are not aliases. Use the old bundled CLI only when preparing an older bundle for
+its documented upgrade path.

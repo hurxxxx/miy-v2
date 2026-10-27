@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "candidateCommit": "REPLACE_WITH_40_CHAR_SOURCE_COMMIT",
+  "cliVersion": "0.5.0",
+  "records": [
+    {"requirement":"linux-runtime-regression","status":"NOT_RUN","commit":"","evidence":"","redactionPassed":false},
+    {"requirement":"browser-regression","status":"NOT_RUN","commit":"","evidence":"","redactionPassed":false},
+    {"requirement":"linux-remote-e2e","status":"NOT_RUN","commit":"","evidence":"","redactionPassed":false},
+    {"requirement":"oidc-session-and-core-disable","status":"NOT_RUN","commit":"","evidence":"","redactionPassed":false},
+    {"requirement":"windows11-powershell51","status":"NOT_RUN","commit":"","evidence":"","redactionPassed":false},
+    {"requirement":"windows11-powershell7","status":"NOT_RUN","commit":"","evidence":"","redactionPassed":false},
+    {"requirement":"windows11-docker-desktop","status":"NOT_RUN","commit":"","evidence":"","redactionPassed":false},
+    {"requirement":"codex-linux","status":"NOT_RUN","commit":"","evidence":"","redactionPassed":false,"freshSession":false,"sessionId":"","calls":0,"readBytes":0,"manualInterventions":0,"recoverySeconds":0,"unexpectedChanges":0,"permissionBypasses":0,"duplicateOperations":0},
+    {"requirement":"codex-macos","status":"NOT_RUN","commit":"","evidence":"","redactionPassed":false,"freshSession":false,"sessionId":"","calls":0,"readBytes":0,"manualInterventions":0,"recoverySeconds":0,"unexpectedChanges":0,"permissionBypasses":0,"duplicateOperations":0},
+    {"requirement":"codex-windows","status":"NOT_RUN","commit":"","evidence":"","redactionPassed":false,"freshSession":false,"sessionId":"","calls":0,"readBytes":0,"manualInterventions":0,"recoverySeconds":0,"unexpectedChanges":0,"permissionBypasses":0,"duplicateOperations":0},
+    {"requirement":"claude-linux","status":"NOT_RUN","commit":"","evidence":"","redactionPassed":false,"freshSession":false,"sessionId":"","calls":0,"readBytes":0,"manualInterventions":0,"recoverySeconds":0,"unexpectedChanges":0,"permissionBypasses":0,"duplicateOperations":0},
+    {"requirement":"claude-macos","status":"NOT_RUN","commit":"","evidence":"","redactionPassed":false,"freshSession":false,"sessionId":"","calls":0,"readBytes":0,"manualInterventions":0,"recoverySeconds":0,"unexpectedChanges":0,"permissionBypasses":0,"duplicateOperations":0},
+    {"requirement":"claude-windows","status":"NOT_RUN","commit":"","evidence":"","redactionPassed":false,"freshSession":false,"sessionId":"","calls":0,"readBytes":0,"manualInterventions":0,"recoverySeconds":0,"unexpectedChanges":0,"permissionBypasses":0,"duplicateOperations":0}
+  ]
+}

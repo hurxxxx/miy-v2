@@ -31,3 +31,17 @@ Consider these integration boundaries for the app's actual changes:
 
 Use not_run and a reason when a boundary was not exercised; do not invent a pass.
 The checklist is development guidance. `app check` cannot replace browser/DB tests.
+
+For a complete structured input document, include the note:
+
+```json
+{
+  "releaseId": "EXACT-DEV-RELEASE-UUID",
+  "note": "Observed acceptance checks",
+  "checks": [
+    {"scope":"browser workflow","actor":"ordinary user","result":"passed","evidence":"Recorded test run and actual outcome"}
+  ]
+}
+```
+
+Use `app accept --input @acceptance-input.json` or explicit stdin with `--input -`. Do not combine it with note/release/report flags. Unknown fields are rejected. Inspect the generated input schema with `describe --command "app accept"`. Promotion is a separate user-authorized operation: `miy --context CONTEXT --app APP --yes app promote --environment prod --release RELEASE_ID`.

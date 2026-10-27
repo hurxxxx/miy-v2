@@ -273,7 +273,13 @@ async fn guard(S(state): S<State>, mut req: Request, next: Next) -> Response {
         .and_then(|v| v.to_str().ok())
         .and_then(|v| v.strip_prefix("Bearer "));
     let auth = match token {
-        Some(t) => state.auth.bearer(t).await,
+        Some(t) => match state.auth.bearer(t).await {
+            Ok(p) => match crate::auth_sessions::ensure_active(&state.pool, &p.id).await {
+                Ok(()) => Ok(p),
+                Err(e) => Err(e),
+            },
+            Err(e) => Err(e),
+        },
         None => Err(ApiError::unauthorized()),
     };
     match auth {

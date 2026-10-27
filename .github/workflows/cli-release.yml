@@ -1,0 +1,235 @@
+name: CLI release candidate
+
+on:
+  workflow_dispatch:
+    inputs:
+      candidate_commit:
+        description: Full 40-character source commit to build and validate
+        required: true
+        type: string
+      release_tag:
+        description: Exact Cargo version prefixed with v, such as v0.5.0
+        required: true
+        type: string
+      publish:
+        description: Publish only after all manual Windows, remote-server and fresh AI evidence passes
+        required: false
+        default: false
+        type: boolean
+      evidence_path:
+        description: Committed evidence JSON in the workflow ref (may be newer than candidate_commit)
+        required: false
+        default: docs/releases/cli-0.5.0-evidence.json
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cli-release-${{ inputs.release_tag }}
+  cancel-in-progress: false
+
+jobs:
+  candidate:
+    runs-on: ubuntu-24.04
+    outputs:
+      commit: ${{ steps.identity.outputs.commit }}
+      version: ${{ steps.identity.outputs.version }}
+      tag: ${{ steps.identity.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.candidate_commit }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - id: identity
+        name: Bind the candidate commit to the requested version
+        env:
+          CANDIDATE_COMMIT: ${{ inputs.candidate_commit }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: |
+          python - <<'PY'
+          import os, re, subprocess, tomllib
+          commit = os.environ['CANDIDATE_COMMIT']
+          tag = os.environ['RELEASE_TAG']
+          assert re.fullmatch(r'[a-f0-9]{40}', commit), 'Use a full source commit'
+          assert subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip() == commit
+          with open('crates/miy/Cargo.toml', 'rb') as source:
+              version = tomllib.load(source)['package']['version']
+          assert re.fullmatch(r'\d+\.\d+\.\d+', version) and tag == 'v' + version
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+              output.write(f'commit={commit}\nversion={version}\ntag={tag}\n')
+          PY
+      - name: Check publication gate logic
+        run: python scripts/test-cli-release.py
+
+  native:
+    needs: candidate
+    name: ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            target: x86_64-unknown-linux-gnu
+            executable: miy
+          - os: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+            executable: miy
+          - os: macos-15-intel
+            target: x86_64-apple-darwin
+            executable: miy
+          - os: macos-15
+            target: aarch64-apple-darwin
+            executable: miy
+          - os: windows-2022
+            target: x86_64-pc-windows-msvc
+            executable: miy.exe
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.candidate.outputs.commit }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install the pinned native toolchain
+        run: rustup toolchain install 1.99.1 --profile minimal --component rustfmt --component clippy --target ${{ matrix.target }}
+      - name: Check source formatting and checkout bytes
+        run: |
+          cargo +1.99.1 fmt --all -- --check
+          python scripts/check-bundle-portability.py source
+      - name: Check and lint the native client
+        run: |
+          cargo +1.99.1 check --workspace --all-targets --locked --no-default-features --target ${{ matrix.target }}
+          cargo +1.99.1 clippy --workspace --all-targets --locked --no-default-features --target ${{ matrix.target }} -- -D warnings
+      - name: Run native unit tests
+        run: cargo +1.99.1 test --workspace --locked --no-default-features --target ${{ matrix.target }}
+      - name: Build the release executable
+        run: cargo +1.99.1 build --release --locked --no-default-features --target ${{ matrix.target }}
+      - name: Verify the executable, output contract and portable bundle
+        run: |
+          python scripts/check-cli-output.py --cli target/${{ matrix.target }}/release/${{ matrix.executable }}
+          python scripts/check-bundle-portability.py check --cli target/${{ matrix.target }}/release/${{ matrix.executable }} --output .local/release-bundle/bundle.json
+      - name: Package binary, provenance and SHA-256
+        run: python scripts/package-cli-release.py package --binary target/${{ matrix.target }}/release/${{ matrix.executable }} --target ${{ matrix.target }} --output .local/release-assets
+      - name: Check installer contracts in Windows PowerShell 5.1
+        if: matrix.target == 'x86_64-pc-windows-msvc'
+        shell: powershell
+        run: |
+          & ./scripts/check-windows-installer.ps1 -ArchivePath .local/release-assets/miy-${{ needs.candidate.outputs.version }}-x86_64-pc-windows-msvc.zip
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Check installer contracts in PowerShell 7
+        if: matrix.target == 'x86_64-pc-windows-msvc'
+        shell: pwsh
+        run: |
+          & ./scripts/check-windows-installer.ps1 -ArchivePath .local/release-assets/miy-${{ needs.candidate.outputs.version }}-x86_64-pc-windows-msvc.zip
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cli-release-${{ matrix.target }}
+          path: .local/release-assets/*
+          include-hidden-files: true
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cli-bundle-${{ matrix.target }}
+          path: .local/release-bundle/bundle.json
+          include-hidden-files: true
+          if-no-files-found: error
+
+  aggregate:
+    needs: [candidate, native]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.candidate.outputs.commit }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: cli-release-*
+          path: dist
+          merge-multiple: true
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: cli-bundle-*
+          path: bundle-manifests
+      - name: Verify all five source identities, archives and bundles
+        run: |
+          python scripts/package-cli-release.py verify --directory dist
+          python scripts/check-bundle-portability.py compare bundle-manifests/*/bundle.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: miy-${{ needs.candidate.outputs.version }}-${{ needs.candidate.outputs.commit }}
+          path: dist/*
+          if-no-files-found: error
+
+  publish:
+    if: inputs.publish
+    needs: [candidate, aggregate]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    env:
+      CANDIDATE_COMMIT: ${{ needs.candidate.outputs.commit }}
+      RELEASE_VERSION: ${{ needs.candidate.outputs.version }}
+      RELEASE_TAG: ${{ needs.candidate.outputs.tag }}
+      EVIDENCE_PATH: ${{ inputs.evidence_path }}
+    steps:
+      # Evidence can be recorded in a later docs commit without rebuilding a
+      # different source candidate. The checked archives retain their source SHA.
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/download-artifact@v4
+        with:
+          name: miy-${{ needs.candidate.outputs.version }}-${{ needs.candidate.outputs.commit }}
+          path: dist
+      - name: Require committed Windows, remote-server and independent AI evidence
+        run: |
+          python - <<'PY'
+          import os, pathlib, subprocess
+          path = pathlib.PurePosixPath(os.environ['EVIDENCE_PATH'])
+          assert not path.is_absolute() and '..' not in path.parts and path.parts[0] == 'docs'
+          subprocess.run(['git', 'ls-files', '--error-unmatch', str(path)], check=True)
+          PY
+          python scripts/package-cli-release.py verify-evidence --directory dist --evidence "$EVIDENCE_PATH" --tag "$RELEASE_TAG" --commit "$CANDIDATE_COMMIT"
+      - name: Upload the complete release as a draft, then publish
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          if git show-ref --verify --quiet "refs/tags/$RELEASE_TAG"; then
+            test "$(git rev-parse "$RELEASE_TAG^{commit}")" = "$CANDIDATE_COMMIT"
+          fi
+          if gh release view "$RELEASE_TAG" --json isDraft,targetCommitish > .local-release.json 2>/dev/null; then
+            python - <<'PY'
+          import json, os
+          release = json.load(open('.local-release.json'))
+          assert release['isDraft'], 'A published release is immutable; use a new version'
+          assert release['targetCommitish'] == os.environ['CANDIDATE_COMMIT'], 'Draft belongs to another source candidate'
+          PY
+          else
+            python - <<'PY'
+          import os
+          with open('.local-release-notes.md', 'w') as notes:
+              notes.write(f"Native miy CLI {os.environ['RELEASE_VERSION']}.\n\nSource commit: `{os.environ['CANDIDATE_COMMIT']}`.\n\nVerify SHA256SUMS before installation. Windows scripts run from the extracted release outside the installation directory. Projects, configuration, credentials and application data are preserved.\n")
+          PY
+            gh release create "$RELEASE_TAG" --draft --target "$CANDIDATE_COMMIT" --title "miy $RELEASE_VERSION" --notes-file .local-release-notes.md
+          fi
+          gh release upload "$RELEASE_TAG" dist/*.zip dist/*.tar.gz dist/*.sha256 dist/*.json dist/SHA256SUMS --clobber
+          gh release edit "$RELEASE_TAG" --draft=false
+
+# Native Windows Server installer tests are contract checks. They do not replace
+# Windows 11 + Docker Desktop or the user-run PowerShell validation release gates.
+# Native runner labels: https://docs.github.com/en/actions/reference/runners/github-hosted-runners

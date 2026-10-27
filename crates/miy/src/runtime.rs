@@ -1,6 +1,7 @@
 //! Local single-host image store + persistent Docker deployment runner.
 pub(crate) use crate::docker::{docker, healthy, inspect};
 pub(crate) use crate::identity::sign_identity;
+use crate::runtime_contract::{ExpectedState, FailureCode, RuntimeFailure};
 use crate::{
     State,
     auth::{self, Principal},
@@ -36,7 +37,7 @@ impl Drop for RemoveDirectoryOnDrop {
     }
 }
 
-#[derive(Deserialize, schemars::JsonSchema)]
+#[derive(Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct RuntimeRequest {
     pub action: String,
@@ -44,6 +45,12 @@ pub struct RuntimeRequest {
     pub image_id: Option<String>,
     pub release_id: Option<Uuid>,
     pub idempotency_key: String,
+    #[serde(default)]
+    pub expected_state: Option<ExpectedState>,
+    #[serde(default)]
+    pub confirmed: bool,
+    #[serde(skip)]
+    pub retry_of: Option<Uuid>,
 }
 pub(crate) fn image_id(value: &str) -> bool {
     value.strip_prefix("sha256:").is_some_and(|v| {
@@ -52,41 +59,9 @@ pub(crate) fn image_id(value: &str) -> bool {
                 .all(|c| c.is_ascii_digit() || (b'a'..=b'f').contains(&c))
     })
 }
-#[derive(Serialize, Deserialize, schemars::JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub struct AcceptanceCheck {
-    pub scope: String,
-    /// Account/role used in the test, not the authenticated acceptance recorder.
-    pub actor: String,
-    pub result: String,
-    pub evidence: String,
-}
+pub use crate::acceptance_contract::{AcceptanceCheck, ReleaseCheck};
 fn validate_checks(checks: &[AcceptanceCheck]) -> ApiResult<()> {
-    if checks.len() > 64
-        || checks.iter().any(|c| {
-            c.scope.trim().is_empty()
-                || c.scope.len() > 120
-                || c.actor.trim().is_empty()
-                || c.actor.len() > 120
-                || c.evidence.trim().is_empty()
-                || c.evidence.len() > 2000
-                || !["passed", "not_run"].contains(&c.result.as_str())
-        })
-        || (!checks.is_empty() && !checks.iter().any(|c| c.result == "passed"))
-    {
-        return Err(ApiError::bad(
-            "invalid_acceptance_checks: use passed/not_run with scope, actor and evidence; unresolved failures cannot be accepted",
-        ));
-    }
-    Ok(())
-}
-#[derive(Deserialize, schemars::JsonSchema)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct ReleaseCheck {
-    pub release_id: Uuid,
-    pub note: String,
-    #[serde(default)]
-    pub checks: Vec<AcceptanceCheck>,
+    crate::acceptance_contract::validate_checks(checks).map_err(ApiError::bad)
 }
 pub async fn check_release(
     state: &State,
@@ -114,7 +89,7 @@ pub async fn check_release(
         json!({"releaseId":v.release_id,"tested":true,"recordedBy":p.id,"checks":v.checks,"structured":!v.checks.is_empty(),"note":v.note.trim(),"meaning":"User-recorded test acceptance plus runtime health; not automatic business correctness verification"}),
     )
 }
-async fn checked_image(pool: &sqlx::PgPool, app: &str, release: Uuid) -> Result<String> {
+pub(crate) async fn checked_image(pool: &sqlx::PgPool, app: &str, release: Uuid) -> Result<String> {
     let image: Option<String> = sqlx::query_scalar("SELECT r.image_id FROM releases r JOIN release_checks c ON c.release_id=r.id WHERE r.id=$1 AND r.app_id=$2 AND EXISTS(SELECT 1 FROM runtime_jobs j WHERE j.release_id=r.id AND j.environment='dev' AND j.action='deploy' AND j.status='succeeded')")
         .bind(release).bind(app).fetch_optional(pool).await?.flatten();
     image.context("release_not_tested_in_dev")
@@ -138,6 +113,13 @@ pub async fn request(
         return Err(ApiError::bad("invalid_image_id"));
     }
     domain::manage(state, p, app, &v.environment).await?;
+    if v.expected_state.is_none() {
+        return Err(ApiError::bad("expected_state_required"));
+    }
+    if (v.environment == "prod" || v.action == "remove") && !v.confirmed {
+        return Err(ApiError::bad("confirmation_required"));
+    }
+
     if (v.action == "deploy" && v.environment != "dev")
         || (v.action == "promote" && (v.environment != "prod" || v.release_id.is_none()))
         || (v.action != "promote" && v.release_id.is_some())
@@ -153,19 +135,95 @@ pub async fn request(
     } else {
         v.image_id.clone()
     };
-    let input = contract::hash(format!("{app}:{}:{}:{:?}", v.environment, v.action, image));
-    sqlx::query("INSERT INTO runtime_jobs(id,app_id,environment,actor,action,image_id,idempotency_key,input_hash) VALUES($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT(actor,idempotency_key) DO NOTHING")
-        .bind(Uuid::new_v4()).bind(app).bind(&v.environment).bind(&p.id).bind(&v.action).bind(&image).bind(&v.idempotency_key).bind(&input).execute(&state.pool).await?;
+    let request_data = serde_json::to_value(&v)?;
+    let input = if v.expected_state.is_some() {
+        contract::hash(serde_json::to_vec(
+            &json!({"appId":app,"request":request_data,"retryOf":v.retry_of}),
+        )?)
+    } else {
+        contract::hash(format!("{app}:{}:{}:{:?}", v.environment, v.action, image))
+    };
+    let mut tx = state.pool.begin().await?;
+    sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))")
+        .bind(format!("runtime-request:{}:{}", p.id, v.idempotency_key))
+        .execute(&mut *tx)
+        .await?;
+    if let Some(previous) =
+        sqlx::query("SELECT id,input_hash FROM runtime_jobs WHERE actor=$1 AND idempotency_key=$2")
+            .bind(&p.id)
+            .bind(&v.idempotency_key)
+            .fetch_optional(&mut *tx)
+            .await?
+    {
+        if previous.get::<String, _>("input_hash") != input {
+            return Err(ApiError::conflict("idempotency_conflict"));
+        }
+        let id = previous.get("id");
+        tx.commit().await?;
+        return job(state, p, id).await;
+    }
+    if let Some(expected) = &v.expected_state {
+        let locked: bool =
+            sqlx::query_scalar("SELECT pg_try_advisory_xact_lock(hashtextextended($1,0))")
+                .bind(format!("runtime:{app}:{}", v.environment))
+                .fetch_one(&mut *tx)
+                .await?;
+        if !locked {
+            return Err(ApiError::conflict("operation_in_progress"));
+        }
+        let busy:bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM runtime_jobs WHERE app_id=$1 AND environment=$2 AND status IN ('queued','running'))")
+            .bind(app).bind(&v.environment).fetch_one(&mut *tx).await?;
+        if busy {
+            return Err(ApiError::conflict("operation_in_progress"));
+        }
+        let current = crate::runtime_preflight::snapshot(&state.pool, app, &v.environment).await?;
+        crate::runtime_contract::compare_expected(expected, &current)
+            .map_err(|_| ApiError::conflict("state_changed"))?;
+        use crate::runtime_contract::{CheckName, PreflightCheck, PreflightInput, RuntimeTarget};
+        let input = PreflightInput {
+            target: RuntimeTarget {
+                app_id: app.into(),
+                environment: v
+                    .environment
+                    .parse()
+                    .map_err(|_| ApiError::bad("invalid_environment"))?,
+            },
+            action: v
+                .action
+                .parse()
+                .map_err(|_| ApiError::bad("invalid_action"))?,
+            image_id: v.image_id.clone(),
+            release_id: v.release_id,
+        };
+        let mut checks = vec![
+            PreflightCheck::passed(CheckName::Target),
+            PreflightCheck::passed(CheckName::Authorization),
+            PreflightCheck::passed(CheckName::PendingOperation),
+        ];
+        if v.action == "promote" {
+            checks.push(PreflightCheck::passed(CheckName::ReleaseAcceptance));
+        }
+        let plan = crate::runtime_contract::preflight(&input, &current, checks)
+            .map_err(|_| ApiError::bad("invalid_runtime_request"))?;
+        if !plan.can_submit {
+            return Err(ApiError::conflict("preflight_failed"));
+        }
+    }
+    sqlx::query("INSERT INTO runtime_jobs(id,app_id,environment,actor,action,image_id,idempotency_key,input_hash,expected_state,request_data,retry_of) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) ON CONFLICT(actor,idempotency_key) DO NOTHING")
+        .bind(Uuid::new_v4()).bind(app).bind(&v.environment).bind(&p.id).bind(&v.action).bind(&image).bind(&v.idempotency_key).bind(&input)
+        .bind(v.expected_state.as_ref().map(serde_json::to_value).transpose()?).bind(request_data).bind(v.retry_of).execute(&mut *tx).await?;
     let row =
         sqlx::query("SELECT id,input_hash FROM runtime_jobs WHERE actor=$1 AND idempotency_key=$2")
             .bind(&p.id)
             .bind(&v.idempotency_key)
-            .fetch_one(&state.pool)
+            .fetch_one(&mut *tx)
             .await?;
     if row.get::<String, _>("input_hash") != input {
         return Err(ApiError::conflict("idempotency_conflict"));
     }
-    job(state, p, row.get("id")).await
+    let id = row.get("id");
+    tx.commit().await?;
+    job(state, p, id).await
 }
 pub async fn job(state: &State, p: &Principal, id: Uuid) -> ApiResult<Value> {
     let row = sqlx::query("SELECT * FROM runtime_jobs WHERE id=$1")
@@ -175,14 +233,14 @@ pub async fn job(state: &State, p: &Principal, id: Uuid) -> ApiResult<Value> {
         .ok_or_else(ApiError::not_found)?;
     domain::authorize(state, p, row.get("app_id"), row.get("environment"), false).await?;
     Ok(
-        json!({"id":id,"appId":row.get::<String,_>("app_id"),"environment":row.get::<String,_>("environment"),"action":row.get::<String,_>("action"),"status":row.get::<String,_>("status"),"step":row.get::<String,_>("step"),"errorCode":row.get::<Option<String>,_>("error_code"),"installationId":row.get::<Option<Uuid>,_>("installation_id"),"releaseId":row.get::<Option<Uuid>,_>("release_id")}),
+        json!({"requestId":row.get::<String,_>("idempotency_key"),"imageId":row.get::<Option<String>,_>("image_id"),"createdAt":row.get::<chrono::DateTime<chrono::Utc>,_>("created_at"),"id":id,"appId":row.get::<String,_>("app_id"),"environment":row.get::<String,_>("environment"),"action":row.get::<String,_>("action"),"status":row.get::<String,_>("status"),"step":row.get::<String,_>("step"),"errorCode":row.get::<Option<String>,_>("error_code"),"failureClass":row.get::<Option<String>,_>("failure_class"),"retryable":row.get::<bool,_>("retryable"),"retryOf":row.get::<Option<Uuid>,_>("retry_of"),"installationId":row.get::<Option<Uuid>,_>("installation_id"),"releaseId":row.get::<Option<Uuid>,_>("release_id")}),
     )
 }
 async fn owned(name: &str, installation: Uuid) -> Result<Value> {
     let value = inspect(name).await?;
     anyhow::ensure!(
         value["Config"]["Labels"]["org.miy.installation"] == installation.to_string(),
-        "unmanaged_container"
+        RuntimeFailure::new(FailureCode::ContainerOwnershipMismatch)
     );
     Ok(value)
 }
@@ -260,27 +318,12 @@ pub async fn tick(pool: &sqlx::PgPool) -> Result<bool> {
     .await?;
     let result = execute(pool, &job).await;
     if let Err(error) = result {
-        let detail = error.to_string();
-        let code = if detail.contains("manifest") || detail.contains("contract") {
-            "invalid_image_contract"
-        } else if detail.contains("permission") {
-            "permission_revoked"
-        } else if detail.contains("migration") {
-            "migration_failed"
-        } else if detail.contains("immutable") {
-            "immutable_release_conflict"
-        } else if detail.contains("health") {
-            "app_health_failed"
-        } else {
-            "runtime_operation_failed"
-        };
-        sqlx::query(
-            "UPDATE runtime_jobs SET status='failed',error_code=$2,updated_at=now() WHERE id=$1",
-        )
-        .bind(id)
-        .bind(code)
-        .execute(pool)
-        .await?;
+        let failure = crate::runtime_contract::classify_failure(&error);
+        let code = failure.code();
+        let class = serde_json::to_value(failure.retry_class())?;
+        sqlx::query("UPDATE runtime_jobs SET status='failed',error_code=$2,failure_class=$3,retryable=$4,updated_at=now() WHERE id=$1")
+            .bind(id).bind(code).bind(class.as_str().unwrap_or("never"))
+            .bind(failure.retry_class() != crate::runtime_contract::RetryClass::Never).execute(pool).await?;
         tracing::error!(event="runtime_job_failed",job_id=%id,code);
     } else {
         sqlx::query("UPDATE runtime_jobs SET status='succeeded',step='complete',updated_at=now() WHERE id=$1").bind(id).execute(pool).await?;
@@ -299,8 +342,24 @@ async fn execute(pool: &sqlx::PgPool, job: &sqlx::postgres::PgRow) -> Result<()>
     let action: String = job.get("action");
     anyhow::ensure!(
         domain::can_manage(pool, &actor, &app, &env).await?,
-        "permission_revoked"
+        RuntimeFailure::new(FailureCode::PermissionRevoked)
     );
+    if job
+        .get::<Option<chrono::DateTime<chrono::Utc>>, _>("expected_checked_at")
+        .is_none()
+        && let Some(value) = job.get::<Option<Value>, _>("expected_state")
+    {
+        let expected: ExpectedState = serde_json::from_value(value)?;
+        let current = crate::runtime_preflight::snapshot(pool, &app, &env)
+            .await
+            .map_err(|_| RuntimeFailure::new(FailureCode::StateChanged))?;
+        crate::runtime_contract::compare_expected(&expected, &current)
+            .map_err(|_| RuntimeFailure::new(FailureCode::StateChanged))?;
+        sqlx::query("UPDATE runtime_jobs SET expected_checked_at=now() WHERE id=$1")
+            .bind(id)
+            .execute(pool)
+            .await?;
+    }
     if action == "promote" {
         let image: String = job.get("image_id");
         let release: Uuid =
@@ -309,7 +368,9 @@ async fn execute(pool: &sqlx::PgPool, job: &sqlx::postgres::PgRow) -> Result<()>
                 .bind(&image)
                 .fetch_one(pool)
                 .await?;
-        checked_image(pool, &app, release).await?;
+        checked_image(pool, &app, release)
+            .await
+            .map_err(|_| RuntimeFailure::new(FailureCode::ReleaseNotAccepted))?;
     }
     if action != "deploy" && action != "promote" {
         let inst = sqlx::query("SELECT * FROM installations WHERE app_id=$1 AND environment=$2")
@@ -366,7 +427,7 @@ async fn execute(pool: &sqlx::PgPool, job: &sqlx::postgres::PgRow) -> Result<()>
                 anyhow::ensure!(
                     metadata["Config"]["Labels"]["org.miy.release"]
                         == inst.get::<Uuid, _>("release_id").to_string(),
-                    "container_release_mismatch_redeploy"
+                    RuntimeFailure::new(FailureCode::ContainerOwnershipMismatch)
                 );
                 sqlx::query("UPDATE installations SET desired_state='running',runtime_status='starting' WHERE id=$1").bind(installation).execute(pool).await?;
                 let started = async {
@@ -383,7 +444,7 @@ async fn execute(pool: &sqlx::PgPool, job: &sqlx::postgres::PgRow) -> Result<()>
                     anyhow::ensure!(
                         meta["Image"].as_str()
                             == inst.get::<Option<String>, _>("runtime_image").as_deref(),
-                        "running_image_mismatch"
+                        RuntimeFailure::new(FailureCode::InvalidImageContract)
                     );
                     // Docker allocates a fresh random published port on every start.
                     let port = published_port(&meta)?;
@@ -392,7 +453,9 @@ async fn execute(pool: &sqlx::PgPool, job: &sqlx::postgres::PgRow) -> Result<()>
                         .bind(port)
                         .execute(pool)
                         .await?;
-                    healthy(port, inst.get("release_id")).await?;
+                    healthy(port, inst.get("release_id"))
+                        .await
+                        .map_err(|_| RuntimeFailure::new(FailureCode::AppHealthFailed))?;
                     Ok::<_, anyhow::Error>(())
                 }
                 .await;
@@ -417,10 +480,17 @@ async fn execute(pool: &sqlx::PgPool, job: &sqlx::postgres::PgRow) -> Result<()>
         .context("missing_image")?;
     anyhow::ensure!(image_id(&image), "invalid_image");
     step(pool, id, "verifying_image").await?;
-    let meta = inspect(&image).await?;
+    let meta = inspect(&image)
+        .await
+        .map_err(|_| RuntimeFailure::new(FailureCode::ImageUnavailable))?;
     anyhow::ensure!(
         meta["Id"] == image && meta["Config"]["Labels"]["org.miy.app.id"] == app,
-        "image_manifest_mismatch"
+        RuntimeFailure::new(FailureCode::InvalidImageContract)
+    );
+    anyhow::ensure!(
+        crate::runtime_platform::image(&meta).is_some()
+            && crate::runtime_platform::image(&meta) == crate::runtime_platform::server(),
+        RuntimeFailure::new(FailureCode::ImagePlatformMismatch)
     );
     let root = PathBuf::from(std::env::var("MIY_ARTIFACTS")?);
     let temporary = root.join(format!(".import-{id}"));
@@ -443,10 +513,12 @@ async fn execute(pool: &sqlx::PgPool, job: &sqlx::postgres::PgRow) -> Result<()>
     let removed = docker(&["rm", &extraction]).await;
     copied?;
     removed?;
-    let hash = contract::artifact_hash(&temporary)?; // Reject symlinks before reading any imported file.
+    let hash = contract::artifact_hash(&temporary)
+        .map_err(|_| RuntimeFailure::new(FailureCode::InvalidImageContract))?; // Reject symlinks before reading any imported file.
     let manifest: Manifest =
         serde_json::from_slice(&std::fs::read(temporary.join("manifest.json"))?)?;
-    contract::validate(&manifest).map_err(anyhow::Error::msg)?;
+    contract::validate(&manifest)
+        .map_err(|_| RuntimeFailure::new(FailureCode::InvalidImageContract))?;
     anyhow::ensure!(
         manifest.id == app
             && temporary
@@ -454,12 +526,14 @@ async fn execute(pool: &sqlx::PgPool, job: &sqlx::postgres::PgRow) -> Result<()>
                 .join(&manifest.ui.module_entry)
                 .is_file()
             && temporary.join("migrations").is_dir(),
-        "invalid_manifest_bundle"
+        RuntimeFailure::new(FailureCode::InvalidImageContract)
     );
     let build: Value = serde_json::from_slice(&std::fs::read(temporary.join("build.json"))?)?;
     // Fail before stopping the previous release when the packaged contract is invalid.
-    crate::bundle::migrations(&temporary.join("migrations"))?;
-    crate::bundle::ui(&temporary.join("ui"))?;
+    crate::bundle::migrations(&temporary.join("migrations"))
+        .map_err(|_| RuntimeFailure::new(FailureCode::InvalidImageContract))?;
+    crate::bundle::ui(&temporary.join("ui"))
+        .map_err(|_| RuntimeFailure::new(FailureCode::InvalidImageContract))?;
     let commit = build["sourceCommit"]
         .as_str()
         .context("missing_source_commit")?;
@@ -469,7 +543,7 @@ async fn execute(pool: &sqlx::PgPool, job: &sqlx::postgres::PgRow) -> Result<()>
             && meta["Config"]["Labels"]["org.opencontainers.image.revision"] == commit
             && build["appId"] == app
             && build["version"] == manifest.version,
-        "image_manifest_provenance_mismatch"
+        RuntimeFailure::new(FailureCode::InvalidImageContract)
     );
     let dest = root.join(&hash);
     if dest.exists() {
@@ -486,7 +560,7 @@ async fn execute(pool: &sqlx::PgPool, job: &sqlx::postgres::PgRow) -> Result<()>
     let release = if let Some(row) = existing {
         anyhow::ensure!(
             row.get::<Option<String>, _>("image_id").as_deref() == Some(&image),
-            "immutable_release_conflict"
+            RuntimeFailure::new(FailureCode::ImmutableReleaseConflict)
         );
         row.get::<Uuid, _>("id")
     } else {
@@ -577,7 +651,7 @@ async fn deploy_installation(
             .execute(pool)
             .await?;
     }
-    db?;
+    db.map_err(|_| RuntimeFailure::new(FailureCode::MigrationFailed))?;
     let resource = sqlx::query("SELECT * FROM db_resources WHERE installation_id=$1")
         .bind(installation)
         .fetch_one(pool)
@@ -650,7 +724,10 @@ async fn deploy_installation(
     step(pool, job, "starting_container").await?;
     docker(&["start", &name]).await?;
     let meta = owned(&name, installation).await?;
-    anyhow::ensure!(meta["Image"] == image, "running_image_mismatch");
+    anyhow::ensure!(
+        meta["Image"] == image,
+        RuntimeFailure::new(FailureCode::InvalidImageContract)
+    );
     let port = published_port(&meta)?;
     sqlx::query("UPDATE installations SET runtime_port=$2 WHERE id=$1")
         .bind(installation)

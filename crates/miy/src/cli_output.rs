@@ -82,6 +82,18 @@ fn json_line(writer: &mut impl Write, value: &Value) -> io::Result<()> {
     writer.write_all(b"\n")
 }
 
+fn metadata(data: &Value) -> Value {
+    let mut meta = serde_json::Map::new();
+    if let Ok((name, context)) = crate::cli_config::selected() {
+        meta.insert("context".into(), json!(name));
+        meta.insert("origin".into(), json!(context.origin));
+    }
+    if let Some(cursor) = data.get("nextCursor") {
+        meta.insert("nextCursor".into(), cursor.clone());
+    }
+    Value::Object(meta)
+}
+
 fn emit_to(
     mode: OutputMode,
     command: &str,
@@ -93,6 +105,19 @@ fn emit_to(
     match result {
         Ok(Outcome::Raw) => Ok(0),
         Ok(Outcome::Data(data)) => {
+            let meta = metadata(data);
+            let projected;
+            let data = if let Some(fields) = crate::cli_config::options().fields.as_deref() {
+                match crate::cli_input::project(data, fields) {
+                    Ok(value) => {
+                        projected = value;
+                        &projected
+                    }
+                    Err(error) => return emit_to(mode, command, &Err(error), raw, stdout, stderr),
+                }
+            } else {
+                data
+            };
             if mode == OutputMode::Text {
                 text_value(stdout, data, 0)?;
             } else {
@@ -100,7 +125,7 @@ fn emit_to(
                     stdout,
                     &json!({
                         "schemaVersion":1,"command":command,"ok":true,
-                        "data":data,"error":null,"meta":{}
+                        "data":data,"error":null,"meta":meta
                     }),
                 )?;
             }

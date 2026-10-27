@@ -1,19 +1,38 @@
 //! Docker process helpers shared by the local preview and Linux worker.
 use crate::app_health as runtime_health;
-use anyhow::{Context, Result};
+use anyhow::Result;
 use serde_json::Value;
 use std::time::Duration;
 use tokio::process::Command;
 use uuid::Uuid;
 
 pub(crate) async fn docker(args: &[&str]) -> Result<String> {
-    let child = Command::new("docker")
+    let mut command = Command::new("docker");
+    command
         .args(args)
-        .kill_on_drop(true)
-        .output();
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
+    let (child, _process_guard) =
+        crate::owned_process::spawn(&mut command)
+            .await
+            .map_err(|_| {
+                crate::runtime_contract::RuntimeFailure::new(
+                    crate::runtime_contract::FailureCode::DockerUnavailable,
+                )
+            })?;
+    let child = child.wait_with_output();
     let out = tokio::time::timeout(Duration::from_secs(90), child)
         .await
-        .context("docker_timeout")??;
+        .map_err(|_| {
+            crate::runtime_contract::RuntimeFailure::new(
+                crate::runtime_contract::FailureCode::DockerTimeout,
+            )
+        })?
+        .map_err(|_| {
+            crate::runtime_contract::RuntimeFailure::new(
+                crate::runtime_contract::FailureCode::DockerUnavailable,
+            )
+        })?;
     anyhow::ensure!(out.status.success(), "docker_command_failed");
     Ok(String::from_utf8(out.stdout)?.trim().to_string())
 }

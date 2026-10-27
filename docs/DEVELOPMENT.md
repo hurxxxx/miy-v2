@@ -1,22 +1,22 @@
 # miy 앱 개발 흐름과 CLI 계획
 
-2026-10-27 후속 구현 범위는 [CLI 0.5 개선과 Windows 네이티브 지원](CLI-IMPLEMENTATION-PLAN.md)으로 확정했다. 다중 서버 운영, 사람/AI 공통 명령·출력, 사용자 세션 인증, 작업·로그, Windows 11 x64 PowerShell 개발·관리의 상세 계약은 해당 계획을 따른다. 첫 OS·빌드 기반 구현을 시작했으며 전체 명령·인증·Windows 지원은 미완료다. 다른 환경에서 이어갈 작업 순서는 [CLI 개발 인계](CLI-HANDOFF.md)에 있다. 이 문서의 장기 설계 예시와 현재 명령은 구분한다.
+2026-10-27 후속 구현 범위는 [CLI 0.5 개선과 Windows 네이티브 지원](CLI-IMPLEMENTATION-PLAN.md)으로 확정했다. 다중 서버 운영, 사람/AI 공통 명령·출력, 사용자 세션 인증, 작업·로그, Windows 11 x64 PowerShell 개발·관리의 상세 계약은 해당 계획을 따른다. CLI 0.5.0 / 번들 0.6.2 작업 트리에 루트 명령, context·세션 인증, preflight·journal·작업 관찰·제한된 로그와 OS 경계를 구현 중이다. 구현 존재와 검증 완료를 구분하며 실제 Windows 11·별도 Linux 서버·IdP 전파·독립 AI 인수는 각각 증거가 필요하다. 다른 환경에서 이어갈 작업 순서는 [CLI 개발 인계](CLI-HANDOFF.md)에 있다. 이 문서의 장기 설계 예시와 현재 명령은 구분한다.
 
-현재 CLI 0.4 / bundle 0.6은 앱의 미저장 상태를 `runtime.registerNavigationGuard`로 등록받아 셸·앱·브라우저 기록 이동을 보호한다. 로컬 preview와 같은 계약이며 앱의 명시적 등록·effect cleanup이 필요하다. 플랫폼 표시 이름은 관리자 메타데이터로 관리하고 배포 이름과 구분한다. 인수 기록은 정확한 릴리스별 검사 범위·실행 계정·결과를 제공한다. 실제 계약·예제는 [번들 계약](../templates/rust-react/docs/CONTRACT.md)과 [검사 기록 형식](../templates/rust-react/docs/ACCEPTANCE.md)을 따른다.
+현재 SDK bundle 0.6 계열은 앱의 미저장 상태를 `runtime.registerNavigationGuard`로 등록받아 셸·앱·브라우저 기록 이동을 보호한다. 로컬 preview와 같은 계약이며 앱의 명시적 등록·effect cleanup이 필요하다. 플랫폼 표시 이름은 관리자 메타데이터로 관리하고 배포 이름과 구분한다. 인수 기록은 정확한 릴리스별 검사 범위·실행 계정·결과를 제공한다. 실제 계약·예제는 [번들 계약](../templates/rust-react/docs/CONTRACT.md)과 [검사 기록 형식](../templates/rust-react/docs/ACCEPTANCE.md)을 따른다.
 
 작성일: 2026-10-20  
 수정일: 2026-10-27
-상태: 개발 경험 설계 초안
+상태: CLI 0.5 사용 계약과 장기 개발 경험 설계. 검증 결과는 별도 기록
 
 **CLI가 실행 가능한 앱의 기본 구조를 준비하고, 개발자는 공통 계약을 지키면서 화면과 업무 로직을 자유롭게 개발한다.** 개발 중에는 로컬에서 바로 실행하거나 miy의 개발 영역에 올려 평가하고, 검증한 릴리스를 운영으로 승격한다.
 
-제품 요구사항은 [PRD](PRD.md), 추진 순서는 [PLAN](PLAN.md), Windmill에서 참고한 기능과 차이는 [조사 문서](RESEARCH.md#개발-맥락과-배포-경험)에 연결한다. 아래 명령과 파일 구조는 설계 예시이며, 현재 구현된 CLI나 확정된 인터페이스는 아니다.
+제품 요구사항은 [PRD](PRD.md), 추진 순서는 [PLAN](PLAN.md), Windmill에서 참고한 기능과 차이는 [조사 문서](RESEARCH.md#개발-맥락과-배포-경험)에 연결한다. 장기 아키텍처·파일 구조 제안은 해당 절에서 구분한다. 현재 명령은 아래 CLI 0.5 예시와 [실행 안내](RUNNING.md), 설치된 `describe --command`를 기준으로 한다.
 
 최소 플랫폼과 이 개발 계약으로 Codex가 실제 앱을 완성·배포할 수 있는지 먼저 확인한다. 생성 지침·검사·진단을 묶은 하네스, MCP 사용 증거, 독립 인수 검사와 Docker·DB·UI 런타임 검증은 [집중 검증 계획](VALIDATION.md)을 따른다.
 
 ## 현재 구현한 컴포넌트 배포 분리
 
-CLI 0.3 / 개발 번들 0.5부터 공용 컴포넌트는 CLI 내장 코드와 분리한다. 템플릿은 기본 컴포넌트를 선언하고, 플랫폼 로그인 후 `miy app components sync`가 버전 소스와 사용 예제를 가져온다. 새 컴포넌트는 관리자가 플랫폼 API에 게시하며 CLI·서버 재빌드 없이 발견·설치할 수 있다.
+CLI 0.3 / 개발 번들 0.5부터 공용 컴포넌트는 CLI 내장 코드와 분리한다. 템플릿은 기본 컴포넌트를 선언하고, 플랫폼 로그인 후 `miy component sync`가 버전 소스와 사용 예제를 가져온다. 새 컴포넌트는 관리자가 플랫폼 API에 게시하며 CLI·서버 재빌드 없이 발견·설치할 수 있다.
 
 현재 구현은 인증된 자체 source-package API이며 npm/Gitea 패키지 레지스트리 연동은 아래 장기 설계의 선택안이다. 패키지에는 버전·호환 번들·파일 목록·README가 있고 플랫폼에서 같은 이름/버전의 변경을 거부한다. CLI는 같은 프로토콜로 모든 컴포넌트를 취급하고, MCP도 이 실시간 목록과 설명을 사용한다.
 
@@ -130,9 +130,9 @@ Resources를 언제 모델에 전달할지는 클라이언트가 정하고, Prom
 
 1. CLI 설치 후 대상 miy에 로그인하거나 기본 로컬 번들로 시작한다.
 2. `miy app init`이 호환되는 템플릿·지침·SDK·UI·예제를 준비한다. 앱 생성 이름 등 명시된 입력으로 파일을 생성하고 선택한 버전을 기록한다.
-3. 앱과 개발 환경을 연결하고 `miy context sync`로 허용된 스키마·앱 기능·현재 설치 정보를 가져온다.
+3. 명명한 context와 앱을 선택하고 MCP·허용된 API로 스키마·앱 기능을 조회한다. CLI 0.5의 context 명령은 add/list/show/use/remove이며 context sync는 제공하지 않는다.
 4. 개발자는 지침과 예제를 이용해 구현한다. MCP를 사용하는 에이전트는 필요한 API·컴포넌트 설명·연결 정보를 추가 조회한다.
-5. `miy dev`, `miy check`, 미리보기·승격 명령으로 같은 흐름을 반복한다. MCP를 사용하지 않는 경우에도 CLI·문서 조회로 완료할 수 있다.
+5. `miy app dev`, `miy app check`, 미리보기·승격 명령으로 같은 흐름을 반복한다. MCP를 사용하지 않는 경우에도 CLI·문서 조회로 완료할 수 있다.
 
 개발 지침은 프로젝트의 필수 계약과 실행·검사 명령을 먼저 설명하고 상세 문서로 연결한다. 특정 파일 이름을 모든 에이전트가 자동 인식한다고 가정하지 않으며, 클라이언트별 지침·skill 연결은 지원 버전을 확인한 어댑터로 제공한다. 기존 `AGENTS.md`나 고객 지침은 무조건 덮어쓰지 않고 변경 내용을 비교한다. 지침은 개발을 돕고, 필수 계약은 검사 도구와 서버가 검증한다.
 
@@ -416,7 +416,7 @@ DB·파일 복구 지점은 변경 위험과 복구 정책에 맞춰 준비한�
 
 앱 목록에 이름·환경·담당자·활성/선택 버전·목표 상태·실제 상태·CPU·메모리·최근 작업을 표시한다. 앱 상세에서 시작·중지·재시작·업데이트·이전 버전 복구·삭제를 실행하고 로그·DB/파일 용량·진행 중 작업·실패 원인을 확인한다. 운영자는 Docker 명령이나 Kubernetes 리소스를 직접 다루지 않아도 된다.
 
-관리 화면·CLI·API·허용된 MCP 도구는 같은 관리 API를 사용한다. CLI 예시는 `miy app start|stop|restart|update|delete <app> --env <env>`이며 인터페이스 이름은 설계 예시다. 앱 사용 권한과 운영 제어 권한을 구분하고 앱·환경·행위별 위임을 검사한다. 코어가 영속 작업으로 요청을 기록하고 내부 runner가 제한된 명령으로 Docker Engine을 제어한다. 브라우저·사용자 앱·공개 API에 관리 소켓을 제공하지 않는다.
+관리 화면·CLI·API·허용된 MCP 도구는 같은 관리 API를 사용한다. CLI 0.5는 `miy --context CONTEXT --app APP app start|stop|restart|remove --environment ENV`를 사용한다. Prod와 모든 app remove는 확인 또는 자동화의 `--yes`가 필요하고 DB를 보존한다. 업데이트는 새 dev deploy와 인수된 릴리스의 prod promote로 수행한다. 앱 사용 권한과 운영 제어 권한을 구분하고 앱·환경·행위별 위임을 검사한다. 코어가 영속 작업으로 요청을 기록하고 내부 runner가 제한된 명령으로 Docker Engine을 제어한다. 브라우저·사용자 앱·공개 API에 관리 소켓을 제공하지 않는다.
 
 목표 상태는 실행·중지·제거로, 관측 상태는 설치 준비·시작 중·실행 중·중지 중·중지됨·업데이트 중·실패·복구 필요·상태 미확인·제거됨 등으로 구분한다. 버튼 클릭을 실제 완료로 표시하지 않는다. 코어·runner·호스트 재시작 후 저장된 목표와 실제 컨테이너를 대조한다. 운영자가 중지·삭제한 앱은 트래픽·예약 작업·재시작 정책으로 부활하지 않으며, 상태를 확인할 수 없을 때에는 중복 인스턴스를 새로 만들지 않는다.
 
@@ -464,32 +464,55 @@ DB·파일 복구 지점은 변경 위험과 복구 정책에 맞춰 준비한�
 
 기업 데이터 소스의 자격증명은 서버에 두고, CLI·MCP는 현재 사용자와 앱에 허용된 스키마·예제만 가져온다. 앱 전용 로컬 테스트 DB의 자격증명과 기업 연결 자격증명을 구분한다. 로컬에서 받은 플랫폼 세션은 소스·일반 로그·생성 지침에 포함하지 않는다.
 
-`miy context sync`는 허용된 설치 정보·지침·스키마와 해당 계약의 생성 타입을 갱신한다. SDK·UI 의존성이나 앱 소스를 자동 업그레이드하지 않는다. 개발 번들·패키지 업그레이드는 별도 변경으로 버전·호환성·차이를 검토하고 잠금 파일을 갱신한다.
+허용된 설치 정보·지침·스키마와 생성 타입을 로컬 캐시로 동기화하는 기능은 후속 설계다. CLI 0.5에 context sync 명령은 없으며 현재 context는 서버 origin·CA·사용자 연결을 선택한다. SDK·UI 의존성이나 앱 소스를 자동 업그레이드하지 않는다. 개발 번들·패키지 업그레이드는 별도 변경으로 버전·호환성·차이를 검토하고 잠금 파일을 갱신한다.
 
 생성 파일과 사용자 작성 파일을 구분하고, 수정된 지침·예제를 무조건 덮어쓰지 않는다. 고객사 맥락 캐시는 설치·사용자·앱·환경별로 분리하고 `.miy/context/` 등을 기본 Git·업로드 제외 대상으로 둔다. 자격증명은 소스·생성 파일에 넣지 않고 OS 자격증명 저장소 등 별도 위치에 보관한다. 지침·스키마 갱신에 실제 업무 데이터를 자동 포함하지 않으며, 플랫폼은 자료를 전달할 때 권한과 외부 AI 정책을 검사한다. 로컬에 이미 전달한 자료는 권한 회수만으로 소급 삭제되지 않는다.
 
-## CLI 명령 예시
+## CLI 0.5 명령 예시
 
-다음은 사용자 흐름을 설명하기 위한 가칭 명령이다. 인증 방식, 옵션과 실제 패키지 배포 방법은 후속 설계에서 확정한다.
+다음은 현재 작업 트리의 명령 계약이다. 설치된 버전과 서버 지원 기능은 `miy describe`·`doctor --for operate`로 확인하고, 실제 환경별 인수 결과는 [검증 행렬](CLI-VALIDATION-MATRIX.md)에서 구분한다.
 
 ```sh
-miy app init purchase-app --template business-web
+miy context add work --url https://miy.example.com
+miy context use work
+miy auth login
+# 비TTY/--no-input이면 public pending 결과의 URL/code를 승인한 다음:
+miy auth wait LOGIN_UUID
+miy doctor --for operate
+miy --context work app init purchase-app --id purchase --name '구매 관리'
 cd purchase-app
-miy dev --mode local
-miy login --server https://miy.example.com
-miy app link --app purchase --env dev
-miy context sync
-miy check
-miy preview create --env dev
-miy logs --operation <operation-id>
-# 운영 후보를 Git에 커밋·push한 뒤
-miy release create --commit <commit-sha> --env dev
-miy release promote <release-id> --env prod
+miy component sync
+miy doctor --for develop
+miy app register
+# 관리자의 registration approve 후:
+miy app dev
+miy app dev-stop
+miy app check
+# 앱 버전과 소스를 커밋한 뒤:
+miy app build
+miy app deploy --environment dev --dry-run
+miy app deploy --no-wait
+miy job watch JOB_UUID
+miy app accept --input @acceptance.json
+miy --context work --app purchase --yes app promote --environment prod --release RELEASE_UUID
 ```
 
-`preview create`는 중간 작업본을, `release create`는 기준 저장소의 정확한 커밋을 대상으로 한다. 승격은 해당 릴리스의 검증 완료와 현재 배포 권한을 서버에서 확인한다. 모든 원격 명령에서 대상 서버·앱·환경을 표시하며, 필수 대상이 모호하면 임의의 운영 환경을 선택하지 않는다.
+비TTY 로그인은 브라우저를 자동 실행하지 않고 pending을 반환한다. `--account developer`는 명시적으로 켠 HTTP loopback 개발 프로필에 한해 같은 device 승인 흐름을 자동 진행하는 검사 예외다. Access token은 최대 15분, 회전 refresh 세션은 최대 30일이며 origin/user별 보호 저장소에 보관한다. 갱신 응답 유실은 재로그인으로 복구한다. Core 사용자 활성 상태와 상위 IdP 비활성화의 전파·지연을 구분한다.
 
-자동화에서는 필요한 대상을 명시하고 구조화된 결과를 받는다. 로컬 CLI의 저장 설정이나 검사 결과로 서버 권한을 우회할 수 없어야 한다.
+빌드는 깨끗이 커밋된 소스로 불변 Linux 이미지를 만들며 `dist/image.json`의 platform과 서버 runtimePlatform을 비교한다. Docker 엔진 CPU가 서버와 다르면 `app build --platform linux/amd64|linux/arm64`를 명시하고 실제 빌더/에뮬레이션을 준비한다. Dry-run은 expected-state와 변경 계획을 조회하며 이미지 업로드·runtime job을 생성하지 않는다.
+
+Runtime payload와 원본 request key는 context/origin/user/app에 묶인 journal에 먼저 저장한다. 이미지 접수·ID 조회를 포함한 응답 유실은 `job resume REQUEST_OR_JOB_ID`로 복구한다. 부분 바이트 재개는 지원하지 않는다. `job watch`는 cursor/JSONL 재연결을 제공하며 Ctrl-C는 원격 작업을 취소하지 않는다. `job retry`는 타입상 허용된 terminal failure만 새 preflight 후 재시도한다. Prod 및 모든 app remove의 실행·retry·미접수 재전송은 명시적 context/app/environment와 확인이 필요하며, 이미 접수된 job의 관찰은 새 승인 없이 가능하다.
+
+```sh
+miy describe --command "job retry"
+miy --output json --fields apps.id,apps.name,nextCursor app list --limit 20
+miy --output jsonl job watch JOB_UUID --after EVENT_CURSOR
+miy --app purchase app logs --environment dev --tail 100
+miy --app purchase app logs --environment dev --request LOG_REQUEST_UUID
+miy --app purchase grant set --input @grant.json
+```
+
+Fields는 지원된 읽기 결과만 선택하고 서버 권한을 바꾸지 않는다. 목록 cursor는 사용자·필터 범위에 묶인다. `--input @file|-`는 타입·크기·unknown-field·중복 출처를 검증한다. 로그는 보존 서비스가 아닌 bounded snapshot이며 잘림과 회전 누락을 표시한다. 성공 envelope와 접수 ID만으로 실제 앱·UI·데이터 인수를 통과했다고 판단하지 않는다.
 
 ## 관리형 실행 구조의 적용 범위
 
@@ -515,10 +538,12 @@ miy release promote <release-id> --env prod
 
 ## CLI 릴리스와 개발 안내 유지관리
 
-CLI 사용법 원본은 `crates/miy/guidance/miy-cli/`다. 명령·인자·옵션·기본값은 `AppCommand`/컴포넌트 명령의 Clap 정의에서 생성하고, 절차·권한·실패 처리 설명은 같은 디렉터리의 workflow에서 관리한다. 생성된 프로젝트 파일을 따로 수정해 릴리스를 만들지 않는다.
+CLI 사용법 원본은 `crates/miy/guidance/miy-cli/`다. 명령·인자·옵션·기본값·충돌·완성은 루트 `Args::command()` Clap 트리에서 생성하고, 선택 조회의 권한·부작용과 구조화 입력 스키마는 `cli_discovery` 및 공유 계약 타입에 연결한다.  절차·권한·실패 처리 설명은 같은 디렉터리의 workflow에서 관리한다. 생성된 프로젝트 파일을 따로 수정해 릴리스를 만들지 않는다.
 
 CLI 변경 시 명령의 help 설명과 workflow의 해당 절차를 함께 검토하고 Cargo 패키지 버전을 올린다. CLI 전용 안내 변경에는 SDK bundle 버전이나 공용 UI 릴리스를 올리지 않는다. 실행 파일에 안내 원본을 포함하며 init/setup/upgrade가 그 버전의 스킬·문서·miy.cli.json을 배포한다. 현재 SDK 보호 파일의 변경은 별도 SDK 번들 전환 규칙을 따른다.
 
-템플릿 `AGENTS.md`와 `CLAUDE.md`는 CLI 전용 스킬·전체 매뉴얼로 연결하는 진입점이며 SDK 보호 파일이다. 이 파일을 바꾸면 이전 번들 해시를 보관하고 새 번들 버전과 명시적 업그레이드를 제공한다. 0.6.1은 두 진입점만 바꾸므로 0.6.0 컴포넌트 호환성을 명시적으로 유지한다. 이는 모든 패치 버전을 자동 호환으로 간주하는 규칙이 아니다. 스킬·매뉴얼 본문의 일반적인 갱신은 계속 CLI 버전만으로 관리한다.
+템플릿 `AGENTS.md`와 `CLAUDE.md`는 CLI 전용 스킬·전체 매뉴얼로 연결하는 진입점이며 SDK 보호 파일이다. 이 파일을 바꾸면 이전 번들 해시를 보관하고 새 번들 버전과 명시적 업그레이드를 제공한다. 0.6.1 스냅샷을 보존한 0.6.2 전환은 새 CLI 지침과 플랫폼 작업 흐름을 명시적으로 배포한다. 지원하는 기존 번들과 컴포넌트 호환성은 upgrade 코드의 허용 목록으로 확인한다. 이는 모든 패치 버전을 자동 호환으로 간주하는 규칙이 아니다. 스킬·매뉴얼 본문의 일반적인 갱신은 계속 CLI 버전만으로 관리한다.
 
-릴리스 전 `cargo test -p miy`, `cargo clippy -p miy --all-targets -- -D warnings`, 스킬 형식 검사와 `scripts/check-cli-guidance.mjs`를 실행한다. 이 회귀 검사는 실제 --help와 생성 참조의 명령·옵션 일치, JSON/Markdown/MCP 버전 일치, 두 에이전트 파일 일치, 관리 파일 수정 거부·복구, 구버전 CLI 전환 시 업무 파일 보존을 확인한다. 자연어 절차의 의미까지 자동 검증하지 않으므로 동작 변경에 맞춘 원본 검토는 릴리스 작업에 포함한다.
+릴리스 전 `cargo test -p miy`, `cargo clippy -p miy --all-targets -- -D warnings`, 스킬 형식 검사와 `scripts/check-cli-guidance.mjs`를 실행한다. 이 회귀 검사는 실제 --help와 생성 참조의 명령·옵션 일치, 선택 describe/도움말/생성 매뉴얼/MCP 버전 일치, 두 에이전트 파일 일치, 관리 파일 수정 거부·복구, 구버전 CLI 전환 시 업무 파일 보존을 확인한다. 자연어 절차의 의미까지 자동 검증하지 않으므로 동작 변경에 맞춘 원본 검토는 릴리스 작업에 포함한다.
+
+검증은 각 변경의 client/server 단위·계약 검사, CLI 블랙박스, 격리 HTTP/worker 회귀, 네이티브 OS 검사와 실제 사용자 환경 인수를 분리한다. 과거 커밋의 통과 기록을 새 인증·journal·Windows 기능의 증거로 이월하지 않는다. CLI 0.5 사용 계약의 구현 완료도 전체 V7 완료와 같지 않다.
