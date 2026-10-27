@@ -10,8 +10,8 @@
 
 | 요구 | 실제 검사와 확인한 조건 | 결과 |
 | --- | --- | --- |
-| U1 서버 경계 | Rust 단위 101개, ignored 외부 서비스 검사 3개 별도; Clippy warnings 금지 | PASS |
-| U2 클라이언트 경계 | `--no-default-features` 단위 89개와 Clippy; 서버/worker 명령 제외 | PASS |
+| U1 서버 경계 | Rust 단위 103개, ignored 외부 서비스 검사 3개 별도; Clippy warnings 금지 | PASS |
+| U2 클라이언트 경계 | `--no-default-features` 단위 91개와 Clippy; 서버/worker 명령 제외 | PASS |
 | B1 출력 | 실제 CLI Python 블랙박스 11묶음: 자동/text/JSON, argv 오류 비밀 차단, UTF-8, 상태별 종료 코드, terminal9, POSIX Ctrl+C130, refresh 응답 유실 후 재사용 차단 | PASS |
 | B2 전송 복구 | 실제 CLI + 합성 archive/loopback fault fixture 6묶음: 완전한 사전 journal, upload/runtime ACK 유실, receipt 대상/해시 거부, resume 대상 거부, timeout 후 재개, 실패 lifecycle 후 새 요청 | PASS |
 | G1 지침·갱신 | 실제 도움말/describe/MCP 일치, 사용자 문서 충돌 보존, 누락 복구, 반복 setup, 비공개 MCP 유지 | PASS |
@@ -87,3 +87,9 @@ python3 scripts/test-cli-release.py
 PowerShell 개발 검사 증거: `.local/evidence/cli-installer/summary.json`. 실제 파일 복구 fixture에서 PowerShell의 null 인수 전달을 수정해 File.Replace가 올바른 null backup 경로를 받게 했다. Windows PowerShell 5.1과 네이티브 파일 잠금/ACL 검사는 별도 CI·사용자 결과로 기록한다.
 
 원격 문서 commit `6e2e107`의 실제 Windows 기록도 통합했다. CLI 0.4.2 (`fb42b38`)는 Windows 11 Pro build 26200, PS7.6.5/5.1.26100.9711에서 각 단위37개·출력9개·release/번들/MCP 오프라인 검사를 통과했다. 상세 환경·hash·미실행 범위는 Windows 문서의 이력을 그대로 보존하며 새 0.5 인수로 이월하지 않는다.
+
+### 첫 네이티브 CI에서 보완한 경계
+
+`34546ae`의 [CI 40458485585](https://github.com/hurxxxx/miy-v2/actions/runs/40458485585)는 Linux 서버/클라이언트를 통과했지만 macOS 임시 경로와 Windows 종료코드 검사에서 실패했다. macOS의 root 소유 `/var → /private/var`, `/tmp → /private/tmp` 시스템 조상 별칭만 허용하고 설정 root·임의 조상·credentials/record 링크 거부를 유지했다. fixture 경로도 정규화했다. Windows Job Object 종료는 특정 종료코드를 보장하지 않으므로, 테스트를 종료 전 생존·소속, 종료 후 제한 시간 내 완료, 별도 Job의 프로세스 생존 확인으로 수정했다. 실패를 성공으로 집계하지 않으며 후보 CI `40458514245`는 해당 수정 후 다시 만들기 위해 취소했다.
+
+보완 후 로컬 서버 단위103개/클라이언트91개, 출력11묶음, 클라이언트 Clippy와 Windows 최소 harness all-targets Clippy를 통과했다. Windows 개발 안내의 `doctor --for develop` 및 선행 `component sync`도 수정했다. 실제 OS 재실행 결과는 다음 CI 기록으로 추가한다.

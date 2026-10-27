@@ -115,9 +115,37 @@ pub fn root() -> Result<PathBuf> {
     }
 }
 pub fn ensure_root() -> Result<PathBuf> {
-    let root = root()?;
+    ensure_root_path(root()?)
+}
+
+#[cfg(target_os = "macos")]
+fn trusted_system_ancestor(path: &Path, root: &Path) -> bool {
+    use std::os::unix::fs::MetadataExt;
+    if path == root {
+        return false;
+    }
+    let (relative, absolute) = match path.to_str() {
+        Some("/var") => ("private/var", "/private/var"),
+        Some("/tmp") => ("private/tmp", "/private/tmp"),
+        _ => return false,
+    };
+    std::fs::symlink_metadata(path)
+        .is_ok_and(|meta| meta.file_type().is_symlink() && meta.uid() == 0)
+        && std::fs::read_link(path)
+            .is_ok_and(|target| target == Path::new(relative) || target == Path::new(absolute))
+}
+
+fn ensure_root_path(root: PathBuf) -> Result<PathBuf> {
     for path in root.ancestors() {
-        platform::reject_reparse(path)?;
+        #[cfg(target_os = "macos")]
+        if trusted_system_ancestor(path, &root) {
+            continue;
+        }
+        platform::reject_reparse(path).map_err(|_| CliError::new(
+            Category::Environment,
+            "config_path_unavailable",
+            "Use an accessible, canonical configuration path without symlinks or reparse points.",
+        ))?;
     }
     let exists = root.exists();
     std::fs::create_dir_all(&root)?;
@@ -519,6 +547,39 @@ pub fn confirm(message: &str) -> Result<()> {
 #[cfg(test)]
 mod pagination_tests {
     use super::*;
+    #[cfg(unix)]
+    #[test]
+    fn config_owned_and_ancestor_links_are_rejected_before_creation() {
+        use std::os::unix::fs::symlink;
+        let temp = tempfile::tempdir().unwrap();
+        let base = temp.path().canonicalize().unwrap();
+        let real = base.join("real");
+        ensure_root_path(real.clone()).unwrap();
+        let linked = base.join("linked");
+        symlink(&real, &linked).unwrap();
+        for path in [linked.clone(), linked.join("not-created")] {
+            let error = ensure_root_path(path).unwrap_err();
+            assert_eq!(
+                crate::cli_error::classify(&error).code,
+                "config_path_unavailable"
+            );
+        }
+        assert!(!real.join("not-created").exists());
+    }
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn macos_trusted_temporary_ancestor_keeps_owned_links_forbidden() {
+        let temp = tempfile::tempdir_in("/private/tmp").unwrap();
+        let canonical = temp.path().canonicalize().unwrap();
+        let alias = Path::new("/tmp").join(canonical.strip_prefix("/private/tmp").unwrap());
+        assert!(trusted_system_ancestor(Path::new("/tmp"), &alias));
+        assert!(!trusted_system_ancestor(
+            Path::new("/tmp"),
+            Path::new("/tmp")
+        ));
+        ensure_root_path(alias.join("private-config")).unwrap();
+        assert!(canonical.join("private-config").is_dir());
+    }
 
     fn fixture() -> Config {
         let mut config = Config {

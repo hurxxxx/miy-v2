@@ -274,7 +274,7 @@ def check(cli):
         print(f"PASS {name}", flush=True)
 
     with tempfile.TemporaryDirectory(prefix="miy-cli-recovery-") as temporary:
-        root = Path(temporary)
+        root = Path(temporary).resolve()
         config = root / "private-config"
         project = root / "한글 recovery app"
         env = dict(os.environ)

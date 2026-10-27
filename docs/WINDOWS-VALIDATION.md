@@ -498,8 +498,10 @@ Docker Desktop을 Linux 컨테이너 모드로 준비한다. 한글·공백 경�
 & $MiyCli --context validation app init .\windows-demo --id windows-demo --name 'Windows 검증 앱'
 Assert-MiyExit 'app init'
 Set-Location -LiteralPath .\windows-demo
-& .\.miy-tools\miy.exe doctor --for dev --output json
-Assert-MiyExit 'doctor dev'
+& .\.miy-tools\miy.exe component sync
+Assert-MiyExit 'component sync'
+& .\.miy-tools\miy.exe doctor --for develop --output json
+Assert-MiyExit 'doctor develop'
 & .\.miy-tools\miy.exe app check
 Assert-MiyExit 'app check'
 & .\.miy-tools\miy.exe app dev

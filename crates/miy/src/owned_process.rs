@@ -151,6 +151,7 @@ mod tests {
             .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::null());
         let (mut child, guard) = standard(&mut command).unwrap();
+        let (mut separate, separate_guard) = standard(&mut command).unwrap();
         let mut member = 0;
         unsafe {
             assert_ne!(
@@ -163,6 +164,8 @@ mod tests {
             );
         }
         assert_ne!(member, 0);
+        assert!(child.try_wait().unwrap().is_none());
+        assert!(separate.try_wait().unwrap().is_none());
         drop(guard);
         unsafe {
             assert_eq!(
@@ -173,6 +176,19 @@ mod tests {
                 0
             );
         }
-        assert!(!child.wait().unwrap().success());
+        // KILL_ON_JOB_CLOSE guarantees termination, not a particular exit code.
+        child.wait().unwrap();
+        assert!(separate.try_wait().unwrap().is_none());
+        drop(separate_guard);
+        unsafe {
+            assert_eq!(
+                windows_sys::Win32::System::Threading::WaitForSingleObject(
+                    separate.as_raw_handle(),
+                    3000
+                ),
+                0
+            );
+        }
+        separate.wait().unwrap();
     }
 }

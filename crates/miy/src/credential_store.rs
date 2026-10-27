@@ -1052,6 +1052,23 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
+    fn root_and_credential_directory_links_are_rejected() {
+        use std::os::unix::fs::symlink;
+        let temp = tempfile::tempdir().unwrap();
+        let real = temp.path().join("real");
+        std::fs::create_dir(&real).unwrap();
+        let linked = temp.path().join("linked");
+        symlink(&real, &linked).unwrap();
+        assert!(Store::open(&linked, &key("entry")).is_err());
+        let elsewhere = temp.path().join("elsewhere");
+        std::fs::create_dir(&elsewhere).unwrap();
+        symlink(&elsewhere, real.join("credentials")).unwrap();
+        assert!(Store::open(&real, &key("entry")).is_err());
+        assert_eq!(std::fs::read_dir(&elsewhere).unwrap().count(), 0);
+    }
+
+    #[cfg(unix)]
+    #[test]
     fn unix_fallback_permissions_and_links_are_rejected() {
         use std::os::unix::fs::{PermissionsExt, symlink};
         let root = tempfile::tempdir().unwrap();

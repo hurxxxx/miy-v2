@@ -531,8 +531,8 @@ Windows 전용 안내와 기반 구현을 `fbbd087`로 커밋·푸시한 뒤, 1B
 
 | 검사 | 결과 |
 | --- | --- |
-| 서버 Rust 단위 / Clippy | 101 passed, 3 ignored / warnings 금지 통과 |
-| 클라이언트 Rust 단위 / Clippy | 89 passed / warnings 금지 통과 |
+| 서버 Rust 단위 / Clippy | 103 passed, 3 ignored / warnings 금지 통과 |
+| 클라이언트 Rust 단위 / Clippy | 91 passed / warnings 금지 통과 |
 | 실제 HTTP/PostgreSQL/Docker/CLI | **52개 PASS**, 140.96초, cleanup errors 0, 기존 실행 컨테이너 ID·이미지·시작 시각 보존 |
 | 출력/오류/refresh 유실 블랙박스 | 11묶음 PASS; 합성 loopback HTTP, POSIX Ctrl+C 포함 |
 | 업로드/runtime ACK 유실 복구 | 6묶음 PASS; 배포 export/upload POST/runtime POST 각1, lifecycle 새 요청4/preflight4, 원격 취소0 |
@@ -549,3 +549,9 @@ Windows 전용 안내와 기반 구현을 `fbbd087`로 커밋·푸시한 뒤, 1B
 검증 중 resume 대상 불일치, 불완전 journal 공개, 실패한 lifecycle 영구 차단을 수정하고 실제 CLI 회귀로 재확인했다. 통합 fixture의 API 경로/개발 계정/명시 앱/충돌 종료 코드와 backup 경로 기대값도 수정했다. 앞선 실패 run을 통과 개수에 합치지 않았다.
 
 이번 0.5의 사용자 Windows 11 PowerShell 5.1·7/Docker Desktop·실제 Credential Manager/DPAPI·콘솔 Ctrl+C·프로젝트 MCP, 별도 원격 Linux/실제 OIDC, Codex·Claude 독립 새 세션 평가는 **NOT_RUN**이다. 호스티드 CI나 합성 archive/개발 로그인 fixture가 이를 대체하지 않는다. 정식 공개 릴리스와 전체 V2~V7 인수 완료는 별도로 유지한다.
+
+### 첫 네이티브 CI에서 보완한 경계
+
+`34546ae`의 [CI 40458485585](https://github.com/hurxxxx/miy-v2/actions/runs/40458485585)는 Linux 서버/클라이언트를 통과했지만 macOS 임시 경로와 Windows 종료코드 검사에서 실패했다. macOS의 root 소유 `/var → /private/var`, `/tmp → /private/tmp` 시스템 조상 별칭만 허용하고 설정 root·임의 조상·credentials/record 링크 거부를 유지했다. fixture 경로도 정규화했다. Windows Job Object 종료는 특정 종료코드를 보장하지 않으므로, 테스트를 종료 전 생존·소속, 종료 후 제한 시간 내 완료, 별도 Job의 프로세스 생존 확인으로 수정했다. 실패를 성공으로 집계하지 않으며 후보 CI `40458514245`는 해당 수정 후 다시 만들기 위해 취소했다.
+
+보완 후 로컬 서버 단위103개/클라이언트91개, 출력11묶음, 클라이언트 Clippy와 Windows 최소 harness all-targets Clippy를 통과했다. Windows 개발 안내의 `doctor --for develop` 및 선행 `component sync`도 수정했다. 실제 OS 재실행 결과는 다음 CI 기록으로 추가한다.

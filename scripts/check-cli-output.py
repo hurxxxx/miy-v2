@@ -182,7 +182,9 @@ def check(cli):
         print(f"PASS {name}", flush=True)
 
     with tempfile.TemporaryDirectory(prefix="miy-cli-output-") as temporary:
-        root = Path(temporary)
+        # macOS temporary paths can start at the OS /var -> /private/var alias.
+        # Use its canonical path; user-owned config links remain forbidden.
+        root = Path(temporary).resolve()
         env["MIY_CONFIG_DIR"]=str(root/"private-config")
         env["MIY_CREDENTIAL_BACKEND"]="file"
         env.pop("MIY_CONTEXT",None)
@@ -227,6 +229,17 @@ def check(cli):
         ok("parse errors hide argument secrets; unsupported JSONL has no init side effects")
 
         run(["user","list"],expected=7,command="user list")
+        if os.name != "nt":
+            link = root / "linked-config-parent"
+            link.symlink_to(root, target_is_directory=True)
+            previous_config = env["MIY_CONFIG_DIR"]
+            env["MIY_CONFIG_DIR"] = str(link / "must-not-create")
+            try:
+                rejected = run(["context","add","unsafe","--url","http://127.0.0.1:1"], expected=7)
+                require(rejected["error"]["code"] == "config_path_unavailable", "Config link refusal must be structured")
+                require(not (root / "must-not-create").exists(), "Rejected config link created storage")
+            finally:
+                env["MIY_CONFIG_DIR"] = previous_config
         for old in ["login","logout","describe","doctor","users","resume","control","components","mcp","codex","setup-codex"]:
             response=run(["app",old],expected=2)
             require(response["error"]["code"]=="removed_command","Removed commands must explain replacement")
