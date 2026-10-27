@@ -56,6 +56,10 @@ mod helper_image;
 mod http;
 mod identity;
 mod image_contract;
+#[cfg(feature = "server")]
+mod image_import;
+#[cfg(all(test, feature = "server"))]
+mod image_import_regression;
 #[cfg(all(test, feature = "server"))]
 mod integration;
 #[cfg(feature = "server")]

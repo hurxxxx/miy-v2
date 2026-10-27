@@ -501,7 +501,10 @@ async fn execute(pool: &sqlx::PgPool, job: &sqlx::postgres::PgRow) -> Result<()>
                     let meta = owned(&name, installation).await?;
                     anyhow::ensure!(
                         meta["Image"].as_str()
-                            == inst.get::<Option<String>, _>("runtime_image").as_deref(),
+                            == inst
+                                .get::<Option<String>, _>("runtime_local_image")
+                                .or_else(|| inst.get("runtime_image"))
+                                .as_deref(),
                         RuntimeFailure::new(FailureCode::InvalidImageContract)
                     );
                     // Docker allocates a fresh random published port on every start.
@@ -538,11 +541,14 @@ async fn execute(pool: &sqlx::PgPool, job: &sqlx::postgres::PgRow) -> Result<()>
         .context("missing_image")?;
     anyhow::ensure!(image_id(&image), "invalid_image");
     step(pool, id, "verifying_image").await?;
-    let meta = inspect(&image)
+    let local_image = crate::image_import::resolve(pool, &app, &image)
+        .await
+        .map_err(|_| RuntimeFailure::new(FailureCode::ImageUnavailable))?;
+    let meta = inspect(&local_image)
         .await
         .map_err(|_| RuntimeFailure::new(FailureCode::ImageUnavailable))?;
     anyhow::ensure!(
-        meta["Id"] == image && meta["Config"]["Labels"]["org.miy.app.id"] == app,
+        meta["Id"] == local_image && meta["Config"]["Labels"]["org.miy.app.id"] == app,
         RuntimeFailure::new(FailureCode::InvalidImageContract)
     );
     anyhow::ensure!(
@@ -561,7 +567,15 @@ async fn execute(pool: &sqlx::PgPool, job: &sqlx::postgres::PgRow) -> Result<()>
     if inspect(&extraction).await.is_ok() {
         docker(&["rm", "-f", &extraction]).await?;
     }
-    docker(&["create", "--name", &extraction, "--network", "none", &image]).await?;
+    docker(&[
+        "create",
+        "--name",
+        &extraction,
+        "--network",
+        "none",
+        &local_image,
+    ])
+    .await?;
     let copied = docker(&[
         "cp",
         &format!("{extraction}:/miy/."),
@@ -646,7 +660,19 @@ async fn execute(pool: &sqlx::PgPool, job: &sqlx::postgres::PgRow) -> Result<()>
         .bind(installation.to_string())
         .execute(&mut *lock)
         .await?;
-    let result = deploy_installation(pool, id, installation, release, &image, &actor, &inst).await;
+    let result = deploy_installation(
+        pool,
+        id,
+        installation,
+        release,
+        ResolvedImage {
+            original: &image,
+            local: &local_image,
+        },
+        &actor,
+        &inst,
+    )
+    .await;
     sqlx::query("SELECT pg_advisory_unlock(hashtextextended($1,0))")
         .bind(installation.to_string())
         .execute(&mut *lock)
@@ -665,15 +691,21 @@ async fn execute(pool: &sqlx::PgPool, job: &sqlx::postgres::PgRow) -> Result<()>
     }
     result
 }
+struct ResolvedImage<'a> {
+    original: &'a str,
+    local: &'a str,
+}
 async fn deploy_installation(
     pool: &sqlx::PgPool,
     job: Uuid,
     installation: Uuid,
     release: Uuid,
-    image: &str,
+    images: ResolvedImage<'_>,
     actor: &str,
     inst: &sqlx::postgres::PgRow,
 ) -> Result<()> {
+    let image = images.original;
+    let local_image = images.local;
     runtime_health::record(pool, installation, Observation::Inactive).await?;
     step(pool, job, "stopping_previous").await?;
     sqlx::query(
@@ -773,17 +805,17 @@ async fn deploy_installation(
         "max-size=5m",
         "--log-opt",
         "max-file=2",
-        image,
+        local_image,
     ])
     .await;
     std::fs::remove_file(&env_path)?;
     created?;
-    sqlx::query("UPDATE installations SET runtime_container=$2,runtime_image=$3,runtime_secret=$4,desired_state='running',runtime_status='starting' WHERE id=$1").bind(installation).bind(&name).bind(image).bind(auth::encrypt(&secret)?).execute(pool).await?;
+    sqlx::query("UPDATE installations SET runtime_container=$2,runtime_image=$3,runtime_secret=$4,runtime_local_image=$5,desired_state='running',runtime_status='starting' WHERE id=$1").bind(installation).bind(&name).bind(image).bind(auth::encrypt(&secret)?).bind(local_image).execute(pool).await?;
     step(pool, job, "starting_container").await?;
     docker(&["start", &name]).await?;
     let meta = owned(&name, installation).await?;
     anyhow::ensure!(
-        meta["Image"] == image,
+        meta["Image"] == local_image,
         RuntimeFailure::new(FailureCode::InvalidImageContract)
     );
     let port = published_port(&meta)?;
@@ -844,7 +876,10 @@ pub async fn reconcile(pool: &sqlx::PgPool) -> Result<()> {
         match owned(&name, id).await {
             Ok(meta) if meta["State"]["Running"] == true => {
                 let matching = meta["Image"].as_str()
-                    == row.get::<Option<String>, _>("runtime_image").as_deref()
+                    == row
+                        .get::<Option<String>, _>("runtime_local_image")
+                        .or_else(|| row.get("runtime_image"))
+                        .as_deref()
                     && meta["Config"]["Labels"]["org.miy.release"]
                         == row.get::<Uuid, _>("release_id").to_string();
                 if !matching || row.get::<String, _>("desired_state") != "running" {

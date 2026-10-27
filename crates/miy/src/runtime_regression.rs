@@ -336,7 +336,18 @@ async fn isolated_runtime_regression() -> Result<()> {
         .execute(&pool)
         .await?;
     let image = |name: &str| cfg["images"][name]["id"].as_str().unwrap().to_owned();
-    let first = image("v1");
+    let (first, first_local, import_evidence) = crate::image_import_regression::run(
+        &s,
+        &dev,
+        &image("v1"),
+        &format!("{}:legacy-v1", cfg["prefix"].as_str().unwrap()),
+    )
+    .await?;
+    report(
+        "classic Docker archive resolves a verified immutable server image",
+        true,
+        import_evidence,
+    );
     let denied = runtime::request(
         &s,
         &ordinary,
@@ -403,11 +414,34 @@ async fn isolated_runtime_regression() -> Result<()> {
         .await?;
     report(
         "real Docker deployment and resource configuration",
-        docker["Image"] == first
+        docker["Image"] == first_local
+            && initial["runtimeImage"] == first
             && docker["HostConfig"]["Memory"] == 268435456_i64
             && docker["HostConfig"]["NanoCpus"] == 1000000000_i64
             && docker["HostConfig"]["ReadonlyRootfs"] == true,
-        json!({"installation":initial,"memory":docker["HostConfig"]["Memory"],"nanoCpus":docker["HostConfig"]["NanoCpus"],"pidsLimit":docker["HostConfig"]["PidsLimit"],"user":docker["Config"]["User"]}),
+        json!({"installation":initial,"serverLocalImage":docker["Image"],"memory":docker["HostConfig"]["Memory"],"nanoCpus":docker["HostConfig"]["NanoCpus"],"pidsLimit":docker["HostConfig"]["PidsLimit"],"user":docker["Config"]["User"]}),
+    );
+    let restart = submit(
+        &s,
+        &dev,
+        "restart",
+        "dev",
+        None,
+        None,
+        "restart-imported-image",
+    )
+    .await?;
+    let restarted = finish(&pool, restart).await?;
+    runtime::reconcile(&pool).await?;
+    runtime_health::scan(&pool, &runtime_health::client()?).await?;
+    let after_restart = inst(&pool, "dev").await?;
+    report(
+        "imported original identity survives restart, reconciliation and health checks",
+        restarted["status"] == "succeeded"
+            && after_restart["runtimeImage"] == first
+            && after_restart["runtimeStatus"] == "running"
+            && after_restart["healthStatus"] == "healthy",
+        json!({"job":restarted,"installation":after_restart,"serverLocalImageId":first_local}),
     );
     // Planning is a read: no runtime/job/installation mutation, and observations do not change a control revision.
     let before_plan = crate::runtime_preflight::snapshot(&pool, "audit-runtime", "dev")
@@ -547,6 +581,7 @@ async fn isolated_runtime_regression() -> Result<()> {
     let pj = finish(&pool, pid).await?;
     ensure!(pj["status"] == "succeeded", "prod {pj}");
     let prod = inst(&pool, "prod").await?;
+    let prod_container = runtime::inspect(prod["runtimeContainer"].as_str().unwrap()).await?;
     let mut proddb = db(&pool, uuid(&prod["id"]), true).await?;
     let prodcount: i64 = sqlx::query_scalar("SELECT count(*) FROM app.records")
         .fetch_one(&mut proddb)
@@ -557,10 +592,11 @@ async fn isolated_runtime_regression() -> Result<()> {
     report(
         "exact image promotion and independent prod data",
         prod["runtimeImage"] == initial["runtimeImage"]
+            && prod_container["Image"] == first_local
             && prod["releaseId"] == initial["releaseId"]
             && prod["id"] != initial["id"]
             && prodcount == 0,
-        json!({"dev":initial,"prod":prod,"initialProdRows":prodcount}),
+        json!({"dev":initial,"prod":prod,"serverLocalImage":prod_container["Image"],"initialProdRows":prodcount}),
     );
     let ddl = devdb.execute("CREATE TABLE app.forbidden(id int)").await;
     let history = devdb.execute("DELETE FROM app._sqlx_migrations").await;

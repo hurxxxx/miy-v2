@@ -1,11 +1,13 @@
 # Windows 네이티브 빌드·운영 검증 안내
 
-- 작성일: 2026-10-27
+- 갱신일: 2026-10-28
 - 현재 구현 대상: CLI **0.6.0** / 개발 번들 **0.7.0**. 아래 0.5 후보·0.4.2 실행 기록은 해당 버전의 이력이다.
 - 대상: Windows 11 x64, Windows PowerShell 5.1과 PowerShell 7
 - 상태: Windows에서 사용자가 직접 빌드·검증하고 결과를 추가할 안내. **0.6의 실제 Windows 11·PowerShell 5.1/7·원격 DB·독립 AI 세션 인수는 아직 NOT_RUN이다.** 과거 호스티드 Windows MSVC CI 결과는 이번 후보의 인수 결과로 이월하지 않는다.
 
 ## CLI 0.6 인수 준비 — 2026-10-28
+
+현재 설치 후보는 `b67798b`다. [설치 화면](https://v2.dwdcc.kr/cli/install)에서 검증된 ZIP과 서버 주소가 포함된 명령을 받는다. [후보 CI](https://github.com/hurxxxx/miy-v2/actions/runs/40602334949)의 Windows Server 2022에서 단위 95개, 출력 11그룹, 서버 등록 9그룹, PowerShell 5.1/7 설치 각각 9개가 통과했다. 사용자의 실제 Windows 11 인수는 아직 NOT_RUN이며 [핵심 흐름 테스트](CORE-TESTING.md)부터 진행한다.
 
 서버 URL은 사용자가 명시하거나 홈페이지 설치 명령의 `-Server URL`로 전달한다. 기본 IP·도메인은 없다. 주소를 생략한 대화형 설치는 URL을 질문하며, 비대화형 설치는 실행 파일만 설치하고 `contextInitialization.status=required`와 `miy context init`을 안내한다. 이후 `miy context init` 또는 최초 대화형 로그인에서 등록한다. `-NonInteractive`/`--no-input`에서는 입력을 기다리지 않는다. 기존 설정은 보존하고 다른 요청 주소는 `activeOrigin`, `requestedOrigin`, `serverMismatch`로 구분한다.
 
@@ -74,7 +76,7 @@ $MiyCheckout = Join-Path $env:USERPROFILE 'miy-windows-validation'
 git clone https://github.com/hurxxxx/miy-v2.git $MiyCheckout
 if ($LASTEXITCODE -ne 0) { throw "git clone failed: $LASTEXITCODE" }
 Set-Location -LiteralPath $MiyCheckout
-$MiyCandidateCommit = '0fe94a4b9d851e7cf71dc9c8e91fb469423134e2'
+$MiyCandidateCommit = 'b67798bfb84f299257ba4326beaf034b125cde7a'
 git switch --detach $MiyCandidateCommit
 if ($LASTEXITCODE -ne 0) { throw "git switch failed: $LASTEXITCODE" }
 git status --short --branch
@@ -83,7 +85,7 @@ git log -5 --oneline
 if ($LASTEXITCODE -ne 0) { throw "git log failed: $LASTEXITCODE" }
 ```
 
-배포 후보와 같은 코드를 검증하도록 위 예제는 소스 commit `0fe94a4`를 고정한다. 이 안내와 실행 결과는 이후 문서 commit에서 갱신되므로, 문서의 최신 commit과 검증 대상 소스 commit을 혼동하지 않는다. 다른 코드를 검사한다면 그 commit을 기록하고 기존 후보의 통과 증거로 합치지 않는다.
+배포 후보와 같은 코드를 검증하도록 위 예제는 CLI 0.6 소스 commit `b67798b`를 고정한다. 이 안내와 실행 결과는 이후 문서 commit에서 갱신되므로, 문서의 최신 commit과 검증 대상 소스 commit을 혼동하지 않는다. 다른 코드를 검사한다면 그 commit을 기록하고 기존 후보의 통과 증거로 합치지 않는다.
 
 Windows PowerShell 5.1에서는 네이티브 실행 파일의 비정상 종료가 `$ErrorActionPreference = 'Stop'`만으로 자동 예외가 되지 않는다. 아래에서는 각 네이티브 명령 직후 `$LASTEXITCODE`를 확인하고 실패하면 중단한다. PowerShell cmdlet은 `$ErrorActionPreference`를 따른다. 종료 코드의 의미는 [Microsoft의 자동 변수 문서](https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.core/about/about_automatic_variables?view=powershell-5.1)를 참고한다.
 

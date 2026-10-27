@@ -228,24 +228,22 @@ pub async fn tick(pool: &sqlx::PgPool) -> anyhow::Result<bool> {
         let checked_path = path.clone();
         let checked_app = app.clone();
         let checked_image = image.clone();
-        tokio::task::spawn_blocking(move || {
-            validate_archive(&checked_path, &checked_app, &checked_image)
+        let identity = tokio::task::spawn_blocking(move || {
+            crate::image_import::archive(&checked_path, &checked_app, Some(&checked_image))
         })
         .await??;
-        // Docker addresses images by content: after a worker crash, an already
-        // loaded immutable image is the durable import receipt.
-        if runtime::inspect(&image).await.is_err() {
-            runtime::docker(&["load", "--input", path.to_str().unwrap()]).await?;
-        }
-        let meta = runtime::inspect(&image).await?;
-        anyhow::ensure!(
-            meta["Id"] == image && meta["Config"]["Labels"]["org.miy.app.id"] == app,
-            "uploaded_image_mismatch"
-        );
+        crate::image_import::load(
+            pool,
+            &app,
+            &image,
+            &path,
+            &identity,
+            row.get("archive_hash"),
+        )
+        .await?;
         Ok::<_, anyhow::Error>(())
     }
     .await;
-    let _ = tokio::fs::remove_file(path).await;
     sqlx::query("UPDATE image_uploads SET status=$2,error_code=$3 WHERE id=$1")
         .bind(id)
         .bind(if result.is_ok() { "ready" } else { "failed" })
@@ -256,75 +254,8 @@ pub async fn tick(pool: &sqlx::PgPool) -> anyhow::Result<bool> {
         })
         .execute(pool)
         .await?;
+    // Keep the archive until the durable receipt commits. A worker crash before
+    // this point can repeat verification; after it the ready receipt is final.
+    let _ = tokio::fs::remove_file(path).await;
     Ok(true)
-}
-
-// Validate the single-image envelope without extracting any archive path on the host.
-fn validate_archive(path: &std::path::Path, app: &str, image: &str) -> anyhow::Result<()> {
-    use std::io::Read;
-    let mut archive = tar::Archive::new(std::fs::File::open(path)?);
-    let mut json_files = std::collections::BTreeMap::new();
-    let mut seen = std::collections::BTreeSet::new();
-    for entry in archive.entries()? {
-        let mut entry = entry?;
-        let name = entry.path()?.to_string_lossy().into_owned();
-        anyhow::ensure!(
-            seen.insert(name.clone()) && seen.len() <= 4096,
-            "invalid_archive_entries"
-        );
-        anyhow::ensure!(
-            crate::contract::safe_relative(name.trim_end_matches('/')),
-            "invalid_archive_path"
-        );
-        anyhow::ensure!(
-            entry.header().entry_type().is_file() || entry.header().entry_type().is_dir(),
-            "invalid_archive_entry_type"
-        );
-        if entry.header().entry_type().is_file() && entry.size() <= 1024 * 1024 {
-            let mut data = Vec::new();
-            entry.read_to_end(&mut data)?;
-            if let Ok(value) = serde_json::from_slice::<Value>(&data) {
-                json_files.insert(name, (value, crate::contract::hash(&data)));
-            }
-        }
-    }
-    let manifest = &json_files
-        .get("manifest.json")
-        .ok_or_else(|| anyhow::anyhow!("missing_image_manifest"))?
-        .0;
-    anyhow::ensure!(
-        manifest.as_array().is_some_and(|v| v.len() == 1),
-        "upload_must_contain_one_image"
-    );
-    let config = manifest[0]["Config"]
-        .as_str()
-        .ok_or_else(|| anyhow::anyhow!("missing_image_config"))?;
-    let (config_json, config_hash) = json_files
-        .get(config)
-        .ok_or_else(|| anyhow::anyhow!("missing_image_config"))?;
-    anyhow::ensure!(
-        config_json["config"]["Labels"]["org.miy.app.id"] == app,
-        "image_app_mismatch"
-    );
-    if let Some((index, _)) = json_files.get("index.json") {
-        anyhow::ensure!(
-            index["manifests"].as_array().is_some_and(|v| v.len() == 1)
-                && index["manifests"][0]["digest"] == image,
-            "image_digest_mismatch"
-        );
-        let blob = format!(
-            "blobs/sha256/{}",
-            image.strip_prefix("sha256:").unwrap_or_default()
-        );
-        let (_, digest) = json_files
-            .get(&blob)
-            .ok_or_else(|| anyhow::anyhow!("missing_image_index"))?;
-        anyhow::ensure!(format!("sha256:{digest}") == image, "image_digest_mismatch");
-    } else {
-        anyhow::ensure!(
-            format!("sha256:{config_hash}") == image,
-            "image_digest_mismatch"
-        );
-    }
-    Ok(())
 }

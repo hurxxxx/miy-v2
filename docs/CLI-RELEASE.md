@@ -2,7 +2,13 @@
 
 이 문서는 구현된 배포 도구의 사용법이다. Windows 11·별도 Linux 서버·실제 OIDC·독립 AI 세션의 인수 통과나 공개 릴리스 발행을 의미하지 않는다. 사용자 Windows 실행은 [Windows 검증](WINDOWS-VALIDATION.md), 전체 검증 범위는 [검증 행렬](CLI-VALIDATION-MATRIX.md)에 기록한다.
 
-## 현재 검증한 후보
+## 현재 0.6 검증 후보
+
+CLI 소스 `b67798bfb84f299257ba4326beaf034b125cde7a`의 [기반 CI](https://github.com/hurxxxx/miy-v2/actions/runs/40602323702)와 [후보 CI](https://github.com/hurxxxx/miy-v2/actions/runs/40602334949)가 모두 통과했다. 다섯 네이티브 CLI와 두 Linux helper를 검증해 [현재 서버 설치 화면](https://v2.dwdcc.kr/cli/install)에 게시했다. [전체 후보 artifact](https://github.com/hurxxxx/miy-v2/actions/runs/40602334949/artifacts/12779751510)와 [배포물별 SHA-256·소스 index](releases/cli-0.6.0-candidate.json)를 보존한다. 실제 공개 경로의 일곱 파일 해시와 홈페이지 명령·다운로드 링크도 확인했다.
+
+Windows Server 2022에서 네이티브 단위 95개, 출력 11그룹, 서버 등록 9그룹, PowerShell 5.1.20348.5756과 7.6.8의 설치 검사 각각 9개가 통과했다. 사용자 Windows 11·Docker Desktop·독립 AI 세션 인수는 별도다. `publish=false`로 실행했으므로 정식 GitHub Release나 공개 tag를 생성하지 않았다. 시작 절차는 [핵심 흐름 테스트](CORE-TESTING.md)를 따른다.
+
+## 이전 0.5 검증 후보
 
 2026-10-27 소스 `0fe94a4b9d851e7cf71dc9c8e91fb469423134e2`의 [CI 40460582868](https://github.com/hurxxxx/miy-v2/actions/runs/40460582868)가 5개 native build와 aggregate 검사를 모두 통과했다. [전체 후보 artifact](https://github.com/hurxxxx/miy-v2/actions/runs/40460582868/artifacts/12715067551)를 내려받아 Actions의 바깥 ZIP을 풀면 OS/CPU별 아카이브·`.sha256`·`SHA256SUMS`·provenance를 얻는다. [배포물별 SHA-256과 소스 index](releases/cli-0.5.0-candidate.json)도 저장소에 보존한다. 이 index는 공개 승인 증거 JSON이 아니다.
 
@@ -31,6 +37,19 @@ python3 scripts/package-cli-release.py package --binary target/x86_64-unknown-li
 ```
 
 다섯 target의 결과를 같은 디렉터리에 모은 뒤 `python3 scripts/package-cli-release.py verify --directory DIR`로 검증한다. 하나의 OS에서 다른 target 바이너리를 실제 실행한 것으로 기록하지 않는다.
+
+## 서버의 다운로드 게시
+
+CLI 0.6 후보에는 다섯 네이티브 CLI와 Linux amd64/arm64 DB 연결 helper가 함께 있어야 한다. Helper의 archive SHA-256, config SHA-256, 플랫폼, 소스 commit과 태그를 검증하며 개발 작업 트리용 helper는 게시하지 않는다. Docker 저장 방식에 따라 달라지는 image ID는 검증된 config 내용과 대조한 후 해당 컴퓨터의 불변 ID로 실행한다.
+
+검증한 aggregate 디렉터리를 서버의 `MIY_CLI_RELEASE_DIR`에 게시한다. 다음 명령의 commit은 CLI 후보 소스이며, 이후 서버 전용 수정이나 증거 문서 commit과 혼동하지 않는다.
+
+```sh
+python3 scripts/stage-cli-release.py --source /path/to/aggregate --destination /path/to/cli-downloads --commit CLI_CANDIDATE_40_HEX_COMMIT
+python3 scripts/check-cli-downloads.py --origin https://PLATFORM --expected-commit CLI_CANDIDATE_40_HEX_COMMIT
+```
+
+게시 도구는 모든 파일을 다시 검증한 뒤 commit별 불변 디렉터리를 만들고 최상위 index를 원자적으로 교체한다. 같은 commit의 파일을 다른 내용으로 덮어쓰지 않는다. 설치 안내는 `/cli/downloads/COMMIT/FILE`을 사용하며 Windows 명령은 다운로드·해시 대조·압축 해제·명시적 서버 등록을 포함한다. 이 테스트용 서버 게시와 검증 완료 후의 정식 GitHub Release 공개는 별개다.
 
 ## Unix 설치
 
