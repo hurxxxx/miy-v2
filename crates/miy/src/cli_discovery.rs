@@ -476,6 +476,14 @@ fn data_schema(command: &str) -> Value {
             collection:{"type":"array","items":{"type":"object","additionalProperties":true}},"nextCursor":{"type":["string","null"]}},"additionalProperties":true});
     }
     match command {
+        "context init" => {
+            json!({"oneOf":[
+                {"type":"object","required":["status","active","context","origin","setupRequired","serverMismatch"],"properties":{
+                    "status":{"const":"initialized"},"active":{"const":"default"},"context":{"const":"default"},"origin":{"type":"string"},"setupRequired":{"const":false},"serverMismatch":{"const":false}},"additionalProperties":false},
+                {"type":"object","required":["status","active","activeOrigin","requestedOrigin","setupRequired","serverMismatch","next"],"properties":{
+                    "status":{"const":"preserved"},"active":{"type":["string","null"]},"activeOrigin":{"type":["string","null"]},"requestedOrigin":{"type":["string","null"]},"setupRequired":{"type":"boolean"},"serverMismatch":{"type":"boolean"},"next":{"type":"array","items":{"type":"object","required":["program","args"],"properties":{"program":{"const":"miy"},"args":{"type":"array","items":{"type":"string"}}},"additionalProperties":false}}},"additionalProperties":false}
+            ]})
+        }
         "context list" => {
             json!({"type":"object","required":["active","contexts","nextCursor"],"properties":{
             "active":{"type":["string","null"]},"contexts":{"type":"object","additionalProperties":{"type":"object"}},"nextCursor":{"type":["string","null"]}},"additionalProperties":false})
@@ -550,8 +558,15 @@ fn job_schema() -> Value {
 
 fn behavior(command: &str) -> Value {
     match command {
+        "context init" => json!({
+            "freshConfiguration":"Creates and selects the default context from the explicitly supplied URL; no built-in server address.",
+            "missingUrl":"Prompts for an explicit HTTP/HTTPS URL only on a terminal. Noninteractive or --no-input returns server_url_required; blank input cancels with exit 130 without configuration writes.",
+            "existingConfiguration":"Validates and preserves an existing configuration byte-for-byte, including empty configurations. Invalid configurations fail without replacement.",
+            "differentServer":"Reports activeOrigin, requestedOrigin and serverMismatch plus explicit context add/use argument vectors; never silently changes the selected server.",
+            "selection":"Does not use --context, MIY_CONTEXT or project bindings to select a server.",
+            "network":"Offline: does not contact the server or log in."}),
         "auth login" => {
-            json!({"noninteractive":"Returns pending public instructions; auth wait LOGIN_ID completes approval.","noWait":"Returns pending immediately.","deviceCode":"Suppresses automatic browser opening.","developmentAccount":"Explicit enabled HTTP loopback shortcut auto-approves and waits even without a TTY.","deviceApprovalSeconds":300,"accessTokenMaxSeconds":900,"refreshSessionMaxDays":30})
+            json!({"serverSetup":"Fresh interactive login requests a server URL if none is configured. Noninteractive login requires an explicitly registered context; existing configuration is preserved.","noninteractive":"Returns pending public instructions after context validation; auth wait LOGIN_ID completes approval.","noWait":"Returns pending immediately.","deviceCode":"Suppresses automatic browser opening.","developmentAccount":"Explicit enabled HTTP loopback shortcut auto-approves and waits even without a TTY.","deviceApprovalSeconds":300,"accessTokenMaxSeconds":900,"refreshSessionMaxDays":30})
         }
         "auth wait" => {
             json!({"interruption":"Exit 130 preserves the flow until expiry; no token or private device code is printed."})
@@ -560,7 +575,13 @@ fn behavior(command: &str) -> Value {
             json!({"localOnly":"Skips remote revocation explicitly; local deletion failures and uncertain remote revocation are reported separately."})
         }
         "doctor" => {
-            json!({"operate":"Default: context, identity, connection and server features; no local source or development tools required.","develop":"Adds project integrity, versions, Docker Linux engine and server architecture checks."})
+            json!({"operate":"Default: context, identity, connection and server features; no local source or development tools required.","develop":"Adds project integrity, exact Codex/Claude MCP configuration, bounded local MCP initialize/tools/list, Rust linker/rustfmt, versions, Docker Linux engine and server architecture checks. Requires development.sessions.v1.","mcpLimit":"The local stdio probe does not verify a real agent session or live API tool calls."})
+        }
+        "app init" => {
+            json!({"serverAddress":"Uses an explicitly selected context or --url; no built-in IP/domain or localhost fallback. Without either, scaffolds an offline unbound project requiring server registration before remote work."})
+        }
+        "app dev" => {
+            json!({"databaseDefault":"server","localDatabase":"Only --database local uses a separate local DB; connection failure never selects it automatically.","serverDatabase":"Requires registration approval and development.sessions.v1. The server prepares/applies SQL and the local app connects through an authenticated WS/WSS tunnel.","concurrency":"One local session per app; stop it with app dev-stop before dev deployment.","migration":"Schema changes stop the deployed dev app; applied SQL cannot be edited or deleted. Dev deployment reuses the same database and rows; prod uses a separate database."})
         }
         "app deploy" | "app start" | "app stop" | "app restart" | "app remove" | "app promote"
         | "job retry" => json!({
@@ -595,6 +616,7 @@ fn examples(command: &str, path: &[String]) -> Value {
         json!({"executable":"miy","args":help,"purpose":"Read help without executing the operation."}),
     ];
     let template: &[&str] = match command {
+        "context init" => &["context", "init", "--url", "https://platform.example"],
         "context add" => &[
             "context",
             "add",
@@ -751,10 +773,16 @@ fn policy(command: &str, group: bool) -> Policy {
             policy.source = "crates/miy/src/cli_doctor.rs";
             policy.permissions = "A selected server context and valid user session are required for readiness; develop also requires a local project and tools.";
             policy.local_effects = &[
-                "Operate reads configuration; develop also verifies project files and invokes bounded tool/Docker probes.",
+                "Operate reads configuration; develop also verifies project/MCP files, starts a bounded local MCP probe, links a temporary Rust executable and invokes tool/Docker probes.",
             ];
             policy.remote_effects =
                 &["Reads server capabilities and verifies the authenticated identity."];
+        }
+        "context init" => {
+            policy.source = "crates/miy/src/cli_config.rs";
+            policy.local_effects = &[
+                "Validates an explicitly supplied or terminal-entered URL and optional CA; creates a context only when config.json is absent. Existing configuration and credentials are preserved; no address is assumed.",
+            ];
         }
         "context add" | "context use" => {
             policy.source = "crates/miy/src/cli_config.rs";
@@ -780,7 +808,7 @@ fn policy(command: &str, group: bool) -> Policy {
         }
         "app init" => {
             policy.local_effects = &[
-                "Creates a project, bundled CLI, SDKs, instructions and project configuration at the requested path.",
+                "Creates a project, bundled CLI, SDKs, instructions and MCP configuration at the requested path. No server URL is invented when scaffolding an unbound offline project.",
             ]
         }
         "app setup" | "app setup-codex" => {
@@ -810,18 +838,20 @@ fn policy(command: &str, group: bool) -> Policy {
                 &["When a context is selected, reads its server runtime platform before building."];
         }
         "app dev" => {
-            policy.permissions = "Authenticated platform user; access to connected platform resources is checked by their APIs.";
+            policy.permissions = "Authenticated developer for an administrator-approved app; platform/connected APIs enforce their permissions.";
             policy.local_effects = &[
-                "Builds and starts local containers, database and gateway; writes preview state and may open a browser.",
+                "Builds and starts the local app, authenticated DB tunnel and loopback gateway; writes preview state and may open a browser. Only --database local starts a separate local DB.",
             ];
             policy.remote_effects = &[
-                "Reads authenticated platform connection metadata. Application code may call connected APIs.",
+                "By default creates a single-app development session, prepares the server dev DB and applies migrations; schema changes stop a deployed dev app. Application code uses that dev DB and authorized connected APIs.",
             ];
         }
         "app dev-stop" => {
             policy.local_effects = &[
-                "Stops the project's preview gateway and containers; preserves its database volume.",
-            ]
+                "Stops the project's preview gateway and containers; preserves database data and any explicit local DB volume.",
+            ];
+            policy.remote_effects =
+                &["Releases the owned server development session and its temporary DB access."];
         }
         "app login" | "auth login" | "auth wait" => {
             policy.source = "crates/miy/src/cli_login.rs";

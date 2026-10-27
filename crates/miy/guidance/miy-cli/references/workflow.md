@@ -1,6 +1,6 @@
 # MIY CLI workflows
 
-This is the CLI 0.5 command contract. Use the project's `.miy-tools/miy` on Unix or
+This is the CLI 0.6 command contract. Use the project's `.miy-tools/miy` on Unix or
 `.miy-tools/miy.exe` on Windows. Use the intended global `miy` to initialize or
 explicitly update a project. Exact parser definitions are in the generated
 [command reference](commands.md); start with `describe --command "GROUP ACTION"`.
@@ -10,8 +10,8 @@ repository validation records for actual OS, server and end-to-end evidence.
 ## Context and authentication
 
 ```sh
-miy context add work --url https://PLATFORM --ca-file /path/to/private-root.crt
-miy context use work
+# Fresh interactive setup asks for the target URL; there is no default address.
+miy context init
 miy auth login
 # When login returned pending, approve its URL/code, then:
 miy auth wait LOGIN_UUID
@@ -19,7 +19,19 @@ miy auth status
 miy doctor --for operate
 ```
 
-Omit `--ca-file` for a public CA. TLS verification stays enabled. Context selection
+The platform install command includes its configured server URL in `--server` or
+`-Server`; this is an explicit argument, not an address built into the CLI. Without
+it, interactive installation asks for the URL; noninteractive installation or a
+cancelled prompt installs the binary and reports that server setup is required.
+Run `context init --url URL` for unattended fresh setup, or `context add NAME --url
+URL` followed by `context use NAME` for additional connections. Existing settings,
+including intentionally empty configurations, are preserved; a different supplied
+address is reported with explicit add/use recovery arguments. `auth login` asks
+for a URL on a fresh interactive client; noninteractive login never guesses one.
+Use a complete `https://domain[:port]` or `http://IP:port` origin. HTTP requires an
+explicit internal-server HTTP configuration and carries unencrypted traffic.
+
+Add `--ca-file` only when a private CA is required. TLS verification stays enabled. Context selection
 is explicit `--context`, then `MIY_CONTEXT`, project binding, then active context.
 `--project PATH` selects a project directory; operational commands can instead use
 `--app APP_ID` without a local source tree. Never silently fall back to another
@@ -80,7 +92,7 @@ Bash, Zsh, Fish and PowerShell (plus shells advertised by the installed parser).
 ## Initialize, register and develop
 
 ```sh
-miy --context work app init ./my-app --id my-app --name 'My app'
+miy app init ./my-app --id my-app --name 'My app'
 cd my-app
 miy component sync
 miy doctor --for develop
@@ -96,7 +108,11 @@ Registration creates no immediate access. Approval creates the app and grants it
 requester develop permission in dev; production deploy permission is separate.
 The operate doctor checks authentication/server capabilities without requiring
 Rust, Node or Docker. Develop additionally checks project integrity, components,
-Rust/Node/pnpm/Git/Docker versions, Linux Docker mode and server/image architecture.
+Rust/Node/pnpm/Git/Docker versions, rustfmt, an actual tiny Rust link (MSVC/Windows
+SDK on Windows), exact Codex/Claude MCP configuration, a bounded local stdio MCP
+initialize/tools/list probe, Linux Docker mode and server/image architecture.
+The local MCP probe does not prove that a real agent loaded the project or that
+live API tool calls work. Develop requires server capability development.sessions.v1.
 A failed diagnostic returns exit 7 and its check results.
 
 `app setup` synchronizes the compatible project executable, CLI skills/manual and
@@ -110,11 +126,24 @@ frontend tooling and writes dependencies/artifacts; project code executes. It
 checks managed files, migration rules and build assets, but does not prove actual
 browser behavior or database migration execution.
 
-`app dev` builds the working tree and starts its own local database, backend and
-loopback preview. Connected platform/other-app calls use the user's authorized
-server dev access. This local database is distinct from server dev and prod.
-Stop with Ctrl-C or `app dev-stop`; preserve the local database volume. Do not
-claim success while shutdown is pending. Preview is build-and-run, not HMR.
+`app init` with no selected context or explicit URL scaffolds an offline unbound
+project; it does not invent a localhost address. Register/select the intended
+server before remote work. Registration and administrator approval are required
+before local preview can use an app's development permissions.
+
+`app dev` builds the working tree and opens a single local development session for
+the app. The server prepares its development DB and applies the validated SQL;
+the local backend connects through a managed WS/WSS tunnel. Local preview and the
+later dev deployment use the same DB and rows. Schema changes stop an already
+deployed dev app; applied SQL files must not be edited or deleted. The previous
+release is not automatically restarted against a changed schema.
+
+Use `app dev --database local` only when a separate local DB is explicitly wanted.
+Remote failures never trigger that mode automatically. Connected platform calls
+still require authorization. Stop with Ctrl-C or `app dev-stop` before building
+and deploying; an active session blocks dev deployment. Stop closes the tunnel
+and releases the session, preserving server data and any explicit local volume.
+Do not claim success while shutdown is pending. Preview is build-and-run, not HMR.
 
 ## Components and immutable deployment
 
@@ -124,8 +153,8 @@ change them explicitly. Commit `platform-components/` and its lock; custom code
 belongs outside managed files. Publishing requires administrator authority and
 never updates an installed or running app automatically.
 
-For an update, increment manifest version, preserve applied SQL bytes, commit clean
-source and run `app build`. It builds one immutable Rust/React Linux image. The
+For an update, stop local preview, increment manifest version, preserve applied
+SQL bytes, commit clean source and run `app build`. It builds one immutable Rust/React Linux image. The
 image platform must match the selected server. When local Docker has another CPU,
 choose `app build --platform linux/amd64` (or `linux/arm64`) explicitly and configure
 a working Docker emulation/builder; the flag alone does not install emulation.
@@ -159,7 +188,7 @@ an old running installation or an accepted submission is not proof of success.
 
 Record actual testing with `app accept --note 'observed checks' --report FILE`, or
 `app accept --input @FILE` with `{releaseId,note,checks}`. See `docs/ACCEPTANCE.md`.
-Evidence is user attestation for an exact healthy dev release, not an automated
+Evidence is user attestation for an exact healthy dev release and database schema, not an automated
 business-quality verdict. Unchecked scopes must remain `not_run` with a reason.
 
 ```sh

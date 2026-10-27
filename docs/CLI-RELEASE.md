@@ -36,6 +36,19 @@ python3 scripts/package-cli-release.py package --binary target/x86_64-unknown-li
 
 자신의 OS/CPU tar.gz와 `.sha256`을 받고 SHA-256을 비교한 뒤 새 디렉터리에 푼다. 그 디렉터리에서 `bash install-cli.sh --prefix "$HOME/.local/bin"`을 실행한다. 동봉된 `release.json`과 `miy`가 있으면 Rust 빌드 없이 바이너리를 설치한다. 명시적인 다른 파일은 `--from /absolute/path/to/miy`로 지정한다. 소스 checkout에서 실행하는 경우에만 `--no-default-features` 클라이언트를 빌드한다. shell profile/PATH는 자동 변경하지 않는다.
 
+## 서버 주소가 포함된 설치 안내
+
+이번 변경을 포함한 새 배포물은 플랫폼의 `/cli/install` 안내에서 서버 주소가 채워진 명령을 복사할 수 있다. Unix에서는 검증한 배포물을 푼 디렉터리에서 다음 형태로 실행한다.
+
+```sh
+bash ./install-cli.sh --server https://PLATFORM
+miy auth login
+```
+
+서버는 `MIY_ORIGIN`으로 설치 안내의 주소를 결정한다. 실행 파일이나 설치기에 특정 도메인을 내장하지 않으며, 브라우저 Host로 주소를 추측하지 않는다. 서버 인수는 설치된 CLI의 `context init --url`로 전달된다. 사용자 설정이 없으면 `default` 연결을 만들고 선택하며, 기존 설정이 있으면 바이트를 그대로 보존한다. 초기화 실패는 비정상 종료와 함께 실행 파일은 이미 설치되었음을 알린다. 서버 인수를 생략한 대화형 설치는 URL을 입력받고, 비대화형 설치는 실행 파일만 설치한 뒤 `miy context init`을 안내한다. 위에 기록된 `0fe94a4` 후보에는 새 옵션이 포함되지 않으므로 새 설치기와 새 CLI를 함께 배포해야 한다.
+
+Windows의 `install-cli.ps1`과 `update-cli.ps1`에는 `-Server https://PLATFORM`을 추가할 수 있다. 아래처럼 `$Archive`와 `$ExpectedSha256`을 준비한 다음, 플랫폼 안내에 나온 주소가 포함된 명령을 실행한다. 기존 context·활성 연결·사용자·인증서·자격증명은 보존한다.
+
 ## Windows 설치·갱신·제거
 
 ZIP을 신뢰한 배포 위치에서 받고 게시된 SHA-256과 대조한 다음 별도 디렉터리에 풀어 설치 스크립트를 실행한다. ZIP 내부에는 `miy.exe`, `release.json`, 설치·갱신·제거 스크립트와 공통 라이브러리가 있다. 설치 스크립트 자체도 검증한 ZIP 또는 확인한 소스 checkout에서 사용한다.
@@ -44,10 +57,10 @@ ZIP을 신뢰한 배포 위치에서 받고 게시된 SHA-256과 대조한 다�
 
 ```powershell
 $ExpectedSha256 = 'REPLACE_WITH_PUBLISHED_SHA256'
-$Archive = (Resolve-Path '.\miy-0.5.0-x86_64-pc-windows-msvc.zip').Path
+$Archive = (Resolve-Path '.\miy-0.6.0-x86_64-pc-windows-msvc.zip').Path
 if ((Get-FileHash -LiteralPath $Archive -Algorithm SHA256).Hash -ne $ExpectedSha256) { throw 'ZIP checksum mismatch' }
-Expand-Archive -LiteralPath $Archive -DestinationPath '.\miy-release-0.5.0'
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File '.\miy-release-0.5.0\install-cli.ps1' -ArchivePath $Archive -Sha256 $ExpectedSha256
+Expand-Archive -LiteralPath $Archive -DestinationPath '.\miy-release-0.6.0'
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File '.\miy-release-0.6.0\install-cli.ps1' -ArchivePath $Archive -Sha256 $ExpectedSha256
 if ($LASTEXITCODE -ne 0) { throw "Install failed: $LASTEXITCODE" }
 & "$env:LOCALAPPDATA\Programs\miy\bin\miy.exe" --version
 if ($LASTEXITCODE -ne 0) { throw "CLI failed: $LASTEXITCODE" }
@@ -60,15 +73,15 @@ if ($LASTEXITCODE -ne 0) { throw "CLI failed: $LASTEXITCODE" }
 업데이트는 검증한 새 배포물의 외부 스크립트로 실행한다.
 
 ```powershell
-pwsh -NoProfile -ExecutionPolicy Bypass -File '.\miy-release-0.5.0\update-cli.ps1' -ArchivePath $Archive -Sha256 $ExpectedSha256
+pwsh -NoProfile -ExecutionPolicy Bypass -File '.\miy-release-0.6.0\update-cli.ps1' -ArchivePath $Archive -Sha256 $ExpectedSha256
 if ($LASTEXITCODE -ne 0) { throw "Update failed: $LASTEXITCODE" }
-pwsh -NoProfile -ExecutionPolicy Bypass -File '.\miy-release-0.5.0\uninstall-cli.ps1'
+pwsh -NoProfile -ExecutionPolicy Bypass -File '.\miy-release-0.6.0\uninstall-cli.ps1'
 if ($LASTEXITCODE -ne 0) { throw "Uninstall failed: $LASTEXITCODE" }
 ```
 
 사용자 PATH 항목도 제거하려면 제거 명령에 `-RemoveFromPath`를 명시한다. 사용자 지정 설치 경로는 갱신·제거에서도 같은 `-InstallDir`를 전달한다. `-Version 0.5.0`을 사용하면 신뢰한 기존 설치기가 명시 버전의 ZIP과 체크섬을 GitHub Releases에서 받아 검증한다. `latest`를 자동 선택하지 않는다. 공개 릴리스가 아직 없으면 이 원격 경로는 사용할 수 없다.
 
-설치기는 SHA-256, ZIP 경로, PE x64 header, 내부 binary hash, 실제 `--version`을 먼저 검사한다. 실행 중인 CLI/MCP 때문에 파일을 교체할 수 없으면 종료 코드 6으로 거부한다. 프로세스를 강제로 종료하거나 실행 중인 CLI가 자기 파일을 덮어쓰게 하지 않는다. 설치/제거는 설치 디렉터리의 소유한 `miy.exe`와 metadata만 변경하며 프로젝트·설정·인증·앱 데이터와 사용자 파일은 보존한다. 이전 버전 backup도 남긴다.
+설치기는 SHA-256, ZIP 경로, PE x64 header, 내부 binary hash, 실제 `--version`을 먼저 검사한다. 실행 중인 CLI/MCP 때문에 파일을 교체할 수 없으면 종료 코드 6으로 거부한다. 프로세스를 강제로 종료하거나 실행 중인 CLI가 자기 파일을 덮어쓰게 하지 않는다. 실행 파일 교체와 제거는 설치 디렉터리의 소유한 `miy.exe`와 metadata를 대상으로 한다. `-Server`를 전달한 설치는 사용자 설정이 없을 때만 기본 연결을 추가하며, 기존 설정·인증·프로젝트·앱 데이터와 사용자 파일은 보존한다. 이전 버전 backup도 남긴다.
 
 중단 기록은 `.miy-install-journal.json`, backup은 `.miy-backups/ID/`에 있다. 다음 외부 설치/갱신/제거가 기록을 확인해 회복한다. 다른 프로세스의 파일 잠금이나 사용자 수정·backup 변조로 복구가 불가능하면 journal과 backup을 유지하고 오류를 반환한다. 그 경우 설치 디렉터리를 지우지 말고 원인을 해결한 뒤 재실행한다. PowerShell 5.1은 native 명령의 실패만으로 자동 중단하지 않으므로 각 명령 직후 `$LASTEXITCODE`를 검사한다.
 

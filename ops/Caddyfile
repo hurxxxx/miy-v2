@@ -2,20 +2,26 @@
   auto_https disable_redirects
 }
 (platform) {
+  handle /identity/* {
+    reverse_proxy keycloak:8080
+  }
   handle /api/* {
-    reverse_proxy host.docker.internal:18080
+    reverse_proxy {$MIY_CORE_UPSTREAM:host.docker.internal:18080}
   }
   handle /auth/* {
-    reverse_proxy host.docker.internal:18080
+    reverse_proxy {$MIY_CORE_UPSTREAM:host.docker.internal:18080}
   }
   handle /mcp* {
-    reverse_proxy host.docker.internal:18080
+    reverse_proxy {$MIY_CORE_UPSTREAM:host.docker.internal:18080}
   }
   handle /.well-known/* {
-    reverse_proxy host.docker.internal:18080
+    reverse_proxy {$MIY_CORE_UPSTREAM:host.docker.internal:18080}
   }
   handle /artifacts/* {
-    reverse_proxy host.docker.internal:18080
+    reverse_proxy {$MIY_CORE_UPSTREAM:host.docker.internal:18080}
+  }
+  handle /cli/downloads/* {
+    reverse_proxy {$MIY_CORE_UPSTREAM:host.docker.internal:18080}
   }
   handle {
     root * /srv/platform
@@ -23,13 +29,10 @@
     file_server
   }
 }
-https://localhost:18443 {
+{$MIY_PROXY_TLS_SITE:https://localhost:18443} {
   tls internal
-  handle /identity/* {
-    reverse_proxy keycloak:8080
-  }
   import platform
 }
-http://localhost:18000 {
+http://:18000 {
   import platform
 }

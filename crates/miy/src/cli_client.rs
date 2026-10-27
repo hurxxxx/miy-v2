@@ -8,23 +8,24 @@ pub fn origin(url: &str) -> Result<String> {
         CliError::new(
             Category::Usage,
             "invalid_platform_origin",
-            "Use an HTTPS server origin without credentials, path, query or fragment. HTTP is allowed only for loopback servers.",
+            "Enter an explicit http:// or https:// server origin, optionally with a port, without credentials, path, query or fragment.",
         )
     };
     let u = url::Url::parse(url).map_err(|_| invalid())?;
-    if !(u.username().is_empty()
+    if !(url.contains("://")
+        && u.has_host()
+        && u.username().is_empty()
         && u.password().is_none()
         && u.query().is_none()
         && u.fragment().is_none()
         && u.path() == "/"
-        && (u.scheme() == "https"
-            || (u.scheme() == "http"
-                && matches!(u.host_str(), Some("localhost" | "127.0.0.1" | "[::1]")))))
+        && matches!(u.scheme(), "http" | "https"))
     {
         return Err(invalid().into());
     }
     Ok(u.origin().ascii_serialization())
 }
+
 pub fn client(ca: Option<&Path>, seconds: u64) -> Result<reqwest::Client> {
     let mut builder = reqwest::Client::builder()
         .retry(reqwest::retry::never())
@@ -77,4 +78,33 @@ pub fn configure(root: &Path, url: &str, ca: Option<&Path>) -> Result<()> {
             .context("invalid_path")?,
         &json!({"url":url,"caFile":ca}),
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::origin;
+
+    #[test]
+    fn explicit_http_and_https_origins_include_remote_ip_and_domain() {
+        for (input, expected) in [
+            ("http://192.168.10.4:8080", "http://192.168.10.4:8080"),
+            ("http://INTRANET.example:80/", "http://intranet.example"),
+            ("http://[fd00::4]:8080", "http://[fd00::4]:8080"),
+            ("https://PLATFORM.example:443/", "https://platform.example"),
+        ] {
+            assert_eq!(origin(input).unwrap(), expected);
+        }
+        for input in [
+            "192.168.10.4:8080",
+            "platform.example",
+            "http:platform.example",
+            "https://user:password@platform.example",
+            "https://platform.example/path",
+            "http://platform.example/?x=1",
+            "http://platform.example/#fragment",
+            "ftp://platform.example",
+        ] {
+            assert!(origin(input).is_err());
+        }
+    }
 }

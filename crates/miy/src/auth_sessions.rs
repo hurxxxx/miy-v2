@@ -465,10 +465,11 @@ pub async fn principal(state: &State, token: &str) -> ApiResult<Principal> {
     if !valid_secret(token, ACCESS_PREFIX) {
         return Err(ApiError::unauthorized());
     }
-    let row = sqlx::query("SELECT s.user_id,u.enabled FROM cli_access_tokens a JOIN cli_sessions s ON s.id=a.session_id JOIN users u ON u.id=s.user_id WHERE a.token_hash=$1 AND a.expires_at>now() AND s.expires_at>now() AND s.revoked_at IS NULL")
+    let row = sqlx::query("SELECT s.id AS cli_session_id,s.user_id,u.enabled FROM cli_access_tokens a JOIN cli_sessions s ON s.id=a.session_id JOIN users u ON u.id=s.user_id WHERE a.token_hash=$1 AND a.expires_at>now() AND s.expires_at>now() AND s.revoked_at IS NULL")
         .bind(hash(token)).fetch_optional(&state.pool).await?.ok_or_else(ApiError::unauthorized)?;
     active_result(Some(row.get("enabled")))?;
     Ok(Principal {
+        cli_session_id: Some(row.get("cli_session_id")),
         id: row.get("user_id"),
         scopes: vec!["miy.read".into(), "miy.dev".into()],
         csrf: None,

@@ -97,6 +97,7 @@ class Fixture:
         self.fail_refresh=False
         self.refresh_requests=0
         self.session_id=str(uuid.uuid4())
+        self.runtime_preflight = "runtime.preflight.v2"
         self.requests = []
         self.auth_failures = 0
         self.job_observed = threading.Event()
@@ -136,7 +137,7 @@ def fixture_server():
             if path!="/api/v1/capabilities" and self.headers.get("Cookie")!="fixture=synthetic" and self.headers.get("Authorization")!=f"Bearer {SENTINEL}":state.auth_failures+=1
             if path=="/api/v1/users":self.send_json(state.status,state.body)
             elif path=="/api/v1/me":self.send_json(200,{"id":state.actor,"csrf":"fixture-csrf","name":"한글 사용자"})
-            elif path=="/api/v1/capabilities":self.send_json(200,{"schemaVersion":1,"cliContractVersion":1,"runtimePlatform":"linux/amd64","features":["runtime.preflight.v1","auth.sessions.v1","auth.device.v1","runtime.jobs.v1","runtime.events.v1","runtime.retry.v1","images.idempotency.v1","runtime.logs.v1","lists.pagination.v1"]})
+            elif path=="/api/v1/capabilities":self.send_json(200,{"schemaVersion":1,"cliContractVersion":1,"runtimePlatform":"linux/amd64","features":[state.runtime_preflight,"auth.sessions.v1","auth.device.v1","runtime.jobs.v1","runtime.events.v1","runtime.retry.v1","images.idempotency.v1","runtime.logs.v1","lists.pagination.v1"]})
             elif path==f"/api/v1/runtime/jobs/{state.job_id}":
                 self.send_json(200,self.job());state.job_observed.set()
             elif path==f"/api/v1/runtime/jobs/{state.job_id}/events":
@@ -284,6 +285,13 @@ def check(cli):
             state.reply(200, f"invalid JSON {SENTINEL}".encode())
             run(["user", "list"], cwd=remote, expected=8, command="user list")
             ok("authenticated loopback success and malformed successful response")
+
+            state.runtime_preflight = "runtime.preflight.v1"
+            response = run(["--app", "output-probe", "app", "start", "--environment", "dev", "--dry-run"], cwd=remote, expected=7, command="app start")
+            require(response["error"]["code"] == "unsupported_server_capability", "Old schema contract must fail before runtime submission")
+            require("runtime.preflight.v2" in response["error"]["details"]["missingFeatures"], "Schema-aware capability requirement missing")
+            state.runtime_preflight = "runtime.preflight.v2"
+            ok("legacy runtime schema is rejected with an upgrade capability error before mutation")
 
             for status, expected in [(400, 2), (401, 3), (403, 4), (404, 5), (409, 6), (429, 8), (500, 8)]:
                 for body in [

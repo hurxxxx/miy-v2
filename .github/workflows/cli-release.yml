@@ -8,7 +8,7 @@ on:
         required: true
         type: string
       release_tag:
-        description: Exact Cargo version prefixed with v, such as v0.5.0
+        description: Exact Cargo version prefixed with v, such as v0.6.0
         required: true
         type: string
       publish:
@@ -19,7 +19,7 @@ on:
       evidence_path:
         description: Committed evidence JSON in the workflow ref (may be newer than candidate_commit)
         required: false
-        default: docs/releases/cli-0.5.0-evidence.json
+        default: docs/releases/cli-0.6.0-evidence.json
         type: string
 
 permissions:
@@ -62,7 +62,9 @@ jobs:
               output.write(f'commit={commit}\nversion={version}\ntag={tag}\n')
           PY
       - name: Check publication gate logic
-        run: python scripts/test-cli-release.py
+        run: |
+          python scripts/test-cli-release.py
+          python scripts/test-cli-downloads.py
 
   native:
     needs: candidate
@@ -114,9 +116,15 @@ jobs:
       - name: Verify the executable, output contract and portable bundle
         run: |
           python scripts/check-cli-output.py --cli target/${{ matrix.target }}/release/${{ matrix.executable }}
+          python scripts/check-cli-install.py --cli target/${{ matrix.target }}/release/${{ matrix.executable }}
           python scripts/check-bundle-portability.py check --cli target/${{ matrix.target }}/release/${{ matrix.executable }} --output .local/release-bundle/bundle.json
       - name: Package binary, provenance and SHA-256
         run: python scripts/package-cli-release.py package --binary target/${{ matrix.target }}/release/${{ matrix.executable }} --target ${{ matrix.target }} --output .local/release-assets
+      - name: Build and package the Linux development connection helper
+        if: matrix.target == 'x86_64-unknown-linux-gnu' || matrix.target == 'aarch64-unknown-linux-gnu'
+        env:
+          HELPER_PLATFORM: ${{ matrix.target == 'x86_64-unknown-linux-gnu' && 'linux/amd64' || 'linux/arm64' }}
+        run: python scripts/db_tunnel_package.py --platform "$HELPER_PLATFORM" --output .local/release-assets
       - name: Check installer contracts in Windows PowerShell 5.1
         if: matrix.target == 'x86_64-pc-windows-msvc'
         shell: powershell
@@ -227,7 +235,7 @@ jobs:
           PY
             gh release create "$RELEASE_TAG" --draft --target "$CANDIDATE_COMMIT" --title "miy $RELEASE_VERSION" --notes-file .local-release-notes.md
           fi
-          gh release upload "$RELEASE_TAG" dist/*.zip dist/*.tar.gz dist/*.sha256 dist/*.json dist/SHA256SUMS --clobber
+          gh release upload "$RELEASE_TAG" dist/*.zip dist/*.tar.gz dist/*.oci.tar dist/*.sha256 dist/*.json dist/SHA256SUMS --clobber
           gh release edit "$RELEASE_TAG" --draft=false
 
 # Native Windows Server installer tests are contract checks. They do not replace

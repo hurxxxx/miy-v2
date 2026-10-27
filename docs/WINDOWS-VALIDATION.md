@@ -1,9 +1,21 @@
 # Windows 네이티브 빌드·운영 검증 안내
 
 - 작성일: 2026-10-27
-- 현재 코드 버전: CLI **0.5.0** / 개발 번들 **0.6.2**
+- 현재 구현 대상: CLI **0.6.0** / 개발 번들 **0.7.0**. 아래 0.5 후보·0.4.2 실행 기록은 해당 버전의 이력이다.
 - 대상: Windows 11 x64, Windows PowerShell 5.1과 PowerShell 7
-- 상태: Windows에서 사용자가 직접 빌드·검증하고 결과를 추가할 안내. **기존 0.4.2는 실제 Windows 11/PowerShell 5.1·7 기반 검사를 통과했다. 이번 0.5의 새 기능은 재검증 대상이다.** 호스티드 Windows MSVC CI 결과는 아래에 별도로 기록한다.
+- 상태: Windows에서 사용자가 직접 빌드·검증하고 결과를 추가할 안내. **0.6의 실제 Windows 11·PowerShell 5.1/7·원격 DB·독립 AI 세션 인수는 아직 NOT_RUN이다.** 과거 호스티드 Windows MSVC CI 결과는 이번 후보의 인수 결과로 이월하지 않는다.
+
+## CLI 0.6 인수 준비 — 2026-10-28
+
+서버 URL은 사용자가 명시하거나 홈페이지 설치 명령의 `-Server URL`로 전달한다. 기본 IP·도메인은 없다. 주소를 생략한 대화형 설치는 URL을 질문하며, 비대화형 설치는 실행 파일만 설치하고 `contextInitialization.status=required`와 `miy context init`을 안내한다. 이후 `miy context init` 또는 최초 대화형 로그인에서 등록한다. `-NonInteractive`/`--no-input`에서는 입력을 기다리지 않는다. 기존 설정은 보존하고 다른 요청 주소는 `activeOrigin`, `requestedOrigin`, `serverMismatch`로 구분한다.
+
+이번 검증은 개발 도구가 준비된 Windows 11 일반 사용자 PC에서 시작한다. 홈페이지의 검증된 후보 설치 → 명시적 서버 등록 → 개발자 로그인 → 앱 생성 → 앱 등록 요청/별도 관리자 승인 → 컴포넌트 동기화 → doctor/check → 로컬 개발 → dev-stop → build/deploy → 개발 배포 확인/인수 → 별도 운영 권한으로 promote 순서다. Codex·Claude는 각각 새 프로젝트 세션에서 업무 요구만 전달하고, 생성된 지침·CLI·MCP가 사용되는지 기록한다.
+
+- `doctor --for develop`은 버전 검사 외에 rustfmt, 임시 Rust 실행 파일 링크(MSVC/Windows SDK), 실제 Codex·Claude MCP 설정과 제한 시간 내 로컬 stdio initialize/tools/list를 검사한다. 이 로컬 probe는 실제 AI 세션과 API 도구 성공을 대신하지 않는다.
+- 기본 `app dev`는 서버 개발 DB를 사용한다. 로컬에서 만든 레코드가 개발 배포 후 그대로 남는지 DB 식별자와 함께 확인한다. 별도 로컬 DB는 `--database local`로만 선택한다.
+- 앱당 개발 세션 하나이며 배포 전에 `app dev-stop`으로 종료한다. 스키마 변경은 배포된 개발 앱을 중지할 수 있다. 운영 DB는 별도이고 개발 데이터는 복사하지 않는다.
+- HTTPS/WSS와 인증서 없는 사내 HTTP IP/WS 구성, 주소 누락·입력 취소·기존 연결 보존, 권한 회수·세션 만료·연결 단절·마이그레이션 실패를 각각 기록한다. 실패 뒤 수행하지 못한 항목은 NOT_RUN으로 남긴다.
+- 새 후보의 실제 commit·배포물 해시·CI·서버/Windows 결과는 완료 후 기록한다. 아래 과거 후보 파일을 이번 기능의 설치 파일로 사용하지 않는다. UI/UX 개선은 TODO로 기록한다.
 
 이 문서는 현재 구현된 클라이언트 빌드 경계, OS 유틸리티, 앱 생성·설정과 번들 바이트 보존을 확인한다. [CLI 0.5 구현 계획](CLI-IMPLEMENTATION-PLAN.md)의 전체 기능이나 Windows 정식 지원 완료를 선언하지 않는다. 두 PowerShell 버전에서 아래 절차를 각각 실행하고, 같은 commit이라도 실행 기록은 별도로 남긴다. WSL 결과는 Windows 네이티브 결과로 기록하지 않는다.
 
@@ -31,6 +43,14 @@ CLI 0.5에는 루트 `context/auth/job/describe/doctor/component/mcp`와 앱 lif
 아래 빌드·오프라인 검사 뒤 10절의 설치/인증/원격/로컬 개발 검사를 수행한다. **검사 절차가 존재하는 것과 사용자 Windows 11 통과는 구분한다.**
 
 ## 2. Windows 준비
+
+### 후보 이후 추가된 설치 연결 옵션
+
+이번 작업 트리의 설치기·CLI는 `install-cli.ps1`/`update-cli.ps1`의 `-Server URL`로 명시한 서버를 등록한다. 플랫폼의 `/cli/install` 화면이 서버 `MIY_ORIGIN`에서 주소를 채운 명령을 제공한다. 기존 `config.json`이 있으면 빈 context 목록까지 그대로 보존하며, URL을 새로 전달해도 기존 활성 서버·사용자·인증서 설정을 바꾸지 않는다. 다른 주소는 명시적으로 표시하고 context 추가/선택을 안내한다. 옵션 생략 시 대화형 입력 또는 설치 후 등록이 필요하며 어떤 주소도 대신 적용하지 않는다.
+
+이 기능은 위 `0fe94a4` 후보에 포함되어 있지 않다. 변경을 포함한 새 실행 파일·설치기를 함께 빌드한 후 `python scripts/check-cli-install.py --cli PATH_TO_MIY_EXE`와 `scripts/check-windows-installer.ps1 -ArchivePath VERIFIED_NEW_ZIP`을 실행한다. 설치기는 9개 시나리오로 확장되었으며, Windows 네이티브 결과를 새로 기록해야 한다. 현재 확인한 것은 Linux PowerShell 7.6.9의 공통 초기화·복구 9개 검사와 스크립트 구문 검사다.
+
+### 필요한 도구
 
 일반 사용자 계정의 Windows 11 x64에서 PowerShell 5.1과 PowerShell 7을 준비한다. 시작 메뉴에서 Windows PowerShell과 PowerShell 7을 각각 열거나, 별도 터미널에서 `powershell.exe -NoProfile`, `pwsh.exe -NoProfile`로 시작한다. 관리자 권한 터미널을 기본 검증 환경으로 사용하지 않는다.
 
@@ -159,7 +179,7 @@ Assert-MiyExit 'miy.exe --help'
 Assert-MiyExit 'miy.exe app --help'
 ```
 
-기대 결과는 `miy 0.5.0`이며 루트 도움말에 서버용 네 명령이 없어야 한다. 테스트 수·ignored 수와 이름은 실제 출력대로 기록한다. 빌드 성공 후의 실행 파일은 `target\x86_64-pc-windows-msvc\release\miy.exe`다. 실패한 검사는 로그와 종료 코드를 남기고 이후 의존하는 항목을 `not_run`으로 기록한다.
+기대 결과는 `miy 0.6.0`이며 루트 도움말에 서버용 네 명령이 없어야 한다. 테스트 수·ignored 수와 이름은 실제 출력대로 기록한다. 빌드 성공 후의 실행 파일은 `target\x86_64-pc-windows-msvc\release\miy.exe`다. 실패한 검사는 로그와 종료 코드를 남기고 이후 의존하는 항목을 `not_run`으로 기록한다.
 
 ## 5. 한글·공백 경로, 번들·Git checkout 검사
 
@@ -257,8 +277,8 @@ with (evidence / "mcp-stderr.txt").open("wb") as errors:
         reply = request(3, "tools/call", {"name": "get_cli_help", "arguments": {}})
         assert not reply.get("isError", False), reply
         help_data = json.loads(next(block["text"] for block in reply["content"] if block["type"] == "text"))
-        assert help_data["cliVersion"] == "0.5.0", help_data["cliVersion"]
-        assert help_data["bundleVersion"] == "0.6.2", help_data["bundleVersion"]
+        assert help_data["cliVersion"] == "0.6.0", help_data["cliVersion"]
+        assert help_data["bundleVersion"] == "0.7.0", help_data["bundleVersion"]
         process.stdin.close()
         assert process.wait(timeout=10) == 0
         (evidence / "mcp-offline.json").write_text(
@@ -284,7 +304,7 @@ Assert-MiyExit 'python <evidence>/mcp-offline.py <fixture-app> <evidence>'
 아래 파일은 검증한 바이너리를 옮기기 위한 **로컬 검증 산출물**이다. 설치기나 공식 릴리스가 아니며 PATH 등록·자동 갱신·제거 기능을 제공하지 않는다.
 
 ```powershell
-$MiyPackageName = 'miy-0.5.0-windows-x64-' + $MiyCommit.Substring(0,12)
+$MiyPackageName = 'miy-0.6.0-windows-x64-' + $MiyCommit.Substring(0,12)
 $MiyPackageDir = Join-Path $MiyEvidence $MiyPackageName
 New-Item -ItemType Directory -Path $MiyPackageDir | Out-Null
 $MiyPackagedExe = Join-Path $MiyPackageDir 'miy.exe'
@@ -443,7 +463,7 @@ c5510f56a15674d93b6641c3e73ecb04a54c96359aa67e1d98110b2e5b2262ec  miy-0.4.2-wind
 
 추가로 Windows PowerShell 7에서 `node --test scripts/lib/cli-result.test.mjs` **4개 통과**, 종료 코드 0을 확인했다. 로그는 공통 준비 증거 폴더의 `node-cli-result-tests.txt`에 있다. 두 셸의 성공 기록은 Windows 기반 클라이언트 빌드·오프라인 검사 범위이며, 8절의 미완료 구현이나 CLI 0.5 전체 릴리스를 완료 처리하지 않는다. 실행한 검사에서 코드 수정이 필요한 실패는 없었다.
 
-## 10. CLI 0.5 설치·인증·개발 인수
+## 10. CLI 0.6 설치·인증·개발 인수
 
 각 PowerShell 버전에서 위 기록 준비를 실행하고 동일한 commit의 바이너리를 사용한다. 실제 서버는 CLI 0.5의 migration/API/capability가 먼저 적용된 **검증 전용 서버**를 선택한다. 아래 새 CLI 0.5 장비 결과는 아직 `NOT_RUN`이다. 앞 절의 0.4.2 기반 검사 이력은 보존한다.
 
@@ -512,6 +532,9 @@ Docker Desktop을 Linux 컨테이너 모드로 준비한다. 한글·공백 경�
 & $MiyCli --context validation app init .\windows-demo --id windows-demo --name 'Windows 검증 앱'
 Assert-MiyExit 'app init'
 Set-Location -LiteralPath .\windows-demo
+& .\.miy-tools\miy.exe app register
+Assert-MiyExit 'app register'
+# 별도 관리자 계정이 registration list/approve로 승인한 뒤 계속한다.
 & .\.miy-tools\miy.exe component sync
 Assert-MiyExit 'component sync'
 & .\.miy-tools\miy.exe doctor --for develop --output json
@@ -526,7 +549,7 @@ Assert-MiyExit 'app dev-stop'
 # 준비 중 Ctrl+C 및 dev-stop 후 재시작도 별도로 기록한다.
 ```
 
-등록·관리자 승인·Git commit 후 `app build --platform linux/amd64`와 `app deploy`를 실행한다. 서버가 ARM64라면 capability에 맞춰 `linux/arm64`와 Docker emulation을 명시한다. 등록/승인과 실제 인수는 [실행 안내](RUNNING.md)의 순서를 따른다. dev-stop/중단 후 이 프로젝트의 자식·컨테이너만 정리되고 DB 볼륨·다른 프로젝트가 유지되는지 비교한다.
+등록·관리자 승인은 위 로컬 개발 전에 완료한다. 로컬 테스트 후 `app dev-stop`으로 세션을 종료하고 Git commit 후 `app build --platform linux/amd64`와 `app deploy`를 실행한다. 로컬에서 작성한 레코드가 서버 개발 배포에도 남아야 하며, 운영 승격은 별도 DB와 데이터를 사용한다. 서버가 ARM64라면 capability에 맞춰 `linux/arm64`와 Docker emulation을 명시한다. 등록/승인과 실제 인수는 [실행 안내](RUNNING.md)의 순서를 따른다. dev-stop/중단 후 이 프로젝트의 자식·컨테이너만 정리되고 DB 볼륨·다른 프로젝트가 유지되는지 비교한다.
 
 일반 Codex와 Claude Code 각각에서 프로젝트 신뢰·MCP 승인을 정상 진행하고 root `mcp` 서버의 `get_cli_help`, 계약/API/컴포넌트 조회와 실제 앱 작업을 확인한다. 독립 새 세션 평가는 [구현 계획](CLI-IMPLEMENTATION-PLAN.md)의 OS별 3회 규칙으로 별도 기록한다.
 

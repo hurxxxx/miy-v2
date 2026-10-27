@@ -30,8 +30,10 @@ pub async fn snapshot(
             "imageId":row.get::<Option<String>,_>("runtime_image")
         })
     });
+    let resource=sqlx::query("SELECT id,status,schema_generation,schema_fingerprint FROM db_resources WHERE app_id=$1 AND environment=$2").bind(app).bind(environment).fetch_optional(pool).await?;
+    let database=resource.map(|row|json!({"databaseId":row.get::<uuid::Uuid,_>("id"),"status":row.get::<String,_>("status"),"schemaGeneration":row.get::<i64,_>("schema_generation"),"schemaFingerprint":row.get::<Option<String>,_>("schema_fingerprint")}));
     serde_json::from_value(
-        json!({"target":{"appId":app,"environment":environment},"installation":installation}),
+        json!({"target":{"appId":app,"environment":environment},"installation":installation,"database":database}),
     )
     .map_err(|_| ApiError::unavailable("unsupported_installation_state"))
 }
@@ -63,7 +65,12 @@ pub async fn inspect(
     let mut checks = vec![
         PreflightCheck::passed(CheckName::Target),
         PreflightCheck::passed(CheckName::Authorization),
-        if busy {
+        if environment == "dev" && crate::development::active_for_app(&state.pool, app).await? {
+            PreflightCheck::failed(
+                CheckName::PendingOperation,
+                runtime_contract::FailureCode::ActiveDevelopmentSession,
+            )
+        } else if busy {
             PreflightCheck::failed(
                 CheckName::PendingOperation,
                 runtime_contract::FailureCode::OperationInProgress,

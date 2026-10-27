@@ -83,6 +83,7 @@ string_enum!(FailureCode {
     RuntimeOperationFailed => "runtime_operation_failed",
     StateChanged => "state_changed",
     OperationInProgress => "operation_in_progress",
+    ActiveDevelopmentSession => "active_dev_session",
     ImageUnavailable => "image_unavailable",
     ImagePlatformMismatch => "image_platform_mismatch",
     DatabaseUnavailable => "database_unavailable",
@@ -188,16 +189,29 @@ pub struct InstallationState {
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct DatabaseState {
+    pub database_id: Uuid,
+    pub status: DbStatus,
+    pub schema_generation: u64,
+    pub schema_fingerprint: Option<String>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ExpectedState {
     pub target: RuntimeTarget,
     /// None explicitly means this target has no installation yet.
     pub installation: Option<InstallationState>,
+    /// Shared database identity and SQL history are independently revisioned.
+    pub database: Option<DatabaseState>,
 }
 
 string_enum!(StateField {
     AppId => "appId", Environment => "environment", InstallationId => "installationId",
     ReleaseId => "releaseId", Generation => "generation", DesiredState => "desiredState",
     RuntimeStatus => "runtimeStatus", DbStatus => "dbStatus", ImageId => "imageId",
+    DatabaseId => "databaseId", DatabaseResourceStatus => "databaseResourceStatus",
+    SchemaGeneration => "schemaGeneration", SchemaFingerprint => "schemaFingerprint",
 });
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -289,6 +303,15 @@ pub fn validate_state(state: &ExpectedState) -> Result<(), ContractError> {
     if !crate::contract::valid_id(&state.target.app_id) {
         return Err(ContractError::invalid("target.appId"));
     }
+    if let Some(database) = &state.database
+        && (database.database_id.is_nil()
+            || database.schema_generation > i64::MAX as u64
+            || database.schema_fingerprint.as_ref().is_some_and(|value| {
+                value.len() != 64 || !value.bytes().all(|c| c.is_ascii_hexdigit())
+            }))
+    {
+        return Err(ContractError::invalid("database"));
+    }
     if let Some(installation) = &state.installation {
         if installation.installation_id.is_nil() || installation.release_id.is_nil() {
             return Err(ContractError::invalid("installation"));
@@ -320,6 +343,34 @@ pub fn compare_expected(
     }
     if expected.target.environment != current.target.environment {
         changed_fields.push(StateField::Environment);
+    }
+    match (&expected.database, &current.database) {
+        (None, None) => {}
+        (Some(before), Some(after)) => {
+            for (changed, field) in [
+                (
+                    before.database_id != after.database_id,
+                    StateField::DatabaseId,
+                ),
+                (
+                    before.status != after.status,
+                    StateField::DatabaseResourceStatus,
+                ),
+                (
+                    before.schema_generation != after.schema_generation,
+                    StateField::SchemaGeneration,
+                ),
+                (
+                    before.schema_fingerprint != after.schema_fingerprint,
+                    StateField::SchemaFingerprint,
+                ),
+            ] {
+                if changed {
+                    changed_fields.push(field);
+                }
+            }
+        }
+        _ => changed_fields.push(StateField::DatabaseId),
     }
     match (&expected.installation, &current.installation) {
         (None, None) => {}
@@ -631,6 +682,7 @@ mod tests {
     fn current() -> ExpectedState {
         ExpectedState {
             target: target(Environment::Dev),
+            database: None,
             installation: Some(InstallationState {
                 installation_id: Uuid::from_u128(1),
                 release_id: Uuid::from_u128(2),
@@ -738,10 +790,30 @@ mod tests {
         let absent = ExpectedState {
             target: expected.target.clone(),
             installation: None,
+            database: None,
         };
         assert!(compare_expected(&absent, &absent).is_ok());
         assert!(compare_expected(&absent, &expected).is_err());
         assert!(compare_expected(&expected, &absent).is_err());
+    }
+
+    #[test]
+    fn schema_changes_invalidate_a_preflight_without_a_runtime_change() {
+        let mut before = current();
+        before.database = Some(DatabaseState {
+            database_id: Uuid::from_u128(9),
+            status: DbStatus::Ready,
+            schema_generation: 1,
+            schema_fingerprint: Some("a".repeat(64)),
+        });
+        let mut after = before.clone();
+        after.database.as_mut().unwrap().schema_generation += 1;
+        after.database.as_mut().unwrap().schema_fingerprint = Some("b".repeat(64));
+        let error = compare_expected(&before, &after).unwrap_err();
+        assert_eq!(
+            error.changed_fields,
+            vec![StateField::SchemaGeneration, StateField::SchemaFingerprint]
+        );
     }
 
     #[test]
@@ -817,6 +889,7 @@ mod tests {
         let absent = ExpectedState {
             target: snapshot.target.clone(),
             installation: None,
+            database: None,
         };
         assert!(
             !preflight(

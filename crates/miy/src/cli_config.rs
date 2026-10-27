@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::{
     collections::BTreeMap,
-    io::IsTerminal,
+    io::{IsTerminal, Write},
     path::{Path, PathBuf},
     sync::OnceLock,
 };
@@ -262,7 +262,7 @@ pub fn selected() -> Result<(String, Context)> {
             "context_required",
             "Add and select a server context before remote operations.",
         )
-        .with_recovery("miy", &["context", "--help"])
+        .with_recovery("miy", &["context", "init"])
     })?;
     let context = config.contexts.get(&name).cloned().ok_or_else(|| {
         CliError::new(
@@ -327,6 +327,13 @@ pub fn bind_project(path: &Path) -> Result<()> {
 
 #[derive(Subcommand)]
 pub enum ContextCommand {
+    /// Register an explicitly supplied server, or ask for its URL on a terminal.
+    Init {
+        #[arg(long)]
+        url: Option<String>,
+        #[arg(long)]
+        ca_file: Option<PathBuf>,
+    },
     /// Add a named server origin without storing credentials in the project.
     Add {
         name: String,
@@ -349,6 +356,7 @@ pub enum ContextCommand {
 }
 pub fn execute(command: ContextCommand) -> Result<Value> {
     match command {
+        ContextCommand::Init { url, ca_file } => initialize_context(url, ca_file),
         ContextCommand::List => {
             context_page(&load()?, options().limit, options().cursor.as_deref())
         }
@@ -443,6 +451,142 @@ pub fn execute(command: ContextCommand) -> Result<Value> {
                 json!({"removed":name,"localCredentialsRemoved":local_credentials_removed,"remoteSessionsRevoked":false,"projectDataPreserved":true}),
             )
         }
+    }
+}
+
+fn preserved_context(config: &Config, requested: Option<&str>) -> Value {
+    let active_origin = config
+        .active
+        .as_ref()
+        .and_then(|name| config.contexts.get(name))
+        .map(|context| context.origin.as_str());
+    let mismatch = requested.is_some_and(|origin| active_origin != Some(origin));
+    let mut next = Vec::new();
+    if let Some(origin) = requested.filter(|_| mismatch) {
+        // These are argument arrays, not shell source. A URL must never be
+        // interpolated into a suggested command without shell-specific quoting.
+        if let Some((name, _)) = config.contexts.iter().find(|(_, c)| c.origin == origin) {
+            next.push(json!({"program":"miy","args":["context","use",name]}));
+        } else {
+            let mut name = "work".to_owned();
+            let mut suffix = 2;
+            while config.contexts.contains_key(&name) {
+                name = format!("work-{suffix}");
+                suffix += 1;
+            }
+            next.push(json!({"program":"miy","args":["context","add",name,"--url",origin]}));
+            next.push(json!({"program":"miy","args":["context","use",name]}));
+        }
+    } else if active_origin.is_none() {
+        next.push(json!({"program":"miy","args":["context","list"]}));
+        next.push(json!({"program":"miy","args":["context","add","work","--url","<server-url>"]}));
+    } else {
+        next.push(json!({"program":"miy","args":["context","show"]}));
+    }
+    json!({"status":"preserved","active":config.active,"activeOrigin":active_origin,
+        "requestedOrigin":requested,"serverMismatch":mismatch,"setupRequired":active_origin.is_none(),
+        "next":next})
+}
+
+fn prompt_server_origin() -> Result<String> {
+    if !interactive() {
+        return Err(CliError::new(
+            Category::Usage,
+            "server_url_required",
+            "No server is configured. Supply --url with an explicit HTTP or HTTPS server URL, or run miy context init in a terminal.",
+        )
+        .with_recovery("miy", &["context", "init"])
+        .into());
+    }
+    loop {
+        eprint!("Target server URL (include http:// or https://; blank cancels): ");
+        std::io::stderr().flush()?;
+        let mut answer = String::new();
+        std::io::stdin().read_line(&mut answer)?;
+        if answer.trim().is_empty() {
+            return Err(CliError::new(
+                Category::Interrupted,
+                "server_setup_cancelled",
+                "Server registration was cancelled. No default server was configured.",
+            )
+            .with_recovery("miy", &["context", "init"])
+            .into());
+        }
+        match crate::cli_client::origin(answer.trim()) {
+            Ok(origin) => return Ok(origin),
+            Err(_) => eprintln!(
+                "Enter a complete HTTP or HTTPS origin without credentials, path, query or fragment."
+            ),
+        }
+    }
+}
+
+fn initialize_context(url: Option<String>, ca_file: Option<PathBuf>) -> Result<Value> {
+    let requested = url.as_deref().map(crate::cli_client::origin).transpose()?;
+    let ca_file = ca_file.map(std::fs::canonicalize).transpose()?;
+    crate::cli_client::client(ca_file.as_deref(), 20)?;
+    let path = root()?.join("config.json");
+    platform::reject_reparse(&path)?;
+    if path.try_exists()? {
+        // An intentionally empty configuration also belongs to the user.
+        // Validate its private directory and serialize with other config writers.
+        let _lock = lock()?;
+        return Ok(preserved_context(&load()?, requested.as_deref()));
+    }
+    let origin = match requested {
+        Some(origin) => origin,
+        None => prompt_server_origin()?,
+    };
+    // Do not hold the configuration lock while waiting for human input.
+    let _lock = lock()?;
+    platform::reject_reparse(&path)?;
+    if path.try_exists()? {
+        return Ok(preserved_context(&load()?, Some(&origin)));
+    }
+    let mut config = Config {
+        active: Some("default".into()),
+        ..Config::default()
+    };
+    config.contexts.insert(
+        "default".into(),
+        Context {
+            origin: origin.clone(),
+            ca_file,
+            user_id: None,
+        },
+    );
+    save(&config)?;
+    Ok(
+        json!({"status":"initialized","active":"default","context":"default",
+        "origin":origin,"setupRequired":false,"serverMismatch":false}),
+    )
+}
+
+/// Only a fresh, interactive login may request a server. Existing configurations
+/// and explicit/project selections retain their normal selection semantics.
+pub fn login_context() -> Result<(String, Context)> {
+    match selected() {
+        Ok(context) => Ok(context),
+        Err(error)
+            if interactive()
+                && error
+                    .downcast_ref::<CliError>()
+                    .is_some_and(|error| error.code == "context_required") =>
+        {
+            let setup = initialize_context(None, None)?;
+            if setup["setupRequired"] == true {
+                return Err(CliError::new(
+                    Category::Environment,
+                    "context_required",
+                    "Existing server configuration was preserved. Add a context with miy context add NAME --url URL, then select it with miy context use NAME.",
+                )
+                .with_details(setup)
+                .with_recovery("miy", &["context", "list"])
+                .into());
+            }
+            selected()
+        }
+        Err(error) => Err(error),
     }
 }
 #[derive(Serialize, Deserialize)]
@@ -547,6 +691,40 @@ pub fn confirm(message: &str) -> Result<()> {
 #[cfg(test)]
 mod pagination_tests {
     use super::*;
+    #[test]
+    fn preservation_reports_missing_setup_and_exact_server_selection_without_defaults() {
+        let mut config = Config::default();
+        let empty = preserved_context(&config, None);
+        assert_eq!(empty["status"], "preserved");
+        assert_eq!(empty["setupRequired"], true);
+        assert!(empty["activeOrigin"].is_null());
+        assert!(empty["requestedOrigin"].is_null());
+        let requested = "http://192.168.10.2:8080";
+        let empty_request = preserved_context(&config, Some(requested));
+        assert_eq!(empty_request["serverMismatch"], true);
+        assert_eq!(empty_request["next"][0]["args"][4], requested);
+        config.contexts.insert(
+            "work".into(),
+            Context {
+                origin: requested.into(),
+                ca_file: None,
+                user_id: None,
+            },
+        );
+        let selected = preserved_context(&config, Some(requested));
+        assert_eq!(selected["next"].as_array().unwrap().len(), 1);
+        assert_eq!(
+            selected["next"][0]["args"],
+            json!(["context", "use", "work"])
+        );
+        config.active = Some("work".into());
+        let same = preserved_context(&config, Some(requested));
+        assert_eq!(same["setupRequired"], false);
+        assert_eq!(same["serverMismatch"], false);
+        let other = preserved_context(&config, Some("https://another.example"));
+        assert_eq!(other["activeOrigin"], requested);
+        assert_eq!(other["next"][0]["args"][2], "work-2");
+    }
     #[cfg(unix)]
     #[test]
     fn config_owned_and_ancestor_links_are_rejected_before_creation() {

@@ -70,6 +70,15 @@ pub async fn check_release(
     v: ReleaseCheck,
 ) -> ApiResult<Value> {
     domain::manage(state, p, app, "dev").await?;
+    let mut guard = state.pool.acquire().await?;
+    guard.close_on_drop();
+    sqlx::query("SELECT pg_advisory_lock(hashtextextended($1,0))")
+        .bind(format!("runtime:{app}:dev"))
+        .execute(&mut *guard)
+        .await?;
+    if crate::development::active_for_app(&state.pool, app).await? {
+        return Err(ApiError::conflict("active_dev_session"));
+    }
     if v.note.trim().is_empty() || v.note.len() > 2000 {
         return Err(ApiError::bad("test_note_required"));
     }
@@ -83,14 +92,17 @@ pub async fn check_release(
     )
     .await
     .map_err(|_| ApiError::conflict("app_health_failed"))?;
-    sqlx::query("INSERT INTO release_checks(release_id,installation_id,actor,note,checks) VALUES($1,$2,$3,$4,$5) ON CONFLICT(release_id) DO UPDATE SET actor=excluded.actor,note=excluded.note,checks=excluded.checks,checked_at=now()")
-        .bind(v.release_id).bind(row.get::<Uuid,_>("id")).bind(&p.id).bind(v.note.trim()).bind(json!(v.checks)).execute(&state.pool).await?;
+    let fingerprint:Option<String>=sqlx::query_scalar("SELECT schema_fingerprint FROM db_resources WHERE app_id=$1 AND environment='dev' AND status='ready'").bind(app).fetch_optional(&state.pool).await?.flatten();
+    let fingerprint =
+        fingerprint.ok_or_else(|| ApiError::conflict("database_schema_unverified"))?;
+    sqlx::query("INSERT INTO release_checks(release_id,installation_id,actor,note,checks,schema_fingerprint) VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT(release_id) DO UPDATE SET actor=excluded.actor,note=excluded.note,checks=excluded.checks,schema_fingerprint=excluded.schema_fingerprint,checked_at=now()")
+        .bind(v.release_id).bind(row.get::<Uuid,_>("id")).bind(&p.id).bind(v.note.trim()).bind(json!(v.checks)).bind(fingerprint).execute(&state.pool).await?;
     Ok(
         json!({"releaseId":v.release_id,"tested":true,"recordedBy":p.id,"checks":v.checks,"structured":!v.checks.is_empty(),"note":v.note.trim(),"meaning":"User-recorded test acceptance plus runtime health; not automatic business correctness verification"}),
     )
 }
 pub(crate) async fn checked_image(pool: &sqlx::PgPool, app: &str, release: Uuid) -> Result<String> {
-    let image: Option<String> = sqlx::query_scalar("SELECT r.image_id FROM releases r JOIN release_checks c ON c.release_id=r.id WHERE r.id=$1 AND r.app_id=$2 AND EXISTS(SELECT 1 FROM runtime_jobs j WHERE j.release_id=r.id AND j.environment='dev' AND j.action='deploy' AND j.status='succeeded')")
+    let image: Option<String> = sqlx::query_scalar("SELECT r.image_id FROM releases r JOIN release_checks c ON c.release_id=r.id JOIN db_resources d ON d.app_id=r.app_id AND d.environment='dev' WHERE r.id=$1 AND r.app_id=$2 AND d.status='ready' AND c.schema_fingerprint IS NOT NULL AND c.schema_fingerprint=d.schema_fingerprint AND NOT EXISTS(SELECT 1 FROM app_dev_sessions s WHERE s.app_id=r.app_id AND s.status IN ('queued','preparing','ready') AND s.expires_at>now()) AND EXISTS(SELECT 1 FROM runtime_jobs j WHERE j.release_id=r.id AND j.environment='dev' AND j.action='deploy' AND j.status='succeeded')")
         .bind(release).bind(app).fetch_optional(pool).await?.flatten();
     image.context("release_not_tested_in_dev")
 }
@@ -176,6 +188,9 @@ pub async fn request(
         if busy {
             return Err(ApiError::conflict("operation_in_progress"));
         }
+        if v.environment == "dev" && crate::development::active_for_app(&state.pool, app).await? {
+            return Err(ApiError::conflict("active_dev_session"));
+        }
         let current = crate::runtime_preflight::snapshot(&state.pool, app, &v.environment).await?;
         crate::runtime_contract::compare_expected(expected, &current)
             .map_err(|_| ApiError::conflict("state_changed"))?;
@@ -236,6 +251,32 @@ pub async fn job(state: &State, p: &Principal, id: Uuid) -> ApiResult<Value> {
         json!({"requestId":row.get::<String,_>("idempotency_key"),"imageId":row.get::<Option<String>,_>("image_id"),"createdAt":row.get::<chrono::DateTime<chrono::Utc>,_>("created_at"),"id":id,"appId":row.get::<String,_>("app_id"),"environment":row.get::<String,_>("environment"),"action":row.get::<String,_>("action"),"status":row.get::<String,_>("status"),"step":row.get::<String,_>("step"),"errorCode":row.get::<Option<String>,_>("error_code"),"failureClass":row.get::<Option<String>,_>("failure_class"),"retryable":row.get::<bool,_>("retryable"),"retryOf":row.get::<Option<Uuid>,_>("retry_of"),"installationId":row.get::<Option<Uuid>,_>("installation_id"),"releaseId":row.get::<Option<Uuid>,_>("release_id")}),
     )
 }
+
+/// Called only under the app/dev operation lock, before a local schema change.
+/// An old image is intentionally left stopped until a matching release is deployed.
+pub(crate) async fn stop_for_development_schema(pool: &sqlx::PgPool, app: &str) -> Result<()> {
+    let Some(row) = sqlx::query(
+        "SELECT id,runtime_container FROM installations WHERE app_id=$1 AND environment='dev'",
+    )
+    .bind(app)
+    .fetch_optional(pool)
+    .await?
+    else {
+        return Ok(());
+    };
+    let id: Uuid = row.get("id");
+    if let Some(name) = row.get::<Option<String>, _>("runtime_container") {
+        let metadata = removable_container(&name, id).await?;
+        if let Some(metadata) = metadata {
+            let container = metadata["Id"].as_str().context("missing_container_id")?;
+            docker(&["stop", "--time", "10", container]).await?;
+        }
+    }
+    sqlx::query("UPDATE installations SET runtime_status='stopped',desired_state='stopped',db_status='not_prepared' WHERE id=$1").bind(id).execute(pool).await?;
+    runtime_health::record(pool, id, Observation::Inactive).await?;
+    Ok(())
+}
+
 async fn owned(name: &str, installation: Uuid) -> Result<Value> {
     let value = inspect(name).await?;
     anyhow::ensure!(
@@ -310,6 +351,20 @@ pub async fn tick(pool: &sqlx::PgPool) -> Result<bool> {
         .bind(&lock_key)
         .execute(&mut *lock)
         .await?;
+    // A promotion's acceptance is tied to dev schema evidence. Keep that schema
+    // stable until this immutable image has finished deploying to production.
+    let mut acceptance_guard = if env == "prod" && job.get::<String, _>("action") == "promote" {
+        Some(pool.acquire().await?)
+    } else {
+        None
+    };
+    if let Some(guard) = acceptance_guard.as_mut() {
+        guard.close_on_drop();
+        sqlx::query("SELECT pg_advisory_lock(hashtextextended($1,0))")
+            .bind(format!("runtime:{app}:dev"))
+            .execute(&mut **guard)
+            .await?;
+    }
     sqlx::query(
         "UPDATE runtime_jobs SET status='running',error_code=NULL,updated_at=now() WHERE id=$1",
     )
@@ -344,6 +399,9 @@ async fn execute(pool: &sqlx::PgPool, job: &sqlx::postgres::PgRow) -> Result<()>
         domain::can_manage(pool, &actor, &app, &env).await?,
         RuntimeFailure::new(FailureCode::PermissionRevoked)
     );
+    if env == "dev" && crate::development::active_for_app(pool, &app).await? {
+        anyhow::bail!(RuntimeFailure::new(FailureCode::ActiveDevelopmentSession));
+    }
     if job
         .get::<Option<chrono::DateTime<chrono::Utc>>, _>("expected_checked_at")
         .is_none()

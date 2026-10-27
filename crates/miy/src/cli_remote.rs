@@ -632,7 +632,7 @@ async fn mutate(
         )
     })?;
     let session = app_cli::session()?;
-    let mut features = vec!["runtime.preflight.v1", "runtime.jobs.v1"];
+    let mut features = vec!["runtime.preflight.v2", "runtime.jobs.v1"];
     if !no_wait {
         features.push("runtime.events.v1");
     }
@@ -1088,7 +1088,7 @@ async fn resume(
         bind_job(&mut entry, job)?;
         job.clone()
     } else {
-        let mut features = vec!["runtime.preflight.v1"];
+        let mut features = vec!["runtime.preflight.v2"];
         if entry.intent.action == Operation::Deploy && entry.retry_of.is_none() {
             features.push("images.idempotency.v1");
         }

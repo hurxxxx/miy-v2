@@ -148,3 +148,43 @@ button {
   gap: 8px;
   flex-wrap: wrap;
 }
+.cli-install-public {
+  max-width: 1200px;
+  padding: 32px clamp(20px, 5vw, 56px);
+  margin: 0 auto;
+}
+.login a.cli-install-link {
+  display: block;
+  width: fit-content;
+  margin-top: 12px;
+}
+.cli-install {
+  max-width: 1080px;
+  min-width: 0;
+}
+.cli-install p {
+  line-height: 1.7;
+  overflow-wrap: anywhere;
+}
+.cli-install-platforms {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(320px, 100%), 1fr));
+  gap: 20px;
+  margin: 20px 0;
+}
+.cli-install-platforms > * {
+  min-width: 0;
+}
+.cli-install-command pre {
+  padding: 16px;
+  border-radius: 8px;
+  background: #edf2f7;
+  color: #14273e;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 13px;
+  line-height: 1.6;
+}
+.cli-install-command [role="status"] {
+  font-size: 13px;
+}

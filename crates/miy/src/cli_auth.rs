@@ -154,6 +154,7 @@ pub async fn principal(s: &State, token: &str) -> ApiResult<Principal> {
     .ok_or_else(ApiError::unauthorized)?;
     crate::auth_sessions::ensure_active(&s.pool, &user).await?;
     Ok(Principal {
+        cli_session_id: None,
         id: user,
         scopes: vec!["miy.read".into(), "miy.dev".into()],
         csrf: None,

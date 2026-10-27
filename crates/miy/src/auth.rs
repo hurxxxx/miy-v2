@@ -18,6 +18,7 @@ use url::Url;
 
 #[derive(Clone, Debug)]
 pub struct Principal {
+    pub cli_session_id: Option<uuid::Uuid>,
     pub id: String,
     pub scopes: Vec<String>,
     pub csrf: Option<String>,
@@ -89,12 +90,18 @@ pub fn decrypt(value: &str) -> anyhow::Result<String> {
 }
 impl Auth {
     pub async fn new() -> anyhow::Result<Self> {
-        let cert = reqwest::Certificate::from_pem(&std::fs::read(std::env::var("MIY_CA_FILE")?)?)?;
-        let client = reqwest::Client::builder()
-            .add_root_certificate(cert)
+        let allow_http = std::env::var("MIY_ALLOW_HTTP").as_deref() == Ok("1");
+        let origin = crate::server_origin::validate(&std::env::var("MIY_ORIGIN")?, allow_http)?;
+        let issuer = crate::server_origin::issuer(&std::env::var("MIY_ISSUER")?, allow_http)?;
+        let mut builder = reqwest::Client::builder()
+            .redirect(reqwest::redirect::Policy::none())
             .timeout(std::time::Duration::from_secs(10))
-            .build()?;
-        let issuer = std::env::var("MIY_ISSUER")?;
+            .retry(reqwest::retry::never());
+        if let Some(path) = std::env::var_os("MIY_CA_FILE").filter(|value| !value.is_empty()) {
+            let cert = reqwest::Certificate::from_pem(&std::fs::read(path)?)?;
+            builder = builder.add_root_certificate(cert);
+        }
+        let client = builder.build()?;
         let discovery: Discovery = client
             .get(format!("{issuer}/.well-known/openid-configuration"))
             .send()
@@ -103,6 +110,23 @@ impl Auth {
             .json()
             .await?;
         anyhow::ensure!(discovery.issuer == issuer, "issuer_mismatch");
+        for endpoint in [
+            &discovery.authorization_endpoint,
+            &discovery.token_endpoint,
+            &discovery.introspection_endpoint,
+            &discovery.jwks_uri,
+            &discovery.end_session_endpoint,
+        ] {
+            let endpoint = Url::parse(endpoint)?;
+            anyhow::ensure!(
+                endpoint.username().is_empty()
+                    && endpoint.password().is_none()
+                    && endpoint.fragment().is_none()
+                    && (endpoint.scheme() == "https"
+                        || (issuer.starts_with("http://") && endpoint.scheme() == "http")),
+                "invalid_identity_endpoint_transport"
+            );
+        }
         let jwks = client
             .get(&discovery.jwks_uri)
             .send()
@@ -110,7 +134,6 @@ impl Auth {
             .error_for_status()?
             .json()
             .await?;
-        let origin = std::env::var("MIY_ORIGIN")?;
         let development_origin =
             std::env::var("MIY_DEV_ORIGIN").unwrap_or_else(|_| "http://localhost:18000".into());
         let development_login = development_profile(
@@ -129,6 +152,9 @@ impl Auth {
             web_secret: std::env::var("MIY_WEB_SECRET")?,
             resource_secret: std::env::var("MIY_RESOURCE_SECRET")?,
         })
+    }
+    pub fn cookie(&self, name: &str, value: &str, path: &str, max_age: u32) -> String {
+        crate::server_origin::cookie(&self.origin, name, value, path, max_age)
     }
     fn claims(&self, token: &str, audience: &str) -> ApiResult<Claims> {
         let header = jsonwebtoken::decode_header(token).map_err(|_| ApiError::unauthorized())?;
@@ -189,6 +215,7 @@ impl Auth {
             return Err(ApiError::forbidden());
         }
         Ok(Principal {
+            cli_session_id: None,
             id: c.sub,
             scopes,
             csrf: None,
@@ -295,6 +322,7 @@ impl Auth {
             let row = sqlx::query("SELECT user_id,csrf FROM development_sessions WHERE id_hash=$1 AND expires_at>now()")
                 .bind(hash(session)).fetch_optional(&state.pool).await?.ok_or_else(ApiError::unauthorized)?;
             return Ok(Principal {
+                cli_session_id: None,
                 id: row.get("user_id"),
                 scopes: vec!["miy.read".into(), "miy.dev".into()],
                 csrf: Some(row.get("csrf")),
@@ -336,6 +364,7 @@ impl Auth {
         }
         tx.commit().await?;
         Ok(Principal {
+            cli_session_id: None,
             id,
             scopes: vec!["miy.read".into(), "miy.dev".into()],
             csrf: Some(row.get("csrf")),

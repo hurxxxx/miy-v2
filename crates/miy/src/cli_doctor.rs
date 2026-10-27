@@ -2,12 +2,16 @@
 use anyhow::Result;
 use serde::Serialize;
 use serde_json::{Value, json};
-use std::{path::Path, process::Stdio, time::Duration};
-use tokio::io::AsyncReadExt;
+use std::{
+    path::{Path, PathBuf},
+    process::Stdio,
+    time::Duration,
+};
+use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 
 const TIMEOUT: Duration = Duration::from_secs(8);
 const OUTPUT_LIMIT: u64 = 64 * 1024;
-const REQUIRED_FEATURES: &[&str] = &["runtime.preflight.v1"];
+const REQUIRED_FEATURES: &[&str] = &["runtime.preflight.v2"];
 
 #[derive(clap::Args, Debug)]
 pub struct DoctorArgs {
@@ -63,17 +67,19 @@ pub async fn inspect(args: DoctorArgs) -> Result<Value> {
         )
         .into());
     }
-    let (mut checks, platform) = server_checks().await;
+    let (mut checks, platform) = server_checks(args.for_mode == "develop").await;
     if args.for_mode == "develop" {
         checks.extend(project_checks(Path::new(".")));
         checks.extend(
             futures_util::future::join_all(
-                ["cargo", "rustc", "node", "pnpm", "git", "docker"]
+                ["cargo", "rustc", "rustfmt", "node", "pnpm", "git", "docker"]
                     .into_iter()
                     .map(tool_check),
             )
             .await,
         );
+        let (linker, mcp) = tokio::join!(rust_link_check(), mcp_start_check(Path::new(".")));
+        checks.extend([linker, mcp]);
         checks.extend(docker_checks(platform.as_deref()).await);
     }
     let ready = ready(&checks);
@@ -89,7 +95,7 @@ fn ready(checks: &[Check]) -> bool {
         .all(|check| !check.required || check.status == "pass")
 }
 
-async fn server_checks() -> (Vec<Check>, Option<String>) {
+async fn server_checks(develop: bool) -> (Vec<Check>, Option<String>) {
     let mut checks = Vec::new();
     let session = crate::app_cli::session().ok();
     checks.push(Check::new(
@@ -129,7 +135,12 @@ async fn server_checks() -> (Vec<Check>, Option<String>) {
         return (checks, None);
     };
     let Ok(origin) = crate::cli_client::origin(&origin) else {
-        checks.push(Check::new("serverConnection", false, "invalid_server_origin", "The saved server origin is invalid; select a valid HTTPS context or loopback development server."));
+        checks.push(Check::new(
+            "serverConnection",
+            false,
+            "invalid_server_origin",
+            "The saved server origin is invalid; register the intended HTTP or HTTPS server URL.",
+        ));
         return (checks, None);
     };
     // Context selection and credential loading are separate reads. A concurrent
@@ -176,7 +187,7 @@ async fn server_checks() -> (Vec<Check>, Option<String>) {
     let (capabilities, authentication) = tokio::join!(capabilities, authentication);
     let platform = match capabilities {
         Ok(value) => {
-            let (capabilities, platform) = assess_capabilities(&value);
+            let (capabilities, platform) = assess_capabilities(&value, develop);
             checks.push(capabilities);
             platform
         }
@@ -241,9 +252,13 @@ fn request_check(id: &'static str, reason: RequestFailure) -> Check {
     }
 }
 
-fn assess_capabilities(value: &Value) -> (Check, Option<String>) {
+fn assess_capabilities(value: &Value, develop: bool) -> (Check, Option<String>) {
     let features = value["features"].as_array();
-    let missing: Vec<_> = REQUIRED_FEATURES
+    let mut required = REQUIRED_FEATURES.to_vec();
+    if develop {
+        required.push("development.sessions.v1");
+    }
+    let missing: Vec<_> = required
         .iter()
         .filter(|expected| {
             !features.is_some_and(|features| {
@@ -267,7 +282,7 @@ fn assess_capabilities(value: &Value) -> (Check, Option<String>) {
     (Check::new("serverCapabilities", valid,
         if valid { "server_compatible" } else { "server_capabilities_missing" },
         "The server must advertise CLI contract 1, the required runtime features and a supported Linux runtime platform.",
-    ).details(json!({"requiredFeatures":REQUIRED_FEATURES,"missingFeatures":missing,
+    ).details(json!({"requiredFeatures":required,"missingFeatures":missing,
         "schemaVersionCompatible":value["schemaVersion"] == 1,
         "cliContractVersionCompatible":value["cliContractVersion"] == 1,
         "runtimePlatform":platform})), platform)
@@ -299,7 +314,12 @@ fn project_checks(root: &Path) -> Vec<Check> {
         validation_check(
             "projectGuidance",
             crate::cli_guidance::verify(root).is_ok(),
-            "The project CLI instructions and MCP configuration must match this CLI; run app setup when compatible.",
+            "The project CLI instructions must match this CLI; run app setup when compatible.",
+        ),
+        validation_check(
+            "projectMcpConfiguration",
+            crate::agent_tools::verify_setup(root).is_ok(),
+            "The actual Codex and Claude MCP entries must point to this project's CLI and directory; run app setup when compatible.",
         ),
         validation_check(
             "projectComponents",
@@ -359,7 +379,160 @@ async fn probe(program: &str, args: &[&str]) -> std::result::Result<Vec<u8>, Pro
         Ok(bytes)
     })
     .await;
-    result.unwrap_or(Err(ProbeFailure::TimedOut))
+    let result = result.unwrap_or(Err(ProbeFailure::TimedOut));
+    if result.is_err() {
+        let _ = child.start_kill();
+        let _ = tokio::time::timeout(TIMEOUT, child.wait()).await;
+    }
+    result
+}
+
+struct ProbeDirectory(PathBuf);
+impl ProbeDirectory {
+    fn create() -> std::io::Result<Self> {
+        let path = std::env::temp_dir()
+            .canonicalize()?
+            .join(format!("miy-doctor-{}", uuid::Uuid::new_v4()));
+        #[cfg(unix)]
+        let builder = {
+            use std::os::unix::fs::DirBuilderExt;
+            let mut builder = std::fs::DirBuilder::new();
+            builder.mode(0o700);
+            builder
+        };
+        #[cfg(not(unix))]
+        let builder = std::fs::DirBuilder::new();
+        builder.create(&path)?;
+        Ok(Self(path))
+    }
+}
+impl Drop for ProbeDirectory {
+    fn drop(&mut self) {
+        // Only this invocation's freshly created temporary directory is owned.
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
+}
+
+async fn rust_link_check() -> Check {
+    let result = async {
+        let temp = ProbeDirectory::create().map_err(|_| ProbeFailure::Unavailable)?;
+        let source = temp.0.join("probe.rs");
+        let executable = temp
+            .0
+            .join(if cfg!(windows) { "probe.exe" } else { "probe" });
+        std::fs::write(&source, "fn main() {}\n").map_err(|_| ProbeFailure::Failed)?;
+        probe(
+            "rustc",
+            &[
+                "--edition",
+                "2024",
+                "--crate-name",
+                "miy_doctor_probe",
+                source.to_str().ok_or(ProbeFailure::Failed)?,
+                "-o",
+                executable.to_str().ok_or(ProbeFailure::Failed)?,
+            ],
+        )
+        .await?;
+        if !executable.is_file() {
+            return Err(ProbeFailure::Failed);
+        }
+        Ok(())
+    }
+    .await;
+    Check::new(
+        "rustLinker",
+        result.is_ok(),
+        match result {
+            Ok(()) => "rust_link_ready",
+            Err(ProbeFailure::TimedOut) => "rust_link_timed_out",
+            Err(_) => "rust_link_failed",
+        },
+        "Compiles and links a tiny Rust executable in a temporary directory; Windows requires the MSVC C++ tools and Windows SDK. The executable is not run.",
+    )
+}
+
+async fn mcp_start_check(root: &Path) -> Check {
+    if crate::agent_tools::verify_setup(root).is_err() {
+        return Check::skipped(
+            "projectMcpProcess",
+            "Repair the project MCP configuration before its local process can be tested.",
+        );
+    }
+    let result = probe_mcp(root).await;
+    Check::new("projectMcpProcess", result.is_ok(), match result {
+        Ok(()) => "mcp_stdio_ready",
+        Err(ProbeFailure::TimedOut) => "mcp_stdio_timed_out",
+        Err(_) => "mcp_stdio_failed",
+    }, "Starts the project CLI and performs local MCP initialize/tools/list within eight seconds. This does not verify an actual Codex/Claude session or live API tools.")
+        .details(json!({"transport":"stdio","agentSessionVerified":false,"liveApiToolsVerified":false}))
+}
+
+async fn probe_mcp(root: &Path) -> std::result::Result<(), ProbeFailure> {
+    let root = root.canonicalize().map_err(|_| ProbeFailure::Unavailable)?;
+    let binary = crate::platform::project_cli(&root);
+    let command =
+        crate::platform::command(binary.to_str().ok_or(ProbeFailure::Unavailable)?, &["mcp"])
+            .map_err(|_| ProbeFailure::Unavailable)?;
+    let mut command = tokio::process::Command::from(command);
+    command
+        .current_dir(&root)
+        .env("MIY_APP_DIRECTORY", &root)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .kill_on_drop(true);
+    let (mut child, _guard) = crate::owned_process::spawn(&mut command)
+        .await
+        .map_err(|_| ProbeFailure::Unavailable)?;
+    let result = tokio::time::timeout(TIMEOUT, async {
+        let mut input = child.stdin.take().ok_or(ProbeFailure::Failed)?;
+        let output = child.stdout.take().ok_or(ProbeFailure::Failed)?;
+        let mut output = BufReader::new(output.take(OUTPUT_LIMIT + 1));
+        let initialize = json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"miy-doctor","version":env!("CARGO_PKG_VERSION")}}});
+        input.write_all(format!("{initialize}\n").as_bytes()).await.map_err(|_| ProbeFailure::Failed)?;
+        let initialized = mcp_reply(&mut output, 1).await?;
+        if !initialized["result"]["capabilities"]["tools"].is_object() { return Err(ProbeFailure::Failed); }
+        input.write_all(b"{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\"}\n{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/list\",\"params\":{}}\n").await.map_err(|_| ProbeFailure::Failed)?;
+        let listed = mcp_reply(&mut output, 2).await?;
+        let tools = listed["result"]["tools"].as_array().ok_or(ProbeFailure::Failed)?;
+        for name in ["get_contract", "get_cli_help", "search_api", "get_api"] {
+            if !tools.iter().any(|tool| tool["name"] == name) { return Err(ProbeFailure::Failed); }
+        }
+        drop(input);
+        Ok(())
+    }).await.unwrap_or(Err(ProbeFailure::TimedOut));
+    let _ = child.start_kill();
+    let _ = tokio::time::timeout(Duration::from_secs(1), child.wait()).await;
+    result
+}
+
+async fn mcp_reply(
+    reader: &mut (impl tokio::io::AsyncBufRead + Unpin),
+    id: u64,
+) -> std::result::Result<Value, ProbeFailure> {
+    for _ in 0..16 {
+        let mut bytes = Vec::new();
+        if reader
+            .read_until(b'\n', &mut bytes)
+            .await
+            .map_err(|_| ProbeFailure::Failed)?
+            == 0
+        {
+            return Err(ProbeFailure::Failed);
+        }
+        if bytes.len() > OUTPUT_LIMIT as usize {
+            return Err(ProbeFailure::OutputLimit);
+        }
+        let value: Value = serde_json::from_slice(&bytes).map_err(|_| ProbeFailure::Failed)?;
+        if value["id"].as_u64() == Some(id) {
+            if value["jsonrpc"] != "2.0" || !value["error"].is_null() {
+                return Err(ProbeFailure::Failed);
+            }
+            return Ok(value);
+        }
+    }
+    Err(ProbeFailure::OutputLimit)
 }
 
 async fn tool_check(name: &'static str) -> Check {
@@ -504,14 +677,18 @@ mod tests {
 
     #[test]
     fn capability_contract_rejects_missing_features_and_unknown_platforms() {
-        let value = json!({"schemaVersion":1,"cliContractVersion":1,"features":["runtime.preflight.v1"],"runtimePlatform":"linux/amd64"});
-        assert_eq!(assess_capabilities(&value).0.status, "pass");
+        let value = json!({"schemaVersion":1,"cliContractVersion":1,"features":["runtime.preflight.v2"],"runtimePlatform":"linux/amd64"});
+        assert_eq!(assess_capabilities(&value, false).0.status, "pass");
+        assert_eq!(assess_capabilities(&value, true).0.status, "fail");
+        let mut develop = value.clone();
+        develop["features"] = json!(["runtime.preflight.v2", "development.sessions.v1"]);
+        assert_eq!(assess_capabilities(&develop, true).0.status, "pass");
         let mut invalid = value.clone();
         invalid["features"] = json!([]);
-        assert_eq!(assess_capabilities(&invalid).0.status, "fail");
+        assert_eq!(assess_capabilities(&invalid, false).0.status, "fail");
         invalid = value;
         invalid["runtimePlatform"] = json!("TOKEN-SENTINEL");
-        let (check, platform) = assess_capabilities(&invalid);
+        let (check, platform) = assess_capabilities(&invalid, false);
         assert!(platform.is_none());
         assert!(
             !serde_json::to_string(&check)

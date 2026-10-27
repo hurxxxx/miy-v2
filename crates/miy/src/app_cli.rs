@@ -26,8 +26,8 @@ pub enum AppCommand {
         id: String,
         #[arg(long)]
         name: String,
-        #[arg(long, default_value = "http://localhost:18000")]
-        url: String,
+        #[arg(long)]
+        url: Option<String>,
         #[arg(long)]
         ca_file: Option<PathBuf>,
     },
@@ -38,12 +38,15 @@ pub enum AppCommand {
     /// Check manifest, managed files, components and both language toolchains.
     Check,
     Fmt,
-    /// Run the local development gateway and private application database.
+    /// Run local development against the server's development database.
     Dev {
         #[arg(long, default_value = "18100")]
         port: u16,
         #[arg(long)]
         no_open: bool,
+        /// Use the server development DB, or explicitly select an isolated local DB.
+        #[arg(long, value_enum, default_value = "server")]
+        database: crate::development_client::DatabaseMode,
     },
     /// Stop this project's owned development processes; preserve its database volume.
     DevStop,
@@ -276,7 +279,11 @@ pub async fn execute(command: AppCommand) -> Result<Outcome> {
         AppCommand::Resume(_) => return removed(&["job", "resume", "--help"]),
         AppCommand::Control(_) => return removed(&["app", "--help"]),
         AppCommand::SetupCodex(_) | AppCommand::Codex(_) => return removed(&["app", "setup"]),
-        AppCommand::Dev { port, no_open } => crate::preview::run(port, no_open).await?,
+        AppCommand::Dev {
+            port,
+            no_open,
+            database,
+        } => crate::preview::run(port, no_open, database).await?,
         AppCommand::DevStop => crate::preview::stop().await?,
         AppCommand::Upgrade => return Ok(Outcome::Data(crate::upgrade::run().await?)),
         AppCommand::Setup => return Ok(Outcome::Data(crate::agent_tools::setup(Path::new("."))?)),
@@ -396,11 +403,21 @@ pub async fn execute(command: AppCommand) -> Result<Outcome> {
             );
             let selected = crate::cli_config::optional_selected()?;
             let (url, ca_file) = if let Some((_, context)) = &selected {
-                (context.origin.clone(), context.ca_file.clone())
+                if let Some(ref explicit) = url {
+                    anyhow::ensure!(
+                        crate::cli_client::origin(explicit)? == context.origin,
+                        CliError::new(
+                            Category::Conflict,
+                            "server_context_mismatch",
+                            "The supplied URL differs from the selected context. Add and select the intended context first."
+                        )
+                    );
+                }
+                (Some(context.origin.clone()), context.ca_file.clone())
             } else {
                 (url, ca_file)
             };
-            let url = crate::cli_client::origin(&url)?;
+            let url = url.as_deref().map(crate::cli_client::origin).transpose()?;
             crate::cli_client::client(ca_file.as_deref(), 20)?;
             std::fs::create_dir_all(&path)?;
             for (relative, content) in bundle::template() {
@@ -437,11 +454,25 @@ pub async fn execute(command: AppCommand) -> Result<Outcome> {
                 &std::env::current_exe()?,
                 &crate::platform::project_cli(&path),
             )?;
-            crate::cli_client::configure(&path, &url, ca_file.as_deref())?;
+            if let Some(ref url) = url {
+                crate::cli_client::configure(&path, url, ca_file.as_deref())?;
+            }
             crate::cli_config::bind_project(&path)?;
             crate::agent_tools::setup(&path)?;
+            let mut next = Vec::new();
+            if selected.is_none() {
+                next.push("miy context init (enter the target server URL)");
+            }
+            next.extend([
+                "miy auth login",
+                "miy component sync",
+                "miy doctor --for develop",
+                "miy app register (administrator approval required before app dev)",
+                "codex or claude (approve project trust/MCP when prompted)",
+                ".miy-tools/miy app check",
+            ]);
             return Ok(Outcome::Data(
-                json!({"created":path.canonicalize()?,"cliVersion":crate::cli_guidance::VERSION,"cliSkill":".agents/skills/miy-cli/SKILL.md","cliManual":"docs/CLI-REFERENCE.md","appId":id,"bundleVersion":bundle::VERSION,"components":"Declared in miy.components.json; fetch after login","next":["miy doctor --for develop","miy auth login","miy component sync", "codex or claude (approve project trust/MCP when prompted)",".miy-tools/miy app check",".miy-tools/miy app register"]}),
+                json!({"created":path.canonicalize()?,"cliVersion":crate::cli_guidance::VERSION,"cliSkill":".agents/skills/miy-cli/SKILL.md","cliManual":"docs/CLI-REFERENCE.md","appId":id,"bundleVersion":bundle::VERSION,"components":"Declared in miy.components.json; fetch after login","next":next}),
             ));
         }
         AppCommand::Fmt => run("cargo", &["fmt", "--package", "miy-app"])?,

@@ -582,7 +582,7 @@ async fn login(
     no_open: bool,
     account: Option<String>,
 ) -> Result<Value> {
-    let (name, context) = cli_config::selected()?;
+    let (name, context) = cli_config::login_context()?;
     crate::cli_client::origin(&context.origin)?;
     let capability = crate::cli_client::client(context.ca_file.as_deref(), HTTP_SECONDS)?
         .get(format!("{}/api/v1/capabilities", context.origin))

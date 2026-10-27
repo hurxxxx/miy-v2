@@ -162,7 +162,7 @@ def fixture_server(config):
             if path != "/api/v1/capabilities":
                 self.authenticated()
             if path == "/api/v1/capabilities":
-                self.send_json(200, {"schemaVersion": 1, "cliContractVersion": 1, "runtimePlatform": "linux/amd64", "features": ["auth.device.v1", "auth.sessions.v1", "runtime.preflight.v1", "runtime.jobs.v1", "runtime.events.v1", "images.idempotency.v1"]})
+                self.send_json(200, {"schemaVersion": 1, "cliContractVersion": 1, "runtimePlatform": "linux/amd64", "features": ["auth.device.v1", "auth.sessions.v1", "runtime.preflight.v2", "runtime.jobs.v1", "runtime.events.v1", "images.idempotency.v1"]})
             elif path == "/api/v1/me":
                 self.send_json(200, {"id": "fixture-user", "csrf": "fixture-csrf"})
             elif path.startswith(f"/api/v1/apps/{APP}/image-uploads/by-request/") or path.startswith("/api/v1/image-uploads/"):

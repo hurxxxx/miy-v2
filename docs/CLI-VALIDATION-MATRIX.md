@@ -1,12 +1,66 @@
-# CLI 0.5 상세 검증 기록
+# CLI 상세 검증 기록
 
-- 갱신: 2026-10-27
-- 코드 버전: CLI 0.5.0 / 번들 0.6.2
+- 갱신: 2026-10-28
+- 현재 구현 대상: CLI 0.6.0 / 번들 0.7.0. 기존 증거의 기준은 CLI 0.5.0 / 번들 0.6.2다.
 - 범위: [구현 계획](CLI-IMPLEMENTATION-PLAN.md). [전체 V0~V7 인수](VALIDATION.md)는 별도다.
 
 실제 실행 결과와 남은 환경 검사를 구분한다. 초기 Linux 검사는 `fb42b38` 이후 구현 작업 트리에서 실행했고, 최종 통합 검사는 미커밋 변경이 없는 `0fe94a4b9d851e7cf71dc9c8e91fb469423134e2`에서 다시 실행했다. 같은 커밋의 OS별 검사 결과를 아래 CI 기록으로 연결한다. `PASS`는 명시한 fixture·환경·assertion 범위에만 적용하고, 실제 장비/IdP/원격 서버/AI 세션을 대신하지 않는다.
 
-## 로컬 결과
+## CLI 0.6 추가 검증 범위 — 2026-10-28
+
+아래는 새 후보에서 실행·기록할 항목이다. 0.5의 PASS를 새 구현의 결과로 이월하지 않는다. 개별 개발 중 검사와 최종 후보 commit의 통합 검사도 구분한다.
+
+| 검증 대상 | 완료 판단에 필요한 증거 | 현재 인수 상태 |
+| --- | --- | --- |
+| 서버 명시 등록 | 설치 명령 주소 전달, 입력 요청·취소, 비대화형 미등록 상태, 설치 후 등록, 기존 연결·다른 요청 주소 표시, 기본 주소 없음 | 최종 후보 재검증 필요 |
+| HTTP IP | 인증서 없는 비-loopback HTTP의 OIDC·CLI·MCP·WS DB 터널·배포와 HTTPS 회귀 | 최종 후보 재검증 필요 |
+| 개발 준비 진단 | rustfmt, 실제 Rust 링크, Codex/Claude 설정 파싱, 제한 시간 내 local stdio initialize/tools/list | 최종 후보 재검증 필요 |
+| 서버 개발 DB | 로컬 CRUD 후 개발 배포에서 같은 DB·레코드 유지, 운영 DB 분리 | 최종 후보 재검증 필요 |
+| 복구·격리 | 동시 세션 충돌, 만료·권한 회수, SQL 변경/부분 실패, 연결 단절, 서버 재시작, 오래된 preflight | 최종 후보 재검증 필요 |
+| Windows 11 | 일반 사용자 PS5.1/7, Docker Desktop, 홈페이지 설치부터 운영 승격까지 | NOT_RUN |
+| 독립 AI 세션 | 새 Codex·Claude 프로젝트에서 생성 지침·MCP·CLI만으로 업무 앱 개발/검증 | NOT_RUN |
+
+로컬 MCP process probe는 실제 AI 세션이나 서버 API 도구 성공을 증명하지 않는다. CI Windows Server 결과와 사용자 Windows 11 결과를 각각 기록한다. 최종 후보의 commit·hash·실제 수행 명령·실패·NOT_RUN을 함께 남기고 UI/UX 개선은 TODO로 관리한다.
+
+### 0.6 구현 작업 트리 검증
+
+2026-10-28 Linux에서 다음 검사를 수행했다. 이 기록은 후보 CI나 사용자 Windows 결과와 합산하지 않는다.
+
+| 검사 | 관찰 결과 |
+| --- | --- |
+| Rust | 클라이언트 98개, 서버 118개 PASS; 외부 서비스 4개 ignored. 두 빌드 경계 Clippy warnings 금지·fmt PASS |
+| CLI 계약 | 출력 12개(이전 runtime capability 거부 포함), 요청 복구 6개, 명시적 서버 설치 17개 PASS |
+| 프런트 | TypeScript·production build PASS; 설치 화면 4개 PASS(배포 파일/체크섬 링크 포함) |
+| 서버 설정 | HTTP 허용 명시, 기존 비밀 보존, 컨테이너 UID의 초기화 파일 접근, Nginx·실제 systemd 단위 검증, 기존 realm 설정 갱신 PASS |
+| 개발 DB | 실제 PostgreSQL·HTTP/WS 16개 PASS: 동일 DB 재사용, 권한/세션 철회, DDL·다른 DB 접근 차단, 부분 SQL 실패·재개·스키마 revision. `.local/development-regression-57c52f5455/test.log` |
+| 기존 배포 회귀 | 두 실행 모두 runtime 33 + operations 6 + CLI 6 + auth 7 = 52개 관찰 PASS. 전체 runner는 별도 GitLab 컨테이너의 외부 변경 때문에 baseline 보존 검사에서 FAIL. 검증 조건을 완화하지 않았으며 소유 테스트 리소스 12개는 모두 정리됨. `/tmp/miy-runtime-regression-0fxroqjq/evidence/` |
+| 실제 HTTP IP | 별도 임시 서버에서 실제 Keycloak OIDC, 설치 CLI device 승인·인증 API, 쿠키·CSRF·Origin 검증 9개 PASS. 테스트 리소스 정리·기존 v2 PG/Keycloak 보존 확인. `.local/miy-http-db48ead1ea25/summary.json` |
+| 실제 HTTPS 로그인 | `v2.dwdcc.kr`에서 분리한 개발자·관리자의 OIDC/device 승인, 앱 등록과 권한 거부/관리자 승인 7개 PASS. 전체 DB·배포 단계는 후보 파일 준비 후 별도 실행 |
+| 기존 앱 갱신 | 보관된 CLI 0.5/번들 0.6.2로 만든 앱을 0.6/0.7로 업그레이드. 업무 Rust/React, 원본 SQL·사용자 CRLF SQL, manifest·의존성·컴포넌트 선언 등 10개 파일 hash 보존 PASS. 보호 SQL 변조는 거부. `.local/evidence/upgrade062-703e5ae10d/result.json` |
+
+DB 연결 helper는 Docker classic/containerd의 서로 다른 로컬 image ID 대신 검증한 config SHA로 동일성을 확인하고, 실행 시에는 검증을 마친 로컬 불변 ID를 사용한다. 실제 containerd export와 두 아카이브 형식·변조 거부 단위 검사를 통과했다. 실제 Windows Docker Desktop 결과는 NOT_RUN이다.
+
+사용자 테스트의 시작 순서는 [핵심 흐름 테스트](CORE-TESTING.md)를 따른다.
+
+## 로컬 결과 — 이전 후보와 설치 개선 이력
+
+### 서버 주소를 전달하는 설치 개선 — 2026-10-27 작업 트리
+
+기존 후보 이후 변경으로, 서버 `MIY_ORIGIN` 기반 `/cli/install` 안내와 `--server`/`-Server`, 설정이 없는 경우에만 생성하는 `context init --url`을 추가했다. 아래 결과는 이 변경 작업 트리의 Linux 실행이며 이전 공개 후보나 실제 Windows 통과 기록으로 이월하지 않는다.
+
+| 검사 | 결과 |
+| --- | --- |
+| 서버·클라이언트 Rust | 서버 단위 106개 통과(외부 서비스 3개 ignored), 클라이언트 91개 통과. 양쪽 Clippy warnings 금지·fmt 통과 |
+| 설치·기본 연결 블랙박스 | `check-cli-install.py` 11개 통과. 제공한 URL 정규화, 신규 활성 연결, 기존 파일·사용자·CA·인증정보 보존, 명시적 선택과 프로젝트 binding 독립, 잘못된 입력/설정 거부, 실제 Unix 설치·갱신·부분 실패 처리 |
+| 기존 CLI 출력 계약 | `check-cli-output.py` 11개 통과 |
+| PowerShell 공통 초기화·복구 | Linux PowerShell 7.6.9 + 실제 Linux CLI로 9개 통과. 새 URL 등록, 기존/빈 설정 보존, 오류 코드 전달, 파일 복구 확인. Windows 전용 설치 실행과 구분 |
+| 설치 안내 API | 서버 단위 검사에 포함된 3개 통과. 서로 다른 공개 URL, 셸 인용, 외부 Host 헤더와 무관한 서버 설정 사용 확인 |
+| 설치 안내 UI | Playwright 3개 통과. 공개/로그인 후 접근, 서버 제공 URL·정확한 명령 복사, API 실패 표시, 데스크톱·모바일 화면 확인 |
+| 기존 UI 회귀·빌드 | runtime-health UI 6개, TypeScript, 플랫폼 production build 통과 |
+
+네이티브 CLI 설치 검사는 foundation/release CI에 추가했다. 실제 Windows PowerShell 5.1/7 설치기는 신규 연결·설정 보존·부분 실패 검사까지 9개 시나리오로 확장했지만, 이번 변경의 네이티브 Windows/macOS 실행은 미실행이다. `v2.dwdcc.kr` 운영 반영·실제 로그인·새 설치 패키지 발행도 이 검증에 포함하지 않는다.
+
+### 기존 후보 결과
 
 | 요구 | 실제 검사와 확인한 조건 | 결과 |
 | --- | --- | --- |
@@ -73,6 +127,7 @@ cargo clippy --workspace --all-targets --locked --no-default-features -- -D warn
 cargo test --workspace --locked --no-default-features
 cargo build --locked --no-default-features
 python3 scripts/check-cli-output.py --cli target/debug/miy
+python3 scripts/check-cli-install.py --cli target/debug/miy
 python3 scripts/check-cli-recovery.py --cli target/debug/miy
 python3 scripts/check-bundle-portability.py check --cli target/debug/miy --output .local/ci/bundle.json
 MIY_PREVIOUS_BUNDLE_CLI=/absolute/path/to/previous/miy node scripts/check-cli-guidance.mjs
@@ -80,6 +135,7 @@ python3 scripts/runtime-regression/test_cleanup.py
 python3 scripts/runtime-regression/run.py
 pnpm typecheck
 pnpm exec playwright test --config scripts/runtime-regression/ui.config.ts
+pnpm exec playwright test --config scripts/runtime-regression/cli-install-ui.config.ts
 node --test scripts/lib/cli-result.test.mjs
 python3 scripts/test-cli-release.py
 ```

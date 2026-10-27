@@ -132,8 +132,54 @@ pub(crate) fn setup_changes(root: &Path) -> Result<Vec<crate::file_transaction::
 
 pub(crate) fn setup_result(root: &Path) -> Result<Value> {
     let guidance = crate::cli_guidance::verify(root)?;
+    let mcp = verify_setup(root)?;
     Ok(
-        json!({"cliGuidance":guidance,"cliVersion":crate::cli_guidance::VERSION,"configured":["Codex","Claude Code"],"transport":"stdio MCP using CLI login","next":["miy auth login","codex or claude; accept project trust and MCP prompts"],"globalSettingsChanged":false}),
+        json!({"cliGuidance":guidance,"mcpConfiguration":mcp,"cliVersion":crate::cli_guidance::VERSION,"configured":["Codex","Claude Code"],"transport":"stdio MCP using CLI login","next":["miy auth login","codex or claude; accept project trust and MCP prompts"],"globalSettingsChanged":false}),
+    )
+}
+
+/// Validate the actual agent configuration, including TOML syntax/duplicate
+/// tables, without returning other MCP servers' configuration or credentials.
+pub(crate) fn verify_setup(root: &Path) -> Result<Value> {
+    let root = root.canonicalize()?;
+    for path in [
+        ".codex/config.toml",
+        ".mcp.json",
+        crate::platform::project_cli_relative(),
+    ] {
+        crate::cli_guidance::safe_target(&root, path)?;
+    }
+    let binary = crate::platform::project_cli(&root);
+    ensure!(binary.is_file(), "project_cli_unavailable");
+    let codex_path = root.join(".codex/config.toml");
+    let claude_path = root.join(".mcp.json");
+    ensure!(
+        std::fs::metadata(&codex_path)?.len() <= 1024 * 1024,
+        "codex_config_too_large"
+    );
+    ensure!(
+        std::fs::metadata(&claude_path)?.len() <= 1024 * 1024,
+        "claude_config_too_large"
+    );
+    let codex: toml::Value = toml::from_str(&std::fs::read_to_string(codex_path)?)
+        .map_err(|_| anyhow::anyhow!("invalid_codex_mcp_config"))?;
+    let configured = codex
+        .get("mcp_servers")
+        .and_then(|servers| servers.get("miy_app"));
+    ensure!(
+        serde_json::to_value(configured)?
+            == json!({"command":binary,"args":["mcp"],"cwd":root,"required":true}),
+        "codex_mcp_config_mismatch"
+    );
+    let claude: Value = serde_json::from_slice(&std::fs::read(claude_path)?)
+        .map_err(|_| anyhow::anyhow!("invalid_claude_mcp_config"))?;
+    ensure!(
+        claude["mcpServers"]["miy_app"]
+            == json!({"type":"stdio","command":binary,"args":["mcp"],"env":{"MIY_APP_DIRECTORY":root}}),
+        "claude_mcp_config_mismatch"
+    );
+    Ok(
+        json!({"valid":true,"clients":["Codex","Claude Code"],"transport":"stdio","liveProbe":false}),
     )
 }
 #[derive(Clone)]
@@ -154,7 +200,7 @@ struct CliHelpInput {
 fn result(v: Result<Value>) -> Result<CallToolResult, McpError> {
     Ok(match v {
         Ok(v)=>CallToolResult::success(vec![ContentBlock::text(v.to_string())]),
-        Err(e)=>CallToolResult::error(vec![ContentBlock::text(json!({"error":e.to_string(),"hint":"Run .miy-tools/miy app login in this app directory; inspect app doctor. Never read or print credential files."}).to_string())])
+        Err(e)=>CallToolResult::error(vec![ContentBlock::text(json!({"error":e.to_string(),"hint":"Register an explicit server with miy context init if needed, then run .miy-tools/miy auth login and doctor --for develop in this app directory (.exe on Windows). Never read or print credential files."}).to_string())])
     })
 }
 #[derive(Deserialize, schemars::JsonSchema)]
@@ -331,4 +377,51 @@ pub async fn serve() -> Result<()> {
     .await?;
     service.waiting().await?;
     Ok(())
+}
+
+#[cfg(test)]
+mod configuration_tests {
+    use super::*;
+
+    #[test]
+    fn actual_mcp_configuration_rejects_wrong_targets_duplicates_and_private_extra_fields() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().canonicalize().unwrap();
+        std::fs::create_dir(root.join(".codex")).unwrap();
+        std::fs::create_dir(root.join(".miy-tools")).unwrap();
+        let binary = crate::platform::project_cli(&root);
+        std::fs::write(&binary, []).unwrap();
+        let codex = format!(
+            "[mcp_servers.other]\ncommand = \"unrelated\"\n\n[mcp_servers.miy_app]\ncommand = {}\nargs = [\"mcp\"]\ncwd = {}\nrequired = true\n",
+            json!(binary),
+            json!(root)
+        );
+        let claude = json!({"mcpServers":{"other":{"token":"PRIVATE-SENTINEL"},"miy_app":{"type":"stdio","command":binary,"args":["mcp"],"env":{"MIY_APP_DIRECTORY":root}}}});
+        let codex_path = root.join(".codex/config.toml");
+        let claude_path = root.join(".mcp.json");
+        std::fs::write(&codex_path, &codex).unwrap();
+        std::fs::write(&claude_path, claude.to_string()).unwrap();
+        assert!(
+            !verify_setup(&root)
+                .unwrap()
+                .to_string()
+                .contains("PRIVATE-SENTINEL")
+        );
+        std::fs::write(
+            &codex_path,
+            format!("{codex}\n[mcp_servers.miy_app]\ncommand = \"PRIVATE-SENTINEL\"\n"),
+        )
+        .unwrap();
+        let error = verify_setup(&root).unwrap_err().to_string();
+        assert_eq!(error, "invalid_codex_mcp_config");
+        assert!(!error.contains("PRIVATE-SENTINEL"));
+        std::fs::write(&codex_path, &codex).unwrap();
+        let mut invalid = claude;
+        invalid["mcpServers"]["miy_app"]["env"]["MIY_APP_DIRECTORY"] = json!("wrong-directory");
+        std::fs::write(&claude_path, invalid.to_string()).unwrap();
+        assert_eq!(
+            verify_setup(&root).unwrap_err().to_string(),
+            "claude_mcp_config_mismatch"
+        );
+    }
 }

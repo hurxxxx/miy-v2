@@ -301,7 +301,8 @@ function Get-MiyReleaseArchive([string]$Stage, [string]$ArchivePath, [string]$Sh
 }
 
 function Invoke-MiyInstall([string]$InstallDir, [string]$InstallerDirectory, [string]$ArchivePath,
-    [string]$Sha256, [string]$Version, [string]$Repository = 'hurxxxx/miy-v2', [switch]$AddToPath, [switch]$RequireExisting) {
+    [string]$Sha256, [string]$Version, [string]$Repository = 'hurxxxx/miy-v2', [string]$Server,
+    [switch]$AddToPath, [switch]$RequireExisting, [switch]$NonInteractive) {
     $installation = Open-MiyInstallation $InstallDir $InstallerDirectory -Create
     $root = $installation.Root
     $stage = $null
@@ -325,8 +326,24 @@ function Invoke-MiyInstall([string]$InstallDir, [string]$InstallerDirectory, [st
         $journal.phase = 'committed'
         Write-MiyAtomic (Join-Path $root '.miy-install-journal.json') (ConvertTo-MiyBytes $journal)
         Repair-MiyInstallation $root
+        # Configuration is a separate, create-only CLI operation after the
+        # binary transaction commits. It must never participate in rollback.
+        $contextInitialization = Initialize-MiyContext (Join-Path $root 'miy.exe') $Server -AllowPrompt:(-not $NonInteractive)
         if ($AddToPath) { Set-MiyUserPath $root }
-        return @{ installed = $true; version = $metadata.version; directory = $root; userPathChanged = [bool]$AddToPath; backup = $paths.Backup }
+        $result = @{ installed = $true; version = $metadata.version; directory = $root; userPathChanged = [bool]$AddToPath; backup = $paths.Backup }
+        if ($null -ne $contextInitialization) {
+            $result.contextInitialization = $contextInitialization
+            if ($contextInitialization.status -eq 'initialized') {
+                $result.next = @('miy --context default auth login', 'miy --context default doctor --for operate')
+            } elseif ($contextInitialization.status -eq 'required') {
+                $result.next = @('miy context init', 'miy auth login')
+            } elseif ($contextInitialization.setupRequired -or $contextInitialization.serverMismatch) {
+                $result.next = $contextInitialization.next
+            } else {
+                $result.next = @('miy context show')
+            }
+        }
+        return $result
     } catch {
         $original = $_
         try { Repair-MiyInstallation $root } catch { Stop-MiyInstall 'Installation recovery is pending. Preserve the journal and backups, close CLI/MCP processes, and retry the external installer.' 6 }
@@ -336,6 +353,86 @@ function Invoke-MiyInstall([string]$InstallDir, [string]$InstallerDirectory, [st
             Remove-MiyStage $stage
         }
         $installation.Lock.Dispose()
+    }
+}
+
+function Test-MiyConsoleInput {
+    try {
+        return $Host.Name -eq 'ConsoleHost' -and -not [Console]::IsInputRedirected -and
+            -not [Console]::IsOutputRedirected -and -not [Console]::IsErrorRedirected -and
+            ([Environment]::GetCommandLineArgs() -notcontains '-NonInteractive')
+    } catch { return $false }
+}
+
+function Initialize-MiyContext([string]$Binary, [string]$Server, [switch]$AllowPrompt) {
+    $prompted = $false
+    while ($true) {
+        $previous = $ErrorActionPreference
+        # The native command always receives --no-input because stdout is
+        # captured as JSON. The installer owns any terminal prompt separately.
+        $PSNativeCommandUseErrorActionPreference = $false
+        $arguments = @('--output', 'json', '--no-input', 'context', 'init')
+        if (-not [string]::IsNullOrEmpty($Server)) { $arguments += @('--url', $Server) }
+        try {
+            $ErrorActionPreference = 'Continue'
+            $reported = & $Binary @arguments 2>$null
+            $nativeExit = $LASTEXITCODE
+        } catch {
+            Stop-MiyInstall 'The CLI binary is installed, but server context initialization could not run. Retry with a compatible CLI and installer; existing configuration was not reset.'
+        } finally { $ErrorActionPreference = $previous }
+        try {
+            $text = ($reported -join "`n")
+            if ($text.Length -gt 65536) { throw 'oversized context result' }
+            $reply = $text | ConvertFrom-Json -ErrorAction Stop
+            if ($null -eq $reply -or $reply.schemaVersion -ne 1 -or $reply.command -ne 'context init' -or
+                $reply.ok -isnot [bool] -or $reply.ok -ne ($nativeExit -eq 0)) { throw 'invalid context result' }
+        } catch {
+            Stop-MiyInstall 'The CLI binary is installed, but its server context initialization result could not be verified. Inspect the configuration with "miy context show" before retrying. The installer did not reset configuration.'
+        }
+        if ($nativeExit -ne 0) {
+            $missingUrl = $nativeExit -eq 2 -and [string]::IsNullOrEmpty($Server) -and
+                $null -ne $reply.PSObject.Properties['error'] -and $reply.error.code -eq 'server_url_required'
+            $invalidPrompt = $nativeExit -eq 2 -and $prompted -and
+                $null -ne $reply.PSObject.Properties['error'] -and $reply.error.code -eq 'invalid_platform_origin'
+            if ($missingUrl -or $invalidPrompt) {
+                if ($AllowPrompt -and (Test-MiyConsoleInput)) {
+                    if ($invalidPrompt) { [Console]::Error.WriteLine('Enter a complete HTTP or HTTPS origin without credentials, path, query or fragment.') }
+                    $Server = Read-Host 'Target server URL (include http:// or https://; blank registers later)'
+                    if (-not [string]::IsNullOrWhiteSpace($Server)) {
+                        $Server = $Server.Trim()
+                        $prompted = $true
+                        continue
+                    }
+                }
+                return @{ status = 'required'; active = $null; setupRequired = $true; serverMismatch = $false;
+                    next = @('miy context init', 'miy auth login') }
+            }
+            $code = if ($nativeExit -ge 1 -and $nativeExit -le 255) { $nativeExit } else { 7 }
+            Stop-MiyInstall ('The CLI binary is installed, but server context initialization failed (exit ' + $nativeExit + '). Check the server URL and configuration, then retry the installer or miy context init. Existing configuration was not reset.') $code
+        }
+        try {
+            if ($null -eq $reply.data) { throw 'missing context result' }
+            $data = $reply.data
+            if ($data.status -eq 'initialized') {
+                if ($data.context -ne 'default' -or $data.active -ne 'default' -or
+                    $data.origin -isnot [string] -or [string]::IsNullOrEmpty($data.origin)) { throw 'invalid initialized context' }
+                return @{ status = 'initialized'; active = 'default'; context = 'default'; origin = $data.origin;
+                    setupRequired = $false; serverMismatch = $false }
+            }
+            if ($data.status -eq 'preserved') {
+                $active = $data.active
+                if (($null -ne $active -and $active -isnot [string]) -or
+                    ($null -ne $data.activeOrigin -and $data.activeOrigin -isnot [string]) -or
+                    ($null -ne $data.requestedOrigin -and $data.requestedOrigin -isnot [string]) -or
+                    $data.setupRequired -isnot [bool] -or $data.serverMismatch -isnot [bool]) { throw 'invalid preserved context' }
+                return @{ status = 'preserved'; active = $active; activeOrigin = $data.activeOrigin;
+                    requestedOrigin = $data.requestedOrigin; setupRequired = $data.setupRequired;
+                    serverMismatch = $data.serverMismatch; next = @($data.next) }
+            }
+            throw 'unknown context status'
+        } catch {
+            Stop-MiyInstall 'The CLI binary is installed, but its server context initialization result could not be verified. Inspect the configuration with "miy context show" before retrying. The installer did not reset configuration.'
+        }
     }
 }
 

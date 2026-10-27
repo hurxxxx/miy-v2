@@ -32,8 +32,19 @@ import {
 import { Button, Panel } from "@miy/ui";
 import "./style.css";
 import { RuntimeHealth } from "./RuntimeHealth";
+import { CliInstall } from "./CliInstall";
 
 const activeGuards = new Set<ReturnType<typeof createNavigationGuards>>();
+
+// getRandomValues is available on internal HTTP origins as well as HTTPS.
+// randomUUID requires a secure context and would break runtime controls on IP HTTP.
+function requestId() {
+  const bytes = crypto.getRandomValues(new Uint8Array(16));
+  bytes[6] = (bytes[6]! & 0x0f) | 0x40;
+  bytes[8] = (bytes[8]! & 0x3f) | 0x80;
+  const hex = Array.from(bytes, (value) => value.toString(16).padStart(2, "0")).join("");
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
 
 type User = { id: string; name: string; admin: boolean; csrf: string };
 type LoginOptions = {
@@ -122,6 +133,7 @@ function Login() {
       >
         {options?.developmentLogin ? "OAuth로 로그인" : "로그인"}
       </a>
+      <Link to={"/cli/install" as "/"} className="oauth-link cli-install-link">CLI 설치 안내</Link>
     </main>
   );
 }
@@ -154,6 +166,14 @@ function Shell() {
         .then(setApps)
         .catch(() => setApps([]));
   }, [user, location.pathname]);
+  if (location.pathname === "/cli/install" && !user)
+    return (
+      <main className="cli-install-public">
+        <Link to="/" className="brand">miy</Link>
+        <Outlet />
+        <Link to="/">플랫폼으로 돌아가기</Link>
+      </main>
+    );
   if (user === undefined) return <main>불러오는 중…</main>;
   if (!user) return <Login />;
   if (environment === "invalid")
@@ -188,6 +208,7 @@ function Shell() {
           <Link to={environmentPath("dev") as "/"}>테스트 영역</Link>
           <Link to={environmentPath("prod") as "/"}>운영 영역</Link>
           {user.admin && <Link to={"/admin" as "/"}>플랫폼 관리</Link>}
+          <Link to={"/cli/install" as "/"}>CLI 설치</Link>
         </nav>
         <nav>
           <Link to={environmentPath(environment) as "/"}>홈</Link>
@@ -291,7 +312,7 @@ function RuntimeControls({
             environment: app.environment,
             expectedState: plan.expectedState,
             confirmed: app.environment === "prod" || action === "remove",
-            idempotencyKey: crypto.randomUUID(),
+            idempotencyKey: requestId(),
           }),
         },
       );
@@ -889,6 +910,11 @@ const router = createRouter({
       getParentRoute: () => root,
       path: "/environments/$environment/apps/$appId/$",
       component: AppView,
+    }),
+    createRoute({
+      getParentRoute: () => root,
+      path: "/cli/install",
+      component: CliInstall,
     }),
     createRoute({
       getParentRoute: () => root,

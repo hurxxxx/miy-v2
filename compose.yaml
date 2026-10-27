@@ -4,11 +4,11 @@ services:
     image: postgres:18.3@sha256:7e32e9833a6fb1c92c32552794cb6ed569d51b445a54907d35fc112ef39684db
     environment:
       POSTGRES_PASSWORD: ${MIY_PG_ADMIN_PASSWORD:?run scripts/bootstrap.py}
-    ports: ["127.0.0.1:15432:5432"]
+    ports: ["127.0.0.1:${MIY_POSTGRES_PORT:-15432}:5432"]
     networks: [default, app_runtime]
     volumes:
       - pgdata:/var/lib/postgresql
-      - ./.local/init.sql:/docker-entrypoint-initdb.d/10-miy.sql:ro
+      - ${MIY_STATE_DIR:-./.local}/init.sql:/docker-entrypoint-initdb.d/10-miy.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 2s
@@ -24,20 +24,25 @@ services:
       KC_DB_PASSWORD: ${MIY_IDENTITY_PASSWORD:?}
       KC_HTTP_ENABLED: "true"
       KC_HTTP_RELATIVE_PATH: /identity
-      KC_HOSTNAME: https://localhost:18443/identity
+      KC_HOSTNAME: ${MIY_ORIGIN:?run scripts/bootstrap.py}/identity
       KC_PROXY_HEADERS: xforwarded
       KC_BOOTSTRAP_ADMIN_USERNAME: bootstrap
       KC_BOOTSTRAP_ADMIN_PASSWORD: ${MIY_IDENTITY_ADMIN_PASSWORD:?}
       KC_HEALTH_ENABLED: "true"
-    volumes: ["./.local/realm.json:/opt/keycloak/data/import/miy-realm.json:ro"]
+    ports: ["127.0.0.1:${MIY_IDENTITY_PORT:-18181}:8080"]
+    volumes: ["${MIY_STATE_DIR:-./.local}/realm.json:/opt/keycloak/data/import/miy-realm.json:ro"]
     depends_on:
       postgres: {condition: service_healthy}
   proxy:
     image: caddy:2.11.2@sha256:25cdc846626b62d05f6b633b9b40c2c9f6ef89b515dc76133cefd920f7dbe562
-    ports: ["127.0.0.1:18443:18443", "127.0.0.1:18000:18000"]
+    ports: ["${MIY_PROXY_BIND:-127.0.0.1}:${MIY_HTTPS_PORT:-18443}:18443", "${MIY_PROXY_BIND:-127.0.0.1}:${MIY_HTTP_PORT:-18000}:18000"]
+    environment:
+      MIY_CORE_UPSTREAM: ${MIY_CORE_UPSTREAM:-host.docker.internal:18080}
+      MIY_PROXY_TLS_SITE: ${MIY_PROXY_TLS_SITE:-https://localhost:18443}
+    extra_hosts: ["host.docker.internal:host-gateway"]
     volumes:
-      - ./ops/Caddyfile:/etc/caddy/Caddyfile:ro
-      - ./.local/caddy:/data
+      - ${MIY_CADDY_CONFIG:-./ops/Caddyfile}:/etc/caddy/Caddyfile:ro
+      - ${MIY_STATE_DIR:-./.local}/caddy:/data
       - ./web/platform/dist:/srv/platform:ro
     depends_on: [keycloak]
 volumes:

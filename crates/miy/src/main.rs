@@ -24,6 +24,8 @@ mod cli_doctor;
 mod cli_error;
 mod cli_guidance;
 mod cli_input;
+#[cfg(feature = "server")]
+mod cli_install;
 mod cli_journal;
 mod cli_login;
 mod cli_output;
@@ -39,12 +41,17 @@ mod component_registry;
 mod connections;
 mod contract;
 mod credential_store;
+mod db_tunnel;
 #[cfg(feature = "server")]
 mod delivery;
+#[cfg(feature = "server")]
+mod development;
+mod development_client;
 mod docker;
 #[cfg(feature = "server")]
 mod domain;
 mod file_transaction;
+mod helper_image;
 #[cfg(feature = "server")]
 mod http;
 mod identity;
@@ -76,6 +83,8 @@ mod runtime_platform;
 mod runtime_preflight;
 #[cfg(all(test, feature = "server"))]
 mod runtime_regression;
+#[cfg(feature = "server")]
+mod server_origin;
 mod upgrade;
 #[cfg(feature = "server")]
 mod worker;
@@ -146,6 +155,9 @@ enum Command {
     },
     /// Serve the project read-only JSON-RPC MCP interface over stdio.
     Mcp,
+    /// Internal Docker helper; configured only by app dev.
+    #[command(hide = true)]
+    InternalDbTunnel,
     App {
         #[command(subcommand)]
         command: app_cli::AppCommand,
@@ -226,7 +238,10 @@ async fn main() -> Result<()> {
     {
         std::process::exit(cli_output::emit(mode, &command_name, &Err(error), false)?);
     }
-    let raw = matches!(&args.command, Command::Mcp | Command::Completion { .. });
+    let raw = matches!(
+        &args.command,
+        Command::Mcp | Command::InternalDbTunnel | Command::Completion { .. }
+    );
     let result = match args.command {
         Command::Context { command } => cli_config::execute(command).map(cli_output::Outcome::Data),
         Command::Auth { command } => Box::pin(cli_login::execute(command))
@@ -266,6 +281,9 @@ async fn main() -> Result<()> {
             cli_discovery::completion(shell).map(|()| cli_output::Outcome::Raw)
         }
         Command::Mcp => Box::pin(agent_tools::serve())
+            .await
+            .map(|()| cli_output::Outcome::Raw),
+        Command::InternalDbTunnel => Box::pin(db_tunnel::run())
             .await
             .map(|()| cli_output::Outcome::Raw),
         #[cfg(feature = "server")]
@@ -346,8 +364,9 @@ async fn run_server(command: Command) -> Result<()> {
         auth: Arc::new(auth::Auth::new().await?),
         artifacts: std::env::var("MIY_ARTIFACTS")?.into(),
     };
-    let listener = tokio::net::TcpListener::bind("0.0.0.0:18080").await?;
-    tracing::info!(event = "core_listening", port = 18080);
+    let bind = std::env::var("MIY_BIND_ADDR").unwrap_or_else(|_| "127.0.0.1:18080".into());
+    let listener = tokio::net::TcpListener::bind(&bind).await?;
+    tracing::info!(event = "core_listening", address = %bind);
     axum::serve(listener, http::router(state))
         .with_graceful_shutdown(async {
             let _ = tokio::signal::ctrl_c().await;

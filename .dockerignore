@@ -1,9 +1,15 @@
 .git
 .local
+.env
+.env.*
 target
 node_modules
+**/target
 **/node_modules
 **/dist
-docs
+**/.miy
+**/.miy-tools
+**/__pycache__
 test-results
 playwright-report
+*.log

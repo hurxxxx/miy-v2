@@ -72,6 +72,9 @@ jobs:
       - name: Verify CLI output and exit contracts with a loopback fixture
         if: matrix.client
         run: python scripts/check-cli-output.py --cli "${{ matrix.binary }}"
+      - name: Verify installer server bootstrap and existing configuration preservation
+        if: matrix.client
+        run: python scripts/check-cli-install.py --cli "${{ matrix.binary }}"
       - name: Verify lost acknowledgements and lifecycle recovery
         if: matrix.id == 'linux-client'
         run: |

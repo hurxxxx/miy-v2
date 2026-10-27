@@ -13,8 +13,35 @@ use uuid::Uuid;
 
 pub use crate::api_error::{ApiError, ApiResult};
 
+async fn no_store(mut response: Response) -> Response {
+    response
+        .headers_mut()
+        .insert(header::CACHE_CONTROL, "no-store".parse().unwrap());
+    response
+}
+
 pub fn router(state: State) -> Router {
     let api = Router::new()
+        .route(
+            "/apps/{app}/dev-sessions",
+            axum::routing::post(crate::development::create)
+                .layer(axum::extract::DefaultBodyLimit::max(
+                    crate::development::MAX_BODY,
+                ))
+                .layer(middleware::map_response(no_store)),
+        )
+        .route(
+            "/dev-sessions/{id}",
+            axum::routing::get(crate::development::get).delete(crate::development::close),
+        )
+        .route(
+            "/dev-sessions/{id}/heartbeat",
+            axum::routing::post(crate::development::heartbeat),
+        )
+        .route(
+            "/apps/{app}/dev-sessions/by-request/{request}",
+            axum::routing::get(crate::development::by_request),
+        )
         .route(
             "/components",
             axum::routing::get(crate::component_registry::catalog)
@@ -145,7 +172,12 @@ pub fn router(state: State) -> Router {
         .route_layer(middleware::from_fn_with_state(state.clone(), session_guard));
     Router::new()
         .nest("/api/v1", api)
+        .route(
+            "/api/v1/dev-sessions/{id}/database",
+            axum::routing::get(crate::development::database),
+        )
         .route("/api/v1/capabilities", axum::routing::get(capabilities))
+        .merge(crate::cli_install::router(state.auth.origin.clone()))
         .route(
             "/auth/cli/device",
             axum::routing::post(crate::auth_sessions::start),
@@ -311,7 +343,7 @@ async fn capabilities() -> Json<Value> {
         "runtimePlatform":crate::runtime_platform::server(),
         "userActivationSource":"core.users.enabled",
         "userActivationPropagation":"each authenticated request and queued operation; no Keycloak synchronization implied",
-        "features":["runtime.preflight.v1","auth.sessions.v1","auth.device.v1","runtime.jobs.v1","runtime.events.v1","runtime.retry.v1","images.idempotency.v1","runtime.logs.v1","lists.pagination.v1"]}),
+        "features":["runtime.preflight.v2","development.sessions.v1","auth.sessions.v1","auth.device.v1","runtime.jobs.v1","runtime.events.v1","runtime.retry.v1","images.idempotency.v1","runtime.logs.v1","lists.pagination.v1"]}),
     )
 }
 #[derive(serde::Deserialize)]
@@ -515,7 +547,8 @@ async fn login(S(s): S<State>) -> ApiResult<Response> {
     let mut r = Redirect::to(&url).into_response();
     r.headers_mut().append(
         header::SET_COOKIE,
-        format!("miy_login={value}; HttpOnly; Secure; SameSite=Lax; Path=/auth; Max-Age=300")
+        s.auth
+            .cookie("miy_login", &value, "/auth", 300)
             .parse()
             .unwrap(),
     );
@@ -590,15 +623,14 @@ async fn callback(
     let mut r = Redirect::to("/").into_response();
     r.headers_mut().append(
         header::SET_COOKIE,
-        format!("miy_session={session}; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=28800")
+        s.auth
+            .cookie("miy_session", &session, "/", 28800)
             .parse()
             .unwrap(),
     );
     r.headers_mut().append(
         header::SET_COOKIE,
-        "miy_login=; HttpOnly; Secure; SameSite=Lax; Path=/auth; Max-Age=0"
-            .parse()
-            .unwrap(),
+        s.auth.cookie("miy_login", "", "/auth", 0).parse().unwrap(),
     );
     Ok(r)
 }
@@ -613,9 +645,7 @@ async fn logout(S(s): S<State>, headers: HeaderMap) -> ApiResult<Response> {
     let mut r = Json(json!({"redirect":url})).into_response();
     r.headers_mut().append(
         header::SET_COOKIE,
-        "miy_session=; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=0"
-            .parse()
-            .unwrap(),
+        s.auth.cookie("miy_session", "", "/", 0).parse().unwrap(),
     );
     r.headers_mut().append(
         header::SET_COOKIE,

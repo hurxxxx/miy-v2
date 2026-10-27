@@ -22,6 +22,7 @@ fn report(name: &str, passed: bool, evidence: Value) {
 }
 fn actor(id: &str) -> auth::Principal {
     auth::Principal {
+        cli_session_id: None,
         id: id.into(),
         scopes: vec!["miy.dev".into()],
         csrf: None,

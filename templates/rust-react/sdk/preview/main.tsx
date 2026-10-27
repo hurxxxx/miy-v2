@@ -65,7 +65,7 @@ function Preview() {
   return (
     <>
       <header style={{ padding: 16, background: "#edf2f7" }}>
-        miy · LOCAL PREVIEW · {context.user.name} · separate local database /
+        miy · LOCAL PREVIEW · {context.user.name} · development database /
         server DEV connections
       </header>
       <main style={{ padding: 24 }}>

@@ -34,6 +34,7 @@ pub async fn run() -> Result<Value> {
         Some("0.5.0") => include_str!("../bundles/0.5.0.json"),
         Some("0.6.0") => include_str!("../bundles/0.6.0.json"),
         Some("0.6.1") => include_str!("../bundles/0.6.1.json"),
+        Some("0.6.2") => include_str!("../bundles/0.6.2.json"),
         _ => anyhow::bail!(CliError::new(
             Category::Environment,
             "unsupported_old_bundle",
@@ -74,7 +75,10 @@ pub async fn run() -> Result<Value> {
     let protected = crate::bundle::protected_hashes();
     // The 0.6.x transition updates guidance only. Prove runtime/default bytes
     // stay identical before taking this path; no login/download/lock resolution.
-    if matches!(old["bundleVersion"].as_str(), Some("0.6.0" | "0.6.1")) {
+    if matches!(
+        old["bundleVersion"].as_str(),
+        Some("0.6.0" | "0.6.1" | "0.6.2")
+    ) {
         let mut changes = crate::agent_tools::setup_changes(&root)?;
         for (path, content) in crate::bundle::template() {
             if !protected.contains_key(path) {
@@ -82,7 +86,9 @@ pub async fn run() -> Result<Value> {
             }
             let unchanged = hashes.get(*path).and_then(Value::as_str)
                 == Some(crate::contract::hash(content).as_str());
-            if path.starts_with("sdk/") || path.ends_with(".sql") || *path == "miy.components.json"
+            if (path.starts_with("sdk/") && *path != "sdk/preview/main.tsx")
+                || path.ends_with(".sql")
+                || *path == "miy.components.json"
             {
                 ensure!(
                     unchanged,
@@ -97,7 +103,7 @@ pub async fn run() -> Result<Value> {
                 continue;
             }
             ensure!(
-                matches!(*path, "AGENTS.md" | "CLAUDE.md")
+                matches!(*path, "AGENTS.md" | "CLAUDE.md" | "sdk/preview/main.tsx")
                     || path.starts_with("docs/")
                     || path.starts_with(".agents/skills/")
                     || path.starts_with(".claude/skills/"),

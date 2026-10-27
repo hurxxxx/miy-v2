@@ -1,4 +1,5 @@
-//! Local preview uses its own PostgreSQL and app container. Server credentials stay in this gateway.
+//! Local preview uses a server development database by default. Platform credentials stay in this gateway.
+use crate::development_client::{DatabaseMode, Remote};
 use crate::{
     api_error::{ApiError, ApiResult},
     app_cli::{self, Session},
@@ -16,7 +17,11 @@ use axum::{
 };
 use serde_json::{Value, json};
 use sqlx::{Connection, Executor};
-use std::{future::Future, path::PathBuf, sync::Arc};
+use std::{
+    future::{Future, IntoFuture},
+    path::PathBuf,
+    sync::Arc,
+};
 use tower_http::services::{ServeDir, ServeFile};
 use uuid::Uuid;
 
@@ -63,7 +68,8 @@ fn lock_file() -> Result<std::fs::File> {
 async fn remove_containers() -> Result<()> {
     let name = prefix()?;
     remove_owned(&format!("{name}-app"), &name).await?;
-    remove_owned(&format!("{name}-db"), &name).await
+    remove_owned(&format!("{name}-db"), &name).await?;
+    remove_owned(&format!("{name}-tunnel"), &name).await
 }
 fn remove_state() {
     for path in [
@@ -107,6 +113,7 @@ pub async fn stop() -> Result<()> {
         }
     }
     remove_containers().await?;
+    crate::development_client::stop_saved().await?;
     remove_state();
     eprintln!(
         "Local preview stopped: gateway, port, project lock and containers released; local database volume retained."
@@ -145,7 +152,7 @@ async fn shutdown_reason(
     }
 }
 
-pub async fn run(port: u16, no_open: bool) -> Result<()> {
+pub async fn run(port: u16, no_open: bool, database: DatabaseMode) -> Result<()> {
     let preview_lock = lock_file()?;
     preview_lock.try_lock().map_err(|_| {
         CliError::new(
@@ -176,13 +183,24 @@ pub async fn run(port: u16, no_open: bool) -> Result<()> {
         let _ = shutdown.send(reason);
     });
     // Startup completes its current build/migration before cleanup, avoiding orphaned children.
-    let result = serve_preview(port, no_open, rx).await;
+    let result = serve_preview(port, no_open, database, rx).await;
     watcher.abort();
     let reason = *observed.borrow();
     let cleaned = remove_containers().await;
+    // Preserve uncertain requests for recovery without creating duplicate work.
+    let uncertain = reason == Shutdown::Running
+        && result
+            .as_ref()
+            .err()
+            .is_some_and(|error| crate::cli_error::classify(error).category == Category::Network);
+    let released = if uncertain {
+        Ok(())
+    } else {
+        crate::development_client::stop_saved().await
+    };
     remove_state();
     if reason == Shutdown::Interrupted {
-        if cleaned.is_err() {
+        if cleaned.is_err() || released.is_err() {
             return Err(CliError::new(
                 Category::Environment,
                 "preview_cleanup_failed",
@@ -200,8 +218,11 @@ pub async fn run(port: u16, no_open: bool) -> Result<()> {
         .with_details(json!({"cleanupComplete":true,"databaseVolumePreserved":true}))
         .into());
     }
-    result?;
+    if reason != Shutdown::Requested {
+        result?;
+    }
     cleaned?;
+    released?;
     if reason == Shutdown::SignalUnavailable {
         return Err(CliError::new(
             Category::Environment,
@@ -215,6 +236,7 @@ pub async fn run(port: u16, no_open: bool) -> Result<()> {
 async fn serve_preview(
     port: u16,
     no_open: bool,
+    database: DatabaseMode,
     mut shutdown: tokio::sync::watch::Receiver<Shutdown>,
 ) -> Result<()> {
     let listener = tokio::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, port))
@@ -274,80 +296,96 @@ async fn serve_preview(
         return Ok(());
     }
     remove_containers().await?;
-    let result = start(&project, &image, &m).await;
-    let (backend_port, secret, installation, release) = match result {
-        Ok(v) => v,
-        Err(e) => {
-            let _ = remove_containers().await;
-            return Err(e);
-        }
+    ensure_network(&project).await?;
+    let remote = if database == DatabaseMode::Server {
+        Some(
+            Remote::start(&session, &m, &project, || {
+                *shutdown.borrow() != Shutdown::Running
+            })
+            .await?,
+        )
+    } else {
+        None
     };
-    if *shutdown.borrow() != Shutdown::Running {
-        return Ok(());
+    let serving = async {
+        let database_url = if let Some(ref remote) = remote {
+            remote.database_url.clone()
+        } else {
+            local_database(&project, &m).await?
+        };
+        let result = start_app(&project, &image, &database_url).await;
+        let (backend_port, secret, installation, release) = match result {
+            Ok(v) => v,
+            Err(e) => {
+                let _ = remove_containers().await;
+                return Err(e);
+            }
+        };
+        if *shutdown.borrow() != Shutdown::Running {
+            return Ok(());
+        }
+        let origin = format!("http://127.0.0.1:{port}");
+        let state = Arc::new(Preview {
+            session,
+            manifest: m.clone(),
+            user,
+            installation,
+            release,
+            port: backend_port,
+            secret,
+            cookie: auth::random(),
+            csrf: auth::random(),
+            origin: origin.clone(),
+            cookie_name: format!("miy_preview_{port}"),
+        });
+        let url = format!("{origin}/?preview={}", state.cookie);
+        // Only the short-lived preview entry token appears locally; no platform credential does.
+        app_cli::save(
+            ".miy/preview.json",
+            &json!({"url":url,"appId":m.id,"port":port}),
+        )?;
+        eprintln!(
+            "{}",
+            json!({"url":url,"appId":m.id,"database":if remote.is_some() { "server-dev" } else { "local-only" },"platformEnvironment":"dev","databaseId":remote.as_ref().map(|r|r.database_id),"schemaFingerprint":remote.as_ref().map(|r|r.schema_fingerprint.as_str())})
+        );
+        let app = Router::new()
+            .route("/__miy/context", axum::routing::get(context))
+            .route("/__miy/api/{*path}", axum::routing::any(backend))
+            .route("/__miy/platform/directory", axum::routing::get(directory))
+            .route(
+                "/__miy/connections/{target}/api/{*path}",
+                axum::routing::any(connection),
+            )
+            .fallback_service(
+                ServeDir::new("dist/preview").fallback(ServeFile::new("dist/preview/index.html")),
+            )
+            .layer(middleware::from_fn_with_state(state.clone(), guard))
+            .with_state(state);
+        if !no_open {
+            let _ = crate::platform::open_browser(&url);
+        }
+        let server = axum::serve(listener, app)
+            .with_graceful_shutdown(async move {
+                let _ = shutdown
+                    .wait_for(|reason| *reason != Shutdown::Running)
+                    .await;
+            })
+            .into_future();
+        server.await?;
+        Ok::<(), anyhow::Error>(())
+    };
+    if let Some(ref remote) = remote {
+        tokio::select! {
+            result = serving => result?,
+            result = remote.maintain() => result?,
+        }
+    } else {
+        serving.await?;
     }
-    let origin = format!("http://127.0.0.1:{port}");
-    let state = Arc::new(Preview {
-        session,
-        manifest: m.clone(),
-        user,
-        installation,
-        release,
-        port: backend_port,
-        secret,
-        cookie: auth::random(),
-        csrf: auth::random(),
-        origin: origin.clone(),
-        cookie_name: format!("miy_preview_{port}"),
-    });
-    let url = format!("{origin}/?preview={}", state.cookie);
-    // Only the short-lived preview entry token appears locally; no platform credential does.
-    app_cli::save(
-        ".miy/preview.json",
-        &json!({"url":url,"appId":m.id,"port":port}),
-    )?;
-    eprintln!(
-        "{}",
-        json!({"url":url,"appId":m.id,"database":"local-only","platformEnvironment":"dev"})
-    );
-    let app = Router::new()
-        .route("/__miy/context", axum::routing::get(context))
-        .route("/__miy/api/{*path}", axum::routing::any(backend))
-        .route("/__miy/platform/directory", axum::routing::get(directory))
-        .route(
-            "/__miy/connections/{target}/api/{*path}",
-            axum::routing::any(connection),
-        )
-        .fallback_service(
-            ServeDir::new("dist/preview").fallback(ServeFile::new("dist/preview/index.html")),
-        )
-        .layer(middleware::from_fn_with_state(state.clone(), guard))
-        .with_state(state);
-    if !no_open {
-        let _ = crate::platform::open_browser(&url);
-    }
-    axum::serve(listener, app)
-        .with_graceful_shutdown(async move {
-            let _ = shutdown
-                .wait_for(|reason| *reason != Shutdown::Running)
-                .await;
-        })
-        .await?;
     Ok(())
 }
 
-async fn start(
-    project: &str,
-    image: &str,
-    m: &contract::Manifest,
-) -> Result<(i32, String, Uuid, Uuid)> {
-    let path = PathBuf::from(".miy/local-db.json");
-    let cfg: Value = if path.exists() {
-        serde_json::from_slice(&std::fs::read(path)?)?
-    } else {
-        let v = json!({"admin":auth::random(),"migration":auth::random(),"runtime":auth::random()});
-        app_cli::save(".miy/local-db.json", &v)?;
-        v
-    };
+async fn ensure_network(project: &str) -> Result<()> {
     if runtime::docker(&["network", "inspect", project])
         .await
         .is_err()
@@ -360,7 +398,26 @@ async fn start(
             project,
         ])
         .await?;
+    } else {
+        let network: Value =
+            serde_json::from_str(&runtime::docker(&["network", "inspect", project]).await?)?;
+        ensure!(
+            network[0]["Labels"]["org.miy.preview"] == project,
+            "unmanaged_preview_network"
+        );
     }
+    Ok(())
+}
+
+async fn local_database(project: &str, m: &contract::Manifest) -> Result<String> {
+    let path = PathBuf::from(".miy/local-db.json");
+    let cfg: Value = if path.exists() {
+        serde_json::from_slice(&std::fs::read(path)?)?
+    } else {
+        let v = json!({"admin":auth::random(),"migration":auth::random(),"runtime":auth::random()});
+        app_cli::save(".miy/local-db.json", &v)?;
+        v
+    };
     let env = std::env::current_dir()?.join(".miy/preview-db.env");
     private_env(
         &env,
@@ -453,6 +510,17 @@ async fn start(
     migrator
         .execute("REVOKE ALL ON app._sqlx_migrations FROM miy_local_runtime")
         .await?;
+    Ok(format!(
+        "postgres://miy_local_runtime:{}@postgres:5432/postgres",
+        cfg["runtime"].as_str().unwrap()
+    ))
+}
+
+async fn start_app(
+    project: &str,
+    image: &str,
+    database_url: &str,
+) -> Result<(i32, String, Uuid, Uuid)> {
     let secret = auth::random();
     let installation = Uuid::new_v4();
     let release = Uuid::new_v4();
@@ -460,8 +528,7 @@ async fn start(
     private_env(
         &env,
         &format!(
-            "DATABASE_URL=postgres://miy_local_runtime:{}@postgres:5432/postgres\nMIY_GATEWAY_SECRET={secret}\nMIY_INSTALLATION_ID={installation}\nMIY_RELEASE_ID={release}\n",
-            cfg["runtime"].as_str().unwrap()
+            "DATABASE_URL={database_url}\nMIY_GATEWAY_SECRET={secret}\nMIY_INSTALLATION_ID={installation}\nMIY_RELEASE_ID={release}\n"
         ),
     )?;
     let name = format!("{project}-app");

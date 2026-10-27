@@ -223,6 +223,7 @@ async fn pages_and_events(
     let direct = crate::read_api::page(
         h.state,
         &auth::Principal {
+            cli_session_id: None,
             id: manager.id.clone(),
             scopes: vec!["miy.dev".into()],
             csrf: None,

@@ -20,6 +20,7 @@ pub async fn run(pool: sqlx::PgPool) -> Result<()> {
         .await?;
     tracing::info!(event = "db_runner_ready");
     crate::runtime::recover(&pool).await?;
+    crate::development::recover(&pool).await?;
     sqlx::query("UPDATE image_uploads SET status='pending' WHERE status='loading'")
         .execute(&pool)
         .await?;
@@ -27,6 +28,7 @@ pub async fn run(pool: sqlx::PgPool) -> Result<()> {
     // aborted before this runner releases its exclusive ownership on shutdown.
     let _log_monitor = crate::runtime_logs::start(pool.clone());
     let _health_monitor = crate::runtime_health::start(pool.clone())?;
+    let _development_monitor = crate::development::start(pool.clone());
     let mut last_reconcile = std::time::Instant::now();
     loop {
         if last_reconcile.elapsed().as_secs() >= 5 {
@@ -41,6 +43,20 @@ pub async fn run(pool: sqlx::PgPool) -> Result<()> {
             let id: Uuid = row.get("id");
             let installation: Uuid = row.get("installation_id");
             let release: Uuid = row.get("release_id");
+            let target = sqlx::query("SELECT app_id,environment FROM installations WHERE id=$1")
+                .bind(installation)
+                .fetch_one(&pool)
+                .await?;
+            let mut app_lock = pool.acquire().await?;
+            app_lock.close_on_drop();
+            sqlx::query("SELECT pg_advisory_lock(hashtextextended($1,0))")
+                .bind(format!(
+                    "runtime:{}:{}",
+                    target.get::<String, _>("app_id"),
+                    target.get::<String, _>("environment")
+                ))
+                .execute(&mut *app_lock)
+                .await?;
             let mut lock = pool.acquire().await?;
             lock.close_on_drop();
             sqlx::query("SELECT pg_advisory_lock(hashtextextended($1,0))")
@@ -56,6 +72,7 @@ pub async fn run(pool: sqlx::PgPool) -> Result<()> {
                 let authorized:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM users WHERE id=$1 AND admin) OR EXISTS(SELECT 1 FROM installations i JOIN grants g ON g.app_id=i.app_id AND g.environment=i.environment WHERE i.id=$2 AND i.environment='dev' AND g.user_id=$1 AND g.permission='develop')")
                     .bind(row.get::<String,_>("actor")).bind(installation).fetch_one(&pool).await?;
                 anyhow::ensure!(authorized, RuntimeFailure::new(FailureCode::PermissionRevoked));
+                if target.get::<String,_>("environment")=="dev" && crate::development::active_for_app(&pool,target.get("app_id")).await? {anyhow::bail!(RuntimeFailure::new(FailureCode::ActiveDevelopmentSession));}
                 prepare(&pool, id, installation, release).await
             }.await;
             match result {
@@ -88,7 +105,10 @@ pub async fn run(pool: sqlx::PgPool) -> Result<()> {
                 .bind(installation.to_string())
                 .execute(&mut *lock)
                 .await?;
-        } else if !crate::delivery::tick(&pool).await? && !crate::runtime::tick(&pool).await? {
+        } else if !crate::development::tick(&pool).await?
+            && !crate::delivery::tick(&pool).await?
+            && !crate::runtime::tick(&pool).await?
+        {
             tokio::time::sleep(std::time::Duration::from_millis(300)).await;
         }
         // The connection must remain live for the entire runner lifetime.
@@ -120,41 +140,172 @@ pub(crate) async fn prepare(
     contract::validate(&m).map_err(anyhow::Error::msg)?;
     let migrations = artifact.join(&m.migrations.directory);
     crate::bundle::migrations(&migrations)?;
-    let suffix = installation.simple().to_string();
-    let db = format!("miy_app_{suffix}");
-    let owner = format!("miy_o_{suffix}");
-    let migration = format!("miy_m_{suffix}");
-    let runtime = format!("miy_r_{suffix}");
-    sqlx::query("INSERT INTO db_resources VALUES($1,$2,$3,$4,$5,$6,$7) ON CONFLICT DO NOTHING")
-        .bind(installation)
-        .bind(&db)
-        .bind(&owner)
-        .bind(&migration)
-        .bind(&runtime)
-        .bind(auth::encrypt(&auth::random())?)
-        .bind(auth::encrypt(&auth::random())?)
-        .execute(pool)
-        .await?;
-    let resource = sqlx::query("SELECT * FROM db_resources WHERE installation_id=$1")
+    let target = sqlx::query("SELECT app_id,environment FROM installations WHERE id=$1")
         .bind(installation)
         .fetch_one(pool)
         .await?;
-    let mp = auth::decrypt(resource.get("migration_secret"))?;
-    let rp = auth::decrypt(resource.get("runtime_secret"))?;
-    let provision = std::env::var("PROVISION_DATABASE_URL")?;
-    let mut admin = sqlx::PgConnection::connect(&provision)
-        .await
-        .map_err(|_| RuntimeFailure::new(FailureCode::DatabaseUnavailable))?;
-    step(pool, job, "provisioning").await?;
+    let resource = ensure_resource(
+        pool,
+        target.get("app_id"),
+        target.get("environment"),
+        Some(installation),
+    )
+    .await?;
     sqlx::query("UPDATE installations SET db_status='provisioning' WHERE id=$1")
         .bind(installation)
         .execute(pool)
         .await?;
-    for (name, password) in [
-        (&owner, None),
-        (&migration, Some(&mp)),
-        (&runtime, Some(&rp)),
-    ] {
+    prepare_resource(pool, &resource, &migrations, Some(job)).await?;
+    sqlx::query("UPDATE installations SET db_status='ready',release_id=$2 WHERE id=$1")
+        .bind(installation)
+        .bind(release)
+        .execute(pool)
+        .await?;
+    tracing::info!(event="database_ready",job_id=%job,installation_id=%installation);
+    Ok(())
+}
+
+pub(crate) struct DatabaseResource {
+    pub id: Uuid,
+    pub database: String,
+    pub owner: String,
+    pub migration: String,
+    pub runtime: String,
+    migration_secret: String,
+    runtime_secret: String,
+}
+
+fn resource(row: sqlx::postgres::PgRow) -> DatabaseResource {
+    DatabaseResource {
+        id: row.get("id"),
+        database: row.get("database_name"),
+        owner: row.get("owner_role"),
+        migration: row.get("migration_role"),
+        runtime: row.get("runtime_role"),
+        migration_secret: row.get("migration_secret"),
+        runtime_secret: row.get("runtime_secret"),
+    }
+}
+
+pub(crate) async fn resource_by_id(pool: &sqlx::PgPool, id: Uuid) -> Result<DatabaseResource> {
+    Ok(resource(
+        sqlx::query("SELECT * FROM db_resources WHERE id=$1")
+            .bind(id)
+            .fetch_one(pool)
+            .await?,
+    ))
+}
+
+pub(crate) async fn ensure_resource(
+    pool: &sqlx::PgPool,
+    app: &str,
+    environment: &str,
+    installation: Option<Uuid>,
+) -> Result<DatabaseResource> {
+    anyhow::ensure!(matches!(environment, "dev" | "prod"), "invalid_environment");
+    let id = installation.unwrap_or_else(Uuid::new_v4);
+    let suffix = id.simple().to_string();
+    sqlx::query("INSERT INTO db_resources(id,installation_id,app_id,environment,database_name,owner_role,migration_role,runtime_role,migration_secret,runtime_secret,status) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'not_prepared') ON CONFLICT(app_id,environment) DO UPDATE SET installation_id=COALESCE(db_resources.installation_id,excluded.installation_id)")
+        .bind(id).bind(installation).bind(app).bind(environment)
+        .bind(format!("miy_app_{suffix}")).bind(format!("miy_o_{suffix}"))
+        .bind(format!("miy_m_{suffix}")).bind(format!("miy_r_{suffix}"))
+        .bind(auth::encrypt(&auth::random())?).bind(auth::encrypt(&auth::random())?)
+        .execute(pool).await?;
+    let row = sqlx::query("SELECT * FROM db_resources WHERE app_id=$1 AND environment=$2")
+        .bind(app)
+        .bind(environment)
+        .fetch_one(pool)
+        .await?;
+    if let Some(installation) = installation {
+        anyhow::ensure!(
+            row.get::<Option<Uuid>, _>("installation_id") == Some(installation),
+            "database_installation_mismatch"
+        );
+    }
+    Ok(resource(row))
+}
+
+pub(crate) fn desired_fingerprint(migrator: &sqlx::migrate::Migrator) -> Result<String> {
+    let history: Vec<_> = migrator
+        .iter()
+        .map(|m| (m.version, hex::encode(&m.checksum)))
+        .collect();
+    Ok(contract::hash(serde_json::to_vec(&history)?))
+}
+
+async fn record_schema(
+    pool: &sqlx::PgPool,
+    resource: &DatabaseResource,
+    conn: &mut sqlx::PgConnection,
+    succeeded: bool,
+) -> Result<()> {
+    let exists: bool = sqlx::query_scalar("SELECT to_regclass('app._sqlx_migrations') IS NOT NULL")
+        .fetch_one(&mut *conn)
+        .await?;
+    let mut history = Vec::new();
+    if exists {
+        for row in sqlx::query(
+            "SELECT version,checksum FROM app._sqlx_migrations WHERE success ORDER BY version",
+        )
+        .fetch_all(&mut *conn)
+        .await?
+        {
+            history.push((
+                row.get::<i64, _>("version"),
+                hex::encode(row.get::<Vec<u8>, _>("checksum")),
+            ));
+        }
+        conn.execute(
+            format!(
+                "REVOKE ALL ON TABLE app._sqlx_migrations FROM {}",
+                resource.runtime
+            )
+            .as_str(),
+        )
+        .await?;
+    }
+    let fingerprint = contract::hash(serde_json::to_vec(&history)?);
+    sqlx::query("UPDATE db_resources SET status=$2,schema_generation=schema_generation+CASE WHEN schema_fingerprint IS DISTINCT FROM $3 THEN 1 ELSE 0 END,schema_fingerprint=$3 WHERE id=$1")
+        .bind(resource.id).bind(if succeeded {"ready"} else {"failed"}).bind(fingerprint).execute(pool).await?;
+    Ok(())
+}
+
+pub(crate) async fn prepare_resource(
+    pool: &sqlx::PgPool,
+    resource: &DatabaseResource,
+    migrations: &std::path::Path,
+    job: Option<Uuid>,
+) -> Result<()> {
+    crate::bundle::migrations(migrations)?;
+    let db = &resource.database;
+    let owner = &resource.owner;
+    let migration = &resource.migration;
+    let runtime = &resource.runtime;
+    let mp = auth::decrypt(&resource.migration_secret)?;
+    let rp = auth::decrypt(&resource.runtime_secret)?;
+    let provision = std::env::var("PROVISION_DATABASE_URL")?;
+    let address = url::Url::parse(&provision)?;
+    let host = address
+        .host_str()
+        .context("database_host_required")?
+        .trim_matches(['[', ']']);
+    sqlx::query("UPDATE db_resources SET endpoint_host=$2,endpoint_port=$3 WHERE id=$1")
+        .bind(resource.id)
+        .bind(host)
+        .bind(i32::from(address.port().unwrap_or(5432)))
+        .execute(pool)
+        .await?;
+    let mut admin = sqlx::PgConnection::connect(&provision)
+        .await
+        .map_err(|_| RuntimeFailure::new(FailureCode::DatabaseUnavailable))?;
+    sqlx::query("UPDATE db_resources SET status='provisioning' WHERE id=$1")
+        .bind(resource.id)
+        .execute(pool)
+        .await?;
+    if let Some(job) = job {
+        step(pool, job, "provisioning").await?;
+    }
+    for (name, password) in [(owner, None), (migration, Some(&mp)), (runtime, Some(&rp))] {
         let exists: bool =
             sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM pg_roles WHERE rolname=$1)")
                 .bind(name)
@@ -177,7 +328,7 @@ pub(crate) async fn prepare(
         .await?;
     let exists: bool =
         sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM pg_database WHERE datname=$1)")
-            .bind(&db)
+            .bind(db)
             .fetch_one(&mut admin)
             .await?;
     if !exists {
@@ -194,13 +345,15 @@ pub(crate) async fn prepare(
     admin
         .execute(format!("ALTER DATABASE {db} ALLOW_CONNECTIONS true").as_str())
         .await?;
-    step(pool, job, "database_created").await?;
-    if std::env::var("MIY_FAILPOINT").as_deref() == Ok("after_database") {
-        std::process::exit(86);
+    if let Some(job) = job {
+        step(pool, job, "database_created").await?;
+        if std::env::var("MIY_FAILPOINT").as_deref() == Ok("after_database") {
+            std::process::exit(86);
+        }
     }
-    let mut admin_url = url::Url::parse(&provision)?;
-    admin_url.set_path(&db);
-    let mut conn = sqlx::PgConnection::connect(admin_url.as_str()).await?;
+    let mut target = url::Url::parse(&provision)?;
+    target.set_path(db);
+    let mut conn = sqlx::PgConnection::connect(target.as_str()).await?;
     conn.execute("REVOKE ALL ON SCHEMA public FROM PUBLIC")
         .await?;
     conn.execute(format!("CREATE SCHEMA IF NOT EXISTS app AUTHORIZATION {owner}").as_str())
@@ -209,33 +362,30 @@ pub(crate) async fn prepare(
         .await?;
     conn.execute(format!("ALTER DEFAULT PRIVILEGES FOR ROLE {owner} IN SCHEMA app GRANT SELECT,INSERT,UPDATE,DELETE ON TABLES TO {runtime}").as_str()).await?;
     conn.execute(format!("ALTER DEFAULT PRIVILEGES FOR ROLE {owner} IN SCHEMA app GRANT USAGE,SELECT ON SEQUENCES TO {runtime}").as_str()).await?;
-    for role in [&migration, &runtime] {
+    for role in [migration, runtime] {
         conn.execute(format!("ALTER ROLE {role} IN DATABASE {db} SET search_path=app").as_str())
             .await?;
     }
-    step(pool, job, "migrating").await?;
-    let mut target = admin_url;
+    if let Some(job) = job {
+        step(pool, job, "migrating").await?;
+    }
     target
-        .set_username(&migration)
+        .set_username(migration)
         .map_err(|_| anyhow::anyhow!("invalid_role"))?;
     target
         .set_password(Some(&mp))
         .map_err(|_| anyhow::anyhow!("invalid_secret"))?;
     let mut conn = sqlx::PgConnection::connect(target.as_str()).await?;
     conn.execute(format!("SET ROLE {owner}").as_str()).await?;
-    let migrator = sqlx::migrate::Migrator::new(migrations.as_path()).await?;
-    migrator.run(&mut conn).await.context("migration_failed")?;
-    conn.execute(format!("REVOKE ALL ON TABLE app._sqlx_migrations FROM {runtime}").as_str())
-        .await?;
-    step(pool, job, "migrations_applied").await?;
-    if std::env::var("MIY_FAILPOINT").as_deref() == Ok("after_migration") {
-        std::process::exit(86);
+    let migrator = sqlx::migrate::Migrator::new(migrations).await?;
+    let applied = migrator.run(&mut conn).await;
+    record_schema(pool, resource, &mut conn, applied.is_ok()).await?;
+    applied.context("migration_failed")?;
+    if let Some(job) = job {
+        step(pool, job, "migrations_applied").await?;
+        if std::env::var("MIY_FAILPOINT").as_deref() == Ok("after_migration") {
+            std::process::exit(86);
+        }
     }
-    sqlx::query("UPDATE installations SET db_status='ready',release_id=$2 WHERE id=$1")
-        .bind(installation)
-        .bind(release)
-        .execute(pool)
-        .await?;
-    tracing::info!(event="database_ready",job_id=%job,installation_id=%installation);
     Ok(())
 }
