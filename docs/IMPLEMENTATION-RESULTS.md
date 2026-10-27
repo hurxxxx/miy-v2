@@ -495,6 +495,8 @@ Windows 전용 안내와 기반 구현을 `fbbd087`로 커밋·푸시한 뒤, 1B
 
 기반 commit `fbbd087`의 [CI 실행 40446385352](https://github.com/hurxxxx/miy-v2/actions/runs/40446385352)는 Linux 서버/클라이언트, macOS, Windows MSVC, OS 간 번들 비교를 모두 통과했다. 새 출력 블랙박스도 클라이언트 CI에 추가했다. CI 결과는 해당 commit의 증거이며 이후 코드에 자동으로 승계하지 않는다.
 
+후속 코드 commit `67d7e429d99df10895b409a267c07849431b6160`의 [CI 실행 40447432789](https://github.com/hurxxxx/miy-v2/actions/runs/40447432789)도 전체 성공했다. Linux 서버/클라이언트, macOS, Windows MSVC의 검사·단위 테스트, 세 OS 클라이언트 빌드·번들/Git 왕복·공통 출력 블랙박스, OS 간 번들 해시 비교가 통과했다. Windows 콘솔 신호 검사는 제외되며 실제 Windows 11/PowerShell 5.1·7 및 Docker Desktop 결과와 구분한다.
+
 이번 출력 변경으로 실제 원격 서버의 전체 로그인·배포·Docker preview 흐름을 다시 실행한 것은 아니다. 지침 검사의 0.6.0 번들 전환과 live app check는 이번에도 미실행이며, 사용자 Windows 11·PowerShell·Docker Desktop 검증은 [Windows 전용 문서](WINDOWS-VALIDATION.md)에 사용자가 실행한 결과로 추가한다. 신호·종료 사유 단위 검사와 POSIX 원격 관찰 실증은 Windows 자식 프로세스 정리 실증을 대신하지 않는다.
 
 다음은 공유 preflight·expected-state와 타입별 원격 실패/재시도 계약이다. 현재 전송/관찰 오류의 retryable 표시를 새 원격 작업 재시도 승인으로 사용하지 않는다. 새 context/auth/job 명령, 입력·필드·페이지 계약, 서버 capability, 작업 이벤트/로그/dry-run, Windows Job Object와 여러 파일 복구, 설치·릴리스는 후속 작업이다.

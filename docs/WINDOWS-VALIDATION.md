@@ -15,6 +15,8 @@
 
 `fbbd0870f45ec976d150988cc568c0765c9453f1`의 [CI 실행 40446385352](https://github.com/hurxxxx/miy-v2/actions/runs/40446385352)는 2026-10-27에 Linux 서버/클라이언트, macOS 클라이언트, Windows MSVC 클라이언트와 OS 간 번들 해시 비교를 모두 통과했다. Windows job은 `windows-2022`의 Bash 셸에서 debug 빌드·단위 검사·오프라인 앱 생성·Git 왕복을 수행했다. 아래 사용자 PowerShell release 빌드·ZIP·MCP 검증과 구분한다.
 
+공통 출력 구현 commit `67d7e429d99df10895b409a267c07849431b6160`의 [CI 실행 40447432789](https://github.com/hurxxxx/miy-v2/actions/runs/40447432789)도 같은 날 전체 job을 통과했다. Windows 네이티브 CLI의 출력 envelope·종료 코드·loopback HTTP 오류 검사가 추가로 통과했다. Windows 콘솔 Ctrl+C는 이 검사에서 제외하며 사용자 PowerShell 검증 완료를 뜻하지 않는다.
+
 | 지금 확인할 수 있는 항목 | 이번 절차에서 확인하지 않는 항목 |
 | --- | --- |
 | `--no-default-features` Windows 클라이언트 빌드·단위 검사 | Windows 서버/worker 실행 |
