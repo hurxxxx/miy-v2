@@ -860,12 +860,42 @@ async fn installation_network(installation: Uuid) -> Result<String> {
         .unwrap_or_else(|_| "miy-v2-validation-postgres-1".into());
     let meta = inspect(&database).await?;
     if meta["NetworkSettings"]["Networks"].get(&name).is_none() {
+        // Docker can change the default gateway (and the published-port target)
+        // when a network is attached with the same priority as existing ones.
+        // That closes held Core/advisory-lock connections mid-deployment. A new
+        // app endpoint must rank below every currently selected gateway.
+        let priority = database_network_priority(&meta)?.to_string();
         docker(&[
-            "network", "connect", "--alias", "postgres", &name, &database,
+            "network",
+            "connect",
+            "--gw-priority",
+            &priority,
+            "--alias",
+            "postgres",
+            &name,
+            &database,
         ])
         .await?;
     }
     Ok(name)
+}
+
+fn database_network_priority(metadata: &Value) -> Result<i64> {
+    let networks = metadata["NetworkSettings"]["Networks"]
+        .as_object()
+        .context(
+            "database_gateway_priority_unavailable: Docker Engine and CLI 28 or newer are required",
+        )?;
+    let mut minimum = None;
+    for network in networks.values() {
+        let priority = network["GwPriority"].as_i64().context(
+            "database_gateway_priority_unavailable: Docker Engine and CLI 28 or newer are required",
+        )?;
+        minimum = Some(minimum.map_or(priority, |current: i64| current.min(priority)));
+    }
+    minimum
+        .and_then(|priority| priority.checked_sub(1))
+        .context("database_gateway_priority_unavailable")
 }
 /// Reconcile externally stopped/restarted containers. Database state is not fabricated.
 pub async fn reconcile(pool: &sqlx::PgPool) -> Result<()> {
@@ -1012,7 +1042,37 @@ mod tests {
             assert!(!image_id(value));
         }
     }
+    #[test]
+    fn new_database_endpoints_rank_below_the_existing_gateway() {
+        use serde_json::json;
+        for (priorities, expected) in [(vec![0, 0], -1), (vec![-7, -3], -8), (vec![4, -2], -3)] {
+            let networks: serde_json::Map<String, serde_json::Value> = priorities
+                .into_iter()
+                .enumerate()
+                .map(|(index, priority)| (index.to_string(), json!({"GwPriority":priority})))
+                .collect();
+            assert_eq!(
+                super::database_network_priority(&json!({"NetworkSettings":{"Networks":networks}}))
+                    .unwrap(),
+                expected
+            );
+        }
+        for networks in [
+            json!({}),
+            json!({"old":{}}),
+            json!({"minimum":{"GwPriority":i64::MIN}}),
+        ] {
+            assert!(
+                super::database_network_priority(&json!({"NetworkSettings":{"Networks":networks}}))
+                    .is_err()
+            );
+        }
+    }
 }
+
+#[cfg(test)]
+#[path = "runtime_network_regression.rs"]
+mod network_regression;
 
 #[cfg(test)]
 mod acceptance_tests {

@@ -46,11 +46,11 @@ CLI 0.5에는 루트 `context/auth/job/describe/doctor/component/mcp`와 앱 lif
 
 ## 2. Windows 준비
 
-### 후보 이후 추가된 설치 연결 옵션
+### CLI 0.6의 설치 연결 옵션
 
-이번 작업 트리의 설치기·CLI는 `install-cli.ps1`/`update-cli.ps1`의 `-Server URL`로 명시한 서버를 등록한다. 플랫폼의 `/cli/install` 화면이 서버 `MIY_ORIGIN`에서 주소를 채운 명령을 제공한다. 기존 `config.json`이 있으면 빈 context 목록까지 그대로 보존하며, URL을 새로 전달해도 기존 활성 서버·사용자·인증서 설정을 바꾸지 않는다. 다른 주소는 명시적으로 표시하고 context 추가/선택을 안내한다. 옵션 생략 시 대화형 입력 또는 설치 후 등록이 필요하며 어떤 주소도 대신 적용하지 않는다.
+현재 `b67798b` 후보의 설치기·CLI는 `install-cli.ps1`/`update-cli.ps1`의 `-Server URL`로 명시한 서버를 등록한다. 플랫폼의 `/cli/install` 화면이 서버 `MIY_ORIGIN`에서 주소를 채운 명령을 제공한다. 기존 `config.json`이 있으면 빈 context 목록까지 그대로 보존하며, URL을 새로 전달해도 기존 활성 서버·사용자·인증서 설정을 바꾸지 않는다. 다른 주소는 명시적으로 표시하고 context 추가/선택을 안내한다. 옵션 생략 시 대화형 입력 또는 설치 후 등록이 필요하며 어떤 주소도 대신 적용하지 않는다.
 
-이 기능은 위 `0fe94a4` 후보에 포함되어 있지 않다. 변경을 포함한 새 실행 파일·설치기를 함께 빌드한 후 `python scripts/check-cli-install.py --cli PATH_TO_MIY_EXE`와 `scripts/check-windows-installer.ps1 -ArchivePath VERIFIED_NEW_ZIP`을 실행한다. 설치기는 9개 시나리오로 확장되었으며, Windows 네이티브 결과를 새로 기록해야 한다. 현재 확인한 것은 Linux PowerShell 7.6.9의 공통 초기화·복구 9개 검사와 스크립트 구문 검사다.
+이 기능은 이전 `0fe94a4` 후보에는 없고 현재 `b67798b` 후보에 포함되어 있다. [Windows 후보 job](https://github.com/hurxxxx/miy-v2/actions/runs/40602334949/job/122533455640)에서 `check-cli-install.py` 9그룹과 PowerShell 5.1/7의 설치기 9개 시나리오를 각각 통과했다. Windows 11 PC에서는 검증된 현재 ZIP을 사용하고 실제 설치·Docker Desktop 개발 결과를 별도로 기록한다.
 
 ### 필요한 도구
 

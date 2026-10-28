@@ -3,6 +3,7 @@
 // --check: read-only local prerequisites
 // --run --phase auth --cli .local/bin/miy-server: login/register/admin approval
 // --run --resume <evidence directory>: continue after helper publication
+// --run --resume <evidence directory> --recover-deploy: recover a failed dev deploy
 // --run --cli <binary>: complete fresh working-tree (nonpublishable) acceptance
 import { spawn } from "node:child_process";
 import {
@@ -23,16 +24,17 @@ for (let i = 2; i < process.argv.length; i++) {
   const arg = process.argv[i];
   if (arg === "--run") options.run = true;
   else if (arg === "--check") options.check = true;
+  else if (arg === "--recover-deploy") options.recoverDeploy = true;
   else if (["--cli", "--phase", "--resume"].includes(arg) && process.argv[i + 1]) {
     options[arg.slice(2)] = process.argv[++i];
     if (arg === "--cli") options.cliSupplied = true;
   }
   else {
-    console.error("Usage: node scripts/check-server-development-flow.mjs --check | --run [--phase auth|all] [--cli PATH] [--resume EVIDENCE_DIR]");
+    console.error("Usage: node scripts/check-server-development-flow.mjs --check | --run [--phase auth|all] [--cli PATH] [--resume EVIDENCE_DIR] [--recover-deploy]");
     process.exit(2);
   }
 }
-if (options.run === options.check || !["auth", "all"].includes(options.phase)) {
+if (options.run === options.check || !["auth", "all"].includes(options.phase) || options.recoverDeploy && (!options.run || !options.resume || options.phase !== "all")) {
   console.error("Choose --check or --run, with optional --phase auth|all.");
   process.exit(2);
 }
@@ -275,6 +277,8 @@ async function runtimeJob(account, args) {
   const queued = await cli(account, ["--app", state.appId, "--yes", ...args, "--no-wait"]);
   requireThat(queued.appId === state.appId && typeof queued.id === "string", "job_target_mismatch");
   event("runtime_job", { id: queued.id, appId: queued.appId, environment: queued.environment, action: queued.action });
+  (state.runtimeJobs ||= []).push({ id: queued.id, appId: queued.appId, environment: queued.environment, action: queued.action, step });
+  save();
   const result = await cli(account, ["job", "watch", queued.id, "--timeout", "900"], { timeout: 930000 });
   requireThat(result.id === queued.id && result.status === "succeeded", "runtime_job_not_succeeded");
   return { id: result.id, status: result.status, environment: result.environment, action: result.action };
@@ -354,7 +358,16 @@ async function run(settings, credentials) {
     evidence = resolve(options.resume);
     requireThat(evidence.startsWith(evidenceRoot + sep), "resume_directory_outside_harness");
     state = readJson(join(evidence, "result.json"));
-    requireThat(state.harness === "server-development-flow-v1" && state.stage === "registered" && state.origin === settings.origin && /^qa-core-[a-z0-9-]+$/.test(state.appId), "invalid_resume_state");
+    requireThat(state.harness === "server-development-flow-v1" && state.origin === settings.origin && /^qa-core-[a-z0-9-]+$/.test(state.appId), "invalid_resume_state");
+    if (options.recoverDeploy) {
+      requireThat(state.stage === "running" && state.status === "failed" && state.failure?.step === "build_and_dev_deploy" && state.failure?.code === "remote_job_failed" && state.localDevelopment?.databaseId && state.record?.count === 1 && state.build?.imageId, "invalid_deploy_recovery_checkpoint");
+      const previous = "failed-run-" + Date.now() + ".json";
+      writeJson(join(evidence, previous), state);
+      (state.previousFailures ||= []).push({ report: previous, ...state.failure });
+      state.cleanup = [];
+      state.status = "recovering";
+      delete state.failure;
+    } else requireThat(state.stage === "registered", "invalid_resume_stage");
   } else {
     const stamp = new Date().toISOString().replace(/[-:.TZ]/g, "").toLowerCase() + "-" + randomBytes(3).toString("hex");
     evidence = join(evidenceRoot, stamp);
@@ -371,7 +384,7 @@ async function run(settings, credentials) {
   binary = join(evidence, "bin/miy" + suffix);
   privateDir(join(evidence, "private"));
   for (const account of ["admin", "developer"]) privateDir(join(evidence, "private", account));
-  (state.executions ||= []).push({ phase: options.phase, resumed, startedAt: new Date().toISOString(), scriptSha256: await hashFile(fileURLToPath(import.meta.url)) });
+  (state.executions ||= []).push({ phase: options.phase, resumed, recoverDeploy: !!options.recoverDeploy, startedAt: new Date().toISOString(), scriptSha256: await hashFile(fileURLToPath(import.meta.url)) });
   save();
   console.log("Evidence: " + evidence);
   if (!resumed) {
@@ -395,13 +408,14 @@ async function run(settings, credentials) {
   users = {};
   for (const account of ["developer", "admin"]) {
     users[account] = await loginBrowser(account, credentials[account], settings.origin);
-    if (!resumed) await loginCli(account, users[account], settings.origin);
+    if (!resumed || options.recoverDeploy) await loginCli(account, users[account], settings.origin);
     else {
       await cli(account, ["auth", "status"], { project: false, cwd: root, timeout: 60000 });
       loggedIn.add(account);
     }
   }
   requireThat(users.developer.me.id !== users.admin.me.id, "separate_accounts_required");
+  if (options.recoverDeploy) requireThat(users.developer.me.id === state.users.developer && users.admin.me.id === state.users.admin, "recovery_actor_changed");
   state.users = { developer: users.developer.me.id, admin: users.admin.me.id };
   if (!resumed) {
     step = "init_and_register_fixture";
@@ -426,10 +440,11 @@ async function run(settings, credentials) {
     console.log("Authentication and registration complete; resume this evidence directory for the remaining checks.");
     return;
   }
-  await developmentFlow(settings);
+  if (options.recoverDeploy) await recoverDeployment(settings);
+  else await developmentFlow(settings);
 }
 
-async function developmentFlow(settings) {
+async function verifyCandidate(settings) {
   step = "published_helper_discovery";
   const installResponse = await users.developer.context.request.get(settings.origin + "/api/v1/cli/install");
   requireThat(installResponse.status() === 200, "install_guide_unavailable");
@@ -451,6 +466,10 @@ async function developmentFlow(settings) {
   if (cached.code === 0 && !state.notRun.includes("Fresh helper download (matching helper was already cached)"))
     state.notRun.push("Fresh helper download (matching helper was already cached)");
   passed("configured_origin_and_matching_helper_advertised");
+}
+
+async function developmentFlow(settings) {
+  await verifyCandidate(settings);
   state.stage = "running";
   save();
 
@@ -526,10 +545,41 @@ async function developmentFlow(settings) {
   step = "build_and_dev_deploy";
   const image = await cli("developer", ["app", "build"]);
   state.build = { imageId: image.imageId, sourceCommit: image.sourceCommit, platform: image.platform };
+  await deployAndVerify(created, marker);
+}
+
+async function recoverDeployment(settings) {
+  await verifyCandidate(settings);
+  step = "inspect_failed_deployment";
+  requireThat(!existsSync(join(app, ".miy/remote-dev.json")) && !existsSync(join(app, ".miy/preview-run.json")), "development_cleanup_required_before_recovery");
+  requireThat(await checked("git", ["rev-parse", "HEAD"], { cwd: app }) === state.appCommit && await checked("git", ["status", "--porcelain"], { cwd: app }) === "", "recovery_application_source_changed");
+  const image = readJson(join(app, "dist/image.json"));
+  requireThat(image.imageId === state.build.imageId && image.sourceCommit === state.appCommit, "recovery_immutable_image_changed");
+  const jobs = readFileSync(join(evidence, "events.jsonl"), "utf8").trim().split("\n").map(line => JSON.parse(line));
+  const original = jobs.filter(row => row.type === "runtime_job" && row.appId === state.appId && row.action === "deploy" && row.environment === "dev" && row.step === "build_and_dev_deploy").at(-1);
+  requireThat(original, "failed_deployment_job_missing");
+  const failed = await cli("developer", ["job", "get", original.id]);
+  requireThat(failed.appId === state.appId && failed.status === "failed" && failed.imageId === image.imageId && failed.environment === "dev" && failed.retryable === false, "failed_deployment_recovery_target_changed");
+  const refusal = await cli("developer", ["--app", state.appId, "--yes", "job", "retry", failed.id, "--environment", "dev", "--no-wait"], { expected: 6 });
+  requireThat(refusal.code === "retry_not_allowed", "unclassified_failure_was_retryable");
+  state.recovery = { originalJobId: failed.id, originalErrorCode: safeCode(failed.errorCode), originalReleaseId: failed.releaseId, imageId: image.imageId, databaseId: state.localDevelopment.databaseId, databaseName: state.localDevelopment.databaseName, method: "new checked deploy of unchanged image after server repair", typedRetryRefused: true };
+  passed("failed_job_inspected_and_unclassified_retry_refused");
+  const current = selectedInstallation(await cli("developer", ["app", "status"]), "dev");
+  requireThat(current.runtimeStatus === "stopped" && current.releaseId === failed.releaseId && current.imageId === image.imageId, "recovery_installation_changed");
+  step = "build_and_dev_deploy";
+  await deployAndVerify({ database: state.localDevelopment.databaseName, userId: state.record.owner }, state.record.value);
+}
+
+async function deployAndVerify(created, marker) {
   state.devJob = await runtimeJob("developer", ["app", "deploy", "--environment", "dev"]);
+  if (state.recovery) {
+    requireThat(state.devJob.id !== state.recovery.originalJobId, "failed_job_reused_for_recovery");
+    state.recovery.recoveredJobId = state.devJob.id;
+  }
   const dev = selectedInstallation(await cli("developer", ["app", "status"]), "dev");
   requireThat(dev.runtimeStatus === "running" && dev.dbStatus === "ready", "dev_runtime_not_ready");
   state.dev = installationEvidence(dev);
+  if (state.recovery) requireThat(dev.releaseId === state.recovery.originalReleaseId && dev.imageId === state.recovery.imageId, "recovery_release_changed");
   const devRows = await fixtureApi(users.developer, dev, "/records");
   requireThat(devRows.database === created.database && devRows.userId === created.userId && devRows.records.length === 1 && devRows.records[0].key === "keep" && devRows.records[0].value === marker, "development_database_record_not_preserved");
   const devUi = await browserRecords(users.developer, dev);
@@ -537,6 +587,7 @@ async function developmentFlow(settings) {
   const adminRows = await fixtureApi(users.admin, dev, "/records");
   requireThat(adminRows.userId === users.admin.me.id && adminRows.records.length === 0, "sdk_identity_ownership_failed");
   passed("dev_deployment_reuses_exact_server_database_and_local_record", { databaseId: state.localDevelopment.databaseId, installationId: dev.id, releaseId: dev.releaseId });
+  if (state.recovery) passed("failed_deploy_recovered_with_same_release_database_and_original_local_record");
   passed("separate_admin_sdk_identity_cannot_read_developer_owned_rows");
 
   step = "acceptance_and_production_permission";
@@ -553,7 +604,7 @@ async function developmentFlow(settings) {
     await cli("admin", ["--app", state.appId, "grant", "set", "--user", users.developer.me.id, "--permission", permission, "--environment", "prod"]);
   state.prodJob = await runtimeJob("developer", ["app", "promote", "--environment", "prod", "--release", dev.releaseId]);
   const prod = selectedInstallation(await cli("developer", ["app", "status"]), "prod");
-  requireThat(prod.releaseId === dev.releaseId && prod.runtimeStatus === "running" && prod.dbStatus === "ready", "production_release_not_ready");
+  requireThat(prod.releaseId === dev.releaseId && prod.imageId === dev.imageId && prod.runtimeStatus === "running" && prod.dbStatus === "ready", "production_release_not_ready");
   state.prod = installationEvidence(prod);
   const prodRows = await fixtureApi(users.developer, prod, "/records");
   requireThat(prodRows.database !== created.database && prodRows.records.length === 0, "production_database_not_isolated");
@@ -561,6 +612,29 @@ async function developmentFlow(settings) {
   requireThat(prodUi.data.records.length === 0 && prodUi.data.database === prodRows.database, "production_browser_not_isolated");
   state.productionDatabase = { databaseName: prodRows.database, recordCount: prodRows.records.length };
   passed("admin_granted_exact_release_promotion_with_separate_empty_production_database");
+
+  step = "production_crud_and_bidirectional_isolation";
+  const prodKey = "prod-" + state.appId, prodMarker = "production-only-" + state.appId;
+  await prodUi.page.getByLabel("Record key", { exact: true }).fill(prodKey);
+  await prodUi.page.getByLabel("Record value", { exact: true }).fill(prodMarker);
+  await prodUi.page.getByRole("button", { name: "Save record", exact: true }).click();
+  await poll(async () => (await prodUi.page.getByTestId("records").textContent())?.includes(prodMarker));
+  const written = await fixtureApi(users.developer, prod, "/records");
+  requireThat(written.database === prodRows.database && written.userId === users.developer.me.id && written.records.length === 1 && written.records[0].key === prodKey && written.records[0].value === prodMarker, "production_write_read_failed");
+  const devAfterProdWrite = await fixtureApi(users.developer, dev, "/records");
+  requireThat(devAfterProdWrite.database === created.database && devAfterProdWrite.records.length === 1 && devAfterProdWrite.records[0].key === "keep" && devAfterProdWrite.records[0].value === marker, "production_write_leaked_into_development_database");
+  await fixtureApi(users.developer, prod, "/records", "POST", { key: prodKey, value: prodMarker + "-updated" });
+  const changed = await fixtureApi(users.developer, prod, "/records");
+  requireThat(changed.records.length === 1 && changed.records[0].value === prodMarker + "-updated", "production_update_failed");
+  await fixtureApi(users.developer, prod, "/records/" + prodKey, "DELETE");
+  requireThat((await fixtureApi(users.developer, prod, "/records")).records.length === 0, "production_delete_failed");
+  await prodUi.page.getByRole("button", { name: "Refresh records", exact: true }).click();
+  await poll(async () => {
+    const value = JSON.parse(await prodUi.page.getByTestId("records").textContent());
+    return value.records.length === 0;
+  });
+  state.productionDatabase.crud = { key: prodKey, browserCreate: true, apiReadUpdateDelete: true, finalRecordCount: 0, developmentRecordCountAfterProductionWrite: devAfterProdWrite.records.length };
+  passed("production_browser_create_api_read_update_delete_and_bidirectional_database_isolation");
 
   step = "logs_and_status";
   for (const environment of ["dev", "prod"]) {

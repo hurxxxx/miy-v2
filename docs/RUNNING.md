@@ -192,6 +192,8 @@ miy --app my-app grant set --input @grant.json
 
 서버 대표 주소는 운영자가 `MIY_ORIGIN`으로 명시한다. 서버 구성 스크립트의 `--profile server`는 첫 구성 시 주소가 없으면 실패한다. 기존 구성 재실행은 저장된 주소·포트·자격증명을 유지한다. 이 서버 설정은 홈페이지 설치 명령에 인자로 전달되며 클라이언트 실행 파일의 기본 주소가 되지 않는다.
 
+서버의 Docker Engine과 CLI는 `network connect --gw-priority`를 지원하는 28 이상을 사용한다. 앱별 네트워크를 PostgreSQL에 연결할 때 기존 기본 경로보다 낮은 우선순위를 주어 코어의 열린 DB 연결을 유지한다. 지원하지 않는 엔진에서는 우선순위 없이 연결을 재시도하지 않는다. 이 옵션은 [Docker 28 릴리스](https://docs.docker.com/engine/release-notes/28/)에 추가되었다. 기존 네트워크 연결은 자동으로 끊거나 다시 구성하지 않는다.
+
 ```sh
 python3 scripts/bootstrap.py --profile server \
   --origin https://v2.dwdcc.kr --bind 127.0.0.1:18180 \

@@ -1,28 +1,50 @@
 # CLI 상세 검증 기록
 
 - 갱신: 2026-10-28
-- 현재 구현 대상: CLI 0.6.0 / 번들 0.7.0. 기존 증거의 기준은 CLI 0.5.0 / 번들 0.6.2다.
+- 현재 검증 대상: CLI 0.6.0 / 번들 0.7.0. 배포 CLI 후보는 `b67798b`, 후속 서버 수정은 `1c6ba50`이며 서로 다른 소스와 바이너리의 증거를 구분한다.
 - 범위: [구현 계획](CLI-IMPLEMENTATION-PLAN.md). [전체 V0~V7 인수](VALIDATION.md)는 별도다.
 
-실제 실행 결과와 남은 환경 검사를 구분한다. 초기 Linux 검사는 `fb42b38` 이후 구현 작업 트리에서 실행했고, 최종 통합 검사는 미커밋 변경이 없는 `0fe94a4b9d851e7cf71dc9c8e91fb469423134e2`에서 다시 실행했다. 같은 커밋의 OS별 검사 결과를 아래 CI 기록으로 연결한다. `PASS`는 명시한 fixture·환경·assertion 범위에만 적용하고, 실제 장비/IdP/원격 서버/AI 세션을 대신하지 않는다.
+실제 실행 결과와 남은 환경 검사를 구분한다. 현재 0.6 결과를 먼저 기록하고, CLI 0.5 / 번들 0.6.2와 `0fe94a4`의 검증은 아래 이력에 보존한다. `PASS`는 명시한 소스·바이너리·fixture·환경·assertion 범위에만 적용하고, 실제 장비/IdP/원격 서버/AI 세션을 대신하지 않는다.
 
-## CLI 0.6 추가 검증 범위 — 2026-10-28
+## CLI 0.6 현재 검증 범위 — 2026-10-28
 
-아래는 새 후보에서 실행·기록할 항목이다. 0.5의 PASS를 새 구현의 결과로 이월하지 않는다. 개별 개발 중 검사와 최종 후보 commit의 통합 검사도 구분한다.
+아래 상태는 이번 후보에서 실제 수행한 범위다. 0.5의 PASS를 이월하지 않으며, 작업 트리 검사·깨끗한 후보 검사·공개 서버의 전체 흐름을 따로 기록한다.
 
 | 검증 대상 | 완료 판단에 필요한 증거 | 현재 인수 상태 |
 | --- | --- | --- |
-| 서버 명시 등록 | 설치 명령 주소 전달, 입력 요청·취소, 비대화형 미등록 상태, 설치 후 등록, 기존 연결·다른 요청 주소 표시, 기본 주소 없음 | 최종 후보 재검증 필요 |
-| HTTP IP | 인증서 없는 비-loopback HTTP의 OIDC·CLI·MCP·WS DB 터널·배포와 HTTPS 회귀 | 최종 후보 재검증 필요 |
-| 개발 준비 진단 | rustfmt, 실제 Rust 링크, Codex/Claude 설정 파싱, 제한 시간 내 local stdio initialize/tools/list | 최종 후보 재검증 필요 |
-| 서버 개발 DB | 로컬 CRUD 후 개발 배포에서 같은 DB·레코드 유지, 운영 DB 분리 | 최종 후보 재검증 필요 |
-| 복구·격리 | 동시 세션 충돌, 만료·권한 회수, SQL 변경/부분 실패, 연결 단절, 서버 재시작, 오래된 preflight | 최종 후보 재검증 필요 |
+| 서버 명시 등록 | 설치 명령 주소 전달, 입력 요청·취소, 비대화형 미등록 상태, 설치 후 등록, 기존 연결·다른 요청 주소 표시, 기본 주소 없음 | `b67798b` 네이티브 설치/등록 CI와 Windows PS5.1/7 설치기 PASS. 공개 설치 주소·다운로드 7개 검증 PASS |
+| HTTP IP | 인증서 없는 비-loopback HTTP의 OIDC·CLI·MCP·WS DB 터널·배포와 HTTPS 회귀 | 실제 HTTP OIDC/device·인증 API·쿠키/CSRF/Origin 9개 PASS. HTTP MCP·WS DB·전체 배포 흐름은 NOT_RUN |
+| 개발 준비 진단 | rustfmt, 실제 Rust 링크, Codex/Claude 설정 파싱, 제한 시간 내 local stdio initialize/tools/list | 진단·설정 파싱 단위 검사 PASS. 사용자 PC의 실제 도구 준비와 독립 AI 연계 인수는 미완료 |
+| 서버 개발 DB | 로컬 CRUD 후 개발 배포에서 같은 DB·레코드 유지, 운영 DB 분리 | 깨끗한 `b67798b`의 실제 PostgreSQL·HTTP/WS 16개 PASS. 생성 앱의 공개 HTTPS 전체 흐름은 아래 별도 항목 |
+| 복구·격리 | 동시 세션 충돌, 만료·권한 회수, SQL 변경/부분 실패, 연결 단절, 서버 재시작, 오래된 preflight | 후보 격리 회귀 52개·공유 DB 16개 PASS. 서버 이미지 수정 작업 트리 회귀 54개 PASS. 실제 사용자 환경 장애 인수와 구분 |
+| 실제 HTTPS 전체 흐름 | 게시된 CLI로 생성 앱의 로컬 CRUD → dev 배포·같은 데이터 → 인수·prod 별도 DB 확인 | 진행 중. 로그인·등록 7개는 PASS지만 배포 health 실패 복구 후 전체 결과를 별도로 기록할 예정 |
 | Windows 11 | 일반 사용자 PS5.1/7, Docker Desktop, 홈페이지 설치부터 운영 승격까지 | NOT_RUN |
 | 독립 AI 세션 | 새 Codex·Claude 프로젝트에서 생성 지침·MCP·CLI만으로 업무 앱 개발/검증 | NOT_RUN |
 
 로컬 MCP process probe는 실제 AI 세션이나 서버 API 도구 성공을 증명하지 않는다. CI Windows Server 결과와 사용자 Windows 11 결과를 각각 기록한다. 최종 후보의 commit·hash·실제 수행 명령·실패·NOT_RUN을 함께 남기고 UI/UX 개선은 TODO로 관리한다.
 
-### 0.6 구현 작업 트리 검증
+### 게시한 CLI 후보와 후속 서버 검증
+
+배포 CLI 소스는 `b67798bfb84f299257ba4326beaf034b125cde7a`다. [기반 CI 40602323702](https://github.com/hurxxxx/miy-v2/actions/runs/40602323702)와 [후보 CI 40602334949](https://github.com/hurxxxx/miy-v2/actions/runs/40602334949)가 모두 통과했다. 후속 서버 수정 `1c6ba50e1431c8bbd1093056f0ae12e381c3cbbd`의 [기반 CI 40604813425](https://github.com/hurxxxx/miy-v2/actions/runs/40604813425)도 Linux 서버/클라이언트·Windows·macOS·번들 비교를 모두 통과했다. 이 서버 수정으로 이미 게시한 CLI 후보의 소스 commit이나 바이너리 hash를 바꾸어 기록하지 않는다.
+
+| 검사 | 실제 결과와 증거 |
+| --- | --- |
+| 네이티브 후보 5종 | Linux x64/ARM64, macOS x64/ARM64, Windows x64의 fmt/check/Clippy·단위·최적화 빌드·실행 파일/번들 검사 PASS. aggregate는 5개 CLI와 Linux helper 2개의 버전·소스·CPU·아카이브/내부 hash를 검증하고 5개 내장 번들의 일치를 확인 |
+| Windows Server 2022 | [Windows release job](https://github.com/hurxxxx/miy-v2/actions/runs/40602334949/job/122533455640): 단위 95개, 출력 계약 11그룹, 서버 등록 9그룹, 내장/Git 파일 31개 PASS. PowerShell 5.1.20348.5756과 7.6.8의 설치/갱신·등록·기존 설정 보존·실패/잠금/복구·제거 검사 각각 9개 PASS. Windows 11/Docker Desktop 인수는 NOT_RUN |
+| 서버 게시·실제 다운로드 | [후보 artifact 12779751510](https://github.com/hurxxxx/miy-v2/actions/runs/40602334949/artifacts/12779751510)을 내려받아 재검증하고 원자적으로 게시. `check-cli-downloads.py`가 `https://v2.dwdcc.kr`의 commit 고정 URL 7개, 총 247,218,991바이트의 SHA-256 일치를 확인. [보존한 배포 index](releases/cli-0.6.0-candidate.json)는 게시 index와 동일 |
+| 깨끗한 CLI 후보의 격리 회귀 | `b67798b`, `workingTreeDirty=false`. runtime 33 + operations 6 + CLI 6 + auth 7 = **52개 PASS**. `/tmp/miy-runtime-regression-k67e8rtg/evidence/`의 `cli-identity.json`, `results.jsonl`, `cleanup.json`. 기존 실행 컨테이너 22개 보존, 소유 리소스 12개 정리, cleanup errors 0 |
+| 깨끗한 CLI 후보의 공유 개발 DB | `b67798b`, `workingTreeDirty=false`. 실제 PostgreSQL·HTTP/WS **16개 PASS**. `.local/development-regression-96d5ba1371/identity.json`, `test.log`; 임시 컨테이너 제거 확인. 첫 세션 DB 생성·같은 DB/레코드의 dev 배포 재사용·prod DB/역할 분리, 임시 CRUD 권한, DDL/다른 DB 차단, 만료·권한/CLI 세션/사용자 철회, SQL 부분 실패·복구·인수 스키마 경계 확인 |
+| 서버 이미지 이식성 수정 작업 트리 | 기준 commit `b67798b`, **`workingTreeDirty=true`**. runtime 35 + operations 6 + CLI 6 + auth 7 = **54개 PASS**. `/tmp/miy-runtime-regression-0ay807qu/evidence/`의 `cli-identity.json`, `results.jsonl`, `portable-image-import.json`, `cleanup.json`. 기존 실행 컨테이너 22개 보존, cleanup errors 0. 이 실행은 깨끗한 `1c6ba50` 실행이나 게시한 CLI 실행으로 기록하지 않음 |
+
+위 52개 검사의 격리 CLI SHA-256은 `84f6f3bf88e96cfd9cfe3c86546336fb9e5763bb3f54cbdab95e2b2b2cdbe603`, 공유 DB 16개 검사의 test binary SHA-256은 `48645bb5e927482ba0238bec09826cb47255a2a297db0f16fab5a0894a39b8f2`다. 수정 작업 트리 54개의 격리 CLI SHA-256은 `08a6b8ad2430ca0bd98046d16f0383f9a6c7a04e8b07b6031b6a268378bcf464`이며, 게시한 Linux CLI SHA-256 `134f8f95e7e3c39f0f42139e0c5384171c0a2779f45de677352899ce03ea4924`와 구분한다.
+
+54개 회귀에 추가한 두 관찰은 classic 형식 Docker archive를 containerd의 검증된 불변 이미지로 연결하는 처리와, 원래 영수증 이미지 식별자를 유지한 재시작·조정·health 검사다. config 충돌 거부도 확인했다. 실제 Docker를 사용하지만 격리 suite의 Python 앱 이미지·합성 인증 계정은 실제 사용자 Rust/React 앱·실제 OIDC 전체 인수와 다르다. 위 로컬 증거 디렉터리는 Git으로 전달되지 않는다.
+
+실제 HTTPS 앱의 첫 배포에서는 PostgreSQL에 앱 네트워크를 추가하며 기본 경로가 바뀌어, 열린 코어 DB 연결과 advisory lock 연결이 끊기는 결함을 발견했다. 앱 자체 health는 통과했지만 잠금 해제 단계에서 작업이 실패했다. 새 연결의 gateway 우선순위를 기존 모든 연결보다 낮추는 서버 수정을 적용했고, 실패를 무시하거나 잠금 검사를 제거하지 않았다. 별도 Docker/PostgreSQL에서 기존 방식의 연결 단절, 수정한 실제 함수의 동일 backend PID·임시 데이터·잠금 유지, 반복 연결 시 변화 없음의 **3개 관찰 PASS**를 확인했다. 증거는 `.local/miy-gateway-test-b0ddcc032620/`다. 처음 재현 fixture의 동적 published port가 바뀌어 실패한 기록은 `.local/miy-gateway-test-e2b62ca4b60c/`에 보존하며, 실제 서버와 같은 고정 포트 fixture로 수정했다. 서버 단위 **121개 PASS / 외부 서비스 5개 ignored**, fmt와 strict Clippy도 통과했다. 기존 플랫폼 PostgreSQL·Keycloak을 재시작하지 않았다.
+
+후보 workflow의 `publish=false`에 따라 정식 GitHub Release/tag를 발행하지 않았다. Windows 11·Docker Desktop·독립 AI 결과와 실제 HTTPS 전체 흐름은 완료된 범위만 별도로 추가한다.
+
+### 앞선 0.6 구현 작업 트리 검증 이력
 
 2026-10-28 Linux에서 다음 검사를 수행했다. 이 기록은 후보 CI나 사용자 Windows 결과와 합산하지 않는다.
 
@@ -33,9 +55,9 @@
 | 프런트 | TypeScript·production build PASS; 설치 화면 4개 PASS(배포 파일/체크섬 링크 포함) |
 | 서버 설정 | HTTP 허용 명시, 기존 비밀 보존, 컨테이너 UID의 초기화 파일 접근, Nginx·실제 systemd 단위 검증, 기존 realm 설정 갱신 PASS |
 | 개발 DB | 실제 PostgreSQL·HTTP/WS 16개 PASS: 동일 DB 재사용, 권한/세션 철회, DDL·다른 DB 접근 차단, 부분 SQL 실패·재개·스키마 revision. `.local/development-regression-57c52f5455/test.log` |
-| 기존 배포 회귀 | 두 실행 모두 runtime 33 + operations 6 + CLI 6 + auth 7 = 52개 관찰 PASS. 전체 runner는 별도 GitLab 컨테이너의 외부 변경 때문에 baseline 보존 검사에서 FAIL. 검증 조건을 완화하지 않았으며 소유 테스트 리소스 12개는 모두 정리됨. `/tmp/miy-runtime-regression-0fxroqjq/evidence/` |
+| 기존 배포 회귀 | 두 실행 모두 runtime 33 + operations 6 + CLI 6 + auth 7 = 52개 관찰 PASS. 전체 runner는 무관한 컨테이너의 외부 변경 때문에 baseline 보존 검사에서 FAIL. 검증 조건을 완화하지 않았으며 소유 테스트 리소스 12개는 모두 정리됨. `/tmp/miy-runtime-regression-0fxroqjq/evidence/`. 이후 깨끗한 후보의 52개 PASS와 별도 실행으로 보존 |
 | 실제 HTTP IP | 별도 임시 서버에서 실제 Keycloak OIDC, 설치 CLI device 승인·인증 API, 쿠키·CSRF·Origin 검증 9개 PASS. 테스트 리소스 정리·기존 v2 PG/Keycloak 보존 확인. `.local/miy-http-db48ead1ea25/summary.json` |
-| 실제 HTTPS 로그인 | `v2.dwdcc.kr`에서 분리한 개발자·관리자의 OIDC/device 승인, 앱 등록과 권한 거부/관리자 승인 7개 PASS. 전체 DB·배포 단계는 후보 파일 준비 후 별도 실행 |
+| 실제 HTTPS 로그인 | `v2.dwdcc.kr`에서 분리한 개발자·관리자의 OIDC/device 승인, 앱 등록과 권한 거부/관리자 승인 7개 PASS. 전체 DB·배포 단계는 현재 검증 표의 별도 진행 항목 |
 | 기존 앱 갱신 | 보관된 CLI 0.5/번들 0.6.2로 만든 앱을 0.6/0.7로 업그레이드. 업무 Rust/React, 원본 SQL·사용자 CRLF SQL, manifest·의존성·컴포넌트 선언 등 10개 파일 hash 보존 PASS. 보호 SQL 변조는 거부. `.local/evidence/upgrade062-703e5ae10d/result.json` |
 
 DB 연결 helper는 Docker classic/containerd의 서로 다른 로컬 image ID 대신 검증한 config SHA로 동일성을 확인하고, 실행 시에는 검증을 마친 로컬 불변 ID를 사용한다. 실제 containerd export와 두 아카이브 형식·변조 거부 단위 검사를 통과했다. 실제 Windows Docker Desktop 결과는 NOT_RUN이다.
@@ -44,7 +66,7 @@ DB 연결 helper는 Docker classic/containerd의 서로 다른 로컬 image ID �
 
 사용자 테스트의 시작 순서는 [핵심 흐름 테스트](CORE-TESTING.md)를 따른다.
 
-## 로컬 결과 — 이전 후보와 설치 개선 이력
+## 이력 — CLI 0.5 로컬 결과와 설치 개선
 
 ### 서버 주소를 전달하는 설치 개선 — 2026-10-27 작업 트리
 
@@ -60,7 +82,7 @@ DB 연결 helper는 Docker classic/containerd의 서로 다른 로컬 image ID �
 | 설치 안내 UI | Playwright 3개 통과. 공개/로그인 후 접근, 서버 제공 URL·정확한 명령 복사, API 실패 표시, 데스크톱·모바일 화면 확인 |
 | 기존 UI 회귀·빌드 | runtime-health UI 6개, TypeScript, 플랫폼 production build 통과 |
 
-네이티브 CLI 설치 검사는 foundation/release CI에 추가했다. 실제 Windows PowerShell 5.1/7 설치기는 신규 연결·설정 보존·부분 실패 검사까지 9개 시나리오로 확장했지만, 이번 변경의 네이티브 Windows/macOS 실행은 미실행이다. `v2.dwdcc.kr` 운영 반영·실제 로그인·새 설치 패키지 발행도 이 검증에 포함하지 않는다.
+당시 네이티브 CLI 설치 검사를 foundation/release CI에 추가하고 Windows PowerShell 5.1/7 설치기를 9개 시나리오로 확장했지만 네이티브 Windows/macOS 실행은 아직 미실행이었다. 당시 검사에는 `v2.dwdcc.kr` 반영·실제 로그인·새 설치 패키지가 포함되지 않았다. 이후 0.6 후보에서 완료한 결과는 위 현재 검증 표를 따른다.
 
 ### 기존 후보 결과
 
@@ -81,7 +103,7 @@ DB 연결 helper는 Docker classic/containerd의 서로 다른 로컬 image ID �
 
 G1/G2 증거는 `.local/evidence/cli-guidance/mvq9xhg4/result.json`, G3는 `.local/evidence/cli05/bundle-linux.json`, W1은 `.local/evidence/runtime-health-ui/`와 `/tmp/miy-cli05-browser.log`다. B1/B2의 임시 프로젝트는 종료 시 삭제하며 요약 로그와 검사 스크립트를 보존한다. 이 절의 성공은 이전 실패 실행을 성공으로 바꾼 기록이 아니다.
 
-## 실제 HTTP/PostgreSQL/Docker 통합
+## 이력 — CLI 0.5 HTTP/PostgreSQL/Docker 통합
 
 `scripts/runtime-regression/run.py`는 일회성 PostgreSQL·앱 이미지·network, 실제 router/worker와 CLI subprocess를 함께 사용한다. 일반 플랫폼의 runtime.env·인증·DB는 읽지 않고 중지/재배포하지 않는다. 원래 실행 중인 컨테이너 ID·이미지·시작 시각을 전후 비교한다. 단계가 실패해도 자기 label/소유 기록의 리소스만 정리한다.
 
@@ -93,11 +115,11 @@ G1/G2 증거는 `.local/evidence/cli-guidance/mvq9xhg4/result.json`, G3는 `.loc
 | CLI 6개 | 실제 개발 로그인→전역 private vault, 두 프로세스 refresh 1회, flag/env/project/active 우선순위, 프로젝트 밖 운영·typed input, dry-run 및 대상/확인 누락 변경0, 요청 ID 복구·JSONL·logout |
 | Auth 7개 | device pending/slowdown/CSRF/Origin/일회사용/만료/거부, 15분/30일, refresh rotation/reuse/동시 교환, 본인 세션 페이지/철회, Core 비활성화·재활성화·기존 세션 차단, rate limit |
 
-**최종 통합 PASS: 52개 (runtime 33 + operations 6 + CLI 6 + auth 7), 140.33초.** `0fe94a4b9d851e7cf71dc9c8e91fb469423134e2`의 clean 작업본에서 실행했으며, 증거는 `/tmp/miy-runtime-regression-k3bkplo6/evidence/`의 `results.jsonl`, `integration.log`, `cli-identity.json`, `cleanup.json`, `cleanup.log`다. 기존 실행 컨테이너 20개의 ID·이미지·시작 시각·실행 상태 보존과 cleanup errors 0을 확인했다. 검사한 CLI SHA-256은 `f4301fc8b7c787f5d210d66a7c5a32b6e77ccf364383c63e0ea1533701eb4fac`다. Runner는 빌드한 CLI를 격리 경로에 복사한 뒤 실행하고, 각 묶음의 개수를 따로 확인하여 새 suite가 빠진 결과를 통과로 인정하지 않는다. `cli-identity.json`의 `workingTreeDirty`는 `false`다. 검사용 Python 앱 이미지는 실제 사용자 Rust/React 앱과 구분한다.
+**CLI 0.5 당시 최종 통합 PASS: 52개 (runtime 33 + operations 6 + CLI 6 + auth 7), 140.33초.** `0fe94a4b9d851e7cf71dc9c8e91fb469423134e2`의 clean 작업본에서 실행했으며, 증거는 `/tmp/miy-runtime-regression-k3bkplo6/evidence/`의 `results.jsonl`, `integration.log`, `cli-identity.json`, `cleanup.json`, `cleanup.log`다. 기존 실행 컨테이너 20개의 ID·이미지·시작 시각·실행 상태 보존과 cleanup errors 0을 확인했다. 검사한 CLI SHA-256은 `f4301fc8b7c787f5d210d66a7c5a32b6e77ccf364383c63e0ea1533701eb4fac`다. Runner는 빌드한 CLI를 격리 경로에 복사한 뒤 실행하고, 각 묶음의 개수를 따로 확인하여 새 suite가 빠진 결과를 통과로 인정하지 않는다. `cli-identity.json`의 `workingTreeDirty`는 `false`다. 검사용 Python 앱 이미지는 실제 사용자 Rust/React 앱과 구분한다.
 
 앞선 dirty 작업본의 52개 PASS(140.96초)는 `/tmp/miy-runtime-regression-ojcff20t/evidence/`에 보존한다. 최종 결과와 합산하지 않는다. 위 로컬 증거 경로는 Git으로 전달되지 않는다.
 
-## 실패를 통해 보완한 부분
+## 이력 — CLI 0.5 실패를 통해 보완한 부분
 
 - 재개 시 dev 요청도 명시한 앱·환경과 journal 대상이 다르면 충돌로 거부한다.
 - runtime payload/hash/path를 완성하고 저장한 다음 journal index를 공개한다. 불완전 기록 때문에 정상 실행을 복구할 수 없는 경우를 제거했다.
@@ -106,7 +128,9 @@ G1/G2 증거는 `.local/evidence/cli-guidance/mvq9xhg4/result.json`, G3는 `.loc
 - 실제 CLI fixture의 허용 개발 계정 이름·명시 앱 대상·충돌 종료 코드(6)를 바로잡았다. 해당 실패 run은 최종 통과 증거에 합치지 않는다.
 - 소스 경계의 dead-code/Clippy 지적을 서버 또는 test cfg로 정리했다. 잘못된 검사 기대값 때문에 제품의 실패 정책을 완화하지 않았다.
 
-## 남은 외부 인수
+## 이력 — CLI 0.5에서 남겨둔 외부 인수
+
+다음은 0.5 종료 시점의 상태다. 현재 0.6에서 추가로 수행한 실제 HTTP/OIDC·CI·다운로드 결과와 미완료 항목은 문서 위의 현재 검증 표를 따른다.
 
 | 요구 | 상태와 필요한 증거 |
 | --- | --- |
@@ -148,13 +172,13 @@ PowerShell 개발 검사 증거: `.local/evidence/cli-installer/summary.json`. �
 
 원격 문서 commit `6e2e107`의 실제 Windows 기록도 통합했다. CLI 0.4.2 (`fb42b38`)는 Windows 11 Pro build 26200, PS7.6.5/5.1.26100.9711에서 각 단위37개·출력9개·release/번들/MCP 오프라인 검사를 통과했다. 상세 환경·hash·미실행 범위는 Windows 문서의 이력을 그대로 보존하며 새 0.5 인수로 이월하지 않는다.
 
-### 첫 네이티브 CI에서 보완한 경계
+### CLI 0.5 이력: 첫 네이티브 CI에서 보완한 경계
 
 `34546ae`의 [CI 40458485585](https://github.com/hurxxxx/miy-v2/actions/runs/40458485585)는 Linux 서버/클라이언트를 통과했지만 macOS 임시 경로와 Windows 종료코드 검사에서 실패했다. macOS의 root 소유 `/var → /private/var`, `/tmp → /private/tmp` 시스템 조상 별칭만 허용하고 설정 root·임의 조상·credentials/record 링크 거부를 유지했다. fixture 경로도 정규화했다. Windows Job Object 종료는 특정 종료코드를 보장하지 않으므로, 테스트를 종료 전 생존·소속, 종료 후 제한 시간 내 완료, 별도 Job의 프로세스 생존 확인으로 수정했다. 실패를 성공으로 집계하지 않으며 후보 CI `40458514245`는 해당 수정 후 다시 만들기 위해 취소했다.
 
 보완 후 로컬 서버 단위103개/클라이언트91개, 출력11묶음, 클라이언트 Clippy와 Windows 최소 harness all-targets Clippy를 통과했다. Windows 개발 안내의 `doctor --for develop` 및 선행 `component sync`도 수정했다. 실제 OS 재실행 결과는 다음 CI 기록으로 추가한다.
 
-### Windows debug 스택과 설치기 실증
+### CLI 0.5 이력: Windows debug 스택과 설치기 실증
 
 `021c3b`의 [release Windows CI](https://github.com/hurxxxx/miy-v2/actions/runs/40459450347/job/122040382727)는 Windows Server 2022에서 네이티브 단위87개·출력10개·번들31파일과 PowerShell 5.1.20348.5756/7.6.8 설치기 각각6시나리오를 통과했다. 체크섬 거부, 설치/갱신, 파일 잠금, 손상 backup 거부, 중단 복구, 제거 시 보존을 실제 Windows에서 실행했다. Windows 11/Docker Desktop 인수는 계속 별도다.
 
@@ -162,7 +186,7 @@ PowerShell 개발 검사 증거: `.local/evidence/cli-installer/summary.json`. �
 
 병렬 단위 검사에서 컴포넌트 잠금 재획득이 한 번 실패한 것도 기록한다. 자식 생성 시 잠금 descriptor가 일시적으로 남을 수 있어 guard 종료에 명시적 unlock을 추가했고, 기존 동시 설치 거부·중단 복구 검사와 전체 단위 검사를 다시 통과했다. 새 수정의 전체 native/candidate 결과는 뒤의 최종 CI 기록을 따른다.
 
-### 최종 커밋의 기본 CI
+### CLI 0.5 이력: 최종 커밋의 기본 CI
 
 소스 `0fe94a4b9d851e7cf71dc9c8e91fb469423134e2`의 [CI 40460546995](https://github.com/hurxxxx/miy-v2/actions/runs/40460546995)는 **전체 5개 job 성공**이다. 이전 실패 run의 결과와 합산하지 않는다.
 
@@ -176,7 +200,7 @@ PowerShell 개발 검사 증거: `.local/evidence/cli-installer/summary.json`. �
 
 Windows 환경은 Windows Server 2022 Datacenter `10.0.20348`, runner image `20261022.344.1`, Rust `1.99.1`, Python `3.12.10` x64다. 출력 fixture의 Windows 콘솔 Ctrl+C는 명시적으로 SKIP이며, 외부 실제 서비스는 사용하지 않았다. Windows 11 사용자 인수와 구분한다.
 
-### 최종 5개 배포 후보
+### CLI 0.5 이력: 최종 5개 배포 후보
 
 같은 소스의 [release candidate CI 40460582868](https://github.com/hurxxxx/miy-v2/actions/runs/40460582868)는 **candidate·5개 native·aggregate job 전부 성공**했고 `publish`는 요청값 `false`에 따라 SKIP했다.
 
@@ -192,4 +216,4 @@ Windows 환경은 Windows Server 2022 Datacenter `10.0.20348`, runner image `202
 - [커밋한 배포물별 SHA-256·binary hash·source index](releases/cli-0.5.0-candidate.json)
 - Windows Server 설치기 환경과 ZIP hash는 [Windows 안내](WINDOWS-VALIDATION.md)에 별도로 기록했다.
 
-이로써 이번 코드의 로컬 자동 검사·기본 CI·5개 배포 후보 생성 검사를 완료했다. 위 외부 인수의 `NOT_RUN` 상태와 공개 릴리스 미발행 상태는 유지한다. 결과 문서만 수정한 후속 commit을 검증 대상 소스 commit으로 바꿔 기록하지 않는다.
+이로써 이전 0.5 후보의 로컬 자동 검사·기본 CI·5개 배포 후보 생성 검사를 완료했다. 당시 외부 인수의 `NOT_RUN`과 정식 릴리스 미발행 상태를 이력으로 보존한다. 결과 문서만 수정한 후속 commit을 검증 대상 소스 commit으로 바꿔 기록하지 않는다.
