@@ -2,6 +2,12 @@
 
 Windows 11 x64 사용자는 회사 MIY 홈페이지의 `/cli/install`에서 **Windows 설치 파일 다운로드**를 선택한다. 설치 파일에는 CLI와 검증된 설치 스크립트가 들어 있다. 설치할 때 GitHub나 고정된 공개 배포 서버에 접속할 필요가 없다.
 
+## 현재 설치 후보
+
+설치기 소스 `92fc608`의 [Windows 빌드](https://github.com/hurxxxx/miy-v2/actions/runs/40640667383)가 통과했다. 내장 CLI는 검증된 `b67798b`의 0.6.0이며, 설치 파일은 약 5.7 MiB다. [현재 서버에서 다운로드](https://v2.dwdcc.kr/cli/installers/92fc608d33e61544598b4e9bb9177ab23f3b0032/MiySetup-0.6.0-windows-x64.exe)하거나 [설치 홈페이지](https://v2.dwdcc.kr/cli/install)를 이용한다.
+
+Windows Server 2022 / PowerShell 5.1에서 실제 설치 파일의 18개 검사가 통과했다. 별도 패키지 검사 19개, 설치 안내 브라우저 검사 6개와 실제 홈페이지 버튼을 통한 다운로드·SHA-256도 확인했다. 네이티브 설치 창과 홈페이지 PC·모바일 화면을 검토했다. [파일 해시·출처·수행 범위](releases/windows-installer-0.6.0-candidate.json)를 보존한다. 실제 사용자 Windows 11의 클릭·브라우저 승인·Docker Desktop 개발 인수는 아직 남아 있다.
+
 ## 설치와 서버 등록
 
 1. 홈페이지에 표시된 회사 서버 주소를 복사하고 `MiySetup-0.6.0-windows-x64.exe`를 실행한다.

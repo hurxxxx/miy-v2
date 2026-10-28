@@ -1,0 +1,118 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-10-28",
+  "status": "candidate",
+  "installer": {
+    "archiveSha256": "d7cc2e1b4cca63b215b525a51f85372792db5241c218185635fe693a714ea87f",
+    "bytes": 5940736,
+    "cliBinarySha256": "99f590c62b44e4b61391b8986d5fa6175ebee1d072efd066bbc85747e38eac71",
+    "cliCommit": "b67798bfb84f299257ba4326beaf034b125cde7a",
+    "file": "MiySetup-0.6.0-windows-x64.exe",
+    "installerCommit": "92fc608d33e61544598b4e9bb9177ab23f3b0032",
+    "platform": "windows-x64",
+    "schemaVersion": 1,
+    "sha256": "e9ade33486ffdfce32a66fcca1c1a20d41779ff70420d74fe402cc6638cb39bc",
+    "version": "0.6.0"
+  },
+  "serverSourceCommit": "2f7d453c225634f5573ed1bc236ff5b94ab9007f",
+  "buildRun": "https://github.com/hurxxxx/miy-v2/actions/runs/40640667383",
+  "artifact": "https://github.com/hurxxxx/miy-v2/actions/runs/40640667383/artifacts/12795516107",
+  "installerUrl": "https://v2.dwdcc.kr/cli/installers/92fc608d33e61544598b4e9bb9177ab23f3b0032/MiySetup-0.6.0-windows-x64.exe",
+  "checksumUrl": "https://v2.dwdcc.kr/cli/installers/92fc608d33e61544598b4e9bb9177ab23f3b0032/MiySetup-0.6.0-windows-x64.exe.sha256",
+  "nativeWindows": {
+    "os": "Windows Server 2022 x64",
+    "powershellVersion": "5.1.20348.5756",
+    "passed": true,
+    "cases": [
+      {
+        "name": "embedded_archive_and_cli_provenance",
+        "passed": true
+      },
+      {
+        "name": "native_winforms_render_and_blank_initial_server",
+        "passed": true
+      },
+      {
+        "name": "fresh_inspection_does_not_create_settings",
+        "passed": true
+      },
+      {
+        "name": "missing_server_refuses_install_without_mutation",
+        "passed": true
+      },
+      {
+        "name": "invalid_and_credential_bearing_origins_are_rejected",
+        "passed": true
+      },
+      {
+        "name": "failed_probe_does_not_install_or_register",
+        "passed": true
+      },
+      {
+        "name": "redirects_and_oversized_capabilities_are_rejected",
+        "passed": true
+      },
+      {
+        "name": "explicit_http_ip_and_port_are_supported",
+        "passed": true
+      },
+      {
+        "name": "fresh_native_install_unicode_path_and_explicit_server",
+        "passed": true
+      },
+      {
+        "name": "rerun_preserves_existing_config_and_credentials_exactly",
+        "passed": true
+      },
+      {
+        "name": "different_server_requires_explicit_context_consent",
+        "passed": true
+      },
+      {
+        "name": "existing_context_cannot_be_rebound",
+        "passed": true
+      },
+      {
+        "name": "explicit_context_add_and_select_preserves_other_bindings",
+        "passed": true
+      },
+      {
+        "name": "changed_config_snapshot_is_rejected_before_install",
+        "passed": true
+      },
+      {
+        "name": "login_refuses_a_context_whose_server_changed",
+        "passed": true
+      },
+      {
+        "name": "existing_empty_configuration_requires_explicit_add",
+        "passed": true
+      },
+      {
+        "name": "relative_config_override_survives_temporary_package_cleanup",
+        "passed": true
+      },
+      {
+        "name": "uninstall_preserves_even_broken_config_and_unmanaged_files",
+        "passed": true
+      }
+    ]
+  },
+  "verification": {
+    "packageRegressionCases": 19,
+    "serverUnitTestsPassed": 124,
+    "serverUnitTestsIgnored": 5,
+    "installGuideBrowserCases": 6,
+    "livePublicDownloadSha256Verified": true,
+    "liveBrowserDownloadSha256Verified": true,
+    "nativeScreenshotReviewed": true,
+    "desktopAndMobileWebsiteReviewed": true,
+    "postgresAndIdentityContainersUnchanged": true
+  },
+  "notRun": [
+    "User Windows 11 interactive installer and browser login",
+    "User Windows 11 full development and deployment with Docker Desktop and independent AI sessions"
+  ],
+  "authenticodeSigned": false,
+  "githubReleasePublished": false
+}
