@@ -1,0 +1,140 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-10-28",
+  "purpose": "Windows user testing readiness; not formal release approval",
+  "publishable": false,
+  "cliVersion": "0.6.0",
+  "bundleVersion": "0.7.0",
+  "origin": "https://v2.dwdcc.kr",
+  "environment": {
+    "clientOS": "Linux",
+    "clientAndServerSameHost": true,
+    "identity": "real Keycloak OIDC and CLI device UI approval",
+    "transport": "HTTPS via public domain and Nginx; Docker server-development database tunnel"
+  },
+  "identity": {
+    "serverCommit": "5ca4047cdaa77c5ebb970060b91a8073bd6c7ae7",
+    "serverBinarySha256": "bc4d772f04477bb459cd0b650bc1679b83c553ed53785eb6b996923e49ad8cbb",
+    "serverDeploymentEvidence": ".local/evidence/gateway-fix/deployment.json",
+    "nativeCliCandidateCommit": "b67798bfb84f299257ba4326beaf034b125cde7a",
+    "nativeCliSha256": "134f8f95e7e3c39f0f42139e0c5384171c0a2779f45de677352899ce03ea4924"
+  },
+  "workflows": {
+    "cliCandidate": "https://github.com/hurxxxx/miy-v2/actions/runs/40602334949",
+    "cliFoundation": "https://github.com/hurxxxx/miy-v2/actions/runs/40602323702",
+    "serverFoundation": "https://github.com/hurxxxx/miy-v2/actions/runs/40606859082"
+  },
+  "harness": {
+    "path": "scripts/check-server-development-flow.mjs",
+    "sha256": "bbc87aded90eaad88112ab77910812369d2c6cbdde979df0d4e217076f07fe4c"
+  },
+  "scenarios": [
+    {
+      "kind": "recovery",
+      "status": "PASS",
+      "appId": "qa-core-20261027231515301-b142d5",
+      "observations": [
+        "installed_snapshot_with_explicit_configured_origin",
+        "developer_normal_oidc_login",
+        "developer_cli_device_ui_approval",
+        "admin_normal_oidc_login",
+        "admin_cli_device_ui_approval",
+        "ordinary_developer_cannot_approve_registration",
+        "admin_approved_unique_developer_app",
+        "resume_installed_candidate_and_updated_project_without_changing_bundle_or_contexts",
+        "configured_origin_and_matching_helper_advertised",
+        "generated_guidance_mcp_linker_and_application_checks",
+        "local_browser_create_and_api_read_update_delete_on_server_dev_database",
+        "local_preview_stopped_before_build_and_deploy",
+        "failed_job_inspected_and_unclassified_retry_refused",
+        "dev_deployment_reuses_exact_server_database_and_local_record",
+        "failed_deploy_recovered_with_same_release_database_and_original_local_record",
+        "separate_admin_sdk_identity_cannot_read_developer_owned_rows",
+        "accepted_release_cannot_promote_without_production_grant",
+        "admin_granted_exact_release_promotion_with_separate_empty_production_database",
+        "production_browser_create_api_read_update_delete_and_bidirectional_database_isolation",
+        "dev_and_prod_logs_and_running_status"
+      ],
+      "observationCount": 20,
+      "countIncludesEarlierExecutions": true,
+      "localEvidenceDirectory": ".local/evidence/server-development-flow/20261027231515301-b142d5",
+      "cleanup": {
+        "runtimeEnvironmentsStopped": [
+          "dev",
+          "prod"
+        ],
+        "databasesPreserved": true,
+        "cliSessionsRevoked": 2
+      }
+    },
+    {
+      "kind": "fresh",
+      "status": "PASS",
+      "appId": "qa-core-20261028001234088-a064df",
+      "observations": [
+        "installed_snapshot_with_explicit_configured_origin",
+        "developer_normal_oidc_login",
+        "developer_cli_device_ui_approval",
+        "admin_normal_oidc_login",
+        "admin_cli_device_ui_approval",
+        "ordinary_developer_cannot_approve_registration",
+        "admin_approved_unique_developer_app",
+        "configured_origin_and_matching_helper_advertised",
+        "generated_stdio_mcp_executes_live_contract_api_components_and_scoped_cli_help",
+        "generated_guidance_mcp_linker_and_application_checks",
+        "local_browser_create_and_api_read_update_delete_on_server_dev_database",
+        "local_preview_stopped_before_build_and_deploy",
+        "dev_deployment_reuses_exact_server_database_and_local_record",
+        "separate_admin_sdk_identity_cannot_read_developer_owned_rows",
+        "accepted_release_cannot_promote_without_production_grant",
+        "admin_granted_exact_release_promotion_with_separate_empty_production_database",
+        "production_browser_create_api_read_update_delete_and_bidirectional_database_isolation",
+        "dev_and_prod_logs_and_running_status"
+      ],
+      "observationCount": 18,
+      "countIncludesEarlierExecutions": false,
+      "localEvidenceDirectory": ".local/evidence/server-development-flow/20261028001234088-a064df",
+      "cleanup": {
+        "runtimeEnvironmentsStopped": [
+          "dev",
+          "prod"
+        ],
+        "databasesPreserved": true,
+        "cliSessionsRevoked": 2
+      }
+    }
+  ],
+  "liveMcp": [
+    {
+      "tool": "get_contract",
+      "status": "passed",
+      "protectedFileCount": 19
+    },
+    {
+      "tool": "search_api",
+      "status": "passed",
+      "apiCount": 51
+    },
+    {
+      "tool": "list_components",
+      "status": "passed",
+      "componentCount": 1
+    },
+    {
+      "tool": "get_cli_help",
+      "status": "passed",
+      "commandCount": 1
+    }
+  ],
+  "serviceDependenciesPreserved": [
+    "PostgreSQL",
+    "Keycloak"
+  ],
+  "notRun": [
+    "User Windows 11 with PowerShell 5.1 and 7 and Docker Desktop",
+    "Independent Codex and Claude development sessions",
+    "Client and server on separate physical hosts",
+    "Complete MCP/WebSocket database/deployment flow over HTTP IP",
+    "Formal GitHub Release publication"
+  ]
+}

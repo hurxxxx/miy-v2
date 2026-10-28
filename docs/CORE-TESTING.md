@@ -2,6 +2,8 @@
 
 대상은 CLI 0.6.0 / 개발 번들 0.7.0이다. Windows 11의 개발 도구와 Docker Desktop Linux 엔진은 준비되어 있다고 가정한다. 이번 테스트는 핵심 기능·권한·데이터 보존을 검증하며, 화면·사용성 개선은 [TODO](TODO.md)에 기록한다. 실제 Windows와 독립 Codex·Claude 세션의 미실행 항목은 [검증 행렬](CLI-VALIDATION-MATRIX.md)에 구분한다.
 
+현재 설치 후보는 `b67798b`, 서버는 `5ca4047`이다. Linux에서 실제 로그인·MCP/API·로컬 CRUD·개발 DB 재사용·운영 DB 분리까지 검증했고, Windows Server CI의 PowerShell 5.1/7 설치 검사도 통과했다. 아래 절차는 아직 실행하지 않은 사용자 Windows 11·Docker Desktop·독립 AI 개발 흐름을 확인하기 위한 것이다.
+
 ## 설치와 로그인
 
 현재 배포의 [CLI 설치 안내](https://v2.dwdcc.kr/cli/install)에 접속해 Windows 명령을 실행하고 새 PowerShell을 연다. 화면의 소스 commit과 다운로드 SHA-256을 실행 기록에 남긴다. 이 도메인은 현재 서버의 배포 설정이다. CLI에 기본 주소가 들어 있지 않으며, 다른 서버의 설치 화면은 그 서버의 주소를 명령에 전달한다.

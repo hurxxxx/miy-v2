@@ -1,7 +1,7 @@
 # CLI 상세 검증 기록
 
 - 갱신: 2026-10-28
-- 현재 검증 대상: CLI 0.6.0 / 번들 0.7.0. 배포 CLI 후보는 `b67798b`, 후속 서버 수정은 `1c6ba50`이며 서로 다른 소스와 바이너리의 증거를 구분한다.
+- 현재 검증 대상: CLI 0.6.0 / 번들 0.7.0. 배포 CLI 후보는 `b67798b`, 반영한 서버 소스는 `5ca4047`이며 서로 다른 소스와 바이너리의 증거를 구분한다.
 - 범위: [구현 계획](CLI-IMPLEMENTATION-PLAN.md). [전체 V0~V7 인수](VALIDATION.md)는 별도다.
 
 실제 실행 결과와 남은 환경 검사를 구분한다. 현재 0.6 결과를 먼저 기록하고, CLI 0.5 / 번들 0.6.2와 `0fe94a4`의 검증은 아래 이력에 보존한다. `PASS`는 명시한 소스·바이너리·fixture·환경·assertion 범위에만 적용하고, 실제 장비/IdP/원격 서버/AI 세션을 대신하지 않는다.
@@ -14,10 +14,10 @@
 | --- | --- | --- |
 | 서버 명시 등록 | 설치 명령 주소 전달, 입력 요청·취소, 비대화형 미등록 상태, 설치 후 등록, 기존 연결·다른 요청 주소 표시, 기본 주소 없음 | `b67798b` 네이티브 설치/등록 CI와 Windows PS5.1/7 설치기 PASS. 공개 설치 주소·다운로드 7개 검증 PASS |
 | HTTP IP | 인증서 없는 비-loopback HTTP의 OIDC·CLI·MCP·WS DB 터널·배포와 HTTPS 회귀 | 실제 HTTP OIDC/device·인증 API·쿠키/CSRF/Origin 9개 PASS. HTTP MCP·WS DB·전체 배포 흐름은 NOT_RUN |
-| 개발 준비 진단 | rustfmt, 실제 Rust 링크, Codex/Claude 설정 파싱, 제한 시간 내 local stdio initialize/tools/list | 진단·설정 파싱 단위 검사 PASS. 사용자 PC의 실제 도구 준비와 독립 AI 연계 인수는 미완료 |
-| 서버 개발 DB | 로컬 CRUD 후 개발 배포에서 같은 DB·레코드 유지, 운영 DB 분리 | 깨끗한 `b67798b`의 실제 PostgreSQL·HTTP/WS 16개 PASS. 생성 앱의 공개 HTTPS 전체 흐름은 아래 별도 항목 |
-| 복구·격리 | 동시 세션 충돌, 만료·권한 회수, SQL 변경/부분 실패, 연결 단절, 서버 재시작, 오래된 preflight | 후보 격리 회귀 52개·공유 DB 16개 PASS. 서버 이미지 수정 작업 트리 회귀 54개 PASS. 실제 사용자 환경 장애 인수와 구분 |
-| 실제 HTTPS 전체 흐름 | 게시된 CLI로 생성 앱의 로컬 CRUD → dev 배포·같은 데이터 → 인수·prod 별도 DB 확인 | 진행 중. 로그인·등록 7개는 PASS지만 배포 health 실패 복구 후 전체 결과를 별도로 기록할 예정 |
+| 개발 준비 진단 | rustfmt, 실제 Rust 링크, Codex/Claude 설정 파싱, 제한 시간 내 local stdio initialize/tools/list | 단위 검사와 실제 생성 앱의 doctor/check PASS. 생성된 stdio MCP의 실제 계약·API·컴포넌트·CLI 도움말 도구 4종 PASS. 독립 AI와 사용자 Windows 인수는 별도 |
+| 서버 개발 DB | 로컬 CRUD 후 개발 배포에서 같은 DB·레코드 유지, 운영 DB 분리 | 깨끗한 `b67798b`의 PostgreSQL·HTTP/WS 16개 PASS. 실제 Rust/React 앱의 로컬 CRUD → 동일 dev DB/레코드 → 별도 prod DB CRUD 및 양방향 격리 PASS |
+| 복구·격리 | 동시 세션 충돌, 만료·권한 회수, SQL 변경/부분 실패, 연결 단절, 서버 재시작, 오래된 preflight | 후보 회귀 52개·공유 DB 16개, 이미지 수정 회귀 54개, gateway 재현 3개 PASS. 실패했던 실제 앱도 동일 이미지·릴리스·DB·레코드로 복구 PASS |
+| 실제 HTTPS 전체 흐름 | 게시된 CLI로 생성 앱의 로컬 CRUD → dev 배포·같은 데이터 → 인수·prod 별도 DB 확인 | 동일 Linux 호스트의 공개 HTTPS 경로에서 신규 앱 18개 관찰 PASS. 이전 실패 앱의 복구까지 누적 20개 관찰 PASS. 서로 다른 호스트와 Windows 결과로 확대하지 않음 |
 | Windows 11 | 일반 사용자 PS5.1/7, Docker Desktop, 홈페이지 설치부터 운영 승격까지 | NOT_RUN |
 | 독립 AI 세션 | 새 Codex·Claude 프로젝트에서 생성 지침·MCP·CLI만으로 업무 앱 개발/검증 | NOT_RUN |
 
@@ -42,7 +42,20 @@
 
 실제 HTTPS 앱의 첫 배포에서는 PostgreSQL에 앱 네트워크를 추가하며 기본 경로가 바뀌어, 열린 코어 DB 연결과 advisory lock 연결이 끊기는 결함을 발견했다. 앱 자체 health는 통과했지만 잠금 해제 단계에서 작업이 실패했다. 새 연결의 gateway 우선순위를 기존 모든 연결보다 낮추는 서버 수정을 적용했고, 실패를 무시하거나 잠금 검사를 제거하지 않았다. 별도 Docker/PostgreSQL에서 기존 방식의 연결 단절, 수정한 실제 함수의 동일 backend PID·임시 데이터·잠금 유지, 반복 연결 시 변화 없음의 **3개 관찰 PASS**를 확인했다. 증거는 `.local/miy-gateway-test-b0ddcc032620/`다. 처음 재현 fixture의 동적 published port가 바뀌어 실패한 기록은 `.local/miy-gateway-test-e2b62ca4b60c/`에 보존하며, 실제 서버와 같은 고정 포트 fixture로 수정했다. 서버 단위 **121개 PASS / 외부 서비스 5개 ignored**, fmt와 strict Clippy도 통과했다. 기존 플랫폼 PostgreSQL·Keycloak을 재시작하지 않았다.
 
-후보 workflow의 `publish=false`에 따라 정식 GitHub Release/tag를 발행하지 않았다. Windows 11·Docker Desktop·독립 AI 결과와 실제 HTTPS 전체 흐름은 완료된 범위만 별도로 추가한다.
+최종 반영한 서버 소스 `5ca4047cdaa77c5ebb970060b91a8073bd6c7ae7`의 [기반 CI 40606859082](https://github.com/hurxxxx/miy-v2/actions/runs/40606859082)도 모두 통과했다. Linux 서버 121개/외부 통합 5개 ignored, Linux·macOS·Windows 클라이언트 각각 99·97·95개, 출력·설치·복구 검사와 3개 운영체제의 내장 번들 비교가 통과했다. 외부 통합 5개를 CI 실행으로 세지 않는다.
+
+### 현재 서버의 실제 Rust/React 전체 흐름
+
+검사 도구는 `scripts/check-server-development-flow.mjs`이며 CLI는 게시된 Linux 네이티브 후보 `b67798b`, 서버는 `5ca4047`이다. 서버 바이너리 SHA-256은 `bc4d772f04477bb459cd0b650bc1679b83c553ed53785eb6b996923e49ad8cbb`다. 클라이언트와 플랫폼은 같은 Linux 호스트에서 실행했고, 공개 도메인의 HTTPS/Nginx·실제 Keycloak·Docker DB 터널을 사용했다. 별도 PC 네트워크나 실제 AI 세션을 검증한 것으로 기록하지 않는다. [커밋한 결과 요약](releases/cli-0.6.0-core-validation.json)에 두 소스·해시·관찰·미실행 범위를 보존한다.
+
+| 실행 | 관찰과 결과 |
+| --- | --- |
+| 실패 앱의 복구 | `.local/evidence/server-development-flow/20261027231515301-b142d5/`. 원래 실패 보고서를 별도 보존하고 일반 OIDC/device 재로그인, 실패 job 조회, 허용되지 않은 자동 retry 거부를 확인. 새 사전 검사를 거친 배포로 원래 이미지·release·DB·로컬 레코드 유지. 운영 권한 거부/관리자 승인·동일 이미지 승격·별도 prod DB CRUD까지 누적 **20개 관찰 PASS** |
+| 신규 앱 전체 흐름 | `.local/evidence/server-development-flow/20261028001234088-a064df/`. 명시적 서버 설치, 분리한 개발자/관리자의 실제 로그인·앱 승인, 생성 지침·doctor/check, 로컬 브라우저/API CRUD, 첫 dev 배포의 동일 DB/레코드, 사용자별 데이터 경계, 인수·운영 권한·동일 이미지 승격, prod CRUD·양방향 DB 격리, 로그/상태의 **18개 관찰 PASS** |
+| 실제 프로젝트 MCP | 신규 앱의 생성 `.mcp.json`으로 stdio 프로세스를 실행. `get_contract`의 보호 파일 19개, `search_api`의 API 51개, `list_components`의 컴포넌트 1개, `get_cli_help`의 `app dev` 도움말을 실제 브라우저 API/CLI 결과와 대조하여 PASS. 두 AI 제품의 독립 실행은 NOT_RUN |
+| 정리·서비스 보존 | 두 실행의 dev/prod 런타임을 정상 중지하고 테스트 DB는 보존. 각 실행에서 사용한 두 CLI 세션을 철회. 서버 수정 반영 후 PG·Keycloak ID/이미지/시작 시각 보존과 serve/worker의 재시작 횟수 0 확인 |
+
+후보 workflow의 `publish=false`에 따라 정식 GitHub Release/tag는 발행하지 않았다. 실제 Windows 11·PowerShell 5.1/7·Docker Desktop, 독립 Codex/Claude, 서로 다른 호스트의 원격 개발, HTTP IP에서의 MCP/WS DB/전체 배포 흐름은 여전히 NOT_RUN이다. 사용자 테스트는 [핵심 흐름 테스트](CORE-TESTING.md)에서 시작한다.
 
 ### 앞선 0.6 구현 작업 트리 검증 이력
 

@@ -1,12 +1,14 @@
 # CLI 배포 후보와 Windows 설치기
 
-이 문서는 구현된 배포 도구의 사용법이다. Windows 11·별도 Linux 서버·실제 OIDC·독립 AI 세션의 인수 통과나 공개 릴리스 발행을 의미하지 않는다. 사용자 Windows 실행은 [Windows 검증](WINDOWS-VALIDATION.md), 전체 검증 범위는 [검증 행렬](CLI-VALIDATION-MATRIX.md)에 기록한다.
+이 문서는 배포 도구의 사용법과 현재 후보를 기록한다. 후보 게시와 정식 GitHub Release 발행은 구분한다. 실제 수행 범위는 [검증 행렬](CLI-VALIDATION-MATRIX.md), 아직 남은 사용자 PC 실행은 [Windows 검증](WINDOWS-VALIDATION.md)을 따른다.
 
 ## 현재 0.6 검증 후보
 
 CLI 소스 `b67798bfb84f299257ba4326beaf034b125cde7a`의 [기반 CI](https://github.com/hurxxxx/miy-v2/actions/runs/40602323702)와 [후보 CI](https://github.com/hurxxxx/miy-v2/actions/runs/40602334949)가 모두 통과했다. 다섯 네이티브 CLI와 두 Linux helper를 검증해 [현재 서버 설치 화면](https://v2.dwdcc.kr/cli/install)에 게시했다. [전체 후보 artifact](https://github.com/hurxxxx/miy-v2/actions/runs/40602334949/artifacts/12779751510)와 [배포물별 SHA-256·소스 index](releases/cli-0.6.0-candidate.json)를 보존한다. 실제 공개 경로의 일곱 파일 해시와 홈페이지 명령·다운로드 링크도 확인했다.
 
 Windows Server 2022에서 네이티브 단위 95개, 출력 11그룹, 서버 등록 9그룹, PowerShell 5.1.20348.5756과 7.6.8의 설치 검사 각각 9개가 통과했다. 사용자 Windows 11·Docker Desktop·독립 AI 세션 인수는 별도다. `publish=false`로 실행했으므로 정식 GitHub Release나 공개 tag를 생성하지 않았다. 시작 절차는 [핵심 흐름 테스트](CORE-TESTING.md)를 따른다.
+
+현재 서버는 이미지 식별자 호환성과 PostgreSQL 네트워크 연결 보존을 수정한 `5ca4047`이며 [서버 CI](https://github.com/hurxxxx/miy-v2/actions/runs/40606859082)가 통과했다. 게시된 CLI `b67798b`와 함께 실제 Rust/React 앱의 로컬 개발 DB CRUD·dev 데이터 유지·별도 prod DB 승격과 CRUD를 검증했다. [두 소스와 실제 수행 범위](releases/cli-0.6.0-core-validation.json)를 별도로 기록하며 CLI 후보 파일을 서버 소스 commit으로 다시 표시하지 않는다.
 
 ## 이전 0.5 검증 후보
 

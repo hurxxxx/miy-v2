@@ -290,6 +290,96 @@ async function browserRecords(user, installation) {
   await poll(async () => (await page.getByTestId("records").textContent())?.includes('"records"'));
   return { page, data: JSON.parse(await page.getByTestId("records").textContent()) };
 }
+async function verifyLiveMcp() {
+  step = "generated_mcp_live_api_tools";
+  const configured = readJson(join(app, ".mcp.json")).mcpServers?.miy_app;
+  requireThat(configured?.type === "stdio" && configured.command === join(app, ".miy-tools/miy" + suffix)
+    && JSON.stringify(configured.args) === '["mcp"]' && configured.env?.MIY_APP_DIRECTORY === app, "generated_mcp_configuration_mismatch");
+  const child = spawn(configured.command, configured.args, {
+    cwd: app, env: { ...environment("developer"), ...configured.env },
+    stdio: ["pipe", "pipe", "ignore"], detached: process.platform !== "win32",
+  });
+  let buffer = "", sequence = 0, protocolFailure, exited = false;
+  const pending = new Map();
+  const error = code => Object.assign(new Error(code), { safeCode: code });
+  const rejectPending = code => {
+    protocolFailure = code;
+    for (const request of pending.values()) { clearTimeout(request.timer); request.reject(error(code)); }
+    pending.clear();
+  };
+  const closed = new Promise(resolveClosed => child.once("close", code => {
+    exited = true; rejectPending("mcp_process_closed"); resolveClosed(code);
+  }));
+  child.once("error", () => rejectPending("mcp_process_start_failed"));
+  child.stdin.on("error", () => rejectPending("mcp_input_closed"));
+  child.stdout.on("data", chunk => {
+    buffer += chunk.toString();
+    if (buffer.length > 4 * 1024 * 1024) { rejectPending("mcp_output_limit"); return; }
+    let boundary;
+    while ((boundary = buffer.indexOf("\n")) >= 0) {
+      const line = buffer.slice(0, boundary); buffer = buffer.slice(boundary + 1);
+      if (!line.trim()) continue;
+      let reply;
+      try { reply = JSON.parse(line); } catch { rejectPending("mcp_invalid_json"); return; }
+      if (reply.jsonrpc !== "2.0") { rejectPending("mcp_invalid_protocol"); return; }
+      const request = pending.get(reply.id);
+      if (request) {
+        clearTimeout(request.timer); pending.delete(reply.id);
+        if (reply.error) request.reject(error("mcp_protocol_error"));
+        else request.resolve(reply.result);
+      }
+    }
+  });
+  const call = (method, params) => {
+    if (protocolFailure || exited) return Promise.reject(error(protocolFailure || "mcp_process_closed"));
+    const id = ++sequence;
+    return new Promise((resolveCall, reject) => {
+      const timer = setTimeout(() => { pending.delete(id); reject(error("mcp_request_timeout")); }, 20000);
+      pending.set(id, { resolve: resolveCall, reject, timer });
+      child.stdin.write(JSON.stringify({ jsonrpc: "2.0", id, method, params }) + "\n");
+    });
+  };
+  const api = async path => {
+    const response = await users.developer.context.request.get(state.origin + path);
+    requireThat(response.status() === 200, "mcp_live_api_comparison_failed");
+    return response.json();
+  };
+  const tool = async (name, args) => {
+    const result = await call("tools/call", { name, arguments: args });
+    requireThat(result && !result.isError && Array.isArray(result.content), "mcp_tool_failed");
+    const body = result.content.find(block => block.type === "text")?.text;
+    try { return JSON.parse(body); } catch { fail("mcp_tool_invalid_json"); }
+  };
+  try {
+    const initialized = await call("initialize", { protocolVersion: "2025-03-26", capabilities: {}, clientInfo: { name: "server-development-acceptance", version: "1" } });
+    requireThat(initialized?.serverInfo, "mcp_initialize_failed");
+    child.stdin.write(JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" }) + "\n");
+    const listed = await call("tools/list", {});
+    requireThat(["get_contract", "search_api", "list_components", "get_cli_help"].every(name => listed.tools?.some(item => item.name === name)), "mcp_required_tool_missing");
+    const contract = await tool("get_contract", {}), liveContract = await api("/api/v1/contracts");
+    requireThat(contract.platformBundleVersion === liveContract.bundleVersion && contract.bundleVersion === state.bundleVersion && Object.keys(contract.protectedFiles || {}).length > 0, "mcp_live_contract_mismatch");
+    const catalog = await tool("search_api", { query: "" }), liveCatalog = await api("/api/v1/catalog");
+    requireThat(Array.isArray(catalog) && catalog.length > 0 && catalog.some(row => row.path?.includes("/dev-sessions"))
+      && JSON.stringify(catalog.map(row => row.id).sort()) === JSON.stringify(liveCatalog.map(row => row.id).sort()), "mcp_live_api_catalog_mismatch");
+    const components = await tool("list_components", { query: "" }), liveComponents = await api("/api/v1/components");
+    const versions = rows => rows.map(row => row.name + "@" + row.version).sort();
+    requireThat(Array.isArray(components) && components.length > 0 && JSON.stringify(versions(components)) === JSON.stringify(versions(liveComponents)), "mcp_live_components_mismatch");
+    const help = await tool("get_cli_help", { command: "app dev" });
+    const directHelp = await cli("developer", ["describe", "--command", "app dev"]);
+    requireThat(help.scope === "command" && help.cliVersion === state.cliVersion && JSON.stringify(help) === JSON.stringify(directHelp), "mcp_scoped_cli_help_mismatch");
+    state.mcpLive = [
+      { tool: "get_contract", status: "passed", protectedFileCount: Object.keys(contract.protectedFiles).length },
+      { tool: "search_api", status: "passed", apiCount: catalog.length },
+      { tool: "list_components", status: "passed", componentCount: components.length },
+      { tool: "get_cli_help", status: "passed", commandCount: 1 },
+    ];
+    passed("generated_stdio_mcp_executes_live_contract_api_components_and_scoped_cli_help");
+  } finally {
+    child.stdin.end();
+    const done = await Promise.race([closed, new Promise(resolveWait => setTimeout(() => resolveWait("pending"), 3000))]);
+    if (done === "pending") { signalOwned(child, "SIGKILL"); await closed; }
+  }
+}
 async function stopPreview() {
   if (!app || (!preview && !existsSync(join(app, ".miy/remote-dev.json")) && !existsSync(join(app, ".miy/preview-run.json")))) return;
   step = "local_preview_stop";
@@ -479,6 +569,8 @@ async function developmentFlow(settings) {
   const doctor = await cli("developer", ["doctor", "--for", "develop"], { timeout: 120000 });
   state.doctor = doctor.checks.map(check => ({ id: check.id, status: check.status, code: check.code }));
   requireThat(doctor.ready && ["rustfmt", "rustLinker", "projectMcpConfiguration", "projectMcpProcess"].every(id => doctor.checks.some(check => check.id === id && check.status === "pass")), "development_doctor_not_ready");
+  await verifyLiveMcp();
+  step = "fixture_toolchain_and_guidance";
   await cli("developer", ["app", "check"]);
   await checked("git", ["init", "-b", "main"], { cwd: app });
   await checked("git", ["add", "."], { cwd: app });
