@@ -166,6 +166,17 @@ button {
   line-height: 1.7;
   overflow-wrap: anywhere;
 }
+.cli-install-download {
+  display: inline-block;
+  padding: 12px 20px;
+  border-radius: 8px;
+  background: var(--miy-accent);
+  color: #fff;
+  font-weight: 600;
+}
+.cli-install-download:hover {
+  filter: brightness(0.9);
+}
 .cli-install-platforms {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(320px, 100%), 1fr));

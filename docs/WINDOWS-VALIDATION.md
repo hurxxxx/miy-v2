@@ -7,7 +7,7 @@
 
 ## CLI 0.6 인수 준비 — 2026-10-28
 
-현재 설치 후보는 `b67798b`다. [설치 화면](https://v2.dwdcc.kr/cli/install)에서 검증된 ZIP과 서버 주소가 포함된 명령을 받는다. [후보 CI](https://github.com/hurxxxx/miy-v2/actions/runs/40602334949)의 Windows Server 2022에서 단위 95개, 출력 11그룹, 서버 등록 9그룹, PowerShell 5.1/7 설치 각각 9개가 통과했다. 사용자의 실제 Windows 11 인수는 아직 NOT_RUN이며 [핵심 흐름 테스트](CORE-TESTING.md)부터 진행한다.
+현재 설치 후보는 `b67798b`다. [설치 화면](https://v2.dwdcc.kr/cli/install)에서 Windows GUI 설치 파일을 받는다. [설치 안내](WINDOWS-INSTALLER.md)처럼 빈 입력란에 회사 서버 주소를 입력한다. ZIP과 PowerShell 명령도 보조 경로로 유지한다. [후보 CI](https://github.com/hurxxxx/miy-v2/actions/runs/40602334949)의 Windows Server 2022에서 단위 95개, 출력 11그룹, 서버 등록 9그룹, PowerShell 5.1/7 설치 각각 9개가 통과했다. 사용자의 실제 Windows 11 인수는 아직 NOT_RUN이며 [핵심 흐름 테스트](CORE-TESTING.md)부터 진행한다.
 
 서버 URL은 사용자가 명시하거나 홈페이지 설치 명령의 `-Server URL`로 전달한다. 기본 IP·도메인은 없다. 주소를 생략한 대화형 설치는 URL을 질문하며, 비대화형 설치는 실행 파일만 설치하고 `contextInitialization.status=required`와 `miy context init`을 안내한다. 이후 `miy context init` 또는 최초 대화형 로그인에서 등록한다. `-NonInteractive`/`--no-input`에서는 입력을 기다리지 않는다. 기존 설정은 보존하고 다른 요청 주소는 `activeOrigin`, `requestedOrigin`, `serverMismatch`로 구분한다.
 

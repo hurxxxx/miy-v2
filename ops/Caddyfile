@@ -23,6 +23,9 @@
   handle /cli/downloads/* {
     reverse_proxy {$MIY_CORE_UPSTREAM:host.docker.internal:18080}
   }
+  handle /cli/installers/* {
+    reverse_proxy {$MIY_CORE_UPSTREAM:host.docker.internal:18080}
+  }
   handle {
     root * /srv/platform
     try_files {path} /index.html

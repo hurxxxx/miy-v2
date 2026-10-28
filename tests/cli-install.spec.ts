@@ -97,3 +97,51 @@ test("published candidate exposes immutable archive and checksum links with its 
   await expect(page.getByText(commit, { exact: true })).toBeVisible();
   await expect(page.getByText("설치 파일을 준비 중입니다.", { exact: false })).toHaveCount(0);
 });
+
+test("Windows setup is the primary download and requires the displayed company URL", async ({ page }, testInfo) => {
+  await setup(page);
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText: async (text: string) => {
+        (window as typeof window & { copiedCommand?: string }).copiedCommand = text;
+      } },
+    });
+  });
+  const installerCommit = "d".repeat(40);
+  const file = "MiySetup-0.6.0-windows-x64.exe";
+  const url = `/cli/installers/${installerCommit}/${file}`;
+  await page.route("**/api/v1/cli/install", (route) => route.fulfill({ json: {
+    ...guide,
+    windowsInstaller: { file, url, checksumUrl: `${url}.sha256`, sha256: "e".repeat(64) },
+  } }));
+  await page.goto("/cli/install");
+  const download = page.getByRole("link", { name: "Windows 설치 파일 다운로드", exact: true });
+  await expect(download).toHaveAttribute("href", url);
+  await expect(download).toHaveAttribute("download", file);
+  await expect(page.getByRole("link", { name: "설치 파일 SHA-256", exact: true })).toHaveAttribute("href", `${url}.sha256`);
+  await expect(page.getByText("서버 주소 입력란은 비어 있는 상태로 시작합니다.", { exact: false })).toBeVisible();
+  await expect(page.getByLabel("설치에 입력할 서버 주소", { exact: true })).toHaveText(serverUrl);
+  await page.getByRole("button", { name: "설치에 입력할 서버 주소 복사", exact: true }).click();
+  await expect.poll(() => page.evaluate(() => (window as typeof window & { copiedCommand?: string }).copiedCommand)).toBe(serverUrl);
+  await expect(page.getByLabel("Windows 설치 명령", { exact: true })).not.toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath("windows-installer-desktop.png"), fullPage: true });
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  await page.screenshot({ path: testInfo.outputPath("windows-installer-mobile.png"), fullPage: true });
+  await page.getByText("스크립트 설치와 다른 운영체제", { exact: true }).click();
+  await expect(page.getByLabel("Windows 설치 명령", { exact: true })).toHaveText(guide.commands.windows);
+});
+
+test("Windows setup guidance supports company HTTP IP servers without substituting a domain", async ({ page }) => {
+  await setup(page);
+  const companyUrl = "http://192.168.20.10:8080";
+  await page.route("**/api/v1/cli/install", (route) => route.fulfill({ json: {
+    ...guide, serverUrl: companyUrl,
+    windowsInstaller: { file: "MiySetup-0.6.0-windows-x64.exe", url: "/cli/installers/fixture/setup.exe", checksumUrl: "/cli/installers/fixture/setup.exe.sha256", sha256: "e".repeat(64) },
+  } }));
+  await page.goto("/cli/install");
+  await expect(page.getByTestId("cli-install-server")).toHaveText(companyUrl);
+  await expect(page.getByLabel("설치에 입력할 서버 주소", { exact: true })).toHaveText(companyUrl);
+  await expect(page.getByText("이 서버는 사내망 HTTP 구성으로 통신이 암호화되지 않습니다.")).toBeVisible();
+});

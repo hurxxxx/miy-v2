@@ -14,7 +14,7 @@ CLI로 앱의 기본 구조를 만들고, 자신의 개발 에이전트를 MCP�
 
 공용 UI는 CLI 내장 코드에서 분리했다. 플랫폼 컴포넌트 저장소에 새 버전을 게시하면 같은 CLI와 MCP에서 즉시 조회하며, 앱은 명시적인 설치·업데이트 전까지 기존 버전을 유지한다. [설치·갱신 안내](docs/RUNNING.md#공용-컴포넌트-설치와-업데이트)를 따른다.
 
-CLI 설치는 `bash scripts/install-cli.sh`, 새 앱 시작은 `miy app init ./my-app --id my-app --name '내 앱'`이다. 로그인·등록 승인·로컬 테스트·배포 순서는 [실행 안내](docs/RUNNING.md)를 따른다. 이전 [휴가 앱 실증](docs/LEAVE-LEDGER-RESULTS.md)과 bundle 0.3 검증은 당시의 보완 과정과 한계가 남아 있는 이력이다.
+Windows CLI는 회사 홈페이지의 `/cli/install`에서 [GUI 설치 파일](docs/WINDOWS-INSTALLER.md)을 받아 서버 주소를 입력해 설치한다. Unix의 기존 설치 명령은 `bash scripts/install-cli.sh`이며, 새 앱 시작은 `miy app init ./my-app --id my-app --name '내 앱'`이다. 로그인·등록 승인·로컬 테스트·배포 순서는 [실행 안내](docs/RUNNING.md)를 따른다. 이전 [휴가 앱 실증](docs/LEAVE-LEDGER-RESULTS.md)과 bundle 0.3 검증은 당시의 보완 과정과 한계가 남아 있는 이력이다.
 
 [CLI 0.5 개선 계획](docs/CLI-IMPLEMENTATION-PLAN.md)의 context·인증·작업·로그·실행 전 검증과 Windows 설치/갱신 도구를 구현했다. [개발 인계](docs/CLI-HANDOFF.md)와 [세부 검증](docs/CLI-VALIDATION-MATRIX.md)에서 현재 증거와 남은 조건을 확인한다. 사용자 Windows 11/PowerShell/Docker Desktop, 별도 Linux 서버와 독립 AI 검증은 남아 있으며 정식 릴리스 완료로 표시하지 않는다.
 

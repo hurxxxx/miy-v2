@@ -9,6 +9,7 @@ type InstallGuide = {
   commands: { unix: string; windows: string; login: string };
   downloads?: { target: string; file: string; sha256: string; url: string; checksumUrl: string }[];
   sourceCommit?: string;
+  windowsInstaller?: { file: string; sha256: string; url: string; checksumUrl: string };
 };
 
 function Command({ label, command }: { label: string; command: string }) {
@@ -16,9 +17,9 @@ function Command({ label, command }: { label: string; command: string }) {
   async function copy() {
     try {
       await navigator.clipboard.writeText(command);
-      setMessage("명령을 복사했습니다.");
+      setMessage("복사했습니다.");
     } catch {
-      setMessage("명령을 선택해 직접 복사해 주세요.");
+      setMessage("내용을 선택해 직접 복사해 주세요.");
     }
   }
   return (
@@ -48,6 +49,20 @@ export function CliInstall() {
       {!guide && !error && <p role="status">설치 정보를 불러오는 중…</p>}
       {guide && <>
         <p>연결할 서버: <strong data-testid="cli-install-server">{guide.serverUrl}</strong> · CLI {guide.cliVersion}</p>
+        {guide.windowsInstaller && <Panel title="1. Windows 설치">
+          <p>Windows 11 x64에서 설치 파일을 실행하세요. 관리자 권한 없이 현재 사용자에게 설치합니다.</p>
+          <p><a className="cli-install-download" href={guide.windowsInstaller.url} download={guide.windowsInstaller.file}>Windows 설치 파일 다운로드</a></p>
+          <p><a href={guide.windowsInstaller.checksumUrl}>설치 파일 SHA-256</a></p>
+          <ol>
+            <li>설치 파일을 실행하고 아래 서버 주소를 입력하세요. 처음 설치하는 PC에서는 서버 주소 입력란이 비어 있습니다.</li>
+            <li>연결 확인 후 설치를 진행하세요. 기존 연결이 있으면 내용을 확인하고 사용할 연결을 선택합니다.</li>
+            <li>설치를 마친 뒤 브라우저에서 로그인하고 새 터미널을 여세요.</li>
+          </ol>
+          <Command label="설치에 입력할 서버 주소" command={guide.serverUrl} />
+          <p>사내 IP의 HTTP 주소와 도메인의 HTTPS 주소를 모두 사용할 수 있습니다. 다른 회사 서버에 연결하려면 해당 회사에서 안내한 주소를 입력하세요.</p>
+        </Panel>}
+        <details open={!guide.windowsInstaller}>
+          <summary>스크립트 설치와 다른 운영체제</summary>
         <Panel title="1. 배포 패키지 준비">
           {guide.downloads?.length ? <>
             <p>운영체제·CPU에 맞는 설치 파일을 선택하세요. Windows 설치 명령은 다운로드와 해시 확인을 함께 수행합니다.</p>
@@ -70,8 +85,9 @@ export function CliInstall() {
             <p>기본 설치 경로는 <code>%LOCALAPPDATA%\Programs\miy\bin</code>입니다. 명령 뒤에 <code>-AddToPath</code>를 추가하면 사용자 PATH에 등록하며, 새 터미널에서 사용할 수 있습니다.</p>
           </Panel>
         </div>
-        <Panel title="3. 로그인">
-          <p>위 명령에 명시된 서버 주소를 연결로 등록합니다. CLI에는 기본 IP나 도메인이 없습니다. 주소 없이 설치하면 직접 입력하거나 설치 후 <code>miy context init</code>으로 등록하세요.</p>
+        </details>
+        <Panel title={guide.windowsInstaller ? "2. 로그인 확인" : "3. 로그인"}>
+          <p>설치 중 입력한 주소 또는 설치 명령에 명시된 주소를 연결로 등록합니다. CLI에는 기본 IP나 도메인이 없습니다. 주소 없이 설치하면 직접 입력하거나 설치 후 <code>miy context init</code>으로 등록하세요.</p>
           {guide.serverUrl.startsWith("http://") && <p>이 서버는 사내망 HTTP 구성으로 통신이 암호화되지 않습니다.</p>}
           <p>PATH가 설정된 터미널에서 실행하고, 열린 브라우저에서 계정과 인증 코드를 확인해 연결을 승인하세요.</p>
           <Command label="CLI 로그인 명령" command={guide.commands.login} />

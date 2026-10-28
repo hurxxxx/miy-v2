@@ -14,6 +14,8 @@ struct InstallGuide {
     downloads: Vec<Value>,
     tunnel_images: Vec<Value>,
     source_commit: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    windows_installer: Option<Value>,
 }
 
 #[derive(Serialize)]
@@ -101,6 +103,14 @@ fn guide(origin: &str) -> ApiResult<InstallGuide> {
             powershell_quote(&server_url)
         );
     }
+    let windows_installer = match std::env::var("MIY_CLI_INSTALLER_DIR") {
+        Ok(root) => load_windows_installer(
+            std::path::Path::new(&root),
+            source_commit.as_deref(),
+            &downloads,
+        )?,
+        Err(_) => None,
+    };
     Ok(InstallGuide {
         schema_version: 1,
         server_url,
@@ -109,7 +119,67 @@ fn guide(origin: &str) -> ApiResult<InstallGuide> {
         downloads,
         tunnel_images,
         source_commit,
+        windows_installer,
     })
+}
+
+fn load_windows_installer(
+    root: &std::path::Path,
+    cli_commit: Option<&str>,
+    downloads: &[Value],
+) -> ApiResult<Option<Value>> {
+    let path = root.join("installer-index.json");
+    let bytes = match std::fs::read(path) {
+        Ok(bytes) => bytes,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(_) => return Err(ApiError::unavailable("cli_installer_unavailable")),
+    };
+    let index: Value = serde_json::from_slice(&bytes)
+        .map_err(|_| ApiError::unavailable("invalid_cli_installer_index"))?;
+    windows_installer(&index, cli_commit, downloads).map(Some)
+}
+
+fn windows_installer(
+    index: &Value,
+    cli_commit: Option<&str>,
+    downloads: &[Value],
+) -> ApiResult<Value> {
+    let invalid = || ApiError::unavailable("invalid_cli_installer_index");
+    let windows = downloads
+        .iter()
+        .find(|item| item["target"] == "x86_64-pc-windows-msvc")
+        .ok_or_else(invalid)?;
+    let version = env!("CARGO_PKG_VERSION");
+    let installer_commit = index["installerCommit"]
+        .as_str()
+        .filter(|commit| crate::helper_image::valid_hash(commit, 40))
+        .ok_or_else(invalid)?;
+    let file = index["file"].as_str().ok_or_else(invalid)?;
+    if index["schemaVersion"] != 1
+        || index["platform"] != "windows-x64"
+        || index["version"] != version
+        || cli_commit.is_none()
+        || index["cliCommit"].as_str() != cli_commit
+        || index["cliBinarySha256"] != windows["binarySha256"]
+        || index["archiveSha256"] != windows["sha256"]
+        || file != format!("MiySetup-{version}-windows-x64.exe")
+        || !index["bytes"]
+            .as_u64()
+            .is_some_and(|size| size > 0 && size <= 532 * 1024 * 1024)
+        || !["sha256", "cliBinarySha256", "archiveSha256"]
+            .iter()
+            .all(|field| {
+                index[field]
+                    .as_str()
+                    .is_some_and(|hash| crate::helper_image::valid_hash(hash, 64))
+            })
+    {
+        return Err(invalid());
+    }
+    let mut installer = index.clone();
+    installer["url"] = json!(format!("/cli/installers/{installer_commit}/{file}"));
+    installer["checksumUrl"] = json!(format!("/cli/installers/{installer_commit}/{file}.sha256"));
+    Ok(installer)
 }
 
 fn validate_index(index: &Value) -> ApiResult<()> {
@@ -200,6 +270,9 @@ pub fn router<S: Clone + Send + Sync + 'static>(origin: String) -> Router<S> {
     if let Ok(root) = std::env::var("MIY_CLI_RELEASE_DIR") {
         router = router.nest_service("/cli/downloads", tower_http::services::ServeDir::new(root));
     }
+    if let Ok(root) = std::env::var("MIY_CLI_INSTALLER_DIR") {
+        router = router.nest_service("/cli/installers", tower_http::services::ServeDir::new(root));
+    }
     router
 }
 
@@ -208,6 +281,102 @@ mod tests {
     use super::*;
     use axum::http::StatusCode;
     use serde_json::Value;
+
+    fn installer_fixture() -> (Value, Value, String) {
+        let commit = "a".repeat(40);
+        let windows = json!({
+            "target": "x86_64-pc-windows-msvc",
+            "binarySha256": "b".repeat(64),
+            "sha256": "c".repeat(64),
+        });
+        let installer = json!({
+            "schemaVersion": 1,
+            "platform": "windows-x64",
+            "version": env!("CARGO_PKG_VERSION"),
+            "installerCommit": "d".repeat(40),
+            "cliCommit": commit,
+            "cliBinarySha256": windows["binarySha256"],
+            "archiveSha256": windows["sha256"],
+            "file": format!("MiySetup-{}-windows-x64.exe", env!("CARGO_PKG_VERSION")),
+            "sha256": "e".repeat(64),
+            "bytes": 123456,
+        });
+        (installer, windows, commit)
+    }
+
+    #[test]
+    fn installer_download_uses_its_own_commit_and_matches_the_selected_cli() {
+        let (index, windows, commit) = installer_fixture();
+        let result = windows_installer(&index, Some(&commit), &[windows]).unwrap();
+        let url = format!(
+            "/cli/installers/{}/{}",
+            "d".repeat(40),
+            index["file"].as_str().unwrap()
+        );
+        assert_eq!(result["url"], url);
+        assert_eq!(result["checksumUrl"], format!("{url}.sha256"));
+        assert_eq!(result["cliCommit"], commit);
+        assert_ne!(result["cliCommit"], result["installerCommit"]);
+    }
+
+    #[test]
+    fn installer_rejects_mixed_cli_versions_hashes_and_unsafe_downloads() {
+        let (index, windows, commit) = installer_fixture();
+        for (field, value) in [
+            ("schemaVersion", json!(2)),
+            ("platform", json!("windows-arm64")),
+            ("version", json!("0.0.0")),
+            ("installerCommit", json!("../escape")),
+            ("cliCommit", json!("f".repeat(40))),
+            ("cliBinarySha256", json!("f".repeat(64))),
+            ("archiveSha256", json!("f".repeat(64))),
+            ("file", json!("../MiySetup-0.6.0-windows-x64.exe")),
+            ("file", json!("https://foreign.example/setup.exe")),
+            ("sha256", json!("z".repeat(64))),
+            ("bytes", json!(0)),
+            ("bytes", json!(-1)),
+            ("bytes", json!(532_u64 * 1024 * 1024 + 1)),
+        ] {
+            let mut changed = index.clone();
+            changed[field] = value;
+            assert_eq!(
+                windows_installer(&changed, Some(&commit), std::slice::from_ref(&windows))
+                    .unwrap_err()
+                    .code,
+                "invalid_cli_installer_index",
+                "{field}",
+            );
+        }
+        assert!(windows_installer(&index, None, std::slice::from_ref(&windows)).is_err());
+        assert!(windows_installer(&index, Some(&commit), &[]).is_err());
+    }
+
+    #[test]
+    fn missing_installer_index_is_optional_but_invalid_index_is_not_advertised() {
+        let root = tempfile::tempdir().unwrap();
+        let (index, windows, commit) = installer_fixture();
+        let downloads = [windows];
+        assert!(
+            load_windows_installer(root.path(), Some(&commit), &downloads)
+                .unwrap()
+                .is_none()
+        );
+        let path = root.path().join("installer-index.json");
+        std::fs::write(&path, b"not json").unwrap();
+        assert_eq!(
+            load_windows_installer(root.path(), Some(&commit), &downloads)
+                .unwrap_err()
+                .code,
+            "invalid_cli_installer_index"
+        );
+        std::fs::write(&path, serde_json::to_vec(&index).unwrap()).unwrap();
+        assert!(
+            load_windows_installer(root.path(), Some(&commit), &downloads)
+                .unwrap()
+                .is_some()
+        );
+        assert!(load_windows_installer(root.path(), None, &[]).is_err());
+    }
 
     #[test]
     fn catalog_rejects_mixed_candidates_and_development_helpers() {

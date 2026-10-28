@@ -104,6 +104,7 @@ config = {
     'caFile': str(ca_file) if ca_file else None,
     'proxyMode': 'local' if args.profile == 'local' else 'external',
     'cliReleaseDir': os.getenv('MIY_CLI_RELEASE_DIR', previous.get('cliReleaseDir', str(LOCAL / 'cli-downloads'))),
+    'cliInstallerDir': os.getenv('MIY_CLI_INSTALLER_DIR', previous.get('cliInstallerDir', str(LOCAL / 'cli-installers'))),
 }
 private_write(LOCAL / 'server.json', json.dumps(config, indent=2) + '\n')
 tls_host = '[' + parsed.hostname + ']' if ':' in parsed.hostname else parsed.hostname
@@ -126,6 +127,7 @@ runtime = {
     'MIY_WEB_SECRET': s['web_client'], 'MIY_RESOURCE_SECRET': s['resource_client'],
     'MIY_ENCRYPTION_KEY': s['encryption_key'], 'MIY_ARTIFACTS': LOCAL / 'artifacts',
     'MIY_CLI_RELEASE_DIR': config['cliReleaseDir'],
+    'MIY_CLI_INSTALLER_DIR': config['cliInstallerDir'],
 }
 if ca_file:
     runtime['MIY_CA_FILE'] = ca_file

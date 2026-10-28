@@ -117,6 +117,7 @@ with tempfile.TemporaryDirectory(prefix='miy-server-config-') as temporary:
     require('MIY_CA_FILE' not in runtime and realm['sslRequired'] == 'none', 'HTTP requires a certificate')
     require(compose['MIY_CADDY_CONFIG'].endswith('Caddyfile.http'), 'Wrong HTTP proxy configuration')
     require(compose['MIY_STATE_DIR'] == str(state), 'Space-containing state path was corrupted')
+    require(runtime['MIY_CLI_INSTALLER_DIR'] == str(state / 'cli-installers'), 'Installer directory was not configured')
     require(realm['clients'][0]['redirectUris'] == ['http://10.2.3.4:8080/auth/callback'], 'Incorrect browser callback')
     original_secrets = (state / 'credentials.json').read_bytes()
     bootstrap(state)
@@ -137,7 +138,7 @@ with tempfile.TemporaryDirectory(prefix='miy-server-config-') as temporary:
     proxy = (state / 'nginx-miy.conf').read_text()
     require('listen 8080;' in proxy and 'ssl_certificate' not in proxy and 'Strict-Transport-Security' not in proxy,
             'HTTP render accidentally enabled TLS')
-    require('cli/downloads' in proxy and 'proxy_set_header Upgrade' in proxy, 'Download or WebSocket route missing')
+    require('cli/(downloads|installers)' in proxy and 'proxy_set_header Upgrade' in proxy, 'Download, installer or WebSocket route missing')
     if shutil.which('nginx'):
         wrapper = state / 'nginx-validation.conf'
         wrapper.write_text(f'pid "{state / "nginx.pid"}"; error_log stderr; events {{}} http {{ access_log off; include "{state / "nginx-miy.conf"}"; }}')

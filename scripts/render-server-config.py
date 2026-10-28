@@ -95,7 +95,7 @@ server {{
     location /identity/ {{
         proxy_pass {identity};
 {forwarding}    }}
-    location ~ ^/(api(/|$)|auth(/|$)|mcp(/|$)|\\.well-known(/|$)|artifacts(/|$)|cli/downloads(/|$)) {{
+    location ~ ^/(api(/|$)|auth(/|$)|mcp(/|$)|\\.well-known(/|$)|artifacts(/|$)|cli/(downloads|installers)(/|$)) {{
         proxy_pass {core};
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;

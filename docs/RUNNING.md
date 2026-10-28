@@ -223,7 +223,7 @@ python3 scripts/render-server-config.py --binary "$PWD/target/release/miy"
 
 HTTP는 내부망용이며 통신이 암호화되지 않는다. 이 구성은 `MIY_ALLOW_HTTP=1`을 기록하고 CA·TLS 리다이렉트·HSTS를 요구하지 않는다. 일반 로그인·권한·CSRF 검사는 유지한다. HTTPS 구성은 시스템 신뢰 저장소를 사용하며 사설 CA는 `--ca-file` 또는 `MIY_CA_FILE`로 추가한다. TLS 검증을 끄거나 HTTPS 실패를 HTTP로 대체하지 않는다. Keycloak 대표 주소와 MIY realm SSL 정책도 함께 적용하며 master realm은 변경하지 않는다. 관리 API 접근은 loopback으로 제한한다.
 
-`MIY_STATE_DIR`/`--state-dir`는 private 상태 위치, `MIY_BINARY`/`--binary`는 서버 실행 파일을 지정한다. `MIY_CLI_RELEASE_DIR`는 검증된 CLI 다운로드 묶음을 제공할 위치이며 기본은 상태 디렉터리의 `cli-downloads`다. PostgreSQL과 Keycloak 호스트 포트는 loopback에만 공개한다. `credentials.json`, runtime/compose env는 0600이고 상태 디렉터리는 0700이다. 컨테이너에 개별 읽기 전용 mount하는 init.sql/realm.json은 컨테이너 UID가 읽을 수 있도록 0644이며 호스트에서는 상태 디렉터리의 접근 제한을 받는다.
+`MIY_STATE_DIR`/`--state-dir`는 private 상태 위치, `MIY_BINARY`/`--binary`는 서버 실행 파일을 지정한다. `MIY_CLI_RELEASE_DIR`는 검증된 CLI 다운로드 묶음을 제공할 위치이며 기본은 상태 디렉터리의 `cli-downloads`다. `MIY_CLI_INSTALLER_DIR`는 Windows GUI 설치 파일의 게시 위치이며 기본은 상태 디렉터리의 `cli-installers`다. 검증한 설치 파일이 없으면 기존 ZIP·스크립트 안내를 제공한다. [Windows 설치 파일 배포](WINDOWS-INSTALLER.md)를 참고한다. PostgreSQL과 Keycloak 호스트 포트는 loopback에만 공개한다. `credentials.json`, runtime/compose env는 0600이고 상태 디렉터리는 0700이다. 컨테이너에 개별 읽기 전용 mount하는 init.sql/realm.json은 컨테이너 UID가 읽을 수 있도록 0644이며 호스트에서는 상태 디렉터리의 접근 제한을 받는다.
 
 ## 로컬 플랫폼 보조 도구와 검증
 

@@ -6,7 +6,7 @@
 
 ## 설치와 로그인
 
-현재 배포의 [CLI 설치 안내](https://v2.dwdcc.kr/cli/install)에 접속해 Windows 명령을 실행하고 새 PowerShell을 연다. 화면의 소스 commit과 다운로드 SHA-256을 실행 기록에 남긴다. 이 도메인은 현재 서버의 배포 설정이다. CLI에 기본 주소가 들어 있지 않으며, 다른 서버의 설치 화면은 그 서버의 주소를 명령에 전달한다.
+현재 배포의 [CLI 설치 안내](https://v2.dwdcc.kr/cli/install)에 접속해 Windows 설치 파일을 내려받아 실행한다. 홈페이지의 회사 서버 주소를 설치 화면에 입력하고 연결 확인·설치·브라우저 로그인을 진행한 뒤 새 PowerShell을 연다. [GUI 설치 안내](WINDOWS-INSTALLER.md)를 참고한다. 화면의 소스 commit과 다운로드 SHA-256을 실행 기록에 남긴다. 이 도메인은 현재 서버의 배포 설정이다. CLI에 기본 주소가 들어 있지 않으며, 다른 서버의 홈페이지는 그 서버의 주소를 표시한다. PowerShell 설치 명령을 사용하는 경우에는 주소를 인수로 전달한다.
 
 ```powershell
 miy --version
