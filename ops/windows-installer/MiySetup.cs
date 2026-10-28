@@ -284,7 +284,7 @@ namespace Miy.Setup
             try
             {
                 Reply reply = package.Run(request);
-                return new HelperResult { Reply = reply, Error = reply.Code == 0 ? null : reply.Error };
+                return new HelperResult { Reply = reply, Error = reply.Code == 0 ? null : String.IsNullOrEmpty(reply.Error) ? "설치 작업을 완료하지 못했습니다. 다시 실행해 상태를 확인하세요." : reply.Error };
             }
             catch (Exception error) { return new HelperResult { Error = error.Message }; }
         }
@@ -329,6 +329,7 @@ namespace Miy.Setup
             string inspectionError = ApplyState(snapshot, prefillServer);
             string error = operationError ?? "";
             if (inspectionError.Length > 0 && inspectionError != error) error += (error.Length > 0 ? "\r\n" : "") + inspectionError;
+            if (String.IsNullOrEmpty(operationError) && error.Length > 0 && !String.IsNullOrEmpty(message)) error = message + "\r\n" + error;
             SetStatus(error.Length > 0 ? error : message ?? DefaultStatus(), error.Length > 0);
         }
         private async Task Perform(Func<Task> action, string message)
