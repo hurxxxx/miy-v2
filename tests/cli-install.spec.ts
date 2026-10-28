@@ -120,7 +120,7 @@ test("Windows setup is the primary download and requires the displayed company U
   await expect(download).toHaveAttribute("href", url);
   await expect(download).toHaveAttribute("download", file);
   await expect(page.getByRole("link", { name: "설치 파일 SHA-256", exact: true })).toHaveAttribute("href", `${url}.sha256`);
-  await expect(page.getByText("서버 주소 입력란은 비어 있는 상태로 시작합니다.", { exact: false })).toBeVisible();
+  await expect(page.getByText("처음 설치하는 PC에서는 서버 주소 입력란이 비어 있습니다.", { exact: false })).toBeVisible();
   await expect(page.getByLabel("설치에 입력할 서버 주소", { exact: true })).toHaveText(serverUrl);
   await page.getByRole("button", { name: "설치에 입력할 서버 주소 복사", exact: true }).click();
   await expect.poll(() => page.evaluate(() => (window as typeof window & { copiedCommand?: string }).copiedCommand)).toBe(serverUrl);

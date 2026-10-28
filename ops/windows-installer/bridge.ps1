@@ -90,6 +90,45 @@ function Get-Settings([string]$Binary) {
         active = $active; activeOrigin = $origin; contexts = $contexts }
 }
 
+function Get-Installation([string]$Directory, $Metadata) {
+    $root = (Assert-MiyPath $Directory).TrimEnd('\')
+    if ($root -eq [IO.Path]::GetPathRoot($root).TrimEnd('\')) { Stop-MiyInstall 'Use the dedicated per-user MIY installation directory.' 6 }
+    if (-not [IO.Directory]::Exists($root)) {
+        return @{ present = $false; current = $false; recoveryRequired = $false }
+    }
+    $ownership = Join-Path $root '.miy-install-root.json'
+    if (-not [IO.File]::Exists($ownership)) {
+        if (@(Get-ChildItem -LiteralPath $root -Force).Count -eq 0) {
+            return @{ present = $false; current = $false; recoveryRequired = $false }
+        }
+        Stop-MiyInstall 'The MIY install directory contains unmanaged files. Preserve them before installing.' 6
+    }
+    $identity = [Security.Principal.WindowsIdentity]::GetCurrent().User
+    $owner = Read-MiyJson $ownership
+    if ($owner.schemaVersion -ne 1 -or $owner.application -ne 'miy-cli' -or $owner.ownerSid -ne $identity.Value -or
+        -not $root.Equals([string]$owner.directory, [StringComparison]::OrdinalIgnoreCase)) {
+        Stop-MiyInstall 'Installation ownership does not match this user and directory.' 6
+    }
+    $acl = Get-Acl -LiteralPath $root
+    if ($acl.GetOwner([Security.Principal.SecurityIdentifier]).Value -ne $identity.Value) { Stop-MiyInstall 'The install directory is owned by another user.' 6 }
+    $writeRights = [Security.AccessControl.FileSystemRights]'Write, Delete, ChangePermissions, TakeOwnership'
+    foreach ($rule in $acl.Access) {
+        if ($rule.AccessControlType -eq [Security.AccessControl.AccessControlType]::Allow -and
+            ($rule.FileSystemRights -band $writeRights) -ne 0 -and
+            $rule.IdentityReference.Translate([Security.Principal.SecurityIdentifier]).Value -ne $identity.Value) {
+            Stop-MiyInstall 'The install directory permits another identity to modify its files.' 6
+        }
+    }
+    # Inspection does not create a lock, change ACLs, repair a journal or create
+    # a directory. Only an explicit install/remove operation may mutate files.
+    $recovery = [IO.File]::Exists((Assert-MiyPath (Join-Path $root '.miy-install-journal.json')))
+    $binary = Join-Path $root 'miy.exe'
+    if (-not $recovery) { Assert-MiyOwnedBinary $root }
+    $present = [IO.File]::Exists($binary)
+    return @{ present = $present; current = ($present -and -not $recovery -and (Get-MiyHash $binary) -eq $Metadata.cliBinarySha256);
+        recoveryRequired = $recovery }
+}
+
 function Get-Origin([string]$Value) {
     if ([string]::IsNullOrWhiteSpace($Value)) { Stop-MiyInstall 'Enter your company server URL. No default server is selected.' 2 }
     $value = $Value.Trim()
@@ -155,6 +194,17 @@ function Get-Selection($Settings, [string]$Origin, $Request) {
         return @{ name = $Settings.active; action = 'keep' }
     }
     if (-not $Settings.exists) { return @{ name = 'default'; action = 'initialize' } }
+    if ((Get-Option $Request 'autoSelectContext' $false) -eq $true) {
+        # The user explicitly entered this origin and selected Install. Names
+        # are internal; reuse an existing binding or allocate without overwrite.
+        foreach ($existing in @($Settings.contexts.Keys | Sort-Object)) {
+            if ($Settings.contexts[$existing].origin -eq $Origin) { return @{ name = $existing; action = 'select' } }
+        }
+        $name = 'work'
+        $suffix = 2
+        while ($Settings.contexts.ContainsKey($name)) { $name = 'work-' + $suffix; $suffix += 1 }
+        return @{ name = $name; action = 'add' }
+    }
     if ((Get-Option $Request 'selectContext' $false) -ne $true) {
         Stop-MiyInstall 'Existing settings are preserved. Explicitly approve adding or selecting a context for this server.' 2
     }
@@ -181,6 +231,7 @@ try {
     $action = [string](Get-Option $request 'action' '')
     $result = switch ($action) {
         'inspect' { Get-Settings $bundledBinary; break }
+        'installation' { Get-Installation ([string](Get-Option $request 'installDir' '')) $metadata; break }
         'probe' { Test-Server ([string](Get-Option $request 'server' '')); break }
         'install' {
             $probe = Test-Server ([string](Get-Option $request 'server' ''))
@@ -215,23 +266,6 @@ try {
             $directory = [string](Get-Option $request 'installDir' '')
             if ([string]::IsNullOrWhiteSpace($directory)) { Stop-MiyInstall 'Choose the existing installation directory.' 2 }
             Invoke-MiyUninstall -InstallDir $directory -InstallerDirectory $PSScriptRoot -RemoveFromPath:([bool](Get-Option $request 'removeFromPath' $false))
-            break
-        }
-        'login' {
-            $directory = Assert-MiyPath ([string](Get-Option $request 'installDir' ''))
-            $binary = Join-Path $directory 'miy.exe'
-            if ((Get-MiyHash $binary) -ne $metadata.cliBinarySha256) { Stop-MiyInstall 'The installed CLI changed. Run its current installer before starting login.' 6 }
-            $name = [string](Get-Option $request 'contextName' '')
-            if ($name -notmatch '^[a-z][a-z0-9-]{0,47}$') { Stop-MiyInstall 'The selected context name is invalid.' 2 }
-            $context = Invoke-Client $binary @('context', 'show', $name)
-            if ($context.context.origin -ne (Get-Origin ([string](Get-Option $request 'server' '')))) { Stop-MiyInstall 'The selected server changed. Review miy context show before logging in.' 6 }
-            $start = New-Object Diagnostics.ProcessStartInfo
-            $start.FileName = $binary
-            $start.Arguments = '--context ' + (Quote-Native $name) + ' auth login'
-            $start.WorkingDirectory = $directory
-            $start.UseShellExecute = $true
-            $null = [Diagnostics.Process]::Start($start)
-            @{ started = $true; context = $name }
             break
         }
         default { Stop-MiyInstall 'Unknown installer action.' 2 }

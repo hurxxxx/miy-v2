@@ -88,6 +88,8 @@ jobs:
             .local/windows-installer/evidence/summary.json
             .local/windows-installer/evidence/embedded-provenance.json
             .local/windows-installer/evidence/initial-form.png
+            .local/windows-installer/evidence/completed-form.png
+            .local/windows-installer/evidence/ui-state.json
           include-hidden-files: true
           if-no-files-found: ignore
       - uses: actions/upload-artifact@v4
@@ -100,6 +102,8 @@ jobs:
             .local/windows-installer/evidence/summary.json
             .local/windows-installer/evidence/embedded-provenance.json
             .local/windows-installer/evidence/initial-form.png
+            .local/windows-installer/evidence/completed-form.png
+            .local/windows-installer/evidence/ui-state.json
           include-hidden-files: true
           if-no-files-found: error
 

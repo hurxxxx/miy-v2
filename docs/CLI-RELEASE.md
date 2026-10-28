@@ -74,7 +74,7 @@ Windows의 `install-cli.ps1`과 `update-cli.ps1`에는 `-Server https://PLATFORM
 
 ## Windows 설치·갱신·제거
 
-일반 사용자는 [Windows GUI 설치 파일](WINDOWS-INSTALLER.md)을 사용한다. 회사 홈페이지에서 내려받아 서버 주소 입력·연결 확인·설치·로그인을 진행한다. 다음 ZIP·PowerShell 방식은 수동 설치와 진단을 위한 보조 경로다.
+일반 사용자는 [Windows GUI 설치 파일](WINDOWS-INSTALLER.md)을 사용한다. 회사 홈페이지에서 내려받아 서버 주소 입력·연결 확인·설치를 진행한 뒤 새 터미널에서 `miy auth login`을 실행한다. 다음 ZIP·PowerShell 방식은 수동 설치와 진단을 위한 보조 경로다.
 
 ZIP을 신뢰한 배포 위치에서 받고 게시된 SHA-256과 대조한 다음 별도 디렉터리에 풀어 설치 스크립트를 실행한다. ZIP 내부에는 `miy.exe`, `release.json`, 설치·갱신·제거 스크립트와 공통 라이브러리가 있다. 설치 스크립트 자체도 검증한 ZIP 또는 확인한 소스 checkout에서 사용한다.
 

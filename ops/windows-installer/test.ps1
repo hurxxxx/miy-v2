@@ -24,6 +24,7 @@ $savedConfig = $env:MIY_CONFIG_DIR
 $savedContext = $env:MIY_CONTEXT
 $savedPath = [Environment]::GetEnvironmentVariable('Path', 'User')
 $cases = New-Object Collections.Generic.List[object]
+$uiStates = [ordered]@{}
 $serverA = $null
 $serverB = $null
 $failed = $false
@@ -56,6 +57,26 @@ function Invoke-Bridge($Request, [int]$ExpectedExit = 0) {
     Assert-True ($reply.ok -eq ($code -eq 0)) 'The response and actual process exit code disagree.'
     if ($code -ne 0) { Assert-True ($reply.error.code -eq $code) 'The public failure code does not match the process exit.' }
     return $reply
+}
+function Read-UiState([string]$Name, $Request) {
+    $script:sequence += 1
+    $inputPath = Join-Path $root ('ui-request-' + $script:sequence + '.json')
+    $resultPath = Join-Path $root ('ui-result-' + $script:sequence + '.json')
+    Write-Json $inputPath $Request
+    Assert-True ((Run-Setup @('--render-state', $inputPath, $resultPath)) -eq 0) 'Native UI state inspection failed.'
+    $reply = [IO.File]::ReadAllText($resultPath, [Text.UTF8Encoding]::new($false, $true)) | ConvertFrom-Json
+    Assert-True $reply.ok 'The native UI did not return its control state.'
+    Assert-True ($reply.data.buttonCount -eq 3 -and $reply.data.textBoxCount -eq 1 -and $reply.data.checkBoxCount -eq 0) 'The simplified form contains unexpected login, context, folder or PATH controls.'
+    # Only public fixture state is published, never request paths/configuration.
+    $uiStates[$Name] = $reply.data
+    return $reply.data
+}
+function Installation-Snapshot([string]$Directory) {
+    if (-not [IO.Directory]::Exists($Directory)) { return 'absent' }
+    $files = @(Get-ChildItem -LiteralPath $Directory -Force -Recurse -File | Sort-Object FullName | ForEach-Object {
+        [ordered]@{ name = $_.FullName.Substring($Directory.Length); hash = (Hash $_.FullName); modified = $_.LastWriteTimeUtc.Ticks }
+    })
+    return ([ordered]@{ acl = (Get-Acl -LiteralPath $Directory).Sddl; files = $files } | ConvertTo-Json -Depth 6 -Compress)
 }
 function Case([string]$Name, [scriptblock]$Body) {
     try {
@@ -133,15 +154,21 @@ public sealed class MiyInstallerFixture : IDisposable {
         Assert-True ($metadata.cliBinarySha256 -eq '99f590c62b44e4b61391b8986d5fa6175ebee1d072efd066bbc85747e38eac71') 'Unexpected native binary hash.'
         Assert-True ($metadata.installerCommit -match '^[a-f0-9]{40}$') 'Missing installer source provenance.'
     }
-    Case 'native_winforms_render_and_blank_initial_server' {
+    Case 'native_winforms_initial_state_is_simple_and_read_only' {
         $destination = Join-Path $evidence 'initial-form.png'
-        Assert-True ((Run-Setup @('--render', $destination)) -eq 0) 'Native WinForms construction/render failed.'
+        $state = Read-UiState 'fresh' @{ installDir = $installDir; screenshot = $destination }
+        Assert-True ($state.server -eq '' -and -not $state.installEnabled -and -not $state.removeEnabled -and -not $state.present -and -not $state.current) 'Fresh UI enables installation/removal or invents a server/installation.'
+        Assert-True ($state.configurationReady -and $state.installationReady) 'Fresh configuration/installation inspection failed.'
         Assert-True ((Get-Item -LiteralPath $destination).Length -gt 5000) 'The rendered installer image is empty.'
+        Assert-True (-not [IO.Directory]::Exists($installDir) -and -not [IO.File]::Exists($config)) 'Opening the installer created installation/configuration files.'
     }
     Case 'fresh_inspection_does_not_create_settings' {
         $reply = Invoke-Bridge @{ action = 'inspect' }
         Assert-True (-not $reply.data.exists -and $null -eq $reply.data.activeOrigin) 'Fresh installation unexpectedly has a server.'
         Assert-True (-not [IO.File]::Exists($config)) 'Inspection created configuration.'
+        $reply = Invoke-Bridge @{ action = 'installation'; installDir = $installDir }
+        Assert-True (-not $reply.data.present -and -not $reply.data.current -and -not $reply.data.recoveryRequired) 'Fresh installation state is incorrect.'
+        Assert-True (-not [IO.Directory]::Exists($installDir)) 'Installation inspection created its target directory.'
     }
     Case 'missing_server_refuses_install_without_mutation' {
         $null = Invoke-Bridge @{ action = 'install'; installDir = $installDir } 2
@@ -157,6 +184,9 @@ public sealed class MiyInstallerFixture : IDisposable {
         try { $null = Invoke-Bridge @{ action = 'install'; server = $originA; installDir = $installDir } 4 }
         finally { $serverA.Mode = 'good' }
         Assert-True (-not [IO.File]::Exists($binary) -and -not [IO.File]::Exists($config)) 'Failed probe changed installation or settings.'
+        $state = Read-UiState 'failedInstall' @{ installDir = $installDir; serverOverride = $originA }
+        Assert-True ($state.installEnabled -and -not $state.removeEnabled -and -not $state.present) 'A failed install enables removal or prevents retry.'
+        Assert-True (-not [IO.Directory]::Exists($installDir) -and -not [IO.File]::Exists($config)) 'Inspecting a failed install created installation/configuration files.'
     }
     Case 'redirects_and_oversized_capabilities_are_rejected' {
         try {
@@ -168,7 +198,7 @@ public sealed class MiyInstallerFixture : IDisposable {
         Assert-True ($reply.data.compatible -and $reply.data.origin -eq $originA -and $reply.data.transport -eq 'http') 'Explicit HTTP IP server was rejected or changed.'
     }
     Case 'fresh_native_install_unicode_path_and_explicit_server' {
-        $reply = Invoke-Bridge @{ action = 'install'; server = $originA; installDir = $installDir; addToPath = $true; expectedConfigHash = '' }
+        $reply = Invoke-Bridge @{ action = 'install'; server = $originA; installDir = $installDir; addToPath = $true; autoSelectContext = $true; expectedConfigHash = '' }
         Assert-True ($reply.data.directory -ceq $installDir) 'Unicode installation path was corrupted in the bridge response.'
         Assert-True ($reply.data.context -eq 'default' -and $reply.data.origin -eq $originA) 'The explicit server was not selected.'
         Assert-True ((Hash $binary) -eq '99f590c62b44e4b61391b8986d5fa6175ebee1d072efd066bbc85747e38eac71') 'Installed binary hash differs.'
@@ -183,8 +213,53 @@ public sealed class MiyInstallerFixture : IDisposable {
     $sentinel = Join-Path $env:MIY_CONFIG_DIR 'credential-preservation.sentinel'
     [IO.File]::WriteAllText($sentinel, 'Test-only credential sentinel; not a real credential.')
     $sentinelHash = Hash $sentinel
+    Case 'installed_ui_disables_install_across_reopen_and_server_edit' {
+        $before = Installation-Snapshot $installDir
+        $reply = Invoke-Bridge @{ action = 'installation'; installDir = $installDir }
+        Assert-True ($reply.data.present -and $reply.data.current -and -not $reply.data.recoveryRequired) 'Installed CLI is not recognized as current.'
+        $state = Read-UiState 'installed' @{ installDir = $installDir; screenshot = (Join-Path $evidence 'completed-form.png') }
+        Assert-True (-not $state.installEnabled -and $state.removeEnabled -and $state.current -and $state.server -eq $originA) 'Reopened installer does not reflect installed state.'
+        $state = Read-UiState 'installedServerEdited' @{ installDir = $installDir; serverOverride = $originB }
+        Assert-True (-not $state.installEnabled -and $state.removeEnabled) 'Editing the server enabled reinstall of the current CLI.'
+        $state = Read-UiState 'busy' @{ installDir = $installDir; busy = $true }
+        Assert-True ($state.busy -and -not $state.installEnabled -and -not $state.removeEnabled -and -not $state.serverEnabled -and -not $state.probeEnabled) 'Busy UI still allows a conflicting user action.'
+        Assert-True ((Installation-Snapshot $installDir) -ceq $before) 'Inspection changed installation files, timestamps or ACLs.'
+        Assert-True ((Hash $config) -eq $originalHash -and (Hash $sentinel) -eq $sentinelHash) 'Opening the form changed settings or credentials.'
+        Assert-True ((Get-Item -LiteralPath (Join-Path $evidence 'completed-form.png')).Length -gt 5000) 'The completed installer screenshot is empty.'
+    }
+    Case 'different_owned_binary_allows_update' {
+        $markerPath = Join-Path $installDir '.miy-install.json'
+        $binaryBytes = [IO.File]::ReadAllBytes($binary)
+        $markerBytes = [IO.File]::ReadAllBytes($markerPath)
+        try {
+            [IO.File]::WriteAllBytes($binary, [byte[]]($binaryBytes + [byte]0))
+            $marker = [IO.File]::ReadAllText($markerPath) | ConvertFrom-Json
+            $marker.binarySha256 = Hash $binary
+            Write-Json $markerPath $marker
+            $before = Installation-Snapshot $installDir
+            $state = Read-UiState 'updateAvailable' @{ installDir = $installDir }
+            Assert-True ($state.present -and -not $state.current -and $state.installEnabled -and $state.removeEnabled) 'An owned different binary cannot be updated or removed.'
+            Assert-True ((Installation-Snapshot $installDir) -ceq $before) 'Update inspection mutated the existing installation.'
+        } finally {
+            [IO.File]::WriteAllBytes($binary, $binaryBytes)
+            [IO.File]::WriteAllBytes($markerPath, $markerBytes)
+        }
+    }
+    Case 'pending_recovery_is_detected_without_mutation' {
+        $journalPath = Join-Path $installDir '.miy-install-journal.json'
+        # Detection must leave even an unreadable journal for the transaction engine.
+        [IO.File]::WriteAllText($journalPath, '{ interrupted fixture')
+        try {
+            $before = Installation-Snapshot $installDir
+            $reply = Invoke-Bridge @{ action = 'installation'; installDir = $installDir }
+            Assert-True ($reply.data.present -and -not $reply.data.current -and $reply.data.recoveryRequired) 'Pending transaction was reported as a completed installation.'
+            $state = Read-UiState 'recoveryRequired' @{ installDir = $installDir }
+            Assert-True ($state.recoveryRequired -and -not $state.current -and $state.installEnabled) 'Pending recovery cannot be retried through the UI.'
+            Assert-True ((Installation-Snapshot $installDir) -ceq $before) 'Inspection repaired or changed a pending transaction.'
+        } finally { [IO.File]::Delete($journalPath) }
+    }
     Case 'rerun_preserves_existing_config_and_credentials_exactly' {
-        $null = Invoke-Bridge @{ action = 'install'; server = $originA; installDir = $installDir; addToPath = $true; expectedConfigHash = $originalHash }
+        $null = Invoke-Bridge @{ action = 'install'; server = $originA; installDir = $installDir; addToPath = $true; autoSelectContext = $true; expectedConfigHash = $originalHash }
         Assert-True ((Hash $config) -eq $originalHash -and (Hash $sentinel) -eq $sentinelHash) 'Existing config or credential sentinel changed.'
         Assert-True (@(([Environment]::GetEnvironmentVariable('Path', 'User') -split ';') | Where-Object { $_ -eq $installDir }).Count -eq 1) 'Rerunning the installer duplicated PATH.'
     }
@@ -204,15 +279,40 @@ public sealed class MiyInstallerFixture : IDisposable {
         $reply = Invoke-Bridge @{ action = 'install'; server = $originA; installDir = $installDir; selectContext = $true; contextName = 'default' }
         Assert-True ($reply.data.context -eq 'default') 'An existing matching context could not be selected.'
     }
+    Case 'automatic_context_selection_reuses_matching_binding' {
+        $reply = Invoke-Bridge @{ action = 'install'; server = $originB; installDir = $installDir; autoSelectContext = $true; expectedConfigHash = (Hash $config) }
+        $current = [IO.File]::ReadAllText($config) | ConvertFrom-Json
+        Assert-True ($reply.data.context -eq 'company-b' -and $current.active -eq 'company-b') 'Automatic selection did not reuse an existing server binding.'
+        Assert-True (@($current.contexts.PSObject.Properties).Count -eq 2 -and $current.contexts.default.origin -eq $originA) 'Automatic selection duplicated or changed existing contexts.'
+        Assert-True ($current.clientId -eq $originalConfig.clientId -and (Hash $sentinel) -eq $sentinelHash) 'Automatic selection changed identity or credentials.'
+        $null = Invoke-Bridge @{ action = 'install'; server = $originA; installDir = $installDir; autoSelectContext = $true }
+    }
+    Case 'automatic_context_names_avoid_collisions_and_preserve_bindings' {
+        $current = [IO.File]::ReadAllText($config) | ConvertFrom-Json
+        $current.contexts = [pscustomobject]@{
+            default = $current.contexts.default
+            work = [pscustomobject]@{ origin = 'https://preserved-one.invalid'; caFile = $null; userId = 'fixture-one' }
+            'work-2' = [pscustomobject]@{ origin = 'https://preserved-two.invalid'; caFile = $null; userId = 'fixture-two' }
+        }
+        Write-Json $config $current
+        $reply = Invoke-Bridge @{ action = 'install'; server = $originB; installDir = $installDir; autoSelectContext = $true; expectedConfigHash = (Hash $config) }
+        $current = [IO.File]::ReadAllText($config) | ConvertFrom-Json
+        Assert-True ($reply.data.context -eq 'work-3' -and $current.active -eq 'work-3' -and $current.contexts.'work-3'.origin -eq $originB) 'Automatic selection did not allocate the next unused context name.'
+        Assert-True ($current.contexts.work.origin -eq 'https://preserved-one.invalid' -and $current.contexts.work.userId -eq 'fixture-one' -and $current.contexts.'work-2'.origin -eq 'https://preserved-two.invalid' -and $current.contexts.'work-2'.userId -eq 'fixture-two') 'Automatic naming overwrote an existing server or authentication binding.'
+        Assert-True ($current.contexts.default.origin -eq $originA -and $current.clientId -eq $originalConfig.clientId -and (Hash $sentinel) -eq $sentinelHash) 'Automatic naming changed original context, identity or credentials.'
+        $null = Invoke-Bridge @{ action = 'install'; server = $originA; installDir = $installDir; autoSelectContext = $true }
+    }
     Case 'changed_config_snapshot_is_rejected_before_install' {
         $before = Hash $config
         $null = Invoke-Bridge @{ action = 'install'; server = $originA; installDir = $installDir; expectedConfigHash = ('0' * 64) } 6
         Assert-True ((Hash $config) -eq $before) 'Stale GUI settings changed configuration.'
     }
-    Case 'login_refuses_a_context_whose_server_changed' {
-        $null = Invoke-Bridge @{ action = 'login'; server = $originB; installDir = $installDir; contextName = 'default' } 6
+    Case 'installer_has_no_browser_login_action' {
+        $before = Hash $config
+        $null = Invoke-Bridge @{ action = 'login'; server = $originA; installDir = $installDir; contextName = 'default' } 2
+        Assert-True ((Hash $config) -eq $before -and (Hash $sentinel) -eq $sentinelHash) 'Removed login action changed settings or credentials.'
     }
-    Case 'existing_empty_configuration_requires_explicit_add' {
+    Case 'existing_empty_configuration_supports_automatic_context' {
         $emptyRoot = Join-Path $root 'empty-settings'
         $saved = $env:MIY_CONFIG_DIR
         try {
@@ -225,8 +325,9 @@ public sealed class MiyInstallerFixture : IDisposable {
             $emptyHash = Hash $emptyPath
             $null = Invoke-Bridge @{ action = 'install'; server = $originB; installDir = $installDir } 2
             Assert-True ((Hash $emptyPath) -eq $emptyHash) 'Empty existing configuration was overwritten.'
-            $reply = Invoke-Bridge @{ action = 'install'; server = $originB; installDir = $installDir; selectContext = $true; contextName = 'office' }
-            Assert-True ($reply.data.context -eq 'office') 'Empty configuration could not be explicitly populated.'
+            $reply = Invoke-Bridge @{ action = 'install'; server = $originB; installDir = $installDir; autoSelectContext = $true; expectedConfigHash = $emptyHash }
+            $updated = [IO.File]::ReadAllText($emptyPath) | ConvertFrom-Json
+            Assert-True ($reply.data.context -eq 'work' -and $updated.active -eq 'work' -and $updated.clientId -eq $empty.clientId) 'Empty configuration could not be populated automatically without changing client identity.'
         } finally { $env:MIY_CONFIG_DIR = $saved }
     }
     Case 'relative_config_override_survives_temporary_package_cleanup' {
@@ -245,11 +346,21 @@ public sealed class MiyInstallerFixture : IDisposable {
         $brokenHash = Hash $config
         $unmanaged = Join-Path $installDir 'keep-user-file.txt'
         [IO.File]::WriteAllText($unmanaged, 'This is not owned by the installer.')
+        $state = Read-UiState 'brokenConfiguration' @{ installDir = $installDir }
+        Assert-True (-not $state.configurationReady -and $state.installationReady -and $state.removeEnabled -and -not $state.installEnabled) 'Invalid configuration prevents removal or enables installation.'
         $reply = Invoke-Bridge @{ action = 'uninstall'; installDir = $installDir; removeFromPath = $true }
         Assert-True ($reply.data.removed -and -not [IO.File]::Exists($binary)) 'Owned CLI was not removed.'
         Assert-True ((Hash $config) -eq $brokenHash -and (Hash $sentinel) -eq $sentinelHash -and [IO.File]::Exists($unmanaged)) 'Uninstall changed config, credentials or unmanaged files.'
         Assert-True (-not (([Environment]::GetEnvironmentVariable('Path', 'User') -split ';') -contains $installDir)) 'Uninstall left its user PATH entry.'
         [IO.File]::WriteAllBytes($config, $original)
+    }
+    Case 'removed_ui_disables_remove_and_allows_install_again' {
+        $before = Installation-Snapshot $installDir
+        $reply = Invoke-Bridge @{ action = 'installation'; installDir = $installDir }
+        Assert-True (-not $reply.data.present -and -not $reply.data.current -and -not $reply.data.recoveryRequired) 'Removed CLI still reports installed.'
+        $state = Read-UiState 'removed' @{ installDir = $installDir }
+        Assert-True (-not $state.removeEnabled -and $state.installEnabled -and -not $state.present -and $state.server -eq $originA) 'Removed UI does not allow reinstallation with the preserved server.'
+        Assert-True ((Installation-Snapshot $installDir) -ceq $before -and (Hash $config) -eq $originalHash) 'Opening the removed UI changed installation remnants or preserved settings.'
     }
 } catch {
     $failed = $true
@@ -263,6 +374,7 @@ public sealed class MiyInstallerFixture : IDisposable {
     try { Remove-Item -LiteralPath $root -Recurse -Force }
     catch { $failed = $true; $cases.Add(@{ name = 'isolated_fixture_cleanup'; passed = $false }) }
     Write-Json (Join-Path $evidence 'summary.json') ([ordered]@{ schemaVersion = 1; passed = (-not $failed); powershellVersion = $PSVersionTable.PSVersion.ToString(); cases = @($cases.ToArray()) })
+    Write-Json (Join-Path $evidence 'ui-state.json') ([ordered]@{ schemaVersion = 1; passed = (-not $failed); states = $uiStates })
 }
 if ($failed) { throw 'Native installer validation failed; inspect the sanitized summary.json and initial-form.png artifacts.' }
 Write-Output ('Native Windows installer validation passed: ' + $cases.Count + ' cases.')
