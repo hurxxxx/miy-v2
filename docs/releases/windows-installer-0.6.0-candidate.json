@@ -4,21 +4,21 @@
   "status": "candidate",
   "installer": {
     "archiveSha256": "d7cc2e1b4cca63b215b525a51f85372792db5241c218185635fe693a714ea87f",
-    "bytes": 5940736,
+    "bytes": 5950976,
     "cliBinarySha256": "99f590c62b44e4b61391b8986d5fa6175ebee1d072efd066bbc85747e38eac71",
     "cliCommit": "b67798bfb84f299257ba4326beaf034b125cde7a",
     "file": "MiySetup-0.6.0-windows-x64.exe",
-    "installerCommit": "92fc608d33e61544598b4e9bb9177ab23f3b0032",
+    "installerCommit": "94a02c7741d8dd413345abcc110c9d6fe2a153b4",
     "platform": "windows-x64",
     "schemaVersion": 1,
-    "sha256": "e9ade33486ffdfce32a66fcca1c1a20d41779ff70420d74fe402cc6638cb39bc",
+    "sha256": "b456874803ba3c00665daa4072eb96efd2d3145e4e612575f4264050c908d4f8",
     "version": "0.6.0"
   },
   "serverSourceCommit": "2f7d453c225634f5573ed1bc236ff5b94ab9007f",
-  "buildRun": "https://github.com/hurxxxx/miy-v2/actions/runs/40640667383",
-  "artifact": "https://github.com/hurxxxx/miy-v2/actions/runs/40640667383/artifacts/12795516107",
-  "installerUrl": "https://v2.dwdcc.kr/cli/installers/92fc608d33e61544598b4e9bb9177ab23f3b0032/MiySetup-0.6.0-windows-x64.exe",
-  "checksumUrl": "https://v2.dwdcc.kr/cli/installers/92fc608d33e61544598b4e9bb9177ab23f3b0032/MiySetup-0.6.0-windows-x64.exe.sha256",
+  "buildRun": "https://github.com/hurxxxx/miy-v2/actions/runs/40653364755",
+  "artifact": "https://github.com/hurxxxx/miy-v2/actions/runs/40653364755/artifacts/12800492945",
+  "installerUrl": "https://v2.dwdcc.kr/cli/installers/94a02c7741d8dd413345abcc110c9d6fe2a153b4/MiySetup-0.6.0-windows-x64.exe",
+  "checksumUrl": "https://v2.dwdcc.kr/cli/installers/94a02c7741d8dd413345abcc110c9d6fe2a153b4/MiySetup-0.6.0-windows-x64.exe.sha256",
   "nativeWindows": {
     "os": "Windows Server 2022 x64",
     "powershellVersion": "5.1.20348.5756",
@@ -29,7 +29,7 @@
         "passed": true
       },
       {
-        "name": "native_winforms_render_and_blank_initial_server",
+        "name": "native_winforms_initial_state_is_simple_and_read_only",
         "passed": true
       },
       {
@@ -61,6 +61,18 @@
         "passed": true
       },
       {
+        "name": "installed_ui_disables_install_across_reopen_and_server_edit",
+        "passed": true
+      },
+      {
+        "name": "different_owned_binary_allows_update",
+        "passed": true
+      },
+      {
+        "name": "pending_recovery_is_detected_without_mutation",
+        "passed": true
+      },
+      {
         "name": "rerun_preserves_existing_config_and_credentials_exactly",
         "passed": true
       },
@@ -77,15 +89,23 @@
         "passed": true
       },
       {
+        "name": "automatic_context_selection_reuses_matching_binding",
+        "passed": true
+      },
+      {
+        "name": "automatic_context_names_avoid_collisions_and_preserve_bindings",
+        "passed": true
+      },
+      {
         "name": "changed_config_snapshot_is_rejected_before_install",
         "passed": true
       },
       {
-        "name": "login_refuses_a_context_whose_server_changed",
+        "name": "installer_has_no_browser_login_action",
         "passed": true
       },
       {
-        "name": "existing_empty_configuration_requires_explicit_add",
+        "name": "existing_empty_configuration_supports_automatic_context",
         "passed": true
       },
       {
@@ -95,22 +115,118 @@
       {
         "name": "uninstall_preserves_even_broken_config_and_unmanaged_files",
         "passed": true
+      },
+      {
+        "name": "removed_ui_disables_remove_and_allows_install_again",
+        "passed": true
       }
-    ]
+    ],
+    "uiStates": {
+      "fresh": {
+        "installEnabled": false,
+        "removeEnabled": false,
+        "present": false,
+        "current": false,
+        "recoveryRequired": false,
+        "buttonCount": 3,
+        "textBoxCount": 1,
+        "checkBoxCount": 0
+      },
+      "failedInstall": {
+        "installEnabled": true,
+        "removeEnabled": false,
+        "present": false,
+        "current": false,
+        "recoveryRequired": false,
+        "buttonCount": 3,
+        "textBoxCount": 1,
+        "checkBoxCount": 0
+      },
+      "installed": {
+        "installEnabled": false,
+        "removeEnabled": true,
+        "present": true,
+        "current": true,
+        "recoveryRequired": false,
+        "buttonCount": 3,
+        "textBoxCount": 1,
+        "checkBoxCount": 0
+      },
+      "installedServerEdited": {
+        "installEnabled": false,
+        "removeEnabled": true,
+        "present": true,
+        "current": true,
+        "recoveryRequired": false,
+        "buttonCount": 3,
+        "textBoxCount": 1,
+        "checkBoxCount": 0
+      },
+      "busy": {
+        "installEnabled": false,
+        "removeEnabled": false,
+        "present": true,
+        "current": true,
+        "recoveryRequired": false,
+        "buttonCount": 3,
+        "textBoxCount": 1,
+        "checkBoxCount": 0
+      },
+      "updateAvailable": {
+        "installEnabled": true,
+        "removeEnabled": true,
+        "present": true,
+        "current": false,
+        "recoveryRequired": false,
+        "buttonCount": 3,
+        "textBoxCount": 1,
+        "checkBoxCount": 0
+      },
+      "recoveryRequired": {
+        "installEnabled": true,
+        "removeEnabled": true,
+        "present": true,
+        "current": false,
+        "recoveryRequired": true,
+        "buttonCount": 3,
+        "textBoxCount": 1,
+        "checkBoxCount": 0
+      },
+      "brokenConfiguration": {
+        "installEnabled": false,
+        "removeEnabled": true,
+        "present": true,
+        "current": true,
+        "recoveryRequired": false,
+        "buttonCount": 3,
+        "textBoxCount": 1,
+        "checkBoxCount": 0
+      },
+      "removed": {
+        "installEnabled": true,
+        "removeEnabled": false,
+        "present": false,
+        "current": false,
+        "recoveryRequired": false,
+        "buttonCount": 3,
+        "textBoxCount": 1,
+        "checkBoxCount": 0
+      }
+    }
   },
   "verification": {
     "packageRegressionCases": 19,
-    "serverUnitTestsPassed": 124,
-    "serverUnitTestsIgnored": 5,
+    "typescriptTypecheckPassed": true,
     "installGuideBrowserCases": 6,
     "livePublicDownloadSha256Verified": true,
     "liveBrowserDownloadSha256Verified": true,
-    "nativeScreenshotReviewed": true,
+    "nativeInitialAndInstalledScreenshotsReviewed": true,
     "desktopAndMobileWebsiteReviewed": true,
+    "existingCliReleaseUnchanged": true,
     "postgresAndIdentityContainersUnchanged": true
   },
   "notRun": [
-    "User Windows 11 interactive installer and browser login",
+    "User Windows 11 interactive installer and CLI-triggered browser login",
     "User Windows 11 full development and deployment with Docker Desktop and independent AI sessions"
   ],
   "authenticodeSigned": false,

@@ -10,7 +10,7 @@ Windows Server 2022에서 네이티브 단위 95개, 출력 11그룹, 서버 등
 
 핵심 흐름을 검증한 서버 소스는 이미지 식별자 호환성과 PostgreSQL 네트워크 연결 보존을 수정한 `5ca4047`이며 [서버 CI](https://github.com/hurxxxx/miy-v2/actions/runs/40606859082)가 통과했다. 게시된 CLI `b67798b`와 함께 실제 Rust/React 앱의 로컬 개발 DB CRUD·dev 데이터 유지·별도 prod DB 승격과 CRUD를 검증했다. [두 소스와 실제 수행 범위](releases/cli-0.6.0-core-validation.json)를 별도로 기록하며 CLI 후보 파일을 서버 소스 commit으로 다시 표시하지 않는다.
 
-Windows GUI 설치 파일과 설치 안내 API는 이후 `92fc608` / 서버 `2f7d453`으로 추가했다. [네이티브 설치 검사와 다운로드 증거](WINDOWS-INSTALLER.md#현재-설치-후보)를 별도로 기록한다. 기존 CLI·DB·앱 런타임의 검증 범위를 새 설치기 검증으로 대체하지 않는다.
+Windows GUI 설치 파일과 설치 안내 API는 이후 `92fc608` / 서버 `2f7d453`으로 추가했다. 현재 GUI 후보 `94a02c7`은 설치 상태에 따른 버튼 활성화와 서버 주소만 입력하는 화면으로 개선했다. [네이티브 설치 검사와 다운로드 증거](WINDOWS-INSTALLER.md#현재-설치-후보)를 별도로 기록한다. 기존 CLI·DB·앱 런타임의 검증 범위를 새 설치기 검증으로 대체하지 않는다.
 
 ## 이전 0.5 검증 후보
 

@@ -4,16 +4,18 @@ Windows 11 x64 사용자는 회사 MIY 홈페이지의 `/cli/install`에서 **Wi
 
 ## 현재 설치 후보
 
-설치기 소스 `92fc608`의 [Windows 빌드](https://github.com/hurxxxx/miy-v2/actions/runs/40640667383)가 통과했다. 내장 CLI는 검증된 `b67798b`의 0.6.0이며, 설치 파일은 약 5.7 MiB다. [현재 서버에서 다운로드](https://v2.dwdcc.kr/cli/installers/92fc608d33e61544598b4e9bb9177ab23f3b0032/MiySetup-0.6.0-windows-x64.exe)하거나 [설치 홈페이지](https://v2.dwdcc.kr/cli/install)를 이용한다.
+설치기 소스 `94a02c7`의 [Windows 빌드](https://github.com/hurxxxx/miy-v2/actions/runs/40653364755)가 통과했다. 내장 CLI는 검증된 `b67798b`의 0.6.0이며, 설치 파일은 약 5.7 MiB다. [현재 서버에서 다운로드](https://v2.dwdcc.kr/cli/installers/94a02c7741d8dd413345abcc110c9d6fe2a153b4/MiySetup-0.6.0-windows-x64.exe)하거나 [설치 홈페이지](https://v2.dwdcc.kr/cli/install)를 이용한다.
 
-Windows Server 2022 / PowerShell 5.1에서 실제 설치 파일의 18개 검사가 통과했다. 별도 패키지 검사 19개, 설치 안내 브라우저 검사 6개와 실제 홈페이지 버튼을 통한 다운로드·SHA-256도 확인했다. 네이티브 설치 창과 홈페이지 PC·모바일 화면을 검토했다. [파일 해시·출처·수행 범위](releases/windows-installer-0.6.0-candidate.json)를 보존한다. 실제 사용자 Windows 11의 클릭·브라우저 승인·Docker Desktop 개발 인수는 아직 남아 있다.
+Windows Server 2022 / PowerShell 5.1에서 실제 설치 파일의 24개 검사가 통과했다. 설치 전·설치 후·재실행·제거 후, 다른 버전·복구 대기·설정 오류·작업 중의 버튼 상태와 자동 연결 선택을 확인했다. 화면에는 서버 주소 입력 하나와 연결 확인·설치·제거 버튼만 표시한다. 상태 확인은 설치 파일·설정·ACL을 변경하지 않는다.
+
+별도 패키지 검사 19개, TypeScript 검사, 설치 안내 브라우저 검사 6개와 실제 홈페이지 버튼을 통한 다운로드·SHA-256도 확인했다. 설치 전·후 네이티브 창과 홈페이지 PC·모바일 화면을 검토했다. [파일 해시·출처·수행 범위](releases/windows-installer-0.6.0-candidate.json)를 보존한다. 실제 사용자 Windows 11의 클릭·CLI 로그인·Docker Desktop 개발 인수는 아직 남아 있다.
 
 ## 설치와 서버 등록
 
 1. 홈페이지에 표시된 회사 서버 주소를 복사하고 `MiySetup-0.6.0-windows-x64.exe`를 실행한다.
 2. 빈 서버 주소 입력란에 `https://회사도메인` 또는 `http://사내IP:포트`를 입력하고 연결을 확인한다. 기본 도메인이나 IP는 없다.
 3. **설치**를 누른다. 설치 폴더·연결 이름·사용자 PATH는 자동으로 관리한다.
-4. 설치가 완료되면 설치 버튼은 비활성화되고 **CLI 제거**만 사용할 수 있다. 설치 전에는 제거 버튼이 비활성화된다.
+4. 설치가 완료되면 설치 버튼은 비활성화되고 **CLI 제거** 버튼이 활성화된다. 설치 전에는 제거 버튼이 비활성화된다.
 5. 새 PowerShell에서 `miy auth login`을 실행하고 열린 브라우저에서 승인한다. 설치 창에는 로그인 버튼이 없다. `miy auth status`로 확인한 뒤 [핵심 흐름 테스트](CORE-TESTING.md)를 진행한다.
 
 기존 설정이 있으면 현재 서버를 표시하고 설정과 인증정보를 보존한다. 설치할 서버 주소를 입력하면 같은 주소의 연결을 재사용하고, 필요한 새 연결 이름은 기존 이름과 겹치지 않게 자동으로 정한다. 이미 같은 CLI가 설치되어 있으면 설치 버튼을 비활성화하며, 새 버전 설치 파일에서는 업데이트할 수 있다. 갱신할 설치 파일도 회사 MIY 홈페이지나 사내 배포 경로에서 받는다.
