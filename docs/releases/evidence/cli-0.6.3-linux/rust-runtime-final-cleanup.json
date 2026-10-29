@@ -1,0 +1,183 @@
+{
+  "completedAt": "2026-10-29T06:52:25.163207+00:00",
+  "removed": [
+    "/miy-app-4fbf79965df04703a1ce7ed8693c7d7e",
+    "/miy-app-d99a3defa2c046b9a552a483d537cdbc",
+    "/miy-audit-1024-f69b5e-db",
+    "miy-audit-1024-f69b5e",
+    "miy-runtime-4fbf79965df04703a1ce7ed8693c7d7e",
+    "miy-runtime-d99a3defa2c046b9a552a483d537cdbc",
+    "sha256:4273f12800ec8170d271ed8adc25dae169206d61276ddfa261611cbcf237f0f8",
+    "sha256:6c7aca2278bdfc08fda414edd3fe9d65c43691bce8e9b6568f16224d0f5b4c10",
+    "sha256:bbe496eddf8e3ac8b6e80ab44d7a125ee1d33f89054f7ca095ce136eff3e7eb8",
+    "sha256:b330c2551890fa15c5f5baf061a21ed40f6abe65e724b52e055f8931bf218666",
+    "sha256:1f6fd4bf38008dec27cc8beb0a5209bf68fa212ad968cf11e9442a3d7329b2ac",
+    "sha256:a435ba65fd9dffea5ed67210d85c2fc0133eb115b32a74fd604241b944124c4e",
+    "sha256:1a156a72ca318da7e3c6e0368ee64f0593827b56910fe24738b24ad5a0b79486"
+  ],
+  "baselineComparison": [
+    {
+      "name": "/miy-app-0ef7e3f6d9eb4a8dae05f06c603f80b4",
+      "sameId": true,
+      "sameImage": true,
+      "sameStartedAt": true,
+      "stillRunning": true
+    },
+    {
+      "name": "/gitlab",
+      "sameId": true,
+      "sameImage": true,
+      "sameStartedAt": true,
+      "stillRunning": true
+    },
+    {
+      "name": "/miy-v2-validation-keycloak-1",
+      "sameId": true,
+      "sameImage": true,
+      "sameStartedAt": true,
+      "stillRunning": true
+    },
+    {
+      "name": "/miy-v2-validation-postgres-1",
+      "sameId": true,
+      "sameImage": true,
+      "sameStartedAt": true,
+      "stillRunning": true
+    },
+    {
+      "name": "/ai-do-matomo-cron",
+      "sameId": true,
+      "sameImage": true,
+      "sameStartedAt": true,
+      "stillRunning": true
+    },
+    {
+      "name": "/ai-do-matomo",
+      "sameId": true,
+      "sameImage": true,
+      "sameStartedAt": true,
+      "stillRunning": true
+    },
+    {
+      "name": "/ai-do-dev-livekit",
+      "sameId": true,
+      "sameImage": true,
+      "sameStartedAt": true,
+      "stillRunning": true
+    },
+    {
+      "name": "/ai-do-dev-nginx",
+      "sameId": true,
+      "sameImage": true,
+      "sameStartedAt": true,
+      "stillRunning": true
+    },
+    {
+      "name": "/ai-do-dev-drawio",
+      "sameId": true,
+      "sameImage": true,
+      "sameStartedAt": true,
+      "stillRunning": true
+    },
+    {
+      "name": "/ai-do-dev-redis",
+      "sameId": true,
+      "sameImage": true,
+      "sameStartedAt": true,
+      "stillRunning": true
+    },
+    {
+      "name": "/ai-do-dev-qdrant",
+      "sameId": true,
+      "sameImage": true,
+      "sameStartedAt": true,
+      "stillRunning": true
+    },
+    {
+      "name": "/ai-do-dev-opensearch",
+      "sameId": true,
+      "sameImage": true,
+      "sameStartedAt": true,
+      "stillRunning": true
+    },
+    {
+      "name": "/ai-do-dev-minio",
+      "sameId": true,
+      "sameImage": true,
+      "sameStartedAt": true,
+      "stillRunning": true
+    },
+    {
+      "name": "/ai-do-prod-minio",
+      "sameId": true,
+      "sameImage": true,
+      "sameStartedAt": true,
+      "stillRunning": true
+    },
+    {
+      "name": "/ai-do-prod-redis",
+      "sameId": true,
+      "sameImage": true,
+      "sameStartedAt": true,
+      "stillRunning": true
+    },
+    {
+      "name": "/ai-do-prod-qdrant",
+      "sameId": true,
+      "sameImage": true,
+      "sameStartedAt": true,
+      "stillRunning": true
+    },
+    {
+      "name": "/ai-do-prod-opensearch",
+      "sameId": true,
+      "sameImage": true,
+      "sameStartedAt": true,
+      "stillRunning": true
+    },
+    {
+      "name": "/ai-do-prod-drawio",
+      "sameId": true,
+      "sameImage": true,
+      "sameStartedAt": true,
+      "stillRunning": true
+    },
+    {
+      "name": "/ai-do-matomo-db",
+      "sameId": true,
+      "sameImage": true,
+      "sameStartedAt": true,
+      "stillRunning": true
+    },
+    {
+      "name": "/infra-telemetry-grafana-1",
+      "sameId": true,
+      "sameImage": true,
+      "sameStartedAt": true,
+      "stillRunning": true
+    },
+    {
+      "name": "/infra-telemetry-prometheus-1",
+      "sameId": true,
+      "sameImage": true,
+      "sameStartedAt": true,
+      "stillRunning": true
+    },
+    {
+      "name": "/infra-telemetry-alertmanager-1",
+      "sameId": true,
+      "sameImage": true,
+      "sameStartedAt": true,
+      "stillRunning": true
+    },
+    {
+      "name": "/infra-telemetry-blackbox_exporter-1",
+      "sameId": true,
+      "sameImage": true,
+      "sameStartedAt": true,
+      "stillRunning": true
+    }
+  ],
+  "notes": [],
+  "errors": []
+}

@@ -1,5 +1,9 @@
 # Windows 네이티브 빌드·운영 검증 안내
 
+## Linux 후속 완료 — 새 CI 설치기 0.6.3 게시
+
+아래 Windows 로컬 기록 이후 [Linux 검증과 서버 반영](CLI-0.6.3-LINUX-VALIDATION.md)을 수행했다. [설치 안내](https://v2.dwdcc.kr/cli/install)는 이제 `8d7d042`의 검증된 CI CLI와 설치기를 제공한다. 기존 Windows 로컬 `0db21c3` 파일과 해시는 다르다. 서버·UI·index 0.6.3 반영, 실제 390px Todo와 기존 DB/레코드 보존을 확인했다. 이번 CI 설치기를 사용자 Windows 11에서 실행한 결과와 실제 IdP 정상 로그인은 아직 **NOT_RUN**이다.
+
 ## 2026-10-29 CLI 0.6.3 설치·로그인·모바일 개선 검증
 
 0.6.2 실제 전체 흐름에서 남긴 개선을 `codex/cli-experience-improvements`에 구현했다. 기능 소스는 `0db21c3`, Windows CI 도구 검색 격리를 보완한 소스는 `8d7d042`다. CLI **0.6.3** / 번들 **0.7.1**이며 [구조화 결과](releases/cli-0.6.3-experience-validation.json)와 [서버 측 후속 프롬프트](CLI-EXPERIENCE-SERVER-HANDOFF.md)를 보존한다.
@@ -66,7 +70,7 @@ Docker Desktop을 설치하지 않고 기본 `app dev`의 Rust 서버·React 정
 
 ## CLI 0.6 인수 준비 — 2026-10-28
 
-현재 CLI 후보는 `b67798b`, GUI 설치기 후보는 `94a02c7`이다. 설치기 자체의 Windows Server 네이티브 검사 24개와 게시 증거는 [GUI 설치 안내](WINDOWS-INSTALLER.md#현재-설치-후보)에 기록한다. [설치 화면](https://v2.dwdcc.kr/cli/install)에서 Windows GUI 설치 파일을 받는다. [설치 안내](WINDOWS-INSTALLER.md)처럼 빈 입력란에 회사 서버 주소를 입력한다. ZIP과 PowerShell 명령도 보조 경로로 유지한다. [후보 CI](https://github.com/hurxxxx/miy-v2/actions/runs/40602334949)의 Windows Server 2022에서 단위 95개, 출력 11그룹, 서버 등록 9그룹, PowerShell 5.1/7 설치 각각 9개가 통과했다. 사용자의 실제 Windows 11 인수는 아직 NOT_RUN이며 [핵심 흐름 테스트](CORE-TESTING.md)부터 진행한다.
+현재 CLI 후보는 `b67798b`, GUI 설치기 후보는 `94a02c7`이다. 설치기 자체의 Windows Server 네이티브 검사 24개와 게시 증거는 [GUI 설치 안내](releases/windows-installer-0.6.0-candidate.json)에 기록한다. [설치 화면](https://v2.dwdcc.kr/cli/install)에서 Windows GUI 설치 파일을 받는다. [설치 안내](WINDOWS-INSTALLER.md)처럼 빈 입력란에 회사 서버 주소를 입력한다. ZIP과 PowerShell 명령도 보조 경로로 유지한다. [후보 CI](https://github.com/hurxxxx/miy-v2/actions/runs/40602334949)의 Windows Server 2022에서 단위 95개, 출력 11그룹, 서버 등록 9그룹, PowerShell 5.1/7 설치 각각 9개가 통과했다. 사용자의 실제 Windows 11 인수는 아직 NOT_RUN이며 [핵심 흐름 테스트](CORE-TESTING.md)부터 진행한다.
 
 서버 URL은 사용자가 명시하거나 홈페이지 설치 명령의 `-Server URL`로 전달한다. 기본 IP·도메인은 없다. 주소를 생략한 대화형 설치는 URL을 질문하며, 비대화형 설치는 실행 파일만 설치하고 `contextInitialization.status=required`와 `miy context init`을 안내한다. 이후 `miy context init` 또는 최초 대화형 로그인에서 등록한다. `-NonInteractive`/`--no-input`에서는 입력을 기다리지 않는다. 기존 설정은 보존하고 다른 요청 주소는 `activeOrigin`, `requestedOrigin`, `serverMismatch`로 구분한다.
 

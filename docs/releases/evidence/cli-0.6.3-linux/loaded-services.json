@@ -1,0 +1,23 @@
+{
+  "services": [
+    {
+      "ActiveState": "active",
+      "MainPID": "3413666",
+      "NRestarts": "0",
+      "ExecMainStartTimestamp": "Thu 2026-10-29 15:53:03 KST",
+      "name": "miy-v2-serve",
+      "loadedBinarySha256": "4573260257147c2563ba5ffae177b9ac6c6b0a331d2a0b1fef1cf6e60d10064e"
+    },
+    {
+      "ActiveState": "active",
+      "MainPID": "3413667",
+      "NRestarts": "0",
+      "ExecMainStartTimestamp": "Thu 2026-10-29 15:53:03 KST",
+      "name": "miy-v2-worker",
+      "loadedBinarySha256": "4573260257147c2563ba5ffae177b9ac6c6b0a331d2a0b1fef1cf6e60d10064e"
+    }
+  ],
+  "health": {
+    "status": "ok"
+  }
+}

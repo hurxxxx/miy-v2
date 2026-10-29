@@ -2,7 +2,11 @@
 
 이 문서는 배포 도구의 사용법과 현재 후보를 기록한다. 후보 게시와 정식 GitHub Release 발행은 구분한다. 실제 수행 범위는 [검증 행렬](CLI-VALIDATION-MATRIX.md), 아직 남은 사용자 PC 실행은 [Windows 검증](WINDOWS-VALIDATION.md)을 따른다.
 
-## 현재 0.6 검증 후보
+## 현재 0.6.3 검증 후보
+
+`8d7d04271f9467d8bbdd16308e73715b33e4dc0c`의 [CLI CI 40826960538](https://github.com/hurxxxx/miy-v2/actions/runs/40826960538)와 같은 CLI 출처·해시를 사용한 [설치기 CI 40830813012](https://github.com/hurxxxx/miy-v2/actions/runs/40830813012)가 성공했다. 다섯 CLI·두 Linux helper·Windows EXE를 검증해 [설치 안내](https://v2.dwdcc.kr/cli/install)에 게시하고 서버·UI도 0.6.3으로 반영했다. SDK 번들은 0.7.1이다. [Linux 검사·실제 다운로드·Todo 보존·NOT_RUN](CLI-0.6.3-LINUX-VALIDATION.md), [CLI index](releases/cli-0.6.3-candidate.json), [설치기 index](releases/windows-installer-0.6.3-candidate.json)를 함께 보존한다. 공개 GitHub Release/tag는 생성하지 않았다.
+
+## 이전 0.6.0 검증 후보
 
 CLI 소스 `b67798bfb84f299257ba4326beaf034b125cde7a`의 [기반 CI](https://github.com/hurxxxx/miy-v2/actions/runs/40602323702)와 [후보 CI](https://github.com/hurxxxx/miy-v2/actions/runs/40602334949)가 모두 통과했다. 다섯 네이티브 CLI와 두 Linux helper를 검증해 [현재 서버 설치 화면](https://v2.dwdcc.kr/cli/install)에 게시했다. [전체 후보 artifact](https://github.com/hurxxxx/miy-v2/actions/runs/40602334949/artifacts/12779751510)와 [배포물별 SHA-256·소스 index](releases/cli-0.6.0-candidate.json)를 보존한다. 실제 공개 경로의 일곱 파일 해시와 홈페이지 명령·다운로드 링크도 확인했다.
 
@@ -10,7 +14,7 @@ Windows Server 2022에서 네이티브 단위 95개, 출력 11그룹, 서버 등
 
 핵심 흐름을 검증한 서버 소스는 이미지 식별자 호환성과 PostgreSQL 네트워크 연결 보존을 수정한 `5ca4047`이며 [서버 CI](https://github.com/hurxxxx/miy-v2/actions/runs/40606859082)가 통과했다. 게시된 CLI `b67798b`와 함께 실제 Rust/React 앱의 로컬 개발 DB CRUD·dev 데이터 유지·별도 prod DB 승격과 CRUD를 검증했다. [두 소스와 실제 수행 범위](releases/cli-0.6.0-core-validation.json)를 별도로 기록하며 CLI 후보 파일을 서버 소스 commit으로 다시 표시하지 않는다.
 
-Windows GUI 설치 파일과 설치 안내 API는 이후 `92fc608` / 서버 `2f7d453`으로 추가했다. 현재 GUI 후보 `94a02c7`은 설치 상태에 따른 버튼 활성화와 서버 주소만 입력하는 화면으로 개선했다. [네이티브 설치 검사와 다운로드 증거](WINDOWS-INSTALLER.md#현재-설치-후보)를 별도로 기록한다. 기존 CLI·DB·앱 런타임의 검증 범위를 새 설치기 검증으로 대체하지 않는다.
+Windows GUI 설치 파일과 설치 안내 API는 이후 `92fc608` / 서버 `2f7d453`으로 추가했다. 현재 GUI 후보 `94a02c7`은 설치 상태에 따른 버튼 활성화와 서버 주소만 입력하는 화면으로 개선했다. [네이티브 설치 검사와 다운로드 증거](releases/windows-installer-0.6.0-candidate.json)를 별도로 기록한다. 기존 CLI·DB·앱 런타임의 검증 범위를 새 설치기 검증으로 대체하지 않는다.
 
 ## 이전 0.5 검증 후보
 

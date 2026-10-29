@@ -1,5 +1,7 @@
 # CLI 0.6.3 Linux 서버 후속 검증·반영
 
+이 인수 절차의 Linux 실행 결과는 [검증·반영 보고서](CLI-0.6.3-LINUX-VALIDATION.md)와 [JSON 증거](releases/cli-0.6.3-linux-validation.json)에 있다. 0.6.3 서버·UI·다운로드를 반영했고 실제 IdP 정상 로그인·소비된 실제 callback 재사용은 NOT_RUN으로 구분했다. 아래는 원래 전달한 절차다.
+
 Windows 수정은 `codex/cli-experience-improvements`에 있다. 기능 소스는 `0db21c38d89061c4fb6d774585ffba46ee10407c`, CI 환경 격리 보완은 `8d7d04271f9467d8bbdd16308e73715b33e4dc0c`다. 이 브랜치에는 기존 서버 빌드와 Windows 검증 수정도 포함된다. 상세 결과는 [Windows 기록](WINDOWS-VALIDATION.md)과 [0.6.3 결과 JSON](releases/cli-0.6.3-experience-validation.json)에 보존한다.
 
 아래 프롬프트를 Linux 서버의 Codex에 전달한다.

@@ -1,0 +1,24 @@
+{
+  "name": "installer-runs-before",
+  "command": [
+    "gh",
+    "run",
+    "list",
+    "--repo",
+    "hurxxxx/miy-v2",
+    "--workflow",
+    "windows-installer.yml",
+    "--branch",
+    "codex/cli-experience-improvements",
+    "--limit",
+    "10",
+    "--json",
+    "databaseId,headSha,status,conclusion,createdAt,url"
+  ],
+  "cwd": "/projects/miy-v2-cli-experience-20261029",
+  "startedAt": "2026-10-29T06:41:51.765076+00:00",
+  "finishedAt": "2026-10-29T06:41:52.546415+00:00",
+  "exitCode": 0,
+  "stdout": "/projects/miy-cli-experience-run-20261029/evidence/artifacts/installer-runs-before.stdout.log",
+  "stderr": "/projects/miy-cli-experience-run-20261029/evidence/artifacts/installer-runs-before.stderr.log"
+}

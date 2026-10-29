@@ -1,12 +1,18 @@
 # CLI 상세 검증 기록
 
 - 갱신: 2026-10-29
-- 최신 개선 검증: CLI **0.6.3** / 번들 **0.7.1**, 기능 소스 `0db21c3`·fixture 보완 `8d7d042`. 실제 Windows 전체 배포 흐름은 아래 **0.6.2** 결과와 구분한다. 공개 설치 후보 0.6.0을 교체한 기록이 아니다.
+- 최신 개선 검증: CLI **0.6.3** / 번들 **0.7.1**, 후보 `8d7d042`. Linux 검증 후 서버·UI와 CLI/설치기 index를 0.6.3으로 반영했다. 실제 Windows 전체 배포 흐름은 아래 **0.6.2** 결과와 구분한다.
 - 범위: [구현 계획](CLI-IMPLEMENTATION-PLAN.md). [전체 V0~V7 인수](VALIDATION.md)는 별도다.
 
 실제 실행 결과와 남은 환경 검사를 구분한다. 최신 Windows 개선과 0.6.2 전체 흐름을 별도로 기록하고, 0.6.0·0.5의 검증은 아래 이력에 보존한다. `PASS`는 명시한 소스·바이너리·fixture·환경·assertion 범위에만 적용하고, 실제 장비/IdP/원격 서버/AI 세션을 대신하지 않는다.
 
-## CLI 0.6.3 개선 검증 — 2026-10-29
+## CLI 0.6.3 Linux 검증·서버 반영 — 2026-10-29
+
+[보고서](CLI-0.6.3-LINUX-VALIDATION.md)와 [구조화 증거](releases/cli-0.6.3-linux-validation.json)를 보존한다. Linux 서버 단위 **143개**, 클라이언트 **110개**, 출력/원격 빌드/복구 **14/10/6그룹**, Docker runtime **55개**(auth **8그룹** 포함), server-build API **8그룹**, Chromium fixture **14개**, 실제 개발 로그인 **3개**, 실제 HTTPS 화면 **8그룹** PASS다. Windows 수치를 이월하지 않았다. auth 기대값 7→8 집계 수정 후 전체 runtime을 재실행했다.
+
+CLI CI **40826960538**, Windows 설치기 CI **40830813012** 성공. 5 CLI·2 helper·EXE provenance/해시와 실제 공개 다운로드를 검증했다. API/worker/UI를 0.6.3으로 반영했고 기존 Todo 0.1.2 release·image·DB UUID·원본 레코드는 그대로다. 390px Todo와 OAuth 실패 복구를 실제 서버에서 확인했다. 실제 IdP 정상 로그인·소비된 실제 callback 재방문, 사용자 Windows 11의 새 CI 설치기 실행은 **NOT_RUN**이다. 공개 GitHub Release/tag·다른 앱 변경·운영 승격은 하지 않았다.
+
+## CLI 0.6.3 Windows 개선 검증 — 2026-10-29
 
 [상세 결과](WINDOWS-VALIDATION.md)·[결과 JSON](releases/cli-0.6.3-experience-validation.json)·[Linux 후속 작업](CLI-EXPERIENCE-SERVER-HANDOFF.md)을 보존한다. Windows 단위 106개, fmt/Clippy/release, debug/release 출력 13그룹, 원격 빌드 fixture 10그룹, 복구 6그룹 PASS. 로컬 Chrome 화면/API fixture 14개, TypeScript/플랫폼 build PASS. 실제 0.6.3 Windows GUI 설치 파일의 PowerShell 5.1 네이티브 검사 24개와 잘못된 출처·해시 거부 4개 PASS. 패키지 검사 15개 PASS, Linux 게시 4개 SKIP.
 

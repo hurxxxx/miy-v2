@@ -1,0 +1,16 @@
+{
+  "name": "verify-cli",
+  "command": [
+    "python3",
+    "scripts/package-cli-release.py",
+    "verify",
+    "--directory",
+    "/projects/miy-cli-experience-run-20261029/artifacts/cli-aggregate"
+  ],
+  "cwd": "/projects/miy-v2-cli-experience-20261029",
+  "startedAt": "2026-10-29T06:41:41.320221+00:00",
+  "finishedAt": "2026-10-29T06:41:41.922541+00:00",
+  "exitCode": 0,
+  "stdout": "/projects/miy-cli-experience-run-20261029/evidence/artifacts/verify-cli.stdout.log",
+  "stderr": "/projects/miy-cli-experience-run-20261029/evidence/artifacts/verify-cli.stderr.log"
+}
