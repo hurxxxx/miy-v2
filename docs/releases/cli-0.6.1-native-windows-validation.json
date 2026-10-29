@@ -138,5 +138,15 @@
     "native-todo-browser.jpg",
     "native-todo-restarted.jpg"
   ],
-  "secrets": "No credentials, cookies, CSRF, private preview entry URL or database connection strings included."
+  "secrets": "No credentials, cookies, CSRF, private preview entry URL or database connection strings included.",
+  "subsequentSynchronization": {
+    "sourceCommit": "60a9952c352dc24cbbffacbf5ac654c8d3ec588e",
+    "includedMainCommit": "564df40756a634bdcfdabdefb92e8fd3817d01eb",
+    "cliUnitTests": 98,
+    "fmt": "PASS",
+    "clippy": "PASS",
+    "releaseBuild": "PASS",
+    "binarySha256": "fea99eb3b9414367046b1d2af104733d9bf893615a490ddb855d1bff6943379d",
+    "scope": "Merged later shared-development-login changes from main; native preview implementation unchanged. Live Todo/browser evidence above belongs to b873a81 binary; Linux handoff will validate the merged branch deployment."
+  }
 }
