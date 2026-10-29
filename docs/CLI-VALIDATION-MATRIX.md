@@ -1,10 +1,14 @@
 # CLI 상세 검증 기록
 
-- 갱신: 2026-10-29
+- 갱신: 2026-10-30
 - 최신 개선 검증: CLI **0.6.3** / 번들 **0.7.1**, 후보 `8d7d042`. Linux 검증 후 서버·UI와 CLI/설치기 index를 0.6.3으로 반영했다. 실제 Windows 전체 배포 흐름은 아래 **0.6.2** 결과와 구분한다.
 - 범위: [구현 계획](CLI-IMPLEMENTATION-PLAN.md). [전체 V0~V7 인수](VALIDATION.md)는 별도다.
 
 실제 실행 결과와 남은 환경 검사를 구분한다. 최신 Windows 개선과 0.6.2 전체 흐름을 별도로 기록하고, 0.6.0·0.5의 검증은 아래 이력에 보존한다. `PASS`는 명시한 소스·바이너리·fixture·환경·assertion 범위에만 적용하고, 실제 장비/IdP/원격 서버/AI 세션을 대신하지 않는다.
+
+## CLI 0.6.3 Windows 서버 반영 재확인 — 2026-10-30
+
+[결과 JSON](releases/cli-0.6.3-windows-postdeploy-validation.json)에 공개 설치 파일/ZIP/내장 CLI 해시와 출처, 새 CLI 실행·기존 인증, Todo release·레코드 보존, 실제 390px 메뉴·만료/오류 복구 화면 PASS를 보존한다. 앱 데이터·전역 CLI 설치는 변경하지 않았다. 새 CI 설치기의 사용자 PC 실제 설치와 실제 IdP 정상 로그인/소비 콜백 재사용은 별도 NOT_RUN이다.
 
 ## CLI 0.6.3 Linux 검증·서버 반영 — 2026-10-29
 

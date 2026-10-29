@@ -1,5 +1,15 @@
 # Windows 네이티브 빌드·운영 검증 안내
 
+## 2026-10-30 서버 반영 후 Windows 재확인
+
+서버 측 `f72c049`·`39b5640`의 [Linux 반영 기록](CLI-0.6.3-LINUX-VALIDATION.md)을 동기화한 뒤 실제 `https://v2.dwdcc.kr`을 Windows에서 재확인했다. `/api/health` 200, 서버·설치 안내 **0.6.3**, 배포물 소스 `8d7d042`가 일치한다. [실제 다운로드·CLI·브라우저 검증 결과](releases/cli-0.6.3-windows-postdeploy-validation.json)를 보존한다.
+
+공개 Windows 설치 파일 SHA-256 `662f8a59c098ac4b2cbde4041799a99f0c6e21f193bbe8b31d2098f6095233af`, ZIP `1403083b604b77036785d07c42f13c6aad754ea7ae6ff7de94bb15e0a1eb72e3`을 실제 내려받아 checksum URL·내장 ZIP·CLI 출처와 대조했다. 내장 `miy.exe`의 해시 `055bc8655c706b586f1d8517cb719ac8cd1335107e2815aef10747fa3b7565e3`, `miy 0.6.3` 실행, 기존 default/admin 인증 재사용이 통과했다. Docker가 없는 로컬 빌드는 예상한 exit 7과 `miy app build --remote` recovery를 반환했다. 전역 CLI 설치는 변경하지 않았다.
+
+실제 Chrome에서 Todo 0.1.2의 running/healthy, 기존 release와 Todo ID `8dcfffe2-3854-4ce5-b878-2da9f915c151`·미완료 상태를 확인했다. 390px 화면의 메뉴 펼치기·이동 후 닫기와 가로 넘침 없음도 확인했다. 만료 요청의 새 로그인 명령, 로그인 없는 새 상태 API의 401, 합성 OAuth 실패의 303 고정 redirect·임시 쿠키 삭제·복구 화면이 통과했다. [데스크톱 화면](releases/evidence/cli-0.6.3-windows-postdeploy/todo-desktop.png), [모바일 화면](releases/evidence/cli-0.6.3-windows-postdeploy/mobile-todo.png), [복구 화면](releases/evidence/cli-0.6.3-windows-postdeploy/oauth-recovery.png)을 보존한다. 확인용 개발 로그인은 정상 logout하고 임시 화면 크기를 복원했다. 앱 데이터·release는 바꾸지 않았다.
+
+새 CI 설치기의 사용자 PC 실제 설치/갱신/제거, 실제 IdP 정상 로그인과 그 소비된 콜백 재사용은 **NOT_RUN**이다. 이번 확인은 게시 파일/내장 CLI 실행·기존 인증·실제 서버 화면 검증이며 앞선 24개 로컬 설치기 검사를 새 CI 파일의 설치 성공으로 이월하지 않는다. 새 pending 요청/자연 만료·DB 장애 suite도 반복하지 않았으며 Linux 결과와 구분한다.
+
 ## Linux 후속 완료 — 새 CI 설치기 0.6.3 게시
 
 아래 Windows 로컬 기록 이후 [Linux 검증과 서버 반영](CLI-0.6.3-LINUX-VALIDATION.md)을 수행했다. [설치 안내](https://v2.dwdcc.kr/cli/install)는 이제 `8d7d042`의 검증된 CI CLI와 설치기를 제공한다. 기존 Windows 로컬 `0db21c3` 파일과 해시는 다르다. 서버·UI·index 0.6.3 반영, 실제 390px Todo와 기존 DB/레코드 보존을 확인했다. 이번 CI 설치기를 사용자 Windows 11에서 실행한 결과와 실제 IdP 정상 로그인은 아직 **NOT_RUN**이다.
