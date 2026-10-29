@@ -488,7 +488,7 @@ try {
     const output = openSync(join(evidence, "preview.log"), "w");
     const child = spawn(
       join(app.path, ".miy-tools/miy"),
-      ["app", "dev", "--database", "local", "--port", "18100", "--no-open"],
+      ["app", "dev", "--runtime", "docker", "--database", "local", "--port", "18100", "--no-open"],
       { cwd: app.path, env, stdio: ["ignore", output, output] },
     );
     let code;
@@ -524,7 +524,7 @@ try {
       assert.equal(beforeLocal.userId,state.developer);
       assert(!beforeLocal.records.some(r=>r.title==="dev-only-record"));
       let duplicateFailure;
-      try {execFileSync(join(app.path,".miy-tools/miy"),["--output","json","app","dev","--database","local","--port","18101","--no-open"],{cwd:app.path,env,timeout:5000,stdio:["ignore","pipe","pipe"]});}
+      try {execFileSync(join(app.path,".miy-tools/miy"),["--output","json","app","dev","--runtime","docker","--database","local","--port","18101","--no-open"],{cwd:app.path,env,timeout:5000,stdio:["ignore","pipe","pipe"]});}
       catch(e){duplicateFailure=e;}
       assertCliFailure(duplicateFailure,CLI_EXIT.conflict,/preview_already_running_for_this_project/,"app dev");
       await localPage

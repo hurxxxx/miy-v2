@@ -575,13 +575,13 @@ fn behavior(command: &str) -> Value {
             json!({"localOnly":"Skips remote revocation explicitly; local deletion failures and uncertain remote revocation are reported separately."})
         }
         "doctor" => {
-            json!({"operate":"Default: context, identity, connection and server features; no local source or development tools required.","develop":"Adds project integrity, exact Codex/Claude MCP configuration, bounded local MCP initialize/tools/list, Rust linker/rustfmt, versions, Docker Linux engine and server architecture checks. Requires development.sessions.v1.","mcpLimit":"The local stdio probe does not verify a real agent session or live API tool calls."})
+            json!({"operate":"Default: context, identity, connection and server features; no local source or development tools required.","develop":"Adds project integrity, exact Codex/Claude MCP configuration, bounded local MCP initialize/tools/list, Rust linker/rustfmt, versions and server architecture checks; Docker engine checks require --runtime docker. Requires development.sessions.v1.","mcpLimit":"The local stdio probe does not verify a real agent session or live API tool calls."})
         }
         "app init" => {
             json!({"serverAddress":"Uses an explicitly selected context or --url; no built-in IP/domain or localhost fallback. Without either, scaffolds an offline unbound project requiring server registration before remote work."})
         }
         "app dev" => {
-            json!({"databaseDefault":"server","localDatabase":"Only --database local uses a separate local DB; connection failure never selects it automatically.","serverDatabase":"Requires registration approval and development.sessions.v1. The server prepares/applies SQL and the local app connects through an authenticated WS/WSS tunnel.","concurrency":"One local session per app; stop it with app dev-stop before dev deployment.","migration":"Schema changes stop the deployed dev app; applied SQL cannot be edited or deleted. Dev deployment reuses the same database and rows; prod uses a separate database."})
+            json!({"runtimeDefault":"native","native":"Compiles the native Rust backend, serves the built React preview on loopback and runs the authenticated DB tunnel in-process; no Docker, WSL or local PostgreSQL required.","databaseDefault":"server","localDatabase":"Only --runtime docker --database local uses a separate local DB; connection failure never selects it automatically.","serverDatabase":"Requires registration approval and development.sessions.v1. The server prepares/applies SQL and the local app connects through an authenticated WS/WSS tunnel.","concurrency":"One local session per app; stop it with app dev-stop before dev deployment.","migration":"Schema changes stop the deployed dev app; applied SQL cannot be edited or deleted. Dev deployment reuses the same database and rows; prod uses a separate database."})
         }
         "app deploy" | "app start" | "app stop" | "app restart" | "app remove" | "app promote"
         | "job retry" => json!({
@@ -840,7 +840,7 @@ fn policy(command: &str, group: bool) -> Policy {
         "app dev" => {
             policy.permissions = "Authenticated developer for an administrator-approved app; platform/connected APIs enforce their permissions.";
             policy.local_effects = &[
-                "Builds and starts the local app, authenticated DB tunnel and loopback gateway; writes preview state and may open a browser. Only --database local starts a separate local DB.",
+                "Builds and starts the local app, authenticated DB tunnel and loopback gateway; writes preview state and may open a browser. Native is the default; --runtime docker --database local explicitly starts a separate local DB.",
             ];
             policy.remote_effects = &[
                 "By default creates a single-app development session, prepares the server dev DB and applies migrations; schema changes stop a deployed dev app. Application code uses that dev DB and authorized connected APIs.",
@@ -848,7 +848,7 @@ fn policy(command: &str, group: bool) -> Policy {
         }
         "app dev-stop" => {
             policy.local_effects = &[
-                "Stops the project's preview gateway and containers; preserves database data and any explicit local DB volume.",
+                "Stops the project's owned gateway, native backend and database tunnel (or explicit Docker containers); preserves database data.",
             ];
             policy.remote_effects =
                 &["Releases the owned server development session and its temporary DB access."];

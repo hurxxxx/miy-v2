@@ -76,7 +76,10 @@ pub async fn serve(api: Router) -> anyhow::Result<()> {
     let app = Router::new()
         .nest("/api", api.route_layer(middleware::from_fn(identity)))
         .route("/health",get(|| async { Json(json!({"status":"ok","releaseId":std::env::var("MIY_RELEASE_ID").unwrap_or_default()})) }));
-    let listener = tokio::net::TcpListener::bind("0.0.0.0:8080").await?;
+    // Containers retain their existing address; native CLI launches use a
+    // private loopback port and the same signed gateway identity contract.
+    let address = std::env::var("MIY_BIND_ADDR").unwrap_or_else(|_| "0.0.0.0:8080".into());
+    let listener = tokio::net::TcpListener::bind(address).await?;
     axum::serve(listener, app)
         .with_graceful_shutdown(async {
             let _ = tokio::signal::ctrl_c().await;

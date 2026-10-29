@@ -108,9 +108,9 @@ Registration creates no immediate access. Approval creates the app and grants it
 requester develop permission in dev; production deploy permission is separate.
 The operate doctor checks authentication/server capabilities without requiring
 Rust, Node or Docker. Develop additionally checks project integrity, components,
-Rust/Node/pnpm/Git/Docker versions, rustfmt, an actual tiny Rust link (MSVC/Windows
+Rust/Node/pnpm/Git versions, rustfmt, an actual tiny Rust link (MSVC/Windows
 SDK on Windows), exact Codex/Claude MCP configuration, a bounded local stdio MCP
-initialize/tools/list probe, Linux Docker mode and server/image architecture.
+initialize/tools/list probe and server architecture. `--runtime docker` additionally checks the Linux Docker engine.
 The local MCP probe does not prove that a real agent loaded the project or that
 live API tool calls work. Develop requires server capability development.sessions.v1.
 A failed diagnostic returns exit 7 and its check results.
@@ -138,7 +138,7 @@ later dev deployment use the same DB and rows. Schema changes stop an already
 deployed dev app; applied SQL files must not be edited or deleted. The previous
 release is not automatically restarted against a changed schema.
 
-Use `app dev --database local` only when a separate local DB is explicitly wanted.
+Use `app dev --runtime docker --database local` only when a separate local DB is explicitly wanted.
 Remote failures never trigger that mode automatically. Connected platform calls
 still require authorization. Stop with Ctrl-C or `app dev-stop` before building
 and deploying; an active session blocks dev deployment. Stop closes the tunnel
@@ -232,3 +232,5 @@ Removed forms return usage errors with recovery guidance. Deployment `--retry`
 and `deploy --environment prod` are invalid; use `job retry` and `app promote`.
 
 `context list --limit/--cursor` pages the local context map and restarts when configuration changes. `component list` returns `{components,nextCursor}`; it retrieves the complete authenticated catalog before paging locally. Fields such as `components.name` and `contexts.work-prod.origin` select keys from the authorized result.
+
+Local development defaults to native Rust plus the built React preview and an in-process tunnel to the server dev DB. Docker Desktop, WSL and local PostgreSQL are not needed for `app dev` or `doctor --for develop`. Explicit `--runtime docker` selects the container workflow. Image build/deployment still require a Linux Docker engine; native preview is not a releasable Linux image.

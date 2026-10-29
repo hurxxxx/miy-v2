@@ -1,5 +1,19 @@
 # Windows 네이티브 빌드·운영 검증 안내
 
+## 2026-10-29 Docker 없는 네이티브 개발 검증
+
+사용자 요청으로 Docker Desktop 설치를 중단하고 `b873a81`의 CLI **0.6.1** / 번들 **0.7.1**에서 기본 로컬 개발을 네이티브 Rust·React 정적 미리보기·프로세스 내부 서버 DB 터널로 변경했다. [사용법](NATIVE-DEVELOPMENT.md)과 [기계 판독 결과](releases/cli-0.6.1-native-windows-validation.json)를 함께 보존한다. 기존 홈페이지의 0.6.0 후보와 구분하며 새 GUI 설치기를 게시한 결과가 아니다.
+
+마지막 동기화에서 추가된 main `564df40`의 공용 개발 계정 로그인 변경을 `60a9952`에 병합했고, fmt·Clippy·release build와 단위 **98개**를 다시 통과했다. 네이티브 미리보기 구현은 동일하며, 아래 실제 브라우저 증거의 바이너리는 최초 `b873a81`로 구분한다. [Linux 후속 Codex 프롬프트](LINUX-TODO-HANDOFF.md)는 병합한 브랜치에서 배포를 검증하도록 안내한다.
+
+실제 Windows 11 Pro x64 build 26200 일반 사용자 / PS7.6.5 / Rust 1.99.1 MSVC / Node 24.19.0 / pnpm 10.34.5에서 CLI 단위 **97개**, fmt·Clippy 경고 금지·release build, 출력 계약 **11그룹**, 지침·MCP·0.7.0→0.7.1 보존 업그레이드 **5그룹**을 통과했다. 사용자 설정을 사용하는 첫 단위 실행의 metadata 기대값 실패는 격리한 `MIY_CONFIG_DIR`로 다시 수행해 통과했으며 assertion을 완화하지 않았다.
+
+별도 Codex CLI 새 세션이 프로젝트 지침과 실제 MCP 5종을 사용해 DB Todo 앱을 구현했다. 앱 Rust 검사 **6개**, `app check` **11항목**이 통과했다. 네이티브 업그레이드 뒤 `doctor --for develop`은 Docker 없이 **17항목 전체 통과**했다. 브라우저에서 추가·완료·완료 취소·새로고침, 실제 서버 DB API CRUD, 빈 제목·소유자 위조·CSRF 누락·서명 없는 직접 백엔드 접근 거부를 확인했다. pnpm EPERM 일회 실패는 변경 없는 재실행으로 통과했으며 Federation 분석 시간 경고를 기록한다.
+
+`app dev-stop` 뒤 백엔드 프로세스·로컬 포트·터널·서버 개발 세션의 정리와 exit 0을 확인했고, 재시작 후 DB `129f8abd-62c2-40d1-9175-d73d85196940`와 Todo `8dcfffe2-3854-4ce5-b878-2da9f915c151`의 ID·제목·완료 상태를 그대로 유지했다. 재시작한 브라우저에서도 같은 항목을 확인했다. Windows 세션은 Linux 배포 인계를 위해 정상 종료했다. 업무 소스는 [Todo 예제](../examples/native-todo/README.md)에 있다.
+
+사용자가 admin 계정을 선택했으므로 개발자 최소 권한 인수로 확대하지 않는다. Linux 이미지 빌드·dev 배포·배포 후 동일 DB/레코드 확인, 실제 콘솔 Ctrl+C·강제 종료·다른 OS, 운영 승격은 **NOT_RUN**이다. Linux 후속 Codex에 해당 브랜치와 예제를 전달한다. 원본 증거와 화면은 이 PC의 `.local/evidence/windows-todo/20261029/`에만 보존하며 비밀 정보는 결과 문서에 포함하지 않는다.
+
 - 갱신일: 2026-10-28
 - 현재 구현 대상: CLI **0.6.0** / 개발 번들 **0.7.0**. 아래 0.5 후보·0.4.2 실행 기록은 해당 버전의 이력이다.
 - 대상: Windows 11 x64, Windows PowerShell 5.1과 PowerShell 7

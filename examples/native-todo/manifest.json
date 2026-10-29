@@ -1,0 +1,24 @@
+{
+  "contractVersion": "miy.app/v1alpha1",
+  "id": "todo-win-20261029",
+  "migrations": {
+    "directory": "migrations"
+  },
+  "name": "Windows Todo 검증",
+  "requestedPermissions": [
+    "database"
+  ],
+  "resources": {
+    "database": "postgresql"
+  },
+  "runtime": {
+    "profile": "rust-web-v1"
+  },
+  "ui": {
+    "contractVersion": "miy.ui/v1alpha1",
+    "delivery": "module",
+    "moduleEntry": "mf-manifest.json",
+    "moduleExport": "./AppRoot"
+  },
+  "version": "0.1.0"
+}

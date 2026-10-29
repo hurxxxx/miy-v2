@@ -32,7 +32,8 @@ assert.equal(lock.cliVersion,summary.cliVersion);assert.equal(lock.bundleVersion
 assert(!summary.commands.some(row=>row.command.includes(' ')),'default discovery must remain compact');
 for(const [path,expected]of Object.entries(lock.files))assert.equal(hash(join(fresh,path)),expected,path);
 assert.equal(readFileSync(join(fresh,'.agents/skills/miy-cli/SKILL.md'),'utf8'),readFileSync(join(fresh,'.claude/skills/miy-cli/SKILL.md'),'utf8'));
-for(const row of all.commands){const actual=run(binary,[...row.command.split(' '),'--help'],fresh);assert.equal(actual.replace(/\s+/g,' ').trim(),row.help.replace(/\s+/g,' ').trim(),row.command);}
+const normalizedHelp=text=>text.replace(/Usage: miy\.exe\b/g,'Usage: miy').replace(/\s+/g,' ').trim();
+for(const row of all.commands){const actual=run(binary,[...row.command.split(' '),'--help'],fresh);assert.equal(normalizedHelp(actual),normalizedHelp(row.help),row.command);}
 for(const [file,skill]of [['AGENTS.md','.agents/skills/miy-cli/SKILL.md'],['CLAUDE.md','.claude/skills/miy-cli/SKILL.md']]){const text=readFileSync(join(fresh,file),'utf8');assert(text.includes(skill));assert(existsSync(join(fresh,skill)));}
 const manual=readFileSync(join(fresh,'docs/CLI-REFERENCE.md'),'utf8');assert(manual.includes('miy auth login'));assert(manual.includes('miy job watch'));
 fails(['app','deploy','--environment','prod'],fresh,CLI_EXIT.usage,/invalid_arguments/);

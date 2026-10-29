@@ -47,6 +47,9 @@ pub enum AppCommand {
         /// Use the server development DB, or explicitly select an isolated local DB.
         #[arg(long, value_enum, default_value = "server")]
         database: crate::development_client::DatabaseMode,
+        /// Run Rust directly, or explicitly use a Linux Docker engine.
+        #[arg(long, value_enum, default_value = "native")]
+        runtime: crate::preview::Runtime,
     },
     /// Stop this project's owned development processes; preserve its database volume.
     DevStop,
@@ -141,7 +144,7 @@ pub(crate) fn run(program: &str, args: &[&str]) -> Result<()> {
     );
     Ok(())
 }
-fn output(program: &str, args: &[&str]) -> Result<String> {
+pub(crate) fn output(program: &str, args: &[&str]) -> Result<String> {
     let out = crate::owned_process::output(&mut crate::platform::command(program, args)?)?;
     anyhow::ensure!(
         out.status.success(),
@@ -283,7 +286,8 @@ pub async fn execute(command: AppCommand) -> Result<Outcome> {
             port,
             no_open,
             database,
-        } => crate::preview::run(port, no_open, database).await?,
+            runtime,
+        } => crate::preview::run(port, no_open, database, runtime).await?,
         AppCommand::DevStop => crate::preview::stop().await?,
         AppCommand::Upgrade => return Ok(Outcome::Data(crate::upgrade::run().await?)),
         AppCommand::Setup => return Ok(Outcome::Data(crate::agent_tools::setup(Path::new("."))?)),

@@ -66,6 +66,7 @@ mod integration;
 mod job_api;
 #[cfg(feature = "server")]
 mod mcp;
+mod native_preview;
 #[cfg(all(test, feature = "server"))]
 mod operations_regression;
 mod owned_process;
