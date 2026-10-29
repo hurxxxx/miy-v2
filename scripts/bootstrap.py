@@ -54,6 +54,10 @@ parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--profile', choices=['local', 'server'], default=os.getenv('MIY_SERVER_PROFILE', previous.get('profile', 'local')))
 parser.add_argument('--origin', default=os.getenv('MIY_ORIGIN', previous.get('origin')))
 parser.add_argument('--allow-http', action='store_true', default=os.getenv('MIY_ALLOW_HTTP', '1' if previous.get('allowHttp') else '0') == '1')
+shared_login_env = os.getenv('MIY_SHARED_DEVELOPMENT_LOGIN')
+parser.add_argument('--shared-development-login', action=argparse.BooleanOptionalAction,
+                    default=None if shared_login_env is None else shared_login_env == '1',
+                    help='Enable shared development account buttons for the configured origin; defaults to disabled')
 parser.add_argument('--state-dir', type=Path, default=Path(os.getenv('MIY_STATE_DIR', str(ROOT / '.local'))))
 parser.add_argument('--bind', default=os.getenv('MIY_BIND_ADDR', previous.get('bind', '0.0.0.0:18080')))
 parser.add_argument('--postgres-port', type=port, default=port(os.getenv('MIY_POSTGRES_PORT', previous.get('postgresPort', 15432))))
@@ -63,6 +67,8 @@ parser.add_argument('--https-port', type=port, default=port(os.getenv('MIY_HTTPS
 parser.add_argument('--proxy-bind', default=os.getenv('MIY_PROXY_BIND', previous.get('proxyBind', '127.0.0.1')))
 parser.add_argument('--ca-file', type=Path, default=os.getenv('MIY_CA_FILE') or None)
 args = parser.parse_args()
+if shared_login_env not in (None, '0', '1'):
+    parser.error('MIY_SHARED_DEVELOPMENT_LOGIN must be 1 or 0')
 if args.profile == 'server' and not args.origin:
     parser.error('--profile server requires --origin URL or MIY_ORIGIN; no server address is assumed')
 try:
@@ -89,18 +95,24 @@ parsed = urllib.parse.urlsplit(origin)
 local_tls = args.profile == 'local' and parsed.scheme == 'https'
 previous_ca = previous.get('caFile') if origin == previous.get('origin') and parsed.scheme == 'https' else None
 ca_file = args.ca_file.resolve() if args.ca_file else (Path(previous_ca) if previous_ca else (LOCAL / 'caddy/caddy/pki/authorities/local/root.crt' if local_tls else None))
-development_origin = f'http://localhost:{args.http_port}' if args.profile == 'local' else origin
+# Retain explicit opt-in only for the same configured origin. Moving a server
+# to another address requires a fresh opt-in rather than exposing accounts there.
+shared_development_login = (args.shared_development_login if args.shared_development_login is not None
+                            else previous.get('sharedDevelopmentLogin') is True and origin == previous.get('origin'))
+development_origin = (origin if shared_development_login else
+                      f'http://localhost:{args.http_port}' if args.profile == 'local' else origin)
 try:
     is_local = parsed.hostname == 'localhost' or ipaddress.ip_address(parsed.hostname).is_loopback
 except ValueError:
     is_local = False
-development_login = args.profile == 'local' and is_local
+development_login = shared_development_login or (args.profile == 'local' and is_local)
 config = {
     'profile': args.profile, 'origin': origin, 'allowHttp': args.allow_http,
     'bind': args.bind, 'postgresPort': args.postgres_port, 'identityPort': args.identity_port,
     'httpPort': args.http_port, 'httpsPort': args.https_port, 'proxyBind': args.proxy_bind,
     'identityAdminUrl': f'http://127.0.0.1:{args.identity_port}/identity',
     'developmentOrigin': development_origin, 'developmentLogin': development_login,
+    'sharedDevelopmentLogin': shared_development_login,
     'caFile': str(ca_file) if ca_file else None,
     'proxyMode': 'local' if args.profile == 'local' else 'external',
     'cliReleaseDir': os.getenv('MIY_CLI_RELEASE_DIR', previous.get('cliReleaseDir', str(LOCAL / 'cli-downloads'))),
@@ -123,7 +135,8 @@ runtime = {
     'PROVISION_DATABASE_URL': f"postgres://postgres:{s['pg_admin']}@127.0.0.1:{args.postgres_port}/postgres",
     'MIY_ORIGIN': origin, 'MIY_ISSUER': origin + '/identity/realms/miy',
     'MIY_ALLOW_HTTP': '1' if args.allow_http else '0', 'MIY_BIND_ADDR': args.bind,
-    'MIY_DEV_LOGIN': '1' if development_login else '0', 'MIY_DEV_ORIGIN': development_origin,
+    'MIY_DEV_LOGIN': 'shared' if shared_development_login else '1' if development_login else '0',
+    'MIY_DEV_ORIGIN': development_origin,
     'MIY_WEB_SECRET': s['web_client'], 'MIY_RESOURCE_SECRET': s['resource_client'],
     'MIY_ENCRYPTION_KEY': s['encryption_key'], 'MIY_ARTIFACTS': LOCAL / 'artifacts',
     'MIY_CLI_RELEASE_DIR': config['cliReleaseDir'],

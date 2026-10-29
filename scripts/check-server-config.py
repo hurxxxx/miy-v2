@@ -20,10 +20,10 @@ def require(condition, message):
         raise AssertionError(message)
 
 
-def bootstrap(state, *args, expected=0):
+def bootstrap(state, *args, expected=0, environment=None):
     result = subprocess.run(
         [sys.executable, str(ROOT / 'scripts/bootstrap.py'), '--state-dir', str(state), *args],
-        env=ENV, capture_output=True, text=True, timeout=15,
+        env={**ENV, **(environment or {})}, capture_output=True, text=True, timeout=15,
     )
     require(result.returncode == expected, 'Unexpected bootstrap result')
     if expected == 0:
@@ -114,6 +114,8 @@ with tempfile.TemporaryDirectory(prefix='miy-server-config-') as temporary:
     realm = json.loads((state / 'realm.json').read_text())
     require(runtime['MIY_ORIGIN'] == 'http://10.2.3.4:8080' and runtime['MIY_ALLOW_HTTP'] == '1', 'HTTP configuration mismatch')
     require(runtime['MIY_BIND_ADDR'] == '127.0.0.1:18180' and runtime['MIY_DEV_LOGIN'] == '0', 'Unsafe development profile')
+    require(json.loads((state / 'server.json').read_text())['sharedDevelopmentLogin'] is False,
+            'Shared development login was enabled without opt-in')
     require('MIY_CA_FILE' not in runtime and realm['sslRequired'] == 'none', 'HTTP requires a certificate')
     require(compose['MIY_CADDY_CONFIG'].endswith('Caddyfile.http'), 'Wrong HTTP proxy configuration')
     require(compose['MIY_STATE_DIR'] == str(state), 'Space-containing state path was corrupted')
@@ -161,6 +163,9 @@ with tempfile.TemporaryDirectory(prefix='miy-server-config-') as temporary:
     bootstrap(secure, '--profile', 'server', '--origin', 'https://PLATFORM.example:443/')
     runtime = load_env(secure, 'runtime.env')
     require(runtime['MIY_ORIGIN'] == 'https://platform.example', 'HTTPS canonical origin mismatch')
+    require(runtime['MIY_DEV_LOGIN'] == '0'
+            and json.loads((secure / 'server.json').read_text())['sharedDevelopmentLogin'] is False,
+            'HTTPS server enabled shared development accounts by default')
     require('MIY_CA_FILE' not in runtime and runtime['MIY_ALLOW_HTTP'] == '0', 'HTTPS defaults were weakened')
     require(json.loads((secure / 'realm.json').read_text())['sslRequired'] == 'external', 'HTTPS realm policy changed')
     result = subprocess.run([sys.executable, str(ROOT / 'scripts/render-server-config.py'), '--state-dir', str(secure)],
@@ -172,10 +177,69 @@ with tempfile.TemporaryDirectory(prefix='miy-server-config-') as temporary:
     proxy = (secure / 'nginx-miy.conf').read_text()
     require('listen 443 ssl;' in proxy and 'ssl_certificate_key' in proxy and 'server_name "platform.example";' in proxy,
             'HTTPS renderer did not retain the configured domain and TLS')
+
+    shared = root / 'shared-development'
+    bootstrap(shared, '--profile', 'server', '--origin', 'https://SHARED.example:443/', '--shared-development-login')
+    shared_secrets = (shared / 'credentials.json').read_bytes()
+    shared_realm = (shared / 'realm.json').read_bytes()
+    shared_runtime = load_env(shared, 'runtime.env')
+    shared_settings = json.loads((shared / 'server.json').read_text())
+    require(shared_settings['sharedDevelopmentLogin'] is True and shared_settings['developmentLogin'] is True
+            and shared_settings['developmentOrigin'] == 'https://shared.example',
+            'Shared development settings did not bind to the explicit HTTPS origin')
+    require(shared_runtime['MIY_DEV_LOGIN'] == 'shared' and shared_runtime['MIY_DEV_ORIGIN'] == shared_runtime['MIY_ORIGIN']
+            and shared_runtime['MIY_ALLOW_HTTP'] == '0', 'Shared development runtime differs from the configured origin')
+    require(json.loads(shared_realm)['clients'][0]['redirectUris'] == ['https://shared.example/auth/callback'],
+            'Shared development changed the normal OAuth callback')
+    bootstrap(shared)
+    require(load_env(shared, 'runtime.env') == shared_runtime, 'Shared development preference was not preserved on rerun')
+    require((shared / 'credentials.json').read_bytes() == shared_secrets and (shared / 'realm.json').read_bytes() == shared_realm,
+            'Shared development rerun regenerated credentials or OAuth configuration')
+    bootstrap(shared, '--no-shared-development-login')
+    require(load_env(shared, 'runtime.env')['MIY_DEV_LOGIN'] == '0'
+            and json.loads((shared / 'server.json').read_text())['sharedDevelopmentLogin'] is False,
+            'Explicit shared development disable did not take effect')
+    bootstrap(shared)
+    require(load_env(shared, 'runtime.env')['MIY_DEV_LOGIN'] == '0', 'Disabled shared development mode returned on rerun')
+    require((shared / 'credentials.json').read_bytes() == shared_secrets and (shared / 'realm.json').read_bytes() == shared_realm,
+            'Disabling shared development replaced credentials or OAuth configuration')
+    bootstrap(shared, environment={'MIY_SHARED_DEVELOPMENT_LOGIN': '1'})
+    require(load_env(shared, 'runtime.env')['MIY_DEV_LOGIN'] == 'shared', 'Shared development environment opt-in was ignored')
+    bootstrap(shared, '--no-shared-development-login', environment={'MIY_SHARED_DEVELOPMENT_LOGIN': '1'})
+    require(load_env(shared, 'runtime.env')['MIY_DEV_LOGIN'] == '0', 'Explicit disable did not override environment opt-in')
+    bootstrap(shared, '--shared-development-login', environment={'MIY_SHARED_DEVELOPMENT_LOGIN': '0'})
+    require(load_env(shared, 'runtime.env')['MIY_DEV_LOGIN'] == 'shared', 'Explicit opt-in did not override environment disable')
+    bootstrap(shared, environment={'MIY_SHARED_DEVELOPMENT_LOGIN': '0'})
+    require(load_env(shared, 'runtime.env')['MIY_DEV_LOGIN'] == '0', 'Shared development environment disable was ignored')
+    bootstrap(shared, '--shared-development-login')
+    bootstrap(shared, '--origin', 'https://different.example')
+    require(load_env(shared, 'runtime.env')['MIY_DEV_LOGIN'] == '0'
+            and json.loads((shared / 'server.json').read_text())['sharedDevelopmentLogin'] is False,
+            'Changing origin implicitly enabled shared development accounts at the new address')
+    bootstrap(shared, '--shared-development-login')
+    require(load_env(shared, 'runtime.env')['MIY_DEV_ORIGIN'] == 'https://different.example'
+            and load_env(shared, 'runtime.env')['MIY_DEV_LOGIN'] == 'shared',
+            'New origin could not explicitly enable shared development accounts')
+    invalid_shared = root / 'invalid-shared-development'
+    bootstrap(invalid_shared, '--profile', 'server', '--origin', 'https://shared.example', expected=2,
+              environment={'MIY_SHARED_DEVELOPMENT_LOGIN': 'yes'})
+    require(not invalid_shared.exists(), 'Invalid shared development environment value wrote configuration')
+    print('PASS explicit shared development origin, persistence, disable and unchanged OAuth credentials')
+
     local = root / 'local'
     bootstrap(local, '--profile', 'local')
     runtime = load_env(local, 'runtime.env')
     require(runtime['MIY_ORIGIN'] == 'https://localhost:18443' and runtime['MIY_DEV_LOGIN'] == '1', 'Local validation profile changed')
+    require(json.loads((local / 'server.json').read_text())['sharedDevelopmentLogin'] is False,
+            'Local validation implicitly enabled shared development mode')
+    bootstrap(local, '--shared-development-login')
+    runtime = load_env(local, 'runtime.env')
+    require(runtime['MIY_DEV_LOGIN'] == 'shared' and runtime['MIY_DEV_ORIGIN'] == runtime['MIY_ORIGIN'],
+            'Explicit shared mode did not override the local development origin')
+    bootstrap(local, '--no-shared-development-login')
+    runtime = load_env(local, 'runtime.env')
+    require(runtime['MIY_DEV_LOGIN'] == '1' and runtime['MIY_DEV_ORIGIN'] == 'http://localhost:18000',
+            'Disabling shared mode changed the existing local development behavior')
     bootstrap(local, '--origin', 'http://10.2.3.4:18000', '--allow-http')
     runtime = load_env(local, 'runtime.env')
     require(runtime['MIY_DEV_LOGIN'] == '0' and 'MIY_CA_FILE' not in runtime, 'Non-loopback HTTP enabled synthetic login or inherited CA')
