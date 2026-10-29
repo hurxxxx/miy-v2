@@ -15,6 +15,7 @@ from urllib.parse import urlsplit, parse_qs
 import os
 from pathlib import Path
 import signal
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -201,9 +202,9 @@ def check(cli):
             _, hard = resource.getrlimit(resource.RLIMIT_STACK)
             resource.setrlimit(resource.RLIMIT_STACK, (1024 * 1024, hard))
 
-        def run(args, cwd=root, expected=0, command=None):
+        def run(args, cwd=root, expected=0, command=None, executable=cli):
             result = subprocess.run(
-                [str(cli), *args], cwd=cwd, env=env,
+                [str(executable), *args], cwd=cwd, env=env,
                 stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                 timeout=30, check=False,
                 preexec_fn=bounded_stack if sys.platform.startswith("linux") else None,
@@ -264,10 +265,18 @@ def check(cli):
         original_path = env.get("PATH", "")
         empty_tools = root / "no-local-build-tools"
         empty_tools.mkdir()
+        # CreateProcess also searches the application's directory and System32.
+        # An empty PATH alone cannot hide the hosted Windows runner's Docker.
+        probe_cli = empty_tools / cli.name
+        shutil.copy2(cli, probe_cli)
+        if os.name == "nt":
+            # The same trusted CLI rejects Docker's info arguments with exit 2.
+            # Its placement beside the probe wins over the system Docker engine.
+            shutil.copy2(cli, empty_tools / "docker.exe")
         env["PATH"] = str(empty_tools)
         try:
-            failure = run(["app", "build"], cwd=project, expected=7)["error"]
-            require(failure["code"] == "docker_daemon_unavailable" and "miy app build --remote" in failure["message"], "Missing Docker must explain server build")
+            failure = run(["app", "build"], cwd=project, expected=7, executable=probe_cli)["error"]
+            require(failure["code"] == "docker_daemon_unavailable" and "miy app build --remote" in failure["message"], "Missing Docker must explain server build (" + failure["code"] + ")")
             require(failure["recovery"]["args"] == ["app", "build", "--remote"], "Missing Docker must expose an executable recovery command")
             require(not (project / "dist/image.json").exists(), "Missing Docker created a deployment receipt")
         finally:

@@ -15,7 +15,7 @@ export default defineConfig({
   ],
   use: {
     baseURL: "http://127.0.0.1:18763",
-    channel: "chrome",
+    channel: process.platform === "win32" ? "chrome" : undefined,
     screenshot: "only-on-failure",
   },
   webServer: {
