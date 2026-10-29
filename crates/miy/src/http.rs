@@ -77,6 +77,10 @@ pub fn router(state: State) -> Router {
         )
         .route("/cli/logout", axum::routing::post(crate::cli_auth::revoke))
         .route(
+            "/cli/devices/{id}",
+            axum::routing::get(crate::auth_sessions::device_status),
+        )
+        .route(
             "/cli/devices/{id}/decision",
             axum::routing::post(crate::auth_sessions::approve),
         )
@@ -630,7 +634,7 @@ async fn development_login(
 #[derive(Deserialize)]
 struct Callback {
     code: Option<String>,
-    state: String,
+    state: Option<String>,
     error: Option<String>,
 }
 async fn callback(
@@ -638,11 +642,31 @@ async fn callback(
     headers: HeaderMap,
     Query(v): Query<Callback>,
 ) -> ApiResult<Response> {
-    if v.error.is_some() {
-        return Err(ApiError::unauthorized());
-    }
-    let code = v.code.ok_or_else(ApiError::unauthorized)?;
-    let session = s.auth.callback(&s, &code, &v.state, &headers).await?;
+    let result = match (v.error, v.code, v.state) {
+        (None, Some(code), Some(state)) => s.auth.callback(&s, &code, &state, &headers).await,
+        _ => Err(ApiError::unauthorized()),
+    };
+    let session = match result {
+        Ok(session) => session,
+        Err(error) => {
+            let target = match error.status.as_u16() {
+                401 => "/?login=expired",
+                403 => "/?login=forbidden",
+                503 => "/?login=unavailable",
+                _ => return Err(error),
+            };
+            tracing::info!(event = "browser_login_failed", code = %error.code);
+            let mut response = Redirect::to(target).into_response();
+            response
+                .headers_mut()
+                .insert(header::CACHE_CONTROL, "no-store".parse().unwrap());
+            response.headers_mut().append(
+                header::SET_COOKIE,
+                s.auth.cookie("miy_login", "", "/auth", 0).parse().unwrap(),
+            );
+            return Ok(response);
+        }
+    };
     let mut r = Redirect::to("/").into_response();
     r.headers_mut().append(
         header::SET_COOKIE,

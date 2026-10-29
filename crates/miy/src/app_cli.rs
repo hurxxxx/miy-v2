@@ -53,7 +53,7 @@ pub enum AppCommand {
     },
     /// Stop this project's owned development processes; preserve its database volume.
     DevStop,
-    /// Build an immutable Linux image for the selected server platform.
+    /// Build a Linux image locally with Docker; use --remote to build on the server without Docker.
     Build {
         #[arg(long,value_parser=["linux/amd64","linux/arm64"])]
         platform: Option<String>,

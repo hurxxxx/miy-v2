@@ -1,5 +1,22 @@
 # Windows GUI 설치 파일
 
+## CLI 0.6.3 설치기 준비
+
+`codex/cli-experience-improvements`의 설치기 빌드는 0.6.0 배포물에 고정하지 않고 검증한 후보의 버전·CLI 소스 commit·ZIP SHA-256·실행 파일 SHA-256을 명시적으로 받는다. 설치기와 CLI의 출처는 계속 별도로 검증한다. 새 후보를 빌드했다고 아래 기존 공개 설치 파일을 교체한 것은 아니다.
+
+```powershell
+# 깨끗한 CLI 소스 checkout에서 package-cli-release.py package로 생성한 ZIP을 사용한다.
+# 값은 해당 후보의 release.json과 별도로 확인한 체크섬에서 가져온다.
+& ./ops/windows-installer/build.ps1 -ArchivePath $Archive -Sha256 $ArchiveSha256 `
+  -OutputDirectory $BuildDirectory -InstallerCommit $InstallerCommit `
+  -Version $CliVersion -CliCommit $CliCommit -CliBinarySha256 $CliBinarySha256
+& ./ops/windows-installer/test.ps1 -InstallerPath $Installer -ArchivePath $Archive `
+  -OutputDirectory $EvidenceDirectory -Version $CliVersion `
+  -CliCommit $CliCommit -CliBinarySha256 $CliBinarySha256
+```
+
+Actions의 `Windows installer candidate`에도 `installer_commit`, 성공한 CLI 후보 workflow의 `cli_run_id`, `cli_version`, `cli_commit`, `cli_archive_sha256`, `cli_binary_sha256`을 전달한다. 후보 workflow는 빌드·검사·artifact 보존만 수행하고 다운로드 서버나 GitHub Release에 자동 게시하지 않는다. 게시 시에는 CLI 다섯 대상의 aggregate와 설치기 index가 같은 버전·CLI commit·Windows ZIP/실행 파일 해시를 가리켜야 한다. 0.6.3 서버에 0.6.0 다운로드 index만 그대로 연결하면 버전 검사에서 거부되므로 서버 반영과 배포물 준비를 함께 진행한다.
+
 Windows 11 x64 사용자는 회사 MIY 홈페이지의 `/cli/install`에서 **Windows 설치 파일 다운로드**를 선택한다. 설치 파일에는 CLI와 검증된 설치 스크립트가 들어 있다. 설치할 때 GitHub나 고정된 공개 배포 서버에 접속할 필요가 없다.
 
 ## 현재 설치 후보

@@ -210,6 +210,31 @@ pub async fn start(
     ))
 }
 
+/// Browser-only public request metadata. Never expose either approval secret.
+pub async fn device_status(
+    S(state): S<State>,
+    Extension(principal): Extension<Principal>,
+    Path(id): Path<Uuid>,
+) -> ApiResult<Response> {
+    if principal.csrf.is_none() {
+        return Err(ApiError::forbidden());
+    }
+    ensure_active(&state.pool, &principal.id).await?;
+    let row = sqlx::query("SELECT client_name,status,user_id,expires_at,GREATEST(0,EXTRACT(EPOCH FROM (expires_at-clock_timestamp()))::bigint) AS remaining FROM cli_device_authorizations WHERE id=$1")
+        .bind(id).fetch_optional(&state.pool).await?.ok_or_else(ApiError::not_found)?;
+    let owner: Option<String> = row.get("user_id");
+    if owner.as_deref().is_some_and(|owner| owner != principal.id) {
+        return Err(ApiError::not_found());
+    }
+    let remaining: i64 = row.get("remaining");
+    let status: String = row.get("status");
+    Ok(private_json(
+        json!({"id":id,"clientName":row.get::<String,_>("client_name"),
+        "status":if remaining == 0 { "expired" } else { &status },
+        "expiresAt":row.get::<DateTime<Utc>,_>("expires_at"),"expiresIn":remaining}),
+    ))
+}
+
 #[derive(Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Decision {
