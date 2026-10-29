@@ -666,15 +666,17 @@ async fn mutate(
         let metadata: Value = serde_json::from_slice(&std::fs::read("dist/image.json")?)?;
         metadata
             .get("serverBuild")
-            .map(|value| {
-                serde_json::from_value::<crate::cli_build::ServerBuildReceipt>(value.clone())
-                    .map_err(|_| {
+            .map(|value| -> Result<crate::cli_build::ServerBuildReceipt> {
+                Ok(
+                    serde_json::from_value::<crate::cli_build::ServerBuildReceipt>(value.clone())
+                        .map_err(|_| {
                         CliError::new(
                             Category::Environment,
                             "invalid_server_build_receipt",
                             "The saved server build receipt is invalid.",
                         )
-                    })
+                    })?,
+                )
             })
             .transpose()?
     } else {

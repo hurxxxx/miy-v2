@@ -759,14 +759,14 @@ pub async fn try_watch(
         return Ok(None);
     };
     let after = after
-        .map(|s| {
-            s.parse::<u64>().map_err(|_| {
+        .map(|s| -> Result<u64> {
+            Ok(s.parse::<u64>().map_err(|_| {
                 CliError::new(
                     Category::Usage,
                     "invalid_build_log_cursor",
                     "Use the nonnegative build log sequence returned by job logs.",
                 )
-            })
+            })?)
         })
         .transpose()?;
     observe(session, load(session, id)?, job, timeout, mode, after)

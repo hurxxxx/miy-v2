@@ -1,12 +1,28 @@
 # CLI 상세 검증 기록
 
-- 갱신: 2026-10-28
-- 현재 검증 대상: CLI 0.6.0 / 번들 0.7.0. 배포 CLI 후보는 `b67798b`, 반영한 서버 소스는 `5ca4047`이며 서로 다른 소스와 바이너리의 증거를 구분한다.
+- 갱신: 2026-10-29
+- 최신 검증 대상: CLI **0.6.2** / 번들 **0.7.1**. Windows 검증 소스는 `2fabe68`, 서버 빌드 기반은 `1775eac`다. 공개 설치 후보 0.6.0과 구분한다.
 - 범위: [구현 계획](CLI-IMPLEMENTATION-PLAN.md). [전체 V0~V7 인수](VALIDATION.md)는 별도다.
 
-실제 실행 결과와 남은 환경 검사를 구분한다. 현재 0.6 결과를 먼저 기록하고, CLI 0.5 / 번들 0.6.2와 `0fe94a4`의 검증은 아래 이력에 보존한다. `PASS`는 명시한 소스·바이너리·fixture·환경·assertion 범위에만 적용하고, 실제 장비/IdP/원격 서버/AI 세션을 대신하지 않는다.
+실제 실행 결과와 남은 환경 검사를 구분한다. 최신 Windows 0.6.2 결과를 먼저 기록하고, 0.6.0·0.5의 검증은 아래 이력에 보존한다. `PASS`는 명시한 소스·바이너리·fixture·환경·assertion 범위에만 적용하고, 실제 장비/IdP/원격 서버/AI 세션을 대신하지 않는다.
 
-## CLI 0.6 현재 검증 범위 — 2026-10-28
+## CLI 0.6.2 Windows 실제 서버 빌드 — 2026-10-29
+
+Windows 11 Pro x64의 비승격 PowerShell 7.6.5에서 Docker Desktop 없이 검증했다. [상세 결과](WINDOWS-VALIDATION.md#2026-10-29-cli-062-windows--서버-빌드--dev-배포-검증), [구조화 증거](releases/cli-0.6.2-windows-server-build-validation.json), [배포 화면](releases/evidence/cli-0.6.2-windows-server-build/deployed-final.jpg)을 함께 보존한다. CLI를 프로젝트에 소스 빌드로 갱신했으며 공개 GUI 설치기는 새로 게시하지 않았다.
+
+| 검증 대상 | 실제 인수 상태 |
+| --- | --- |
+| Windows 소스·실행 파일 | 단위 **106개**, fmt·strict Clippy·release PASS. 새 closure 두 곳의 Windows 오류 크기 경고를 수정 후 재실행 |
+| 자동 계약·복구 | 출력 **11그룹**, runtime 복구 **6그룹**, 원격 빌드 fixture **10그룹**, 지침/MCP/업그레이드 **5그룹** PASS. fixture UTF-8/LF·Windows 도구 trap 보완 |
+| 네이티브 개발 | doctor **17항목**, Rust 서버·React 정적 화면·실제 서버 개발 DB CRUD·브라우저 PASS |
+| Windows → Linux 빌드 | `app.builds.v1` 실제 서버의 작업 `1ba1607e-9915-4b2b-b946-d1fa8018e961` 성공. 반복 요청/resume 동일 job, 순서 로그 114개, cursor 이후 빈 로그 PASS. 제한 PATH에서 로컬 빌드 도구/SSH/WSL 호출 0회 |
+| dev 배포·브라우저 | Todo 0.1.2, release `871549de-041d-4fa7-8c17-b8e7b3c54e47`, 서버 빌드와 동일 이미지·running/healthy. 브라우저 완료 취소/새로고침·API CRUD·release guard PASS |
+| DB 보존·종료 | 같은 DB UUID·스키마, 기존/새 레코드 유지. 서버 변경을 로컬 재시작에서도 확인. 임시 데이터만 삭제하고 로컬 프로세스·포트·서버 개발 세션 정리 PASS |
+| 남은 범위 | admin 계정으로 검사. 개발자/일반 사용자·PS5.1 새 전체 흐름·실콘솔 Ctrl+C/워커 crash/실제 통신 장애·모바일/이탈 방지·운영 승격은 NOT_RUN |
+
+서버가 Linux에서 수행한 이전 검증은 [별도 결과](releases/cli-0.6.2-server-build-validation.json)에 남긴다. 이번 Windows 결과로 해당 서버의 전체 회귀를 다시 수행했다고 기록하지 않는다. 해당 앱 release에는 실제 범위를 명시한 구조화 인수를 저장했다.
+
+## CLI 0.6.0 검증 이력 — 2026-10-28
 
 아래 상태는 이번 후보에서 실제 수행한 범위다. 0.5의 PASS를 이월하지 않으며, 작업 트리 검사·깨끗한 후보 검사·공개 서버의 전체 흐름을 따로 기록한다.
 

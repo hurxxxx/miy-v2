@@ -1,5 +1,27 @@
 # Windows 네이티브 빌드·운영 검증 안내
 
+## 2026-10-29 CLI 0.6.2 Windows → 서버 빌드 → dev 배포 검증
+
+서버 빌드 구현 `1775eac`를 동기화하고 Windows 수정 `50edd05`와 fixture 수정 `2fabe68`을 적용한 CLI **0.6.2** / 번들 **0.7.1**로 실제 전체 흐름을 통과했다. [기계 판독 결과](releases/cli-0.6.2-windows-server-build-validation.json)와 [최종 브라우저 화면](releases/evidence/cli-0.6.2-windows-server-build/deployed-final.jpg)을 보존한다. 환경은 Windows 11 Pro x64 build 26200, 비승격 PowerShell 7.6.5, Rust 1.99.1 MSVC, Node 24.19.0, pnpm 10.34.5다. 프로젝트 CLI를 소스에서 갱신했으며 공개 GUI 설치기·전역 CLI를 새로 게시한 결과는 아니다.
+
+Docker Desktop을 설치하지 않고 기본 `app dev`의 Rust 서버·React 정적 화면·서버 개발 DB 연결을 확인했다. 이후 로컬 세션을 정상 종료하고 `app build --remote` → 작업 조회·로그·resume → dev 배포를 실행했다. 원격 명령 동안 Docker·Rust·Node·pnpm·SSH·WSL을 실패 trap으로 막았고 호출은 **0회**였다. Linux 워커에서 앱 검사와 이미지 생성이 수행됐으며 이미지를 Windows로 내려받거나 다시 업로드하지 않았다.
+
+| 검사 | 실제 결과 |
+| --- | --- |
+| Windows 클라이언트 | 단위 **106개 PASS / 실패·ignored 0**, fmt, all-targets Clippy `-D warnings`, release 빌드 PASS |
+| CLI 계약·복구 | 출력 **11그룹**, runtime 복구 **6그룹**, 서버 빌드 오류·재개 fixture **10그룹**, 지침·MCP·보존 업그레이드 **5그룹** PASS |
+| 실제 프로젝트 | 네이티브 doctor **17항목** PASS. 서버 워커의 앱 Rust 검사 **6개**, frozen/offline 의존성·TypeScript·Vite·배포물 검증 PASS |
+| 실제 원격 빌드 | `1ba1607e-9915-4b2b-b946-d1fa8018e961` 성공. 반복 요청·resume은 동일 작업, 순서 로그 **114개**, 마지막 cursor 이후 빈 로그 확인 |
+| 실제 dev 배포 | `c45dc134-e0ee-45ce-8cc2-658a15b4a6fc` 성공. Todo **0.1.2**, release `871549de-041d-4fa7-8c17-b8e7b3c54e47`, runtime running/healthy |
+| 브라우저·API | 로컬 추가·완료·새로고침, 배포 후 기존 데이터 표시·완료 취소·새로고침, 배포 API CRUD PASS. release 헤더 누락은 예상한 409로 거부 |
+| 데이터 보존·정리 | 같은 DB UUID·스키마·기존 Todo와 테스트 Todo의 ID·데이터 유지. 서버 브라우저의 변경을 재시작한 로컬에서도 확인. 테스트용 레코드만 삭제, 원래 Todo 보존, 백엔드·포트·개발 세션 정리 PASS |
+
+배포 이미지 `sha256:386e71c86012e6a55c579fc2482bf255fb3cbab8f83f99c0d3bb50799164a75f`는 서버 빌드 영수증과 일치한다. 앱 소스는 `f7e898161688f114edbc81941cb7592cda358b1e`, Windows CLI SHA-256은 `98fa982280fb041b1136a11bdf499979e9ce6133536ae51bd8b05d54888d9b13`이다. [실제 개발 앱](https://v2.dwdcc.kr/environments/dev/apps/todo-win-20261029)은 정상 실행 상태로 남겼고 해당 release에 범위를 명시한 구조화 인수 기록을 저장했다.
+
+최초 strict Clippy는 Windows에서 새 closure 두 곳의 `result_large_err`로 실패했다. 오류 원인을 보존하는 `anyhow::Result`로 수정하고 재검사했다. 원격 빌드 fixture는 Python의 Windows CRLF와 기본 인코딩 때문에 소스 해시가 달라 실패했으므로 UTF-8/LF를 명시하고 Windows CMD trap을 추가했다. 잘못된 로그 cursor와 손상된 영수증의 오류 계약도 추가 검증했다. 검사 완화나 lint suppression은 사용하지 않았다.
+
+이번 계정은 사용자가 선택한 admin이다. 개발자·일반 사용자 최소 권한, PowerShell 5.1의 새 전체 흐름, 실콘솔 Ctrl+C·워커 강제 종료·실제 통신 장애, 모바일·이탈 방지, 운영 승격은 **NOT_RUN**이다. 실패 fixture와 실제 서버 성공을 구분하며 아래 구버전 결과를 이번 소스의 통과로 이월하지 않는다. 원본 로그는 `.local/evidence/windows-server-build/20261029-131310/`에 보존한다. 토큰·쿠키·DB 접속 문자열은 커밋하지 않는다.
+
 ## 2026-10-29 Docker 없는 네이티브 개발 검증
 
 사용자 요청으로 Docker Desktop 설치를 중단하고 `b873a81`의 CLI **0.6.1** / 번들 **0.7.1**에서 기본 로컬 개발을 네이티브 Rust·React 정적 미리보기·프로세스 내부 서버 DB 터널로 변경했다. [사용법](NATIVE-DEVELOPMENT.md)과 [기계 판독 결과](releases/cli-0.6.1-native-windows-validation.json)를 함께 보존한다. 기존 홈페이지의 0.6.0 후보와 구분하며 새 GUI 설치기를 게시한 결과가 아니다.
@@ -14,10 +36,12 @@
 
 사용자가 admin 계정을 선택했으므로 개발자 최소 권한 인수로 확대하지 않는다. Linux 이미지 빌드·dev 배포·배포 후 동일 DB/레코드 확인, 실제 콘솔 Ctrl+C·강제 종료·다른 OS, 운영 승격은 **NOT_RUN**이다. Linux 후속 Codex에 해당 브랜치와 예제를 전달한다. 원본 증거와 화면은 이 PC의 `.local/evidence/windows-todo/20261029/`에만 보존하며 비밀 정보는 결과 문서에 포함하지 않는다.
 
-- 갱신일: 2026-10-28
-- 현재 구현 대상: CLI **0.6.0** / 개발 번들 **0.7.0**. 아래 0.5 후보·0.4.2 실행 기록은 해당 버전의 이력이다.
+## 2026-10-28 CLI 0.6.0 후보 검증 안내 이력
+
+- 당시 갱신일: 2026-10-28
+- 당시 구현 대상: CLI **0.6.0** / 개발 번들 **0.7.0**. 아래 0.5 후보·0.4.2 실행 기록은 해당 버전의 이력이다.
 - 대상: Windows 11 x64, Windows PowerShell 5.1과 PowerShell 7
-- 상태: Windows에서 사용자가 직접 빌드·검증하고 결과를 추가할 안내. **0.6의 실제 Windows 11·PowerShell 5.1/7·원격 DB·독립 AI 세션 인수는 아직 NOT_RUN이다.** 과거 호스티드 Windows MSVC CI 결과는 이번 후보의 인수 결과로 이월하지 않는다.
+- 당시 상태: Windows에서 사용자가 직접 빌드·검증하고 결과를 추가할 안내. **이 0.6.0 후보의 실제 Windows 11·PowerShell 5.1/7·원격 DB·독립 AI 세션 인수는 NOT_RUN이었다.** 최신 0.6.2 결과는 위 절에서 별도로 확인한다. 과거 호스티드 Windows MSVC CI 결과는 이 후보의 인수 결과로 이월하지 않는다.
 
 ## CLI 0.6 인수 준비 — 2026-10-28
 

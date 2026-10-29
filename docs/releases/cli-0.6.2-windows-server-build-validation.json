@@ -1,0 +1,318 @@
+{
+  "schemaVersion": 1,
+  "checkedAt": "2026-10-29T04:41:49.013876+00:00",
+  "status": "PASSED_WITH_DOCUMENTED_LIMITS",
+  "baseCommit": "1775eac",
+  "sourceCommit": "2fabe686dbf5a018e102a877e262b1b962e96d2d",
+  "windowsErrorFixCommit": "50edd05e1ab31135d72148d4c78fd1e121eae1af",
+  "fixtureFixCommit": "2fabe686dbf5a018e102a877e262b1b962e96d2d",
+  "branch": "codex/windows-server-build-validation",
+  "cliVersion": "0.6.2",
+  "bundleVersion": "0.7.1",
+  "windowsCliSha256": "98fa982280fb041b1136a11bdf499979e9ce6133536ae51bd8b05d54888d9b13",
+  "environment": {
+    "os": "Windows 11 Pro x64 build 26200",
+    "powershell": "7.6.5",
+    "rust": "1.99.1 MSVC",
+    "node": "24.19.0",
+    "pnpm": "10.34.5",
+    "administrator": false,
+    "dockerDesktopInstalled": false,
+    "browser": "Chrome, existing admin selected through configured shared development login",
+    "cliAuthentication": "Existing user-approved admin CLI session reused; credentials not inspected"
+  },
+  "target": {
+    "origin": "https://v2.dwdcc.kr",
+    "appId": "todo-win-20261029",
+    "environment": "dev",
+    "version": "0.1.2",
+    "sourceCommit": "f7e898161688f114edbc81941cb7592cda358b1e",
+    "url": "https://v2.dwdcc.kr/environments/dev/apps/todo-win-20261029",
+    "installationId": "0ef7e3f6-d9eb-4a8d-ae05-f06c603f80b4",
+    "releaseId": "871549de-041d-4fa7-8c17-b8e7b3c54e47",
+    "imageId": "sha256:386e71c86012e6a55c579fc2482bf255fb3cbab8f83f99c0d3bb50799164a75f",
+    "runtimeStatus": "running",
+    "health": "healthy"
+  },
+  "serverBuild": {
+    "id": "1ba1607e-9915-4b2b-b946-d1fa8018e961",
+    "requestId": "4ba10d8f-68b6-43e7-a8e8-bdae60e62fed",
+    "canonicalRequestId": "4ba10d8f-68b6-43e7-a8e8-bdae60e62fed",
+    "appId": "todo-win-20261029",
+    "version": "0.1.2",
+    "bundleVersion": "0.7.1",
+    "sourceCommit": "f7e898161688f114edbc81941cb7592cda358b1e",
+    "archiveHash": "1f780cb082b4f6c305c2f58f3f6be87f6f273ade3903daa88fefaa085a646530",
+    "sizeBytes": 490496,
+    "platform": "linux/amd64",
+    "status": "succeeded",
+    "step": "ready",
+    "createdAt": "2026-10-29T04:24:42.485796Z",
+    "startedAt": "2026-10-29T04:24:42.786747Z",
+    "finishedAt": "2026-10-29T04:25:11.342840Z",
+    "imageId": "sha256:386e71c86012e6a55c579fc2482bf255fb3cbab8f83f99c0d3bb50799164a75f",
+    "metadataWritten": true
+  },
+  "deployment": {
+    "id": "c45dc134-e0ee-45ce-8cc2-658a15b4a6fc",
+    "requestId": "b6d6a4af-733d-4f49-b233-3ce2ba65c8c2",
+    "appId": "todo-win-20261029",
+    "environment": "dev",
+    "status": "succeeded",
+    "step": "complete",
+    "imageId": "sha256:386e71c86012e6a55c579fc2482bf255fb3cbab8f83f99c0d3bb50799164a75f",
+    "installationId": "0ef7e3f6-d9eb-4a8d-ae05-f06c603f80b4",
+    "releaseId": "871549de-041d-4fa7-8c17-b8e7b3c54e47"
+  },
+  "clientIsolation": {
+    "blockedTools": [
+      "docker",
+      "cargo",
+      "rustc",
+      "rustup",
+      "node",
+      "npm",
+      "pnpm",
+      "ssh",
+      "wsl"
+    ],
+    "forbiddenInvocations": 0,
+    "restrictedCommands": 15,
+    "sameJobOnRepeatAndResume": true,
+    "sequencedBuildLogs": 114,
+    "afterLastSequenceLogs": 0,
+    "imageRoundTrip": false,
+    "proof": "Remote source upload/build/watch/logs/resume/deploy ran with only Git and system paths plus failing tool traps; server image receipt was used directly."
+  },
+  "database": {
+    "id": "129f8abd-62c2-40d1-9175-d73d85196940",
+    "nativeBefore": {
+      "appId": "todo-win-20261029",
+      "runtime": "native",
+      "database": "server-dev",
+      "databaseId": "129f8abd-62c2-40d1-9175-d73d85196940",
+      "schemaFingerprint": "0b4d2d5b69c27b12e9288067b1caf4f4eb8850b797592e4e27321ee3fa8a418a",
+      "platformEnvironment": "dev"
+    },
+    "nativeAfter": {
+      "appId": "todo-win-20261029",
+      "runtime": "native",
+      "database": "server-dev",
+      "databaseId": "129f8abd-62c2-40d1-9175-d73d85196940",
+      "schemaFingerprint": "0b4d2d5b69c27b12e9288067b1caf4f4eb8850b797592e4e27321ee3fa8a418a",
+      "platformEnvironment": "dev"
+    },
+    "sameIdAndSchemaFingerprint": true
+  },
+  "preservedTodo": {
+    "before": {
+      "completed": false,
+      "createdAt": "2026-10-29T02:23:27.176135Z",
+      "id": "8dcfffe2-3854-4ce5-b878-2da9f915c151",
+      "title": "네이티브 실행 후에도 남는 할 일 20261029",
+      "updatedAt": "2026-10-29T02:23:58.463116Z"
+    },
+    "after": {
+      "completed": false,
+      "createdAt": "2026-10-29T02:23:27.176135Z",
+      "id": "8dcfffe2-3854-4ce5-b878-2da9f915c151",
+      "title": "네이티브 실행 후에도 남는 할 일 20261029",
+      "updatedAt": "2026-10-29T02:23:58.463116Z"
+    },
+    "unchanged": true
+  },
+  "temporaryPersistenceTodo": {
+    "before": {
+      "completed": true,
+      "createdAt": "2026-10-29T04:22:01.515943Z",
+      "id": "4b03a3b2-4e8c-4c89-b1af-10e09708532d",
+      "title": "Windows 원격 빌드 검증 20261029-131310",
+      "updatedAt": "2026-10-29T04:22:07.042363Z"
+    },
+    "afterDeployment": {
+      "completed": true,
+      "createdAt": "2026-10-29T04:22:01.515943Z",
+      "id": "4b03a3b2-4e8c-4c89-b1af-10e09708532d",
+      "title": "Windows 원격 빌드 검증 20261029-131310",
+      "updatedAt": "2026-10-29T04:22:07.042363Z"
+    },
+    "afterServerBrowserUndo": {
+      "completed": false,
+      "createdAt": "2026-10-29T04:22:01.515943Z",
+      "id": "4b03a3b2-4e8c-4c89-b1af-10e09708532d",
+      "title": "Windows 원격 빌드 검증 20261029-131310",
+      "updatedAt": "2026-10-29T04:29:53.836660Z"
+    },
+    "removedAtEnd": true
+  },
+  "sourcePreservation": {
+    "protectedBundleFiles": 19,
+    "allProtectedFilesUnchanged": true,
+    "appSourceCommit": "f7e898161688f114edbc81941cb7592cda358b1e",
+    "sqlSha256": {
+      "migrations/0001_initial.sql": "24948591b41e10398ad4f1a8338bc605e209fffa90bc9dbc283f80083fbca8f3",
+      "migrations/0002_todos.sql": "07ca2380fbd6bc89036814b745cd0811ef88ba53aec0c22b51b4f55b81d8885e"
+    }
+  },
+  "tests": [
+    {
+      "name": "Windows MSVC client units",
+      "passed": 106,
+      "failed": 0,
+      "ignored": 0
+    },
+    {
+      "name": "fmt / all-targets Clippy -D warnings / release",
+      "result": "PASS"
+    },
+    {
+      "name": "remote build fault/recovery fixture",
+      "passedGroups": 10,
+      "realWorkerBuild": false
+    },
+    {
+      "name": "output contract",
+      "passedGroups": 11
+    },
+    {
+      "name": "runtime recovery",
+      "passedGroups": 6
+    },
+    {
+      "name": "guidance/MCP/upgrade preservation",
+      "passedGroups": 5
+    },
+    {
+      "name": "actual project native doctor",
+      "passedChecks": 17
+    },
+    {
+      "name": "real Linux worker application units",
+      "passed": 6,
+      "failed": 0
+    },
+    {
+      "name": "real worker frozen dependencies / TypeScript / Vite / artifact verification",
+      "result": "PASS"
+    },
+    {
+      "name": "Windows local browser create/complete/reload, dev browser preserved data and undo/reload",
+      "result": "PASS"
+    },
+    {
+      "name": "deployed API create/update/delete and missing release guard rejection",
+      "result": "PASS"
+    },
+    {
+      "name": "local-server DB identity, schema and records; post-deploy reverse update",
+      "result": "PASS"
+    },
+    {
+      "name": "normal native shutdown before build and after final DB comparison",
+      "result": "PASS"
+    }
+  ],
+  "acceptance": {
+    "releaseId": "871549de-041d-4fa7-8c17-b8e7b3c54e47",
+    "recorded": true,
+    "structured": true,
+    "checks": [
+      {
+        "scope": "native preview and shared dev database",
+        "evidence": "Local browser created and completed a new Todo; same database UUID and original/new records survived remote build and dev deployment.",
+        "result": "passed",
+        "actor": "Codex on Windows, admin"
+      },
+      {
+        "scope": "remote build client isolation and recovery",
+        "evidence": "Local Docker/Rust/Node/pnpm/SSH/WSL traps recorded zero calls. Repeated request and resume reused build 1ba1607e-9915-4b2b-b946-d1fa8018e961; sequenced logs and server image receipt verified.",
+        "result": "passed",
+        "actor": "Windows CLI 0.6.2"
+      },
+      {
+        "scope": "dev deployment immutable image",
+        "evidence": "Dev 0.1.2 job c45dc134-e0ee-45ce-8cc2-658a15b4a6fc succeeded with the exact server-built image; final app status running and healthy.",
+        "result": "passed",
+        "actor": "Windows CLI 0.6.2"
+      },
+      {
+        "scope": "desktop browser and deployed app API",
+        "evidence": "Preserved original Todo; browser create/complete/undo and reload, deployed API create/update/delete, missing release guard rejected. Temporary records removed; original unchanged.",
+        "result": "passed",
+        "actor": "Chrome on Windows, admin"
+      },
+      {
+        "scope": "native lifecycle cleanup",
+        "evidence": "dev-stop before build and after rechecking deployment exited 0; backend, gateway port and local/remote session state released. Server dev app remains running.",
+        "result": "passed",
+        "actor": "Windows CLI 0.6.2"
+      },
+      {
+        "scope": "other users and least privilege",
+        "evidence": "This run reused the user-selected admin account. Developer/ordinary-user isolation was not retested.",
+        "result": "not_run",
+        "actor": "not exercised"
+      },
+      {
+        "scope": "navigation guards and mobile layout",
+        "evidence": "Desktop CRUD and reload tested. Dirty navigation/back-forward dialogs and prior platform mobile-layout finding were not retested.",
+        "result": "not_run",
+        "actor": "not exercised"
+      },
+      {
+        "scope": "production and live failure injection",
+        "evidence": "No production promotion, live console Ctrl+C, worker/daemon crash or live network fault injection was performed.",
+        "result": "not_run",
+        "actor": "not exercised"
+      }
+    ]
+  },
+  "cleanup": {
+    "previewStateRemoved": true,
+    "remoteSessionStateRemoved": true,
+    "nativeBackends": 0,
+    "localGatewayListeners": 0,
+    "forbiddenToolInvocationsFileExists": false,
+    "dockerDesktopInstalled": false
+  },
+  "failuresAndFixes": [
+    {
+      "issue": "Windows Clippy result_large_err for two new closures (136-byte error value)",
+      "result": "Fixed with anyhow::Result return types, retaining typed error causes and no lint suppression; units/Clippy/release rerun passed."
+    },
+    {
+      "issue": "New Python fixture wrote CRLF on Windows while component locks hashed LF, causing invalid_build_source; default encoding and POSIX-only tool traps were also nonportable",
+      "result": "Explicit UTF-8/LF and Windows CMD traps; added invalid log cursor and malformed receipt typed-error checks; final ten groups passed."
+    },
+    {
+      "issue": "Local orchestration helper leaked cwd; HTTP probe initially omitted x-miy-release and received expected 409 protection",
+      "result": "Scoped cwd/PATH and nonempty identity checks before live build; probe now sends pinned release and explicitly validates rejection without it. No product guard was weakened."
+    }
+  ],
+  "notRun": [
+    {
+      "item": "PowerShell 5.1 full new remote flow / macOS / linux-arm64 clients",
+      "reason": "This execution used Windows PowerShell 7.6.5 and Linux amd64 server."
+    },
+    {
+      "item": "live Windows console Ctrl+C, worker/daemon crash or network fault injection",
+      "reason": "Fault fixture covers lost acknowledgements, timeouts, recovery and dedup; live native cleanup was cooperative dev-stop."
+    },
+    {
+      "item": "ordinary/developer users and cross-user grants",
+      "reason": "User-selected admin was reused; no least-privilege claim."
+    },
+    {
+      "item": "dirty navigation/back-forward and mobile layout",
+      "reason": "Desktop CRUD/reload scope; previous platform mobile finding not retested."
+    },
+    {
+      "item": "production promotion, other apps, public Windows installer publication",
+      "reason": "Outside scope. Project CLI updated from source; global published installer not replaced."
+    }
+  ],
+  "localEvidenceDirectory": "C:\\projects\\miy-v2\\.local\\evidence\\windows-server-build\\20261029-131310",
+  "screenshot": "evidence/cli-0.6.2-windows-server-build/deployed-final.jpg",
+  "screenshotSha256": "d4787ee4a4e1876c96de2ec217cafa636ff3e6a4219d864eac3c9525fe67c559",
+  "secrets": "No tokens, cookies, CSRF, preview entry URLs, database URLs or private authentication storage copied into this report."
+}
