@@ -1,4 +1,4 @@
-//! Shared app identity format and local-origin policy; no core session state.
+//! Shared app identity format and development-origin policy; no core session state.
 use crate::api_error::{ApiError, ApiResult};
 use axum::http::HeaderMap;
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
@@ -26,6 +26,18 @@ pub fn cookie(headers: &HeaderMap, name: &str) -> Option<String> {
 }
 #[cfg(any(feature = "server", test))]
 pub fn development_profile(flag: Option<&str>, origin: &str, development_origin: &str) -> bool {
+    fn valid_origin(value: &str) -> Option<Url> {
+        let url = Url::parse(value).ok()?;
+        (matches!(url.scheme(), "http" | "https")
+            && url.has_host()
+            && url.username().is_empty()
+            && url.password().is_none()
+            && url.path() == "/"
+            && url.query().is_none()
+            && url.fragment().is_none()
+            && url.origin().ascii_serialization() == value)
+            .then_some(url)
+    }
     fn local_origin(value: &str) -> bool {
         let Ok(url) = Url::parse(value) else {
             return false;
@@ -43,7 +55,13 @@ pub fn development_profile(flag: Option<&str>, origin: &str, development_origin:
                 _ => false,
             }
     }
-    flag == Some("1") && local_origin(origin) && local_origin(development_origin)
+    match flag {
+        Some("1") => local_origin(origin) && local_origin(development_origin),
+        // Shared development is a separate explicit mode, confined to the
+        // configured platform origin. Ordinary server profiles remain off.
+        Some("shared") => origin == development_origin && valid_origin(origin).is_some(),
+        _ => false,
+    }
 }
 #[derive(Serialize)]
 struct Claims {
@@ -103,5 +121,29 @@ mod tests {
             "https://localhost:18443",
             "http://localhost:18000"
         ));
+    }
+
+    #[test]
+    fn shared_development_requires_explicit_mode_and_exact_origin() {
+        for origin in ["https://development.example", "http://10.2.3.4:8080"] {
+            assert!(development_profile(Some("shared"), origin, origin));
+            for flag in [None, Some("0"), Some("1"), Some("true")] {
+                assert!(!development_profile(flag, origin, origin));
+            }
+            for other in ["https://another.example", "http://localhost:18000"] {
+                assert!(!development_profile(Some("shared"), origin, other));
+            }
+        }
+        for invalid in [
+            "https://user:password@example.com",
+            "https://example.com/path",
+            "https://example.com?query=1",
+            "https://example.com#fragment",
+            "https://example.com/",
+            "file:///tmp/development",
+            "not-an-origin",
+        ] {
+            assert!(!development_profile(Some("shared"), invalid, invalid));
+        }
     }
 }

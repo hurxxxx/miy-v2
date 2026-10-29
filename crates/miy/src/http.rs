@@ -554,7 +554,7 @@ async fn login(S(s): S<State>) -> ApiResult<Response> {
     );
     r.headers_mut().append(
         header::SET_COOKIE,
-        "miy_development=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0"
+        crate::server_origin::cookie(&s.auth.development_origin, "miy_development", "", "/", 0)
             .parse()
             .unwrap(),
     );
@@ -598,9 +598,15 @@ async fn development_login(
         .insert(header::CACHE_CONTROL, "no-store".parse().unwrap());
     response.headers_mut().append(
         header::SET_COOKIE,
-        format!("miy_development={session}; HttpOnly; SameSite=Lax; Path=/; Max-Age=28800")
-            .parse()
-            .unwrap(),
+        crate::server_origin::cookie(
+            &s.auth.development_origin,
+            "miy_development",
+            &session,
+            "/",
+            28800,
+        )
+        .parse()
+        .unwrap(),
     );
     Ok(response)
 }
@@ -649,7 +655,7 @@ async fn logout(S(s): S<State>, headers: HeaderMap) -> ApiResult<Response> {
     );
     r.headers_mut().append(
         header::SET_COOKIE,
-        "miy_development=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0"
+        crate::server_origin::cookie(&s.auth.development_origin, "miy_development", "", "/", 0)
             .parse()
             .unwrap(),
     );

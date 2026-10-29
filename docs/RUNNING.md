@@ -225,6 +225,28 @@ HTTP는 내부망용이며 통신이 암호화되지 않는다. 이 구성은 `M
 
 `MIY_STATE_DIR`/`--state-dir`는 private 상태 위치, `MIY_BINARY`/`--binary`는 서버 실행 파일을 지정한다. `MIY_CLI_RELEASE_DIR`는 검증된 CLI 다운로드 묶음을 제공할 위치이며 기본은 상태 디렉터리의 `cli-downloads`다. `MIY_CLI_INSTALLER_DIR`는 Windows GUI 설치 파일의 게시 위치이며 기본은 상태 디렉터리의 `cli-installers`다. 검증한 설치 파일이 없으면 기존 ZIP·스크립트 안내를 제공한다. [Windows 설치 파일 배포](WINDOWS-INSTALLER.md)를 참고한다. PostgreSQL과 Keycloak 호스트 포트는 loopback에만 공개한다. `credentials.json`, runtime/compose env는 0600이고 상태 디렉터리는 0700이다. 컨테이너에 개별 읽기 전용 mount하는 init.sql/realm.json은 컨테이너 UID가 읽을 수 있도록 0644이며 호스트에서는 상태 디렉터리의 접근 제한을 받는다.
 
+## 공유 개발 서버의 계정 버튼
+
+운영자가 공유 개발 로그인을 켜면 설정된 서버 주소의 로그인 화면에 `admin`, `developer`, `alice`, `bob` 버튼이 나타난다. 해당 서버에 접속한 사람은 비밀번호 입력 없이 선택한 개발 계정으로 로그인할 수 있다. 계정 비밀번호를 화면이나 문서에 공개하지 않으며 기존 OAuth 로그인도 계속 사용할 수 있다. 공유 개발 로그인은 새 서버에서 기본으로 꺼져 있고, 도메인이나 접속 위치만으로 활성화되지 않는다.
+
+이미 구성된 `https://v2.dwdcc.kr` 서버에서 활성화하려면 같은 상태 디렉터리에서 다음을 실행한다. 저장된 주소·포트·자격증명과 DB 데이터를 보존하며 서버 프로세스를 재시작해 적용한다.
+
+```sh
+python3 scripts/bootstrap.py --shared-development-login
+sudo systemctl restart miy-v2-serve
+```
+
+다시 끄려면 다음을 실행한다.
+
+```sh
+python3 scripts/bootstrap.py --no-shared-development-login
+sudo systemctl restart miy-v2-serve
+```
+
+다른 상태 디렉터리를 사용하는 서버는 두 명령에 동일한 `--state-dir PATH`를 전달한다. 초기 구성에서는 `--profile server --origin https://공유서버주소 --shared-development-login`을 함께 지정한다. 환경변수 `MIY_SHARED_DEVELOPMENT_LOGIN=1` 또는 `0`으로도 설정할 수 있으며 명령줄 옵션이 우선한다. 선택은 `server.json`의 `sharedDevelopmentLogin`에 저장되어 같은 대표 주소로 재실행하면 유지된다. 대표 주소를 바꾸면 공유 로그인이 꺼지므로 새 주소에서도 사용할 때는 옵션을 다시 명시한다. 활성화 시 런타임에는 `MIY_DEV_LOGIN=shared`, `MIY_DEV_ORIGIN=MIY_ORIGIN`이 기록된다.
+
+CLI에서는 평소처럼 `miy auth login`을 실행한다. 열린 브라우저에서 개발 계정 버튼을 누르고 CLI 승인 화면의 코드를 대조·승인하면 해당 계정으로 인증된다. 이후 `miy auth status`로 확인한다. 실제 OAuth·기업 SSO 인수는 해당 로그인 경로로 별도 확인한다.
+
 ## 로컬 플랫폼 보조 도구와 검증
 
 저장소의 `bash scripts/up.sh --profile local`는 로컬 PostgreSQL·Keycloak·Caddy와 코어/worker/UI 검증 기반을 준비한다. 이 로컬 검증 프로필만 `https://localhost:18443`을 제공하며 클라이언트의 서버 기본값과 관계없다. HTTP 검증에는 `--origin http://IP:18000 --allow-http --proxy-bind 0.0.0.0`을 명시한다. 외부 Nginx를 구성한 서버에서는 `--profile server --origin URL`을 사용하며 로컬 Caddy·브라우저 컨테이너는 시작하지 않는다. `bash scripts/down.sh`는 저장 데이터를 보존하며 해당 기반을 중지한다. 이 도구의 기존 환경 기록을 모든 OS의 지원 증거로 확대하지 않는다. `.local/credentials.json`과 `.local/runtime.env`는 로컬 비밀 설정이므로 출력·게시하지 않는다.
