@@ -1,0 +1,78 @@
+{
+  "assets": [
+    {
+      "binarySha256": "24159429a22513ea7a54dbf51600564acc50e8ce010c2794fc1d34abbba2f2d4",
+      "commit": "8d7d04271f9467d8bbdd16308e73715b33e4dc0c",
+      "file": "miy-0.6.3-aarch64-apple-darwin.tar.gz",
+      "schemaVersion": 1,
+      "sha256": "44f940d4e10a411946e7e1fe2d0d3c7ca12028c313161ce63ce1224dd320be46",
+      "target": "aarch64-apple-darwin",
+      "version": "0.6.3"
+    },
+    {
+      "binarySha256": "ce073db05ededa3acffd1eae4c14861308d82f320fc67db0378c90e2598dc137",
+      "commit": "8d7d04271f9467d8bbdd16308e73715b33e4dc0c",
+      "file": "miy-0.6.3-aarch64-unknown-linux-gnu.tar.gz",
+      "schemaVersion": 1,
+      "sha256": "c483c257c7f7ed26f55ef28c99de6d114b5972338ac11e4d723cb231e763018c",
+      "target": "aarch64-unknown-linux-gnu",
+      "version": "0.6.3"
+    },
+    {
+      "binarySha256": "1fcdfb607c62962cbcb0342d283cdf861ee006310d37cfe031e898aff6c3b14c",
+      "commit": "8d7d04271f9467d8bbdd16308e73715b33e4dc0c",
+      "file": "miy-0.6.3-x86_64-apple-darwin.tar.gz",
+      "schemaVersion": 1,
+      "sha256": "b2f9165839952c09c5c150ee49c5e648743373c2b7dd1a177f50d881409ed86f",
+      "target": "x86_64-apple-darwin",
+      "version": "0.6.3"
+    },
+    {
+      "binarySha256": "055bc8655c706b586f1d8517cb719ac8cd1335107e2815aef10747fa3b7565e3",
+      "commit": "8d7d04271f9467d8bbdd16308e73715b33e4dc0c",
+      "file": "miy-0.6.3-x86_64-pc-windows-msvc.zip",
+      "schemaVersion": 1,
+      "sha256": "1403083b604b77036785d07c42f13c6aad754ea7ae6ff7de94bb15e0a1eb72e3",
+      "target": "x86_64-pc-windows-msvc",
+      "version": "0.6.3"
+    },
+    {
+      "binarySha256": "86d0d6294eb751ab88e7d7ed1d6925c0a477b4e71686e1cb087f17f5026bbf54",
+      "commit": "8d7d04271f9467d8bbdd16308e73715b33e4dc0c",
+      "file": "miy-0.6.3-x86_64-unknown-linux-gnu.tar.gz",
+      "schemaVersion": 1,
+      "sha256": "4dbd45689ccc421feb6707d037e59bcabb4d225afcae86c11a6949e05f0d7ab6",
+      "target": "x86_64-unknown-linux-gnu",
+      "version": "0.6.3"
+    }
+  ],
+  "commit": "8d7d04271f9467d8bbdd16308e73715b33e4dc0c",
+  "schemaVersion": 1,
+  "tunnelImages": [
+    {
+      "commit": "8d7d04271f9467d8bbdd16308e73715b33e4dc0c",
+      "configSha256": "3f5e94f93758302dfe976eab4a972144810f6b4ee67a1542df560df128b68f0b",
+      "development": false,
+      "file": "miy-db-tunnel-0.6.3-amd64.oci.tar",
+      "imageId": "sha256:3f5e94f93758302dfe976eab4a972144810f6b4ee67a1542df560df128b68f0b",
+      "imageTag": "miy-db-tunnel:8d7d04271f9467d8bbdd16308e73715b33e4dc0c-amd64",
+      "platform": "linux/amd64",
+      "schemaVersion": 1,
+      "sha256": "f75e9c7f135162cdf0712f9bacc0dc31c9dd8101b687b44d980657c7bb1c8de5",
+      "version": "0.6.3"
+    },
+    {
+      "commit": "8d7d04271f9467d8bbdd16308e73715b33e4dc0c",
+      "configSha256": "61b550a604764d335f4299ada2ebff9796a1835a2d48e757dcbb6946e3db70ea",
+      "development": false,
+      "file": "miy-db-tunnel-0.6.3-arm64.oci.tar",
+      "imageId": "sha256:61b550a604764d335f4299ada2ebff9796a1835a2d48e757dcbb6946e3db70ea",
+      "imageTag": "miy-db-tunnel:8d7d04271f9467d8bbdd16308e73715b33e4dc0c-arm64",
+      "platform": "linux/arm64",
+      "schemaVersion": 1,
+      "sha256": "3dc440b768a4de6a8bb4b3f25bba68024719e6484802c97fe63a0480d9f5f4d3",
+      "version": "0.6.3"
+    }
+  ],
+  "version": "0.6.3"
+}

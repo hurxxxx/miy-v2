@@ -258,6 +258,33 @@ async fn approval_and_rotation(h: &Harness<'_>, passed: &mut Vec<String>) -> Res
     )
     .await?;
     let device = h.device().await?;
+    let metadata_path = format!("/api/v1/cli/devices/{}", device.id);
+    error(
+        h.request(Method::GET, &metadata_path).send().await?,
+        401,
+        "unauthorized",
+    )
+    .await?;
+    let metadata = private_response(
+        h.browser(Method::GET, &metadata_path, &browser, false)
+            .send()
+            .await?,
+        200,
+    )
+    .await?;
+    ensure!(
+        metadata["status"] == "pending"
+            && metadata["expiresIn"]
+                .as_i64()
+                .is_some_and(|value| (1..=300).contains(&value)),
+        "invalid public device lifetime"
+    );
+    ensure!(
+        metadata.as_object().is_some_and(|value| value.len() == 5)
+            && !metadata.to_string().contains(&device.secret)
+            && !metadata.to_string().contains(&device.code),
+        "device status exposed approval credentials"
+    );
     let stored=sqlx::query("SELECT device_secret_hash,user_code_hash,EXTRACT(epoch FROM expires_at-created_at)::bigint AS seconds FROM cli_device_authorizations WHERE id=$1")
         .bind(device.id).fetch_one(&h.state.pool).await?;
     ensure!(
@@ -342,6 +369,24 @@ async fn approval_and_rotation(h: &Harness<'_>, passed: &mut Vec<String>) -> Res
     h.approve(&browser, &device, "approve").await?;
     h.ready_to_poll(&device).await?;
     let original = h.exchange(&device).await?;
+    error(
+        h.request(Method::GET, &metadata_path)
+            .bearer_auth(&original.access)
+            .send()
+            .await?,
+        403,
+        "forbidden",
+    )
+    .await?;
+    let other_browser = h.user().await?;
+    error(
+        h.browser(Method::GET, &metadata_path, &other_browser, false)
+            .send()
+            .await?,
+        404,
+        "not_found",
+    )
+    .await?;
     h.active(&original).await?;
     error(h.poll(&device).await?, 400, "invalid_grant").await?;
     ensure!(
@@ -887,6 +932,33 @@ pub async fn run(state: &State, client: &Client, base: &str) -> Result<Vec<Strin
         base: base.trim_end_matches('/'),
     };
     let mut passed = vec![];
+    let login_client = Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .build()?;
+    for path in [
+        "/auth/callback",
+        "/auth/callback?error=expired_code&state=untrusted",
+        "/auth/callback?code=consumed&state=unknown",
+    ] {
+        let response = login_client.get(format!("{}{path}", h.base)).send().await?;
+        ensure!(
+            response.status().as_u16() == 303
+                && response
+                    .headers()
+                    .get("location")
+                    .is_some_and(|value| value == "/?login=expired"),
+            "invalid OAuth callback did not return safe login recovery"
+        );
+        ensure!(
+            response.headers().get("set-cookie").is_some_and(|value| {
+                value.to_str().is_ok_and(|value| {
+                    value.starts_with("miy_login=;") && value.contains("Max-Age=0")
+                })
+            }),
+            "invalid callback retained its login cookie"
+        );
+    }
+    passed.push("expired/missing/replayed OAuth callbacks clear login state and redirect to fixed recovery without authenticating".into());
     approval_and_rotation(&h, &mut passed)
         .await
         .context("device approval and rotation regression")?;

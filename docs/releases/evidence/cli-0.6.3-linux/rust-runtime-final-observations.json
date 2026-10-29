@@ -1,0 +1,277 @@
+[
+  {
+    "test": "classic Docker archive resolves a verified immutable server image",
+    "status": "PASS",
+    "suite": "runtime"
+  },
+  {
+    "test": "unauthorized runtime request creates no job",
+    "status": "PASS",
+    "suite": "runtime"
+  },
+  {
+    "test": "16 concurrent duplicate submissions coalesce",
+    "status": "PASS",
+    "suite": "runtime"
+  },
+  {
+    "test": "same key different input conflicts",
+    "status": "PASS",
+    "suite": "runtime"
+  },
+  {
+    "test": "real Docker deployment and resource configuration",
+    "status": "PASS",
+    "suite": "runtime"
+  },
+  {
+    "test": "imported original identity survives restart, reconciliation and health checks",
+    "status": "PASS",
+    "suite": "runtime"
+  },
+  {
+    "test": "preflight creates no job and changes no installation",
+    "status": "PASS",
+    "suite": "runtime"
+  },
+  {
+    "test": "health observations do not invalidate a control revision",
+    "status": "PASS",
+    "suite": "runtime"
+  },
+  {
+    "test": "stale preflight is rejected before job creation",
+    "status": "PASS",
+    "suite": "runtime"
+  },
+  {
+    "test": "worker rechecks expected state before container changes",
+    "status": "PASS",
+    "suite": "runtime"
+  },
+  {
+    "test": "unaccepted production promotion rejected",
+    "status": "PASS",
+    "suite": "runtime"
+  },
+  {
+    "test": "prod develop permission cannot promote",
+    "status": "PASS",
+    "suite": "runtime"
+  },
+  {
+    "test": "exact image promotion and independent prod data",
+    "status": "PASS",
+    "suite": "runtime"
+  },
+  {
+    "test": "runtime DB role cannot DDL or edit migration history",
+    "status": "PASS",
+    "suite": "runtime"
+  },
+  {
+    "test": "queued authority revoked before execution",
+    "status": "PASS",
+    "suite": "runtime"
+  },
+  {
+    "test": "wrong-app",
+    "status": "PASS",
+    "suite": "runtime"
+  },
+  {
+    "test": "immutable-version",
+    "status": "PASS",
+    "suite": "runtime"
+  },
+  {
+    "test": "stored artifact tampering rejected before old app stop",
+    "status": "PASS",
+    "suite": "runtime"
+  },
+  {
+    "test": "schema update preserves data and prod release",
+    "status": "PASS",
+    "suite": "runtime"
+  },
+  {
+    "test": "failed migration rolls back DDL and preserves data",
+    "status": "PASS",
+    "suite": "runtime"
+  },
+  {
+    "test": "new release recovers failed update",
+    "status": "PASS",
+    "suite": "runtime"
+  },
+  {
+    "test": "old image cannot silently roll back advanced schema",
+    "status": "PASS",
+    "suite": "runtime"
+  },
+  {
+    "test": "worker crash after DB provisioning resumes deployment",
+    "status": "PASS",
+    "suite": "runtime"
+  },
+  {
+    "test": "manual stop persists across worker restart",
+    "status": "PASS",
+    "suite": "runtime"
+  },
+  {
+    "test": "competing changes require fresh preflight after the pending operation",
+    "status": "PASS",
+    "suite": "runtime"
+  },
+  {
+    "test": "first service failure is degraded while process remains running",
+    "status": "PASS",
+    "suite": "runtime"
+  },
+  {
+    "test": "repeated HTTP failure is unhealthy without stopping container",
+    "status": "PASS",
+    "suite": "runtime"
+  },
+  {
+    "test": "HTTP recovery clears failures and records health transitions",
+    "status": "PASS",
+    "suite": "runtime"
+  },
+  {
+    "test": "Docker lookup failure preserves container and does not complete remove",
+    "status": "PASS",
+    "suite": "runtime"
+  },
+  {
+    "test": "foreign same-name container is preserved",
+    "status": "PASS",
+    "suite": "runtime"
+  },
+  {
+    "test": "remove resumes after container deletion before DB status commit",
+    "status": "PASS",
+    "suite": "runtime"
+  },
+  {
+    "test": "confirmed absent container removal is idempotent",
+    "status": "PASS",
+    "suite": "runtime"
+  },
+  {
+    "test": "redeploy after interrupted removal restores same data",
+    "status": "PASS",
+    "suite": "runtime"
+  },
+  {
+    "test": "slow health services do not occupy the control queue",
+    "status": "PASS",
+    "suite": "runtime"
+  },
+  {
+    "test": "late health result cannot overwrite a newer lifecycle generation",
+    "status": "PASS",
+    "suite": "runtime"
+  },
+  {
+    "test": "permission-filtered keyset pages, actor/filter cursor scope and management-only acceptance evidence",
+    "status": "PASS",
+    "suite": "operations"
+  },
+  {
+    "test": "transactional ordered job events, rollback, terminal pagination/resume and authority/cursor revocation",
+    "status": "PASS",
+    "suite": "operations"
+  },
+  {
+    "test": "dry-run has zero remote mutations; expected-state, prod/remove confirmation and stale-state admission fail closed",
+    "status": "PASS",
+    "suite": "operations"
+  },
+  {
+    "test": "typed retry eligibility, fresh confirmation/state, request-ID recovery, idempotency and active-operation exclusion",
+    "status": "PASS",
+    "suite": "operations"
+  },
+  {
+    "test": "lost upload receipt recovery, exact immutable identity, per-actor privacy and expired-key rejection",
+    "status": "PASS",
+    "suite": "operations"
+  },
+  {
+    "test": "real worker logs are capped at 1MiB, ownership/generation/permission/TTL checked; two gated diagnostics do not block prod start",
+    "status": "PASS",
+    "suite": "operations"
+  },
+  {
+    "test": "real CLI context login, private global credentials and two concurrent processes rotate once",
+    "status": "PASS",
+    "suite": "cli"
+  },
+  {
+    "test": "real CLI context selection follows flag, environment, project binding and active context in order",
+    "status": "PASS",
+    "suite": "cli"
+  },
+  {
+    "test": "real CLI project-free pagination/projection, project binding, registration approval and strict typed grant input",
+    "status": "PASS",
+    "suite": "cli"
+  },
+  {
+    "test": "real CLI dry-run and missing explicit targets/confirmation create no upload or runtime job",
+    "status": "PASS",
+    "suite": "cli"
+  },
+  {
+    "test": "real CLI no-wait journal, timeout without cancellation, lost-ack request-ID resume without duplication and terminal JSONL events",
+    "status": "PASS",
+    "suite": "cli"
+  },
+  {
+    "test": "real CLI remote logout, local credential deletion and explicit context removal",
+    "status": "PASS",
+    "suite": "cli"
+  },
+  {
+    "test": "expired/missing/replayed OAuth callbacks clear login state and redirect to fixed recovery without authenticating",
+    "status": "PASS",
+    "suite": "auth"
+  },
+  {
+    "test": "device hashes, pending/slow_down, browser CSRF/origin, exact account and one-use exchange",
+    "status": "PASS",
+    "suite": "auth"
+  },
+  {
+    "test": "15-minute access, fixed 30-day family, rotation history and committed reuse revocation",
+    "status": "PASS",
+    "suite": "auth"
+  },
+  {
+    "test": "concurrent device exchange issues once; concurrent refresh commits one rotation then family revocation",
+    "status": "PASS",
+    "suite": "auth"
+  },
+  {
+    "test": "denial and five-minute device expiry; expired access refreshes; absolute family expiry denies both tokens",
+    "status": "PASS",
+    "suite": "auth"
+  },
+  {
+    "test": "self-only session keyset pagination/revocation and idempotent logout without affecting another family",
+    "status": "PASS",
+    "suite": "auth"
+  },
+  {
+    "test": "grant revocation and Core disable immediately block API/worker authority; re-enable never resurrects old sessions",
+    "status": "PASS",
+    "suite": "auth"
+  },
+  {
+    "test": "per-client creation, per-actor code guessing and shared legacy/device global capacity are bounded",
+    "status": "PASS",
+    "suite": "auth"
+  }
+]

@@ -3,16 +3,17 @@ param(
     [Parameter(Mandatory = $true)][string]$ArchivePath,
     [Parameter(Mandatory = $true)][ValidatePattern('^[a-fA-F0-9]{64}$')][string]$Sha256,
     [Parameter(Mandatory = $true)][string]$OutputDirectory,
-    [Parameter(Mandatory = $true)][ValidatePattern('^[a-f0-9]{40}$')][string]$InstallerCommit
+    [Parameter(Mandatory = $true)][ValidatePattern('^[a-f0-9]{40}$')][string]$InstallerCommit,
+    [Parameter(Mandatory = $true)][ValidatePattern('^\d+\.\d+\.\d+$')][string]$Version,
+    [Parameter(Mandatory = $true)][ValidatePattern('^[a-f0-9]{40}$')][string]$CliCommit,
+    [Parameter(Mandatory = $true)][ValidatePattern('^[a-f0-9]{64}$')][string]$CliBinarySha256
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 if ([Environment]::OSVersion.Platform -ne [PlatformID]::Win32NT -or -not [Environment]::Is64BitProcess) { throw 'Build on Windows x64.' }
 $archive = (Resolve-Path -LiteralPath $ArchivePath).Path
-$expectedArchive = 'd7cc2e1b4cca63b215b525a51f85372792db5241c218185635fe693a714ea87f'
-$expectedBinary = '99f590c62b44e4b61391b8986d5fa6175ebee1d072efd066bbc85747e38eac71'
-$cliCommit = 'b67798bfb84f299257ba4326beaf034b125cde7a'
-if ($Sha256.ToLowerInvariant() -ne $expectedArchive -or (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToLowerInvariant() -ne $expectedArchive) { throw 'The archive must be the verified Windows CLI 0.6.0 release.' }
+$expectedArchive = $Sha256.ToLowerInvariant()
+if ((Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToLowerInvariant() -ne $expectedArchive) { throw 'The CLI archive checksum differs from the selected candidate.' }
 $output = [IO.Path]::GetFullPath($OutputDirectory)
 $null = New-Item -ItemType Directory -Path $output -Force
 $stage = Join-Path ([IO.Path]::GetTempPath()) ('miy-setup-build-' + [Guid]::NewGuid().ToString('N'))
@@ -25,17 +26,24 @@ try {
         if ($null -eq $entry) { throw 'The release provenance is missing.' }
         $reader = New-Object IO.StreamReader($entry.Open())
         try { $release = $reader.ReadToEnd() | ConvertFrom-Json } finally { $reader.Dispose() }
-        if ($release.schemaVersion -ne 1 -or $release.version -ne '0.6.0' -or $release.commit -ne $cliCommit -or $release.binarySha256 -ne $expectedBinary -or $release.target -ne 'x86_64-pc-windows-msvc') { throw 'The CLI provenance is invalid.' }
+        if ($release.schemaVersion -ne 1 -or $release.version -cne $Version -or $release.commit -cne $CliCommit -or $release.binarySha256 -cne $CliBinarySha256 -or $release.target -ne 'x86_64-pc-windows-msvc') { throw 'The CLI provenance differs from the selected candidate.' }
+        $binary = $zip.GetEntry('miy.exe')
+        if ($null -eq $binary -or $binary.Length -gt 536870912) { throw 'The CLI binary is missing or oversized.' }
+        $stream = $binary.Open()
+        $hasher = [Security.Cryptography.SHA256]::Create()
+        try { $actualBinary = [BitConverter]::ToString($hasher.ComputeHash($stream)).Replace('-','').ToLowerInvariant() }
+        finally { $stream.Dispose(); $hasher.Dispose() }
+        if ($actualBinary -cne $CliBinarySha256) { throw 'The CLI binary checksum differs from the selected candidate.' }
     } finally { $zip.Dispose() }
-    $metadata = [ordered]@{ schemaVersion = 1; version = '0.6.0'; target = 'windows-x64'; installerCommit = $InstallerCommit;
-        cliCommit = $cliCommit; archiveSha256 = $expectedArchive; cliBinarySha256 = $expectedBinary }
+    $metadata = [ordered]@{ schemaVersion = 1; version = $Version; target = 'windows-x64'; installerCommit = $InstallerCommit;
+        cliCommit = $CliCommit; archiveSha256 = $expectedArchive; cliBinarySha256 = $CliBinarySha256 }
     $metadataPath = Join-Path $stage 'installer.json'
     [IO.File]::WriteAllText($metadataPath, ($metadata | ConvertTo-Json -Compress), [Text.UTF8Encoding]::new($false))
     # Windows PowerShell 5.1 decodes BOM-less scripts using its ANSI code page.
     # The bridge itself is ASCII; the Korean UI is C# /codepage:65001 source.
     $compiler = Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319\csc.exe'
     if (-not (Test-Path -LiteralPath $compiler)) { throw 'The Windows .NET Framework C# compiler is unavailable.' }
-    $exe = Join-Path $output 'MiySetup-0.6.0-windows-x64.exe'
+    $exe = Join-Path $output ('MiySetup-' + $Version + '-windows-x64.exe')
     $arguments = @('/nologo', '/target:winexe', '/platform:x64', '/optimize+', '/codepage:65001',
         ('/out:' + $exe), ('/win32manifest:' + (Join-Path $PSScriptRoot 'app.manifest')),
         '/reference:System.dll', '/reference:System.Core.dll', '/reference:System.Drawing.dll',

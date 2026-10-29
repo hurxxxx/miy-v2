@@ -1,0 +1,142 @@
+[
+  {
+    "file": "cli-downloads/8d7d04271f9467d8bbdd16308e73715b33e4dc0c/SHA256SUMS",
+    "bytes": 527,
+    "sha256": "d6d506894ab54e3885e9e4b56c149724e3813d60634c858326c7576c81df926f"
+  },
+  {
+    "file": "cli-downloads/8d7d04271f9467d8bbdd16308e73715b33e4dc0c/miy-0.6.3-aarch64-apple-darwin.tar.gz",
+    "bytes": 6147063,
+    "sha256": "44f940d4e10a411946e7e1fe2d0d3c7ca12028c313161ce63ce1224dd320be46"
+  },
+  {
+    "file": "cli-downloads/8d7d04271f9467d8bbdd16308e73715b33e4dc0c/miy-0.6.3-aarch64-apple-darwin.tar.gz.sha256",
+    "bytes": 104,
+    "sha256": "70ea530d23b38ca02084238421cf82b98420acaa57afe40320c3888c3141fb2d"
+  },
+  {
+    "file": "cli-downloads/8d7d04271f9467d8bbdd16308e73715b33e4dc0c/miy-0.6.3-aarch64-unknown-linux-gnu.tar.gz",
+    "bytes": 6815728,
+    "sha256": "c483c257c7f7ed26f55ef28c99de6d114b5972338ac11e4d723cb231e763018c"
+  },
+  {
+    "file": "cli-downloads/8d7d04271f9467d8bbdd16308e73715b33e4dc0c/miy-0.6.3-aarch64-unknown-linux-gnu.tar.gz.sha256",
+    "bytes": 109,
+    "sha256": "9cb7883c3683bbc4a8eeb26559837180226581b775dbeda8f4258d98794368c1"
+  },
+  {
+    "file": "cli-downloads/8d7d04271f9467d8bbdd16308e73715b33e4dc0c/miy-0.6.3-x86_64-apple-darwin.tar.gz",
+    "bytes": 6375573,
+    "sha256": "b2f9165839952c09c5c150ee49c5e648743373c2b7dd1a177f50d881409ed86f"
+  },
+  {
+    "file": "cli-downloads/8d7d04271f9467d8bbdd16308e73715b33e4dc0c/miy-0.6.3-x86_64-apple-darwin.tar.gz.sha256",
+    "bytes": 103,
+    "sha256": "1c77d1642c1bb8963aa83cde4dda470a1f889956b6b208cfe9f94209effa80b3"
+  },
+  {
+    "file": "cli-downloads/8d7d04271f9467d8bbdd16308e73715b33e4dc0c/miy-0.6.3-x86_64-pc-windows-msvc.zip",
+    "bytes": 6046843,
+    "sha256": "1403083b604b77036785d07c42f13c6aad754ea7ae6ff7de94bb15e0a1eb72e3"
+  },
+  {
+    "file": "cli-downloads/8d7d04271f9467d8bbdd16308e73715b33e4dc0c/miy-0.6.3-x86_64-pc-windows-msvc.zip.sha256",
+    "bytes": 104,
+    "sha256": "78c590e9b553874dc97b90b6e1445e78e1c04623e6b3147bb3fe9460dc9ab44e"
+  },
+  {
+    "file": "cli-downloads/8d7d04271f9467d8bbdd16308e73715b33e4dc0c/miy-0.6.3-x86_64-unknown-linux-gnu.tar.gz",
+    "bytes": 6827879,
+    "sha256": "4dbd45689ccc421feb6707d037e59bcabb4d225afcae86c11a6949e05f0d7ab6"
+  },
+  {
+    "file": "cli-downloads/8d7d04271f9467d8bbdd16308e73715b33e4dc0c/miy-0.6.3-x86_64-unknown-linux-gnu.tar.gz.sha256",
+    "bytes": 108,
+    "sha256": "61dce6497086a1e39d31e3834e156f114dfac140b212e0a09e2a0a03f1256762"
+  },
+  {
+    "file": "cli-downloads/8d7d04271f9467d8bbdd16308e73715b33e4dc0c/miy-db-tunnel-0.6.3-amd64.oci.tar",
+    "bytes": 97844224,
+    "sha256": "f75e9c7f135162cdf0712f9bacc0dc31c9dd8101b687b44d980657c7bb1c8de5"
+  },
+  {
+    "file": "cli-downloads/8d7d04271f9467d8bbdd16308e73715b33e4dc0c/miy-db-tunnel-0.6.3-amd64.oci.tar.sha256",
+    "bytes": 100,
+    "sha256": "bd0f6ebf527af1c223fc042b19da8a01657d822e73f4cc3ebd76424659bbafaa"
+  },
+  {
+    "file": "cli-downloads/8d7d04271f9467d8bbdd16308e73715b33e4dc0c/miy-db-tunnel-0.6.3-arm64.oci.tar",
+    "bytes": 119090176,
+    "sha256": "3dc440b768a4de6a8bb4b3f25bba68024719e6484802c97fe63a0480d9f5f4d3"
+  },
+  {
+    "file": "cli-downloads/8d7d04271f9467d8bbdd16308e73715b33e4dc0c/miy-db-tunnel-0.6.3-arm64.oci.tar.sha256",
+    "bytes": 100,
+    "sha256": "32ce83950896c5b591db5404b295b24a4432081a3709f61f76a80b5ae4d16ff5"
+  },
+  {
+    "file": "cli-downloads/8d7d04271f9467d8bbdd16308e73715b33e4dc0c/provenance-aarch64-apple-darwin.json",
+    "bytes": 225,
+    "sha256": "8b3684f03acbcd46dd5b4e1f80264b4057b21ec1098f3f1665c2b603452e6e0f"
+  },
+  {
+    "file": "cli-downloads/8d7d04271f9467d8bbdd16308e73715b33e4dc0c/provenance-aarch64-unknown-linux-gnu.json",
+    "bytes": 230,
+    "sha256": "3215d96baab82d482410248e18f051b91c79ffe329fa2409c8a2e6681ef5fd70"
+  },
+  {
+    "file": "cli-downloads/8d7d04271f9467d8bbdd16308e73715b33e4dc0c/provenance-x86_64-apple-darwin.json",
+    "bytes": 224,
+    "sha256": "ac74edf4e6e799a8e98f010c52acc07ea109b22aa15ae880541c8a869ce4e117"
+  },
+  {
+    "file": "cli-downloads/8d7d04271f9467d8bbdd16308e73715b33e4dc0c/provenance-x86_64-pc-windows-msvc.json",
+    "bytes": 227,
+    "sha256": "8041a72c92148a7d33ec294ed20386cfc85e4e1f1fe65aaeec3e2d3f7b58d656"
+  },
+  {
+    "file": "cli-downloads/8d7d04271f9467d8bbdd16308e73715b33e4dc0c/provenance-x86_64-unknown-linux-gnu.json",
+    "bytes": 229,
+    "sha256": "796976df117e810c4f0d0350ae884aac698581324337dba2e3b3a8ae05e5fd91"
+  },
+  {
+    "file": "cli-downloads/8d7d04271f9467d8bbdd16308e73715b33e4dc0c/release-index.json",
+    "bytes": 3295,
+    "sha256": "eba982aeb5bcb9834bf1ea8d30ccdbc823cf681baeffa199e0c2d8624abc483e"
+  },
+  {
+    "file": "cli-downloads/8d7d04271f9467d8bbdd16308e73715b33e4dc0c/tunnel-amd64.json",
+    "bytes": 535,
+    "sha256": "3db8155c798ecf94ed1c222d1e46b537db85190efbef77cde0d12c2fe434b125"
+  },
+  {
+    "file": "cli-downloads/8d7d04271f9467d8bbdd16308e73715b33e4dc0c/tunnel-arm64.json",
+    "bytes": 535,
+    "sha256": "49ab93e0a9b9369c4cd772c5fb5b9657c27b0dab0f49966142c1a51802578739"
+  },
+  {
+    "file": "cli-downloads/release-index.json",
+    "bytes": 3295,
+    "sha256": "eba982aeb5bcb9834bf1ea8d30ccdbc823cf681baeffa199e0c2d8624abc483e"
+  },
+  {
+    "file": "cli-installers/8d7d04271f9467d8bbdd16308e73715b33e4dc0c/MiySetup-0.6.3-windows-x64.exe",
+    "bytes": 6105600,
+    "sha256": "662f8a59c098ac4b2cbde4041799a99f0c6e21f193bbe8b31d2098f6095233af"
+  },
+  {
+    "file": "cli-installers/8d7d04271f9467d8bbdd16308e73715b33e4dc0c/MiySetup-0.6.3-windows-x64.exe.sha256",
+    "bytes": 97,
+    "sha256": "6eb8763bef765cb389275fe37682e4a7b77b252791a0c2d021efca5210681778"
+  },
+  {
+    "file": "cli-installers/8d7d04271f9467d8bbdd16308e73715b33e4dc0c/installer-index.json",
+    "bytes": 520,
+    "sha256": "ec3c80c00bfa482855b487bf58528c85a4c0bda4685794c45d374088cb6faf38"
+  },
+  {
+    "file": "cli-installers/installer-index.json",
+    "bytes": 520,
+    "sha256": "ec3c80c00bfa482855b487bf58528c85a4c0bda4685794c45d374088cb6faf38"
+  }
+]

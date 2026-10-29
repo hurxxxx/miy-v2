@@ -1,0 +1,128 @@
+{
+  "status": "PASS",
+  "completedAt": "2026-10-29T06:53:42.786419+00:00",
+  "source": {
+    "sourceCommit": "84d58cd417c990e37e29d4b8183b260f0f10d0a5",
+    "candidateCommit": "8d7d04271f9467d8bbdd16308e73715b33e4dc0c",
+    "candidateRuntimeDiff": [],
+    "deployedCommit": "1775eacac8ce04cbefc234b4e58de513016acfef",
+    "deployedMigrationDiff": [],
+    "migrationSha256": {
+      "migrations/core/0001_initial.sql": "f21bd81172acb2b1f95396649706984343d5f49db7dd94cbe69d2dca9413e279",
+      "migrations/core/0002_development_sessions.sql": "04654306d9e017eee7ab4320335f9326c2fd91150c9db1fd6d827d8d76015b13",
+      "migrations/core/0003_app_runtime.sql": "9d59f8fd3eb6b9a88edb07cf2123178cd018c04ca7b9e9322916a389959f6e9c",
+      "migrations/core/0004_app_registration.sql": "75e7af144c319cbb31cb34cf9659103dde1c3770cbd4e36f0427744847494e93",
+      "migrations/core/0005_delivery_boundaries.sql": "c38d4369913a07c092610d99d325472f3e294026f98c2f05dde1f077485a4f5f",
+      "migrations/core/0006_component_registry.sql": "178254f12f4d8efa14a851bae6e6db3ebb5cd3611576107245365c676a8e8ac5",
+      "migrations/core/0007_acceptance_checks.sql": "2fba72de30858c02390f9387a7c58fdc1fb2e42949d6dbe5be734356a0f08217",
+      "migrations/core/0008_runtime_health.sql": "fc026291c2939a9763ee59292ece3122b7df8a6642b15403aa77ae23fa40792a",
+      "migrations/core/0009_runtime_contract.sql": "253fbfdc9c63c7e3d41aa5969d929310e62c2f495d490d6613cf02c96eb5bd3a",
+      "migrations/core/0010_cli_sessions.sql": "8e1600af7c00758a928a8fb8eae94a9d9079e94ed4146a1a4005121a77e64a18",
+      "migrations/core/0011_cli_operations.sql": "9d8b674f497fa57fffa392e0cf8beaa28801a3f52dc6b2833021d0aef421939e",
+      "migrations/core/0012_runtime_logs.sql": "d05ae5f690869561db84e3757152aa744157972f871e1faa0bc8bb0b62ba3292",
+      "migrations/core/0013_shared_development_database.sql": "df297a35942782f8d34ac3d48099fd999b8f2e567aacea7dec03a0f175dd8069",
+      "migrations/core/0014_portable_image_identity.sql": "9161851ef9b4a2d4b366a27da6498ccaeb9f551c0a9f53db4f349d3e40f7af56",
+      "migrations/core/0015_server_builds.sql": "1bdd273cbaf4568f1e3c38faacd85986b739aa588b024007ef3ef66b3ab7395a"
+    }
+  },
+  "deploymentBinary": {
+    "path": "/projects/miy-cli-experience-run-20261029/artifacts/miy-0.6.3-linux-server",
+    "sha256": "4573260257147c2563ba5ffae177b9ac6c6b0a331d2a0b1fef1cf6e60d10064e",
+    "sizeBytes": 28550784,
+    "sourceCommit": "84d58cd417c990e37e29d4b8183b260f0f10d0a5",
+    "defaultFeatures": true,
+    "serverFeature": true,
+    "version": "miy 0.6.3",
+    "serveHelpExitCode": 0
+  },
+  "units": {
+    "defaultServer": {
+      "passed": 143,
+      "failed": 0,
+      "ignored": 6
+    },
+    "clientOnly": {
+      "passed": 110,
+      "failed": 0,
+      "ignored": 0
+    }
+  },
+  "cliFixtureGroups": {
+    "output": 14,
+    "remoteBuild": 10,
+    "recovery": 6
+  },
+  "runtime": {
+    "observations": 55,
+    "suites": {
+      "runtime": 35,
+      "operations": 6,
+      "cli": 6,
+      "auth": 8
+    },
+    "exitCode": 0,
+    "fixture": "/projects/miy-cli-experience-run-20261029/private/tmp/miy-runtime-regression-bxpoz594"
+  },
+  "serverBuildAPI": {
+    "groups": 8,
+    "passed": true,
+    "dockerBuildExecuted": false
+  },
+  "authCoverage": "auth-coverage.json",
+  "cleanup": [
+    {
+      "evidence": "runtime-interrupted-cleanup.json",
+      "errors": [],
+      "removedResources": 13,
+      "baselineContainers": 23,
+      "allBaselineUnchanged": true
+    },
+    {
+      "evidence": "runtime-attempt-2-cleanup.json",
+      "errors": [],
+      "removedResources": 13,
+      "baselineContainers": 23,
+      "allBaselineUnchanged": true
+    },
+    {
+      "evidence": "runtime-final-cleanup.json",
+      "errors": [],
+      "removedResources": 13,
+      "baselineContainers": 23,
+      "allBaselineUnchanged": true
+    }
+  ],
+  "serverBuildCleanup": {
+    "ownedContainer": "miy-build-api-test-b24d6e8d9ba5",
+    "ownedContainerRemoved": true,
+    "liveDatabaseUsed": false,
+    "privateFixtureRetained": "/projects/miy-v2-cli-experience-20261029/.local/server-build-regression-6048b3e77c6a"
+  },
+  "configDirectoryEmpty": true,
+  "configMode": "0o700",
+  "testHarnessChange": "scripts/runtime-regression/run.py: expected auth groups 7 -> 8; no Rust, Cargo or SQL changes",
+  "historicalFailures": [
+    {
+      "attempt": 1,
+      "status": "INTERRUPTED",
+      "validationSessionExitCode": 143,
+      "observationsPassedBeforeInterruption": 22,
+      "cause": "Unconfirmed external SIGTERM; no assertion failure recorded; owned cleanup passed."
+    },
+    {
+      "attempt": 2,
+      "wrapperExitCode": 1,
+      "rustTestExitCode": 0,
+      "observationsPassed": 55,
+      "cause": "Stale expected auth count 7 instead of 8; corrected; final rerun passed."
+    }
+  ],
+  "notRunInThisSlice": [
+    "Real identity-provider login/browser approval (separate browser workstream).",
+    "Unrelated opt-in live database integration, development database and database network harnesses."
+  ],
+  "liveCredentialsUsed": false,
+  "liveServicesMutated": false,
+  "evidenceSecretScanFindings": [],
+  "exactCommands": "commands.json"
+}

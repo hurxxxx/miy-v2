@@ -31,8 +31,9 @@ pub async fn build_target(explicit: Option<&str>) -> Result<String> {
                 CliError::new(
                     Category::Environment,
                     "docker_daemon_unavailable",
-                    "Start the Docker daemon before building.",
+                    "Local builds require a running Linux Docker engine. To build on the selected server without installing Docker, run: miy app build --remote",
                 )
+                .with_recovery("miy", &["app", "build", "--remote"])
             })?,
     )?;
     let local = normalize(
@@ -43,8 +44,9 @@ pub async fn build_target(explicit: Option<&str>) -> Result<String> {
         CliError::new(
             Category::Environment,
             "linux_docker_required",
-            "Use a supported Linux container engine (amd64 or arm64).",
+            "Local builds require a Linux container engine (amd64 or arm64). To use the selected server instead, run: miy app build --remote",
         )
+        .with_recovery("miy", &["app", "build", "--remote"])
     })?;
     let target = if let Some((_, context)) = crate::cli_config::optional_selected()? {
         let response = crate::cli_client::client(context.ca_file.as_deref(), 15)?

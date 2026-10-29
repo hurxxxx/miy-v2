@@ -1,0 +1,20 @@
+{
+  "name": "verify-installer",
+  "command": [
+    "python3",
+    "scripts/package-windows-installer.py",
+    "verify",
+    "--directory",
+    "/projects/miy-cli-experience-run-20261029/artifacts/windows-installer/package",
+    "--installer-commit",
+    "8d7d04271f9467d8bbdd16308e73715b33e4dc0c",
+    "--cli-commit",
+    "8d7d04271f9467d8bbdd16308e73715b33e4dc0c"
+  ],
+  "cwd": "/projects/miy-v2-cli-experience-20261029",
+  "startedAt": "2026-10-29T06:45:33.776866+00:00",
+  "finishedAt": "2026-10-29T06:45:33.886758+00:00",
+  "exitCode": 0,
+  "stdout": "/projects/miy-cli-experience-run-20261029/evidence/artifacts/verify-installer.stdout.log",
+  "stderr": "/projects/miy-cli-experience-run-20261029/evidence/artifacts/verify-installer.stderr.log"
+}

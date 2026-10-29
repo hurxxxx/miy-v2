@@ -1,0 +1,10 @@
+
+Running 3 tests using 1 worker
+
+(node:3415808) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓  1 tests/development-login.spec.ts:34:5 › all development account buttons sign in and out on the current origin without an identity redirect (877ms)
+  ✓  2 tests/development-login.spec.ts:85:5 › development login rejects foreign origins and unknown accounts (33ms)
+  ✓  3 tests/development-login.spec.ts:113:5 › development account selection preserves ordinary CLI browser approval (352ms)
+
+  3 passed (1.7s)

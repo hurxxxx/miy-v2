@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { test, expect, request } from "@playwright/test";
+import { test, expect, request, type BrowserContext } from "@playwright/test";
 
 // Device credentials must not be persisted in failure trace archives.
 test.use({ trace: "off" });
@@ -13,6 +13,23 @@ const accounts = [
   { name: "alice", label: /사용자 A/, admin: false },
   { name: "bob", label: /사용자 B/, admin: false },
 ];
+
+async function closeDevelopmentContext(context: BrowserContext) {
+  try {
+    const response = await context.request.get(origin + "/api/v1/me");
+    if (response.status() === 401) return;
+    expect(response.status()).toBe(200);
+    const me = await response.json();
+    if (me.development !== true) return;
+    expect(typeof me.csrf).toBe("string");
+    const loggedOut = await context.request.post(origin + "/auth/logout", {
+      headers: { origin, "x-miy-csrf": me.csrf },
+    });
+    expect(loggedOut.status()).toBe(200);
+  } finally {
+    await context.close();
+  }
+}
 
 test("all development account buttons sign in and out on the current origin without an identity redirect", async ({
   browser,
@@ -61,7 +78,7 @@ test("all development account buttons sign in and out on the current origin with
     }
     expect(identityRequests).toEqual([]);
   } finally {
-    await context.close();
+    await closeDevelopmentContext(context);
   }
 });
 
@@ -89,7 +106,7 @@ test("development login rejects foreign origins and unknown accounts", async ({
       ),
     ).toBe(false);
   } finally {
-    await context.close();
+    await closeDevelopmentContext(context);
   }
 });
 
@@ -173,8 +190,11 @@ test("development account selection preserves ordinary CLI browser approval", as
         expect(revoked.status()).toBe(200);
       }
     } finally {
-      await context.close();
-      await client.dispose();
+      try {
+        await closeDevelopmentContext(context);
+      } finally {
+        await client.dispose();
+      }
     }
   }
 });

@@ -1,0 +1,13 @@
+{
+  "file": "/projects/miy-cli-experience-run-20261029/artifacts/linux-native-execution/miy",
+  "target": "x86_64-unknown-linux-gnu",
+  "version": "0.6.3",
+  "sourceCommit": "8d7d04271f9467d8bbdd16308e73715b33e4dc0c",
+  "binarySha256": "86d0d6294eb751ab88e7d7ed1d6925c0a477b4e71686e1cb087f17f5026bbf54",
+  "archiveSha256": "4dbd45689ccc421feb6707d037e59bcabb4d225afcae86c11a6949e05f0d7ab6",
+  "configDirectory": "/projects/miy-cli-experience-run-20261029/evidence/artifacts/native-cli-empty-config",
+  "configInitiallyEmpty": true,
+  "versionOutput": "miy 0.6.3",
+  "exitCode": 0,
+  "configStillEmpty": true
+}
