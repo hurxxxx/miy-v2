@@ -10,7 +10,7 @@ export default defineConfig({
     ["list"],
     [
       "json",
-      { outputFile: ".local/evidence/cli-experience/browser-results.json" },
+      { outputFile: "../.local/evidence/cli-experience/browser-results.json" },
     ],
   ],
   use: {

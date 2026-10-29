@@ -1,10 +1,16 @@
 # CLI 상세 검증 기록
 
 - 갱신: 2026-10-29
-- 최신 검증 대상: CLI **0.6.2** / 번들 **0.7.1**. Windows 검증 소스는 `2fabe68`, 서버 빌드 기반은 `1775eac`다. 공개 설치 후보 0.6.0과 구분한다.
+- 최신 개선 검증: CLI **0.6.3** / 번들 **0.7.1**, 기능 소스 `0db21c3`·fixture 보완 `8d7d042`. 실제 Windows 전체 배포 흐름은 아래 **0.6.2** 결과와 구분한다. 공개 설치 후보 0.6.0을 교체한 기록이 아니다.
 - 범위: [구현 계획](CLI-IMPLEMENTATION-PLAN.md). [전체 V0~V7 인수](VALIDATION.md)는 별도다.
 
-실제 실행 결과와 남은 환경 검사를 구분한다. 최신 Windows 0.6.2 결과를 먼저 기록하고, 0.6.0·0.5의 검증은 아래 이력에 보존한다. `PASS`는 명시한 소스·바이너리·fixture·환경·assertion 범위에만 적용하고, 실제 장비/IdP/원격 서버/AI 세션을 대신하지 않는다.
+실제 실행 결과와 남은 환경 검사를 구분한다. 최신 Windows 개선과 0.6.2 전체 흐름을 별도로 기록하고, 0.6.0·0.5의 검증은 아래 이력에 보존한다. `PASS`는 명시한 소스·바이너리·fixture·환경·assertion 범위에만 적용하고, 실제 장비/IdP/원격 서버/AI 세션을 대신하지 않는다.
+
+## CLI 0.6.3 개선 검증 — 2026-10-29
+
+[상세 결과](WINDOWS-VALIDATION.md)·[결과 JSON](releases/cli-0.6.3-experience-validation.json)·[Linux 후속 작업](CLI-EXPERIENCE-SERVER-HANDOFF.md)을 보존한다. Windows 단위 106개, fmt/Clippy/release, debug/release 출력 13그룹, 원격 빌드 fixture 10그룹, 복구 6그룹 PASS. 로컬 Chrome 화면/API fixture 14개, TypeScript/플랫폼 build PASS. 실제 0.6.3 Windows GUI 설치 파일의 PowerShell 5.1 네이티브 검사 24개와 잘못된 출처·해시 거부 4개 PASS. 패키지 검사 15개 PASS, Linux 게시 4개 SKIP.
+
+`8d7d042`의 [기반 CI 40826944825](https://github.com/hurxxxx/miy-v2/actions/runs/40826944825)는 Linux 서버, Linux/macOS/Windows 클라이언트와 OS 간 번들 비교 전체 PASS다. 5대상 배포 후보 CI와 실제 Linux 인증 DB/IdP 회귀·플랫폼 UI 재배포·다운로드 게시를 별도로 관리한다. 새 화면의 모바일 검사는 모의 API 경계이며 실제 서버의 모바일 Todo 재검증을 대신하지 않는다.
 
 ## CLI 0.6.2 Windows 실제 서버 빌드 — 2026-10-29
 

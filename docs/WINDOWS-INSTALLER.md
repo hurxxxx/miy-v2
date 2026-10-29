@@ -4,6 +4,8 @@
 
 `codex/cli-experience-improvements`의 설치기 빌드는 0.6.0 배포물에 고정하지 않고 검증한 후보의 버전·CLI 소스 commit·ZIP SHA-256·실행 파일 SHA-256을 명시적으로 받는다. 설치기와 CLI의 출처는 계속 별도로 검증한다. 새 후보를 빌드했다고 아래 기존 공개 설치 파일을 교체한 것은 아니다.
 
+Windows 11에서 로컬 0.6.3 파일을 생성해 PowerShell 5.1의 실제 설치·갱신·보존·제거 **24개**와 잘못된 후보 입력 거부 **4개**를 통과했다. [결과와 해시](releases/cli-0.6.3-experience-validation.json)를 확인한다. 파일은 이 PC의 `.local/releases/cli-0.6.3-local-0db21c3/`에 있으며 공개 게시 전 후보로 구분한다.
+
 ```powershell
 # 깨끗한 CLI 소스 checkout에서 package-cli-release.py package로 생성한 ZIP을 사용한다.
 # 값은 해당 후보의 release.json과 별도로 확인한 체크섬에서 가져온다.
