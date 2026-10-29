@@ -9,11 +9,11 @@ The generated [CLI-REFERENCE.md](CLI-REFERENCE.md) contains the installed workfl
 | --- | --- | --- |
 | Connect | `context init`, `context add NAME --url URL`, `context use NAME` | Explicit HTTP/HTTPS origin; no default address; optional CA and user binding |
 | Sign in | `auth login`, `auth wait LOGIN_ID`, `auth status` | Approve the public URL/user code; noninteractive login returns pending |
-| Diagnose | `doctor --for operate`, `doctor --for develop` | Development also checks rustfmt/Rust linking, exact MCP config and bounded local MCP startup, plus tool/Docker checks |
+| Diagnose | `doctor --for operate`, `doctor --for develop` | Development also checks rustfmt/Rust linking, exact MCP config and bounded local MCP startup, plus native tool checks (Docker only with --runtime docker) |
 | Configure agents | `app setup`, then ordinary `codex` or `claude` | Project stdio `mcp`; accept normal trust/MCP prompts |
 | Register | `app register`, `registration list`, `registration approve ID` | Administrator approval grants requester develop access in dev |
 | Permissions | `user list`, `grant list`, `grant set`, `grant revoke` | Administrator grants are scoped to app/environment |
-| Develop | `app fmt`, `app check`, `app dev`, `app dev-stop` | After app approval, preview uses the server dev DB; stop before deployment; --database local is explicit |
+| Develop | `app fmt`, `app check`, `app dev`, `app dev-stop` | After app approval, preview uses the server dev DB; stop before deployment; --runtime docker --database local is explicit |
 | Components | `component list/show/add/update/sync/check/publish` | Lock exact sources; publishing needs administrator authority |
 | Build | `app build [--platform linux/amd64]` | Clean committed source; Linux image must match the server platform |
 | Deploy | `app deploy --environment dev --dry-run`, `app deploy --no-wait` | Preflight then image receipt/job journal; no prod deployment shortcut |
