@@ -127,6 +127,8 @@ Check는 프로젝트 Rust 테스트와 프런트 도구를 실행하고 의존�
 
 Build는 깨끗이 커밋한 소스로 불변 Linux 이미지를 만든다. 배포는 manifest·커밋·이미지·번들 영수증을 확인하며 이미지 platform이 서버 `runtimePlatform`과 같아야 한다. 다른 CPU의 빌드에는 명시적 `--platform`과 실제로 동작하는 빌더가 필요하다. 플래그만으로 에뮬레이션을 설치하지 않는다.
 
+CLI 0.6.2의 `app build --remote`는 선택한 서버의 Docker Engine에서 검사와 빌드를 수행한다. Windows에 Docker나 SSH가 없어도 동작하며, 기존 로컬 빌드는 `app build`로 유지한다. 원격 빌드의 `--platform`은 서버의 실제 `runtimePlatform`과 같아야 한다. `--no-wait`, `job get/watch/logs/resume`으로 작업과 로그를 다시 조회할 수 있다. 성공한 서버 빌드 영수증을 사용한 dev 배포는 로컬 Docker 이미지 전송을 생략한다. 자세한 Windows 명령은 [네이티브 개발](NATIVE-DEVELOPMENT.md)을 참고한다.
+
 Dry-run은 예상 상태·계획된 변경·worker에서 남은 검사를 반환한다. 이미지 업로드나 runtime job은 생성하지 않는다. 실제 실행은 context/origin/user/app, 요청 키, payload와 expected-state를 먼저 journal에 기록한다. 이미지 archive 상한은 1 GiB다. 업로드 접수·ID 조회부터 runtime 제출까지 복구 대상이며, 전송 바이트의 일부부터 이어 보내는 기능은 제공하지 않는다.
 
 CLI 0.6의 runtime 명령은 `runtime.preflight.v2`를 요구한다. 이 계약은 실행 앱 상태에 더해 독립적인 DB 식별자와 스키마 변경 이력을 비교한다. 이전 CLI나 서버 조합은 capability 오류로 업그레이드를 안내하며, 알 수 없는 상태를 무시하고 배포하지 않는다.
@@ -211,6 +213,8 @@ python3 scripts/render-server-config.py --binary "$PWD/target/release/miy" \
 ```
 
 마지막 명령은 `.local/nginx-miy.conf`, `.local/miy-v2-serve.service`, `.local/miy-v2-worker.service`를 생성한다. 기존 Nginx 사이트를 수정하거나 서비스를 시작하지 않는다. 생성 파일을 검토하여 전용 사이트·unit으로 설치하고, `nginx -t` 통과 후 Nginx reload 및 두 unit 시작을 수행한다. `/identity`는 loopback Keycloak 포트, API·MCP·WebSocket·다운로드는 core bind 주소, 나머지는 빌드한 플랫폼 UI로 연결된다. 이미지 업로드 한도는 core와 동일한 1 GiB이며 WebSocket 전달과 스트리밍 응답을 지원한다. 서비스 wrapper는 private runtime.env를 읽고 serve에서 DB 관리자 연결을, worker에서 OIDC client secret을 제거한다.
+
+서버 빌드 기능 도입 시에는 새 서버 바이너리와 `0015_server_builds.sql`까지의 코어 마이그레이션을 적용하고 serve/worker를 함께 갱신한다. 이 마이그레이션은 빌드 작업·요청·로그 테이블을 추가하며 앱 DB를 변경하지 않는다. 소스는 `MIY_ARTIFACTS/.builds` 아래 private 디렉터리에 저장하며 업로드 한도는 64 MiB, 파일 수는 4,096개, 저장 로그는 작업당 2 MiB다. 대기·실행 작업은 사용자당 2개, 전체 8개로 제한한다. 작업자는 서버 소유 Dockerfile을 사용하며 소스의 패키지 스크립트·Rust 테스트는 Docker 내부에서 실행한다. worker가 중단된 작업은 검증 가능한 완성 이미지가 있으면 복구하고, 그렇지 않으면 중단 실패로 기록한다. 불확실한 기존 빌드를 자동으로 다시 시작하지 않는다.
 
 다른 사내 서버를 인증서 없이 구성할 때에는 주소와 HTTP 허용을 명시한다.
 

@@ -1,0 +1,337 @@
+{
+  "schemaVersion": 1,
+  "checkedAt": "2026-10-29T03:34:19.302103+00:00",
+  "status": "PASSED_WITH_DOCUMENTED_LIMITS",
+  "repository": "https://github.com/hurxxxx/miy-v2.git",
+  "branch": "codex/server-docker-build",
+  "baseCommit": "d3ee532ac85845d63b1a82d1b73bba67014aa2cd",
+  "cliVersion": "0.6.2",
+  "bundleVersion": "0.7.1",
+  "target": {
+    "origin": "https://v2.dwdcc.kr",
+    "appId": "todo-win-20261029",
+    "environment": "dev",
+    "url": "https://v2.dwdcc.kr/environments/dev/apps/todo-win-20261029",
+    "installationId": "0ef7e3f6-d9eb-4a8d-ae05-f06c603f80b4"
+  },
+  "originalCheckout": {
+    "path": "/projects/miy-v2",
+    "head": "564df40756a634bdcfdabdefb92e8fd3817d01eb",
+    "gitStatus": "clean"
+  },
+  "linuxHandoff": {
+    "status": "PASSED_WITH_MOBILE_FINDING",
+    "cliVersion": "0.6.1",
+    "bundleVersion": "0.7.1",
+    "platformCommit": "d3ee532ac85845d63b1a82d1b73bba67014aa2cd",
+    "appSourceCommit": "cd6a351bfa704b353d3e9d13e370d8201b7bf874",
+    "deployJobId": "026e1595-965e-4e1a-85a1-e96e16c6c76a",
+    "releaseId": "7a007445-d1c2-4d4c-a7d4-bfa8ee2784f9",
+    "imageId": "sha256:6ce8e8ac8ab489042e1502a60940189db1bdb2c200e2d13c0199bd2bd8220cde",
+    "requiredDesktopCrudPassed": true,
+    "platformRedeployedDuringPhase1": false
+  },
+  "serverBuild": {
+    "action": "build",
+    "actor": "00000000-0000-4000-8000-000000000001",
+    "appId": "todo-win-20261029",
+    "archiveHash": "bda21afe7208f9270487f009747ffa8c894d4708571e2aad71be779727cf0a59",
+    "bundleVersion": "0.7.1",
+    "canonicalRequestId": "2df99e8f-c944-4cea-b647-4af226b6cb7a",
+    "createdAt": "2026-10-29T03:27:54.085975Z",
+    "environment": "dev",
+    "errorCode": null,
+    "finishedAt": "2026-10-29T03:28:28.635718Z",
+    "id": "74b5b3ad-bad5-4142-82f3-3cf059ba4659",
+    "imageId": "sha256:a2928906b0dfb2334bc417daf99b0616cbce323ae5a1bc443f8d859f0e1deedd",
+    "logTruncated": false,
+    "metadataWritten": true,
+    "platform": "linux/amd64",
+    "requestId": "2df99e8f-c944-4cea-b647-4af226b6cb7a",
+    "retryable": false,
+    "serverBuild": {
+      "appId": "todo-win-20261029",
+      "archiveHash": "bda21afe7208f9270487f009747ffa8c894d4708571e2aad71be779727cf0a59",
+      "bundleVersion": "0.7.1",
+      "context": "todo-dev",
+      "imageId": "sha256:a2928906b0dfb2334bc417daf99b0616cbce323ae5a1bc443f8d859f0e1deedd",
+      "jobId": "74b5b3ad-bad5-4142-82f3-3cf059ba4659",
+      "origin": "https://v2.dwdcc.kr",
+      "platform": "linux/amd64",
+      "sourceCommit": "ae12ef719b161e759f9e36d8e3404895b3537dc4",
+      "userId": "00000000-0000-4000-8000-000000000001",
+      "version": "0.1.1"
+    },
+    "sizeBytes": 490496,
+    "sourceCommit": "ae12ef719b161e759f9e36d8e3404895b3537dc4",
+    "startedAt": "2026-10-29T03:27:54.302088Z",
+    "status": "succeeded",
+    "step": "ready",
+    "updatedAt": "2026-10-29T03:28:28.635718Z",
+    "userId": "00000000-0000-4000-8000-000000000001",
+    "version": "0.1.1"
+  },
+  "developmentDeployment": {
+    "action": "deploy",
+    "appId": "todo-win-20261029",
+    "createdAt": "2026-10-29T03:28:51.876852Z",
+    "environment": "dev",
+    "errorCode": null,
+    "failureClass": null,
+    "id": "3b0b9571-fc61-4783-9939-bd750a8fda7a",
+    "imageId": "sha256:a2928906b0dfb2334bc417daf99b0616cbce323ae5a1bc443f8d859f0e1deedd",
+    "installationId": "0ef7e3f6-d9eb-4a8d-ae05-f06c603f80b4",
+    "releaseId": "70774229-d1fa-4b2b-9a8e-4f3835d5c0e2",
+    "requestId": "2a10a891-fa05-4c19-a51d-a0b178dd0b21",
+    "retryOf": null,
+    "retryable": false,
+    "status": "succeeded",
+    "step": "complete"
+  },
+  "database": {
+    "before": {
+      "databaseId": "129f8abd-62c2-40d1-9175-d73d85196940",
+      "schemaFingerprint": "0b4d2d5b69c27b12e9288067b1caf4f4eb8850b797592e4e27321ee3fa8a418a",
+      "schemaGeneration": 1,
+      "status": "ready"
+    },
+    "after": {
+      "databaseId": "129f8abd-62c2-40d1-9175-d73d85196940",
+      "schemaFingerprint": "0b4d2d5b69c27b12e9288067b1caf4f4eb8850b797592e4e27321ee3fa8a418a",
+      "schemaGeneration": 1,
+      "status": "ready"
+    },
+    "unchanged": true
+  },
+  "todo": {
+    "expected": {
+      "id": "8dcfffe2-3854-4ce5-b878-2da9f915c151",
+      "title": "네이티브 실행 후에도 남는 할 일 20261029",
+      "completed": false,
+      "createdAt": "2026-10-29T02:23:27.176135Z",
+      "updatedAt": "2026-10-29T02:23:58.463116Z"
+    },
+    "before": {
+      "id": "8dcfffe2-3854-4ce5-b878-2da9f915c151",
+      "title": "네이티브 실행 후에도 남는 할 일 20261029",
+      "completed": false,
+      "createdAt": "2026-10-29T02:23:27.176135Z",
+      "updatedAt": "2026-10-29T02:23:58.463116Z"
+    },
+    "after": {
+      "id": "8dcfffe2-3854-4ce5-b878-2da9f915c151",
+      "title": "네이티브 실행 후에도 남는 할 일 20261029",
+      "completed": false,
+      "createdAt": "2026-10-29T02:23:27.176135Z",
+      "updatedAt": "2026-10-29T02:23:58.463116Z"
+    },
+    "unchanged": true
+  },
+  "temporaryCrud": {
+    "id": "4be6e71d-7dc7-48b2-8750-480524afa577",
+    "title": "서버 빌드 배포 임시 CRUD 2026-10-29T03:29:53.747Z 474f412d",
+    "create": true,
+    "read": true,
+    "complete": true,
+    "completeReload": true,
+    "undo": true,
+    "undoReload": true,
+    "delete": true,
+    "deleteReload": true
+  },
+  "adminIdentity": {
+    "id": "00000000-0000-4000-8000-000000000001",
+    "name": "admin",
+    "admin": true,
+    "development": true
+  },
+  "sourcePreservation": {
+    "protectedBundleFiles": 19,
+    "allProtectedFilesUnchanged": true,
+    "sqlSha256": {
+      "migrations/0001_initial.sql": "24948591b41e10398ad4f1a8338bc605e209fffa90bc9dbc283f80083fbca8f3",
+      "migrations/0002_todos.sql": "07ca2380fbd6bc89036814b745cd0811ef88ba53aec0c22b51b4f55b81d8885e"
+    },
+    "appSourceCommit": "ae12ef719b161e759f9e36d8e3404895b3537dc4"
+  },
+  "clientIsolation": {
+    "toolsBlocked": [
+      "docker",
+      "cargo",
+      "rustc",
+      "node",
+      "npm",
+      "pnpm",
+      "ssh",
+      "wsl"
+    ],
+    "invocations": 0,
+    "commands": "remote build, build get/watch/logs/resume/dedup and dev deploy",
+    "imageRoundTrip": false
+  },
+  "serverUpdate": {
+    "binary": {
+      "previousBinarySha256": "8069770e38230da55bf05564c7d655a2f6b728bf7cfc4d2829e76d27f4645cd0",
+      "installedBinarySha256": "02a3cf41a5d315c17523a0d906d52d095ba056694fdf2c8ab84b79315880f606",
+      "clientSha256": "ffcb223645ea3e0bd3720a30648735fe685ad66161a33653e7dd8fd9882ec786",
+      "cliVersion": "0.6.2",
+      "bundleVersion": "0.7.1",
+      "originalSourceCheckoutModified": false
+    },
+    "migration": "0015_server_builds.sql (new build/request/log tables only)",
+    "servicesRestarted": [
+      "miy-v2-serve",
+      "miy-v2-worker"
+    ],
+    "platformUiRebuilt": false,
+    "appDatabaseChangedByBuild": false
+  },
+  "tests": [
+    {
+      "name": "server Rust tests",
+      "passed": 143,
+      "failed": 0,
+      "ignored": 6,
+      "exitCode": 0
+    },
+    {
+      "name": "portable client Rust tests --no-default-features",
+      "passed": 110,
+      "failed": 0,
+      "exitCode": 0
+    },
+    {
+      "name": "real CLI server-build fault fixture",
+      "passedScenarios": 10,
+      "exitCode": 0
+    },
+    {
+      "name": "existing CLI runtime recovery fixture",
+      "passedScenarios": 6,
+      "exitCode": 0
+    },
+    {
+      "name": "owned PostgreSQL/HTTP server-build regression",
+      "passedGroups": 8,
+      "exitCode": 0
+    },
+    {
+      "name": "remote worker application Rust tests",
+      "passed": 6,
+      "failed": 0,
+      "exitCode": 0
+    },
+    {
+      "name": "remote worker rustfmt, frozen pnpm, TypeScript, Vite, artifact verification",
+      "status": "PASS"
+    },
+    {
+      "name": "same admin Chromium desktop preserved Todo and temporary CRUD with reloads",
+      "passedSteps": 16,
+      "exitCode": 0
+    },
+    {
+      "name": "cargo fmt --all --check / git diff --check",
+      "status": "PASS"
+    }
+  ],
+  "failuresAndFindings": [
+    {
+      "phase": "linux handoff browser attempt 1",
+      "issue": "Playwright check() races controlled React asynchronous PATCH",
+      "resolved": true,
+      "resolution": "Click then assert returned PATCH and eventual checkbox state; temporary row cleaned."
+    },
+    {
+      "phase": "linux handoff supplemental mobile check",
+      "issue": "Existing platform sidebar compresses 390px content; desktop acceptance and CRUD passed.",
+      "resolved": false,
+      "scope": "Platform UI unchanged; browser desktop required flow passed."
+    },
+    {
+      "phase": "implementation formatting",
+      "exitCode": 1,
+      "resolved": true,
+      "resolution": "Formatted new source archive code; final fmt check passes."
+    },
+    {
+      "phase": "first recorded server unit run",
+      "exitCode": 101,
+      "resolved": true,
+      "resolution": "Test runner accidentally injected authenticated CLI context into an output-envelope test; rerun used isolated empty CLI config, all 143 tests pass."
+    },
+    {
+      "phase": "app source commit",
+      "exitCode": 128,
+      "resolved": true,
+      "resolution": "Used the existing repository author for this commit only; global Git settings unchanged."
+    }
+  ],
+  "notRun": [
+    {
+      "item": "Windows native execution of new CLI 0.6.2",
+      "status": "NOT_RUN",
+      "reason": "This host is Linux. Real Linux CLI was tested with all local build/SSH tools blocked; Windows feature-disabled client source is provided."
+    },
+    {
+      "item": "linux/arm64 remote Docker build",
+      "status": "NOT_RUN",
+      "reason": "Selected server advertises linux/amd64."
+    },
+    {
+      "item": "worker/Docker daemon crash during live compilation",
+      "status": "NOT_RUN",
+      "reason": "Recovery and process ownership are covered in targeted code/tests; no live daemon crash induced."
+    },
+    {
+      "item": "five existing broad runtime/database ignored tests",
+      "status": "NOT_RUN",
+      "reason": "Not required for changed paths; new isolated server-build ignored regression was explicitly executed."
+    },
+    {
+      "item": "supplemental mobile browser check after remote build",
+      "status": "NOT_RUN",
+      "reason": "Existing shell layout issue already documented in phase 1; requested desktop flow rerun successfully."
+    },
+    {
+      "item": "production promotion / changes to other existing apps / public Windows installer publication",
+      "status": "NOT_RUN",
+      "reason": "Outside requested scope."
+    }
+  ],
+  "limitations": [
+    "Source commit is authenticated caller metadata captured from HEAD by CLI; archive SHA-256 is independently verified, not a Git commit signature.",
+    "Secret filename and private-key detection cannot identify every arbitrary hardcoded secret.",
+    "Standard existing Docker BuildKit has bounded execution time/logs/artifact sizes but no new per-build daemon CPU/memory/disk quotas.",
+    "Successful source archives remain in the private client recovery journal."
+  ],
+  "windowsCommands": {
+    "prerequisite": "Build CLI 0.6.2 from this branch with cargo build --locked --release --no-default-features --bin miy; use that executable for app setup inside the existing app project. Existing selected context/login are preserved. Set manifest.version to an unused version (next after this validation: 0.1.2), preserve applied SQL, and commit all source.",
+    "commands": [
+      "miy app setup",
+      "miy component sync",
+      "miy app dev-stop",
+      "git add .",
+      "git commit -m \"Prepare committed Todo update\"",
+      "miy --output json app build --remote --no-wait",
+      "miy job watch BUILD_JOB_ID --timeout 1800",
+      "miy job logs BUILD_JOB_ID --after 0",
+      "miy job resume BUILD_JOB_OR_REQUEST_ID --environment dev",
+      "miy --output json app deploy --environment dev --no-wait",
+      "miy job watch DEPLOY_JOB_ID --timeout 600",
+      "miy app status"
+    ],
+    "sourceBuildInstructions": "docs/NATIVE-DEVELOPMENT.md: PowerShell isolated clone/build/app setup instructions"
+  },
+  "evidenceDirectory": "evidence/cli-0.6.2-server-build",
+  "evidenceSha256": {
+    "todo-temporary-completed-desktop.png": "03d728c005e68e13bf5a2d904d0b4c5c9096a571512f6e534c87c9de740cf38d",
+    "linux-handoff-commands.jsonl": "415b00622ba78c6dd5866830d0c53793178c4aa4a9ac908c82291a0afab347e2",
+    "browser-validation.json": "7842ebdf62a1b26dafe343e7267f82de2fe41314027b5906584e80ea97419d69",
+    "commands.jsonl": "321111c7f132cf5963c7fe6bcf778cb355176a6544280557c3ca0e2b93599e2b",
+    "linux-handoff-report.json": "aac8e575d33351a024deb76f70c08009687640091ec7c3363e31d3942a8bd778",
+    "todo-final-desktop.png": "cb9e35e08688fd6a9dc0bfc3709043469631e31edc395f380aa38ef63b9754b4",
+    "server-api-regression.json": "020847862e67ed894a96d46950a2b8cbe6c29a0ffe7e6f05d88becd7519a95a7",
+    "server-build.txt": "6bcef769bd0482ab82a6d3c4cfd0ff40feade6e12ad54ee4453af670c705aff8"
+  }
+}

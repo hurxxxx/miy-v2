@@ -297,7 +297,7 @@ pub async fn grant(state: &State, p: &Principal, v: Grant) -> ApiResult<Value> {
 }
 pub use crate::contract::get_contract;
 pub fn catalog() -> Value {
-    json!([
+    let mut catalog = json!([
         {"id":"development_session_create","method":"POST","path":"/api/v1/apps/{app}/dev-sessions","permission":"CLI session + develop in dev","description":"CLI app dev creates one leased server development DB session per app, with immutable SQL migration history; preparation is worker-owned","input":schemars::schema_for!(crate::development::NewSession)},
         {"id":"development_session_get","method":"GET","path":"/api/v1/dev-sessions/{id}","permission":"own CLI session + develop","description":"Inspect queued/preparing/ready/failed database preparation; no connection secrets returned"},
         {"id":"development_session_heartbeat","method":"POST","path":"/api/v1/dev-sessions/{id}/heartbeat","permission":"own CLI session + develop","description":"Renew a 120-second development lease every 30 seconds; revoked parent sessions or grants cannot renew"},
@@ -349,5 +349,12 @@ pub fn catalog() -> Value {
         {"id":"app_api_post","method":"POST","path":"/api/v1/installations/{id}/api/{path}","permission":"use or develop on installation","description":"Forward mutation with CSRF and x-miy-release header matching active release"},
         {"id":"app_api_patch","method":"PATCH","path":"/api/v1/installations/{id}/api/{path}","permission":"use or develop on installation","description":"Forward app record update with CSRF and current release"},
         {"id":"app_api_delete","method":"DELETE","path":"/api/v1/installations/{id}/api/{path}","permission":"use or develop on installation","description":"Forward app record deletion with CSRF and current release"}
-    ])
+    ]);
+    catalog.as_array_mut().unwrap().extend([
+        json!({"id":"source_build","method":"POST","path":"/api/v1/apps/{app}/builds","permission":"develop in dev","description":"Queue a server Docker build from a bounded committed-source tar (64 MiB maximum). Headers: Content-Length, X-Miy-Source-Commit, X-Miy-Archive-Sha256, X-Miy-Platform, X-Miy-Request-Id. Use CLI app build --remote.","binary":true}),
+        json!({"id":"source_build_status","method":"GET","path":"/api/v1/builds/{id}","permission":"build owner with develop in dev","description":"Read durable build status and immutable image/source receipt; use CLI job get/watch/resume."}),
+        json!({"id":"source_build_logs","method":"GET","path":"/api/v1/builds/{id}/logs","permission":"build owner with develop in dev","description":"Read bounded persistent build logs after a sequence; use CLI job logs."}),
+        json!({"id":"source_build_request","method":"GET","path":"/api/v1/apps/{app}/build-requests/{request}","permission":"build owner with develop in dev","description":"Recover an original build request or deduplicated alias after a lost upload acknowledgement."}),
+    ]);
+    catalog
 }

@@ -159,6 +159,22 @@ image platform must match the selected server. When local Docker has another CPU
 choose `app build --platform linux/amd64` (or `linux/arm64`) explicitly and configure
 a working Docker emulation/builder; the flag alone does not install emulation.
 
+For Docker-free clients use `app build --remote --no-wait` (CLI 0.6.2,
+server capability `app.builds.v1`). This uploads up to 64 MiB of clean committed
+source, excluding credentials, `.git`, `.miy`, dependencies and build output.
+The worker verifies source, SDK, published components and applied SQL history;
+Rust tests and React checks/build execute inside its trusted Docker recipe.
+The build never applies SQL or changes an installation. Use `job get BUILD_ID`,
+`job watch BUILD_ID --timeout 1800`, `job logs BUILD_ID --after 0` and
+`job resume BUILD_OR_REQUEST_ID --environment dev` for durable observations.
+JSONL watch emits log sequence cursors. Duplicate input recovers existing work.
+After terminal failure, resume observes the original result; a new explicit
+`app build --remote` starts a new attempt. A successful result writes a receipt
+bound to context, actor, app, source hash/commit and immutable image. Dev deploy
+and deployment resume validate it and use that server image directly, without
+Docker image download/export/upload on the client. `job list` remains the
+lifecycle job list; save build/request IDs returned by remote build.
+
 ```sh
 miy app deploy --environment dev --dry-run
 miy app deploy --environment dev --no-wait
@@ -233,4 +249,4 @@ and `deploy --environment prod` are invalid; use `job retry` and `app promote`.
 
 `context list --limit/--cursor` pages the local context map and restarts when configuration changes. `component list` returns `{components,nextCursor}`; it retrieves the complete authenticated catalog before paging locally. Fields such as `components.name` and `contexts.work-prod.origin` select keys from the authorized result.
 
-Local development defaults to native Rust plus the built React preview and an in-process tunnel to the server dev DB. Docker Desktop, WSL and local PostgreSQL are not needed for `app dev` or `doctor --for develop`. Explicit `--runtime docker` selects the container workflow. Image build/deployment still require a Linux Docker engine; native preview is not a releasable Linux image.
+Local development defaults to native Rust plus the built React preview and an in-process tunnel to the server dev DB. Docker Desktop, WSL and local PostgreSQL are not needed for `app dev` or `doctor --for develop`. Explicit `--runtime docker` selects the container workflow. `app build --remote` uses the selected server Linux Docker engine with the existing login; Windows needs no local Docker or SSH. The default `app build` retains local Docker behavior. Native preview is not a releasable Linux image.

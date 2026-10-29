@@ -496,7 +496,7 @@ fn data_schema(command: &str) -> Value {
         "job watch" => {
             json!({"oneOf":[job_schema(),{"type":"object","required":["cursor","sequence","createdAt","job"],
             "properties":{"cursor":{"type":"string"},"sequence":{"type":"integer","minimum":1},"createdAt":{"type":"string","format":"date-time"},"job":job_schema()},"additionalProperties":true}],
-            "description":"Ordinary output is the terminal job; JSONL data is one event per envelope."})
+            "description":"Ordinary output is the terminal job; JSONL contains runtime events, or build log entries followed by the completed build receipt."})
         }
         "app deploy" | "app promote" | "app start" | "app stop" | "app restart" | "app remove"
         | "job retry" => {
@@ -504,6 +504,12 @@ fn data_schema(command: &str) -> Value {
             "description":"Dry-run returns preflight data; execution returns the accepted or terminal job."})
         }
         "job resume" => job_schema(),
+        "job logs" => {
+            json!({"type":"object","required":["id","jobId","logs","nextSequence","terminal"],
+            "properties":{"id":{"type":"string","format":"uuid"},"jobId":{"type":"string","format":"uuid"},
+            "logs":{"type":"array","items":{"type":"object","required":["sequence","text"],"properties":{"sequence":{"type":"integer","minimum":1},"text":{"type":"string"}},"additionalProperties":true}},
+            "nextSequence":{"type":"integer","minimum":0},"terminal":{"type":"boolean"}},"additionalProperties":true})
+        }
         "doctor" => {
             json!({"type":"object","required":["for","ready","cliVersion","bundleVersion","checks"],"properties":{
             "for":{"enum":["operate","develop"]},"ready":{"type":"boolean"},"cliVersion":{"type":"string"},"bundleVersion":{"type":"string"},"checks":{"type":"array","items":{"type":"object"}}},"additionalProperties":true,
@@ -552,7 +558,8 @@ fn pagination(command: &str) -> Value {
 fn job_schema() -> Value {
     json!({"type":"object","required":["id","appId","environment","action","status"],"properties":{
         "id":{"type":"string","format":"uuid"},"appId":{"type":"string"},"environment":{"enum":["dev","prod"]},
-        "action":shared_schema::<crate::runtime_contract::Operation>(),"status":shared_schema::<crate::runtime_contract::JobStatus>(),
+        "action":{"anyOf":[shared_schema::<crate::runtime_contract::Operation>(),{"const":"build"}]},
+        "status":{"anyOf":[shared_schema::<crate::runtime_contract::JobStatus>(),{"const":"receiving"}]},
         "requestId":{"type":"string"},"retryable":{"type":"boolean"},"errorCode":{"type":["string","null"]}},"additionalProperties":true})
 }
 
@@ -591,10 +598,13 @@ fn behavior(command: &str) -> Value {
             "dryRun":"No image upload or runtime job; returns expected state, intended changes and worker checks that remain deferred.",
             "recovery":"Persisted request keys and payloads are recovered with job resume before creating another operation; image upload recovery is whole-archive, not byte-range continuation."}),
         "job resume" => {
-            json!({"knownJob":"Observation only, without another execution confirmation.","unacknowledgedRequest":"Look up the original request before explicit resubmission with its original key, payload and expected state. Prod/remove requires explicit context/app/environment and fresh confirmation."})
+            json!({"knownJob":"Observes an accepted runtime or build job. A completed build restores image metadata for its original project when its committed revision still matches.","unacknowledgedRequest":"Look up the original request before explicit resubmission with its original key and input. Build recovery uses the saved source archive and never local Docker; runtime prod/remove requires explicit context/app/environment and fresh confirmation."})
+        }
+        "job logs" => {
+            json!({"scope":"Server builds only; use app logs for application runtime logs.","cursor":"Pass the returned nonnegative nextSequence to --after.","bounded":true})
         }
         "job watch" => {
-            json!({"jsonl":true,"cursor":"Use --after or --cursor, or the saved journal cursor.","interruption":"Exit 130 stops observation, never cancels the remote job.","timeout":"Exit 8 preserves job ID and cursor.","terminalFailureExit":9})
+            json!({"jsonl":true,"cursor":"Use --after or --cursor, or the saved journal cursor. Server builds use numeric log sequences; runtime jobs use opaque event cursors.","interruption":"Exit 130 stops observation, never cancels the remote job.","timeout":"Exit 8 preserves job ID and cursor.","terminalFailureExit":9})
         }
         "app logs" => {
             json!({"bounded":true,"retentionService":false,"rotationMayOmit":true,"resume":"Use --request ID to observe the same accepted log request; tail/since cannot be combined with --request."})
@@ -603,7 +613,12 @@ fn behavior(command: &str) -> Value {
             json!({"flagDefaults":{"environment":"dev","permission":"use"},"structuredInput":"Complete typed document; defaults above apply only to the flag form."})
         }
         "app build" => {
-            json!({"platform":"The image must match the selected server's Linux platform. Different engine/server CPUs require explicit --platform and a working Docker builder/emulation."})
+            json!({"default":"Local Docker build with local checks; --remote uploads a filtered, clean committed source snapshot for server-side build.",
+                "remoteRequirements":"Named context, login, approved app develop permission, Git and app.builds.v1; remote mode never invokes local Docker, Rust or pnpm.",
+                "platform":"Remote mode uses the selected server runtime platform; an explicit --platform must match it. Local engine/server CPU differences require explicit platform and a working builder.",
+                "recovery":"Before upload, records actor/origin/context, source hash and original request ID. Use job resume ID after interruption; accepted work continues. Re-running app build after terminal failure starts a new attempt.",
+                "result":"Successful remote builds write server-bound dist/build.json and dist/image.json; app deploy verifies the receipt and uses the existing server image directly.",
+                "observation":"--no-wait returns the accepted build; --timeout defaults to 1800 seconds. job get/watch/resume and job logs accept build IDs."})
         }
         _ => json!({}),
     }
@@ -637,6 +652,8 @@ fn examples(command: &str, path: &[String]) -> Value {
             "--name",
             "My app",
         ],
+        "app build" => &["app", "build", "--remote", "--no-wait"],
+        "job logs" => &["job", "logs", "<BUILD_UUID>", "--after", "0"],
         "app deploy" => &["app", "deploy", "--environment", "dev", "--dry-run"],
         "app promote" => &[
             "--context",
@@ -831,11 +848,14 @@ fn policy(command: &str, group: bool) -> Policy {
             policy.local_effects = &["Formats and rewrites the project's Rust source files."]
         }
         "app build" => {
+            policy.source = "crates/miy/src/app_cli.rs; crates/miy/src/cli_build.rs; crates/miy/src/source_archive.rs";
+            policy.permissions = "Remote mode requires a named context, login and develop permission for an approved app; local mode can build offline.";
             policy.local_effects = &[
-                "Runs checks and project code, installs dependencies, builds an immutable Linux Docker image and writes local build/platform metadata.",
+                "Local mode runs project checks and Docker. Remote mode reads committed Git blobs, excludes secrets and local state, saves a private source archive/recovery journal, and writes completed build metadata without invoking local Docker or language tools.",
             ];
-            policy.remote_effects =
-                &["When a context is selected, reads its server runtime platform before building."];
+            policy.remote_effects = &[
+                "Remote mode uploads source and starts a durable server Docker build; local mode only reads the selected server platform. Timeout or interruption does not cancel accepted builds.",
+            ];
         }
         "app dev" => {
             policy.permissions = "Authenticated developer for an administrator-approved app; platform/connected APIs enforce their permissions.";
@@ -935,10 +955,11 @@ fn policy(command: &str, group: bool) -> Policy {
         "app deploy" => {
             policy.source = "crates/miy/src/cli_remote.rs; crates/miy/src/cli_upload.rs";
             policy.permissions = "miy.dev scope plus administrator or develop permission for this app's dev environment.";
-            policy.local_effects =
-                &["Exports the local image and saves upload/job recovery state."];
+            policy.local_effects = &[
+                "Saves deployment recovery state. Exports a local image only for local builds; server build receipts require no Docker export.",
+            ];
             policy.remote_effects = &[
-                "Except in dry-run, uploads image data and submits a dev deployment. The worker may migrate the app database and replace containers.",
+                "Verifies server build receipts directly, or uploads local image data, then submits a checked dev deployment. Dry-run submits neither upload nor runtime work. The worker may migrate the app database and replace containers.",
             ];
         }
         "app promote" => {
@@ -961,7 +982,7 @@ fn policy(command: &str, group: bool) -> Policy {
             policy.source = "crates/miy/src/cli_remote.rs; crates/miy/src/cli_journal.rs; crates/miy/src/cli_upload.rs";
             policy.permissions = "Saved requests require their original context and actor; known jobs require app/environment visibility. Resubmission rechecks management permission; prod/remove requires explicit target and confirmation.";
             policy.local_effects = &[
-                "Reads and updates request/upload/job recovery state; may export or read the original image archive when recovering an unsubmitted upload.",
+                "Reads and updates recovery state. Build recovery reuses the saved committed source archive; server-image deployment recovery never exports Docker images. Local-image recovery may export the original image.",
             ];
             policy.remote_effects = &[
                 "Observes an existing job, or looks up the saved upload/runtime request and explicitly resubmits unacknowledged input with its original idempotency key and expected state.",
@@ -975,14 +996,15 @@ fn policy(command: &str, group: bool) -> Policy {
                 "Reads authorized app/installation metadata; manager-only acceptance details remain subject to server authorization.",
             ];
         }
-        "job list" | "job get" | "job watch" => {
+        "job list" | "job get" | "job watch" | "job logs" => {
             policy.source = "crates/miy/src/cli_remote.rs; crates/miy/src/job_api.rs";
             policy.permissions =
                 "Authenticated user authorized for the returned job's app/environment.";
-            policy.local_effects =
-                &["Watch may persist an event cursor in the existing context/actor-bound journal."];
+            policy.local_effects = &[
+                "Watch may persist an event/log cursor; a completed build restores its original project build receipt when the committed revision still matches.",
+            ];
             policy.remote_effects = &[
-                "Reads jobs or ordered cursor events. Timeout/Ctrl-C stops local observation without cancelling the job.",
+                "List returns runtime jobs; get/watch also accept server builds. Logs reads bounded build log entries. Timeout/Ctrl-C stops local observation without cancelling accepted work.",
             ];
         }
         "job retry" => {

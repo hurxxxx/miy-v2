@@ -21,6 +21,7 @@ pub async fn run(pool: sqlx::PgPool) -> Result<()> {
     tracing::info!(event = "db_runner_ready");
     crate::runtime::recover(&pool).await?;
     crate::development::recover(&pool).await?;
+    crate::server_build_worker::recover(&pool).await?;
     sqlx::query("UPDATE image_uploads SET status='pending' WHERE status='loading'")
         .execute(&pool)
         .await?;
@@ -108,6 +109,7 @@ pub async fn run(pool: sqlx::PgPool) -> Result<()> {
         } else if !crate::development::tick(&pool).await?
             && !crate::delivery::tick(&pool).await?
             && !crate::runtime::tick(&pool).await?
+            && !crate::server_build_worker::tick(&pool).await?
         {
             tokio::time::sleep(std::time::Duration::from_millis(300)).await;
         }
@@ -231,6 +233,87 @@ pub(crate) fn desired_fingerprint(migrator: &sqlx::migrate::Migrator) -> Result<
         .map(|m| (m.version, hex::encode(&m.checksum)))
         .collect();
     Ok(contract::hash(serde_json::to_vec(&history)?))
+}
+
+/// A build may add migrations, but must preserve every already applied SQL file.
+/// This connection is read only: no provisioning, schema changes, or migrations.
+pub(crate) async fn verify_development_migrations(
+    pool: &sqlx::PgPool,
+    app: &str,
+    migrations: &std::path::Path,
+) -> Result<()> {
+    crate::bundle::migrations(migrations)?;
+    let desired = sqlx::migrate::Migrator::new(migrations).await?;
+    let Some(database) = sqlx::query_scalar::<_, String>(
+        "SELECT database_name FROM db_resources WHERE app_id=$1 AND environment='dev'",
+    )
+    .bind(app)
+    .fetch_optional(pool)
+    .await?
+    else {
+        return Ok(());
+    };
+    let mut address = url::Url::parse(&std::env::var("PROVISION_DATABASE_URL")?)?;
+    address.set_path(&database);
+    let mut conn = sqlx::PgConnection::connect(address.as_str())
+        .await
+        .map_err(|_| anyhow::anyhow!("build_database_history_unavailable"))?;
+    let mut tx = conn.begin().await?;
+    sqlx::query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY")
+        .execute(&mut *tx)
+        .await?;
+    let exists: bool = sqlx::query_scalar("SELECT to_regclass('app._sqlx_migrations') IS NOT NULL")
+        .fetch_one(&mut *tx)
+        .await?;
+    if exists {
+        let applied = sqlx::query(
+            "SELECT version,checksum,success FROM app._sqlx_migrations ORDER BY version",
+        )
+        .fetch_all(&mut *tx)
+        .await?;
+        for row in applied {
+            let version: i64 = row.get("version");
+            let checksum: Vec<u8> = row.get("checksum");
+            anyhow::ensure!(row.get::<bool,_>("success") && desired.iter().any(|m| m.version == version && m.checksum.as_ref() == checksum.as_slice()), "migration_history_mismatch");
+        }
+    }
+    tx.commit().await?;
+    Ok(())
+}
+
+/// A self-consistent lock alone is insufficient: it must name published bytes.
+pub(crate) async fn verify_build_components(
+    pool: &sqlx::PgPool,
+    root: &std::path::Path,
+) -> Result<()> {
+    let verified = crate::component_cli::verify(root)?;
+    for component in verified["components"]
+        .as_array()
+        .context("missing_component_lock")?
+    {
+        let expected: Option<String> = sqlx::query_scalar(
+            "SELECT digest FROM component_releases WHERE name=$1 AND version=$2",
+        )
+        .bind(
+            component["name"]
+                .as_str()
+                .context("invalid_component_name")?,
+        )
+        .bind(
+            component["version"]
+                .as_str()
+                .context("invalid_component_version")?,
+        )
+        .fetch_optional(pool)
+        .await?;
+        anyhow::ensure!(
+            expected
+                .as_deref()
+                .is_some_and(|digest| Some(digest) == component["sha256"].as_str()),
+            "unpublished_source_component"
+        );
+    }
+    Ok(())
 }
 
 async fn record_schema(

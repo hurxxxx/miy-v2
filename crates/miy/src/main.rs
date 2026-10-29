@@ -17,6 +17,7 @@ mod auth_sessions_regression;
 mod bundle;
 #[cfg(feature = "server")]
 mod cli_auth;
+mod cli_build;
 mod cli_client;
 mod cli_config;
 mod cli_discovery;
@@ -89,7 +90,14 @@ mod runtime_preflight;
 #[cfg(all(test, feature = "server"))]
 mod runtime_regression;
 #[cfg(feature = "server")]
+mod server_build;
+#[cfg(all(test, feature = "server"))]
+mod server_build_regression;
+#[cfg(feature = "server")]
+mod server_build_worker;
+#[cfg(feature = "server")]
 mod server_origin;
+mod source_archive;
 mod upgrade;
 #[cfg(feature = "server")]
 mod worker;

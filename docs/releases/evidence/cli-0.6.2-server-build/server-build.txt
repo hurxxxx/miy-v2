@@ -1,0 +1,915 @@
+Building with the verified worker recipe; application checks run inside offline Docker stages.
+#0 building with "default" instance using docker driver
+
+#1 [internal] load build definition from Dockerfile
+#1 transferring dockerfile: 1.99kB done
+#1 DONE 0.0s
+
+#2 [internal] load metadata for mcr.microsoft.com/playwright:v1.64.1-noble@sha256:7852dc5a7d72f5fe458a597d690f6c42fbc8e9e26ddfa95f8e6ef552558d9bbf
+#2 DONE 0.6s
+
+#3 [internal] load metadata for docker.io/library/rust:1.99.1-slim-bookworm@sha256:16113eb5d5c1e25d9359f40115225ce8719997fb0d9a3dab83e921da0308992f
+#3 ...
+
+#4 [internal] load metadata for docker.io/library/debian:bookworm-slim@sha256:7ff6ba31527b9e336162fa061746c366c4b2032f4d2cff2078bea43f78efe3f8
+#4 DONE 1.6s
+
+#3 [internal] load metadata for docker.io/library/rust:1.99.1-slim-bookworm@sha256:16113eb5d5c1e25d9359f40115225ce8719997fb0d9a3dab83e921da0308992f
+#3 DONE 1.6s
+
+#5 [internal] load .dockerignore
+#5 transferring context: 2B done
+#5 DONE 0.0s
+
+#6 [stage-4 1/6] FROM docker.io/library/debian:bookworm-slim@sha256:7ff6ba31527b9e336162fa061746c366c4b2032f4d2cff2078bea43f78efe3f8
+#6 resolve docker.io/library/debian:bookworm-slim@sha256:7ff6ba31527b9e336162fa061746c366c4b2032f4d2cff2078bea43f78efe3f8 done
+#6 DONE 0.0s
+
+#7 [rust-tools 1/2] FROM docker.io/library/rust:1.99.1-slim-bookworm@sha256:16113eb5d5c1e25d9359f40115225ce8719997fb0d9a3dab83e921da0308992f
+#7 resolve docker.io/library/rust:1.99.1-slim-bookworm@sha256:16113eb5d5c1e25d9359f40115225ce8719997fb0d9a3dab83e921da0308992f 0.0s done
+#7 CACHED
+
+#8 [internal] load build context
+#8 transferring context: 457.08kB done
+#8 DONE 0.0s
+
+#9 [node-tools 1/2] FROM mcr.microsoft.com/playwright:v1.64.1-noble@sha256:7852dc5a7d72f5fe458a597d690f6c42fbc8e9e26ddfa95f8e6ef552558d9bbf
+#9 resolve mcr.microsoft.com/playwright:v1.64.1-noble@sha256:7852dc5a7d72f5fe458a597d690f6c42fbc8e9e26ddfa95f8e6ef552558d9bbf 0.0s done
+#9 sha256:8e76854735f1ff0cbac804200a73a599cb51c0692601fbeda64ffd8930fab4af 0B / 122.08MB 0.2s
+#9 sha256:ee918a637493be99132a3d3d8da8579e74002930bcf465da88bff56248173b66 7.34MB / 113.75MB 0.3s
+#9 sha256:e20e5ef3d394f99e31aa3f12e05c702d7fab0f958f9a20895f11e4b3e282066c 0B / 314.30MB 0.2s
+#9 sha256:2d370c712b39dd321ae06a3834d1eafe511a8c0e790e33c4ee8a3b148c9b4c7e 0B / 294.57MB 0.2s
+#9 sha256:ee918a637493be99132a3d3d8da8579e74002930bcf465da88bff56248173b66 16.78MB / 113.75MB 0.6s
+#9 sha256:ee918a637493be99132a3d3d8da8579e74002930bcf465da88bff56248173b66 25.17MB / 113.75MB 0.9s
+#9 sha256:ee918a637493be99132a3d3d8da8579e74002930bcf465da88bff56248173b66 31.46MB / 113.75MB 1.2s
+#9 sha256:e20e5ef3d394f99e31aa3f12e05c702d7fab0f958f9a20895f11e4b3e282066c 17.83MB / 314.30MB 1.2s
+#9 sha256:8e76854735f1ff0cbac804200a73a599cb51c0692601fbeda64ffd8930fab4af 6.29MB / 122.08MB 1.5s
+#9 sha256:ee918a637493be99132a3d3d8da8579e74002930bcf465da88bff56248173b66 39.85MB / 113.75MB 1.8s
+#9 sha256:ee918a637493be99132a3d3d8da8579e74002930bcf465da88bff56248173b66 47.19MB / 113.75MB 2.1s
+#9 ...
+
+#10 [rust-tools 2/2] RUN rustup component add rustfmt clippy --toolchain 1.99.1
+#10 0.155 info: downloading 2 components
+#10 DONE 2.2s
+
+#11 [backend 1/4] WORKDIR /build
+#11 DONE 0.0s
+
+#12 [backend 2/4] COPY . .
+#12 DONE 0.0s
+
+#9 [node-tools 1/2] FROM mcr.microsoft.com/playwright:v1.64.1-noble@sha256:7852dc5a7d72f5fe458a597d690f6c42fbc8e9e26ddfa95f8e6ef552558d9bbf
+#9 sha256:ee918a637493be99132a3d3d8da8579e74002930bcf465da88bff56248173b66 53.48MB / 113.75MB 2.4s
+#9 sha256:e20e5ef3d394f99e31aa3f12e05c702d7fab0f958f9a20895f11e4b3e282066c 34.60MB / 314.30MB 2.4s
+#9 sha256:8e76854735f1ff0cbac804200a73a599cb51c0692601fbeda64ffd8930fab4af 13.63MB / 122.08MB 2.9s
+#9 sha256:ee918a637493be99132a3d3d8da8579e74002930bcf465da88bff56248173b66 59.77MB / 113.75MB 3.0s
+#9 sha256:2d370c712b39dd321ae06a3834d1eafe511a8c0e790e33c4ee8a3b148c9b4c7e 16.78MB / 294.57MB 3.0s
+#9 sha256:ee918a637493be99132a3d3d8da8579e74002930bcf465da88bff56248173b66 66.06MB / 113.75MB 3.3s
+#9 sha256:ee918a637493be99132a3d3d8da8579e74002930bcf465da88bff56248173b66 74.45MB / 113.75MB 3.8s
+#9 sha256:e20e5ef3d394f99e31aa3f12e05c702d7fab0f958f9a20895f11e4b3e282066c 50.33MB / 314.30MB 3.8s
+#9 sha256:8e76854735f1ff0cbac804200a73a599cb51c0692601fbeda64ffd8930fab4af 19.92MB / 122.08MB 3.9s
+#9 sha256:ee918a637493be99132a3d3d8da8579e74002930bcf465da88bff56248173b66 80.74MB / 113.75MB 4.5s
+#9 sha256:8e76854735f1ff0cbac804200a73a599cb51c0692601fbeda64ffd8930fab4af 27.26MB / 122.08MB 4.8s
+#9 sha256:8e76854735f1ff0cbac804200a73a599cb51c0692601fbeda64ffd8930fab4af 33.55MB / 122.08MB 5.3s
+#9 sha256:ee918a637493be99132a3d3d8da8579e74002930bcf465da88bff56248173b66 88.08MB / 113.75MB 5.6s
+#9 sha256:e20e5ef3d394f99e31aa3f12e05c702d7fab0f958f9a20895f11e4b3e282066c 66.06MB / 314.30MB 5.4s
+#9 sha256:2d370c712b39dd321ae06a3834d1eafe511a8c0e790e33c4ee8a3b148c9b4c7e 32.51MB / 294.57MB 5.4s
+#9 ...
+
+#13 [backend 3/4] RUN cargo fetch --locked
+#13 0.133     Updating crates.io index
+#13 1.369  Downloading crates ...
+#13 1.495   Downloaded tokio-macros v2.7.2
+#13 1.496   Downloaded windows-link v0.2.1
+#13 1.524   Downloaded powerfmt v0.2.1
+#13 1.525   Downloaded time-core v0.1.9
+#13 1.527   Downloaded scopeguard v1.2.0
+#13 1.533   Downloaded time-macros v0.2.32
+#13 1.534   Downloaded num-conv v0.2.2
+#13 1.537   Downloaded mime v0.3.17
+#13 1.559   Downloaded rustls v0.23.46
+#13 1.565   Downloaded find-msvc-tools v0.1.15
+#13 1.566   Downloaded anyhow v1.0.104
+#13 1.568   Downloaded atomic-waker v1.1.2
+#13 1.571   Downloaded cfg-if v1.0.5
+#13 1.578   Downloaded getrandom v0.2.17
+#13 1.580   Downloaded foldhash v0.1.5
+#13 1.596   Downloaded http-body v1.1.0
+#13 1.598   Downloaded windows-result v0.4.1
+#13 1.601   Downloaded serde_urlencoded v0.7.1
+#13 1.602   Downloaded windows-interface v0.59.3
+#13 1.603   Downloaded shlex v2.0.1
+#13 1.603   Downloaded crc-catalog v2.5.0
+#13 1.604   Downloaded wasm-bindgen-macro v0.2.129
+#13 1.604   Downloaded windows-targets v0.52.6
+#13 1.605   Downloaded crossbeam-utils v0.8.23
+#13 1.609   Downloaded crypto-common v0.1.7
+#13 1.619   Downloaded tower-layer v0.3.3
+#13 1.620   Downloaded wasite v0.1.0
+#13 1.621   Downloaded parking v2.2.1
+#13 1.621   Downloaded equivalent v1.0.3
+#13 1.622   Downloaded http-body-util v0.1.5
+#13 1.623   Downloaded httparse v1.10.1
+#13 1.627   Downloaded rand_chacha v0.3.1
+#13 1.627   Downloaded untrusted v0.9.0
+#13 1.628   Downloaded futures-io v0.3.34
+#13 1.630   Downloaded httpdate v1.0.3
+#13 1.630   Downloaded sync_wrapper v1.0.2
+#13 1.640   Downloaded atoi v2.0.0
+#13 1.640   Downloaded iana-time-zone-haiku v0.1.2
+#13 1.644   Downloaded crc v3.4.0
+#13 1.664   Downloaded futures-sink v0.3.34
+#13 1.667   Downloaded windows-implement v0.60.2
+#13 1.668   Downloaded tower-service v0.3.3
+#13 1.669   Downloaded windows-strings v0.5.1
+#13 1.670   Downloaded android_system_properties v0.1.6
+#13 1.670   Downloaded plain v0.2.3
+#13 1.671   Downloaded md-5 v0.10.6
+#13 1.672   Downloaded hex v0.4.3
+#13 1.672   Downloaded rustls-webpki v0.103.16
+#13 1.674   Downloaded signature v2.2.0
+#13 1.675   Downloaded serde_path_to_error v0.1.20
+#13 1.676   Downloaded stringprep v0.1.5
+#13 1.676   Downloaded matchit v0.8.4
+#13 1.678   Downloaded version_check v0.9.5
+#13 1.678   Downloaded form_urlencoded v1.2.2
+#13 1.679   Downloaded sha1 v0.10.7
+#13 1.683   Downloaded stable_deref_trait v1.2.1
+#13 1.683   Downloaded hashlink v0.10.0
+#13 1.684   Downloaded ppv-lite86 v0.2.21
+#13 1.685   Downloaded rand_core v0.6.4
+#13 1.689   Downloaded byteorder v1.5.0
+#13 1.691   Downloaded pkg-config v0.3.34
+#13 1.693   Downloaded futures-executor v0.3.34
+#13 1.694   Downloaded whoami v1.6.1
+#13 1.695   Downloaded libredox v0.1.25
+#13 1.695   Downloaded pem v3.0.6
+#13 1.696   Downloaded either v1.19.0
+#13 1.696   Downloaded crossbeam-queue v0.3.14
+#13 1.697   Downloaded deranged v0.5.9
+#13 1.699   Downloaded lazy_static v1.5.1
+#13 1.701   Downloaded iana-time-zone v0.1.65
+#13 1.703   Downloaded spin v0.9.9
+#13 1.705   Downloaded redox_syscall v0.9.5
+#13 1.706   Downloaded spki v0.7.3
+#13 1.707   Downloaded block-buffer v0.10.4
+#13 1.709   Downloaded unicode-bidi v0.3.18
+#13 1.711   Downloaded home v0.5.12
+#13 1.719   Downloaded sqlx-macros v0.8.6
+#13 1.720   Downloaded futures-core v0.3.34
+#13 1.725   Downloaded axum-core v0.5.6
+#13 1.728   Downloaded event-listener v5.4.2
+#13 1.730   Downloaded autocfg v1.5.1
+#13 1.732   Downloaded core-foundation-sys v0.8.7
+#13 1.733   Downloaded futures-channel v0.3.34
+#13 1.734   Downloaded unicode-properties v0.1.4
+#13 1.743   Downloaded cpufeatures v0.2.17
+#13 1.744   Downloaded base64ct v1.8.3
+#13 1.746   Downloaded ryu v1.0.23
+#13 1.748   Downloaded dotenvy v0.15.7
+#13 1.749   Downloaded generic-array v0.14.7
+#13 1.757   Downloaded idna_adapter v1.2.2
+#13 1.765   Downloaded sqlx-macros-core v0.8.6
+#13 1.767   Downloaded etcetera v0.8.0
+#13 1.767   Downloaded pem-rfc7468 v0.7.0
+#13 1.769   Downloaded hmac v0.12.1
+#13 1.770   Downloaded num-iter v0.1.46
+#13 1.772   Downloaded errno v0.3.14
+#13 1.773   Downloaded windows-core v0.62.2
+#13 1.781   Downloaded itoa v1.0.18
+#13 1.783   Downloaded tinyvec v1.13.3
+#13 1.785   Downloaded allocator-api2 v0.2.21
+#13 1.786   Downloaded axum-macros v0.5.1
+#13 1.791   Downloaded pkcs8 v0.10.2
+#13 1.793   Downloaded zerofrom v0.1.8
+#13 1.795   Downloaded futures-task v0.3.34
+#13 1.795   Downloaded utf8_iter v1.0.4
+#13 1.797   Downloaded yoke-derive v0.8.4
+#13 1.799   Downloaded potential_utf v0.1.6
+#13 1.807   Downloaded pkcs1 v0.7.5
+#13 1.809   Downloaded heck v0.5.0
+#13 1.811   Downloaded jsonwebtoken v9.3.1
+#13 1.813   Downloaded subtle v2.6.1
+#13 1.816   Downloaded num-traits v0.2.19
+#13 1.818   Downloaded flume v0.11.1
+#13 1.822   Downloaded windows-targets v0.48.5
+#13 1.835   Downloaded rand v0.8.8
+#13 1.844   Downloaded wasi v0.11.1+wasi-snapshot-preview1
+#13 1.845   Downloaded redox_syscall v0.5.18
+#13 1.847   Downloaded wasm-bindgen-shared v0.2.129
+#13 1.849   Downloaded slab v0.4.12
+#13 1.855   Downloaded webpki-roots v0.26.11
+#13 1.859   Downloaded zmij v1.0.23
+#13 1.861   Downloaded synstructure v0.14.0
+#13 1.866   Downloaded futures-intrusive v0.5.0
+#13 1.871   Downloaded digest v0.10.7
+#13 1.876   Downloaded hashbrown v0.15.5
+#13 1.879   Downloaded sqlx-mysql v0.8.6
+#13 1.884   Downloaded base64 v0.22.1
+#13 1.887   Downloaded tower v0.5.3
+#13 1.892   Downloaded zeroize v1.9.1
+#13 1.893   Downloaded signal-hook-registry v1.4.8
+#13 1.910   Downloaded rustversion v1.0.23
+#13 1.922   Downloaded zerocopy-derive v0.8.63
+#13 1.928   Downloaded rsa v0.9.10
+#13 1.931   Downloaded num-bigint v0.4.8
+#13 1.934   Downloaded http v1.5.0
+#13 1.936   Downloaded percent-encoding v2.3.2
+#13 1.936   Downloaded displaydoc v0.2.7
+#13 1.937   Downloaded thiserror v2.0.21
+#13 1.940   Downloaded indexmap v2.14.2
+#13 1.942   Downloaded pin-project-lite v0.2.17
+#13 1.945   Downloaded sha2 v0.10.9
+#13 1.947   Downloaded zerofrom-derive v0.1.8
+#13 1.947   Downloaded hashbrown v0.17.1
+#13 1.955   Downloaded unicode-normalization v0.1.26
+#13 1.958   Downloaded quote v1.0.47
+#13 1.965   Downloaded num-integer v0.1.47
+#13 1.966   Downloaded sqlx-postgres v0.8.6
+#13 1.970   Downloaded hyper-util v0.1.21
+#13 1.974   Downloaded lock_api v0.4.14
+#13 1.975   Downloaded cc v1.9.0
+#13 1.979   Downloaded num-bigint-dig v0.8.6
+#13 1.982   Downloaded rustls-pki-types v1.15.1
+#13 1.983   Downloaded smallvec v1.16.3
+#13 1.985   Downloaded tokio-stream v0.1.19
+#13 1.988   Downloaded zerovec-derive v0.11.6
+#13 1.993   Downloaded parking_lot_core v0.9.12
+#13 1.994   Downloaded litemap v0.8.3
+#13 1.995   Downloaded yoke v0.8.3
+#13 2.002   Downloaded simple_asn1 v0.6.4
+#13 2.010   Downloaded axum v0.8.9
+#13 2.042   Downloaded hyper v1.12.0
+#13 2.046   Downloaded parking_lot v0.12.5
+#13 2.047   Downloaded once_cell v1.21.4
+#13 2.049   Downloaded writeable v0.6.4
+#13 2.050   Downloaded tracing-attributes v0.1.31
+#13 2.051   Downloaded thiserror-impl v2.0.21
+#13 2.052   Downloaded const-oid v0.9.6
+#13 2.053   Downloaded serde_core v1.0.229
+#13 2.054   Downloaded bitflags v2.13.2
+#13 2.056   Downloaded libm v0.2.16
+#13 2.062   Downloaded serde_derive v1.0.229
+#13 2.064   Downloaded getrandom v0.4.3
+#13 2.065   Downloaded hkdf v0.12.4
+#13 2.069   Downloaded wasm-bindgen v0.2.129
+#13 2.071   Downloaded icu_provider v2.3.1
+#13 2.072   Downloaded tinystr v0.8.4
+#13 2.097   Downloaded r-efi v6.0.0
+#13 2.100   Downloaded log v0.4.34
+#13 2.101   Downloaded tracing-core v0.1.36
+#13 2.106   Downloaded unicode-ident v1.0.27
+#13 2.107   Downloaded proc-macro2 v1.0.107
+#13 2.124   Downloaded vcpkg v0.2.15
+#13 2.150   Downloaded icu_normalizer_data v2.3.0
+#13 2.151   Downloaded socket2 v0.6.5
+#13 2.159   Downloaded bytes v1.12.1
+#13 2.161   Downloaded chrono v0.4.45
+#13 2.165   Downloaded sqlx-sqlite v0.8.6
+#13 2.174   Downloaded icu_collections v2.3.0
+#13 2.184   Downloaded url v2.5.8
+#13 2.188   Downloaded zerotrie v0.2.5
+#13 2.190   Downloaded icu_locale_core v2.3.0
+#13 2.193   Downloaded uuid v1.28.0
+#13 2.195   Downloaded serde v1.0.229
+#13 2.197   Downloaded icu_properties v2.3.0
+#13 2.198   Downloaded memchr v2.8.3
+#13 2.201   Downloaded typenum v1.20.1
+#13 2.203   Downloaded time v0.3.55
+#13 2.211   Downloaded der v0.7.10
+#13 2.213   Downloaded bumpalo v3.20.3
+#13 2.215   Downloaded mio v1.2.4
+#13 2.218   Downloaded js-sys v0.3.106
+#13 2.238   Downloaded zerovec v0.11.8
+#13 2.242   Downloaded zerocopy v0.8.63
+#13 2.256   Downloaded sqlx-core v0.8.6
+#13 2.260   Downloaded idna v1.1.0
+#13 2.265   Downloaded wasm-bindgen-macro-support v0.2.129
+#13 2.284   Downloaded futures-util v0.3.34
+#13 2.291   Downloaded serde_json v1.0.154
+#13 2.294   Downloaded icu_properties_data v2.3.0
+#13 2.300   Downloaded sqlx v0.8.6
+#13 2.308   Downloaded syn v3.0.9
+#13 2.318   Downloaded webpki-roots v1.0.10
+#13 2.330   Downloaded windows_x86_64_gnullvm v0.52.6
+#13 2.348   Downloaded windows_aarch64_gnullvm v0.48.5
+#13 2.364   Downloaded windows_x86_64_gnullvm v0.48.5
+#13 2.372   Downloaded windows_aarch64_gnullvm v0.52.6
+#13 2.385   Downloaded syn v2.0.119
+#13 2.400   Downloaded windows_i686_gnullvm v0.52.6
+#13 2.491   Downloaded icu_normalizer v2.3.0
+#13 2.497   Downloaded tracing v0.1.44
+#13 2.626   Downloaded windows_x86_64_msvc v0.48.5
+#13 2.643   Downloaded libc v0.2.191
+#13 2.667   Downloaded tokio v1.54.0
+#13 2.769   Downloaded windows_aarch64_msvc v0.48.5
+#13 2.776   Downloaded windows_x86_64_msvc v0.52.6
+#13 2.784   Downloaded windows-sys v0.61.2
+#13 2.820   Downloaded windows_x86_64_gnu v0.48.5
+#13 2.830   Downloaded windows_aarch64_msvc v0.52.6
+#13 2.837   Downloaded windows_x86_64_gnu v0.52.6
+#13 2.848   Downloaded windows_i686_msvc v0.52.6
+#13 2.855   Downloaded windows_i686_msvc v0.48.5
+#13 2.862   Downloaded windows_i686_gnu v0.48.5
+#13 2.872   Downloaded windows_i686_gnu v0.52.6
+#13 2.881   Downloaded ring v0.17.14
+#13 3.138   Downloaded windows-sys v0.52.0
+#13 3.168   Downloaded windows-sys v0.48.0
+#13 3.259   Downloaded libsqlite3-sys v0.30.1
+#13 DONE 3.5s
+
+#9 [node-tools 1/2] FROM mcr.microsoft.com/playwright:v1.64.1-noble@sha256:7852dc5a7d72f5fe458a597d690f6c42fbc8e9e26ddfa95f8e6ef552558d9bbf
+#9 sha256:8e76854735f1ff0cbac804200a73a599cb51c0692601fbeda64ffd8930fab4af 39.85MB / 122.08MB 5.9s
+#9 sha256:ee918a637493be99132a3d3d8da8579e74002930bcf465da88bff56248173b66 96.47MB / 113.75MB 6.2s
+#9 sha256:e20e5ef3d394f99e31aa3f12e05c702d7fab0f958f9a20895f11e4b3e282066c 82.84MB / 314.30MB 6.3s
+#9 sha256:2d370c712b39dd321ae06a3834d1eafe511a8c0e790e33c4ee8a3b148c9b4c7e 48.23MB / 294.57MB 6.6s
+#9 sha256:8e76854735f1ff0cbac804200a73a599cb51c0692601fbeda64ffd8930fab4af 48.23MB / 122.08MB 6.8s
+#9 sha256:ee918a637493be99132a3d3d8da8579e74002930bcf465da88bff56248173b66 102.76MB / 113.75MB 6.8s
+#9 sha256:ee918a637493be99132a3d3d8da8579e74002930bcf465da88bff56248173b66 110.10MB / 113.75MB 7.2s
+#9 sha256:ee918a637493be99132a3d3d8da8579e74002930bcf465da88bff56248173b66 113.75MB / 113.75MB 7.4s done
+#9 sha256:e20e5ef3d394f99e31aa3f12e05c702d7fab0f958f9a20895f11e4b3e282066c 100.66MB / 314.30MB 7.4s
+#9 sha256:8e76854735f1ff0cbac804200a73a599cb51c0692601fbeda64ffd8930fab4af 55.57MB / 122.08MB 7.7s
+#9 sha256:78ee9142e3341681cf74691dc85e198954e5f2c776b3fdf953508aab7badc219 0B / 3.17MB 0.2s
+#9 sha256:2d370c712b39dd321ae06a3834d1eafe511a8c0e790e33c4ee8a3b148c9b4c7e 65.01MB / 294.57MB 7.7s
+#9 sha256:78ee9142e3341681cf74691dc85e198954e5f2c776b3fdf953508aab7badc219 1.05MB / 3.17MB 0.3s
+#9 sha256:78ee9142e3341681cf74691dc85e198954e5f2c776b3fdf953508aab7badc219 3.17MB / 3.17MB 0.5s done
+#9 sha256:c5480f689a28c81884305e47f713a582bc62a229e1dd37fb01515ba8442e2709 0B / 108.64MB 0.2s
+#9 sha256:e20e5ef3d394f99e31aa3f12e05c702d7fab0f958f9a20895f11e4b3e282066c 116.39MB / 314.30MB 8.1s
+#9 sha256:8e76854735f1ff0cbac804200a73a599cb51c0692601fbeda64ffd8930fab4af 61.87MB / 122.08MB 8.4s
+#9 sha256:2d370c712b39dd321ae06a3834d1eafe511a8c0e790e33c4ee8a3b148c9b4c7e 80.74MB / 294.57MB 8.4s
+#9 sha256:e20e5ef3d394f99e31aa3f12e05c702d7fab0f958f9a20895f11e4b3e282066c 132.12MB / 314.30MB 9.0s
+#9 sha256:8e76854735f1ff0cbac804200a73a599cb51c0692601fbeda64ffd8930fab4af 68.16MB / 122.08MB 9.3s
+#9 sha256:2d370c712b39dd321ae06a3834d1eafe511a8c0e790e33c4ee8a3b148c9b4c7e 98.57MB / 294.57MB 9.3s
+#9 sha256:c5480f689a28c81884305e47f713a582bc62a229e1dd37fb01515ba8442e2709 6.29MB / 108.64MB 1.7s
+#9 sha256:8e76854735f1ff0cbac804200a73a599cb51c0692601fbeda64ffd8930fab4af 75.50MB / 122.08MB 9.9s
+#9 sha256:e20e5ef3d394f99e31aa3f12e05c702d7fab0f958f9a20895f11e4b3e282066c 148.90MB / 314.30MB 9.9s
+#9 sha256:2d370c712b39dd321ae06a3834d1eafe511a8c0e790e33c4ee8a3b148c9b4c7e 117.44MB / 294.57MB 10.2s
+#9 sha256:c5480f689a28c81884305e47f713a582bc62a229e1dd37fb01515ba8442e2709 13.63MB / 108.64MB 2.6s
+#9 sha256:8e76854735f1ff0cbac804200a73a599cb51c0692601fbeda64ffd8930fab4af 81.79MB / 122.08MB 11.0s
+#9 sha256:e20e5ef3d394f99e31aa3f12e05c702d7fab0f958f9a20895f11e4b3e282066c 164.63MB / 314.30MB 10.8s
+#9 sha256:2d370c712b39dd321ae06a3834d1eafe511a8c0e790e33c4ee8a3b148c9b4c7e 134.22MB / 294.57MB 11.1s
+#9 sha256:c5480f689a28c81884305e47f713a582bc62a229e1dd37fb01515ba8442e2709 19.92MB / 108.64MB 3.3s
+#9 sha256:8e76854735f1ff0cbac804200a73a599cb51c0692601fbeda64ffd8930fab4af 90.18MB / 122.08MB 12.0s
+#9 sha256:e20e5ef3d394f99e31aa3f12e05c702d7fab0f958f9a20895f11e4b3e282066c 180.36MB / 314.30MB 11.9s
+#9 sha256:c5480f689a28c81884305e47f713a582bc62a229e1dd37fb01515ba8442e2709 26.21MB / 108.64MB 4.2s
+#9 sha256:2d370c712b39dd321ae06a3834d1eafe511a8c0e790e33c4ee8a3b148c9b4c7e 150.99MB / 294.57MB 12.2s
+#9 sha256:c5480f689a28c81884305e47f713a582bc62a229e1dd37fb01515ba8442e2709 32.51MB / 108.64MB 4.5s
+#9 sha256:8e76854735f1ff0cbac804200a73a599cb51c0692601fbeda64ffd8930fab4af 96.47MB / 122.08MB 12.6s
+#9 sha256:e20e5ef3d394f99e31aa3f12e05c702d7fab0f958f9a20895f11e4b3e282066c 196.08MB / 314.30MB 12.9s
+#9 sha256:2d370c712b39dd321ae06a3834d1eafe511a8c0e790e33c4ee8a3b148c9b4c7e 167.77MB / 294.57MB 12.9s
+#9 sha256:c5480f689a28c81884305e47f713a582bc62a229e1dd37fb01515ba8442e2709 39.85MB / 108.64MB 5.4s
+#9 sha256:2d370c712b39dd321ae06a3834d1eafe511a8c0e790e33c4ee8a3b148c9b4c7e 183.50MB / 294.57MB 13.5s
+#9 sha256:8e76854735f1ff0cbac804200a73a599cb51c0692601fbeda64ffd8930fab4af 103.81MB / 122.08MB 13.8s
+#9 sha256:e20e5ef3d394f99e31aa3f12e05c702d7fab0f958f9a20895f11e4b3e282066c 212.86MB / 314.30MB 13.8s
+#9 sha256:c5480f689a28c81884305e47f713a582bc62a229e1dd37fb01515ba8442e2709 47.19MB / 108.64MB 6.3s
+#9 sha256:2d370c712b39dd321ae06a3834d1eafe511a8c0e790e33c4ee8a3b148c9b4c7e 202.38MB / 294.57MB 14.4s
+#9 sha256:8e76854735f1ff0cbac804200a73a599cb51c0692601fbeda64ffd8930fab4af 110.10MB / 122.08MB 14.7s
+#9 sha256:e20e5ef3d394f99e31aa3f12e05c702d7fab0f958f9a20895f11e4b3e282066c 229.64MB / 314.30MB 14.9s
+#9 sha256:c5480f689a28c81884305e47f713a582bc62a229e1dd37fb01515ba8442e2709 54.53MB / 108.64MB 7.1s
+#9 sha256:2d370c712b39dd321ae06a3834d1eafe511a8c0e790e33c4ee8a3b148c9b4c7e 219.15MB / 294.57MB 15.2s
+#9 sha256:8e76854735f1ff0cbac804200a73a599cb51c0692601fbeda64ffd8930fab4af 117.44MB / 122.08MB 15.3s
+#9 ...
+
+#14 [backend 4/4] RUN --network=none cargo fmt --all --check && cargo test --locked --offline && cargo build --release --locked --offline && cp target/release/miy-app /miy-app
+#14 0.256    Compiling proc-macro2 v1.0.107
+#14 0.256    Compiling unicode-ident v1.0.27
+#14 0.256    Compiling quote v1.0.47
+#14 0.256    Compiling libc v0.2.191
+#14 0.256    Compiling serde v1.0.229
+#14 0.256    Compiling cfg-if v1.0.5
+#14 0.256    Compiling serde_core v1.0.229
+#14 0.258    Compiling stable_deref_trait v1.2.1
+#14 0.260    Compiling version_check v0.9.5
+#14 0.261    Compiling typenum v1.20.1
+#14 0.261    Compiling autocfg v1.5.1
+#14 0.261    Compiling find-msvc-tools v0.1.15
+#14 0.261    Compiling shlex v2.0.1
+#14 0.262    Compiling pin-project-lite v0.2.17
+#14 0.263    Compiling parking_lot_core v0.9.12
+#14 0.265    Compiling futures-core v0.3.34
+#14 0.265    Compiling subtle v2.6.1
+#14 0.265    Compiling bytes v1.12.1
+#14 0.265    Compiling itoa v1.0.18
+#14 0.265    Compiling scopeguard v1.2.0
+#14 0.275    Compiling writeable v0.6.4
+#14 0.291    Compiling litemap v0.8.3
+#14 0.298    Compiling utf8_iter v1.0.4
+#14 0.306    Compiling icu_normalizer_data v2.3.0
+#14 0.323    Compiling cc v1.9.0
+#14 0.329    Compiling lock_api v0.4.14
+#14 0.351    Compiling icu_properties_data v2.3.0
+#14 0.356    Compiling once_cell v1.21.4
+#14 0.356    Compiling untrusted v0.9.0
+#14 0.366    Compiling zeroize v1.9.1
+#14 0.368    Compiling memchr v2.8.3
+#14 0.369    Compiling percent-encoding v2.3.2
+#14 0.370    Compiling zmij v1.0.23
+#14 0.381    Compiling serde_json v1.0.154
+#14 0.391    Compiling log v0.4.34
+#14 0.402    Compiling thiserror v2.0.21
+#14 0.411    Compiling generic-array v0.14.7
+#14 0.420    Compiling tracing-core v0.1.36
+#14 0.434    Compiling rustls-pki-types v1.15.1
+#14 0.441    Compiling futures-sink v0.3.34
+#14 0.453    Compiling rustls v0.23.46
+#14 0.453    Compiling futures-io v0.3.34
+#14 0.461    Compiling futures-task v0.3.34
+#14 0.478    Compiling equivalent v1.0.3
+#14 0.479    Compiling num-traits v0.2.19
+#14 0.500    Compiling crossbeam-utils v0.8.23
+#14 0.510    Compiling zerocopy v0.8.63
+#14 0.512    Compiling slab v0.4.12
+#14 0.520    Compiling foldhash v0.1.5
+#14 0.524    Compiling cpufeatures v0.2.17
+#14 0.532    Compiling iana-time-zone v0.1.65
+#14 0.547    Compiling allocator-api2 v0.2.21
+#14 0.579    Compiling hashbrown v0.17.1
+#14 0.583    Compiling parking v2.2.1
+#14 0.613    Compiling crc-catalog v2.5.0
+#14 0.637    Compiling webpki-roots v1.0.10
+#14 0.649    Compiling crc v3.4.0
+#14 0.660    Compiling futures-util v0.3.34
+#14 0.683    Compiling webpki-roots v0.26.11
+#14 0.717    Compiling event-listener v5.4.2
+#14 0.745    Compiling hashbrown v0.15.5
+#14 0.751    Compiling tinyvec v1.13.3
+#14 0.754    Compiling http v1.5.0
+#14 0.761    Compiling syn v3.0.9
+#14 0.768    Compiling syn v2.0.119
+#14 0.780    Compiling form_urlencoded v1.2.2
+#14 0.830    Compiling getrandom v0.4.3
+#14 0.832    Compiling unicode-bidi v0.3.18
+#14 0.837    Compiling unicode-properties v0.1.4
+#14 0.852    Compiling futures-channel v0.3.34
+#14 0.920    Compiling crossbeam-queue v0.3.14
+#14 0.943    Compiling base64 v0.22.1
+#14 0.957    Compiling indexmap v2.14.2
+#14 0.957    Compiling hex v0.4.3
+#14 0.968    Compiling unicode-normalization v0.1.26
+#14 0.976    Compiling httparse v1.10.1
+#14 0.996    Compiling block-buffer v0.10.4
+#14 1.000    Compiling crypto-common v0.1.7
+#14 1.029    Compiling hashlink v0.10.0
+#14 1.033    Compiling dotenvy v0.15.7
+#14 1.041    Compiling digest v0.10.7
+#14 1.087    Compiling getrandom v0.2.17
+#14 1.093    Compiling socket2 v0.6.5
+#14 1.107    Compiling mio v1.2.4
+#14 1.124    Compiling errno v0.3.14
+#14 1.133    Compiling sha2 v0.10.9
+#14 1.134    Compiling hmac v0.12.1
+#14 1.149    Compiling rand_core v0.6.4
+#14 1.152    Compiling http-body v1.1.0
+#14 1.173    Compiling signal-hook-registry v1.4.8
+#14 1.176    Compiling chrono v0.4.45
+#14 1.190    Compiling byteorder v1.5.0
+#14 1.203    Compiling home v0.5.12
+#14 1.237    Compiling stringprep v0.1.5
+#14 1.240    Compiling bitflags v2.13.2
+#14 1.242    Compiling whoami v1.6.1
+#14 1.247    Compiling uuid v1.28.0
+#14 1.272    Compiling ring v0.17.14
+#14 1.338    Compiling hkdf v0.12.4
+#14 1.361    Compiling tokio v1.54.0
+#14 1.366    Compiling md-5 v0.10.6
+#14 1.380    Compiling atoi v2.0.0
+#14 1.387    Compiling tower-service v0.3.3
+#14 1.387    Compiling time-core v0.1.9
+#14 1.397    Compiling num-conv v0.2.2
+#14 1.421    Compiling num-integer v0.1.47
+#14 1.453    Compiling sync_wrapper v1.0.2
+#14 1.463    Compiling heck v0.5.0
+#14 1.481    Compiling deranged v0.5.9
+#14 1.484    Compiling httpdate v1.0.3
+#14 1.488    Compiling tower-layer v0.3.3
+#14 1.493    Compiling powerfmt v0.2.1
+#14 1.496    Compiling time-macros v0.2.32
+#14 1.557    Compiling atomic-waker v1.1.2
+#14 1.563    Compiling num-bigint v0.4.8
+#14 1.569    Compiling http-body-util v0.1.5
+#14 1.612    Compiling anyhow v1.0.104
+#14 1.615    Compiling mime v0.3.17
+#14 1.631    Compiling ryu v1.0.23
+#14 1.639    Compiling pem v3.0.6
+#14 1.643    Compiling matchit v0.8.4
+#14 1.716    Compiling serde_path_to_error v0.1.20
+#14 2.165    Compiling time v0.3.55
+#14 2.566    Compiling synstructure v0.14.0
+#14 2.577    Compiling tracing-attributes v0.1.31
+#14 2.577    Compiling axum-macros v0.5.1
+#14 2.683    Compiling ppv-lite86 v0.2.21
+#14 2.757    Compiling serde_derive v1.0.229
+#14 2.757    Compiling zerofrom-derive v0.1.8
+#14 2.757    Compiling yoke-derive v0.8.4
+#14 2.757    Compiling zerovec-derive v0.11.6
+#14 2.757    Compiling displaydoc v0.2.7
+#14 2.757    Compiling thiserror-impl v2.0.21
+#14 2.757    Compiling tokio-macros v2.7.2
+#14 2.822    Compiling rand_chacha v0.3.1
+#14 2.953    Compiling rand v0.8.8
+#14 2.979    Compiling tracing v0.1.44
+#14 3.094    Compiling axum-core v0.5.6
+#14 3.124    Compiling zerofrom v0.1.8
+#14 3.164    Compiling yoke v0.8.3
+#14 3.229    Compiling simple_asn1 v0.6.4
+#14 3.245    Compiling zerovec v0.11.8
+#14 3.245    Compiling zerotrie v0.2.5
+#14 3.249    Compiling rustls-webpki v0.103.16
+#14 3.448    Compiling tokio-stream v0.1.19
+#14 3.486    Compiling tinystr v0.8.4
+#14 3.486    Compiling potential_utf v0.1.6
+#14 3.523    Compiling icu_collections v2.3.0
+#14 3.552    Compiling icu_locale_core v2.3.0
+#14 3.906    Compiling icu_provider v2.3.1
+#14 3.953    Compiling smallvec v1.16.3
+#14 3.953    Compiling either v1.19.0
+#14 3.956    Compiling serde_urlencoded v0.7.1
+#14 3.956    Compiling jsonwebtoken v9.3.1
+#14 4.004    Compiling icu_properties v2.3.0
+#14 4.033    Compiling icu_normalizer v2.3.0
+#14 4.110    Compiling parking_lot v0.12.5
+#14 4.191    Compiling futures-intrusive v0.5.0
+#14 4.446    Compiling idna_adapter v1.2.2
+#14 4.475    Compiling idna v1.1.0
+#14 4.594    Compiling url v2.5.8
+#14 5.002    Compiling sqlx-core v0.8.6
+#14 5.978    Compiling sqlx-postgres v0.8.6
+#14 6.199    Compiling hyper v1.12.0
+#14 6.199    Compiling tower v0.5.3
+#14 6.510    Compiling hyper-util v0.1.21
+#14 6.611    Compiling axum v0.8.9
+#14 7.571    Compiling sqlx-macros-core v0.8.6
+#14 8.039    Compiling sqlx-macros v0.8.6
+#14 8.856    Compiling sqlx v0.8.6
+#14 8.902    Compiling miy-app-sdk v0.2.0 (/build/sdk/rust)
+#14 9.588    Compiling miy-app v0.1.0 (/build)
+#14 9.871     Finished `test` profile [unoptimized + debuginfo] target(s) in 9.70s
+#14 9.880      Running unittests src/main.rs (target/debug/deps/miy_app-135303dc6e237b77)
+#14 9.881 
+#14 9.881 running 6 tests
+#14 9.881 test todos::tests::counts_unicode_characters_instead_of_utf8_bytes ... ok
+#14 9.881 test todos::tests::malformed_ids_and_database_errors_are_safe ... ok
+#14 9.881 test todos::tests::rejects_blank_or_control_characters ... ok
+#14 9.881 test todos::tests::requires_an_explicit_boolean_completion_state ... ok
+#14 9.881 test todos::tests::rejects_caller_supplied_ownership_and_admin_fields ... ok
+#14 9.881 test todos::tests::trims_surrounding_unicode_whitespace_and_keeps_internal_spaces ... ok
+#14 9.881 
+#14 9.881 test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+#14 9.881 
+#14 9.975    Compiling proc-macro2 v1.0.107
+#14 9.975    Compiling unicode-ident v1.0.27
+#14 9.975    Compiling quote v1.0.47
+#14 9.977    Compiling libc v0.2.191
+#14 9.977    Compiling serde v1.0.229
+#14 9.977    Compiling serde_core v1.0.229
+#14 9.977    Compiling version_check v0.9.5
+#14 9.977    Compiling cfg-if v1.0.5
+#14 9.977    Compiling shlex v2.0.1
+#14 9.977    Compiling parking_lot_core v0.9.12
+#14 9.979    Compiling find-msvc-tools v0.1.15
+#14 9.981    Compiling autocfg v1.5.1
+#14 9.982    Compiling icu_properties_data v2.3.0
+#14 9.982    Compiling icu_normalizer_data v2.3.0
+#14 9.983    Compiling stable_deref_trait v1.2.1
+#14 9.986    Compiling zmij v1.0.23
+#14 9.986    Compiling zerocopy v0.8.63
+#14 9.994    Compiling pin-project-lite v0.2.17
+#14 10.00    Compiling itoa v1.0.18
+#14 10.00    Compiling thiserror v2.0.21
+#14 10.02    Compiling futures-core v0.3.34
+#14 10.02    Compiling bytes v1.12.1
+#14 10.03    Compiling crossbeam-utils v0.8.23
+#14 10.04    Compiling serde_json v1.0.154
+#14 10.04    Compiling typenum v1.20.1
+#14 10.05    Compiling cc v1.9.0
+#14 10.06    Compiling litemap v0.8.3
+#14 10.08    Compiling writeable v0.6.4
+#14 10.08    Compiling scopeguard v1.2.0
+#14 10.09    Compiling subtle v2.6.1
+#14 10.09    Compiling utf8_iter v1.0.4
+#14 10.10    Compiling rustls v0.23.46
+#14 10.11    Compiling generic-array v0.14.7
+#14 10.11    Compiling lock_api v0.4.14
+#14 10.13    Compiling zeroize v1.9.1
+#14 10.17    Compiling num-traits v0.2.19
+#14 10.19    Compiling rustls-pki-types v1.15.1
+#14 ...
+
+#9 [node-tools 1/2] FROM mcr.microsoft.com/playwright:v1.64.1-noble@sha256:7852dc5a7d72f5fe458a597d690f6c42fbc8e9e26ddfa95f8e6ef552558d9bbf
+#9 sha256:e20e5ef3d394f99e31aa3f12e05c702d7fab0f958f9a20895f11e4b3e282066c 246.42MB / 314.30MB 15.8s
+#9 sha256:2d370c712b39dd321ae06a3834d1eafe511a8c0e790e33c4ee8a3b148c9b4c7e 236.98MB / 294.57MB 15.8s
+#9 sha256:8e76854735f1ff0cbac804200a73a599cb51c0692601fbeda64ffd8930fab4af 122.08MB / 122.08MB 15.9s done
+#9 sha256:c5480f689a28c81884305e47f713a582bc62a229e1dd37fb01515ba8442e2709 61.87MB / 108.64MB 8.3s
+#9 sha256:a60ef8ec184edb5ed91f5983f00261359fb2fe20f603e8d488b9477d32fcad70 1.05MB / 29.76MB 0.2s
+#9 sha256:a60ef8ec184edb5ed91f5983f00261359fb2fe20f603e8d488b9477d32fcad70 3.15MB / 29.76MB 0.3s
+#9 sha256:a60ef8ec184edb5ed91f5983f00261359fb2fe20f603e8d488b9477d32fcad70 6.29MB / 29.76MB 0.5s
+#9 sha256:a60ef8ec184edb5ed91f5983f00261359fb2fe20f603e8d488b9477d32fcad70 8.39MB / 29.76MB 0.6s
+#9 sha256:a60ef8ec184edb5ed91f5983f00261359fb2fe20f603e8d488b9477d32fcad70 11.53MB / 29.76MB 0.8s
+#9 sha256:2d370c712b39dd321ae06a3834d1eafe511a8c0e790e33c4ee8a3b148c9b4c7e 254.80MB / 294.57MB 16.8s
+#9 sha256:a60ef8ec184edb5ed91f5983f00261359fb2fe20f603e8d488b9477d32fcad70 14.68MB / 29.76MB 0.9s
+#9 sha256:e20e5ef3d394f99e31aa3f12e05c702d7fab0f958f9a20895f11e4b3e282066c 262.14MB / 314.30MB 17.0s
+#9 sha256:c5480f689a28c81884305e47f713a582bc62a229e1dd37fb01515ba8442e2709 68.16MB / 108.64MB 9.0s
+#9 sha256:a60ef8ec184edb5ed91f5983f00261359fb2fe20f603e8d488b9477d32fcad70 17.83MB / 29.76MB 1.1s
+#9 sha256:a60ef8ec184edb5ed91f5983f00261359fb2fe20f603e8d488b9477d32fcad70 19.92MB / 29.76MB 1.2s
+#9 sha256:a60ef8ec184edb5ed91f5983f00261359fb2fe20f603e8d488b9477d32fcad70 23.07MB / 29.76MB 1.4s
+#9 sha256:a60ef8ec184edb5ed91f5983f00261359fb2fe20f603e8d488b9477d32fcad70 26.21MB / 29.76MB 1.5s
+#9 sha256:c5480f689a28c81884305e47f713a582bc62a229e1dd37fb01515ba8442e2709 74.45MB / 108.64MB 9.6s
+#9 sha256:a60ef8ec184edb5ed91f5983f00261359fb2fe20f603e8d488b9477d32fcad70 29.76MB / 29.76MB 1.7s
+#9 sha256:a60ef8ec184edb5ed91f5983f00261359fb2fe20f603e8d488b9477d32fcad70 29.76MB / 29.76MB 1.7s done
+#9 extracting sha256:a60ef8ec184edb5ed91f5983f00261359fb2fe20f603e8d488b9477d32fcad70
+#9 sha256:2d370c712b39dd321ae06a3834d1eafe511a8c0e790e33c4ee8a3b148c9b4c7e 270.53MB / 294.57MB 17.7s
+#9 sha256:e20e5ef3d394f99e31aa3f12e05c702d7fab0f958f9a20895f11e4b3e282066c 277.87MB / 314.30MB 18.0s
+#9 extracting sha256:a60ef8ec184edb5ed91f5983f00261359fb2fe20f603e8d488b9477d32fcad70 0.5s done
+#9 sha256:c5480f689a28c81884305e47f713a582bc62a229e1dd37fb01515ba8442e2709 81.79MB / 108.64MB 10.4s
+#9 sha256:e20e5ef3d394f99e31aa3f12e05c702d7fab0f958f9a20895f11e4b3e282066c 295.70MB / 314.30MB 18.8s
+#9 sha256:2d370c712b39dd321ae06a3834d1eafe511a8c0e790e33c4ee8a3b148c9b4c7e 287.31MB / 294.57MB 19.1s
+#9 sha256:c5480f689a28c81884305e47f713a582bc62a229e1dd37fb01515ba8442e2709 88.08MB / 108.64MB 11.3s
+#9 sha256:2d370c712b39dd321ae06a3834d1eafe511a8c0e790e33c4ee8a3b148c9b4c7e 294.57MB / 294.57MB 19.4s done
+#9 sha256:e20e5ef3d394f99e31aa3f12e05c702d7fab0f958f9a20895f11e4b3e282066c 314.30MB / 314.30MB 19.5s done
+#9 sha256:c5480f689a28c81884305e47f713a582bc62a229e1dd37fb01515ba8442e2709 94.37MB / 108.64MB 12.2s
+#9 sha256:c5480f689a28c81884305e47f713a582bc62a229e1dd37fb01515ba8442e2709 100.66MB / 108.64MB 12.5s
+#9 sha256:c5480f689a28c81884305e47f713a582bc62a229e1dd37fb01515ba8442e2709 108.64MB / 108.64MB 13.2s done
+#9 extracting sha256:c5480f689a28c81884305e47f713a582bc62a229e1dd37fb01515ba8442e2709
+#9 extracting sha256:c5480f689a28c81884305e47f713a582bc62a229e1dd37fb01515ba8442e2709 1.2s done
+#9 extracting sha256:78ee9142e3341681cf74691dc85e198954e5f2c776b3fdf953508aab7badc219 done
+#9 extracting sha256:2d370c712b39dd321ae06a3834d1eafe511a8c0e790e33c4ee8a3b148c9b4c7e
+#9 ...
+
+#14 [backend 4/4] RUN --network=none cargo fmt --all --check && cargo test --locked --offline && cargo build --release --locked --offline && cp target/release/miy-app /miy-app
+#14 10.20    Compiling once_cell v1.21.4
+#14 10.23    Compiling equivalent v1.0.3
+#14 10.23    Compiling memchr v2.8.3
+#14 10.24    Compiling untrusted v0.9.0
+#14 10.30    Compiling tracing-core v0.1.36
+#14 10.36    Compiling futures-sink v0.3.34
+#14 10.40    Compiling foldhash v0.1.5
+#14 10.40    Compiling percent-encoding v2.3.2
+#14 10.47    Compiling syn v3.0.9
+#14 10.48    Compiling syn v2.0.119
+#14 10.49    Compiling allocator-api2 v0.2.21
+#14 10.64    Compiling log v0.4.34
+#14 10.65    Compiling form_urlencoded v1.2.2
+#14 10.68    Compiling hashbrown v0.15.5
+#14 10.71    Compiling http v1.5.0
+#14 10.71    Compiling webpki-roots v1.0.10
+#14 10.82    Compiling block-buffer v0.10.4
+#14 10.83    Compiling getrandom v0.2.17
+#14 10.84    Compiling crypto-common v0.1.7
+#14 10.87    Compiling socket2 v0.6.5
+#14 10.87    Compiling mio v1.2.4
+#14 10.87    Compiling digest v0.10.7
+#14 10.92    Compiling rand_core v0.6.4
+#14 10.95    Compiling cpufeatures v0.2.17
+#14 10.96    Compiling errno v0.3.14
+#14 10.99    Compiling futures-task v0.3.34
+#14 11.02    Compiling signal-hook-registry v1.4.8
+#14 11.03    Compiling futures-io v0.3.34
+#14 11.04    Compiling getrandom v0.4.3
+#14 11.04    Compiling ring v0.17.14
+#14 11.06    Compiling tokio v1.54.0
+#14 11.07    Compiling hashbrown v0.17.1
+#14 11.08    Compiling slab v0.4.12
+#14 11.08    Compiling tinyvec v1.13.3
+#14 11.10    Compiling crc-catalog v2.5.0
+#14 11.10    Compiling iana-time-zone v0.1.65
+#14 11.12    Compiling parking v2.2.1
+#14 11.17    Compiling chrono v0.4.45
+#14 11.20    Compiling http-body v1.1.0
+#14 11.20    Compiling event-listener v5.4.2
+#14 11.21    Compiling crc v3.4.0
+#14 11.23    Compiling futures-util v0.3.34
+#14 11.25    Compiling hashlink v0.10.0
+#14 11.25    Compiling hmac v0.12.1
+#14 11.27    Compiling unicode-normalization v0.1.26
+#14 11.31    Compiling sha2 v0.10.9
+#14 11.33    Compiling crossbeam-queue v0.3.14
+#14 11.37    Compiling indexmap v2.14.2
+#14 11.37    Compiling webpki-roots v0.26.11
+#14 11.39    Compiling unicode-bidi v0.3.18
+#14 11.47    Compiling httparse v1.10.1
+#14 11.50    Compiling base64 v0.22.1
+#14 11.58    Compiling uuid v1.28.0
+#14 11.64    Compiling unicode-properties v0.1.4
+#14 11.70    Compiling hkdf v0.12.4
+#14 11.72    Compiling stringprep v0.1.5
+#14 11.79    Compiling md-5 v0.10.6
+#14 11.80    Compiling atoi v2.0.0
+#14 11.84    Compiling futures-channel v0.3.34
+#14 11.86    Compiling hex v0.4.3
+#14 11.89    Compiling byteorder v1.5.0
+#14 11.99    Compiling tower-service v0.3.3
+#14 12.01    Compiling num-conv v0.2.2
+#14 12.02    Compiling home v0.5.12
+#14 12.02    Compiling whoami v1.6.1
+#14 12.02    Compiling time-core v0.1.9
+#14 12.05    Compiling bitflags v2.13.2
+#14 12.06    Compiling dotenvy v0.15.7
+#14 12.10    Compiling time-macros v0.2.32
+#14 12.23    Compiling synstructure v0.14.0
+#14 12.27    Compiling num-integer v0.1.47
+#14 12.28    Compiling powerfmt v0.2.1
+#14 12.53    Compiling httpdate v1.0.3
+#14 12.54    Compiling sync_wrapper v1.0.2
+#14 12.57    Compiling atomic-waker v1.1.2
+#14 12.60    Compiling deranged v0.5.9
+#14 12.62    Compiling heck v0.5.0
+#14 12.63    Compiling tower-layer v0.3.3
+#14 12.67    Compiling ppv-lite86 v0.2.21
+#14 12.71    Compiling num-bigint v0.4.8
+#14 12.74    Compiling http-body-util v0.1.5
+#14 12.85    Compiling anyhow v1.0.104
+#14 12.86    Compiling mime v0.3.17
+#14 12.87    Compiling rand_chacha v0.3.1
+#14 12.96    Compiling rand v0.8.8
+#14 13.02    Compiling ryu v1.0.23
+#14 13.09    Compiling pem v3.0.6
+#14 13.11    Compiling serde_path_to_error v0.1.20
+#14 13.12    Compiling matchit v0.8.4
+#14 13.19    Compiling serde_derive v1.0.229
+#14 13.20    Compiling zerofrom-derive v0.1.8
+#14 13.24    Compiling yoke-derive v0.8.4
+#14 13.24    Compiling zerovec-derive v0.11.6
+#14 13.31    Compiling displaydoc v0.2.7
+#14 13.32    Compiling thiserror-impl v2.0.21
+#14 13.34    Compiling tokio-macros v2.7.2
+#14 13.36    Compiling rustls-webpki v0.103.16
+#14 13.37    Compiling tracing-attributes v0.1.31
+#14 13.38    Compiling time v0.3.55
+#14 13.45    Compiling axum-macros v0.5.1
+#14 13.52    Compiling tokio-stream v0.1.19
+#14 13.79    Compiling zerofrom v0.1.8
+#14 13.83    Compiling yoke v0.8.3
+#14 13.89    Compiling tracing v0.1.44
+#14 13.91    Compiling zerovec v0.11.8
+#14 13.92    Compiling zerotrie v0.2.5
+#14 14.02    Compiling axum-core v0.5.6
+#14 14.18    Compiling tinystr v0.8.4
+#14 14.18    Compiling potential_utf v0.1.6
+#14 14.21    Compiling icu_collections v2.3.0
+#14 14.24    Compiling icu_locale_core v2.3.0
+#14 14.48    Compiling smallvec v1.16.3
+#14 14.48    Compiling either v1.19.0
+#14 14.50    Compiling serde_urlencoded v0.7.1
+#14 14.57    Compiling simple_asn1 v0.6.4
+#14 14.60    Compiling icu_provider v2.3.1
+#14 14.64    Compiling parking_lot v0.12.5
+#14 14.69    Compiling icu_properties v2.3.0
+#14 14.69    Compiling icu_normalizer v2.3.0
+#14 14.74    Compiling futures-intrusive v0.5.0
+#14 15.19    Compiling idna_adapter v1.2.2
+#14 15.23    Compiling idna v1.1.0
+#14 15.37    Compiling url v2.5.8
+#14 15.58    Compiling sqlx-core v0.8.6
+#14 15.64    Compiling jsonwebtoken v9.3.1
+#14 16.62    Compiling sqlx-postgres v0.8.6
+#14 17.24    Compiling hyper v1.12.0
+#14 17.24    Compiling tower v0.5.3
+#14 17.67    Compiling hyper-util v0.1.21
+#14 17.79    Compiling axum v0.8.9
+#14 18.39    Compiling sqlx-macros-core v0.8.6
+#14 18.90    Compiling sqlx-macros v0.8.6
+#14 ...
+
+#9 [node-tools 1/2] FROM mcr.microsoft.com/playwright:v1.64.1-noble@sha256:7852dc5a7d72f5fe458a597d690f6c42fbc8e9e26ddfa95f8e6ef552558d9bbf
+#9 extracting sha256:2d370c712b39dd321ae06a3834d1eafe511a8c0e790e33c4ee8a3b148c9b4c7e 2.5s done
+#9 DONE 24.9s
+
+#9 [node-tools 1/2] FROM mcr.microsoft.com/playwright:v1.64.1-noble@sha256:7852dc5a7d72f5fe458a597d690f6c42fbc8e9e26ddfa95f8e6ef552558d9bbf
+#9 extracting sha256:e20e5ef3d394f99e31aa3f12e05c702d7fab0f958f9a20895f11e4b3e282066c
+#9 extracting sha256:e20e5ef3d394f99e31aa3f12e05c702d7fab0f958f9a20895f11e4b3e282066c 1.8s done
+#9 DONE 26.7s
+
+#14 [backend 4/4] RUN --network=none cargo fmt --all --check && cargo test --locked --offline && cargo build --release --locked --offline && cp target/release/miy-app /miy-app
+#14 20.71    Compiling sqlx v0.8.6
+#14 20.76    Compiling miy-app-sdk v0.2.0 (/build/sdk/rust)
+#14 ...
+
+#9 [node-tools 1/2] FROM mcr.microsoft.com/playwright:v1.64.1-noble@sha256:7852dc5a7d72f5fe458a597d690f6c42fbc8e9e26ddfa95f8e6ef552558d9bbf
+#9 extracting sha256:8e76854735f1ff0cbac804200a73a599cb51c0692601fbeda64ffd8930fab4af 0.9s done
+#9 DONE 27.6s
+
+#9 [node-tools 1/2] FROM mcr.microsoft.com/playwright:v1.64.1-noble@sha256:7852dc5a7d72f5fe458a597d690f6c42fbc8e9e26ddfa95f8e6ef552558d9bbf
+#9 extracting sha256:ee918a637493be99132a3d3d8da8579e74002930bcf465da88bff56248173b66
+#9 extracting sha256:ee918a637493be99132a3d3d8da8579e74002930bcf465da88bff56248173b66 0.8s done
+#9 DONE 28.4s
+
+#14 [backend 4/4] RUN --network=none cargo fmt --all --check && cargo test --locked --offline && cargo build --release --locked --offline && cp target/release/miy-app /miy-app
+#14 22.31    Compiling miy-app v0.1.0 (/build)
+#14 23.74     Finished `release` profile [optimized] target(s) in 13.83s
+#14 ...
+
+#15 [node-tools 2/2] RUN npm install --global pnpm@10.34.5
+#15 0.785 
+#15 0.785 added 1 package in 651ms
+#15 0.785 
+#15 0.785 1 package is looking for funding
+#15 0.785   run `npm fund` for details
+#15 0.785 npm notice
+#15 0.785 npm notice New major version of npm available! 11.19.0 -> 12.2.1
+#15 0.785 npm notice Changelog: https://github.com/npm/cli/releases/tag/v12.2.1
+#15 0.785 npm notice To update run: npm install -g npm@12.2.1
+#15 0.785 npm notice
+#15 DONE 1.4s
+
+#14 [backend 4/4] RUN --network=none cargo fmt --all --check && cargo test --locked --offline && cargo build --release --locked --offline && cp target/release/miy-app /miy-app
+#14 DONE 24.1s
+
+#16 [frontend 1/5] WORKDIR /build
+#16 DONE 0.0s
+
+#17 [frontend 2/5] COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+#17 DONE 0.0s
+
+#18 [frontend 3/5] RUN pnpm fetch --frozen-lockfile --ignore-scripts --ignore-pnpmfile
+#18 ...
+
+#19 [stage-4 2/6] COPY --from=backend /miy-app /usr/local/bin/miy-app
+#19 CACHED
+
+#20 [stage-4 3/6] COPY manifest.json /miy/manifest.json
+#20 DONE 0.0s
+
+#21 [stage-4 4/6] COPY migrations /miy/migrations
+#21 DONE 0.0s
+
+#18 [frontend 3/5] RUN pnpm fetch --frozen-lockfile --ignore-scripts --ignore-pnpmfile
+#18 0.314 Importing packages to virtual store
+#18 0.316 Already up to date
+#18 0.320 Progress: resolved 1, reused 0, downloaded 0, added 0
+#18 1.056 Progress: resolved 37, reused 0, downloaded 37, added 37, done
+#18 1.078 
+#18 DONE 1.3s
+
+#22 [frontend 4/5] COPY . .
+#22 DONE 0.0s
+
+#23 [frontend 5/5] RUN --network=none pnpm install --offline --frozen-lockfile && pnpm typecheck && pnpm build
+#23 0.214 Lockfile is up to date, resolution step is skipped
+#23 0.222 Already up to date
+#23 0.285 
+#23 0.285 dependencies:
+#23 0.285 + @tanstack/history 1.162.5
+#23 0.285 + react 19.3.1
+#23 0.285 + react-dom 19.3.1
+#23 0.285 
+#23 0.285 devDependencies:
+#23 0.285 + @module-federation/vite 1.23.5
+#23 0.285 + @types/react 19.3.0
+#23 0.285 + @types/react-dom 19.3.0
+#23 0.285 + @vitejs/plugin-react 6.1.2
+#23 0.285 + typescript 7.0.2
+#23 0.285 + vite 8.3.5
+#23 0.285 
+#23 0.293 Done in 234ms using pnpm v10.34.5
+#23 0.446 
+#23 0.446 > miy-app-ui@0.1.0 typecheck /build
+#23 0.446 > tsc --noEmit
+#23 0.446 
+#23 0.696 
+#23 0.696 > miy-app-ui@0.1.0 build /build
+#23 0.696 > vite build
+#23 0.696 
+#23 0.836 vite v8.3.5 building client environment for production...
+#23 0.856 transforming...
+#23 0.933 ✓ 85 modules transformed.
+#23 0.948 rendering chunks...
+#23 0.974 computing gzip size...
+#23 0.976 dist/ui/mf-manifest.json                                                                                                                                     2.00 kB │ gzip:  0.60 kB
+#23 0.976 dist/ui/mf-stats.json                                                                                                                                        5.06 kB │ gzip:  0.93 kB
+#23 0.976 dist/ui/.vite/manifest.json                                                                                                                                  6.60 kB │ gzip:  0.82 kB
+#23 0.976 dist/ui/assets/AppRoot-Ca5AZPG8.css                                                                                                                          6.28 kB │ gzip:  1.97 kB
+#23 0.976 dist/ui/assets/helpers-oIxDNnZJ.js                                                                                                                           0.08 kB │ gzip:  0.10 kB
+#23 0.976 dist/ui/assets/dist-C5M3fhBw.js                                                                                                                              0.29 kB │ gzip:  0.22 kB
+#23 0.976 dist/ui/assets/_virtual_mf___mfe_internal__miy_todo_win_20261029__mf_owner__106378157702578__prebuild__react_mf_1_jsx_mf_2_runtime__prebuild__-lLn5ruiO.js   0.52 kB │ gzip:  0.34 kB
+#23 0.976 dist/ui/assets/rolldown-runtime-XKyaHtl9.js                                                                                                                  0.72 kB │ gzip:  0.42 kB
+#23 0.976 dist/ui/assets/vite-preload-helper-CRzLMJPS.js                                                                                                               1.53 kB │ gzip:  0.80 kB
+#23 0.976 dist/ui/assets/_virtual_mf___mfe_internal__miy_todo_win_20261029__mf_owner__106378157702578__prebuild__react__prebuild__-BC1ksIG3.js                         1.73 kB │ gzip:  0.72 kB
+#23 0.976 dist/ui/assets/pendingShares-2OOqSVmL.js                                                                                                                     1.85 kB │ gzip:  0.93 kB
+#23 0.976 dist/ui/assets/_virtual_mf-localSharedImportMap___mfe_internal__miy_todo_win_20261029__mf_owner__1-1YHjsu87.js                                               3.62 kB │ gzip:  1.24 kB
+#23 0.976 dist/ui/assets/_virtual_mf___mfe_internal__miy_todo_win_20261029__mf_owner__106378157702578__prebuild__react_mf_2_dom__prebuild__-BtbxHBoQ.js                4.55 kB │ gzip:  1.59 kB
+#23 0.976 dist/ui/assets/hostInit-BRpD0NDF.js                                                                                                                          5.14 kB │ gzip:  2.17 kB
+#23 0.976 dist/ui/assets/react-DlmbjZJV.js                                                                                                                             7.87 kB │ gzip:  3.00 kB
+#23 0.976 dist/ui/assets/_virtual_mf___mfe_internal__miy_todo_win_20261029__mf_owner__106378157702578__loadShare__shared-BMNx6C-g.js                                   9.21 kB │ gzip:  2.84 kB
+#23 0.976 dist/ui/assets/AppRoot-Dh8oAiq5.js                                                                                                                           9.30 kB │ gzip:  3.78 kB
+#23 0.976 dist/ui/remoteEntry.js                                                                                                                                      21.05 kB │ gzip:  7.14 kB
+#23 0.976 dist/ui/assets/utils-v9GZlbdk.js                                                                                                                            65.49 kB │ gzip: 19.40 kB
+#23 0.976 
+#23 0.976 ✓ built in 139ms
+#23 DONE 1.1s
+
+#24 [stage-4 5/6] COPY --from=frontend /build/dist/ui /miy/ui
+#24 DONE 0.0s
+
+#25 [stage-4 6/6] COPY .miy-server-build.json /miy/build.json
+#25 DONE 0.0s
+
+#26 exporting to image
+#26 exporting layers 0.1s done
+#26 exporting manifest sha256:5553a99252ae62a10dc8d4fcd9722c7355100e07be49480fb11b6faaf50d4cc6 0.0s done
+#26 exporting config sha256:ccfa6fa6b01ac2b6ef4b74d70f08ae4b45af8651d6deb03b588a7072d85d4273 done
+#26 exporting attestation manifest sha256:fc979d55f1447585bc15adf44e9645c9fa514885bfe450a029875abc2452c501 done
+#26 exporting manifest list sha256:a2928906b0dfb2334bc417daf99b0616cbce323ae5a1bc443f8d859f0e1deedd done
+#26 naming to docker.io/library/miy-server-build:74b5b3ad-bad5-4142-82f3-3cf059ba4659 done
+#26 unpacking to docker.io/library/miy-server-build:74b5b3ad-bad5-4142-82f3-3cf059ba4659 0.0s done
+#26 DONE 0.1s
+Build succeeded; the immutable image is ready for a separate development deployment.

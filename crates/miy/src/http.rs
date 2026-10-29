@@ -98,6 +98,23 @@ pub fn router(state: State) -> Router {
                 .layer(axum::extract::DefaultBodyLimit::disable()),
         )
         .route(
+            "/apps/{app}/builds",
+            axum::routing::post(crate::server_build::upload)
+                .layer(axum::extract::DefaultBodyLimit::disable()),
+        )
+        .route(
+            "/builds/{id}",
+            axum::routing::get(crate::server_build::status),
+        )
+        .route(
+            "/builds/{id}/logs",
+            axum::routing::get(crate::server_build::logs),
+        )
+        .route(
+            "/apps/{app}/build-requests/{request}",
+            axum::routing::get(crate::server_build::by_request),
+        )
+        .route(
             "/image-uploads/{id}",
             axum::routing::get(crate::delivery::status),
         )
@@ -343,7 +360,7 @@ async fn capabilities() -> Json<Value> {
         "runtimePlatform":crate::runtime_platform::server(),
         "userActivationSource":"core.users.enabled",
         "userActivationPropagation":"each authenticated request and queued operation; no Keycloak synchronization implied",
-        "features":["runtime.preflight.v2","development.sessions.v1","auth.sessions.v1","auth.device.v1","runtime.jobs.v1","runtime.events.v1","runtime.retry.v1","images.idempotency.v1","runtime.logs.v1","lists.pagination.v1"]}),
+        "features":["app.builds.v1","runtime.preflight.v2","development.sessions.v1","auth.sessions.v1","auth.device.v1","runtime.jobs.v1","runtime.events.v1","runtime.retry.v1","images.idempotency.v1","runtime.logs.v1","lists.pagination.v1"]}),
     )
 }
 #[derive(serde::Deserialize)]

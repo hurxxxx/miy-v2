@@ -57,6 +57,13 @@ pub enum AppCommand {
     Build {
         #[arg(long,value_parser=["linux/amd64","linux/arm64"])]
         platform: Option<String>,
+        /// Build committed source on the selected server without local Docker or language tools.
+        #[arg(long)]
+        remote: bool,
+        #[arg(long, requires = "remote")]
+        no_wait: bool,
+        #[arg(long, default_value = "1800", value_parser=clap::value_parser!(u64).range(1..=86400))]
+        timeout: u64,
     },
     /// Request administrator approval for this project's application.
     Register,
@@ -486,7 +493,15 @@ pub async fn execute(command: AppCommand) -> Result<Outcome> {
                 json!({"valid":true,"appId":m.id,"bundleVersion":bundle::VERSION,"checks":["manifest","bundle-integrity","cli-guidance-integrity","component-integrity","migration-contract","rust-format","rust-tests","frozen-dependencies","typescript","ui-build","federation-assets"],"browserIntegration":"requires platform acceptance test"}),
             ));
         }
-        AppCommand::Build { platform } => {
+        AppCommand::Build {
+            platform,
+            remote,
+            no_wait,
+            timeout,
+        } => {
+            if remote {
+                return crate::cli_build::execute(platform, no_wait, timeout).await;
+            }
             let platform = crate::runtime_platform::build_target(platform.as_deref()).await?;
             let m = manifest()?;
             let commit = output("git", &["rev-parse", "HEAD"])?;

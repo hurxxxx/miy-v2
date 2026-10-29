@@ -94,7 +94,13 @@ pub enum JobCommand {
         #[arg(long,default_value="600",value_parser=clap::value_parser!(u64).range(1..=86400))]
         timeout: u64,
     },
-    /// Recover the original request or reconnect to an acknowledged job.
+    /// Read bounded server-build log entries after a sequence.
+    Logs {
+        id: Uuid,
+        #[arg(long, default_value = "0")]
+        after: u64,
+    },
+    /// Recover the original request or reconnect to an acknowledged runtime or build job.
     Resume {
         id: Uuid,
         #[arg(long)]
@@ -162,7 +168,7 @@ fn data(value: Value) -> Result<Outcome> {
     Ok(Outcome::Data(value))
 }
 
-async fn require_features(session: &Session, features: &[&str]) -> Result<Value> {
+pub(crate) async fn require_features(session: &Session, features: &[&str]) -> Result<Value> {
     let value = app_cli::api(session, "/api/v1/capabilities", None)
         .await
         .map_err(|error| {
@@ -535,6 +541,30 @@ fn local_build() -> Result<(String, String)> {
         )
         .into());
     }
+    if let Some(receipt) = image.get("serverBuild") {
+        let receipt: crate::cli_build::ServerBuildReceipt = serde_json::from_value(receipt.clone())
+            .map_err(|_| {
+                CliError::new(
+                    Category::Environment,
+                    "invalid_server_build_receipt",
+                    "The saved server build receipt is invalid.",
+                )
+            })?;
+        if receipt.app_id != manifest.id
+            || receipt.version != manifest.version
+            || receipt.source_commit != image["sourceCommit"]
+            || receipt.bundle_version != crate::bundle::VERSION
+            || receipt.image_id != image_id
+            || receipt.platform != image["platform"]
+        {
+            return Err(CliError::new(
+                Category::Conflict,
+                "stale_server_build",
+                "The server build receipt differs from the committed project's build metadata.",
+            )
+            .into());
+        }
+    }
     Ok((manifest.id, image_id.into()))
 }
 
@@ -632,12 +662,43 @@ async fn mutate(
         )
     })?;
     let session = app_cli::session()?;
+    let server_build = if action == Operation::Deploy && retry.is_none() {
+        let metadata: Value = serde_json::from_slice(&std::fs::read("dist/image.json")?)?;
+        metadata
+            .get("serverBuild")
+            .map(|value| {
+                serde_json::from_value::<crate::cli_build::ServerBuildReceipt>(value.clone())
+                    .map_err(|_| {
+                        CliError::new(
+                            Category::Environment,
+                            "invalid_server_build_receipt",
+                            "The saved server build receipt is invalid.",
+                        )
+                    })
+            })
+            .transpose()?
+    } else {
+        None
+    };
+    if let Some(receipt) = &server_build {
+        crate::cli_build::validate_receipt_identity(
+            receipt,
+            &session,
+            &app,
+            input.image_id.as_deref().unwrap_or(""),
+        )?;
+        crate::cli_build::verify_receipt(&session, receipt).await?;
+    }
     let mut features = vec!["runtime.preflight.v2", "runtime.jobs.v1"];
     if !no_wait {
         features.push("runtime.events.v1");
     }
     if action == Operation::Deploy && retry.is_none() {
-        features.push("images.idempotency.v1");
+        features.push(if server_build.is_some() {
+            "app.builds.v1"
+        } else {
+            "images.idempotency.v1"
+        });
     }
     if retry.is_some() {
         features.push("runtime.retry.v1");
@@ -722,6 +783,7 @@ async fn mutate(
     }
     let mut entry = cli_journal::create(&session, input, retry)?;
     entry.retry_of = retry;
+    entry.server_build = server_build;
     let payload = if let Some(id) = retry {
         entry.submit_path = Some(format!("/api/v1/runtime/jobs/{id}/retry"));
         json!({"appId":app,"environment":environment,"idempotencyKey":entry.request_id,"expectedState":plan.expected_state,"confirmed":plan.requires_confirmation})
@@ -733,7 +795,7 @@ async fn mutate(
     entry.payload_hash = Some(crate::contract::hash(serde_json::to_vec(&payload)?));
     entry.payload = Some(payload);
     cli_journal::publish(&entry)?;
-    if action == Operation::Deploy && retry.is_none() {
+    if action == Operation::Deploy && retry.is_none() && entry.server_build.is_none() {
         crate::cli_upload::ensure(&session, &mut entry, false).await?;
     }
     let job = submit(&session, &mut entry).await?;
@@ -875,6 +937,58 @@ pub async fn execute_job(command: JobCommand, mode: OutputMode) -> Result<Outcom
         .into());
     }
     let session = app_cli::session()?;
+    let known_runtime = match &command {
+        JobCommand::Get { id } | JobCommand::Watch { id, .. } | JobCommand::Resume { id, .. } => {
+            match cli_journal::load(&session, *id) {
+                Ok(_) => true,
+                Err(error) if crate::cli_error::classify(&error).category == Category::NotFound => {
+                    false
+                }
+                Err(error) => return Err(error),
+            }
+        }
+        _ => false,
+    };
+    if !known_runtime {
+        match &command {
+            JobCommand::Get { id } => {
+                if let Some(job) = crate::cli_build::try_get(&session, *id).await? {
+                    return data(job);
+                }
+            }
+            JobCommand::Watch { id, after, timeout } => {
+                if let Some(result) = crate::cli_build::try_watch(
+                    &session,
+                    *id,
+                    after
+                        .clone()
+                        .or_else(|| cli_config::options().cursor.clone()),
+                    *timeout,
+                    mode,
+                )
+                .await?
+                {
+                    return Ok(result);
+                }
+            }
+            JobCommand::Resume {
+                id,
+                no_wait,
+                environment,
+            } => {
+                if let Some(result) =
+                    crate::cli_build::try_resume(&session, *id, *no_wait, environment.as_deref())
+                        .await?
+                {
+                    return Ok(result);
+                }
+            }
+            JobCommand::Logs { id, after } => {
+                return data(crate::cli_build::logs(&session, *id, *after).await?);
+            }
+            _ => {}
+        }
+    }
     require_features(&session, &["runtime.jobs.v1"]).await?;
     match command {
         JobCommand::List {
@@ -896,6 +1010,9 @@ pub async fn execute_job(command: JobCommand, mode: OutputMode) -> Result<Outcom
             .await?,
         ),
         JobCommand::Get { id } => data(get_job(&session, id).await?),
+        JobCommand::Logs { .. } => {
+            unreachable!("build log requests return before runtime dispatch")
+        }
         JobCommand::Watch { id, after, timeout } => {
             watch(
                 &session,
@@ -1090,7 +1207,11 @@ async fn resume(
     } else {
         let mut features = vec!["runtime.preflight.v2"];
         if entry.intent.action == Operation::Deploy && entry.retry_of.is_none() {
-            features.push("images.idempotency.v1");
+            features.push(if entry.server_build.is_some() {
+                "app.builds.v1"
+            } else {
+                "images.idempotency.v1"
+            });
         }
         if entry.retry_of.is_some() {
             features.push("runtime.retry.v1");
@@ -1129,7 +1250,11 @@ async fn resume(
             ))?;
         }
         if entry.intent.action == Operation::Deploy && entry.retry_of.is_none() {
-            crate::cli_upload::ensure(session, &mut entry, true).await?;
+            if let Some(receipt) = &entry.server_build {
+                crate::cli_build::verify_receipt(session, receipt).await?;
+            } else {
+                crate::cli_upload::ensure(session, &mut entry, true).await?;
+            }
         }
         submit(session, &mut entry).await?
     };
