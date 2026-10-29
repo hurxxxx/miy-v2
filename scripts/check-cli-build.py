@@ -39,8 +39,8 @@ def require(condition, message):
 
 def component_fixture(project):
     source = ROOT / 'registry/components/ui/1.0.1'
-    metadata = json.loads((source / 'component.json').read_text())
-    files = {name: (source / name).read_text() for name in sorted(metadata['files'])}
+    metadata = json.loads((source / 'component.json').read_text(encoding='utf-8'))
+    files = {name: (source / name).read_text(encoding='utf-8') for name in sorted(metadata['files'])}
     package = {key: metadata[key] for key in ['protocol', 'name', 'version', 'description', 'uiContract', 'bundleVersions']}
     package['files'] = files
     digest = hashlib.sha256(json.dumps(package, ensure_ascii=False, separators=(',', ':')).encode()).hexdigest()
@@ -49,10 +49,10 @@ def component_fixture(project):
     for name, text in files.items():
         path = project / 'platform-components/ui' / name
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(text)
+        path.write_text(text, encoding='utf-8', newline='\n')
     (project / 'platform-components/miy.components.lock.json').write_text(json.dumps({
         'protocol': metadata['protocol'], 'registry': 'http://localhost:18000', 'components': {'ui': entry},
-    }))
+    }), encoding='utf-8', newline='\n')
 
 
 def check(cli):
@@ -69,9 +69,13 @@ def check(cli):
         tools = root / 'forbidden-tools'
         tools.mkdir()
         tool_log = root / 'forbidden-tool-calls'
-        for tool in ['docker', 'cargo', 'rustc', 'pnpm', 'npm', 'node', 'ssh']:
-            (tools / tool).write_text('#!/bin/sh\nprintf "%s\\n" "' + tool + '" >> "$MIY_FORBIDDEN_TOOL_LOG"\nexit 97\n')
-            (tools / tool).chmod(0o700)
+        for tool in ['docker', 'cargo', 'rustc', 'pnpm', 'npm', 'node', 'ssh', 'wsl']:
+            if os.name == 'nt':
+                (tools / (tool + '.cmd')).write_bytes(
+                    ('@echo off\r\necho ' + tool + '>>"%MIY_FORBIDDEN_TOOL_LOG%"\r\nexit /b 97\r\n').encode('ascii'))
+            else:
+                (tools / tool).write_text('#!/bin/sh\nprintf "%s\\n" "' + tool + '" >> "$MIY_FORBIDDEN_TOOL_LOG"\nexit 97\n', encoding='utf-8', newline='\n')
+                (tools / tool).chmod(0o700)
         env = {**os.environ, 'MIY_CONFIG_DIR': str(config), 'MIY_CREDENTIAL_BACKEND': 'file',
                'RUST_LOG': 'off', 'NO_PROXY': '127.0.0.1,localhost', 'no_proxy': '127.0.0.1,localhost',
                'GIT_CONFIG_NOSYSTEM': '1', 'GIT_CONFIG_GLOBAL': os.devnull,
@@ -179,7 +183,7 @@ def check(cli):
                     self.authenticated()
                     request = self.headers.get('x-miy-request-id')
                     require(str(uuid.UUID(request)) == request, 'Missing immutable build request UUID')
-                    entry = json.loads((config / 'build-journal' / (request + '.json')).read_text())
+                    entry = json.loads((config / 'build-journal' / (request + '.json')).read_text(encoding='utf-8'))
                     require(entry['submissionStatus'] == 'sending' and entry['requestId'] == request,
                             'Build upload preceded durable journal')
                     require(entry['archiveHash'] == hashlib.sha256(raw).hexdigest() == self.headers.get('x-miy-archive-sha256')
@@ -233,7 +237,7 @@ def check(cli):
                                      'desiredState': 'running', 'requiresConfirmation': False, 'preservesDatabase': True})
                 elif self.path == f'/api/v1/apps/{APP}/runtime':
                     self.authenticated()
-                    entry = json.loads((config / 'journal' / (body['idempotencyKey'] + '.json')).read_text())
+                    entry = json.loads((config / 'journal' / (body['idempotencyKey'] + '.json')).read_text(encoding='utf-8'))
                     require(entry['payload'] == body and entry['submissionStatus'] == 'sending', 'Deployment preceded durable payload')
                     require(entry['upload'] is None and entry['serverBuild']['imageId'] == IMAGE, 'Server build attempted image upload')
                     require(body['imageId'] == IMAGE and body['action'] == 'deploy', 'Deployment did not use server image directly')
@@ -272,7 +276,7 @@ def check(cli):
             return result.stdout.decode().strip()
 
         def change_source(label):
-            with (project / 'src/main.rs').open('a') as file:
+            with (project / 'src/main.rs').open('a', encoding='utf-8', newline='\n') as file:
                 file.write('\n// ' + label + '\n')
             git('add', 'src/main.rs')
             git('commit', '--quiet', '-m', label)
@@ -282,13 +286,13 @@ def check(cli):
             call(['--context', 'fixture', 'auth', 'login', '--account', 'developer'], cwd=root)
             call(['--context', 'fixture', 'app', 'init', str(project), '--id', APP, '--name', 'Remote build fixture'], cwd=root)
             component_fixture(project)
-            (project / '.env').write_text(SECRET)
-            (project / 'src/.env').write_text(SECRET)
+            (project / '.env').write_text(SECRET, encoding='utf-8', newline='\n')
+            (project / 'src/.env').write_text(SECRET, encoding='utf-8', newline='\n')
             git('-c', 'init.templateDir=', 'init', '--quiet')
             git('add', '.')
             git('commit', '--quiet', '-m', 'Committed synthetic app')
             dirty = project / 'src/uncommitted.rs'
-            dirty.write_text('// uncommitted source must not reach server')
+            dirty.write_text('// uncommitted source must not reach server', encoding='utf-8', newline='\n')
             invalid = call(['--context', 'fixture', 'app', 'build', '--remote', '--no-wait'], expected=6)
             require(invalid['error']['code'] == 'commit_source_before_building' and not state['uploads'], 'Dirty source was submitted')
             dirty.unlink()
@@ -314,12 +318,14 @@ def check(cli):
             job.update(status='succeeded', imageId=IMAGE, step='completed')
             job['canonicalRequestId'] = str(uuid.uuid4())
             result = call(['--context', 'fixture', 'job', 'resume', build_id])['data']
-            require(result['metadataWritten'] and json.loads((project / 'dist/image.json').read_text())['serverBuild']['jobId'] == build_id,
+            require(result['metadataWritten'] and json.loads((project / 'dist/image.json').read_text(encoding='utf-8'))['serverBuild']['jobId'] == build_id,
                     'Completed server build did not publish local deployment receipt')
             logs = call(['--context', 'fixture', 'job', 'logs', build_id])['data']
             require(len(logs['logs']) == 2 and logs['nextSequence'] == 2, 'Build logs lost their sequence')
             lines = call(['--context', 'fixture', 'job', 'watch', build_id, '--after', '0'], output='jsonl')
             require(len(lines) == 3 and lines[-1]['data']['status'] == 'succeeded', 'JSONL build observation omitted logs or terminal result')
+            invalid_cursor = call(['--context', 'fixture', 'job', 'watch', build_id, '--after', 'invalid'], expected=2)
+            require(invalid_cursor['error']['code'] == 'invalid_build_log_cursor', 'Invalid log cursor lost its typed usage error')
             ok('canonical build identity, completed receipts, bounded logs and JSONL observation')
 
             call(['--context', 'fixture', 'app', 'deploy', '--dry-run'])
@@ -335,12 +341,20 @@ def check(cli):
             original = image_file.read_bytes()
             image = json.loads(original)
             image['serverBuild']['origin'] = 'https://wrong.example'
-            image_file.write_text(json.dumps(image))
+            image_file.write_text(json.dumps(image), encoding='utf-8', newline='\n')
             before = len(state['runtime_posts'])
             call(['--context', 'fixture', 'app', 'deploy', '--no-wait'], expected=6)
             image_file.write_bytes(original)
             require(len(state['runtime_posts']) == before, 'Foreign receipt caused deployment')
             ok('cross-origin receipt refuses deployment before mutation')
+
+            image['serverBuild'] = {'jobId': False}
+            image_file.write_text(json.dumps(image), encoding='utf-8', newline='\n')
+            malformed = call(['--context', 'fixture', 'app', 'deploy', '--no-wait'], expected=7)
+            image_file.write_bytes(original)
+            require(malformed['error']['code'] == 'invalid_server_build_receipt' and len(state['runtime_posts']) == before,
+                    'Malformed receipt lost its typed error or submitted a runtime request')
+            ok('malformed build receipt preserves typed validation error without deployment')
 
             change_source('timeout fixture')
             result = call(['--context', 'fixture', 'app', 'build', '--remote', '--timeout', '1'], expected=8)
