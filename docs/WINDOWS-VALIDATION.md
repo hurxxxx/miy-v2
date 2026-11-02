@@ -1,5 +1,9 @@
 # Windows 네이티브 빌드·운영 검증 안내
 
+## 다음 사용자 실행 — 게시된 0.6.3 설치기 인수
+
+[Windows 11 / PowerShell 5.1·7 인수 절차](WINDOWS-0.6.3-ACCEPTANCE.md)와 [사전·후검사 도구](../scripts/check-windows-published-installer.ps1)를 준비했다. 공개 API의 출처·해시 확인, 사용자가 직접 하는 GUI 설치·갱신·제거, 기존 연결·인증·프로젝트 보존 결과를 실행별로 남긴다. 사용자는 Windows 검증을 나중에 수행하기로 했으므로 **이번 실제 Windows 실행은 NOT_RUN**이다. 아래 기존 Windows 결과와 Windows Server CI는 별도 이력으로 유지한다.
+
 ## 2026-10-30 서버 반영 후 Windows 재확인
 
 서버 측 `f72c049`·`39b5640`의 [Linux 반영 기록](CLI-0.6.3-LINUX-VALIDATION.md)을 동기화한 뒤 실제 `https://v2.dwdcc.kr`을 Windows에서 재확인했다. `/api/health` 200, 서버·설치 안내 **0.6.3**, 배포물 소스 `8d7d042`가 일치한다. [실제 다운로드·CLI·브라우저 검증 결과](releases/cli-0.6.3-windows-postdeploy-validation.json)를 보존한다.

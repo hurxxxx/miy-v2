@@ -1,0 +1,17 @@
+.page { max-width: 960px; margin: 0 auto; padding: 32px 20px; color: #182c37; }
+.description { color: #5b6c76; margin-bottom: 28px; }
+.form { padding: 20px; background: #f4f7f8; border: 1px solid #dce5e8; border-radius: 12px; margin-bottom: 32px; }
+.form h2 { margin-top: 0; }
+.fields { display: flex; gap: 16px; align-items: end; flex-wrap: wrap; border: 0; padding: 0; margin: 0; }
+.fields label { display: grid; gap: 8px; font-weight: 600; flex: 1 1 160px; }
+.fields input { padding: 10px; border: 1px solid #9cadb5; border-radius: 6px; font: inherit; min-width: 0; }
+.fields button { min-height: 42px; }
+.error { padding: 14px; background: #fff0ef; color: #9e2925; border-radius: 8px; }
+.success { padding: 14px; background: #eaf6ee; color: #216438; border-radius: 8px; }
+.count { font-size: 16px; color: #526a76; }
+.tableWrap { overflow-x: auto; }
+.table { border-collapse: collapse; width: 100%; text-align: left; }
+.table th { background: #eef3f5; padding: 14px; }
+.table td { padding: 14px; border-bottom: 1px solid #dce5e8; overflow-wrap: anywhere; }
+.actions { display: flex; gap: 8px; }
+.page button:disabled { opacity: .55; cursor: not-allowed; }

@@ -1,5 +1,7 @@
 # Windows GUI 설치 파일
 
+게시된 0.6.3 설치기를 사용자 PC에서 확인하려면 [Windows 11 인수 절차](WINDOWS-0.6.3-ACCEPTANCE.md)를 따른다. PowerShell 5.1·7 사전·후검사 도구는 다운로드·출처 검증과 보존 비교만 수행하며, GUI 설치·갱신·제거는 사용자가 직접 실행한다. 이번 사용자 Windows 검증은 나중에 수행할 **NOT_RUN** 상태다.
+
 ## 현재 설치 후보
 
 CLI·설치기 소스는 `8d7d04271f9467d8bbdd16308e73715b33e4dc0c`다. [CLI CI 40826960538](https://github.com/hurxxxx/miy-v2/actions/runs/40826960538)의 정확한 Windows 행을 [설치기 CI 40830813012](https://github.com/hurxxxx/miy-v2/actions/runs/40830813012)에 전달했다. 네이티브 검사 24개와 Linux 패키지 검사 19개가 통과했고, 실제 서버에 동일한 CLI/installer index와 0.6.3 서버/UI를 반영했다. [Linux 검증 보고서](CLI-0.6.3-LINUX-VALIDATION.md)에 검사·출처·남은 IdP 확인 범위를 기록한다.

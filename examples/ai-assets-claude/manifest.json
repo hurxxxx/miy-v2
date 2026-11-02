@@ -1,0 +1,24 @@
+{
+  "contractVersion": "miy.app/v1alpha1",
+  "id": "qa-ai-claude-mvz9422x",
+  "migrations": {
+    "directory": "migrations"
+  },
+  "name": "AI claude 비품대장",
+  "requestedPermissions": [
+    "database"
+  ],
+  "resources": {
+    "database": "postgresql"
+  },
+  "runtime": {
+    "profile": "rust-web-v1"
+  },
+  "ui": {
+    "contractVersion": "miy.ui/v1alpha1",
+    "delivery": "module",
+    "moduleEntry": "mf-manifest.json",
+    "moduleExport": "./AppRoot"
+  },
+  "version": "0.2.0"
+}

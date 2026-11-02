@@ -1,0 +1,1015 @@
+{
+  "schemaVersion": 1,
+  "checkedAt": "2026-11-02T13:52:22.426412+00:00",
+  "status": "PASS",
+  "scope": "Two independent Linux developer sessions: new app v1, continuation v2, remote build and dev deploy; Windows execution deferred by user.",
+  "platform": {
+    "origin": "https://v2.dwdcc.kr",
+    "cliVersion": "0.6.3",
+    "bundleVersion": "0.7.1",
+    "publishedSourceCommit": "8d7d04271f9467d8bbdd16308e73715b33e4dc0c",
+    "mainIntegrationCommit": "a6fae065ed627bb63798cf74ea8a2c73a744c104",
+    "publishedLinuxCliSha256": "86d0d6294eb751ab88e7d7ed1d6925c0a477b4e71686e1cb087f17f5026bbf54",
+    "integrationCi": {
+      "runId": 41447528061,
+      "status": "SUCCESS",
+      "jobs": 5,
+      "url": "https://github.com/hurxxxx/miy-v2/actions/runs/41447528061"
+    }
+  },
+  "isolation": {
+    "freshAppAndConversationPerTool": true,
+    "v2ContinuesOwnV1Conversation": true,
+    "hostPlatformSourceAndDockerSocketMounted": false,
+    "directHostNetworkAvailable": false,
+    "scopedUnixSocketProxy": true,
+    "actualUpstreamMiyTokensMounted": false,
+    "adminCredentialsAvailableToAgent": false,
+    "developerOidcIdentityUsed": true,
+    "evaluatorRegisteredAppsAndPreapprovedDevPermissions": true,
+    "providerAuth": "A copy of the existing provider login was used in each fresh profile; this is not a separate OAuth login. Copies were removed without provider-wide logout."
+  },
+  "agents": {
+    "codex": {
+      "cliVersion": "0.166.0",
+      "modelsObserved": [
+        "gpt-6.1-sol"
+      ],
+      "sessionIds": [
+        "01a19c50-1388-7d42-af32-c36ce6c43ccd"
+      ],
+      "promptSha256": {
+        "prompt-mcp-verification.txt": "01c3e5ce3d0cf0e35e82eac5ddc193c6bdb0d995d467da4930a93fec8f4b0a31",
+        "prompt-v1.txt": "25fb8dfc2cebf940dd9ba3f9fd0a5b718c1f55e8aab0bbcbec5dfa1e764b8d89",
+        "prompt-v1-recovery.txt": "70427263f86eaacf8695d35680aabeefa4a9e52b946fe131facefb063275c7bc",
+        "prompt-v2.txt": "54da8079a1a23a5a095f044414afc73b92e8a13cff7283f9713324d669792a0a"
+      },
+      "runs": [
+        {
+          "schemaVersion": 1,
+          "runId": "20261102T124952Z-aeb6a5d25207",
+          "check": true,
+          "childExit": 0,
+          "timedOut": false,
+          "interrupted": false,
+          "durationMs": 165,
+          "stdoutSha256": "d9b9137920eb3870036c27ef4c5791ef3cea9b536f971bc77088f4844300b894",
+          "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "unitSummaries": []
+        },
+        {
+          "schemaVersion": 1,
+          "runId": "20261102T125055Z-2d73aa44232a",
+          "check": false,
+          "childExit": 0,
+          "timedOut": false,
+          "interrupted": false,
+          "durationMs": 216543,
+          "stdoutSha256": "8a3100460f6c1ed205fe6484e07c33dad360329c42b709d3f73ee9c8d322c153",
+          "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "unitSummaries": [
+            {
+              "status": "ok",
+              "passed": 4,
+              "failed": 0,
+              "ignored": 0
+            }
+          ]
+        },
+        {
+          "schemaVersion": 1,
+          "runId": "20261102T130141Z-a8bf86c89269",
+          "check": true,
+          "childExit": 0,
+          "timedOut": false,
+          "interrupted": false,
+          "durationMs": 315,
+          "stdoutSha256": "e4d4c65e3fe1f743dbfe307d248cebe3ad0856421b4352890f3bcca3957c7d4f",
+          "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "unitSummaries": []
+        },
+        {
+          "schemaVersion": 1,
+          "runId": "20261102T130242Z-beed5fcffc03",
+          "check": false,
+          "childExit": 0,
+          "timedOut": false,
+          "interrupted": false,
+          "durationMs": 156333,
+          "stdoutSha256": "6e4a0c56333f1c492fce62b7ee4ac9b9c024288f847ab6b5c7a4f36ab468f3f2",
+          "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "unitSummaries": [
+            {
+              "status": "ok",
+              "passed": 4,
+              "failed": 0,
+              "ignored": 0
+            }
+          ]
+        },
+        {
+          "schemaVersion": 1,
+          "runId": "20261102T130833Z-35ecf88946ed",
+          "check": false,
+          "childExit": 0,
+          "timedOut": false,
+          "interrupted": false,
+          "durationMs": 186311,
+          "stdoutSha256": "86af5bce3b07fb7d084e78f4417c4fdefbb3fc8f04c8cdfab6ff592de25fcbef",
+          "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "unitSummaries": [
+            {
+              "status": "ok",
+              "passed": 7,
+              "failed": 0,
+              "ignored": 0
+            }
+          ]
+        },
+        {
+          "schemaVersion": 1,
+          "runId": "20261102T133556Z-efad94fecf16",
+          "check": false,
+          "childExit": 78,
+          "timedOut": false,
+          "interrupted": false,
+          "durationMs": 64,
+          "stdoutSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "stderrSha256": "4e5777aedda5845835d69b491aac9f2a443af9dad45806a309f08b3576970c40",
+          "unitSummaries": []
+        },
+        {
+          "schemaVersion": 1,
+          "runId": "20261102T133612Z-f2b7a42b8e25",
+          "check": false,
+          "childExit": 0,
+          "timedOut": false,
+          "interrupted": false,
+          "durationMs": 15060,
+          "stdoutSha256": "73f53fc0e00c87f8ff0cb7e5a53a3988b71eed1375341929ff9855c7ac71b2b7",
+          "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "unitSummaries": []
+        },
+        {
+          "schemaVersion": 1,
+          "runId": "20261102T133722Z-ed876710934b",
+          "check": false,
+          "childExit": 0,
+          "timedOut": false,
+          "interrupted": false,
+          "durationMs": 12951,
+          "stdoutSha256": "0daf32d915bc13cb73ed4d9f7d06e4372d4ef9bd8c9ab118415cf039a0e4c0f6",
+          "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "unitSummaries": []
+        },
+        {
+          "schemaVersion": 1,
+          "runId": "20261102T134059Z-2f4ea7eb3e98",
+          "check": true,
+          "childExit": 0,
+          "timedOut": false,
+          "interrupted": false,
+          "durationMs": 315,
+          "stdoutSha256": "e4d4c65e3fe1f743dbfe307d248cebe3ad0856421b4352890f3bcca3957c7d4f",
+          "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "unitSummaries": []
+        }
+      ],
+      "nativeMcp": {
+        "status": "PASS",
+        "requiredTools": [
+          "get_cli_help",
+          "get_contract",
+          "list_components",
+          "search_api"
+        ],
+        "events": [
+          {
+            "runId": "20261102T130242Z-beed5fcffc03",
+            "tool": "search_api",
+            "status": "FAIL",
+            "delivery": "inline",
+            "payloadShapeValid": false
+          },
+          {
+            "runId": "20261102T130242Z-beed5fcffc03",
+            "tool": "get_contract",
+            "status": "FAIL",
+            "delivery": "inline",
+            "payloadShapeValid": false
+          },
+          {
+            "runId": "20261102T130242Z-beed5fcffc03",
+            "tool": "list_components",
+            "status": "FAIL",
+            "delivery": "inline",
+            "payloadShapeValid": false
+          },
+          {
+            "runId": "20261102T130242Z-beed5fcffc03",
+            "tool": "get_cli_help",
+            "status": "PASS",
+            "delivery": "inline",
+            "payloadShapeValid": true
+          },
+          {
+            "runId": "20261102T130833Z-35ecf88946ed",
+            "tool": "search_api",
+            "status": "FAIL",
+            "delivery": "inline",
+            "payloadShapeValid": false
+          },
+          {
+            "runId": "20261102T130833Z-35ecf88946ed",
+            "tool": "list_components",
+            "status": "FAIL",
+            "delivery": "inline",
+            "payloadShapeValid": false
+          },
+          {
+            "runId": "20261102T130833Z-35ecf88946ed",
+            "tool": "get_contract",
+            "status": "FAIL",
+            "delivery": "inline",
+            "payloadShapeValid": false
+          },
+          {
+            "runId": "20261102T130833Z-35ecf88946ed",
+            "tool": "get_cli_help",
+            "status": "PASS",
+            "delivery": "inline",
+            "payloadShapeValid": true
+          },
+          {
+            "runId": "20261102T133612Z-f2b7a42b8e25",
+            "tool": "list_components",
+            "status": "FAIL",
+            "delivery": "inline",
+            "payloadShapeValid": false
+          },
+          {
+            "runId": "20261102T133612Z-f2b7a42b8e25",
+            "tool": "get_contract",
+            "status": "FAIL",
+            "delivery": "inline",
+            "payloadShapeValid": false
+          },
+          {
+            "runId": "20261102T133612Z-f2b7a42b8e25",
+            "tool": "get_cli_help",
+            "status": "PASS",
+            "delivery": "inline",
+            "payloadShapeValid": true
+          },
+          {
+            "runId": "20261102T133612Z-f2b7a42b8e25",
+            "tool": "search_api",
+            "status": "FAIL",
+            "delivery": "inline",
+            "payloadShapeValid": false
+          },
+          {
+            "runId": "20261102T133722Z-ed876710934b",
+            "tool": "get_cli_help",
+            "status": "PASS",
+            "delivery": "inline",
+            "payloadShapeValid": true
+          },
+          {
+            "runId": "20261102T133722Z-ed876710934b",
+            "tool": "search_api",
+            "status": "PASS",
+            "delivery": "inline",
+            "payloadShapeValid": true
+          },
+          {
+            "runId": "20261102T133722Z-ed876710934b",
+            "tool": "get_contract",
+            "status": "PASS",
+            "delivery": "inline",
+            "payloadShapeValid": true
+          },
+          {
+            "runId": "20261102T133722Z-ed876710934b",
+            "tool": "list_components",
+            "status": "PASS",
+            "delivery": "inline",
+            "payloadShapeValid": true
+          }
+        ],
+        "note": "Completed events only; no double-count of started/completed. Claude full-contract results were spooled by the client and independently parsed from the saved file."
+      },
+      "v1": {
+        "status": "PASS",
+        "checkedAt": "2026-11-02T13:06:19.119Z",
+        "phase": 1,
+        "url": "https://v2.dwdcc.kr/environments/dev/apps/qa-ai-codex-mvz9422x",
+        "installation": {
+          "id": "9dbde4bf-23e1-4625-ad90-2829ad554359",
+          "releaseId": "a28237aa-fd87-4b7e-b954-44ddd6fdaa67",
+          "imageId": "sha256:008e3839b55a7ce8ffa694394b26d5352dcf288094deda9e5638a1bec5c8559f",
+          "sourceCommit": "e4818942bc35d3311e603a73af710ee1245a5b17",
+          "dbStatus": "ready",
+          "runtimeStatus": "running"
+        },
+        "database": {
+          "id": "9dbde4bf-23e1-4625-ad90-2829ad554359",
+          "name": "miy_app_9dbde4bf23e14625ad902829ad554359",
+          "environment": "dev"
+        },
+        "preserved": {
+          "id": "c0ebb52b-0e8f-4226-8309-bbb52f070956",
+          "name": "qa-preserve-c76652ad5d",
+          "quantity": 3
+        },
+        "checks": [
+          "authenticated_developer_api",
+          "invalid_input_rejected_without_mutation",
+          "cross_user_list_denied",
+          "create_update_delete",
+          "browser_list_and_reload",
+          "protected_bundle_lock_preserved"
+        ],
+        "scopeNotes": [
+          "Cross-user update/delete are verified in a separate targeted check and the v2 evaluator; this v1 report initially checked cross-user listing only."
+        ]
+      },
+      "v2": {
+        "status": "PASS",
+        "checkedAt": "2026-11-02T13:40:49.691Z",
+        "evaluationHarnessSha256": "bd332d2b8c884e9d2358615b2c563d3b803180843e856b1cab39bb090d26fada",
+        "phase": 2,
+        "url": "https://v2.dwdcc.kr/environments/dev/apps/qa-ai-codex-mvz9422x",
+        "build": {
+          "id": "1608733f-6b12-4a60-831e-f9f0cd9121e2",
+          "sourceCommit": "7b78ac06fc0893e39a39ab804b3019cb1fee1a4b",
+          "imageId": "sha256:b506b49d74f49ff7c2fdf0bf2f73444791ff8f8d582b99320cfe7cc62999de25",
+          "status": "succeeded",
+          "platform": "linux/amd64"
+        },
+        "deployJob": {
+          "id": "42f0b915-aaaa-439d-9e03-47e5c27c2506",
+          "status": "succeeded",
+          "releaseId": "99663bc6-669a-471d-b8e9-08fc0ca0215f",
+          "imageId": "sha256:b506b49d74f49ff7c2fdf0bf2f73444791ff8f8d582b99320cfe7cc62999de25"
+        },
+        "installation": {
+          "id": "9dbde4bf-23e1-4625-ad90-2829ad554359",
+          "releaseId": "99663bc6-669a-471d-b8e9-08fc0ca0215f",
+          "imageId": "sha256:b506b49d74f49ff7c2fdf0bf2f73444791ff8f8d582b99320cfe7cc62999de25",
+          "sourceCommit": "7b78ac06fc0893e39a39ab804b3019cb1fee1a4b",
+          "dbStatus": "ready",
+          "runtimeStatus": "running"
+        },
+        "database": {
+          "id": "9dbde4bf-23e1-4625-ad90-2829ad554359",
+          "name": "miy_app_9dbde4bf23e14625ad902829ad554359",
+          "environment": "dev"
+        },
+        "preserved": {
+          "id": "c0ebb52b-0e8f-4226-8309-bbb52f070956",
+          "name": "qa-preserve-c76652ad5d",
+          "quantity": 3
+        },
+        "checks": [
+          "authenticated_developer_api",
+          "invalid_input_rejected_without_mutation",
+          "cross_user_list_and_update_delete_denied",
+          "create_update_delete",
+          "browser_list_and_reload",
+          "browser_form_create_edit_delete_reaches_database",
+          "build_deploy_image_and_source_match",
+          "protected_bundle_lock_and_file_hashes_preserved",
+          "tracked_source_matches_agent_commit",
+          "same_installation_new_release",
+          "v1_uuid_name_quantity_preserved",
+          "new_location_create_update"
+        ]
+      },
+      "businessSourceSnapshot": {
+        "sourceCommit": "7b78ac06fc0893e39a39ab804b3019cb1fee1a4b",
+        "directory": "examples/ai-assets-codex",
+        "filesSha256": {
+          "manifest.json": "37ec538b7af084e146021b1f4583c2f52522a71a77b6b4e35299688f8309280f",
+          "migrations/0002_assets.sql": "a35ce85154d2e3d280f2d203112357ffbb51a87347e35fedcdbb77d93031863f",
+          "migrations/0003_asset_location.sql": "4cd70ab81ccc864ae84b9053d3fcb85814bbc74cf94dd7b3e767dc9ad4e6b20e",
+          "src/main.rs": "8dcb2a52397c6588eb0797c0439521012c90bce372b94e3a4eb5a71697629305",
+          "web/src/AppRoot.module.css": "b52dd89ee3d6bcf53cfb350ab79bb9d22ec358a05339948b60a494e0acf81a6f",
+          "web/src/AppRoot.tsx": "df99d8be33f5b26451d6a7dc1c69f57189bca8b72d9457db604eec8f18fee267",
+          "web/src/styles.d.ts": "e15bcdb25192ec0b8086fa65f0d0e6b5ccac7874f6f3afc513e382bd6445e69e"
+        }
+      },
+      "screenshotSha256": "a0eacb2982d2e0213712e08d30f15299695d5caccaae0c39d86f2b2c5fe8442b"
+    },
+    "claude": {
+      "cliVersion": "2.1.316",
+      "modelsObserved": [
+        "claude-opus-5-5"
+      ],
+      "sessionIds": [
+        "0e39975f-3262-48ea-9f93-9c40dddf45fb"
+      ],
+      "promptSha256": {
+        "prompt-v1.txt": "7bd533084f8291ba85dc61b713d83fa07a353dff088ea0e60857f4b069421b98",
+        "prompt-v1-recovery.txt": "70427263f86eaacf8695d35680aabeefa4a9e52b946fe131facefb063275c7bc",
+        "prompt-v2.txt": "351540905d914093bdeee9eb3b0a7134b3f8462441c6d3b6b3ee190344c8ce89"
+      },
+      "runs": [
+        {
+          "schemaVersion": 1,
+          "runId": "20261102T124952Z-fc50ef0de153",
+          "check": true,
+          "childExit": 0,
+          "timedOut": false,
+          "interrupted": false,
+          "durationMs": 215,
+          "stdoutSha256": "d9b9137920eb3870036c27ef4c5791ef3cea9b536f971bc77088f4844300b894",
+          "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "unitSummaries": []
+        },
+        {
+          "schemaVersion": 1,
+          "runId": "20261102T125055Z-20b5d26b6f43",
+          "check": false,
+          "childExit": 0,
+          "timedOut": false,
+          "interrupted": false,
+          "durationMs": 303724,
+          "stdoutSha256": "234582e39034116f0f1a4c630a289c64abdba1b9387b192885d19b739d2b29aa",
+          "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "unitSummaries": []
+        },
+        {
+          "schemaVersion": 1,
+          "runId": "20261102T130141Z-df20e4fef828",
+          "check": true,
+          "childExit": 0,
+          "timedOut": false,
+          "interrupted": false,
+          "durationMs": 215,
+          "stdoutSha256": "e3e720e2f2581d50ff6d323988651403890e790c5792513ae0dcb01535fb8806",
+          "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "unitSummaries": []
+        },
+        {
+          "schemaVersion": 1,
+          "runId": "20261102T130244Z-9c13d2005af6",
+          "check": false,
+          "childExit": 0,
+          "timedOut": false,
+          "interrupted": false,
+          "durationMs": 181651,
+          "stdoutSha256": "74365d22395fd27db51c36f02f6e6c5f91eaaf707c399c48296283bcac07f31b",
+          "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "unitSummaries": [
+            {
+              "status": "ok",
+              "passed": 7,
+              "failed": 0,
+              "ignored": 0
+            }
+          ]
+        },
+        {
+          "schemaVersion": 1,
+          "runId": "20261102T130834Z-82ce97693fb7",
+          "check": false,
+          "childExit": 0,
+          "timedOut": false,
+          "interrupted": false,
+          "durationMs": 207059,
+          "stdoutSha256": "b2ba1005590232d3241abcab6c0026dbbc77cd30093a6d2a3a886a3419dce060",
+          "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "unitSummaries": [
+            {
+              "status": "ok",
+              "passed": 10,
+              "failed": 0,
+              "ignored": 0
+            }
+          ]
+        },
+        {
+          "schemaVersion": 1,
+          "runId": "20261102T134059Z-b9b49a4fc294",
+          "check": true,
+          "childExit": 0,
+          "timedOut": false,
+          "interrupted": false,
+          "durationMs": 267,
+          "stdoutSha256": "e3e720e2f2581d50ff6d323988651403890e790c5792513ae0dcb01535fb8806",
+          "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "unitSummaries": []
+        }
+      ],
+      "nativeMcp": {
+        "status": "PASS",
+        "requiredTools": [
+          "get_cli_help",
+          "get_contract",
+          "list_components",
+          "search_api"
+        ],
+        "events": [
+          {
+            "runId": "20261102T125055Z-20b5d26b6f43",
+            "tool": "get_cli_help",
+            "status": "PASS",
+            "delivery": "inline",
+            "payloadShapeValid": true
+          },
+          {
+            "runId": "20261102T125055Z-20b5d26b6f43",
+            "tool": "get_contract",
+            "status": "PASS",
+            "delivery": "spooled_valid_json",
+            "payloadShapeValid": true,
+            "spooledPayloadSha256": "cb874b69f8cbc7eca870d8b1d583762ab8fea1bc99aa6069461139d74ad7f224"
+          },
+          {
+            "runId": "20261102T125055Z-20b5d26b6f43",
+            "tool": "search_api",
+            "status": "PASS",
+            "delivery": "inline",
+            "payloadShapeValid": true
+          },
+          {
+            "runId": "20261102T125055Z-20b5d26b6f43",
+            "tool": "get_cli_help",
+            "status": "PASS",
+            "delivery": "inline",
+            "payloadShapeValid": true
+          },
+          {
+            "runId": "20261102T125055Z-20b5d26b6f43",
+            "tool": "list_components",
+            "status": "PASS",
+            "delivery": "inline",
+            "payloadShapeValid": true
+          },
+          {
+            "runId": "20261102T130244Z-9c13d2005af6",
+            "tool": "search_api",
+            "status": "PASS",
+            "delivery": "inline",
+            "payloadShapeValid": true
+          },
+          {
+            "runId": "20261102T130244Z-9c13d2005af6",
+            "tool": "list_components",
+            "status": "PASS",
+            "delivery": "inline",
+            "payloadShapeValid": true
+          },
+          {
+            "runId": "20261102T130244Z-9c13d2005af6",
+            "tool": "get_contract",
+            "status": "PASS",
+            "delivery": "spooled_valid_json",
+            "payloadShapeValid": true,
+            "spooledPayloadSha256": "cb874b69f8cbc7eca870d8b1d583762ab8fea1bc99aa6069461139d74ad7f224"
+          },
+          {
+            "runId": "20261102T130244Z-9c13d2005af6",
+            "tool": "get_cli_help",
+            "status": "PASS",
+            "delivery": "inline",
+            "payloadShapeValid": true
+          },
+          {
+            "runId": "20261102T130834Z-82ce97693fb7",
+            "tool": "search_api",
+            "status": "PASS",
+            "delivery": "inline",
+            "payloadShapeValid": true
+          },
+          {
+            "runId": "20261102T130834Z-82ce97693fb7",
+            "tool": "get_contract",
+            "status": "PASS",
+            "delivery": "spooled_valid_json",
+            "payloadShapeValid": true,
+            "spooledPayloadSha256": "cb874b69f8cbc7eca870d8b1d583762ab8fea1bc99aa6069461139d74ad7f224"
+          },
+          {
+            "runId": "20261102T130834Z-82ce97693fb7",
+            "tool": "get_cli_help",
+            "status": "PASS",
+            "delivery": "inline",
+            "payloadShapeValid": true
+          },
+          {
+            "runId": "20261102T130834Z-82ce97693fb7",
+            "tool": "list_components",
+            "status": "PASS",
+            "delivery": "inline",
+            "payloadShapeValid": true
+          }
+        ],
+        "note": "Completed events only; no double-count of started/completed. Claude full-contract results were spooled by the client and independently parsed from the saved file."
+      },
+      "v1": {
+        "status": "PASS",
+        "checkedAt": "2026-11-02T13:06:19.099Z",
+        "phase": 1,
+        "url": "https://v2.dwdcc.kr/environments/dev/apps/qa-ai-claude-mvz9422x",
+        "installation": {
+          "id": "f0ddc8fd-0ad9-4766-9032-f745c854ffca",
+          "releaseId": "fd04c703-3fd1-4d9f-843e-d021d4a46c2f",
+          "imageId": "sha256:7401f0b9ba1c7b45511118adb8c952f222fa57b482ee76996b4c667549a7cf52",
+          "sourceCommit": "db21393e2f1f72f7ef840c3da9979578e1211aa4",
+          "dbStatus": "ready",
+          "runtimeStatus": "running"
+        },
+        "database": {
+          "id": "f0ddc8fd-0ad9-4766-9032-f745c854ffca",
+          "name": "miy_app_f0ddc8fd0ad947669032f745c854ffca",
+          "environment": "dev"
+        },
+        "preserved": {
+          "id": "c7ad8fe3-471c-4c82-b3a1-160c9bf95a17",
+          "name": "qa-preserve-2fc73873b1",
+          "quantity": 3
+        },
+        "checks": [
+          "authenticated_developer_api",
+          "invalid_input_rejected_without_mutation",
+          "cross_user_list_denied",
+          "create_update_delete",
+          "browser_list_and_reload",
+          "protected_bundle_lock_preserved"
+        ],
+        "scopeNotes": [
+          "Cross-user update/delete are verified in a separate targeted check and the v2 evaluator; this v1 report initially checked cross-user listing only."
+        ]
+      },
+      "v2": {
+        "status": "PASS",
+        "checkedAt": "2026-11-02T13:40:49.668Z",
+        "evaluationHarnessSha256": "bd332d2b8c884e9d2358615b2c563d3b803180843e856b1cab39bb090d26fada",
+        "phase": 2,
+        "url": "https://v2.dwdcc.kr/environments/dev/apps/qa-ai-claude-mvz9422x",
+        "build": {
+          "id": "2d0fa043-e920-4af2-a4bf-d99681521a70",
+          "sourceCommit": "5e3d3608f24e06bbfcb272b5a4e9b380eadd1c61",
+          "imageId": "sha256:dfee87d383c80a53576f53c9beaae7a4da0a9d8a0b9d9b8b03a8699d13f891fe",
+          "status": "succeeded",
+          "platform": "linux/amd64"
+        },
+        "deployJob": {
+          "id": "9eca2975-5e25-4c03-82ba-e60175bd597f",
+          "status": "succeeded",
+          "releaseId": "ccd6ea3e-3b99-4e2b-96a2-7110a22a5338",
+          "imageId": "sha256:dfee87d383c80a53576f53c9beaae7a4da0a9d8a0b9d9b8b03a8699d13f891fe"
+        },
+        "installation": {
+          "id": "f0ddc8fd-0ad9-4766-9032-f745c854ffca",
+          "releaseId": "ccd6ea3e-3b99-4e2b-96a2-7110a22a5338",
+          "imageId": "sha256:dfee87d383c80a53576f53c9beaae7a4da0a9d8a0b9d9b8b03a8699d13f891fe",
+          "sourceCommit": "5e3d3608f24e06bbfcb272b5a4e9b380eadd1c61",
+          "dbStatus": "ready",
+          "runtimeStatus": "running"
+        },
+        "database": {
+          "id": "f0ddc8fd-0ad9-4766-9032-f745c854ffca",
+          "name": "miy_app_f0ddc8fd0ad947669032f745c854ffca",
+          "environment": "dev"
+        },
+        "preserved": {
+          "id": "c7ad8fe3-471c-4c82-b3a1-160c9bf95a17",
+          "name": "qa-preserve-2fc73873b1",
+          "quantity": 3
+        },
+        "checks": [
+          "authenticated_developer_api",
+          "invalid_input_rejected_without_mutation",
+          "cross_user_list_and_update_delete_denied",
+          "create_update_delete",
+          "browser_list_and_reload",
+          "browser_form_create_edit_delete_reaches_database",
+          "build_deploy_image_and_source_match",
+          "protected_bundle_lock_and_file_hashes_preserved",
+          "tracked_source_matches_agent_commit",
+          "same_installation_new_release",
+          "v1_uuid_name_quantity_preserved",
+          "new_location_create_update"
+        ]
+      },
+      "businessSourceSnapshot": {
+        "sourceCommit": "5e3d3608f24e06bbfcb272b5a4e9b380eadd1c61",
+        "directory": "examples/ai-assets-claude",
+        "filesSha256": {
+          "manifest.json": "580d68d1bcf7f10531c11d0cb44769c8c86136b9fe6fcb0c7a619c45f6c51742",
+          "migrations/0002_assets.sql": "2b15e2c51be4f2ceda98fdaf0b5b49171b84265f3530c93ddb6402b50690bec8",
+          "migrations/0003_asset_location.sql": "52f5ef6ad98dd6f0d78e9775943dd6745b96154786ce0a1e8e3e344a1277c1f2",
+          "src/assets.rs": "e3057b340cd2ee4a67eddb8923b1c44964a2be038d631befe4ddf973c157699d",
+          "src/main.rs": "d77d8a8879b0e1e49a76745017bf9704f78fc611ab8bd75de9770326d63b675f",
+          "web/src/AppRoot.module.css": "86ed404f670e08b010a8a99509fbda3cb58226fbfd8c8c9f55b8d51aef17c12b",
+          "web/src/AppRoot.tsx": "e6c52f6e2fedb7ef7310a1e260a2d5f9fab1d54b0cccb4589dc720f39c26e08e",
+          "web/src/assetForm.ts": "a302651f6348a9d06c4c37a676d7cb1ebb229f9680e1d7fbcd35a5897636396f",
+          "web/src/css-modules.d.ts": "00a558ca41e878c67239d4026b1d53eca70a77ab92c0cc5c5240b4fea185e4d4"
+        }
+      },
+      "screenshotSha256": "4cd3be86fa309318d5ce6d51dcebd3224deb8a4e168f42454047119144eb9868"
+    }
+  },
+  "finalHelperSha256": {
+    "agent-acceptance-proxy.py": "9f4876f17592e993809dbdf1f4856fbe66309916bc280439470b76ce0531acaf",
+    "agent-acceptance-sandbox.py": "c59dfae45117b91529553b619895c85ad1ca81833ba18cf2d8bcd0df5c871d06",
+    "run-agent-acceptance.mjs": "16520aa9d88b4a169b9dbad863bf8b80e2e596618c5231c559b9f04afd4657db",
+    "test-agent-acceptance-proxy.py": "10af607af4d545a52a9a9e7980e8866830a058e35858d1a3b4da25226ef8a53b",
+    "check-windows-published-installer.ps1": "64ee566eb2b5ddbe893501871a72112b65e5031f5571a97b9af0ffcbf6de70e1"
+  },
+  "helperVersionNote": "Helpers evolved during execution. Per-phase evaluator hashes and private executed snapshots identify actual grading versions. The final proxy concurrency and runner interrupted-prepare/stale-PASS fixes were verified locally after live acceptance; they were not followed by another live agent deployment.",
+  "attempt-1-fixture-failures": {
+    "status": "INCOMPLETE_FIXTURE_FAILURE",
+    "applicationCodeEditedByEvaluator": false,
+    "causes": [
+      "Proxy unbuffered HTTP body read returned a short read on source upload.",
+      "Evaluation namespace omitted the cc alternatives link.",
+      "Codex project trust configuration was ignored by session overrides."
+    ],
+    "attempts": {
+      "codex": [
+        {
+          "schemaVersion": 1,
+          "runId": "20261102T124952Z-aeb6a5d25207",
+          "check": true,
+          "childExit": 0,
+          "timedOut": false,
+          "interrupted": false,
+          "durationMs": 165,
+          "stdoutSha256": "d9b9137920eb3870036c27ef4c5791ef3cea9b536f971bc77088f4844300b894",
+          "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "schemaVersion": 1,
+          "runId": "20261102T125055Z-2d73aa44232a",
+          "check": false,
+          "childExit": 0,
+          "timedOut": false,
+          "interrupted": false,
+          "durationMs": 216543,
+          "stdoutSha256": "8a3100460f6c1ed205fe6484e07c33dad360329c42b709d3f73ee9c8d322c153",
+          "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ],
+      "claude": [
+        {
+          "schemaVersion": 1,
+          "runId": "20261102T124952Z-fc50ef0de153",
+          "check": true,
+          "childExit": 0,
+          "timedOut": false,
+          "interrupted": false,
+          "durationMs": 215,
+          "stdoutSha256": "d9b9137920eb3870036c27ef4c5791ef3cea9b536f971bc77088f4844300b894",
+          "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "schemaVersion": 1,
+          "runId": "20261102T125055Z-20b5d26b6f43",
+          "check": false,
+          "childExit": 0,
+          "timedOut": false,
+          "interrupted": false,
+          "durationMs": 303724,
+          "stdoutSha256": "234582e39034116f0f1a4c630a289c64abdba1b9387b192885d19b739d2b29aa",
+          "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ]
+    }
+  },
+  "proxy-boundary-checks": {
+    "status": "PASS",
+    "checks": [
+      {
+        "agent": "codex",
+        "method": "GET",
+        "case": "capabilities",
+        "status": 200
+      },
+      {
+        "agent": "codex",
+        "method": "GET",
+        "case": "own_app",
+        "status": 200
+      },
+      {
+        "agent": "codex",
+        "method": "GET",
+        "case": "scope_denial",
+        "status": 403
+      },
+      {
+        "agent": "codex",
+        "method": "GET",
+        "case": "scope_denial",
+        "status": 403
+      },
+      {
+        "agent": "codex",
+        "method": "POST",
+        "case": "scope_denial",
+        "status": 403
+      },
+      {
+        "agent": "codex",
+        "method": "POST",
+        "case": "scope_denial",
+        "status": 403
+      },
+      {
+        "agent": "codex",
+        "method": "CONNECT",
+        "case": "scope_denial",
+        "status": 403
+      },
+      {
+        "agent": "codex",
+        "method": "CONNECT",
+        "case": "scope_denial",
+        "status": 403
+      },
+      {
+        "agent": "claude",
+        "method": "GET",
+        "case": "capabilities",
+        "status": 200
+      },
+      {
+        "agent": "claude",
+        "method": "GET",
+        "case": "own_app",
+        "status": 200
+      },
+      {
+        "agent": "claude",
+        "method": "GET",
+        "case": "scope_denial",
+        "status": 403
+      },
+      {
+        "agent": "claude",
+        "method": "GET",
+        "case": "scope_denial",
+        "status": 403
+      },
+      {
+        "agent": "claude",
+        "method": "POST",
+        "case": "scope_denial",
+        "status": 403
+      },
+      {
+        "agent": "claude",
+        "method": "POST",
+        "case": "scope_denial",
+        "status": 403
+      },
+      {
+        "agent": "claude",
+        "method": "CONNECT",
+        "case": "scope_denial",
+        "status": 403
+      },
+      {
+        "agent": "claude",
+        "method": "CONNECT",
+        "case": "scope_denial",
+        "status": 403
+      }
+    ],
+    "traceabilityNote": "Original denial cases were anonymized as scope_denial. This report proves four allowed requests and four denials each for GET, POST and CONNECT, but does not retain a per-route case mapping."
+  },
+  "preservation-final": {
+    "checkedAt": "2026-11-02T13:37:42.169634+00:00",
+    "status": "PASS",
+    "checks": {
+      "serviceProcessStartRestartAndBinaryUnchanged": true,
+      "all23OriginalRunningContainersUnchanged": true,
+      "all5ExistingInstallationsUnchanged": true,
+      "newContainersOnlyOwnedDevApps": true
+    },
+    "services": {
+      "miy-v2-serve": {
+        "ActiveState": "active",
+        "UnitFileState": "enabled",
+        "MainPID": "3413666",
+        "NRestarts": "0",
+        "ExecMainStartTimestamp": "Thu 2026-10-29 15:53:03 KST",
+        "binarySha256": "4573260257147c2563ba5ffae177b9ac6c6b0a331d2a0b1fef1cf6e60d10064e"
+      },
+      "miy-v2-worker": {
+        "ActiveState": "active",
+        "UnitFileState": "enabled",
+        "MainPID": "3413667",
+        "NRestarts": "0",
+        "ExecMainStartTimestamp": "Thu 2026-10-29 15:53:03 KST",
+        "binarySha256": "4573260257147c2563ba5ffae177b9ac6c6b0a331d2a0b1fef1cf6e60d10064e"
+      },
+      "nginx": {
+        "ActiveState": "active",
+        "UnitFileState": "enabled",
+        "MainPID": "3019993",
+        "NRestarts": "0",
+        "ExecMainStartTimestamp": "Wed 2026-10-28 06:07:42 KST"
+      }
+    },
+    "originalRunningContainerCount": 23,
+    "originalInstallationsCount": 5,
+    "newOwnedDevContainerCount": 2,
+    "newOwnedDevContainers": [
+      {
+        "id": "a39fe71cab7797a2ac1dccdc3553121e8ed1d0e0ae1919171a1ec4c7e58a449d",
+        "name": "/miy-app-f0ddc8fd0ad947669032f745c854ffca",
+        "image": "sha256:dfee87d383c80a53576f53c9beaae7a4da0a9d8a0b9d9b8b03a8699d13f891fe",
+        "startedAt": "2026-11-02T13:11:35.985274922Z",
+        "running": true
+      },
+      {
+        "id": "7bab34ef5be7e5d3f70c1fd7e8d1a107a3c1eee05bfd5f0f91f1f1b602914973",
+        "name": "/miy-app-9dbde4bf23e14625ad902829ad554359",
+        "image": "sha256:b506b49d74f49ff7c2fdf0bf2f73444791ff8f8d582b99320cfe7cc62999de25",
+        "startedAt": "2026-11-02T13:11:25.425415037Z",
+        "running": true
+      }
+    ],
+    "note": "App/build/release counts intentionally increased for two owned development applications. Existing app data contents and all server configuration files were not exhaustively compared."
+  },
+  "teardown-final": {
+    "checkedAt": "2026-11-02T13:42:11.676501+00:00",
+    "status": "PASS",
+    "checks": {
+      "ownedProxyAndSandboxProcessesGone": true,
+      "ownedProxySocketsRemoved": true,
+      "providerOAuthCopiesRemoved": true,
+      "actualUpstreamProxyCredentialFilesRemoved": true,
+      "ownedMiySessionsCleaned": true
+    },
+    "miySessionCleanup": [
+      "codex:proxy_cli_revoked",
+      "codex:upstream_local_credentials_removed",
+      "claude:proxy_cli_revoked",
+      "claude:upstream_local_credentials_removed",
+      "developer:cli_logged_out",
+      "developer:platform_browser_logged_out",
+      "admin:cli_logged_out",
+      "admin:platform_browser_logged_out"
+    ],
+    "removedPrivateCopies": [
+      "codex:.codex/auth.json",
+      "codex:private/proxy.json",
+      "claude:.claude/.credentials.json",
+      "claude:.claude.json",
+      "claude:private/proxy.json",
+      "developer:browser_storage",
+      "admin:browser_storage"
+    ],
+    "providerWideLogoutPerformed": false,
+    "originalHostProviderAuthFilesRemoved": false,
+    "retained": "Two dev applications and their preserved synthetic records; private raw logs for audit."
+  },
+  "v1EvaluatorSnapshot": {
+    "sha256": "b0549270717dff53fa5b3f4db0258fa0be8805a80a7fd369c2f7a1e4d48ada35",
+    "note": "Both v1 browser/API acceptance runs used this evaluator snapshot; per-agent reports are authoritative."
+  },
+  "verification": {
+    "integration": "143 Rust default tests passed, 6 ignored; 110 client tests passed; both Clippy, fmt, web typecheck/build passed; exact integration CI succeeded on 5 jobs.",
+    "proxyRegressionTests": {
+      "passed": 6,
+      "scope": "fragmented upload/EOF/timeout, own request recovery, concurrent refresh success and lost acknowledgment"
+    },
+    "pythonSyntax": {
+      "files": 3,
+      "status": "PASS"
+    },
+    "nodeSyntax": "PASS",
+    "failedReevaluationReplacesStalePass": "PASS (missing browser state injected; no API request)",
+    "windowsPowerShellParser": {
+      "version": "7.6.9 on Linux",
+      "scriptErrors": 0,
+      "documentCodeBlocksPassed": 7,
+      "actualWindowsExecution": "NOT_RUN"
+    },
+    "whitespace": {
+      "defaultDiffCheck": "One blank line at EOF in the unchanged Claude business snapshot AppRoot.tsx is retained for byte-for-byte source provenance.",
+      "remainingWhitespaceCheck": "PASS: git -c core.whitespace=-blank-at-eof diff --cached --check"
+    }
+  },
+  "interventions": [
+    "Evaluator fixed HTTP source-upload short reads and omitted cc alternatives mount, then resumed each original independent conversation.",
+    "Evaluator fixed Codex project trust and MCP MIY/proxy environment forwarding; final four native calls succeeded in a separate read-only continuation. Earlier failed native calls are retained.",
+    "Evaluator repaired its own shared-state race, cross-user check placement, inline/table form selection and record-specific accessible button matching. No app business code was authored or repaired by evaluator.",
+    "v1 original reports prove cross-user listing only; final v2 reports additionally prove PATCH/DELETE denial.",
+    "Claude full-contract payload exceeded client inline output limit and was spooled to a private file containing valid JSON. Compact/sectioned discovery is a follow-up task.",
+    "Final proxy refresh race and runner failure bookkeeping fixes were locally regression checked after live acceptance."
+  ],
+  "notRun": [
+    "Actual Windows 11 GUI install/update/uninstall and native PowerShell 5.1 execution (user deferred).",
+    "Native app dev process against the server DB or local-preview-to-dev preservation in these independent sessions.",
+    "Prod promotion/prod DB isolation, restart/backup/restore and clean platform installation.",
+    "Three repetitions per tool/OS and the full V2–V7 product acceptance."
+  ],
+  "retainedArtifacts": "Two running dev apps and one preserved synthetic row per app. Only whitelisted metadata, business source and screenshots are committed. Raw conversations, browser storage, tokens and credentials are excluded."
+}

@@ -2,21 +2,23 @@
 
 - 작성일: 2026-10-20
 - 수정일: 2026-11-02
-- 상태: CLI 0.6.3 소스 main 통합·검증 진행 중, Windows 설치기 검증 절차와 독립 AI 개발 인수 준비
+- 상태: CLI 0.6.3 main 통합·CI와 Codex·Claude 독립 개발 인수 완료, Windows 실제 인수는 사용자 추후 수행
 
-현재 통합 작업본은 CLI **0.6.3 / 개발 번들 0.7.1**이며 네이티브 로컬 개발, 서버 원격 빌드, dev 배포, 검증한 릴리스의 prod 승격을 구현했다. 현재 운영 서버와 게시 CLI의 artifact source는 `8d7d042`다. main 통합 commit과 배포물의 출처는 별도로 기록하며, 소스 통합만으로 서버를 재배포한 것으로 표시하지 않는다. 실제 완료 범위와 한계는 [현재 서버 운영 안내](SERVER-OPERATIONS.md), [검증 행렬](CLI-VALIDATION-MATRIX.md), [구현 결과](IMPLEMENTATION-RESULTS.md)를 따른다. 아래 제품 전체의 단계는 최초 설계 로드맵으로 유지하며, 모든 단계가 완료됐다는 뜻은 아니다.
+현재 main은 CLI **0.6.3 / 개발 번들 0.7.1**이며 통합 commit `a6fae065ed627bb63798cf74ea8a2c73a744c104`를 게시했다. 네이티브 로컬 개발, 서버 원격 빌드, dev 배포, 검증한 릴리스의 prod 승격을 구현했다. 현재 운영 서버와 게시 CLI의 artifact source는 `8d7d042`다. main 통합 commit과 배포물의 출처는 별도로 기록하며, 소스 통합만으로 서버를 재배포한 것으로 표시하지 않는다. 실제 완료 범위와 한계는 [현재 서버 운영 안내](SERVER-OPERATIONS.md), [독립 AI 인수 결과](INDEPENDENT-AGENTS-0.6.3-ACCEPTANCE.md), [검증 행렬](CLI-VALIDATION-MATRIX.md)을 따른다. 아래 제품 전체의 단계는 최초 설계 로드맵으로 유지하며, 모든 단계가 완료됐다는 뜻은 아니다.
 
 ## 다음 우선 작업
 
-2026-11-02 사용자가 요청한 다음 작업은 아래 순서로 진행한다. 실행 절차는 [핵심 흐름 사용자 테스트](CORE-TESTING.md)를 따른다.
+2026-11-02 사용자가 요청한 세 작업의 현재 결과는 다음과 같다. 재현 절차와 별도 검증 범위는 [핵심 흐름 사용자 테스트](CORE-TESTING.md)를 따른다.
 
-1. **운영 0.6.3 소스의 main 통합과 검증.** 네이티브 개발·원격 빌드·복구 안내를 포함한 소스를 통합하고 검사 결과를 남긴다. 기존 운영 서비스·앱·데이터와 게시 artifact의 출처를 보존한다.
-2. **새 게시 CI 설치기 구현과 검증 절차 준비.** 설치·갱신·제거 경로와 배포물의 버전·source·SHA-256을 확인할 절차를 준비한다. 사용자 지시에 따라 실제 Windows 11 검사는 사용자가 추후 수행하며 현재 `NOT_RUN`으로 남긴다. 이후 일반 사용자 여부와 PowerShell 버전을 기록하고 설치·갱신·제거·재설치, 기존 context와 앱 데이터 보존, 서버 연결·브라우저 승인을 확인한다. 설치기 구현과 CI 파일 검사를 실제 Windows 인수 통과로 표시하지 않는다.
-3. **Codex·Claude 각각의 새 앱·새 세션 인수.** 지원되는 Linux 환경에서도 진행할 수 있으며, 서로 다른 작업 폴더와 앱 ID에서 지침·MCP·CLI를 사용하여 업무 앱 개발·검사, 커밋 소스의 서버 원격 빌드, dev 배포와 같은 DB·레코드 보존을 확인한다. 각 도구의 인증·프로젝트 신뢰·MCP 연결을 먼저 확인하고, 세션과 실제 도구 사용·수동 개입·작업 ID를 별도로 기록한다. Codex와 Claude 인증을 확인했으며 두 도구의 새 개발 인수는 진행 중이다. 이번 인수는 dev 배포까지이며 prod 승격은 별도 범위다.
+1. **운영 0.6.3 소스의 main 통합과 검증 완료.** 네이티브 개발·원격 빌드·복구 안내를 포함한 소스를 통합하고 [로컬 검사 결과](releases/cli-0.6.3-main-integration.json)를 남겼다. 통합 commit의 [CI 41447528061](https://github.com/hurxxxx/miy-v2/actions/runs/41447528061)은 5개 job 모두 통과했다. 운영 서버와 게시 artifact의 출처는 그대로 유지했다.
+2. **새 게시 CI 설치기 구현과 검증 절차 준비 완료.** [Windows 0.6.3 인수 안내](WINDOWS-0.6.3-ACCEPTANCE.md)에 설치·갱신·제거와 배포물의 버전·source·SHA-256 확인 절차를 정리했다. 사용자 지시에 따라 실제 Windows 11 검사는 사용자가 추후 수행하며 `NOT_RUN`이다. 일반 사용자·PowerShell 5.1/7의 실제 설치와 기존 context·프로젝트 보존은 해당 실행 증거를 추가한 뒤 판정한다.
+3. **Codex·Claude 각각의 독립 앱 개발·v1→v2 인수 완료.** Linux에서 서로 다른 새 작업 폴더·앱 ID·v1 대화로 비품대장을 개발하고, 각 도구가 자신의 같은 대화를 재개하여 v2의 보관 위치 기능을 추가했다. 실제 Rust/앱 검사, 서버 원격 빌드와 dev 배포를 수행했고, 최종 평가에서 API CRUD·잘못된 입력 거부·사용자 소유권, 브라우저 생성·수정·삭제·새로고침, 같은 DB와 v1 레코드 보존을 확인했다. 각 단계의 범위·source/build/job/release/image는 [독립 AI 인수 결과](INDEPENDENT-AGENTS-0.6.3-ACCEPTANCE.md)에 기록한다.
+
+독립 AI 인수에는 컴파일러 별칭, 프록시 요청 본문 읽기, Codex 프로젝트 신뢰 설정 등 평가환경 보완이 포함됐다. 평가자는 앱 업무 코드나 SDK를 작성·수정하지 않았다. 이번 검사에서 로컬 `app dev` 실행과 로컬→dev 배포 간 데이터 보존은 `NOT_RUN`이며, prod 승격·전체 V7·여러 차례의 새 환경 반복 검증도 별도 범위다. 다음 실제 인수는 사용자의 Windows 실행과 이 미실행 항목을 대상으로 한다.
 
 2026-10-29 Windows 0.6.2의 실제 개발·배포 기록과 10-30 게시 0.6.3의 다운로드·해시 확인, 11-02 CLI/MCP 연결 검사는 유지한다. 이 결과를 새 설치기 실행이나 독립 AI 개발의 통과로 대신하지 않는다. 장비·인증 부족으로 실행하지 못한 단계는 `NOT_RUN`, 실제 실행 후 실패한 단계는 `FAIL`로 구분한다.
 
-CLI 개선이나 위 세 작업의 완료는 아래 정식 V2~V7 전체 인수 완료를 뜻하지 않는다. 기존 v1→v2 변경·데이터 보존·재시작·독립 설치 반복과 백업/복원 등 남은 제품 검증은 별도로 추적한다.
+CLI 개선이나 위 세 작업의 완료는 아래 정식 V2~V7 전체 인수 완료를 뜻하지 않는다. 이번 두 앱의 v1→v2 데이터 보존 결과와 별도로 재시작·운영 실패 복구·독립 설치 반복·백업/복원 등 남은 제품 검증을 추적한다.
 
 다른 환경에서 개발을 이어갈 때는 [CLI 개발 인계](CLI-HANDOFF.md)의 기준 코드·파일 지도·체크리스트·검증 명령을 사용한다. [CLI 0.5 구현 계획](CLI-IMPLEMENTATION-PLAN.md)은 명령·인증·OS 계약과 구현 이력의 기준이며, 현재 실행 절차와 완료 여부는 최신 실행 안내·검증 기록을 따른다. 이전 문서의 예시 명령을 현재 지원 명령으로 해석하지 않는다.
 
@@ -31,6 +33,8 @@ CLI 개선이나 위 세 작업의 완료는 아래 정식 V2~V7 전체 인수 �
 | [CLI-IMPLEMENTATION-PLAN.md](CLI-IMPLEMENTATION-PLAN.md) | CLI 0.5 명령·인증·운영 계약, Windows 네이티브 지원, 구현 순서와 릴리스 기준 |
 | [CLI-HANDOFF.md](CLI-HANDOFF.md) | 환경 간 개발 인계, 코드 위치·작업 현황·검증 방법 |
 | [CORE-TESTING.md](CORE-TESTING.md) | 게시 설치기와 Codex·Claude 각각의 새 앱 개발·원격 빌드·dev 배포·데이터 보존 인수 절차 |
+| [INDEPENDENT-AGENTS-0.6.3-ACCEPTANCE.md](INDEPENDENT-AGENTS-0.6.3-ACCEPTANCE.md) | 독립 Codex·Claude의 v1 개발·같은 대화의 v2 재개, 실제 인수 결과와 평가환경 보완·미실행 범위 |
+| [WINDOWS-0.6.3-ACCEPTANCE.md](WINDOWS-0.6.3-ACCEPTANCE.md) | 게시 0.6.3 설치기의 사용자 Windows 실행 절차와 미실행 인수 항목 |
 | [SERVER-OPERATIONS.md](SERVER-OPERATIONS.md) | 현재 운영 서버·게시 CLI·배포 소스와 안전한 연결 검증 범위 |
 | [WINDOWS-VALIDATION.md](WINDOWS-VALIDATION.md) | 사용자가 Windows에서 수행할 네이티브 빌드·검증·로컬 패키징 절차와 실행 기록 |
 | [RESEARCH.md](RESEARCH.md) | 유사 프로젝트의 확인된 기능, 차용 판단, 기존 miy의 참고 계약 |

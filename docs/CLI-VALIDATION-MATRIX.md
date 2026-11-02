@@ -10,7 +10,13 @@
 
 운영 소스 계열을 main에 병합하고 겹치는 검증 문서의 양쪽 이력을 보존했다. 현재 소스는 CLI **0.6.3 / 번들 0.7.1**이며 `crates/`, `migrations/`, `templates/`가 게시 후보 `8d7d042`와 바이트상 일치한다. [통합 검사 기록](releases/cli-0.6.3-main-integration.json)에 명령과 결과를 보존한다. 서버 단위143개(별도opt-in6개 ignored), 클라이언트110개, 양쪽 Clippy 경고 금지·fmt, TypeScript·격리 출력 경로의 플랫폼 production build가 통과했다. source 통합은 운영 서버·게시 배포물의 교체가 아니다.
 
-Windows 새 설치기의 사용자 PC 인수는 사용자 요청으로 추후 수행하며, 이번에는 구현과 실행 절차를 준비한다. Codex·Claude의 새 독립 세션 인수는 별도 앱과 기록으로 관리한다.
+통합 commit `a6fae065ed627bb63798cf74ea8a2c73a744c104`의 [CI 41447528061](https://github.com/hurxxxx/miy-v2/actions/runs/41447528061)은 5개 job 모두 성공했다. Windows 실제 실행은 사용자 요청으로 추후 수행하며 [별도 인수 안내](WINDOWS-0.6.3-ACCEPTANCE.md)를 준비했다.
+
+## 독립 Codex·Claude 앱 개발 — 2026-11-02
+
+[상세 결과](INDEPENDENT-AGENTS-0.6.3-ACCEPTANCE.md)와 [구조화 증거](releases/cli-0.6.3-independent-agents-validation.json)에 각 도구의 새 v1 앱·대화, 자신의 대화를 재개한 v2, 실제 원격 빌드·dev 배포와 같은 DB·레코드 보존을 기록했다. 최종 v2는 API·잘못된 입력·다른 사용자의 조회/수정/삭제 거부와 브라우저 폼 CRUD·새로고침·DB 반영을 통과했다. 실제 업무 검사 수는 Codex 4→7개, Claude 7→10개다.
+
+평가환경과 평가기를 보완한 후의 최종 PASS다. Codex 초기 네이티브 MCP 실패와 이후 네 가지 도구의 읽기 전용 재확인, Claude 계약 응답의 파일 전환을 구분했다. 평가자는 앱 업무 코드를 작성·수정하지 않았다. 기존 서비스·23개 컨테이너·5개 installation 배포 상태를 보존하고 검증용 세션·프록시·인증 사본을 정리했다. Windows 실제 실행, 이번 두 앱의 로컬 `app dev`, prod·전체 V7·독립3회 반복은 `NOT_RUN`이다.
 
 ## 현재 플랫폼 서버 연결 — 2026-11-02
 

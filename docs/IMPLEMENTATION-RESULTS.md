@@ -1,5 +1,11 @@
 # 구현과 검증 결과
 
+## main 통합·Windows 준비·독립 AI 개발 인수 (2026-11-02)
+
+운영 0.6.3 소스를 `main`의 `a6fae065ed627bb63798cf74ea8a2c73a744c104`에 통합하고 [CI 41447528061](https://github.com/hurxxxx/miy-v2/actions/runs/41447528061) 5개 job을 통과했다. 운영 artifact source `8d7d042`와 실행 중 서비스를 유지했다. [Windows 설치기 인수 절차](WINDOWS-0.6.3-ACCEPTANCE.md)는 준비했으며 실제 Windows 검사는 사용자 요청으로 추후 수행한다.
+
+Linux의 독립 Codex·Claude가 각각 새 비품대장을 구현하고 v1→v2를 서버 원격 빌드·dev 배포했다. 최종 API·소유권·브라우저 CRUD와 동일 DB·기존 행 보존을 통과했다. 평가환경 보완·초기 실패·실제 MCP 응답 범위와 소스/build/job/release/image는 [독립 AI 결과](INDEPENDENT-AGENTS-0.6.3-ACCEPTANCE.md)에 구분했다. 로컬 `app dev`, prod 승격이나 전체 V7 통과를 주장하지 않는다.
+
 ## 현재 서버의 CLI·MCP 연결 재확인 (2026-11-02)
 
 현재 호스트는 `https://v2.dwdcc.kr`의 플랫폼 서버이며 서버·게시 CLI 0.6.3 / 번들 0.7.1을 사용한다. `main`의 0.6.0 소스를 재배포하지 않고 기존 0.6.3의 실제 연결을 확인했다. 배포 소스는 `8d7d04271f9467d8bbdd16308e73715b33e4dc0c`이며 [현재 서버 운영 안내](SERVER-OPERATIONS.md)에 주소·서비스·배포 소스 경계를 기록했다.

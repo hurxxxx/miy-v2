@@ -1,0 +1,64 @@
+.form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: flex-end;
+  margin-bottom: 16px;
+}
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 14px;
+}
+.input {
+  padding: 8px 10px;
+  border: 1px solid #ccd5df;
+  border-radius: 8px;
+  font-size: 14px;
+  min-width: 0;
+}
+.nameInput {
+  composes: input;
+  width: 240px;
+}
+.quantityInput {
+  composes: input;
+  width: 120px;
+}
+.status {
+  margin: 0 0 12px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: #e8f5ec;
+  color: #1d5b32;
+}
+.error {
+  margin: 0 0 12px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: #fdecec;
+  color: #8a1f1f;
+}
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+.table th,
+.table td {
+  text-align: left;
+  padding: 8px;
+  border-bottom: 1px solid #e5eaf0;
+  vertical-align: middle;
+}
+.number {
+  text-align: right;
+}
+.actions {
+  display: flex;
+  gap: 8px;
+}
+.empty {
+  color: #5b6773;
+}
