@@ -8,9 +8,11 @@ CLI로 앱의 기본 구조를 만들고, 자신의 개발 에이전트를 MCP�
 
 ## 현재 단계
 
-현재 호스트의 플랫폼은 [https://v2.dwdcc.kr](https://v2.dwdcc.kr)이며, [CLI 설치 안내](https://v2.dwdcc.kr/cli/install)에서 서버에 맞는 배포물을 제공한다. 실행 서버·게시 CLI와 통합한 `main` 소스는 **0.6.3 / 번들 0.7.1**이다. 게시 배포물은 검증한 `8d7d042`를 계속 사용하며 후속 소스 통합 commit과 출처를 구분한다. 서버 주소·CLI/MCP 연결과 배포 소스의 구분은 [현재 서버 운영 안내](docs/SERVER-OPERATIONS.md)를 따른다.
+현재 호스트의 플랫폼은 [https://v2.dwdcc.kr](https://v2.dwdcc.kr)이며, [CLI 설치 안내](https://v2.dwdcc.kr/cli/install)에서 서버에 맞는 배포물을 제공한다. 실행 서버·게시 CLI는 **0.6.3 / 번들 0.7.1**이며, 현재 `main` 소스는 코어 권한 보강을 포함한 **0.7.0 / 번들 0.8.0**이다. 게시 배포물은 검증한 `8d7d042`를 계속 사용하며 후속 소스 통합 commit과 출처를 구분한다. 서버 주소·CLI/MCP 연결과 배포 소스의 구분은 [현재 서버 운영 안내](docs/SERVER-OPERATIONS.md)를 따른다.
 
-현재는 **독립 앱 개발·로컬 미리보기·테스트 배포·운영 승격을 연결하고 구조 검증을 수행한 단계**다. 플랫폼과 사용자 앱의 Rust backend, React/Vite UI, Docker, 앱·환경별 DB를 분리한다. CLI 0.6.3 / bundle 0.7.1에서 일반 Codex·Claude Code용 프로젝트 MCP·스킬, 브라우저 승인 CLI 로그인, 인증된 이미지 업로드, 테스트한 릴리스의 운영 승격과 별도 배포 권한을 제공한다.
+[코어 권한 계약](docs/CORE-PERMISSIONS.md)은 설치/릴리스별 명시 승인, 제한된 사용자 위임, 앱 후속 호출을 설명한다. miy-v1·UI 이식은 [코어 안정화](docs/CORE-HARDENING.md) 이후이며 다음 단계는 서버 자원 예산이다.
+
+현재는 **독립 앱 개발·로컬 미리보기·테스트 배포·운영 승격을 연결하고 구조 검증을 수행한 단계**다. 플랫폼과 사용자 앱의 Rust backend, React/Vite UI, Docker, 앱·환경별 DB를 분리한다. 일반 Codex·Claude Code용 프로젝트 MCP·스킬, 브라우저 승인 CLI 로그인, 인증된 이미지 업로드, 테스트한 릴리스의 운영 승격과 별도 배포 권한을 제공한다.
 
 [구조 진단과 9개 요건별 결과](docs/IMPLEMENTATION-RESULTS.md#구조-심층-진단과-핵심-9개-요건-개선)를 먼저 읽는다. 개발·운영 라우터, 로컬 DB 격리, 다른 앱 API, 권한 회수, 기존 앱 보존을 실제 검사했다. 신뢰된 UI 코드의 통합이며 악성 JavaScript의 브라우저 격리는 제공하지 않는다. 5개 OS/CPU의 CLI 후보와 회사 홈페이지 배포를 제공하며, 제품 전체 완성과 독립 반복 인수는 별도 범위다.
 

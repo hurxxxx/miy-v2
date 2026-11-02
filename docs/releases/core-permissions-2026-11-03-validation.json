@@ -1,0 +1,546 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-11-03",
+  "recordedAt": "2026-11-02T23:58:40.199887+00:00",
+  "scope": "Core hardening stage 2: installed approvals, user delegation, original caller continuity; excludes miy-v1 and UI migration",
+  "versions": {
+    "cliCore": "0.7.0",
+    "bundle": "0.8.0",
+    "rustSdk": "0.3.0"
+  },
+  "implementationCommit": "5802c9670ef25c620ec69ed7573bc264326928f3",
+  "implementationFilesSha256": {
+    "Cargo.lock": "5c0ef7e9a21bbb59d905312d8627de7640de13abc58dccbc4ee6ad3c0b0efbd8",
+    "crates/miy/Cargo.toml": "8a6cfb29bc2c6d406ea8ef12e2c1739b77bc03a4a478089eb93460fa24182ed2",
+    "crates/miy/bundles/0.7.1.json": "f7e912f242dc802e2a187c0c68bf9f452bf9b8ef1a6005af3059100e7e99d253",
+    "crates/miy/guidance/miy-cli/references/workflow.md": "e5740a62c13f049299445e143b06a6a5d2d54c6c0f1423f5989bf009e3d654c6",
+    "crates/miy/src/app_calls.rs": "0b9548e9483e37fa208709f6bd22c167ae962e3da05298890479570852a6106e",
+    "crates/miy/src/auth.rs": "6541f72397abaf7e10b301ac86902d1ca9cf68cdba92b067748fb58312973d7d",
+    "crates/miy/src/auth_sessions.rs": "8809cf5291bd832a413f0f01af05107001436aeb83db50acc0227a8101525f52",
+    "crates/miy/src/bundle.rs": "4ea85ec8cdf944e78b98e4077c3110fa2216ccd62f9f71b989df725607b75ac8",
+    "crates/miy/src/cli_auth.rs": "f63995463e72af99a4859489feb9dfbec5f1efcf2d43c7ff5fa51153e8f78358",
+    "crates/miy/src/cli_discovery.rs": "9066893983512d55d752697d9e863b0a0203754682642fab06240c2e8994e4d3",
+    "crates/miy/src/cli_input.rs": "d0d6f228d490be911f5e11f18cd0ce948cee2a92d54dab1b0905e07102fbcea3",
+    "crates/miy/src/cli_login.rs": "7827f2cb0587df0c5c06e7a814e894cf7ee04cf2e9b5cc227289c2cba78382f5",
+    "crates/miy/src/cli_permissions.rs": "993f0ef68d0c70745943aa4d083c5bc93574be07a2bb0cda1d353bf103f40ce5",
+    "crates/miy/src/connections.rs": "82a1deeee5538c27c2ba1ae46b8fe7c58d2208bc66ad3e99fd43402180ab838a",
+    "crates/miy/src/delegation_regression.rs": "f8ec51f4b9c25b716e480aa58cb5a8b9ea8e8c1ac710863ce792524bb6c4d455",
+    "crates/miy/src/delegations.rs": "f750d752d42d94cb7c43946da60d0a9dc684bd10427cd402d2e22c1a2f95ca5c",
+    "crates/miy/src/delivery.rs": "6580f04c019319759460c3daa34da6c2a5f0e760aa1b6f15e2cb74f84f06f70e",
+    "crates/miy/src/development.rs": "57e68feea0b361f205b87866a0b730b66037406ade5263b192ad5860fd8a0c09",
+    "crates/miy/src/development_regression.rs": "1e2db4d1d8f3106e99e49ecf866ee217a5482024afbfbc1fbb877e8b7bae6a2d",
+    "crates/miy/src/domain.rs": "025d4a6c1cf6ff9927623ae9b3e366e093d05b7221a147c5e0723b9421caca9a",
+    "crates/miy/src/http.rs": "29ea25628b0c656990931fe875aced65706d78d0ddf865b44b905dc864ae2bdf",
+    "crates/miy/src/identity.rs": "2152cbb82faab637eafbc2097ce7446d0eb154539dfe591653666e0d6e565272",
+    "crates/miy/src/integration.rs": "33301fd3c2a4fca8dd0105f0c4fe9bc44c6ec557cf0d95e520ace378fca0a800",
+    "crates/miy/src/job_api.rs": "c9a5a5325eb0b31ece9245b00aa3a8fca5523427b37f828844cb80bc32518248",
+    "crates/miy/src/main.rs": "4d6bfde2791056c5cb8692144e2a2837b01472a717a0394a259984d2586bbcd0",
+    "crates/miy/src/mcp.rs": "77ddb203e1432f72e3c2b50a13cda1558d15f45fc024cd49b0c4a9827cb615fd",
+    "crates/miy/src/operations_regression.rs": "f19a449dc284254be5ff7ddfef0a1e039ca8054a8fd6fd0e9fe12f8c245bcbef",
+    "crates/miy/src/permissions.rs": "15071938e622519150bda7e6dafb0b9cd57a6f68767af7e16142b59afe74e235",
+    "crates/miy/src/permissions_regression.rs": "1f532b86adca91abac20ac76dde9e5da0cf2d1e23f5d5d34c30f515c06d63b92",
+    "crates/miy/src/read_api.rs": "3565b541731686dca185ef6e5aeb860434ea3e188404c6c8bcfa32db0b7b65b6",
+    "crates/miy/src/registration.rs": "e9a20d36dbbdb4fec3fd438a50446051762ab7dc17106f4db382a66b8bcd1092",
+    "crates/miy/src/runtime.rs": "9c5ea02c4908003e3e9aa239b48b4de282b9fcd49c7a380b97bad91a21f11bee",
+    "crates/miy/src/runtime_logs.rs": "7766c65eb62fc2efe7db3f9c9cf9cb36d601128f7f7e7a05d0e1e17db7202780",
+    "crates/miy/src/runtime_preflight.rs": "1ce80ad0540ecff67998d489d57e909b5786ffa7e879403c85aff851e3155769",
+    "crates/miy/src/runtime_regression.rs": "95bc282a93a87a87653ddb8f1a2a21ec516e7a5b7607d084758663748429902c",
+    "crates/miy/src/server_build.rs": "d6546fc3bb85b5b9908118ed98593879f29a879dfc48e4eec92ab4600cb8eb1b",
+    "crates/miy/src/server_build_worker.rs": "e60a03b44202ff2d8662bdae95423bc8873df92c82021700f34a66a680c63f92",
+    "crates/miy/src/upgrade.rs": "8e925e5e8e99a9b69a7803bf4a3a129f2a600f917c6aae2111b20d7b392867e5",
+    "crates/miy/src/worker.rs": "292114353f71b04402797ce56f3b4e4811ab78a54d7cef86568f3f862251fe80",
+    "migrations/core/0016_installation_permissions.sql": "d93295b5b521cde88a2036edb785996cd895bc1e01a11d3c418e578fc16cd07b",
+    "migrations/core/0017_delegations.sql": "3894e44e99176d23597419e37414d2b5a9a783afc365610955de7a766edbd730",
+    "scripts/check-cli-guidance.mjs": "fced33e2c8caa3c5504b4bce752ae706417eb4451576e0aab4d2e8b506cbf4fe",
+    "scripts/runtime-regression/run.py": "c8378b072f3a4fdd98b4919923f3bd1f57b1cf6793976dee2cf1daffb52c0a67",
+    "templates/rust-react/Cargo.lock": "5ffcba62d59372c9907f7268a6315c232fc0d8c97cb95136bee616d867712e59",
+    "templates/rust-react/docs/CONTRACT.md": "faec5953ec96ddcdae0c327725193c0d5a336536408f04af01cc6a43bbceacb2",
+    "templates/rust-react/sdk/rust/Cargo.toml": "b0cd34d43275c66e8c10e50ed566d0300dfa99a950afeff936921c6a31b23ac4",
+    "templates/rust-react/sdk/rust/src/lib.rs": "21255ffd56c472518eb4a30b3187f3ddf7b2563f744dc14d3dc8f28014c84761"
+  },
+  "execution": {
+    "sourceCommit": "5802c9670ef25c620ec69ed7573bc264326928f3",
+    "workingTreeDirty": true,
+    "binarySha256": "4ee8ab07f50dac7ff2d0cca971a0a9d7f0af1d0dc687364677265e90b1ec1bb7",
+    "workingTreeDirtyExplanation": "Only accompanying repository documentation changed; all 47 implementation files match the implementation commit byte-for-byte.",
+    "host": "Linux",
+    "evidenceRoot": ".local/evidence/core-permissions-20261103",
+    "isolatedFixture": "/tmp/miy-runtime-regression-cz0p6mlh"
+  },
+  "checks": [
+    {
+      "command": "cargo test --workspace --locked",
+      "exitCode": 0,
+      "passed": 159,
+      "ignored": 6,
+      "logSha256": "9531e137200551077169b027ec5772244a6443b6d4f5248cfce88f3c89211f8a"
+    },
+    {
+      "command": "cargo test --workspace --no-default-features --locked",
+      "exitCode": 0,
+      "passed": 113,
+      "ignored": 0,
+      "logSha256": "e8709a7a3e9c0812d087c0ee600b9fe5f9bce13091a01e9a5fa7c17e969eda05",
+      "sourceBoundary": "Precommit checkout; client source is byte-identical to the implementation commit."
+    },
+    {
+      "command": "cargo test --manifest-path templates/rust-react/Cargo.toml -p miy-app-sdk --locked --offline",
+      "exitCode": 0,
+      "passed": 5,
+      "ignored": 0,
+      "logSha256": "faccfd8c0aa806f22e8cc9d04ab8be18ba18ff19983fbdd98e08d2bec01cd6cd",
+      "sourceBoundary": "Precommit checkout; SDK source and lockfile are byte-identical to the implementation commit."
+    },
+    {
+      "command": "cargo clippy --workspace --all-targets --locked -- -D warnings",
+      "exitCode": 0,
+      "logSha256": "59639588a6f1826f129cbcd121edc07279dab94786f5fa5bde6b3439b2e845cc"
+    },
+    {
+      "command": "cargo clippy --workspace --all-targets --no-default-features --locked -- -D warnings",
+      "exitCode": 0,
+      "logSha256": "df104eb91867be978c6c1d525c0a84afe1dc77f819ea9656d721253b4ee0c823"
+    },
+    {
+      "command": "cargo fmt --all -- --check",
+      "exitCode": 0
+    },
+    {
+      "command": "python3 scripts/check-bundle-portability.py source",
+      "exitCode": 0
+    }
+  ],
+  "integration": {
+    "command": "python3 scripts/runtime-regression/run.py",
+    "exitCode": 0,
+    "passedObservations": 70,
+    "suites": {
+      "runtime": 38,
+      "operations": 6,
+      "cli": 6,
+      "auth": 8,
+      "permissions": 8,
+      "delegation": 4
+    },
+    "observations": [
+      {
+        "name": "classic Docker archive resolves a verified immutable server image",
+        "status": "PASS",
+        "suite": "runtime"
+      },
+      {
+        "name": "unauthorized runtime request creates no job",
+        "status": "PASS",
+        "suite": "runtime"
+      },
+      {
+        "name": "16 concurrent duplicate submissions coalesce",
+        "status": "PASS",
+        "suite": "runtime"
+      },
+      {
+        "name": "same key different input conflicts",
+        "status": "PASS",
+        "suite": "runtime"
+      },
+      {
+        "name": "real Docker deployment and resource configuration",
+        "status": "PASS",
+        "suite": "runtime"
+      },
+      {
+        "name": "imported original identity survives restart, reconciliation and health checks",
+        "status": "PASS",
+        "suite": "runtime"
+      },
+      {
+        "name": "preflight creates no job and changes no installation",
+        "status": "PASS",
+        "suite": "runtime"
+      },
+      {
+        "name": "health observations do not invalidate a control revision",
+        "status": "PASS",
+        "suite": "runtime"
+      },
+      {
+        "name": "stale preflight is rejected before job creation",
+        "status": "PASS",
+        "suite": "runtime"
+      },
+      {
+        "name": "worker rechecks expected state before container changes",
+        "status": "PASS",
+        "suite": "runtime"
+      },
+      {
+        "name": "unaccepted production promotion rejected",
+        "status": "PASS",
+        "suite": "runtime"
+      },
+      {
+        "name": "prod develop permission cannot promote",
+        "status": "PASS",
+        "suite": "runtime"
+      },
+      {
+        "name": "exact image promotion and independent prod data",
+        "status": "PASS",
+        "suite": "runtime"
+      },
+      {
+        "name": "runtime DB role cannot DDL or edit migration history",
+        "status": "PASS",
+        "suite": "runtime"
+      },
+      {
+        "name": "queued authority revoked before execution",
+        "status": "PASS",
+        "suite": "runtime"
+      },
+      {
+        "name": "wrong-app",
+        "status": "PASS",
+        "suite": "runtime"
+      },
+      {
+        "name": "immutable-version",
+        "status": "PASS",
+        "suite": "runtime"
+      },
+      {
+        "name": "stored artifact tampering rejected before old app stop",
+        "status": "PASS",
+        "suite": "runtime"
+      },
+      {
+        "name": "schema update preserves data and prod release",
+        "status": "PASS",
+        "suite": "runtime"
+      },
+      {
+        "name": "failed migration rolls back DDL and preserves data",
+        "status": "PASS",
+        "suite": "runtime"
+      },
+      {
+        "name": "new release recovers failed update",
+        "status": "PASS",
+        "suite": "runtime"
+      },
+      {
+        "name": "old image cannot silently roll back advanced schema",
+        "status": "PASS",
+        "suite": "runtime"
+      },
+      {
+        "name": "worker crash after DB provisioning resumes deployment",
+        "status": "PASS",
+        "suite": "runtime"
+      },
+      {
+        "name": "manual stop persists across worker restart",
+        "status": "PASS",
+        "suite": "runtime"
+      },
+      {
+        "name": "competing changes require fresh preflight after the pending operation",
+        "status": "PASS",
+        "suite": "runtime"
+      },
+      {
+        "name": "first service failure is degraded while process remains running",
+        "status": "PASS",
+        "suite": "runtime"
+      },
+      {
+        "name": "repeated HTTP failure is unhealthy without stopping container",
+        "status": "PASS",
+        "suite": "runtime"
+      },
+      {
+        "name": "HTTP recovery clears failures and records health transitions",
+        "status": "PASS",
+        "suite": "runtime"
+      },
+      {
+        "name": "Docker lookup failure preserves container and does not complete remove",
+        "status": "PASS",
+        "suite": "runtime"
+      },
+      {
+        "name": "foreign same-name container is preserved",
+        "status": "PASS",
+        "suite": "runtime"
+      },
+      {
+        "name": "remove resumes after container deletion before DB status commit",
+        "status": "PASS",
+        "suite": "runtime"
+      },
+      {
+        "name": "confirmed absent container removal is idempotent",
+        "status": "PASS",
+        "suite": "runtime"
+      },
+      {
+        "name": "redeploy after interrupted removal restores same data",
+        "status": "PASS",
+        "suite": "runtime"
+      },
+      {
+        "name": "slow health services do not occupy the control queue",
+        "status": "PASS",
+        "suite": "runtime"
+      },
+      {
+        "name": "late health result cannot overwrite a newer lifecycle generation",
+        "status": "PASS",
+        "suite": "runtime"
+      },
+      {
+        "name": "permission-filtered keyset pages, actor/filter cursor scope and management-only acceptance evidence",
+        "status": "PASS",
+        "suite": "operations"
+      },
+      {
+        "name": "transactional ordered job events, rollback, terminal pagination/resume and authority/cursor revocation",
+        "status": "PASS",
+        "suite": "operations"
+      },
+      {
+        "name": "dry-run has zero remote mutations; expected-state, prod/remove confirmation and stale-state admission fail closed",
+        "status": "PASS",
+        "suite": "operations"
+      },
+      {
+        "name": "typed retry eligibility, fresh confirmation/state, request-ID recovery, idempotency and active-operation exclusion",
+        "status": "PASS",
+        "suite": "operations"
+      },
+      {
+        "name": "lost upload receipt recovery, exact immutable identity, per-actor privacy and expired-key rejection",
+        "status": "PASS",
+        "suite": "operations"
+      },
+      {
+        "name": "real worker logs are capped at 1MiB, ownership/generation/permission/TTL checked; two gated diagnostics do not block prod start",
+        "status": "PASS",
+        "suite": "operations"
+      },
+      {
+        "name": "real CLI context login, private global credentials and two concurrent processes rotate once",
+        "status": "PASS",
+        "suite": "cli"
+      },
+      {
+        "name": "real CLI context selection follows flag, environment, project binding and active context in order",
+        "status": "PASS",
+        "suite": "cli"
+      },
+      {
+        "name": "real CLI project-free pagination/projection, project binding, registration approval and strict typed grant input",
+        "status": "PASS",
+        "suite": "cli"
+      },
+      {
+        "name": "real CLI dry-run and missing explicit targets/confirmation create no upload or runtime job",
+        "status": "PASS",
+        "suite": "cli"
+      },
+      {
+        "name": "real CLI no-wait journal, timeout without cancellation, lost-ack request-ID resume without duplication and terminal JSONL events",
+        "status": "PASS",
+        "suite": "cli"
+      },
+      {
+        "name": "real CLI remote logout, local credential deletion and explicit context removal",
+        "status": "PASS",
+        "suite": "cli"
+      },
+      {
+        "name": "expired/missing/replayed OAuth callbacks clear login state and redirect to fixed recovery without authenticating",
+        "status": "PASS",
+        "suite": "auth"
+      },
+      {
+        "name": "device hashes, pending/slow_down, browser CSRF/origin, exact account and one-use exchange",
+        "status": "PASS",
+        "suite": "auth"
+      },
+      {
+        "name": "15-minute access, fixed 30-day family, rotation history and committed reuse revocation",
+        "status": "PASS",
+        "suite": "auth"
+      },
+      {
+        "name": "concurrent device exchange issues once; concurrent refresh commits one rotation then family revocation",
+        "status": "PASS",
+        "suite": "auth"
+      },
+      {
+        "name": "denial and five-minute device expiry; expired access refreshes; absolute family expiry denies both tokens",
+        "status": "PASS",
+        "suite": "auth"
+      },
+      {
+        "name": "self-only session keyset pagination/revocation and idempotent logout without affecting another family",
+        "status": "PASS",
+        "suite": "auth"
+      },
+      {
+        "name": "grant revocation and Core disable immediately block API/worker authority; re-enable never resurrects old sessions",
+        "status": "PASS",
+        "suite": "auth"
+      },
+      {
+        "name": "per-client creation, per-actor code guessing and shared legacy/device global capacity are bounded",
+        "status": "PASS",
+        "suite": "auth"
+      },
+      {
+        "name": "installation permissions start empty and user/admin calls cannot bypass approval",
+        "status": "PASS",
+        "suite": "permissions"
+      },
+      {
+        "name": "concurrent approval compare-and-swap accepts one writer and exposes current revision",
+        "status": "PASS",
+        "suite": "permissions"
+      },
+      {
+        "name": "approvals reject foreign releases and undeclared grants; new releases and prod never inherit dev approval",
+        "status": "PASS",
+        "suite": "permissions"
+      },
+      {
+        "name": "signed caller identity and stale-release writes fail closed; current user and approval revocations apply",
+        "status": "PASS",
+        "suite": "permissions"
+      },
+      {
+        "name": "opaque multi-hop proofs retain ordered identity and recheck every source grant, approval and release",
+        "status": "PASS",
+        "suite": "permissions"
+      },
+      {
+        "name": "continuation authority narrows; expiry, cycles and eight-hop bounds hold while expired backlogs do not consume live quota",
+        "status": "PASS",
+        "suite": "permissions"
+      },
+      {
+        "name": "HTTP and MCP share permission reads, administrator checks, committed updates and CAS conflicts",
+        "status": "PASS",
+        "suite": "permissions"
+      },
+      {
+        "name": "user disable and CLI/browser/legacy logout revoke issued continuations, including held requests and child proofs",
+        "status": "PASS",
+        "suite": "permissions"
+      },
+      {
+        "name": "actual CLI private delegation import and explicit app/environment/actions; scoped lease cleanup rejects other apps/families while undelegated grant-loss cleanup remains available",
+        "status": "PASS",
+        "suite": "delegation"
+      },
+      {
+        "name": "queued runtime retains originating delegation, rejects idempotency rebinding and fails closed after revocation before Docker action",
+        "status": "PASS",
+        "suite": "delegation"
+      },
+      {
+        "name": "refresh preserves scope/expiry; delegated session revocation and refresh reuse remove queued authority independently of owner session",
+        "status": "PASS",
+        "suite": "delegation"
+      },
+      {
+        "name": "current grant revocation, delegation expiry and issuing CLI family revocation invalidate delegated API and queued authority",
+        "status": "PASS",
+        "suite": "delegation"
+      },
+      {
+        "name": "held build ownership does not block control; recovery resumes when released",
+        "status": "PASS",
+        "suite": "runtime"
+      },
+      {
+        "name": "blocked recovery does not delay ownership loss or successor control",
+        "status": "PASS",
+        "suite": "runtime"
+      },
+      {
+        "name": "SIGTERM cancels blocked recovery and releases worker and build ownership",
+        "status": "PASS",
+        "suite": "runtime"
+      }
+    ],
+    "logSha256": "09e592011cec9f90ee6008d57fe22f13bffece8b80c527e12dd96eb6a02df0f4",
+    "resultsSha256": "e09aa84fe4d4dc6a8f5c5decec75183ee69dc9f098356dfad6707a9f0432eecb"
+  },
+  "serverBuildApi": {
+    "dockerBuildExecuted": false,
+    "groups": 8,
+    "passed": true,
+    "runtimeJobsUnchanged": true,
+    "storage": "owned disposable PostgreSQL",
+    "suite": "server-build-api",
+    "transport": "real loopback HTTP",
+    "sourceBoundary": "Executed before the implementation commit; API/admission code matches the final commit. The subsequently reordered worker publication check is outside this API-only fixture."
+  },
+  "guidanceAndUpgrade": {
+    "cliVersion": "0.7.0",
+    "bundleVersion": "0.8.0",
+    "checks": [
+      "compact discovery and installed manuals cover actual visible commands; removed names and prod deploy are refused",
+      "MCP default, command and search discovery exactly match the installed CLI",
+      "setup rejects changed managed documents, restores missing guidance and is repeatable",
+      "tooling transaction preserves unrelated private MCP configuration and installs root mcp arguments",
+      "explicit 0.7.1 → 0.8.0 upgrade preserves business, CRLF SQL, components and existing dependency versions; SDK lock migration is explicit and conflicts preserve old executable"
+    ],
+    "registeredApps": 0
+  },
+  "reviewFixes": [
+    "Recheck source approvals and developer grants after preview request-body collection.",
+    "Bind delegated development-session close to its own parent session, target and dev_session action.",
+    "Count only unexpired continuation proofs when expired-row cleanup is bounded.",
+    "Recheck deployment authority after image extraction/lock wait and build publication authority after migration-history awaits."
+  ],
+  "verificationHistory": [
+    {
+      "fixture": "miy-runtime-regression-jp2zumlr",
+      "passedObservations": 70,
+      "role": "initial implementation; superseded by review fixes"
+    },
+    {
+      "fixture": "miy-runtime-regression-6ul4qp4m",
+      "passedObservations": 70,
+      "role": "expanded regression; final publication-check ordering subsequently reviewed"
+    },
+    {
+      "fixture": "miy-runtime-regression-cz0p6mlh",
+      "passedObservations": 70,
+      "role": "final implementation commit"
+    }
+  ],
+  "preservation": {
+    "existingRunningContainers": 25,
+    "allContainersPreserved": true,
+    "servicesPreserved": {
+      "miy-v2-serve": true,
+      "miy-v2-worker": true
+    },
+    "installedBinarySha256": "4573260257147c2563ba5ffae177b9ac6c6b0a331d2a0b1fef1cf6e60d10064e",
+    "cleanupErrors": 0,
+    "operationalMigrationApplied": false,
+    "operationalDeploymentPerformed": false
+  },
+  "limits": [
+    "Native Windows 11 build/install/import/upgrade acceptance remains NOT_RUN for the user.",
+    "Production services, DB migrations, app releases and published downloads were not changed.",
+    "Core multi-hop policy uses real HTTP/PostgreSQL with signed loopback app fixtures. SDK transport uses actual loopback TCP tests; end-to-end deployed Docker/public-origin SDK calls are NOT_RUN.",
+    "Server-build API fixture does not execute Docker compilation; final-build DB-history delay/revocation was corrected by source review and not fault-injected during a real compilation.",
+    "Only delegated user credentials are implemented; service-account issuance and recursive user delegation are unsupported.",
+    "Revocation is checked at request/execution/checkpoint boundaries; already completed side effects are not rolled back and running work is not universally forcibly canceled.",
+    "New-host installation, whole-host capacity/load/OOM enforcement, backup/restore/updater and full V7 remain later stages."
+  ]
+}
