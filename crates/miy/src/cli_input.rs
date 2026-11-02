@@ -73,6 +73,8 @@ pub fn validate_fields(command: &str, fields: &str) -> Result<()> {
             | "context show"
             | "auth status"
             | "auth sessions list"
+            | "auth delegations list"
+            | "permissions get"
             | "app list"
             | "app show"
             | "app status"

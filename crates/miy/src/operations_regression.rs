@@ -224,6 +224,7 @@ async fn pages_and_events(
         h.state,
         &auth::Principal {
             cli_session_id: None,
+            delegation_id: None,
             id: manager.id.clone(),
             scopes: vec!["miy.dev".into()],
             csrf: None,

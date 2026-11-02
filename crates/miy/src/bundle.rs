@@ -6,10 +6,11 @@ use std::{
     collections::{BTreeMap, BTreeSet},
     path::Path,
 };
-pub const VERSION: &str = "0.7.1";
-// 0.6.x guidance updates preserve the component API and application SDK bytes.
+pub const VERSION: &str = "0.8.0";
+// The contextual Rust SDK changes independently of the compatible browser/UI
+// component contract. SDK bundle upgrades remain explicit and hash checked.
 pub fn component_compatible(version: &str) -> bool {
-    version == VERSION || matches!(version, "0.6.0" | "0.6.1" | "0.6.2" | "0.7.0")
+    version == VERSION || matches!(version, "0.6.0" | "0.6.1" | "0.6.2" | "0.7.0" | "0.7.1")
 }
 pub const GUIDANCE: &str = include_str!("../../../templates/rust-react/docs/CONTRACT.md");
 pub const AGENT_GUIDANCE: &str = include_str!("../../../templates/rust-react/AGENTS.md");

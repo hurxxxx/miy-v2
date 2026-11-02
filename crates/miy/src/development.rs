@@ -95,7 +95,14 @@ async fn owner(state: &State, p: &Principal, id: Uuid) -> ApiResult<sqlx::postgr
     {
         return Err(ApiError::forbidden());
     }
-    domain::manage(state, p, row.get("app_id"), "dev").await?;
+    domain::manage_action(
+        state,
+        p,
+        row.get("app_id"),
+        "dev",
+        crate::delegations::Action::DevSession,
+    )
+    .await?;
     Ok(row)
 }
 
@@ -127,7 +134,14 @@ pub async fn create(
     Path(app): Path<String>,
     Json(input): Json<NewSession>,
 ) -> ApiResult<Json<Value>> {
-    domain::manage(&state, &p, &app, "dev").await?;
+    domain::manage_action(
+        &state,
+        &p,
+        &app,
+        "dev",
+        crate::delegations::Action::DevSession,
+    )
+    .await?;
     let parent = p
         .cli_session_id
         .ok_or_else(|| ApiError::bad("cli_session_required"))?;
@@ -238,10 +252,23 @@ pub async fn close(
         .fetch_optional(&state.pool)
         .await?
         .ok_or_else(ApiError::not_found)?;
-    // Releasing one's own lease cannot grant DB access. Permit a fresh login and
-    // permission loss to clean up an older owned session without its secrets.
-
     let app: String = row.get("app_id");
+    // An undelegated user may clean up an older owned lease after a fresh login
+    // or grant loss. A scoped agent may only close its own family's lease within
+    // its explicitly delegated development authority.
+    if p.delegation_id.is_some() {
+        if row.get::<Uuid, _>("parent_session_id") != parent {
+            return Err(ApiError::forbidden());
+        }
+        crate::delegations::check(
+            &state,
+            &p,
+            &app,
+            "dev",
+            crate::delegations::Action::DevSession,
+        )
+        .await?;
+    }
     let mut tx = state.pool.begin().await?;
     sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))")
         .bind(format!("runtime:{app}:dev"))
@@ -257,7 +284,18 @@ pub async fn close(
 }
 
 pub(crate) async fn session_valid(pool: &sqlx::PgPool, id: Uuid) -> Result<bool, sqlx::Error> {
-    sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM app_dev_sessions d JOIN cli_sessions c ON c.id=d.parent_session_id JOIN users u ON u.id=d.actor WHERE d.id=$1 AND d.status IN ('queued','preparing','ready') AND d.expires_at>now() AND c.user_id=d.actor AND c.revoked_at IS NULL AND c.expires_at>now() AND u.enabled AND (u.admin OR EXISTS(SELECT 1 FROM grants g WHERE g.user_id=d.actor AND g.app_id=d.app_id AND g.environment='dev' AND g.permission='develop')))").bind(id).fetch_one(pool).await
+    let row=sqlx::query("SELECT d.actor,d.app_id,c.delegation_id FROM app_dev_sessions d JOIN cli_sessions c ON c.id=d.parent_session_id JOIN users u ON u.id=d.actor WHERE d.id=$1 AND d.status IN ('queued','preparing','ready') AND d.expires_at>now() AND c.user_id=d.actor AND c.revoked_at IS NULL AND c.expires_at>now() AND u.enabled AND (u.admin OR EXISTS(SELECT 1 FROM grants g WHERE g.user_id=d.actor AND g.app_id=d.app_id AND g.environment='dev' AND g.permission='develop'))").bind(id).fetch_optional(pool).await?;
+    let Some(row) = row else { return Ok(false) };
+    Ok(crate::delegations::check_queued(
+        pool,
+        row.get("actor"),
+        row.get("delegation_id"),
+        row.get("app_id"),
+        "dev",
+        crate::delegations::Action::DevSession,
+    )
+    .await
+    .is_ok())
 }
 pub(crate) async fn active_for_app(pool: &sqlx::PgPool, app: &str) -> Result<bool, sqlx::Error> {
     sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM app_dev_sessions WHERE app_id=$1 AND status IN ('queued','preparing','ready') AND expires_at>now())").bind(app).fetch_one(pool).await

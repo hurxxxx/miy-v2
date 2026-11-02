@@ -13,6 +13,7 @@ fn principal(parent: Uuid) -> Principal {
     Principal {
         id: "developer".into(),
         cli_session_id: Some(parent),
+        delegation_id: None,
         scopes: vec!["miy.dev".into()],
         csrf: None,
         development: false,

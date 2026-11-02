@@ -135,6 +135,7 @@ async fn real_database_isolation_migrations_and_crash_recovery() -> Result<()> {
     };
     let actor = auth::Principal {
         cli_session_id: None,
+        delegation_id: None,
         id: "00000000-0000-4000-8000-000000000001".into(),
         scopes: vec!["miy.dev".into()],
         csrf: None,

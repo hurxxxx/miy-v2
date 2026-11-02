@@ -23,6 +23,7 @@ fn report(name: &str, passed: bool, evidence: Value) {
 fn actor(id: &str) -> auth::Principal {
     auth::Principal {
         cli_session_id: None,
+        delegation_id: None,
         id: id.into(),
         scopes: vec!["miy.dev".into()],
         csrf: None,
@@ -1177,6 +1178,20 @@ async fn isolated_runtime_regression() -> Result<()> {
             &name,
             true,
             json!({"suite":"auth","transport":"HTTP","storage":"isolated PostgreSQL","identity":"synthetic development account"}),
+        );
+    }
+    for name in crate::permissions_regression::run(&s, &client, &api_origin).await? {
+        report(
+            &name,
+            true,
+            json!({"suite":"permissions","transport":"HTTP and MCP","storage":"isolated PostgreSQL","runtime":"signed loopback app fixtures"}),
+        );
+    }
+    for name in crate::delegation_regression::run(&s, &client, &api_origin).await? {
+        report(
+            &name,
+            true,
+            json!({"suite":"delegation","transport":"HTTP","storage":"isolated PostgreSQL","identity":"synthetic CLI sessions and delegated credentials"}),
         );
     }
     worker_recovery_boundaries(&s, &admin).await?;

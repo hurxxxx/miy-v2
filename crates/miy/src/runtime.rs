@@ -1,6 +1,5 @@
 //! Local single-host image store + persistent Docker deployment runner.
 pub(crate) use crate::docker::{docker, healthy, inspect};
-pub(crate) use crate::identity::sign_identity;
 use crate::runtime_contract::{ExpectedState, FailureCode, RuntimeFailure};
 use crate::{
     State,
@@ -69,7 +68,7 @@ pub async fn check_release(
     app: &str,
     v: ReleaseCheck,
 ) -> ApiResult<Value> {
-    domain::manage(state, p, app, "dev").await?;
+    domain::manage_action(state, p, app, "dev", crate::delegations::Action::Accept).await?;
     let mut guard = state.pool.acquire().await?;
     guard.close_on_drop();
     sqlx::query("SELECT pg_advisory_lock(hashtextextended($1,0))")
@@ -124,7 +123,7 @@ pub async fn request(
     {
         return Err(ApiError::bad("invalid_image_id"));
     }
-    domain::manage(state, p, app, &v.environment).await?;
+    domain::manage_action(state, p, app, &v.environment, v.action.parse()?).await?;
     if v.expected_state.is_none() {
         return Err(ApiError::bad("expected_state_required"));
     }
@@ -161,13 +160,13 @@ pub async fn request(
         .execute(&mut *tx)
         .await?;
     if let Some(previous) =
-        sqlx::query("SELECT id,input_hash FROM runtime_jobs WHERE actor=$1 AND idempotency_key=$2")
+        sqlx::query("SELECT id,input_hash,delegation_id FROM runtime_jobs WHERE actor=$1 AND idempotency_key=$2")
             .bind(&p.id)
             .bind(&v.idempotency_key)
             .fetch_optional(&mut *tx)
             .await?
     {
-        if previous.get::<String, _>("input_hash") != input {
+        if previous.get::<String, _>("input_hash") != input || previous.get::<Option<Uuid>,_>("delegation_id") != p.delegation_id {
             return Err(ApiError::conflict("idempotency_conflict"));
         }
         let id = previous.get("id");
@@ -224,16 +223,18 @@ pub async fn request(
             return Err(ApiError::conflict("preflight_failed"));
         }
     }
-    sqlx::query("INSERT INTO runtime_jobs(id,app_id,environment,actor,action,image_id,idempotency_key,input_hash,expected_state,request_data,retry_of) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) ON CONFLICT(actor,idempotency_key) DO NOTHING")
+    sqlx::query("INSERT INTO runtime_jobs(id,app_id,environment,actor,action,image_id,idempotency_key,input_hash,expected_state,request_data,retry_of,delegation_id) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) ON CONFLICT(actor,idempotency_key) DO NOTHING")
         .bind(Uuid::new_v4()).bind(app).bind(&v.environment).bind(&p.id).bind(&v.action).bind(&image).bind(&v.idempotency_key).bind(&input)
-        .bind(v.expected_state.as_ref().map(serde_json::to_value).transpose()?).bind(request_data).bind(v.retry_of).execute(&mut *tx).await?;
+        .bind(v.expected_state.as_ref().map(serde_json::to_value).transpose()?).bind(request_data).bind(v.retry_of).bind(p.delegation_id).execute(&mut *tx).await?;
     let row =
-        sqlx::query("SELECT id,input_hash FROM runtime_jobs WHERE actor=$1 AND idempotency_key=$2")
+        sqlx::query("SELECT id,input_hash,delegation_id FROM runtime_jobs WHERE actor=$1 AND idempotency_key=$2")
             .bind(&p.id)
             .bind(&v.idempotency_key)
             .fetch_one(&mut *tx)
             .await?;
-    if row.get::<String, _>("input_hash") != input {
+    if row.get::<String, _>("input_hash") != input
+        || row.get::<Option<Uuid>, _>("delegation_id") != p.delegation_id
+    {
         return Err(ApiError::conflict("idempotency_conflict"));
     }
     let id = row.get("id");
@@ -395,6 +396,17 @@ async fn execute(pool: &sqlx::PgPool, job: &sqlx::postgres::PgRow) -> Result<()>
     let env: String = job.get("environment");
     let actor: String = job.get("actor");
     let action: String = job.get("action");
+    crate::delegations::check_queued(
+        pool,
+        &actor,
+        job.get("delegation_id"),
+        &app,
+        &env,
+        action
+            .parse()
+            .map_err(|_| RuntimeFailure::new(FailureCode::InvalidRequest))?,
+    )
+    .await?;
     anyhow::ensure!(
         domain::can_manage(pool, &actor, &app, &env).await?,
         RuntimeFailure::new(FailureCode::PermissionRevoked)
@@ -660,6 +672,24 @@ async fn execute(pool: &sqlx::PgPool, job: &sqlx::postgres::PgRow) -> Result<()>
         .bind(installation.to_string())
         .execute(&mut *lock)
         .await?;
+    // Image extraction and waiting for the installation lock can take time.
+    // Recheck before entering the branch whose failure cleanup may stop the
+    // existing application; a revoked grant must leave that runtime intact.
+    anyhow::ensure!(
+        domain::can_manage(pool, &actor, &app, &env).await?,
+        RuntimeFailure::new(FailureCode::PermissionRevoked)
+    );
+    crate::delegations::check_queued(
+        pool,
+        &actor,
+        job.get("delegation_id"),
+        &app,
+        &env,
+        action
+            .parse()
+            .map_err(|_| RuntimeFailure::new(FailureCode::InvalidRequest))?,
+    )
+    .await?;
     let result = deploy_installation(
         pool,
         id,
@@ -741,7 +771,7 @@ async fn deploy_installation(
     }
     step(pool, job, "preparing_database").await?;
     let db_job = Uuid::new_v4();
-    sqlx::query("INSERT INTO jobs(id,installation_id,release_id,actor,idempotency_key,input_hash,status) VALUES($1,$2,$3,$4,$5,$6,'running')").bind(db_job).bind(installation).bind(release).bind(actor).bind(format!("runtime-{job}-{}",Uuid::new_v4())).bind(contract::hash(job.to_string())).execute(pool).await?;
+    sqlx::query("INSERT INTO jobs(id,installation_id,release_id,actor,idempotency_key,input_hash,status,delegation_id,delegation_action) VALUES($1,$2,$3,$4,$5,$6,'running',(SELECT delegation_id FROM runtime_jobs WHERE id=$7),(SELECT action FROM runtime_jobs WHERE id=$7))").bind(db_job).bind(installation).bind(release).bind(actor).bind(format!("runtime-{job}-{}",Uuid::new_v4())).bind(contract::hash(job.to_string())).bind(job).execute(pool).await?;
     let db = crate::worker::prepare(pool, db_job, installation, release)
         .await
         .map_err(classify_database_prepare_failure);
@@ -783,7 +813,16 @@ async fn deploy_installation(
         .write(true)
         .mode(0o600)
         .open(&env_path)?;
-    std::io::Write::write_all(&mut env,format!("DATABASE_URL={db_url}\nMIY_GATEWAY_SECRET={secret}\nMIY_INSTALLATION_ID={installation}\nMIY_RELEASE_ID={release}\n").as_bytes())?;
+    let core_origin = crate::server_origin::validate(
+        &std::env::var("MIY_ORIGIN")?,
+        std::env::var("MIY_ALLOW_HTTP").as_deref() == Ok("1"),
+    )?;
+    let allow_http = if core_origin.starts_with("http://") {
+        "1"
+    } else {
+        "0"
+    };
+    std::io::Write::write_all(&mut env,format!("DATABASE_URL={db_url}\nMIY_GATEWAY_SECRET={secret}\nMIY_INSTALLATION_ID={installation}\nMIY_RELEASE_ID={release}\nMIY_CORE_ORIGIN={core_origin}\nMIY_CORE_ALLOW_HTTP={allow_http}\n").as_bytes())?;
     drop(env);
     step(pool, job, "creating_container").await?;
     let network = installation_network(installation).await?;
@@ -969,6 +1008,16 @@ pub async fn proxy(
     Path((id, path)): Path<(Uuid, String)>,
     request: Request,
 ) -> ApiResult<Response> {
+    let (parts, body) = request.into_parts();
+    let body = tokio::time::timeout(Duration::from_secs(15), to_bytes(body, 4 * 1024 * 1024))
+        .await
+        .map_err(|_| ApiError::bad("request_body_timeout"))?
+        .map_err(|_| ApiError::bad("request_too_large"))?;
+    // Authorization and every upstream approval are checked after bounded body
+    // collection, immediately before issuing the signed target identity.
+    if let Some(preview) = parts.extensions.get::<crate::connections::PreviewCall>() {
+        crate::connections::recheck_preview(&state, &p, preview).await?;
+    }
     let inst = domain::installation(&state, &p, id, false).await?;
     if inst.get::<String, _>("runtime_status") != "running"
         || inst.get::<String, _>("desired_state") != "running"
@@ -976,9 +1025,9 @@ pub async fn proxy(
         return Err(ApiError::unavailable("app_runtime_not_running"));
     }
     let release: Uuid = inst.get("release_id");
-    if !matches!(*request.method(), Method::GET | Method::HEAD)
-        && request
-            .headers()
+    if !matches!(parts.method, Method::GET | Method::HEAD)
+        && parts
+            .headers
             .get("x-miy-release")
             .and_then(|v| v.to_str().ok())
             != Some(release.to_string().as_str())
@@ -995,23 +1044,45 @@ pub async fn proxy(
         inst.get::<Option<&str>, _>("runtime_secret")
             .ok_or_else(ApiError::not_found)?,
     )?;
-    let token = sign_identity(
+    crate::delegations::check(
+        &state,
+        &p,
+        inst.get("app_id"),
+        inst.get("environment"),
+        if matches!(parts.method, Method::GET | Method::HEAD) {
+            crate::delegations::Action::AppRead
+        } else {
+            crate::delegations::Action::AppWrite
+        },
+    )
+    .await?;
+    let context = crate::app_calls::identity(
+        &state,
+        &p,
+        &inst,
+        parts.extensions.get::<crate::app_calls::ForwardContext>(),
+        parts.extensions.get::<crate::app_calls::Origin>(),
+        parts
+            .extensions
+            .get::<crate::connections::PreviewCall>()
+            .is_none(),
+    )
+    .await?;
+    let token = crate::identity::sign_identity_context(
         &p.id,
         domain::admin(&state, &p).await.is_ok(),
         id,
         release,
         &secret,
+        &context,
     )?;
-    let query = request
-        .uri()
+    let query = parts
+        .uri
         .query()
         .map(|q| format!("?{q}"))
         .unwrap_or_default();
-    let method = request.method().clone();
-    let content_type = request.headers().get(header::CONTENT_TYPE).cloned();
-    let body = to_bytes(request.into_body(), 4 * 1024 * 1024)
-        .await
-        .map_err(|_| ApiError::bad("request_too_large"))?;
+    let method = parts.method.clone();
+    let content_type = parts.headers.get(header::CONTENT_TYPE).cloned();
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(15))
         .redirect(reqwest::redirect::Policy::none())

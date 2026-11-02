@@ -14,6 +14,7 @@ fn view(row: &sqlx::postgres::PgRow) -> Value {
     json!({"id":row.get::<Uuid,_>("id"),"appId":row.get::<String,_>("app_id"),"name":row.get::<String,_>("name"),"requestedBy":row.get::<String,_>("actor"),"status":row.get::<String,_>("status"),"decidedBy":row.get::<Option<String>,_>("decided_by")})
 }
 pub async fn request(s: &State, p: &Principal, v: domain::NewApp) -> ApiResult<Value> {
+    crate::delegations::unrestricted(p)?;
     let allowed: bool = sqlx::query_scalar(
         "SELECT EXISTS(SELECT 1 FROM users WHERE id=$1 AND (admin OR can_develop))",
     )
@@ -49,6 +50,7 @@ pub async fn request(s: &State, p: &Principal, v: domain::NewApp) -> ApiResult<V
     Ok(result)
 }
 pub async fn list(s: &State, p: &Principal) -> ApiResult<Value> {
+    crate::delegations::unrestricted(p)?;
     let admin = domain::admin(s, p).await.is_ok();
     let rows =
         sqlx::query("SELECT * FROM app_registrations WHERE actor=$1 OR $2 ORDER BY created_at,id")

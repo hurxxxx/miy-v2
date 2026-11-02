@@ -14,6 +14,16 @@ const cli=(args,cwd=root)=>cliData(run(binary,['--output','json',...args],cwd));
 const app=(args,cwd)=>cli(['app',...args],cwd);
 const ok=message=>{checks.push(message);console.log('PASS '+message);};
 function fails(args,cwd,exit,pattern){let failure;try{run(binary,['--output','json',...args],cwd);}catch(error){failure=error;}return assertCliFailure(failure,exit,pattern);}
+function cargoPackages(text){
+ // Cargo's generated lock format uses standalone package tables and quoted
+ // scalar identity fields. Dependencies may grow; existing package identities
+ // and checksums must remain unchanged during the explicit SDK migration.
+ return text.split(/^\[\[package\]\]\s*$/m).slice(1).map(block=>{
+  const row={};for(const match of block.matchAll(/^(name|version|source|checksum)\s*=\s*("(?:[^"\\]|\\.)*")\s*$/gm))row[match[1]]=JSON.parse(match[2]);
+  assert(row.name&&row.version,'invalid Cargo package identity');return row;
+ });
+}
+const cargoKey=row=>JSON.stringify([row.name,row.version,row.source||'',row.checksum||'']);
 async function mcp(cwd){
  const child=spawn(join(cwd,'.miy-tools/miy'+suffix),['mcp'],{cwd,env,stdio:['pipe','pipe','pipe']});let buffer='',sequence=0;const pending=new Map();
  child.stdout.on('data',bytes=>{buffer+=bytes;let n;while((n=buffer.indexOf('\n'))>=0){const line=buffer.slice(0,n);buffer=buffer.slice(n+1);if(line.trim()){const value=JSON.parse(line);pending.get(value.id)?.(value);}}});
@@ -58,7 +68,8 @@ if(previous){
  writeFileSync(join(old,'src/main.rs'),readFileSync(join(old,'src/main.rs'),'utf8')+'\n// business change must survive upgrade\n');
  writeFileSync(join(old,'migrations/0002_preserved.sql'),'-- existing applied bytes\r\nCREATE TABLE app.preserved(id integer);\r\n');
  mkdirSync(join(old,'platform-components/custom'),{recursive:true});writeFileSync(join(old,'platform-components/custom/source.ts'),'export const business = "preserve";\n');
- const preserved=['src/main.rs','web/src/AppRoot.tsx','manifest.json','Cargo.toml','Cargo.lock','package.json','pnpm-lock.yaml','tsconfig.json','migrations/0001_initial.sql','migrations/0002_preserved.sql','platform-components/custom/source.ts','miy.components.json'];
+ const preserved=['src/main.rs','web/src/AppRoot.tsx','manifest.json','Cargo.toml','package.json','pnpm-lock.yaml','tsconfig.json','migrations/0001_initial.sql','migrations/0002_preserved.sql','platform-components/custom/source.ts','miy.components.json'];
+ const previousCargo=cargoPackages(readFileSync(join(old,'Cargo.lock'),'utf8'));
  const hashes=preserved.map(path=>hash(join(old,path)));
  run('git',['init'],old);run('git',['add','.'],old);run('git',['-c','user.name=MIY regression','-c','user.email=fixture@localhost','commit','-m','Preserved application fixture'],old);
  if(oldLock.bundleVersion!==bundle.bundleVersion)fails(['app','setup'],old,CLI_EXIT.environment,/bundle_version_mismatch/);
@@ -67,10 +78,14 @@ if(previous){
  fails(['app','upgrade'],old,CLI_EXIT.environment,/cli_guidance_modified_or_conflict/);assert.equal(hash(join(old,'.miy-tools/miy'+suffix)),oldExecutable);assert.deepEqual(JSON.parse(readFileSync(join(old,'miy.bundle.json'))),oldLock);
  writeFileSync(join(old,'docs/CLI-REFERENCE.md'),oldManual);run('git',['add','.'],old);run('git',['-c','user.name=MIY regression','-c','user.email=fixture@localhost','commit','-m','Restore managed document'],old);
  const upgraded=app(['upgrade'],old);assert.equal(upgraded.bundleVersion,bundle.bundleVersion);assert.deepEqual(preserved.map(path=>hash(join(old,path))),hashes);
+ const updatedCargo=cargoPackages(readFileSync(join(old,'Cargo.lock'),'utf8')),updatedKeys=new Set(updatedCargo.map(cargoKey));
+ for(const row of previousCargo)if(row.name!=='miy-app-sdk'||row.source)assert(updatedKeys.has(cargoKey(row)),`existing Cargo package changed: ${row.name} ${row.version}`);
+ const sdkVersion=readFileSync(join(fresh,'sdk/rust/Cargo.toml'),'utf8').match(/^version\s*=\s*"([^"]+)"/m)?.[1];assert(sdkVersion);
+ assert(updatedCargo.some(row=>row.name==='miy-app-sdk'&&!row.source&&row.version===sdkVersion),'SDK lock version must match the upgraded protected SDK');
  for(const [path,expected]of Object.entries(bundle.protectedFiles))assert.equal(hash(join(old,path)),expected,path);
  assert.equal(run(join(old,'.miy-tools/miy'+suffix),['--version'],old),`miy ${summary.cliVersion}\n`);await mcp(old);
  const backup=resolve(old,upgraded.backup||upgraded.transaction?.backup);
  assert(existsSync(join(backup,'manifest.json')));
- ok(`explicit ${oldLock.bundleVersion} → ${bundle.bundleVersion} upgrade preserves business, CRLF SQL, components and dependencies; conflicts preserve old executable`);
+ ok(`explicit ${oldLock.bundleVersion} → ${bundle.bundleVersion} upgrade preserves business, CRLF SQL, components and existing dependency versions; SDK lock migration is explicit and conflicts preserve old executable`);
 }else console.log('SKIP prior-version transition: set MIY_PREVIOUS_BUNDLE_CLI to the preserved baseline binary');
 writeFileSync(join(out,'result.json'),JSON.stringify({cliVersion:summary.cliVersion,bundleVersion:bundle.bundleVersion,checks,registeredApps:0},null,2));console.log('Evidence: '+out);

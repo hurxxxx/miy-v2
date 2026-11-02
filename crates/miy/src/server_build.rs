@@ -116,7 +116,7 @@ impl UploadInput {
 
 pub async fn authorize(s: &State, p: &Principal, app: &str) -> ApiResult<()> {
     crate::auth_sessions::ensure_active(&s.pool, &p.id).await?;
-    domain::manage(s, p, app, "dev").await?;
+    domain::manage_action(s, p, app, "dev", crate::delegations::Action::Build).await?;
     if !sqlx::query_scalar::<_, bool>("SELECT EXISTS(SELECT 1 FROM apps WHERE id=$1)")
         .bind(app)
         .fetch_one(&s.pool)
@@ -133,7 +133,10 @@ async fn owned(s: &State, p: &Principal, id: Uuid) -> ApiResult<PgRow> {
         .await?
         .ok_or_else(ApiError::not_found)?;
     authorize(s, p, row.get("app_id")).await?;
-    if row.get::<String, _>("actor") != p.id {
+    if row.get::<String, _>("actor") != p.id
+        || (p.delegation_id.is_some()
+            && row.get::<Option<Uuid>, _>("delegation_id") != p.delegation_id)
+    {
         return Err(ApiError::forbidden());
     }
     Ok(row)
@@ -175,8 +178,8 @@ pub async fn upload(
         .bind(&p.id).bind(input.request_id).fetch_optional(&mut *tx).await?;
     let previous = match previous {
         Some(row) => Some(row),
-        None => sqlx::query("SELECT * FROM app_builds WHERE actor=$1 AND app_id=$2 AND source_commit=$3 AND archive_hash=$4 AND platform=$5 AND status<>'failed'")
-            .bind(&p.id).bind(&app).bind(&input.source_commit).bind(&input.archive_hash).bind(&input.platform).fetch_optional(&mut *tx).await?,
+        None => sqlx::query("SELECT * FROM app_builds WHERE actor=$1 AND app_id=$2 AND source_commit=$3 AND archive_hash=$4 AND platform=$5 AND status<>'failed' AND delegation_id IS NOT DISTINCT FROM $6")
+            .bind(&p.id).bind(&app).bind(&input.source_commit).bind(&input.archive_hash).bind(&input.platform).bind(p.delegation_id).fetch_optional(&mut *tx).await?,
     };
     if previous
         .as_ref()
@@ -200,9 +203,14 @@ pub async fn upload(
             return Err(ApiError::conflict("build_queue_full"));
         }
     }
+    if let Some(row) = &previous
+        && row.get::<Option<Uuid>, _>("delegation_id") != p.delegation_id
+    {
+        return Err(ApiError::conflict("idempotency_scope_conflict"));
+    }
     if previous.is_none() {
-        sqlx::query("INSERT INTO app_builds(id,app_id,actor,request_id,source_commit,archive_hash,size_bytes,platform) VALUES($1,$2,$3,$4,$5,$6,$7,$8)")
-            .bind(id).bind(&app).bind(&p.id).bind(input.request_id).bind(&input.source_commit).bind(&input.archive_hash).bind(input.size_bytes).bind(&input.platform).execute(&mut *tx).await?;
+        sqlx::query("INSERT INTO app_builds(id,app_id,actor,request_id,source_commit,archive_hash,size_bytes,platform,delegation_id) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)")
+            .bind(id).bind(&app).bind(&p.id).bind(input.request_id).bind(&input.source_commit).bind(&input.archive_hash).bind(input.size_bytes).bind(&input.platform).bind(p.delegation_id).execute(&mut *tx).await?;
     }
     sqlx::query("INSERT INTO app_build_requests(actor,request_id,build_id) VALUES($1,$2,$3) ON CONFLICT(actor,request_id) DO NOTHING")
         .bind(&p.id).bind(input.request_id).bind(id).execute(&mut *tx).await?;

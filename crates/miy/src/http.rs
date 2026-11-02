@@ -72,6 +72,18 @@ pub fn router(state: State) -> Router {
         )
         .route("/me", axum::routing::get(me))
         .route(
+            "/delegations",
+            axum::routing::get(crate::delegations::list).post(crate::delegations::create),
+        )
+        .route(
+            "/delegations/{id}",
+            axum::routing::delete(crate::delegations::revoke),
+        )
+        .route(
+            "/installations/{id}/permissions",
+            axum::routing::get(crate::permissions::get).put(crate::permissions::put),
+        )
+        .route(
             "/cli-authorizations/{id}/approve",
             axum::routing::post(crate::cli_auth::approve),
         )
@@ -301,12 +313,42 @@ async fn session_guard(S(state): S<State>, mut request: Request, next: Next) -> 
         if request.headers().contains_key("origin") {
             return ApiError::forbidden().into_response();
         }
-        crate::cli_auth::principal(&state, token).await
+        if token.starts_with(crate::app_calls::PREFIX) {
+            match crate::app_calls::authenticate(&state, token).await {
+                Ok((p, context)) => {
+                    let path = request
+                        .extensions()
+                        .get::<axum::extract::OriginalUri>()
+                        .map(|u| u.0.path())
+                        .unwrap_or(request.uri().path());
+                    if !crate::app_calls::allowed_route(&context, path, request.method()) {
+                        crate::app_calls::audit_rejected(&state, token, path).await;
+                        return ApiError::forbidden().into_response();
+                    }
+                    request.extensions_mut().insert(context);
+                    Ok(p)
+                }
+                Err(e) => {
+                    let path = request
+                        .extensions()
+                        .get::<axum::extract::OriginalUri>()
+                        .map(|u| u.0.path())
+                        .unwrap_or(request.uri().path());
+                    crate::app_calls::audit_rejected(&state, token, path).await;
+                    Err(e)
+                }
+            }
+        } else {
+            crate::cli_auth::principal(&state, token).await
+        }
     } else {
         state.auth.session(&state, request.headers()).await
     };
     match result {
         Ok(p) => {
+            if let Some(origin) = crate::app_calls::origin(&p, request.headers()) {
+                request.extensions_mut().insert(origin);
+            }
             if let Err(error) = crate::auth_sessions::ensure_active(&state.pool, &p.id).await {
                 return error.into_response();
             }
@@ -326,8 +368,18 @@ async fn session_guard(S(state): S<State>, mut request: Request, next: Next) -> 
             let actor = p.id.clone();
             let path = request.uri().path().to_owned();
             let method = request.method().to_string();
+            let route = request
+                .extensions()
+                .get::<axum::extract::MatchedPath>()
+                .map(|p| p.as_str())
+                .unwrap_or("");
+            let allowed = p.delegation_id.is_none() || delegated_route(route, request.method());
             request.extensions_mut().insert(p);
-            let mut response = next.run(request).await;
+            let mut response = if allowed {
+                next.run(request).await
+            } else {
+                ApiError::forbidden().into_response()
+            };
             let id = response
                 .headers()
                 .get("x-request-id")
@@ -338,7 +390,10 @@ async fn session_guard(S(state): S<State>, mut request: Request, next: Next) -> 
                 .headers_mut()
                 .insert("x-request-id", id.parse().unwrap());
             tracing::info!(event="api_request",request_id=%id,actor=%actor,method=%method,path=%path,status=response.status().as_u16());
-            if method != "GET"
+            if (method != "GET"
+                || !response.status().is_success()
+                || path.contains("/connections/")
+                || path.ends_with("/platform/directory"))
                 && sqlx::query(
                     "INSERT INTO audit(actor,action,target,request_id) VALUES($1,$2,$3,$4)",
                 )
@@ -357,6 +412,76 @@ async fn session_guard(S(state): S<State>, mut request: Request, next: Next) -> 
         Err(e) => e.into_response(),
     }
 }
+// Only routes with explicit delegated action/resource checks may accept a
+// restricted credential. A future unrelated account/admin API stays denied.
+fn delegated_route(route: &str, method: &axum::http::Method) -> bool {
+    use axum::http::Method;
+    let route = route.strip_prefix("/api/v1").unwrap_or(route);
+    match (method, route) {
+        (
+            &Method::GET,
+            "/me"
+            | "/contracts"
+            | "/catalog"
+            | "/openapi.json"
+            | "/components"
+            | "/components/{name}/{version}"
+            | "/apps"
+            | "/apps/{app}"
+            | "/installations"
+            | "/grants"
+            | "/installations/{id}/permissions"
+            | "/jobs/{id}"
+            | "/runtime/jobs"
+            | "/runtime/jobs/{id}"
+            | "/runtime/jobs/{id}/events"
+            | "/runtime/logs/{id}"
+            | "/builds/{id}"
+            | "/builds/{id}/logs"
+            | "/apps/{app}/build-requests/{request}"
+            | "/image-uploads/{id}"
+            | "/apps/{app}/image-uploads/by-request/{request}"
+            | "/dev-sessions/{id}"
+            | "/apps/{app}/dev-sessions/by-request/{request}"
+            | "/artifacts/{hash}/ui/{*path}",
+        ) => true,
+        (
+            &Method::POST,
+            "/contracts/validate"
+            | "/apps/{app}/runtime"
+            | "/apps/{app}/runtime/preflight"
+            | "/runtime/jobs/{id}/retry"
+            | "/apps/{app}/logs"
+            | "/apps/{app}/builds"
+            | "/apps/{app}/images"
+            | "/apps/{app}/dev-sessions"
+            | "/dev-sessions/{id}/heartbeat"
+            | "/apps/{app}/test-acceptance"
+            | "/database/prepare"
+            | "/cli/logout",
+        ) => true,
+        (&Method::DELETE, "/dev-sessions/{id}") => true,
+        (
+            &Method::GET,
+            "/installations/{id}/platform/directory" | "/preview/apps/{app}/platform/directory",
+        ) => true,
+        (
+            _,
+            "/installations/{id}/api/{*path}"
+            | "/installations/{id}/connections/{target}/api/{*path}"
+            | "/preview/apps/{app}/connections/{target}/api/{*path}",
+        ) => matches!(
+            *method,
+            Method::GET
+                | Method::HEAD
+                | Method::POST
+                | Method::PUT
+                | Method::PATCH
+                | Method::DELETE
+        ),
+        _ => false,
+    }
+}
 type P = axum::Extension<Principal>;
 async fn capabilities() -> Json<Value> {
     Json(
@@ -364,7 +489,7 @@ async fn capabilities() -> Json<Value> {
         "runtimePlatform":crate::runtime_platform::server(),
         "userActivationSource":"core.users.enabled",
         "userActivationPropagation":"each authenticated request and queued operation; no Keycloak synchronization implied",
-        "features":["app.builds.v1","runtime.preflight.v2","development.sessions.v1","auth.sessions.v1","auth.device.v1","runtime.jobs.v1","runtime.events.v1","runtime.retry.v1","images.idempotency.v1","runtime.logs.v1","lists.pagination.v1"]}),
+        "features":["installation.permissions.v1","auth.delegations.v1","app.calls.v1","app.builds.v1","runtime.preflight.v2","development.sessions.v1","auth.sessions.v1","auth.device.v1","runtime.jobs.v1","runtime.events.v1","runtime.retry.v1","images.idempotency.v1","runtime.logs.v1","lists.pagination.v1"]}),
     )
 }
 #[derive(serde::Deserialize)]

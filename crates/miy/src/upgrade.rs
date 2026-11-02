@@ -36,6 +36,7 @@ pub async fn run() -> Result<Value> {
         Some("0.6.1") => include_str!("../bundles/0.6.1.json"),
         Some("0.6.2") => include_str!("../bundles/0.6.2.json"),
         Some("0.7.0") => include_str!("../bundles/0.7.0.json"),
+        Some("0.7.1") => include_str!("../bundles/0.7.1.json"),
         _ => anyhow::bail!(CliError::new(
             Category::Environment,
             "unsupported_old_bundle",
@@ -74,12 +75,11 @@ pub async fn run() -> Result<Value> {
         "cli_guidance_invalid",
     )?;
     let protected = crate::bundle::protected_hashes();
-    // These bundles have compatible dependencies and components. The native
-    // transition updates the Rust SDK's bind address support explicitly, while
-    // preserving application code, dependency locks and all migration bytes.
+    // Browser components remain compatible. The explicit Rust SDK migration
+    // resolves only the SDK's new dependencies, before any project file changes.
     if matches!(
         old["bundleVersion"].as_str(),
-        Some("0.6.0" | "0.6.1" | "0.6.2" | "0.7.0")
+        Some("0.6.0" | "0.6.1" | "0.6.2" | "0.7.0" | "0.7.1")
     ) {
         let mut changes = crate::agent_tools::setup_changes(&root)?;
         for (path, content) in crate::bundle::template() {
@@ -89,7 +89,10 @@ pub async fn run() -> Result<Value> {
             let unchanged = hashes.get(*path).and_then(Value::as_str)
                 == Some(crate::contract::hash(content).as_str());
             if (path.starts_with("sdk/")
-                && !matches!(*path, "sdk/preview/main.tsx" | "sdk/rust/src/lib.rs"))
+                && !matches!(
+                    *path,
+                    "sdk/preview/main.tsx" | "sdk/rust/src/lib.rs" | "sdk/rust/Cargo.toml"
+                ))
                 || path.ends_with(".sql")
                 || *path == "miy.components.json"
             {
@@ -98,7 +101,7 @@ pub async fn run() -> Result<Value> {
                     CliError::new(
                         Category::Environment,
                         "guidance_upgrade_runtime_changed",
-                        "This guidance-only upgrade cannot change SDK, SQL or component defaults."
+                        "This upgrade cannot change unrelated SDK files, SQL or component defaults."
                     )
                 );
             }
@@ -108,7 +111,11 @@ pub async fn run() -> Result<Value> {
             ensure!(
                 matches!(
                     *path,
-                    "AGENTS.md" | "CLAUDE.md" | "sdk/preview/main.tsx" | "sdk/rust/src/lib.rs"
+                    "AGENTS.md"
+                        | "CLAUDE.md"
+                        | "sdk/preview/main.tsx"
+                        | "sdk/rust/src/lib.rs"
+                        | "sdk/rust/Cargo.toml"
                 ) || path.starts_with("docs/")
                     || path.starts_with(".agents/skills/")
                     || path.starts_with(".claude/skills/"),
@@ -142,10 +149,18 @@ pub async fn run() -> Result<Value> {
             )
             .expecting(expected_files.get("miy.bundle.json").cloned().flatten()),
         );
+        changes.extend(crate::cli_error::validation(
+            resolve_sdk_lock(
+                &root,
+                &transaction.workspace()?.join("rust-sdk-resolution"),
+                &mut expected_files,
+            ),
+            "sdk_upgrade_invalid",
+        )?);
         let receipt = transaction.commit(changes)?;
         let setup = crate::agent_tools::setup_result(&root)?;
         return Ok(
-            json!({"upgradedFrom":old["bundleVersion"],"bundleVersion":crate::bundle::VERSION,"cliVersion":crate::cli_guidance::VERSION,"backup":receipt.backup,"changedFiles":receipt.changed_files,"setup":setup,"next":["review git diff and commit updated guidance","reopen the agent session"]}),
+            json!({"upgradedFrom":old["bundleVersion"],"bundleVersion":crate::bundle::VERSION,"cliVersion":crate::cli_guidance::VERSION,"backup":receipt.backup,"changedFiles":receipt.changed_files,"setup":setup,"next":["review SDK and Cargo.lock changes","miy app check","increment manifest version and commit before deployment","reopen the agent session"]}),
         );
     }
     let mut files: BTreeMap<String, Vec<u8>> = BTreeMap::new();
@@ -331,6 +346,14 @@ pub async fn run() -> Result<Value> {
         )?;
     }
     let mut changes = crate::agent_tools::setup_changes(&root)?;
+    changes.extend(crate::cli_error::validation(
+        resolve_sdk_lock(
+            &root,
+            &transaction.workspace()?.join("rust-sdk-resolution"),
+            &mut expected_files,
+        ),
+        "sdk_upgrade_invalid",
+    )?);
     changes.extend(files.into_iter().map(|(path, bytes)| {
         let expected = expected_files.get(&path).cloned().flatten();
         crate::file_transaction::Change::new(path, bytes).expecting(expected)
@@ -340,6 +363,187 @@ pub async fn run() -> Result<Value> {
     Ok(
         json!({"upgradedFrom":old["bundleVersion"],"cliVersion":crate::cli_guidance::VERSION,"bundleVersion":crate::bundle::VERSION,"backup":receipt.backup,"changedFiles":receipt.changed_files,"components":"compatible installed components preserved; older bundles initialize ui 1.0.1","next":["review git diff","miy app check","increment manifest version and commit before deployment"]}),
     )
+}
+
+fn sdk_upgrade_manifest(manifest: &toml::Value) -> Result<()> {
+    ensure!(
+        matches!(
+            manifest
+                .get("dependencies")
+                .and_then(|value| value.get("miy-app-sdk"))
+                .and_then(|value| value.get("path"))
+                .and_then(toml::Value::as_str),
+            Some("sdk/rust" | "./sdk/rust")
+        ),
+        "unsupported_sdk_dependency: the SDK must be the project's sdk/rust path dependency"
+    );
+    ensure!(
+        manifest
+            .get("package")
+            .and_then(|value| value.get("workspace"))
+            .is_none(),
+        "custom_workspace_requires_sdk_migration"
+    );
+    if let Some(members) = manifest
+        .get("workspace")
+        .and_then(|value| value.get("members"))
+    {
+        ensure!(
+            members.as_array().is_some_and(|members| members
+                .iter()
+                .all(|member| matches!(member.as_str(), Some("sdk/rust" | "./sdk/rust")))),
+            "custom_workspace_requires_sdk_migration"
+        );
+    }
+    fn dependency_paths(value: &toml::Value) -> bool {
+        let Some(table) = value.as_table() else {
+            return true;
+        };
+        for (key, value) in table {
+            if matches!(
+                key.as_str(),
+                "dependencies" | "dev-dependencies" | "build-dependencies"
+            ) {
+                let Some(dependencies) = value.as_table() else {
+                    return false;
+                };
+                for (name, dependency) in dependencies {
+                    if let Some(path) = dependency.get("path")
+                        && !(name == "miy-app-sdk"
+                            && matches!(path.as_str(), Some("sdk/rust" | "./sdk/rust")))
+                    {
+                        return false;
+                    }
+                }
+            } else if !dependency_paths(value) {
+                return false;
+            }
+        }
+        true
+    }
+    ensure!(
+        dependency_paths(manifest),
+        "custom_path_dependency_requires_sdk_migration"
+    );
+    // A package override can point outside the staged project or replace the
+    // SDK's new HTTP transport. Leave such custom resolution to an explicit review.
+    ensure!(
+        manifest.get("patch").is_none() && manifest.get("replace").is_none(),
+        "custom_dependency_override_requires_sdk_migration"
+    );
+    Ok(())
+}
+
+fn preserved_lock_packages(before: &str, after: &str) -> Result<()> {
+    fn packages(
+        input: &str,
+    ) -> Result<std::collections::BTreeSet<(String, String, String, String)>> {
+        let document: toml::Value =
+            toml::from_str(input).map_err(|_| anyhow::anyhow!("invalid_cargo_lock"))?;
+        document
+            .get("package")
+            .and_then(toml::Value::as_array)
+            .context("invalid_cargo_lock")?
+            .iter()
+            .filter(|package| {
+                package.get("name").and_then(toml::Value::as_str) != Some("miy-app-sdk")
+                    || package.get("source").is_some()
+            })
+            .map(|package| {
+                Ok((
+                    package
+                        .get("name")
+                        .and_then(toml::Value::as_str)
+                        .context("invalid_cargo_lock")?
+                        .into(),
+                    package
+                        .get("version")
+                        .and_then(toml::Value::as_str)
+                        .context("invalid_cargo_lock")?
+                        .into(),
+                    package
+                        .get("source")
+                        .and_then(toml::Value::as_str)
+                        .unwrap_or_default()
+                        .into(),
+                    package
+                        .get("checksum")
+                        .and_then(toml::Value::as_str)
+                        .unwrap_or_default()
+                        .into(),
+                ))
+            })
+            .collect()
+    }
+    ensure!(
+        packages(before)?.is_subset(&packages(after)?),
+        "sdk_upgrade_would_change_existing_dependency: project files unchanged"
+    );
+    Ok(())
+}
+
+fn resolve_sdk_lock(
+    root: &Path,
+    stage: &Path,
+    expected: &mut BTreeMap<String, Option<String>>,
+) -> Result<Vec<crate::file_transaction::Change>> {
+    let manifest = read_input("Cargo.toml", expected)?;
+    let mut staged_manifest: toml::Value = toml::from_str(std::str::from_utf8(&manifest)?)
+        .map_err(|_| anyhow::anyhow!("invalid_cargo_manifest"))?;
+    sdk_upgrade_manifest(&staged_manifest)?;
+    for configuration in [".cargo/config", ".cargo/config.toml"] {
+        ensure!(
+            !root.join(configuration).exists(),
+            "custom_cargo_configuration_requires_sdk_migration"
+        );
+    }
+    let lock =
+        read_input("Cargo.lock", expected).context("sdk_upgrade_requires_committed_cargo_lock")?;
+    std::fs::create_dir_all(stage.join("src"))?;
+    staged_manifest
+        .as_table_mut()
+        .context("invalid_cargo_manifest")?
+        .entry("workspace")
+        .or_insert_with(|| toml::Value::Table(toml::map::Map::new()));
+    std::fs::write(stage.join("Cargo.toml"), toml::to_string(&staged_manifest)?)?;
+    std::fs::write(stage.join("Cargo.lock"), &lock)?;
+    // Cargo lock resolution never builds or executes project code. Stub targets
+    // avoid copying application source, configuration or credentials to the stage.
+    std::fs::write(stage.join("src/main.rs"), b"fn main() {}\n")?;
+    std::fs::write(
+        stage.join("src/lib.rs"),
+        b"// Dependency resolution only.\n",
+    )?;
+    for (path, content) in crate::bundle::template() {
+        if path.starts_with("sdk/rust/") {
+            let destination = stage.join(path);
+            std::fs::create_dir_all(destination.parent().context("invalid_sdk_stage")?)?;
+            std::fs::write(destination, content)?;
+        }
+    }
+    let resolved = crate::owned_process::output(
+        crate::platform::command("cargo", &["update", "--package", "miy-app-sdk"])?
+            .current_dir(stage)
+            .env("PATH", crate::platform::tool_path()?),
+    )?;
+    ensure!(
+        resolved.status.success(),
+        CliError::new(
+            Category::Environment,
+            "sdk_dependency_resolution_failed",
+            "The staged SDK dependency lock could not be resolved; application files are unchanged. Check Cargo registry access and custom target configuration."
+        )
+    );
+    let updated = std::fs::read(stage.join("Cargo.lock"))?;
+    preserved_lock_packages(std::str::from_utf8(&lock)?, std::str::from_utf8(&updated)?)?;
+    Ok(vec![
+        // Include the unchanged manifest in the transaction's expectation check:
+        // a concurrent dependency edit must invalidate this resolved lock.
+        crate::file_transaction::Change::new("Cargo.toml", manifest)
+            .expecting(expected.get("Cargo.toml").cloned().flatten()),
+        crate::file_transaction::Change::new("Cargo.lock", updated)
+            .expecting(expected.get("Cargo.lock").cloned().flatten()),
+    ])
 }
 
 fn read_input(path: &str, expected: &mut BTreeMap<String, Option<String>>) -> Result<Vec<u8>> {
@@ -384,4 +588,43 @@ fn collect_component_files(
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn sdk_lock_upgrade_preserves_every_existing_external_package() {
+        let before = "version = 4\n[[package]]\nname='miy-app-sdk'\nversion='0.2.0'\n[[package]]\nname='business-dependency'\nversion='1.2.3'\nsource='registry+https://example.invalid/index'\nchecksum='original'\n";
+        let added = format!(
+            "{}\n[[package]]\nname='new-sdk-http-dependency'\nversion='0.1.0'\n",
+            before.replace("0.2.0", "0.3.0")
+        );
+        preserved_lock_packages(before, &added).unwrap();
+        for changed in [
+            added.replace("1.2.3", "1.2.4"),
+            added.replace("original", "changed"),
+            added.replace("business-dependency", "replacement"),
+        ] {
+            assert!(preserved_lock_packages(before, &changed).is_err());
+        }
+    }
+
+    #[test]
+    fn staged_sdk_resolution_rejects_external_paths_and_custom_workspace_members() {
+        let base = "[package]\nname='business-app'\nversion='1.0.0'\n[dependencies]\nmiy-app-sdk={path='sdk/rust'}\nserde='1'\n[workspace]\n";
+        sdk_upgrade_manifest(&toml::from_str(base).unwrap()).unwrap();
+        for changed in [
+            base.replace("serde='1'", "private-library={path='../private-library'}"),
+            format!("{base}members=['../other-app']\n"),
+            format!("{base}\n[patch.crates-io]\nreqwest={{path='../private-http'}}\n"),
+            base.replace("path='sdk/rust'", "path='../sdk/rust'"),
+            format!(
+                "{base}\n[target.'cfg(unix)'.build-dependencies]\nprivate-library={{path='../private-library'}}\n"
+            ),
+        ] {
+            assert!(sdk_upgrade_manifest(&toml::from_str(&changed).unwrap()).is_err());
+        }
+    }
 }

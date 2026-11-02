@@ -6,6 +6,8 @@ compile_error!(
 mod acceptance_contract;
 mod agent_tools;
 mod api_error;
+#[cfg(feature = "server")]
+mod app_calls;
 mod app_cli;
 mod app_health;
 #[cfg(feature = "server")]
@@ -30,6 +32,7 @@ mod cli_install;
 mod cli_journal;
 mod cli_login;
 mod cli_output;
+mod cli_permissions;
 #[cfg(all(test, feature = "server"))]
 mod cli_regression;
 mod cli_remote;
@@ -43,6 +46,10 @@ mod connections;
 mod contract;
 mod credential_store;
 mod db_tunnel;
+#[cfg(all(test, feature = "server"))]
+mod delegation_regression;
+#[cfg(feature = "server")]
+mod delegations;
 #[cfg(feature = "server")]
 mod delivery;
 #[cfg(feature = "server")]
@@ -71,6 +78,10 @@ mod native_preview;
 #[cfg(all(test, feature = "server"))]
 mod operations_regression;
 mod owned_process;
+#[cfg(feature = "server")]
+mod permissions;
+#[cfg(all(test, feature = "server"))]
+mod permissions_regression;
 mod platform;
 mod preview;
 #[cfg(feature = "server")]
@@ -165,6 +176,11 @@ enum Command {
     Grant {
         #[command(subcommand)]
         command: cli_remote::GrantCommand,
+    },
+    /// Inspect and explicitly approve installation/release external access.
+    Permissions {
+        #[command(subcommand)]
+        command: cli_permissions::PermissionCommand,
     },
     /// Serve the project read-only JSON-RPC MCP interface over stdio.
     Mcp,
@@ -269,6 +285,9 @@ async fn main() -> Result<()> {
         }
         Command::User { command } => Box::pin(cli_remote::execute_user(command)).await,
         Command::Grant { command } => Box::pin(cli_remote::execute_grant(command)).await,
+        Command::Permissions { command } => Box::pin(cli_permissions::execute(command))
+            .await
+            .map(cli_output::Outcome::Data),
         Command::App { command } => Box::pin(app_cli::execute(command)).await,
         Command::Doctor(options) => {
             Box::pin(cli_doctor::inspect(options))

@@ -45,7 +45,14 @@ pub async fn request(
     {
         return Err(ApiError::bad("invalid_log_request"));
     }
-    domain::manage(&s, &p, &app, &input.environment).await?;
+    domain::manage_action(
+        &s,
+        &p,
+        &app,
+        &input.environment,
+        crate::delegations::Action::Logs,
+    )
+    .await?;
     let mut tx = s.pool.begin().await?;
     sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))")
         .bind(format!("logs:{}", p.id))
@@ -62,7 +69,7 @@ pub async fn request(
     }
     let row=sqlx::query("SELECT id,control_generation,runtime_container FROM installations WHERE app_id=$1 AND environment=$2 AND runtime_status='running' AND runtime_container IS NOT NULL").bind(&app).bind(&input.environment).fetch_optional(&mut *tx).await?.ok_or_else(||ApiError::conflict("runtime_not_running"))?;
     let id = Uuid::new_v4();
-    let expires:chrono::DateTime<chrono::Utc>=sqlx::query_scalar("INSERT INTO runtime_log_requests(id,actor,app_id,environment,installation_id,generation,expected_container,tail,since) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING expires_at").bind(id).bind(&p.id).bind(app).bind(input.environment).bind(row.get::<Uuid,_>("id")).bind(row.get::<i64,_>("control_generation")).bind(row.get::<String,_>("runtime_container")).bind(input.tail).bind(input.since).fetch_one(&mut *tx).await?;
+    let expires:chrono::DateTime<chrono::Utc>=sqlx::query_scalar("INSERT INTO runtime_log_requests(id,actor,app_id,environment,installation_id,generation,expected_container,tail,since,delegation_id) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING expires_at").bind(id).bind(&p.id).bind(app).bind(input.environment).bind(row.get::<Uuid,_>("id")).bind(row.get::<i64,_>("control_generation")).bind(row.get::<String,_>("runtime_container")).bind(input.tail).bind(input.since).bind(p.delegation_id).fetch_one(&mut *tx).await?;
     tx.commit().await?;
     Ok(Json(json!({"id":id,"status":"queued","expiresAt":expires})))
 }
@@ -78,10 +85,20 @@ pub async fn get(
     .fetch_optional(&s.pool)
     .await?
     .ok_or_else(ApiError::not_found)?;
-    if row.get::<String, _>("actor") != p.id {
+    if row.get::<String, _>("actor") != p.id
+        || (p.delegation_id.is_some()
+            && row.get::<Option<Uuid>, _>("delegation_id") != p.delegation_id)
+    {
         return Err(ApiError::forbidden());
     }
-    domain::manage(&s, &p, row.get("app_id"), row.get("environment")).await?;
+    domain::manage_action(
+        &s,
+        &p,
+        row.get("app_id"),
+        row.get("environment"),
+        crate::delegations::Action::Logs,
+    )
+    .await?;
     Ok(Json(
         json!({"id":id,"status":row.get::<String,_>("status"),"appId":row.get::<String,_>("app_id"),"environment":row.get::<String,_>("environment"),"installationId":row.get::<Uuid,_>("installation_id"),"generation":row.get::<i64,_>("generation"),"container":row.get::<Option<String>,_>("container_id"),"tail":row.get::<i32,_>("tail"),"since":row.get::<Option<chrono::DateTime<chrono::Utc>>,_>("since"),"text":row.get::<Option<String>,_>("text"),"truncated":row.get::<bool,_>("truncated"),"rotationMayOmit":true,"maxBytes":MAX_BYTES,"expiresAt":row.get::<chrono::DateTime<chrono::Utc>,_>("expires_at"),"errorCode":row.get::<Option<String>,_>("error_code")}),
     ))
@@ -126,6 +143,16 @@ pub fn start(pool: sqlx::PgPool) -> Monitor {
     }))
 }
 async fn current(pool: &sqlx::PgPool, row: &sqlx::postgres::PgRow) -> Result<(), &'static str> {
+    crate::delegations::check_queued(
+        pool,
+        row.get("actor"),
+        row.get("delegation_id"),
+        row.get("app_id"),
+        row.get("environment"),
+        crate::delegations::Action::Logs,
+    )
+    .await
+    .map_err(|_| "permission_revoked")?;
     if !domain::can_manage(
         pool,
         row.get("actor"),

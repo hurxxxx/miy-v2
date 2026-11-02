@@ -368,7 +368,17 @@ async fn execute(pool: &sqlx::PgPool, row: &PgRow, recovering: bool) -> Result<(
     let id: Uuid = row.get("id");
     let app: String = row.get("app_id");
     ensure!(
-        domain::can_manage(pool, row.get("actor"), &app, "dev").await?,
+        domain::can_manage(pool, row.get("actor"), &app, "dev").await?
+            && crate::delegations::check_queued(
+                pool,
+                row.get("actor"),
+                row.get("delegation_id"),
+                &app,
+                "dev",
+                crate::delegations::Action::Build
+            )
+            .await
+            .is_ok(),
         "permission_revoked"
     );
     ensure!(
@@ -537,12 +547,6 @@ async fn execute(pool: &sqlx::PgPool, row: &PgRow, recovering: bool) -> Result<(
     .await
     .context("build_artifact_invalid")?
     .context("build_artifact_invalid")?;
-    // Authorization and history can change during a long compilation. A build
-    // never applies migrations, provisions databases, or changes a release.
-    ensure!(
-        domain::can_manage(pool, row.get("actor"), &app, "dev").await?,
-        "permission_revoked"
-    );
     crate::worker::verify_development_migrations(pool, &app, &artifact.join("migrations"))
         .await
         .context("migration_history_validation_failed")?;
@@ -552,6 +556,22 @@ async fn execute(pool: &sqlx::PgPool, row: &PgRow, recovering: bool) -> Result<(
         .as_str()
         .context("missing_build_version")?
         .to_owned();
+    // Authorization and history can change during a long compilation. A build
+    // never applies migrations, provisions databases, or changes a release.
+    ensure!(
+        domain::can_manage(pool, row.get("actor"), &app, "dev").await?
+            && crate::delegations::check_queued(
+                pool,
+                row.get("actor"),
+                row.get("delegation_id"),
+                &app,
+                "dev",
+                crate::delegations::Action::Build
+            )
+            .await
+            .is_ok(),
+        "permission_revoked"
+    );
     Ok((image, version))
 }
 

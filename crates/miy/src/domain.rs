@@ -22,6 +22,7 @@ pub async fn seed(pool: &sqlx::PgPool) -> anyhow::Result<()> {
     Ok(())
 }
 pub async fn admin(state: &State, p: &Principal) -> ApiResult<()> {
+    crate::delegations::unrestricted(p)?;
     let yes: bool = sqlx::query_scalar(
         "SELECT COALESCE((SELECT admin AND enabled FROM users WHERE id=$1),false)",
     )
@@ -42,10 +43,21 @@ pub async fn authorize(
     write: bool,
 ) -> ApiResult<()> {
     crate::auth_sessions::ensure_active(&state.pool, &p.id).await?;
+    if write {
+        crate::delegations::unrestricted(p)?;
+    } else {
+        crate::delegations::check(state, p, app, env, crate::delegations::Action::Read).await?;
+    }
     if write && !p.scopes.iter().any(|s| s == "miy.dev") {
         return Err(ApiError::forbidden());
     }
-    if admin(state, p).await.is_ok() {
+    if sqlx::query_scalar::<_, bool>(
+        "SELECT EXISTS(SELECT 1 FROM users WHERE id=$1 AND enabled AND admin)",
+    )
+    .bind(&p.id)
+    .fetch_one(&state.pool)
+    .await?
+    {
         return Ok(());
     }
     if write && env == "prod" {
@@ -70,6 +82,17 @@ pub async fn can_manage(
         .bind(actor).bind(app).bind(env).bind(if env == "prod" { "deploy" } else { "develop" }).fetch_one(pool).await
 }
 pub async fn manage(state: &State, p: &Principal, app: &str, env: &str) -> ApiResult<()> {
+    crate::delegations::unrestricted(p)?;
+    manage_action(state, p, app, env, crate::delegations::Action::Read).await
+}
+pub async fn manage_action(
+    state: &State,
+    p: &Principal,
+    app: &str,
+    env: &str,
+    action: crate::delegations::Action,
+) -> ApiResult<()> {
+    crate::delegations::check(state, p, app, env, action).await?;
     if !p.scopes.iter().any(|s| s == "miy.dev") || !can_manage(&state.pool, &p.id, app, env).await?
     {
         return Err(ApiError::forbidden());
@@ -83,10 +106,23 @@ pub async fn me(state: &State, p: &Principal) -> ApiResult<Value> {
         .fetch_optional(&state.pool)
         .await?
         .ok_or_else(ApiError::forbidden)?;
+    let delegation = if let Some(id) = p.delegation_id {
+        Some(crate::delegations::active(&state.pool, &p.id, id).await?)
+    } else {
+        None
+    };
     let grants:Vec<Value>=sqlx::query_scalar("SELECT jsonb_build_object('appId',app_id,'environment',environment,'permission',permission) FROM grants WHERE user_id=$1")
         .bind(&p.id).fetch_all(&state.pool).await?;
+    let grants: Vec<Value> = grants
+        .into_iter()
+        .filter(|g| {
+            delegation
+                .as_ref()
+                .is_none_or(|d| g["appId"] == d.app_id && g["environment"] == d.environment)
+        })
+        .collect();
     Ok(
-        json!({"id":p.id,"name":row.get::<String,_>("name"),"admin":row.get::<bool,_>("admin"),"grants":grants,"csrf":p.csrf,"development":p.development}),
+        json!({"id":p.id,"name":row.get::<String,_>("name"),"admin":row.get::<bool,_>("admin") && p.delegation_id.is_none(),"grants":grants,"csrf":p.csrf,"development":p.development,"delegation":delegation}),
     )
 }
 #[derive(Deserialize, schemars::JsonSchema)]
@@ -225,7 +261,22 @@ pub struct Prepare {
     pub idempotency_key: String,
 }
 pub async fn prepare(state: &State, p: &Principal, v: Prepare) -> ApiResult<Value> {
-    let inst = installation(state, p, v.installation_id, true).await?;
+    let inst = sqlx::query("SELECT * FROM installations WHERE id=$1")
+        .bind(v.installation_id)
+        .fetch_optional(&state.pool)
+        .await?
+        .ok_or_else(ApiError::not_found)?;
+    manage_action(
+        state,
+        p,
+        inst.get("app_id"),
+        inst.get("environment"),
+        crate::delegations::Action::PrepareDatabase,
+    )
+    .await?;
+    if inst.get::<String, _>("environment") != "dev" {
+        return Err(ApiError::forbidden());
+    }
     if inst.get::<Option<String>, _>("runtime_image").is_some() {
         return Err(ApiError::conflict("deploy_image_for_database_changes"));
     }
@@ -243,14 +294,18 @@ pub async fn prepare(state: &State, p: &Principal, v: Prepare) -> ApiResult<Valu
     }
     let input = contract::hash(format!("{}:{}", v.installation_id, v.release_id));
     let id = Uuid::new_v4();
-    sqlx::query("INSERT INTO jobs(id,installation_id,release_id,actor,idempotency_key,input_hash) VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT(actor,idempotency_key) DO NOTHING")
-        .bind(id).bind(v.installation_id).bind(v.release_id).bind(&p.id).bind(&v.idempotency_key).bind(&input).execute(&state.pool).await?;
-    let row = sqlx::query("SELECT id,input_hash FROM jobs WHERE actor=$1 AND idempotency_key=$2")
-        .bind(&p.id)
-        .bind(&v.idempotency_key)
-        .fetch_one(&state.pool)
-        .await?;
-    if row.get::<String, _>("input_hash") != input {
+    sqlx::query("INSERT INTO jobs(id,installation_id,release_id,actor,idempotency_key,input_hash,delegation_id) VALUES($1,$2,$3,$4,$5,$6,$7) ON CONFLICT(actor,idempotency_key) DO NOTHING")
+        .bind(id).bind(v.installation_id).bind(v.release_id).bind(&p.id).bind(&v.idempotency_key).bind(&input).bind(p.delegation_id).execute(&state.pool).await?;
+    let row = sqlx::query(
+        "SELECT id,input_hash,delegation_id FROM jobs WHERE actor=$1 AND idempotency_key=$2",
+    )
+    .bind(&p.id)
+    .bind(&v.idempotency_key)
+    .fetch_one(&state.pool)
+    .await?;
+    if row.get::<String, _>("input_hash") != input
+        || row.get::<Option<Uuid>, _>("delegation_id") != p.delegation_id
+    {
         return Err(ApiError::conflict("idempotency_conflict"));
     }
     get_job(state, p, row.get("id")).await
@@ -351,6 +406,11 @@ pub fn catalog() -> Value {
         {"id":"app_api_delete","method":"DELETE","path":"/api/v1/installations/{id}/api/{path}","permission":"use or develop on installation","description":"Forward app record deletion with CSRF and current release"}
     ]);
     catalog.as_array_mut().unwrap().extend([
+        json!({"id":"get_installation_permissions","method":"GET","path":"/api/v1/installations/{id}/permissions","permission":"use on installation and token read scope","description":"Read requested and approved external permissions, revision and last 100 history entries; optional releaseId query."}),
+        json!({"id":"set_installation_permissions","method":"PUT","path":"/api/v1/installations/{id}/permissions","permission":"non-delegated admin with miy.dev","description":"Replace explicit external approvals for exactly this installation/release; compare expectedRevision. Empty permissions revokes all. No automatic carryover to new releases or prod.","input":schemars::schema_for!(crate::permissions::PermissionUpdate)}),
+        json!({"id":"create_delegation","method":"POST","path":"/api/v1/delegations","permission":"non-delegated user; current user grants intersect all requested actions","description":"Issue an app/environment/action-scoped user credential with fixed expiry and revocation. Credential returned once; use auth delegations create --credential-file.","input":schemars::schema_for!(crate::delegations::Create)}),
+        json!({"id":"list_delegations","method":"GET","path":"/api/v1/delegations","permission":"non-delegated owner","description":"Read own delegation metadata without credentials."}),
+        json!({"id":"revoke_delegation","method":"DELETE","path":"/api/v1/delegations/{id}","permission":"non-delegated owner","description":"Revoke a delegation, including queued work and app continuation proofs."}),
         json!({"id":"source_build","method":"POST","path":"/api/v1/apps/{app}/builds","permission":"develop in dev","description":"Queue a server Docker build from a bounded committed-source tar (64 MiB maximum). Headers: Content-Length, X-Miy-Source-Commit, X-Miy-Archive-Sha256, X-Miy-Platform, X-Miy-Request-Id. Use CLI app build --remote.","binary":true}),
         json!({"id":"source_build_status","method":"GET","path":"/api/v1/builds/{id}","permission":"build owner with develop in dev","description":"Read durable build status and immutable image/source receipt; use CLI job get/watch/resume."}),
         json!({"id":"source_build_logs","method":"GET","path":"/api/v1/builds/{id}/logs","permission":"build owner with develop in dev","description":"Read bounded persistent build logs after a sequence; use CLI job logs."}),

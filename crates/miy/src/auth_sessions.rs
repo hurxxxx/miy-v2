@@ -394,7 +394,7 @@ async fn exchange_device(pool: &PgPool, id: Uuid, secret: &str) -> ApiResult<Res
     Ok(private_json(tokens))
 }
 
-async fn issue(
+pub(crate) async fn issue(
     connection: &mut PgConnection,
     session: Uuid,
     user: &str,
@@ -422,11 +422,14 @@ async fn rotate(pool: &PgPool, secret: &str) -> ApiResult<Response> {
     }
     let digest = hash(secret);
     let identity =
-        sqlx::query("SELECT r.session_id,s.user_id FROM cli_refresh_tokens r JOIN cli_sessions s ON s.id=r.session_id WHERE r.token_hash=$1")
+        sqlx::query("SELECT r.session_id,s.user_id,s.delegation_id FROM cli_refresh_tokens r JOIN cli_sessions s ON s.id=r.session_id WHERE r.token_hash=$1")
             .bind(&digest)
             .fetch_optional(pool)
             .await?
             .ok_or_else(|| error(StatusCode::BAD_REQUEST, "invalid_grant"))?;
+    if let Some(id) = identity.get::<Option<Uuid>, _>("delegation_id") {
+        crate::delegations::active(pool, identity.get("user_id"), id).await?;
+    }
     let session: Uuid = identity.get("session_id");
     let user: String = identity.get("user_id");
     let family = session.to_string();
@@ -490,11 +493,15 @@ pub async fn principal(state: &State, token: &str) -> ApiResult<Principal> {
     if !valid_secret(token, ACCESS_PREFIX) {
         return Err(ApiError::unauthorized());
     }
-    let row = sqlx::query("SELECT s.id AS cli_session_id,s.user_id,u.enabled FROM cli_access_tokens a JOIN cli_sessions s ON s.id=a.session_id JOIN users u ON u.id=s.user_id WHERE a.token_hash=$1 AND a.expires_at>now() AND s.expires_at>now() AND s.revoked_at IS NULL")
+    let row = sqlx::query("SELECT s.id AS cli_session_id,s.delegation_id,s.user_id,u.enabled FROM cli_access_tokens a JOIN cli_sessions s ON s.id=a.session_id JOIN users u ON u.id=s.user_id WHERE a.token_hash=$1 AND a.expires_at>now() AND s.expires_at>now() AND s.revoked_at IS NULL")
         .bind(hash(token)).fetch_optional(&state.pool).await?.ok_or_else(ApiError::unauthorized)?;
     active_result(Some(row.get("enabled")))?;
+    if let Some(id) = row.get::<Option<Uuid>, _>("delegation_id") {
+        crate::delegations::active(&state.pool, row.get("user_id"), id).await?;
+    }
     Ok(Principal {
         cli_session_id: Some(row.get("cli_session_id")),
+        delegation_id: row.get("delegation_id"),
         id: row.get("user_id"),
         scopes: vec!["miy.read".into(), "miy.dev".into()],
         csrf: None,
@@ -582,6 +589,7 @@ pub async fn list_sessions(
     Extension(principal): Extension<Principal>,
     Query(page): Query<SessionPage>,
 ) -> ApiResult<Response> {
+    crate::delegations::unrestricted(&principal)?;
     ensure_active(&state.pool, &principal.id).await?;
     let limit = page.limit()?;
     let cursor = page
@@ -620,6 +628,7 @@ pub async fn revoke_session(
     Extension(principal): Extension<Principal>,
     Path(id): Path<Uuid>,
 ) -> ApiResult<Response> {
+    crate::delegations::unrestricted(&principal)?;
     ensure_active(&state.pool, &principal.id).await?;
     let changed = sqlx::query("UPDATE cli_sessions SET revoked_at=COALESCE(revoked_at,now()),revocation_reason=COALESCE(revocation_reason,'user_revoked') WHERE id=$1 AND user_id=$2")
         .bind(id).bind(&principal.id).execute(&state.pool).await?.rows_affected();

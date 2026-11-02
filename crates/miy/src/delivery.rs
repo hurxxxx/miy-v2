@@ -26,7 +26,7 @@ pub async fn upload(
     Path(app): Path<String>,
     req: Request,
 ) -> ApiResult<Json<Value>> {
-    domain::manage(&s, &p, &app, "dev").await?;
+    domain::manage_action(&s, &p, &app, "dev", crate::delegations::Action::Upload).await?;
     let image = req
         .headers()
         .get("x-miy-image")
@@ -79,6 +79,7 @@ pub async fn upload(
             || row.get::<String, _>("image_id") != image
             || row.get::<String, _>("archive_hash") != expected_hash
             || row.get::<i64, _>("size_bytes") != size as i64
+            || row.get::<Option<Uuid>, _>("delegation_id") != p.delegation_id
         {
             return Err(ApiError::conflict("idempotency_conflict"));
         }
@@ -93,8 +94,8 @@ pub async fn upload(
     if pending >= 2 {
         return Err(ApiError::conflict("finish_pending_uploads_first"));
     }
-    sqlx::query("INSERT INTO image_uploads(id,app_id,actor,image_id,size_bytes,archive_hash,status,request_id) VALUES($1,$2,$3,$4,$5,$6,'receiving',$7)")
-        .bind(id).bind(&app).bind(&p.id).bind(&image).bind(size as i64).bind(&expected_hash).bind(request_id).execute(&mut *tx).await?;
+    sqlx::query("INSERT INTO image_uploads(id,app_id,actor,image_id,size_bytes,archive_hash,status,request_id,delegation_id) VALUES($1,$2,$3,$4,$5,$6,'receiving',$7,$8)")
+        .bind(id).bind(&app).bind(&p.id).bind(&image).bind(size as i64).bind(&expected_hash).bind(request_id).bind(p.delegation_id).execute(&mut *tx).await?;
     tx.commit().await?;
     let path = root.join(format!("{id}.tar"));
     let result = async {
@@ -150,8 +151,18 @@ pub async fn status(
         .fetch_optional(&s.pool)
         .await?
         .ok_or_else(ApiError::not_found)?;
-    domain::manage(&s, &p, row.get("app_id"), "dev").await?;
-    if row.get::<String, _>("actor") != p.id {
+    domain::manage_action(
+        &s,
+        &p,
+        row.get("app_id"),
+        "dev",
+        crate::delegations::Action::Upload,
+    )
+    .await?;
+    if row.get::<String, _>("actor") != p.id
+        || (p.delegation_id.is_some()
+            && row.get::<Option<Uuid>, _>("delegation_id") != p.delegation_id)
+    {
         return Err(ApiError::forbidden());
     }
     if row.get::<chrono::DateTime<chrono::Utc>, _>("expires_at") <= chrono::Utc::now() {
@@ -167,7 +178,7 @@ pub async fn by_request(
     axum::Extension(p): axum::Extension<Principal>,
     Path((app, request)): Path<(String, Uuid)>,
 ) -> ApiResult<Json<Value>> {
-    domain::manage(&s, &p, &app, "dev").await?;
+    domain::manage_action(&s, &p, &app, "dev", crate::delegations::Action::Upload).await?;
     let id: Uuid = sqlx::query_scalar(
         "SELECT id FROM image_uploads WHERE actor=$1 AND request_id=$2 AND app_id=$3",
     )
@@ -203,6 +214,15 @@ pub async fn tick(pool: &sqlx::PgPool) -> anyhow::Result<bool> {
         .execute(pool)
         .await?;
     let result = async {
+        crate::delegations::check_queued(
+            pool,
+            row.get("actor"),
+            row.get("delegation_id"),
+            &app,
+            "dev",
+            crate::delegations::Action::Upload,
+        )
+        .await?;
         anyhow::ensure!(
             domain::can_manage(pool, row.get("actor"), &app, "dev").await?,
             "permission_revoked"
@@ -232,6 +252,15 @@ pub async fn tick(pool: &sqlx::PgPool) -> anyhow::Result<bool> {
             crate::image_import::archive(&checked_path, &checked_app, Some(&checked_image))
         })
         .await??;
+        crate::delegations::check_queued(
+            pool,
+            row.get("actor"),
+            row.get("delegation_id"),
+            &app,
+            "dev",
+            crate::delegations::Action::Upload,
+        )
+        .await?;
         crate::image_import::load(
             pool,
             &app,
@@ -239,6 +268,15 @@ pub async fn tick(pool: &sqlx::PgPool) -> anyhow::Result<bool> {
             &path,
             &identity,
             row.get("archive_hash"),
+        )
+        .await?;
+        crate::delegations::check_queued(
+            pool,
+            row.get("actor"),
+            row.get("delegation_id"),
+            &app,
+            "dev",
+            crate::delegations::Action::Upload,
         )
         .await?;
         Ok::<_, anyhow::Error>(())

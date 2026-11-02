@@ -53,8 +53,68 @@ struct ComponentId {
     name: String,
     version: String,
 }
+#[derive(Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct PermissionRead {
+    installation_id: Uuid,
+    release_id: Option<Uuid>,
+}
+#[derive(Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct PermissionSet {
+    installation_id: Uuid,
+    release_id: Uuid,
+    expected_revision: u64,
+    permissions: Vec<String>,
+}
 #[tool_router]
 impl Mcp {
+    #[tool(
+        description = "Read explicit external-call approvals for one installation/release; requested permissions are not grants.",
+        annotations(read_only_hint = true)
+    )]
+    async fn get_installation_permissions(
+        &self,
+        Parameters(v): Parameters<PermissionRead>,
+        ctx: RequestContext<RoleServer>,
+    ) -> Result<CallToolResult, McpError> {
+        let p = principal(&ctx)?;
+        result(
+            async {
+                use sqlx::Row;
+                let release = match v.release_id {
+                    Some(id) => id,
+                    None => domain::installation(&self.state, &p, v.installation_id, false)
+                        .await?
+                        .get("release_id"),
+                };
+                crate::permissions::read(&self.state, &p, v.installation_id, release).await
+            }
+            .await,
+        )
+    }
+    #[tool(
+        description = "Explicitly replace external-call approvals for an installation/release using the observed revision. Requires a non-delegated administrator; an empty list revokes all external calls."
+    )]
+    async fn set_installation_permissions(
+        &self,
+        Parameters(v): Parameters<PermissionSet>,
+        ctx: RequestContext<RoleServer>,
+    ) -> Result<CallToolResult, McpError> {
+        result(
+            crate::permissions::update(
+                &self.state,
+                &principal(&ctx)?,
+                v.installation_id,
+                crate::permissions::PermissionUpdate {
+                    release_id: v.release_id,
+                    expected_revision: v.expected_revision,
+                    permissions: v.permissions,
+                },
+            )
+            .await,
+        )
+    }
     #[tool(
         description = "Search live component releases and compatibility; this catalog is independent of CLI releases.",
         annotations(read_only_hint = true)
@@ -273,7 +333,11 @@ async fn guard(S(state): S<State>, mut req: Request, next: Next) -> Response {
         .and_then(|v| v.to_str().ok())
         .and_then(|v| v.strip_prefix("Bearer "));
     let auth = match token {
-        Some(t) => match state.auth.bearer(t).await {
+        Some(t) => match if t.starts_with("miy_access_") {
+            crate::auth_sessions::principal(&state, t).await
+        } else {
+            state.auth.bearer(t).await
+        } {
             Ok(p) => match crate::auth_sessions::ensure_active(&state.pool, &p.id).await {
                 Ok(()) => Ok(p),
                 Err(e) => Err(e),

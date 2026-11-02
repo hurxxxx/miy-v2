@@ -19,6 +19,7 @@ use url::Url;
 #[derive(Clone, Debug)]
 pub struct Principal {
     pub cli_session_id: Option<uuid::Uuid>,
+    pub delegation_id: Option<uuid::Uuid>,
     pub id: String,
     pub scopes: Vec<String>,
     pub csrf: Option<String>,
@@ -216,6 +217,7 @@ impl Auth {
         }
         Ok(Principal {
             cli_session_id: None,
+            delegation_id: None,
             id: c.sub,
             scopes,
             csrf: None,
@@ -323,6 +325,7 @@ impl Auth {
                 .bind(hash(session)).fetch_optional(&state.pool).await?.ok_or_else(ApiError::unauthorized)?;
             return Ok(Principal {
                 cli_session_id: None,
+                delegation_id: None,
                 id: row.get("user_id"),
                 scopes: vec!["miy.read".into(), "miy.dev".into()],
                 csrf: Some(row.get("csrf")),
@@ -365,6 +368,7 @@ impl Auth {
         tx.commit().await?;
         Ok(Principal {
             cli_session_id: None,
+            delegation_id: None,
             id,
             scopes: vec!["miy.read".into(), "miy.dev".into()],
             csrf: Some(row.get("csrf")),

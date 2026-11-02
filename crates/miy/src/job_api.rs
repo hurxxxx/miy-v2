@@ -118,7 +118,10 @@ pub async fn retry(
         .ok_or_else(ApiError::not_found)?;
     let app: String = row.get("app_id");
     let env: String = row.get("environment");
-    domain::manage(&s, &p, &app, &env).await?;
+    domain::manage_action(&s, &p, &app, &env, row.get::<String, _>("action").parse()?).await?;
+    if p.delegation_id.is_some() && row.get::<Option<Uuid>, _>("delegation_id") != p.delegation_id {
+        return Err(ApiError::forbidden());
+    }
     if input.app_id != app || input.environment != env {
         return Err(ApiError::bad("retry_target_mismatch"));
     }

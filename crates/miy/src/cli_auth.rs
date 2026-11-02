@@ -155,6 +155,7 @@ pub async fn principal(s: &State, token: &str) -> ApiResult<Principal> {
     crate::auth_sessions::ensure_active(&s.pool, &user).await?;
     Ok(Principal {
         cli_session_id: None,
+        delegation_id: None,
         id: user,
         scopes: vec!["miy.read".into(), "miy.dev".into()],
         csrf: None,

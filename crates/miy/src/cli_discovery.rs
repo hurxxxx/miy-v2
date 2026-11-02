@@ -167,7 +167,7 @@ fn detail(command: &Command, path: &[String]) -> Value {
         "contracts":contracts(&name),
         "behavior":behavior(&name),
         "fieldSelectionSupported":crate::cli_input::validate_fields(&name,"id").is_ok(),
-        "paginationSupported":matches!(name.as_str(),"app list"|"user list"|"grant list"|"registration list"|"job list"|"auth sessions list"|"context list"|"component list"),
+        "paginationSupported":matches!(name.as_str(),"app list"|"user list"|"grant list"|"registration list"|"job list"|"auth sessions list"|"auth delegations list"|"context list"|"component list"),
         "pagination":pagination(&name),
         "schemaScope":{
             "input":"Explicit CLI arguments keyed by Clap argument ID, before default expansion. Clap remains the parser for relationships and command-specific validation.",
@@ -468,6 +468,7 @@ fn data_schema(command: &str) -> Value {
         "registration list" => Some("registrations"),
         "job list" => Some("jobs"),
         "auth sessions list" => Some("sessions"),
+        "auth delegations list" => Some("delegations"),
         "component list" => Some("components"),
         _ => None,
     };
@@ -543,8 +544,13 @@ fn pagination(command: &str) -> Value {
             "component name then version, ascending lexical order",
             "Collection, context, server origin and authenticated user; every page authenticates again. The server catalog is fetched in full before the CLI selects the page.",
         ),
-        "app list" | "user list" | "grant list" | "registration list" | "job list"
-        | "auth sessions list" => (
+        "app list"
+        | "user list"
+        | "grant list"
+        | "registration list"
+        | "job list"
+        | "auth sessions list"
+        | "auth delegations list" => (
             "server",
             "server-defined stable key",
             "Collection, authenticated user and applicable filters; every page checks permission.",
@@ -897,6 +903,48 @@ fn policy(command: &str, group: bool) -> Policy {
                 &["Reads protected credentials and may save a serialized session renewal."];
             policy.remote_effects = &[
                 "Verifies identity or reads this user's sessions; expiring credentials may rotate through the refresh endpoint.",
+            ];
+        }
+        "auth delegations create" => {
+            policy.source = "crates/miy/src/cli_login.rs";
+            policy.permissions = "An undelegated user may issue only current app/environment authority, with explicitly selected actions and a 60..86400 second lifetime. Nested delegation is rejected.";
+            policy.local_effects = &[
+                "Creates a protected credential file; access and refresh tokens are never returned in command output.",
+            ];
+            policy.remote_effects = &[
+                "Creates one revocable user delegation and a separate CLI session family; no app operation is executed.",
+            ];
+        }
+        "auth delegations import" => {
+            policy.source = "crates/miy/src/cli_login.rs";
+            policy.permissions = "A private delegation credential file and matching server context in an isolated MIY_CONFIG_DIR without an existing user credential.";
+            policy.local_effects = &[
+                "Stores the delegation in the selected credential vault and binds the context user; the input credential file is retained.",
+            ];
+            policy.remote_effects = &[
+                "Verifies the server identity and delegation binding without executing an app operation.",
+            ];
+        }
+        "auth delegations list" | "auth delegations revoke" => {
+            policy.source = "crates/miy/src/cli_login.rs";
+            policy.permissions =
+                "The undelegated owner. Revocation requires explicit confirmation or --yes.";
+            policy.remote_effects = &[
+                "Lists only owned delegations or revokes the selected delegation, its credentials and queued authority.",
+            ];
+        }
+        "permissions get" => {
+            policy.source = "crates/miy/src/cli_permissions.rs";
+            policy.permissions = "Authenticated installation reader; --installation is explicit and --release optionally selects the candidate.";
+            policy.remote_effects = &[
+                "Reads requested and approved installation permissions and the current approval revision.",
+            ];
+        }
+        "permissions set" => {
+            policy.source = "crates/miy/src/cli_permissions.rs";
+            policy.permissions = "An installation permission administrator; --installation and explicit --input are required.";
+            policy.remote_effects = &[
+                "Changes only explicitly listed permissions for the specified release using expectedRevision concurrency checking.",
             ];
         }
         "auth sessions revoke" => {

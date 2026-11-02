@@ -100,12 +100,47 @@ fn encode(scope: &str, boundary: String) -> String {
     )
 }
 
-pub async fn page(s: &State, p: &Principal, kind: &str, q: Page) -> ApiResult<Value> {
+pub async fn page(s: &State, p: &Principal, kind: &str, mut q: Page) -> ApiResult<Value> {
     crate::auth_sessions::ensure_active(&s.pool, &p.id).await?;
     let limit = q.limit()?;
-    let scope = q.scope(kind, &p.id);
+    let delegation = if let Some(id) = p.delegation_id {
+        if !matches!(kind, "apps" | "jobs" | "installations" | "grants") {
+            return Err(ApiError::forbidden());
+        }
+        let d = crate::delegations::active(&s.pool, &p.id, id).await?;
+        crate::delegations::check(
+            s,
+            p,
+            &d.app_id,
+            &d.environment,
+            crate::delegations::Action::Read,
+        )
+        .await?;
+        if q.app_id.as_ref().is_some_and(|a| a != &d.app_id)
+            || q.environment.as_ref().is_some_and(|e| e != &d.environment)
+        {
+            return Err(ApiError::forbidden());
+        }
+        q.app_id = Some(d.app_id.clone());
+        if kind != "apps" {
+            q.environment = Some(d.environment.clone());
+        } else {
+            q.environment = None;
+        }
+        Some(d)
+    } else {
+        None
+    };
+    let scope = q.scope(kind, &format!("{}:{:?}", p.id, p.delegation_id));
     let boundary = q.boundary(&scope)?;
-    let is_admin = domain::admin(s, p).await.is_ok();
+    let is_admin = if delegation.is_some() {
+        sqlx::query_scalar::<_, bool>("SELECT admin AND enabled FROM users WHERE id=$1")
+            .bind(&p.id)
+            .fetch_one(&s.pool)
+            .await?
+    } else {
+        domain::admin(s, p).await.is_ok()
+    };
     if kind == "users" && !is_admin {
         return Err(ApiError::forbidden());
     }
@@ -186,7 +221,21 @@ pub async fn page(s: &State, p: &Principal, kind: &str, q: Page) -> ApiResult<Va
     } else {
         None
     };
-    let values: Vec<Value> = rows.into_iter().map(|row| row.get("value")).collect();
+    let values: Vec<Value> = rows
+        .into_iter()
+        .map(|row| {
+            let mut value: Value = row.get("value");
+            if let Some(d) = &delegation
+                && kind == "installations"
+            {
+                value["canPromote"] =
+                    json!(d.allows(&d.app_id, "prod", crate::delegations::Action::Promote));
+                value["canManage"] = json!(false);
+                value["acceptance"] = Value::Null;
+            }
+            value
+        })
+        .collect();
     Ok(json!({kind:values,"nextCursor":cursor}))
 }
 const INSTALLATION_VIEW: &str = "jsonb_build_object('id',t.id,'appId',t.app_id,'name',a.name,'environment',t.environment,'releaseId',t.release_id,'imageId',r.image_id,'sourceCommit',r.source_commit,'version',r.version,'manifestName',r.manifest->>'name','kind',CASE WHEN r.image_id IS NULL THEN 'validation_fixture' ELSE 'docker_app' END,'canPromote',($2 OR EXISTS(SELECT 1 FROM grants g WHERE g.user_id=$1 AND g.app_id=t.app_id AND g.environment='prod' AND g.permission='deploy')),'lastOperation',(SELECT jsonb_build_object('id',j.id,'status',j.status,'action',j.action,'errorCode',j.error_code,'step',j.step,'retryable',j.retryable) FROM runtime_jobs j WHERE j.app_id=t.app_id AND j.environment=t.environment ORDER BY j.created_at DESC,j.id DESC LIMIT 1),'generation',t.control_generation,'dbStatus',t.db_status,'runtimeStatus',t.runtime_status,'desiredState',t.desired_state,'health',jsonb_build_object('status',t.health_status,'checkedAt',t.health_checked_at,'consecutiveFailures',t.health_failures),'canManage',($2 OR EXISTS(SELECT 1 FROM grants g WHERE g.user_id=$1 AND g.app_id=t.app_id AND g.environment=t.environment AND g.permission=CASE WHEN t.environment='prod' THEN 'deploy' ELSE 'develop' END)),'acceptance',CASE WHEN ($2 OR EXISTS(SELECT 1 FROM grants g WHERE g.user_id=$1 AND g.app_id=t.app_id AND g.environment=t.environment AND g.permission=CASE WHEN t.environment='prod' THEN 'deploy' ELSE 'develop' END)) THEN (SELECT jsonb_build_object('recordedBy',c.actor,'note',c.note,'checks',c.checks,'checkedAt',c.checked_at) FROM release_checks c WHERE c.release_id=r.id) ELSE NULL END)";
@@ -217,7 +266,25 @@ pub async fn app(
     Path(id): Path<String>,
 ) -> ApiResult<Json<Value>> {
     crate::auth_sessions::ensure_active(&s.pool, &p.id).await?;
-    let admin = domain::admin(&s, &p).await.is_ok();
+    if let Some(delegation) = p.delegation_id {
+        let d = crate::delegations::active(&s.pool, &p.id, delegation).await?;
+        crate::delegations::check(
+            &s,
+            &p,
+            &id,
+            &d.environment,
+            crate::delegations::Action::Read,
+        )
+        .await?;
+    }
+    let admin = if p.delegation_id.is_some() {
+        sqlx::query_scalar::<_, bool>("SELECT admin AND enabled FROM users WHERE id=$1")
+            .bind(&p.id)
+            .fetch_one(&s.pool)
+            .await?
+    } else {
+        domain::admin(&s, &p).await.is_ok()
+    };
     let app:Value=sqlx::query_scalar("SELECT jsonb_build_object('id',id,'name',name) FROM apps a WHERE id=$1 AND ($3 OR EXISTS(SELECT 1 FROM grants WHERE user_id=$2 AND app_id=a.id))").bind(&id).bind(&p.id).bind(admin).fetch_optional(&s.pool).await?.ok_or_else(ApiError::not_found)?;
     let installs = page(
         &s,

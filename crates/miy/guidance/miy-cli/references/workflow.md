@@ -1,6 +1,6 @@
 # MIY CLI workflows
 
-This is the CLI 0.6 command contract. Use the project's `.miy-tools/miy` on Unix or
+This is the CLI 0.7 command contract. Use the project's `.miy-tools/miy` on Unix or
 `.miy-tools/miy.exe` on Windows. Use the intended global `miy` to initialize or
 explicitly update a project. Exact parser definitions are in the generated
 [command reference](commands.md); start with `describe --command "GROUP ACTION"`.
@@ -56,6 +56,38 @@ revokes remotely before local removal; `--local-only` explicitly skips revocatio
 A local deletion failure and uncertain remote revocation are reported separately.
 Core `users.enabled` is checked by the server; upstream identity-provider disable
 propagation is not implied by that check.
+
+## Scoped user delegation
+
+Use `auth delegations create --app APP --environment dev --action read --action build
+--action deploy --name AGENT --expires-in 3600 --credential-file PRIVATE_PATH` to
+issue a separate user credential with exactly those actions. Repeat `--action`
+for each needed operation; actions never imply another action. The lifetime is
+explicit, at most 24 hours and bounded by the issuing CLI session. This is user
+delegation, not a service account, and a delegated credential cannot delegate again.
+
+The file contains secrets and belongs outside source control. Transfer it only to
+the intended agent, create a matching server context in a separate `MIY_CONFIG_DIR`,
+and run `auth delegations import --credential-file PRIVATE_PATH`. Import verifies
+the server and delegation, refuses existing credentials and retains the input file;
+remove that private copy after the recipient has stored it. `auth delegations list`
+and `auth delegations revoke ID` inspect or revoke the owner's grants. Session
+refresh never increases scope or extends the fixed delegation expiry. Revocation,
+expiry and current user permissions are rechecked before queued work and before
+publishing a long-running build result. A running irreversible action is not undone.
+
+Read metadata requires `read`; app requests additionally require `app_read` or
+`app_write`, and directory access requires `directory_read`. Other actions are
+`build`, `upload`, `dev_session`, `prepare_database`, `accept`, `deploy`, `promote`,
+`start`, `stop`, `restart`, `remove` and `logs`. Production operations still require
+explicit target confirmation. Local stdio MCP uses the selected CLI credential;
+the HTTP MCP endpoint accepts the same scoped Core access credential as well as
+its existing OIDC authentication. Neither transport changes authorization.
+
+`permissions get --installation ID [--release ID]` compares manifest requests with
+installation approvals. `permissions set --installation ID --input @approval.json`
+uses `{ "releaseId": "UUID", "expectedRevision": NUMBER, "permissions": [] }` to
+approve exactly the selected permissions. New requests are not automatically granted.
 
 ## Output, input and discovery
 

@@ -52,6 +52,47 @@ pub enum AuthCommand {
         #[command(subcommand)]
         command: SessionCommand,
     },
+    /// Issue, inspect, revoke or import an explicitly scoped user delegation.
+    Delegations {
+        #[command(subcommand)]
+        command: DelegationCommand,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum DelegationCommand {
+    /// Create a fixed, revocable app/environment grant; secrets go only to a private file.
+    Create {
+        #[arg(long)]
+        app: String,
+        #[arg(long, value_parser=["dev","prod"])]
+        environment: String,
+        #[arg(long="action", required=true, value_parser=["read","app_read","app_write","directory_read","build","upload","dev_session","prepare_database","accept","deploy","promote","start","stop","restart","remove","logs"])]
+        actions: Vec<String>,
+        #[arg(long)]
+        name: String,
+        #[arg(long, value_parser=clap::value_parser!(i64).range(60..=86400))]
+        expires_in: i64,
+        #[arg(long)]
+        credential_file: PathBuf,
+    },
+    List,
+    Revoke {
+        id: Uuid,
+    },
+    /// Import into an isolated CLI config with a matching server context and no existing credential.
+    Import {
+        #[arg(long)]
+        credential_file: PathBuf,
+    },
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct DelegatedCredential {
+    schema_version: u32,
+    delegation_id: Uuid,
+    credential: Credential,
 }
 
 #[derive(Subcommand)]
@@ -1006,6 +1047,7 @@ pub async fn execute(command: AuthCommand) -> Result<Value> {
                 "expiresAt":credential.expires_at,"refreshExpiresAt":credential.refresh_expires_at}),
             )
         }
+        AuthCommand::Delegations { command } => delegation_command(command).await,
         AuthCommand::Sessions { command } => {
             let session = refreshed(&session()?).await?;
             let context = context_for_session(&session)?;
@@ -1056,6 +1098,171 @@ pub async fn execute(command: AuthCommand) -> Result<Value> {
                 }
             }
         }
+    }
+}
+
+async fn delegation_command(command: DelegationCommand) -> Result<Value> {
+    if let DelegationCommand::Import { credential_file } = command {
+        crate::platform::reject_reparse(&credential_file).map_err(|_| storage_error())?;
+        let metadata = std::fs::metadata(&credential_file).map_err(|_| storage_error())?;
+        if !metadata.is_file() || metadata.len() > BODY_LIMIT as u64 {
+            return Err(storage_error().into());
+        }
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::MetadataExt;
+            if metadata.mode() & 0o077 != 0 || metadata.nlink() != 1 {
+                return Err(storage_error().into());
+            }
+        }
+        let bytes = std::fs::read(&credential_file).map_err(|_| storage_error())?;
+        let exported: DelegatedCredential =
+            serde_json::from_slice(&bytes).map_err(|_| invalid_response())?;
+        let (name, context) = cli_config::selected()?;
+        let root = cli_config::root()?;
+        let credential = exported.credential;
+        validate_credential(&credential, &context.origin, &credential.user_id)?;
+        usable(&credential)?;
+        if exported.schema_version != 1
+            || exported.delegation_id.is_nil()
+            || credential.expires_at <= now()
+        {
+            return Err(auth_error("delegation_import_invalid","The delegation file is invalid or its access credential expired. Issue a new delegation.").into());
+        }
+        let _lock = lock(&root, &credential_key(&context, &credential.user_id)).await?;
+        if context.user_id.is_some()
+            || vault_get(&root, &credential_key(&context, &credential.user_id))?.is_some()
+        {
+            return Err(CliError::new(Category::Conflict,"delegation_import_requires_isolated_config","Use a separate MIY_CONFIG_DIR and an unsigned-in context; delegation import never replaces an existing credential.").into());
+        }
+        let me = authenticated(
+            &context,
+            &credential.access_token,
+            "/api/v1/me",
+            reqwest::Method::GET,
+        )
+        .await?;
+        if me["id"] != credential.user_id
+            || me["delegation"]["id"] != exported.delegation_id.to_string()
+        {
+            return Err(auth_error(
+                "delegation_binding_invalid",
+                "The credential does not match the expected server delegation.",
+            )
+            .into());
+        }
+        persist(&root, &context, &credential)?;
+        if cli_config::set_user(&name, Some(credential.user_id.clone())).is_err() {
+            let _ = vault_remove(&root, &credential_key(&context, &credential.user_id));
+            return Err(storage_error().into());
+        }
+        return Ok(
+            json!({"imported":true,"context":name,"delegation":me["delegation"],"credentialFileRetained":true}),
+        );
+    }
+    let session = refreshed(&session()?).await?;
+    let context = context_for_session(&session)?;
+    let token = session
+        .token
+        .as_deref()
+        .ok_or_else(|| auth_error("login_required", "Sign in before managing delegations."))?;
+    match command {
+        DelegationCommand::Create {
+            app,
+            environment,
+            actions,
+            name,
+            expires_in,
+            credential_file,
+        } => {
+            if std::fs::symlink_metadata(&credential_file).is_ok() {
+                return Err(CliError::new(
+                    Category::Conflict,
+                    "credential_file_exists",
+                    "Choose a new private credential file path.",
+                )
+                .into());
+            }
+            // Create the private destination before issuing credentials; reject
+            // an unwritable path before the remote side effect.
+            crate::platform::write_private(&credential_file, b"{}\n")
+                .map_err(|_| storage_error())?;
+            let client = crate::cli_client::client(context.ca_file.as_deref(), HTTP_SECONDS)?;
+            let result=async {
+                response(client.post(format!("{}/api/v1/delegations",context.origin)).bearer_auth(token)
+                    .json(&json!({"appId":app,"environment":environment,"actions":actions,"name":name,"expiresIn":expires_in}))
+                    .send().await.map_err(crate::cli_error::transport)?).await
+            }.await;
+            let value = match result {
+                Ok(value) => value,
+                Err(error) => {
+                    let _ = std::fs::remove_file(&credential_file);
+                    return Err(error);
+                }
+            };
+            let credential = credential_from_reply(value["credential"].clone(), &context.origin)?;
+            let id: Uuid = serde_json::from_value(value["delegation"]["id"].clone())
+                .map_err(|_| invalid_response())?;
+            let exported = DelegatedCredential {
+                schema_version: 1,
+                delegation_id: id,
+                credential,
+            };
+            if crate::platform::write_private(
+                &credential_file,
+                &serde_json::to_vec_pretty(&exported)?,
+            )
+            .is_err()
+            {
+                let revoked = revoke_issued(&context, &exported.credential).await;
+                let _ = std::fs::remove_file(&credential_file);
+                return Err(storage_error()
+                    .with_details(json!({"credentialStored":false,"remoteSessionRevoked":revoked}))
+                    .into());
+            }
+            Ok(
+                json!({"delegation":value["delegation"],"credentialFile":credential_file,"credentialStored":true}),
+            )
+        }
+        DelegationCommand::List => {
+            let options = cli_config::options();
+            let mut endpoint = url::Url::parse(&format!("{}/api/v1/delegations", context.origin))
+                .map_err(|_| invalid_response())?;
+            endpoint.query_pairs_mut().append_pair(
+                "limit",
+                &if options.limit == 0 {
+                    50
+                } else {
+                    options.limit.min(200)
+                }
+                .to_string(),
+            );
+            if let Some(cursor) = &options.cursor {
+                endpoint.query_pairs_mut().append_pair("cursor", cursor);
+            }
+            authenticated(
+                &context,
+                token,
+                &format!(
+                    "{}?{}",
+                    endpoint.path(),
+                    endpoint.query().unwrap_or_default()
+                ),
+                reqwest::Method::GET,
+            )
+            .await
+        }
+        DelegationCommand::Revoke { id } => {
+            cli_config::confirm(&format!("Revoke delegation {id}?"))?;
+            authenticated(
+                &context,
+                token,
+                &format!("/api/v1/delegations/{id}"),
+                reqwest::Method::DELETE,
+            )
+            .await
+        }
+        DelegationCommand::Import { .. } => unreachable!(),
     }
 }
 

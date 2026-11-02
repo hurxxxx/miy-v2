@@ -147,6 +147,7 @@ async fn control_loop(pool: &sqlx::PgPool) -> Result<()> {
                     .bind(row.get::<String,_>("actor")).bind(installation).fetch_one(pool).await?;
                 anyhow::ensure!(authorized, RuntimeFailure::new(FailureCode::PermissionRevoked));
                 if target.get::<String,_>("environment")=="dev" && crate::development::active_for_app(pool,target.get("app_id")).await? {anyhow::bail!(RuntimeFailure::new(FailureCode::ActiveDevelopmentSession));}
+                crate::delegations::check_queued(pool,row.get("actor"),row.get("delegation_id"),target.get("app_id"),target.get("environment"),row.get::<String,_>("delegation_action").parse().map_err(|_|RuntimeFailure::new(FailureCode::InvalidRequest))?).await?;
                 prepare(pool, id, installation, release).await
             }.await;
             match result {
