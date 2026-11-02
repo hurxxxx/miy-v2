@@ -37,6 +37,7 @@ button {
 }
 .shell > aside {
   width: 240px;
+  flex-shrink: 0;
   padding: 32px 24px;
   background: #fff;
   border-right: 1px solid #e2e8ef;
@@ -58,6 +59,7 @@ button {
 .shell > aside nav a {
   padding: 12px;
   border-radius: 8px;
+  overflow-wrap: anywhere;
 }
 .shell > aside nav a:hover {
   background: #edf2f7;
@@ -80,7 +82,7 @@ button {
 }
 .grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(260px, 100%), 1fr));
   gap: 20px;
 }
 .login {
@@ -198,4 +200,64 @@ button {
 }
 .cli-install-command [role="status"] {
   font-size: 13px;
+}
+.workspace-heading, .cli-approval-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.navigation-toggle {
+  display: none;
+  padding: 8px 10px;
+  border: 1px solid var(--miy-border);
+  border-radius: 8px;
+  color: var(--miy-text);
+  background: white;
+  cursor: pointer;
+}
+.cli-approval {
+  max-width: 640px;
+  line-height: 1.7;
+  overflow-wrap: anywhere;
+}
+.cli-approval input {
+  display: block;
+  width: min(100%, 320px);
+  padding: 12px;
+  margin: 8px 0 16px;
+  border: 1px solid var(--miy-border);
+  border-radius: 8px;
+  font: inherit;
+}
+.cli-approval-actions {
+  flex-wrap: wrap;
+}
+.cli-approval pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  padding: 12px;
+  background: var(--miy-background);
+  border-radius: 8px;
+}
+@media (max-width: 767px) {
+  .shell { display: block; }
+  .shell > aside {
+    display: none;
+    width: 100%;
+    padding: 20px;
+    border-right: 0;
+    border-bottom: 1px solid #e2e8ef;
+  }
+  .shell > aside.navigation-open { display: block; }
+  .shell > aside .label { margin-top: 16px; }
+  .navigation-toggle { display: inline-block; }
+  .workspace > header {
+    height: auto;
+    min-height: 72px;
+    padding: 16px;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+  .workspace > main { padding: 24px 16px; }
+  .login { padding: 24px; margin: 6vh auto; }
 }

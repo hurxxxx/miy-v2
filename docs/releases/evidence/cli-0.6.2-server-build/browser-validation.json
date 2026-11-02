@@ -1,0 +1,194 @@
+{
+  "schemaVersion": 1,
+  "startedAt": "2026-10-29T03:29:52.510Z",
+  "finishedAt": "2026-10-29T03:29:56.677Z",
+  "browser": "standalone Playwright Chromium",
+  "supplementalMobile": "NOT_RUN: pre-existing platform layout finding recorded in phase 1",
+  "status": "passed",
+  "passed": true,
+  "origin": "https://v2.dwdcc.kr",
+  "appId": "todo-win-20261029",
+  "environment": "dev",
+  "url": "https://v2.dwdcc.kr/environments/dev/apps/todo-win-20261029",
+  "selectedIdentity": {
+    "id": "00000000-0000-4000-8000-000000000001",
+    "name": "admin",
+    "admin": true,
+    "development": true
+  },
+  "installation": {
+    "id": "0ef7e3f6-d9eb-4a8d-ae05-f06c603f80b4",
+    "appId": "todo-win-20261029",
+    "environment": "dev",
+    "releaseId": "70774229-d1fa-4b2b-9a8e-4f3835d5c0e2",
+    "imageId": "sha256:a2928906b0dfb2334bc417daf99b0616cbce323ae5a1bc443f8d859f0e1deedd",
+    "version": "0.1.1",
+    "sourceCommit": "ae12ef719b161e759f9e36d8e3404895b3537dc4",
+    "runtimeStatus": "running",
+    "desiredState": "running",
+    "dbStatus": "ready"
+  },
+  "preserved": {
+    "expected": {
+      "id": "8dcfffe2-3854-4ce5-b878-2da9f915c151",
+      "title": "네이티브 실행 후에도 남는 할 일 20261029",
+      "completed": false,
+      "createdAt": "2026-10-29T02:23:27.176135Z",
+      "updatedAt": "2026-10-29T02:23:58.463116Z"
+    },
+    "before": {
+      "id": "8dcfffe2-3854-4ce5-b878-2da9f915c151",
+      "title": "네이티브 실행 후에도 남는 할 일 20261029",
+      "completed": false,
+      "createdAt": "2026-10-29T02:23:27.176135Z",
+      "updatedAt": "2026-10-29T02:23:58.463116Z"
+    },
+    "after": {
+      "id": "8dcfffe2-3854-4ce5-b878-2da9f915c151",
+      "title": "네이티브 실행 후에도 남는 할 일 20261029",
+      "completed": false,
+      "createdAt": "2026-10-29T02:23:27.176135Z",
+      "updatedAt": "2026-10-29T02:23:58.463116Z"
+    },
+    "unchanged": true
+  },
+  "temporary": {
+    "id": "4be6e71d-7dc7-48b2-8750-480524afa577",
+    "title": "서버 빌드 배포 임시 CRUD 2026-10-29T03:29:53.747Z 474f412d",
+    "create": true,
+    "read": true,
+    "complete": true,
+    "completeReload": true,
+    "undo": true,
+    "undoReload": true,
+    "delete": true,
+    "deleteReload": true
+  },
+  "cleanup": {
+    "attempted": false,
+    "status": "deleted_by_ui"
+  },
+  "screenshots": [
+    "todo-initial-desktop.png",
+    "todo-temporary-completed-desktop.png",
+    "todo-final-desktop.png"
+  ],
+  "diagnostics": {
+    "console": [
+      {
+        "phase": "login",
+        "severity": "error",
+        "route": "session"
+      }
+    ],
+    "pageErrors": [],
+    "failedRequests": [],
+    "httpErrors": [
+      {
+        "phase": "login",
+        "route": "session",
+        "status": 401
+      }
+    ]
+  },
+  "steps": [
+    {
+      "name": "prerequisites",
+      "startedAt": "2026-10-29T03:29:52.511Z",
+      "status": "passed",
+      "finishedAt": "2026-10-29T03:29:52.518Z"
+    },
+    {
+      "name": "admin_login",
+      "startedAt": "2026-10-29T03:29:52.518Z",
+      "status": "passed",
+      "finishedAt": "2026-10-29T03:29:52.834Z"
+    },
+    {
+      "name": "deployment_identity",
+      "startedAt": "2026-10-29T03:29:52.835Z",
+      "status": "passed",
+      "finishedAt": "2026-10-29T03:29:52.843Z"
+    },
+    {
+      "name": "preserved_api_before",
+      "startedAt": "2026-10-29T03:29:52.844Z",
+      "status": "passed",
+      "finishedAt": "2026-10-29T03:29:52.852Z"
+    },
+    {
+      "name": "initial_ui",
+      "startedAt": "2026-10-29T03:29:52.852Z",
+      "status": "passed",
+      "finishedAt": "2026-10-29T03:29:53.746Z"
+    },
+    {
+      "name": "temporary_create",
+      "startedAt": "2026-10-29T03:29:53.747Z",
+      "status": "passed",
+      "finishedAt": "2026-10-29T03:29:53.811Z"
+    },
+    {
+      "name": "temporary_read",
+      "startedAt": "2026-10-29T03:29:53.811Z",
+      "status": "passed",
+      "finishedAt": "2026-10-29T03:29:53.824Z"
+    },
+    {
+      "name": "temporary_complete",
+      "startedAt": "2026-10-29T03:29:53.824Z",
+      "status": "passed",
+      "finishedAt": "2026-10-29T03:29:53.877Z"
+    },
+    {
+      "name": "completed_reload",
+      "startedAt": "2026-10-29T03:29:53.877Z",
+      "status": "passed",
+      "finishedAt": "2026-10-29T03:29:54.763Z"
+    },
+    {
+      "name": "temporary_undo",
+      "startedAt": "2026-10-29T03:29:54.764Z",
+      "status": "passed",
+      "finishedAt": "2026-10-29T03:29:54.828Z"
+    },
+    {
+      "name": "undone_reload",
+      "startedAt": "2026-10-29T03:29:54.828Z",
+      "status": "passed",
+      "finishedAt": "2026-10-29T03:29:55.666Z"
+    },
+    {
+      "name": "temporary_delete",
+      "startedAt": "2026-10-29T03:29:55.667Z",
+      "status": "passed",
+      "finishedAt": "2026-10-29T03:29:55.742Z"
+    },
+    {
+      "name": "deleted_reload",
+      "startedAt": "2026-10-29T03:29:55.743Z",
+      "status": "passed",
+      "finishedAt": "2026-10-29T03:29:56.576Z"
+    },
+    {
+      "name": "preserved_api_after",
+      "startedAt": "2026-10-29T03:29:56.576Z",
+      "status": "passed",
+      "finishedAt": "2026-10-29T03:29:56.593Z"
+    },
+    {
+      "name": "final_screenshots",
+      "startedAt": "2026-10-29T03:29:56.594Z",
+      "status": "passed",
+      "finishedAt": "2026-10-29T03:29:56.644Z"
+    },
+    {
+      "name": "browser_diagnostics",
+      "startedAt": "2026-10-29T03:29:56.645Z",
+      "status": "passed",
+      "finishedAt": "2026-10-29T03:29:56.646Z"
+    }
+  ],
+  "failed": [],
+  "notRun": []
+}

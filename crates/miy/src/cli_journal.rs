@@ -47,6 +47,8 @@ pub struct Entry {
     pub cursor: Option<String>,
     pub sequence: Option<u64>,
     pub upload: Option<Upload>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub server_build: Option<crate::cli_build::ServerBuildReceipt>,
 }
 
 fn directory() -> Result<PathBuf> {
@@ -121,6 +123,7 @@ pub fn create(session: &Session, intent: PreflightInput, retry: Option<Uuid>) ->
         cursor: None,
         sequence: None,
         upload: None,
+        server_build: None,
     };
     Ok(entry)
 }
@@ -295,6 +298,25 @@ pub fn validate(entry: &Entry, session: &Session) -> Result<()> {
             )
             .into());
         }
+    }
+    if let Some(receipt) = &entry.server_build {
+        if entry.intent.action != crate::runtime_contract::Operation::Deploy
+            || entry.upload.is_some()
+            || entry.retry_of.is_some()
+        {
+            return Err(CliError::new(
+                Category::Environment,
+                "journal_build_invalid",
+                "The server build receipt does not match this deployment request.",
+            )
+            .into());
+        }
+        crate::cli_build::validate_receipt_identity(
+            receipt,
+            session,
+            &entry.app_id,
+            entry.intent.image_id.as_deref().unwrap_or(""),
+        )?;
     }
     if let Some(upload) = &entry.upload {
         let expected = archive_path(entry.request_id)?;
@@ -476,6 +498,7 @@ mod tests {
             cursor: None,
             sequence: None,
             upload: None,
+            server_build: None,
         };
         assert!(validate(&entry, &session).is_ok());
         let mut other = session.clone();

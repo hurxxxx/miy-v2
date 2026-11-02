@@ -1,0 +1,291 @@
+{
+  "sourceCommit": "84d58cd417c990e37e29d4b8183b260f0f10d0a5",
+  "isolatedConfig": "/projects/miy-cli-experience-run-20261029/private/test-cli-config",
+  "databaseEnvironmentInherited": false,
+  "commands": [
+    {
+      "name": "fmt",
+      "command": [
+        "/home/dwdcc/.cargo/bin/cargo",
+        "fmt",
+        "--all",
+        "--",
+        "--check"
+      ],
+      "cwd": "/projects/miy-v2-cli-experience-20261029",
+      "startedAt": "2026-10-29T06:40:55.379144+00:00",
+      "log": "/projects/miy-cli-experience-run-20261029/evidence/rust/fmt.log",
+      "exitCode": 0,
+      "elapsedSeconds": 0.25,
+      "rustTestResults": [],
+      "passLines": 0
+    },
+    {
+      "name": "server-check",
+      "command": [
+        "/home/dwdcc/.cargo/bin/cargo",
+        "check",
+        "--locked",
+        "--workspace"
+      ],
+      "cwd": "/projects/miy-v2-cli-experience-20261029",
+      "startedAt": "2026-10-29T06:40:55.628628+00:00",
+      "log": "/projects/miy-cli-experience-run-20261029/evidence/rust/server-check.log",
+      "exitCode": 0,
+      "elapsedSeconds": 5.18,
+      "rustTestResults": [],
+      "passLines": 0
+    },
+    {
+      "name": "server-clippy",
+      "command": [
+        "/home/dwdcc/.cargo/bin/cargo",
+        "clippy",
+        "--locked",
+        "--workspace",
+        "--all-targets",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "cwd": "/projects/miy-v2-cli-experience-20261029",
+      "startedAt": "2026-10-29T06:41:00.813522+00:00",
+      "log": "/projects/miy-cli-experience-run-20261029/evidence/rust/server-clippy.log",
+      "exitCode": 0,
+      "elapsedSeconds": 7.67,
+      "rustTestResults": [],
+      "passLines": 0
+    },
+    {
+      "name": "server-tests",
+      "command": [
+        "/home/dwdcc/.cargo/bin/cargo",
+        "test",
+        "--locked",
+        "--workspace"
+      ],
+      "cwd": "/projects/miy-v2-cli-experience-20261029",
+      "startedAt": "2026-10-29T06:41:08.482384+00:00",
+      "log": "/projects/miy-cli-experience-run-20261029/evidence/rust/server-tests.log",
+      "exitCode": 0,
+      "elapsedSeconds": 20.03,
+      "rustTestResults": [
+        "ok. 143 passed; 0 failed; 6 ignored; 0 measured; 0 filtered out; finished in 2.01s"
+      ],
+      "passLines": 0
+    },
+    {
+      "name": "server-release-build",
+      "command": [
+        "/home/dwdcc/.cargo/bin/cargo",
+        "build",
+        "--locked",
+        "--release",
+        "--bin",
+        "miy"
+      ],
+      "cwd": "/projects/miy-v2-cli-experience-20261029",
+      "startedAt": "2026-10-29T06:41:28.507908+00:00",
+      "log": "/projects/miy-cli-experience-run-20261029/evidence/rust/server-release-build.log",
+      "exitCode": 0,
+      "elapsedSeconds": 34.96,
+      "rustTestResults": [],
+      "passLines": 0
+    },
+    {
+      "name": "client-check",
+      "command": [
+        "/home/dwdcc/.cargo/bin/cargo",
+        "check",
+        "--locked",
+        "--workspace",
+        "--no-default-features"
+      ],
+      "cwd": "/projects/miy-v2-cli-experience-20261029",
+      "startedAt": "2026-10-29T06:42:03.501825+00:00",
+      "log": "/projects/miy-cli-experience-run-20261029/evidence/rust/client-check.log",
+      "exitCode": 0,
+      "elapsedSeconds": 2.63,
+      "rustTestResults": [],
+      "passLines": 0
+    },
+    {
+      "name": "client-clippy",
+      "command": [
+        "/home/dwdcc/.cargo/bin/cargo",
+        "clippy",
+        "--locked",
+        "--workspace",
+        "--all-targets",
+        "--no-default-features",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "cwd": "/projects/miy-v2-cli-experience-20261029",
+      "startedAt": "2026-10-29T06:42:06.131538+00:00",
+      "log": "/projects/miy-cli-experience-run-20261029/evidence/rust/client-clippy.log",
+      "exitCode": 0,
+      "elapsedSeconds": 3.29,
+      "rustTestResults": [],
+      "passLines": 0
+    },
+    {
+      "name": "client-tests",
+      "command": [
+        "/home/dwdcc/.cargo/bin/cargo",
+        "test",
+        "--locked",
+        "--workspace",
+        "--no-default-features"
+      ],
+      "cwd": "/projects/miy-v2-cli-experience-20261029",
+      "startedAt": "2026-10-29T06:42:09.418851+00:00",
+      "log": "/projects/miy-cli-experience-run-20261029/evidence/rust/client-tests.log",
+      "exitCode": 0,
+      "elapsedSeconds": 9.32,
+      "rustTestResults": [
+        "ok. 110 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.01s"
+      ],
+      "passLines": 0
+    },
+    {
+      "name": "client-build",
+      "command": [
+        "/home/dwdcc/.cargo/bin/cargo",
+        "build",
+        "--locked",
+        "--bin",
+        "miy",
+        "--no-default-features"
+      ],
+      "cwd": "/projects/miy-v2-cli-experience-20261029",
+      "startedAt": "2026-10-29T06:42:18.735676+00:00",
+      "log": "/projects/miy-cli-experience-run-20261029/evidence/rust/client-build.log",
+      "exitCode": 0,
+      "elapsedSeconds": 6.8,
+      "rustTestResults": [],
+      "passLines": 0
+    },
+    {
+      "name": "cli-output",
+      "command": [
+        "python3",
+        "scripts/check-cli-output.py",
+        "--cli",
+        "/projects/miy-cli-experience-run-20261029/private/bin/miy-client-0.6.3"
+      ],
+      "cwd": "/projects/miy-v2-cli-experience-20261029",
+      "startedAt": "2026-10-29T06:42:25.740249+00:00",
+      "log": "/projects/miy-cli-experience-run-20261029/evidence/rust/cli-output.log",
+      "exitCode": 0,
+      "elapsedSeconds": 19.87,
+      "rustTestResults": [],
+      "passLines": 14
+    },
+    {
+      "name": "cli-build",
+      "command": [
+        "python3",
+        "scripts/check-cli-build.py",
+        "--cli",
+        "/projects/miy-cli-experience-run-20261029/private/bin/miy-client-0.6.3"
+      ],
+      "cwd": "/projects/miy-v2-cli-experience-20261029",
+      "startedAt": "2026-10-29T06:42:45.611307+00:00",
+      "log": "/projects/miy-cli-experience-run-20261029/evidence/rust/cli-build.log",
+      "exitCode": 0,
+      "elapsedSeconds": 10.12,
+      "rustTestResults": [],
+      "passLines": 11
+    },
+    {
+      "name": "cli-recovery",
+      "command": [
+        "python3",
+        "scripts/check-cli-recovery.py",
+        "--cli",
+        "/projects/miy-cli-experience-run-20261029/private/bin/miy-client-0.6.3"
+      ],
+      "cwd": "/projects/miy-v2-cli-experience-20261029",
+      "startedAt": "2026-10-29T06:42:55.730474+00:00",
+      "log": "/projects/miy-cli-experience-run-20261029/evidence/rust/cli-recovery.log",
+      "exitCode": 0,
+      "elapsedSeconds": 7.73,
+      "rustTestResults": [],
+      "passLines": 6
+    },
+    {
+      "name": "runtime-regression-interrupted",
+      "command": [
+        "python3",
+        "scripts/runtime-regression/run.py"
+      ],
+      "cwd": "/projects/miy-v2-cli-experience-20261029",
+      "exitCode": null,
+      "termination": "Validation tool session ended with SIGTERM; no child exit code or assertion failure was recorded.",
+      "passObservationsBeforeInterruption": 22,
+      "log": "/projects/miy-cli-experience-run-20261029/evidence/rust/runtime-regression.log",
+      "ownedFixture": "/projects/miy-cli-experience-run-20261029/private/tmp/miy-runtime-regression-km7pdj8n",
+      "validationSessionExitCode": 143,
+      "status": "INTERRUPTED"
+    },
+    {
+      "name": "runtime-interrupted-cleanup",
+      "command": [
+        "python3",
+        "scripts/runtime-regression/cleanup.py"
+      ],
+      "cwd": "/projects/miy-v2-cli-experience-20261029",
+      "fixtureRoot": "/projects/miy-cli-experience-run-20261029/private/tmp/miy-runtime-regression-km7pdj8n",
+      "exitCode": 0,
+      "log": "/projects/miy-cli-experience-run-20261029/evidence/rust/runtime-interrupted-cleanup.log"
+    },
+    {
+      "name": "runtime-regression-attempt-2",
+      "command": [
+        "python3",
+        "scripts/runtime-regression/run.py"
+      ],
+      "cwd": "/projects/miy-v2-cli-experience-20261029",
+      "startedAt": "2026-10-29T06:46:26.679094+00:00",
+      "log": "/projects/miy-cli-experience-run-20261029/evidence/rust/runtime-regression-attempt-2.log",
+      "exitCode": 1,
+      "elapsedSeconds": 163.03,
+      "expectedFailureReason": "All 55 observations passed; harness expected auth=7 but observed auth=8.",
+      "resolvedBy": "scripts/runtime-regression/run.py expected auth count 7->8; attempt 3 exit 0"
+    },
+    {
+      "name": "server-build-regression",
+      "command": [
+        "python3",
+        "scripts/check-server-builds.py"
+      ],
+      "cwd": "/projects/miy-v2-cli-experience-20261029",
+      "startedAt": "2026-10-29T06:49:09.714075+00:00",
+      "log": "/projects/miy-cli-experience-run-20261029/evidence/rust/server-build-regression.log",
+      "exitCode": 0,
+      "elapsedSeconds": 2.42
+    },
+    {
+      "name": "runtime-regression-attempt-3",
+      "command": [
+        "python3",
+        "scripts/runtime-regression/run.py"
+      ],
+      "cwd": "/projects/miy-v2-cli-experience-20261029",
+      "startedAt": "2026-10-29T06:49:42.185885+00:00",
+      "log": "/projects/miy-cli-experience-run-20261029/evidence/rust/runtime-regression-attempt-3.log",
+      "exitCode": 0,
+      "elapsedSeconds": 162.99,
+      "observations": 55,
+      "suiteCounts": {
+        "runtime": 35,
+        "operations": 6,
+        "cli": 6,
+        "auth": 8
+      }
+    }
+  ],
+  "completedAt": "2026-10-29T06:53:42.786419+00:00"
+}

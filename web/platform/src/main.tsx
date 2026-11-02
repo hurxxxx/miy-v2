@@ -33,6 +33,7 @@ import { Button, Panel } from "@miy/ui";
 import "./style.css";
 import { RuntimeHealth } from "./RuntimeHealth";
 import { CliInstall } from "./CliInstall";
+import { CliDeviceApproval, LoginRecovery } from "./LoginRecovery";
 
 const activeGuards = new Set<ReturnType<typeof createNavigationGuards>>();
 
@@ -104,6 +105,7 @@ function Login() {
           ? "개발 계정을 선택하면 바로 시작합니다."
           : "업무 앱과 데이터를 한곳에서"}
       </p>
+      <LoginRecovery />
       {options?.developmentLogin && (
         <div className="quick-accounts">
           {options.accounts.map((account, index) => (
@@ -148,9 +150,11 @@ function useSession() {
 }
 function Shell() {
   const user = useSession();
+  const [menuOpen, setMenuOpen] = useState(false);
   const [apps, setApps] = useState<Installation[]>([]);
   const location = useLocation();
   const environment = currentEnvironment(location.pathname);
+  useEffect(() => setMenuOpen(false), [location.pathname]);
   useEffect(() => {
     if (user && location.pathname === "/") {
       const target = sessionStorage.getItem("miy.returnTo");
@@ -197,7 +201,7 @@ function Shell() {
   }
   return (
     <div className="shell">
-      <aside>
+      <aside id="platform-navigation" className={menuOpen ? "navigation-open" : ""}>
         <Link to="/" className="brand">
           miy
         </Link>
@@ -226,7 +230,12 @@ function Shell() {
       </aside>
       <div className="workspace">
         <header>
-          <span>업무 공간</span>
+          <div className="workspace-heading">
+            <button type="button" className="navigation-toggle" aria-controls="platform-navigation" aria-expanded={menuOpen} onClick={() => setMenuOpen(!menuOpen)}>
+              {menuOpen ? "메뉴 닫기" : "메뉴 열기"}
+            </button>
+            <span>업무 공간</span>
+          </div>
           <span>
             {user.name} <Button onClick={logout}>로그아웃</Button>
           </span>
@@ -706,37 +715,7 @@ function CliAuthorize() {
 }
 function CliDeviceApprove() {
   const user = useSession();
-  const location = useLocation();
-  const id = location.pathname.split("/").at(-1);
-  const [code, setCode] = useState("");
-  const [result, setResult] = useState("");
-  const [error, setError] = useState("");
-  const [busy, setBusy] = useState(false);
-  async function decide(decision: "approve" | "deny") {
-    if (!user || busy) return;
-    setBusy(true); setError("");
-    try {
-      await request(`/api/v1/cli/devices/${id}/decision`, user.csrf, {
-        method: "POST", body: JSON.stringify({ userCode: code, decision }),
-      });
-      setResult(decision === "approve" ? "CLI 연결을 승인했습니다. 터미널로 돌아가세요." : "CLI 연결을 거절했습니다.");
-    } catch {
-      setError("처리하지 못했습니다. 터미널의 코드와 요청 유효 시간을 확인해 주세요.");
-    } finally { setBusy(false); }
-  }
-  return <Panel title="CLI 로그인 승인">
-    <p>서버: <strong>{window.location.origin}</strong></p>
-    <p><strong>{user?.name}</strong> 계정의 권한으로 CLI를 연결합니다.</p>
-    <p>직접 시작한 요청인지 확인하고 터미널에 표시된 코드를 입력하세요. 요청은 5분 동안 유효합니다.</p>
-    <p>요청 ID: <code>{id}</code></p>
-    {result ? <p role="status">{result}</p> : <form onSubmit={event => { event.preventDefault(); void decide("approve"); }}>
-      <label>인증 코드 <input name="userCode" value={code} onChange={event => setCode(event.target.value)} autoComplete="off" spellCheck={false} maxLength={32} required /></label>
-      <Button type="submit" disabled={busy || !code.trim()}>이 계정으로 CLI 연결 승인</Button>
-      <Button type="button" disabled={busy || !code.trim()} onClick={() => void decide("deny")}>거절</Button>
-      {error && <p role="alert">{error}</p>}
-      <p>연결 후에는 CLI의 로그인 세션 관리에서 철회할 수 있습니다.</p>
-    </form>}
-  </Panel>;
+  return <CliDeviceApproval user={user} />;
 }
 function Admin() {
   const user = useSession();

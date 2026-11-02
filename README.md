@@ -8,17 +8,17 @@ CLI로 앱의 기본 구조를 만들고, 자신의 개발 에이전트를 MCP�
 
 ## 현재 단계
 
-현재 호스트의 플랫폼은 [https://v2.dwdcc.kr](https://v2.dwdcc.kr)이며, [CLI 설치 안내](https://v2.dwdcc.kr/cli/install)에서 서버에 맞는 배포물을 제공한다. 실행 서버·게시 CLI는 **0.6.3 / 번들 0.7.1**, 이 작업본의 `main` 소스는 **0.6.0 / 번들 0.7.0**이다. 서버 주소·CLI/MCP 연결과 배포 소스의 구분은 [현재 서버 운영 안내](docs/SERVER-OPERATIONS.md)를 따른다.
+현재 호스트의 플랫폼은 [https://v2.dwdcc.kr](https://v2.dwdcc.kr)이며, [CLI 설치 안내](https://v2.dwdcc.kr/cli/install)에서 서버에 맞는 배포물을 제공한다. 실행 서버·게시 CLI와 통합한 `main` 소스는 **0.6.3 / 번들 0.7.1**이다. 게시 배포물은 검증한 `8d7d042`를 계속 사용하며 후속 소스 통합 commit과 출처를 구분한다. 서버 주소·CLI/MCP 연결과 배포 소스의 구분은 [현재 서버 운영 안내](docs/SERVER-OPERATIONS.md)를 따른다.
 
-현재는 **독립 앱 개발·로컬 미리보기·테스트 배포·운영 승격을 연결하고 구조 검증을 수행한 단계**다. 플랫폼과 사용자 앱의 Rust backend, React/Vite UI, Docker, 앱·환경별 DB를 분리한다. CLI 0.5.0 / bundle 0.6.2에서 일반 Codex·Claude Code용 프로젝트 MCP·스킬, 브라우저 승인 CLI 로그인, 인증된 이미지 업로드, 테스트한 릴리스의 운영 승격과 별도 배포 권한을 제공한다.
+현재는 **독립 앱 개발·로컬 미리보기·테스트 배포·운영 승격을 연결하고 구조 검증을 수행한 단계**다. 플랫폼과 사용자 앱의 Rust backend, React/Vite UI, Docker, 앱·환경별 DB를 분리한다. CLI 0.6.3 / bundle 0.7.1에서 일반 Codex·Claude Code용 프로젝트 MCP·스킬, 브라우저 승인 CLI 로그인, 인증된 이미지 업로드, 테스트한 릴리스의 운영 승격과 별도 배포 권한을 제공한다.
 
-[구조 진단과 9개 요건별 결과](docs/IMPLEMENTATION-RESULTS.md#구조-심층-진단과-핵심-9개-요건-개선)를 먼저 읽는다. 개발·운영 라우터, 로컬 DB 격리, 다른 앱 API, 권한 회수, 기존 앱 보존을 실제 검사했다. 신뢰된 UI 코드의 통합이며 악성 JavaScript의 브라우저 격리는 제공하지 않는다. 별도 서버·CPU·배포 바이너리 공개 배포와 제품 전체 완성은 후속 범위다.
+[구조 진단과 9개 요건별 결과](docs/IMPLEMENTATION-RESULTS.md#구조-심층-진단과-핵심-9개-요건-개선)를 먼저 읽는다. 개발·운영 라우터, 로컬 DB 격리, 다른 앱 API, 권한 회수, 기존 앱 보존을 실제 검사했다. 신뢰된 UI 코드의 통합이며 악성 JavaScript의 브라우저 격리는 제공하지 않는다. 5개 OS/CPU의 CLI 후보와 회사 홈페이지 배포를 제공하며, 제품 전체 완성과 독립 반복 인수는 별도 범위다.
 
 공용 UI는 CLI 내장 코드에서 분리했다. 플랫폼 컴포넌트 저장소에 새 버전을 게시하면 같은 CLI와 MCP에서 즉시 조회하며, 앱은 명시적인 설치·업데이트 전까지 기존 버전을 유지한다. [설치·갱신 안내](docs/RUNNING.md#공용-컴포넌트-설치와-업데이트)를 따른다.
 
 Windows CLI는 회사 홈페이지의 `/cli/install`에서 [GUI 설치 파일](docs/WINDOWS-INSTALLER.md)을 받아 서버 주소를 입력해 설치한다. Unix의 기존 설치 명령은 `bash scripts/install-cli.sh`이며, 새 앱 시작은 `miy app init ./my-app --id my-app --name '내 앱'`이다. 로그인·등록 승인·로컬 테스트·배포 순서는 [실행 안내](docs/RUNNING.md)를 따른다. 이전 [휴가 앱 실증](docs/LEAVE-LEDGER-RESULTS.md)과 bundle 0.3 검증은 당시의 보완 과정과 한계가 남아 있는 이력이다.
 
-[CLI 0.5 개선 계획](docs/CLI-IMPLEMENTATION-PLAN.md)의 context·인증·작업·로그·실행 전 검증과 Windows 설치/갱신 도구를 구현했다. [개발 인계](docs/CLI-HANDOFF.md)와 [세부 검증](docs/CLI-VALIDATION-MATRIX.md)에서 현재 증거와 남은 조건을 확인한다. 사용자 Windows 11/PowerShell/Docker Desktop, 별도 Linux 서버와 독립 AI 검증은 남아 있으며 정식 릴리스 완료로 표시하지 않는다.
+[CLI 0.5 개선 계획](docs/CLI-IMPLEMENTATION-PLAN.md)의 context·인증·작업·로그·실행 전 검증과 Windows 설치/갱신 도구를 구현했다. [개발 인계](docs/CLI-HANDOFF.md)와 [세부 검증](docs/CLI-VALIDATION-MATRIX.md)에서 현재 증거와 남은 조건을 확인한다. 사용자 Windows의 기존 네이티브 개발·서버 빌드 실증은 기록에 보존한다. 새 CI 설치기의 Windows 11 실제 설치·갱신·제거는 사용자가 나중에 수행하며, Codex·Claude의 독립 새 세션 인수는 별도로 관리한다.
 
 최초 V0~V1 구현 범위와 실행 방식은 [V0~V1 구현 계획](docs/IMPLEMENTATION.md)을 따른다. 로컬 Docker에서 UI 런타임 통합, 웹·MCP OAuth, 앱별 DB와 작업 실행기를 검증한다.
 

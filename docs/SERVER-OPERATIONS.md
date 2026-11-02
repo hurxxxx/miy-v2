@@ -63,9 +63,9 @@ Codex·Claude의 생성된 프로젝트 MCP는 프로젝트의 `.miy-tools/miy[.
 
 ## 3. 현재 배포 소스와 이 작업본의 차이
 
-이 작업본의 `main`은 CLI **0.6.0 / 번들 0.7.0** 소스다. 실제 서버와 공개 CLI는 별도 checkout에서 준비한 **0.6.3 / 번들 0.7.1**이다. 운영 소스는 `codex/cli-experience-improvements` 계열이며, 로컬 `codex/cli-experience-linux-validation`도 해당 후속 검증 기록을 포함한다.
+이 작업본의 `main`에 운영 소스를 통합하여 CLI **0.6.3 / 번들 0.7.1**로 맞췄다. 실제 서버와 공개 CLI는 별도 checkout에서 검증한 `8d7d042` 배포물을 유지한다. 앞선 2026-11-02 연결 검사 시점의 `main`은 0.6.0이었으며 그 당시 source/hash 기록은 변경하지 않는다. 운영 소스는 `codex/cli-experience-improvements` 계열이며, 로컬 `codex/cli-experience-linux-validation`도 해당 후속 검증 기록을 포함한다.
 
-따라서 서버를 갱신할 때에는 먼저 배포 대상 소스 commit과 현재 실행 파일을 확인한다. 이 `main`에서 단순히 `cargo build` 후 실행 파일을 교체하면 서버 빌드 API·worker 기능 등이 없는 버전으로 내려갈 수 있다. 새 배포는 검증한 소스의 별도 checkout에서 빌드하고, 서버/worker·UI·게시 index를 같은 검증 기록에 묶어 반영한다. 기존 비밀 설정과 DB 데이터를 사용하는 서버에 초기 `bootstrap`, `seed`, Keycloak 재설정을 갱신 절차 대신 실행하지 않는다.
+따라서 서버를 갱신할 때에는 먼저 배포 대상 소스 commit과 현재 실행 파일을 확인한다. 같은 버전 문자열이라도 실제 source commit·빌드 경계·설치된 SQL과 게시된 배포물의 출처를 함께 확인한다. 새 배포는 검증한 소스의 별도 checkout에서 빌드하고, 서버/worker·UI·게시 index를 같은 검증 기록에 묶어 반영한다. 기존 비밀 설정과 DB 데이터를 사용하는 서버에 초기 `bootstrap`, `seed`, Keycloak 재설정을 갱신 절차 대신 실행하지 않는다.
 
 현재 서버 바이너리 SHA-256은 `4573260257147c2563ba5ffae177b9ac6c6b0a331d2a0b1fef1cf6e60d10064e`다. 게시 CLI의 source commit과 target별 hash는 `GET /api/v1/cli/install`로 확인한다. 서버 바이너리는 default features 빌드이므로 클라이언트 전용 바이너리와 hash가 다르다.
 

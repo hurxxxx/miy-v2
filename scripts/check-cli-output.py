@@ -15,6 +15,7 @@ from urllib.parse import urlsplit, parse_qs
 import os
 from pathlib import Path
 import signal
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -101,6 +102,8 @@ class Fixture:
         self.requests = []
         self.auth_failures = 0
         self.job_observed = threading.Event()
+        self.login_seconds = 300
+        self.device_reply = "approved"
 
     def reply(self, status, body, request_id="fixture-request-123"):
         self.status = status
@@ -154,9 +157,11 @@ def fixture_server():
                 if state.fail_refresh:
                     self.close_connection=True
                     return
-            if self.path=="/auth/cli/device":self.send_json(200,{"id":state.login_id,"deviceCode":"miy_device_"+"a"*48,"userCode":"ABCDE-FGHJK","verificationPath":f"/cli/device/{state.login_id}","expiresIn":300,"interval":1})
+            if self.path=="/auth/cli/device":self.send_json(200,{"id":state.login_id,"deviceCode":"miy_device_"+"a"*48,"userCode":"ABCDE-FGHJK","verificationPath":f"/cli/device/{state.login_id}","expiresIn":state.login_seconds,"interval":1})
             elif self.path=="/auth/development":self.send_json(200,{},cookie=True)
             elif self.path==f"/api/v1/cli/devices/{state.login_id}/decision":self.send_json(200,{"approved":True})
+            elif self.path=="/auth/cli/token" and request_body.get("grantType")=="device_code" and state.device_reply=="expired":self.send_json(400,{"error":{"code":"expired_token"}})
+            elif self.path=="/auth/cli/token" and request_body.get("grantType")=="device_code" and state.device_reply=="pending":self.send_json(200,{"status":"pending","interval":1})
             elif self.path=="/auth/cli/token":self.send_json(200,{"status":"approved","sessionId":state.session_id,"userId":state.actor,"accessToken":SENTINEL,"refreshToken":"miy_refresh_"+"r"*48,"tokenType":"Bearer","expiresIn":state.access_seconds,"refreshExpiresAt":(datetime.now(timezone.utc)+timedelta(days=30)).isoformat()})
             elif self.path=="/auth/cli/revoke":self.send_json(200,{"revoked":True})
             else:self.send_json(405,{})
@@ -197,9 +202,9 @@ def check(cli):
             _, hard = resource.getrlimit(resource.RLIMIT_STACK)
             resource.setrlimit(resource.RLIMIT_STACK, (1024 * 1024, hard))
 
-        def run(args, cwd=root, expected=0, command=None):
+        def run(args, cwd=root, expected=0, command=None, executable=cli):
             result = subprocess.run(
-                [str(cli), *args], cwd=cwd, env=env,
+                [str(executable), *args], cwd=cwd, env=env,
                 stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                 timeout=30, check=False,
                 preexec_fn=bounded_stack if sys.platform.startswith("linux") else None,
@@ -257,6 +262,26 @@ def check(cli):
 
         project = root / "한글 앱 with spaces"
         run(["app", "init", str(project), "--id", "output-probe", "--name", "한글 앱"], command="app init")
+        original_path = env.get("PATH", "")
+        empty_tools = root / "no-local-build-tools"
+        empty_tools.mkdir()
+        # CreateProcess also searches the application's directory and System32.
+        # An empty PATH alone cannot hide the hosted Windows runner's Docker.
+        probe_cli = empty_tools / cli.name
+        shutil.copy2(cli, probe_cli)
+        if os.name == "nt":
+            # The same trusted CLI rejects Docker's info arguments with exit 2.
+            # Its placement beside the probe wins over the system Docker engine.
+            shutil.copy2(cli, empty_tools / "docker.exe")
+        env["PATH"] = str(empty_tools)
+        try:
+            failure = run(["app", "build"], cwd=project, expected=7, executable=probe_cli)["error"]
+            require(failure["code"] == "docker_daemon_unavailable" and "miy app build --remote" in failure["message"], "Missing Docker must explain server build (" + failure["code"] + ")")
+            require(failure["recovery"]["args"] == ["app", "build", "--remote"], "Missing Docker must expose an executable recovery command")
+            require(not (project / "dist/image.json").exists(), "Missing Docker created a deployment receipt")
+        finally:
+            env["PATH"] = original_path
+        ok("missing local Docker offers explicit remote build without compiling or uploading")
         manifest = json.loads((project / "manifest.json").read_bytes())
         require(manifest["name"] == "한글 앱", "UTF-8 app identity was not preserved")
         run(["app", "setup"], cwd=project, command="app setup")
@@ -346,6 +371,18 @@ def check(cli):
             run(["auth","status"],cwd=remote,expected=3)
             require(state.refresh_requests==attempts==1,"CLI replayed a possibly consumed refresh token")
             ok("lost refresh response persists uncertain state and prevents automatic token replay")
+
+            for mode, expected_code in [("expired", "login_not_approved"), ("pending", "login_expired")]:
+                state.device_reply = mode
+                state.login_seconds = 1 if mode == "pending" else 300
+                pending = run(["auth", "login", "--no-wait"], cwd=remote)["data"]
+                require(0 <= pending["expiresIn"] <= state.login_seconds and pending["expiresAt"] > 0, "Pending login omitted bounded lifetime")
+                require(pending["restart"]["args"][-2:] == ["auth", "login"], "Pending login omitted restart command")
+                failure = run(["auth", "wait", pending["loginId"]], cwd=remote, expected=3)["error"]
+                require(failure["code"] == expected_code and failure["recovery"] == pending["restart"], "Expired login did not restart in its original context")
+                require(not (Path(env["MIY_CONFIG_DIR"]) / "login-flows" / (pending["loginId"] + ".json")).exists(), "Expired flow metadata was retained")
+                require("miy_device_" not in json.dumps(failure), "Expired login leaked its private device secret")
+            ok("server and local device expiry clean the flow and expose context-bound fresh-login recovery")
 
     print(json.dumps({"passed": len(passed), "liveServicesUsed": False, "temporaryProjectsRemoved": True}))
 

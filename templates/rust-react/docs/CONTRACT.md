@@ -1,6 +1,6 @@
-# miy application bundle v0.6.2
+# miy application bundle v0.7.1
 
-This describes bundle 0.6.2 and its CLI 0.5 workflow; application runtime protocol versions remain unchanged. Existing apps must follow their installed protected SDK and use an explicit bundle upgrade before adopting new SDK methods. Project stdio MCP reports the installed bundle; the server HTTP contract describes the latest bundle.
+This describes bundle 0.7.1 with native local development; application runtime protocol versions remain unchanged. Existing apps must follow their installed protected SDK and use an explicit bundle upgrade before adopting new SDK methods. Project stdio MCP reports the installed bundle; the server HTTP contract describes the latest bundle.
 
 Backend: Rust 1.99.1, Axum 0.8.9, SQLx 0.8.6. UI: React 19.3.1, Vite 8.3.5, Module Federation.
 Keep manifest.json `miy.app/v1alpha1`, runtime `rust-web-v1`, UI `miy.ui/v1alpha1`, export `./AppRoot`.
@@ -22,11 +22,11 @@ Registration: developer runs `miy app register`; administrator runs `miy registr
 Build: commit source, then `miy app build` (which includes the full check). Deploy: `miy app deploy --environment dev`. A stale build is rejected. The CLI uploads the image archive over the authenticated platform API. The built Linux image platform must match the selected server; choose an explicit build --platform and a working builder when host/engine and server CPUs differ.
 Long jobs: use `miy app deploy --no-wait`, then `miy job watch JOB_ID`. Request and upload receipt IDs are journaled before submission. Use `job resume REQUEST_OR_JOB_ID` to recover the same original input after a lost acknowledgement; it may explicitly retransmit after lookup. No byte-range archive continuation is provided. Use `job retry FAILED_JOB_ID` only when the typed failure permits it, after fresh preflight and confirmation. A running old release is not evidence that an update succeeded.
 CLI login uses a selected context and browser/device approval. `auth login` returns pending instructions outside a TTY; approve the URL/user code and run `auth wait LOGIN_ID`. Access tokens last up to 15 minutes; rotating refresh sessions up to 30 days. Credentials are stored by server/user in the protected credential store. Project stdio MCP uses the same selected session. Explicit HTTP loopback development login is a separate testing shortcut, not evidence of enterprise identity-provider integration.
-Discover commands with `miy describe`, then `miy describe --command "app deploy"`. `doctor --for operate` checks remote access; `doctor --for develop` also checks the app bundle, tools and Docker.
+Discover commands with `miy describe`, then `miy describe --command "app deploy"`. `doctor --for operate` checks remote access; `doctor --for develop` checks the app bundle, Rust/Node tools and native linking. Docker checks require explicit `--runtime docker`.
 
 ## Local development and data connections
 
-`miy app dev` builds the current working tree and runs a local Docker backend and PostgreSQL database, with a browser preview on loopback. It does not write into the platform's app database. The preview gateway holds your CLI credential, signs your actual user identity, and proxies authorized calls to the platform's dev environment. Stop with Ctrl-C or `miy app dev-stop`; local database volume is retained.
+`miy app dev` compiles and runs the native Rust backend, serves the built React preview on loopback, and connects to the server development database through an authenticated in-process WS/WSS tunnel. Rust, Node and the selected server are required; Docker Desktop, WSL and a local PostgreSQL installation are not required. The CLI owns the backend, gateway, tunnel and session heartbeat. The gateway signs the actual caller identity; platform credentials stay in the CLI. Stop with Ctrl-C or `miy app dev-stop`; development DB rows survive. Development deployment reuses that same DB. Use `--runtime docker` explicitly for a container backend, and `--runtime docker --database local` for a separate local container database. Native development never falls back to a separate DB.
 
 Declare `platform:directory:read` in requestedPermissions and call `runtime.platformApi("directory")` for the shared user directory (id/name only). Declare `app:TARGET:read` or `app:TARGET:write` and use `runtime.appApi(TARGET,"/path",options)` to call another app in the same environment. The platform also requires the caller's access to that target; declarations do not grant user access. Target backend business authorization still applies. No cross-database credentials are exposed.
 
@@ -71,7 +71,7 @@ draft protection. When a deployed release changes, the host retains the mounted
 view and blocks stale API calls until the user reloads.
 
 `app dev-stop` requests shutdown of this project's runner, waits for the port and
-lock to be released, and removes its containers. The local DB volume survives.
+lock to be released, and stops its owned native backend and DB tunnel (or explicitly selected containers). Database data survives.
 During startup it waits for the current build/migration to finish. A timeout is
 reported as pending, never successful. Old CLI runners must first be stopped with
 Ctrl-C in their terminal. Deployment does not stop a local preview automatically.

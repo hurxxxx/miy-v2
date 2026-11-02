@@ -74,6 +74,13 @@ pub async fn run() -> Result<()> {
     let config: Config = serde_json::from_str(
         &std::env::var("MIY_TUNNEL_CONFIG").context("missing_tunnel_configuration")?,
     )?;
+    let listener = tokio::net::TcpListener::bind("0.0.0.0:5432").await?;
+    serve(listener, config).await
+}
+
+/// The native preview supplies an already-bound loopback listener. Dropping this
+/// future closes the listener and every active database connection.
+pub async fn serve(listener: tokio::net::TcpListener, config: Config) -> Result<()> {
     let url = url::Url::parse(&config.url)?;
     ensure!(
         matches!(url.scheme(), "ws" | "wss")
@@ -84,21 +91,21 @@ pub async fn run() -> Result<()> {
         "invalid_tunnel_url"
     );
     let tls = connector(config.ca_pem.as_deref())?;
-    let listener = tokio::net::TcpListener::bind("0.0.0.0:5432").await?;
-    let permits = Arc::new(tokio::sync::Semaphore::new(16));
+    let mut connections = tokio::task::JoinSet::new();
     loop {
-        let (socket, _) = listener.accept().await?;
-        let Ok(permit) = permits.clone().try_acquire_owned() else {
-            drop(socket);
-            continue;
-        };
-        let config = config.clone();
-        let tls = tls.clone();
-        tokio::spawn(async move {
-            let _permit = permit;
-            // Do not log connection errors: HTTP errors can contain sensitive headers.
-            let _ = connection(socket, &config, tls).await;
-        });
+        tokio::select! {
+            accepted = listener.accept() => {
+                let (socket, _) = accepted?;
+                if connections.len() >= 16 { drop(socket); continue; }
+                let config = config.clone();
+                let tls = tls.clone();
+                connections.spawn(async move {
+                    // HTTP errors can contain sensitive headers; never log them.
+                    let _ = connection(socket, &config, tls).await;
+                });
+            }
+            _ = connections.join_next(), if !connections.is_empty() => {}
+        }
     }
 }
 
@@ -109,5 +116,91 @@ mod tests {
     fn invalid_extra_ca_is_rejected() {
         assert!(connector(None).is_ok());
         assert!(connector(Some("not a certificate")).is_err());
+    }
+
+    #[tokio::test]
+    async fn native_tunnel_forwards_authenticated_bytes_and_closes_connections_on_stop() {
+        use axum::{
+            Router,
+            extract::ws::{Message, WebSocketUpgrade},
+            http::HeaderMap,
+            response::IntoResponse,
+        };
+        async fn echo(headers: HeaderMap, upgrade: WebSocketUpgrade) -> impl IntoResponse {
+            assert_eq!(
+                headers.get("authorization").unwrap(),
+                "Bearer fixture-token"
+            );
+            upgrade.on_upgrade(|mut socket| async move {
+                while let Some(Ok(Message::Binary(bytes))) = socket.recv().await {
+                    if socket.send(Message::Binary(bytes)).await.is_err() {
+                        break;
+                    }
+                }
+            })
+        }
+        let upstream = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = upstream.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            axum::serve(
+                upstream,
+                Router::new().route("/database", axum::routing::get(echo)),
+            )
+            .await
+            .unwrap();
+        });
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let local = listener.local_addr().unwrap();
+        let tunnel = tokio::spawn(serve(
+            listener,
+            Config {
+                url: format!("ws://{address}/database"),
+                token: "fixture-token".into(),
+                ca_pem: None,
+            },
+        ));
+        let mut client = tokio::net::TcpStream::connect(local).await.unwrap();
+        client.write_all(b"postgres-wire-fixture").await.unwrap();
+        let mut bytes = [0u8; 21];
+        tokio::time::timeout(
+            std::time::Duration::from_secs(3),
+            client.read_exact(&mut bytes),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        assert_eq!(&bytes, b"postgres-wire-fixture");
+        tunnel.abort();
+        assert!(tunnel.await.unwrap_err().is_cancelled());
+        let mut byte = [0u8; 1];
+        let closed =
+            tokio::time::timeout(std::time::Duration::from_secs(3), client.read(&mut byte))
+                .await
+                .unwrap();
+        assert!(matches!(closed, Ok(0) | Err(_)));
+        assert!(tokio::net::TcpStream::connect(local).await.is_err());
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn native_tunnel_rejects_credential_bearing_or_query_urls() {
+        for url in [
+            "ws://user:password@localhost/database",
+            "ws://localhost/database?token=fixture",
+            "http://localhost/database",
+        ] {
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let error = serve(
+                listener,
+                Config {
+                    url: url.into(),
+                    token: "fixture".into(),
+                    ca_pem: None,
+                },
+            )
+            .await
+            .unwrap_err();
+            assert_eq!(error.to_string(), "invalid_tunnel_url");
+        }
     }
 }

@@ -1,0 +1,56 @@
+{
+  "schemaVersion": 1,
+  "checkedAt": "2026-11-02T12:47:10.509139+00:00",
+  "status": "PASS",
+  "sourceVersion": "0.6.3",
+  "bundleVersion": "0.7.1",
+  "mergeParents": [
+    "5eaa60fd815710123c2859f9924a408e5fc12e62",
+    "7617246"
+  ],
+  "operatingArtifactSource": "8d7d04271f9467d8bbdd16308e73715b33e4dc0c",
+  "operatingSourceDirectoriesMatchCandidate": true,
+  "checks": [
+    {
+      "command": "cargo fmt --all -- --check",
+      "exitCode": 0
+    },
+    {
+      "command": "cargo clippy --workspace --all-targets --locked -- -D warnings",
+      "exitCode": 0
+    },
+    {
+      "command": "cargo test --workspace --locked",
+      "exitCode": 0,
+      "passed": 143,
+      "ignored": 6
+    },
+    {
+      "command": "cargo clippy --workspace --all-targets --locked --no-default-features -- -D warnings",
+      "exitCode": 0
+    },
+    {
+      "command": "cargo test --workspace --locked --no-default-features",
+      "exitCode": 0,
+      "passed": 110,
+      "ignored": 0
+    },
+    {
+      "command": "cargo build --locked --no-default-features",
+      "exitCode": 0
+    },
+    {
+      "command": "pnpm typecheck",
+      "exitCode": 0
+    },
+    {
+      "command": "pnpm --filter @miy/platform exec vite build --outDir /projects/miy-v2/.local/integration-0.6.3-web --emptyOutDir",
+      "exitCode": 0
+    }
+  ],
+  "scopeNotes": [
+    "Source integration does not deploy a new server or change published release provenance.",
+    "The platform UI build used a separate output directory, preserving served web/platform/dist.",
+    "Windows user acceptance is deferred to the user; independent-agent acceptance is tracked separately."
+  ]
+}

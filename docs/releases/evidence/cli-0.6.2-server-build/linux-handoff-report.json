@@ -1,0 +1,305 @@
+{
+  "phase": "linux-todo-deployment",
+  "status": "PASSED_WITH_FINDINGS",
+  "sourceCommit": "d3ee532ac85845d63b1a82d1b73bba67014aa2cd",
+  "cliVersion": "0.6.1",
+  "bundleVersion": "0.7.1",
+  "deployment": {
+    "passed": true,
+    "job": {
+      "action": "deploy",
+      "appId": "todo-win-20261029",
+      "createdAt": "2026-10-29T02:50:19.128620Z",
+      "environment": "dev",
+      "errorCode": null,
+      "failureClass": null,
+      "id": "026e1595-965e-4e1a-85a1-e96e16c6c76a",
+      "imageId": "sha256:6ce8e8ac8ab489042e1502a60940189db1bdb2c200e2d13c0199bd2bd8220cde",
+      "installationId": "0ef7e3f6-d9eb-4a8d-ae05-f06c603f80b4",
+      "releaseId": "7a007445-d1c2-4d4c-a7d4-bfa8ee2784f9",
+      "requestId": "33680959-97d0-48c5-a6da-3fa244f111a9",
+      "retryOf": null,
+      "retryable": false,
+      "status": "succeeded",
+      "step": "complete"
+    },
+    "databaseBefore": {
+      "databaseId": "129f8abd-62c2-40d1-9175-d73d85196940",
+      "schemaFingerprint": "0b4d2d5b69c27b12e9288067b1caf4f4eb8850b797592e4e27321ee3fa8a418a",
+      "schemaGeneration": 1,
+      "status": "ready"
+    },
+    "databaseAfter": {
+      "databaseId": "129f8abd-62c2-40d1-9175-d73d85196940",
+      "schemaFingerprint": "0b4d2d5b69c27b12e9288067b1caf4f4eb8850b797592e4e27321ee3fa8a418a",
+      "schemaGeneration": 1,
+      "status": "ready"
+    },
+    "installation": {
+      "acceptance": null,
+      "appId": "todo-win-20261029",
+      "canManage": true,
+      "canPromote": true,
+      "dbStatus": "ready",
+      "desiredState": "running",
+      "displayNameDiffers": false,
+      "environment": "dev",
+      "generation": 6,
+      "health": {
+        "checkedAt": "2026-10-29T02:50:34.458337+00:00",
+        "consecutiveFailures": 0,
+        "status": "healthy"
+      },
+      "id": "0ef7e3f6-d9eb-4a8d-ae05-f06c603f80b4",
+      "imageId": "sha256:6ce8e8ac8ab489042e1502a60940189db1bdb2c200e2d13c0199bd2bd8220cde",
+      "kind": "docker_app",
+      "lastOperation": {
+        "action": "deploy",
+        "errorCode": null,
+        "id": "026e1595-965e-4e1a-85a1-e96e16c6c76a",
+        "retryable": false,
+        "status": "succeeded",
+        "step": "complete"
+      },
+      "localBuild": {
+        "imageId": "sha256:6ce8e8ac8ab489042e1502a60940189db1bdb2c200e2d13c0199bd2bd8220cde",
+        "matchesRunningImage": true,
+        "sourceCommit": "cd6a351bfa704b353d3e9d13e370d8201b7bf874",
+        "version": "0.1.0"
+      },
+      "localManifestName": "Windows Todo 검증",
+      "manifestName": "Windows Todo 검증",
+      "name": "Windows Todo 검증",
+      "releaseId": "7a007445-d1c2-4d4c-a7d4-bfa8ee2784f9",
+      "runtimeStatus": "running",
+      "sourceCommit": "cd6a351bfa704b353d3e9d13e370d8201b7bf874",
+      "url": "https://v2.dwdcc.kr/environments/dev/apps/todo-win-20261029",
+      "version": "0.1.0"
+    },
+    "build": {
+      "appId": "todo-win-20261029",
+      "bundleVersion": "0.7.1",
+      "imageId": "sha256:6ce8e8ac8ab489042e1502a60940189db1bdb2c200e2d13c0199bd2bd8220cde",
+      "platform": "linux/amd64",
+      "sourceCommit": "cd6a351bfa704b353d3e9d13e370d8201b7bf874",
+      "tag": "miy-app/todo-win-20261029:0.1.0",
+      "version": "0.1.0"
+    }
+  },
+  "browser": {
+    "schemaVersion": 1,
+    "startedAt": "2026-10-29T02:55:54.899Z",
+    "finishedAt": "2026-10-29T02:56:29.139Z",
+    "status": "failed",
+    "passed": false,
+    "origin": "https://v2.dwdcc.kr",
+    "appId": "todo-win-20261029",
+    "environment": "dev",
+    "url": "https://v2.dwdcc.kr/environments/dev/apps/todo-win-20261029",
+    "selectedIdentity": {
+      "id": "00000000-0000-4000-8000-000000000001",
+      "name": "admin",
+      "admin": true,
+      "development": true
+    },
+    "installation": {
+      "id": "0ef7e3f6-d9eb-4a8d-ae05-f06c603f80b4",
+      "appId": "todo-win-20261029",
+      "environment": "dev",
+      "releaseId": "7a007445-d1c2-4d4c-a7d4-bfa8ee2784f9",
+      "imageId": "sha256:6ce8e8ac8ab489042e1502a60940189db1bdb2c200e2d13c0199bd2bd8220cde",
+      "version": "0.1.0",
+      "sourceCommit": "cd6a351bfa704b353d3e9d13e370d8201b7bf874",
+      "runtimeStatus": "running",
+      "desiredState": "running",
+      "dbStatus": "ready"
+    },
+    "preserved": {
+      "expected": {
+        "id": "8dcfffe2-3854-4ce5-b878-2da9f915c151",
+        "title": "네이티브 실행 후에도 남는 할 일 20261029",
+        "completed": false,
+        "createdAt": "2026-10-29T02:23:27.176135Z",
+        "updatedAt": "2026-10-29T02:23:58.463116Z"
+      },
+      "before": {
+        "id": "8dcfffe2-3854-4ce5-b878-2da9f915c151",
+        "title": "네이티브 실행 후에도 남는 할 일 20261029",
+        "completed": false,
+        "createdAt": "2026-10-29T02:23:27.176135Z",
+        "updatedAt": "2026-10-29T02:23:58.463116Z"
+      },
+      "after": {
+        "id": "8dcfffe2-3854-4ce5-b878-2da9f915c151",
+        "title": "네이티브 실행 후에도 남는 할 일 20261029",
+        "completed": false,
+        "createdAt": "2026-10-29T02:23:27.176135Z",
+        "updatedAt": "2026-10-29T02:23:58.463116Z"
+      },
+      "unchanged": true
+    },
+    "temporary": {
+      "id": "31029c5f-3366-4e58-b6de-6de88df4a343",
+      "title": "Linux 배포 임시 CRUD 2026-10-29T02:55:56.113Z 95591b9c",
+      "create": true,
+      "read": true,
+      "complete": true,
+      "completeReload": true,
+      "undo": true,
+      "undoReload": true,
+      "delete": true,
+      "deleteReload": true
+    },
+    "cleanup": {
+      "attempted": false,
+      "status": "deleted_by_ui"
+    },
+    "screenshots": [
+      "todo-initial-desktop.png",
+      "todo-temporary-completed-desktop.png",
+      "todo-final-desktop.png",
+      "todo-failure.png"
+    ],
+    "diagnostics": {
+      "console": [
+        {
+          "phase": "login",
+          "severity": "error",
+          "route": "session"
+        }
+      ],
+      "pageErrors": [],
+      "failedRequests": [],
+      "httpErrors": [
+        {
+          "phase": "login",
+          "route": "session",
+          "status": 401
+        }
+      ]
+    },
+    "steps": [
+      {
+        "name": "prerequisites",
+        "startedAt": "2026-10-29T02:55:54.900Z",
+        "status": "passed",
+        "finishedAt": "2026-10-29T02:55:54.907Z"
+      },
+      {
+        "name": "admin_login",
+        "startedAt": "2026-10-29T02:55:54.908Z",
+        "status": "passed",
+        "finishedAt": "2026-10-29T02:55:55.212Z"
+      },
+      {
+        "name": "deployment_identity",
+        "startedAt": "2026-10-29T02:55:55.213Z",
+        "status": "passed",
+        "finishedAt": "2026-10-29T02:55:55.221Z"
+      },
+      {
+        "name": "preserved_api_before",
+        "startedAt": "2026-10-29T02:55:55.222Z",
+        "status": "passed",
+        "finishedAt": "2026-10-29T02:55:55.229Z"
+      },
+      {
+        "name": "initial_ui",
+        "startedAt": "2026-10-29T02:55:55.230Z",
+        "status": "passed",
+        "finishedAt": "2026-10-29T02:55:56.112Z"
+      },
+      {
+        "name": "temporary_create",
+        "startedAt": "2026-10-29T02:55:56.113Z",
+        "status": "passed",
+        "finishedAt": "2026-10-29T02:55:56.178Z"
+      },
+      {
+        "name": "temporary_read",
+        "startedAt": "2026-10-29T02:55:56.178Z",
+        "status": "passed",
+        "finishedAt": "2026-10-29T02:55:56.187Z"
+      },
+      {
+        "name": "temporary_complete",
+        "startedAt": "2026-10-29T02:55:56.188Z",
+        "status": "passed",
+        "finishedAt": "2026-10-29T02:55:56.245Z"
+      },
+      {
+        "name": "completed_reload",
+        "startedAt": "2026-10-29T02:55:56.245Z",
+        "status": "passed",
+        "finishedAt": "2026-10-29T02:55:57.146Z"
+      },
+      {
+        "name": "temporary_undo",
+        "startedAt": "2026-10-29T02:55:57.147Z",
+        "status": "passed",
+        "finishedAt": "2026-10-29T02:55:57.212Z"
+      },
+      {
+        "name": "undone_reload",
+        "startedAt": "2026-10-29T02:55:57.213Z",
+        "status": "passed",
+        "finishedAt": "2026-10-29T02:55:58.050Z"
+      },
+      {
+        "name": "temporary_delete",
+        "startedAt": "2026-10-29T02:55:58.051Z",
+        "status": "passed",
+        "finishedAt": "2026-10-29T02:55:58.142Z"
+      },
+      {
+        "name": "deleted_reload",
+        "startedAt": "2026-10-29T02:55:58.143Z",
+        "status": "passed",
+        "finishedAt": "2026-10-29T02:55:58.974Z"
+      },
+      {
+        "name": "preserved_api_after",
+        "startedAt": "2026-10-29T02:55:58.975Z",
+        "status": "passed",
+        "finishedAt": "2026-10-29T02:55:58.990Z"
+      },
+      {
+        "name": "final_screenshots",
+        "startedAt": "2026-10-29T02:55:58.991Z",
+        "status": "failed",
+        "finishedAt": "2026-10-29T02:56:29.051Z"
+      }
+    ],
+    "failed": [
+      {
+        "step": "final_screenshots",
+        "category": "assertion_failed",
+        "at": "2026-10-29T02:56:29.051Z"
+      }
+    ],
+    "notRun": [
+      "browser_diagnostics"
+    ]
+  },
+  "requiredValidationPassed": true,
+  "findings": [
+    {
+      "code": "browser_automation_checkbox_race",
+      "resolved": true,
+      "detail": "Controlled React checkbox changed after PATCH; retry uses click plus eventual assertions."
+    },
+    {
+      "code": "platform_mobile_layout",
+      "resolved": false,
+      "detail": "390px viewport existing platform sidebar compresses content; final mobile visibility assertion failed. Desktop screenshots and required CRUD pass."
+    }
+  ],
+  "notRun": [
+    "Integrated Browser unavailable; standalone Chromium used successfully.",
+    "Final automated browser_diagnostics step skipped after mobile assertion. Captured diagnostics show only expected pre-login /me 401, no Todo API or client errors.",
+    "Production promotion (excluded by user).",
+    "Platform redeploy / other-app changes (excluded from phase 1)."
+  ],
+  "commandLog": "commands.jsonl",
+  "browserEvidence": "browser-validation.json"
+}

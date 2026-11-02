@@ -1,0 +1,152 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-10-29",
+  "status": "partial_acceptance",
+  "sourceCommit": "b873a811be533e3f907ff36b39408db185c81571",
+  "baseCommit": "d556b6a",
+  "branch": "codex/native-local-preview",
+  "cliVersion": "0.6.1",
+  "bundleVersion": "0.7.1",
+  "cliSha256": "1faa30a7998188b3b4bf61ce7f01194ae5f1b7ab22071bbf97a1830e150d0635",
+  "environment": {
+    "os": "Windows 11 Pro x64 build 26200",
+    "powershell": "7.6.5",
+    "rust": "1.99.1 MSVC",
+    "node": "24.19.0",
+    "pnpm": "10.34.5",
+    "administrator": false,
+    "dockerDesktopInstalled": false,
+    "wslInstalled": false,
+    "account": "admin (selected by user)"
+  },
+  "application": {
+    "id": "todo-win-20261029",
+    "windowsPath": "C:\\projects\\miy-todo-validation-20261029",
+    "businessSourceCommit": "f4e65a6",
+    "toolingUpgradeCommit": "5590d2c",
+    "portableBusinessSource": "examples/native-todo",
+    "databaseId": "129f8abd-62c2-40d1-9175-d73d85196940",
+    "preservedTodo": {
+      "completed": false,
+      "createdAt": "2026-10-29T02:23:27.176135Z",
+      "id": "8dcfffe2-3854-4ce5-b878-2da9f915c151",
+      "title": "네이티브 실행 후에도 남는 할 일 20261029",
+      "updatedAt": "2026-10-29T02:23:58.463116Z"
+    }
+  },
+  "checks": [
+    {
+      "name": "repository_sync",
+      "result": "PASS",
+      "details": "Fast-forwarded main to d556b6a; unrelated untracked artifacts and prior validation stash preserved."
+    },
+    {
+      "name": "published_cli_identity_and_device_login",
+      "result": "PASS",
+      "details": "Existing CLI 0.6.0 matched b67798b binary hash; expired approval was replaced and user approved admin session."
+    },
+    {
+      "name": "component_sync_and_registration",
+      "result": "PASS",
+      "details": "ui 1.0.1 installed; registration 7e8fe190-6ee9-4d5e-9f1e-9006d61b4bb0 approved."
+    },
+    {
+      "name": "independent_codex_app_implementation",
+      "result": "PASS",
+      "details": {
+        "cliVersion": "0.164.0-alpha.11.1",
+        "threadId": "01a1855f-b95c-7cb0-a5f3-dd844825225c",
+        "successfulMcpCalls": 8,
+        "tools": [
+          "get_cli_help",
+          "get_component",
+          "get_contract",
+          "list_components",
+          "search_api"
+        ],
+        "appRustTests": 6,
+        "appCheckGroups": 11
+      }
+    },
+    {
+      "name": "native_cli_unit_fmt_clippy_release",
+      "result": "PASS",
+      "details": "97 unit tests; fmt check; all-targets client Clippy -D warnings; Windows x64 release build."
+    },
+    {
+      "name": "native_bundle_guidance_upgrade",
+      "result": "PASS",
+      "details": "Five guidance/MCP/transaction groups including 0.7.0 -> 0.7.1 preserve business files, SQL CRLF bytes, component and dependency locks; Windows Usage executable suffix normalized in test only."
+    },
+    {
+      "name": "output_contract",
+      "result": "PASS",
+      "details": "11 black-box groups; native console Ctrl+C explicitly not covered."
+    },
+    {
+      "name": "native_doctor",
+      "result": "PASS",
+      "details": "17 required checks; no Docker probes in native mode; linker and actual project stdio MCP startup succeeded."
+    },
+    {
+      "name": "browser_real_database_crud",
+      "result": "PASS",
+      "details": "Browser add, complete, undo, refresh; API create/update/delete of a separate disposable row; only preserved row retained."
+    },
+    {
+      "name": "native_authentication_boundaries",
+      "result": "PASS",
+      "details": "Blank title, forged ownership, missing CSRF and unsigned direct backend requests rejected."
+    },
+    {
+      "name": "native_stop_restart",
+      "result": "PASS",
+      "details": "dev-stop exit 0; gateway/backend ports closed, backend process and local server-session state removed; restart retained identical database UUID and todo UUID/title/completion. Restarted UI showed the row; inspected browser error log was empty."
+    }
+  ],
+  "observedIssues": [
+    "Docker Desktop interactive installer failed because Virtual Machine Platform was disabled; user requested no Docker Desktop. No WSL/Windows feature was enabled.",
+    "pnpm lockfile rename returned transient EPERM once in the independent app check; unchanged rerun passed.",
+    "Module Federation emitted a module analysis timing warning; app build and native browser preview completed. Deployed Federation integration remains NOT_RUN.",
+    "First source unit run inherited real user context and failed an output fixture expecting empty metadata; isolated MIY_CONFIG_DIR rerun passed all 97. No product test assertion was weakened.",
+    "Restart probe initially read UTF-8 Korean evidence using Windows cp949; the probe was corrected to explicit UTF-8 and passed."
+  ],
+  "notRun": [
+    {
+      "name": "linux_image_build_dev_deploy_browser_and_db_reuse",
+      "reason": "No Linux build host SSH connection configured on this PC; user will relay Linux Codex handoff. Current build/deploy still require Linux image build."
+    },
+    {
+      "name": "production_and_least_privilege",
+      "reason": "User selected admin; production was not requested. Independent developer/admin separation and prod database isolation not tested."
+    },
+    {
+      "name": "native_console_ctrl_c_and_parent_crash",
+      "reason": "Cooperative dev-stop and Windows owned-process unit test passed; live console signal and forced parent death not exercised."
+    },
+    {
+      "name": "native_macos_linux_and_docker_regression",
+      "reason": "Only actual Windows native preview tested here; legacy explicit Docker suites updated but not run without an engine."
+    },
+    {
+      "name": "native_gui_installer_publication",
+      "reason": "Existing published installer/CLI 0.6.0 was not replaced. Native 0.6.1 is a source branch build, not a published installer."
+    }
+  ],
+  "localEvidence": "C:\\projects\\miy-v2\\.local\\evidence\\windows-todo\\20261029",
+  "screenshots": [
+    "native-todo-browser.jpg",
+    "native-todo-restarted.jpg"
+  ],
+  "secrets": "No credentials, cookies, CSRF, private preview entry URL or database connection strings included.",
+  "subsequentSynchronization": {
+    "sourceCommit": "60a9952c352dc24cbbffacbf5ac654c8d3ec588e",
+    "includedMainCommit": "564df40756a634bdcfdabdefb92e8fd3817d01eb",
+    "cliUnitTests": 98,
+    "fmt": "PASS",
+    "clippy": "PASS",
+    "releaseBuild": "PASS",
+    "binarySha256": "fea99eb3b9414367046b1d2af104733d9bf893615a490ddb855d1bff6943379d",
+    "scope": "Merged later shared-development-login changes from main; native preview implementation unchanged. Live Todo/browser evidence above belongs to b873a81 binary; Linux handoff will validate the merged branch deployment."
+  }
+}

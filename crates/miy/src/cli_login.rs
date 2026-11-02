@@ -562,7 +562,8 @@ fn valid_user_code(value: &str) -> bool {
 fn pending(flow: &Flow) -> Value {
     json!({"status":"pending","loginId":flow.id,"context":flow.context,
         "verificationUrl":format!("{}/cli/device/{}",flow.origin,flow.id),"userCode":flow.user_code,
-        "expiresAt":flow.expires_at,"interval":flow.interval,
+        "expiresAt":flow.expires_at,"expiresIn":(flow.expires_at-now()).max(0),"interval":flow.interval,
+        "restart":{"executable":"miy","args":["--context",flow.context,"auth","login"]},
         "recovery":{"executable":"miy","args":["--context",flow.context,"auth","wait",flow.id.to_string()]}})
 }
 
@@ -659,8 +660,14 @@ async fn login(
     }
     let url = format!("{}{}", context.origin, started.verification_path);
     eprintln!(
-        "Open {url} and approve code {}. Login request: {}",
-        flow.user_code, flow.id
+        "Open {url} and approve code {}. Login request: {}. Expires at {} ({} seconds remaining). If it expires, run: miy --context {} auth login",
+        flow.user_code,
+        flow.id,
+        chrono::DateTime::from_timestamp(flow.expires_at, 0)
+            .unwrap()
+            .to_rfc3339(),
+        (flow.expires_at - now()).max(0),
+        flow.context
     );
     if !device_code && !no_open {
         let _ = crate::platform::open_browser(&url);
@@ -715,7 +722,8 @@ async fn wait(id: Uuid) -> Result<Value> {
     loop {
         if now() >= flow.expires_at {
             clean_flow(&root, &flow);
-            return Err(auth_error(
+            return Err(restart_login(
+                &flow,
                 "login_expired",
                 "The login request expired; start a new login.",
             )
@@ -752,7 +760,8 @@ async fn wait(id: Uuid) -> Result<Value> {
                     "access_denied" | "expired_token" | "invalid_grant"
                 ) {
                     clean_flow(&root, &flow);
-                    return Err(auth_error(
+                    return Err(restart_login(
+                        &flow,
                         "login_not_approved",
                         "The login request was denied, expired or consumed; start a new login.",
                     )
@@ -811,6 +820,12 @@ async fn wait(id: Uuid) -> Result<Value> {
             }
         }
     }
+}
+
+fn restart_login(flow: &Flow, code: &str, message: &str) -> CliError {
+    CliError::new(Category::Auth, code, format!("{message} Run: miy --context {} auth login", flow.context))
+        .with_details(json!({"loginId":flow.id,"expiresAt":flow.expires_at,"expiresIn":(flow.expires_at-now()).max(0)}))
+        .with_recovery("miy", &["--context", &flow.context, "auth", "login"])
 }
 
 fn interrupted(flow: &Flow) -> CliError {

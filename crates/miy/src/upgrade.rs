@@ -35,6 +35,7 @@ pub async fn run() -> Result<Value> {
         Some("0.6.0") => include_str!("../bundles/0.6.0.json"),
         Some("0.6.1") => include_str!("../bundles/0.6.1.json"),
         Some("0.6.2") => include_str!("../bundles/0.6.2.json"),
+        Some("0.7.0") => include_str!("../bundles/0.7.0.json"),
         _ => anyhow::bail!(CliError::new(
             Category::Environment,
             "unsupported_old_bundle",
@@ -73,11 +74,12 @@ pub async fn run() -> Result<Value> {
         "cli_guidance_invalid",
     )?;
     let protected = crate::bundle::protected_hashes();
-    // The 0.6.x transition updates guidance only. Prove runtime/default bytes
-    // stay identical before taking this path; no login/download/lock resolution.
+    // These bundles have compatible dependencies and components. The native
+    // transition updates the Rust SDK's bind address support explicitly, while
+    // preserving application code, dependency locks and all migration bytes.
     if matches!(
         old["bundleVersion"].as_str(),
-        Some("0.6.0" | "0.6.1" | "0.6.2")
+        Some("0.6.0" | "0.6.1" | "0.6.2" | "0.7.0")
     ) {
         let mut changes = crate::agent_tools::setup_changes(&root)?;
         for (path, content) in crate::bundle::template() {
@@ -86,7 +88,8 @@ pub async fn run() -> Result<Value> {
             }
             let unchanged = hashes.get(*path).and_then(Value::as_str)
                 == Some(crate::contract::hash(content).as_str());
-            if (path.starts_with("sdk/") && *path != "sdk/preview/main.tsx")
+            if (path.starts_with("sdk/")
+                && !matches!(*path, "sdk/preview/main.tsx" | "sdk/rust/src/lib.rs"))
                 || path.ends_with(".sql")
                 || *path == "miy.components.json"
             {
@@ -103,8 +106,10 @@ pub async fn run() -> Result<Value> {
                 continue;
             }
             ensure!(
-                matches!(*path, "AGENTS.md" | "CLAUDE.md" | "sdk/preview/main.tsx")
-                    || path.starts_with("docs/")
+                matches!(
+                    *path,
+                    "AGENTS.md" | "CLAUDE.md" | "sdk/preview/main.tsx" | "sdk/rust/src/lib.rs"
+                ) || path.starts_with("docs/")
                     || path.starts_with(".agents/skills/")
                     || path.starts_with(".claude/skills/"),
                 CliError::new(

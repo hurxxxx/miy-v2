@@ -157,7 +157,7 @@ function Test-Server([string]$Server) {
         $request.Timeout = 8000
         $request.ReadWriteTimeout = 8000
         $request.Accept = 'application/json'
-        $request.UserAgent = 'MiySetup/0.6.0'
+        $request.UserAgent = 'MiySetup'
         $response = $request.GetResponse()
         if ([int]$response.StatusCode -ne 200) { Stop-MiyInstall 'The server did not return its capabilities directly. Enter the final server address (redirects are not followed).' 4 }
         if ($response.ContentLength -gt 131072) { Stop-MiyInstall 'The server capabilities response is too large.' 4 }

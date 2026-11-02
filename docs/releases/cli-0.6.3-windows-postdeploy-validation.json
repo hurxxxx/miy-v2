@@ -1,0 +1,150 @@
+{
+  "schemaVersion": 1,
+  "checkedAt": "2026-10-30T07:22:02.987276+09:00",
+  "status": "DEPLOYMENT_CONFIRMED_WITH_NOT_RUN_ITEMS",
+  "origin": "https://v2.dwdcc.kr",
+  "repositoryHead": "39b56407e52f7b67bb708e25dc290906cb0fec3f",
+  "client": "Windows 11 x64 / PowerShell 7.6.5 / installed Chrome",
+  "serverVersion": "0.6.3",
+  "cliVersion": "0.6.3",
+  "bundleVersion": "0.7.1",
+  "releaseSourceCommit": "8d7d04271f9467d8bbdd16308e73715b33e4dc0c",
+  "coreHealth": {
+    "httpStatus": 200,
+    "status": "ok"
+  },
+  "downloads": [
+    {
+      "file": "MiySetup-0.6.3-windows-x64.exe",
+      "sha256": "662f8a59c098ac4b2cbde4041799a99f0c6e21f193bbe8b31d2098f6095233af",
+      "verified": true,
+      "bytes": 6105600
+    },
+    {
+      "file": "miy-0.6.3-x86_64-pc-windows-msvc.zip",
+      "sha256": "1403083b604b77036785d07c42f13c6aad754ea7ae6ff7de94bb15e0a1eb72e3",
+      "verified": true,
+      "bytes": 6046843
+    }
+  ],
+  "provenance": {
+    "installer": {
+      "installerCommit": "8d7d04271f9467d8bbdd16308e73715b33e4dc0c",
+      "bytes": 6105600,
+      "archiveSha256": "1403083b604b77036785d07c42f13c6aad754ea7ae6ff7de94bb15e0a1eb72e3",
+      "schemaVersion": 1,
+      "sha256": "662f8a59c098ac4b2cbde4041799a99f0c6e21f193bbe8b31d2098f6095233af",
+      "platform": "windows-x64",
+      "cliBinarySha256": "055bc8655c706b586f1d8517cb719ac8cd1335107e2815aef10747fa3b7565e3",
+      "version": "0.6.3",
+      "file": "MiySetup-0.6.3-windows-x64.exe",
+      "cliCommit": "8d7d04271f9467d8bbdd16308e73715b33e4dc0c"
+    },
+    "cli": {
+      "binarySha256": "055bc8655c706b586f1d8517cb719ac8cd1335107e2815aef10747fa3b7565e3",
+      "commit": "8d7d04271f9467d8bbdd16308e73715b33e4dc0c",
+      "schemaVersion": 1,
+      "target": "x86_64-pc-windows-msvc",
+      "version": "0.6.3"
+    },
+    "embeddedArchiveMatchesDownload": true,
+    "verified": true
+  },
+  "cliChecks": {
+    "publishedBinaryExecuted": true,
+    "versionOutput": "miy 0.6.3",
+    "existingAuthenticationVerified": true,
+    "context": "default",
+    "userId": "00000000-0000-4000-8000-000000000001",
+    "dockerAbsentRecovery": {
+      "args": [
+        "app",
+        "build",
+        "--remote"
+      ],
+      "executable": "miy"
+    },
+    "dockerProbeExpectedExit": 7,
+    "globalInstallationChanged": false
+  },
+  "app": {
+    "id": "0ef7e3f6-d9eb-4a8d-ae05-f06c603f80b4",
+    "appId": "todo-win-20261029",
+    "version": "0.1.2",
+    "releaseId": "871549de-041d-4fa7-8c17-b8e7b3c54e47",
+    "imageId": "sha256:386e71c86012e6a55c579fc2482bf255fb3cbab8f83f99c0d3bb50799164a75f",
+    "sourceCommit": "f7e898161688f114edbc81941cb7592cda358b1e",
+    "runtimeStatus": "running",
+    "health": {
+      "checkedAt": "2026-10-29T22:18:18.432462+00:00",
+      "consecutiveFailures": 0,
+      "status": "healthy"
+    },
+    "url": "https://v2.dwdcc.kr/environments/dev/apps/todo-win-20261029"
+  },
+  "browserChecks": {
+    "account": "previously user-selected admin, configured shared development login",
+    "actualDesktopTodoRendered": true,
+    "originalTodoReadback": {
+      "completed": false,
+      "documentWidth": 375,
+      "originalTodoId": "8dcfffe2-3854-4ce5-b878-2da9f915c151",
+      "originalTodoVisible": true,
+      "sidebarVisible": false,
+      "url": "https://v2.dwdcc.kr/environments/dev/apps/todo-win-20261029",
+      "width": 390
+    },
+    "menuExpanded": true,
+    "menuClosedAfterRouting": true,
+    "expiredRequestExplainsFreshLogin": true,
+    "oauthErrorRecoveryRendered": true,
+    "installGuideShowsPublished063": true,
+    "temporaryViewportReset": true,
+    "verificationDevelopmentLoginLoggedOut": true
+  },
+  "httpChecks": {
+    "unauthenticatedDeviceStatus": {
+      "httpStatus": 401,
+      "code": "unauthorized",
+      "loginRequired": true
+    },
+    "syntheticExpiredCallback": {
+      "status": 303,
+      "location": "/?login=expired",
+      "cacheControl": "no-store",
+      "clearsLoginCookie": true
+    }
+  },
+  "preservation": {
+    "originalTodoCompleted": false,
+    "originalTodoId": "8dcfffe2-3854-4ce5-b878-2da9f915c151",
+    "appVersionAndReleaseUnchanged": true,
+    "newAppBuildOrDeployRequested": false,
+    "todoWritesPerformed": false,
+    "existingCliAuthenticationPreserved": true
+  },
+  "notRun": [
+    "Fresh installation/update/removal of the CI installer on this user profile; download hash, embedded payload/provenance and published CLI execution were checked.",
+    "Successful human IdP authentication and replay of its actual consumed callback; shared-development login and synthetic callback failure were verified separately.",
+    "A new pending device request, natural five-minute expiry and full DB/auth fault suites were not repeated on this Windows pass; deployed Linux validation records cover those automated scopes.",
+    "No new app build/deployment, CRUD changes, production promotion, global CLI replacement or public GitHub release/tag."
+  ],
+  "screenshots": {
+    "directory": "evidence/cli-0.6.3-windows-postdeploy",
+    "sha256": {
+      "todo-desktop.png": "5861321fb2bc75cb96fc1a3f7f2015b383024df4f4828b5676017fd5265da4b2",
+      "mobile-todo.png": "3bccca84c05631bd53a03ee06e6719a13f4e05a36cd8b9d50c9d86a5232dd4e9",
+      "mobile-menu.png": "2eb2c9c21344b0754a26c56e247f1bf063cfe2ae7fb828b533e3185d17430e30",
+      "expired-request.png": "3eb993b3bcebfc1907ffc9ce1d5dfc1384a9376c5a0487081919ec82ef3645dc",
+      "oauth-recovery.png": "2735311a8ca02db104412bf2ac682c075c28ca93c90281cbfb1bc9c5ad20ac6f",
+      "install-guide-desktop.png": "2d45aed85e5e36b3c5ddd470e4a23441e2e9fbb24a80b76bbc0d8ce0a39a2747"
+    }
+  },
+  "linuxValidation": "cli-0.6.3-linux-validation.json",
+  "localEvidenceDirectory": "C:\\projects\\miy-v2\\.local\\evidence\\windows-postdeploy-063-20261030",
+  "diagnosticNotes": [
+    "Checksum endpoints use an octet-stream response; the verifier explicitly decoded UTF-8 before comparison.",
+    "The first full-page capture timed out; subsequent captures and all visible UI assertions succeeded."
+  ],
+  "secrets": "Only public metadata, identifiers and visible verification screenshots retained; no tokens, cookies, CSRF values or credential storage copied."
+}

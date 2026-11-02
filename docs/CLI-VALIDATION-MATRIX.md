@@ -1,10 +1,16 @@
 # CLI 상세 검증 기록
 
 - 갱신: 2026-11-02
-- 최신 연결 검사 대상: 실제 서버·게시 CLI **0.6.3 / 번들 0.7.1**, 배포 소스 `8d7d04271f9467d8bbdd16308e73715b33e4dc0c`. 이 `main` 작업본의 CLI 0.6.0 / 번들 0.7.0 소스와 구분한다.
+- 최신 연결 검사 대상: 실제 서버·게시 CLI **0.6.3 / 번들 0.7.1**, 배포 소스 `8d7d04271f9467d8bbdd16308e73715b33e4dc0c`. 운영 소스의 `main` 통합 후 소스 버전도 CLI 0.6.3 / 번들 0.7.1이다. 배포 바이너리의 출처 commit과 후속 통합 commit은 구분한다.
 - 범위: [구현 계획](CLI-IMPLEMENTATION-PLAN.md). [전체 V0~V7 인수](VALIDATION.md)는 별도다.
 
 실제 실행 결과와 남은 환경 검사를 구분한다. 최신 연결 검사와 이전 0.6 결과를 먼저 기록하고, CLI 0.5 / 번들 0.6.2와 `0fe94a4`의 검증은 아래 이력에 보존한다. `PASS`는 명시한 소스·바이너리·fixture·환경·assertion 범위에만 적용하고, 다른 장비/원격 서버/AI 세션을 대신하지 않는다.
+
+## 운영 소스 main 통합 — 2026-11-02
+
+운영 소스 계열을 main에 병합하고 겹치는 검증 문서의 양쪽 이력을 보존했다. 현재 소스는 CLI **0.6.3 / 번들 0.7.1**이며 `crates/`, `migrations/`, `templates/`가 게시 후보 `8d7d042`와 바이트상 일치한다. [통합 검사 기록](releases/cli-0.6.3-main-integration.json)에 명령과 결과를 보존한다. 서버 단위143개(별도opt-in6개 ignored), 클라이언트110개, 양쪽 Clippy 경고 금지·fmt, TypeScript·격리 출력 경로의 플랫폼 production build가 통과했다. source 통합은 운영 서버·게시 배포물의 교체가 아니다.
+
+Windows 새 설치기의 사용자 PC 인수는 사용자 요청으로 추후 수행하며, 이번에는 구현과 실행 절차를 준비한다. Codex·Claude의 새 독립 세션 인수는 별도 앱과 기록으로 관리한다.
 
 ## 현재 플랫폼 서버 연결 — 2026-11-02
 
@@ -22,7 +28,39 @@
 
 검사기 `scripts/check-platform-connection.mjs`는 작업 중 추가한 파일이며, 결과에 실행한 파일의 SHA-256과 당시 저장소 commit을 남겼다. 제품 실행 파일은 게시된 `8d7d042`의 불변 바이너리다. 이 연결 검사 수를 Rust 단위 테스트 수나 앱 배포 인수 수로 합산하지 않는다. 별도 PC에서의 실행·독립 AI·OAuth callback 재사용·앱 재배포는 이번 실행에 포함하지 않았다. 이전 인수 기록의 같은 Linux 호스트/다른 PC 구분도 유지한다.
 
-## CLI 0.6 현재 검증 범위 — 2026-10-28
+## CLI 0.6.3 Windows 서버 반영 재확인 — 2026-10-30
+
+[결과 JSON](releases/cli-0.6.3-windows-postdeploy-validation.json)에 공개 설치 파일/ZIP/내장 CLI 해시와 출처, 새 CLI 실행·기존 인증, Todo release·레코드 보존, 실제 390px 메뉴·만료/오류 복구 화면 PASS를 보존한다. 앱 데이터·전역 CLI 설치는 변경하지 않았다. 새 CI 설치기의 사용자 PC 실제 설치와 실제 IdP 정상 로그인/소비 콜백 재사용은 별도 NOT_RUN이다.
+
+## CLI 0.6.3 Linux 검증·서버 반영 — 2026-10-29
+
+[보고서](CLI-0.6.3-LINUX-VALIDATION.md)와 [구조화 증거](releases/cli-0.6.3-linux-validation.json)를 보존한다. Linux 서버 단위 **143개**, 클라이언트 **110개**, 출력/원격 빌드/복구 **14/10/6그룹**, Docker runtime **55개**(auth **8그룹** 포함), server-build API **8그룹**, Chromium fixture **14개**, 실제 개발 로그인 **3개**, 실제 HTTPS 화면 **8그룹** PASS다. Windows 수치를 이월하지 않았다. auth 기대값 7→8 집계 수정 후 전체 runtime을 재실행했다.
+
+CLI CI **40826960538**, Windows 설치기 CI **40830813012** 성공. 5 CLI·2 helper·EXE provenance/해시와 실제 공개 다운로드를 검증했다. API/worker/UI를 0.6.3으로 반영했고 기존 Todo 0.1.2 release·image·DB UUID·원본 레코드는 그대로다. 390px Todo와 OAuth 실패 복구를 실제 서버에서 확인했다. 실제 IdP 정상 로그인·소비된 실제 callback 재방문, 사용자 Windows 11의 새 CI 설치기 실행은 **NOT_RUN**이다. 공개 GitHub Release/tag·다른 앱 변경·운영 승격은 하지 않았다.
+
+## CLI 0.6.3 Windows 개선 검증 — 2026-10-29
+
+[상세 결과](WINDOWS-VALIDATION.md)·[결과 JSON](releases/cli-0.6.3-experience-validation.json)·[Linux 후속 작업](CLI-EXPERIENCE-SERVER-HANDOFF.md)을 보존한다. Windows 단위 106개, fmt/Clippy/release, debug/release 출력 13그룹, 원격 빌드 fixture 10그룹, 복구 6그룹 PASS. 로컬 Chrome 화면/API fixture 14개, TypeScript/플랫폼 build PASS. 실제 0.6.3 Windows GUI 설치 파일의 PowerShell 5.1 네이티브 검사 24개와 잘못된 출처·해시 거부 4개 PASS. 패키지 검사 15개 PASS, Linux 게시 4개 SKIP.
+
+`8d7d042`의 [기반 CI 40826944825](https://github.com/hurxxxx/miy-v2/actions/runs/40826944825)는 Linux 서버, Linux/macOS/Windows 클라이언트와 OS 간 번들 비교 전체 PASS다. 5대상 배포 후보 CI와 실제 Linux 인증 DB/IdP 회귀·플랫폼 UI 재배포·다운로드 게시를 별도로 관리한다. 새 화면의 모바일 검사는 모의 API 경계이며 실제 서버의 모바일 Todo 재검증을 대신하지 않는다.
+
+## CLI 0.6.2 Windows 실제 서버 빌드 — 2026-10-29
+
+Windows 11 Pro x64의 비승격 PowerShell 7.6.5에서 Docker Desktop 없이 검증했다. [상세 결과](WINDOWS-VALIDATION.md#2026-10-29-cli-062-windows--서버-빌드--dev-배포-검증), [구조화 증거](releases/cli-0.6.2-windows-server-build-validation.json), [배포 화면](releases/evidence/cli-0.6.2-windows-server-build/deployed-final.jpg)을 함께 보존한다. CLI를 프로젝트에 소스 빌드로 갱신했으며 공개 GUI 설치기는 새로 게시하지 않았다.
+
+| 검증 대상 | 실제 인수 상태 |
+| --- | --- |
+| Windows 소스·실행 파일 | 단위 **106개**, fmt·strict Clippy·release PASS. 새 closure 두 곳의 Windows 오류 크기 경고를 수정 후 재실행 |
+| 자동 계약·복구 | 출력 **11그룹**, runtime 복구 **6그룹**, 원격 빌드 fixture **10그룹**, 지침/MCP/업그레이드 **5그룹** PASS. fixture UTF-8/LF·Windows 도구 trap 보완 |
+| 네이티브 개발 | doctor **17항목**, Rust 서버·React 정적 화면·실제 서버 개발 DB CRUD·브라우저 PASS |
+| Windows → Linux 빌드 | `app.builds.v1` 실제 서버의 작업 `1ba1607e-9915-4b2b-b946-d1fa8018e961` 성공. 반복 요청/resume 동일 job, 순서 로그 114개, cursor 이후 빈 로그 PASS. 제한 PATH에서 로컬 빌드 도구/SSH/WSL 호출 0회 |
+| dev 배포·브라우저 | Todo 0.1.2, release `871549de-041d-4fa7-8c17-b8e7b3c54e47`, 서버 빌드와 동일 이미지·running/healthy. 브라우저 완료 취소/새로고침·API CRUD·release guard PASS |
+| DB 보존·종료 | 같은 DB UUID·스키마, 기존/새 레코드 유지. 서버 변경을 로컬 재시작에서도 확인. 임시 데이터만 삭제하고 로컬 프로세스·포트·서버 개발 세션 정리 PASS |
+| 남은 범위 | admin 계정으로 검사. 개발자/일반 사용자·PS5.1 새 전체 흐름·실콘솔 Ctrl+C/워커 crash/실제 통신 장애·모바일/이탈 방지·운영 승격은 NOT_RUN |
+
+서버가 Linux에서 수행한 이전 검증은 [별도 결과](releases/cli-0.6.2-server-build-validation.json)에 남긴다. 이번 Windows 결과로 해당 서버의 전체 회귀를 다시 수행했다고 기록하지 않는다. 해당 앱 release에는 실제 범위를 명시한 구조화 인수를 저장했다.
+
+## CLI 0.6.0 검증 이력 — 2026-10-28
 
 아래 상태는 이번 후보에서 실제 수행한 범위다. 0.5의 PASS를 이월하지 않으며, 작업 트리 검사·깨끗한 후보 검사·공개 서버의 전체 흐름을 따로 기록한다.
 

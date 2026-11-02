@@ -47,13 +47,23 @@ pub enum AppCommand {
         /// Use the server development DB, or explicitly select an isolated local DB.
         #[arg(long, value_enum, default_value = "server")]
         database: crate::development_client::DatabaseMode,
+        /// Run Rust directly, or explicitly use a Linux Docker engine.
+        #[arg(long, value_enum, default_value = "native")]
+        runtime: crate::preview::Runtime,
     },
     /// Stop this project's owned development processes; preserve its database volume.
     DevStop,
-    /// Build an immutable Linux image for the selected server platform.
+    /// Build a Linux image locally with Docker; use --remote to build on the server without Docker.
     Build {
         #[arg(long,value_parser=["linux/amd64","linux/arm64"])]
         platform: Option<String>,
+        /// Build committed source on the selected server without local Docker or language tools.
+        #[arg(long)]
+        remote: bool,
+        #[arg(long, requires = "remote")]
+        no_wait: bool,
+        #[arg(long, default_value = "1800", value_parser=clap::value_parser!(u64).range(1..=86400))]
+        timeout: u64,
     },
     /// Request administrator approval for this project's application.
     Register,
@@ -141,7 +151,7 @@ pub(crate) fn run(program: &str, args: &[&str]) -> Result<()> {
     );
     Ok(())
 }
-fn output(program: &str, args: &[&str]) -> Result<String> {
+pub(crate) fn output(program: &str, args: &[&str]) -> Result<String> {
     let out = crate::owned_process::output(&mut crate::platform::command(program, args)?)?;
     anyhow::ensure!(
         out.status.success(),
@@ -283,7 +293,8 @@ pub async fn execute(command: AppCommand) -> Result<Outcome> {
             port,
             no_open,
             database,
-        } => crate::preview::run(port, no_open, database).await?,
+            runtime,
+        } => crate::preview::run(port, no_open, database, runtime).await?,
         AppCommand::DevStop => crate::preview::stop().await?,
         AppCommand::Upgrade => return Ok(Outcome::Data(crate::upgrade::run().await?)),
         AppCommand::Setup => return Ok(Outcome::Data(crate::agent_tools::setup(Path::new("."))?)),
@@ -482,7 +493,15 @@ pub async fn execute(command: AppCommand) -> Result<Outcome> {
                 json!({"valid":true,"appId":m.id,"bundleVersion":bundle::VERSION,"checks":["manifest","bundle-integrity","cli-guidance-integrity","component-integrity","migration-contract","rust-format","rust-tests","frozen-dependencies","typescript","ui-build","federation-assets"],"browserIntegration":"requires platform acceptance test"}),
             ));
         }
-        AppCommand::Build { platform } => {
+        AppCommand::Build {
+            platform,
+            remote,
+            no_wait,
+            timeout,
+        } => {
+            if remote {
+                return crate::cli_build::execute(platform, no_wait, timeout).await;
+            }
             let platform = crate::runtime_platform::build_target(platform.as_deref()).await?;
             let m = manifest()?;
             let commit = output("git", &["rev-parse", "HEAD"])?;

@@ -1,0 +1,215 @@
+{
+  "config": {
+    "argv": [
+      "/usr/bin/node",
+      "/projects/miy-v2-cli-experience-20261029/node_modules/@playwright/test/cli.js",
+      "test",
+      "--config",
+      ".local/cli063-live.config.ts"
+    ],
+    "configFile": "/projects/miy-v2-cli-experience-20261029/.local/cli063-live.config.ts",
+    "rootDir": "/projects/miy-v2-cli-experience-20261029/tests",
+    "failOnFlakyTests": false,
+    "forbidOnly": false,
+    "fullyParallel": false,
+    "globalSetup": null,
+    "globalTeardown": null,
+    "globalTimeout": 0,
+    "grep": {},
+    "grepInvert": null,
+    "maxFailures": 0,
+    "metadata": {
+      "actualWorkers": 1
+    },
+    "preserveOutput": "always",
+    "projects": [
+      {
+        "outputDir": "/projects/miy-cli-experience-run-20261029/evidence/live-development-login",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 1
+        },
+        "id": "",
+        "name": "",
+        "testDir": "/projects/miy-v2-cli-experience-20261029/tests",
+        "testIgnore": [],
+        "testMatch": [
+          "development-login.spec.ts"
+        ],
+        "timeout": 120000
+      }
+    ],
+    "filteredProjects": [
+      {
+        "grep": {},
+        "grepInvert": null,
+        "outputDir": "/projects/miy-cli-experience-run-20261029/evidence/live-development-login",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 1
+        },
+        "name": "",
+        "testDir": "/projects/miy-v2-cli-experience-20261029/tests",
+        "snapshotDir": "/projects/miy-v2-cli-experience-20261029/tests",
+        "testIgnore": [],
+        "testMatch": "development-login.spec.ts",
+        "timeout": 120000,
+        "use": {
+          "baseURL": "https://v2.dwdcc.kr",
+          "trace": "off",
+          "screenshot": "only-on-failure"
+        },
+        "dependencies": [],
+        "ignoreSnapshots": false,
+        "__projectId": ""
+      }
+    ],
+    "quiet": false,
+    "reporter": [
+      [
+        "list",
+        null
+      ],
+      [
+        "json",
+        {
+          "outputFile": "/projects/miy-cli-experience-run-20261029/evidence/live-development-login-results.json"
+        }
+      ]
+    ],
+    "reportSlowTests": {
+      "max": 5,
+      "threshold": 300000
+    },
+    "shard": null,
+    "tags": [],
+    "updateSnapshots": "default",
+    "updateSourceMethod": "patch",
+    "version": "1.64.1",
+    "workers": 1,
+    "webServer": null
+  },
+  "suites": [
+    {
+      "title": "development-login.spec.ts",
+      "file": "development-login.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "all development account buttons sign in and out on the current origin without an identity redirect",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 120000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 877,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-29T06:53:45.259Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "61a700f2c0352e287afc-19b20295d565522be871",
+          "file": "development-login.spec.ts",
+          "line": 34,
+          "column": 5
+        },
+        {
+          "title": "development login rejects foreign origins and unknown accounts",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 120000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 33,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-29T06:53:46.189Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "61a700f2c0352e287afc-9376ecc657b0f6597309",
+          "file": "development-login.spec.ts",
+          "line": 85,
+          "column": 5
+        },
+        {
+          "title": "development account selection preserves ordinary CLI browser approval",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 120000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 352,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-29T06:53:46.229Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "61a700f2c0352e287afc-99d57d1af8211b950d47",
+          "file": "development-login.spec.ts",
+          "line": 113,
+          "column": 5
+        }
+      ]
+    }
+  ],
+  "errors": [],
+  "stats": {
+    "startTime": "2026-10-29T06:53:44.938Z",
+    "duration": 1684.787,
+    "expected": 3,
+    "skipped": 0,
+    "unexpected": 0,
+    "flaky": 0
+  }
+}

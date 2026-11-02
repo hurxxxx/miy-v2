@@ -1,0 +1,15 @@
+{
+  "name": "native-linux-version",
+  "command": [
+    "env",
+    "MIY_CONFIG_DIR=/projects/miy-cli-experience-run-20261029/evidence/artifacts/native-cli-empty-config",
+    "/projects/miy-cli-experience-run-20261029/artifacts/linux-native-execution/miy",
+    "--version"
+  ],
+  "cwd": "/projects/miy-v2-cli-experience-20261029",
+  "startedAt": "2026-10-29T06:46:24.874710+00:00",
+  "finishedAt": "2026-10-29T06:46:24.879395+00:00",
+  "exitCode": 0,
+  "stdout": "/projects/miy-cli-experience-run-20261029/evidence/artifacts/native-linux-version.stdout.log",
+  "stderr": "/projects/miy-cli-experience-run-20261029/evidence/artifacts/native-linux-version.stderr.log"
+}

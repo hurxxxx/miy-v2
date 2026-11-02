@@ -1,0 +1,835 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-10-29T06:55:49.994009+00:00",
+  "status": "DEPLOYED_AND_AUTOMATED_CHECKS_PASSED_WITH_NOT_RUN_ITEMS",
+  "origin": "https://v2.dwdcc.kr",
+  "cliVersion": "0.6.3",
+  "sdkBundleVersion": "0.7.1",
+  "source": {
+    "sourceCommit": "84d58cd417c990e37e29d4b8183b260f0f10d0a5",
+    "candidateCommit": "8d7d04271f9467d8bbdd16308e73715b33e4dc0c",
+    "candidateRuntimeDiff": [],
+    "deployedCommit": "1775eacac8ce04cbefc234b4e58de513016acfef",
+    "deployedMigrationDiff": [],
+    "migrationSha256": {
+      "migrations/core/0001_initial.sql": "f21bd81172acb2b1f95396649706984343d5f49db7dd94cbe69d2dca9413e279",
+      "migrations/core/0002_development_sessions.sql": "04654306d9e017eee7ab4320335f9326c2fd91150c9db1fd6d827d8d76015b13",
+      "migrations/core/0003_app_runtime.sql": "9d59f8fd3eb6b9a88edb07cf2123178cd018c04ca7b9e9322916a389959f6e9c",
+      "migrations/core/0004_app_registration.sql": "75e7af144c319cbb31cb34cf9659103dde1c3770cbd4e36f0427744847494e93",
+      "migrations/core/0005_delivery_boundaries.sql": "c38d4369913a07c092610d99d325472f3e294026f98c2f05dde1f077485a4f5f",
+      "migrations/core/0006_component_registry.sql": "178254f12f4d8efa14a851bae6e6db3ebb5cd3611576107245365c676a8e8ac5",
+      "migrations/core/0007_acceptance_checks.sql": "2fba72de30858c02390f9387a7c58fdc1fb2e42949d6dbe5be734356a0f08217",
+      "migrations/core/0008_runtime_health.sql": "fc026291c2939a9763ee59292ece3122b7df8a6642b15403aa77ae23fa40792a",
+      "migrations/core/0009_runtime_contract.sql": "253fbfdc9c63c7e3d41aa5969d929310e62c2f495d490d6613cf02c96eb5bd3a",
+      "migrations/core/0010_cli_sessions.sql": "8e1600af7c00758a928a8fb8eae94a9d9079e94ed4146a1a4005121a77e64a18",
+      "migrations/core/0011_cli_operations.sql": "9d8b674f497fa57fffa392e0cf8beaa28801a3f52dc6b2833021d0aef421939e",
+      "migrations/core/0012_runtime_logs.sql": "d05ae5f690869561db84e3757152aa744157972f871e1faa0bc8bb0b62ba3292",
+      "migrations/core/0013_shared_development_database.sql": "df297a35942782f8d34ac3d48099fd999b8f2e567aacea7dec03a0f175dd8069",
+      "migrations/core/0014_portable_image_identity.sql": "9161851ef9b4a2d4b366a27da6498ccaeb9f551c0a9f53db4f349d3e40f7af56",
+      "migrations/core/0015_server_builds.sql": "1bdd273cbaf4568f1e3c38faacd85986b739aa588b024007ef3ef66b3ab7395a"
+    },
+    "branch": "codex/cli-experience-improvements",
+    "validationWorktree": "/projects/miy-v2-cli-experience-20261029",
+    "originalWorktreePreserved": "/projects/miy-v2",
+    "checkoutNote": "84d58cd adds handoff/evidence documents and Linux Chromium selection after candidate 8d7d042. Runtime source is identical. Validation-only changes fix the auth group count and close owned browser test sessions."
+  },
+  "ci": {
+    "version": "0.6.3",
+    "cliCommit": "8d7d04271f9467d8bbdd16308e73715b33e4dc0c",
+    "installerCommit": "8d7d04271f9467d8bbdd16308e73715b33e4dc0c",
+    "cliRunId": 40826960538,
+    "cliArtifactId": 12876804133,
+    "installerRunId": 40830813012,
+    "installerArtifactId": 12878084842,
+    "cliTargets": 5,
+    "linuxHelpers": 2,
+    "windowsInstallerNativeCases": 24,
+    "powershellVersion": "5.1.20348.5756",
+    "windowsArchiveSha256": "1403083b604b77036785d07c42f13c6aad754ea7ae6ff7de94bb15e0a1eb72e3",
+    "windowsBinarySha256": "055bc8655c706b586f1d8517cb719ac8cd1335107e2815aef10747fa3b7565e3",
+    "installerSha256": "662f8a59c098ac4b2cbde4041799a99f0c6e21f193bbe8b31d2098f6095233af",
+    "cliStaging": "/projects/miy-cli-experience-run-20261029/staging/cli-downloads",
+    "installerStaging": "/projects/miy-cli-experience-run-20261029/staging/cli-installers",
+    "publicReleaseCreated": false,
+    "completedAt": "2026-10-29T06:45:52.415625+00:00",
+    "nativeLinuxX86_64": {
+      "file": "/projects/miy-cli-experience-run-20261029/artifacts/linux-native-execution/miy",
+      "target": "x86_64-unknown-linux-gnu",
+      "version": "0.6.3",
+      "sourceCommit": "8d7d04271f9467d8bbdd16308e73715b33e4dc0c",
+      "binarySha256": "86d0d6294eb751ab88e7d7ed1d6925c0a477b4e71686e1cb087f17f5026bbf54",
+      "archiveSha256": "4dbd45689ccc421feb6707d037e59bcabb4d225afcae86c11a6949e05f0d7ab6",
+      "configDirectory": "/projects/miy-cli-experience-run-20261029/evidence/artifacts/native-cli-empty-config",
+      "configInitiallyEmpty": true,
+      "versionOutput": "miy 0.6.3",
+      "exitCode": 0,
+      "configStillEmpty": true
+    },
+    "installerPackagingUnitTests": 19,
+    "installerCiConclusion": "success",
+    "localCliVerifyExitCode": 0,
+    "localInstallerVerifyExitCode": 0,
+    "cliStageRepeatedExitCodes": [
+      0,
+      0
+    ],
+    "installerStageRepeatedExitCodes": [
+      0,
+      0
+    ],
+    "verificationStatus": "PASS"
+  },
+  "releaseIndex": "cli-0.6.3-candidate.json",
+  "installerIndex": "windows-installer-0.6.3-candidate.json",
+  "server": {
+    "path": "/projects/miy-cli-experience-run-20261029/artifacts/miy-0.6.3-linux-server",
+    "sha256": "4573260257147c2563ba5ffae177b9ac6c6b0a331d2a0b1fef1cf6e60d10064e",
+    "sizeBytes": 28550784,
+    "sourceCommit": "84d58cd417c990e37e29d4b8183b260f0f10d0a5",
+    "defaultFeatures": true,
+    "serverFeature": true,
+    "version": "miy 0.6.3",
+    "serveHelpExitCode": 0,
+    "liveBinary": "/projects/miy-v2/.local/bin/miy-server",
+    "health": {
+      "status": "ok"
+    },
+    "services": [
+      "miy-v2-serve",
+      "miy-v2-worker"
+    ],
+    "deployedAt": "2026-10-29T06:53:04Z",
+    "rollbackUsed": false,
+    "loadedProcessEvidence": "evidence/cli-0.6.3-linux/loaded-services.json"
+  },
+  "ui": {
+    "sourceCommit": "8d7d04271f9467d8bbdd16308e73715b33e4dc0c",
+    "indexSha256": "80509d76a5c38c23c5ae57de3cb5729c4f1388a9bbb0de84f5ab9b6cb9bab73d",
+    "archiveSha256": "10c95a12bbc9160b51fce9f198d0a2ea3a21568fabadcd5dfa13aabf3d7f5aa1"
+  },
+  "checks": {
+    "serverUnits": {
+      "passed": 143,
+      "failed": 0,
+      "ignored": 6
+    },
+    "clientUnits": {
+      "passed": 110,
+      "failed": 0,
+      "ignored": 0
+    },
+    "cliGroups": {
+      "output": 14,
+      "remoteBuild": 10,
+      "recovery": 6
+    },
+    "runtime": {
+      "observations": 55,
+      "suites": {
+        "runtime": 35,
+        "operations": 6,
+        "cli": 6,
+        "auth": 8
+      },
+      "exitCode": 0,
+      "fixture": "/projects/miy-cli-experience-run-20261029/private/tmp/miy-runtime-regression-bxpoz594"
+    },
+    "serverBuildAPI": {
+      "groups": 8,
+      "passed": true,
+      "dockerBuildExecuted": false
+    },
+    "chromiumFixtures": {
+      "passed": 14,
+      "failed": 0,
+      "skipped": 0
+    },
+    "actualDevelopmentLogin": {
+      "passed": 3,
+      "failed": 0
+    },
+    "actualLiveBrowser": [
+      {
+        "name": "same-admin-login",
+        "status": "PASS"
+      },
+      {
+        "name": "preserved-release-database-and-all-todos",
+        "status": "PASS"
+      },
+      {
+        "name": "desktop-todo-screen",
+        "status": "PASS"
+      },
+      {
+        "name": "390px-todo-and-collapsible-navigation",
+        "status": "PASS"
+      },
+      {
+        "name": "naturally-expired-login-request-and-no-secret-status",
+        "status": "PASS"
+      },
+      {
+        "name": "live-device-status-browser-only-code-repair-and-consumed-state",
+        "status": "PASS"
+      },
+      {
+        "name": "actual-server-invalid-oauth-callback-clears-cookie-and-fixed-recovery",
+        "status": "PASS"
+      },
+      {
+        "name": "installation-guide-and-installer-download-actual-sha256",
+        "status": "PASS"
+      }
+    ],
+    "publicDownloads": {
+      "verified": true,
+      "serverUrl": "https://v2.dwdcc.kr",
+      "commit": "8d7d04271f9467d8bbdd16308e73715b33e4dc0c",
+      "version": "0.6.3",
+      "downloads": 7,
+      "bytes": 249147486
+    },
+    "installerDownload": {
+      "url": "https://v2.dwdcc.kr/cli/installers/8d7d04271f9467d8bbdd16308e73715b33e4dc0c/MiySetup-0.6.3-windows-x64.exe",
+      "sha256": "662f8a59c098ac4b2cbde4041799a99f0c6e21f193bbe8b31d2098f6095233af",
+      "bytes": 6105600
+    }
+  },
+  "preservedTodo": {
+    "url": "https://v2.dwdcc.kr/environments/dev/apps/todo-win-20261029",
+    "installation": {
+      "id": "0ef7e3f6-d9eb-4a8d-ae05-f06c603f80b4",
+      "appId": "todo-win-20261029",
+      "environment": "dev",
+      "releaseId": "871549de-041d-4fa7-8c17-b8e7b3c54e47",
+      "imageId": "sha256:386e71c86012e6a55c579fc2482bf255fb3cbab8f83f99c0d3bb50799164a75f",
+      "version": "0.1.2",
+      "sourceCommit": "f7e898161688f114edbc81941cb7592cda358b1e",
+      "generation": 18,
+      "desiredState": "running",
+      "runtimeStatus": "running",
+      "dbStatus": "ready"
+    },
+    "database": {
+      "databaseId": "129f8abd-62c2-40d1-9175-d73d85196940",
+      "status": "ready",
+      "schemaGeneration": 1,
+      "schemaFingerprint": "0b4d2d5b69c27b12e9288067b1caf4f4eb8850b797592e4e27321ee3fa8a418a"
+    },
+    "records": [
+      {
+        "completed": false,
+        "createdAt": "2026-10-29T02:23:27.176135Z",
+        "id": "8dcfffe2-3854-4ce5-b878-2da9f915c151",
+        "title": "네이티브 실행 후에도 남는 할 일 20261029",
+        "updatedAt": "2026-10-29T02:23:58.463116Z"
+      }
+    ],
+    "allBeforeAfterEqual": true,
+    "appDeploymentPerformed": false,
+    "newBuildJobId": null,
+    "newDeploymentJobId": null
+  },
+  "auth": {
+    "isolated": "evidence/cli-0.6.3-linux/rust-auth-coverage.json",
+    "liveDeviceStatus": {
+      "anonymous": 401,
+      "bearer": 403,
+      "otherApprovedUser": 404,
+      "cacheControl": "no-store",
+      "secretsAbsent": true,
+      "statuses": [
+        "pending",
+        "approved",
+        "consumed"
+      ]
+    },
+    "naturalExpiry": {
+      "id": "c92ef370-7f28-4de6-b430-af94e6129166",
+      "status": "expired",
+      "expiresAt": "2026-10-29T06:45:51.768641Z",
+      "expiresIn": 0
+    },
+    "idpLoginFormReached": true,
+    "actualIdpLogin": "NOT_RUN: user confirmation pending; human entry requested at https://v2.dwdcc.kr/auth/login",
+    "actualConsumedIdpCallback": "NOT_RUN: no genuine successful IdP callback replayed; missing/invalid/unknown-state cases are separate"
+  },
+  "historicalFailures": [
+    {
+      "attempt": 1,
+      "status": "INTERRUPTED",
+      "validationSessionExitCode": 143,
+      "observationsPassedBeforeInterruption": 22,
+      "cause": "Unconfirmed external SIGTERM; no assertion failure recorded; owned cleanup passed."
+    },
+    {
+      "attempt": 2,
+      "wrapperExitCode": 1,
+      "rustTestExitCode": 0,
+      "observationsPassed": 55,
+      "cause": "Stale expected auth count 7 instead of 8; corrected; final rerun passed."
+    }
+  ],
+  "fixes": [
+    "scripts/runtime-regression/run.py expected auth groups 7 -> 8",
+    "tests/development-login.spec.ts logs out each owned development session in finally; CLI refresh token revoke retained"
+  ],
+  "cleanup": {
+    "isolatedDocker": [
+      {
+        "evidence": "runtime-interrupted-cleanup.json",
+        "errors": [],
+        "removedResources": 13,
+        "baselineContainers": 23,
+        "allBaselineUnchanged": true
+      },
+      {
+        "evidence": "runtime-attempt-2-cleanup.json",
+        "errors": [],
+        "removedResources": 13,
+        "baselineContainers": 23,
+        "allBaselineUnchanged": true
+      },
+      {
+        "evidence": "runtime-final-cleanup.json",
+        "errors": [],
+        "removedResources": 13,
+        "baselineContainers": 23,
+        "allBaselineUnchanged": true
+      }
+    ],
+    "serverBuildFixture": {
+      "ownedContainer": "miy-build-api-test-b24d6e8d9ba5",
+      "ownedContainerRemoved": true,
+      "liveDatabaseUsed": false,
+      "privateFixtureRetained": "/projects/miy-v2-cli-experience-20261029/.local/server-build-regression-6048b3e77c6a"
+    },
+    "isolatedConfigEmpty": true,
+    "liveTestCLIRevoked": true,
+    "liveTestBrowserSessionsLoggedOut": true,
+    "developmentLoginTestsCleanup": "own sessions logged out and CLI refresh credential revoked",
+    "baselineSessionResidual": "Initial read-only baseline browser context was closed before logout was added; its one development login session expires normally after 8 hours. No cookie/token retained or exported; no broad authentication-table deletion attempted.",
+    "configurationAndExistingContainers": {
+      "configurationUnchanged": {
+        ".local/runtime.env": true,
+        ".local/server.json": true,
+        "/etc/systemd/system/miy-v2-serve.service": true,
+        "/etc/systemd/system/miy-v2-worker.service": true,
+        "nginx": true
+      },
+      "containersUnchanged": [
+        {
+          "Id": "892c4cd41ca1b22a74cd2967e339ae1bf7ebf1350f5d98db3e4bbb06702f28c5",
+          "Name": "/miy-app-0ef7e3f6d9eb4a8dae05f06c603f80b4",
+          "Image": "sha256:386e71c86012e6a55c579fc2482bf255fb3cbab8f83f99c0d3bb50799164a75f",
+          "StartedAt": "2026-10-29T04:27:49.709637797Z",
+          "Status": "running"
+        },
+        {
+          "Id": "b05396e09227cfda0edce10fc8099c5b1b561b2bf9ddb28f2a002e686ea0f8b3",
+          "Name": "/miy-app-3424326c54484eee8841b44bec358ca2",
+          "Image": "sha256:d69be14b19af7ad671c47537ac212af8ab9cf44430e890ce6c19994a8b8fe8db",
+          "StartedAt": "2026-10-28T00:12:53.710671004Z",
+          "Status": "exited"
+        },
+        {
+          "Id": "16fae76f589a3015153abae2882c4c9022ee617594feb0ddef44b133d2dc9694",
+          "Name": "/miy-app-b0fae2e73da8403e929fc0cbcb25c460",
+          "Image": "sha256:d69be14b19af7ad671c47537ac212af8ab9cf44430e890ce6c19994a8b8fe8db",
+          "StartedAt": "2026-10-28T00:12:51.595303409Z",
+          "Status": "exited"
+        },
+        {
+          "Id": "a5777e4171c4755e85a4c13380082cfdc0821dce3733bebf5f8d01011bab0d12",
+          "Name": "/miy-app-83dc604fb11b4263bcba1a97a50da235",
+          "Image": "sha256:cac0426bc97a2df08c9749edc0a1c9ea2eab8ddf150968918f96a477e5b4ff44",
+          "StartedAt": "2026-10-28T00:10:01.316727015Z",
+          "Status": "exited"
+        },
+        {
+          "Id": "565b14807d75832cd30dc74a3b0387271f887d84e18ffba1f2d643c26fa60d3e",
+          "Name": "/miy-app-07b3a6e7ac9345e69c7e48ddc85b8ed5",
+          "Image": "sha256:cac0426bc97a2df08c9749edc0a1c9ea2eab8ddf150968918f96a477e5b4ff44",
+          "StartedAt": "2026-10-28T00:09:59.224331907Z",
+          "Status": "exited"
+        },
+        {
+          "Id": "c4632e9ca29df13e13f6e0fa767e603d5745734e3851e02e07cbb70e7b9ba4c4",
+          "Name": "/miy-v2-validation-keycloak-1",
+          "Image": "sha256:79c623a22abacf3fe6c00a5fb30f5b7843d717b234033b80995891c06116d244",
+          "StartedAt": "2026-10-27T22:55:03.611322718Z",
+          "Status": "running"
+        },
+        {
+          "Id": "19cfc6f830c9ebb952d3feb1c8fbbd81848055939a62eabccf071fa2d5985372",
+          "Name": "/miy-v2-validation-postgres-1",
+          "Image": "sha256:7e32e9833a6fb1c92c32552794cb6ed569d51b445a54907d35fc112ef39684db",
+          "StartedAt": "2026-10-27T22:54:51.051403522Z",
+          "Status": "running"
+        }
+      ],
+      "uiIndexSha256": "80509d76a5c38c23c5ae57de3cb5729c4f1388a9bbb0de84f5ab9b6cb9bab73d",
+      "serverVersion": "miy 0.6.3",
+      "originalWorkspaceClean": true
+    },
+    "privateRollbackRetained": "/projects/miy-cli-experience-run-20261029/private/rollback",
+    "privateSyntheticFixtureEvidenceRetained": true,
+    "oldDownloadDirectoriesAndUIAssetsPreserved": true
+  },
+  "notRun": [
+    "Successful human IdP authentication and replay of its actual consumed OAuth callback",
+    "Windows 11 execution of the newly published CI installer on the user PC; Windows Server CI native tests are recorded separately",
+    "Three unrelated opt-in harnesses: shared development database, full database integration, database network regression",
+    "A new native Todo image build/deployment, app version bump, production promotion and other app changes were outside this validation run",
+    "Public GitHub Release/tag intentionally not created"
+  ],
+  "commands": [
+    {
+      "name": "fmt",
+      "command": [
+        "/home/dwdcc/.cargo/bin/cargo",
+        "fmt",
+        "--all",
+        "--",
+        "--check"
+      ],
+      "cwd": "/projects/miy-v2-cli-experience-20261029",
+      "startedAt": "2026-10-29T06:40:55.379144+00:00",
+      "log": "/projects/miy-cli-experience-run-20261029/evidence/rust/fmt.log",
+      "exitCode": 0,
+      "elapsedSeconds": 0.25,
+      "rustTestResults": [],
+      "passLines": 0
+    },
+    {
+      "name": "server-check",
+      "command": [
+        "/home/dwdcc/.cargo/bin/cargo",
+        "check",
+        "--locked",
+        "--workspace"
+      ],
+      "cwd": "/projects/miy-v2-cli-experience-20261029",
+      "startedAt": "2026-10-29T06:40:55.628628+00:00",
+      "log": "/projects/miy-cli-experience-run-20261029/evidence/rust/server-check.log",
+      "exitCode": 0,
+      "elapsedSeconds": 5.18,
+      "rustTestResults": [],
+      "passLines": 0
+    },
+    {
+      "name": "server-clippy",
+      "command": [
+        "/home/dwdcc/.cargo/bin/cargo",
+        "clippy",
+        "--locked",
+        "--workspace",
+        "--all-targets",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "cwd": "/projects/miy-v2-cli-experience-20261029",
+      "startedAt": "2026-10-29T06:41:00.813522+00:00",
+      "log": "/projects/miy-cli-experience-run-20261029/evidence/rust/server-clippy.log",
+      "exitCode": 0,
+      "elapsedSeconds": 7.67,
+      "rustTestResults": [],
+      "passLines": 0
+    },
+    {
+      "name": "server-tests",
+      "command": [
+        "/home/dwdcc/.cargo/bin/cargo",
+        "test",
+        "--locked",
+        "--workspace"
+      ],
+      "cwd": "/projects/miy-v2-cli-experience-20261029",
+      "startedAt": "2026-10-29T06:41:08.482384+00:00",
+      "log": "/projects/miy-cli-experience-run-20261029/evidence/rust/server-tests.log",
+      "exitCode": 0,
+      "elapsedSeconds": 20.03,
+      "rustTestResults": [
+        "ok. 143 passed; 0 failed; 6 ignored; 0 measured; 0 filtered out; finished in 2.01s"
+      ],
+      "passLines": 0
+    },
+    {
+      "name": "server-release-build",
+      "command": [
+        "/home/dwdcc/.cargo/bin/cargo",
+        "build",
+        "--locked",
+        "--release",
+        "--bin",
+        "miy"
+      ],
+      "cwd": "/projects/miy-v2-cli-experience-20261029",
+      "startedAt": "2026-10-29T06:41:28.507908+00:00",
+      "log": "/projects/miy-cli-experience-run-20261029/evidence/rust/server-release-build.log",
+      "exitCode": 0,
+      "elapsedSeconds": 34.96,
+      "rustTestResults": [],
+      "passLines": 0
+    },
+    {
+      "name": "client-check",
+      "command": [
+        "/home/dwdcc/.cargo/bin/cargo",
+        "check",
+        "--locked",
+        "--workspace",
+        "--no-default-features"
+      ],
+      "cwd": "/projects/miy-v2-cli-experience-20261029",
+      "startedAt": "2026-10-29T06:42:03.501825+00:00",
+      "log": "/projects/miy-cli-experience-run-20261029/evidence/rust/client-check.log",
+      "exitCode": 0,
+      "elapsedSeconds": 2.63,
+      "rustTestResults": [],
+      "passLines": 0
+    },
+    {
+      "name": "client-clippy",
+      "command": [
+        "/home/dwdcc/.cargo/bin/cargo",
+        "clippy",
+        "--locked",
+        "--workspace",
+        "--all-targets",
+        "--no-default-features",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "cwd": "/projects/miy-v2-cli-experience-20261029",
+      "startedAt": "2026-10-29T06:42:06.131538+00:00",
+      "log": "/projects/miy-cli-experience-run-20261029/evidence/rust/client-clippy.log",
+      "exitCode": 0,
+      "elapsedSeconds": 3.29,
+      "rustTestResults": [],
+      "passLines": 0
+    },
+    {
+      "name": "client-tests",
+      "command": [
+        "/home/dwdcc/.cargo/bin/cargo",
+        "test",
+        "--locked",
+        "--workspace",
+        "--no-default-features"
+      ],
+      "cwd": "/projects/miy-v2-cli-experience-20261029",
+      "startedAt": "2026-10-29T06:42:09.418851+00:00",
+      "log": "/projects/miy-cli-experience-run-20261029/evidence/rust/client-tests.log",
+      "exitCode": 0,
+      "elapsedSeconds": 9.32,
+      "rustTestResults": [
+        "ok. 110 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.01s"
+      ],
+      "passLines": 0
+    },
+    {
+      "name": "client-build",
+      "command": [
+        "/home/dwdcc/.cargo/bin/cargo",
+        "build",
+        "--locked",
+        "--bin",
+        "miy",
+        "--no-default-features"
+      ],
+      "cwd": "/projects/miy-v2-cli-experience-20261029",
+      "startedAt": "2026-10-29T06:42:18.735676+00:00",
+      "log": "/projects/miy-cli-experience-run-20261029/evidence/rust/client-build.log",
+      "exitCode": 0,
+      "elapsedSeconds": 6.8,
+      "rustTestResults": [],
+      "passLines": 0
+    },
+    {
+      "name": "cli-output",
+      "command": [
+        "python3",
+        "scripts/check-cli-output.py",
+        "--cli",
+        "/projects/miy-cli-experience-run-20261029/private/bin/miy-client-0.6.3"
+      ],
+      "cwd": "/projects/miy-v2-cli-experience-20261029",
+      "startedAt": "2026-10-29T06:42:25.740249+00:00",
+      "log": "/projects/miy-cli-experience-run-20261029/evidence/rust/cli-output.log",
+      "exitCode": 0,
+      "elapsedSeconds": 19.87,
+      "rustTestResults": [],
+      "passLines": 14
+    },
+    {
+      "name": "cli-build",
+      "command": [
+        "python3",
+        "scripts/check-cli-build.py",
+        "--cli",
+        "/projects/miy-cli-experience-run-20261029/private/bin/miy-client-0.6.3"
+      ],
+      "cwd": "/projects/miy-v2-cli-experience-20261029",
+      "startedAt": "2026-10-29T06:42:45.611307+00:00",
+      "log": "/projects/miy-cli-experience-run-20261029/evidence/rust/cli-build.log",
+      "exitCode": 0,
+      "elapsedSeconds": 10.12,
+      "rustTestResults": [],
+      "passLines": 11
+    },
+    {
+      "name": "cli-recovery",
+      "command": [
+        "python3",
+        "scripts/check-cli-recovery.py",
+        "--cli",
+        "/projects/miy-cli-experience-run-20261029/private/bin/miy-client-0.6.3"
+      ],
+      "cwd": "/projects/miy-v2-cli-experience-20261029",
+      "startedAt": "2026-10-29T06:42:55.730474+00:00",
+      "log": "/projects/miy-cli-experience-run-20261029/evidence/rust/cli-recovery.log",
+      "exitCode": 0,
+      "elapsedSeconds": 7.73,
+      "rustTestResults": [],
+      "passLines": 6
+    },
+    {
+      "name": "runtime-regression-interrupted",
+      "command": [
+        "python3",
+        "scripts/runtime-regression/run.py"
+      ],
+      "cwd": "/projects/miy-v2-cli-experience-20261029",
+      "exitCode": null,
+      "termination": "Validation tool session ended with SIGTERM; no child exit code or assertion failure was recorded.",
+      "passObservationsBeforeInterruption": 22,
+      "log": "/projects/miy-cli-experience-run-20261029/evidence/rust/runtime-regression.log",
+      "ownedFixture": "/projects/miy-cli-experience-run-20261029/private/tmp/miy-runtime-regression-km7pdj8n",
+      "validationSessionExitCode": 143,
+      "status": "INTERRUPTED"
+    },
+    {
+      "name": "runtime-interrupted-cleanup",
+      "command": [
+        "python3",
+        "scripts/runtime-regression/cleanup.py"
+      ],
+      "cwd": "/projects/miy-v2-cli-experience-20261029",
+      "fixtureRoot": "/projects/miy-cli-experience-run-20261029/private/tmp/miy-runtime-regression-km7pdj8n",
+      "exitCode": 0,
+      "log": "/projects/miy-cli-experience-run-20261029/evidence/rust/runtime-interrupted-cleanup.log"
+    },
+    {
+      "name": "runtime-regression-attempt-2",
+      "command": [
+        "python3",
+        "scripts/runtime-regression/run.py"
+      ],
+      "cwd": "/projects/miy-v2-cli-experience-20261029",
+      "startedAt": "2026-10-29T06:46:26.679094+00:00",
+      "log": "/projects/miy-cli-experience-run-20261029/evidence/rust/runtime-regression-attempt-2.log",
+      "exitCode": 1,
+      "elapsedSeconds": 163.03,
+      "expectedFailureReason": "All 55 observations passed; harness expected auth=7 but observed auth=8.",
+      "resolvedBy": "scripts/runtime-regression/run.py expected auth count 7->8; attempt 3 exit 0"
+    },
+    {
+      "name": "server-build-regression",
+      "command": [
+        "python3",
+        "scripts/check-server-builds.py"
+      ],
+      "cwd": "/projects/miy-v2-cli-experience-20261029",
+      "startedAt": "2026-10-29T06:49:09.714075+00:00",
+      "log": "/projects/miy-cli-experience-run-20261029/evidence/rust/server-build-regression.log",
+      "exitCode": 0,
+      "elapsedSeconds": 2.42
+    },
+    {
+      "name": "runtime-regression-attempt-3",
+      "command": [
+        "python3",
+        "scripts/runtime-regression/run.py"
+      ],
+      "cwd": "/projects/miy-v2-cli-experience-20261029",
+      "startedAt": "2026-10-29T06:49:42.185885+00:00",
+      "log": "/projects/miy-cli-experience-run-20261029/evidence/rust/runtime-regression-attempt-3.log",
+      "exitCode": 0,
+      "elapsedSeconds": 162.99,
+      "observations": 55,
+      "suiteCounts": {
+        "runtime": 35,
+        "operations": 6,
+        "cli": 6,
+        "auth": 8
+      }
+    },
+    {
+      "label": "pnpm-install",
+      "command": [
+        "pnpm",
+        "install",
+        "--frozen-lockfile"
+      ],
+      "cwd": "/projects/miy-v2-cli-experience-20261029",
+      "environment": {
+        "MIY_CONFIG_DIR": "/projects/miy-cli-experience-run-20261029/ui-config",
+        "PLAYWRIGHT_JSON_OUTPUT_FILE": "/projects/miy-cli-experience-run-20261029/evidence/ui/browser-results.json"
+      },
+      "startedAt": "2026-10-29T06:41:18.926987+00:00",
+      "durationSeconds": 0.548,
+      "exitCode": 0,
+      "log": "/projects/miy-cli-experience-run-20261029/evidence/ui/pnpm-install.log"
+    },
+    {
+      "label": "pnpm-typecheck",
+      "command": [
+        "pnpm",
+        "typecheck"
+      ],
+      "cwd": "/projects/miy-v2-cli-experience-20261029",
+      "environment": {
+        "MIY_CONFIG_DIR": "/projects/miy-cli-experience-run-20261029/ui-config",
+        "PLAYWRIGHT_JSON_OUTPUT_FILE": "/projects/miy-cli-experience-run-20261029/evidence/ui/browser-results.json"
+      },
+      "startedAt": "2026-10-29T06:41:31.487882+00:00",
+      "durationSeconds": 0.976,
+      "exitCode": 0,
+      "log": "/projects/miy-cli-experience-run-20261029/evidence/ui/pnpm-typecheck.log"
+    },
+    {
+      "label": "platform-build",
+      "command": [
+        "pnpm",
+        "--filter",
+        "@miy/platform",
+        "build"
+      ],
+      "cwd": "/projects/miy-v2-cli-experience-20261029",
+      "environment": {
+        "MIY_CONFIG_DIR": "/projects/miy-cli-experience-run-20261029/ui-config",
+        "PLAYWRIGHT_JSON_OUTPUT_FILE": "/projects/miy-cli-experience-run-20261029/evidence/ui/browser-results.json"
+      },
+      "startedAt": "2026-10-29T06:41:31.490590+00:00",
+      "durationSeconds": 1.896,
+      "exitCode": 0,
+      "log": "/projects/miy-cli-experience-run-20261029/evidence/ui/platform-build.log"
+    },
+    {
+      "label": "playwright-fixtures",
+      "command": [
+        "pnpm",
+        "exec",
+        "playwright",
+        "test",
+        "--config",
+        "tests/cli-experience.config.ts"
+      ],
+      "cwd": "/projects/miy-v2-cli-experience-20261029",
+      "environment": {
+        "MIY_CONFIG_DIR": "/projects/miy-cli-experience-run-20261029/ui-config",
+        "PLAYWRIGHT_JSON_OUTPUT_FILE": "/projects/miy-cli-experience-run-20261029/evidence/ui/browser-results.json"
+      },
+      "startedAt": "2026-10-29T06:41:42.622367+00:00",
+      "durationSeconds": 9.899,
+      "exitCode": 0,
+      "log": "/projects/miy-cli-experience-run-20261029/evidence/ui/playwright-fixtures.log"
+    },
+    {
+      "name": "deploy",
+      "command": [
+        "python3",
+        "/projects/miy-cli-experience-run-20261029/deploy.py"
+      ],
+      "cwd": "/projects/miy-v2-cli-experience-20261029",
+      "startedAt": "2026-10-29T06:53:02Z",
+      "exitCode": 0,
+      "finishedAt": "2026-10-29T06:53:04Z"
+    },
+    {
+      "name": "public-downloads",
+      "command": [
+        "python3",
+        "scripts/check-cli-downloads.py",
+        "--origin",
+        "https://v2.dwdcc.kr",
+        "--expected-commit",
+        "8d7d04271f9467d8bbdd16308e73715b33e4dc0c"
+      ],
+      "cwd": "/projects/miy-v2-cli-experience-20261029",
+      "startedAt": "2026-10-29T06:53:14Z",
+      "exitCode": 0,
+      "finishedAt": "2026-10-29T06:53:15Z"
+    },
+    {
+      "name": "live-browser",
+      "command": [
+        "node",
+        "/projects/miy-cli-experience-run-20261029/verify-live.mjs"
+      ],
+      "cwd": "/projects/miy-v2-cli-experience-20261029",
+      "startedAt": "2026-10-29T06:53:14Z",
+      "exitCode": 0,
+      "finishedAt": "2026-10-29T06:53:17Z"
+    },
+    {
+      "name": "live-development-login",
+      "command": [
+        "pnpm",
+        "exec",
+        "playwright",
+        "test",
+        "--config",
+        ".local/cli063-live.config.ts"
+      ],
+      "cwd": "/projects/miy-v2-cli-experience-20261029",
+      "startedAt": "2026-10-29T06:53:44Z",
+      "exitCode": 0,
+      "finishedAt": "2026-10-29T06:53:46Z"
+    }
+  ],
+  "evidenceDirectory": "evidence/cli-0.6.3-linux",
+  "screenshots": [
+    {
+      "file": "evidence/cli-0.6.3-linux/live-todo-desktop.png",
+      "sha256": "d89c6c6a31bda84f2d860e4f03a50205989cb79d23745a49ec81930b6741d300"
+    },
+    {
+      "file": "evidence/cli-0.6.3-linux/live-todo-390px.png",
+      "sha256": "0085af448a88d79b5622c41443383452c5011306310aab750f262e0166ce0e80"
+    },
+    {
+      "file": "evidence/cli-0.6.3-linux/live-menu-390px.png",
+      "sha256": "3e334c1fb7756ebee44b98b641a031a7cee78e20912d0f6755b9e890acde9bb4"
+    },
+    {
+      "file": "evidence/cli-0.6.3-linux/live-expired-request-390px.png",
+      "sha256": "61c546b44fe2087aaf023b940bd448d0693455072f554b7e9cd440a749c00e55"
+    },
+    {
+      "file": "evidence/cli-0.6.3-linux/live-pending-request-390px.png",
+      "sha256": "afee6fff99ad110c5f46505d9e87ac2abf7aae8412f3d8ee3f6438f8e67b4ee2"
+    },
+    {
+      "file": "evidence/cli-0.6.3-linux/live-consumed-request-390px.png",
+      "sha256": "0361b59172ed9049e4f39a02cbbde22d83eafabb09a19708371e83cfc36a5eaa"
+    },
+    {
+      "file": "evidence/cli-0.6.3-linux/live-oauth-recovery-390px.png",
+      "sha256": "272a417a21e58b17f775f97adadfb797e4b5d18716f3bfe3eaf2bc38f79d102e"
+    },
+    {
+      "file": "evidence/cli-0.6.3-linux/live-idp-login-awaiting-user.png",
+      "sha256": "3feca130ee7e3417bada8cb2bae633754fd4eb8e7434574bcc68b40b356b214b"
+    },
+    {
+      "file": "evidence/cli-0.6.3-linux/live-install-guide-390px.png",
+      "sha256": "3473edd9c2a8f49e3d1cd55eb31da4b0a5cbbef0bfd8deaed545c3c1508e66a6"
+    }
+  ],
+  "credentialEvidencePolicy": "No tokens, cookies, authentication codes, DB connection strings or personal credential stores are copied to committed evidence."
+}

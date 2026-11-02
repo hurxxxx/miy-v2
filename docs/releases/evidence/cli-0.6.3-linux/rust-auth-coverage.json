@@ -1,0 +1,66 @@
+{
+  "run": "runtime-regression-attempt-3",
+  "groupsExecuted": 8,
+  "allPassed": true,
+  "groups": [
+    {
+      "test": "expired/missing/replayed OAuth callbacks clear login state and redirect to fixed recovery without authenticating",
+      "status": "PASS",
+      "suite": "auth"
+    },
+    {
+      "test": "device hashes, pending/slow_down, browser CSRF/origin, exact account and one-use exchange",
+      "status": "PASS",
+      "suite": "auth"
+    },
+    {
+      "test": "15-minute access, fixed 30-day family, rotation history and committed reuse revocation",
+      "status": "PASS",
+      "suite": "auth"
+    },
+    {
+      "test": "concurrent device exchange issues once; concurrent refresh commits one rotation then family revocation",
+      "status": "PASS",
+      "suite": "auth"
+    },
+    {
+      "test": "denial and five-minute device expiry; expired access refreshes; absolute family expiry denies both tokens",
+      "status": "PASS",
+      "suite": "auth"
+    },
+    {
+      "test": "self-only session keyset pagination/revocation and idempotent logout without affecting another family",
+      "status": "PASS",
+      "suite": "auth"
+    },
+    {
+      "test": "grant revocation and Core disable immediately block API/worker authority; re-enable never resurrects old sessions",
+      "status": "PASS",
+      "suite": "auth"
+    },
+    {
+      "test": "per-client creation, per-actor code guessing and shared legacy/device global capacity are bounded",
+      "status": "PASS",
+      "suite": "auth"
+    }
+  ],
+  "deviceStatusChecks": {
+    "anonymous": "401 unauthorized",
+    "browserSession": "200 with pending status and bounded expiresIn",
+    "bearerCLI": "403 forbidden",
+    "approvedOtherUser": "404 not_found",
+    "privateResponse": "Cache-Control: no-store",
+    "publicFields": "exactly 5 fields; device secret and user code absent"
+  },
+  "oauthRecoveryCases": [
+    "missing callback parameters",
+    "expired_code callback error",
+    "consumed code with unknown state"
+  ],
+  "oauthRecoveryAssertions": [
+    "303 to fixed /?login=expired",
+    "miy_login cookie cleared with Max-Age=0"
+  ],
+  "scope": "Real loopback HTTP and isolated PostgreSQL; synthetic local development users. No actual identity-provider authentication performed.",
+  "source": "crates/miy/src/auth_sessions_regression.rs"
+}

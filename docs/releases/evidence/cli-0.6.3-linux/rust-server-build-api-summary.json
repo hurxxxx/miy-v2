@@ -1,0 +1,9 @@
+{
+  "dockerBuildExecuted": false,
+  "groups": 8,
+  "passed": true,
+  "runtimeJobsUnchanged": true,
+  "storage": "owned disposable PostgreSQL",
+  "suite": "server-build-api",
+  "transport": "real loopback HTTP"
+}

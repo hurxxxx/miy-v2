@@ -7,6 +7,26 @@ on:
         description: Full 40-character installer source commit (embedded CLI retains its original commit)
         required: true
         type: string
+      cli_run_id:
+        description: Successful CLI release candidate run containing the verified Windows artifact
+        required: true
+        type: string
+      cli_version:
+        description: Exact CLI version, such as 0.6.3
+        required: true
+        type: string
+      cli_commit:
+        description: Full source commit of the selected CLI candidate
+        required: true
+        type: string
+      cli_archive_sha256:
+        description: SHA-256 of the selected Windows CLI archive
+        required: true
+        type: string
+      cli_binary_sha256:
+        description: SHA-256 of miy.exe inside that archive
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -20,10 +40,11 @@ concurrency:
 # relabel, or publish the five-target CLI/helper aggregate or a GitHub release.
 env:
   INSTALLER_COMMIT: ${{ inputs.installer_commit }}
-  CLI_VERSION: '0.6.0'
-  CLI_COMMIT: b67798bfb84f299257ba4326beaf034b125cde7a
-  CLI_ARCHIVE_SHA256: d7cc2e1b4cca63b215b525a51f85372792db5241c218185635fe693a714ea87f
-  CLI_BINARY_SHA256: 99f590c62b44e4b61391b8986d5fa6175ebee1d072efd066bbc85747e38eac71
+  CLI_VERSION: ${{ inputs.cli_version }}
+  CLI_COMMIT: ${{ inputs.cli_commit }}
+  CLI_ARCHIVE_SHA256: ${{ inputs.cli_archive_sha256 }}
+  CLI_BINARY_SHA256: ${{ inputs.cli_binary_sha256 }}
+  CLI_RUN_ID: ${{ inputs.cli_run_id }}
 
 jobs:
   build:
@@ -41,17 +62,19 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           if ($env:INSTALLER_COMMIT -cnotmatch '^[a-f0-9]{40}$') { throw 'Use a full lowercase installer source commit.' }
+          if ($env:CLI_COMMIT -cnotmatch '^[a-f0-9]{40}$' -or $env:CLI_VERSION -cnotmatch '^\d+\.\d+\.\d+$' -or $env:CLI_RUN_ID -cnotmatch '^[1-9][0-9]*$') { throw 'Invalid CLI candidate identity.' }
+          if ($env:CLI_ARCHIVE_SHA256 -cnotmatch '^[a-f0-9]{64}$' -or $env:CLI_BINARY_SHA256 -cnotmatch '^[a-f0-9]{64}$') { throw 'Invalid CLI candidate checksums.' }
           if ((git rev-parse HEAD) -cne $env:INSTALLER_COMMIT) { throw 'Installer checkout identity differs.' }
           if (git status --porcelain --untracked-files=normal) { throw 'Installer checkout is not clean.' }
           python scripts/test-windows-installer-package.py
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       # CI reuses the verified original candidate artifact; installation itself
       # is offline and contains no company server URL or artifact dependency.
-      - name: Download the original verified Windows CLI artifact
+      - name: Download the selected verified Windows CLI artifact
         uses: actions/download-artifact@v4
         with:
           name: cli-release-x86_64-pc-windows-msvc
-          run-id: 40602334949
+          run-id: ${{ inputs.cli_run_id }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
           path: .local/windows-installer/original-cli
       - name: Verify and select the original Windows CLI payload
@@ -59,7 +82,7 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           $null = New-Item -ItemType Directory -Force .local/windows-installer/input
-          $archive = '.local/windows-installer/original-cli/miy-0.6.0-x86_64-pc-windows-msvc.zip'
+          $archive = '.local/windows-installer/original-cli/miy-' + $env:CLI_VERSION + '-x86_64-pc-windows-msvc.zip'
           if ((Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToLowerInvariant() -cne $env:CLI_ARCHIVE_SHA256) {
             throw 'Original CLI archive checksum differs.'
           }
@@ -67,17 +90,17 @@ jobs:
       - name: Build the Windows x64 GUI installer
         shell: powershell
         run: |
-          & ./ops/windows-installer/build.ps1 -ArchivePath .local/windows-installer/input/cli.zip -Sha256 $env:CLI_ARCHIVE_SHA256 -OutputDirectory .local/windows-installer/build -InstallerCommit $env:INSTALLER_COMMIT
+          & ./ops/windows-installer/build.ps1 -ArchivePath .local/windows-installer/input/cli.zip -Sha256 $env:CLI_ARCHIVE_SHA256 -OutputDirectory .local/windows-installer/build -InstallerCommit $env:INSTALLER_COMMIT -Version $env:CLI_VERSION -CliCommit $env:CLI_COMMIT -CliBinarySha256 $env:CLI_BINARY_SHA256
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Check packaged installation, preservation, HTTP and GUI rendering
         shell: powershell
         run: |
-          & ./ops/windows-installer/test.ps1 -InstallerPath .local/windows-installer/build/MiySetup-0.6.0-windows-x64.exe -ArchivePath .local/windows-installer/input/cli.zip -OutputDirectory .local/windows-installer/evidence
+          & ./ops/windows-installer/test.ps1 -InstallerPath ('.local/windows-installer/build/MiySetup-' + $env:CLI_VERSION + '-windows-x64.exe') -ArchivePath .local/windows-installer/input/cli.zip -OutputDirectory .local/windows-installer/evidence -Version $env:CLI_VERSION -CliCommit $env:CLI_COMMIT -CliBinarySha256 $env:CLI_BINARY_SHA256
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Package installer with separate installer and CLI provenance
         shell: pwsh
         run: |
-          python scripts/package-windows-installer.py package --installer .local/windows-installer/build/MiySetup-0.6.0-windows-x64.exe --cli-archive .local/windows-installer/input/cli.zip --output .local/windows-installer/package --installer-commit $env:INSTALLER_COMMIT --cli-commit $env:CLI_COMMIT --archive-sha256 $env:CLI_ARCHIVE_SHA256 --cli-binary-sha256 $env:CLI_BINARY_SHA256 --version $env:CLI_VERSION
+          python scripts/package-windows-installer.py package --installer ".local/windows-installer/build/MiySetup-$env:CLI_VERSION-windows-x64.exe" --cli-archive .local/windows-installer/input/cli.zip --output .local/windows-installer/package --installer-commit $env:INSTALLER_COMMIT --cli-commit $env:CLI_COMMIT --archive-sha256 $env:CLI_ARCHIVE_SHA256 --cli-binary-sha256 $env:CLI_BINARY_SHA256 --version $env:CLI_VERSION
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Preserve safe native test diagnostics, including failed runs
         if: ${{ always() }}
@@ -96,8 +119,8 @@ jobs:
         with:
           name: windows-installer-build-${{ inputs.installer_commit }}
           path: |
-            .local/windows-installer/package/MiySetup-0.6.0-windows-x64.exe
-            .local/windows-installer/package/MiySetup-0.6.0-windows-x64.exe.sha256
+            .local/windows-installer/package/MiySetup-${{ inputs.cli_version }}-windows-x64.exe
+            .local/windows-installer/package/MiySetup-${{ inputs.cli_version }}-windows-x64.exe.sha256
             .local/windows-installer/package/installer-index.json
             .local/windows-installer/evidence/summary.json
             .local/windows-installer/evidence/embedded-provenance.json

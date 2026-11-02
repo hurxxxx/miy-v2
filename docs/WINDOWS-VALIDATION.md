@@ -1,13 +1,86 @@
 # Windows 네이티브 빌드·운영 검증 안내
 
-- 갱신일: 2026-10-28
-- 현재 구현 대상: CLI **0.6.0** / 개발 번들 **0.7.0**. 아래 0.5 후보·0.4.2 실행 기록은 해당 버전의 이력이다.
+## 2026-10-30 서버 반영 후 Windows 재확인
+
+서버 측 `f72c049`·`39b5640`의 [Linux 반영 기록](CLI-0.6.3-LINUX-VALIDATION.md)을 동기화한 뒤 실제 `https://v2.dwdcc.kr`을 Windows에서 재확인했다. `/api/health` 200, 서버·설치 안내 **0.6.3**, 배포물 소스 `8d7d042`가 일치한다. [실제 다운로드·CLI·브라우저 검증 결과](releases/cli-0.6.3-windows-postdeploy-validation.json)를 보존한다.
+
+공개 Windows 설치 파일 SHA-256 `662f8a59c098ac4b2cbde4041799a99f0c6e21f193bbe8b31d2098f6095233af`, ZIP `1403083b604b77036785d07c42f13c6aad754ea7ae6ff7de94bb15e0a1eb72e3`을 실제 내려받아 checksum URL·내장 ZIP·CLI 출처와 대조했다. 내장 `miy.exe`의 해시 `055bc8655c706b586f1d8517cb719ac8cd1335107e2815aef10747fa3b7565e3`, `miy 0.6.3` 실행, 기존 default/admin 인증 재사용이 통과했다. Docker가 없는 로컬 빌드는 예상한 exit 7과 `miy app build --remote` recovery를 반환했다. 전역 CLI 설치는 변경하지 않았다.
+
+실제 Chrome에서 Todo 0.1.2의 running/healthy, 기존 release와 Todo ID `8dcfffe2-3854-4ce5-b878-2da9f915c151`·미완료 상태를 확인했다. 390px 화면의 메뉴 펼치기·이동 후 닫기와 가로 넘침 없음도 확인했다. 만료 요청의 새 로그인 명령, 로그인 없는 새 상태 API의 401, 합성 OAuth 실패의 303 고정 redirect·임시 쿠키 삭제·복구 화면이 통과했다. [데스크톱 화면](releases/evidence/cli-0.6.3-windows-postdeploy/todo-desktop.png), [모바일 화면](releases/evidence/cli-0.6.3-windows-postdeploy/mobile-todo.png), [복구 화면](releases/evidence/cli-0.6.3-windows-postdeploy/oauth-recovery.png)을 보존한다. 확인용 개발 로그인은 정상 logout하고 임시 화면 크기를 복원했다. 앱 데이터·release는 바꾸지 않았다.
+
+새 CI 설치기의 사용자 PC 실제 설치/갱신/제거, 실제 IdP 정상 로그인과 그 소비된 콜백 재사용은 **NOT_RUN**이다. 이번 확인은 게시 파일/내장 CLI 실행·기존 인증·실제 서버 화면 검증이며 앞선 24개 로컬 설치기 검사를 새 CI 파일의 설치 성공으로 이월하지 않는다. 새 pending 요청/자연 만료·DB 장애 suite도 반복하지 않았으며 Linux 결과와 구분한다.
+
+## Linux 후속 완료 — 새 CI 설치기 0.6.3 게시
+
+아래 Windows 로컬 기록 이후 [Linux 검증과 서버 반영](CLI-0.6.3-LINUX-VALIDATION.md)을 수행했다. [설치 안내](https://v2.dwdcc.kr/cli/install)는 이제 `8d7d042`의 검증된 CI CLI와 설치기를 제공한다. 기존 Windows 로컬 `0db21c3` 파일과 해시는 다르다. 서버·UI·index 0.6.3 반영, 실제 390px Todo와 기존 DB/레코드 보존을 확인했다. 이번 CI 설치기를 사용자 Windows 11에서 실행한 결과와 실제 IdP 정상 로그인은 아직 **NOT_RUN**이다.
+
+## 2026-10-29 CLI 0.6.3 설치·로그인·모바일 개선 검증
+
+0.6.2 실제 전체 흐름에서 남긴 개선을 `codex/cli-experience-improvements`에 구현했다. 기능 소스는 `0db21c3`, Windows CI 도구 검색 격리를 보완한 소스는 `8d7d042`다. CLI **0.6.3** / 번들 **0.7.1**이며 [구조화 결과](releases/cli-0.6.3-experience-validation.json)와 [서버 측 후속 프롬프트](CLI-EXPERIENCE-SERVER-HANDOFF.md)를 보존한다.
+
+| 개선·검사 | 실제 결과 |
+| --- | --- |
+| 설치기 후보 선택 | 0.6.0 고정 버전·해시를 제거하고 검증한 CLI 후보의 출처/해시를 명시적으로 받음. 로컬 Windows 11 / **Windows PowerShell 5.1.26100.9711에서 실제 설치·업데이트·설정/인증 보존·제거 24개 PASS** |
+| 설치기 입력 검증 | ZIP 해시·버전·CLI commit·실행 파일 해시 불일치 **4개 거부 PASS**. 패키지 무결성 검사 **15개 PASS / Linux 게시 검사 4개 SKIP** |
+| Docker 없는 빌드 안내 | Docker가 없거나 Linux 엔진이 아니면 `miy app build --remote`를 메시지와 recovery argv에 제공. 자동 소스 업로드나 Docker 설치 전환 없음 |
+| 로그인 복구 | CLI 만료 시각·남은 시간·원래 context의 재로그인 명령 제공. 서버 상태 기반 승인 화면, 만료/처리 완료·잘못된 코드·통신 장애 복구 구현. OAuth 실패 쿠키 정리·고정 복구 경로 구현 |
+| 모바일 | 390px에서 메뉴 기본 접기·펼치기·이동 후 닫기·전체 workspace 폭 확인. 승인 입력과 요청 ID 줄바꿈, 가로 넘침 없음 확인 |
+| Windows CLI | 단위 **106개**, fmt·strict Clippy·release PASS. debug/release 출력 **13그룹**, 원격 빌드 fixture **10그룹**, 복구 **6그룹** PASS |
+| 화면·배포물 | 실제 Chrome + 로컬 플랫폼/모의 API 경계의 브라우저 **14개 PASS / 실패·skip·flaky 0**, TypeScript·플랫폼 Vite build PASS |
+| 교차 OS 기반 CI | `8d7d042`의 [CI 40826944825](https://github.com/hurxxxx/miy-v2/actions/runs/40826944825): Linux 서버·Linux/macOS/Windows 클라이언트·내장 번들 비교 전체 PASS |
+
+로컬 후보 `MiySetup-0.6.3-windows-x64.exe`는 **6,105,600바이트**, SHA-256 `f201775aa7e9dd7b326e48ae4ea9864e30aa30204acb335557d3eaefbeb97de7`이다. 내장 CLI와 설치기 소스는 `0db21c38d89061c4fb6d774585ffba46ee10407c`, CLI SHA-256은 `2d1b0994b069b6315f816df6d934afba0fe82eb993f408345d01fa187a4cbe61`, ZIP SHA-256은 `401cf840ff2c38dc846f711af8494fb0d4c4e70d202036d3973c2c1f2a765fd9`다. 별도 깨끗한 소스 checkout에서 패키징했고 파일은 `.local/releases/cli-0.6.3-local-0db21c3/`에 있다. 이 후보를 소스가 다른 CI artifact로 표시하지 않는다.
+
+최초 단위 실행의 사용자 context 유입 실패는 격리한 `MIY_CONFIG_DIR`로 재실행했다. 처음 브라우저 설정에 포함했던 실제 서버용 3개 검사는 localhost:18000 미구동으로 실패했으며 모의 API suite와 실제 서버 suite를 명시적으로 분리했다. 첫 CI에서는 빈 PATH만으로 Windows의 시스템 Docker 검색을 막지 못했다. 복사한 CLI 옆에 신뢰한 실패용 실행 파일을 배치해 격리했고 동일한 strict assertion으로 새 CI를 통과했다. 검사 조건을 완화하지 않았다. C# 빌드의 기존 `Capture` 멤버 CS0108 경고는 비차단 이력으로 남긴다.
+
+[모바일 승인 화면](releases/evidence/cli-0.6.3-experience/mobile-approval.png), [만료 복구 화면](releases/evidence/cli-0.6.3-experience/expired-request.png), [설치 완료 화면](releases/evidence/cli-0.6.3-experience/installer-completed-form.png)은 로컬 fixture이며 화면의 계정·코드·loopback 서버는 합성 값이다. 실제 IdP/DB를 사용하는 새 인증 API의 Linux 통합 회귀와 플랫폼 재배포, 실제 서버의 모바일 Todo 확인, 공개 설치 파일 게시, 전역 CLI 교체는 **NOT_RUN**이다. 기존 실제 Todo 앱과 DB는 이 실행에서 변경하지 않았다. `publish=false`인 [5개 OS/CPU 후보 CI](https://github.com/hurxxxx/miy-v2/actions/runs/40826960538)는 결과 JSON의 시점별 상태를 따르며, 미완료 job은 PASS로 세지 않는다.
+
+## 2026-10-29 CLI 0.6.2 Windows → 서버 빌드 → dev 배포 검증
+
+서버 빌드 구현 `1775eac`를 동기화하고 Windows 수정 `50edd05`와 fixture 수정 `2fabe68`을 적용한 CLI **0.6.2** / 번들 **0.7.1**로 실제 전체 흐름을 통과했다. [기계 판독 결과](releases/cli-0.6.2-windows-server-build-validation.json)와 [최종 브라우저 화면](releases/evidence/cli-0.6.2-windows-server-build/deployed-final.jpg)을 보존한다. 환경은 Windows 11 Pro x64 build 26200, 비승격 PowerShell 7.6.5, Rust 1.99.1 MSVC, Node 24.19.0, pnpm 10.34.5다. 프로젝트 CLI를 소스에서 갱신했으며 공개 GUI 설치기·전역 CLI를 새로 게시한 결과는 아니다.
+
+Docker Desktop을 설치하지 않고 기본 `app dev`의 Rust 서버·React 정적 화면·서버 개발 DB 연결을 확인했다. 이후 로컬 세션을 정상 종료하고 `app build --remote` → 작업 조회·로그·resume → dev 배포를 실행했다. 원격 명령 동안 Docker·Rust·Node·pnpm·SSH·WSL을 실패 trap으로 막았고 호출은 **0회**였다. Linux 워커에서 앱 검사와 이미지 생성이 수행됐으며 이미지를 Windows로 내려받거나 다시 업로드하지 않았다.
+
+| 검사 | 실제 결과 |
+| --- | --- |
+| Windows 클라이언트 | 단위 **106개 PASS / 실패·ignored 0**, fmt, all-targets Clippy `-D warnings`, release 빌드 PASS |
+| CLI 계약·복구 | 출력 **11그룹**, runtime 복구 **6그룹**, 서버 빌드 오류·재개 fixture **10그룹**, 지침·MCP·보존 업그레이드 **5그룹** PASS |
+| 실제 프로젝트 | 네이티브 doctor **17항목** PASS. 서버 워커의 앱 Rust 검사 **6개**, frozen/offline 의존성·TypeScript·Vite·배포물 검증 PASS |
+| 실제 원격 빌드 | `1ba1607e-9915-4b2b-b946-d1fa8018e961` 성공. 반복 요청·resume은 동일 작업, 순서 로그 **114개**, 마지막 cursor 이후 빈 로그 확인 |
+| 실제 dev 배포 | `c45dc134-e0ee-45ce-8cc2-658a15b4a6fc` 성공. Todo **0.1.2**, release `871549de-041d-4fa7-8c17-b8e7b3c54e47`, runtime running/healthy |
+| 브라우저·API | 로컬 추가·완료·새로고침, 배포 후 기존 데이터 표시·완료 취소·새로고침, 배포 API CRUD PASS. release 헤더 누락은 예상한 409로 거부 |
+| 데이터 보존·정리 | 같은 DB UUID·스키마·기존 Todo와 테스트 Todo의 ID·데이터 유지. 서버 브라우저의 변경을 재시작한 로컬에서도 확인. 테스트용 레코드만 삭제, 원래 Todo 보존, 백엔드·포트·개발 세션 정리 PASS |
+
+배포 이미지 `sha256:386e71c86012e6a55c579fc2482bf255fb3cbab8f83f99c0d3bb50799164a75f`는 서버 빌드 영수증과 일치한다. 앱 소스는 `f7e898161688f114edbc81941cb7592cda358b1e`, Windows CLI SHA-256은 `98fa982280fb041b1136a11bdf499979e9ce6133536ae51bd8b05d54888d9b13`이다. [실제 개발 앱](https://v2.dwdcc.kr/environments/dev/apps/todo-win-20261029)은 정상 실행 상태로 남겼고 해당 release에 범위를 명시한 구조화 인수 기록을 저장했다.
+
+최초 strict Clippy는 Windows에서 새 closure 두 곳의 `result_large_err`로 실패했다. 오류 원인을 보존하는 `anyhow::Result`로 수정하고 재검사했다. 원격 빌드 fixture는 Python의 Windows CRLF와 기본 인코딩 때문에 소스 해시가 달라 실패했으므로 UTF-8/LF를 명시하고 Windows CMD trap을 추가했다. 잘못된 로그 cursor와 손상된 영수증의 오류 계약도 추가 검증했다. 검사 완화나 lint suppression은 사용하지 않았다.
+
+이번 계정은 사용자가 선택한 admin이다. 개발자·일반 사용자 최소 권한, PowerShell 5.1의 새 전체 흐름, 실콘솔 Ctrl+C·워커 강제 종료·실제 통신 장애, 모바일·이탈 방지, 운영 승격은 **NOT_RUN**이다. 실패 fixture와 실제 서버 성공을 구분하며 아래 구버전 결과를 이번 소스의 통과로 이월하지 않는다. 원본 로그는 `.local/evidence/windows-server-build/20261029-131310/`에 보존한다. 토큰·쿠키·DB 접속 문자열은 커밋하지 않는다.
+
+## 2026-10-29 Docker 없는 네이티브 개발 검증
+
+사용자 요청으로 Docker Desktop 설치를 중단하고 `b873a81`의 CLI **0.6.1** / 번들 **0.7.1**에서 기본 로컬 개발을 네이티브 Rust·React 정적 미리보기·프로세스 내부 서버 DB 터널로 변경했다. [사용법](NATIVE-DEVELOPMENT.md)과 [기계 판독 결과](releases/cli-0.6.1-native-windows-validation.json)를 함께 보존한다. 기존 홈페이지의 0.6.0 후보와 구분하며 새 GUI 설치기를 게시한 결과가 아니다.
+
+마지막 동기화에서 추가된 main `564df40`의 공용 개발 계정 로그인 변경을 `60a9952`에 병합했고, fmt·Clippy·release build와 단위 **98개**를 다시 통과했다. 네이티브 미리보기 구현은 동일하며, 아래 실제 브라우저 증거의 바이너리는 최초 `b873a81`로 구분한다. [Linux 후속 Codex 프롬프트](LINUX-TODO-HANDOFF.md)는 병합한 브랜치에서 배포를 검증하도록 안내한다.
+
+실제 Windows 11 Pro x64 build 26200 일반 사용자 / PS7.6.5 / Rust 1.99.1 MSVC / Node 24.19.0 / pnpm 10.34.5에서 CLI 단위 **97개**, fmt·Clippy 경고 금지·release build, 출력 계약 **11그룹**, 지침·MCP·0.7.0→0.7.1 보존 업그레이드 **5그룹**을 통과했다. 사용자 설정을 사용하는 첫 단위 실행의 metadata 기대값 실패는 격리한 `MIY_CONFIG_DIR`로 다시 수행해 통과했으며 assertion을 완화하지 않았다.
+
+별도 Codex CLI 새 세션이 프로젝트 지침과 실제 MCP 5종을 사용해 DB Todo 앱을 구현했다. 앱 Rust 검사 **6개**, `app check` **11항목**이 통과했다. 네이티브 업그레이드 뒤 `doctor --for develop`은 Docker 없이 **17항목 전체 통과**했다. 브라우저에서 추가·완료·완료 취소·새로고침, 실제 서버 DB API CRUD, 빈 제목·소유자 위조·CSRF 누락·서명 없는 직접 백엔드 접근 거부를 확인했다. pnpm EPERM 일회 실패는 변경 없는 재실행으로 통과했으며 Federation 분석 시간 경고를 기록한다.
+
+`app dev-stop` 뒤 백엔드 프로세스·로컬 포트·터널·서버 개발 세션의 정리와 exit 0을 확인했고, 재시작 후 DB `129f8abd-62c2-40d1-9175-d73d85196940`와 Todo `8dcfffe2-3854-4ce5-b878-2da9f915c151`의 ID·제목·완료 상태를 그대로 유지했다. 재시작한 브라우저에서도 같은 항목을 확인했다. Windows 세션은 Linux 배포 인계를 위해 정상 종료했다. 업무 소스는 [Todo 예제](../examples/native-todo/README.md)에 있다.
+
+사용자가 admin 계정을 선택했으므로 개발자 최소 권한 인수로 확대하지 않는다. Linux 이미지 빌드·dev 배포·배포 후 동일 DB/레코드 확인, 실제 콘솔 Ctrl+C·강제 종료·다른 OS, 운영 승격은 **NOT_RUN**이다. Linux 후속 Codex에 해당 브랜치와 예제를 전달한다. 원본 증거와 화면은 이 PC의 `.local/evidence/windows-todo/20261029/`에만 보존하며 비밀 정보는 결과 문서에 포함하지 않는다.
+
+## 2026-10-28 CLI 0.6.0 후보 검증 안내 이력
+
+- 당시 갱신일: 2026-10-28
+- 당시 구현 대상: CLI **0.6.0** / 개발 번들 **0.7.0**. 아래 0.5 후보·0.4.2 실행 기록은 해당 버전의 이력이다.
 - 대상: Windows 11 x64, Windows PowerShell 5.1과 PowerShell 7
-- 상태: Windows에서 사용자가 직접 빌드·검증하고 결과를 추가할 안내. **0.6의 실제 Windows 11·PowerShell 5.1/7·원격 DB·독립 AI 세션 인수는 아직 NOT_RUN이다.** 과거 호스티드 Windows MSVC CI 결과는 이번 후보의 인수 결과로 이월하지 않는다.
+- 당시 상태: Windows에서 사용자가 직접 빌드·검증하고 결과를 추가할 안내. **이 0.6.0 후보의 실제 Windows 11·PowerShell 5.1/7·원격 DB·독립 AI 세션 인수는 NOT_RUN이었다.** 최신 0.6.2 결과는 위 절에서 별도로 확인한다. 과거 호스티드 Windows MSVC CI 결과는 이 후보의 인수 결과로 이월하지 않는다.
 
 ## CLI 0.6 인수 준비 — 2026-10-28
 
-현재 CLI 후보는 `b67798b`, GUI 설치기 후보는 `94a02c7`이다. 설치기 자체의 Windows Server 네이티브 검사 24개와 게시 증거는 [GUI 설치 안내](WINDOWS-INSTALLER.md#현재-설치-후보)에 기록한다. [설치 화면](https://v2.dwdcc.kr/cli/install)에서 Windows GUI 설치 파일을 받는다. [설치 안내](WINDOWS-INSTALLER.md)처럼 빈 입력란에 회사 서버 주소를 입력한다. ZIP과 PowerShell 명령도 보조 경로로 유지한다. [후보 CI](https://github.com/hurxxxx/miy-v2/actions/runs/40602334949)의 Windows Server 2022에서 단위 95개, 출력 11그룹, 서버 등록 9그룹, PowerShell 5.1/7 설치 각각 9개가 통과했다. 사용자의 실제 Windows 11 인수는 아직 NOT_RUN이며 [핵심 흐름 테스트](CORE-TESTING.md)부터 진행한다.
+현재 CLI 후보는 `b67798b`, GUI 설치기 후보는 `94a02c7`이다. 설치기 자체의 Windows Server 네이티브 검사 24개와 게시 증거는 [GUI 설치 안내](releases/windows-installer-0.6.0-candidate.json)에 기록한다. [설치 화면](https://v2.dwdcc.kr/cli/install)에서 Windows GUI 설치 파일을 받는다. [설치 안내](WINDOWS-INSTALLER.md)처럼 빈 입력란에 회사 서버 주소를 입력한다. ZIP과 PowerShell 명령도 보조 경로로 유지한다. [후보 CI](https://github.com/hurxxxx/miy-v2/actions/runs/40602334949)의 Windows Server 2022에서 단위 95개, 출력 11그룹, 서버 등록 9그룹, PowerShell 5.1/7 설치 각각 9개가 통과했다. 사용자의 실제 Windows 11 인수는 아직 NOT_RUN이며 [핵심 흐름 테스트](CORE-TESTING.md)부터 진행한다.
 
 서버 URL은 사용자가 명시하거나 홈페이지 설치 명령의 `-Server URL`로 전달한다. 기본 IP·도메인은 없다. 주소를 생략한 대화형 설치는 URL을 질문하며, 비대화형 설치는 실행 파일만 설치하고 `contextInitialization.status=required`와 `miy context init`을 안내한다. 이후 `miy context init` 또는 최초 대화형 로그인에서 등록한다. `-NonInteractive`/`--no-input`에서는 입력을 기다리지 않는다. 기존 설정은 보존하고 다른 요청 주소는 `activeOrigin`, `requestedOrigin`, `serverMismatch`로 구분한다.
 

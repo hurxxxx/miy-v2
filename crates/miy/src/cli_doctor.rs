@@ -18,6 +18,9 @@ pub struct DoctorArgs {
     /// Diagnose operation access, or the full local application development environment.
     #[arg(long = "for", default_value = "operate", value_parser = ["develop", "operate"])]
     pub for_mode: String,
+    /// Native development needs Rust/Node; Docker is an explicit alternative.
+    #[arg(long, value_enum, default_value = "native")]
+    pub runtime: crate::preview::Runtime,
 }
 
 #[derive(Serialize)]
@@ -72,7 +75,7 @@ pub async fn inspect(args: DoctorArgs) -> Result<Value> {
         checks.extend(project_checks(Path::new(".")));
         checks.extend(
             futures_util::future::join_all(
-                ["cargo", "rustc", "rustfmt", "node", "pnpm", "git", "docker"]
+                ["cargo", "rustc", "rustfmt", "node", "pnpm", "git"]
                     .into_iter()
                     .map(tool_check),
             )
@@ -80,12 +83,15 @@ pub async fn inspect(args: DoctorArgs) -> Result<Value> {
         );
         let (linker, mcp) = tokio::join!(rust_link_check(), mcp_start_check(Path::new(".")));
         checks.extend([linker, mcp]);
-        checks.extend(docker_checks(platform.as_deref()).await);
+        if args.runtime == crate::preview::Runtime::Docker {
+            checks.push(tool_check("docker").await);
+            checks.extend(docker_checks(platform.as_deref()).await);
+        }
     }
     let ready = ready(&checks);
     Ok(json!({
         "for":args.for_mode,"ready":ready,"cliVersion":env!("CARGO_PKG_VERSION"),
-        "bundleVersion":crate::bundle::VERSION,"checks":checks,
+        "bundleVersion":crate::bundle::VERSION,"runtime":args.runtime,"checks":checks,
     }))
 }
 

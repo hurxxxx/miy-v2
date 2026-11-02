@@ -4,7 +4,10 @@
 param(
     [Parameter(Mandatory = $true)][string]$InstallerPath,
     [Parameter(Mandatory = $true)][string]$ArchivePath,
-    [Parameter(Mandatory = $true)][string]$OutputDirectory
+    [Parameter(Mandatory = $true)][string]$OutputDirectory,
+    [Parameter(Mandatory = $true)][ValidatePattern('^\d+\.\d+\.\d+$')][string]$Version,
+    [Parameter(Mandatory = $true)][ValidatePattern('^[a-f0-9]{40}$')][string]$CliCommit,
+    [Parameter(Mandatory = $true)][ValidatePattern('^[a-f0-9]{64}$')][string]$CliBinarySha256
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
@@ -150,8 +153,8 @@ public sealed class MiyInstallerFixture : IDisposable {
         Assert-True ((Run-Setup @('--verify', $destination)) -eq 0) 'Embedded verification failed.'
         $metadata = [IO.File]::ReadAllText($destination) | ConvertFrom-Json
         Assert-True ($metadata.archiveSha256 -eq (Hash $archive)) 'The packaged archive differs from the verified build input.'
-        Assert-True ($metadata.cliCommit -eq 'b67798bfb84f299257ba4326beaf034b125cde7a') 'Unexpected CLI source commit.'
-        Assert-True ($metadata.cliBinarySha256 -eq '99f590c62b44e4b61391b8986d5fa6175ebee1d072efd066bbc85747e38eac71') 'Unexpected native binary hash.'
+        Assert-True ($metadata.cliCommit -ceq $CliCommit -and $metadata.version -ceq $Version) 'Unexpected CLI source commit/version.'
+        Assert-True ($metadata.cliBinarySha256 -ceq $CliBinarySha256) 'Unexpected native binary hash.'
         Assert-True ($metadata.installerCommit -match '^[a-f0-9]{40}$') 'Missing installer source provenance.'
     }
     Case 'native_winforms_initial_state_is_simple_and_read_only' {
@@ -201,9 +204,9 @@ public sealed class MiyInstallerFixture : IDisposable {
         $reply = Invoke-Bridge @{ action = 'install'; server = $originA; installDir = $installDir; addToPath = $true; autoSelectContext = $true; expectedConfigHash = '' }
         Assert-True ($reply.data.directory -ceq $installDir) 'Unicode installation path was corrupted in the bridge response.'
         Assert-True ($reply.data.context -eq 'default' -and $reply.data.origin -eq $originA) 'The explicit server was not selected.'
-        Assert-True ((Hash $binary) -eq '99f590c62b44e4b61391b8986d5fa6175ebee1d072efd066bbc85747e38eac71') 'Installed binary hash differs.'
-        $version = & $binary --version
-        Assert-True ($LASTEXITCODE -eq 0 -and $version -eq 'miy 0.6.0') 'Installed native CLI did not execute.'
+        Assert-True ((Hash $binary) -ceq $CliBinarySha256) 'Installed binary hash differs.'
+        $installedVersion = & $binary --version
+        Assert-True ($LASTEXITCODE -eq 0 -and $installedVersion -ceq ('miy ' + $Version)) 'Installed native CLI did not execute.'
         $userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
         Assert-True (($userPath -split ';') -contains $installDir) 'User PATH was not updated.'
     }

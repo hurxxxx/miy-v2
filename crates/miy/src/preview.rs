@@ -25,6 +25,29 @@ use std::{
 use tower_http::services::{ServeDir, ServeFile};
 use uuid::Uuid;
 
+#[derive(
+    Clone, Copy, Debug, clap::ValueEnum, serde::Serialize, serde::Deserialize, PartialEq, Eq,
+)]
+#[serde(rename_all = "lowercase")]
+pub enum Runtime {
+    Native,
+    Docker,
+}
+
+fn saved_runtime() -> Result<Runtime> {
+    match std::fs::read(".miy/preview-run.json") {
+        Ok(bytes) => {
+            let state: Value = serde_json::from_slice(&bytes).context("invalid_preview_owner")?;
+            match state.get("runtime") {
+                Some(value) => Ok(serde_json::from_value(value.clone())?),
+                None => Ok(Runtime::Docker), // runners before native support
+            }
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(Runtime::Native),
+        Err(error) => Err(error.into()),
+    }
+}
+
 fn prefix() -> Result<String> {
     Ok(format!(
         "miy-preview-{}",
@@ -88,6 +111,7 @@ fn stop_requested(run: &str) -> bool {
 }
 pub async fn stop() -> Result<()> {
     let lock = lock_file()?;
+    let runtime = saved_runtime()?;
     if lock.try_lock().is_err() {
         let v: Value = std::fs::read(".miy/preview-run.json").ok()
             .and_then(|v| serde_json::from_slice(&v).ok())
@@ -112,11 +136,13 @@ pub async fn stop() -> Result<()> {
             tokio::time::sleep(std::time::Duration::from_millis(100)).await;
         }
     }
-    remove_containers().await?;
+    if runtime == Runtime::Docker {
+        remove_containers().await?;
+    }
     crate::development_client::stop_saved().await?;
     remove_state();
     eprintln!(
-        "Local preview stopped: gateway, port, project lock and containers released; local database volume retained."
+        "Local preview stopped: gateway, backend, database tunnel and project lock released; database data retained."
     );
     Ok(())
 }
@@ -152,7 +178,15 @@ async fn shutdown_reason(
     }
 }
 
-pub async fn run(port: u16, no_open: bool, database: DatabaseMode) -> Result<()> {
+pub async fn run(port: u16, no_open: bool, database: DatabaseMode, runtime: Runtime) -> Result<()> {
+    ensure!(
+        runtime != Runtime::Native || database == DatabaseMode::Server,
+        CliError::new(
+            Category::Usage,
+            "native_requires_server_database",
+            "Native development uses the server development database. Use --runtime docker --database local only for a separate container database."
+        )
+    );
     let preview_lock = lock_file()?;
     preview_lock.try_lock().map_err(|_| {
         CliError::new(
@@ -162,11 +196,20 @@ pub async fn run(port: u16, no_open: bool, database: DatabaseMode) -> Result<()>
         )
         .with_recovery("miy", &["app", "dev-stop"])
     })?;
+    ensure!(
+        !std::path::Path::new(".miy/preview-run.json").exists() || saved_runtime()? == runtime,
+        CliError::new(
+            Category::Conflict,
+            "preview_runtime_cleanup_required",
+            "Stop the previous preview runtime before changing runtimes."
+        )
+        .with_recovery("miy", &["app", "dev-stop"])
+    );
     remove_state();
     let run = Uuid::new_v4().to_string();
     app_cli::save(
         ".miy/preview-run.json",
-        &json!({"protocol":1,"project":prefix()?,"runId":run,"pid":std::process::id()}),
+        &json!({"protocol":1,"project":prefix()?,"runId":run,"pid":std::process::id(),"runtime":runtime}),
     )?;
     let (shutdown, rx) = tokio::sync::watch::channel(Shutdown::Running);
     let observed = rx.clone();
@@ -183,10 +226,14 @@ pub async fn run(port: u16, no_open: bool, database: DatabaseMode) -> Result<()>
         let _ = shutdown.send(reason);
     });
     // Startup completes its current build/migration before cleanup, avoiding orphaned children.
-    let result = serve_preview(port, no_open, database, rx).await;
+    let result = serve_preview(port, no_open, database, runtime, rx).await;
     watcher.abort();
     let reason = *observed.borrow();
-    let cleaned = remove_containers().await;
+    let cleaned = if runtime == Runtime::Docker {
+        remove_containers().await
+    } else {
+        Ok(())
+    };
     // Preserve uncertain requests for recovery without creating duplicate work.
     let uncertain = reason == Shutdown::Running
         && result
@@ -204,7 +251,7 @@ pub async fn run(port: u16, no_open: bool, database: DatabaseMode) -> Result<()>
             return Err(CliError::new(
                 Category::Environment,
                 "preview_cleanup_failed",
-                "Preview was interrupted, but its owned containers could not be fully cleaned up.",
+                "Preview was interrupted, but its owned resources could not be fully cleaned up.",
             )
             .with_details(json!({"interrupted":true,"cleanupComplete":false}))
             .with_recovery("miy", &["app", "dev-stop"])
@@ -237,6 +284,7 @@ async fn serve_preview(
     port: u16,
     no_open: bool,
     database: DatabaseMode,
+    runtime: Runtime,
     mut shutdown: tokio::sync::watch::Receiver<Shutdown>,
 ) -> Result<()> {
     let listener = tokio::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, port))
@@ -259,7 +307,7 @@ async fn serve_preview(
         })?;
     let port = listener.local_addr()?.port();
     let session = app_cli::session()?;
-    if database == DatabaseMode::Server {
+    if database == DatabaseMode::Server && runtime == Runtime::Docker {
         crate::development_client::validate_origin(&session.origin)?;
     }
     let user = app_cli::api(&session, "/api/v1/me", None).await?;
@@ -282,29 +330,40 @@ async fn serve_preview(
     let _ = std::fs::remove_file("dist/image.json"); // Preview is not a releasable build.
     let project = prefix()?;
     let image = format!("miy-preview/{}:local", &project[12..]);
-    app_cli::run(
-        "docker",
-        &[
-            "build",
-            "--build-arg",
-            &format!("MIY_APP_ID={}", m.id),
-            "--build-arg",
-            "MIY_SOURCE_COMMIT=0000000000000000000000000000000000000000",
-            "-t",
-            &image,
-            ".",
-        ],
-    )?;
+    let executable = if runtime == Runtime::Native {
+        Some(crate::native_preview::build()?)
+    } else {
+        app_cli::run(
+            "docker",
+            &[
+                "build",
+                "--build-arg",
+                &format!("MIY_APP_ID={}", m.id),
+                "--build-arg",
+                "MIY_SOURCE_COMMIT=0000000000000000000000000000000000000000",
+                "-t",
+                &image,
+                ".",
+            ],
+        )?;
+        None
+    };
     if *shutdown.borrow() != Shutdown::Running {
         return Ok(());
     }
-    remove_containers().await?;
-    ensure_network(&project).await?;
+    if runtime == Runtime::Docker {
+        remove_containers().await?;
+        ensure_network(&project).await?;
+    }
     let remote = if database == DatabaseMode::Server {
         Some(
-            Remote::start(&session, &m, &project, || {
-                *shutdown.borrow() != Shutdown::Running
-            })
+            Remote::start(
+                &session,
+                &m,
+                &project,
+                || *shutdown.borrow() != Shutdown::Running,
+                runtime,
+            )
             .await?,
         )
     } else {
@@ -316,11 +375,27 @@ async fn serve_preview(
         } else {
             local_database(&project, &m).await?
         };
-        let result = start_app(&project, &image, &database_url).await;
+        let mut native = if let Some(ref executable) = executable {
+            Some(crate::native_preview::Backend::start(executable, &database_url).await?)
+        } else {
+            None
+        };
+        let result = if let Some(ref backend) = native {
+            Ok((
+                backend.port,
+                backend.secret.clone(),
+                backend.installation,
+                backend.release,
+            ))
+        } else {
+            start_app(&project, &image, &database_url).await
+        };
         let (backend_port, secret, installation, release) = match result {
             Ok(v) => v,
             Err(e) => {
-                let _ = remove_containers().await;
+                if runtime == Runtime::Docker {
+                    let _ = remove_containers().await;
+                }
                 return Err(e);
             }
         };
@@ -345,11 +420,11 @@ async fn serve_preview(
         // Only the short-lived preview entry token appears locally; no platform credential does.
         app_cli::save(
             ".miy/preview.json",
-            &json!({"url":url,"appId":m.id,"port":port}),
+            &json!({"url":url,"appId":m.id,"port":port,"runtime":runtime,"backendPort":backend_port,"databaseId":remote.as_ref().map(|r|r.database_id)}),
         )?;
         eprintln!(
             "{}",
-            json!({"url":url,"appId":m.id,"database":if remote.is_some() { "server-dev" } else { "local-only" },"platformEnvironment":"dev","databaseId":remote.as_ref().map(|r|r.database_id),"schemaFingerprint":remote.as_ref().map(|r|r.schema_fingerprint.as_str())})
+            json!({"url":url,"appId":m.id,"runtime":runtime,"database":if remote.is_some() { "server-dev" } else { "local-only" },"platformEnvironment":"dev","databaseId":remote.as_ref().map(|r|r.database_id),"schemaFingerprint":remote.as_ref().map(|r|r.schema_fingerprint.as_str())})
         );
         let app = Router::new()
             .route("/__miy/context", axum::routing::get(context))
@@ -374,7 +449,15 @@ async fn serve_preview(
                     .await;
             })
             .into_future();
-        server.await?;
+        let result = if let Some(ref mut backend) = native {
+            tokio::select! { result = server => result.map_err(anyhow::Error::from), result = backend.exited() => result }
+        } else {
+            server.await.map_err(anyhow::Error::from)
+        };
+        if let Some(ref mut backend) = native {
+            backend.stop().await?;
+        }
+        result?;
         Ok::<(), anyhow::Error>(())
     };
     if let Some(ref remote) = remote {

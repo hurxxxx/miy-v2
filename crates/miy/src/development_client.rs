@@ -63,6 +63,14 @@ pub struct Remote {
     pub schema_fingerprint: String,
     pub database_url: String,
     session: Session,
+    native_tunnel: Option<NativeTunnel>,
+}
+
+struct NativeTunnel(tokio::task::JoinHandle<Result<()>>);
+impl Drop for NativeTunnel {
+    fn drop(&mut self) {
+        self.0.abort();
+    }
 }
 
 fn same_owner(saved: &Saved, session: &Session) -> Result<()> {
@@ -131,8 +139,11 @@ impl Remote {
         manifest: &contract::Manifest,
         project: &str,
         cancelled: impl Fn() -> bool,
+        runtime: crate::preview::Runtime,
     ) -> Result<Self> {
-        validate_origin(&session.origin)?;
+        if runtime == crate::preview::Runtime::Docker {
+            validate_origin(&session.origin)?;
+        }
         let capability = app_cli::api(session, "/api/v1/capabilities", None).await?;
         ensure!(
             capability["features"]
@@ -144,7 +155,11 @@ impl Remote {
                 "This server does not support shared development databases. Upgrade the server before starting local development."
             )
         );
-        let image = helper_image(session).await?;
+        let image = if runtime == crate::preview::Runtime::Docker {
+            Some(helper_image(session).await?)
+        } else {
+            None
+        };
         ensure!(
             !cancelled(),
             CliError::new(
@@ -281,42 +296,51 @@ impl Remote {
                 .map(std::fs::read_to_string)
                 .transpose()?,
         };
-        let env = std::env::current_dir()?.join(".miy/preview-tunnel.env");
-        crate::platform::write_private(
-            &env,
-            format!("MIY_TUNNEL_CONFIG={}\n", serde_json::to_string(&config)?).as_bytes(),
-        )?;
-        let name = format!("{project}-tunnel");
-        let result = docker::docker(&[
-            "run",
-            "-d",
-            "--name",
-            &name,
-            "--label",
-            &format!("org.miy.preview={project}"),
-            "--network",
-            project,
-            "--network-alias",
-            "postgres",
-            "--env-file",
-            env.to_str().context("invalid_path")?,
-            "--user",
-            "10001:10001",
-            "--read-only",
-            "--cap-drop",
-            "ALL",
-            "--security-opt",
-            "no-new-privileges",
-            "--memory",
-            "96m",
-            "--pids-limit",
-            "64",
-            &image,
-        ])
-        .await;
-        let _ = std::fs::remove_file(&env);
-        result?;
-        let mut database_url = url::Url::parse("postgres://postgres:5432/")?;
+        let (host, port, native_tunnel) = if let Some(image) = image {
+            let env = std::env::current_dir()?.join(".miy/preview-tunnel.env");
+            crate::platform::write_private(
+                &env,
+                format!("MIY_TUNNEL_CONFIG={}\n", serde_json::to_string(&config)?).as_bytes(),
+            )?;
+            let name = format!("{project}-tunnel");
+            let result = docker::docker(&[
+                "run",
+                "-d",
+                "--name",
+                &name,
+                "--label",
+                &format!("org.miy.preview={project}"),
+                "--network",
+                project,
+                "--network-alias",
+                "postgres",
+                "--env-file",
+                env.to_str().context("invalid_path")?,
+                "--user",
+                "10001:10001",
+                "--read-only",
+                "--cap-drop",
+                "ALL",
+                "--security-opt",
+                "no-new-privileges",
+                "--memory",
+                "96m",
+                "--pids-limit",
+                "64",
+                &image,
+            ])
+            .await;
+            let _ = std::fs::remove_file(&env);
+            result?;
+            ("postgres", 5432, None)
+        } else {
+            let listener =
+                tokio::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0)).await?;
+            let port = listener.local_addr()?.port();
+            let tunnel = NativeTunnel(tokio::spawn(crate::db_tunnel::serve(listener, config)));
+            ("127.0.0.1", port, Some(tunnel))
+        };
+        let mut database_url = url::Url::parse(&format!("postgres://{host}:{port}/"))?;
         database_url
             .set_username(user)
             .map_err(|_| anyhow::anyhow!("invalid_development_user"))?;
@@ -333,11 +357,23 @@ impl Remote {
             schema_fingerprint: state["schemaFingerprint"].as_str().unwrap_or("").to_owned(),
             database_url: database_url.to_string(),
             session: session.clone(),
+            native_tunnel,
         })
     }
 
     pub async fn maintain(&self) -> Result<()> {
         loop {
+            ensure!(
+                !self
+                    .native_tunnel
+                    .as_ref()
+                    .is_some_and(|tunnel| tunnel.0.is_finished()),
+                CliError::new(
+                    Category::Network,
+                    "database_tunnel_stopped",
+                    "The local development database tunnel stopped."
+                )
+            );
             app_cli::api(
                 &self.session,
                 &format!("/api/v1/dev-sessions/{}/heartbeat", self.id),

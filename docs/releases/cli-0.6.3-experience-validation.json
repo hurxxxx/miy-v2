@@ -1,0 +1,325 @@
+{
+  "schemaVersion": 1,
+  "checkedAt": "2026-10-29T06:12:19.529511+00:00",
+  "status": "PASSED_LOCAL_WITH_SERVER_FOLLOWUP",
+  "branch": "codex/cli-experience-improvements",
+  "sourceCommit": "0db21c38d89061c4fb6d774585ffba46ee10407c",
+  "fixtureFixCommit": "8d7d04271f9467d8bbdd16308e73715b33e4dc0c",
+  "baseCommit": "c69c335",
+  "cliVersion": "0.6.3",
+  "bundleVersion": "0.7.1",
+  "environment": {
+    "os": "Windows 11 Pro x64 build 26200",
+    "shell": "PowerShell 7.6.5, non-elevated",
+    "installerTestShell": "5.1.26100.9711",
+    "rust": "1.99.1 MSVC",
+    "node": "24.19.0",
+    "pnpm": "10.34.5",
+    "browser": "installed Chrome, isolated headless fixtures",
+    "dockerDesktopInstalled": false
+  },
+  "changes": [
+    "Candidate-bound Windows installer build/test/workflow inputs replace fixed CLI 0.6.0 metadata; archive and binary checks remain mandatory.",
+    "Local Docker failures explain app build --remote in text and structured recovery; no automatic upload fallback.",
+    "CLI approval lifetime and context-bound restart; browser-only request status with no approval secrets; countdown and stale-request recovery.",
+    "OAuth authentication failures clear the temporary login cookie and redirect to fixed, non-reflecting recovery views; permission/unavailable states stay distinct.",
+    "390px mobile shell collapses navigation, preserves workspace width and closes navigation after routing."
+  ],
+  "tests": [
+    {
+      "name": "Windows client Rust units",
+      "passed": 106,
+      "failed": 0,
+      "ignored": 0
+    },
+    {
+      "name": "fmt / all-targets Clippy -D warnings / MSVC release",
+      "result": "PASS"
+    },
+    {
+      "name": "output contract including Docker guidance and both login expiry paths",
+      "passedGroups": 13,
+      "buildModes": [
+        "debug",
+        "release"
+      ]
+    },
+    {
+      "name": "server-build fault/recovery fixture",
+      "passedGroups": 10,
+      "realWorkerBuild": false
+    },
+    {
+      "name": "runtime client recovery fixture",
+      "passedGroups": 6,
+      "realDockerUsed": false
+    },
+    {
+      "name": "platform TypeScript / Vite production build",
+      "result": "PASS"
+    },
+    {
+      "name": "actual Chrome against local frontend and mocked API boundaries",
+      "passed": 14,
+      "failed": 0,
+      "skipped": 0,
+      "flaky": 0
+    },
+    {
+      "name": "installer integrity package regression",
+      "passed": 15,
+      "skipped": 4,
+      "skippedReason": "Linux publication/staging checks excluded on Windows"
+    },
+    {
+      "name": "exact native Windows installer including isolated install/update/uninstall",
+      "passed": 24,
+      "shell": "5.1.26100.9711",
+      "cases": [
+        {
+          "name": "embedded_archive_and_cli_provenance",
+          "passed": true
+        },
+        {
+          "name": "native_winforms_initial_state_is_simple_and_read_only",
+          "passed": true
+        },
+        {
+          "name": "fresh_inspection_does_not_create_settings",
+          "passed": true
+        },
+        {
+          "name": "missing_server_refuses_install_without_mutation",
+          "passed": true
+        },
+        {
+          "name": "invalid_and_credential_bearing_origins_are_rejected",
+          "passed": true
+        },
+        {
+          "name": "failed_probe_does_not_install_or_register",
+          "passed": true
+        },
+        {
+          "name": "redirects_and_oversized_capabilities_are_rejected",
+          "passed": true
+        },
+        {
+          "name": "explicit_http_ip_and_port_are_supported",
+          "passed": true
+        },
+        {
+          "name": "fresh_native_install_unicode_path_and_explicit_server",
+          "passed": true
+        },
+        {
+          "name": "installed_ui_disables_install_across_reopen_and_server_edit",
+          "passed": true
+        },
+        {
+          "name": "different_owned_binary_allows_update",
+          "passed": true
+        },
+        {
+          "name": "pending_recovery_is_detected_without_mutation",
+          "passed": true
+        },
+        {
+          "name": "rerun_preserves_existing_config_and_credentials_exactly",
+          "passed": true
+        },
+        {
+          "name": "different_server_requires_explicit_context_consent",
+          "passed": true
+        },
+        {
+          "name": "existing_context_cannot_be_rebound",
+          "passed": true
+        },
+        {
+          "name": "explicit_context_add_and_select_preserves_other_bindings",
+          "passed": true
+        },
+        {
+          "name": "automatic_context_selection_reuses_matching_binding",
+          "passed": true
+        },
+        {
+          "name": "automatic_context_names_avoid_collisions_and_preserve_bindings",
+          "passed": true
+        },
+        {
+          "name": "changed_config_snapshot_is_rejected_before_install",
+          "passed": true
+        },
+        {
+          "name": "installer_has_no_browser_login_action",
+          "passed": true
+        },
+        {
+          "name": "existing_empty_configuration_supports_automatic_context",
+          "passed": true
+        },
+        {
+          "name": "relative_config_override_survives_temporary_package_cleanup",
+          "passed": true
+        },
+        {
+          "name": "uninstall_preserves_even_broken_config_and_unmanaged_files",
+          "passed": true
+        },
+        {
+          "name": "removed_ui_disables_remove_and_allows_install_again",
+          "passed": true
+        }
+      ]
+    },
+    {
+      "name": "installer build rejects mismatched candidate identity before producing an executable",
+      "passed": 4,
+      "cases": [
+        {
+          "case": "archive-hash",
+          "rejected": true,
+          "installerProduced": false
+        },
+        {
+          "case": "version",
+          "rejected": true,
+          "installerProduced": false
+        },
+        {
+          "case": "cli-commit",
+          "rejected": true,
+          "installerProduced": false
+        },
+        {
+          "case": "binary-hash",
+          "rejected": true,
+          "installerProduced": false
+        }
+      ]
+    }
+  ],
+  "localInstaller": {
+    "archiveSha256": "401cf840ff2c38dc846f711af8494fb0d4c4e70d202036d3973c2c1f2a765fd9",
+    "bytes": 6105600,
+    "cliBinarySha256": "2d1b0994b069b6315f816df6d934afba0fe82eb993f408345d01fa187a4cbe61",
+    "cliCommit": "0db21c38d89061c4fb6d774585ffba46ee10407c",
+    "file": "MiySetup-0.6.3-windows-x64.exe",
+    "installerCommit": "0db21c38d89061c4fb6d774585ffba46ee10407c",
+    "platform": "windows-x64",
+    "schemaVersion": 1,
+    "sha256": "f201775aa7e9dd7b326e48ae4ea9864e30aa30204acb335557d3eaefbeb97de7",
+    "version": "0.6.3",
+    "published": false,
+    "relativeDeliveryDirectory": ".local/releases/cli-0.6.3-local-0db21c3"
+  },
+  "ci": {
+    "foundation": {
+      "url": "https://github.com/hurxxxx/miy-v2/actions/runs/40826944825",
+      "headSha": "8d7d04271f9467d8bbdd16308e73715b33e4dc0c",
+      "status": "completed",
+      "conclusion": "success",
+      "jobs": [
+        {
+          "name": "Linux client",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "macOS client",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Linux server (default features)",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Windows MSVC client",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Compare embedded bundle hashes across operating systems",
+          "status": "completed",
+          "conclusion": "success"
+        }
+      ]
+    },
+    "nativeCandidates": {
+      "url": "https://github.com/hurxxxx/miy-v2/actions/runs/40826960538",
+      "headSha": "8d7d04271f9467d8bbdd16308e73715b33e4dc0c",
+      "status": "in_progress",
+      "conclusion": "",
+      "jobs": [
+        {
+          "name": "candidate",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "x86_64-pc-windows-msvc",
+          "status": "in_progress",
+          "conclusion": ""
+        },
+        {
+          "name": "x86_64-unknown-linux-gnu",
+          "status": "in_progress",
+          "conclusion": ""
+        },
+        {
+          "name": "x86_64-apple-darwin",
+          "status": "in_progress",
+          "conclusion": ""
+        },
+        {
+          "name": "aarch64-apple-darwin",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "aarch64-unknown-linux-gnu",
+          "status": "completed",
+          "conclusion": "success"
+        }
+      ]
+    },
+    "publishRequested": false
+  },
+  "knownFailuresAndLimits": [
+    "An initial unit run inherited the real CLI context and failed the empty-metadata assertion. Rerun in an isolated MIY_CONFIG_DIR passed all 106 without weakening the assertion.",
+    "A first frontend fixture configuration also selected three live-server tests, which failed because localhost:18000 was not running. The isolated suite now explicitly targets mocked UI tests; live tests remain unchanged and are listed for Linux follow-up.",
+    "First foundation Windows CI failed because empty PATH did not isolate Windows executable search from installed Docker. The fixture now runs a copied CLI beside a trusted failing Docker executable, preserving the original strict assertion. Debug/release checks pass locally; follow the recorded corrected CI status.",
+    "Native C# compilation retains the existing CS0108 Capture member warning. The exact produced installer passed all 24 native scenarios."
+  ],
+  "notRun": [
+    "New browser-only device status and OAuth callback against a real PostgreSQL/IdP deployment; extended owned Linux auth regression must run on the server.",
+    "Actual 0.6.3 platform UI/server deployment and live 390px Todo browser acceptance.",
+    "Public CLI/installer index publication, official GitHub Release/tag, and global user CLI installation.",
+    "Any unfinished native CI jobs are pending, not counted as passing local tests.",
+    "Production promotion, daemon/network failure injection and new least-privilege acceptance."
+  ],
+  "screenshots": {
+    "directory": "evidence/cli-0.6.3-experience",
+    "sha256": {
+      "mobile-approval.png": "c685828c57ed8ccec19e190e526bc4086145b0f9448d019d57dce96d43a16244",
+      "expired-request.png": "3ef66377433990d4619fb254f160fc16f82aabc789996d327d7e6baa9c2f2685",
+      "mobile-shell.png": "81cecff73a6180c2d15985460aa80234bbb77f5edf8d0e2ce92aa85949819c73",
+      "installer-initial-form.png": "936d07d7db98a344180ac09229088cfd043cb1ad8918b08c74be9c28f4708853",
+      "installer-completed-form.png": "dae4832ccad3d40839cd95e3ad0e7cfa1a654fb3ac4fce5c95679da775a81b08"
+    },
+    "scope": "Local UI/API fixtures and isolated native installer; loopback server/approval code in images are synthetic."
+  },
+  "cleanup": {
+    "nativeInstallerFixtureCleaned": true,
+    "userSettingsAndCredentialsPreserved": true,
+    "userPathRestoredByFixture": true,
+    "realTodoAppAndDatabaseModified": false
+  },
+  "handoff": "../CLI-EXPERIENCE-SERVER-HANDOFF.md",
+  "localEvidenceDirectory": "C:\\projects\\miy-v2\\.local\\evidence\\cli-experience",
+  "secrets": "No private tokens, cookies, credential storage or database connection strings copied into the report."
+}

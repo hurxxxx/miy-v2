@@ -1,8 +1,33 @@
 # Windows GUI 설치 파일
 
+## 현재 설치 후보
+
+CLI·설치기 소스는 `8d7d04271f9467d8bbdd16308e73715b33e4dc0c`다. [CLI CI 40826960538](https://github.com/hurxxxx/miy-v2/actions/runs/40826960538)의 정확한 Windows 행을 [설치기 CI 40830813012](https://github.com/hurxxxx/miy-v2/actions/runs/40830813012)에 전달했다. 네이티브 검사 24개와 Linux 패키지 검사 19개가 통과했고, 실제 서버에 동일한 CLI/installer index와 0.6.3 서버/UI를 반영했다. [Linux 검증 보고서](CLI-0.6.3-LINUX-VALIDATION.md)에 검사·출처·남은 IdP 확인 범위를 기록한다.
+
+[현재 설치 파일 다운로드](https://v2.dwdcc.kr/cli/installers/8d7d04271f9467d8bbdd16308e73715b33e4dc0c/MiySetup-0.6.3-windows-x64.exe): 6,105,600 bytes, SHA-256 `662f8a59c098ac4b2cbde4041799a99f0c6e21f193bbe8b31d2098f6095233af`. [index](releases/windows-installer-0.6.3-candidate.json)의 CLI ZIP/실행 파일 해시도 게시된 CLI와 일치한다. 기존 0.6.0 파일은 되돌림을 위해 보존했다. 사용자 Windows 11에서 이 CI 파일의 새 실행은 별도 확인 사항이다.
+
+## CLI 0.6.3 Windows 구현·로컬 후보 준비 이력
+
+`codex/cli-experience-improvements`의 설치기 빌드는 0.6.0 배포물에 고정하지 않고 검증한 후보의 버전·CLI 소스 commit·ZIP SHA-256·실행 파일 SHA-256을 명시적으로 받는다. 설치기와 CLI의 출처는 계속 별도로 검증한다. 이 Windows 로컬 준비 단계에서는 당시 공개 설치 파일을 교체하지 않았다. 이후 Linux 게시 결과는 위 현재 설치 후보 절을 따른다.
+
+Windows 11에서 로컬 0.6.3 파일을 생성해 PowerShell 5.1의 실제 설치·갱신·보존·제거 **24개**와 잘못된 후보 입력 거부 **4개**를 통과했다. [결과와 해시](releases/cli-0.6.3-experience-validation.json)를 확인한다. 파일은 이 PC의 `.local/releases/cli-0.6.3-local-0db21c3/`에 있으며 공개 게시 전 후보로 구분한다.
+
+```powershell
+# 깨끗한 CLI 소스 checkout에서 package-cli-release.py package로 생성한 ZIP을 사용한다.
+# 값은 해당 후보의 release.json과 별도로 확인한 체크섬에서 가져온다.
+& ./ops/windows-installer/build.ps1 -ArchivePath $Archive -Sha256 $ArchiveSha256 `
+  -OutputDirectory $BuildDirectory -InstallerCommit $InstallerCommit `
+  -Version $CliVersion -CliCommit $CliCommit -CliBinarySha256 $CliBinarySha256
+& ./ops/windows-installer/test.ps1 -InstallerPath $Installer -ArchivePath $Archive `
+  -OutputDirectory $EvidenceDirectory -Version $CliVersion `
+  -CliCommit $CliCommit -CliBinarySha256 $CliBinarySha256
+```
+
+Actions의 `Windows installer candidate`에도 `installer_commit`, 성공한 CLI 후보 workflow의 `cli_run_id`, `cli_version`, `cli_commit`, `cli_archive_sha256`, `cli_binary_sha256`을 전달한다. 후보 workflow는 빌드·검사·artifact 보존만 수행하고 다운로드 서버나 GitHub Release에 자동 게시하지 않는다. 게시 시에는 CLI 다섯 대상의 aggregate와 설치기 index가 같은 버전·CLI commit·Windows ZIP/실행 파일 해시를 가리켜야 한다. 0.6.3 서버에 0.6.0 다운로드 index만 그대로 연결하면 버전 검사에서 거부되므로 서버 반영과 배포물 준비를 함께 진행한다.
+
 Windows 11 x64 사용자는 회사 MIY 홈페이지의 `/cli/install`에서 **Windows 설치 파일 다운로드**를 선택한다. 설치 파일에는 CLI와 검증된 설치 스크립트가 들어 있다. 설치할 때 GitHub나 고정된 공개 배포 서버에 접속할 필요가 없다.
 
-## 현재 설치 후보
+## 이전 설치 후보 — 0.6.0
 
 설치기 소스 `94a02c7`의 [Windows 빌드](https://github.com/hurxxxx/miy-v2/actions/runs/40653364755)가 통과했다. 내장 CLI는 검증된 `b67798b`의 0.6.0이며, 설치 파일은 약 5.7 MiB다. [현재 서버에서 다운로드](https://v2.dwdcc.kr/cli/installers/94a02c7741d8dd413345abcc110c9d6fe2a153b4/MiySetup-0.6.0-windows-x64.exe)하거나 [설치 홈페이지](https://v2.dwdcc.kr/cli/install)를 이용한다.
 
@@ -12,7 +37,7 @@ Windows Server 2022 / PowerShell 5.1에서 실제 설치 파일의 24개 검사�
 
 ## 설치와 서버 등록
 
-1. 홈페이지에 표시된 회사 서버 주소를 복사하고 `MiySetup-0.6.0-windows-x64.exe`를 실행한다.
+1. 홈페이지에 표시된 회사 서버 주소를 복사하고 `MiySetup-0.6.3-windows-x64.exe`를 실행한다.
 2. 빈 서버 주소 입력란에 `https://회사도메인` 또는 `http://사내IP:포트`를 입력하고 연결을 확인한다. 기본 도메인이나 IP는 없다.
 3. **설치**를 누른다. 설치 폴더·연결 이름·사용자 PATH는 자동으로 관리한다.
 4. 설치가 완료되면 설치 버튼은 비활성화되고 **CLI 제거** 버튼이 활성화된다. 설치 전에는 제거 버튼이 비활성화된다.

@@ -1,0 +1,63 @@
+{
+  "configurationUnchanged": {
+    ".local/runtime.env": true,
+    ".local/server.json": true,
+    "/etc/systemd/system/miy-v2-serve.service": true,
+    "/etc/systemd/system/miy-v2-worker.service": true,
+    "nginx": true
+  },
+  "containersUnchanged": [
+    {
+      "Id": "892c4cd41ca1b22a74cd2967e339ae1bf7ebf1350f5d98db3e4bbb06702f28c5",
+      "Name": "/miy-app-0ef7e3f6d9eb4a8dae05f06c603f80b4",
+      "Image": "sha256:386e71c86012e6a55c579fc2482bf255fb3cbab8f83f99c0d3bb50799164a75f",
+      "StartedAt": "2026-10-29T04:27:49.709637797Z",
+      "Status": "running"
+    },
+    {
+      "Id": "b05396e09227cfda0edce10fc8099c5b1b561b2bf9ddb28f2a002e686ea0f8b3",
+      "Name": "/miy-app-3424326c54484eee8841b44bec358ca2",
+      "Image": "sha256:d69be14b19af7ad671c47537ac212af8ab9cf44430e890ce6c19994a8b8fe8db",
+      "StartedAt": "2026-10-28T00:12:53.710671004Z",
+      "Status": "exited"
+    },
+    {
+      "Id": "16fae76f589a3015153abae2882c4c9022ee617594feb0ddef44b133d2dc9694",
+      "Name": "/miy-app-b0fae2e73da8403e929fc0cbcb25c460",
+      "Image": "sha256:d69be14b19af7ad671c47537ac212af8ab9cf44430e890ce6c19994a8b8fe8db",
+      "StartedAt": "2026-10-28T00:12:51.595303409Z",
+      "Status": "exited"
+    },
+    {
+      "Id": "a5777e4171c4755e85a4c13380082cfdc0821dce3733bebf5f8d01011bab0d12",
+      "Name": "/miy-app-83dc604fb11b4263bcba1a97a50da235",
+      "Image": "sha256:cac0426bc97a2df08c9749edc0a1c9ea2eab8ddf150968918f96a477e5b4ff44",
+      "StartedAt": "2026-10-28T00:10:01.316727015Z",
+      "Status": "exited"
+    },
+    {
+      "Id": "565b14807d75832cd30dc74a3b0387271f887d84e18ffba1f2d643c26fa60d3e",
+      "Name": "/miy-app-07b3a6e7ac9345e69c7e48ddc85b8ed5",
+      "Image": "sha256:cac0426bc97a2df08c9749edc0a1c9ea2eab8ddf150968918f96a477e5b4ff44",
+      "StartedAt": "2026-10-28T00:09:59.224331907Z",
+      "Status": "exited"
+    },
+    {
+      "Id": "c4632e9ca29df13e13f6e0fa767e603d5745734e3851e02e07cbb70e7b9ba4c4",
+      "Name": "/miy-v2-validation-keycloak-1",
+      "Image": "sha256:79c623a22abacf3fe6c00a5fb30f5b7843d717b234033b80995891c06116d244",
+      "StartedAt": "2026-10-27T22:55:03.611322718Z",
+      "Status": "running"
+    },
+    {
+      "Id": "19cfc6f830c9ebb952d3feb1c8fbbd81848055939a62eabccf071fa2d5985372",
+      "Name": "/miy-v2-validation-postgres-1",
+      "Image": "sha256:7e32e9833a6fb1c92c32552794cb6ed569d51b445a54907d35fc112ef39684db",
+      "StartedAt": "2026-10-27T22:54:51.051403522Z",
+      "Status": "running"
+    }
+  ],
+  "uiIndexSha256": "80509d76a5c38c23c5ae57de3cb5729c4f1388a9bbb0de84f5ab9b6cb9bab73d",
+  "serverVersion": "miy 0.6.3",
+  "originalWorkspaceClean": true
+}

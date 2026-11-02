@@ -1,0 +1,209 @@
+{
+  "generatedAt": "2026-10-29T06:44:04.137441+00:00",
+  "sourceCommit": "84d58cd417c990e37e29d4b8183b260f0f10d0a5",
+  "scope": "Linux frontend checks and route-mocked Chromium browser regression; no live service or IdP test performed by this agent",
+  "status": "PASS",
+  "commands": [
+    {
+      "label": "pnpm-install",
+      "command": [
+        "pnpm",
+        "install",
+        "--frozen-lockfile"
+      ],
+      "cwd": "/projects/miy-v2-cli-experience-20261029",
+      "environment": {
+        "MIY_CONFIG_DIR": "/projects/miy-cli-experience-run-20261029/ui-config",
+        "PLAYWRIGHT_JSON_OUTPUT_FILE": "/projects/miy-cli-experience-run-20261029/evidence/ui/browser-results.json"
+      },
+      "startedAt": "2026-10-29T06:41:18.926987+00:00",
+      "durationSeconds": 0.548,
+      "exitCode": 0,
+      "log": "/projects/miy-cli-experience-run-20261029/evidence/ui/pnpm-install.log"
+    },
+    {
+      "label": "pnpm-typecheck",
+      "command": [
+        "pnpm",
+        "typecheck"
+      ],
+      "cwd": "/projects/miy-v2-cli-experience-20261029",
+      "environment": {
+        "MIY_CONFIG_DIR": "/projects/miy-cli-experience-run-20261029/ui-config",
+        "PLAYWRIGHT_JSON_OUTPUT_FILE": "/projects/miy-cli-experience-run-20261029/evidence/ui/browser-results.json"
+      },
+      "startedAt": "2026-10-29T06:41:31.487882+00:00",
+      "durationSeconds": 0.976,
+      "exitCode": 0,
+      "log": "/projects/miy-cli-experience-run-20261029/evidence/ui/pnpm-typecheck.log"
+    },
+    {
+      "label": "platform-build",
+      "command": [
+        "pnpm",
+        "--filter",
+        "@miy/platform",
+        "build"
+      ],
+      "cwd": "/projects/miy-v2-cli-experience-20261029",
+      "environment": {
+        "MIY_CONFIG_DIR": "/projects/miy-cli-experience-run-20261029/ui-config",
+        "PLAYWRIGHT_JSON_OUTPUT_FILE": "/projects/miy-cli-experience-run-20261029/evidence/ui/browser-results.json"
+      },
+      "startedAt": "2026-10-29T06:41:31.490590+00:00",
+      "durationSeconds": 1.896,
+      "exitCode": 0,
+      "log": "/projects/miy-cli-experience-run-20261029/evidence/ui/platform-build.log"
+    },
+    {
+      "label": "playwright-fixtures",
+      "command": [
+        "pnpm",
+        "exec",
+        "playwright",
+        "test",
+        "--config",
+        "tests/cli-experience.config.ts"
+      ],
+      "cwd": "/projects/miy-v2-cli-experience-20261029",
+      "environment": {
+        "MIY_CONFIG_DIR": "/projects/miy-cli-experience-run-20261029/ui-config",
+        "PLAYWRIGHT_JSON_OUTPUT_FILE": "/projects/miy-cli-experience-run-20261029/evidence/ui/browser-results.json"
+      },
+      "startedAt": "2026-10-29T06:41:42.622367+00:00",
+      "durationSeconds": 9.899,
+      "exitCode": 0,
+      "log": "/projects/miy-cli-experience-run-20261029/evidence/ui/playwright-fixtures.log"
+    }
+  ],
+  "browser": {
+    "engine": "Google Chrome for Testing 156.0.8078.4",
+    "playwright": "1.64.1",
+    "executable": "/home/dwdcc/.cache/ms-playwright/chromium_headless_shell-1248/chrome-headless-shell-linux64/chrome-headless-shell",
+    "passed": 14,
+    "failed": 0,
+    "skipped": 0,
+    "flaky": 0,
+    "screenshots": [
+      {
+        "path": "/projects/miy-cli-experience-run-20261029/evidence/ui/screenshots/mobile-shell.png",
+        "sourcePath": "/projects/miy-v2-cli-experience-20261029/.local/evidence/cli-experience/browser/cli-experience-390px-shell-28ff9-and-closes-it-after-routing/mobile-shell.png",
+        "sha256": "c1be70bb3386c58696ea3700884294e521049b33fa3c0c0d55537244c7bc2fa0",
+        "width": 390,
+        "height": 844
+      },
+      {
+        "path": "/projects/miy-cli-experience-run-20261029/evidence/ui/screenshots/mobile-approval.png",
+        "sourcePath": "/projects/miy-v2-cli-experience-20261029/.local/evidence/cli-experience/browser/cli-experience-approval-sh-b841f-xact-code-with-browser-CSRF/mobile-approval.png",
+        "sha256": "6f43573bd90339b746569882dc872d8e09b17e392616a1c2c95714bf66f7c7d8",
+        "width": 390,
+        "height": 844
+      },
+      {
+        "path": "/projects/miy-cli-experience-run-20261029/evidence/ui/screenshots/expired-request.png",
+        "sourcePath": "/projects/miy-v2-cli-experience-20261029/.local/evidence/cli-experience/browser/cli-experience-expired-or--f51f9--command-and-cannot-approve/expired-request.png",
+        "sha256": "682a4bd8dee57f9aa326766cd7be685c03e55dbe5868617936ec26f294130c5f",
+        "width": 1280,
+        "height": 720
+      },
+      {
+        "path": "/projects/miy-cli-experience-run-20261029/evidence/ui/screenshots/windows-installer-desktop.png",
+        "sourcePath": "/projects/miy-v2-cli-experience-20261029/.local/evidence/cli-experience/browser/cli-install-Windows-setup--51094-s-the-displayed-company-URL/windows-installer-desktop.png",
+        "sha256": "cc691ab804609784fe659e50cc425ea88b05a909d081615cc1117818302e7787",
+        "width": 1280,
+        "height": 1299
+      },
+      {
+        "path": "/projects/miy-cli-experience-run-20261029/evidence/ui/screenshots/windows-installer-mobile.png",
+        "sourcePath": "/projects/miy-v2-cli-experience-20261029/.local/evidence/cli-experience/browser/cli-install-Windows-setup--51094-s-the-displayed-company-URL/windows-installer-mobile.png",
+        "sha256": "aea8216ae8747eaf9543c7c4056026be9814cf9726105e6901383fcfcf392869",
+        "width": 390,
+        "height": 1793
+      },
+      {
+        "path": "/projects/miy-cli-experience-run-20261029/evidence/ui/screenshots/cli-install-desktop.png",
+        "sourcePath": "/projects/miy-v2-cli-experience-20261029/.local/evidence/cli-experience/browser/cli-install-public-install-90b0f-n-and-copies-exact-commands/cli-install-desktop.png",
+        "sha256": "78bd56c479753cc1c76f195cbfa7c0231ed6985cfb7e19c28f0cabddd3d7aa57",
+        "width": 1280,
+        "height": 1497
+      },
+      {
+        "path": "/projects/miy-cli-experience-run-20261029/evidence/ui/screenshots/cli-install-mobile.png",
+        "sourcePath": "/projects/miy-v2-cli-experience-20261029/.local/evidence/cli-experience/browser/cli-install-public-install-90b0f-n-and-copies-exact-commands/cli-install-mobile.png",
+        "sha256": "69837c311089ab659242cc88d5007bee0527c3b5db050c1160da43b6a38b89bd",
+        "width": 390,
+        "height": 2365
+      }
+    ],
+    "visualReview": "All 7 screenshots inspected. 390px mobile approval, navigation shell and installation screens are readable without horizontal overflow; desktop installation/recovery screens are readable. Screenshot CLI0.6.0 and account/code values are deliberate test fixtures, not deployed version evidence."
+  },
+  "artifact": {
+    "sourceCommit": "84d58cd417c990e37e29d4b8183b260f0f10d0a5",
+    "distPath": "/projects/miy-v2-cli-experience-20261029/web/platform/dist",
+    "archivePath": "/projects/miy-cli-experience-run-20261029/evidence/ui/platform-ui.tar.gz",
+    "archiveSha256": "10c95a12bbc9160b51fce9f198d0a2ea3a21568fabadcd5dfa13aabf3d7f5aa1",
+    "fileManifestSha256": "fc12db48d43961712b8227c3cfabce63c6f31c4c72374f3ba167aab6be7e15ca",
+    "fileCount": 17,
+    "totalBytes": 442014
+  },
+  "artifactArchiveMatchesManifest": true,
+  "failures": [],
+  "warnings": [
+    "Playwright subprocesses warn that FORCE_COLOR overrides NO_COLOR; tests pass."
+  ],
+  "evidenceCollectionCorrection": "First metadata collection exited1 because it assumed obsolete executable name headless_shell. Located actual chrome-headless-shell binary, reran collection successfully. No test rerun or source change needed.",
+  "realIntegration": [
+    {
+      "case": "development-login.spec.ts",
+      "status": "NOT_RUN_BY_THIS_AGENT",
+      "reason": "Parent owns post-deployment run against actual configured shared development login. Local default platform localhost:18000 unavailable; no environment created or live config changed.",
+      "testCount": 3,
+      "coverage": "4 account buttons and logout, origin/account rejection, real CLI device approval/token exchange/revoke using synthetic development identities; no IdP redirect expected."
+    },
+    {
+      "case": "natural CLI request expiry",
+      "status": "NOT_RUN_BY_THIS_AGENT",
+      "reason": "Parent created an actual live request and owns waiting for natural five-minute expiry and checking browser recovery. Route-mocked countdown and missing request cases passed here."
+    },
+    {
+      "case": "normal actual IdP login",
+      "status": "NOT_RUN",
+      "reason": "Requires user-held IdP credentials or an existing authorized IdP session, neither used by this agent.",
+      "url": "https://v2.dwdcc.kr/auth/login",
+      "instructions": [
+        "Open this URL in a new private browser context. Use the actual IdP login, not the 4 shared development account buttons.",
+        "Complete provider login and return within five minutes. Verify return to platform and /api/v1/me success for the expected account with development=false.",
+        "Record only status, fixed page URL and redacted screenshot; keep credentials, callback query strings, cookie/token values out of evidence. Log out the test session."
+      ]
+    },
+    {
+      "case": "genuine used OAuth callback",
+      "status": "NOT_RUN",
+      "reason": "Needs successful actual IdP callback first. Unknown-state synthetic callback regression is not evidence of an actual consumed authorization code.",
+      "startUrl": "https://v2.dwdcc.kr/auth/login",
+      "instructions": [
+        "Complete a normal real IdP login while retaining its callback URL only in private browser memory; disable trace/network archives and never print its code or state.",
+        "Revisit the same callback once without changing cookies/state/nonce or intercepting requests. Expect redirect to https://v2.dwdcc.kr/?login=expired, no-store, and miy_login cleared.",
+        "Verify no new session is issued. An existing legitimate miy_session need not be cleared by callback recovery. Finish by logging out and close the private context."
+      ]
+    },
+    {
+      "case": "actual IdP flow naturally expires",
+      "status": "NOT_RUN",
+      "reason": "Requires interactive IdP login after waiting over five minutes.",
+      "url": "https://v2.dwdcc.kr/auth/login",
+      "instructions": [
+        "Start OAuth at this URL, wait over five minutes before completing the actual provider login, and confirm fixed /?login=expired recovery with a new-login link. Do not change database expiry or bypass state/nonce/Origin checks."
+      ]
+    }
+  ],
+  "cleanup": {
+    "playwrightWebServer18763Stopped": true,
+    "isolatedConfigDir": "/projects/miy-cli-experience-run-20261029/ui-config",
+    "isolatedConfigDirStillEmpty": true,
+    "trackedSourceUnchanged": true,
+    "liveServiceConfigDatabaseKeycloakMutated": false,
+    "userSecretsRead": false,
+    "retained": "node_modules, web/platform/dist and test output in isolated worktree; command logs, 7 screenshots and immutable platform UI archive in evidence/ui."
+  }
+}
