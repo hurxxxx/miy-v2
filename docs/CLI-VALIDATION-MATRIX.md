@@ -1,10 +1,26 @@
 # CLI 상세 검증 기록
 
-- 갱신: 2026-10-28
-- 현재 검증 대상: CLI 0.6.0 / 번들 0.7.0. 배포 CLI 후보는 `b67798b`, 반영한 서버 소스는 `5ca4047`이며 서로 다른 소스와 바이너리의 증거를 구분한다.
+- 갱신: 2026-11-02
+- 최신 연결 검사 대상: 실제 서버·게시 CLI **0.6.3 / 번들 0.7.1**, 배포 소스 `8d7d04271f9467d8bbdd16308e73715b33e4dc0c`. 이 `main` 작업본의 CLI 0.6.0 / 번들 0.7.0 소스와 구분한다.
 - 범위: [구현 계획](CLI-IMPLEMENTATION-PLAN.md). [전체 V0~V7 인수](VALIDATION.md)는 별도다.
 
-실제 실행 결과와 남은 환경 검사를 구분한다. 현재 0.6 결과를 먼저 기록하고, CLI 0.5 / 번들 0.6.2와 `0fe94a4`의 검증은 아래 이력에 보존한다. `PASS`는 명시한 소스·바이너리·fixture·환경·assertion 범위에만 적용하고, 실제 장비/IdP/원격 서버/AI 세션을 대신하지 않는다.
+실제 실행 결과와 남은 환경 검사를 구분한다. 최신 연결 검사와 이전 0.6 결과를 먼저 기록하고, CLI 0.5 / 번들 0.6.2와 `0fe94a4`의 검증은 아래 이력에 보존한다. `PASS`는 명시한 소스·바이너리·fixture·환경·assertion 범위에만 적용하고, 다른 장비/원격 서버/AI 세션을 대신하지 않는다.
+
+## 현재 플랫폼 서버 연결 — 2026-11-02
+
+현재 호스트의 `https://v2.dwdcc.kr`는 서버·worker·웹·CLI 다운로드가 이미 0.6.3으로 반영된 상태다. 이 실행에서는 게시된 CLI의 출처·hash를 확인하고 새 격리 설정으로 실제 연결만 검증했다. [운영·재실행 안내](SERVER-OPERATIONS.md), [비밀값 없는 결과 JSON](releases/platform-server-2026-11-02-validation.json)을 보존한다.
+
+| 검사 | 실제 결과 |
+| --- | --- |
+| 호스트·HTTPS | TLS 1.3 인증서 검증, Nginx 설정 검사, 두 MIY 서비스 active/enabled, 설치된 Nginx/unit과 생성본 hash 일치 |
+| 게시 배포물 | CLI5종 + helper2종 **7개 / 249,147,486 bytes**와 Windows 설치 EXE **6,105,600 bytes**를 실제 다운로드·SHA-256 검증 |
+| 설치·서버 선택 | Unix 임시 prefix 설치, 명시한 HTTPS 주소 context 등록, 게시 바이너리 hash 보존 |
+| 일반 OIDC·CLI | 개발자 일반 IdP 로그인1회, 같은 계정의 device UI 승인·auth status·operate doctor PASS. 공유 개발 로그인 대신 일반 OIDC 경로로 성공 |
+| 생성 stdio MCP | 실제 initialize/tools/list와 도구4종 PASS: 보호 파일19개·API55개·컴포넌트1개·선택 도움말을 HTTP API/실행 CLI 결과와 대조 |
+| 직접 HTTP MCP | metadata의 대표 주소/issuer 일치, 누락·잘못된 bearer 각각401/OAuth challenge. 인증된 HTTP 도구 호출은 이번 NOT_RUN |
+| 정리·보존 | 연결·비교·정리 **17개 확인 PASS**, cleanup 실패0. 새 CLI·웹 플랫폼 세션 로그아웃. 서비스 PID/시작/재시작 횟수와 기존23컨테이너 보존, 앱3·릴리스5·설치5·runtime job13·upload4·server build2·migration15개 수 동일 |
+
+검사기 `scripts/check-platform-connection.mjs`는 작업 중 추가한 파일이며, 결과에 실행한 파일의 SHA-256과 당시 저장소 commit을 남겼다. 제품 실행 파일은 게시된 `8d7d042`의 불변 바이너리다. 이 연결 검사 수를 Rust 단위 테스트 수나 앱 배포 인수 수로 합산하지 않는다. 별도 PC에서의 실행·독립 AI·OAuth callback 재사용·앱 재배포는 이번 실행에 포함하지 않았다. 이전 인수 기록의 같은 Linux 호스트/다른 PC 구분도 유지한다.
 
 ## CLI 0.6 현재 검증 범위 — 2026-10-28
 

@@ -1,0 +1,251 @@
+{
+  "schemaVersion": 1,
+  "checkedAt": "2026-11-02T12:01:53.014Z",
+  "serverUrl": "https://v2.dwdcc.kr",
+  "serverVersion": "0.6.3",
+  "bundleVersion": "0.7.1",
+  "deployedSourceCommit": "8d7d04271f9467d8bbdd16308e73715b33e4dc0c",
+  "status": "PASS",
+  "configuration": {
+    "nginx": {
+      "renderedMatchesInstalled": true,
+      "installedSha256": "88e414985999409345114a0913340f3528c0b9917c9ea2402b4582a1c90624ff"
+    },
+    "serveUnit": {
+      "renderedMatchesInstalled": true,
+      "installedSha256": "9d6275ecd5c35b31b04d99ff2157461fac04107104c0cabde4521eaf79576850"
+    },
+    "workerUnit": {
+      "renderedMatchesInstalled": true,
+      "installedSha256": "c4b61a17ee83a6d25483bb3f97fd85da40ba229f907dcbf90662bcbd579b83ea"
+    },
+    ".local": {
+      "mode": "0o700"
+    },
+    ".local/runtime.env": {
+      "mode": "0o600"
+    },
+    ".local/credentials.json": {
+      "mode": "0o600"
+    }
+  },
+  "publishedLinuxCli": {
+    "origin": "https://v2.dwdcc.kr",
+    "sourceCommit": "8d7d04271f9467d8bbdd16308e73715b33e4dc0c",
+    "cliVersion": "0.6.3",
+    "archiveSha256": "4dbd45689ccc421feb6707d037e59bcabb4d225afcae86c11a6949e05f0d7ab6",
+    "binarySha256": "86d0d6294eb751ab88e7d7ed1d6925c0a477b4e71686e1cb087f17f5026bbf54",
+    "downloadBytes": 6827879,
+    "metadataVerified": true
+  },
+  "unixInstallation": {
+    "status": "PASS",
+    "serverRegistered": true,
+    "binaryMatchesPublished": true,
+    "binarySha256": "86d0d6294eb751ab88e7d7ed1d6925c0a477b4e71686e1cb087f17f5026bbf54",
+    "version": "miy 0.6.3"
+  },
+  "downloads": {
+    "verified": true,
+    "serverUrl": "https://v2.dwdcc.kr",
+    "commit": "8d7d04271f9467d8bbdd16308e73715b33e4dc0c",
+    "version": "0.6.3",
+    "downloads": 7,
+    "bytes": 249147486
+  },
+  "windowsInstallerAndTls": {
+    "status": "PASS",
+    "file": "MiySetup-0.6.3-windows-x64.exe",
+    "installerCommit": "8d7d04271f9467d8bbdd16308e73715b33e4dc0c",
+    "sha256": "662f8a59c098ac4b2cbde4041799a99f0c6e21f193bbe8b31d2098f6095233af",
+    "bytes": 6105600,
+    "tls": {
+      "verified": true,
+      "protocol": "TLSv1.3",
+      "certificateExpires": "Jan 23 22:22:12 2027 GMT"
+    }
+  },
+  "httpMcpUnauthenticatedBoundary": {
+    "status": "PASS",
+    "checks": [
+      {
+        "case": "missing_bearer",
+        "status": 401,
+        "hasOAuthResourceChallenge": true
+      },
+      {
+        "case": "invalid_bearer",
+        "status": 401,
+        "hasOAuthResourceChallenge": true
+      }
+    ]
+  },
+  "connection": {
+    "schemaVersion": 1,
+    "startedAt": "2026-11-02T12:01:51.692Z",
+    "finishedAt": "2026-11-02T12:01:53.014Z",
+    "status": "passed",
+    "scope": "ordinary_oidc_and_read_only_platform_cli_stdio_mcp",
+    "executionCliSha256": "86d0d6294eb751ab88e7d7ed1d6925c0a477b4e71686e1cb087f17f5026bbf54",
+    "cliVersion": "0.6.3",
+    "observedServerVersion": "0.6.3",
+    "observedInstallCliVersion": "0.6.3",
+    "repositoryCommit": "564df40756a634bdcfdabdefb92e8fd3817d01eb",
+    "harnessCommit": null,
+    "harnessSha256": "62868e0f7d0ae685a067652e0aa33a0146fdcd581658f4faf3d2d5bbe7a2a0c9",
+    "passes": [
+      {
+        "name": "isolated_private_config_and_execution_cli_provenance",
+        "status": "passed"
+      },
+      {
+        "name": "public_health_capabilities_and_published_cli_install_binding",
+        "status": "passed",
+        "publishedArtifactCount": 5
+      },
+      {
+        "name": "oidc_discovery_and_http_mcp_unauthenticated_401",
+        "status": "passed"
+      },
+      {
+        "name": "ordinary_developer_oidc_login_without_shared_development_session",
+        "status": "passed"
+      },
+      {
+        "name": "isolated_cli_device_login_same_browser_identity_and_auth_status",
+        "status": "passed"
+      },
+      {
+        "name": "authenticated_cli_doctor_operate",
+        "status": "passed",
+        "checkCount": 4
+      },
+      {
+        "name": "local_app_init_and_generated_mcp_configuration_without_remote_registration",
+        "status": "passed"
+      },
+      {
+        "name": "generated_stdio_mcp_initialize_and_required_tools",
+        "status": "passed",
+        "toolCount": 7
+      },
+      {
+        "name": "mcp_get_contract_matches_live_version_and_installed_bundle",
+        "status": "passed",
+        "protectedFileCount": 19,
+        "protectedFilesSha256": "e1923c4ced90b28a2c1d2d121e103791d5588ea90b337d33cc7cbfadfdd2bf4e"
+      },
+      {
+        "name": "mcp_search_api_matches_authenticated_http_catalog",
+        "status": "passed",
+        "apiCount": 55,
+        "catalogSha256": "c0c3e4ec7e9dd54ab710ca1e303329be5ca58c781567e9f92d312704c27730f9"
+      },
+      {
+        "name": "mcp_list_components_matches_authenticated_http_components",
+        "status": "passed",
+        "componentCount": 1,
+        "componentsSha256": "edd9e1c5829cef3674cb73a1abef64c62371bde4707281a504718d7f8157035f"
+      },
+      {
+        "name": "mcp_get_cli_help_matches_executed_cli_describe",
+        "status": "passed",
+        "commandCount": 1,
+        "descriptionSha256": "bc074e75899bce3bae168a838b2845538255200f76a036a4fc44eefb6f97e644"
+      },
+      {
+        "name": "owned_stdio_mcp_process_closed",
+        "status": "passed"
+      },
+      {
+        "name": "owned_cli_session_logged_out",
+        "status": "passed"
+      },
+      {
+        "name": "owned_browser_platform_session_logged_out",
+        "status": "passed"
+      },
+      {
+        "name": "owned_browser_context_closed",
+        "status": "passed"
+      },
+      {
+        "name": "owned_headless_browser_closed",
+        "status": "passed"
+      }
+    ],
+    "cleanupFailures": [],
+    "originSha256": "60507cab564dfbad0a776d17daa5d489de5338a4591969f5f8a990732a0ab411",
+    "harnessWorkingTreeChanges": true,
+    "publishedSourceCommit": "8d7d04271f9467d8bbdd16308e73715b33e4dc0c",
+    "bundleVersion": "0.7.1"
+  },
+  "preservation": {
+    "status": "PASS",
+    "servicesUnchanged": true,
+    "allExistingContainersUnchanged": true,
+    "existingContainerCount": 23,
+    "newContainerCount": 0,
+    "databaseCountsBefore": {
+      "apps": 3,
+      "releases": 5,
+      "migrations": 15,
+      "runtimeJobs": 13,
+      "imageUploads": 4,
+      "serverBuilds": 2,
+      "installations": 5
+    },
+    "databaseCountsAfter": {
+      "apps": 3,
+      "releases": 5,
+      "migrations": 15,
+      "runtimeJobs": 13,
+      "imageUploads": 4,
+      "serverBuilds": 2,
+      "installations": 5
+    },
+    "services": {
+      "miy-v2-serve": {
+        "ActiveState": "active",
+        "UnitFileState": "enabled",
+        "MainPID": "3413666",
+        "NRestarts": "0",
+        "ExecMainStartTimestamp": "Thu 2026-10-29 15:53:03 KST",
+        "binarySha256": "4573260257147c2563ba5ffae177b9ac6c6b0a331d2a0b1fef1cf6e60d10064e"
+      },
+      "miy-v2-worker": {
+        "ActiveState": "active",
+        "UnitFileState": "enabled",
+        "MainPID": "3413667",
+        "NRestarts": "0",
+        "ExecMainStartTimestamp": "Thu 2026-10-29 15:53:03 KST",
+        "binarySha256": "4573260257147c2563ba5ffae177b9ac6c6b0a331d2a0b1fef1cf6e60d10064e"
+      },
+      "nginx": {
+        "ActiveState": "active",
+        "UnitFileState": "enabled",
+        "MainPID": "3019993",
+        "NRestarts": "0",
+        "ExecMainStartTimestamp": "Wed 2026-10-28 06:07:42 KST"
+      }
+    },
+    "applicationAndJobCountsUnchanged": true
+  },
+  "notRun": [
+    "Separate Windows/macOS/Linux client host acceptance in this execution",
+    "Independent Codex/Claude agent use",
+    "Authenticated direct HTTP MCP tools and OIDC callback reuse in this execution",
+    "Application deployment, production promotion and workload data-content assertions in this execution"
+  ],
+  "notes": [
+    "This run validates the already deployed 0.6.3 server; it does not deploy the main 0.6.0 source.",
+    "The ordinary OIDC login used one developer login attempt; credentials, cookies, device codes and tokens were not logged.",
+    "Only this run's CLI and platform browser sessions were logged out; no IdP account-wide session revocation was performed.",
+    "The connection checker ran as an uncommitted new harness file. The recorded file SHA-256 identifies the tested harness; the deployed source commit and published binary hashes identify the product."
+  ],
+  "entrypoints": {
+    "httpRootStatus": 410,
+    "httpsInstallPageStatus": 200,
+    "canonicalOrigin": "https://v2.dwdcc.kr"
+  }
+}

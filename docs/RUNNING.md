@@ -1,5 +1,7 @@
 # CLI 0.6과 독립 앱 개발·운영 실행 안내
 
+현재 호스트는 `https://v2.dwdcc.kr`에서 **서버·게시 CLI 0.6.3 / 번들 0.7.1**을 제공한다. 이 작업본의 소스 버전과 다르므로 실제 서버 유지관리·접속은 [현재 서버 운영 안내](SERVER-OPERATIONS.md)를 먼저 확인한다.
+
 이 문서는 CLI 0.6.0 / 개발 번들 0.7.0 작업 트리의 사용 계약을 설명한다. 설치된 실행 파일의 `miy --version`, `miy describe`와 서버 capability가 실제 사용 가능한 범위를 결정한다. 명령 구현과 해당 환경의 검증 통과를 구분한다. 실행 결과는 [구현 결과](IMPLEMENTATION-RESULTS.md), 미실행·외부 환경 항목은 [검증 행렬](CLI-VALIDATION-MATRIX.md)과 [Windows 안내](WINDOWS-VALIDATION.md)를 따른다. CLI 완료가 V7 전체 인수를 뜻하지 않는다.
 
 ## 설치와 발견
