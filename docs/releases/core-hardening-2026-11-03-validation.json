@@ -1,0 +1,216 @@
+{
+  "schemaVersion": 1,
+  "checkedAt": "2026-11-02T22:59:07.154035+00:00",
+  "status": "PASS",
+  "scope": "Core hardening stage 1: independent control/build execution, worker ownership/shutdown, cancellation-safe scratch and DB prepare error types. miy-v1, UI and stages2-5 are outside this implementation.",
+  "implementationCommit": "99672655721af202fe0bc981163a15bb145b1dff",
+  "implementationSourceSha256": {
+    "crates/miy/src/runtime.rs": "217af66860f01327ca02319e26acc627085b9ab50e8646f4ecbee10b54d23634",
+    "crates/miy/src/runtime_regression.rs": "f62c77f3e1b83df57256da7cdc618ede9e368d7238ea1ef67ad960acf9bc2acf",
+    "crates/miy/src/server_build_worker.rs": "b6e9f6e362242928faa4752d900b0dbd9996e72ce6d098f2c0bf5e867d86711e",
+    "crates/miy/src/worker.rs": "a1e307d766f2d1cdb8a425697ee9c0408d8e6caf7c610c528a56e6311a68c77d",
+    "scripts/runtime-regression/run.py": "9d6ce48254c101bb43e32b7e71fa5017f1b2eacf356689646d75c2c42f7218dd"
+  },
+  "executionCheckout": {
+    "sourceCommit": "eeb080bd699fa213908bebfd1fc91c4a05866972",
+    "workingTreeDirty": true,
+    "binarySha256": "2c0c0425f19181412ba7f69491c5279d334acca3e6afc21473c6bdd7a352b2a2"
+  },
+  "sourceProvenanceNote": "Local tests ran before the implementation commit with source changes present; recorded source file hashes match the committed implementation. Raw test checkout identity is preserved separately from this commit.",
+  "checks": [
+    {
+      "command": "cargo fmt --all -- --check",
+      "status": "PASS"
+    },
+    {
+      "command": "cargo test --workspace --locked",
+      "status": "PASS",
+      "passed": 152,
+      "ignored": 6
+    },
+    {
+      "command": "cargo test --workspace --locked --no-default-features",
+      "status": "PASS",
+      "passed": 110,
+      "ignored": 0
+    },
+    {
+      "command": "cargo clippy --workspace --all-targets --locked -- -D warnings",
+      "status": "PASS"
+    },
+    {
+      "command": "cargo clippy --workspace --all-targets --locked --no-default-features -- -D warnings",
+      "status": "PASS"
+    },
+    {
+      "command": "python3 scripts/runtime-regression/run.py",
+      "status": "PASS",
+      "observations": 58,
+      "suites": {
+        "runtime": 38,
+        "operations": 6,
+        "cli": 6,
+        "auth": 8
+      },
+      "rustIntegrationTests": 1
+    }
+  ],
+  "newUnitCoverage": {
+    "schedulerSupervision": 4,
+    "typedDatabasePrepareFailures": 3,
+    "privateScratchAndBlockingTaskCancellation": 2,
+    "includedIn152ServerUnitTests": true
+  },
+  "newIsolatedObservations": [
+    {
+      "evidence": {
+        "buildStatusWhileLocked": "running",
+        "controlJob": {
+          "errorCode": null,
+          "failureClass": null,
+          "id": "6130cc1f-bcc1-4c0d-a4bc-4f8f2ecf4b40",
+          "releaseId": "835f0b51-e427-492b-92df-26a568ca5094",
+          "retryable": false,
+          "status": "succeeded",
+          "step": "complete"
+        },
+        "recoveredErrorCode": "source_validation_failed",
+        "workerPoolConnections": 10
+      },
+      "status": "PASS",
+      "test": "held build ownership does not block control; recovery resumes when released"
+    },
+    {
+      "evidence": {
+        "controlJob": {
+          "errorCode": null,
+          "failureClass": null,
+          "id": "7e86d986-38f1-4bb4-b30d-f270f2764721",
+          "releaseId": "835f0b51-e427-492b-92df-26a568ca5094",
+          "retryable": false,
+          "status": "succeeded",
+          "step": "complete"
+        },
+        "ownershipLossExit": 101,
+        "recoverySqlObservedWaiting": true,
+        "successorControlJob": {
+          "errorCode": null,
+          "failureClass": null,
+          "id": "1886f226-97bb-4ee7-9733-895851199fd7",
+          "releaseId": "835f0b51-e427-492b-92df-26a568ca5094",
+          "retryable": false,
+          "status": "succeeded",
+          "step": "complete"
+        },
+        "tableLockStillHeld": true
+      },
+      "status": "PASS",
+      "test": "blocked recovery does not delay ownership loss or successor control"
+    },
+    {
+      "evidence": {
+        "remainingAdvisoryLocks": 0,
+        "tableLockReleased": true,
+        "workerExit": 0
+      },
+      "status": "PASS",
+      "test": "SIGTERM cancels blocked recovery and releases worker and build ownership"
+    }
+  ],
+  "strengthenedMigrationObservations": [
+    {
+      "evidence": {
+        "job": {
+          "errorCode": "migration_failed",
+          "failureClass": "never",
+          "id": "7b0bce0a-4348-4684-85ff-8e7f96d7ec91",
+          "releaseId": "a6798f23-e4ac-4a94-abac-16b027df3719",
+          "retryable": false,
+          "status": "failed",
+          "step": "preparing_database"
+        },
+        "partialColumnCount": 0,
+        "retainedValue": "dev-retained",
+        "state": {
+          "dbStatus": "failed",
+          "desiredState": "stopped",
+          "healthCheckedAt": null,
+          "healthError": null,
+          "healthFailures": 0,
+          "healthStatus": "not_applicable",
+          "id": "4a31b636-8079-4e1a-9c90-d128f0a7fb35",
+          "releaseId": "3d6f6fec-0ae1-483f-9f9e-3c445705f7d6",
+          "runtimeContainer": "miy-app-4a31b63680794e1a9c90d128f0a7fb35",
+          "runtimeImage": "sha256:1ad2aa6ecff381fdb693e24ca59aee59a94e64e8b6839dedfb893103ed00aa3f",
+          "runtimePort": 33024,
+          "runtimeStatus": "failed"
+        }
+      },
+      "status": "PASS",
+      "test": "failed migration rolls back DDL and preserves data"
+    },
+    {
+      "evidence": {
+        "automaticRollbackSupported": false,
+        "job": {
+          "errorCode": "migration_history_mismatch",
+          "failureClass": "never",
+          "id": "0664c351-8fc2-47fe-bd62-14c250f048cc",
+          "releaseId": "835f0b51-e427-492b-92df-26a568ca5094",
+          "retryable": false,
+          "status": "failed",
+          "step": "preparing_database"
+        },
+        "retainedValue": "dev-retained",
+        "state": {
+          "dbStatus": "failed",
+          "desiredState": "stopped",
+          "healthCheckedAt": null,
+          "healthError": null,
+          "healthFailures": 0,
+          "healthStatus": "not_applicable",
+          "id": "4a31b636-8079-4e1a-9c90-d128f0a7fb35",
+          "releaseId": "a8e3dce6-1d17-4794-b9b4-44f9a9d992c4",
+          "runtimeContainer": "miy-app-4a31b63680794e1a9c90d128f0a7fb35",
+          "runtimeImage": "sha256:14839f8b96b66c9e8da5009314834f414714c8df4150a5f54735c81ad13245a0",
+          "runtimePort": 33025,
+          "runtimeStatus": "failed"
+        }
+      },
+      "status": "PASS",
+      "test": "old image cannot silently roll back advanced schema"
+    }
+  ],
+  "environment": {
+    "os": "Linux",
+    "database": "Disposable PostgreSQL18.3 container",
+    "applicationContainers": "Owned Python fixture images on Docker; existing platform applications not modified",
+    "workerPoolMaxConnections": 10,
+    "concurrencyFaults": "Held advisory build lock and ACCESS EXCLUSIVE app_builds table lock, plus termination of the exact isolated worker ownership backend",
+    "syntheticTypedAvailabilityFailure": "Unit test only; a live provision-database network outage was not injected"
+  },
+  "logSha256": {
+    "unit-server.log": "15dfb8e43d946a8de602d8130280b88f7d0927fcb49b817391ec4865551b14e6",
+    "unit-client.log": "c1631ca8168e84ab23fc4db62850a1a4699553be0eb8752e58044329e5dfd836",
+    "clippy-server.log": "7ebd87889cba30a217b16320e08d0fd8526fa13a0669bb6067e6867e9201eacc",
+    "clippy-client.log": "c92508a29848820f033cd2ea015c85dde0953c88b07cc967ce34b7c08f610549",
+    "results.jsonl": "f1a1326c5579942f12b5f6a17789f4a252b8501c96469730225606b5b79dc70f",
+    "integration.log": "10c2217eead6cfcca9a3a097c69a393c26bbe303435529548c2ad0300a01df77",
+    "cleanup.json": "f0078af745b654a857424d6d921a2957f8bbe57a47c5eb334baf6b1b54eef21d"
+  },
+  "preservation": {
+    "checkedAt": "2026-11-02T22:58:22.737823+00:00",
+    "status": "PASS",
+    "servicesAndInstalledBinaryUnchanged": true,
+    "existingRunningContainersUnchanged": 25,
+    "ownedFixtureCleanupFailures": 0,
+    "note": "Only disposable fixture resources were modified; the running platform was not redeployed."
+  },
+  "limitations": [
+    "The pending-build unit test and real blocked-recovery/control integration tests do not measure start/stop latency during a real long Rust Docker compilation.",
+    "SIGKILL skips RAII destructors; crash-leftover scratch cleanup remains a capacity-management follow-up.",
+    "DB preparation/image import/runtime control retain their existing sequencing within the control lane.",
+    "Installation-approved permissions, delegated identities, total resource admission, backup/restore, host updater and clean-host lifecycle acceptance remain stages2-5.",
+    "No live platform redeployment, new CLI publication, Windows11 acceptance, miy-v1/UI migration or fullV7 repetition was performed."
+  ]
+}

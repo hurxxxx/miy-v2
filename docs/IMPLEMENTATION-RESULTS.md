@@ -1,5 +1,9 @@
 # 구현과 검증 결과
 
+## 코어 안정화 1차 (2026-11-03)
+
+miy-v1과 UI 이식에 앞서 worker의 제어·빌드 실행을 분리하고 DB 준비의 typed 오류를 보존했다. 구현 `9967265`는 서버 단위152개(ignored6), 클라이언트110개, fmt·양쪽 Clippy와 실제 격리 PostgreSQL/Docker58개 관찰을 통과했다. 빌드 복구 잠금 대기, 소유권 유실 후 워커 교체, SIGTERM 종료와 잠금 해제를 확인했다. [상세 결과·한계](CORE-HARDENING.md)와 [구조화 증거](releases/core-hardening-2026-11-03-validation.json)를 보존한다. 실제 장기 컴파일 중 지연 측정과 권한·자원·백업 등 2~5차는 후속이며 운영 서버 재배포는 수행하지 않았다.
+
 ## main 통합·Windows 준비·독립 AI 개발 인수 (2026-11-02)
 
 운영 0.6.3 소스를 `main`의 `a6fae065ed627bb63798cf74ea8a2c73a744c104`에 통합하고 [CI 41447528061](https://github.com/hurxxxx/miy-v2/actions/runs/41447528061) 5개 job을 통과했다. 운영 artifact source `8d7d042`와 실행 중 서비스를 유지했다. [Windows 설치기 인수 절차](WINDOWS-0.6.3-ACCEPTANCE.md)는 준비했으며 실제 Windows 검사는 사용자 요청으로 추후 수행한다.
