@@ -4,6 +4,7 @@ use crate::{
 };
 use anyhow::{Context, Result};
 use sqlx::{Connection, Executor, Row};
+use std::{future::Future, time::Duration};
 use uuid::Uuid;
 
 pub async fn run(pool: sqlx::PgPool) -> Result<()> {
@@ -15,30 +16,102 @@ pub async fn run(pool: sqlx::PgPool) -> Result<()> {
         .fetch_one(&mut *guard)
         .await?;
     anyhow::ensure!(acquired, "another_db_runner_is_active");
-    sqlx::query("UPDATE jobs SET status='queued',updated_at=now() WHERE status='running'")
-        .execute(&pool)
-        .await?;
     tracing::info!(event = "db_runner_ready");
-    crate::runtime::recover(&pool).await?;
-    crate::development::recover(&pool).await?;
-    crate::server_build_worker::recover(&pool).await?;
-    sqlx::query("UPDATE image_uploads SET status='pending' WHERE status='loading'")
-        .execute(&pool)
-        .await?;
     // HTTP observations never occupy the deployment/control queue. The task is
     // aborted before this runner releases its exclusive ownership on shutdown.
     let _log_monitor = crate::runtime_logs::start(pool.clone());
     let _health_monitor = crate::runtime_health::start(pool.clone())?;
     let _development_monitor = crate::development::start(pool.clone());
+    // Direct futures share ownership of this scope: a failed lane or lost
+    // session lock drops every other lane before the ownership connection.
+    // Build recovery can itself take minutes and must not delay control startup.
+    supervise(
+        control_loop(&pool),
+        build_loop(&pool),
+        watch_ownership(&mut guard),
+        shutdown(),
+    )
+    .await
+}
+
+async fn supervise(
+    control: impl Future<Output = Result<()>>,
+    builds: impl Future<Output = Result<()>>,
+    ownership: impl Future<Output = Result<()>>,
+    shutdown: impl Future<Output = Result<()>>,
+) -> Result<()> {
+    tokio::select! {
+        // Ownership and shutdown take precedence when multiple branches wake.
+        biased;
+        result = ownership => { result?; anyhow::bail!("worker_ownership_monitor_stopped") },
+        result = shutdown => result,
+        result = control => { result?; anyhow::bail!("worker_control_loop_stopped") },
+        result = builds => { result?; anyhow::bail!("worker_build_loop_stopped") },
+    }
+}
+
+async fn watch_ownership(guard: &mut sqlx::pool::PoolConnection<sqlx::Postgres>) -> Result<()> {
+    let mut interval = tokio::time::interval(Duration::from_secs(1));
+    interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+    loop {
+        interval.tick().await;
+        tokio::time::timeout(
+            Duration::from_secs(3),
+            sqlx::query("SELECT 1").execute(&mut **guard),
+        )
+        .await
+        .context("worker_ownership_check_timeout")?
+        .context("worker_ownership_connection_lost")?;
+    }
+}
+
+async fn shutdown() -> Result<()> {
+    #[cfg(unix)]
+    {
+        let mut terminate =
+            tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())?;
+        tokio::select! {
+            result = tokio::signal::ctrl_c() => result?,
+            _ = terminate.recv() => {},
+        }
+    }
+    #[cfg(not(unix))]
+    tokio::signal::ctrl_c().await?;
+    tracing::info!(event = "worker_shutdown");
+    Ok(())
+}
+
+async fn build_loop(pool: &sqlx::PgPool) -> Result<()> {
+    // A previous worker may still be unwinding its build lock after losing
+    // ownership. Retry recovery instead of silently abandoning running jobs.
+    while !crate::server_build_worker::recover(pool).await? {
+        tokio::time::sleep(Duration::from_millis(300)).await;
+    }
+    loop {
+        if !crate::server_build_worker::tick(pool).await? {
+            tokio::time::sleep(Duration::from_millis(300)).await;
+        }
+    }
+}
+
+async fn control_loop(pool: &sqlx::PgPool) -> Result<()> {
+    sqlx::query("UPDATE jobs SET status='queued',updated_at=now() WHERE status='running'")
+        .execute(pool)
+        .await?;
+    crate::runtime::recover(pool).await?;
+    crate::development::recover(pool).await?;
+    sqlx::query("UPDATE image_uploads SET status='pending' WHERE status='loading'")
+        .execute(pool)
+        .await?;
     let mut last_reconcile = std::time::Instant::now();
     loop {
         if last_reconcile.elapsed().as_secs() >= 5 {
-            crate::runtime::reconcile(&pool).await?;
+            crate::runtime::reconcile(pool).await?;
             last_reconcile = std::time::Instant::now();
         }
         let row =
             sqlx::query("SELECT * FROM jobs WHERE status='queued' ORDER BY created_at,id LIMIT 1")
-                .fetch_optional(&pool)
+                .fetch_optional(pool)
                 .await?;
         if let Some(row) = row {
             let id: Uuid = row.get("id");
@@ -46,7 +119,7 @@ pub async fn run(pool: sqlx::PgPool) -> Result<()> {
             let release: Uuid = row.get("release_id");
             let target = sqlx::query("SELECT app_id,environment FROM installations WHERE id=$1")
                 .bind(installation)
-                .fetch_one(&pool)
+                .fetch_one(pool)
                 .await?;
             let mut app_lock = pool.acquire().await?;
             app_lock.close_on_drop();
@@ -66,38 +139,27 @@ pub async fn run(pool: sqlx::PgPool) -> Result<()> {
                 .await?;
             sqlx::query("UPDATE jobs SET status='running',updated_at=now() WHERE id=$1")
                 .bind(id)
-                .execute(&pool)
+                .execute(pool)
                 .await?;
             let result = async {
-                crate::auth_sessions::ensure_active(&pool,row.get("actor")).await.map_err(|_| RuntimeFailure::new(FailureCode::UserDisabled))?;
+                crate::auth_sessions::ensure_active(pool,row.get("actor")).await.map_err(|_| RuntimeFailure::new(FailureCode::UserDisabled))?;
                 let authorized:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM users WHERE id=$1 AND admin) OR EXISTS(SELECT 1 FROM installations i JOIN grants g ON g.app_id=i.app_id AND g.environment=i.environment WHERE i.id=$2 AND i.environment='dev' AND g.user_id=$1 AND g.permission='develop')")
-                    .bind(row.get::<String,_>("actor")).bind(installation).fetch_one(&pool).await?;
+                    .bind(row.get::<String,_>("actor")).bind(installation).fetch_one(pool).await?;
                 anyhow::ensure!(authorized, RuntimeFailure::new(FailureCode::PermissionRevoked));
-                if target.get::<String,_>("environment")=="dev" && crate::development::active_for_app(&pool,target.get("app_id")).await? {anyhow::bail!(RuntimeFailure::new(FailureCode::ActiveDevelopmentSession));}
-                prepare(&pool, id, installation, release).await
+                if target.get::<String,_>("environment")=="dev" && crate::development::active_for_app(pool,target.get("app_id")).await? {anyhow::bail!(RuntimeFailure::new(FailureCode::ActiveDevelopmentSession));}
+                prepare(pool, id, installation, release).await
             }.await;
             match result {
                 Ok(()) => {
-                    sqlx::query("UPDATE jobs SET status='succeeded',step='ready',error_code=NULL,updated_at=now() WHERE id=$1").bind(id).execute(&pool).await?;
+                    sqlx::query("UPDATE jobs SET status='succeeded',step='ready',error_code=NULL,updated_at=now() WHERE id=$1").bind(id).execute(pool).await?;
                 }
                 Err(e) => {
-                    let code = if let Some(failure) = e.downcast_ref::<RuntimeFailure>() {
-                        failure.code()
-                    } else if matches!(
-                        e.downcast_ref::<sqlx::migrate::MigrateError>(),
-                        Some(
-                            sqlx::migrate::MigrateError::VersionMissing(_)
-                                | sqlx::migrate::MigrateError::VersionMismatch(_)
-                        )
-                    ) {
-                        "migration_history_mismatch"
-                    } else {
-                        "database_prepare_failed"
-                    };
-                    sqlx::query("UPDATE jobs SET status='failed',error_code=$2,updated_at=now() WHERE id=$1").bind(id).bind(code).execute(&pool).await?;
+                    let failure = crate::runtime::classify_database_prepare_failure(e);
+                    let code = failure.code();
+                    sqlx::query("UPDATE jobs SET status='failed',error_code=$2,updated_at=now() WHERE id=$1").bind(id).bind(code).execute(pool).await?;
                     sqlx::query("UPDATE installations SET db_status='failed' WHERE id=$1")
                         .bind(installation)
-                        .execute(&pool)
+                        .execute(pool)
                         .await?;
                     tracing::error!(event="database_job_failed",job_id=%id,code);
                 }
@@ -106,15 +168,12 @@ pub async fn run(pool: sqlx::PgPool) -> Result<()> {
                 .bind(installation.to_string())
                 .execute(&mut *lock)
                 .await?;
-        } else if !crate::development::tick(&pool).await?
-            && !crate::delivery::tick(&pool).await?
-            && !crate::runtime::tick(&pool).await?
-            && !crate::server_build_worker::tick(&pool).await?
+        } else if !crate::development::tick(pool).await?
+            && !crate::delivery::tick(pool).await?
+            && !crate::runtime::tick(pool).await?
         {
             tokio::time::sleep(std::time::Duration::from_millis(300)).await;
         }
-        // The connection must remain live for the entire runner lifetime.
-        sqlx::query("SELECT 1").execute(&mut *guard).await?;
     }
 }
 async fn step(pool: &sqlx::PgPool, id: Uuid, name: &str) -> Result<()> {
@@ -471,4 +530,128 @@ pub(crate) async fn prepare_resource(
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod scheduling_tests {
+    use super::*;
+    use std::sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    };
+    use tokio::sync::oneshot;
+
+    struct Dropped(Arc<AtomicUsize>);
+    impl Drop for Dropped {
+        fn drop(&mut self) {
+            self.0.fetch_add(1, Ordering::SeqCst);
+        }
+    }
+    async fn pending() -> Result<()> {
+        std::future::pending().await
+    }
+
+    #[tokio::test]
+    async fn blocked_build_does_not_delay_control() {
+        let (build_entered, build_started) = oneshot::channel();
+        let (control_completed, control_done) = oneshot::channel();
+        let result = tokio::time::timeout(
+            Duration::from_secs(1),
+            supervise(
+                async {
+                    build_started.await?;
+                    control_completed.send(()).unwrap();
+                    pending().await
+                },
+                async {
+                    build_entered.send(()).unwrap();
+                    pending().await
+                },
+                pending(),
+                async {
+                    control_done.await?;
+                    Ok(())
+                },
+            ),
+        )
+        .await;
+        assert!(
+            result.is_ok_and(|r| r.is_ok()),
+            "control must complete while build remains blocked"
+        );
+    }
+
+    #[tokio::test]
+    async fn lost_ownership_cancels_both_active_lanes() {
+        let dropped = Arc::new(AtomicUsize::new(0));
+        let control_dropped = Dropped(dropped.clone());
+        let build_dropped = Dropped(dropped.clone());
+        let (control_entered, control_started) = oneshot::channel();
+        let (build_entered, build_started) = oneshot::channel();
+        let result = supervise(
+            async {
+                let _guard = control_dropped;
+                control_entered.send(()).unwrap();
+                pending().await
+            },
+            async {
+                let _guard = build_dropped;
+                build_entered.send(()).unwrap();
+                pending().await
+            },
+            async {
+                control_started.await?;
+                build_started.await?;
+                anyhow::bail!("synthetic_ownership_loss")
+            },
+            pending(),
+        )
+        .await;
+        assert_eq!(result.unwrap_err().to_string(), "synthetic_ownership_loss");
+        assert_eq!(dropped.load(Ordering::SeqCst), 2);
+    }
+
+    #[tokio::test]
+    async fn shutdown_cancels_active_lanes_before_returning() {
+        let dropped = Arc::new(AtomicUsize::new(0));
+        let control_dropped = Dropped(dropped.clone());
+        let build_dropped = Dropped(dropped.clone());
+        let (control_entered, control_started) = oneshot::channel();
+        let (build_entered, build_started) = oneshot::channel();
+        supervise(
+            async {
+                let _guard = control_dropped;
+                control_entered.send(()).unwrap();
+                pending().await
+            },
+            async {
+                let _guard = build_dropped;
+                build_entered.send(()).unwrap();
+                pending().await
+            },
+            pending(),
+            async {
+                control_started.await?;
+                build_started.await?;
+                Ok(())
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(dropped.load(Ordering::SeqCst), 2);
+    }
+
+    #[tokio::test]
+    async fn failed_lane_stops_worker_and_successful_loop_exit_is_an_error() {
+        let result = supervise(
+            async { anyhow::bail!("control_failure") },
+            pending(),
+            pending(),
+            pending(),
+        )
+        .await;
+        assert_eq!(result.unwrap_err().to_string(), "control_failure");
+        let result = supervise(pending(), async { Ok(()) }, pending(), pending()).await;
+        assert_eq!(result.unwrap_err().to_string(), "worker_build_loop_stopped");
+    }
 }

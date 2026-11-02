@@ -695,6 +695,25 @@ struct ResolvedImage<'a> {
     original: &'a str,
     local: &'a str,
 }
+
+/// Preserve failures classified at their origin. Migration errors are terminal,
+/// including connection errors raised while executing a migration: only an
+/// explicitly classified availability failure may grant retry permission.
+pub(crate) fn classify_database_prepare_failure(error: anyhow::Error) -> RuntimeFailure {
+    if let Some(failure) = error.downcast_ref::<RuntimeFailure>() {
+        return failure.clone();
+    }
+    let code = match error.downcast_ref::<sqlx::migrate::MigrateError>() {
+        Some(
+            sqlx::migrate::MigrateError::VersionMissing(_)
+            | sqlx::migrate::MigrateError::VersionMismatch(_),
+        ) => FailureCode::MigrationHistoryMismatch,
+        Some(_) => FailureCode::MigrationFailed,
+        None => FailureCode::DatabasePrepareFailed,
+    };
+    RuntimeFailure::new(code)
+}
+
 async fn deploy_installation(
     pool: &sqlx::PgPool,
     job: Uuid,
@@ -723,16 +742,14 @@ async fn deploy_installation(
     step(pool, job, "preparing_database").await?;
     let db_job = Uuid::new_v4();
     sqlx::query("INSERT INTO jobs(id,installation_id,release_id,actor,idempotency_key,input_hash,status) VALUES($1,$2,$3,$4,$5,$6,'running')").bind(db_job).bind(installation).bind(release).bind(actor).bind(format!("runtime-{job}-{}",Uuid::new_v4())).bind(contract::hash(job.to_string())).execute(pool).await?;
-    let db = crate::worker::prepare(pool, db_job, installation, release).await;
+    let db = crate::worker::prepare(pool, db_job, installation, release)
+        .await
+        .map_err(classify_database_prepare_failure);
     sqlx::query("UPDATE jobs SET status=$2,step=$3,error_code=$4,updated_at=now() WHERE id=$1")
         .bind(db_job)
         .bind(if db.is_ok() { "succeeded" } else { "failed" })
         .bind(if db.is_ok() { "ready" } else { "failed" })
-        .bind(if db.is_ok() {
-            None
-        } else {
-            Some("database_prepare_failed")
-        })
+        .bind(db.as_ref().err().map(RuntimeFailure::code))
         .execute(pool)
         .await?;
     if db.is_err() {
@@ -741,7 +758,7 @@ async fn deploy_installation(
             .execute(pool)
             .await?;
     }
-    db.map_err(|_| RuntimeFailure::new(FailureCode::MigrationFailed))?;
+    db?;
     let resource = sqlx::query("SELECT * FROM db_resources WHERE installation_id=$1")
         .bind(installation)
         .fetch_one(pool)
@@ -1030,6 +1047,73 @@ pub async fn proxy(
 #[cfg(test)]
 mod tests {
     use super::image_id;
+    use crate::runtime_contract::{FailureCode, JobStatus, RetryClass, RuntimeFailure, can_retry};
+
+    #[test]
+    fn database_prepare_preserves_typed_failures_and_retry_policy() {
+        for code in [
+            FailureCode::DatabaseUnavailable,
+            FailureCode::MigrationFailed,
+            FailureCode::MigrationHistoryMismatch,
+            FailureCode::InvalidImageContract,
+        ] {
+            let original = RuntimeFailure::new(code);
+            let wrapped = anyhow::Error::new(original.clone()).context("database preparation");
+            let classified = super::classify_database_prepare_failure(wrapped);
+            assert_eq!(classified, original);
+            // Deploy propagates this typed error to the normal runtime job
+            // classifier, which persists the failure code and retry policy.
+            let propagated = crate::runtime_contract::classify_failure(&classified.into());
+            assert_eq!(propagated, original);
+            assert_eq!(
+                can_retry(JobStatus::Failed, &propagated),
+                code == FailureCode::DatabaseUnavailable
+            );
+        }
+    }
+
+    #[test]
+    fn database_prepare_distinguishes_history_from_execution_failures() {
+        use sqlx::migrate::MigrateError;
+        for (error, expected) in [
+            (
+                MigrateError::VersionMissing(1),
+                FailureCode::MigrationHistoryMismatch,
+            ),
+            (
+                MigrateError::VersionMismatch(2),
+                FailureCode::MigrationHistoryMismatch,
+            ),
+            (
+                MigrateError::ExecuteMigration(sqlx::Error::Protocol("invalid SQL".into()), 3),
+                FailureCode::MigrationFailed,
+            ),
+            (
+                MigrateError::Execute(sqlx::Error::Io(std::io::ErrorKind::ConnectionReset.into())),
+                FailureCode::MigrationFailed,
+            ),
+        ] {
+            let classified = super::classify_database_prepare_failure(
+                anyhow::Error::new(error).context("migration_failed"),
+            );
+            assert_eq!(classified.code, expected);
+            assert_eq!(classified.retry_class(), RetryClass::Never);
+        }
+    }
+
+    #[test]
+    fn database_prepare_unknown_errors_do_not_grant_retry_by_message() {
+        for error in [
+            anyhow::anyhow!("database_unavailable"),
+            anyhow::anyhow!("migration_history_mismatch"),
+            anyhow::Error::new(sqlx::Error::PoolTimedOut),
+        ] {
+            let classified = super::classify_database_prepare_failure(error);
+            assert_eq!(classified.code, FailureCode::DatabasePrepareFailed);
+            assert_eq!(classified.retry_class(), RetryClass::Never);
+        }
+    }
+
     #[test]
     fn image_references_are_immutable() {
         assert!(image_id(&format!("sha256:{}", "a".repeat(64))));

@@ -9,6 +9,7 @@ use std::{
     collections::BTreeSet,
     path::{Path, PathBuf},
     process::Stdio,
+    sync::Arc,
     time::Duration,
 };
 use tokio::{
@@ -45,6 +46,40 @@ impl Drop for ClientGroup {
 
 fn work(id: Uuid) -> Result<PathBuf> {
     Ok(server_build::root()?.join("work").join(id.to_string()))
+}
+
+// Blocking archive validation continues even when its awaiting future is dropped.
+// Each execution therefore owns a fresh sibling of work(id), and each blocking
+// closure retains an Arc until all its file operations have finished. A later
+// attempt may clean the durable job directory without touching this scratch.
+struct ExecutionScratch {
+    path: PathBuf,
+}
+
+impl ExecutionScratch {
+    fn create(root: &Path, id: Uuid) -> Result<Arc<Self>> {
+        use std::os::unix::fs::DirBuilderExt;
+
+        ensure!(
+            std::fs::symlink_metadata(root)?.file_type().is_dir(),
+            "invalid_build_scratch_root"
+        );
+        let path = root.join(format!("scratch-{id}-{}", Uuid::new_v4()));
+        std::fs::DirBuilder::new().mode(0o700).create(&path)?;
+        Ok(Arc::new(Self { path }))
+    }
+}
+
+impl Drop for ExecutionScratch {
+    fn drop(&mut self) {
+        // Only remove the unique directory this execution created. In
+        // particular, never recursively clean the shared build root/work(id).
+        if let Err(error) = std::fs::remove_dir_all(&self.path)
+            && error.kind() != std::io::ErrorKind::NotFound
+        {
+            tracing::warn!(event = "build_scratch_cleanup_failed");
+        }
+    }
 }
 
 fn tag(id: Uuid) -> String {
@@ -346,7 +381,8 @@ async fn execute(pool: &sqlx::PgPool, row: &PgRow, recovering: bool) -> Result<(
     let control = directory.join("control");
     tokio::fs::create_dir_all(control.join("docker")).await?;
     tokio::fs::write(control.join("docker/config.json"), b"{}\n").await?;
-    let context = directory.join("source");
+    let scratch = ExecutionScratch::create(&server_build::root()?, id)?;
+    let context = scratch.path.join("source");
     let archive = server_build::archive_path(id)?;
     step(pool, id, "validating_source").await?;
     let check_archive = archive.clone();
@@ -354,15 +390,14 @@ async fn execute(pool: &sqlx::PgPool, row: &PgRow, recovering: bool) -> Result<(
     let check_app = app.clone();
     let expected_hash: String = row.get("archive_hash");
     let expected_size: i64 = row.get("size_bytes");
+    let check_scratch = Arc::clone(&scratch);
     let manifest = tokio::task::spawn_blocking(move || {
+        let _scratch_guard = check_scratch;
         ensure!(
             std::fs::metadata(&check_archive)?.len() == expected_size as u64
                 && source_archive::digest(&check_archive)? == expected_hash,
             "archive_hash_mismatch"
         );
-        if check_context.exists() {
-            std::fs::remove_dir_all(&check_context)?;
-        }
         source_archive::extract(&check_archive, &check_context)?;
         source_archive::validate(&check_context, &check_app)
     })
@@ -461,8 +496,7 @@ async fn execute(pool: &sqlx::PgPool, row: &PgRow, recovering: bool) -> Result<(
     )
     .await
     .context("build_artifact_invalid")?;
-    let artifact_archive = directory.join("artifact.tar");
-    let _ = tokio::fs::remove_file(&artifact_archive).await;
+    let artifact_archive = scratch.path.join("artifact.tar");
     let copied = docker(
         pool,
         id,
@@ -475,13 +509,12 @@ async fn execute(pool: &sqlx::PgPool, row: &PgRow, recovering: bool) -> Result<(
     let removed = remove_extraction(pool, id, &control).await;
     copied.context("build_artifact_invalid")?;
     removed.context("build_artifact_invalid")?;
-    let artifact = directory.join("artifact");
+    let artifact = scratch.path.join("artifact");
     let checked_artifact = artifact.clone();
     let checked_context = context.clone();
+    let check_scratch = Arc::clone(&scratch);
     tokio::task::spawn_blocking(move || {
-        if checked_artifact.exists() {
-            std::fs::remove_dir_all(&checked_artifact)?;
-        }
+        let _scratch_guard = check_scratch;
         extract_artifact(&artifact_archive, &checked_artifact)?;
         let packaged: contract::Manifest =
             serde_json::from_slice(&std::fs::read(checked_artifact.join("manifest.json"))?)?;
@@ -625,9 +658,11 @@ async fn lock(pool: &sqlx::PgPool) -> Result<Option<sqlx::pool::PoolConnection<s
     Ok(acquired.then_some(guard))
 }
 
-pub async fn recover(pool: &sqlx::PgPool) -> Result<()> {
+/// False means another execution still owns the build lock; recovery must be
+/// retried before processing queued builds, rather than treating it as complete.
+pub async fn recover(pool: &sqlx::PgPool) -> Result<bool> {
     let Some(_guard) = lock(pool).await? else {
-        return Ok(());
+        return Ok(false);
     };
     let rows =
         sqlx::query("SELECT * FROM app_builds WHERE status='running' ORDER BY created_at,id")
@@ -636,7 +671,7 @@ pub async fn recover(pool: &sqlx::PgPool) -> Result<()> {
     for row in rows {
         finish(pool, &row, true).await?;
     }
-    Ok(())
+    Ok(true)
 }
 
 pub async fn tick(pool: &sqlx::PgPool) -> Result<bool> {
@@ -672,6 +707,102 @@ pub async fn tick(pool: &sqlx::PgPool) -> Result<bool> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn execution_scratch_is_private_unique_and_cleans_only_its_owned_directory() {
+        use std::os::unix::fs::{PermissionsExt, symlink};
+
+        let root = tempfile::tempdir().unwrap();
+        let id = Uuid::new_v4();
+        let durable = root.path().join("work").join(id.to_string());
+        std::fs::create_dir_all(&durable).unwrap();
+        std::fs::write(durable.join("image.iid"), b"durable-recovery-id").unwrap();
+        let first = ExecutionScratch::create(root.path(), id).unwrap();
+        let second = ExecutionScratch::create(root.path(), id).unwrap();
+        let first_path = first.path.clone();
+        let second_path = second.path.clone();
+        assert_ne!(first_path, second_path);
+        assert_eq!(first_path.parent(), Some(root.path()));
+        assert!(!first_path.starts_with(&durable));
+        assert_eq!(
+            std::fs::metadata(&first_path).unwrap().permissions().mode() & 0o777,
+            0o700
+        );
+        std::fs::write(first_path.join("source"), b"first").unwrap();
+        std::fs::write(second_path.join("source"), b"second").unwrap();
+        let held = Arc::clone(&first);
+        drop(first);
+        assert!(first_path.exists());
+        drop(held);
+        assert!(!first_path.exists());
+        assert_eq!(
+            std::fs::read(second_path.join("source")).unwrap(),
+            b"second"
+        );
+        assert_eq!(
+            std::fs::read(durable.join("image.iid")).unwrap(),
+            b"durable-recovery-id"
+        );
+        drop(second);
+        assert!(!second_path.exists());
+        assert!(durable.exists());
+
+        let alias = root.path().join("alias");
+        symlink(&durable, &alias).unwrap();
+        assert!(ExecutionScratch::create(&alias, id).is_err());
+        assert_eq!(std::fs::read_dir(&durable).unwrap().count(), 1);
+    }
+
+    #[tokio::test]
+    async fn canceled_execution_keeps_blocking_scratch_until_completion_and_isolates_next_attempt()
+    {
+        let root = tempfile::tempdir().unwrap();
+        let id = Uuid::new_v4();
+        let scratch = ExecutionScratch::create(root.path(), id).unwrap();
+        let abandoned_path = scratch.path.clone();
+        let (started_tx, started_rx) = tokio::sync::oneshot::channel();
+        let (release_tx, release_rx) = std::sync::mpsc::channel();
+        let (finished_tx, finished_rx) = tokio::sync::oneshot::channel();
+        let execution = tokio::spawn(async move {
+            let blocking_scratch = Arc::clone(&scratch);
+            tokio::task::spawn_blocking(move || {
+                std::fs::write(blocking_scratch.path.join("source"), b"started").unwrap();
+                started_tx.send(()).unwrap();
+                release_rx.recv_timeout(Duration::from_secs(15)).unwrap();
+                std::fs::write(blocking_scratch.path.join("source"), b"finished").unwrap();
+                drop(blocking_scratch);
+                finished_tx.send(()).unwrap();
+            })
+            .await
+            .unwrap();
+            drop(scratch);
+        });
+        tokio::time::timeout(Duration::from_secs(5), started_rx)
+            .await
+            .unwrap()
+            .unwrap();
+        execution.abort();
+        assert!(execution.await.unwrap_err().is_cancelled());
+        assert!(abandoned_path.exists());
+
+        let resumed = ExecutionScratch::create(root.path(), id).unwrap();
+        let resumed_path = resumed.path.clone();
+        assert_ne!(resumed_path, abandoned_path);
+        std::fs::write(resumed_path.join("source"), b"resumed-attempt").unwrap();
+        release_tx.send(()).unwrap();
+        tokio::time::timeout(Duration::from_secs(5), finished_rx)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(!abandoned_path.exists());
+        assert_eq!(
+            std::fs::read(resumed_path.join("source")).unwrap(),
+            b"resumed-attempt"
+        );
+        drop(resumed);
+        assert!(!resumed_path.exists());
+    }
+
     #[test]
     fn recipe_uses_offline_checks_and_no_shared_compiled_cache() {
         assert!(RECIPE.contains("cargo fetch --locked"));

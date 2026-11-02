@@ -1,6 +1,6 @@
 //! Test-only integration harness. Product implementations are imported unchanged.
 use crate::{State, auth, domain, runtime, runtime_health};
-use anyhow::{Result, ensure};
+use anyhow::{Context, Result, ensure};
 use serde_json::{Value, json};
 use sqlx::{Connection, Executor, Row};
 use std::{path::PathBuf, sync::Arc, time::Duration};
@@ -59,7 +59,7 @@ async fn submit(
     Ok(serde_json::from_value(v["id"].clone())?)
 }
 async fn job(pool: &sqlx::PgPool, id: Uuid) -> Result<Value> {
-    Ok(sqlx::query_scalar("SELECT jsonb_build_object('id',id,'status',status,'step',step,'errorCode',error_code,'releaseId',release_id) FROM runtime_jobs WHERE id=$1").bind(id).fetch_one(pool).await?)
+    Ok(sqlx::query_scalar("SELECT jsonb_build_object('id',id,'status',status,'step',step,'errorCode',error_code,'releaseId',release_id,'failureClass',failure_class,'retryable',retryable) FROM runtime_jobs WHERE id=$1").bind(id).fetch_one(pool).await?)
 }
 async fn finish(pool: &sqlx::PgPool, id: Uuid) -> Result<Value> {
     runtime::tick(pool).await?;
@@ -217,6 +217,216 @@ async fn monitoring_boundaries(s: &State, admin: &auth::Principal) -> Result<()>
     servers.abort_all();
     Ok(())
 }
+
+fn worker_application_name(process: u32) -> String {
+    format!("miy-audit-worker-{process}")
+}
+
+async fn worker_guard_pid(pool: &sqlx::PgPool, process: u32) -> Result<i32> {
+    tokio::time::timeout(Duration::from_secs(10), async {
+        loop {
+            let pid = sqlx::query_scalar("SELECT a.pid FROM pg_locks l JOIN pg_stat_activity a ON a.pid=l.pid WHERE l.locktype='advisory' AND l.classid=0 AND l.objid=73490123 AND l.objsubid=1 AND l.granted AND l.database=(SELECT oid FROM pg_database WHERE datname=current_database()) AND a.application_name=$1")
+                .bind(worker_application_name(process)).fetch_optional(pool).await?;
+            if let Some(pid) = pid {
+                return Ok(pid);
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+    })
+    .await
+    .context("worker did not acquire the isolated ownership lock")?
+}
+
+async fn blocked_build_recovery(pool: &sqlx::PgPool, process: u32) -> Result<i32> {
+    tokio::time::timeout(Duration::from_secs(10), async {
+        loop {
+            let pid = sqlx::query_scalar("SELECT pid FROM pg_stat_activity WHERE datname=current_database() AND application_name=$1 AND state='active' AND wait_event_type='Lock' AND query LIKE 'SELECT * FROM app_builds WHERE status=''running''%' LIMIT 1")
+                .bind(worker_application_name(process)).fetch_optional(pool).await?;
+            if let Some(pid) = pid {
+                return Ok(pid);
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+    })
+    .await
+    .context("worker recovery did not reach the held app_builds table lock")?
+}
+
+async fn start_during_recovery(s: &State, admin: &auth::Principal, key: &str) -> Result<Value> {
+    tokio::time::timeout(Duration::from_secs(12), async {
+        let id = submit(s, admin, "start", "prod", None, None, key).await?;
+        let result = terminal(&s.pool, id).await?;
+        ensure!(result["status"] == "succeeded", "{key}: {result}");
+        Ok(result)
+    })
+    .await
+    .context("runtime control was blocked by build recovery")?
+}
+
+// Real worker subprocesses, PostgreSQL locks and the existing owned production
+// fixture. No substitute build implementation or worker scheduling hook is used.
+async fn worker_recovery_boundaries(s: &State, admin: &auth::Principal) -> Result<()> {
+    // Stop before measuring startup so Docker's normal stop grace is excluded.
+    let stop = submit(
+        s,
+        admin,
+        "stop",
+        "prod",
+        None,
+        None,
+        "recovery-prepare-prod",
+    )
+    .await?;
+    ensure!(finish(&s.pool, stop).await?["status"] == "succeeded");
+    let mut build_lock = s.pool.acquire().await?;
+    build_lock.close_on_drop();
+    ensure!(
+        sqlx::query_scalar::<_, bool>("SELECT pg_try_advisory_lock(73490125)")
+            .fetch_one(&mut *build_lock)
+            .await?,
+        "unexpected live build owner in the isolated fixture"
+    );
+    let build = Uuid::new_v4();
+    ensure!(!crate::server_build::archive_path(build)?.exists());
+    sqlx::query("INSERT INTO app_builds(id,app_id,actor,request_id,source_commit,archive_hash,size_bytes,platform,status,step,started_at) VALUES($1,'audit-runtime',$2,$3,$4,$5,1,$6,'running','validating_source',now())")
+        .bind(build).bind(&admin.id).bind(Uuid::new_v4()).bind("a".repeat(40))
+        .bind(crate::contract::hash(build.as_bytes()))
+        .bind(crate::runtime_platform::server().context("unsupported fixture platform")?)
+        .execute(&s.pool).await?;
+    let mut first = worker(None, None)?;
+    let first_process = first.id().context("worker process was not started")?;
+    worker_guard_pid(&s.pool, first_process).await?;
+    let control = start_during_recovery(s, admin, "start-with-held-build-lock").await?;
+    let pending: String = sqlx::query_scalar("SELECT status FROM app_builds WHERE id=$1")
+        .bind(build)
+        .fetch_one(&s.pool)
+        .await?;
+    ensure!(
+        pending == "running",
+        "build recovery bypassed its ownership lock"
+    );
+    ensure!(
+        sqlx::query_scalar::<_, bool>("SELECT pg_advisory_unlock(73490125)")
+            .fetch_one(&mut *build_lock)
+            .await?
+    );
+    drop(build_lock);
+    let recovered: String = tokio::time::timeout(Duration::from_secs(20), async {
+        loop {
+            let row = sqlx::query("SELECT status,error_code FROM app_builds WHERE id=$1")
+                .bind(build)
+                .fetch_one(&s.pool)
+                .await?;
+            if row.get::<String, _>("status") == "failed" {
+                return Ok::<String, anyhow::Error>(row.get("error_code"));
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+    })
+    .await
+    .context("build recovery was skipped after its lock became available")??;
+    ensure!(
+        recovered == "source_validation_failed",
+        "unexpected recovery failure code: {recovered}"
+    );
+    ensure!(
+        tokio::process::Command::new("/bin/kill")
+            .args(["-TERM", "--", &first_process.to_string()])
+            .status()
+            .await?
+            .success()
+    );
+    ensure!(
+        tokio::time::timeout(Duration::from_secs(8), first.wait())
+            .await??
+            .success()
+    );
+    report(
+        "held build ownership does not block control; recovery resumes when released",
+        true,
+        json!({"controlJob":control,"buildStatusWhileLocked":pending,"recoveredErrorCode":recovered,"workerPoolConnections":10}),
+    );
+
+    let stop = submit(
+        s,
+        admin,
+        "stop",
+        "prod",
+        None,
+        None,
+        "table-lock-prepare-prod",
+    )
+    .await?;
+    ensure!(finish(&s.pool, stop).await?["status"] == "succeeded");
+    let mut table_lock = s.pool.begin().await?;
+    sqlx::query("LOCK TABLE app_builds IN ACCESS EXCLUSIVE MODE")
+        .execute(&mut *table_lock)
+        .await?;
+    let mut blocked = worker(None, None)?;
+    let blocked_process = blocked.id().context("worker process was not started")?;
+    let guard_pid = worker_guard_pid(&s.pool, blocked_process).await?;
+    let recovery_pid = blocked_build_recovery(&s.pool, blocked_process).await?;
+    ensure!(
+        guard_pid != recovery_pid,
+        "recovery reused the ownership connection"
+    );
+    let control = start_during_recovery(s, admin, "start-with-blocked-build-recovery").await?;
+    // Recheck every ownership condition in the terminating statement. Only this
+    // subprocess's global guard in this disposable database may be terminated.
+    let terminated: bool = sqlx::query_scalar("SELECT pg_terminate_backend(a.pid) FROM pg_locks l JOIN pg_stat_activity a ON a.pid=l.pid WHERE a.pid=$1 AND a.application_name=$2 AND a.datname=current_database() AND l.locktype='advisory' AND l.classid=0 AND l.objid=73490123 AND l.objsubid=1 AND l.granted AND l.database=(SELECT oid FROM pg_database WHERE datname=current_database())")
+        .bind(guard_pid).bind(worker_application_name(blocked_process)).fetch_one(&s.pool).await?;
+    ensure!(
+        terminated,
+        "isolated worker ownership connection was not terminated"
+    );
+    let exit = tokio::time::timeout(Duration::from_secs(8), blocked.wait())
+        .await
+        .context("worker did not exit after losing ownership during recovery")??;
+    ensure!(
+        !exit.success(),
+        "worker ownership loss was reported as success"
+    );
+    let mut successor = worker(None, None)?;
+    let successor_process = successor.id().context("successor worker was not started")?;
+    worker_guard_pid(&s.pool, successor_process).await?;
+    blocked_build_recovery(&s.pool, successor_process).await?;
+    let successor_control =
+        start_during_recovery(s, admin, "successor-start-with-blocked-recovery").await?;
+    report(
+        "blocked recovery does not delay ownership loss or successor control",
+        true,
+        json!({"controlJob":control,"successorControlJob":successor_control,"recoverySqlObservedWaiting":true,"ownershipLossExit":exit.code(),"tableLockStillHeld":true}),
+    );
+
+    // Exercise shutdown while the successor still holds BUILD_LOCK and its
+    // recovery query is blocked. Dropping those futures must release both locks.
+    let signal = tokio::process::Command::new("/bin/kill")
+        .args(["-TERM", "--", &successor_process.to_string()])
+        .status()
+        .await?;
+    ensure!(
+        signal.success(),
+        "could not signal the owned worker subprocess"
+    );
+    let exit = tokio::time::timeout(Duration::from_secs(8), successor.wait())
+        .await
+        .context("SIGTERM did not stop the worker during blocked recovery")??;
+    ensure!(exit.success(), "worker SIGTERM was not a clean exit");
+    let remaining: i64 = sqlx::query_scalar("SELECT count(*) FROM pg_locks WHERE locktype='advisory' AND classid=0 AND objid IN (73490123,73490125) AND objsubid=1 AND granted AND database=(SELECT oid FROM pg_database WHERE datname=current_database())")
+        .fetch_one(&s.pool).await?;
+    ensure!(
+        remaining == 0,
+        "worker retained ownership or build lock after shutdown"
+    );
+    table_lock.rollback().await?;
+    report(
+        "SIGTERM cancels blocked recovery and releases worker and build ownership",
+        true,
+        json!({"workerExit":exit.code(),"remainingAdvisoryLocks":remaining,"tableLockReleased":true}),
+    );
+    Ok(())
+}
+
 async fn deployed(s: &State, p: &auth::Principal, image: &str, key: &str) -> Result<Value> {
     let id = submit(s, p, "deploy", "dev", Some(image), None, key).await?;
     let result = finish(&s.pool, id).await?;
@@ -267,7 +477,14 @@ async fn worker_child() -> Result<()> {
     unsafe {
         std::env::set_var("AUDIT_WORKER_PID", std::process::id().to_string());
     }
-    crate::worker::run(sqlx::PgPool::connect(&std::env::var("DATABASE_URL")?).await?).await
+    let options = std::env::var("DATABASE_URL")?
+        .parse::<sqlx::postgres::PgConnectOptions>()?
+        .application_name(&worker_application_name(std::process::id()));
+    let pool = sqlx::postgres::PgPoolOptions::new()
+        .max_connections(10)
+        .connect_with(options)
+        .await?;
+    crate::worker::run(pool).await
 }
 
 #[tokio::test]
@@ -699,7 +916,12 @@ async fn isolated_runtime_regression() -> Result<()> {
         .await?;
     report(
         "failed migration rolls back DDL and preserves data",
-        j["status"] == "failed" && bad_columns == 0 && value == "dev-retained",
+        j["status"] == "failed"
+            && j["errorCode"] == "migration_failed"
+            && j["failureClass"] == "never"
+            && j["retryable"] == false
+            && bad_columns == 0
+            && value == "dev-retained",
         json!({"job":j,"partialColumnCount":bad_columns,"state":inst(&pool,"dev").await?,"retainedValue":value}),
     );
     let recovered = deployed(&s, &dev, &image("recovery"), "forward-recovery").await?;
@@ -724,7 +946,11 @@ async fn isolated_runtime_regression() -> Result<()> {
         .await?;
     report(
         "old image cannot silently roll back advanced schema",
-        rollback["status"] == "failed" && value == "dev-retained",
+        rollback["status"] == "failed"
+            && rollback["errorCode"] == "migration_history_mismatch"
+            && rollback["failureClass"] == "never"
+            && rollback["retryable"] == false
+            && value == "dev-retained",
         json!({"job":rollback,"state":inst(&pool,"dev").await?,"retainedValue":value,"automaticRollbackSupported":false}),
     );
     deployed(&s, &dev, &image("recovery"), "restore-current").await?;
@@ -953,6 +1179,7 @@ async fn isolated_runtime_regression() -> Result<()> {
             json!({"suite":"auth","transport":"HTTP","storage":"isolated PostgreSQL","identity":"synthetic development account"}),
         );
     }
+    worker_recovery_boundaries(&s, &admin).await?;
     api_server.abort();
     oidc.abort();
     let failures = std::fs::read_to_string(root().join("evidence/results.jsonl"))?
