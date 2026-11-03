@@ -1,0 +1,9 @@
+{
+  "sourceCommit": "3406d9f5b9c8afbc55a0e3e8752cb178c61db0de",
+  "workingTreeDirty": false,
+  "version": "miy 0.7.0",
+  "sha256": "59407ce6d8853c8176054fb36afb92fa97585502cea1b5b04483d8a82ce91feb",
+  "bytes": 30372712,
+  "command": "cargo build --release --locked -p miy -j 8",
+  "log": "/tmp/miy-release-review-20261104-build.log"
+}

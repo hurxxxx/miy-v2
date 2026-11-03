@@ -1,0 +1,43 @@
+{
+  "status": "FAIL",
+  "usableConnections": 97,
+  "settings": {
+    "max_connections": "100",
+    "reserved_connections": "0",
+    "superuser_reserved_connections": "3"
+  },
+  "worstCase": 124,
+  "reserved": {
+    "corePools": 20,
+    "coreTransient": 4,
+    "coreTransientSources": {
+      "provisioning": 2,
+      "developmentLeaseMonitor": 1,
+      "serverBuildHistory": 1
+    },
+    "identityPool": 100,
+    "identityPoolSource": "Keycloak default (KC_DB_POOL_MAX_SIZE unset)",
+    "roles": {
+      "runtime": {
+        "roles": 7,
+        "limitSum": 0,
+        "unbounded": 7
+      },
+      "migration": {
+        "roles": 7,
+        "limitSum": 0,
+        "unbounded": 7
+      }
+    }
+  },
+  "currentUse": {
+    "identity": 2,
+    "miy-app (no application_name)": 3,
+    "miy-core (no application_name)": 13,
+    "other": 1
+  },
+  "problems": [
+    "login roles without a connection limit: migration, runtime (check worker startup alignment or the next deployment)",
+    "worst case 124 exceeds usable 97"
+  ]
+}

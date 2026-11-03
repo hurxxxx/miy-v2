@@ -1,0 +1,14 @@
+{
+  "status": "PASS",
+  "container": "492ef7200628",
+  "image": "postgres:18.3@sha256:7e32e9833a6fb1c92c32552794cb6ed569d51b445a54907d35fc112ef39684db",
+  "migrationVersion": 17,
+  "tables": 35,
+  "rows": 1412,
+  "mismatchedTables": [],
+  "rehearsal": {
+    "exitCode": 0,
+    "migrationVersionAfter": 19
+  },
+  "containerRemoved": true
+}

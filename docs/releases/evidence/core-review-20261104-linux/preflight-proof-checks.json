@@ -1,0 +1,14 @@
+{
+  "attempts": [
+    {
+      "status": "FAIL",
+      "stage": "read_only_proof_preflight",
+      "reason": "inspect.getsource included a final newline excluded by the rehearsal AST source segment; no production mutations occurred"
+    },
+    {
+      "status": "PASS",
+      "stage": "read_only_proof_preflight",
+      "reason": "Normalized final newline; source, candidate, dump, exact restore function and real rollback proof match"
+    }
+  ]
+}

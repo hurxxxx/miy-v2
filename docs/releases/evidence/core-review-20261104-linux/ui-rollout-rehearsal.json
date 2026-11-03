@@ -1,0 +1,25 @@
+{
+  "sourceCommit": "3406d9f5b9c8afbc55a0e3e8752cb178c61db0de",
+  "canonicalScript": "docs/releases/evidence/core-review-20261104-linux/ui-rollout.py",
+  "scriptSha256": "befd619f10c1be2eeb5043781a9346bdae9f45a246109a47a1e040a84c165e1c",
+  "manifestSha256": "f9f19d234f8285168ad1c229f4ce381aaa29a56ab80131038c69ac656860052f",
+  "productionMutation": "NOT_RUN",
+  "checks": [
+    {
+      "check": "isolated_apply",
+      "result": "PASS"
+    },
+    {
+      "check": "isolated_index_rollback_preserves_both_asset_generations",
+      "result": "PASS"
+    },
+    {
+      "check": "existing_backup_refused",
+      "result": "PASS"
+    },
+    {
+      "check": "immutable_collision_refused_before_mutation",
+      "result": "PASS"
+    }
+  ]
+}
