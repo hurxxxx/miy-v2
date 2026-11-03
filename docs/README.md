@@ -12,6 +12,7 @@
 | --- | --- | --- |
 | 제품 요구사항 | [PRD.md](PRD.md) | 제품 정의, 합의 사항, 기능 요구사항, 인수 조건, 후속 범위 |
 | 작업 순서 | [PLAN.md](PLAN.md) | 다음 우선 작업표, 코어 묶음 요약, 보류 중인 사용성 개선, 최초 설계 로드맵 |
+| 검사 | [CHECKS.md](CHECKS.md) | 변경 영역별 최소 검사, 정적·격리 Docker·로컬 스택·운영 검사의 구분. 플랫폼 개발 규칙은 루트 `AGENTS.md` |
 | v1 적용 | [V1-ADOPTION.md](V1-ADOPTION.md) | 후속 설계 기준인 공식 v1(`/projects/miy`)의 검토·재검증 결과, 적용 항목(ID `V1-*`)과 제외 항목, 실패 교훈과 남은 결정 사항 |
 | 기본 UI | [UIUX-MIGRATION.md](UIUX-MIGRATION.md) | ai-do 기반 UI-1~5의 완료 이력·계약·검증 결과와 miy v1 기준 후속 UI 작업의 경계 |
 | 코어 안정화 | [CORE-HARDENING.md](CORE-HARDENING.md) | worker·권한·자원·복구·새 서버 인수 1~5차의 완료 기준과 증거 |
@@ -20,7 +21,7 @@
 | CLI 사용·서버 구성 | [RUNNING.md](RUNNING.md) | CLI 설치·인증, 앱 등록·빌드·dev 배포·prod 승격, 공용 컴포넌트 갱신, 서버 구성(HTTPS 도메인·사내 HTTP IP) |
 | 운영 서버 | [SERVER-OPERATIONS.md](SERVER-OPERATIONS.md) | v2.dwdcc.kr 구성, 게시 CLI, 배포 소스와 기록, 되돌리기 위치 |
 | CLI | [CLI-IMPLEMENTATION-PLAN.md](CLI-IMPLEMENTATION-PLAN.md), [CLI-RELEASE.md](CLI-RELEASE.md), [CLI-VALIDATION-MATRIX.md](CLI-VALIDATION-MATRIX.md) | 명령·인증·OS 계약, 배포 후보·게시 절차, 요구별 검증 범위 |
-| Windows | [WINDOWS-INSTALLER.md](WINDOWS-INSTALLER.md), [WINDOWS-VALIDATION.md](WINDOWS-VALIDATION.md), [WINDOWS-0.6.3-ACCEPTANCE.md](WINDOWS-0.6.3-ACCEPTANCE.md) | 설치 파일, 사용자 수행 빌드·검증 절차와 실행 기록. 0.6.3 인수 절차는 당시 후보 전용이며 0.7.0용 절차·검사기 갱신은 미완료 |
+| Windows | [WINDOWS-ACCEPTANCE.md](WINDOWS-ACCEPTANCE.md), [WINDOWS-INSTALLER.md](WINDOWS-INSTALLER.md), [WINDOWS-VALIDATION.md](WINDOWS-VALIDATION.md) | 현재 게시 후보(0.7.0)의 Windows 11 인수 절차·출처 검사기, 설치 파일 동작, 사용자 수행 빌드·검증 절차와 실행 기록. [0.6.3 인수](WINDOWS-0.6.3-ACCEPTANCE.md)는 당시 후보의 이력 |
 | 자원 | [CAPACITY.md](CAPACITY.md) | CPU·메모리·파일·DB 예산과 한도 초과 대응 |
 | 내부 AI | [AI.md](AI.md) | 공통 AI 연결, 사용자별 독립 세션, Hermes 연동 계획 |
 | 기술 선택 | [STACK.md](STACK.md), [FRONTEND.md](FRONTEND.md), [RESEARCH.md](RESEARCH.md) | 스택 추천안, 프론트엔드 비교, 유사 프로젝트 차용 판단 |
