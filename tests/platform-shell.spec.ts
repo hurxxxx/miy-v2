@@ -164,3 +164,37 @@ test("mobile drawer closes on Escape and returns focus to the toggle", async ({ 
   await expect(page.locator("#platform-navigation")).toBeHidden();
   await expect(page.getByRole("button", { name: "메뉴 열기" })).toBeFocused();
 });
+
+test("unsaved app input guards app switching and logout through the shell", async ({ page }) => {
+  const { resolve, sep } = await import("node:path");
+  const remote = resolve(".local/evidence/runtime-health-ui/remote");
+  await page.route("**/artifacts/health-fixture/**", async (route) => {
+    const path = resolve(remote, new URL(route.request().url()).pathname.slice("/artifacts/health-fixture/".length));
+    expect(path.startsWith(remote + sep)).toBe(true);
+    await route.fulfill({ path });
+  });
+  await mock(page, { me: () => ({ status: 200, json: user }), installations: () => ({ status: 200, json: [app] }) });
+  const logouts: string[] = [];
+  page.on("request", (r) => {
+    if (new URL(r.url()).pathname === "/auth/logout") logouts.push(r.method());
+  });
+  await page.goto("/environments/dev/apps/shell-app");
+  const input = page.getByLabel("문서 제목");
+  await expect(input).toHaveValue("저장된 제목");
+  await input.fill("미저장 제목");
+  const rail = page.locator("#platform-navigation");
+  page.once("dialog", async (dialog) => {
+    expect(dialog.message()).toContain("저장하지 않은 제목");
+    await dialog.dismiss();
+  });
+  await rail.getByRole("link", { name: "홈", exact: true }).click();
+  await expect(page).toHaveURL(/\/environments\/dev\/apps\/shell-app$/);
+  await expect(input).toHaveValue("미저장 제목");
+  page.once("dialog", (dialog) => dialog.dismiss());
+  await page.getByRole("button", { name: "로그아웃" }).click();
+  await expect(input).toHaveValue("미저장 제목");
+  expect(logouts).toEqual([]);
+  page.once("dialog", (dialog) => dialog.accept());
+  await rail.getByRole("link", { name: "홈", exact: true }).click();
+  await expect(page).toHaveURL(/\/environments\/dev$/);
+});

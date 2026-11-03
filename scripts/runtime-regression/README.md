@@ -28,6 +28,23 @@ pnpm exec playwright test --config scripts/runtime-regression/ui.config.ts
 
 This builds the platform and a real Federation test app into `.local/evidence/runtime-health-ui/` and starts its own preview on `127.0.0.1:18147` (fails if occupied). It does not replace the running platform's build. API requests are intercepted with fixtures. Tests cover health displays, unsaved input and SDK callback stability, release-change API blocking, and late responses across app and environment navigation. It does not send mutations to a platform API.
 
+The platform shell can also be checked against the real core server of this checkout:
+
+```sh
+cargo build
+pnpm exec playwright test --config scripts/runtime-regression/server-ui.config.ts
+```
+
+`server-ui.mjs` starts a disposable `postgres:18.3` container (random loopback port, tmpfs, label `miy.server-ui`), static OIDC metadata, `miy migrate`/`seed`/`serve` on 127.0.0.1:18149 and the built platform with `/api` and `/auth` proxied on 127.0.0.1:18148. It uses only the loopback development login and never reads `.local/runtime.env`. The container is removed on exit and at the next start. It does not cover Keycloak login, deployed Docker apps or remote app screens served by the core.
+
+Remote app rendering before and after a shell change:
+
+```sh
+node scripts/runtime-regression/app-css-baseline.mjs <base-commit>
+```
+
+It builds the base platform in a temporary git worktree, loads the reference fixture app in both shells with mocked APIs and writes computed-style differences and screenshots to `.local/evidence/app-css-baseline/`.
+
 The CLI 0.5 suites additionally check permission-scoped pagination, atomic event cursors, preflight/expected-state and confirmation rejection, typed retry, idempotent upload receipts, bounded worker logs, concurrent real CLI refresh, typed JSON input and request-ID resume. Two blocked log diagnostics must allow a production start to complete; the owned app prints 2 MiB so collection must truncate to 1 MiB. Neither test reads an unrelated container's logs.
 
 Client transport failures can also be checked without Docker/PostgreSQL:
