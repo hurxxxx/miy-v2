@@ -1,0 +1,38 @@
+{
+  "status": "PASS",
+  "services": [
+    {
+      "service": "miy-v2-serve",
+      "ActiveState": "active",
+      "SubState": "running",
+      "MainPID": "3482850",
+      "NRestarts": "0"
+    },
+    {
+      "service": "miy-v2-worker",
+      "ActiveState": "active",
+      "SubState": "running",
+      "MainPID": "3482851",
+      "NRestarts": "0"
+    }
+  ],
+  "database": {
+    "migrationVersion": 19,
+    "installations": 7,
+    "running": 6,
+    "healthyRunning": 6
+  },
+  "appContainersPreserved": 7,
+  "baselineRunningContainers": 6,
+  "publicNewAssetsAndIndexHashMatches": 4,
+  "attempts": [
+    {
+      "status": "FAIL",
+      "reason": "Initial extra check assumed four running containers from an earlier preflight; the actual rollout baseline already had six after runtime operations before service stop. No container drift occurred."
+    },
+    {
+      "status": "PASS",
+      "reason": "Compared against the actual rollout baseline; all seven containers preserved and six running installations healthy."
+    }
+  ]
+}

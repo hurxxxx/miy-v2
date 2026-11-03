@@ -1,0 +1,148 @@
+{
+  "date": "2026-11-04",
+  "status": "PASS",
+  "origin": "https://v2.dwdcc.kr",
+  "sourceCommit": "3406d9f5b9c8afbc55a0e3e8752cb178c61db0de",
+  "deploymentToolCommit": "f55bc34",
+  "deploymentPerformed": true,
+  "pushPerformed": false,
+  "priorImplementationValidation": "core-review-2026-11-04-validation.json",
+  "server": {
+    "version": "0.7.0",
+    "sha256": "59407ce6d8853c8176054fb36afb92fa97585502cea1b5b04483d8a82ce91feb",
+    "previousSha256": "615f19a4f96b9b3adbdf393dd6c9cb8a7e52bda1dfd2d608ef5ac808da0bbe3d",
+    "build": "separate clean checkout; cargo build --release --locked -p miy -j 8",
+    "runningExecutables": {
+      "miy-v2-serve": {
+        "pid": 3482850,
+        "sha256": "59407ce6d8853c8176054fb36afb92fa97585502cea1b5b04483d8a82ce91feb"
+      },
+      "miy-v2-worker": {
+        "pid": 3482851,
+        "sha256": "59407ce6d8853c8176054fb36afb92fa97585502cea1b5b04483d8a82ce91feb"
+      }
+    }
+  },
+  "ui": {
+    "sourceCommit": "3406d9f5b9c8afbc55a0e3e8752cb178c61db0de",
+    "indexSha256": "baadc4db49abdb888563a6b01ebce74415f79269702145f4a54f32ed18229c49",
+    "newAssets": 3,
+    "identicalAssets": 105,
+    "publicNewAssetsAndIndexHashesVerified": 4,
+    "browserPassed": 12,
+    "browserNotRun": [
+      {
+        "name": "administrator_group_members_read_only",
+        "result": "NOT_RUN",
+        "reason": "no_existing_groups"
+      },
+      {
+        "name": "regular_user_existing_app_render",
+        "result": "NOT_RUN",
+        "reason": "no_visible_running_app"
+      }
+    ],
+    "pageErrors": 0,
+    "cleanupErrors": []
+  },
+  "timing": {
+    "startedAt": "2026-11-03T23:29:30Z",
+    "serviceStoppedAt": "2026-11-03T23:29:31Z",
+    "servicesStartedAt": "2026-11-03T23:30:06Z",
+    "finishedAt": "2026-11-03T23:30:08Z"
+  },
+  "database": {
+    "schemaBefore": 17,
+    "schemaAfter": 19,
+    "finalBackup": {
+      "file": "miy_core.dump",
+      "bytes": 218503,
+      "sha256": "d62448b727d948bc946f525985b00331a89cd4238036eab8e0a6bb037afd5403",
+      "migrationVersion": 17
+    },
+    "backedUpTables": 35,
+    "backedUpRows": 1444,
+    "freshBackupRestoreMigrateVerified": true,
+    "samePostgresContainer": true,
+    "postgresNetworksPreserved": 9,
+    "maxConnections": 200,
+    "identityPoolMaxSize": 10,
+    "runtimeRoleLimit": 6,
+    "migrationRoleLimit": 2,
+    "connectionBudgetWorstCase": 90,
+    "connectionBudgetUsable": 197,
+    "connectionBudgetStatus": "PASS"
+  },
+  "preservation": {
+    "stableRecordsUnchanged": true,
+    "stableTables": [
+      "users",
+      "apps",
+      "app_registrations",
+      "grants",
+      "installations",
+      "releases",
+      "release_checks",
+      "db_resources"
+    ],
+    "apps": 5,
+    "releases": 9,
+    "installations": 7,
+    "users": 4,
+    "grants": 9,
+    "appContainersUnchanged": 7,
+    "runningAtActualRolloutBaseline": 6,
+    "healthyRunningAfterChecks": 6,
+    "coreServiceRestartsAfterStart": 0
+  },
+  "publishedCli": {
+    "version": "0.7.0",
+    "sourceCommit": "01e4d4924f8c8fc4e11720c1af81adf17ddb20bf",
+    "changed": false,
+    "newCliLockFixPublished": false,
+    "ordinaryOidcAndCliStdioMcpChecks": 17,
+    "checksStatus": "passed",
+    "cleanupFailures": []
+  },
+  "rollback": {
+    "used": false,
+    "databaseRestoredInProduction": false,
+    "preflightRealDumpRollback": "PASS",
+    "rowDigestComparison": "PASS",
+    "coreBackupPath": "/projects/miy-v2/.local/release-review-20261104/core/rollback",
+    "uiBackupPath": "/projects/miy-v2/.local/release-review-20261104/ui/production-backup",
+    "postStartupFailurePolicy": "Stop core for assessment; do not overwrite newly accepted writes automatically.",
+    "connectionSettingsRevertedOnRollback": false
+  },
+  "attemptsPreserved": [
+    "evidence/core-review-20261104-linux/preflight-proof-checks.json",
+    "evidence/core-review-20261104-linux/first-deploy-attempt.json",
+    "evidence/core-review-20261104-linux/postdeploy-preservation.json"
+  ],
+  "notRun": [
+    "Windows/macOS installation acceptance",
+    "new multi-platform CLI publication",
+    "production group/member/grant writes; mutation boundaries were tested in the isolated regression",
+    "representative business app workspace and ACL acceptance",
+    "production rollback execution; real-dump rollback was rehearsed in a disposable database"
+  ],
+  "evidence": {
+    "server-build.json": "evidence/core-review-20261104-linux/server-build.json",
+    "preflight-restore-migrate.json": "evidence/core-review-20261104-linux/preflight-restore-migrate.json",
+    "rollback-rehearsal.json": "evidence/core-review-20261104-linux/rollback-rehearsal.json",
+    "connection-budget-before.json": "evidence/core-review-20261104-linux/connection-budget-before.json",
+    "connection-budget-after.json": "evidence/core-review-20261104-linux/connection-budget-after.json",
+    "ui-build-manifest.json": "evidence/core-review-20261104-linux/ui-build-manifest.json",
+    "ui-rollout-rehearsal.json": "evidence/core-review-20261104-linux/ui-rollout-rehearsal.json",
+    "platform-connection.json": "evidence/core-review-20261104-linux/platform-connection.json",
+    "ui-postdeploy-smoke.json": "evidence/core-review-20261104-linux/ui-postdeploy-smoke.json",
+    "postdeploy-preservation.json": "evidence/core-review-20261104-linux/postdeploy-preservation.json"
+  },
+  "executionScriptsSha256": {
+    "docs/releases/evidence/core-review-20261104-linux/deploy.py": "38db1a31692c3d048a0b114e073ad4e64c6b5b941c337150a2de2af15c55e1fe",
+    "docs/releases/evidence/core-review-20261104-linux/rollback-rehearsal.py": "5bb0f5ece30020a7cc0cedc00aaff73836dcd5825506af1abf4c6731ab81244d",
+    "docs/releases/evidence/core-review-20261104-linux/ui-rollout.py": "befd619f10c1be2eeb5043781a9346bdae9f45a246109a47a1e040a84c165e1c",
+    "docs/releases/evidence/core-review-20261104-linux/ui-postdeploy-smoke.mjs": "d8223cbd572e04db9e57a218ac5c4b37b2f41cdad98efa5fc687a89ef63ee431",
+    "scripts/check-platform-connection.mjs": "62868e0f7d0ae685a067652e0aa33a0146fdcd581658f4faf3d2d5bbe7a2a0c9"
+  }
+}

@@ -1,0 +1,40 @@
+{
+  "status": "PASS",
+  "usableConnections": 197,
+  "settings": {
+    "max_connections": "200",
+    "reserved_connections": "0",
+    "superuser_reserved_connections": "3"
+  },
+  "worstCase": 90,
+  "reserved": {
+    "corePools": 20,
+    "coreTransient": 4,
+    "coreTransientSources": {
+      "provisioning": 2,
+      "developmentLeaseMonitor": 1,
+      "serverBuildHistory": 1
+    },
+    "identityPool": 10,
+    "identityPoolSource": "KC_DB_POOL_MAX_SIZE",
+    "roles": {
+      "runtime": {
+        "roles": 7,
+        "limitSum": 42,
+        "unbounded": 0
+      },
+      "migration": {
+        "roles": 7,
+        "limitSum": 14,
+        "unbounded": 0
+      }
+    }
+  },
+  "currentUse": {
+    "identity": 3,
+    "miy-core-serve": 1,
+    "miy-core-worker": 5,
+    "other": 1
+  },
+  "problems": []
+}

@@ -1,10 +1,21 @@
 # 현재 플랫폼 서버 운영·연결 안내
 
-- 확인일: 2026-11-03
+- 확인일: 2026-11-04
 - 플랫폼 주소: **https://v2.dwdcc.kr**
 - CLI 설치 안내: **https://v2.dwdcc.kr/cli/install**
-- 실행 서버·게시 CLI: **0.7.0**, SDK 번들 **0.8.0** (2026-11-03 반영)
-- 배포 소스: 서버·CLI `01e4d4924f8c8fc4e11720c1af81adf17ddb20bf`, 웹 화면 `3876d43`(기본 UI 이식 후속 리뷰 보완, 2026-11-03 21:43 KST 교체)
+- 실행 서버·게시 CLI: **0.7.0**, SDK 번들 **0.8.0**
+- 배포 소스: 서버·웹 화면 `3406d9f5b9c8afbc55a0e3e8752cb178c61db0de`(2026-11-04 08:30 KST 반영), 게시 CLI `01e4d4924f8c8fc4e11720c1af81adf17ddb20bf`
+
+2026-11-04 사용자 요청으로 사용자·그룹 앱 권한, 감사 조회와 리뷰 보완을 운영에 반영했다([배포 결과](releases/core-review-2026-11-04-deployment.json), [배포 도구](releases/evidence/core-review-20261104-linux/deploy.py)). 아래 2026-11-03 기록은 이전 배포 이력이다.
+
+- 별도 clean checkout에서 빌드한 서버 SHA-256: `59407ce6d8853c8176054fb36afb92fa97585502cea1b5b04483d8a82ce91feb`. serve·worker의 실제 실행 파일도 같은 해시다. DB migration은 17→19, 코어 서비스 중지 구간은 약 35초였다.
+- 반영 전에 실제 운영 덤프를 격리 DB에 복원하고 비특권 소유자로 migration·신규 FK 데이터 작성·rollback을 수행했다. 35개 테이블의 행 수와 전체 행 내용 해시, 소유자·locale·ACL 복원이 일치했다. 서비스 중지 후 다시 받은 최종 백업은 218,503 bytes·1,444행이며, 별도 복원·migration 확인 후 반영했다.
+- PostgreSQL 컨테이너와 앱 네트워크 9개를 유지하고 연결 한도를 200으로 반영했다. Keycloak 풀은 10, 기존 앱 역할 14개는 runtime 6·migration 2다. 연결 예산은 **90 / 197 PASS**이며 과거 FAIL 기록은 보존한다.
+- 앱 5개·릴리스 9개·설치 7개와 주요 기존 레코드 내용, 앱 컨테이너 7개의 ID·이미지·상태·시작 시각을 보존했다. 배포 직전 기준 실행 6개·중지 1개이며, 실행 앱 6개는 배포 후 모두 healthy다. 초기 점검 뒤 발생한 앱 조작은 배포 직전 기준에 반영했다. 작업 중 첫 배포 시도는 대기 작업 감지로 서비스 중지 전에 거부됐고, 완료·유휴 확인 후 재시도했다.
+- UI는 기존 자산을 유지하고 새 자산 3개를 추가한 뒤 `index.html`을 원자적으로 교체했다. 공개 index와 새 자산의 해시가 일치한다. 실제 IdP·게시 CLI·stdio MCP 연결 17항목, 읽기 위주 화면/API 12항목 PASS, 페이지 오류·세션 정리 실패 0건이다. 기존 그룹이 없어서 그룹 구성원 화면, 일반 사용자에게 보이는 실행 앱이 없어서 해당 앱 렌더링은 NOT_RUN이다.
+- 복구 자료: `.local/release-review-20261104/core/rollback/`의 기존 서버·DB 덤프, `.local/release-review-20261104/ui/production-backup/`의 기존 화면. [UI 도구](releases/evidence/core-review-20261104-linux/ui-rollout.py)의 `rollback --backup <위 UI 경로>`로 이전 index를 복구할 수 있다. 서버 시작 전 실패는 검증한 덤프로 복구하지만, 시작 후 실패는 새로 받은 쓰기를 덮어쓰지 않도록 코어를 중지하고 별도 판단한다. 실제 운영 rollback은 사용하지 않았다. DB·Keycloak 연결 설정은 서버 rollback 시 유지된다.
+
+게시 CLI와 Windows 설치 파일은 기존 0.7.0 배포물을 유지했다. 이번 소스의 CLI 파일 잠금 수정은 아직 사용자 PC 배포물에 포함되지 않는다. Windows 실행 인수는 [별도 절차](WINDOWS-ACCEPTANCE.md)로 수행한다.
 
 2026-11-03 [설치 승인·사용자 위임·앱 호출 계약](CORE-PERMISSIONS.md)을 포함한 **0.7.0 / 번들 0.8.0**을 운영에 반영했다([배포 기록](releases/core-0.7.0-deployment.json), [배포 스크립트](releases/evidence/core-0.7.0-linux/deploy.py)).
 
@@ -84,11 +95,11 @@ Codex·Claude의 생성된 프로젝트 MCP는 프로젝트의 `.miy-tools/miy[.
 
 ## 3. 현재 배포 소스와 이 작업본의 차이
 
-실행 서버·worker·게시 CLI는 별도 checkout에서 검증한 `01e4d4924f8c8fc4e11720c1af81adf17ddb20bf`(0.7.0 / 번들 0.8.0) 배포물이고, 웹 화면은 `3876d43`이다(위 반영 기록). 이후 `main`의 소스 변경은 운영 반영을 뜻하지 않는다. 2026-11-03 이후 main에는 DB 역할 연결 한도·`application_name`·Docker 저장 공간 하한 같은 코어 변경과, 사용자·그룹 앱 권한과 감사 조회 migration `0018`·`0019`가 있다. 운영 반영은 사용자 요청과 별도 기록으로 하며, 반영 전 §6의 최소 백업과 `--migrate-with` 리허설을 수행한다.
+실행 서버·worker·웹 화면은 `3406d9f5b9c8afbc55a0e3e8752cb178c61db0de`이고, 게시 CLI는 `01e4d4924f8c8fc4e11720c1af81adf17ddb20bf`다(모두 버전 0.7.0 / 번들 0.8.0). DB 역할 연결 한도·`application_name`·Docker 저장 공간 하한과 사용자·그룹 앱 권한·감사 조회 migration `0018`·`0019`는 2026-11-04 반영했다. 이후 `main` 변경은 자동 배포되지 않는다. 운영 반영은 사용자 요청과 별도 기록으로 하며, 반영 전 §6의 최소 백업과 `--migrate-with` 리허설을 수행한다.
 
 서버를 갱신할 때는 먼저 배포 대상 소스 commit과 현재 실행 파일을 확인한다. 같은 버전 문자열이라도 실제 source commit·빌드 경계·설치된 SQL과 게시된 배포물의 출처를 함께 확인한다. 새 배포는 검증한 소스의 별도 checkout에서 빌드하고, 서버/worker·UI·게시 index를 같은 검증 기록에 묶어 반영한다.
 
-현재 서버 바이너리 SHA-256은 `615f19a4f96b9b3adbdf393dd6c9cb8a7e52bda1dfd2d608ef5ac808da0bbe3d`다(이전 0.6.3은 `4573260…`). 게시 CLI의 source commit과 target별 hash는 `GET /api/v1/cli/install`로 확인한다. 서버 바이너리는 default features 빌드이므로 클라이언트 전용 바이너리와 hash가 다르다.
+현재 서버 바이너리 SHA-256은 `59407ce6d8853c8176054fb36afb92fa97585502cea1b5b04483d8a82ce91feb`다(직전 서버는 `615f19a4…`). 게시 CLI의 source commit과 target별 hash는 `GET /api/v1/cli/install`로 확인한다. 서버 바이너리는 default features 빌드이므로 클라이언트 전용 바이너리와 hash가 다르다.
 
 배포와 이전 검증의 상세 이력은 [운영 소스의 0.6.3 반영 기록](https://github.com/hurxxxx/miy-v2/blob/7617246/docs/CLI-0.6.3-LINUX-VALIDATION.md)에 있다. 이 문서의 실제 연결 재검사 결과는 아래에 추가한다.
 
@@ -172,4 +183,4 @@ python3 scripts/check-db-connections.py
 - 복구 시 현재 DB의 재접속을 막고 고유 이름으로 보존한 뒤 빈 DB에 덤프를 복원한다. 덤프·기존 바이너리 해시와 복원 성공을 확인하기 전 서비스를 다시 시작하지 않는다. 복구에 실패하면 `ROLLBACK_FAILED`를 기록하고 수동 복구가 필요하다.
 - PostgreSQL 설정 변경은 기존 컨테이너를 재시작해 앱별 네트워크 연결을 보존한다. 실행 중 앱의 DB 연결에는 영향이 있으므로 별도 운영 반영 절차로 수행한다. 전원 장애·SIGKILL 이후 자동 복구는 구현 범위에 없다.
 
-현재 소스의 모의 시험과 합성 DB 복원 결과는 [리뷰 후 검증 기록](releases/core-review-2026-11-04-validation.json)으로 관리한다. 운영 배포와 실제 Windows 인수는 별도다.
+리뷰 당시 모의 시험과 합성 DB 복원 결과는 [리뷰 후 검증 기록](releases/core-review-2026-11-04-validation.json)에 있다. 이후 `3406d9f`의 실제 운영 덤프 리허설·배포 결과는 [별도 기록](releases/core-review-2026-11-04-deployment.json)으로 관리한다. 실제 Windows 인수는 별도다.

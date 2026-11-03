@@ -214,19 +214,19 @@ v1은 회사 소개 자료 `MIY 소개 및 사례_20261002.pdf`를 v1 구현과 
 
 ## 7. 적용 상태
 
-착수한 항목의 현재 구현 범위와 남은 부분을 적는다. 소스 구현·일부 구현은 전체 완료나 운영 반영을 뜻하지 않는다. 표에 없는 항목은 미착수다. 후속 리뷰의 구현·검증 결과는 [2026-11-04 기록](releases/core-review-2026-11-04-validation.json)에 있다.
+착수한 항목의 현재 구현 범위와 남은 부분을 적는다. 소스 구현·일부 구현은 전체 완료나 운영 반영을 뜻하지 않는다. 표에 없는 항목은 미착수다. 후속 리뷰의 구현·검증 결과는 [2026-11-04 기록](releases/core-review-2026-11-04-validation.json)에 있다. 구현분은 같은 날 서버·UI `3406d9f`로 [운영 반영](releases/core-review-2026-11-04-deployment.json)했다. 아래 일부 구현 항목의 남은 범위는 그대로다.
 
 | ID | 상태 | 반영 | 확인 |
 | --- | --- | --- | --- |
 | V1-Q1 | 완료 | 루트 `AGENTS.md`, `CLAUDE.md` | 운영 경계·비밀·Git·검증 보고 규칙 |
 | V1-Q2 | 완료 | [변경별 검사 지도](CHECKS.md) | 각 명령의 전제(Docker·로컬 스택·이전 CLI)를 스크립트에서 확인 |
-| V1-O1 | 소스 구현(운영 미반영) | `crates/miy/src/docker_storage.rs`. 서버 빌드 시작과 로컬에 없는 이미지 적재 전에 15GiB·15% 하한 확인, `docker_storage_low`·`docker_storage_unknown` 추가 | 단위 테스트, 실제 Docker 측정·거부 테스트, 격리 회귀. 이미지 정리 규칙은 코어 3차 남은 범위 |
-| V1-O2 | 소스 구현(운영 미반영) | 설치 역할 연결 한도(runtime 6, migration 2), worker 시작 시 기존 역할 한도 적용, 코어·앱 `application_name`, compose의 PostgreSQL 200·Keycloak 풀 10. 연결 보고는 병렬 관리 연결 4개 포함 | 과거 운영 보고의 FAIL은 보존. 새 구성의 운영 예산은 반영 후 다시 측정하며 계산은 [자원 안내](CAPACITY.md) 기준 |
-| V1-O4 | 일부 구현(운영 미반영) | 결과를 모르는 DB 오류에서 배포 보상 중지를 생략하고, 교체 전 기존 desired state·release·image를 유지해 후속 reconcile도 실행 중인 앱을 보존. 개발 세션의 일시적 DB 오류는 권한 회수와 구분. 빌드 실패 정리는 이 worker가 실패를 기록했을 때만 | 배포 쓰기 응답 유실은 격리 시험. 나머지(별도 시작·재시작 포트 기록, 업로드 만료 순서, `delivery` 보관 파일, `ensure_active` 분류)는 순서 6 |
-| V1-G1 | 소스 구현(운영 미반영) | migration `0018_groups_and_app_access.sql`의 조직·수동 그룹, 주 소속, 그룹 권한(`use`·`develop`), 관리 API·화면. 변경 커밋 전 현재 관리자 권한을 잠그고 재검사 | 잠금 대기 중 회수·감사 원자성, 앱/그룹 선택 전환의 지연 응답 회귀 |
-| V1-G2 | 소스 구현(운영 미반영) | 앱·환경별 입장 대상(`selected`/`all`), 회사 사용 중지(관리자 포함 차단, 개발자는 dev에서 수정) | 같은 회귀, `access_decision` 단위 테스트 |
-| V1-G3 | 소스 구현(운영 미반영) | `effective_grants` 뷰를 매번 계산해 다음 요청과 대기 작업에 반영(캐시 무효화 불필요) | 멤버 해제 즉시 회수 관찰 |
-| V1-A1 | 일부 구현(운영 미반영) | `GET /api/v1/audit`(기간·행위자·동작 접두어, id cursor), 감사 화면, migration `0019_audit_query.sql`(인덱스). 개인·그룹 권한 변경은 같은 트랜잭션에 기록하고 주 소속 변경은 이전/새 그룹을 기록 | 조회·권한·원자성·검색 실패 회귀. 별도 대상 종류·결과·요약 필드와 보존 정책은 남음. 보존 기간은 PRD 미결정 |
+| V1-O1 | 구현분 운영 반영 | `crates/miy/src/docker_storage.rs`. 서버 빌드 시작과 로컬에 없는 이미지 적재 전에 15GiB·15% 하한 확인, `docker_storage_low`·`docker_storage_unknown` 추가 | 단위 테스트, 실제 Docker 측정·거부 테스트, 격리 회귀. 이미지 정리 규칙은 코어 3차 남은 범위 |
+| V1-O2 | 구현분 운영 반영 | 설치 역할 연결 한도(runtime 6, migration 2), worker 시작 시 기존 역할 한도 적용, 코어·앱 `application_name`, compose의 PostgreSQL 200·Keycloak 풀 10. 연결 보고는 병렬 관리 연결 4개 포함 | 과거 운영 보고의 FAIL은 보존. 2026-11-04 새 운영 예산 90/197 PASS, 무제한 역할 0. 계산은 [자원 안내](CAPACITY.md) 기준 |
+| V1-O4 | 일부 구현·운영 반영 | 결과를 모르는 DB 오류에서 배포 보상 중지를 생략하고, 교체 전 기존 desired state·release·image를 유지해 후속 reconcile도 실행 중인 앱을 보존. 개발 세션의 일시적 DB 오류는 권한 회수와 구분. 빌드 실패 정리는 이 worker가 실패를 기록했을 때만 | 배포 쓰기 응답 유실은 격리 시험. 나머지(별도 시작·재시작 포트 기록, 업로드 만료 순서, `delivery` 보관 파일, `ensure_active` 분류)는 순서 6 |
+| V1-G1 | 구현분 운영 반영 | migration `0018_groups_and_app_access.sql`의 조직·수동 그룹, 주 소속, 그룹 권한(`use`·`develop`), 관리 API·화면. 변경 커밋 전 현재 관리자 권한을 잠그고 재검사 | 잠금 대기 중 회수·감사 원자성, 앱/그룹 선택 전환의 지연 응답 회귀 |
+| V1-G2 | 구현분 운영 반영 | 앱·환경별 입장 대상(`selected`/`all`), 회사 사용 중지(관리자 포함 차단, 개발자는 dev에서 수정) | 같은 회귀, `access_decision` 단위 테스트 |
+| V1-G3 | 구현분 운영 반영 | `effective_grants` 뷰를 매번 계산해 다음 요청과 대기 작업에 반영(캐시 무효화 불필요) | 멤버 해제 즉시 회수 관찰 |
+| V1-A1 | 일부 구현·운영 반영 | `GET /api/v1/audit`(기간·행위자·동작 접두어, id cursor), 감사 화면, migration `0019_audit_query.sql`(인덱스). 개인·그룹 권한 변경은 같은 트랜잭션에 기록하고 주 소속 변경은 이전/새 그룹을 기록 | 조회·권한·원자성·검색 실패 회귀. 별도 대상 종류·결과·요약 필드와 보존 정책은 남음. 보존 기간은 PRD 미결정 |
 | V1-Q3 | 완료 | `scripts/check-static.sh`, `.github/workflows/web.yml`, `check.sh` origin 가드, 루트 Playwright 설정 축소 | 로컬에서 `scripts`·`rust`·`web` 모두 PASS. `check.sh`가 운영 `.local`을 거부함을 확인. GitHub `Web and scripts` run 41645608115 success |
 
 ## 8. 재검증 기록 (2026-11-03)

@@ -1,0 +1,100 @@
+{
+  "schemaVersion": 1,
+  "startedAt": "2026-11-03T23:30:32.785Z",
+  "finishedAt": "2026-11-03T23:30:34.827Z",
+  "status": "passed",
+  "scope": "ordinary_oidc_and_read_only_platform_cli_stdio_mcp",
+  "executionCliSha256": "47e1930cb3e6a2d278faf39e195b9da162a524b2f220c48ed05efd27e1198e85",
+  "cliVersion": "0.7.0",
+  "observedServerVersion": "0.7.0",
+  "observedInstallCliVersion": "0.7.0",
+  "repositoryCommit": "f55bc34dd566979a936614921be282d1d7202f8f",
+  "harnessCommit": "5eaa60fd815710123c2859f9924a408e5fc12e62",
+  "harnessSha256": "62868e0f7d0ae685a067652e0aa33a0146fdcd581658f4faf3d2d5bbe7a2a0c9",
+  "passes": [
+    {
+      "name": "isolated_private_config_and_execution_cli_provenance",
+      "status": "passed"
+    },
+    {
+      "name": "public_health_capabilities_and_published_cli_install_binding",
+      "status": "passed",
+      "publishedArtifactCount": 5
+    },
+    {
+      "name": "oidc_discovery_and_http_mcp_unauthenticated_401",
+      "status": "passed"
+    },
+    {
+      "name": "ordinary_developer_oidc_login_without_shared_development_session",
+      "status": "passed"
+    },
+    {
+      "name": "isolated_cli_device_login_same_browser_identity_and_auth_status",
+      "status": "passed"
+    },
+    {
+      "name": "authenticated_cli_doctor_operate",
+      "status": "passed",
+      "checkCount": 4
+    },
+    {
+      "name": "local_app_init_and_generated_mcp_configuration_without_remote_registration",
+      "status": "passed"
+    },
+    {
+      "name": "generated_stdio_mcp_initialize_and_required_tools",
+      "status": "passed",
+      "toolCount": 7
+    },
+    {
+      "name": "mcp_get_contract_matches_live_version_and_installed_bundle",
+      "status": "passed",
+      "protectedFileCount": 19,
+      "protectedFilesSha256": "7cf78d0af156489fda249508ae6b8cd4faf1250a2261d0f268ac99f0e729f596"
+    },
+    {
+      "name": "mcp_search_api_matches_authenticated_http_catalog",
+      "status": "passed",
+      "apiCount": 73,
+      "catalogSha256": "1c1bdee090fb6b548a9deb55a49d8a0ebc74720075873e491085ba46b5584566"
+    },
+    {
+      "name": "mcp_list_components_matches_authenticated_http_components",
+      "status": "passed",
+      "componentCount": 1,
+      "componentsSha256": "edd9e1c5829cef3674cb73a1abef64c62371bde4707281a504718d7f8157035f"
+    },
+    {
+      "name": "mcp_get_cli_help_matches_executed_cli_describe",
+      "status": "passed",
+      "commandCount": 1,
+      "descriptionSha256": "47268c52b896f68f021832e2b8be262bb5286989953f697acb2299b731f190bc"
+    },
+    {
+      "name": "owned_stdio_mcp_process_closed",
+      "status": "passed"
+    },
+    {
+      "name": "owned_cli_session_logged_out",
+      "status": "passed"
+    },
+    {
+      "name": "owned_browser_platform_session_logged_out",
+      "status": "passed"
+    },
+    {
+      "name": "owned_browser_context_closed",
+      "status": "passed"
+    },
+    {
+      "name": "owned_headless_browser_closed",
+      "status": "passed"
+    }
+  ],
+  "cleanupFailures": [],
+  "originSha256": "60507cab564dfbad0a776d17daa5d489de5338a4591969f5f8a990732a0ab411",
+  "harnessWorkingTreeChanges": false,
+  "publishedSourceCommit": "01e4d4924f8c8fc4e11720c1af81adf17ddb20bf",
+  "bundleVersion": "0.8.0"
+}

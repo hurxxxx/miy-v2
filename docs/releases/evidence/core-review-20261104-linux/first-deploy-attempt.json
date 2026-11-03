@@ -1,0 +1,29 @@
+{
+  "status": "PREFLIGHT_FAILED",
+  "reason": "active_work_prevents_rollout",
+  "productionMutations": false,
+  "servicesRemainedActive": true,
+  "idleRecheck": [
+    {
+      "runtime": 0,
+      "builds": 0,
+      "database": 0,
+      "development": 0,
+      "uploads": 0
+    },
+    {
+      "runtime": 0,
+      "builds": 0,
+      "database": 0,
+      "development": 0,
+      "uploads": 0
+    },
+    {
+      "runtime": 0,
+      "builds": 0,
+      "database": 0,
+      "development": 0,
+      "uploads": 0
+    }
+  ]
+}
