@@ -2,7 +2,13 @@
 
 이 문서는 배포 도구의 사용법과 현재 후보를 기록한다. 후보 게시와 정식 GitHub Release 발행은 구분한다. 실제 수행 범위는 [검증 행렬](CLI-VALIDATION-MATRIX.md), 아직 남은 사용자 PC 실행은 [Windows 검증](WINDOWS-VALIDATION.md)을 따른다.
 
-## 현재 0.6.3 검증 후보
+## 현재 0.7.0 게시 후보
+
+`01e4d4924f8c8fc4e11720c1af81adf17ddb20bf`의 [CLI CI 41613023015](https://github.com/hurxxxx/miy-v2/actions/runs/41613023015)(5개 target, 공개 Release 없음)와 같은 CLI 출처·해시로 만든 [설치 파일 CI 41614954095](https://github.com/hurxxxx/miy-v2/actions/runs/41614954095)를 검증해 2026-11-03 [설치 안내](https://v2.dwdcc.kr/cli/install)에 게시했다. SDK 번들은 0.8.0이다. 해시와 반영 절차는 [0.7.0 배포 기록](releases/core-0.7.0-deployment.json)과 [서버 운영 안내](SERVER-OPERATIONS.md)에 있다. Windows 11 사용자 인수는 [현재 후보 절차](WINDOWS-ACCEPTANCE.md)를 쓰며 아직 `NOT_RUN`이다.
+
+새 후보를 게시하면 [Windows 후보 파일](releases/windows-candidate.json)을 그 CI 해시로 갱신한다. Windows 인수 검사기는 이 파일을 기대값으로 쓴다.
+
+## 이전 0.6.3 검증 후보
 
 `8d7d04271f9467d8bbdd16308e73715b33e4dc0c`의 [CLI CI 40826960538](https://github.com/hurxxxx/miy-v2/actions/runs/40826960538)와 같은 CLI 출처·해시를 사용한 [설치기 CI 40830813012](https://github.com/hurxxxx/miy-v2/actions/runs/40830813012)가 성공했다. 다섯 CLI·두 Linux helper·Windows EXE를 검증해 [설치 안내](https://v2.dwdcc.kr/cli/install)에 게시하고 서버·UI도 0.6.3으로 반영했다. SDK 번들은 0.7.1이다. [Linux 검사·실제 다운로드·Todo 보존·NOT_RUN](CLI-0.6.3-LINUX-VALIDATION.md), [CLI index](releases/cli-0.6.3-candidate.json), [설치기 index](releases/windows-installer-0.6.3-candidate.json)를 함께 보존한다. 공개 GitHub Release/tag는 생성하지 않았다.
 

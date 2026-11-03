@@ -1,6 +1,6 @@
 # 게시된 CLI 0.6.3 Windows 11 인수 준비
 
-> 이 문서와 [검사기](../scripts/check-windows-published-installer.ps1)는 CLI **0.6.3 / source `8d7d042`**만 허용한다. 현재 게시된 **0.7.0용 절차·검사기 갱신은 미완료**이며, 아래 명령을 현재 후보 검증에 바로 사용할 수 없다. 원래 대상과 해시는 당시 기록으로 보존한다. 사용자 Windows 실제 인수와 검사기 코드 갱신은 이번 문서 정리에서 수행하지 않았다.
+> 이 문서는 CLI **0.6.3 / source `8d7d042`** 후보의 당시 절차와 기록이다. 2026-11-03부터 [검사기](../scripts/check-windows-published-installer.ps1)는 [후보 파일](releases/windows-candidate.json)(현재 0.7.0)을 기대값으로 쓰므로, 아래 명령은 현재 후보를 검사한다. 현재 후보 절차는 [Windows 인수](WINDOWS-ACCEPTANCE.md)를 따른다. 0.6.3 당시 검사기는 commit `4a5980b` 이전 이력에 있다. 원래 대상과 해시는 당시 기록으로 보존한다.
 
 이 문서는 **구현·실행 절차 준비 완료, 이번 사용자 Windows 실행은 `NOT_RUN`** 상태다. 사용자가 나중에 Windows에서 실행한 뒤 결과를 추가한다. Windows Server CI 통과를 이 표의 Windows 11 통과로 옮기지 않는다. 기존 [Windows 검증](WINDOWS-VALIDATION.md), [이전 0.6.3 Windows 게시 후 확인](releases/cli-0.6.3-windows-postdeploy-validation.json), [설치기 설명](WINDOWS-INSTALLER.md)은 별도 이력이며 덮어쓰지 않는다.
 

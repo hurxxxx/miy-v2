@@ -10,7 +10,7 @@
 
 2026-11-03 사용자 결정에 따라 1·2차 이후 [기본 UI/UX 이식](UIUX-MIGRATION.md)을 진행했다. ai-do를 원본으로 라이트 테마·한국어·새 설치 기준의 UI-1~4를 구현하고 UI-5 통합 검증을 마쳤으며, v2.dwdcc.kr에 웹 화면과 0.7.0 서버·migration 17·공개 CLI를 반영했다([배포 기록](releases/core-0.7.0-deployment.json)). 후속 설계 기준은 공식 miy v1이며, 플랫폼의 사용자·그룹별 앱 사용 권한과 앱 내부의 선택적 데이터 공간을 적용한다. 각 기능의 회귀 검사는 계속 수행하고 현재 실행 순서는 [추진 계획](PLAN.md)을 따른다.
 
-현재 게시 서버·CLI의 artifact source는 `01e4d4924f8c8fc4e11720c1af81adf17ddb20bf`(0.7.0)다. 이전 0.6.3 source `8d7d04271f9467d8bbdd16308e73715b33e4dc0c`와 main 통합 commit `a6fae065ed627bb63798cf74ea8a2c73a744c104`는 구분한다. 문서·소스 수정은 운영 반영을 뜻하지 않는다. [운영 안내](SERVER-OPERATIONS.md)의 기존 서비스·데이터 보존 경계를 유지하며, 새 인수는 격리 환경에서 수행한다. 사용자 Windows 11 실제 검증은 사용자가 추후 수행한다. [0.6.3 인수 기록](WINDOWS-0.6.3-ACCEPTANCE.md)의 `NOT_RUN`을 유지하며, 현재 0.7.0용 절차·검사기 갱신은 미완료다.
+현재 게시 서버·CLI의 artifact source는 `01e4d4924f8c8fc4e11720c1af81adf17ddb20bf`(0.7.0)다. 이전 0.6.3 source `8d7d04271f9467d8bbdd16308e73715b33e4dc0c`와 main 통합 commit `a6fae065ed627bb63798cf74ea8a2c73a744c104`는 구분한다. 문서·소스 수정은 운영 반영을 뜻하지 않는다. [운영 안내](SERVER-OPERATIONS.md)의 기존 서비스·데이터 보존 경계를 유지하며, 새 인수는 격리 환경에서 수행한다. 사용자 Windows 11 실제 검증은 사용자가 추후 수행한다. 0.7.0용 절차와 출처 검사기는 [Windows 인수](WINDOWS-ACCEPTANCE.md)에 준비했고 실제 실행은 `NOT_RUN`이다. [0.6.3 인수 기록](WINDOWS-0.6.3-ACCEPTANCE.md)의 `NOT_RUN`도 유지한다.
 
 ## 현재 구현과 기존 증거
 

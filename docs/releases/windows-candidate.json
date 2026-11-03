@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "origin": "https://v2.dwdcc.kr",
+  "version": "0.7.0",
+  "bundleVersion": "0.8.0",
+  "sourceCommit": "01e4d4924f8c8fc4e11720c1af81adf17ddb20bf",
+  "installer": {
+    "file": "MiySetup-0.7.0-windows-x64.exe",
+    "bytes": 6209536,
+    "sha256": "8e01d1f65f4dbf1e3a69f9a6ae5ffefa9c82b9b8f2966274d3fc4a6e79a9612f"
+  },
+  "archive": {
+    "file": "miy-0.7.0-x86_64-pc-windows-msvc.zip",
+    "sha256": "cd082c473d70704b2f7bc89af82b8d555b64a137c6c59baf50a1ebe35a4403f3",
+    "binarySha256": "148683289767eb578200de0f79664e48cca9b387956bd99c4774bd3093f261a8"
+  },
+  "provenance": {
+    "cliReleaseRun": 41613023015,
+    "windowsInstallerRun": 41614954095,
+    "record": "core-0.7.0-deployment.json"
+  }
+}

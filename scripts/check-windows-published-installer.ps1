@@ -10,9 +10,13 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
-$origin = 'https://v2.dwdcc.kr'
-$expectedCommit = '8d7d04271f9467d8bbdd16308e73715b33e4dc0c'
-$expectedVersion = '0.6.3'
+# The expected candidate comes from docs/releases/windows-candidate.json: the published version,
+# source commit and the CI-built archive, binary and installer hashes. Update that file per release.
+$origin = $null
+$expectedCommit = $null
+$expectedVersion = $null
+$expectedBundleVersion = $null
+$pin = $null
 $target = 'x86_64-pc-windows-msvc'
 $utf8 = New-Object Text.UTF8Encoding($false, $true)
 $stepDirectory = $null
@@ -191,6 +195,17 @@ try {
     $os = Get-CimInstance Win32_OperatingSystem
     Require ($os.ProductType -eq 1 -and [int]$os.BuildNumber -ge 22000)
     $repository = Split-Path -Parent $PSScriptRoot
+    $stage = 'candidate_pin'
+    $pin = Read-Json (Join-Path $repository 'docs\releases\windows-candidate.json')
+    Require ($pin.schemaVersion -eq 1 -and $pin.origin -cmatch '^https://[a-z0-9.-]+(:[0-9]{1,5})?$')
+    Require ($pin.version -cmatch '^[0-9]+\.[0-9]+\.[0-9]+$' -and $pin.bundleVersion -cmatch '^[0-9]+\.[0-9]+\.[0-9]+$' -and $pin.sourceCommit -cmatch '^[a-f0-9]{40}$')
+    Require ($pin.installer.file -ceq ('MiySetup-' + $pin.version + '-windows-x64.exe') -and [long]$pin.installer.bytes -gt 0 -and $pin.installer.sha256 -cmatch '^[a-f0-9]{64}$')
+    Require ($pin.archive.file -ceq ('miy-' + $pin.version + '-' + $target + '.zip') -and $pin.archive.sha256 -cmatch '^[a-f0-9]{64}$' -and $pin.archive.binarySha256 -cmatch '^[a-f0-9]{64}$')
+    $origin = [string]$pin.origin
+    $expectedVersion = [string]$pin.version
+    $expectedCommit = [string]$pin.sourceCommit
+    $expectedBundleVersion = [string]$pin.bundleVersion
+    $stage = 'environment'
     $outputRoot = Safe-Path (Join-Path $repository '.local\windows-published-acceptance')
     $null = [IO.Directory]::CreateDirectory($outputRoot)
     $stage = 'private_evidence'
@@ -232,6 +247,9 @@ try {
             Require ($installer.cliCommit -ceq $expectedCommit -and $installer.installerCommit -ceq $expectedCommit)
             Require ($installer.file -ceq "MiySetup-$expectedVersion-windows-x64.exe" -and $installer.sha256 -cmatch '^[a-f0-9]{64}$')
             Require ($installer.archiveSha256 -ceq $cli.sha256 -and $installer.cliBinarySha256 -ceq $cli.binarySha256)
+            # Independent of the server: the published files must be the CI-built files recorded in the pin.
+            Require ($cli.file -ceq $pin.archive.file -and $cli.sha256 -ceq $pin.archive.sha256 -and $cli.binarySha256 -ceq $pin.archive.binarySha256)
+            Require ($installer.file -ceq $pin.installer.file -and [long]$installer.bytes -eq [long]$pin.installer.bytes -and $installer.sha256 -ceq $pin.installer.sha256)
             $stage = 'downloads_and_checksums'
             foreach ($pair in @(@{ row = $cli; kind = 'downloads' }, @{ row = $installer; kind = 'installers' })) {
                 $row = $pair.row
@@ -296,14 +314,15 @@ public static class MiyAcceptanceBytes {
             cliCommit = $expectedCommit; archiveSha256 = $cli.sha256; cliBinarySha256 = $cli.binarySha256 }
         Require ([MiyAcceptanceBytes]::Count($exe, $utf8.GetBytes(($embedded | ConvertTo-Json -Compress))) -eq 1)
         Require ([MiyAcceptanceBytes]::Count($exe, [IO.File]::ReadAllBytes($archivePath)) -eq 1)
-        $candidate = @{ schemaVersion = 1; version = $expectedVersion; expectedBundleVersion = '0.7.1'; bundleVersionVerification = 'NOT_RUN'; cliCommit = $expectedCommit; installerCommit = $expectedCommit;
+        $candidate = @{ schemaVersion = 1; version = $expectedVersion; expectedBundleVersion = $expectedBundleVersion; bundleVersionVerification = 'NOT_RUN'; cliCommit = $expectedCommit; installerCommit = $expectedCommit;
             archiveSha256 = $cli.sha256; binarySha256 = $cli.binarySha256; installerSha256 = $installer.sha256; installerBytes = $installer.bytes;
-            cliFile = $cli.file; installerFile = $installer.file; origin = $origin }
+            cliFile = $cli.file; installerFile = $installer.file; origin = $origin; pinFile = 'docs/releases/windows-candidate.json';
+            cliReleaseRun = [string]$pin.provenance.cliReleaseRun; windowsInstallerRun = [string]$pin.provenance.windowsInstallerRun }
         Write-Json (Join-Path $runDirectory 'candidate.json') $candidate
         $details = @{ publishedDownloads = 'PASS'; embeddedZipAndProvenance = 'PASS'; authenticode = [string](Get-AuthenticodeSignature -LiteralPath $exePath).Status; guiAcceptance = 'NOT_RUN' }
     } else {
         $candidate = Read-Json (Join-Path $runDirectory 'candidate.json')
-        Require ($candidate.cliCommit -ceq $expectedCommit -and $candidate.version -ceq $expectedVersion)
+        Require ($candidate.cliCommit -ceq $expectedCommit -and $candidate.version -ceq $expectedVersion -and $candidate.installerSha256 -ceq $pin.installer.sha256)
         $script:runKey = [IO.File]::ReadAllBytes((Safe-Path (Join-Path $runDirectory 'comparison.key')))
         Require ($script:runKey.Length -eq 32)
         $stage = 'local_snapshot'
