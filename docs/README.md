@@ -10,12 +10,12 @@
 | --- | --- | --- |
 | 제품 요구사항 | [PRD.md](PRD.md) | 제품 정의, 합의 사항, 기능 요구사항, 인수 조건, 후속 범위 |
 | 작업 순서 | [PLAN.md](PLAN.md) | 다음 우선 작업표, 코어 묶음 요약, 보류 중인 사용성 개선, 최초 설계 로드맵 |
-| v1 적용 | [V1-ADOPTION.md](V1-ADOPTION.md) | 공식 v1(`/projects/miy`) 검토 결과, 가져올 항목(ID `V1-*`)과 제외 항목, v1의 실패 교훈 |
+| v1 적용 | [V1-ADOPTION.md](V1-ADOPTION.md) | 공식 v1(`/projects/miy`) 검토·재검증 결과, 가져올 항목(ID `V1-*`)과 제외 항목, v1의 실패 교훈, 사용자 결정이 필요한 사항 |
 | 기본 UI | [UIUX-MIGRATION.md](UIUX-MIGRATION.md) | ai-do UI 이식의 범위·계약·검증 결과, 후속 UI 작업의 경계 |
 | 코어 안정화 | [CORE-HARDENING.md](CORE-HARDENING.md) | worker·권한·자원·복구·새 서버 인수 1~5차의 완료 기준과 증거 |
 | 코어 권한 | [CORE-PERMISSIONS.md](CORE-PERMISSIONS.md) | 설치/릴리스 승인, 사용자 위임, 앱 후속 호출 계약과 기존 설치 전환 |
 | 앱 개발 | [DEVELOPMENT.md](DEVELOPMENT.md), [NATIVE-DEVELOPMENT.md](NATIVE-DEVELOPMENT.md) | 앱 개발 계약, CLI 흐름, 로컬·네이티브 실행, 개발 영역 평가와 운영 승격 |
-| 실행·운영 명령 | [RUNNING.md](RUNNING.md) | 로컬 기동, 공용 컴포넌트 설치·갱신, 배포 상태 확인 |
+| CLI 사용·서버 구성 | [RUNNING.md](RUNNING.md) | CLI 설치·인증, 앱 등록·빌드·dev 배포·prod 승격, 공용 컴포넌트 갱신, 서버 구성(HTTPS 도메인·사내 HTTP IP) |
 | 운영 서버 | [SERVER-OPERATIONS.md](SERVER-OPERATIONS.md) | v2.dwdcc.kr 구성, 게시 CLI, 배포 소스와 기록, 되돌리기 위치 |
 | CLI | [CLI-IMPLEMENTATION-PLAN.md](CLI-IMPLEMENTATION-PLAN.md), [CLI-RELEASE.md](CLI-RELEASE.md), [CLI-VALIDATION-MATRIX.md](CLI-VALIDATION-MATRIX.md) | 명령·인증·OS 계약, 배포 후보·게시 절차, 요구별 검증 범위 |
 | Windows | [WINDOWS-INSTALLER.md](WINDOWS-INSTALLER.md), [WINDOWS-VALIDATION.md](WINDOWS-VALIDATION.md), [WINDOWS-0.6.3-ACCEPTANCE.md](WINDOWS-0.6.3-ACCEPTANCE.md) | 설치 파일, 사용자 수행 빌드·검증 절차와 실행 기록 |
