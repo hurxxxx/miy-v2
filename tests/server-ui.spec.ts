@@ -29,7 +29,7 @@ test("admin signs in, sees an empty launcher, real directory data and survives r
   const rail = page.locator("#platform-navigation");
   await rail.getByRole("link", { name: "플랫폼 관리", exact: true }).click();
   await expect(page.getByRole("heading", { name: "플랫폼 관리" })).toBeVisible();
-  await expect(page.getByLabel("사용자")).toContainText("alice");
+  await expect(page.getByRole("combobox", { name: "사용자", exact: true })).toContainText("alice");
   await expect(page.getByText("대기 중인 신청이 없습니다.")).toBeVisible();
   await expect(page.getByText("배포된 앱이 없습니다.")).toBeVisible();
   await page.reload();
@@ -41,7 +41,7 @@ test("admin signs in, sees an empty launcher, real directory data and survives r
 
 test("admin grant form sends the session CSRF and shows the server's answer", async ({ page }) => {
   await signIn(page, /관리자로 시작/, "/admin");
-  await page.getByLabel("사용자").selectOption({ label: "alice" });
+  await page.getByRole("combobox", { name: "사용자", exact: true }).selectOption({ label: "alice" });
   await page.getByLabel("앱 ID").fill("missing-app");
   const [response] = await Promise.all([
     page.waitForResponse((r) => r.url().endsWith("/api/v1/grants") && r.request().method() === "PUT"),

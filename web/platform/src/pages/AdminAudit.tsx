@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { request } from "@miy/sdk";
 import { Button, Field, Loading, Panel } from "../ui";
 import type { DirectoryUser } from "./AdminAccess";
@@ -18,6 +18,7 @@ type Filter = { actor: string; action: string; from: string; to: string };
 const actionKinds = [
   { value: "", label: "전체" },
   { value: "group", label: "그룹·그룹 권한" },
+  { value: "grant.", label: "사용자 권한" },
   { value: "user.", label: "주 소속" },
   { value: "app.", label: "앱 입장·사용 중지" },
 ];
@@ -32,6 +33,8 @@ const actionLabel: Record<string, string> = {
   "user.primary_group_set": "주 소속 지정",
   "group_grant.enabled": "그룹 권한 부여",
   "group_grant.disabled": "그룹 권한 회수",
+  "grant.enabled": "사용자 권한 부여",
+  "grant.disabled": "사용자 권한 회수",
   "app.admission_set": "입장 대상 변경",
   "app.disabled": "앱 사용 중지",
   "app.enabled": "앱 사용 재개",
@@ -58,27 +61,39 @@ function query(filter: Filter, cursor: number | null) {
 }
 
 export function AuditLog({ users, report }: { users: DirectoryUser[] | null; report: (message: string) => void }) {
-  const [filter, setFilter] = useState<Filter>({ actor: "", action: "", from: "", to: "" });
-  const [entries, setEntries] = useState<Entry[] | null>(null);
-  const [next, setNext] = useState<number | null>(null);
+  const [result, setResult] = useState<(Page & { filter: Filter }) | null>(null);
   const [busy, setBusy] = useState(false);
+  const [failed, setFailed] = useState(false);
+  const sequence = useRef(0);
   const load = useCallback(
     async (current: Filter, cursor: number | null) => {
+      const requestId = ++sequence.current;
       setBusy(true);
+      setFailed(false);
+      if (cursor === null) setResult(null);
       try {
         const page = await request<Page>(query(current, cursor));
-        setEntries((previous) => (cursor === null ? page.entries : [...(previous ?? []), ...page.entries]));
-        setNext(page.nextCursor);
+        if (requestId !== sequence.current) return;
+        setResult((previous) => ({
+          ...page,
+          filter: current,
+          entries: cursor === null ? page.entries : [...(previous?.entries ?? []), ...page.entries],
+        }));
       } catch (error) {
+        if (requestId !== sequence.current) return;
+        setFailed(true);
         report(`감사 기록을 불러오지 못했습니다: ${String(error)}`);
       } finally {
-        setBusy(false);
+        if (requestId === sequence.current) setBusy(false);
       }
     },
     [report],
   );
   useEffect(() => {
     void load({ actor: "", action: "", from: "", to: "" }, null);
+    return () => {
+      sequence.current++;
+    };
   }, [load]);
   function apply(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -89,9 +104,9 @@ export function AuditLog({ users, report }: { users: DirectoryUser[] | null; rep
       from: String(form.get("from") ?? ""),
       to: String(form.get("to") ?? ""),
     };
-    setFilter(current);
     void load(current, null);
   }
+  const entries = result?.entries ?? null;
   return (
     <Panel title="감사 기록">
       <form className="access-toolbar" onSubmit={apply} aria-label="감사 기록 조건">
@@ -125,7 +140,11 @@ export function AuditLog({ users, report }: { users: DirectoryUser[] | null; rep
         </Button>
       </form>
       {entries === null ? (
-        <Loading />
+        failed ? (
+          <p className="ui-empty-inline">감사 기록을 불러오지 못했습니다. 조건을 확인한 뒤 다시 조회하세요.</p>
+        ) : (
+          <Loading />
+        )
       ) : entries.length === 0 ? (
         <p className="ui-empty-inline">조건에 맞는 기록이 없습니다.</p>
       ) : (
@@ -152,9 +171,9 @@ export function AuditLog({ users, report }: { users: DirectoryUser[] | null; rep
           </tbody>
         </table>
       )}
-      {next !== null && (
+      {result && result.nextCursor !== null && (
         <div className="grant-form-actions">
-          <Button onClick={() => void load(filter, next)} disabled={busy}>
+          <Button onClick={() => void load(result.filter, result.nextCursor)} disabled={busy}>
             더 보기
           </Button>
         </div>

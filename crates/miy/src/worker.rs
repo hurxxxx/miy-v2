@@ -229,11 +229,14 @@ pub(crate) async fn apply_connection_limits(pool: &sqlx::PgPool) -> Result<usize
 }
 
 fn managed_login_role(name: &str) -> bool {
-    (name.starts_with("miy_m_") || name.starts_with("miy_r_"))
-        && name.len() <= 63
-        && name
-            .bytes()
-            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'_')
+    name.strip_prefix("miy_m_")
+        .or_else(|| name.strip_prefix("miy_r_"))
+        .is_some_and(|suffix| {
+            suffix.len() == 32
+                && suffix
+                    .bytes()
+                    .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+        })
 }
 
 pub(crate) async fn prepare(
@@ -657,6 +660,9 @@ mod scheduling_tests {
             "postgres".into(),
             "miy_r_x; DROP ROLE postgres".into(),
             "miy_r_X".into(),
+            "miy_r_".into(),
+            "miy_r_customer_admin".into(),
+            format!("miy_r_{}", "g".repeat(32)),
             format!("miy_r_{}", "a".repeat(60)),
         ] {
             assert!(!managed_login_role(&name), "{name}");

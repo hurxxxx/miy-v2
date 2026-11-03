@@ -6,11 +6,26 @@ import { Badge, Button, Field, Loading, Panel, useConfirm } from "../ui";
 // Group permissions are computed on every request, so nothing is copied to users.
 
 export type DirectoryUser = { id: string; name: string };
-type Group = { id: string; name: string; source: "hr" | "local"; parentId: string | null; active: boolean; members: number };
+type Group = {
+  id: string;
+  name: string;
+  source: "hr" | "local";
+  parentId: string | null;
+  active: boolean;
+  members: number;
+};
 type Member = { id: string; name: string; enabled: boolean };
 type Environment = "dev" | "prod";
-type GroupGrant = { groupId: string; environment: Environment; permission: "use" | "develop" };
-type UserGrant = { userId: string; environment: Environment; permission: "use" | "develop" | "deploy" };
+type GroupGrant = {
+  groupId: string;
+  environment: Environment;
+  permission: "use" | "develop";
+};
+type UserGrant = {
+  userId: string;
+  environment: Environment;
+  permission: "use" | "develop" | "deploy";
+};
 type Access = {
   appId: string;
   disabled: boolean;
@@ -21,54 +36,72 @@ type Access = {
 
 const sourceLabel = { hr: "조직(인사)", local: "수동 그룹" } as const;
 const environmentLabel = { dev: "테스트", prod: "운영" } as const;
-const permissionLabel = { use: "사용", develop: "개발", deploy: "배포" } as const;
+const permissionLabel = {
+  use: "사용",
+  develop: "개발",
+  deploy: "배포",
+} as const;
 
 type Report = (message: string) => void;
 
-function useGroups(report: Report) {
-  const [groups, setGroups] = useState<Group[] | null>(null);
-  const load = useCallback(async () => {
-    try {
-      setGroups(await request<Group[]>("/api/v1/groups"));
-    } catch (error) {
-      report(`그룹 목록을 불러오지 못했습니다: ${String(error)}`);
-    }
-  }, [report]);
+// Bind each response to the selection that requested it. Refreshing after a
+// mutation reloads the current selection, even if the user switched meanwhile.
+function useSelectedResource<T>(id: string | null, path: string | null, report: Report, errorMessage: string) {
+  const [result, setResult] = useState<{ id: string; data: T } | null>(null);
+  const [revision, setRevision] = useState(0);
+  const refresh = useCallback(() => setRevision((value) => value + 1), []);
   useEffect(() => {
-    void load();
-  }, [load]);
-  return { groups, load };
+    setResult((previous) => (previous?.id === id ? previous : null));
+    if (!id || !path) return;
+    let current = true;
+    request<T>(path)
+      .then((data) => {
+        if (current) setResult({ id, data });
+      })
+      .catch((error) => {
+        if (current) report(`${errorMessage}: ${String(error)}`);
+      });
+    return () => {
+      current = false;
+    };
+  }, [id, path, revision, report, errorMessage]);
+  return { data: result?.id === id ? result.data : null, refresh };
+}
+
+export function useGroups(report: Report) {
+  const { data: groups, refresh } = useSelectedResource<Group[]>("groups", "/api/v1/groups", report, "그룹 목록을 불러오지 못했습니다");
+  return { groups, refresh };
 }
 
 async function send(csrf: string, path: string, method: "POST" | "PUT" | "PATCH", body: unknown) {
   await request(path, csrf, { method, body: JSON.stringify(body) });
 }
 
-export function GroupAdmin({ csrf, users, report }: { csrf: string; users: DirectoryUser[] | null; report: Report }) {
-  const { groups, load } = useGroups(report);
+type AdminAccessProps = {
+  csrf: string;
+  users: DirectoryUser[] | null;
+  report: Report;
+  directory: ReturnType<typeof useGroups>;
+};
+
+export function GroupAdmin({ csrf, users, report, directory }: AdminAccessProps) {
+  const { groups, refresh } = directory;
   const [selected, setSelected] = useState<string | null>(null);
-  const [members, setMembers] = useState<Member[] | null>(null);
+  const { data: members, refresh: refreshMembers } = useSelectedResource<Member[]>(
+    selected,
+    selected ? `/api/v1/groups/${selected}/members` : null,
+    report,
+    "구성원을 불러오지 못했습니다",
+  );
   const [source, setSource] = useState<"hr" | "local">("local");
   const group = groups?.find((g) => g.id === selected) ?? null;
   const hrGroups = (groups ?? []).filter((g) => g.source === "hr" && g.active);
-  const loadMembers = useCallback(async (id: string) => {
-    try {
-      setMembers(await request<Member[]>(`/api/v1/groups/${id}/members`));
-    } catch (error) {
-      report(`구성원을 불러오지 못했습니다: ${String(error)}`);
-    }
-  }, [report]);
-  useEffect(() => {
-    setMembers(null);
-    if (selected) void loadMembers(selected);
-  }, [selected, loadMembers]);
-
   async function apply(path: string, method: "POST" | "PUT" | "PATCH", body: unknown, done: string) {
     try {
       await send(csrf, path, method, body);
       report(done);
-      await load();
-      if (selected) await loadMembers(selected);
+      refresh();
+      refreshMembers();
     } catch (error) {
       report(String(error));
     }
@@ -184,7 +217,7 @@ export function GroupAdmin({ csrf, users, report }: { csrf: string; users: Direc
             <Button type="submit">{group.source === "local" ? "추가" : "주 소속 지정"}</Button>
           </form>
           {group.source === "hr" && (
-            <form className="access-toolbar" onSubmit={moveParent}>
+            <form key={`${group.id}:${group.parentId ?? ""}`} className="access-toolbar" onSubmit={moveParent}>
               <Field label="상위 조직">
                 <select name="parent" defaultValue={group.parentId ?? ""}>
                   <option value="">없음</option>
@@ -231,33 +264,28 @@ export function GroupAdmin({ csrf, users, report }: { csrf: string; users: Direc
   );
 }
 
-export function AppAccessAdmin({ csrf, users, report }: { csrf: string; users: DirectoryUser[] | null; report: Report }) {
-  const { groups } = useGroups(report);
+export function AppAccessAdmin({ csrf, users, report, directory }: AdminAccessProps) {
+  const { groups } = directory;
   const [apps, setApps] = useState<{ id: string; name: string }[] | null>(null);
   const [appId, setAppId] = useState("");
-  const [access, setAccess] = useState<Access | null>(null);
+  const { data: loadedAccess, refresh } = useSelectedResource<Access>(
+    appId,
+    appId ? `/api/v1/apps/${encodeURIComponent(appId)}/access` : null,
+    report,
+    "앱 접근 설정을 불러오지 못했습니다",
+  );
+  const access = loadedAccess?.appId === appId ? loadedAccess : null;
   const { confirm, dialog } = useConfirm();
   useEffect(() => {
     request<{ apps: { id: string; name: string }[] }>("/api/v1/apps?limit=200")
       .then((page) => setApps(page.apps))
       .catch((error) => report(`앱 목록을 불러오지 못했습니다: ${String(error)}`));
   }, [report]);
-  const load = useCallback(async (id: string) => {
-    try {
-      setAccess(await request<Access>(`/api/v1/apps/${encodeURIComponent(id)}/access`));
-    } catch (error) {
-      report(`앱 접근 설정을 불러오지 못했습니다: ${String(error)}`);
-    }
-  }, [report]);
-  useEffect(() => {
-    setAccess(null);
-    if (appId) void load(appId);
-  }, [appId, load]);
   async function apply(path: string, body: unknown, done: string) {
     try {
       await send(csrf, path, "PUT", body);
       report(done);
-      await load(appId);
+      refresh();
     } catch (error) {
       report(String(error));
     }
@@ -281,7 +309,13 @@ export function AppAccessAdmin({ csrf, users, report }: { csrf: string; users: D
     const form = new FormData(event.currentTarget);
     void apply(
       "/api/v1/group-grants",
-      { groupId: form.get("group"), appId, environment: form.get("environment"), permission: form.get("permission"), enabled: true },
+      {
+        groupId: form.get("group"),
+        appId,
+        environment: form.get("environment"),
+        permission: form.get("permission"),
+        enabled: true,
+      },
       "그룹 권한을 부여했습니다.",
     );
   }
@@ -384,7 +418,19 @@ export function AppAccessAdmin({ csrf, users, report }: { csrf: string; users: D
                   </span>
                   <Button
                     size="sm"
-                    onClick={() => void apply("/api/v1/grants", { userId: g.userId, appId, environment: g.environment, permission: g.permission, enabled: false }, "권한을 회수했습니다.")}
+                    onClick={() =>
+                      void apply(
+                        "/api/v1/grants",
+                        {
+                          userId: g.userId,
+                          appId,
+                          environment: g.environment,
+                          permission: g.permission,
+                          enabled: false,
+                        },
+                        "권한을 회수했습니다.",
+                      )
+                    }
                   >
                     회수
                   </Button>

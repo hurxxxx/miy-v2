@@ -56,7 +56,49 @@ def sha256(path: Path) -> str:
 
 
 def run(args, **kwargs):
-    return subprocess.run(args, check=True, **kwargs)
+    try:
+        return subprocess.run(args, check=True, **kwargs)
+    except subprocess.CalledProcessError:
+        # Docker startup arguments can contain the disposable database password.
+        raise RuntimeError("command_failed") from None
+
+
+def cleanup_container(container: str, label: str, token: str) -> dict:
+    """Remove one owned immutable ID; daemon errors never prove absence."""
+    result = {"containerRemoved": False}
+    if not re.fullmatch(r"[0-9a-f]{64}", container):
+        return {**result, "cleanupError": "invalid_container_id"}
+
+    def present():
+        listing = subprocess.run(
+            ["docker", "container", "ls", "--all", "--quiet", "--no-trunc", "--filter", f"id={container}"],
+            capture_output=True, text=True, timeout=30)
+        if listing.returncode != 0:
+            raise RuntimeError("container_lookup_failed")
+        ids = listing.stdout.split()
+        if ids not in ([], [container]):
+            raise RuntimeError("container_lookup_ambiguous")
+        return bool(ids)
+
+    try:
+        if not present():
+            return {"containerRemoved": True}
+        ownership = subprocess.run(
+            ["docker", "inspect", "-f", f'{{{{ index .Config.Labels "{label}" }}}}', container],
+            capture_output=True, text=True, timeout=30)
+        if ownership.returncode != 0:
+            return {**result, "cleanupError": "container_ownership_unknown"}
+        if ownership.stdout.strip() != token:
+            return {**result, "cleanupError": "container_ownership_mismatch"}
+        # A lost removal response can be resolved by a successful exact listing.
+        subprocess.run(["docker", "rm", "-f", "-v", container], capture_output=True, timeout=30)
+        if present():
+            return {**result, "cleanupError": "container_removal_failed"}
+        return {"containerRemoved": True}
+    except (OSError, subprocess.TimeoutExpired):
+        return {**result, "cleanupError": "container_cleanup_unavailable"}
+    except RuntimeError as error:
+        return {**result, "cleanupError": str(error)}
 
 
 class Session:
@@ -184,13 +226,13 @@ def verify(args) -> int:
             result["rehearsal"] = {"exitCode": migrate.returncode, "migrationVersionAfter": int(after)}
             ok = migrate.returncode == 0
         result["status"] = "PASS" if ok else "FAIL"
+    except (Exception, SystemExit):
+        # Do not print database or migration stderr; it can contain private rows.
+        result["failureCategory"] = "verification_failed"
     finally:
-        labels = subprocess.run(["docker", "inspect", "-f", f'{{{{ index .Config.Labels "{LABEL}" }}}}', container],
-                                capture_output=True, text=True).stdout.strip()
-        if labels == token:
-            subprocess.run(["docker", "rm", "-f", "-v", container], capture_output=True)
-        result["containerRemoved"] = subprocess.run(["docker", "inspect", container],
-                                                    capture_output=True).returncode != 0
+        result.update(cleanup_container(container, LABEL, token))
+        if not result["containerRemoved"]:
+            result["status"] = "FAIL"
     print(json.dumps(result))
     return 0 if result["status"] == "PASS" and result["containerRemoved"] else 1
 

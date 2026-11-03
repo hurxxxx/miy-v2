@@ -154,6 +154,7 @@ pub async fn create(state: &State, p: &Principal, v: NewGroup) -> ApiResult<Valu
         .bind(v.parent_id)
         .execute(&mut *tx)
         .await?;
+    domain::admin_locked(&mut tx, p).await?;
     audit(&mut tx, &p.id, "group.created", &format!("group:{id}")).await?;
     tx.commit().await?;
     Ok(json!({"id":id,"name":name,"source":v.source,"parentId":v.parent_id,"active":true}))
@@ -175,6 +176,7 @@ pub async fn update(state: &State, p: &Principal, id: Uuid, v: GroupChange) -> A
         Some(true) => "group.activated",
         None => "group.renamed",
     };
+    domain::admin_locked(&mut tx, p).await?;
     audit(&mut tx, &p.id, action, &format!("group:{id}")).await?;
     tx.commit().await?;
     Ok(json!({"id":id,"updated":true}))
@@ -218,6 +220,7 @@ pub async fn set_parent(
         .bind(v.parent_id)
         .execute(&mut *tx)
         .await?;
+    domain::admin_locked(&mut tx, p).await?;
     audit(&mut tx, &p.id, "group.parent_set", &format!("group:{id}")).await?;
     tx.commit().await?;
     Ok(json!({"id":id,"parentId":v.parent_id}))
@@ -263,6 +266,7 @@ pub async fn set_member(state: &State, p: &Principal, id: Uuid, v: Membership) -
     } else {
         "group.member_removed"
     };
+    domain::admin_locked(&mut tx, p).await?;
     audit(
         &mut tx,
         &p.id,
@@ -287,20 +291,36 @@ pub async fn set_primary_group(
     {
         return Err(ApiError::bad("primary_group_must_be_hr"));
     }
-    let changed = sqlx::query("UPDATE users SET primary_group_id=$2 WHERE id=$1")
+    // Both rows may be updated by another administrator assigning a primary group.
+    // Lock them in one order rather than target first and actor at final approval;
+    // NO KEY UPDATE remains compatible with ordinary user foreign-key checks.
+    let users = sqlx::query(
+        "SELECT id,primary_group_id FROM users WHERE id=ANY($1) ORDER BY id FOR NO KEY UPDATE",
+    )
+    .bind(vec![p.id.as_str(), user])
+    .fetch_all(&mut *tx)
+    .await?;
+    let before = users
+        .iter()
+        .find(|row| row.get::<String, _>("id") == user)
+        .ok_or_else(ApiError::not_found)?
+        .get::<Option<Uuid>, _>("primary_group_id");
+    sqlx::query("UPDATE users SET primary_group_id=$2 WHERE id=$1")
         .bind(user)
         .bind(v.group_id)
         .execute(&mut *tx)
-        .await?
-        .rows_affected();
-    if changed != 1 {
-        return Err(ApiError::not_found());
-    }
+        .await?;
+    domain::admin_locked(&mut tx, p).await?;
     audit(
         &mut tx,
         &p.id,
         "user.primary_group_set",
-        &format!("user:{user}"),
+        &format!(
+            "user:{user}:from:{}:to:{}",
+            before.map_or_else(|| "none".into(), |id| id.to_string()),
+            v.group_id
+                .map_or_else(|| "none".into(), |id| id.to_string()),
+        ),
     )
     .await?;
     tx.commit().await?;
@@ -344,6 +364,7 @@ pub async fn set_grant(state: &State, p: &Principal, v: GroupGrant) -> ApiResult
         "group:{}:app:{}:{}:{}",
         v.group_id, v.app_id, v.environment, v.permission
     );
+    domain::admin_locked(&mut tx, p).await?;
     audit(&mut tx, &p.id, action, &target).await?;
     tx.commit().await?;
     Ok(json!({"updated":true}))
@@ -388,6 +409,7 @@ pub async fn set_admission(
         .bind(app).bind(&v.environment).bind(&v.mode).bind(&p.id)
         .execute(&mut *tx).await?;
     let target = format!("app:{app}:{}:{}", v.environment, v.mode);
+    domain::admin_locked(&mut tx, p).await?;
     audit(&mut tx, &p.id, "app.admission_set", &target).await?;
     tx.commit().await?;
     Ok(json!({"appId":app,"environment":v.environment,"mode":v.mode}))
@@ -409,6 +431,7 @@ pub async fn set_control(
     } else {
         "app.enabled"
     };
+    domain::admin_locked(&mut tx, p).await?;
     audit(&mut tx, &p.id, action, &format!("app:{app}")).await?;
     tx.commit().await?;
     Ok(json!({"appId":app,"disabled":v.disabled}))

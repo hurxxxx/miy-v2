@@ -119,13 +119,13 @@ API 요청, 예약 작업, 빌드, 문서 처리와 Hermes 실행은 동시 실�
 
 | 대상 | 상한 | 근거 |
 | --- | --- | --- |
-| 코어 serve·worker | 각 10, 단건 작업용 관리 연결 여유 2 | `PgPoolOptions::max_connections(10)` |
+| 코어 serve·worker | 각 10, 병렬 관리 연결 여유 4 | 풀 20 + DB 준비 2 + 독립 빌드 1 + 개발 세션 정리 1 |
 | Keycloak | 10 | compose의 `KC_DB_POOL_MAX_SIZE`. 설정하지 않으면 Keycloak 기본값 100이 예산 전체를 넘는다 |
 | 설치별 runtime 역할 | 6 | SDK 풀 5 + 수동 확인 1. 배포마다, 그리고 worker 시작 시 한도가 다른 기존 설치 역할에 `ALTER ROLE ... CONNECTION LIMIT`으로 적용 |
 | 설치별 migration 역할 | 2 | migration은 연결 하나로 실행, 겹친 재시도 1 |
 | 개발 세션 역할 | 16 | 세션별 생성 시 지정 |
 
-설치 수를 N, 활성 개발 세션 수를 D라고 하면 최악 수는 22 + 10 + 8N + 16D다. PostgreSQL 기본 `max_connections=100`(사용 가능 97)은 개발 세션이 없을 때 설치 8개까지만 들어가므로, compose에서 `max_connections=200`(사용 가능 197)으로 둔다. 이때 개발 세션이 없으면 설치 20개, 개발 세션 4개면 설치 12개까지 들어간다. 그보다 많아지면 `max_connections`를 더 올리거나(재시작 필요) PgBouncer를 검토한다.
+설치 수를 N, 활성 개발 세션 수를 D라고 하면 보수적인 최악 수는 24 + 10 + 8N + 16D다. 관리 연결 4개는 control·build·개발 세션 정리가 동시에 실행되는 경우를 포함한다. PostgreSQL 기본 `max_connections=100`(사용 가능 97)은 이 예산에서 개발 세션이 없을 때 설치 7개까지 들어간다. compose의 `max_connections=200`(사용 가능 197)에서는 개발 세션이 없으면 설치 20개, 개발 세션 4개면 설치 12개까지 들어간다. 설정을 늘려도 실제 호스트의 메모리 여유는 별도로 확인해야 한다. 더 많은 연결이 필요하면 풀 축소나 PgBouncer를 검토한다.
 
 연결마다 `application_name`을 붙여 `pg_stat_activity`에서 구분한다: `miy-core-serve`, `miy-core-worker`, `miy-core-migrate`, `miy-core-seed`, 앱은 `miy-app-<앱>-<환경>`(최대 63바이트). 풀 크기는 코드 상수이며 env로 덮어쓰지 않아, 오래된 env 값이 새 기본값을 덮는 문제가 없다. 새 설치를 막는 원자적 예약은 아직 없고 코어 3차 남은 범위로 둔다.
 

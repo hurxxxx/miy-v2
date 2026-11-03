@@ -194,7 +194,9 @@ pub async fn page(s: &State, p: &Principal, kind: &str, mut q: Page) -> ApiResul
             "installations t JOIN releases r ON r.id=t.release_id JOIN apps a ON a.id=t.app_id",
             "t.app_id||':'||t.environment||':'||t.id::text",
             INSTALLATION_VIEW,
-            "($2 OR EXISTS(SELECT 1 FROM effective_grants g WHERE g.user_id=$1 AND g.app_id=t.app_id AND g.environment=t.environment))",
+            "($2 OR EXISTS(SELECT 1 FROM effective_grants g WHERE g.user_id=$1 AND g.app_id=t.app_id AND g.environment=t.environment)) \
+             AND (NOT EXISTS(SELECT 1 FROM app_controls c WHERE c.app_id=t.app_id AND c.disabled) \
+             OR (t.environment='dev' AND ($2 OR EXISTS(SELECT 1 FROM effective_grants g WHERE g.user_id=$1 AND g.app_id=t.app_id AND g.environment='dev' AND g.permission='develop'))))",
             "t.app_id",
             "t.environment",
             "NULL::text",

@@ -13,7 +13,15 @@ import subprocess
 import sys
 
 CORE_POOLS = 2 * 10  # serve + worker PgPoolOptions::max_connections(10)
-CORE_TRANSIENT = 2  # provisioning/admin connections opened for a single job
+CORE_TRANSIENT_SOURCES = {
+    # Both owned connections live until prepare_resource returns, including migrations.
+    "provisioning": 2,
+    "developmentLeaseMonitor": 1,
+    "serverBuildHistory": 1,
+}
+# Control, build and development reconciliation run independently. Migration-role
+# connections are already counted in the per-role limits below, not again here.
+CORE_TRANSIENT = sum(CORE_TRANSIENT_SOURCES.values())
 DEV_SESSION_LIMIT = 16  # development.rs CREATE ROLE ... CONNECTION LIMIT 16
 KEYCLOAK_DEFAULT_POOL = 100  # Keycloak db-pool-max-size default
 
@@ -30,7 +38,13 @@ def identity_pool(container: str):
         return None, "identity container not found"
     for line in probe.stdout.splitlines():
         if line.startswith("KC_DB_POOL_MAX_SIZE="):
-            return int(line.split("=", 1)[1]), "KC_DB_POOL_MAX_SIZE"
+            try:
+                size = int(line.split("=", 1)[1])
+                if size > 0:
+                    return size, "KC_DB_POOL_MAX_SIZE"
+            except ValueError:
+                pass
+            return None, "invalid KC_DB_POOL_MAX_SIZE"
     return KEYCLOAK_DEFAULT_POOL, "Keycloak default (KC_DB_POOL_MAX_SIZE unset)"
 
 
@@ -71,7 +85,7 @@ def main() -> int:
     problems = []
     if unbounded:
         problems.append("login roles without a connection limit: " + ", ".join(unbounded) +
-                        " (installations receive limits at their next deployment)")
+                        " (check worker startup alignment or the next deployment)")
     if pool is None:
         problems.append("identity pool unknown")
     if worst > usable:
@@ -82,6 +96,7 @@ def main() -> int:
         "settings": settings,
         "worstCase": worst,
         "reserved": {"corePools": CORE_POOLS, "coreTransient": CORE_TRANSIENT,
+                     "coreTransientSources": CORE_TRANSIENT_SOURCES,
                      "identityPool": pool, "identityPoolSource": pool_source, "roles": by_kind},
         "currentUse": usage,
         "problems": problems,

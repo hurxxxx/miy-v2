@@ -206,7 +206,16 @@ pub fn verify(root: &Path) -> Result<Value> {
         json!({"valid":true,"cliVersion":VERSION,"bundleVersion":crate::bundle::VERSION,"skills":[".agents/skills/miy-cli",".claude/skills/miy-cli"],"manual":"docs/CLI-REFERENCE.md","lock":LOCK}),
     )
 }
-pub fn operation(root: &Path) -> Result<std::fs::File> {
+pub struct OperationLock(std::fs::File);
+impl Drop for OperationLock {
+    fn drop(&mut self) {
+        // Closing our descriptor alone does not release a Unix lock while a
+        // concurrently spawned child still holds an inherited descriptor.
+        let _ = self.0.unlock();
+    }
+}
+
+pub fn operation(root: &Path) -> Result<OperationLock> {
     safe_target(root, ".miy/cli-setup.lock")?;
     std::fs::create_dir_all(root.join(".miy"))?;
     let lock = std::fs::OpenOptions::new()
@@ -217,7 +226,7 @@ pub fn operation(root: &Path) -> Result<std::fs::File> {
         .open(root.join(".miy/cli-setup.lock"))?;
     lock.try_lock()
         .context("cli_setup_already_running_for_this_project")?;
-    Ok(lock)
+    Ok(OperationLock(lock))
 }
 #[cfg(test)]
 mod tests {
@@ -291,6 +300,10 @@ mod tests {
     fn setup_is_serialized_per_project() {
         let root = tempfile::tempdir().unwrap();
         let first = operation(root.path()).unwrap();
+        // A forked child may retain this open file description until exec.
+        // Keeping a duplicate alive makes that window deterministic on Unix.
+        #[cfg(unix)]
+        let _inherited = first.0.try_clone().unwrap();
         assert!(operation(root.path()).is_err());
         drop(first);
         assert!(operation(root.path()).is_ok());

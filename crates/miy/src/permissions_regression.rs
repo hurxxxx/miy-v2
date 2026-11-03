@@ -175,6 +175,35 @@ impl Harness<'_> {
             .find(|row| row["id"] == json!(app.installation))
             .cloned())
     }
+    /// A filter or cursor must not bypass the default installation admission policy.
+    async fn visibility_consistent(&self, actor: &Actor, app: &App, visible: bool) -> Result<()> {
+        ensure!(
+            self.visible(actor, app).await?.is_some() == visible,
+            "default installation visibility differs from expected admission"
+        );
+        for path in [
+            format!("/api/v1/installations?limit=200&appId={}", app.app),
+            format!("/api/v1/apps/{}", app.app),
+        ] {
+            let value = response(
+                self.request(&actor.token, Method::GET, &path)
+                    .send()
+                    .await?,
+                200,
+            )
+            .await?;
+            let found = value["installations"]
+                .as_array()
+                .context("filtered installations list")?
+                .iter()
+                .any(|row| row["id"] == json!(app.installation));
+            ensure!(
+                found == visible,
+                "filtered installation visibility bypassed admission"
+            );
+        }
+        Ok(())
+    }
     async fn grant(&self, actor: &Actor, app: &App, environment: &str) -> Result<()> {
         sqlx::query("INSERT INTO grants(user_id,app_id,environment,permission) VALUES($1,$2,$3,'use') ON CONFLICT DO NOTHING")
             .bind(&actor.id).bind(&app.app).bind(environment).execute(&self.state.pool).await?;
@@ -1367,6 +1396,11 @@ async fn groups(h: &mut Harness<'_>, suffix: &str, passed: &mut Vec<String>) -> 
         h.visible(&carol, &dev).await?.is_some(),
         "a developer lost dev to repair the app"
     );
+    h.visibility_consistent(&operator, &prod, false).await?;
+    h.visibility_consistent(&operator, &dev, true).await?;
+    h.visibility_consistent(&erin, &dev, false).await?;
+    h.visibility_consistent(&carol, &dev, true).await?;
+    h.visibility_consistent(&carol, &prod, false).await?;
     let blocked = response(
         h.request(
             &operator.token,
@@ -1393,7 +1427,9 @@ async fn groups(h: &mut Harness<'_>, suffix: &str, passed: &mut Vec<String>) -> 
         h.visible(&operator, &prod).await?.is_some() && h.visible(&erin, &dev).await?.is_some(),
         "re-enabling did not restore use"
     );
-    passed.push("the company switch stops use for administrators and users while developers keep dev, and re-enabling restores it".into());
+    h.visibility_consistent(&operator, &prod, true).await?;
+    h.visibility_consistent(&erin, &dev, true).await?;
+    passed.push("the company switch consistently filters default, paged and app-detail installations; developers keep dev and re-enabling restores use".into());
 
     denied(
         h.request(&carol.token, Method::GET, "/api/v1/groups")
@@ -1469,5 +1505,348 @@ async fn groups(h: &mut Harness<'_>, suffix: &str, passed: &mut Vec<String>) -> 
         );
     }
     passed.push("only administrators change groups and access, and every change is audited and queryable by actor, action and cursor".into());
+    mutation_revocation(h, &app, &local, &unit, &team, &dave, &erin, suffix).await?;
+    passed.push("all group/access mutations and personal grants roll back without domain audit when an administrator is revoked or disabled during a PostgreSQL lock wait".into());
+    grant_and_primary_audit(h, &operator, &app, &unit, &team).await?;
+    passed.push("personal grant changes and primary-group assignments retain their exact before/after targets in the same transaction audit".into());
+    primary_group_lock_order(h).await?;
+    passed.push("opposing administrators update primary groups with ordered user locks, preserving the unlocked target and completing without deadlock".into());
+    Ok(())
+}
+
+/// Observe an actual PostgreSQL wait, rather than assuming a request started after a sleep.
+async fn blocked_by(pool: &sqlx::PgPool, blocker: i32, prefix: &str) -> Result<i32> {
+    tokio::time::timeout(Duration::from_secs(10), async {
+        loop {
+            let pid: Option<i32> = sqlx::query_scalar(
+                "SELECT pid FROM pg_stat_activity WHERE datname=current_database() AND wait_event_type='Lock' \
+                 AND $1=ANY(pg_blocking_pids(pid)) AND starts_with(query,$2) LIMIT 1",
+            )
+            .bind(blocker)
+            .bind(prefix)
+            .fetch_optional(pool)
+            .await?;
+            if let Some(pid) = pid {
+                return Ok(pid);
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    })
+    .await
+    .context("permission regression did not observe the expected PostgreSQL lock wait")?
+}
+
+struct PendingMutation {
+    name: &'static str,
+    method: Method,
+    path: String,
+    body: Value,
+    lock: String,
+    snapshot: String,
+    action: &'static str,
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn mutation_revocation(
+    h: &Harness<'_>,
+    app: &str,
+    local: &str,
+    unit: &str,
+    team: &str,
+    primary_user: &Actor,
+    personal_user: &Actor,
+    suffix: &str,
+) -> Result<()> {
+    // Interpolated values are exclusively IDs generated by this isolated fixture.
+    let group_lock = |id: &str| format!("SELECT id FROM groups WHERE id='{id}' FOR UPDATE");
+    let primary_snapshot = format!(
+        "SELECT COALESCE(primary_group_id::text,'none') FROM users WHERE id='{}'",
+        primary_user.id
+    );
+    let cases = [
+        PendingMutation {
+            name: "create group",
+            method: Method::POST,
+            path: "/api/v1/groups".into(),
+            body: json!({"name":format!("pending {suffix}"),"source":"hr","parentId":unit}),
+            lock: group_lock(unit),
+            snapshot: format!("SELECT count(*)::text FROM groups WHERE name='pending {suffix}'"),
+            action: "group.created",
+        },
+        PendingMutation {
+            name: "update group",
+            method: Method::PATCH,
+            path: format!("/api/v1/groups/{local}"),
+            body: json!({"name":format!("changed {suffix}"),"active":false}),
+            lock: group_lock(local),
+            snapshot: format!("SELECT name||':'||active::text FROM groups WHERE id='{local}'"),
+            action: "group.deactivated",
+        },
+        PendingMutation {
+            name: "set parent",
+            method: Method::PUT,
+            path: format!("/api/v1/groups/{unit}/parent"),
+            body: json!({"parentId":team}),
+            lock: group_lock(unit),
+            snapshot: format!(
+                "SELECT COALESCE(parent_id::text,'none') FROM groups WHERE id='{unit}'"
+            ),
+            action: "group.parent_set",
+        },
+        PendingMutation {
+            name: "set member",
+            method: Method::PUT,
+            path: format!("/api/v1/groups/{local}/members"),
+            body: json!({"userId":personal_user.id,"member":true}),
+            lock: group_lock(local),
+            snapshot: format!(
+                "SELECT count(*)::text FROM group_members WHERE group_id='{local}' AND user_id='{}'",
+                personal_user.id
+            ),
+            action: "group.member_added",
+        },
+        PendingMutation {
+            name: "set primary group",
+            method: Method::PUT,
+            path: format!("/api/v1/users/{}/primary-group", primary_user.id),
+            body: json!({"groupId":team}),
+            lock: group_lock(team),
+            snapshot: primary_snapshot,
+            action: "user.primary_group_set",
+        },
+        PendingMutation {
+            name: "set group grant",
+            method: Method::PUT,
+            path: "/api/v1/group-grants".into(),
+            body: json!({"groupId":local,"appId":app,"environment":"prod","permission":"use","enabled":true}),
+            lock: group_lock(local),
+            snapshot: format!(
+                "SELECT count(*)::text FROM group_grants WHERE group_id='{local}' AND app_id='{app}' AND environment='prod'"
+            ),
+            action: "group_grant.enabled",
+        },
+        PendingMutation {
+            name: "set admission",
+            method: Method::PUT,
+            path: format!("/api/v1/apps/{app}/admission"),
+            body: json!({"environment":"prod","mode":"all"}),
+            lock: format!(
+                "SELECT app_id FROM app_admission WHERE app_id='{app}' AND environment='prod' FOR UPDATE"
+            ),
+            snapshot: format!(
+                "SELECT mode FROM app_admission WHERE app_id='{app}' AND environment='prod'"
+            ),
+            action: "app.admission_set",
+        },
+        PendingMutation {
+            name: "set company control",
+            method: Method::PUT,
+            path: format!("/api/v1/apps/{app}/control"),
+            body: json!({"disabled":true}),
+            lock: format!("SELECT app_id FROM app_controls WHERE app_id='{app}' FOR UPDATE"),
+            snapshot: format!("SELECT disabled::text FROM app_controls WHERE app_id='{app}'"),
+            action: "app.disabled",
+        },
+        PendingMutation {
+            name: "revoke personal grant",
+            method: Method::PUT,
+            path: "/api/v1/grants".into(),
+            body: json!({"userId":personal_user.id,"appId":app,"environment":"dev","permission":"use","enabled":false}),
+            lock: format!(
+                "SELECT user_id FROM grants WHERE user_id='{}' AND app_id='{app}' AND environment='dev' AND permission='use' FOR UPDATE",
+                personal_user.id
+            ),
+            snapshot: format!(
+                "SELECT count(*)::text FROM grants WHERE user_id='{}' AND app_id='{app}' AND environment='dev' AND permission='use'",
+                personal_user.id
+            ),
+            action: "grant.disabled",
+        },
+    ];
+    for case in cases {
+        for revoke in ["admin", "enabled"] {
+            let actor = h.actor(true).await?;
+            let before: String = sqlx::query_scalar(&case.snapshot)
+                .fetch_one(&h.state.pool)
+                .await?;
+            let mut blocker = h.state.pool.begin().await?;
+            let pid: i32 = sqlx::query_scalar("SELECT pg_backend_pid()")
+                .fetch_one(&mut *blocker)
+                .await?;
+            sqlx::query(&case.lock).fetch_all(&mut *blocker).await?;
+            let pending = h
+                .request(&actor.token, case.method.clone(), &case.path)
+                .json(&case.body)
+                .send();
+            tokio::pin!(pending);
+            tokio::select! {
+                observed = blocked_by(&h.state.pool, pid, "") => { observed?; }
+                early = &mut pending => {
+                    anyhow::bail!("{} completed before its lock wait (HTTP {})", case.name, early?.status().as_u16());
+                }
+            }
+            // Both are Core-authoritative user state. No test credential is printed.
+            sqlx::query(&format!("UPDATE users SET {revoke}=false WHERE id=$1"))
+                .bind(&actor.id)
+                .execute(&h.state.pool)
+                .await?;
+            blocker.rollback().await?;
+            response(
+                tokio::time::timeout(Duration::from_secs(10), pending).await??,
+                403,
+            )
+            .await?;
+            let after: String = sqlx::query_scalar(&case.snapshot)
+                .fetch_one(&h.state.pool)
+                .await?;
+            ensure!(
+                before == after,
+                "{} survived {revoke} revocation",
+                case.name
+            );
+            let audits: i64 =
+                sqlx::query_scalar("SELECT count(*) FROM audit WHERE actor=$1 AND action=$2")
+                    .bind(&actor.id)
+                    .bind(case.action)
+                    .fetch_one(&h.state.pool)
+                    .await?;
+            ensure!(
+                audits == 0,
+                "{} recorded a rolled-back domain change",
+                case.name
+            );
+        }
+    }
+    Ok(())
+}
+
+async fn grant_and_primary_audit(
+    h: &Harness<'_>,
+    operator: &Actor,
+    app: &str,
+    unit: &str,
+    team: &str,
+) -> Result<()> {
+    let user = h.actor(false).await?;
+    for (before, after) in [(false, true), (true, true), (true, false)] {
+        h.json(
+            &operator.token, Method::PUT, "/api/v1/grants",
+            json!({"userId":user.id,"appId":app,"environment":"prod","permission":"deploy","enabled":after}),
+            200,
+        ).await?;
+        let exists: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM grants WHERE user_id=$1 AND app_id=$2 AND environment='prod' AND permission='deploy')")
+            .bind(&user.id).bind(app).fetch_one(&h.state.pool).await?;
+        ensure!(exists == after, "personal grant state did not commit");
+        let action = if after {
+            "grant.enabled"
+        } else {
+            "grant.disabled"
+        };
+        let target = format!(
+            "user:{}:app:{app}:prod:deploy:from:{before}:to:{after}",
+            user.id
+        );
+        let recorded: bool = sqlx::query_scalar(
+            "SELECT EXISTS(SELECT 1 FROM audit WHERE actor=$1 AND action=$2 AND target=$3)",
+        )
+        .bind(&operator.id)
+        .bind(action)
+        .bind(target)
+        .fetch_one(&h.state.pool)
+        .await?;
+        ensure!(
+            recorded,
+            "personal grant audit lost its user/app/environment/permission or before/after state"
+        );
+    }
+    let mut before = "none";
+    for after in [Some(unit), Some(team), None] {
+        h.json(
+            &operator.token,
+            Method::PUT,
+            &format!("/api/v1/users/{}/primary-group", user.id),
+            json!({"groupId":after}),
+            200,
+        )
+        .await?;
+        let target = format!(
+            "user:{}:from:{before}:to:{}",
+            user.id,
+            after.unwrap_or("none")
+        );
+        let recorded: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM audit WHERE actor=$1 AND action='user.primary_group_set' AND target=$2)")
+            .bind(&operator.id).bind(target).fetch_one(&h.state.pool).await?;
+        ensure!(
+            recorded,
+            "primary-group audit lost its old/new group or explicit removal"
+        );
+        before = after.unwrap_or("none");
+    }
+    Ok(())
+}
+
+async fn primary_group_lock_order(h: &Harness<'_>) -> Result<()> {
+    let mut actors = [h.actor(true).await?, h.actor(true).await?];
+    actors.sort_by(|a, b| a.id.cmp(&b.id));
+    let [low, high] = &actors;
+    let mut blocker = h.state.pool.begin().await?;
+    let pid: i32 = sqlx::query_scalar("SELECT pg_backend_pid()")
+        .fetch_one(&mut *blocker)
+        .await?;
+    sqlx::query("SELECT id FROM users WHERE id=$1 FOR UPDATE")
+        .bind(&low.id)
+        .fetch_one(&mut *blocker)
+        .await?;
+    let first = h
+        .request(
+            &low.token,
+            Method::PUT,
+            &format!("/api/v1/users/{}/primary-group", high.id),
+        )
+        .json(&json!({"groupId":null}))
+        .send();
+    tokio::pin!(first);
+    tokio::select! {
+        observed = blocked_by(&h.state.pool, pid, "SELECT id,primary_group_id FROM users") => { observed?; }
+        early = &mut first => { anyhow::bail!("first primary-group change skipped ordered locks (HTTP {})", early?.status().as_u16()); }
+    }
+    // The high target must still be free: target-first locking would have acquired
+    // it before waiting on the low actor, creating an A->B/B->A deadlock.
+    let mut probe = h.state.pool.begin().await?;
+    sqlx::query("SELECT id FROM users WHERE id=$1 FOR NO KEY UPDATE NOWAIT")
+        .bind(&high.id)
+        .fetch_one(&mut *probe)
+        .await?;
+    probe.rollback().await?;
+    let second = h
+        .request(
+            &high.token,
+            Method::PUT,
+            &format!("/api/v1/users/{}/primary-group", low.id),
+        )
+        .json(&json!({"groupId":null}))
+        .send();
+    tokio::pin!(second);
+    tokio::select! {
+        early = &mut first => { anyhow::bail!("first primary-group change escaped its user lock (HTTP {})", early?.status().as_u16()); }
+        early = &mut second => { anyhow::bail!("second primary-group change escaped its user lock (HTTP {})", early?.status().as_u16()); }
+        // The second request may wait on the first waiter's tuple lock rather
+        // than the blocker PID, but both must still be acquiring ordered users.
+        waits = tokio::time::timeout(Duration::from_secs(10), async {
+            loop {
+                let n: i64 = sqlx::query_scalar("SELECT count(*) FROM pg_stat_activity WHERE datname=current_database() AND wait_event_type='Lock' AND starts_with(query,'SELECT id,primary_group_id FROM users')")
+                    .fetch_one(&h.state.pool).await?;
+                if n >= 2 { return Ok::<_, anyhow::Error>(()); }
+                tokio::time::sleep(Duration::from_millis(20)).await;
+            }
+        }) => { waits??; }
+    }
+    blocker.rollback().await?;
+    let (a, b) = tokio::time::timeout(Duration::from_secs(10), async {
+        tokio::try_join!(first, second)
+    })
+    .await??;
+    response(a, 200).await?;
+    response(b, 200).await?;
     Ok(())
 }

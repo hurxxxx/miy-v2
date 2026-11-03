@@ -8,7 +8,7 @@ import { LoadError, StaleNotice } from "../components/LoadState";
 import { RuntimeHealth } from "../components/RuntimeHealth";
 import { RuntimeControls } from "../components/RuntimeControls";
 import { Badge, Button, EmptyState, Field, Loading, Panel } from "../ui";
-import { AppAccessAdmin, GroupAdmin, type DirectoryUser } from "./AdminAccess";
+import { AppAccessAdmin, GroupAdmin, useGroups, type DirectoryUser } from "./AdminAccess";
 import { AuditLog } from "./AdminAudit";
 
 type Registration = { id: string; appId: string; name: string; status: string; requester: string };
@@ -31,6 +31,7 @@ function AdminConsole({ csrf }: { csrf: string }) {
   const [users, setUsers] = useState<DirectoryUser[] | null>(null);
   const [loadError, setLoadError] = useState(false);
   const [message, setMessage] = useState("");
+  const groups = useGroups(setMessage);
   const loadDirectory = useCallback(async () => {
     try {
       const [nextRequests, nextUsers] = await Promise.all([
@@ -166,8 +167,8 @@ function AdminConsole({ csrf }: { csrf: string }) {
       </div>
       <h2 className="page-section-title">사용자·그룹 권한</h2>
       <div className="admin-grid">
-        <GroupAdmin csrf={csrf} users={users} report={setMessage} />
-        <AppAccessAdmin csrf={csrf} users={users} report={setMessage} />
+        <GroupAdmin csrf={csrf} users={users} report={setMessage} directory={groups} />
+        <AppAccessAdmin csrf={csrf} users={users} report={setMessage} directory={groups} />
       </div>
       <AuditLog users={users} report={setMessage} />
       <h2 className="page-section-title">앱 실행 상태</h2>

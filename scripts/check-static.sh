@@ -43,6 +43,7 @@ script_checks() {
   python3 scripts/test-cli-downloads.py
   python3 scripts/test-windows-installer-package.py
   python3 scripts/test-agent-acceptance-proxy.py
+  python3 scripts/test-core-ops.py
   python3 scripts/check-server-config.py
 }
 

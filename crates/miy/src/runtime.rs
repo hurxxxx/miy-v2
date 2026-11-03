@@ -719,7 +719,8 @@ async fn execute(pool: &sqlx::PgPool, job: &sqlx::postgres::PgRow) -> Result<()>
     if let Err(error) = &result {
         // An unproven database outcome must not stop a container that a committed row
         // may describe as running, nor the previous release before it was replaced
-        // (V1-O4). Runtime reconciliation later records the actual container state.
+        // (V1-O4). Keep the previous desired state until a replacement exists so
+        // reconciliation cannot turn this skipped compensation into a later stop.
         if crate::db_outcome::uncertain(error) {
             tracing::warn!(event = "deploy_compensation_skipped", installation_id = %installation);
         } else {
@@ -773,12 +774,15 @@ async fn deploy_installation(
     let local_image = images.local;
     runtime_health::record(pool, installation, Observation::Inactive).await?;
     step(pool, job, "stopping_previous").await?;
-    sqlx::query(
-        "UPDATE installations SET runtime_status='deploying',desired_state='stopped' WHERE id=$1",
-    )
-    .bind(installation)
-    .execute(pool)
-    .await?;
+    // Deployment is a replacement, not a request to stop the previous release.
+    // If this write commits but its response is lost, retain the old release,
+    // image and desired state so reconciliation preserves the running container.
+    sqlx::query("UPDATE installations SET runtime_status='deploying' WHERE id=$1")
+        .bind(installation)
+        .execute(pool)
+        .await?;
+    #[cfg(test)]
+    crate::runtime_regression::deployment_write_ack(job, "before_stop")?;
     let name = format!("miy-app-{}", installation.simple());
     if inspect(&name).await.is_ok() {
         owned(&name, installation).await?;
@@ -887,6 +891,8 @@ async fn deploy_installation(
     std::fs::remove_file(&env_path)?;
     created?;
     sqlx::query("UPDATE installations SET runtime_container=$2,runtime_image=$3,runtime_secret=$4,runtime_local_image=$5,desired_state='running',runtime_status='starting' WHERE id=$1").bind(installation).bind(&name).bind(image).bind(auth::encrypt(&secret)?).bind(local_image).execute(pool).await?;
+    #[cfg(test)]
+    crate::runtime_regression::deployment_write_ack(job, "before_start")?;
     step(pool, job, "starting_container").await?;
     docker(&["start", &name]).await?;
     let meta = owned(&name, installation).await?;
@@ -900,6 +906,8 @@ async fn deploy_installation(
         .bind(port)
         .execute(pool)
         .await?;
+    #[cfg(test)]
+    crate::runtime_regression::deployment_write_ack(job, "after_start")?;
     step(pool, job, "health_check").await?;
     if let Err(error) = healthy(port, release).await {
         let _ = docker(&["stop", "--time", "5", &name]).await;

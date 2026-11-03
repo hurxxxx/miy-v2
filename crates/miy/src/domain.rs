@@ -35,6 +35,26 @@ pub async fn admin(state: &State, p: &Principal) -> ApiResult<()> {
         Err(ApiError::forbidden())
     }
 }
+/// Recheck after mutation locks have been acquired, and hold authority until commit.
+/// Callers keep all writes in this transaction so denial rolls them back. Operations
+/// that update users must lock actor/target rows in ID order before their writes.
+pub(crate) async fn admin_locked(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    p: &Principal,
+) -> ApiResult<()> {
+    crate::delegations::unrestricted(p)?;
+    let allowed: bool = sqlx::query_scalar(
+        "SELECT COALESCE((SELECT admin AND enabled FROM users WHERE id=$1 FOR SHARE),false)",
+    )
+    .bind(&p.id)
+    .fetch_one(&mut **tx)
+    .await?;
+    if allowed {
+        Ok(())
+    } else {
+        Err(ApiError::forbidden())
+    }
+}
 pub async fn authorize(
     state: &State,
     p: &Principal,
@@ -374,17 +394,42 @@ pub async fn grant(state: &State, p: &Principal, v: Grant) -> ApiResult<Value> {
     {
         return Err(ApiError::bad("invalid_grant"));
     }
-    if v.enabled {
+    let mut tx = state.pool.begin().await?;
+    let changed = if v.enabled {
         sqlx::query("INSERT INTO grants VALUES($1,$2,$3,$4) ON CONFLICT DO NOTHING")
             .bind(&v.user_id)
             .bind(&v.app_id)
             .bind(&v.environment)
             .bind(&v.permission)
-            .execute(&state.pool)
-            .await?;
+            .execute(&mut *tx)
+            .await?
+            .rows_affected()
     } else {
-        sqlx::query("DELETE FROM grants WHERE user_id=$1 AND app_id=$2 AND environment=$3 AND permission=$4").bind(&v.user_id).bind(&v.app_id).bind(&v.environment).bind(&v.permission).execute(&state.pool).await?;
-    }
+        sqlx::query("DELETE FROM grants WHERE user_id=$1 AND app_id=$2 AND environment=$3 AND permission=$4").bind(&v.user_id).bind(&v.app_id).bind(&v.environment).bind(&v.permission).execute(&mut *tx).await?.rows_affected()
+    };
+    admin_locked(&mut tx, p).await?;
+    let before = if v.enabled {
+        changed == 0
+    } else {
+        changed != 0
+    };
+    let action = if v.enabled {
+        "grant.enabled"
+    } else {
+        "grant.disabled"
+    };
+    let target = format!(
+        "user:{}:app:{}:{}:{}:from:{before}:to:{}",
+        v.user_id, v.app_id, v.environment, v.permission, v.enabled,
+    );
+    sqlx::query("INSERT INTO audit(actor,action,target,request_id) VALUES($1,$2,$3,$4)")
+        .bind(&p.id)
+        .bind(action)
+        .bind(target)
+        .bind(Uuid::new_v4().to_string())
+        .execute(&mut *tx)
+        .await?;
+    tx.commit().await?;
     Ok(json!({"updated":true}))
 }
 pub use crate::contract::get_contract;

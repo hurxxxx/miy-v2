@@ -1,0 +1,220 @@
+{
+  "date": "2026-11-04",
+  "baseCommit": "a2964121c92ea8ae1469e8ef6d69708717cd3092",
+  "workingTreeChanges": true,
+  "status": "PASS",
+  "scope": [
+    "review fixes from cb9a5b8",
+    "7d3c66a existing role connection limits",
+    "a296412 rollout and rollback tooling",
+    "CLI project lock release found during validation",
+    "pinned runtime test executable and precise server UI selectors"
+  ],
+  "deploymentPerformed": false,
+  "checks": [
+    {
+      "command": "bash scripts/check-static.sh rust",
+      "status": "PASS",
+      "serverTests": 170,
+      "clientTests": 113,
+      "serverIgnored": 7,
+      "includes": [
+        "fmt",
+        "server/client Clippy",
+        "bundle portability"
+      ],
+      "log": "/tmp/miy-improve-20261104-rust-complete.log"
+    },
+    {
+      "command": "bash scripts/check-static.sh scripts",
+      "status": "PASS",
+      "coreOpsMockTests": 25,
+      "externalCommandsInCoreOpsTests": "mocked",
+      "log": "/tmp/miy-improve-20261104-scripts-complete.log"
+    },
+    {
+      "command": "bash scripts/check-static.sh web",
+      "status": "PASS",
+      "browserTests": 50,
+      "suites": {
+        "platform": 35,
+        "cliExperience": 14,
+        "httpIp": 1
+      },
+      "includes": [
+        "typecheck",
+        "isolated platform and fixture builds"
+      ],
+      "log": "/tmp/miy-improve-20261104-web-final.log"
+    },
+    {
+      "command": "python3 scripts/runtime-regression/run.py",
+      "status": "PASS",
+      "observations": 83,
+      "suites": {
+        "runtime": 42,
+        "operations": 6,
+        "cli": 6,
+        "auth": 8,
+        "permissions": 17,
+        "delegation": 4
+      },
+      "evidence": "/tmp/miy-runtime-regression-dpuhmkff/evidence",
+      "log": "/tmp/miy-improve-20261104-runtime-final.log",
+      "newBoundaries": {
+        "revocationWhileLockedPaths": 18,
+        "deploymentLostAcknowledgementStages": [
+          "before_stop",
+          "before_start",
+          "after_start"
+        ]
+      },
+      "faultInjection": "test-only transport error returned after a real PostgreSQL write; not a network packet-loss experiment"
+    },
+    {
+      "command": "pnpm exec playwright test --config scripts/runtime-regression/server-ui.config.ts",
+      "status": "PASS",
+      "tests": 7,
+      "server": "current source with disposable PostgreSQL and loopback development login",
+      "evidence": ".local/evidence/server-ui",
+      "log": "/tmp/miy-improve-20261104-server-ui-complete.log"
+    },
+    {
+      "command": "cargo build --locked --no-default-features -p miy; python3 scripts/check-cli-output.py --cli target/debug/miy; python3 scripts/check-cli-install.py --cli target/debug/miy; python3 scripts/check-cli-recovery.py --cli target/debug/miy",
+      "status": "PASS",
+      "checks": {
+        "output": 14,
+        "install": 17,
+        "recovery": 6
+      },
+      "liveServicesUsed": false,
+      "logs": [
+        "/tmp/miy-improve-20261104-cli-output.log",
+        "/tmp/miy-improve-20261104-cli-install.log",
+        "/tmp/miy-improve-20261104-cli-recovery.log"
+      ]
+    },
+    {
+      "command": "python3 /tmp/miy-backup-restore-review-20261104.py",
+      "status": "PASS",
+      "checks": 9,
+      "evidence": "/tmp/miy-backup-restore-review-1ngy58t3/result.json",
+      "scope": "Actual create/verify/restore_database functions against synthetic PostgreSQL fixture, not real migration 17 to 19 or live deployment."
+    },
+    {
+      "command": "python3 scripts/check-doc-links.py; git diff --check",
+      "status": "PASS",
+      "relativeLinks": 506,
+      "trackedMarkdownFiles": 53
+    }
+  ],
+  "notRun": [
+    "Windows/macOS installation acceptance",
+    "production rollout and rollback",
+    "actual migration 17 to 19 using production data",
+    "real OIDC identity-provider login in the new browser checks",
+    "representative business app workspace and ACL acceptance",
+    "physical DB connection-loss fault injection; committed-write acknowledgement loss was simulated"
+  ],
+  "changes": [
+    "Recheck active administrator under a transaction lock before committing group, app-policy and personal-grant changes.",
+    "Record personal-grant and primary-group before/after targets in the change transaction.",
+    "Apply company disablement consistently to paged and unpaged installation reads, preserving dev repair access.",
+    "Bind administrator UI responses to the selected app/group; share refreshed group data and keep audit filter/cursor together.",
+    "Preserve previous deployment intent so reconciliation does not stop a running container after an unknown DB outcome.",
+    "Budget four parallel administrative connections; restrict startup role updates to generated login-role names.",
+    "Require confirmed container absence for backup cleanup and harden the source-specific rollout/rollback preconditions.",
+    "Explicitly unlock project-operation guards even when a Unix duplicate file descriptor survives."
+  ],
+  "attemptsPreserved": [
+    {
+      "status": "FAIL",
+      "check": "initial runtime integration",
+      "observationsBeforeFailure": 37,
+      "reason": "Worker subprocess launch returned ENOENT while a concurrent Cargo build was running. Replacement of the shared test executable is the suspected cause; the runner now pins its executable outside target and the final run passed.",
+      "evidence": "/tmp/miy-runtime-regression-euy069_m/evidence"
+    },
+    {
+      "status": "FAIL",
+      "check": "intermediate client unit tests",
+      "passed": 112,
+      "failed": 1,
+      "reason": "A project lock survived guard close through an inherited Unix file descriptor. A deterministic cloned-descriptor regression also failed before the explicit unlock fix.",
+      "log": "/tmp/miy-improve-20261104-rust-final.log"
+    },
+    {
+      "status": "FAIL",
+      "check": "initial server UI integration",
+      "passed": 5,
+      "failed": 2,
+      "reason": "The new audit option made a broad user-label selector ambiguous.",
+      "evidence": "/tmp/miy-improve-20261104-server-ui-first/evidence"
+    },
+    {
+      "status": "FAIL",
+      "check": "second server UI integration",
+      "passed": 6,
+      "failed": 1,
+      "reason": "An exact raw label changed when options loaded. The test now uses the exact accessible combobox name.",
+      "evidence": "/tmp/miy-improve-20261104-server-ui-second/evidence"
+    },
+    {
+      "status": "FAIL",
+      "check": "new UI regression authoring attempts",
+      "reason": "Test selector and shared mock-fixture state corrected before final passing run.",
+      "evidence": [
+        "/tmp/miy-audit-review-g05bp3bc/fixed-results",
+        "/tmp/miy-audit-review-g05bp3bc/fixed-results-2"
+      ]
+    }
+  ],
+  "cleanup": {
+    "errors": [],
+    "baselineContainers": 40,
+    "baselinePreserved": true,
+    "syntheticBackupFixtureAndVerifierRemoved": true
+  },
+  "remainingScope": [
+    "V1-G4 directory selectors",
+    "V1-G5/G6 representative app-owned space and ACL acceptance",
+    "V1-A2 service accounts",
+    "V1-A1 structured target/result/summary fields and retention policy",
+    "full host updater and power-loss recovery"
+  ],
+  "commitCreated": false,
+  "pushPerformed": false,
+  "sourceFileSha256": {
+    "crates/miy/src/cli_guidance.rs": "251dec91291f7a111acd4e14cbd453015ae458bbcc1af250df32a4489df639fc",
+    "crates/miy/src/domain.rs": "a4c5f7c8f61daba85cdc49e3d25b3994bbce6f73a93b5fa23c0ead9295a542de",
+    "crates/miy/src/file_transaction.rs": "9bd8735da47520b15b27915ec9f9cb381aa4a998c591d70339b4c45aecbaa41e",
+    "crates/miy/src/groups.rs": "b8522fa6648b9c83cc3841b79a576102e75c57459c6e9827240424586a6b1beb",
+    "crates/miy/src/permissions_regression.rs": "db40da89779e587dfce648e0ae99b0a42d2388bf0a53f687f899ec6e11e91f6e",
+    "crates/miy/src/read_api.rs": "10535a77fc3200a090cc7427e0b682db3d6b43b6869e52b0ff72679edeebb1fb",
+    "crates/miy/src/runtime.rs": "a254fb866e538c268aee71987b65d3ad7a94391269b6b43339e9f547bd9a26db",
+    "crates/miy/src/runtime_regression.rs": "4ede4ee753d26ea71b624d229f6b37c637ca7e8f83b1f9eb8d08b1b99ef25a68",
+    "crates/miy/src/worker.rs": "649664a7711eae3b2ea5dd621af5ce9a6353929d3a307a03b7a6aea591f89220",
+    "docs/releases/evidence/core-0.7.0-7d3c66a-linux/deploy.py": "33648632a46133f61bc9767c5f336baad0f2f739584e793cf4f53162396936fc",
+    "docs/releases/evidence/core-0.7.0-7d3c66a-linux/rollback-rehearsal.py": "6a99733ce235a457fd4e09b54cc6a6e0404985194bcb60b4805717164f8d9ba5",
+    "scripts/check-db-connections.py": "78aa8eb13da3a01bb4d1454c2668bcda6122e8a19fa662d7d55128b4218bf412",
+    "scripts/check-static.sh": "14a3f5196b33c61bb52d6323ce8f201c56af981b6de0006c44c237e5b2499dd3",
+    "scripts/core-backup.py": "e7a8f50d6d4b194386d77438827a6fa4b8a4bf4e4911a35b78023c0a385014ee",
+    "scripts/runtime-regression/run.py": "00292eebf24341e11a62cff12b642864ae61cf77779ebd08e8792b656c23ded8",
+    "scripts/test-core-ops.py": "d8b7233a3d96116bbca190845b6ccac60e73cd283e7f28aeeef35b02483bb372",
+    "tests/admin-access.spec.ts": "8b80e2d2afcf1aa091c9fd01130a7071ae8f6720635ddfb15bcf4fdd5fab58c4",
+    "tests/server-ui.spec.ts": "a633f8fce4723a2a088c9dcf7f257b898be6bd679b8ea266616c32225e425526",
+    "web/platform/src/pages/Admin.tsx": "eae46a188648ad32f426517015e3c7beabb3a1ee9987324168155878c776fcbf",
+    "web/platform/src/pages/AdminAccess.tsx": "5f72f6b3af82e85708f78f50ef817b5f4b670d938ecdc87db919f6cb45121a0c",
+    "web/platform/src/pages/AdminAudit.tsx": "c2ede9596984c263f9e84f021f787fe0186f59875c487ea03d7de283d896a875"
+  },
+  "runtimeExecutables": {
+    "cli-identity": {
+      "sourceCommit": "a2964121c92ea8ae1469e8ef6d69708717cd3092",
+      "workingTreeDirty": true,
+      "binarySha256": "74ef3d7f6865921107122f1a23993b087a2c19c09fbe83226cfe4bb5ccbb179d"
+    },
+    "test-identity": {
+      "binarySha256": "3529ca9a10020d1c3092e0bf7b451b8cb224fce60e0d5fc76018b0b0f6454e30",
+      "isolatedExecutable": "/tmp/miy-runtime-regression-dpuhmkff/bin/miy-runtime-tests"
+    }
+  }
+}

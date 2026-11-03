@@ -40,6 +40,8 @@ def main():
     backup, binary = pathlib.Path(sys.argv[1]).resolve(), pathlib.Path(sys.argv[2]).resolve()
     manifest = json.loads((backup / 'manifest.json').read_text())
     dump = backup / manifest['dump']['file']
+    if core_backup.sha256(dump) != manifest['dump']['sha256']:
+        raise RuntimeError('dump_hash_mismatch')
     live = json.loads(psql(deploy.DB, PROPERTIES))
     token, password, owner_password = secrets.token_hex(8), secrets.token_hex(16), secrets.token_hex(16)
     with socket.socket() as s:
@@ -52,6 +54,8 @@ def main():
             if subprocess.run(['docker', 'exec', container, 'pg_isready', '-U', 'postgres', '-h', '127.0.0.1'],
                               capture_output=True).returncode == 0: break
             time.sleep(1)
+        else:
+            raise RuntimeError('disposable_database_not_ready')
         psql(container, f"CREATE ROLE miy_core LOGIN PASSWORD '{owner_password}'")
         psql(container, f'CREATE DATABASE miy_core {deploy.DB_PROPERTIES}')
         psql(container, 'REVOKE ALL ON DATABASE miy_core FROM PUBLIC')
@@ -69,24 +73,33 @@ def main():
         mismatched = sorted(t for t in set(manifest['tables']) | set(restored['tables'])
                             if manifest['tables'].get(t) != restored['tables'].get(t))
         properties = json.loads(psql(container, PROPERTIES))
+        # Only this disposable rehearsal briefly reopens the preserved copy to
+        # prove its data survived. Production restore_database leaves it closed.
+        psql(container, f'ALTER DATABASE {kept} ALLOW_CONNECTIONS true')
+        try:
+            kept_has_probe = psql(container, "SELECT count(*) FROM groups WHERE name = 'rollback probe'", kept) == '1'
+        finally:
+            psql(container, f'ALTER DATABASE {kept} ALLOW_CONNECTIONS false')
         result.update({
             'migrateExitCode': migrate.returncode, 'migratedVersion': int(migrated),
             'restoredVersion': restored['migrationVersion'], 'tables': len(restored['tables']),
             'mismatchedTables': mismatched,
             'groupsTableGone': psql(container, "SELECT to_regclass('public.groups') IS NULL", 'miy_core') == 't',
-            'keptDatabaseHasProbe': psql(container, "SELECT count(*) FROM groups WHERE name = 'rollback probe'", kept) == '1',
+            'keptDatabaseHasProbe': kept_has_probe,
+            # The failed DB stays closed to prevent reconnects; inspect its catalog entry.
+            'keptDatabaseClosed': psql(container, f"SELECT NOT datallowconn FROM pg_database WHERE datname = '{kept}'") == 't',
             'propertiesMatchLive': properties == live, 'properties': properties,
         })
         ok = (migrate.returncode == 0 and result['migratedVersion'] == 19 and result['restoredVersion'] == 17
-              and not mismatched and result['groupsTableGone'] and result['keptDatabaseHasProbe']
+              and not mismatched and result['groupsTableGone'] and result['keptDatabaseHasProbe'] and result['keptDatabaseClosed']
               and result['propertiesMatchLive'])
         result['status'] = 'PASS' if ok else 'FAIL'
+    except Exception:
+        result['failureCategory'] = 'rollback_rehearsal_failed'
     finally:
-        labels = subprocess.run(['docker', 'inspect', '-f', f'{{{{ index .Config.Labels "{LABEL}" }}}}', container],
-                                capture_output=True, text=True).stdout.strip()
-        if labels == token:
-            subprocess.run(['docker', 'rm', '-f', '-v', container], capture_output=True)
-        result['containerRemoved'] = subprocess.run(['docker', 'inspect', container], capture_output=True).returncode != 0
+        result.update(core_backup.cleanup_container(container, LABEL, token))
+        if not result['containerRemoved']:
+            result['status'] = 'FAIL'
     print(json.dumps(result))
     return 0 if result['status'] == 'PASS' and result['containerRemoved'] else 1
 

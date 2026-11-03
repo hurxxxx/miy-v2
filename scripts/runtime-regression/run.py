@@ -43,8 +43,29 @@ try:
         "workingTreeDirty": bool(subprocess.check_output(["git", "status", "--porcelain"], cwd=repo)),
         "binarySha256": hashlib.sha256(binary.read_bytes()).hexdigest(),
     }, indent=2))
-    args = [cargo, "test", "--offline", "--locked", "--workspace",
-            "runtime_regression::isolated_runtime_regression", "--", "--exact",
+    # Worker subprocesses re-execute the test binary. Pin it outside Cargo's
+    # shared target directory just like the CLI: another build can replace that
+    # directory's executable while this long-running suite is still using it.
+    with (root / "evidence/test-build.log").open("w") as log:
+        build = subprocess.run(
+            [cargo, "test", "--offline", "--locked", "-p", "miy", "--bin", "miy",
+             "--no-run", "--message-format=json"],
+            cwd=repo, env=env, stdout=subprocess.PIPE, stderr=log, text=True)
+        log.write(build.stdout)
+        build.check_returncode()
+    artifacts = [json.loads(line) for line in build.stdout.splitlines() if line.startswith("{")]
+    executables = [row["executable"] for row in artifacts
+                   if row.get("reason") == "compiler-artifact" and row.get("profile", {}).get("test")
+                   and row.get("target", {}).get("name") == "miy" and row.get("executable")]
+    if len(executables) != 1:
+        raise RuntimeError("expected exactly one runtime test executable")
+    test_binary = root / "bin/miy-runtime-tests"
+    shutil.copy2(executables[0], test_binary)
+    (root / "evidence/test-identity.json").write_text(json.dumps({
+        "binarySha256": hashlib.sha256(test_binary.read_bytes()).hexdigest(),
+        "isolatedExecutable": str(test_binary),
+    }, indent=2))
+    args = [str(test_binary), "runtime_regression::isolated_runtime_regression", "--exact",
             "--ignored", "--nocapture", "--test-threads=1"]
     with (root / "evidence/integration.log").open("w") as log:
         result_code = subprocess.run(args, cwd=repo, env=env, stdout=log,
@@ -55,7 +76,7 @@ try:
     counts = {suite: sum(row.get("evidence", {}).get("suite", "runtime") == suite for row in rows)
               for suite in ("runtime", "operations", "cli", "auth", "permissions", "delegation")}
     print(json.dumps({"observations": len(rows), "suites": counts}))
-    if counts != {"runtime": 39, "operations": 6, "cli": 6, "auth": 8, "permissions": 14, "delegation": 4} or any(row["status"] != "PASS" for row in rows):
+    if counts != {"runtime": 42, "operations": 6, "cli": 6, "auth": 8, "permissions": 17, "delegation": 4} or any(row["status"] != "PASS" for row in rows):
         result_code = result_code or 1
 except KeyboardInterrupt:
     result_code = 130

@@ -54,7 +54,7 @@ pub struct Transaction {
     root: PathBuf,
     id: String,
     recovered: bool,
-    _lock: File,
+    _lock: crate::cli_guidance::OperationLock,
 }
 
 #[derive(Clone, Copy, PartialEq, Deserialize, Serialize)]
@@ -733,7 +733,13 @@ mod tests {
         transaction.apply_one(&mut journal, 1).unwrap();
         std::fs::write(root.path().join("b"), "user-edit").unwrap();
         drop(transaction);
-        assert!(begin(root.path()).is_err());
+        let error = begin(root.path())
+            .err()
+            .expect("recovery must preserve the edit");
+        assert_eq!(
+            error.downcast_ref::<CliError>().unwrap().code,
+            "file_transaction_recovery_required"
+        );
         assert_eq!(std::fs::read(root.path().join("a")).unwrap(), b"old-a");
         assert_eq!(std::fs::read(root.path().join("b")).unwrap(), b"user-edit");
         assert!(root.path().join(JOURNAL).exists());

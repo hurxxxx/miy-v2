@@ -1,10 +1,25 @@
-//! Test-only integration harness. Product implementations are imported unchanged.
+//! Integration harness with real runtimes and test-only lost-acknowledgement hooks.
 use crate::{State, auth, domain, runtime, runtime_health};
 use anyhow::{Context, Result, ensure};
 use serde_json::{Value, json};
 use sqlx::{Connection, Executor, Row};
 use std::{path::PathBuf, sync::Arc, time::Duration};
 use uuid::Uuid;
+
+// The test-only hook returns a transport error after a real PostgreSQL write has
+// committed. It models a lost acknowledgement without changing the persisted
+// state or exposing failure injection in a production binary.
+static DEPLOY_ACK_LOSS: std::sync::Mutex<Option<(Uuid, &'static str)>> =
+    std::sync::Mutex::new(None);
+
+pub(crate) fn deployment_write_ack(job: Uuid, stage: &'static str) -> Result<()> {
+    let mut loss = DEPLOY_ACK_LOSS.lock().unwrap();
+    if *loss == Some((job, stage)) {
+        *loss = None;
+        return Err(sqlx::Error::Io(std::io::ErrorKind::ConnectionReset.into()).into());
+    }
+    Ok(())
+}
 
 fn root() -> PathBuf {
     std::env::var("MIY_AUDIT_ROOT").unwrap().into()
@@ -433,6 +448,77 @@ async fn deployed(s: &State, p: &auth::Principal, image: &str, key: &str) -> Res
     let result = finish(&s.pool, id).await?;
     ensure!(result["status"] == "succeeded", "{key}: {result}");
     inst(&s.pool, "dev").await
+}
+
+async fn lost_deployment_acknowledgements(
+    s: &State,
+    p: &auth::Principal,
+    image: &str,
+) -> Result<()> {
+    for stage in ["before_stop", "before_start", "after_start"] {
+        let before = inst(&s.pool, "dev").await?;
+        let name = before["runtimeContainer"].as_str().unwrap();
+        let original = runtime::inspect(name).await?;
+        ensure!(original["State"]["Running"] == true);
+        let id = submit(
+            s,
+            p,
+            "deploy",
+            "dev",
+            Some(image),
+            None,
+            &format!("lost-ack-{stage}"),
+        )
+        .await?;
+        *DEPLOY_ACK_LOSS.lock().unwrap() = Some((id, stage));
+        let failed = finish(&s.pool, id).await?;
+        ensure!(
+            DEPLOY_ACK_LOSS.lock().unwrap().take().is_none(),
+            "ack loss was not reached"
+        );
+        ensure!(
+            failed["status"] == "failed",
+            "ack-loss job should not claim success"
+        );
+        let at_failure = runtime::inspect(name).await?;
+        // Exercise both subsequent reconciliation and worker recovery. Neither
+        // may remove/stop a container merely because the write result was unknown.
+        runtime::reconcile(&s.pool).await?;
+        runtime::recover(&s.pool).await?;
+        runtime::reconcile(&s.pool).await?;
+        let after = runtime::inspect(name).await?;
+        let current = inst(&s.pool, "dev").await?;
+        let expected_running = stage != "before_start";
+        let preserved = after["Id"] == at_failure["Id"]
+            && after["State"]["Running"] == expected_running
+            && after["State"]["StartedAt"] == at_failure["State"]["StartedAt"]
+            && after["State"]["FinishedAt"] == at_failure["State"]["FinishedAt"]
+            && current["desiredState"] == "running"
+            && current["runtimeStatus"]
+                == if expected_running {
+                    "running"
+                } else {
+                    "stopped"
+                }
+            && (stage != "before_stop"
+                || (after["Id"] == original["Id"] && current["releaseId"] == before["releaseId"]));
+        report(
+            &format!("lost deployment acknowledgement {stage} preserves the observed container"),
+            preserved,
+            json!({"job":failed,"installation":current,"sameContainerAfterReconcile":after["Id"]==at_failure["Id"],"running":after["State"]["Running"]}),
+        );
+        ensure!(
+            preserved,
+            "reconciliation changed an uncertain deployment's container"
+        );
+        if !expected_running {
+            let start = submit(s, p, "start", "dev", None, None, "start-after-lost-ack").await?;
+            ensure!(finish(&s.pool, start).await?["status"] == "succeeded");
+        }
+        runtime_health::scan(&s.pool, &runtime_health::client()?).await?;
+        ensure!(inst(&s.pool, "dev").await?["healthStatus"] == "healthy");
+    }
+    Ok(())
 }
 fn worker(failpoint: Option<&str>, crash_remove: Option<&str>) -> Result<tokio::process::Child> {
     let mut c = tokio::process::Command::new(std::env::current_exe()?);
@@ -916,6 +1002,7 @@ async fn isolated_runtime_regression() -> Result<()> {
         j["status"] == "failed" && after["Id"] == docker["Id"] && after["State"]["Running"] == true,
         j,
     );
+    lost_deployment_acknowledgements(&s, &dev, &first).await?;
     let updated = deployed(&s, &dev, &image("v2"), "update-v2").await?;
     let devvalue: String = sqlx::query_scalar("SELECT value FROM app.records WHERE id=1")
         .fetch_one(&mut devdb)

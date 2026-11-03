@@ -154,8 +154,22 @@ python3 scripts/check-db-connections.py
 ```
 
 - `create`: 운영 `miy_core`를 서비스 중지 없이 읽기만 한다. 덤프와 테이블별 행 수를 같은 REPEATABLE READ 스냅샷에서 얻어 `manifest.json`에 기록한다. 덤프와 manifest는 0600, 폴더는 0700이다.
-- `verify`: 라벨을 붙인 일회용 PostgreSQL(tmpfs)에 복원해 migration 버전과 모든 테이블 행 수를 대조한다. `--migrate-with`를 주면 반영할 바이너리의 core migration을 복원본에 먼저 적용해 리허설한다. 만든 컨테이너만 지운다.
+- `verify`: 라벨을 붙인 일회용 PostgreSQL(tmpfs)에 복원해 migration 버전과 모든 테이블 행 수를 대조한다. `--migrate-with`를 주면 반영할 바이너리의 core migration을 복원본에 먼저 적용해 리허설한다. 소유 라벨과 전체 컨테이너 ID가 일치할 때만 지우고, 성공한 목록 조회로 부재를 확인해야 정리 완료로 보고한다. Docker 연결·조회 오류나 삭제 실패는 `FAIL`이며 `cleanupError`를 남긴다.
 - 첫 실행(2026-11-03 21:57 KST): 덤프 214,693 bytes, migration 17, 테이블 35개·행 1,365개. 복원 대조 PASS, 현재 소스 바이너리로 migration 리허설 종료코드 0, 일회용 컨테이너 삭제. 행 수 하나를 바꾼 manifest는 FAIL로 거부됐다.
 - 서비스를 멈춘 상태의 일관된 덤프가 필요한 실제 반영은 [0.7.0 배포 스크립트](releases/evidence/core-0.7.0-linux/deploy.py)처럼 반영 절차 안에서 다시 백업한다.
 
-`check-db-connections.py`는 공유 PostgreSQL의 최악의 연결 수(코어 풀·Keycloak 풀·설치 역할 한도·활성 개발 세션)를 사용 가능 연결과 비교한다. 2026-11-03 운영 결과는 FAIL이다. 설치 역할 14개에 연결 한도가 없고, Keycloak 풀이 기본값 100이라 최악 122가 사용 가능한 97을 넘는다. 새 코어를 반영한 뒤 각 앱의 다음 배포에서 역할 한도(runtime 6, migration 2)가 적용되고, Keycloak을 `KC_DB_POOL_MAX_SIZE=10`으로 다시 만들면 최악 88이 된다. 두 작업 모두 운영 반영 요청 때 함께 수행한다.
+`check-db-connections.py`는 공유 PostgreSQL의 최악의 연결 수(코어 풀·병렬 관리 연결·Keycloak 풀·설치 역할 한도·활성 개발 세션)를 사용 가능 연결과 비교한다. 2026-11-03 운영 결과는 FAIL이었다. 당시 설치 역할 14개에 연결 한도가 없고, Keycloak 풀이 기본값 100이라 당시 계산의 최악 122가 사용 가능한 97을 넘었다. 현재 계산은 관리 연결 4개를 포함하며 [연결 예산](CAPACITY.md#연결-예산-현재-구현-2026-11-04)을 따른다.
+
+새 코어는 앱 배포뿐 아니라 worker 시작 때도 기존 설치 역할 한도(runtime 6, migration 2)를 맞춘다. 코어가 생성하는 `miy_r_`·`miy_m_`와 32자리 소문자 16진수 ID 형식만 허용한다. 시작 시 적용이 실패하면 경고를 기록하고 다음 worker 시작 또는 해당 앱 배포 때 다시 적용한다. compose는 PostgreSQL `max_connections=200`, Keycloak `KC_DB_POOL_MAX_SIZE=10`을 설정한다. 소스 변경만으로 기존 운영 설정이나 역할 한도가 바뀌지 않으므로 운영 반영 후 예산을 다시 측정한다.
+
+## 7. 7d3c66a 전용 배포·복구 도구의 범위
+
+[배포 도구](releases/evidence/core-0.7.0-7d3c66a-linux/deploy.py)는 해당 소스의 0.7.0 서버와 core migration 17→19를 위한 특정 호스트 도구다. 이후 소스의 배포 검증이나 범용 updater로 취급하지 않는다. 2026-11-04 리뷰 보완은 이 도구를 실행해 운영에 반영한 기록이 아니다.
+
+- 단일 실행 잠금과 새로운 복구 디렉터리를 요구하며, 기존 `rollback`이 있으면 덮어쓰지 않는다. 후보 바이너리를 복사해 검증·migration·설치가 같은 바이트를 사용한다.
+- 서비스 중지 전 DB 소유자·UTF8·locale·libc provider·PUBLIC 권한 회수가 복원 계약과 같은지 확인한다. serve·worker 각각의 중지와 시작 상태를 확인한다.
+- 코어 중지 후 `rollback/core/miy_core.dump`를 만들고, 일회용 PostgreSQL에서 실제 복원·migration 검증과 정리를 통과한 뒤 운영 설정·schema 변경을 시작한다.
+- 복구 시 현재 DB의 재접속을 막고 고유 이름으로 보존한 뒤 빈 DB에 덤프를 복원한다. 덤프·기존 바이너리 해시와 복원 성공을 확인하기 전 서비스를 다시 시작하지 않는다. 복구에 실패하면 `ROLLBACK_FAILED`를 기록하고 수동 복구가 필요하다.
+- PostgreSQL 설정 변경은 기존 컨테이너를 재시작해 앱별 네트워크 연결을 보존한다. 실행 중 앱의 DB 연결에는 영향이 있으므로 별도 운영 반영 절차로 수행한다. 전원 장애·SIGKILL 이후 자동 복구는 구현 범위에 없다.
+
+현재 소스의 모의 시험과 합성 DB 복원 결과는 [리뷰 후 검증 기록](releases/core-review-2026-11-04-validation.json)으로 관리한다. 운영 배포와 실제 Windows 인수는 별도다.
