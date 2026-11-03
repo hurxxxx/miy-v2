@@ -1,0 +1,58 @@
+/*
+ * Remote apps share this document. Only the rules in this file are global:
+ * they are the baseline existing apps already render with (box-sizing, body
+ * font/background/color, link color, button font). Every other rule targets
+ * shell or platform classes. Apps render inside .miy-app-root, which restores
+ * the app baseline so the shell font, size and line height never reach them.
+ */
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+  font-family: var(--miy-app-font);
+  background: var(--miy-background);
+  color: var(--miy-text);
+}
+a {
+  color: var(--miy-accent);
+  text-decoration: none;
+}
+button {
+  font: inherit;
+}
+
+/* Shell typography scope. */
+.shell,
+.boot,
+.login-page,
+.cli-install-public,
+.shell-dialog,
+.rail-tooltip {
+  font-family: var(--shell-font);
+  color: var(--shell-ink);
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+.miy-app-root {
+  min-width: 0;
+  font-family: var(--miy-app-font);
+  font-size: 16px;
+  font-weight: normal;
+  line-height: normal;
+  letter-spacing: normal;
+  color: var(--miy-text);
+  -webkit-font-smoothing: auto;
+}
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}

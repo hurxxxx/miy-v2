@@ -1,0 +1,436 @@
+/* Platform pages. Selectors are page classes, never bare elements. */
+.boot {
+  max-width: 560px;
+  margin: 12vh auto;
+  padding: 0 var(--shell-space-4);
+}
+
+.page-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--shell-space-3);
+  margin-bottom: var(--shell-space-6);
+}
+.page-header h1 {
+  margin: 0;
+  font-size: 24px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+.page-header p {
+  margin: var(--shell-space-1) 0 0;
+  color: var(--shell-ink-subtle);
+}
+.page-section-title {
+  margin: var(--shell-space-8) 0 var(--shell-space-3);
+  font-size: 16px;
+  font-weight: 700;
+}
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(300px, 100%), 1fr));
+  gap: var(--shell-space-4);
+}
+.grid > .ui-panel + .ui-panel {
+  margin-top: 0;
+}
+
+/* Login */
+.login-page {
+  display: flex;
+  min-height: 100vh;
+  align-items: center;
+  justify-content: center;
+  padding: var(--shell-space-6) var(--shell-space-4);
+  background:
+    radial-gradient(circle at 15% 10%, rgba(37, 99, 235, 0.08), transparent 40%),
+    radial-gradient(circle at 85% 90%, rgba(124, 58, 237, 0.07), transparent 40%),
+    var(--shell-surface-subtle);
+}
+.login-card {
+  width: min(440px, 100%);
+  padding: var(--shell-space-8);
+  border: 1px solid var(--shell-border);
+  border-radius: 18px;
+  background: var(--shell-surface);
+  box-shadow: var(--shell-shadow-lg);
+}
+.login-brand {
+  display: inline-flex;
+  margin: 0 0 var(--shell-space-4);
+  padding: 6px 12px;
+  border-radius: 10px;
+  background: var(--shell-bg-strong);
+  color: #fff;
+  font-size: 18px;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+}
+.login-card h1 {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 800;
+}
+.login-lead {
+  margin: var(--shell-space-1) 0 var(--shell-space-5);
+  color: var(--shell-ink-subtle);
+}
+.quick-accounts {
+  display: grid;
+  gap: var(--shell-space-2);
+  margin: var(--shell-space-4) 0;
+}
+.account-button {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 14px 16px;
+  border: 1px solid var(--shell-border);
+  border-radius: var(--shell-radius-lg);
+  background: var(--shell-surface);
+  color: var(--shell-ink);
+  font-family: var(--shell-font);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color var(--shell-motion), background var(--shell-motion);
+}
+.account-button strong {
+  font-size: 15px;
+}
+.account-button span {
+  color: var(--shell-ink-subtle);
+  font-size: 13px;
+}
+.account-button.primary {
+  background: var(--shell-accent);
+  border-color: var(--shell-accent);
+  color: var(--shell-accent-fg);
+}
+.account-button.primary span {
+  color: #cbd5e1;
+}
+.account-button:hover:not(:disabled) {
+  border-color: var(--shell-border-strong);
+}
+.account-button:focus-visible {
+  outline: none;
+  box-shadow: var(--shell-focus-ring);
+}
+.account-button:disabled {
+  cursor: wait;
+  opacity: 0.6;
+}
+.login-primary {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  margin-top: var(--shell-space-2);
+  border-radius: var(--shell-radius-lg);
+  background: var(--shell-accent);
+  color: var(--shell-accent-fg);
+  font-weight: 700;
+}
+.login-primary:hover {
+  background: var(--shell-accent-hover);
+}
+.login-primary.oauth-link {
+  min-height: 36px;
+  background: transparent;
+  color: var(--shell-ink-subtle);
+  font-weight: 600;
+}
+.login-footer {
+  display: flex;
+  justify-content: center;
+  margin-top: var(--shell-space-5);
+  padding-top: var(--shell-space-4);
+  border-top: 1px solid var(--shell-border);
+  font-size: 13px;
+}
+.login-footer a {
+  color: var(--shell-ink-subtle);
+}
+.login-card [role="alert"] {
+  margin: var(--shell-space-3) 0;
+  padding: var(--shell-space-3);
+  border-radius: var(--shell-radius-md);
+  background: var(--shell-danger-bg);
+  color: var(--shell-danger-text);
+}
+
+/* Home launcher */
+.app-card .ui-panel-heading {
+  justify-content: flex-start;
+}
+.app-card-title {
+  display: flex;
+  align-items: center;
+  gap: var(--shell-space-3);
+  min-width: 0;
+}
+.app-card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--shell-space-2);
+  margin-bottom: var(--shell-space-3);
+}
+.app-card-meta code {
+  font-family: var(--shell-font-mono);
+  font-size: 12px;
+  color: var(--shell-ink-subtle);
+}
+.app-card-open {
+  display: inline-flex;
+  margin-top: var(--shell-space-3);
+  padding: 8px 14px;
+  border-radius: var(--shell-radius-md);
+  background: var(--shell-accent);
+  color: var(--shell-accent-fg);
+  font-weight: 700;
+}
+.app-card-open:hover {
+  background: var(--shell-accent-hover);
+}
+.app-card-open:focus-visible {
+  outline: none;
+  box-shadow: var(--shell-focus-ring);
+}
+.runtime-health {
+  margin-top: var(--shell-space-2);
+  padding: var(--shell-space-3);
+  border-radius: var(--shell-radius-md);
+  background: var(--shell-surface-subtle);
+  font-size: 13px;
+}
+.runtime-health p {
+  margin: 0;
+  color: var(--shell-ink-muted);
+}
+.runtime-health p + p {
+  margin-top: 2px;
+}
+.runtime-health.is-unhealthy {
+  background: var(--shell-danger-bg);
+}
+.runtime-health.is-unhealthy p {
+  color: var(--shell-danger-text);
+}
+.runtime-controls {
+  margin-top: var(--shell-space-3);
+  padding-top: var(--shell-space-3);
+  border-top: 1px solid var(--shell-border);
+  font-size: 13px;
+}
+.runtime-controls > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--shell-space-2);
+}
+.runtime-controls p {
+  margin: var(--shell-space-2) 0 0;
+}
+.runtime-controls [role="alert"] {
+  color: var(--shell-danger-text);
+}
+.runtime-image {
+  margin: 0 0 var(--shell-space-2) !important;
+  font-family: var(--shell-font-mono);
+  font-size: 12px;
+  color: var(--shell-ink-subtle) !important;
+  overflow-wrap: anywhere;
+}
+
+/* App session chrome above the app container */
+.app-session-bar {
+  margin-bottom: var(--shell-space-4);
+}
+
+/* Admin */
+.admin-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: var(--shell-space-4);
+  align-items: start;
+}
+.admin-grid > .ui-panel + .ui-panel {
+  margin-top: 0;
+}
+.registration-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--shell-space-2);
+  padding: var(--shell-space-3) 0;
+  border-top: 1px solid var(--shell-border);
+}
+.registration-row:first-of-type {
+  border-top: 0;
+}
+.registration-row p {
+  margin: 0;
+}
+.registration-actions {
+  display: flex;
+  gap: var(--shell-space-2);
+}
+.grant-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--shell-space-3);
+}
+.grant-form-actions {
+  display: flex;
+  grid-column: 1 / -1;
+  justify-content: flex-end;
+}
+.status-message {
+  margin: var(--shell-space-4) 0;
+  color: var(--shell-ink-muted);
+}
+.ui-empty-inline {
+  margin: 0;
+  color: var(--shell-ink-subtle);
+}
+@media (max-width: 1023px) {
+  .admin-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+@media (max-width: 480px) {
+  .grant-form {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* CLI install (public and signed in) */
+.cli-install-public {
+  min-height: 100vh;
+  background: var(--shell-surface-subtle);
+}
+.public-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--shell-space-3);
+  padding: var(--shell-space-4) clamp(16px, 5vw, 56px);
+  border-bottom: 1px solid var(--shell-border);
+  background: var(--shell-bg);
+}
+.public-bar .brand {
+  font-size: 22px;
+}
+.cli-install-public > main {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: var(--shell-space-8) clamp(16px, 5vw, 56px) 48px;
+}
+.cli-install {
+  max-width: 1080px;
+  min-width: 0;
+}
+.cli-install h1 {
+  margin: 0 0 var(--shell-space-2);
+  font-size: 24px;
+  font-weight: 800;
+}
+.cli-install p,
+.cli-install li {
+  line-height: 1.7;
+  overflow-wrap: anywhere;
+}
+.cli-install > p {
+  color: var(--shell-ink-muted);
+}
+.cli-install .ui-panel {
+  margin-top: var(--shell-space-4);
+}
+.cli-install details {
+  margin-top: var(--shell-space-4);
+}
+.cli-install summary {
+  cursor: pointer;
+  font-weight: 700;
+}
+.cli-install code {
+  font-family: var(--shell-font-mono);
+  font-size: 13px;
+}
+.cli-install-download {
+  display: inline-block;
+  padding: 10px 18px;
+  border-radius: var(--shell-radius-md);
+  background: var(--shell-accent);
+  color: var(--shell-accent-fg);
+  font-weight: 700;
+}
+.cli-install-download:hover {
+  background: var(--shell-accent-hover);
+}
+.cli-install-platforms {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(320px, 100%), 1fr));
+  gap: var(--shell-space-4);
+  margin: var(--shell-space-4) 0;
+}
+.cli-install-platforms > * {
+  min-width: 0;
+}
+.cli-install-platforms > .ui-panel {
+  margin-top: 0;
+}
+.cli-install-command pre {
+  margin: var(--shell-space-2) 0;
+  padding: var(--shell-space-4);
+  border-radius: var(--shell-radius-md);
+  background: var(--shell-bg-strong);
+  color: #e5e7eb;
+  font-family: var(--shell-font-mono);
+  font-size: 13px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.cli-install-command [role="status"] {
+  font-size: 13px;
+}
+
+/* CLI approval */
+.cli-approval {
+  max-width: 640px;
+  line-height: 1.7;
+  overflow-wrap: anywhere;
+}
+.cli-approval input {
+  display: block;
+  width: min(100%, 320px);
+  min-height: 42px;
+  margin: var(--shell-space-2) 0 var(--shell-space-4);
+  padding: 0 var(--shell-space-3);
+  border: 1px solid var(--shell-border);
+  border-radius: var(--shell-radius-md);
+  font-family: var(--shell-font-mono);
+  font-size: 16px;
+  letter-spacing: 0.08em;
+}
+.cli-approval input:focus-visible {
+  outline: none;
+  box-shadow: var(--shell-focus-ring);
+}
+.cli-approval-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--shell-space-3);
+}
+.cli-approval pre {
+  padding: var(--shell-space-3);
+  border-radius: var(--shell-radius-md);
+  background: var(--shell-surface-subtle);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}

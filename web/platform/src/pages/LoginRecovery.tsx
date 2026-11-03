@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useLocation } from "@tanstack/react-router";
 import { request } from "@miy/sdk";
-import { Button, Panel } from "@miy/ui";
+import { Button, Panel } from "../ui";
 
 export function LoginRecovery() {
   const reason = new URLSearchParams(window.location.search).get("login");

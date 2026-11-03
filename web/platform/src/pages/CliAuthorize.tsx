@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useLocation } from "@tanstack/react-router";
 import { request } from "@miy/sdk";
-import { Button, Panel } from "@miy/ui";
+import { Button, Panel } from "../ui";
 import { useUser } from "../data/session";
 import { CliDeviceApproval } from "./LoginRecovery";
 

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { request, type Installation } from "@miy/sdk";
-import { Button } from "@miy/ui";
+import { Button, useConfirm } from "../ui";
 import { requestId } from "../lib/paths";
 
 const labels: Record<string, string> = {
@@ -21,7 +21,8 @@ export function RuntimeControls({
 }) {
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
-  async function control(action: string) {
+  const { confirm, dialog } = useConfirm();
+  async function control(action: string, trigger: HTMLElement) {
     setBusy(action);
     setError("");
     try {
@@ -34,10 +35,25 @@ export function RuntimeControls({
         },
       );
       if (!plan.canSubmit) throw new Error("현재 상태에서 실행할 수 없습니다. 새로고침 후 확인하세요.");
+      const needsConfirmation = app.environment === "prod" || action === "remove";
+      // The dialog names the exact target the preflight inspected.
       if (
-        (app.environment === "prod" || action === "remove") &&
-        !window.confirm(`${app.name} (${app.appId}) / ${app.environment}: ${action} 실행
-실행 중인 앱에 영향을 줍니다. 데이터베이스와 업무 데이터는 보존됩니다. 계속할까요?`)
+        needsConfirmation &&
+        !(await confirm({
+          title: `${labels[action]} 실행 확인`,
+          body: (
+            <>
+              <p>
+                대상: <strong>{app.name}</strong> (<code>{app.appId}</code>) · 환경: <strong>{app.environment}</strong>
+              </p>
+              <p>작업: {action}</p>
+              <p>실행 중인 앱에 영향을 줍니다. 데이터베이스와 업무 데이터는 보존됩니다.</p>
+            </>
+          ),
+          confirmLabel: labels[action]!,
+          returnFocus: trigger,
+          tone: action === "remove" || action === "stop" ? "danger" : "primary",
+        }))
       )
         return;
       const job = await request<{ id: string }>(`/api/v1/apps/${app.appId}/runtime`, csrf, {
@@ -46,7 +62,7 @@ export function RuntimeControls({
           action,
           environment: app.environment,
           expectedState: plan.expectedState,
-          confirmed: app.environment === "prod" || action === "remove",
+          confirmed: needsConfirmation,
           idempotencyKey: requestId(),
         }),
       });
@@ -73,16 +89,17 @@ export function RuntimeControls({
     return <p>앱 실행 환경이 제거됐습니다. DB는 보존됩니다. CLI에서 다시 배포할 수 있습니다.</p>;
   return (
     <div className="runtime-controls">
-      <p>{app.imageId?.slice(0, 22)}…</p>
+      {app.imageId && <p className="runtime-image">{app.imageId.slice(0, 22)}…</p>}
       <div>
         {(app.runtimeStatus === "running" ? ["stop", "restart", "remove"] : ["start", "remove"]).map((action) => (
-          <Button key={action} disabled={!!busy} onClick={() => control(action)}>
+          <Button key={action} size="sm" disabled={!!busy} onClick={(event) => control(action, event.currentTarget)}>
             {labels[action]}
           </Button>
         ))}
       </div>
       {busy && <p role="status">Docker 작업을 처리하고 있습니다…</p>}
-      {error && <p role="alert">{error}</p>}
+      {error && <p role="alert">작업을 완료하지 못했습니다: {error}</p>}
+      {dialog}
     </div>
   );
 }

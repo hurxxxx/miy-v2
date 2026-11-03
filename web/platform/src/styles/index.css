@@ -1,0 +1,6 @@
+@import "pretendard/dist/web/variable/pretendardvariable-dynamic-subset.css";
+@import "./tokens.css";
+@import "./base.css";
+@import "./components.css";
+@import "./shell.css";
+@import "./pages.css";

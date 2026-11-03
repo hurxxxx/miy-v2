@@ -1,7 +1,7 @@
 import React, { Component, Suspense, useEffect, useMemo, useState } from "react";
 import { Link, useLocation, useRouter } from "@tanstack/react-router";
 import { appTarget, createNavigationGuards, request, type AppRuntime, type Installation } from "@miy/sdk";
-import { Button, Panel } from "@miy/ui";
+import { Button, Loading, Notice, Panel } from "../ui";
 import { useUser } from "../data/session";
 import { currentEnvironment, environmentPath } from "../lib/paths";
 import { activeGuards } from "../lib/navigation-guards";
@@ -168,15 +168,20 @@ function AppSession({ appId, environment, basePath }: { appId: string; environme
   if (loadFailed)
     return (
       <Panel title="앱 정보를 불러오지 못했습니다">
-        <div role="alert">
-          <p>연결 상태를 확인한 뒤 다시 시도하세요.</p>
-          <Button type="button" onClick={() => setAttempt((value) => value + 1)}>
-            다시 시도
-          </Button>
-        </div>
+        <Notice
+          role="alert"
+          tone="danger"
+          actions={
+            <Button size="sm" onClick={() => setAttempt((value) => value + 1)}>
+              다시 시도
+            </Button>
+          }
+        >
+          <p>연결 상태를 확인한 뒤 다시 시도하세요. 앱 접근 권한은 바뀌지 않았습니다.</p>
+        </Notice>
       </Panel>
     );
-  if (app === undefined) return <p className="load-pending">앱을 불러오는 중…</p>;
+  if (app === undefined) return <Loading>앱을 불러오는 중…</Loading>;
   if (!app || !runtime)
     return (
       <Panel title="앱에 접근할 수 없습니다">
@@ -187,7 +192,7 @@ function AppSession({ appId, environment, basePath }: { appId: string; environme
     return (
       <Panel title="앱이 실행 중이 아닙니다">
         <p>현재 상태: {app.runtimeStatus}. 홈의 앱 관리에서 시작할 수 있습니다.</p>
-        <Link to="/">홈으로</Link>
+        <Link to={environmentPath(environment) as "/"}>홈으로</Link>
       </Panel>
     );
   let View: ReturnType<typeof remote>;
@@ -202,13 +207,24 @@ function AppSession({ appId, environment, basePath }: { appId: string; environme
   }
   return (
     <>
-      {updated && (
-        <Panel title="앱 상태가 변경되었습니다">
-          <p>작성 중인 내용을 확인한 뒤 최신 상태로 다시 열어주세요. 현재 화면의 API 호출은 중지됩니다.</p>
-          <Button onClick={() => window.location.reload()}>새로고침</Button>
-        </Panel>
-      )}
-      <RuntimeHealth app={{ ...app, health }} />
+      <div className="app-session-bar">
+        {updated && (
+          <Notice
+            tone="warning"
+            actions={
+              <Button size="sm" variant="primary" onClick={() => window.location.reload()}>
+                새로고침
+              </Button>
+            }
+          >
+            <p>
+              <strong>앱 상태가 변경되었습니다</strong>
+            </p>
+            <p>작성 중인 내용을 확인한 뒤 최신 상태로 다시 열어주세요. 현재 화면의 API 호출은 중지됩니다.</p>
+          </Notice>
+        )}
+        <RuntimeHealth app={{ ...app, health }} />
+      </div>
       {/* Apps render only inside this container; shell selectors must not reach into it. */}
       <div className="miy-app-root" data-miy-app={app.appId}>
         <Boundary key={app.releaseId}>

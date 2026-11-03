@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { request } from "@miy/sdk";
-import { Button, Panel } from "@miy/ui";
+import { Button, Panel } from "../ui";
 
 type InstallGuide = {
   schemaVersion: number;

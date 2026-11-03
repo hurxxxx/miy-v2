@@ -97,10 +97,70 @@ test("remote apps mount inside a dedicated container, not as shell main content"
   const container = page.locator('.workspace > main > .miy-app-root[data-miy-app="shell-app"]');
   await expect(container).toHaveCount(1);
   expect(await container.evaluate((node) => node.childElementCount)).toBeGreaterThan(0);
-  // The only element directly inside main from the app session is the container, plus shell status.
+  // Directly inside main: the app container and the shell's session bar only.
   expect(
     await page.locator(".workspace > main > *").evaluateAll((nodes) =>
-      nodes.filter((node) => !node.classList.contains("miy-app-root") && node.getAttribute("role") !== "status").length,
+      nodes.filter((node) => !node.classList.contains("miy-app-root") && !node.classList.contains("app-session-bar")).length,
     ),
   ).toBe(0);
+});
+
+test("runtime confirmation is a keyboard modal: Escape cancels and focus returns", async ({ page }) => {
+  const prod = { ...app, environment: "prod" as const, canManage: true };
+  const writes: string[] = [];
+  await page.route("**/api/**", async (route) => {
+    const path = new URL(route.request().url()).pathname;
+    if (route.request().method() !== "GET") writes.push(path);
+    if (path === "/api/v1/me") return route.fulfill({ json: { ...user, admin: true } });
+    if (path === "/api/v1/installations") return route.fulfill({ json: [prod] });
+    if (path.endsWith("/runtime/preflight")) return route.fulfill({ json: { canSubmit: true, expectedState: {}, changes: [] } });
+    return route.fulfill({ status: 500, json: { error: { code: "unexpected" } } });
+  });
+  await page.goto("/environments/prod");
+  const stop = page.getByRole("button", { name: "중지", exact: true });
+  await stop.click();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByRole("button", { name: "취소" })).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(dialog).toHaveCount(0);
+  await expect(stop).toBeFocused();
+  expect(writes).toEqual(["/api/v1/apps/shell-app/runtime/preflight"]);
+});
+
+test("rail shows unique monograms with accessible names and marks the current app", async ({ page }) => {
+  const apps: Installation[] = [
+    { ...app, id: "a1", appId: "docs", name: "문서 관리" },
+    { ...app, id: "a2", appId: "inquiry", name: "문의 게시판" },
+    { ...app, id: "a3", appId: "long", name: "아주 긴 이름을 가진 업무 앱 이름 표시 검증" },
+  ];
+  await mock(page, { me: () => ({ status: 200, json: user }), installations: () => ({ status: 200, json: apps }) });
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/environments/dev");
+  const rail = page.locator("#platform-navigation");
+  await expect(rail.getByRole("link", { name: "문서 관리", exact: true })).toContainText("문서");
+  await expect(rail.getByRole("link", { name: "문의 게시판", exact: true })).toContainText("문의");
+  await rail.getByRole("link", { name: "문의 게시판", exact: true }).hover();
+  await expect(page.locator(".rail-tooltip")).toHaveText("문의 게시판");
+  await rail.getByRole("link", { name: "문서 관리", exact: true }).click();
+  await expect(rail.getByRole("link", { name: "문서 관리", exact: true })).toHaveAttribute("aria-current", "page");
+  await expect(page.locator("header")).toContainText("문서 관리");
+  for (const width of [1440, 768, 390]) {
+    await page.setViewportSize({ width, height: 900 });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  }
+});
+
+test("mobile drawer closes on Escape and returns focus to the toggle", async ({ page }) => {
+  await mock(page, { me: () => ({ status: 200, json: user }), installations: () => ({ status: 200, json: [app] }) });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/environments/dev");
+  await expect(page.locator("header")).toContainText("테스트 · DEV");
+  const toggle = page.getByRole("button", { name: "메뉴 열기" });
+  await toggle.click();
+  await expect(page.locator("#platform-navigation")).toBeVisible();
+  await expect(page.locator("#platform-navigation").getByRole("link", { name: "셸 검증 앱", exact: true })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.locator("#platform-navigation")).toBeHidden();
+  await expect(page.getByRole("button", { name: "메뉴 열기" })).toBeFocused();
 });

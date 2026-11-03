@@ -1,0 +1,69 @@
+/*
+ * Light shell tokens. Values follow the AI-DO light palette (packages/ui/styles.css
+ * at ai-do dev 6dce8c7) and are re-declared here, not imported.
+ * --miy-* are the original variables apps may already read; they stay unchanged.
+ */
+:root {
+  --miy-background: #f5f7fa;
+  --miy-text: #18283c;
+  --miy-accent: #244bff;
+  --miy-border: #dce3e9;
+  /* Font that existing apps render with; the shell font never reaches them. */
+  --miy-app-font: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+
+  --shell-font: "Pretendard Variable", Pretendard, -apple-system, BlinkMacSystemFont,
+    "Apple SD Gothic Neo", "Malgun Gothic", "Segoe UI", sans-serif;
+  --shell-font-mono: "IBM Plex Mono", "JetBrains Mono", ui-monospace, monospace;
+
+  --shell-bg: #ffffff;
+  --shell-bg-strong: #1e1f21;
+  --shell-surface: #ffffff;
+  --shell-surface-subtle: #f4f6f8;
+  --shell-surface-hover: #e9edf2;
+  --shell-border: #d7dde5;
+  --shell-border-strong: #aeb8c5;
+  --shell-ink: #111827;
+  --shell-ink-muted: #374151;
+  --shell-ink-subtle: #64748b;
+
+  --shell-accent: #0f172a;
+  --shell-accent-hover: #1e293b;
+  --shell-accent-weak: #f1f5f9;
+  --shell-accent-fg: #ffffff;
+
+  --shell-info: #2563eb;
+  --shell-info-bg: #eff6ff;
+  --shell-info-border: #bfdbfe;
+  --shell-info-text: #1d4ed8;
+  --shell-success-bg: #ecfdf5;
+  --shell-success-border: #a7f3d0;
+  --shell-success-text: #047857;
+  --shell-warning: #f97316;
+  --shell-warning-bg: #fff7ed;
+  --shell-warning-border: #fed7aa;
+  --shell-warning-text: #c2410c;
+  --shell-danger: #ef4444;
+  --shell-danger-bg: #fef2f2;
+  --shell-danger-border: #fecaca;
+  --shell-danger-text: #b91c1c;
+
+  --shell-radius-sm: 6px;
+  --shell-radius-md: 8px;
+  --shell-radius-lg: 10px;
+  --shell-radius-xl: 14px;
+  --shell-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
+  --shell-shadow-lg: 0 16px 32px rgba(0, 0, 0, 0.12);
+  --shell-focus-ring: 0 0 0 3px rgba(37, 99, 235, 0.35);
+
+  --shell-space-1: 4px;
+  --shell-space-2: 8px;
+  --shell-space-3: 12px;
+  --shell-space-4: 16px;
+  --shell-space-5: 20px;
+  --shell-space-6: 24px;
+  --shell-space-8: 32px;
+
+  --shell-rail-width: 64px;
+  --shell-header-height: 64px;
+  --shell-motion: 160ms;
+}

@@ -1,6 +1,6 @@
 import { createRoot } from "react-dom/client";
 import { RouterProvider } from "@tanstack/react-router";
-import "./style.css";
+import "./styles/index.css";
 import { SessionProvider } from "./data/session";
 import { router } from "./router";
 

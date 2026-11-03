@@ -263,7 +263,7 @@ test("device approval displays origin/account and sends the typed code with CSRF
   });
   await page.goto(`/cli/device/${id}`);
   await expect(page.getByRole("heading",{name:"CLI 로그인 승인"})).toBeVisible();
-  await expect(page.getByText("승인할 계정",{exact:true})).toBeVisible();
+  await expect(page.locator("main").getByText("승인할 계정",{exact:true})).toBeVisible();
   await expect(page.getByText("http://127.0.0.1:18147",{exact:true})).toBeVisible();
   const approve=page.getByRole("button",{name:"이 계정으로 CLI 연결 승인"});
   await expect(approve).toBeDisabled();
@@ -293,12 +293,16 @@ test("production controls confirm the exact target and preserve the inspected ex
     return route.fulfill({json:[]});
   });
   await page.goto("/environments/prod");
-  page.once("dialog",async dialog=>{expect(dialog.message()).toContain("confirmed-app");expect(dialog.message()).toContain("prod");await dialog.dismiss();});
   await page.getByRole("button",{name:"중지",exact:true}).click();
+  const confirmation=page.getByRole("dialog");
+  await expect(confirmation).toContainText("confirmed-app");
+  await expect(confirmation).toContainText("prod");
+  await confirmation.getByRole("button",{name:"취소"}).click();
+  await expect(confirmation).toHaveCount(0);
   await expect(page.getByRole("button",{name:"중지",exact:true})).toBeEnabled();
   expect(mutations).toHaveLength(0);
-  page.once("dialog",async dialog=>{await dialog.accept();});
   await page.getByRole("button",{name:"중지",exact:true}).click();
+  await page.getByRole("dialog").getByRole("button",{name:"중지",exact:true}).click();
   await expect(page.getByRole("alert")).toContainText("state_changed");
   expect(mutations).toHaveLength(1);
   expect(mutations[0]).toMatchObject({action:"stop",environment:"prod",expectedState,confirmed:true});
