@@ -446,6 +446,8 @@ async fn execute(pool: &sqlx::PgPool, row: &PgRow, recovering: bool) -> Result<(
         .await?;
         tokio::fs::write(control.join("Dockerfile"), RECIPE).await?;
         let _ = tokio::fs::remove_file(&iid).await;
+        // A build pulls base images and grows the build cache on the Docker data root.
+        crate::docker_storage::preflight().await?;
         step(pool, id, "building").await?;
         server_build::append_log(pool,id,"Building with the verified worker recipe; application checks run inside offline Docker stages.\n").await?;
         let command = vec![
@@ -590,6 +592,8 @@ fn failure_code(error: &anyhow::Error, recovering: bool) -> &'static str {
             "unpublished_source_component" => return "unpublished_source_component",
             "build_platform_mismatch" => return "build_platform_mismatch",
             "build_docker_unavailable" => return "build_docker_unavailable",
+            "docker_storage_low" => return "docker_storage_low",
+            "docker_storage_unknown" => return "docker_storage_unknown",
             "bundle_version_mismatch" => return "bundle_version_mismatch",
             "missing_bundle_lock"
             | "bundle_lock_modified"
@@ -639,8 +643,10 @@ async fn finish(pool: &sqlx::PgPool, row: &PgRow, recovering: bool) -> Result<()
                 &format!("Build failed: {code}. A new explicit request is required to retry.\n"),
             )
             .await?;
-            sqlx::query("UPDATE app_builds SET status='failed',step='failed',error_code=$2,finished_at=now(),updated_at=now() WHERE id=$1 AND status='running'")
-                .bind(id).bind(code).execute(pool).await?;
+            // Clean up only after this worker recorded the failure: if the row already
+            // left 'running', a terminal receipt may reference the image (V1-O4).
+            ensure!(sqlx::query("UPDATE app_builds SET status='failed',step='failed',error_code=$2,finished_at=now(),updated_at=now() WHERE id=$1 AND status='running'")
+                .bind(id).bind(code).execute(pool).await?.rows_affected() == 1, "build_ownership_lost");
             tracing::warn!(event="server_build_failed",build_id=%id,code);
         }
     }

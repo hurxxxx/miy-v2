@@ -286,7 +286,7 @@ pub async fn close(
 pub(crate) async fn session_valid(pool: &sqlx::PgPool, id: Uuid) -> Result<bool, sqlx::Error> {
     let row=sqlx::query("SELECT d.actor,d.app_id,c.delegation_id FROM app_dev_sessions d JOIN cli_sessions c ON c.id=d.parent_session_id JOIN users u ON u.id=d.actor WHERE d.id=$1 AND d.status IN ('queued','preparing','ready') AND d.expires_at>now() AND c.user_id=d.actor AND c.revoked_at IS NULL AND c.expires_at>now() AND u.enabled AND (u.admin OR EXISTS(SELECT 1 FROM grants g WHERE g.user_id=d.actor AND g.app_id=d.app_id AND g.environment='dev' AND g.permission='develop'))").bind(id).fetch_optional(pool).await?;
     let Some(row) = row else { return Ok(false) };
-    Ok(crate::delegations::check_queued(
+    match crate::delegations::check_queued(
         pool,
         row.get("actor"),
         row.get("delegation_id"),
@@ -295,7 +295,18 @@ pub(crate) async fn session_valid(pool: &sqlx::PgPool, id: Uuid) -> Result<bool,
         crate::delegations::Action::DevSession,
     )
     .await
-    .is_ok())
+    {
+        Ok(()) => Ok(true),
+        // An unavailable check is not a revocation: reconciliation must not drop the
+        // session role or terminate its connections on it (V1-O4).
+        Err(error)
+            if crate::runtime_contract::classify_failure(&error).code
+                == crate::runtime_contract::FailureCode::DatabaseUnavailable =>
+        {
+            Err(sqlx::Error::Protocol("delegation_check_unavailable".into()))
+        }
+        Err(_) => Ok(false),
+    }
 }
 pub(crate) async fn active_for_app(pool: &sqlx::PgPool, app: &str) -> Result<bool, sqlx::Error> {
     sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM app_dev_sessions WHERE app_id=$1 AND status IN ('queued','preparing','ready') AND expires_at>now())").bind(app).fetch_one(pool).await

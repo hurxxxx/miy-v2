@@ -285,10 +285,16 @@ pub async fn tick(pool: &sqlx::PgPool) -> anyhow::Result<bool> {
     sqlx::query("UPDATE image_uploads SET status=$2,error_code=$3 WHERE id=$1")
         .bind(id)
         .bind(if result.is_ok() { "ready" } else { "failed" })
-        .bind(if result.is_ok() {
-            None
-        } else {
-            Some("image_import_failed")
+        .bind(match &result {
+            Ok(()) => None,
+            // Keep the storage floor visible: the upload can be repeated after freeing space.
+            Err(error) => Some(
+                match crate::runtime_contract::classify_failure(error).code {
+                    code @ (crate::runtime_contract::FailureCode::DockerStorageLow
+                    | crate::runtime_contract::FailureCode::DockerStorageUnknown) => code.as_str(),
+                    _ => "image_import_failed",
+                },
+            ),
         })
         .execute(pool)
         .await?;

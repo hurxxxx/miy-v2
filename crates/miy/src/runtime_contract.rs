@@ -98,6 +98,8 @@ string_enum!(FailureCode {
     ArchiveHashMismatch => "archive_hash_mismatch",
     UploadExpired => "upload_expired",
     RetryNotAllowed => "retry_not_allowed",
+    DockerStorageLow => "docker_storage_low",
+    DockerStorageUnknown => "docker_storage_unknown",
     #[serde(other)] Unknown => "unknown",
 });
 
@@ -112,7 +114,9 @@ impl FailureCode {
             Self::DatabaseUnavailable
             | Self::DockerUnavailable
             | Self::DockerTimeout
-            | Self::NetworkUnavailable => RetryClass::AfterPreflight,
+            | Self::NetworkUnavailable
+            | Self::DockerStorageLow
+            | Self::DockerStorageUnknown => RetryClass::AfterPreflight,
             _ => RetryClass::Never,
         }
     }

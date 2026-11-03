@@ -294,6 +294,13 @@ pub(crate) async fn load(
 ) -> Result<String> {
     // Loading the authenticated, hashed archive also handles recovery after a
     // worker crash. No mutable tag is accepted as the durable import identity.
+    // A load adds image layers unless this exact image is already present.
+    if runtime::docker(&["image", "inspect", "--format", "{{.Id}}", original])
+        .await
+        .is_err()
+    {
+        crate::docker_storage::preflight().await?;
+    }
     let output =
         runtime::docker(&["load", "--input", path.to_str().context("invalid_path")?]).await?;
     let mut candidates = vec![

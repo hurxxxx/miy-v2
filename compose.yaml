@@ -22,6 +22,9 @@ services:
       KC_DB_URL: jdbc:postgresql://postgres:5432/miy_identity
       KC_DB_USERNAME: miy_identity
       KC_DB_PASSWORD: ${MIY_IDENTITY_PASSWORD:?}
+      # Shares PostgreSQL with the core and apps; the default pool of 100 would exceed
+      # the whole connection budget (docs/CAPACITY.md, scripts/check-db-connections.py).
+      KC_DB_POOL_MAX_SIZE: "10"
       KC_HTTP_ENABLED: "true"
       KC_HTTP_RELATIVE_PATH: /identity
       KC_HOSTNAME: ${MIY_ORIGIN:?run scripts/bootstrap.py}/identity

@@ -185,6 +185,11 @@ async fn step(pool: &sqlx::PgPool, id: Uuid, name: &str) -> Result<()> {
         .await?;
     Ok(())
 }
+/// The SDK pool opens at most 5 runtime connections; one more covers a manual check.
+pub(crate) const RUNTIME_CONNECTION_LIMIT: u32 = 6;
+/// Migrations run on one connection; one more covers an overlapping retry.
+pub(crate) const MIGRATION_CONNECTION_LIMIT: u32 = 2;
+
 pub(crate) async fn prepare(
     pool: &sqlx::PgPool,
     job: Uuid,
@@ -466,6 +471,19 @@ pub(crate) async fn prepare_resource(
             admin.execute(cmd.as_str()).await?;
         }
     }
+    // Per-role caps keep one app from exhausting the shared cluster (V1-O2). Applied on
+    // every preparation so existing installations receive them at their next deployment.
+    admin
+        .execute(
+            format!("ALTER ROLE {migration} CONNECTION LIMIT {MIGRATION_CONNECTION_LIMIT}")
+                .as_str(),
+        )
+        .await?;
+    admin
+        .execute(
+            format!("ALTER ROLE {runtime} CONNECTION LIMIT {RUNTIME_CONNECTION_LIMIT}").as_str(),
+        )
+        .await?;
     admin
         .execute(format!("GRANT {owner} TO {migration}").as_str())
         .await?;

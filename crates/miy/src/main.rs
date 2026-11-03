@@ -45,6 +45,8 @@ mod component_registry;
 mod connections;
 mod contract;
 mod credential_store;
+#[cfg(feature = "server")]
+mod db_outcome;
 mod db_tunnel;
 #[cfg(all(test, feature = "server"))]
 mod delegation_regression;
@@ -56,6 +58,8 @@ mod delivery;
 mod development;
 mod development_client;
 mod docker;
+#[cfg(feature = "server")]
+mod docker_storage;
 #[cfg(feature = "server")]
 mod domain;
 mod file_transaction;
@@ -376,9 +380,22 @@ fn output_hint(argv: &[std::ffi::OsString]) -> OutputMode {
 
 #[cfg(feature = "server")]
 async fn run_server(command: Command) -> Result<()> {
+    // application_name separates core, app and identity connections in pg_stat_activity (V1-O2).
+    let application = if matches!(command, Command::Migrate) {
+        "miy-core-migrate"
+    } else if matches!(command, Command::Seed) {
+        "miy-core-seed"
+    } else if matches!(command, Command::Worker) {
+        "miy-core-worker"
+    } else {
+        "miy-core-serve"
+    };
+    let options = std::env::var("DATABASE_URL")?
+        .parse::<sqlx::postgres::PgConnectOptions>()?
+        .application_name(application);
     let pool = PgPoolOptions::new()
         .max_connections(10)
-        .connect(&std::env::var("DATABASE_URL")?)
+        .connect_with(options)
         .await?;
     if matches!(command, Command::Migrate) {
         sqlx::migrate!("../../migrations/core").run(&pool).await?;

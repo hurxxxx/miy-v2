@@ -134,6 +134,22 @@ test("deployed Docker app opens in the shell with real health and runtime contro
   await expect(page.locator("#platform-navigation").getByRole("link", { name: appName })).toHaveAttribute("aria-current", "page");
   await expect(page.locator(".app-session-bar").getByRole("status")).toContainText("서비스: 정상");
   expect(manifests).toContain(200);
+  // V1-O2: the deployment capped this installation's roles and the app tagged its connections.
+  const sql = (query: string) =>
+    execFileSync("docker", ["exec", "miy-stack-ui-postgres-1", "psql", "-X", "-At", "-U", "postgres", "-d", "miy_core", "-c", query], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    }).trim();
+  expect(
+    sql(
+      `SELECT string_agg(r.rolconnlimit::text, ',' ORDER BY r.rolname = d.runtime_role DESC) FROM db_resources d ` +
+        `JOIN pg_roles r ON r.rolname IN (d.runtime_role, d.migration_role) WHERE d.app_id = '${appId}' AND d.environment = 'dev'`,
+    ),
+  ).toBe("6,2");
+  await expect
+    .poll(() => Number(sql(`SELECT count(*) FROM pg_stat_activity WHERE application_name = 'miy-app-${appId}-dev'`)), { timeout: 20000 })
+    .toBeGreaterThan(0);
+  expect(Number(sql(`SELECT count(*) FROM pg_stat_activity WHERE application_name IN ('miy-core-serve', 'miy-core-worker')`))).toBeGreaterThan(0);
 
   await page.locator("#platform-navigation").getByRole("link", { name: "홈", exact: true }).click();
   await card.getByRole("button", { name: "중지" }).click();
@@ -149,7 +165,7 @@ test("deployed Docker app opens in the shell with real health and runtime contro
   expect(running()).toBe("true");
   await page.screenshot({ path: join(root, ".local/evidence/stack-ui/home.png"), fullPage: true });
   await context.close();
-  checks.push("remote-ui-from-core", "health", "stop-start");
+  checks.push("remote-ui-from-core", "health", "db-connection-budget", "stop-start");
 });
 
 test("unsaved input blocks shell navigation, and a new release asks for a reload", async ({ browser }) => {

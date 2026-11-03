@@ -156,10 +156,14 @@ pub async fn check_queued(
     if let Some(id) = id {
         check_id(pool, actor, id, app, env, action)
             .await
-            .map_err(|_| {
-                crate::runtime_contract::RuntimeFailure::new(
-                    crate::runtime_contract::FailureCode::PermissionRevoked,
-                )
+            .map_err(|error| {
+                // A failed permission read proves nothing about the delegation (V1-O4):
+                // only a definite denial is a revocation that may end or discard work.
+                crate::runtime_contract::RuntimeFailure::new(if error.status.is_server_error() {
+                    crate::runtime_contract::FailureCode::DatabaseUnavailable
+                } else {
+                    crate::runtime_contract::FailureCode::PermissionRevoked
+                })
             })?;
     }
     Ok(())

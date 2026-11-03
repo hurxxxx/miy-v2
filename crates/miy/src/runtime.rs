@@ -58,6 +58,15 @@ pub(crate) fn image_id(value: &str) -> bool {
                 .all(|c| c.is_ascii_digit() || (b'a'..=b'f').contains(&c))
     })
 }
+/// PostgreSQL keeps at most 63 bytes of application_name; app IDs are ASCII.
+pub(crate) fn app_connection_name(app: &str, environment: &str) -> String {
+    let mut name: String = format!("miy-app-{app}-{environment}")
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric() || *c == '-')
+        .collect();
+    name.truncate(63);
+    name
+}
 pub use crate::acceptance_contract::{AcceptanceCheck, ReleaseCheck};
 fn validate_checks(checks: &[AcceptanceCheck]) -> ApiResult<()> {
     crate::acceptance_contract::validate_checks(checks).map_err(ApiError::bad)
@@ -707,17 +716,24 @@ async fn execute(pool: &sqlx::PgPool, job: &sqlx::postgres::PgRow) -> Result<()>
         .bind(installation.to_string())
         .execute(&mut *lock)
         .await?;
-    if result.is_err() {
-        let name = format!("miy-app-{}", installation.simple());
-        if owned(&name, installation).await.is_ok() {
-            let _ = docker(&["stop", "--time", "5", &name]).await;
+    if let Err(error) = &result {
+        // An unproven database outcome must not stop a container that a committed row
+        // may describe as running, nor the previous release before it was replaced
+        // (V1-O4). Runtime reconciliation later records the actual container state.
+        if crate::db_outcome::uncertain(error) {
+            tracing::warn!(event = "deploy_compensation_skipped", installation_id = %installation);
+        } else {
+            let name = format!("miy-app-{}", installation.simple());
+            if owned(&name, installation).await.is_ok() {
+                let _ = docker(&["stop", "--time", "5", &name]).await;
+            }
+            sqlx::query(
+                "UPDATE installations SET runtime_status='failed',desired_state='stopped' WHERE id=$1",
+            )
+            .bind(installation)
+            .execute(pool)
+            .await?;
         }
-        sqlx::query(
-            "UPDATE installations SET runtime_status='failed',desired_state='stopped' WHERE id=$1",
-        )
-        .bind(installation)
-        .execute(pool)
-        .await?;
     }
     result
 }
@@ -795,10 +811,14 @@ async fn deploy_installation(
         .await?;
     let password = auth::decrypt(resource.get("runtime_secret"))?;
     let db_url = format!(
-        "postgres://{}:{}@postgres:5432/{}",
+        "postgres://{}:{}@postgres:5432/{}?application_name={}",
         resource.get::<String, _>("runtime_role"),
         password,
-        resource.get::<String, _>("database_name")
+        resource.get::<String, _>("database_name"),
+        app_connection_name(
+            &resource.get::<String, _>("app_id"),
+            &resource.get::<String, _>("environment")
+        )
     );
     let secret = match inst.get::<Option<String>, _>("runtime_secret") {
         Some(value) => auth::decrypt(&value)?,
@@ -1228,6 +1248,24 @@ mod tests {
 #[cfg(test)]
 #[path = "runtime_network_regression.rs"]
 mod network_regression;
+
+#[cfg(test)]
+mod connection_name_tests {
+    #[test]
+    fn app_connection_names_are_bounded_and_url_safe() {
+        assert_eq!(
+            super::app_connection_name("todo-win-20261029", "dev"),
+            "miy-app-todo-win-20261029-dev"
+        );
+        let long = super::app_connection_name(&"a".repeat(80), "prod");
+        assert_eq!(long.len(), 63);
+        assert!(long.starts_with("miy-app-aaaa"));
+        assert_eq!(
+            super::app_connection_name("x&y=z", "dev"),
+            "miy-app-xyz-dev"
+        );
+    }
+}
 
 #[cfg(test)]
 mod acceptance_tests {
