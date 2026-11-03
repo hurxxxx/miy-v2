@@ -3,7 +3,7 @@
 - 작성·수정일: 2026-11-03
 - 상태: **UI-1~5 구현·격리 검증 완료.** 모의 API, 실서버(개발 로그인), 원격 앱 CSS 기준선, 격리 전체 스택(Keycloak·Caddy·CLI 배포 Docker 앱)에서 통과. 2026-11-03 v2.dwdcc.kr에 반영(웹 화면 이후 서버 0.7.0도 반영, [운영 기록](SERVER-OPERATIONS.md)).
 - 다음: 착수 순서는 [추진 계획](PLAN.md#다음-우선-작업)의 작업표를 따른다. §7 후속 작업에 적용할 v1 규칙은 [v1 적용 계획](V1-ADOPTION.md)에 있다. 2026-11-03 루트 `UIUX_MIGRATION_PLAN.md`에서 이 위치로 옮겼다.
-- 후속 리뷰: §9의 UI·테스트 정리 보완은 소스·회귀 검증 결과이며 이번 리뷰에서 운영 UI를 재배포하지 않았다.
+- 후속 리뷰: §9의 UI·테스트 정리 보완(`3876d43`)은 격리 전체 스택 재검증(5 PASS, 남은 자원 0, 호스트 차이 0) 후 2026-11-03 운영 화면에 반영했다([운영 기록](SERVER-OPERATIONS.md)).
 - 역할: UI 이식의 범위·계약·완료 기준은 이 문서, 제품 전체 우선순위는 [추진 계획](PLAN.md), 남은 운영 기반은 [코어 안정화 계획](CORE-HARDENING.md)이 관리한다.
 
 ## 1. 목표와 사용자 결정
@@ -176,6 +176,6 @@
 | `python3 scripts/runtime-regression/test_ui_cleanup.py` | 11 PASS, 실제 Docker·서비스 미사용 |
 | `bash -n scripts/runtime-regression/stack-ui.sh`, `node --check scripts/runtime-regression/server-ui.mjs`, `git diff --check` | PASS |
 
-수정 전 실패 자료는 `.local/evidence/ui-review-20261103/before-polling`, `before-confirmation`, `before-css`에 보존했다. 이번 리뷰에서는 공개 API·Rust 서버·DB·게시 컴포넌트를 변경하지 않았다. 전체 Docker/Keycloak 스택, 실제 운영 제어와 Windows 인수를 다시 실행하지 않았으며 이전 실행 결과와 구분한다. §6의 간헐 앱 최초 로딩 실패는 이번 회귀의 해결 항목으로 간주하지 않는다. 운영 기록상 웹 화면은 `98a31cc` 산출물이며 리뷰 수정의 재배포는 별도다. SIGKILL 후 남는 테스트 잠금·소유 표식 없는 이전 상태는 자동 삭제하지 않고 수동 확인한다.
+수정 전 실패 자료는 `.local/evidence/ui-review-20261103/before-polling`, `before-confirmation`, `before-css`에 보존했다. 이번 리뷰에서는 공개 API·Rust 서버·DB·게시 컴포넌트를 변경하지 않았다. 전체 Docker/Keycloak 스택, 실제 운영 제어와 Windows 인수를 다시 실행하지 않았으며 이전 실행 결과와 구분한다. §6의 간헐 앱 최초 로딩 실패는 이번 회귀의 해결 항목으로 간주하지 않는다. 리뷰 당시 운영 웹 화면은 `98a31cc` 산출물이었다. 이후 같은 날 격리 전체 스택을 다시 실행한 뒤 `3876d43` 화면을 운영에 반영했다([운영 기록](SERVER-OPERATIONS.md)). SIGKILL 후 남는 테스트 잠금·소유 표식 없는 이전 상태는 자동 삭제하지 않고 수동 확인한다.
 
 열려 있던 [PR #2](https://github.com/hurxxxx/miy-v2/pull/2)와 [PR #3](https://github.com/hurxxxx/miy-v2/pull/3)은 이번 UI 구현과 별개인 과거 Windows·CLI 개선이다. 두 head `c69c335`·`7617246`이 통합 커밋 `a6fae06` 및 main의 조상임을 확인했다. 이미 포함된 변경이므로 중복 병합 없이 사유를 남기고 닫았으며 브랜치·검증 기록은 보존했다.
