@@ -3,6 +3,7 @@
 - 작성·수정일: 2026-11-03
 - 상태: **UI-1~5 구현·격리 검증 완료.** 모의 API, 실서버(개발 로그인), 원격 앱 CSS 기준선, 격리 전체 스택(Keycloak·Caddy·CLI 배포 Docker 앱)에서 통과. 2026-11-03 v2.dwdcc.kr에 반영(웹 화면 이후 서버 0.7.0도 반영, [운영 기록](docs/SERVER-OPERATIONS.md)).
 - 다음: §7 순서. 서버·게시 CLI 0.7.0도 2026-11-03 운영 반영했다([운영 기록](docs/SERVER-OPERATIONS.md)).
+- 후속 리뷰: §9의 UI·테스트 정리 보완은 소스·회귀 검증 결과이며 이번 리뷰에서 운영 UI를 재배포하지 않았다.
 - 역할: UI 이식의 범위·계약·완료 기준은 이 문서, 제품 전체 우선순위는 [추진 계획](docs/PLAN.md), 남은 운영 기반은 [코어 안정화 계획](docs/CORE-HARDENING.md)이 관리한다.
 
 ## 1. 목표와 사용자 결정
@@ -149,3 +150,30 @@
 - UI-1~5의 상태는 해당 코드와 검증 증거가 마련된 뒤 갱신한다. UI-1~5는 위 결과로 갱신했다.
 - 후속 모델·업무 기능은 기본 UI와 별도 구현 묶음으로 설계한다. 원본의 전체 데이터 이관 계획을 이 문서의 실행 목록으로 확대하지 않는다.
 - [추진 계획](docs/PLAN.md)과 README는 이 문서로 연결하고, 기존 코어 단계 번호와 과거 검증 결과는 보존한다.
+
+## 9. UI 이식 후속 리뷰 (2026-11-03)
+
+주요 검토 범위는 최초 계획 `925d72f` 이후 `01e4d49`까지의 7개 커밋·48개 변경 파일이다. 라이트·한국어·새 설치, 기존 API/SDK/등록 컴포넌트 유지, 업무 워크스페이스 후속 분리 방향은 계획에 맞다. 검토 중 추가된 `7a8d5a6`의 별도 서버·CLI 배포 기록은 보존했다. 다음 회귀와 테스트 자원 소유권 문제를 보완했다.
+
+| 중요도 | 발견한 문제 | 보완과 확인 |
+| --- | --- | --- |
+| P1 | `stack-ui.sh run`이 기존 환경 때문에 시작을 거부해도 EXIT 정리가 기존 상태를 삭제. `server-ui.mjs`도 같은 라벨의 다른 실행 DB를 일괄 삭제 | 상태·소유 표식 확보 후만 정리, 실행별 DB 이름·라벨 확인, 동시 실행 잠금. 실제 Docker 대신 명령 stub으로 기존 상태·부분 스택·다른 실행 DB 보존 검사 |
+| P2 | 설치 목록 응답이 3초보다 느리면 반복 조회가 응답을 계속 폐기해 로딩이 끝나지 않음 | 응답 완료 후 다음 조회 예약. 4초 지연에서 수정 전 실패·수정 후 통과. 권한 회수 뒤 오래된 응답의 앱 복원 방지도 통과 |
+| P2 | `.page-header`, `.ui-button`, `.shell` 등 동명 클래스가 원격 앱 내부를 변경 | 플랫폼 선택자가 `.miy-app-root`와 하위를 제외하도록 제한. 기본 전역 스타일·앱 기준선 유지, 플랫폼 오류/로딩 UI는 컨테이너 밖에 배치. 1440/390px에서 클래스 부여 전후 스타일 비교가 수정 전 실패·수정 후 통과 |
+| P2 | 확인창 열린 동안 앱 제거·재배포 시 이전 확인창이 재등장하고 작업 대기가 남음 | 확인 요청 취소와 대상 세대 검사. 늦은 preflight·권한 회수·릴리스 교체도 함께 검사 |
+| P2 | 승인한 작업의 성공/실패 후 비활성화됐던 버튼으로 키보드 포커스가 돌아오지 않음 | 작업 종료 뒤 버튼 활성화 시 복귀. 사용자가 다른 컨트롤로 옮긴 포커스는 유지 |
+
+이 리뷰에서 수행한 검증은 다음과 같다. 브라우저 검사는 모의 API·실제 Federation 모듈을 사용하는 격리 빌드이며 새 서버 권한 정책 검증은 아니다.
+
+| 명령 | 결과 |
+| --- | --- |
+| `pnpm typecheck` | PASS |
+| `pnpm exec playwright test --config scripts/runtime-regression/ui.config.ts --output .local/evidence/ui-review-20261103/after-ui` | 25 PASS (기존 15 + 목록 2 + 확인창 6 + CSS 2) |
+| `pnpm exec playwright test --config tests/cli-experience.config.ts --reporter=line --output .local/evidence/ui-review-20261103/cli` | 14 PASS |
+| `pnpm exec playwright test --config scripts/runtime-regression/http-ui.config.ts --output .local/evidence/ui-review-20261103/http` | 1 PASS |
+| `python3 scripts/runtime-regression/test_ui_cleanup.py` | 11 PASS, 실제 Docker·서비스 미사용 |
+| `bash -n scripts/runtime-regression/stack-ui.sh`, `node --check scripts/runtime-regression/server-ui.mjs`, `git diff --check` | PASS |
+
+수정 전 실패 자료는 `.local/evidence/ui-review-20261103/before-polling`, `before-confirmation`, `before-css`에 보존했다. 이번 리뷰에서는 공개 API·Rust 서버·DB·게시 컴포넌트를 변경하지 않았다. 전체 Docker/Keycloak 스택, 실제 운영 제어와 Windows 인수를 다시 실행하지 않았으며 이전 실행 결과와 구분한다. §6의 간헐 앱 최초 로딩 실패는 이번 회귀의 해결 항목으로 간주하지 않는다. 운영 기록상 웹 화면은 `98a31cc` 산출물이며 리뷰 수정의 재배포는 별도다. SIGKILL 후 남는 테스트 잠금·소유 표식 없는 이전 상태는 자동 삭제하지 않고 수동 확인한다.
+
+열려 있던 [PR #2](https://github.com/hurxxxx/miy-v2/pull/2)와 [PR #3](https://github.com/hurxxxx/miy-v2/pull/3)은 이번 UI 구현과 별개인 과거 Windows·CLI 개선이다. 두 head `c69c335`·`7617246`이 통합 커밋 `a6fae06` 및 main의 조상임을 확인했다. 이미 포함된 변경이므로 중복 병합 없이 사유를 남기고 닫았으며 브랜치·검증 기록은 보존했다.

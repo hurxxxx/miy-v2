@@ -1,10 +1,10 @@
-/* Signed-in shell: 64px app rail, sticky header, content. */
-.shell {
+/* Signed-in shell: 64px app rail, sticky header, content; never remote app descendants. */
+.shell:not(:where(.miy-app-root, .miy-app-root *)) {
   display: flex;
   min-height: 100vh;
   background: var(--shell-surface-subtle);
 }
-.skip-link {
+.skip-link:not(:where(.miy-app-root, .miy-app-root *)) {
   position: absolute;
   left: var(--shell-space-3);
   top: -48px;
@@ -14,11 +14,11 @@
   background: var(--shell-accent);
   color: var(--shell-accent-fg);
 }
-.skip-link:focus {
+.skip-link:focus:not(:where(.miy-app-root, .miy-app-root *)) {
   top: var(--shell-space-3);
 }
 
-.rail {
+.rail:not(:where(.miy-app-root, .miy-app-root *)) {
   position: sticky;
   top: 0;
   z-index: 20;
@@ -33,12 +33,12 @@
   background: var(--shell-bg-strong);
   color: #e5e7eb;
 }
-.brand {
+.brand:not(:where(.miy-app-root, .miy-app-root *)) {
   color: var(--shell-ink);
   font-weight: 800;
   letter-spacing: -0.03em;
 }
-.rail-brand {
+.rail-brand:not(:where(.miy-app-root, .miy-app-root *)) {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -49,25 +49,25 @@
   color: var(--shell-bg-strong);
   font-size: 15px;
 }
-.rail-section {
+.rail-section:not(:where(.miy-app-root, .miy-app-root *)) {
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: var(--shell-space-1);
   width: 100%;
 }
-.rail-apps {
+.rail-apps:not(:where(.miy-app-root, .miy-app-root *)) {
   flex: 1;
   min-height: 0;
   padding-top: var(--shell-space-2);
   overflow-y: auto;
   scrollbar-width: none;
 }
-.rail-platform {
+.rail-platform:not(:where(.miy-app-root, .miy-app-root *)) {
   padding-top: var(--shell-space-2);
   border-top: 1px solid rgba(255, 255, 255, 0.12);
 }
-.rail-item {
+.rail-item:not(:where(.miy-app-root, .miy-app-root *)) {
   position: relative;
   display: flex;
   flex-direction: column;
@@ -79,19 +79,19 @@
   color: #cbd5e1;
   transition: background var(--shell-motion), color var(--shell-motion);
 }
-.rail-item:hover {
+.rail-item:hover:not(:where(.miy-app-root, .miy-app-root *)) {
   background: rgba(255, 255, 255, 0.08);
   color: #fff;
 }
-.rail-item:focus-visible {
+.rail-item:focus-visible:not(:where(.miy-app-root, .miy-app-root *)) {
   outline: none;
   box-shadow: 0 0 0 2px #93c5fd;
 }
-.rail-item[aria-current="page"] {
+.rail-item[aria-current="page"]:not(:where(.miy-app-root, .miy-app-root *)) {
   background: rgba(255, 255, 255, 0.14);
   color: #fff;
 }
-.rail-item[aria-current="page"]::before {
+.rail-item[aria-current="page"]:not(:where(.miy-app-root, .miy-app-root *))::before {
   content: "";
   position: absolute;
   left: -4px;
@@ -101,14 +101,14 @@
   border-radius: 0 3px 3px 0;
   background: #fff;
 }
-.rail-icon {
+.rail-icon:not(:where(.miy-app-root, .miy-app-root *)) {
   display: flex;
   align-items: center;
   justify-content: center;
   width: 40px;
   height: 40px;
 }
-.rail-label {
+.rail-label:not(:where(.miy-app-root, .miy-app-root *)) {
   max-width: 52px;
   overflow: hidden;
   font-size: 11px;
@@ -116,16 +116,16 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.rail-label-full {
+.rail-label-full:not(:where(.miy-app-root, .miy-app-root *)) {
   display: none;
 }
-.rail-note {
+.rail-note:not(:where(.miy-app-root, .miy-app-root *)) {
   margin: var(--shell-space-2) 4px;
   color: #94a3b8;
   font-size: 11px;
   text-align: center;
 }
-.rail-tooltip {
+.rail-tooltip:not(:where(.miy-app-root, .miy-app-root *)) {
   position: fixed;
   left: calc(var(--shell-rail-width) + 6px);
   z-index: 60;
@@ -139,18 +139,18 @@
   pointer-events: none;
   overflow-wrap: anywhere;
 }
-.env-switch.env-switch-drawer,
-.drawer-backdrop {
+.env-switch.env-switch-drawer:not(:where(.miy-app-root, .miy-app-root *)),
+.drawer-backdrop:not(:where(.miy-app-root, .miy-app-root *)) {
   display: none;
 }
 
-.workspace {
+.workspace:not(:where(.miy-app-root, .miy-app-root *)) {
   display: flex;
   flex: 1;
   flex-direction: column;
   min-width: 0;
 }
-.shell-header {
+.shell-header:not(:where(.miy-app-root, .miy-app-root *)) {
   position: sticky;
   top: 0;
   z-index: 30;
@@ -162,17 +162,17 @@
   border-bottom: 1px solid var(--shell-border);
   background: var(--shell-bg);
 }
-.env-is-prod .shell-header {
+.env-is-prod .shell-header:not(:where(.miy-app-root, .miy-app-root *)) {
   box-shadow: inset 0 3px 0 var(--shell-warning);
 }
-.header-context {
+.header-context:not(:where(.miy-app-root, .miy-app-root *)) {
   display: flex;
   flex: 1;
   align-items: center;
   gap: var(--shell-space-4);
   min-width: 0;
 }
-.header-title {
+.header-title:not(:where(.miy-app-root, .miy-app-root *)) {
   margin: 0;
   overflow: hidden;
   font-size: 15px;
@@ -180,13 +180,13 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.header-account {
+.header-account:not(:where(.miy-app-root, .miy-app-root *)) {
   display: flex;
   align-items: center;
   gap: var(--shell-space-3);
   min-width: 0;
 }
-.account-name {
+.account-name:not(:where(.miy-app-root, .miy-app-root *)) {
   max-width: 200px;
   overflow: hidden;
   color: var(--shell-ink-muted);
@@ -194,7 +194,7 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.env-switch {
+.env-switch:not(:where(.miy-app-root, .miy-app-root *)) {
   display: inline-flex;
   flex-shrink: 0;
   padding: 3px;
@@ -202,7 +202,7 @@
   background: var(--shell-surface-subtle);
   border: 1px solid var(--shell-border);
 }
-.env-option {
+.env-option:not(:where(.miy-app-root, .miy-app-root *)) {
   padding: 5px 12px;
   border-radius: var(--shell-radius-md);
   color: var(--shell-ink-subtle);
@@ -210,26 +210,26 @@
   font-weight: 600;
   white-space: nowrap;
 }
-.env-option:hover {
+.env-option:hover:not(:where(.miy-app-root, .miy-app-root *)) {
   color: var(--shell-ink);
 }
-.env-option:focus-visible {
+.env-option:focus-visible:not(:where(.miy-app-root, .miy-app-root *)) {
   outline: none;
   box-shadow: var(--shell-focus-ring);
 }
-.env-option[aria-current] {
+.env-option[aria-current]:not(:where(.miy-app-root, .miy-app-root *)) {
   background: var(--shell-surface);
   color: var(--shell-info-text);
   box-shadow: var(--shell-shadow-sm);
 }
-.env-option.env-prod[aria-current] {
+.env-option.env-prod[aria-current]:not(:where(.miy-app-root, .miy-app-root *)) {
   background: var(--shell-warning-bg);
   color: var(--shell-warning-text);
 }
-.env-badge-mobile {
+.env-badge-mobile:not(:where(.miy-app-root, .miy-app-root *)) {
   display: none;
 }
-.navigation-toggle {
+.navigation-toggle:not(:where(.miy-app-root, .miy-app-root *)) {
   display: none;
   align-items: center;
   justify-content: center;
@@ -242,25 +242,25 @@
   color: var(--shell-ink);
   cursor: pointer;
 }
-.navigation-toggle:focus-visible {
+.navigation-toggle:focus-visible:not(:where(.miy-app-root, .miy-app-root *)) {
   outline: none;
   box-shadow: var(--shell-focus-ring);
 }
-.workspace > main {
+.workspace > main:not(:where(.miy-app-root, .miy-app-root *)) {
   flex: 1;
   width: 100%;
   max-width: 1440px;
   padding: var(--shell-space-8) var(--shell-space-8) 48px;
 }
-.workspace > main:focus {
+.workspace > main:focus:not(:where(.miy-app-root, .miy-app-root *)) {
   outline: none;
 }
 
 @media (max-width: 767px) {
-  .shell {
+  .shell:not(:where(.miy-app-root, .miy-app-root *)) {
     display: block;
   }
-  .rail {
+  .rail:not(:where(.miy-app-root, .miy-app-root *)) {
     position: fixed;
     top: 56px;
     bottom: 0;
@@ -274,86 +274,86 @@
     overflow-y: auto;
     box-shadow: var(--shell-shadow-lg);
   }
-  .rail.navigation-open {
+  .rail.navigation-open:not(:where(.miy-app-root, .miy-app-root *)) {
     display: flex;
   }
-  .rail-brand {
+  .rail-brand:not(:where(.miy-app-root, .miy-app-root *)) {
     display: none;
   }
-  .env-switch.env-switch-drawer {
+  .env-switch.env-switch-drawer:not(:where(.miy-app-root, .miy-app-root *)) {
     display: flex;
     background: rgba(255, 255, 255, 0.06);
     border-color: rgba(255, 255, 255, 0.12);
   }
-  .env-switch-drawer .env-option {
+  .env-switch-drawer .env-option:not(:where(.miy-app-root, .miy-app-root *)) {
     flex: 1;
     text-align: center;
     color: #cbd5e1;
   }
-  .rail-section {
+  .rail-section:not(:where(.miy-app-root, .miy-app-root *)) {
     align-items: stretch;
   }
-  .rail-apps {
+  .rail-apps:not(:where(.miy-app-root, .miy-app-root *)) {
     flex: none;
     overflow: visible;
   }
-  .rail-item {
+  .rail-item:not(:where(.miy-app-root, .miy-app-root *)) {
     flex-direction: row;
     gap: var(--shell-space-3);
     width: 100%;
     padding: 6px 8px;
   }
-  .rail-item[aria-current="page"]::before {
+  .rail-item[aria-current="page"]:not(:where(.miy-app-root, .miy-app-root *))::before {
     display: none;
   }
-  .rail-label {
+  .rail-label:not(:where(.miy-app-root, .miy-app-root *)) {
     max-width: none;
     font-size: 14px;
   }
-  .rail-label-short {
+  .rail-label-short:not(:where(.miy-app-root, .miy-app-root *)) {
     display: none;
   }
-  .rail-label-full {
+  .rail-label-full:not(:where(.miy-app-root, .miy-app-root *)) {
     display: inline;
   }
-  .rail-note {
+  .rail-note:not(:where(.miy-app-root, .miy-app-root *)) {
     text-align: left;
   }
-  .rail-tooltip {
+  .rail-tooltip:not(:where(.miy-app-root, .miy-app-root *)) {
     display: none;
   }
-  .drawer-backdrop {
+  .drawer-backdrop:not(:where(.miy-app-root, .miy-app-root *)) {
     position: fixed;
     inset: 56px 0 0 0;
     z-index: 40;
     display: block;
     background: rgba(15, 23, 42, 0.45);
   }
-  .shell-header {
+  .shell-header:not(:where(.miy-app-root, .miy-app-root *)) {
     gap: var(--shell-space-2);
     height: 56px;
     min-height: 56px;
     padding: 0 var(--shell-space-3);
   }
-  .navigation-toggle {
+  .navigation-toggle:not(:where(.miy-app-root, .miy-app-root *)) {
     display: inline-flex;
   }
-  .env-switch.env-switch-header {
+  .env-switch.env-switch-header:not(:where(.miy-app-root, .miy-app-root *)) {
     display: none;
   }
-  .env-badge-mobile {
+  .env-badge-mobile:not(:where(.miy-app-root, .miy-app-root *)) {
     display: inline-flex;
   }
-  .header-context {
+  .header-context:not(:where(.miy-app-root, .miy-app-root *)) {
     gap: var(--shell-space-2);
   }
-  .header-title {
+  .header-title:not(:where(.miy-app-root, .miy-app-root *)) {
     font-size: 14px;
   }
-  .account-name {
+  .account-name:not(:where(.miy-app-root, .miy-app-root *)) {
     display: none;
   }
-  .workspace > main {
+  .workspace > main:not(:where(.miy-app-root, .miy-app-root *)) {
     padding: var(--shell-space-5) var(--shell-space-4) 40px;
   }
 }

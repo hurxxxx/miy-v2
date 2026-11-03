@@ -1,11 +1,11 @@
-/* Platform pages. Selectors are page classes, never bare elements. */
-.boot {
+/* Platform pages exclude remote app descendants, including generic page/grid names. */
+.boot:not(:where(.miy-app-root, .miy-app-root *)) {
   max-width: 560px;
   margin: 12vh auto;
   padding: 0 var(--shell-space-4);
 }
 
-.page-header {
+.page-header:not(:where(.miy-app-root, .miy-app-root *)) {
   display: flex;
   flex-wrap: wrap;
   align-items: flex-end;
@@ -13,32 +13,32 @@
   gap: var(--shell-space-3);
   margin-bottom: var(--shell-space-6);
 }
-.page-header h1 {
+.page-header h1:not(:where(.miy-app-root, .miy-app-root *)) {
   margin: 0;
   font-size: 24px;
   font-weight: 800;
   letter-spacing: -0.02em;
 }
-.page-header p {
+.page-header p:not(:where(.miy-app-root, .miy-app-root *)) {
   margin: var(--shell-space-1) 0 0;
   color: var(--shell-ink-subtle);
 }
-.page-section-title {
+.page-section-title:not(:where(.miy-app-root, .miy-app-root *)) {
   margin: var(--shell-space-8) 0 var(--shell-space-3);
   font-size: 16px;
   font-weight: 700;
 }
-.grid {
+.grid:not(:where(.miy-app-root, .miy-app-root *)) {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(min(300px, 100%), 1fr));
   gap: var(--shell-space-4);
 }
-.grid > .ui-panel + .ui-panel {
+.grid > .ui-panel + .ui-panel:not(:where(.miy-app-root, .miy-app-root *)) {
   margin-top: 0;
 }
 
 /* Login */
-.login-page {
+.login-page:not(:where(.miy-app-root, .miy-app-root *)) {
   display: flex;
   min-height: 100vh;
   align-items: center;
@@ -49,7 +49,7 @@
     radial-gradient(circle at 85% 90%, rgba(124, 58, 237, 0.07), transparent 40%),
     var(--shell-surface-subtle);
 }
-.login-card {
+.login-card:not(:where(.miy-app-root, .miy-app-root *)) {
   width: min(440px, 100%);
   padding: var(--shell-space-8);
   border: 1px solid var(--shell-border);
@@ -57,7 +57,7 @@
   background: var(--shell-surface);
   box-shadow: var(--shell-shadow-lg);
 }
-.login-brand {
+.login-brand:not(:where(.miy-app-root, .miy-app-root *)) {
   display: inline-flex;
   margin: 0 0 var(--shell-space-4);
   padding: 6px 12px;
@@ -68,21 +68,21 @@
   font-weight: 800;
   letter-spacing: -0.03em;
 }
-.login-card h1 {
+.login-card h1:not(:where(.miy-app-root, .miy-app-root *)) {
   margin: 0;
   font-size: 22px;
   font-weight: 800;
 }
-.login-lead {
+.login-lead:not(:where(.miy-app-root, .miy-app-root *)) {
   margin: var(--shell-space-1) 0 var(--shell-space-5);
   color: var(--shell-ink-subtle);
 }
-.quick-accounts {
+.quick-accounts:not(:where(.miy-app-root, .miy-app-root *)) {
   display: grid;
   gap: var(--shell-space-2);
   margin: var(--shell-space-4) 0;
 }
-.account-button {
+.account-button:not(:where(.miy-app-root, .miy-app-root *)) {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
@@ -97,33 +97,33 @@
   cursor: pointer;
   transition: border-color var(--shell-motion), background var(--shell-motion);
 }
-.account-button strong {
+.account-button strong:not(:where(.miy-app-root, .miy-app-root *)) {
   font-size: 15px;
 }
-.account-button span {
+.account-button span:not(:where(.miy-app-root, .miy-app-root *)) {
   color: var(--shell-ink-subtle);
   font-size: 13px;
 }
-.account-button.primary {
+.account-button.primary:not(:where(.miy-app-root, .miy-app-root *)) {
   background: var(--shell-accent);
   border-color: var(--shell-accent);
   color: var(--shell-accent-fg);
 }
-.account-button.primary span {
+.account-button.primary span:not(:where(.miy-app-root, .miy-app-root *)) {
   color: #cbd5e1;
 }
-.account-button:hover:not(:disabled) {
+.account-button:hover:not(:disabled):not(:where(.miy-app-root, .miy-app-root *)) {
   border-color: var(--shell-border-strong);
 }
-.account-button:focus-visible {
+.account-button:focus-visible:not(:where(.miy-app-root, .miy-app-root *)) {
   outline: none;
   box-shadow: var(--shell-focus-ring);
 }
-.account-button:disabled {
+.account-button:disabled:not(:where(.miy-app-root, .miy-app-root *)) {
   cursor: wait;
   opacity: 0.6;
 }
-.login-primary {
+.login-primary:not(:where(.miy-app-root, .miy-app-root *)) {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -134,16 +134,16 @@
   color: var(--shell-accent-fg);
   font-weight: 700;
 }
-.login-primary:hover {
+.login-primary:hover:not(:where(.miy-app-root, .miy-app-root *)) {
   background: var(--shell-accent-hover);
 }
-.login-primary.oauth-link {
+.login-primary.oauth-link:not(:where(.miy-app-root, .miy-app-root *)) {
   min-height: 36px;
   background: transparent;
   color: var(--shell-ink-subtle);
   font-weight: 600;
 }
-.login-footer {
+.login-footer:not(:where(.miy-app-root, .miy-app-root *)) {
   display: flex;
   justify-content: center;
   margin-top: var(--shell-space-5);
@@ -151,10 +151,10 @@
   border-top: 1px solid var(--shell-border);
   font-size: 13px;
 }
-.login-footer a {
+.login-footer a:not(:where(.miy-app-root, .miy-app-root *)) {
   color: var(--shell-ink-subtle);
 }
-.login-card [role="alert"] {
+.login-card [role="alert"]:not(:where(.miy-app-root, .miy-app-root *)) {
   margin: var(--shell-space-3) 0;
   padding: var(--shell-space-3);
   border-radius: var(--shell-radius-md);
@@ -163,27 +163,27 @@
 }
 
 /* Home launcher */
-.app-card .ui-panel-heading {
+.app-card .ui-panel-heading:not(:where(.miy-app-root, .miy-app-root *)) {
   justify-content: flex-start;
 }
-.app-card-title {
+.app-card-title:not(:where(.miy-app-root, .miy-app-root *)) {
   display: flex;
   align-items: center;
   gap: var(--shell-space-3);
   min-width: 0;
 }
-.app-card-meta {
+.app-card-meta:not(:where(.miy-app-root, .miy-app-root *)) {
   display: flex;
   flex-wrap: wrap;
   gap: var(--shell-space-2);
   margin-bottom: var(--shell-space-3);
 }
-.app-card-meta code {
+.app-card-meta code:not(:where(.miy-app-root, .miy-app-root *)) {
   font-family: var(--shell-font-mono);
   font-size: 12px;
   color: var(--shell-ink-subtle);
 }
-.app-card-open {
+.app-card-open:not(:where(.miy-app-root, .miy-app-root *)) {
   display: inline-flex;
   margin-top: var(--shell-space-3);
   padding: 8px 14px;
@@ -192,51 +192,51 @@
   color: var(--shell-accent-fg);
   font-weight: 700;
 }
-.app-card-open:hover {
+.app-card-open:hover:not(:where(.miy-app-root, .miy-app-root *)) {
   background: var(--shell-accent-hover);
 }
-.app-card-open:focus-visible {
+.app-card-open:focus-visible:not(:where(.miy-app-root, .miy-app-root *)) {
   outline: none;
   box-shadow: var(--shell-focus-ring);
 }
-.runtime-health {
+.runtime-health:not(:where(.miy-app-root, .miy-app-root *)) {
   margin-top: var(--shell-space-2);
   padding: var(--shell-space-3);
   border-radius: var(--shell-radius-md);
   background: var(--shell-surface-subtle);
   font-size: 13px;
 }
-.runtime-health p {
+.runtime-health p:not(:where(.miy-app-root, .miy-app-root *)) {
   margin: 0;
   color: var(--shell-ink-muted);
 }
-.runtime-health p + p {
+.runtime-health p + p:not(:where(.miy-app-root, .miy-app-root *)) {
   margin-top: 2px;
 }
-.runtime-health.is-unhealthy {
+.runtime-health.is-unhealthy:not(:where(.miy-app-root, .miy-app-root *)) {
   background: var(--shell-danger-bg);
 }
-.runtime-health.is-unhealthy p {
+.runtime-health.is-unhealthy p:not(:where(.miy-app-root, .miy-app-root *)) {
   color: var(--shell-danger-text);
 }
-.runtime-controls {
+.runtime-controls:not(:where(.miy-app-root, .miy-app-root *)) {
   margin-top: var(--shell-space-3);
   padding-top: var(--shell-space-3);
   border-top: 1px solid var(--shell-border);
   font-size: 13px;
 }
-.runtime-controls > div {
+.runtime-controls > div:not(:where(.miy-app-root, .miy-app-root *)) {
   display: flex;
   flex-wrap: wrap;
   gap: var(--shell-space-2);
 }
-.runtime-controls p {
+.runtime-controls p:not(:where(.miy-app-root, .miy-app-root *)) {
   margin: var(--shell-space-2) 0 0;
 }
-.runtime-controls [role="alert"] {
+.runtime-controls [role="alert"]:not(:where(.miy-app-root, .miy-app-root *)) {
   color: var(--shell-danger-text);
 }
-.runtime-image {
+.runtime-image:not(:where(.miy-app-root, .miy-app-root *)) {
   margin: 0 0 var(--shell-space-2) !important;
   font-family: var(--shell-font-mono);
   font-size: 12px;
@@ -245,21 +245,21 @@
 }
 
 /* App session chrome above the app container */
-.app-session-bar {
+.app-session-bar:not(:where(.miy-app-root, .miy-app-root *)) {
   margin-bottom: var(--shell-space-4);
 }
 
 /* Admin */
-.admin-grid {
+.admin-grid:not(:where(.miy-app-root, .miy-app-root *)) {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: var(--shell-space-4);
   align-items: start;
 }
-.admin-grid > .ui-panel + .ui-panel {
+.admin-grid > .ui-panel + .ui-panel:not(:where(.miy-app-root, .miy-app-root *)) {
   margin-top: 0;
 }
-.registration-row {
+.registration-row:not(:where(.miy-app-root, .miy-app-root *)) {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -268,51 +268,51 @@
   padding: var(--shell-space-3) 0;
   border-top: 1px solid var(--shell-border);
 }
-.registration-row:first-of-type {
+.registration-row:first-of-type:not(:where(.miy-app-root, .miy-app-root *)) {
   border-top: 0;
 }
-.registration-row p {
+.registration-row p:not(:where(.miy-app-root, .miy-app-root *)) {
   margin: 0;
 }
-.registration-actions {
+.registration-actions:not(:where(.miy-app-root, .miy-app-root *)) {
   display: flex;
   gap: var(--shell-space-2);
 }
-.grant-form {
+.grant-form:not(:where(.miy-app-root, .miy-app-root *)) {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: var(--shell-space-3);
 }
-.grant-form-actions {
+.grant-form-actions:not(:where(.miy-app-root, .miy-app-root *)) {
   display: flex;
   grid-column: 1 / -1;
   justify-content: flex-end;
 }
-.status-message {
+.status-message:not(:where(.miy-app-root, .miy-app-root *)) {
   margin: var(--shell-space-4) 0;
   color: var(--shell-ink-muted);
 }
-.ui-empty-inline {
+.ui-empty-inline:not(:where(.miy-app-root, .miy-app-root *)) {
   margin: 0;
   color: var(--shell-ink-subtle);
 }
 @media (max-width: 1023px) {
-  .admin-grid {
+  .admin-grid:not(:where(.miy-app-root, .miy-app-root *)) {
     grid-template-columns: minmax(0, 1fr);
   }
 }
 @media (max-width: 480px) {
-  .grant-form {
+  .grant-form:not(:where(.miy-app-root, .miy-app-root *)) {
     grid-template-columns: minmax(0, 1fr);
   }
 }
 
 /* CLI install (public and signed in) */
-.cli-install-public {
+.cli-install-public:not(:where(.miy-app-root, .miy-app-root *)) {
   min-height: 100vh;
   background: var(--shell-surface-subtle);
 }
-.public-bar {
+.public-bar:not(:where(.miy-app-root, .miy-app-root *)) {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -321,46 +321,46 @@
   border-bottom: 1px solid var(--shell-border);
   background: var(--shell-bg);
 }
-.public-bar .brand {
+.public-bar .brand:not(:where(.miy-app-root, .miy-app-root *)) {
   font-size: 22px;
 }
-.cli-install-public > main {
+.cli-install-public > main:not(:where(.miy-app-root, .miy-app-root *)) {
   max-width: 1200px;
   margin: 0 auto;
   padding: var(--shell-space-8) clamp(16px, 5vw, 56px) 48px;
 }
-.cli-install {
+.cli-install:not(:where(.miy-app-root, .miy-app-root *)) {
   max-width: 1080px;
   min-width: 0;
 }
-.cli-install h1 {
+.cli-install h1:not(:where(.miy-app-root, .miy-app-root *)) {
   margin: 0 0 var(--shell-space-2);
   font-size: 24px;
   font-weight: 800;
 }
-.cli-install p,
-.cli-install li {
+.cli-install p:not(:where(.miy-app-root, .miy-app-root *)),
+.cli-install li:not(:where(.miy-app-root, .miy-app-root *)) {
   line-height: 1.7;
   overflow-wrap: anywhere;
 }
-.cli-install > p {
+.cli-install > p:not(:where(.miy-app-root, .miy-app-root *)) {
   color: var(--shell-ink-muted);
 }
-.cli-install .ui-panel {
+.cli-install .ui-panel:not(:where(.miy-app-root, .miy-app-root *)) {
   margin-top: var(--shell-space-4);
 }
-.cli-install details {
+.cli-install details:not(:where(.miy-app-root, .miy-app-root *)) {
   margin-top: var(--shell-space-4);
 }
-.cli-install summary {
+.cli-install summary:not(:where(.miy-app-root, .miy-app-root *)) {
   cursor: pointer;
   font-weight: 700;
 }
-.cli-install code {
+.cli-install code:not(:where(.miy-app-root, .miy-app-root *)) {
   font-family: var(--shell-font-mono);
   font-size: 13px;
 }
-.cli-install-download {
+.cli-install-download:not(:where(.miy-app-root, .miy-app-root *)) {
   display: inline-block;
   padding: 10px 18px;
   border-radius: var(--shell-radius-md);
@@ -368,22 +368,22 @@
   color: var(--shell-accent-fg);
   font-weight: 700;
 }
-.cli-install-download:hover {
+.cli-install-download:hover:not(:where(.miy-app-root, .miy-app-root *)) {
   background: var(--shell-accent-hover);
 }
-.cli-install-platforms {
+.cli-install-platforms:not(:where(.miy-app-root, .miy-app-root *)) {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(320px, 100%), 1fr));
   gap: var(--shell-space-4);
   margin: var(--shell-space-4) 0;
 }
-.cli-install-platforms > * {
+.cli-install-platforms > *:not(:where(.miy-app-root, .miy-app-root *)) {
   min-width: 0;
 }
-.cli-install-platforms > .ui-panel {
+.cli-install-platforms > .ui-panel:not(:where(.miy-app-root, .miy-app-root *)) {
   margin-top: 0;
 }
-.cli-install-command pre {
+.cli-install-command pre:not(:where(.miy-app-root, .miy-app-root *)) {
   margin: var(--shell-space-2) 0;
   padding: var(--shell-space-4);
   border-radius: var(--shell-radius-md);
@@ -395,17 +395,17 @@
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
-.cli-install-command [role="status"] {
+.cli-install-command [role="status"]:not(:where(.miy-app-root, .miy-app-root *)) {
   font-size: 13px;
 }
 
 /* CLI approval */
-.cli-approval {
+.cli-approval:not(:where(.miy-app-root, .miy-app-root *)) {
   max-width: 640px;
   line-height: 1.7;
   overflow-wrap: anywhere;
 }
-.cli-approval input {
+.cli-approval input:not(:where(.miy-app-root, .miy-app-root *)) {
   display: block;
   width: min(100%, 320px);
   min-height: 42px;
@@ -417,17 +417,17 @@
   font-size: 16px;
   letter-spacing: 0.08em;
 }
-.cli-approval input:focus-visible {
+.cli-approval input:focus-visible:not(:where(.miy-app-root, .miy-app-root *)) {
   outline: none;
   box-shadow: var(--shell-focus-ring);
 }
-.cli-approval-actions {
+.cli-approval-actions:not(:where(.miy-app-root, .miy-app-root *)) {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: var(--shell-space-3);
 }
-.cli-approval pre {
+.cli-approval pre:not(:where(.miy-app-root, .miy-app-root *)) {
   padding: var(--shell-space-3);
   border-radius: var(--shell-radius-md);
   background: var(--shell-surface-subtle);

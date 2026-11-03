@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { request, type Installation } from "@miy/sdk";
 import { Button, useConfirm } from "../ui";
 import { requestId } from "../lib/paths";
@@ -21,8 +21,48 @@ export function RuntimeControls({
 }) {
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
-  const { confirm, dialog } = useConfirm();
+  const { confirm, dialog, cancel } = useConfirm();
+  const generation = useRef(0);
+  const mounted = useRef(true);
+  const returnFocus = useRef<HTMLElement | null>(null);
+  useEffect(() => {
+    mounted.current = true;
+    generation.current++;
+    return () => {
+      mounted.current = false;
+      generation.current++;
+      cancel();
+    };
+  }, [
+    app.id,
+    app.appId,
+    app.environment,
+    app.releaseId,
+    app.runtimeStatus,
+    app.canManage,
+    cancel,
+  ]);
+  useEffect(() => {
+    if (busy || !returnFocus.current) return;
+    const trigger = returnFocus.current;
+    returnFocus.current = null;
+    const frame = requestAnimationFrame(() => {
+      // A confirmed action keeps its opener disabled until the job settles.
+      // Do not steal focus if the user moved elsewhere while it was running.
+      const focused = document.activeElement;
+      if (
+        trigger.isConnected &&
+        !trigger.matches(":disabled") &&
+        (!focused || focused === document.body || !focused.isConnected)
+      )
+        trigger.focus();
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [busy]);
   async function control(action: string, trigger: HTMLElement) {
+    const startedIn = generation.current;
+    const targetIsCurrent = () =>
+      mounted.current && generation.current === startedIn;
     setBusy(action);
     setError("");
     try {
@@ -34,8 +74,10 @@ export function RuntimeControls({
           body: JSON.stringify({ target: { appId: app.appId, environment: app.environment }, action }),
         },
       );
+      if (!targetIsCurrent()) return;
       if (!plan.canSubmit) throw new Error("현재 상태에서 실행할 수 없습니다. 새로고침 후 확인하세요.");
       const needsConfirmation = app.environment === "prod" || action === "remove";
+      if (needsConfirmation) returnFocus.current = trigger;
       // The dialog names the exact target the preflight inspected.
       if (
         needsConfirmation &&
@@ -56,6 +98,7 @@ export function RuntimeControls({
         }))
       )
         return;
+      if (!targetIsCurrent()) return;
       const job = await request<{ id: string }>(`/api/v1/apps/${app.appId}/runtime`, csrf, {
         method: "POST",
         body: JSON.stringify({
@@ -67,9 +110,11 @@ export function RuntimeControls({
         }),
       });
       for (let i = 0; i < 240; i++) {
+        if (!mounted.current) return;
         const state = await request<{ status: string; step: string; errorCode?: string }>(
           `/api/v1/runtime/jobs/${job.id}`,
         );
+        if (!mounted.current) return;
         if (state.status === "failed") throw new Error(state.errorCode || "작업 실패");
         if (state.status === "succeeded") {
           refresh();
@@ -79,10 +124,12 @@ export function RuntimeControls({
       }
       throw new Error("작업이 지연되고 있습니다. 새로고침해 상태를 확인하세요.");
     } catch (error) {
-      setError(error instanceof Error ? error.message : "작업을 완료하지 못했습니다.");
+      if (mounted.current) setError(error instanceof Error ? error.message : "작업을 완료하지 못했습니다.");
     } finally {
-      setBusy("");
-      refresh();
+      if (mounted.current) {
+        setBusy("");
+        refresh();
+      }
     }
   }
   if (app.runtimeStatus === "removed")

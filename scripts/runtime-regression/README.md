@@ -35,7 +35,7 @@ cargo build
 pnpm exec playwright test --config scripts/runtime-regression/server-ui.config.ts
 ```
 
-`server-ui.mjs` starts a disposable `postgres:18.3` container (random loopback port, tmpfs, label `miy.server-ui`), static OIDC metadata, `miy migrate`/`seed`/`serve` on 127.0.0.1:18149 and the built platform with `/api` and `/auth` proxied on 127.0.0.1:18148. It uses only the loopback development login and never reads `.local/runtime.env`. The container is removed on exit and at the next start. It does not cover Keycloak login, deployed Docker apps or remote app screens served by the core.
+`server-ui.mjs` starts a disposable `postgres:18.3` container (random loopback port, tmpfs, unique execution label `miy.server-ui`), static OIDC metadata, `miy migrate`/`seed`/`serve` on 127.0.0.1:18149 and the built platform with `/api` and `/auth` proxied on 127.0.0.1:18148. It uses only the loopback development login and never reads `.local/runtime.env`. Cleanup removes only the container created by this execution after checking its owner label. A `.local/evidence/server-ui.lock` directory prevents concurrent runs from overwriting evidence. It does not cover Keycloak login, deployed Docker apps or remote app screens served by the core. A lock or container left by SIGKILL requires explicit inspection; a new run never removes all containers sharing the harness label.
 
 The full stack (Keycloak, Caddy, core serve/worker and CLI-deployed Docker apps) runs disposably:
 
@@ -46,6 +46,14 @@ scripts/runtime-regression/stack-ui.sh down
 ```
 
 It uses compose project `miy-stack-ui` with `stack-ui.compose.yaml` (own app network, own platform build), ports 18300–18304, state in `.local/stack-ui` and `MIY_DATABASE_CONTAINER=miy-stack-ui-postgres-1`; the core listens on the Docker bridge address only. `down` removes the app containers, `miy-runtime-*` networks and images belonging to installations in the stack's own database, then the compose project with its volume and the state directory. `run` compares containers, networks, volumes and images before and after and fails on any difference (`.local/evidence/stack-ui/host-diff.txt`). It never reads `.local/runtime.env` or touches `miy-v2-validation-*`. Docker BuildKit cache from the app build is shared and kept.
+
+The atomic state-directory creation and `.stack-ui-owner` marker establish ownership before `run` enables cleanup. Existing state, partial compose resources, or a port conflict cause refusal without deleting those resources or replacing existing evidence. `down` also verifies the marker and database compose label; older state without a marker must be inspected manually rather than adopted automatically.
+
+Run UI harness ownership checks with mocked Docker/service commands, without a Docker daemon or platform server:
+
+```sh
+python3 scripts/runtime-regression/test_ui_cleanup.py
+```
 
 Remote app rendering before and after a shell change:
 

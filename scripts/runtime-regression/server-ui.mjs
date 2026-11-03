@@ -9,30 +9,47 @@ import { fileURLToPath } from "node:url";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const evidence = resolve(root, ".local/evidence/server-ui");
+const lock = `${evidence}.lock`;
 const site = join(evidence, "site");
 const UI_PORT = 18148;
 const API_PORT = 18149;
 const ISSUER_PORT = 18150;
 const origin = `http://127.0.0.1:${UI_PORT}`;
 const issuer = `http://127.0.0.1:${ISSUER_PORT}/identity/realms/miy`;
-const label = `miy.server-ui=${process.pid}`;
-const database = `miy-server-ui-${process.pid}`;
+const owner = `${process.pid}-${randomBytes(8).toString("hex")}`;
+const label = `miy.server-ui=${owner}`;
+const database = `miy-server-ui-${owner}`;
 const binary = resolve(root, "target/debug/miy");
 const children = [];
+let ownsDatabase = false;
+let ownsLock = false;
 
 function cleanup() {
   for (const child of children) child.kill("SIGTERM");
   try {
-    execFileSync("docker", ["rm", "-f", "-v", database], { stdio: "ignore" });
-  } catch {}
+    if (!ownsDatabase) return;
+    const actualOwner = execFileSync("docker", ["inspect", "-f", '{{ index .Config.Labels "miy.server-ui" }}', database], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
+    if (actualOwner === owner) {
+      execFileSync("docker", ["rm", "-f", "-v", database], { stdio: "ignore" });
+      ownsDatabase = false;
+    }
+  } catch {} finally {
+    if (ownsLock) {
+      rmSync(lock, { recursive: true, force: true });
+      ownsLock = false;
+    }
+  }
 }
 for (const signal of ["SIGTERM", "SIGINT", "SIGHUP"]) process.on(signal, () => (cleanup(), process.exit(0)));
 process.on("exit", cleanup);
 
 if (!existsSync(binary)) throw new Error("build the core first: cargo build");
-// Remove databases left by an interrupted earlier run; only this harness uses the label.
-const stale = execFileSync("docker", ["ps", "-aq", "--filter", "label=miy.server-ui"]).toString().split(/\s+/).filter(Boolean);
-if (stale.length) execFileSync("docker", ["rm", "-f", "-v", ...stale], { stdio: "ignore" });
+mkdirSync(dirname(evidence), { recursive: true });
+// Ports and evidence paths are fixed; fail before touching another run's files.
+mkdirSync(lock);
+ownsLock = true;
+// Other invocations may still be running. Cleanup is limited to this execution's
+// successfully created container; interrupted runs require explicit inspection.
 rmSync(evidence, { recursive: true, force: true });
 mkdirSync(join(evidence, "artifacts"), { recursive: true });
 
@@ -43,6 +60,7 @@ execFileSync("docker", [
   "-p", "127.0.0.1::5432", "-e", `POSTGRES_PASSWORD=${password}`, "-e", "POSTGRES_DB=miy_ui_core",
   "--tmpfs", "/var/lib/postgresql", "postgres:18.3",
 ], { stdio: "ignore" });
+ownsDatabase = true;
 for (let i = 0; ; i++) {
   try {
     execFileSync("docker", ["exec", database, "pg_isready", "-h", "127.0.0.1", "-U", "postgres"], { stdio: "ignore" });

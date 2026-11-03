@@ -13,17 +13,43 @@ PROJECT=miy-stack-ui
 ORIGIN=http://localhost:18300
 DB=$PROJECT-postgres-1
 EVIDENCE=$ROOT/.local/evidence/stack-ui
+OWNER_FILE=$STATE/.stack-ui-owner
+OWNER_TOKEN=
+OWNED_STATE=0
+CAPTURE_SNAPSHOT=0
 export MIY_STATE_DIR=$STATE
 export MIY_DATABASE_CONTAINER=$DB
 compose=(docker compose -p "$PROJECT" -f compose.yaml -f scripts/runtime-regression/stack-ui.compose.yaml --env-file "$STATE/compose.env")
 
+project_resources() {
+  docker ps -aq --filter "label=com.docker.compose.project=$PROJECT" || return
+  docker volume ls -q --filter "label=com.docker.compose.project=$PROJECT" || return
+  docker network ls -q --filter "label=com.docker.compose.project=$PROJECT" || return
+  docker network ls -q --filter "name=^${PROJECT}-app-runtime$"
+}
+
 up() {
-  if docker inspect "$DB" >/dev/null 2>&1 || [ -e "$STATE" ]; then
+  if docker inspect "$DB" >/dev/null 2>&1 || [ -e "$STATE" ] || [ -L "$STATE" ]; then
     echo "stack-ui already exists; run '$0 down' first" >&2; exit 1
+  fi
+  resources=$(project_resources) || { echo "cannot inspect stack-ui ownership" >&2; exit 1; }
+  if [ -n "$resources" ]; then
+    echo "stack-ui resources already exist; refusing to adopt or remove them" >&2; exit 1
   fi
   for port in 18300 18301 18302 18303 18304; do
     if ss -ltn "sport = :$port" | grep -q LISTEN; then echo "port $port is in use" >&2; exit 1; fi
   done
+  # The atomic mkdir is also the single-run lock. A rejected/concurrent run must
+  # never remove a previous invocation's state or Docker resources in its trap.
+  mkdir -p "$ROOT/.local"
+  mkdir -m 700 "$STATE"
+  OWNER_TOKEN="$$-$RANDOM-$RANDOM"
+  printf '%s\n%s\n' "$ROOT" "$OWNER_TOKEN" >"$OWNER_FILE"
+  OWNED_STATE=1
+  if [ "$CAPTURE_SNAPSHOT" -eq 1 ]; then
+    mkdir -p "$EVIDENCE"
+    snapshot >"$EVIDENCE/host-before.txt"
+  fi
   # The core listens on the Docker bridge address so only the proxy container can reach it.
   python3 scripts/bootstrap.py --state-dir "$STATE" --origin "$ORIGIN" --bind 172.17.0.1:18304 \
     --postgres-port 18301 --identity-port 18302 --http-port 18300 --https-port 18303 --no-shared-development-login
@@ -46,6 +72,24 @@ up() {
 }
 
 down() {
+  if [ ! -e "$STATE" ] && [ ! -L "$STATE" ]; then
+    resources=$(project_resources) || return 1
+    if docker inspect "$DB" >/dev/null 2>&1 || [ -n "$resources" ]; then
+      echo "stack-ui has resources without owned state; refusing cleanup" >&2; return 1
+    fi
+    echo "stack-ui already absent"
+    return 0
+  fi
+  if [ -L "$STATE" ] || [ ! -f "$OWNER_FILE" ] || [ -L "$OWNER_FILE" ] ||
+      [ "$(sed -n '1p' "$OWNER_FILE")" != "$ROOT" ] ||
+      [ -z "$(sed -n '2p' "$OWNER_FILE")" ] ||
+      { [ "$OWNED_STATE" -eq 1 ] && [ "$(sed -n '2p' "$OWNER_FILE")" != "$OWNER_TOKEN" ]; }; then
+    echo "stack-ui state is not owned by this harness; refusing cleanup" >&2; return 1
+  fi
+  if docker inspect "$DB" >/dev/null 2>&1 &&
+      [ "$(docker inspect -f '{{ index .Config.Labels "com.docker.compose.project" }}' "$DB")" != "$PROJECT" ]; then
+    echo "stack-ui database name belongs to another owner; refusing cleanup" >&2; return 1
+  fi
   set +e
   [ -d "$STATE" ] && python3 scripts/services.py stop
   if docker inspect "$DB" >/dev/null 2>&1; then
@@ -84,9 +128,9 @@ down() {
 
 # Identity of the running platform's containers, networks and app images.
 snapshot() {
-  { docker ps -a --format '{{.ID}} {{.Names}} {{.State}}' | grep -v " $PROJECT-" | sort
-    docker network ls --format '{{.ID}} {{.Name}}' | grep -v " $PROJECT" | sort
-    docker volume ls -q | grep -v "^${PROJECT}_" | sort
+  { docker ps -a --format '{{.ID}} {{.Names}} {{.State}}' | awk -v prefix="$PROJECT-" 'index($2, prefix) != 1' | sort
+    docker network ls --format '{{.ID}} {{.Name}}' | awk -v prefix="$PROJECT" 'index($2, prefix) != 1' | sort
+    docker volume ls -q | awk -v prefix="${PROJECT}_" 'index($0, prefix) != 1' | sort
     docker images --format '{{.ID}} {{.Repository}}:{{.Tag}}' | sort; }
 }
 
@@ -94,10 +138,9 @@ case "${1:-}" in
   up) up ;;
   down) down ;;
   run)
-    mkdir -p "$EVIDENCE"
-    snapshot >"$EVIDENCE/host-before.txt"
+    CAPTURE_SNAPSHOT=1
     status=0
-    trap 'down; snapshot >"$EVIDENCE/host-after.txt"; diff -u "$EVIDENCE/host-before.txt" "$EVIDENCE/host-after.txt" >"$EVIDENCE/host-diff.txt" && echo "running platform unchanged" || { echo "host resources changed: $EVIDENCE/host-diff.txt" >&2; exit 1; }' EXIT
+    trap 'if [ "$OWNED_STATE" -eq 1 ]; then down; snapshot >"$EVIDENCE/host-after.txt"; diff -u "$EVIDENCE/host-before.txt" "$EVIDENCE/host-after.txt" >"$EVIDENCE/host-diff.txt" && echo "running platform unchanged" || { echo "host resources changed: $EVIDENCE/host-diff.txt" >&2; exit 1; }; fi' EXIT
     up
     pnpm exec playwright test -c scripts/runtime-regression/stack-ui.config.ts || status=$?
     exit $status

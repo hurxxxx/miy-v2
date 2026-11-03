@@ -72,6 +72,104 @@ test("installation read failure is distinct from an empty list and can be retrie
   await expect(page.getByRole("link", { name: "셸 검증 앱", exact: true })).toBeVisible();
 });
 
+test("installation polling settles when every response is slower than the polling interval", async ({
+  page,
+}) => {
+  let completed = 0;
+  await page.route("**/api/**", async (route) => {
+    const path = new URL(route.request().url()).pathname;
+    if (path === "/api/v1/me") return route.fulfill({ json: user });
+    expect(path).toBe("/api/v1/installations");
+    // A healthy but slow API must not leave the screen loading forever because
+    // each three-second poll supersedes the previous request before it finishes.
+    await new Promise((resolve) => setTimeout(resolve, 4000));
+    if (page.isClosed()) return;
+    await route.fulfill({ json: [app] });
+    completed += 1;
+  });
+  await page.goto("/environments/dev");
+  await expect(
+    page.getByRole("link", { name: app.name, exact: true }),
+  ).toBeVisible({ timeout: 12000 });
+  expect(completed).toBeGreaterThan(0);
+  await expect(
+    page.getByText("앱 목록을 불러오는 중…", { exact: true }),
+  ).toHaveCount(0);
+});
+
+test("an older installation response cannot restore an app after a newer permission revocation", async ({
+  page,
+}) => {
+  let reads = 0;
+  let releaseOlder!: () => void;
+  let markOlderStarted!: () => void;
+  let markOlderFinished!: () => void;
+  const olderGate = new Promise<void>((resolve) => {
+    releaseOlder = resolve;
+  });
+  const olderStarted = new Promise<void>((resolve) => {
+    markOlderStarted = resolve;
+  });
+  const olderFinished = new Promise<void>((resolve) => {
+    markOlderFinished = resolve;
+  });
+  await page.route("**/api/**", async (route) => {
+    const path = new URL(route.request().url()).pathname;
+    if (path === "/api/v1/me") return route.fulfill({ json: user });
+    expect(path).toBe("/api/v1/installations");
+    const id = ++reads;
+    if (id === 2) {
+      markOlderStarted();
+      await olderGate;
+      await route.fulfill({ json: [app] });
+      markOlderFinished();
+      return;
+    }
+    await route.fulfill({ json: id === 1 ? [app] : [] });
+  });
+  try {
+    await page.goto("/environments/dev");
+    await expect(
+      page.getByRole("link", { name: app.name, exact: true }),
+    ).toBeVisible();
+    await olderStarted;
+    // The navigation refresh observes revoked access while the earlier poll
+    // still holds a snapshot taken before revocation.
+    await page
+      .getByRole("navigation", { name: "실행 환경" })
+      .filter({ visible: true })
+      .getByRole("link", { name: "운영 영역" })
+      .click();
+    await expect(
+      page.getByText("이 실행 환경에서 사용할 수 있는 앱이 없습니다."),
+    ).toBeVisible();
+    await page
+      .getByRole("navigation", { name: "실행 환경" })
+      .filter({ visible: true })
+      .getByRole("link", { name: "테스트 영역" })
+      .click();
+    await expect(
+      page.getByText("이 실행 환경에서 사용할 수 있는 앱이 없습니다."),
+    ).toBeVisible();
+    releaseOlder();
+    await olderFinished;
+    await page.evaluate(
+      () =>
+        new Promise<void>((resolve) =>
+          requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+        ),
+    );
+    await expect(
+      page.getByRole("link", { name: app.name, exact: true }),
+    ).toHaveCount(0);
+    await expect(
+      page.getByText("이 실행 환경에서 사용할 수 있는 앱이 없습니다."),
+    ).toBeVisible();
+  } finally {
+    releaseOlder();
+  }
+});
+
 test("app screen read failure is not reported as missing permission", async ({ page }) => {
   let failApp = true;
   await mock(page, {

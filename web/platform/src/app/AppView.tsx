@@ -225,14 +225,14 @@ function AppSession({ appId, environment, basePath }: { appId: string; environme
         )}
         <RuntimeHealth app={{ ...app, health }} />
       </div>
-      {/* Apps render only inside this container; shell selectors must not reach into it. */}
-      <div className="miy-app-root" data-miy-app={app.appId}>
-        <Boundary key={app.releaseId}>
-          <Suspense fallback={<p>앱 화면을 불러오는 중…</p>}>
+      {/* Platform fallbacks stay outside the container excluded from shell CSS. */}
+      <Boundary key={app.releaseId}>
+        <Suspense fallback={<p>앱 화면을 불러오는 중…</p>}>
+          <div className="miy-app-root" data-miy-app={app.appId}>
             <View key={app.id} runtime={runtime} />
-          </Suspense>
-        </Boundary>
-      </div>
+          </div>
+        </Suspense>
+      </Boundary>
     </>
   );
 }

@@ -1,5 +1,5 @@
-/* Platform controls; every selector is a ui-* / shell class. */
-.ui-button {
+/* Platform controls exclude the remote app root, even for colliding ui-* names. */
+.ui-button:not(:where(.miy-app-root, .miy-app-root *)) {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -21,47 +21,47 @@
     border-color var(--shell-motion),
     box-shadow var(--shell-motion);
 }
-.ui-button-sm {
+.ui-button-sm:not(:where(.miy-app-root, .miy-app-root *)) {
   min-height: 30px;
   padding: 0 var(--shell-space-3);
   font-size: 13px;
 }
-.ui-button:hover:not(:disabled) {
+.ui-button:hover:not(:disabled):not(:where(.miy-app-root, .miy-app-root *)) {
   background: var(--shell-surface-hover);
 }
-.ui-button:focus-visible,
-.ui-input:focus-visible,
-.ui-field select:focus-visible,
-.ui-field input:focus-visible {
+.ui-button:focus-visible:not(:where(.miy-app-root, .miy-app-root *)),
+.ui-input:focus-visible:not(:where(.miy-app-root, .miy-app-root *)),
+.ui-field select:focus-visible:not(:where(.miy-app-root, .miy-app-root *)),
+.ui-field input:focus-visible:not(:where(.miy-app-root, .miy-app-root *)) {
   outline: none;
   box-shadow: var(--shell-focus-ring);
 }
-.ui-button:disabled {
+.ui-button:disabled:not(:where(.miy-app-root, .miy-app-root *)) {
   cursor: not-allowed;
   opacity: 0.55;
 }
-.ui-button-primary {
+.ui-button-primary:not(:where(.miy-app-root, .miy-app-root *)) {
   background: var(--shell-accent);
   border-color: var(--shell-accent);
   color: var(--shell-accent-fg);
 }
-.ui-button-primary:hover:not(:disabled) {
+.ui-button-primary:hover:not(:disabled):not(:where(.miy-app-root, .miy-app-root *)) {
   background: var(--shell-accent-hover);
 }
-.ui-button-danger {
+.ui-button-danger:not(:where(.miy-app-root, .miy-app-root *)) {
   background: var(--shell-danger-text);
   border-color: var(--shell-danger-text);
   color: #fff;
 }
-.ui-button-danger:hover:not(:disabled) {
+.ui-button-danger:hover:not(:disabled):not(:where(.miy-app-root, .miy-app-root *)) {
   background: #991b1b;
 }
-.ui-button-ghost {
+.ui-button-ghost:not(:where(.miy-app-root, .miy-app-root *)) {
   border-color: transparent;
   background: transparent;
 }
 
-.ui-panel {
+.ui-panel:not(:where(.miy-app-root, .miy-app-root *)) {
   min-width: 0;
   padding: var(--shell-space-5);
   border: 1px solid var(--shell-border);
@@ -69,29 +69,29 @@
   background: var(--shell-surface);
   box-shadow: var(--shell-shadow-sm);
 }
-.ui-panel + .ui-panel {
+.ui-panel + .ui-panel:not(:where(.miy-app-root, .miy-app-root *)) {
   margin-top: var(--shell-space-4);
 }
-.ui-panel-heading {
+.ui-panel-heading:not(:where(.miy-app-root, .miy-app-root *)) {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: var(--shell-space-3);
   margin-bottom: var(--shell-space-3);
 }
-.ui-panel-heading h2 {
+.ui-panel-heading h2:not(:where(.miy-app-root, .miy-app-root *)) {
   margin: 0;
   font-size: 16px;
   font-weight: 700;
   overflow-wrap: anywhere;
 }
-.ui-panel p {
+.ui-panel p:not(:where(.miy-app-root, .miy-app-root *)) {
   margin: 0 0 var(--shell-space-2);
   color: var(--shell-ink-muted);
   overflow-wrap: anywhere;
 }
 
-.ui-badge {
+.ui-badge:not(:where(.miy-app-root, .miy-app-root *)) {
   display: inline-flex;
   align-items: center;
   gap: var(--shell-space-1);
@@ -102,33 +102,33 @@
   font-weight: 600;
   white-space: nowrap;
 }
-.ui-tone-neutral {
+.ui-tone-neutral:not(:where(.miy-app-root, .miy-app-root *)) {
   background: var(--shell-surface-subtle);
   border-color: var(--shell-border);
   color: var(--shell-ink-muted);
 }
-.ui-tone-info {
+.ui-tone-info:not(:where(.miy-app-root, .miy-app-root *)) {
   background: var(--shell-info-bg);
   border-color: var(--shell-info-border);
   color: var(--shell-info-text);
 }
-.ui-tone-success {
+.ui-tone-success:not(:where(.miy-app-root, .miy-app-root *)) {
   background: var(--shell-success-bg);
   border-color: var(--shell-success-border);
   color: var(--shell-success-text);
 }
-.ui-tone-warning {
+.ui-tone-warning:not(:where(.miy-app-root, .miy-app-root *)) {
   background: var(--shell-warning-bg);
   border-color: var(--shell-warning-border);
   color: var(--shell-warning-text);
 }
-.ui-tone-danger {
+.ui-tone-danger:not(:where(.miy-app-root, .miy-app-root *)) {
   background: var(--shell-danger-bg);
   border-color: var(--shell-danger-border);
   color: var(--shell-danger-text);
 }
 
-.ui-notice {
+.ui-notice:not(:where(.miy-app-root, .miy-app-root *)) {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -139,31 +139,31 @@
   border: 1px solid;
   border-radius: var(--shell-radius-lg);
 }
-.ui-notice-body {
+.ui-notice-body:not(:where(.miy-app-root, .miy-app-root *)) {
   min-width: 0;
   flex: 1 1 240px;
 }
-.ui-notice-body p {
+.ui-notice-body p:not(:where(.miy-app-root, .miy-app-root *)) {
   margin: 0;
   color: inherit;
 }
-.ui-notice-body p + p {
+.ui-notice-body p + p:not(:where(.miy-app-root, .miy-app-root *)) {
   margin-top: var(--shell-space-1);
 }
-.ui-notice-actions {
+.ui-notice-actions:not(:where(.miy-app-root, .miy-app-root *)) {
   display: flex;
   flex-wrap: wrap;
   gap: var(--shell-space-2);
 }
 
-.ui-loading {
+.ui-loading:not(:where(.miy-app-root, .miy-app-root *)) {
   display: flex;
   align-items: center;
   gap: var(--shell-space-2);
   margin: var(--shell-space-4) 0;
   color: var(--shell-ink-subtle);
 }
-.ui-spinner {
+.ui-spinner:not(:where(.miy-app-root, .miy-app-root *)) {
   width: 14px;
   height: 14px;
   border: 2px solid var(--shell-border);
@@ -177,12 +177,12 @@
   }
 }
 @media (prefers-reduced-motion: reduce) {
-  .ui-spinner {
+  .ui-spinner:not(:where(.miy-app-root, .miy-app-root *)) {
     animation: none;
   }
 }
 
-.ui-empty {
+.ui-empty:not(:where(.miy-app-root, .miy-app-root *)) {
   padding: var(--shell-space-8) var(--shell-space-6);
   border: 1px dashed var(--shell-border-strong);
   border-radius: var(--shell-radius-xl);
@@ -190,32 +190,32 @@
   text-align: center;
   color: var(--shell-ink-subtle);
 }
-.ui-empty p {
+.ui-empty p:not(:where(.miy-app-root, .miy-app-root *)) {
   margin: 0;
 }
-.ui-empty .ui-empty-title {
+.ui-empty .ui-empty-title:not(:where(.miy-app-root, .miy-app-root *)) {
   margin-bottom: var(--shell-space-1);
   color: var(--shell-ink);
   font-weight: 600;
 }
 
-.ui-field {
+.ui-field:not(:where(.miy-app-root, .miy-app-root *)) {
   display: grid;
   gap: var(--shell-space-1);
   min-width: 0;
 }
-.ui-field-label {
+.ui-field-label:not(:where(.miy-app-root, .miy-app-root *)) {
   font-size: 13px;
   font-weight: 600;
   color: var(--shell-ink-muted);
 }
-.ui-field-hint {
+.ui-field-hint:not(:where(.miy-app-root, .miy-app-root *)) {
   font-size: 12px;
   color: var(--shell-ink-subtle);
 }
-.ui-input,
-.ui-field input,
-.ui-field select {
+.ui-input:not(:where(.miy-app-root, .miy-app-root *)),
+.ui-field input:not(:where(.miy-app-root, .miy-app-root *)),
+.ui-field select:not(:where(.miy-app-root, .miy-app-root *)) {
   width: 100%;
   min-height: 38px;
   padding: 0 var(--shell-space-3);
@@ -226,7 +226,7 @@
   font: inherit;
 }
 
-.app-mark {
+.app-mark:not(:where(.miy-app-root, .miy-app-root *)) {
   display: inline-flex;
   flex-shrink: 0;
   align-items: center;
@@ -238,24 +238,24 @@
   line-height: 1;
   user-select: none;
 }
-.app-mark-sm {
+.app-mark-sm:not(:where(.miy-app-root, .miy-app-root *)) {
   width: 28px;
   height: 28px;
   border-radius: 8px;
   font-size: 12px;
 }
-.app-mark-md {
+.app-mark-md:not(:where(.miy-app-root, .miy-app-root *)) {
   width: 40px;
   height: 40px;
   font-size: 15px;
 }
-.app-mark-lg {
+.app-mark-lg:not(:where(.miy-app-root, .miy-app-root *)) {
   width: 48px;
   height: 48px;
   font-size: 18px;
 }
 
-.shell-dialog {
+.shell-dialog:not(:where(.miy-app-root, .miy-app-root *)) {
   width: min(480px, calc(100vw - 32px));
   padding: var(--shell-space-6);
   border: 1px solid var(--shell-border);
@@ -263,21 +263,21 @@
   background: var(--shell-surface);
   box-shadow: var(--shell-shadow-lg);
 }
-.shell-dialog::backdrop {
+.shell-dialog:not(:where(.miy-app-root, .miy-app-root *))::backdrop {
   background: rgba(15, 23, 42, 0.45);
 }
-.shell-dialog h2 {
+.shell-dialog h2:not(:where(.miy-app-root, .miy-app-root *)) {
   margin: 0 0 var(--shell-space-3);
   font-size: 18px;
 }
-.shell-dialog-body {
+.shell-dialog-body:not(:where(.miy-app-root, .miy-app-root *)) {
   color: var(--shell-ink-muted);
   overflow-wrap: anywhere;
 }
-.shell-dialog-body p {
+.shell-dialog-body p:not(:where(.miy-app-root, .miy-app-root *)) {
   margin: 0 0 var(--shell-space-2);
 }
-.shell-dialog-actions {
+.shell-dialog-actions:not(:where(.miy-app-root, .miy-app-root *)) {
   display: flex;
   flex-wrap: wrap;
   justify-content: flex-end;

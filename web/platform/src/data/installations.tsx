@@ -58,8 +58,19 @@ export function useInstallations() {
 export function useInstallationPolling(intervalMs = 3000) {
   const { refresh } = useInstallations();
   useEffect(() => {
-    const timer = setInterval(() => void refresh(), intervalMs);
-    return () => clearInterval(timer);
+    let active = true;
+    let timer: ReturnType<typeof setTimeout>;
+    async function poll() {
+      await refresh();
+      // Keep polls sequential: a slow response must be allowed to settle before
+      // another poll supersedes it. Explicit refreshes still use latest-wins.
+      if (active) timer = setTimeout(poll, intervalMs);
+    }
+    timer = setTimeout(poll, intervalMs);
+    return () => {
+      active = false;
+      clearTimeout(timer);
+    };
   }, [refresh, intervalMs]);
 }
 

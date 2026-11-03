@@ -146,21 +146,42 @@ type ConfirmOptions = {
  * Escape cancels, and focus returns to the element that opened it.
  */
 export function useConfirm() {
-  const [request, setRequest] = useState<(ConfirmOptions & { resolve: (ok: boolean) => void }) | null>(null);
+  type PendingConfirmation = ConfirmOptions & {
+    resolve: (ok: boolean) => void;
+  };
+  const [request, setRequest] = useState<PendingConfirmation | null>(null);
+  const pending = useRef<PendingConfirmation | null>(null);
+  const mounted = useRef(true);
+  const settle = useCallback((ok: boolean) => {
+    const current = pending.current;
+    pending.current = null;
+    if (mounted.current) setRequest(null);
+    current?.resolve(ok);
+  }, []);
+  const cancel = useCallback(() => settle(false), [settle]);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      cancel();
+    };
+  }, [cancel]);
   const confirm = useCallback(
-    (options: ConfirmOptions) => new Promise<boolean>((resolve) => setRequest({ ...options, resolve })),
-    [],
+    (options: ConfirmOptions) => {
+      cancel();
+      if (!mounted.current) return Promise.resolve(false);
+      return new Promise<boolean>((resolve) => {
+        const next = { ...options, resolve };
+        pending.current = next;
+        setRequest(next);
+      });
+    },
+    [cancel],
   );
   const dialog = request ? (
-    <ConfirmDialog
-      {...request}
-      onClose={(ok) => {
-        request.resolve(ok);
-        setRequest(null);
-      }}
-    />
+    <ConfirmDialog {...request} onClose={settle} />
   ) : null;
-  return { confirm, dialog };
+  return { confirm, dialog, cancel };
 }
 
 function ConfirmDialog({ title, body, confirmLabel, tone = "primary", returnFocus, onClose }: ConfirmOptions & { onClose: (ok: boolean) => void }) {

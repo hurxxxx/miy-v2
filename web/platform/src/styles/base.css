@@ -1,9 +1,14 @@
 /*
  * Remote apps share this document. Only the rules in this file are global:
  * they are the baseline existing apps already render with (box-sizing, body
- * font/background/color, link color, button font). Every other rule targets
- * shell or platform classes. Apps render inside .miy-app-root, which restores
- * the app baseline so the shell font, size and line height never reach them.
+ * font/background/color, link color, button font). These legacy rules and the
+ * .miy-app-root baseline are deliberately preserved for existing apps.
+ * Platform class names alone are not a scope: remote apps may use the same
+ * names. Every platform selector therefore excludes .miy-app-root and its
+ * descendants at the target element, including before pseudo-elements.
+ * :where() keeps the exclusion at zero specificity so platform cascade order
+ * is unchanged. Apps render inside .miy-app-root, which restores their font,
+ * size and line height; platform error/loading UI belongs outside that root.
  */
 * {
   box-sizing: border-box;
@@ -23,12 +28,12 @@ button {
 }
 
 /* Shell typography scope. */
-.shell,
-.boot,
-.login-page,
-.cli-install-public,
-.shell-dialog,
-.rail-tooltip {
+.shell:not(:where(.miy-app-root, .miy-app-root *)),
+.boot:not(:where(.miy-app-root, .miy-app-root *)),
+.login-page:not(:where(.miy-app-root, .miy-app-root *)),
+.cli-install-public:not(:where(.miy-app-root, .miy-app-root *)),
+.shell-dialog:not(:where(.miy-app-root, .miy-app-root *)),
+.rail-tooltip:not(:where(.miy-app-root, .miy-app-root *)) {
   font-family: var(--shell-font);
   color: var(--shell-ink);
   font-size: 14px;
@@ -45,7 +50,7 @@ button {
   color: var(--miy-text);
   -webkit-font-smoothing: auto;
 }
-.visually-hidden {
+.visually-hidden:not(:where(.miy-app-root, .miy-app-root *)) {
   position: absolute;
   width: 1px;
   height: 1px;
