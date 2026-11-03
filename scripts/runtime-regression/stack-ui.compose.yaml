@@ -1,0 +1,9 @@
+# Override for the disposable UI-5 stack (project "miy-stack-ui").
+# Keeps the stack off the running platform's shared network and its platform build.
+services:
+  proxy:
+    volumes:
+      - ${MIY_STATE_DIR:?}/site:/srv/platform:ro
+networks:
+  app_runtime:
+    name: miy-stack-ui-app-runtime

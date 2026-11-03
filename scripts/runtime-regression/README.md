@@ -37,6 +37,16 @@ pnpm exec playwright test --config scripts/runtime-regression/server-ui.config.t
 
 `server-ui.mjs` starts a disposable `postgres:18.3` container (random loopback port, tmpfs, label `miy.server-ui`), static OIDC metadata, `miy migrate`/`seed`/`serve` on 127.0.0.1:18149 and the built platform with `/api` and `/auth` proxied on 127.0.0.1:18148. It uses only the loopback development login and never reads `.local/runtime.env`. The container is removed on exit and at the next start. It does not cover Keycloak login, deployed Docker apps or remote app screens served by the core.
 
+The full stack (Keycloak, Caddy, core serve/worker and CLI-deployed Docker apps) runs disposably:
+
+```sh
+scripts/runtime-regression/stack-ui.sh run   # up → tests/stack-ui.spec.ts → down → host diff
+scripts/runtime-regression/stack-ui.sh up    # or start/stop by hand
+scripts/runtime-regression/stack-ui.sh down
+```
+
+It uses compose project `miy-stack-ui` with `stack-ui.compose.yaml` (own app network, own platform build), ports 18300–18304, state in `.local/stack-ui` and `MIY_DATABASE_CONTAINER=miy-stack-ui-postgres-1`; the core listens on the Docker bridge address only. `down` removes the app containers, `miy-runtime-*` networks and images belonging to installations in the stack's own database, then the compose project with its volume and the state directory. `run` compares containers, networks, volumes and images before and after and fails on any difference (`.local/evidence/stack-ui/host-diff.txt`). It never reads `.local/runtime.env` or touches `miy-v2-validation-*`. Docker BuildKit cache from the app build is shared and kept.
+
 Remote app rendering before and after a shell change:
 
 ```sh
