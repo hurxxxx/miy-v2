@@ -8,6 +8,8 @@
 
 2026-11-03 저장소의 새 코어 소스는 **0.7.0 / 번들 0.8.0**이다. [설치 승인·사용자 위임·앱 호출 계약](CORE-PERMISSIONS.md)을 구현했으며 현재 운영 바이너리·DB migration·게시 CLI에는 반영하지 않았다. 특히 0016 migration은 기존 외부 호출 권한을 자동 승인하지 않으므로 실제 적용 때 정확한 설치/릴리스별 승인 전환이 필요하다.
 
+2026-11-03 웹 화면만 [기본 UI 이식](../UIUX_MIGRATION_PLAN.md) 결과(소스 `98a31cc`)로 교체했다. 서버·worker 실행 파일과 DB는 위 0.6.3(`8d7d042`) 그대로다. 새 화면이 쓰는 API 경로·SDK·공유 모듈 설정은 `8d7d042` 화면과 같음을 확인했다. 교체 전 `web/platform/dist`는 `.local/platform-dist-backups/dist-20261103T183736`(파일 해시 목록 `.sha256` 포함)에 보존했고, 열린 탭이 이전 파일을 계속 읽도록 이전 `assets/`와 `remoteEntry`도 새 산출물에 남겼다. 공개 주소에서 공유 개발 로그인으로 홈·앱 레일·기존 앱 화면·운영 영역·관리 화면·모바일 서랍·공개 CLI 설치 화면을 읽기만 하여 확인했고 페이지 오류는 없었다(검사 세션은 로그아웃). 되돌리려면 `mv web/platform/dist web/platform/dist.failed && cp -a .local/platform-dist-backups/dist-20261103T183736 web/platform/dist`를 실행한다. Nginx·서비스 재시작은 필요 없다.
+
 현재 호스트가 플랫폼 서버다. 다른 PC의 브라우저·CLI·프로젝트 MCP는 위 HTTPS 주소를 사용한다. 주소·인증·서비스 설정은 이미 적용되어 있으며, 이 문서는 현재 배포와 저장소 작업본을 구분해 유지관리하는 절차다.
 
 ## 1. 서버 주소와 실행 구성
