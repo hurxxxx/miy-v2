@@ -254,6 +254,7 @@ test("device approval displays origin/account and sends the typed code with CSRF
   await page.route("**/api/**",async route=>{
     const path=new URL(route.request().url()).pathname;
     if(path==="/api/v1/me") return route.fulfill({json:{id:"fixture-user",name:"승인할 계정",admin:false,csrf:"fixture-csrf"}});
+    if(path===`/api/v1/cli/devices/${id}`) return route.fulfill({json:{status:"pending",expiresIn:300}});
     if(path===`/api/v1/cli/devices/${id}/decision`){
       expect(route.request().headers()["x-miy-csrf"]).toBe("fixture-csrf");
       decisions.push(route.request().postDataJSON());return route.fulfill({json:{approved:true}});
