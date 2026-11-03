@@ -19,8 +19,8 @@ GitHub Actions는 `cli-foundation.yml`(Linux 서버·Linux/macOS/Windows 클라�
 | 바꾼 것 | 최소 검사 | 해당할 때 추가 |
 | --- | --- | --- |
 | 문서만(`docs/`, `README.md`) | `python3 scripts/check-doc-links.py` | 상태·버전·commit을 바꿨다면 실제 증거와 대조 |
-| 코어 서버 Rust(`crates/miy/src`의 서버 기능) | `check-static.sh rust` | Docker·DB·작업 실행 동작: `run.py`. 실제 DB 복구 테스트는 로컬 개발 스택의 `check.sh` |
-| core migration(`migrations/core`) | `check-static.sh rust`, `run.py` | 이미 적용한 파일은 고치지 않고 새 번호로 추가(sqlx가 checksum 불일치를 거부). 운영 반영 전 대상 DB 덤프를 일회용 PostgreSQL에 복원해 migration 리허설 |
+| 코어 서버 Rust(`crates/miy/src`의 서버 기능) | `check-static.sh rust` | 배포·이미지 적재·권한·위임: `python3 scripts/runtime-regression/run.py`. 개발 세션 DB: `python3 scripts/check-development-database.py`. 서버 빌드: `python3 scripts/check-server-builds.py`(셋 다 일회용 PostgreSQL·Docker). 실제 DB 복구 테스트는 로컬 개발 스택의 `check.sh` |
+| core migration(`migrations/core`) | `check-static.sh rust`, `run.py` | 이미 적용한 파일은 고치지 않고 새 번호로 추가(sqlx가 checksum 불일치를 거부). 운영 반영 전 `python3 scripts/core-backup.py create`로 대상 DB를 백업하고 `verify --migrate-with <서버 바이너리>`로 일회용 PostgreSQL에서 복원·migration 리허설 |
 | CLI 클라이언트(`--no-default-features` 경로) | `check-static.sh rust` | `cargo build --locked --no-default-features` 후 `python3 scripts/check-cli-output.py --cli target/debug/miy`, `check-cli-install.py`, `check-cli-recovery.py`. macOS·Windows는 CI 매트릭스 |
 | 개발 번들·템플릿·CLI 지침(`templates/`, `crates/miy/guidance/`, `registry/`) | `check-static.sh rust`(번들 바이트 검사 포함) | 지침·업그레이드: 이전 기준 CLI를 `MIY_PREVIOUS_BUNDLE_CLI`로 지정하고 `node scripts/check-cli-guidance.mjs`. 번들 버전 변경은 [CLI 릴리스](CLI-RELEASE.md) 절차 |
 | 플랫폼 웹(`web/platform`) | `check-static.sh web` | 셸 CSS: `node scripts/runtime-regression/app-css-baseline.mjs <기준 commit>`. 실제 core 연동: `cargo build` 후 `pnpm exec playwright test --config scripts/runtime-regression/server-ui.config.ts`. 인증·앱 배포 전체: `stack-ui.sh run` |
@@ -28,7 +28,7 @@ GitHub Actions는 `cli-foundation.yml`(Linux 서버·Linux/macOS/Windows 클라�
 | 검증·정리 스크립트(`scripts/`) | `check-static.sh scripts` | 자원을 지우는 스크립트는 소유 표식·기존 자원 보존을 stub 테스트로 확인 |
 | 릴리스·설치 파일(`scripts/package-*`, `stage-*`, 릴리스 workflow) | `check-static.sh scripts` | GitHub Actions 후보 실행(`publish=false`) 후 `package-cli-release.py verify`, `package-windows-installer.py verify`. Windows 11 실제 설치는 [Windows 인수](WINDOWS-ACCEPTANCE.md)로 사용자가 수행 |
 | 서버 구성 생성(`bootstrap.py`, `render-server-config.py`, `configure-identity.py`) | `check-static.sh scripts`(`check-server-config.py` 포함) | 운영 `.local`에 bootstrap·seed·Keycloak 재설정을 실행하지 않는다 |
-| 운영 반영(v2.dwdcc.kr) | 위 해당 검사 전부, 변경 범위의 백업과 별도 영역 복원 확인 | health·설치 안내 버전, 게시 CLI로 `node scripts/check-platform-connection.mjs`, 읽기 위주 브라우저 확인, 운영 기록 갱신 |
+| 운영 반영(v2.dwdcc.kr) | 위 해당 검사 전부, 변경 범위의 백업과 별도 영역 복원 확인(`core-backup.py`), 연결 예산(`check-db-connections.py`) | health·설치 안내 버전, 게시 CLI로 `node scripts/check-platform-connection.mjs`, 읽기 위주 브라우저 확인, 운영 기록 갱신 |
 
 ## 루트 Playwright 설정
 

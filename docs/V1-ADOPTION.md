@@ -76,7 +76,7 @@ v1 근거는 `miy:<경로>`, ai-do 근거는 `ai-do:<경로>`로 적는다. 각�
 | V1-O1 | Docker 저장소 사전 점검(v1 기준은 15GiB 이상이면서 15% 이상 여유), 현재·직전 롤백 이미지 보존. BuildKit 캐시 GC는 이미지 정리와 분리 | `miy:docs/domains/release/README.md` §Build and test storage, `miy:scripts/docker-storage.mjs` | [CAPACITY](CAPACITY.md)에 설계만 있음 | 변형 적용: v2 작업·복구 필요량에 맞춰 수치 확인 | P1 | 3차 중 먼저, 변경 범위의 최소 백업·복원 확인과 함께 |
 | V1-O2 | DB 연결 예산: dev/prod 합계를 서버 한도 아래로 두고 `application_name`으로 구분해 관찰. 오래된 env 값이 새 기본값을 덮어쓰지 않게 함 | release README §Database connection budgets | CAPACITY 표에 한 줄 | 적용 | P2 | 3차(먼저) |
 | V1-O3 | 깨지는 변경의 전환·롤백: 불변 이미지 digest, 해당 리비전의 설정 스냅샷과 0600 env 백업, prepare/deploy/rollback 상호 배제 잠금, 실패 시 이전 이미지 복구 | release README §Incompatible database and configuration cutovers, `miy:scripts/prod-app.sh` | 배포마다 쓰는 `deploy.py`의 `restore()`뿐 | 적용: 호스트 updater의 설계 원칙으로 | P1 | 4차 |
-| V1-O4 | 불확실한 커밋 결과로 보상 삭제를 하지 않음. 확정된 거부 SQLSTATE만 근거로 인정하고, class 40 전체는 제외(completion_unknown 40003 포함) | `miy:apps/api/src/miy_api/core/transaction_outcome.py` | 1차에서 DB 오류를 타입별로 분류 | 적용: 파일 저장소·정리 작업에도 적용 | P2 | 4차·§7-3 |
+| V1-O4 | 불확실한 커밋 결과로 보상 삭제를 하지 않음. 확정된 거부 SQLSTATE만 근거로 인정하고, class 40 전체는 제외(completion_unknown 40003 포함) | `miy:apps/api/src/miy_api/core/transaction_outcome.py` | 1차는 DB 준비 실패의 재시도 분류만 했고, 커밋 결과를 판별하는 코드는 없었다(2026-11-03 조사) | 적용: 파일 저장소·정리 작업에도 적용 | P2 | 4차·§7-3 |
 | V1-O5 | 공개 런타임 설정 스키마: 모르는 키나 잘못된 값이면 시작 실패, 값은 출력하지 않음. 설정 migration은 0600으로 백업하고, 새 키가 남아 있으면 downgrade 차단 | release README §Public runtime configuration, `miy:scripts/runtime-config-migrate.py` | `render-server-config.py`, `runtime.env` | 변형 적용 | P2 | 4·5차 |
 | V1-O6 | 호스트 진단 항목: Docker data-root 이전, 메모리·swap 제한, 클러스터 생성 전 PostgreSQL 로케일 | `miy:docs/domains/release/installation-operations.md` | 없음 | 적용 | P2 | 5차 |
 | V1-O7 | 빈 설치 공개 전 점검: 격리 프로세스에서 초기 관리자 생성, 공개 최초 사용자 설정이 닫혔는지 확인, 업무 앱은 관리자가 켜고 대상을 정할 때까지 꺼진 상태로 시작 | release README(빈 배포 노출 전 절차) | `scripts/bootstrap.py` | 적용: 인수 체크 항목 | P2 | 5차 |
@@ -200,9 +200,9 @@ v1은 회사 소개 자료 `MIY 소개 및 사례_20261002.pdf`를 v1 구현과 
 
 | # | 항목 | 현재 기준 | 남은 설계·권고 |
 | --- | --- | --- | --- |
-| 1 | 작업 순서와 첫 업무 앱 | [추진 계획](PLAN.md#다음-우선-작업): 변경 범위의 최소 백업·복원 확인과 디스크·DB 보호 → 사용자·그룹 앱 권한과 공용 UI → 공통 기능·업무 앱. 전체 백업 제품·호스트 updater·종합 인수는 베타 전 | 최소 보호의 완료 기준을 먼저 좁히고 각 업무 앱을 하나씩 인수한다. 전체 코어 4차를 기능 개발의 선행 조건으로 두지 않음 |
-| 2 | 그룹 정본·동기화 | v1식 단일 그룹, 주 소속 정확 일치와 수동 사용자 배정. 하위 부서 자동 상속·중첩 그룹 제외 | 코어 DB를 정본으로 시작하고 Keycloak은 인증에 사용하는 안을 우선 검토. 외부 인사 연동이 필요하면 출처·동기화·회수 계약을 먼저 정의. ai-do식 동적 조직 묶음은 자동 도입하지 않음 |
-| 3 | 앱 내부 공간의 상세 계약 | 공간이 필요한 앱만 자체 DB·API에서 데이터·멤버·역할을 관리. 플랫폼은 사용자·그룹 조회와 공용 UI/SDK를 제공 | 대표 앱에서 생성·조회·공유·마지막 소유자 보호·권한 회수·데이터 보존을 정한다. 공용 선택 UI를 재사용해도 공간 소유권은 앱에 유지 |
+| 1 | 작업 순서와 첫 업무 앱 | [추진 계획](PLAN.md#다음-우선-작업): 변경 범위의 최소 백업·복원 확인과 디스크·DB 보호 → 사용자·그룹 앱 권한과 공용 UI → 공통 기능·업무 앱. 전체 백업 제품·호스트 updater·종합 인수는 베타 전 | 최소 보호는 core DB 범위로 구현(§7). 첫 업무 앱은 프로젝트·업무 앱(2026-11-03 결정)이며 앱은 하나씩 인수한다. 전체 코어 4차를 기능 개발의 선행 조건으로 두지 않음 |
+| 2 | 그룹 정본·동기화 | v1식 단일 그룹, 주 소속 정확 일치와 수동 사용자 배정. 하위 부서 자동 상속·중첩 그룹 제외 | **결정(2026-11-03):** 코어 DB가 정본, Keycloak은 인증만. 그룹으로 줄 수 있는 권한은 `use`·`develop`, `deploy`는 사람별. 외부 인사 연동은 출처·동기화·회수 계약을 먼저 정의. ai-do식 동적 조직 묶음은 자동 도입하지 않음 |
+| 3 | 앱 내부 공간의 상세 계약 | 공간이 필요한 앱만 자체 DB·API에서 데이터·멤버·역할을 관리. 플랫폼은 사용자·그룹 조회와 공용 UI/SDK를 제공 | **결정(2026-11-03):** 대표 앱은 v1 PMS 공간 모델을 줄인 프로젝트·업무 앱. 그 앱에서 생성·조회·공유·마지막 소유자 보호·권한 회수·데이터 보존을 정한다. 공용 선택 UI를 재사용해도 공간 소유권은 앱에 유지 |
 | 4 | 대외 자료 요구와 보류 앱 | V1-R1~R5 및 §3.6의 보류 앱은 채택 / 보류 / 범위 밖으로 구분 | R1(수명주기 기록)·R3(납품 패키지)은 기존 v2 방향과 맞아 채택을 권고. R2·R4·R5와 보류 앱은 제품 범위 결정이 필요. 특히 R5 웹 Studio는 별도 결정 |
 | 5 | Hermes 채택 유지 | PRD 합의대로 유지 / 4-1 실험 후 재검토 | 유지하되 4-1 실험에서 통합 비용(upstream 공백 9건, 버전마다 재검증)과 v2 Rust 코어와의 경계를 측정한 뒤 확정 |
 
@@ -220,6 +220,9 @@ v1은 회사 소개 자료 `MIY 소개 및 사례_20261002.pdf`를 v1 구현과 
 | --- | --- | --- | --- |
 | V1-Q1 | 완료 | 루트 `AGENTS.md`, `CLAUDE.md` | 운영 경계·비밀·Git·검증 보고 규칙 |
 | V1-Q2 | 완료 | [변경별 검사 지도](CHECKS.md) | 각 명령의 전제(Docker·로컬 스택·이전 CLI)를 스크립트에서 확인 |
+| V1-O1 | 소스 구현(운영 미반영) | `crates/miy/src/docker_storage.rs`. 서버 빌드 시작과 로컬에 없는 이미지 적재 전에 15GiB·15% 하한 확인, `docker_storage_low`·`docker_storage_unknown` 추가 | 단위 테스트, 실제 Docker 측정·거부 테스트, 격리 회귀. 이미지 정리 규칙은 코어 3차 남은 범위 |
+| V1-O2 | 소스 구현(운영 미반영) | 설치 역할 연결 한도(runtime 6, migration 2), 코어·앱 `application_name`, compose의 Keycloak 풀 10, `scripts/check-db-connections.py` | 운영 보고는 FAIL(역할 한도 없음, Keycloak 100). 반영·재배포 후 최악 88/97 |
+| V1-O4 | 일부 구현(운영 미반영) | `crates/miy/src/db_outcome.rs`. 결과를 모르는 DB 오류에서 배포 실패 정리(컨테이너 중지)를 하지 않음. 위임 확인 중 DB 오류를 권한 회수(`permission_revoked`)가 아닌 `database_unavailable`로 분리해, 일시적 DB 오류로 개발 세션 역할을 지우던 문제 수정. 업로드 적재 실패에 저장 공간 코드를 남김. 빌드 실패 정리는 이 worker가 실패를 기록했을 때만 | 나머지(시작·재시작 포트 기록, 업로드 만료 순서, `delivery` 보관 파일, `ensure_active` 분류)는 순서 6 |
 | V1-Q3 | 완료(GitHub 실행은 push 후) | `scripts/check-static.sh`, `.github/workflows/web.yml`, `check.sh` origin 가드, 루트 Playwright 설정 축소 | 로컬에서 `scripts`·`rust`·`web` 모두 PASS. `check.sh`가 운영 `.local`을 거부함을 확인 |
 
 ## 8. 재검증 기록 (2026-11-03)

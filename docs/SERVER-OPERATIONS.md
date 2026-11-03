@@ -84,11 +84,11 @@ Codex·Claude의 생성된 프로젝트 MCP는 프로젝트의 `.miy-tools/miy[.
 
 ## 3. 현재 배포 소스와 이 작업본의 차이
 
-2026-11-02에 `main`에 운영 소스를 통합하여 CLI **0.6.3 / 번들 0.7.1**로 맞췄다. 이후 2026-11-03 코어 권한 소스는 0.7.0 / 0.8.0으로 진행했으며 이 운영 반영 이력과 구분한다. 실제 서버와 공개 CLI는 별도 checkout에서 검증한 `8d7d042` 배포물을 유지한다. 앞선 2026-11-02 연결 검사 시점의 `main`은 0.6.0이었으며 그 당시 source/hash 기록은 변경하지 않는다. 운영 소스는 `codex/cli-experience-improvements` 계열이며, 로컬 `codex/cli-experience-linux-validation`도 해당 후속 검증 기록을 포함한다.
+실행 서버·worker·게시 CLI는 별도 checkout에서 검증한 `01e4d4924f8c8fc4e11720c1af81adf17ddb20bf`(0.7.0 / 번들 0.8.0) 배포물이고, 웹 화면은 `3876d43`이다(위 반영 기록). 이후 `main`의 소스 변경은 운영 반영을 뜻하지 않는다. 2026-11-03 이후 main에는 DB 역할 연결 한도·`application_name`·Docker 저장 공간 하한 같은 코어 변경이 있으며, 운영 반영은 사용자 요청과 별도 기록으로 한다.
 
-따라서 서버를 갱신할 때에는 먼저 배포 대상 소스 commit과 현재 실행 파일을 확인한다. 같은 버전 문자열이라도 실제 source commit·빌드 경계·설치된 SQL과 게시된 배포물의 출처를 함께 확인한다. 새 배포는 검증한 소스의 별도 checkout에서 빌드하고, 서버/worker·UI·게시 index를 같은 검증 기록에 묶어 반영한다. 기존 비밀 설정과 DB 데이터를 사용하는 서버에 초기 `bootstrap`, `seed`, Keycloak 재설정을 갱신 절차 대신 실행하지 않는다.
+서버를 갱신할 때는 먼저 배포 대상 소스 commit과 현재 실행 파일을 확인한다. 같은 버전 문자열이라도 실제 source commit·빌드 경계·설치된 SQL과 게시된 배포물의 출처를 함께 확인한다. 새 배포는 검증한 소스의 별도 checkout에서 빌드하고, 서버/worker·UI·게시 index를 같은 검증 기록에 묶어 반영한다.
 
-현재 서버 바이너리 SHA-256은 `4573260257147c2563ba5ffae177b9ac6c6b0a331d2a0b1fef1cf6e60d10064e`다. 게시 CLI의 source commit과 target별 hash는 `GET /api/v1/cli/install`로 확인한다. 서버 바이너리는 default features 빌드이므로 클라이언트 전용 바이너리와 hash가 다르다.
+현재 서버 바이너리 SHA-256은 `615f19a4f96b9b3adbdf393dd6c9cb8a7e52bda1dfd2d608ef5ac808da0bbe3d`다(이전 0.6.3은 `4573260…`). 게시 CLI의 source commit과 target별 hash는 `GET /api/v1/cli/install`로 확인한다. 서버 바이너리는 default features 빌드이므로 클라이언트 전용 바이너리와 hash가 다르다.
 
 배포와 이전 검증의 상세 이력은 [운영 소스의 0.6.3 반영 기록](https://github.com/hurxxxx/miy-v2/blob/7617246/docs/CLI-0.6.3-LINUX-VALIDATION.md)에 있다. 이 문서의 실제 연결 재검사 결과는 아래에 추가한다.
 
@@ -142,3 +142,20 @@ python3 scripts/check-cli-downloads.py --origin https://v2.dwdcc.kr \
 ```
 
 기존 `scripts/check-mcp.mjs`는 로컬 검증 계정의 전체 세션을 철회하는 검사이며, 일반 플랫폼의 연결 확인용으로 실행하지 않는다. `check-server-development-flow.mjs --run`도 새 앱·권한·DB·배포를 만드는 전체 인수 도구이므로 위 연결 검사와 용도를 구분한다.
+
+## 6. 변경 전 최소 백업과 복원 확인
+
+core DB를 바꾸는 반영(migration, 권한·그룹 데이터 변경) 전에는 그 범위를 백업하고, 별도 영역에 복원해 확인한다. 이는 [추진 계획](PLAN.md#다음-우선-작업) 순서 1의 최소 보호이며, 역할·앱 DB·파일·키까지 포함하는 전체 백업 제품(코어 4차)과 구분한다.
+
+```sh
+python3 scripts/core-backup.py create --out .local/backups/core-$(date -u +%Y%m%dT%H%M%SZ)
+python3 scripts/core-backup.py verify .local/backups/core-<시각> --migrate-with <반영할 서버 바이너리>
+python3 scripts/check-db-connections.py
+```
+
+- `create`: 운영 `miy_core`를 서비스 중지 없이 읽기만 한다. 덤프와 테이블별 행 수를 같은 REPEATABLE READ 스냅샷에서 얻어 `manifest.json`에 기록한다. 덤프와 manifest는 0600, 폴더는 0700이다.
+- `verify`: 라벨을 붙인 일회용 PostgreSQL(tmpfs)에 복원해 migration 버전과 모든 테이블 행 수를 대조한다. `--migrate-with`를 주면 반영할 바이너리의 core migration을 복원본에 먼저 적용해 리허설한다. 만든 컨테이너만 지운다.
+- 첫 실행(2026-11-03 21:57 KST): 덤프 214,693 bytes, migration 17, 테이블 35개·행 1,365개. 복원 대조 PASS, 현재 소스 바이너리로 migration 리허설 종료코드 0, 일회용 컨테이너 삭제. 행 수 하나를 바꾼 manifest는 FAIL로 거부됐다.
+- 서비스를 멈춘 상태의 일관된 덤프가 필요한 실제 반영은 [0.7.0 배포 스크립트](releases/evidence/core-0.7.0-linux/deploy.py)처럼 반영 절차 안에서 다시 백업한다.
+
+`check-db-connections.py`는 공유 PostgreSQL의 최악의 연결 수(코어 풀·Keycloak 풀·설치 역할 한도·활성 개발 세션)를 사용 가능 연결과 비교한다. 2026-11-03 운영 결과는 FAIL이다. 설치 역할 14개에 연결 한도가 없고, Keycloak 풀이 기본값 100이라 최악 122가 사용 가능한 97을 넘는다. 새 코어를 반영한 뒤 각 앱의 다음 배포에서 역할 한도(runtime 6, migration 2)가 적용되고, Keycloak을 `KC_DB_POOL_MAX_SIZE=10`으로 다시 만들면 최악 88이 된다. 두 작업 모두 운영 반영 요청 때 함께 수행한다.

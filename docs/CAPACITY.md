@@ -79,6 +79,15 @@ API 요청, 예약 작업, 빌드, 문서 처리와 Hermes 실행은 동시 실�
 
 로그는 크기·보존 기간으로 회전시키고, 빌드 캐시는 크기·사용 시점에 따라 정리한다. Docker의 로그 회전과 BuildKit GC를 기반 기능으로 활용하되, 활성 릴리스·보존 대상 롤백 이미지·진행 중 빌드의 파일은 보호한다. [Docker local 로그](https://docs.docker.com/engine/logging/drivers/local/), [BuildKit GC](https://docs.docker.com/build/cache/garbage-collection/)
 
+**Docker 저장 공간 하한 (현재 구현, 2026-11-03).** 이미지를 늘리는 작업 직전에 Docker data root(`docker info`의 `DockerRootDir`)의 여유를 확인한다. 대상은 서버 빌드 시작과, 로컬에 없는 이미지의 배포 적재(`docker load`)다. 여유가 15GiB 미만이거나 15% 미만이면 `docker_storage_low`, 측정할 수 없으면 `docker_storage_unknown`으로 작업을 거부한다. 두 코드 모두 공간을 확보한 뒤 다시 요청할 수 있다. 단일 서버에서는 PostgreSQL 볼륨도 같은 파일시스템에 있으므로, 이 하한은 빌드보다 DB 쓰기를 먼저 보호한다. 하한은 `MIY_DOCKER_MIN_FREE_GIB`·`MIY_DOCKER_MIN_FREE_PERCENT`로 조정하며, 둘 다 0이면 점검을 끈다(data root를 로컬에서 잴 수 없는 호스트용).
+
+기준값은 v1의 검증값(15GiB·15%)을 그대로 쓴다. 2026-11-03 이 호스트의 실측값은 다음과 같다.
+- v2 앱 이미지: 1개 약 123MB
+- 빌드 캐시: 다른 프로젝트 포함 110GB
+- Docker 파일시스템: 937GB 중 227GB(25%) 여유
+
+현재·직전 이미지는 삭제하지 않는다. 코어에 이미지 정리 기능이 없어 보존은 지켜지지만 사용량은 계속 늘어나므로, 보존 규칙을 지키는 정리는 코어 3차 남은 범위로 둔다.
+
 디스크 경보는 사용률뿐 아니라 남은 바이트·inode, 증가 추세, 예정된 작업에 필요한 공간을 함께 본다. 예측된 고갈 시점은 추정치로 표시한다. 백업은 기존 방침대로 별도 저장 위치에 보관하고, 전송 전 로컬에 만드는 임시 사본도 예산에 반영한다.
 
 ## PostgreSQL 공유 구성의 한계와 보호
@@ -103,6 +112,22 @@ API 요청, 예약 작업, 빌드, 문서 처리와 Hermes 실행은 동시 실�
 - 느린 쿼리·잠금·임시 파일 증가를 식별하고 취소·중지할 수 있는 운영 경로.
 
 `work_mem`은 DB 전체나 한 연결 전체의 메모리 상한이 아니며 여러 연산·세션·병렬 작업에서 누적될 수 있다. `temp_file_limit`도 프로세스의 특정 임시 파일에 대한 제한으로, 앱 DB 저장량 전체를 제한하지 않는다. `statement_timeout` 등 앱 세션에서 바꿀 수 있는 설정은 절대적인 격리 경계로 설명하지 않는다. [PostgreSQL 자원 설정](https://www.postgresql.org/docs/current/runtime-config-resource.html), [연결 기본값](https://www.postgresql.org/docs/current/runtime-config-client.html)
+
+### 연결 예산 (현재 구현, 2026-11-03)
+
+공유 PostgreSQL의 최악 연결 수는 `max_connections − superuser_reserved_connections − reserved_connections` 안에 있어야 한다. `scripts/check-db-connections.py`가 이 계산과 현재 사용량을 읽기만 해서 보고한다.
+
+| 대상 | 상한 | 근거 |
+| --- | --- | --- |
+| 코어 serve·worker | 각 10, 단건 작업용 관리 연결 여유 2 | `PgPoolOptions::max_connections(10)` |
+| Keycloak | 10 | compose의 `KC_DB_POOL_MAX_SIZE`. 설정하지 않으면 Keycloak 기본값 100이 예산 전체를 넘는다 |
+| 설치별 runtime 역할 | 6 | SDK 풀 5 + 수동 확인 1. 배포마다 `ALTER ROLE ... CONNECTION LIMIT`으로 적용 |
+| 설치별 migration 역할 | 2 | migration은 연결 하나로 실행, 겹친 재시도 1 |
+| 개발 세션 역할 | 16 | 세션별 생성 시 지정 |
+
+설치 수를 N, 활성 개발 세션 수를 D라고 하면 최악 수는 22 + 10 + 8N + 16D다. 기본 `max_connections=100`이면 사용 가능 97이므로 개발 세션이 없을 때 설치 8개까지 들어간다. 그보다 많아지면 `max_connections`를 올리거나(재시작 필요) PgBouncer를 검토한다.
+
+연결마다 `application_name`을 붙여 `pg_stat_activity`에서 구분한다: `miy-core-serve`, `miy-core-worker`, `miy-core-migrate`, `miy-core-seed`, 앱은 `miy-app-<앱>-<환경>`(최대 63바이트). 풀 크기는 코드 상수이며 env로 덮어쓰지 않아, 오래된 env 값이 새 기본값을 덮는 문제가 없다. 새 설치를 막는 원자적 예약은 아직 없고 코어 3차 남은 범위로 둔다.
 
 앱 수가 증가하여 연결 비용이 문제가 되면 PgBouncer를 검토한다. DB·사용자별 서버 연결 상한을 설정하고, 앱이 풀을 우회하지 못하게 연결 경로를 관리한다. 트랜잭션 풀 모드의 세션 기능·ORM·마이그레이션 호환성은 별도로 확인한다. 처음부터 연결 풀 하나를 추가하는 것만으로 DB 부하가 해결된다고 가정하지 않는다. [PgBouncer 설정](https://www.pgbouncer.org/config.html)
 

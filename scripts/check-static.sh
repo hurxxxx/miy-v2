@@ -35,6 +35,8 @@ script_checks() {
   python3 scripts/check-doc-links.py
   for script in scripts/*.sh scripts/runtime-regression/*.sh; do bash -n "$script"; done
   for script in scripts/*.mjs scripts/lib/*.mjs scripts/runtime-regression/*.mjs; do node --check "$script"; done
+  python3 -c 'import ast, sys; [ast.parse(open(f, encoding="utf-8").read(), f) for f in sys.argv[1:]]' \
+    scripts/*.py scripts/runtime-regression/*.py
   python3 scripts/runtime-regression/test_cleanup.py
   python3 scripts/runtime-regression/test_ui_cleanup.py
   python3 scripts/test-cli-release.py
