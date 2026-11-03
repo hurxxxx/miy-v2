@@ -319,7 +319,7 @@
     "userPathRestoredByFixture": true,
     "realTodoAppAndDatabaseModified": false
   },
-  "handoff": "../CLI-EXPERIENCE-SERVER-HANDOFF.md",
+  "handoff": "../archive/CLI-EXPERIENCE-SERVER-HANDOFF.md",
   "localEvidenceDirectory": "C:\\projects\\miy-v2\\.local\\evidence\\cli-experience",
   "secrets": "No private tokens, cookies, credential storage or database connection strings copied into the report."
 }

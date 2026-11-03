@@ -6,7 +6,7 @@
 
 서버 단위159개(ignored6), 클라이언트113개, SDK5개와 fmt·양쪽 Clippy, 격리 PostgreSQL/HTTP/Docker70개 관찰, 서버 빌드 API8그룹, CLI/MCP 안내·기존 번들 전환5개 관찰을 검증했다. 추가 리뷰에서 preview의 body 대기 중 철회, 다른 개발 세션 종료, 만료 증표의 한도 집계, 빌드 이력 조회 뒤 권한 재검사 경계를 보완했다. [권한 계약·전환과 실행 한계](CORE-PERMISSIONS.md), [구조화 검증 기록](releases/core-permissions-2026-11-03-validation.json)을 따른다.
 
-실제 운영 서버·migration·게시 CLI는 변경하지 않았다. 기존 설치의 외부 호출을 자동 승인하지 않으므로 운영 적용에는 설치/릴리스별 승인 전환이 필요하다. Windows 사용자 실행, 실제 운영 Docker 네트워크의 SDK 후속 호출, 서비스 계정, 진행 중 부작용 강제 롤백은 이번 완료 범위가 아니다. 이후 2026-11-03 사용자 결정으로 [기본 UI/UX 이식](../UIUX_MIGRATION_PLAN.md)을 진행했다. UI-1~5의 구현·검증 및 후속 리뷰는 해당 문서, 웹 화면만 반영한 이력은 [운영 안내](SERVER-OPERATIONS.md)를 따른다. 전체 서버 자원 예산과 실행 허용 판단 등 남은 운영 기반은 [코어 안정화 계획](CORE-HARDENING.md)에서 계속 추적한다.
+실제 운영 서버·migration·게시 CLI는 변경하지 않았다. 기존 설치의 외부 호출을 자동 승인하지 않으므로 운영 적용에는 설치/릴리스별 승인 전환이 필요하다. Windows 사용자 실행, 실제 운영 Docker 네트워크의 SDK 후속 호출, 서비스 계정, 진행 중 부작용 강제 롤백은 이번 완료 범위가 아니다. 이후 2026-11-03 사용자 결정으로 [기본 UI/UX 이식](UIUX-MIGRATION.md)을 진행했다. UI-1~5의 구현·검증 및 후속 리뷰는 해당 문서, 웹 화면만 반영한 이력은 [운영 안내](SERVER-OPERATIONS.md)를 따른다. 전체 서버 자원 예산과 실행 허용 판단 등 남은 운영 기반은 [코어 안정화 계획](CORE-HARDENING.md)에서 계속 추적한다.
 
 ## 코어 안정화 1차 (2026-11-03)
 
@@ -30,7 +30,7 @@ Linux의 독립 Codex·Claude가 각각 새 비품대장을 구현하고 v1→v2
 
 다음 이전 기록의 코드 기준은 CLI 0.4.2 / 개발 번들 0.6.1이다. [에이전트 진입 안내 보완](#에이전트-진입-안내-보완-2026-10-23-cli-042--bundle-061)과 [런타임 관찰·앱 실행 경계 보완](#런타임-관찰과-앱-실행-경계-보완-2026-10-24)까지의 구현 이력을 유지하며, 이후 변경은 [CLI 0.5 기반 구현](#cli-05-기반-구현-착수-2026-10-27)과 [공통 출력·오류](#cli-공통-출력과-오류-계약-2026-10-27)에 기록한다. 아래 실행 상태와 검증 결과는 각 기록일 기준이며 현재 서버의 가동 상태를 뜻하지 않는다.
 
-2026-10-27에 합의한 [CLI 0.5·Windows 지원 계획](CLI-IMPLEMENTATION-PLAN.md)은 첫 OS·빌드 기반 구현에 착수했다. 전체 0.5 기능·Windows 지원은 미완료이며 [기반 구현 기록](#cli-05-기반-구현-착수-2026-10-27)을 따른다. 다른 환경에서 이어갈 기준 코드와 기존 검사 결과는 [개발 인계](CLI-HANDOFF.md)를 따른다.
+2026-10-27에 합의한 [CLI 0.5·Windows 지원 계획](CLI-IMPLEMENTATION-PLAN.md)은 첫 OS·빌드 기반 구현에 착수했다. 전체 0.5 기능·Windows 지원은 미완료이며 [기반 구현 기록](#cli-05-기반-구현-착수-2026-10-27)을 따른다. 다른 환경에서 이어갈 기준 코드와 기존 검사 결과는 [개발 인계](archive/CLI-HANDOFF.md)를 따른다.
 
 당시 실행 상태(2026-10-22 플랫폼·CLI 개선 후): 앱 `my-cli-test`는 메모 0.1.1에서 메모·할 일 0.2.0으로 dev 업데이트됐으며 prod 설치는 없다. 아래 [독립 Codex 세션 재검토](#독립-codex-세션-재검토-2026-10-22)와 [할 일 추가 요청 검토](#할-일-추가-요청과-업데이트-배포-검토)에 실제 실행 상태와 보완점을 기록했다. 이후 플랫폼·CLI에 적용한 수정은 [운영 개선 결과](#플랫폼cli-운영-개선-cli-040--bundle-060)를 따른다.
 
@@ -547,7 +547,7 @@ Windows 전용 안내와 기반 구현을 `fbbd087`로 커밋·푸시한 뒤, 1B
 
 ## CLI 0.5 운영 계약 구현과 상세 검사 (2026-10-27)
 
-사용자 지시에 따라 공통 계약→context/인증→작업/업로드/로그→실행 전 검사→Windows/프로젝트 갱신·배포 준비 순서로 구현했다. 코드 버전은 **CLI 0.5.0 / bundle 0.6.2**다. 기존 서버를 재배포하거나 기존 서비스 DB에 migration을 적용한 결과가 아니다. [인계](CLI-HANDOFF.md), [상세 검증](CLI-VALIDATION-MATRIX.md), [Windows 사용자 실행](WINDOWS-VALIDATION.md), [배포 후보](CLI-RELEASE.md)로 현재 절차를 나눠 관리한다.
+사용자 지시에 따라 공통 계약→context/인증→작업/업로드/로그→실행 전 검사→Windows/프로젝트 갱신·배포 준비 순서로 구현했다. 코드 버전은 **CLI 0.5.0 / bundle 0.6.2**다. 기존 서버를 재배포하거나 기존 서비스 DB에 migration을 적용한 결과가 아니다. [인계](archive/CLI-HANDOFF.md), [상세 검증](CLI-VALIDATION-MATRIX.md), [Windows 사용자 실행](WINDOWS-VALIDATION.md), [배포 후보](CLI-RELEASE.md)로 현재 절차를 나눠 관리한다.
 
 - 역할별 루트 명령과 프로젝트 밖 운영, JSON/JSONL envelope, 종료 코드, typed JSON 입력/fields, context·원격 목록 cursor, 선택형 describe/schema/completion/doctor를 연결했다. 이전 명령은 대체 경로를 안내하고 거부한다.
 - device/browser 승인, 전역 context/vault, access 15분·고정 30일 refresh family, 회전·동시 갱신·재사용 철회·logout/self sessions를 구현했다. Core users.enabled가 비활성화 기준이며 Keycloak 상태 자동 전파를 주장하지 않는다. 갱신 결과 유실은 이전 토큰 재사용 대신 재로그인을 요구한다.

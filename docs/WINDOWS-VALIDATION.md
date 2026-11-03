@@ -24,7 +24,7 @@
 
 ## 2026-10-29 CLI 0.6.3 설치·로그인·모바일 개선 검증
 
-0.6.2 실제 전체 흐름에서 남긴 개선을 `codex/cli-experience-improvements`에 구현했다. 기능 소스는 `0db21c3`, Windows CI 도구 검색 격리를 보완한 소스는 `8d7d042`다. CLI **0.6.3** / 번들 **0.7.1**이며 [구조화 결과](releases/cli-0.6.3-experience-validation.json)와 [서버 측 후속 프롬프트](CLI-EXPERIENCE-SERVER-HANDOFF.md)를 보존한다.
+0.6.2 실제 전체 흐름에서 남긴 개선을 `codex/cli-experience-improvements`에 구현했다. 기능 소스는 `0db21c3`, Windows CI 도구 검색 격리를 보완한 소스는 `8d7d042`다. CLI **0.6.3** / 번들 **0.7.1**이며 [구조화 결과](releases/cli-0.6.3-experience-validation.json)와 [서버 측 후속 프롬프트](archive/CLI-EXPERIENCE-SERVER-HANDOFF.md)를 보존한다.
 
 | 개선·검사 | 실제 결과 |
 | --- | --- |
@@ -69,7 +69,7 @@ Docker Desktop을 설치하지 않고 기본 `app dev`의 Rust 서버·React 정
 
 사용자 요청으로 Docker Desktop 설치를 중단하고 `b873a81`의 CLI **0.6.1** / 번들 **0.7.1**에서 기본 로컬 개발을 네이티브 Rust·React 정적 미리보기·프로세스 내부 서버 DB 터널로 변경했다. [사용법](NATIVE-DEVELOPMENT.md)과 [기계 판독 결과](releases/cli-0.6.1-native-windows-validation.json)를 함께 보존한다. 기존 홈페이지의 0.6.0 후보와 구분하며 새 GUI 설치기를 게시한 결과가 아니다.
 
-마지막 동기화에서 추가된 main `564df40`의 공용 개발 계정 로그인 변경을 `60a9952`에 병합했고, fmt·Clippy·release build와 단위 **98개**를 다시 통과했다. 네이티브 미리보기 구현은 동일하며, 아래 실제 브라우저 증거의 바이너리는 최초 `b873a81`로 구분한다. [Linux 후속 Codex 프롬프트](LINUX-TODO-HANDOFF.md)는 병합한 브랜치에서 배포를 검증하도록 안내한다.
+마지막 동기화에서 추가된 main `564df40`의 공용 개발 계정 로그인 변경을 `60a9952`에 병합했고, fmt·Clippy·release build와 단위 **98개**를 다시 통과했다. 네이티브 미리보기 구현은 동일하며, 아래 실제 브라우저 증거의 바이너리는 최초 `b873a81`로 구분한다. [Linux 후속 Codex 프롬프트](archive/LINUX-TODO-HANDOFF.md)는 병합한 브랜치에서 배포를 검증하도록 안내한다.
 
 실제 Windows 11 Pro x64 build 26200 일반 사용자 / PS7.6.5 / Rust 1.99.1 MSVC / Node 24.19.0 / pnpm 10.34.5에서 CLI 단위 **97개**, fmt·Clippy 경고 금지·release build, 출력 계약 **11그룹**, 지침·MCP·0.7.0→0.7.1 보존 업그레이드 **5그룹**을 통과했다. 사용자 설정을 사용하는 첫 단위 실행의 metadata 기대값 실패는 격리한 `MIY_CONFIG_DIR`로 다시 수행해 통과했으며 assertion을 완화하지 않았다.
 
@@ -409,7 +409,7 @@ Stop-Transcript
 
 CLI 0.5의 새 명령·인증·Job Object·파일 트랜잭션·설치 스크립트는 구현되어 있다. Windows 네이티브 CI는 코드와 자동 fixture를 검사한다. 사용자 Windows 11의 실제 로그인·원격 서버·Docker Desktop·프로젝트 MCP·콘솔 신호는 아래 별도 절차에서 확인해야 한다. 소스 빌드나 호스티드 runner 성공만으로 전체 지원을 완료 처리하지 않는다.
 
-실행 결과는 아래 형식으로 **새 기록을 추가**한다. 실패 뒤 수정하여 재실행했으면 이전 실패 기록을 삭제하거나 성공으로 덮어쓰지 않고 새 run ID·commit으로 추가한다. 검사하지 않은 행은 `not_run`과 이유를 남긴다. 후속 문서 업데이트 시 증거와 실제 실행 범위에 맞춰 [구현 결과](IMPLEMENTATION-RESULTS.md)와 [인계 체크리스트](CLI-HANDOFF.md)를 갱신한다.
+실행 결과는 아래 형식으로 **새 기록을 추가**한다. 실패 뒤 수정하여 재실행했으면 이전 실패 기록을 삭제하거나 성공으로 덮어쓰지 않고 새 run ID·commit으로 추가한다. 검사하지 않은 행은 `not_run`과 이유를 남긴다. 후속 문서 업데이트 시 증거와 실제 실행 범위에 맞춰 [구현 결과](IMPLEMENTATION-RESULTS.md)와 [인계 체크리스트](archive/CLI-HANDOFF.md)를 갱신한다.
 
 ```markdown
 ### Windows 실행 기록 — YYYY-MM-DD / RUN_ID

@@ -46,7 +46,7 @@ CLI CI **40826960538**, Windows 설치기 CI **40830813012** 성공. 5 CLI·2 he
 
 ## CLI 0.6.3 Windows 개선 검증 — 2026-10-29
 
-[상세 결과](WINDOWS-VALIDATION.md)·[결과 JSON](releases/cli-0.6.3-experience-validation.json)·[Linux 후속 작업](CLI-EXPERIENCE-SERVER-HANDOFF.md)을 보존한다. Windows 단위 106개, fmt/Clippy/release, debug/release 출력 13그룹, 원격 빌드 fixture 10그룹, 복구 6그룹 PASS. 로컬 Chrome 화면/API fixture 14개, TypeScript/플랫폼 build PASS. 실제 0.6.3 Windows GUI 설치 파일의 PowerShell 5.1 네이티브 검사 24개와 잘못된 출처·해시 거부 4개 PASS. 패키지 검사 15개 PASS, Linux 게시 4개 SKIP.
+[상세 결과](WINDOWS-VALIDATION.md)·[결과 JSON](releases/cli-0.6.3-experience-validation.json)·[Linux 후속 작업](archive/CLI-EXPERIENCE-SERVER-HANDOFF.md)을 보존한다. Windows 단위 106개, fmt/Clippy/release, debug/release 출력 13그룹, 원격 빌드 fixture 10그룹, 복구 6그룹 PASS. 로컬 Chrome 화면/API fixture 14개, TypeScript/플랫폼 build PASS. 실제 0.6.3 Windows GUI 설치 파일의 PowerShell 5.1 네이티브 검사 24개와 잘못된 출처·해시 거부 4개 PASS. 패키지 검사 15개 PASS, Linux 게시 4개 SKIP.
 
 `8d7d042`의 [기반 CI 40826944825](https://github.com/hurxxxx/miy-v2/actions/runs/40826944825)는 Linux 서버, Linux/macOS/Windows 클라이언트와 OS 간 번들 비교 전체 PASS다. 5대상 배포 후보 CI와 실제 Linux 인증 DB/IdP 회귀·플랫폼 UI 재배포·다운로드 게시를 별도로 관리한다. 새 화면의 모바일 검사는 모의 API 경계이며 실제 서버의 모바일 Todo 재검증을 대신하지 않는다.
 

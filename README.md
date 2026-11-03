@@ -10,7 +10,7 @@ CLI로 앱의 기본 구조를 만들고, 자신의 개발 에이전트를 MCP�
 
 현재 호스트의 플랫폼은 [https://v2.dwdcc.kr](https://v2.dwdcc.kr)이며, [CLI 설치 안내](https://v2.dwdcc.kr/cli/install)에서 서버에 맞는 배포물을 제공한다. 실행 서버·게시 CLI는 코어 권한 보강을 포함한 **0.7.0 / 번들 0.8.0**(source `01e4d49`, 2026-11-03 반영)이다. 이후 소스 commit과 게시 배포물의 출처는 구분한다. 서버 주소·CLI/MCP 연결과 배포 소스의 구분은 [현재 서버 운영 안내](docs/SERVER-OPERATIONS.md)를 따른다.
 
-[코어 권한 계약](docs/CORE-PERMISSIONS.md)은 설치/릴리스별 명시 승인, 제한된 사용자 위임, 앱 후속 호출을 설명한다. 코어 안정화 1·2차 이후의 다음 구현은 [기본 UI/UX 이식](UIUX_MIGRATION_PLAN.md)이다. `../ai-do/dev`의 UI를 라이트 테마·한국어·새 설치 기준으로 이식하고, 조직·그룹 권한과 앱 소유 워크스페이스는 후속으로 둔다. UI-1~4(화면 구조·디자인 기반·앱 레일 탐색·기존 화면 연결)를 구현하고 UI-5 통합 검증(격리 전체 스택 포함)을 마쳤다. v2.dwdcc.kr에는 새 화면과 0.7.0 서버를 함께 반영했다. 서버 자원·복구 등 남은 구현과 베타 전 검증은 [코어 안정화 계획](docs/CORE-HARDENING.md)에서 계속 관리한다.
+[코어 권한 계약](docs/CORE-PERMISSIONS.md)은 설치/릴리스별 명시 승인, 제한된 사용자 위임, 앱 후속 호출을 설명한다. 코어 안정화 1·2차와 [기본 UI 이식](docs/UIUX-MIGRATION.md) UI-1~5를 마치고 v2.dwdcc.kr에 반영했다. 다음 작업 순서는 [추진 계획](docs/PLAN.md#다음-우선-작업)의 작업표 하나로 관리한다. 공식 v1(`../miy`)에서 가져올 규칙과 제외할 구조는 [v1 적용 계획](docs/V1-ADOPTION.md)에 정리했다.
 
 현재는 **독립 앱 개발·로컬 미리보기·테스트 배포·운영 승격을 연결하고 구조 검증을 수행한 단계**다. 플랫폼과 사용자 앱의 Rust backend, React/Vite UI, Docker, 앱·환경별 DB를 분리한다. 일반 Codex·Claude Code용 프로젝트 MCP·스킬, 브라우저 승인 CLI 로그인, 인증된 이미지 업로드, 테스트한 릴리스의 운영 승격과 별도 배포 권한을 제공한다.
 
@@ -20,7 +20,7 @@ CLI로 앱의 기본 구조를 만들고, 자신의 개발 에이전트를 MCP�
 
 Windows CLI는 회사 홈페이지의 `/cli/install`에서 [GUI 설치 파일](docs/WINDOWS-INSTALLER.md)을 받아 서버 주소를 입력해 설치한다. Unix의 기존 설치 명령은 `bash scripts/install-cli.sh`이며, 새 앱 시작은 `miy app init ./my-app --id my-app --name '내 앱'`이다. 로그인·등록 승인·로컬 테스트·배포 순서는 [실행 안내](docs/RUNNING.md)를 따른다. 이전 [휴가 앱 실증](docs/LEAVE-LEDGER-RESULTS.md)과 bundle 0.3 검증은 당시의 보완 과정과 한계가 남아 있는 이력이다.
 
-[CLI 0.5 개선 계획](docs/CLI-IMPLEMENTATION-PLAN.md)의 context·인증·작업·로그·실행 전 검증과 Windows 설치/갱신 도구를 구현했다. [개발 인계](docs/CLI-HANDOFF.md)와 [세부 검증](docs/CLI-VALIDATION-MATRIX.md)에서 현재 증거와 남은 조건을 확인한다. 사용자 Windows의 기존 네이티브 개발·서버 빌드 실증은 기록에 보존한다. 새 CI 설치기의 Windows 11 실제 설치·갱신·제거는 사용자가 나중에 수행하며, Codex·Claude의 독립 새 세션 인수는 별도로 관리한다.
+[CLI 0.5 개선 계획](docs/CLI-IMPLEMENTATION-PLAN.md)의 context·인증·작업·로그·실행 전 검증과 Windows 설치/갱신 도구를 구현했다. [개발 인계](docs/archive/CLI-HANDOFF.md)와 [세부 검증](docs/CLI-VALIDATION-MATRIX.md)에서 현재 증거와 남은 조건을 확인한다. 사용자 Windows의 기존 네이티브 개발·서버 빌드 실증은 기록에 보존한다. 새 CI 설치기의 Windows 11 실제 설치·갱신·제거는 사용자가 나중에 수행하며, Codex·Claude의 독립 새 세션 인수는 별도로 관리한다.
 
 최초 V0~V1 구현 범위와 실행 방식은 [V0~V1 구현 계획](docs/IMPLEMENTATION.md)을 따른다. 로컬 Docker에서 UI 런타임 통합, 웹·MCP OAuth, 앱별 DB와 작업 실행기를 검증한다.
 
@@ -50,23 +50,15 @@ Windows CLI는 회사 홈페이지의 `/cli/install`에서 [GUI 설치 파일](d
 
 ## 기획 문서
 
-- [PRD 초안](docs/PRD.md): 제품 정의, 합의 사항, 기능 요구사항과 인수 조건의 기준
-- [추진 계획](docs/PLAN.md): 현재 구현 단계, 다음 우선 작업과 제품 전체의 단계별 완료 기준
-- [UI/UX 마이그레이션 계획](UIUX_MIGRATION_PLAN.md): 이전 UI·워크스페이스 설계의 적용 범위, 기본 UI 이식 순서·호환 계약·검증과 후속 기능
-- [CLI 0.5 구현 계획](docs/CLI-IMPLEMENTATION-PLAN.md): 사람·AI 공통 CLI, 인증·운영 계약, Windows 지원과 릴리스 조건
-- [CLI 배포 후보·설치](docs/CLI-RELEASE.md): 5개 OS/CPU artifact, 체크섬, Windows 설치기와 공개 조건
-- [CLI 상세 검증](docs/CLI-VALIDATION-MATRIX.md): 실제 통과 범위와 남은 환경 인수
-- [CLI 개발 인계](docs/CLI-HANDOFF.md): 다른 환경에서 이어갈 코드 위치, 작업 체크리스트, 재검증 명령과 로컬 환경 경계
-- [현재 플랫폼 서버 운영](docs/SERVER-OPERATIONS.md): 실제 접속 주소, CLI/MCP 연결, systemd·Nginx 구성과 배포 소스
-- [Windows 빌드·검증 안내](docs/WINDOWS-VALIDATION.md): 사용자 환경의 PowerShell 5.1/7 빌드·검사·ZIP 생성 절차와 실행 결과 기록
-- [핵심 흐름 검증 계획](docs/VALIDATION.md): 최소 구현 범위, Codex·CLI·하네스·MCP 평가, Docker·DB·UI 라우팅의 단계별 통과 조건과 증거
-- [앱 개발 흐름과 CLI 계획](docs/DEVELOPMENT.md): 프로젝트 생성, 개발 계약, 로컬 실행, 개발 영역 검증과 운영 승격
-- [아키텍처 설명과 구성도](docs/architecture/README.md): [전체 구조 한 장](docs/architecture/00-platform-overview.png), 서비스 개념·논리 구조·개발 배포 흐름·권한 접근도와 PDF
-- [유사 프로젝트 비교](docs/RESEARCH.md): 공식 자료에 근거한 비교, 차용할 개념과 적용 방향
-- [프론트엔드 기술 검토](docs/FRONTEND.md): 후보 비교, 추천 구성, Rust 연동 방식
-- [전체 기술 스택 추천안](docs/STACK.md): 코어·앱·CLI·인증·실행·저장소·유지관리의 추천 조합과 확정 전 검증 항목
-- [인프라 용량 관리와 효율화](docs/CAPACITY.md): CPU·메모리·파일·DB 한도, 실행 전 용량 확인, 초과 대응과 효율화 순서
-- [내부 AI 연결과 세션 계획](docs/AI.md): 공통 AI 연결, Codex thread 매핑, 사용자별 독립 대화·실행·도구 권한과 공통 한도 관리
+전체 문서의 담당 범위와 보관 문서는 [문서 지도](docs/README.md)에 있다. 먼저 읽을 문서는 다음과 같다.
+
+- [PRD 초안](docs/PRD.md): 제품 정의, 합의 사항, 기능 요구사항과 인수 조건
+- [추진 계획](docs/PLAN.md): 다음 우선 작업표(유일한 순서 기준)와 제품 로드맵
+- [v1 적용 계획](docs/V1-ADOPTION.md): 공식 v1 검토 결과, 가져올 항목과 제외 항목
+- [UI/UX 이식 계획](docs/UIUX-MIGRATION.md): 기본 UI 이식 결과와 후속 UI 작업의 경계
+- [코어 안정화 계획](docs/CORE-HARDENING.md): 자원·복구·새 서버 인수의 완료 기준
+- [현재 플랫폼 서버 운영](docs/SERVER-OPERATIONS.md): 실제 접속 주소, CLI/MCP 연결, 배포 소스와 기록
+- [아키텍처 설명과 구성도](docs/architecture/README.md): [전체 구조 한 장](docs/architecture/00-platform-overview.png)과 상세 구성도
 
 구체적인 구현 기술은 검토 중이다. 관리 웹의 기본 제안은 TypeScript, React, Vite, TanStack Router, TanStack Query 조합이다. 합의된 제품 방향과 기술 기본안·미결정 사항은 PRD에서 구분한다.
 

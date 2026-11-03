@@ -1,6 +1,6 @@
 # miy 앱 개발 흐름과 CLI 계획
 
-2026-10-27 후속 구현 범위는 [CLI 0.5 개선과 Windows 네이티브 지원](CLI-IMPLEMENTATION-PLAN.md)으로 확정했다. 다중 서버 운영, 사람/AI 공통 명령·출력, 사용자 세션 인증, 작업·로그, Windows 11 x64 PowerShell 개발·관리의 상세 계약은 해당 계획을 따른다. CLI 0.5.0 / 번들 0.6.2 작업 트리에 루트 명령, context·세션 인증, preflight·journal·작업 관찰·제한된 로그와 OS 경계를 구현 중이다. 구현 존재와 검증 완료를 구분하며 실제 Windows 11·별도 Linux 서버·IdP 전파·독립 AI 인수는 각각 증거가 필요하다. 다른 환경에서 이어갈 작업 순서는 [CLI 개발 인계](CLI-HANDOFF.md)에 있다. 이 문서의 장기 설계 예시와 현재 명령은 구분한다.
+2026-10-27 후속 구현 범위는 [CLI 0.5 개선과 Windows 네이티브 지원](CLI-IMPLEMENTATION-PLAN.md)으로 확정했다. 다중 서버 운영, 사람/AI 공통 명령·출력, 사용자 세션 인증, 작업·로그, Windows 11 x64 PowerShell 개발·관리의 상세 계약은 해당 계획을 따른다. CLI 0.5.0 / 번들 0.6.2 작업 트리에 루트 명령, context·세션 인증, preflight·journal·작업 관찰·제한된 로그와 OS 경계를 구현 중이다. 구현 존재와 검증 완료를 구분하며 실제 Windows 11·별도 Linux 서버·IdP 전파·독립 AI 인수는 각각 증거가 필요하다. 다른 환경에서 이어갈 작업 순서는 [CLI 개발 인계](archive/CLI-HANDOFF.md)에 있다. 이 문서의 장기 설계 예시와 현재 명령은 구분한다.
 
 현재 SDK bundle 0.6 계열은 앱의 미저장 상태를 `runtime.registerNavigationGuard`로 등록받아 셸·앱·브라우저 기록 이동을 보호한다. 로컬 preview와 같은 계약이며 앱의 명시적 등록·effect cleanup이 필요하다. 플랫폼 표시 이름은 관리자 메타데이터로 관리하고 배포 이름과 구분한다. 인수 기록은 정확한 릴리스별 검사 범위·실행 계정·결과를 제공한다. 실제 계약·예제는 [번들 계약](../templates/rust-react/docs/CONTRACT.md)과 [검사 기록 형식](../templates/rust-react/docs/ACCEPTANCE.md)을 따른다.
 

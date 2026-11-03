@@ -230,49 +230,7 @@ Gitea의 npm Package Registry는 scope 패키지의 게시·설치를 지원하�
 
 ## 기존 miy에서 참고할 계약
 
-기존 프로젝트는 새 요구사항을 검토하는 참고 자료다. 아래 계약을 새 프로젝트에 그대로 적용하거나 기존 기능 전체를 이전하는 것으로 취급하지 않는다.
-
-| 참고 자료 | 활용할 내용 | 후속 설계에서 구분할 점 |
-| --- | --- | --- |
-| [앱 플랫폼 계약](../../miy/dev/docs/domains/app-platform/README.md) | 회사·사용자·그룹·앱 접근, 별도 출처의 앱 실행 | 기존 내장 앱의 공통 배포 구조와 신규 독립 앱 목표 |
-| [독립 앱 계약](../../miy/dev/apps/api/src/miy_api/domains/independent_apps/README.md) | manifest, release, installation, 앱 세션과 배포 상태 | 기존 구현의 지원 프로필과 miy-v2의 웹앱·API·작업 실행 범위 |
-| [앱 SDK](../../miy/dev/packages/app-sdk/README.md) | 앱 실행 연결과 인증·데이터 접근 계약 | 새 API·언어·패키지 버전에 맞춘 SDK 설계 |
-| [독립 앱 템플릿](../../miy/dev/templates/independent-app/README.md) | 플랫폼과 분리된 앱 소스와 개발 안내 | 기존 템플릿의 기술 스택을 새 앱 전체에 강제하지 않음 |
-| [원본 데이터 접근 계약](../../miy/dev/docs/domains/source-access/README.md) | 검색·RAG·직접 조회의 현재 권한 확인 | 신규 앱·커넥터에도 같은 경계가 적용되는지 검증 |
-| [Hermes 계약](../../miy/dev/docs/domains/ai/hermes.md) | 실행 주체, 도구 권한, 모델 정책과 격리 | 기존 서비스·설정·버전을 그대로 도입하지 않고 새 구조에 맞춰 검토 |
-
-### 기존 miy에서 확인한 내장 챗봇 경로
-
-2026-10-20 로컬 `../miy/dev`의 문서와 소스에서 다음 흐름을 확인했다.
-
-| 구간 | 확인한 구현 |
-| --- | --- |
-| 사이트 챗봇 → miy API | [챗봇 어댑터](../../miy/dev/packages/platform-web/src/chatbot/api/chatbot-api.ts)의 `startHermesRun`이 세션과 실행을 만들고, [API 클라이언트](../../miy/dev/packages/platform-web/src/ai/hermes-agent-api.ts)가 `/api/v1/agent` 경로를 사용 |
-| 실행 등록 → 내부 디스패치 | [실행 라우터](../../miy/dev/apps/api/src/miy_api/domains/hermes/router.py)의 `create_run`이 소유 대화·모델 정책을 확인하고 실행을 저장한 뒤 디스패치를 발행 |
-| 워커 → Hermes 런타임 | [워커](../../miy/dev/apps/worker/src/miy_worker/tasks/hermes.py)가 `execute_hermes_run`을 호출하고, [런타임 클라이언트](../../miy/dev/apps/api/src/miy_api/domains/hermes/client.py)가 내부 Hermes의 `/v1/runs`를 사용 |
-| 도구 반복 실행과 결과 반환 | [Hermes 계약](../../miy/dev/docs/domains/ai/hermes.md)은 모델 호출·추론·도구 반복 실행을 Hermes 책임으로 명시하며, 브라우저는 miy의 재연결 가능한 SSE 이벤트와 실행 결과를 소비 |
-
-이 구조에서 차용할 것은 **사이트 내장 챗봇 → miy 대화·실행 관리 → 내부 Hermes 루프 → 통제된 도구 호출 → 사이트 응답**의 책임 구분이다. 기존 Python API·워커 구현, 큐 제품, 런타임 버전과 경로를 miy-v2의 기술 선택으로 그대로 확정하지 않는다. 앱 작업 큐는 업무 작업을 실행하고, Hermes 루프는 대화 중 다음 모델·도구 호출을 결정한다.
-
-### 구독 연결과 사용자별 세션에서 참고할 기존 구현
-
-2026-10-20 `../miy/dev`에서 확인한 범위에서는 **구독 인증을 쓰는 Workbench와 제품 내장 Hermes가 별도 실행 경로**다. v2의 구독 AI 기본 연결은 기존 구현을 그대로 켜는 작업이 아니라 두 경로의 유용한 계약을 참고하여 새로 설계할 부분이다.
-
-| 확인한 근거 | 실제 구현과 v2에 참고할 내용 |
-| --- | --- |
-| [Workbench 실행 경계](../../miy/dev/docs/apps/codex-console/README.md#실행-경계) | 소유자 한 명의 ChatGPT 구독으로 공식 `codex app-server`를 사용하는 별도 클라이언트. 제품 AI workload의 공용 공급자가 아니며 현재 서버 사용자의 인증 저장소를 사용 |
-| [Codex 런타임](../../miy/dev/apps/codex-console-api/src/codex_console/runtime.py) | `account/read`로 ChatGPT 인증 상태를 확인하고 `account/rateLimits/read`, `model/list`, `thread/start`·`thread/resume` 사용. 공식 프로토콜·계정 상태·대화 재개 처리 참고 |
-| [Hermes 모델](../../miy/dev/apps/api/src/miy_api/domains/hermes/models.py) | `HermesProfileBinding`은 사용자·route에 귀속되고 `HermesSessionBinding`은 사용자·profile·Hermes 세션을 연결. 사용자별 세션 소유 관계 참고 |
-| [Hermes 실행](../../miy/dev/apps/api/src/miy_api/domains/hermes/execution.py)과 [실행 계약](../../miy/dev/docs/domains/ai/hermes.md) | 실행 소유자의 앱 권한 재검사, 실행 lease·동시 실행 제어, 대화별 순서와 재연결·중복 실행 방지 참고 |
-| [제품 AI gateway](../../miy/dev/docs/domains/ai/gateway.md) | 등록 workload와 관리자가 지정한 API·사내 모델 연결을 사용. 이 경로에 다중 사용자 Codex·Claude Code 구독 연결이 이미 구현되었다고 해석하지 않음 |
-
-v2에서는 관리자가 설정하는 공통 AI 연결과 사용자별 독립 세션을 설계한다. 직원별 공급자 로그인은 요구하지 않는다. 기존 Codex 런타임의 thread 시작·재개와 Hermes의 사용자별 소유 관계를 참고하여, 공통 연결 아래의 대화·이벤트·도구 권한을 분리한다. 사용자별 취소·로그아웃과 공통 인증 갱신·해제·한도 초과의 영향을 구분한다. 위에서 조사한 Hermes·Workbench 경로에서는 Claude Code 구독을 내장 Hermes의 모델 백엔드로 연결한 구현을 확인하지 못했다.
-
-2026-10-21 공식 문서에서 Codex의 `thread/start`·`thread/resume`, `turn/start`·`turn/interrupt`, thread·turn·item 이벤트와 공통 계정 상태 조회를 확인했다. miy 사용자마다 별도 대화를 매핑하고 이벤트와 도구 권한을 집행하는 설계의 근거로 사용한다. thread 기능 자체가 파일·메모리·사용자 권한까지 격리하는 것은 아니므로 이 부분은 miy가 구현·검증한다. [Codex App Server](https://learn.chatgpt.com/docs/app-server)
-
-공통 연결에 사용할 계정·요금제와 공급자별 허용 범위는 별도 검토한다. OpenAI는 조직 자동화용 서비스 계정을 사용량 기반 요금제에 제공하며, ChatGPT plan usage와 Claude Code에도 각각 적용 조건이 있다. 이러한 검토가 제품 요구사항을 직원별 개인 구독 연결로 바꾸는 것은 아니다. [OpenAI 서비스 계정](https://learn.chatgpt.com/docs/enterprise/service-accounts), [ChatGPT plan usage](https://developers.openai.com/siwc/token-sharing-open-source), [Claude Code 호스팅·인증 조건](https://code.claude.com/docs/en/legal-and-compliance)
-
-지원 후보·제약과 공통 연결·사용자별 독립 세션 계약의 기준 문서는 [내부 AI 계획](AI.md)이다.
+2026-10-20에 정리한 기존 miy(v1)의 참고 계약, 내장 챗봇 경로, 구독 연결·사용자별 세션 조사는 2026-11-03 [v1 적용 계획](V1-ADOPTION.md)으로 옮겼다. 그 문서가 v1 전체 검토 결과와 적용·제외 판단을 함께 관리한다. 공통 연결과 사용자별 세션의 설계 기준은 [내부 AI 계획](AI.md)이다. Codex App Server의 thread·turn API와 공급자별 계정 조건에 대한 공식 문서 근거는 [AI 계획](AI.md)과 [v1 적용 계획](V1-ADOPTION.md) V1-I6에서 다룬다.
 
 ## 도입 판단 원칙
 

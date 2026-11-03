@@ -109,7 +109,7 @@ MinIO는 도입 대상에서 제외한다. 자체 구현 범위는 파일 API·�
 
 Gitea는 자체 Git과 OCI Container Registry를 함께 제공하므로 별도 Git 플랫폼과 이미지 레지스트리 운영을 줄일 수 있다. 다만 Gitea 저장소·패키지 권한과 miy의 앱·릴리스 권한은 연동이 필요하다. 배포 시 변경 가능한 이미지 태그 대신 검증한 digest를 사용한다. [Gitea 소개](https://docs.gitea.com/), [Container Registry](https://docs.gitea.com/usage/packages/container/)
 
-Hermes는 별도 Python 런타임으로 고정 버전을 운영하고 miy 전용 어댑터를 둔다. miy의 사용자·실행 식별자를 유지하며 허용된 도구만 연결한다. 기존 miy 통합에서 확인한 책임 구분을 차용하되 상위 Hermes에 miy 전용 HTTP API가 기본 제공된다고 가정하지 않는다. [Hermes](https://github.com/NousResearch/hermes-agent), [Hermes MCP](https://hermes-agent.nousresearch.com/docs/user-guide/features/mcp), [기존 통합 조사](RESEARCH.md#기존-miy에서-확인한-내장-챗봇-경로)
+Hermes는 별도 Python 런타임으로 고정 버전을 운영하고 miy 전용 어댑터를 둔다. miy의 사용자·실행 식별자를 유지하며 허용된 도구만 연결한다. 기존 miy 통합에서 확인한 책임 구분을 차용하되 상위 Hermes에 miy 전용 HTTP API가 기본 제공된다고 가정하지 않는다. [Hermes](https://github.com/NousResearch/hermes-agent), [Hermes MCP](https://hermes-agent.nousresearch.com/docs/user-guide/features/mcp), [v1 적용 계획](V1-ADOPTION.md) §3.7
 
 모델 연결은 관리자가 설정하는 공통 Codex·Claude Code 연결을 사용하고 직원별 공급자 로그인은 요구하지 않는다. Codex App Server의 공식 계정·thread·turn 인터페이스를 우선 검증하고, 각 miy 대화에 독립 thread를 배정한다. 코딩 에이전트 실행과 Hermes의 모델 API를 동일시하지 않으며 Hermes 연동과 공급자별 공통 연결의 지원 조건을 확인한다. API LLM과 사내 모델은 명시적으로 선택하는 별도 연결이다. 근거·지원 조건·검증 항목은 [내부 AI 계획](AI.md#공급자별-적용-후보와-확인할-조건)에 모은다.
 
