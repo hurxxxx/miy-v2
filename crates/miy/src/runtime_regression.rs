@@ -639,6 +639,35 @@ async fn isolated_runtime_regression() -> Result<()> {
             && docker["HostConfig"]["ReadonlyRootfs"] == true,
         json!({"installation":initial,"serverLocalImage":docker["Image"],"memory":docker["HostConfig"]["Memory"],"nanoCpus":docker["HostConfig"]["NanoCpus"],"pidsLimit":docker["HostConfig"]["PidsLimit"],"user":docker["Config"]["User"]}),
     );
+    // Installations prepared before per-role caps receive them when a runner starts.
+    let (runtime_role, migration_role): (String, String) = sqlx::query_as(
+        "SELECT runtime_role, migration_role FROM db_resources WHERE installation_id=$1",
+    )
+    .bind(dev_id)
+    .fetch_one(&pool)
+    .await?;
+    let mut provision =
+        sqlx::PgConnection::connect(&std::env::var("PROVISION_DATABASE_URL")?).await?;
+    for role in [&runtime_role, &migration_role] {
+        provision
+            .execute(format!("ALTER ROLE {role} CONNECTION LIMIT -1").as_str())
+            .await?;
+    }
+    let changed = crate::worker::apply_connection_limits(&pool).await?;
+    let limits: Vec<i32> = sqlx::query_scalar(
+        "SELECT rolconnlimit FROM pg_roles WHERE rolname = ANY($1) ORDER BY rolname = $2 DESC",
+    )
+    .bind(vec![runtime_role.clone(), migration_role.clone()])
+    .bind(&runtime_role)
+    .fetch_all(&pool)
+    .await?;
+    let repeated = crate::worker::apply_connection_limits(&pool).await?;
+    provision.close().await?;
+    report(
+        "existing installations receive role connection limits when a runner starts",
+        changed == 2 && limits == [6, 2] && repeated == 0,
+        json!({"changed":changed,"limits":limits,"repeated":repeated}),
+    );
     let restart = submit(
         &s,
         &dev,

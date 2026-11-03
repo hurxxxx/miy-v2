@@ -113,7 +113,7 @@ API 요청, 예약 작업, 빌드, 문서 처리와 Hermes 실행은 동시 실�
 
 `work_mem`은 DB 전체나 한 연결 전체의 메모리 상한이 아니며 여러 연산·세션·병렬 작업에서 누적될 수 있다. `temp_file_limit`도 프로세스의 특정 임시 파일에 대한 제한으로, 앱 DB 저장량 전체를 제한하지 않는다. `statement_timeout` 등 앱 세션에서 바꿀 수 있는 설정은 절대적인 격리 경계로 설명하지 않는다. [PostgreSQL 자원 설정](https://www.postgresql.org/docs/current/runtime-config-resource.html), [연결 기본값](https://www.postgresql.org/docs/current/runtime-config-client.html)
 
-### 연결 예산 (현재 구현, 2026-11-03)
+### 연결 예산 (현재 구현, 2026-11-04)
 
 공유 PostgreSQL의 최악 연결 수는 `max_connections − superuser_reserved_connections − reserved_connections` 안에 있어야 한다. `scripts/check-db-connections.py`가 이 계산과 현재 사용량을 읽기만 해서 보고한다.
 
@@ -121,11 +121,11 @@ API 요청, 예약 작업, 빌드, 문서 처리와 Hermes 실행은 동시 실�
 | --- | --- | --- |
 | 코어 serve·worker | 각 10, 단건 작업용 관리 연결 여유 2 | `PgPoolOptions::max_connections(10)` |
 | Keycloak | 10 | compose의 `KC_DB_POOL_MAX_SIZE`. 설정하지 않으면 Keycloak 기본값 100이 예산 전체를 넘는다 |
-| 설치별 runtime 역할 | 6 | SDK 풀 5 + 수동 확인 1. 배포마다 `ALTER ROLE ... CONNECTION LIMIT`으로 적용 |
+| 설치별 runtime 역할 | 6 | SDK 풀 5 + 수동 확인 1. 배포마다, 그리고 worker 시작 시 한도가 다른 기존 설치 역할에 `ALTER ROLE ... CONNECTION LIMIT`으로 적용 |
 | 설치별 migration 역할 | 2 | migration은 연결 하나로 실행, 겹친 재시도 1 |
 | 개발 세션 역할 | 16 | 세션별 생성 시 지정 |
 
-설치 수를 N, 활성 개발 세션 수를 D라고 하면 최악 수는 22 + 10 + 8N + 16D다. 기본 `max_connections=100`이면 사용 가능 97이므로 개발 세션이 없을 때 설치 8개까지 들어간다. 그보다 많아지면 `max_connections`를 올리거나(재시작 필요) PgBouncer를 검토한다.
+설치 수를 N, 활성 개발 세션 수를 D라고 하면 최악 수는 22 + 10 + 8N + 16D다. PostgreSQL 기본 `max_connections=100`(사용 가능 97)은 개발 세션이 없을 때 설치 8개까지만 들어가므로, compose에서 `max_connections=200`(사용 가능 197)으로 둔다. 이때 개발 세션이 없으면 설치 20개, 개발 세션 4개면 설치 12개까지 들어간다. 그보다 많아지면 `max_connections`를 더 올리거나(재시작 필요) PgBouncer를 검토한다.
 
 연결마다 `application_name`을 붙여 `pg_stat_activity`에서 구분한다: `miy-core-serve`, `miy-core-worker`, `miy-core-migrate`, `miy-core-seed`, 앱은 `miy-app-<앱>-<환경>`(최대 63바이트). 풀 크기는 코드 상수이며 env로 덮어쓰지 않아, 오래된 env 값이 새 기본값을 덮는 문제가 없다. 새 설치를 막는 원자적 예약은 아직 없고 코어 3차 남은 범위로 둔다.
 

@@ -16,6 +16,12 @@ pub async fn run(pool: sqlx::PgPool) -> Result<()> {
         .fetch_one(&mut *guard)
         .await?;
     anyhow::ensure!(acquired, "another_db_runner_is_active");
+    // A failure here leaves the limits for the next deployment; it does not stop the runner.
+    match apply_connection_limits(&pool).await {
+        Ok(0) => {}
+        Ok(roles) => tracing::info!(event = "connection_limits_applied", roles),
+        Err(_) => tracing::warn!(event = "connection_limits_not_applied"),
+    }
     tracing::info!(event = "db_runner_ready");
     // HTTP observations never occupy the deployment/control queue. The task is
     // aborted before this runner releases its exclusive ownership on shutdown.
@@ -189,6 +195,46 @@ async fn step(pool: &sqlx::PgPool, id: Uuid, name: &str) -> Result<()> {
 pub(crate) const RUNTIME_CONNECTION_LIMIT: u32 = 6;
 /// Migrations run on one connection; one more covers an overlapping retry.
 pub(crate) const MIGRATION_CONNECTION_LIMIT: u32 = 2;
+
+/// Installations prepared before per-role caps existed receive them when a runner starts
+/// instead of waiting for their next deployment (V1-O2). Idempotent: only roles whose
+/// limit differs are altered. Returns the number of roles changed.
+pub(crate) async fn apply_connection_limits(pool: &sqlx::PgPool) -> Result<usize> {
+    let roles: Vec<(String, i32)> = sqlx::query_as(
+        "SELECT k.role, k.wanted FROM (SELECT migration_role AS role, $1::int AS wanted FROM db_resources \
+         UNION ALL SELECT runtime_role, $2::int FROM db_resources) k \
+         JOIN pg_roles r ON r.rolname = k.role WHERE r.rolconnlimit <> k.wanted ORDER BY k.role",
+    )
+    .bind(MIGRATION_CONNECTION_LIMIT as i32)
+    .bind(RUNTIME_CONNECTION_LIMIT as i32)
+    .fetch_all(pool)
+    .await?;
+    if roles.is_empty() {
+        return Ok(0);
+    }
+    let mut admin = sqlx::PgConnection::connect(&std::env::var("PROVISION_DATABASE_URL")?).await?;
+    let mut changed = 0;
+    for (role, wanted) in roles {
+        // Only names this core generated are interpolated into DDL.
+        if !managed_login_role(&role) {
+            tracing::warn!(event = "connection_limit_role_skipped");
+            continue;
+        }
+        admin
+            .execute(format!("ALTER ROLE {role} CONNECTION LIMIT {wanted}").as_str())
+            .await?;
+        changed += 1;
+    }
+    Ok(changed)
+}
+
+fn managed_login_role(name: &str) -> bool {
+    (name.starts_with("miy_m_") || name.starts_with("miy_r_"))
+        && name.len() <= 63
+        && name
+            .bytes()
+            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'_')
+}
 
 pub(crate) async fn prepare(
     pool: &sqlx::PgPool,
@@ -598,6 +644,23 @@ mod scheduling_tests {
             result.is_ok_and(|r| r.is_ok()),
             "control must complete while build remains blocked"
         );
+    }
+
+    #[test]
+    fn only_generated_login_roles_receive_limits() {
+        let id = Uuid::new_v4().simple().to_string();
+        assert!(managed_login_role(&format!("miy_m_{id}")));
+        assert!(managed_login_role(&format!("miy_r_{id}")));
+        for name in [
+            format!("miy_o_{id}"),
+            format!("miy_d_{id}"),
+            "postgres".into(),
+            "miy_r_x; DROP ROLE postgres".into(),
+            "miy_r_X".into(),
+            format!("miy_r_{}", "a".repeat(60)),
+        ] {
+            assert!(!managed_login_role(&name), "{name}");
+        }
     }
 
     #[tokio::test]
