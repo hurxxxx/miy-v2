@@ -3,12 +3,19 @@
 - 확인일: 2026-11-03
 - 플랫폼 주소: **https://v2.dwdcc.kr**
 - CLI 설치 안내: **https://v2.dwdcc.kr/cli/install**
-- 실행 서버·게시 CLI: **0.6.3**, SDK 번들 **0.7.1**
-- 배포 소스: 서버·CLI `8d7d04271f9467d8bbdd16308e73715b33e4dc0c`, 웹 화면 `98a31cc`(2026-11-03 기본 UI 이식)
+- 실행 서버·게시 CLI: **0.7.0**, SDK 번들 **0.8.0** (2026-11-03 반영)
+- 배포 소스: 서버·CLI `01e4d4924f8c8fc4e11720c1af81adf17ddb20bf`, 웹 화면 `98a31cc`(기본 UI 이식, `01e4d49`와 화면 소스 동일)
 
-2026-11-03 저장소의 새 코어 소스는 **0.7.0 / 번들 0.8.0**이다. [설치 승인·사용자 위임·앱 호출 계약](CORE-PERMISSIONS.md)을 구현했으며 현재 운영 바이너리·DB migration·게시 CLI에는 반영하지 않았다. 특히 0016 migration은 기존 외부 호출 권한을 자동 승인하지 않으므로 실제 적용 때 정확한 설치/릴리스별 승인 전환이 필요하다.
+2026-11-03 [설치 승인·사용자 위임·앱 호출 계약](CORE-PERMISSIONS.md)을 포함한 **0.7.0 / 번들 0.8.0**을 운영에 반영했다([배포 기록](releases/core-0.7.0-deployment.json), [배포 스크립트](releases/evidence/core-0.7.0-linux/deploy.py)).
 
-2026-11-03 웹 화면만 [기본 UI 이식](../UIUX_MIGRATION_PLAN.md) 결과(소스 `98a31cc`)로 교체했다. 서버·worker 실행 파일과 DB는 위 0.6.3(`8d7d042`) 그대로다. 새 화면이 쓰는 API 경로·SDK·공유 모듈 설정은 `8d7d042` 화면과 같음을 확인했다. 교체 전 `web/platform/dist`는 `.local/platform-dist-backups/dist-20261103T183736`(파일 해시 목록 `.sha256` 포함)에 보존했고, 열린 탭이 이전 파일을 계속 읽도록 이전 `assets/`와 `remoteEntry`도 새 산출물에 남겼다. 공개 주소에서 공유 개발 로그인으로 홈·앱 레일·기존 앱 화면·운영 영역·관리 화면·모바일 서랍·공개 CLI 설치 화면을 읽기만 하여 확인했고 페이지 오류는 없었다(검사 세션은 로그아웃). 되돌리려면 `mv web/platform/dist web/platform/dist.failed && cp -a .local/platform-dist-backups/dist-20261103T183736 web/platform/dist`를 실행한다. Nginx·서비스 재시작은 필요 없다.
+- 서버: 별도 checkout에서 `cargo build --release --locked`, SHA-256 `615f19a4f96b9b3adbdf393dd6c9cb8a7e52bda1dfd2d608ef5ac808da0bbe3d`. 이전 0.6.3 바이너리는 `4573260…`.
+- DB: core migration 15 → 17. 적용 전 서비스 중지 상태에서 `miy_core`를 덤프하고 읽기 가능함을 확인했다. 사전 리허설로 실제 DB 덤프를 일회용 PostgreSQL에 복원해 같은 migration이 통과하고 설치 7건이 보존됨을 확인했다. 실제 설치 7건은 모두 `database`만 요청하므로 0016 이후 추가로 승인할 외부 연결은 없었다.
+- 게시 CLI: GitHub Actions 후보 run `41613023015`(5개 target, 공개 Release 없음)와 Windows 설치 파일 run `41614954095`(`MiySetup-0.7.0-windows-x64.exe`)를 검증·staging한 뒤 게시했다.
+- 확인: 앱 컨테이너·앱·릴리스·설치(릴리스·상태 포함)·권한·사용자 수가 전후 동일, health·설치 안내 0.7.0, 공개 다운로드 7개 해시 일치, 공유 개발 로그인 읽기 전용 브라우저 검사 오류 0건, 게시 0.7.0 Linux CLI로 아래 연결 검사 17개 PASS(정리 실패 0).
+- 되돌리기: `.local/release-0.7.0/rollback/`에 이전 바이너리·CLI/설치 index·DB 덤프(0600)를 보존했다. 배포 스크립트의 `restore()`가 서비스 중지 → 파일 복원 → `pg_restore --clean --single-transaction` → 시작 순서로 되돌린다.
+- 기존 사용자 PC의 0.6.3 CLI는 서버에서 차단되지 않지만 새 기능·번들 0.8.0은 [설치 안내](https://v2.dwdcc.kr/cli/install)의 0.7.0으로 갱신해야 한다. 기존 앱은 `miy app upgrade`로 번들을 전환한다. Windows 설치 파일의 실제 실행은 사용자 수행 범위로 남는다.
+
+2026-11-03 웹 화면만 [기본 UI 이식](../UIUX_MIGRATION_PLAN.md) 결과(소스 `98a31cc`)로 교체했다. 이 시점의 서버·worker 실행 파일과 DB는 0.6.3(`8d7d042`)이었고, 같은 날 위 0.7.0 반영으로 교체했다. 새 화면이 쓰는 API 경로·SDK·공유 모듈 설정은 `8d7d042` 화면과 같음을 확인했다. 교체 전 `web/platform/dist`는 `.local/platform-dist-backups/dist-20261103T183736`(파일 해시 목록 `.sha256` 포함)에 보존했고, 열린 탭이 이전 파일을 계속 읽도록 이전 `assets/`와 `remoteEntry`도 새 산출물에 남겼다. 공개 주소에서 공유 개발 로그인으로 홈·앱 레일·기존 앱 화면·운영 영역·관리 화면·모바일 서랍·공개 CLI 설치 화면을 읽기만 하여 확인했고 페이지 오류는 없었다(검사 세션은 로그아웃). 되돌리려면 `mv web/platform/dist web/platform/dist.failed && cp -a .local/platform-dist-backups/dist-20261103T183736 web/platform/dist`를 실행한다. Nginx·서비스 재시작은 필요 없다.
 
 현재 호스트가 플랫폼 서버다. 다른 PC의 브라우저·CLI·프로젝트 MCP는 위 HTTPS 주소를 사용한다. 주소·인증·서비스 설정은 이미 적용되어 있으며, 이 문서는 현재 배포와 저장소 작업본을 구분해 유지관리하는 절차다.
 

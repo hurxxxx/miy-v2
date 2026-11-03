@@ -1,0 +1,60 @@
+{
+  "date": "2026-11-03",
+  "origin": "https://v2.dwdcc.kr",
+  "status": "PASS",
+  "rollbackUsed": false,
+  "sourceCommit": "01e4d4924f8c8fc4e11720c1af81adf17ddb20bf",
+  "version": "0.7.0",
+  "bundleVersion": "0.8.0",
+  "server": {
+    "build": "cargo build --release --locked (separate checkout)",
+    "sha256": "615f19a4f96b9b3adbdf393dd6c9cb8a7e52bda1dfd2d608ef5ac808da0bbe3d",
+    "previousSha256": "4573260257147c2563ba5ffae177b9ac6c6b0a331d2a0b1fef1cf6e60d10064e"
+  },
+  "database": {
+    "migrationsBefore": 15,
+    "migrationsAfter": 17,
+    "backup": {
+      "bytes": 195837,
+      "sha256": "8f1b3ddb876eaffc3c0617c78ee84004efb82ea6e0c1602df085be08ec57eefb",
+      "migrationVersion": 15
+    },
+    "rehearsal": "live dump restored into disposable postgres:18.3, migrate 15->17 PASS, installations 7 preserved; container and dump removed",
+    "externalApprovalsNeeded": 0,
+    "note": "all 7 installations request only database; 0016 adds no approvals and none were required"
+  },
+  "ci": {
+    "cliReleaseRun": 41613023015,
+    "windowsInstallerRun": 41614954095,
+    "publish": false,
+    "targets": [
+      "aarch64-apple-darwin",
+      "aarch64-unknown-linux-gnu",
+      "x86_64-apple-darwin",
+      "x86_64-pc-windows-msvc",
+      "x86_64-unknown-linux-gnu"
+    ],
+    "windowsArchiveSha256": "cd082c473d70704b2f7bc89af82b8d555b64a137c6c59baf50a1ebe35a4403f3",
+    "windowsBinarySha256": "148683289767eb578200de0f79664e48cca9b387956bd99c4774bd3093f261a8",
+    "installer": {
+      "file": "MiySetup-0.7.0-windows-x64.exe",
+      "sha256": "8e01d1f65f4dbf1e3a69f9a6ae5ffefa9c82b9b8f2966274d3fc4a6e79a9612f",
+      "bytes": 6209536
+    }
+  },
+  "checks": {
+    "preservation": "miy-app containers (3 running), apps 5, releases 9, installations 7 with release/status, grants 9, users 4 identical before/after",
+    "health": {
+      "status": "ok"
+    },
+    "installGuide": {
+      "cliVersion": "0.7.0",
+      "sourceCommit": "01e4d4924f8c8fc4e11720c1af81adf17ddb20bf"
+    },
+    "publicDownloads": "scripts/check-cli-downloads.py: 7 files, 250,621,555 bytes, hashes verified",
+    "browser": "shared development login, read-only: home/rail/existing app/prod/admin/mobile drawer/public CLI install, 0 page errors, sessions logged out",
+    "platformConnection": "scripts/check-platform-connection.mjs with published 0.7.0 Linux CLI: 17 PASS, cleanup failures 0"
+  },
+  "rollback": "private backups in .local/release-0.7.0/rollback (binary, release/installer indexes, miy_core.dump 0600); restore() in deploy.py",
+  "deployedAt": "2026-11-03T09:58:05Z"
+}
