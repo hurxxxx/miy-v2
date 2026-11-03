@@ -223,7 +223,10 @@ v1은 회사 소개 자료 `MIY 소개 및 사례_20261002.pdf`를 v1 구현과 
 | V1-O1 | 소스 구현(운영 미반영) | `crates/miy/src/docker_storage.rs`. 서버 빌드 시작과 로컬에 없는 이미지 적재 전에 15GiB·15% 하한 확인, `docker_storage_low`·`docker_storage_unknown` 추가 | 단위 테스트, 실제 Docker 측정·거부 테스트, 격리 회귀. 이미지 정리 규칙은 코어 3차 남은 범위 |
 | V1-O2 | 소스 구현(운영 미반영) | 설치 역할 연결 한도(runtime 6, migration 2), 코어·앱 `application_name`, compose의 Keycloak 풀 10, `scripts/check-db-connections.py` | 운영 보고는 FAIL(역할 한도 없음, Keycloak 100). 반영·재배포 후 최악 88/97 |
 | V1-O4 | 일부 구현(운영 미반영) | `crates/miy/src/db_outcome.rs`. 결과를 모르는 DB 오류에서 배포 실패 정리(컨테이너 중지)를 하지 않음. 위임 확인 중 DB 오류를 권한 회수(`permission_revoked`)가 아닌 `database_unavailable`로 분리해, 일시적 DB 오류로 개발 세션 역할을 지우던 문제 수정. 업로드 적재 실패에 저장 공간 코드를 남김. 빌드 실패 정리는 이 worker가 실패를 기록했을 때만 | 나머지(시작·재시작 포트 기록, 업로드 만료 순서, `delivery` 보관 파일, `ensure_active` 분류)는 순서 6 |
-| V1-Q3 | 완료(GitHub 실행은 push 후) | `scripts/check-static.sh`, `.github/workflows/web.yml`, `check.sh` origin 가드, 루트 Playwright 설정 축소 | 로컬에서 `scripts`·`rust`·`web` 모두 PASS. `check.sh`가 운영 `.local`을 거부함을 확인 |
+| V1-G1 | 소스 구현(운영 미반영) | migration `0018_groups_and_app_access.sql`의 조직·수동 그룹, 주 소속, 그룹 권한(`use`·`develop`), `crates/miy/src/groups.rs` 관리 API, 플랫폼 관리 화면 | 격리 회귀 권한 묶음 6개 관찰, 화면 모의 검사 3건 |
+| V1-G2 | 소스 구현(운영 미반영) | 앱·환경별 입장 대상(`selected`/`all`), 회사 사용 중지(관리자 포함 차단, 개발자는 dev에서 수정) | 같은 회귀, `access_decision` 단위 테스트 |
+| V1-G3 | 소스 구현(운영 미반영) | `effective_grants` 뷰를 매번 계산해 다음 요청과 대기 작업에 반영(캐시 무효화 불필요) | 멤버 해제 즉시 회수 관찰 |
+| V1-Q3 | 완료 | `scripts/check-static.sh`, `.github/workflows/web.yml`, `check.sh` origin 가드, 루트 Playwright 설정 축소 | 로컬에서 `scripts`·`rust`·`web` 모두 PASS. `check.sh`가 운영 `.local`을 거부함을 확인. GitHub `Web and scripts` run 41645608115 success |
 
 ## 8. 재검증 기록 (2026-11-03)
 

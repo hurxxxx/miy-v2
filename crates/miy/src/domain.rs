@@ -51,21 +51,58 @@ pub async fn authorize(
     if write && !p.scopes.iter().any(|s| s == "miy.dev") {
         return Err(ApiError::forbidden());
     }
-    if sqlx::query_scalar::<_, bool>(
-        "SELECT EXISTS(SELECT 1 FROM users WHERE id=$1 AND enabled AND admin)",
+    // User and group permissions come from the computed `effective_grants` view.
+    let row = sqlx::query(
+        "SELECT u.admin, EXISTS(SELECT 1 FROM app_controls c WHERE c.app_id=$2 AND c.disabled) AS disabled, \
+         EXISTS(SELECT 1 FROM effective_grants g WHERE g.user_id=$1 AND g.app_id=$2 AND g.environment=$3 AND g.permission='develop') AS develop, \
+         EXISTS(SELECT 1 FROM effective_grants g WHERE g.user_id=$1 AND g.app_id=$2 AND g.environment=$3 AND g.permission IN ('use','deploy')) AS other \
+         FROM users u WHERE u.id=$1 AND u.enabled",
     )
     .bind(&p.id)
-    .fetch_one(&state.pool)
+    .bind(app)
+    .bind(env)
+    .fetch_optional(&state.pool)
     .await?
-    {
-        return Ok(());
+    .ok_or_else(ApiError::forbidden)?;
+    let admin: bool = row.get("admin");
+    let develop = admin || row.get::<bool, _>("develop");
+    access_decision(
+        write,
+        env,
+        admin,
+        develop,
+        row.get("other"),
+        row.get("disabled"),
+    )
+}
+/// Development stays possible on a disabled app so it can be repaired; the company
+/// switch stops use for everyone, administrators included, except developers in dev.
+fn access_decision(
+    write: bool,
+    env: &str,
+    admin: bool,
+    develop: bool,
+    other: bool,
+    disabled: bool,
+) -> ApiResult<()> {
+    if write {
+        return if develop && (admin || env != "prod") {
+            Ok(())
+        } else {
+            Err(ApiError::forbidden())
+        };
     }
-    if write && env == "prod" {
-        return Err(ApiError::forbidden());
+    if disabled {
+        return if env == "dev" && develop {
+            Ok(())
+        } else {
+            Err(ApiError {
+                status: axum::http::StatusCode::FORBIDDEN,
+                code: "app_disabled".into(),
+            })
+        };
     }
-    let yes:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM grants WHERE user_id=$1 AND app_id=$2 AND environment=$3 AND (permission='develop' OR ($4=false AND permission IN ('use','deploy'))))")
-        .bind(&p.id).bind(app).bind(env).bind(write).fetch_one(&state.pool).await?;
-    if yes {
+    if develop || other {
         Ok(())
     } else {
         Err(ApiError::forbidden())
@@ -78,7 +115,7 @@ pub async fn can_manage(
     app: &str,
     env: &str,
 ) -> Result<bool, sqlx::Error> {
-    sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM users WHERE id=$1 AND enabled AND (admin OR EXISTS(SELECT 1 FROM grants WHERE user_id=$1 AND app_id=$2 AND environment=$3 AND permission=$4)))")
+    sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM users WHERE id=$1 AND enabled AND (admin OR EXISTS(SELECT 1 FROM effective_grants WHERE user_id=$1 AND app_id=$2 AND environment=$3 AND permission=$4)))")
         .bind(actor).bind(app).bind(env).bind(if env == "prod" { "deploy" } else { "develop" }).fetch_one(pool).await
 }
 pub async fn manage(state: &State, p: &Principal, app: &str, env: &str) -> ApiResult<()> {
@@ -111,7 +148,7 @@ pub async fn me(state: &State, p: &Principal) -> ApiResult<Value> {
     } else {
         None
     };
-    let grants:Vec<Value>=sqlx::query_scalar("SELECT jsonb_build_object('appId',app_id,'environment',environment,'permission',permission) FROM grants WHERE user_id=$1")
+    let grants:Vec<Value>=sqlx::query_scalar("SELECT jsonb_build_object('appId',app_id,'environment',environment,'permission',permission) FROM effective_grants WHERE user_id=$1 ORDER BY app_id,environment,permission")
         .bind(&p.id).fetch_all(&state.pool).await?;
     let grants: Vec<Value> = grants
         .into_iter()
@@ -417,4 +454,51 @@ pub fn catalog() -> Value {
         json!({"id":"source_build_request","method":"GET","path":"/api/v1/apps/{app}/build-requests/{request}","permission":"build owner with develop in dev","description":"Recover an original build request or deduplicated alias after a lost upload acknowledgement."}),
     ]);
     catalog
+        .as_array_mut()
+        .unwrap()
+        .extend(crate::groups::catalog());
+    catalog
+}
+
+#[cfg(test)]
+mod access_tests {
+    use super::access_decision as decide;
+
+    fn code(result: super::ApiResult<()>) -> Option<String> {
+        result.err().map(|error| error.code)
+    }
+
+    #[test]
+    fn use_and_admin_reads() {
+        assert!(decide(false, "prod", false, false, true, false).is_ok());
+        assert!(decide(false, "prod", false, false, false, false).is_err());
+        assert!(decide(false, "prod", true, true, false, false).is_ok());
+    }
+
+    #[test]
+    fn company_switch_blocks_use_for_everyone_but_developers_in_dev() {
+        let disabled = Some("app_disabled".to_string());
+        assert_eq!(
+            code(decide(false, "prod", true, true, false, true)),
+            disabled
+        );
+        assert_eq!(
+            code(decide(false, "prod", false, true, true, true)),
+            disabled
+        );
+        assert_eq!(
+            code(decide(false, "dev", false, false, true, true)),
+            disabled
+        );
+        assert!(decide(false, "dev", true, true, false, true).is_ok());
+        assert!(decide(false, "dev", false, true, false, true).is_ok());
+    }
+
+    #[test]
+    fn writes_need_develop_and_prod_writes_need_admin() {
+        assert!(decide(true, "dev", false, true, false, true).is_ok());
+        assert!(decide(true, "dev", false, false, true, false).is_err());
+        assert!(decide(true, "prod", false, true, false, false).is_err());
+        assert!(decide(true, "prod", true, true, false, false).is_ok());
+    }
 }

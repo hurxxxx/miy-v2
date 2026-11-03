@@ -145,6 +145,36 @@ impl Harness<'_> {
             .bind(hash(&token)).bind(session).execute(&self.state.pool).await?;
         Ok(Actor { id, token, session })
     }
+    async fn json(
+        &self,
+        token: &str,
+        method: Method,
+        path: &str,
+        body: Value,
+        expected: u16,
+    ) -> Result<Value> {
+        response(
+            self.request(token, method, path).json(&body).send().await?,
+            expected,
+        )
+        .await
+    }
+    /// The installation as the user's platform home lists it, if the user may use it.
+    async fn visible(&self, actor: &Actor, app: &App) -> Result<Option<Value>> {
+        let rows = response(
+            self.request(&actor.token, Method::GET, "/api/v1/installations")
+                .send()
+                .await?,
+            200,
+        )
+        .await?;
+        Ok(rows
+            .as_array()
+            .context("installations list")?
+            .iter()
+            .find(|row| row["id"] == json!(app.installation))
+            .cloned())
+    }
     async fn grant(&self, actor: &Actor, app: &App, environment: &str) -> Result<()> {
         sqlx::query("INSERT INTO grants(user_id,app_id,environment,permission) VALUES($1,$2,$3,'use') ON CONFLICT DO NOTHING")
             .bind(&actor.id).bind(&app.app).bind(environment).execute(&self.state.pool).await?;
@@ -1105,5 +1135,305 @@ pub async fn run(state: &State, client: &Client, base: &str) -> Result<Vec<Strin
     )
     .await?;
     passed.push("user disable and CLI/browser/legacy logout revoke issued continuations, including held requests and child proofs".into());
+    groups(&mut h, suffix, &mut passed).await?;
     Ok(passed)
+}
+
+/// Groups and app access (V1-G1, V1-G2): permissions are computed from current
+/// memberships on every request and never copied into user grants.
+async fn groups(h: &mut Harness<'_>, suffix: &str, passed: &mut Vec<String>) -> Result<()> {
+    let operator = h.actor(true).await?;
+    let carol = h.actor(false).await?;
+    let dave = h.actor(false).await?;
+    let erin = h.actor(false).await?;
+    let app = format!("permission-g-{suffix}");
+    let dev = h.app(app.clone(), "dev", &[]).await?;
+    let prod = h.app(app.clone(), "prod", &[]).await?;
+    let harness: &Harness<'_> = h;
+    let token = operator.token.as_str();
+    let admin = move |method: Method, path: String, body: Value, expected: u16| async move {
+        harness.json(token, method, &path, body, expected).await
+    };
+
+    let local = admin(
+        Method::POST,
+        "/api/v1/groups".into(),
+        json!({"name":format!("로컬 {suffix}"),"source":"local"}),
+        200,
+    )
+    .await?;
+    let local = local["id"].as_str().context("local group id")?.to_owned();
+    admin(
+        Method::PUT,
+        "/api/v1/group-grants".into(),
+        json!({"groupId":local,"appId":app,"environment":"dev","permission":"use","enabled":true}),
+        200,
+    )
+    .await?;
+    ensure!(
+        h.visible(&carol, &dev).await?.is_none(),
+        "group grant reached a non-member"
+    );
+    admin(
+        Method::PUT,
+        format!("/api/v1/groups/{local}/members"),
+        json!({"userId":carol.id,"member":true}),
+        200,
+    )
+    .await?;
+    ensure!(
+        h.visible(&carol, &dev).await?.is_some(),
+        "local member did not receive use"
+    );
+    ensure!(
+        h.visible(&carol, &prod).await?.is_none(),
+        "dev group grant reached prod"
+    );
+    admin(
+        Method::PUT,
+        format!("/api/v1/groups/{local}/members"),
+        json!({"userId":carol.id,"member":false}),
+        200,
+    )
+    .await?;
+    ensure!(
+        h.visible(&carol, &dev).await?.is_none(),
+        "removed member kept use"
+    );
+    let copied: i64 = sqlx::query_scalar("SELECT count(*) FROM grants WHERE user_id=$1")
+        .bind(&carol.id)
+        .fetch_one(&h.state.pool)
+        .await?;
+    ensure!(copied == 0, "group permission was copied into user grants");
+    passed.push("a local group grant gives use to current members only, and removal applies to the next request without copied grants".into());
+
+    let unit = admin(
+        Method::POST,
+        "/api/v1/groups".into(),
+        json!({"name":format!("본부 {suffix}"),"source":"hr"}),
+        200,
+    )
+    .await?;
+    let unit = unit["id"].as_str().context("hr group id")?.to_owned();
+    let team = admin(
+        Method::POST,
+        "/api/v1/groups".into(),
+        json!({"name":format!("팀 {suffix}"),"source":"hr","parentId":unit}),
+        200,
+    )
+    .await?;
+    let team = team["id"].as_str().context("hr child id")?.to_owned();
+    admin(
+        Method::PUT,
+        "/api/v1/group-grants".into(),
+        json!({"groupId":unit,"appId":app,"environment":"dev","permission":"use","enabled":true}),
+        200,
+    )
+    .await?;
+    admin(
+        Method::PUT,
+        format!("/api/v1/users/{}/primary-group", dave.id),
+        json!({"groupId":team}),
+        200,
+    )
+    .await?;
+    ensure!(
+        h.visible(&dave, &dev).await?.is_none(),
+        "a child unit inherited the parent grant"
+    );
+    admin(
+        Method::PUT,
+        format!("/api/v1/users/{}/primary-group", dave.id),
+        json!({"groupId":unit}),
+        200,
+    )
+    .await?;
+    ensure!(
+        h.visible(&dave, &dev).await?.is_some(),
+        "an exact primary member did not receive use"
+    );
+    admin(
+        Method::PUT,
+        format!("/api/v1/groups/{unit}/members"),
+        json!({"userId":dave.id,"member":true}),
+        400,
+    )
+    .await?;
+    admin(
+        Method::PUT,
+        format!("/api/v1/groups/{unit}/parent"),
+        json!({"parentId":team}),
+        409,
+    )
+    .await?;
+    admin(
+        Method::PUT,
+        format!("/api/v1/groups/{team}/parent"),
+        json!({"parentId":null}),
+        200,
+    )
+    .await?;
+    passed.push("HR groups admit exact primary members only, neither parents nor children inherit, and hierarchy cycles are rejected".into());
+
+    admin(Method::PUT, "/api/v1/group-grants".into(), json!({"groupId":local,"appId":app,"environment":"prod","permission":"deploy","enabled":true}), 400).await?;
+    admin(Method::PUT, "/api/v1/group-grants".into(), json!({"groupId":local,"appId":app,"environment":"dev","permission":"develop","enabled":true}), 200).await?;
+    admin(
+        Method::PUT,
+        format!("/api/v1/groups/{local}/members"),
+        json!({"userId":carol.id,"member":true}),
+        200,
+    )
+    .await?;
+    let row = h
+        .visible(&carol, &dev)
+        .await?
+        .context("group developer cannot see dev")?;
+    ensure!(
+        row["canManage"] == true && row["canPromote"] == false,
+        "group develop must manage dev only: {row}"
+    );
+    ensure!(
+        h.visible(&carol, &prod).await?.is_none(),
+        "group develop reached prod"
+    );
+    passed.push("groups cannot hold deploy, and a group develop grant manages only the development environment".into());
+
+    ensure!(
+        h.visible(&erin, &prod).await?.is_none(),
+        "unadmitted user saw prod"
+    );
+    admin(
+        Method::PUT,
+        format!("/api/v1/apps/{app}/admission"),
+        json!({"environment":"prod","mode":"all"}),
+        200,
+    )
+    .await?;
+    ensure!(
+        h.visible(&erin, &prod).await?.is_some(),
+        "all admission did not admit an enabled user"
+    );
+    ensure!(
+        h.visible(&erin, &dev).await?.is_none(),
+        "prod admission reached dev"
+    );
+    admin(
+        Method::PUT,
+        format!("/api/v1/apps/{app}/admission"),
+        json!({"environment":"prod","mode":"selected"}),
+        200,
+    )
+    .await?;
+    ensure!(
+        h.visible(&erin, &prod).await?.is_none(),
+        "selected mode kept an implicit user"
+    );
+    admin(
+        Method::PUT,
+        format!("/api/v1/apps/{app}/admission"),
+        json!({"environment":"prod","mode":"everyone"}),
+        400,
+    )
+    .await?;
+    passed.push("admitting all users is an explicit per-environment choice, and returning to selected removes it".into());
+
+    admin(
+        Method::PUT,
+        "/api/v1/grants".into(),
+        json!({"userId":erin.id,"appId":app,"environment":"dev","permission":"use","enabled":true}),
+        200,
+    )
+    .await?;
+    ensure!(
+        h.visible(&operator, &prod).await?.is_some(),
+        "administrator could not see prod"
+    );
+    admin(
+        Method::PUT,
+        format!("/api/v1/apps/{app}/control"),
+        json!({"disabled":true}),
+        200,
+    )
+    .await?;
+    ensure!(
+        h.visible(&operator, &prod).await?.is_none(),
+        "an administrator used a disabled app"
+    );
+    ensure!(
+        h.visible(&erin, &dev).await?.is_none(),
+        "a user used a disabled app"
+    );
+    ensure!(
+        h.visible(&carol, &dev).await?.is_some(),
+        "a developer lost dev to repair the app"
+    );
+    let blocked = response(
+        h.request(
+            &operator.token,
+            Method::GET,
+            &format!("/api/v1/installations/{}/api/probe", prod.installation),
+        )
+        .send()
+        .await?,
+        403,
+    )
+    .await?;
+    ensure!(
+        blocked["error"]["code"] == "app_disabled",
+        "disabled app call lacks a stable code: {blocked}"
+    );
+    admin(
+        Method::PUT,
+        format!("/api/v1/apps/{app}/control"),
+        json!({"disabled":false}),
+        200,
+    )
+    .await?;
+    ensure!(
+        h.visible(&operator, &prod).await?.is_some() && h.visible(&erin, &dev).await?.is_some(),
+        "re-enabling did not restore use"
+    );
+    passed.push("the company switch stops use for administrators and users while developers keep dev, and re-enabling restores it".into());
+
+    denied(
+        h.request(&carol.token, Method::GET, "/api/v1/groups")
+            .send()
+            .await?,
+    )
+    .await?;
+    denied(
+        h.request(
+            &carol.token,
+            Method::PUT,
+            &format!("/api/v1/apps/{app}/control"),
+        )
+        .json(&json!({"disabled":true}))
+        .send()
+        .await?,
+    )
+    .await?;
+    let actions: Vec<String> = sqlx::query_scalar(
+        "SELECT DISTINCT action FROM audit WHERE actor=$1 AND action NOT LIKE '%:%'",
+    )
+    .bind(&operator.id)
+    .fetch_all(&h.state.pool)
+    .await?;
+    for action in [
+        "group.created",
+        "group_grant.enabled",
+        "group.member_added",
+        "group.member_removed",
+        "user.primary_group_set",
+        "group.parent_set",
+        "app.admission_set",
+        "app.disabled",
+        "app.enabled",
+    ] {
+        ensure!(
+            actions.iter().any(|a| a == action),
+            "missing audit action {action}"
+        );
+    }
+    passed.push("only administrators change groups and access, and every change is audited".into());
+    Ok(())
 }

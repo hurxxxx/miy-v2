@@ -2,7 +2,7 @@
 
 - 작성일: 2026-11-03
 - 소스 버전: CLI/core **0.7.0**, 개발 번들 **0.8.0**, Rust SDK **0.3.0**
-- 범위: [코어 안정화 2차](CORE-HARDENING.md). miy-v1, UI/UX, 서비스 계정 발급은 포함하지 않는다.
+- 범위: [코어 안정화 2차](CORE-HARDENING.md)와 사용자·그룹 앱 권한([추진 계획](PLAN.md#다음-우선-작업) 순서 2). 서비스 계정 발급은 포함하지 않는다.
 - 운영 반영: 2026-11-03 v2.dwdcc.kr 서버·게시 CLI 0.7.0 / 번들 0.8.0 ([배포 기록](releases/core-0.7.0-deployment.json)). 기존 설치는 모두 `database`만 요청해 추가 승인 대상이 없었다.
 
 ## 설치가 요청한 권한과 관리자가 승인한 권한
@@ -38,6 +38,37 @@ miy --context platform permissions set --installation INSTALLATION_UUID --input 
 ```
 
 HTTP MCP의 `get_installation_permissions`, `set_installation_permissions`도 같은 정책과 승인 이력을 사용한다. 로컬 stdio MCP는 조회·안내 도구를 제공하며 변경은 명시적인 CLI 명령으로 수행한다.
+
+## 사용자·그룹의 앱 권한과 회사 사용 중지
+
+2026-11-03 소스(migration `0018_groups_and_app_access.sql`)는 [PRD](PRD.md#앱-사용-권한과-앱-내부-데이터-권한)의 앱 사용 권한을 사용자와 그룹 두 주체로 넓힌다. 운영 서버에는 아직 적용하지 않았다.
+
+- **정본:** 그룹과 주 소속의 정본은 코어 DB다. Keycloak은 인증만 맡는다.
+- **그룹 종류:**
+  - 조직(인사, `hr`) 그룹: 주 소속(`users.primary_group_id`)이 정확히 그 그룹인 사용자만 포함한다.
+  - 수동(`local`) 그룹: 관리자가 직접 추가한 사용자만 포함한다.
+  - 계층은 조직 그룹에만 있다. 상위·하위 조직이나 책임자에게 권한이 이어지지 않는다. 계층 변경은 잠금 후 최신 관계로 순환을 검사해 `409 group_hierarchy_cycle`로 거부한다.
+- **그룹 권한:** `use`와 `develop`만 줄 수 있다. 운영 배포(`deploy`)는 사람별로만 부여하며, 그룹에 요청하면 `400 group_permission_not_allowed`다.
+- **판정:** 권한 판정은 `effective_grants` 뷰(직접 권한 ∪ 현재 그룹 멤버십 ∪ 전체 허용)를 매번 계산한다. 그룹 권한을 사용자 권한 행으로 복사하지 않는다. 멤버십·주 소속·그룹 활성 상태가 바뀌면 다음 요청부터 반영되고, 대기 작업도 실행 시점에 같은 뷰로 다시 검사한다. 이 뷰를 쓰는 곳은 `authorize`·`can_manage`, 조회 API, 위임 범위, 개발 세션, worker의 develop 확인이다.
+- **입장 대상:** 앱·환경마다 `selected`(기본, 권한을 받은 사용자·그룹만)와 `all`(사용 중인 모든 사용자) 중 하나다. `all`은 명시적으로 고를 때만 적용된다.
+- **회사 사용 중지:** 앱 사용 경로(화면 자산, 설치 목록, 앱 API 호출, 앱 간 호출 대상)를 막고 `403 app_disabled`를 돌려준다. 관리자도 우회하지 못한다. 다만 그 앱의 개발 권한이 있는 사용자는 테스트(dev) 환경에서 앱을 고칠 수 있고, 실행 관리(시작·중지·배포)도 계속할 수 있다.
+- **관리:** 위임되지 않은 관리자만 바꿀 수 있고, 변경마다 같은 트랜잭션에 감사 기록(`group.*`, `group_grant.*`, `user.primary_group_set`, `app.admission_set`, `app.disabled`·`app.enabled`)을 남긴다. 플랫폼 관리 화면의 "사용자·그룹 권한"에서 다룬다.
+
+```text
+GET|POST /api/v1/groups                  PATCH /api/v1/groups/{id}
+PUT /api/v1/groups/{id}/parent            GET|PUT /api/v1/groups/{id}/members
+PUT /api/v1/users/{id}/primary-group      GET|PUT /api/v1/group-grants
+GET /api/v1/apps/{app}/access             PUT /api/v1/apps/{app}/admission
+PUT /api/v1/apps/{app}/control
+```
+
+격리 회귀의 권한 묶음 6개 관찰이 실제 PostgreSQL·HTTP로 위 규칙을 확인한다(2026-11-03, 76개 관찰 PASS).
+- 멤버 해제 즉시 회수, 복사된 권한 없음
+- 조직 정확 일치와 상속 없음, 순환 거부
+- `deploy` 거부와 develop의 dev 한정
+- `all` 입장 대상의 명시 선택과 해제
+- 관리자도 막는 회사 사용 중지와 개발자의 dev 수정
+- 관리자 전용과 감사 기록
 
 ## CLI·MCP의 사용자 위임
 

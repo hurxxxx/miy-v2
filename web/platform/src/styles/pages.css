@@ -434,3 +434,62 @@
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+
+/* Users, groups and app access (admin). */
+.access-toolbar:not(:where(.miy-app-root, .miy-app-root *)) {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--shell-space-2);
+  margin-bottom: var(--shell-space-3);
+}
+.access-hint:not(:where(.miy-app-root, .miy-app-root *)) {
+  margin-bottom: var(--shell-space-3);
+  font-size: 0.85rem;
+}
+.access-table:not(:where(.miy-app-root, .miy-app-root *)) {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+.access-table th:not(:where(.miy-app-root, .miy-app-root *)),
+.access-table td:not(:where(.miy-app-root, .miy-app-root *)) {
+  padding: var(--shell-space-2) var(--shell-space-2);
+  border-bottom: 1px solid var(--shell-border);
+  text-align: left;
+  vertical-align: middle;
+}
+.access-table th:not(:where(.miy-app-root, .miy-app-root *)) {
+  color: var(--shell-ink-muted);
+  font-weight: 600;
+}
+.access-table tr[aria-current="true"] td:not(:where(.miy-app-root, .miy-app-root *)) {
+  background: var(--shell-surface-muted, rgba(0, 0, 0, 0.03));
+}
+.access-actions:not(:where(.miy-app-root, .miy-app-root *)) {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--shell-space-2);
+}
+.access-detail:not(:where(.miy-app-root, .miy-app-root *)) {
+  margin-top: var(--shell-space-4);
+}
+.access-detail h3:not(:where(.miy-app-root, .miy-app-root *)) {
+  margin: var(--shell-space-4) 0 var(--shell-space-2);
+  font-size: 0.95rem;
+}
+.access-row:not(:where(.miy-app-root, .miy-app-root *)),
+.access-members li:not(:where(.miy-app-root, .miy-app-root *)) {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--shell-space-2);
+  padding: var(--shell-space-2) 0;
+  border-bottom: 1px solid var(--shell-border);
+}
+.access-members:not(:where(.miy-app-root, .miy-app-root *)) {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}

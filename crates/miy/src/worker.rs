@@ -143,7 +143,7 @@ async fn control_loop(pool: &sqlx::PgPool) -> Result<()> {
                 .await?;
             let result = async {
                 crate::auth_sessions::ensure_active(pool,row.get("actor")).await.map_err(|_| RuntimeFailure::new(FailureCode::UserDisabled))?;
-                let authorized:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM users WHERE id=$1 AND admin) OR EXISTS(SELECT 1 FROM installations i JOIN grants g ON g.app_id=i.app_id AND g.environment=i.environment WHERE i.id=$2 AND i.environment='dev' AND g.user_id=$1 AND g.permission='develop')")
+                let authorized:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM users WHERE id=$1 AND admin) OR EXISTS(SELECT 1 FROM installations i JOIN effective_grants g ON g.app_id=i.app_id AND g.environment=i.environment WHERE i.id=$2 AND i.environment='dev' AND g.user_id=$1 AND g.permission='develop')")
                     .bind(row.get::<String,_>("actor")).bind(installation).fetch_one(pool).await?;
                 anyhow::ensure!(authorized, RuntimeFailure::new(FailureCode::PermissionRevoked));
                 if target.get::<String,_>("environment")=="dev" && crate::development::active_for_app(pool,target.get("app_id")).await? {anyhow::bail!(RuntimeFailure::new(FailureCode::ActiveDevelopmentSession));}

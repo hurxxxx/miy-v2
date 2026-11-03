@@ -284,7 +284,7 @@ pub async fn close(
 }
 
 pub(crate) async fn session_valid(pool: &sqlx::PgPool, id: Uuid) -> Result<bool, sqlx::Error> {
-    let row=sqlx::query("SELECT d.actor,d.app_id,c.delegation_id FROM app_dev_sessions d JOIN cli_sessions c ON c.id=d.parent_session_id JOIN users u ON u.id=d.actor WHERE d.id=$1 AND d.status IN ('queued','preparing','ready') AND d.expires_at>now() AND c.user_id=d.actor AND c.revoked_at IS NULL AND c.expires_at>now() AND u.enabled AND (u.admin OR EXISTS(SELECT 1 FROM grants g WHERE g.user_id=d.actor AND g.app_id=d.app_id AND g.environment='dev' AND g.permission='develop'))").bind(id).fetch_optional(pool).await?;
+    let row=sqlx::query("SELECT d.actor,d.app_id,c.delegation_id FROM app_dev_sessions d JOIN cli_sessions c ON c.id=d.parent_session_id JOIN users u ON u.id=d.actor WHERE d.id=$1 AND d.status IN ('queued','preparing','ready') AND d.expires_at>now() AND c.user_id=d.actor AND c.revoked_at IS NULL AND c.expires_at>now() AND u.enabled AND (u.admin OR EXISTS(SELECT 1 FROM effective_grants g WHERE g.user_id=d.actor AND g.app_id=d.app_id AND g.environment='dev' AND g.permission='develop'))").bind(id).fetch_optional(pool).await?;
     let Some(row) = row else { return Ok(false) };
     match crate::delegations::check_queued(
         pool,

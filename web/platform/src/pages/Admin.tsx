@@ -8,9 +8,9 @@ import { LoadError, StaleNotice } from "../components/LoadState";
 import { RuntimeHealth } from "../components/RuntimeHealth";
 import { RuntimeControls } from "../components/RuntimeControls";
 import { Badge, Button, EmptyState, Field, Loading, Panel } from "../ui";
+import { AppAccessAdmin, GroupAdmin, type DirectoryUser } from "./AdminAccess";
 
 type Registration = { id: string; appId: string; name: string; status: string; requester: string };
-type DirectoryUser = { id: string; name: string };
 
 export function Admin() {
   const user = useUser();
@@ -89,7 +89,7 @@ function AdminConsole({ csrf }: { csrf: string }) {
       <div className="page-header">
         <div>
           <h1>플랫폼 관리</h1>
-          <p>앱 등록 신청, 앱·환경 권한, 실행 중인 앱을 관리합니다.</p>
+          <p>앱 등록 신청, 사용자·그룹의 앱 권한과 회사 사용 상태, 실행 중인 앱을 관리합니다.</p>
         </div>
       </div>
       {loadError && <LoadError message="앱 등록 신청 또는 사용자 목록을 불러오지 못했습니다." onRetry={refresh} />}
@@ -162,6 +162,11 @@ function AdminConsole({ csrf }: { csrf: string }) {
             </div>
           </form>
         </Panel>
+      </div>
+      <h2 className="page-section-title">사용자·그룹 권한</h2>
+      <div className="admin-grid">
+        <GroupAdmin csrf={csrf} users={users} report={setMessage} />
+        <AppAccessAdmin csrf={csrf} users={users} report={setMessage} />
       </div>
       <h2 className="page-section-title">앱 실행 상태</h2>
       {installations.items === null ? (

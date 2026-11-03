@@ -163,6 +163,27 @@ pub fn router(state: State) -> Router {
             "/grants",
             axum::routing::get(crate::read_api::grants).put(grant),
         )
+        .route(
+            "/groups",
+            axum::routing::get(groups_list).post(groups_create),
+        )
+        .route("/groups/{id}", axum::routing::patch(groups_update))
+        .route("/groups/{id}/parent", axum::routing::put(groups_parent))
+        .route(
+            "/groups/{id}/members",
+            axum::routing::get(groups_members).put(groups_set_member),
+        )
+        .route(
+            "/users/{id}/primary-group",
+            axum::routing::put(user_primary_group),
+        )
+        .route(
+            "/group-grants",
+            axum::routing::get(group_grants_list).put(group_grants_set),
+        )
+        .route("/apps/{app}/access", axum::routing::get(app_access))
+        .route("/apps/{app}/admission", axum::routing::put(app_admission))
+        .route("/apps/{app}/control", axum::routing::put(app_control))
         .route("/contracts", axum::routing::get(get_contract))
         .route(
             "/contracts/validate",
@@ -662,6 +683,90 @@ async fn grant(
     Json(v): Json<domain::Grant>,
 ) -> ApiResult<Json<Value>> {
     Ok(Json(domain::grant(&s, &p, v).await?))
+}
+async fn groups_list(S(s): S<State>, axum::Extension(p): P) -> ApiResult<Json<Value>> {
+    Ok(Json(crate::groups::list(&s, &p).await?))
+}
+async fn groups_create(
+    S(s): S<State>,
+    axum::Extension(p): P,
+    Json(v): Json<crate::groups::NewGroup>,
+) -> ApiResult<Json<Value>> {
+    Ok(Json(crate::groups::create(&s, &p, v).await?))
+}
+async fn groups_update(
+    S(s): S<State>,
+    axum::Extension(p): P,
+    Path(id): Path<Uuid>,
+    Json(v): Json<crate::groups::GroupChange>,
+) -> ApiResult<Json<Value>> {
+    Ok(Json(crate::groups::update(&s, &p, id, v).await?))
+}
+async fn groups_parent(
+    S(s): S<State>,
+    axum::Extension(p): P,
+    Path(id): Path<Uuid>,
+    Json(v): Json<crate::groups::GroupParent>,
+) -> ApiResult<Json<Value>> {
+    Ok(Json(crate::groups::set_parent(&s, &p, id, v).await?))
+}
+async fn groups_members(
+    S(s): S<State>,
+    axum::Extension(p): P,
+    Path(id): Path<Uuid>,
+) -> ApiResult<Json<Value>> {
+    Ok(Json(crate::groups::members(&s, &p, id).await?))
+}
+async fn groups_set_member(
+    S(s): S<State>,
+    axum::Extension(p): P,
+    Path(id): Path<Uuid>,
+    Json(v): Json<crate::groups::Membership>,
+) -> ApiResult<Json<Value>> {
+    Ok(Json(crate::groups::set_member(&s, &p, id, v).await?))
+}
+async fn user_primary_group(
+    S(s): S<State>,
+    axum::Extension(p): P,
+    Path(id): Path<String>,
+    Json(v): Json<crate::groups::PrimaryGroup>,
+) -> ApiResult<Json<Value>> {
+    Ok(Json(
+        crate::groups::set_primary_group(&s, &p, &id, v).await?,
+    ))
+}
+async fn group_grants_list(S(s): S<State>, axum::Extension(p): P) -> ApiResult<Json<Value>> {
+    Ok(Json(crate::groups::grants(&s, &p).await?))
+}
+async fn group_grants_set(
+    S(s): S<State>,
+    axum::Extension(p): P,
+    Json(v): Json<crate::groups::GroupGrant>,
+) -> ApiResult<Json<Value>> {
+    Ok(Json(crate::groups::set_grant(&s, &p, v).await?))
+}
+async fn app_access(
+    S(s): S<State>,
+    axum::Extension(p): P,
+    Path(app): Path<String>,
+) -> ApiResult<Json<Value>> {
+    Ok(Json(crate::groups::access(&s, &p, &app).await?))
+}
+async fn app_admission(
+    S(s): S<State>,
+    axum::Extension(p): P,
+    Path(app): Path<String>,
+    Json(v): Json<crate::groups::Admission>,
+) -> ApiResult<Json<Value>> {
+    Ok(Json(crate::groups::set_admission(&s, &p, &app, v).await?))
+}
+async fn app_control(
+    S(s): S<State>,
+    axum::Extension(p): P,
+    Path(app): Path<String>,
+    Json(v): Json<crate::groups::AppControl>,
+) -> ApiResult<Json<Value>> {
+    Ok(Json(crate::groups::set_control(&s, &p, &app, v).await?))
 }
 async fn get_contract() -> Json<Value> {
     Json(domain::get_contract())

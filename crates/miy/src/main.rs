@@ -63,6 +63,8 @@ mod docker_storage;
 #[cfg(feature = "server")]
 mod domain;
 mod file_transaction;
+#[cfg(feature = "server")]
+mod groups;
 mod helper_image;
 #[cfg(feature = "server")]
 mod http;

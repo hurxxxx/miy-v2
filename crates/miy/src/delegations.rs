@@ -116,7 +116,7 @@ async fn granted(
     env: &str,
     action: Action,
 ) -> ApiResult<bool> {
-    Ok(sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM users u WHERE u.id=$1 AND u.enabled AND (u.admin OR EXISTS(SELECT 1 FROM grants g WHERE g.user_id=u.id AND g.app_id=$2 AND g.environment=$3 AND (NOT $4 OR g.permission=$5))))")
+    Ok(sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM users u WHERE u.id=$1 AND u.enabled AND (u.admin OR EXISTS(SELECT 1 FROM effective_grants g WHERE g.user_id=u.id AND g.app_id=$2 AND g.environment=$3 AND (NOT $4 OR g.permission=$5))))")
         .bind(user).bind(app).bind(env).bind(action.management()).bind(if env=="prod"{"deploy"}else{"develop"}).fetch_one(pool).await?)
 }
 pub async fn check(
