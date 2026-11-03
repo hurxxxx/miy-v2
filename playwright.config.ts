@@ -1,7 +1,9 @@
 import { defineConfig } from "@playwright/test";
 export default defineConfig({
   testDir: "./tests",
-  testMatch: "*.spec.ts",
+  // Only the specs that target the running local development stack (scripts/up.sh).
+  // Other specs bring their own server and config; see docs/CHECKS.md.
+  testMatch: ["validation.spec.ts", "development-login.spec.ts"],
   workers: 1,
   fullyParallel: false,
   timeout: 120000,

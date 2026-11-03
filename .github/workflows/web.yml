@@ -1,0 +1,44 @@
+name: Web and scripts
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  static:
+    name: Typecheck, isolated builds, mocked browser suites and script tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: pnpm
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install workspace dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Install the Playwright browser
+        run: pnpm exec playwright install --with-deps chromium
+      - name: Script syntax and harness tests
+        run: bash scripts/check-static.sh scripts
+      - name: Typecheck, isolated builds and mocked browser suites
+        run: bash scripts/check-static.sh web
+      - name: Upload browser evidence
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-evidence
+          path: .local/evidence/
+          include-hidden-files: true
+          if-no-files-found: ignore
+
+# Rust formatting, Clippy and tests run per OS in cli-foundation.yml.
+# Suites that need the running local stack, Docker or Keycloak are listed in docs/CHECKS.md.

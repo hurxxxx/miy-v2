@@ -66,4 +66,4 @@ Windows CLI는 회사 홈페이지의 `/cli/install`에서 [GUI 설치 파일](d
 
 화면 통합은 신뢰한 앱의 React 모듈을 플랫폼 라우터에서 동적으로 로드하는 방식을 우선 검증한다. 별도 브라우저 격리가 필요한 앱의 실행 방식과 구분한다.
 
-CLI 초기화는 Codex·Claude Code용 `miy-cli` 스킬과 `docs/CLI-REFERENCE.md`도 설치한다. 명령·옵션은 실행 파일의 정의에서 자동 생성하며 CLI 버전별로 잠근다. 전역 CLI 갱신 후 호환 프로젝트에서 `miy app setup`을 실행하면 동봉 CLI·스킬·매뉴얼을 함께 갱신한다. SDK 변경은 `app upgrade`로 구분한다. [운영 방법](docs/RUNNING.md#cli-사용법-스킬과-매뉴얼-동기화)
+CLI 초기화는 Codex·Claude Code용 `miy-cli` 스킬과 `docs/CLI-REFERENCE.md`도 설치한다. 명령·옵션은 실행 파일의 정의에서 자동 생성하며 CLI 버전별로 잠근다. 전역 CLI 갱신 후 호환 프로젝트에서 `miy app setup`을 실행하면 동봉 CLI·스킬·매뉴얼을 함께 갱신한다. SDK 변경은 `app upgrade`로 구분한다. [운영 방법](docs/RUNNING.md#호환-도구-갱신과-이전-이름)

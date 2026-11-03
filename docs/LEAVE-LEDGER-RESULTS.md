@@ -8,7 +8,7 @@
 
 - 개발 화면: [http://localhost:18000](http://localhost:18000). **관리자로 시작** → **휴가 관리 대장**을 선택한다.
 - 앱 경로: [http://localhost:18000/apps/leave-ledger](http://localhost:18000/apps/leave-ledger).
-- 독립 소스: `~/projects/miy-apps/leave-ledger`. [앱 README](../../miy-apps/leave-ledger/README.md)에 API와 업무 규칙을 기록했다.
+- 독립 소스: `~/projects/miy-apps/leave-ledger`. 앱 README(`~/projects/miy-apps/leave-ledger/README.md`)에 API와 업무 규칙을 기록했다.
 - 최종 소스 커밋: `a10f34e220ad4ef0e3f18b10cab3c6d7e624ce0f`.
 - 최종 릴리스: `0.1.1`, 이미지 태그 `miy-app/leave-ledger:0.1.1`.
 - 실제 실행 이미지 ID: `sha256:657d6031505f764f966b1a2447b62c361909a25cd6ae521739290609b9079d14`.
