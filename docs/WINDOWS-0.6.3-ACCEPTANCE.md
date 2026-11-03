@@ -1,10 +1,12 @@
 # 게시된 CLI 0.6.3 Windows 11 인수 준비
 
+> 이 문서와 [검사기](../scripts/check-windows-published-installer.ps1)는 CLI **0.6.3 / source `8d7d042`**만 허용한다. 현재 게시된 **0.7.0용 절차·검사기 갱신은 미완료**이며, 아래 명령을 현재 후보 검증에 바로 사용할 수 없다. 원래 대상과 해시는 당시 기록으로 보존한다. 사용자 Windows 실제 인수와 검사기 코드 갱신은 이번 문서 정리에서 수행하지 않았다.
+
 이 문서는 **구현·실행 절차 준비 완료, 이번 사용자 Windows 실행은 `NOT_RUN`** 상태다. 사용자가 나중에 Windows에서 실행한 뒤 결과를 추가한다. Windows Server CI 통과를 이 표의 Windows 11 통과로 옮기지 않는다. 기존 [Windows 검증](WINDOWS-VALIDATION.md), [이전 0.6.3 Windows 게시 후 확인](releases/cli-0.6.3-windows-postdeploy-validation.json), [설치기 설명](WINDOWS-INSTALLER.md)은 별도 이력이며 덮어쓰지 않는다.
 
 대상은 CLI **0.6.3**, SDK bundle **0.7.1**, [공개 설치 안내](https://v2.dwdcc.kr/cli/install)다. 2026-11-02에 읽은 [공개 API](https://v2.dwdcc.kr/api/v1/cli/install)는 아래 출처를 반환했다. 저장소를 main에 통합한 commit과 이미 게시한 바이너리의 source commit은 서로 다를 수 있다. 설치 파일의 출처를 main HEAD로 다시 표시하지 않는다.
 
-| 항목 | 현재 공개 값 |
+| 항목 | 2026-11-02에 확인한 공개 값 |
 |---|---|
 | CLI source / installer source | 둘 다 `8d7d04271f9467d8bbdd16308e73715b33e4dc0c` |
 | GUI EXE | `MiySetup-0.6.3-windows-x64.exe`, 6,105,600 bytes |

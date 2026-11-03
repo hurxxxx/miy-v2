@@ -4,21 +4,23 @@
 
 주제마다 **담당 문서 하나**가 현재 기준을 관리한다. 다른 문서는 그 문서로 연결하고 같은 내용을 따로 유지하지 않는다. 구현된 동작은 코드와 테스트가 최종 기준이다. 작업 순서는 [추진 계획](PLAN.md#다음-우선-작업)의 작업표 하나만 따른다.
 
+기본 UI 이식 UI-1~5는 ai-do 기반으로 완료한 이력이다. 향후 설계는 공식 miy v1을 기준으로 하며, 플랫폼의 사용자·그룹별 앱 사용 권한과 앱 내부의 선택적 데이터 공간을 적용한다. 원본 변경을 기존 UI 검증 결과의 변경으로 표시하지 않는다.
+
 ## 현재 기준 문서
 
 | 주제 | 담당 문서 | 관리하는 내용 |
 | --- | --- | --- |
 | 제품 요구사항 | [PRD.md](PRD.md) | 제품 정의, 합의 사항, 기능 요구사항, 인수 조건, 후속 범위 |
 | 작업 순서 | [PLAN.md](PLAN.md) | 다음 우선 작업표, 코어 묶음 요약, 보류 중인 사용성 개선, 최초 설계 로드맵 |
-| v1 적용 | [V1-ADOPTION.md](V1-ADOPTION.md) | 공식 v1(`/projects/miy`) 검토·재검증 결과, 가져올 항목(ID `V1-*`)과 제외 항목, v1의 실패 교훈, 사용자 결정이 필요한 사항 |
-| 기본 UI | [UIUX-MIGRATION.md](UIUX-MIGRATION.md) | ai-do UI 이식의 범위·계약·검증 결과, 후속 UI 작업의 경계 |
+| v1 적용 | [V1-ADOPTION.md](V1-ADOPTION.md) | 후속 설계 기준인 공식 v1(`/projects/miy`)의 검토·재검증 결과, 적용 항목(ID `V1-*`)과 제외 항목, 실패 교훈과 남은 결정 사항 |
+| 기본 UI | [UIUX-MIGRATION.md](UIUX-MIGRATION.md) | ai-do 기반 UI-1~5의 완료 이력·계약·검증 결과와 miy v1 기준 후속 UI 작업의 경계 |
 | 코어 안정화 | [CORE-HARDENING.md](CORE-HARDENING.md) | worker·권한·자원·복구·새 서버 인수 1~5차의 완료 기준과 증거 |
 | 코어 권한 | [CORE-PERMISSIONS.md](CORE-PERMISSIONS.md) | 설치/릴리스 승인, 사용자 위임, 앱 후속 호출 계약과 기존 설치 전환 |
 | 앱 개발 | [DEVELOPMENT.md](DEVELOPMENT.md), [NATIVE-DEVELOPMENT.md](NATIVE-DEVELOPMENT.md) | 앱 개발 계약, CLI 흐름, 로컬·네이티브 실행, 개발 영역 평가와 운영 승격 |
 | CLI 사용·서버 구성 | [RUNNING.md](RUNNING.md) | CLI 설치·인증, 앱 등록·빌드·dev 배포·prod 승격, 공용 컴포넌트 갱신, 서버 구성(HTTPS 도메인·사내 HTTP IP) |
 | 운영 서버 | [SERVER-OPERATIONS.md](SERVER-OPERATIONS.md) | v2.dwdcc.kr 구성, 게시 CLI, 배포 소스와 기록, 되돌리기 위치 |
 | CLI | [CLI-IMPLEMENTATION-PLAN.md](CLI-IMPLEMENTATION-PLAN.md), [CLI-RELEASE.md](CLI-RELEASE.md), [CLI-VALIDATION-MATRIX.md](CLI-VALIDATION-MATRIX.md) | 명령·인증·OS 계약, 배포 후보·게시 절차, 요구별 검증 범위 |
-| Windows | [WINDOWS-INSTALLER.md](WINDOWS-INSTALLER.md), [WINDOWS-VALIDATION.md](WINDOWS-VALIDATION.md), [WINDOWS-0.6.3-ACCEPTANCE.md](WINDOWS-0.6.3-ACCEPTANCE.md) | 설치 파일, 사용자 수행 빌드·검증 절차와 실행 기록 |
+| Windows | [WINDOWS-INSTALLER.md](WINDOWS-INSTALLER.md), [WINDOWS-VALIDATION.md](WINDOWS-VALIDATION.md), [WINDOWS-0.6.3-ACCEPTANCE.md](WINDOWS-0.6.3-ACCEPTANCE.md) | 설치 파일, 사용자 수행 빌드·검증 절차와 실행 기록. 0.6.3 인수 절차는 당시 후보 전용이며 0.7.0용 절차·검사기 갱신은 미완료 |
 | 자원 | [CAPACITY.md](CAPACITY.md) | CPU·메모리·파일·DB 예산과 한도 초과 대응 |
 | 내부 AI | [AI.md](AI.md) | 공통 AI 연결, 사용자별 독립 세션, Hermes 연동 계획 |
 | 기술 선택 | [STACK.md](STACK.md), [FRONTEND.md](FRONTEND.md), [RESEARCH.md](RESEARCH.md) | 스택 추천안, 프론트엔드 비교, 유사 프로젝트 차용 판단 |
