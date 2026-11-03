@@ -1412,12 +1412,46 @@ async fn groups(h: &mut Harness<'_>, suffix: &str, passed: &mut Vec<String>) -> 
         .await?,
     )
     .await?;
-    let actions: Vec<String> = sqlx::query_scalar(
-        "SELECT DISTINCT action FROM audit WHERE actor=$1 AND action NOT LIKE '%:%'",
+    denied(
+        h.request(&carol.token, Method::GET, "/api/v1/audit")
+            .send()
+            .await?,
     )
-    .bind(&operator.id)
-    .fetch_all(&h.state.pool)
     .await?;
+    let audit = |query: String| {
+        let request = harness.request(token, Method::GET, &format!("/api/v1/audit?{query}"));
+        async move { response(request.send().await?, 200).await }
+    };
+    let first = audit(format!("actor={}&action=group.&limit=2", operator.id)).await?;
+    let cursor = first["nextCursor"]
+        .as_i64()
+        .context("audit paging lacks nextCursor")?;
+    ensure!(
+        first["entries"].as_array().map(Vec::len) == Some(2),
+        "audit page size: {first}"
+    );
+    let rest = audit(format!(
+        "actor={}&action=group.&limit=200&cursor={cursor}",
+        operator.id
+    ))
+    .await?;
+    ensure!(
+        rest["entries"]
+            .as_array()
+            .is_some_and(|e| e.iter().all(|x| x["id"].as_i64() < Some(cursor))),
+        "audit cursor did not page backwards"
+    );
+    let all = audit(format!("actor={}&limit=200", operator.id)).await?;
+    let mut actions: Vec<String> = Vec::new();
+    for page in [&first, &rest, &all] {
+        for entry in page["entries"].as_array().context("audit entries")? {
+            ensure!(
+                entry["actor"] == json!(operator.id),
+                "audit actor filter leaked: {entry}"
+            );
+            actions.push(entry["action"].as_str().unwrap_or_default().to_owned());
+        }
+    }
     for action in [
         "group.created",
         "group_grant.enabled",
@@ -1434,6 +1468,6 @@ async fn groups(h: &mut Harness<'_>, suffix: &str, passed: &mut Vec<String>) -> 
             "missing audit action {action}"
         );
     }
-    passed.push("only administrators change groups and access, and every change is audited".into());
+    passed.push("only administrators change groups and access, and every change is audited and queryable by actor, action and cursor".into());
     Ok(())
 }

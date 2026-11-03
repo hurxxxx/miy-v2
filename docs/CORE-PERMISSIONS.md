@@ -62,13 +62,15 @@ GET /api/v1/apps/{app}/access             PUT /api/v1/apps/{app}/admission
 PUT /api/v1/apps/{app}/control
 ```
 
+감사 기록은 `GET /api/v1/audit`(관리자 전용)로 기간·행위자·동작 접두어(예: `group.`, `app.`)를 걸러 최신순으로 조회한다. `nextCursor`로 이전 기록을 이어 읽는다. 요청 미들웨어 기록은 `METHOD:status`와 경로, 도메인 변경은 위 동작 이름이다. 플랫폼 관리 화면의 "감사 기록"에서 같은 조건으로 본다. migration `0019_audit_query.sql`은 행위자·시각 인덱스만 추가한다. 보존 기간은 PRD 미결정 사항이라 아직 삭제하지 않는다.
+
 격리 회귀의 권한 묶음 6개 관찰이 실제 PostgreSQL·HTTP로 위 규칙을 확인한다(2026-11-03, 76개 관찰 PASS).
 - 멤버 해제 즉시 회수, 복사된 권한 없음
 - 조직 정확 일치와 상속 없음, 순환 거부
 - `deploy` 거부와 develop의 dev 한정
 - `all` 입장 대상의 명시 선택과 해제
 - 관리자도 막는 회사 사용 중지와 개발자의 dev 수정
-- 관리자 전용과 감사 기록
+- 관리자 전용과 감사 기록(조회 API의 행위자·동작 필터와 cursor 포함)
 
 ## CLI·MCP의 사용자 위임
 

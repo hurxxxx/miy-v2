@@ -9,6 +9,7 @@ import { RuntimeHealth } from "../components/RuntimeHealth";
 import { RuntimeControls } from "../components/RuntimeControls";
 import { Badge, Button, EmptyState, Field, Loading, Panel } from "../ui";
 import { AppAccessAdmin, GroupAdmin, type DirectoryUser } from "./AdminAccess";
+import { AuditLog } from "./AdminAudit";
 
 type Registration = { id: string; appId: string; name: string; status: string; requester: string };
 
@@ -168,6 +169,7 @@ function AdminConsole({ csrf }: { csrf: string }) {
         <GroupAdmin csrf={csrf} users={users} report={setMessage} />
         <AppAccessAdmin csrf={csrf} users={users} report={setMessage} />
       </div>
+      <AuditLog users={users} report={setMessage} />
       <h2 className="page-section-title">앱 실행 상태</h2>
       {installations.items === null ? (
         installations.status === "error" ? (

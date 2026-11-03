@@ -458,6 +458,10 @@ pub fn catalog() -> Value {
         .unwrap()
         .extend(crate::groups::catalog());
     catalog
+        .as_array_mut()
+        .unwrap()
+        .push(crate::audit::catalog());
+    catalog
 }
 
 #[cfg(test)]

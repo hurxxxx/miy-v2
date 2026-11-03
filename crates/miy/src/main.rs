@@ -11,6 +11,8 @@ mod app_calls;
 mod app_cli;
 mod app_health;
 #[cfg(feature = "server")]
+mod audit;
+#[cfg(feature = "server")]
 mod auth;
 #[cfg(feature = "server")]
 mod auth_sessions;

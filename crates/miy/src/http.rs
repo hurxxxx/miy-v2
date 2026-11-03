@@ -163,6 +163,7 @@ pub fn router(state: State) -> Router {
             "/grants",
             axum::routing::get(crate::read_api::grants).put(grant),
         )
+        .route("/audit", axum::routing::get(audit_list))
         .route(
             "/groups",
             axum::routing::get(groups_list).post(groups_create),
@@ -683,6 +684,13 @@ async fn grant(
     Json(v): Json<domain::Grant>,
 ) -> ApiResult<Json<Value>> {
     Ok(Json(domain::grant(&s, &p, v).await?))
+}
+async fn audit_list(
+    S(s): S<State>,
+    axum::Extension(p): P,
+    Query(q): Query<crate::audit::AuditQuery>,
+) -> ApiResult<Json<Value>> {
+    Ok(Json(crate::audit::list(&s, &p, q).await?))
 }
 async fn groups_list(S(s): S<State>, axum::Extension(p): P) -> ApiResult<Json<Value>> {
     Ok(Json(crate::groups::list(&s, &p).await?))

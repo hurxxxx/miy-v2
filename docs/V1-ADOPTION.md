@@ -226,6 +226,7 @@ v1은 회사 소개 자료 `MIY 소개 및 사례_20261002.pdf`를 v1 구현과 
 | V1-G1 | 소스 구현(운영 미반영) | migration `0018_groups_and_app_access.sql`의 조직·수동 그룹, 주 소속, 그룹 권한(`use`·`develop`), `crates/miy/src/groups.rs` 관리 API, 플랫폼 관리 화면 | 격리 회귀 권한 묶음 6개 관찰, 화면 모의 검사 3건 |
 | V1-G2 | 소스 구현(운영 미반영) | 앱·환경별 입장 대상(`selected`/`all`), 회사 사용 중지(관리자 포함 차단, 개발자는 dev에서 수정) | 같은 회귀, `access_decision` 단위 테스트 |
 | V1-G3 | 소스 구현(운영 미반영) | `effective_grants` 뷰를 매번 계산해 다음 요청과 대기 작업에 반영(캐시 무효화 불필요) | 멤버 해제 즉시 회수 관찰 |
+| V1-A1 | 소스 구현(운영 미반영) | `GET /api/v1/audit`(기간·행위자·동작 접두어, id cursor), 플랫폼 관리 화면 "감사 기록", migration `0019_audit_query.sql`(인덱스). 권한·그룹 변경은 같은 트랜잭션에 기록 | 회귀 관찰(필터·cursor·비관리자 거부), 화면 모의 검사. 보존 기간은 PRD 미결정 |
 | V1-Q3 | 완료 | `scripts/check-static.sh`, `.github/workflows/web.yml`, `check.sh` origin 가드, 루트 Playwright 설정 축소 | 로컬에서 `scripts`·`rust`·`web` 모두 PASS. `check.sh`가 운영 `.local`을 거부함을 확인. GitHub `Web and scripts` run 41645608115 success |
 
 ## 8. 재검증 기록 (2026-11-03)

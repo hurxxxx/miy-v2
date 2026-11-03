@@ -17,10 +17,23 @@ async function mock(page: Page) {
     userGrants: [{ userId: "alice", environment: "dev", permission: "use" }],
     groupGrants: [] as { groupId: string; environment: string; permission: string }[],
   };
+  const auditQueries: URLSearchParams[] = [];
+  const audit = [
+    { id: 3, at: "2026-11-03T03:00:00Z", actor: "admin", actorName: "관리자", action: "group.member_added", target: "group:g-hr:user:alice", requestId: "r3" },
+    { id: 2, at: "2026-11-03T02:00:00Z", actor: "admin", actorName: "관리자", action: "POST:200", target: "/api/v1/groups", requestId: "r2" },
+    { id: 1, at: "2026-11-03T01:00:00Z", actor: "admin", actorName: "관리자", action: "app.disabled", target: "app:ledger", requestId: "r1" },
+  ];
   await page.route("**/api/**", async (route) => {
     const request = route.request();
-    const path = new URL(request.url()).pathname;
+    const url = new URL(request.url());
+    const path = url.pathname;
     const method = request.method();
+    if (path === "/api/v1/audit") {
+      auditQueries.push(url.searchParams);
+      const cursor = url.searchParams.get("cursor");
+      const page = cursor ? audit.filter((e) => e.id < Number(cursor)) : audit.slice(0, 2);
+      return route.fulfill({ status: 200, json: { entries: page, nextCursor: cursor ? null : 2 } });
+    }
     if (method !== "GET") {
       const body = request.postDataJSON();
       sent.push({ method, path, body, csrf: await request.headerValue("x-miy-csrf") });
@@ -71,7 +84,7 @@ async function mock(page: Page) {
     if (reply === null) return route.fulfill({ status: 404, json: { error: { code: "not_found" } } });
     await route.fulfill({ status: 200, json: reply });
   });
-  return { sent, access };
+  return { sent, access, auditQueries };
 }
 
 test("an administrator creates a local group and manages its members", async ({ page }) => {
@@ -132,4 +145,29 @@ test("the company switch asks first, and groups can receive use or develop but n
   await panel.getByRole("button", { name: "부여" }).click();
   await expect(panel.getByText("본부 · 테스트 · 개발")).toBeVisible();
   expect(sent.at(-1)).toMatchObject({ path: "/api/v1/group-grants", body: { groupId: "g-hr", appId: "ledger", environment: "dev", permission: "develop", enabled: true } });
+});
+
+test("the audit log pages backwards and filters by actor, action and period", async ({ page }) => {
+  const { auditQueries } = await mock(page);
+  await page.goto("/admin");
+  const panel = page.locator(".ui-panel").filter({ has: page.getByRole("heading", { name: "감사 기록" }) });
+  const rows = panel.getByRole("row");
+  await expect(rows).toHaveCount(3);
+  await expect(panel.getByText("구성원 추가")).toBeVisible();
+  await expect(panel.getByText("요청 POST · 200")).toBeVisible();
+  await panel.getByRole("button", { name: "더 보기" }).click();
+  await expect(panel.getByText("앱 사용 중지")).toBeVisible();
+  await expect(panel.getByRole("button", { name: "더 보기" })).toHaveCount(0);
+  expect(auditQueries.at(-1)?.get("cursor")).toBe("2");
+
+  await panel.getByLabel("행위자").selectOption("alice");
+  await panel.getByLabel("동작").selectOption("app.");
+  await panel.getByLabel("시작일").fill("2026-11-01");
+  await panel.getByLabel("종료일").fill("2026-11-03");
+  await panel.getByRole("button", { name: "조회" }).click();
+  await expect.poll(() => auditQueries.at(-1)?.get("actor")).toBe("alice");
+  const last = auditQueries.at(-1)!;
+  expect(last.get("action")).toBe("app.");
+  expect(last.get("cursor")).toBeNull();
+  expect(new Date(last.get("to")!).getTime() - new Date(last.get("from")!).getTime()).toBe(3 * 24 * 3600 * 1000);
 });
