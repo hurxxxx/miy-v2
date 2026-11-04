@@ -1,13 +1,17 @@
 #!/usr/bin/env python3
-"""Offline safety regression for core backup, capacity reports and rollout helpers.
+"""Offline safety regression for core backup, capacity reports and the maintained rollout tools.
 
 Every process invocation is mocked. Never calls Docker, systemd, a server binary or a database.
+Rollout tests cover scripts/core-rollout.py and scripts/ui-rollout.py, the tools later rollouts
+run; per-release evidence copies under docs/releases/evidence stay as history.
 """
 import contextlib
 import hashlib
 import io
 import json
+import os
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -17,7 +21,6 @@ from unittest.mock import Mock, patch
 
 sys.dont_write_bytecode = True
 ROOT = Path(__file__).resolve().parent.parent
-ROLLOUT = ROOT / 'docs/releases/evidence/core-0.7.0-7d3c66a-linux'
 
 
 def load(name, path):
@@ -212,174 +215,484 @@ class ConnectionBudgetTests(OfflineTest):
                 self.assertEqual(reason, 'invalid KC_DB_POOL_MAX_SIZE')
 
 
-class RolloutSafetyTests(OfflineTest):
+ZERO_WORK = {'runtime': 0, 'builds': 0, 'database': 0, 'development': 0, 'uploads': 0}
+OLD = b'previous server binary'
+NEW = b'candidate server binary'
+OLD_SHA = hashlib.sha256(OLD).hexdigest()
+NEW_SHA = hashlib.sha256(NEW).hexdigest()
+COMMIT = 'c' * 40
+APP_CONTAINER = 'miy-app-' + 'd' * 32
+
+
+class FakeHost:
+    """Stateful systemd, PostgreSQL, Docker, git and HTTP stand-in with an ordered event log."""
+
+    def __init__(self, test):
+        self.test = test
+        self.events = []
+        self.states = {service: 'active' for service in test.rollout.SERVICES}
+        self.running = OLD_SHA
+        self.started = []
+        self.schema = 19
+        self.head = COMMIT
+        self.dirty = ''
+        self.version = 'miy 0.7.0'
+        self.max_connections = '200'
+        self.pool = '10'
+        self.work = [ZERO_WORK]
+        self.stop_works = True
+        self.restarts = 0
+        self.verify = {'status': 'PASS', 'containerRemoved': True, 'mismatchedTables': [],
+                       'rehearsal': {'exitCode': 0, 'migrationVersionAfter': 19}}
+        self.on_verify = None
+        self.healthy_candidate = True
+        self.records_change_with_candidate = False
+        self.budget_before = True
+        self.budget_with_candidate = True
+
+    def candidate_running(self):
+        return self.running == NEW_SHA and all(state == 'active' for state in self.states.values())
+
+    def call(self, args):
+        args = [str(a) for a in args]
+        self.test.rollout.REPORT['commands'].append({'command': args, 'exitCode': 0})
+        if args[:2] == ['systemctl', 'show'] and args[2] == '--property=ActiveState':
+            return self.states[args[-1]]
+        if args[:4] == ['sudo', '-n', 'systemctl', 'stop']:
+            self.events.append('stop')
+            if self.stop_works:
+                self.states = {service: 'inactive' for service in self.states}
+            return ''
+        if args[:4] == ['sudo', '-n', 'systemctl', 'start']:
+            self.events.append('start')
+            self.running = hashlib.sha256(self.test.installed.read_bytes()).hexdigest()
+            self.started.append(self.running)
+            self.states = {service: 'active' for service in self.states}
+            return ''
+        if args[-1] == '--version':
+            return self.version
+        if args[:2] == ['docker', 'exec']:
+            return self.sql(args[-1])
+        if args[0] == 'python3' and args[2] == 'create':
+            self.events.append('backup')
+            out = Path(args[-1])
+            self.test.fixture_backup(out)
+            manifest = json.loads((out / 'manifest.json').read_text())
+            manifest['migrationVersion'] = self.schema
+            (out / 'manifest.json').write_text(json.dumps(manifest))
+            return '{"status":"CREATED"}'
+        if args[0] == 'python3' and args[2] == 'verify':
+            self.events.append('verify')
+            self.test.assertEqual(args[-1], str(self.test.rollout.REL / 'rollback/miy-server.candidate'))
+            if self.on_verify:
+                self.on_verify()
+            return json.dumps(self.verify)
+        self.test.fail('unexpected command: ' + ' '.join(args))
+
+    def sql(self, query):
+        if query == 'SELECT max(version) FROM _sqlx_migrations':
+            return str(self.schema)
+        if query == 'SHOW max_connections':
+            return self.max_connections
+        if 'runtime_jobs' in query:
+            return json.dumps(self.work.pop(0) if len(self.work) > 1 else self.work[0])
+        if 'information_schema.columns' in query:
+            return '["id","name"]'
+        if 'string_agg' in query:
+            changed = self.records_change_with_candidate and self.candidate_running()
+            return json.dumps({'rows': 3 if changed else 2, 'sha256': ('f' if changed else 'e') * 64})
+        if 'json_agg(runtime_container' in query:
+            return json.dumps([APP_CONTAINER])
+        self.test.fail('unexpected SQL: ' + query)
+
+    def quiet(self, args):
+        args = [str(a) for a in args]
+        if args[0] == 'git':
+            return self.head if 'rev-parse' in args else self.dirty
+        if args[:4] == ['docker', 'inspect', '-f', '{{json .NetworkSettings.Networks}}']:
+            return json.dumps({'miy': {}, 'app-network': {}})
+        if args[:4] == ['docker', 'inspect', '-f', '{{.Id}}']:
+            return 'database-container'
+        if args[:4] == ['docker', 'inspect', '-f', '{{json .Config.Env}}']:
+            return json.dumps([f'KC_DB_POOL_MAX_SIZE={self.pool}', 'KC_DB_PASSWORD=private-sentinel'])
+        if args[:2] == ['docker', 'inspect'] and args[2] == APP_CONTAINER:
+            return json.dumps([{'Name': '/' + APP_CONTAINER, 'Id': 'app-container', 'Image': 'sha256:app',
+                                'State': {'Status': 'running', 'StartedAt': 'fixture'}, 'RestartCount': self.restarts}])
+        self.test.fail('unexpected inspection: ' + ' '.join(args))
+
+    def get_json(self, url):
+        if url.endswith('/api/health'):
+            if not all(state == 'active' for state in self.states.values()):
+                raise OSError('core unavailable')
+            if self.running == NEW_SHA and not self.healthy_candidate:
+                return {'status': 'error'}
+            return {'status': 'ok'}
+        if url.endswith('/api/v1/cli/install'):
+            return {'cliVersion': '0.7.0', 'sourceCommit': 'a' * 40, 'windowsInstaller': {'sha256': 'b' * 64}}
+        self.test.fail('unexpected URL ' + url)
+
+    def executable_hashes(self, expected):
+        self.test.rollout.require(self.running == expected, 'running_binary_hash_mismatch')
+        return {service: {'pid': 100 + index, 'sha256': self.running}
+                for index, service in enumerate(self.test.rollout.SERVICES)}
+
+    def connection_budget(self, source, seconds):
+        if not (self.budget_with_candidate if self.candidate_running() else self.budget_before):
+            raise RuntimeError('connection_budget_not_ready')
+        return {'status': 'PASS', 'worstCase': 90, 'usableConnections': 197}
+
+
+class CoreRolloutTests(OfflineTest):
+    """scripts/core-rollout.py: what each failure leaves installed and running."""
+
     def setUp(self):
         super().setUp()
-        self.deploy = load('rollout_under_test', ROLLOUT / 'deploy.py')
-        self.deploy.LIVE = self.root
+        self.rollout = load('core_rollout_under_test', ROOT / 'scripts/core-rollout.py')
+        self.rollout.LIVE = self.root
         (self.root / '.local/bin').mkdir(parents=True)
-        self.deploy.REL = self.root / '.local/release'
-        self.deploy.BACKUP = self.deploy.REL / 'rollback'
-        self.deploy.REPORT = {'commands': [], 'rollbackUsed': False, 'databaseRestored': False}
+        self.installed = self.root / '.local/bin/miy-server'
+        self.candidate = self.root / 'candidate'
+        self.source = self.root / '.local/release-source'
+        (self.source / 'scripts').mkdir(parents=True)
+        (self.source / 'crates/miy').mkdir(parents=True)
+        (self.source / 'migrations/core').mkdir(parents=True)
+        (self.source / 'crates/miy/Cargo.toml').write_text('[package]\nname = "miy"\nversion = "0.7.0"\n')
+        for name in ('0001_init.sql', '0019_audit_query.sql'):
+            (self.source / 'migrations/core' / name).write_text('-- fixture\n')
+        self.attempt = 0
+        self.reset()
+        for name in ('call', 'quiet', 'get_json', 'executable_hashes', 'connection_budget'):
+            patch.object(self.rollout, name, lambda *args, _name=name: getattr(self.host, _name)(*args)).start()
+        patch.object(self.rollout.time, 'sleep').start()
 
-    def test_existing_recovery_data_is_not_overwritten(self):
-        self.deploy.BACKUP.mkdir(parents=True)
-        marker = self.deploy.BACKUP / 'miy_core.dump'
-        marker.write_bytes(b'previous recovery dump')
-        with self.assertRaises(FileExistsError), self.deploy.rollout_lock():
-            self.fail('must reject existing recovery data')
-        self.assertEqual(marker.read_bytes(), b'previous recovery dump')
-        self.no_process.assert_not_called()
+    def reset(self):
+        self.installed.write_bytes(OLD)
+        self.candidate.write_bytes(NEW)
+        shutil.copyfile(ROOT / 'scripts/core-rollout.py', self.source / 'scripts/core-rollout.py')
+        (self.source / 'migrations/core/0020_next.sql').unlink(missing_ok=True)
+        self.host = FakeHost(self)
 
-    def test_concurrent_rollout_is_rejected_and_private_state_is_private(self):
-        with self.deploy.rollout_lock():
-            self.deploy.save()
-            self.assertEqual(self.deploy.BACKUP.stat().st_mode & 0o777, 0o700)
-            self.assertEqual((self.deploy.REL / 'deployment.json').stat().st_mode & 0o777, 0o600)
-            with self.assertRaises(BlockingIOError), self.deploy.rollout_lock():
-                self.fail('second rollout must not acquire ownership')
-        self.no_process.assert_not_called()
+    def run_tool(self, action='apply', release=None, **changes):
+        self.attempt += 1
+        release = release or self.root / f'.local/release-{self.attempt}'
+        values = {'--source': self.source, '--commit': COMMIT, '--candidate': self.candidate,
+                  '--candidate-sha256': NEW_SHA, '--installed-sha256': OLD_SHA, '--release-dir': release}
+        values.update({'--' + key.replace('_', '-'): value for key, value in changes.items()})
+        argv = [action] + [str(item) for key, value in values.items() if value is not None for item in (key, value)]
+        self.rollout.REPORT, self.rollout.REL, self.rollout.REPORT_FILE = {'commands': []}, None, None
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            code = self.rollout.main(argv)
+        return code, json.loads(output.getvalue()), release
 
-    def test_failed_stop_prevents_binary_and_database_rollback(self):
-        with patch.object(self.deploy, 'save'), \
-             patch.object(self.deploy, 'call', side_effect=RuntimeError('stop failed')), \
-             patch.object(self.deploy, 'atomic_copy') as copy, \
-             patch.object(self.deploy, 'restore_database') as restore:
-            with self.assertRaisesRegex(RuntimeError, 'stop failed'):
-                self.deploy.restore(True)
-            copy.assert_not_called()
-            restore.assert_not_called()
+    def assert_untouched(self, installed=OLD):
+        self.assertNotIn('stop', self.host.events)
+        self.assertNotIn('start', self.host.events)
+        self.assertEqual(self.host.started, [])
+        self.assertEqual(self.installed.read_bytes(), installed)
 
-    def test_stop_success_with_active_service_also_blocks_rollback(self):
-        with patch.object(self.deploy, 'save'), \
-             patch.object(self.deploy, 'call', side_effect=['', 'active']), \
-             patch.object(self.deploy, 'atomic_copy') as copy, \
-             patch.object(self.deploy, 'restore_database') as restore:
-            with self.assertRaisesRegex(RuntimeError, 'core_not_stopped'):
-                self.deploy.restore(True)
-            copy.assert_not_called()
-            restore.assert_not_called()
+    def test_apply_installs_only_after_a_verified_backup_and_keeps_private_records(self):
+        code, result, release = self.run_tool()
+        self.assertEqual((code, result['status']), (0, 'PASS'))
+        self.assertEqual(self.host.events, ['stop', 'backup', 'verify', 'start'])
+        self.assertEqual(self.installed.read_bytes(), NEW)
+        self.assertEqual(self.host.started, [NEW_SHA])
+        record_text = (release / 'deployment.json').read_text()
+        record = json.loads(record_text)
+        self.assertEqual(record['status'], 'PASS')
+        self.assertEqual((record['schema'], record['previousSha256'], record['serverSha256']), (19, OLD_SHA, NEW_SHA))
+        self.assertTrue(record['backupVerified'])
+        self.assertNotIn('private-sentinel', record_text)
+        self.assertEqual((release / 'deployment.json').stat().st_mode & 0o777, 0o600)
+        self.assertEqual((release / 'rollback').stat().st_mode & 0o777, 0o700)
+        self.assertEqual((release / 'rollback/miy-server').read_bytes(), OLD)
+
+    def test_inspect_reads_only(self):
+        code, result, release = self.run_tool('inspect')
+        self.assertEqual((code, result['status'], result['schema']), (0, 'READY', 19))
+        self.assertEqual(self.host.events, [])
+        self.assert_untouched()
+        self.assertFalse(release.exists())
+
+    def test_preflight_refusals_change_nothing(self):
+        cases = {
+            'source_commit_mismatch': lambda: setattr(self.host, 'head', 'e' * 40),
+            'source_worktree_dirty': lambda: setattr(self.host, 'dirty', ' M crates/miy/src/http.rs'),
+            'rollout_tool_differs_from_source': lambda: (self.source / 'scripts/core-rollout.py').write_text('# other\n'),
+            'candidate_hash_mismatch': lambda: self.candidate.write_bytes(b'unreviewed'),
+            'candidate_version_mismatch': lambda: setattr(self.host, 'version', 'miy 0.6.3'),
+            'installed_binary_changed': lambda: self.installed.write_bytes(b'unexpected installed'),
+            'running_binary_hash_mismatch': lambda: setattr(self.host, 'running', 'a' * 64),
+            'migration_rollout_not_supported': lambda: (self.source / 'migrations/core/0020_next.sql').write_text(''),
+            'source_schema_older_than_live': lambda: setattr(self.host, 'schema', 20),
+            'database_settings_differ': lambda: setattr(self.host, 'max_connections', '100'),
+            'identity_settings_differ': lambda: setattr(self.host, 'pool', '100'),
+            'connection_budget_not_ready': lambda: setattr(self.host, 'budget_before', False),
+            'active_work_prevents_rollout': lambda: setattr(self.host, 'work', [{**ZERO_WORK, 'runtime': 1}]),
+        }
+        for code_name, change in cases.items():
+            with self.subTest(code_name):
+                self.reset()
+                change()
+                code, result, release = self.run_tool()
+                self.assertEqual((code, result['failure']), (1, code_name))
+                record = json.loads((release / 'deployment.json').read_text())
+                self.assertEqual(record['status'], 'PREFLIGHT_FAILED')
+                self.assertFalse(record['productionMutations'])
+                self.assert_untouched(b'unexpected installed' if code_name == 'installed_binary_changed' else OLD)
+
+    def test_source_must_be_a_separate_checkout(self):
+        code, result, _ = self.run_tool('inspect', source=self.root)
+        self.assertEqual(result['failure'], 'source_must_be_separate_checkout')
+        self.assert_untouched()
+
+    def test_failures_before_start_reinstall_and_start_the_previous_binary(self):
+        def changed_container():
+            self.host.restarts = 1
+        cases = {
+            'active_work_prevents_rollout': lambda: setattr(self.host, 'work', [ZERO_WORK, {**ZERO_WORK, 'runtime': 1}]),
+            'backup_restore_not_verified': lambda: self.host.verify.update(containerRemoved=False),
+            'runtime_containers_changed_before_start': lambda: setattr(self.host, 'on_verify', changed_container),
+        }
+        for code_name, change in cases.items():
+            with self.subTest(code_name):
+                self.reset()
+                change()
+                code, result, release = self.run_tool()
+                self.assertEqual((code, result['failure']), (1, code_name))
+                record = json.loads((release / 'deployment.json').read_text())
+                self.assertEqual((record['status'], record['failureCategory']), ('ROLLED_BACK', code_name))
+                self.assertTrue(record['rollbackUsed'])
+                self.assertEqual(self.installed.read_bytes(), OLD)
+                self.assertEqual(self.host.started, [OLD_SHA])
+                self.assertEqual(set(self.host.states.values()), {'active'})
+
+    def test_failures_after_start_stop_core_and_keep_the_candidate_for_assessment(self):
+        cases = {
+            'post_deployment_health_failed': lambda: setattr(self.host, 'healthy_candidate', False),
+            'post_start_stable_records_changed': lambda: setattr(self.host, 'records_change_with_candidate', True),
+            'connection_budget_not_ready': lambda: setattr(self.host, 'budget_with_candidate', False),
+        }
+        for code_name, change in cases.items():
+            with self.subTest(code_name):
+                self.reset()
+                change()
+                code, result, release = self.run_tool()
+                self.assertEqual((code, result['failure']), (1, 'post_start_failed_manual_assessment_required'))
+                record = json.loads((release / 'deployment.json').read_text())
+                self.assertEqual((record['status'], record['failureCategory']), ('POST_START_FAILED', code_name))
+                self.assertTrue(record['coreStoppedForAssessment'])
+                self.assertFalse(record['rollbackUsed'])
+                self.assertEqual(set(self.host.states.values()), {'inactive'})
+                self.assertEqual(self.installed.read_bytes(), NEW)
+                self.assertEqual(self.host.events[-2:], ['start', 'stop'])
+
+    def test_changed_recovery_binary_is_never_started(self):
+        def tamper():
+            (self.rollout.REL / 'rollback/miy-server').write_bytes(b'tampered')
+        self.host.verify.update(status='FAIL')
+        self.host.on_verify = tamper
+        code, result, release = self.run_tool()
+        self.assertEqual(result['failure'], 'rollback_failed_manual_recovery_required')
+        record = json.loads((release / 'deployment.json').read_text())
+        self.assertEqual((record['status'], record['rollbackFailureCategory']), ('ROLLBACK_FAILED', 'rollback_binary_changed'))
+        self.assertNotIn('start', self.host.events)
+        self.assertEqual(self.installed.read_bytes(), OLD)
+
+    def test_stop_that_leaves_a_service_active_never_installs_or_starts(self):
+        self.host.stop_works = False
+        code, result, release = self.run_tool()
+        self.assertEqual(result['failure'], 'rollback_failed_manual_recovery_required')
+        record = json.loads((release / 'deployment.json').read_text())
+        self.assertEqual((record['failureCategory'], record['rollbackFailureCategory']), ('core_not_stopped', 'core_not_stopped'))
+        self.assertNotIn('backup', self.host.events)
+        self.assertNotIn('start', self.host.events)
+        self.assertEqual(self.installed.read_bytes(), OLD)
 
     def test_active_serve_does_not_hide_failed_worker(self):
-        with patch.object(self.deploy, 'call', side_effect=['active', 'failed']):
-            with self.assertRaisesRegex(RuntimeError, 'core_not_active'):
-                self.deploy.require_core_state('active')
+        self.host.states['miy-v2-worker'] = 'failed'
+        with self.assertRaisesRegex(RuntimeError, 'core_not_active'):
+            self.rollout.require_core_state('active')
 
-    def test_restore_blocks_reconnections_before_terminating_and_renaming(self):
-        self.fixture_backup()
-        run = Mock(return_value='')
-        kept = self.deploy.restore_database(run, self.root / 'miy_core.dump', container='fixture-db')
-        commands = [call.args[0] for call in run.call_args_list]
-        self.assertEqual(commands[0][-1], 'ALTER DATABASE miy_core ALLOW_CONNECTIONS false')
-        self.assertIn('pg_terminate_backend', commands[1][-1])
-        self.assertEqual(commands[2][-1], 'ALTER DATABASE miy_core RENAME TO ' + kept)
-        self.assertTrue(all(command[2] == 'fixture-db' for command in commands[:-1]))
-        self.assertIn('--single-transaction', commands[-1])
-        self.assertTrue(kept.startswith('miy_core_failed_'))
-        self.no_process.assert_not_called()
+    def test_existing_recovery_data_is_not_overwritten(self):
+        release = self.root / '.local/release-existing'
+        (release / 'rollback').mkdir(parents=True)
+        marker = release / 'rollback/miy-server'
+        marker.write_bytes(b'previous recovery binary')
+        code, result, _ = self.run_tool(release=release)
+        self.assertEqual((code, result['failure']), (1, 'FileExistsError'))
+        self.assertEqual(marker.read_bytes(), b'previous recovery binary')
+        self.assertEqual(self.host.events, [])
 
-    def test_invalid_database_name_is_rejected_before_commands(self):
-        run = Mock()
-        with self.assertRaisesRegex(RuntimeError, 'invalid_database_name'):
-            self.deploy.restore_database(run, self.root / 'missing', db='core; DROP DATABASE postgres')
-        run.assert_not_called()
+    def test_concurrent_rollout_is_rejected(self):
+        self.rollout.REL = self.root / '.local/release-holder'
+        with self.rollout.rollout_lock(fresh=True):
+            code, result, release = self.run_tool()
+        self.assertEqual((code, result['failure']), (1, 'BlockingIOError'))
+        self.assertFalse((release / 'rollback').exists())
+        self.assertEqual(self.host.events, [])
 
-    def test_database_properties_require_exact_restore_contract(self):
-        expected = self.deploy.EXPECTED_DB_PROPERTIES
-        with patch.object(self.deploy, 'sql', return_value=json.dumps(expected)) as sql:
-            self.deploy.require_database_properties()
-            query = sql.call_args.args[1]
-            self.assertIn("acldefault('d', datdba)", query)
-            self.assertIn('WHERE grantee=0', query)
-        for field, value in [('owner', 'other'), ('encoding', 'LATIN1'), ('collate', 'C'),
-                             ('ctype', 'C'), ('provider', 'i'), ('publicRevoked', False)]:
-            with self.subTest(field=field), patch.object(self.deploy, 'sql', return_value=json.dumps({**expected, field: value})):
-                with self.assertRaisesRegex(RuntimeError, 'unexpected_database_properties'):
-                    self.deploy.require_database_properties()
-        self.no_process.assert_not_called()
+    def test_release_directory_must_be_under_private_state(self):
+        code, result, _ = self.run_tool(release=self.root / 'outside')
+        self.assertEqual(result['failure'], 'release_directory_outside_state')
+        self.assertFalse((self.root / 'outside').exists())
 
-    def test_database_property_mismatch_prevents_service_stop(self):
-        self.deploy.BACKUP.mkdir(parents=True)
-        candidate = self.root / 'candidate'
-        candidate.write_bytes(b'reviewed candidate')
-        with patch.object(self.deploy, 'call', return_value='miy 0.7.0'), \
-             patch.object(self.deploy, 'migrations', return_value='17'), \
-             patch.object(self.deploy, 'sql', return_value=json.dumps(None)), \
-             patch.object(self.deploy, 'stop_core') as stop, \
-             patch.object(self.deploy, 'restore') as restore:
-            with self.assertRaisesRegex(RuntimeError, 'unexpected_database_properties'):
-                self.deploy.deploy(self.deploy.SERVER_COMMIT, candidate, self.deploy.digest(candidate))
-            stop.assert_not_called()
-            restore.assert_not_called()
-        self.no_process.assert_not_called()
+    def test_operator_rollback_reinstalls_the_previous_binary(self):
+        code, _, release = self.run_tool()
+        self.assertEqual(code, 0)
+        code, result, _ = self.run_tool('rollback', release=release)
+        self.assertEqual((code, result['status']), (0, 'ROLLED_BACK'))
+        self.assertEqual(self.installed.read_bytes(), OLD)
+        self.assertEqual(self.host.started, [NEW_SHA, OLD_SHA])
+        receipt = json.loads(next(release.glob('rollback-*.json')).read_text())
+        self.assertEqual((receipt['status'], receipt['fromSha256']), ('ROLLED_BACK', NEW_SHA))
 
-    def test_failed_database_restore_does_not_install_or_start_services(self):
-        self.deploy.REPORT.update({'backupVerified': True, 'databaseBackup': {'sha256': 'fixture'}})
-        with patch.object(self.deploy, 'save'), patch.object(self.deploy, 'stop_core'), \
-             patch.object(self.deploy, 'digest', return_value='fixture'), \
-             patch.object(self.deploy, 'restore_database', side_effect=RuntimeError('restore failed')), \
-             patch.object(self.deploy, 'atomic_copy') as copy, patch.object(self.deploy, 'call') as call:
-            with self.assertRaisesRegex(RuntimeError, 'restore failed'):
-                self.deploy.restore(True)
-            copy.assert_not_called()
-            call.assert_not_called()
-
-    def test_failed_separate_restore_check_blocks_all_live_database_changes(self):
-        candidate = self.root / 'candidate'
-        candidate.write_bytes(b'reviewed candidate')
-        (self.root / '.local/bin/miy-server').write_bytes(b'old binary')
-        commands = []
-
-        def call(argv, **kwargs):
-            commands.append(argv)
-            if argv[-1] == '--version':
-                return 'miy 0.7.0'
-            if 'compose-diff.py' in argv[-1]:
-                return json.dumps({'keycloak': {'differs': ['env:KC_DB_POOL_MAX_SIZE']},
-                                   'postgres': {'differs': ['command', 'networks']}})
-            if argv[:4] == ['sudo', '-n', 'systemctl', 'stop']:
-                return ''
-            if argv[:2] == ['systemctl', 'show']:
-                return 'inactive'
-            if len(argv) > 2 and argv[2] == 'create':
-                self.fixture_backup(Path(argv[-1]))
-                return '{}'
-            if len(argv) > 2 and argv[2] == 'verify':
-                return json.dumps({'status': 'FAIL', 'containerRemoved': False})
-            self.fail('unexpected operation before backup verification')
-
-        guide = {'cliVersion': '0.7.0', 'sourceCommit': self.deploy.CLI_COMMIT,
-                 'windowsInstaller': {'sha256': 'installer-fixture'}}
-        with self.deploy.rollout_lock(), patch.object(self.deploy, 'call', side_effect=call), \
-             patch.object(self.deploy, 'migrations', return_value='17'), \
-             patch.object(self.deploy, 'require_database_properties'), \
-             patch.object(self.deploy, 'get_json', return_value=guide), \
-             patch.object(self.deploy, 'networks', return_value=['fixture']), \
-             patch.object(self.deploy, 'container_id', return_value=CID), \
-             patch.object(self.deploy, 'restore') as restore:
-            with self.assertRaisesRegex(RuntimeError, 'backup_restore_not_verified'):
-                self.deploy.deploy(self.deploy.SERVER_COMMIT, candidate, self.deploy.digest(candidate))
-            restore.assert_called_once_with(False)
-        self.assertFalse(any(argv[0] == 'docker' or argv[0] == 'bash' for argv in commands))
-        self.assertEqual((self.deploy.BACKUP / 'miy-server').read_bytes(), b'old binary')
+    def test_operator_rollback_refuses_another_rollouts_binary(self):
+        code, _, release = self.run_tool()
+        self.assertEqual(code, 0)
+        self.installed.write_bytes(b'later rollout')
+        events = list(self.host.events)
+        code, result, _ = self.run_tool('rollback', release=release)
+        self.assertEqual((code, result['failure']), (1, 'installed_binary_belongs_to_another_rollout'))
+        receipt = json.loads(next(release.glob('rollback-*.json')).read_text())
+        self.assertEqual((receipt['status'], receipt['productionMutations']), ('REFUSED', False))
+        self.assertEqual(self.host.events, events)
+        self.assertEqual(self.installed.read_bytes(), b'later rollout')
 
     def test_safety_require_survives_optimized_python(self):
+        path = ROOT / 'scripts/core-rollout.py'
         module = ModuleType('optimized_rollout')
-        module.__file__ = str(ROLLOUT / 'deploy.py')
-        exec(compile((ROLLOUT / 'deploy.py').read_text(), module.__file__, 'exec', optimize=2), module.__dict__)
+        module.__file__ = str(path)
+        exec(compile(path.read_text(), module.__file__, 'exec', optimize=2), module.__dict__)
         with self.assertRaisesRegex(RuntimeError, 'precondition_failed'):
             module.require(False, 'precondition_failed')
 
-    def test_rehearsal_rejects_changed_dump_before_live_queries(self):
-        self.fixture_backup()
-        (self.root / 'miy_core.dump').write_bytes(b'changed')
-        rehearsal = load('rehearsal_under_test', ROLLOUT / 'rollback-rehearsal.py')
-        with patch.object(sys, 'argv', ['rollback-rehearsal.py', str(self.root), '/fixture/binary']), \
-             patch.object(rehearsal, 'psql') as sql:
-            with self.assertRaisesRegex(RuntimeError, 'dump_hash_mismatch'):
-                rehearsal.main()
-            sql.assert_not_called()
-        self.no_process.assert_not_called()
+
+class UiRolloutTests(OfflineTest):
+    """scripts/ui-rollout.py: builds outside the live dist; apply adds, never replaces, assets."""
+
+    def setUp(self):
+        super().setUp()
+        self.ui = load('ui_rollout_under_test', ROOT / 'scripts/ui-rollout.py')
+        self.ui.ROOT = self.root
+        self.live = self.root / 'web/platform/dist'
+        (self.live / 'assets').mkdir(parents=True)
+        (self.live / 'assets/old.js').write_text('old')
+        (self.live / 'index.html').write_text('<script type="module" src="/assets/old.js"></script>')
+        (self.root / 'web/platform/src').mkdir(parents=True)
+        (self.root / 'web/platform/src/main.tsx').write_text('main')
+        (self.root / 'package.json').write_text('{}')
+        self.release = self.root / '.local/ui-release'
+        self.commands = []
+        self.inputs_dirty = ''
+        self.git_show = None
+
+    def process(self, argv, **kwargs):
+        self.commands.append(argv)
+        output = ''
+        if argv[0] == 'git':
+            if 'rev-parse' in argv:
+                output = COMMIT + '\n'
+            elif 'status' in argv:
+                output = self.inputs_dirty
+            elif 'ls-files' in argv:
+                output = 'package.json\0web/platform/src/main.tsx\0'
+            elif 'show' in argv:
+                name = argv[-1].split(':', 1)[1]
+                content = self.git_show or (self.root / name).read_bytes()
+                return subprocess.CompletedProcess(argv, 0, content, b'')
+        elif argv[:2] == ['pnpm', '--filter']:
+            out = Path(argv[argv.index('--outDir') + 1])
+            (out / 'assets').mkdir(parents=True)
+            (out / 'assets/old.js').write_text('old')
+            (out / 'assets/new.js').write_text('new')
+            (out / 'index.html').write_text('<script type="module" src="/assets/new.js"></script>')
+        elif argv[1:] == ['--version']:
+            output = 'fixture'
+        else:
+            self.fail('unexpected process: ' + ' '.join(argv))
+        return subprocess.CompletedProcess(argv, 0, output, '')
+
+    def tool(self, *argv):
+        output = io.StringIO()
+        with patch.object(subprocess, 'run', side_effect=self.process), contextlib.redirect_stdout(output):
+            code = self.ui.main([*argv, '--release-dir', str(self.release)])
+        return code, json.loads(output.getvalue())
+
+    def test_build_apply_and_rollback_keep_both_asset_generations(self):
+        old_index = (self.live / 'index.html').read_bytes()
+        code, built = self.tool('build', '--commit', COMMIT)
+        self.assertEqual((code, built['newAssets']), (0, 1))
+        manifest = json.loads((self.release / 'manifest.json').read_text())
+        self.assertEqual(sorted(manifest['sourceFiles']), ['package.json', 'web/platform/src/main.tsx'])
+        self.assertEqual(manifest['expectedLiveIndexSha256'], hashlib.sha256(old_index).hexdigest())
+        code, inspected = self.tool('inspect')
+        self.assertEqual((code, inspected['newAssets']), (0, ['assets/new.js']))
+        self.assertEqual((self.live / 'index.html').read_bytes(), old_index)
+        code, applied = self.tool('apply', '--expected-commit', COMMIT)
+        self.assertEqual((code, applied['phase']), (0, 'applied'))
+        self.assertIn('new.js', (self.live / 'index.html').read_text())
+        self.assertEqual((self.live / 'assets/old.js').read_text(), 'old')
+        self.assertEqual((self.release / 'production-backup/dist/index.html').read_bytes(), old_index)
+        code, rolled = self.tool('rollback')
+        self.assertEqual((code, rolled['phase']), (0, 'rolled_back'))
+        self.assertEqual((self.live / 'index.html').read_bytes(), old_index)
+        self.assertEqual((self.live / 'assets/new.js').read_text(), 'new')
+
+    def test_build_refuses_vite_environment_and_dirty_inputs_before_building(self):
+        with patch.dict(os.environ, {'VITE_API_ORIGIN': 'https://elsewhere.invalid'}):
+            code, result = self.tool('build', '--commit', COMMIT)
+        self.assertEqual(code, 1)
+        self.assertIn('VITE_API_ORIGIN', result['error'])
+        self.assertEqual(self.commands, [])
+        self.inputs_dirty = ' M web/platform/src/main.tsx\n'
+        code, result = self.tool('build', '--commit', COMMIT)
+        self.assertEqual((code, result['error']), (1, 'build inputs are not clean'))
+        self.assertFalse(any(argv[0] == 'pnpm' for argv in self.commands))
+        self.assertFalse((self.release / 'dist').exists())
+
+    def test_release_directory_must_be_under_private_state(self):
+        self.release = self.root / 'elsewhere'
+        code, result = self.tool('build', '--commit', COMMIT)
+        self.assertEqual((code, result['error']), (1, 'release directory must be under .local'))
+        self.assertFalse(self.release.exists())
+
+    def test_apply_refusals_leave_the_live_dist_unchanged(self):
+        self.assertEqual(self.tool('build', '--commit', COMMIT)[0], 0)
+        before = self.ui.inventory(self.live)
+        (self.live / 'assets/new.js').write_text('different bytes under the same name')
+        code, result = self.tool('apply', '--expected-commit', COMMIT)
+        self.assertEqual((code, result['error']), (1, 'immutable asset collision: assets/new.js'))
+        (self.live / 'assets/new.js').unlink()
+        self.assertEqual(self.ui.inventory(self.live), before)
+        (self.live / 'index.html').write_text('<script type="module" src="/assets/old.js"></script><!-- other -->')
+        code, result = self.tool('apply', '--expected-commit', COMMIT)
+        self.assertEqual((code, result['error']), (1, 'live index differs from build baseline'))
+        (self.live / 'index.html').write_text('<script type="module" src="/assets/old.js"></script>')
+        self.git_show = b'not the committed file'
+        code, result = self.tool('apply', '--expected-commit', COMMIT)
+        self.assertEqual((code, result['error']), (1, 'commit build input mismatch: package.json'))
+        self.git_show = None
+        code, result = self.tool('apply', '--expected-commit', 'e' * 40)
+        self.assertEqual((code, result['error']), (1, 'source commit does not match approved manifest'))
+        self.assertEqual(self.ui.inventory(self.live), before)
+        self.assertFalse((self.release / 'production-backup').exists())
+
+    def test_second_apply_never_reuses_a_backup(self):
+        self.assertEqual(self.tool('build', '--commit', COMMIT)[0], 0)
+        self.assertEqual(self.tool('apply', '--expected-commit', COMMIT)[0], 0)
+        backup = (self.release / 'production-backup/dist/index.html').read_bytes()
+        code, result = self.tool('apply', '--expected-commit', COMMIT)
+        self.assertEqual(code, 1)
+        self.assertEqual((self.release / 'production-backup/dist/index.html').read_bytes(), backup)
+
+    def test_rollback_refuses_an_index_from_another_deployment(self):
+        self.assertEqual(self.tool('build', '--commit', COMMIT)[0], 0)
+        self.assertEqual(self.tool('apply', '--expected-commit', COMMIT)[0], 0)
+        (self.live / 'index.html').write_text('<script type="module" src="/assets/old.js"></script><!-- later -->')
+        code, result = self.tool('rollback')
+        self.assertEqual((code, result['error']), (1, 'live index belongs to another deployment'))
+        self.assertIn('later', (self.live / 'index.html').read_text())
 
 
 if __name__ == '__main__':
