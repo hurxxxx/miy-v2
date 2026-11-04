@@ -71,9 +71,12 @@
       "newObservations": [
         "delegated disabled runtime read+stop returns one queued receipt and idempotent replay; missing read is denied by planning/submission before insertion",
         "runtime job detail/events and cursor pages enforce company disable, current grants and delegated app/environment/read scope",
-        "runtime job list/detail agree for admin, deploy, develop and use with actual miy.dev scope, including read-only dev repair",
+        "runtime job list/detail agree for admin, deploy, develop and use with actual miy.dev scope, including read-only dev repair"
+      ],
+      "relatedExistingObservations": [
         "queued runtime retains originating delegation, rejects idempotency rebinding and fails closed after revocation before Docker action"
       ],
+      "recordCorrection": "2026-11-05 review: newObservations listed this pre-existing observation (present at d23d8ce); the delegation suite grew by 3 (4 -> 7)",
       "cleanup": {
         "removed": 13,
         "errors": [],

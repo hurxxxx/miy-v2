@@ -38,6 +38,9 @@ DB = 'miy-v2-validation-postgres-1'
 KEYCLOAK = 'miy-v2-validation-keycloak-1'
 ORIGIN = 'https://v2.dwdcc.kr'
 SERVICES = ['miy-v2-serve', 'miy-v2-worker']
+# systemd ActiveState values in which a unit runs no process. `systemctl stop` leaves a failed
+# unit failed; every other state (active, activating, deactivating, ...) may still accept or run work.
+STOPPED_STATES = ('inactive', 'failed')
 # Old-column projections of these tables must survive the rollout unchanged.
 STABLE_TABLES = ['users', 'apps', 'app_registrations', 'grants', 'installations', 'releases', 'release_checks',
                  'db_resources', 'groups', 'group_members', 'group_grants', 'app_admission', 'app_controls']
@@ -188,6 +191,12 @@ def require_core_state(expected):
 
 def stop_core():
     call(['sudo', '-n', 'systemctl', 'stop', *SERVICES])
+    # A unit that was failed stays failed after stop: it runs nothing, but keeps its failure
+    # result and start-limit count. Reset only those units so the core is uniformly inactive and
+    # the next start is not refused; the failure itself remains in the journal.
+    failed = [service for service, state in service_states().items() if state == 'failed']
+    if failed:
+        call(['sudo', '-n', 'systemctl', 'reset-failed', *failed])
     require_core_state('inactive')
     REPORT.setdefault('serviceStopEvents', []).append(now())
     save()
@@ -482,10 +491,11 @@ def rollback():
         require(digest(recovery() / 'miy-server') == previous, 'rollback_binary_changed')
         require(digest(installed()) in (candidate, previous), 'installed_binary_belongs_to_another_rollout')
         require(migrations() == schema, 'schema_changed_since_rollout')
-        check_idle = any(state != 'inactive' for state in service_states().values())
+        check_idle = any(state not in STOPPED_STATES for state in service_states().values())
         if check_idle:
             # A failed service does not mean its peer has stopped accepting or processing work.
-            # Only an entirely inactive core uses the assessed, already-stopped recovery path.
+            # Only a core with no running unit (inactive or failed) uses the assessed,
+            # already-stopped recovery path whose persisted work the previous binary takes over.
             REPORT['idleBeforeStop'] = idle()
     except (Exception, KeyboardInterrupt) as error:
         REPORT.update({'status': 'REFUSED', 'failureCategory': failure_code(error), 'productionMutations': False,

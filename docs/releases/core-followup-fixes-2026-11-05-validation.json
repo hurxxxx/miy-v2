@@ -1,0 +1,97 @@
+{
+  "date": "2026-11-05",
+  "baseCommit": "0d8f0437e71ca205f2a618d4e4930e5465425519",
+  "validatedTree": "baseCommit plus the changes identified by sourceFileSha256 (documentation and records excluded)",
+  "status": "PASS",
+  "scope": [
+    "Core rollout stop handling: a unit that systemctl stop leaves failed is cleared with reset-failed before the inactive check, in apply, the post-start assessment stop and rollback",
+    "Core rollback checks active work only when some unit may still run (not inactive or failed); a core with no running unit uses the assessed recovery path",
+    "CLI file transactions: the Unix-only fsync calls use std::fs::File by path, so the Windows client build has no unused import",
+    "Record correction in core-review-followup-2026-11-05-validation.json: the delegation suite gained three observations, not four"
+  ],
+  "deploymentPerformed": false,
+  "pushPerformed": false,
+  "hostObservations": [
+    {
+      "check": "Transient systemd user unit (Restart=no) whose process exited with failure",
+      "result": "ActiveState failed; still failed after systemctl stop; inactive after systemctl reset-failed"
+    },
+    {
+      "check": "Transient systemd user unit in a Restart=on-failure crash loop (activating/auto-restart)",
+      "result": "inactive after systemctl stop (Result=success); a crash-looping candidate was already stoppable"
+    },
+    {
+      "check": "Production unit restart policy (read only)",
+      "result": "miy-v2-serve and miy-v2-worker: Restart=on-failure, RestartSec=3s, StartLimitBurst=5 per 10s"
+    }
+  ],
+  "defectReproduction": {
+    "tool": "scripts/core-rollout.py at baseCommit (sha256 b6478cd711fce9746ef46053fe7d4c5f6459f52846697034a31de3aa78627f41)",
+    "method": "repository rollout tests with a fake host whose stop keeps failed units failed, as observed above",
+    "serveFailedWorkerActive": "ROLLBACK_FAILED core_not_stopped: worker stopped, candidate still installed",
+    "bothFailed": "ROLLBACK_FAILED core_not_stopped: candidate still installed",
+    "afterFix": "both ROLLED_BACK with stop, reset-failed, start"
+  },
+  "checks": [
+    {
+      "command": "bash scripts/check-static.sh rust",
+      "status": "PASS",
+      "serverTests": 170,
+      "serverIgnored": 7,
+      "clientTests": 113,
+      "steps": "cargo fmt --check; clippy default and --no-default-features with -D warnings; tests for both",
+      "inputSha256": {
+        "crates/miy/src/file_transaction.rs": "0c1f194895d30e018ea8d65138dafd26ff4c5a5af63d89bd0d745c6f3e811115"
+      },
+      "startedAt": "2026-11-04T23:25:07Z",
+      "finishedAt": "2026-11-04T23:25:20Z"
+    },
+    {
+      "command": "python3 scripts/test-core-ops.py (four new rollout tests) against the baseCommit core-rollout.py in a scratch copy",
+      "status": "PASS",
+      "expectation": "the new tests fail on the defect",
+      "failuresOnPreFixTool": 5,
+      "tests": [
+        "test_operator_rollback_with_a_failed_unit_checks_the_live_peer_and_completes (2 subtests)",
+        "test_operator_rollback_of_an_entirely_failed_core_uses_the_stopped_recovery_path",
+        "test_apply_continues_when_stopping_leaves_a_unit_failed",
+        "test_crashed_candidate_unit_is_stopped_for_assessment_and_rolled_back"
+      ]
+    },
+    {
+      "command": "bash scripts/check-static.sh scripts",
+      "status": "PASS",
+      "coreOpsMockTests": 51,
+      "docLinks": 533,
+      "startedAt": "2026-11-04T23:27:25Z",
+      "finishedAt": "2026-11-04T23:27:34Z"
+    },
+    {
+      "command": "git diff --check",
+      "status": "PASS"
+    }
+  ],
+  "attemptsPreserved": [
+    {
+      "check": "cargo clippy --workspace --all-targets --locked --no-default-features --target x86_64-pc-windows-msvc -- -D warnings on this Linux host, before the fix",
+      "status": "FAIL",
+      "reason": "ring 0.17.14's build script needs an MSVC C compiler (GNU compiler is not supported for this target). The miy crate was not reached, so this host can neither reproduce nor verify the Windows lint.",
+      "startedAt": "2026-11-04T23:23:27Z"
+    }
+  ],
+  "notRun": [
+    "Windows MSVC clippy: needs the CLI foundation Windows job after a push. Before the fix that job failed on 7b43789 and d23d8ce with this single error (unused import fs::File, crates/miy/src/file_transaction.rs:9).",
+    "Isolated runtime regression on this tree: the only Rust change replaces a Unix-only import with qualified paths and leaves Linux code unchanged. The 87-observation PASS in core-review-followup-2026-11-05-validation.json applies to its own tree only.",
+    "Rollback against real production units; failed-unit behavior was observed on transient user units and exercised in the mock",
+    "Production apply/rollback"
+  ],
+  "sourceFileSha256": {
+    "crates/miy/src/file_transaction.rs": "0c1f194895d30e018ea8d65138dafd26ff4c5a5af63d89bd0d745c6f3e811115",
+    "scripts/core-rollout.py": "c30b937d353c525ce2b6ea5f17f5a7be5afad586b45b29c96de6075677617042",
+    "scripts/test-core-ops.py": "01872c3b3baff5c0011c3731c20ff11b55d146b64a39ecf325f6f9bf1da2589e"
+  },
+  "limits": [
+    "reset-failed clears systemd's failure result and start-limit count for the reset units; the failure details stay in the journal",
+    "Production still runs 7b43789; this tree and 0d8f043 are source-only until a separate rollout request"
+  ]
+}

@@ -243,6 +243,8 @@ class FakeHost:
         self.pool = '10'
         self.work = [ZERO_WORK]
         self.stop_works = True
+        self.fail_on_stop = set()  # units a stop leaves failed, e.g. after a stop timeout
+        self.crash_candidate = set()  # units that fail right after the candidate starts
         self.restarts = 0
         self.verify = {'status': 'PASS', 'containerRemoved': True, 'mismatchedTables': [],
                        'rehearsal': {'exitCode': 0, 'migrationVersionAfter': 19}}
@@ -263,13 +265,23 @@ class FakeHost:
         if args[:4] == ['sudo', '-n', 'systemctl', 'stop']:
             self.events.append('stop')
             if self.stop_works:
-                self.states = {service: 'inactive' for service in self.states}
+                # Like systemd: a failed unit stays failed after stop; only reset-failed clears it.
+                self.states = {service: 'failed' if state == 'failed' or service in self.fail_on_stop
+                               else 'inactive' for service, state in self.states.items()}
+            return ''
+        if args[:4] == ['sudo', '-n', 'systemctl', 'reset-failed']:
+            self.events.append('reset-failed')
+            for service in args[4:]:
+                self.test.assertEqual(self.states[service], 'failed')
+                self.states[service] = 'inactive'
             return ''
         if args[:4] == ['sudo', '-n', 'systemctl', 'start']:
             self.events.append('start')
             self.running = hashlib.sha256(self.test.installed.read_bytes()).hexdigest()
             self.started.append(self.running)
             self.states = {service: 'active' for service in self.states}
+            if self.running == NEW_SHA:
+                self.states.update({service: 'failed' for service in self.crash_candidate})
             return ''
         if args[-1] == '--version':
             return self.version
@@ -601,6 +613,71 @@ class CoreRolloutTests(OfflineTest):
         self.host.work = [{**ZERO_WORK, 'runtime': 1}]
         code, result, _ = self.run_tool('rollback', release=release)
         self.assertEqual((code, result['status']), (0, 'ROLLED_BACK'))
+        self.assertEqual(self.installed.read_bytes(), OLD)
+
+    def rollback_receipt(self, release):
+        return json.loads(next(release.glob('rollback-*.json')).read_text())
+
+    def reset_failed_commands(self, record):
+        return [entry['command'] for entry in record['commands'] if 'reset-failed' in entry['command']]
+
+    def test_operator_rollback_with_a_failed_unit_checks_the_live_peer_and_completes(self):
+        # systemctl stop leaves the failed unit failed; rollback resets it instead of giving up.
+        for failed in self.rollout.SERVICES:
+            with self.subTest(failed=failed):
+                self.reset()
+                code, _, release = self.run_tool()
+                self.assertEqual(code, 0)
+                self.host.states[failed] = 'failed'
+                events = list(self.host.events)
+                code, result, _ = self.run_tool('rollback', release=release)
+                self.assertEqual((code, result['status']), (0, 'ROLLED_BACK'))
+                receipt = self.rollback_receipt(release)
+                self.assertEqual((receipt['idleBeforeStop'], receipt['idleAfterStop']), (ZERO_WORK, ZERO_WORK))
+                self.assertEqual(self.host.events, events + ['stop', 'reset-failed', 'start'])
+                self.assertEqual(self.reset_failed_commands(receipt), [['sudo', '-n', 'systemctl', 'reset-failed', failed]])
+                self.assertEqual(set(self.host.states.values()), {'active'})
+                self.assertEqual(self.installed.read_bytes(), OLD)
+
+    def test_operator_rollback_of_an_entirely_failed_core_uses_the_stopped_recovery_path(self):
+        code, _, release = self.run_tool()
+        self.assertEqual(code, 0)
+        self.host.states = {service: 'failed' for service in self.rollout.SERVICES}
+        # No unit runs: persisted work waits for the previous binary, as for an inactive core.
+        self.host.work = [{**ZERO_WORK, 'runtime': 1}]
+        events = list(self.host.events)
+        code, result, _ = self.run_tool('rollback', release=release)
+        self.assertEqual((code, result['status']), (0, 'ROLLED_BACK'))
+        receipt = self.rollback_receipt(release)
+        self.assertNotIn('idleBeforeStop', receipt)
+        self.assertEqual(self.host.events, events + ['stop', 'reset-failed', 'start'])
+        self.assertEqual(self.reset_failed_commands(receipt), [['sudo', '-n', 'systemctl', 'reset-failed', *self.rollout.SERVICES]])
+        self.assertEqual(self.installed.read_bytes(), OLD)
+
+    def test_apply_continues_when_stopping_leaves_a_unit_failed(self):
+        # A stop timeout kills the unit and leaves it failed; nothing runs, so the rollout proceeds.
+        self.host.fail_on_stop = {'miy-v2-worker'}
+        code, result, release = self.run_tool()
+        self.assertEqual((code, result['status']), (0, 'PASS'))
+        self.assertEqual(self.host.events, ['stop', 'reset-failed', 'backup', 'verify', 'start'])
+        record = json.loads((release / 'deployment.json').read_text())
+        self.assertEqual(self.reset_failed_commands(record), [['sudo', '-n', 'systemctl', 'reset-failed', 'miy-v2-worker']])
+        self.assertEqual(self.installed.read_bytes(), NEW)
+
+    def test_crashed_candidate_unit_is_stopped_for_assessment_and_rolled_back(self):
+        self.host.crash_candidate = {'miy-v2-worker'}
+        code, result, release = self.run_tool()
+        self.assertEqual((code, result['failure']), (1, 'post_start_failed_manual_assessment_required'))
+        record = json.loads((release / 'deployment.json').read_text())
+        self.assertEqual((record['status'], record['failureCategory']), ('POST_START_FAILED', 'post_deployment_health_failed'))
+        self.assertTrue(record['coreStoppedForAssessment'])
+        self.assertEqual(self.host.events[-3:], ['start', 'stop', 'reset-failed'])
+        self.assertEqual(set(self.host.states.values()), {'inactive'})
+        self.assertEqual(self.installed.read_bytes(), NEW)
+        code, result, _ = self.run_tool('rollback', release=release)
+        self.assertEqual((code, result['status']), (0, 'ROLLED_BACK'))
+        self.assertEqual(self.host.events[-2:], ['stop', 'start'])
+        self.assertEqual(set(self.host.states.values()), {'active'})
         self.assertEqual(self.installed.read_bytes(), OLD)
 
     def test_safety_require_survives_optimized_python(self):
