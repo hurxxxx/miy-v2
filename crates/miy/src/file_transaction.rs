@@ -6,7 +6,6 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{
     collections::BTreeSet,
-    fs::File,
     path::{Path, PathBuf},
 };
 
@@ -219,8 +218,9 @@ fn probe_replace(path: &Path) -> Result<()> {
 fn save(root: &Path, journal: &Journal) -> Result<()> {
     safe_path(root, JOURNAL, false)?;
     crate::platform::write_private(&root.join(JOURNAL), &serde_json::to_vec(journal)?)?;
+    // Directory fsync is Unix-only; a file-level import would be unused on Windows.
     #[cfg(unix)]
-    File::open(root.join(".miy"))?.sync_all()?;
+    std::fs::File::open(root.join(".miy"))?.sync_all()?;
     Ok(())
 }
 
@@ -586,7 +586,7 @@ fn publish(root: &Path, entry: &Entry, bytes: &[u8], restoring: bool) -> Result<
         std::fs::set_permissions(&target, permissions)?;
     }
     #[cfg(unix)]
-    File::open(target.parent().unwrap())?.sync_all()?;
+    std::fs::File::open(target.parent().unwrap())?.sync_all()?;
     Ok(())
 }
 
