@@ -1,0 +1,115 @@
+{
+  "sourceLabel": "d23d8ce+review-fixes-working-tree",
+  "evidenceDirectory": "/tmp/miy-delegated-disabled-fixed-review-yz2l4rks",
+  "workerStarted": false,
+  "appContainersCreated": false,
+  "scope": "Independent fixed-source HTTP verification of disabled delegated runtime submission and current-authority job visibility",
+  "observations": {
+    "delegationCreation": {
+      "httpStatus": 200,
+      "actions": [
+        "read",
+        "stop"
+      ],
+      "environment": "prod"
+    },
+    "delegatedPreflight": {
+      "httpStatus": 200,
+      "canSubmit": true
+    },
+    "missingReadPreflight": {
+      "httpStatus": 403,
+      "errorCode": "delegation_scope_denied"
+    },
+    "missingReadSubmit": {
+      "httpStatus": 403,
+      "errorCode": "delegation_scope_denied"
+    },
+    "missingReadQueuedRows": 0,
+    "delegatedSubmit": {
+      "httpStatus": 200,
+      "errorCode": null
+    },
+    "committedJobRows": {
+      "count": 1,
+      "queuedCount": 1,
+      "delegatedCount": 1
+    },
+    "delegatedJob": {
+      "httpStatus": 200,
+      "errorCode": null
+    },
+    "delegatedEvents": {
+      "httpStatus": 200,
+      "errorCode": null
+    },
+    "adminJob": {
+      "httpStatus": 200,
+      "errorCode": null
+    },
+    "useOnlyJob": {
+      "httpStatus": 403,
+      "errorCode": "app_disabled"
+    },
+    "useOnlyEvents": {
+      "httpStatus": 403,
+      "errorCode": "app_disabled"
+    },
+    "useOnlyJobList": {
+      "httpStatus": 200,
+      "matchingQueuedJobCount": 0
+    },
+    "delegatedJobList": {
+      "httpStatus": 200,
+      "matchingQueuedJobCount": 1
+    },
+    "missingReadJob": {
+      "httpStatus": 403,
+      "errorCode": "delegation_scope_denied"
+    },
+    "missingReadEvents": {
+      "httpStatus": 403,
+      "errorCode": "delegation_scope_denied"
+    },
+    "wrongEnvironmentJob": {
+      "httpStatus": 403,
+      "errorCode": "delegation_scope_denied"
+    },
+    "wrongEnvironmentEvents": {
+      "httpStatus": 403,
+      "errorCode": "delegation_scope_denied"
+    },
+    "delegatedIdenticalRetry": {
+      "httpStatus": 200,
+      "errorCode": null
+    },
+    "rowsAfterRetry": 1,
+    "delegatedJobAfterReenable": {
+      "httpStatus": 200,
+      "errorCode": null
+    },
+    "useOnlyExistingCursorAfterDisable": {
+      "httpStatus": 200,
+      "jobCount": 0
+    }
+  },
+  "status": "PASS",
+  "binarySha256": "16117a8fb2dc13136cb48329ae0601c646299bb9cc2dd02eecb119c346a59ccd",
+  "ownedContainerId": "08b1f52de8a1f243f5ec81547b4672dccf127d41c9310ba4a87f1b9b29230b38",
+  "checks": {
+    "delegatedSubmitAndRead": true,
+    "singleCommittedJob": true,
+    "useOnlyReadBlocked": true,
+    "useOnlyListFiltered": true,
+    "delegatedListVisible": true,
+    "missingReadDeniedBeforeCommit": true,
+    "readAndEnvironmentScopeEnforced": true,
+    "idempotentRetry": true,
+    "reenableRead": true,
+    "cursorRechecksDisable": true
+  },
+  "coreExited": true,
+  "cleanup": {
+    "containerRemoved": true
+  }
+}

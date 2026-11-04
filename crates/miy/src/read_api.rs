@@ -185,7 +185,13 @@ pub async fn page(s: &State, p: &Principal, kind: &str, mut q: Page) -> ApiResul
             "runtime_jobs t",
             "t.created_at::text||':'||t.id::text",
             "jsonb_build_object('id',t.id,'appId',t.app_id,'environment',t.environment,'action',t.action,'status',t.status,'step',t.step,'errorCode',t.error_code,'failureClass',t.failure_class,'retryable',t.retryable,'retryOf',t.retry_of,'requestId',t.idempotency_key,'imageId',t.image_id,'releaseId',t.release_id,'createdAt',t.created_at)",
-            "($2 OR EXISTS(SELECT 1 FROM effective_grants g WHERE g.user_id=$1 AND g.app_id=t.app_id AND g.environment=t.environment))",
+            // Match runtime::job: ordinary use, dev repair, or runtime management
+            // with the actual credential's miy.dev scope. Delegation read and
+            // app/environment scope were checked above, before pagination.
+            "($2 OR EXISTS(SELECT 1 FROM effective_grants g WHERE g.user_id=$1 AND g.app_id=t.app_id AND g.environment=t.environment)) \
+             AND (NOT EXISTS(SELECT 1 FROM app_controls c WHERE c.app_id=t.app_id AND c.disabled) \
+             OR (t.environment='dev' AND ($2 OR EXISTS(SELECT 1 FROM effective_grants g WHERE g.user_id=$1 AND g.app_id=t.app_id AND g.environment='dev' AND g.permission='develop'))) \
+             OR ($8 AND ($2 OR EXISTS(SELECT 1 FROM effective_grants g WHERE g.user_id=$1 AND g.app_id=t.app_id AND g.environment=t.environment AND g.permission=CASE WHEN t.environment='prod' THEN 'deploy' ELSE 'develop' END))))",
             "t.app_id",
             "t.environment",
             "t.idempotency_key",
@@ -206,16 +212,18 @@ pub async fn page(s: &State, p: &Principal, kind: &str, mut q: Page) -> ApiResul
     let sql = format!(
         "SELECT {key} AS key,{view} AS value FROM {source} WHERE {permission} AND {key}>$3 AND ($4::text IS NULL OR {app}=$4) AND ($5::text IS NULL OR {env}=$5) AND ($6::text IS NULL OR {request}=$6) ORDER BY {key} LIMIT $7"
     );
-    let mut rows = sqlx::query(&sql)
+    let mut query = sqlx::query(&sql)
         .bind(&p.id)
         .bind(is_admin)
         .bind(boundary)
         .bind(q.app_id)
         .bind(q.environment)
         .bind(q.request_id)
-        .bind(limit + 1)
-        .fetch_all(&s.pool)
-        .await?;
+        .bind(limit + 1);
+    if kind == "jobs" {
+        query = query.bind(p.scopes.iter().any(|scope| scope == "miy.dev"));
+    }
+    let mut rows = query.fetch_all(&s.pool).await?;
     let more = rows.len() > limit as usize;
     rows.truncate(limit as usize);
     let cursor = if more {

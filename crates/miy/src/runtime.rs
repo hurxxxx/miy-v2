@@ -132,7 +132,7 @@ pub async fn request(
     {
         return Err(ApiError::bad("invalid_image_id"));
     }
-    domain::manage_action(state, p, app, &v.environment, v.action.parse()?).await?;
+    authorize_request(state, p, app, &v.environment, v.action.parse()?).await?;
     if v.expected_state.is_none() {
         return Err(ApiError::bad("expected_state_required"));
     }
@@ -169,18 +169,21 @@ pub async fn request(
         .execute(&mut *tx)
         .await?;
     if let Some(previous) =
-        sqlx::query("SELECT id,input_hash,delegation_id FROM runtime_jobs WHERE actor=$1 AND idempotency_key=$2")
+        sqlx::query("SELECT * FROM runtime_jobs WHERE actor=$1 AND idempotency_key=$2")
             .bind(&p.id)
             .bind(&v.idempotency_key)
             .fetch_optional(&mut *tx)
             .await?
     {
-        if previous.get::<String, _>("input_hash") != input || previous.get::<Option<Uuid>,_>("delegation_id") != p.delegation_id {
+        if previous.get::<String, _>("input_hash") != input
+            || previous.get::<Option<Uuid>, _>("delegation_id") != p.delegation_id
+        {
             return Err(ApiError::conflict("idempotency_conflict"));
         }
-        let id = previous.get("id");
+        authorize_request(state, p, app, &v.environment, v.action.parse()?).await?;
+        let value = job_value(&previous);
         tx.commit().await?;
-        return job(state, p, id).await;
+        return Ok(value);
     }
     if let Some(expected) = &v.expected_state {
         let locked: bool =
@@ -235,20 +238,45 @@ pub async fn request(
     sqlx::query("INSERT INTO runtime_jobs(id,app_id,environment,actor,action,image_id,idempotency_key,input_hash,expected_state,request_data,retry_of,delegation_id) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) ON CONFLICT(actor,idempotency_key) DO NOTHING")
         .bind(Uuid::new_v4()).bind(app).bind(&v.environment).bind(&p.id).bind(&v.action).bind(&image).bind(&v.idempotency_key).bind(&input)
         .bind(v.expected_state.as_ref().map(serde_json::to_value).transpose()?).bind(request_data).bind(v.retry_of).bind(p.delegation_id).execute(&mut *tx).await?;
-    let row =
-        sqlx::query("SELECT id,input_hash,delegation_id FROM runtime_jobs WHERE actor=$1 AND idempotency_key=$2")
-            .bind(&p.id)
-            .bind(&v.idempotency_key)
-            .fetch_one(&mut *tx)
-            .await?;
+    let row = sqlx::query("SELECT * FROM runtime_jobs WHERE actor=$1 AND idempotency_key=$2")
+        .bind(&p.id)
+        .bind(&v.idempotency_key)
+        .fetch_one(&mut *tx)
+        .await?;
     if row.get::<String, _>("input_hash") != input
         || row.get::<Option<Uuid>, _>("delegation_id") != p.delegation_id
     {
         return Err(ApiError::conflict("idempotency_conflict"));
     }
-    let id = row.get("id");
+    // Recheck after waiting for locks, while denial can still roll back the job.
+    // Return this authorized receipt without a second authorization after commit.
+    authorize_request(state, p, app, &v.environment, v.action.parse()?).await?;
+    let value = job_value(&row);
     tx.commit().await?;
-    job(state, p, id).await
+    Ok(value)
+}
+/// Runtime requests return an observable job, so both the action and read scope
+/// must be explicit. Planning and submission use the same admission policy.
+pub(crate) async fn authorize_request(
+    state: &State,
+    p: &Principal,
+    app: &str,
+    env: &str,
+    action: crate::delegations::Action,
+) -> ApiResult<()> {
+    domain::manage_action(state, p, app, env, action).await?;
+    authorize_job(state, p, app, env).await
+}
+async fn authorize_job(state: &State, p: &Principal, app: &str, env: &str) -> ApiResult<()> {
+    // The company switch blocks use, not runtime control. A scoped manager may
+    // follow jobs only within its explicit read scope; everyone else needs use.
+    if domain::manage_action(state, p, app, env, crate::delegations::Action::Read)
+        .await
+        .is_err()
+    {
+        domain::authorize(state, p, app, env, false).await?;
+    }
+    Ok(())
 }
 pub async fn job(state: &State, p: &Principal, id: Uuid) -> ApiResult<Value> {
     let row = sqlx::query("SELECT * FROM runtime_jobs WHERE id=$1")
@@ -257,14 +285,11 @@ pub async fn job(state: &State, p: &Principal, id: Uuid) -> ApiResult<Value> {
         .await?
         .ok_or_else(ApiError::not_found)?;
     let (app, env): (String, String) = (row.get("app_id"), row.get("environment"));
-    // The company switch blocks use, not runtime control: whoever may still manage the
-    // installation can follow its jobs. Everyone else needs current use access.
-    if domain::manage(state, p, &app, &env).await.is_err() {
-        domain::authorize(state, p, &app, &env, false).await?;
-    }
-    Ok(
-        json!({"requestId":row.get::<String,_>("idempotency_key"),"imageId":row.get::<Option<String>,_>("image_id"),"createdAt":row.get::<chrono::DateTime<chrono::Utc>,_>("created_at"),"id":id,"appId":row.get::<String,_>("app_id"),"environment":row.get::<String,_>("environment"),"action":row.get::<String,_>("action"),"status":row.get::<String,_>("status"),"step":row.get::<String,_>("step"),"errorCode":row.get::<Option<String>,_>("error_code"),"failureClass":row.get::<Option<String>,_>("failure_class"),"retryable":row.get::<bool,_>("retryable"),"retryOf":row.get::<Option<Uuid>,_>("retry_of"),"installationId":row.get::<Option<Uuid>,_>("installation_id"),"releaseId":row.get::<Option<Uuid>,_>("release_id")}),
-    )
+    authorize_job(state, p, &app, &env).await?;
+    Ok(job_value(&row))
+}
+fn job_value(row: &sqlx::postgres::PgRow) -> Value {
+    json!({"requestId":row.get::<String,_>("idempotency_key"),"imageId":row.get::<Option<String>,_>("image_id"),"createdAt":row.get::<chrono::DateTime<chrono::Utc>,_>("created_at"),"id":row.get::<Uuid,_>("id"),"appId":row.get::<String,_>("app_id"),"environment":row.get::<String,_>("environment"),"action":row.get::<String,_>("action"),"status":row.get::<String,_>("status"),"step":row.get::<String,_>("step"),"errorCode":row.get::<Option<String>,_>("error_code"),"failureClass":row.get::<Option<String>,_>("failure_class"),"retryable":row.get::<bool,_>("retryable"),"retryOf":row.get::<Option<Uuid>,_>("retry_of"),"installationId":row.get::<Option<Uuid>,_>("installation_id"),"releaseId":row.get::<Option<Uuid>,_>("release_id")})
 }
 
 /// Called only under the app/dev operation lock, before a local schema change.

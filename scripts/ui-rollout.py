@@ -15,6 +15,7 @@ RELEASE is a new directory under .local per rollout. apply/rollback run only aft
 rollout checks and an explicit production request. No service or database access.
 """
 import argparse
+import contextlib
 import fcntl
 import hashlib
 import json
@@ -129,6 +130,61 @@ def sources(manifest, expected):
                 'commit build input mismatch: ' + name)
 
 
+def build_inputs(root):
+    """Cover Vite's production dotenv/public inputs as well as tracked source bytes.
+
+    The maintained platform config uses Vite's default envDir/publicDir. Dotenv files are
+    forbidden even if tracked; public files must be regular, tracked files. Do not read their
+    contents before these checks: an ignored public file may contain private local data.
+    """
+    for directory in (root, root / 'web/platform'):
+        for name in ('.env', '.env.local', '.env.production', '.env.production.local'):
+            path = directory / name
+            require(not path.exists() and not path.is_symlink(),
+                    'dotenv build input refused: ' + path.relative_to(root).as_posix())
+    names = [name for name in git(root, 'ls-files', '-z', '--', *INPUTS).split('\0') if name]
+    public = plain(root / 'web/platform/public')
+    if public.exists():
+        require(public.is_dir(), 'public build input is not a directory')
+        for path in public.rglob('*'):
+            plain(path)
+            if path.is_dir():
+                continue
+            name = path.relative_to(root).as_posix()
+            require(stat.S_ISREG(path.stat().st_mode), 'non-regular public build input: ' + name)
+            require(name in names, 'untracked public build input: ' + name)
+    files = {}
+    for name in names:
+        path = plain(root / name)
+        require(stat.S_ISREG(path.stat().st_mode), 'non-regular tracked build input: ' + name)
+        files[name] = digest(path)
+    return files
+
+
+@contextlib.contextmanager
+def publication_lock(release, live):
+    """Different releases publishing to the same canonical live directory share one lock.
+
+    Keep lock files in private state, outside live assets, and never unlink them: unlinking a
+    held flock would let a later process lock a different inode for the same destination.
+    """
+    directory = plain(ROOT / '.local/ui-rollout-locks')
+    directory.mkdir(mode=0o700, exist_ok=True)
+    key = hashlib.sha256(str(plain(live)).encode()).hexdigest()
+    paths = (directory / (key + '.lock'), release / 'ui-rollout.lock')
+    with contextlib.ExitStack() as stack:
+        for index, path in enumerate(paths):
+            descriptor = os.open(plain(path), os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
+            lock = stack.enter_context(os.fdopen(descriptor, 'a'))
+            require(stat.S_ISREG(os.fstat(lock.fileno()).st_mode), 'non-regular rollout lock refused')
+            try:
+                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                raise RuntimeError('live target is locked by another UI rollout' if index == 0
+                                   else 'release is locked by another UI rollout') from None
+        yield
+
+
 def disjoint(*paths):
     for index, path in enumerate(paths):
         for other in paths[index + 1:]:
@@ -200,15 +256,17 @@ def build(release, args):
     require(not candidate.exists() and not manifest_path.exists(), 'release directory already has a build')
     require(git(root, 'rev-parse', 'HEAD').strip() == args.commit, 'source checkout is not at --commit')
     require(git(root, 'status', '--porcelain', '--', *INPUTS) == '', 'build inputs are not clean')
+    files = build_inputs(root)
+    sources({'sourceCommit': args.commit, 'sourceRoot': str(root), 'sourceFiles': files}, args.commit)
     command = ['pnpm', '--filter', '@miy/platform', 'exec', 'vite', 'build', '--mode', 'production',
                '--outDir', str(candidate), '--emptyOutDir']
     descriptor = os.open(release / 'build.log', os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
     with os.fdopen(descriptor, 'w') as log:
         result = subprocess.run(command, cwd=root, stdout=log, stderr=subprocess.STDOUT)
     require(result.returncode == 0, 'vite build failed; see build.log')
+    require(git(root, 'rev-parse', 'HEAD').strip() == args.commit, 'source checkout changed during build')
     require(git(root, 'status', '--porcelain', '--', *INPUTS) == '', 'build changed its inputs')
-    names = [name for name in git(root, 'ls-files', '-z', '--', *INPUTS).split('\0') if name]
-    files = {name: digest(root / name) for name in names}
+    require(build_inputs(root) == files, 'build input bytes changed during build')
     new = inventory(candidate)
     references(candidate / 'index.html', new)
     old = inventory(live)
@@ -249,8 +307,7 @@ def run(args):
     backup = plain(args.backup or release / 'production-backup')
     disjoint(backup, live, candidate)
     require(release in backup.parents, 'backup must be inside the release directory')
-    with (release / 'ui-rollout.lock').open('a') as lock:
-        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    with publication_lock(release, live):
         if args.action == 'apply':
             require(args.expected_commit is not None, '--expected-commit is required')
             sources(manifest, args.expected_commit)
@@ -289,8 +346,8 @@ def run(args):
             replace_index(backup / 'dist/index.html', live, current, record['files']['index.html'])
             record['phase'] = 'rolled_back'
             save(backup / 'rollback-receipt.json', record)
-    return {'phase': record['phase'], 'sourceCommit': record['sourceCommit'], 'backup': str(backup),
-            'indexSha256': digest(live / 'index.html')}
+        return {'phase': record['phase'], 'sourceCommit': record['sourceCommit'], 'backup': str(backup),
+                'indexSha256': digest(live / 'index.html')}
 
 
 def main(argv=None):

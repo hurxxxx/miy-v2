@@ -6,6 +6,7 @@ Rollout tests cover scripts/core-rollout.py and scripts/ui-rollout.py, the tools
 run; per-release evidence copies under docs/releases/evidence stay as history.
 """
 import contextlib
+from concurrent.futures import ThreadPoolExecutor
 import hashlib
 import io
 import json
@@ -15,6 +16,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import threading
 from types import ModuleType, SimpleNamespace
 import unittest
 from unittest.mock import Mock, patch
@@ -559,6 +561,48 @@ class CoreRolloutTests(OfflineTest):
         self.assertEqual(self.host.events, events)
         self.assertEqual(self.installed.read_bytes(), b'later rollout')
 
+    def test_operator_rollback_refuses_busy_work_with_a_partial_service_failure(self):
+        for failed in self.rollout.SERVICES:
+            with self.subTest(failed=failed):
+                self.reset()
+                code, _, release = self.run_tool()
+                self.assertEqual(code, 0)
+                self.host.states[failed] = 'failed'
+                self.host.work = [{**ZERO_WORK, 'runtime': 1}]
+                events = list(self.host.events)
+                states = dict(self.host.states)
+                code, result, _ = self.run_tool('rollback', release=release)
+                self.assertEqual((code, result['failure']), (1, 'active_work_prevents_rollout'))
+                receipt = json.loads(next(release.glob('rollback-*.json')).read_text())
+                self.assertEqual((receipt['status'], receipt['productionMutations']), ('REFUSED', False))
+                self.assertEqual(self.host.events, events)
+                self.assertEqual(self.host.states, states)
+                self.assertEqual(self.installed.read_bytes(), NEW)
+
+    def test_operator_rollback_rechecks_work_after_stopping_before_replacing_binary(self):
+        code, _, release = self.run_tool()
+        self.assertEqual(code, 0)
+        self.host.work = [ZERO_WORK, {**ZERO_WORK, 'runtime': 1}]
+        events = list(self.host.events)
+        code, result, _ = self.run_tool('rollback', release=release)
+        self.assertEqual((code, result['failure']), (1, 'rollback_failed_manual_recovery_required'))
+        receipt = json.loads(next(release.glob('rollback-*.json')).read_text())
+        self.assertEqual((receipt['status'], receipt['failureCategory']),
+                         ('ROLLBACK_FAILED', 'active_work_prevents_rollout'))
+        self.assertEqual(self.host.events, events + ['stop'])
+        self.assertEqual(set(self.host.states.values()), {'inactive'})
+        self.assertEqual(self.installed.read_bytes(), NEW)
+
+    def test_operator_rollback_of_an_already_inactive_core_keeps_manual_recovery_available(self):
+        code, _, release = self.run_tool()
+        self.assertEqual(code, 0)
+        self.host.states = {service: 'inactive' for service in self.rollout.SERVICES}
+        # An assessed, stopped core can have persisted work awaiting recovery by the previous binary.
+        self.host.work = [{**ZERO_WORK, 'runtime': 1}]
+        code, result, _ = self.run_tool('rollback', release=release)
+        self.assertEqual((code, result['status']), (0, 'ROLLED_BACK'))
+        self.assertEqual(self.installed.read_bytes(), OLD)
+
     def test_safety_require_survives_optimized_python(self):
         path = ROOT / 'scripts/core-rollout.py'
         module = ModuleType('optimized_rollout')
@@ -586,6 +630,8 @@ class UiRolloutTests(OfflineTest):
         self.commands = []
         self.inputs_dirty = ''
         self.git_show = None
+        self.tracked = ['package.json', 'web/platform/src/main.tsx']
+        self.during_build = None
 
     def process(self, argv, **kwargs):
         self.commands.append(argv)
@@ -596,7 +642,7 @@ class UiRolloutTests(OfflineTest):
             elif 'status' in argv:
                 output = self.inputs_dirty
             elif 'ls-files' in argv:
-                output = 'package.json\0web/platform/src/main.tsx\0'
+                output = '\0'.join(self.tracked) + '\0'
             elif 'show' in argv:
                 name = argv[-1].split(':', 1)[1]
                 content = self.git_show or (self.root / name).read_bytes()
@@ -607,6 +653,8 @@ class UiRolloutTests(OfflineTest):
             (out / 'assets/old.js').write_text('old')
             (out / 'assets/new.js').write_text('new')
             (out / 'index.html').write_text('<script type="module" src="/assets/new.js"></script>')
+            if self.during_build:
+                self.during_build()
         elif argv[1:] == ['--version']:
             output = 'fixture'
         else:
@@ -656,6 +704,148 @@ class UiRolloutTests(OfflineTest):
         code, result = self.tool('build', '--commit', COMMIT)
         self.assertEqual((code, result['error']), (1, 'release directory must be under .local'))
         self.assertFalse(self.release.exists())
+
+    def test_build_refuses_untracked_public_files_even_when_git_status_is_clean(self):
+        public = self.root / 'web/platform/public'
+        public.mkdir()
+        for name in ('.env', 'debug.log', 'untracked.txt'):
+            with self.subTest(name=name):
+                path = public / name
+                path.write_text('NONSECRET_REVIEW_FIXTURE')
+                code, result = self.tool('build', '--commit', COMMIT)
+                self.assertEqual((code, result['error']),
+                                 (1, 'untracked public build input: web/platform/public/' + name))
+                self.assertFalse(any(argv[0] == 'pnpm' for argv in self.commands))
+                self.assertFalse((self.release / 'manifest.json').exists())
+                path.unlink()
+
+    def test_build_refuses_public_directory_and_nested_symlinks(self):
+        public = self.root / 'web/platform/public'
+        outside = self.root / 'not-public'
+        outside.mkdir()
+        (outside / 'private.txt').write_text('NONSECRET_REVIEW_FIXTURE')
+        public.symlink_to(outside, target_is_directory=True)
+        code, result = self.tool('build', '--commit', COMMIT)
+        self.assertEqual(code, 1)
+        self.assertIn('symlink path refused', result['error'])
+        public.unlink()
+        public.mkdir()
+        for target in (outside, outside / 'private.txt', outside / 'missing'):
+            with self.subTest(target=target.name):
+                link = public / 'linked'
+                link.symlink_to(target, target_is_directory=target.is_dir())
+                code, result = self.tool('build', '--commit', COMMIT)
+                self.assertEqual(code, 1)
+                self.assertIn('symlink path refused', result['error'])
+                link.unlink()
+        self.assertFalse(any(argv[0] == 'pnpm' for argv in self.commands))
+
+    def test_build_accepts_regular_tracked_public_files_in_the_source_manifest(self):
+        public = self.root / 'web/platform/public'
+        public.mkdir()
+        (public / 'logo.svg').write_text('<svg/>')
+        self.tracked.append('web/platform/public/logo.svg')
+        self.assertEqual(self.tool('build', '--commit', COMMIT)[0], 0)
+        manifest = json.loads((self.release / 'manifest.json').read_text())
+        self.assertEqual(manifest['sourceFiles']['web/platform/public/logo.svg'],
+                         hashlib.sha256(b'<svg/>').hexdigest())
+
+    def test_build_refuses_production_dotenv_files_including_tracked_files(self):
+        for directory in (self.root, self.root / 'web/platform'):
+            for name in ('.env', '.env.local', '.env.production', '.env.production.local'):
+                with self.subTest(directory=directory.name, name=name):
+                    path = directory / name
+                    path.write_text('NONSECRET_REVIEW_FIXTURE')
+                    relative = path.relative_to(self.root).as_posix()
+                    self.tracked.append(relative)
+                    code, result = self.tool('build', '--commit', COMMIT)
+                    self.assertEqual((code, result['error']), (1, 'dotenv build input refused: ' + relative))
+                    self.assertFalse(any(argv[0] == 'pnpm' for argv in self.commands))
+                    self.tracked.remove(relative)
+                    path.unlink()
+
+    def test_build_rechecks_public_and_dotenv_inputs_after_vite(self):
+        public = self.root / 'web/platform/public'
+        public.mkdir()
+        for relative, error in (
+                ('web/platform/public/.env', 'untracked public build input: web/platform/public/.env'),
+                ('web/platform/.env.production.local', 'dotenv build input refused: web/platform/.env.production.local')):
+            with self.subTest(path=relative):
+                self.release = self.root / ('.local/post-build-' + str(len(self.commands)))
+                path = self.root / relative
+                self.during_build = lambda: path.write_text('NONSECRET_REVIEW_FIXTURE')
+                code, result = self.tool('build', '--commit', COMMIT)
+                self.assertEqual((code, result['error']), (1, error))
+                self.assertFalse((self.release / 'manifest.json').exists())
+                path.unlink()
+
+    def test_build_refuses_changed_tracked_bytes_even_if_status_stays_clean(self):
+        self.during_build = lambda: (self.root / 'web/platform/src/main.tsx').write_text('changed')
+        code, result = self.tool('build', '--commit', COMMIT)
+        self.assertEqual((code, result['error']), (1, 'build input bytes changed during build'))
+        self.assertFalse((self.release / 'manifest.json').exists())
+
+    def test_build_checks_source_bytes_against_the_commit_before_vite(self):
+        self.git_show = b'not the committed file'
+        code, result = self.tool('build', '--commit', COMMIT)
+        self.assertEqual((code, result['error']), (1, 'commit build input mismatch: package.json'))
+        self.assertFalse(any(argv[0] == 'pnpm' for argv in self.commands))
+
+    def assert_common_publication_lock(self, competing_action, phase):
+        second = self.root / '.local/second-release'
+        self.release = second
+        self.assertEqual(self.tool('build', '--commit', COMMIT)[0], 0)
+        if competing_action == 'rollback':
+            self.assertEqual(self.tool('apply', '--expected-commit', COMMIT)[0], 0)
+        first = self.root / '.local/first-release'
+        self.release = first
+        self.assertEqual(self.tool('build', '--commit', COMMIT)[0], 0)
+        entered, finish = threading.Event(), threading.Event()
+        original = getattr(self.ui, phase)
+
+        def paused(*args):
+            should_pause = ((phase == 'save' and args[0] == first / 'production-backup/receipt.json')
+                            or (phase == 'check' and args[0] == first / 'dist'))
+            if should_pause:
+                entered.set()
+                self.assertTrue(finish.wait(5), 'publication test timed out')
+            return original(*args)
+
+        def arguments(action, release):
+            return SimpleNamespace(action=action, release_dir=release, manifest=None, candidate=None,
+                                   live=self.live, backup=None, expected_commit=COMMIT)
+
+        # Real flock on separate file descriptors, with two distinct release directories.
+        # Only subprocesses (git inspection) are mocked; index/backup/receipt writes are real temporary files.
+        with patch.object(subprocess, 'run', side_effect=self.process), patch.object(self.ui, phase, side_effect=paused):
+            with ThreadPoolExecutor(max_workers=1) as executor:
+                running = executor.submit(self.ui.run, arguments('apply', first))
+                try:
+                    self.assertTrue(entered.wait(5), 'first publication did not reach the guarded phase')
+                    before = self.ui.inventory(self.live)
+                    with self.assertRaisesRegex(RuntimeError, 'live target is locked by another UI rollout'):
+                        self.ui.run(arguments(competing_action, second))
+                    self.assertEqual(self.ui.inventory(self.live), before)
+                    self.assertFalse((second / 'production-backup/rollback-receipt.json').exists())
+                    if competing_action == 'apply':
+                        self.assertFalse((second / 'production-backup').exists())
+                finally:
+                    finish.set()
+                self.assertEqual(running.result(timeout=5)['phase'], 'applied')
+            if competing_action == 'rollback':
+                self.assertEqual(self.ui.run(arguments('rollback', second))['phase'], 'rolled_back')
+
+    def test_common_live_lock_blocks_other_release_apply_before_check(self):
+        self.assert_common_publication_lock('apply', 'check')
+
+    def test_common_live_lock_blocks_other_release_apply_through_receipt(self):
+        self.assert_common_publication_lock('apply', 'save')
+
+    def test_common_live_lock_blocks_other_release_rollback_before_check(self):
+        self.assert_common_publication_lock('rollback', 'check')
+
+    def test_common_live_lock_blocks_other_release_rollback_through_receipt(self):
+        self.assert_common_publication_lock('rollback', 'save')
 
     def test_apply_refusals_leave_the_live_dist_unchanged(self):
         self.assertEqual(self.tool('build', '--commit', COMMIT)[0], 0)

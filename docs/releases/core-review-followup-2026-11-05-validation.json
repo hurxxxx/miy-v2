@@ -1,0 +1,128 @@
+{
+  "date": "2026-11-05",
+  "baseCommit": "d23d8ced52805e06b03b0f94acb67a7521ae7243",
+  "validatedTree": "baseCommit plus working-tree changes identified by sourceFileSha256",
+  "status": "PASS",
+  "scope": [
+    "Delegated disabled-app runtime submission returns its committed job receipt; read is required before admission",
+    "Runtime jobs list and detail/events use current scope, management, company switch and delegation policy",
+    "UI build rejects ignored/untracked public inputs, symlinks and ambient production dotenv files",
+    "UI apply/rollback share a canonical live-target lock across releases",
+    "Core rollback checks active work when services are partly failed, before and after stopping"
+  ],
+  "deploymentPerformed": false,
+  "commitPerformed": false,
+  "pushPerformed": false,
+  "checks": [
+    {
+      "command": "bash scripts/check-static.sh scripts",
+      "status": "PASS",
+      "coreOpsMockTests": 47,
+      "docLinks": 529,
+      "log": "/tmp/miy-review-fixes-20261105-scripts.log",
+      "finalLog": "/tmp/miy-review-fixes-20261105-scripts-final.log",
+      "finalDocLinks": 530
+    },
+    {
+      "command": "python3 /tmp/miy_ui_ignored_public_fixed_review_20261105.py",
+      "status": "PASS",
+      "observations": 8,
+      "toolSha256": "05c7a018a196cd7e4cc01ffbba9cd475cf446f7630bfb2d4e3fd09e28c914b20",
+      "scope": "Real Vite in a temporary Git fixture, including actual ignored public copying; build guard plus normal build/inspect/apply/rollback into a temporary live directory",
+      "evidence": "evidence/core-review-followup-20261105-linux/ui-real-vite.json",
+      "harness": "evidence/core-review-followup-20261105-linux/verify-ui-build.py"
+    },
+    {
+      "command": "bash scripts/check-static.sh rust",
+      "status": "PASS",
+      "serverTests": 170,
+      "clientTests": 113,
+      "serverIgnored": 7,
+      "log": "/tmp/miy-review-fixes-20261105-rust-final.log",
+      "previousPassLog": "/tmp/miy-review-fixes-20261105-rust.log",
+      "repeatReason": "Regression fixture cleanup was finalized after the initial Rust run; the full Rust check was repeated on the final source."
+    },
+    {
+      "command": "python3 /tmp/miy-delegated-disabled-fixed-review-20261105.py --binary /tmp/miy-runtime-regression-xr00w0r8/bin/miy --source-label d23d8ce+review-fixes-working-tree",
+      "status": "PASS",
+      "observations": 10,
+      "evidence": "evidence/core-review-followup-20261105-linux/delegated-http.json",
+      "harness": "evidence/core-review-followup-20261105-linux/verify-delegated-http.py",
+      "workerStarted": false,
+      "appContainersCreated": false,
+      "cleanup": "owned core exited and owned PostgreSQL container removed",
+      "binarySha256": "16117a8fb2dc13136cb48329ae0601c646299bb9cc2dd02eecb119c346a59ccd"
+    },
+    {
+      "command": "python3 scripts/runtime-regression/run.py",
+      "status": "PASS",
+      "observations": 87,
+      "suites": {
+        "runtime": 43,
+        "operations": 6,
+        "cli": 6,
+        "auth": 8,
+        "permissions": 17,
+        "delegation": 7
+      },
+      "evidence": "evidence/core-review-followup-20261105-linux/runtime-observations.json",
+      "log": "/tmp/miy-review-fixes-20261105-runtime.log",
+      "runtimeDirectory": "/tmp/miy-runtime-regression-xr00w0r8",
+      "newObservations": [
+        "delegated disabled runtime read+stop returns one queued receipt and idempotent replay; missing read is denied by planning/submission before insertion",
+        "runtime job detail/events and cursor pages enforce company disable, current grants and delegated app/environment/read scope",
+        "runtime job list/detail agree for admin, deploy, develop and use with actual miy.dev scope, including read-only dev repair",
+        "queued runtime retains originating delegation, rejects idempotency rebinding and fails closed after revocation before Docker action"
+      ],
+      "cleanup": {
+        "removed": 13,
+        "errors": [],
+        "baselineContainers": 41,
+        "baselinePreserved": true,
+        "leftoverContainers": 0
+      }
+    },
+    {
+      "command": "Read-only systemctl and /proc executable SHA-256 plus live UI index comparison before/after",
+      "status": "PASS",
+      "unchanged": true,
+      "operatingSourceCommit": "7b437890030f0da6f10dc6a76881891f353f31cf",
+      "evidence": "evidence/core-review-followup-20261105-linux/live-after.json"
+    },
+    {
+      "command": "python3 scripts/check-doc-links.py; git diff --check",
+      "status": "PASS",
+      "docLinks": 532,
+      "trackedMarkdownFiles": 53
+    }
+  ],
+  "notRun": [
+    "Production apply/rollback and service restart",
+    "Windows/macOS installer acceptance; these changes do not modify installers",
+    "Platform UI browser suite; no platform UI source changed",
+    "Real OIDC provider login; credential-scope combinations are checked with explicit Principal values, and delegated CLI credentials are checked over HTTP"
+  ],
+  "attemptsPreserved": [
+    {
+      "check": "Read-only service identity probe with systemctl --user",
+      "status": "FAIL",
+      "reason": "Services belong to the system manager; user-manager MainPID was 0. No mutation. The subsequent systemctl show probe succeeded."
+    }
+  ],
+  "sourceFileSha256": {
+    "crates/miy/src/delegation_regression.rs": "6b217a4d568b20fa0a9f4421b3892a245144be42d62303a12747f7938d0e7503",
+    "crates/miy/src/read_api.rs": "6e3e0971203dbcdba6d91e90f851e847f07030cf48f82441ecfe88bc7d3ac7dd",
+    "crates/miy/src/runtime.rs": "9c3255ddaecbe392b8f1c9e2e3728185a6cce46c2855536348c93db388f6e03a",
+    "crates/miy/src/runtime_preflight.rs": "55973a81f46768a62900e14e676d272a7c059f57f97f5b5451cd859ae4dabcf4",
+    "scripts/core-rollout.py": "b6478cd711fce9746ef46053fe7d4c5f6459f52846697034a31de3aa78627f41",
+    "scripts/runtime-regression/run.py": "3f6485504e2eed7331611a584ade03e60e2094766fdb82fefa99a6334ac7716a",
+    "scripts/test-core-ops.py": "7b356183f77809320b3c06bf7b784a66a5d9d96037459bb5f2d80f94af1437ae",
+    "scripts/ui-rollout.py": "05c7a018a196cd7e4cc01ffbba9cd475cf446f7630bfb2d4e3fd09e28c914b20"
+  },
+  "sourceHashesUnchangedAfterChecks": true,
+  "limits": [
+    "UI input inspection follows the maintained Vite configuration default envDir/publicDir; changing those settings requires updating the guard. Existing historical manifests remain compatible.",
+    "The new delegated job admission fixtures do not start a worker; real app container lifecycle behavior is covered separately by the full isolated runtime suite.",
+    "Source changes remain uncommitted and undeployed; current production source is 7b43789."
+  ]
+}

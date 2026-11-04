@@ -482,8 +482,10 @@ def rollback():
         require(digest(recovery() / 'miy-server') == previous, 'rollback_binary_changed')
         require(digest(installed()) in (candidate, previous), 'installed_binary_belongs_to_another_rollout')
         require(migrations() == schema, 'schema_changed_since_rollout')
-        if all(state == 'active' for state in service_states().values()):
-            # Stopping a running core interrupts work; a core stopped for assessment has none.
+        check_idle = any(state != 'inactive' for state in service_states().values())
+        if check_idle:
+            # A failed service does not mean its peer has stopped accepting or processing work.
+            # Only an entirely inactive core uses the assessed, already-stopped recovery path.
             REPORT['idleBeforeStop'] = idle()
     except (Exception, KeyboardInterrupt) as error:
         REPORT.update({'status': 'REFUSED', 'failureCategory': failure_code(error), 'productionMutations': False,
@@ -492,6 +494,8 @@ def rollback():
         raise
     try:
         stop_core()
+        if check_idle:
+            REPORT['idleAfterStop'] = idle()
         atomic_copy(recovery() / 'miy-server', installed())
         require(digest(installed()) == previous, 'rollback_install_mismatch')
         start_core()

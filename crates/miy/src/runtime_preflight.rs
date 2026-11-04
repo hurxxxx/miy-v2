@@ -3,7 +3,6 @@ use crate::{
     State,
     api_error::{ApiError, ApiResult},
     auth::Principal,
-    domain,
     runtime_contract::{self, ExpectedState, PreflightInput, PreflightResult},
 };
 use serde_json::json;
@@ -50,7 +49,8 @@ pub async fn inspect(
     runtime_contract::validate_input(&input)
         .map_err(|_| ApiError::bad("invalid_runtime_request"))?;
     let environment = input.target.environment.as_str();
-    domain::manage_action(state, p, app, environment, input.action.as_str().parse()?).await?;
+    crate::runtime::authorize_request(state, p, app, environment, input.action.as_str().parse()?)
+        .await?;
     let exists: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM apps WHERE id=$1)")
         .bind(app)
         .fetch_one(&state.pool)

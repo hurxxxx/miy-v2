@@ -226,6 +226,401 @@ async fn lease_cleanup_scope(state: &State, h: &Harness<'_>, other_app_token: &s
     Ok(())
 }
 
+/// These are synthetic metadata and HTTP admission tests. The harness advances
+/// workers explicitly; no Docker action runs for this app, and its one admitted
+/// job is made terminal before the next worker tick.
+async fn runtime_job_boundaries(state: &State, h: &Harness<'_>) -> Result<Vec<String>> {
+    let app = format!(
+        "delegated-jobs-{}",
+        &Uuid::new_v4().simple().to_string()[..12]
+    );
+    let release = Uuid::new_v4();
+    sqlx::query("INSERT INTO apps(id,name) VALUES($1,'Runtime job permission fixture')")
+        .bind(&app)
+        .execute(&state.pool)
+        .await?;
+    sqlx::query("INSERT INTO releases(id,app_id,version,artifact_hash,manifest) SELECT $1,$2,'1.0.0',artifact_hash,jsonb_set(manifest,'{id}',to_jsonb($2::text)) FROM releases WHERE app_id='audit-runtime' LIMIT 1")
+        .bind(release).bind(&app).execute(&state.pool).await?;
+    let mut historical_jobs = Vec::new();
+    for environment in ["dev", "prod"] {
+        sqlx::query("INSERT INTO installations(id,app_id,environment,release_id,db_status,runtime_status,desired_state,runtime_image) VALUES($1,$2,$3,$4,'ready','running','running',$5)")
+            .bind(Uuid::new_v4()).bind(&app).bind(environment).bind(release)
+            .bind(format!("sha256:{}", "a".repeat(64))).execute(&state.pool).await?;
+        for _ in 0..2 {
+            let job = Uuid::new_v4();
+            sqlx::query("INSERT INTO runtime_jobs(id,app_id,environment,actor,action,idempotency_key,input_hash,status,step) VALUES($1,$2,$3,$4,'stop',$5,$5,'succeeded','done')")
+                .bind(job).bind(&app).bind(environment).bind(&h.user).bind(job.to_string())
+                .execute(&state.pool).await?;
+            historical_jobs.push((environment, job));
+        }
+    }
+    let viewer = Harness {
+        client: h.client,
+        base: h.base,
+        user: format!("job-reader-{}", Uuid::new_v4()),
+        parent: Uuid::new_v4(),
+        token: format!("miy_access_{}", auth::random()),
+    };
+    sqlx::query("INSERT INTO users(id,name) VALUES($1,'Job reader fixture')")
+        .bind(&viewer.user)
+        .execute(&state.pool)
+        .await?;
+    sqlx::query("INSERT INTO cli_sessions(id,user_id,client_id,client_name) VALUES($1,$2,$3,'Job reader fixture')")
+        .bind(viewer.parent).bind(&viewer.user).bind(Uuid::new_v4()).execute(&state.pool).await?;
+    sqlx::query("INSERT INTO cli_access_tokens(token_hash,session_id,expires_at) VALUES($1,$2,now()+interval '15 minutes')")
+        .bind(contract::hash(&viewer.token)).bind(viewer.parent).execute(&state.pool).await?;
+    for environment in ["dev", "prod"] {
+        sqlx::query(
+            "INSERT INTO grants(user_id,app_id,environment,permission) VALUES($1,$2,$3,'use')",
+        )
+        .bind(&viewer.user)
+        .bind(&app)
+        .bind(environment)
+        .execute(&state.pool)
+        .await?;
+    }
+    let list = format!("/api/v1/runtime/jobs?appId={app}&environment=prod&limit=1");
+    let first_page = h
+        .request(&viewer.token, Method::GET, &list, None, StatusCode::OK)
+        .await?;
+    let cursor = first_page["nextCursor"]
+        .as_str()
+        .expect("job fixture needs a second page");
+    let next = format!("{list}&cursor={cursor}");
+    let viewer_delegation = viewer.request(&viewer.token, Method::POST, "/api/v1/delegations",
+        Some(json!({"name":"Scoped reader","appId":app,"environment":"prod","actions":["read"],"expiresIn":3600})), StatusCode::OK).await?;
+    let delegated_page = h
+        .request(
+            access(&viewer_delegation),
+            Method::GET,
+            &list,
+            None,
+            StatusCode::OK,
+        )
+        .await?;
+    let delegated_next = format!(
+        "{list}&cursor={}",
+        delegated_page["nextCursor"].as_str().unwrap()
+    );
+    h.request(
+        &h.token,
+        Method::PUT,
+        &format!("/api/v1/apps/{app}/control"),
+        Some(json!({"disabled":true})),
+        StatusCode::OK,
+    )
+    .await?;
+
+    let mut issued = Vec::new();
+    for actions in [vec!["read", "stop"], vec!["stop"]] {
+        issued.push(h.request(&h.token, Method::POST, "/api/v1/delegations",
+            Some(json!({"name":"Scoped runtime fixture","appId":app,"environment":"prod","actions":actions,"expiresIn":3600})), StatusCode::OK).await?);
+    }
+    let delegated = access(&issued[0]);
+    let stop_only = access(&issued[1]);
+    let preflight = format!("/api/v1/apps/{app}/runtime/preflight");
+    let submit = format!("/api/v1/apps/{app}/runtime");
+    let plan_input = json!({"target":{"appId":app,"environment":"prod"},"action":"stop"});
+    let plan = h
+        .request(
+            delegated,
+            Method::POST,
+            &preflight,
+            Some(plan_input.clone()),
+            StatusCode::OK,
+        )
+        .await?;
+    ensure!(plan["canSubmit"] == true);
+    h.request(
+        stop_only,
+        Method::POST,
+        &preflight,
+        Some(plan_input),
+        StatusCode::FORBIDDEN,
+    )
+    .await?;
+    let no_read_key = Uuid::new_v4().to_string();
+    let mut request = json!({"action":"stop","environment":"prod","idempotencyKey":no_read_key,"confirmed":true,"expectedState":plan["expectedState"]});
+    h.request(
+        stop_only,
+        Method::POST,
+        &submit,
+        Some(request.clone()),
+        StatusCode::FORBIDDEN,
+    )
+    .await?;
+    let denied_rows: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM runtime_jobs WHERE actor=$1 AND idempotency_key=$2",
+    )
+    .bind(&h.user)
+    .bind(&no_read_key)
+    .fetch_one(&state.pool)
+    .await?;
+    ensure!(
+        denied_rows == 0,
+        "read-less delegation left a committed job"
+    );
+    request["idempotencyKey"] = json!(Uuid::new_v4().to_string());
+    let accepted = h
+        .request(
+            delegated,
+            Method::POST,
+            &submit,
+            Some(request.clone()),
+            StatusCode::OK,
+        )
+        .await?;
+    let job = id(&accepted, "id");
+    ensure!(accepted["status"] == "queued");
+    let row = sqlx::query("SELECT status,delegation_id FROM runtime_jobs WHERE id=$1")
+        .bind(job)
+        .fetch_one(&state.pool)
+        .await?;
+    ensure!(
+        row.get::<String, _>("status") == "queued"
+            && row.get::<Uuid, _>("delegation_id") == id(&issued[0]["delegation"], "id")
+    );
+    let replay = h
+        .request(
+            delegated,
+            Method::POST,
+            &submit,
+            Some(request),
+            StatusCode::OK,
+        )
+        .await?;
+    ensure!(id(&replay, "id") == job);
+    let accepted_rows: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM runtime_jobs WHERE delegation_id=$1")
+            .bind(id(&issued[0]["delegation"], "id"))
+            .fetch_one(&state.pool)
+            .await?;
+    ensure!(
+        accepted_rows == 1,
+        "idempotent runtime request inserted twice"
+    );
+    for suffix in ["", "/events"] {
+        let path = format!("/api/v1/runtime/jobs/{job}{suffix}");
+        h.request(delegated, Method::GET, &path, None, StatusCode::OK)
+            .await?;
+        h.request(stop_only, Method::GET, &path, None, StatusCode::FORBIDDEN)
+            .await?;
+        let denied = h
+            .request(
+                &viewer.token,
+                Method::GET,
+                &path,
+                None,
+                StatusCode::FORBIDDEN,
+            )
+            .await?;
+        ensure!(denied["error"]["code"] == "app_disabled");
+    }
+    // Cross-environment detail and list checks must retain the delegation boundary.
+    h.request(
+        delegated,
+        Method::GET,
+        &format!("/api/v1/runtime/jobs/{}", historical_jobs[0].1),
+        None,
+        StatusCode::FORBIDDEN,
+    )
+    .await?;
+    h.request(
+        delegated,
+        Method::GET,
+        &format!("/api/v1/runtime/jobs?appId={app}&environment=dev"),
+        None,
+        StatusCode::FORBIDDEN,
+    )
+    .await?;
+    h.request(
+        delegated,
+        Method::GET,
+        "/api/v1/runtime/jobs?appId=audit-runtime&environment=prod",
+        None,
+        StatusCode::FORBIDDEN,
+    )
+    .await?;
+    let visible = h
+        .request(
+            delegated,
+            Method::GET,
+            &format!("/api/v1/runtime/jobs?appId={app}&environment=prod&limit=200"),
+            None,
+            StatusCode::OK,
+        )
+        .await?;
+    ensure!(
+        visible["jobs"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|value| id(value, "id") == job)
+    );
+    // No worker action is claimed for these metadata-only fixtures.
+    sqlx::query("UPDATE runtime_jobs SET status='failed',step='fixture_complete' WHERE id=$1")
+        .bind(job)
+        .execute(&state.pool)
+        .await?;
+
+    for token in [viewer.token.as_str(), access(&viewer_delegation)] {
+        let page = h
+            .request(token, Method::GET, &list, None, StatusCode::OK)
+            .await?;
+        ensure!(page["jobs"].as_array().unwrap().is_empty() && page["nextCursor"].is_null());
+    }
+    let disabled_next = h
+        .request(&viewer.token, Method::GET, &next, None, StatusCode::OK)
+        .await?;
+    ensure!(disabled_next["jobs"].as_array().unwrap().is_empty());
+    let disabled_delegated = h
+        .request(
+            access(&viewer_delegation),
+            Method::GET,
+            &delegated_next,
+            None,
+            StatusCode::OK,
+        )
+        .await?;
+    ensure!(disabled_delegated["jobs"].as_array().unwrap().is_empty());
+    h.request(
+        &h.token,
+        Method::PUT,
+        &format!("/api/v1/apps/{app}/control"),
+        Some(json!({"disabled":false})),
+        StatusCode::OK,
+    )
+    .await?;
+    let enabled_next = h
+        .request(&viewer.token, Method::GET, &next, None, StatusCode::OK)
+        .await?;
+    ensure!(!enabled_next["jobs"].as_array().unwrap().is_empty());
+    h.request(
+        &viewer.token,
+        Method::GET,
+        &format!("/api/v1/runtime/jobs/{job}"),
+        None,
+        StatusCode::OK,
+    )
+    .await?;
+    sqlx::query("DELETE FROM grants WHERE user_id=$1 AND app_id=$2")
+        .bind(&viewer.user)
+        .bind(&app)
+        .execute(&state.pool)
+        .await?;
+    let revoked_next = h
+        .request(&viewer.token, Method::GET, &next, None, StatusCode::OK)
+        .await?;
+    ensure!(revoked_next["jobs"].as_array().unwrap().is_empty());
+    h.request(
+        &viewer.token,
+        Method::GET,
+        &format!("/api/v1/runtime/jobs/{job}"),
+        None,
+        StatusCode::FORBIDDEN,
+    )
+    .await?;
+    h.request(
+        access(&viewer_delegation),
+        Method::GET,
+        &delegated_next,
+        None,
+        StatusCode::FORBIDDEN,
+    )
+    .await?;
+
+    // CLI access tokens carry miy.dev. Exercise the same SQL with read-only OIDC
+    // Principal scopes directly, including the deliberate dev repair exception.
+    h.request(
+        &h.token,
+        Method::PUT,
+        &format!("/api/v1/apps/{app}/control"),
+        Some(json!({"disabled":true})),
+        StatusCode::OK,
+    )
+    .await?;
+    for (admin, permission, env, has_dev, allowed) in [
+        (true, "use", "prod", true, true),
+        (true, "use", "prod", false, false),
+        (true, "use", "dev", false, true),
+        (false, "use", "prod", true, false),
+        (false, "use", "dev", true, false),
+        (false, "deploy", "prod", true, true),
+        (false, "deploy", "prod", false, false),
+        (false, "develop", "dev", true, true),
+        (false, "develop", "dev", false, true),
+        (false, "develop", "prod", true, false),
+    ] {
+        sqlx::query("UPDATE users SET admin=$2 WHERE id=$1")
+            .bind(&viewer.user)
+            .bind(admin)
+            .execute(&state.pool)
+            .await?;
+        sqlx::query("DELETE FROM grants WHERE user_id=$1 AND app_id=$2")
+            .bind(&viewer.user)
+            .bind(&app)
+            .execute(&state.pool)
+            .await?;
+        sqlx::query(
+            "INSERT INTO grants(user_id,app_id,environment,permission) VALUES($1,$2,$3,$4)",
+        )
+        .bind(&viewer.user)
+        .bind(&app)
+        .bind(env)
+        .bind(permission)
+        .execute(&state.pool)
+        .await?;
+        let mut principal = auth::Principal {
+            id: viewer.user.clone(),
+            cli_session_id: Some(viewer.parent),
+            delegation_id: None,
+            scopes: vec!["miy.read".into()],
+            csrf: None,
+            development: false,
+        };
+        if has_dev {
+            principal.scopes.push("miy.dev".into());
+        }
+        let page = crate::read_api::page(
+            state,
+            &principal,
+            "jobs",
+            crate::read_api::Page {
+                app_id: Some(app.clone()),
+                environment: Some(env.into()),
+                ..Default::default()
+            },
+        )
+        .await
+        .map_err(|error| anyhow::anyhow!(error.code))?;
+        let detail = crate::runtime::job(
+            state,
+            &principal,
+            historical_jobs
+                .iter()
+                .find(|(environment, _)| *environment == env)
+                .unwrap()
+                .1,
+        )
+        .await;
+        ensure!(
+            detail.is_ok() == allowed && page["jobs"].as_array().unwrap().is_empty() != allowed,
+            "runtime job scope mismatch: admin={admin}, permission={permission}, env={env}, miy.dev={has_dev}"
+        );
+    }
+    sqlx::query(
+        "UPDATE installations SET desired_state='stopped',runtime_status='stopped' WHERE app_id=$1",
+    )
+    .bind(&app)
+    .execute(&state.pool)
+    .await?;
+    Ok(vec![
+        "delegated disabled runtime read+stop returns one queued receipt and idempotent replay; missing read is denied by planning/submission before insertion".into(),
+        "runtime job detail/events and cursor pages enforce company disable, current grants and delegated app/environment/read scope".into(),
+        "runtime job list/detail agree for admin, deploy, develop and use with actual miy.dev scope, including read-only dev repair".into(),
+    ])
+}
+
 pub async fn run(state: &State, client: &Client, base: &str) -> Result<Vec<String>> {
     let user = format!("delegation-audit-{}", Uuid::new_v4());
     let parent = Uuid::new_v4();
@@ -300,6 +695,8 @@ pub async fn run(state: &State, client: &Client, base: &str) -> Result<Vec<Strin
             .all(|v| v["appId"] == "audit-runtime" && v["environment"] == "prod")
     );
     passed.push("actual CLI private delegation import and explicit app/environment/actions; scoped lease cleanup rejects other apps/families while undelegated grant-loss cleanup remains available".into());
+
+    passed.extend(runtime_job_boundaries(state, &h).await?);
 
     let plan = h
         .request(

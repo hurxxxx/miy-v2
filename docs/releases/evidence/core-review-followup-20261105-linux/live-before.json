@@ -1,0 +1,15 @@
+{
+  "miy-v2-serve": {
+    "ActiveState": "active",
+    "MainPID": "3090945",
+    "ExecMainStartTimestamp": "Thu 2026-11-05 07:09:44 KST",
+    "sha256": "d9ce25351221bce31d5342785a9906f6163fdc7d2bc83e468092d20613d5c46e"
+  },
+  "miy-v2-worker": {
+    "ActiveState": "active",
+    "MainPID": "3090946",
+    "ExecMainStartTimestamp": "Thu 2026-11-05 07:09:44 KST",
+    "sha256": "d9ce25351221bce31d5342785a9906f6163fdc7d2bc83e468092d20613d5c46e"
+  },
+  "uiIndexSha256": "dbb0c78e669eae1de8c49d0603e192c709487abd913a5e3ba0fb7919a6b4e006"
+}

@@ -1,0 +1,17 @@
+{
+  "fixtureRoot": "/tmp/miy-ui-real-vite-fixed-review-nh59a47k",
+  "sourceCommit": "24cbc766f977cfca76dfe4334d2790fa540ab057",
+  "checks": {
+    "realViteCopiesGitIgnoredPublicFile": true,
+    "ignoredPublicRejectedBeforeBuild": true,
+    "liveUnchangedAfterRejectedBuild": true,
+    "ambientDotenvRejectedBeforeBuild": true,
+    "trackedPublicBuildInspectApply": true,
+    "ignoredFileNeverPublished": true,
+    "rollbackRestoresIndexKeepsAddedAssets": true,
+    "fixtureTrackedSourceRemainsClean": true
+  },
+  "publicRejection": "untracked public build input: web/platform/public/.env",
+  "dotenvRejection": "dotenv build input refused: web/platform/.env.production.local",
+  "status": "PASS"
+}
