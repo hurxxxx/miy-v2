@@ -151,6 +151,46 @@
       "output": "/tmp/claude-1000/-projects-miy-v2/a37f9a99-4561-4486-885f-dc72f0b5b50d/scratchpad/verify-runtime-management/live-inspect.json"
     },
     {
+      "command": "python3 scripts/ui-rollout.py build|inspect|apply|apply|rollback --release-dir <rehearsal>/release --live <rehearsal>/live-copy",
+      "status": "PASS",
+      "sourceCommit": "bedf96ffaec2ac52ee68a6d647b41c4c18592d0a",
+      "target": "copy of web/platform/dist under .local/evidence; the live dist was only read",
+      "build": {
+        "sourceFiles": 42,
+        "candidateFiles": 109,
+        "newAssets": 2,
+        "identicalAssets": 106,
+        "candidateIndexSha256": "dbb0c78e669eae1de8c49d0603e192c709487abd913a5e3ba0fb7919a6b4e006",
+        "liveIndexSha256": "baadc4db49abdb888563a6b01ebce74415f79269702145f4a54f32ed18229c49",
+        "matchesExpectedLiveIndex": true
+      },
+      "apply": {
+        "filesBefore": 130,
+        "filesAfter": 132,
+        "indexAfter": "dbb0c78e…"
+      },
+      "secondApply": {
+        "status": "FAIL as intended",
+        "error": "live index differs from build baseline"
+      },
+      "rollback": {
+        "indexAfter": "baadc4db…",
+        "filesAfter": 132,
+        "bothAssetGenerationsKept": true
+      },
+      "liveUntouched": {
+        "distInventorySha256Before": "787111142c63224533772bf17cc66059f57b1cc4e85426db81fd0c2c12abd36d",
+        "distInventorySha256After": "787111142c63224533772bf17cc66059f57b1cc4e85426db81fd0c2c12abd36d",
+        "publicIndexSha256": "baadc4db49abdb888563a6b01ebce74415f79269702145f4a54f32ed18229c49"
+      },
+      "privateModes": {
+        "release": "0700",
+        "manifest": "0600",
+        "buildLog": "0600"
+      },
+      "evidence": "/projects/miy-v2/.local/evidence/ui-rollout-rehearsal-20261104T112248Z"
+    },
+    {
       "command": "python3 scripts/check-doc-links.py; git diff --check",
       "status": "PASS",
       "docLinks": 521
@@ -159,7 +199,7 @@
   "notRun": [
     "production rollout; v2.dwdcc.kr still runs 3406d9f (binary 59407ce6...)",
     "core-rollout.py apply/rollback against production (only the read-only inspect ran)",
-    "ui-rollout.py rehearsal with a real vite build: the offline package store lacked a tarball for an install in the commit checkout; recorded separately after the next commit",
+    "ui-rollout.py apply/rollback against the production dist (only the rehearsal copy changed)",
     "Windows/macOS installation acceptance",
     "real OIDC identity-provider login in the new checks"
   ],
@@ -193,5 +233,6 @@
     "web/platform/src/pages/Admin.tsx": "8f1b1f660c974bec88d7f6ced4ca6d20608e43e2c9e834b81507b0955506c7ed",
     "tests/admin-access.spec.ts": "7c413e000155b7798e9e87dab0ff8de1fdee0b950503cfd1e6e115728abff4ad",
     "tests/runtime-health.spec.ts": "66eb74ed02c65c0f92ddf61eb4f278d8911a7e8df96c2c14e882f0a1d92222c2"
-  }
+  },
+  "runtimeManagementCommit": "bedf96ffaec2ac52ee68a6d647b41c4c18592d0a"
 }
