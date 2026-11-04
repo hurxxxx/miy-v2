@@ -1,0 +1,25 @@
+{
+  "tool": "scripts/ui-rollout.py",
+  "toolSha256": "42a5bdc119f61d189fb546a30dafb2f89f2e1c2b56194f13687b6b2c341262e1",
+  "phase": "applied",
+  "sourceCommit": "7b437890030f0da6f10dc6a76881891f353f31cf",
+  "appliedAt": "2026-11-04T22:10:22Z",
+  "previousIndexSha256": "baadc4db49abdb888563a6b01ebce74415f79269702145f4a54f32ed18229c49",
+  "indexSha256": "dbb0c78e669eae1de8c49d0603e192c709487abd913a5e3ba0fb7919a6b4e006",
+  "liveFilesBefore": 130,
+  "liveFilesAfter": 132,
+  "candidateFiles": 109,
+  "newAssets": [
+    "assets/index-vCLI_7eC.js",
+    "assets/mf-entry-bootstrap-0-ceb81100.js"
+  ],
+  "identicalAssets": 106,
+  "previousAssetsKept": true,
+  "liveIndexIsCandidate": true,
+  "publicHashMatches": {
+    "index.html": true,
+    "assets/index-vCLI_7eC.js": true,
+    "assets/mf-entry-bootstrap-0-ceb81100.js": true
+  },
+  "backup": ".local/release-7b43789/ui/production-backup (verified copy of the previous dist)"
+}

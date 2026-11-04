@@ -1,0 +1,89 @@
+{
+  "sourceCommit": "7b437890030f0da6f10dc6a76881891f353f31cf",
+  "origin": "https://v2.dwdcc.kr",
+  "result": "PASS",
+  "checks": [
+    {
+      "name": "public_index_matches_candidate",
+      "result": "PASS",
+      "indexSha256": "dbb0c78e669eae1de8c49d0603e192c709487abd913a5e3ba0fb7919a6b4e006"
+    },
+    {
+      "name": "administrator_home",
+      "result": "PASS"
+    },
+    {
+      "name": "administrator_default_paged_and_app_detail_installations",
+      "result": "PASS",
+      "installationCount": 7,
+      "appCount": 5
+    },
+    {
+      "name": "administrator_managed_runtime_installations_api",
+      "result": "PASS",
+      "managedCount": 7,
+      "disabledCount": 0
+    },
+    {
+      "name": "administrator_groups_group_grants_and_audit_get",
+      "result": "PASS",
+      "groupCount": 0,
+      "groupGrantCount": 0
+    },
+    {
+      "name": "administrator_management_sections_and_personal_grant_audit_filter",
+      "result": "PASS"
+    },
+    {
+      "name": "administrator_runtime_panel_uses_managed_list",
+      "result": "PASS",
+      "runtimePanels": 7,
+      "openLinks": 7,
+      "disabledBadges": 0
+    },
+    {
+      "name": "administrator_switches_two_app_access_details",
+      "result": "PASS"
+    },
+    {
+      "name": "administrator_group_members_read_only",
+      "result": "NOT_RUN",
+      "reason": "no_existing_groups"
+    },
+    {
+      "name": "administrator_existing_app_render",
+      "result": "PASS"
+    },
+    {
+      "name": "administrator_owned_session_logout",
+      "result": "PASS"
+    },
+    {
+      "name": "regular_user_home",
+      "result": "PASS"
+    },
+    {
+      "name": "regular_user_default_paged_and_app_detail_installations",
+      "result": "PASS",
+      "installationCount": 0,
+      "appCount": 0
+    },
+    {
+      "name": "regular_user_admin_api_and_screen_denied",
+      "result": "PASS",
+      "deniedRoutes": 5
+    },
+    {
+      "name": "regular_user_existing_app_render",
+      "result": "NOT_RUN",
+      "reason": "no_visible_running_app"
+    },
+    {
+      "name": "regular_user_owned_session_logout",
+      "result": "PASS"
+    }
+  ],
+  "cleanupErrors": [],
+  "pageErrors": 0,
+  "blockedMutations": 0
+}

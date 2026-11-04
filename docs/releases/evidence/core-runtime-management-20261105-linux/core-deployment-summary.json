@@ -1,0 +1,116 @@
+{
+  "tool": "scripts/core-rollout.py",
+  "toolSha256": "b414c0336725e5afe6823856210fbb4f33eddb9efe51b71fa461ad1c8cac368b",
+  "action": "apply",
+  "status": "PASS",
+  "sourceCommit": "7b437890030f0da6f10dc6a76881891f353f31cf",
+  "version": "0.7.0",
+  "schema": 19,
+  "serverSha256": "d9ce25351221bce31d5342785a9906f6163fdc7d2bc83e468092d20613d5c46e",
+  "previousSha256": "59407ce6d8853c8176054fb36afb92fa97585502cea1b5b04483d8a82ce91feb",
+  "rollbackUsed": false,
+  "startedAt": "2026-11-04T22:09:40Z",
+  "serviceStoppedAt": [
+    "2026-11-04T22:09:41Z"
+  ],
+  "serviceStartedAt": [
+    "2026-11-04T22:09:44Z"
+  ],
+  "finishedAt": "2026-11-04T22:09:47Z",
+  "commands": 61,
+  "nonZeroExitCodes": 0,
+  "idleBeforeStop": {
+    "runtime": 0,
+    "builds": 0,
+    "database": 0,
+    "development": 0,
+    "uploads": 0
+  },
+  "idleAfterStop": {
+    "runtime": 0,
+    "builds": 0,
+    "database": 0,
+    "development": 0,
+    "uploads": 0
+  },
+  "databaseBackup": {
+    "file": "miy_core.dump",
+    "bytes": 231290,
+    "sha256": "48df068a9894058e57d83d680140b64746bda31328828928158fe3ab65007969",
+    "migrationVersion": 19,
+    "tables": 40,
+    "rows": 1464
+  },
+  "backupRestoredAndMigrateChecked": true,
+  "stableTables": [
+    "app_admission",
+    "app_controls",
+    "app_registrations",
+    "apps",
+    "db_resources",
+    "grants",
+    "group_grants",
+    "group_members",
+    "groups",
+    "installations",
+    "release_checks",
+    "releases",
+    "users"
+  ],
+  "stableRecordsUnchanged": true,
+  "stableRows": {
+    "users": 4,
+    "apps": 5,
+    "app_registrations": 5,
+    "grants": 9,
+    "installations": 7,
+    "releases": 9,
+    "release_checks": 3,
+    "db_resources": 7,
+    "groups": 0,
+    "group_members": 0,
+    "group_grants": 0,
+    "app_admission": 0,
+    "app_controls": 0
+  },
+  "appContainers": 7,
+  "appContainersUnchanged": true,
+  "runningAppContainers": 5,
+  "databaseNetworks": 9,
+  "cliGuide": {
+    "cliVersion": "0.7.0",
+    "sourceCommit": "01e4d4924f8c8fc4e11720c1af81adf17ddb20bf",
+    "windowsInstallerSha256": "8e01d1f65f4dbf1e3a69f9a6ae5ffefa9c82b9b8f2966274d3fc4a6e79a9612f"
+  },
+  "previousExecutables": {
+    "miy-v2-serve": {
+      "pid": 3482850,
+      "sha256": "59407ce6d8853c8176054fb36afb92fa97585502cea1b5b04483d8a82ce91feb"
+    },
+    "miy-v2-worker": {
+      "pid": 3482851,
+      "sha256": "59407ce6d8853c8176054fb36afb92fa97585502cea1b5b04483d8a82ce91feb"
+    }
+  },
+  "runningExecutables": {
+    "miy-v2-serve": {
+      "pid": 3090945,
+      "sha256": "d9ce25351221bce31d5342785a9906f6163fdc7d2bc83e468092d20613d5c46e"
+    },
+    "miy-v2-worker": {
+      "pid": 3090946,
+      "sha256": "d9ce25351221bce31d5342785a9906f6163fdc7d2bc83e468092d20613d5c46e"
+    }
+  },
+  "connectionBudgetBefore": {
+    "status": "PASS",
+    "worstCase": 90,
+    "usableConnections": 197
+  },
+  "connectionBudgetAfter": {
+    "status": "PASS",
+    "worstCase": 90,
+    "usableConnections": 197
+  },
+  "privateRecord": ".local/release-7b43789/core-1/deployment.json (0600; command metadata, container identities, per-table hashes)"
+}

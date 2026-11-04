@@ -1,0 +1,36 @@
+{
+  "status": "READY",
+  "sourceCommit": "7b437890030f0da6f10dc6a76881891f353f31cf",
+  "version": "0.7.0",
+  "schema": 19,
+  "executables": {
+    "miy-v2-serve": {
+      "pid": 3482850,
+      "sha256": "59407ce6d8853c8176054fb36afb92fa97585502cea1b5b04483d8a82ce91feb"
+    },
+    "miy-v2-worker": {
+      "pid": 3482851,
+      "sha256": "59407ce6d8853c8176054fb36afb92fa97585502cea1b5b04483d8a82ce91feb"
+    }
+  },
+  "cliGuide": {
+    "cliVersion": "0.7.0",
+    "sourceCommit": "01e4d4924f8c8fc4e11720c1af81adf17ddb20bf",
+    "windowsInstallerSha256": "8e01d1f65f4dbf1e3a69f9a6ae5ffefa9c82b9b8f2966274d3fc4a6e79a9612f"
+  },
+  "connectionBudget": {
+    "status": "PASS",
+    "worstCase": 90,
+    "usableConnections": 197
+  },
+  "idle": {
+    "runtime": 0,
+    "builds": 0,
+    "database": 0,
+    "development": 0,
+    "uploads": 0
+  },
+  "appContainers": 7,
+  "runningAppContainers": 5,
+  "databaseNetworks": 9
+}

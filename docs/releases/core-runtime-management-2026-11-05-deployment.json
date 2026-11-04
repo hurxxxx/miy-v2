@@ -1,0 +1,204 @@
+{
+  "date": "2026-11-05",
+  "status": "PASS",
+  "origin": "https://v2.dwdcc.kr",
+  "sourceCommit": "7b437890030f0da6f10dc6a76881891f353f31cf",
+  "deployedChanges": [
+    "dec457ec827e54b39c6cd1ea6c43a9f19d482aa1 core: recheck administrators for user state and registration decisions",
+    "f7f0fe08cf51dcf227c0f81ef8fe4cc331df4393 ops: maintained core and UI rollout tools (not part of the served binary or UI)",
+    "bedf96ffaec2ac52ee68a6d647b41c4c18592d0a core: keep company-disabled apps in administrator runtime management",
+    "7b437890030f0da6f10dc6a76881891f353f31cf docs: record the UI rollout tool rehearsal for bedf96f"
+  ],
+  "previousSourceCommit": "3406d9f5b9c8afbc55a0e3e8752cb178c61db0de",
+  "requestedBy": "user (explicit request: push and production rollout)",
+  "pushPerformed": true,
+  "pushedRange": "ef7d011..7b43789 to origin/main before the rollout",
+  "deploymentPerformed": true,
+  "deploymentTools": {
+    "scripts/core-rollout.py": "b414c0336725e5afe6823856210fbb4f33eddb9efe51b71fa461ad1c8cac368b",
+    "scripts/ui-rollout.py": "42a5bdc119f61d189fb546a30dafb2f89f2e1c2b56194f13687b6b2c341262e1"
+  },
+  "priorImplementationValidation": [
+    "core-admin-recheck-2026-11-04-validation.json",
+    "core-runtime-management-2026-11-04-validation.json"
+  ],
+  "server": {
+    "version": "0.7.0",
+    "sha256": "d9ce25351221bce31d5342785a9906f6163fdc7d2bc83e468092d20613d5c46e",
+    "bytes": 30411536,
+    "previousSha256": "59407ce6d8853c8176054fb36afb92fa97585502cea1b5b04483d8a82ce91feb",
+    "build": "separate clean checkout (detached worktree at sourceCommit); cargo build --release --locked -p miy -j 8; checkout clean after the build",
+    "inspect": "READY (read-only preflight with the same arguments)",
+    "runningExecutables": {
+      "miy-v2-serve": {
+        "pid": 3090945,
+        "sha256": "d9ce25351221bce31d5342785a9906f6163fdc7d2bc83e468092d20613d5c46e"
+      },
+      "miy-v2-worker": {
+        "pid": 3090946,
+        "sha256": "d9ce25351221bce31d5342785a9906f6163fdc7d2bc83e468092d20613d5c46e"
+      }
+    },
+    "newRouteServed": "GET /api/v1/runtime/installations: 401 without a session (unknown routes 404), 200 for the administrator, 403 for a regular user"
+  },
+  "ui": {
+    "sourceCommit": "7b437890030f0da6f10dc6a76881891f353f31cf",
+    "indexSha256": "dbb0c78e669eae1de8c49d0603e192c709487abd913a5e3ba0fb7919a6b4e006",
+    "previousIndexSha256": "baadc4db49abdb888563a6b01ebce74415f79269702145f4a54f32ed18229c49",
+    "sameCandidateAsRehearsal": "bedf96f rehearsal built the same index (core-runtime-management-2026-11-04-validation.json)",
+    "buildInputs": 42,
+    "candidateFiles": 109,
+    "newAssets": 2,
+    "identicalAssets": 106,
+    "liveFilesBefore": 130,
+    "liveFilesAfter": 132,
+    "previousAssetsKept": true,
+    "publicNewAssetsAndIndexHashesVerified": 3,
+    "browserPassed": 14,
+    "browserNotRun": [
+      {
+        "name": "administrator_group_members_read_only",
+        "result": "NOT_RUN",
+        "reason": "no_existing_groups"
+      },
+      {
+        "name": "regular_user_existing_app_render",
+        "result": "NOT_RUN",
+        "reason": "no_visible_running_app"
+      }
+    ],
+    "runtimeManagementScreen": {
+      "managedInstallations": 7,
+      "disabledApps": 0,
+      "runtimePanels": 7,
+      "openLinks": 7,
+      "disabledBadges": 0
+    },
+    "pageErrors": 0,
+    "blockedMutations": 0,
+    "cleanupErrors": []
+  },
+  "timing": {
+    "startedAt": "2026-11-04T22:09:40Z",
+    "serviceStoppedAt": "2026-11-04T22:09:41Z",
+    "servicesStartedAt": "2026-11-04T22:09:44Z",
+    "coreFinishedAt": "2026-11-04T22:09:47Z",
+    "uiAppliedAt": "2026-11-04T22:10:22Z",
+    "platformConnectionFinishedAt": "2026-11-04T22:11:17Z",
+    "browserCheckFinishedAt": "2026-11-04T22:12:53Z",
+    "preservationCheckedAt": "2026-11-04T22:13:32Z",
+    "coreStoppedSeconds": 3
+  },
+  "activityBeforeRollout": {
+    "activeWebSessions": 0,
+    "webSessionsCreatedLastHour": 0,
+    "idleBeforeAndAfterStop": "runtime 0, builds 0, database 0, development 0, uploads 0"
+  },
+  "database": {
+    "schemaBefore": 19,
+    "schemaAfter": 19,
+    "migrationApplied": false,
+    "finalBackup": {
+      "file": "miy_core.dump",
+      "bytes": 231290,
+      "sha256": "48df068a9894058e57d83d680140b64746bda31328828928158fe3ab65007969",
+      "migrationVersion": 19
+    },
+    "backedUpTables": 40,
+    "backedUpRows": 1464,
+    "freshBackupRestoreMigrateVerified": true,
+    "verifyContainersLeft": 0,
+    "postgresNetworksPreserved": 9,
+    "maxConnections": 200,
+    "identityPoolMaxSize": 10,
+    "connectionSettingsChanged": false,
+    "connectionBudgetWorstCase": 90,
+    "connectionBudgetUsable": 197,
+    "connectionBudgetStatus": "PASS"
+  },
+  "preservation": {
+    "stableRecordsUnchanged": true,
+    "stableTables": [
+      "users",
+      "apps",
+      "app_registrations",
+      "grants",
+      "installations",
+      "releases",
+      "release_checks",
+      "db_resources",
+      "groups",
+      "group_members",
+      "group_grants",
+      "app_admission",
+      "app_controls"
+    ],
+    "apps": 5,
+    "releases": 9,
+    "installations": 7,
+    "users": 4,
+    "grants": 9,
+    "stableRowCountsAfterChecks": "unchanged",
+    "appContainersUnchanged": 7,
+    "runningAtRolloutBaseline": 5,
+    "healthyRunningAfterChecks": 5,
+    "coreServiceRestartsAfterStart": 0,
+    "samePidsAfterChecks": true
+  },
+  "publishedCli": {
+    "version": "0.7.0",
+    "sourceCommit": "01e4d4924f8c8fc4e11720c1af81adf17ddb20bf",
+    "changed": false,
+    "executionCliSha256": "47e1930cb3e6a2d278faf39e195b9da162a524b2f220c48ed05efd27e1198e85",
+    "ordinaryOidcAndCliStdioMcpChecks": 17,
+    "checksStatus": "passed",
+    "authenticatedApiCatalogEntries": 74,
+    "apiCatalogNote": "73 at the 2026-11-04 deployment; the added entry is runtime_installations",
+    "cleanupFailures": []
+  },
+  "rollback": {
+    "used": false,
+    "databaseRestoredInProduction": false,
+    "coreRecoveryPath": "/projects/miy-v2/.local/release-7b43789/core-1/rollback",
+    "coreRollbackCommand": "python3 .local/release-7b43789/source/scripts/core-rollout.py rollback --release-dir .local/release-7b43789/core-1",
+    "uiBackupPath": "/projects/miy-v2/.local/release-7b43789/ui/production-backup",
+    "uiRollbackCommand": "python3 scripts/ui-rollout.py rollback --release-dir .local/release-7b43789/ui",
+    "postStartupFailurePolicy": "Stop core for assessment; do not overwrite newly accepted writes automatically."
+  },
+  "attemptsPreserved": [
+    {
+      "check": "postdeploy-preservation",
+      "status": "SUPERSEDED",
+      "reason": "The first run (PASS) also reported postgresContainerSame, which compared the database container ID with itself and verified nothing. The field was removed and the read-only check re-run; postdeploy-preservation.json is the re-run."
+    }
+  ],
+  "notRun": [
+    "Windows/macOS installation acceptance",
+    "new CLI or Windows installer publication (unchanged at 01e4d49)",
+    "production writes for the deployed behaviors (company-disabled app stop/start and job reads, user enable/disable, registration decisions); exercised against real containers in the isolated regression of the prior validations",
+    "administrator group member screen: no existing groups",
+    "regular user app render: no visible running app",
+    "production rollback execution; the fresh dump was restored and migrate-checked in a disposable PostgreSQL before install"
+  ],
+  "evidence": {
+    "server-build.json": "evidence/core-runtime-management-20261105-linux/server-build.json",
+    "core-inspect.json": "evidence/core-runtime-management-20261105-linux/core-inspect.json",
+    "core-deployment-summary.json": "evidence/core-runtime-management-20261105-linux/core-deployment-summary.json",
+    "ui-build-manifest.json": "evidence/core-runtime-management-20261105-linux/ui-build-manifest.json",
+    "ui-rollout.json": "evidence/core-runtime-management-20261105-linux/ui-rollout.json",
+    "published-cli-provenance.json": "evidence/core-runtime-management-20261105-linux/published-cli-provenance.json",
+    "platform-connection.json": "evidence/core-runtime-management-20261105-linux/platform-connection.json",
+    "ui-postdeploy-smoke.json": "evidence/core-runtime-management-20261105-linux/ui-postdeploy-smoke.json",
+    "postdeploy-preservation.json": "evidence/core-runtime-management-20261105-linux/postdeploy-preservation.json"
+  },
+  "executionScriptsSha256": {
+    "scripts/core-rollout.py": "b414c0336725e5afe6823856210fbb4f33eddb9efe51b71fa461ad1c8cac368b",
+    "scripts/core-backup.py": "e7a8f50d6d4b194386d77438827a6fa4b8a4bf4e4911a35b78023c0a385014ee",
+    "scripts/check-db-connections.py": "78aa8eb13da3a01bb4d1454c2668bcda6122e8a19fa662d7d55128b4218bf412",
+    "scripts/ui-rollout.py": "42a5bdc119f61d189fb546a30dafb2f89f2e1c2b56194f13687b6b2c341262e1",
+    "scripts/check-platform-connection.mjs": "62868e0f7d0ae685a067652e0aa33a0146fdcd581658f4faf3d2d5bbe7a2a0c9",
+    "docs/releases/evidence/core-runtime-management-20261105-linux/fetch-published-cli.py": "a563e38f0f26bd7c2cbd0a62ee751aa99c32058d4abf75d55d08ca9c1a0cfc9b",
+    "docs/releases/evidence/core-runtime-management-20261105-linux/ui-postdeploy-smoke.mjs": "6d63b44847c3d123acb842123314ea9b52a10814c947b4a94e16f5d7f5898243",
+    "docs/releases/evidence/core-runtime-management-20261105-linux/postdeploy-preservation.py": "67be985146cabac313d9977dbad0f6238ea2a0a90c9a6d9ea79ee65ce8ab172f"
+  }
+}

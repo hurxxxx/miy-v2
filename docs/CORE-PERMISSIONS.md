@@ -41,7 +41,7 @@ HTTP MCP의 `get_installation_permissions`, `set_installation_permissions`도 �
 
 ## 사용자·그룹의 앱 권한과 회사 사용 중지
 
-2026-11-03 소스(migration `0018_groups_and_app_access.sql`)는 [PRD](PRD.md#앱-사용-권한과-앱-내부-데이터-권한)의 앱 사용 권한을 사용자와 그룹 두 주체로 넓힌다. 2026-11-04 운영 서버에 반영했다([배포 기록](releases/core-review-2026-11-04-deployment.json)). 이후 `main` 변경의 운영 반영 여부는 [운영 안내](SERVER-OPERATIONS.md#3-현재-배포-소스와-이-작업본의-차이)를 따른다.
+2026-11-03 소스(migration `0018_groups_and_app_access.sql`)는 [PRD](PRD.md#앱-사용-권한과-앱-내부-데이터-권한)의 앱 사용 권한을 사용자와 그룹 두 주체로 넓힌다. 2026-11-04 운영 서버에 반영했다([배포 기록](releases/core-review-2026-11-04-deployment.json)). 아래의 사용 중지 중 실행 관리와 관리자 재확인 보완은 2026-11-05 반영했다([배포 기록](releases/core-runtime-management-2026-11-05-deployment.json)). 이후 `main` 변경의 운영 반영 여부는 [운영 안내](SERVER-OPERATIONS.md#3-현재-배포-소스와-이-작업본의-차이)를 따른다.
 
 - **정본:** 그룹과 주 소속의 정본은 코어 DB다. Keycloak은 인증만 맡는다.
 - **그룹 종류:**

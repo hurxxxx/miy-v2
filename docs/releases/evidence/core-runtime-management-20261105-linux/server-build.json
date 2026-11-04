@@ -1,0 +1,11 @@
+{
+  "sourceCommit": "7b437890030f0da6f10dc6a76881891f353f31cf",
+  "workingTreeDirty": false,
+  "version": "miy 0.7.0",
+  "sha256": "d9ce25351221bce31d5342785a9906f6163fdc7d2bc83e468092d20613d5c46e",
+  "bytes": 30411536,
+  "command": "cargo build --release --locked -p miy -j 8",
+  "startedAt": "2026-11-04T22:07:30Z",
+  "finishedAt": "2026-11-04T22:08:18Z",
+  "checkout": "git worktree --detach at sourceCommit (.local/release-7b43789/source); CARGO_TARGET_DIR outside the checkout"
+}

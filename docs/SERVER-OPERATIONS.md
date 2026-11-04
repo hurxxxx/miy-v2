@@ -1,12 +1,20 @@
 # 현재 플랫폼 서버 운영·연결 안내
 
-- 확인일: 2026-11-04
+- 확인일: 2026-11-05
 - 플랫폼 주소: **https://v2.dwdcc.kr**
 - CLI 설치 안내: **https://v2.dwdcc.kr/cli/install**
 - 실행 서버·게시 CLI: **0.7.0**, SDK 번들 **0.8.0**
-- 배포 소스: 서버·웹 화면 `3406d9f5b9c8afbc55a0e3e8752cb178c61db0de`(2026-11-04 08:30 KST 반영), 게시 CLI `01e4d4924f8c8fc4e11720c1af81adf17ddb20bf`
+- 배포 소스: 서버·웹 화면 `7b437890030f0da6f10dc6a76881891f353f31cf`(2026-11-05 07:10 KST 반영), 게시 CLI `01e4d4924f8c8fc4e11720c1af81adf17ddb20bf`
 
-2026-11-04 사용자 요청으로 사용자·그룹 앱 권한, 감사 조회와 리뷰 보완을 운영에 반영했다([배포 결과](releases/core-review-2026-11-04-deployment.json), [배포 도구](releases/evidence/core-review-20261104-linux/deploy.py)). 아래 2026-11-03 기록은 이전 배포 이력이다.
+2026-11-05 사용자 요청으로 관리자 재확인 보완(`dec457e`)과 사용 중지된 앱의 관리자 실행 관리(`bedf96f`)를 §7의 도구로 반영했다([배포 결과](releases/core-runtime-management-2026-11-05-deployment.json)). migration은 없다.
+
+- 서버: 별도 clean checkout에서 빌드한 SHA-256 `d9ce25351221bce31d5342785a9906f6163fdc7d2bc83e468092d20613d5c46e`. serve·worker의 실제 실행 파일도 같은 해시다. 코어 중지 구간은 약 3초다. 중지 후 받은 덤프(231,290 bytes, 테이블 40개·행 1,464개)를 일회용 PostgreSQL에 복원해 새 바이너리의 migration 확인(schema 19 유지)을 통과한 뒤 설치했다.
+- 보존: 주요 레코드 13개 테이블의 내용 해시, 앱 컨테이너 7개의 ID·이미지·상태·시작 시각, PostgreSQL 네트워크 9개가 같다. 실행 앱 5개는 배포 후 모두 healthy이고 연결 예산은 **90 / 197 PASS**다.
+- UI: 기존 자산을 유지하고 새 자산 2개를 추가한 뒤 `index.html`을 원자적으로 교체했다. 공개 index와 새 자산의 해시가 일치한다.
+- 확인: 일반 IdP·게시 CLI·stdio MCP 연결 17항목, 읽기 위주 화면/API 14항목 PASS. 관리자 실행 관리 목록과 "앱 실행 상태" 패널 7개, 일반 사용자의 새 경로 403을 확인했다. 페이지 오류·차단된 변경 요청·세션 정리 실패는 0건이다. 그룹 구성원 화면(기존 그룹 없음)과 일반 사용자의 앱 렌더링(보이는 실행 앱 없음)은 NOT_RUN이다.
+- 복구 자료: `.local/release-7b43789/core-1/rollback/`의 이전 서버·덤프, `.local/release-7b43789/ui/production-backup/`의 이전 화면. 되돌리기 명령은 배포 결과의 `rollback`에 있다. 실제 운영 rollback은 사용하지 않았다. 게시 CLI와 Windows 설치 파일은 0.7.0(`01e4d49`) 그대로다.
+
+2026-11-04 사용자 요청으로 사용자·그룹 앱 권한, 감사 조회와 리뷰 보완을 운영에 반영했다([배포 결과](releases/core-review-2026-11-04-deployment.json), [배포 도구](releases/evidence/core-review-20261104-linux/deploy.py)). 이 기록과 아래 2026-11-03 기록은 이전 배포 이력이다.
 
 - 별도 clean checkout에서 빌드한 서버 SHA-256: `59407ce6d8853c8176054fb36afb92fa97585502cea1b5b04483d8a82ce91feb`. serve·worker의 실제 실행 파일도 같은 해시다. DB migration은 17→19, 코어 서비스 중지 구간은 약 35초였다.
 - 반영 전에 실제 운영 덤프를 격리 DB에 복원하고 비특권 소유자로 migration·신규 FK 데이터 작성·rollback을 수행했다. 35개 테이블의 행 수와 전체 행 내용 해시, 소유자·locale·ACL 복원이 일치했다. 서비스 중지 후 다시 받은 최종 백업은 218,503 bytes·1,444행이며, 별도 복원·migration 확인 후 반영했다.
@@ -95,16 +103,16 @@ Codex·Claude의 생성된 프로젝트 MCP는 프로젝트의 `.miy-tools/miy[.
 
 ## 3. 현재 배포 소스와 이 작업본의 차이
 
-실행 서버·worker·웹 화면은 `3406d9f5b9c8afbc55a0e3e8752cb178c61db0de`이고, 게시 CLI는 `01e4d4924f8c8fc4e11720c1af81adf17ddb20bf`다(모두 버전 0.7.0 / 번들 0.8.0). DB 역할 연결 한도·`application_name`·Docker 저장 공간 하한과 사용자·그룹 앱 권한·감사 조회 migration `0018`·`0019`는 2026-11-04 반영했다. 이후 `main` 변경은 자동 배포되지 않는다. `3406d9f` 이후 `main`에는 다음이 추가됐고 운영에는 아직 반영하지 않았다.
+실행 서버·worker·웹 화면은 `7b437890030f0da6f10dc6a76881891f353f31cf`이고, 게시 CLI는 `01e4d4924f8c8fc4e11720c1af81adf17ddb20bf`다(모두 버전 0.7.0 / 번들 0.8.0). DB 역할 연결 한도·`application_name`·Docker 저장 공간 하한과 사용자·그룹 앱 권한·감사 조회 migration `0018`·`0019`는 2026-11-04 반영했다. 2026-11-05에는 다음 두 변경을 반영했다([배포 결과](releases/core-runtime-management-2026-11-05-deployment.json)).
 
 - 사용자 활성 상태 변경과 앱 등록 결정의 관리자 재확인·감사 기록(`user.enabled`·`user.disabled`, 등록 승인의 `grant.enabled`) — [검증 기록](releases/core-admin-recheck-2026-11-04-validation.json)
-- 회사 사용 중지된 앱을 관리자 실행 관리 목록(`GET /api/v1/runtime/installations`)과 실행 작업 조회에 남기는 변경, 관리 화면 "앱 실행 상태"의 사용 중지 표시, §7의 유지 관리 배포 도구 — [검증 기록](releases/core-runtime-management-2026-11-04-validation.json)
+- 회사 사용 중지된 앱을 관리자 실행 관리 목록(`GET /api/v1/runtime/installations`)과 실행 작업 조회에 남기는 변경, 관리 화면 "앱 실행 상태"의 사용 중지 표시 — [검증 기록](releases/core-runtime-management-2026-11-04-validation.json)
 
-새 migration은 없다. 운영 반영은 사용자 요청과 별도 기록으로 하며 §7의 도구(서버 바이너리 교체, 웹 자산 추가·index 교체)를 쓴다.
+이후 `main` 변경은 자동 배포되지 않는다. 운영 반영은 사용자 요청과 별도 기록으로 하며 §7의 도구(서버 바이너리 교체, 웹 자산 추가·index 교체)를 쓴다.
 
 서버를 갱신할 때는 먼저 배포 대상 소스 commit과 현재 실행 파일을 확인한다. 같은 버전 문자열이라도 실제 source commit·빌드 경계·설치된 SQL과 게시된 배포물의 출처를 함께 확인한다. 새 배포는 검증한 소스의 별도 checkout에서 빌드하고, 서버/worker·UI·게시 index를 같은 검증 기록에 묶어 반영한다.
 
-현재 서버 바이너리 SHA-256은 `59407ce6d8853c8176054fb36afb92fa97585502cea1b5b04483d8a82ce91feb`다(직전 서버는 `615f19a4…`). 게시 CLI의 source commit과 target별 hash는 `GET /api/v1/cli/install`로 확인한다. 서버 바이너리는 default features 빌드이므로 클라이언트 전용 바이너리와 hash가 다르다.
+현재 서버 바이너리 SHA-256은 `d9ce25351221bce31d5342785a9906f6163fdc7d2bc83e468092d20613d5c46e`다(직전 서버는 `59407ce6…`). 게시 CLI의 source commit과 target별 hash는 `GET /api/v1/cli/install`로 확인한다. 서버 바이너리는 default features 빌드이므로 클라이언트 전용 바이너리와 hash가 다르다.
 
 배포와 이전 검증의 상세 이력은 [운영 소스의 0.6.3 반영 기록](https://github.com/hurxxxx/miy-v2/blob/7617246/docs/CLI-0.6.3-LINUX-VALIDATION.md)에 있다. 이 문서의 실제 연결 재검사 결과는 아래에 추가한다.
 

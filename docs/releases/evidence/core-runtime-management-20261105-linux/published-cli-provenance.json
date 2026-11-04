@@ -1,0 +1,9 @@
+{
+  "status": "PASS",
+  "sourceCommit": "01e4d4924f8c8fc4e11720c1af81adf17ddb20bf",
+  "cliVersion": "0.7.0",
+  "target": "x86_64-unknown-linux-gnu",
+  "archiveSha256": "446238a9bc971ea04a8c99596445f63100ed36efb9e0a75d14d6ac153b459a80",
+  "binarySha256": "47e1930cb3e6a2d278faf39e195b9da162a524b2f220c48ed05efd27e1198e85",
+  "downloadBytes": 6973404
+}

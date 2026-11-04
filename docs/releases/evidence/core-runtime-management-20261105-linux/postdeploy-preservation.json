@@ -1,0 +1,42 @@
+{
+  "status": "PASS",
+  "services": [
+    {
+      "service": "miy-v2-serve",
+      "ActiveState": "active",
+      "SubState": "running",
+      "MainPID": "3090945",
+      "NRestarts": "0",
+      "samePidAndBinaryAsRollout": true
+    },
+    {
+      "service": "miy-v2-worker",
+      "ActiveState": "active",
+      "SubState": "running",
+      "MainPID": "3090946",
+      "NRestarts": "0",
+      "samePidAndBinaryAsRollout": true
+    }
+  ],
+  "installedBinaryIsCandidate": true,
+  "database": {
+    "migrationVersion": 19,
+    "installations": 7,
+    "running": 5,
+    "healthyRunning": 5,
+    "activeWebSessions": 0,
+    "activeWork": 0
+  },
+  "stableRowCountsSinceRollout": "unchanged",
+  "appContainersPreserved": 7,
+  "appContainers": 7,
+  "runningAppContainers": 5,
+  "health": {
+    "status": "ok"
+  },
+  "connectionBudget": {
+    "status": "PASS",
+    "worstCase": 90,
+    "usableConnections": 197
+  }
+}
