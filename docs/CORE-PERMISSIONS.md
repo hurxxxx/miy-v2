@@ -51,7 +51,8 @@ HTTP MCP의 `get_installation_permissions`, `set_installation_permissions`도 �
 - **그룹 권한:** `use`와 `develop`만 줄 수 있다. 운영 배포(`deploy`)는 사람별로만 부여하며, 그룹에 요청하면 `400 group_permission_not_allowed`다.
 - **판정:** 권한 판정은 `effective_grants` 뷰(직접 권한 ∪ 현재 그룹 멤버십 ∪ 전체 허용)를 매번 계산한다. 그룹 권한을 사용자 권한 행으로 복사하지 않는다. 멤버십·주 소속·그룹 활성 상태가 바뀌면 다음 요청부터 반영되고, 대기 작업도 실행 시점에 같은 뷰로 다시 검사한다. 이 뷰를 쓰는 곳은 `authorize`·`can_manage`, 조회 API, 위임 범위, 개발 세션, worker의 develop 확인이다.
 - **입장 대상:** 앱·환경마다 `selected`(기본, 권한을 받은 사용자·그룹만)와 `all`(사용 중인 모든 사용자) 중 하나다. `all`은 명시적으로 고를 때만 적용된다.
-- **회사 사용 중지:** 앱 사용 경로(화면 자산, 앱 API 호출, 앱 간 호출 대상)는 `403 app_disabled`로 차단한다. 일반·페이지 설치 목록과 앱 상세의 설치 목록에는 같은 정책을 적용해 사용 불가능한 설치를 제외한다. 관리용 앱 이름·ID 목록은 유지한다. 관리자도 운영(prod) 사용 중지를 우회하지 못한다. 다만 그 앱의 개발 권한이 있는 사용자는 테스트(dev) 환경에서 앱을 고칠 수 있고, 실행 관리(시작·중지·배포)도 계속할 수 있다.
+- **회사 사용 중지:** 앱 사용 경로(화면 자산, 앱 API 호출, 앱 간 호출 대상)는 `403 app_disabled`로 차단한다. 일반·페이지 설치 목록과 앱 상세의 설치 목록에는 같은 정책을 적용해 사용 불가능한 설치를 제외한다. 관리용 앱 이름·ID 목록은 유지한다. 관리자도 운영(prod) 사용 중지를 우회하지 못한다. 다만 그 앱의 개발 권한이 있는 사용자는 테스트(dev) 환경에서 앱을 고칠 수 있다.
+- **사용 중지 중 실행 관리:** 사용 중지는 사용을 막고 실행 관리는 막지 않는다. 시작·중지·재시작·삭제·배포와 그 작업 상태 조회는 기존 실행 권한(dev는 `develop`, prod는 `deploy` 또는 관리자)으로 계속할 수 있다. 사용 권한만 있는 사용자는 작업 상태도 `app_disabled`로 거부된다. 관리자 실행 관리 목록(`GET /api/v1/runtime/installations`, 위임되지 않은 관리자 전용)은 사용 중지된 앱의 설치도 `appDisabled`와 함께 돌려주고, 지금 열 수 있는지는 서버 판정 `canOpen`으로 알린다. 관리 화면 "앱 실행 상태"는 이 목록으로 배지를 달고, 열 수 없는 설치에는 "앱 열기"를 표시하지 않는다.
 - **관리:** 위임되지 않은 관리자만 바꿀 수 있다. 그룹·앱 정책·개인 권한 변경, 사용자 활성 상태 변경, 앱 등록 승인·거절은 커밋 전에 현재 `admin AND enabled`를 다시 확인하고 사용자 행 잠금을 커밋까지 유지한다. 대상 잠금을 기다리는 동안 관리자 권한이 회수됐다면 변경과 감사 기록을 함께 취소한다. 주 소속·사용자 활성 상태 변경은 행위자·대상 사용자 행을 같은 ID 순서로 잠근다. 사용자 활성 상태는 변경 전에 확인하므로 관리자가 자신의 계정을 비활성화할 수 있다(마지막 활성 관리자는 제외).
 - **감사:** 개인 권한(`grant.enabled`·`grant.disabled`. 앱 등록 승인으로 요청자에게 생기는 dev `develop` 포함), 그룹·그룹 권한(`group.*`·`group_grant.*`), 사용자 활성 상태(`user.enabled`·`user.disabled`)와 주 소속(`user.primary_group_set`), 앱 정책(`app.admission_set`·`app.disabled`·`app.enabled`) 변경을 같은 트랜잭션에 기록한다. 개인 권한에는 사용자·앱·환경·권한, 사용자 활성 상태·주 소속에는 변경 전후 값을 남긴다. 플랫폼 관리 화면의 "사용자·그룹 권한"에서 다룬다.
 
@@ -60,17 +61,18 @@ GET|POST /api/v1/groups                  PATCH /api/v1/groups/{id}
 PUT /api/v1/groups/{id}/parent            GET|PUT /api/v1/groups/{id}/members
 PUT /api/v1/users/{id}/primary-group      GET|PUT /api/v1/group-grants
 GET /api/v1/apps/{app}/access             PUT /api/v1/apps/{app}/admission
-PUT /api/v1/apps/{app}/control
+PUT /api/v1/apps/{app}/control            GET /api/v1/runtime/installations
 ```
 
 감사 기록은 `GET /api/v1/audit`(관리자 전용)로 기간·행위자·동작 접두어(예: `grant.`, `group.`, `app.`)를 걸러 최신순으로 조회한다. `nextCursor`로 이전 기록을 이어 읽는다. 요청 미들웨어 기록은 `METHOD:status`와 경로, 도메인 변경은 위 동작 이름이다. 플랫폼 관리 화면의 "감사 기록"은 검색 조건과 해당 결과의 cursor를 함께 관리하며 새 검색이 실패하면 이전 페이지를 이어 붙이지 않는다. migration `0019_audit_query.sql`은 행위자·시각 인덱스만 추가한다. 별도 대상 종류·결과·요약 필드와 보존 정책은 V1-A1의 후속 범위다. 보존 기간은 PRD 미결정 사항이라 아직 삭제하지 않는다.
 
-격리 회귀는 실제 PostgreSQL·HTTP로 아래 규칙을 확인한다. 보완 소스의 실행 결과는 [리뷰 후 검증 기록](releases/core-review-2026-11-04-validation.json)과 이후 [관리자 재확인 보완 기록](releases/core-admin-recheck-2026-11-04-validation.json)에 남긴다.
+격리 회귀는 실제 PostgreSQL·HTTP로 아래 규칙을 확인한다. 보완 소스의 실행 결과는 [리뷰 후 검증 기록](releases/core-review-2026-11-04-validation.json), 이후 [관리자 재확인 보완 기록](releases/core-admin-recheck-2026-11-04-validation.json)과 [실행 관리 목록 기록](releases/core-runtime-management-2026-11-04-validation.json)에 남긴다.
 - 멤버 해제 즉시 회수, 복사된 권한 없음
 - 조직 정확 일치와 상속 없음, 순환 거부
 - `deploy` 거부와 develop의 dev 한정
 - `all` 입장 대상의 명시 선택과 해제
 - 관리자도 막는 회사 사용 중지와 개발자의 dev 수정
+- 사용 중지 중 관리자 실행 관리 목록(`appDisabled`·`canOpen`, 비관리자 거부)과 실제 운영 컨테이너 중지·시작·작업 조회(사용 권한만 있는 사용자는 거부)
 - 관리자 전용과 감사 기록(조회 API의 행위자·동작 필터와 cursor 포함)
 - 잠금 대기 중 관리자 권한 회수(사용자 활성 상태 변경·앱 등록 승인 포함), 변경·감사 기록의 원자성, 일반·페이지 설치 조회의 중지 정책 일치
 

@@ -256,7 +256,12 @@ pub async fn job(state: &State, p: &Principal, id: Uuid) -> ApiResult<Value> {
         .fetch_optional(&state.pool)
         .await?
         .ok_or_else(ApiError::not_found)?;
-    domain::authorize(state, p, row.get("app_id"), row.get("environment"), false).await?;
+    let (app, env): (String, String) = (row.get("app_id"), row.get("environment"));
+    // The company switch blocks use, not runtime control: whoever may still manage the
+    // installation can follow its jobs. Everyone else needs current use access.
+    if domain::manage(state, p, &app, &env).await.is_err() {
+        domain::authorize(state, p, &app, &env, false).await?;
+    }
     Ok(
         json!({"requestId":row.get::<String,_>("idempotency_key"),"imageId":row.get::<Option<String>,_>("image_id"),"createdAt":row.get::<chrono::DateTime<chrono::Utc>,_>("created_at"),"id":id,"appId":row.get::<String,_>("app_id"),"environment":row.get::<String,_>("environment"),"action":row.get::<String,_>("action"),"status":row.get::<String,_>("status"),"step":row.get::<String,_>("step"),"errorCode":row.get::<Option<String>,_>("error_code"),"failureClass":row.get::<Option<String>,_>("failure_class"),"retryable":row.get::<bool,_>("retryable"),"retryOf":row.get::<Option<Uuid>,_>("retry_of"),"installationId":row.get::<Option<Uuid>,_>("installation_id"),"releaseId":row.get::<Option<Uuid>,_>("release_id")}),
     )

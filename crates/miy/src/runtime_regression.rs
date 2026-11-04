@@ -234,6 +234,82 @@ async fn monitoring_boundaries(s: &State, admin: &auth::Principal) -> Result<()>
     Ok(())
 }
 
+/// The company switch blocks use, not runtime control (CORE-PERMISSIONS): an administrator
+/// still finds the disabled app in the runtime list, stops and starts the real prod container
+/// and follows each job. A user with only use loses the job together with the app.
+async fn disabled_app_runtime_control(
+    s: &State,
+    admin: &auth::Principal,
+    user: &auth::Principal,
+) -> Result<()> {
+    let pool = &s.pool;
+    sqlx::query("INSERT INTO grants VALUES('audit-user','audit-runtime','prod','use') ON CONFLICT DO NOTHING")
+        .execute(pool)
+        .await?;
+    let before = runtime::job(s, user, prod_job(pool).await?).await.is_ok();
+    sqlx::query("INSERT INTO app_controls(app_id,disabled,changed_by) VALUES('audit-runtime',true,'audit-admin') ON CONFLICT(app_id) DO UPDATE SET disabled=true")
+        .execute(pool)
+        .await?;
+    let observed = async {
+        let code = |e: crate::http::ApiError| anyhow::anyhow!(e.code);
+        let prod = |rows: &Value| {
+            rows.as_array().and_then(|rows| {
+                rows.iter()
+                    .find(|r| r["appId"] == "audit-runtime" && r["environment"] == "prod")
+                    .cloned()
+            })
+        };
+        let managed = prod(&crate::domain::managed_installations(s, admin).await.map_err(code)?)
+            .context("disabled prod left the runtime list")?;
+        let usable = prod(&crate::domain::installations(s, admin).await.map_err(code)?).is_some();
+        let list_denied = crate::domain::managed_installations(s, user).await.err().map(|e| e.code);
+        let stop = submit(s, admin, "stop", "prod", None, None, "disabled-app-stop").await?;
+        let stopped = finish(pool, stop).await?;
+        let container = inst(pool, "prod").await?;
+        let docker = runtime::inspect(container["runtimeContainer"].as_str().unwrap()).await?;
+        let admin_reads = runtime::job(s, admin, stop).await.is_ok();
+        let user_read = runtime::job(s, user, stop).await.err().map(|e| e.code);
+        let start = submit(s, admin, "start", "prod", None, None, "disabled-app-start").await?;
+        let started = finish(pool, start).await?;
+        let running = inst(pool, "prod").await?;
+        Ok::<_, anyhow::Error>(json!({
+            "managed":{"appDisabled":managed["appDisabled"],"canOpen":managed["canOpen"],"canManage":managed["canManage"]},
+            "usageListed":usable,"nonAdminList":list_denied,"stop":stopped,"stoppedContainerRunning":docker["State"]["Running"],
+            "adminReadsJob":admin_reads,"useOnlyJobRead":user_read,"start":started,"runtimeAfterStart":running["runtimeStatus"],
+        }))
+    }
+    .await;
+    // Later cases expect an enabled app without the extra grant, whatever happened above.
+    sqlx::query("DELETE FROM app_controls WHERE app_id='audit-runtime'")
+        .execute(pool)
+        .await?;
+    sqlx::query("DELETE FROM grants WHERE user_id='audit-user' AND app_id='audit-runtime'")
+        .execute(pool)
+        .await?;
+    let e = observed?;
+    report(
+        "company-disabled app stays in administrator runtime control",
+        before
+            && e["managed"] == json!({"appDisabled":true,"canOpen":false,"canManage":true})
+            && e["usageListed"] == false
+            && e["nonAdminList"] == "forbidden"
+            && e["stop"]["status"] == "succeeded"
+            && e["stoppedContainerRunning"] == false
+            && e["adminReadsJob"] == true
+            && e["useOnlyJobRead"] == "app_disabled"
+            && e["start"]["status"] == "succeeded"
+            && e["runtimeAfterStart"] == "running",
+        json!({"useOnlyJobReadBeforeDisable":before,"observed":e}),
+    );
+    Ok(())
+}
+async fn prod_job(pool: &sqlx::PgPool) -> Result<Uuid> {
+    Ok(sqlx::query_scalar(
+        "SELECT id FROM runtime_jobs WHERE app_id='audit-runtime' AND environment='prod' ORDER BY created_at DESC LIMIT 1",
+    )
+    .fetch_one(pool)
+    .await?)
+}
 fn worker_application_name(process: u32) -> String {
     format!("miy-audit-worker-{process}")
 }
@@ -931,6 +1007,7 @@ async fn isolated_runtime_regression() -> Result<()> {
             && prodcount == 0,
         json!({"dev":initial,"prod":prod,"serverLocalImage":prod_container["Image"],"initialProdRows":prodcount}),
     );
+    disabled_app_runtime_control(&s, &admin, &ordinary).await?;
     let ddl = devdb.execute("CREATE TABLE app.forbidden(id int)").await;
     let history = devdb.execute("DELETE FROM app._sqlx_migrations").await;
     report(

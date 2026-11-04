@@ -95,7 +95,12 @@ Codex·Claude의 생성된 프로젝트 MCP는 프로젝트의 `.miy-tools/miy[.
 
 ## 3. 현재 배포 소스와 이 작업본의 차이
 
-실행 서버·worker·웹 화면은 `3406d9f5b9c8afbc55a0e3e8752cb178c61db0de`이고, 게시 CLI는 `01e4d4924f8c8fc4e11720c1af81adf17ddb20bf`다(모두 버전 0.7.0 / 번들 0.8.0). DB 역할 연결 한도·`application_name`·Docker 저장 공간 하한과 사용자·그룹 앱 권한·감사 조회 migration `0018`·`0019`는 2026-11-04 반영했다. 이후 `main` 변경은 자동 배포되지 않는다. `3406d9f` 이후 `main`에는 사용자 활성 상태 변경과 앱 등록 결정의 관리자 재확인·감사 기록(`user.enabled`·`user.disabled`, 등록 승인의 `grant.enabled`)이 추가됐고([검증 기록](releases/core-admin-recheck-2026-11-04-validation.json)) 운영에는 아직 반영하지 않았다. 운영 반영은 사용자 요청과 별도 기록으로 하며, 반영 전 §6의 최소 백업과 `--migrate-with` 리허설을 수행한다.
+실행 서버·worker·웹 화면은 `3406d9f5b9c8afbc55a0e3e8752cb178c61db0de`이고, 게시 CLI는 `01e4d4924f8c8fc4e11720c1af81adf17ddb20bf`다(모두 버전 0.7.0 / 번들 0.8.0). DB 역할 연결 한도·`application_name`·Docker 저장 공간 하한과 사용자·그룹 앱 권한·감사 조회 migration `0018`·`0019`는 2026-11-04 반영했다. 이후 `main` 변경은 자동 배포되지 않는다. `3406d9f` 이후 `main`에는 다음이 추가됐고 운영에는 아직 반영하지 않았다.
+
+- 사용자 활성 상태 변경과 앱 등록 결정의 관리자 재확인·감사 기록(`user.enabled`·`user.disabled`, 등록 승인의 `grant.enabled`) — [검증 기록](releases/core-admin-recheck-2026-11-04-validation.json)
+- 회사 사용 중지된 앱을 관리자 실행 관리 목록(`GET /api/v1/runtime/installations`)과 실행 작업 조회에 남기는 변경, 관리 화면 "앱 실행 상태"의 사용 중지 표시, §7의 유지 관리 배포 도구 — [검증 기록](releases/core-runtime-management-2026-11-04-validation.json)
+
+새 migration은 없다. 운영 반영은 사용자 요청과 별도 기록으로 하며 §7의 도구(서버 바이너리 교체, 웹 자산 추가·index 교체)를 쓴다.
 
 서버를 갱신할 때는 먼저 배포 대상 소스 commit과 현재 실행 파일을 확인한다. 같은 버전 문자열이라도 실제 source commit·빌드 경계·설치된 SQL과 게시된 배포물의 출처를 함께 확인한다. 새 배포는 검증한 소스의 별도 checkout에서 빌드하고, 서버/worker·UI·게시 index를 같은 검증 기록에 묶어 반영한다.
 
@@ -167,20 +172,43 @@ python3 scripts/check-db-connections.py
 - `create`: 운영 `miy_core`를 서비스 중지 없이 읽기만 한다. 덤프와 테이블별 행 수를 같은 REPEATABLE READ 스냅샷에서 얻어 `manifest.json`에 기록한다. 덤프와 manifest는 0600, 폴더는 0700이다.
 - `verify`: 라벨을 붙인 일회용 PostgreSQL(tmpfs)에 복원해 migration 버전과 모든 테이블 행 수를 대조한다. `--migrate-with`를 주면 반영할 바이너리의 core migration을 복원본에 먼저 적용해 리허설한다. 소유 라벨과 전체 컨테이너 ID가 일치할 때만 지우고, 성공한 목록 조회로 부재를 확인해야 정리 완료로 보고한다. Docker 연결·조회 오류나 삭제 실패는 `FAIL`이며 `cleanupError`를 남긴다.
 - 첫 실행(2026-11-03 21:57 KST): 덤프 214,693 bytes, migration 17, 테이블 35개·행 1,365개. 복원 대조 PASS, 현재 소스 바이너리로 migration 리허설 종료코드 0, 일회용 컨테이너 삭제. 행 수 하나를 바꾼 manifest는 FAIL로 거부됐다.
-- 서비스를 멈춘 상태의 일관된 덤프가 필요한 실제 반영은 [0.7.0 배포 스크립트](releases/evidence/core-0.7.0-linux/deploy.py)처럼 반영 절차 안에서 다시 백업한다.
+- 서비스를 멈춘 상태의 일관된 덤프가 필요한 실제 반영은 §7의 `core-rollout.py apply`가 코어를 멈춘 뒤 다시 백업하고, 별도 복원·migration 확인을 통과해야 설치한다.
 
 `check-db-connections.py`는 공유 PostgreSQL의 최악의 연결 수(코어 풀·병렬 관리 연결·Keycloak 풀·설치 역할 한도·활성 개발 세션)를 사용 가능 연결과 비교한다. 2026-11-03 운영 결과는 FAIL이었다. 당시 설치 역할 14개에 연결 한도가 없고, Keycloak 풀이 기본값 100이라 당시 계산의 최악 122가 사용 가능한 97을 넘었다. 현재 계산은 관리 연결 4개를 포함하며 [연결 예산](CAPACITY.md#연결-예산-현재-구현-2026-11-04)을 따른다.
 
 새 코어는 앱 배포뿐 아니라 worker 시작 때도 기존 설치 역할 한도(runtime 6, migration 2)를 맞춘다. 코어가 생성하는 `miy_r_`·`miy_m_`와 32자리 소문자 16진수 ID 형식만 허용한다. 시작 시 적용이 실패하면 경고를 기록하고 다음 worker 시작 또는 해당 앱 배포 때 다시 적용한다. compose는 PostgreSQL `max_connections=200`, Keycloak `KC_DB_POOL_MAX_SIZE=10`을 설정한다. 소스 변경만으로 기존 운영 설정이나 역할 한도가 바뀌지 않으므로 운영 반영 후 예산을 다시 측정한다.
 
-## 7. 7d3c66a 전용 배포·복구 도구의 범위
+## 7. 배포 도구
 
-[배포 도구](releases/evidence/core-0.7.0-7d3c66a-linux/deploy.py)는 해당 소스의 0.7.0 서버와 core migration 17→19를 위한 특정 호스트 도구다. 이후 소스의 배포 검증이나 범용 updater로 취급하지 않는다. 2026-11-04 리뷰 보완은 이 도구를 실행해 운영에 반영한 기록이 아니다.
+운영 반영은 저장소에서 계속 관리하는 두 도구로 한다. 반영할 commit의 별도 clean checkout에 있는 사본을 실행하며, `scripts/test-core-ops.py`가 같은 파일의 실패 경계를 모의 시험한다. 배포별 증거 디렉터리의 이전 도구(`core-0.7.0-linux`, `core-0.7.0-7d3c66a-linux`, `core-review-20261104-linux`)는 실행 당시 기록이므로 고치거나 다시 쓰지 않는다.
 
-- 단일 실행 잠금과 새로운 복구 디렉터리를 요구하며, 기존 `rollback`이 있으면 덮어쓰지 않는다. 후보 바이너리를 복사해 검증·migration·설치가 같은 바이트를 사용한다.
-- 서비스 중지 전 DB 소유자·UTF8·locale·libc provider·PUBLIC 권한 회수가 복원 계약과 같은지 확인한다. serve·worker 각각의 중지와 시작 상태를 확인한다.
-- 코어 중지 후 `rollback/core/miy_core.dump`를 만들고, 일회용 PostgreSQL에서 실제 복원·migration 검증과 정리를 통과한 뒤 운영 설정·schema 변경을 시작한다.
-- 복구 시 현재 DB의 재접속을 막고 고유 이름으로 보존한 뒤 빈 DB에 덤프를 복원한다. 덤프·기존 바이너리 해시와 복원 성공을 확인하기 전 서비스를 다시 시작하지 않는다. 복구에 실패하면 `ROLLBACK_FAILED`를 기록하고 수동 복구가 필요하다.
-- PostgreSQL 설정 변경은 기존 컨테이너를 재시작해 앱별 네트워크 연결을 보존한다. 실행 중 앱의 DB 연결에는 영향이 있으므로 별도 운영 반영 절차로 수행한다. 전원 장애·SIGKILL 이후 자동 복구는 구현 범위에 없다.
+**서버 `scripts/core-rollout.py`**
 
-리뷰 당시 모의 시험과 합성 DB 복원 결과는 [리뷰 후 검증 기록](releases/core-review-2026-11-04-validation.json)에 있다. 이후 `3406d9f`의 실제 운영 덤프 리허설·배포 결과는 [별도 기록](releases/core-review-2026-11-04-deployment.json)으로 관리한다. 실제 Windows 인수는 별도다.
+- **범위:** core migration 집합이 운영 DB와 같은 소스의 서버 바이너리 교체만 한다. 소스의 migration이 많거나 적으면 `migration_rollout_not_supported`·`source_schema_older_than_live`로 거부한다. PostgreSQL 연결 한도와 Keycloak 풀은 기대값(기본 200·10)과 같은지 확인만 하고 바꾸지 않는다. migration·설정 전환이 필요한 반영은 실제 덤프 rollback 리허설을 포함하도록 이 도구를 먼저 확장한다.
+- **`inspect`(기본):** 바꾸지 않고 `apply`의 사전 확인만 한다. 소스 commit·clean 상태, 실행 중인 도구와 소스 사본의 일치, 후보 해시·버전, 설치 파일과 serve·worker 실제 실행 파일의 해시, schema, 연결 설정·예산, health·게시 CLI 안내, 대기 작업 0, 앱 컨테이너를 확인한다.
+- **`apply`:** 같은 확인 후 코어를 멈추고 대기 작업을 다시 확인한다. 새 덤프를 일회용 PostgreSQL에 복원해 행 수와 후보의 migration(변경 없음)을 확인해야 설치한다. 시작 후 health·게시 CLI 안내·실행 파일 해시·schema·주요 레코드 해시·앱 컨테이너·연결 예산을 확인한다.
+- **실패 처리:** 후보 시작 전 실패는 해시를 확인한 이전 바이너리를 다시 설치하고 코어를 시작한다(`ROLLED_BACK`). 시작 후 실패는 새로 받은 쓰기를 덮어쓰지 않도록 코어를 멈춘다(`POST_START_FAILED`). 운영자가 판단한 뒤 `rollback`으로 이전 바이너리를 다시 설치·시작한다. 보관한 바이너리 해시가 다르거나 설치 파일이 이 반영의 것이 아니면 시작하지 않는다. 시작 직후 사용자의 정상 쓰기도 레코드 해시 비교를 실패시킬 수 있으므로 이용이 적은 시간에 반영한다.
+- **기록:** 시도마다 `.local` 아래 새 `--release-dir`(0700)에 이전·후보 바이너리와 덤프(`rollback/`), 명령·종료 코드만 담은 `deployment.json`(0600)을 남긴다. 출력과 기록에 비밀값·행 내용을 넣지 않는다.
+
+```sh
+python3 <checkout>/scripts/core-rollout.py inspect --source <checkout> --commit <commit> \
+  --candidate <checkout>/target/release/miy --candidate-sha256 <후보> --installed-sha256 <현재>
+python3 <checkout>/scripts/core-rollout.py apply <같은 인수> --release-dir .local/release-<commit>-<시도>
+python3 <checkout>/scripts/core-rollout.py rollback --release-dir <같은 경로>
+```
+
+**웹 화면 `scripts/ui-rollout.py`**
+
+- **`build`:** checkout이 `--commit`에 있고 빌드 입력(루트 `package.json`·lock·workspace·`tsconfig.json`, `packages/`, `web/platform/`)이 깨끗할 때만 `<release>/dist`에 빌드한다. `VITE_*` 환경 변수가 있으면 거부한다. 입력 파일·후보 파일·현재 운영 index의 해시를 `manifest.json`에 묶는다. 운영 dist에는 빌드하지 않는다.
+- **`inspect`(기본):** 후보와 운영 dist를 비교하고, manifest의 입력 해시가 commit의 파일과 같은지 확인한다.
+- **`apply --expected-commit`:** 운영 dist를 `<release>/production-backup`에 복사·검증한다. 같은 이름의 다른 파일이 있거나 빌드 뒤 운영 index가 바뀌었으면 아무것도 바꾸지 않고 거부한다. 새 파일만 추가한 뒤 `index.html`을 원자적으로 바꾼다.
+- **`rollback`:** 백업의 `index.html`로 되돌린다. 두 세대의 자산은 모두 남긴다.
+
+```sh
+python3 scripts/ui-rollout.py build --release-dir .local/release-<commit>-ui --commit <commit>  # --source-root 기본값은 이 checkout(의존성 설치 필요)
+python3 scripts/ui-rollout.py inspect --release-dir <같은 경로>
+python3 scripts/ui-rollout.py apply --release-dir <같은 경로> --expected-commit <commit>
+python3 scripts/ui-rollout.py rollback --release-dir <같은 경로>
+```
+
+서버를 반영하고 확인한 다음 웹 화면을 반영한다. 반영 후 읽기 위주 확인은 §5의 연결 검사와 별도 브라우저 확인으로 한다. 게시 CLI·Windows 설치 파일 교체는 이 도구의 범위가 아니다([CLI 릴리스](CLI-RELEASE.md)).

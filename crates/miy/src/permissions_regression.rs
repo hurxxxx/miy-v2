@@ -1416,6 +1416,46 @@ async fn groups(h: &mut Harness<'_>, suffix: &str, passed: &mut Vec<String>) -> 
         blocked["error"]["code"] == "app_disabled",
         "disabled app call lacks a stable code: {blocked}"
     );
+    // Runtime management is not use: administrators keep the installation to stop or
+    // remove it, but it is not openable in prod; others cannot read this list.
+    let entry = |rows: &Value, app: &App| {
+        rows.as_array().and_then(|rows| {
+            rows.iter()
+                .find(|row| row["id"] == json!(app.installation))
+                .cloned()
+        })
+    };
+    let managed = response(
+        h.request(
+            &operator.token,
+            Method::GET,
+            "/api/v1/runtime/installations",
+        )
+        .send()
+        .await?,
+        200,
+    )
+    .await?;
+    let managed_prod = entry(&managed, &prod).context("disabled prod left runtime management")?;
+    let managed_dev = entry(&managed, &dev).context("disabled dev left runtime management")?;
+    ensure!(
+        managed_prod["appDisabled"] == true
+            && managed_prod["canOpen"] == false
+            && managed_prod["canManage"] == true,
+        "runtime management view of a disabled prod app: {managed_prod}"
+    );
+    ensure!(
+        managed_dev["appDisabled"] == true && managed_dev["canOpen"] == true,
+        "administrator lost dev repair of a disabled app: {managed_dev}"
+    );
+    for actor in [&carol, &erin] {
+        denied(
+            h.request(&actor.token, Method::GET, "/api/v1/runtime/installations")
+                .send()
+                .await?,
+        )
+        .await?;
+    }
     admin(
         Method::PUT,
         format!("/api/v1/apps/{app}/control"),
@@ -1429,7 +1469,24 @@ async fn groups(h: &mut Harness<'_>, suffix: &str, passed: &mut Vec<String>) -> 
     );
     h.visibility_consistent(&operator, &prod, true).await?;
     h.visibility_consistent(&erin, &dev, true).await?;
-    passed.push("the company switch consistently filters default, paged and app-detail installations; developers keep dev and re-enabling restores use".into());
+    let managed = response(
+        h.request(
+            &operator.token,
+            Method::GET,
+            "/api/v1/runtime/installations",
+        )
+        .send()
+        .await?,
+        200,
+    )
+    .await?;
+    let managed_prod =
+        entry(&managed, &prod).context("enabled prod missing from runtime management")?;
+    ensure!(
+        managed_prod["appDisabled"] == false && managed_prod["canOpen"] == true,
+        "re-enabling did not reach runtime management: {managed_prod}"
+    );
+    passed.push("the company switch consistently filters default, paged and app-detail installations; developers keep dev and re-enabling restores use; administrators keep the disabled app in runtime management, unopenable in prod, and non-administrators cannot read that list".into());
 
     denied(
         h.request(&carol.token, Method::GET, "/api/v1/groups")

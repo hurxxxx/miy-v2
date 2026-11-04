@@ -208,6 +208,10 @@ pub fn router(state: State) -> Router {
             axum::routing::get(crate::runtime_logs::get),
         )
         .route("/runtime/jobs", axum::routing::get(crate::read_api::jobs))
+        .route(
+            "/runtime/installations",
+            axum::routing::get(managed_installations),
+        )
         .route("/runtime/jobs/{id}", axum::routing::get(runtime_job))
         .route(
             "/runtime/jobs/{id}/events",
@@ -690,6 +694,9 @@ async fn installations(
     } else {
         Ok(Json(domain::installations(&s, &p).await?))
     }
+}
+async fn managed_installations(S(s): S<State>, axum::Extension(p): P) -> ApiResult<Json<Value>> {
+    Ok(Json(domain::managed_installations(&s, &p).await?))
 }
 async fn create_installation(
     S(s): S<State>,

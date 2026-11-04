@@ -276,23 +276,43 @@ pub async fn create_installation(
         json!({"id":id,"appId":v.app_id,"environment":v.environment,"runtimeStatus":"not_deployed","desiredState":"stopped"}),
     )
 }
+/// Installations the user may open now (rail, launcher, app detail).
 pub async fn installations(state: &State, p: &Principal) -> ApiResult<Value> {
-    let rows=sqlx::query("SELECT i.*,a.name,r.artifact_hash,r.manifest,r.image_id,r.source_commit,(SELECT jsonb_build_object('recordedBy',c.actor,'note',c.note,'checks',c.checks,'structured',jsonb_array_length(c.checks)>0,'checkedAt',c.checked_at) FROM release_checks c WHERE c.release_id=r.id) AS acceptance FROM installations i JOIN apps a ON a.id=i.app_id JOIN releases r ON r.id=i.release_id ORDER BY a.name,i.environment")
+    installation_list(state, p, false).await
+}
+/// Administrator runtime management. The company switch blocks use, not runtime control,
+/// so disabled apps stay listed with `appDisabled`; `canOpen` is the current use decision.
+pub async fn managed_installations(state: &State, p: &Principal) -> ApiResult<Value> {
+    admin(state, p).await?;
+    installation_list(state, p, true).await
+}
+async fn installation_list(state: &State, p: &Principal, managed: bool) -> ApiResult<Value> {
+    let rows=sqlx::query("SELECT i.*,a.name,r.artifact_hash,r.manifest,r.image_id,r.source_commit,EXISTS(SELECT 1 FROM app_controls c WHERE c.app_id=i.app_id AND c.disabled) AS app_disabled,(SELECT jsonb_build_object('recordedBy',c.actor,'note',c.note,'checks',c.checks,'structured',jsonb_array_length(c.checks)>0,'checkedAt',c.checked_at) FROM release_checks c WHERE c.release_id=r.id) AS acceptance FROM installations i JOIN apps a ON a.id=i.app_id JOIN releases r ON r.id=i.release_id ORDER BY a.name,i.environment")
         .fetch_all(&state.pool).await?;
     let mut out = vec![];
     for r in rows {
         let app: String = r.get("app_id");
         let env: String = r.get("environment");
-        if authorize(state, p, &app, &env, false).await.is_err() {
+        let usable = authorize(state, p, &app, &env, false).await.is_ok();
+        if !managed && !usable {
+            continue;
+        }
+        let can_manage = manage(state, p, &app, &env).await.is_ok();
+        if managed && !can_manage {
             continue;
         }
         let m: Manifest = serde_json::from_value(r.get("manifest"))?;
-        out.push(json!({"id":r.get::<Uuid,_>("id"),"appId":app,"name":r.get::<String,_>("name"),"manifestName":m.name,"version":m.version,"acceptance":if manage(state,p,&app,&env).await.is_ok() {r.get::<Option<Value>,_>("acceptance")} else {None},"environment":env,"releaseId":r.get::<Uuid,_>("release_id"),
+        let mut item = json!({"id":r.get::<Uuid,_>("id"),"appId":app,"name":r.get::<String,_>("name"),"manifestName":m.name,"version":m.version,"acceptance":if can_manage {r.get::<Option<Value>,_>("acceptance")} else {None},"environment":env,"releaseId":r.get::<Uuid,_>("release_id"),
             "dbStatus":r.get::<String,_>("db_status"),"runtimeStatus":r.get::<String,_>("runtime_status"),"desiredState":r.get::<String,_>("desired_state"),
             "health":{"status":r.get::<String,_>("health_status"),"consecutiveFailures":r.get::<i32,_>("health_failures"),"checkedAt":r.get::<Option<chrono::DateTime<chrono::Utc>>,_>("health_checked_at"),"errorCode":r.get::<Option<String>,_>("health_error")},
-            "canManage":manage(state,p,&app,&env).await.is_ok(),"canPromote":manage(state,p,&app,"prod").await.is_ok(),
+            "canManage":can_manage,"canPromote":manage(state,p,&app,"prod").await.is_ok(),
             "imageId":r.get::<Option<String>,_>("image_id"),"sourceCommit":r.get::<Option<String>,_>("source_commit"),
-            "ui":{"entry":format!("/artifacts/{}/ui/{}",r.get::<String,_>("artifact_hash"),m.ui.module_entry),"export":m.ui.module_export,"contractVersion":m.ui.contract_version},"kind":if r.get::<Option<String>,_>("image_id").is_some(){"docker_app"}else{"validation_fixture"}}));
+            "ui":{"entry":format!("/artifacts/{}/ui/{}",r.get::<String,_>("artifact_hash"),m.ui.module_entry),"export":m.ui.module_export,"contractVersion":m.ui.contract_version},"kind":if r.get::<Option<String>,_>("image_id").is_some(){"docker_app"}else{"validation_fixture"}});
+        if managed {
+            item["appDisabled"] = json!(r.get::<bool, _>("app_disabled"));
+            item["canOpen"] = json!(usable);
+        }
+        out.push(item);
     }
     Ok(json!(out))
 }
@@ -490,7 +510,8 @@ pub fn catalog() -> Value {
         {"id":"prepare_database","method":"POST","path":"/api/v1/database/prepare","permission":"develop on installation","description":"Prepare one installation DB and apply a registered release's migrations","input":schemars::schema_for!(Prepare)},
         {"id":"get_job","method":"GET","path":"/api/v1/jobs/{id}","permission":"use or develop on installation","description":"Read persistent database job state"},
         {"id":"runtime_request","method":"POST","path":"/api/v1/apps/{app}/runtime","permission":"dev/develop or prod/deploy; administrator implicit","description":"Deploy uploaded immutable image to dev; promote accepted release unchanged to prod; start/stop/restart/remove without restarting the platform. Remove preserves database.","input":schemars::schema_for!(crate::runtime::RuntimeRequest)},
-        {"id":"runtime_job","method":"GET","path":"/api/v1/runtime/jobs/{id}","permission":"use or develop on app/environment","description":"Read deployment or lifecycle job state"},
+        {"id":"runtime_job","method":"GET","path":"/api/v1/runtime/jobs/{id}","permission":"use or develop on app/environment; runtime managers also while the app is company-disabled","description":"Read deployment or lifecycle job state"},
+        {"id":"runtime_installations","method":"GET","path":"/api/v1/runtime/installations","permission":"non-delegated admin with miy.dev","description":"Runtime management list: installations the administrator can manage, including company-disabled apps (appDisabled). canOpen is the current use decision; opening and app APIs stay blocked while disabled."},
         {"id":"app_api_get","method":"GET","path":"/api/v1/installations/{id}/api/{path}","permission":"use or develop on installation","description":"Forward app-relative API path with verified signed identity. App enforces record ownership."},
         {"id":"app_api_post","method":"POST","path":"/api/v1/installations/{id}/api/{path}","permission":"use or develop on installation","description":"Forward mutation with CSRF and x-miy-release header matching active release"},
         {"id":"app_api_patch","method":"PATCH","path":"/api/v1/installations/{id}/api/{path}","permission":"use or develop on installation","description":"Forward app record update with CSRF and current release"},

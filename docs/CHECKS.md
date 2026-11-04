@@ -14,7 +14,7 @@
 
 GitHub Actions는 `cli-foundation.yml`(Linux 서버·Linux/macOS/Windows 클라이언트의 fmt·Clippy·test·CLI 검사)과 `web.yml`(정적 `scripts`·`web`)을 실행한다. CI 통과를 격리 Docker·로컬 스택·운영 검사의 통과로 옮기지 않는다.
 
-`scripts/test-core-ops.py`는 백업 정리·연결 예산·특정 호스트 배포/복구 도구의 실패 경계를 모든 외부 명령을 대체한 모의 시험으로 검사한다. 운영 배포를 실행하지 않는다. 격리 runtime 도구는 CLI와 테스트 실행 파일을 검증 디렉터리에 복사해 고정하며, worker 자식도 같은 테스트 실행 파일을 사용한다. 다른 Cargo 빌드가 공유 `target`을 바꿔도 실행 중인 회귀의 자식 파일 경로가 사라지지 않게 한다.
+`scripts/test-core-ops.py`는 백업 정리·연결 예산과 유지 관리하는 배포 도구(`scripts/core-rollout.py`, `scripts/ui-rollout.py`)의 실패 경계를 모든 외부 명령을 대체한 모의 시험으로 검사한다. 운영 배포를 실행하지 않는다. `docs/releases/evidence/`의 배포별 도구 사본은 당시 기록이며 검사 대상이 아니다. 격리 runtime 도구는 CLI와 테스트 실행 파일을 검증 디렉터리에 복사해 고정하며, worker 자식도 같은 테스트 실행 파일을 사용한다. 다른 Cargo 빌드가 공유 `target`을 바꿔도 실행 중인 회귀의 자식 파일 경로가 사라지지 않게 한다.
 
 ## 변경 영역별 최소 검사
 
@@ -30,7 +30,7 @@ GitHub Actions는 `cli-foundation.yml`(Linux 서버·Linux/macOS/Windows 클라�
 | 검증·정리 스크립트(`scripts/`) | `check-static.sh scripts` | 자원을 지우는 스크립트는 소유 표식·기존 자원 보존을 stub 테스트로 확인 |
 | 릴리스·설치 파일(`scripts/package-*`, `stage-*`, 릴리스 workflow) | `check-static.sh scripts` | GitHub Actions 후보 실행(`publish=false`) 후 `package-cli-release.py verify`, `package-windows-installer.py verify`. Windows 11 실제 설치는 [Windows 인수](WINDOWS-ACCEPTANCE.md)로 사용자가 수행 |
 | 서버 구성 생성(`bootstrap.py`, `render-server-config.py`, `configure-identity.py`) | `check-static.sh scripts`(`check-server-config.py` 포함) | 운영 `.local`에 bootstrap·seed·Keycloak 재설정을 실행하지 않는다 |
-| 운영 반영(v2.dwdcc.kr) | 위 해당 검사 전부, 변경 범위의 백업과 별도 영역 복원 확인(`core-backup.py`), 연결 예산(`check-db-connections.py`) | health·설치 안내 버전, 게시 CLI로 `node scripts/check-platform-connection.mjs`, 읽기 위주 브라우저 확인, 운영 기록 갱신 |
+| 운영 반영(v2.dwdcc.kr) | 위 해당 검사 전부, [배포 도구](SERVER-OPERATIONS.md#7-배포-도구)의 `inspect`(백업·별도 복원 확인과 연결 예산은 `core-rollout.py apply`가 수행) | health·설치 안내 버전, 게시 CLI로 `node scripts/check-platform-connection.mjs`, 읽기 위주 브라우저 확인, 운영 기록 갱신 |
 
 ## 루트 Playwright 설정
 

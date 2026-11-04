@@ -37,7 +37,9 @@ test("service health changes independently from process controls", async ({
         ? { id: "fixture", name: "검증 관리자", admin: true, csrf: "fixture" }
         : url.pathname === "/api/v1/installations"
           ? [app]
-          : [];
+          : url.pathname === "/api/v1/runtime/installations"
+            ? [{ ...app, appDisabled: false, canOpen: true }]
+            : [];
     await route.fulfill({ json: value });
   });
   await page.goto("/environments/dev");

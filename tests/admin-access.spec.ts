@@ -49,6 +49,8 @@ async function mock(page: Page) {
   };
   const apps = [{ id: "ledger", name: "장부" }];
   const accessByApp: Record<string, typeof access> = { ledger: access };
+  // Administrator runtime list (GET /api/v1/runtime/installations); empty unless a test fills it.
+  const managed: Record<string, unknown>[] = [];
   const auditQueries: URLSearchParams[] = [];
   const audit = [
     {
@@ -140,6 +142,9 @@ async function mock(page: Page) {
         groups.find((g) => g.id === member[1])!.members = list.length;
         return route.fulfill({ status: 200, json: { updated: true } });
       }
+      if (path.endsWith("/runtime/preflight"))
+        return route.fulfill({ status: 200, json: { canSubmit: true, expectedState: {}, changes: [] } });
+      if (path.endsWith("/runtime")) return route.fulfill({ status: 200, json: { id: "runtime-job" } });
       if (path === "/api/v1/apps/ledger/control") access.disabled = body.disabled;
       if (path === "/api/v1/apps/ledger/admission") access.admission[body.environment as "dev" | "prod"] = body.mode;
       if (path === "/api/v1/group-grants") {
@@ -167,7 +172,11 @@ async function mock(page: Page) {
         ? admin
         : path === "/api/v1/installations"
           ? []
-          : path === "/api/v1/app-registrations"
+          : path === "/api/v1/runtime/installations"
+            ? managed
+            : path === "/api/v1/runtime/jobs/runtime-job"
+              ? { status: "succeeded", step: "completed" }
+              : path === "/api/v1/app-registrations"
             ? []
             : path === "/api/v1/users"
               ? [
@@ -193,6 +202,7 @@ async function mock(page: Page) {
   return {
     sent,
     access,
+    managed,
     auditQueries,
     groups,
     members,
@@ -348,6 +358,46 @@ test("the audit log pages backwards and filters by actor, action and period", as
   await expect(panel.getByText("사용자 다시 사용", { exact: true })).toBeVisible();
   await expect(panel.getByText("사용자 비활성화", { exact: true })).toBeVisible();
   expect(auditQueries.at(-1)?.get("action")).toBe("user.");
+});
+
+test("a company-disabled app stays in runtime management but is not offered for opening", async ({ page }) => {
+  const { sent, managed } = await mock(page);
+  const ledger = {
+    appId: "ledger",
+    name: "장부",
+    releaseId: "release-1",
+    version: "1.0.0",
+    dbStatus: "ready",
+    runtimeStatus: "running",
+    desiredState: "running",
+    kind: "docker_app",
+    canManage: true,
+    appDisabled: true,
+    ui: { entry: "/unused-manifest.json", export: "./AppRoot", contractVersion: "miy.ui/v1alpha1" },
+  };
+  managed.push(
+    { ...ledger, id: "ledger-dev", environment: "dev", canOpen: true },
+    { ...ledger, id: "ledger-prod", environment: "prod", canOpen: false },
+  );
+  await page.goto("/admin");
+  const panel = (title: string) =>
+    page.locator(".ui-panel").filter({ has: page.getByRole("heading", { name: title, exact: true }) });
+  const prod = panel("장부 · prod");
+  await expect(prod.getByText("회사 사용 중지", { exact: true })).toBeVisible();
+  await expect(prod.getByRole("link", { name: "앱 열기" })).toHaveCount(0);
+  await expect(prod).toContainText("회사 사용 중지 중이라 열 수 없습니다.");
+  await expect(panel("장부 · dev").getByRole("link", { name: "앱 열기" })).toBeVisible();
+
+  await prod.getByRole("button", { name: "중지", exact: true }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "중지", exact: true }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect.poll(() => sent.filter((s) => s.path === "/api/v1/apps/ledger/runtime").length).toBe(1);
+  expect(sent.find((s) => s.path === "/api/v1/apps/ledger/runtime")).toMatchObject({
+    body: { action: "stop", environment: "prod", confirmed: true },
+    csrf: "fixture-csrf",
+  });
+  await expect(prod.getByText("Docker 작업을 처리하고 있습니다…")).toHaveCount(0);
+  await expect(prod.getByRole("alert")).toHaveCount(0);
 });
 
 test("switching HR groups uses the selected group's parent, including after a change", async ({ page }) => {

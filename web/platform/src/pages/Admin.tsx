@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { Link } from "@tanstack/react-router";
 import { request } from "@miy/sdk";
-import { useInstallationPolling, useInstallations } from "../data/installations";
+import { useInstallations, useManagedInstallations } from "../data/installations";
 import { useUser } from "../data/session";
 import { environmentPath } from "../lib/paths";
 import { LoadError, StaleNotice } from "../components/LoadState";
@@ -25,8 +25,9 @@ export function Admin() {
 }
 
 function AdminConsole({ csrf }: { csrf: string }) {
+  // The runtime panel uses the management list; the shared list feeds the rail.
   const installations = useInstallations();
-  useInstallationPolling();
+  const managed = useManagedInstallations();
   const [requests, setRequests] = useState<Registration[] | null>(null);
   const [users, setUsers] = useState<DirectoryUser[] | null>(null);
   const [loadError, setLoadError] = useState(false);
@@ -48,7 +49,8 @@ function AdminConsole({ csrf }: { csrf: string }) {
   const refresh = useCallback(() => {
     void loadDirectory();
     void installations.refresh();
-  }, [loadDirectory, installations.refresh]);
+    void managed.refresh();
+  }, [loadDirectory, installations.refresh, managed.refresh]);
   useEffect(() => {
     void loadDirectory();
     const timer = setInterval(() => void loadDirectory(), 3000);
@@ -172,27 +174,39 @@ function AdminConsole({ csrf }: { csrf: string }) {
       </div>
       <AuditLog users={users} report={setMessage} />
       <h2 className="page-section-title">앱 실행 상태</h2>
-      {installations.items === null ? (
-        installations.status === "error" ? (
+      {managed.items === null ? (
+        managed.status === "error" ? (
           <LoadError message="앱 목록을 불러오지 못했습니다." onRetry={refresh} />
         ) : (
           <Loading>앱 목록을 불러오는 중…</Loading>
         )
       ) : (
         <>
-          {installations.status === "error" && <StaleNotice updatedAt={installations.updatedAt} onRetry={refresh} />}
-          {installations.items.filter((a) => a.kind === "docker_app").length === 0 ? (
+          {managed.status === "error" && <StaleNotice updatedAt={managed.updatedAt} onRetry={refresh} />}
+          {managed.items.filter((a) => a.kind === "docker_app").length === 0 ? (
             <EmptyState title="배포된 앱이 없습니다." />
           ) : (
             <div className="grid">
-              {installations.items
+              {managed.items
                 .filter((a) => a.kind === "docker_app")
                 .map((a) => (
-                  <Panel key={a.id} title={`${a.name} · ${a.environment}`}>
+                  <Panel
+                    key={a.id}
+                    title={`${a.name} · ${a.environment}`}
+                    actions={a.appDisabled && <Badge tone="warning">회사 사용 중지</Badge>}
+                  >
                     <p>
                       {a.version} · DB {a.dbStatus}
                     </p>
-                    <Link to={environmentPath(a.environment, a.appId) as "/"}>앱 열기</Link>
+                    {a.canOpen ? (
+                      <Link to={environmentPath(a.environment, a.appId) as "/"}>앱 열기</Link>
+                    ) : (
+                      <p className="ui-empty-inline">
+                        {a.appDisabled
+                          ? "회사 사용 중지 중이라 열 수 없습니다. 시작·중지·배포는 계속할 수 있습니다."
+                          : "지금은 이 앱을 열 수 없습니다."}
+                      </p>
+                    )}
                     <RuntimeHealth app={a} />
                     <RuntimeControls app={a} csrf={csrf} refresh={refresh} />
                   </Panel>

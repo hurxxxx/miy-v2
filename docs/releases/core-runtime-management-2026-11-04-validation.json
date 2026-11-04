@@ -1,0 +1,197 @@
+{
+  "date": "2026-11-04",
+  "baseCommit": "dec457ec827e54b39c6cd1ea6c43a9f19d482aa1",
+  "toolsCommit": "f7f0fe08cf51dcf227c0f81ef8fe4cc331df4393",
+  "validatedTree": "toolsCommit plus the working tree committed next (same file hashes as below)",
+  "status": "PASS",
+  "scope": [
+    "maintained rollout tools scripts/core-rollout.py (same-schema server binary replacement) and scripts/ui-rollout.py (build manifest, asset addition, index swap), replacing per-release evidence copies as the tested tools",
+    "administrator runtime management list GET /api/v1/runtime/installations keeping company-disabled installations with appDisabled and the server's canOpen decision",
+    "runtime job and job event reads allowed to runtime managers while the app is company-disabled; use-only users are still refused",
+    "admin runtime panel on the management list with a disabled badge and no open link when canOpen is false"
+  ],
+  "deploymentPerformed": false,
+  "pushPerformed": false,
+  "checks": [
+    {
+      "command": "python3 scripts/test-core-ops.py",
+      "status": "PASS",
+      "tests": 33,
+      "coreRolloutTests": 15,
+      "uiRolloutTests": 6,
+      "mutationCheck": {
+        "mutations": 10,
+        "detected": 10,
+        "cases": [
+          "install before backup verify",
+          "started flag set after start",
+          "no preflight idle check",
+          "stop state not checked",
+          "restore skips recovery binary hash",
+          "no schema guard",
+          "recovery directory reused",
+          "UI asset replacement allowed",
+          "UI live index baseline ignored",
+          "UI build from dirty inputs"
+        ]
+      }
+    },
+    {
+      "command": "cargo clippy -p miy --all-targets --locked -- -D warnings",
+      "status": "PASS"
+    },
+    {
+      "command": "bash scripts/check-static.sh all",
+      "status": "PASS",
+      "serverTests": 170,
+      "serverIgnored": 7,
+      "clientTests": 113,
+      "browserTests": {
+        "platform": 36,
+        "cliExperience": 14,
+        "httpIp": 1
+      },
+      "coreOpsMockTests": 33,
+      "docLinks": 521,
+      "log": "/tmp/claude-1000/-projects-miy-v2/a37f9a99-4561-4486-885f-dc72f0b5b50d/scratchpad/verify-runtime-management/static.log"
+    },
+    {
+      "command": "python3 scripts/runtime-regression/run.py",
+      "status": "PASS",
+      "observations": 84,
+      "suites": {
+        "runtime": 43,
+        "operations": 6,
+        "cli": 6,
+        "auth": 8,
+        "permissions": 17,
+        "delegation": 4
+      },
+      "newObservations": [
+        "company-disabled app stays in administrator runtime control"
+      ],
+      "extendedObservations": [
+        "the company switch consistently filters default, paged and app-detail installations; developers keep dev and re-enabling restores use; administrators keep the disabled app in runtime management, unopenable in prod, and non-administrators cannot read that list"
+      ],
+      "newObservationEvidence": {
+        "managed": {
+          "appDisabled": true,
+          "canOpen": false,
+          "canManage": true
+        },
+        "usageListed": false,
+        "nonAdminList": "forbidden",
+        "stopStatus": "succeeded",
+        "stoppedContainerRunning": false,
+        "adminReadsJob": true,
+        "useOnlyJobReadBeforeDisable": true,
+        "useOnlyJobRead": "app_disabled",
+        "startStatus": "succeeded",
+        "runtimeAfterStart": "running"
+      },
+      "testExecutableSha256": "91ec006ec78ffd5966a75c5a34124bd9190dddef388c6c5564506283cb5f651d",
+      "cleanup": {
+        "removed": 13,
+        "errors": [],
+        "baselineContainers": 41,
+        "baselinePreserved": true,
+        "leftoverContainers": 0
+      },
+      "evidence": "/tmp/miy-runtime-regression-lk0e9suh/evidence",
+      "log": "/tmp/claude-1000/-projects-miy-v2/a37f9a99-4561-4486-885f-dc72f0b5b50d/scratchpad/verify-runtime-management/runtime.log"
+    },
+    {
+      "command": "pnpm exec playwright test --config scripts/runtime-regression/server-ui.config.ts",
+      "status": "PASS",
+      "browserTests": 7,
+      "runtimeManagementRequests": {
+        "actor": "development admin",
+        "path": "/api/v1/runtime/installations",
+        "status": 200,
+        "count": 3
+      },
+      "leftoverContainers": 0,
+      "log": "/tmp/claude-1000/-projects-miy-v2/a37f9a99-4561-4486-885f-dc72f0b5b50d/scratchpad/verify-runtime-management/server-ui.log"
+    },
+    {
+      "command": "python3 <commit checkout>/scripts/core-rollout.py inspect (production host, read-only)",
+      "status": "PASS",
+      "result": "READY",
+      "sourceCommit": "f7f0fe08cf51dcf227c0f81ef8fe4cc331df4393",
+      "note": "candidate set to the installed binary to exercise the live probes only; no service, database, container or file change",
+      "observed": {
+        "version": "0.7.0",
+        "schema": 19,
+        "executables": {
+          "miy-v2-serve": {
+            "pid": 3482850,
+            "sha256": "59407ce6d8853c8176054fb36afb92fa97585502cea1b5b04483d8a82ce91feb"
+          },
+          "miy-v2-worker": {
+            "pid": 3482851,
+            "sha256": "59407ce6d8853c8176054fb36afb92fa97585502cea1b5b04483d8a82ce91feb"
+          }
+        },
+        "connectionBudget": {
+          "status": "PASS",
+          "worstCase": 90,
+          "usableConnections": 197
+        },
+        "idle": {
+          "runtime": 0,
+          "builds": 0,
+          "database": 0,
+          "development": 0,
+          "uploads": 0
+        },
+        "appContainers": 7,
+        "runningAppContainers": 5,
+        "databaseNetworks": 9
+      },
+      "output": "/tmp/claude-1000/-projects-miy-v2/a37f9a99-4561-4486-885f-dc72f0b5b50d/scratchpad/verify-runtime-management/live-inspect.json"
+    },
+    {
+      "command": "python3 scripts/check-doc-links.py; git diff --check",
+      "status": "PASS",
+      "docLinks": 521
+    }
+  ],
+  "notRun": [
+    "production rollout; v2.dwdcc.kr still runs 3406d9f (binary 59407ce6...)",
+    "core-rollout.py apply/rollback against production (only the read-only inspect ran)",
+    "ui-rollout.py rehearsal with a real vite build: the offline package store lacked a tarball for an install in the commit checkout; recorded separately after the next commit",
+    "Windows/macOS installation acceptance",
+    "real OIDC identity-provider login in the new checks"
+  ],
+  "attemptsPreserved": [
+    {
+      "check": "pnpm install --offline --frozen-lockfile in the f7f0fe0 checkout for the UI rehearsal",
+      "status": "FAIL",
+      "reason": "ERR_PNPM_NO_OFFLINE_TARBALL (playwright-1.64.1 not in the local store); nothing downloaded, no tracked file changed"
+    }
+  ],
+  "changes": [
+    "scripts/core-rollout.py: inspect/apply/rollback for same-schema binary replacement. Refuses a source with a different migration set, a running tool that differs from the source copy, changed candidate/installed/running hashes, other PostgreSQL/Keycloak settings, a failing connection budget and active work; installs only after a fresh dump is restored and migrate-checked; pre-start failures reinstall the previous binary, post-start failures stop core for assessment.",
+    "scripts/ui-rollout.py: build from a clean checkout at the commit into the release directory (never the live dist), manifest binding tracked inputs, candidate files and the live index; apply/rollback as in the 2026-11-04 tool with the release directory as an argument.",
+    "scripts/test-core-ops.py: stateful fake host for both tools replaces the 7d3c66a-specific tests.",
+    "GET /api/v1/runtime/installations: non-delegated administrators only (delegated credentials are denied by the route guard); every installation they can manage with appDisabled and canOpen.",
+    "GET /api/v1/runtime/jobs/{id} and its events: allowed when the caller can manage the app/environment, otherwise the existing use check.",
+    "Admin runtime panel: management list, 회사 사용 중지 badge, 앱 열기 only when canOpen; the shared use list still feeds the rail.",
+    "Docs: CORE-PERMISSIONS company switch rule, SERVER-OPERATIONS §3/§6/§7, CHECKS, PLAN, V1-ADOPTION V1-G2/V1-O3."
+  ],
+  "sourceFileSha256": {
+    "scripts/core-rollout.py": "b414c0336725e5afe6823856210fbb4f33eddb9efe51b71fa461ad1c8cac368b",
+    "scripts/ui-rollout.py": "42a5bdc119f61d189fb546a30dafb2f89f2e1c2b56194f13687b6b2c341262e1",
+    "scripts/test-core-ops.py": "82c18d3c0712ff4d7cd5d00c94e89858bd768e59ee122fe7e2b6acb7a8a42ef6",
+    "crates/miy/src/domain.rs": "1891b59554ae16ec8ec5c34f929bb5c52f90e6250723cadc52eb645fad0d43ae",
+    "crates/miy/src/http.rs": "f8d3b7af1178e38000484418cecf4c2063c58a6691311a94236b7158f5527908",
+    "crates/miy/src/runtime.rs": "87ea6bac39b6d8d095332f303f3e0ffb560f22816a6a30aded0a0abf503c7bd0",
+    "crates/miy/src/permissions_regression.rs": "cca070bd2ed0910c25a3fcdb19b03c07ce2571c8756916b7fc7dd4ebe998c473",
+    "crates/miy/src/runtime_regression.rs": "a467a8be0afec9663de883895107bf3962e928c5670c023d800d211a2a6b8a00",
+    "scripts/runtime-regression/run.py": "db3d4da0a8e9b9621d15d017c114d54fb98a4a720a0d2585cab06616e3c175a7",
+    "web/platform/src/data/installations.tsx": "15c5efc068e55444561004ab3b34245092606430a56f2cb72bb54869a466e0ee",
+    "web/platform/src/pages/Admin.tsx": "8f1b1f660c974bec88d7f6ced4ca6d20608e43e2c9e834b81507b0955506c7ed",
+    "tests/admin-access.spec.ts": "7c413e000155b7798e9e87dab0ff8de1fdee0b950503cfd1e6e115728abff4ad",
+    "tests/runtime-health.spec.ts": "66eb74ed02c65c0f92ddf61eb4f278d8911a7e8df96c2c14e882f0a1d92222c2"
+  }
+}
