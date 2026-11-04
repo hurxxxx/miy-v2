@@ -418,19 +418,28 @@ pub async fn grant(state: &State, p: &Principal, v: Grant) -> ApiResult<Value> {
     } else {
         "grant.disabled"
     };
-    let target = format!(
-        "user:{}:app:{}:{}:{}:from:{before}:to:{}",
-        v.user_id, v.app_id, v.environment, v.permission, v.enabled,
+    let target = grant_audit_target(
+        &v.user_id,
+        &v.app_id,
+        &v.environment,
+        &v.permission,
+        before,
+        v.enabled,
     );
-    sqlx::query("INSERT INTO audit(actor,action,target,request_id) VALUES($1,$2,$3,$4)")
-        .bind(&p.id)
-        .bind(action)
-        .bind(target)
-        .bind(Uuid::new_v4().to_string())
-        .execute(&mut *tx)
-        .await?;
+    crate::audit::record(&mut tx, &p.id, action, &target).await?;
     tx.commit().await?;
     Ok(json!({"updated":true}))
+}
+/// Audit target of a personal grant change; registration approval uses it too.
+pub(crate) fn grant_audit_target(
+    user: &str,
+    app: &str,
+    environment: &str,
+    permission: &str,
+    before: bool,
+    after: bool,
+) -> String {
+    format!("user:{user}:app:{app}:{environment}:{permission}:from:{before}:to:{after}")
 }
 pub use crate::contract::get_contract;
 pub fn catalog() -> Value {

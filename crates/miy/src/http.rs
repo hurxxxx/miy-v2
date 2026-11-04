@@ -530,12 +530,25 @@ async fn set_user_state(
     sqlx::query("SELECT pg_advisory_xact_lock(73490130)")
         .execute(&mut *tx)
         .await?;
-    let target = sqlx::query("SELECT admin,enabled FROM users WHERE id=$1 FOR UPDATE")
-        .bind(&id)
-        .fetch_optional(&mut *tx)
-        .await?
+    // Lock actor and target in one ID order, as primary-group changes do, so the
+    // recheck holds the actor's authority until commit without a lock cycle.
+    let users = sqlx::query(
+        "SELECT id,admin,enabled FROM users WHERE id=ANY($1) ORDER BY id FOR NO KEY UPDATE",
+    )
+    .bind(vec![p.id.as_str(), id.as_str()])
+    .fetch_all(&mut *tx)
+    .await?;
+    let target = users
+        .iter()
+        .find(|row| row.get::<String, _>("id") == id)
         .ok_or_else(ApiError::not_found)?;
-    if !input.enabled && target.get::<bool, _>("admin") && target.get::<bool, _>("enabled") {
+    let (target_admin, before) = (
+        target.get::<bool, _>("admin"),
+        target.get::<bool, _>("enabled"),
+    );
+    // Before the update: an administrator may still disable their own account.
+    domain::admin_locked(&mut tx, &p).await?;
+    if !input.enabled && target_admin && before {
         let count: i64 = sqlx::query_scalar("SELECT count(*) FROM users WHERE admin AND enabled")
             .fetch_one(&mut *tx)
             .await?;
@@ -548,6 +561,13 @@ async fn set_user_state(
         .bind(input.enabled)
         .execute(&mut *tx)
         .await?;
+    let action = if input.enabled {
+        "user.enabled"
+    } else {
+        "user.disabled"
+    };
+    let change = format!("user:{id}:from:{before}:to:{}", input.enabled);
+    crate::audit::record(&mut tx, &p.id, action, &change).await?;
     tx.commit().await?;
     Ok(Json(
         json!({"userId":id,"enabled":input.enabled,"source":"core","sessionsRevoked":!input.enabled}),

@@ -1,6 +1,6 @@
 # CLI 0.6 핵심 흐름 사용자 테스트
 
-대상은 CLI **0.6.3** / 개발 번들 **0.7.1**이다. 현재 운영 서버와 게시 CLI의 artifact source는 `8d7d042`이며 main 통합 commit과 별도로 기록한다. 기본 네이티브 실행과 서버 빌드 경로에는 Docker Desktop·WSL·SSH가 필요하지 않다. 서버는 `app.builds.v1`을 제공해야 한다. 이번 인수는 Codex·Claude 각각의 새 업무 앱 개발·서버 원격 빌드·dev 배포·데이터 보존까지이며, 화면·사용성 개선은 [보류 중인 사용성 개선](PLAN.md#보류-중인-사용성-개선)에 기록한다.
+대상은 CLI **0.6.3** / 개발 번들 **0.7.1**이다. 이 인수 당시 운영 서버와 게시 CLI의 artifact source는 `8d7d042`였고 main 통합 commit과 별도로 기록했다. 현재 배포 소스는 [운영 안내](SERVER-OPERATIONS.md)를 따른다. 기본 네이티브 실행과 서버 빌드 경로에는 Docker Desktop·WSL·SSH가 필요하지 않다. 서버는 `app.builds.v1`을 제공해야 한다. 이번 인수는 Codex·Claude 각각의 새 업무 앱 개발·서버 원격 빌드·dev 배포·데이터 보존까지이며, 화면·사용성 개선은 [보류 중인 사용성 개선](PLAN.md#보류-중인-사용성-개선)에 기록한다.
 
 2026-11-02 Linux에서 Codex·Claude 각각의 독립 개발과 v1→v2 인수를 완료했다. 각 도구는 새 폴더·앱 ID·대화로 비품대장 v1을 개발하고 자신의 같은 대화를 재개하여 v2의 보관 위치 기능을 추가했다. 실제 Rust/앱 검사, 서버 원격 빌드와 dev 배포를 수행했으며 최종 v2 평가에서 API CRUD·입력 검증·소유권, 브라우저 생성·수정·삭제·새로고침, 동일 DB와 v1 레코드 보존을 확인했다. v1과 v2에서 각각 실행한 검사의 차이와 source/build/job/release/image는 [독립 AI 인수 결과](INDEPENDENT-AGENTS-0.6.3-ACCEPTANCE.md)를 따른다.
 

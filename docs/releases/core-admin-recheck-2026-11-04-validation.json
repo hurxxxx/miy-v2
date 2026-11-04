@@ -1,0 +1,107 @@
+{
+  "date": "2026-11-04",
+  "baseCommit": "ef7d011b47e6ab537467972c40ea35bd8687262f",
+  "workingTreeChanges": true,
+  "status": "PASS",
+  "scope": [
+    "administrator recheck under user row locks and user.enabled/user.disabled audit for user state changes",
+    "administrator recheck and grant.enabled audit for the develop grant created by app registration approval",
+    "single transaction audit helper shared by group, grant, user state and registration changes",
+    "stale current-state statements after the 3406d9f production rollout"
+  ],
+  "deploymentPerformed": false,
+  "pushPerformed": false,
+  "checks": [
+    {
+      "command": "cargo fmt --all; cargo clippy --locked --all-targets --features server -- -D warnings",
+      "status": "PASS"
+    },
+    {
+      "command": "bash scripts/check-static.sh all",
+      "status": "PASS",
+      "serverTests": 170,
+      "serverIgnored": 7,
+      "clientTests": 113,
+      "browserTests": {
+        "platform": 35,
+        "cliExperience": 14,
+        "httpIp": 1
+      },
+      "coreOpsMockTests": 25,
+      "docLinks": 519,
+      "log": "/tmp/claude-1000/-projects-miy-v2/a37f9a99-4561-4486-885f-dc72f0b5b50d/scratchpad/verify-admin-recheck/static.log"
+    },
+    {
+      "command": "python3 scripts/runtime-regression/run.py",
+      "status": "PASS",
+      "observations": 83,
+      "suites": {
+        "runtime": 42,
+        "operations": 6,
+        "cli": 6,
+        "auth": 8,
+        "permissions": 17,
+        "delegation": 4
+      },
+      "extendedObservations": [
+        "all group/access mutations, personal grants, user state changes and registration decisions roll back without domain audit when an administrator is revoked or disabled during a PostgreSQL lock wait",
+        "personal grant changes (including registration approval), user state changes and primary-group assignments retain their exact before/after targets in the same transaction audit"
+      ],
+      "cleanup": {
+        "removed": 13,
+        "errors": [],
+        "baselineContainers": 41,
+        "baselinePreserved": true
+      },
+      "evidence": "/tmp/miy-runtime-regression-9gmkbckw/evidence",
+      "log": "/tmp/claude-1000/-projects-miy-v2/a37f9a99-4561-4486-885f-dc72f0b5b50d/scratchpad/verify-admin-recheck/runtime.log"
+    },
+    {
+      "command": "pnpm exec playwright test --config scripts/runtime-regression/server-ui.config.ts",
+      "status": "PASS",
+      "browserTests": 7,
+      "leftoverContainers": 0,
+      "log": "/tmp/claude-1000/-projects-miy-v2/a37f9a99-4561-4486-885f-dc72f0b5b50d/scratchpad/verify-admin-recheck/server-ui.log"
+    },
+    {
+      "command": "python3 scripts/check-doc-links.py; git diff --check",
+      "status": "PASS",
+      "docLinks": 519
+    }
+  ],
+  "notRun": [
+    "production rollout; v2.dwdcc.kr still runs 3406d9f (binary 59407ce6...)",
+    "production user state or registration writes",
+    "Windows/macOS installation acceptance",
+    "real OIDC identity-provider login in the new checks"
+  ],
+  "attemptsPreserved": [],
+  "changes": [
+    "User state changes lock actor and target user rows in ID order under the existing user-state advisory lock, recheck admin AND enabled before the update (self-disable stays possible except for the last enabled administrator) and record user.enabled/user.disabled with before/after state.",
+    "Registration decisions recheck the administrator after the registration, app and grant writes; approval records grant.enabled for the requester's dev develop grant in the same transaction.",
+    "audit::record is the single in-transaction audit insert; groups.rs and domain::grant use it, and grant targets share domain::grant_audit_target.",
+    "The audit screen filter 'user.' is labelled 사용자 상태·주 소속 and shows user.enabled/user.disabled labels.",
+    "Docs: deployment status of 0018 and current deployment sources now point to SERVER-OPERATIONS §3; dated 0.6.3 statements say 당시."
+  ],
+  "sourceFileSha256": {
+    "crates/miy/src/audit.rs": "475178b4247a10c37ee089a105cda13b10739f53d3f7d48cc2a50a1f2a4ee384",
+    "crates/miy/src/domain.rs": "ae4659b40737b212be53094b2230095fb20a510444c0783b09de32b2c086a3f0",
+    "crates/miy/src/groups.rs": "a6647164b54ecc65417839374a47f6bba8cbda7496503b7443a75af4ca4910a4",
+    "crates/miy/src/http.rs": "e5577960a6047e1530592f7b9083e5e8ae97f683c78a7840434a67f45923edc3",
+    "crates/miy/src/permissions_regression.rs": "6befc290444689117da812fa79a1ca4d4292c1201a5b4aab77e1dce4116de864",
+    "crates/miy/src/registration.rs": "500339d30ce580f80e48bd6a09e7bd51e3b77266e1762d67803122deaabee4e2",
+    "tests/admin-access.spec.ts": "3cba85eb260454f64d4bc628b3bfd74eb010ed96c52a906736f2ea8eaa68abdc",
+    "web/platform/src/pages/AdminAudit.tsx": "2c520b8d2c3d9f5bbf53b15a31604d3f951cda174bc06b4328f290cc14846f25"
+  },
+  "runtimeExecutables": {
+    "cli-identity": {
+      "sourceCommit": "ef7d011b47e6ab537467972c40ea35bd8687262f",
+      "workingTreeDirty": true,
+      "binarySha256": "f2676a1c707d345daa09a3c4eac2fd7c3f85c79a1a043e23988cc7ec2ce7e46e"
+    },
+    "test-identity": {
+      "binarySha256": "00fed168b9ee9c4df8ec2a37eca75844a53bfdf43815acd757632cb508f0867c",
+      "isolatedExecutable": "/tmp/miy-runtime-regression-9gmkbckw/bin/miy-runtime-tests"
+    }
+  }
+}

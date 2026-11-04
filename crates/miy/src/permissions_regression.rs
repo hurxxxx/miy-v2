@@ -1506,9 +1506,9 @@ async fn groups(h: &mut Harness<'_>, suffix: &str, passed: &mut Vec<String>) -> 
     }
     passed.push("only administrators change groups and access, and every change is audited and queryable by actor, action and cursor".into());
     mutation_revocation(h, &app, &local, &unit, &team, &dave, &erin, suffix).await?;
-    passed.push("all group/access mutations and personal grants roll back without domain audit when an administrator is revoked or disabled during a PostgreSQL lock wait".into());
+    passed.push("all group/access mutations, personal grants, user state changes and registration decisions roll back without domain audit when an administrator is revoked or disabled during a PostgreSQL lock wait".into());
     grant_and_primary_audit(h, &operator, &app, &unit, &team).await?;
-    passed.push("personal grant changes and primary-group assignments retain their exact before/after targets in the same transaction audit".into());
+    passed.push("personal grant changes (including registration approval), user state changes and primary-group assignments retain their exact before/after targets in the same transaction audit".into());
     primary_group_lock_order(h).await?;
     passed.push("opposing administrators update primary groups with ordered user locks, preserving the unlocked target and completing without deadlock".into());
     Ok(())
@@ -1563,6 +1563,15 @@ async fn mutation_revocation(
         "SELECT COALESCE(primary_group_id::text,'none') FROM users WHERE id='{}'",
         primary_user.id
     );
+    // A pending registration whose approval would create the app and a develop grant.
+    let registration = Uuid::new_v4();
+    let registered = format!("permission-r-{suffix}");
+    sqlx::query("INSERT INTO app_registrations(id,app_id,name,actor) VALUES($1,$2,$2,$3)")
+        .bind(registration)
+        .bind(&registered)
+        .bind(&personal_user.id)
+        .execute(&h.state.pool)
+        .await?;
     let cases = [
         PendingMutation {
             name: "create group",
@@ -1661,6 +1670,31 @@ async fn mutation_revocation(
                 personal_user.id
             ),
             action: "grant.disabled",
+        },
+        PendingMutation {
+            name: "disable user",
+            method: Method::POST,
+            path: format!("/api/v1/users/{}/state", personal_user.id),
+            body: json!({"enabled":false}),
+            // The request waits on the user-state lock before it locks any user row,
+            // so the actor can be revoked while the change is pending.
+            lock: "SELECT pg_advisory_xact_lock(73490130)".into(),
+            snapshot: format!(
+                "SELECT enabled::text FROM users WHERE id='{}'",
+                personal_user.id
+            ),
+            action: "user.disabled",
+        },
+        PendingMutation {
+            name: "approve registration",
+            method: Method::POST,
+            path: format!("/api/v1/app-registrations/{registration}/decision"),
+            body: json!({"approve":true}),
+            lock: format!("SELECT id FROM app_registrations WHERE id='{registration}' FOR UPDATE"),
+            snapshot: format!(
+                "SELECT status||':'||(SELECT count(*) FROM apps WHERE id='{registered}')||':'||(SELECT count(*) FROM grants WHERE app_id='{registered}') FROM app_registrations WHERE id='{registration}'"
+            ),
+            action: "grant.enabled",
         },
     ];
     for case in cases {
@@ -1782,6 +1816,62 @@ async fn grant_and_primary_audit(
         );
         before = after.unwrap_or("none");
     }
+    let audited = move |action: &'static str, target: String| async move {
+        sqlx::query_scalar::<_, bool>(
+            "SELECT EXISTS(SELECT 1 FROM audit WHERE actor=$1 AND action=$2 AND target=$3)",
+        )
+        .bind(&operator.id)
+        .bind(action)
+        .bind(target)
+        .fetch_one(&h.state.pool)
+        .await
+    };
+    for (before, after) in [(true, false), (false, true)] {
+        h.json(
+            &operator.token,
+            Method::POST,
+            &format!("/api/v1/users/{}/state", user.id),
+            json!({"enabled":after}),
+            200,
+        )
+        .await?;
+        let action = if after {
+            "user.enabled"
+        } else {
+            "user.disabled"
+        };
+        ensure!(
+            audited(action, format!("user:{}:from:{before}:to:{after}", user.id)).await?,
+            "user state audit lost its user or before/after state"
+        );
+    }
+    let registration = Uuid::new_v4();
+    let registered = format!("permission-a-{}", Uuid::new_v4().simple());
+    sqlx::query("INSERT INTO app_registrations(id,app_id,name,actor) VALUES($1,$2,$2,$3)")
+        .bind(registration)
+        .bind(&registered)
+        .bind(&user.id)
+        .execute(&h.state.pool)
+        .await?;
+    h.json(
+        &operator.token,
+        Method::POST,
+        &format!("/api/v1/app-registrations/{registration}/decision"),
+        json!({"approve":true}),
+        200,
+    )
+    .await?;
+    ensure!(
+        audited(
+            "grant.enabled",
+            format!(
+                "user:{}:app:{registered}:dev:develop:from:false:to:true",
+                user.id
+            )
+        )
+        .await?,
+        "registration approval created a develop grant without its personal grant audit"
+    );
     Ok(())
 }
 

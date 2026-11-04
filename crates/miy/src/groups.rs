@@ -9,6 +9,7 @@
 //! audit row in the same transaction.
 use crate::{
     State,
+    audit::record as audit,
     auth::Principal,
     domain,
     http::{ApiError, ApiResult},
@@ -79,22 +80,6 @@ pub struct Admission {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct AppControl {
     pub disabled: bool,
-}
-
-async fn audit(
-    tx: &mut Transaction<'_, Postgres>,
-    actor: &str,
-    action: &str,
-    target: &str,
-) -> ApiResult<()> {
-    sqlx::query("INSERT INTO audit(actor,action,target,request_id) VALUES($1,$2,$3,$4)")
-        .bind(actor)
-        .bind(action)
-        .bind(target)
-        .bind(Uuid::new_v4().to_string())
-        .execute(&mut **tx)
-        .await?;
-    Ok(())
 }
 
 fn name(value: &str) -> ApiResult<String> {

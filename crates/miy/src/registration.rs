@@ -85,15 +85,24 @@ pub async fn decide(s: &State, p: &Principal, id: Uuid, decision: Decision) -> A
         }
         return Ok(view(&row));
     }
+    let requester: String = row.get("actor");
+    let app: String = row.get("app_id");
     if decision.approve {
         sqlx::query("INSERT INTO apps(id,name) VALUES($1,$2)")
-            .bind(row.get::<String, _>("app_id"))
+            .bind(&app)
             .bind(row.get::<String, _>("name"))
             .execute(&mut *tx)
             .await?;
-        sqlx::query("INSERT INTO grants(user_id,app_id,environment,permission) VALUES($1,$2,'dev','develop')").bind(row.get::<String,_>("actor")).bind(row.get::<String,_>("app_id")).execute(&mut *tx).await?;
+        sqlx::query("INSERT INTO grants(user_id,app_id,environment,permission) VALUES($1,$2,'dev','develop')").bind(&requester).bind(&app).execute(&mut *tx).await?;
     }
     let row = sqlx::query("UPDATE app_registrations SET status=$2,decided_by=$3,updated_at=now() WHERE id=$1 RETURNING *").bind(id).bind(status).bind(&p.id).fetch_one(&mut *tx).await?;
+    // Recheck once the registration, app and grant rows are held: a decision whose
+    // administrator was revoked meanwhile rolls back together with its grant.
+    domain::admin_locked(&mut tx, p).await?;
+    if decision.approve {
+        let target = domain::grant_audit_target(&requester, &app, "dev", "develop", false, true);
+        crate::audit::record(&mut tx, &p.id, "grant.enabled", &target).await?;
+    }
     tx.commit().await?;
     Ok(view(&row))
 }

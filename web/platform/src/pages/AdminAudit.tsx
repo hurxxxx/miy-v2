@@ -19,7 +19,7 @@ const actionKinds = [
   { value: "", label: "전체" },
   { value: "group", label: "그룹·그룹 권한" },
   { value: "grant.", label: "사용자 권한" },
-  { value: "user.", label: "주 소속" },
+  { value: "user.", label: "사용자 상태·주 소속" },
   { value: "app.", label: "앱 입장·사용 중지" },
 ];
 const actionLabel: Record<string, string> = {
@@ -31,6 +31,8 @@ const actionLabel: Record<string, string> = {
   "group.member_added": "구성원 추가",
   "group.member_removed": "구성원 제외",
   "user.primary_group_set": "주 소속 지정",
+  "user.disabled": "사용자 비활성화",
+  "user.enabled": "사용자 다시 사용",
   "group_grant.enabled": "그룹 권한 부여",
   "group_grant.disabled": "그룹 권한 회수",
   "grant.enabled": "사용자 권한 부여",

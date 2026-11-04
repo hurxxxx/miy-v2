@@ -337,6 +337,17 @@ test("the audit log pages backwards and filters by actor, action and period", as
   await expect(panel.getByText("사용자 권한 회수", { exact: true })).toBeVisible();
   await expect(rows).toHaveCount(3);
   expect(auditQueries.at(-1)?.get("action")).toBe("grant.");
+
+  audit.unshift(
+    { id: 7, at: "2026-11-03T07:00:00Z", actor: "admin", actorName: "관리자", action: "user.enabled", target: "user:alice:from:false:to:true", requestId: "r7" },
+    { id: 6, at: "2026-11-03T06:00:00Z", actor: "admin", actorName: "관리자", action: "user.disabled", target: "user:alice:from:true:to:false", requestId: "r6" },
+  );
+  await expect(panel.getByLabel("동작").locator("option", { hasText: "사용자 상태·주 소속" })).toHaveAttribute("value", "user.");
+  await panel.getByLabel("동작").selectOption("user.");
+  await panel.getByRole("button", { name: "조회", exact: true }).click();
+  await expect(panel.getByText("사용자 다시 사용", { exact: true })).toBeVisible();
+  await expect(panel.getByText("사용자 비활성화", { exact: true })).toBeVisible();
+  expect(auditQueries.at(-1)?.get("action")).toBe("user.");
 });
 
 test("switching HR groups uses the selected group's parent, including after a change", async ({ page }) => {

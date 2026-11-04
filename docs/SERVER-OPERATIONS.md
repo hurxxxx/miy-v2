@@ -95,7 +95,7 @@ Codex·Claude의 생성된 프로젝트 MCP는 프로젝트의 `.miy-tools/miy[.
 
 ## 3. 현재 배포 소스와 이 작업본의 차이
 
-실행 서버·worker·웹 화면은 `3406d9f5b9c8afbc55a0e3e8752cb178c61db0de`이고, 게시 CLI는 `01e4d4924f8c8fc4e11720c1af81adf17ddb20bf`다(모두 버전 0.7.0 / 번들 0.8.0). DB 역할 연결 한도·`application_name`·Docker 저장 공간 하한과 사용자·그룹 앱 권한·감사 조회 migration `0018`·`0019`는 2026-11-04 반영했다. 이후 `main` 변경은 자동 배포되지 않는다. 운영 반영은 사용자 요청과 별도 기록으로 하며, 반영 전 §6의 최소 백업과 `--migrate-with` 리허설을 수행한다.
+실행 서버·worker·웹 화면은 `3406d9f5b9c8afbc55a0e3e8752cb178c61db0de`이고, 게시 CLI는 `01e4d4924f8c8fc4e11720c1af81adf17ddb20bf`다(모두 버전 0.7.0 / 번들 0.8.0). DB 역할 연결 한도·`application_name`·Docker 저장 공간 하한과 사용자·그룹 앱 권한·감사 조회 migration `0018`·`0019`는 2026-11-04 반영했다. 이후 `main` 변경은 자동 배포되지 않는다. `3406d9f` 이후 `main`에는 사용자 활성 상태 변경과 앱 등록 결정의 관리자 재확인·감사 기록(`user.enabled`·`user.disabled`, 등록 승인의 `grant.enabled`)이 추가됐고([검증 기록](releases/core-admin-recheck-2026-11-04-validation.json)) 운영에는 아직 반영하지 않았다. 운영 반영은 사용자 요청과 별도 기록으로 하며, 반영 전 §6의 최소 백업과 `--migrate-with` 리허설을 수행한다.
 
 서버를 갱신할 때는 먼저 배포 대상 소스 commit과 현재 실행 파일을 확인한다. 같은 버전 문자열이라도 실제 source commit·빌드 경계·설치된 SQL과 게시된 배포물의 출처를 함께 확인한다. 새 배포는 검증한 소스의 별도 checkout에서 빌드하고, 서버/worker·UI·게시 index를 같은 검증 기록에 묶어 반영한다.
 

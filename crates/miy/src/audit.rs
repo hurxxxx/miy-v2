@@ -30,6 +30,24 @@ pub struct AuditQuery {
     pub limit: Option<i64>,
 }
 
+/// Record a domain change in the caller's transaction, so a rolled-back change
+/// leaves no audit row and a committed one always has its row.
+pub(crate) async fn record(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    actor: &str,
+    action: &str,
+    target: &str,
+) -> ApiResult<()> {
+    sqlx::query("INSERT INTO audit(actor,action,target,request_id) VALUES($1,$2,$3,$4)")
+        .bind(actor)
+        .bind(action)
+        .bind(target)
+        .bind(uuid::Uuid::new_v4().to_string())
+        .execute(&mut **tx)
+        .await?;
+    Ok(())
+}
+
 fn action_prefix(value: &str) -> bool {
     !value.is_empty()
         && value.len() <= 64

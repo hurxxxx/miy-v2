@@ -1,14 +1,14 @@
 # CLI 상세 검증 기록
 
 - 갱신: 2026-11-02
-- 최신 연결 검사 대상: 실제 서버·게시 CLI **0.6.3 / 번들 0.7.1**, 배포 소스 `8d7d04271f9467d8bbdd16308e73715b33e4dc0c`. 운영 소스의 `main` 통합 후 소스 버전도 CLI 0.6.3 / 번들 0.7.1이다. 배포 바이너리의 출처 commit과 후속 통합 commit은 구분한다.
+- 이 문서의 마지막 연결 검사 대상(2026-11-02): 실제 서버·게시 CLI **0.6.3 / 번들 0.7.1**, 배포 소스 `8d7d04271f9467d8bbdd16308e73715b33e4dc0c`. 당시 운영 소스의 `main` 통합 후 소스 버전도 CLI 0.6.3 / 번들 0.7.1이었다. 이후 0.7.0 연결 검사와 현재 배포 소스는 [운영 안내](SERVER-OPERATIONS.md)와 배포 기록을 따른다. 배포 바이너리의 출처 commit과 후속 통합 commit은 구분한다.
 - 범위: [구현 계획](CLI-IMPLEMENTATION-PLAN.md). [전체 V0~V7 인수](VALIDATION.md)는 별도다.
 
 실제 실행 결과와 남은 환경 검사를 구분한다. 최신 연결 검사와 이전 0.6 결과를 먼저 기록하고, CLI 0.5 / 번들 0.6.2와 `0fe94a4`의 검증은 아래 이력에 보존한다. `PASS`는 명시한 소스·바이너리·fixture·환경·assertion 범위에만 적용하고, 다른 장비/원격 서버/AI 세션을 대신하지 않는다.
 
 ## 운영 소스 main 통합 — 2026-11-02
 
-운영 소스 계열을 main에 병합하고 겹치는 검증 문서의 양쪽 이력을 보존했다. 현재 소스는 CLI **0.6.3 / 번들 0.7.1**이며 `crates/`, `migrations/`, `templates/`가 게시 후보 `8d7d042`와 바이트상 일치한다. [통합 검사 기록](releases/cli-0.6.3-main-integration.json)에 명령과 결과를 보존한다. 서버 단위143개(별도opt-in6개 ignored), 클라이언트110개, 양쪽 Clippy 경고 금지·fmt, TypeScript·격리 출력 경로의 플랫폼 production build가 통과했다. source 통합은 운영 서버·게시 배포물의 교체가 아니다.
+운영 소스 계열을 main에 병합하고 겹치는 검증 문서의 양쪽 이력을 보존했다. 당시 소스는 CLI **0.6.3 / 번들 0.7.1**이며 `crates/`, `migrations/`, `templates/`가 게시 후보 `8d7d042`와 바이트상 일치한다. [통합 검사 기록](releases/cli-0.6.3-main-integration.json)에 명령과 결과를 보존한다. 서버 단위143개(별도opt-in6개 ignored), 클라이언트110개, 양쪽 Clippy 경고 금지·fmt, TypeScript·격리 출력 경로의 플랫폼 production build가 통과했다. source 통합은 운영 서버·게시 배포물의 교체가 아니다.
 
 통합 commit `a6fae065ed627bb63798cf74ea8a2c73a744c104`의 [CI 41447528061](https://github.com/hurxxxx/miy-v2/actions/runs/41447528061)은 5개 job 모두 성공했다. Windows 실제 실행은 사용자 요청으로 추후 수행하며 [별도 인수 안내](WINDOWS-0.6.3-ACCEPTANCE.md)를 준비했다.
 
