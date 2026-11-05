@@ -24,3 +24,6 @@ Dockerfile text eol=lf
 
 # Applied SQL is byte-addressed history. Do not normalize it on checkout/add.
 *.sql -text
+
+# Preserve captured validation output, including its original whitespace.
+docs/releases/evidence/**/*.log -text -whitespace

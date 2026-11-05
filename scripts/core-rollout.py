@@ -38,9 +38,10 @@ DB = 'miy-v2-validation-postgres-1'
 KEYCLOAK = 'miy-v2-validation-keycloak-1'
 ORIGIN = 'https://v2.dwdcc.kr'
 SERVICES = ['miy-v2-serve', 'miy-v2-worker']
-# systemd ActiveState values in which a unit runs no process. `systemctl stop` leaves a failed
-# unit failed; every other state (active, activating, deactivating, ...) may still accept or run work.
+# These states require an independent process check: failed/inactive can retain cgroup processes.
 STOPPED_STATES = ('inactive', 'failed')
+CGROUP_ROOT = pathlib.Path('/sys/fs/cgroup')
+PROCESS_PROPERTIES = ('Id', 'LoadState', 'ActiveState', 'Slice', 'ControlGroup', 'MainPID', 'ControlPID')
 # Old-column projections of these tables must survive the rollout unchanged.
 STABLE_TABLES = ['users', 'apps', 'app_registrations', 'grants', 'installations', 'releases', 'release_checks',
                  'db_resources', 'groups', 'group_members', 'group_grants', 'app_admission', 'app_controls']
@@ -189,14 +190,87 @@ def require_core_state(expected):
         require(state == expected, 'core_not_stopped' if expected == 'inactive' else 'core_not_active')
 
 
+def core_units():
+    """Bind empty ControlGroup values to this host's known unit paths, never to the cgroup root."""
+    units = {}
+    for service in SERVICES:
+        raw = call(['systemctl', 'show', '--property=' + ','.join(PROCESS_PROPERTIES), service])
+        fields = {}
+        for line in raw.splitlines():
+            key, separator, value = line.partition('=')
+            require(separator and key in PROCESS_PROPERTIES and key not in fields, 'core_process_state_unknown')
+            fields[key] = value
+        require(set(fields) == set(PROCESS_PROPERTIES), 'core_process_state_unknown')
+        expected = '/system.slice/' + service + '.service'
+        require(fields['Id'] == service + '.service' and fields['LoadState'] == 'loaded'
+                and fields['Slice'] == 'system.slice' and fields['ControlGroup'] in ('', expected),
+                'core_cgroup_layout_unsupported')
+        require(all(re.fullmatch(r'[0-9]+', fields[key]) for key in ('MainPID', 'ControlPID')),
+                'core_process_state_unknown')
+        units[service] = fields
+    return units
+
+
+def cgroup_populated(directory):
+    # cgroup.events includes descendants, unlike the parent cgroup.procs alone.
+    fields = {}
+    for line in plain(directory / 'cgroup.events').read_text().splitlines():
+        parts = line.split()
+        require(len(parts) == 2 and parts[0] not in fields, 'core_process_state_unknown')
+        fields[parts[0]] = parts[1]
+    require(fields.get('populated') in ('0', '1'), 'core_process_state_unknown')
+    return fields['populated'] == '1'
+
+
+def core_cgroup_population():
+    """Read descendants as well as main processes; missing/unknown evidence is not empty."""
+    population = {}
+    try:
+        plain(CGROUP_ROOT / 'cgroup.controllers').read_text()
+        parent = plain(CGROUP_ROOT / 'system.slice')
+        cgroup_populated(parent)
+        for service in SERVICES:
+            directory = plain(parent / (service + '.service'))
+            try:
+                directory.lstat()
+            except FileNotFoundError:
+                # Do not mistake a missing/unreadable parent for a removed service cgroup.
+                cgroup_populated(parent)
+                population[service] = False
+            else:
+                population[service] = cgroup_populated(directory)
+    except (OSError, UnicodeError):
+        raise RuntimeError('core_process_state_unknown') from None
+    return population
+
+
+def require_core_quiescent():
+    """Require stopped units AND empty canonical cgroups, even if ControlGroup was cleared.
+
+    This host uses system.slice on cgroup v2. A vanished service directory is empty only when
+    the v2 root and parent slice are readable. Recheck after reset-failed: it never kills a PID.
+    """
+    units = core_units()
+    for fields in units.values():
+        require(fields['ActiveState'] in STOPPED_STATES, 'core_not_stopped')
+        require(int(fields['MainPID']) == 0 and int(fields['ControlPID']) == 0,
+                'core_processes_remaining')
+    require(not any(core_cgroup_population().values()), 'core_processes_remaining')
+    # Recheck properties after filesystem inspection, before treating the stop as complete.
+    require(core_units() == units, 'core_process_state_changed')
+    return units
+
+
 def stop_core():
+    core_units()  # Refuse unknown unit identities/layouts before issuing stop.
+    core_cgroup_population()
     call(['sudo', '-n', 'systemctl', 'stop', *SERVICES])
-    # A unit that was failed stays failed after stop: it runs nothing, but keeps its failure
-    # result and start-limit count. Reset only those units so the core is uniformly inactive and
-    # the next start is not refused; the failure itself remains in the journal.
-    failed = [service for service, state in service_states().items() if state == 'failed']
+    units = require_core_quiescent()
+    # Reset failure/start-limit state only after proving no processes remain, then check again.
+    failed = [service for service, fields in units.items() if fields['ActiveState'] == 'failed']
     if failed:
         call(['sudo', '-n', 'systemctl', 'reset-failed', *failed])
+    require_core_quiescent()
     require_core_state('inactive')
     REPORT.setdefault('serviceStopEvents', []).append(now())
     save()
@@ -338,6 +412,8 @@ def preflight(args):
     require(call([plain(args.candidate), '--version']) == f"miy {facts['version']}", 'candidate_version_mismatch')
     require(digest(installed()) == args.installed_sha256, 'installed_binary_changed')
     require_core_state('active')
+    core_units()
+    core_cgroup_population()
     facts['executables'] = executable_hashes(args.installed_sha256)
     live_schema = migrations()
     require(live_schema == facts['schema'],
@@ -494,9 +570,10 @@ def rollback():
         check_idle = any(state not in STOPPED_STATES for state in service_states().values())
         if check_idle:
             # A failed service does not mean its peer has stopped accepting or processing work.
-            # Only a core with no running unit (inactive or failed) uses the assessed,
-            # already-stopped recovery path whose persisted work the previous binary takes over.
             REPORT['idleBeforeStop'] = idle()
+        else:
+            # Only a proved-empty core may hand its persisted work to the previous binary.
+            require_core_quiescent()
     except (Exception, KeyboardInterrupt) as error:
         REPORT.update({'status': 'REFUSED', 'failureCategory': failure_code(error), 'productionMutations': False,
                        'finishedAt': now()})

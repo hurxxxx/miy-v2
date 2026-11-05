@@ -1,0 +1,12 @@
+{
+  "status": "PASS",
+  "expectation": "new regression tests must fail against previous tool",
+  "previousToolTestExitCode": 1,
+  "cases": [
+    "test_failed_stop_with_residual_descendants_never_resets_or_publishes",
+    "test_reset_failed_is_followed_by_another_real_process_check",
+    "test_rollback_of_failed_or_inactive_core_requires_empty_cgroups_before_mutation"
+  ],
+  "assertionFailures": 4,
+  "log": "/tmp/miy-quiescence-prefixed-898_z7_d/result.log"
+}

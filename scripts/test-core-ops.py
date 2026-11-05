@@ -245,6 +245,17 @@ class FakeHost:
         self.stop_works = True
         self.fail_on_stop = set()  # units a stop leaves failed, e.g. after a stop timeout
         self.crash_candidate = set()  # units that fail right after the candidate starts
+        self.retain_processes = set()
+        self.process_properties = {}
+        self.on_stop = None
+        self.on_reset_failed = None
+        cgroups = test.rollout.CGROUP_ROOT
+        shutil.rmtree(cgroups, ignore_errors=True)
+        (cgroups / 'system.slice').mkdir(parents=True)
+        (cgroups / 'cgroup.controllers').write_text('cpu memory pids\n')
+        (cgroups / 'system.slice/cgroup.events').write_text('populated 1\nfrozen 0\n')
+        for service in self.states:
+            self.population(service, True)
         self.restarts = 0
         self.verify = {'status': 'PASS', 'containerRemoved': True, 'mismatchedTables': [],
                        'rehearsal': {'exitCode': 0, 'migrationVersionAfter': 19}}
@@ -257,23 +268,42 @@ class FakeHost:
     def candidate_running(self):
         return self.running == NEW_SHA and all(state == 'active' for state in self.states.values())
 
+    def population(self, service, populated):
+        directory = self.test.rollout.CGROUP_ROOT / 'system.slice' / (service + '.service')
+        directory.mkdir(exist_ok=True)
+        (directory / 'cgroup.events').write_text(f'populated {int(populated)}\nfrozen 0\n')
+        return directory
+
     def call(self, args):
         args = [str(a) for a in args]
         self.test.rollout.REPORT['commands'].append({'command': args, 'exitCode': 0})
         if args[:2] == ['systemctl', 'show'] and args[2] == '--property=ActiveState':
             return self.states[args[-1]]
+        if args[:2] == ['systemctl', 'show'] and args[2].startswith('--property=Id,'):
+            service = args[-1]
+            fields = {'Id': service + '.service', 'LoadState': 'loaded', 'ActiveState': self.states[service],
+                      'Slice': 'system.slice', 'ControlGroup': '/system.slice/' + service + '.service',
+                      'MainPID': '0' if self.states[service] in ('inactive', 'failed') else '123', 'ControlPID': '0'}
+            fields.update(self.process_properties.get(service, {}))
+            return '\n'.join(key + '=' + value for key, value in fields.items())
         if args[:4] == ['sudo', '-n', 'systemctl', 'stop']:
             self.events.append('stop')
             if self.stop_works:
                 # Like systemd: a failed unit stays failed after stop; only reset-failed clears it.
                 self.states = {service: 'failed' if state == 'failed' or service in self.fail_on_stop
                                else 'inactive' for service, state in self.states.items()}
+                for service in self.states:
+                    self.population(service, service in self.retain_processes)
+            if self.on_stop:
+                self.on_stop()
             return ''
         if args[:4] == ['sudo', '-n', 'systemctl', 'reset-failed']:
             self.events.append('reset-failed')
             for service in args[4:]:
                 self.test.assertEqual(self.states[service], 'failed')
                 self.states[service] = 'inactive'
+            if self.on_reset_failed:
+                self.on_reset_failed()
             return ''
         if args[:4] == ['sudo', '-n', 'systemctl', 'start']:
             self.events.append('start')
@@ -282,6 +312,8 @@ class FakeHost:
             self.states = {service: 'active' for service in self.states}
             if self.running == NEW_SHA:
                 self.states.update({service: 'failed' for service in self.crash_candidate})
+            for service, state in self.states.items():
+                self.population(service, state == 'active')
             return ''
         if args[-1] == '--version':
             return self.version
@@ -363,6 +395,7 @@ class CoreRolloutTests(OfflineTest):
         super().setUp()
         self.rollout = load('core_rollout_under_test', ROOT / 'scripts/core-rollout.py')
         self.rollout.LIVE = self.root
+        self.rollout.CGROUP_ROOT = self.root / 'cgroup'
         (self.root / '.local/bin').mkdir(parents=True)
         self.installed = self.root / '.local/bin/miy-server'
         self.candidate = self.root / 'candidate'
@@ -609,6 +642,8 @@ class CoreRolloutTests(OfflineTest):
         code, _, release = self.run_tool()
         self.assertEqual(code, 0)
         self.host.states = {service: 'inactive' for service in self.rollout.SERVICES}
+        for service in self.rollout.SERVICES:
+            self.host.population(service, False)
         # An assessed, stopped core can have persisted work awaiting recovery by the previous binary.
         self.host.work = [{**ZERO_WORK, 'runtime': 1}]
         code, result, _ = self.run_tool('rollback', release=release)
@@ -643,6 +678,8 @@ class CoreRolloutTests(OfflineTest):
         code, _, release = self.run_tool()
         self.assertEqual(code, 0)
         self.host.states = {service: 'failed' for service in self.rollout.SERVICES}
+        for service in self.rollout.SERVICES:
+            self.host.population(service, False)
         # No unit runs: persisted work waits for the previous binary, as for an inactive core.
         self.host.work = [{**ZERO_WORK, 'runtime': 1}]
         events = list(self.host.events)
@@ -679,6 +716,157 @@ class CoreRolloutTests(OfflineTest):
         self.assertEqual(self.host.events[-2:], ['stop', 'start'])
         self.assertEqual(set(self.host.states.values()), {'active'})
         self.assertEqual(self.installed.read_bytes(), OLD)
+
+    def assert_stop_refused_without_replacement(self, failure):
+        code, _, release = self.run_tool()
+        self.assertEqual(code, 1)
+        record = json.loads((release / 'deployment.json').read_text())
+        self.assertEqual(record['failureCategory'], failure)
+        self.assertNotIn('backup', self.host.events)
+        self.assertNotIn('start', self.host.events)
+        self.assertEqual(self.installed.read_bytes(), OLD)
+
+    def test_failed_stop_with_residual_descendants_never_resets_or_publishes(self):
+        worker = 'miy-v2-worker'
+        self.host.fail_on_stop = {worker}
+        self.host.retain_processes = {worker}
+
+        def descendant():
+            directory = self.rollout.CGROUP_ROOT / 'system.slice' / (worker + '.service')
+            (directory / 'cgroup.procs').write_text('')
+            (directory / 'build').mkdir(exist_ok=True)
+            (directory / 'build/cgroup.procs').write_text('456\n')
+            self.host.process_properties[worker] = {'ControlGroup': ''}
+
+        self.host.on_stop = descendant
+        self.assert_stop_refused_without_replacement('core_processes_remaining')
+        self.assertNotIn('reset-failed', self.host.events)
+
+    def test_stop_checks_both_pid_fields_even_when_the_cgroup_is_empty(self):
+        worker = 'miy-v2-worker'
+        for key in ('MainPID', 'ControlPID'):
+            with self.subTest(key=key):
+                self.reset()
+                self.host.fail_on_stop = {worker}
+                self.host.on_stop = lambda: self.host.process_properties.update({worker: {key: '456'}})
+                self.assert_stop_refused_without_replacement('core_processes_remaining')
+                self.assertNotIn('reset-failed', self.host.events)
+
+    def test_stop_unknown_cgroup_evidence_is_not_empty(self):
+        worker = 'miy-v2-worker'
+        for content in (None, '', 'frozen 0\n', 'populated unknown\n',
+                        'populated 0\npopulated 1\n', 'populated 0 extra\n'):
+            with self.subTest(content=content):
+                self.reset()
+                self.host.fail_on_stop = {worker}
+                path = self.rollout.CGROUP_ROOT / 'system.slice' / (worker + '.service/cgroup.events')
+                self.host.on_stop = lambda: path.unlink() if content is None else path.write_text(content)
+                self.assert_stop_refused_without_replacement('core_process_state_unknown')
+                self.assertNotIn('reset-failed', self.host.events)
+
+    def test_stop_refuses_unreadable_cgroup_evidence(self):
+        path = self.rollout.CGROUP_ROOT / 'system.slice/miy-v2-worker.service/cgroup.events'
+        original = Path.read_text
+
+        def read(file, *args, **kwargs):
+            if file == path and 'stop' in self.host.events:
+                raise PermissionError('fixture denied')
+            return original(file, *args, **kwargs)
+
+        with patch.object(Path, 'read_text', read):
+            self.assert_stop_refused_without_replacement('core_process_state_unknown')
+
+    def test_reset_failed_is_followed_by_another_real_process_check(self):
+        worker = 'miy-v2-worker'
+        self.host.fail_on_stop = {worker}
+
+        def unexpected_process():
+            self.host.population(worker, True)
+            self.host.retain_processes.add(worker)
+            self.host.process_properties[worker] = {'ControlGroup': ''}
+
+        self.host.on_reset_failed = unexpected_process
+        self.assert_stop_refused_without_replacement('core_processes_remaining')
+        self.assertEqual(self.host.events.count('reset-failed'), 1)
+
+    def test_rollback_of_failed_or_inactive_core_requires_empty_cgroups_before_mutation(self):
+        for state in ('failed', 'inactive'):
+            with self.subTest(state=state):
+                self.reset()
+                code, _, release = self.run_tool()
+                self.assertEqual(code, 0)
+                self.host.states = {service: state for service in self.rollout.SERVICES}
+                self.host.process_properties = {s: {'ControlGroup': ''} for s in self.rollout.SERVICES}
+                events = list(self.host.events)
+                code, result, _ = self.run_tool('rollback', release=release)
+                self.assertEqual((code, result.get('failure')), (1, 'core_processes_remaining'))
+                record = self.rollback_receipt(release)
+                self.assertEqual((record['status'], record['productionMutations']), ('REFUSED', False))
+                self.assertEqual(self.host.events, events)
+                self.assertEqual(self.installed.read_bytes(), NEW)
+
+    def test_stopped_core_with_removed_cgroups_and_empty_properties_can_recover(self):
+        code, _, release = self.run_tool()
+        self.assertEqual(code, 0)
+
+        def removed():
+            for service in self.rollout.SERVICES:
+                directory = self.rollout.CGROUP_ROOT / 'system.slice' / (service + '.service')
+                shutil.rmtree(directory)
+                self.host.process_properties[service] = {'ControlGroup': ''}
+
+        self.host.states = {service: 'failed' for service in self.rollout.SERVICES}
+        removed()
+        self.host.on_stop = removed
+        self.host.work = [{**ZERO_WORK, 'runtime': 1}]
+        code, result, _ = self.run_tool('rollback', release=release)
+        self.assertEqual((code, result['status']), (0, 'ROLLED_BACK'))
+        self.assertEqual(self.installed.read_bytes(), OLD)
+
+    def test_missing_parent_or_v2_marker_is_not_a_removed_service_cgroup(self):
+        for relative in ('cgroup.controllers', 'system.slice/cgroup.events', 'system.slice'):
+            with self.subTest(relative=relative):
+                self.reset()
+                path = self.rollout.CGROUP_ROOT / relative
+                if path.is_dir():
+                    shutil.rmtree(path)
+                else:
+                    path.unlink()
+                code, result, _ = self.run_tool()
+                self.assertEqual((code, result['failure']), (1, 'core_process_state_unknown'))
+                self.assert_untouched()
+
+    def test_unknown_unit_identity_or_cgroup_layout_is_refused_before_stop(self):
+        for fields in ({'Id': 'other.service'}, {'Slice': 'other.slice'}, {'LoadState': 'not-found'},
+                       {'ControlGroup': '/system.slice/other.service'}, {'ControlGroup': '/'},
+                       {'ControlGroup': '/system.slice/../other.service'}):
+            with self.subTest(fields=fields):
+                self.reset()
+                self.host.process_properties['miy-v2-worker'] = fields
+                code, result, _ = self.run_tool()
+                self.assertEqual((code, result['failure']), (1, 'core_cgroup_layout_unsupported'))
+                self.assert_untouched()
+
+    def test_pid_and_unit_property_errors_are_not_assumed_to_be_zero(self):
+        for fields in ({'MainPID': ''}, {'ControlPID': 'unknown'}, {'MainPID': '-1'},
+                       {'MainPID': '0\nMainPID=123'}):
+            with self.subTest(fields=fields):
+                self.reset()
+                self.host.process_properties['miy-v2-worker'] = fields
+                code, result, _ = self.run_tool()
+                self.assertEqual((code, result['failure']), (1, 'core_process_state_unknown'))
+                self.assert_untouched()
+
+    def test_cgroup_symlinks_are_refused_before_stop(self):
+        path = self.rollout.CGROUP_ROOT / 'system.slice/miy-v2-worker.service'
+        target = self.root / 'empty-cgroup'
+        target.mkdir()
+        (target / 'cgroup.events').write_text('populated 0\n')
+        shutil.rmtree(path)
+        path.symlink_to(target, target_is_directory=True)
+        code, result, _ = self.run_tool()
+        self.assertEqual((code, result['failure']), (1, 'symlink_path_refused'))
+        self.assert_untouched()
 
     def test_safety_require_survives_optimized_python(self):
         path = ROOT / 'scripts/core-rollout.py'

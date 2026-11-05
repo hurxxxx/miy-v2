@@ -1,0 +1,33 @@
+{
+  "status": "PASS",
+  "scope": "Read-only live systemd and cgroup v2 probe; no service or database change",
+  "guardRefusal": "core_not_stopped",
+  "units": {
+    "miy-v2-serve": {
+      "Id": "miy-v2-serve.service",
+      "LoadState": "loaded",
+      "ActiveState": "active",
+      "MainPID": "3090945",
+      "ControlPID": "0",
+      "Slice": "system.slice",
+      "ControlGroup": "/system.slice/miy-v2-serve.service",
+      "executableSha256": "d9ce25351221bce31d5342785a9906f6163fdc7d2bc83e468092d20613d5c46e"
+    },
+    "miy-v2-worker": {
+      "Id": "miy-v2-worker.service",
+      "LoadState": "loaded",
+      "ActiveState": "active",
+      "MainPID": "3090946",
+      "ControlPID": "0",
+      "Slice": "system.slice",
+      "ControlGroup": "/system.slice/miy-v2-worker.service",
+      "executableSha256": "d9ce25351221bce31d5342785a9906f6163fdc7d2bc83e468092d20613d5c46e"
+    }
+  },
+  "population": {
+    "miy-v2-serve": true,
+    "miy-v2-worker": true
+  },
+  "toolSha256": "ae373404a0c71a3defc8dcca568e43ecd09ba96d6aad5d4dfd3e0e96b71c789c",
+  "uiIndexSha256": "dbb0c78e669eae1de8c49d0603e192c709487abd913a5e3ba0fb7919a6b4e006"
+}

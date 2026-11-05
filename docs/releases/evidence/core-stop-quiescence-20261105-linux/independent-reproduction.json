@@ -1,0 +1,48 @@
+{
+  "scope": "temporary cgroup files and mocked systemd/DB/Docker only",
+  "sourceSha256": "ae373404a0c71a3defc8dcca568e43ecd09ba96d6aad5d4dfd3e0e96b71c789c",
+  "status": "PASS",
+  "observations": [
+    {
+      "case": "populated_failed_stop_blocks_publication",
+      "status": "PASS",
+      "reportedStatus": "ROLLBACK_FAILED",
+      "failure": "core_processes_remaining",
+      "events": [
+        "stop",
+        "stop"
+      ],
+      "previousBinaryPreserved": true,
+      "cgroupStillPopulated": true
+    },
+    {
+      "case": "cleared_control_group_still_checks_canonical_path",
+      "status": "PASS",
+      "failure": "core_processes_remaining",
+      "newServiceEvents": [],
+      "clearedControlGroupDidNotHideResidual": true
+    },
+    {
+      "case": "empty_failed_core_allows_manual_recovery",
+      "status": "PASS",
+      "reportedStatus": "ROLLED_BACK",
+      "persistedWorkRecoveryRetained": true
+    },
+    {
+      "case": "population_after_reset_still_blocks_publication",
+      "status": "PASS",
+      "failure": "core_processes_remaining",
+      "events": [
+        "stop",
+        "reset-failed",
+        "stop"
+      ],
+      "previousBinaryPreserved": true
+    },
+    {
+      "case": "known_absent_cgroups_allow_recovery",
+      "status": "PASS",
+      "verifiedAbsentCanonicalGroupsAccepted": true
+    }
+  ]
+}

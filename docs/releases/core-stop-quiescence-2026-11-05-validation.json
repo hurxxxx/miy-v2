@@ -1,0 +1,88 @@
+{
+  "date": "2026-11-05",
+  "baseCommit": "50e0da33a304e1cfda373db6374387167e6b7bb4",
+  "validatedTree": "baseCommit plus the changes identified by sourceFileSha256",
+  "status": "PASS",
+  "scope": [
+    "Prove main/control PIDs and canonical cgroup v2 descendants absent before and after reset-failed",
+    "Do not infer absence from empty ControlGroup or failed/inactive state",
+    "Refuse unsupported unit layout, missing or unreadable cgroup evidence before publication",
+    "Allow the already-stopped rollback recovery path only after proving the core empty"
+  ],
+  "deploymentPerformed": false,
+  "commitPerformed": false,
+  "pushPerformed": false,
+  "checks": [
+    {
+      "command": "python3 scripts/test-core-ops.py",
+      "status": "PASS",
+      "tests": 62,
+      "addedTests": 11,
+      "log": "/tmp/miy-stop-quiescence-tests.log"
+    },
+    {
+      "command": "New residual-process regression tests against the preceding core-rollout.py in a temporary copy",
+      "status": "PASS",
+      "expectation": "The pre-fix tool must fail the new tests; those expected failures are preserved",
+      "evidence": "evidence/core-stop-quiescence-20261105-linux/prefixed-regression.json"
+    },
+    {
+      "command": "python3 /tmp/miy_failed_unit_fixed_review.py",
+      "status": "PASS",
+      "observations": 5,
+      "scope": "Stateful mock with actual temporary cgroup files; no systemd/Docker/DB mutation",
+      "evidence": "evidence/core-stop-quiescence-20261105-linux/independent-reproduction.json"
+    },
+    {
+      "command": "Read-only core_units/core_cgroup_population/require_core_quiescent probe of the live host",
+      "status": "PASS",
+      "expectation": "Running serve/worker report populated cgroups and the stopped guard refuses them",
+      "operatingSourceCommit": "7b437890030f0da6f10dc6a76881891f353f31cf",
+      "evidence": "evidence/core-stop-quiescence-20261105-linux/live-probe.json"
+    },
+    {
+      "command": "bash scripts/check-static.sh scripts",
+      "status": "PASS",
+      "coreOpsTests": 62,
+      "docLinks": 536,
+      "log": "/tmp/miy-stop-quiescence-static-scripts-final.log"
+    },
+    {
+      "command": "git diff --check",
+      "status": "PASS"
+    }
+  ],
+  "attemptsPreserved": [
+    {
+      "check": "Initial pre-fix regression check",
+      "status": "FAIL",
+      "reason": "Two negative subtests indexed a missing failure key when the old tool wrongly succeeded, producing KeyError rather than assertion failure. Changed the assertion to use get, then repeated the check; the product code was unchanged.",
+      "log": "/tmp/miy-quiescence-prefixed-jtv5oud2/result.log"
+    },
+    {
+      "check": "Initial validation artifact creation",
+      "status": "FAIL",
+      "reason": "The pre-fix check had not written its result JSON after its assertion failure; the artifact writer stopped on the missing source file. Retried after the check completed."
+    },
+    {
+      "check": "First bash scripts/check-static.sh scripts",
+      "status": "FAIL",
+      "reason": "Link check ran before the new validation JSON existed. No script tests ran. Repeated after writing the record.",
+      "log": "/tmp/miy-stop-quiescence-static-scripts.log"
+    }
+  ],
+  "notRun": [
+    "Production apply/rollback, stopping or resetting real units",
+    "Real uninterruptible-I/O fault injection; residual process cases use stateful mocks",
+    "Rust/runtime/UI/Windows suites: no Rust, platform UI, CLI or installer code changed"
+  ],
+  "sourceFileSha256": {
+    "scripts/core-rollout.py": "ae373404a0c71a3defc8dcca568e43ecd09ba96d6aad5d4dfd3e0e96b71c789c",
+    "scripts/test-core-ops.py": "d58425ffe9edf10850f9b7c9adc4ab05fb86a9de60ee75097ea1be04d6ce368a"
+  },
+  "limits": [
+    "This host-specific tool supports canonical miy-v2 service units in system.slice on cgroup v2; other slices/layouts are refused.",
+    "An unreadable or populated cgroup can also prevent automatic rollback; the tool leaves the binary unchanged and requires manual assessment."
+  ],
+  "sourceHashesUnchangedAfterChecks": true
+}

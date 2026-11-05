@@ -1,0 +1,52 @@
+test_failed_stop_with_residual_descendants_never_resets_or_publishes (__main__.CoreRolloutTests.test_failed_stop_with_residual_descendants_never_resets_or_publishes) ... FAIL
+test_reset_failed_is_followed_by_another_real_process_check (__main__.CoreRolloutTests.test_reset_failed_is_followed_by_another_real_process_check) ... FAIL
+test_rollback_of_failed_or_inactive_core_requires_empty_cgroups_before_mutation (__main__.CoreRolloutTests.test_rollback_of_failed_or_inactive_core_requires_empty_cgroups_before_mutation) ... 
+  test_rollback_of_failed_or_inactive_core_requires_empty_cgroups_before_mutation (__main__.CoreRolloutTests.test_rollback_of_failed_or_inactive_core_requires_empty_cgroups_before_mutation) (state='failed') ... ERROR
+  test_rollback_of_failed_or_inactive_core_requires_empty_cgroups_before_mutation (__main__.CoreRolloutTests.test_rollback_of_failed_or_inactive_core_requires_empty_cgroups_before_mutation) (state='inactive') ... ERROR
+
+======================================================================
+ERROR: test_rollback_of_failed_or_inactive_core_requires_empty_cgroups_before_mutation (__main__.CoreRolloutTests.test_rollback_of_failed_or_inactive_core_requires_empty_cgroups_before_mutation) (state='failed')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tmp/miy-quiescence-prefixed-jtv5oud2/scripts/test-core-ops.py", line 802, in test_rollback_of_failed_or_inactive_core_requires_empty_cgroups_before_mutation
+    self.assertEqual((code, result['failure']), (1, 'core_processes_remaining'))
+                            ~~~~~~^^^^^^^^^^^
+KeyError: 'failure'
+
+======================================================================
+ERROR: test_rollback_of_failed_or_inactive_core_requires_empty_cgroups_before_mutation (__main__.CoreRolloutTests.test_rollback_of_failed_or_inactive_core_requires_empty_cgroups_before_mutation) (state='inactive')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tmp/miy-quiescence-prefixed-jtv5oud2/scripts/test-core-ops.py", line 802, in test_rollback_of_failed_or_inactive_core_requires_empty_cgroups_before_mutation
+    self.assertEqual((code, result['failure']), (1, 'core_processes_remaining'))
+                            ~~~~~~^^^^^^^^^^^
+KeyError: 'failure'
+
+======================================================================
+FAIL: test_failed_stop_with_residual_descendants_never_resets_or_publishes (__main__.CoreRolloutTests.test_failed_stop_with_residual_descendants_never_resets_or_publishes)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tmp/miy-quiescence-prefixed-jtv5oud2/scripts/test-core-ops.py", line 742, in test_failed_stop_with_residual_descendants_never_resets_or_publishes
+    self.assert_stop_refused_without_replacement('core_processes_remaining')
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/tmp/miy-quiescence-prefixed-jtv5oud2/scripts/test-core-ops.py", line 722, in assert_stop_refused_without_replacement
+    self.assertEqual(code, 1)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^
+AssertionError: 0 != 1
+
+======================================================================
+FAIL: test_reset_failed_is_followed_by_another_real_process_check (__main__.CoreRolloutTests.test_reset_failed_is_followed_by_another_real_process_check)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tmp/miy-quiescence-prefixed-jtv5oud2/scripts/test-core-ops.py", line 789, in test_reset_failed_is_followed_by_another_real_process_check
+    self.assert_stop_refused_without_replacement('core_processes_remaining')
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/tmp/miy-quiescence-prefixed-jtv5oud2/scripts/test-core-ops.py", line 722, in assert_stop_refused_without_replacement
+    self.assertEqual(code, 1)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^
+AssertionError: 0 != 1
+
+----------------------------------------------------------------------
+Ran 3 tests in 0.025s
+
+FAILED (failures=2, errors=2)
