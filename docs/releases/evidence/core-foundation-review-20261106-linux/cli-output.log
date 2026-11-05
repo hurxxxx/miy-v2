@@ -1,0 +1,15 @@
+PASS auto nonTTY and global JSON options return one versioned envelope
+PASS text mode renders a human-readable result
+PASS parse errors hide argument secrets; unsupported JSONL has no init side effects
+PASS remote commands require a context and removed names return replacement errors
+PASS missing local Docker offers explicit remote build without compiling or uploading
+PASS UTF-8 scaffold, transactional repeatable setup, focused discovery and completion
+PASS authenticated loopback success and malformed successful response
+PASS legacy runtime schema is rejected with an upgrade capability error before mutation
+PASS HTTP status categories survive JSON/HTML bodies without leaking secrets
+PASS terminal observation failure exits 9 and retains job/cursor recovery
+PASS POSIX Ctrl+C ends local observation with exit 130 and keeps the remote job
+PASS all fixture operations were authenticated reads; no remote cancellation or mutation
+PASS lost refresh response persists uncertain state and prevents automatic token replay
+PASS server and local device expiry clean the flow and expose context-bound fresh-login recovery
+{"passed": 14, "liveServicesUsed": false, "temporaryProjectsRemoved": true}

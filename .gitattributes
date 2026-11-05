@@ -27,3 +27,4 @@ Dockerfile text eol=lf
 
 # Preserve captured validation output, including its original whitespace.
 docs/releases/evidence/**/*.log -text -whitespace
+docs/releases/evidence/**/*.jsonl -text

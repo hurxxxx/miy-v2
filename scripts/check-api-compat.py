@@ -8,7 +8,8 @@ may only add to it. For every published type and field this check fails when
 
 - the type or field is gone, or a required field became optional,
 - a value that was not allowed before can now be sent (a type or `null` added, a
-  reference changed, an enum value added),
+  reference changed, an enum value added, an integer range widened, or a string
+  format such as UUID/date-time removed or changed),
 
 unless the field is listed under "removable" in the published file with its reason.
 An enum that already has the `unknown` value readers fall back to may gain values.
@@ -18,14 +19,43 @@ Usage: scripts/check-api-compat.py [--published PATH] [--current PATH]
 """
 import argparse
 import json
+import math
 import pathlib
 import sys
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
+# Schemars describes Rust integer readers by format, without explicit min/max.
+INTEGER_RANGES = {
+    **{f"int{bits}": (-(2 ** (bits - 1)), 2 ** (bits - 1) - 1) for bits in (8, 16, 32, 64, 128)},
+    **{f"uint{bits}": (0, 2 ** bits - 1) for bits in (8, 16, 32, 64, 128)},
+}
+
+
+def numeric_bounds(schema, kind):
+    """The reader's numeric interval, including Rust integer formats and explicit bounds."""
+    lower, upper = INTEGER_RANGES.get(schema.get("format"), (-math.inf, math.inf)) if kind == "integer" else (-math.inf, math.inf)
+    lower_closed = upper_closed = True
+    for key, closed in (("minimum", True), ("exclusiveMinimum", False)):
+        if key in schema:
+            value = schema[key]
+            if value > lower or (value == lower and not closed):
+                lower, lower_closed = value, closed
+    for key, closed in (("maximum", True), ("exclusiveMaximum", False)):
+        if key in schema:
+            value = schema[key]
+            if value < upper or (value == upper and not closed):
+                upper, upper_closed = value, closed
+    if kind == "integer":
+        if math.isfinite(lower):
+            lower = math.ceil(lower) if lower_closed else math.floor(lower) + 1
+        if math.isfinite(upper):
+            upper = math.floor(upper) if upper_closed else math.ceil(upper) - 1
+        lower_closed = upper_closed = True
+    return lower, lower_closed, upper, upper_closed
 
 
 def values(schema):
-    """What a value may be: ('ref', name) entries, JSON types, or enum literals."""
+    """Generated schema alternatives, preserving formats/ranges even inside arrays or nullables."""
     if "$ref" in schema:
         return {("ref", schema["$ref"].rsplit("/", 1)[-1])}
     if "const" in schema:
@@ -41,14 +71,49 @@ def values(schema):
     for kind in kinds:
         if kind == "array":
             found |= {("array", item) for item in values(schema.get("items", {}))}
+        elif kind in ("integer", "number"):
+            found.add((kind, numeric_bounds(schema, kind)))
+        elif kind == "string":
+            found.add(("string", schema.get("format")))
         else:
-            found.add(("type", "number" if kind == "integer" else kind))
+            found.add(("type", kind))
     return found
 
 
 def describe(value):
     kind, detail = value
-    return f"array of {describe(detail)}" if kind == "array" else detail
+    if kind == "array":
+        return f"array of {describe(detail)}"
+    if kind == "string":
+        return f"{detail} string" if detail else "string"
+    if kind in ("integer", "number"):
+        if detail == (-math.inf, True, math.inf, True):
+            return kind
+        lower, lower_closed, upper, upper_closed = detail
+        return f"{kind} in {'[' if lower_closed else '('}{lower}, {upper}{']' if upper_closed else ')'}"
+    return detail
+
+
+def covered(value, previous):
+    """May an old reader accept every value of this generated alternative?"""
+    if value == previous:
+        return True
+    kind, detail = value
+    old_kind, old_detail = previous
+    if kind == old_kind == "array":
+        return covered(detail, old_detail)
+    if kind == old_kind == "string":
+        # A generic string reader accepts a newly constrained format; the reverse
+        # would let invalid UUID/date-time values reach typed Rust readers.
+        return old_detail is None
+    if kind in ("integer", "number") and old_kind in ("integer", "number"):
+        if kind == "number" and old_kind == "integer":
+            return False
+        lower, lower_closed, upper, upper_closed = detail
+        old_lower, old_lower_closed, old_upper, old_upper_closed = old_detail
+        return ((lower > old_lower or (lower == old_lower and (old_lower_closed or not lower_closed)))
+                and (upper < old_upper or (upper == old_upper and (old_upper_closed or not upper_closed))))
+    return False
 
 
 def open_enum(schema):
@@ -56,8 +121,10 @@ def open_enum(schema):
 
 
 def compare(where, old, new, removable, problems):
-    added = values(new) - values(old)
-    if added and not (open_enum(old) and all(kind == "literal" for kind, _ in added)):
+    previous = values(old)
+    added = {value for value in values(new) if not any(covered(value, before) for before in previous)}
+    if added and not (open_enum(old) and all(kind == "literal" and isinstance(json.loads(value), str)
+                                           for kind, value in added)):
         problems.append(f"{where} may now be {', '.join(sorted(map(describe, added)))}")
     old_properties, new_properties = old.get("properties", {}), new.get("properties", {})
     old_required, new_required = set(old.get("required", [])), set(new.get("required", []))

@@ -90,6 +90,7 @@ class Fixture:
         self.body = b"[]"
         self.request_id = "fixture-request-123"
         self.job_id = str(uuid.uuid4())
+        self.job_request_id = str(uuid.uuid4())
         self.job_status = "failed"
         self.actor = "fixture-user"
         self.login_id = str(uuid.uuid4())
@@ -131,8 +132,25 @@ def fixture_server():
             except (BrokenPipeError,ConnectionResetError):pass
 
         def job(self):
-            return {"id":state.job_id,"appId":"output-probe","environment":"dev","action":"start",
-                    "status":state.job_status,"step":"migration","errorCode":"migration_failed"}
+            # Match RuntimeJob for both the detail response and event snapshots.
+            failed = state.job_status == "failed"
+            return {
+                "id": state.job_id,
+                "requestId": state.job_request_id,
+                "appId": "output-probe",
+                "environment": "dev",
+                "action": "start",
+                "status": state.job_status,
+                "step": "migration",
+                "errorCode": "migration_failed" if failed else None,
+                "failureClass": "never" if failed else None,
+                "retryable": False,
+                "retryOf": None,
+                "imageId": None,
+                "installationId": None,
+                "releaseId": None,
+                "createdAt": "2026-01-01T00:00:00Z",
+            }
 
         def do_GET(self):
             state.requests.append(("GET",self.path))

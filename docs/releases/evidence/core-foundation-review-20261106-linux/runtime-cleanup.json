@@ -1,0 +1,309 @@
+{
+  "completedAt": "2026-11-05T22:40:38.414550+00:00",
+  "removed": [
+    "/miy-app-296ecdb9659149ecb377134c3a3ea4d4",
+    "/miy-app-80a30d30edc64c2aa7c2f002f4b5aa48",
+    "/miy-audit-1024-72cd49-db",
+    "miy-audit-1024-72cd49",
+    "miy-runtime-80a30d30edc64c2aa7c2f002f4b5aa48",
+    "miy-runtime-296ecdb9659149ecb377134c3a3ea4d4",
+    "sha256:94caaf21567bea1f1876a13a23638134c09d80f193b1277d3922ca3ca2019a0c",
+    "sha256:deaef5f8311fb601f13ecfa7b9b71d73138596a1b6cdeebe21efd2ce9fce52ae",
+    "sha256:a7b41f70b4e1314b9b07904b1dbec282afb3a676886dc67d760efc2ce4dfb572",
+    "sha256:a47fcff00b1de4a8f6110269353d202f36bb75933c589d6b19969b284096115e",
+    "sha256:ad8db2e221235e125fd91fe7177093eaf725604ebbe97ac72f54095451e687ab",
+    "sha256:4759d24248d569d9ec52030d42f0cfc483bec302047c845ab5aa9ed3e582307d",
+    "sha256:869c6ba94b127c30faf7ce3dec84365f43ae63fa81eb23fb3035c6f9eda1cc9d"
+  ],
+  "baselineComparison": [
+    {
+      "name": "/ai-do-isolated-appfirst-worker-ai-graph",
+      "sameId": true,
+      "sameImage": true,
+      "sameStartedAt": true,
+      "stillRunning": true
+    },
+    {
+      "name": "/ai-do-isolated-appfirst-worker-patent",
+      "sameId": true,
+      "sameImage": true,
+      "sameStartedAt": true,
+      "stillRunning": true
+    },
+    {
+      "name": "/ai-do-isolated-appfirst-worker-default",
+      "sameId": true,
+      "sameImage": true,
+      "sameStartedAt": true,
+      "stillRunning": true
+    },
+    {
+      "name": "/ai-do-isolated-appfirst-worker-ppt",
+      "sameId": true,
+      "sameImage": true,
+      "sameStartedAt": true,
+      "stillRunning": true
+    },
+    {
+      "name": "/ai-do-isolated-appfirst-worker-qna-board",
+      "sameId": true,
+      "sameImage": true,
+      "sameStartedAt": true,
+      "stillRunning": true
+    },
+    {
+      "name": "/ai-do-isolated-appfirst-worker-realtime",
+      "sameId": true,
+      "sameImage": true,
+      "sameStartedAt": true,
+      "stillRunning": true
+    },
+    {
+      "name": "/ai-do-isolated-appfirst-worker-long",
+      "sameId": true,
+      "sameImage": true,
+      "sameStartedAt": true,
+      "stillRunning": true
+    },
+    {
+      "name": "/ai-do-isolated-appfirst-web",
+      "sameId": true,
+      "sameImage": true,
+      "sameStartedAt": true,
+      "stillRunning": true
+    },
+    {
+      "name": "/ai-do-isolated-appfirst-api",
+      "sameId": true,
+      "sameImage": true,
+      "sameStartedAt": true,
+      "stillRunning": true
+    },
+    {
+      "name": "/ai-do-isolated-appfirst-redis",
+      "sameId": true,
+      "sameImage": true,
+      "sameStartedAt": true,
+      "stillRunning": true
+    },
+    {
+      "name": "/ai-do-isolated-appfirst-qdrant",
+      "sameId": true,
+      "sameImage": true,
+      "sameStartedAt": true,
+      "stillRunning": true
+    },
+    {
+      "name": "/ai-do-isolated-appfirst-opensearch",
+      "sameId": true,
+      "sameImage": true,
+      "sameStartedAt": true,
+      "stillRunning": true
+    },
+    {
+      "name": "/ai-do-isolated-appfirst-minio",
+      "sameId": true,
+      "sameImage": true,
+      "sameStartedAt": true,
+      "stillRunning": true
+    },
+    {
+      "name": "/ai-do-isolated-appfirst-bridge",
+      "sameId": true,
+      "sameImage": true,
+      "sameStartedAt": true,
+      "stillRunning": true
+    },
+    {
+      "name": "/miy-v2-validation-keycloak-1",
+      "sameId": true,
+      "sameImage": true,
+      "sameStartedAt": true,
+      "stillRunning": true
+    },
+    {
+      "name": "/miy-app-9dbde4bf23e14625ad902829ad554359",
+      "sameId": true,
+      "sameImage": true,
+      "sameStartedAt": true,
+      "stillRunning": true
+    },
+    {
+      "name": "/miy-app-0ef7e3f6d9eb4a8dae05f06c603f80b4",
+      "sameId": true,
+      "sameImage": true,
+      "sameStartedAt": true,
+      "stillRunning": true
+    },
+    {
+      "name": "/miy-app-3424326c54484eee8841b44bec358ca2",
+      "sameId": true,
+      "sameImage": true,
+      "sameStartedAt": true,
+      "stillRunning": true
+    },
+    {
+      "name": "/miy-app-83dc604fb11b4263bcba1a97a50da235",
+      "sameId": true,
+      "sameImage": true,
+      "sameStartedAt": true,
+      "stillRunning": true
+    },
+    {
+      "name": "/miy-app-07b3a6e7ac9345e69c7e48ddc85b8ed5",
+      "sameId": true,
+      "sameImage": true,
+      "sameStartedAt": true,
+      "stillRunning": true
+    },
+    {
+      "name": "/gitlab",
+      "sameId": true,
+      "sameImage": true,
+      "sameStartedAt": true,
+      "stillRunning": true
+    },
+    {
+      "name": "/miy-v2-validation-postgres-1",
+      "sameId": true,
+      "sameImage": true,
+      "sameStartedAt": true,
+      "stillRunning": true
+    },
+    {
+      "name": "/ai-do-matomo-cron",
+      "sameId": true,
+      "sameImage": true,
+      "sameStartedAt": true,
+      "stillRunning": true
+    },
+    {
+      "name": "/ai-do-matomo",
+      "sameId": true,
+      "sameImage": true,
+      "sameStartedAt": true,
+      "stillRunning": true
+    },
+    {
+      "name": "/ai-do-dev-livekit",
+      "sameId": true,
+      "sameImage": true,
+      "sameStartedAt": true,
+      "stillRunning": true
+    },
+    {
+      "name": "/ai-do-dev-nginx",
+      "sameId": true,
+      "sameImage": true,
+      "sameStartedAt": true,
+      "stillRunning": true
+    },
+    {
+      "name": "/ai-do-dev-drawio",
+      "sameId": true,
+      "sameImage": true,
+      "sameStartedAt": true,
+      "stillRunning": true
+    },
+    {
+      "name": "/ai-do-dev-redis",
+      "sameId": true,
+      "sameImage": true,
+      "sameStartedAt": true,
+      "stillRunning": true
+    },
+    {
+      "name": "/ai-do-dev-qdrant",
+      "sameId": true,
+      "sameImage": true,
+      "sameStartedAt": true,
+      "stillRunning": true
+    },
+    {
+      "name": "/ai-do-dev-opensearch",
+      "sameId": true,
+      "sameImage": true,
+      "sameStartedAt": true,
+      "stillRunning": true
+    },
+    {
+      "name": "/ai-do-dev-minio",
+      "sameId": true,
+      "sameImage": true,
+      "sameStartedAt": true,
+      "stillRunning": true
+    },
+    {
+      "name": "/ai-do-prod-minio",
+      "sameId": true,
+      "sameImage": true,
+      "sameStartedAt": true,
+      "stillRunning": true
+    },
+    {
+      "name": "/ai-do-prod-redis",
+      "sameId": true,
+      "sameImage": true,
+      "sameStartedAt": true,
+      "stillRunning": true
+    },
+    {
+      "name": "/ai-do-prod-qdrant",
+      "sameId": true,
+      "sameImage": true,
+      "sameStartedAt": true,
+      "stillRunning": true
+    },
+    {
+      "name": "/ai-do-prod-opensearch",
+      "sameId": true,
+      "sameImage": true,
+      "sameStartedAt": true,
+      "stillRunning": true
+    },
+    {
+      "name": "/ai-do-prod-drawio",
+      "sameId": true,
+      "sameImage": true,
+      "sameStartedAt": true,
+      "stillRunning": true
+    },
+    {
+      "name": "/ai-do-matomo-db",
+      "sameId": true,
+      "sameImage": true,
+      "sameStartedAt": true,
+      "stillRunning": true
+    },
+    {
+      "name": "/infra-telemetry-grafana-1",
+      "sameId": true,
+      "sameImage": true,
+      "sameStartedAt": true,
+      "stillRunning": true
+    },
+    {
+      "name": "/infra-telemetry-prometheus-1",
+      "sameId": true,
+      "sameImage": true,
+      "sameStartedAt": true,
+      "stillRunning": true
+    },
+    {
+      "name": "/infra-telemetry-alertmanager-1",
+      "sameId": true,
+      "sameImage": true,
+      "sameStartedAt": true,
+      "stillRunning": true
+    },
+    {
+      "name": "/infra-telemetry-blackbox_exporter-1",
+      "sameId": true,
+      "sameImage": true,
+      "sameStartedAt": true,
+      "stillRunning": true
+    }
+  ],
+  "notes": [],
+  "errors": []
+}

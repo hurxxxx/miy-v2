@@ -1,0 +1,24 @@
+PASS complete checked journal precedes upload; lost acknowledgement uses receipt lookup without another POST
+PASS receipt request ID, immutable image and archive hash mismatches are rejected
+PASS explicit app and environment mismatch cannot resume a dev mutation
+Traceback (most recent call last):
+  File "/projects/miy-v2/scripts/check-cli-recovery.py", line 394, in <module>
+    check(executable)
+    ~~~~~^^^^^^^^^^^^
+  File "/projects/miy-v2/scripts/check-cli-recovery.py", line 341, in check
+    recovered = run(resume, cwd=project, command="job resume")["data"]
+                ~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/projects/miy-v2/scripts/check-cli-recovery.py", line 288, in run
+    return envelope(result, expected, command)
+  File "/projects/miy-v2/scripts/check-cli-output.py", line 44, in envelope
+    require(
+    ~~~~~~~^
+        result.returncode == expected_exit,
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        f"CLI exit mismatch: expected {expected_exit}, received {result.returncode}",
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/projects/miy-v2/scripts/check-cli-output.py", line 32, in require
+    raise AssertionError(message)
+AssertionError: CLI exit mismatch: expected 0, received 8

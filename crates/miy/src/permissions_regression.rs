@@ -1167,6 +1167,9 @@ pub async fn run(state: &State, client: &Client, base: &str) -> Result<Vec<Strin
     groups(&mut h, suffix, &mut passed).await?;
     // Independent fixtures: a failing check here does not hide the others.
     let mut stopped = Vec::new();
+    if let Err(error) = policy_snapshot(&mut h, suffix, &mut passed).await {
+        stopped.push(format!("policy snapshot: {error:#}"));
+    }
     if let Err(error) = policy_matrix(&mut h, suffix, &mut passed).await {
         stopped.push(format!("policy matrix: {error:#}"));
     }
@@ -1181,6 +1184,113 @@ pub async fn run(state: &State, client: &Client, base: &str) -> Result<Vec<Strin
     }
     ensure!(stopped.is_empty(), "{}", stopped.join("; "));
     Ok(passed)
+}
+
+/// Neither the initial nor the final state permits this user to read/manage the app:
+/// enabled without a grant -> disabled with a direct grant. Hold the grants relation
+/// while a real HTTP list and the real worker recheck reach their policy reads, then
+/// commit both changes together. Separate user/grant queries combine these states and
+/// incorrectly allow both; one statement snapshot must deny both.
+async fn policy_snapshot(
+    h: &mut Harness<'_>,
+    suffix: &str,
+    passed: &mut Vec<String>,
+) -> Result<()> {
+    use crate::{delegations::Action, policy, runtime_contract::FailureCode};
+    let actor = h.actor(false).await?;
+    let app = h.app(format!("snapshot-{suffix}"), "dev", &[]).await?;
+    ensure!(
+        h.visible(&actor, &app).await?.is_none(),
+        "initial app visibility"
+    );
+    ensure!(
+        policy::recheck_queued(
+            &h.state.pool,
+            &actor.id,
+            None,
+            &app.app,
+            "dev",
+            Action::Start
+        )
+        .await
+        .is_err(),
+        "initial worker authority"
+    );
+    let mut gate = h.state.pool.begin().await?;
+    let blocker: i32 = sqlx::query_scalar("SELECT pg_backend_pid()")
+        .fetch_one(&mut *gate)
+        .await?;
+    sqlx::query("LOCK TABLE grants IN ACCESS EXCLUSIVE MODE")
+        .execute(&mut *gate)
+        .await?;
+    let request = h.request(
+        &actor.token,
+        Method::GET,
+        &format!("/api/v1/installations?limit=200&appId={}", app.app),
+    );
+    let change = async {
+        tokio::time::timeout(Duration::from_secs(8), async {
+            loop {
+                let waiting: i64 = sqlx::query_scalar(
+                    "SELECT count(*) FROM pg_stat_activity WHERE pid<>$1 AND $1=ANY(pg_blocking_pids(pid)) AND query LIKE '%effective_grants%'",
+                )
+                .bind(blocker)
+                .fetch_one(&h.state.pool)
+                .await?;
+                if waiting >= 2 {
+                    return Ok::<_, anyhow::Error>(());
+                }
+                tokio::time::sleep(Duration::from_millis(20)).await;
+            }
+        })
+        .await
+        .context("HTTP list and worker recheck did not wait on policy grants")??;
+        sqlx::query("UPDATE users SET enabled=false WHERE id=$1")
+            .bind(&actor.id)
+            .execute(&mut *gate)
+            .await?;
+        sqlx::query("INSERT INTO grants(user_id,app_id,environment,permission) VALUES($1,$2,'dev','develop')")
+            .bind(&actor.id).bind(&app.app).execute(&mut *gate).await?;
+        gate.commit().await?;
+        Ok::<_, anyhow::Error>(())
+    };
+    let (http, queued, changed) = tokio::time::timeout(Duration::from_secs(15), async {
+        tokio::join!(
+            request.send(),
+            policy::recheck_queued(
+                &h.state.pool,
+                &actor.id,
+                None,
+                &app.app,
+                "dev",
+                Action::Start
+            ),
+            change,
+        )
+    })
+    .await
+    .context("policy snapshot requests did not finish")?;
+    changed?;
+    let listing = response(http?, 200).await?;
+    ensure!(
+        listing["installations"]
+            .as_array()
+            .context("snapshot installation list")?
+            .is_empty(),
+        "HTTP list combined an old enabled flag with a new grant"
+    );
+    let failure = queued
+        .err()
+        .context("worker combined an old enabled flag with a new grant")?;
+    ensure!(
+        matches!(
+            failure.code,
+            FailureCode::UserDisabled | FailureCode::PermissionRevoked
+        ),
+        "snapshot denial was not an authority denial"
+    );
+    passed.push("HTTP visibility and worker rechecks never combine an old active user with a newly granted permission after disable".into());
+    Ok(())
 }
 
 /// Groups and app access (V1-G1, V1-G2): permissions are computed from current

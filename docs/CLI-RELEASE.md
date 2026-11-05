@@ -10,6 +10,8 @@
 
 같은 커밋에서 `python3 scripts/check-api-compat.py --refresh 버전 소스커밋`으로 [게시 CLI 응답 계약](../contracts/api-v1.published.json)도 그 소스의 스키마로 갱신한다. 이후 서버 응답은 이 파일보다 필드를 추가만 할 수 있다(`check-static.sh scripts`). 이전 서버가 보내지 않는 필드는 CLI가 기본값으로 읽는다([계약 타입](../crates/miy/src/api_contract.rs)).
 
+호환 검사는 필드·필수 여부·enum뿐 아니라 정수와 실수, Rust 정수 표현 범위와 명시된 수치 한도, UUID·날짜 형식을 비교한다(nullable·배열 포함). 기존 독자가 읽지 못하는 값으로의 확장은 거부하고 표현 범위 축소는 허용한다. CLI 출력·복구 검사의 모의 작업 응답도 `RuntimeJob` 계약의 필수 필드를 갖추며, 실제 CLI로 종료 코드·유실 응답 복구·중복 제출 방지를 검사한다.
+
 ## 이전 0.6.3 검증 후보
 
 `8d7d04271f9467d8bbdd16308e73715b33e4dc0c`의 [CLI CI 40826960538](https://github.com/hurxxxx/miy-v2/actions/runs/40826960538)와 같은 CLI 출처·해시를 사용한 [설치기 CI 40830813012](https://github.com/hurxxxx/miy-v2/actions/runs/40830813012)가 성공했다. 다섯 CLI·두 Linux helper·Windows EXE를 검증해 [설치 안내](https://v2.dwdcc.kr/cli/install)에 게시하고 서버·UI도 0.6.3으로 반영했다. SDK 번들은 0.7.1이다. [Linux 검사·실제 다운로드·Todo 보존·NOT_RUN](CLI-0.6.3-LINUX-VALIDATION.md), [CLI index](releases/cli-0.6.3-candidate.json), [설치기 index](releases/windows-installer-0.6.3-candidate.json)를 함께 보존한다. 공개 GitHub Release/tag는 생성하지 않았다.

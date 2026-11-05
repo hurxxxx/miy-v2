@@ -1,0 +1,198 @@
+{
+  "date": "2026-11-06",
+  "status": "PASS",
+  "scope": "Review fixes: consistent policy snapshots, delegation lock ordering, CLI wire fixtures and API compatibility constraints",
+  "source": {
+    "baseCommit": "0a7b379d25fd04ff380bff2fe614ec0910a91b13",
+    "workingTreeDirty": true,
+    "files": {
+      "crates/miy/src/policy.rs": "642d76ae73a7ebaff4b6a931da5e5258a164bf319e5bb22075fdeb949c46a859",
+      "crates/miy/src/delegations.rs": "32460863572e6a9311c21f7b88c3fc883aaaa9669e9e3b2e610d10e7422ac520",
+      "crates/miy/src/permissions_regression.rs": "bfaf559168adac683f4f93682ec1cbf54cfcbccafc4931d7073b89a3e6c56d9d",
+      "crates/miy/src/delegation_regression.rs": "5a679e7d8b8695898066598fd9d4660bfa50f780f9d86334d7199ebe5a96a5d3",
+      "scripts/check-api-compat.py": "527030bbae2abc7ff6774eed623082319f6de4663728a12045d416fe8d7d2d9b",
+      "scripts/test-api-compat.py": "8e4637f61b6f85f19f7e014bee96e08f76d8381ff53aafac880d5823373c8e03",
+      "scripts/check-cli-output.py": "793c2daf45f112b7749ec87bb5ee8392b6659e391e3921b528616a60c4bff71a",
+      "scripts/check-cli-recovery.py": "4f91c4f50bc43cb04cb2f418a8fe0e2c9af2e0e3f0f0e2d8becb1008e3aead00",
+      "scripts/runtime-regression/run.py": "d6b0e27539724020899b959dbcc7ab7ad6d9e2133b5e8d7104be1c8423c40e2d"
+    }
+  },
+  "changes": [
+    "Read user, effective grants, company switch and active delegation in one SELECT snapshot for request, explicit delegation and queued-worker checks. Authorized writes acquire user/delegation share locks before the decision snapshot.",
+    "Restore user-before-parent-session lock order when issuing a delegation and retain the final in-transaction decision.",
+    "Complete RuntimeJob fixtures without weakening output, lost-acknowledgement, identity or duplicate-submission assertions.",
+    "Reject integer-to-number, numeric-range and UUID/date-time format widening, including nullable and array alternatives."
+  ],
+  "checks": [
+    {
+      "command": "bash scripts/check-static.sh rust",
+      "status": "PASS",
+      "serverTests": 179,
+      "serverIgnored": 7,
+      "clientTests": 116,
+      "includes": [
+        "format",
+        "server/client Clippy",
+        "bundle source",
+        "write-decision guard"
+      ]
+    },
+    {
+      "command": "bash scripts/check-static.sh scripts",
+      "status": "PASS",
+      "apiCompatibilityTests": 12,
+      "publishedApiTypes": 18,
+      "coreOpsTests": 62
+    },
+    {
+      "command": "bash scripts/check-static.sh web",
+      "status": "PASS",
+      "browserTests": 51,
+      "suites": [
+        36,
+        14,
+        1
+      ],
+      "buildDestination": ".local/evidence/check-static"
+    },
+    {
+      "command": "python3 scripts/runtime-regression/run.py",
+      "status": "PASS",
+      "observations": 100,
+      "suites": {
+        "runtime": 46,
+        "operations": 6,
+        "cli": 6,
+        "auth": 8,
+        "permissions": 24,
+        "delegation": 10
+      },
+      "cleanup": "PASS"
+    },
+    {
+      "command": "cargo build --locked --no-default-features",
+      "status": "PASS",
+      "artifact": "evidence/core-foundation-review-20261106-linux/client-identity.json"
+    },
+    {
+      "command": "python3 scripts/check-cli-output.py --cli <pinned current client binary>",
+      "status": "PASS",
+      "result": {
+        "passed": 14,
+        "liveServicesUsed": false,
+        "temporaryProjectsRemoved": true
+      }
+    },
+    {
+      "command": "python3 scripts/check-cli-recovery.py --cli <pinned current client binary>",
+      "status": "PASS",
+      "result": {
+        "passed": 6,
+        "scope": "CLI wire/client recovery",
+        "counts": {
+          "deployment": {
+            "exports": 1,
+            "uploadPosts": 1,
+            "runtimePosts": 1
+          },
+          "lifecycle": {
+            "preflights": 4,
+            "runtimePosts": 4,
+            "failedJobs": 2,
+            "freshSuccessfulJobs": 2
+          }
+        },
+        "liveServicesUsed": false,
+        "realDockerUsed": false,
+        "temporaryProjectsRemoved": true
+      }
+    },
+    {
+      "command": "python3 scripts/check-cli-install.py --cli <pinned current client binary>",
+      "status": "PASS",
+      "result": {
+        "status": "pass",
+        "checks": 17,
+        "platform": "posix"
+      }
+    },
+    {
+      "command": "new repository schema regressions against HEAD:scripts/check-api-compat.py",
+      "status": "PASS",
+      "method": "In-memory substitution of the old checker; four regression methods produced 19 expected failing subtests and no errors. Tool output retained in review conversation; no separate log file."
+    },
+    {
+      "command": "python3 scripts/check-doc-links.py",
+      "status": "PASS",
+      "relativeLinks": 555,
+      "trackedMarkdownFiles": 53
+    },
+    {
+      "command": "git diff --check",
+      "status": "PASS"
+    },
+    {
+      "command": "source and evidence SHA-256 verification",
+      "status": "PASS",
+      "sourceFiles": 9,
+      "artifacts": 15
+    }
+  ],
+  "concurrencyCoverage": [
+    "Actual HTTP installation list and actual Rust queued recheck block on the grants relation; an atomic active-without-grant to disabled-with-grant transition must deny both.",
+    "Actual concurrent delegation-create and user-disable HTTP requests: observe parent-session and user-row waits, release the gate, require both responses to be 200, and verify the user/delegation/parent and child credentials are revoked."
+  ],
+  "priorFailures": [
+    {
+      "phase": "pre-fix review",
+      "status": "FAIL",
+      "case": "CLI output: expected exit 9, actual 8; CLI recovery: expected exit 0, actual 8",
+      "artifacts": [
+        "review-cli-output-fail.log",
+        "review-cli-recovery-fail.log"
+      ]
+    },
+    {
+      "phase": "pre-fix review",
+      "status": "REPRODUCED",
+      "case": "PostgreSQL same-SQL reproduction: mixed snapshot incorrectly allows; lock inversion aborts user disable with 40P01",
+      "artifact": "review-policy-sql-reproduction.json",
+      "scope": "SQL-order reproduction, not HTTP execution"
+    },
+    {
+      "phase": "initial implementation check",
+      "status": "FAIL",
+      "case": "cargo was absent from shell PATH; rerun with the explicit cargo path, then all check-static rust checks passed",
+      "artifact": "initial-cargo-path-fail.log"
+    }
+  ],
+  "limits": [
+    "Native Windows/macOS and GitHub-hosted workflows: NOT_RUN; this is a local Linux working-tree validation.",
+    "Windows 11 acceptance remains user-run under the existing Windows acceptance documents.",
+    "Dedicated snapshot race uses an undelegated user. Delegated facts use the same SQL snapshot and retain existing expiration/revocation suite coverage; no separate delegated snapshot race was added.",
+    "Deployment-tool target CI verification remains planned separately.",
+    "Existing uncommitted core stop/cgroup verification changes were preserved; their 62 operation-tool tests ran but they are not introduced by this review fix."
+  ],
+  "publication": {
+    "commit": "NOT_RUN",
+    "push": "NOT_RUN",
+    "deployment": "NOT_RUN"
+  },
+  "evidence": {
+    "evidence/core-foundation-review-20261106-linux/cli-install.log": "a9d60582d8632a71ac2c21e5c8b5ad76e1afe620c2845f402d28ae80a85e7a9d",
+    "evidence/core-foundation-review-20261106-linux/cli-output.log": "d821aa8662e65ac7a876372730077c749071b0cd74040f5da8f66ee451ed7abe",
+    "evidence/core-foundation-review-20261106-linux/cli-recovery.log": "61291c953b4366a44b5e43e3c5d3f76f68f4fe8c67b10cbe25703168740dccc6",
+    "evidence/core-foundation-review-20261106-linux/client-identity.json": "67eaec534472a542ac0a45596a94d996910609ce51494733b5320643ffb5f080",
+    "evidence/core-foundation-review-20261106-linux/initial-cargo-path-fail.log": "a326558a932a2a67436a997ada30bbb04a637812287a7435cac205a7a51c6e71",
+    "evidence/core-foundation-review-20261106-linux/review-cli-output-fail.log": "9615f04076269b2da5c6ace4b032eb9dfa7433c2abb48949fd1dce32b661aab7",
+    "evidence/core-foundation-review-20261106-linux/review-cli-recovery-fail.log": "643ded82a5d6fea757138f34dffeeafc783b4e31ea8b5fc8c2a92d4be22f4e97",
+    "evidence/core-foundation-review-20261106-linux/review-policy-sql-reproduction.json": "2f3c52eedd8f139671177877edbae3415b29dd891a4510872298039b07688019",
+    "evidence/core-foundation-review-20261106-linux/runtime-cleanup.json": "76f05707b6662c61715a0e787b6de8c6c418c2a7905a683f1d9fe7aeb0ec5a4d",
+    "evidence/core-foundation-review-20261106-linux/runtime-results.jsonl": "8e8df0299f1d37899e83337abaa967a706d4f094f939af4af6c880d077269e03",
+    "evidence/core-foundation-review-20261106-linux/runtime-test-identity.json": "e4852cfe7a6f6aab45b6f639ef01149571229e0994ef4cb9a90758cc4a60505d",
+    "evidence/core-foundation-review-20261106-linux/rust.log": "aeacef72ff862820f1e5c0ce4321fb424c30618c96a5bec2c3fb84a65ecc1b36",
+    "evidence/core-foundation-review-20261106-linux/scripts.log": "a460b1e259fdb2bdda380e754ed5eb6089bec08c3666cf6a4ae1b2a5e934b692",
+    "evidence/core-foundation-review-20261106-linux/server-cli-identity.json": "f8772809b0df18f36c1cdb52dc0fb6c772b563c9f0cb864b2faec86d70869e77",
+    "evidence/core-foundation-review-20261106-linux/web.log": "c455087561d5d895abe1d47a69de91fde65cc8a80e5ee083976ec3888c256f16"
+  }
+}

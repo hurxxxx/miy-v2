@@ -1,0 +1,54 @@
+{
+  "kind": "isolated PostgreSQL lock-order reproduction; no HTTP handler or worker",
+  "status": "REPRODUCED",
+  "source": "0a7b379",
+  "cases": [
+    {
+      "mode": "current_session_then_user",
+      "observedWait": "disable waits for create parent-session lock",
+      "outcomes": {
+        "create": "committed",
+        "disable": "aborted"
+      },
+      "sqlstates": {
+        "create": [],
+        "disable": [
+          "40P01"
+        ]
+      },
+      "actorEnabled": true,
+      "delegationRows": 1,
+      "activeIssuedSessions": 1
+    },
+    {
+      "mode": "previous_user_then_session",
+      "observedWait": "disable waits for create user lock, before touching sessions",
+      "outcomes": {
+        "create": "committed",
+        "disable": "committed"
+      },
+      "sqlstates": {
+        "create": [],
+        "disable": []
+      },
+      "actorEnabled": false,
+      "delegationRows": 1,
+      "activeIssuedSessions": 0
+    }
+  ],
+  "postgresVersion": "18.3 (Debian 18.3-1.pgdg13+1)",
+  "snapshotCombination": {
+    "method": "Exact Facts::read SQL order and pure Manage/queued decision evaluated over loaded fields; not Rust/HTTP execution",
+    "initialSingleQueryAllowed": false,
+    "finalSingleQueryAllowed": false,
+    "cachedEnabled": true,
+    "laterDevelopGrantPresent": true,
+    "currentFactsManageAllowed": true,
+    "companyDisabled": false,
+    "finalDatabaseUserEnabled": false
+  },
+  "cleanup": {
+    "ownedContainerRemoved": true,
+    "ownedContainerId": "2be3e754559ae0f0b3febc49a1940e776ba360059198c396585cdc3a7eb3037b"
+  }
+}

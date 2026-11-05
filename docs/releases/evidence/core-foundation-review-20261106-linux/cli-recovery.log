@@ -1,0 +1,7 @@
+PASS complete checked journal precedes upload; lost acknowledgement uses receipt lookup without another POST
+PASS receipt request ID, immutable image and archive hash mismatches are rejected
+PASS explicit app and environment mismatch cannot resume a dev mutation
+PASS runtime acknowledgement loss resumes the original request and job without reupload or resubmission
+PASS timeout only stops observation; cursor resume completes the same job with one export and one POST per stage
+PASS failed start/stop remains nonretryable; restored explicit commands use fresh preflight and new request/job IDs
+{"passed": 6, "scope": "CLI wire/client recovery", "counts": {"deployment": {"exports": 1, "uploadPosts": 1, "runtimePosts": 1}, "lifecycle": {"preflights": 4, "runtimePosts": 4, "failedJobs": 2, "freshSuccessfulJobs": 2}}, "liveServicesUsed": false, "realDockerUsed": false, "temporaryProjectsRemoved": true}

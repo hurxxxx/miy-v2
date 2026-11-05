@@ -1,6 +1,6 @@
 //! Actual HTTP/PostgreSQL delegation boundaries inside the owned runtime fixture.
 use crate::{State, auth, contract};
-use anyhow::{Result, ensure};
+use anyhow::{Context, Result, ensure};
 use reqwest::{Client, Method, StatusCode};
 use serde_json::{Value, json};
 use sqlx::Row;
@@ -61,6 +61,129 @@ fn id(value: &Value, path: &str) -> Uuid {
 }
 fn access(value: &Value) -> &str {
     value["credential"]["accessToken"].as_str().unwrap()
+}
+
+async fn waiting_on(
+    pool: &sqlx::PgPool,
+    blockers: &[i32],
+    query_prefix: &str,
+    excluded_pid: i32,
+) -> Result<(i32, bool)> {
+    tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        loop {
+            let row = sqlx::query(
+                "SELECT pid,starts_with(query,'SELECT id,admin,enabled FROM users') AS user_wait \
+                 FROM pg_stat_activity WHERE datname=current_database() AND wait_event_type='Lock' \
+                 AND pg_blocking_pids(pid) && $1::integer[] AND starts_with(query,$2) AND pid<>$3 LIMIT 1",
+            )
+            .bind(blockers)
+            .bind(query_prefix)
+            .bind(excluded_pid)
+            .fetch_optional(pool)
+            .await?;
+            if let Some(row) = row {
+                return Ok::<_, anyhow::Error>((row.get("pid"), row.get("user_wait")));
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+        }
+    })
+    .await
+    .context("delegation regression did not observe the expected PostgreSQL lock wait")?
+}
+
+/// Real concurrent API requests, with a parent-session gate to force the former
+/// session -> user / user -> session lock cycle. No sleep guesses request order.
+async fn issue_during_user_disable(state: &State, admin: &Harness<'_>) -> Result<()> {
+    let subject = Harness {
+        client: admin.client,
+        base: admin.base,
+        user: format!("delegation-lock-{}", Uuid::new_v4()),
+        parent: Uuid::new_v4(),
+        token: format!("miy_access_{}", auth::random()),
+    };
+    sqlx::query("INSERT INTO users(id,name) VALUES($1,'Delegation lock fixture')")
+        .bind(&subject.user)
+        .execute(&state.pool)
+        .await?;
+    sqlx::query("INSERT INTO grants(user_id,app_id,environment,permission) VALUES($1,'audit-runtime','dev','develop')")
+        .bind(&subject.user).execute(&state.pool).await?;
+    sqlx::query("INSERT INTO cli_sessions(id,user_id,client_id,client_name) VALUES($1,$2,$3,'Delegation lock fixture')")
+        .bind(subject.parent).bind(&subject.user).bind(Uuid::new_v4()).execute(&state.pool).await?;
+    sqlx::query("INSERT INTO cli_access_tokens(token_hash,session_id,expires_at) VALUES($1,$2,now()+interval '15 minutes')")
+        .bind(contract::hash(&subject.token)).bind(subject.parent).execute(&state.pool).await?;
+
+    let mut gate = state.pool.begin().await?;
+    let gate_pid: i32 = sqlx::query_scalar("SELECT pg_backend_pid()")
+        .fetch_one(&mut *gate)
+        .await?;
+    sqlx::query("SELECT id FROM cli_sessions WHERE id=$1 FOR UPDATE")
+        .bind(subject.parent)
+        .fetch_one(&mut *gate)
+        .await?;
+    let actions = ["read", "start"];
+    let create_blockers = [gate_pid];
+    let creating = subject.create("dev", &actions);
+    tokio::pin!(creating);
+    let (create_pid, _) = tokio::select! {
+        observed = waiting_on(&state.pool, &create_blockers, "SELECT expires_at FROM cli_sessions", 0) => observed?,
+        early = &mut creating => {
+            early?;
+            anyhow::bail!("delegation issue completed before its parent-session lock wait");
+        }
+    };
+    let path = format!("/api/v1/users/{}/state", subject.user);
+    let disabling = admin.request(
+        &admin.token,
+        Method::POST,
+        &path,
+        Some(json!({"enabled":false})),
+        StatusCode::OK,
+    );
+    tokio::pin!(disabling);
+    let disable_blockers = [gate_pid, create_pid];
+    let (_, waits_on_user) = tokio::select! {
+        observed = waiting_on(&state.pool, &disable_blockers, "", create_pid) => observed?,
+        early = &mut creating => {
+            early?;
+            anyhow::bail!("delegation issue escaped its parent-session gate");
+        }
+        early = &mut disabling => {
+            early?;
+            anyhow::bail!("user disable completed before the delegated write released its user lock");
+        }
+    };
+    gate.rollback().await?;
+    // Drain both requests even if one fails; a failed old implementation must not
+    // leave an in-flight mutation behind for subsequent fixture observations.
+    let (created, disabled) = tokio::join!(creating, disabling);
+    let created = created?;
+    let disabled = disabled?;
+    ensure!(
+        waits_on_user,
+        "user disable waited on a credential before the user row"
+    );
+    ensure!(disabled["enabled"] == false);
+    let delegation = id(&created["delegation"], "id");
+    let child = id(&created["credential"], "sessionId");
+    let row = sqlx::query(
+        "SELECT NOT u.enabled AS disabled,d.revoked_at IS NOT NULL AS delegation_revoked, \
+         (SELECT count(*) FROM cli_sessions c WHERE c.user_id=u.id AND c.id=ANY($3) AND c.revoked_at IS NOT NULL) AS revoked_sessions \
+         FROM users u JOIN delegations d ON d.user_id=u.id WHERE u.id=$1 AND d.id=$2",
+    )
+    .bind(&subject.user)
+    .bind(delegation)
+    .bind(vec![subject.parent, child])
+    .fetch_one(&state.pool)
+    .await?;
+    ensure!(
+        row.get::<bool, _>("disabled")
+            && row.get::<bool, _>("delegation_revoked")
+            && row.get::<i64, _>("revoked_sessions") == 2,
+        "user disable did not revoke the newly issued delegation and both credential families"
+    );
+    subject.denied(&subject.token).await?;
+    subject.denied(access(&created)).await?;
+    Ok(())
 }
 
 async fn cli_import(base: &str, issued: &Value) -> Result<()> {
@@ -727,6 +850,10 @@ pub async fn run(state: &State, client: &Client, base: &str) -> Result<Vec<Strin
     lease_cleanup_scope(state, &h, delegated).await?;
     // Independent checks: a failure is reported at the end without hiding the others.
     let mut stopped = Vec::new();
+    match issue_during_user_disable(state, &h).await {
+        Ok(()) => passed.push("concurrent HTTP delegation issue and user disable keep user-before-session lock order, both return 200 and revoke the newly issued credential".into()),
+        Err(error) => stopped.push(format!("delegation issue versus user disable: {error:#}")),
+    }
     match acceptance_scope(&h).await {
         Ok(()) => passed.push("recording a test acceptance with a delegation needs accept and read before any other check".into()),
         Err(error) => stopped.push(format!("test acceptance scope: {error:#}")),

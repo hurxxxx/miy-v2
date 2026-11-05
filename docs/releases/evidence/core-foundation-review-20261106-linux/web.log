@@ -1,0 +1,269 @@
+
+> miy-workspace@ typecheck /projects/miy-v2
+> tsc --noEmit
+
+vite v8.3.5 building client environment for production...
+transforming...
+✓ 203 modules transformed.
+rendering chunks...
+computing gzip size...
+../../.local/evidence/check-static/platform/index.html                                                                                                                                    1.67 kB │ gzip:  0.56 kB
+../../.local/evidence/check-static/platform/assets/mf-entry-bootstrap-0-69953960.js                                                                                                       2.16 kB
+../../.local/evidence/check-static/platform/assets/PretendardVariable.subset.66-C3HqaDeY.woff2                                                                                            8.25 kB
+../../.local/evidence/check-static/platform/assets/PretendardVariable.subset.64-CTbrgYF9.woff2                                                                                            8.26 kB
+../../.local/evidence/check-static/platform/assets/PretendardVariable.subset.65-B66rjuyf.woff2                                                                                           11.10 kB
+../../.local/evidence/check-static/platform/assets/PretendardVariable.subset.68-DS9B48d0.woff2                                                                                           16.34 kB
+../../.local/evidence/check-static/platform/assets/PretendardVariable.subset.73-DMrK970F.woff2                                                                                           18.33 kB
+../../.local/evidence/check-static/platform/assets/PretendardVariable.subset.72-pYYGrEQR.woff2                                                                                           19.50 kB
+../../.local/evidence/check-static/platform/assets/PretendardVariable.subset.75-CxKdrRNf.woff2                                                                                           19.99 kB
+../../.local/evidence/check-static/platform/assets/PretendardVariable.subset.90-BF7RiZjm.woff2                                                                                           20.85 kB
+../../.local/evidence/check-static/platform/assets/PretendardVariable.subset.67-BmuXdlDy.woff2                                                                                           21.84 kB
+../../.local/evidence/check-static/platform/assets/PretendardVariable.subset.89-DOzqWPpX.woff2                                                                                           21.86 kB
+../../.local/evidence/check-static/platform/assets/PretendardVariable.subset.74-D4tQnymK.woff2                                                                                           22.39 kB
+../../.local/evidence/check-static/platform/assets/PretendardVariable.subset.84-Brb8EsYQ.woff2                                                                                           24.49 kB
+../../.local/evidence/check-static/platform/assets/PretendardVariable.subset.87-Lzui2vbK.woff2                                                                                           24.66 kB
+../../.local/evidence/check-static/platform/assets/PretendardVariable.subset.76-DhPm2b_q.woff2                                                                                           24.92 kB
+../../.local/evidence/check-static/platform/assets/PretendardVariable.subset.85-Byo_x2hf.woff2                                                                                           25.10 kB
+../../.local/evidence/check-static/platform/assets/PretendardVariable.subset.88-CqX6JSgh.woff2                                                                                           25.64 kB
+../../.local/evidence/check-static/platform/assets/PretendardVariable.subset.86-XG7lTN_6.woff2                                                                                           25.71 kB
+../../.local/evidence/check-static/platform/assets/PretendardVariable.subset.77-DwaxqOC8.woff2                                                                                           26.04 kB
+../../.local/evidence/check-static/platform/assets/PretendardVariable.subset.79-XpoyPP38.woff2                                                                                           26.22 kB
+../../.local/evidence/check-static/platform/assets/PretendardVariable.subset.81-BZzF9Hb3.woff2                                                                                           26.30 kB
+../../.local/evidence/check-static/platform/assets/PretendardVariable.subset.82-BgAHe30u.woff2                                                                                           26.50 kB
+../../.local/evidence/check-static/platform/assets/PretendardVariable.subset.78-DhqRbBzT.woff2                                                                                           26.54 kB
+../../.local/evidence/check-static/platform/assets/PretendardVariable.subset.83-DF-zBLLe.woff2                                                                                           26.96 kB
+../../.local/evidence/check-static/platform/assets/PretendardVariable.subset.70-BUXiAGMT.woff2                                                                                           27.54 kB
+../../.local/evidence/check-static/platform/assets/PretendardVariable.subset.37-BD6FyOtY.woff2                                                                                           27.91 kB
+../../.local/evidence/check-static/platform/assets/PretendardVariable.subset.71-DuPZj8us.woff2                                                                                           28.32 kB
+../../.local/evidence/check-static/platform/assets/PretendardVariable.subset.80-DsV9Qp_h.woff2                                                                                           28.79 kB
+../../.local/evidence/check-static/platform/assets/PretendardVariable.subset.63-B35xsm4O.woff2                                                                                           28.81 kB
+../../.local/evidence/check-static/platform/assets/PretendardVariable.subset.40-BDaOfdUe.woff2                                                                                           29.84 kB
+../../.local/evidence/check-static/platform/assets/PretendardVariable.subset.43-DHdpry7N.woff2                                                                                           30.38 kB
+../../.local/evidence/check-static/platform/assets/PretendardVariable.subset.7-E2HaA55t.woff2                                                                                            31.91 kB
+../../.local/evidence/check-static/platform/assets/PretendardVariable.subset.1-C-__qv6_.woff2                                                                                            32.04 kB
+../../.local/evidence/check-static/platform/assets/PretendardVariable.subset.44-qHopVhdd.woff2                                                                                           32.13 kB
+../../.local/evidence/check-static/platform/assets/PretendardVariable.subset.24-CmkE8Q8D.woff2                                                                                           32.30 kB
+../../.local/evidence/check-static/platform/assets/PretendardVariable.subset.10-DzSWztS8.woff2                                                                                           33.03 kB
+../../.local/evidence/check-static/platform/assets/PretendardVariable.subset.41-BUACvzZC.woff2                                                                                           33.18 kB
+../../.local/evidence/check-static/platform/assets/PretendardVariable.subset.50-C8IyFH7L.woff2                                                                                           33.22 kB
+../../.local/evidence/check-static/platform/assets/PretendardVariable.subset.54-Dt2-cQkx.woff2                                                                                           33.34 kB
+../../.local/evidence/check-static/platform/assets/PretendardVariable.subset.5-K_MNGNCe.woff2                                                                                            33.62 kB
+../../.local/evidence/check-static/platform/assets/PretendardVariable.subset.6-Bxhohlcm.woff2                                                                                            33.96 kB
+../../.local/evidence/check-static/platform/assets/PretendardVariable.subset.9-Btb3bmS6.woff2                                                                                            34.01 kB
+../../.local/evidence/check-static/platform/assets/PretendardVariable.subset.55-jFgflYjX.woff2                                                                                           34.18 kB
+../../.local/evidence/check-static/platform/assets/PretendardVariable.subset.39-B_7wfth9.woff2                                                                                           34.25 kB
+../../.local/evidence/check-static/platform/assets/PretendardVariable.subset.52-CNgqKOOJ.woff2                                                                                           34.35 kB
+../../.local/evidence/check-static/platform/assets/PretendardVariable.subset.0-BHUkWNFR.woff2                                                                                            34.56 kB
+../../.local/evidence/check-static/platform/assets/PretendardVariable.subset.53-BSRnyb-u.woff2                                                                                           34.57 kB
+../../.local/evidence/check-static/platform/assets/PretendardVariable.subset.42-Dp-5mnyL.woff2                                                                                           34.60 kB
+../../.local/evidence/check-static/platform/assets/PretendardVariable.subset.45-BniyRFfm.woff2                                                                                           34.66 kB
+../../.local/evidence/check-static/platform/assets/PretendardVariable.subset.36-Dn5IBRQB.woff2                                                                                           34.68 kB
+../../.local/evidence/check-static/platform/assets/PretendardVariable.subset.34-CaCS33Md.woff2                                                                                           34.72 kB
+../../.local/evidence/check-static/platform/assets/PretendardVariable.subset.69-YT16ymcp.woff2                                                                                           34.78 kB
+../../.local/evidence/check-static/platform/assets/PretendardVariable.subset.38-D4hu443z.woff2                                                                                           34.80 kB
+../../.local/evidence/check-static/platform/assets/PretendardVariable.subset.62-DGSAWCfb.woff2                                                                                           34.87 kB
+../../.local/evidence/check-static/platform/assets/PretendardVariable.subset.33--0OT__YQ.woff2                                                                                           34.91 kB
+../../.local/evidence/check-static/platform/assets/PretendardVariable.subset.17-BfZSA-Xc.woff2                                                                                           34.94 kB
+../../.local/evidence/check-static/platform/assets/PretendardVariable.subset.4-Bvh2YGoc.woff2                                                                                            35.15 kB
+../../.local/evidence/check-static/platform/assets/PretendardVariable.subset.56-BwZdvJZQ.woff2                                                                                           35.18 kB
+../../.local/evidence/check-static/platform/assets/PretendardVariable.subset.35-DWFYRGLp.woff2                                                                                           35.35 kB
+../../.local/evidence/check-static/platform/assets/PretendardVariable.subset.27-CT6nuW9L.woff2                                                                                           35.42 kB
+../../.local/evidence/check-static/platform/assets/PretendardVariable.subset.61-PUuTnod4.woff2                                                                                           35.64 kB
+../../.local/evidence/check-static/platform/assets/PretendardVariable.subset.15-D04iXIE3.woff2                                                                                           35.66 kB
+../../.local/evidence/check-static/platform/assets/PretendardVariable.subset.13-C42mj_j2.woff2                                                                                           35.70 kB
+../../.local/evidence/check-static/platform/assets/PretendardVariable.subset.47-B-cWO2pw.woff2                                                                                           35.72 kB
+../../.local/evidence/check-static/platform/assets/PretendardVariable.subset.57-BwFDg-Fs.woff2                                                                                           35.96 kB
+../../.local/evidence/check-static/platform/assets/PretendardVariable.subset.51-Bxd0gTAs.woff2                                                                                           36.02 kB
+../../.local/evidence/check-static/platform/assets/PretendardVariable.subset.49-BblQVys9.woff2                                                                                           36.05 kB
+../../.local/evidence/check-static/platform/assets/PretendardVariable.subset.20-Ig1-z3n5.woff2                                                                                           36.12 kB
+../../.local/evidence/check-static/platform/assets/PretendardVariable.subset.14-Bl512uUX.woff2                                                                                           36.51 kB
+../../.local/evidence/check-static/platform/assets/PretendardVariable.subset.46-BMRq7xC-.woff2                                                                                           36.54 kB
+../../.local/evidence/check-static/platform/assets/PretendardVariable.subset.8-CRbJhhyA.woff2                                                                                            36.69 kB
+../../.local/evidence/check-static/platform/assets/PretendardVariable.subset.21-yKPEdLXC.woff2                                                                                           37.26 kB
+../../.local/evidence/check-static/platform/assets/PretendardVariable.subset.11-CqVmlKJn.woff2                                                                                           37.40 kB
+../../.local/evidence/check-static/platform/assets/PretendardVariable.subset.48-Ct-fWrPO.woff2                                                                                           37.77 kB
+../../.local/evidence/check-static/platform/assets/PretendardVariable.subset.60-CeHezjjf.woff2                                                                                           37.77 kB
+../../.local/evidence/check-static/platform/assets/PretendardVariable.subset.16-BQUnS2GX.woff2                                                                                           37.91 kB
+../../.local/evidence/check-static/platform/assets/PretendardVariable.subset.12-BHuZSgT0.woff2                                                                                           37.94 kB
+../../.local/evidence/check-static/platform/assets/PretendardVariable.subset.91-Csm0YNoH.woff2                                                                                           37.99 kB
+../../.local/evidence/check-static/platform/assets/PretendardVariable.subset.30-CWDM1c0J.woff2                                                                                           38.44 kB
+../../.local/evidence/check-static/platform/assets/PretendardVariable.subset.28-CpO0Y96p.woff2                                                                                           38.46 kB
+../../.local/evidence/check-static/platform/assets/PretendardVariable.subset.22-CSqxKoOs.woff2                                                                                           38.68 kB
+../../.local/evidence/check-static/platform/assets/PretendardVariable.subset.59-CMkWjhdo.woff2                                                                                           38.97 kB
+../../.local/evidence/check-static/platform/assets/PretendardVariable.subset.29-D6hjrUWm.woff2                                                                                           39.28 kB
+../../.local/evidence/check-static/platform/assets/PretendardVariable.subset.32-CGnFWD2i.woff2                                                                                           40.21 kB
+../../.local/evidence/check-static/platform/assets/PretendardVariable.subset.23-DK80wi0t.woff2                                                                                           40.28 kB
+../../.local/evidence/check-static/platform/assets/PretendardVariable.subset.26-Sozl8dw8.woff2                                                                                           40.32 kB
+../../.local/evidence/check-static/platform/assets/PretendardVariable.subset.3-Dqw33sf4.woff2                                                                                            40.64 kB
+../../.local/evidence/check-static/platform/assets/PretendardVariable.subset.58-DlucQts_.woff2                                                                                           41.56 kB
+../../.local/evidence/check-static/platform/assets/PretendardVariable.subset.18-CwAxMC3C.woff2                                                                                           41.60 kB
+../../.local/evidence/check-static/platform/assets/PretendardVariable.subset.31-CdmyZ5mm.woff2                                                                                           41.89 kB
+../../.local/evidence/check-static/platform/assets/PretendardVariable.subset.25-CsoWBIZB.woff2                                                                                           42.03 kB
+../../.local/evidence/check-static/platform/assets/PretendardVariable.subset.19-CJu4Zcdo.woff2                                                                                           42.32 kB
+../../.local/evidence/check-static/platform/assets/PretendardVariable.subset.2-dCZkyKLw.woff2                                                                                            43.92 kB
+../../.local/evidence/check-static/platform/assets/index-gql6MDte.css                                                                                                                    79.69 kB │ gzip: 20.20 kB
+../../.local/evidence/check-static/platform/assets/helpers-C_34uY6R.js                                                                                                                    0.08 kB │ gzip:  0.10 kB
+../../.local/evidence/check-static/platform/assets/dist-C5FDqBLb.js                                                                                                                       0.45 kB │ gzip:  0.28 kB
+../../.local/evidence/check-static/platform/assets/_virtual_mf___mfe_internal__miy_shell__mf_owner__82325798177518__prebuild__react_mf_2_dom__prebuild__-BVM7-R3C.js                      0.87 kB │ gzip:  0.46 kB
+../../.local/evidence/check-static/platform/assets/rolldown-runtime-BWaJ3C7D.js                                                                                                           0.91 kB │ gzip:  0.51 kB
+../../.local/evidence/check-static/platform/assets/pendingShares-CtF6yu7A.js                                                                                                              1.48 kB │ gzip:  0.83 kB
+../../.local/evidence/check-static/platform/assets/vite-preload-helper-BLdHbfdN.js                                                                                                        1.51 kB │ gzip:  0.79 kB
+../../.local/evidence/check-static/platform/assets/_virtual_mf___mfe_internal__miy_shell__mf_owner__82325798177518__loadShare__react_mf_1_jsx_mf_2_runtime__loadShare__.js-Kl9YNvVy.js    3.14 kB │ gzip:  1.34 kB
+../../.local/evidence/check-static/platform/assets/_virtual_mf-localSharedImportMap___mfe_internal__miy_shell__mf_owner__1-lk_dnfDC.js                                                    4.51 kB │ gzip:  1.33 kB
+../../.local/evidence/check-static/platform/assets/hostInit-C6Rzi-SC.js                                                                                                                   5.07 kB │ gzip:  2.15 kB
+../../.local/evidence/check-static/platform/assets/_virtual_mf___mfe_internal__miy_shell__mf_owner__82325798177518__loadShare__react__loadShare__.js-0ujCdT_r.js                         14.54 kB │ gzip:  5.18 kB
+../../.local/evidence/check-static/platform/remoteEntry-CRy52ZxZ.js                                                                                                                      19.99 kB │ gzip:  6.71 kB
+../../.local/evidence/check-static/platform/assets/utils-CNQ8lnHu.js                                                                                                                     65.51 kB │ gzip: 19.41 kB
+../../.local/evidence/check-static/platform/assets/index-C29TG7hE.js                                                                                                                    128.76 kB │ gzip: 43.32 kB
+../../.local/evidence/check-static/platform/assets/_virtual_mf___mfe_internal__miy_shell__mf_owner__82325798177518__loadShare__react_mf_2_dom_mf_1_client__loadShare__.js-BbawRYDh.js   213.99 kB │ gzip: 66.97 kB
+
+✓ built in 350ms
+vite v8.3.5 building client environment for reference...
+transforming...
+✓ 87 modules transformed.
+rendering chunks...
+computing gzip size...
+../../.local/evidence/check-static/fixtures-reference/mf-manifest.json                                                                                                                             1.90 kB │ gzip:  0.60 kB
+../../.local/evidence/check-static/fixtures-reference/mf-stats.json                                                                                                                                4.90 kB │ gzip:  0.91 kB
+../../.local/evidence/check-static/fixtures-reference/.vite/manifest.json                                                                                                                          6.33 kB │ gzip:  0.81 kB
+../../.local/evidence/check-static/fixtures-reference/assets/ReferenceApp-qIBxuuED.css                                                                                                             0.10 kB │ gzip:  0.09 kB
+../../.local/evidence/check-static/fixtures-reference/assets/helpers-oIxDNnZJ.js                                                                                                                   0.08 kB │ gzip:  0.10 kB
+../../.local/evidence/check-static/fixtures-reference/assets/dist-C5M3fhBw.js                                                                                                                      0.29 kB │ gzip:  0.22 kB
+../../.local/evidence/check-static/fixtures-reference/assets/_virtual_mf___mfe_internal__miy_reference__mf_owner__104336378906952__prebuild__react_mf_1_jsx_mf_2_runtime__prebuild__-lLn5ruiO.js   0.52 kB │ gzip:  0.34 kB
+../../.local/evidence/check-static/fixtures-reference/assets/rolldown-runtime-XKyaHtl9.js                                                                                                          0.72 kB │ gzip:  0.42 kB
+../../.local/evidence/check-static/fixtures-reference/assets/ReferenceApp-Bhsqj1Qp.js                                                                                                              1.45 kB │ gzip:  0.85 kB
+../../.local/evidence/check-static/fixtures-reference/assets/vite-preload-helper-CRzLMJPS.js                                                                                                       1.53 kB │ gzip:  0.80 kB
+../../.local/evidence/check-static/fixtures-reference/assets/_virtual_mf___mfe_internal__miy_reference__mf_owner__104336378906952__prebuild__react__prebuild__-BC1ksIG3.js                         1.73 kB │ gzip:  0.72 kB
+../../.local/evidence/check-static/fixtures-reference/assets/pendingShares-BQjys1zt.js                                                                                                             1.83 kB │ gzip:  0.92 kB
+../../.local/evidence/check-static/fixtures-reference/assets/_virtual_mf-localSharedImportMap___mfe_internal__miy_reference__mf_owner__1-BMMSlPSw.js                                               3.58 kB │ gzip:  1.23 kB
+../../.local/evidence/check-static/fixtures-reference/assets/_virtual_mf___mfe_internal__miy_reference__mf_owner__104336378906952__prebuild__react_mf_2_dom__prebuild__-BtbxHBoQ.js                4.55 kB │ gzip:  1.59 kB
+../../.local/evidence/check-static/fixtures-reference/assets/hostInit-DVbBbpCF.js                                                                                                                  5.11 kB │ gzip:  2.16 kB
+../../.local/evidence/check-static/fixtures-reference/assets/react-DlmbjZJV.js                                                                                                                     7.87 kB │ gzip:  3.00 kB
+../../.local/evidence/check-static/fixtures-reference/assets/_virtual_mf___mfe_internal__miy_reference__mf_owner__104336378906952__loadShare__shared-Cxft0b-v.js                                   9.14 kB │ gzip:  2.83 kB
+../../.local/evidence/check-static/fixtures-reference/remoteEntry.js                                                                                                                              21.03 kB │ gzip:  7.13 kB
+../../.local/evidence/check-static/fixtures-reference/assets/utils-v9GZlbdk.js                                                                                                                    65.49 kB │ gzip: 19.40 kB
+
+✓ built in 151ms
+vite v8.3.5 building client environment for diagnosis...
+transforming...
+✓ 87 modules transformed.
+rendering chunks...
+computing gzip size...
+../../.local/evidence/check-static/fixtures-diagnosis/mf-manifest.json                                                                                                                            1.90 kB │ gzip:  0.60 kB
+../../.local/evidence/check-static/fixtures-diagnosis/mf-stats.json                                                                                                                               4.90 kB │ gzip:  0.92 kB
+../../.local/evidence/check-static/fixtures-diagnosis/.vite/manifest.json                                                                                                                         6.31 kB │ gzip:  0.81 kB
+../../.local/evidence/check-static/fixtures-diagnosis/assets/DiagnosticApp-qIBxuuED.css                                                                                                           0.10 kB │ gzip:  0.09 kB
+../../.local/evidence/check-static/fixtures-diagnosis/assets/helpers-oIxDNnZJ.js                                                                                                                  0.08 kB │ gzip:  0.10 kB
+../../.local/evidence/check-static/fixtures-diagnosis/assets/dist-C5M3fhBw.js                                                                                                                     0.29 kB │ gzip:  0.22 kB
+../../.local/evidence/check-static/fixtures-diagnosis/assets/_virtual_mf___mfe_internal__miy_diagnosis__mf_owner__30790392827825__prebuild__react_mf_1_jsx_mf_2_runtime__prebuild__-lLn5ruiO.js   0.52 kB │ gzip:  0.34 kB
+../../.local/evidence/check-static/fixtures-diagnosis/assets/rolldown-runtime-XKyaHtl9.js                                                                                                         0.72 kB │ gzip:  0.42 kB
+../../.local/evidence/check-static/fixtures-diagnosis/assets/DiagnosticApp-Cz_UBYdX.js                                                                                                            1.45 kB │ gzip:  0.84 kB
+../../.local/evidence/check-static/fixtures-diagnosis/assets/vite-preload-helper-CRzLMJPS.js                                                                                                      1.53 kB │ gzip:  0.80 kB
+../../.local/evidence/check-static/fixtures-diagnosis/assets/_virtual_mf___mfe_internal__miy_diagnosis__mf_owner__30790392827825__prebuild__react__prebuild__-BC1ksIG3.js                         1.73 kB │ gzip:  0.72 kB
+../../.local/evidence/check-static/fixtures-diagnosis/assets/pendingShares-BRQiudhh.js                                                                                                            1.83 kB │ gzip:  0.92 kB
+../../.local/evidence/check-static/fixtures-diagnosis/assets/_virtual_mf-localSharedImportMap___mfe_internal__miy_diagnosis__mf_owner__1-CpvvQsY_.js                                              3.57 kB │ gzip:  1.23 kB
+../../.local/evidence/check-static/fixtures-diagnosis/assets/_virtual_mf___mfe_internal__miy_diagnosis__mf_owner__30790392827825__prebuild__react_mf_2_dom__prebuild__-BtbxHBoQ.js                4.55 kB │ gzip:  1.59 kB
+../../.local/evidence/check-static/fixtures-diagnosis/assets/hostInit-f6a6oFFW.js                                                                                                                 5.11 kB │ gzip:  2.16 kB
+../../.local/evidence/check-static/fixtures-diagnosis/assets/react-DlmbjZJV.js                                                                                                                    7.87 kB │ gzip:  3.00 kB
+../../.local/evidence/check-static/fixtures-diagnosis/assets/_virtual_mf___mfe_internal__miy_diagnosis__mf_owner__30790392827825__loadShare__shared-Boba43aQ.js                                   9.14 kB │ gzip:  2.83 kB
+../../.local/evidence/check-static/fixtures-diagnosis/remoteEntry.js                                                                                                                             21.03 kB │ gzip:  7.13 kB
+../../.local/evidence/check-static/fixtures-diagnosis/assets/utils-v9GZlbdk.js                                                                                                                   65.49 kB │ gzip: 19.40 kB
+
+✓ built in 147ms
+[WebServer] (node:3161541) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] (node:3161553) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] (node:3161944) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] (node:3162046) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] (node:3162220) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] (node:3162383) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+
+Running 36 tests using 1 worker
+
+(node:3162852) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓   1 tests/admin-access.spec.ts:227:5 › an administrator creates a local group and manages its members (680ms)
+  ✓   2 tests/admin-access.spec.ts:262:5 › HR groups take members through the primary group, not manual membership (257ms)
+  ✓   3 tests/admin-access.spec.ts:277:5 › the company switch asks first, and groups can receive use or develop but never deploy (513ms)
+  ✓   4 tests/admin-access.spec.ts:315:5 › the audit log pages backwards and filters by actor, action and period (480ms)
+  ✓   5 tests/admin-access.spec.ts:363:5 › a company-disabled app stays in runtime management but is not offered for opening (290ms)
+  ✓   6 tests/admin-access.spec.ts:403:5 › switching HR groups uses the selected group's parent, including after a change (313ms)
+  ✓   7 tests/admin-access.spec.ts:451:5 › late app access responses cannot replace the selected app or change its revoke target (225ms)
+  ✓   8 tests/admin-access.spec.ts:501:5 › late HR membership responses cannot expose another group's removal action (346ms)
+  ✓   9 tests/admin-access.spec.ts:552:5 › an app mutation finishing after selection changes refreshes the current app (293ms)
+  ✓  10 tests/admin-access.spec.ts:593:5 › a membership mutation finishing after selection changes refreshes the current group (409ms)
+  ✓  11 tests/admin-access.spec.ts:640:5 › failed audit filters discard the previous cursor and retry from the new first page (327ms)
+  ✓  12 tests/platform-css-isolation.spec.ts:51:7 › platform class names do not restyle remote app elements at 1440px (880ms)
+  ✓  13 tests/platform-css-isolation.spec.ts:51:7 › platform class names do not restyle remote app elements at 390px (867ms)
+  ✓  14 tests/platform-shell.spec.ts:38:5 › a failed session read is shown as a connection error, not as signed out (179ms)
+  ✓  15 tests/platform-shell.spec.ts:50:5 › 401 alone shows the login screen (100ms)
+  ✓  16 tests/platform-shell.spec.ts:56:5 › installation read failure is distinct from an empty list and can be retried (6.4s)
+  ✓  17 tests/platform-shell.spec.ts:75:5 › installation polling settles when every response is slower than the polling interval (7.4s)
+  ✓  18 tests/platform-shell.spec.ts:100:5 › an older installation response cannot restore an app after a newer permission revocation (3.2s)
+  ✓  19 tests/platform-shell.spec.ts:173:5 › app screen read failure is not reported as missing permission (103ms)
+  ✓  20 tests/platform-shell.spec.ts:184:5 › remote apps mount inside a dedicated container, not as shell main content (893ms)
+  ✓  21 tests/platform-shell.spec.ts:206:5 › runtime confirmation is a keyboard modal: Escape cancels and focus returns (236ms)
+  ✓  22 tests/platform-shell.spec.ts:229:5 › rail shows unique monograms with accessible names and marks the current app (221ms)
+  ✓  23 tests/platform-shell.spec.ts:252:5 › mobile drawer closes on Escape and returns focus to the toggle (142ms)
+  ✓  24 tests/platform-shell.spec.ts:266:5 › unsaved app input guards app switching and logout through the shell (1.0s)
+  ✓  25 tests/runtime-confirmation.spec.ts:84:7 › confirmed runtime action restores focus after a delayed succeeded job (1.1s)
+  ✓  26 tests/runtime-confirmation.spec.ts:84:7 › confirmed runtime action restores focus after a delayed failed job (1.1s)
+  ✓  27 tests/runtime-confirmation.spec.ts:112:5 › removal while confirming cancels the old operation before the installation is redeployed (6.4s)
+  ✓  28 tests/runtime-confirmation.spec.ts:142:5 › a late preflight cannot open a confirmation or submit after management permission is withdrawn (9.2s)
+  ✓  29 tests/runtime-confirmation.spec.ts:167:5 › a preflight response for the previous release cannot open a new confirmation (3.5s)
+  ✓  30 tests/runtime-confirmation.spec.ts:188:5 › job completion preserves focus when the user has moved to another control (1.1s)
+  ✓  31 tests/runtime-health.spec.ts:4:5 › service health changes independently from process controls (15.8s)
+  ✓  32 tests/runtime-health.spec.ts:184:5 › health observations preserve SDK callbacks and unsaved input; release change still blocks APIs (9.3s)
+  ✓  33 tests/runtime-health.spec.ts:224:7 › late polling response cannot cross the app boundary (3.9s)
+  ✓  34 tests/runtime-health.spec.ts:224:7 › late polling response cannot cross the environment boundary (3.3s)
+  ✓  35 tests/runtime-health.spec.ts:253:5 › device approval displays origin/account and sends the typed code with CSRF exactly once (172ms)
+  ✓  36 tests/runtime-health.spec.ts:279:5 › production controls confirm the exact target and preserve the inspected expected state (382ms)
+
+  36 passed (1.4m)
+[WebServer] (node:3171340) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] (node:3171355) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+
+Running 14 tests using 1 worker
+
+(node:3171423) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓   1 tests/cli-experience.spec.ts:7:5 › a status network failure after a rejected code does not expire a live request (505ms)
+  ✓   2 tests/cli-experience.spec.ts:63:5 › approval shows the server lifetime and submits the exact code with browser CSRF (350ms)
+  ✓   3 tests/cli-experience.spec.ts:96:5 › expired or missing requests show a fresh-login command and cannot approve (298ms)
+  ✓   4 tests/cli-experience.spec.ts:118:5 › pending countdown disables an expired request without sending another approval (2.7s)
+  ✓   5 tests/cli-experience.spec.ts:135:5 › wrong code preserves a pending request so the user can correct it (438ms)
+  ✓   6 tests/cli-experience.spec.ts:158:5 › a failed metadata read can be retried without starting a new device request (409ms)
+  ✓   7 tests/cli-experience.spec.ts:176:5 › OAuth recovery offers a new login and never reflects arbitrary callback input (511ms)
+  ✓   8 tests/cli-experience.spec.ts:194:5 › 390px shell leaves content usable, opens navigation and closes it after routing (395ms)
+  ✓   9 tests/cli-install.spec.ts:34:5 › public installation guide uses server configuration and copies exact commands (601ms)
+  ✓  10 tests/cli-install.spec.ts:66:5 › signed-in users can open installation guidance from the platform menu (335ms)
+  ✓  11 tests/cli-install.spec.ts:74:5 › unavailable server guidance never falls back to a browser-derived installation command (251ms)
+  ✓  12 tests/cli-install.spec.ts:82:5 › published candidate exposes immutable archive and checksum links with its install command (267ms)
+  ✓  13 tests/cli-install.spec.ts:101:5 › Windows setup is the primary download and requires the displayed company URL (489ms)
+  ✓  14 tests/cli-install.spec.ts:136:5 › Windows setup guidance supports company HTTP IP servers without substituting a domain (268ms)
+
+  14 passed (9.2s)
+[WebServer] (node:3172868) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] (node:3172900) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] (node:3172973) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] (node:3172990) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+
+Running 1 test using 1 worker
+
+(node:3173069) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓  1 tests/http-ip.spec.ts:3:5 › HTTP IP runtime controls create a valid request without secure-context APIs (243ms)
+
+  1 passed (2.5s)
+check-static web: PASS

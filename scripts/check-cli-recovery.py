@@ -237,7 +237,24 @@ def fixture_server(config):
                 require(entry["payload"] == body and entry["submissionStatus"] == "sending", "Runtime POST preceded durable sending state")
                 require(body["action"] == "deploy" and body["imageId"] == IMAGE, "Runtime changed checked input")
                 state.first_submission = body
-                state.job = {"id": str(uuid.uuid4()), "requestId": body["idempotencyKey"], "appId": APP, "environment": "dev", "action": "deploy", "imageId": IMAGE, "status": "running", "errorCode": None}
+                # One complete RuntimeJob is shared by detail, page and events.
+                state.job = {
+                    "id": str(uuid.uuid4()),
+                    "requestId": body["idempotencyKey"],
+                    "appId": APP,
+                    "environment": "dev",
+                    "action": "deploy",
+                    "status": "running",
+                    "step": "migration",
+                    "errorCode": None,
+                    "failureClass": None,
+                    "retryable": False,
+                    "retryOf": None,
+                    "imageId": IMAGE,
+                    "installationId": state.installation_id,
+                    "releaseId": state.release_id,
+                    "createdAt": "2026-01-01T00:00:00Z",
+                }
                 self.lose_ack()
             else:
                 state.failures.append("Unexpected mutating request")
@@ -250,7 +267,23 @@ def fixture_server(config):
             require(body["expectedState"]["installation"]["generation"] == state.lifecycle_generation, "New lifecycle request reused a stale expected state")
             require(body["idempotencyKey"] not in [job["requestId"] for job in state.lifecycle_jobs], "New lifecycle command reused a failed request key")
             restored = state.lifecycle_permission_restored
-            job = {"id": str(uuid.uuid4()), "requestId": body["idempotencyKey"], "appId": APP, "environment": "dev", "action": body["action"], "status": "succeeded" if restored else "failed", "errorCode": None if restored else "permission_revoked", "retryable": False, "failureClass": "never"}
+            job = {
+                "id": str(uuid.uuid4()),
+                "requestId": body["idempotencyKey"],
+                "appId": APP,
+                "environment": "dev",
+                "action": body["action"],
+                "status": "succeeded" if restored else "failed",
+                "step": "complete" if restored else "queued",
+                "errorCode": None if restored else "permission_revoked",
+                "failureClass": None if restored else "never",
+                "retryable": False,
+                "retryOf": None,
+                "imageId": None,
+                "installationId": state.installation_id if restored else None,
+                "releaseId": state.release_id if restored else None,
+                "createdAt": "2026-01-01T00:00:00Z",
+            }
             state.lifecycle_jobs.append(job)
             self.send_json(200, job)
 
@@ -351,6 +384,7 @@ def check(cli):
             require(timed_out["error"]["details"]["remoteWorkCancelled"] is False, "Observation timeout claimed cancellation")
             require(all(method == "GET" for method, _ in state.requests[before:]), "Observation timeout issued a mutation")
             state.job["status"] = "succeeded"
+            state.job["step"] = "complete"
             completed = run(resume[:-1], cwd=project, command="job resume")["data"]
             require(completed["id"] == recovered["id"] and completed["status"] == "succeeded", "Observation failed to resume the same remote job")
             require(state.journal(request_id)["sequence"] == 2, "Event cursor did not advance across timeout recovery")

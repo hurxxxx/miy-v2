@@ -98,7 +98,7 @@ impl Scope {
             && self.actions.iter().any(|v| v == action.as_str())
     }
 }
-const ACTIVE: &str = "SELECT d.* FROM delegations d JOIN users u ON u.id=d.user_id WHERE d.id=$1 AND d.user_id=$2 AND u.enabled AND d.revoked_at IS NULL AND d.expires_at>clock_timestamp() AND EXISTS(SELECT 1 FROM cli_sessions issued WHERE issued.delegation_id=d.id AND issued.revoked_at IS NULL AND issued.expires_at>clock_timestamp()) AND (d.parent_session_id IS NULL OR EXISTS(SELECT 1 FROM cli_sessions c WHERE c.id=d.parent_session_id AND c.user_id=d.user_id AND c.delegation_id IS NULL AND c.revoked_at IS NULL AND c.expires_at>clock_timestamp()))";
+pub(crate) const ACTIVE: &str = "SELECT d.* FROM delegations d JOIN users u ON u.id=d.user_id WHERE d.id=$1 AND d.user_id=$2 AND u.enabled AND d.revoked_at IS NULL AND d.expires_at>clock_timestamp() AND EXISTS(SELECT 1 FROM cli_sessions issued WHERE issued.delegation_id=d.id AND issued.revoked_at IS NULL AND issued.expires_at>clock_timestamp()) AND (d.parent_session_id IS NULL OR EXISTS(SELECT 1 FROM cli_sessions c WHERE c.id=d.parent_session_id AND c.user_id=d.user_id AND c.delegation_id IS NULL AND c.revoked_at IS NULL AND c.expires_at>clock_timestamp()))";
 pub async fn active(pool: &PgPool, user: &str, id: Uuid) -> ApiResult<Scope> {
     active_in(&mut *pool.acquire().await?, user, id, false).await
 }
@@ -153,9 +153,7 @@ pub async fn check_id(
     env: &str,
     action: Action,
 ) -> ApiResult<()> {
-    let scope = active(pool, user, id).await?;
-    let mut facts = policy::Facts::actor(pool, user, Some(app)).await?;
-    facts.delegation = policy::Delegation::Active(scope);
+    let facts = policy::Facts::actor_delegated(pool, user, Some(app), Some(id)).await?;
     Ok(facts.delegated(app, env, action)?)
 }
 /// Generic legacy mutators do not acquire new delegated authority implicitly.
@@ -221,6 +219,9 @@ pub async fn create(
         facts.decide(&input.app_id, &input.environment, action)?;
     }
     let mut tx = policy::Write::begin(&s.pool).await?;
+    // Disabling a user locks the account before its credential rows. Keep the
+    // same order before taking the parent session lock, then decide again below.
+    crate::auth_sessions::active_locked(&mut tx, &p.id).await?;
     sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))")
         .bind(format!("delegations:{}", p.id))
         .execute(&mut *tx)

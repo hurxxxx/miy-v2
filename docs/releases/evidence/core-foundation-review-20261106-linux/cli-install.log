@@ -1,0 +1,18 @@
+PASS noninteractive setup and login require an explicit server without guessing
+PASS fresh install selects the supplied normalized server
+PASS repeated or different-server initialization preserves existing bytes
+PASS custom contexts, active selection, CA, user identity and credentials survive
+PASS an intentionally empty existing configuration stays empty
+PASS bootstrap is independent of context flags, environment and project bindings
+PASS invalid or credential-bearing server URLs are rejected without configuration
+PASS explicit certificate-free HTTP IP is retained without URL inference
+PASS malformed and unsupported existing configurations fail without overwrite
+PASS Unix installation without --server leaves configuration uninitialized
+PASS Unix installer registers a default connection usable by the installed CLI
+PASS Unix update preserves existing selected server, identity and credentials
+PASS Unix bootstrap failure is nonzero and reports the installed binary state
+PASS terminal registration requests a URL and retries invalid input
+PASS cancelled setup and first login preserve no-server state; no-input never prompts
+PASS Unix installer requests the server when omitted in a terminal
+PASS cancelled installer registration retains the installed CLI and requires later setup
+{"status": "pass", "checks": 17, "platform": "posix"}

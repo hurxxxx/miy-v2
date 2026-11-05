@@ -1,0 +1,29 @@
+PASS auto nonTTY and global JSON options return one versioned envelope
+PASS text mode renders a human-readable result
+PASS parse errors hide argument secrets; unsupported JSONL has no init side effects
+PASS remote commands require a context and removed names return replacement errors
+PASS missing local Docker offers explicit remote build without compiling or uploading
+PASS UTF-8 scaffold, transactional repeatable setup, focused discovery and completion
+PASS authenticated loopback success and malformed successful response
+PASS legacy runtime schema is rejected with an upgrade capability error before mutation
+PASS HTTP status categories survive JSON/HTML bodies without leaking secrets
+Traceback (most recent call last):
+  File "/projects/miy-v2/scripts/check-cli-output.py", line 396, in <module>
+    check(executable)
+    ~~~~~^^^^^^^^^^^^
+  File "/projects/miy-v2/scripts/check-cli-output.py", line 337, in check
+    response=run(["job","watch",state.job_id],cwd=remote,expected=9,command="job watch")
+  File "/projects/miy-v2/scripts/check-cli-output.py", line 212, in run
+    return envelope(result, expected, command)
+  File "/projects/miy-v2/scripts/check-cli-output.py", line 44, in envelope
+    require(
+    ~~~~~~~^
+        result.returncode == expected_exit,
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        f"CLI exit mismatch: expected {expected_exit}, received {result.returncode}",
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/projects/miy-v2/scripts/check-cli-output.py", line 32, in require
+    raise AssertionError(message)
+AssertionError: CLI exit mismatch: expected 9, received 8

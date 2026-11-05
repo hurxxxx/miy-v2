@@ -12,9 +12,15 @@
 | 로컬 개발 스택 | `bash scripts/check.sh` | `scripts/up.sh`로 띄운 loopback 스택 | `.local`을 읽고 worker를 재시작한다. origin이 loopback이 아니면 거부한다 |
 | 운영 | [서버 운영 안내](SERVER-OPERATIONS.md)의 반영 절차와 연결 검사 | 사용자의 반영 요청 | 반영 전 백업·복원 확인, 반영 후 읽기 위주 확인 |
 
-GitHub Actions는 `cli-foundation.yml`(Linux 서버·Linux/macOS/Windows 클라이언트의 fmt·Clippy·test·CLI 검사)과 `web.yml`(정적 `scripts`·`web`)을 실행한다. CI 통과를 격리 Docker·로컬 스택·운영 검사의 통과로 옮기지 않는다.
+GitHub Actions는 `cli-foundation.yml`(Linux 서버·Linux/macOS/Windows 클라이언트의 fmt·Clippy·test·CLI 검사)과 `web.yml`(정적 `scripts`·`web`)을 실행한다. 각 workflow가 실제 실행한 검사 범위를 구분하고, 이를 로컬 전체 스택·운영 검사의 통과로 옮기지 않는다.
 
-`scripts/test-core-ops.py`는 백업 정리·연결 예산과 유지 관리하는 배포 도구(`scripts/core-rollout.py`, `scripts/ui-rollout.py`)의 실패 경계를 모든 외부 명령을 대체한 모의 시험으로 검사한다. 부분 서비스 장애 중 rollback 유휴 검사와 stop 뒤에도 남는 `failed` unit 정리, 서로 다른 release의 같은 UI 대상 잠금, 무시된 public/환경 입력·심볼릭 링크와 빌드 중 입력 변경 거부도 포함한다. 운영 배포를 실행하지 않는다. 실제 Vite 빌드와 실제 HTTP·PostgreSQL 위임 검증은 별도 실행으로 기록한다. `docs/releases/evidence/`의 배포별 도구 사본은 당시 기록이며 검사 대상이 아니다. 격리 runtime 도구는 CLI와 테스트 실행 파일을 검증 디렉터리에 복사해 고정하며, worker 자식도 같은 테스트 실행 파일을 사용한다. 다른 Cargo 빌드가 공유 `target`을 바꿔도 실행 중인 회귀의 자식 파일 경로가 사라지지 않게 한다.
+`runtime-regression.yml`은 main push·main 대상 PR에서 격리 Docker 회귀를 실행한다. 현재 기대값은 runtime 46·operations 6·CLI 6·auth 8·permissions 24·delegation 10, 총 100개 관찰이다. 권한 스냅샷 변경 중 실제 HTTP 목록·worker 재확인과 위임 발급·사용자 비활성화의 HTTP 경합도 포함한다. 로컬 실행의 PASS와 해당 commit의 GitHub 실행 결과는 따로 기록한다. CLI 응답 타입을 바꿀 때는 정적 검사 외에 실제 클라이언트 빌드로 출력·복구 검사까지 실행한다.
+
+`scripts/test-core-ops.py`는 백업 정리·연결 예산과 유지 관리하는 배포 도구(`scripts/core-rollout.py`, `scripts/ui-rollout.py`)의 실패 경계를 모든 외부 명령을 대체한 모의 시험으로 검사한다. 부분 서비스 장애 중 rollback 유휴 검사, 서로 다른 release의 같은 UI 대상 잠금, 무시된 public/환경 입력·심볼릭 링크와 빌드 중 입력 변경 거부도 포함한다.
+
+코어 중지 검사는 `failed`·`inactive` 표시와 실제 프로세스 부재를 구분한다. `reset-failed` 전후의 `MainPID`·`ControlPID`, 하위 cgroup을 포함하는 cgroup v2 `populated` 값, 고정 서비스 경로를 확인한다. 잔류 프로세스·읽기 실패·판정 불가 시 배포·복구가 중단되고, 이미 중지된 코어의 rollback 유휴 검사 생략도 실제로 비어 있을 때만 허용되는지 검사한다. 범위와 실행 결과는 [서버 운영 안내](SERVER-OPERATIONS.md#7-배포-도구)와 [중지 확인 검증](releases/core-stop-quiescence-2026-11-05-validation.json)에 기록한다.
+
+모의 시험은 운영 배포를 실행하지 않는다. 실제 Vite 빌드와 실제 HTTP·PostgreSQL 위임 검증은 별도 실행으로 기록한다. `docs/releases/evidence/`의 배포별 도구 사본은 당시 기록이며 검사 대상이 아니다. 격리 runtime 도구는 CLI와 테스트 실행 파일을 검증 디렉터리에 복사해 고정하며, worker 자식도 같은 테스트 실행 파일을 사용한다. 다른 Cargo 빌드가 공유 `target`을 바꿔도 실행 중인 회귀의 자식 파일 경로가 사라지지 않게 한다.
 
 ## 변경 영역별 최소 검사
 

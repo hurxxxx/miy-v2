@@ -148,74 +148,108 @@ impl Facts {
         app: Option<&str>,
         lock: bool,
     ) -> ApiResult<Self> {
-        let mut facts = Self::read(&mut *connection, &p.id, app, lock).await?;
+        if lock {
+            // Acquire locks before taking the decision's snapshot. A statement that
+            // waits for a row lock can otherwise combine an updated locked row with
+            // grants from the snapshot it took before that wait.
+            sqlx::query("SELECT id FROM users WHERE id=$1 FOR SHARE")
+                .bind(&p.id)
+                .fetch_optional(&mut *connection)
+                .await?;
+            if let Some(id) = p.delegation_id {
+                sqlx::query("SELECT id FROM delegations WHERE id=$1 AND user_id=$2 FOR SHARE")
+                    .bind(id)
+                    .bind(&p.id)
+                    .fetch_optional(&mut *connection)
+                    .await?;
+            }
+        }
+        let mut facts = Self::read(connection, &p.id, app, p.delegation_id).await?;
         facts.dev_scope = p.scopes.iter().any(|scope| scope == "miy.dev");
-        facts.delegation = match p.delegation_id {
-            None => Delegation::None,
-            Some(id) => match delegations::active_in(connection, &p.id, id, lock).await {
-                Ok(scope) => Delegation::Active(scope),
-                Err(error) if error.status == StatusCode::FORBIDDEN => Delegation::Inactive,
-                Err(error) => return Err(error),
-            },
-        };
         Ok(facts)
     }
 
-    /// Facts for a stored actor without a credential (queued work): no scope, no delegation.
-    pub async fn actor(pool: &PgPool, actor: &str, app: Option<&str>) -> Result<Self, sqlx::Error> {
-        Self::read(&mut *pool.acquire().await?, actor, app, false).await
+    /// Facts for a stored actor (no credential scope). The actor and its optional
+    /// delegation are read in the same statement snapshot.
+    pub async fn actor_delegated(
+        pool: &PgPool,
+        actor: &str,
+        app: Option<&str>,
+        delegation: Option<Uuid>,
+    ) -> Result<Self, sqlx::Error> {
+        Self::read(&mut *pool.acquire().await?, actor, app, delegation).await
     }
 
     async fn read(
         connection: &mut PgConnection,
         actor: &str,
         app: Option<&str>,
-        lock: bool,
+        delegation: Option<Uuid>,
     ) -> Result<Self, sqlx::Error> {
-        let user = sqlx::query(if lock {
-            "SELECT enabled,admin FROM users WHERE id=$1 FOR SHARE"
-        } else {
-            "SELECT enabled,admin FROM users WHERE id=$1"
-        })
-        .bind(actor)
-        .fetch_optional(&mut *connection)
-        .await?
-        .map(|row| User {
-            enabled: row.get("enabled"),
-            admin: row.get("admin"),
-        });
-        let mut grants: HashMap<(String, String), Grants> = HashMap::new();
-        for row in sqlx::query("SELECT app_id,environment,permission FROM effective_grants WHERE user_id=$1 AND ($2::text IS NULL OR app_id=$2)")
+        // One SELECT, including delegation liveness, means one MVCC snapshot even
+        // outside a transaction. Never combine an old enabled/admin flag with a new
+        // grant, or an old grant with a newly enabled app or delegation.
+        let query = format!(
+            "WITH active_delegation AS ({}) \
+             SELECT u.enabled,u.admin, \
+             (SELECT COALESCE(jsonb_agg(jsonb_build_array(g.app_id,g.environment,g.permission)), '[]'::jsonb) \
+              FROM effective_grants g WHERE g.user_id=$2 AND ($3::text IS NULL OR g.app_id=$3)) AS grants, \
+             ARRAY(SELECT c.app_id FROM app_controls c WHERE c.disabled AND ($3::text IS NULL OR c.app_id=$3)) AS disabled, \
+             d.id AS delegation_id,d.user_id,d.name,d.app_id,d.environment,d.actions,d.expires_at \
+             FROM users u LEFT JOIN active_delegation d ON true WHERE u.id=$2",
+            delegations::ACTIVE
+        );
+        let row = sqlx::query(&query)
+            .bind(delegation)
             .bind(actor)
             .bind(app)
-            .fetch_all(&mut *connection)
-            .await?
-        {
-            let entry = grants
-                .entry((row.get("app_id"), row.get("environment")))
-                .or_default();
-            match row.get::<String, _>("permission").as_str() {
+            .fetch_optional(connection)
+            .await?;
+        let mut facts = Self {
+            user: None,
+            dev_scope: false,
+            delegation: if delegation.is_some() {
+                Delegation::Inactive
+            } else {
+                Delegation::None
+            },
+            grants: HashMap::new(),
+            disabled: HashSet::new(),
+        };
+        let Some(row) = row else {
+            return Ok(facts);
+        };
+        facts.user = Some(User {
+            enabled: row.try_get("enabled")?,
+            admin: row.try_get("admin")?,
+        });
+        let sqlx::types::Json(grants): sqlx::types::Json<Vec<(String, String, String)>> =
+            row.try_get("grants")?;
+        for (app, environment, permission) in grants {
+            let entry = facts.grants.entry((app, environment)).or_default();
+            match permission.as_str() {
                 "use" => entry.use_ = true,
                 "develop" => entry.develop = true,
                 "deploy" => entry.deploy = true,
                 _ => {}
             }
         }
-        let disabled = sqlx::query_scalar(
-            "SELECT app_id FROM app_controls WHERE disabled AND ($1::text IS NULL OR app_id=$1)",
-        )
-        .bind(app)
-        .fetch_all(&mut *connection)
-        .await?
-        .into_iter()
-        .collect();
-        Ok(Self {
-            user,
-            dev_scope: false,
-            delegation: Delegation::None,
-            grants,
-            disabled,
-        })
+        facts.disabled = row
+            .try_get::<Vec<String>, _>("disabled")?
+            .into_iter()
+            .collect();
+        if let Some(id) = row.try_get("delegation_id")? {
+            facts.delegation = Delegation::Active(delegations::Scope {
+                id,
+                user_id: row.try_get("user_id")?,
+                name: row.try_get("name")?,
+                app_id: row.try_get("app_id")?,
+                environment: row.try_get("environment")?,
+                actions: row.try_get("actions")?,
+                expires_at: row.try_get("expires_at")?,
+            });
+        }
+        Ok(facts)
     }
 
     fn grants(&self, app: &str, env: &str) -> Grants {
@@ -509,16 +543,9 @@ pub async fn recheck_queued(
     action: Action,
 ) -> Result<(), RuntimeFailure> {
     let unavailable = || RuntimeFailure::new(FailureCode::DatabaseUnavailable);
-    let mut facts = Facts::actor(pool, actor, Some(app))
+    let facts = Facts::actor_delegated(pool, actor, Some(app), delegation)
         .await
         .map_err(|_| unavailable())?;
-    if let Some(id) = delegation {
-        facts.delegation = match delegations::active(pool, actor, id).await {
-            Ok(scope) => Delegation::Active(scope),
-            Err(error) if error.status.is_server_error() => return Err(unavailable()),
-            Err(_) => Delegation::Inactive,
-        };
-    }
     facts.queued(app, env, action)
 }
 

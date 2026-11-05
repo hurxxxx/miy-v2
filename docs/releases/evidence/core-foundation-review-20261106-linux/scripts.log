@@ -1,0 +1,122 @@
+PASS 553 relative links in 53 tracked Markdown files
+.
+----------------------------------------------------------------------
+Ran 1 test in 1.521s
+
+OK
+...........
+----------------------------------------------------------------------
+Ran 11 tests in 1.779s
+
+OK
+...
+----------------------------------------------------------------------
+Ran 3 tests in 0.000s
+
+OK
+........
+----------------------------------------------------------------------
+Ran 8 tests in 0.183s
+
+OK
+...
+----------------------------------------------------------------------
+Ran 3 tests in 0.014s
+
+OK
+PASS api types match contracts/api-v1.schema.json
+PASS api compatibility with 0.7.0 (18 types)
+............
+----------------------------------------------------------------------
+Ran 12 tests in 0.006s
+
+OK
+...
+----------------------------------------------------------------------
+Ran 3 tests in 1.049s
+
+OK
+...................
+----------------------------------------------------------------------
+Ran 19 tests in 0.020s
+
+OK
+......
+----------------------------------------------------------------------
+Ran 6 tests in 0.401s
+
+OK
+test_absent_owned_id_needs_successful_listing_only (__main__.BackupCleanupTests.test_absent_owned_id_needs_successful_listing_only) ... ok
+test_ambiguous_lookup_does_not_remove_anything (__main__.BackupCleanupTests.test_ambiguous_lookup_does_not_remove_anything) ... ok
+test_daemon_failures_never_report_successful_cleanup (__main__.BackupCleanupTests.test_daemon_failures_never_report_successful_cleanup) ... ok
+test_failed_command_does_not_echo_password_arguments (__main__.BackupCleanupTests.test_failed_command_does_not_echo_password_arguments) ... ok
+test_foreign_ownership_is_preserved (__main__.BackupCleanupTests.test_foreign_ownership_is_preserved) ... ok
+test_invalid_id_does_not_invoke_docker (__main__.BackupCleanupTests.test_invalid_id_does_not_invoke_docker) ... ok
+test_success_and_lost_removal_response_require_confirmed_absence (__main__.BackupCleanupTests.test_success_and_lost_removal_response_require_confirmed_absence) ... ok
+test_development_and_migration_roles_are_counted_once (__main__.ConnectionBudgetTests.test_development_and_migration_roles_are_counted_once) ... ok
+test_invalid_identity_pool_is_unknown_without_echoing_value (__main__.ConnectionBudgetTests.test_invalid_identity_pool_is_unknown_without_echoing_value) ... ok
+test_previous_two_connection_margin_is_not_accepted (__main__.ConnectionBudgetTests.test_previous_two_connection_margin_is_not_accepted) ... ok
+test_reserves_all_independent_admin_lanes (__main__.ConnectionBudgetTests.test_reserves_all_independent_admin_lanes) ... ok
+test_unknown_identity_and_unlimited_roles_fail_closed (__main__.ConnectionBudgetTests.test_unknown_identity_and_unlimited_roles_fail_closed) ... ok
+test_active_serve_does_not_hide_failed_worker (__main__.CoreRolloutTests.test_active_serve_does_not_hide_failed_worker) ... ok
+test_apply_continues_when_stopping_leaves_a_unit_failed (__main__.CoreRolloutTests.test_apply_continues_when_stopping_leaves_a_unit_failed) ... ok
+test_apply_installs_only_after_a_verified_backup_and_keeps_private_records (__main__.CoreRolloutTests.test_apply_installs_only_after_a_verified_backup_and_keeps_private_records) ... ok
+test_cgroup_symlinks_are_refused_before_stop (__main__.CoreRolloutTests.test_cgroup_symlinks_are_refused_before_stop) ... ok
+test_changed_recovery_binary_is_never_started (__main__.CoreRolloutTests.test_changed_recovery_binary_is_never_started) ... ok
+test_concurrent_rollout_is_rejected (__main__.CoreRolloutTests.test_concurrent_rollout_is_rejected) ... ok
+test_crashed_candidate_unit_is_stopped_for_assessment_and_rolled_back (__main__.CoreRolloutTests.test_crashed_candidate_unit_is_stopped_for_assessment_and_rolled_back) ... ok
+test_existing_recovery_data_is_not_overwritten (__main__.CoreRolloutTests.test_existing_recovery_data_is_not_overwritten) ... ok
+test_failed_stop_with_residual_descendants_never_resets_or_publishes (__main__.CoreRolloutTests.test_failed_stop_with_residual_descendants_never_resets_or_publishes) ... ok
+test_failures_after_start_stop_core_and_keep_the_candidate_for_assessment (__main__.CoreRolloutTests.test_failures_after_start_stop_core_and_keep_the_candidate_for_assessment) ... ok
+test_failures_before_start_reinstall_and_start_the_previous_binary (__main__.CoreRolloutTests.test_failures_before_start_reinstall_and_start_the_previous_binary) ... ok
+test_inspect_reads_only (__main__.CoreRolloutTests.test_inspect_reads_only) ... ok
+test_missing_parent_or_v2_marker_is_not_a_removed_service_cgroup (__main__.CoreRolloutTests.test_missing_parent_or_v2_marker_is_not_a_removed_service_cgroup) ... ok
+test_operator_rollback_of_an_already_inactive_core_keeps_manual_recovery_available (__main__.CoreRolloutTests.test_operator_rollback_of_an_already_inactive_core_keeps_manual_recovery_available) ... ok
+test_operator_rollback_of_an_entirely_failed_core_uses_the_stopped_recovery_path (__main__.CoreRolloutTests.test_operator_rollback_of_an_entirely_failed_core_uses_the_stopped_recovery_path) ... ok
+test_operator_rollback_rechecks_work_after_stopping_before_replacing_binary (__main__.CoreRolloutTests.test_operator_rollback_rechecks_work_after_stopping_before_replacing_binary) ... ok
+test_operator_rollback_refuses_another_rollouts_binary (__main__.CoreRolloutTests.test_operator_rollback_refuses_another_rollouts_binary) ... ok
+test_operator_rollback_refuses_busy_work_with_a_partial_service_failure (__main__.CoreRolloutTests.test_operator_rollback_refuses_busy_work_with_a_partial_service_failure) ... ok
+test_operator_rollback_reinstalls_the_previous_binary (__main__.CoreRolloutTests.test_operator_rollback_reinstalls_the_previous_binary) ... ok
+test_operator_rollback_with_a_failed_unit_checks_the_live_peer_and_completes (__main__.CoreRolloutTests.test_operator_rollback_with_a_failed_unit_checks_the_live_peer_and_completes) ... ok
+test_pid_and_unit_property_errors_are_not_assumed_to_be_zero (__main__.CoreRolloutTests.test_pid_and_unit_property_errors_are_not_assumed_to_be_zero) ... ok
+test_preflight_refusals_change_nothing (__main__.CoreRolloutTests.test_preflight_refusals_change_nothing) ... ok
+test_release_directory_must_be_under_private_state (__main__.CoreRolloutTests.test_release_directory_must_be_under_private_state) ... ok
+test_reset_failed_is_followed_by_another_real_process_check (__main__.CoreRolloutTests.test_reset_failed_is_followed_by_another_real_process_check) ... ok
+test_rollback_of_failed_or_inactive_core_requires_empty_cgroups_before_mutation (__main__.CoreRolloutTests.test_rollback_of_failed_or_inactive_core_requires_empty_cgroups_before_mutation) ... ok
+test_safety_require_survives_optimized_python (__main__.CoreRolloutTests.test_safety_require_survives_optimized_python) ... ok
+test_source_must_be_a_separate_checkout (__main__.CoreRolloutTests.test_source_must_be_a_separate_checkout) ... ok
+test_stop_checks_both_pid_fields_even_when_the_cgroup_is_empty (__main__.CoreRolloutTests.test_stop_checks_both_pid_fields_even_when_the_cgroup_is_empty) ... ok
+test_stop_refuses_unreadable_cgroup_evidence (__main__.CoreRolloutTests.test_stop_refuses_unreadable_cgroup_evidence) ... ok
+test_stop_that_leaves_a_service_active_never_installs_or_starts (__main__.CoreRolloutTests.test_stop_that_leaves_a_service_active_never_installs_or_starts) ... ok
+test_stop_unknown_cgroup_evidence_is_not_empty (__main__.CoreRolloutTests.test_stop_unknown_cgroup_evidence_is_not_empty) ... ok
+test_stopped_core_with_removed_cgroups_and_empty_properties_can_recover (__main__.CoreRolloutTests.test_stopped_core_with_removed_cgroups_and_empty_properties_can_recover) ... ok
+test_unknown_unit_identity_or_cgroup_layout_is_refused_before_stop (__main__.CoreRolloutTests.test_unknown_unit_identity_or_cgroup_layout_is_refused_before_stop) ... ok
+test_apply_refusals_leave_the_live_dist_unchanged (__main__.UiRolloutTests.test_apply_refusals_leave_the_live_dist_unchanged) ... ok
+test_build_accepts_regular_tracked_public_files_in_the_source_manifest (__main__.UiRolloutTests.test_build_accepts_regular_tracked_public_files_in_the_source_manifest) ... ok
+test_build_apply_and_rollback_keep_both_asset_generations (__main__.UiRolloutTests.test_build_apply_and_rollback_keep_both_asset_generations) ... ok
+test_build_checks_source_bytes_against_the_commit_before_vite (__main__.UiRolloutTests.test_build_checks_source_bytes_against_the_commit_before_vite) ... ok
+test_build_rechecks_public_and_dotenv_inputs_after_vite (__main__.UiRolloutTests.test_build_rechecks_public_and_dotenv_inputs_after_vite) ... ok
+test_build_refuses_changed_tracked_bytes_even_if_status_stays_clean (__main__.UiRolloutTests.test_build_refuses_changed_tracked_bytes_even_if_status_stays_clean) ... ok
+test_build_refuses_production_dotenv_files_including_tracked_files (__main__.UiRolloutTests.test_build_refuses_production_dotenv_files_including_tracked_files) ... ok
+test_build_refuses_public_directory_and_nested_symlinks (__main__.UiRolloutTests.test_build_refuses_public_directory_and_nested_symlinks) ... ok
+test_build_refuses_untracked_public_files_even_when_git_status_is_clean (__main__.UiRolloutTests.test_build_refuses_untracked_public_files_even_when_git_status_is_clean) ... ok
+test_build_refuses_vite_environment_and_dirty_inputs_before_building (__main__.UiRolloutTests.test_build_refuses_vite_environment_and_dirty_inputs_before_building) ... ok
+test_common_live_lock_blocks_other_release_apply_before_check (__main__.UiRolloutTests.test_common_live_lock_blocks_other_release_apply_before_check) ... ok
+test_common_live_lock_blocks_other_release_apply_through_receipt (__main__.UiRolloutTests.test_common_live_lock_blocks_other_release_apply_through_receipt) ... ok
+test_common_live_lock_blocks_other_release_rollback_before_check (__main__.UiRolloutTests.test_common_live_lock_blocks_other_release_rollback_before_check) ... ok
+test_common_live_lock_blocks_other_release_rollback_through_receipt (__main__.UiRolloutTests.test_common_live_lock_blocks_other_release_rollback_through_receipt) ... ok
+test_release_directory_must_be_under_private_state (__main__.UiRolloutTests.test_release_directory_must_be_under_private_state) ... ok
+test_rollback_refuses_an_index_from_another_deployment (__main__.UiRolloutTests.test_rollback_refuses_an_index_from_another_deployment) ... ok
+test_second_apply_never_reuses_a_backup (__main__.UiRolloutTests.test_second_apply_never_reuses_a_backup) ... ok
+
+----------------------------------------------------------------------
+Ran 62 tests in 0.320s
+
+OK
+PASS explicit server origin and HTTP opt-in
+PASS certificate-free HTTP, configured ports, private files and credential preservation
+PASS HTTP Nginx and systemd rendering without live changes
+PASS existing realm HTTP settings via internal administration only
+PASS explicit shared development origin, persistence, disable and unchanged OAuth credentials
+PASS HTTPS system roots and loopback-only synthetic login
+check-static scripts: PASS

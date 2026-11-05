@@ -1,0 +1,5 @@
+{
+  "path": "/tmp/miy-foundation-cli-p5tzpetg/miy",
+  "sha256": "2b9609e39565a8f1951137c52cd8f3b3e6af4c1677a1fc708b89e04ce9212f1d",
+  "build": "cargo build --locked --no-default-features"
+}
