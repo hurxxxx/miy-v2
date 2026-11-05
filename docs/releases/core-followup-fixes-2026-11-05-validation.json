@@ -93,5 +93,44 @@
   "limits": [
     "reset-failed clears systemd's failure result and start-limit count for the reset units; the failure details stay in the journal",
     "Production still runs 7b43789; this tree and 0d8f043 are source-only until a separate rollout request"
-  ]
+  ],
+  "afterPush": {
+    "note": "Added after the push. Fields above describe the state before it; this records the CI run that the first notRun entry deferred.",
+    "date": "2026-11-05",
+    "pushedRange": "d23d8ced52805e06b03b0f94acb67a7521ae7243..023cea536802b3b71eed8b63c8855077366c25c4",
+    "deploymentPerformed": false,
+    "checks": [
+      {
+        "command": "GitHub Actions CLI foundation (push of 023cea5)",
+        "run": "https://github.com/hurxxxx/miy-v2/actions/runs/41947007186",
+        "status": "PASS",
+        "jobs": {
+          "Linux server (default features)": "success",
+          "Linux client": "success",
+          "macOS client": "success",
+          "Windows MSVC client": "success",
+          "Compare embedded bundle hashes across operating systems": "success"
+        },
+        "windowsMsvcClient": {
+          "runnerImage": "windows-2022 20261025.346.1",
+          "clippy": "cargo +1.99.1 clippy --workspace --all-targets --locked --no-default-features --target x86_64-pc-windows-msvc -- -D warnings: success",
+          "unitTests": "109 passed, 0 failed, 0 ignored",
+          "embeddedBundleFiles": 31,
+          "cliOutputGroups": 13,
+          "installerBootstrapChecks": 9,
+          "lifecycleRecoveryCheck": "skipped: the workflow runs it on the Linux client only"
+        },
+        "previousWindowsPass": "cb9a5b8 (run 41731937817). Runs for ef7d011, 7b43789 and d23d8ce stopped at the Windows lint step, so the client changes since cb9a5b8 (cli_guidance OperationLock and the file_transaction lock type) first ran Windows unit and CLI checks in this run"
+      },
+      {
+        "command": "GitHub Actions Web and scripts (push of 023cea5)",
+        "run": "https://github.com/hurxxxx/miy-v2/actions/runs/41947007189",
+        "status": "PASS"
+      }
+    ],
+    "limits": [
+      "A hosted Windows Server 2022 pass is not Windows 11 acceptance; the published CLI's Windows 11 acceptance (docs/WINDOWS-ACCEPTANCE.md) remains NOT_RUN",
+      "The client changes since the published CLI 01e4d49 reach Windows users only through a new CLI candidate"
+    ]
+  }
 }
