@@ -182,7 +182,7 @@ pub async fn page(s: &State, p: &Principal, kind: &str, mut q: Page) -> ApiResul
             "runtime_jobs t",
             "t.created_at::text||':'||t.id::text",
             "jsonb_build_object('id',t.id,'appId',t.app_id,'environment',t.environment,'action',t.action,'status',t.status,'step',t.step,'errorCode',t.error_code,'failureClass',t.failure_class,'retryable',t.retryable,'retryOf',t.retry_of,'requestId',t.idempotency_key,'imageId',t.image_id,'releaseId',t.release_id,'createdAt',t.created_at)",
-            // The (app, environment) pairs where runtime::job would answer (FollowJob).
+            // The (app, environment) pairs where runtime::job would answer (Observe).
             ALLOWED_PAIRS,
             "t.app_id",
             "t.environment",
@@ -228,7 +228,7 @@ pub async fn page(s: &State, p: &Principal, kind: &str, mut q: Page) -> ApiResul
                 ),
                 _ => {
                     let action = if kind == "jobs" {
-                        AppAction::FollowJob
+                        AppAction::Observe
                     } else {
                         AppAction::Use
                     };

@@ -93,11 +93,15 @@ pub async fn create_app(state: &State, p: &Principal, v: NewApp) -> ApiResult<Va
     if !contract::valid_id(&v.id) || v.name.trim().is_empty() || v.name.len() > 120 {
         return Err(ApiError::bad("invalid_app"));
     }
+    let mut tx = state.pool.begin().await?;
     sqlx::query("INSERT INTO apps VALUES($1,$2)")
         .bind(&v.id)
         .bind(&v.name)
-        .execute(&state.pool)
+        .execute(&mut *tx)
         .await?;
+    // The insert may wait for a concurrent one with the same ID; decide after it.
+    admin_locked(&mut tx, p).await?;
+    tx.commit().await?;
     Ok(json!({"id":v.id,"name":v.name}))
 }
 #[derive(Deserialize, schemars::JsonSchema)]
@@ -420,7 +424,7 @@ pub fn catalog() -> Value {
         {"id":"app_api_delete","method":"DELETE","path":"/api/v1/installations/{id}/api/{path}","permission":"use or develop on installation","description":"Forward app record deletion with CSRF and current release"}
     ]);
     catalog.as_array_mut().unwrap().extend([
-        json!({"id":"get_installation_permissions","method":"GET","path":"/api/v1/installations/{id}/permissions","permission":"use on installation and token read scope","description":"Read requested and approved external permissions, revision and last 100 history entries; optional releaseId query."}),
+        json!({"id":"get_installation_permissions","method":"GET","path":"/api/v1/installations/{id}/permissions","permission":"observe on installation (use, or runtime management read) and token read scope","description":"Read requested and approved external permissions, revision and last 100 history entries; optional releaseId query."}),
         json!({"id":"set_installation_permissions","method":"PUT","path":"/api/v1/installations/{id}/permissions","permission":"non-delegated admin with miy.dev","description":"Replace explicit external approvals for exactly this installation/release; compare expectedRevision. Empty permissions revokes all. No automatic carryover to new releases or prod.","input":schemars::schema_for!(crate::permissions::PermissionUpdate)}),
         json!({"id":"create_delegation","method":"POST","path":"/api/v1/delegations","permission":"non-delegated user; current user grants intersect all requested actions","description":"Issue an app/environment/action-scoped user credential with fixed expiry and revocation. Credential returned once; use auth delegations create --credential-file.","input":schemars::schema_for!(crate::delegations::Create)}),
         json!({"id":"list_delegations","method":"GET","path":"/api/v1/delegations","permission":"non-delegated owner","description":"Read own delegation metadata without credentials."}),

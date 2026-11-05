@@ -226,6 +226,88 @@ async fn lease_cleanup_scope(state: &State, h: &Harness<'_>, other_app_token: &s
     Ok(())
 }
 
+/// A recorded test acceptance is management information (shown with `canManage`), like
+/// a runtime receipt: a delegation needs `accept` and `read`, and lacking `read` it is
+/// refused before the release is even looked up.
+async fn acceptance_scope(h: &Harness<'_>) -> Result<()> {
+    let body = json!({"releaseId":Uuid::new_v4(),"note":"Delegation scope probe","checks":[]});
+    let path = "/api/v1/apps/audit-runtime/test-acceptance";
+    let accept_only = h.create("dev", &["accept"]).await?;
+    let denied = h
+        .request(
+            access(&accept_only),
+            Method::POST,
+            path,
+            Some(body.clone()),
+            StatusCode::FORBIDDEN,
+        )
+        .await?;
+    ensure!(
+        denied["error"]["code"] == "delegation_scope_denied",
+        "test acceptance without read used another denial"
+    );
+    let with_read = h.create("dev", &["accept", "read"]).await?;
+    let admitted = h
+        .request(
+            access(&with_read),
+            Method::POST,
+            path,
+            Some(body),
+            StatusCode::CONFLICT,
+        )
+        .await?;
+    ensure!(
+        admitted["error"]["code"] == "release_not_running_in_dev",
+        "test acceptance with accept and read did not reach the release check"
+    );
+    Ok(())
+}
+
+/// `by-request` recovers a dev-session creation reply. It is a read of the session, so
+/// it needs what reading the session needs: the creating credential and `dev_session`.
+async fn dev_session_recovery_scope(state: &State, h: &Harness<'_>) -> Result<()> {
+    let app = format!(
+        "delegate-recovery-{}",
+        &Uuid::new_v4().simple().to_string()[..12]
+    );
+    sqlx::query("INSERT INTO apps(id,name) VALUES($1,'Delegation recovery fixture')")
+        .bind(&app)
+        .execute(&state.pool)
+        .await?;
+    let resource = crate::worker::ensure_resource(&state.pool, &app, "dev", None).await?;
+    let developer=h.request(&h.token,Method::POST,"/api/v1/delegations",Some(json!({"name":"Developer recovery fixture","appId":app,"environment":"dev","actions":["dev_session"],"expiresIn":3600})),StatusCode::OK).await?;
+    let read=h.request(&h.token,Method::POST,"/api/v1/delegations",Some(json!({"name":"Read recovery fixture","appId":app,"environment":"dev","actions":["read"],"expiresIn":3600})),StatusCode::OK).await?;
+    // Each lease belongs to the credential that would have created it.
+    for (credential, expected) in [(&developer, StatusCode::OK), (&read, StatusCode::FORBIDDEN)] {
+        let lease = Uuid::new_v4();
+        let key = contract::hash(lease.as_bytes());
+        sqlx::query("INSERT INTO app_dev_sessions(id,app_id,database_id,actor,parent_session_id,idempotency_key,input_hash,request_data,role_name,connection_secret,tunnel_token_hash) VALUES($1,$2,$3,$4,$5,$6,$6,'{}',$7,$8,$6)")
+            .bind(lease).bind(&app).bind(resource.id).bind(&h.user).bind(id(&credential["credential"],"sessionId"))
+            .bind(&key).bind(format!("miy_d_{}",lease.simple()))
+            .bind(auth::encrypt("{}")?).execute(&state.pool).await?;
+        let answer = h
+            .request(
+                access(credential),
+                Method::GET,
+                &format!("/api/v1/apps/{app}/dev-sessions/by-request/{key}"),
+                None,
+                expected,
+            )
+            .await?;
+        // One active lease per app: remove it before the next credential's lease.
+        sqlx::query("DELETE FROM app_dev_sessions WHERE id=$1")
+            .bind(lease)
+            .execute(&state.pool)
+            .await?;
+        ensure!(
+            expected == StatusCode::OK && answer["id"] == json!(lease)
+                || answer["error"]["code"] == "delegation_scope_denied",
+            "dev-session recovery answered another record or denial"
+        );
+    }
+    Ok(())
+}
+
 /// These are synthetic metadata and HTTP admission tests. The harness advances
 /// workers explicitly; no Docker action runs for this app, and its one admitted
 /// job is made terminal before the next worker tick.
@@ -643,6 +725,16 @@ pub async fn run(state: &State, client: &Client, base: &str) -> Result<Vec<Strin
     cli_import(base, &first).await?;
     let delegated = access(&first);
     lease_cleanup_scope(state, &h, delegated).await?;
+    // Independent checks: a failure is reported at the end without hiding the others.
+    let mut stopped = Vec::new();
+    match acceptance_scope(&h).await {
+        Ok(()) => passed.push("recording a test acceptance with a delegation needs accept and read before any other check".into()),
+        Err(error) => stopped.push(format!("test acceptance scope: {error:#}")),
+    }
+    match dev_session_recovery_scope(state, &h).await {
+        Ok(()) => passed.push("recovering a lost dev-session reply by request ID needs the same dev_session decision as reading the session".into()),
+        Err(error) => stopped.push(format!("dev-session recovery scope: {error:#}")),
+    }
     let me = h
         .request(delegated, Method::GET, "/api/v1/me", None, StatusCode::OK)
         .await?;
@@ -779,7 +871,7 @@ pub async fn run(state: &State, client: &Client, base: &str) -> Result<Vec<Strin
     .await?;
     h.denied(refreshed["accessToken"].as_str().unwrap()).await?;
     ensure!(
-        crate::delegations::check_queued(
+        crate::policy::recheck_queued(
             &state.pool,
             &h.user,
             Some(id(&second["delegation"], "id")),
@@ -795,7 +887,7 @@ pub async fn run(state: &State, client: &Client, base: &str) -> Result<Vec<Strin
     h.request("",Method::POST,"/auth/cli/token",Some(json!({"grantType":"refresh_token","refreshToken":replay["credential"]["refreshToken"]})),StatusCode::UNAUTHORIZED).await?;
     h.denied(rotated["accessToken"].as_str().unwrap()).await?;
     ensure!(
-        crate::delegations::check_queued(
+        crate::policy::recheck_queued(
             &state.pool,
             &h.user,
             Some(id(&replay["delegation"], "id")),
@@ -815,7 +907,7 @@ pub async fn run(state: &State, client: &Client, base: &str) -> Result<Vec<Strin
     sqlx::query("INSERT INTO grants(user_id,app_id,environment,permission) VALUES($1,'audit-runtime','dev','develop')").bind(&h.user).execute(&state.pool).await?;
     let grant = h.create("dev", &["read", "build"]).await?;
     ensure!(
-        crate::delegations::check_queued(
+        crate::policy::recheck_queued(
             &state.pool,
             &h.user,
             Some(id(&grant["delegation"], "id")),
@@ -839,7 +931,7 @@ pub async fn run(state: &State, client: &Client, base: &str) -> Result<Vec<Strin
     )
     .await?;
     ensure!(
-        crate::delegations::check_queued(
+        crate::policy::recheck_queued(
             &state.pool,
             &h.user,
             Some(id(&grant["delegation"], "id")),
@@ -865,5 +957,6 @@ pub async fn run(state: &State, client: &Client, base: &str) -> Result<Vec<Strin
         .await?;
     h.denied(access(&inherited)).await?;
     passed.push("current grant revocation, delegation expiry and issuing CLI family revocation invalidate delegated API and queued authority".into());
+    ensure!(stopped.is_empty(), "{}", stopped.join("; "));
     Ok(passed)
 }

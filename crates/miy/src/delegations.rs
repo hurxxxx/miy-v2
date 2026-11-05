@@ -135,29 +135,6 @@ pub async fn check_id(
     facts.delegation = policy::Delegation::Active(scope);
     Ok(facts.delegated(app, env, action)?)
 }
-pub async fn check_queued(
-    pool: &PgPool,
-    actor: &str,
-    id: Option<Uuid>,
-    app: &str,
-    env: &str,
-    action: Action,
-) -> anyhow::Result<()> {
-    if let Some(id) = id {
-        check_id(pool, actor, id, app, env, action)
-            .await
-            .map_err(|error| {
-                // A failed permission read proves nothing about the delegation (V1-O4):
-                // only a definite denial is a revocation that may end or discard work.
-                crate::runtime_contract::RuntimeFailure::new(if error.status.is_server_error() {
-                    crate::runtime_contract::FailureCode::DatabaseUnavailable
-                } else {
-                    crate::runtime_contract::FailureCode::PermissionRevoked
-                })
-            })?;
-    }
-    Ok(())
-}
 /// Generic legacy mutators do not acquire new delegated authority implicitly.
 pub fn unrestricted(p: &Principal) -> ApiResult<()> {
     if p.delegation_id.is_some() {

@@ -35,6 +35,28 @@ fn report(name: &str, passed: bool, evidence: Value) {
         .unwrap();
     writeln!(f, "{line}").unwrap();
 }
+/// A suite stops at its first failed check. Record the stop as a FAIL row and go on,
+/// so later suites still run and one run shows every failing suite. The error goes
+/// to the log only, like an aborted run's error did.
+fn suite(name: &str, result: Result<Vec<String>>, evidence: Value) {
+    match result {
+        Ok(passed) => {
+            for test in passed {
+                report(&test, true, evidence.clone());
+            }
+        }
+        Err(error) => {
+            eprintln!("{name} suite stopped: {error:#}");
+            let mut evidence = evidence;
+            evidence["stopped"] = json!(true);
+            report(
+                &format!("{name} suite stopped at a failed check"),
+                false,
+                evidence,
+            );
+        }
+    }
+}
 fn actor(id: &str) -> auth::Principal {
     auth::Principal {
         cli_session_id: None,
@@ -100,6 +122,151 @@ async fn db(pool: &sqlx::PgPool, id: Uuid, runtime_role: bool) -> Result<sqlx::P
 }
 fn uuid(v: &Value) -> Uuid {
     v.as_str().unwrap().parse().unwrap()
+}
+/// A developer whose grant is revoked while its test acceptance waits on the app's
+/// runtime lock (held here like a running deployment would): the acceptance must be
+/// decided again after the wait and record nothing.
+async fn acceptance_lock_revocation(s: &State, release: Uuid) -> Result<(bool, Value)> {
+    sqlx::query("INSERT INTO users(id,name,admin) VALUES('audit-acceptor','Synthetic acceptor',false) ON CONFLICT (id) DO NOTHING")
+        .execute(&s.pool)
+        .await?;
+    sqlx::query("INSERT INTO grants VALUES('audit-acceptor','audit-runtime','dev','develop') ON CONFLICT DO NOTHING")
+        .execute(&s.pool)
+        .await?;
+    let recorded = "SELECT actor||':'||checked_at::text FROM release_checks WHERE release_id=$1";
+    let before: String = sqlx::query_scalar(recorded)
+        .bind(release)
+        .fetch_one(&s.pool)
+        .await?;
+    let mut blocker = s.pool.acquire().await?;
+    blocker.close_on_drop();
+    let pid: i32 = sqlx::query_scalar("SELECT pg_backend_pid()")
+        .fetch_one(&mut *blocker)
+        .await?;
+    sqlx::query("SELECT pg_advisory_lock(hashtextextended('runtime:audit-runtime:dev',0))")
+        .execute(&mut *blocker)
+        .await?;
+    let state = s.clone();
+    let pending = tokio::spawn(async move {
+        runtime::check_release(
+            &state,
+            &actor("audit-acceptor"),
+            "audit-runtime",
+            runtime::ReleaseCheck {
+                release_id: release,
+                note: "Synthetic lock-wait probe; not business acceptance".into(),
+                checks: vec![],
+            },
+        )
+        .await
+    });
+    tokio::time::timeout(Duration::from_secs(10), async {
+        loop {
+            let waiting: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM pg_stat_activity WHERE wait_event_type='Lock' AND wait_event='advisory' AND $1=ANY(pg_blocking_pids(pid)))")
+                .bind(pid)
+                .fetch_one(&s.pool)
+                .await?;
+            if waiting {
+                return Ok::<_, anyhow::Error>(());
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    })
+    .await
+    .context("test acceptance did not wait on the runtime lock")??;
+    sqlx::query("DELETE FROM grants WHERE user_id='audit-acceptor'")
+        .execute(&s.pool)
+        .await?;
+    sqlx::query("SELECT pg_advisory_unlock(hashtextextended('runtime:audit-runtime:dev',0))")
+        .execute(&mut *blocker)
+        .await?;
+    let result = tokio::time::timeout(Duration::from_secs(30), pending).await??;
+    let after: String = sqlx::query_scalar(recorded)
+        .bind(release)
+        .fetch_one(&s.pool)
+        .await?;
+    let error = result.as_ref().err().map(|e| e.code.clone());
+    Ok((
+        error.as_deref() == Some("forbidden") && before == after,
+        json!({"error":error,"recordUnchanged":before == after}),
+    ))
+}
+
+/// A deployment prepares its database as a `jobs` row. A restart queues that row
+/// again, and the worker rechecks it like other queued work: the actor's management
+/// grant for the installation's environment, which is `deploy` in prod. A denied
+/// recheck fails the job without touching the installation.
+async fn requeued_database_job(s: &State) -> Result<(bool, Value)> {
+    let pool = &s.pool;
+    let prod = inst(pool, "prod").await?;
+    let installation = uuid(&prod["id"]);
+    let release = uuid(&prod["releaseId"]);
+    let mut observed = serde_json::Map::new();
+    let mut passed = true;
+    for (user, permission, expected) in [
+        ("audit-deployer", "deploy", ("succeeded", None)),
+        (
+            "audit-prod-user",
+            "use",
+            ("failed", Some("permission_revoked")),
+        ),
+    ] {
+        sqlx::query("INSERT INTO users(id,name,admin) VALUES($1,'Synthetic prod actor',false) ON CONFLICT (id) DO NOTHING")
+            .bind(user)
+            .execute(pool)
+            .await?;
+        sqlx::query(
+            "INSERT INTO grants VALUES($1,'audit-runtime','prod',$2) ON CONFLICT DO NOTHING",
+        )
+        .bind(user)
+        .bind(permission)
+        .execute(pool)
+        .await?;
+        let before: String = sqlx::query_scalar("SELECT db_status FROM installations WHERE id=$1")
+            .bind(installation)
+            .fetch_one(pool)
+            .await?;
+        let job = Uuid::new_v4();
+        // The deployment's own row as the worker leaves it after a restart.
+        sqlx::query("INSERT INTO jobs(id,installation_id,release_id,actor,idempotency_key,input_hash,status,delegation_action) VALUES($1,$2,$3,$4,$5,$6,'queued','deploy')")
+            .bind(job)
+            .bind(installation)
+            .bind(release)
+            .bind(user)
+            .bind(format!("runtime-requeued-{job}"))
+            .bind(crate::contract::hash(job.to_string()))
+            .execute(pool)
+            .await?;
+        for _ in 0..10 {
+            if !crate::worker::database_tick(pool).await? {
+                break;
+            }
+        }
+        let (status, code): (String, Option<String>) =
+            sqlx::query_as("SELECT status,error_code FROM jobs WHERE id=$1")
+                .bind(job)
+                .fetch_one(pool)
+                .await?;
+        let after: String = sqlx::query_scalar("SELECT db_status FROM installations WHERE id=$1")
+            .bind(installation)
+            .fetch_one(pool)
+            .await?;
+        // Keep later production checks independent of this probe.
+        sqlx::query("UPDATE installations SET db_status=$2 WHERE id=$1")
+            .bind(installation)
+            .bind(&before)
+            .execute(pool)
+            .await?;
+        passed &= status == expected.0
+            && code.as_deref() == expected.1
+            && after == "ready"
+            && before == "ready";
+        observed.insert(
+            user.into(),
+            json!({"grant":permission,"status":status,"errorCode":code,"dbStatusBefore":before,"dbStatusAfter":after}),
+        );
+    }
+    Ok((passed, Value::Object(observed)))
 }
 // Real worker/control job with twelve slow HTTP services and isolated metadata.
 // These rows exercise observation scheduling, not image admission or OAuth.
@@ -962,6 +1129,12 @@ async fn isolated_runtime_regression() -> Result<()> {
     )
     .await
     .map_err(|e| anyhow::anyhow!(e.code))?;
+    let (revoked_wait, evidence) = acceptance_lock_revocation(&s, release).await?;
+    report(
+        "test acceptance rechecks its developer after waiting for the runtime lock",
+        revoked_wait,
+        evidence,
+    );
     sqlx::query("INSERT INTO grants VALUES('audit-dev','audit-runtime','prod','develop')")
         .execute(&pool)
         .await?;
@@ -1008,6 +1181,12 @@ async fn isolated_runtime_regression() -> Result<()> {
         json!({"dev":initial,"prod":prod,"serverLocalImage":prod_container["Image"],"initialProdRows":prodcount}),
     );
     disabled_app_runtime_control(&s, &admin, &ordinary).await?;
+    let (requeued, evidence) = requeued_database_job(&s).await?;
+    report(
+        "a production database job queued again after a restart keeps its deployer's authority",
+        requeued,
+        evidence,
+    );
     let ddl = devdb.execute("CREATE TABLE app.forbidden(id int)").await;
     let history = devdb.execute("DELETE FROM app._sqlx_migrations").await;
     report(
@@ -1352,41 +1531,31 @@ async fn isolated_runtime_regression() -> Result<()> {
         .redirect(reqwest::redirect::Policy::none())
         .timeout(Duration::from_secs(15))
         .build()?;
-    for name in crate::operations_regression::run(&s, &client, &api_origin).await? {
-        report(
-            &name,
-            true,
-            json!({"suite":"operations","transport":"HTTP","storage":"isolated PostgreSQL","runtime":"owned Docker fixtures"}),
-        );
-    }
-    for name in crate::cli_regression::run(&s, &api_origin).await? {
-        report(
-            &name,
-            true,
-            json!({"suite":"cli","transport":"actual CLI binary and HTTP","storage":"isolated config and PostgreSQL"}),
-        );
-    }
-    for name in crate::auth_sessions_regression::run(&s, &client, &api_origin).await? {
-        report(
-            &name,
-            true,
-            json!({"suite":"auth","transport":"HTTP","storage":"isolated PostgreSQL","identity":"synthetic development account"}),
-        );
-    }
-    for name in crate::permissions_regression::run(&s, &client, &api_origin).await? {
-        report(
-            &name,
-            true,
-            json!({"suite":"permissions","transport":"HTTP and MCP","storage":"isolated PostgreSQL","runtime":"signed loopback app fixtures"}),
-        );
-    }
-    for name in crate::delegation_regression::run(&s, &client, &api_origin).await? {
-        report(
-            &name,
-            true,
-            json!({"suite":"delegation","transport":"HTTP","storage":"isolated PostgreSQL","identity":"synthetic CLI sessions and delegated credentials"}),
-        );
-    }
+    suite(
+        "operations",
+        crate::operations_regression::run(&s, &client, &api_origin).await,
+        json!({"suite":"operations","transport":"HTTP","storage":"isolated PostgreSQL","runtime":"owned Docker fixtures"}),
+    );
+    suite(
+        "cli",
+        crate::cli_regression::run(&s, &api_origin).await,
+        json!({"suite":"cli","transport":"actual CLI binary and HTTP","storage":"isolated config and PostgreSQL"}),
+    );
+    suite(
+        "auth",
+        crate::auth_sessions_regression::run(&s, &client, &api_origin).await,
+        json!({"suite":"auth","transport":"HTTP","storage":"isolated PostgreSQL","identity":"synthetic development account"}),
+    );
+    suite(
+        "permissions",
+        crate::permissions_regression::run(&s, &client, &api_origin).await,
+        json!({"suite":"permissions","transport":"HTTP and MCP","storage":"isolated PostgreSQL","runtime":"signed loopback app fixtures"}),
+    );
+    suite(
+        "delegation",
+        crate::delegation_regression::run(&s, &client, &api_origin).await,
+        json!({"suite":"delegation","transport":"HTTP","storage":"isolated PostgreSQL","identity":"synthetic CLI sessions and delegated credentials"}),
+    );
     worker_recovery_boundaries(&s, &admin).await?;
     api_server.abort();
     oidc.abort();

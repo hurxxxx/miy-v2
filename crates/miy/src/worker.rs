@@ -115,73 +115,113 @@ async fn control_loop(pool: &sqlx::PgPool) -> Result<()> {
             crate::runtime::reconcile(pool).await?;
             last_reconcile = std::time::Instant::now();
         }
-        let row =
-            sqlx::query("SELECT * FROM jobs WHERE status='queued' ORDER BY created_at,id LIMIT 1")
-                .fetch_optional(pool)
-                .await?;
-        if let Some(row) = row {
-            let id: Uuid = row.get("id");
-            let installation: Uuid = row.get("installation_id");
-            let release: Uuid = row.get("release_id");
-            let target = sqlx::query("SELECT app_id,environment FROM installations WHERE id=$1")
-                .bind(installation)
-                .fetch_one(pool)
-                .await?;
-            let mut app_lock = pool.acquire().await?;
-            app_lock.close_on_drop();
-            sqlx::query("SELECT pg_advisory_lock(hashtextextended($1,0))")
-                .bind(format!(
-                    "runtime:{}:{}",
-                    target.get::<String, _>("app_id"),
-                    target.get::<String, _>("environment")
-                ))
-                .execute(&mut *app_lock)
-                .await?;
-            let mut lock = pool.acquire().await?;
-            lock.close_on_drop();
-            sqlx::query("SELECT pg_advisory_lock(hashtextextended($1,0))")
-                .bind(installation.to_string())
-                .execute(&mut *lock)
-                .await?;
-            sqlx::query("UPDATE jobs SET status='running',updated_at=now() WHERE id=$1")
-                .bind(id)
-                .execute(pool)
-                .await?;
-            let result = async {
-                crate::auth_sessions::ensure_active(pool,row.get("actor")).await.map_err(|_| RuntimeFailure::new(FailureCode::UserDisabled))?;
-                let authorized:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM users WHERE id=$1 AND admin) OR EXISTS(SELECT 1 FROM installations i JOIN effective_grants g ON g.app_id=i.app_id AND g.environment=i.environment WHERE i.id=$2 AND i.environment='dev' AND g.user_id=$1 AND g.permission='develop')")
-                    .bind(row.get::<String,_>("actor")).bind(installation).fetch_one(pool).await?;
-                anyhow::ensure!(authorized, RuntimeFailure::new(FailureCode::PermissionRevoked));
-                if target.get::<String,_>("environment")=="dev" && crate::development::active_for_app(pool,target.get("app_id")).await? {anyhow::bail!(RuntimeFailure::new(FailureCode::ActiveDevelopmentSession));}
-                crate::delegations::check_queued(pool,row.get("actor"),row.get("delegation_id"),target.get("app_id"),target.get("environment"),row.get::<String,_>("delegation_action").parse().map_err(|_|RuntimeFailure::new(FailureCode::InvalidRequest))?).await?;
-                prepare(pool, id, installation, release).await
-            }.await;
-            match result {
-                Ok(()) => {
-                    sqlx::query("UPDATE jobs SET status='succeeded',step='ready',error_code=NULL,updated_at=now() WHERE id=$1").bind(id).execute(pool).await?;
-                }
-                Err(e) => {
-                    let failure = crate::runtime::classify_database_prepare_failure(e);
-                    let code = failure.code();
-                    sqlx::query("UPDATE jobs SET status='failed',error_code=$2,updated_at=now() WHERE id=$1").bind(id).bind(code).execute(pool).await?;
-                    sqlx::query("UPDATE installations SET db_status='failed' WHERE id=$1")
-                        .bind(installation)
-                        .execute(pool)
-                        .await?;
-                    tracing::error!(event="database_job_failed",job_id=%id,code);
-                }
-            }
-            sqlx::query("SELECT pg_advisory_unlock(hashtextextended($1,0))")
-                .bind(installation.to_string())
-                .execute(&mut *lock)
-                .await?;
-        } else if !crate::development::tick(pool).await?
+        if !database_tick(pool).await?
+            && !crate::development::tick(pool).await?
             && !crate::delivery::tick(pool).await?
             && !crate::runtime::tick(pool).await?
         {
             tokio::time::sleep(std::time::Duration::from_millis(300)).await;
         }
     }
+}
+/// Process the oldest queued standalone database job; `false` when none is queued.
+pub(crate) async fn database_tick(pool: &sqlx::PgPool) -> Result<bool> {
+    let Some(row) =
+        sqlx::query("SELECT * FROM jobs WHERE status='queued' ORDER BY created_at,id LIMIT 1")
+            .fetch_optional(pool)
+            .await?
+    else {
+        return Ok(false);
+    };
+    let id: Uuid = row.get("id");
+    let installation: Uuid = row.get("installation_id");
+    let release: Uuid = row.get("release_id");
+    let target = sqlx::query("SELECT app_id,environment FROM installations WHERE id=$1")
+        .bind(installation)
+        .fetch_one(pool)
+        .await?;
+    let mut app_lock = pool.acquire().await?;
+    app_lock.close_on_drop();
+    sqlx::query("SELECT pg_advisory_lock(hashtextextended($1,0))")
+        .bind(format!(
+            "runtime:{}:{}",
+            target.get::<String, _>("app_id"),
+            target.get::<String, _>("environment")
+        ))
+        .execute(&mut *app_lock)
+        .await?;
+    let mut lock = pool.acquire().await?;
+    lock.close_on_drop();
+    sqlx::query("SELECT pg_advisory_lock(hashtextextended($1,0))")
+        .bind(installation.to_string())
+        .execute(&mut *lock)
+        .await?;
+    sqlx::query("UPDATE jobs SET status='running',updated_at=now() WHERE id=$1")
+        .bind(id)
+        .execute(pool)
+        .await?;
+    let app: String = target.get("app_id");
+    let env: String = target.get("environment");
+    // A deployment's own preparation row carries the deployment's action.
+    let recheck = match row.get::<String, _>("delegation_action").parse() {
+        Ok(action) => {
+            crate::policy::recheck_queued(
+                pool,
+                row.get("actor"),
+                row.get("delegation_id"),
+                &app,
+                &env,
+                action,
+            )
+            .await
+        }
+        Err(_) => Err(RuntimeFailure::new(FailureCode::InvalidRequest)),
+    };
+    // `(failure, ran)`: a refused recheck ran nothing, so the installation keeps its
+    // database state; a failed preparation marks it failed.
+    let outcome = match recheck {
+        Err(failure) => Err((failure, false)),
+        Ok(()) => async {
+            if env == "dev" && crate::development::active_for_app(pool, &app).await? {
+                anyhow::bail!(RuntimeFailure::new(FailureCode::ActiveDevelopmentSession));
+            }
+            prepare(pool, id, installation, release).await
+        }
+        .await
+        .map_err(|error| {
+            (
+                crate::runtime::classify_database_prepare_failure(error),
+                true,
+            )
+        }),
+    };
+    match outcome {
+        Ok(()) => {
+            sqlx::query("UPDATE jobs SET status='succeeded',step='ready',error_code=NULL,updated_at=now() WHERE id=$1").bind(id).execute(pool).await?;
+        }
+        Err((failure, ran)) => {
+            let code = failure.code();
+            sqlx::query(
+                "UPDATE jobs SET status='failed',error_code=$2,updated_at=now() WHERE id=$1",
+            )
+            .bind(id)
+            .bind(code)
+            .execute(pool)
+            .await?;
+            if ran {
+                sqlx::query("UPDATE installations SET db_status='failed' WHERE id=$1")
+                    .bind(installation)
+                    .execute(pool)
+                    .await?;
+            }
+            tracing::error!(event="database_job_failed",job_id=%id,code);
+        }
+    }
+    sqlx::query("SELECT pg_advisory_unlock(hashtextextended($1,0))")
+        .bind(installation.to_string())
+        .execute(&mut *lock)
+        .await?;
+    Ok(true)
 }
 async fn step(pool: &sqlx::PgPool, id: Uuid, name: &str) -> Result<()> {
     sqlx::query("UPDATE jobs SET step=$2,updated_at=now() WHERE id=$1")

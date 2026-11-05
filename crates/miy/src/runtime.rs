@@ -78,14 +78,10 @@ pub async fn check_release(
     app: &str,
     v: ReleaseCheck,
 ) -> ApiResult<Value> {
-    policy::require(
-        state,
-        p,
-        app,
-        "dev",
-        AppAction::Manage(crate::delegations::Action::Accept),
-    )
-    .await?;
+    // The record is management information (shown with `canManage`), so recording it
+    // is a request like a runtime one: `accept` and `read` for a delegation.
+    let decision = AppAction::Request(crate::delegations::Action::Accept);
+    policy::require(state, p, app, "dev", decision).await?;
     let mut guard = state.pool.acquire().await?;
     guard.close_on_drop();
     sqlx::query("SELECT pg_advisory_lock(hashtextextended($1,0))")
@@ -111,8 +107,13 @@ pub async fn check_release(
     let fingerprint:Option<String>=sqlx::query_scalar("SELECT schema_fingerprint FROM db_resources WHERE app_id=$1 AND environment='dev' AND status='ready'").bind(app).fetch_optional(&state.pool).await?.flatten();
     let fingerprint =
         fingerprint.ok_or_else(|| ApiError::conflict("database_schema_unverified"))?;
+    let mut tx = state.pool.begin().await?;
     sqlx::query("INSERT INTO release_checks(release_id,installation_id,actor,note,checks,schema_fingerprint) VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT(release_id) DO UPDATE SET actor=excluded.actor,note=excluded.note,checks=excluded.checks,schema_fingerprint=excluded.schema_fingerprint,checked_at=now()")
-        .bind(v.release_id).bind(row.get::<Uuid,_>("id")).bind(&p.id).bind(v.note.trim()).bind(json!(v.checks)).bind(fingerprint).execute(&state.pool).await?;
+        .bind(v.release_id).bind(row.get::<Uuid,_>("id")).bind(&p.id).bind(v.note.trim()).bind(json!(v.checks)).bind(fingerprint).execute(&mut *tx).await?;
+    // Decide again after waiting for the runtime lock and the health check, while a
+    // denial still rolls the record back, as runtime admission does.
+    policy::require(state, p, app, "dev", decision).await?;
+    tx.commit().await?;
     Ok(
         json!({"releaseId":v.release_id,"tested":true,"recordedBy":p.id,"checks":v.checks,"structured":!v.checks.is_empty(),"note":v.note.trim(),"meaning":"User-recorded test acceptance plus runtime health; not automatic business correctness verification"}),
     )
@@ -291,7 +292,7 @@ pub async fn job(state: &State, p: &Principal, id: Uuid) -> ApiResult<Value> {
         .await?
         .ok_or_else(ApiError::not_found)?;
     let (app, env): (String, String) = (row.get("app_id"), row.get("environment"));
-    policy::require(state, p, &app, &env, AppAction::FollowJob).await?;
+    policy::require(state, p, &app, &env, AppAction::Observe).await?;
     Ok(job_value(&row))
 }
 fn job_value(row: &sqlx::postgres::PgRow) -> Value {
@@ -441,7 +442,7 @@ async fn execute(pool: &sqlx::PgPool, job: &sqlx::postgres::PgRow) -> Result<()>
     let env: String = job.get("environment");
     let actor: String = job.get("actor");
     let action: String = job.get("action");
-    crate::delegations::check_queued(
+    policy::recheck_queued(
         pool,
         &actor,
         job.get("delegation_id"),
@@ -452,10 +453,6 @@ async fn execute(pool: &sqlx::PgPool, job: &sqlx::postgres::PgRow) -> Result<()>
             .map_err(|_| RuntimeFailure::new(FailureCode::InvalidRequest))?,
     )
     .await?;
-    anyhow::ensure!(
-        policy::queued_manager(pool, &actor, &app, &env).await?,
-        RuntimeFailure::new(FailureCode::PermissionRevoked)
-    );
     if env == "dev" && crate::development::active_for_app(pool, &app).await? {
         anyhow::bail!(RuntimeFailure::new(FailureCode::ActiveDevelopmentSession));
     }
@@ -720,11 +717,7 @@ async fn execute(pool: &sqlx::PgPool, job: &sqlx::postgres::PgRow) -> Result<()>
     // Image extraction and waiting for the installation lock can take time.
     // Recheck before entering the branch whose failure cleanup may stop the
     // existing application; a revoked grant must leave that runtime intact.
-    anyhow::ensure!(
-        policy::queued_manager(pool, &actor, &app, &env).await?,
-        RuntimeFailure::new(FailureCode::PermissionRevoked)
-    );
-    crate::delegations::check_queued(
+    policy::recheck_queued(
         pool,
         &actor,
         job.get("delegation_id"),

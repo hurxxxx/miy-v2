@@ -155,15 +155,15 @@ Windows 사용자 인수, 실제 콘솔 신호, 다른 OS 또는 Docker Desktop 
   - 동작 변경은 위임 자격증명의 표시값뿐이다([코어 권한](CORE-PERMISSIONS.md)의 "표시값").
   - 정적 검사와 격리 회귀(관찰 88개)가 통과했다([검증 기록](releases/core-policy-2026-11-05-validation.json)).
 - **4:** `scripts/check-cli-version.py`를 릴리스 후보 workflow에 연결했다.
-- **2의 다음 단계 대상:** 판정 정리 중 확인한 불일치다. 고친 항목은 줄을 긋고 고친 내용을 적었다([검증 기록](releases/core-policy-followup-2026-11-05-validation.json)).
+- **2의 둘째 단계(불일치 수정):** 판정 정리 중 확인한 불일치다. 고친 항목은 줄을 긋고 고친 내용을 적었다([1·4 검증 기록](releases/core-policy-followup-2026-11-05-validation.json), [2·3·5~8 검증 기록](releases/core-policy-consistency-2026-11-05-validation.json)). 9는 3에서 다룬다.
   1. ~~DB 준비(`prepare`)는 작업을 넣은 뒤 `read`를 확인한다.~~ 고침: 접수 전에 `Request(prepare_database)`로 판정한다.
-  2. 설치 권한 변경은 커밋한 뒤 결과 조회에서 사용 중지된 prod 앱이면 `403 app_disabled`가 된다. 관리자는 실행 관리 목록에 보이는 그 설치의 권한을 읽지 못한다.
-  3. 관리자 쓰기 중 앱 생성·앱 이름 변경·공용 컴포넌트 게시는 커밋 전 잠금 재확인이 없다.
+  2. ~~설치 권한 변경은 커밋한 뒤 결과 조회에서 사용 중지된 prod 앱이면 `403 app_disabled`가 된다. 관리자는 실행 관리 목록에 보이는 그 설치의 권한을 읽지 못한다.~~ 고침: 승인 기록 조회는 운영 기록 조회(`Observe`: 사용 또는 관리 읽기)로 판정하고, 변경 응답은 커밋 전에 같은 트랜잭션에서 만든다.
+  3. ~~관리자 쓰기 중 앱 생성·앱 이름 변경·공용 컴포넌트 게시는 커밋 전 잠금 재확인이 없다.~~ 고침: 셋 다 트랜잭션 안에서 쓰고 커밋 전에 `admin_locked`로 다시 확인한다.
   4. ~~위임 자격증명의 관리자 여부가 경로마다 다르다. `GET /grants`는 위임 범위 앱·환경의 모든 사용자 직접 권한을 보여 준다.~~ 고침: 위임된 관리자는 자기 권한만 본다.
-  5. DB 작업 worker의 재확인은 dev 개발 권한만 인정한다. prod 배포 담당자의 DB 작업이 재시작 후 다시 대기열에 오르면 거부될 수 있다. 코드 판독 결과이며 실행하지 않았다.
-  6. 릴리스 시험 결과 기록은 `accept`만 요구하고 `read`와 잠금 후 재확인이 없다.
-  7. `GET /dev-sessions/by-request`는 소유자 필터만 있고 권한 판정이 없다.
-  8. 대기 작업 재확인의 횟수와 실패 분류가 작업 종류마다 다르다. 빌드·로그 요청은 DB 장애도 `permission_revoked`로 분류한다.
+  5. ~~DB 작업 worker의 재확인은 dev 개발 권한만 인정한다. prod 배포 담당자의 DB 작업이 재시작 후 다시 대기열에 오르면 거부될 수 있다. 코드 판독 결과이며 실행하지 않았다.~~ 고침: 다른 대기 작업과 같은 재확인(`recheck_queued`)을 쓴다. 고치기 전 코드에서는 다시 대기열에 오른 prod 배포 담당자의 DB 작업이 `permission_revoked`로 실패하고 설치의 DB 상태를 `failed`로 바꿨다. 이제 거부된 DB 작업은 실행한 것이 없으므로 설치 상태를 바꾸지 않는다.
+  6. ~~릴리스 시험 결과 기록은 `accept`만 요구하고 `read`와 잠금 후 재확인이 없다.~~ 고침: `Request(accept)`로 접수하고, 실행 잠금과 앱 상태 확인을 기다린 뒤 기록 직전에 트랜잭션 안에서 다시 판정한다.
+  7. ~~`GET /dev-sessions/by-request`는 소유자 필터만 있고 권한 판정이 없다.~~ 고침: 세션 조회와 같은 `Manage(dev_session)` 판정을 한다.
+  8. ~~대기 작업 재확인의 횟수와 실패 분류가 작업 종류마다 다르다. 빌드·로그 요청은 DB 장애도 `permission_revoked`로 분류한다.~~ 고침: 모든 대기 작업이 시작 전과 긴 대기 뒤에 `recheck_queued` 하나를 부른다. 확정 거부는 `user_disabled`·`permission_revoked`이고, 권한을 읽지 못하면 `database_unavailable`(로그는 `diagnostic_unavailable`)이다. 이미지 적재는 이 코드를 `image_import_failed`로 덮지 않는다. 고치기 전 분류는 코드 판독이고 실행으로 재현하지 않았다. 고친 뒤의 분류는 단위 시험으로 확인했다.
   9. `GET /installations`는 질의가 있는지에 따라 응답 형식이 다른 두 구현으로 나뉜다. 3에서 한 형식으로 합친다.
 
 보류한 것:

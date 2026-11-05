@@ -765,7 +765,18 @@ async fn permission_and_disable(h: &Harness<'_>, passed: &mut Vec<String>) -> Re
     .await?;
     error(h.refresh(&issued.refresh).await?, 403, "user_disabled").await?;
     ensure!(
-        !crate::policy::queued_manager(&h.state.pool, &browser.user, &app, "dev").await?,
+        crate::policy::recheck_queued(
+            &h.state.pool,
+            &browser.user,
+            None,
+            &app,
+            "dev",
+            crate::delegations::Action::Start
+        )
+        .await
+        .err()
+        .map(|failure| failure.code)
+            == Some(crate::runtime_contract::FailureCode::UserDisabled),
         "disabled user retained queued runtime authority"
     );
     let removed:i64=sqlx::query_scalar("SELECT (SELECT count(*) FROM cli_tokens WHERE user_id=$1)+(SELECT count(*) FROM sessions WHERE user_id=$1)+(SELECT count(*) FROM development_sessions WHERE user_id=$1)+(SELECT count(*) FROM cli_authorizations WHERE user_id=$1)")

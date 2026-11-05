@@ -368,20 +368,7 @@ async fn step(pool: &sqlx::PgPool, id: Uuid, name: &str) -> Result<()> {
 async fn execute(pool: &sqlx::PgPool, row: &PgRow, recovering: bool) -> Result<(String, String)> {
     let id: Uuid = row.get("id");
     let app: String = row.get("app_id");
-    ensure!(
-        policy::queued_manager(pool, row.get("actor"), &app, "dev").await?
-            && crate::delegations::check_queued(
-                pool,
-                row.get("actor"),
-                row.get("delegation_id"),
-                &app,
-                "dev",
-                crate::delegations::Action::Build
-            )
-            .await
-            .is_ok(),
-        "permission_revoked"
-    );
+    recheck(pool, row, &app).await?;
     ensure!(
         source_archive::valid_commit(row.get("source_commit"))
             && crate::runtime_platform::server().as_deref()
@@ -561,21 +548,26 @@ async fn execute(pool: &sqlx::PgPool, row: &PgRow, recovering: bool) -> Result<(
         .to_owned();
     // Authorization and history can change during a long compilation. A build
     // never applies migrations, provisions databases, or changes a release.
-    ensure!(
-        policy::queued_manager(pool, row.get("actor"), &app, "dev").await?
-            && crate::delegations::check_queued(
-                pool,
-                row.get("actor"),
-                row.get("delegation_id"),
-                &app,
-                "dev",
-                crate::delegations::Action::Build
-            )
-            .await
-            .is_ok(),
-        "permission_revoked"
-    );
+    recheck(pool, row, &app).await?;
     Ok((image, version))
+}
+
+/// The queued build's recheck, before it starts and after compilation. An unreadable
+/// recheck is `database_unavailable`, not a revocation.
+async fn recheck(
+    pool: &sqlx::PgPool,
+    row: &PgRow,
+    app: &str,
+) -> Result<(), crate::runtime_contract::RuntimeFailure> {
+    policy::recheck_queued(
+        pool,
+        row.get("actor"),
+        row.get("delegation_id"),
+        app,
+        "dev",
+        crate::delegations::Action::Build,
+    )
+    .await
 }
 
 fn failure_code(error: &anyhow::Error, recovering: bool) -> &'static str {
@@ -586,6 +578,8 @@ fn failure_code(error: &anyhow::Error, recovering: bool) -> &'static str {
         let code = message.split(':').next().unwrap_or("");
         match code {
             "permission_revoked" => return "permission_revoked",
+            "user_disabled" => return "user_disabled",
+            "database_unavailable" => return "database_unavailable",
             "migration_history_mismatch" => return "migration_history_mismatch",
             "build_database_history_unavailable" => return "build_database_history_unavailable",
             "build_timeout" => return "build_timeout",
@@ -734,6 +728,22 @@ pub async fn tick(pool: &sqlx::PgPool) -> Result<bool> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The queued recheck's codes survive into the build record; an unreadable
+    /// recheck is not reported as a revocation.
+    #[test]
+    fn queued_recheck_codes_are_recorded_as_they_are() {
+        use crate::runtime_contract::{FailureCode, RuntimeFailure};
+        for (code, recorded) in [
+            (FailureCode::PermissionRevoked, "permission_revoked"),
+            (FailureCode::UserDisabled, "user_disabled"),
+            (FailureCode::DatabaseUnavailable, "database_unavailable"),
+        ] {
+            let error = anyhow::Error::from(RuntimeFailure::new(code));
+            assert_eq!(failure_code(&error, false), recorded);
+            assert_eq!(failure_code(&error, true), recorded);
+        }
+    }
 
     #[test]
     fn execution_scratch_is_private_unique_and_cleans_only_its_owned_directory() {

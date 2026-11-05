@@ -143,7 +143,7 @@ pub fn start(pool: sqlx::PgPool) -> Monitor {
     }))
 }
 async fn current(pool: &sqlx::PgPool, row: &sqlx::postgres::PgRow) -> Result<(), &'static str> {
-    crate::delegations::check_queued(
+    policy::recheck_queued(
         pool,
         row.get("actor"),
         row.get("delegation_id"),
@@ -152,23 +152,20 @@ async fn current(pool: &sqlx::PgPool, row: &sqlx::postgres::PgRow) -> Result<(),
         crate::delegations::Action::Logs,
     )
     .await
-    .map_err(|_| "permission_revoked")?;
-    if !policy::queued_manager(
-        pool,
-        row.get("actor"),
-        row.get("app_id"),
-        row.get("environment"),
-    )
-    .await
-    .map_err(|_| "diagnostic_unavailable")?
-    {
-        return Err("permission_revoked");
-    }
+    .map_err(|failure| log_code(failure.code))?;
     let same:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM installations WHERE id=$1 AND app_id=$2 AND environment=$3 AND control_generation=$4 AND runtime_container=$5 AND runtime_status='running')").bind(row.get::<Uuid,_>("installation_id")).bind(row.get::<String,_>("app_id")).bind(row.get::<String,_>("environment")).bind(row.get::<i64,_>("generation")).bind(row.get::<String,_>("expected_container")).fetch_one(pool).await.map_err(|_|"diagnostic_unavailable")?;
     if !same {
         return Err("state_changed");
     }
     Ok(())
+}
+/// A diagnostic names an unreadable recheck like its other read failures; a definite
+/// denial keeps the recheck's own code.
+fn log_code(code: crate::runtime_contract::FailureCode) -> &'static str {
+    match code {
+        crate::runtime_contract::FailureCode::DatabaseUnavailable => "diagnostic_unavailable",
+        code => code.as_str(),
+    }
 }
 async fn bounded_read(
     mut input: impl AsyncRead + Unpin,
@@ -268,6 +265,20 @@ async fn collect(pool: &sqlx::PgPool, row: sqlx::postgres::PgRow) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    /// An unreadable recheck is a diagnostic read failure, not a revocation.
+    #[test]
+    fn queued_recheck_codes() {
+        use crate::runtime_contract::FailureCode;
+        assert_eq!(
+            log_code(FailureCode::DatabaseUnavailable),
+            "diagnostic_unavailable"
+        );
+        assert_eq!(
+            log_code(FailureCode::PermissionRevoked),
+            "permission_revoked"
+        );
+        assert_eq!(log_code(FailureCode::UserDisabled), "user_disabled");
+    }
     #[tokio::test]
     async fn combined_stream_limit() {
         let budget = Arc::new(AtomicUsize::new(0));

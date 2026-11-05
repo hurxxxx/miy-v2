@@ -15,15 +15,19 @@ use axum::{
 use serde_json::{Value, json};
 use std::path::Path as FsPath;
 
-pub async fn store(pool: &sqlx::PgPool, publisher: &str, p: Package) -> ApiResult<Value> {
+pub async fn store(
+    connection: &mut sqlx::PgConnection,
+    publisher: &str,
+    p: Package,
+) -> ApiResult<Value> {
     let r = release(p).map_err(|e| ApiError::bad_owned(e.to_string()))?;
     sqlx::query("INSERT INTO component_releases(name,version,digest,package,publisher) VALUES($1,$2,$3,$4,$5) ON CONFLICT(name,version) DO NOTHING")
-        .bind(&r.package.name).bind(&r.package.version).bind(&r.sha256).bind(serde_json::to_value(&r.package)?).bind(publisher).execute(pool).await?;
+        .bind(&r.package.name).bind(&r.package.version).bind(&r.sha256).bind(serde_json::to_value(&r.package)?).bind(publisher).execute(&mut *connection).await?;
     let existing: String =
         sqlx::query_scalar("SELECT digest FROM component_releases WHERE name=$1 AND version=$2")
             .bind(&r.package.name)
             .bind(&r.package.version)
-            .fetch_one(pool)
+            .fetch_one(&mut *connection)
             .await?;
     if existing != r.sha256 {
         return Err(ApiError::conflict("immutable_component_version"));
@@ -58,13 +62,18 @@ pub async fn publish(
     Json(package): Json<Package>,
 ) -> ApiResult<Json<Value>> {
     crate::domain::admin(&s, &p).await?;
-    Ok(Json(store(&s.pool, &p.id, package).await?))
+    let mut tx = s.pool.begin().await?;
+    let stored = store(&mut tx, &p.id, package).await?;
+    // The insert may wait for a concurrent publication of the same version.
+    crate::domain::admin_locked(&mut tx, &p).await?;
+    tx.commit().await?;
+    Ok(Json(stored))
 }
 pub async fn seed(pool: &sqlx::PgPool) -> Result<()> {
     let root = std::env::var("MIY_COMPONENT_SEED")
         .unwrap_or_else(|_| "registry/components/ui/1.0.1".into());
     let p = read_source(FsPath::new(&root)).context("read_component_seed")?;
-    store(pool, "bootstrap", p)
+    store(&mut *pool.acquire().await?, "bootstrap", p)
         .await
         .map_err(|e| anyhow::anyhow!("component_seed: {}", e.code))?;
     Ok(())

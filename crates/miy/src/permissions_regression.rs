@@ -1165,7 +1165,18 @@ pub async fn run(state: &State, client: &Client, base: &str) -> Result<Vec<Strin
     .await?;
     passed.push("user disable and CLI/browser/legacy logout revoke issued continuations, including held requests and child proofs".into());
     groups(&mut h, suffix, &mut passed).await?;
-    policy_matrix(&mut h, suffix, &mut passed).await?;
+    // Independent fixtures: a failing check here does not hide the others.
+    let mut stopped = Vec::new();
+    if let Err(error) = policy_matrix(&mut h, suffix, &mut passed).await {
+        stopped.push(format!("policy matrix: {error:#}"));
+    }
+    if let Err(error) = disabled_app_approvals(&mut h, suffix, &mut passed).await {
+        stopped.push(format!("approvals of a disabled app: {error:#}"));
+    }
+    if let Err(error) = administrator_write_rechecks(&h, suffix, &mut passed).await {
+        stopped.push(format!("administrator write rechecks: {error:#}"));
+    }
+    ensure!(stopped.is_empty(), "{}", stopped.join("; "));
     Ok(passed)
 }
 
@@ -1573,12 +1584,13 @@ async fn groups(h: &mut Harness<'_>, suffix: &str, passed: &mut Vec<String>) -> 
 }
 
 /// One expected row of the policy matrix: which environments a principal may open and
-/// whose jobs it may follow (company switch off, on), and its display values.
+/// whose operating records (jobs, approvals) it may observe (company switch off, on),
+/// and its display values.
 struct PolicyCase {
     name: &'static str,
     token: String,
     open: [&'static [&'static str]; 2],
-    follow: [&'static [&'static str]; 2],
+    observe: [&'static [&'static str]; 2],
     manage: &'static [&'static str],
     promote: bool,
 }
@@ -1619,9 +1631,9 @@ fn environments(rows: &[Value]) -> Vec<String> {
 
 /// Lists, details and display values come from one policy decision (`policy.rs`). For
 /// each kind of principal, with the company switch off and on, the default and paged
-/// installation lists must equal the installation detail decision, the job list must
-/// equal the job detail decision, and both installation lists report the same display
-/// values that the matching requests would get.
+/// installation lists must equal the use decision, the installation's approval record,
+/// the job list and the job details must equal the observe decision, and both
+/// installation lists report the same display values that the matching requests would get.
 async fn policy_matrix(h: &mut Harness<'_>, suffix: &str, passed: &mut Vec<String>) -> Result<()> {
     let app = format!("policy-{suffix}");
     let dev = h.app(app.clone(), "dev", &[]).await?;
@@ -1680,7 +1692,7 @@ async fn policy_matrix(h: &mut Harness<'_>, suffix: &str, passed: &mut Vec<Strin
             name: "administrator",
             token: admin.token.clone(),
             open: [both, &["dev"]],
-            follow: [both, both],
+            observe: [both, both],
             manage: both,
             promote: true,
         },
@@ -1688,7 +1700,7 @@ async fn policy_matrix(h: &mut Harness<'_>, suffix: &str, passed: &mut Vec<Strin
             name: "deployer",
             token: deployer.token.clone(),
             open: [both, &["dev"]],
-            follow: [both, both],
+            observe: [both, both],
             manage: both,
             promote: true,
         },
@@ -1696,7 +1708,7 @@ async fn policy_matrix(h: &mut Harness<'_>, suffix: &str, passed: &mut Vec<Strin
             name: "developer",
             token: developer.token.clone(),
             open: [&["dev"], &["dev"]],
-            follow: [&["dev"], &["dev"]],
+            observe: [&["dev"], &["dev"]],
             manage: &["dev"],
             promote: false,
         },
@@ -1704,7 +1716,7 @@ async fn policy_matrix(h: &mut Harness<'_>, suffix: &str, passed: &mut Vec<Strin
             name: "user",
             token: user.token.clone(),
             open: [both, &[]],
-            follow: [both, &[]],
+            observe: [both, &[]],
             manage: &[],
             promote: false,
         },
@@ -1712,7 +1724,7 @@ async fn policy_matrix(h: &mut Harness<'_>, suffix: &str, passed: &mut Vec<Strin
             name: "stranger",
             token: stranger.token.clone(),
             open: [&[], &[]],
-            follow: [&[], &[]],
+            observe: [&[], &[]],
             manage: &[],
             promote: false,
         },
@@ -1720,7 +1732,7 @@ async fn policy_matrix(h: &mut Harness<'_>, suffix: &str, passed: &mut Vec<Strin
             name: "delegated developer with read",
             token: delegate(&developer, "dev", &["read", "start"]).await?,
             open: [&["dev"], &["dev"]],
-            follow: [&["dev"], &["dev"]],
+            observe: [&["dev"], &["dev"]],
             manage: &["dev"],
             promote: false,
         },
@@ -1728,7 +1740,7 @@ async fn policy_matrix(h: &mut Harness<'_>, suffix: &str, passed: &mut Vec<Strin
             name: "delegated developer without read",
             token: delegate(&developer, "dev", &["start"]).await?,
             open: [&[], &[]],
-            follow: [&[], &[]],
+            observe: [&[], &[]],
             manage: &[],
             promote: false,
         },
@@ -1736,7 +1748,7 @@ async fn policy_matrix(h: &mut Harness<'_>, suffix: &str, passed: &mut Vec<Strin
             name: "delegated deployer",
             token: delegate(&deployer, "prod", &["read", "promote"]).await?,
             open: [&["prod"], &[]],
-            follow: [&["prod"], &["prod"]],
+            observe: [&["prod"], &["prod"]],
             manage: &["prod"],
             promote: true,
         },
@@ -1798,9 +1810,13 @@ async fn policy_matrix(h: &mut Harness<'_>, suffix: &str, passed: &mut Vec<Strin
                 environments(&paged) == expected,
                 "{context}: paged installation list differs from policy"
             );
+            let observed: Vec<String> = case.observe[state]
+                .iter()
+                .map(|e| (*e).to_owned())
+                .collect();
             ensure!(
-                detail == expected,
-                "{context}: installation detail differs from the lists"
+                detail == observed,
+                "{context}: installation approval record differs from the observe decision"
             );
             for row in default.iter().chain(&paged) {
                 let environment = row["environment"].as_str().unwrap_or_default();
@@ -1838,14 +1854,12 @@ async fn policy_matrix(h: &mut Harness<'_>, suffix: &str, passed: &mut Vec<Strin
                     followed.push((*environment).to_owned());
                 }
             }
-            let expected: Vec<String> =
-                case.follow[state].iter().map(|e| (*e).to_owned()).collect();
             ensure!(
-                environments(&listed_jobs) == expected,
+                environments(&listed_jobs) == observed,
                 "{context}: job list differs from policy"
             );
             ensure!(
-                followed == expected,
+                followed == observed,
                 "{context}: job detail differs from the job list"
             );
         }
@@ -1858,7 +1872,7 @@ async fn policy_matrix(h: &mut Harness<'_>, suffix: &str, passed: &mut Vec<Strin
         200,
     )
     .await?;
-    passed.push("default and paged installation lists, installation and job details, job lists and display values agree for administrators, deployers, developers, users, strangers and delegated credentials with and without read, with the company switch off and on".into());
+    passed.push("default and paged installation lists, installation approval records, job details, job lists and display values agree for administrators, deployers, developers, users, strangers and delegated credentials with and without read, with the company switch off and on".into());
     // A database preparation receipt is an observable job like a runtime receipt: a
     // delegation needs prepare_database and read before anything is stored.
     let jobs_by = async |actor: &Actor| -> Result<i64> {
@@ -1936,6 +1950,121 @@ async fn policy_matrix(h: &mut Harness<'_>, suffix: &str, passed: &mut Vec<Strin
     Ok(())
 }
 
+/// An administrator manages a company-disabled prod installation (it stays in the
+/// runtime management list), so its approvals stay readable and changeable there, and
+/// a change is answered with the record it committed instead of a later `app_disabled`.
+async fn disabled_app_approvals(
+    h: &mut Harness<'_>,
+    suffix: &str,
+    passed: &mut Vec<String>,
+) -> Result<()> {
+    let app = h.app(format!("approvals-{suffix}"), "prod", &[]).await?;
+    let admin = h.actor(true).await?;
+    h.json(
+        &admin.token,
+        Method::PUT,
+        &format!("/api/v1/apps/{}/control", app.app),
+        json!({"disabled":true}),
+        200,
+    )
+    .await?;
+    let status = h
+        .update(&admin, &app, app.release, 0, &[])
+        .await?
+        .status()
+        .as_u16();
+    let committed: Option<i64> = sqlx::query_scalar(
+        "SELECT revision FROM installation_permissions WHERE installation_id=$1 AND release_id=$2",
+    )
+    .bind(app.installation)
+    .bind(app.release)
+    .fetch_optional(&h.state.pool)
+    .await?;
+    ensure!(
+        status == 200 && committed == Some(1),
+        "an approval change on a disabled prod app answered HTTP {status} with committed revision {committed:?}"
+    );
+    let current = h.read(&admin, &app, app.release).await?;
+    let latest = response(
+        h.request(&admin.token, Method::GET, &app.permissions())
+            .send()
+            .await?,
+        200,
+    )
+    .await?;
+    ensure!(
+        current["revision"] == 1 && latest["revision"] == 1,
+        "the approval record of a disabled prod app is not the committed one"
+    );
+    passed.push("an administrator reads and changes the approvals of a company-disabled prod installation it manages, and a change answers with the record it committed".into());
+    Ok(())
+}
+
+/// Administrator writes outside groups and grants: app creation, app display name and
+/// shared component publication. Each waits on a PostgreSQL lock while its
+/// administrator is revoked, and must then roll back.
+async fn administrator_write_rechecks(
+    h: &Harness<'_>,
+    suffix: &str,
+    passed: &mut Vec<String>,
+) -> Result<()> {
+    // Interpolated values are exclusively IDs generated by this isolated fixture.
+    let created = format!("admin-write-app-{suffix}");
+    let renamed = format!("admin-write-name-{suffix}");
+    let component = format!("admin-write-component-{suffix}");
+    sqlx::query("INSERT INTO apps(id,name) VALUES($1,'Rename fixture')")
+        .bind(&renamed)
+        .execute(&h.state.pool)
+        .await?;
+    let cases = [
+        PendingMutation {
+            name: "create app",
+            method: Method::POST,
+            path: "/api/v1/apps".into(),
+            body: json!({"id":created,"name":"Pending app"}),
+            lock: format!("INSERT INTO apps(id,name) VALUES('{created}','Lock holder')"),
+            snapshot: format!("SELECT count(*)::text FROM apps WHERE id='{created}'"),
+            action: None,
+        },
+        PendingMutation {
+            name: "rename app",
+            method: Method::POST,
+            path: format!("/api/v1/apps/{renamed}/name"),
+            body: json!({"name":format!("Renamed {suffix}")}),
+            lock: format!("SELECT id FROM apps WHERE id='{renamed}' FOR UPDATE"),
+            snapshot: format!("SELECT name FROM apps WHERE id='{renamed}'"),
+            action: None,
+        },
+        PendingMutation {
+            name: "publish component",
+            method: Method::POST,
+            path: "/api/v1/components".into(),
+            body: json!({
+                "protocol":"miy.component/v1","name":component,"version":"1.0.0",
+                "description":"Pending component","uiContract":"miy.ui/v1alpha1",
+                "bundleVersions":["1.0.0"],
+                "files":{"README.md":"Pending component\n","index.ts":"export {};\n"},
+            }),
+            lock: format!(
+                "INSERT INTO component_releases(name,version,digest,package,publisher) VALUES('{component}','1.0.0','lock','{{}}','lock')"
+            ),
+            snapshot: format!(
+                "SELECT count(*)::text FROM component_releases WHERE name='{component}'"
+            ),
+            action: None,
+        },
+    ];
+    let mut failed = Vec::new();
+    for case in &cases {
+        if let Err(error) = pending_revocation(h, case).await {
+            failed.push(format!("{}: {error:#}", case.name));
+        }
+    }
+    ensure!(failed.is_empty(), "{}", failed.join("; "));
+    passed.push("app creation, app display name changes and shared component publication roll back when their administrator is revoked or disabled during a PostgreSQL lock wait".into());
+    Ok(())
+}
+
 /// Observe an actual PostgreSQL wait, rather than assuming a request started after a sleep.
 async fn blocked_by(pool: &sqlx::PgPool, blocker: i32, prefix: &str) -> Result<i32> {
     tokio::time::timeout(Duration::from_secs(10), async {
@@ -1965,7 +2094,8 @@ struct PendingMutation {
     body: Value,
     lock: String,
     snapshot: String,
-    action: &'static str,
+    /// The audit action a committed change would record, when the change is audited.
+    action: Option<&'static str>,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -2002,7 +2132,7 @@ async fn mutation_revocation(
             body: json!({"name":format!("pending {suffix}"),"source":"hr","parentId":unit}),
             lock: group_lock(unit),
             snapshot: format!("SELECT count(*)::text FROM groups WHERE name='pending {suffix}'"),
-            action: "group.created",
+            action: Some("group.created"),
         },
         PendingMutation {
             name: "update group",
@@ -2011,7 +2141,7 @@ async fn mutation_revocation(
             body: json!({"name":format!("changed {suffix}"),"active":false}),
             lock: group_lock(local),
             snapshot: format!("SELECT name||':'||active::text FROM groups WHERE id='{local}'"),
-            action: "group.deactivated",
+            action: Some("group.deactivated"),
         },
         PendingMutation {
             name: "set parent",
@@ -2022,7 +2152,7 @@ async fn mutation_revocation(
             snapshot: format!(
                 "SELECT COALESCE(parent_id::text,'none') FROM groups WHERE id='{unit}'"
             ),
-            action: "group.parent_set",
+            action: Some("group.parent_set"),
         },
         PendingMutation {
             name: "set member",
@@ -2034,7 +2164,7 @@ async fn mutation_revocation(
                 "SELECT count(*)::text FROM group_members WHERE group_id='{local}' AND user_id='{}'",
                 personal_user.id
             ),
-            action: "group.member_added",
+            action: Some("group.member_added"),
         },
         PendingMutation {
             name: "set primary group",
@@ -2043,7 +2173,7 @@ async fn mutation_revocation(
             body: json!({"groupId":team}),
             lock: group_lock(team),
             snapshot: primary_snapshot,
-            action: "user.primary_group_set",
+            action: Some("user.primary_group_set"),
         },
         PendingMutation {
             name: "set group grant",
@@ -2054,7 +2184,7 @@ async fn mutation_revocation(
             snapshot: format!(
                 "SELECT count(*)::text FROM group_grants WHERE group_id='{local}' AND app_id='{app}' AND environment='prod'"
             ),
-            action: "group_grant.enabled",
+            action: Some("group_grant.enabled"),
         },
         PendingMutation {
             name: "set admission",
@@ -2067,7 +2197,7 @@ async fn mutation_revocation(
             snapshot: format!(
                 "SELECT mode FROM app_admission WHERE app_id='{app}' AND environment='prod'"
             ),
-            action: "app.admission_set",
+            action: Some("app.admission_set"),
         },
         PendingMutation {
             name: "set company control",
@@ -2076,7 +2206,7 @@ async fn mutation_revocation(
             body: json!({"disabled":true}),
             lock: format!("SELECT app_id FROM app_controls WHERE app_id='{app}' FOR UPDATE"),
             snapshot: format!("SELECT disabled::text FROM app_controls WHERE app_id='{app}'"),
-            action: "app.disabled",
+            action: Some("app.disabled"),
         },
         PendingMutation {
             name: "revoke personal grant",
@@ -2091,7 +2221,7 @@ async fn mutation_revocation(
                 "SELECT count(*)::text FROM grants WHERE user_id='{}' AND app_id='{app}' AND environment='dev' AND permission='use'",
                 personal_user.id
             ),
-            action: "grant.disabled",
+            action: Some("grant.disabled"),
         },
         PendingMutation {
             name: "disable user",
@@ -2105,7 +2235,7 @@ async fn mutation_revocation(
                 "SELECT enabled::text FROM users WHERE id='{}'",
                 personal_user.id
             ),
-            action: "user.disabled",
+            action: Some("user.disabled"),
         },
         PendingMutation {
             name: "approve registration",
@@ -2116,54 +2246,64 @@ async fn mutation_revocation(
             snapshot: format!(
                 "SELECT status||':'||(SELECT count(*) FROM apps WHERE id='{registered}')||':'||(SELECT count(*) FROM grants WHERE app_id='{registered}') FROM app_registrations WHERE id='{registration}'"
             ),
-            action: "grant.enabled",
+            action: Some("grant.enabled"),
         },
     ];
-    for case in cases {
-        for revoke in ["admin", "enabled"] {
-            let actor = h.actor(true).await?;
-            let before: String = sqlx::query_scalar(&case.snapshot)
-                .fetch_one(&h.state.pool)
-                .await?;
-            let mut blocker = h.state.pool.begin().await?;
-            let pid: i32 = sqlx::query_scalar("SELECT pg_backend_pid()")
-                .fetch_one(&mut *blocker)
-                .await?;
-            sqlx::query(&case.lock).fetch_all(&mut *blocker).await?;
-            let pending = h
-                .request(&actor.token, case.method.clone(), &case.path)
-                .json(&case.body)
-                .send();
-            tokio::pin!(pending);
-            tokio::select! {
-                observed = blocked_by(&h.state.pool, pid, "") => { observed?; }
-                early = &mut pending => {
-                    anyhow::bail!("{} completed before its lock wait (HTTP {})", case.name, early?.status().as_u16());
-                }
-            }
-            // Both are Core-authoritative user state. No test credential is printed.
-            sqlx::query(&format!("UPDATE users SET {revoke}=false WHERE id=$1"))
-                .bind(&actor.id)
-                .execute(&h.state.pool)
-                .await?;
-            blocker.rollback().await?;
-            response(
-                tokio::time::timeout(Duration::from_secs(10), pending).await??,
-                403,
-            )
+    for case in &cases {
+        pending_revocation(h, case).await?;
+    }
+    Ok(())
+}
+
+/// Hold `case.lock`, start the change, revoke the administrator (admin, then enabled
+/// on a fresh actor) while the change waits on the lock, then release it: the change
+/// must answer 403 and leave the snapshot and the audit trail unchanged.
+async fn pending_revocation(h: &Harness<'_>, case: &PendingMutation) -> Result<()> {
+    for revoke in ["admin", "enabled"] {
+        let actor = h.actor(true).await?;
+        let before: String = sqlx::query_scalar(&case.snapshot)
+            .fetch_one(&h.state.pool)
             .await?;
-            let after: String = sqlx::query_scalar(&case.snapshot)
-                .fetch_one(&h.state.pool)
-                .await?;
-            ensure!(
-                before == after,
-                "{} survived {revoke} revocation",
-                case.name
-            );
+        let mut blocker = h.state.pool.begin().await?;
+        let pid: i32 = sqlx::query_scalar("SELECT pg_backend_pid()")
+            .fetch_one(&mut *blocker)
+            .await?;
+        sqlx::query(&case.lock).fetch_all(&mut *blocker).await?;
+        let pending = h
+            .request(&actor.token, case.method.clone(), &case.path)
+            .json(&case.body)
+            .send();
+        tokio::pin!(pending);
+        tokio::select! {
+            observed = blocked_by(&h.state.pool, pid, "") => { observed?; }
+            early = &mut pending => {
+                anyhow::bail!("{} completed before its lock wait (HTTP {})", case.name, early?.status().as_u16());
+            }
+        }
+        // Both are Core-authoritative user state. No test credential is printed.
+        sqlx::query(&format!("UPDATE users SET {revoke}=false WHERE id=$1"))
+            .bind(&actor.id)
+            .execute(&h.state.pool)
+            .await?;
+        blocker.rollback().await?;
+        response(
+            tokio::time::timeout(Duration::from_secs(10), pending).await??,
+            403,
+        )
+        .await?;
+        let after: String = sqlx::query_scalar(&case.snapshot)
+            .fetch_one(&h.state.pool)
+            .await?;
+        ensure!(
+            before == after,
+            "{} survived {revoke} revocation",
+            case.name
+        );
+        if let Some(action) = case.action {
             let audits: i64 =
                 sqlx::query_scalar("SELECT count(*) FROM audit WHERE actor=$1 AND action=$2")
                     .bind(&actor.id)
-                    .bind(case.action)
+                    .bind(action)
                     .fetch_one(&h.state.pool)
                     .await?;
             ensure!(

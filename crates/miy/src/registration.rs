@@ -123,15 +123,19 @@ pub async fn rename(s: &State, p: &Principal, app: &str, v: DisplayName) -> ApiR
     if name.is_empty() || name.len() > 120 {
         return Err(ApiError::bad("invalid_app_name"));
     }
+    let mut tx = s.pool.begin().await?;
     let changed = sqlx::query("UPDATE apps SET name=$2 WHERE id=$1")
         .bind(app)
         .bind(name)
-        .execute(&s.pool)
+        .execute(&mut *tx)
         .await?
         .rows_affected();
     if changed == 0 {
         return Err(ApiError::not_found());
     }
+    // The update may wait on the app row; decide after it, holding the actor row.
+    domain::admin_locked(&mut tx, p).await?;
+    tx.commit().await?;
     Ok(
         json!({"appId":app,"name":name,"policy":"Platform display name; release manifest and application source are unchanged"}),
     )

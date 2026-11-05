@@ -4,6 +4,7 @@ use crate::{
     api_error::{ApiError, ApiResult},
     auth::Principal,
     domain,
+    policy::{self, AppAction},
 };
 use axum::{
     Extension, Json,
@@ -100,13 +101,39 @@ pub async fn require(
     }
 }
 
+/// Approvals are an installation's operating record ([`AppAction::Observe`]): readable
+/// with use, or with the management read that keeps a company-disabled prod app in the
+/// administrator's runtime management list. Returns the installation's current release.
+pub async fn observable(s: &State, p: &Principal, installation: Uuid) -> ApiResult<Uuid> {
+    let row = sqlx::query("SELECT app_id,environment,release_id FROM installations WHERE id=$1")
+        .bind(installation)
+        .fetch_optional(&s.pool)
+        .await?
+        .ok_or_else(ApiError::not_found)?;
+    let (app, env): (String, String) = (row.get("app_id"), row.get("environment"));
+    policy::require(s, p, &app, &env, AppAction::Observe).await?;
+    Ok(row.get("release_id"))
+}
+
 pub async fn read(s: &State, p: &Principal, installation: Uuid, release: Uuid) -> ApiResult<Value> {
-    domain::installation(s, p, installation).await?;
+    observable(s, p, installation).await?;
     let requested = requested(&s.pool, installation, release).await?;
+    let mut connection = s.pool.acquire().await?;
+    record(&mut connection, installation, release, requested).await
+}
+
+/// The approval record. Callers decide first; a change builds its answer in its own
+/// transaction, so the answer never depends on a decision made after the commit.
+async fn record(
+    connection: &mut sqlx::PgConnection,
+    installation: Uuid,
+    release: Uuid,
+    requested: Vec<String>,
+) -> ApiResult<Value> {
     let current=sqlx::query("SELECT revision,permissions,approved_by,approved_at FROM installation_permissions WHERE installation_id=$1 AND release_id=$2")
-        .bind(installation).bind(release).fetch_optional(&s.pool).await?;
+        .bind(installation).bind(release).fetch_optional(&mut *connection).await?;
     let history:Vec<Value>=sqlx::query_scalar("SELECT jsonb_build_object('revision',revision,'permissions',permissions,'actor',actor,'createdAt',created_at) FROM installation_permission_history WHERE installation_id=$1 AND release_id=$2 ORDER BY revision DESC LIMIT 100")
-        .bind(installation).bind(release).fetch_all(&s.pool).await?;
+        .bind(installation).bind(release).fetch_all(&mut *connection).await?;
     Ok(
         json!({"installationId":installation,"releaseId":release,"requestedPermissions":requested,
         "approvedPermissions":current.as_ref().map(|r|r.get::<Value,_>("permissions")).unwrap_or_else(||json!([])),
@@ -165,8 +192,9 @@ pub async fn update(
         .bind(installation).bind(input.release_id).bind(revision).bind(json!(approved)).bind(&p.id).execute(&mut *tx).await?;
     sqlx::query("INSERT INTO installation_permission_history(installation_id,release_id,revision,permissions,actor) VALUES($1,$2,$3,$4,$5)")
         .bind(installation).bind(input.release_id).bind(revision).bind(json!(approved)).bind(&p.id).execute(&mut *tx).await?;
+    let answer = record(&mut tx, installation, input.release_id, requested).await?;
     tx.commit().await?;
-    read(s, p, installation, input.release_id).await
+    Ok(answer)
 }
 pub async fn get(
     S(s): S<State>,
@@ -176,7 +204,7 @@ pub async fn get(
 ) -> ApiResult<Json<Value>> {
     let release = match q.release_id {
         Some(r) => r,
-        None => domain::installation(&s, &p, id).await?.get("release_id"),
+        None => observable(&s, &p, id).await?,
     };
     Ok(Json(read(&s, &p, id, release).await?))
 }

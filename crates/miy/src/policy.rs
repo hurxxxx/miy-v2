@@ -3,18 +3,20 @@
 //! Every decision is a pure function over [`Facts`] loaded once for a principal, so a
 //! detail check, list visibility and the `canOpen`/`canManage`/`canPromote` display
 //! values share one definition. Handlers name an [`AppAction`]; they do not choose
-//! among check functions. Administrative endpoints keep `domain::admin` and
-//! `domain::admin_locked`; queued work keeps its own recheck through
-//! [`queued_manager`] and `delegations::check_queued`.
+//! among check functions. Queued work rechecks through [`recheck_queued`], the same
+//! decision without a credential. Administrative endpoints keep `domain::admin` and
+//! `domain::admin_locked`.
 use crate::{
     State,
     auth::Principal,
     delegations::{self, Action},
     http::{ApiError, ApiResult},
+    runtime_contract::{FailureCode, RuntimeFailure},
 };
 use axum::http::StatusCode;
 use sqlx::{PgPool, Row};
 use std::collections::{HashMap, HashSet};
+use uuid::Uuid;
 
 /// Every installation, job and grant uses one of these environments (database checks).
 pub const ENVIRONMENTS: [&str; 2] = ["dev", "prod"];
@@ -31,10 +33,13 @@ pub enum AppAction {
     /// (`develop` in dev, `deploy` in prod). Delegated credentials need this action in
     /// their scope. The company switch blocks use, not management.
     Manage(Action),
-    /// Follow runtime jobs: management read, or otherwise use.
-    FollowJob,
-    /// Submit a runtime request. The receipt is an observable job, so the action and
-    /// [`AppAction::FollowJob`] must both hold (a delegation needs the action and `read`).
+    /// See an installation's operating records (runtime jobs, approved permissions):
+    /// management read, or otherwise use. Whoever manages a company-disabled prod app
+    /// keeps seeing them.
+    Observe,
+    /// Submit a request whose answer is a stored record (a runtime or database job, a
+    /// test acceptance), so the action and [`AppAction::Observe`] must both hold: a
+    /// delegation needs the action and `read`.
     Request(Action),
 }
 
@@ -287,12 +292,12 @@ impl Facts {
                     Err(Denial::Forbidden)
                 }
             }
-            AppAction::FollowJob => self
+            AppAction::Observe => self
                 .decide(app, env, AppAction::Manage(Action::Read))
                 .or_else(|_| self.decide(app, env, AppAction::Use)),
             AppAction::Request(action) => {
                 self.decide(app, env, AppAction::Manage(action))?;
-                self.decide(app, env, AppAction::FollowJob)
+                self.decide(app, env, AppAction::Observe)
             }
         }
     }
@@ -333,17 +338,54 @@ pub async fn require(
         .decide(app, env, action)?)
 }
 
-/// Queued work rechecks the stored actor's management grant; the delegation, if any,
-/// is rechecked separately by `delegations::check_queued`.
-pub async fn queued_manager(
+/// The recheck queued work makes before it acts and after each long wait (locks,
+/// compilation, image import): the stored actor is enabled and holds the environment's
+/// management grant, and the stored delegation, if any, still allows `action` there.
+/// This is admission's [`AppAction::Manage`] decision without the credential's
+/// `miy.dev` scope, which admission checked and a queue does not keep.
+///
+/// A failed read is `database_unavailable`, never a revocation (V1-O4): only a definite
+/// denial (`user_disabled`, `permission_revoked`) may end or discard work.
+pub async fn recheck_queued(
     pool: &PgPool,
     actor: &str,
+    delegation: Option<Uuid>,
     app: &str,
     env: &str,
-) -> Result<bool, sqlx::Error> {
-    Ok(Facts::actor(pool, actor, Some(app))
-        .await?
-        .manages(app, env))
+    action: Action,
+) -> Result<(), RuntimeFailure> {
+    let unavailable = || RuntimeFailure::new(FailureCode::DatabaseUnavailable);
+    let mut facts = Facts::actor(pool, actor, Some(app))
+        .await
+        .map_err(|_| unavailable())?;
+    if let Some(id) = delegation {
+        facts.delegation = match delegations::active(pool, actor, id).await {
+            Ok(scope) => Delegation::Active(scope),
+            Err(error) if error.status.is_server_error() => return Err(unavailable()),
+            Err(_) => Delegation::Inactive,
+        };
+    }
+    facts.queued(app, env, action)
+}
+
+impl Facts {
+    /// [`recheck_queued`] over loaded facts.
+    pub fn queued(&self, app: &str, env: &str, action: Action) -> Result<(), RuntimeFailure> {
+        let revoked = |denial| {
+            RuntimeFailure::new(match denial {
+                Denial::UserDisabled => FailureCode::UserDisabled,
+                _ => FailureCode::PermissionRevoked,
+            })
+        };
+        self.active().map_err(revoked)?;
+        let queued = Self {
+            dev_scope: true,
+            ..self.clone()
+        };
+        queued
+            .decide(app, env, AppAction::Manage(action))
+            .map_err(revoked)
+    }
 }
 
 #[cfg(test)]
@@ -354,7 +396,6 @@ mod tests {
     //! and every combination of facts is compared, error codes included.
     use super::*;
     use chrono::Utc;
-    use uuid::Uuid;
 
     mod legacy {
         use super::*;
@@ -686,7 +727,7 @@ mod tests {
                 let decide = |action| facts.decide("app", env, action);
                 assert_eq!(decide(AppAction::Use), legacy::authorize(&c, false));
                 assert_eq!(decide(AppAction::Develop), legacy::authorize(&c, true));
-                assert_eq!(decide(AppAction::FollowJob), legacy::authorize_job(&c));
+                assert_eq!(decide(AppAction::Observe), legacy::authorize_job(&c));
                 assert_eq!(facts.manages("app", env), legacy::can_manage(&c));
                 for action in actions {
                     assert_eq!(
@@ -710,7 +751,7 @@ mod tests {
     fn flags_mirror_the_decisions_and_lists_use_the_same_pairs() {
         for facts in every_facts() {
             let apps = vec!["app".to_owned(), "other".to_owned()];
-            for action in [AppAction::Use, AppAction::FollowJob] {
+            for action in [AppAction::Use, AppAction::Observe] {
                 let (listed_apps, listed_envs) = facts.allowed_pairs(&apps, action);
                 for app in &apps {
                     for env in ENVIRONMENTS {
@@ -741,6 +782,55 @@ mod tests {
                         .is_ok()
                 );
             }
+        }
+    }
+
+    /// Queued work keeps the checks it had (the stored actor's management grant and the
+    /// stored delegation) and now names a definite denial the same way for every kind.
+    #[test]
+    fn queued_rechecks_keep_management_and_delegation_and_name_denials() {
+        let actions = [
+            Action::Read,
+            Action::Start,
+            Action::Promote,
+            Action::Build,
+            Action::Upload,
+            Action::Logs,
+            Action::DevSession,
+            Action::PrepareDatabase,
+        ];
+        for facts in every_facts() {
+            for env in ENVIRONMENTS {
+                for action in actions {
+                    let queued = facts.queued("app", env, action);
+                    assert_eq!(
+                        queued.is_ok(),
+                        facts.manages("app", env) && facts.delegated("app", env, action).is_ok(),
+                        "{action:?} {env}"
+                    );
+                    let expected = match facts.user {
+                        _ if queued.is_ok() => None,
+                        Some(user) if !user.enabled => Some(FailureCode::UserDisabled),
+                        _ => Some(FailureCode::PermissionRevoked),
+                    };
+                    assert_eq!(queued.err().map(|failure| failure.code), expected);
+                }
+            }
+        }
+    }
+
+    /// A recheck that cannot read proves nothing about the actor (V1-O4).
+    #[tokio::test]
+    async fn an_unreadable_recheck_is_unavailability_not_revocation() {
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .acquire_timeout(std::time::Duration::from_millis(500))
+            .connect_lazy("postgres://miy@127.0.0.1:1/unreachable")
+            .unwrap();
+        for delegation in [None, Some(Uuid::nil())] {
+            let failure = recheck_queued(&pool, "u", delegation, "app", "prod", Action::Start)
+                .await
+                .unwrap_err();
+            assert_eq!(failure.code, FailureCode::DatabaseUnavailable);
         }
     }
 }

@@ -81,12 +81,11 @@ impl Mcp {
         let p = principal(&ctx)?;
         result(
             async {
-                use sqlx::Row;
                 let release = match v.release_id {
                     Some(id) => id,
-                    None => domain::installation(&self.state, &p, v.installation_id)
-                        .await?
-                        .get("release_id"),
+                    None => {
+                        crate::permissions::observable(&self.state, &p, v.installation_id).await?
+                    }
                 };
                 crate::permissions::read(&self.state, &p, v.installation_id, release).await
             }

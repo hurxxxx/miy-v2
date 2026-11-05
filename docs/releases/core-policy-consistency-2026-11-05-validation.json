@@ -1,0 +1,142 @@
+{
+  "date": "2026-11-05",
+  "baseCommit": "a081422645a7eb44500b1d07fe99af1d98245b4f",
+  "validatedTree": "baseCommit plus the changes identified by sourceFileSha256 (documentation excluded)",
+  "status": "PASS",
+  "scope": [
+    "CORE-HARDENING structure foundation item 2, second step: inconsistencies 2, 3 and 5 to 8 found while moving decisions into policy.rs (1 and 4 are in core-policy-followup-2026-11-05-validation.json; 9 belongs to item 3)",
+    "2: installation approvals are read with AppAction::Observe (use, or runtime management read; previously FollowJob, renamed); a change answers with the record read in its own transaction before commit",
+    "3: app creation, app display-name change and shared component publication write in a transaction and recheck the administrator with admin_locked before commit",
+    "5 and 8: every queued job (runtime, database, build, image upload, log request, dev session) rechecks through policy::recheck_queued; a definite denial is user_disabled or permission_revoked, an unreadable recheck is database_unavailable (diagnostic_unavailable for log requests); a refused database job leaves the installation's database state unchanged",
+    "6: test acceptance is admitted with Request(accept) (a delegation needs accept and read) and decided again inside its transaction after the runtime lock and the health check",
+    "7: GET /api/v1/apps/{app}/dev-sessions/by-request/{request} decides Manage(dev_session) like reading the session",
+    "Regression harness: a suite that stops at a failed check is recorded as a FAIL row and later suites still run"
+  ],
+  "behaviorChanges": [
+    "GET /api/v1/installations/{id}/permissions and MCP get_installation_permissions: administrators and deployers of a company-disabled prod app now read its approvals (previously 403 app_disabled). PUT on such an installation answers 200 with the committed record (previously it committed and then answered 403 app_disabled)",
+    "POST /api/v1/apps, POST /api/v1/apps/{app}/name and POST /api/v1/components: an administrator revoked or disabled while the write waits on a lock gets 403 and nothing is written (previously 200 and written)",
+    "POST /api/v1/apps/{app}/test-acceptance: a delegation without read gets 403 delegation_scope_denied before any other check (previously admitted); a developer whose grant is revoked while the request waits on the runtime lock gets 403 and nothing is recorded (previously recorded)",
+    "GET /api/v1/apps/{app}/dev-sessions/by-request/{request}: a credential without dev_session on the app's dev environment gets 403 (previously the session was returned to its creating credential)",
+    "Queued database jobs, including a deployment's own preparation row queued again after a restart, accept the environment's management grant (deploy in prod) like other queued work. Previously only administrators and dev developers passed, and a refusal also set the installation's db_status to failed",
+    "Queued runtime jobs of a disabled user fail with user_disabled (previously permission_revoked). Builds record user_disabled or database_unavailable and log requests diagnostic_unavailable when the recheck cannot read (previously permission_revoked). Image uploads keep permission_revoked, user_disabled and database_unavailable instead of image_import_failed"
+  ],
+  "deploymentPerformed": false,
+  "pushPerformed": false,
+  "defectReproduction": [
+    {
+      "command": "python3 scripts/runtime-regression/run.py",
+      "tree": "baseCommit plus the new observations and the behavior-preserving extraction of worker::database_tick, without fixes",
+      "startedAt": "2026-11-05T08:35:29Z",
+      "status": "FAIL",
+      "expected": true,
+      "observations": 67,
+      "passedObservations": 63,
+      "failures": [
+        "test acceptance rechecks its developer after waiting for the runtime lock: the acceptance succeeded and replaced the record",
+        "a production database job queued again after a restart keeps its deployer's authority: the deployer's job failed with permission_revoked and set db_status to failed; the refused use-only job also set db_status to failed",
+        "permissions: the administrator's approval record on the company-disabled prod app differed from the observe decision; an approval change answered HTTP 403 after committing revision 1; rename and component publication answered 200 after the administrator was revoked",
+        "delegation: test acceptance with an accept-only delegation answered 409 release_not_running_in_dev instead of 403"
+      ],
+      "testDefects": [
+        "The create-app check used the app ID permission-c-<suffix>, which an earlier fixture already uses, so it failed on fixture setup (duplicate key) instead of on the defect",
+        "The dev-session recovery check inserted a second active lease for one app and hit app_dev_sessions_one_active, so its read-only case did not run"
+      ]
+    },
+    {
+      "command": "python3 scripts/runtime-regression/run.py",
+      "tree": "baseCommit plus the corrected observations and the database_tick extraction, without fixes (temporary git worktree, CARGO_TARGET_DIR shared with the main checkout)",
+      "startedAt": "2026-11-05T08:41:49Z",
+      "status": "FAIL",
+      "expected": false,
+      "observations": 0,
+      "reason": "run.py reads the CLI binary from <checkout>/target/debug/miy; with the shared CARGO_TARGET_DIR the worktree had no target directory, so the runner stopped after the build and before any test. Rerun after linking the worktree's target to the shared directory"
+    },
+    {
+      "command": "python3 scripts/runtime-regression/run.py",
+      "tree": "same as the previous attempt, target linked",
+      "startedAt": "2026-11-05T08:42:36Z",
+      "status": "FAIL",
+      "expected": true,
+      "observations": 67,
+      "passedObservations": 63,
+      "failures": [
+        "test acceptance lock wait: succeeded and replaced the record",
+        "requeued production database job: deployer refused with permission_revoked, db_status set to failed",
+        "permissions: approval record differs from the observe decision; approval change 403 after commit; create app, rename and component publication answered 200 after the administrator was revoked",
+        "delegation: accept-only test acceptance answered 409 instead of 403; a read-only delegation recovered its dev-session record by request ID with 200 (the dev_session delegation's 200 case passed first)"
+      ],
+      "cleanupErrors": 0
+    }
+  ],
+  "checks": [
+    {
+      "command": "bash scripts/check-static.sh rust",
+      "status": "PASS",
+      "serverTests": 176,
+      "serverIgnored": 7,
+      "clientTests": 113,
+      "newUnitTests": [
+        "policy::tests::queued_rechecks_keep_management_and_delegation_and_name_denials",
+        "policy::tests::an_unreadable_recheck_is_unavailability_not_revocation",
+        "server_build_worker::tests::queued_recheck_codes_are_recorded_as_they_are",
+        "runtime_logs::tests::queued_recheck_codes"
+      ]
+    },
+    {
+      "command": "python3 scripts/runtime-regression/run.py",
+      "status": "PASS",
+      "startedAt": "2026-11-05T08:47:44Z",
+      "finishedAt": "2026-11-05T08:51:45Z",
+      "observations": 96,
+      "suites": {
+        "runtime": 45,
+        "operations": 6,
+        "cli": 6,
+        "auth": 8,
+        "permissions": 22,
+        "delegation": 9
+      },
+      "testBinarySha256": "036bbde5609b9fe6b7754d017326d2b5857d1c9816871f90ec101ee45fdc2fe4",
+      "cleanupErrors": 0,
+      "newObservations": [
+        "test acceptance rechecks its developer after waiting for the runtime lock",
+        "a production database job queued again after a restart keeps its deployer's authority",
+        "an administrator reads and changes the approvals of a company-disabled prod installation it manages, and a change answers with the record it committed",
+        "app creation, app display name changes and shared component publication roll back when their administrator is revoked or disabled during a PostgreSQL lock wait",
+        "recording a test acceptance with a delegation needs accept and read before any other check",
+        "recovering a lost dev-session reply by request ID needs the same dev_session decision as reading the session"
+      ],
+      "changedObservation": "the policy matrix now compares installation approval records with the observe decision (it previously compared them with the use decision)"
+    }
+  ],
+  "notRun": [
+    "GitHub Actions for this tree (not pushed)",
+    "No run reproduced a recheck that cannot read for builds, log requests or uploads. The pre-fix classification was found by reading code; the fixed classification is covered by unit tests, not by the isolated regression",
+    "The server build regression (scripts/check-server-builds.py) and the development database regression (scripts/check-development-database.py) were not run; their recheck changes are covered by unit tests and the isolated regression above"
+  ],
+  "sourceFileSha256": {
+    "crates/miy/src/auth_sessions_regression.rs": "de77777b602094cd3c1009933bacd876bdcf693180498716dad745a97f5c293c",
+    "crates/miy/src/component_registry.rs": "79e7ebfaa0f2c472bd809febf506f8db2e800e8c491cb6cb6d4a5f8b5b9b13f6",
+    "crates/miy/src/delegation_regression.rs": "87ef1a3c164dc21cac09f0aecb2d5aa5c3115df2445d9bee81548db6cd641701",
+    "crates/miy/src/delegations.rs": "0bfbf292e77c276146ff334c80103278cdff35a78307261a29c7cb5b4b5f350f",
+    "crates/miy/src/delivery.rs": "93b29daaa32b830542863576d0814ba5581ff2006f4bd2079f86ceec33b0031d",
+    "crates/miy/src/development.rs": "1765e13e34fbc199c98d8ad9707a40e6e8610c14c2f085ff2f4dadf1146e900a",
+    "crates/miy/src/domain.rs": "533ffff9c61ec8594b8a743d946ff890e2b0bfd3b84373381a2e789fe5b7aeb3",
+    "crates/miy/src/mcp.rs": "8b0b525a0f59d741de375b5a0369c06da5b2fcac7541e0b8f17d173ed9d45b0d",
+    "crates/miy/src/permissions.rs": "584601be4a353e8317f236feb8e5b097c15baec2c2c5a4e32a2d5c227f230816",
+    "crates/miy/src/permissions_regression.rs": "dc16fa8fba1bddc8c5993e2fbb898cb70370b1aa6e94c64da0ecbea9ad148fde",
+    "crates/miy/src/policy.rs": "38f5aa9ed2f9c7d4befaee92c3498b5730d23048e38877a7e52f6f30f2bff117",
+    "crates/miy/src/read_api.rs": "f9a8906080b1cecda33eaa2d73e1a25325cb3f8218e76dcd7ff5cea1199c8840",
+    "crates/miy/src/registration.rs": "02d3494d457adc6587a47a10ec9274f981c682aea4965073bc5135b99231d371",
+    "crates/miy/src/runtime.rs": "51e60402dd1c1236217671351dab23ce3368043e6902968b721e6cdaa04a6436",
+    "crates/miy/src/runtime_logs.rs": "56cba4928846ad42c0f2cc682e9613602928d4cf65896658e71f1158e31795cb",
+    "crates/miy/src/runtime_regression.rs": "bbc9be25f38fc3ffade2df8cb4a2a3aa5885e9c3717de4f2e39e1252d6aebdce",
+    "crates/miy/src/server_build_worker.rs": "6bf539de32e38f4b8bceffd9801673dcb00961f184858ec12af3326cec4b155e",
+    "crates/miy/src/worker.rs": "2e64b434bf57747959aaadf372377421e6caa2b71b4e57773cacc1fd8e1964fc",
+    "scripts/runtime-regression/run.py": "e96a5ef0277593ee22b21c979a447f292a9a6b9def1d3c3c4b6f55062f71f033"
+  },
+  "limits": [
+    "A revocation that commits after a write's in-transaction decision and before its commit still lets that write commit; queued work rechecks before acting. Holding authority until commit for every write is item 2's third step",
+    "GET /api/v1/installations still has two response shapes (item 9, moved to item 3)"
+  ]
+}

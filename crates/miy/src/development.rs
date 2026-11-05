@@ -211,6 +211,15 @@ pub async fn by_request(
     if request.is_empty() || request.len() > 128 {
         return Err(ApiError::bad("invalid_idempotency_key"));
     }
+    // The same decision as reading the session (`owner`).
+    policy::require(
+        &state,
+        &p,
+        &app,
+        "dev",
+        AppAction::Manage(crate::delegations::Action::DevSession),
+    )
+    .await?;
     let row=sqlx::query("SELECT * FROM app_dev_sessions WHERE actor=$1 AND parent_session_id=$2 AND app_id=$3 AND idempotency_key=$4").bind(&p.id).bind(parent).bind(app).bind(request).fetch_optional(&state.pool).await?.ok_or_else(ApiError::not_found)?;
     Ok(Json(public(&state.pool, &row).await?))
 }
@@ -285,9 +294,9 @@ pub async fn close(
 }
 
 pub(crate) async fn session_valid(pool: &sqlx::PgPool, id: Uuid) -> Result<bool, sqlx::Error> {
-    let row=sqlx::query("SELECT d.actor,d.app_id,c.delegation_id FROM app_dev_sessions d JOIN cli_sessions c ON c.id=d.parent_session_id JOIN users u ON u.id=d.actor WHERE d.id=$1 AND d.status IN ('queued','preparing','ready') AND d.expires_at>now() AND c.user_id=d.actor AND c.revoked_at IS NULL AND c.expires_at>now() AND u.enabled AND (u.admin OR EXISTS(SELECT 1 FROM effective_grants g WHERE g.user_id=d.actor AND g.app_id=d.app_id AND g.environment='dev' AND g.permission='develop'))").bind(id).fetch_optional(pool).await?;
+    let row=sqlx::query("SELECT d.actor,d.app_id,c.delegation_id FROM app_dev_sessions d JOIN cli_sessions c ON c.id=d.parent_session_id WHERE d.id=$1 AND d.status IN ('queued','preparing','ready') AND d.expires_at>now() AND c.user_id=d.actor AND c.revoked_at IS NULL AND c.expires_at>now()").bind(id).fetch_optional(pool).await?;
     let Some(row) = row else { return Ok(false) };
-    match crate::delegations::check_queued(
+    match policy::recheck_queued(
         pool,
         row.get("actor"),
         row.get("delegation_id"),
@@ -300,11 +309,10 @@ pub(crate) async fn session_valid(pool: &sqlx::PgPool, id: Uuid) -> Result<bool,
         Ok(()) => Ok(true),
         // An unavailable check is not a revocation: reconciliation must not drop the
         // session role or terminate its connections on it (V1-O4).
-        Err(error)
-            if crate::runtime_contract::classify_failure(&error).code
-                == crate::runtime_contract::FailureCode::DatabaseUnavailable =>
+        Err(failure)
+            if failure.code == crate::runtime_contract::FailureCode::DatabaseUnavailable =>
         {
-            Err(sqlx::Error::Protocol("delegation_check_unavailable".into()))
+            Err(sqlx::Error::Protocol("permission_check_unavailable".into()))
         }
         Err(_) => Ok(false),
     }

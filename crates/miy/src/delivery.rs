@@ -205,6 +205,23 @@ pub async fn by_request(
     status(S(s), axum::Extension(p), Path(id)).await
 }
 
+/// The queued upload's recheck, before hashing and after each long import step.
+async fn recheck(
+    pool: &sqlx::PgPool,
+    row: &sqlx::postgres::PgRow,
+    app: &str,
+) -> Result<(), crate::runtime_contract::RuntimeFailure> {
+    policy::recheck_queued(
+        pool,
+        row.get("actor"),
+        row.get("delegation_id"),
+        app,
+        "dev",
+        crate::delegations::Action::Upload,
+    )
+    .await
+}
+
 pub async fn tick(pool: &sqlx::PgPool) -> anyhow::Result<bool> {
     let expired:Vec<Uuid>=sqlx::query_scalar("UPDATE image_uploads SET status='failed',error_code='upload_expired' WHERE (status='receiving' AND created_at<now()-interval '6 minutes') OR (status IN ('receiving','pending') AND expires_at<=clock_timestamp()) RETURNING id").fetch_all(pool).await?;
     for id in expired {
@@ -228,19 +245,7 @@ pub async fn tick(pool: &sqlx::PgPool) -> anyhow::Result<bool> {
         .execute(pool)
         .await?;
     let result = async {
-        crate::delegations::check_queued(
-            pool,
-            row.get("actor"),
-            row.get("delegation_id"),
-            &app,
-            "dev",
-            crate::delegations::Action::Upload,
-        )
-        .await?;
-        anyhow::ensure!(
-            policy::queued_manager(pool, row.get("actor"), &app, "dev").await?,
-            "permission_revoked"
-        );
+        recheck(pool, &row, &app).await?;
         let mut file = tokio::fs::File::open(&path).await?;
         use tokio::io::AsyncReadExt;
         let mut hash = Sha256::new();
@@ -266,15 +271,7 @@ pub async fn tick(pool: &sqlx::PgPool) -> anyhow::Result<bool> {
             crate::image_import::archive(&checked_path, &checked_app, Some(&checked_image))
         })
         .await??;
-        crate::delegations::check_queued(
-            pool,
-            row.get("actor"),
-            row.get("delegation_id"),
-            &app,
-            "dev",
-            crate::delegations::Action::Upload,
-        )
-        .await?;
+        recheck(pool, &row, &app).await?;
         crate::image_import::load(
             pool,
             &app,
@@ -284,15 +281,7 @@ pub async fn tick(pool: &sqlx::PgPool) -> anyhow::Result<bool> {
             row.get("archive_hash"),
         )
         .await?;
-        crate::delegations::check_queued(
-            pool,
-            row.get("actor"),
-            row.get("delegation_id"),
-            &app,
-            "dev",
-            crate::delegations::Action::Upload,
-        )
-        .await?;
+        recheck(pool, &row, &app).await?;
         Ok::<_, anyhow::Error>(())
     }
     .await;
@@ -301,11 +290,15 @@ pub async fn tick(pool: &sqlx::PgPool) -> anyhow::Result<bool> {
         .bind(if result.is_ok() { "ready" } else { "failed" })
         .bind(match &result {
             Ok(()) => None,
-            // Keep the storage floor visible: the upload can be repeated after freeing space.
+            // Keep the storage floor and the queued recheck's outcome visible: an upload
+            // can be repeated after freeing space or once the database answers again.
             Err(error) => Some(
                 match crate::runtime_contract::classify_failure(error).code {
                     code @ (crate::runtime_contract::FailureCode::DockerStorageLow
-                    | crate::runtime_contract::FailureCode::DockerStorageUnknown) => code.as_str(),
+                    | crate::runtime_contract::FailureCode::DockerStorageUnknown
+                    | crate::runtime_contract::FailureCode::PermissionRevoked
+                    | crate::runtime_contract::FailureCode::UserDisabled
+                    | crate::runtime_contract::FailureCode::DatabaseUnavailable) => code.as_str(),
                     _ => "image_import_failed",
                 },
             ),
