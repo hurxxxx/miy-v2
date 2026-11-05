@@ -40,6 +40,7 @@ script_checks() {
   python3 scripts/runtime-regression/test_cleanup.py
   python3 scripts/runtime-regression/test_ui_cleanup.py
   python3 scripts/test-cli-release.py
+  python3 scripts/test-cli-version.py
   python3 scripts/test-cli-downloads.py
   python3 scripts/test-windows-installer-package.py
   python3 scripts/test-agent-acceptance-proxy.py

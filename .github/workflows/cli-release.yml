@@ -40,6 +40,8 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: ${{ inputs.candidate_commit }}
+          # The version gate diffs against the published source commit.
+          fetch-depth: 0
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
@@ -61,9 +63,12 @@ jobs:
           with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
               output.write(f'commit={commit}\nversion={version}\ntag={tag}\n')
           PY
+      - name: Refuse the published version for changed client inputs
+        run: python scripts/check-cli-version.py --candidate "${{ steps.identity.outputs.commit }}"
       - name: Check publication gate logic
         run: |
           python scripts/test-cli-release.py
+          python scripts/test-cli-version.py
           python scripts/test-cli-downloads.py
 
   native:

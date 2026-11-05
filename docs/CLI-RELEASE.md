@@ -30,7 +30,7 @@ Windows 사용자 검증에는 [Windows 전용 후보 및 실행 안내](WINDOWS
 
 ## 배포 후보 생성
 
-[CLI release candidate workflow](../.github/workflows/cli-release.yml)는 수동 실행한다. `candidate_commit`에는 전체 40자리 소스 commit, `release_tag`에는 해당 Cargo 버전 앞에 `v`를 붙인 값을 입력한다. `publish=false`가 기본값이다. 버전이 다른 tag, 변경된 checkout, 다른 CPU의 바이너리, 누락된 배포물은 거부한다.
+[CLI release candidate workflow](../.github/workflows/cli-release.yml)는 수동 실행한다. `candidate_commit`에는 전체 40자리 소스 commit, `release_tag`에는 해당 Cargo 버전 앞에 `v`를 붙인 값을 입력한다. `publish=false`가 기본값이다. 버전이 다른 tag, 변경된 checkout, 다른 CPU의 바이너리, 누락된 배포물은 거부한다. 게시본([Windows 후보 파일](releases/windows-candidate.json)의 버전·source) 이후 클라이언트 빌드 입력이 바뀌었는데 버전이 같거나 낮으면 `scripts/check-cli-version.py`가 후보 생성을 거부한다. 설치기와 갱신이 같은 버전을 이미 설치된 것으로 보기 때문이다. 서버 전용 모듈(`main.rs`에서 `feature = "server"`로만 컴파일)은 세지 않고, 공용 모듈은 서버·시험 부분만 바뀌어도 센다. 서버 배포는 버전을 유지할 수 있다.
 
 | 배포물 | 네이티브 runner |
 | --- | --- |
