@@ -1,6 +1,7 @@
 //! Permission-filtered keyset pages. Cursors select a boundary, never authority.
 use crate::{
     State,
+    api_contract::{App, AppDetail, InstallationPage, RuntimeJobPage},
     auth::Principal,
     domain,
     http::{ApiError, ApiResult},
@@ -181,7 +182,7 @@ pub async fn page(s: &State, p: &Principal, kind: &str, mut q: Page) -> ApiResul
         "jobs" => (
             "runtime_jobs t",
             "t.created_at::text||':'||t.id::text",
-            "jsonb_build_object('id',t.id,'appId',t.app_id,'environment',t.environment,'action',t.action,'status',t.status,'step',t.step,'errorCode',t.error_code,'failureClass',t.failure_class,'retryable',t.retryable,'retryOf',t.retry_of,'requestId',t.idempotency_key,'imageId',t.image_id,'releaseId',t.release_id,'createdAt',t.created_at)",
+            crate::runtime::JOB_ROW,
             // The (app, environment) pairs where runtime::job would answer (Observe).
             ALLOWED_PAIRS,
             "t.app_id",
@@ -191,7 +192,7 @@ pub async fn page(s: &State, p: &Principal, kind: &str, mut q: Page) -> ApiResul
         "installations" => (
             "installations t JOIN releases r ON r.id=t.release_id JOIN apps a ON a.id=t.app_id",
             "t.app_id||':'||t.environment||':'||t.id::text",
-            INSTALLATION_VIEW,
+            domain::INSTALLATION_ROW,
             // The pairs where the installation may be used (domain::installation).
             ALLOWED_PAIRS,
             "t.app_id",
@@ -248,36 +249,24 @@ pub async fn page(s: &State, p: &Principal, kind: &str, mut q: Page) -> ApiResul
     } else {
         None
     };
-    let values: Vec<Value> = rows
-        .into_iter()
-        .map(|row| {
-            let mut value: Value = row.get("value");
-            if let Some(facts) = &facts
-                && kind == "installations"
-            {
-                // Display values are the decisions this credential would get.
-                let flags = facts.flags(
-                    value["appId"].as_str().unwrap_or_default(),
-                    value["environment"].as_str().unwrap_or_default(),
-                );
-                let record = value
-                    .as_object_mut()
-                    .and_then(|item| item.remove("acceptanceRecord"))
-                    .unwrap_or(Value::Null);
-                value["canPromote"] = json!(flags.can_promote);
-                value["canManage"] = json!(flags.can_manage);
-                value["acceptance"] = if flags.can_manage {
-                    record
-                } else {
-                    Value::Null
-                };
-            }
-            value
-        })
-        .collect();
-    Ok(json!({kind:values,"nextCursor":cursor}))
+    let values = rows.into_iter().map(|row| row.get::<Value, _>("value"));
+    // Installations and jobs are answered through their contract types (api_contract).
+    Ok(match (kind, &facts) {
+        ("installations", Some(facts)) => serde_json::to_value(InstallationPage {
+            installations: values
+                .map(|value| domain::installation_view(value, facts))
+                .collect::<ApiResult<_>>()?,
+            next_cursor: cursor,
+        })?,
+        ("jobs", _) => serde_json::to_value(RuntimeJobPage {
+            jobs: values
+                .map(serde_json::from_value)
+                .collect::<Result<_, _>>()?,
+            next_cursor: cursor,
+        })?,
+        _ => json!({kind:values.collect::<Vec<_>>(),"nextCursor":cursor}),
+    })
 }
-const INSTALLATION_VIEW: &str = "jsonb_build_object('id',t.id,'appId',t.app_id,'name',a.name,'environment',t.environment,'releaseId',t.release_id,'imageId',r.image_id,'sourceCommit',r.source_commit,'version',r.version,'manifestName',r.manifest->>'name','kind',CASE WHEN r.image_id IS NULL THEN 'validation_fixture' ELSE 'docker_app' END,'lastOperation',(SELECT jsonb_build_object('id',j.id,'status',j.status,'action',j.action,'errorCode',j.error_code,'step',j.step,'retryable',j.retryable) FROM runtime_jobs j WHERE j.app_id=t.app_id AND j.environment=t.environment ORDER BY j.created_at DESC,j.id DESC LIMIT 1),'generation',t.control_generation,'dbStatus',t.db_status,'runtimeStatus',t.runtime_status,'desiredState',t.desired_state,'health',jsonb_build_object('status',t.health_status,'checkedAt',t.health_checked_at,'consecutiveFailures',t.health_failures),'acceptanceRecord',(SELECT jsonb_build_object('recordedBy',c.actor,'note',c.note,'checks',c.checks,'checkedAt',c.checked_at) FROM release_checks c WHERE c.release_id=r.id))";
 /// Rows whose (app, environment) is in the policy's allowed pairs ($8, $9).
 const ALLOWED_PAIRS: &str =
     "(t.app_id,t.environment) IN (SELECT * FROM unnest($8::text[],$9::text[]))";
@@ -325,12 +314,15 @@ pub async fn app(
     {
         return Err(ApiError::not_found());
     }
-    let app: Value =
-        sqlx::query_scalar("SELECT jsonb_build_object('id',id,'name',name) FROM apps WHERE id=$1")
-            .bind(&id)
-            .fetch_optional(&s.pool)
-            .await?
-            .ok_or_else(ApiError::not_found)?;
+    let app = sqlx::query("SELECT id,name FROM apps WHERE id=$1")
+        .bind(&id)
+        .fetch_optional(&s.pool)
+        .await?
+        .map(|row| App {
+            id: row.get("id"),
+            name: row.get("name"),
+        })
+        .ok_or_else(ApiError::not_found)?;
     let installs = page(
         &s,
         &p,
@@ -341,9 +333,11 @@ pub async fn app(
         },
     )
     .await?;
-    Ok(Json(
-        json!({"app":app,"installations":installs["installations"]}),
-    ))
+    let installs: InstallationPage = serde_json::from_value(installs)?;
+    Ok(Json(serde_json::to_value(AppDetail {
+        app,
+        installations: installs.installations,
+    })?))
 }
 #[cfg(test)]
 mod tests {

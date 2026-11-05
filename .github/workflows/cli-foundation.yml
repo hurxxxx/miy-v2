@@ -55,6 +55,9 @@ jobs:
         run: rustup toolchain install 1.99.1 --profile minimal --component rustfmt --component clippy
       - name: Check managed source and SQL checkout bytes
         run: python scripts/check-bundle-portability.py source
+      - name: Refuse authorized writes outside policy::Write
+        if: matrix.id == 'linux-server'
+        run: python scripts/check-write-decisions.py
       - name: Check formatting
         run: cargo +1.99.1 fmt --all -- --check
       - name: Check this build boundary

@@ -1,18 +1,8 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
-import { request } from "@miy/sdk";
+import { request, type AuditEntry as Entry, type AuditPage as Page } from "@miy/sdk";
 import { Button, Field, Loading, Panel } from "../ui";
 import type { DirectoryUser } from "./AdminAccess";
 
-type Entry = {
-  id: number;
-  at: string;
-  actor: string | null;
-  actorName: string | null;
-  action: string;
-  target: string | null;
-  requestId: string;
-};
-type Page = { entries: Entry[]; nextCursor: number | null };
 type Filter = { actor: string; action: string; from: string; to: string };
 
 const actionKinds = [

@@ -352,19 +352,21 @@ pub async fn execute(command: AppCommand) -> Result<Outcome> {
                     let release_id = if let Some(release) = release {
                         release
                     } else {
-                        let detail = api(&s, &format!("/api/v1/apps/{app}"), None).await?;
-                        let id = detail["installations"]
-                            .as_array()
-                            .and_then(|items| items.iter().find(|v| v["environment"] == "dev"))
-                            .and_then(|v| v["releaseId"].as_str())
+                        let detail: crate::api_contract::AppDetail = serde_json::from_value(
+                            api(&s, &format!("/api/v1/apps/{app}"), None).await?,
+                        )?;
+                        detail
+                            .installations
+                            .iter()
+                            .find(|v| v.environment == crate::runtime_contract::Environment::Dev)
+                            .map(|v| v.release_id)
                             .ok_or_else(|| {
                                 CliError::new(
                                     Category::Environment,
                                     "dev_release_required",
                                     "Deploy to dev before accepting a release.",
                                 )
-                            })?;
-                        uuid::Uuid::parse_str(id)?
+                            })?
                     };
                     crate::acceptance_contract::ReleaseCheck {
                         release_id,

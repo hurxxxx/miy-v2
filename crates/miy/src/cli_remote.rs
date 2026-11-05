@@ -363,6 +363,16 @@ pub async fn execute_app(command: RemoteAppCommand) -> Result<Outcome> {
             let session = app_cli::session()?;
             require_features(&session, &["lists.pagination.v1"]).await?;
             let mut value = app_cli::api(&session, &format!("/api/v1/apps/{app}"), None).await?;
+            // Read through the contract type; the output keeps fields this CLI does not know.
+            serde_json::from_value::<crate::api_contract::AppDetail>(value.clone()).map_err(
+                |_| {
+                    CliError::new(
+                        Category::Network,
+                        "invalid_app_response",
+                        "The server did not return a valid app.",
+                    )
+                },
+            )?;
             let local = app_cli::manifest().ok().filter(|m| m.id == app);
             let build = if local.is_some() {
                 std::fs::read("dist/image.json")
@@ -918,7 +928,16 @@ fn bind_job(entry: &mut Entry, value: &Value) -> Result<()> {
 
 async fn get_job(session: &Session, id: Uuid) -> Result<Value> {
     let value = app_cli::api(session, &format!("/api/v1/runtime/jobs/{id}"), None).await?;
-    if job_id(&value)? != id {
+    // Read through the contract type; the output keeps fields this CLI does not know.
+    let job: crate::api_contract::RuntimeJob =
+        serde_json::from_value(value.clone()).map_err(|_| {
+            CliError::new(
+                Category::Network,
+                "invalid_job_response",
+                "The server did not return a valid job.",
+            )
+        })?;
+    if job.id != id {
         return Err(CliError::new(
             Category::Network,
             "job_id_mismatch",
@@ -1188,13 +1207,17 @@ async fn resume(
         None,
     )
     .await?;
-    let jobs = found["jobs"].as_array().ok_or_else(|| {
+    let invalid = || {
         CliError::new(
             Category::Network,
             "invalid_jobs_response",
             "The server returned an invalid request lookup.",
         )
-    })?;
+    };
+    // Read through the contract type; the job output keeps fields this CLI does not know.
+    serde_json::from_value::<crate::api_contract::RuntimeJobPage>(found.clone())
+        .map_err(|_| invalid())?;
+    let jobs = found["jobs"].as_array().ok_or_else(invalid)?;
     if jobs.len() > 1 {
         return Err(journal_error(
             &entry,

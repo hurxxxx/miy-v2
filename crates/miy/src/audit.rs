@@ -4,6 +4,7 @@
 //! Retention is not decided yet (PRD open item); nothing is deleted.
 use crate::{
     State,
+    api_contract::{AuditEntry, AuditPage},
     auth::Principal,
     domain,
     http::{ApiError, ApiResult},
@@ -81,27 +82,28 @@ pub async fn list(state: &State, p: &Principal, q: AuditQuery) -> ApiResult<Valu
     .fetch_all(&state.pool)
     .await?;
     let more = rows.len() as i64 > limit;
-    let entries: Vec<Value> = rows
+    let entries: Vec<AuditEntry> = rows
         .iter()
         .take(limit as usize)
-        .map(|r| {
-            json!({
-                "id": r.get::<i64, _>("id"),
-                "at": r.get::<DateTime<Utc>, _>("created_at"),
-                "actor": r.get::<Option<String>, _>("actor"),
-                "actorName": r.get::<Option<String>, _>("actor_name"),
-                "action": r.get::<String, _>("action"),
-                "target": r.get::<Option<String>, _>("target"),
-                "requestId": r.get::<String, _>("request_id"),
-            })
+        .map(|r| AuditEntry {
+            id: r.get("id"),
+            at: r.get("created_at"),
+            actor: r.get("actor"),
+            actor_name: r.get("actor_name"),
+            action: r.get("action"),
+            target: r.get("target"),
+            request_id: r.get("request_id"),
         })
         .collect();
-    let next = if more {
-        entries.last().map(|e| e["id"].clone())
+    let next_cursor = if more {
+        entries.last().map(|e| e.id)
     } else {
         None
     };
-    Ok(json!({"entries": entries, "nextCursor": next}))
+    Ok(serde_json::to_value(AuditPage {
+        entries,
+        next_cursor,
+    })?)
 }
 
 pub fn catalog() -> Value {

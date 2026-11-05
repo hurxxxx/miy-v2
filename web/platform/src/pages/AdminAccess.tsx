@@ -1,19 +1,11 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
-import { request } from "@miy/sdk";
+import { request, type Group } from "@miy/sdk";
 import { Badge, Button, Field, Loading, Panel, useConfirm } from "../ui";
 
 // Users and groups receive app permissions here; apps keep their internal data access.
 // Group permissions are computed on every request, so nothing is copied to users.
 
 export type DirectoryUser = { id: string; name: string };
-type Group = {
-  id: string;
-  name: string;
-  source: "hr" | "local";
-  parentId: string | null;
-  active: boolean;
-  members: number;
-};
 type Member = { id: string; name: string; enabled: boolean };
 type Environment = "dev" | "prod";
 type GroupGrant = {

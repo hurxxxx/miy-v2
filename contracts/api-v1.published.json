@@ -1,0 +1,608 @@
+{
+  "publishedCli": {
+    "version": "0.7.0",
+    "sourceCommit": "01e4d4924f8c8fc4e11720c1af81adf17ddb20bf",
+    "note": "The contract was introduced after CLI 0.7.0 was published. 0.7.0 reads these responses as untyped JSON; every field below is protected from the contract's first commit on."
+  },
+  "removable": [],
+  "$defs": {
+    "AcceptanceRecord": {
+      "properties": {
+        "checkedAt": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "checks": {
+          "items": {
+            "$ref": "#/$defs/RecordedCheck"
+          },
+          "type": "array"
+        },
+        "note": {
+          "type": "string"
+        },
+        "recordedBy": {
+          "type": "string"
+        },
+        "structured": {
+          "default": false,
+          "description": "The record has structured checks, not only a note (0.7.0 servers: default list only).",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "recordedBy",
+        "note",
+        "checks",
+        "structured",
+        "checkedAt"
+      ],
+      "type": "object"
+    },
+    "App": {
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "name"
+      ],
+      "type": "object"
+    },
+    "AppDetail": {
+      "description": "`GET /api/v1/apps/{app}`: the app and the installations this credential may use.",
+      "properties": {
+        "app": {
+          "$ref": "#/$defs/App"
+        },
+        "installations": {
+          "items": {
+            "$ref": "#/$defs/Installation"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "app",
+        "installations"
+      ],
+      "type": "object"
+    },
+    "AuditEntry": {
+      "properties": {
+        "action": {
+          "type": "string"
+        },
+        "actor": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "actorName": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "at": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "id": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "requestId": {
+          "type": "string"
+        },
+        "target": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "at",
+        "actor",
+        "actorName",
+        "action",
+        "target",
+        "requestId"
+      ],
+      "type": "object"
+    },
+    "AuditPage": {
+      "properties": {
+        "entries": {
+          "items": {
+            "$ref": "#/$defs/AuditEntry"
+          },
+          "type": "array"
+        },
+        "nextCursor": {
+          "description": "Pass as `before` to read older entries.",
+          "format": "int64",
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "entries",
+        "nextCursor"
+      ],
+      "type": "object"
+    },
+    "Environment": {
+      "enum": [
+        "dev",
+        "prod"
+      ],
+      "type": "string"
+    },
+    "Group": {
+      "properties": {
+        "active": {
+          "type": "boolean"
+        },
+        "id": {
+          "format": "uuid",
+          "type": "string"
+        },
+        "members": {
+          "description": "Members now: users whose primary group it is (HR) or listed members (local).",
+          "format": "int64",
+          "type": "integer"
+        },
+        "name": {
+          "type": "string"
+        },
+        "parentId": {
+          "format": "uuid",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "source": {
+          "$ref": "#/$defs/GroupSource"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "source",
+        "parentId",
+        "active",
+        "members"
+      ],
+      "type": "object"
+    },
+    "GroupSource": {
+      "enum": [
+        "hr",
+        "local"
+      ],
+      "type": "string"
+    },
+    "Health": {
+      "description": "The latest service observation; process state stays in `runtimeStatus`.",
+      "properties": {
+        "checkedAt": {
+          "format": "date-time",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "consecutiveFailures": {
+          "format": "int32",
+          "type": "integer"
+        },
+        "errorCode": {
+          "default": null,
+          "description": "0.7.0 servers send it only in the default list.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "status": {
+          "$ref": "#/$defs/HealthStatus"
+        }
+      },
+      "required": [
+        "status",
+        "consecutiveFailures",
+        "checkedAt",
+        "errorCode"
+      ],
+      "type": "object"
+    },
+    "HealthStatus": {
+      "oneOf": [
+        {
+          "enum": [
+            "healthy",
+            "degraded",
+            "unhealthy",
+            "not_applicable"
+          ],
+          "type": "string"
+        },
+        {
+          "const": "unknown",
+          "description": "Not observed yet; a status this client does not know also reads as unknown.",
+          "type": "string"
+        }
+      ]
+    },
+    "Installation": {
+      "description": "An installation as the installation lists, the runtime management list and the app\ndetail return it. `canOpen`, `canManage` and `canPromote` are the decisions this\ncredential would get.",
+      "properties": {
+        "acceptance": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AcceptanceRecord"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The release's recorded test acceptance; present only with `canManage`."
+        },
+        "appDisabled": {
+          "default": false,
+          "description": "The company switch stops use of this app (0.7.0 servers: runtime management list only).",
+          "type": "boolean"
+        },
+        "appId": {
+          "type": "string"
+        },
+        "canManage": {
+          "description": "Runtime management read on this installation.",
+          "type": "boolean"
+        },
+        "canOpen": {
+          "default": false,
+          "description": "Use: open the app now (0.7.0 servers: runtime management list only).",
+          "type": "boolean"
+        },
+        "canPromote": {
+          "description": "A promotion request on the app's prod environment would be admitted.",
+          "type": "boolean"
+        },
+        "dbStatus": {
+          "type": "string"
+        },
+        "desiredState": {
+          "type": "string"
+        },
+        "environment": {
+          "$ref": "#/$defs/Environment"
+        },
+        "generation": {
+          "description": "Control generation of the current runtime container.",
+          "format": "int64",
+          "type": "integer"
+        },
+        "health": {
+          "$ref": "#/$defs/Health"
+        },
+        "id": {
+          "format": "uuid",
+          "type": "string"
+        },
+        "imageId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "kind": {
+          "$ref": "#/$defs/InstallationKind"
+        },
+        "lastOperation": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/LastOperation"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The latest runtime job of this app and environment."
+        },
+        "manifestName": {
+          "description": "The name in the release manifest.",
+          "type": "string"
+        },
+        "name": {
+          "description": "The platform display name.",
+          "type": "string"
+        },
+        "releaseId": {
+          "format": "uuid",
+          "type": "string"
+        },
+        "runtimeStatus": {
+          "type": "string"
+        },
+        "sourceCommit": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "ui": {
+          "$ref": "#/$defs/UiModule",
+          "default": {
+            "contractVersion": "",
+            "entry": "",
+            "export": ""
+          },
+          "description": "0.7.0 servers send it only in the default list."
+        },
+        "version": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "appId",
+        "name",
+        "manifestName",
+        "version",
+        "environment",
+        "releaseId",
+        "kind",
+        "imageId",
+        "sourceCommit",
+        "dbStatus",
+        "runtimeStatus",
+        "desiredState",
+        "generation",
+        "health",
+        "ui",
+        "lastOperation",
+        "acceptance",
+        "appDisabled",
+        "canOpen",
+        "canManage",
+        "canPromote"
+      ],
+      "type": "object"
+    },
+    "InstallationKind": {
+      "enum": [
+        "docker_app",
+        "validation_fixture"
+      ],
+      "type": "string"
+    },
+    "InstallationPage": {
+      "properties": {
+        "installations": {
+          "items": {
+            "$ref": "#/$defs/Installation"
+          },
+          "type": "array"
+        },
+        "nextCursor": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "installations",
+        "nextCursor"
+      ],
+      "type": "object"
+    },
+    "LastOperation": {
+      "properties": {
+        "action": {
+          "type": "string"
+        },
+        "errorCode": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "id": {
+          "format": "uuid",
+          "type": "string"
+        },
+        "retryable": {
+          "type": "boolean"
+        },
+        "status": {
+          "type": "string"
+        },
+        "step": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "action",
+        "status",
+        "step",
+        "errorCode",
+        "retryable"
+      ],
+      "type": "object"
+    },
+    "RecordedCheck": {
+      "description": "A stored acceptance check, as the test acceptance request recorded it.",
+      "properties": {
+        "actor": {
+          "type": "string"
+        },
+        "evidence": {
+          "type": "string"
+        },
+        "result": {
+          "type": "string"
+        },
+        "scope": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "scope",
+        "actor",
+        "result",
+        "evidence"
+      ],
+      "type": "object"
+    },
+    "RuntimeJob": {
+      "description": "A runtime job: the receipt of a runtime request and every job read.",
+      "properties": {
+        "action": {
+          "type": "string"
+        },
+        "appId": {
+          "type": "string"
+        },
+        "createdAt": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "environment": {
+          "$ref": "#/$defs/Environment"
+        },
+        "errorCode": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "failureClass": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "id": {
+          "format": "uuid",
+          "type": "string"
+        },
+        "imageId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "installationId": {
+          "default": null,
+          "description": "0.7.0 servers send it only for a single job.",
+          "format": "uuid",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "releaseId": {
+          "format": "uuid",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "requestId": {
+          "description": "The idempotency key the request was submitted with.",
+          "type": "string"
+        },
+        "retryOf": {
+          "format": "uuid",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "retryable": {
+          "type": "boolean"
+        },
+        "status": {
+          "type": "string"
+        },
+        "step": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "requestId",
+        "appId",
+        "environment",
+        "action",
+        "status",
+        "step",
+        "errorCode",
+        "failureClass",
+        "retryable",
+        "retryOf",
+        "imageId",
+        "installationId",
+        "releaseId",
+        "createdAt"
+      ],
+      "type": "object"
+    },
+    "RuntimeJobPage": {
+      "properties": {
+        "jobs": {
+          "items": {
+            "$ref": "#/$defs/RuntimeJob"
+          },
+          "type": "array"
+        },
+        "nextCursor": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "jobs",
+        "nextCursor"
+      ],
+      "type": "object"
+    },
+    "UiModule": {
+      "description": "Where the platform loads the app's UI module.",
+      "properties": {
+        "contractVersion": {
+          "type": "string"
+        },
+        "entry": {
+          "type": "string"
+        },
+        "export": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "entry",
+        "export",
+        "contractVersion"
+      ],
+      "type": "object"
+    }
+  }
+}

@@ -196,7 +196,7 @@ pub async fn request(
         {
             return Err(ApiError::conflict("idempotency_conflict"));
         }
-        let value = job_value(&previous);
+        let value = job_value(&previous)?;
         tx.decide(p, app, &v.environment, decision)
             .await?
             .commit()
@@ -268,7 +268,7 @@ pub async fn request(
     }
     // Decide after waiting for locks, while denial can still roll back the job, and
     // return this authorized receipt without a second authorization after commit.
-    let value = job_value(&row);
+    let value = job_value(&row)?;
     tx.decide(p, app, &v.environment, decision)
         .await?
         .commit()
@@ -283,11 +283,33 @@ pub async fn job(state: &State, p: &Principal, id: Uuid) -> ApiResult<Value> {
         .ok_or_else(ApiError::not_found)?;
     let (app, env): (String, String) = (row.get("app_id"), row.get("environment"));
     policy::require(state, p, &app, &env, AppAction::Observe).await?;
-    Ok(job_value(&row))
+    job_value(&row)
 }
-fn job_value(row: &sqlx::postgres::PgRow) -> Value {
-    json!({"requestId":row.get::<String,_>("idempotency_key"),"imageId":row.get::<Option<String>,_>("image_id"),"createdAt":row.get::<chrono::DateTime<chrono::Utc>,_>("created_at"),"id":row.get::<Uuid,_>("id"),"appId":row.get::<String,_>("app_id"),"environment":row.get::<String,_>("environment"),"action":row.get::<String,_>("action"),"status":row.get::<String,_>("status"),"step":row.get::<String,_>("step"),"errorCode":row.get::<Option<String>,_>("error_code"),"failureClass":row.get::<Option<String>,_>("failure_class"),"retryable":row.get::<bool,_>("retryable"),"retryOf":row.get::<Option<Uuid>,_>("retry_of"),"installationId":row.get::<Option<Uuid>,_>("installation_id"),"releaseId":row.get::<Option<Uuid>,_>("release_id")})
+fn job_value(row: &sqlx::postgres::PgRow) -> ApiResult<Value> {
+    let job = crate::api_contract::RuntimeJob {
+        id: row.get("id"),
+        request_id: row.get("idempotency_key"),
+        app_id: row.get("app_id"),
+        environment: row
+            .get::<String, _>("environment")
+            .parse()
+            .map_err(|_| ApiError::bad("invalid_environment"))?,
+        action: row.get("action"),
+        status: row.get("status"),
+        step: row.get("step"),
+        error_code: row.get("error_code"),
+        failure_class: row.get("failure_class"),
+        retryable: row.get("retryable"),
+        retry_of: row.get("retry_of"),
+        image_id: row.get("image_id"),
+        installation_id: row.get("installation_id"),
+        release_id: row.get("release_id"),
+        created_at: row.get("created_at"),
+    };
+    Ok(serde_json::to_value(job)?)
 }
+/// One runtime job as JSON for the job pages, matching [`job_value`].
+pub(crate) const JOB_ROW: &str = "jsonb_build_object('id',t.id,'requestId',t.idempotency_key,'appId',t.app_id,'environment',t.environment,'action',t.action,'status',t.status,'step',t.step,'errorCode',t.error_code,'failureClass',t.failure_class,'retryable',t.retryable,'retryOf',t.retry_of,'imageId',t.image_id,'installationId',t.installation_id,'releaseId',t.release_id,'createdAt',t.created_at)";
 
 /// Called only under the app/dev operation lock, before a local schema change.
 /// An old image is intentionally left stopped until a matching release is deployed.

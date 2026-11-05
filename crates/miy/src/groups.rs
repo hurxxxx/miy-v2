@@ -116,7 +116,12 @@ pub async fn list(state: &State, p: &Principal) -> ApiResult<Value> {
     )
     .fetch_all(&state.pool)
     .await?;
-    Ok(json!(rows))
+    // Pass through the contract type (api_contract::Group).
+    let groups = rows
+        .into_iter()
+        .map(serde_json::from_value::<crate::api_contract::Group>)
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(serde_json::to_value(groups)?)
 }
 
 pub async fn create(state: &State, p: &Principal, v: NewGroup) -> ApiResult<Value> {

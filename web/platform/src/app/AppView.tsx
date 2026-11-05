@@ -223,7 +223,7 @@ function AppSession({ appId, environment, basePath }: { appId: string; environme
             <p>작성 중인 내용을 확인한 뒤 최신 상태로 다시 열어주세요. 현재 화면의 API 호출은 중지됩니다.</p>
           </Notice>
         )}
-        <RuntimeHealth app={{ ...app, health }} />
+        <RuntimeHealth app={{ ...app, health: health ?? app.health }} />
       </div>
       {/* Platform fallbacks stay outside the container excluded from shell CSS. */}
       <Boundary key={app.releaseId}>

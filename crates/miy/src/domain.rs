@@ -183,32 +183,38 @@ pub async fn managed_installations(state: &State, p: &Principal) -> ApiResult<Va
     installation_list(state, p, true).await
 }
 async fn installation_list(state: &State, p: &Principal, managed: bool) -> ApiResult<Value> {
-    let rows=sqlx::query("SELECT i.*,a.name,r.artifact_hash,r.manifest,r.image_id,r.source_commit,EXISTS(SELECT 1 FROM app_controls c WHERE c.app_id=i.app_id AND c.disabled) AS app_disabled,(SELECT jsonb_build_object('recordedBy',c.actor,'note',c.note,'checks',c.checks,'structured',jsonb_array_length(c.checks)>0,'checkedAt',c.checked_at) FROM release_checks c WHERE c.release_id=r.id) AS acceptance FROM installations i JOIN apps a ON a.id=i.app_id JOIN releases r ON r.id=i.release_id ORDER BY a.name,i.environment")
-        .fetch_all(&state.pool).await?;
+    let rows: Vec<Value> = sqlx::query_scalar(&format!("SELECT {INSTALLATION_ROW} FROM installations t JOIN releases r ON r.id=t.release_id JOIN apps a ON a.id=t.app_id ORDER BY a.name,t.environment"))
+        .fetch_all(&state.pool)
+        .await?;
     let facts = policy::Facts::load(&state.pool, p, None).await?;
-    let mut out = vec![];
-    for r in rows {
-        let app: String = r.get("app_id");
-        let env: String = r.get("environment");
-        let flags = facts.flags(&app, &env);
-        let can_manage = flags.can_manage;
-        if (!managed && !flags.can_open) || (managed && !can_manage) {
-            continue;
+    let mut out = Vec::new();
+    for row in rows {
+        let item = installation_view(row, &facts)?;
+        if (managed && item.can_manage) || (!managed && item.can_open) {
+            out.push(item);
         }
-        let m: Manifest = serde_json::from_value(r.get("manifest"))?;
-        let mut item = json!({"id":r.get::<Uuid,_>("id"),"appId":app,"name":r.get::<String,_>("name"),"manifestName":m.name,"version":m.version,"acceptance":if can_manage {r.get::<Option<Value>,_>("acceptance")} else {None},"environment":env,"releaseId":r.get::<Uuid,_>("release_id"),
-            "dbStatus":r.get::<String,_>("db_status"),"runtimeStatus":r.get::<String,_>("runtime_status"),"desiredState":r.get::<String,_>("desired_state"),
-            "health":{"status":r.get::<String,_>("health_status"),"consecutiveFailures":r.get::<i32,_>("health_failures"),"checkedAt":r.get::<Option<chrono::DateTime<chrono::Utc>>,_>("health_checked_at"),"errorCode":r.get::<Option<String>,_>("health_error")},
-            "canManage":can_manage,"canPromote":flags.can_promote,
-            "imageId":r.get::<Option<String>,_>("image_id"),"sourceCommit":r.get::<Option<String>,_>("source_commit"),
-            "ui":{"entry":format!("/artifacts/{}/ui/{}",r.get::<String,_>("artifact_hash"),m.ui.module_entry),"export":m.ui.module_export,"contractVersion":m.ui.contract_version},"kind":if r.get::<Option<String>,_>("image_id").is_some(){"docker_app"}else{"validation_fixture"}});
-        if managed {
-            item["appDisabled"] = json!(r.get::<bool, _>("app_disabled"));
-            item["canOpen"] = json!(flags.can_open);
-        }
-        out.push(item);
     }
-    Ok(json!(out))
+    Ok(serde_json::to_value(out)?)
+}
+/// One installation for [`installation_view`]; every installation list selects it
+/// over `installations t JOIN releases r JOIN apps a`. The display values are set
+/// from the policy afterwards.
+pub(crate) const INSTALLATION_ROW: &str = "jsonb_build_object('id',t.id,'appId',t.app_id,'name',a.name,'manifestName',r.manifest->>'name','version',r.version,'environment',t.environment,'releaseId',t.release_id,'kind',CASE WHEN r.image_id IS NULL THEN 'validation_fixture' ELSE 'docker_app' END,'imageId',r.image_id,'sourceCommit',r.source_commit,'dbStatus',t.db_status,'runtimeStatus',t.runtime_status,'desiredState',t.desired_state,'generation',t.control_generation,'health',jsonb_build_object('status',t.health_status,'consecutiveFailures',t.health_failures,'checkedAt',t.health_checked_at,'errorCode',t.health_error),'ui',jsonb_build_object('entry','/artifacts/'||r.artifact_hash||'/ui/'||(r.manifest->'ui'->>'moduleEntry'),'export',r.manifest->'ui'->>'moduleExport','contractVersion',r.manifest->'ui'->>'contractVersion'),'lastOperation',(SELECT jsonb_build_object('id',j.id,'action',j.action,'status',j.status,'step',j.step,'errorCode',j.error_code,'retryable',j.retryable) FROM runtime_jobs j WHERE j.app_id=t.app_id AND j.environment=t.environment ORDER BY j.created_at DESC,j.id DESC LIMIT 1),'acceptance',(SELECT jsonb_build_object('recordedBy',c.actor,'note',c.note,'checks',c.checks,'structured',jsonb_array_length(c.checks)>0,'checkedAt',c.checked_at) FROM release_checks c WHERE c.release_id=r.id),'appDisabled',EXISTS(SELECT 1 FROM app_controls c WHERE c.app_id=t.app_id AND c.disabled),'canOpen',false,'canManage',false,'canPromote',false)";
+/// The installation in `row` ([`INSTALLATION_ROW`]) with the decisions `facts` give:
+/// the display values, and the acceptance record only with management read.
+pub(crate) fn installation_view(
+    row: Value,
+    facts: &policy::Facts,
+) -> ApiResult<crate::api_contract::Installation> {
+    let mut item: crate::api_contract::Installation = serde_json::from_value(row)?;
+    let flags = facts.flags(&item.app_id, item.environment.as_str());
+    item.can_open = flags.can_open;
+    item.can_manage = flags.can_manage;
+    item.can_promote = flags.can_promote;
+    if !flags.can_manage {
+        item.acceptance = None;
+    }
+    Ok(item)
 }
 /// Load an installation the principal may use ([`AppAction::Use`]).
 pub async fn installation(

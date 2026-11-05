@@ -1813,6 +1813,11 @@ async fn policy_matrix(h: &mut Harness<'_>, suffix: &str, passed: &mut Vec<Strin
                 environments(&paged) == expected,
                 "{context}: paged installation list differs from policy"
             );
+            // One installation record (api_contract::Installation) on both paths.
+            ensure!(
+                default == paged,
+                "{context}: default and paged installation lists return different records"
+            );
             let observed: Vec<String> = case.observe[state]
                 .iter()
                 .map(|e| (*e).to_owned())
@@ -1875,7 +1880,7 @@ async fn policy_matrix(h: &mut Harness<'_>, suffix: &str, passed: &mut Vec<Strin
         200,
     )
     .await?;
-    passed.push("default and paged installation lists, installation approval records, job details, job lists and display values agree for administrators, deployers, developers, users, strangers and delegated credentials with and without read, with the company switch off and on".into());
+    passed.push("default and paged installation lists return the same records, and with installation approval records, job details, job lists and display values agree for administrators, deployers, developers, users, strangers and delegated credentials with and without read, with the company switch off and on".into());
     // A database preparation receipt is an observable job like a runtime receipt: a
     // delegation needs prepare_database and read before anything is stored.
     let jobs_by = async |actor: &Actor| -> Result<i64> {

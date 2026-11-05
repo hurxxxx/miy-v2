@@ -1,29 +1,25 @@
 export { createNavigationGuards, type NavigationGuard } from "./navigation";
 export const UI_CONTRACT = "miy.ui/v1alpha1" as const;
-export interface Installation {
-  id: string;
-  appId: string;
-  name: string;
-  environment: "dev" | "prod";
-  releaseId: string;
-  version?: string;
-  canPromote?: boolean;
-  dbStatus: string;
-  runtimeStatus: string;
-  /** Latest service observation; process state remains in runtimeStatus. */
-  health?: {
-    status: "unknown" | "healthy" | "degraded" | "unhealthy" | "not_applicable";
-    consecutiveFailures: number;
-    checkedAt: string | null;
-    errorCode: string | null;
-  };
-  desiredState: string;
-  kind: "validation_fixture" | "docker_app";
-  canManage?: boolean;
-  imageId?: string;
-  sourceCommit?: string;
-  ui: { entry: string; export: "./AppRoot"; contractVersion: string };
-}
+export type {
+  AcceptanceRecord,
+  App,
+  AppDetail,
+  AuditEntry,
+  AuditPage,
+  Environment,
+  Group,
+  GroupSource,
+  Health,
+  HealthStatus,
+  Installation,
+  InstallationKind,
+  InstallationPage,
+  LastOperation,
+  RecordedCheck,
+  RuntimeJob,
+  RuntimeJobPage,
+  UiModule,
+} from "./api.gen";
 export interface AppRuntime {
   installationId: string;
   appId: string;

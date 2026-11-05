@@ -155,6 +155,11 @@ Windows 사용자 인수, 실제 콘솔 신호, 다른 OS 또는 Docker Desktop 
   - 동작 변경은 위임 자격증명의 표시값뿐이다([코어 권한](CORE-PERMISSIONS.md)의 "표시값").
   - 정적 검사와 격리 회귀(관찰 88개)가 통과했다([검증 기록](releases/core-policy-2026-11-05-validation.json)).
 - **4:** `scripts/check-cli-version.py`를 릴리스 후보 workflow에 연결했다.
+- **3(API 계약 단일 원본):**
+  - [계약 타입](../crates/miy/src/api_contract.rs)에 설치(설치 목록·실행 관리 목록·앱 상세)·실행 작업·감사·그룹 응답을 두었다. 서버는 이 타입으로 응답하고, CLI는 작업·앱 상세를 이 타입으로 읽는다.
+  - [JSON Schema](../contracts/api-v1.schema.json)와 SDK의 `packages/sdk/src/api.gen.ts`는 이 타입에서 생성한다. Rust 단위 시험과 `node scripts/api-types.mjs --check`가 어긋남을 막는다. 플랫폼 화면의 설치·감사·그룹 타입은 생성 타입을 쓴다.
+  - 호환 규칙: 응답은 필드를 추가만 한다. 게시 CLI가 읽을 수 있는 필드는 [게시 계약](../contracts/api-v1.published.json)에 두고 `scripts/check-api-compat.py`가 제거·필수 해제·값 확장을 막는다. 제거는 그 파일의 `removable`에 이유를 적은 뒤에만 한다. 이전 서버(0.7.0)가 보내지 않는 필드는 CLI가 기본값으로 읽는다.
+  - 남은 범위: 나머지 응답(설치 권한, 그룹 구성원·권한, 앱 접근 등)의 타입 이전과 OpenAPI 응답 스키마 연결([검증 기록](releases/api-contract-2026-11-05-validation.json)).
 - **2의 둘째 단계(불일치 수정):** 판정 정리 중 확인한 불일치다. 고친 항목은 줄을 긋고 고친 내용을 적었다([1·4 검증 기록](releases/core-policy-followup-2026-11-05-validation.json), [2·3·5~8 검증 기록](releases/core-policy-consistency-2026-11-05-validation.json)). 9는 3에서 다룬다.
   1. ~~DB 준비(`prepare`)는 작업을 넣은 뒤 `read`를 확인한다.~~ 고침: 접수 전에 `Request(prepare_database)`로 판정한다.
   2. ~~설치 권한 변경은 커밋한 뒤 결과 조회에서 사용 중지된 prod 앱이면 `403 app_disabled`가 된다. 관리자는 실행 관리 목록에 보이는 그 설치의 권한을 읽지 못한다.~~ 고침: 승인 기록 조회는 운영 기록 조회(`Observe`: 사용 또는 관리 읽기)로 판정하고, 변경 응답은 커밋 전에 같은 트랜잭션에서 만든다.
@@ -164,7 +169,7 @@ Windows 사용자 인수, 실제 콘솔 신호, 다른 OS 또는 Docker Desktop 
   6. ~~릴리스 시험 결과 기록은 `accept`만 요구하고 `read`와 잠금 후 재확인이 없다.~~ 고침: `Request(accept)`로 접수하고, 실행 잠금과 앱 상태 확인을 기다린 뒤 기록 직전에 트랜잭션 안에서 다시 판정한다.
   7. ~~`GET /dev-sessions/by-request`는 소유자 필터만 있고 권한 판정이 없다.~~ 고침: 세션 조회와 같은 `Manage(dev_session)` 판정을 한다.
   8. ~~대기 작업 재확인의 횟수와 실패 분류가 작업 종류마다 다르다. 빌드·로그 요청은 DB 장애도 `permission_revoked`로 분류한다.~~ 고침: 모든 대기 작업이 시작 전과 긴 대기 뒤에 `recheck_queued` 하나를 부른다. 확정 거부는 `user_disabled`·`permission_revoked`이고, 권한을 읽지 못하면 `database_unavailable`(로그는 `diagnostic_unavailable`)이다. 이미지 적재는 이 코드를 `image_import_failed`로 덮지 않는다. 고치기 전 분류는 코드 판독이고 실행으로 재현하지 않았다. 고친 뒤의 분류는 단위 시험으로 확인했다.
-  9. `GET /installations`는 질의가 있는지에 따라 응답 형식이 다른 두 구현으로 나뉜다. 3에서 한 형식으로 합친다.
+  9. ~~`GET /installations`는 질의가 있는지에 따라 응답 형식이 다른 두 구현으로 나뉜다. 3에서 한 형식으로 합친다.~~ 고침(3): 기본·페이지·실행 관리 목록과 앱 상세가 같은 SQL 행과 변환 하나(`api_contract::Installation`)를 쓴다.
 - **2의 셋째 단계(트랜잭션 안 판정):** 권한이 필요한 쓰기는 `policy::Write`로만 커밋한다. 쓰기와 잠금 뒤 같은 트랜잭션에서 판정하고, 판정을 통과한 트랜잭션(`Decided`)만 커밋할 수 있다. 관리자 재확인(`admin_locked`)과 실행 접수 재판정을 이 타입 하나로 바꿨다.
   - 판정은 행위자의 사용자 행·위임 행을 커밋까지 공유 잠금한다. 권한·그룹 행은 잠그지 않는다(보기 `effective_grants`가 합집합이라 행 잠금이 안 되고, 관리 변경과의 잠금 순서 문제를 만들지 않기 위해서다).
   - 목록 밖의 직접 트랜잭션과 주체 쓰기는 `scripts/check-write-decisions.py`가 막는다([검증 기록](releases/core-policy-transactions-2026-11-05-validation.json)).

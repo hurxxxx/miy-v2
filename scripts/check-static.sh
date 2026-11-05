@@ -43,6 +43,9 @@ script_checks() {
   python3 scripts/test-cli-release.py
   python3 scripts/test-cli-version.py
   python3 scripts/test-write-decisions.py
+  node scripts/api-types.mjs --check
+  python3 scripts/check-api-compat.py
+  python3 scripts/test-api-compat.py
   python3 scripts/test-cli-downloads.py
   python3 scripts/test-windows-installer-package.py
   python3 scripts/test-agent-acceptance-proxy.py

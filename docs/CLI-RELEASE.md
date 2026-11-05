@@ -8,6 +8,8 @@
 
 새 후보를 게시하면 [Windows 후보 파일](releases/windows-candidate.json)을 그 CI 해시로 갱신한다. Windows 인수 검사기는 이 파일을 기대값으로 쓴다.
 
+같은 커밋에서 `python3 scripts/check-api-compat.py --refresh 버전 소스커밋`으로 [게시 CLI 응답 계약](../contracts/api-v1.published.json)도 그 소스의 스키마로 갱신한다. 이후 서버 응답은 이 파일보다 필드를 추가만 할 수 있다(`check-static.sh scripts`). 이전 서버가 보내지 않는 필드는 CLI가 기본값으로 읽는다([계약 타입](../crates/miy/src/api_contract.rs)).
+
 ## 이전 0.6.3 검증 후보
 
 `8d7d04271f9467d8bbdd16308e73715b33e4dc0c`의 [CLI CI 40826960538](https://github.com/hurxxxx/miy-v2/actions/runs/40826960538)와 같은 CLI 출처·해시를 사용한 [설치기 CI 40830813012](https://github.com/hurxxxx/miy-v2/actions/runs/40830813012)가 성공했다. 다섯 CLI·두 Linux helper·Windows EXE를 검증해 [설치 안내](https://v2.dwdcc.kr/cli/install)에 게시하고 서버·UI도 0.6.3으로 반영했다. SDK 번들은 0.7.1이다. [Linux 검사·실제 다운로드·Todo 보존·NOT_RUN](CLI-0.6.3-LINUX-VALIDATION.md), [CLI index](releases/cli-0.6.3-candidate.json), [설치기 index](releases/windows-installer-0.6.3-candidate.json)를 함께 보존한다. 공개 GitHub Release/tag는 생성하지 않았다.

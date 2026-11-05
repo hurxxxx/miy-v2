@@ -1,0 +1,109 @@
+{
+  "date": "2026-11-05",
+  "baseCommit": "567bf56e777e4e40a812603760e3470cc725a897",
+  "validatedTree": "baseCommit plus the changes identified by sourceFileSha256 (documentation excluded)",
+  "status": "PASS",
+  "scope": [
+    "CORE-HARDENING structure foundation item 3 (API contract single source), first set: installations, runtime jobs, audit and groups; item 2's inconsistency 9",
+    "crates/miy/src/api_contract.rs (client and server) defines Installation, InstallationPage, AppDetail, RuntimeJob, RuntimeJobPage, AuditEntry, AuditPage and Group. The server answers through them; the CLI reads runtime jobs, the request-ID job lookup and app details through them",
+    "contracts/api-v1.schema.json is generated from the types (a Rust unit test fails when it is stale); packages/sdk/src/api.gen.ts is generated from the schema (node scripts/api-types.mjs --check fails when it is stale). The SDK re-exports the generated types and the platform's installation, audit and group types use them",
+    "Compatibility: responses only add fields. contracts/api-v1.published.json holds what published CLIs may read; scripts/check-api-compat.py fails on a removed type or field, a field no longer always sent, or a value that was not allowed before, unless listed as removable with a reason. Fields an older (0.7.0) server does not send are read with defaults",
+    "Item 9: the default, paged and runtime-management installation lists and the app detail use one SQL row (domain::INSTALLATION_ROW) and one conversion (domain::installation_view)",
+    "scripts/check-write-decisions.py (item 2, third step) also runs in the CLI foundation workflow's Linux server job"
+  ],
+  "behaviorChanges": [
+    "GET /api/v1/installations without a page query and GET /api/v1/runtime/installations now also return generation, lastOperation, appDisabled and canOpen (canOpen and appDisabled were in the management list only)",
+    "GET /api/v1/installations with a page query and GET /api/v1/apps/{app} now also return ui, health.errorCode, appDisabled, canOpen and acceptance.structured",
+    "Runtime job pages now also return installationId, like a single job",
+    "The CLI rejects a runtime job, job lookup or app detail response that does not match the contract (invalid_job_response, invalid_jobs_response, invalid_app_response); it still prints the server's JSON, including fields it does not know"
+  ],
+  "deploymentPerformed": false,
+  "pushPerformed": false,
+  "checks": [
+    {
+      "command": "bash scripts/check-static.sh rust",
+      "status": "PASS",
+      "serverTests": 179,
+      "serverIgnored": 7,
+      "clientTests": 116,
+      "newUnitTests": [
+        "api_contract::tests::committed_schema_matches_the_types",
+        "api_contract::tests::readers_accept_fields_and_states_they_do_not_know",
+        "api_contract::tests::a_newer_client_reads_an_older_server"
+      ]
+    },
+    {
+      "command": "bash scripts/check-static.sh scripts",
+      "status": "PASS",
+      "includes": [
+        "node scripts/api-types.mjs --check",
+        "python3 scripts/check-api-compat.py",
+        "python3 scripts/test-api-compat.py (4 tests)",
+        "python3 scripts/check-doc-links.py"
+      ]
+    },
+    {
+      "command": "bash scripts/check-static.sh web",
+      "status": "PASS",
+      "playwright": {
+        "runtimeRegressionUi": 36,
+        "cliExperience": 14,
+        "httpUi": 1
+      },
+      "note": "builds went to .local/evidence/check-static; web/platform/dist/index.html modification time unchanged"
+    },
+    {
+      "command": "python3 scripts/runtime-regression/run.py",
+      "status": "PASS",
+      "startedAt": "2026-11-05T09:24:15Z",
+      "finishedAt": "2026-11-05T09:28:03Z",
+      "observations": 98,
+      "suites": {
+        "runtime": 46,
+        "operations": 6,
+        "cli": 6,
+        "auth": 8,
+        "permissions": 23,
+        "delegation": 9
+      },
+      "testBinarySha256": "15fffd49993a3e7dfd8c81eefc1a9535f79eb4fbf32ec7609ab52047b2820306",
+      "cleanupErrors": 0,
+      "changedObservation": "the policy matrix also requires the default and paged installation lists to return identical records"
+    }
+  ],
+  "notRun": [
+    "GitHub Actions for this tree (not pushed)",
+    "No pre-change run of the identical-records assertion: the base commit's default and paged lists differ by construction (the default list had ui and no lastOperation, the paged list the reverse)",
+    "The new CLI against the production 0.7.0 server: covered by a unit test with a 0.7.0-shaped installation row, not by a live call",
+    "Windows client build and tests for this tree (the Windows CI job runs after a push)"
+  ],
+  "sourceFileSha256": {
+    ".github/workflows/cli-foundation.yml": "f6fcf9825d52f1056373992b89726d77b4b28ed483cee2394090667b485cb153",
+    "contracts/api-v1.published.json": "61da638949f9e62f56ba5e495af746137b91cb2622305e881b01d4418a45d09e",
+    "contracts/api-v1.schema.json": "e657b0176b79b4ee02d562ab88f863c53fded484c7641f30db8f76a51dc7cb63",
+    "crates/miy/src/api_contract.rs": "371a710c7a4388a83d02abc8cb7c711ea6eab7d3c64f160a119b80b11a2bbf8b",
+    "crates/miy/src/app_cli.rs": "ffe6114063feba24fd036345f3305fe784eac7f95d91bbb21e83868d88a9bc5d",
+    "crates/miy/src/audit.rs": "c36e814595bfc1b885f3637fd352e92db3292e035afbbfe1afb3bdde8ac9c0cc",
+    "crates/miy/src/cli_remote.rs": "5a4894f650a0a3a0332081c1ea07941518a94013e68416f2f8c38ad2c3083442",
+    "crates/miy/src/domain.rs": "896c50490059f4d2cf01becc77e7f10782d42f5d0972e0dcec01c2dd9b9f54dc",
+    "crates/miy/src/groups.rs": "311213296a5c5081274f74e7eb418a38cbf1d5b37bdf57db57e50de2f4604d66",
+    "crates/miy/src/main.rs": "ec007fae09f0b874167e32b325074fded23bc0dd27518e405f715df741f6646f",
+    "crates/miy/src/permissions_regression.rs": "c89a9ff3e6add705dc116358e658d12042d7e6fb08b278d3d7a56b01e5eb1498",
+    "crates/miy/src/read_api.rs": "400372d1df75f7a4a9081529e6604d5f1936c14748b62d119713216b9d7cac29",
+    "crates/miy/src/runtime.rs": "243dbec02d06e44cfbfb9c76738f3146c5780c15950f4404523ff74afd0d86bb",
+    "packages/sdk/src/api.gen.ts": "843b641883d0e47be2039d3597f0a22e2ba9f08744d72df02885f055de5f6f48",
+    "packages/sdk/src/index.ts": "ff5ee60788bccc6c277dce0e0db25d192ed7498642dc66124d0db0ac53ca5372",
+    "scripts/api-types.mjs": "70a6f65d8e46870f38789c507014cf6a86402d424c9e1b92bbf362e5c3a27695",
+    "scripts/check-api-compat.py": "0b80db3b83c5c57c4ca5410b4a70536b9407e4f7a6ab3d45c4f18820f81de722",
+    "scripts/check-static.sh": "d86054a0fd55d5bf7b0a4b6bca6bf921df93636ceff62cf54fe590e1e2a3779e",
+    "scripts/test-api-compat.py": "e4f9b2bd71588ea427f7b1b803ff0334c4c8d6b2c6dcb309f7465438c63f28ca",
+    "web/platform/src/app/AppView.tsx": "7431b621ba84c07c5cb2be4ef60959f92254a8931418d6d288ee8300ae85bd2d",
+    "web/platform/src/pages/AdminAccess.tsx": "9eeed6dee93f187366498697f26b205466d7ba4f69072f2509e017d881042275",
+    "web/platform/src/pages/AdminAudit.tsx": "30894f202b85229610caa562cc03563ca1b3224e9e461d2bc298da5e218846de"
+  },
+  "limits": [
+    "Installation approvals, group members and grants, app access, delegations and the remaining responses are still built as untyped JSON; /openapi.json does not reference the contract schema yet",
+    "contracts/api-v1.published.json was recorded from this contract, after CLI 0.7.0 was published; 0.7.0 reads these responses as untyped JSON",
+    "The CLI version gate (scripts/check-cli-version.py) requires the next CLI candidate to be above 0.7.0; this change adds client inputs (api_contract.rs, app_cli.rs, cli_remote.rs)"
+  ]
+}

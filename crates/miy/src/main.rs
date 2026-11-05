@@ -5,6 +5,7 @@ compile_error!(
 
 mod acceptance_contract;
 mod agent_tools;
+mod api_contract;
 mod api_error;
 #[cfg(feature = "server")]
 mod app_calls;
