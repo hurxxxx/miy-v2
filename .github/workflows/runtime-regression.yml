@@ -1,0 +1,39 @@
+name: Isolated runtime regression
+
+# Runs the PostgreSQL/Docker/CLI regression (permissions, delegation, runtime,
+# operations, auth and CLI suites) that unit tests skip as ignored entry points.
+# scripts/runtime-regression/run.py owns setup, the suite counts and cleanup.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  regression:
+    name: Permissions, delegation and runtime against PostgreSQL and Docker
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: Free runner disk for the Docker storage floor
+        # The core refuses builds and image loads below 15 GiB and 15% free on the
+        # Docker data root. Keep that default; remove preinstalled SDKs instead.
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          df -h "$(docker info --format '{{.DockerRootDir}}')"
+      - name: Install the pinned Rust toolchain
+        run: rustup toolchain install 1.99.1 --profile minimal --component rustfmt --component clippy
+      - name: Fetch locked crates for the offline regression build
+        run: cargo fetch --locked
+      - name: Pull the fixed regression images
+        run: |
+          docker pull postgres:18.3
+          docker pull python:3.14-slim
+      - name: Run the isolated regression
+        run: python3 scripts/runtime-regression/run.py
