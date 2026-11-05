@@ -1,4 +1,5 @@
 //! Same-environment, user-authorized data connections. Never opens another app's DB.
+use crate::policy::{self, AppAction};
 use crate::{
     State,
     auth::Principal,
@@ -20,7 +21,7 @@ async fn source(
     id: Uuid,
     permission: &str,
 ) -> ApiResult<sqlx::postgres::PgRow> {
-    let inst = domain::installation(s, p, id, false).await?;
+    let inst = domain::installation(s, p, id).await?;
     crate::permissions::require(&s.pool, id, inst.get("release_id"), permission).await?;
     let action = if permission == "platform:directory:read" {
         crate::delegations::Action::DirectoryRead
@@ -91,7 +92,14 @@ pub async fn preview_connect(
     Path((app, target, path)): Path<(String, String, String)>,
     mut req: Request,
 ) -> ApiResult<Response> {
-    domain::manage_action(&s, &p, &app, "dev", crate::delegations::Action::DevSession).await?;
+    policy::require(
+        &s,
+        &p,
+        &app,
+        "dev",
+        AppAction::Manage(crate::delegations::Action::DevSession),
+    )
+    .await?;
     let id = dev_installation(&s, &app).await?;
     let access = if matches!(
         *req.method(),
@@ -118,7 +126,14 @@ pub async fn preview_directory(
     axum::Extension(p): axum::Extension<Principal>,
     Path(app): Path<String>,
 ) -> ApiResult<Json<Value>> {
-    domain::manage_action(&s, &p, &app, "dev", crate::delegations::Action::DevSession).await?;
+    policy::require(
+        &s,
+        &p,
+        &app,
+        "dev",
+        AppAction::Manage(crate::delegations::Action::DevSession),
+    )
+    .await?;
     source(
         &s,
         &p,
@@ -138,7 +153,7 @@ async fn forward(
     req: &mut Request,
 ) -> ApiResult<Response> {
     let env: &str = source.get("environment");
-    domain::authorize(s, p, target, env, false).await?;
+    policy::require(s, p, target, env, AppAction::Use).await?;
     let row = sqlx::query("SELECT * FROM installations WHERE app_id=$1 AND environment=$2")
         .bind(target)
         .bind(env)
@@ -184,12 +199,12 @@ pub struct PreviewCall {
     permission: String,
 }
 pub async fn recheck_preview(s: &State, p: &Principal, call: &PreviewCall) -> ApiResult<()> {
-    domain::manage_action(
+    policy::require(
         s,
         p,
         &call.app_id,
         "dev",
-        crate::delegations::Action::DevSession,
+        AppAction::Manage(crate::delegations::Action::DevSession),
     )
     .await?;
     let inst = source(s, p, call.installation_id, &call.permission).await?;

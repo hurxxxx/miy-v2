@@ -208,7 +208,7 @@ async fn current(s: &State, p: &Principal, c: &Context) -> ApiResult<Vec<String>
         if !ids.insert(id) {
             return Err(ApiError::forbidden());
         }
-        let inst = domain::installation(s, p, id, false).await?;
+        let inst = domain::installation(s, p, id).await?;
         if inst.get::<Uuid, _>("release_id") != release
             || inst.get::<String, _>("environment") != c.environment
             || app.is_some_and(|app| inst.get::<String, _>("app_id") != app)

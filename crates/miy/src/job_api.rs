@@ -1,8 +1,8 @@
 //! Reconnectable event observations and explicit, typed retries.
+use crate::policy::{self, AppAction};
 use crate::{
     State,
     auth::Principal,
-    domain,
     http::{ApiError, ApiResult},
     runtime,
     runtime_contract::{ExpectedState, FailureCode, JobStatus, RuntimeFailure},
@@ -118,7 +118,14 @@ pub async fn retry(
         .ok_or_else(ApiError::not_found)?;
     let app: String = row.get("app_id");
     let env: String = row.get("environment");
-    domain::manage_action(&s, &p, &app, &env, row.get::<String, _>("action").parse()?).await?;
+    policy::require(
+        &s,
+        &p,
+        &app,
+        &env,
+        AppAction::Manage(row.get::<String, _>("action").parse()?),
+    )
+    .await?;
     if p.delegation_id.is_some() && row.get::<Option<Uuid>, _>("delegation_id") != p.delegation_id {
         return Err(ApiError::forbidden());
     }

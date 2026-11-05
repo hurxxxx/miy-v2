@@ -1,10 +1,11 @@
 //! Leased local development against the application's persistent server dev DB.
 //! HTTP handlers only enqueue work; privileged database changes run in the worker.
+use crate::policy::{self, AppAction};
 use crate::{
     State,
     api_error::{ApiError, ApiResult},
     auth::{self, Principal},
-    contract, domain, worker,
+    contract, worker,
 };
 use anyhow::{Context, Result};
 use axum::{
@@ -95,12 +96,12 @@ async fn owner(state: &State, p: &Principal, id: Uuid) -> ApiResult<sqlx::postgr
     {
         return Err(ApiError::forbidden());
     }
-    domain::manage_action(
+    policy::require(
         state,
         p,
         row.get("app_id"),
         "dev",
-        crate::delegations::Action::DevSession,
+        AppAction::Manage(crate::delegations::Action::DevSession),
     )
     .await?;
     Ok(row)
@@ -134,12 +135,12 @@ pub async fn create(
     Path(app): Path<String>,
     Json(input): Json<NewSession>,
 ) -> ApiResult<Json<Value>> {
-    domain::manage_action(
+    policy::require(
         &state,
         &p,
         &app,
         "dev",
-        crate::delegations::Action::DevSession,
+        AppAction::Manage(crate::delegations::Action::DevSession),
     )
     .await?;
     let parent = p

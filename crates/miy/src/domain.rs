@@ -3,6 +3,7 @@ use crate::{
     auth::Principal,
     contract::{self, Manifest},
     http::{ApiError, ApiResult},
+    policy::{self, AppAction},
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -54,107 +55,6 @@ pub(crate) async fn admin_locked(
     } else {
         Err(ApiError::forbidden())
     }
-}
-pub async fn authorize(
-    state: &State,
-    p: &Principal,
-    app: &str,
-    env: &str,
-    write: bool,
-) -> ApiResult<()> {
-    crate::auth_sessions::ensure_active(&state.pool, &p.id).await?;
-    if write {
-        crate::delegations::unrestricted(p)?;
-    } else {
-        crate::delegations::check(state, p, app, env, crate::delegations::Action::Read).await?;
-    }
-    if write && !p.scopes.iter().any(|s| s == "miy.dev") {
-        return Err(ApiError::forbidden());
-    }
-    // User and group permissions come from the computed `effective_grants` view.
-    let row = sqlx::query(
-        "SELECT u.admin, EXISTS(SELECT 1 FROM app_controls c WHERE c.app_id=$2 AND c.disabled) AS disabled, \
-         EXISTS(SELECT 1 FROM effective_grants g WHERE g.user_id=$1 AND g.app_id=$2 AND g.environment=$3 AND g.permission='develop') AS develop, \
-         EXISTS(SELECT 1 FROM effective_grants g WHERE g.user_id=$1 AND g.app_id=$2 AND g.environment=$3 AND g.permission IN ('use','deploy')) AS other \
-         FROM users u WHERE u.id=$1 AND u.enabled",
-    )
-    .bind(&p.id)
-    .bind(app)
-    .bind(env)
-    .fetch_optional(&state.pool)
-    .await?
-    .ok_or_else(ApiError::forbidden)?;
-    let admin: bool = row.get("admin");
-    let develop = admin || row.get::<bool, _>("develop");
-    access_decision(
-        write,
-        env,
-        admin,
-        develop,
-        row.get("other"),
-        row.get("disabled"),
-    )
-}
-/// Development stays possible on a disabled app so it can be repaired; the company
-/// switch stops use for everyone, administrators included, except developers in dev.
-fn access_decision(
-    write: bool,
-    env: &str,
-    admin: bool,
-    develop: bool,
-    other: bool,
-    disabled: bool,
-) -> ApiResult<()> {
-    if write {
-        return if develop && (admin || env != "prod") {
-            Ok(())
-        } else {
-            Err(ApiError::forbidden())
-        };
-    }
-    if disabled {
-        return if env == "dev" && develop {
-            Ok(())
-        } else {
-            Err(ApiError {
-                status: axum::http::StatusCode::FORBIDDEN,
-                code: "app_disabled".into(),
-            })
-        };
-    }
-    if develop || other {
-        Ok(())
-    } else {
-        Err(ApiError::forbidden())
-    }
-}
-/// Runtime authority is deliberately distinct from schema development rights.
-pub async fn can_manage(
-    pool: &sqlx::PgPool,
-    actor: &str,
-    app: &str,
-    env: &str,
-) -> Result<bool, sqlx::Error> {
-    sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM users WHERE id=$1 AND enabled AND (admin OR EXISTS(SELECT 1 FROM effective_grants WHERE user_id=$1 AND app_id=$2 AND environment=$3 AND permission=$4)))")
-        .bind(actor).bind(app).bind(env).bind(if env == "prod" { "deploy" } else { "develop" }).fetch_one(pool).await
-}
-pub async fn manage(state: &State, p: &Principal, app: &str, env: &str) -> ApiResult<()> {
-    crate::delegations::unrestricted(p)?;
-    manage_action(state, p, app, env, crate::delegations::Action::Read).await
-}
-pub async fn manage_action(
-    state: &State,
-    p: &Principal,
-    app: &str,
-    env: &str,
-    action: crate::delegations::Action,
-) -> ApiResult<()> {
-    crate::delegations::check(state, p, app, env, action).await?;
-    if !p.scopes.iter().any(|s| s == "miy.dev") || !can_manage(&state.pool, &p.id, app, env).await?
-    {
-        return Err(ApiError::forbidden());
-    }
-    Ok(())
 }
 pub async fn me(state: &State, p: &Principal) -> ApiResult<Value> {
     crate::auth_sessions::ensure_active(&state.pool, &p.id).await?;
@@ -211,7 +111,7 @@ pub async fn create_release(
     app: &str,
     v: NewRelease,
 ) -> ApiResult<Value> {
-    authorize(state, p, app, "dev", true).await?;
+    policy::require(state, p, app, "dev", AppAction::Develop).await?;
     let path = contract::verified_artifact(&state.artifacts, &v.artifact_hash)
         .map_err(|_| ApiError::bad("invalid_artifact"))?;
     let m: Manifest = serde_json::from_slice(&std::fs::read(path.join("manifest.json"))?)
@@ -251,7 +151,7 @@ pub async fn create_installation(
     if !["dev", "prod"].contains(&v.environment.as_str()) {
         return Err(ApiError::bad("invalid_environment"));
     }
-    authorize(state, p, &v.app_id, &v.environment, true).await?;
+    policy::require(state, p, &v.app_id, &v.environment, AppAction::Develop).await?;
     if v.environment == "prod" {
         return Err(ApiError::bad("use_checked_release_promotion_for_prod"));
     }
@@ -289,45 +189,44 @@ pub async fn managed_installations(state: &State, p: &Principal) -> ApiResult<Va
 async fn installation_list(state: &State, p: &Principal, managed: bool) -> ApiResult<Value> {
     let rows=sqlx::query("SELECT i.*,a.name,r.artifact_hash,r.manifest,r.image_id,r.source_commit,EXISTS(SELECT 1 FROM app_controls c WHERE c.app_id=i.app_id AND c.disabled) AS app_disabled,(SELECT jsonb_build_object('recordedBy',c.actor,'note',c.note,'checks',c.checks,'structured',jsonb_array_length(c.checks)>0,'checkedAt',c.checked_at) FROM release_checks c WHERE c.release_id=r.id) AS acceptance FROM installations i JOIN apps a ON a.id=i.app_id JOIN releases r ON r.id=i.release_id ORDER BY a.name,i.environment")
         .fetch_all(&state.pool).await?;
+    let facts = policy::Facts::load(&state.pool, p, None).await?;
     let mut out = vec![];
     for r in rows {
         let app: String = r.get("app_id");
         let env: String = r.get("environment");
-        let usable = authorize(state, p, &app, &env, false).await.is_ok();
-        if !managed && !usable {
-            continue;
-        }
-        let can_manage = manage(state, p, &app, &env).await.is_ok();
-        if managed && !can_manage {
+        let flags = facts.flags(&app, &env);
+        let can_manage = flags.can_manage;
+        if (!managed && !flags.can_open) || (managed && !can_manage) {
             continue;
         }
         let m: Manifest = serde_json::from_value(r.get("manifest"))?;
         let mut item = json!({"id":r.get::<Uuid,_>("id"),"appId":app,"name":r.get::<String,_>("name"),"manifestName":m.name,"version":m.version,"acceptance":if can_manage {r.get::<Option<Value>,_>("acceptance")} else {None},"environment":env,"releaseId":r.get::<Uuid,_>("release_id"),
             "dbStatus":r.get::<String,_>("db_status"),"runtimeStatus":r.get::<String,_>("runtime_status"),"desiredState":r.get::<String,_>("desired_state"),
             "health":{"status":r.get::<String,_>("health_status"),"consecutiveFailures":r.get::<i32,_>("health_failures"),"checkedAt":r.get::<Option<chrono::DateTime<chrono::Utc>>,_>("health_checked_at"),"errorCode":r.get::<Option<String>,_>("health_error")},
-            "canManage":can_manage,"canPromote":manage(state,p,&app,"prod").await.is_ok(),
+            "canManage":can_manage,"canPromote":flags.can_promote,
             "imageId":r.get::<Option<String>,_>("image_id"),"sourceCommit":r.get::<Option<String>,_>("source_commit"),
             "ui":{"entry":format!("/artifacts/{}/ui/{}",r.get::<String,_>("artifact_hash"),m.ui.module_entry),"export":m.ui.module_export,"contractVersion":m.ui.contract_version},"kind":if r.get::<Option<String>,_>("image_id").is_some(){"docker_app"}else{"validation_fixture"}});
         if managed {
             item["appDisabled"] = json!(r.get::<bool, _>("app_disabled"));
-            item["canOpen"] = json!(usable);
+            item["canOpen"] = json!(flags.can_open);
         }
         out.push(item);
     }
     Ok(json!(out))
 }
+/// Load an installation the principal may use ([`AppAction::Use`]).
 pub async fn installation(
     state: &State,
     p: &Principal,
     id: Uuid,
-    write: bool,
 ) -> ApiResult<sqlx::postgres::PgRow> {
     let row = sqlx::query("SELECT * FROM installations WHERE id=$1")
         .bind(id)
         .fetch_optional(&state.pool)
         .await?
         .ok_or_else(ApiError::not_found)?;
-    authorize(state, p, row.get("app_id"), row.get("environment"), write).await?;
+    let (app, env): (String, String) = (row.get("app_id"), row.get("environment"));
+    policy::require(state, p, &app, &env, AppAction::Use).await?;
     Ok(row)
 }
 #[derive(Deserialize, Serialize, schemars::JsonSchema)]
@@ -343,12 +242,13 @@ pub async fn prepare(state: &State, p: &Principal, v: Prepare) -> ApiResult<Valu
         .fetch_optional(&state.pool)
         .await?
         .ok_or_else(ApiError::not_found)?;
-    manage_action(
+    let (app, env): (String, String) = (inst.get("app_id"), inst.get("environment"));
+    policy::require(
         state,
         p,
-        inst.get("app_id"),
-        inst.get("environment"),
-        crate::delegations::Action::PrepareDatabase,
+        &app,
+        &env,
+        AppAction::Manage(crate::delegations::Action::PrepareDatabase),
     )
     .await?;
     if inst.get::<String, _>("environment") != "dev" {
@@ -393,7 +293,7 @@ pub async fn get_job(state: &State, p: &Principal, id: Uuid) -> ApiResult<Value>
         .fetch_optional(&state.pool)
         .await?
         .ok_or_else(ApiError::not_found)?;
-    installation(state, p, row.get("installation_id"), false).await?;
+    installation(state, p, row.get("installation_id")).await?;
     Ok(
         json!({"id":id,"installationId":row.get::<Uuid,_>("installation_id"),"releaseId":row.get::<Uuid,_>("release_id"),"status":row.get::<String,_>("status"),"step":row.get::<String,_>("step"),"errorCode":row.get::<Option<String>,_>("error_code")}),
     )
@@ -537,47 +437,4 @@ pub fn catalog() -> Value {
         .unwrap()
         .push(crate::audit::catalog());
     catalog
-}
-
-#[cfg(test)]
-mod access_tests {
-    use super::access_decision as decide;
-
-    fn code(result: super::ApiResult<()>) -> Option<String> {
-        result.err().map(|error| error.code)
-    }
-
-    #[test]
-    fn use_and_admin_reads() {
-        assert!(decide(false, "prod", false, false, true, false).is_ok());
-        assert!(decide(false, "prod", false, false, false, false).is_err());
-        assert!(decide(false, "prod", true, true, false, false).is_ok());
-    }
-
-    #[test]
-    fn company_switch_blocks_use_for_everyone_but_developers_in_dev() {
-        let disabled = Some("app_disabled".to_string());
-        assert_eq!(
-            code(decide(false, "prod", true, true, false, true)),
-            disabled
-        );
-        assert_eq!(
-            code(decide(false, "prod", false, true, true, true)),
-            disabled
-        );
-        assert_eq!(
-            code(decide(false, "dev", false, false, true, true)),
-            disabled
-        );
-        assert!(decide(false, "dev", true, true, false, true).is_ok());
-        assert!(decide(false, "dev", false, true, false, true).is_ok());
-    }
-
-    #[test]
-    fn writes_need_develop_and_prod_writes_need_admin() {
-        assert!(decide(true, "dev", false, true, false, true).is_ok());
-        assert!(decide(true, "dev", false, false, true, false).is_err());
-        assert!(decide(true, "prod", false, true, false, false).is_err());
-        assert!(decide(true, "prod", true, true, false, false).is_ok());
-    }
 }

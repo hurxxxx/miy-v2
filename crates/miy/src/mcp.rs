@@ -84,7 +84,7 @@ impl Mcp {
                 use sqlx::Row;
                 let release = match v.release_id {
                     Some(id) => id,
-                    None => domain::installation(&self.state, &p, v.installation_id, false)
+                    None => domain::installation(&self.state, &p, v.installation_id)
                         .await?
                         .get("release_id"),
                 };

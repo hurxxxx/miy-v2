@@ -76,7 +76,7 @@ try:
     counts = {suite: sum(row.get("evidence", {}).get("suite", "runtime") == suite for row in rows)
               for suite in ("runtime", "operations", "cli", "auth", "permissions", "delegation")}
     print(json.dumps({"observations": len(rows), "suites": counts}))
-    if counts != {"runtime": 43, "operations": 6, "cli": 6, "auth": 8, "permissions": 17, "delegation": 7} or any(row["status"] != "PASS" for row in rows):
+    if counts != {"runtime": 43, "operations": 6, "cli": 6, "auth": 8, "permissions": 18, "delegation": 7} or any(row["status"] != "PASS" for row in rows):
         result_code = result_code or 1
 except KeyboardInterrupt:
     result_code = 130

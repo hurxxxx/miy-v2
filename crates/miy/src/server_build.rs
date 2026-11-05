@@ -1,9 +1,9 @@
 //! Durable, bounded source upload and observations for server-side builds.
 //! Only the worker executes build commands; reconnects never create duplicate work.
+use crate::policy::{self, AppAction};
 use crate::{
     State,
     auth::Principal,
-    domain,
     http::{ApiError, ApiResult},
     source_archive::{MAX_SOURCE_BYTES, valid_commit},
 };
@@ -116,7 +116,14 @@ impl UploadInput {
 
 pub async fn authorize(s: &State, p: &Principal, app: &str) -> ApiResult<()> {
     crate::auth_sessions::ensure_active(&s.pool, &p.id).await?;
-    domain::manage_action(s, p, app, "dev", crate::delegations::Action::Build).await?;
+    policy::require(
+        s,
+        p,
+        app,
+        "dev",
+        AppAction::Manage(crate::delegations::Action::Build),
+    )
+    .await?;
     if !sqlx::query_scalar::<_, bool>("SELECT EXISTS(SELECT 1 FROM apps WHERE id=$1)")
         .bind(app)
         .fetch_one(&s.pool)

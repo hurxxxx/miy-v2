@@ -1,0 +1,113 @@
+{
+  "date": "2026-11-05",
+  "baseCommit": "e7ec2fbd7906fc777487ef2d17cebe9664ed9b49",
+  "validatedTree": "baseCommit plus the changes identified by sourceFileSha256 (documentation excluded)",
+  "status": "PASS",
+  "scope": [
+    "crates/miy/src/policy.rs decides app-level authorization (Use, Develop, Manage(action), FollowJob, Request(action)) as pure functions over facts loaded once per principal",
+    "Removed domain::authorize, access_decision, can_manage, manage, manage_action and runtime::authorize_request/authorize_job; about 30 call sites name an action instead",
+    "Apps, installations and runtime job pages filter by policy-allowed (app, environment) arrays instead of SQL permission predicates; installation display values come from the same decisions",
+    "The default installation list loads facts once instead of running per-row checks; delegation checks and delegation creation read the same policy definitions"
+  ],
+  "behaviorChanges": [
+    "Delegated credentials: canManage is the Manage(read) decision (previously always false); canPromote is the prod Request(promote) decision, which also needs read, the deploy grant and miy.dev (previously false on the default list and delegation scope only on the paged list); acceptance follows canManage",
+    "Display values now also require miy.dev on the paged list; no HTTP principal that reaches these lists lacks it today"
+  ],
+  "deploymentPerformed": false,
+  "pushPerformed": false,
+  "checks": [
+    {
+      "command": "bash scripts/check-static.sh rust",
+      "status": "PASS",
+      "serverTests": 172,
+      "serverIgnored": 7,
+      "clientTests": 113,
+      "policyUnitTests": 5,
+      "legacyEquivalence": "30720 fact/environment combinations compare Use, Develop, FollowJob, the management grant and Manage/Request for five actions with a transcription of the replaced checks, error codes included",
+      "note": "172 = 170 before, minus the 3 access_decision tests moved into policy.rs, plus 5 policy tests"
+    },
+    {
+      "command": "python3 scripts/runtime-regression/run.py",
+      "status": "PASS",
+      "observations": 88,
+      "suites": {
+        "runtime": 43,
+        "operations": 6,
+        "cli": 6,
+        "auth": 8,
+        "permissions": 18,
+        "delegation": 7
+      },
+      "newObservation": "default and paged installation lists, installation and job details, job lists and display values agree for administrators, deployers, developers, users, strangers and delegated credentials with and without read, with the company switch off and on",
+      "startedAt": "2026-11-05T02:24:19Z",
+      "finishedAt": "2026-11-05T02:28:12Z",
+      "cliBinarySha256": "e6e28dba74ce6468c95a80a3cd297ce00621d63ae1ac59902395d2e9ba77816e",
+      "testBinarySha256": "d85e65f297cfe2cb91fd491a59873bd62c90601a36cfb82569938fb5db368528",
+      "cleanup": {
+        "removed": 13,
+        "errors": 0
+      }
+    },
+    {
+      "command": "python3 scripts/check-doc-links.py",
+      "status": "PASS",
+      "docLinks": 542
+    },
+    {
+      "command": "git diff --check",
+      "status": "PASS"
+    }
+  ],
+  "earlierRuns": [
+    {
+      "command": "python3 scripts/runtime-regression/run.py",
+      "tree": "50e0da3 (Rust identical to baseCommit), before any policy change",
+      "status": "PASS",
+      "observations": 87,
+      "startedAt": "2026-11-05T01:53:11Z",
+      "finishedAt": "2026-11-05T01:57:01Z",
+      "purpose": "baseline"
+    },
+    {
+      "command": "python3 scripts/runtime-regression/run.py",
+      "tree": "intermediate working tree: policy module before the import tidy, the canPromote alignment and the matrix observation",
+      "status": "PASS",
+      "observations": 87,
+      "startedAt": "2026-11-05T02:19:01Z",
+      "finishedAt": "2026-11-05T02:23:01Z",
+      "note": "not evidence for the validated tree"
+    }
+  ],
+  "notRun": [
+    "GitHub Actions for this tree (not pushed), including the new isolated regression workflow and the Windows client job",
+    "Platform UI browser suites: no UI source changed, and browser sessions are never delegated, so their display values do not change",
+    "Production deployment"
+  ],
+  "sourceFileSha256": {
+    "crates/miy/src/app_calls.rs": "b1d552da6b20f41e23d7fabf824914ed8aa82dbb2ca9d290f922ac150e26416d",
+    "crates/miy/src/auth_sessions_regression.rs": "bdfdea712f619420d94d71656b1db21850647414abee2374979fb08295512931",
+    "crates/miy/src/connections.rs": "1a00863596a3caf9c7464d704ef81ffcf6e71f99f02ed0c8a2efc50d27453df4",
+    "crates/miy/src/delegations.rs": "51d55671df0489fc6688988dd9d9d78ff02bd309f397c1785a63b51b848b890a",
+    "crates/miy/src/delivery.rs": "8b8e908358bf76f2cc5dee9432702e723fd69e755cb5c54c22c40dc7374f3d37",
+    "crates/miy/src/development.rs": "690dd38e3038a0e290a1dae319dcb4ef35cf2deab4dcf206f445424cdeaab4af",
+    "crates/miy/src/domain.rs": "285392132ddaa14deed49541045672cef9a8369ea49d1aeccadfb7ce9c5a3ad8",
+    "crates/miy/src/http.rs": "b550c1fa08161dafddbb011202e7c0af993a72dffa03b12bef68b345ed1c3487",
+    "crates/miy/src/job_api.rs": "e257c4200671316246944668840d21dc4b6793c96d7ec62dc041e69e07daaf98",
+    "crates/miy/src/main.rs": "90a4d9afc390199f31bf44a977a9043435d102f0363fde363a3970ffe72a85be",
+    "crates/miy/src/mcp.rs": "d55ee706a5f0e66a57d62fa2940edc7bcb2bc9d3945fdc051b5b110086c2334b",
+    "crates/miy/src/permissions.rs": "c9523d623634d13271712cbb403755e9b3fa1129d705b9ff8e26bd728018a580",
+    "crates/miy/src/permissions_regression.rs": "d244c76b358812b7eac98df947424c6d21fcd8c586bb7fb4d27f4c35246ae325",
+    "crates/miy/src/policy.rs": "d026b8a6982d2b8c9de2fd947e3fe897f74a1edf6f3378ab8f30f3669efd81d8",
+    "crates/miy/src/read_api.rs": "ec2fb438185d5295a26c279623d929314e3802c50996a9cb5758251ab051aece",
+    "crates/miy/src/runtime.rs": "e15e8b84088bf289ccb2dbb4860c61e2a4337b78f793be134542c244616698c1",
+    "crates/miy/src/runtime_logs.rs": "cf54db11428d05dc9237a0914ff21c0d74879d0cf42f259f6525c67e946e2648",
+    "crates/miy/src/runtime_preflight.rs": "b4ca3ed03e22eb73f939c618ea0aaa0cf951182ff0e17c22b46d67979d8b0cbf",
+    "crates/miy/src/server_build.rs": "d5e55ec9fe0be1d2a7647cc6644d63c90463553ff35c82a37980ac309a74c694",
+    "crates/miy/src/server_build_worker.rs": "0ca76a90c3a8ab180d23dd988b2acc3a0e0e45e47f26caf1a0cc2c6a8dca30a0",
+    "scripts/runtime-regression/run.py": "527a224581033e4e5aca80cfdf73c1eb78f333b2a439605f932db1afa9919624"
+  },
+  "limits": [
+    "Administrative endpoints (admin, admin_locked) and queued-work rechecks keep their own paths; the remaining inconsistencies found while moving the checks are listed in CORE-HARDENING.md for the next step",
+    "Single checks and list facts are read in separate statements, as before; writes are not yet bound to an in-transaction decision"
+  ]
+}

@@ -1165,6 +1165,7 @@ pub async fn run(state: &State, client: &Client, base: &str) -> Result<Vec<Strin
     .await?;
     passed.push("user disable and CLI/browser/legacy logout revoke issued continuations, including held requests and child proofs".into());
     groups(&mut h, suffix, &mut passed).await?;
+    policy_matrix(&mut h, suffix, &mut passed).await?;
     Ok(passed)
 }
 
@@ -1568,6 +1569,296 @@ async fn groups(h: &mut Harness<'_>, suffix: &str, passed: &mut Vec<String>) -> 
     passed.push("personal grant changes (including registration approval), user state changes and primary-group assignments retain their exact before/after targets in the same transaction audit".into());
     primary_group_lock_order(h).await?;
     passed.push("opposing administrators update primary groups with ordered user locks, preserving the unlocked target and completing without deadlock".into());
+    Ok(())
+}
+
+/// One expected row of the policy matrix: which environments a principal may open and
+/// whose jobs it may follow (company switch off, on), and its display values.
+struct PolicyCase {
+    name: &'static str,
+    token: String,
+    open: [&'static [&'static str]; 2],
+    follow: [&'static [&'static str]; 2],
+    manage: &'static [&'static str],
+    promote: bool,
+}
+
+/// Environments listed for `app` by a list endpoint; a 403 page means nothing is listed.
+async fn listed_environments(
+    h: &Harness<'_>,
+    token: &str,
+    path: &str,
+    field: Option<&str>,
+    app: &str,
+) -> Result<Vec<Value>> {
+    let answer = h.request(token, Method::GET, path).send().await?;
+    if answer.status().as_u16() == 403 {
+        return Ok(Vec::new());
+    }
+    let value = response(answer, 200).await?;
+    let rows = match field {
+        Some(field) => value[field].as_array(),
+        None => value.as_array(),
+    }
+    .context("policy matrix list")?;
+    Ok(rows
+        .iter()
+        .filter(|row| row["appId"] == json!(app))
+        .cloned()
+        .collect())
+}
+
+fn environments(rows: &[Value]) -> Vec<String> {
+    let mut found: Vec<String> = rows
+        .iter()
+        .filter_map(|row| row["environment"].as_str().map(str::to_owned))
+        .collect();
+    found.sort();
+    found
+}
+
+/// Lists, details and display values come from one policy decision (`policy.rs`). For
+/// each kind of principal, with the company switch off and on, the default and paged
+/// installation lists must equal the installation detail decision, the job list must
+/// equal the job detail decision, and both installation lists report the same display
+/// values that the matching requests would get.
+async fn policy_matrix(h: &mut Harness<'_>, suffix: &str, passed: &mut Vec<String>) -> Result<()> {
+    let app = format!("policy-{suffix}");
+    let dev = h.app(app.clone(), "dev", &[]).await?;
+    let prod = h.app(app.clone(), "prod", &[]).await?;
+    let admin = h.actor(true).await?;
+    let deployer = h.actor(false).await?;
+    let developer = h.actor(false).await?;
+    let user = h.actor(false).await?;
+    let stranger = h.actor(false).await?;
+    for (actor, environment, permission) in [
+        (&deployer, "dev", "develop"),
+        (&deployer, "prod", "deploy"),
+        (&developer, "dev", "develop"),
+        (&user, "dev", "use"),
+        (&user, "prod", "use"),
+    ] {
+        sqlx::query(
+            "INSERT INTO grants(user_id,app_id,environment,permission) VALUES($1,$2,$3,$4)",
+        )
+        .bind(&actor.id)
+        .bind(&app)
+        .bind(environment)
+        .bind(permission)
+        .execute(&h.state.pool)
+        .await?;
+    }
+    let mut jobs = Vec::new();
+    for (environment, installation) in [("dev", &dev), ("prod", &prod)] {
+        let id = Uuid::new_v4();
+        sqlx::query("INSERT INTO runtime_jobs(id,app_id,environment,actor,action,installation_id,release_id,idempotency_key,input_hash,status,step) VALUES($1,$2,$3,$4,'restart',$5,$6,$7,'policy-matrix','succeeded','completed')")
+            .bind(id).bind(&app).bind(environment).bind(&admin.id)
+            .bind(installation.installation).bind(installation.release)
+            .bind(format!("policy-matrix-{environment}-{suffix}"))
+            .execute(&h.state.pool).await?;
+        jobs.push((environment, id));
+    }
+    let delegate = |actor: &Actor, environment: &'static str, actions: &'static [&'static str]| {
+        let body = json!({"name":"Policy matrix","appId":app,"environment":environment,"actions":actions,"expiresIn":3600});
+        let token = actor.token.clone();
+        let h = &*h;
+        async move {
+            let value = h
+                .json(&token, Method::POST, "/api/v1/delegations", body, 200)
+                .await?;
+            Ok::<_, anyhow::Error>(
+                value["credential"]["accessToken"]
+                    .as_str()
+                    .context("delegated access token")?
+                    .to_owned(),
+            )
+        }
+    };
+    let both: &[&str] = &["dev", "prod"];
+    let cases = vec![
+        PolicyCase {
+            name: "administrator",
+            token: admin.token.clone(),
+            open: [both, &["dev"]],
+            follow: [both, both],
+            manage: both,
+            promote: true,
+        },
+        PolicyCase {
+            name: "deployer",
+            token: deployer.token.clone(),
+            open: [both, &["dev"]],
+            follow: [both, both],
+            manage: both,
+            promote: true,
+        },
+        PolicyCase {
+            name: "developer",
+            token: developer.token.clone(),
+            open: [&["dev"], &["dev"]],
+            follow: [&["dev"], &["dev"]],
+            manage: &["dev"],
+            promote: false,
+        },
+        PolicyCase {
+            name: "user",
+            token: user.token.clone(),
+            open: [both, &[]],
+            follow: [both, &[]],
+            manage: &[],
+            promote: false,
+        },
+        PolicyCase {
+            name: "stranger",
+            token: stranger.token.clone(),
+            open: [&[], &[]],
+            follow: [&[], &[]],
+            manage: &[],
+            promote: false,
+        },
+        PolicyCase {
+            name: "delegated developer with read",
+            token: delegate(&developer, "dev", &["read", "start"]).await?,
+            open: [&["dev"], &["dev"]],
+            follow: [&["dev"], &["dev"]],
+            manage: &["dev"],
+            promote: false,
+        },
+        PolicyCase {
+            name: "delegated developer without read",
+            token: delegate(&developer, "dev", &["start"]).await?,
+            open: [&[], &[]],
+            follow: [&[], &[]],
+            manage: &[],
+            promote: false,
+        },
+        PolicyCase {
+            name: "delegated deployer",
+            token: delegate(&deployer, "prod", &["read", "promote"]).await?,
+            open: [&["prod"], &[]],
+            follow: [&["prod"], &["prod"]],
+            manage: &["prod"],
+            promote: true,
+        },
+    ];
+    for (state, disabled) in [(0, false), (1, true)] {
+        h.json(
+            &admin.token,
+            Method::PUT,
+            &format!("/api/v1/apps/{app}/control"),
+            json!({"disabled":disabled}),
+            200,
+        )
+        .await?;
+        for case in &cases {
+            let context = format!(
+                "{} with the company switch {}",
+                case.name,
+                if disabled { "on" } else { "off" }
+            );
+            let default =
+                listed_environments(h, &case.token, "/api/v1/installations", None, &app).await?;
+            let paged = listed_environments(
+                h,
+                &case.token,
+                &format!("/api/v1/installations?limit=200&appId={app}"),
+                Some("installations"),
+                &app,
+            )
+            .await?;
+            let mut detail = Vec::new();
+            for (environment, installation) in [("dev", &dev), ("prod", &prod)] {
+                let status = h
+                    .request(
+                        &case.token,
+                        Method::GET,
+                        &format!(
+                            "/api/v1/installations/{}/permissions",
+                            installation.installation
+                        ),
+                    )
+                    .send()
+                    .await?
+                    .status()
+                    .as_u16();
+                ensure!(
+                    matches!(status, 200 | 401 | 403),
+                    "{context}: installation detail answered HTTP {status}"
+                );
+                if status == 200 {
+                    detail.push(environment.to_owned());
+                }
+            }
+            let expected: Vec<String> = case.open[state].iter().map(|e| (*e).to_owned()).collect();
+            ensure!(
+                environments(&default) == expected,
+                "{context}: default installation list differs from policy"
+            );
+            ensure!(
+                environments(&paged) == expected,
+                "{context}: paged installation list differs from policy"
+            );
+            ensure!(
+                detail == expected,
+                "{context}: installation detail differs from the lists"
+            );
+            for row in default.iter().chain(&paged) {
+                let environment = row["environment"].as_str().unwrap_or_default();
+                ensure!(
+                    row["canManage"] == json!(case.manage.contains(&environment))
+                        && row["canPromote"] == json!(case.promote),
+                    "{context}: display values differ from the management and promotion decisions"
+                );
+            }
+            let listed_jobs = listed_environments(
+                h,
+                &case.token,
+                &format!("/api/v1/runtime/jobs?limit=200&appId={app}"),
+                Some("jobs"),
+                &app,
+            )
+            .await?;
+            let mut followed = Vec::new();
+            for (environment, id) in &jobs {
+                let status = h
+                    .request(
+                        &case.token,
+                        Method::GET,
+                        &format!("/api/v1/runtime/jobs/{id}"),
+                    )
+                    .send()
+                    .await?
+                    .status()
+                    .as_u16();
+                ensure!(
+                    matches!(status, 200 | 401 | 403),
+                    "{context}: job detail answered HTTP {status}"
+                );
+                if status == 200 {
+                    followed.push((*environment).to_owned());
+                }
+            }
+            let expected: Vec<String> =
+                case.follow[state].iter().map(|e| (*e).to_owned()).collect();
+            ensure!(
+                environments(&listed_jobs) == expected,
+                "{context}: job list differs from policy"
+            );
+            ensure!(
+                followed == expected,
+                "{context}: job detail differs from the job list"
+            );
+        }
+    }
+    h.json(
+        &admin.token,
+        Method::PUT,
+        &format!("/api/v1/apps/{app}/control"),
+        json!({"disabled":false}),
+        200,
+    )
+    .await?;
+    passed.push("default and paged installation lists, installation and job details, job lists and display values agree for administrators, deployers, developers, users, strangers and delegated credentials with and without read, with the company switch off and on".into());
     Ok(())
 }
 

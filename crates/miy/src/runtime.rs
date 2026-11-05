@@ -1,5 +1,6 @@
 //! Local single-host image store + persistent Docker deployment runner.
 pub(crate) use crate::docker::{docker, healthy, inspect};
+use crate::policy::{self, AppAction};
 use crate::runtime_contract::{ExpectedState, FailureCode, RuntimeFailure};
 use crate::{
     State,
@@ -77,7 +78,14 @@ pub async fn check_release(
     app: &str,
     v: ReleaseCheck,
 ) -> ApiResult<Value> {
-    domain::manage_action(state, p, app, "dev", crate::delegations::Action::Accept).await?;
+    policy::require(
+        state,
+        p,
+        app,
+        "dev",
+        AppAction::Manage(crate::delegations::Action::Accept),
+    )
+    .await?;
     let mut guard = state.pool.acquire().await?;
     guard.close_on_drop();
     sqlx::query("SELECT pg_advisory_lock(hashtextextended($1,0))")
@@ -132,7 +140,14 @@ pub async fn request(
     {
         return Err(ApiError::bad("invalid_image_id"));
     }
-    authorize_request(state, p, app, &v.environment, v.action.parse()?).await?;
+    policy::require(
+        state,
+        p,
+        app,
+        &v.environment,
+        AppAction::Request(v.action.parse()?),
+    )
+    .await?;
     if v.expected_state.is_none() {
         return Err(ApiError::bad("expected_state_required"));
     }
@@ -180,7 +195,14 @@ pub async fn request(
         {
             return Err(ApiError::conflict("idempotency_conflict"));
         }
-        authorize_request(state, p, app, &v.environment, v.action.parse()?).await?;
+        policy::require(
+            state,
+            p,
+            app,
+            &v.environment,
+            AppAction::Request(v.action.parse()?),
+        )
+        .await?;
         let value = job_value(&previous);
         tx.commit().await?;
         return Ok(value);
@@ -250,33 +272,17 @@ pub async fn request(
     }
     // Recheck after waiting for locks, while denial can still roll back the job.
     // Return this authorized receipt without a second authorization after commit.
-    authorize_request(state, p, app, &v.environment, v.action.parse()?).await?;
+    policy::require(
+        state,
+        p,
+        app,
+        &v.environment,
+        AppAction::Request(v.action.parse()?),
+    )
+    .await?;
     let value = job_value(&row);
     tx.commit().await?;
     Ok(value)
-}
-/// Runtime requests return an observable job, so both the action and read scope
-/// must be explicit. Planning and submission use the same admission policy.
-pub(crate) async fn authorize_request(
-    state: &State,
-    p: &Principal,
-    app: &str,
-    env: &str,
-    action: crate::delegations::Action,
-) -> ApiResult<()> {
-    domain::manage_action(state, p, app, env, action).await?;
-    authorize_job(state, p, app, env).await
-}
-async fn authorize_job(state: &State, p: &Principal, app: &str, env: &str) -> ApiResult<()> {
-    // The company switch blocks use, not runtime control. A scoped manager may
-    // follow jobs only within its explicit read scope; everyone else needs use.
-    if domain::manage_action(state, p, app, env, crate::delegations::Action::Read)
-        .await
-        .is_err()
-    {
-        domain::authorize(state, p, app, env, false).await?;
-    }
-    Ok(())
 }
 pub async fn job(state: &State, p: &Principal, id: Uuid) -> ApiResult<Value> {
     let row = sqlx::query("SELECT * FROM runtime_jobs WHERE id=$1")
@@ -285,7 +291,7 @@ pub async fn job(state: &State, p: &Principal, id: Uuid) -> ApiResult<Value> {
         .await?
         .ok_or_else(ApiError::not_found)?;
     let (app, env): (String, String) = (row.get("app_id"), row.get("environment"));
-    authorize_job(state, p, &app, &env).await?;
+    policy::require(state, p, &app, &env, AppAction::FollowJob).await?;
     Ok(job_value(&row))
 }
 fn job_value(row: &sqlx::postgres::PgRow) -> Value {
@@ -447,7 +453,7 @@ async fn execute(pool: &sqlx::PgPool, job: &sqlx::postgres::PgRow) -> Result<()>
     )
     .await?;
     anyhow::ensure!(
-        domain::can_manage(pool, &actor, &app, &env).await?,
+        policy::queued_manager(pool, &actor, &app, &env).await?,
         RuntimeFailure::new(FailureCode::PermissionRevoked)
     );
     if env == "dev" && crate::development::active_for_app(pool, &app).await? {
@@ -715,7 +721,7 @@ async fn execute(pool: &sqlx::PgPool, job: &sqlx::postgres::PgRow) -> Result<()>
     // Recheck before entering the branch whose failure cleanup may stop the
     // existing application; a revoked grant must leave that runtime intact.
     anyhow::ensure!(
-        domain::can_manage(pool, &actor, &app, &env).await?,
+        policy::queued_manager(pool, &actor, &app, &env).await?,
         RuntimeFailure::new(FailureCode::PermissionRevoked)
     );
     crate::delegations::check_queued(
@@ -1076,7 +1082,7 @@ pub async fn proxy(
     if let Some(preview) = parts.extensions.get::<crate::connections::PreviewCall>() {
         crate::connections::recheck_preview(&state, &p, preview).await?;
     }
-    let inst = domain::installation(&state, &p, id, false).await?;
+    let inst = domain::installation(&state, &p, id).await?;
     if inst.get::<String, _>("runtime_status") != "running"
         || inst.get::<String, _>("desired_state") != "running"
     {

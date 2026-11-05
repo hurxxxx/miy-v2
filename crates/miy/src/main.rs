@@ -91,6 +91,8 @@ mod permissions;
 #[cfg(all(test, feature = "server"))]
 mod permissions_regression;
 mod platform;
+#[cfg(feature = "server")]
+mod policy;
 mod preview;
 #[cfg(feature = "server")]
 mod read_api;

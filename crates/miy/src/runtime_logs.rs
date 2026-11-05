@@ -1,8 +1,8 @@
 //! Bounded, expiring diagnostics. The core queues requests; only the worker runs Docker.
+use crate::policy::{self, AppAction};
 use crate::{
     State,
     auth::Principal,
-    domain,
     http::{ApiError, ApiResult},
 };
 use axum::{
@@ -45,12 +45,12 @@ pub async fn request(
     {
         return Err(ApiError::bad("invalid_log_request"));
     }
-    domain::manage_action(
+    policy::require(
         &s,
         &p,
         &app,
         &input.environment,
-        crate::delegations::Action::Logs,
+        AppAction::Manage(crate::delegations::Action::Logs),
     )
     .await?;
     let mut tx = s.pool.begin().await?;
@@ -91,12 +91,12 @@ pub async fn get(
     {
         return Err(ApiError::forbidden());
     }
-    domain::manage_action(
+    policy::require(
         &s,
         &p,
         row.get("app_id"),
         row.get("environment"),
-        crate::delegations::Action::Logs,
+        AppAction::Manage(crate::delegations::Action::Logs),
     )
     .await?;
     Ok(Json(
@@ -153,7 +153,7 @@ async fn current(pool: &sqlx::PgPool, row: &sqlx::postgres::PgRow) -> Result<(),
     )
     .await
     .map_err(|_| "permission_revoked")?;
-    if !domain::can_manage(
+    if !policy::queued_manager(
         pool,
         row.get("actor"),
         row.get("app_id"),

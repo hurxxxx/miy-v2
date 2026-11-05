@@ -1,9 +1,9 @@
 //! Bounded authenticated archive transfer. Only the worker can load Docker images.
 pub use crate::image_contract::MAX_ARCHIVE;
+use crate::policy::{self, AppAction};
 use crate::{
     State,
     auth::Principal,
-    domain,
     http::{ApiError, ApiResult},
     runtime,
 };
@@ -26,7 +26,14 @@ pub async fn upload(
     Path(app): Path<String>,
     req: Request,
 ) -> ApiResult<Json<Value>> {
-    domain::manage_action(&s, &p, &app, "dev", crate::delegations::Action::Upload).await?;
+    policy::require(
+        &s,
+        &p,
+        &app,
+        "dev",
+        AppAction::Manage(crate::delegations::Action::Upload),
+    )
+    .await?;
     let image = req
         .headers()
         .get("x-miy-image")
@@ -151,12 +158,12 @@ pub async fn status(
         .fetch_optional(&s.pool)
         .await?
         .ok_or_else(ApiError::not_found)?;
-    domain::manage_action(
+    policy::require(
         &s,
         &p,
         row.get("app_id"),
         "dev",
-        crate::delegations::Action::Upload,
+        AppAction::Manage(crate::delegations::Action::Upload),
     )
     .await?;
     if row.get::<String, _>("actor") != p.id
@@ -178,7 +185,14 @@ pub async fn by_request(
     axum::Extension(p): axum::Extension<Principal>,
     Path((app, request)): Path<(String, Uuid)>,
 ) -> ApiResult<Json<Value>> {
-    domain::manage_action(&s, &p, &app, "dev", crate::delegations::Action::Upload).await?;
+    policy::require(
+        &s,
+        &p,
+        &app,
+        "dev",
+        AppAction::Manage(crate::delegations::Action::Upload),
+    )
+    .await?;
     let id: Uuid = sqlx::query_scalar(
         "SELECT id FROM image_uploads WHERE actor=$1 AND request_id=$2 AND app_id=$3",
     )
@@ -224,7 +238,7 @@ pub async fn tick(pool: &sqlx::PgPool) -> anyhow::Result<bool> {
         )
         .await?;
         anyhow::ensure!(
-            domain::can_manage(pool, row.get("actor"), &app, "dev").await?,
+            policy::queued_manager(pool, row.get("actor"), &app, "dev").await?,
             "permission_revoked"
         );
         let mut file = tokio::fs::File::open(&path).await?;

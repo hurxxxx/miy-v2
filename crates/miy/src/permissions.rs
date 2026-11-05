@@ -101,7 +101,7 @@ pub async fn require(
 }
 
 pub async fn read(s: &State, p: &Principal, installation: Uuid, release: Uuid) -> ApiResult<Value> {
-    domain::installation(s, p, installation, false).await?;
+    domain::installation(s, p, installation).await?;
     let requested = requested(&s.pool, installation, release).await?;
     let current=sqlx::query("SELECT revision,permissions,approved_by,approved_at FROM installation_permissions WHERE installation_id=$1 AND release_id=$2")
         .bind(installation).bind(release).fetch_optional(&s.pool).await?;
@@ -176,9 +176,7 @@ pub async fn get(
 ) -> ApiResult<Json<Value>> {
     let release = match q.release_id {
         Some(r) => r,
-        None => domain::installation(&s, &p, id, false)
-            .await?
-            .get("release_id"),
+        None => domain::installation(&s, &p, id).await?.get("release_id"),
     };
     Ok(Json(read(&s, &p, id, release).await?))
 }

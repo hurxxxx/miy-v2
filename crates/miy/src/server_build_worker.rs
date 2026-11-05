@@ -1,7 +1,8 @@
 //! Source builds use a worker-owned recipe and never invoke project tools on the
 //! host. A build receipt becomes successful only after immutable image and
 //! packaged artifact verification; deployment remains a separate operation.
-use crate::{bundle, contract, domain, server_build, source_archive};
+use crate::policy;
+use crate::{bundle, contract, server_build, source_archive};
 use anyhow::{Context, Result, ensure};
 use serde_json::{Value, json};
 use sqlx::{Row, postgres::PgRow};
@@ -368,7 +369,7 @@ async fn execute(pool: &sqlx::PgPool, row: &PgRow, recovering: bool) -> Result<(
     let id: Uuid = row.get("id");
     let app: String = row.get("app_id");
     ensure!(
-        domain::can_manage(pool, row.get("actor"), &app, "dev").await?
+        policy::queued_manager(pool, row.get("actor"), &app, "dev").await?
             && crate::delegations::check_queued(
                 pool,
                 row.get("actor"),
@@ -561,7 +562,7 @@ async fn execute(pool: &sqlx::PgPool, row: &PgRow, recovering: bool) -> Result<(
     // Authorization and history can change during a long compilation. A build
     // never applies migrations, provisions databases, or changes a release.
     ensure!(
-        domain::can_manage(pool, row.get("actor"), &app, "dev").await?
+        policy::queued_manager(pool, row.get("actor"), &app, "dev").await?
             && crate::delegations::check_queued(
                 pool,
                 row.get("actor"),

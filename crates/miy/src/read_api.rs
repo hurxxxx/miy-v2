@@ -4,6 +4,7 @@ use crate::{
     auth::Principal,
     domain,
     http::{ApiError, ApiResult},
+    policy::{self, AppAction},
 };
 use axum::{
     Extension, Json,
@@ -149,7 +150,7 @@ pub async fn page(s: &State, p: &Principal, kind: &str, mut q: Page) -> ApiResul
             "apps t",
             "t.id",
             "jsonb_build_object('id',t.id,'name',t.name)",
-            "($2 OR EXISTS(SELECT 1 FROM effective_grants g WHERE g.user_id=$1 AND g.app_id=t.id))",
+            "t.id=ANY($8::text[])",
             "t.id",
             "NULL::text",
             "NULL::text",
@@ -185,13 +186,8 @@ pub async fn page(s: &State, p: &Principal, kind: &str, mut q: Page) -> ApiResul
             "runtime_jobs t",
             "t.created_at::text||':'||t.id::text",
             "jsonb_build_object('id',t.id,'appId',t.app_id,'environment',t.environment,'action',t.action,'status',t.status,'step',t.step,'errorCode',t.error_code,'failureClass',t.failure_class,'retryable',t.retryable,'retryOf',t.retry_of,'requestId',t.idempotency_key,'imageId',t.image_id,'releaseId',t.release_id,'createdAt',t.created_at)",
-            // Match runtime::job: ordinary use, dev repair, or runtime management
-            // with the actual credential's miy.dev scope. Delegation read and
-            // app/environment scope were checked above, before pagination.
-            "($2 OR EXISTS(SELECT 1 FROM effective_grants g WHERE g.user_id=$1 AND g.app_id=t.app_id AND g.environment=t.environment)) \
-             AND (NOT EXISTS(SELECT 1 FROM app_controls c WHERE c.app_id=t.app_id AND c.disabled) \
-             OR (t.environment='dev' AND ($2 OR EXISTS(SELECT 1 FROM effective_grants g WHERE g.user_id=$1 AND g.app_id=t.app_id AND g.environment='dev' AND g.permission='develop'))) \
-             OR ($8 AND ($2 OR EXISTS(SELECT 1 FROM effective_grants g WHERE g.user_id=$1 AND g.app_id=t.app_id AND g.environment=t.environment AND g.permission=CASE WHEN t.environment='prod' THEN 'deploy' ELSE 'develop' END))))",
+            // The (app, environment) pairs where runtime::job would answer (FollowJob).
+            ALLOWED_PAIRS,
             "t.app_id",
             "t.environment",
             "t.idempotency_key",
@@ -200,9 +196,8 @@ pub async fn page(s: &State, p: &Principal, kind: &str, mut q: Page) -> ApiResul
             "installations t JOIN releases r ON r.id=t.release_id JOIN apps a ON a.id=t.app_id",
             "t.app_id||':'||t.environment||':'||t.id::text",
             INSTALLATION_VIEW,
-            "($2 OR EXISTS(SELECT 1 FROM effective_grants g WHERE g.user_id=$1 AND g.app_id=t.app_id AND g.environment=t.environment)) \
-             AND (NOT EXISTS(SELECT 1 FROM app_controls c WHERE c.app_id=t.app_id AND c.disabled) \
-             OR (t.environment='dev' AND ($2 OR EXISTS(SELECT 1 FROM effective_grants g WHERE g.user_id=$1 AND g.app_id=t.app_id AND g.environment='dev' AND g.permission='develop'))))",
+            // The pairs where the installation may be used (domain::installation).
+            ALLOWED_PAIRS,
             "t.app_id",
             "t.environment",
             "NULL::text",
@@ -212,6 +207,7 @@ pub async fn page(s: &State, p: &Principal, kind: &str, mut q: Page) -> ApiResul
     let sql = format!(
         "SELECT {key} AS key,{view} AS value FROM {source} WHERE {permission} AND {key}>$3 AND ($4::text IS NULL OR {app}=$4) AND ($5::text IS NULL OR {env}=$5) AND ($6::text IS NULL OR {request}=$6) ORDER BY {key} LIMIT $7"
     );
+    let q_app = q.app_id.clone();
     let mut query = sqlx::query(&sql)
         .bind(&p.id)
         .bind(is_admin)
@@ -220,9 +216,34 @@ pub async fn page(s: &State, p: &Principal, kind: &str, mut q: Page) -> ApiResul
         .bind(q.environment)
         .bind(q.request_id)
         .bind(limit + 1);
-    if kind == "jobs" {
-        query = query.bind(p.scopes.iter().any(|scope| scope == "miy.dev"));
-    }
+    let facts = match kind {
+        "apps" | "jobs" | "installations" => {
+            let facts = policy::Facts::load(&s.pool, p, q_app.as_deref()).await?;
+            let apps: Vec<String> =
+                sqlx::query_scalar("SELECT id FROM apps WHERE ($1::text IS NULL OR id=$1)")
+                    .bind(q_app.as_deref())
+                    .fetch_all(&s.pool)
+                    .await?;
+            query = match kind {
+                "apps" => query.bind(
+                    apps.into_iter()
+                        .filter(|app| facts.sees_app(app))
+                        .collect::<Vec<_>>(),
+                ),
+                _ => {
+                    let action = if kind == "jobs" {
+                        AppAction::FollowJob
+                    } else {
+                        AppAction::Use
+                    };
+                    let (apps, envs) = facts.allowed_pairs(&apps, action);
+                    query.bind(apps).bind(envs)
+                }
+            };
+            Some(facts)
+        }
+        _ => None,
+    };
     let mut rows = query.fetch_all(&s.pool).await?;
     let more = rows.len() > limit as usize;
     rows.truncate(limit as usize);
@@ -235,20 +256,35 @@ pub async fn page(s: &State, p: &Principal, kind: &str, mut q: Page) -> ApiResul
         .into_iter()
         .map(|row| {
             let mut value: Value = row.get("value");
-            if let Some(d) = &delegation
+            if let Some(facts) = &facts
                 && kind == "installations"
             {
-                value["canPromote"] =
-                    json!(d.allows(&d.app_id, "prod", crate::delegations::Action::Promote));
-                value["canManage"] = json!(false);
-                value["acceptance"] = Value::Null;
+                // Display values are the decisions this credential would get.
+                let flags = facts.flags(
+                    value["appId"].as_str().unwrap_or_default(),
+                    value["environment"].as_str().unwrap_or_default(),
+                );
+                let record = value
+                    .as_object_mut()
+                    .and_then(|item| item.remove("acceptanceRecord"))
+                    .unwrap_or(Value::Null);
+                value["canPromote"] = json!(flags.can_promote);
+                value["canManage"] = json!(flags.can_manage);
+                value["acceptance"] = if flags.can_manage {
+                    record
+                } else {
+                    Value::Null
+                };
             }
             value
         })
         .collect();
     Ok(json!({kind:values,"nextCursor":cursor}))
 }
-const INSTALLATION_VIEW: &str = "jsonb_build_object('id',t.id,'appId',t.app_id,'name',a.name,'environment',t.environment,'releaseId',t.release_id,'imageId',r.image_id,'sourceCommit',r.source_commit,'version',r.version,'manifestName',r.manifest->>'name','kind',CASE WHEN r.image_id IS NULL THEN 'validation_fixture' ELSE 'docker_app' END,'canPromote',($2 OR EXISTS(SELECT 1 FROM effective_grants g WHERE g.user_id=$1 AND g.app_id=t.app_id AND g.environment='prod' AND g.permission='deploy')),'lastOperation',(SELECT jsonb_build_object('id',j.id,'status',j.status,'action',j.action,'errorCode',j.error_code,'step',j.step,'retryable',j.retryable) FROM runtime_jobs j WHERE j.app_id=t.app_id AND j.environment=t.environment ORDER BY j.created_at DESC,j.id DESC LIMIT 1),'generation',t.control_generation,'dbStatus',t.db_status,'runtimeStatus',t.runtime_status,'desiredState',t.desired_state,'health',jsonb_build_object('status',t.health_status,'checkedAt',t.health_checked_at,'consecutiveFailures',t.health_failures),'canManage',($2 OR EXISTS(SELECT 1 FROM effective_grants g WHERE g.user_id=$1 AND g.app_id=t.app_id AND g.environment=t.environment AND g.permission=CASE WHEN t.environment='prod' THEN 'deploy' ELSE 'develop' END)),'acceptance',CASE WHEN ($2 OR EXISTS(SELECT 1 FROM effective_grants g WHERE g.user_id=$1 AND g.app_id=t.app_id AND g.environment=t.environment AND g.permission=CASE WHEN t.environment='prod' THEN 'deploy' ELSE 'develop' END)) THEN (SELECT jsonb_build_object('recordedBy',c.actor,'note',c.note,'checks',c.checks,'checkedAt',c.checked_at) FROM release_checks c WHERE c.release_id=r.id) ELSE NULL END)";
+const INSTALLATION_VIEW: &str = "jsonb_build_object('id',t.id,'appId',t.app_id,'name',a.name,'environment',t.environment,'releaseId',t.release_id,'imageId',r.image_id,'sourceCommit',r.source_commit,'version',r.version,'manifestName',r.manifest->>'name','kind',CASE WHEN r.image_id IS NULL THEN 'validation_fixture' ELSE 'docker_app' END,'lastOperation',(SELECT jsonb_build_object('id',j.id,'status',j.status,'action',j.action,'errorCode',j.error_code,'step',j.step,'retryable',j.retryable) FROM runtime_jobs j WHERE j.app_id=t.app_id AND j.environment=t.environment ORDER BY j.created_at DESC,j.id DESC LIMIT 1),'generation',t.control_generation,'dbStatus',t.db_status,'runtimeStatus',t.runtime_status,'desiredState',t.desired_state,'health',jsonb_build_object('status',t.health_status,'checkedAt',t.health_checked_at,'consecutiveFailures',t.health_failures),'acceptanceRecord',(SELECT jsonb_build_object('recordedBy',c.actor,'note',c.note,'checks',c.checks,'checkedAt',c.checked_at) FROM release_checks c WHERE c.release_id=r.id))";
+/// Rows whose (app, environment) is in the policy's allowed pairs ($8, $9).
+const ALLOWED_PAIRS: &str =
+    "(t.app_id,t.environment) IN (SELECT * FROM unnest($8::text[],$9::text[]))";
 pub async fn apps(
     S(s): S<State>,
     Extension(p): Extension<Principal>,
@@ -287,15 +323,18 @@ pub async fn app(
         )
         .await?;
     }
-    let admin = if p.delegation_id.is_some() {
-        sqlx::query_scalar::<_, bool>("SELECT admin AND enabled FROM users WHERE id=$1")
-            .bind(&p.id)
-            .fetch_one(&s.pool)
+    if !policy::Facts::load(&s.pool, &p, Some(&id))
+        .await?
+        .sees_app(&id)
+    {
+        return Err(ApiError::not_found());
+    }
+    let app: Value =
+        sqlx::query_scalar("SELECT jsonb_build_object('id',id,'name',name) FROM apps WHERE id=$1")
+            .bind(&id)
+            .fetch_optional(&s.pool)
             .await?
-    } else {
-        domain::admin(&s, &p).await.is_ok()
-    };
-    let app:Value=sqlx::query_scalar("SELECT jsonb_build_object('id',id,'name',name) FROM apps a WHERE id=$1 AND ($3 OR EXISTS(SELECT 1 FROM effective_grants WHERE user_id=$2 AND app_id=a.id))").bind(&id).bind(&p.id).bind(admin).fetch_optional(&s.pool).await?.ok_or_else(ApiError::not_found)?;
+            .ok_or_else(ApiError::not_found)?;
     let installs = page(
         &s,
         &p,

@@ -1,4 +1,5 @@
 //! Revocable user-to-agent authority. Scope never replaces current user grants.
+use crate::policy;
 use crate::{
     State,
     auth::Principal,
@@ -64,7 +65,7 @@ impl Action {
             Self::Logs => "logs",
         }
     }
-    fn management(self) -> bool {
+    pub(crate) fn management(self) -> bool {
         !matches!(
             self,
             Self::Read | Self::AppRead | Self::AppWrite | Self::DirectoryRead
@@ -109,16 +110,6 @@ pub async fn active(pool: &PgPool, user: &str, id: Uuid) -> ApiResult<Scope> {
         expires_at: row.get("expires_at"),
     })
 }
-async fn granted(
-    pool: &PgPool,
-    user: &str,
-    app: &str,
-    env: &str,
-    action: Action,
-) -> ApiResult<bool> {
-    Ok(sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM users u WHERE u.id=$1 AND u.enabled AND (u.admin OR EXISTS(SELECT 1 FROM effective_grants g WHERE g.user_id=u.id AND g.app_id=$2 AND g.environment=$3 AND (NOT $4 OR g.permission=$5))))")
-        .bind(user).bind(app).bind(env).bind(action.management()).bind(if env=="prod"{"deploy"}else{"develop"}).fetch_one(pool).await?)
-}
 pub async fn check(
     state: &State,
     p: &Principal,
@@ -140,10 +131,9 @@ pub async fn check_id(
     action: Action,
 ) -> ApiResult<()> {
     let scope = active(pool, user, id).await?;
-    if !scope.allows(app, env, action) || !granted(pool, user, app, env, action).await? {
-        return Err(denied("delegation_scope_denied"));
-    }
-    Ok(())
+    let mut facts = policy::Facts::actor(pool, user, Some(app)).await?;
+    facts.delegation = policy::Delegation::Active(scope);
+    Ok(facts.delegated(app, env, action)?)
 }
 pub async fn check_queued(
     pool: &PgPool,
@@ -220,9 +210,10 @@ pub async fn create(
     unrestricted(&p)?;
     validate(&input)?;
     crate::auth_sessions::ensure_active(&s.pool, &p.id).await?;
+    let facts = policy::Facts::actor(&s.pool, &p.id, Some(&input.app_id)).await?;
     for action in &input.actions {
         if (action.management() && !p.scopes.iter().any(|s| s == "miy.dev"))
-            || !granted(&s.pool, &p.id, &input.app_id, &input.environment, *action).await?
+            || !facts.delegable(&input.app_id, &input.environment, *action)
         {
             return Err(ApiError::forbidden());
         }

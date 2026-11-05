@@ -1,3 +1,4 @@
+use crate::policy::{self, AppAction};
 use crate::{State, auth::Principal, contract, domain};
 use axum::{
     Json, Router,
@@ -292,9 +293,15 @@ async fn ui_asset(
     let installations=sqlx::query("SELECT i.app_id,i.environment FROM installations i JOIN releases r ON r.id=i.release_id WHERE r.artifact_hash=$1").bind(&hash).fetch_all(&s.pool).await?;
     let mut allowed = false;
     for row in installations {
-        if domain::authorize(&s, &p, row.get("app_id"), row.get("environment"), false)
-            .await
-            .is_ok()
+        if policy::require(
+            &s,
+            &p,
+            row.get("app_id"),
+            row.get("environment"),
+            AppAction::Use,
+        )
+        .await
+        .is_ok()
         {
             allowed = true;
             break;
