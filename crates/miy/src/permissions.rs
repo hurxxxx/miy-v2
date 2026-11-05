@@ -160,7 +160,7 @@ pub async fn update(
         .ok()
         .and_then(|v| v.checked_add(1))
         .ok_or_else(|| ApiError::bad("invalid_revision"))?;
-    let mut tx = s.pool.begin().await?;
+    let mut tx = policy::Write::begin(&s.pool).await?;
     sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))")
         .bind(format!(
             "installation-permissions:{installation}:{}",
@@ -168,16 +168,10 @@ pub async fn update(
         ))
         .execute(&mut *tx)
         .await?;
-    // Recheck admin under the same transaction that records the approval.
-    let allowed: bool = sqlx::query_scalar(
-        "SELECT COALESCE((SELECT admin AND enabled FROM users WHERE id=$1 FOR SHARE),false)",
-    )
-    .bind(&p.id)
-    .fetch_one(&mut *tx)
-    .await?;
-    if !allowed {
-        return Err(ApiError::forbidden());
-    }
+    // Decide after the approval lock, in the transaction that records the approval.
+    let mut tx = tx
+        .decide_platform(p, policy::PlatformAction::Administer)
+        .await?;
     let previous: Option<i64> = sqlx::query_scalar(
         "SELECT revision FROM installation_permissions WHERE installation_id=$1 AND release_id=$2",
     )

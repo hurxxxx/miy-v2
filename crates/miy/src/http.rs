@@ -537,7 +537,7 @@ async fn set_user_state(
     Json(input): Json<UserState>,
 ) -> ApiResult<Json<Value>> {
     domain::admin(&s, &p).await?;
-    let mut tx = s.pool.begin().await?;
+    let mut tx = crate::policy::Write::begin(&s.pool).await?;
     sqlx::query("SELECT pg_advisory_xact_lock(73490130)")
         .execute(&mut *tx)
         .await?;
@@ -558,7 +558,9 @@ async fn set_user_state(
         target.get::<bool, _>("enabled"),
     );
     // Before the update: an administrator may still disable their own account.
-    domain::admin_locked(&mut tx, &p).await?;
+    let mut tx = tx
+        .decide_platform(&p, crate::policy::PlatformAction::Administer)
+        .await?;
     if !input.enabled && target_admin && before {
         let count: i64 = sqlx::query_scalar("SELECT count(*) FROM users WHERE admin AND enabled")
             .fetch_one(&mut *tx)

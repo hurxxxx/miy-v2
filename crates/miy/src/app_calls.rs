@@ -319,7 +319,7 @@ pub async fn identity(
         && !effective.is_empty()
         && context.callers.len() < MAX_HOPS
     {
-        let mut tx = s.pool.begin().await?;
+        let mut tx = crate::policy::Write::begin(&s.pool).await?;
         sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))")
             .bind(format!("app-call:{}", p.id))
             .execute(&mut *tx)
@@ -336,7 +336,13 @@ pub async fn identity(
         let token = format!("{PREFIX}{}", crate::auth::random());
         sqlx::query("INSERT INTO app_call_tokens(token_hash,user_id,cli_session_id,delegation_id,installation_id,release_id,environment,callers,effective_permissions,expires_at,permissions_used,origin) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)")
             .bind(contract::hash(&token)).bind(&p.id).bind(p.cli_session_id).bind(p.delegation_id).bind(id).bind(release).bind(&context.environment).bind(serde_json::to_value(&context.callers)?).bind(serde_json::to_value(&effective)?).bind(context.expires_at).bind(serde_json::to_value(&context.permissions_used)?).bind(context.origin.as_ref().map(serde_json::to_value).transpose()?).execute(&mut *tx).await?;
-        tx.commit().await?;
+        // The token carries this use of the installation; decide it before it exists.
+        let app: String = inst.get("app_id");
+        let environment: String = inst.get("environment");
+        tx.decide(p, &app, &environment, crate::policy::AppAction::Use)
+            .await?
+            .commit()
+            .await?;
         Some(token)
     } else {
         None

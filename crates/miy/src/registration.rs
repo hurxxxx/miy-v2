@@ -27,7 +27,7 @@ pub async fn request(s: &State, p: &Principal, v: domain::NewApp) -> ApiResult<V
     if !contract::valid_id(&v.id) || v.name.trim().is_empty() || v.name.len() > 120 {
         return Err(ApiError::bad("invalid_app"));
     }
-    let mut tx = s.pool.begin().await?;
+    let mut tx = crate::policy::Write::begin(&s.pool).await?;
     // The unique app ID serializes competing requests without giving the loser access.
     sqlx::query("INSERT INTO app_registrations(id,app_id,name,actor) VALUES($1,$2,$3,$4) ON CONFLICT(app_id) DO NOTHING").bind(Uuid::new_v4()).bind(&v.id).bind(&v.name).bind(&p.id).execute(&mut *tx).await?;
     let row = sqlx::query("SELECT * FROM app_registrations WHERE app_id=$1 FOR UPDATE")
@@ -46,7 +46,10 @@ pub async fn request(s: &State, p: &Principal, v: domain::NewApp) -> ApiResult<V
     }
     // A rejection is terminal; the requester cannot undo an administrator's decision.
     let result = view(&row);
-    tx.commit().await?;
+    tx.decide_platform(p, crate::policy::PlatformAction::RequestApp)
+        .await?
+        .commit()
+        .await?;
     Ok(result)
 }
 pub async fn list(s: &State, p: &Principal) -> ApiResult<Value> {
@@ -67,7 +70,7 @@ pub struct Decision {
 }
 pub async fn decide(s: &State, p: &Principal, id: Uuid, decision: Decision) -> ApiResult<Value> {
     domain::admin(s, p).await?;
-    let mut tx = s.pool.begin().await?;
+    let mut tx = crate::policy::Write::begin(&s.pool).await?;
     let row = sqlx::query("SELECT * FROM app_registrations WHERE id=$1 FOR UPDATE")
         .bind(id)
         .fetch_optional(&mut *tx)
@@ -98,7 +101,9 @@ pub async fn decide(s: &State, p: &Principal, id: Uuid, decision: Decision) -> A
     let row = sqlx::query("UPDATE app_registrations SET status=$2,decided_by=$3,updated_at=now() WHERE id=$1 RETURNING *").bind(id).bind(status).bind(&p.id).fetch_one(&mut *tx).await?;
     // Recheck once the registration, app and grant rows are held: a decision whose
     // administrator was revoked meanwhile rolls back together with its grant.
-    domain::admin_locked(&mut tx, p).await?;
+    let mut tx = tx
+        .decide_platform(p, crate::policy::PlatformAction::Administer)
+        .await?;
     if decision.approve {
         let target = domain::grant_audit_target(&requester, &app, "dev", "develop", false, true);
         crate::audit::record(&mut tx, &p.id, "grant.enabled", &target).await?;
@@ -123,7 +128,7 @@ pub async fn rename(s: &State, p: &Principal, app: &str, v: DisplayName) -> ApiR
     if name.is_empty() || name.len() > 120 {
         return Err(ApiError::bad("invalid_app_name"));
     }
-    let mut tx = s.pool.begin().await?;
+    let mut tx = crate::policy::Write::begin(&s.pool).await?;
     let changed = sqlx::query("UPDATE apps SET name=$2 WHERE id=$1")
         .bind(app)
         .bind(name)
@@ -134,8 +139,10 @@ pub async fn rename(s: &State, p: &Principal, app: &str, v: DisplayName) -> ApiR
         return Err(ApiError::not_found());
     }
     // The update may wait on the app row; decide after it, holding the actor row.
-    domain::admin_locked(&mut tx, p).await?;
-    tx.commit().await?;
+    tx.decide_platform(p, crate::policy::PlatformAction::Administer)
+        .await?
+        .commit()
+        .await?;
     Ok(
         json!({"appId":app,"name":name,"policy":"Platform display name; release manifest and application source are unchanged"}),
     )

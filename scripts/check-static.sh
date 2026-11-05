@@ -12,6 +12,7 @@ OUT=$PWD/.local/evidence/check-static
 
 rust_checks() {
   python3 scripts/check-bundle-portability.py source
+  python3 scripts/check-write-decisions.py
   cargo fmt --all -- --check
   cargo clippy --workspace --all-targets --locked -- -D warnings
   cargo clippy --workspace --all-targets --locked --no-default-features -- -D warnings
@@ -41,6 +42,7 @@ script_checks() {
   python3 scripts/runtime-regression/test_ui_cleanup.py
   python3 scripts/test-cli-release.py
   python3 scripts/test-cli-version.py
+  python3 scripts/test-write-decisions.py
   python3 scripts/test-cli-downloads.py
   python3 scripts/test-windows-installer-package.py
   python3 scripts/test-agent-acceptance-proxy.py

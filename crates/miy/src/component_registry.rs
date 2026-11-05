@@ -62,11 +62,13 @@ pub async fn publish(
     Json(package): Json<Package>,
 ) -> ApiResult<Json<Value>> {
     crate::domain::admin(&s, &p).await?;
-    let mut tx = s.pool.begin().await?;
+    let mut tx = crate::policy::Write::begin(&s.pool).await?;
     let stored = store(&mut tx, &p.id, package).await?;
     // The insert may wait for a concurrent publication of the same version.
-    crate::domain::admin_locked(&mut tx, &p).await?;
-    tx.commit().await?;
+    tx.decide_platform(&p, crate::policy::PlatformAction::Administer)
+        .await?
+        .commit()
+        .await?;
     Ok(Json(stored))
 }
 pub async fn seed(pool: &sqlx::PgPool) -> Result<()> {

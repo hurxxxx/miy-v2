@@ -107,13 +107,12 @@ pub async fn check_release(
     let fingerprint:Option<String>=sqlx::query_scalar("SELECT schema_fingerprint FROM db_resources WHERE app_id=$1 AND environment='dev' AND status='ready'").bind(app).fetch_optional(&state.pool).await?.flatten();
     let fingerprint =
         fingerprint.ok_or_else(|| ApiError::conflict("database_schema_unverified"))?;
-    let mut tx = state.pool.begin().await?;
+    let mut tx = policy::Write::begin(&state.pool).await?;
     sqlx::query("INSERT INTO release_checks(release_id,installation_id,actor,note,checks,schema_fingerprint) VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT(release_id) DO UPDATE SET actor=excluded.actor,note=excluded.note,checks=excluded.checks,schema_fingerprint=excluded.schema_fingerprint,checked_at=now()")
         .bind(v.release_id).bind(row.get::<Uuid,_>("id")).bind(&p.id).bind(v.note.trim()).bind(json!(v.checks)).bind(fingerprint).execute(&mut *tx).await?;
     // Decide again after waiting for the runtime lock and the health check, while a
     // denial still rolls the record back, as runtime admission does.
-    policy::require(state, p, app, "dev", decision).await?;
-    tx.commit().await?;
+    tx.decide(p, app, "dev", decision).await?.commit().await?;
     Ok(
         json!({"releaseId":v.release_id,"tested":true,"recordedBy":p.id,"checks":v.checks,"structured":!v.checks.is_empty(),"note":v.note.trim(),"meaning":"User-recorded test acceptance plus runtime health; not automatic business correctness verification"}),
     )
@@ -179,7 +178,8 @@ pub async fn request(
     } else {
         contract::hash(format!("{app}:{}:{}:{:?}", v.environment, v.action, image))
     };
-    let mut tx = state.pool.begin().await?;
+    let decision = AppAction::Request(v.action.parse()?);
+    let mut tx = policy::Write::begin(&state.pool).await?;
     sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))")
         .bind(format!("runtime-request:{}:{}", p.id, v.idempotency_key))
         .execute(&mut *tx)
@@ -196,16 +196,11 @@ pub async fn request(
         {
             return Err(ApiError::conflict("idempotency_conflict"));
         }
-        policy::require(
-            state,
-            p,
-            app,
-            &v.environment,
-            AppAction::Request(v.action.parse()?),
-        )
-        .await?;
         let value = job_value(&previous);
-        tx.commit().await?;
+        tx.decide(p, app, &v.environment, decision)
+            .await?
+            .commit()
+            .await?;
         return Ok(value);
     }
     if let Some(expected) = &v.expected_state {
@@ -271,18 +266,13 @@ pub async fn request(
     {
         return Err(ApiError::conflict("idempotency_conflict"));
     }
-    // Recheck after waiting for locks, while denial can still roll back the job.
-    // Return this authorized receipt without a second authorization after commit.
-    policy::require(
-        state,
-        p,
-        app,
-        &v.environment,
-        AppAction::Request(v.action.parse()?),
-    )
-    .await?;
+    // Decide after waiting for locks, while denial can still roll back the job, and
+    // return this authorized receipt without a second authorization after commit.
     let value = job_value(&row);
-    tx.commit().await?;
+    tx.decide(p, app, &v.environment, decision)
+        .await?
+        .commit()
+        .await?;
     Ok(value)
 }
 pub async fn job(state: &State, p: &Principal, id: Uuid) -> ApiResult<Value> {

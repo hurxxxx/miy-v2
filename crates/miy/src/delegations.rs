@@ -4,6 +4,7 @@ use crate::{
     State,
     auth::Principal,
     http::{ApiError, ApiResult},
+    policy::AppAction,
 };
 use axum::{
     Extension, Json,
@@ -97,9 +98,31 @@ impl Scope {
             && self.actions.iter().any(|v| v == action.as_str())
     }
 }
+const ACTIVE: &str = "SELECT d.* FROM delegations d JOIN users u ON u.id=d.user_id WHERE d.id=$1 AND d.user_id=$2 AND u.enabled AND d.revoked_at IS NULL AND d.expires_at>clock_timestamp() AND EXISTS(SELECT 1 FROM cli_sessions issued WHERE issued.delegation_id=d.id AND issued.revoked_at IS NULL AND issued.expires_at>clock_timestamp()) AND (d.parent_session_id IS NULL OR EXISTS(SELECT 1 FROM cli_sessions c WHERE c.id=d.parent_session_id AND c.user_id=d.user_id AND c.delegation_id IS NULL AND c.revoked_at IS NULL AND c.expires_at>clock_timestamp()))";
 pub async fn active(pool: &PgPool, user: &str, id: Uuid) -> ApiResult<Scope> {
-    let row=sqlx::query("SELECT d.* FROM delegations d JOIN users u ON u.id=d.user_id WHERE d.id=$1 AND d.user_id=$2 AND u.enabled AND d.revoked_at IS NULL AND d.expires_at>clock_timestamp() AND EXISTS(SELECT 1 FROM cli_sessions issued WHERE issued.delegation_id=d.id AND issued.revoked_at IS NULL AND issued.expires_at>clock_timestamp()) AND (d.parent_session_id IS NULL OR EXISTS(SELECT 1 FROM cli_sessions c WHERE c.id=d.parent_session_id AND c.user_id=d.user_id AND c.delegation_id IS NULL AND c.revoked_at IS NULL AND c.expires_at>clock_timestamp()))")
-        .bind(id).bind(user).fetch_optional(pool).await?.ok_or_else(||denied("delegation_expired_or_revoked"))?;
+    active_in(&mut *pool.acquire().await?, user, id, false).await
+}
+/// [`active`] through `connection`; with `lock` the delegation row stays share-locked
+/// until the transaction ends, so revoking it waits for the write being decided.
+pub(crate) async fn active_in(
+    connection: &mut sqlx::PgConnection,
+    user: &str,
+    id: Uuid,
+    lock: bool,
+) -> ApiResult<Scope> {
+    let locked;
+    let query = if lock {
+        locked = format!("{ACTIVE} FOR SHARE OF d");
+        locked.as_str()
+    } else {
+        ACTIVE
+    };
+    let row = sqlx::query(query)
+        .bind(id)
+        .bind(user)
+        .fetch_optional(connection)
+        .await?
+        .ok_or_else(|| denied("delegation_expired_or_revoked"))?;
     Ok(Scope {
         id: row.get("id"),
         user_id: row.get("user_id"),
@@ -187,16 +210,17 @@ pub async fn create(
     unrestricted(&p)?;
     validate(&input)?;
     crate::auth_sessions::ensure_active(&s.pool, &p.id).await?;
-    let facts = policy::Facts::actor(&s.pool, &p.id, Some(&input.app_id)).await?;
-    for action in &input.actions {
-        if (action.management() && !p.scopes.iter().any(|s| s == "miy.dev"))
-            || !facts.delegable(&input.app_id, &input.environment, *action)
-        {
-            return Err(ApiError::forbidden());
-        }
+    let delegated = || {
+        input
+            .actions
+            .iter()
+            .map(|action| AppAction::Delegate(*action))
+    };
+    let facts = policy::Facts::load(&s.pool, &p, Some(&input.app_id)).await?;
+    for action in delegated() {
+        facts.decide(&input.app_id, &input.environment, action)?;
     }
-    let mut tx = s.pool.begin().await?;
-    crate::auth_sessions::active_locked(&mut tx, &p.id).await?;
+    let mut tx = policy::Write::begin(&s.pool).await?;
     sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))")
         .bind(format!("delegations:{}", p.id))
         .execute(&mut *tx)
@@ -227,7 +251,11 @@ pub async fn create(
     .bind(id.to_string())
     .execute(&mut *tx)
     .await?;
-    tx.commit().await?;
+    // Decide after the per-user lock and the count, holding the account until commit.
+    tx.decide_all(&p, &input.app_id, &input.environment, delegated())
+        .await?
+        .commit()
+        .await?;
     Ok((
         [
             (header::CACHE_CONTROL, "no-store"),

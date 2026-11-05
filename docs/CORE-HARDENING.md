@@ -165,6 +165,9 @@ Windows 사용자 인수, 실제 콘솔 신호, 다른 OS 또는 Docker Desktop 
   7. ~~`GET /dev-sessions/by-request`는 소유자 필터만 있고 권한 판정이 없다.~~ 고침: 세션 조회와 같은 `Manage(dev_session)` 판정을 한다.
   8. ~~대기 작업 재확인의 횟수와 실패 분류가 작업 종류마다 다르다. 빌드·로그 요청은 DB 장애도 `permission_revoked`로 분류한다.~~ 고침: 모든 대기 작업이 시작 전과 긴 대기 뒤에 `recheck_queued` 하나를 부른다. 확정 거부는 `user_disabled`·`permission_revoked`이고, 권한을 읽지 못하면 `database_unavailable`(로그는 `diagnostic_unavailable`)이다. 이미지 적재는 이 코드를 `image_import_failed`로 덮지 않는다. 고치기 전 분류는 코드 판독이고 실행으로 재현하지 않았다. 고친 뒤의 분류는 단위 시험으로 확인했다.
   9. `GET /installations`는 질의가 있는지에 따라 응답 형식이 다른 두 구현으로 나뉜다. 3에서 한 형식으로 합친다.
+- **2의 셋째 단계(트랜잭션 안 판정):** 권한이 필요한 쓰기는 `policy::Write`로만 커밋한다. 쓰기와 잠금 뒤 같은 트랜잭션에서 판정하고, 판정을 통과한 트랜잭션(`Decided`)만 커밋할 수 있다. 관리자 재확인(`admin_locked`)과 실행 접수 재판정을 이 타입 하나로 바꿨다.
+  - 판정은 행위자의 사용자 행·위임 행을 커밋까지 공유 잠금한다. 권한·그룹 행은 잠그지 않는다(보기 `effective_grants`가 합집합이라 행 잠금이 안 되고, 관리 변경과의 잠금 순서 문제를 만들지 않기 위해서다).
+  - 목록 밖의 직접 트랜잭션과 주체 쓰기는 `scripts/check-write-decisions.py`가 막는다([검증 기록](releases/core-policy-transactions-2026-11-05-validation.json)).
 
 보류한 것:
 - core/CLI crate 분리: 클라이언트도 로컬 preview·MCP에 axum·sqlx·rmcp를 쓴다. 3의 계약 타입을 별도 모듈로 모으는 데까지만 한다.

@@ -53,7 +53,7 @@ pub async fn request(
         AppAction::Manage(crate::delegations::Action::Logs),
     )
     .await?;
-    let mut tx = s.pool.begin().await?;
+    let mut tx = policy::Write::begin(&s.pool).await?;
     sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))")
         .bind(format!("logs:{}", p.id))
         .execute(&mut *tx)
@@ -69,8 +69,16 @@ pub async fn request(
     }
     let row=sqlx::query("SELECT id,control_generation,runtime_container FROM installations WHERE app_id=$1 AND environment=$2 AND runtime_status='running' AND runtime_container IS NOT NULL").bind(&app).bind(&input.environment).fetch_optional(&mut *tx).await?.ok_or_else(||ApiError::conflict("runtime_not_running"))?;
     let id = Uuid::new_v4();
-    let expires:chrono::DateTime<chrono::Utc>=sqlx::query_scalar("INSERT INTO runtime_log_requests(id,actor,app_id,environment,installation_id,generation,expected_container,tail,since,delegation_id) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING expires_at").bind(id).bind(&p.id).bind(app).bind(input.environment).bind(row.get::<Uuid,_>("id")).bind(row.get::<i64,_>("control_generation")).bind(row.get::<String,_>("runtime_container")).bind(input.tail).bind(input.since).bind(p.delegation_id).fetch_one(&mut *tx).await?;
-    tx.commit().await?;
+    let expires:chrono::DateTime<chrono::Utc>=sqlx::query_scalar("INSERT INTO runtime_log_requests(id,actor,app_id,environment,installation_id,generation,expected_container,tail,since,delegation_id) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING expires_at").bind(id).bind(&p.id).bind(&app).bind(&input.environment).bind(row.get::<Uuid,_>("id")).bind(row.get::<i64,_>("control_generation")).bind(row.get::<String,_>("runtime_container")).bind(input.tail).bind(input.since).bind(p.delegation_id).fetch_one(&mut *tx).await?;
+    tx.decide(
+        &p,
+        &app,
+        &input.environment,
+        AppAction::Manage(crate::delegations::Action::Logs),
+    )
+    .await?
+    .commit()
+    .await?;
     Ok(Json(json!({"id":id,"status":"queued","expiresAt":expires})))
 }
 pub async fn get(

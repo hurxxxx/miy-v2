@@ -175,7 +175,7 @@ pub async fn upload(
     authorize(&s, &p, &app).await?;
     let input = UploadInput::parse(req.headers())?;
     prepare_root().await?;
-    let mut tx = s.pool.begin().await?;
+    let mut tx = policy::Write::begin(&s.pool).await?;
     // Short admission lock protects aliases, content deduplication and both caps.
     // The slow stream never holds this transaction or the global queue lock.
     sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended('server-build-admission',0))")
@@ -223,7 +223,15 @@ pub async fn upload(
         .bind(&p.id).bind(input.request_id).bind(id).execute(&mut *tx).await?;
     sqlx::query("UPDATE app_builds SET upload_expires_at=clock_timestamp()+interval '5 minutes' WHERE id=$1 AND status='receiving'")
         .bind(id).execute(&mut *tx).await?;
-    tx.commit().await?;
+    tx.decide(
+        &p,
+        &app,
+        "dev",
+        AppAction::Manage(crate::delegations::Action::Build),
+    )
+    .await?
+    .commit()
+    .await?;
     if previous
         .as_ref()
         .is_some_and(|row| row.get::<String, _>("status") != "receiving")

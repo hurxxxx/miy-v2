@@ -36,26 +36,6 @@ pub async fn admin(state: &State, p: &Principal) -> ApiResult<()> {
         Err(ApiError::forbidden())
     }
 }
-/// Recheck after mutation locks have been acquired, and hold authority until commit.
-/// Callers keep all writes in this transaction so denial rolls them back. Operations
-/// that update users must lock actor/target rows in ID order before their writes.
-pub(crate) async fn admin_locked(
-    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
-    p: &Principal,
-) -> ApiResult<()> {
-    crate::delegations::unrestricted(p)?;
-    let allowed: bool = sqlx::query_scalar(
-        "SELECT COALESCE((SELECT admin AND enabled FROM users WHERE id=$1 FOR SHARE),false)",
-    )
-    .bind(&p.id)
-    .fetch_one(&mut **tx)
-    .await?;
-    if allowed {
-        Ok(())
-    } else {
-        Err(ApiError::forbidden())
-    }
-}
 pub async fn me(state: &State, p: &Principal) -> ApiResult<Value> {
     crate::auth_sessions::ensure_active(&state.pool, &p.id).await?;
     let row = sqlx::query("SELECT name,admin FROM users WHERE id=$1")
@@ -93,15 +73,17 @@ pub async fn create_app(state: &State, p: &Principal, v: NewApp) -> ApiResult<Va
     if !contract::valid_id(&v.id) || v.name.trim().is_empty() || v.name.len() > 120 {
         return Err(ApiError::bad("invalid_app"));
     }
-    let mut tx = state.pool.begin().await?;
+    let mut tx = crate::policy::Write::begin(&state.pool).await?;
     sqlx::query("INSERT INTO apps VALUES($1,$2)")
         .bind(&v.id)
         .bind(&v.name)
         .execute(&mut *tx)
         .await?;
     // The insert may wait for a concurrent one with the same ID; decide after it.
-    admin_locked(&mut tx, p).await?;
-    tx.commit().await?;
+    tx.decide_platform(p, crate::policy::PlatformAction::Administer)
+        .await?
+        .commit()
+        .await?;
     Ok(json!({"id":v.id,"name":v.name}))
 }
 #[derive(Deserialize, schemars::JsonSchema)]
@@ -128,6 +110,7 @@ pub async fn create_release(
         return Err(ApiError::bad("invalid_artifact"));
     }
     let id = Uuid::new_v4();
+    let mut tx = policy::Write::begin(&state.pool).await?;
     sqlx::query(
         "INSERT INTO releases(id,app_id,version,artifact_hash,manifest) VALUES($1,$2,$3,$4,$5)",
     )
@@ -136,8 +119,12 @@ pub async fn create_release(
     .bind(&m.version)
     .bind(&v.artifact_hash)
     .bind(serde_json::to_value(&m)?)
-    .execute(&state.pool)
+    .execute(&mut *tx)
     .await?;
+    tx.decide(p, app, "dev", AppAction::Develop)
+        .await?
+        .commit()
+        .await?;
     Ok(json!({"id":id,"artifactHash":v.artifact_hash,"manifest":m,"kind":"validation_fixture"}))
 }
 #[derive(Deserialize, schemars::JsonSchema)]
@@ -169,12 +156,17 @@ pub async fn create_installation(
         return Err(ApiError::bad("release_app_mismatch"));
     }
     let id = Uuid::new_v4();
+    let mut tx = policy::Write::begin(&state.pool).await?;
     sqlx::query("INSERT INTO installations(id,app_id,environment,release_id) VALUES($1,$2,$3,$4)")
         .bind(id)
         .bind(&v.app_id)
         .bind(&v.environment)
         .bind(v.release_id)
-        .execute(&state.pool)
+        .execute(&mut *tx)
+        .await?;
+    tx.decide(p, &v.app_id, &v.environment, AppAction::Develop)
+        .await?
+        .commit()
         .await?;
     Ok(
         json!({"id":id,"appId":v.app_id,"environment":v.environment,"runtimeStatus":"not_deployed","desiredState":"stopped"}),
@@ -277,21 +269,32 @@ pub async fn prepare(state: &State, p: &Principal, v: Prepare) -> ApiResult<Valu
     }
     let input = contract::hash(format!("{}:{}", v.installation_id, v.release_id));
     let id = Uuid::new_v4();
+    let mut tx = policy::Write::begin(&state.pool).await?;
     sqlx::query("INSERT INTO jobs(id,installation_id,release_id,actor,idempotency_key,input_hash,delegation_id) VALUES($1,$2,$3,$4,$5,$6,$7) ON CONFLICT(actor,idempotency_key) DO NOTHING")
-        .bind(id).bind(v.installation_id).bind(v.release_id).bind(&p.id).bind(&v.idempotency_key).bind(&input).bind(p.delegation_id).execute(&state.pool).await?;
-    let row = sqlx::query(
-        "SELECT id,input_hash,delegation_id FROM jobs WHERE actor=$1 AND idempotency_key=$2",
-    )
-    .bind(&p.id)
-    .bind(&v.idempotency_key)
-    .fetch_one(&state.pool)
-    .await?;
+        .bind(id).bind(v.installation_id).bind(v.release_id).bind(&p.id).bind(&v.idempotency_key).bind(&input).bind(p.delegation_id).execute(&mut *tx).await?;
+    let row = sqlx::query("SELECT * FROM jobs WHERE actor=$1 AND idempotency_key=$2")
+        .bind(&p.id)
+        .bind(&v.idempotency_key)
+        .fetch_one(&mut *tx)
+        .await?;
     if row.get::<String, _>("input_hash") != input
         || row.get::<Option<Uuid>, _>("delegation_id") != p.delegation_id
     {
         return Err(ApiError::conflict("idempotency_conflict"));
     }
-    get_job(state, p, row.get("id")).await
+    // Decide after the insert waited on any competing request with this key; the
+    // receipt is the row read here, not a second authorization after commit.
+    let receipt = job_view(&row);
+    tx.decide(
+        p,
+        &app,
+        &env,
+        AppAction::Request(crate::delegations::Action::PrepareDatabase),
+    )
+    .await?
+    .commit()
+    .await?;
+    Ok(receipt)
 }
 pub async fn get_job(state: &State, p: &Principal, id: Uuid) -> ApiResult<Value> {
     let row = sqlx::query("SELECT * FROM jobs WHERE id=$1")
@@ -300,9 +303,10 @@ pub async fn get_job(state: &State, p: &Principal, id: Uuid) -> ApiResult<Value>
         .await?
         .ok_or_else(ApiError::not_found)?;
     installation(state, p, row.get("installation_id")).await?;
-    Ok(
-        json!({"id":id,"installationId":row.get::<Uuid,_>("installation_id"),"releaseId":row.get::<Uuid,_>("release_id"),"status":row.get::<String,_>("status"),"step":row.get::<String,_>("step"),"errorCode":row.get::<Option<String>,_>("error_code")}),
-    )
+    Ok(job_view(&row))
+}
+fn job_view(row: &sqlx::postgres::PgRow) -> Value {
+    json!({"id":row.get::<Uuid,_>("id"),"installationId":row.get::<Uuid,_>("installation_id"),"releaseId":row.get::<Uuid,_>("release_id"),"status":row.get::<String,_>("status"),"step":row.get::<String,_>("step"),"errorCode":row.get::<Option<String>,_>("error_code")})
 }
 #[derive(Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -320,7 +324,7 @@ pub async fn grant(state: &State, p: &Principal, v: Grant) -> ApiResult<Value> {
     {
         return Err(ApiError::bad("invalid_grant"));
     }
-    let mut tx = state.pool.begin().await?;
+    let mut tx = crate::policy::Write::begin(&state.pool).await?;
     let changed = if v.enabled {
         sqlx::query("INSERT INTO grants VALUES($1,$2,$3,$4) ON CONFLICT DO NOTHING")
             .bind(&v.user_id)
@@ -333,7 +337,9 @@ pub async fn grant(state: &State, p: &Principal, v: Grant) -> ApiResult<Value> {
     } else {
         sqlx::query("DELETE FROM grants WHERE user_id=$1 AND app_id=$2 AND environment=$3 AND permission=$4").bind(&v.user_id).bind(&v.app_id).bind(&v.environment).bind(&v.permission).execute(&mut *tx).await?.rows_affected()
     };
-    admin_locked(&mut tx, p).await?;
+    let mut tx = tx
+        .decide_platform(p, crate::policy::PlatformAction::Administer)
+        .await?;
     let before = if v.enabled {
         changed == 0
     } else {

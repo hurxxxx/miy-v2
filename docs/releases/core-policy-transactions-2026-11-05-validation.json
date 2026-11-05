@@ -1,0 +1,112 @@
+{
+  "date": "2026-11-05",
+  "baseCommit": "9540a55fae95d25599aa803f0e8838531f5e8d34",
+  "validatedTree": "baseCommit plus the changes identified by sourceFileSha256 (documentation excluded)",
+  "status": "PASS",
+  "scope": [
+    "CORE-HARDENING structure foundation item 2, third step: writes commit only after a decision made inside their transaction, after their locks",
+    "policy::Write opens the transaction; Write::decide / decide_all (app actions) and Write::decide_platform (Administer, RequestApp) read the facts through it and return Decided, the only type that commits. Dropping either rolls back",
+    "The decision share-locks the actor's user row and delegation row until commit, so disabling the user, revoking administrator rights or revoking the delegation waits for an in-flight write. Grant and group rows are not locked",
+    "Converted: all administrator writes (domain::admin_locked removed), installation approval changes, app registration requests, runtime and database admission, test acceptance, release and installation creation, image upload, log request, dev-session creation and heartbeat, build admission, app-call tokens and delegation issue (new AppAction::Delegate)",
+    "scripts/check-write-decisions.py (in check-static.sh rust) fails on a raw transaction or a principal handler's write outside policy::Write unless the function is listed with a reason (identity flows, own credential or lease reductions, read-only snapshots, worker bookkeeping); listed entries that no longer apply also fail"
+  ],
+  "behaviorChanges": [
+    "POST /api/v1/installations, POST /api/v1/database/prepare and POST /api/v1/delegations decide again after their lock waits: a developer whose grant is revoked during the wait gets 403 and nothing is written (previously installation creation and delegation issue answered 200, and database preparation answered 403 but kept the stored job)",
+    "Database preparation stores the job and decides in one transaction and answers with the job read there (previously the receipt was read with a separate use check after the insert)",
+    "Release creation, dev-session heartbeat, app-call token issue, image upload, log request, dev-session and build admission now also decide inside their transaction before commit; their admission checks are unchanged",
+    "User disable, administrator revocation and delegation revocation wait for writes already decided under them"
+  ],
+  "deploymentPerformed": false,
+  "pushPerformed": false,
+  "defectReproduction": [
+    {
+      "command": "python3 scripts/runtime-regression/run.py",
+      "tree": "baseCommit plus the new app-write observation (temporary git worktree, CARGO_TARGET_DIR shared); the account-hold observation needs policy::Write and was left out",
+      "startedAt": "2026-11-05T09:02:34Z",
+      "status": "FAIL",
+      "expected": true,
+      "observations": 75,
+      "passedObservations": 74,
+      "failures": [
+        "create installation: answered HTTP 200 and kept its write after the developer's grant was revoked during the lock wait",
+        "prepare database: answered HTTP 403 but kept the stored job",
+        "issue delegation: answered HTTP 200 and kept the delegation"
+      ],
+      "cleanupErrors": 0
+    }
+  ],
+  "checks": [
+    {
+      "command": "bash scripts/check-static.sh rust",
+      "status": "PASS",
+      "serverTests": 176,
+      "serverIgnored": 7,
+      "clientTests": 113,
+      "writeDecisions": "20 listed transactions, 6 listed writers",
+      "unitTestChange": "decisions_reproduce_the_replaced_checks_for_every_combination also compares AppAction::Delegate with the replaced delegation issue checks"
+    },
+    {
+      "command": "python3 scripts/test-write-decisions.py",
+      "status": "PASS",
+      "tests": 3
+    },
+    {
+      "command": "bash scripts/check-static.sh scripts",
+      "status": "PASS",
+      "note": "includes check-doc-links.py and test-write-decisions.py; run with another worker's uncommitted scripts/test-core-ops.py present"
+    },
+    {
+      "command": "python3 scripts/runtime-regression/run.py",
+      "status": "PASS",
+      "startedAt": "2026-11-05T09:07:51Z",
+      "finishedAt": "2026-11-05T09:11:52Z",
+      "observations": 98,
+      "suites": {
+        "runtime": 46,
+        "operations": 6,
+        "cli": 6,
+        "auth": 8,
+        "permissions": 23,
+        "delegation": 9
+      },
+      "testBinarySha256": "6ecca82c04106969612639202e8e7543298de6651b4fbc7abba234cefc05546c",
+      "cleanupErrors": 0,
+      "newObservations": [
+        "a decided write holds its actor's account until it commits (disable waited for the write; it did not finish before commit; it disabled the user after commit)",
+        "installation creation, database preparation and delegation issue decide after their PostgreSQL lock wait"
+      ]
+    }
+  ],
+  "notRun": [
+    "GitHub Actions for this tree (not pushed)",
+    "No pre-fix run for the account-hold observation: it exercises policy::Write, which the base commit does not have",
+    "Delegation-row holding (a delegation revocation waiting for a delegated write) is implemented by the same locked read but has no observation of its own",
+    "The server build and development database regressions were not run; build admission and dev-session writes are covered by the static check, compilation and the isolated regression above"
+  ],
+  "sourceFileSha256": {
+    "crates/miy/src/app_calls.rs": "07c06ce1ef5f221ac6403a731063a443e4618f18b24f878ba9da1d44964766bb",
+    "crates/miy/src/audit.rs": "e15588c9757e6c813bb9fb9c340092e9b28a7d91d0d38b9bc5f8bd1deaa0c939",
+    "crates/miy/src/component_registry.rs": "84518adcbe80d535b2c00238bf627aa24cfd9566e380eca3f4223b138d9a9fef",
+    "crates/miy/src/delegations.rs": "be84bfbbd17bf87fd6b5f29499a47c96726787f54701b229b6e839ba8eab6a1e",
+    "crates/miy/src/delivery.rs": "3072b3dc78fce447d518eb29e8da0306c37edeb253397100b7bc46f9de1eaaf5",
+    "crates/miy/src/development.rs": "53e577f7d6287802ade1f43fac5e61a4b0bbcacab76cda54e2245c9ddca286ac",
+    "crates/miy/src/domain.rs": "cafee82ceb11bfeddaa8bd3847ec6daa17d7f83f5329282722db18999313115a",
+    "crates/miy/src/groups.rs": "d51e5a51843dcadfddcecf2cd3f6487ced2c9a3a3708b8e43b88c95a271f33fa",
+    "crates/miy/src/http.rs": "7c6005af9c06d331da538ad2ab076001cfaea0d4b92259b12b8d7d84a3254118",
+    "crates/miy/src/permissions.rs": "e27fd2e1764c58180c7a3d076360a8bbde531f7b57d0fe85bbebe1f55376a956",
+    "crates/miy/src/permissions_regression.rs": "ed3b4265c37ebc88659c5d0a6b6ec7bcc89d9aa4f1140154c26c078c72f62ebf",
+    "crates/miy/src/policy.rs": "bec9105879a626cf77e3d3aa16f56711d1715e032a56bf0450881983b777fbab",
+    "crates/miy/src/registration.rs": "69c65fa58773e96e784465de26800724f436f7b2dd6594476392eebc267b5b5e",
+    "crates/miy/src/runtime.rs": "2893333e0067d9a33bcef0650ddd8f87256412be92e670ee9b892a5df297cddf",
+    "crates/miy/src/runtime_logs.rs": "c51694601e4c262d33425a27a943170fdee23718b582c22a77e2c096e587dcbd",
+    "crates/miy/src/runtime_regression.rs": "cb2f3f7554fa498f9338af48c869825f05d1cdb6a6a3c71aa46b782c14a2cf0b",
+    "crates/miy/src/server_build.rs": "a4403f9914d10816d239d088945e48d600ba00b2c470a877bea9718d478541fe",
+    "scripts/check-static.sh": "fd8b2bad554d87f50ef29539740553b0d1fe4c7bd59158d87c9fce7eb08dd397",
+    "scripts/runtime-regression/run.py": "54977a7a81c7399742898962d4a5d19bec39f89428cf22f94e359c3d6c89c5aa",
+    "scripts/test-write-decisions.py": "90feb52e8a6913630d5ad0134d34931fef08136615ab6747b43d99b1f1fd5532"
+  },
+  "limits": [
+    "Grant, group membership, admission and company-switch changes do not wait for in-flight writes; a write decided just before such a change still commits. Queued work rechecks before acting",
+    "The static check reads function bodies line by line; a write issued through a helper that takes a pool instead of a transaction is not detected"
+  ]
+}

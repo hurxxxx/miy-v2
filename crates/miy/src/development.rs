@@ -149,7 +149,7 @@ pub async fn create(
     validate_request(&app, &input)?;
     let input_data = serde_json::to_value(&input)?;
     let input_hash = contract::hash(serde_json::to_vec(&input_data)?);
-    let mut tx = state.pool.begin().await?;
+    let mut tx = policy::Write::begin(&state.pool).await?;
     sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))")
         .bind(format!(
             "dev-request:{}:{parent}:{}",
@@ -159,7 +159,10 @@ pub async fn create(
         .await?;
     if let Some(row)=sqlx::query("SELECT * FROM app_dev_sessions WHERE actor=$1 AND parent_session_id=$2 AND idempotency_key=$3").bind(&p.id).bind(parent).bind(&input.idempotency_key).fetch_optional(&mut *tx).await? {
         if row.get::<String,_>("input_hash")!=input_hash {return Err(ApiError::conflict("idempotency_conflict"));}
-        tx.commit().await?;
+        tx.decide(&p, &app, "dev", AppAction::Manage(crate::delegations::Action::DevSession))
+            .await?
+            .commit()
+            .await?;
         return Ok(Json(creation_reply(&state.pool,&row).await?));
     }
     let locked: bool =
@@ -190,7 +193,15 @@ pub async fn create(
     let connection = json!({"database":resource.database,"user":role,"password":auth::random(),"tunnelToken":token});
     sqlx::query("INSERT INTO app_dev_sessions(id,app_id,database_id,actor,parent_session_id,idempotency_key,input_hash,request_data,role_name,connection_secret,tunnel_token_hash) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)")
         .bind(id).bind(&app).bind(resource.id).bind(&p.id).bind(parent).bind(&input.idempotency_key).bind(input_hash).bind(input_data).bind(role).bind(auth::encrypt(&connection.to_string())?).bind(contract::hash(&token)).execute(&mut *tx).await?;
-    tx.commit().await?;
+    tx.decide(
+        &p,
+        &app,
+        "dev",
+        AppAction::Manage(crate::delegations::Action::DevSession),
+    )
+    .await?
+    .commit()
+    .await?;
     let row = sqlx::query("SELECT * FROM app_dev_sessions WHERE id=$1")
         .bind(id)
         .fetch_one(&state.pool)
@@ -241,7 +252,18 @@ pub async fn heartbeat(
     if !session_valid(&state.pool, id).await? {
         return Err(ApiError::conflict("development_session_expired"));
     }
-    let row=sqlx::query("UPDATE app_dev_sessions SET expires_at=now()+interval '120 seconds',updated_at=now() WHERE id=$1 AND status IN ('queued','preparing','ready') AND expires_at>now() RETURNING *").bind(id).fetch_optional(&state.pool).await?.ok_or_else(||ApiError::conflict("development_session_expired"))?;
+    let mut tx = policy::Write::begin(&state.pool).await?;
+    let row=sqlx::query("UPDATE app_dev_sessions SET expires_at=now()+interval '120 seconds',updated_at=now() WHERE id=$1 AND status IN ('queued','preparing','ready') AND expires_at>now() RETURNING *").bind(id).fetch_optional(&mut *tx).await?.ok_or_else(||ApiError::conflict("development_session_expired"))?;
+    let app: String = row.get("app_id");
+    tx.decide(
+        &p,
+        &app,
+        "dev",
+        AppAction::Manage(crate::delegations::Action::DevSession),
+    )
+    .await?
+    .commit()
+    .await?;
     Ok(Json(public(&state.pool, &row).await?))
 }
 pub async fn close(

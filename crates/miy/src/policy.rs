@@ -3,9 +3,9 @@
 //! Every decision is a pure function over [`Facts`] loaded once for a principal, so a
 //! detail check, list visibility and the `canOpen`/`canManage`/`canPromote` display
 //! values share one definition. Handlers name an [`AppAction`]; they do not choose
-//! among check functions. Queued work rechecks through [`recheck_queued`], the same
-//! decision without a credential. Administrative endpoints keep `domain::admin` and
-//! `domain::admin_locked`.
+//! among check functions. Writes commit only through [`Write`], decided inside their
+//! transaction after their locks. Queued work rechecks through [`recheck_queued`], the
+//! same decision without a credential.
 use crate::{
     State,
     auth::Principal,
@@ -14,8 +14,11 @@ use crate::{
     runtime_contract::{FailureCode, RuntimeFailure},
 };
 use axum::http::StatusCode;
-use sqlx::{PgPool, Row};
-use std::collections::{HashMap, HashSet};
+use sqlx::{PgConnection, PgPool, Postgres, Row, Transaction};
+use std::{
+    collections::{HashMap, HashSet},
+    ops::{Deref, DerefMut},
+};
 use uuid::Uuid;
 
 /// Every installation, job and grant uses one of these environments (database checks).
@@ -41,6 +44,20 @@ pub enum AppAction {
     /// test acceptance), so the action and [`AppAction::Observe`] must both hold: a
     /// delegation needs the action and `read`.
     Request(Action),
+    /// Issue a delegation carrying the action: an undelegated credential whose user
+    /// holds the right behind it (the management grant for a management action, any
+    /// grant for a read); a management action also needs `miy.dev`.
+    Delegate(Action),
+}
+
+/// Decisions that name no app.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PlatformAction {
+    /// Administrator changes: an undelegated, enabled administrator.
+    Administer,
+    /// Ask for a new app: an undelegated, enabled administrator or developer
+    /// (`can_develop`) with `miy.dev`.
+    RequestApp,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -120,35 +137,58 @@ pub struct Facts {
 impl Facts {
     /// Facts for `p`, limited to `app` when given; `None` loads every app (lists).
     pub async fn load(pool: &PgPool, p: &Principal, app: Option<&str>) -> ApiResult<Self> {
-        let delegation = match p.delegation_id {
+        Self::load_in(&mut *pool.acquire().await?, p, app, false).await
+    }
+
+    /// [`Facts::load`] through `connection`. With `lock` the user row, then the
+    /// delegation row, stay share-locked until the transaction ends ([`Write`]).
+    async fn load_in(
+        connection: &mut PgConnection,
+        p: &Principal,
+        app: Option<&str>,
+        lock: bool,
+    ) -> ApiResult<Self> {
+        let mut facts = Self::read(&mut *connection, &p.id, app, lock).await?;
+        facts.dev_scope = p.scopes.iter().any(|scope| scope == "miy.dev");
+        facts.delegation = match p.delegation_id {
             None => Delegation::None,
-            Some(id) => match delegations::active(pool, &p.id, id).await {
+            Some(id) => match delegations::active_in(connection, &p.id, id, lock).await {
                 Ok(scope) => Delegation::Active(scope),
                 Err(error) if error.status == StatusCode::FORBIDDEN => Delegation::Inactive,
                 Err(error) => return Err(error),
             },
         };
-        let mut facts = Self::actor(pool, &p.id, app).await?;
-        facts.dev_scope = p.scopes.iter().any(|scope| scope == "miy.dev");
-        facts.delegation = delegation;
         Ok(facts)
     }
 
     /// Facts for a stored actor without a credential (queued work): no scope, no delegation.
     pub async fn actor(pool: &PgPool, actor: &str, app: Option<&str>) -> Result<Self, sqlx::Error> {
-        let user = sqlx::query("SELECT enabled,admin FROM users WHERE id=$1")
-            .bind(actor)
-            .fetch_optional(pool)
-            .await?
-            .map(|row| User {
-                enabled: row.get("enabled"),
-                admin: row.get("admin"),
-            });
+        Self::read(&mut *pool.acquire().await?, actor, app, false).await
+    }
+
+    async fn read(
+        connection: &mut PgConnection,
+        actor: &str,
+        app: Option<&str>,
+        lock: bool,
+    ) -> Result<Self, sqlx::Error> {
+        let user = sqlx::query(if lock {
+            "SELECT enabled,admin FROM users WHERE id=$1 FOR SHARE"
+        } else {
+            "SELECT enabled,admin FROM users WHERE id=$1"
+        })
+        .bind(actor)
+        .fetch_optional(&mut *connection)
+        .await?
+        .map(|row| User {
+            enabled: row.get("enabled"),
+            admin: row.get("admin"),
+        });
         let mut grants: HashMap<(String, String), Grants> = HashMap::new();
         for row in sqlx::query("SELECT app_id,environment,permission FROM effective_grants WHERE user_id=$1 AND ($2::text IS NULL OR app_id=$2)")
             .bind(actor)
             .bind(app)
-            .fetch_all(pool)
+            .fetch_all(&mut *connection)
             .await?
         {
             let entry = grants
@@ -165,7 +205,7 @@ impl Facts {
             "SELECT app_id FROM app_controls WHERE disabled AND ($1::text IS NULL OR app_id=$1)",
         )
         .bind(app)
-        .fetch_all(pool)
+        .fetch_all(&mut *connection)
         .await?
         .into_iter()
         .collect();
@@ -299,6 +339,17 @@ impl Facts {
                 self.decide(app, env, AppAction::Manage(action))?;
                 self.decide(app, env, AppAction::Observe)
             }
+            AppAction::Delegate(action) => {
+                if !matches!(self.delegation, Delegation::None) {
+                    return Err(Denial::DelegationScope);
+                }
+                self.active()?;
+                if (action.management() && !self.dev_scope) || !self.delegable(app, env, action) {
+                    Err(Denial::Forbidden)
+                } else {
+                    Ok(())
+                }
+            }
         }
     }
 
@@ -322,6 +373,109 @@ impl Facts {
             .filter(|(app, env)| self.decide(app, env, action).is_ok())
             .map(|(app, env)| (app.clone(), env.to_owned()))
             .unzip()
+    }
+}
+
+/// A write transaction that commits only after a decision made inside it.
+///
+/// Make the writes first, so they take their locks and wait for whatever they wait
+/// for, then decide. The decision reads the facts through this transaction and keeps
+/// the actor's user row (and delegation row) share-locked until the end, so disabling
+/// the user, revoking administrator rights or revoking the delegation waits for this
+/// write instead of racing it. Grant and group changes do not wait: a write decided
+/// just before such a change still commits, and queued work rechecks before it acts.
+/// Dropping a write, decided or not, rolls it back.
+pub struct Write(Transaction<'static, Postgres>);
+
+/// A [`Write`] whose decision allowed it; only this commits.
+pub struct Decided(Transaction<'static, Postgres>);
+
+impl Write {
+    pub async fn begin(pool: &PgPool) -> ApiResult<Self> {
+        Ok(Self(pool.begin().await?))
+    }
+
+    /// Decide `action` on `app`/`env` for `p` (see [`Facts::decide`]).
+    pub async fn decide(
+        self,
+        p: &Principal,
+        app: &str,
+        env: &str,
+        action: AppAction,
+    ) -> ApiResult<Decided> {
+        self.decide_all(p, app, env, [action]).await
+    }
+
+    /// Decide every action on `app`/`env` for `p`; all must hold.
+    pub async fn decide_all(
+        mut self,
+        p: &Principal,
+        app: &str,
+        env: &str,
+        actions: impl IntoIterator<Item = AppAction>,
+    ) -> ApiResult<Decided> {
+        let facts = Facts::load_in(&mut self.0, p, Some(app), true).await?;
+        for action in actions {
+            facts.decide(app, env, action)?;
+        }
+        Ok(Decided(self.0))
+    }
+
+    /// Decide a platform action for `p`.
+    pub async fn decide_platform(
+        mut self,
+        p: &Principal,
+        action: PlatformAction,
+    ) -> ApiResult<Decided> {
+        delegations::unrestricted(p)?;
+        let user = sqlx::query("SELECT enabled,admin,can_develop FROM users WHERE id=$1 FOR SHARE")
+            .bind(&p.id)
+            .fetch_optional(&mut *self.0)
+            .await?;
+        let allowed = user.is_some_and(|row| {
+            row.get::<bool, _>("enabled")
+                && match action {
+                    PlatformAction::Administer => row.get("admin"),
+                    PlatformAction::RequestApp => {
+                        (row.get::<bool, _>("admin") || row.get::<bool, _>("can_develop"))
+                            && p.scopes.iter().any(|scope| scope == "miy.dev")
+                    }
+                }
+        });
+        if allowed {
+            Ok(Decided(self.0))
+        } else {
+            Err(ApiError::forbidden())
+        }
+    }
+}
+
+impl Decided {
+    pub async fn commit(self) -> ApiResult<()> {
+        Ok(self.0.commit().await?)
+    }
+}
+
+impl Deref for Write {
+    type Target = PgConnection;
+    fn deref(&self) -> &PgConnection {
+        &self.0
+    }
+}
+impl DerefMut for Write {
+    fn deref_mut(&mut self) -> &mut PgConnection {
+        &mut self.0
+    }
+}
+impl Deref for Decided {
+    type Target = PgConnection;
+    fn deref(&self) -> &PgConnection {
+        &self.0
+    }
+}
+impl DerefMut for Decided {
+    fn deref_mut(&mut self) -> &mut PgConnection {
+        &mut self.0
     }
 }
 
@@ -512,6 +666,17 @@ mod tests {
         pub fn authorize_request(c: &Case, action: Action) -> Result<(), Denial> {
             manage_action(c, action)?;
             authorize_job(c)
+        }
+        // delegations::create: unrestricted, ensure_active, then each action
+        pub fn delegate(c: &Case, action: Action) -> Result<(), Denial> {
+            if !matches!(c.facts.delegation, Delegation::None) {
+                return Err(Denial::DelegationScope);
+            }
+            ensure_active(c)?;
+            if (action.management() && !c.facts.dev_scope) || !granted(c, action) {
+                return Err(Denial::Forbidden);
+            }
+            Ok(())
         }
     }
 
@@ -738,6 +903,11 @@ mod tests {
                     assert_eq!(
                         decide(AppAction::Request(action)),
                         legacy::authorize_request(&c, action),
+                        "{action:?} {env}"
+                    );
+                    assert_eq!(
+                        decide(AppAction::Delegate(action)),
+                        legacy::delegate(&c, action),
                         "{action:?} {env}"
                     );
                 }

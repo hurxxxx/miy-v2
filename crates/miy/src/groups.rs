@@ -16,7 +16,7 @@ use crate::{
 };
 use serde::Deserialize;
 use serde_json::{Value, json};
-use sqlx::{Postgres, Row, Transaction};
+use sqlx::Row;
 use uuid::Uuid;
 
 /// Serializes hierarchy changes so two concurrent moves cannot form a cycle.
@@ -98,10 +98,10 @@ fn environment(value: &str) -> ApiResult<&str> {
     }
 }
 
-async fn source(tx: &mut Transaction<'_, Postgres>, id: Uuid) -> ApiResult<String> {
+async fn source(tx: &mut sqlx::PgConnection, id: Uuid) -> ApiResult<String> {
     sqlx::query_scalar("SELECT source FROM groups WHERE id=$1 FOR UPDATE")
         .bind(id)
-        .fetch_optional(&mut **tx)
+        .fetch_optional(&mut *tx)
         .await?
         .ok_or_else(ApiError::not_found)
 }
@@ -125,7 +125,7 @@ pub async fn create(state: &State, p: &Principal, v: NewGroup) -> ApiResult<Valu
     if !["hr", "local"].contains(&v.source.as_str()) {
         return Err(ApiError::bad("invalid_group_source"));
     }
-    let mut tx = state.pool.begin().await?;
+    let mut tx = crate::policy::Write::begin(&state.pool).await?;
     if let Some(parent) = v.parent_id
         && (v.source != "hr" || source(&mut tx, parent).await? != "hr")
     {
@@ -139,7 +139,9 @@ pub async fn create(state: &State, p: &Principal, v: NewGroup) -> ApiResult<Valu
         .bind(v.parent_id)
         .execute(&mut *tx)
         .await?;
-    domain::admin_locked(&mut tx, p).await?;
+    let mut tx = tx
+        .decide_platform(p, crate::policy::PlatformAction::Administer)
+        .await?;
     audit(&mut tx, &p.id, "group.created", &format!("group:{id}")).await?;
     tx.commit().await?;
     Ok(json!({"id":id,"name":name,"source":v.source,"parentId":v.parent_id,"active":true}))
@@ -148,7 +150,7 @@ pub async fn create(state: &State, p: &Principal, v: NewGroup) -> ApiResult<Valu
 pub async fn update(state: &State, p: &Principal, id: Uuid, v: GroupChange) -> ApiResult<Value> {
     domain::admin(state, p).await?;
     let new_name = v.name.as_deref().map(name).transpose()?;
-    let mut tx = state.pool.begin().await?;
+    let mut tx = crate::policy::Write::begin(&state.pool).await?;
     source(&mut tx, id).await?;
     sqlx::query("UPDATE groups SET name=COALESCE($2,name),active=COALESCE($3,active),updated_at=now() WHERE id=$1")
         .bind(id)
@@ -161,7 +163,9 @@ pub async fn update(state: &State, p: &Principal, id: Uuid, v: GroupChange) -> A
         Some(true) => "group.activated",
         None => "group.renamed",
     };
-    domain::admin_locked(&mut tx, p).await?;
+    let mut tx = tx
+        .decide_platform(p, crate::policy::PlatformAction::Administer)
+        .await?;
     audit(&mut tx, &p.id, action, &format!("group:{id}")).await?;
     tx.commit().await?;
     Ok(json!({"id":id,"updated":true}))
@@ -174,7 +178,7 @@ pub async fn set_parent(
     v: GroupParent,
 ) -> ApiResult<Value> {
     domain::admin(state, p).await?;
-    let mut tx = state.pool.begin().await?;
+    let mut tx = crate::policy::Write::begin(&state.pool).await?;
     sqlx::query("SELECT pg_advisory_xact_lock($1)")
         .bind(HIERARCHY_LOCK)
         .execute(&mut *tx)
@@ -205,7 +209,9 @@ pub async fn set_parent(
         .bind(v.parent_id)
         .execute(&mut *tx)
         .await?;
-    domain::admin_locked(&mut tx, p).await?;
+    let mut tx = tx
+        .decide_platform(p, crate::policy::PlatformAction::Administer)
+        .await?;
     audit(&mut tx, &p.id, "group.parent_set", &format!("group:{id}")).await?;
     tx.commit().await?;
     Ok(json!({"id":id,"parentId":v.parent_id}))
@@ -226,7 +232,7 @@ pub async fn members(state: &State, p: &Principal, id: Uuid) -> ApiResult<Value>
 
 pub async fn set_member(state: &State, p: &Principal, id: Uuid, v: Membership) -> ApiResult<Value> {
     domain::admin(state, p).await?;
-    let mut tx = state.pool.begin().await?;
+    let mut tx = crate::policy::Write::begin(&state.pool).await?;
     if source(&mut tx, id).await? != "local" {
         // HR membership follows the user's primary group exactly.
         return Err(ApiError::bad("hr_membership_is_primary_group"));
@@ -251,7 +257,9 @@ pub async fn set_member(state: &State, p: &Principal, id: Uuid, v: Membership) -
     } else {
         "group.member_removed"
     };
-    domain::admin_locked(&mut tx, p).await?;
+    let mut tx = tx
+        .decide_platform(p, crate::policy::PlatformAction::Administer)
+        .await?;
     audit(
         &mut tx,
         &p.id,
@@ -270,7 +278,7 @@ pub async fn set_primary_group(
     v: PrimaryGroup,
 ) -> ApiResult<Value> {
     domain::admin(state, p).await?;
-    let mut tx = state.pool.begin().await?;
+    let mut tx = crate::policy::Write::begin(&state.pool).await?;
     if let Some(group) = v.group_id
         && source(&mut tx, group).await? != "hr"
     {
@@ -295,7 +303,9 @@ pub async fn set_primary_group(
         .bind(v.group_id)
         .execute(&mut *tx)
         .await?;
-    domain::admin_locked(&mut tx, p).await?;
+    let mut tx = tx
+        .decide_platform(p, crate::policy::PlatformAction::Administer)
+        .await?;
     audit(
         &mut tx,
         &p.id,
@@ -329,7 +339,7 @@ pub async fn set_grant(state: &State, p: &Principal, v: GroupGrant) -> ApiResult
     if !["use", "develop"].contains(&v.permission.as_str()) {
         return Err(ApiError::bad("group_permission_not_allowed"));
     }
-    let mut tx = state.pool.begin().await?;
+    let mut tx = crate::policy::Write::begin(&state.pool).await?;
     source(&mut tx, v.group_id).await?;
     if v.enabled {
         sqlx::query("INSERT INTO group_grants(group_id,app_id,environment,permission) VALUES($1,$2,$3,$4) ON CONFLICT DO NOTHING")
@@ -349,7 +359,9 @@ pub async fn set_grant(state: &State, p: &Principal, v: GroupGrant) -> ApiResult
         "group:{}:app:{}:{}:{}",
         v.group_id, v.app_id, v.environment, v.permission
     );
-    domain::admin_locked(&mut tx, p).await?;
+    let mut tx = tx
+        .decide_platform(p, crate::policy::PlatformAction::Administer)
+        .await?;
     audit(&mut tx, &p.id, action, &target).await?;
     tx.commit().await?;
     Ok(json!({"updated":true}))
@@ -389,12 +401,14 @@ pub async fn set_admission(
     if !["selected", "all"].contains(&v.mode.as_str()) {
         return Err(ApiError::bad("invalid_admission_mode"));
     }
-    let mut tx = state.pool.begin().await?;
+    let mut tx = crate::policy::Write::begin(&state.pool).await?;
     sqlx::query("INSERT INTO app_admission(app_id,environment,mode,changed_by) VALUES($1,$2,$3,$4) ON CONFLICT(app_id,environment) DO UPDATE SET mode=excluded.mode,changed_by=excluded.changed_by,changed_at=now()")
         .bind(app).bind(&v.environment).bind(&v.mode).bind(&p.id)
         .execute(&mut *tx).await?;
     let target = format!("app:{app}:{}:{}", v.environment, v.mode);
-    domain::admin_locked(&mut tx, p).await?;
+    let mut tx = tx
+        .decide_platform(p, crate::policy::PlatformAction::Administer)
+        .await?;
     audit(&mut tx, &p.id, "app.admission_set", &target).await?;
     tx.commit().await?;
     Ok(json!({"appId":app,"environment":v.environment,"mode":v.mode}))
@@ -407,7 +421,7 @@ pub async fn set_control(
     v: AppControl,
 ) -> ApiResult<Value> {
     domain::admin(state, p).await?;
-    let mut tx = state.pool.begin().await?;
+    let mut tx = crate::policy::Write::begin(&state.pool).await?;
     sqlx::query("INSERT INTO app_controls(app_id,disabled,changed_by) VALUES($1,$2,$3) ON CONFLICT(app_id) DO UPDATE SET disabled=excluded.disabled,changed_by=excluded.changed_by,changed_at=now()")
         .bind(app).bind(v.disabled).bind(&p.id)
         .execute(&mut *tx).await?;
@@ -416,7 +430,9 @@ pub async fn set_control(
     } else {
         "app.enabled"
     };
-    domain::admin_locked(&mut tx, p).await?;
+    let mut tx = tx
+        .decide_platform(p, crate::policy::PlatformAction::Administer)
+        .await?;
     audit(&mut tx, &p.id, action, &format!("app:{app}")).await?;
     tx.commit().await?;
     Ok(json!({"appId":app,"disabled":v.disabled}))

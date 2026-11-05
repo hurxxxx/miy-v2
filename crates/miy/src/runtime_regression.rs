@@ -192,6 +192,65 @@ async fn acceptance_lock_revocation(s: &State, release: Uuid) -> Result<(bool, V
     ))
 }
 
+/// A write decided through `policy::Write` keeps its actor's user row share-locked:
+/// disabling the user waits until the write commits instead of landing between the
+/// decision and the commit.
+async fn decided_write_holds_its_actor(s: &State) -> Result<(bool, Value)> {
+    sqlx::query("INSERT INTO users(id,name,admin) VALUES('audit-holder','Synthetic holder',false) ON CONFLICT (id) DO NOTHING")
+        .execute(&s.pool)
+        .await?;
+    sqlx::query("INSERT INTO grants VALUES('audit-holder','audit-runtime','dev','use') ON CONFLICT DO NOTHING")
+        .execute(&s.pool)
+        .await?;
+    let write = crate::policy::Write::begin(&s.pool)
+        .await
+        .map_err(|e| anyhow::anyhow!(e.code))?;
+    let mut decided = write
+        .decide(
+            &actor("audit-holder"),
+            "audit-runtime",
+            "dev",
+            crate::policy::AppAction::Use,
+        )
+        .await
+        .map_err(|e| anyhow::anyhow!(e.code))?;
+    let holder: i32 = sqlx::query_scalar("SELECT pg_backend_pid()")
+        .fetch_one(&mut *decided)
+        .await?;
+    let pool = s.pool.clone();
+    let disable = tokio::spawn(async move {
+        sqlx::query("UPDATE users SET enabled=false WHERE id='audit-holder'")
+            .execute(&pool)
+            .await
+    });
+    let waited = tokio::time::timeout(Duration::from_secs(10), async {
+        loop {
+            let blocked: bool = sqlx::query_scalar(
+                "SELECT EXISTS(SELECT 1 FROM pg_stat_activity WHERE $1=ANY(pg_blocking_pids(pid)))",
+            )
+            .bind(holder)
+            .fetch_one(&s.pool)
+            .await?;
+            if blocked {
+                return Ok::<_, anyhow::Error>(());
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    })
+    .await
+    .is_ok_and(|waited| waited.is_ok());
+    let finished_early = disable.is_finished();
+    decided
+        .commit()
+        .await
+        .map_err(|e| anyhow::anyhow!(e.code))?;
+    let disabled = tokio::time::timeout(Duration::from_secs(10), disable).await???;
+    Ok((
+        waited && !finished_early && disabled.rows_affected() == 1,
+        json!({"disableWaitedForTheWrite":waited,"disableFinishedBeforeCommit":finished_early,"disabledAfterCommit":disabled.rows_affected()}),
+    ))
+}
+
 /// A deployment prepares its database as a `jobs` row. A restart queues that row
 /// again, and the worker rechecks it like other queued work: the actor's management
 /// grant for the installation's environment, which is `deploy` in prod. A denied
@@ -1185,6 +1244,12 @@ async fn isolated_runtime_regression() -> Result<()> {
     report(
         "a production database job queued again after a restart keeps its deployer's authority",
         requeued,
+        evidence,
+    );
+    let (held, evidence) = decided_write_holds_its_actor(&s).await?;
+    report(
+        "a decided write holds its actor's account until it commits",
+        held,
         evidence,
     );
     let ddl = devdb.execute("CREATE TABLE app.forbidden(id int)").await;

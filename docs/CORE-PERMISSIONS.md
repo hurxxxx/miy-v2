@@ -60,7 +60,9 @@ HTTP MCP의 `get_installation_permissions`, `set_installation_permissions`도 �
   - 상세 판정, 목록(앱·설치·작업)의 노출 범위, 설치 목록의 표시값이 모두 이 판정에서 나온다. 목록 SQL에는 권한 조건이 없고, 판정이 허용한 앱·환경 목록으로만 거른다.
   - 대기 작업(실행·DB·빌드·이미지 적재·로그 요청·개발 세션)은 시작 전과 긴 대기(잠금, 컴파일, 이미지 적재) 뒤에 `recheck_queued` 하나로 다시 판정한다. 저장된 행위자의 활성 상태와 환경 관리 권한(관리자, dev `develop`, prod `deploy`), 저장된 위임의 범위를 본다. 접수 때의 `Manage(동작)`에서 자격증명의 `miy.dev`만 뺀 판정이다.
   - 확정 거부는 `user_disabled` 또는 `permission_revoked`로 기록한다. 권한을 읽지 못하면 `database_unavailable`(로그 요청은 `diagnostic_unavailable`)이고 회수로 분류하지 않는다. 거부된 DB 작업은 실행한 것이 없으므로 설치의 DB 상태를 바꾸지 않는다.
-  - 관리자 전용 변경은 `admin`·`admin_locked`를 쓴다(아래 "관리").
+  - 쓰기는 `policy::Write`로만 커밋한다. 쓰기와 잠금을 먼저 하고 같은 트랜잭션 안에서 판정하며, 판정을 통과한 트랜잭션만 커밋할 수 있다. 앱 단위 쓰기(실행·DB 작업과 시험 결과 접수, 릴리스·설치 생성, 이미지 적재·로그 요청·개발 세션·빌드 접수, 앱 호출 토큰, 위임 발급)는 위 동작으로, 관리자 변경(아래 "관리")과 앱 등록 요청은 플랫폼 동작으로 판정한다.
+  - 판정은 행위자의 사용자 행과 위임 행을 커밋까지 공유 잠금한다. 그래서 사용자 비활성화·관리자 회수·위임 철회는 진행 중인 쓰기가 끝날 때까지 기다린다. 권한·그룹 변경은 기다리지 않는다. 판정 직후 회수되면 그 쓰기는 커밋되고, 대기 작업은 실행 전에 다시 확인한다.
+  - 인증 흐름, 본인 자격증명·임대 회수, 읽기 전용 스냅샷, worker 기록은 `scripts/check-write-decisions.py`의 목록에 이유와 함께 둔다. 이 검사(`check-static.sh rust`)는 목록 밖에서 트랜잭션을 직접 열거나, 주체를 받는 함수가 `Write` 없이 쓰면 실패한다.
 - **표시값:** 서버가 계산하는 안내 값이며, 실제 요청은 서버가 다시 판정한다.
   - `canOpen`은 사용 판정이다. `canManage`는 관리 읽기(`Manage(read)`), `canPromote`는 prod 승격 요청 접수(`Request(promote)`) 판정이다. `acceptance`는 `canManage`일 때만 담는다.
   - 위임 자격증명도 같은 판정을 따른다. 범위에 `read`가 있고 해당 환경의 관리 권한이 있으면 `canManage`가 참이다. `canPromote`는 위임 범위의 `promote`·`read`에 더해 실제 `deploy` 권한과 `miy.dev`까지 본다. 이전에는 위임이면 `canManage`가 항상 거짓이었고, 페이지 목록의 `canPromote`는 위임 범위만 봤다.
@@ -87,6 +89,7 @@ PUT /api/v1/apps/{app}/control            GET /api/v1/runtime/installations
 - 위임된 `read+stop`의 HTTP 접수·동일 키 재시도, `read` 누락 시 저장 전 거부, 상세/events/목록의 일치, 기존 cursor의 회사 중지·권한 회수 재검사, `miy.dev` scope 조합. 이 추가 시험의 합성 앱에는 worker를 실행하지 않음
 - 관리자 전용과 감사 기록(조회 API의 행위자·동작 필터와 cursor 포함)
 - 잠금 대기 중 관리자 권한 회수(사용자 활성 상태 변경·앱 등록 승인·앱 생성·이름 변경·컴포넌트 게시 포함), 변경·감사 기록의 원자성, 일반·페이지 설치 조회의 중지 정책 일치
+- 잠금 대기 중 개발 권한 회수(설치 생성·DB 준비·위임 발급), 판정된 쓰기의 커밋까지 사용자 비활성화 대기
 - 회사 사용 중지된 prod 설치의 승인 기록 조회·변경(관리자), 주체별 승인 기록·작업 조회와 운영 기록 조회 판정의 일치
 
 ## CLI·MCP의 사용자 위임
@@ -102,7 +105,7 @@ accept deploy promote start stop restart remove logs
 
 `read`는 상태·설치·작업 조회의 별도 권한이다. 일반 작업 흐름에 관찰이 필요하면 함께 지정한다. `start`가 `stop`이나 `remove`를 허용하지 않는다. 관리자가 발급해도 지정한 앱·환경·action을 벗어날 수 없다. 위임 자격증명으로 다시 위임하거나 설치 권한을 승인하고, 계정·전역 관리·등록 API를 호출할 수 없다. 단일 앱 위임으로 다른 앱의 API 접근 범위까지 얻는 것은 지원하지 않는다.
 
-실행 작업 요청은 접수한 작업의 상태를 응답하므로 실행 action과 `read`를 함께 부여해야 한다. preflight와 POST 모두 이를 검사하고, `read`가 없으면 작업을 저장하기 전에 거부한다. 접수 응답은 커밋 전에 읽은 작업으로 만들어 커밋 후 별도 권한 조회 때문에 403이 되는 경우를 없앤다. 후속 상세·events·목록 조회는 요청마다 현재 위임과 사용자 권한을 다시 검사한다. DB 준비(`POST /api/v1/database/prepare`)도 같은 규칙이다. 접수 응답이 저장된 DB 작업이므로 `prepare_database`와 `read`가 함께 필요하고, `read`가 없으면 작업을 저장하기 전에 거부한다. 시험 결과 기록(`POST /api/v1/apps/{app}/test-acceptance`)도 남는 기록이 실행 관리 정보(`canManage`일 때만 보이는 `acceptance`)라서 `accept`와 `read`가 함께 필요하다. 실행 잠금과 앱 상태 확인을 기다린 뒤 기록 직전에 다시 판정한다. 개발 세션 생성 응답 복구(`GET /api/v1/apps/{app}/dev-sessions/by-request/{request}`)는 세션 조회와 같은 판정(`dev_session`)을 한다. 위임 자격증명은 관리자 권한을 갖지 않는다. 관리자 API뿐 아니라 권한 목록(`GET /api/v1/grants`)에서도 위임된 관리자는 자기 권한만 본다. 앱·설치·작업의 앱 단위 판정에서는 위임 범위 안에서 사용자의 관리자 권한을 그대로 쓴다.
+실행 작업 요청은 접수한 작업의 상태를 응답하므로 실행 action과 `read`를 함께 부여해야 한다. preflight와 POST 모두 이를 검사하고, `read`가 없으면 작업을 저장하기 전에 거부한다. 접수 응답은 커밋 전에 읽은 작업으로 만들어 커밋 후 별도 권한 조회 때문에 403이 되는 경우를 없앤다. 후속 상세·events·목록 조회는 요청마다 현재 위임과 사용자 권한을 다시 검사한다. DB 준비(`POST /api/v1/database/prepare`)도 같은 규칙이다. 접수 응답이 저장된 DB 작업이므로 `prepare_database`와 `read`가 함께 필요하고, `read`가 없으면 작업을 저장하기 전에 거부한다. 작업 저장과 판정은 한 트랜잭션이며, 응답은 그 트랜잭션에서 읽은 작업이다. 시험 결과 기록(`POST /api/v1/apps/{app}/test-acceptance`)도 남는 기록이 실행 관리 정보(`canManage`일 때만 보이는 `acceptance`)라서 `accept`와 `read`가 함께 필요하다. 실행 잠금과 앱 상태 확인을 기다린 뒤 기록 직전에 다시 판정한다. 개발 세션 생성 응답 복구(`GET /api/v1/apps/{app}/dev-sessions/by-request/{request}`)는 세션 조회와 같은 판정(`dev_session`)을 한다. 위임 자격증명은 관리자 권한을 갖지 않는다. 관리자 API뿐 아니라 권한 목록(`GET /api/v1/grants`)에서도 위임된 관리자는 자기 권한만 본다. 앱·설치·작업의 앱 단위 판정에서는 위임 범위 안에서 사용자의 관리자 권한을 그대로 쓴다.
 
 ```sh
 miy --context platform auth delegations create --app inventory --environment dev \

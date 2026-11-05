@@ -69,7 +69,7 @@ pub async fn upload(
     let root = root()?;
     tokio::fs::create_dir_all(&root).await?;
     let id = Uuid::new_v4();
-    let mut tx = s.pool.begin().await?;
+    let mut tx = crate::policy::Write::begin(&s.pool).await?;
     sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))")
         .bind(format!("upload:{}", p.id))
         .execute(&mut *tx)
@@ -94,7 +94,15 @@ pub async fn upload(
             return Err(ApiError::conflict("upload_expired"));
         }
         let receipt = view(&row);
-        tx.commit().await?;
+        tx.decide(
+            &p,
+            &app,
+            "dev",
+            AppAction::Manage(crate::delegations::Action::Upload),
+        )
+        .await?
+        .commit()
+        .await?;
         return Ok(Json(receipt));
     }
     let pending:i64=sqlx::query_scalar("SELECT count(*) FROM image_uploads WHERE actor=$1 AND status IN ('receiving','pending','loading')").bind(&p.id).fetch_one(&mut *tx).await?;
@@ -103,7 +111,15 @@ pub async fn upload(
     }
     sqlx::query("INSERT INTO image_uploads(id,app_id,actor,image_id,size_bytes,archive_hash,status,request_id,delegation_id) VALUES($1,$2,$3,$4,$5,$6,'receiving',$7,$8)")
         .bind(id).bind(&app).bind(&p.id).bind(&image).bind(size as i64).bind(&expected_hash).bind(request_id).bind(p.delegation_id).execute(&mut *tx).await?;
-    tx.commit().await?;
+    tx.decide(
+        &p,
+        &app,
+        "dev",
+        AppAction::Manage(crate::delegations::Action::Upload),
+    )
+    .await?
+    .commit()
+    .await?;
     let path = root.join(format!("{id}.tar"));
     let result = async {
         let mut file = tokio::fs::OpenOptions::new()
