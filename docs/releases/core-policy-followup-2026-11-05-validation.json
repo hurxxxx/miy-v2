@@ -1,0 +1,90 @@
+{
+  "date": "2026-11-05",
+  "baseCommit": "93ff4de9d0bb394fac3aa3d39e14b3b4abd5e62e",
+  "validatedTree": "baseCommit plus the changes identified by sourceFileSha256 (documentation excluded)",
+  "status": "PASS",
+  "scope": [
+    "Database preparation is admitted with Request(prepare_database): a delegation needs prepare_database and read before a job is stored (CORE-HARDENING structure step 2, item 1)",
+    "A delegation never carries administrator authority on list pages: a delegated administrator's grants page shows only its own grants (item 4)"
+  ],
+  "behaviorChanges": [
+    "POST /api/v1/database/prepare with a read-less delegation: still 403 delegation_scope_denied, but no job is stored (previously the job was stored and later run by the worker)",
+    "GET /api/v1/grants with a delegated administrator credential: only that user's own grants (previously every user's direct grants for the delegation's app and environment)"
+  ],
+  "deploymentPerformed": false,
+  "pushPerformed": false,
+  "defectReproduction": [
+    {
+      "command": "python3 scripts/runtime-regression/run.py",
+      "tree": "baseCommit plus the new observations, without either fix",
+      "status": "FAIL",
+      "expected": true,
+      "failure": "a denied delegated database preparation stored a job",
+      "startedAt": "2026-11-05T02:30:01Z",
+      "finishedAt": "2026-11-05T02:33:28Z",
+      "cleanupErrors": 0
+    },
+    {
+      "command": "python3 scripts/runtime-regression/run.py",
+      "tree": "baseCommit plus the observations and the preparation fix, without the list fix",
+      "status": "FAIL",
+      "expected": true,
+      "failure": "a delegated administrator listed other users' grants",
+      "startedAt": "2026-11-05T02:33:40Z",
+      "finishedAt": "2026-11-05T02:37:13Z",
+      "cleanupErrors": 0
+    }
+  ],
+  "checks": [
+    {
+      "command": "bash scripts/check-static.sh rust",
+      "status": "PASS",
+      "serverTests": 172,
+      "serverIgnored": 7,
+      "clientTests": 113
+    },
+    {
+      "command": "python3 scripts/runtime-regression/run.py",
+      "status": "PASS",
+      "observations": 90,
+      "suites": {
+        "runtime": 43,
+        "operations": 6,
+        "cli": 6,
+        "auth": 8,
+        "permissions": 20,
+        "delegation": 7
+      },
+      "newObservations": [
+        "delegated database preparation needs prepare_database and read before a job is stored; with both it returns the stored job",
+        "a delegated administrator lists only its own grants; administrator authority stays with undelegated credentials"
+      ],
+      "startedAt": "2026-11-05T02:37:22Z",
+      "finishedAt": "2026-11-05T02:41:20Z",
+      "testBinarySha256": "533c8d966f332325989b05dec5c8d4975f7fd6cd78fca8dad9f6597d99cd54f1",
+      "cliBinarySha256": "9f1d76b11e1b9b213f3891975bf842f0af04e453faa884e5169899d05972e7c3",
+      "cleanup": {
+        "removed": 13,
+        "errors": 0
+      }
+    },
+    {
+      "command": "python3 scripts/check-doc-links.py; git diff --check",
+      "status": "PASS"
+    }
+  ],
+  "notRun": [
+    "GitHub Actions for this tree (not pushed)",
+    "Production deployment"
+  ],
+  "sourceFileSha256": {
+    "crates/miy/src/domain.rs": "f4e64ce1d1d665d1c9ceca5fdd619d61e8a4275f464581abeb70898cccc7de8b",
+    "crates/miy/src/read_api.rs": "7b5fedb0c23fd7d9e0a34a7687da77cd0bc5afc9b8d0828fb18a14d66e39fa3e",
+    "crates/miy/src/permissions_regression.rs": "a7e31529a469062babbdf5e047f3a06958d85b5849a3164154318c70738581fb",
+    "scripts/runtime-regression/run.py": "1d69667559d50334d254a8e6c738631fa573bcf766c1938ea9a9c8e364fcb85e"
+  },
+  "limits": [
+    "Database preparation still inserts outside a transaction and reads the receipt afterwards; a permission change between admission and the receipt read can still answer 403 after the insert. Binding writes to an in-transaction decision is the next step",
+    "Items 2, 3 and 5 to 9 of the structure step 2 list in CORE-HARDENING.md remain"
+  ]
+}

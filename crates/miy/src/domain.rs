@@ -248,7 +248,9 @@ pub async fn prepare(state: &State, p: &Principal, v: Prepare) -> ApiResult<Valu
         p,
         &app,
         &env,
-        AppAction::Manage(crate::delegations::Action::PrepareDatabase),
+        // The receipt is the stored job, so admission also needs read (like runtime
+        // requests): a read-less delegation is refused before anything is inserted.
+        AppAction::Request(crate::delegations::Action::PrepareDatabase),
     )
     .await?;
     if inst.get::<String, _>("environment") != "dev" {

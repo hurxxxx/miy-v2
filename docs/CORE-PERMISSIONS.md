@@ -99,7 +99,7 @@ accept deploy promote start stop restart remove logs
 
 `read`는 상태·설치·작업 조회의 별도 권한이다. 일반 작업 흐름에 관찰이 필요하면 함께 지정한다. `start`가 `stop`이나 `remove`를 허용하지 않는다. 관리자가 발급해도 지정한 앱·환경·action을 벗어날 수 없다. 위임 자격증명으로 다시 위임하거나 설치 권한을 승인하고, 계정·전역 관리·등록 API를 호출할 수 없다. 단일 앱 위임으로 다른 앱의 API 접근 범위까지 얻는 것은 지원하지 않는다.
 
-실행 작업 요청은 접수한 작업의 상태를 응답하므로 실행 action과 `read`를 함께 부여해야 한다. preflight와 POST 모두 이를 검사하고, `read`가 없으면 작업을 저장하기 전에 거부한다. 접수 응답은 커밋 전에 읽은 작업으로 만들어 커밋 후 별도 권한 조회 때문에 403이 되는 경우를 없앤다. 후속 상세·events·목록 조회는 요청마다 현재 위임과 사용자 권한을 다시 검사한다.
+실행 작업 요청은 접수한 작업의 상태를 응답하므로 실행 action과 `read`를 함께 부여해야 한다. preflight와 POST 모두 이를 검사하고, `read`가 없으면 작업을 저장하기 전에 거부한다. 접수 응답은 커밋 전에 읽은 작업으로 만들어 커밋 후 별도 권한 조회 때문에 403이 되는 경우를 없앤다. 후속 상세·events·목록 조회는 요청마다 현재 위임과 사용자 권한을 다시 검사한다. DB 준비(`POST /api/v1/database/prepare`)도 같은 규칙이다. 접수 응답이 저장된 DB 작업이므로 `prepare_database`와 `read`가 함께 필요하고, `read`가 없으면 작업을 저장하기 전에 거부한다. 위임 자격증명은 관리자 권한을 갖지 않는다. 관리자 API뿐 아니라 권한 목록(`GET /api/v1/grants`)에서도 위임된 관리자는 자기 권한만 본다. 앱·설치·작업의 앱 단위 판정에서는 위임 범위 안에서 사용자의 관리자 권한을 그대로 쓴다.
 
 ```sh
 miy --context platform auth delegations create --app inventory --environment dev \

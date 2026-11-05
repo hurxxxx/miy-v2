@@ -134,14 +134,10 @@ pub async fn page(s: &State, p: &Principal, kind: &str, mut q: Page) -> ApiResul
     };
     let scope = q.scope(kind, &format!("{}:{:?}", p.id, p.delegation_id));
     let boundary = q.boundary(&scope)?;
-    let is_admin = if delegation.is_some() {
-        sqlx::query_scalar::<_, bool>("SELECT admin AND enabled FROM users WHERE id=$1")
-            .bind(&p.id)
-            .fetch_one(&s.pool)
-            .await?
-    } else {
-        domain::admin(s, p).await.is_ok()
-    };
+    // A delegation never carries administrator authority, as in domain::admin and /me:
+    // a delegated administrator lists only its own grants. App visibility in the
+    // apps, installations and jobs pages comes from the policy decisions instead.
+    let is_admin = delegation.is_none() && domain::admin(s, p).await.is_ok();
     if kind == "users" && !is_admin {
         return Err(ApiError::forbidden());
     }

@@ -1859,6 +1859,80 @@ async fn policy_matrix(h: &mut Harness<'_>, suffix: &str, passed: &mut Vec<Strin
     )
     .await?;
     passed.push("default and paged installation lists, installation and job details, job lists and display values agree for administrators, deployers, developers, users, strangers and delegated credentials with and without read, with the company switch off and on".into());
+    // A database preparation receipt is an observable job like a runtime receipt: a
+    // delegation needs prepare_database and read before anything is stored.
+    let jobs_by = async |actor: &Actor| -> Result<i64> {
+        Ok(
+            sqlx::query_scalar("SELECT count(*) FROM jobs WHERE actor=$1")
+                .bind(&actor.id)
+                .fetch_one(&h.state.pool)
+                .await?,
+        )
+    };
+    let prepare = |token: String, key: &'static str| {
+        let body = json!({"installationId":dev.installation,"releaseId":dev.release,"idempotencyKey":format!("{key}-{suffix}")});
+        h.request(&token, Method::POST, "/api/v1/database/prepare")
+            .json(&body)
+            .send()
+    };
+    let without_read = delegate(&developer, "dev", &["prepare_database"]).await?;
+    let denied = prepare(without_read, "policy-prepare-without-read").await?;
+    ensure!(
+        denied.status().as_u16() == 403,
+        "database preparation without read answered HTTP {}",
+        denied.status().as_u16()
+    );
+    let code: Value = denied.json().await?;
+    ensure!(
+        code["error"]["code"] == "delegation_scope_denied",
+        "database preparation without read used another denial"
+    );
+    ensure!(
+        jobs_by(&developer).await? == 0,
+        "a denied delegated database preparation stored a job"
+    );
+    let with_read = delegate(&developer, "dev", &["prepare_database", "read"]).await?;
+    let receipt = response(prepare(with_read, "policy-prepare-with-read").await?, 200).await?;
+    ensure!(
+        receipt["installationId"] == json!(dev.installation) && jobs_by(&developer).await? == 1,
+        "delegated database preparation with read did not return its stored job"
+    );
+    passed.push("delegated database preparation needs prepare_database and read before a job is stored; with both it returns the stored job".into());
+    // A delegation never carries administrator authority: the grants page shows a
+    // delegated administrator only its own grants, like any delegated user.
+    let grants_page = format!("/api/v1/grants?limit=200&appId={app}&environment=dev");
+    let delegated_admin = delegate(&admin, "dev", &["read"]).await?;
+    let own = response(
+        h.request(&delegated_admin, Method::GET, &grants_page)
+            .send()
+            .await?,
+        200,
+    )
+    .await?;
+    ensure!(
+        own["grants"]
+            .as_array()
+            .context("delegated grants page")?
+            .iter()
+            .all(|row| row["userId"] == json!(admin.id)),
+        "a delegated administrator listed other users' grants"
+    );
+    let full = response(
+        h.request(&admin.token, Method::GET, &grants_page)
+            .send()
+            .await?,
+        200,
+    )
+    .await?;
+    ensure!(
+        full["grants"]
+            .as_array()
+            .context("grants page")?
+            .iter()
+            .any(|row| row["userId"] == json!(developer.id)),
+        "an administrator could not list other users' grants"
+    );
+    passed.push("a delegated administrator lists only its own grants; administrator authority stays with undelegated credentials".into());
     Ok(())
 }
 
