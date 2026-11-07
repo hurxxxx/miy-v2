@@ -1,18 +1,28 @@
 # 현재 플랫폼 서버 운영·연결 안내
 
-- 확인일: 2026-11-05
-- 플랫폼 주소: **https://v2.dwdcc.kr**
+- 확인일: 2026-11-07
+- 업무 포털: **https://v2.dwdcc.kr**
+- 관리·CLI 승인·로그인 콘솔: **https://v2.dwdcc.kr:9443**
 - CLI 설치 안내: **https://v2.dwdcc.kr/cli/install**
 - 실행 서버·게시 CLI: **0.7.0**, SDK 번들 **0.8.0**
-- 배포 소스: 서버·웹 화면 `7b437890030f0da6f10dc6a76881891f353f31cf`(2026-11-05 07:10 KST 반영), 게시 CLI `01e4d4924f8c8fc4e11720c1af81adf17ddb20bf`
+- 배포 소스: 서버·웹 화면 `a4ad37006c58bc80de61892517cd3e1a153208ba`(2026-11-07 반영), 게시 CLI `01e4d4924f8c8fc4e11720c1af81adf17ddb20bf` 유지
 
-**아래는 현재 운영과 실제 배포 기록이다.** [내부 업무 앱의 최소 보안안](APP-BOUNDARIES.md#확정-결정)은 소스에 구현했으며 운영 미반영이다. 회사가 관리하는 개발자·앱과 내부망을 전제로, iframe 없는 MF·AppRoot·라우터 계약을 유지한다. 한 IP의 포털·신뢰 콘솔 두 HTTPS origin을 사용하며 dev/prod 업무 UI는 포털에, Keycloak `/identity/realms/miy`와 CLI 승인은 콘솔에 둔다. 두 포트는 예를 들어 8443/9443이며 설정 가능하다. 별도 IdP origin·dev 포털·도메인·추가 IP는 필수 조건이 아니다. 공개 운영 중인 `v2.dwdcc.kr`을 이 내부망 범위에 자동으로 포함하거나 현재 위험이 수용됐다고 판단하지 않는다. 운영 [전환·복구](APP-BOUNDARIES.md#전환과-복구)는 `NOT_RUN`이며 격리 환경의 [신규 인수](APP-BOUNDARIES.md#경계-인수)와 구분한다.
+여기서 운영 반영은 이 프로젝트의 기존 서버에 변경분을 배포했다는 뜻이다. 제품 개발 완료나 정식 오픈을 선언한 것은 아니다. 현재 `:9443`은 기존 DNS·인증서를 그대로 쓰기 위한 선택이며, 도메인이 있으면 같은 IP·443의 별도 관리 호스트로 설정할 수 있다. 출처 배치 계약은 [경계 설계](APP-BOUNDARIES.md#영역과-설정)를 따른다.
 
-**전환 전 알려진 위험:** 현행 같은 페이지 앱 코드는 브라우저 세션으로 legacy·device CLI 승인을 악용할 수 있다. 구형 토큰은 8시간, 현행 access는 15분·refresh family는 최대 30일이며 브라우저 logout과 CLI 회수는 별개다. 현재 CLI 세션 목록에는 구형 토큰이 포함되지 않는다. 코드·리뷰 근거와 공격 재현의 한계는 [문제와 임시 통제](APP-BOUNDARIES.md#전환-전-임시-운영)에 보존한다. 이번 작업에서 운영 헤더·로그인 공격을 재현하거나 배포를 변경하지 않았다.
+**현재 운영은 두 출처 경계를 적용했다.** [사내 업무 앱의 최소 보안 계약](APP-BOUNDARIES.md#확정-결정)에 따라 iframe 없는 MF·AppRoot·통합 라우팅을 유지하고, 기존 포털의 dev/prod 업무 UI와 `:9443` 콘솔의 관리·CLI 승인·Keycloak `/identity/realms/miy`를 분리했다. 단일 호스트의 포트는 origin을 나누지만 쿠키를 격리하지 않으므로 목적별 세션·정확한 Origin·CSRF·응답 제한을 함께 적용한다. 공개 운영 `v2.dwdcc.kr`을 회사 내부망 범위로 자동 인정하거나 같은 페이지 앱 간 격리를 보장하지 않는다.
 
-내부 최소안은 CLI 승인 중지·고권한 계정의 앱 사용 금지·develop 그룹 부여 금지를 일괄 제품 정책으로 추가하지 않는다. 안전하지 않은 구 승인 경로가 남는 동안에는 노출된 경로·계정·앱에 한정한 차단, 별도 프로필 또는 의심 credential 회수를 운영 책임자가 정해 적용한다. 공개 운영 환경의 조치 범위는 별도 확인해야 한다. 운영 책임 역할은 플랫폼 운영 관리자이며 최초 재검토는 2026-11-13(KST) 또는 다음 운영 변경 직전 중 이른 시점이다. **통제 적용·회수·전환은 NOT_RUN**이고 문서 수정으로 권한·세션·인증서를 변경하지 않았다. MFA·별도 IdP 사이트·추가 모니터링은 후속 강화이며 이번 최소 구현의 선행 조건이 아니다.
+2026-11-07 사용자 요청으로 서버·UI `a4ad370`, core schema19→20, 두 listener·Nginx와 issuer/callback/logout 설정을 함께 전환했다([배포 기록](releases/internal-minimum-security-2026-11-07-deployment.json)). 게시 CLI `01e4d49`와 번들 0.8.0은 유지했다. 공유 개발 로그인은 끄고 일반 OIDC 로그인을 사용한다. 구 브라우저 세션·로그인 flow·미완료 CLI 승인은 무효화했으므로 다시 로그인한다. 기존 정상 CLI credential은 보존하며 의심 device/legacy credential은 콘솔 개인 CLI 목록에서 각각 회수한다.
 
-반영 전에는 실제 대상 SHA의 CI·변경 범위 회귀와 백업·별도 복원을 확인한다. 공개 운영의 긴급 수정이 필요하면 운영 `7b43789` 기준 최소 hotfix와 main의 전체 변경을 구분하여 배포 소스를 정한다. 2026-11-06 비교에서 확인한 후속 16개 커밋을 자동으로 함께 반영하지 않는다. 실제 배포는 별도 요청과 기록으로 관리하며 이번 구현·격리 검증은 공개 운영 hotfix나 서비스 변경을 수행한 기록이 아니다.
+- 성공한 반영은 11:44:14~11:44:36 KST(02:44:14~02:44:36 UTC), 공개 업무 경로 제한은 약 22초였다. 서버 바이너리 SHA-256은 `450a1709dea67803ce120bcc8c4fc55d9823f28006cf420378f312c93c26e5a2`다.
+- 최종 Core 백업은 231,772 bytes, 40개 테이블·1,474행이며 별도 복원과 schema19→20 리허설을 통과했다. identity 101개 테이블·1,279행의 별도 덤프 복원도 PASS다. 이는 전체 호스트 복구 제품의 인수가 아니다.
+- 기존 Keycloak·PostgreSQL과 앱 컨테이너 7개(실행 5·중지 2)의 ID·상태, 독립 CLI credential을 보존했다. 컨테이너를 재생성하지 않고 Keycloak realm `frontendUrl`과 기존 `miy-web`의 정확한 callback/logout URI만 좁게 바꿔 realm·사용자 sub·client 신원을 유지했다. Core/Keycloak 내부 포트는 loopback이다.
+- 전환 전용 도구가 대상 SHA·필수 CI·후보/백업 해시를 확인하고 유지보수 응답 → 설정·DB·Core/UI 전환 → 보존/기능 확인 → 새 경로 공개 순서로 처리했다. 일반 `core-rollout.py`에 CI gate와 migration/설정 전환을 통합하는 일은 남아 있다.
+- 첫 시도 `core/`는 02:41:43 UTC에 Nginx reload 준비 경쟁으로 DB 변경 전에 중단·자동 복귀했다. 보완 후 `core-02/`에서 성공했으며 두 기록을 보존한다. 실제 운영 DB restore/rollback은 실행하지 않았다.
+- 운영 후 일반 OIDC의 포털 로그인→콘솔 SSO, 게시 CLI의 device 승인·status·doctor, 기존 SDK 앱 초기화·생성 stdio MCP의 catalog/contract/components/help·자기 세션 정리 등 연결 20개 PASS다. 허용된 실행 dev 앱 2개에서 MF 로딩·iframe 0·뒤로/앞으로·reload를 확인했고, 정적 자산 63건은 200이었다. 콘솔 앱/remote 요청·페이지 오류·업무 쓰기/WS 시도는 0이며 포털 관리 API 403과 두 세션 로그아웃 후 401을 확인했다. 공개 7개 경로의 상태·헤더와 공유 개발 로그인 꺼짐도 확인했다. 세 번째 앱은 허용된 실행 대상이 없어 NOT_RUN이다.
+
+구 승인 경로의 위험과 과거 관찰은 [문제와 임시 기준](APP-BOUNDARIES.md#전환-전-임시-운영)에 보존한다. 공격 재현·전 사용자 CLI credential 점검·기존 기기의 Service Worker 정리·직접 외부 OAuth MCP 재로그인은 NOT_RUN이다. 브라우저 logout은 CLI credential 회수를 대신하지 않는다. MFA·별도 IdP 사이트·추가 관제는 후속이며 공개 노출 범위와 잔여 위험은 운영 책임자가 계속 검토한다.
+
+아래 날짜별 기록은 이전 배포 이력이다. 과거 PASS·FAIL·NOT_RUN과 당시 공유 개발 로그인 상태를 현재 상태로 바꾸지 않는다.
 
 2026-11-05 사용자 요청으로 관리자 재확인 보완(`dec457e`)과 사용 중지된 앱의 관리자 실행 관리(`bedf96f`)를 §7의 도구로 반영했다([배포 결과](releases/core-runtime-management-2026-11-05-deployment.json)). migration은 없다.
 
@@ -76,7 +86,7 @@ python3 scripts/render-server-config.py --state-dir /srv/miy-new \
 
 생성된 Nginx 설정·서비스 파일을 검토한 뒤 해당 서버의 반영 절차를 따른다. `consoleOrigin`과 `consoleBind`를 생략해 구 1출처 설정으로 Core를 시작하는 fallback은 없다. `miy-web`의 callback/logout URI는 두 origin의 정확한 경로만 등록한다. 기존 realm·사용자 sub·secret을 재생성하지 않고, issuer는 콘솔 `/identity/realms/miy`로 옮긴다. CLI context의 포털 URL은 그대로이고 MCP 클라이언트는 새 issuer 발견·필요한 재로그인을 확인한다. 내부 Core/Keycloak listener는 loopback이며 생성 proxy만 고정 목적 listener로 전달한다.
 
-운영 전환 전 변경 범위의 백업·별도 복원과 migration 0020 리허설이 필요하다. 0020은 브라우저 세션·로그인 flow·미완료 CLI 승인을 무효화하므로 재로그인을 안내한다. 앱/사용자/그룹 데이터와 독립 CLI 세션은 유지된다. 의심 자격증명은 콘솔의 개인 CLI 목록에서 device·legacy를 각각 회수한다. 게시 CLI/SDK를 전면 교체하거나 앱 데이터를 다시 만들지 않는다.
+새 서버 또는 후속 전환 전 변경 범위의 백업·별도 복원과 필요한 migration 리허설을 수행한다. 이 호스트의 migration 0020 전환은 2026-11-07 완료했다. 0020은 브라우저 세션·로그인 flow·미완료 CLI 승인을 무효화하므로 재로그인을 안내한다. 앱/사용자/그룹 데이터와 독립 CLI 세션은 유지된다. 의심 자격증명은 콘솔의 개인 CLI 목록에서 device·legacy를 각각 회수한다. 게시 CLI/SDK를 전면 교체하거나 앱 데이터를 다시 만들지 않는다.
 
 이미 앱 코드를 실행했던 포털의 브라우저별 개발자 도구에서 해당 origin의 Service Worker 등록을 해제하고 cache/storage를 정리한 뒤 새 로그인으로 확인한다. 콘솔은 앱 코드가 실행되지 않았던 새 origin을 쓴다. 일회성 서버 정리가 필요하면 **해당 origin에만** `Clear-Site-Data: "cache", "storage"`를 사용한다. `"cookies"`/`"*"`는 등록 도메인과 다른 포트 서비스에 영향을 주므로 금지한다. 알려진 구 `miy_session`·`miy_development`(/)·`miy_login`(/auth)만 만료시키고 새 목적별 쿠키나 IdP 쿠키를 일괄 지우지 않는다. 중복 쿠키/431이 남은 기기는 해당 호스트의 사이트 데이터 정리를 사용자에게 안내한다. 미접속 기기 정리 완료를 주장하지 않는다.
 
@@ -87,22 +97,25 @@ python3 scripts/render-server-config.py --state-dir /srv/miy-new \
 | 항목 | 현재 구성 |
 | --- | --- |
 | 대표 주소 | `https://v2.dwdcc.kr` |
-| 웹·API·CLI 설치/다운로드 | 같은 대표 주소, 호스트 Nginx에서 전달 |
+| 업무 웹·API·CLI 설치/다운로드 | 기존 대표 주소, 호스트 Nginx에서 전달 |
+| 관리·CLI 승인·로그인 | `https://v2.dwdcc.kr:9443`, 같은 호스트 Nginx의 별도 listener |
 | 플랫폼 API/worker | systemd `miy-v2-serve`, `miy-v2-worker` |
 | 서버 실행 파일 | `/projects/miy-v2/.local/bin/miy-server` |
-| API 내부 주소 | `127.0.0.1:18180` |
-| IdP | `/identity/realms/miy`, 내부 Keycloak `127.0.0.1:18181` |
+| 포털 Core 내부 주소 | `127.0.0.1:18180` |
+| 콘솔 Core 내부 주소 | `127.0.0.1:18182` |
+| IdP | `https://v2.dwdcc.kr:9443/identity/realms/miy`, 내부 Keycloak `127.0.0.1:18181` |
 | PostgreSQL | 호스트 loopback `127.0.0.1:15432` |
 | 상태·비밀 설정 | `/projects/miy-v2/.local/`, `server.json`, `runtime.env`, `credentials.json` |
 | 직접 HTTP MCP | `https://v2.dwdcc.kr/mcp`, IdP OAuth 인증 |
 
-대표 주소는 서버의 `MIY_ORIGIN`, 로그인 issuer는 `MIY_ISSUER`로 관리한다. Nginx·Keycloak callback·MCP resource/audience·설치 화면의 서버 주소를 같은 origin에 맞춘다. API와 DB의 내부 포트는 사용자 PC의 CLI 설정에 입력하지 않는다. 비밀 설정 파일이나 그 전체 내용을 문서·채팅·Git에 복사하지 않는다.
+대표 주소는 `MIY_ORIGIN`, 콘솔은 `MIY_CONSOLE_ORIGIN`, 로그인 issuer는 `MIY_ISSUER`로 관리한다. Core의 고정 목적 listener는 `MIY_BIND_ADDR`·`MIY_CONSOLE_BIND_ADDR`이며 `server.json`의 `origin`·`consoleOrigin`·`bind`·`consoleBind`와 일치시킨다. Keycloak은 두 출처의 정확한 callback/logout URI만 허용하고 issuer는 콘솔에 둔다. MCP resource/audience와 CLI context·설치 안내의 서버 주소는 기존 포털을 유지한다. API와 DB의 내부 포트는 사용자 PC의 CLI 설정에 입력하지 않는다. 비밀 설정 파일이나 그 전체 내용을 문서·채팅·Git에 복사하지 않는다.
 
 서버 상태는 다음 읽기 명령으로 확인한다.
 
 ```sh
 systemctl status miy-v2-serve miy-v2-worker --no-pager
 curl --fail --silent --show-error https://v2.dwdcc.kr/api/health
+curl --fail --silent --show-error https://v2.dwdcc.kr:9443/api/health
 curl --fail --silent --show-error https://v2.dwdcc.kr/api/v1/capabilities
 sudo nginx -t
 ```
@@ -133,32 +146,32 @@ miy --context platform auth login
 
 Windows 설정 위치는 `%APPDATA%\miy\config.json`, Unix 기본 위치는 `~/.config/miy/config.json`이며 `XDG_CONFIG_HOME`과 `MIY_CONFIG_DIR`로 바꿀 수 있다. 서버 주소·CA 설정과 사용자 로그인 자격증명은 별도로 관리한다. 자격증명을 프로젝트나 AI 설정에 복사하지 않는다.
 
-Codex·Claude의 생성된 프로젝트 MCP는 프로젝트의 `.miy-tools/miy[.exe] mcp`를 로컬 stdio로 실행한다. 이 프로세스가 CLI와 같은 context·사용자 세션으로 플랫폼의 계약·API·컴포넌트를 읽는다. 프로젝트 MCP 설정에 `/mcp` URL을 넣거나 별도의 토큰을 복사할 필요가 없다. 직접 HTTP MCP 연결을 사용하는 클라이언트는 `/mcp`의 별도 OAuth 흐름을 사용한다.
+Codex·Claude의 생성된 프로젝트 MCP는 프로젝트의 `.miy-tools/miy[.exe] mcp`를 로컬 stdio로 실행한다. 이 프로세스가 CLI와 같은 context·사용자 세션으로 플랫폼의 계약·API·컴포넌트를 읽는다. 프로젝트 MCP 설정에 `/mcp` URL을 넣거나 별도의 토큰을 복사할 필요가 없다. 직접 HTTP MCP 연결을 사용하는 클라이언트는 `/mcp`의 별도 OAuth 흐름을 사용한다. MCP resource URL은 그대로지만 issuer가 콘솔로 바뀌었으므로 기존 외부 클라이언트의 새 issuer 발견·재로그인을 확인해야 한다. 해당 외부 클라이언트의 실제 전환 검증은 NOT_RUN이다.
 
 ## 3. 현재 배포 소스와 이 작업본의 차이
 
-실행 서버·worker·웹 화면은 `7b437890030f0da6f10dc6a76881891f353f31cf`이고, 게시 CLI는 `01e4d4924f8c8fc4e11720c1af81adf17ddb20bf`다(모두 버전 0.7.0 / 번들 0.8.0). DB 역할 연결 한도·`application_name`·Docker 저장 공간 하한과 사용자·그룹 앱 권한·감사 조회 migration `0018`·`0019`는 2026-11-04 반영했다. 2026-11-05에는 다음 두 변경을 반영했다([배포 결과](releases/core-runtime-management-2026-11-05-deployment.json)).
+실행 서버·worker·웹 화면은 `a4ad37006c58bc80de61892517cd3e1a153208ba`이고, 게시 CLI는 `01e4d4924f8c8fc4e11720c1af81adf17ddb20bf`다(모두 버전 0.7.0 / 번들 0.8.0). DB 역할 연결 한도·`application_name`·Docker 저장 공간 하한과 사용자·그룹 앱 권한·감사 조회 migration `0018`·`0019`는 2026-11-04 반영했다. 2026-11-05에는 다음 두 변경을 반영했다([배포 결과](releases/core-runtime-management-2026-11-05-deployment.json)).
 
 - 사용자 활성 상태 변경과 앱 등록 결정의 관리자 재확인·감사 기록(`user.enabled`·`user.disabled`, 등록 승인의 `grant.enabled`) — [검증 기록](releases/core-admin-recheck-2026-11-04-validation.json)
 - 회사 사용 중지된 앱을 관리자 실행 관리 목록(`GET /api/v1/runtime/installations`)과 실행 작업 조회에 남기는 변경, 관리 화면 "앱 실행 상태"의 사용 중지 표시 — [검증 기록](releases/core-runtime-management-2026-11-04-validation.json)
 
 이후 `main` 변경은 자동 배포되지 않는다. 운영 반영은 사용자 요청과 별도 기록으로 하며 §7의 도구(서버 바이너리 교체, 웹 자산 추가·index 교체)를 쓴다.
 
-2026-11-05 후속 리뷰 보완은 **소스 적용, 운영 미반영**이다. 사용 중지 앱의 위임 실행 요청이 접수 후 403이 되는 문제와 작업 목록·상세 권한 차이를 수정했다. 배포 도구에는 무시된 public/환경 파일의 빌드 유입 차단, 같은 웹 대상의 공통 잠금, 부분 서비스 장애 중 rollback 유휴 검사를 추가했다. 검증 결과는 [후속 리뷰 보완 기록](releases/core-review-followup-2026-11-05-validation.json)에 있다. 이어서 stop 뒤에도 `failed`로 남는 unit 때문에 rollback이 끝나지 않던 문제와 CLI 소스의 Windows lint 오류를 고쳤다([추가 보완 기록](releases/core-followup-fixes-2026-11-05-validation.json)). 이 변경에 migration·게시 CLI·Windows 설치 파일 변경은 없다.
+2026-11-05 후속 리뷰 보완은 **2026-11-07 운영 반영**했다. 사용 중지 앱의 위임 실행 요청이 접수 후 403이 되는 문제와 작업 목록·상세 권한 차이를 수정했다. 배포 도구에는 무시된 public/환경 파일의 빌드 유입 차단, 같은 웹 대상의 공통 잠금, 부분 서비스 장애 중 rollback 유휴 검사를 추가했다. 검증 결과는 [후속 리뷰 보완 기록](releases/core-review-followup-2026-11-05-validation.json)에 있다. 이어서 stop 뒤에도 `failed`로 남는 unit 때문에 rollback이 끝나지 않던 문제와 CLI 소스의 Windows lint 오류를 고쳤다([추가 보완 기록](releases/core-followup-fixes-2026-11-05-validation.json)). 이 변경에 migration·게시 CLI·Windows 설치 파일 변경은 없다.
 
-서비스의 `failed`·`inactive` 표시만으로 프로세스가 없다고 판단하지 않도록 중지 확인도 보완했다. `reset-failed` 전후에 PID와 서비스 cgroup의 실제 상태를 확인하고, 프로세스가 남거나 확인할 수 없으면 배포·복구를 중단한다([중지 확인 검증](releases/core-stop-quiescence-2026-11-05-validation.json)). 이 보완도 소스에만 적용하며 운영 서버·UI는 위 `7b43789`를 유지한다.
+서비스의 `failed`·`inactive` 표시만으로 프로세스가 없다고 판단하지 않도록 중지 확인도 보완했다. `reset-failed` 전후에 PID와 서비스 cgroup의 실제 상태를 확인하고, 프로세스가 남거나 확인할 수 없으면 배포·복구를 중단한다([중지 확인 검증](releases/core-stop-quiescence-2026-11-05-validation.json)). 이 보완은 이번 전환 도구에도 사용했고 서버·UI는 `a4ad370`으로 바꿨다.
 
 서버를 갱신할 때는 먼저 배포 대상 소스 commit과 현재 실행 파일을 확인한다. 같은 버전 문자열이라도 실제 source commit·빌드 경계·설치된 SQL과 게시된 배포물의 출처를 함께 확인한다. 새 배포는 검증한 소스의 별도 checkout에서 빌드하고, 서버/worker·UI·게시 index를 같은 검증 기록에 묶어 반영한다.
 
-현재 서버 바이너리 SHA-256은 `d9ce25351221bce31d5342785a9906f6163fdc7d2bc83e468092d20613d5c46e`다(직전 서버는 `59407ce6…`). 게시 CLI의 source commit과 target별 hash는 `GET /api/v1/cli/install`로 확인한다. 서버 바이너리는 default features 빌드이므로 클라이언트 전용 바이너리와 hash가 다르다.
+현재 서버 바이너리 SHA-256은 `450a1709dea67803ce120bcc8c4fc55d9823f28006cf420378f312c93c26e5a2`다. 후보·설치 파일·serve/worker 실행 파일 대조는 [배포 기록](releases/internal-minimum-security-2026-11-07-deployment.json)을 따른다. 직전 `7b43789` 바이너리는 `d9ce25351221bce31d5342785a9906f6163fdc7d2bc83e468092d20613d5c46e`였다. 게시 CLI의 source commit과 target별 hash는 `GET /api/v1/cli/install`로 확인한다. 서버 바이너리는 default features 빌드이므로 클라이언트 전용 바이너리와 hash가 다르다.
 
 배포와 이전 검증의 상세 이력은 [운영 소스의 0.6.3 반영 기록](https://github.com/hurxxxx/miy-v2/blob/7617246/docs/CLI-0.6.3-LINUX-VALIDATION.md)에 있다. 이 문서의 실제 연결 재검사 결과는 아래에 추가한다.
 
 ## 4. 공유 개발 로그인과 운영 전환
 
-현재 서버에는 명시적으로 **공유 개발 로그인**이 켜져 있다. 접속자는 로그인 화면의 개발 계정 버튼으로 관리자·개발자·사용자 계정을 선택할 수 있다. 이는 이 서버의 개발·평가용 설정이며, 실제 IdP 로그인도 별도로 제공한다.
+현재 공개 서버의 **공유 개발 로그인은 꺼져 있다**. `MIY_DEV_LOGIN=0`·`sharedDevelopmentLogin=false`·`developmentLogin=false`로 반영했으며 관리자·개발자·사용자 선택 버튼 대신 일반 OIDC 로그인을 사용한다. 개발 계정을 선택해 관리 권한을 얻는 공개 우회를 콘솔에 복제하지 않는다.
 
-일반 사용자별 인증으로 전환할 때에는 같은 상태 디렉터리에서 `python3 scripts/bootstrap.py --no-shared-development-login`으로 설정을 바꾸고 `miy-v2-serve`에 반영한다. 반영할 실행 파일이 해당 옵션을 지원하는 소스인지 먼저 확인한다. 개발 로그인 버튼을 끈 사실만으로 사용자 계정·권한·업무 앱의 전체 인수가 완료되는 것은 아니다.
+0020 전환에서 기존 브라우저 세션·로그인 flow·미완료 CLI 승인을 무효화했다. 포털과 콘솔은 각각 다시 로그인하며 IdP의 사용자 계정·sub는 유지한다. 기존 승인 URL은 flow ID만 고정 콘솔 경로로 옮기고 포털에서 승인을 처리하지 않는다. 정상 독립 CLI credential은 유지하며 의심 credential만 콘솔에서 회수한다. 이후 설정 변경은 백업·검토된 좁은 반영 절차를 사용하고 운영 `.local`에 bootstrap/configure-identity를 다시 실행하지 않는다. 공유 개발 로그인 비활성화만으로 전체 사용자·업무 앱 인수가 끝났다고 표시하지 않는다.
 
 Windows·macOS의 실제 사용자 PC에서 설치·인증·개발·배포를 실행한 증거와 독립 AI 세션 평가는 해당 환경의 기록으로 관리한다. 같은 Linux 호스트에서 공개 HTTPS 주소로 접속한 검사를 다른 PC의 검증 결과로 기록하지 않는다.
 
@@ -226,11 +239,11 @@ python3 scripts/check-db-connections.py
 
 ## 7. 배포 도구
 
-운영 반영은 저장소에서 계속 관리하는 두 도구로 한다. 반영할 commit의 별도 clean checkout에 있는 사본을 실행하며, `scripts/test-core-ops.py`가 같은 파일의 실패 경계를 모의 시험한다. 배포별 증거 디렉터리의 이전 도구(`core-0.7.0-linux`, `core-0.7.0-7d3c66a-linux`, `core-review-20261104-linux`)는 실행 당시 기록이므로 고치거나 다시 쓰지 않는다.
+같은 schema의 일반 서버·UI 반영은 저장소에서 계속 관리하는 두 도구로 한다. 2026-11-07의 schema19→20·설정·issuer 전환은 검증한 전용 조정 도구로 수행했으며 [배포 기록](releases/internal-minimum-security-2026-11-07-deployment.json)을 따른다. 이를 일반 `core-rollout.py`의 migration/설정 전환 또는 CI gate 기능 완료로 표시하지 않는다. 반영할 commit의 별도 clean checkout에 있는 사본을 실행하며, `scripts/test-core-ops.py`가 같은 파일의 실패 경계를 모의 시험한다. 배포별 증거 디렉터리의 이전 도구(`core-0.7.0-linux`, `core-0.7.0-7d3c66a-linux`, `core-review-20261104-linux`)는 실행 당시 기록이므로 고치거나 다시 쓰지 않는다.
 
 **서버 `scripts/core-rollout.py`**
 
-- **범위:** core migration 집합이 운영 DB와 같은 소스의 서버 바이너리 교체만 한다. 소스의 migration이 많거나 적으면 `migration_rollout_not_supported`·`source_schema_older_than_live`로 거부한다. PostgreSQL 연결 한도와 Keycloak 풀은 기대값(기본 200·10)과 같은지 확인만 하고 바꾸지 않는다. migration·설정 전환이 필요한 반영은 실제 덤프 rollback 리허설을 포함하도록 이 도구를 먼저 확장한다.
+- **범위:** core migration 집합이 운영 DB와 같은 소스의 서버 바이너리 교체만 한다. 소스의 migration이 많거나 적으면 `migration_rollout_not_supported`·`source_schema_older_than_live`로 거부한다. PostgreSQL 연결 한도와 Keycloak 풀은 기대값(기본 200·10)과 같은지 확인만 하고 바꾸지 않는다. migration·설정 전환이 필요한 반영은 실제 덤프 rollback 리허설과 해당 SHA CI·전체 변경 범위 확인을 포함한 별도 검증 절차가 필요하다. 일반 도구의 해당 기능·CI gate 통합은 미구현이다.
 - **`inspect`(기본):** 바꾸지 않고 `apply`의 사전 확인만 한다. 소스 commit·clean 상태, 실행 중인 도구와 소스 사본의 일치, 후보 해시·버전, 설치 파일과 serve·worker 실제 실행 파일의 해시, schema, 연결 설정·예산, health·게시 CLI 안내, 대기 작업 0, 앱 컨테이너를 확인한다. 서비스의 `Id`·`Slice`·cgroup 경로와 cgroup v2의 읽기 가능 여부도 중지 전에 점검한다.
 - **`apply`:** 같은 확인 후 코어를 멈추고 프로세스가 없음을 확인한 뒤 대기 작업을 다시 확인한다. 새 덤프를 일회용 PostgreSQL에 복원해 행 수와 후보의 migration(변경 없음)을 확인해야 설치한다. 시작 후 health·게시 CLI 안내·실행 파일 해시·schema·주요 레코드 해시·앱 컨테이너·연결 예산을 확인한다.
 - **실패 처리:** 후보 시작 전 실패도 실제 중지 검사를 통과해야 해시를 확인한 이전 바이너리를 다시 설치하고 코어를 시작한다(`ROLLED_BACK`). 중지 확인에 실패하면 `ROLLBACK_FAILED`로 수동 판단을 남기며, 잔류 프로세스를 강제 종료하거나 서비스를 시작하지 않는다. 시작 후 실패는 새로 받은 쓰기를 덮어쓰지 않도록 코어를 멈춘다(`POST_START_FAILED`). 운영자가 판단한 뒤 `rollback`으로 이전 바이너리를 다시 설치·시작한다. 보관한 바이너리 해시가 다르거나 설치 파일이 이 반영의 것이 아니면 시작하지 않는다. 시작 직후 사용자의 정상 쓰기도 레코드 해시 비교를 실패시킬 수 있으므로 이용이 적은 시간에 반영한다.
@@ -261,4 +274,4 @@ python3 scripts/ui-rollout.py apply --release-dir <같은 경로> --expected-com
 python3 scripts/ui-rollout.py rollback --release-dir <같은 경로>
 ```
 
-서버를 반영하고 확인한 다음 웹 화면을 반영한다. 반영 후 읽기 위주 확인은 §5의 연결 검사와 별도 브라우저 확인으로 한다. 게시 CLI·Windows 설치 파일 교체는 이 도구의 범위가 아니다([CLI 릴리스](CLI-RELEASE.md)).
+같은 schema·같은 인증 계약의 일반 변경은 서버를 반영하고 확인한 다음 웹 화면을 반영한다. 이번처럼 세션·issuer·schema 계약이 함께 바뀌면 개별 적용 명령을 순서 없이 실행하지 않고 유지보수 응답 아래 검증한 하나의 전환 절차로 묶는다. 반영 후 읽기 위주 확인은 §5의 연결 검사와 별도 브라우저 확인으로 한다. 게시 CLI·Windows 설치 파일 교체는 이 도구의 범위가 아니다([CLI 릴리스](CLI-RELEASE.md)).

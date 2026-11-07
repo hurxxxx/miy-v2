@@ -1,10 +1,10 @@
 # miy 추진 계획
 
 - 작성일: 2026-10-20
-- 수정일: 2026-11-06
-- 상태: 코어 안정화 1·2차와 기본 UI 이식 UI-1~5 완료. miy v1 기준 최소 데이터 보호·사용자/그룹 앱 권한·기본 감사 구현분은 서버/UI `7b43789`, 게시 CLI는 `01e4d49`다. 2026-11-06 사내 최소 경계를 소스에 구현하고 실행한 격리 검증을 통과했다. 다음 기능은 디렉터리·공통 ACL이며, BV 표의 잔여 전환·외부 환경 인수는 별도로 추적한다. 운영에는 반영하지 않았다.
+- 수정일: 2026-11-07
+- 상태: 코어 안정화 1·2차와 기본 UI 이식 UI-1~5, miy v1 기준 최소 데이터 보호·사용자/그룹 앱 권한·기본 감사와 사내 최소 보안 구현분을 운영에 반영했다. 현재 서버/UI는 `a4ad370`(2026-11-07), 게시 CLI는 `01e4d49`다. 다음 기능은 디렉터리·공통 ACL이며, BV 표의 외부 환경·수동 전환 잔여 인수는 별도로 추적한다([배포 기록](releases/internal-minimum-security-2026-11-07-deployment.json)).
 
-현재 main 소스는 CLI **0.7.0 / 개발 번들 0.8.0**이다. 네이티브 로컬 개발, 서버 원격 빌드, dev 배포, 검증한 릴리스의 prod 승격, 설치/릴리스별 권한 승인을 구현했다. 운영 서버·UI는 `7b43789`, 게시 CLI는 `01e4d49`다([배포 기록](releases/core-runtime-management-2026-11-05-deployment.json), [서버 운영 안내](SERVER-OPERATIONS.md)). 사용 중지 앱의 위임 실행·작업 조회와 배포 도구 3개 문제는 후속 리뷰에서 소스에 보완했으며 운영 미반영이다([검증 기록](releases/core-review-followup-2026-11-05-validation.json)). main 소스 통합과 배포물의 출처는 따로 기록한다. 소스를 통합했다고 서버를 재배포한 것으로 표시하지 않는다. 최초 설계 로드맵은 [보관본](archive/PLAN-INITIAL-ROADMAP.md)에 있으며 모든 단계를 완료했다는 뜻이 아니다.
+현재 main 소스는 CLI **0.7.0 / 개발 번들 0.8.0**이다. 네이티브 로컬 개발, 서버 원격 빌드, dev 배포, 검증한 릴리스의 prod 승격, 설치/릴리스별 권한 승인을 구현했다. 운영 서버·UI는 `a4ad370`, 게시 CLI는 `01e4d49`다([배포 기록](releases/internal-minimum-security-2026-11-07-deployment.json), [서버 운영 안내](SERVER-OPERATIONS.md)). 사용 중지 앱의 위임 실행·작업 조회와 배포 도구 보완을 포함해 반영했다. 일반 `core-rollout.py`의 대상 SHA CI 자동 확인은 후속이며 이번 전환 전용 도구의 CI gate와 구분한다. main 소스 통합과 배포물의 출처는 따로 기록한다. 소스를 통합했다고 서버를 재배포한 것으로 표시하지 않는다. 최초 설계 로드맵은 [보관본](archive/PLAN-INITIAL-ROADMAP.md)에 있으며 모든 단계를 완료했다는 뜻이 아니다.
 
 ## 다음 우선 작업
 
@@ -14,24 +14,24 @@
 
 **2026-11-05 결정: 2의 남은 기능을 더 쌓기 전에 "기반"(코어 구조 다지기)을 먼저 한다.** 같은 날 후속 리뷰의 결함(위임 실행 접수 후 403, 작업 목록·상세 권한 불일치, main CI 실패 중 운영 반영)이 흩어진 권한 판정, 세 곳에서 따로 쓰는 API 형식, 수동으로만 도는 DB 회귀에서 나왔다. 서비스 계정(A2)·디렉터리 선택기(G4)·공용 UI(3)는 이 구조 위에 올린다. 표의 번호는 다른 문서가 참조하므로 바꾸지 않는다.
 
-2026-11-06 리뷰의 권한 스냅샷·위임 잠금 순서·CLI 모의 응답·API 호환 검사 보완은 [구조 기반 보완 기록](releases/core-foundation-review-2026-11-06-validation.json)에 있다. 운영 도구의 대상 CI 확인과 GitHub 실행 확인은 남아 있으며 최소 경계 개발과 병행한다. 실제 운영 반영 전 해당 SHA 검증은 생략하지 않는다.
+2026-11-06 리뷰의 권한 스냅샷·위임 잠금 순서·CLI 모의 응답·API 호환 검사 보완은 [구조 기반 보완 기록](releases/core-foundation-review-2026-11-06-validation.json)에 있다. 이번 운영 전환은 전용 도구에서 대상 SHA의 필수 GitHub CI를 확인한 뒤 수행했다([배포 기록](releases/internal-minimum-security-2026-11-07-deployment.json)). 일반 `core-rollout.py`에 같은 CI gate를 통합하는 작업은 남아 있으며 후속 운영 반영에서도 대상 SHA 검증을 생략하지 않는다.
 
-**현재 개발 순서: 문서 확정 → 경계의 필수 인수 → G4·G5·G6 및 기존 기능.** 독립 UI 자산·기존 AppRuntime 기능은 호환 검사를 하며 병행할 수 있다. 공개 운영의 긴급 대응과 모든 후속 권장 인수를 사내 기능 개발의 공통 선행 조건으로 묶지 않는다.
+**현재 개발 순서: 운영 반영 기록 동기화 → G4·G5·G6 및 기존 기능.** 경계의 구현·격리 필수 인수와 이번 운영 전환은 완료했으며 아래 BV 잔여 항목은 계속 추적한다. 독립 UI 자산·기존 AppRuntime 기능은 호환 검사를 하며 병행할 수 있다. 공개 운영의 긴급 대응과 모든 후속 권장 인수를 사내 기능 개발의 공통 선행 조건으로 묶지 않는다.
 
 | 순서 | 작업 | 포함 항목 | 상태 |
 | --- | --- | --- | --- |
 | 0 | 즉시 정리 | UI 후속 리뷰 보완(`3876d43`)의 격리 전체 스택 재검증과 운영 화면 재반영. 플랫폼 개발용 루트 `AGENTS.md`(V1-Q1), 변경별 검사 지도(V1-Q2), 웹 CI 작업과 `check.sh` 분리(V1-Q3). Windows 0.7.0용 출처 검증 절차·검사기 준비(실제 Windows 실행은 사용자 수행) | 완료(2026-11-03). 운영 화면 반영, [검사 지도](CHECKS.md)·`check-static.sh`·웹 workflow·[Windows 인수](WINDOWS-ACCEPTANCE.md) 준비. 새 `Web and scripts` workflow GitHub 실행 success(run 41645608115) |
 | 1 | 기능 개발에 필요한 최소 데이터 보호 | 변경 대상 DB·파일·설정의 백업 범위와 복구 절차를 정하고 별도 영역에 복원 확인. Docker 저장소 점검·이미지 보존(V1-O1), DB 연결 예산(V1-O2), 불확실한 커밋 처리(V1-O4). 전체 코어 4차 완료와 구분 | 구현분 운영 반영(2026-11-04). core DB 백업·복원, Docker 저장 공간 하한, 기존 역할 연결 한도 적용, 병렬 관리 연결 예산, 불확실한 배포 쓰기 이후 컨테이너 보존을 보완. [격리 검증](releases/core-review-2026-11-04-validation.json)과 실제 운영 덤프 복구 리허설 후 반영. 새 운영 연결 예산 90/197 PASS, 과거 FAIL은 이력으로 보존. [배포 결과](releases/core-review-2026-11-04-deployment.json) |
-| 긴급 | 기존 공개 운영 위험 대응(별도) | [임시 기준](APP-BOUNDARIES.md#전환-전-임시-운영)의 신뢰 앱·계정/프로필 분리, legacy/device 의심 credential 회수, API sandbox/nosniff·anti-frame. 안전한 콘솔 승인을 함께 제공할 수 없을 때만 구 승인 임시 중지. 운영 `7b43789` 최소 hotfix 후보·해당 SHA CI·백업/복원은 실제 반영 때 확인 | 운영 위험·대응안 기록, 적용/공격 재현 NOT_RUN. 격리 구현·검증은 운영 변경이 아님. 사내 대상의 CLI 전면 중지·개발자 앱 사용 금지를 기본으로 두지 않음. 공개 운영 책임자 재검토는 2026-11-13 또는 다음 변경 전 |
-| 기반 | 코어 구조 다지기 (2의 남은 항목보다 먼저) | ① 회귀 상시화: 격리 DB 회귀(권한·위임·실행)를 CI에서 실행, 운영 반영 도구가 대상 commit의 CI 성공 확인. ② 권한 판정 단일화: 주체·대상·동작 판정을 정책 모듈 하나로, 목록 SQL 조건과 표시값을 같은 정의에서, 쓰기는 트랜잭션 안 판정으로, 상세·목록·표시값 일치 행렬 시험. ③ API 계약 단일 원본: Rust 응답 구조체와 JSON Schema, SDK·플랫폼 TS 타입 생성과 CI 불일치 검사, CLI 공유, 게시 CLI 호환 규칙. ④ CLI 버전 일치 검사(V1-Q4 확장). 순서 ①→②→③, ④는 함께. 보류: core/CLI crate 분리, OS별 분기 정리. 완료 기준은 [코어 안정화 계획](CORE-HARDENING.md#구조-기반) | 진행(2026-11-05, 소스·격리 검증, 운영 미반영): ② 완료(정책 모듈, 불일치 9건 수정, 트랜잭션 안 판정), ③ 첫 묶음(설치·실행 작업·감사·그룹) 완료, ④ 완료. ①은 CI 회귀 workflow 추가 완료. 서비스 중지 확인 보완은 커밋했으며, 운영 반영 도구의 대상 CI 확인과 GitHub 실행 확인이 남음 |
-| 경계 | 사내 업무용 최소 보안(2의 G4·G5·G6 전) | 두 출처(업무 dev/prod 공통, 콘솔+Keycloak) → portal/console 세션·경로/Origin/CSRF → 콘솔 legacy/device 승인·기존 CLI/OIDC 호환 → prod Use/관리 분리·안전한 응답·credential 회수 → 변경 범위 복구·필수 인수. MF·SDK·앱 데이터·토큰 수명 유지 | 두 listener·목적별 세션·콘솔 승인·개인 credential 회수·prod 정책·UI·설정 도구 소스 구현(2026-11-06), 격리 회귀112·실제 스택6·게시 CLI HTTPS12 PASS, 운영 미반영. [이번 구현·검증 기록](releases/internal-minimum-security-implementation-2026-11-06-validation.json)과 [필수/후속과 BV 인수](APP-BOUNDARIES.md#경계-인수)가 기준. BV-13 독립 3회는 후속이며 새 IdP 출처·MFA 의무화·자동 CA·전 앱 전환 도구를 먼저 만들지 않음 |
-| 2 | 사용자·그룹 앱 권한과 공통 업무 ACL·연계 기반 (UI §7-2) | G1~G3 기반에 G4 디렉터리/현재 그룹 확인 → G5·G6 공통 ACL SDK·서버 집행·공유/회수. 이후 A2 서비스 주체와 UI Use/API Invoke 분리를 해당 기능으로 진행. 앱 DB의 공간·ACL 소유 유지, 작은 PLM 연계는 필요한 기능이 준비될 때 인수 | G1~G3·관리 화면·A1 기본 감사 구현분 운영 반영. G4~G6·A2·Invoke·상세 감사는 미구현. 경계의 필수 인수 후 기능 개발을 이어가며 전체 PLM·이벤트·파일은 선행 조건이 아님. [보완 검증](releases/core-review-2026-11-04-validation.json), [배포](releases/core-review-2026-11-04-deployment.json), [11-05 배포](releases/core-runtime-management-2026-11-05-deployment.json) |
+| 긴급 | 기존 공개 운영 위험 대응(별도) | 콘솔 전용 legacy/device 승인·IdP, API sandbox/nosniff·anti-frame, 공유 개발 로그인 비활성화를 두 출처 전환에 함께 반영. 의심 credential은 목록/회수로 대응하고 [임시 기준](APP-BOUNDARIES.md#전환-전-임시-운영)은 구 구조·복구 시 참고 | `a4ad370` 운영 반영(2026-11-07). 운영 공격 재현·전 사용자 credential 점검·기존 기기 worker 정리는 NOT_RUN. 공개 운영이 사내 신뢰 전제에 자동 포함되는 것은 아니며 잔여 위험을 2026-11-13 또는 다음 변경 전 재검토 |
+| 기반 | 코어 구조 다지기 (2의 남은 항목보다 먼저) | ① 회귀 상시화: 격리 DB 회귀(권한·위임·실행)를 CI에서 실행, 운영 반영 도구가 대상 commit의 CI 성공 확인. ② 권한 판정 단일화: 주체·대상·동작 판정을 정책 모듈 하나로, 목록 SQL 조건과 표시값을 같은 정의에서, 쓰기는 트랜잭션 안 판정으로, 상세·목록·표시값 일치 행렬 시험. ③ API 계약 단일 원본: Rust 응답 구조체와 JSON Schema, SDK·플랫폼 TS 타입 생성과 CI 불일치 검사, CLI 공유, 게시 CLI 호환 규칙. ④ CLI 버전 일치 검사(V1-Q4 확장). 순서 ①→②→③, ④는 함께. 보류: core/CLI crate 분리, OS별 분기 정리. 완료 기준은 [코어 안정화 계획](CORE-HARDENING.md#구조-기반) | 구현분 운영 반영(2026-11-07): ② 완료(정책 모듈, 불일치 9건 수정, 트랜잭션 안 판정), ③ 첫 묶음(설치·실행 작업·감사·그룹) 완료, ④ 완료. ①은 CI 회귀 workflow와 이번 대상 SHA 확인을 수행. 전환 전용 도구에 CI gate를 적용했으며 일반 `core-rollout.py` 통합은 남음 |
+| 경계 | 사내 업무용 최소 보안(2의 G4·G5·G6 전) | 두 출처(업무 dev/prod 공통, 콘솔+Keycloak) → portal/console 세션·경로/Origin/CSRF → 콘솔 legacy/device 승인·기존 CLI/OIDC 호환 → prod Use/관리 분리·안전한 응답·credential 회수 → 변경 범위 복구·필수 인수. MF·SDK·앱 데이터·토큰 수명 유지 | 두 listener·목적별 세션·콘솔 승인·개인 credential 회수·prod 정책·UI·설정 도구 구현과 2026-11-07 운영 반영. 격리 회귀112·실제 스택6·게시 CLI HTTPS12 PASS, 운영 증거는 [배포 기록](releases/internal-minimum-security-2026-11-07-deployment.json)으로 분리. [이번 구현·검증 기록](releases/internal-minimum-security-implementation-2026-11-06-validation.json)과 [필수/후속과 BV 인수](APP-BOUNDARIES.md#경계-인수)가 기준. BV-13 독립 3회는 후속이며 새 IdP 출처·MFA 의무화·자동 CA·전 앱 전환 도구를 먼저 만들지 않음 |
+| 2 | 사용자·그룹 앱 권한과 공통 업무 ACL·연계 기반 (UI §7-2) | G1~G3 기반에 G4 디렉터리/현재 그룹 확인 → G5·G6 공통 ACL SDK·서버 집행·공유/회수. 이후 A2 서비스 주체와 UI Use/API Invoke 분리를 해당 기능으로 진행. 앱 DB의 공간·ACL 소유 유지, 작은 PLM 연계는 필요한 기능이 준비될 때 인수 | G1~G3·관리 화면·A1 기본 감사 구현분 운영 반영. G4~G6·A2·Invoke·상세 감사는 미구현. 다음 기능 작업으로 G4부터 진행하며 전체 PLM·이벤트·파일은 선행 조건이 아님. [보완 검증](releases/core-review-2026-11-04-validation.json), [배포](releases/core-review-2026-11-04-deployment.json), [11-05 배포](releases/core-runtime-management-2026-11-05-deployment.json) |
 | 3 | 공용 UI 배포·테마/언어 (UI §7-1) | miy v1 기반 U1 UI 원칙·U2 다크 테마·U3 한/영·U4 primitive·U5 날짜/공휴일·U6 SDK 확장. 기존 MF/AppRuntime을 유지하므로 독립 UI 작업과 테마/언어 개발은 호환 검사를 하며 병행. 인증 변경과 겹치는 부분만 경계와 맞춤 | 미착수. iframe 브리지·별도 dev 포털·모든 후속 보안 완료를 기다리지 않음 |
 | 4 | 데이터 연결·앱 조합과 공통 업무 기능 (UI §7-3) | Storage API → 파일(V1-F1·F2·F4) → 알림(V1-F3) → 편집기·선택한 업무 앱(V1-F5·F6). PLM/PDM의 대형 파일은 파일 ID·버전·좁은 접근 권한으로 전달. 업무 이벤트/outbox·중복 방지·재시도·실패 조회·감사 계약을 앱 연계에 추가. 외부 PostgreSQL·HTTP와 환경별 바인딩, 내장 Git·기준 저장소 연결, 필요한 실시간(V1-F7)·앱 간 검색(V1-F8)을 앱별로 인수 | 미착수. 업무 이벤트 큐·대용량 파일·서비스 주체는 미구현이며 기존 JSON 앱 호출·운영 작업 큐의 구현과 구분 |
 | 병행 | 공통 AI 연결 최소 실험 (4-1) | 최초 로드맵의 원칙대로 5단계까지 미루지 않는다. Codex App Server 연동 규칙(V1-I6), 모델 연결 목록(V1-I5) 설계 확인, Hermes 통합 비용 측정(결정 사항 5). 1~4와 병행 가능 | 설계만 있음 |
 | 5 | 내장 챗봇과 앱 AI 기능 (5단계) | [AI 계획](AI.md) 기준. AI 독립 운영(V1-I14), 실행 내구성(V1-I1), 도구 신원(V1-I2), 쓰기 승인(V1-I3), 도구 선언(V1-I4), 이후 V1-I7~I13 | 미착수 |
 | 6 | 코어 3~5차 남은 구현과 종합 인수(베타 전) | 전체 자원 예약, 백업·복원 제품/updater, 새 서버·수명주기·독립 반복 BV-13, V1-O3~O8·채택 시 V1-R3. MFA 의무화·보안 관제·자동 CA는 후속 권장. 외부 노출/외부 앱 도입 시 별도 IdP/사이트·앱 격리를 재검토 | 부분 실증만 있음, 전체 인수 미완료. 사내 최소 경계와 기능 개발의 선행 조건으로 올리지 않음 |
-| 상시 | 사용자 수행 인수, 영역별 검사 보강, 미해결 관찰 | 사용자가 [Windows 인수](WINDOWS-ACCEPTANCE.md) 절차로 설치·갱신·제거와 원격 앱 DB 보존을 확인. 기존 HTTP IP 결과를 단일 IP·사설 CA HTTPS나 신규 보안 인수로 대체하지 않음. [0.6.3 절차](WINDOWS-0.6.3-ACCEPTANCE.md)는 당시 후보의 이력. macOS 추가 인수, 해당 영역을 바꿀 때 V1-Q4~Q9 적용, 앱 최초 로딩 오류 1회 관찰(보관된 UI-1~5 §6), 설치되지 않은 앱 권한 정책 결정, 아래 보류 사용성 항목 | Windows 0.7.0 절차·검사기 준비 완료 · 실제 실행은 사용자 수행 |
+| 상시 | 사용자 수행 인수, 영역별 검사 보강, 미해결 관찰 | 사용자가 [Windows 인수](WINDOWS-ACCEPTANCE.md) 절차로 설치·갱신·제거와 원격 앱 DB 보존을 확인. 기존 HTTP IP 결과를 단일 IP·사설 CA HTTPS나 신규 보안 인수로 대체하지 않음. [0.6.3 절차](WINDOWS-0.6.3-ACCEPTANCE.md)는 당시 후보의 이력. macOS 추가 인수, 해당 영역을 바꿀 때 V1-Q4~Q9 적용, 앱 최초 로딩 오류 1회 관찰(보관된 UI-1~5 §6), 설치되지 않은 앱 권한 정책 결정, 아래 보류 사용성 항목과 Docker 저장소별 native export digest 호환성 | Windows 0.7.0 절차·검사기 준비 완료 · 실제 실행은 사용자 수행. Docker classic store의 native export 호환성은 아래 미해결 관찰 참조 |
 
 ### 결정이 필요한 사항
 
@@ -42,7 +42,7 @@
 3. 대표 앱의 내부 공간·역할·공유·회수 계약: **결정(2026-11-03): v1 PMS 공간 모델을 줄인 프로젝트·업무 앱**에서 구현·인수한다. 플랫폼 공통 워크스페이스는 도입하지 않으며 공간이 필요 없는 앱은 그대로 동작한다. 2026-11-06 PLM 검토는 이 대표 앱을 대체하지 않고 공통 ACL과 작은 PLM→PDM/MES 연계 인수를 추가하는 요구다. 업무 앱 구현은 코어와 분리한다.
 4. 대외 소개 자료의 제품 요구(V1-R1~R5, 비용 집계 V1-A3는 R2에 포함)와 v1 보류 앱(Mail·Community·Whiteboard·Video-chat)의 채택 범위. 상세 범위는 v1 적용 계획 §3.6·3.8에서 관리한다.
 5. Hermes 채택 유지: PRD 합의 사항이다. 다만 v1은 upstream 공백 9건을 자체 어댑터로 메웠고, 그중 일부는 비공개 API를 썼다. 4-1 실험에서 이 비용을 확인한다.
-6. **확정(2026-11-06): 사내 최소 보안·호환성 우선.** 회사가 관리하는 앱·개발자와 제한된 사내 접속을 대상으로 MF/AppRoot·단일 IP HTTPS를 유지한다. 업무 포털과 콘솔+Keycloak 두 출처, portal/console 세션·콘솔 CLI 승인·prod 사용/관리 분리가 필수다. 기존 CLI·SDK·miy-web·realm/sub·토큰 수명은 재사용한다. 같은 페이지 앱 격리와 포트 쿠키 격리를 주장하지 않는다. 별도 IdP/dev 포털·MFA 의무화·자동 CA·전체 앱 전환은 후속이며 공개 운영을 사내 범위로 자동 인정하지 않는다. 상세는 [APP-BOUNDARIES](APP-BOUNDARIES.md). 미지원 service/AI credential·업무 WebSocket은 기본 거부다. 최소 경계는 소스 구현·운영 미반영이다.
+6. **확정(2026-11-06): 사내 최소 보안·호환성 우선.** 회사가 관리하는 앱·개발자와 제한된 사내 접속을 대상으로 MF/AppRoot·단일 IP HTTPS를 유지한다. 업무 포털과 콘솔+Keycloak 두 출처, portal/console 세션·콘솔 CLI 승인·prod 사용/관리 분리가 필수다. 기존 CLI·SDK·miy-web·realm/sub·토큰 수명은 재사용한다. 같은 페이지 앱 격리와 포트 쿠키 격리를 주장하지 않는다. 별도 IdP/dev 포털·MFA 의무화·자동 CA·전체 앱 전환은 후속이며 공개 운영을 사내 범위로 자동 인정하지 않는다. 상세는 [APP-BOUNDARIES](APP-BOUNDARIES.md). 미지원 service/AI credential·업무 WebSocket은 기본 거부다. 최소 경계는 서버·UI `a4ad370`으로 운영에 반영했다.
 
 현재 v2의 실제 데이터에 영향을 주는 변경 전에는 해당 범위의 백업·복구 경로를 먼저 확보한다. 권한 계약·기존 설치 전환은 [코어 권한 안내](CORE-PERMISSIONS.md)를 따른다. 기본 회귀 검사는 각 단계에서 수행한다. 다른 단계의 PASS를 이월하지 않는다.
 
@@ -55,6 +55,10 @@
 | 5 | 격리된 새 서버·앱 수명주기 인수 | 새 설치·재실행·재부팅·업데이트·실패 복구·복원 후 앱/데이터/권한 확인, 기존 운영 서비스와 분리한 반복 증거 | 기존 부분 실증 있음 · 새 전체 인수 NOT_RUN |
 
 1차 구현 `9967265`와 2차 권한 보강의 실행 증거는 각각 [1차 기록](releases/core-hardening-2026-11-03-validation.json)과 [2차 기록](releases/core-permissions-2026-11-03-validation.json)에 있다. 2026-11-02의 0.6.3 main 통합, Windows 설치기 준비, Codex·Claude 독립 앱 개발 인수 결과는 [핵심 흐름 사용자 테스트](CORE-TESTING.md)와 [독립 AI 인수 결과](INDEPENDENT-AGENTS-0.6.3-ACCEPTANCE.md)에 있다. 그 인수에서 다음은 `NOT_RUN`이다: 로컬 `app dev`, 로컬→dev 데이터 보존, prod 승격, 새 환경 반복(V7).
+
+### 미해결 호환성 관찰
+
+Docker 28 classic image store의 native `docker save` 결과는 image `.Id`가 가리키는 config digest와 OCI manifest digest가 달라 현재 native export 검사에 실패한다. 이번 CI에서 확인한 호환성 과제이며 제품의 digest 검증을 완화하거나 해결 PASS로 표시하지 않았다. 운영과 격리 회귀 112개는 containerd image store 범위다. 생성한 classic archive를 이 기준 저장소로 import한 시험은 모든 Docker 저장소의 raw native export 지원을 뜻하지 않는다. 상세 범위는 [회귀 실행 환경과 한계](../scripts/runtime-regression/README.md)를 따른다.
 
 ### 보류 중인 사용성 개선
 

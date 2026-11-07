@@ -1,0 +1,441 @@
+{
+  "date": "2026-11-07",
+  "status": "PASS",
+  "scope": "Deployment of this project to its existing v2.dwdcc.kr server; no declaration of a public launch or completed product development.",
+  "sourceCommit": "a4ad37006c58bc80de61892517cd3e1a153208ba",
+  "implementationCommit": "58cecffc497ac3c1da7e19539a2a482d34c1c424",
+  "previousServerSourceCommit": "7b437890030f0da6f10dc6a76881891f353f31cf",
+  "serverVersion": "0.7.0",
+  "serverSha256": "450a1709dea67803ce120bcc8c4fc55d9823f28006cf420378f312c93c26e5a2",
+  "uiSourceCommit": "a4ad37006c58bc80de61892517cd3e1a153208ba",
+  "uiIndexSha256": "69489bb2b44c1e7df85d7f5b1b99722f92477a83594d095fb3f1e62093f73e01",
+  "publishedCliSourceCommit": "01e4d4924f8c8fc4e11720c1af81adf17ddb20bf",
+  "publishedCliAndSdkChanged": false,
+  "bundleVersion": "0.8.0",
+  "build": {
+    "cleanCheckout": true,
+    "profile": "cargo build --locked; strip --strip-debug",
+    "ui": "isolated ui-rollout.py build; verified immutable assets; atomic index replacement"
+  },
+  "ci": {
+    "web.yml": {
+      "runId": 42329736472,
+      "attempt": 1,
+      "url": "https://github.com/hurxxxx/miy-v2/actions/runs/42329736472",
+      "headSha": "a4ad37006c58bc80de61892517cd3e1a153208ba",
+      "conclusion": "success",
+      "jobs": 1
+    },
+    "cli-foundation.yml": {
+      "runId": 42329736468,
+      "attempt": 1,
+      "url": "https://github.com/hurxxxx/miy-v2/actions/runs/42329736468",
+      "headSha": "a4ad37006c58bc80de61892517cd3e1a153208ba",
+      "conclusion": "success",
+      "jobs": 5
+    },
+    "runtime-regression.yml": {
+      "runId": 42329736540,
+      "attempt": 1,
+      "url": "https://github.com/hurxxxx/miy-v2/actions/runs/42329736540",
+      "headSha": "a4ad37006c58bc80de61892517cd3e1a153208ba",
+      "conclusion": "success",
+      "jobs": 1
+    }
+  },
+  "deployment": {
+    "startedAt": "2026-11-07T02:44:10Z",
+    "finishedAt": "2026-11-07T02:44:36Z",
+    "publicMaintenanceStartedAt": "2026-11-07T02:44:14Z",
+    "publicMaintenanceFinishedBy": "2026-11-07T02:44:36Z",
+    "publicMaintenanceApproxSeconds": 22,
+    "portalOrigin": "https://v2.dwdcc.kr",
+    "consoleOrigin": "https://v2.dwdcc.kr:9443",
+    "identityIssuer": "https://v2.dwdcc.kr:9443/identity/realms/miy",
+    "portalBind": "127.0.0.1:18180",
+    "consoleBind": "127.0.0.1:18182",
+    "schemaBefore": 19,
+    "schemaAfter": 20,
+    "sharedDevelopmentLogin": false,
+    "browserSignInAgainRequired": true,
+    "directOAuthMcpClientsMayNeedReauthentication": true,
+    "keycloakTransition": "realm frontendUrl and exact miy-web callbacks/logout only; existing container/KC_HOSTNAME preserved; frontend override verified in isolated OIDC rehearsal",
+    "databaseAndIdentityContainersRecreated": false,
+    "applicationContainersUnchanged": 7,
+    "runningApplicationContainers": 5,
+    "stoppedApplicationContainers": 2,
+    "stableRecordsPreserved": true,
+    "independentCliCredentialsPreserved": true,
+    "otherProjectConfigurationOrDataChanged": false
+  },
+  "backup": {
+    "core": {
+      "bytes": 231772,
+      "tables": 40,
+      "rows": 1474,
+      "finalSnapshotAfterCoreStopped": true,
+      "restoreAndRollbackRehearsal": {
+        "status": "PASS",
+        "sourceCommit": "a4ad37006c58bc80de61892517cd3e1a153208ba",
+        "candidateSha256": "450a1709dea67803ce120bcc8c4fc55d9823f28006cf420378f312c93c26e5a2",
+        "restoreHelperSha256": "a514d2c72948e56907b13a1304b0624301474a6e57cc399e58c390e5fba86550",
+        "migrateExitCode": 0,
+        "migratedVersion": 20,
+        "restoredVersion": 19,
+        "retainedOldColumnTables": 37,
+        "retainedRowsMatch": true,
+        "cliCredentialAndDelegationRowsMatch": true,
+        "oldPendingDeviceApprovalsCleared": true,
+        "legacyPublicIdsUnique": true,
+        "independentCredentialRowsBefore": {
+          "cli_tokens": 0,
+          "cli_sessions": 20,
+          "cli_access_tokens": 1,
+          "cli_refresh_tokens": 32,
+          "delegations": 0
+        },
+        "invalidatedBrowserRowsBefore": {
+          "cli_authorizations": 0,
+          "development_sessions": 1,
+          "login_flows": 0,
+          "sessions": 13
+        },
+        "tables": 40,
+        "rows": 1474,
+        "mismatchedTables": [],
+        "rowDigestMismatchedTables": [],
+        "stableRowDigestsMatch": true,
+        "newPurposeColumnGone": true,
+        "keptDatabaseHasProbe": true,
+        "keptDatabaseClosed": true,
+        "propertiesMatchOriginalFixture": true,
+        "ownershipAndObjectACLMatch": true,
+        "nonPrivilegedMigrationOwner": true,
+        "containerRemoved": true
+      }
+    },
+    "identity": {
+      "status": "PASS",
+      "backupBytes": 257433,
+      "tables": 101,
+      "rows": 1279,
+      "mismatchedTables": [],
+      "rowDigestMismatchedTables": [],
+      "propertiesMatch": true,
+      "ownershipAndObjectACLMatch": true,
+      "userSubAndRealmRowsMatch": true,
+      "clientRowsMatch": true,
+      "realmAttributeRowsMatch": true,
+      "clientAttributeRowsMatch": true,
+      "containerRemoved": true
+    },
+    "privateRecoveryPaths": [
+      ".local/release-a4ad370-boundaries/core-02/rollback/",
+      ".local/release-a4ad370-boundaries/ui/production-backup/",
+      ".local/evidence/internal-boundaries-20261107-deploy/settings-prepared-a4ad370-attempt-02/backup/",
+      ".local/evidence/internal-boundaries-20261107-deploy/rehearsal/identity/"
+    ]
+  },
+  "verification": {
+    "liveConnection": {
+      "status": "passed",
+      "passed": 20,
+      "checks": [
+        "isolated_private_config_and_execution_cli_provenance",
+        "public_health_capabilities_and_published_cli_install_binding",
+        "fixed_portal_and_console_auth_options_and_health",
+        "oidc_discovery_and_http_mcp_unauthenticated_401",
+        "ordinary_developer_oidc_login_without_shared_development_session",
+        "console_oidc_sso_same_identity_and_browser_purpose_separation",
+        "isolated_cli_device_login_same_browser_identity_and_auth_status",
+        "authenticated_cli_doctor_operate",
+        "local_app_init_and_generated_mcp_configuration_without_remote_registration",
+        "generated_stdio_mcp_initialize_and_required_tools",
+        "mcp_get_contract_matches_live_version_and_installed_bundle",
+        "mcp_search_api_matches_authenticated_http_catalog",
+        "mcp_list_components_matches_authenticated_http_components",
+        "mcp_get_cli_help_matches_executed_cli_describe",
+        "owned_stdio_mcp_process_closed",
+        "owned_cli_session_logged_out",
+        "owned_browser_console_session_logged_out",
+        "owned_browser_portal_session_logged_out",
+        "owned_browser_context_closed",
+        "owned_headless_browser_closed"
+      ],
+      "cleanupFailures": [],
+      "publishedCliSha256": "47e1930cb3e6a2d278faf39e195b9da162a524b2f220c48ed05efd27e1198e85",
+      "harnessSha256": "26ec8b428d7eb6555b1d20ed23ae7411a06bb4d3358fbf725ebd9fa73de3f3ad"
+    },
+    "liveUi": {
+      "schemaVersion": 1,
+      "scope": "production_read_only_existing_dev_mf_and_console_browser_boundaries",
+      "expectedDeploymentCommit": "a4ad370",
+      "startedAt": "2026-11-07T02:45:28.452Z",
+      "finishedAt": "2026-11-07T02:45:43.671Z",
+      "status": "PASS",
+      "harnessSha256": "a35611f0fd1c4a5fea44113df0c369b2787009b48f2133f024b9255ee734b278",
+      "tlsVerification": "required_no_bypass",
+      "screenshotsTracesAndRawResponses": "disabled",
+      "settleWindowMs": 1200,
+      "portalChecks": [
+        "deployed_two_surface_configuration",
+        "ordinary_developer_portal_session_and_no_runtime_controls",
+        "managed_installations_403",
+        "app_catalog_403"
+      ],
+      "consoleChecks": [
+        "console_has_no_remote_script_business_content_or_browser_errors"
+      ],
+      "appCounts": {
+        "visibleDev": 4,
+        "runningDev": 2,
+        "selected": 2,
+        "passed": 2,
+        "failed": 0
+      },
+      "apps": [
+        {
+          "appIdSha256": "75572b98d58b25708085b58d4a474eea7b37510d5cd8d3f5c9ddcf5f63b4a287",
+          "kind": "docker_app",
+          "status": "PASS",
+          "checks": [
+            "mf_mounted_with_200_assets_no_iframe",
+            "read_only_back_and_forward",
+            "read_only_reload_with_200_assets"
+          ],
+          "metrics": {
+            "pageErrors": 0,
+            "consoleErrors": 0,
+            "httpFailures": 0,
+            "failedRequests": 0,
+            "abortedNavigations": 0,
+            "unexpectedDialogs": 0,
+            "blockedWrites": 0,
+            "blockedWebSockets": 0,
+            "remoteScriptRequests": 0,
+            "appContentRequests": 0,
+            "artifact200": 33,
+            "artifactOther": 0
+          }
+        },
+        {
+          "appIdSha256": "ee4565814e7500060b238381185e4ae9225a3a379ba53fbb9fbae6928e3ac874",
+          "kind": "docker_app",
+          "status": "PASS",
+          "checks": [
+            "mf_mounted_with_200_assets_no_iframe",
+            "read_only_back_and_forward",
+            "read_only_reload_with_200_assets"
+          ],
+          "metrics": {
+            "pageErrors": 0,
+            "consoleErrors": 0,
+            "httpFailures": 0,
+            "failedRequests": 0,
+            "abortedNavigations": 0,
+            "unexpectedDialogs": 0,
+            "blockedWrites": 0,
+            "blockedWebSockets": 0,
+            "remoteScriptRequests": 0,
+            "appContentRequests": 0,
+            "artifact200": 30,
+            "artifactOther": 0
+          }
+        }
+      ],
+      "blockedBrowserWrites": 0,
+      "blockedWebSockets": 0,
+      "requestGuardFailures": 0,
+      "cleanup": [
+        {
+          "purpose": "console",
+          "status": "PASS"
+        },
+        {
+          "purpose": "portal",
+          "status": "PASS"
+        }
+      ],
+      "consoleMetrics": {
+        "pageErrors": 0,
+        "consoleErrors": 0,
+        "httpFailures": 0,
+        "failedRequests": 0,
+        "abortedNavigations": 0,
+        "unexpectedDialogs": 0,
+        "blockedWrites": 0,
+        "blockedWebSockets": 0,
+        "remoteScriptRequests": 0,
+        "appContentRequests": 0,
+        "artifact200": 0,
+        "artifactOther": 0
+      }
+    },
+    "publicHttp": {
+      "status": "PASS",
+      "checks": 7,
+      "scope": "portal/console HTTPS 200, anti-frame/nosniff headers, old portal IdP 404, console IdP admin and app artifacts 404, both shared development logins disabled"
+    },
+    "keycloakOverrideAndRollback": {
+      "status": "PASS",
+      "checks": 16,
+      "privateEvidence": ".local/miy-https-39f7dfda90fe/summary.json"
+    },
+    "rolloutFailurePaths": {
+      "status": "PASS",
+      "checks": 15,
+      "privateEvidence": ".local/evidence/internal-boundaries-20261107-deploy/rehearsal/rollout-tests-04.json"
+    },
+    "proxyReadiness": {
+      "status": "PASS",
+      "checks": 2,
+      "privateEvidence": ".local/evidence/internal-boundaries-20261107-deploy/maintenance-readiness-tests.json"
+    },
+    "githubRuntime": {
+      "status": "PASS",
+      "observations": 112,
+      "suites": {
+        "runtime": 46,
+        "operations": 6,
+        "cli": 6,
+        "auth": 8,
+        "permissions": 24,
+        "delegation": 10,
+        "boundary": 10,
+        "migration": 2
+      },
+      "runId": 42329736540
+    }
+  },
+  "commands": [
+    {
+      "command": "git commit; git push origin main",
+      "status": "PASS",
+      "commits": [
+        "58cecff",
+        "05ec791",
+        "a4ad370"
+      ]
+    },
+    {
+      "command": "rollout.py inspect; rollout.py apply (attempt 2)",
+      "status": "PASS"
+    },
+    {
+      "command": "core-backup.py create; rehearse.py final snapshot",
+      "status": "PASS"
+    },
+    {
+      "command": "rehearsal/identity/backup_verify.py",
+      "status": "PASS"
+    },
+    {
+      "command": "check-platform-connection.mjs --origin https://v2.dwdcc.kr --cli <published-cli> --credentials-file <private> --output <private evidence>",
+      "status": "PASS"
+    },
+    {
+      "command": "check-live-ui-readonly.mjs --run-after-deploy --credentials-file <private> --max-apps 3",
+      "status": "PASS",
+      "scope": "2 eligible running dev apps; no third eligible target"
+    }
+  ],
+  "failedAttemptsPreserved": [
+    {
+      "scope": "initial clean-checkout build setup",
+      "status": "FAIL",
+      "reason": "cargo was not on shell PATH; offline pnpm store missed a tarball",
+      "resolution": "explicit Cargo PATH and frozen-lockfile install succeeded; initial logs retained"
+    },
+    {
+      "scope": "58cecff web CI",
+      "status": "FAIL",
+      "runId": 42328711077,
+      "reason": "pinned Caddy image not prepared",
+      "resolution": "05ec791 adds proxy prerequisites"
+    },
+    {
+      "scope": "05ec791 runtime CI",
+      "status": "FAIL",
+      "runId": 42328981836,
+      "reason": "Docker classic store native .Id and OCI manifest digest differ",
+      "resolution": "a4ad370 explicitly selects and asserts the reference containerd store; no product digest validation weakened"
+    },
+    {
+      "scope": "05ec791 macOS CI",
+      "status": "CANCELLED",
+      "runId": 42328981826,
+      "reason": "macos-14 runner configuration no longer supported",
+      "resolution": "a4ad370 uses macos-15"
+    },
+    {
+      "scope": "production attempt 1",
+      "status": "FAIL",
+      "recoveryStatus": "ROLLED_BACK",
+      "failureCategory": "public_traffic_not_closed",
+      "startedAt": "2026-11-07T02:41:39Z",
+      "finishedAt": "2026-11-07T02:41:48Z",
+      "databaseChanged": false,
+      "rollbackUsed": true,
+      "privateEvidence": ".local/release-a4ad370-boundaries/core/deployment.json",
+      "resolution": "Wait for observable 503 on both origins after asynchronous Nginx reload; retain old CLI approvals/development-login denial in rollback proxy; fresh attempt succeeded",
+      "toolSha256": "62129ac97f973698e1cbb592277865bb6d82c7e88b33f6dcc1f5073d0c990998"
+    }
+  ],
+  "notRun": [
+    {
+      "check": "Windows 11 real installation/update/removal and native UI",
+      "reason": "User performs later; hosted Windows CI is not this acceptance"
+    },
+    {
+      "check": "Access from a separate external PC to console port 9443",
+      "reason": "Host DNS/TLS/listeners and real local browser via public origins verified; no external client controlled"
+    },
+    {
+      "check": "Existing external OAuth MCP client reauthentication after issuer change",
+      "reason": "Discovery/challenge and newly authenticated published CLI stdio MCP verified; existing external client session not available"
+    },
+    {
+      "check": "Production core/identity database restoration",
+      "reason": "Real dumps restored and core rollback exercised only in disposable PostgreSQL; live DB restore was not needed"
+    },
+    {
+      "check": "All existing browser service workers, cache/cookie-bomb recovery and certificate replacement",
+      "reason": "Fresh verified browsers tested; no claim of cleaning every pre-existing client"
+    },
+    {
+      "check": "Third live app UI",
+      "reason": "Only two eligible running dev apps were visible to the validation user; did not grant access or start stopped apps"
+    },
+    {
+      "check": "Docker 28 classic store raw native export compatibility",
+      "reason": "Current production and runtime CI cover the containerd reference store; fixture classic archive import is a different contract"
+    }
+  ],
+  "limits": [
+    "The no-iframe model trusts company-controlled apps in the portal; it does not isolate hostile same-page JavaScript or cookies by port.",
+    "Shared development sign-in was deliberately disabled on this public instance; ordinary OIDC remains available.",
+    "The generic same-schema core-rollout.py has not gained this one-time transition tool's exact-SHA CI gate.",
+    "No production app database, app permissions, unrelated project configuration, CLI download artifacts or SDK bundle was changed."
+  ],
+  "officialCiReferences": [
+    "https://github.com/actions/runner-images",
+    "https://github.com/moby/moby/blob/v28.0.4/image/tarexport/save.go"
+  ],
+  "toolSha256": {
+    "check-live-ui-readonly.mjs": "a35611f0fd1c4a5fea44113df0c369b2787009b48f2133f024b9255ee734b278",
+    "settings-transition.py": "e25172eb305443d99c5e1e6b260ab9b602e45dee6fa9f722aec917819a07d82e",
+    "restore-core.py": "a514d2c72948e56907b13a1304b0624301474a6e57cc399e58c390e5fba86550",
+    "rollout.py": "ae58501b2332ecf108c3ac20e2ac7bf43f6259f9588003a1450521b8565a4dc6",
+    "rehearse-core.py": "fe021395c8cfc037ce0a1fa55b71ef6ba277c5209620c8ea1019c7cbca215309",
+    "README.md": "e1560adfe94cf44b5585b359c05f7d633b09406499a4819880cfca56cf91e750"
+  },
+  "documentationVerification": {
+    "status": "PASS",
+    "command": "python3 scripts/check-doc-links.py; git diff --cached --check",
+    "relativeLinks": 729,
+    "trackedMarkdownFiles": 61,
+    "newEvidencePythonSyntax": "PASS",
+    "secretPatternScan": "PASS",
+    "historicalArchiveAndPriorReleaseRecordsModified": false
+  }
+}

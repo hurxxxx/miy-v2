@@ -8,7 +8,7 @@
 - [변경별 검사 지도](docs/CHECKS.md): 바꾼 영역에 맞는 최소 검사.
 - 제품 계약은 [PRD](docs/PRD.md), 권한 계약은 [코어 권한](docs/CORE-PERMISSIONS.md)이 기준이다. 구현된 동작은 코드와 테스트가 최종 기준이다.
 
-- 앱 출처·세션·실행 계약을 바꿀 때 [사내 최소 보안 설계](docs/APP-BOUNDARIES.md)를 먼저 읽는다. iframe 없는 MF·통합 라우팅·단일 IP HTTPS를 유지한다. 현재 소스는 업무 포털(dev/prod)과 관리·CLI 승인·Keycloak 콘솔 두 출처, portal/console 세션 용도를 구현했으며 운영에는 미반영이다. 구현·격리 검증·운영 전환 상태를 구분한다. 별도 IdP/dev 출처·외부 앱 격리·MFA 의무화·자동 CA를 기능 개발의 선행 조건으로 추가하지 않는다. 같은 페이지 앱 격리나 포트 쿠키 격리를 주장하지 않으며 공개 운영을 사내 전제로 자동 인정하지 않는다. 권한은 CORE-PERMISSIONS, 순서·상태는 PLAN을 따르고 게시 번들·현행·목표·역사를 구분한다.
+- 앱 출처·세션·실행 계약을 바꿀 때 [사내 최소 보안 설계](docs/APP-BOUNDARIES.md)를 먼저 읽는다. iframe 없는 MF·통합 라우팅·단일 IP HTTPS를 유지한다. 업무 포털(dev/prod)과 관리·CLI 승인·Keycloak 콘솔 두 출처, portal/console 세션 용도는 서버·UI `a4ad370`으로 2026-11-07 운영에 반영했다([배포 기록](docs/releases/internal-minimum-security-2026-11-07-deployment.json)). 운영 콘솔은 `https://v2.dwdcc.kr:9443`이며 공유 개발 로그인은 꺼져 있다. 구현·격리 검증·운영 전환 상태를 구분한다. 별도 IdP/dev 출처·외부 앱 격리·MFA 의무화·자동 CA를 기능 개발의 선행 조건으로 추가하지 않는다. 같은 페이지 앱 격리나 포트 쿠키 격리를 주장하지 않으며 공개 운영을 사내 전제로 자동 인정하지 않는다. 권한은 CORE-PERMISSIONS, 순서·상태는 PLAN을 따르고 게시 번들·현행·목표·역사를 구분한다.
 
 ## 이 호스트의 운영 경계
 

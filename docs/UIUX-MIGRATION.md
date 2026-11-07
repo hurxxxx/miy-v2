@@ -1,6 +1,6 @@
 # 플랫폼 영역과 후속 UI 계약
 
-- 기준: 2026-11-06 [사내 운영 경계](APP-BOUNDARIES.md). **회사 통제 앱의 iframe 없는 통합 UI·두 출처 분리 목표·최소 경계 구현·운영 미반영**.
+- 기준: 2026-11-07 [사내 운영 경계](APP-BOUNDARIES.md). **회사 통제 앱의 iframe 없는 통합 UI·두 출처 분리·최소 경계 구현과 운영 반영**([배포 기록](releases/internal-minimum-security-2026-11-07-deployment.json)).
 - UI-1~5의 ai-do 기반 이식·후속 리뷰는 [완료 이력](archive/UIUX-MIGRATION-UI1-5.md)에 보존한다. 후속 원본은 miy v1이며 독립 앱의 iframe 방식을 v2의 필수 UI 계약으로 이식하지 않는다.
 
 ## 세 영역의 화면 책임
@@ -25,4 +25,4 @@
 
 ## 검증과 상태
 
-동적 앱 추가·통합 라우팅의 기존 인수 요구를 유지한다. 신규 최소 인수는 두 출처와 세션 용도, 콘솔의 CLI 승인·IdP, 관리/사용 권한, 안전한 문자열·응답 헤더·API 탐색 방어와 정상 dev/prod UI를 실제 core·브라우저로 확인한다. 상세 항목은 [경계 인수](APP-BOUNDARIES.md#경계-인수)를 따르며 현재 NOT_RUN이다. 같은 페이지의 앱을 강제로 격리했다는 판정은 하지 않는다. 과거 PASS를 새 인수로 옮기지 않고 운영 dist·Windows 사용자 수행 원칙을 유지한다.
+동적 앱 추가·통합 라우팅의 기존 인수 요구를 유지한다. 신규 최소 인수는 두 출처와 세션 용도, 콘솔의 CLI 승인·IdP, 관리/사용 권한, 안전한 문자열·응답 헤더·API 탐색 방어와 정상 dev/prod UI를 실제 core·브라우저로 확인한다. 상세 결과는 [경계 인수](APP-BOUNDARIES.md#경계-인수)의 실제 실행 범위를 따른다. 격리 Core UI 7개·전체 스택 6개 검사는 PASS이며, 운영 서버·UI `a4ad370` 반영과 이후 확인은 [배포 기록](releases/internal-minimum-security-2026-11-07-deployment.json)에서 구분한다. 실제 Windows, 기존 기기의 worker 정리와 인쇄/새 탭 전체 인수는 NOT_RUN이다. 같은 페이지의 앱을 강제로 격리했다는 판정은 하지 않는다. 과거 PASS를 새 인수로 옮기지 않고 운영 dist·Windows 사용자 수행 원칙을 유지한다.

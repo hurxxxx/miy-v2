@@ -1,6 +1,6 @@
 # 코어 안정화 계획
 
-- 작성·수정일: 2026-11-03
+- 작성일: 2026-11-03 · 수정일: 2026-11-07
 - 기준: 현재 소스 CLI 0.7.0 / 개발 번들 0.8.0 (운영도 2026-11-03부터 0.7.0 / 0.8.0), [PLAN](PLAN.md)의 현재 작업 순서
 - 상태: **1·2차 구현·단위/격리 회귀 및 SDK/CLI 검증. 실제 운영 Docker 후속 호출·서비스 계정과 3~5차는 별도다. [구조 기반](#구조-기반)은 2026-11-05 착수.**
 
@@ -10,7 +10,7 @@
 
 2026-11-03 사용자 결정에 따라 1·2차 이후 [기본 UI/UX 이식](UIUX-MIGRATION.md)을 진행했다. ai-do를 원본으로 라이트 테마·한국어·새 설치 기준의 UI-1~4를 구현하고 UI-5 통합 검증을 마쳤으며, v2.dwdcc.kr에 웹 화면과 0.7.0 서버·migration 17·공개 CLI를 반영했다([배포 기록](releases/core-0.7.0-deployment.json)). 후속 설계 기준은 공식 miy v1이며, 플랫폼의 사용자·그룹별 앱 사용 권한과 앱 내부의 선택적 데이터 공간을 적용한다. 각 기능의 회귀 검사는 계속 수행하고 현재 실행 순서는 [추진 계획](PLAN.md)을 따른다.
 
-운영 서버·UI와 게시 CLI의 현재 배포 소스는 [운영 안내](SERVER-OPERATIONS.md)를 따른다(2026-11-05 기준 서버·UI `7b437890030f0da6f10dc6a76881891f353f31cf`, 게시 CLI `01e4d4924f8c8fc4e11720c1af81adf17ddb20bf`, 모두 0.7.0). 이전 0.6.3 source `8d7d04271f9467d8bbdd16308e73715b33e4dc0c`와 main 통합 commit `a6fae065ed627bb63798cf74ea8a2c73a744c104`는 구분한다. 문서·소스 수정은 운영 반영을 뜻하지 않는다. [운영 안내](SERVER-OPERATIONS.md)의 기존 서비스·데이터 보존 경계를 유지하며, 새 인수는 격리 환경에서 수행한다. 사용자 Windows 11 실제 검증은 사용자가 추후 수행한다. 0.7.0용 절차와 출처 검사기는 [Windows 인수](WINDOWS-ACCEPTANCE.md)에 준비했고 실제 실행은 `NOT_RUN`이다. [0.6.3 인수 기록](WINDOWS-0.6.3-ACCEPTANCE.md)의 `NOT_RUN`도 유지한다.
+운영 서버·UI와 게시 CLI의 현재 배포 소스는 [운영 안내](SERVER-OPERATIONS.md)를 따른다(2026-11-07 기준 서버·UI `a4ad37006c58bc80de61892517cd3e1a153208ba`, 게시 CLI `01e4d4924f8c8fc4e11720c1af81adf17ddb20bf`, 모두 0.7.0). 이전 0.6.3 source `8d7d04271f9467d8bbdd16308e73715b33e4dc0c`와 main 통합 commit `a6fae065ed627bb63798cf74ea8a2c73a744c104`는 구분한다. 이번 최소 경계와 기반 보완의 운영 반영은 [배포 기록](releases/internal-minimum-security-2026-11-07-deployment.json)으로 확인하며 문서·소스 수정만으로 후속 배포를 주장하지 않는다. [운영 안내](SERVER-OPERATIONS.md)의 기존 서비스·데이터 보존 경계를 유지하며, 새 인수는 격리 환경에서 수행한다. 사용자 Windows 11 실제 검증은 사용자가 추후 수행한다. 0.7.0용 절차와 출처 검사기는 [Windows 인수](WINDOWS-ACCEPTANCE.md)에 준비했고 실제 실행은 `NOT_RUN`이다. [0.6.3 인수 기록](WINDOWS-0.6.3-ACCEPTANCE.md)의 `NOT_RUN`도 유지한다.
 
 ## 현재 구현과 기존 증거
 
@@ -33,7 +33,7 @@
 
 ## 1차: worker 제어·빌드 실행 분리와 DB 오류 계약
 
-**현재 상태: 구현과 아래 단위·격리 통합 회귀 통과. 운영 서버 재배포나 전체 코어 완료를 뜻하지 않는다.**
+**현재 상태: 구현과 아래 단위·격리 통합 회귀 통과, 구현분 운영 반영. 이 절의 과거 검사 결과를 전체 코어 완료나 새 범위의 인수로 확대하지 않는다.**
 
 착수 시점의 [worker](../crates/miy/src/worker.rs)는 제어 순회에서 `server_build_worker::tick`을 await하고 빌드 완료까지 기다렸다. [빌드 worker](../crates/miy/src/server_build_worker.rs)의 컴파일 제한 시간은 1,800초다. 이 구조에서는 빌드 중 다음 제어·reconcile 순회가 지연될 수 있다. HTTP 관찰 task가 별도라는 사실만으로 앱 stop/start 처리 지연이 해결되지는 않는다.
 
@@ -128,7 +128,7 @@ Windows 사용자 인수, 실제 콘솔 신호, 다른 OS 또는 Docker Desktop 
 
 ## 구조 기반
 
-회귀 상시화·권한 판정 단일화·API 계약 단일 원본이다. **현재 상태(2026-11-06, 소스·격리 검증, 운영 미반영): 2·4 완료, 3은 첫 묶음과 리뷰 보완 완료, 1은 운영 반영 도구의 CI 확인이 남음.** 2026-11-05 후속 리뷰의 결함(위임 실행 접수 후 403, 작업 목록·상세 권한 불일치, main CI 실패 중 운영 반영)의 구조적 원인을 기능 추가 전에 정리한다. 착수 순서는 [추진 계획](PLAN.md#다음-우선-작업)의 "기반" 행을 따른다.
+회귀 상시화·권한 판정 단일화·API 계약 단일 원본이다. **현재 상태(2026-11-07, 구현분 운영 반영): 2·4 완료, 3은 첫 묶음과 리뷰 보완 완료. 1의 이번 대상 SHA CI는 전환 전용 도구에서 확인했고 일반 `core-rollout.py`의 CI gate 통합은 남음.** 2026-11-05 후속 리뷰의 결함(위임 실행 접수 후 403, 작업 목록·상세 권한 불일치, main CI 실패 중 운영 반영)의 구조적 원인을 기능 추가 전에 정리한다. 착수 순서는 [추진 계획](PLAN.md#다음-우선-작업)의 "기반" 행을 따른다.
 
 완료 기준:
 
@@ -146,8 +146,8 @@ Windows 사용자 인수, 실제 콘솔 신호, 다른 OS 또는 Docker Desktop 
    - 게시된 CLI가 읽는 필드의 호환 규칙(추가만 허용, 제거는 유예 후)을 정하고 검사한다.
 4. **CLI 버전 일치(V1-Q4 확장):** 게시 CLI의 source 이후 클라이언트 빌드에 들어가는 코드가 바뀌었는데 버전이 같으면 검사가 실패한다.
 
-진행 상태(2026-11-06, 소스 기준, 운영 미반영):
-- **1:** `.github/workflows/runtime-regression.yml`을 추가했다. GitHub 실행 결과는 push 후 확인한다. 서비스 중지 확인 보완은 커밋했으며, 운영 반영 도구가 대상 commit의 CI 성공을 확인하는 기능은 후속 작업으로 남아 있다.
+진행 상태(2026-11-07, 아래 구현분 운영 반영):
+- **1:** `.github/workflows/runtime-regression.yml`을 추가하고 이번 배포 SHA의 필수 GitHub CI를 전환 전용 도구에서 확인했다([배포 기록](releases/internal-minimum-security-2026-11-07-deployment.json)). 서비스 중지 확인 보완도 이번 반영에 포함했다. 일반 `core-rollout.py`가 대상 commit의 CI 성공을 확인하는 기능은 후속 작업으로 남아 있다. Docker classic store의 native export digest 호환성은 [PLAN의 미해결 관찰](PLAN.md#미해결-호환성-관찰)과 별개이며 제품 검증을 완화하지 않았다.
 - **2의 첫 단계(판정 이전):**
   - `crates/miy/src/policy.rs`를 만들었다. `domain`의 `authorize`·`access_decision`·`can_manage`·`manage`·`manage_action`과 `runtime`의 `authorize_request`·`authorize_job`을 지우고, 호출부 30여 곳이 동작을 지정하게 했다.
   - 앱·설치·작업 목록의 SQL 권한 조건과 설치 목록 표시값도 같은 판정으로 옮겼다. 설치 목록의 행마다 반복하던 판정 질의도 없앴다.
