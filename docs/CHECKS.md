@@ -7,7 +7,7 @@
 
 | 층 | 명령 | 필요한 것 | 안전 범위 |
 | --- | --- | --- | --- |
-| 정적 | `bash scripts/check-static.sh [all\|rust\|web\|scripts]` | Rust 1.99.1, Node 22·pnpm, Python 3, Playwright Chromium | CI와 운영 호스트에서도 실행 가능. 빌드는 `.local/evidence/check-static`에만 쓰고 모의 API를 쓴다 |
+| 정적·설정 | `bash scripts/check-static.sh [all\|rust\|web\|scripts]` | Rust 1.99.1, Node 22·pnpm, Python 3, Playwright Chromium. `scripts`의 격리 프록시 검사는 Docker·PostgreSQL/Caddy 이미지·Nginx 필요 | CI와 운영 호스트에서도 실행 가능. 빌드는 `.local/evidence/check-static`에만 쓰고 모의 API를 쓴다. 프록시 검사는 임시 경로·전용 포트만 사용 |
 | 격리 Docker | `python3 scripts/runtime-regression/run.py`, `server-ui.config.ts`, `scripts/runtime-regression/stack-ui.sh run` | Docker와 고정 이미지 | 자체 라벨·포트·상태만 만들고 정리한다. 운영 컨테이너·DB를 건드리지 않는다 |
 | 로컬 개발 스택 | `bash scripts/check.sh` | `scripts/up.sh`로 띄운 loopback 스택 | `.local`을 읽고 worker를 재시작한다. origin이 loopback이 아니면 거부한다 |
 | 운영 | [서버 운영 안내](SERVER-OPERATIONS.md)의 반영 절차와 연결 검사 | 사용자의 반영 요청 | 반영 전 백업·복원 확인, 반영 후 읽기 위주 확인 |

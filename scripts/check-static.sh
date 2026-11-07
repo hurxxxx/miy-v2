@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
-# Checks that need no running platform, Docker daemon, service manager or live state.
+# Checks that need no running platform, service manager or live state.
 # Safe on a host whose .local serves a platform and in CI:
 # - web builds go to .local/evidence/check-static (never web/platform/dist, which Nginx may serve);
 # - browser suites use their own preview ports with mocked APIs;
-# - script tests use stubs and temporary directories.
+# - script tests use stubs and temporary directories; proxy checks also require
+#   Docker with postgres:18.3 and the pinned Caddy image, plus Nginx for its checks.
 # Usage: scripts/check-static.sh [all|rust|web|scripts]   (default: all)
 set -euo pipefail
 cd "$(dirname "$0")/.."
