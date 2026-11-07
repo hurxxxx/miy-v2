@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Authenticates once through ordinary OIDC, then exercises read-only platform APIs.
+// Authenticates through portal OIDC and console SSO, then checks read-only platform APIs.
 // Only this run's browser and CLI sessions are revoked. No app is registered.
 // Example: node scripts/check-platform-connection.mjs --origin https://platform.example
 //   --cli /absolute/miy --credentials-file /private/credentials.json --output /private/new-evidence
@@ -73,6 +73,43 @@ async function publicResponse(url, expectedStatus = 200) {
 function json(text, code) { try { return JSON.parse(text); } catch { throw error(code); } }
 async function publicJson(url) { return json((await publicResponse(url)).body, "public_http_invalid_json"); }
 
+function validateBrowserOrigins(portal, options) {
+  requireThat(options?.surface === "portal" && options.portalOrigin === portal
+    && typeof options.consoleOrigin === "string", "portal_auth_options_mismatch");
+  let consoleUrl;
+  try { consoleUrl = new URL(options.consoleOrigin); } catch { throw error("invalid_console_origin"); }
+  requireThat(consoleUrl.origin === options.consoleOrigin && consoleUrl.origin !== portal
+    && consoleUrl.protocol === new URL(portal).protocol && !consoleUrl.username && !consoleUrl.password
+    && consoleUrl.pathname === "/" && !consoleUrl.search && !consoleUrl.hash,
+  "invalid_console_origin");
+  requireThat(options.oauthUrl === portal + "/auth/login", "portal_oauth_url_mismatch");
+  return [{ purpose: "portal", origin: portal }, { purpose: "console", origin: consoleUrl.origin }];
+}
+
+async function browserJson(context, origin, path) {
+  const response = await context.request.get(origin + path, { timeout: 20000, maxRedirects: 0 });
+  requireThat(response.status() === 200, "authenticated_api_status_mismatch");
+  const body = await response.body(); requireThat(body.length <= limit, "authenticated_api_body_limit");
+  return json(body.toString("utf8"), "authenticated_api_invalid_json");
+}
+
+async function logoutBrowser(context, { purpose, origin }) {
+  // A fresh context belongs only to this run. Check both purposes even when login
+  // or a later assertion failed, without touching any other user's IdP sessions.
+  const current = await context.request.get(origin + "/api/v1/me", { timeout: 15000, maxRedirects: 0 });
+  if (current.status() === 401) return;
+  requireThat(current.status() === 200, "browser_cleanup_identity_unavailable");
+  const identity = await current.json();
+  requireThat(identity.browserPurpose === purpose && typeof identity.csrf === "string" && identity.csrf.length > 0,
+    "browser_cleanup_identity_mismatch");
+  const revoked = await context.request.post(origin + "/auth/logout", { timeout: 15000, maxRedirects: 0,
+    headers: { origin, "x-miy-csrf": identity.csrf } });
+  requireThat(revoked.status() === 200, "browser_session_logout_failed");
+  // Do not follow the returned IdP logout URL or revoke account-wide sessions.
+  const after = await context.request.get(origin + "/api/v1/me", { timeout: 15000, maxRedirects: 0 });
+  requireThat(after.status() === 401, "browser_session_logout_unconfirmed");
+}
+
 function startMcp(configured, project, env) {
   const child = spawn(configured.command, configured.args, { cwd: project, env: { ...env, ...configured.env },
     detached: process.platform !== "win32", stdio: ["pipe", "pipe", "ignore"] });
@@ -132,10 +169,11 @@ function startMcp(configured, project, env) {
 }
 
 const result = { schemaVersion: 1, startedAt: new Date().toISOString(), finishedAt: null, status: "running",
-  scope: "ordinary_oidc_and_read_only_platform_cli_stdio_mcp", executionCliSha256: null, cliVersion: null,
+  scope: "two_purpose_oidc_and_read_only_platform_cli_stdio_mcp", executionCliSha256: null, cliVersion: null,
   observedServerVersion: null, observedInstallCliVersion: null, repositoryCommit: null, harnessCommit: null,
   harnessSha256: null, passes: [], cleanupFailures: [] };
 let output, outputReady = false, stage = "arguments", browser, context, me, mcp, cli, cliStarted = false;
+let browserOrigins = [];
 const passed = (name, details = {}) => { result.passes.push({ name, status: "passed", ...details }); console.log("PASS " + name); };
 const cleanup = async (name, action) => {
   try { await action(); passed(name); } catch { result.cleanupFailures.push(name); }
@@ -197,10 +235,21 @@ try {
   requireThat(Array.isArray(guide.downloads) && guide.downloads.some(row => row.binarySha256 === result.executionCliSha256), "execution_cli_not_in_published_install_guide");
   if (/^[a-f0-9]{40}$/.test(guide.sourceCommit)) result.publishedSourceCommit = guide.sourceCommit;
   passed("public_health_capabilities_and_published_cli_install_binding", { publishedArtifactCount: guide.downloads.length });
+  const portalOptions = await publicJson(origin + "/auth/options");
+  browserOrigins = validateBrowserOrigins(origin, portalOptions);
+  const consoleOrigin = browserOrigins[1].origin;
+  const consoleOptions = await publicJson(consoleOrigin + "/auth/options");
+  requireThat(consoleOptions.surface === "console" && consoleOptions.portalOrigin === origin
+    && consoleOptions.consoleOrigin === consoleOrigin && consoleOptions.oauthUrl === consoleOrigin + "/auth/login",
+  "console_auth_options_mismatch");
+  requireThat((await publicJson(consoleOrigin + "/api/health")).status === "ok", "console_health_not_ready");
+  result.consoleOriginSha256 = hash(consoleOrigin);
+  passed("fixed_portal_and_console_auth_options_and_health");
   const metadata = await publicJson(origin + "/.well-known/oauth-protected-resource/mcp");
   requireThat(metadata.resource === origin + "/mcp" && Array.isArray(metadata.authorization_servers) && metadata.authorization_servers.length === 1, "mcp_resource_metadata_mismatch");
   const issuer = new URL(metadata.authorization_servers[0]);
   requireThat(["http:", "https:"].includes(issuer.protocol) && !issuer.username && !issuer.password && !issuer.search && !issuer.hash
+    && issuer.origin === consoleOrigin && issuer.pathname === "/identity/realms/miy"
     && (originUrl.protocol !== "https:" || issuer.protocol === "https:"), "invalid_oidc_issuer");
   const discovery = await publicJson(issuer.href.replace(/\/$/, "") + "/.well-known/openid-configuration");
   requireThat(discovery.issuer === metadata.authorization_servers[0] && new URL(discovery.authorization_endpoint).origin === issuer.origin, "oidc_discovery_mismatch");
@@ -220,20 +269,33 @@ try {
   await page.locator("input[name=password]").fill(credentials.developer);
   credentials = null;
   await page.locator("#kc-login").click();
-  // Keycloak may share this origin under /identity; only the callback's home
-  // redirect counts as successful login. Never retry the supplied password.
+  // IdP is on the console origin. Only the portal callback's home redirect
+  // counts as successful portal login. Never retry the supplied password.
   try { await page.waitForURL(url => url.origin === origin && url.pathname === "/"); }
   catch { throw error("oidc_login_did_not_complete"); }
-  const api = async path => {
-    const response = await context.request.get(origin + path, { timeout: 20000, maxRedirects: 0 });
-    requireThat(response.status() === 200, "authenticated_api_status_mismatch");
-    const body = await response.body(); requireThat(body.length <= limit, "authenticated_api_body_limit");
-    return json(body.toString("utf8"), "authenticated_api_invalid_json");
-  };
-  me = await api("/api/v1/me");
+  me = await browserJson(context, origin, "/api/v1/me");
   requireThat(typeof me.id === "string" && me.id.length > 0 && me.admin === false && me.development === false
+    && me.browserPurpose === "portal" && me.portalOrigin === origin && me.consoleOrigin === consoleOrigin
     && typeof me.csrf === "string" && me.csrf.length > 0, "ordinary_developer_oidc_identity_required");
   passed("ordinary_developer_oidc_login_without_shared_development_session");
+
+  stage = "console_oidc_sso_login";
+  requireThat((await context.request.get(consoleOrigin + "/api/v1/me", { maxRedirects: 0 })).status() === 401,
+    "portal_session_authenticated_console");
+  await page.goto(consoleOptions.oauthUrl);
+  try { await page.waitForURL(url => url.origin === consoleOrigin && url.pathname === "/"); }
+  catch { throw error("console_oidc_sso_did_not_complete"); }
+  const consoleMe = await browserJson(context, consoleOrigin, "/api/v1/me");
+  requireThat(consoleMe.id === me.id && consoleMe.admin === false && consoleMe.development === false
+    && consoleMe.browserPurpose === "console" && consoleMe.portalOrigin === origin && consoleMe.consoleOrigin === consoleOrigin
+    && typeof consoleMe.csrf === "string" && consoleMe.csrf.length > 0 && consoleMe.csrf !== me.csrf,
+  "console_oidc_identity_mismatch");
+  const portalMe = await browserJson(context, origin, "/api/v1/me");
+  requireThat(portalMe.id === me.id && portalMe.browserPurpose === "portal", "portal_session_changed_during_console_login");
+  requireThat((await context.request.get(origin + "/api/v1/contracts", { maxRedirects: 0 })).status() === 403,
+    "portal_management_metadata_not_denied");
+  const api = path => browserJson(context, consoleOrigin, path);
+  passed("console_oidc_sso_same_identity_and_browser_purpose_separation");
 
   stage = "cli_context_and_device_approval";
   await cli(["context", "init", "--url", origin]);
@@ -245,7 +307,13 @@ try {
   const verification = new URL(pending.verificationUrl);
   requireThat(verification.origin === origin && verification.pathname === "/cli/device/" + pending.loginId
     && !verification.username && !verification.password && !verification.search && !verification.hash, "invalid_device_approval_target");
+  const redirect = await context.request.get(verification.href, { timeout: 15000, maxRedirects: 0 });
+  requireThat([302, 303].includes(redirect.status()) && redirect.headers().location === consoleOrigin + verification.pathname,
+    "device_approval_console_redirect_mismatch");
   await page.goto(verification.href);
+  const approvalUrl = new URL(page.url());
+  requireThat(approvalUrl.origin === consoleOrigin && approvalUrl.pathname === verification.pathname
+    && !approvalUrl.search && !approvalUrl.hash, "device_approval_did_not_reach_console");
   await page.locator("input[name=userCode]").fill(pending.userCode);
   await page.getByRole("button", { name: "이 계정으로 CLI 연결 승인", exact: true }).click();
   await page.getByRole("status").filter({ hasText: "CLI 연결을 승인했습니다" }).waitFor();
@@ -299,21 +367,9 @@ try {
     requireThat(loggedOut.signedOut === true && (loggedOut.alreadySignedOut === true
       || (loggedOut.remoteRevoked === true && loggedOut.localCredentialsRemoved === true)), "owned_cli_logout_unconfirmed");
   });
-  if (context) await cleanup("owned_browser_platform_session_logged_out", async () => {
-    // Also handles a session created just before a failed identity assertion.
-    const current = await context.request.get(new URL("/api/v1/me", process.argv[process.argv.indexOf("--origin") + 1]).href, { timeout: 15000, maxRedirects: 0 });
-    if (current.status() === 401) return;
-    requireThat(current.status() === 200, "browser_cleanup_identity_unavailable");
-    const identity = await current.json();
-    requireThat(typeof identity.csrf === "string" && identity.csrf.length > 0, "browser_cleanup_csrf_missing");
-    const origin = new URL(process.argv[process.argv.indexOf("--origin") + 1]).origin;
-    const revoked = await context.request.post(origin + "/auth/logout", { timeout: 15000, maxRedirects: 0,
-      headers: { origin, "x-miy-csrf": identity.csrf } });
-    requireThat(revoked.status() === 200, "browser_session_logout_failed");
-    // Intentionally do not follow the returned IdP logout URL or revoke user-wide sessions.
-    const after = await context.request.get(origin + "/api/v1/me", { timeout: 15000, maxRedirects: 0 });
-    requireThat(after.status() === 401, "browser_session_logout_unconfirmed");
-  });
+  if (context) for (const surface of [...browserOrigins].reverse()) {
+    await cleanup("owned_browser_" + surface.purpose + "_session_logged_out", () => logoutBrowser(context, surface));
+  }
   if (context) await cleanup("owned_browser_context_closed", () => bounded(context.close(), 5000, "browser_context_close_timeout"));
   if (browser) await cleanup("owned_headless_browser_closed", () => bounded(browser.close(), 5000, "browser_close_timeout"));
   result.finishedAt = new Date().toISOString();

@@ -31,7 +31,7 @@ jobs:
             client: true
           - name: macOS client
             id: macos-client
-            os: macos-14
+            os: macos-15
             features: --no-default-features
             target: ""
             binary: target/debug/miy

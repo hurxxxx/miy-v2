@@ -2,6 +2,8 @@
 
 Run from the repository root with Rust 1.99.1, Python 3, OpenSSL, Docker, and cached `postgres:18.3` / `python:3.14-slim` images:
 
+The reference server for this suite uses Docker Engine 28 or later with the **containerd image store** (`docker info --format '{{json .DriverStatus}}'` includes `["driver-type","io.containerd.snapshotter.v1"]`). CI explicitly selects and checks this store on its disposable runner before pulling images. Do not change the Docker store on this checkout's production host to run a test. The suite verifies native OCI identity and a generated classic Docker archive imported into the reference store; it does not prove raw native exports from every Docker store are compatible. In particular, Docker 28's classic store writes an OCI index while reporting the config digest as image `.Id`; those distinct identities currently fail the native-export check. That compatibility work is separate from this CI environment correction, and the product's digest validation remains unchanged.
+
 ```sh
 python3 scripts/runtime-regression/run.py
 ```

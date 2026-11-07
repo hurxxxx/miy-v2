@@ -21,6 +21,29 @@ jobs:
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
+      - name: Select the containerd store on this disposable runner
+        # Match the reference server store. Docker 28's classic store exports an
+        # OCI index but still reports a config digest as image .Id; that is a
+        # different native-export contract from the one this suite exercises.
+        run: |
+          sudo python3 - <<'PY'
+          import json
+          from pathlib import Path
+          path = Path('/etc/docker/daemon.json')
+          settings = json.loads(path.read_text()) if path.exists() else {}
+          settings.setdefault('features', {})['containerd-snapshotter'] = True
+          path.parent.mkdir(parents=True, exist_ok=True)
+          path.write_text(json.dumps(settings, indent=2) + '\n')
+          PY
+          sudo systemctl restart docker
+          docker version --format 'Docker server: {{.Server.Version}}'
+          docker info --format '{{json .DriverStatus}}' | python3 -c '
+          import json, sys
+          status = json.load(sys.stdin)
+          print("Docker driver status: " + json.dumps(status))
+          if ["driver-type", "io.containerd.snapshotter.v1"] not in status:
+              raise SystemExit("Runtime regression requires the containerd image store")
+          '
       - name: Free runner disk for the Docker storage floor
         # The core refuses builds and image loads below 15 GiB and 15% free on the
         # Docker data root. Keep that default; remove preinstalled SDKs instead.
