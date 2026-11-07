@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Offline CLI output/exit contracts with a loopback HTTP fixture.
+"""Offline CLI output/exit contracts with portal/console loopback HTTP fixtures.
 
 Uses only Python's standard library. No Docker, SDK builds, real authentication,
 or deployed services are used. Temporary projects and fixture sessions are removed.
@@ -101,6 +101,7 @@ class Fixture:
         self.session_id=str(uuid.uuid4())
         self.runtime_preflight = "runtime.preflight.v2"
         self.requests = []
+        self.surface_requests = []
         self.auth_failures = 0
         self.job_observed = threading.Event()
         self.login_seconds = 300
@@ -110,6 +111,41 @@ class Fixture:
         self.status = status
         self.body = json.dumps(body, ensure_ascii=False).encode("utf-8") if not isinstance(body, bytes) else body
         self.request_id = request_id
+
+
+@contextmanager
+def surface_servers(handler, state):
+    """Two actual listeners: an origin/Host header never selects the surface."""
+    servers = []
+    threads = []
+    try:
+        for surface in ("portal", "console"):
+            server = HTTPServer(("127.0.0.1", 0), handler)
+            server.surface = surface
+            server.origin = f"http://127.0.0.1:{server.server_port}"
+            setattr(state, f"{surface}_origin", server.origin)
+            servers.append(server)
+        for server in servers:
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            threads.append(thread)
+        yield state, state.portal_origin
+    finally:
+        for server, thread in zip(servers, threads):
+            server.shutdown()
+            thread.join(timeout=5)
+        for server in servers:
+            server.server_close()
+
+
+def check_development_surfaces(state):
+    require(state.portal_origin != state.console_origin, "Fixture origins must use distinct listeners")
+    require(("portal", "GET", "/auth/options") in state.surface_requests, "CLI skipped public console discovery")
+    for method, path in [("POST", "/auth/development"), ("GET", "/api/v1/me"),
+                         ("POST", f"/api/v1/cli/devices/{state.login_id}/decision")]:
+        require(("console", method, path) in state.surface_requests, "Development approval omitted a console request")
+    require(not any(surface == "portal" and (path == "/auth/development" or path.endswith("/decision"))
+                    for surface, _method, path in state.surface_requests), "Browser approval was sent to the portal")
 
 
 @contextmanager
@@ -155,7 +191,24 @@ def fixture_server():
         def do_GET(self):
             state.requests.append(("GET",self.path))
             path=urlsplit(self.path).path
-            if path!="/api/v1/capabilities" and self.headers.get("Cookie")!="fixture=synthetic" and self.headers.get("Authorization")!=f"Bearer {SENTINEL}":state.auth_failures+=1
+            state.surface_requests.append((self.server.surface,"GET",path))
+            if path == "/auth/options":
+                self.send_json(200,{"developmentLogin":True,"surface":self.server.surface,
+                                    "portalOrigin":state.portal_origin,"consoleOrigin":state.console_origin})
+                return
+            if self.server.surface == "console":
+                if path != "/api/v1/me":
+                    self.send_json(403,{"error":{"code":"wrong_browser_purpose"}})
+                elif self.headers.get("Cookie") != "fixture=synthetic":
+                    state.auth_failures+=1
+                    self.send_json(401,{"error":{"code":"unauthorized"}})
+                else:
+                    self.send_json(200,{"id":state.actor,"csrf":"fixture-csrf","name":"한글 사용자"})
+                return
+            if path!="/api/v1/capabilities" and self.headers.get("Authorization")!=f"Bearer {SENTINEL}":
+                state.auth_failures+=1
+                self.send_json(401,{"error":{"code":"unauthorized"}})
+                return
             if path=="/api/v1/users":self.send_json(state.status,state.body)
             elif path=="/api/v1/me":self.send_json(200,{"id":state.actor,"csrf":"fixture-csrf","name":"한글 사용자"})
             elif path=="/api/v1/capabilities":self.send_json(200,{"schemaVersion":1,"cliContractVersion":1,"runtimePlatform":"linux/amd64","features":[state.runtime_preflight,"auth.sessions.v1","auth.device.v1","runtime.jobs.v1","runtime.events.v1","runtime.retry.v1","images.idempotency.v1","runtime.logs.v1","lists.pagination.v1"]})
@@ -169,30 +222,40 @@ def fixture_server():
 
         def do_POST(self):
             state.requests.append(("POST",self.path))
+            state.surface_requests.append((self.server.surface,"POST",self.path))
             length=int(self.headers.get("Content-Length","0"));request_body=json.loads(self.rfile.read(length) or b"{}")
+            browser_path = self.path == "/auth/development" or self.path == f"/api/v1/cli/devices/{state.login_id}/decision"
+            if browser_path:
+                if self.server.surface != "console" or self.headers.get("Origin") != state.console_origin:
+                    state.auth_failures+=1
+                    self.send_json(403,{"error":{"code":"wrong_browser_purpose"}})
+                elif self.path == "/auth/development":
+                    self.send_json(200,{},cookie=True)
+                elif (self.headers.get("Cookie") != "fixture=synthetic" or
+                      self.headers.get("x-miy-csrf") != "fixture-csrf" or
+                      request_body != {"userCode":"ABCDE-FGHJK","decision":"approve"}):
+                    state.auth_failures+=1
+                    self.send_json(403,{"error":{"code":"forbidden"}})
+                else:
+                    self.send_json(200,{"approved":True})
+                return
+            if self.server.surface == "console":
+                self.send_json(403,{"error":{"code":"wrong_browser_purpose"}})
+                return
             if self.path=="/auth/cli/token" and request_body.get("grantType")=="refresh_token":
                 state.refresh_requests+=1
                 if state.fail_refresh:
                     self.close_connection=True
                     return
             if self.path=="/auth/cli/device":self.send_json(200,{"id":state.login_id,"deviceCode":"miy_device_"+"a"*48,"userCode":"ABCDE-FGHJK","verificationPath":f"/cli/device/{state.login_id}","expiresIn":state.login_seconds,"interval":1})
-            elif self.path=="/auth/development":self.send_json(200,{},cookie=True)
-            elif self.path==f"/api/v1/cli/devices/{state.login_id}/decision":self.send_json(200,{"approved":True})
             elif self.path=="/auth/cli/token" and request_body.get("grantType")=="device_code" and state.device_reply=="expired":self.send_json(400,{"error":{"code":"expired_token"}})
             elif self.path=="/auth/cli/token" and request_body.get("grantType")=="device_code" and state.device_reply=="pending":self.send_json(200,{"status":"pending","interval":1})
             elif self.path=="/auth/cli/token":self.send_json(200,{"status":"approved","sessionId":state.session_id,"userId":state.actor,"accessToken":SENTINEL,"refreshToken":"miy_refresh_"+"r"*48,"tokenType":"Bearer","expiresIn":state.access_seconds,"refreshExpiresAt":(datetime.now(timezone.utc)+timedelta(days=30)).isoformat()})
             elif self.path=="/auth/cli/revoke":self.send_json(200,{"revoked":True})
             else:self.send_json(405,{})
 
-    server = HTTPServer(("127.0.0.1", 0), Handler)
-    thread = threading.Thread(target=server.serve_forever, daemon=True)
-    thread.start()
-    try:
-        yield state, f"http://127.0.0.1:{server.server_port}"
-    finally:
-        server.shutdown()
-        server.server_close()
-        thread.join(timeout=5)
+    with surface_servers(Handler, state) as fixture:
+        yield fixture
 
 
 def check(cli):
@@ -320,6 +383,9 @@ def check(cli):
             missing=run(["user","list"],cwd=remote,expected=3)
             require(missing["error"].get("recovery")=={"executable":"miy","args":["auth","login"]},"Login recovery must be argv")
             run(["auth","login","--account","fixture"],cwd=remote)
+            check_development_surfaces(state)
+            require(state.auth_failures == 0, "Development login crossed an authentication boundary")
+            ok("development login discovers a separate console for browser login and approval")
             require(not(remote/".miy/session.json").exists(),"New login wrote a project token")
             state.requests.clear();state.auth_failures=0
             users = [{"id": state.actor, "name": "한글 사용자"}]

@@ -1,12 +1,23 @@
 # 구현과 검증 결과
 
+> 실행 이력 전용. 각 절의 날짜·소스·버전 범위에서만 유효하다. 현재 설계·전환·새 인수는 [APP-BOUNDARIES](APP-BOUNDARIES.md)를 따른다. 이 문서의 MF·같은 출처·iframe 없는 실행 결과는 새 경계의 통과 근거가 아니다.
+
+
+## 사내 최소 경계 구현 (2026-11-06, 작업본)
+
+`22c219d` 위 작업본에서 iframe 없는 MF·통합 라우팅·게시 SDK를 유지하고 포털/콘솔 두 listener와 목적별 세션, 콘솔 CLI 승인·개인 legacy 회수, prod 사용/관리 분리를 구현했다. 콘솔은 앱 코드를 적재하지 않으며 app/preview API의 응답 헤더와 proxy CSP·IdP 노출을 제한한다. 설정 도구는 단일 IP HTTPS와 IP SAN/CA 검사를 제공한다.
+
+Rust 서버187·클라이언트118, 통합 회귀112(schema19→20 보존 포함), 실제 Core UI7·전체 스택6, 새 CLI HTTP/HTTPS 각12·게시 CLI01e4d49와 새 서버 HTTPS12, CLI 출력15·설치17·복구7, shared DB/WS16·서버 빌드API8그룹을 검사했다. UI mock36·경계11·CLI14·HTTP1과 마지막 AppView 관련17개 재검사를 구분한다. 중복 보안 헤더·CLI 관리 상세 누락·구 테스트 가정은 보완했고 최초 FAIL을 보존했다.
+
+운영·Git 게시·기존 SDK/번들·사용자 Windows 환경은 변경하지 않았다. 기존 운영 backup/restore·issuer/MCP 재인증·기기 worker 정리·인증서 교체와 전체 native UI/Windows 인수는 별도다. 명령·환경·바이너리 출처·관찰·실패/NOT_RUN은 [구조화 검증 기록](releases/internal-minimum-security-implementation-2026-11-06-validation.json)에 있다.
+
 ## 코어 안정화 2차 — 설치 승인·사용자 위임·앱 호출 (2026-11-03)
 
 구현 `5802c96`은 CLI/core 0.7.0, 번들 0.8.0, Rust SDK 0.3.0이다. 설치/릴리스별 명시 승인과 변경 이력·CAS, 앱/환경/행위/만료가 제한된 사용자 위임, 작업 큐의 원래 위임 보존, 원래 사용자와 모든 호출 단계의 권한을 유지하는 짧은 수명의 Core 증표를 구현했다. SDK 갱신은 기존 앱 코드·SQL과 SDK 외 기존 의존성을 보존한다. miy-v1과 UI 이식은 포함하지 않는다.
 
 서버 단위159개(ignored6), 클라이언트113개, SDK5개와 fmt·양쪽 Clippy, 격리 PostgreSQL/HTTP/Docker70개 관찰, 서버 빌드 API8그룹, CLI/MCP 안내·기존 번들 전환5개 관찰을 검증했다. 추가 리뷰에서 preview의 body 대기 중 철회, 다른 개발 세션 종료, 만료 증표의 한도 집계, 빌드 이력 조회 뒤 권한 재검사 경계를 보완했다. [권한 계약·전환과 실행 한계](CORE-PERMISSIONS.md), [구조화 검증 기록](releases/core-permissions-2026-11-03-validation.json)을 따른다.
 
-실제 운영 서버·migration·게시 CLI는 변경하지 않았다. 기존 설치의 외부 호출을 자동 승인하지 않으므로 운영 적용에는 설치/릴리스별 승인 전환이 필요하다. Windows 사용자 실행, 실제 운영 Docker 네트워크의 SDK 후속 호출, 서비스 계정, 진행 중 부작용 강제 롤백은 이번 완료 범위가 아니다. 이후 2026-11-03 사용자 결정으로 [기본 UI/UX 이식](UIUX-MIGRATION.md)을 진행했다. UI-1~5의 구현·검증 및 후속 리뷰는 해당 문서, 웹 화면만 반영한 이력은 [운영 안내](SERVER-OPERATIONS.md)를 따른다. 전체 서버 자원 예산과 실행 허용 판단 등 남은 운영 기반은 [코어 안정화 계획](CORE-HARDENING.md)에서 계속 추적한다.
+실제 운영 서버·migration·게시 CLI는 변경하지 않았다. 기존 설치의 외부 호출을 자동 승인하지 않으므로 운영 적용에는 설치/릴리스별 승인 전환이 필요하다. Windows 사용자 실행, 실제 운영 Docker 네트워크의 SDK 후속 호출, 서비스 계정, 진행 중 부작용 강제 롤백은 이번 완료 범위가 아니다. 이후 2026-11-03 사용자 결정으로 [기본 UI/UX 이식](archive/UIUX-MIGRATION-UI1-5.md)을 진행했다. UI-1~5의 구현·검증 및 후속 리뷰는 해당 문서, 웹 화면만 반영한 이력은 [운영 안내](SERVER-OPERATIONS.md)를 따른다. 전체 서버 자원 예산과 실행 허용 판단 등 남은 운영 기반은 [코어 안정화 계획](CORE-HARDENING.md)에서 계속 추적한다.
 
 ## 코어 안정화 1차 (2026-11-03)
 
@@ -46,7 +57,7 @@ Linux의 독립 Codex·Claude가 각각 새 비품대장을 구현하고 v1→v2
 
 Rust 코어·인증·API/MCP·앱 등록 정보, 별도 DB 실행기, React 플랫폼과 런타임 UI 로더를 구현했다. 대상은 로컬 Docker 기반의 V0~V1이며, 제품 전체와 앱 OCI 배포를 완료한 결과는 아니다.
 
-구현 전 문서·아키텍처·검증 계획은 원격 `main`의 체크포인트 `3cecbe1`에 보존했다. 실행 방법은 [RUNNING](RUNNING.md), 요구 범위는 [IMPLEMENTATION](IMPLEMENTATION.md)을 따른다.
+구현 전 문서·아키텍처·검증 계획은 원격 `main`의 체크포인트 `3cecbe1`에 보존했다. 실행 방법은 [RUNNING](RUNNING.md), 요구 범위는 [IMPLEMENTATION](archive/IMPLEMENTATION-V0-V1.md)을 따른다.
 
 ## 확인한 동작
 

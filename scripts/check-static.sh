@@ -28,6 +28,7 @@ web_checks() {
   done
   pnpm exec playwright test --config scripts/runtime-regression/ui.config.ts
   pnpm exec playwright test --config tests/cli-experience.config.ts
+  pnpm exec playwright test --config tests/surface-boundaries.config.ts
   # Needs a non-loopback IPv4 address (or MIY_HTTP_TEST_HOST).
   pnpm exec playwright test --config scripts/runtime-regression/http-ui.config.ts
 }

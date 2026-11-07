@@ -11,6 +11,7 @@ fn api<T>(result: ApiResult<T>) -> Result<T> {
 }
 fn principal(parent: Uuid) -> Principal {
     Principal {
+        browser_purpose: None,
         id: "developer".into(),
         cli_session_id: Some(parent),
         delegation_id: None,
@@ -72,7 +73,8 @@ async fn fixture_auth() -> Result<(
     let origin = format!("http://{}", listener.local_addr()?);
     let issuer = format!("{origin}/identity/realms/miy");
     unsafe {
-        std::env::set_var("MIY_ORIGIN", &origin);
+        std::env::set_var("MIY_ORIGIN", "http://127.0.0.1:1");
+        std::env::set_var("MIY_CONSOLE_ORIGIN", &origin);
         std::env::set_var("MIY_ISSUER", &issuer);
     }
     let metadata = json!({"issuer":issuer,"authorization_endpoint":format!("{origin}/authorize"),"token_endpoint":format!("{origin}/token"),"jwks_uri":format!("{origin}/jwks"),"introspection_endpoint":format!("{origin}/introspect"),"end_session_endpoint":format!("{origin}/logout")});

@@ -1,9 +1,8 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
-import { Link } from "@tanstack/react-router";
 import { request } from "@miy/sdk";
 import { useInstallations, useManagedInstallations } from "../data/installations";
-import { useUser } from "../data/session";
-import { environmentPath } from "../lib/paths";
+import { useUser, useSurface } from "../data/session";
+import { environmentPath, surfaceUrl } from "../lib/paths";
 import { LoadError, StaleNotice } from "../components/LoadState";
 import { RuntimeHealth } from "../components/RuntimeHealth";
 import { RuntimeControls } from "../components/RuntimeControls";
@@ -25,6 +24,7 @@ export function Admin() {
 }
 
 function AdminConsole({ csrf }: { csrf: string }) {
+  const { portalOrigin } = useSurface();
   // The runtime panel uses the management list; the shared list feeds the rail.
   const installations = useInstallations();
   const managed = useManagedInstallations();
@@ -199,7 +199,7 @@ function AdminConsole({ csrf }: { csrf: string }) {
                       {a.version} · DB {a.dbStatus}
                     </p>
                     {a.canOpen ? (
-                      <Link to={environmentPath(a.environment, a.appId) as "/"}>앱 열기</Link>
+                      <a href={surfaceUrl(portalOrigin, environmentPath(a.environment, a.appId))}>포털에서 앱 열기</a>
                     ) : (
                       <p className="ui-empty-inline">
                         {a.appDisabled
@@ -208,7 +208,7 @@ function AdminConsole({ csrf }: { csrf: string }) {
                       </p>
                     )}
                     <RuntimeHealth app={a} />
-                    <RuntimeControls app={a} csrf={csrf} refresh={refresh} />
+                    {a.canManage && <RuntimeControls app={a} csrf={csrf} refresh={refresh} />}
                   </Panel>
                 ))}
             </div>

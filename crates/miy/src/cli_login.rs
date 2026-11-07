@@ -911,9 +911,26 @@ async fn development_approve(
 ) -> Result<()> {
     validate_development(&context.origin, account)?;
     let client = crate::cli_client::client(context.ca_file.as_deref(), HTTP_SECONDS)?;
+    // Discover the fixed console before creating any browser credential. Only
+    // the explicit loopback development helper follows this second origin.
+    let options = self::response(
+        client
+            .get(format!("{}/auth/options", context.origin))
+            .send()
+            .await
+            .map_err(crate::cli_error::transport)?,
+    )
+    .await?;
+    let console = options["consoleOrigin"]
+        .as_str()
+        .ok_or_else(invalid_response)?;
+    validate_development(console, account)?;
+    if options["developmentLogin"] != true {
+        return Err(invalid_response().into());
+    }
     let response = client
-        .post(format!("{}/auth/development", context.origin))
-        .header("origin", &context.origin)
+        .post(format!("{console}/auth/development"))
+        .header("origin", console)
         .json(&json!({"account":account}))
         .send()
         .await
@@ -932,7 +949,7 @@ async fn development_approve(
         .to_owned();
     let me = self::response(
         client
-            .get(format!("{}/api/v1/me", context.origin))
+            .get(format!("{console}/api/v1/me"))
             .header("cookie", &cookie)
             .send()
             .await
@@ -947,10 +964,10 @@ async fn development_approve(
         client
             .post(format!(
                 "{}/api/v1/cli/devices/{}/decision",
-                context.origin, flow.id
+                console, flow.id
             ))
             .header("cookie", &cookie)
-            .header("origin", &context.origin)
+            .header("origin", console)
             .header("x-miy-csrf", csrf)
             .json(&json!({"userCode":flow.user_code,"decision":"approve"}))
             .send()

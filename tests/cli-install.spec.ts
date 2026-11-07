@@ -1,3 +1,4 @@
+import { browserOptions, browserUser, mockSurface } from "./browser-surface";
 import { test, expect, type Page } from "@playwright/test";
 
 const serverUrl = "https://configured-platform.example:8443";
@@ -13,12 +14,13 @@ const guide = {
 };
 
 async function setup(page: Page, signedIn = false, unavailable = false) {
+  await mockSurface(page);
   await page.route("**/api/**", async (route) => {
     const path = new URL(route.request().url()).pathname;
     if (path === "/api/v1/me") {
       await route.fulfill({
         status: signedIn ? 200 : 401,
-        json: signedIn ? { id: "fixture", name: "설치 사용자", admin: false, csrf: "fixture" } : {},
+        json: signedIn ? browserUser(route, { id: "fixture", name: "설치 사용자", admin: false, csrf: "fixture" }) : {},
       });
     } else if (path === "/api/v1/cli/install") {
       await route.fulfill({ status: unavailable ? 503 : 200, json: unavailable ? {} : guide });
@@ -27,7 +29,7 @@ async function setup(page: Page, signedIn = false, unavailable = false) {
     }
   });
   await page.route("**/auth/options", (route) => route.fulfill({
-    json: { developmentLogin: false, developmentOrigin: "", accounts: [], oauthUrl: "/auth/login" },
+    json: { ...browserOptions(route), developmentLogin: false, developmentOrigin: "", accounts: [], oauthUrl: "/auth/login" },
   }));
 }
 

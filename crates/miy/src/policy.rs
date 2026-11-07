@@ -8,7 +8,7 @@
 //! same decision without a credential.
 use crate::{
     State,
-    auth::Principal,
+    auth::{BrowserPurpose, Principal},
     delegations::{self, Action},
     http::{ApiError, ApiResult},
     runtime_contract::{FailureCode, RuntimeFailure},
@@ -37,8 +37,8 @@ pub enum AppAction {
     /// their scope. The company switch blocks use, not management.
     Manage(Action),
     /// See an installation's operating records (runtime jobs, approved permissions):
-    /// management read, or otherwise use. Whoever manages a company-disabled prod app
-    /// keeps seeing them.
+    /// management read only. Use never grants access to these records; managers of a
+    /// company-disabled prod app keep seeing them.
     Observe,
     /// Submit a request whose answer is a stored record (a runtime or database job, a
     /// test acceptance), so the action and [`AppAction::Observe`] must both hold: a
@@ -126,6 +126,9 @@ pub struct Flags {
 #[derive(Clone, Debug)]
 pub struct Facts {
     pub user: Option<User>,
+    /// Portal credentials cannot exercise management authority, including an
+    /// administrator's implicit grants. Their dev preview convenience is retained.
+    pub browser_purpose: Option<BrowserPurpose>,
     /// The credential carries `miy.dev`.
     pub dev_scope: bool,
     pub delegation: Delegation,
@@ -165,6 +168,7 @@ impl Facts {
             }
         }
         let mut facts = Self::read(connection, &p.id, app, p.delegation_id).await?;
+        facts.browser_purpose = p.browser_purpose;
         facts.dev_scope = p.scopes.iter().any(|scope| scope == "miy.dev");
         Ok(facts)
     }
@@ -207,6 +211,7 @@ impl Facts {
             .await?;
         let mut facts = Self {
             user: None,
+            browser_purpose: None,
             dev_scope: false,
             delegation: if delegation.is_some() {
                 Delegation::Inactive
@@ -274,6 +279,9 @@ impl Facts {
 
     /// The environment's management grant: administrators, `develop` in dev, `deploy` in prod.
     pub fn manages(&self, app: &str, env: &str) -> bool {
+        if self.browser_purpose == Some(BrowserPurpose::Portal) {
+            return false;
+        }
         self.enabled_user().is_some_and(|user| {
             let grants = self.grants(app, env);
             user.admin
@@ -288,6 +296,9 @@ impl Facts {
     /// The user's own right behind a delegated action: the management grant for
     /// management actions, any grant for reads.
     pub fn delegable(&self, app: &str, env: &str, action: Action) -> bool {
+        if self.browser_purpose == Some(BrowserPurpose::Portal) {
+            return false;
+        }
         let grants = self.grants(app, env);
         self.enabled_user().is_some_and(|user| {
             user.admin
@@ -314,9 +325,24 @@ impl Facts {
         }
     }
 
-    /// The app is listed for this user: administrators, or any grant in any environment.
-    /// The company switch does not hide it.
+    /// Console metadata lists apps with management read, even before installation or
+    /// while company-disabled. Portal metadata lists usable apps only. Non-browser
+    /// callers retain their existing discovery of apps with any effective grant.
     pub fn sees_app(&self, app: &str) -> bool {
+        match self.browser_purpose {
+            Some(BrowserPurpose::Portal) => {
+                return ENVIRONMENTS
+                    .iter()
+                    .any(|env| self.decide(app, env, AppAction::Use).is_ok());
+            }
+            Some(BrowserPurpose::Console) => {
+                return ENVIRONMENTS.iter().any(|env| {
+                    self.decide(app, env, AppAction::Manage(Action::Read))
+                        .is_ok()
+                });
+            }
+            None => {}
+        }
         self.enabled_user().is_some_and(|user| {
             user.admin
                 || ENVIRONMENTS.iter().any(|env| {
@@ -327,20 +353,23 @@ impl Facts {
     }
 
     pub fn decide(&self, app: &str, env: &str, action: AppAction) -> Result<(), Denial> {
+        if self.browser_purpose == Some(BrowserPurpose::Portal) && action != AppAction::Use {
+            return Err(Denial::Forbidden);
+        }
         match action {
             AppAction::Use => {
                 let user = self.active()?;
                 self.delegated(app, env, Action::Read)?;
                 let grants = self.grants(app, env);
-                let develop = user.admin || grants.develop;
+                let dev_preview = env == "dev" && (user.admin || grants.develop);
                 if self.disabled.contains(app) {
-                    return if env == "dev" && develop {
+                    return if dev_preview {
                         Ok(())
                     } else {
                         Err(Denial::AppDisabled)
                     };
                 }
-                if develop || grants.use_ || grants.deploy {
+                if dev_preview || grants.use_ {
                     Ok(())
                 } else {
                     Err(Denial::Forbidden)
@@ -366,9 +395,7 @@ impl Facts {
                     Err(Denial::Forbidden)
                 }
             }
-            AppAction::Observe => self
-                .decide(app, env, AppAction::Manage(Action::Read))
-                .or_else(|_| self.decide(app, env, AppAction::Use)),
+            AppAction::Observe => self.decide(app, env, AppAction::Manage(Action::Read)),
             AppAction::Request(action) => {
                 self.decide(app, env, AppAction::Manage(action))?;
                 self.decide(app, env, AppAction::Observe)
@@ -461,6 +488,9 @@ impl Write {
         p: &Principal,
         action: PlatformAction,
     ) -> ApiResult<Decided> {
+        if p.browser_purpose == Some(BrowserPurpose::Portal) {
+            return Err(ApiError::forbidden());
+        }
         delegations::unrestricted(p)?;
         let user = sqlx::query("SELECT enabled,admin,can_develop FROM users WHERE id=$1 FOR SHARE")
             .bind(&p.id)
@@ -571,14 +601,13 @@ impl Facts {
 
 #[cfg(test)]
 mod tests {
-    //! The decisions must reproduce the checks they replaced. `legacy` transcribes
-    //! the pre-policy functions (`domain::authorize`/`access_decision`, `can_manage`,
-    //! `manage_action`, `delegations::check_id`/`granted`, `runtime::authorize_job`)
-    //! and every combination of facts is compared, error codes included.
+    //! Compare an independent authority reference across all account, grant and
+    //! delegation combinations. AB-05 removes prod management-implied Use and
+    //! Use-implied Observe; unchanged management and delegation checks stay covered.
     use super::*;
     use chrono::Utc;
 
-    mod legacy {
+    mod reference {
         use super::*;
         pub struct Case<'a> {
             pub facts: &'a Facts,
@@ -660,7 +689,7 @@ mod tests {
                 .ok_or(Denial::Forbidden)?;
             let admin = u.admin;
             let develop = admin || grant(c, "develop");
-            let other = grant(c, "use") || grant(c, "deploy");
+            let use_grant = grant(c, "use");
             let disabled = c.facts.disabled.contains(c.app);
             if write {
                 return if develop && (admin || c.env != "prod") {
@@ -676,7 +705,7 @@ mod tests {
                     Err(Denial::AppDisabled)
                 };
             }
-            if develop || other {
+            if use_grant || (c.env == "dev" && develop) {
                 Ok(())
             } else {
                 Err(Denial::Forbidden)
@@ -684,10 +713,7 @@ mod tests {
         }
         // runtime::authorize_job
         pub fn authorize_job(c: &Case) -> Result<(), Denial> {
-            if manage_action(c, Action::Read).is_err() {
-                authorize(c, false)?;
-            }
-            Ok(())
+            manage_action(c, Action::Read)
         }
         // runtime::authorize_request
         pub fn authorize_request(c: &Case, action: Action) -> Result<(), Denial> {
@@ -713,6 +739,7 @@ mod tests {
                 enabled: true,
                 admin,
             }),
+            browser_purpose: None,
             dev_scope: true,
             delegation: Delegation::None,
             grants: ENVIRONMENTS
@@ -743,7 +770,7 @@ mod tests {
     };
 
     #[test]
-    fn use_and_admin_reads() {
+    fn use_requires_explicit_prod_admission_even_for_admin() {
         assert!(
             facts(false, USE, false)
                 .decide("app", "prod", AppAction::Use)
@@ -757,8 +784,95 @@ mod tests {
         assert!(
             facts(true, NONE, false)
                 .decide("app", "prod", AppAction::Use)
-                .is_ok()
+                .is_err()
         );
+        let deploy = Grants {
+            deploy: true,
+            ..NONE
+        };
+        for admin in [false, true] {
+            let mut current = facts(admin, deploy, false);
+            assert_eq!(
+                current.decide("app", "prod", AppAction::Use),
+                Err(Denial::Forbidden)
+            );
+            assert!(current.decide("app", "prod", AppAction::Observe).is_ok());
+            current
+                .grants
+                .get_mut(&("app".into(), "prod".into()))
+                .unwrap()
+                .use_ = true;
+            assert!(current.decide("app", "prod", AppAction::Use).is_ok());
+            // Removing effective use (personal/group/all admission) must immediately
+            // deny prod again, even while management authority remains.
+            current
+                .grants
+                .get_mut(&("app".into(), "prod".into()))
+                .unwrap()
+                .use_ = false;
+            assert_eq!(
+                current.decide("app", "prod", AppAction::Use),
+                Err(Denial::Forbidden)
+            );
+        }
+    }
+
+    #[test]
+    fn use_only_never_observes_operating_records() {
+        for env in ENVIRONMENTS {
+            let current = facts(false, USE, false);
+            assert!(current.decide("app", env, AppAction::Use).is_ok());
+            assert_eq!(
+                current.decide("app", env, AppAction::Observe),
+                Err(Denial::Forbidden)
+            );
+            let mut read_only_delegation = current;
+            read_only_delegation.delegation = Delegation::Active(scope(env, &[Action::Read]));
+            assert!(
+                read_only_delegation
+                    .decide("app", env, AppAction::Use)
+                    .is_ok()
+            );
+            assert_eq!(
+                read_only_delegation.decide("app", env, AppAction::Observe),
+                Err(Denial::Forbidden)
+            );
+        }
+    }
+
+    #[test]
+    fn portal_preserves_dev_preview_but_cannot_manage_or_delegate() {
+        for (admin, grants) in [(true, NONE), (false, DEVELOP)] {
+            let mut portal = facts(admin, grants, true);
+            portal.browser_purpose = Some(BrowserPurpose::Portal);
+            assert!(portal.decide("app", "dev", AppAction::Use).is_ok());
+            for env in ENVIRONMENTS {
+                for action in [
+                    AppAction::Develop,
+                    AppAction::Manage(Action::Read),
+                    AppAction::Manage(Action::Start),
+                    AppAction::Observe,
+                    AppAction::Request(Action::Promote),
+                    AppAction::Delegate(Action::Read),
+                ] {
+                    assert_eq!(portal.decide("app", env, action), Err(Denial::Forbidden));
+                }
+                assert!(!portal.flags("app", env).can_manage);
+                assert!(!portal.flags("app", env).can_promote);
+                assert!(!portal.manages("app", env));
+            }
+        }
+    }
+
+    #[test]
+    fn console_app_catalog_needs_management_even_without_installations() {
+        let mut use_only = facts(false, USE, false);
+        use_only.browser_purpose = Some(BrowserPurpose::Console);
+        assert!(!use_only.sees_app("app"));
+        let mut developer = facts(false, DEVELOP, true);
+        developer.browser_purpose = Some(BrowserPurpose::Console);
+        assert!(developer.sees_app("app"));
+        assert!(!developer.sees_app("other"));
     }
 
     #[test]
@@ -882,6 +996,7 @@ mod tests {
                         for disabled in [false, true] {
                             all.push(Facts {
                                 user,
+                                browser_purpose: None,
                                 dev_scope,
                                 delegation: delegation.clone(),
                                 grants: grants.clone(),
@@ -900,7 +1015,7 @@ mod tests {
     }
 
     #[test]
-    fn decisions_reproduce_the_replaced_checks_for_every_combination() {
+    fn decisions_match_the_authority_contract_for_every_combination() {
         let actions = [
             Action::Read,
             Action::AppRead,
@@ -911,30 +1026,30 @@ mod tests {
         let mut compared = 0;
         for facts in every_facts() {
             for env in ENVIRONMENTS {
-                let c = legacy::Case {
+                let c = reference::Case {
                     facts: &facts,
                     app: "app",
                     env,
                 };
                 let decide = |action| facts.decide("app", env, action);
-                assert_eq!(decide(AppAction::Use), legacy::authorize(&c, false));
-                assert_eq!(decide(AppAction::Develop), legacy::authorize(&c, true));
-                assert_eq!(decide(AppAction::Observe), legacy::authorize_job(&c));
-                assert_eq!(facts.manages("app", env), legacy::can_manage(&c));
+                assert_eq!(decide(AppAction::Use), reference::authorize(&c, false));
+                assert_eq!(decide(AppAction::Develop), reference::authorize(&c, true));
+                assert_eq!(decide(AppAction::Observe), reference::authorize_job(&c));
+                assert_eq!(facts.manages("app", env), reference::can_manage(&c));
                 for action in actions {
                     assert_eq!(
                         decide(AppAction::Manage(action)),
-                        legacy::manage_action(&c, action),
+                        reference::manage_action(&c, action),
                         "{action:?} {env}"
                     );
                     assert_eq!(
                         decide(AppAction::Request(action)),
-                        legacy::authorize_request(&c, action),
+                        reference::authorize_request(&c, action),
                         "{action:?} {env}"
                     );
                     assert_eq!(
                         decide(AppAction::Delegate(action)),
-                        legacy::delegate(&c, action),
+                        reference::delegate(&c, action),
                         "{action:?} {env}"
                     );
                 }

@@ -2,6 +2,8 @@
 
 이 문서는 배포 도구의 사용법과 현재 후보를 기록한다. 후보 게시와 정식 GitHub Release 발행은 구분한다. 실제 수행 범위는 [검증 행렬](CLI-VALIDATION-MATRIX.md), 아직 남은 사용자 PC 실행은 [Windows 검증](WINDOWS-VALIDATION.md)을 따른다.
 
+[내부 업무 앱의 최소 보안안](APP-BOUNDARIES.md#확정-결정)은 iframe 없는 MF·AppRoot·라우터와 게시 CLI/SDK의 호환성을 유지한다. 한 IP의 포털·신뢰 콘솔 두 HTTPS origin을 사용하고 Keycloak과 브라우저 CLI 승인을 콘솔에 둔다. 상대 `verificationPath`는 유지한 채 고정 콘솔로 이동시키고 start·exchange·poll·refresh·context 형식과 토큰 수명은 바꾸지 않는다. 기존 `miy-web` client·realm·사용자 `sub`를 보존하며 전환 시 재로그인은 허용한다. 모든 앱의 SDK 재배포·별도 IdP origin·자동 인증서 배포는 출시 선행 조건이 아니다. [전환·복구](APP-BOUNDARIES.md#전환과-복구)와 게시 CLI의 [신규 인수](APP-BOUNDARIES.md#경계-인수)는 `NOT_RUN`이며 아래 0.7.0 배포물·해시는 그대로다.
+
 ## 현재 0.7.0 게시 후보
 
 `01e4d4924f8c8fc4e11720c1af81adf17ddb20bf`의 [CLI CI 41613023015](https://github.com/hurxxxx/miy-v2/actions/runs/41613023015)(5개 target, 공개 Release 없음)와 같은 CLI 출처·해시로 만든 [설치 파일 CI 41614954095](https://github.com/hurxxxx/miy-v2/actions/runs/41614954095)를 검증해 2026-11-03 [설치 안내](https://v2.dwdcc.kr/cli/install)에 게시했다. SDK 번들은 0.8.0이다. 해시와 반영 절차는 [0.7.0 배포 기록](releases/core-0.7.0-deployment.json)과 [서버 운영 안내](SERVER-OPERATIONS.md)에 있다. Windows 11 사용자 인수는 [현재 후보 절차](WINDOWS-ACCEPTANCE.md)를 쓰며 아직 `NOT_RUN`이다.

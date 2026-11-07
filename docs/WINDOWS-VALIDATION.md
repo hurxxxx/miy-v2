@@ -1,12 +1,16 @@
 # Windows 네이티브 빌드·운영 검증 안내
 
-## 2026-11-03 코어 권한 보강 소스
+현재 게시 후보는 **CLI 0.7.0 / 번들 0.8.0**이다. 사용자 실행은 [현재 Windows 11 인수 절차](WINDOWS-ACCEPTANCE.md)와 그 후보 파일을 기준으로 하며 아직 `NOT_RUN`이다. 아래 버전별 빌드 명령·해시·PASS는 당시 이력으로 보존하고 현재 후보에 이월하지 않는다.
 
-새 소스는 CLI **0.7.0 / 번들 0.8.0**이며 게시 설치기는 아직 **0.6.3 / 번들 0.7.1**이다. 사용자가 추후 Windows에서 검증한다는 방침을 유지한다. 새 후보의 native 빌드·위임 비공개 파일 발급/가져오기·설치 권한 CLI·기존 프로젝트 0.7.1→0.8.0 업그레이드·기존 SQL/의존성 보존은 **Windows 사용자 실행 NOT_RUN**이다. 후보 게시 후 실제 파일 hash·source commit을 별도로 기록하며 과거 0.6.3 결과를 새 후보에 이월하지 않는다. 새 권한 API를 쓰는 검사는 해당 기능이 반영된 별도 서버 또는 추후 갱신된 서버를 대상으로 한다. [권한 계약과 전환](CORE-PERMISSIONS.md)을 참고한다.
+[내부 업무 앱 최소안](APP-BOUNDARIES.md#확정-결정)은 회사가 관리하는 앱·개발자와 내부망을 대상으로 iframe 없는 MF·라우터 및 기존 CLI/SDK 계약을 유지한다. 포털(dev/prod 공통)과 Keycloak·CLI 승인이 있는 신뢰 콘솔 두 HTTPS origin을 단일 IP에서 사용하며 도메인·추가 IP·별도 IdP origin은 필수가 아니다. IP SAN/체인·CA 신뢰 확인, 기존 OIDC와 CLI 승인 경로 호환·세션 용도 거부·철회가 최소 검사다. 자동 CA 배포·자동 갱신은 후속이고 [전환·복구](APP-BOUNDARIES.md#전환과-복구) 및 [신규 인수](APP-BOUNDARIES.md#경계-인수)는 `NOT_RUN`이다. 게시 SDK·설치 파일과 아래 과거 실행 기록은 바꾸지 않으며 기존 HTTP IP·통합 MF 결과를 새 보안 PASS로 옮기지 않는다.
 
-## 다음 사용자 실행 — 게시된 0.6.3 설치기 인수
+## 2026-11-03 코어 권한 보강 후보 준비 이력
 
-[Windows 11 / PowerShell 5.1·7 인수 절차](WINDOWS-0.6.3-ACCEPTANCE.md)와 [사전·후검사 도구](../scripts/check-windows-published-installer.ps1)를 준비했다. 공개 API의 출처·해시 확인, 사용자가 직접 하는 GUI 설치·갱신·제거, 기존 연결·인증·프로젝트 보존 결과를 실행별로 남긴다. 사용자는 Windows 검증을 나중에 수행하기로 했으므로 **이번 실제 Windows 실행은 NOT_RUN**이다. 아래 기존 Windows 결과와 Windows Server CI는 별도 이력으로 유지한다.
+이 준비 시점의 새 소스는 CLI **0.7.0 / 번들 0.8.0**, 당시 게시 설치기는 **0.6.3 / 번들 0.7.1**이었다. 이후 0.7.0 게시 출처는 [현재 인수 절차](WINDOWS-ACCEPTANCE.md)에 기록했다. 사용자가 추후 Windows에서 검증한다는 방침을 유지한다. 후보의 native 빌드·위임 비공개 파일 발급/가져오기·설치 권한 CLI·기존 프로젝트 0.7.1→0.8.0 업그레이드·기존 SQL/의존성 보존은 **Windows 사용자 실행 NOT_RUN**이다. 과거 0.6.3 결과를 새 후보에 이월하지 않는다. [권한 계약과 전환](CORE-PERMISSIONS.md)을 참고한다.
+
+## 이전 사용자 실행 계획 — 0.6.3 설치기 인수
+
+[당시 Windows 11 / PowerShell 5.1·7 인수 절차](WINDOWS-0.6.3-ACCEPTANCE.md)를 보존한다. [사전·후검사 도구](../scripts/check-windows-published-installer.ps1)는 현재 후보 파일을 사용하므로 새 실행은 위 0.7.0 절차를 따른다. 공개 API의 출처·해시 확인, 사용자가 직접 하는 GUI 설치·갱신·제거, 기존 연결·인증·프로젝트 보존 결과를 실행별로 남긴다. 사용자는 Windows 검증을 나중에 수행하기로 했으므로 실제 사용자 실행은 `NOT_RUN`으로 유지한다. 아래 기존 Windows 결과와 Windows Server CI는 별도 이력이다.
 
 ## 2026-10-30 서버 반영 후 Windows 재확인
 

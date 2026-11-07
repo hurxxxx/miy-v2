@@ -1,7 +1,9 @@
+import { browserUser, mockSurface } from "./browser-surface";
 import { test, expect, type Page, type Route } from "@playwright/test";
 import type { Installation } from "../packages/sdk/src/index";
 
 async function harness(page: Page, holdPreflight = false) {
+  await mockSurface(page, "console");
   const app: Installation = {
     id: "confirmation-installation",
     appId: "confirmation-app",
@@ -30,14 +32,14 @@ async function harness(page: Page, holdPreflight = false) {
     if (route.request().method() !== "GET") writes.push(path);
     if (path === "/api/v1/me")
       return route.fulfill({
-        json: {
+        json: browserUser(route, {
           id: "fixture",
           name: "확인창 검증 사용자",
           admin: true,
           csrf: "fixture",
-        },
+        }),
       });
-    if (path === "/api/v1/installations") {
+    if (path === "/api/v1/runtime/installations") {
       installationReads++;
       return route.fulfill({ json: [app] });
     }
@@ -62,6 +64,7 @@ async function harness(page: Page, holdPreflight = false) {
         },
       });
     }
+    if (path === "/api/v1/apps") return route.fulfill({ json: { apps: [], nextCursor: null } });
     return route.fulfill({ status: 404, json: {} });
   });
   await page.goto("/environments/prod");

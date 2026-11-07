@@ -1,0 +1,163 @@
+{
+  "date": "2026-11-06",
+  "status": "PASS",
+  "scope": "Documentation revision only; no product-security acceptance or risk acceptance",
+  "source_commit": "22c219de570d162646f6bcb9d31b712a46c83e69",
+  "baseline": "Working tree before this task, including existing uncommitted documentation",
+  "requirements": [
+    "No iframe; retain independently built MF/AppRoot UI and integrated routing without rebuilding the platform",
+    "Single server IP with private-CA HTTPS for PoC and operation; no mandatory registered domain, internal DNS or additional IP",
+    "Document security findings, alternatives and limits plus independent PLM/PMS/PDM/MES/DAS common ACL and integration requirements for subsequent review"
+  ],
+  "design_status": "REVIEW_REQUIRED: same-page app code trust boundary and single-IP cookie residuals are not accepted or solved by this documentation",
+  "changed_documents": [
+    "AGENTS.md",
+    "README.md",
+    "docs/CORE-PERMISSIONS.md",
+    "docs/RESEARCH.md",
+    "docs/IMPLEMENTATION.md",
+    "docs/CHECKS.md",
+    "docs/DEVELOPMENT.md",
+    "docs/CLI-RELEASE.md",
+    "docs/WINDOWS-ACCEPTANCE.md",
+    "docs/NATIVE-DEVELOPMENT.md",
+    "docs/UIUX-MIGRATION.md",
+    "docs/CLI-VALIDATION-MATRIX.md",
+    "docs/AI.md",
+    "docs/APP-BOUNDARIES.md",
+    "docs/PLAN.md",
+    "docs/V1-ADOPTION.md",
+    "docs/RUNNING.md",
+    "docs/FRONTEND.md",
+    "docs/SERVER-OPERATIONS.md",
+    "docs/PRD.md",
+    "docs/WINDOWS-VALIDATION.md",
+    "docs/STACK.md",
+    "docs/README.md",
+    "docs/WINDOWS-INSTALLER.md",
+    "docs/architecture/README.md"
+  ],
+  "checks": [
+    {
+      "command": "python3 scripts/check-doc-links.py",
+      "status": "PASS",
+      "exit_code": 0,
+      "relative_links": 598,
+      "tracked_markdown_candidates": 53,
+      "note": "Repository checker excludes generated project guidance while printing total tracked candidate count"
+    },
+    {
+      "command": "Expanded tracked+untracked Markdown link and anchor check using scripts/check-doc-links.py helper functions and git ls-files --cached --others --exclude-standard -- '*.md'",
+      "status": "PASS",
+      "exit_code": 0,
+      "relative_links": 697,
+      "all_markdown_candidates": 60,
+      "checked_markdown": 51,
+      "note": "Generated project guidance excluded; includes new APP-BOUNDARIES and archives"
+    },
+    {
+      "command": "git diff --check",
+      "status": "PASS",
+      "exit_code": 0
+    },
+    {
+      "command": "Documentation ID, coverage, fence and baseline SHA-256 integrity check",
+      "status": "PASS",
+      "exit_code": 0,
+      "details": {
+        "ab_8": true,
+        "bv_14": true,
+        "inherited_11": true,
+        "new_review_9": true,
+        "protected_unchanged": true,
+        "only_markdown_changed": true,
+        "plm_section": true,
+        "fences_balanced": true
+      },
+      "ab_ids": 8,
+      "bv_ids": 14,
+      "inherited_requirements": 11,
+      "additional_review_findings": 9,
+      "protected_files": 198,
+      "protected_violations": []
+    },
+    {
+      "command": "git diff --name-only -- crates web packages templates scripts migrations .github",
+      "status": "PASS",
+      "exit_code": 0,
+      "note": "No product, SDK, published template, migration, script or workflow differences"
+    }
+  ],
+  "review_coverage": {
+    "additional_nine": "APP-BOUNDARIES: additional findings table 1-9, temporary controls, credentials, response defense, transition and BV criteria",
+    "prior_fifteen": {
+      "1": "Temporary controls expanded to admin/develop/deploy; adoption remains NOT_RUN",
+      "2": "Only actual changed security contracts require migration; data-preserving hold and developer-accessible dev acceptance",
+      "3": "Platform cookie, synchronizer CSRF and Origin conditions retained with explicit shared-IP cookie limitations",
+      "4": "Iframe bearer transport is withdrawn as a fixed contract; credentials are a review item and do not isolate same-page modules",
+      "5": "Safe text rendering, CSP and anti-framing apply to trusted pages; no claim that CSP isolates allowed modules",
+      "6": "Service and AI credentials remain explicit, unimplemented and deny by default",
+      "7": "Domain wildcard automation optional; single private-IP IP-SAN/private-CA and endpoint trust distribution required",
+      "8": "Iframe sandbox flags no longer apply; ordinary print, new-tab and safe download requirements remain",
+      "9": "Directory/file common UI and typed SDK functions remain, without a mandatory iframe bridge",
+      "10": "Legacy origin, workers, cookie expiry and cache/storage cleanup remain; no broad cookies/star clearing",
+      "11": "Theme/language integration retains MF/AppRuntime with authentication compatibility review",
+      "12": "Dev preview policy and interim privileged-account restriction distinguished in PRD and permissions",
+      "13": "BV-01..14 retained as revised review criteria, no old PASS transfer",
+      "14": "Use and management record access remain independent",
+      "15": "Historical source snapshot frozen with source/operational commit distinction and active difference-column rule"
+    },
+    "extra_code_findings": [
+      "Both legacy 8-hour CLI and device refresh family up to 30 days affected by same-page approval risk",
+      "Current session listing excludes legacy tokens; browser logout is not CLI revocation",
+      "Issuer migration must preserve Keycloak realm and user sub for existing ACL identity",
+      "Core/common SDK resource ACL and business integration do not isolate malicious shared-realm code"
+    ],
+    "plm": "CORE-PERMISSIONS: common ACL SDK and current group resolver; app-owned data/ACL; UI Use vs API Invoke; user delegation vs service principal; outbox/idempotency/retry/audit; file ID/version/capability; representative PMS plus PLM/PDM/MES fixtures"
+  },
+  "independent_review": {
+    "status": "PASS after documentation corrections",
+    "corrections": [
+      "Specify browser-only Origin/CSRF requirement; preserve nonbrowser start/exchange/refresh checks",
+      "Restore business-WebSocket deny by default and distinct CLI DB tunnel policy",
+      "Describe CSP sandbox as limiting active behavior, not preventing navigation/display"
+    ],
+    "product_checks": "NOT_RUN"
+  },
+  "rejected_edit_attempts": [
+    {
+      "status": "FAIL",
+      "operation": "Initial APP-BOUNDARIES replacement patch",
+      "reason": "Patch used delete and add for the same path; rejected before mutation",
+      "resolution": "Single Update File patch applied successfully"
+    },
+    {
+      "status": "FAIL",
+      "operation": "One PRD synchronization patch",
+      "reason": "Context mismatch; rejected before mutation",
+      "resolution": "Agent corrected context and applied patch; final doc checks passed"
+    }
+  ],
+  "not_run": [
+    {
+      "scope": "Additional CLI/IdP/API-HTML/clickjacking attacks",
+      "reason": "Documentation and source review only; production header findings are user-supplied, not remeasured"
+    },
+    {
+      "scope": "Single-IP private-CA HTTPS, cookie/port isolation, actual OIDC/MCP and MFA",
+      "reason": "Design candidates, no environment or product changes"
+    },
+    {
+      "scope": "Common business ACL, API Invoke, service accounts, events and PLM/file integration",
+      "reason": "Future implementation and acceptance"
+    },
+    {
+      "scope": "Windows installation/update/removal",
+      "reason": "User-run acceptance remains separate"
+    },
+    {
+      "scope": "Product test/build, deployment, restart, migrations, credential revocation, git commit/push",
+      "reason": "Not performed in this documentation task"
+    }
+  ]
+}

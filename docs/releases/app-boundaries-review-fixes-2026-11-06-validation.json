@@ -1,0 +1,164 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-11-06",
+  "status": "PASS",
+  "source": {
+    "baseCommit": "22c219de570d162646f6bcb9d31b712a46c83e69",
+    "workingTreeDirty": true,
+    "description": "Design review fixes over the previous uncommitted documentation worktree; product code and deployment unchanged.",
+    "files": {
+      "README.md": "e1810668b9884616b13ad3f2e57321f98a1b1e1900330442f50f041ca22f1a76",
+      "docs/AI.md": "68687a928ed1e57a5a0bbe62482a2400b779ac96bc1eb9088207bf6029100a08",
+      "docs/APP-BOUNDARIES.md": "a6a7721c283fa6c70843f630b27731dd8d020f251988fbcaae7358fa705088d8",
+      "docs/CHECKS.md": "50351c8b9b7cf84f8f2aa73e3e614a328e0f601c58db6b5773fb0ed33ec952e0",
+      "docs/CLI-RELEASE.md": "4c2a699656386a7848ac36a97bdb615f66e65ba5e6da9f2758401329a98adc70",
+      "docs/CORE-PERMISSIONS.md": "b8d0eeb37804af297ced9954dab6d861dbe0c9bb837aaa64dd37acbb6d58dd74",
+      "docs/DEVELOPMENT.md": "81bd51bc8bb41f17d7d205fb492d5db27528ccaa8b877b8eee403a7b066d6c62",
+      "docs/FRONTEND.md": "7e9b35eac3dad35a135c9c0b5b5075db8aaf011a103a740645eef51935209bb1",
+      "docs/NATIVE-DEVELOPMENT.md": "051755d0fbd959e8a2d68a72b431e9e7fc11be3d63204e00579c598ab53cb24e",
+      "docs/PLAN.md": "67958b85b59d56f00fc14c900ec1eb5491bfe84faa4becdfa2cb62a9cdf964f5",
+      "docs/PRD.md": "6cea3c3715ae313ebea77ff482c3658c7e6e9cf3ec9ca55703142f4b6d267a2a",
+      "docs/README.md": "4da6230ac575cb81d4efead7d999d2cd7e940923cb4cf438762290e61b760338",
+      "docs/RESEARCH.md": "87746d67f5ca906e0a03f0f5dbff20f20b459e548cfbae4d9d4433e753ea5c7b",
+      "docs/RUNNING.md": "c47088d0e8a6fd516be26f09bed75a7cd67ae8a68181beac0dc9ea8b1b52611b",
+      "docs/SERVER-OPERATIONS.md": "d012f91377799936f54828b122d8ddce6e5e07e9f3c892329bdfab66632b4e80",
+      "docs/STACK.md": "6840bd00fea3f14b7a407bbafd6a5691050a67b81dea88902e3fbe781ba6026a",
+      "docs/UIUX-MIGRATION.md": "ba0c534999996dc49abdce113a8018913c6e12174f6da387537c4f3465f745a7",
+      "docs/V1-ADOPTION.md": "b31b1b263ca71e7f9dcd41c834bf1683bcfab006824d670867f115edad91c2c9"
+    }
+  },
+  "scope": "Resolve the 15-item app-boundary design review; synchronize canonical design, permission differences, ordering and related product/development/operations guidance.",
+  "checks": [
+    {
+      "id": "parallel-doc-edit-format-1",
+      "command": "git diff --check -- docs/PRD.md docs/DEVELOPMENT.md docs/FRONTEND.md docs/NATIVE-DEVELOPMENT.md docs/STACK.md docs/V1-ADOPTION.md docs/UIUX-MIGRATION.md docs/AI.md",
+      "status": "FAIL",
+      "exitCode": 2,
+      "observed": "Trailing whitespace on the updated date line in AI.md. Intermediate editing result reported by the document owner; preserved here."
+    },
+    {
+      "id": "parallel-doc-edit-format-2",
+      "command": "git diff --check -- docs/PRD.md docs/DEVELOPMENT.md docs/FRONTEND.md docs/NATIVE-DEVELOPMENT.md docs/STACK.md docs/V1-ADOPTION.md docs/UIUX-MIGRATION.md docs/AI.md",
+      "status": "PASS",
+      "exitCode": 0,
+      "observed": "Changed that date line to a backslash Markdown break and reran. This result precedes final integration; final checks below cover the integrated text."
+    },
+    {
+      "id": "final-tracked-links",
+      "command": "python3 scripts/check-doc-links.py",
+      "status": "PASS",
+      "exitCode": 0,
+      "output": "PASS 595 relative links in 53 tracked Markdown files"
+    },
+    {
+      "id": "final-all-links",
+      "command": "python3 - <<'PY'\nimport importlib.util, subprocess\nspec=importlib.util.spec_from_file_location(\"doclinks\",\"scripts/check-doc-links.py\")\nm=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)\nrun=subprocess.run\nfiles=sorted(set(run([\"git\",\"ls-files\",\"--cached\",\"--others\",\"--exclude-standard\",\"--\",\"*.md\"],check=True,capture_output=True,text=True).stdout.splitlines()))\ndef including_new(args,**kwargs):\n    if args==[\"git\",\"ls-files\",\"*.md\"]:\n        return subprocess.CompletedProcess(args,0,\"\\n\".join(files),\"\")\n    return run(args,**kwargs)\nm.subprocess.run=including_new\nraise SystemExit(m.main())\nPY",
+      "status": "PASS",
+      "exitCode": 0,
+      "output": "PASS 695 relative links in 60 tracked Markdown files",
+      "scope": "Tracked and new non-ignored Markdown; generated app-guidance exclusions retained. Checker output labels the supplied full set as tracked."
+    },
+    {
+      "id": "final-diff-check",
+      "command": "git diff --check",
+      "status": "PASS",
+      "exitCode": 0,
+      "output": ""
+    },
+    {
+      "id": "final-integrity",
+      "command": "python3 - <<'PY'\nimport hashlib,importlib.util,json,re,subprocess\nfrom pathlib import Path\ntmp=Path(\"/tmp/miy-boundary-review-fixes-mhwkcu6y\")\nbaseline=json.loads((tmp/\"baseline.json\").read_text())\nold=(tmp/\"docs/APP-BOUNDARIES.md\").read_text()\napp=Path(\"docs/APP-BOUNDARIES.md\").read_text()\nsection=lambda s,n:s.split(\"## \"+n+\"\\n\",1)[1].split(\"\\n## \",1)[0]\nids=lambda s:re.findall(r\"^\\| (BV-\\d\\d) \\|\",s,re.M)\nassert ids(old)==ids(app) and len(ids(app))==14\nassert section(old,\"기존 검증의 승계\")==section(app,\"기존 검증의 승계\")\nfor key in (\"BV-13\",\"BV-14\"):\n    row=lambda s:next(l for l in s.splitlines() if l.startswith(\"| \"+key+\" |\"))\n    assert row(old)==row(app)\nspec=importlib.util.spec_from_file_location(\"links\",\"scripts/check-doc-links.py\")\nlinks=importlib.util.module_from_spec(spec);spec.loader.exec_module(links)\nassert links.anchors(tmp/\"docs/APP-BOUNDARIES.md\",{}).issubset(links.anchors(Path(\"docs/APP-BOUNDARIES.md\"),{}))\nchanged=[];preserved=0\nfor name,before in baseline.items():\n    path=Path(name);after=hashlib.sha256(path.read_bytes()).hexdigest() if path.is_file() else None\n    if before!=after:changed.append(name)\n    if name.startswith((\"docs/archive/\",\"docs/releases/\")):\n        assert before==after,name\n        preserved+=1\nassert hashlib.sha256(Path(\"docs/VALIDATION.md\").read_bytes()).hexdigest()==baseline[\"docs/VALIDATION.md\"]\nassert hashlib.sha256(Path(\"docs/IMPLEMENTATION-RESULTS.md\").read_bytes()).hexdigest()==baseline[\"docs/IMPLEMENTATION-RESULTS.md\"]\ntracked=subprocess.run([\"git\",\"diff\",\"--name-only\"],capture_output=True,text=True,check=True).stdout.splitlines()\nassert all(n.startswith(\"docs/\") or n in (\"README.md\",\"AGENTS.md\") for n in tracked)\nfor name in changed:\n    if not name.endswith(\".md\"):continue\n    fence=None\n    for line in Path(name).read_text().splitlines():\n        match=re.match(r\"^\\s*(`{3,}|~{3,})\",line)\n        if not match:continue\n        marker=match.group(1)\n        if fence is None:fence=marker\n        elif marker[0]==fence[0] and len(marker)>=len(fence):fence=None\n    assert fence is None,name\nprint(json.dumps({\"status\":\"PASS\",\"stableAcceptanceIds\":14,\"inheritedRequirementRows\":11,\"independentAcceptanceRowsUnchanged\":[\"BV-13\",\"BV-14\"],\"protectedArchiveAndEvidenceFiles\":preserved,\"legacyAnchorsAndResultHistoryPreserved\":True,\"changedDocsThisTask\":changed},ensure_ascii=False))\n\nPY",
+      "status": "PASS",
+      "exitCode": 0,
+      "output": "{\"status\": \"PASS\", \"stableAcceptanceIds\": 14, \"inheritedRequirementRows\": 11, \"independentAcceptanceRowsUnchanged\": [\"BV-13\", \"BV-14\"], \"protectedArchiveAndEvidenceFiles\": 195, \"legacyAnchorsAndResultHistoryPreserved\": true, \"changedDocsThisTask\": [\"README.md\", \"docs/AI.md\", \"docs/APP-BOUNDARIES.md\", \"docs/CHECKS.md\", \"docs/CLI-RELEASE.md\", \"docs/CORE-PERMISSIONS.md\", \"docs/DEVELOPMENT.md\", \"docs/FRONTEND.md\", \"docs/NATIVE-DEVELOPMENT.md\", \"docs/PLAN.md\", \"docs/PRD.md\", \"docs/README.md\", \"docs/RESEARCH.md\", \"docs/RUNNING.md\", \"docs/SERVER-OPERATIONS.md\", \"docs/STACK.md\", \"docs/UIUX-MIGRATION.md\", \"docs/V1-ADOPTION.md\"]}"
+    },
+    {
+      "id": "independent-read-only-reviews",
+      "status": "PASS",
+      "method": "Independent browser-runtime design and document-consistency reviews, followed by owner fixes",
+      "resolved": [
+        "Qualify prod self-admission separately from dev preview.",
+        "Remove remaining all-apps-ready-before-cutover wording.",
+        "Clarify stale-origin code cannot access new sessions/protected APIs; normal portal navigation is allowed.",
+        "Define isolated acceptance for quarantined apps and atomic activation of a matching accepted digest."
+      ],
+      "limits": "Document/source review only; runtime and operational enforcement not tested."
+    }
+  ],
+  "reviewCoverage": {
+    "1": "Interim account/profile and develop rules; responsible roles, confirmation status, review date, removal condition, explicit residual risk; server mitigation remains unimplemented.",
+    "2": "Ready apps migrate; unready installations are quarantined with old runtime paths denied, data preserved, scoped ownership and isolated acceptance before digest activation.",
+    "3": "Required __Host cookie attributes, existing server-bound CSRF, exact Origin on code POST/appropriate WebSockets; same-site limitations explicit.",
+    "4": "Memory-only opaque app bearer, credentials omit, code/token lifetime and revocation; public static UI decision; authenticated file fetch; business WebSockets unsupported.",
+    "5": "Portal/console CSP, safe text/icon rendering, response type protections and negative acceptance.",
+    "6": "Unsupported service-account/AI-specific credential kinds default deny; supported scoped user delegation and execution-owner policy retained.",
+    "7": "Wildcard DNS-01 default, automation scope, certificate import responsibility and explicit private-CA device trust deployment.",
+    "8": "Print sandbox allowance and app-local printing; user-click portal links for new tabs; authenticated attachment handling.",
+    "9": "App-owned directory picker; portal-owned file picker with constrained handle and unsupported capability rejection.",
+    "10": "Fresh portal/console/app origins, old session/flow revocation and browser-route closure; site data cleanup is not universal completion proof.",
+    "11": "Independent UI preparation versus new-SDK-dependent runtime integration ordering.",
+    "12": "Post-isolation dev admin/develop preview and use@dev testing consistently distinguished from interim admin restriction.",
+    "13": "Permission-related BV IDs explicitly listed; stable BV-01..14 IDs retained.",
+    "14": "Disabled app management read is explained as independent of business admission.",
+    "15": "Frozen 22c219d source snapshot versus deployed server/CLI; active permission baseline and difference column update rule."
+  },
+  "notRun": [
+    {
+      "scope": "Actual interim operating controls",
+      "status": "NOT_RUN",
+      "reason": "No account/grant/browser-profile changes or confirmation of human adoption performed."
+    },
+    {
+      "scope": "Interim server mitigation and new boundary product acceptance BV-01..13",
+      "status": "NOT_RUN",
+      "reason": "Design documentation only; no product implementation or runtime execution."
+    },
+    {
+      "scope": "Windows acceptance, real OIDC, DNS/certificate issuance, migration/restore and production rollout",
+      "status": "NOT_RUN",
+      "reason": "Separate implementation and authorized execution required; no production state changed."
+    },
+    {
+      "scope": "Mermaid rendering",
+      "status": "NOT_RUN",
+      "reason": "Only diagram source and document structure reviewed in this task."
+    }
+  ],
+  "limitations": [
+    "PASS describes documentation checks only, not enforcement or operational security acceptance.",
+    "Existing evidence, archive snapshots and immutable SDK/templates are preserved.",
+    "Public static UI is an explicit new design decision, not a change to current hosting; business data and source bundles remain protected."
+  ],
+  "integrity": {
+    "status": "PASS",
+    "stableAcceptanceIds": 14,
+    "inheritedRequirementRows": 11,
+    "independentAcceptanceRowsUnchanged": [
+      "BV-13",
+      "BV-14"
+    ],
+    "protectedArchiveAndEvidenceFiles": 195,
+    "legacyAnchorsAndResultHistoryPreserved": true,
+    "changedDocsThisTask": [
+      "README.md",
+      "docs/AI.md",
+      "docs/APP-BOUNDARIES.md",
+      "docs/CHECKS.md",
+      "docs/CLI-RELEASE.md",
+      "docs/CORE-PERMISSIONS.md",
+      "docs/DEVELOPMENT.md",
+      "docs/FRONTEND.md",
+      "docs/NATIVE-DEVELOPMENT.md",
+      "docs/PLAN.md",
+      "docs/PRD.md",
+      "docs/README.md",
+      "docs/RESEARCH.md",
+      "docs/RUNNING.md",
+      "docs/SERVER-OPERATIONS.md",
+      "docs/STACK.md",
+      "docs/UIUX-MIGRATION.md",
+      "docs/V1-ADOPTION.md"
+    ]
+  },
+  "statusMeaning": "Integrated documentation checks passed; intermediate FAIL preserved. No product implementation or operational mitigation acceptance is claimed."
+}

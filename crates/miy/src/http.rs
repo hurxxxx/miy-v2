@@ -1,5 +1,9 @@
 use crate::policy::{self, AppAction};
-use crate::{State, auth::Principal, contract, domain};
+use crate::{
+    State,
+    auth::{BrowserPurpose, Principal},
+    contract, domain,
+};
 use axum::{
     Json, Router,
     extract::{Path, Query, Request, State as S},
@@ -22,6 +26,10 @@ async fn no_store(mut response: Response) -> Response {
 }
 
 pub fn router(state: State) -> Router {
+    router_for(state, BrowserPurpose::Portal)
+}
+
+pub fn router_for(state: State, purpose: BrowserPurpose) -> Router {
     let api = Router::new()
         .route(
             "/apps/{app}/dev-sessions",
@@ -104,6 +112,14 @@ pub fn router(state: State) -> Router {
         .route(
             "/cli/sessions/{id}",
             axum::routing::delete(crate::auth_sessions::revoke_session),
+        )
+        .route(
+            "/cli/legacy-sessions",
+            axum::routing::get(crate::cli_auth::list_legacy),
+        )
+        .route(
+            "/cli/legacy-sessions/{id}",
+            axum::routing::delete(crate::cli_auth::revoke_legacy),
         )
         .route(
             "/apps/{app}/test-acceptance",
@@ -263,6 +279,8 @@ pub fn router(state: State) -> Router {
         .route("/auth/development", axum::routing::post(development_login))
         .route("/auth/callback", axum::routing::get(callback))
         .route("/auth/logout", axum::routing::post(logout))
+        .route("/cli/authorize/{id}", axum::routing::get(approval_redirect))
+        .route("/cli/device/{id}", axum::routing::get(approval_redirect))
         .route(
             "/.well-known/oauth-protected-resource",
             axum::routing::get(metadata),
@@ -277,7 +295,74 @@ pub fn router(state: State) -> Router {
         )
         .merge(crate::mcp::router(state.clone()))
         .merge(artifacts)
+        .layer(middleware::from_fn_with_state(purpose, browser_boundary))
+        .layer(axum::Extension(purpose))
         .with_state(state)
+}
+
+async fn browser_boundary(S(purpose): S<BrowserPurpose>, request: Request, next: Next) -> Response {
+    let route = request
+        .extensions()
+        .get::<axum::extract::MatchedPath>()
+        .map(|p| p.as_str());
+    let rule = route.and_then(|route| crate::browser_boundary::access(route, request.method()));
+    let bearer = request
+        .headers()
+        .get(header::AUTHORIZATION)
+        .and_then(|v| v.to_str().ok())
+        .is_some_and(|v| v.starts_with("Bearer "));
+    let allowed = rule.is_some_and(|rule| {
+        crate::browser_boundary::allowed(
+            rule,
+            purpose,
+            bearer,
+            request.headers().contains_key(header::ORIGIN),
+        )
+    }) && !request.headers().contains_key("service-worker");
+    let mut response = if allowed {
+        next.run(request).await
+    } else {
+        ApiError::forbidden().into_response()
+    };
+    response
+        .headers_mut()
+        .insert(header::X_CONTENT_TYPE_OPTIONS, "nosniff".parse().unwrap());
+    response
+        .headers_mut()
+        .insert(header::X_FRAME_OPTIONS, "DENY".parse().unwrap());
+    response
+        .headers_mut()
+        .entry(header::CONTENT_SECURITY_POLICY)
+        .or_insert(
+            "frame-ancestors 'none'; object-src 'none'; base-uri 'none'"
+                .parse()
+                .unwrap(),
+        );
+    response
+        .headers_mut()
+        .entry(header::CACHE_CONTROL)
+        .or_insert("no-store".parse().unwrap());
+    response
+}
+
+async fn approval_redirect(
+    S(s): S<State>,
+    axum::Extension(purpose): axum::Extension<BrowserPurpose>,
+    Path(id): Path<Uuid>,
+    uri: axum::http::Uri,
+) -> ApiResult<Redirect> {
+    if purpose != BrowserPurpose::Portal {
+        return Err(ApiError::not_found());
+    }
+    let kind = if uri.path().starts_with("/cli/device/") {
+        "device"
+    } else {
+        "authorize"
+    };
+    Ok(Redirect::to(&format!(
+        "{}/cli/{kind}/{id}",
+        s.auth.console_origin
+    )))
 }
 async fn ui_asset(
     S(s): S<State>,
@@ -336,6 +421,9 @@ async fn ui_asset(
         .into_response())
 }
 async fn session_guard(S(state): S<State>, mut request: Request, next: Next) -> Response {
+    let Some(purpose) = request.extensions().get::<BrowserPurpose>().copied() else {
+        return ApiError::forbidden().into_response();
+    };
     let bearer = request
         .headers()
         .get("authorization")
@@ -375,11 +463,11 @@ async fn session_guard(S(state): S<State>, mut request: Request, next: Next) -> 
             crate::cli_auth::principal(&state, token).await
         }
     } else {
-        state.auth.session(&state, request.headers()).await
+        state.auth.session(&state, request.headers(), purpose).await
     };
     match result {
         Ok(p) => {
-            if let Some(origin) = crate::app_calls::origin(&p, request.headers()) {
+            if let Some(origin) = crate::app_calls::origin(&state.auth, &p, request.headers()) {
                 request.extensions_mut().insert(origin);
             }
             if let Err(error) = crate::auth_sessions::ensure_active(&state.pool, &p.id).await {
@@ -394,7 +482,9 @@ async fn session_guard(S(state): S<State>, mut request: Request, next: Next) -> 
                     .get("x-miy-csrf")
                     .and_then(|v| v.to_str().ok())
                     != p.csrf.as_deref()
-                    || !state.auth.allowed_origin(request.headers(), p.development))
+                    || !state
+                        .auth
+                        .allowed_origin(request.headers(), p.development, purpose))
             {
                 return ApiError::forbidden().into_response();
             }
@@ -466,6 +556,7 @@ fn delegated_route(route: &str, method: &axum::http::Method) -> bool {
             | "/installations/{id}/permissions"
             | "/jobs/{id}"
             | "/runtime/jobs"
+            | "/runtime/installations"
             | "/runtime/jobs/{id}"
             | "/runtime/jobs/{id}/events"
             | "/runtime/logs/{id}"
@@ -837,25 +928,32 @@ async fn get_job(
 ) -> ApiResult<Json<Value>> {
     Ok(Json(domain::get_job(&s, &p, id).await?))
 }
-async fn login(S(s): S<State>) -> ApiResult<Response> {
-    let (url, value) = s.auth.login(&s).await?;
+async fn login(
+    S(s): S<State>,
+    axum::Extension(purpose): axum::Extension<BrowserPurpose>,
+) -> ApiResult<Response> {
+    let (url, value) = s.auth.login(&s, purpose).await?;
     let mut r = Redirect::to(&url).into_response();
     r.headers_mut().append(
         header::SET_COOKIE,
         s.auth
-            .cookie("miy_login", &value, "/auth", 300)
+            .cookie(purpose, "login", &value, 300)
             .parse()
             .unwrap(),
     );
     r.headers_mut().append(
         header::SET_COOKIE,
-        crate::server_origin::cookie(&s.auth.development_origin, "miy_development", "", "/", 0)
+        s.auth
+            .cookie(purpose, "development", "", 0)
             .parse()
             .unwrap(),
     );
     Ok(r)
 }
-async fn login_options(S(s): S<State>) -> Json<Value> {
+async fn login_options(
+    S(s): S<State>,
+    axum::Extension(purpose): axum::Extension<BrowserPurpose>,
+) -> Json<Value> {
     let accounts = if s.auth.development_login {
         json!([
             {"account":"admin","label":"관리자로 시작","description":"전체 앱과 관리 기능"},
@@ -866,9 +964,10 @@ async fn login_options(S(s): S<State>) -> Json<Value> {
     } else {
         json!([])
     };
-    Json(
-        json!({"developmentLogin":s.auth.development_login,"developmentOrigin":s.auth.development_origin,"accounts":accounts,"oauthUrl":format!("{}/auth/login",s.auth.origin)}),
-    )
+    Json(json!({"developmentLogin":s.auth.development_login,
+            "developmentOrigin":if purpose == BrowserPurpose::Portal { &s.auth.development_origin } else { &s.auth.console_origin },
+            "accounts":accounts,"oauthUrl":format!("{}/auth/login",s.auth.browser_origin(purpose)),
+            "surface":purpose,"portalOrigin":s.auth.origin,"consoleOrigin":s.auth.console_origin}))
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -877,31 +976,27 @@ struct DevelopmentLogin {
 }
 async fn development_login(
     S(s): S<State>,
+    axum::Extension(purpose): axum::Extension<BrowserPurpose>,
     headers: HeaderMap,
     Json(v): Json<DevelopmentLogin>,
 ) -> ApiResult<Response> {
     if !s.auth.development_login {
         return Err(ApiError::not_found());
     }
-    if !s.auth.allowed_origin(&headers, true) {
+    if !s.auth.allowed_origin(&headers, true, purpose) {
         return Err(ApiError::forbidden());
     }
-    let session = s.auth.development_session(&s, &v.account).await?;
+    let session = s.auth.development_session(&s, &v.account, purpose).await?;
     let mut response = Json(json!({"redirect":"/"})).into_response();
     response
         .headers_mut()
         .insert(header::CACHE_CONTROL, "no-store".parse().unwrap());
     response.headers_mut().append(
         header::SET_COOKIE,
-        crate::server_origin::cookie(
-            &s.auth.development_origin,
-            "miy_development",
-            &session,
-            "/",
-            28800,
-        )
-        .parse()
-        .unwrap(),
+        s.auth
+            .cookie(purpose, "development", &session, 28800)
+            .parse()
+            .unwrap(),
     );
     Ok(response)
 }
@@ -913,11 +1008,14 @@ struct Callback {
 }
 async fn callback(
     S(s): S<State>,
+    axum::Extension(purpose): axum::Extension<BrowserPurpose>,
     headers: HeaderMap,
     Query(v): Query<Callback>,
 ) -> ApiResult<Response> {
     let result = match (v.error, v.code, v.state) {
-        (None, Some(code), Some(state)) => s.auth.callback(&s, &code, &state, &headers).await,
+        (None, Some(code), Some(state)) => {
+            s.auth.callback(&s, purpose, &code, &state, &headers).await
+        }
         _ => Err(ApiError::unauthorized()),
     };
     let session = match result {
@@ -936,7 +1034,7 @@ async fn callback(
                 .insert(header::CACHE_CONTROL, "no-store".parse().unwrap());
             response.headers_mut().append(
                 header::SET_COOKIE,
-                s.auth.cookie("miy_login", "", "/auth", 0).parse().unwrap(),
+                s.auth.cookie(purpose, "login", "", 0).parse().unwrap(),
             );
             return Ok(response);
         }
@@ -945,32 +1043,37 @@ async fn callback(
     r.headers_mut().append(
         header::SET_COOKIE,
         s.auth
-            .cookie("miy_session", &session, "/", 28800)
+            .cookie(purpose, "session", &session, 28800)
             .parse()
             .unwrap(),
     );
     r.headers_mut().append(
         header::SET_COOKIE,
-        s.auth.cookie("miy_login", "", "/auth", 0).parse().unwrap(),
+        s.auth.cookie(purpose, "login", "", 0).parse().unwrap(),
     );
     Ok(r)
 }
-async fn logout(S(s): S<State>, headers: HeaderMap) -> ApiResult<Response> {
-    let p = s.auth.session(&s, &headers).await?;
+async fn logout(
+    S(s): S<State>,
+    axum::Extension(purpose): axum::Extension<BrowserPurpose>,
+    headers: HeaderMap,
+) -> ApiResult<Response> {
+    let p = s.auth.session(&s, &headers, purpose).await?;
     if headers.get("x-miy-csrf").and_then(|v| v.to_str().ok()) != p.csrf.as_deref()
-        || !s.auth.allowed_origin(&headers, p.development)
+        || !s.auth.allowed_origin(&headers, p.development, purpose)
     {
         return Err(ApiError::forbidden());
     }
-    let url = s.auth.logout(&s, &headers).await?;
+    let url = s.auth.logout(&s, &headers, purpose).await?;
     let mut r = Json(json!({"redirect":url})).into_response();
     r.headers_mut().append(
         header::SET_COOKIE,
-        s.auth.cookie("miy_session", "", "/", 0).parse().unwrap(),
+        s.auth.cookie(purpose, "session", "", 0).parse().unwrap(),
     );
     r.headers_mut().append(
         header::SET_COOKIE,
-        crate::server_origin::cookie(&s.auth.development_origin, "miy_development", "", "/", 0)
+        s.auth
+            .cookie(purpose, "development", "", 0)
             .parse()
             .unwrap(),
     );
@@ -981,12 +1084,15 @@ async fn metadata(S(s): S<State>) -> Json<Value> {
         json!({"resource":format!("{}/mcp",s.auth.origin),"authorization_servers":[s.auth.issuer],"scopes_supported":["miy.read","miy.dev"],"bearer_methods_supported":["header"]}),
     )
 }
-async fn openapi() -> Json<Value> {
+async fn openapi(
+    S(s): S<State>,
+    axum::Extension(purpose): axum::Extension<BrowserPurpose>,
+) -> Json<Value> {
     let mut paths = serde_json::Map::new();
     for item in domain::catalog().as_array().unwrap() {
         let method = item["method"].as_str().unwrap().to_lowercase();
         let path = item["path"].as_str().unwrap();
-        let mut operation = json!({"operationId":item["id"],"summary":item["description"],"security":[{"session":[]}],"responses":{"200":{"description":"Success","content":{"application/json":{"schema":{}}}},"400":{"description":"Invalid contract/input"},"401":{"description":"Authentication required"},"403":{"description":"Permission denied"},"409":{"description":"Conflict"}}});
+        let mut operation = json!({"operationId":item["id"],"summary":item["description"],"security":[{"session":[]},{"bearer":[]}],"responses":{"200":{"description":"Success","content":{"application/json":{"schema":{}}}},"400":{"description":"Invalid contract/input"},"401":{"description":"Authentication required"},"403":{"description":"Permission denied"},"409":{"description":"Conflict"}}});
         if !item["input"].is_null() {
             operation["requestBody"] =
                 json!({"required":true,"content":{"application/json":{"schema":item["input"]}}});
@@ -1030,7 +1136,7 @@ async fn openapi() -> Json<Value> {
     }
     let mut doc = json!({"openapi":"3.1.0","info":{"title":"miy V0-V1 validation API","version":"0.1.0"},"paths":paths});
     normalize(&mut doc, &mut definitions);
-    doc["components"] = json!({"schemas":definitions,"securitySchemes":{"session":{"type":"apiKey","in":"cookie","name":"miy_session"}}});
+    doc["components"] = json!({"schemas":definitions,"securitySchemes":{"session":{"type":"apiKey","in":"cookie","name":s.auth.cookie_name(purpose,"session")},"bearer":{"type":"http","scheme":"bearer"}}});
     Json(doc)
 }
 

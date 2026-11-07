@@ -1,0 +1,250 @@
+{
+  "date": "2026-11-06",
+  "status": "PASS",
+  "scope": "Documentation-only implementation of the approved internal-company minimum-security design. Product code, deployment, authentication configuration, and business data were not changed.",
+  "source_commit": "22c219de570d162646f6bcb9d31b712a46c83e69",
+  "baseline": {
+    "kind": "Existing uncommitted working tree before this revision",
+    "local_snapshot": "/tmp/miy-internal-minimum-docs-8w1db3hj",
+    "preserved_historical_files": 198,
+    "comparison": "File SHA-256 before and after; archive, existing releases/evidence and IMPLEMENTATION-RESULTS are unchanged."
+  },
+  "decisions": {
+    "trust_scope": "Restricted internal company access and company-controlled approved apps/developers; public v2.dwdcc.kr is not automatically accepted under this scope.",
+    "ui": "Keep iframe-free MF/AppRoot, integrated routing, independent app builds, published SDKs and business data.",
+    "origins": "Two HTTPS origins on one IP: portal for both dev/prod, console for management, CLI approval and Keycloak /identity. Domain/DNS/additional IP are not required.",
+    "authentication": "Add portal/console browser purpose and fixed server ingress/route checks. Reuse current OIDC, miy-web client, realm/sub, CLI flows and token lifetimes.",
+    "cli_compatibility": "Preserve relative verificationPath and existing start/exchange/poll/refresh/context/wire contracts; fixed redirect to console for both legacy/device approvals.",
+    "minimum_controls": "Purpose-specific secure cookies, exact Origin/current server CSRF, management permission checks, prod explicit Use, header allowlist, API-only sandbox/nosniff, safe console strings/anti-frame, legacy/device credential revocation coverage.",
+    "tls": "Certificate import, IP SAN/CA/expiry validation, endpoint trust-registration instructions and manual certificate replacement.",
+    "follow_up": "Separate IdP/site/dev portal, mandatory MFA, advanced monitoring, automated CA distribution/renewal, untrusted external app isolation and mass migration tooling are not present prerequisites.",
+    "business_apps": "Continue directory/current-group lookup and common ACL after minimum boundaries; PLM/PMS/PDM/MES/DAS remain independent apps. Invoke/service identities/events/large files follow feature milestones.",
+    "limitations": "Same-page apps share a UI trust domain; ports do not isolate cookies; console and IdP share trust. Backend connections authenticate call chains; browser direct calls do not prove the initiating MF app or enforce its installation approval."
+  },
+  "design_status": {
+    "documentation": "complete",
+    "minimum_product_changes": "NOT_IMPLEMENTED",
+    "operational_rollout": "NOT_RUN",
+    "additional_business_features": "NOT_IMPLEMENTED",
+    "no_commit_or_push": true
+  },
+  "changed_documents": [
+    "AGENTS.md",
+    "README.md",
+    "docs/AI.md",
+    "docs/APP-BOUNDARIES.md",
+    "docs/CHECKS.md",
+    "docs/CLI-IMPLEMENTATION-PLAN.md",
+    "docs/CLI-RELEASE.md",
+    "docs/CLI-VALIDATION-MATRIX.md",
+    "docs/CORE-HARDENING.md",
+    "docs/CORE-PERMISSIONS.md",
+    "docs/DEVELOPMENT.md",
+    "docs/FRONTEND.md",
+    "docs/IMPLEMENTATION.md",
+    "docs/NATIVE-DEVELOPMENT.md",
+    "docs/PLAN.md",
+    "docs/PRD.md",
+    "docs/README.md",
+    "docs/RESEARCH.md",
+    "docs/RUNNING.md",
+    "docs/SERVER-OPERATIONS.md",
+    "docs/STACK.md",
+    "docs/UIUX-MIGRATION.md",
+    "docs/V1-ADOPTION.md",
+    "docs/VALIDATION.md",
+    "docs/WINDOWS-ACCEPTANCE.md",
+    "docs/WINDOWS-INSTALLER.md",
+    "docs/WINDOWS-VALIDATION.md",
+    "docs/architecture/README.md"
+  ],
+  "checks": [
+    {
+      "command": "python3 scripts/check-doc-links.py",
+      "status": "PASS",
+      "relative_links": 596,
+      "tracked_markdown_candidates": 53,
+      "notes": "Generated application guidance is excluded by the existing checker."
+    },
+    {
+      "command": "Expanded inline Python using scripts/check-doc-links.py helpers and git ls-files -c -o --exclude-standard -- '*.md'",
+      "status": "PASS",
+      "candidate_documents": 60,
+      "checked_documents": 51,
+      "relative_links": 697,
+      "failures": []
+    },
+    {
+      "command": "git diff --check",
+      "status": "PASS",
+      "exit_code": 0
+    },
+    {
+      "command": "Inline Python AB/BV/review/V0-V7/fence assertions and SHA-256 baseline comparison",
+      "status": "PASS",
+      "ab_ids": 8,
+      "bv_ids": 14,
+      "additional_review_findings": 9,
+      "v0_v7_rows": 8,
+      "bv13_deferred": true,
+      "balanced_markdown_fences": true,
+      "preserved_historical_files": 198,
+      "product_files_changed": 0,
+      "ops_cli_windows_fenced_blocks_preserved_files": 8
+    },
+    {
+      "command": "Compare fenced command blocks in eight operations/CLI/Windows documents with pre-edit snapshot",
+      "status": "PASS",
+      "files": 8
+    }
+  ],
+  "independent_review": {
+    "agent": "/root/noiframe_security_review",
+    "finding": "Backend installation-approval and caller-identity guarantees were phrased too broadly across browser direct calls.",
+    "severity": "P2",
+    "resolution": "Qualified guarantees to authenticated backend connections paths and explicitly documented browser direct-call limitations in PRD, CORE-PERMISSIONS, PLAN, CORE-HARDENING.",
+    "status": "resolved",
+    "verification": "Reviewer re-read the corrections in CORE-PERMISSIONS, PRD, PLAN and CORE-HARDENING; the P2 was resolved with no additional findings in the correction scope.",
+    "method": "Read-only code-grounded document review; no product execution or operational access."
+  },
+  "not_run": [
+    {
+      "area": "Rust/web product tests, builds and database migrations",
+      "reason": "Documentation-only changes; no product implementation was performed."
+    },
+    {
+      "area": "Two-origin browser security, CLI approval/IdP attack reproduction, real OIDC/CLI/MCP migration and credential revocation",
+      "reason": "New minimum boundary is not implemented; document checks do not prove runtime security."
+    },
+    {
+      "area": "Single-IP HTTPS, actual certificate/trust setup and manual rotation",
+      "reason": "No server, TLS or endpoint configuration was changed."
+    },
+    {
+      "area": "Common ACL, PLM/PDM/MES, Invoke/service identities/events/files",
+      "reason": "Documented future feature work; no new implementation or business app acceptance."
+    },
+    {
+      "area": "Windows installation/update/removal",
+      "reason": "Deferred to the user's Windows environment according to the standing instruction."
+    },
+    {
+      "area": "Production headers, service deployment/restart, backups/restore execution and live IdP changes",
+      "reason": "Current scope is document synchronization; operational actions were not performed."
+    }
+  ],
+  "document_hashes": {
+    "AGENTS.md": {
+      "before_sha256": "5909905eb6ec49c667c0321f7c5984655861998d45aea7a38afb866f80980989",
+      "after_sha256": "eea71e57bd03a405daf33e16d9b5a074148e8c8d237f93706a42cb3bb5b822b1"
+    },
+    "README.md": {
+      "before_sha256": "ce4064f6d5a79cc0d7db88d6e334e247c342d92a440eb00a89676104b2be395e",
+      "after_sha256": "a3c79d5c329b7286c2362ee0168014fda93dea0ec9f48a647016fde25f6e39ac"
+    },
+    "docs/AI.md": {
+      "before_sha256": "b100d93efc9fac814468f333c134c4af12a4c5606c345fe8b53a4e1bed59b63d",
+      "after_sha256": "1ecab3c7545a1244464cdafca3179e188d43e0340d8821e3912054f7634ae0ec"
+    },
+    "docs/APP-BOUNDARIES.md": {
+      "before_sha256": "a9a7d62df87a6c47a736ee7a1d2e2446ada4bb98b9cacf256c5444ce140203bc",
+      "after_sha256": "d6c356cc1510dcde8f37b4a6fd4ed1b07f77019f39fc797d0869f922f61e121f"
+    },
+    "docs/CHECKS.md": {
+      "before_sha256": "e18b633482b7e0cc4c67f5cf8abf797353577132eacfe1ec276bc9d4a5829302",
+      "after_sha256": "2795e817e1820bfc3b978cf312e9231542ec48153255581bcd5b2ab92381ec36"
+    },
+    "docs/CLI-IMPLEMENTATION-PLAN.md": {
+      "before_sha256": "b0ddaa9c731f9e224e4e684b55ef21f53019c058ece662a03199f64df9d151f5",
+      "after_sha256": "a78718a5ddbe9497328b067dcdbe0fa59815928154a6edf347b5826bcf34b638"
+    },
+    "docs/CLI-RELEASE.md": {
+      "before_sha256": "b72d04789a832fce4ab8b5e5931fdc9d0eb92c64711d9590d459a60cfc54d9eb",
+      "after_sha256": "0e2811a4ab34be836c19dc95e1664b00f71896bd539bc770292ede949e8aa358"
+    },
+    "docs/CLI-VALIDATION-MATRIX.md": {
+      "before_sha256": "1ff9e449d39e8293d9818d434cdf1c6295abe0f1f06cb6dd61faf909f6589027",
+      "after_sha256": "b4038a825cb570bcdb093ca9ea2c16d2fee2be0b4c5b1b2f02d5ada92e26fe26"
+    },
+    "docs/CORE-HARDENING.md": {
+      "before_sha256": "4f01f0370497fc0df2d25b4b76b59e2ab3956219282bec6e86e0834c6e3306b2",
+      "after_sha256": "b3499fe7e69dd8d45fa18ddbf6f590561747c501df427c5dcc803164f4c6b21d"
+    },
+    "docs/CORE-PERMISSIONS.md": {
+      "before_sha256": "0410ebe0dcdce364424763aeb3f9b89cdf5b6fb38040af3757fd18dc0b7ade7d",
+      "after_sha256": "5717917c0327120e2c0e2c9deab5b3d7431272569390645df900f488aa122867"
+    },
+    "docs/DEVELOPMENT.md": {
+      "before_sha256": "48a0b233ab11304be7ad25acd588d09507178aade108c0bf8c03bece98236ed2",
+      "after_sha256": "45060fa785bdb46712453d91f54a11f2a192bdb46931e7bddeee30ae9bf813ec"
+    },
+    "docs/FRONTEND.md": {
+      "before_sha256": "e7441936643772168b2dbaae4b3b5196e4d1d8f14e773db0ecf7813ff1206028",
+      "after_sha256": "ada1363e8447ced6399cf6dcbffd4ac1ac88f1c2c5c41c75ba8c4e76c566a764"
+    },
+    "docs/IMPLEMENTATION.md": {
+      "before_sha256": "0885fc8ec29b2770d4e85e1676bdad737cde80520e03d0774bbe9a5783f1ccca",
+      "after_sha256": "f45b19fd1c98a34d9f4aa594614cbcbf7ccad1003c35821f55c6cb400512a717"
+    },
+    "docs/NATIVE-DEVELOPMENT.md": {
+      "before_sha256": "7f356221e695602d52a15a67abc4516925c480329beb28fb01e34dda020fa4ed",
+      "after_sha256": "7d0df03b7cbc2af269e815999ef15a7a5bfc900db1f6a16664a80858fdf56b86"
+    },
+    "docs/PLAN.md": {
+      "before_sha256": "ec769e51f2c549c3846a6077cee70574315e3471b70c63c265146938902b381e",
+      "after_sha256": "4c0a556b9a41b7f3062b5571f1d8be45a0d3e66d6e441a66ff0d1ed8d21a26df"
+    },
+    "docs/PRD.md": {
+      "before_sha256": "6298eea4f8ed4b3471f7df79f216a99390885149c42060778be95dc474f9eda0",
+      "after_sha256": "e7a2ed243ed046324a05239bd2482b1656ee11f937fdc19e72c084f3f81c8ff0"
+    },
+    "docs/README.md": {
+      "before_sha256": "c44560c89308d269b3a4be3dc5d5a4930ed97f6423a8a3a0e82a1e58a2fcdc38",
+      "after_sha256": "79529cbc79deeeaa28391d18c599d9b625f441734e402fe68583f9061f978080"
+    },
+    "docs/RESEARCH.md": {
+      "before_sha256": "c519bf9861bce656763b906f09f2cf83100761b3464d808463ac34ba0264684f",
+      "after_sha256": "5abc0b72ddffb825f329d3730ed3307c8a56572172ddd01b24c97980ef3dc063"
+    },
+    "docs/RUNNING.md": {
+      "before_sha256": "0d6fe4cf6df099ad9aac62b5d7ec82b0dab39b6c6d0a49bbf5472792b0e08f44",
+      "after_sha256": "308f82d4fd5d9482f8a86901fec5f28d2f756a4b3a92f1e81df464835d75ad4b"
+    },
+    "docs/SERVER-OPERATIONS.md": {
+      "before_sha256": "eb3da154ad3e572811cdddf9c24942e2c69b7b785c439b63a024a009c2210009",
+      "after_sha256": "981eb7945ce900abde246f2924145fdd8f3553de47513ea8f3aba1a6268629ee"
+    },
+    "docs/STACK.md": {
+      "before_sha256": "0501fea5b01c48ac06425b00959b45f52fafffc47306e9efaddd959226ea9ce6",
+      "after_sha256": "96178eec034f5409f49d31bd5efad90eb1a7d51ea07eb5c77ef1e5ecb55471b9"
+    },
+    "docs/UIUX-MIGRATION.md": {
+      "before_sha256": "98073cbc467cfeab2fe86ce92ec35bb61501cea52b11f95f9940a034aa5cc33d",
+      "after_sha256": "4c5a04fb9d551f0b3d11ae233abfe4fae935ce2062c2545fa2eb9119b84887e1"
+    },
+    "docs/V1-ADOPTION.md": {
+      "before_sha256": "e3b07e5c96d6a6487a357933dbe699ad9d619be9621701dcb66a4cd905a08d05",
+      "after_sha256": "be7763a7f74432c86ab6c5d5a4e5ff00f9694be908c5878100133a6700dce63b"
+    },
+    "docs/VALIDATION.md": {
+      "before_sha256": "c8ac538695d64985b6bba9620a20b8082ec4d7a7dcdb481ba307b403a63b79aa",
+      "after_sha256": "d0c620704e433e7e96c9e76e2d3a8e76a36e8c2034a859ea227c375916748548"
+    },
+    "docs/WINDOWS-ACCEPTANCE.md": {
+      "before_sha256": "c59582a925f94c7c6e7d44c8f32b7e459566525bdf7070915f1ed78f400f97e9",
+      "after_sha256": "b240cef972800dea80afb3251d041acc28935636be5aa8938d66fcd19ed5efa0"
+    },
+    "docs/WINDOWS-INSTALLER.md": {
+      "before_sha256": "b630b1991f558c6924a2b83f1954a5a0ef0e2511bb37c7e04679ba76edf3d375",
+      "after_sha256": "77d692c01f040a80c6505c001b4fac503877a11e7411a5ccea71a0de31b02c84"
+    },
+    "docs/WINDOWS-VALIDATION.md": {
+      "before_sha256": "2755c8950b50c0e6c795a266cbf499fa6e87943706d222b5062d8dafadd1f829",
+      "after_sha256": "223f2f1741fd29709902c0aa77fb3dad1efba3dfdd1263c7c645b2aed90020ea"
+    },
+    "docs/architecture/README.md": {
+      "before_sha256": "a68f4ab09e0a834018ca16be245ad1886d4f322abebacee90f97c5df61898c46",
+      "after_sha256": "e46d602adceb8f8bad5ff0c920da16e1fcf019940df7a597d9aaecf47c9d778f"
+    }
+  }
+}

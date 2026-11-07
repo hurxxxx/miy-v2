@@ -48,17 +48,22 @@ pub struct Origin {
     pub digest: String,
 }
 
-pub fn origin(p: &Principal, headers: &axum::http::HeaderMap) -> Option<Origin> {
+pub fn origin(
+    auth: &crate::auth::Auth,
+    p: &Principal,
+    headers: &axum::http::HeaderMap,
+) -> Option<Origin> {
     if p.cli_session_id.is_some() {
         return None;
     }
     if p.csrf.is_some() {
-        let (kind, cookie) = if p.development {
-            ("development", "miy_development")
+        let (kind, cookie_kind) = if p.development {
+            ("development", "development")
         } else {
-            ("browser", "miy_session")
+            ("browser", "session")
         };
-        crate::auth::cookie(headers, cookie).map(|value| Origin {
+        let purpose = p.browser_purpose?;
+        crate::auth::cookie(headers, &auth.cookie_name(purpose, cookie_kind)).map(|value| Origin {
             kind: kind.into(),
             digest: contract::hash(value),
         })
@@ -118,6 +123,7 @@ pub async fn authenticate(s: &State, token: &str) -> ApiResult<(Principal, Conte
     .await?
     .ok_or_else(ApiError::unauthorized)?;
     let p = Principal {
+        browser_purpose: None,
         id: row.get("user_id"),
         cli_session_id: row.get("cli_session_id"),
         delegation_id: row.get("delegation_id"),

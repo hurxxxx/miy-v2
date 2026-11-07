@@ -1,6 +1,6 @@
 use crate::{
     State,
-    auth::Principal,
+    auth::{BrowserPurpose, Principal},
     contract::{self, Manifest},
     http::{ApiError, ApiResult},
     policy::{self, AppAction},
@@ -23,6 +23,9 @@ pub async fn seed(pool: &sqlx::PgPool) -> anyhow::Result<()> {
     Ok(())
 }
 pub async fn admin(state: &State, p: &Principal) -> ApiResult<()> {
+    if p.browser_purpose == Some(BrowserPurpose::Portal) {
+        return Err(ApiError::forbidden());
+    }
     crate::delegations::unrestricted(p)?;
     let yes: bool = sqlx::query_scalar(
         "SELECT COALESCE((SELECT admin AND enabled FROM users WHERE id=$1),false)",
@@ -38,7 +41,7 @@ pub async fn admin(state: &State, p: &Principal) -> ApiResult<()> {
 }
 pub async fn me(state: &State, p: &Principal) -> ApiResult<Value> {
     crate::auth_sessions::ensure_active(&state.pool, &p.id).await?;
-    let row = sqlx::query("SELECT name,admin FROM users WHERE id=$1")
+    let row = sqlx::query("SELECT name,admin,can_develop FROM users WHERE id=$1")
         .bind(&p.id)
         .fetch_optional(&state.pool)
         .await?
@@ -58,9 +61,28 @@ pub async fn me(state: &State, p: &Principal) -> ApiResult<Value> {
                 .is_none_or(|d| g["appId"] == d.app_id && g["environment"] == d.environment)
         })
         .collect();
-    Ok(
-        json!({"id":p.id,"name":row.get::<String,_>("name"),"admin":row.get::<bool,_>("admin") && p.delegation_id.is_none(),"grants":grants,"csrf":p.csrf,"development":p.development,"delegation":delegation}),
-    )
+    let portal = p.browser_purpose == Some(BrowserPurpose::Portal);
+    let administrator = row.get::<bool, _>("admin") && p.delegation_id.is_none();
+    // This is a navigation hint, never authority. Each console operation still
+    // checks the current account and app/environment permissions on the server.
+    let can_manage_console = p.delegation_id.is_none()
+        && p.scopes.iter().any(|scope| scope == "miy.dev")
+        && (administrator
+            || row.get::<bool, _>("can_develop")
+            || grants
+                .iter()
+                .any(|grant| matches!(grant["permission"].as_str(), Some("develop" | "deploy"))));
+    let grants: Vec<Value> = grants
+        .into_iter()
+        .filter(|grant| !portal || grant["permission"] == "use")
+        .collect();
+    Ok(json!({
+        "id":p.id,"name":row.get::<String,_>("name"),"admin":administrator && !portal,
+        "grants":grants,"csrf":p.csrf,"development":p.development,"delegation":delegation,
+        "browserPurpose":p.browser_purpose.map(|purpose| purpose.as_str()),
+        "portalOrigin":state.auth.origin,"consoleOrigin":state.auth.console_origin,
+        "canManageConsole":can_manage_console,
+    }))
 }
 #[derive(Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -176,10 +198,14 @@ pub async fn create_installation(
 pub async fn installations(state: &State, p: &Principal) -> ApiResult<Value> {
     installation_list(state, p, false).await
 }
-/// Administrator runtime management. The company switch blocks use, not runtime control,
-/// so disabled apps stay listed with `appDisabled`; `canOpen` is the current use decision.
+/// Per-app runtime management, including non-administrator developers/deployers.
+/// The company switch blocks use, not runtime control, so disabled apps stay listed;
+/// `canOpen` describes the user's portal admission, not a console app execution route.
 pub async fn managed_installations(state: &State, p: &Principal) -> ApiResult<Value> {
-    admin(state, p).await?;
+    if p.browser_purpose == Some(BrowserPurpose::Portal) {
+        return Err(ApiError::forbidden());
+    }
+    crate::auth_sessions::ensure_active(&state.pool, &p.id).await?;
     installation_list(state, p, true).await
 }
 async fn installation_list(state: &State, p: &Principal, managed: bool) -> ApiResult<Value> {
@@ -201,7 +227,8 @@ async fn installation_list(state: &State, p: &Principal, managed: bool) -> ApiRe
 /// from the policy afterwards.
 pub(crate) const INSTALLATION_ROW: &str = "jsonb_build_object('id',t.id,'appId',t.app_id,'name',a.name,'manifestName',r.manifest->>'name','version',r.version,'environment',t.environment,'releaseId',t.release_id,'kind',CASE WHEN r.image_id IS NULL THEN 'validation_fixture' ELSE 'docker_app' END,'imageId',r.image_id,'sourceCommit',r.source_commit,'dbStatus',t.db_status,'runtimeStatus',t.runtime_status,'desiredState',t.desired_state,'generation',t.control_generation,'health',jsonb_build_object('status',t.health_status,'consecutiveFailures',t.health_failures,'checkedAt',t.health_checked_at,'errorCode',t.health_error),'ui',jsonb_build_object('entry','/artifacts/'||r.artifact_hash||'/ui/'||(r.manifest->'ui'->>'moduleEntry'),'export',r.manifest->'ui'->>'moduleExport','contractVersion',r.manifest->'ui'->>'contractVersion'),'lastOperation',(SELECT jsonb_build_object('id',j.id,'action',j.action,'status',j.status,'step',j.step,'errorCode',j.error_code,'retryable',j.retryable) FROM runtime_jobs j WHERE j.app_id=t.app_id AND j.environment=t.environment ORDER BY j.created_at DESC,j.id DESC LIMIT 1),'acceptance',(SELECT jsonb_build_object('recordedBy',c.actor,'note',c.note,'checks',c.checks,'structured',jsonb_array_length(c.checks)>0,'checkedAt',c.checked_at) FROM release_checks c WHERE c.release_id=r.id),'appDisabled',EXISTS(SELECT 1 FROM app_controls c WHERE c.app_id=t.app_id AND c.disabled),'canOpen',false,'canManage',false,'canPromote',false)";
 /// The installation in `row` ([`INSTALLATION_ROW`]) with the decisions `facts` give:
-/// the display values, and the acceptance record only with management read.
+/// the display values, and operational details only with management read. Preserve
+/// the published field names/types for the SDK and older CLI clients.
 pub(crate) fn installation_view(
     row: Value,
     facts: &policy::Facts,
@@ -213,6 +240,10 @@ pub(crate) fn installation_view(
     item.can_promote = flags.can_promote;
     if !flags.can_manage {
         item.acceptance = None;
+        item.last_operation = None;
+        item.image_id = None;
+        item.source_commit = None;
+        item.health.error_code = None;
     }
     Ok(item)
 }
@@ -303,12 +334,19 @@ pub async fn prepare(state: &State, p: &Principal, v: Prepare) -> ApiResult<Valu
     Ok(receipt)
 }
 pub async fn get_job(state: &State, p: &Principal, id: Uuid) -> ApiResult<Value> {
-    let row = sqlx::query("SELECT * FROM jobs WHERE id=$1")
+    let row = sqlx::query("SELECT j.*,t.app_id,t.environment FROM jobs j JOIN installations t ON t.id=j.installation_id WHERE j.id=$1")
         .bind(id)
         .fetch_optional(&state.pool)
         .await?
         .ok_or_else(ApiError::not_found)?;
-    installation(state, p, row.get("installation_id")).await?;
+    policy::require(
+        state,
+        p,
+        row.get("app_id"),
+        row.get("environment"),
+        AppAction::Observe,
+    )
+    .await?;
     Ok(job_view(&row))
 }
 fn job_view(row: &sqlx::postgres::PgRow) -> Value {
@@ -426,17 +464,17 @@ pub fn catalog() -> Value {
         {"id":"installations","method":"GET","path":"/api/v1/installations","permission":"use or develop","description":"Visible app installations and runtime UI metadata"},
         {"id":"validate_manifest","method":"POST","path":"/api/v1/contracts/validate","permission":"authenticated","description":"Validate manifest against pinned contract","input":schemars::schema_for!(Manifest)},
         {"id":"prepare_database","method":"POST","path":"/api/v1/database/prepare","permission":"develop on installation","description":"Prepare one installation DB and apply a registered release's migrations","input":schemars::schema_for!(Prepare)},
-        {"id":"get_job","method":"GET","path":"/api/v1/jobs/{id}","permission":"use or develop on installation","description":"Read persistent database job state"},
+        {"id":"get_job","method":"GET","path":"/api/v1/jobs/{id}","permission":"management read on installation","description":"Read persistent database job state; app use alone cannot read operating records"},
         {"id":"runtime_request","method":"POST","path":"/api/v1/apps/{app}/runtime","permission":"dev/develop or prod/deploy; administrator implicit","description":"Deploy uploaded immutable image to dev; promote accepted release unchanged to prod; start/stop/restart/remove without restarting the platform. Remove preserves database.","input":schemars::schema_for!(crate::runtime::RuntimeRequest)},
-        {"id":"runtime_job","method":"GET","path":"/api/v1/runtime/jobs/{id}","permission":"use or develop on app/environment; runtime managers also while the app is company-disabled","description":"Read deployment or lifecycle job state"},
-        {"id":"runtime_installations","method":"GET","path":"/api/v1/runtime/installations","permission":"non-delegated admin with miy.dev","description":"Runtime management list: installations the administrator can manage, including company-disabled apps (appDisabled). canOpen is the current use decision; opening and app APIs stay blocked while disabled."},
+        {"id":"runtime_job","method":"GET","path":"/api/v1/runtime/jobs/{id}","permission":"management read on app/environment","description":"Read deployment or lifecycle job state, including company-disabled apps; app use alone is insufficient"},
+        {"id":"runtime_installations","method":"GET","path":"/api/v1/runtime/installations","permission":"per-app management read with miy.dev","description":"Installations this developer, deployer or administrator may manage, including company-disabled apps. canOpen is portal admission; console credentials cannot run app UI/API."},
         {"id":"app_api_get","method":"GET","path":"/api/v1/installations/{id}/api/{path}","permission":"use or develop on installation","description":"Forward app-relative API path with verified signed identity. App enforces record ownership."},
         {"id":"app_api_post","method":"POST","path":"/api/v1/installations/{id}/api/{path}","permission":"use or develop on installation","description":"Forward mutation with CSRF and x-miy-release header matching active release"},
         {"id":"app_api_patch","method":"PATCH","path":"/api/v1/installations/{id}/api/{path}","permission":"use or develop on installation","description":"Forward app record update with CSRF and current release"},
         {"id":"app_api_delete","method":"DELETE","path":"/api/v1/installations/{id}/api/{path}","permission":"use or develop on installation","description":"Forward app record deletion with CSRF and current release"}
     ]);
     catalog.as_array_mut().unwrap().extend([
-        json!({"id":"get_installation_permissions","method":"GET","path":"/api/v1/installations/{id}/permissions","permission":"observe on installation (use, or runtime management read) and token read scope","description":"Read requested and approved external permissions, revision and last 100 history entries; optional releaseId query."}),
+        json!({"id":"get_installation_permissions","method":"GET","path":"/api/v1/installations/{id}/permissions","permission":"management read on installation and token read scope; app use is insufficient","description":"Read requested and approved external permissions, revision and last 100 history entries; optional releaseId query."}),
         json!({"id":"set_installation_permissions","method":"PUT","path":"/api/v1/installations/{id}/permissions","permission":"non-delegated admin with miy.dev","description":"Replace explicit external approvals for exactly this installation/release; compare expectedRevision. Empty permissions revokes all. No automatic carryover to new releases or prod.","input":schemars::schema_for!(crate::permissions::PermissionUpdate)}),
         json!({"id":"create_delegation","method":"POST","path":"/api/v1/delegations","permission":"non-delegated user; current user grants intersect all requested actions","description":"Issue an app/environment/action-scoped user credential with fixed expiry and revocation. Credential returned once; use auth delegations create --credential-file.","input":schemars::schema_for!(crate::delegations::Create)}),
         json!({"id":"list_delegations","method":"GET","path":"/api/v1/delegations","permission":"non-delegated owner","description":"Read own delegation metadata without credentials."}),
@@ -455,4 +493,66 @@ pub fn catalog() -> Value {
         .unwrap()
         .push(crate::audit::catalog());
     catalog
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::{HashMap, HashSet};
+
+    #[test]
+    fn portal_installations_preserve_the_sdk_shape_without_operating_details() {
+        let row = json!({
+            "id":Uuid::nil(),"appId":"app","name":"App","manifestName":"App","version":"1.0.0",
+            "environment":"dev","releaseId":Uuid::nil(),"kind":"docker_app",
+            "imageId":"internal-image","sourceCommit":"internal-source",
+            "dbStatus":"ready","runtimeStatus":"running","desiredState":"running","generation":3,
+            "health":{"status":"degraded","checkedAt":null,"consecutiveFailures":1,"errorCode":"internal-error"},
+            "ui":{"entry":"/artifacts/hash/ui/mf-manifest.json","export":"./AppRoot","contractVersion":"miy.ui/v1alpha1"},
+            "lastOperation":{"id":Uuid::nil(),"action":"deploy","status":"succeeded","step":"completed","errorCode":null,"retryable":false},
+            "acceptance":{"recordedBy":"operator","note":"internal-note","checks":[],"structured":false,"checkedAt":"2026-11-03T00:00:00Z"},
+            "appDisabled":false,"canOpen":false,"canManage":false,"canPromote":false,
+        });
+        let mut facts = policy::Facts {
+            user: Some(policy::User {
+                enabled: true,
+                admin: true,
+            }),
+            browser_purpose: Some(BrowserPurpose::Portal),
+            dev_scope: true,
+            delegation: policy::Delegation::None,
+            grants: HashMap::new(),
+            disabled: HashSet::new(),
+        };
+        let portal = installation_view(row.clone(), &facts).unwrap();
+        assert!(portal.can_open);
+        assert!(!portal.can_manage && !portal.can_promote);
+        assert_eq!(portal.ui.entry, "/artifacts/hash/ui/mf-manifest.json");
+        assert_eq!(portal.runtime_status, "running");
+        assert!(portal.image_id.is_none() && portal.source_commit.is_none());
+        assert!(portal.last_operation.is_none() && portal.acceptance.is_none());
+        assert!(portal.health.error_code.is_none());
+        let serialized = serde_json::to_value(&portal).unwrap();
+        assert_eq!(
+            serialized.as_object().unwrap().keys().collect::<Vec<_>>(),
+            row.as_object().unwrap().keys().collect::<Vec<_>>()
+        );
+        facts.browser_purpose = Some(BrowserPurpose::Console);
+        let managed = installation_view(row.clone(), &facts).unwrap();
+        assert!(managed.can_manage && managed.can_promote);
+        assert_eq!(managed.image_id.as_deref(), Some("internal-image"));
+        assert!(managed.last_operation.is_some() && managed.acceptance.is_some());
+        facts.browser_purpose = None;
+        facts.user.as_mut().unwrap().admin = false;
+        facts.grants.insert(
+            ("app".into(), "dev".into()),
+            policy::Grants {
+                use_: true,
+                ..Default::default()
+            },
+        );
+        let use_only_cli = installation_view(row, &facts).unwrap();
+        assert!(use_only_cli.can_open && !use_only_cli.can_manage);
+        assert!(use_only_cli.last_operation.is_none() && use_only_cli.source_commit.is_none());
+    }
 }

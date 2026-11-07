@@ -7,6 +7,17 @@ local=Path(os.getenv('MIY_STATE_DIR',str(root/'.local'))).resolve()
 secrets=json.loads((local/'credentials.json').read_text())
 realm=json.loads((local/'realm.json').read_text())
 settings=json.loads((local/'server.json').read_text())
+# Reject stale generated clients before making an administrative request. Keep
+# the realm, existing miy-web client and user subjects; only its exact approved
+# redirect/logout origins expand to the two browser purposes.
+origins=[settings['origin'],settings.get('consoleOrigin')]
+if not origins[1] or origins[0]==origins[1]:
+ raise SystemExit('Identity requires distinct portal and console origins; rerun bootstrap')
+web=next((client for client in realm['clients'] if client['clientId']=='miy-web'),None)
+if (not web or web['redirectUris']!=[value+'/auth/callback' for value in origins]
+    or web['webOrigins']!=origins
+    or web['attributes']['post.logout.redirect.uris']!='##'.join(value+'/' for value in origins)):
+ raise SystemExit('Generated identity client does not match the two exact configured origins')
 # Administrative credentials only cross a loopback connection. The public
 # issuer stays canonical even when the application's realm permits HTTP.
 origin=settings['identityAdminUrl']
@@ -58,4 +69,4 @@ for client in realm['clients']:
  mappers('/clients/'+existing[client['clientId']]['id'],client.get('protocolMappers',[]))
  for kind,key in [('default','defaultClientScopes'),('optional','optionalClientScopes')]:
   for name in client[key]:call(f"/clients/{existing[client['clientId']]['id']}/{kind}-client-scopes/{scopes[name]}",'PUT')
-print('Validation identity clients and scopes synchronized.')
+print('Identity clients and scopes synchronized; existing realm and user subjects were preserved.')

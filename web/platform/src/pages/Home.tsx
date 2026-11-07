@@ -2,17 +2,11 @@ import { useMemo } from "react";
 import { Link, useLocation } from "@tanstack/react-router";
 import type { Installation } from "@miy/sdk";
 import { installationsIn, useInstallationPolling, useInstallations } from "../data/installations";
-import { useUser } from "../data/session";
 import { currentEnvironment, environmentPath } from "../lib/paths";
 import { LoadError, StaleNotice } from "../components/LoadState";
-import { RuntimeHealth } from "../components/RuntimeHealth";
-import { RuntimeControls } from "../components/RuntimeControls";
-import { AppMark, Badge, EmptyState, Loading, Panel, monograms, type Tone } from "../ui";
-
-const runtimeTone: Record<string, Tone> = { running: "success", stopped: "neutral", failed: "danger", removed: "neutral" };
+import { AppMark, EmptyState, Loading, Panel, monograms } from "../ui";
 
 export function Home() {
-  const user = useUser();
   const installations = useInstallations();
   useInstallationPolling();
   const location = useLocation();
@@ -49,8 +43,6 @@ export function Home() {
                   app={a}
                   mark={marks.get(a.id) ?? "?"}
                   environment={environment}
-                  csrf={user.csrf}
-                  refresh={refresh}
                 />
               ))}
             </div>
@@ -65,14 +57,10 @@ function AppCard({
   app: a,
   mark,
   environment,
-  csrf,
-  refresh,
 }: {
   app: Installation;
   mark: string;
   environment: string;
-  csrf: string;
-  refresh: () => void;
 }) {
   const openable = a.kind !== "docker_app" || a.runtimeStatus === "running";
   return (
@@ -85,19 +73,12 @@ function AppCard({
         </span>
       }
     >
-      <div className="app-card-meta">
-        <Badge tone={runtimeTone[a.runtimeStatus] ?? "neutral"}>{a.runtimeStatus}</Badge>
-        <Badge>DB {a.dbStatus}</Badge>
-        <Badge>v{a.version || "—"}</Badge>
-        <code>{a.appId}</code>
-      </div>
-      <RuntimeHealth app={a} />
       {openable && (
         <Link className="app-card-open" to={environmentPath(environment, a.appId) as "/"}>
           앱 열기 →
         </Link>
       )}
-      {a.kind === "docker_app" && a.canManage && <RuntimeControls app={a} csrf={csrf} refresh={refresh} />}
+      {!openable && <p>지금은 앱을 사용할 수 없습니다. 담당자에게 문의하세요.</p>}
     </Panel>
   );
 }

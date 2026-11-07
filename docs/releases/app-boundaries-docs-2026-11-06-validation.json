@@ -1,0 +1,181 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-11-06",
+  "sourceCommit": "22c219de570d162646f6bcb9d31b712a46c83e69",
+  "sourceState": "documentation worktree; not committed or deployed",
+  "scope": "AB-01 through AB-08 design, current document synchronization, historical archive and acceptance inheritance; no product implementation",
+  "checks": [
+    {
+      "id": "links-integration-1",
+      "command": "python3 scripts/check-doc-links.py",
+      "status": "FAIL",
+      "observed": "626 relative links in 53 tracked Markdown files; integration in progress: missing APP-BOUNDARIES/VALIDATION anchors and moved architecture asset references",
+      "resolution": "Preserved intermediate failure. Followed by final reruns below."
+    },
+    {
+      "id": "links-integration-2",
+      "command": "python3 scripts/check-doc-links.py",
+      "status": "FAIL",
+      "observed": "609 relative links; remaining missing targets: README old architecture PNG, SERVER-OPERATIONS UIUX review anchor, VALIDATION new validation JSON, architecture CORE permission matrix anchor",
+      "resolution": "Preserved intermediate failure. Followed by final reruns below."
+    },
+    {
+      "id": "links-final-tracked",
+      "command": "python3 scripts/check-doc-links.py",
+      "status": "PASS",
+      "exitCode": 0,
+      "output": "PASS 600 relative links in 53 tracked Markdown files"
+    },
+    {
+      "id": "links-final-all",
+      "command": "python3 -c <pythonSource>",
+      "pythonSource": "import importlib.util, subprocess\nspec = importlib.util.spec_from_file_location(\"doclinks\", \"scripts/check-doc-links.py\")\nm = importlib.util.module_from_spec(spec)\nspec.loader.exec_module(m)\nrun = subprocess.run\nfiles = sorted(set(run([\"git\", \"ls-files\", \"--cached\", \"--others\", \"--exclude-standard\", \"--\", \"*.md\"], check=True, capture_output=True, text=True).stdout.splitlines()))\ndef including_new(args, **kwargs):\n    if args == [\"git\", \"ls-files\", \"*.md\"]:\n        return subprocess.CompletedProcess(args, 0, \"\\n\".join(files), \"\")\n    return run(args, **kwargs)\nm.subprocess.run = including_new\nraise SystemExit(m.main())\n",
+      "status": "PASS",
+      "exitCode": 0,
+      "output": "PASS 701 relative links in 60 tracked Markdown files",
+      "scope": "Tracked and new non-ignored Markdown, retaining checker exclusions for generated app guidance. Checker output uses the word tracked for this supplied full list."
+    },
+    {
+      "id": "diff-check",
+      "command": "git diff --check",
+      "status": "PASS",
+      "exitCode": 0,
+      "output": ""
+    },
+    {
+      "id": "archive-assets",
+      "command": "Python byte comparison: git show HEAD:docs/architecture/<name> versus docs/archive/architecture-2026-10/<name>",
+      "status": "PASS",
+      "files": [
+        {
+          "from": "docs/architecture/00-platform-overview.pdf",
+          "to": "docs/archive/architecture-2026-10/00-platform-overview.pdf",
+          "sha256": "b2c61ac920a26ebea24e209b66b38c38a80baa72e19ed5e317791bf4c79d3114"
+        },
+        {
+          "from": "docs/architecture/00-platform-overview.png",
+          "to": "docs/archive/architecture-2026-10/00-platform-overview.png",
+          "sha256": "a5786a5fd9e371a9d10452b29f51fc9e1dd88afc9eb8e7a78f5c80b38c5baa8c"
+        },
+        {
+          "from": "docs/architecture/00-platform-overview.svg",
+          "to": "docs/archive/architecture-2026-10/00-platform-overview.svg",
+          "sha256": "2f0cf80badc75a5acdda84d0ebcf6a684cb398320f9b14ef4c74e88edaa0e565"
+        },
+        {
+          "from": "docs/architecture/01-service-context.png",
+          "to": "docs/archive/architecture-2026-10/01-service-context.png",
+          "sha256": "de50171a1139342c85fb0e66c6d99d3ef0652e6ec37b233e3d704580ea6055fd"
+        },
+        {
+          "from": "docs/architecture/01-service-context.svg",
+          "to": "docs/archive/architecture-2026-10/01-service-context.svg",
+          "sha256": "5d5a317810559921cdded2c0fb58354ab78b3e9ee6429aade032e626edcd9b28"
+        },
+        {
+          "from": "docs/architecture/02-logical-architecture.png",
+          "to": "docs/archive/architecture-2026-10/02-logical-architecture.png",
+          "sha256": "fed15b05f027d4848ad416e8b90170822f338386b3147bca50410b820ee25843"
+        },
+        {
+          "from": "docs/architecture/02-logical-architecture.svg",
+          "to": "docs/archive/architecture-2026-10/02-logical-architecture.svg",
+          "sha256": "988bf67ec4952aaf0acd7646f86a3c25a0b65cbf6807a24708af6cf4bd01668b"
+        },
+        {
+          "from": "docs/architecture/03-development-swimlane.png",
+          "to": "docs/archive/architecture-2026-10/03-development-swimlane.png",
+          "sha256": "f6a7153e0f776e7fc0f3a188b0e7d3627c1efd87fb6aeba6efad7219bf900baf"
+        },
+        {
+          "from": "docs/architecture/03-development-swimlane.svg",
+          "to": "docs/archive/architecture-2026-10/03-development-swimlane.svg",
+          "sha256": "3f9b2345a7334541cc5c321e11811bc01c7143c79b5a22ab528dd87ad1a4906f"
+        },
+        {
+          "from": "docs/architecture/04-access-control.png",
+          "to": "docs/archive/architecture-2026-10/04-access-control.png",
+          "sha256": "413bf47990cad0cda1f3f2b410e3a3a0b07dd0a90e64e767d751acaa292e8b39"
+        },
+        {
+          "from": "docs/architecture/04-access-control.svg",
+          "to": "docs/archive/architecture-2026-10/04-access-control.svg",
+          "sha256": "e90f84aea92e64fda56f2de76d455113b4024dcaf147a54be27e4a9b6674fb5a"
+        },
+        {
+          "from": "docs/architecture/miy-architecture.pdf",
+          "to": "docs/archive/architecture-2026-10/miy-architecture.pdf",
+          "sha256": "09e0a1e54e7ec927e8d6d735d69abc26a885244364cbf1de4994a85db8c59384"
+        }
+      ]
+    },
+    {
+      "id": "scope",
+      "command": "git diff --name-only; assert every tracked change is README.md, AGENTS.md or docs/, and no existing docs/releases file is changed",
+      "status": "PASS",
+      "observed": "No product code, template, published bundle, migration, script or existing release evidence change."
+    },
+    {
+      "id": "cross-review",
+      "status": "PASS",
+      "method": "Two independent read-only integration reviews plus owner review",
+      "resolved": [
+        "Separate old bundle 0.8.0 transition history from new iframe SDK contract.",
+        "Limit delegated administrator privilege reuse to management decisions; prod Use still requires explicit admission.",
+        "Define worker/service-worker prohibition and clean app-origin transition; add lifecycle acceptance.",
+        "Carry independent agent restrictions and evaluator non-intervention into BV-13.",
+        "Move obsolete MF plan and figures to explicitly historical archives; replace current normative links."
+      ]
+    },
+    {
+      "id": "links-after-final-wording",
+      "command": "python3 -c <links-final-all.pythonSource>",
+      "status": "PASS",
+      "exitCode": 0,
+      "output": "PASS 701 relative links in 60 tracked Markdown files"
+    },
+    {
+      "id": "diff-after-final-wording",
+      "command": "git diff --check",
+      "status": "PASS",
+      "exitCode": 0,
+      "output": ""
+    },
+    {
+      "id": "markdown-fences",
+      "command": "Python scan of git diff --name-only plus git ls-files --others --exclude-standard -- *.md; match opening/closing backtick or tilde fences",
+      "status": "PASS",
+      "documents": 32,
+      "limit": "Structural fence check and manual diagram review; Mermaid visual rendering NOT_RUN."
+    }
+  ],
+  "notRun": [
+    {
+      "scope": "New runtime boundary acceptance BV-01 through BV-13",
+      "status": "NOT_RUN",
+      "reason": "Documentation-only change; new origin/session/API/iframe implementation does not exist yet."
+    },
+    {
+      "scope": "Real OIDC, end-to-end malicious app, CLI/MCP compatibility, database restore, independent agent acceptance",
+      "status": "NOT_RUN",
+      "reason": "Requires new product implementation and isolated acceptance environment."
+    },
+    {
+      "scope": "Windows install/update/remove and new DNS/HTTPS boundary",
+      "status": "NOT_RUN",
+      "reason": "User performs actual Windows acceptance separately."
+    },
+    {
+      "scope": "Production deployment, service restart and migration",
+      "status": "NOT_RUN",
+      "reason": "Outside the authorized documentation scope."
+    }
+  ],
+  "evidenceLimits": [
+    "Prior browser-boundary review observations characterize the old implementation, not security acceptance of this design.",
+    "Historical PASS/FAIL/NOT_RUN records are not transferred to the new boundary.",
+    "Published SDK, templates, migrations and product code are unchanged."
+  ],
+  "status": "PASS",
+  "statusMeaning": "Documentation validation only (BV-14); product boundary acceptance remains NOT_RUN."
+}

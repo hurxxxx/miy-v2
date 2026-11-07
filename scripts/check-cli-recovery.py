@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""CLI wire recovery against a loopback fault fixture, using synthetic archive bytes.
+"""CLI wire recovery against portal/console loopback fixtures with synthetic archives.
 
 Runs the real CLI's export/hash/upload/journal/resume paths. A temporary fake Docker
 executable only writes a fixture archive; this does not validate Docker, image
@@ -11,7 +11,7 @@ import argparse
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 import hashlib
-from http.server import BaseHTTPRequestHandler, HTTPServer
+from http.server import BaseHTTPRequestHandler
 import importlib.util
 import json
 import os
@@ -20,7 +20,6 @@ import socket
 import subprocess
 import sys
 import tempfile
-import threading
 from urllib.parse import parse_qs, urlsplit
 import uuid
 
@@ -78,6 +77,7 @@ class Fixture:
         self.upload = None
         self.job = None
         self.requests = []
+        self.surface_requests = []
         self.failures = []
         self.upload_posts = 0
         self.runtime_posts = 0
@@ -132,8 +132,8 @@ def fixture_server(config):
 
         def authenticated(self):
             require(
-                self.headers.get("Authorization") == f"Bearer {ACCESS}"
-                or self.headers.get("Cookie") == "fixture=synthetic",
+                (self.headers.get("Cookie") == "fixture=synthetic" if self.server.surface == "console"
+                 else self.headers.get("Authorization") == f"Bearer {ACCESS}"),
                 "Fixture request omitted authentication",
             )
 
@@ -156,7 +156,19 @@ def fixture_server(config):
         def get(self):
             state.requests.append(("GET", self.path))
             path = urlsplit(self.path).path
+            state.surface_requests.append((self.server.surface, "GET", path))
             query = parse_qs(urlsplit(self.path).query)
+            if path == "/auth/options":
+                self.send_json(200, {"developmentLogin": True, "surface": self.server.surface,
+                                     "portalOrigin": state.portal_origin, "consoleOrigin": state.console_origin})
+                return
+            if self.server.surface == "console":
+                if path != "/api/v1/me":
+                    self.send_json(403, {"error": {"code": "wrong_browser_purpose"}})
+                else:
+                    self.authenticated()
+                    self.send_json(200, {"id": "fixture-user", "csrf": "fixture-csrf"})
+                return
             known_job = next((job for job in [state.job, *state.lifecycle_jobs]
                               if job and path == f"/api/v1/runtime/jobs/{job['id']}"), None)
             if path != "/api/v1/capabilities":
@@ -195,7 +207,24 @@ def fixture_server(config):
 
         def post(self):
             state.requests.append(("POST", self.path))
+            state.surface_requests.append((self.server.surface, "POST", self.path))
             raw = self.rfile.read(int(self.headers.get("Content-Length", "0")))
+            browser_path = self.path == "/auth/development" or self.path == f"/api/v1/cli/devices/{state.login_id}/decision"
+            if browser_path:
+                if self.server.surface != "console" or self.headers.get("Origin") != state.console_origin:
+                    state.failures.append("Browser approval escaped the console origin")
+                    self.send_json(403, {"error": {"code": "wrong_browser_purpose"}})
+                elif self.path == "/auth/development":
+                    self.send_json(200, {}, cookie=True)
+                else:
+                    self.authenticated()
+                    require(self.headers.get("x-miy-csrf") == "fixture-csrf", "Console approval omitted CSRF")
+                    require(json.loads(raw) == {"userCode": "ABCDE-FGHJK", "decision": "approve"}, "Console approval changed the device code")
+                    self.send_json(200, {"approved": True})
+                return
+            if self.server.surface == "console":
+                self.send_json(403, {"error": {"code": "wrong_browser_purpose"}})
+                return
             if self.path == f"/api/v1/apps/{APP}/images":
                 self.authenticated()
                 state.upload_posts += 1
@@ -212,11 +241,6 @@ def fixture_server(config):
             body = json.loads(raw or b"{}")
             if self.path == "/auth/cli/device":
                 self.send_json(200, {"id": state.login_id, "deviceCode": DEVICE, "userCode": "ABCDE-FGHJK", "verificationPath": f"/cli/device/{state.login_id}", "expiresIn": 300, "interval": 1})
-            elif self.path == "/auth/development":
-                self.send_json(200, {}, cookie=True)
-            elif self.path == f"/api/v1/cli/devices/{state.login_id}/decision":
-                self.authenticated()
-                self.send_json(200, {"approved": True})
             elif self.path == "/auth/cli/token":
                 self.send_json(200, {"status": "approved", "sessionId": state.session_id, "userId": "fixture-user", "accessToken": ACCESS, "refreshToken": REFRESH, "tokenType": "Bearer", "expiresIn": 900, "refreshExpiresAt": (datetime.now(timezone.utc) + timedelta(days=30)).isoformat()})
             elif self.path == f"/api/v1/apps/{APP}/runtime/preflight":
@@ -287,16 +311,8 @@ def fixture_server(config):
             state.lifecycle_jobs.append(job)
             self.send_json(200, job)
 
-    server = HTTPServer(("127.0.0.1", 0), Handler)
-    server.timeout = 10
-    thread = threading.Thread(target=server.serve_forever, daemon=True)
-    thread.start()
-    try:
-        yield state, f"http://127.0.0.1:{server.server_port}"
-    finally:
-        server.shutdown()
-        server.server_close()
-        thread.join(timeout=5)
+    with output_contract.surface_servers(Handler, state) as fixture:
+        yield fixture
 
 
 def check(cli):
@@ -323,6 +339,9 @@ def check(cli):
         with fixture_server(config) as (state, origin):
             run(["context", "add", "fixture", "--url", origin])
             run(["--context", "fixture", "auth", "login", "--account", "fixture"])
+            output_contract.check_development_surfaces(state)
+            require(not state.failures, "Development login crossed an authentication boundary")
+            ok("development login discovers the console and keeps browser approval off the portal")
             run(["--context", "fixture", "app", "init", str(project), "--id", APP, "--name", "Recovery fixture"])
 
             def git(*args):

@@ -2,11 +2,12 @@ import { useState } from "react";
 import { useLocation } from "@tanstack/react-router";
 import { request } from "@miy/sdk";
 import { Button, Panel } from "../ui";
-import { useUser } from "../data/session";
+import { useSurface, useUser } from "../data/session";
 import { CliDeviceApproval } from "./LoginRecovery";
 
 export function CliAuthorize() {
   const user = useUser();
+  const { portalOrigin } = useSurface();
   const location = useLocation();
   const id = location.pathname.split("/").at(-1);
   const [result, setResult] = useState("");
@@ -24,6 +25,7 @@ export function CliAuthorize() {
   }
   return (
     <Panel title="CLI 로그인 승인">
+      <p>플랫폼 서버: <strong>{portalOrigin}</strong></p>
       <p>
         {user.name} 계정으로 CLI가 플랫폼 API를 사용하도록 연결합니다. 권한은 이 계정의 앱·환경 권한을 따릅니다.
       </p>

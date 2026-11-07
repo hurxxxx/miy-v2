@@ -6,6 +6,14 @@
 - 실행 서버·게시 CLI: **0.7.0**, SDK 번들 **0.8.0**
 - 배포 소스: 서버·웹 화면 `7b437890030f0da6f10dc6a76881891f353f31cf`(2026-11-05 07:10 KST 반영), 게시 CLI `01e4d4924f8c8fc4e11720c1af81adf17ddb20bf`
 
+**아래는 현재 운영과 실제 배포 기록이다.** [내부 업무 앱의 최소 보안안](APP-BOUNDARIES.md#확정-결정)은 소스에 구현했으며 운영 미반영이다. 회사가 관리하는 개발자·앱과 내부망을 전제로, iframe 없는 MF·AppRoot·라우터 계약을 유지한다. 한 IP의 포털·신뢰 콘솔 두 HTTPS origin을 사용하며 dev/prod 업무 UI는 포털에, Keycloak `/identity/realms/miy`와 CLI 승인은 콘솔에 둔다. 두 포트는 예를 들어 8443/9443이며 설정 가능하다. 별도 IdP origin·dev 포털·도메인·추가 IP는 필수 조건이 아니다. 공개 운영 중인 `v2.dwdcc.kr`을 이 내부망 범위에 자동으로 포함하거나 현재 위험이 수용됐다고 판단하지 않는다. 운영 [전환·복구](APP-BOUNDARIES.md#전환과-복구)는 `NOT_RUN`이며 격리 환경의 [신규 인수](APP-BOUNDARIES.md#경계-인수)와 구분한다.
+
+**전환 전 알려진 위험:** 현행 같은 페이지 앱 코드는 브라우저 세션으로 legacy·device CLI 승인을 악용할 수 있다. 구형 토큰은 8시간, 현행 access는 15분·refresh family는 최대 30일이며 브라우저 logout과 CLI 회수는 별개다. 현재 CLI 세션 목록에는 구형 토큰이 포함되지 않는다. 코드·리뷰 근거와 공격 재현의 한계는 [문제와 임시 통제](APP-BOUNDARIES.md#전환-전-임시-운영)에 보존한다. 이번 작업에서 운영 헤더·로그인 공격을 재현하거나 배포를 변경하지 않았다.
+
+내부 최소안은 CLI 승인 중지·고권한 계정의 앱 사용 금지·develop 그룹 부여 금지를 일괄 제품 정책으로 추가하지 않는다. 안전하지 않은 구 승인 경로가 남는 동안에는 노출된 경로·계정·앱에 한정한 차단, 별도 프로필 또는 의심 credential 회수를 운영 책임자가 정해 적용한다. 공개 운영 환경의 조치 범위는 별도 확인해야 한다. 운영 책임 역할은 플랫폼 운영 관리자이며 최초 재검토는 2026-11-13(KST) 또는 다음 운영 변경 직전 중 이른 시점이다. **통제 적용·회수·전환은 NOT_RUN**이고 문서 수정으로 권한·세션·인증서를 변경하지 않았다. MFA·별도 IdP 사이트·추가 모니터링은 후속 강화이며 이번 최소 구현의 선행 조건이 아니다.
+
+반영 전에는 실제 대상 SHA의 CI·변경 범위 회귀와 백업·별도 복원을 확인한다. 공개 운영의 긴급 수정이 필요하면 운영 `7b43789` 기준 최소 hotfix와 main의 전체 변경을 구분하여 배포 소스를 정한다. 2026-11-06 비교에서 확인한 후속 16개 커밋을 자동으로 함께 반영하지 않는다. 실제 배포는 별도 요청과 기록으로 관리하며 이번 구현·격리 검증은 공개 운영 hotfix나 서비스 변경을 수행한 기록이 아니다.
+
 2026-11-05 사용자 요청으로 관리자 재확인 보완(`dec457e`)과 사용 중지된 앱의 관리자 실행 관리(`bedf96f`)를 §7의 도구로 반영했다([배포 결과](releases/core-runtime-management-2026-11-05-deployment.json)). migration은 없다.
 
 - 서버: 별도 clean checkout에서 빌드한 SHA-256 `d9ce25351221bce31d5342785a9906f6163fdc7d2bc83e468092d20613d5c46e`. serve·worker의 실제 실행 파일도 같은 해시다. 코어 중지 구간은 약 3초다. 중지 후 받은 덤프(231,290 bytes, 테이블 40개·행 1,464개)를 일회용 PostgreSQL에 복원해 새 바이너리의 migration 확인(schema 19 유지)을 통과한 뒤 설치했다.
@@ -36,7 +44,7 @@
 
 2026-11-03 웹 화면만 [기본 UI 이식](UIUX-MIGRATION.md) 결과(소스 `98a31cc`)로 교체했다. 이 시점의 서버·worker 실행 파일과 DB는 0.6.3(`8d7d042`)이었고, 같은 날 위 0.7.0 반영으로 교체했다. 새 화면이 쓰는 API 경로·SDK·공유 모듈 설정은 `8d7d042` 화면과 같음을 확인했다. 교체 전 `web/platform/dist`는 `.local/platform-dist-backups/dist-20261103T183736`(파일 해시 목록 `.sha256` 포함)에 보존했고, 열린 탭이 이전 파일을 계속 읽도록 이전 `assets/`와 `remoteEntry`도 새 산출물에 남겼다. 공개 주소에서 공유 개발 로그인으로 홈·앱 레일·기존 앱 화면·운영 영역·관리 화면·모바일 서랍·공개 CLI 설치 화면을 읽기만 하여 확인했고 페이지 오류는 없었다(검사 세션은 로그아웃). 되돌리려면 `mv web/platform/dist web/platform/dist.failed && cp -a .local/platform-dist-backups/dist-20261103T183736 web/platform/dist`를 실행한다. Nginx·서비스 재시작은 필요 없다.
 
-2026-11-03 21:43 KST(12:43 UTC) 웹 화면을 [UI 후속 리뷰](UIUX-MIGRATION.md#9-ui-이식-후속-리뷰-2026-11-03) 보완 소스 `3876d43`으로 다시 교체했다. 서버·worker·DB·게시 CLI는 0.7.0 그대로다. 교체 전에 격리 전체 스택(`scripts/runtime-regression/stack-ui.sh run`)을 이 소스로 다시 실행해 5건 PASS, 정리 후 남은 자원 0, 실행 전후 호스트 비교 차이 0을 확인했다.
+2026-11-03 21:43 KST(12:43 UTC) 웹 화면을 [UI 후속 리뷰](archive/UIUX-MIGRATION-UI1-5.md#9-ui-이식-후속-리뷰-2026-11-03) 보완 소스 `3876d43`으로 다시 교체했다. 서버·worker·DB·게시 CLI는 0.7.0 그대로다. 교체 전에 격리 전체 스택(`scripts/runtime-regression/stack-ui.sh run`)을 이 소스로 다시 실행해 5건 PASS, 정리 후 남은 자원 0, 실행 전후 호스트 비교 차이 0을 확인했다.
 
 - 빌드: `vite build --mode production`을 격리 경로 `.local/release-ui/3876d43/dist`에 실행했다. 운영 dist와 이름이 같은 파일 105개는 내용도 같았고, 새 파일은 3개였다.
 - 교체: 현재 dist를 `.local/platform-dist-backups/dist-20261103T124335`(UTC 표기, `.sha256` 포함)에 백업했다. 새 파일은 기존 파일을 덮어쓰지 않고 추가해 이전 탭용 파일을 유지했고, 새 `index.html`이 참조하는 파일이 모두 있는지 확인한 뒤 `index.html`만 rename으로 바꿨다.
@@ -47,6 +55,32 @@
 - 되돌리기: `mv web/platform/dist web/platform/dist.failed && cp -a .local/platform-dist-backups/dist-20261103T124335 web/platform/dist`. Nginx·서비스 재시작은 필요 없다.
 
 현재 호스트가 플랫폼 서버다. 다른 PC의 브라우저·CLI·프로젝트 MCP는 위 HTTPS 주소를 사용한다. 주소·인증·서비스 설정은 이미 적용되어 있으며, 이 문서는 현재 배포와 저장소 작업본을 구분해 유지관리하는 절차다.
+
+
+
+## 새 두 출처 설정과 전환 준비
+
+아래는 **새 구현을 사용할 별도 서버/상태 경로**의 준비 명령이다. 이 호스트의 운영 `.local`에는 실행하지 않는다. 사내 공유 서버의 표준은 IP SAN 인증서를 반입한 HTTPS이며 서버의 OS·브라우저·CLI 신뢰는 각각 확인한다. 키·암호·runtime.env를 출력하지 않는다.
+
+```sh
+python3 scripts/bootstrap.py --profile server --state-dir /srv/miy-new \
+  --origin https://192.168.10.20:8443 --console-origin https://192.168.10.20:9443 \
+  --bind 127.0.0.1:18080 --console-bind 127.0.0.1:18081 \
+  --ca-file /etc/miy-tls/company-ca.pem
+python3 scripts/check-server-tls.py --state-dir /srv/miy-new \
+  --certificate /etc/miy-tls/server-chain.pem --key /etc/miy-tls/server.key
+python3 scripts/render-server-config.py --state-dir /srv/miy-new \
+  --binary /opt/miy/miy --service-prefix miy-internal \
+  --certificate /etc/miy-tls/server-chain.pem --key /etc/miy-tls/server.key
+```
+
+생성된 Nginx 설정·서비스 파일을 검토한 뒤 해당 서버의 반영 절차를 따른다. `consoleOrigin`과 `consoleBind`를 생략해 구 1출처 설정으로 Core를 시작하는 fallback은 없다. `miy-web`의 callback/logout URI는 두 origin의 정확한 경로만 등록한다. 기존 realm·사용자 sub·secret을 재생성하지 않고, issuer는 콘솔 `/identity/realms/miy`로 옮긴다. CLI context의 포털 URL은 그대로이고 MCP 클라이언트는 새 issuer 발견·필요한 재로그인을 확인한다. 내부 Core/Keycloak listener는 loopback이며 생성 proxy만 고정 목적 listener로 전달한다.
+
+운영 전환 전 변경 범위의 백업·별도 복원과 migration 0020 리허설이 필요하다. 0020은 브라우저 세션·로그인 flow·미완료 CLI 승인을 무효화하므로 재로그인을 안내한다. 앱/사용자/그룹 데이터와 독립 CLI 세션은 유지된다. 의심 자격증명은 콘솔의 개인 CLI 목록에서 device·legacy를 각각 회수한다. 게시 CLI/SDK를 전면 교체하거나 앱 데이터를 다시 만들지 않는다.
+
+이미 앱 코드를 실행했던 포털의 브라우저별 개발자 도구에서 해당 origin의 Service Worker 등록을 해제하고 cache/storage를 정리한 뒤 새 로그인으로 확인한다. 콘솔은 앱 코드가 실행되지 않았던 새 origin을 쓴다. 일회성 서버 정리가 필요하면 **해당 origin에만** `Clear-Site-Data: "cache", "storage"`를 사용한다. `"cookies"`/`"*"`는 등록 도메인과 다른 포트 서비스에 영향을 주므로 금지한다. 알려진 구 `miy_session`·`miy_development`(/)·`miy_login`(/auth)만 만료시키고 새 목적별 쿠키나 IdP 쿠키를 일괄 지우지 않는다. 중복 쿠키/431이 남은 기기는 해당 호스트의 사이트 데이터 정리를 사용자에게 안내한다. 미접속 기기 정리 완료를 주장하지 않는다.
+
+인증서를 교체할 때에는 새 인증서·키를 별도 파일에 두고 `check-server-tls.py`로 체인·IP SAN·만료·키 일치를 검사한다. 새 CA라면 단말/CLI 신뢰를 먼저 등록하고 원본 경로를 보존한 뒤 proxy의 설정 검사·재적재 절차를 따른다. 이후 같은 검사에 `--connect`를 붙여 두 HTTPS health를 확인한다. 실패하면 보존한 인증서·키·proxy 설정으로 되돌린다. 자동 CA 설치/갱신과 실제 Windows 검증은 이번 구현 범위 밖이다.
 
 ## 1. 서버 주소와 실행 구성
 

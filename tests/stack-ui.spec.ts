@@ -54,9 +54,26 @@ function writeApp(version: string) {
     join(appDir, "web/src/AppRoot.tsx"),
     `import {useState,useEffect} from 'react';import type {AppProps} from '@miy/sdk';
 export default function AppRoot({runtime}:AppProps){const [draft,setDraft]=useState('');
+const [boundary,setBoundary]=useState('');
+async function checkBoundary(){const me=await (await fetch('/api/v1/me')).json();
+const changed=await fetch('/api/v1/apps',{method:'POST',headers:{'Content-Type':'application/json','x-miy-csrf':me.csrf},body:JSON.stringify({id:'boundary-${appId}',name:'경계 확인 앱'})});
+let consoleReadable=false;try{await fetch(me.consoleOrigin+'/api/v1/me',{credentials:'include'});consoleReadable=true;}catch{}
+setBoundary(JSON.stringify({managementStatus:changed.status,consoleReadable}));}
 useEffect(()=>runtime.registerNavigationGuard(()=>draft?'저장하지 않은 입력이 있습니다':undefined),[runtime.registerNavigationGuard,draft]);
-return <section><h1 data-testid="probe-version">UI5 probe ${version}</h1><input aria-label="메모" data-testid="draft" value={draft} onChange={e=>setDraft(e.target.value)}/></section>;}`,
+return <section><h1 data-testid="probe-version">UI5 probe ${version}</h1><input aria-label="메모" data-testid="draft" value={draft} onChange={e=>setDraft(e.target.value)}/><button onClick={checkBoundary}>경계 확인</button><output data-testid="boundary-result">{boundary}</output></section>;}`,
   );
+  writeFileSync(join(appDir, "src/main.rs"), `use axum::{Json, Router, response::Html, routing::get};
+use serde_json::json;
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
+    let pool = miy_app_sdk::database().await?;
+    let app = Router::new()
+        .route("/ping", get(|| async { Json(json!({"message":"Ready to build"})) }))
+        .route("/boundary-html", get(|| async { Html("<!doctype html><h1>Boundary HTML probe</h1><script>window.__boundaryHtmlExecuted=true</script>") }))
+        .with_state(pool);
+    miy_app_sdk::serve(app).await
+}
+`);
   const manifest = JSON.parse(readFileSync(join(appDir, "manifest.json"), "utf8"));
   writeFileSync(join(appDir, "manifest.json"), JSON.stringify({ ...manifest, version }, null, 2) + "\n");
   run("git", ["add", "."], appDir);
@@ -66,25 +83,40 @@ return <section><h1 data-testid="probe-version">UI5 probe ${version}</h1><input 
   installationRow = (cli(["status"]) as { environment: string; id: string; releaseId: string }[]).find((v) => v.environment === "dev");
 }
 
-async function signIn(browser: Browser, user: string): Promise<{ context: BrowserContext; page: Page }> {
-  const context = await browser.newContext();
+async function surfaceOrigin(context: BrowserContext, surface: "portal" | "console") {
+  const options = await (await context.request.get(origin + "/auth/options")).json();
+  return (surface === "console" ? options.consoleOrigin : options.portalOrigin) as string;
+}
+async function signInPage(context: BrowserContext, user: string, surface: "portal" | "console") {
+  const selectedOrigin = await surfaceOrigin(context, surface);
   const page = await context.newPage();
   page.on("pageerror", (e) => console.log(`[${user}] pageerror: ${e.message}`));
   page.on("console", (m) => m.type() === "error" && console.log(`[${user}] console: ${m.text()}`));
-  await page.goto("/");
-  await page.getByRole("link", { name: "OAuth로 로그인" }).click();
-  await page.locator("#username").fill(user);
-  await page.locator("#password").fill(credentials[user]!);
-  await page.locator("#kc-login").click();
-  await page.waitForURL(origin + "/");
+  await page.goto(selectedOrigin + "/");
+  await page.getByRole("link", { name: /^(OAuth로 로그인|로그인)$/ }).click();
+  await Promise.race([
+    page.locator("#username").waitFor({ state: "visible" }),
+    page.getByRole("button", { name: "로그아웃" }).waitFor({ state: "visible" }),
+  ]);
+  if (await page.locator("#username").isVisible()) {
+    await page.locator("#username").fill(user);
+    await page.locator("#password").fill(credentials[user]!);
+    await page.locator("#kc-login").click();
+  }
+  await page.waitForURL(selectedOrigin + "/");
   await expect(page.getByRole("button", { name: "로그아웃" })).toBeVisible();
-  return { context, page };
+  return page;
 }
-async function api(context: BrowserContext, path: string, method = "GET", data?: unknown) {
-  const csrf = (await (await context.request.get(origin + "/api/v1/me")).json()).csrf;
-  return context.request.fetch(origin + "/api/v1" + path, { method, data, headers: { origin, "x-miy-csrf": csrf } });
+async function signIn(browser: Browser, user: string, surface: "portal" | "console" = "portal"): Promise<{ context: BrowserContext; page: Page }> {
+  const context = await browser.newContext();
+  return { context, page: await signInPage(context, user, surface) };
 }
-const appCard = (page: Page) => page.locator(".app-card").filter({ hasText: appId });
+async function api(context: BrowserContext, path: string, method = "GET", data?: unknown, surface: "portal" | "console" = "console") {
+  const selectedOrigin = await surfaceOrigin(context, surface);
+  const csrf = (await (await context.request.get(selectedOrigin + "/api/v1/me")).json()).csrf;
+  return context.request.fetch(selectedOrigin + "/api/v1" + path, { method, data, headers: { origin: selectedOrigin, "x-miy-csrf": csrf } });
+}
+const appCard = (page: Page) => page.locator(".app-card").filter({ hasText: appName });
 
 test.describe.configure({ mode: "serial" });
 
@@ -120,19 +152,17 @@ test("Keycloak login and logout through the new shell", async ({ browser }) => {
   checks.push("keycloak-login-logout");
 });
 
-test("deployed Docker app opens in the shell with real health and runtime controls", async ({ browser }) => {
+test("deployed Docker app opens in the portal and runtime controls stay on the console", async ({ browser }) => {
   const { context, page } = await signIn(browser, "admin");
   const manifests: number[] = [];
   page.on("response", (r) => r.url().endsWith("mf-manifest.json") && manifests.push(r.status()));
   const card = appCard(page);
-  await expect(card.getByRole("status", { name: "앱 실행 및 서비스 상태" })).toContainText("컨테이너: running · 서비스: 정상", {
-    timeout: 60000,
-  });
+  await expect(card.getByRole("button", { name: "중지" })).toHaveCount(0);
   await card.getByRole("link", { name: "앱 열기 →" }).click();
   await expect(page).toHaveURL(new RegExp(`/environments/dev/apps/${appId}$`));
   await expect(page.locator(`.miy-app-root[data-miy-app="${appId}"]`).getByTestId("probe-version")).toHaveText("UI5 probe 0.1.0");
   await expect(page.locator("#platform-navigation").getByRole("link", { name: appName })).toHaveAttribute("aria-current", "page");
-  await expect(page.locator(".app-session-bar").getByRole("status")).toContainText("서비스: 정상");
+  await expect(page.getByText(/컨테이너:|마지막 서비스 검사:/)).toHaveCount(0);
   expect(manifests).toContain(200);
   // V1-O2: the deployment capped this installation's roles and the app tagged its connections.
   const sql = (query: string) =>
@@ -151,19 +181,21 @@ test("deployed Docker app opens in the shell with real health and runtime contro
     .toBeGreaterThan(0);
   expect(Number(sql(`SELECT count(*) FROM pg_stat_activity WHERE application_name IN ('miy-core-serve', 'miy-core-worker')`))).toBeGreaterThan(0);
 
-  await page.locator("#platform-navigation").getByRole("link", { name: "홈", exact: true }).click();
-  await card.getByRole("button", { name: "중지" }).click();
-  await expect(card.locator(".app-card-meta")).toContainText("stopped", { timeout: 120000 });
+  const management = await signIn(browser, "admin", "console");
+  const managedCard = appCard(management.page);
+  await expect(managedCard.getByRole("status", { name: "앱 실행 및 서비스 상태" })).toContainText("서비스: 정상", { timeout: 60000 });
+  await managedCard.getByRole("button", { name: "중지" }).click();
+  await expect(managedCard.locator(".app-card-meta")).toContainText("stopped", { timeout: 120000 });
   expect(running()).toBe("false");
   await page.goto(`/environments/dev/apps/${appId}`);
   await expect(page.getByRole("heading", { name: "앱이 실행 중이 아닙니다" })).toBeVisible();
-  await page.locator("#platform-navigation").getByRole("link", { name: "홈", exact: true }).click();
-  await card.getByRole("button", { name: "시작" }).click();
-  await expect(card.getByRole("status", { name: "앱 실행 및 서비스 상태" })).toContainText("컨테이너: running · 서비스: 정상", {
+  await managedCard.getByRole("button", { name: "시작" }).click();
+  await expect(managedCard.getByRole("status", { name: "앱 실행 및 서비스 상태" })).toContainText("컨테이너: running · 서비스: 정상", {
     timeout: 120000,
   });
   expect(running()).toBe("true");
   await page.screenshot({ path: join(root, ".local/evidence/stack-ui/home.png"), fullPage: true });
+  await management.context.close();
   await context.close();
   checks.push("remote-ui-from-core", "health", "db-connection-budget", "stop-start");
 });
@@ -188,14 +220,72 @@ test("unsaved input blocks shell navigation, and a new release asks for a reload
   answer = "accept";
   await page.getByRole("button", { name: "새로고침" }).click();
   await expect(page.getByTestId("probe-version")).toHaveText("UI5 probe 0.2.0", { timeout: 60000 });
-  await expect(page.locator(".app-session-bar").getByRole("status")).toContainText("서비스: 정상", { timeout: 60000 });
+  await expect(page.getByText(/컨테이너:|마지막 서비스 검사:/)).toHaveCount(0);
   await page.screenshot({ path: join(root, ".local/evidence/stack-ui/app.png"), fullPage: true });
   await context.close();
   checks.push("navigation-guard", "release-change");
 });
 
+test("a real portal module cannot use console privileges or read the IdP, and API HTML cannot execute", async ({ browser }) => {
+  const { context, page } = await signIn(browser, "admin");
+  try {
+    // Keep both purpose cookies in the same browser context. A CORS failure with
+    // no authenticated console session would not establish this boundary.
+    const consolePage = await signInPage(context, "admin", "console");
+    const consoleOrigin = await surfaceOrigin(context, "console");
+    const consoleMe = await context.request.get(consoleOrigin + "/api/v1/me");
+    expect(consoleMe.status()).toBe(200);
+    expect((await consoleMe.json()).browserPurpose).toBe("console");
+    await page.goto(`/environments/dev/apps/${appId}`);
+    await expect(page.getByTestId("probe-version")).toHaveText("UI5 probe 0.2.0");
+    await expect(page.locator("iframe")).toHaveCount(0);
+    // This button and the fetch calls are part of the built, deployed MF module.
+    await page.getByRole("button", { name: "경계 확인", exact: true }).click();
+    await expect(page.getByTestId("boundary-result")).toHaveText(JSON.stringify({ managementStatus: 403, consoleReadable: false }));
+
+    const identityUrl = consoleOrigin + "/identity/realms/miy/protocol/openid-connect/auth";
+    const identity = await context.request.get(identityUrl);
+    expect(identity.headers()["content-security-policy"]).toContain("frame-ancestors 'none'");
+    expect(identity.headers()["x-frame-options"]?.toUpperCase()).toBe("DENY");
+    const frame = await page.evaluate(async (url) => {
+      // An attack probe, never the application execution mechanism.
+      return new Promise<{ loaded: boolean; readable: boolean }>((resolve) => {
+        const element = document.createElement("iframe");
+        const timer = setTimeout(() => { element.remove(); resolve({ loaded: false, readable: false }); }, 10000);
+        element.onload = () => {
+          let readable = false;
+          try { readable = !!element.contentWindow?.document.documentElement; } catch { /* cross-origin access denied */ }
+          clearTimeout(timer);
+          element.remove();
+          resolve({ loaded: true, readable });
+        };
+        element.src = url;
+        document.body.append(element);
+      });
+    }, identityUrl);
+    expect(frame).toEqual({ loaded: true, readable: false });
+    await expect(page.locator("iframe")).toHaveCount(0);
+
+    const apiPath = `/api/v1/installations/${installation().id}/api/boundary-html`;
+    const html = await context.request.get(origin + apiPath);
+    expect(html.status()).toBe(200);
+    expect(html.headers()["content-type"]).toContain("text/html");
+    expect(html.headers()["content-security-policy"]).toContain("sandbox");
+    expect(html.headers()["x-content-type-options"]).toBe("nosniff");
+    const denied = await context.request.get(consoleOrigin + apiPath);
+    expect([403, 404]).toContain(denied.status());
+    const htmlPage = await context.newPage();
+    await htmlPage.goto(origin + apiPath);
+    await expect(htmlPage.getByRole("heading", { name: "Boundary HTML probe", exact: true })).toBeVisible();
+    expect(await htmlPage.evaluate(() => (window as typeof window & { __boundaryHtmlExecuted?: boolean }).__boundaryHtmlExecuted)).toBeUndefined();
+    await htmlPage.close();
+    await consolePage.close();
+    checks.push("real-mf-portal-management-denied", "authenticated-console-cross-origin-read-denied", "idp-dom-and-framing-denied", "api-html-sandbox-nosniff");
+  } finally { await context.close(); }
+});
+
 test("revoking a user's permission while the app is open", async ({ browser }) => {
-  const admin = await signIn(browser, "admin");
+  const admin = await signIn(browser, "admin", "console");
   const grant = (enabled: boolean) =>
     api(admin.context, "/grants", "PUT", { userId: alice, appId, environment: "dev", permission: "use", enabled });
   expect((await grant(true)).ok()).toBeTruthy();
@@ -211,7 +301,7 @@ test("revoking a user's permission while the app is open", async ({ browser }) =
   await expect(rail.getByRole("link", { name: appName })).toHaveCount(0);
   await user.page.goto(`/environments/dev/apps/${appId}`);
   await expect(user.page.getByRole("heading", { name: "앱에 접근할 수 없습니다" })).toBeVisible();
-  const visible = (await (await api(user.context, "/installations")).json()) as { appId: string }[];
+  const visible = (await (await api(user.context, "/installations", "GET", undefined, "portal")).json()) as { appId: string }[];
   expect(visible.map((a) => a.appId)).not.toContain(appId);
   await user.context.close();
   await admin.context.close();
@@ -219,7 +309,7 @@ test("revoking a user's permission while the app is open", async ({ browser }) =
 });
 
 test("removing the app goes through the confirm dialog and removes the container", async ({ browser }) => {
-  const { context, page } = await signIn(browser, "admin");
+  const { context, page } = await signIn(browser, "admin", "console");
   const card = appCard(page);
   const trigger = card.getByRole("button", { name: "앱 제거(DB 보존)" });
   await trigger.click();

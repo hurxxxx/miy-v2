@@ -62,7 +62,7 @@ pub async fn approve(
     axum::Extension(p): axum::Extension<Principal>,
     Path(id): Path<Uuid>,
 ) -> ApiResult<Json<Value>> {
-    if p.csrf.is_none() {
+    if p.csrf.is_none() || p.browser_purpose != Some(auth::BrowserPurpose::Console) {
         return Err(ApiError::forbidden());
     }
     crate::auth_sessions::ensure_active(&s.pool, &p.id).await?;
@@ -78,8 +78,50 @@ pub async fn approve(
     if changed != 1 {
         return Err(ApiError::conflict("login_request_expired_or_approved"));
     }
+    sqlx::query("INSERT INTO audit(actor,action,target,request_id) VALUES($1,'auth.legacy_login.approved',$2,$3)")
+        .bind(&p.id).bind(id.to_string()).bind(Uuid::new_v4().to_string())
+        .execute(&mut *tx).await?;
     tx.commit().await?;
     Ok(Json(json!({"approved":true})))
+}
+
+/// Older CLI credentials remain independent of a browser logout. List only
+/// non-secret identifiers and current lifetime, without changing published
+/// device-session response shapes.
+pub async fn list_legacy(
+    S(s): S<State>,
+    axum::Extension(p): axum::Extension<Principal>,
+) -> ApiResult<Json<Value>> {
+    crate::delegations::unrestricted(&p)?;
+    crate::auth_sessions::ensure_active(&s.pool, &p.id).await?;
+    let sessions: Vec<Value> = sqlx::query_scalar(
+        "SELECT jsonb_build_object('id',id,'createdAt',created_at,'expiresAt',expires_at) FROM cli_tokens WHERE user_id=$1 AND expires_at>now() ORDER BY created_at DESC,id"
+    ).bind(&p.id).fetch_all(&s.pool).await?;
+    Ok(Json(json!({"sessions":sessions})))
+}
+
+pub async fn revoke_legacy(
+    S(s): S<State>,
+    axum::Extension(p): axum::Extension<Principal>,
+    Path(id): Path<Uuid>,
+) -> ApiResult<Json<Value>> {
+    crate::delegations::unrestricted(&p)?;
+    let mut tx = s.pool.begin().await?;
+    crate::auth_sessions::active_locked(&mut tx, &p.id).await?;
+    let count = sqlx::query("DELETE FROM cli_tokens WHERE id=$1 AND user_id=$2")
+        .bind(id)
+        .bind(&p.id)
+        .execute(&mut *tx)
+        .await?
+        .rows_affected();
+    if count == 0 {
+        return Err(ApiError::not_found());
+    }
+    sqlx::query("INSERT INTO audit(actor,action,target,request_id) VALUES($1,'auth.legacy_session.revoked',$2,$3)")
+        .bind(&p.id).bind(id.to_string()).bind(Uuid::new_v4().to_string())
+        .execute(&mut *tx).await?;
+    tx.commit().await?;
+    Ok(Json(json!({"id":id,"revoked":true})))
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -154,6 +196,7 @@ pub async fn principal(s: &State, token: &str) -> ApiResult<Principal> {
     .ok_or_else(ApiError::unauthorized)?;
     crate::auth_sessions::ensure_active(&s.pool, &user).await?;
     Ok(Principal {
+        browser_purpose: None,
         cli_session_id: None,
         delegation_id: None,
         id: user,

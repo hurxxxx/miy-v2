@@ -1,16 +1,18 @@
 # Windows GUI 설치 파일
 
-게시된 0.6.3 설치기를 사용자 PC에서 확인하려면 [Windows 11 인수 절차](WINDOWS-0.6.3-ACCEPTANCE.md)를 따른다. PowerShell 5.1·7 사전·후검사 도구는 다운로드·출처 검증과 보존 비교만 수행하며, GUI 설치·갱신·제거는 사용자가 직접 실행한다. 이번 사용자 Windows 검증은 나중에 수행할 **NOT_RUN** 상태다.
+게시된 **0.7.0 / SDK 번들 0.8.0** 설치기를 사용자 PC에서 확인하려면 [현재 Windows 11 인수 절차](WINDOWS-ACCEPTANCE.md)를 따른다. 후보·출처·해시는 [후보 파일](releases/windows-candidate.json)과 해당 절차에 고정한다. PowerShell 5.1·7 사전·후검사 도구는 다운로드·출처 검증과 보존 비교만 수행하며, GUI 설치·갱신·제거는 사용자가 직접 실행한다. 이번 사용자 Windows 검증은 나중에 수행할 **NOT_RUN** 상태다.
 
-## 현재 설치 후보
+[내부 업무 앱 최소안](APP-BOUNDARIES.md#확정-결정)은 iframe 없는 앱 통합과 기존 CLI/SDK 계약을 유지한다. 단일 IP의 포털·신뢰 콘솔 두 HTTPS origin을 사용하고 Keycloak·CLI 승인은 콘솔에 둔다. 도메인·내부 DNS·추가 IP는 필수가 아니다. 초기 설치 범위는 준비한 인증서의 IP SAN·체인 확인과 CA 신뢰 설정 안내/확인이며 자동 CA 배포·자동 갱신은 후속이다. 서버 context와 상대 승인 경로의 호환성을 유지하고 전환 시 재로그인은 허용한다. [전환·복구](APP-BOUNDARIES.md#전환과-복구)와 신규 검사는 `NOT_RUN`이며 아래 게시 파일·명령은 바뀌지 않았다. 인증서 경고 무시나 TLS 검증 해제는 지원 방식이 아니다.
 
-CLI·설치기 소스는 `8d7d04271f9467d8bbdd16308e73715b33e4dc0c`다. [CLI CI 40826960538](https://github.com/hurxxxx/miy-v2/actions/runs/40826960538)의 정확한 Windows 행을 [설치기 CI 40830813012](https://github.com/hurxxxx/miy-v2/actions/runs/40830813012)에 전달했다. 네이티브 검사 24개와 Linux 패키지 검사 19개가 통과했고, 실제 서버에 동일한 CLI/installer index와 0.6.3 서버/UI를 반영했다. [Linux 검증 보고서](CLI-0.6.3-LINUX-VALIDATION.md)에 검사·출처·남은 IdP 확인 범위를 기록한다.
+## 이전 설치 후보 — 0.6.3
 
-[현재 설치 파일 다운로드](https://v2.dwdcc.kr/cli/installers/8d7d04271f9467d8bbdd16308e73715b33e4dc0c/MiySetup-0.6.3-windows-x64.exe): 6,105,600 bytes, SHA-256 `662f8a59c098ac4b2cbde4041799a99f0c6e21f193bbe8b31d2098f6095233af`. [index](releases/windows-installer-0.6.3-candidate.json)의 CLI ZIP/실행 파일 해시도 게시된 CLI와 일치한다. 기존 0.6.0 파일은 되돌림을 위해 보존했다. 사용자 Windows 11에서 이 CI 파일의 새 실행은 별도 확인 사항이다.
+당시 CLI·설치기 소스는 `8d7d04271f9467d8bbdd16308e73715b33e4dc0c`다. [CLI CI 40826960538](https://github.com/hurxxxx/miy-v2/actions/runs/40826960538)의 정확한 Windows 행을 [설치기 CI 40830813012](https://github.com/hurxxxx/miy-v2/actions/runs/40830813012)에 전달했다. 네이티브 검사 24개와 Linux 패키지 검사 19개가 통과했고, 실제 서버에 동일한 CLI/installer index와 0.6.3 서버/UI를 반영했다. [Linux 검증 보고서](CLI-0.6.3-LINUX-VALIDATION.md)에 검사·출처·남은 IdP 확인 범위를 기록한다.
+
+[이전 설치 파일](https://v2.dwdcc.kr/cli/installers/8d7d04271f9467d8bbdd16308e73715b33e4dc0c/MiySetup-0.6.3-windows-x64.exe): 6,105,600 bytes, SHA-256 `662f8a59c098ac4b2cbde4041799a99f0c6e21f193bbe8b31d2098f6095233af`. [index](releases/windows-installer-0.6.3-candidate.json)의 CLI ZIP/실행 파일 해시도 당시 게시 CLI와 일치했다. 기존 0.6.0 파일은 되돌림을 위해 보존했다. 사용자 Windows 11에서 이 CI 파일의 새 실행은 별도 확인 사항이다.
 
 ## CLI 0.6.3 Windows 구현·로컬 후보 준비 이력
 
-`codex/cli-experience-improvements`의 설치기 빌드는 0.6.0 배포물에 고정하지 않고 검증한 후보의 버전·CLI 소스 commit·ZIP SHA-256·실행 파일 SHA-256을 명시적으로 받는다. 설치기와 CLI의 출처는 계속 별도로 검증한다. 이 Windows 로컬 준비 단계에서는 당시 공개 설치 파일을 교체하지 않았다. 이후 Linux 게시 결과는 위 현재 설치 후보 절을 따른다.
+`codex/cli-experience-improvements`의 설치기 빌드는 0.6.0 배포물에 고정하지 않고 검증한 후보의 버전·CLI 소스 commit·ZIP SHA-256·실행 파일 SHA-256을 명시적으로 받는다. 설치기와 CLI의 출처는 계속 별도로 검증한다. 이 Windows 로컬 준비 단계에서는 당시 공개 설치 파일을 교체하지 않았다. 이후 Linux 게시 결과는 위 0.6.3 이력 절을 따른다.
 
 Windows 11에서 로컬 0.6.3 파일을 생성해 PowerShell 5.1의 실제 설치·갱신·보존·제거 **24개**와 잘못된 후보 입력 거부 **4개**를 통과했다. [결과와 해시](releases/cli-0.6.3-experience-validation.json)를 확인한다. 파일은 이 PC의 `.local/releases/cli-0.6.3-local-0db21c3/`에 있으며 공개 게시 전 후보로 구분한다.
 

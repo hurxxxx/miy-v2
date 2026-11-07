@@ -1,0 +1,901 @@
+{
+  "date": "2026-11-06",
+  "status": "PASS",
+  "scope": "Minimum internal-company security boundaries implemented in the working tree; PASS applies only to executed checks below. No commit, push, publication or production deployment.",
+  "source_commit": "22c219de570d162646f6bcb9d31b712a46c83e69",
+  "working_tree_dirty": true,
+  "baseline": {
+    "snapshot": "/tmp/miy-minimum-boundary-implementation-i_dkaaao/baseline.json",
+    "preexisting_document_changes_preserved": true,
+    "historical_files_checked_unchanged": 198
+  },
+  "implementation": [
+    "Keep iframe-free MF/AppRoot, integrated routing, approved internal apps and existing published SDKs/bundles.",
+    "Fixed portal/console loopback listeners and fail-closed route classification; exact Origin/server CSRF; stored session/login-flow purpose and callback; distinct secure cookie names and duplicate-cookie rejection.",
+    "Move legacy/device browser approval and personal credential management to console; preserve relative verificationPath and non-browser portal API/CLI wire formats, token lifetimes and MCP 401 metadata challenge.",
+    "Add migration0020: invalidate old browser/login/pending-approval state; retain independent CLI credentials and app/user/group data; give legacy credentials public non-secret IDs.",
+    "Require explicit prod use/all even for admin/deploy; Observe is Manage(read); dev preview preserved; CLI management app detail preserves managed installations with canOpen=false.",
+    "Separate portal/console UI; forbid app content on console; API header allowlist plus sandbox/nosniff; proxy anti-frame/CSP and worker denial; imported IP SAN TLS validation.",
+    "Document separate operational migration and Windows acceptance, with common directory/ACL and PLM integrations remaining later feature work."
+  ],
+  "commands": [
+    {
+      "command": "scripts/check-static.sh rust",
+      "status": "PASS",
+      "log": ".local/evidence/internal-boundaries-20261106/rust-03.log",
+      "scope": "fmt, Clippy server/client; server unit 187 PASS with 7 isolated tests ignored, client unit 118 PASS"
+    },
+    {
+      "command": "scripts/check-static.sh web",
+      "status": "PASS",
+      "log": ".local/evidence/internal-boundaries-20261106/web-01.log",
+      "scope": "UI 36, CLI 14, boundary 11, explicit HTTP UI 1; safe builds only. Later AppView change rechecked by the agent with 17 related UI cases and typecheck."
+    },
+    {
+      "command": "scripts/check-static.sh scripts",
+      "status": "PASS",
+      "log": ".local/evidence/internal-boundaries-20261106/scripts-02.log",
+      "scope": "script syntax, fixture cleanup, write decisions, API compatibility, package checks, real isolated Nginx/Caddy including singleton headers and TLS"
+    },
+    {
+      "command": "pnpm exec playwright test --config scripts/runtime-regression/server-ui.config.ts",
+      "status": "PASS",
+      "log": ".local/evidence/internal-boundaries-20261106/server-ui-01.log",
+      "scope": "7 actual Core/PostgreSQL browser cases; synthetic development login, no OIDC claim"
+    },
+    {
+      "command": "scripts/runtime-regression/stack-ui.sh run",
+      "status": "PASS",
+      "log": ".local/evidence/internal-boundaries-20261106/stack-ui-02.log",
+      "scope": "6 actual Keycloak/Core/worker/Docker MF app cases; portal attack and console/IdP isolation, API HTML sandbox, update/revocation/removal; owned resources removed and host inventory unchanged"
+    },
+    {
+      "command": "python3 scripts/runtime-regression/run.py",
+      "status": "PASS",
+      "log": ".local/evidence/internal-boundaries-20261106/runtime-02.log",
+      "scope": "112 actual isolated PostgreSQL/HTTP/Docker observations, including migration19->20; fixture identity metadata, not real OIDC"
+    },
+    {
+      "command": "python3 scripts/check-cli-output.py --cli target/debug/miy",
+      "status": "PASS",
+      "log": ".local/evidence/internal-boundaries-20261106/cli-output-02.log",
+      "scope": "15 output/auth/discovery assertions using two mock HTTP origins"
+    },
+    {
+      "command": "python3 scripts/check-cli-install.py --cli target/debug/miy",
+      "status": "PASS",
+      "log": ".local/evidence/internal-boundaries-20261106/cli-install-01.log",
+      "scope": "17 Linux installation/context checks"
+    },
+    {
+      "command": "python3 scripts/check-cli-recovery.py --cli target/debug/miy",
+      "status": "PASS",
+      "log": ".local/evidence/internal-boundaries-20261106/cli-recovery-02.log",
+      "scope": "7 journal/transport recovery groups with two mock HTTP origins"
+    },
+    {
+      "command": "python3 scripts/check-development-database.py",
+      "status": "PASS",
+      "log": ".local/evidence/internal-boundaries-20261106/development-db-01.log",
+      "scope": "16 shared development database and WebSocket/lease observations; owned PostgreSQL, direct tunnel fixture"
+    },
+    {
+      "command": "python3 scripts/check-server-builds.py",
+      "status": "PASS",
+      "log": ".local/evidence/internal-boundaries-20261106/server-builds-02.log",
+      "scope": "8 persistence/upload/policy groups on owned PostgreSQL and real HTTP; actual Docker source compilation not exercised by this suite"
+    }
+  ],
+  "ip_authentication_runs": [
+    {
+      "summary": ".local/miy-https-6f7a6f5aa6bb/summary.json",
+      "origin": "https://128.1.253.101:56289",
+      "consoleOrigin": "https://128.1.253.101:37095",
+      "https": true,
+      "serverSha256": "3b4d3f66852bb4663f5cedcef737ba4b16dfed9b939606259fe29bcab77062b1",
+      "webSource": "/projects/miy-v2/.local/evidence/internal-boundaries-20261106/tls-platform",
+      "tests": [
+        "bootstrap rejects non-loopback HTTP before creating configuration without explicit opt-in",
+        "bootstrap preserves exact IP portal/console origins, callbacks and isolated Compose resources",
+        "installation guidance preserves the configured portal IP origin and ignores forged forwarding headers",
+        "two fixed server purposes disable synthetic login and expose identity only on the trusted console",
+        "real OIDC keeps the existing realm/user subject while portal cookies cannot authorize console requests",
+        "console OIDC uses its own session and callback; app content and embedding are refused",
+        "portal approval and cross-purpose Origin/CSRF requests are denied even when both cookies are present",
+        "installed CLI preserves relative verification URLs, follows the fixed console redirect and polls successfully",
+        "actual CLI refresh rotates credentials without changing the portal context or session family",
+        "legacy start/exchange and 8-hour wire contract remain compatible; only console approval and explicit revocation work",
+        "purpose-specific browser logout and explicit CLI revocation preserve their separate lifetimes",
+        "single-IP HTTPS works with private CA trust in Core, CLI and an isolated Chrome trust store"
+      ],
+      "cleanupSucceeded": true,
+      "error": null
+    },
+    {
+      "summary": ".local/miy-http-b4332fe921e2/summary.json",
+      "origin": "http://128.1.253.101:58475",
+      "consoleOrigin": "http://128.1.253.101:37935",
+      "https": false,
+      "serverSha256": "3b4d3f66852bb4663f5cedcef737ba4b16dfed9b939606259fe29bcab77062b1",
+      "webSource": "/projects/miy-v2/.local/evidence/internal-boundaries-20261106/tls-platform",
+      "tests": [
+        "bootstrap rejects non-loopback HTTP before creating configuration without explicit opt-in",
+        "bootstrap preserves exact IP portal/console origins, callbacks and isolated Compose resources",
+        "actual server rejects HTTP without MIY_ALLOW_HTTP even with a reachable real database",
+        "installation guidance preserves the configured portal IP origin and ignores forged forwarding headers",
+        "two fixed server purposes disable synthetic login and expose identity only on the trusted console",
+        "real OIDC keeps the existing realm/user subject while portal cookies cannot authorize console requests",
+        "console OIDC uses its own session and callback; app content and embedding are refused",
+        "portal approval and cross-purpose Origin/CSRF requests are denied even when both cookies are present",
+        "installed CLI preserves relative verification URLs, follows the fixed console redirect and polls successfully",
+        "actual CLI refresh rotates credentials without changing the portal context or session family",
+        "legacy start/exchange and 8-hour wire contract remain compatible; only console approval and explicit revocation work",
+        "purpose-specific browser logout and explicit CLI revocation preserve their separate lifetimes"
+      ],
+      "cleanupSucceeded": true,
+      "error": null
+    },
+    {
+      "summary": ".local/miy-https-6d56599705ab/summary.json",
+      "origin": "https://128.1.253.101:57299",
+      "consoleOrigin": "https://128.1.253.101:43617",
+      "https": true,
+      "serverSha256": "39d31dd7772e423f44b49730082e609348700a1eae3440bbf1ebea9f6a360ef7",
+      "cliSha256": "47e1930cb3e6a2d278faf39e195b9da162a524b2f220c48ed05efd27e1198e85",
+      "cliSource": "/projects/miy-v2/.local/evidence/internal-boundaries-20261106/published-cli/miy",
+      "webSource": "/projects/miy-v2/.local/evidence/internal-boundaries-20261106/tls-platform",
+      "tests": [
+        "bootstrap rejects non-loopback HTTP before creating configuration without explicit opt-in",
+        "bootstrap preserves exact IP portal/console origins, callbacks and isolated Compose resources",
+        "installation guidance preserves the configured portal IP origin and ignores forged forwarding headers",
+        "two fixed server purposes disable synthetic login and expose identity only on the trusted console",
+        "real OIDC keeps the existing realm/user subject while portal cookies cannot authorize console requests",
+        "console OIDC uses its own session and callback; app content and embedding are refused",
+        "portal approval and cross-purpose Origin/CSRF requests are denied even when both cookies are present",
+        "installed CLI preserves relative verification URLs, follows the fixed console redirect and polls successfully",
+        "actual CLI refresh rotates credentials without changing the portal context or session family",
+        "legacy start/exchange and 8-hour wire contract remain compatible; only console approval and explicit revocation work",
+        "purpose-specific browser logout and explicit CLI revocation preserve their separate lifetimes",
+        "single-IP HTTPS works with private CA trust in Core, CLI and an isolated Chrome trust store"
+      ],
+      "cleanupSucceeded": true,
+      "error": null
+    }
+  ],
+  "runtime_observations": [
+    {
+      "suite": "migration",
+      "test": "schema 19 to 20 preserves user/group/app/ACL/resource identities, existing legacy/device CLI credential rows and lifetimes, and independent app database fixture records while invalidating old browser sessions and pending login approvals",
+      "status": "PASS"
+    },
+    {
+      "suite": "migration",
+      "test": "migration adds public legacy credential IDs, requires browser purpose and fixed callback data, rejects invalid purpose, and does not re-invalidate current sessions when migration runs again; owned fixtures are cleaned after checks",
+      "status": "PASS"
+    },
+    {
+      "suite": "runtime",
+      "test": "classic Docker archive resolves a verified immutable server image",
+      "status": "PASS"
+    },
+    {
+      "suite": "runtime",
+      "test": "unauthorized runtime request creates no job",
+      "status": "PASS"
+    },
+    {
+      "suite": "runtime",
+      "test": "16 concurrent duplicate submissions coalesce",
+      "status": "PASS"
+    },
+    {
+      "suite": "runtime",
+      "test": "same key different input conflicts",
+      "status": "PASS"
+    },
+    {
+      "suite": "runtime",
+      "test": "real Docker deployment and resource configuration",
+      "status": "PASS"
+    },
+    {
+      "suite": "runtime",
+      "test": "existing installations receive role connection limits when a runner starts",
+      "status": "PASS"
+    },
+    {
+      "suite": "runtime",
+      "test": "imported original identity survives restart, reconciliation and health checks",
+      "status": "PASS"
+    },
+    {
+      "suite": "runtime",
+      "test": "preflight creates no job and changes no installation",
+      "status": "PASS"
+    },
+    {
+      "suite": "runtime",
+      "test": "health observations do not invalidate a control revision",
+      "status": "PASS"
+    },
+    {
+      "suite": "runtime",
+      "test": "stale preflight is rejected before job creation",
+      "status": "PASS"
+    },
+    {
+      "suite": "runtime",
+      "test": "worker rechecks expected state before container changes",
+      "status": "PASS"
+    },
+    {
+      "suite": "runtime",
+      "test": "unaccepted production promotion rejected",
+      "status": "PASS"
+    },
+    {
+      "suite": "runtime",
+      "test": "test acceptance rechecks its developer after waiting for the runtime lock",
+      "status": "PASS"
+    },
+    {
+      "suite": "runtime",
+      "test": "prod develop permission cannot promote",
+      "status": "PASS"
+    },
+    {
+      "suite": "runtime",
+      "test": "exact image promotion and independent prod data",
+      "status": "PASS"
+    },
+    {
+      "suite": "runtime",
+      "test": "company-disabled app stays in administrator runtime control",
+      "status": "PASS"
+    },
+    {
+      "suite": "runtime",
+      "test": "a production database job queued again after a restart keeps its deployer's authority",
+      "status": "PASS"
+    },
+    {
+      "suite": "runtime",
+      "test": "a decided write holds its actor's account until it commits",
+      "status": "PASS"
+    },
+    {
+      "suite": "runtime",
+      "test": "runtime DB role cannot DDL or edit migration history",
+      "status": "PASS"
+    },
+    {
+      "suite": "runtime",
+      "test": "queued authority revoked before execution",
+      "status": "PASS"
+    },
+    {
+      "suite": "runtime",
+      "test": "wrong-app",
+      "status": "PASS"
+    },
+    {
+      "suite": "runtime",
+      "test": "immutable-version",
+      "status": "PASS"
+    },
+    {
+      "suite": "runtime",
+      "test": "stored artifact tampering rejected before old app stop",
+      "status": "PASS"
+    },
+    {
+      "suite": "runtime",
+      "test": "lost deployment acknowledgement before_stop preserves the observed container",
+      "status": "PASS"
+    },
+    {
+      "suite": "runtime",
+      "test": "lost deployment acknowledgement before_start preserves the observed container",
+      "status": "PASS"
+    },
+    {
+      "suite": "runtime",
+      "test": "lost deployment acknowledgement after_start preserves the observed container",
+      "status": "PASS"
+    },
+    {
+      "suite": "runtime",
+      "test": "schema update preserves data and prod release",
+      "status": "PASS"
+    },
+    {
+      "suite": "runtime",
+      "test": "failed migration rolls back DDL and preserves data",
+      "status": "PASS"
+    },
+    {
+      "suite": "runtime",
+      "test": "new release recovers failed update",
+      "status": "PASS"
+    },
+    {
+      "suite": "runtime",
+      "test": "old image cannot silently roll back advanced schema",
+      "status": "PASS"
+    },
+    {
+      "suite": "runtime",
+      "test": "worker crash after DB provisioning resumes deployment",
+      "status": "PASS"
+    },
+    {
+      "suite": "runtime",
+      "test": "manual stop persists across worker restart",
+      "status": "PASS"
+    },
+    {
+      "suite": "runtime",
+      "test": "competing changes require fresh preflight after the pending operation",
+      "status": "PASS"
+    },
+    {
+      "suite": "runtime",
+      "test": "first service failure is degraded while process remains running",
+      "status": "PASS"
+    },
+    {
+      "suite": "runtime",
+      "test": "repeated HTTP failure is unhealthy without stopping container",
+      "status": "PASS"
+    },
+    {
+      "suite": "runtime",
+      "test": "HTTP recovery clears failures and records health transitions",
+      "status": "PASS"
+    },
+    {
+      "suite": "runtime",
+      "test": "Docker lookup failure preserves container and does not complete remove",
+      "status": "PASS"
+    },
+    {
+      "suite": "runtime",
+      "test": "foreign same-name container is preserved",
+      "status": "PASS"
+    },
+    {
+      "suite": "runtime",
+      "test": "remove resumes after container deletion before DB status commit",
+      "status": "PASS"
+    },
+    {
+      "suite": "runtime",
+      "test": "confirmed absent container removal is idempotent",
+      "status": "PASS"
+    },
+    {
+      "suite": "runtime",
+      "test": "redeploy after interrupted removal restores same data",
+      "status": "PASS"
+    },
+    {
+      "suite": "runtime",
+      "test": "slow health services do not occupy the control queue",
+      "status": "PASS"
+    },
+    {
+      "suite": "runtime",
+      "test": "late health result cannot overwrite a newer lifecycle generation",
+      "status": "PASS"
+    },
+    {
+      "suite": "operations",
+      "test": "permission-filtered keyset pages, actor/filter cursor scope and management-only acceptance evidence",
+      "status": "PASS"
+    },
+    {
+      "suite": "operations",
+      "test": "transactional ordered job events, rollback, terminal pagination/resume and authority/cursor revocation",
+      "status": "PASS"
+    },
+    {
+      "suite": "operations",
+      "test": "dry-run has zero remote mutations; expected-state, prod/remove confirmation and stale-state admission fail closed",
+      "status": "PASS"
+    },
+    {
+      "suite": "operations",
+      "test": "typed retry eligibility, fresh confirmation/state, request-ID recovery, idempotency and active-operation exclusion",
+      "status": "PASS"
+    },
+    {
+      "suite": "operations",
+      "test": "lost upload receipt recovery, exact immutable identity, per-actor privacy and expired-key rejection",
+      "status": "PASS"
+    },
+    {
+      "suite": "operations",
+      "test": "real worker logs are capped at 1MiB, ownership/generation/permission/TTL checked; two gated diagnostics do not block prod start",
+      "status": "PASS"
+    },
+    {
+      "suite": "cli",
+      "test": "real CLI context login, private global credentials and two concurrent processes rotate once",
+      "status": "PASS"
+    },
+    {
+      "suite": "cli",
+      "test": "real CLI context selection follows flag, environment, project binding and active context in order",
+      "status": "PASS"
+    },
+    {
+      "suite": "cli",
+      "test": "real CLI project-free pagination/projection, project binding, registration approval and strict typed grant input",
+      "status": "PASS"
+    },
+    {
+      "suite": "cli",
+      "test": "real CLI dry-run and missing explicit targets/confirmation create no upload or runtime job",
+      "status": "PASS"
+    },
+    {
+      "suite": "cli",
+      "test": "real CLI no-wait journal, timeout without cancellation, lost-ack request-ID resume without duplication and terminal JSONL events",
+      "status": "PASS"
+    },
+    {
+      "suite": "cli",
+      "test": "real CLI remote logout, local credential deletion and explicit context removal",
+      "status": "PASS"
+    },
+    {
+      "suite": "boundary",
+      "test": "separate HTTP listeners bind browser credentials to stored purpose, reject copied/renamed and duplicate cookies, and accept both legitimate same-host cookie names without authority mixing",
+      "status": "PASS"
+    },
+    {
+      "suite": "boundary",
+      "test": "portal administrators and ordinary users cannot read management credentials or approve either legacy/device CLI login; Host and forwarded-purpose headers cannot select console authority",
+      "status": "PASS"
+    },
+    {
+      "suite": "boundary",
+      "test": "console mutations need exact Origin and synchronizer CSRF as well as current administrator authority; rejected attempts do not produce a management change and the authorized actor is audited",
+      "status": "PASS"
+    },
+    {
+      "suite": "boundary",
+      "test": "published relative legacy/device verification paths redirect to the fixed console origin with only the flow ID; unclassified HTTP routes fail closed and anonymous MCP preserves its 401 resource metadata challenge",
+      "status": "PASS"
+    },
+    {
+      "suite": "boundary",
+      "test": "existing app API and MF JavaScript work on the portal but are denied on the console; app response headers cannot set cookies, clear site data, redirect, relax CSP/CORS or register workers, and HTML API responses are sandboxed",
+      "status": "PASS"
+    },
+    {
+      "suite": "boundary",
+      "test": "an ordinary console user approves the unchanged legacy start/exchange flow once, retaining an eight-hour credential and original identity; browser Origin cannot turn CLI bearer access into management authority",
+      "status": "PASS"
+    },
+    {
+      "suite": "boundary",
+      "test": "browser logout and reauthentication preserve independent CLI lifetime; legacy sessions expose only public IDs/timestamps, deny another user and portal revocation, and owner revocation immediately invalidates the token with audit",
+      "status": "PASS"
+    },
+    {
+      "suite": "boundary",
+      "test": "ordinary console approval keeps published device start/poll/refresh payloads and relative URL, 15-minute access, rotating tokens and the unchanged 30-day absolute family lifetime",
+      "status": "PASS"
+    },
+    {
+      "suite": "boundary",
+      "test": "device family revocation requires the console owner, denies portal and other-user requests, and blocks both access and refresh without an auth rewrite",
+      "status": "PASS"
+    },
+    {
+      "suite": "boundary",
+      "test": "expired or disabled browser sessions require new authentication; restoring an account does not revive old portal/console cookies and a fresh purpose-bound session works",
+      "status": "PASS"
+    },
+    {
+      "suite": "auth",
+      "test": "expired/missing/replayed OAuth callbacks clear login state and redirect to fixed recovery without authenticating",
+      "status": "PASS"
+    },
+    {
+      "suite": "auth",
+      "test": "device hashes, pending/slow_down, browser CSRF/origin, exact account and one-use exchange",
+      "status": "PASS"
+    },
+    {
+      "suite": "auth",
+      "test": "15-minute access, fixed 30-day family, rotation history and committed reuse revocation",
+      "status": "PASS"
+    },
+    {
+      "suite": "auth",
+      "test": "concurrent device exchange issues once; concurrent refresh commits one rotation then family revocation",
+      "status": "PASS"
+    },
+    {
+      "suite": "auth",
+      "test": "denial and five-minute device expiry; expired access refreshes; absolute family expiry denies both tokens",
+      "status": "PASS"
+    },
+    {
+      "suite": "auth",
+      "test": "self-only session keyset pagination/revocation and idempotent logout without affecting another family",
+      "status": "PASS"
+    },
+    {
+      "suite": "auth",
+      "test": "grant revocation and Core disable immediately block API/worker authority; re-enable never resurrects old sessions",
+      "status": "PASS"
+    },
+    {
+      "suite": "auth",
+      "test": "per-client creation, per-actor code guessing and shared legacy/device global capacity are bounded",
+      "status": "PASS"
+    },
+    {
+      "suite": "permissions",
+      "test": "installation permissions start empty and user/admin calls cannot bypass approval",
+      "status": "PASS"
+    },
+    {
+      "suite": "permissions",
+      "test": "concurrent approval compare-and-swap accepts one writer and exposes current revision",
+      "status": "PASS"
+    },
+    {
+      "suite": "permissions",
+      "test": "approvals reject foreign releases and undeclared grants; new releases and prod never inherit dev approval",
+      "status": "PASS"
+    },
+    {
+      "suite": "permissions",
+      "test": "signed caller identity and stale-release writes fail closed; current user and approval revocations apply",
+      "status": "PASS"
+    },
+    {
+      "suite": "permissions",
+      "test": "opaque multi-hop proofs retain ordered identity and recheck every source grant, approval and release",
+      "status": "PASS"
+    },
+    {
+      "suite": "permissions",
+      "test": "continuation authority narrows; expiry, cycles and eight-hop bounds hold while expired backlogs do not consume live quota",
+      "status": "PASS"
+    },
+    {
+      "suite": "permissions",
+      "test": "HTTP and MCP share permission reads, administrator checks, committed updates and CAS conflicts",
+      "status": "PASS"
+    },
+    {
+      "suite": "permissions",
+      "test": "user disable and CLI/browser/legacy logout revoke issued continuations, including held requests and child proofs",
+      "status": "PASS"
+    },
+    {
+      "suite": "permissions",
+      "test": "a local group grant gives use to current members only, and removal applies to the next request without copied grants",
+      "status": "PASS"
+    },
+    {
+      "suite": "permissions",
+      "test": "HR groups admit exact primary members only, neither parents nor children inherit, and hierarchy cycles are rejected",
+      "status": "PASS"
+    },
+    {
+      "suite": "permissions",
+      "test": "groups cannot hold deploy, and a group develop grant manages only the development environment",
+      "status": "PASS"
+    },
+    {
+      "suite": "permissions",
+      "test": "admitting all users is an explicit per-environment choice, and returning to selected removes it",
+      "status": "PASS"
+    },
+    {
+      "suite": "permissions",
+      "test": "the company switch consistently filters default, paged and app-detail installations; developers keep dev and re-enabling restores explicit use; administrators require explicit prod admission, non-administrator developers see only their managed installations, and disabled apps stay manageable",
+      "status": "PASS"
+    },
+    {
+      "suite": "permissions",
+      "test": "only administrators change groups and access, and every change is audited and queryable by actor, action and cursor",
+      "status": "PASS"
+    },
+    {
+      "suite": "permissions",
+      "test": "all group/access mutations, personal grants, user state changes and registration decisions roll back without domain audit when an administrator is revoked or disabled during a PostgreSQL lock wait",
+      "status": "PASS"
+    },
+    {
+      "suite": "permissions",
+      "test": "personal grant changes (including registration approval), user state changes and primary-group assignments retain their exact before/after targets in the same transaction audit",
+      "status": "PASS"
+    },
+    {
+      "suite": "permissions",
+      "test": "opposing administrators update primary groups with ordered user locks, preserving the unlocked target and completing without deadlock",
+      "status": "PASS"
+    },
+    {
+      "suite": "permissions",
+      "test": "HTTP visibility and worker rechecks never combine an old active user with a newly granted permission after disable",
+      "status": "PASS"
+    },
+    {
+      "suite": "permissions",
+      "test": "default and paged installation lists, per-environment managed lists, approval records, runtime/database jobs and redacted display values agree for administrators, deployers, developers, users, strangers and delegated credentials; prod management never grants use and use never grants operating records, with company switch off and on",
+      "status": "PASS"
+    },
+    {
+      "suite": "permissions",
+      "test": "delegated database preparation needs prepare_database and read before a job is stored; with both it returns the stored job",
+      "status": "PASS"
+    },
+    {
+      "suite": "permissions",
+      "test": "a delegated administrator lists only its own grants; administrator authority stays with undelegated credentials",
+      "status": "PASS"
+    },
+    {
+      "suite": "permissions",
+      "test": "an administrator reads and changes the approvals of a company-disabled prod installation it manages, and a change answers with the record it committed",
+      "status": "PASS"
+    },
+    {
+      "suite": "permissions",
+      "test": "app creation, app display name changes and shared component publication roll back when their administrator is revoked or disabled during a PostgreSQL lock wait",
+      "status": "PASS"
+    },
+    {
+      "suite": "permissions",
+      "test": "installation creation, database preparation and delegation issue decide after their PostgreSQL lock wait: a developer revoked during the wait gets 403 and nothing is written",
+      "status": "PASS"
+    },
+    {
+      "suite": "delegation",
+      "test": "concurrent HTTP delegation issue and user disable keep user-before-session lock order, both return 200 and revoke the newly issued credential",
+      "status": "PASS"
+    },
+    {
+      "suite": "delegation",
+      "test": "recording a test acceptance with a delegation needs accept and read before any other check",
+      "status": "PASS"
+    },
+    {
+      "suite": "delegation",
+      "test": "recovering a lost dev-session reply by request ID needs the same dev_session decision as reading the session",
+      "status": "PASS"
+    },
+    {
+      "suite": "delegation",
+      "test": "actual CLI private delegation import and explicit app/environment/actions; scoped lease cleanup rejects other apps/families while undelegated grant-loss cleanup remains available",
+      "status": "PASS"
+    },
+    {
+      "suite": "delegation",
+      "test": "delegated disabled runtime read+stop returns one queued receipt and idempotent replay; missing read is denied by planning/submission before insertion",
+      "status": "PASS"
+    },
+    {
+      "suite": "delegation",
+      "test": "runtime job detail/events and cursors retain disabled-app management but immediately enforce manager grant withdrawal and delegated app/environment/read scope; actual CLI app status shows managed prod without granting Use",
+      "status": "PASS"
+    },
+    {
+      "suite": "delegation",
+      "test": "runtime job list/detail require management read and miy.dev for admin, deploy and develop; use and read-only dev repair never expose operating records",
+      "status": "PASS"
+    },
+    {
+      "suite": "delegation",
+      "test": "queued runtime retains originating delegation, rejects idempotency rebinding and fails closed after revocation before Docker action",
+      "status": "PASS"
+    },
+    {
+      "suite": "delegation",
+      "test": "refresh preserves scope/expiry; delegated session revocation and refresh reuse remove queued authority independently of owner session",
+      "status": "PASS"
+    },
+    {
+      "suite": "delegation",
+      "test": "current grant revocation, delegation expiry and issuing CLI family revocation invalidate delegated API and queued authority",
+      "status": "PASS"
+    },
+    {
+      "suite": "runtime",
+      "test": "held build ownership does not block control; recovery resumes when released",
+      "status": "PASS"
+    },
+    {
+      "suite": "runtime",
+      "test": "blocked recovery does not delay ownership loss or successor control",
+      "status": "PASS"
+    },
+    {
+      "suite": "runtime",
+      "test": "SIGTERM cancels blocked recovery and releases worker and build ownership",
+      "status": "PASS"
+    }
+  ],
+  "failed_attempts_preserved": [
+    {
+      "status": "FAIL",
+      "command": "cargo check --workspace --all-targets --locked",
+      "cause": "Initial CliError to anyhow conversion and two unused imports; corrected, subsequent check and both Clippy/test profiles passed."
+    },
+    {
+      "status": "FAIL",
+      "log": ".local/evidence/internal-boundaries-20261106/rust-01.log",
+      "cause": "New own-credential revocation needed an explicit own-reduction entry in the existing write-decision audit registry. Owner-conditioned delete and regression retained."
+    },
+    {
+      "status": "FAIL",
+      "log": ".local/evidence/internal-boundaries-20261106/runtime-01.log",
+      "evidence": "/tmp/miy-runtime-regression-p4cdrtmr/evidence",
+      "cause": "Old Use-implies-Observe expectations and a use-only delegation pagination fixture. Updated to management-only records; also preserved CLI app-status management visibility; runtime02 passed112."
+    },
+    {
+      "status": "FAIL",
+      "log": ".local/evidence/internal-boundaries-20261106/stack-ui-01.log",
+      "cause": "Core+proxy duplicated nosniff. Fixed proxy header replacement/hiding without weakening the exact assertion; stack02 passed6."
+    },
+    {
+      "status": "FAIL",
+      "logs": [
+        ".local/evidence/internal-boundaries-20261106/cli-output-01.log",
+        ".local/evidence/internal-boundaries-20261106/cli-recovery-01.log"
+      ],
+      "cause": "Old CLI mocks lacked console discovery and used a single browser origin. Replaced with two actual loopback HTTP servers; second runs passed15/7."
+    },
+    {
+      "status": "FAIL",
+      "log": ".local/evidence/internal-boundaries-20261106/server-builds-01.log",
+      "cause": "Anonymous portal management upload now returns403 before authentication, while the old fixture expected401. Exact new denial assertion retained; second run passed8."
+    },
+    {
+      "status": "FAIL",
+      "scope": "Configuration-agent temporary certificate fixture",
+      "cause": "Initial OpenSSL fixture expiry-generation option and CA keyUsage were wrong; corrected before config and real HTTPS acceptance. No production certificate changed."
+    }
+  ],
+  "not_run": [
+    {
+      "item": "Production rollout, operational issuer migration and existing production-session invalidation",
+      "reason": "Not requested for this implementation turn. Production remains at recorded server/UI7b43789 and published CLI01e4d49."
+    },
+    {
+      "item": "Production backup/restore and operational rollback",
+      "reason": "Required before deployment. Executed fresh schema and isolated19->20/app-data preservation checks do not substitute for production restoration."
+    },
+    {
+      "item": "Windows11 installation/update/removal and Windows CA/browser acceptance",
+      "reason": "User will run separately; WINDOWS-ACCEPTANCE documents the procedure."
+    },
+    {
+      "item": "Actual certificate replacement rehearsal, cookie-bomb/431 recovery and old worker cleanup across existing devices",
+      "reason": "Manual transition procedures documented; current evidence covers imported certificates, trust/SAN/expiry rejection and new worker restrictions."
+    },
+    {
+      "item": "Full external OAuth MCP client reauthentication after an existing issuer move",
+      "reason": "Current run covers metadata/challenge and authenticated synthetic MCP policy; real Keycloak browser and CLI flows are separate. Existing-client issuer migration remains a rollout check."
+    },
+    {
+      "item": "Complete native-preview UI, print and new-tab workflow on every supported OS",
+      "reason": "MF deploy/update/routing and existing UI regressions executed; shared development DB/tunnel exercised separately, not the entire native application flow."
+    },
+    {
+      "item": "Common resource ACL, service identities, Invoke/events/files and PLM business integration; BV13 independent three-run beta acceptance",
+      "reason": "Later milestones; intentionally not added to this minimum-boundary implementation."
+    }
+  ],
+  "limits": [
+    "Approved same-page apps still share a JavaScript trust domain; browser requests cannot prove which MF app initiated an API call.",
+    "Different ports separate origins but not cookies; console and IdP share trust. Cookie-bomb availability and hostile external apps require later review.",
+    "No previous-version or documentation PASS is promoted to this implementation. Historical archive/release records remain unchanged."
+  ],
+  "documentation_checks": {
+    "tracked_relative_links": 601,
+    "tracked_and_untracked_relative_links": 704,
+    "markdown_candidates": 60,
+    "broken_links": 0,
+    "git_diff_check": "PASS",
+    "final_cargo_fmt_check": "PASS",
+    "independent_review_fixes": [
+      "Updated managed installation visibility in CORE-PERMISSIONS.",
+      "Removed operational bootstrap/serve-only instructions from RUNNING and scoped examples to a separate two-origin development server.",
+      "Aligned TLS example certificate paths and required SANs."
+    ]
+  },
+  "changed_source_sha256": {
+    "crates/miy/src/app_response.rs": "d158f520938781cd0d8e282b3cb7bbc3cbb1a31d26059ac92f943efcd6d8d537",
+    "crates/miy/src/browser_boundary.rs": "03d0655427a9f3a39bd78a7d0d90f6b4fe5ec13bdb6027dc2a4c88676dba21cc",
+    "crates/miy/src/browser_boundary_migration_regression.rs": "706fbbeedf788a34b1c1f2e044cb90c53382362fe727fc3de68d51ee155ff51e",
+    "crates/miy/src/browser_boundary_regression.rs": "d25b2bc492abb8706f57885fcfe1f79e001246469e2b509121df17b1f69d01a1",
+    "migrations/core/0020_browser_boundaries.sql": "995d3b3ed51104d8b16bbbf902bdde8463c127e981709ad15d90fd3d3e8ea62c",
+    "ops/Caddyfile.routes": "eb2eed6056debde59db4cc8492726e1ad866c69d0969f1ea2b836c6cf09944c7",
+    "scripts/check-server-tls.py": "ad0a9e0b0eabb2d020dcbd02849af34da8c7b66b7920cd2ef7feb4d82adedd07",
+    "scripts/server_tls.py": "e09e49a30cd9158a21b0101b0f122e51da43293d78fa9d59f5ad37ae46128606",
+    "tests/browser-surface.ts": "be6151984ee4f2fc9ce801dc82a31b7b796725131108ad90fd80480e01c96e33",
+    "tests/surface-boundaries.config.ts": "15e68574d2312edf4f8371315bc502ea651f16a4c198e9b5d2656ba5a29b2f2b",
+    "tests/surface-boundaries.spec.ts": "d5d5ec45e68084efc4e9a5d4a93c09c200519f01d4509dd8072e275778bb875b",
+    "web/platform/src/pages/CliSessions.tsx": "45c39dd8227499e74f90810e367383ba82f30b6e708e4a378aec0ea2b5f6054f",
+    "web/platform/src/pages/ManagedApps.tsx": "acefb752abcce3ebb520bf9ae69fc62a728e9dd36170876cf3b5dc70ac54e962",
+    "compose.yaml": "716d770095d2a03114675c38ae1d6c4b50e02c19ac726e86bcf3da44e662811f",
+    "crates/miy/src/app_calls.rs": "a8fc55684e228299aec8a741999ad93915acc18ec3d8a9f88c64e78a70900620",
+    "crates/miy/src/auth.rs": "a3209954bd7c9118ad3fd875e5a41affb5cb66cd0fca3a1015df1597889e4ce7",
+    "crates/miy/src/auth_sessions.rs": "74232805ab9ac9588d9a6fd1c7c5e8ac641e70e274c60e04d25bbd9a0aea8e03",
+    "crates/miy/src/auth_sessions_regression.rs": "67e6dd4041410ebd0031ff2fdb74f0cae676fd5c75cdccf38c317e4a33406f25",
+    "crates/miy/src/cli_auth.rs": "471769c12e7b77f78a14df9851c06910f69c7e2ee5abd1a1f272d9eb610a9293",
+    "crates/miy/src/cli_login.rs": "11d06757de7c443375135316d892aa00c55ee7334fad5fabb8169c4441cd868c",
+    "crates/miy/src/delegation_regression.rs": "1f9bda29c5a038e8f17f91ec008a77942f340e8ce5f618072fc0ab0b73508d20",
+    "crates/miy/src/development_regression.rs": "538b746375667dc57bf4a242eaa783df00e1ec932b0a57c1b1eba012b7f18d8f",
+    "crates/miy/src/domain.rs": "488ee86cf0dab9fd849496e137533b67b0b1040f72de482b194fc942fa84af84",
+    "crates/miy/src/http.rs": "92e9c71363b25a9dcee785ccfe648b73341a1eb6117bfe0d94d8b1d8938ea38d",
+    "crates/miy/src/identity.rs": "86d7fff8e6f9f059d895608af2aeeb1794a7f8caf10056a74348f6829d881483",
+    "crates/miy/src/integration.rs": "a5177da08d0906dba9f0c8e2ff2f219e6dbf5ad1c3c05e7128b0347635fd41db",
+    "crates/miy/src/main.rs": "659d4fdc5b24da805ccaf20898576967390571b09df600afa40df1571f06a8c1",
+    "crates/miy/src/operations_regression.rs": "fd67b2c2a0a8d3721d89b03ed0c041509c8d739a741fde51eb79a4938216fc6f",
+    "crates/miy/src/permissions.rs": "a47fc449170aa06f62fa481c5223610dde0a468b63c3564812b8869117a959a4",
+    "crates/miy/src/permissions_regression.rs": "f75b8b9b923702041ad0861782d4f9dc090dd75547624737946d224422ad2e9c",
+    "crates/miy/src/policy.rs": "fdc01b4af46ac7aeb7c71f72034c02aada8f2a6282080ccf15d21ae088a6c912",
+    "crates/miy/src/preview.rs": "0d9684e7856b31ee533da210b7e458283e7b5831753f75bdcfa860aa82acd009",
+    "crates/miy/src/read_api.rs": "73ab98c50dbf49d428aedbd689f92c1ce80b97324114ec977727bd510cea1221",
+    "crates/miy/src/runtime.rs": "1e5dcf05fb4d987e2cfea327ee6625d2a30af3ffbc0d0e9c380fd54321366eef",
+    "crates/miy/src/runtime_regression.rs": "882355290057e7f60e483e4d6ccc56882b09071ff976e2f923a0d0aa9c4d2de2",
+    "crates/miy/src/server_build_regression.rs": "96c4b0eb0c94a09c2bc0748bb64e4c72b9ed85fffa87a455e31d3787e977a3cf",
+    "ops/Caddyfile": "4cd029adcf97613ce4eb9e2c007494b22c34572dd16f5f7d71c1131a1a419275",
+    "ops/Caddyfile.http": "a2d337952f3ae1f493482aef6b9b5a74fcf9e4328ab15ca77540f15e52f5da1e",
+    "scripts/bootstrap.py": "64ff20bc8cb1010a6205f8697d2e1ce8a1620dbd248725417421b1788f8790a0",
+    "scripts/check-cli-output.py": "f586454a9897ba21b4d20e1a5827f5daf950563027f26841c408f95a66be0637",
+    "scripts/check-cli-recovery.py": "8dee11a3b962f7329c4bc6c79f0ef47d4e891355bf097b6ffdec5b52e69b7051",
+    "scripts/check-http-server.py": "d246386e08e07f306fc878597e272d1b0ca7292f20e9e8aae3ca804d18dfb342",
+    "scripts/check-server-config.py": "1c6d34b27346f7bff803752cd3830d284380f2dad6cde539cd70e262c382e546",
+    "scripts/check-static.sh": "8b099e751f7193b49a89651b9548bfc87fef1ff25ba9bb6d1a868e6df82fec2b",
+    "scripts/check-write-decisions.py": "3eec39b6043a0e019b6bdbce39a2b4b61f4e94675a03f5911031a0bcccaaae23",
+    "scripts/configure-identity.py": "59396ad93cf364918b9b8e72a9c0d170105160a4f7a4d2d610bad84a204f3d6d",
+    "scripts/import-fixture.py": "2c5881ca704da4520dd20051d76abe5b30c2d1ed5ee42114d877f6480d607407",
+    "scripts/render-server-config.py": "0c9beab10b36053476c82788dab57e051bb5ef3ce36801b5f479fa647c4845be",
+    "scripts/runtime-regression/README.md": "58902c59e5715c2e40ad55597c11ea30fcf852cc25ff4daff29904eb65bcc178",
+    "scripts/runtime-regression/run.py": "9dc4bdd910bfaede2b41ce3e2ca428d656dc8516d3a9b0e7673cd24d1e669916",
+    "scripts/runtime-regression/server-ui.mjs": "fa6d4096b8cdfa736c2bf5b04cf8687a41a12507548bae3e981bb6b085dfc9f8",
+    "scripts/runtime-regression/stack-ui.compose.yaml": "35301292a58935b9e7e6eb82513ced2ca25173b948c022e853765c69073857e0",
+    "scripts/runtime-regression/stack-ui.sh": "6b03e90e299ccc3a4b016aa8eefcaee6a543a51eb0e53767d7ab97e46cf0dce8",
+    "scripts/up.sh": "60866893850b35c43b70557789bf7beaf02e056f9771c3ec6384e8fb50ed9c00",
+    "tests/admin-access.spec.ts": "7fc787b37bebf8975ed19275a6fb2cad91d22fc722ce1fa9fbd6ddd278973223",
+    "tests/cli-experience.spec.ts": "9678e2ac96919644a4fe4e63ec6ae4b0d8a605258178cfc627b1e524b6d2abe4",
+    "tests/cli-install.spec.ts": "da28981634e979cba6d5ff365afa5e5e35cca6443f77d9ce97af954cbe084163",
+    "tests/development-login.spec.ts": "75cc592b0bcca8755bffd3e424bd94a3af49e3d7a98ca97adde6d615f3739276",
+    "tests/fixtures.ts": "a6c7bad26601ab6fa7a7e61ee082dcf10d2e7d11b0bffdc12a6d6dc833cb16fc",
+    "tests/http-ip.spec.ts": "a7377ed1ecaf15006b17316fc6cb1725fe69ef5a78781cd7a17ea471dbda1708",
+    "tests/platform-css-isolation.spec.ts": "b48c6d51b33cf33821422d01d0b2fc0dfdf78fff7aa96546286b982180384660",
+    "tests/platform-shell.spec.ts": "422f2ca5071fff3d5a6e894515d44839bee77225563ac860341dec9a0e94cfa5",
+    "tests/runtime-confirmation.spec.ts": "799fbc7289dec96af05dc7e38c6ed2fdb273c9c3fd4238467d385459ad47041c",
+    "tests/runtime-health.spec.ts": "e5154e0d95760cf642a8f3e4f180420a7ac131e0161eab43c3b7fd3b7edffb2d",
+    "tests/server-ui.spec.ts": "51b3365dd65f8283f4e1e9fee4ff60cbe53848dfe99fb76618da73704111c589",
+    "tests/stack-ui.spec.ts": "eb283461a0217f586af245e210fc12f9b18d3e36bbb879e702c38475d0d07a7c",
+    "tests/validation.spec.ts": "982554e8c298bd04bb6d5c36d99d418ae5888698e646ea8bd260be373d4e8f01",
+    "web/platform/src/app/AppView.tsx": "91455d82da936a406bc8392dfae14931da1eea9a685c2d52083abd2e3e815004",
+    "web/platform/src/data/installations.tsx": "f2b815f882671974d719c4a4c281f29772e8caf4907fd6a0350f158d2d608b34",
+    "web/platform/src/data/session.tsx": "fa3f6fd5fedc48db88cd95e62006c5ed9c3bdfd34bb407a405e3e54aa07d1d90",
+    "web/platform/src/layout/Shell.tsx": "055c0ce2a69c0ef89411c1c8ee3a308c49827721f15d9255fa1e8b1ff1430ad5",
+    "web/platform/src/lib/paths.ts": "63c782c831f8a81848c277ec1e61e12d35138b5e3192c51421f2314d436d4c47",
+    "web/platform/src/pages/Admin.tsx": "1c9921813b996f9779c4c9936a7dffce425668c69439b818cf1cbd5be1ff02b7",
+    "web/platform/src/pages/CliAuthorize.tsx": "de3512e1f0444716d8a5334f87cbdabf822f71ebe80488e84865747db26d6904",
+    "web/platform/src/pages/Home.tsx": "c70545d02669207cc3dd76c26d2dd8f4e98d1d57c371476e25afb9d498e91056",
+    "web/platform/src/pages/Login.tsx": "42edbbff87d16057b24e656368858ee69bbd642059d378f4d097e585a120b046",
+    "web/platform/src/pages/LoginRecovery.tsx": "c654c428e07fbcf3bd35079d3ef0a3d0c698994e2a2325ffeb6264ae39203d40",
+    "web/platform/src/router.tsx": "1162e2c1abddea986d8730194f591179deea6ed01011a1565e55beb01e1b9092"
+  },
+  "changed_source_inventory_sha256": "5ba5c74979ba1cd7dbfaf1840aac7130bbddffe572f4e131e94535d35eb6c671",
+  "compatibility_protection": {
+    "checked_unchanged_files": 66,
+    "scope": "Existing templates/registry/packages, prior core migrations, API schema and dependency locks compared to the pre-implementation working tree."
+  }
+}

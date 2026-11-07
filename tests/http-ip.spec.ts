@@ -1,6 +1,8 @@
+import { browserUser, mockSurface } from "./browser-surface";
 import { test, expect } from "@playwright/test";
 
 test("HTTP IP runtime controls create a valid request without secure-context APIs", async ({ page }) => {
+  await mockSurface(page, "console");
   const app = {
     id: "aaaaaaaa-1111-4222-8333-bbbbbbbbbbbb", appId: "http-probe", name: "HTTP 검증 앱",
     releaseId: "cccccccc-1111-4222-8333-dddddddddddd", environment: "dev", version: "1.0.0",
@@ -12,14 +14,15 @@ test("HTTP IP runtime controls create a valid request without secure-context API
   const mutations: Record<string, unknown>[] = [];
   await page.route("**/api/**", async (route) => {
     const path = new URL(route.request().url()).pathname;
-    if (path === "/api/v1/me") return route.fulfill({ json: { id: "http-user", name: "HTTP 개발자", admin: false, csrf: "fixture-csrf" } });
-    if (path === "/api/v1/installations") return route.fulfill({ json: [app] });
+    if (path === "/api/v1/me") return route.fulfill({ json: browserUser(route, { id: "http-user", name: "HTTP 개발자", admin: false, csrf: "fixture-csrf" }) });
+    if (path === "/api/v1/runtime/installations") return route.fulfill({ json: [app] });
     if (path.endsWith("/runtime/preflight")) return route.fulfill({ json: { canSubmit: true, expectedState, changes: ["stop_runtime"] } });
     if (path.endsWith("/runtime")) {
       expect(route.request().headers()["x-miy-csrf"]).toBe("fixture-csrf");
       mutations.push(route.request().postDataJSON());
       return route.fulfill({ status: 409, json: { error: { code: "state_changed", message: "state_changed" } } });
     }
+    if (path === "/api/v1/apps") return route.fulfill({ json: { apps: [], nextCursor: null } });
     return route.fulfill({ json: [] });
   });
   await page.goto("/environments/dev");

@@ -6,13 +6,23 @@ import os
 from pathlib import Path
 import shlex
 import shutil
+import socket
+import ssl
 import subprocess
 import sys
 import tempfile
 import threading
+import time
+import urllib.error
+import urllib.request
 
 ROOT = Path(__file__).resolve().parent.parent
 ENV = {key: value for key, value in os.environ.items() if not key.startswith('MIY_')}
+CADDY = 'caddy:2.11.2@sha256:25cdc846626b62d05f6b633b9b40c2c9f6ef89b515dc76133cefd920f7dbe562'
+PUBLIC_PROXY_ENV = {'MIY_ORIGIN', 'MIY_CONSOLE_ORIGIN', 'MIY_CORE_UPSTREAM',
+                    'MIY_CONSOLE_CORE_UPSTREAM', 'MIY_IDENTITY_UPSTREAM',
+                    'MIY_PORTAL_HOST', 'MIY_CONSOLE_HOST', 'MIY_PORTAL_PORT',
+                    'MIY_CONSOLE_PORT', 'MIY_PUBLIC_SCHEME', 'MIY_PROXY_BIND', 'MIY_HTTP_PORT'}
 
 
 def require(condition, message):
@@ -34,6 +44,257 @@ def bootstrap(state, *args, expected=0, environment=None):
 def load_env(state, filename):
     return {key: ' '.join(shlex.split(value)) for key, value in
             (line.split('=', 1) for line in (state / filename).read_text().splitlines())}
+
+
+def tls_fixture(directory):
+    directory.mkdir()
+    def openssl(*args):
+        subprocess.run(['openssl', *map(str, args)], check=True, capture_output=True, timeout=30)
+    ca, ca_key = directory / 'ca.pem', directory / 'ca-key.pem'
+    certificate, key, request = directory / 'server.pem', directory / 'server-key.pem', directory / 'server.csr'
+    openssl('req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-keyout', ca_key, '-out', ca,
+            '-days', '2', '-subj', '/CN=MIY isolated configuration CA',
+            '-addext', 'basicConstraints=critical,CA:TRUE',
+            '-addext', 'keyUsage=critical,keyCertSign,cRLSign')
+    openssl('req', '-newkey', 'rsa:2048', '-nodes', '-keyout', key, '-out', request,
+            '-subj', '/CN=MIY isolated configuration server')
+    extensions = directory / 'extensions.cnf'
+    extensions.write_text('subjectAltName=DNS:platform.example,DNS:localhost,IP:127.0.0.1,IP:10.2.3.4\n'
+                          'basicConstraints=critical,CA:FALSE\nkeyUsage=critical,digitalSignature,keyEncipherment\n'
+                          'extendedKeyUsage=serverAuth\n')
+    openssl('x509', '-req', '-in', request, '-CA', ca, '-CAkey', ca_key, '-CAcreateserial',
+            '-out', certificate, '-days', '1', '-extfile', extensions)
+    (directory / 'index').touch()
+    (directory / 'serial').write_text('1000\n')
+    config = directory / 'ca.cnf'
+    config.write_text(f'[ca]\ndefault_ca=local\n[local]\ndatabase={directory}/index\n'
+                      f'new_certs_dir={directory}\nserial={directory}/serial\n'
+                      'default_md=sha256\npolicy=subject\n[subject]\ncommonName=supplied\n')
+    openssl('ca', '-batch', '-config', config, '-cert', ca, '-keyfile', ca_key, '-in', request,
+            '-out', directory / 'expired.pem', '-startdate', '20200101000000Z', '-enddate', '20200102000000Z')
+    return ca, certificate, key
+
+
+def caddy_command(state, *command):
+    values = load_env(state, 'compose.env')
+    result = ['docker', 'run', '--rm', '--pull=never', '--read-only', '--network', 'none']
+    for key in sorted(PUBLIC_PROXY_ENV):
+        result += ['-e', key + '=' + values[key]]
+    return result + ['-v', values['MIY_CADDY_CONFIG'] + ':/etc/caddy/Caddyfile:ro',
+                     '-v', str(ROOT / 'ops/Caddyfile.routes') + ':/etc/caddy/routes.caddy:ro',
+                     CADDY, 'caddy', *command]
+
+
+def fixture_import_checks(root):
+    dist = root / 'fixture-dist'
+    (dist / 'reference').mkdir(parents=True)
+    (dist / 'reference/mf-manifest.json').write_text('{}')
+    state = root / 'fixture-import-state'
+    bootstrap(state, '--origin', 'http://localhost:18000')
+    isolated = {'MIY_STATE_DIR': str(state), 'MIY_FIXTURE_DIST': str(dist),
+                'MIY_DATABASE_CONTAINER': 'miy-unit-fixture-postgres'}
+    def run(environment):
+        return subprocess.run([sys.executable, str(ROOT / 'scripts/import-fixture.py')],
+                              env={**ENV, **environment}, capture_output=True, timeout=15)
+    for environment in [{}, {**isolated, 'MIY_STATE_DIR': str(ROOT / '.local')},
+                        {**isolated, 'MIY_DATABASE_CONTAINER': 'miy-v2-validation-postgres-1'}]:
+        require(run(environment).returncode != 0, 'Fixture importer accepted missing/production scope')
+    result = run(isolated)
+    require(result.returncode == 0, 'Explicit isolated fixture import failed')
+    artifact = json.loads(result.stdout)['artifactHash']
+    require((state / 'artifacts' / artifact / 'manifest.json').is_file(), 'Fixture import ignored MIY_STATE_DIR')
+    escaped = root / 'fixture-import-symlink'
+    bootstrap(escaped, '--origin', 'http://localhost:18000')
+    (escaped / 'artifacts').rmdir()
+    outside = root / 'outside-artifacts'
+    outside.mkdir()
+    (escaped / 'artifacts').symlink_to(outside, target_is_directory=True)
+    require(run({**isolated, 'MIY_STATE_DIR': str(escaped)}).returncode != 0 and not list(outside.iterdir()),
+            'Fixture importer followed an artifact symlink outside isolated state')
+
+
+def check_caddy_config(state, expected_ports):
+    result = subprocess.run(caddy_command(state, 'adapt', '--config', '/etc/caddy/Caddyfile'),
+                            check=True, capture_output=True, timeout=30)
+    model = json.loads(result.stdout)
+    listeners = {address for value in model['apps']['http']['servers'].values() for address in value['listen']}
+    require(listeners == {f'127.0.0.1:{number}' for number in expected_ports},
+            'Caddy opened an unconfigured listener')
+    require(model.get('admin', {}).get('disabled') is True, 'Host-network Caddy exposed its administration API')
+    for value in model['apps']['http']['servers'].values():
+        require(value.get('automatic_https', {}).get('disable_redirects') is True
+                or value.get('automatic_https', {}).get('disable') is True,
+                'Caddy could automatically open another redirect listener')
+
+
+def proxy_regression(state, kind, tls_material=None):
+    """Exercise real proxies against disposable loopback HTTP stubs, without DB/apps."""
+    class Handler(http.server.BaseHTTPRequestHandler):
+        def log_message(self, *_args):
+            pass
+
+        def do_GET(self):
+            payload = json.dumps({'surface': self.server.surface, 'path': self.path,
+                                  'headers': dict(self.headers.items())}).encode()
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json')
+            self.send_header('X-Content-Type-Options', 'nosniff')
+            if self.server.surface == 'identity':
+                self.send_header('X-Frame-Options', 'SAMEORIGIN')
+                self.send_header('Content-Security-Policy', "script-src 'self'")
+            else:
+                self.send_header('X-Frame-Options', 'DENY')
+            self.send_header('Content-Length', str(len(payload)))
+            self.end_headers()
+            self.wfile.write(payload)
+
+    stubs, threads = [], []
+    process = None
+    log = None
+    reserved = []
+    cidfile = state / 'caddy.cid'
+    try:
+        for surface in ['portal', 'console', 'identity']:
+            stub = http.server.ThreadingHTTPServer(('127.0.0.1', 0), Handler)
+            stub.surface = surface
+            thread = threading.Thread(target=stub.serve_forever, daemon=True)
+            thread.start()
+            stubs.append(stub)
+            threads.append(thread)
+        for _ in range(2):
+            sock = socket.socket()
+            sock.bind(('127.0.0.1', 0))
+            reserved.append(sock)
+        ports = [sock.getsockname()[1] for sock in reserved]
+        scheme = 'https' if tls_material else 'http'
+        portal, console = [f'{scheme}://127.0.0.1:{number}' for number in ports]
+        tls_options = ['--ca-file', str(tls_material[0])] if tls_material else []
+        bootstrap(state, '--profile', 'server' if tls_material else 'local', '--origin', portal, '--console-origin', console,
+                  '--bind', f'127.0.0.1:{stubs[0].server_port}',
+                  '--console-bind', f'127.0.0.1:{stubs[1].server_port}',
+                  '--identity-port', str(stubs[2].server_port), *tls_options)
+        site = state / 'site'
+        site.mkdir()
+        (site / 'index.html').write_text('<!doctype html><title>Trusted fixture shell</title>')
+        if kind == 'nginx':
+            certificate_options = ['--certificate', str(tls_material[1]), '--key', str(tls_material[2])] if tls_material else []
+            subprocess.run([sys.executable, str(ROOT / 'scripts/render-server-config.py'), '--state-dir', str(state),
+                            *certificate_options],
+                           env=ENV, check=True, capture_output=True, timeout=15)
+            config = state / 'nginx-miy.conf'
+            config.write_text(config.read_text().replace(str(ROOT / 'web/platform/dist'), str(site)))
+            wrapper = state / 'nginx-validation.conf'
+            wrapper.write_text(f'pid "{state / "nginx.pid"}"; error_log stderr; events {{}} '
+                               f'http {{ access_log off; include "{config}"; }}')
+            command = ['nginx', '-c', str(wrapper), '-p', str(state), '-g', 'daemon off; master_process off;']
+        else:
+            check_caddy_config(state, ports)
+            command = caddy_command(state, 'run', '--config', '/etc/caddy/Caddyfile')
+            command[command.index('none')] = 'host'
+            command[2:2] = ['--cidfile', str(cidfile), '--tmpfs', '/data', '--tmpfs', '/config',
+                            '-v', str(site) + ':/srv/platform:ro']
+        for sock in reserved:
+            sock.close()
+        log = (state / 'proxy.log').open('wb')
+        process = subprocess.Popen(command, env=ENV, stdout=log, stderr=log)
+
+        class NoRedirect(urllib.request.HTTPRedirectHandler):
+            def redirect_request(self, *_args, **_kwargs):
+                return None
+
+        handlers = [NoRedirect(), urllib.request.ProxyHandler({})]
+        if tls_material:
+            handlers.append(urllib.request.HTTPSHandler(context=ssl.create_default_context(cafile=str(tls_material[0]))))
+        opener = urllib.request.build_opener(*handlers)
+        def fetch(origin, path, headers=None):
+            try:
+                response = opener.open(urllib.request.Request(origin + path, headers=headers or {}), timeout=2)
+            except urllib.error.HTTPError as error:
+                response = error
+            with response:
+                return response.status, response.headers, response.read()
+        last_error = 'no response'
+        for _ in range(50):
+            if process.poll() is not None:
+                raise AssertionError(f'{kind} exited before the isolated proxy checks')
+            try:
+                status = fetch(portal, '/api/health')[0]
+                if status == 200:
+                    break
+                last_error = f'HTTP {status}'
+            except (OSError, urllib.error.URLError) as error:
+                last_error = str(error)
+            time.sleep(.1)
+        else:
+            raise AssertionError(f'{kind} did not start on its temporary ports: {last_error}')
+
+        for origin, surface in [(portal, 'portal'), (console, 'console')]:
+            status, headers, body = fetch(origin, '/api/health', {
+                'X-Forwarded-Host': 'attacker.invalid', 'X-Forwarded-Proto': 'https',
+                'X-Forwarded-Port': '443', 'Forwarded': 'host=attacker.invalid;proto=https',
+                'Origin': 'https://attacker.invalid', 'X-Miy-Surface': 'console',
+            })
+            value = json.loads(body)
+            forwarded = {key.lower(): item for key, item in value['headers'].items()}
+            require(status == 200 and value['surface'] == surface, 'Client header selected the upstream purpose')
+            require(forwarded['host'] == origin.split('://', 1)[1]
+                    and forwarded['x-forwarded-host'] == origin.split('://', 1)[1]
+                    and forwarded['x-forwarded-proto'] == scheme
+                    and forwarded['x-forwarded-port'] == origin.rsplit(':', 1)[1]
+                    and 'forwarded' not in forwarded, 'Untrusted forwarding headers reached the backend')
+            require(forwarded['origin'] == 'https://attacker.invalid', 'Proxy rewrote Origin and could bypass server CSRF')
+            require(headers.get_all('X-Frame-Options') == ['DENY']
+                    and headers.get_all('X-Content-Type-Options') == ['nosniff'], 'Proxy security headers missing or duplicated')
+        for flow in ['authorize', 'device']:
+            path = f'/cli/{flow}/00000000-0000-4000-8000-000000000001'
+            status, headers, _ = fetch(portal, path + '?return=https://attacker.invalid/&extra=ignored')
+            require(status == 302 and headers['Location'] == console + path,
+                    'CLI verification redirect copied an untrusted destination or query')
+        require(fetch(portal, '/identity/realms/miy/.well-known/openid-configuration')[0] == 404,
+                'Portal can still proxy identity')
+        for path in ['/identity/admin/', '/identity/realms/master/', '/identity/']:
+            require(fetch(console, path)[0] == 404, 'Console exposed an internal identity endpoint')
+        status, headers, body = fetch(console, '/identity/realms/miy/.well-known/openid-configuration')
+        require(status == 200 and json.loads(body)['surface'] == 'identity'
+                and headers.get('X-Frame-Options') == 'DENY'
+                and "frame-ancestors 'none'" in ';'.join(headers.get_all('Content-Security-Policy')),
+                'Public identity discovery or login anti-frame protection failed')
+        for path in ['/artifacts/hash/ui/remoteEntry.js', '/preview/app', '/apps/app',
+                     '/environments/dev/apps/app', '/api/v1/preview/apps/app/platform/directory',
+                     '/api/v1/installations/id/api/test', '/api/v1/installations/id/connections/target/api/test']:
+            require(fetch(console, path)[0] == 404, 'Console returned app content or SPA fallback')
+        status, headers, _ = fetch(console, '/')
+        csp = ';'.join(headers.get_all('Content-Security-Policy', []))
+        require(status == 200 and "script-src 'self'" in csp and "worker-src 'none'" in csp
+                and "object-src 'none'" in csp, 'Console static shell lacks the strict script/worker CSP')
+        require(fetch(console, '/assets/worker.js', {'Service-Worker': 'script'})[0] == 403,
+                'Console accepted a service-worker script request')
+        require(fetch(portal, '/assets/worker.js', {'Service-Worker': 'script'})[0] == 403,
+                'Portal accepted a service-worker script request')
+        portal_headers = fetch(portal, '/')[1]
+        require("worker-src 'none'" in ';'.join(portal_headers.get_all('Content-Security-Policy', [])),
+                'Portal shell permits new service workers')
+        if tls_material:
+            subprocess.run([sys.executable, str(ROOT / 'scripts/check-server-tls.py'), '--state-dir', str(state),
+                            '--certificate', str(tls_material[1]), '--key', str(tls_material[2]), '--connect'],
+                           env=ENV, check=True, capture_output=True, timeout=30)
+    finally:
+        for sock in reserved:
+            sock.close()
+        if cidfile.exists():
+            identifier = cidfile.read_text().strip()
+            if identifier and all(value in '0123456789abcdef' for value in identifier):
+                subprocess.run(['docker', 'stop', '--time', '2', identifier], capture_output=True, timeout=15)
+        if process and process.poll() is None:
+            process.terminate()
+        if process:
+            process.wait(timeout=15)
+        if log:
+            log.close()
+        for stub, thread in zip(stubs, threads):
+            stub.shutdown()
+            stub.server_close()
+            thread.join()
 
 
 def identity_sync(state):
@@ -93,10 +354,19 @@ def identity_sync(state):
     require(updates == [{'sslRequired': 'none'}], 'Existing realm HTTP policy was not updated')
     require(not any('/admin/realms/master' in path for _, path, _ in requests),
             'Configuration changed the master realm')
+    clients = [json.loads(body) for method, path, body in requests if method == 'PUT' and '/clients/' in path
+               and not ('/protocol-mappers/' in path or '-client-scopes/' in path)]
+    web = next(client for client in clients if client.get('clientId') == 'miy-web')
+    require(web['redirectUris'] == [settings[key] + '/auth/callback' for key in ['origin', 'consoleOrigin']],
+            'Existing miy-web client lost either exact callback')
+    require(not any(method in ['PUT', 'DELETE'] and '/users/' in path for method, path, _ in requests),
+            'Identity synchronization replaced existing user subjects')
 
 
 with tempfile.TemporaryDirectory(prefix='miy-server-config-') as temporary:
     root = Path(temporary)
+    fixture_import_checks(root)
+    print('PASS fixture import requires isolated state/build/database and refuses artifact symlink escapes')
     missing = root / 'missing'
     bootstrap(missing, '--profile', 'server', expected=2)
     require(not missing.exists(), 'Missing server origin created configuration')
@@ -105,6 +375,18 @@ with tempfile.TemporaryDirectory(prefix='miy-server-config-') as temporary:
         bootstrap(state, '--profile', 'server', '--origin', origin, expected=2)
         require(not state.exists(), 'HTTP opt-out created configuration')
     print('PASS explicit server origin and HTTP opt-in')
+
+    for index, options in enumerate([
+        ['--console-origin', 'https://platform.example/'],
+        ['--console-origin', 'http://platform.example:9443', '--allow-http'],
+        ['--bind', '127.0.0.1:18081', '--console-bind', '127.0.0.1:18081'],
+        ['--bind', '0.0.0.0:18080'],
+        ['--console-bind', '10.2.3.4:18081'],
+    ]):
+        rejected = root / f'boundary-refused-{index}'
+        bootstrap(rejected, '--profile', 'server', '--origin', 'https://platform.example', *options, expected=2)
+        require(not rejected.exists(), 'Invalid boundary configuration wrote private state')
+    print('PASS distinct origins/binds, matching transport and loopback-only Core listeners')
 
     state = root / 'http state with spaces'
     bootstrap(state, '--profile', 'server', '--origin', 'http://10.2.3.4:8080/', '--allow-http',
@@ -120,7 +402,15 @@ with tempfile.TemporaryDirectory(prefix='miy-server-config-') as temporary:
     require(compose['MIY_CADDY_CONFIG'].endswith('Caddyfile.http'), 'Wrong HTTP proxy configuration')
     require(compose['MIY_STATE_DIR'] == str(state), 'Space-containing state path was corrupted')
     require(runtime['MIY_CLI_INSTALLER_DIR'] == str(state / 'cli-installers'), 'Installer directory was not configured')
-    require(realm['clients'][0]['redirectUris'] == ['http://10.2.3.4:8080/auth/callback'], 'Incorrect browser callback')
+    require(runtime['MIY_CONSOLE_ORIGIN'] == 'http://10.2.3.4:8081'
+            and runtime['MIY_CONSOLE_BIND_ADDR'] == '127.0.0.1:18081'
+            and runtime['MIY_ISSUER'] == runtime['MIY_CONSOLE_ORIGIN'] + '/identity/realms/miy',
+            'Console/identity did not use the configured distinct listener')
+    require(realm['clients'][0]['redirectUris'] == [value + '/auth/callback' for value in
+            ['http://10.2.3.4:8080', 'http://10.2.3.4:8081']], 'Incorrect browser callbacks')
+    require(realm['clients'][0]['attributes']['post.logout.redirect.uris'] ==
+            'http://10.2.3.4:8080/##http://10.2.3.4:8081/', 'Logout destinations are not exact')
+    require(realm['clients'][2]['clientId'] == runtime['MIY_ORIGIN'] + '/mcp', 'MCP resource moved away from the portal')
     original_secrets = (state / 'credentials.json').read_bytes()
     bootstrap(state)
     require((state / 'credentials.json').read_bytes() == original_secrets, 'Credentials were regenerated')
@@ -141,6 +431,10 @@ with tempfile.TemporaryDirectory(prefix='miy-server-config-') as temporary:
     require('listen 8080;' in proxy and 'ssl_certificate' not in proxy and 'Strict-Transport-Security' not in proxy,
             'HTTP render accidentally enabled TLS')
     require('cli/(downloads|installers)' in proxy and 'proxy_set_header Upgrade' in proxy, 'Download, installer or WebSocket route missing')
+    require('proxy_set_header Host $http_host' not in proxy and 'proxy_set_header X-Forwarded-Proto $scheme' not in proxy,
+            'Proxy forwarding trusts a client-selected origin')
+    require('listen 8081;' in proxy and 'proxy_pass http://127.0.0.1:18081;' in proxy,
+            'Nginx console uses the wrong fixed-purpose listener')
     if shutil.which('nginx'):
         wrapper = state / 'nginx-validation.conf'
         wrapper.write_text(f'pid "{state / "nginx.pid"}"; error_log stderr; events {{}} http {{ access_log off; include "{state / "nginx-miy.conf"}"; }}')
@@ -171,12 +465,29 @@ with tempfile.TemporaryDirectory(prefix='miy-server-config-') as temporary:
     result = subprocess.run([sys.executable, str(ROOT / 'scripts/render-server-config.py'), '--state-dir', str(secure)],
                             env=ENV, capture_output=True, timeout=15)
     require(result.returncode == 2, 'HTTPS renderer accepted missing certificates')
+    ca, certificate, key = tls_fixture(root / 'tls-material')
+    bootstrap(secure, '--ca-file', str(ca))
     subprocess.run([sys.executable, str(ROOT / 'scripts/render-server-config.py'), '--state-dir', str(secure),
-                    '--certificate', str(secure / 'certificate.pem'), '--key', str(secure / 'private-key.pem')],
+                    '--certificate', str(certificate), '--key', str(key)],
                    env=ENV, check=True, capture_output=True, timeout=15)
     proxy = (secure / 'nginx-miy.conf').read_text()
     require('listen 443 ssl;' in proxy and 'ssl_certificate_key' in proxy and 'server_name "platform.example";' in proxy,
             'HTTPS renderer did not retain the configured domain and TLS')
+    for bad_certificate, bad_key, extra in [
+        (ca.parent / 'expired.pem', key, []),
+        (certificate, ca.parent / 'ca-key.pem', []),
+        (certificate, key, ['--ca-file', str(certificate)]),
+    ]:
+        result = subprocess.run([sys.executable, str(ROOT / 'scripts/check-server-tls.py'), '--state-dir', str(secure),
+                                 '--certificate', str(bad_certificate), '--key', str(bad_key), *extra],
+                                env=ENV, capture_output=True, timeout=20)
+        require(result.returncode == 2, 'TLS validator accepted expired/untrusted/mismatched material')
+    wrong_ip = root / 'wrong-ip-san'
+    bootstrap(wrong_ip, '--profile', 'server', '--origin', 'https://10.2.3.5:8443', '--ca-file', str(ca))
+    result = subprocess.run([sys.executable, str(ROOT / 'scripts/check-server-tls.py'), '--state-dir', str(wrong_ip),
+                             '--certificate', str(certificate), '--key', str(key)], env=ENV, capture_output=True, timeout=20)
+    require(result.returncode == 2, 'TLS validator accepted a missing IP SAN')
+    print('PASS certificate/key matching, private CA trust, expiry and IP SAN rejection')
 
     shared = root / 'shared-development'
     bootstrap(shared, '--profile', 'server', '--origin', 'https://SHARED.example:443/', '--shared-development-login')
@@ -189,7 +500,8 @@ with tempfile.TemporaryDirectory(prefix='miy-server-config-') as temporary:
             'Shared development settings did not bind to the explicit HTTPS origin')
     require(shared_runtime['MIY_DEV_LOGIN'] == 'shared' and shared_runtime['MIY_DEV_ORIGIN'] == shared_runtime['MIY_ORIGIN']
             and shared_runtime['MIY_ALLOW_HTTP'] == '0', 'Shared development runtime differs from the configured origin')
-    require(json.loads(shared_realm)['clients'][0]['redirectUris'] == ['https://shared.example/auth/callback'],
+    require(json.loads(shared_realm)['clients'][0]['redirectUris'] ==
+            ['https://shared.example/auth/callback', 'https://shared.example:9443/auth/callback'],
             'Shared development changed the normal OAuth callback')
     bootstrap(shared)
     require(load_env(shared, 'runtime.env') == shared_runtime, 'Shared development preference was not preserved on rerun')
@@ -238,9 +550,23 @@ with tempfile.TemporaryDirectory(prefix='miy-server-config-') as temporary:
             'Explicit shared mode did not override the local development origin')
     bootstrap(local, '--no-shared-development-login')
     runtime = load_env(local, 'runtime.env')
-    require(runtime['MIY_DEV_LOGIN'] == '1' and runtime['MIY_DEV_ORIGIN'] == 'http://localhost:18000',
-            'Disabling shared mode changed the existing local development behavior')
+    require(runtime['MIY_DEV_LOGIN'] == '1' and runtime['MIY_DEV_ORIGIN'] == runtime['MIY_ORIGIN']
+            and runtime['MIY_CONSOLE_ORIGIN'] == 'https://localhost:18444',
+            'Local development did not use the two configured HTTPS purposes')
+    check_caddy_config(local, [18443, 18444, 18000])
+    bootstrap(local, '--origin', 'http://localhost:18000')
+    check_caddy_config(local, [18000, 18001])
     bootstrap(local, '--origin', 'http://10.2.3.4:18000', '--allow-http')
     runtime = load_env(local, 'runtime.env')
     require(runtime['MIY_DEV_LOGIN'] == '0' and 'MIY_CA_FILE' not in runtime, 'Non-loopback HTTP enabled synthetic login or inherited CA')
     print('PASS HTTPS system roots and loopback-only synthetic login')
+
+    if shutil.which('nginx'):
+        proxy_regression(root / 'nginx-http-boundaries', 'nginx')
+        print('PASS Nginx fixed purposes, scoped IdP, CLI redirects, content denial and security headers')
+        proxy_regression(root / 'nginx-single-ip-tls', 'nginx', (ca, certificate, key))
+        print('PASS actual single-IP HTTPS portal/console proxy and client trust checks')
+    else:
+        print('NOT_RUN Nginx proxy checks: nginx is not installed')
+    proxy_regression(root / 'caddy-http-boundaries', 'caddy')
+    print('PASS Caddy fixed purposes, scoped IdP, CLI redirects, content denial and security headers')

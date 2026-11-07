@@ -223,6 +223,7 @@ async fn pages_and_events(
     let direct = crate::read_api::page(
         h.state,
         &auth::Principal {
+            browser_purpose: None,
             cli_session_id: None,
             delegation_id: None,
             id: manager.id.clone(),
@@ -258,7 +259,7 @@ async fn pages_and_events(
             && installed["installations"][0]["acceptance"].is_null(),
         "viewer received management-only evidence"
     );
-    let managed = response(
+    let deployer_use = response(
         h.request(manager, Method::GET, "/api/v1/installations")
             .query(&[("appId", "audit-runtime"), ("environment", "prod")])
             .send()
@@ -267,8 +268,29 @@ async fn pages_and_events(
     )
     .await?;
     ensure!(
-        managed["installations"][0]["canManage"] == true
-            && !managed["installations"][0]["acceptance"].is_null(),
+        deployer_use["installations"]
+            .as_array()
+            .is_some_and(Vec::is_empty),
+        "prod deploy implicitly granted app use"
+    );
+    let managed = response(
+        h.request(manager, Method::GET, "/api/v1/runtime/installations")
+            .send()
+            .await?,
+        200,
+    )
+    .await?;
+    let managed = managed
+        .as_array()
+        .and_then(|rows| {
+            rows.iter()
+                .find(|row| row["appId"] == "audit-runtime" && row["environment"] == "prod")
+        })
+        .context("deployer's managed prod installation")?;
+    ensure!(
+        managed["canManage"] == true
+            && managed["canOpen"] == false
+            && !managed["acceptance"].is_null(),
         "manager could not observe accepted production release"
     );
     sqlx::query("DELETE FROM grants WHERE user_id=$1 AND app_id=$2")
@@ -385,6 +407,16 @@ async fn pages_and_events(
     );
     error(
         h.request(viewer, Method::GET, &path)
+            .query(&[("after", after.as_str())])
+            .send()
+            .await?,
+        403,
+        "forbidden",
+    )
+    .await?;
+    h.grant(other, &a, "dev", "develop").await?;
+    error(
+        h.request(other, Method::GET, &path)
             .query(&[("after", after.as_str())])
             .send()
             .await?,

@@ -2,9 +2,23 @@
 
 - 갱신: 2026-11-02
 - 이 문서의 마지막 연결 검사 대상(2026-11-02): 실제 서버·게시 CLI **0.6.3 / 번들 0.7.1**, 배포 소스 `8d7d04271f9467d8bbdd16308e73715b33e4dc0c`. 당시 운영 소스의 `main` 통합 후 소스 버전도 CLI 0.6.3 / 번들 0.7.1이었다. 이후 0.7.0 연결 검사와 현재 배포 소스는 [운영 안내](SERVER-OPERATIONS.md)와 배포 기록을 따른다. 배포 바이너리의 출처 commit과 후속 통합 commit은 구분한다.
-- 범위: [구현 계획](CLI-IMPLEMENTATION-PLAN.md). [전체 V0~V7 인수](VALIDATION.md)는 별도다.
+- 범위: [구현 계획](CLI-IMPLEMENTATION-PLAN.md). V0~V7 등 기존 결과의 적용 범위는 [기존 검증의 승계](APP-BOUNDARIES.md#기존-검증의-승계)를 따른다.
 
 실제 실행 결과와 남은 환경 검사를 구분한다. 최신 연결 검사와 이전 0.6 결과를 먼저 기록하고, CLI 0.5 / 번들 0.6.2와 `0fe94a4`의 검증은 아래 이력에 보존한다. `PASS`는 명시한 소스·바이너리·fixture·환경·assertion 범위에만 적용하고, 다른 장비/원격 서버/AI 세션을 대신하지 않는다.
+
+[내부 업무 앱의 최소 보안안](APP-BOUNDARIES.md#확정-결정)은 회사가 관리하는 앱·개발자와 내부망을 대상으로 한다. iframe 없는 MF·라우터·SDK/CLI 계약을 유지하고, 포털(dev/prod 공통)과 Keycloak·CLI 승인이 있는 신뢰 콘솔 두 origin으로 나눈다. 단일 IP HTTPS로 인수하며 도메인·추가 IP·별도 IdP origin이나 모든 앱의 SDK 교체는 요구하지 않는다. 운영 [전환·복구](APP-BOUNDARIES.md#전환과-복구)는 미실행이며 새 소스의 [경계 인수](APP-BOUNDARIES.md#경계-인수)와 구분한다. 아래 과거 PASS를 이월하지 않는다. 공개 운영 `v2.dwdcc.kr`을 내부망 범위의 통과로 간주하지 않는다.
+
+## 내부 최소안의 추가 호환 검사
+
+| 범위 | 최소 확인 | 상태 |
+| --- | --- | --- |
+| 기존 OIDC | 기존 `miy-web` client·realm·사용자 `sub`와 권한 연결 보존, 두 origin의 정확한 callback·logout과 재로그인 | PASS: 격리 Keycloak·HTTP/단일 IP HTTPS 두 callback과 동일 sub. 운영 issuer 전환 NOT_RUN |
+| 게시 CLI | legacy·device 상대 `verificationPath`의 고정 콘솔 이동, 기존 start·exchange·poll·refresh·응답 형식·토큰 수명·MCP 연결 유지 | PASS: 게시01e4d49 CLI+새 서버 실제 HTTPS12개, 새 CLI HTTP/HTTPS 각12개. 외부 OAuth MCP issuer 전환은 NOT_RUN |
+| 세션 용도 | portal/console 세션 교차 사용과 잘못된 Origin·CSRF 거부, 콘솔에서 앱 UI·활성 자산·앱 HTML을 제공하지 않음, Core/Keycloak 내부 포트 직접 접근 거부 | PASS: 실제 두 listener·cookie/Origin/CSRF·콘솔 콘텐츠 거부·loopback bind 검사 |
+| 권한·회수 | 현재 권한·사용자 활성 상태 및 명시적 CLI 철회 반영. legacy 토큰과 device refresh family를 구분하고 브라우저 logout을 CLI 회수로 간주하지 않음 | PASS: 격리 runtime 112개 중 auth·permissions·delegation·boundary, 실제 device/legacy 회수 |
+| 단일 IP TLS | 준비한 인증서 반입, IP SAN·체인·만료 검사, 브라우저/CLI의 CA 신뢰 확인. 불신 CA·IP 불일치 거부와 TLS 검증 해제 없음 | PASS: 실제 IP SAN·CA 신뢰·Core/CLI/Chrome 및 SAN/만료 거부. Windows·인증서 수동 교체 NOT_RUN |
+
+포트 분리는 쿠키 격리가 아니다. 이 검사는 내부 통합 앱의 최소 계약을 확인하며 악성 앱 코드의 강제 격리·별도 IdP 사이트·자동 CA 배포/갱신·MFA 강제·확장 관측 체계의 완료를 뜻하지 않는다.
 
 ## 운영 소스 main 통합 — 2026-11-02
 

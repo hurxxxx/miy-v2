@@ -14,15 +14,44 @@ pub fn random() -> String {
     URL_SAFE_NO_PAD.encode(b)
 }
 pub fn cookie(headers: &HeaderMap, name: &str) -> Option<String> {
-    headers
-        .get("cookie")?
-        .to_str()
-        .ok()?
-        .split(';')
-        .find_map(|c| {
-            let (k, v) = c.trim().split_once('=')?;
-            (k == name).then(|| v.to_string())
-        })
+    // Cookie scope does not include ports. Reject ambiguous authentication
+    // values rather than choosing whichever host/path cookie arrived first.
+    let mut found = None;
+    for header in headers.get_all("cookie") {
+        for part in header.to_str().ok()?.split(';') {
+            let Some((key, value)) = part.trim().split_once('=') else {
+                continue;
+            };
+            if key == name {
+                if found.is_some() || value.is_empty() {
+                    return None;
+                }
+                found = Some(value.to_owned());
+            }
+        }
+    }
+    found
+}
+/// Authentication must not fall back from an ambiguous development cookie to
+/// another credential. Only the current purpose's names participate; unrelated
+/// IdP cookies can legitimately have several paths.
+#[cfg(feature = "server")]
+pub fn unambiguous_cookies(headers: &HeaderMap, names: &[&str]) -> bool {
+    let mut seen = std::collections::HashSet::new();
+    for header in headers.get_all("cookie") {
+        let Ok(value) = header.to_str() else {
+            return false;
+        };
+        for part in value.split(';') {
+            let Some((key, value)) = part.trim().split_once('=') else {
+                continue;
+            };
+            if names.contains(&key) && (value.is_empty() || !seen.insert(key.to_owned())) {
+                return false;
+            }
+        }
+    }
+    true
 }
 #[cfg(any(feature = "server", test))]
 pub fn development_profile(flag: Option<&str>, origin: &str, development_origin: &str) -> bool {
@@ -166,6 +195,35 @@ pub(crate) fn sign_identity_context(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn session_cookie_requires_one_unambiguous_value_across_all_headers() {
+        let mut headers = HeaderMap::new();
+        headers.append(
+            "cookie",
+            "miy_portal_session=portal; miy_console_session=console"
+                .parse()
+                .unwrap(),
+        );
+        assert_eq!(
+            cookie(&headers, "miy_portal_session").as_deref(),
+            Some("portal")
+        );
+        assert_eq!(
+            cookie(&headers, "miy_console_session").as_deref(),
+            Some("console")
+        );
+        headers.append("cookie", "miy_portal_session=other".parse().unwrap());
+        assert_eq!(cookie(&headers, "miy_portal_session"), None);
+        headers.insert(
+            "cookie",
+            "miy_portal_session=portal; miy_portal_session=portal"
+                .parse()
+                .unwrap(),
+        );
+        assert_eq!(cookie(&headers, "miy_portal_session"), None);
+        headers.insert("cookie", "miy_portal_session=".parse().unwrap());
+        assert_eq!(cookie(&headers, "miy_portal_session"), None);
+    }
     #[test]
     fn contextual_identity_preserves_actor_target_chain_and_private_proof() {
         let source = Uuid::new_v4();

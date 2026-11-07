@@ -11,6 +11,7 @@ ROOT=$PWD
 STATE=$ROOT/.local/stack-ui
 PROJECT=miy-stack-ui
 ORIGIN=http://localhost:18300
+CONSOLE_ORIGIN=http://localhost:18305
 DB=$PROJECT-postgres-1
 EVIDENCE=$ROOT/.local/evidence/stack-ui
 OWNER_FILE=$STATE/.stack-ui-owner
@@ -36,7 +37,7 @@ up() {
   if [ -n "$resources" ]; then
     echo "stack-ui resources already exist; refusing to adopt or remove them" >&2; exit 1
   fi
-  for port in 18300 18301 18302 18303 18304; do
+  for port in 18300 18301 18302 18303 18304 18305 18306; do
     if ss -ltn "sport = :$port" | grep -q LISTEN; then echo "port $port is in use" >&2; exit 1; fi
   done
   # The atomic mkdir is also the single-run lock. A rejected/concurrent run must
@@ -50,9 +51,11 @@ up() {
     mkdir -p "$EVIDENCE"
     snapshot >"$EVIDENCE/host-before.txt"
   fi
-  # The core listens on the Docker bridge address so only the proxy container can reach it.
-  python3 scripts/bootstrap.py --state-dir "$STATE" --origin "$ORIGIN" --bind 172.17.0.1:18304 \
-    --postgres-port 18301 --identity-port 18302 --http-port 18300 --https-port 18303 --no-shared-development-login
+  # The host-network proxy reaches both loopback-only fixed-purpose Core listeners.
+  python3 scripts/bootstrap.py --state-dir "$STATE" --origin "$ORIGIN" --console-origin "$CONSOLE_ORIGIN" \
+    --bind 127.0.0.1:18304 --console-bind 127.0.0.1:18306 \
+    --postgres-port 18301 --identity-port 18302 --http-port 18300 --https-port 18303 \
+    --console-http-port 18305 --no-shared-development-login
   pnpm --filter @miy/platform exec vite build --mode production --outDir "$STATE/site" --emptyOutDir
   "${compose[@]}" up -d
   for _ in $(seq 1 120); do
@@ -65,7 +68,10 @@ up() {
   bash scripts/run-service.sh seed
   python3 scripts/services.py start
   for _ in $(seq 1 60); do
-    curl -fsS "$ORIGIN/api/health" >/dev/null 2>&1 && { echo "stack-ui ready: $ORIGIN"; return; }
+    if curl -fsS "$ORIGIN/api/health" >/dev/null 2>&1 && \
+        curl -fsS "$CONSOLE_ORIGIN/api/health" >/dev/null 2>&1; then
+      echo "stack-ui ready: portal $ORIGIN; console $CONSOLE_ORIGIN"; return
+    fi
     sleep 1
   done
   echo "stack-ui core did not become ready; see $STATE/serve.log" >&2; exit 1

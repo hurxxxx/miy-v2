@@ -41,6 +41,7 @@ TRANSACTIONS = {
     ("cli_auth.rs", "approve"): "identity",
     ("cli_auth.rs", "exchange"): "identity",
     ("cli_auth.rs", "start"): "identity",
+    ("cli_auth.rs", "revoke_legacy"): "own",
     ("delegations.rs", "revoke"): "own",
     ("development.rs", "close"): "own",
     ("job_api.rs", "events"): "snapshot",
@@ -56,6 +57,7 @@ WRITERS = {
     ("auth_sessions.rs", "approve"): "identity",
     ("auth_sessions.rs", "revoke_session"): "own",
     ("cli_auth.rs", "approve"): "identity",
+    ("cli_auth.rs", "revoke_legacy"): "own",
     ("delegations.rs", "revoke"): "own",
     ("development.rs", "close"): "own",
 }

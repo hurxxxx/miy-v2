@@ -10,6 +10,8 @@ The runner creates a fresh temporary evidence directory, a PostgreSQL container 
 
 The Docker shim injects an error for container lookup and kills only the test worker immediately after successful removal of its exact test container ID. Tests cover ownership refusal, confirmed absence, retry after interruption, service failure/recovery, manual stop, audit transitions, and existing deployment/data-preservation boundaries. Twelve gated HTTP fixtures also verify that the real worker can start a different app before their responses arrive, uses bounded concurrency, and discards observations from before a same-release lifecycle change. These additional service fixtures use synthetic installation metadata, not twelve deployed app containers.
 
+Expected observations: runtime 46, operations 6, CLI 6, auth 8, permissions 24, delegation 10 browser boundary 10 and migration 2 (112 total). The boundary suite exercises actual fixed portal/console HTTP listeners with purpose-bound browser sessions, both CLI approval formats, legacy revocation, application API/header isolation and unchanged CLI credential lifetimes. It uses synthetic identity metadata, not real OIDC.
+
 Any failed observation or missing results file makes the command fail. Cleanup runs even when setup fails. It uses test labels and the private Docker journal when database evidence is unavailable, checks ownership before removing resources, and verifies original running containers retained their IDs, images and start times. Repeated cleanup is safe. Keep the printed evidence directory; check `cleanup.log` on failure.
 
 Run failure-injection checks without Docker or a platform server:
@@ -35,7 +37,7 @@ cargo build
 pnpm exec playwright test --config scripts/runtime-regression/server-ui.config.ts
 ```
 
-`server-ui.mjs` starts a disposable `postgres:18.3` container (random loopback port, tmpfs, unique execution label `miy.server-ui`), static OIDC metadata, `miy migrate`/`seed`/`serve` on 127.0.0.1:18149 and the built platform with `/api` and `/auth` proxied on 127.0.0.1:18148. It uses only the loopback development login and never reads `.local/runtime.env`. Cleanup removes only the container created by this execution after checking its owner label. A `.local/evidence/server-ui.lock` directory prevents concurrent runs from overwriting evidence. It does not cover Keycloak login, deployed Docker apps or remote app screens served by the core. A lock or container left by SIGKILL requires explicit inspection; a new run never removes all containers sharing the harness label.
+`server-ui.mjs` starts a disposable `postgres:18.3` container (random loopback port, tmpfs, unique execution label `miy.server-ui`), static OIDC metadata, `miy migrate`/`seed`/`serve` on fixed portal/console listeners 127.0.0.1:18149 and :18152. The same isolated platform build is served on portal :18148 and console :18151, each proxied only to its own Core listener. It uses only the loopback development login and never reads `.local/runtime.env`. Cleanup removes only the container created by this execution after checking its owner label. A `.local/evidence/server-ui.lock` directory prevents concurrent runs from overwriting evidence. It does not cover Keycloak login, deployed Docker apps or remote app screens served by the core. A lock or container left by SIGKILL requires explicit inspection; a new run never removes all containers sharing the harness label.
 
 The full stack (Keycloak, Caddy, core serve/worker and CLI-deployed Docker apps) runs disposably:
 
@@ -45,7 +47,7 @@ scripts/runtime-regression/stack-ui.sh up    # or start/stop by hand
 scripts/runtime-regression/stack-ui.sh down
 ```
 
-It uses compose project `miy-stack-ui` with `stack-ui.compose.yaml` (own app network, own platform build), ports 18300–18304, state in `.local/stack-ui` and `MIY_DATABASE_CONTAINER=miy-stack-ui-postgres-1`; the core listens on the Docker bridge address only. `down` removes the app containers, `miy-runtime-*` networks and images belonging to installations in the stack's own database, then the compose project with its volume and the state directory. `run` compares containers, networks, volumes and images before and after and fails on any difference (`.local/evidence/stack-ui/host-diff.txt`). It never reads `.local/runtime.env` or touches `miy-v2-validation-*`. Docker BuildKit cache from the app build is shared and kept.
+It uses compose project `miy-stack-ui` with `stack-ui.compose.yaml` (own app network, own platform build), ports 18300–18306 (portal 18300, console/IdP 18305), state in `.local/stack-ui` and `MIY_DATABASE_CONTAINER=miy-stack-ui-postgres-1`; both Core listeners bind loopback; the isolated Caddy proxy uses host networking with only its explicit test ports. `down` removes the app containers, `miy-runtime-*` networks and images belonging to installations in the stack's own database, then the compose project with its volume and the state directory. `run` compares containers, networks, volumes and images before and after and fails on any difference (`.local/evidence/stack-ui/host-diff.txt`). It never reads `.local/runtime.env` or touches `miy-v2-validation-*`. Docker BuildKit cache from the app build is shared and kept.
 
 The atomic state-directory creation and `.stack-ui-owner` marker establish ownership before `run` enables cleanup. Existing state, partial compose resources, or a port conflict cause refusal without deleting those resources or replacing existing evidence. `down` also verifies the marker and database compose label; older state without a marker must be inspected manually rather than adopted automatically.
 
@@ -72,3 +74,14 @@ python3 scripts/check-cli-recovery.py --cli target/debug/miy
 ```
 
 That separate check uses a synthetic Docker export and loopback HTTP fault fixture; it proves CLI journal/ACK recovery and request counts, not a real image import. Browser fixtures also cover device approval/CSRF and production confirmation/state conflicts.
+
+Imported single-IP HTTPS and actual Keycloak/CLI/browser authentication can be checked without touching the deployed UI:
+
+```sh
+python3 scripts/check-http-server.py --binary target/debug/miy \
+  --web-dist .local/evidence/check-static/platform --https --certutil /path/to/certutil
+# Optional: test the existing published CLI against the new server.
+# Add --cli-binary /path/to/verified-published/miy.
+```
+
+This creates an owned Compose project, a private CA with an IP SAN certificate, and a Chrome-only temporary NSS trust store through bubblewrap. It does not skip TLS verification or modify the user's trust store. `--web-dist` is required and the deployed `web/platform/dist` is refused. Omit `--https` only for the explicit legacy HTTP compatibility profile; that result is not HTTPS acceptance. Output summaries contain public origins, binary hashes and assertions, never credentials.

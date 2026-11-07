@@ -30,7 +30,7 @@ services:
       KC_DB_POOL_MAX_SIZE: "10"
       KC_HTTP_ENABLED: "true"
       KC_HTTP_RELATIVE_PATH: /identity
-      KC_HOSTNAME: ${MIY_ORIGIN:?run scripts/bootstrap.py}/identity
+      KC_HOSTNAME: ${MIY_CONSOLE_ORIGIN:?run scripts/bootstrap.py}/identity
       KC_PROXY_HEADERS: xforwarded
       KC_BOOTSTRAP_ADMIN_USERNAME: bootstrap
       KC_BOOTSTRAP_ADMIN_PASSWORD: ${MIY_IDENTITY_ADMIN_PASSWORD:?}
@@ -41,13 +41,25 @@ services:
       postgres: {condition: service_healthy}
   proxy:
     image: caddy:2.11.2@sha256:25cdc846626b62d05f6b633b9b40c2c9f6ef89b515dc76133cefd920f7dbe562
-    ports: ["${MIY_PROXY_BIND:-127.0.0.1}:${MIY_HTTPS_PORT:-18443}:18443", "${MIY_PROXY_BIND:-127.0.0.1}:${MIY_HTTP_PORT:-18000}:18000"]
+    # Linux host networking reaches loopback-only Core and Keycloak. Caddy binds
+    # only the configured interface/ports; it never opens extra ports 80 or 443.
+    network_mode: host
     environment:
-      MIY_CORE_UPSTREAM: ${MIY_CORE_UPSTREAM:-host.docker.internal:18080}
-      MIY_PROXY_TLS_SITE: ${MIY_PROXY_TLS_SITE:-https://localhost:18443}
-    extra_hosts: ["host.docker.internal:host-gateway"]
+      MIY_ORIGIN: ${MIY_ORIGIN:?run scripts/bootstrap.py}
+      MIY_CONSOLE_ORIGIN: ${MIY_CONSOLE_ORIGIN:?run scripts/bootstrap.py}
+      MIY_CORE_UPSTREAM: ${MIY_CORE_UPSTREAM:-127.0.0.1:18080}
+      MIY_CONSOLE_CORE_UPSTREAM: ${MIY_CONSOLE_CORE_UPSTREAM:-127.0.0.1:18081}
+      MIY_IDENTITY_UPSTREAM: ${MIY_IDENTITY_UPSTREAM:-127.0.0.1:18181}
+      MIY_PORTAL_HOST: ${MIY_PORTAL_HOST:?run scripts/bootstrap.py}
+      MIY_CONSOLE_HOST: ${MIY_CONSOLE_HOST:?run scripts/bootstrap.py}
+      MIY_PORTAL_PORT: ${MIY_PORTAL_PORT:?run scripts/bootstrap.py}
+      MIY_CONSOLE_PORT: ${MIY_CONSOLE_PORT:?run scripts/bootstrap.py}
+      MIY_PUBLIC_SCHEME: ${MIY_PUBLIC_SCHEME:?run scripts/bootstrap.py}
+      MIY_PROXY_BIND: ${MIY_PROXY_BIND:-127.0.0.1}
+      MIY_HTTP_PORT: ${MIY_HTTP_PORT:-18000}
     volumes:
       - ${MIY_CADDY_CONFIG:-./ops/Caddyfile}:/etc/caddy/Caddyfile:ro
+      - ./ops/Caddyfile.routes:/etc/caddy/routes.caddy:ro
       - ${MIY_STATE_DIR:-./.local}/caddy:/data
       - ./web/platform/dist:/srv/platform:ro
     depends_on: [keycloak]

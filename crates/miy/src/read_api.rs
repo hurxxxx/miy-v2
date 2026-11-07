@@ -2,7 +2,7 @@
 use crate::{
     State,
     api_contract::{App, AppDetail, InstallationPage, RuntimeJobPage},
-    auth::Principal,
+    auth::{BrowserPurpose, Principal},
     domain,
     http::{ApiError, ApiResult},
     policy::{self, AppAction},
@@ -102,7 +102,17 @@ fn encode(scope: &str, boundary: String) -> String {
     )
 }
 
-pub async fn page(s: &State, p: &Principal, kind: &str, mut q: Page) -> ApiResult<Value> {
+pub async fn page(s: &State, p: &Principal, kind: &str, q: Page) -> ApiResult<Value> {
+    page_for(s, p, kind, q, false).await
+}
+
+async fn page_for(
+    s: &State,
+    p: &Principal,
+    kind: &str,
+    mut q: Page,
+    include_managed_installations: bool,
+) -> ApiResult<Value> {
     crate::auth_sessions::ensure_active(&s.pool, &p.id).await?;
     let limit = q.limit()?;
     let delegation = if let Some(id) = p.delegation_id {
@@ -133,7 +143,12 @@ pub async fn page(s: &State, p: &Principal, kind: &str, mut q: Page) -> ApiResul
     } else {
         None
     };
-    let scope = q.scope(kind, &format!("{}:{:?}", p.id, p.delegation_id));
+    let mut actor_scope = format!("{}:{:?}", p.id, p.delegation_id);
+    if let Some(purpose) = p.browser_purpose {
+        actor_scope.push(':');
+        actor_scope.push_str(purpose.as_str());
+    }
+    let scope = q.scope(kind, &actor_scope);
     let boundary = q.boundary(&scope)?;
     // A delegation never carries administrator authority, as in domain::admin and /me:
     // a delegated administrator lists only its own grants. App visibility in the
@@ -228,13 +243,23 @@ pub async fn page(s: &State, p: &Principal, kind: &str, mut q: Page) -> ApiResul
                         .collect::<Vec<_>>(),
                 ),
                 _ => {
-                    let action = if kind == "jobs" {
-                        AppAction::Observe
-                    } else {
-                        AppAction::Use
-                    };
-                    let (apps, envs) = facts.allowed_pairs(&apps, action);
-                    query.bind(apps).bind(envs)
+                    // Console app details include installations the user manages,
+                    // including disabled apps and prod without a use grant. Public
+                    // portal/non-browser installation lists retain their Use scope.
+                    let action =
+                        if kind == "jobs" || p.browser_purpose == Some(BrowserPurpose::Console) {
+                            AppAction::Observe
+                        } else {
+                            AppAction::Use
+                        };
+                    let (mut allowed_apps, mut allowed_envs) = facts.allowed_pairs(&apps, action);
+                    if kind == "installations" && include_managed_installations {
+                        let (managed_apps, managed_envs) =
+                            facts.allowed_pairs(&apps, AppAction::Observe);
+                        allowed_apps.extend(managed_apps);
+                        allowed_envs.extend(managed_envs);
+                    }
+                    query.bind(allowed_apps).bind(allowed_envs)
                 }
             };
             Some(facts)
@@ -323,7 +348,9 @@ pub async fn app(
             name: row.get("name"),
         })
         .ok_or_else(ApiError::not_found)?;
-    let installs = page(
+    // Published CLI app show/status uses this detail. Preserve its management
+    // visibility without granting prod Use; each returned row carries canOpen.
+    let installs = page_for(
         &s,
         &p,
         "installations",
@@ -331,6 +358,7 @@ pub async fn app(
             app_id: Some(id),
             ..Default::default()
         },
+        p.browser_purpose.is_none(),
     )
     .await?;
     let installs: InstallationPage = serde_json::from_value(installs)?;

@@ -9,9 +9,9 @@ use crate::{
 use anyhow::{Context, Result, ensure};
 use axum::{
     Json, Router,
-    body::{Body, to_bytes},
+    body::to_bytes,
     extract::{Path, Request, State},
-    http::{StatusCode, header},
+    http::header,
     middleware::{self, Next},
     response::{IntoResponse, Redirect, Response},
 };
@@ -837,11 +837,7 @@ async fn forward(
         .bytes()
         .await
         .map_err(|_| ApiError::unavailable("preview_response_failed"))?;
-    let mut out = Response::builder().status(StatusCode::from_u16(status.as_u16()).unwrap());
-    if let Some(ct) = ct {
-        out = out.header(header::CONTENT_TYPE, ct)
-    }
-    Ok(out.body(Body::from(body)).unwrap())
+    Ok(crate::app_response::api(status, ct, body))
 }
 
 #[cfg(test)]

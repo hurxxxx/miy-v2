@@ -106,8 +106,17 @@ impl Harness<'_> {
     fn browser(&self, method: Method, path: &str, browser: &Browser, csrf: bool) -> RequestBuilder {
         let request = self
             .request(method, path)
-            .header("cookie", format!("miy_development={}", browser.cookie))
-            .header("origin", &self.state.auth.origin);
+            .header(
+                "cookie",
+                format!(
+                    "{}={}",
+                    self.state
+                        .auth
+                        .cookie_name(auth::BrowserPurpose::Console, "development"),
+                    browser.cookie
+                ),
+            )
+            .header("origin", &self.state.auth.console_origin);
         if csrf {
             request.header("x-miy-csrf", &browser.csrf)
         } else {
@@ -127,7 +136,7 @@ impl Harness<'_> {
     async fn new_browser(&self, user: &str) -> Result<Browser> {
         let cookie = auth::random();
         let csrf = auth::random();
-        sqlx::query("INSERT INTO development_sessions(id_hash,user_id,csrf,expires_at) VALUES($1,$2,$3,now()+interval '8 hours')")
+        sqlx::query("INSERT INTO development_sessions(id_hash,user_id,csrf,expires_at,browser_purpose) VALUES($1,$2,$3,now()+interval '8 hours','console')")
             .bind(hash(&cookie)).bind(user).bind(&csrf).execute(&self.state.pool).await?;
         Ok(Browser {
             user: user.into(),
@@ -334,7 +343,16 @@ async fn approval_and_rotation(h: &Harness<'_>, passed: &mut Vec<String>) -> Res
     .await?;
     error(
         h.request(Method::POST, &path)
-            .header("cookie", format!("miy_development={}", browser.cookie))
+            .header(
+                "cookie",
+                format!(
+                    "{}={}",
+                    h.state
+                        .auth
+                        .cookie_name(auth::BrowserPurpose::Console, "development"),
+                    browser.cookie
+                ),
+            )
             .header("x-miy-csrf", &browser.csrf)
             .header("origin", "https://foreign.invalid")
             .json(&decision)
@@ -737,7 +755,7 @@ async fn permission_and_disable(h: &Harness<'_>, passed: &mut Vec<String>) -> Re
         .bind(&browser.user)
         .execute(&h.state.pool)
         .await?;
-    sqlx::query("INSERT INTO sessions(id_hash,user_id,access_token,refresh_token,csrf,expires_at) VALUES($1,$2,$3,$4,$5,now()+interval '1 hour')")
+    sqlx::query("INSERT INTO sessions(id_hash,user_id,access_token,refresh_token,csrf,expires_at,browser_purpose) VALUES($1,$2,$3,$4,$5,now()+interval '1 hour','console')")
         .bind(hash(auth::random())).bind(&browser.user).bind(auth::encrypt("synthetic-browser-access")?)
         .bind(auth::encrypt("synthetic-browser-refresh")?).bind(auth::random()).execute(&h.state.pool).await?;
     let approved = h.device().await?;
@@ -963,7 +981,12 @@ pub async fn run(state: &State, client: &Client, base: &str) -> Result<Vec<Strin
         ensure!(
             response.headers().get("set-cookie").is_some_and(|value| {
                 value.to_str().is_ok_and(|value| {
-                    value.starts_with("miy_login=;") && value.contains("Max-Age=0")
+                    value.starts_with(&format!(
+                        "{}=;",
+                        state
+                            .auth
+                            .cookie_name(auth::BrowserPurpose::Console, "login")
+                    )) && value.contains("Max-Age=0")
                 })
             }),
             "invalid callback retained its login cookie"

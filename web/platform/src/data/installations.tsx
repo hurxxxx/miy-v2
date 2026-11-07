@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { request, type Installation } from "@miy/sdk";
+import { useSurface } from "./session";
 
 /**
  * Installations visible to the signed-in user, as decided by the server.
@@ -14,7 +15,7 @@ export type InstallationsState<T = Installation> = {
 };
 
 /**
- * Administrator runtime view. The company switch blocks use, not runtime control, so a
+ * Runtime view for the user's manageable installations. The company switch blocks use, not runtime control, so a
  * disabled app stays here; `canOpen` is the server's current decision about opening it.
  */
 export type ManagedInstallation = Installation & { appDisabled: boolean; canOpen: boolean };
@@ -72,7 +73,8 @@ function usePolling(refresh: () => Promise<void>, intervalMs: number) {
 }
 
 export function InstallationsProvider({ children }: { children: ReactNode }) {
-  const value = useServerList<Installation>("/api/v1/installations");
+  const { surface } = useSurface();
+  const value = useServerList<Installation>(surface === "console" ? "/api/v1/runtime/installations" : "/api/v1/installations");
   return <InstallationsContext.Provider value={value}>{children}</InstallationsContext.Provider>;
 }
 
@@ -88,7 +90,7 @@ export function useInstallationPolling(intervalMs = 3000) {
   usePolling(refresh, intervalMs);
 }
 
-/** Administrator runtime list, loaded on mount and kept fresh while mounted. */
+/** Manageable runtime list, loaded on mount and kept fresh while mounted. */
 export function useManagedInstallations(intervalMs = 3000) {
   const value = useServerList<ManagedInstallation>("/api/v1/runtime/installations");
   const { refresh } = value;

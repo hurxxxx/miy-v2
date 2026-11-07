@@ -1,9 +1,11 @@
+import { browserUser, mockSurface } from "./browser-surface";
 import { test, expect } from "@playwright/test";
 import type { Installation } from "../packages/sdk/src/index";
 
 test("service health changes independently from process controls", async ({
   page,
 }, testInfo) => {
+  await mockSurface(page, "console");
   const app: Installation = {
     id: "test-installation",
     appId: "health-probe",
@@ -34,12 +36,12 @@ test("service health changes independently from process controls", async ({
     const url = new URL(route.request().url());
     const value =
       url.pathname === "/api/v1/me"
-        ? { id: "fixture", name: "검증 관리자", admin: true, csrf: "fixture" }
+        ? browserUser(route, { id: "fixture", name: "검증 관리자", admin: true, csrf: "fixture" })
         : url.pathname === "/api/v1/installations"
           ? [app]
           : url.pathname === "/api/v1/runtime/installations"
             ? [{ ...app, appDisabled: false, canOpen: true }]
-            : [];
+            : url.pathname === "/api/v1/apps" ? { apps: [], nextCursor: null } : [];
     await route.fulfill({ json: value });
   });
   await page.goto("/environments/dev");
@@ -95,6 +97,7 @@ test("service health changes independently from process controls", async ({
 
 // Load a real Federation module, with synthetic API data and no platform writes.
 async function appHarness(page: import("@playwright/test").Page) {
+  await mockSurface(page);
   const { resolve, sep } = await import("node:path");
   const remote = resolve(".local/evidence/runtime-health-ui/remote");
   const first: Installation = {
@@ -160,7 +163,7 @@ async function appHarness(page: import("@playwright/test").Page) {
     await route.fulfill({
       json:
         path === "/api/v1/me"
-          ? { id: "fixture", name: "검증 사용자", admin: true, csrf: "fixture" }
+          ? browserUser(route, { id: "fixture", name: "검증 사용자", admin: true, csrf: "fixture" })
           : path === "/api/v1/installations"
             ? apps
             : { title: "저장된 제목" },
@@ -195,8 +198,9 @@ test("health observations preserve SDK callbacks and unsaved input; release chan
     checkedAt: new Date().toISOString(),
   };
   await expect(
-    page.getByRole("status", { name: "앱 실행 및 서비스 상태" }),
-  ).toContainText("1/3회 실패");
+    page.getByRole("status", { name: "앱 이용 안내" }),
+  ).toContainText("앱의 응답을 확인하고 있습니다");
+  await expect(page.getByText(/컨테이너:|마지막 서비스 검사:|검사 결과:/)).toHaveCount(0);
   await expect(input).toHaveValue("미저장 내용");
   expect(apiCalls.length).toBe(reads);
   first.health = {
@@ -206,8 +210,8 @@ test("health observations preserve SDK callbacks and unsaved input; release chan
     checkedAt: new Date().toISOString(),
   };
   await expect(
-    page.getByRole("status", { name: "앱 실행 및 서비스 상태" }),
-  ).toContainText("서비스: 정상");
+    page.getByRole("status", { name: "앱 이용 안내" }),
+  ).toHaveCount(0);
   await expect(input).toHaveValue("미저장 내용");
   expect(apiCalls.length).toBe(reads);
   first.releaseId = "30000000-0000-4000-8000-000000000001";
@@ -251,11 +255,12 @@ for (const target of ["app", "environment"] as const) {
 }
 
 test("device approval displays origin/account and sends the typed code with CSRF exactly once", async ({ page }) => {
+  await mockSurface(page, "console");
   const id="11111111-2222-4333-8444-555555555555";
   const decisions: unknown[]=[];
   await page.route("**/api/**",async route=>{
     const path=new URL(route.request().url()).pathname;
-    if(path==="/api/v1/me") return route.fulfill({json:{id:"fixture-user",name:"승인할 계정",admin:false,csrf:"fixture-csrf"}});
+    if(path==="/api/v1/me") return route.fulfill({json:browserUser(route,{id:"fixture-user",name:"승인할 계정",admin:false,csrf:"fixture-csrf"})});
     if(path===`/api/v1/cli/devices/${id}`) return route.fulfill({json:{status:"pending",expiresIn:300}});
     if(path===`/api/v1/cli/devices/${id}/decision`){
       expect(route.request().headers()["x-miy-csrf"]).toBe("fixture-csrf");
@@ -277,13 +282,15 @@ test("device approval displays origin/account and sends the typed code with CSRF
 });
 
 test("production controls confirm the exact target and preserve the inspected expected state", async ({ page }) => {
+  await mockSurface(page, "console");
   const app={id:"aaaaaaaa-1111-4222-8333-bbbbbbbbbbbb",appId:"confirmed-app",name:"확인 대상",releaseId:"cccccccc-1111-4222-8333-dddddddddddd",environment:"prod",version:"1.0.0",dbStatus:"ready",runtimeStatus:"running",desiredState:"running",kind:"docker_app",canManage:true,health:{status:"healthy",consecutiveFailures:0,checkedAt:new Date().toISOString()},ui:{entry:"/unused",export:"./AppRoot",contractVersion:"miy.ui/v1alpha1"}};
   const expectedState={target:{appId:app.appId,environment:"prod"},installation:{installationId:app.id,generation:12}};
   const mutations: Record<string,unknown>[]=[];
   await page.route("**/api/**",async route=>{
     const path=new URL(route.request().url()).pathname;
-    if(path==="/api/v1/me")return route.fulfill({json:{id:"fixture",name:"관리자",admin:true,csrf:"fixture-csrf"}});
-    if(path==="/api/v1/installations")return route.fulfill({json:[app]});
+    if(path==="/api/v1/me")return route.fulfill({json:browserUser(route,{id:"fixture",name:"관리자",admin:true,csrf:"fixture-csrf"})});
+    if(path==="/api/v1/runtime/installations")return route.fulfill({json:[app]});
+    if(path==="/api/v1/apps")return route.fulfill({json:{apps:[],nextCursor:null}});
     if(path.endsWith("/runtime/preflight")){
       expect(route.request().postDataJSON()).toEqual({target:{appId:app.appId,environment:"prod"},action:"stop"});
       return route.fulfill({json:{canSubmit:true,expectedState,changes:["stop_runtime"]}});

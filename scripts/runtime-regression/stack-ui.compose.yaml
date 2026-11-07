@@ -2,6 +2,10 @@
 # Keeps the stack off the running platform's shared network and its platform build.
 services:
   proxy:
+    # No shared Docker network or wildcard Core listener is needed. The Caddy
+    # fixture binds only 127.0.0.1:18300 and :18305, never production 80/443.
+    environment:
+      MIY_PROXY_BIND: 127.0.0.1
     volumes:
       - ${MIY_STATE_DIR:?}/site:/srv/platform:ro
 networks:

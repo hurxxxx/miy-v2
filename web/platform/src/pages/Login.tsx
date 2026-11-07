@@ -1,31 +1,14 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { request } from "@miy/sdk";
 import { isCliApprovalPath } from "../lib/paths";
 import { LoginRecovery } from "./LoginRecovery";
-
-type LoginOptions = {
-  developmentLogin: boolean;
-  developmentOrigin: string;
-  accounts: { account: string; label: string; description: string }[];
-  oauthUrl: string;
-};
+import { useSurface } from "../data/session";
 
 export function Login() {
-  const [options, setOptions] = useState<LoginOptions>();
+  const options = useSurface();
   const [busy, setBusy] = useState<string>();
   const [error, setError] = useState("");
-  useEffect(() => {
-    request<LoginOptions>("/auth/options")
-      .then((options) =>
-        setOptions(
-          options.developmentLogin && options.developmentOrigin !== window.location.origin
-            ? { ...options, developmentLogin: false, accounts: [] }
-            : options,
-        ),
-      )
-      .catch(() => setError("로그인 정보를 불러올 수 없습니다."));
-  }, []);
   async function enter(account: string) {
     setBusy(account);
     setError("");

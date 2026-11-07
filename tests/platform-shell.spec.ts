@@ -1,8 +1,11 @@
+import { browserUser, mockSurface } from "./browser-surface";
 import { test, expect, type Page } from "@playwright/test";
 import type { Installation } from "../packages/sdk/src/index";
 
 // UI-1: the shell distinguishes loading, empty and failed reads with mocked APIs.
 // These checks cover presentation only; they are not evidence for server auth.
+test.beforeEach(async ({ page }) => { await mockSurface(page); });
+
 const user = { id: "fixture", name: "셸 검증 사용자", admin: false, csrf: "fixture" };
 const app: Installation = {
   id: "40000000-0000-4000-8000-000000000001",
@@ -31,7 +34,7 @@ async function mock(page: Page, handlers: { me: () => Reply; installations: () =
           ? handlers.installations()
           : { status: 200, json: { title: "저장된 제목" } };
     if (reply === "abort") return route.abort("connectionrefused");
-    await route.fulfill(reply);
+    await route.fulfill(path === "/api/v1/me" && reply.status === 200 ? { ...reply, json: browserUser(route, reply.json as object) } : reply);
   });
 }
 
@@ -78,7 +81,7 @@ test("installation polling settles when every response is slower than the pollin
   let completed = 0;
   await page.route("**/api/**", async (route) => {
     const path = new URL(route.request().url()).pathname;
-    if (path === "/api/v1/me") return route.fulfill({ json: user });
+    if (path === "/api/v1/me") return route.fulfill({ json: browserUser(route, user) });
     expect(path).toBe("/api/v1/installations");
     // A healthy but slow API must not leave the screen loading forever because
     // each three-second poll supersedes the previous request before it finishes.
@@ -115,7 +118,7 @@ test("an older installation response cannot restore an app after a newer permiss
   });
   await page.route("**/api/**", async (route) => {
     const path = new URL(route.request().url()).pathname;
-    if (path === "/api/v1/me") return route.fulfill({ json: user });
+    if (path === "/api/v1/me") return route.fulfill({ json: browserUser(route, user) });
     expect(path).toBe("/api/v1/installations");
     const id = ++reads;
     if (id === 2) {
@@ -204,13 +207,15 @@ test("remote apps mount inside a dedicated container, not as shell main content"
 });
 
 test("runtime confirmation is a keyboard modal: Escape cancels and focus returns", async ({ page }) => {
+  await mockSurface(page, "console");
   const prod = { ...app, environment: "prod" as const, canManage: true };
   const writes: string[] = [];
   await page.route("**/api/**", async (route) => {
     const path = new URL(route.request().url()).pathname;
     if (route.request().method() !== "GET") writes.push(path);
-    if (path === "/api/v1/me") return route.fulfill({ json: { ...user, admin: true } });
-    if (path === "/api/v1/installations") return route.fulfill({ json: [prod] });
+    if (path === "/api/v1/me") return route.fulfill({ json: browserUser(route, { ...user, admin: true }) });
+    if (path === "/api/v1/runtime/installations") return route.fulfill({ json: [prod] });
+    if (path === "/api/v1/apps") return route.fulfill({ json: { apps: [], nextCursor: null } });
     if (path.endsWith("/runtime/preflight")) return route.fulfill({ json: { canSubmit: true, expectedState: {}, changes: [] } });
     return route.fulfill({ status: 500, json: { error: { code: "unexpected" } } });
   });

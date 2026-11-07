@@ -102,7 +102,7 @@ pub async fn require(
 }
 
 /// Approvals are an installation's operating record ([`AppAction::Observe`]): readable
-/// with use, or with the management read that keeps a company-disabled prod app in the
+/// with management read that keeps a company-disabled prod app in the
 /// administrator's runtime management list. Returns the installation's current release.
 pub async fn observable(s: &State, p: &Principal, installation: Uuid) -> ApiResult<Uuid> {
     let row = sqlx::query("SELECT app_id,environment,release_id FROM installations WHERE id=$1")

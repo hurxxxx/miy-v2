@@ -36,6 +36,31 @@ def port(value):
     return value
 
 
+def endpoint_bind(value):
+    parsed = urllib.parse.urlsplit('//' + value)
+    if (not parsed.hostname or parsed.port is None or parsed.path or parsed.query
+            or parsed.fragment or parsed.username is not None or parsed.password is not None):
+        raise ValueError('Use a numeric HOST:PORT for each internal bind')
+    address = ipaddress.ip_address(parsed.hostname)
+    if not address.is_loopback:
+        raise ValueError('Internal Core binds must use loopback; public access goes through the fixed-purpose proxies')
+    port(parsed.port)
+    host = '[' + address.compressed + ']' if address.version == 6 else str(address)
+    return f'{host}:{parsed.port}'
+
+
+def sibling_origin(origin, profile, http_port, https_port):
+    parsed = urllib.parse.urlsplit(origin)
+    host = '[' + parsed.hostname + ']' if ':' in parsed.hostname else parsed.hostname
+    if profile == 'local':
+        number = https_port if parsed.scheme == 'https' else http_port
+    else:
+        current = parsed.port or (443 if parsed.scheme == 'https' else 80)
+        number = 9443 if parsed.scheme == 'https' and current in (443, 8443) else current + 1
+    port(number)
+    return f'{parsed.scheme}://{host}:{number}'
+
+
 def private_write(path, value):
     path.write_text(value, encoding='utf-8')
     path.chmod(0o600)
@@ -53,17 +78,22 @@ previous = json.loads(previous_file.read_text()) if previous_file.exists() else 
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--profile', choices=['local', 'server'], default=os.getenv('MIY_SERVER_PROFILE', previous.get('profile', 'local')))
 parser.add_argument('--origin', default=os.getenv('MIY_ORIGIN', previous.get('origin')))
+parser.add_argument('--console-origin', default=os.getenv('MIY_CONSOLE_ORIGIN'),
+                    help='Trusted console and identity origin; defaults to a separate port on the portal host')
 parser.add_argument('--allow-http', action='store_true', default=os.getenv('MIY_ALLOW_HTTP', '1' if previous.get('allowHttp') else '0') == '1')
 shared_login_env = os.getenv('MIY_SHARED_DEVELOPMENT_LOGIN')
 parser.add_argument('--shared-development-login', action=argparse.BooleanOptionalAction,
                     default=None if shared_login_env is None else shared_login_env == '1',
                     help='Enable shared development account buttons for the configured origin; defaults to disabled')
 parser.add_argument('--state-dir', type=Path, default=Path(os.getenv('MIY_STATE_DIR', str(ROOT / '.local'))))
-parser.add_argument('--bind', default=os.getenv('MIY_BIND_ADDR', previous.get('bind', '0.0.0.0:18080')))
+parser.add_argument('--bind', default=os.getenv('MIY_BIND_ADDR', previous.get('bind', '127.0.0.1:18080')))
+parser.add_argument('--console-bind', default=os.getenv('MIY_CONSOLE_BIND_ADDR', previous.get('consoleBind', '127.0.0.1:18081')))
 parser.add_argument('--postgres-port', type=port, default=port(os.getenv('MIY_POSTGRES_PORT', previous.get('postgresPort', 15432))))
 parser.add_argument('--identity-port', type=port, default=port(os.getenv('MIY_IDENTITY_PORT', previous.get('identityPort', 18181))))
 parser.add_argument('--http-port', type=port, default=port(os.getenv('MIY_HTTP_PORT', previous.get('httpPort', 18000))))
 parser.add_argument('--https-port', type=port, default=port(os.getenv('MIY_HTTPS_PORT', previous.get('httpsPort', 18443))))
+parser.add_argument('--console-http-port', type=port, default=port(os.getenv('MIY_CONSOLE_HTTP_PORT', previous.get('consoleHttpPort', 18001))))
+parser.add_argument('--console-https-port', type=port, default=port(os.getenv('MIY_CONSOLE_HTTPS_PORT', previous.get('consoleHttpsPort', 18444))))
 parser.add_argument('--proxy-bind', default=os.getenv('MIY_PROXY_BIND', previous.get('proxyBind', '127.0.0.1')))
 parser.add_argument('--ca-file', type=Path, default=os.getenv('MIY_CA_FILE') or None)
 args = parser.parse_args()
@@ -73,10 +103,17 @@ if args.profile == 'server' and not args.origin:
     parser.error('--profile server requires --origin URL or MIY_ORIGIN; no server address is assumed')
 try:
     origin = canonical_origin(args.origin or f'https://localhost:{args.https_port}', args.allow_http)
+    stored_console = previous.get('consoleOrigin') if origin == previous.get('origin') else None
+    console_origin = canonical_origin(args.console_origin or stored_console or sibling_origin(
+        origin, args.profile, args.console_http_port, args.console_https_port), args.allow_http)
+    if origin == console_origin or urllib.parse.urlsplit(origin).scheme != urllib.parse.urlsplit(console_origin).scheme:
+        raise ValueError('Portal and console must be distinct origins using the same HTTP/HTTPS transport')
+    args.bind = endpoint_bind(args.bind)
+    args.console_bind = endpoint_bind(args.console_bind)
+    if args.bind == args.console_bind:
+        raise ValueError('Portal and console internal binds must be distinct')
     bind = urllib.parse.urlsplit('//' + args.bind)
-    if not bind.hostname or bind.port is None or bind.path or bind.username is not None:
-        raise ValueError('Use --bind HOST:PORT')
-    port(bind.port)
+    console_bind = urllib.parse.urlsplit('//' + args.console_bind)
     ipaddress.ip_address(args.proxy_bind)
 except (ValueError, argparse.ArgumentTypeError) as error:
     parser.error(str(error))
@@ -99,17 +136,19 @@ ca_file = args.ca_file.resolve() if args.ca_file else (Path(previous_ca) if prev
 # to another address requires a fresh opt-in rather than exposing accounts there.
 shared_development_login = (args.shared_development_login if args.shared_development_login is not None
                             else previous.get('sharedDevelopmentLogin') is True and origin == previous.get('origin'))
-development_origin = (origin if shared_development_login else
-                      f'http://localhost:{args.http_port}' if args.profile == 'local' else origin)
+# Each browser flow uses its configured origin. Explicit loopback HTTP profiles
+# remain supported; the HTTPS profile no longer issues sessions through an alias.
+development_origin = origin
 try:
     is_local = parsed.hostname == 'localhost' or ipaddress.ip_address(parsed.hostname).is_loopback
 except ValueError:
     is_local = False
 development_login = shared_development_login or (args.profile == 'local' and is_local)
 config = {
-    'profile': args.profile, 'origin': origin, 'allowHttp': args.allow_http,
-    'bind': args.bind, 'postgresPort': args.postgres_port, 'identityPort': args.identity_port,
+    'profile': args.profile, 'origin': origin, 'consoleOrigin': console_origin, 'allowHttp': args.allow_http,
+    'bind': args.bind, 'consoleBind': args.console_bind, 'postgresPort': args.postgres_port, 'identityPort': args.identity_port,
     'httpPort': args.http_port, 'httpsPort': args.https_port, 'proxyBind': args.proxy_bind,
+    'consoleHttpPort': args.console_http_port, 'consoleHttpsPort': args.console_https_port,
     'identityAdminUrl': f'http://127.0.0.1:{args.identity_port}/identity',
     'developmentOrigin': development_origin, 'developmentLogin': development_login,
     'sharedDevelopmentLogin': shared_development_login,
@@ -119,22 +158,29 @@ config = {
     'cliInstallerDir': os.getenv('MIY_CLI_INSTALLER_DIR', previous.get('cliInstallerDir', str(LOCAL / 'cli-installers'))),
 }
 private_write(LOCAL / 'server.json', json.dumps(config, indent=2) + '\n')
-tls_host = '[' + parsed.hostname + ']' if ':' in parsed.hostname else parsed.hostname
 private_write(LOCAL / 'compose.env', env_text({
     'MIY_PG_ADMIN_PASSWORD': s['pg_admin'], 'MIY_IDENTITY_PASSWORD': s['identity'],
     'MIY_IDENTITY_ADMIN_PASSWORD': s['identity_admin'],
-    'MIY_ORIGIN': origin, 'MIY_STATE_DIR': LOCAL, 'MIY_POSTGRES_PORT': args.postgres_port,
+    'MIY_ORIGIN': origin, 'MIY_CONSOLE_ORIGIN': console_origin, 'MIY_STATE_DIR': LOCAL, 'MIY_POSTGRES_PORT': args.postgres_port,
     'MIY_IDENTITY_PORT': args.identity_port, 'MIY_HTTP_PORT': args.http_port,
     'MIY_HTTPS_PORT': args.https_port, 'MIY_PROXY_BIND': args.proxy_bind,
-    'MIY_CORE_UPSTREAM': f'host.docker.internal:{bind.port}',
-    'MIY_PROXY_TLS_SITE': f'https://{tls_host}:18443',
+    'MIY_CONSOLE_HTTP_PORT': args.console_http_port, 'MIY_CONSOLE_HTTPS_PORT': args.console_https_port,
+    'MIY_CORE_UPSTREAM': args.bind, 'MIY_CONSOLE_CORE_UPSTREAM': args.console_bind,
+    'MIY_PORTAL_HOST': urllib.parse.urlsplit(origin).netloc,
+    'MIY_CONSOLE_HOST': urllib.parse.urlsplit(console_origin).netloc,
+    'MIY_PORTAL_PORT': parsed.port or (443 if parsed.scheme == 'https' else 80),
+    'MIY_CONSOLE_PORT': urllib.parse.urlsplit(console_origin).port or (443 if parsed.scheme == 'https' else 80),
+    'MIY_PUBLIC_SCHEME': parsed.scheme,
+    'MIY_IDENTITY_UPSTREAM': f'127.0.0.1:{args.identity_port}',
     'MIY_CADDY_CONFIG': ROOT / 'ops' / ('Caddyfile' if local_tls else 'Caddyfile.http'),
 }))
 runtime = {
     'DATABASE_URL': f"postgres://miy_core:{s['core']}@127.0.0.1:{args.postgres_port}/miy_core",
     'PROVISION_DATABASE_URL': f"postgres://postgres:{s['pg_admin']}@127.0.0.1:{args.postgres_port}/postgres",
-    'MIY_ORIGIN': origin, 'MIY_ISSUER': origin + '/identity/realms/miy',
+    'MIY_ORIGIN': origin, 'MIY_CONSOLE_ORIGIN': console_origin,
+    'MIY_ISSUER': console_origin + '/identity/realms/miy',
     'MIY_ALLOW_HTTP': '1' if args.allow_http else '0', 'MIY_BIND_ADDR': args.bind,
+    'MIY_CONSOLE_BIND_ADDR': args.console_bind,
     'MIY_DEV_LOGIN': 'shared' if shared_development_login else '1' if development_login else '0',
     'MIY_DEV_ORIGIN': development_origin,
     'MIY_WEB_SECRET': s['web_client'], 'MIY_RESOURCE_SECRET': s['resource_client'],
@@ -160,7 +206,7 @@ GRANT CONNECT ON DATABASE miy_identity TO miy_identity;
 audience = {'name':'audience','protocol':'openid-connect','protocolMapper':'oidc-audience-mapper','config':{'included.custom.audience':origin+'/mcp','access.token.claim':'true','id.token.claim':'false'}}
 subject = {'name':'subject','protocol':'openid-connect','protocolMapper':'oidc-sub-mapper','config':{'access.token.claim':'true','introspection.token.claim':'true'}}
 clients = [
-    {'clientId':'miy-web','secret':s['web_client'],'publicClient':False,'standardFlowEnabled':True,'redirectUris':[origin+'/auth/callback'],'webOrigins':[origin],'attributes':{'pkce.code.challenge.method':'S256','post.logout.redirect.uris':origin+'/'},'protocolMappers':[{'name':'web-audience','protocol':'openid-connect','protocolMapper':'oidc-audience-mapper','config':{'included.custom.audience':'miy-web','access.token.claim':'true','id.token.claim':'false'}}]},
+    {'clientId':'miy-web','secret':s['web_client'],'publicClient':False,'standardFlowEnabled':True,'redirectUris':[value+'/auth/callback' for value in [origin,console_origin]],'webOrigins':[origin,console_origin],'attributes':{'pkce.code.challenge.method':'S256','post.logout.redirect.uris':'##'.join(value+'/' for value in [origin,console_origin])},'protocolMappers':[{'name':'web-audience','protocol':'openid-connect','protocolMapper':'oidc-audience-mapper','config':{'included.custom.audience':'miy-web','access.token.claim':'true','id.token.claim':'false'}}]},
     {'clientId':'miy-codex','publicClient':True,'standardFlowEnabled':True,'directAccessGrantsEnabled':False,'redirectUris':['http://127.0.0.1:18555/callback'],'attributes':{'pkce.code.challenge.method':'S256'},'protocolMappers':[audience]},
     {'clientId':origin+'/mcp','secret':s['resource_client'],'publicClient':False,'standardFlowEnabled':False,'serviceAccountsEnabled':False,'attributes':{'resource_url':origin+'/mcp'}},
 ]

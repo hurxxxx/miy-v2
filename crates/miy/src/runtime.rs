@@ -13,9 +13,9 @@ use crate::{
 use anyhow::{Context, Result};
 use axum::{
     Extension,
-    body::{Body, to_bytes},
+    body::to_bytes,
     extract::{Path, Request, State as S},
-    http::{Method, StatusCode, header},
+    http::{Method, header},
     response::Response,
 };
 use serde::{Deserialize, Serialize};
@@ -1174,14 +1174,7 @@ pub async fn proxy(
         .bytes()
         .await
         .map_err(|_| ApiError::unavailable("app_response_failed"))?;
-    let mut out = Response::builder().status(StatusCode::from_u16(status.as_u16()).unwrap());
-    if let Some(ct) = content_type {
-        out = out.header(header::CONTENT_TYPE, ct);
-    }
-    Ok(out
-        .header(header::CACHE_CONTROL, "no-store")
-        .body(Body::from(bytes))
-        .unwrap())
+    Ok(crate::app_response::api(status, content_type, bytes))
 }
 
 #[cfg(test)]

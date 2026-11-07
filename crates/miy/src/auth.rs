@@ -12,18 +12,36 @@ use axum::http::HeaderMap;
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use chrono::{Duration, Utc};
 use jsonwebtoken::{Algorithm, DecodingKey, Validation, jwk::JwkSet};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use sqlx::Row;
 use url::Url;
 
 #[derive(Clone, Debug)]
 pub struct Principal {
+    pub browser_purpose: Option<BrowserPurpose>,
     pub cli_session_id: Option<uuid::Uuid>,
     pub delegation_id: Option<uuid::Uuid>,
     pub id: String,
     pub scopes: Vec<String>,
     pub csrf: Option<String>,
     pub development: bool,
+}
+
+/// Set by a fixed core listener, never by Host, forwarded headers or app input.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Deserialize, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum BrowserPurpose {
+    Portal,
+    Console,
+}
+
+impl BrowserPurpose {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Portal => "portal",
+            Self::Console => "console",
+        }
+    }
 }
 #[derive(Deserialize)]
 struct Discovery {
@@ -57,6 +75,7 @@ struct Introspection {
 }
 pub struct Auth {
     pub origin: String,
+    pub console_origin: String,
     pub issuer: String,
     pub development_origin: String,
     pub development_login: bool,
@@ -93,7 +112,26 @@ impl Auth {
     pub async fn new() -> anyhow::Result<Self> {
         let allow_http = std::env::var("MIY_ALLOW_HTTP").as_deref() == Ok("1");
         let origin = crate::server_origin::validate(&std::env::var("MIY_ORIGIN")?, allow_http)?;
+        let console_origin = crate::server_origin::validate(
+            &std::env::var("MIY_CONSOLE_ORIGIN").map_err(|_| {
+                anyhow::anyhow!("MIY_CONSOLE_ORIGIN is required for the management listener")
+            })?,
+            allow_http,
+        )?;
+        anyhow::ensure!(
+            origin != console_origin,
+            "portal_and_console_origins_must_differ"
+        );
+        anyhow::ensure!(
+            Url::parse(&origin)?.scheme() == Url::parse(&console_origin)?.scheme(),
+            "portal_and_console_transport_must_match"
+        );
         let issuer = crate::server_origin::issuer(&std::env::var("MIY_ISSUER")?, allow_http)?;
+        let identity_origin = Url::parse(&issuer)?.origin();
+        anyhow::ensure!(
+            identity_origin != Url::parse(&origin)?.origin(),
+            "identity_must_not_share_the_application_portal_origin"
+        );
         let mut builder = reqwest::Client::builder()
             .redirect(reqwest::redirect::Policy::none())
             .timeout(std::time::Duration::from_secs(10))
@@ -123,6 +161,7 @@ impl Auth {
                 endpoint.username().is_empty()
                     && endpoint.password().is_none()
                     && endpoint.fragment().is_none()
+                    && endpoint.origin() == identity_origin
                     && (endpoint.scheme() == "https"
                         || (issuer.starts_with("http://") && endpoint.scheme() == "http")),
                 "invalid_identity_endpoint_transport"
@@ -141,9 +180,14 @@ impl Auth {
             std::env::var("MIY_DEV_LOGIN").ok().as_deref(),
             &origin,
             &development_origin,
+        ) && development_profile(
+            std::env::var("MIY_DEV_LOGIN").ok().as_deref(),
+            &console_origin,
+            &console_origin,
         );
         Ok(Self {
             origin,
+            console_origin,
             development_origin,
             development_login,
             issuer,
@@ -154,8 +198,28 @@ impl Auth {
             resource_secret: std::env::var("MIY_RESOURCE_SECRET")?,
         })
     }
-    pub fn cookie(&self, name: &str, value: &str, path: &str, max_age: u32) -> String {
-        crate::server_origin::cookie(&self.origin, name, value, path, max_age)
+    pub fn browser_origin(&self, purpose: BrowserPurpose) -> &str {
+        match purpose {
+            BrowserPurpose::Portal => &self.origin,
+            BrowserPurpose::Console => &self.console_origin,
+        }
+    }
+    pub fn cookie_name(&self, purpose: BrowserPurpose, kind: &str) -> String {
+        let prefix = if self.browser_origin(purpose).starts_with("https://") {
+            "__Host-"
+        } else {
+            ""
+        };
+        format!("{prefix}miy_{}_{kind}", purpose.as_str())
+    }
+    pub fn cookie(&self, purpose: BrowserPurpose, kind: &str, value: &str, max_age: u32) -> String {
+        crate::server_origin::cookie(
+            self.browser_origin(purpose),
+            &self.cookie_name(purpose, kind),
+            value,
+            "/",
+            max_age,
+        )
     }
     fn claims(&self, token: &str, audience: &str) -> ApiResult<Claims> {
         let header = jsonwebtoken::decode_header(token).map_err(|_| ApiError::unauthorized())?;
@@ -216,6 +280,7 @@ impl Auth {
             return Err(ApiError::forbidden());
         }
         Ok(Principal {
+            browser_purpose: None,
             cli_session_id: None,
             delegation_id: None,
             id: c.sub,
@@ -224,18 +289,25 @@ impl Auth {
             development: false,
         })
     }
-    pub async fn login(&self, state: &State) -> ApiResult<(String, String)> {
+    pub async fn login(
+        &self,
+        state: &State,
+        purpose: BrowserPurpose,
+    ) -> ApiResult<(String, String)> {
         let value = random();
         let verifier = random();
         let nonce = random();
         sqlx::query("DELETE FROM login_flows WHERE expires_at < now()")
             .execute(&state.pool)
             .await?;
-        sqlx::query("INSERT INTO login_flows VALUES($1,$2,$3,$4)")
+        let callback = format!("{}/auth/callback", self.browser_origin(purpose));
+        sqlx::query("INSERT INTO login_flows(state_hash,verifier,nonce,expires_at,browser_purpose,callback_uri) VALUES($1,$2,$3,$4,$5,$6)")
             .bind(hash(&value))
             .bind(&verifier)
             .bind(&nonce)
             .bind(Utc::now() + Duration::minutes(5))
+            .bind(purpose.as_str())
+            .bind(&callback)
             .execute(&state.pool)
             .await?;
         let mut url = Url::parse(&self.discovery.authorization_endpoint)?;
@@ -244,7 +316,7 @@ impl Auth {
             ("client_id", "miy-web"),
             ("response_type", "code"),
             ("scope", "openid miy.read miy.dev"),
-            ("redirect_uri", &format!("{}/auth/callback", self.origin)),
+            ("redirect_uri", &callback),
             ("state", &value),
             ("nonce", &nonce),
             ("code_challenge", &challenge),
@@ -255,21 +327,24 @@ impl Auth {
     pub async fn callback(
         &self,
         state: &State,
+        purpose: BrowserPurpose,
         code: &str,
         value: &str,
         headers: &HeaderMap,
     ) -> ApiResult<String> {
-        if cookie(headers, "miy_login").as_deref() != Some(value) {
+        if cookie(headers, &self.cookie_name(purpose, "login")).as_deref() != Some(value) {
             return Err(ApiError::unauthorized());
         }
-        let row=sqlx::query("DELETE FROM login_flows WHERE state_hash=$1 AND expires_at>now() RETURNING verifier,nonce")
-            .bind(hash(value)).fetch_optional(&state.pool).await?.ok_or_else(ApiError::unauthorized)?;
+        let callback = format!("{}/auth/callback", self.browser_origin(purpose));
+        let row=sqlx::query("DELETE FROM login_flows WHERE state_hash=$1 AND expires_at>now() AND browser_purpose=$2 AND callback_uri=$3 RETURNING verifier,nonce")
+            .bind(hash(value)).bind(purpose.as_str()).bind(&callback)
+            .fetch_optional(&state.pool).await?.ok_or_else(ApiError::unauthorized)?;
         let verifier: String = row.get("verifier");
         let tokens = self
             .exchange(&[
                 ("grant_type", "authorization_code"),
                 ("code", code),
-                ("redirect_uri", &format!("{}/auth/callback", self.origin)),
+                ("redirect_uri", &callback),
                 ("code_verifier", &verifier),
             ])
             .await?;
@@ -293,9 +368,10 @@ impl Auth {
             return Err(ApiError::forbidden());
         }
         let session = random();
-        sqlx::query("INSERT INTO sessions(id_hash,user_id,access_token,refresh_token,csrf,expires_at) VALUES($1,$2,$3,$4,$5,$6)")
+        sqlx::query("INSERT INTO sessions(id_hash,user_id,access_token,refresh_token,csrf,expires_at,browser_purpose) VALUES($1,$2,$3,$4,$5,$6,$7)")
             .bind(hash(&session)).bind(id.sub).bind(encrypt(&tokens.access_token)?).bind(encrypt(tokens.refresh_token.as_deref().unwrap_or(""))?)
-            .bind(random()).bind(Utc::now()+Duration::seconds(tokens.expires_in)).execute(&mut *tx).await?;
+            .bind(random()).bind(Utc::now()+Duration::seconds(tokens.expires_in)).bind(purpose.as_str())
+            .execute(&mut *tx).await?;
         tx.commit().await?;
         Ok(session)
     }
@@ -317,13 +393,28 @@ impl Auth {
         }
         r.json().await.map_err(|_| ApiError::unauthorized())
     }
-    pub async fn session(&self, state: &State, headers: &HeaderMap) -> ApiResult<Principal> {
+    pub async fn session(
+        &self,
+        state: &State,
+        headers: &HeaderMap,
+        purpose: BrowserPurpose,
+    ) -> ApiResult<Principal> {
+        if !crate::identity::unambiguous_cookies(
+            headers,
+            &[
+                &self.cookie_name(purpose, "development"),
+                &self.cookie_name(purpose, "session"),
+            ],
+        ) {
+            return Err(ApiError::unauthorized());
+        }
         if self.development_login
-            && let Some(session) = cookie(headers, "miy_development")
+            && let Some(session) = cookie(headers, &self.cookie_name(purpose, "development"))
         {
-            let row = sqlx::query("SELECT user_id,csrf FROM development_sessions WHERE id_hash=$1 AND expires_at>now()")
-                .bind(hash(session)).fetch_optional(&state.pool).await?.ok_or_else(ApiError::unauthorized)?;
+            let row = sqlx::query("SELECT user_id,csrf FROM development_sessions WHERE id_hash=$1 AND expires_at>now() AND browser_purpose=$2")
+                .bind(hash(session)).bind(purpose.as_str()).fetch_optional(&state.pool).await?.ok_or_else(ApiError::unauthorized)?;
             return Ok(Principal {
+                browser_purpose: Some(purpose),
                 cli_session_id: None,
                 delegation_id: None,
                 id: row.get("user_id"),
@@ -332,12 +423,16 @@ impl Auth {
                 development: true,
             });
         }
-        let session = cookie(headers, "miy_session").ok_or_else(ApiError::unauthorized)?;
-        let owner: String = sqlx::query_scalar("SELECT user_id FROM sessions WHERE id_hash=$1")
-            .bind(hash(&session))
-            .fetch_optional(&state.pool)
-            .await?
+        let session = cookie(headers, &self.cookie_name(purpose, "session"))
             .ok_or_else(ApiError::unauthorized)?;
+        let owner: String = sqlx::query_scalar(
+            "SELECT user_id FROM sessions WHERE id_hash=$1 AND browser_purpose=$2",
+        )
+        .bind(hash(&session))
+        .bind(purpose.as_str())
+        .fetch_optional(&state.pool)
+        .await?
+        .ok_or_else(ApiError::unauthorized)?;
         let mut tx = state.pool.begin().await?;
         let enabled: Option<bool> =
             sqlx::query_scalar("SELECT enabled FROM users WHERE id=$1 FOR SHARE")
@@ -347,8 +442,8 @@ impl Auth {
         if enabled != Some(true) {
             return Err(ApiError::unauthorized());
         }
-        let row=sqlx::query("SELECT * FROM sessions WHERE id_hash=$1 AND created_at>now()-interval '8 hours' FOR UPDATE")
-            .bind(hash(&session)).fetch_optional(&mut *tx).await?.ok_or_else(ApiError::unauthorized)?;
+        let row=sqlx::query("SELECT * FROM sessions WHERE id_hash=$1 AND browser_purpose=$2 AND created_at>now()-interval '8 hours' FOR UPDATE")
+            .bind(hash(&session)).bind(purpose.as_str()).fetch_optional(&mut *tx).await?.ok_or_else(ApiError::unauthorized)?;
         let mut access = decrypt(row.get("access_token"))?;
         if row.get::<chrono::DateTime<Utc>, _>("expires_at") < Utc::now() + Duration::seconds(5) {
             let refresh = decrypt(row.get("refresh_token"))?;
@@ -367,6 +462,7 @@ impl Auth {
         }
         tx.commit().await?;
         Ok(Principal {
+            browser_purpose: Some(purpose),
             cli_session_id: None,
             delegation_id: None,
             id,
@@ -375,38 +471,60 @@ impl Auth {
             development: false,
         })
     }
-    pub async fn logout(&self, state: &State, headers: &HeaderMap) -> ApiResult<String> {
-        let development = self.development_login && cookie(headers, "miy_development").is_some();
-        if let Some(session) = cookie(headers, "miy_development") {
-            sqlx::query("DELETE FROM development_sessions WHERE id_hash=$1")
+    pub async fn logout(
+        &self,
+        state: &State,
+        headers: &HeaderMap,
+        purpose: BrowserPurpose,
+    ) -> ApiResult<String> {
+        let development = self.development_login
+            && cookie(headers, &self.cookie_name(purpose, "development")).is_some();
+        if let Some(session) = cookie(headers, &self.cookie_name(purpose, "development")) {
+            sqlx::query("DELETE FROM development_sessions WHERE id_hash=$1 AND browser_purpose=$2")
                 .bind(hash(session))
+                .bind(purpose.as_str())
                 .execute(&state.pool)
                 .await?;
         }
-        if let Some(session) = cookie(headers, "miy_session") {
-            sqlx::query("DELETE FROM sessions WHERE id_hash=$1")
+        if let Some(session) = cookie(headers, &self.cookie_name(purpose, "session")) {
+            sqlx::query("DELETE FROM sessions WHERE id_hash=$1 AND browser_purpose=$2")
                 .bind(hash(session))
+                .bind(purpose.as_str())
                 .execute(&state.pool)
                 .await?;
         }
         if development {
-            return Ok(format!("{}/", self.development_origin));
+            return Ok(format!("{}/", self.browser_origin(purpose)));
         }
         let mut url = Url::parse(&self.discovery.end_session_endpoint)?;
         url.query_pairs_mut().extend_pairs([
             ("client_id", "miy-web"),
-            ("post_logout_redirect_uri", &format!("{}/", self.origin)),
+            (
+                "post_logout_redirect_uri",
+                &format!("{}/", self.browser_origin(purpose)),
+            ),
         ]);
         Ok(url.into())
     }
-    pub fn allowed_origin(&self, headers: &HeaderMap, development: bool) -> bool {
+    pub fn allowed_origin(
+        &self,
+        headers: &HeaderMap,
+        development: bool,
+        purpose: BrowserPurpose,
+    ) -> bool {
         let origin = headers.get("origin").and_then(|v| v.to_str().ok());
-        origin == Some(self.origin.as_str())
+        origin == Some(self.browser_origin(purpose))
             || (development
+                && purpose == BrowserPurpose::Portal
                 && self.development_login
                 && origin == Some(self.development_origin.as_str()))
     }
-    pub async fn development_session(&self, state: &State, account: &str) -> ApiResult<String> {
+    pub async fn development_session(
+        &self,
+        state: &State,
+        account: &str,
+        purpose: BrowserPurpose,
+    ) -> ApiResult<String> {
         if !self.development_login {
             return Err(ApiError::not_found());
         }
@@ -424,11 +542,12 @@ impl Auth {
                 .await?
                 .ok_or_else(ApiError::unauthorized)?;
         let session = random();
-        sqlx::query("INSERT INTO development_sessions VALUES($1,$2,$3,$4)")
+        sqlx::query("INSERT INTO development_sessions(id_hash,user_id,csrf,expires_at,browser_purpose) VALUES($1,$2,$3,$4,$5)")
             .bind(hash(&session))
             .bind(&id)
             .bind(random())
             .bind(Utc::now() + Duration::hours(8))
+            .bind(purpose.as_str())
             .execute(&mut *tx)
             .await?;
         tx.commit().await?;

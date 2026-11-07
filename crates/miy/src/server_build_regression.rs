@@ -306,8 +306,8 @@ async fn permissions(h: &Harness, actor: &Actor) -> Result<()> {
         .send()
         .await?;
     ensure!(
-        unauth.status().as_u16() == 401,
-        "anonymous source upload was accepted"
+        unauth.status().as_u16() == 403,
+        "portal upload without a non-browser credential bypassed its purpose boundary"
     );
     let viewer = h.actor("use").await?;
     error(
@@ -672,6 +672,7 @@ async fn durable_server_build_api() -> Result<()> {
     let oidc = tokio::spawn(async move { axum::serve(identity, router).await });
     unsafe {
         std::env::set_var("MIY_ORIGIN", &origin);
+        std::env::set_var("MIY_CONSOLE_ORIGIN", &issuer);
         std::env::set_var("MIY_ISSUER", &issuer);
         std::env::set_var("MIY_DEV_LOGIN", "0");
     }

@@ -216,7 +216,9 @@ pub async fn device_status(
     Extension(principal): Extension<Principal>,
     Path(id): Path<Uuid>,
 ) -> ApiResult<Response> {
-    if principal.csrf.is_none() {
+    if principal.csrf.is_none()
+        || principal.browser_purpose != Some(crate::auth::BrowserPurpose::Console)
+    {
         return Err(ApiError::forbidden());
     }
     ensure_active(&state.pool, &principal.id).await?;
@@ -255,7 +257,9 @@ pub async fn approve(
     Path(id): Path<Uuid>,
     Json(request): Json<Approval>,
 ) -> ApiResult<Response> {
-    if principal.csrf.is_none() {
+    if principal.csrf.is_none()
+        || principal.browser_purpose != Some(crate::auth::BrowserPurpose::Console)
+    {
         return Err(ApiError::forbidden());
     }
     ensure_active(&state.pool, &principal.id).await?;
@@ -500,6 +504,7 @@ pub async fn principal(state: &State, token: &str) -> ApiResult<Principal> {
         crate::delegations::active(&state.pool, row.get("user_id"), id).await?;
     }
     Ok(Principal {
+        browser_purpose: None,
         cli_session_id: Some(row.get("cli_session_id")),
         delegation_id: row.get("delegation_id"),
         id: row.get("user_id"),

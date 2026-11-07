@@ -1,0 +1,136 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-11-06",
+  "source": {
+    "baseCommit": "22c219de570d162646f6bcb9d31b712a46c83e69",
+    "workingTreeDirty": true,
+    "description": "Documentation consolidation on top of the uncommitted boundary-design worktree; no product implementation.",
+    "files": {
+      "AGENTS.md": "6066a903d20ef5a6e6bc0c9e41bdde4af6fa83b469b2956fb3640b4db5de9a1c",
+      "README.md": "006f337890710546d9ec40108894bd80e3c9a75bdf586cabeb1210c57f24e256",
+      "docs/APP-BOUNDARIES.md": "32155284f27cb39bf3d461c3a65dc3d0dd68c12bf6997cad7b69160e909b6ad1",
+      "docs/CHECKS.md": "cba2dcde034dae5f2bb540c57e01dc4114acd7f2883fe0f895e5bc9929b1c57d",
+      "docs/CLI-IMPLEMENTATION-PLAN.md": "b0ddaa9c731f9e224e4e684b55ef21f53019c058ece662a03199f64df9d151f5",
+      "docs/CLI-RELEASE.md": "e2d712b1dff26d5fb9e7e62c952c9387bef45c898c272c32c4e7829b7e09f22e",
+      "docs/CLI-VALIDATION-MATRIX.md": "4509b988d7384c9dc59351720fa790519e17eeec1cf94f99ded518453dc396ae",
+      "docs/CORE-HARDENING.md": "4f01f0370497fc0df2d25b4b76b59e2ab3956219282bec6e86e0834c6e3306b2",
+      "docs/CORE-PERMISSIONS.md": "500bc23367f99459ca7f9ecf43838c50aa040c5420eae9bac1bb109bfb40f539",
+      "docs/DEVELOPMENT.md": "f53f2b8caab8f390d8ba7e99de104d52256965d45b6f13a5531b4638e5508b98",
+      "docs/IMPLEMENTATION-RESULTS.md": "47c1a17eb2b48f346640a16c5a1ae5e5689d954a9cb39f9bcc7e21fc66e0049f",
+      "docs/IMPLEMENTATION.md": "ba21cf8865779db0ef8a60d682763db70dabd449eaf872f3c4a173cd3dfcfb12",
+      "docs/PLAN.md": "415e3f89e19245db8098ce121916c37f80fef683075a14537adb801aa15f5920",
+      "docs/PRD.md": "a592488696f3eec23e72c41ef5834b8f2225556f11c02cd3c24bd1ee0d7ad564",
+      "docs/README.md": "015b3dd1e1623f0e3d18137fb13646d38bf513c418ba4716d8e5ccedb3a11c18",
+      "docs/RESEARCH.md": "506d3d3ca60965a189c442c6c6ef60a2ca03ec15c47f836ea49f5a100d2d7480",
+      "docs/RUNNING.md": "88d304a2d6c6356537478ddfdae70feb8df60f539d77e70dbb11abc3595280d9",
+      "docs/SERVER-OPERATIONS.md": "e50111a435acff9d9d146f5e99409560b7e3ce79def71d6a18d212f20d760ef8",
+      "docs/STACK.md": "76709da32e681986f5e2ec86189d441a777577d446c228caa304af5cc7aa6115",
+      "docs/UIUX-MIGRATION.md": "d552185aee6f40bc4018081ad82b2ce62ff32ec0712cedb8cf56ba759b9e06f5",
+      "docs/V1-ADOPTION.md": "180ab8743c578c38016dd15d3bd648005aeec12b71615f4776d70b209c40dcbd",
+      "docs/VALIDATION.md": "c8ac538695d64985b6bba9620a20b8082ec4d7a7dcdb481ba307b403a63b79aa",
+      "docs/WINDOWS-VALIDATION.md": "f27a4cb518addcd5daeac66eb671a1b7be7957defcae9b11013959cacd0b63bc"
+    }
+  },
+  "status": "PASS",
+  "scope": "Consolidate boundary design, BV-01..14 acceptance, inherited requirements and evidence rules into APP-BOUNDARIES; retain CORE-PERMISSIONS and PLAN ownership; preserve legacy anchors.",
+  "previousDocumentationRecord": "app-boundaries-docs-2026-11-06-validation.json",
+  "checks": [
+    {
+      "id": "tracked-links",
+      "command": "python3 scripts/check-doc-links.py",
+      "status": "PASS",
+      "exitCode": 0,
+      "output": "PASS 592 relative links in 53 tracked Markdown files"
+    },
+    {
+      "id": "all-worktree-links",
+      "command": "python3 - <<'PY'\nimport importlib.util, subprocess\nspec = importlib.util.spec_from_file_location(\"doclinks\", \"scripts/check-doc-links.py\")\nm = importlib.util.module_from_spec(spec)\nspec.loader.exec_module(m)\nrun = subprocess.run\nfiles = sorted(set(run([\"git\", \"ls-files\", \"--cached\", \"--others\", \"--exclude-standard\", \"--\", \"*.md\"], check=True, capture_output=True, text=True).stdout.splitlines()))\ndef including_new(args, **kwargs):\n    if args == [\"git\", \"ls-files\", \"*.md\"]:\n        return subprocess.CompletedProcess(args, 0, \"\\n\".join(files), \"\")\n    return run(args, **kwargs)\nm.subprocess.run = including_new\nraise SystemExit(m.main())\nPY",
+      "status": "PASS",
+      "exitCode": 0,
+      "output": "PASS 691 relative links in 60 tracked Markdown files",
+      "scope": "Tracked and new non-ignored Markdown; checker exclusions for generated app guidance are retained. The checker labels this supplied list as tracked."
+    },
+    {
+      "id": "diff-format",
+      "command": "git diff --check",
+      "status": "PASS",
+      "exitCode": 0,
+      "output": ""
+    },
+    {
+      "id": "consolidation-integrity",
+      "command": "python3 - <<'PY'\nimport hashlib, importlib.util, json, re, subprocess\nfrom pathlib import Path\ntmp=Path(\"/tmp/miy-boundary-docs-consolidation-64z2sjfo\")\nbaseline=json.loads((tmp/\"baseline.json\").read_text())\nold=(tmp/\"VALIDATION.md\").read_text()\napp=Path(\"docs/APP-BOUNDARIES.md\").read_text()\nstub=Path(\"docs/VALIDATION.md\").read_text()\nbefore_app=(tmp/\"APP-BOUNDARIES.md\").read_text()\ndef section(s,name):\n    return s.split(\"## \"+name+\"\\n\",1)[1].split(\"\\n## \",1)[0]\nbv=lambda s: [l for l in s.splitlines() if re.match(r\"^\\| BV-\\d\\d \\|\",l)]\nold_bv=bv(old);new_bv=bv(app)\nassert len(old_bv)==14 and old_bv==new_bv\nassert not bv(stub)\nrows=lambda s: [l for l in section(s,\"기존 검증의 승계\").splitlines() if l.startswith(\"|\")][2:]\nassert len(rows(old))==11 and rows(old)==rows(app)\nassert section(old,\"경계 인수\")==section(app,\"경계 인수\").split(\"아래 BV ID와 통과 조건은 AB-01~08의 구현 완료를 판정하며, 문서 통합은 제품 구현·운영 검증이 아니다.\\n\",1)[1]\nevidence=section(old,\"증거와 판정\").strip().split(\"\\n\\n\",1)[0]\nassert evidence in app\nassert re.findall(r\"```mermaid\\n(.*?)```\",before_app,re.S)==re.findall(r\"```mermaid\\n(.*?)```\",app,re.S)\nspec=importlib.util.spec_from_file_location(\"links\",\"scripts/check-doc-links.py\")\nlinks=importlib.util.module_from_spec(spec);spec.loader.exec_module(links)\nassert links.anchors(tmp/\"VALIDATION.md\",{}).issubset(links.anchors(Path(\"docs/VALIDATION.md\"),{}))\nchanged=[];protected=0\nfor name,digest in baseline.items():\n    p=Path(name)\n    now=hashlib.sha256(p.read_bytes()).hexdigest() if p.is_file() else None\n    if now!=digest:changed.append(name)\n    if name.startswith((\"docs/archive/\",\"docs/releases/\")):\n        assert now==digest, name\n        protected+=1\nhist=Path(\"docs/IMPLEMENTATION-RESULTS.md\").read_text().split(\"## \",1)[1]\nassert hashlib.sha256(hist.encode()).hexdigest()==(tmp/\"implementation-results-body.sha256\").read_text()\npaths=subprocess.run([\"git\",\"diff\",\"--name-only\"],check=True,capture_output=True,text=True).stdout.splitlines()\nassert all(n.startswith(\"docs/\") or n in (\"README.md\",\"AGENTS.md\") for n in paths)\nfor name in changed:\n    p=Path(name)\n    if p.suffix!=\".md\":continue\n    fence=None\n    for line in p.read_text().splitlines():\n        match=re.match(r\"^\\s*(`{3,}|~{3,})\",line)\n        if not match:continue\n        marker=match.group(1)\n        if fence is None:fence=marker\n        elif marker[0]==fence[0] and len(marker)>=len(fence):fence=None\n    assert fence is None, name\nprint(json.dumps({\"status\":\"PASS\",\"acceptanceRows\":14,\"inheritedRequirementRows\":11,\"legacyAnchors\":len(links.anchors(tmp/\"VALIDATION.md\",{})),\"mermaidBlocksUnchanged\":2,\"protectedArchiveAndEvidenceFiles\":protected,\"historicalResultBodyUnchanged\":True,\"changedDocsThisTask\":changed},ensure_ascii=False))\n\nPY",
+      "status": "PASS",
+      "exitCode": 0,
+      "output": "{\"status\": \"PASS\", \"acceptanceRows\": 14, \"inheritedRequirementRows\": 11, \"legacyAnchors\": 5, \"mermaidBlocksUnchanged\": 2, \"protectedArchiveAndEvidenceFiles\": 194, \"historicalResultBodyUnchanged\": true, \"changedDocsThisTask\": [\"AGENTS.md\", \"README.md\", \"docs/APP-BOUNDARIES.md\", \"docs/CHECKS.md\", \"docs/CLI-IMPLEMENTATION-PLAN.md\", \"docs/CLI-RELEASE.md\", \"docs/CLI-VALIDATION-MATRIX.md\", \"docs/CORE-HARDENING.md\", \"docs/CORE-PERMISSIONS.md\", \"docs/DEVELOPMENT.md\", \"docs/IMPLEMENTATION-RESULTS.md\", \"docs/IMPLEMENTATION.md\", \"docs/PLAN.md\", \"docs/PRD.md\", \"docs/README.md\", \"docs/RESEARCH.md\", \"docs/RUNNING.md\", \"docs/SERVER-OPERATIONS.md\", \"docs/STACK.md\", \"docs/UIUX-MIGRATION.md\", \"docs/V1-ADOPTION.md\", \"docs/VALIDATION.md\", \"docs/WINDOWS-VALIDATION.md\"]}"
+    },
+    {
+      "id": "independent-review",
+      "status": "PASS",
+      "method": "Read-only subagent review plus owner integration review",
+      "observed": "No lost criteria or conflicting ownership. Updated the current navigation banner in IMPLEMENTATION-RESULTS to point directly to APP-BOUNDARIES; its historical body is unchanged. Kept legacy VALIDATION anchors for historical incoming links."
+    }
+  ],
+  "notRun": [
+    {
+      "scope": "BV-01..13 runtime/browser/identity/CLI/MCP acceptance",
+      "status": "NOT_RUN",
+      "reason": "Documentation-only consolidation; no runtime or SDK implementation changed."
+    },
+    {
+      "scope": "Windows install/update/remove",
+      "status": "NOT_RUN",
+      "reason": "User performs Windows acceptance separately; this work changes only documentation."
+    },
+    {
+      "scope": "Production deployment, service restart or database migration",
+      "status": "NOT_RUN",
+      "reason": "Outside this documentation task; no production state changed."
+    },
+    {
+      "scope": "Mermaid rendering",
+      "status": "NOT_RUN",
+      "reason": "Diagram source is unchanged; source preservation and document structure are checked."
+    }
+  ],
+  "limitations": [
+    "PASS will describe documentation checks only, not security acceptance of the proposed boundary.",
+    "Historical PASS/FAIL/NOT_RUN records and archived originals are preserved.",
+    "The three primary documents are APP-BOUNDARIES (design and acceptance), CORE-PERMISSIONS (detailed permission policy), and PLAN (sequence and progress)."
+  ],
+  "integrity": {
+    "status": "PASS",
+    "acceptanceRows": 14,
+    "inheritedRequirementRows": 11,
+    "legacyAnchors": 5,
+    "mermaidBlocksUnchanged": 2,
+    "protectedArchiveAndEvidenceFiles": 194,
+    "historicalResultBodyUnchanged": true,
+    "changedDocsThisTask": [
+      "AGENTS.md",
+      "README.md",
+      "docs/APP-BOUNDARIES.md",
+      "docs/CHECKS.md",
+      "docs/CLI-IMPLEMENTATION-PLAN.md",
+      "docs/CLI-RELEASE.md",
+      "docs/CLI-VALIDATION-MATRIX.md",
+      "docs/CORE-HARDENING.md",
+      "docs/CORE-PERMISSIONS.md",
+      "docs/DEVELOPMENT.md",
+      "docs/IMPLEMENTATION-RESULTS.md",
+      "docs/IMPLEMENTATION.md",
+      "docs/PLAN.md",
+      "docs/PRD.md",
+      "docs/README.md",
+      "docs/RESEARCH.md",
+      "docs/RUNNING.md",
+      "docs/SERVER-OPERATIONS.md",
+      "docs/STACK.md",
+      "docs/UIUX-MIGRATION.md",
+      "docs/V1-ADOPTION.md",
+      "docs/VALIDATION.md",
+      "docs/WINDOWS-VALIDATION.md"
+    ]
+  },
+  "statusMeaning": "Documentation consolidation validation only (BV-14 documentation scope); product acceptance BV-01..13 remains NOT_RUN."
+}

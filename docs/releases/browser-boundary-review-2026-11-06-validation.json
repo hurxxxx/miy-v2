@@ -1,0 +1,115 @@
+{
+  "date": "2026-11-06",
+  "purpose": "Characterize same-page authority and cookie boundaries to compare separation proposals; no production changes.",
+  "commands": [
+    {
+      "command": "/home/dwdcc/.cargo/bin/cargo build --locked",
+      "status": "PASS",
+      "exitCode": 0
+    },
+    {
+      "command": "node docs/releases/evidence/browser-boundary-review-20261106/probe.mjs",
+      "status": "PASS",
+      "exitCode": 0
+    },
+    {
+      "command": "python3 scripts/check-doc-links.py",
+      "status": "PASS",
+      "exitCode": 0,
+      "result": "583 relative links in 53 tracked Markdown files"
+    },
+    {
+      "command": "git diff --check",
+      "status": "PASS",
+      "exitCode": 0
+    },
+    {
+      "command": "node --check docs/releases/evidence/browser-boundary-review-20261106/probe.mjs",
+      "status": "PASS",
+      "exitCode": 0
+    },
+    {
+      "command": "python3 -m json.tool docs/releases/browser-boundary-review-2026-11-06-validation.json",
+      "status": "PASS",
+      "exitCode": 0
+    }
+  ],
+  "probeSha256": "16e7ea26023bd3258f782a4db99d79dce9196434bb9ec2c64128c87392a78f1d",
+  "result": {
+    "sourceCommit": "22c219de570d162646f6bcb9d31b712a46c83e69",
+    "result": "PASS",
+    "meaning": "PASS confirms the recorded capabilities and limitations; it does not declare browser isolation safe.",
+    "fixture": "Chromium same-page page.evaluate + actual core HTTP + disposable PostgreSQL + signed-identity synthetic app backend; loopback development login",
+    "observations": [
+      {
+        "name": "admin_same_realm_without_csrf_denied",
+        "status": "PASS",
+        "actual": 403,
+        "expected": 403
+      },
+      {
+        "name": "admin_same_realm_script_can_read_csrf_and_mutate",
+        "status": "PASS",
+        "actual": 200,
+        "expected": 200
+      },
+      {
+        "name": "ordinary_user_same_realm_admin_mutation_denied",
+        "status": "PASS",
+        "actual": 403,
+        "expected": 403
+      },
+      {
+        "name": "a_connection_without_installation_approval_denied",
+        "status": "PASS",
+        "actual": 403,
+        "expected": 403
+      },
+      {
+        "name": "direct_b_request_bypasses_a_approval_with_user_b_grant",
+        "status": "PASS",
+        "actual": 200,
+        "expected": 200
+      },
+      {
+        "name": "direct_b_request_still_obeys_synthetic_business_acl",
+        "status": "PASS",
+        "actual": 403,
+        "expected": 403
+      },
+      {
+        "name": "direct_b_request_after_user_b_grant_revoked_denied",
+        "status": "PASS",
+        "actual": 403,
+        "expected": 403
+      },
+      {
+        "name": "revoked_request_did_not_reach_backend",
+        "status": "PASS",
+        "actual": 2,
+        "expected": 2
+      },
+      {
+        "name": "cookie_sent_to_same_host_different_port",
+        "status": "PASS",
+        "actual": true,
+        "expected": true
+      }
+    ],
+    "productionTouched": false,
+    "runningContainerInventoryUnchanged": true,
+    "notRun": [
+      "real Module Federation artifact installation and execution chain",
+      "real OIDC/Keycloak login",
+      "production browser or server",
+      "proposed split-origin implementation"
+    ]
+  },
+  "limitations": [
+    "The browser executes page.evaluate in the platform document; the full Module Federation package upload/load path is source-reviewed, not executed.",
+    "Development login uses the shared real HTTP authorization middleware; actual OIDC/Keycloak sessions and production behavior were not exercised.",
+    "App installations are synthetic SQL fixtures in the disposable database. The loopback app backend verifies HMAC and has a fixed resource-denial response, not a real business application ACL.",
+    "The cookie observation uses the real development session on HTTP loopback. It demonstrates lack of cookie port isolation, not a deployed console design.",
+    "PASS means expected observations matched, including the risky capabilities; it is not a security acceptance result."
+  ]
+}

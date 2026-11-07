@@ -12,7 +12,24 @@ export function currentEnvironment(path: string): Environment | "invalid" {
 }
 
 export function isCliApprovalPath(path: string | null | undefined) {
-  return !!path && (path.startsWith("/cli/authorize/") || path.startsWith("/cli/device/"));
+  return !!path && /^\/cli\/(authorize|device)\/[^/?#\\]+$/.test(path);
+}
+
+export function isConsolePath(path: string) {
+  const normalized = path.replace(/\/+$/, "");
+  return normalized === "/admin" || normalized === "/cli/sessions" ||
+    /^\/cli\/(authorize|device)(?:\/|$)/.test(normalized);
+}
+
+export function isAppPath(path: string) {
+  return /^\/(?:environments\/[^/]+\/)?apps(?:\/|$)/.test(path);
+}
+
+/** Setting pathname cannot turn app input into an authority, query or fragment. */
+export function surfaceUrl(origin: string, path = "/") {
+  const url = new URL(origin);
+  url.pathname = path;
+  return url.href;
 }
 
 // getRandomValues is available on internal HTTP origins as well as HTTPS.

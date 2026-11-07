@@ -5,7 +5,6 @@ import { Button, Loading, Notice, Panel } from "../ui";
 import { useUser } from "../data/session";
 import { currentEnvironment, environmentPath } from "../lib/paths";
 import { activeGuards } from "../lib/navigation-guards";
-import { RuntimeHealth } from "../components/RuntimeHealth";
 import { remote } from "./remote";
 
 class Boundary extends Component<{ children: React.ReactNode }, { error: boolean }> {
@@ -22,6 +21,15 @@ class Boundary extends Component<{ children: React.ReactNode }, { error: boolean
       this.props.children
     );
   }
+}
+
+function AppAvailability({ health }: { health: Installation["health"] }) {
+  if (health?.status !== "degraded" && health?.status !== "unhealthy") return null;
+  return <Notice role="status" aria-label="앱 이용 안내" tone="warning">
+    <p>{health.status === "unhealthy"
+      ? "앱 응답이 원활하지 않습니다. 문제가 계속되면 앱 담당자에게 문의하세요."
+      : "앱의 응답을 확인하고 있습니다. 잠시 후 다시 시도해 주세요."}</p>
+  </Notice>;
 }
 
 export function AppView() {
@@ -191,7 +199,7 @@ function AppSession({ appId, environment, basePath }: { appId: string; environme
   if (app.kind === "docker_app" && app.runtimeStatus !== "running")
     return (
       <Panel title="앱이 실행 중이 아닙니다">
-        <p>현재 상태: {app.runtimeStatus}. 홈의 앱 관리에서 시작할 수 있습니다.</p>
+        <p>지금은 앱을 사용할 수 없습니다. 앱 담당자에게 문의하세요.</p>
         <Link to={environmentPath(environment) as "/"}>홈으로</Link>
       </Panel>
     );
@@ -223,7 +231,7 @@ function AppSession({ appId, environment, basePath }: { appId: string; environme
             <p>작성 중인 내용을 확인한 뒤 최신 상태로 다시 열어주세요. 현재 화면의 API 호출은 중지됩니다.</p>
           </Notice>
         )}
-        <RuntimeHealth app={{ ...app, health: health ?? app.health }} />
+        <AppAvailability health={health ?? app.health} />
       </div>
       {/* Platform fallbacks stay outside the container excluded from shell CSS. */}
       <Boundary key={app.releaseId}>

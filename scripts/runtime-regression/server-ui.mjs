@@ -14,8 +14,11 @@ const site = join(evidence, "site");
 const UI_PORT = 18148;
 const API_PORT = 18149;
 const ISSUER_PORT = 18150;
+const CONSOLE_UI_PORT = 18151;
+const CONSOLE_API_PORT = 18152;
 const origin = `http://127.0.0.1:${UI_PORT}`;
 const issuer = `http://127.0.0.1:${ISSUER_PORT}/identity/realms/miy`;
+const consoleOrigin = `http://127.0.0.1:${CONSOLE_UI_PORT}`;
 const owner = `${process.pid}-${randomBytes(8).toString("hex")}`;
 const label = `miy.server-ui=${owner}`;
 const database = `miy-server-ui-${owner}`;
@@ -94,6 +97,8 @@ const env = {
   DATABASE_URL: `postgres://postgres:${password}@127.0.0.1:${port}/miy_ui_core`,
   PROVISION_DATABASE_URL: `postgres://postgres:${password}@127.0.0.1:${port}/postgres`,
   MIY_ORIGIN: origin,
+  MIY_CONSOLE_ORIGIN: consoleOrigin,
+  MIY_CONSOLE_BIND_ADDR: `127.0.0.1:${CONSOLE_API_PORT}`,
   MIY_ISSUER: issuer,
   MIY_ALLOW_HTTP: "1",
   MIY_DEV_LOGIN: "1",
@@ -105,7 +110,7 @@ const env = {
   MIY_ARTIFACTS: join(evidence, "artifacts"),
   RUST_LOG: "miy=info",
 };
-writeFileSync(join(evidence, "environment.json"), JSON.stringify({ origin, issuer, apiPort: API_PORT, database, databasePort: port }, null, 2));
+writeFileSync(join(evidence, "environment.json"), JSON.stringify({ origin, consoleOrigin, issuer, apiPort: API_PORT, consoleApiPort: CONSOLE_API_PORT, database, databasePort: port }, null, 2));
 execFileSync(binary, ["migrate"], { env, cwd: root, stdio: "inherit" });
 execFileSync(binary, ["seed"], { env, cwd: root, stdio: "inherit" });
 
@@ -123,13 +128,14 @@ server.on("exit", (code) => {
   process.exit(1);
 });
 
-// 4. One origin for the browser: static platform files, /api and /auth proxied to the core.
+// 4. Two fixed listeners; request headers cannot select another browser purpose.
 const types = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".woff2": "font/woff2", ".json": "application/json", ".svg": "image/svg+xml" };
+function serveSurface(surfaceOrigin, uiPort, apiPort) {
 createServer((req, res) => {
-  const path = new URL(req.url, origin).pathname;
+  const path = new URL(req.url, surfaceOrigin).pathname;
   if (/^\/(api|auth|artifacts)\//.test(path)) {
     const upstream = request(
-      { host: "127.0.0.1", port: API_PORT, method: req.method, path: req.url, headers: req.headers },
+      { host: "127.0.0.1", port: apiPort, method: req.method, path: req.url, headers: req.headers },
       (reply) => {
         res.writeHead(reply.statusCode, reply.headers);
         reply.pipe(res);
@@ -141,6 +147,13 @@ createServer((req, res) => {
   }
   let file = resolve(site, "." + decodeURIComponent(path));
   if (!file.startsWith(site) || !existsSync(file) || statSync(file).isDirectory()) file = join(site, "index.html");
-  res.writeHead(200, { "content-type": types[extname(file)] ?? "application/octet-stream" });
+  res.writeHead(200, {
+    "content-type": types[extname(file)] ?? "application/octet-stream",
+    "content-security-policy": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; font-src 'self' data:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; worker-src 'none'",
+    "x-content-type-options": "nosniff", "x-frame-options": "DENY",
+  });
   createReadStream(file).pipe(res);
-}).listen(UI_PORT, "127.0.0.1", () => console.log(`server-ui ready on ${origin}`));
+}).listen(uiPort, "127.0.0.1", () => console.log(`server-ui ready on ${surfaceOrigin}`));
+}
+serveSurface(origin, UI_PORT, API_PORT);
+serveSurface(consoleOrigin, CONSOLE_UI_PORT, CONSOLE_API_PORT);

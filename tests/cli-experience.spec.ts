@@ -1,3 +1,4 @@
+import { browserOptions, browserUser, mockSurface } from "./browser-surface";
 import { test, expect, type Page } from "@playwright/test";
 
 const id = "93e7411d-b4d6-4a43-a9a6-a9e3998dc408";
@@ -33,24 +34,26 @@ test("a status network failure after a rejected code does not expire a live requ
 });
 
 async function setup(page: Page, signedIn = true) {
+  await mockSurface(page, "console");
   await page.route("**/api/**", (route) => {
     const path = new URL(route.request().url()).pathname;
     return route.fulfill({
       status: path === "/api/v1/me" && !signedIn ? 401 : 200,
       json:
         path === "/api/v1/me"
-          ? {
+          ? browserUser(route, {
               id: "fixture",
               name: "검증 사용자",
               admin: false,
               csrf: "fixture-csrf",
-            }
-          : [],
+            })
+          : path === "/api/v1/apps" ? { apps: [], nextCursor: null } : [],
     });
   });
   await page.route("**/auth/options", (route) =>
     route.fulfill({
       json: {
+        ...browserOptions(route),
         developmentLogin: false,
         developmentOrigin: "",
         accounts: [],

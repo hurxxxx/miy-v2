@@ -175,7 +175,8 @@ impl Harness<'_> {
             .find(|row| row["id"] == json!(app.installation))
             .cloned())
     }
-    /// A filter or cursor must not bypass the default installation admission policy.
+    /// A filter or detail must not bypass admission. CLI app details may include
+    /// managed, closed installations, but their canOpen remains false.
     async fn visibility_consistent(&self, actor: &Actor, app: &App, visible: bool) -> Result<()> {
         ensure!(
             self.visible(actor, app).await?.is_some() == visible,
@@ -196,7 +197,7 @@ impl Harness<'_> {
                 .as_array()
                 .context("filtered installations list")?
                 .iter()
-                .any(|row| row["id"] == json!(app.installation));
+                .any(|row| row["id"] == json!(app.installation) && row["canOpen"] == true);
             ensure!(
                 found == visible,
                 "filtered installation visibility bypassed admission"
@@ -440,7 +441,13 @@ pub async fn run(state: &State, client: &Client, base: &str) -> Result<Vec<Strin
     let mut passed = Vec::new();
     // The following groups deliberately use public HTTP entrypoints, including
     // synthetic access-token authentication; no product API is replaced.
-    let initial = h.read(&user, &a, a.release).await?;
+    denied(
+        h.request(&user.token, Method::GET, &a.permissions())
+            .send()
+            .await?,
+    )
+    .await?;
+    let initial = h.read(&admin, &a, a.release).await?;
     ensure!(
         initial["revision"] == 0,
         "new installation permission revision is not zero"
@@ -486,7 +493,7 @@ pub async fn run(state: &State, client: &Client, base: &str) -> Result<Vec<Strin
     );
     response(first, if statuses[0] == 200 { 200 } else { 409 }).await?;
     response(second, if statuses[1] == 200 { 200 } else { 409 }).await?;
-    let approved = h.read(&user, &a, a.release).await?;
+    let approved = h.read(&admin, &a, a.release).await?;
     ensure!(
         approved["revision"] == 1,
         "approval revision did not advance exactly once"
@@ -525,7 +532,7 @@ pub async fn run(state: &State, client: &Client, base: &str) -> Result<Vec<Strin
     )
     .await?;
     ensure!(
-        h.read(&user, &a, a.release).await?["revision"] == 1,
+        h.read(&admin, &a, a.release).await?["revision"] == 1,
         "rejected approval changed revision"
     );
     let next_release = Uuid::new_v4();
@@ -534,7 +541,7 @@ pub async fn run(state: &State, client: &Client, base: &str) -> Result<Vec<Strin
     sqlx::query("INSERT INTO releases(id,app_id,version,artifact_hash,manifest) SELECT $1,app_id,'2.0.0',artifact_hash,jsonb_set(jsonb_set(manifest,'{version}','\"2.0.0\"'::jsonb),'{requestedPermissions}',$2) FROM releases WHERE id=$3")
         .bind(next_release).bind(json!(next_permissions)).bind(a.release).execute(&state.pool).await?;
     ensure!(
-        h.read(&user, &a, next_release).await?["approvedPermissions"] == json!([]),
+        h.read(&admin, &a, next_release).await?["approvedPermissions"] == json!([]),
         "new release inherited old approvals"
     );
     sqlx::query("UPDATE installations SET release_id=$2 WHERE id=$1")
@@ -972,10 +979,21 @@ pub async fn run(state: &State, client: &Client, base: &str) -> Result<Vec<Strin
     );
     passed.push("continuation authority narrows; expiry, cycles and eight-hop bounds hold while expired backlogs do not consume live quota".into());
 
-    let http = h.read(&user, &a, a.release).await?;
-    let mcp = h
+    let use_only_mcp = h
         .mcp(
             &user,
+            "get_installation_permissions",
+            json!({"installationId":a.installation,"releaseId":a.release}),
+        )
+        .await?;
+    ensure!(
+        use_only_mcp["isError"] == true && use_only_mcp["data"]["error"]["code"] == "forbidden",
+        "MCP exposed approval records to a use-only user"
+    );
+    let http = h.read(&admin, &a, a.release).await?;
+    let mcp = h
+        .mcp(
+            &admin,
             "get_installation_permissions",
             json!({"installationId":a.installation,"releaseId":a.release}),
         )
@@ -1008,7 +1026,7 @@ pub async fn run(state: &State, client: &Client, base: &str) -> Result<Vec<Strin
         "MCP did not enforce approval CAS"
     );
     ensure!(
-        h.read(&user, &a, a.release).await? == approved_mcp["data"],
+        h.read(&admin, &a, a.release).await? == approved_mcp["data"],
         "MCP write was not visible through HTTP"
     );
     passed.push("HTTP and MCP share permission reads, administrator checks, committed updates and CAS conflicts".into());
@@ -1085,8 +1103,13 @@ pub async fn run(state: &State, client: &Client, base: &str) -> Result<Vec<Strin
     }
     let session = auth::random();
     let csrf = auth::random();
-    let cookie = format!("miy_development={session}");
-    sqlx::query("INSERT INTO development_sessions(id_hash,user_id,csrf,expires_at) VALUES($1,$2,$3,now()+interval '5 minutes')")
+    let cookie = format!(
+        "{}={session}",
+        state
+            .auth
+            .cookie_name(auth::BrowserPurpose::Portal, "development")
+    );
+    sqlx::query("INSERT INTO development_sessions(id_hash,user_id,csrf,expires_at,browser_purpose) VALUES($1,$2,$3,now()+interval '5 minutes','portal')")
         .bind(hash(&session)).bind(&browser.id).bind(&csrf).execute(&state.pool).await?;
     let called = response(
         client
@@ -1345,15 +1368,33 @@ async fn groups(h: &mut Harness<'_>, suffix: &str, passed: &mut Vec<String>) -> 
     );
     admin(
         Method::PUT,
+        "/api/v1/group-grants".into(),
+        json!({"groupId":local,"appId":app,"environment":"prod","permission":"use","enabled":true}),
+        200,
+    )
+    .await?;
+    ensure!(
+        h.visible(&carol, &prod).await?.is_some(),
+        "explicit prod group use did not admit its member"
+    );
+    admin(
+        Method::PUT,
         format!("/api/v1/groups/{local}/members"),
         json!({"userId":carol.id,"member":false}),
         200,
     )
     .await?;
     ensure!(
-        h.visible(&carol, &dev).await?.is_none(),
-        "removed member kept use"
+        h.visible(&carol, &dev).await?.is_none() && h.visible(&carol, &prod).await?.is_none(),
+        "removed member kept dev or prod use"
     );
+    admin(
+        Method::PUT,
+        "/api/v1/group-grants".into(),
+        json!({"groupId":local,"appId":app,"environment":"prod","permission":"use","enabled":false}),
+        200,
+    )
+    .await?;
     let copied: i64 = sqlx::query_scalar("SELECT count(*) FROM grants WHERE user_id=$1")
         .bind(&carol.id)
         .fetch_one(&h.state.pool)
@@ -1468,6 +1509,10 @@ async fn groups(h: &mut Harness<'_>, suffix: &str, passed: &mut Vec<String>) -> 
         "all admission did not admit an enabled user"
     );
     ensure!(
+        h.visible(&operator, &prod).await?.is_some(),
+        "all admission did not admit an administrator"
+    );
+    ensure!(
         h.visible(&erin, &dev).await?.is_none(),
         "prod admission reached dev"
     );
@@ -1481,6 +1526,10 @@ async fn groups(h: &mut Harness<'_>, suffix: &str, passed: &mut Vec<String>) -> 
     ensure!(
         h.visible(&erin, &prod).await?.is_none(),
         "selected mode kept an implicit user"
+    );
+    ensure!(
+        h.visible(&operator, &prod).await?.is_none(),
+        "selected mode kept administrator implicit prod use"
     );
     admin(
         Method::PUT,
@@ -1498,9 +1547,16 @@ async fn groups(h: &mut Harness<'_>, suffix: &str, passed: &mut Vec<String>) -> 
         200,
     )
     .await?;
+    admin(
+        Method::PUT,
+        "/api/v1/grants".into(),
+        json!({"userId":operator.id,"appId":app,"environment":"prod","permission":"use","enabled":true}),
+        200,
+    )
+    .await?;
     ensure!(
         h.visible(&operator, &prod).await?.is_some(),
-        "administrator could not see prod"
+        "explicit use did not admit administrator"
     );
     admin(
         Method::PUT,
@@ -1542,7 +1598,8 @@ async fn groups(h: &mut Harness<'_>, suffix: &str, passed: &mut Vec<String>) -> 
         "disabled app call lacks a stable code: {blocked}"
     );
     // Runtime management is not use: administrators keep the installation to stop or
-    // remove it, but it is not openable in prod; others cannot read this list.
+    // remove it, but it is not openable in prod. Other managers see only their own
+    // app/environment; use-only users receive an empty management list.
     let entry = |rows: &Value, app: &App| {
         rows.as_array().and_then(|rows| {
             rows.iter()
@@ -1574,12 +1631,21 @@ async fn groups(h: &mut Harness<'_>, suffix: &str, passed: &mut Vec<String>) -> 
         "administrator lost dev repair of a disabled app: {managed_dev}"
     );
     for actor in [&carol, &erin] {
-        denied(
+        let managed = response(
             h.request(&actor.token, Method::GET, "/api/v1/runtime/installations")
                 .send()
                 .await?,
+            200,
         )
         .await?;
+        ensure!(
+            entry(&managed, &prod).is_none(),
+            "a non-manager listed prod"
+        );
+        ensure!(
+            entry(&managed, &dev).is_some() == (actor.id == carol.id),
+            "per-app developer management visibility is inconsistent"
+        );
     }
     admin(
         Method::PUT,
@@ -1611,7 +1677,7 @@ async fn groups(h: &mut Harness<'_>, suffix: &str, passed: &mut Vec<String>) -> 
         managed_prod["appDisabled"] == false && managed_prod["canOpen"] == true,
         "re-enabling did not reach runtime management: {managed_prod}"
     );
-    passed.push("the company switch consistently filters default, paged and app-detail installations; developers keep dev and re-enabling restores use; administrators keep the disabled app in runtime management, unopenable in prod, and non-administrators cannot read that list".into());
+    passed.push("the company switch consistently filters default, paged and app-detail installations; developers keep dev and re-enabling restores explicit use; administrators require explicit prod admission, non-administrator developers see only their managed installations, and disabled apps stay manageable".into());
 
     denied(
         h.request(&carol.token, Method::GET, "/api/v1/groups")
@@ -1774,6 +1840,7 @@ async fn policy_matrix(h: &mut Harness<'_>, suffix: &str, passed: &mut Vec<Strin
         .await?;
     }
     let mut jobs = Vec::new();
+    let mut database_jobs = Vec::new();
     for (environment, installation) in [("dev", &dev), ("prod", &prod)] {
         let id = Uuid::new_v4();
         sqlx::query("INSERT INTO runtime_jobs(id,app_id,environment,actor,action,installation_id,release_id,idempotency_key,input_hash,status,step) VALUES($1,$2,$3,$4,'restart',$5,$6,$7,'policy-matrix','succeeded','completed')")
@@ -1782,6 +1849,17 @@ async fn policy_matrix(h: &mut Harness<'_>, suffix: &str, passed: &mut Vec<Strin
             .bind(format!("policy-matrix-{environment}-{suffix}"))
             .execute(&h.state.pool).await?;
         jobs.push((environment, id));
+        let database_id = Uuid::new_v4();
+        sqlx::query("INSERT INTO jobs(id,installation_id,release_id,actor,idempotency_key,input_hash,status,step) VALUES($1,$2,$3,$4,$5,'policy-matrix','succeeded','completed')")
+            .bind(database_id).bind(installation.installation).bind(installation.release)
+            .bind(&admin.id).bind(format!("policy-db-{environment}-{suffix}"))
+            .execute(&h.state.pool).await?;
+        database_jobs.push((environment, database_id));
+        sqlx::query("UPDATE releases SET source_commit=$2 WHERE id=$1")
+            .bind(installation.release)
+            .bind("a".repeat(40))
+            .execute(&h.state.pool)
+            .await?;
     }
     let delegate = |actor: &Actor, environment: &'static str, actions: &'static [&'static str]| {
         let body = json!({"name":"Policy matrix","appId":app,"environment":environment,"actions":actions,"expiresIn":3600});
@@ -1804,7 +1882,7 @@ async fn policy_matrix(h: &mut Harness<'_>, suffix: &str, passed: &mut Vec<Strin
         PolicyCase {
             name: "administrator",
             token: admin.token.clone(),
-            open: [both, &["dev"]],
+            open: [&["dev"], &["dev"]],
             observe: [both, both],
             manage: both,
             promote: true,
@@ -1812,7 +1890,7 @@ async fn policy_matrix(h: &mut Harness<'_>, suffix: &str, passed: &mut Vec<Strin
         PolicyCase {
             name: "deployer",
             token: deployer.token.clone(),
-            open: [both, &["dev"]],
+            open: [&["dev"], &["dev"]],
             observe: [both, both],
             manage: both,
             promote: true,
@@ -1829,7 +1907,7 @@ async fn policy_matrix(h: &mut Harness<'_>, suffix: &str, passed: &mut Vec<Strin
             name: "user",
             token: user.token.clone(),
             open: [both, &[]],
-            observe: [both, &[]],
+            observe: [&[], &[]],
             manage: &[],
             promote: false,
         },
@@ -1860,7 +1938,7 @@ async fn policy_matrix(h: &mut Harness<'_>, suffix: &str, passed: &mut Vec<Strin
         PolicyCase {
             name: "delegated deployer",
             token: delegate(&deployer, "prod", &["read", "promote"]).await?,
-            open: [&["prod"], &[]],
+            open: [&[], &[]],
             observe: [&["prod"], &["prod"]],
             manage: &["prod"],
             promote: true,
@@ -1936,6 +2014,48 @@ async fn policy_matrix(h: &mut Harness<'_>, suffix: &str, passed: &mut Vec<Strin
                 detail == observed,
                 "{context}: installation approval record differs from the observe decision"
             );
+            let managed =
+                listed_environments(h, &case.token, "/api/v1/runtime/installations", None, &app)
+                    .await?;
+            let expected_managed: Vec<String> =
+                case.manage.iter().map(|env| (*env).to_owned()).collect();
+            ensure!(
+                environments(&managed) == expected_managed,
+                "{context}: managed installations differ from per-environment management read"
+            );
+            let app_detail = h
+                .request(&case.token, Method::GET, &format!("/api/v1/apps/{app}"))
+                .send()
+                .await?;
+            if case.name != "stranger" && case.name != "delegated developer without read" {
+                let app_detail = response(app_detail, 200).await?;
+                let installations = app_detail["installations"]
+                    .as_array()
+                    .context("CLI app detail installations")?;
+                let mut expected_detail = expected.clone();
+                expected_detail.extend(expected_managed.iter().cloned());
+                expected_detail.sort();
+                expected_detail.dedup();
+                ensure!(
+                    environments(installations) == expected_detail,
+                    "{context}: CLI app show/status lost a managed installation"
+                );
+                for row in installations {
+                    ensure!(
+                        row["canOpen"]
+                            == json!(
+                                case.open[state]
+                                    .contains(&row["environment"].as_str().unwrap_or(""))
+                            ),
+                        "{context}: CLI management metadata bypassed Use"
+                    );
+                }
+            } else {
+                ensure!(
+                    matches!(app_detail.status().as_u16(), 403 | 404),
+                    "{context}: app detail admitted an unauthorized principal"
+                );
+            }
             for row in default.iter().chain(&paged) {
                 let environment = row["environment"].as_str().unwrap_or_default();
                 ensure!(
@@ -1943,6 +2063,16 @@ async fn policy_matrix(h: &mut Harness<'_>, suffix: &str, passed: &mut Vec<Strin
                         && row["canPromote"] == json!(case.promote),
                     "{context}: display values differ from the management and promotion decisions"
                 );
+                if !case.manage.contains(&environment) {
+                    ensure!(
+                        row["lastOperation"].is_null()
+                            && row["acceptance"].is_null()
+                            && row["sourceCommit"].is_null()
+                            && row["imageId"].is_null()
+                            && row["health"]["errorCode"].is_null(),
+                        "{context}: a use-only installation exposed operational details"
+                    );
+                }
             }
             let listed_jobs = listed_environments(
                 h,
@@ -1980,6 +2110,26 @@ async fn policy_matrix(h: &mut Harness<'_>, suffix: &str, passed: &mut Vec<Strin
                 followed == observed,
                 "{context}: job detail differs from the job list"
             );
+            let mut database_observed = Vec::new();
+            for (environment, id) in &database_jobs {
+                let status = h
+                    .request(&case.token, Method::GET, &format!("/api/v1/jobs/{id}"))
+                    .send()
+                    .await?
+                    .status()
+                    .as_u16();
+                ensure!(
+                    matches!(status, 200 | 401 | 403),
+                    "{context}: database job answered HTTP {status}"
+                );
+                if status == 200 {
+                    database_observed.push((*environment).to_owned());
+                }
+            }
+            ensure!(
+                database_observed == observed,
+                "{context}: database job bypassed management read"
+            );
         }
     }
     h.json(
@@ -1990,7 +2140,7 @@ async fn policy_matrix(h: &mut Harness<'_>, suffix: &str, passed: &mut Vec<Strin
         200,
     )
     .await?;
-    passed.push("default and paged installation lists return the same records, and with installation approval records, job details, job lists and display values agree for administrators, deployers, developers, users, strangers and delegated credentials with and without read, with the company switch off and on".into());
+    passed.push("default and paged installation lists, per-environment managed lists, approval records, runtime/database jobs and redacted display values agree for administrators, deployers, developers, users, strangers and delegated credentials; prod management never grants use and use never grants operating records, with company switch off and on".into());
     // A database preparation receipt is an observable job like a runtime receipt: a
     // delegation needs prepare_database and read before anything is stored.
     let jobs_by = async |actor: &Actor| -> Result<i64> {

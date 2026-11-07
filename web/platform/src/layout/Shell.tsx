@@ -2,8 +2,8 @@ import { useEffect, useMemo, useRef, useState, type ReactNode, type SyntheticEve
 import { Link, Outlet, useLocation } from "@tanstack/react-router";
 import { request } from "@miy/sdk";
 import { InstallationsProvider, installationsIn, useInstallations } from "../data/installations";
-import { useSession, type User } from "../data/session";
-import { currentEnvironment, environmentPath, isCliApprovalPath, type Environment } from "../lib/paths";
+import { useSession, useSurface, type User } from "../data/session";
+import { currentEnvironment, environmentPath, isCliApprovalPath, isConsolePath, isAppPath, surfaceUrl, type Environment } from "../lib/paths";
 import { clearAllAppGuards, confirmLeaveAllApps } from "../lib/navigation-guards";
 import { LoadError } from "../components/LoadState";
 import { Login } from "../pages/Login";
@@ -12,17 +12,17 @@ import { AppMark, Badge, Button, Loading, Panel, monograms } from "../ui";
 import { CloseIcon, HomeIcon, MenuIcon, SettingsIcon, TerminalIcon } from "../ui/icons";
 
 export function Shell() {
-  const { state, retry } = useSession();
+  const { state, options, retry } = useSession();
   const location = useLocation();
   useEffect(() => {
-    if (state.status === "ready" && location.pathname === "/") {
+    if (state.status === "ready" && options?.surface === "console" && location.pathname === "/") {
       const target = sessionStorage.getItem("miy.returnTo");
       if (isCliApprovalPath(target)) {
         sessionStorage.removeItem("miy.returnTo");
         window.location.assign(target!);
       }
     }
-  }, [state.status, location.pathname]);
+  }, [state.status, options?.surface, location.pathname]);
   // The installation guide is public; it needs no session. Render it directly:
   // during navigation the router outlet may already hold the next page.
   if (location.pathname === "/cli/install" && state.status !== "ready")
@@ -39,6 +39,13 @@ export function Shell() {
         </main>
       </div>
     );
+  if (options?.surface === "portal" && isConsolePath(location.pathname))
+    return <ConsoleRedirect href={surfaceUrl(options.consoleOrigin, location.pathname)} />;
+  if (options?.surface === "console" && isAppPath(location.pathname))
+    return <main className="boot"><Panel title="업무 앱은 포털에서 열어 주세요">
+      <p>관리 콘솔에서는 업무 앱을 실행하지 않습니다.</p>
+      <a href={surfaceUrl(options.portalOrigin, location.pathname)}>업무 포털에서 열기</a>
+    </Panel></main>;
   if (state.status === "loading")
     return (
       <main className="boot">
@@ -70,6 +77,11 @@ export function Shell() {
       <SignedInLayout user={state.user} environment={environment} />
     </InstallationsProvider>
   );
+}
+
+function ConsoleRedirect({ href }: { href: string }) {
+  useEffect(() => { window.location.replace(href); }, [href]);
+  return <main className="boot"><p>관리 콘솔로 이동합니다. <a href={href}>계속</a></p></main>;
 }
 
 const ENVIRONMENTS: { id: Environment; label: string; badge: string }[] = [
@@ -129,15 +141,19 @@ function RailLink({
   );
 }
 
-function pageTitle(pathname: string, environment: Environment, appName?: string) {
+function pageTitle(pathname: string, environment: Environment, appName?: string, console = false) {
   if (pathname === "/admin") return "플랫폼 관리";
   if (pathname === "/cli/install") return "CLI 설치";
   if (isCliApprovalPath(pathname)) return "CLI 로그인 승인";
+  if (pathname === "/cli/sessions") return "내 CLI 연결";
   if (appName) return appName;
+  if (console) return "내가 관리하는 앱";
   return environment === "prod" ? "운영 앱" : "테스트 앱";
 }
 
 function SignedInLayout({ user, environment }: { user: User; environment: Environment }) {
+  const options = useSurface();
+  const isConsole = options.surface === "console";
   const [menuOpen, setMenuOpen] = useState(false);
   const [tooltip, setTooltip] = useState<{ text: string; top: number } | null>(null);
   const location = useLocation();
@@ -208,7 +224,7 @@ function SignedInLayout({ user, environment }: { user: User; environment: Enviro
             icon={<HomeIcon />}
             active={homeActive}
           />
-          {apps.map((a) => (
+          {!isConsole && apps.map((a) => (
             <RailLink
               key={a.id}
               to={environmentPath(environment, a.appId)}
@@ -224,9 +240,18 @@ function SignedInLayout({ user, environment }: { user: User; environment: Enviro
           )}
         </nav>
         <nav aria-label="플랫폼" className="rail-section rail-platform">
-          {user.admin && (
+          {isConsole && user.admin && (
             <RailLink to="/admin" label="플랫폼 관리" short="관리" icon={<SettingsIcon />} active={pathname === "/admin"} />
           )}
+          {isConsole && <RailLink to="/cli/sessions" label="내 CLI 연결" icon={<TerminalIcon />} active={pathname === "/cli/sessions"} />}
+          {!isConsole && <a className="rail-item" aria-label={user.canManageConsole ? "관리 콘솔" : "내 CLI 연결"}
+            href={surfaceUrl(options.consoleOrigin, user.canManageConsole ? environmentPath(environment) : "/cli/sessions")}
+            onClick={(event) => { if (!confirmLeaveAllApps()) event.preventDefault(); }}>
+            <span className="rail-icon"><SettingsIcon /></span><span className="rail-label">{user.canManageConsole ? "관리 콘솔" : "내 CLI 연결"}</span>
+          </a>}
+          {isConsole && <a className="rail-item" aria-label="업무 포털" href={surfaceUrl(options.portalOrigin, environmentPath(environment))}>
+            <span className="rail-icon"><HomeIcon /></span><span className="rail-label">업무 포털</span>
+          </a>}
           <RailLink
             to="/cli/install"
             label="CLI 설치"
@@ -260,7 +285,7 @@ function SignedInLayout({ user, environment }: { user: User; environment: Enviro
             <span className="env-badge-mobile">
               <Badge tone={environment === "prod" ? "warning" : "info"}>{current.badge}</Badge>
             </span>
-            <p className="header-title">{pageTitle(pathname, environment, activeApp?.name)}</p>
+            <p className="header-title">{pageTitle(pathname, environment, activeApp?.name, isConsole)}</p>
           </div>
           <div className="header-account">
             <span className="account-name" title={user.name}>

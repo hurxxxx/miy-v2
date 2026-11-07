@@ -1,0 +1,85 @@
+# Fixed upstreams bind browser purpose at the server listener, never by a header.
+(common_headers) {
+  header {
+    >X-Content-Type-Options nosniff
+    >X-Frame-Options DENY
+    +Content-Security-Policy "frame-ancestors 'none'"
+  }
+}
+(portal) {
+  import common_headers
+  header +Content-Security-Policy "worker-src 'none'"
+  @worker header Service-Worker script
+  handle @worker {
+    respond 403
+  }
+  @identity path /identity /identity/*
+  handle @identity {
+    respond 404
+  }
+  @cli path_regexp cli ^/cli/(authorize|device)/([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$
+  handle @cli {
+    # Only the public flow id crosses to the fixed trusted origin. Drop queries.
+    redir {$MIY_CONSOLE_ORIGIN}/cli/{re.cli.1}/{re.cli.2} 302
+  }
+  @core path /api/* /auth/* /mcp /mcp/* /.well-known/* /artifacts/* /cli/downloads/* /cli/installers/*
+  handle @core {
+    reverse_proxy {$MIY_CORE_UPSTREAM:127.0.0.1:18080} {
+      header_up Host {$MIY_PORTAL_HOST:localhost:18000}
+      header_up X-Forwarded-Host {$MIY_PORTAL_HOST:localhost:18000}
+      header_up X-Forwarded-Proto {$MIY_PUBLIC_SCHEME:http}
+      header_up X-Forwarded-Port {$MIY_PORTAL_PORT:18000}
+      header_up X-Forwarded-For {remote_host}
+      header_up -Forwarded
+    }
+  }
+  handle {
+    root * /srv/platform
+    try_files {path} /index.html
+    file_server
+  }
+}
+(console) {
+  import common_headers
+  @worker header Service-Worker script
+  handle @worker {
+    respond 403
+  }
+  @appContent path_regexp appContent ^/(artifacts(/|$)|preview(/|$)|((environments/[^/]+/)?apps)(/|$)|api/v1/(preview(/|$)|installations/[^/]+/(api(/|$)|connections/[^/]+/api(/|$))))
+  handle @appContent {
+    respond 404
+  }
+  @identityPublic path /identity/realms/miy /identity/realms/miy/* /identity/resources/*
+  handle @identityPublic {
+    reverse_proxy {$MIY_IDENTITY_UPSTREAM:127.0.0.1:18181} {
+      header_up Host {$MIY_CONSOLE_HOST:localhost:18001}
+      header_up X-Forwarded-Host {$MIY_CONSOLE_HOST:localhost:18001}
+      header_up X-Forwarded-Proto {$MIY_PUBLIC_SCHEME:http}
+      header_up X-Forwarded-Port {$MIY_CONSOLE_PORT:18001}
+      header_up X-Forwarded-For {remote_host}
+      header_up -Forwarded
+      header_down -X-Frame-Options
+    }
+  }
+  @identityPrivate path /identity /identity/*
+  handle @identityPrivate {
+    respond 404
+  }
+  @core path /api/* /auth/* /mcp /mcp/* /.well-known/* /cli/downloads/* /cli/installers/*
+  handle @core {
+    reverse_proxy {$MIY_CONSOLE_CORE_UPSTREAM:127.0.0.1:18081} {
+      header_up Host {$MIY_CONSOLE_HOST:localhost:18001}
+      header_up X-Forwarded-Host {$MIY_CONSOLE_HOST:localhost:18001}
+      header_up X-Forwarded-Proto {$MIY_PUBLIC_SCHEME:http}
+      header_up X-Forwarded-Port {$MIY_CONSOLE_PORT:18001}
+      header_up X-Forwarded-For {remote_host}
+      header_up -Forwarded
+    }
+  }
+  handle {
+    header +Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; worker-src 'none'; form-action 'self'"
+    root * /srv/platform
+    try_files {path} /index.html
+    file_server
+  }
+}

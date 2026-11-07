@@ -1,3 +1,4 @@
+import { browserUser, mockSurface } from "./browser-surface";
 import { test, expect, type Page } from "@playwright/test";
 
 // Admin UI for users, groups and app access with mocked APIs. These checks cover the
@@ -19,6 +20,7 @@ type Group = {
 };
 
 async function mock(page: Page) {
+  await mockSurface(page, "console");
   const sent: {
     method: string;
     path: string;
@@ -169,7 +171,7 @@ async function mock(page: Page) {
     }
     const reply =
       path === "/api/v1/me"
-        ? admin
+        ? browserUser(route, admin)
         : path === "/api/v1/installations"
           ? []
           : path === "/api/v1/runtime/installations"
@@ -384,9 +386,9 @@ test("a company-disabled app stays in runtime management but is not offered for 
     page.locator(".ui-panel").filter({ has: page.getByRole("heading", { name: title, exact: true }) });
   const prod = panel("장부 · prod");
   await expect(prod.getByText("회사 사용 중지", { exact: true })).toBeVisible();
-  await expect(prod.getByRole("link", { name: "앱 열기" })).toHaveCount(0);
+  await expect(prod.getByRole("link", { name: "포털에서 앱 열기" })).toHaveCount(0);
   await expect(prod).toContainText("회사 사용 중지 중이라 열 수 없습니다.");
-  await expect(panel("장부 · dev").getByRole("link", { name: "앱 열기" })).toBeVisible();
+  await expect(panel("장부 · dev").getByRole("link", { name: "포털에서 앱 열기" })).toBeVisible();
 
   await prod.getByRole("button", { name: "중지", exact: true }).click();
   await page.getByRole("dialog").getByRole("button", { name: "중지", exact: true }).click();

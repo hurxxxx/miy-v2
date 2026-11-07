@@ -59,6 +59,7 @@ fn suite(name: &str, result: Result<Vec<String>>, evidence: Value) {
 }
 fn actor(id: &str) -> auth::Principal {
     auth::Principal {
+        browser_purpose: None,
         cli_session_id: None,
         delegation_id: None,
         id: id.into(),
@@ -462,7 +463,8 @@ async fn monitoring_boundaries(s: &State, admin: &auth::Principal) -> Result<()>
 
 /// The company switch blocks use, not runtime control (CORE-PERMISSIONS): an administrator
 /// still finds the disabled app in the runtime list, stops and starts the real prod container
-/// and follows each job. A user with only use loses the job together with the app.
+/// and follows each job. A user with only use cannot read operating records before
+/// or after the company switch changes.
 async fn disabled_app_runtime_control(
     s: &State,
     admin: &auth::Principal,
@@ -488,7 +490,7 @@ async fn disabled_app_runtime_control(
         let managed = prod(&crate::domain::managed_installations(s, admin).await.map_err(code)?)
             .context("disabled prod left the runtime list")?;
         let usable = prod(&crate::domain::installations(s, admin).await.map_err(code)?).is_some();
-        let list_denied = crate::domain::managed_installations(s, user).await.err().map(|e| e.code);
+        let user_managed = crate::domain::managed_installations(s, user).await.map_err(code)?;
         let stop = submit(s, admin, "stop", "prod", None, None, "disabled-app-stop").await?;
         let stopped = finish(pool, stop).await?;
         let container = inst(pool, "prod").await?;
@@ -500,7 +502,7 @@ async fn disabled_app_runtime_control(
         let running = inst(pool, "prod").await?;
         Ok::<_, anyhow::Error>(json!({
             "managed":{"appDisabled":managed["appDisabled"],"canOpen":managed["canOpen"],"canManage":managed["canManage"]},
-            "usageListed":usable,"nonAdminList":list_denied,"stop":stopped,"stoppedContainerRunning":docker["State"]["Running"],
+            "usageListed":usable,"nonAdminList":user_managed,"stop":stopped,"stoppedContainerRunning":docker["State"]["Running"],
             "adminReadsJob":admin_reads,"useOnlyJobRead":user_read,"start":started,"runtimeAfterStart":running["runtimeStatus"],
         }))
     }
@@ -515,14 +517,14 @@ async fn disabled_app_runtime_control(
     let e = observed?;
     report(
         "company-disabled app stays in administrator runtime control",
-        before
+        !before
             && e["managed"] == json!({"appDisabled":true,"canOpen":false,"canManage":true})
             && e["usageListed"] == false
-            && e["nonAdminList"] == "forbidden"
+            && e["nonAdminList"] == json!([])
             && e["stop"]["status"] == "succeeded"
             && e["stoppedContainerRunning"] == false
             && e["adminReadsJob"] == true
-            && e["useOnlyJobRead"] == "app_disabled"
+            && e["useOnlyJobRead"] == "forbidden"
             && e["start"]["status"] == "succeeded"
             && e["runtimeAfterStart"] == "running",
         json!({"useOnlyJobReadBeforeDisable":before,"observed":e}),
@@ -886,6 +888,12 @@ async fn isolated_runtime_regression() -> Result<()> {
         .max_connections(24)
         .connect(&std::env::var("DATABASE_URL")?)
         .await?;
+    let migration = crate::browser_boundary_migration_regression::run(&pool).await?;
+    suite(
+        "migration",
+        Ok(migration),
+        json!({"suite":"migration","storage":"fresh isolated PostgreSQL and independent app database","fromSchema":19,"toSchema":20}),
+    );
     sqlx::migrate!("../../migrations/core").run(&pool).await?;
     sqlx::query("INSERT INTO users(id,name,admin) VALUES('audit-admin','Synthetic admin',true),('audit-dev','Synthetic developer',false),('audit-user','Synthetic user',false) ON CONFLICT (id) DO NOTHING").execute(&pool).await?;
     // Only OIDC discovery metadata is a fixture. This run does not claim OAuth verification.
@@ -908,13 +916,16 @@ async fn isolated_runtime_regression() -> Result<()> {
     let oidc = tokio::spawn(async move { axum::serve(listener, app).await });
     unsafe {
         std::env::set_var("MIY_ISSUER", &origin);
-        std::env::set_var("MIY_ORIGIN", &origin);
         std::env::set_var("MIY_WEB_SECRET", "synthetic");
         std::env::set_var("MIY_RESOURCE_SECRET", "synthetic");
     }
     let api_listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
     let api_origin = format!("http://{}", api_listener.local_addr()?);
+    let console_listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
+    let console_origin = format!("http://{}", console_listener.local_addr()?);
     unsafe {
+        std::env::set_var("MIY_ORIGIN", &api_origin);
+        std::env::set_var("MIY_CONSOLE_ORIGIN", &console_origin);
         std::env::set_var("MIY_DEV_LOGIN", "1");
         std::env::set_var("MIY_DEV_ORIGIN", &api_origin);
     }
@@ -925,6 +936,9 @@ async fn isolated_runtime_regression() -> Result<()> {
     };
     let api_router = crate::http::router(s.clone());
     let api_server = tokio::spawn(async move { axum::serve(api_listener, api_router).await });
+    let console_router = crate::http::router_for(s.clone(), auth::BrowserPurpose::Console);
+    let console_server =
+        tokio::spawn(async move { axum::serve(console_listener, console_router).await });
     let admin = actor("audit-admin");
     let dev = actor("audit-dev");
     let ordinary = actor("audit-user");
@@ -1607,8 +1621,13 @@ async fn isolated_runtime_regression() -> Result<()> {
         json!({"suite":"cli","transport":"actual CLI binary and HTTP","storage":"isolated config and PostgreSQL"}),
     );
     suite(
+        "boundary",
+        crate::browser_boundary_regression::run(&s, &client, &api_origin, &console_origin).await,
+        json!({"suite":"boundary","transport":"two fixed HTTP listeners","storage":"isolated PostgreSQL","identity":"synthetic development sessions","application":"signed loopback API and actual JS artifact"}),
+    );
+    suite(
         "auth",
-        crate::auth_sessions_regression::run(&s, &client, &api_origin).await,
+        crate::auth_sessions_regression::run(&s, &client, &console_origin).await,
         json!({"suite":"auth","transport":"HTTP","storage":"isolated PostgreSQL","identity":"synthetic development account"}),
     );
     suite(
@@ -1623,6 +1642,7 @@ async fn isolated_runtime_regression() -> Result<()> {
     );
     worker_recovery_boundaries(&s, &admin).await?;
     api_server.abort();
+    console_server.abort();
     oidc.abort();
     let failures = std::fs::read_to_string(root().join("evidence/results.jsonl"))?
         .lines()

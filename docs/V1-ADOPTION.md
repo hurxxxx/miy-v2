@@ -1,6 +1,7 @@
 # v1(miy) 검토와 v2 적용 계획
 
 - 작성일: 2026-11-03 (같은 날 원문 대조 재검증·보완, §8)
+- 최소 경계 설계 반영: 2026-11-06. 사내에서 회사가 관리하는 앱을 대상으로 MF/AppRoot·통합 라우팅·단일 IP HTTPS를 유지한다. 업무 포털(dev/prod)과 관리·CLI 승인·Keycloak 콘솔 두 출처, portal/console 세션·prod 입장/관리 분리가 필수다. 별도 IdP/dev 출처·외부 앱 격리·자동 CA는 후속이며 최소 경계는 소스에 구현했으며 운영 미배포. 정본은 [앱 실행·관리 경계](APP-BOUNDARIES.md#확정-결정)
 - 검토 대상: 공식 v1 저장소 `/projects/miy` main `188a8cef`(2026-10-12, VERSION 0.1.1). `origin/dev`(`7d845743`, 10-14)는 main보다 API 코드가 오래됐고 Workbench와 Hermes 런타임 업그레이드(v0.21.7)만 앞서 있다. 그 차이가 판단에 영향을 주는 곳만 따로 적었다.
 - 보조 조사 이력: `../ai-do/dev` `dfc7fb9e16e`(2026-11-03). 이미 구현한 기본 UI의 참조 이력이며, 이후 기능·권한·공간 설계의 기준은 miy v1이다.
 - 최초 비교 기준: v2 main `3876d43` (CLI/core 0.7.0, 번들 0.8.0). §3의 비교 열은 이 시점의 조사 결과이며 현재 구현 상태는 §7을 따른다.
@@ -24,7 +25,7 @@ v1 근거는 `miy:<경로>`, ai-do 근거는 `ai-do:<경로>`로 적는다. 각�
    - 불확실한 커밋 결과를 근거로 보상 삭제를 하지 않는다.
    - AI 없이도 업무가 동작하게 한다.
 2. **v1이 폐기한 구조는 다시 들이지 않는다.** 플랫폼 전역 워크스페이스(ADR 0012로 폐기), 앱 간 공유 DB 외래키, 셸형 AI 터미널, 대리 로그인, 범용 검증 엔진, 무거운 hook·skill 체계가 그 대상이다.
-3. **v2에 들어갈 자리가 없는 기술 공백은 세 가지다.** 감사 기록 조회·보존(V1-A1), 서비스 계정용 범위 제한 API 키(V1-A2), 앱이 플랫폼을 통해 LLM을 호출하는 등록 workload(V1-I7)다. [추진 계획](PLAN.md)의 작업표에 넣었다.
+3. **최초 v1 조사에서 별도로 찾은 기술 공백은 세 가지다.** 감사 기록 조회·보존(V1-A1), 서비스 계정용 범위 제한 API 키(V1-A2), 앱이 플랫폼을 통해 LLM을 호출하는 등록 workload(V1-I7)다. 이후 PLM 연계 요구에서 찾은 공통 업무 ACL·API 전용 호출·업무 이벤트 공백은 §3.3의 추가 검토로 구분한다. 작업 순서는 [추진 계획](PLAN.md)이 관리한다.
 4. **공식 업무 앱은 "이전"이 아니라 "재구현 후 인수"다.**
    - v1 공식 앱 12종은 소유 이전과 대표 경로 검사까지 진행했다.
    - 이슈 대장에 오른 10종은 전체 업무 인수가 "검증 대기"로 남았다. Community는 "의심/미확인"이다(`miy:platform-redesign/APP_ISSUES.md`).
@@ -60,7 +61,7 @@ v1 근거는 `miy:<경로>`, ai-do 근거는 `ai-do:<경로>`로 적는다. 각�
 | ID | 항목 | v1 근거 | v2 현재 | 판정 | 우선 |
 | --- | --- | --- | --- | --- | --- |
 | V1-Q1 | 플랫폼 개발용 루트 `AGENTS.md`와 `CLAUDE.md` 연결. 커밋·push·배포 권한, CI·생성 계약·릴리스 게이트 우회 금지, 비밀 취급, 실행/미실행 검사 보고를 담는다 | `miy:AGENTS.md`, `miy:CLAUDE.md` | 없음. 생성 앱용 `templates/rust-react/AGENTS.md`만 있음 | 변형 적용: Rust 코어·CLI·운영 서버 안전 규칙 중심 | P1 |
-| V1-Q2 | 변경 유형별 최소 검사 지도(Rust 코어, CLI, 웹, migration, 설치 파일, 템플릿) | `miy:docs/agents/vibe-coding-harness.md` | [CORE-TESTING](CORE-TESTING.md)·[VALIDATION](VALIDATION.md)에 흩어져 있음 | 변형 적용 | P1 |
+| V1-Q2 | 변경 유형별 최소 검사 지도(Rust 코어, CLI, 웹, migration, 설치 파일, 템플릿) | `miy:docs/agents/vibe-coding-harness.md` | 최초 비교에서는 여러 문서에 흩어져 있었음. 현재 변경별 명령은 [CHECKS](CHECKS.md), 경계 인수는 [APP-BOUNDARIES](APP-BOUNDARIES.md#경계-인수)로 정리 | 변형 적용 | P1 |
 | V1-Q3 | 웹 CI 작업(`pnpm typecheck` + `pnpm build`). `scripts/check.sh`를 CI에서 돌릴 수 있는 부분과 실행 중 스택이 필요한 부분으로 분리 | `miy:package.json`(`check:web-architecture`) | GitHub Actions는 Rust·CLI만 검사. 웹 검사는 로컬 `check.sh`에서만 실행 | 적용 | P1 |
 | V1-Q4 | 버전 일치 검사: Cargo, 번들·템플릿 버전, 릴리스 증거 | `miy:scripts/check-project-version.mjs` | 릴리스 태그와 Cargo 버전만 대조 | 변형 적용 | P2 |
 | V1-Q5 | 의존성·비밀 검사(`cargo deny`/`cargo audit`, secret scan) | v1 설정에도 없음 | 없음 | 신규 | P2 |
@@ -91,18 +92,21 @@ v1 근거는 `miy:<경로>`, ai-do 근거는 `ai-do:<경로>`로 적는다. 각�
 | ID | 항목 | v1 근거 | v2 현재 | 판정 | 우선 |
 | --- | --- | --- | --- | --- | --- |
 | V1-G1 | 사용자·단일 그룹을 앱 권한 주체로 사용. 인사 주 소속 정확 일치·수동 사용자 배정, 계층·책임자·하위 부서의 자동 권한 상속 없음. 계층 변경은 잠금 후 순환 검사 | `miy:docs/domains/organization/README.md`, `miy:adr/0012-company-app-access-without-workspaces.md`, `miy:WORKSPACE_ACL_REVIEW.md` 43행 | 사용자 단위 `grants`(use/develop/deploy)만 있음 | 변형 적용: 기본 거부·기존 개발/배포 권한 유지, 파생 권한은 현재 멤버십으로 계산. 그룹 정본·동기화는 §5 | P1 |
-| V1-G2 | 앱 입장 대상(전체/선택, 사용자∪그룹)과 앱별 회사 중지 스위치. 설정이 없거나 대상이 비면 거부. 관리자는 대상 선택만 우회하고 중지 스위치는 우회 못 함 | `miy:docs/domains/app-platform/README.md` §App Admission | 없음. 앱 비활성화는 [PRD](PRD.md)에 요구만 있음 | 변형 적용: "전체"는 명시적으로 선택할 때만. 입장 판정과 앱 내부 ACL을 분리하며 v1의 관리자 업무 데이터 조회 정책을 자동 도입하지 않음 | P1 |
+| V1-G2 | 앱 입장 대상(전체/선택, 사용자∪그룹)과 앱별 회사 중지 스위치. 설정이 없거나 대상이 비면 거부. v1 관리자는 대상 선택만 우회하고 중지 스위치는 우회 못 함 | `miy:docs/domains/app-platform/README.md` §App Admission | 최초 비교에서는 미구현. 현재 적용 범위는 §7과 [코어 권한](CORE-PERMISSIONS.md) 참조 | 변형 적용: "전체"는 명시 선택만. 2026-11-06 목표에서는 prod 관리자·deploy의 자동 Use도 제거하고 명시적 use/전체 허용만 인정. 관리/업무 경계 인수 후 dev 관리자/develop의 개발 미리보기와 use@dev 시험 입장, 앱 내부 ACL은 별도 유지. 새 정책은 소스 구현·운영 미반영 | P1 |
 | V1-G3 | 그룹·계정 변경 시 영향받는 사용자만 무효화하고 대기 작업을 다시 확인 | `miy:WORKSPACE_ACL_REVIEW.md` 42행 | 사용자 단위 위임 재확인은 있음([CORE-PERMISSIONS](CORE-PERMISSIONS.md)) | 적용 | P1 |
-| V1-G4 | 디렉터리 선택기 DTO: 활성 대상만, 페이지 처리, 보안 필드 제외. 디렉터리 조회 가능 여부와 콘텐츠 권한은 별개. SDK와 공용 UI에 사용자·그룹 선택기 제공 | `miy:packages/platform-web/src/directory/DirectoryPicker.tsx`, organization README | `connections.rs` `directory_data`가 활성 사용자 전체의 id·이름을 반환 | 변형 적용 | P2 |
-| V1-G5 | 필요 앱만 자기 DB에서 공간·멤버·역할·리소스 ACL을 관리. 플랫폼 워크스페이스 테이블·전역 선택기·필수 숨김 공간 없음. 공간 ID는 앱·환경 범위 안에서만 해석 | ADR 0012, `miy:WORKSPACE_ACL_REVIEW.md` 29~30행 | 앱별 DB는 있음. 공간 권한과 공용 선택 UI·SDK 지원은 후속 | 변형 적용: 플랫폼은 신원·그룹 조회와 재사용 UI/SDK를 제공하며 데이터 소유권은 앱에 유지 | P1 |
-| V1-G6 | 실사용 인수 LIVE-01~17을 v2에 맞게 재작성. 같은 앱에 들어가는 두 사용자의 서로 다른 공간 접근, 공간 없는 앱, 그룹 회수 후 직접 URL·API·대기 작업 거부, 앱/환경 간 공간 ID 오용을 확인 | `miy:docs/product/core-platform-user-acceptance.md` | 없음 | 변형 적용: 대표 앱의 실제 서버 판정으로 인수 | P2 |
+| V1-G4 | 디렉터리 선택기 DTO: 활성 대상만, 페이지 처리, 보안 필드 제외. 디렉터리 조회 가능 여부와 콘텐츠 권한은 별개. SDK와 공용 UI에 사용자·그룹 선택기 제공 | `miy:packages/platform-web/src/directory/DirectoryPicker.tsx`, organization README | `connections.rs` `directory_data`가 활성 사용자 전체의 id·이름을 반환 | 변형 적용: 기존 동적 UI·SDK에서 선택기·DTO·서버 현재 멤버십 확인 제공. 두 출처 최소 보안 다음에 진행하며 별도 앱 bearer·iframe 브리지는 추가하지 않음 | P2 |
+| V1-G5 | 필요 앱만 자기 DB에서 공간·멤버·역할·리소스 ACL을 관리. 플랫폼 워크스페이스 테이블·전역 선택기·필수 숨김 공간 없음. 공간 ID는 앱·환경 범위 안에서만 해석 | ADR 0012, `miy:WORKSPACE_ACL_REVIEW.md` 29~30행 | 앱별 DB는 있음. 공간 권한과 공용 선택 UI·SDK 지원은 후속 | 변형 적용: 플랫폼의 공통 authorize SDK·서버 미들웨어·그룹 확인·공유/회수·감사 도구를 검토. ACL 관계와 업무 규칙은 앱 DB에 유지. 아래 PLM 추가 요구와 함께 미구현 | P1 |
+| V1-G6 | 실사용 인수 LIVE-01~17을 v2에 맞게 재작성. 같은 앱에 들어가는 두 사용자의 서로 다른 공간 접근, 공간 없는 앱, 그룹 회수 후 직접 URL·API·대기 작업 거부, 앱/환경 간 공간 ID 오용을 확인 | `miy:docs/product/core-platform-user-acceptance.md` | 없음 | 변형 적용: 프로젝트·업무 대표 앱의 실제 서버 판정으로 인수. 별도의 PLM→PDM/MES 소규모 연계 인수 추가는 아래 신규 요구이며 NOT_RUN | P2 |
+| V1-G7 | 독립 앱의 별도 출처 iframe과 일회용 launch 교환. v1 전체 내장 앱이 격리됐다는 뜻은 아님 | `miy:docs/domains/app-platform/README.md`, `miy:apps/web/src/platform/apps/IndependentAppHost.tsx` | 현행 같은 페이지 MF. 새 경계 소스 구현·운영 미배포 | iframe 채택 철회. v2는 사내 승인 앱의 MF·단일 IP HTTPS, 포털과 콘솔+Keycloak 두 출처 최소안을 선택. 앱별 강제 격리·전체 MF 앱 폐기·SDK 일괄 교체 없음. [정본](APP-BOUNDARIES.md#확정-결정) 참고 | 순서는 PLAN |
+
+2026-11-06 PLM·PMS·PDM·MES·DAS 연계는 **v1에서 확인한 구현 사실이 아닌 신규 제품 요구**다. 상세는 [공통 업무 권한](CORE-PERMISSIONS.md#공통-업무-권한과-앱-연계)을 따른다. 최소 보안 다음 G4·G5·G6에서 현재 그룹 확인·공통 ACL·대표 프로젝트/업무 앱을 인수한다. A2·API Invoke·업무 이벤트·파일은 해당 후속 기능 때 작은 PLM→PDM/MES 연계로 확인하며 전부를 경계 완료의 선행 조건으로 두지 않는다. 알림 projection과 업무 outbox/중복 방지는 별개이고 신규 기능 검사는 NOT_RUN이다.
 
 ### 3.4 운영 관리 공백
 
 | ID | 항목 | v1 근거 | v2 현재 | 판정 | 우선 |
 | --- | --- | --- | --- | --- | --- |
 | V1-A1 | 구조화된 감사 기록과 관리자 조회: 대상 종류·결과·요약, 기간·행위자·동작 필터, 권한 변경과 같은 트랜잭션에 기록, 보존 기간 | `miy:apps/api/src/miy_api/domains/auth/models.py`, admin `/audit-logs` | `audit` 테이블은 actor/action/target/request_id뿐. 요청 미들웨어는 `METHOD:status`로 기록하고 실패해도 로그만 남김. 위임·앱 호출 거부·상태 점검은 별도 action으로 기록. 조회 API 없음 | 변형 적용 | P2 |
-| V1-A2 | 범위가 제한된 플랫폼 API 키(서비스 계정 기반): `miy_pk_` opaque 토큰, SHA-256 해시로 인증, 코드로 고정한 scope, 사용자 토큰과 섞어 쓸 수 없음, 감사 기록 | `miy:adr/0010-platform-api-key-directory-integration.md`, `miy:docs/domains/integrations/README.md` | 서비스 계정 미구현([CORE-HARDENING](CORE-HARDENING.md) 2차 한계) | 변형 적용: 다시 보여 주기 위한 암호문 저장은 제외 | P2 |
+| V1-A2 | 범위가 제한된 플랫폼 API 키(서비스 계정 기반): `miy_pk_` opaque 토큰, SHA-256 해시로 인증, 코드로 고정한 scope, 사용자 토큰과 섞어 쓸 수 없음, 감사 기록 | `miy:adr/0010-platform-api-key-directory-integration.md`, `miy:docs/domains/integrations/README.md` | 서비스 계정 미구현([CORE-HARDENING](CORE-HARDENING.md) 2차 한계) | 변형 적용: 다시 보여 주기 위한 암호문 저장은 제외. PLM 무인 연계는 앱·환경·action·자원 범위의 서비스 주체로 설계하고 사용자 대행과 구분. 신규 자격증명은 구현 전 기본 거부 | P2 |
 | V1-A3 | 사용량·비용 집계: dev/prod 분리, `complete:false`, 보고되지 않은 비용을 0으로 처리하지 않음 | integrations README, `miy:MIY-SOLUTION-GAP-REVIEW.md` §5.4 | 없음 | 변형 적용: V1-R2를 채택하면 그 일부로 처리 | P3 |
 
 ### 3.5 공용 UI·테마·언어·SDK (UI §7-1)
@@ -110,17 +114,19 @@ v1 근거는 `miy:<경로>`, ai-do 근거는 `ai-do:<경로>`로 적는다. 각�
 | ID | 항목 | 근거(miy v1 기준) | v2 현재 | 판정 | 우선 |
 | --- | --- | --- | --- | --- | --- |
 | V1-U1 | 업무 UI 원칙: 밀도 높은 화면, 평면 표, 한 줄 도구 모음, 모바일 전역 메뉴와 현재 앱 메뉴 분리. 템플릿 지침에도 넣는다 | `miy:docs/product/ui-design-principles.md` | 규칙 문서 없음 | 적용 | P1 |
-| V1-U2 | 다크/시스템 테마: SDK `AppRuntime.theme`를 `"light" \| "dark"`로 확장, `--miy-*` 다크 토큰, 강조색 전경 누락 검사 | `miy:scripts/check-web-dark-mode-tokens.mjs`, `miy:packages/platform-web/src/theme/document-theme.ts` | `theme: "light"` 고정 | 변형 적용: 기존 앱·불변 UI 버전 호환 확인 | P1 |
+| V1-U2 | 다크/시스템 테마: SDK의 테마 상태·변경 알림, `--miy-*` 다크 토큰, 강조색 전경 누락 검사 | `miy:scripts/check-web-dark-mode-tokens.mjs`, `miy:packages/platform-web/src/theme/document-theme.ts` | `theme: "light"` 고정 | 변형 적용: MF/AppRuntime을 유지하는 SDK 확장으로 검토. 게시된 기존 SDK·UI 버전은 수정하지 않음 | P1 |
 | V1-U3 | 한국어/영어 메시지 목록, 런타임 `locale`, 하드코딩 문자열 검사 | `miy:scripts/check-web-i18n-messages.mjs`, `miy:packages/platform-web/src/i18n/resources.ts` | 한국어만 | 변형 적용 | P1 |
 | V1-U4 | 공용 primitive: dialog, confirm/prompt, data-table, 빈 상태·skeleton, 검색 필드, 필터 바, 탭, 상세 drawer, split pane. 새 불변 registry 버전(1.1.x)으로 게시하고 i18n 의존성은 넣지 않음 | `miy:packages/ui/src/lib/` | registry에는 `Panel`·`Button`만 있음 | 변형 적용 | P1 |
 | V1-U5 | 날짜·시간대 유틸과 한국 공휴일(정적 데이터, 지원 범위 밖이면 null) | `miy:packages/platform-web/src/time/korean-holidays.ts`, `miy:docs/product/korean-holidays.md` | 없음 | 적용 | P2 |
 | V1-U6 | SDK 확장: 테마·언어 변경 알림, 다른 앱으로 이동 제안(사용자 확인 필수, 자동 이동 없음), 저장 대기 신호 | `miy:platform-redesign/SDK_NAVIGATION.md`, `miy:apps/official-suite/README.md` | 앱 내부 `navigate`, `registerNavigationGuard` | 변형 적용 | P2 |
 
+U1~U6은 기존 MF/AppRuntime과 SDK를 유지하는 기능 개발이다. 독립 UI 자산·테마·언어는 호환 검사를 하며 병행하고 인증·권한 변경과 겹치는 부분만 최소 경계와 맞춘다. iframe 브리지·별도 dev 포털·모든 후속 보안 완료를 기다리지 않는다. 실제 추가 계약만 새 불변 SDK/UI 버전으로 발행하며 순서·상태는 PLAN을 따른다.
+
 ### 3.6 공통 업무 기능 (UI §7-3)
 
 | ID | 항목 | 근거 | v2 현재 | 판정 | 우선 |
 | --- | --- | --- | --- | --- | --- |
-| V1-F1 | Storage API를 먼저 만들고 그다음 파일 앱. 선택한 파일 읽기는 플랫폼 선택기, 짧은 읽기 권한, 10MiB 상한, `files:read-selected` 권한으로 제공 | `miy:platform-redesign/SDK_FILES.md`, `miy:packages/official-suite-web/src/files/` | PRD에 계획(MinIO 제외)만 있음 | 변형 적용 | P1(§7-3 첫 항목) |
+| V1-F1 | Storage API를 먼저 만들고 그다음 파일 앱. 선택한 파일 읽기는 플랫폼 선택기, 짧은 읽기 권한, 10MiB 상한, `files:read-selected` 권한으로 제공 | `miy:platform-redesign/SDK_FILES.md`, `miy:packages/official-suite-web/src/files/` | PRD에 계획(MinIO 제외)만 있음 | 변형 적용: 공용 선택 UI와 선택 파일만의 제한 핸들. UI 표시를 권한 경계로 삼지 않고 서버가 사용 시 재검사. 10MiB는 v1 선택 파일 기준이며 PLM 대용량 CAD 지원을 뜻하지 않음 | P1(§7-3 첫 항목) |
 | V1-F2 | 콘텐츠 전달 증표: 15분 이내, fragment로 전달, `private, no-store`, 스트리밍 직전 재확인, 전용 서명 키 | `miy:docs/domains/content-access/README.md` | 없음 | 변형 적용 | P2 |
 | V1-F3 | 알림은 원본 앱 이벤트의 읽기 projection. 목록·건수·읽음 처리마다 원본 ACL을 다시 확인하고, 건수는 필터링한 뒤 계산 | `miy:docs/domains/notifications/README.md`, `miy:apps/web/src/components/layout/NotificationPanel.tsx` | 없음(UI-4에서 메뉴 제외) | 변형 적용: 앱이 발행하고 코어가 원본 앱에 재확인 | P2 |
 | V1-F4 | 업로드 관리자 UX: 오른쪽 아래 고정, 탭 단위, 재개·복원 없음 | V1-U1의 UI 원칙 | 없음 | 적용(F1과 함께) | P2 |
@@ -182,7 +188,7 @@ v1은 회사 소개 자료 `MIY 소개 및 사례_20261002.pdf`를 v1 구현과 
 | --- | --- |
 | 플랫폼 전역 워크스페이스·테넌트 범위(ADR 0006·0007·0011) | 세 ADR 모두 "Superseded by ADR 0012"다. 이전 AI ADR(0002·0005)의 scope 정책도 0012로 대체됐으므로 가져오지 않음 |
 | 공유 DB와 앱 간 외래키, 같은 트랜잭션 ACL | v2의 앱별 DB와 반대 구조이며 v1 분리 비용의 원인 |
-| iframe/PKCE 기반 SDK 연결, 사용자별 범용 JSON 레코드 저장 | v2는 같은 출처의 Module Federation과 앱별 DB를 사용. 신뢰할 수 없는 제3자 앱을 받을 때 별도 origin 실행 방식을 다시 검토 |
+| 사용자별 범용 JSON 레코드 저장 | v2는 앱별 DB와 앱이 소유한 업무 스키마·ACL을 유지. V1-G7의 브라우저 계약 검토와 관계없이 범용 JSON 저장 구조를 도입하지 않음 |
 | Workbench(1인용 웹 Codex 콘솔, worktree·GitLab MR) | v2는 사용자 자신의 Codex/Claude Code와 CLI/MCP를 사용. 연동 규칙은 V1-I6만 가져옴. 현업용 웹 Studio 요구는 V1-R5에서 따로 결정 |
 | 셸형 AI 터미널(PTY) | v1이 폐기했지만 종료를 위한 broker·egress 정리 부담이 남았음 |
 | 대리 로그인, 임시 비밀번호·재설정 | 대리 로그인은 v1이 폐기했으나 컬럼·감사 코드가 남았음(`WORKSPACE_ACL_REVIEW.md` 197행). 나머지는 Keycloak이 담당 |
@@ -194,13 +200,15 @@ v1은 회사 소개 자료 `MIY 소개 및 사례_20261002.pdf`를 v1 구현과 
 | Beat heartbeat | v2 worker 소유권 감시(1차)가 대신함 |
 | Bento·draw.io 기반 다이어그램 | 필요할 때 별도 origin 원칙으로 다시 검토 |
 
+v1의 iframe 실행을 v2 필수 계약으로 채택했던 결정은 철회했다. 동적 로딩을 유지하며 이번 최소안은 포털과 관리·로그인 두 출처, 기존 OIDC에 브라우저 용도 구분을 추가하는 방식이다. 새 앱 launch/PKCE 브리지는 만들지 않고 기존 로그인 PKCE는 재사용한다. 같은 페이지 앱 격리나 포트 쿠키 격리를 주장하지 않는다. [출처와 자격증명](APP-BOUNDARIES.md#출처와-자격증명), [전환과 복구](APP-BOUNDARIES.md#전환과-복구)에 따라 기존 CLI·SDK·데이터를 보존한다. 허용된 자동화 promote마다 새 사람 승인을 요구하지 않는다.
+
 ## 5. 결정이 필요한 사항
 
 후속 설계 원본은 miy v1, 앱 입장과 앱 내부 데이터 권한은 분리하는 방향으로 정리했다. 플랫폼 공통 워크스페이스 도입 여부를 다시 선택하는 표가 아니다. 아래에는 그 방향 안에서 남은 범위를 적는다.
 
 | # | 항목 | 현재 기준 | 남은 설계·권고 |
 | --- | --- | --- | --- |
-| 1 | 작업 순서와 첫 업무 앱 | [추진 계획](PLAN.md#다음-우선-작업): 변경 범위의 최소 백업·복원 확인과 디스크·DB 보호 → 사용자·그룹 앱 권한과 공용 UI → 공통 기능·업무 앱. 전체 백업 제품·호스트 updater·종합 인수는 베타 전 | 최소 보호는 core DB 범위로 구현(§7). 첫 업무 앱은 프로젝트·업무 앱(2026-11-03 결정)이며 앱은 하나씩 인수한다. 전체 코어 4차를 기능 개발의 선행 조건으로 두지 않음 |
+| 1 | 작업 순서와 첫 업무 앱 | [PLAN 작업표](PLAN.md#다음-우선-작업)만 순서를 관리. [최소 경계](APP-BOUNDARIES.md#확정-결정) 필수 인수 후 G4·G5·G6과 기존 기능 개발, 권장 보안은 후속 | 최소 데이터 보호 구현분은 §7. 대표 프로젝트·업무 앱은 유지하며 전체 코어 4차·전체 PLM·별도 IdP·자동 CA를 선행 조건으로 두지 않음 |
 | 2 | 그룹 정본·동기화 | v1식 단일 그룹, 주 소속 정확 일치와 수동 사용자 배정. 하위 부서 자동 상속·중첩 그룹 제외 | **결정(2026-11-03):** 코어 DB가 정본, Keycloak은 인증만. 그룹으로 줄 수 있는 권한은 `use`·`develop`, `deploy`는 사람별. 외부 인사 연동은 출처·동기화·회수 계약을 먼저 정의. ai-do식 동적 조직 묶음은 자동 도입하지 않음 |
 | 3 | 앱 내부 공간의 상세 계약 | 공간이 필요한 앱만 자체 DB·API에서 데이터·멤버·역할을 관리. 플랫폼은 사용자·그룹 조회와 공용 UI/SDK를 제공 | **결정(2026-11-03):** 대표 앱은 v1 PMS 공간 모델을 줄인 프로젝트·업무 앱. 그 앱에서 생성·조회·공유·마지막 소유자 보호·권한 회수·데이터 보존을 정한다. 공용 선택 UI를 재사용해도 공간 소유권은 앱에 유지 |
 | 4 | 대외 자료 요구와 보류 앱 | V1-R1~R5 및 §3.6의 보류 앱은 채택 / 보류 / 범위 밖으로 구분 | R1(수명주기 기록)·R3(납품 패키지)은 기존 v2 방향과 맞아 채택을 권고. R2·R4·R5와 보류 앱은 제품 범위 결정이 필요. 특히 R5 웹 Studio는 별도 결정 |

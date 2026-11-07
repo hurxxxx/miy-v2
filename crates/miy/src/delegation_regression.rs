@@ -186,7 +186,7 @@ async fn issue_during_user_disable(state: &State, admin: &Harness<'_>) -> Result
     Ok(())
 }
 
-async fn cli_import(base: &str, issued: &Value) -> Result<()> {
+async fn cli_import(base: &str, issued: &Value, app: &str) -> Result<()> {
     let root = tempfile::tempdir()?;
     let credential = root.path().join("delegation.json");
     let tokens = &issued["credential"];
@@ -216,7 +216,7 @@ async fn cli_import(base: &str, issued: &Value) -> Result<()> {
             0,
         ),
         (vec!["auth", "status"], 0),
-        (vec!["--app", "audit-runtime", "app", "status"], 0),
+        (vec!["--app", app, "app", "status"], 0),
         (vec!["user", "list"], 4),
         (
             vec![
@@ -258,6 +258,16 @@ async fn cli_import(base: &str, issued: &Value) -> Result<()> {
             output.status.code(),
             value["error"]["code"].as_str().unwrap_or("none")
         );
+        if args == ["--app", app, "app", "status"] {
+            let prod = value["data"]["installations"]
+                .as_array()
+                .and_then(|rows| rows.iter().find(|row| row["environment"] == "prod"))
+                .context("actual CLI app status omitted managed prod without Use")?;
+            ensure!(
+                prod["canManage"] == true && prod["canOpen"] == false,
+                "actual CLI app status confused management visibility and prod admission"
+            );
+        }
     }
     Ok(())
 }
@@ -485,12 +495,26 @@ async fn runtime_job_boundaries(state: &State, h: &Harness<'_>) -> Result<Vec<St
         .await?;
     }
     let list = format!("/api/v1/runtime/jobs?appId={app}&environment=prod&limit=1");
+    let use_only = h
+        .request(&viewer.token, Method::GET, &list, None, StatusCode::OK)
+        .await?;
+    ensure!(
+        use_only["jobs"].as_array().is_some_and(Vec::is_empty),
+        "Use alone exposed runtime jobs"
+    );
+    sqlx::query(
+        "INSERT INTO grants(user_id,app_id,environment,permission) VALUES($1,$2,'prod','deploy')",
+    )
+    .bind(&viewer.user)
+    .bind(&app)
+    .execute(&state.pool)
+    .await?;
     let first_page = h
         .request(&viewer.token, Method::GET, &list, None, StatusCode::OK)
         .await?;
     let cursor = first_page["nextCursor"]
         .as_str()
-        .expect("job fixture needs a second page");
+        .context("job fixture needs a second page")?;
     let next = format!("{list}&cursor={cursor}");
     let viewer_delegation = viewer.request(&viewer.token, Method::POST, "/api/v1/delegations",
         Some(json!({"name":"Scoped reader","appId":app,"environment":"prod","actions":["read"],"expiresIn":3600})), StatusCode::OK).await?;
@@ -505,8 +529,20 @@ async fn runtime_job_boundaries(state: &State, h: &Harness<'_>) -> Result<Vec<St
         .await?;
     let delegated_next = format!(
         "{list}&cursor={}",
-        delegated_page["nextCursor"].as_str().unwrap()
+        delegated_page["nextCursor"]
+            .as_str()
+            .context("delegated job fixture needs a second page")?
     );
+    sqlx::query("DELETE FROM grants WHERE user_id=$1 AND app_id=$2 AND environment='prod' AND permission='use'")
+        .bind(&viewer.user).bind(&app).execute(&state.pool).await?;
+    cli_import(h.base, &viewer_delegation, &app).await?;
+    sqlx::query(
+        "INSERT INTO grants(user_id,app_id,environment,permission) VALUES($1,$2,'prod','use')",
+    )
+    .bind(&viewer.user)
+    .bind(&app)
+    .execute(&state.pool)
+    .await?;
     h.request(
         &h.token,
         Method::PUT,
@@ -604,6 +640,21 @@ async fn runtime_job_boundaries(state: &State, h: &Harness<'_>) -> Result<Vec<St
         accepted_rows == 1,
         "idempotent runtime request inserted twice"
     );
+    for token in [viewer.token.as_str(), access(&viewer_delegation)] {
+        let managed = h
+            .request(token, Method::GET, &list, None, StatusCode::OK)
+            .await?;
+        ensure!(
+            managed["jobs"]
+                .as_array()
+                .is_some_and(|rows| !rows.is_empty()),
+            "company disable hid operating records from a current prod manager"
+        );
+    }
+    // Withdraw management while retaining Use. Existing cursors and delegated
+    // read must not preserve access to operating records.
+    sqlx::query("DELETE FROM grants WHERE user_id=$1 AND app_id=$2 AND environment='prod' AND permission='deploy'")
+        .bind(&viewer.user).bind(&app).execute(&state.pool).await?;
     for suffix in ["", "/events"] {
         let path = format!("/api/v1/runtime/jobs/{job}{suffix}");
         h.request(delegated, Method::GET, &path, None, StatusCode::OK)
@@ -619,7 +670,7 @@ async fn runtime_job_boundaries(state: &State, h: &Harness<'_>) -> Result<Vec<St
                 StatusCode::FORBIDDEN,
             )
             .await?;
-        ensure!(denied["error"]["code"] == "app_disabled");
+        ensure!(denied["error"]["code"] == "forbidden");
     }
     // Cross-environment detail and list checks must retain the delegation boundary.
     h.request(
@@ -696,6 +747,20 @@ async fn runtime_job_boundaries(state: &State, h: &Harness<'_>) -> Result<Vec<St
         StatusCode::OK,
     )
     .await?;
+    let still_use_only = h
+        .request(&viewer.token, Method::GET, &next, None, StatusCode::OK)
+        .await?;
+    ensure!(
+        still_use_only["jobs"].as_array().is_some_and(Vec::is_empty),
+        "re-enabling an app restored Use-only access to operating records"
+    );
+    sqlx::query(
+        "INSERT INTO grants(user_id,app_id,environment,permission) VALUES($1,$2,'prod','deploy')",
+    )
+    .bind(&viewer.user)
+    .bind(&app)
+    .execute(&state.pool)
+    .await?;
     let enabled_next = h
         .request(&viewer.token, Method::GET, &next, None, StatusCode::OK)
         .await?;
@@ -735,7 +800,8 @@ async fn runtime_job_boundaries(state: &State, h: &Harness<'_>) -> Result<Vec<St
     .await?;
 
     // CLI access tokens carry miy.dev. Exercise the same SQL with read-only OIDC
-    // Principal scopes directly, including the deliberate dev repair exception.
+    // Principal scopes directly. Dev repair permits Use but operating records
+    // still require management read with miy.dev.
     h.request(
         &h.token,
         Method::PUT,
@@ -747,13 +813,13 @@ async fn runtime_job_boundaries(state: &State, h: &Harness<'_>) -> Result<Vec<St
     for (admin, permission, env, has_dev, allowed) in [
         (true, "use", "prod", true, true),
         (true, "use", "prod", false, false),
-        (true, "use", "dev", false, true),
+        (true, "use", "dev", false, false),
         (false, "use", "prod", true, false),
         (false, "use", "dev", true, false),
         (false, "deploy", "prod", true, true),
         (false, "deploy", "prod", false, false),
         (false, "develop", "dev", true, true),
-        (false, "develop", "dev", false, true),
+        (false, "develop", "dev", false, false),
         (false, "develop", "prod", true, false),
     ] {
         sqlx::query("UPDATE users SET admin=$2 WHERE id=$1")
@@ -776,6 +842,7 @@ async fn runtime_job_boundaries(state: &State, h: &Harness<'_>) -> Result<Vec<St
         .execute(&state.pool)
         .await?;
         let mut principal = auth::Principal {
+            browser_purpose: None,
             id: viewer.user.clone(),
             cli_session_id: Some(viewer.parent),
             delegation_id: None,
@@ -821,8 +888,8 @@ async fn runtime_job_boundaries(state: &State, h: &Harness<'_>) -> Result<Vec<St
     .await?;
     Ok(vec![
         "delegated disabled runtime read+stop returns one queued receipt and idempotent replay; missing read is denied by planning/submission before insertion".into(),
-        "runtime job detail/events and cursor pages enforce company disable, current grants and delegated app/environment/read scope".into(),
-        "runtime job list/detail agree for admin, deploy, develop and use with actual miy.dev scope, including read-only dev repair".into(),
+        "runtime job detail/events and cursors retain disabled-app management but immediately enforce manager grant withdrawal and delegated app/environment/read scope; actual CLI app status shows managed prod without granting Use".into(),
+        "runtime job list/detail require management read and miy.dev for admin, deploy and develop; use and read-only dev repair never expose operating records".into(),
     ])
 }
 
@@ -845,7 +912,7 @@ pub async fn run(state: &State, client: &Client, base: &str) -> Result<Vec<Strin
     };
     let mut passed = vec![];
     let first = h.create("prod", &["read", "start"]).await?;
-    cli_import(base, &first).await?;
+    cli_import(base, &first, "audit-runtime").await?;
     let delegated = access(&first);
     lease_cleanup_scope(state, &h, delegated).await?;
     // Independent checks: a failure is reported at the end without hiding the others.

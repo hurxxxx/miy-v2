@@ -1,8 +1,10 @@
+import { browserUser, mockSurface } from "./browser-surface";
 import { test, expect, type Page } from "@playwright/test";
 import { resolve, sep } from "node:path";
 import type { Installation } from "../packages/sdk/src/index";
 
 async function openRemoteApp(page: Page) {
+  await mockSurface(page);
   const remote = resolve(".local/evidence/runtime-health-ui/remote");
   const app: Installation = {
     id: "60000000-0000-4000-8000-000000000001",
@@ -37,7 +39,7 @@ async function openRemoteApp(page: Page) {
     const path = new URL(route.request().url()).pathname;
     const json =
       path === "/api/v1/me"
-        ? { id: "fixture", name: "검증 사용자", admin: false, csrf: "fixture" }
+        ? browserUser(route, { id: "fixture", name: "검증 사용자", admin: false, csrf: "fixture" })
         : path === "/api/v1/installations"
           ? [app]
           : { title: "저장된 제목" };

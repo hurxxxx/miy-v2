@@ -6,11 +6,16 @@ import { randomUUID } from "node:crypto";
 // Not covered here: OIDC/Keycloak login, deployed Docker apps and remote app UIs.
 
 // Development login returns to the platform home; then open the target page.
-async function signIn(page: Page, label: RegExp, path?: string) {
-  await page.goto("/");
+async function serverOrigins(page: Page) {
+  return (await (await page.request.get("/auth/options")).json()) as { portalOrigin: string; consoleOrigin: string };
+}
+async function signIn(page: Page, label: RegExp, path?: string, surface: "portal" | "console" = "portal") {
+  const origins = await serverOrigins(page);
+  const origin = surface === "console" ? origins.consoleOrigin : origins.portalOrigin;
+  await page.goto(origin + "/");
   await page.getByRole("button", { name: label }).click();
   await expect(page.getByRole("button", { name: "로그아웃" })).toBeVisible();
-  if (path) await page.goto(path);
+  if (path) await page.goto(origin + path);
 }
 
 test("anonymous visitors see the login screen backed by server options", async ({ page }) => {
@@ -27,6 +32,9 @@ test("admin signs in, sees an empty launcher, real directory data and survives r
   await expect(page.getByText("이 실행 환경에서 사용할 수 있는 앱이 없습니다.")).toBeVisible();
   await expect(page.getByRole("alert")).toHaveCount(0);
   const rail = page.locator("#platform-navigation");
+  await rail.getByRole("link", { name: "관리 콘솔", exact: true }).click();
+  await page.getByRole("button", { name: /관리자로 시작/ }).click();
+  await expect(page.getByRole("heading", { name: "내가 관리하는 앱", exact: true })).toBeVisible();
   await rail.getByRole("link", { name: "플랫폼 관리", exact: true }).click();
   await expect(page.getByRole("heading", { name: "플랫폼 관리" })).toBeVisible();
   await expect(page.getByRole("combobox", { name: "사용자", exact: true })).toContainText("alice");
@@ -36,11 +44,11 @@ test("admin signs in, sees an empty launcher, real directory data and survives r
   await expect(page.getByRole("heading", { name: "플랫폼 관리" })).toBeVisible();
   await page.getByRole("link", { name: "운영 영역", exact: true }).click();
   await expect(page).toHaveURL(/\/environments\/prod$/);
-  await expect(page.getByRole("heading", { name: "운영 앱" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "내가 관리하는 앱", exact: true })).toBeVisible();
 });
 
 test("admin grant form sends the session CSRF and shows the server's answer", async ({ page }) => {
-  await signIn(page, /관리자로 시작/, "/admin");
+  await signIn(page, /관리자로 시작/, "/admin", "console");
   await page.getByRole("combobox", { name: "사용자", exact: true }).selectOption({ label: "alice" });
   await page.getByLabel("앱 ID").fill("missing-app");
   const [response] = await Promise.all([
@@ -57,8 +65,10 @@ test("a regular user gets only what the server allows", async ({ page }) => {
   await signIn(page, /사용자 A/);
   await expect(page.locator("#platform-navigation").getByRole("link", { name: "플랫폼 관리" })).toHaveCount(0);
   await page.goto("/admin");
+  await page.getByRole("button", { name: /사용자 A/ }).click();
+  await page.goto((await serverOrigins(page)).consoleOrigin + "/admin");
   await expect(page.getByRole("heading", { name: "관리자 권한이 필요합니다" })).toBeVisible();
-  expect((await page.request.get("/api/v1/users")).status()).toBe(403);
+  expect((await page.request.get((await serverOrigins(page)).consoleOrigin + "/api/v1/users")).status()).toBe(403);
   await page.goto("/environments/dev/apps/missing-app");
   await expect(page.getByRole("heading", { name: "앱에 접근할 수 없습니다" })).toBeVisible();
   await page.goto("/environments/stage");

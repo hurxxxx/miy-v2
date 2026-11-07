@@ -1,4 +1,4 @@
-import { test, expect, login, api, origin } from "./fixtures";
+import { test, expect, login, api, origin, stateDir, webDist, databaseContainer } from "./fixtures";
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { readFileSync, readdirSync, writeFileSync, mkdirSync } from "node:fs";
@@ -33,12 +33,12 @@ test("runtime modules, OAuth session, permissions and DB preparation", async ({
 }) => {
   const run = Date.now().toString(36);
   const appIds = ["reference-" + run, "diagnosis-" + run];
-  const hostHash = treeHash("web/platform/dist");
+  const hostHash = treeHash(webDist);
   const admin = await browser.newContext({ baseURL: origin });
   const page = await admin.newPage();
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
-  await login(page, "admin");
+  await login(page, "admin", "console");
   const installations: any[] = [];
   for (const app of appIds) {
     const artifact = JSON.parse(
@@ -85,7 +85,7 @@ test("runtime modules, OAuth session, permissions and DB preparation", async ({
     [
       "exec",
       "-i",
-      "miy-v2-validation-postgres-1",
+      databaseContainer,
       "psql",
       "-U",
       "postgres",
@@ -126,6 +126,7 @@ test("runtime modules, OAuth session, permissions and DB preparation", async ({
       ).ok(),
     ).toBeTruthy();
   }
+  await login(page, "admin", "portal");
   await page.goto(`/apps/${appIds[0]}`);
   await expect(page.getByTestId("app-root")).toBeVisible();
   await page.getByRole("button", { name: "사무 장비 보기" }).click();
@@ -155,9 +156,10 @@ test("runtime modules, OAuth session, permissions and DB preparation", async ({
   const dev = await browser.newContext({ baseURL: origin });
   const devPage = await dev.newPage();
   await login(devPage, "developer");
-  const visible = await (await api(dev, "/installations")).json();
+  const visible = await (await api(dev, "/installations", "GET", undefined, "portal")).json();
   expect(visible.map((a: any) => a.id)).toContain(installations[0].id);
   expect(visible.map((a: any) => a.id)).not.toContain(prod.id);
+  await login(devPage, "developer", "console");
   const prepare = {
     installationId: installations[0].id,
     releaseId: installations[0].releaseId,
@@ -199,7 +201,7 @@ test("runtime modules, OAuth session, permissions and DB preparation", async ({
   ).toBe(400);
   const invalid = JSON.parse(
     readFileSync(
-      ".local/artifacts/" + installations[0].artifactHash + "/manifest.json",
+      join(stateDir, "artifacts", installations[0].artifactHash, "manifest.json"),
       "utf8",
     ),
   );
@@ -220,11 +222,13 @@ test("runtime modules, OAuth session, permissions and DB preparation", async ({
   const bobPage = await bob.newPage();
   await login(bobPage, "bob");
   expect(
-    (await (await api(alice, "/installations")).json()).map((a: any) => a.id),
+    (await (await api(alice, "/installations", "GET", undefined, "portal")).json()).map((a: any) => a.id),
   ).toContain(installations[0].id);
   expect(
-    (await (await api(bob, "/installations")).json()).map((a: any) => a.id),
+    (await (await api(bob, "/installations", "GET", undefined, "portal")).json()).map((a: any) => a.id),
   ).not.toContain(installations[0].id);
+  const aliceConsole = await alice.newPage();
+  await login(aliceConsole, "alice", "console");
   expect(
     (
       await api(alice, "/database/prepare", "POST", {
@@ -271,10 +275,10 @@ test("runtime modules, OAuth session, permissions and DB preparation", async ({
       })
     ).status(),
   ).toBe(401);
-  expect(treeHash("web/platform/dist")).toBe(hostHash);
-  mkdirSync(".local/evidence", { recursive: true });
+  expect(treeHash(webDist)).toBe(hostHash);
+  mkdirSync(join(stateDir, "evidence"), { recursive: true });
   writeFileSync(
-    ".local/evidence/runtime.json",
+    join(stateDir, "evidence", "runtime.json"),
     JSON.stringify(
       {
         run,
@@ -310,7 +314,7 @@ test("runtime modules, OAuth session, permissions and DB preparation", async ({
   await page.goto(`/apps/${appIds[0]}`);
   await expect(page.getByTestId("app-root")).toBeVisible();
   await page.screenshot({
-    path: ".local/evidence/runtime-ui.png",
+    path: join(stateDir, "evidence", "runtime-ui.png"),
     fullPage: true,
   });
   await admin.close();

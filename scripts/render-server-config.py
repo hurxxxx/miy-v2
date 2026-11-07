@@ -7,6 +7,7 @@ from pathlib import Path
 import pwd
 import re
 import urllib.parse
+from server_tls import validate_certificate
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -44,6 +45,7 @@ parser.add_argument('--user', default=pwd.getpwuid(os.getuid()).pw_name)
 parser.add_argument('--service-prefix', default='miy-v2')
 parser.add_argument('--certificate', type=Path)
 parser.add_argument('--key', type=Path)
+parser.add_argument('--ca-file', type=Path, help='Trusted private CA PEM; otherwise use configured/system roots')
 args = parser.parse_args()
 if not re.fullmatch(r'[a-z][a-z0-9-]{0,47}', args.service_prefix):
     parser.error('Use a lowercase service prefix')
@@ -54,20 +56,35 @@ except KeyError:
 state = args.state_dir.resolve()
 settings = json.loads((state / 'server.json').read_text())
 origin = urllib.parse.urlsplit(settings['origin'])
+if not settings.get('consoleOrigin') or not settings.get('consoleBind'):
+    parser.error('Run bootstrap with distinct portal/console origins and internal binds first')
+console_origin = urllib.parse.urlsplit(settings['consoleOrigin'])
+if settings['origin'] == settings['consoleOrigin'] or origin.scheme != console_origin.scheme:
+    parser.error('Portal and console origins must be distinct and use the same transport')
 if origin.scheme == 'https' and (args.certificate is None or args.key is None):
     parser.error('HTTPS requires --certificate PATH and --key PATH')
 if origin.scheme not in ('http', 'https'):
     parser.error('Unsupported configured origin')
 if origin.scheme == 'http' and not settings.get('allowHttp'):
-    parser.error('The server HTTP profile must explicitly allow HTTP')
-bind = urllib.parse.urlsplit('//' + settings['bind'])
-core_host = {'0.0.0.0': '127.0.0.1', '::': '::1'}.get(bind.hostname, bind.hostname)
-core_host = '[' + core_host + ']' if ':' in core_host else core_host
-core = f'http://{core_host}:{bind.port}'
+    import ipaddress
+    def loopback(public):
+        if public.hostname == 'localhost':
+            return True
+        try:
+            return ipaddress.ip_address(public.hostname).is_loopback
+        except ValueError:
+            return False
+    if not all(loopback(value) for value in [origin, console_origin]):
+        parser.error('The non-loopback HTTP profile must explicitly allow HTTP')
+if origin.scheme == 'https':
+    try:
+        validate_certificate([settings['origin'], settings['consoleOrigin']], args.certificate,
+                             args.key, args.ca_file or settings.get('caFile'))
+    except (ValueError, OSError) as error:
+        parser.error(str(error))
+core = 'http://' + settings['bind']
+console_core = 'http://' + settings['consoleBind']
 identity = f"http://127.0.0.1:{settings['identityPort']}"
-public_port = origin.port or (443 if origin.scheme == 'https' else 80)
-public_host = '[' + origin.hostname + ']' if ':' in origin.hostname else origin.hostname
-public_listen = f'[::]:{public_port}' if ':' in origin.hostname else str(public_port)
 upgrade_variable = '$' + args.service_prefix.replace('-', '_') + '_connection_upgrade'
 tls = ''
 if origin.scheme == 'https':
@@ -75,40 +92,86 @@ if origin.scheme == 'https':
     ssl_certificate_key {nginx(args.key.resolve())};
     ssl_protocols TLSv1.2 TLSv1.3;
 '''
-forwarding = '''        proxy_set_header Host $http_host;
-        proxy_set_header X-Forwarded-Host $http_host;
-        proxy_set_header X-Forwarded-Proto $scheme;
+
+
+def forwarding(public):
+    return f'''        proxy_set_header Host {nginx(public.netloc)};
+        proxy_set_header X-Forwarded-Host {nginx(public.netloc)};
+        proxy_set_header X-Forwarded-Proto {public.scheme};
+        proxy_set_header X-Forwarded-Port {public.port or (443 if public.scheme == 'https' else 80)};
         proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header Forwarded "";
 '''
-nginx_text = f'''# Generated from this deployment's explicit MIY_ORIGIN. Install only this site.
-map $http_upgrade {upgrade_variable} {{
-    default upgrade;
-    '' close;
-}}
-server {{
+
+
+def security_headers(indent='    ', console=False):
+    policy = ("default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; "
+              "img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; "
+              "base-uri 'none'; frame-ancestors 'none'; worker-src 'none'; form-action 'self'"
+              if console else "frame-ancestors 'none'; worker-src 'none'")
+    return (f'{indent}add_header X-Content-Type-Options nosniff always;\n'
+            f'{indent}add_header X-Frame-Options DENY always;\n'
+            f'{indent}add_header Content-Security-Policy "{policy}" always;\n')
+
+
+def server(public, trusted=False):
+    public_port = public.port or (443 if public.scheme == 'https' else 80)
+    public_host = '[' + public.hostname + ']' if ':' in public.hostname else public.hostname
+    public_listen = f'[::]:{public_port}' if ':' in public.hostname else str(public_port)
+    upstream = console_core if trusted else core
+    if trusted:
+        boundaries = f'''    # No app content, even through direct URLs or SPA fallback.
+    if ($http_service_worker = "script") {{ return 403; }}
+    location ~ ^/(artifacts(/|$)|preview(/|$)|((environments/[^/]+/)?apps)(/|$)|api/v1/(preview(/|$)|installations/[^/]+/(api(/|$)|connections/[^/]+/api(/|$)))) {{
+        return 404;
+    }}
+    # Keep Keycloak's own script CSP and add the anti-frame policy.
+    location ~ ^/identity/(realms/miy(/|$)|resources/) {{
+        proxy_pass {identity};
+{forwarding(public)}    }}
+    location /identity {{ return 404; }}
+'''
+    else:
+        boundaries = f'''    if ($http_service_worker = "script") {{ return 403; }}
+    location /identity {{ return 404; }}
+    # Preserve the relative CLI verificationPath via a fixed trusted origin.
+    # Pass only the public UUID, never a query string or a return URL.
+    location ~ "^/cli/(authorize|device)/([0-9a-fA-F]{{8}}-[0-9a-fA-F]{{4}}-[0-9a-fA-F]{{4}}-[0-9a-fA-F]{{4}}-[0-9a-fA-F]{{12}})$" {{
+        return 302 {settings['consoleOrigin']}/cli/$1/$2;
+    }}
+    location ~ ^/cli/(authorize|device)(/|$) {{ return 404; }}
+'''
+    return f'''server {{
     listen {public_listen}{' ssl' if tls else ''};
     server_name {nginx(public_host)};
 {tls}    client_max_body_size 1024m;
     root {nginx(ROOT / 'web/platform/dist')};
     index index.html;
-
-    location /identity/ {{
-        proxy_pass {identity};
-{forwarding}    }}
-    location ~ ^/(api(/|$)|auth(/|$)|mcp(/|$)|\\.well-known(/|$)|artifacts(/|$)|cli/(downloads|installers)(/|$)) {{
-        proxy_pass {core};
+    proxy_hide_header X-Content-Type-Options;
+    proxy_hide_header X-Frame-Options;
+{security_headers()}
+{boundaries}    location ~ ^/(api(/|$)|auth(/|$)|mcp(/|$)|\\.well-known(/|$)|artifacts(/|$)|cli/(downloads|installers)(/|$)) {{
+        proxy_pass {upstream};
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection {upgrade_variable};
         proxy_read_timeout 300s;
         proxy_send_timeout 300s;
         proxy_buffering off;
-{forwarding}    }}
+{forwarding(public)}    }}
     location / {{
-        try_files $uri $uri/ /index.html;
+{security_headers('        ', console=trusted)}        try_files $uri $uri/ /index.html;
     }}
 }}
 '''
+
+
+nginx_text = f'''# Generated from fixed portal/console settings. Both sites are one boundary.
+map $http_upgrade {upgrade_variable} {{
+    default upgrade;
+    '' close;
+}}
+''' + server(origin) + server(console_origin, trusted=True)
 (state / 'nginx-miy.conf').write_text(nginx_text)
 for service in ['serve', 'worker']:
     text = f'''# Generated file. run-service.sh reads private runtime.env and removes unused secrets.

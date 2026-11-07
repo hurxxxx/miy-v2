@@ -8,13 +8,15 @@ CLI로 앱의 기본 구조를 만들고, 자신의 개발 에이전트를 MCP�
 
 ## 현재 단계
 
-현재 호스트의 플랫폼은 [https://v2.dwdcc.kr](https://v2.dwdcc.kr)이며, [CLI 설치 안내](https://v2.dwdcc.kr/cli/install)에서 서버에 맞는 배포물을 제공한다. 실행 서버·게시 CLI는 코어 권한 보강을 포함한 **0.7.0 / 번들 0.8.0**(source `01e4d49`, 2026-11-03 반영)이다. 이후 소스 commit과 게시 배포물의 출처는 구분한다. 서버 주소·CLI/MCP 연결과 배포 소스의 구분은 [현재 서버 운영 안내](docs/SERVER-OPERATIONS.md)를 따른다.
+2026-11-06 [사내 최소 보안 설계](docs/APP-BOUNDARIES.md)를 확정했다. **iframe 없는 MF/AppRoot·통합 라우팅·독립 빌드와 단일 IP HTTPS를 유지한다.** 업무 포털(dev/prod)과 관리·CLI 승인·Keycloak 콘솔 두 출처로 좁히고 기존 SDK·CLI·OIDC를 재사용한다. 필수 보안 다음에 공통 ACL 등 기능 개발을 진행하며 별도 IdP·외부 앱 격리·자동 CA는 후속이다. 제품 변경·운영 반영은 미실행이며 공개 서버를 사내 범위로 자동 인정하지 않는다.
+
+현재 호스트의 플랫폼은 [https://v2.dwdcc.kr](https://v2.dwdcc.kr)이며, [CLI 설치 안내](https://v2.dwdcc.kr/cli/install)에서 서버에 맞는 배포물을 제공한다. 실행 서버·UI는 `7b43789`(2026-11-05 반영), 게시 CLI는 **0.7.0 / 번들 0.8.0**(source `01e4d49`, 2026-11-03 게시)이다. 이후 소스 commit과 게시 배포물의 출처는 구분한다. 서버 주소·CLI/MCP 연결과 배포 소스의 구분은 [현재 서버 운영 안내](docs/SERVER-OPERATIONS.md)를 따른다.
 
 [코어 권한 계약](docs/CORE-PERMISSIONS.md)은 설치/릴리스별 명시 승인, 제한된 사용자 위임, 앱 후속 호출을 설명한다. 코어 안정화 1·2차와 [기본 UI 이식](docs/UIUX-MIGRATION.md) UI-1~5를 마치고 v2.dwdcc.kr에 반영했다. 다음 작업 순서는 [추진 계획](docs/PLAN.md#다음-우선-작업)의 작업표 하나로 관리한다. 공식 v1(`../miy`)에서 가져올 규칙과 제외할 구조는 [v1 적용 계획](docs/V1-ADOPTION.md)에 정리했다.
 
 현재는 **독립 앱 개발·로컬 미리보기·테스트 배포·운영 승격을 연결하고 구조 검증을 수행한 단계**다. 플랫폼과 사용자 앱의 Rust backend, React/Vite UI, Docker, 앱·환경별 DB를 분리한다. 일반 Codex·Claude Code용 프로젝트 MCP·스킬, 브라우저 승인 CLI 로그인, 인증된 이미지 업로드, 테스트한 릴리스의 운영 승격과 별도 배포 권한을 제공한다.
 
-[구조 진단과 9개 요건별 결과](docs/IMPLEMENTATION-RESULTS.md#구조-심층-진단과-핵심-9개-요건-개선)를 먼저 읽는다. 개발·운영 라우터, 로컬 DB 격리, 다른 앱 API, 권한 회수, 기존 앱 보존을 실제 검사했다. 신뢰된 UI 코드의 통합이며 악성 JavaScript의 브라우저 격리는 제공하지 않는다. 5개 OS/CPU의 CLI 후보와 회사 홈페이지 배포를 제공하며, 제품 전체 완성과 독립 반복 인수는 별도 범위다.
+과거 실행 범위는 [구조 진단 결과](docs/IMPLEMENTATION-RESULTS.md#구조-심층-진단과-핵심-9개-요건-개선)에 보존한다. 개발·운영 라우터, 로컬 DB 격리, 다른 앱 API, 권한 회수, 기존 앱 보존을 실제 검사했다. 신뢰된 UI 코드의 통합이며 악성 JavaScript의 브라우저 격리는 제공하지 않는다. 5개 OS/CPU의 CLI 후보와 회사 홈페이지 배포를 제공하며, 제품 전체 완성과 독립 반복 인수는 별도 범위다.
 
 공용 UI는 CLI 내장 코드에서 분리했다. 플랫폼 컴포넌트 저장소에 새 버전을 게시하면 같은 CLI와 MCP에서 즉시 조회하며, 앱은 명시적인 설치·업데이트 전까지 기존 버전을 유지한다. [설치·갱신 안내](docs/RUNNING.md#공용-컴포넌트-설치와-업데이트)를 따른다.
 
@@ -22,11 +24,11 @@ Windows CLI는 회사 홈페이지의 `/cli/install`에서 [GUI 설치 파일](d
 
 [CLI 0.5 개선 계획](docs/CLI-IMPLEMENTATION-PLAN.md)의 context·인증·작업·로그·실행 전 검증과 Windows 설치/갱신 도구를 구현했다. [개발 인계](docs/archive/CLI-HANDOFF.md)와 [세부 검증](docs/CLI-VALIDATION-MATRIX.md)에서 현재 증거와 남은 조건을 확인한다. 사용자 Windows의 기존 네이티브 개발·서버 빌드 실증은 기록에 보존한다. 새 CI 설치기의 Windows 11 실제 설치·갱신·제거는 사용자가 나중에 수행하며, Codex·Claude의 독립 새 세션 인수는 별도로 관리한다.
 
-최초 V0~V1 구현 범위와 실행 방식은 [V0~V1 구현 계획](docs/IMPLEMENTATION.md)을 따른다. 로컬 Docker에서 UI 런타임 통합, 웹·MCP OAuth, 앱별 DB와 작업 실행기를 검증한다.
+최초 V0~V1 계획은 [보관 원문](docs/archive/IMPLEMENTATION-V0-V1.md)이며 현재 구현 지침이 아니다. 유효한 미완료 검증은 [새 인수표](docs/APP-BOUNDARIES.md#기존-검증의-승계)로 승계했다.
 
-로컬 기동은 `bash scripts/up.sh`, 전체 인수 검사는 `bash scripts/check.sh`다. 브라우저에서 [http://localhost:18000](http://localhost:18000)을 열고 **관리자로 시작**을 누르면 비밀번호 없이 개발 화면을 사용할 수 있다. 개발자·사용자 계정 버튼도 제공한다. 실제 OAuth·MCP 검증과 준비 조건·결과 경로는 [실행 안내](docs/RUNNING.md)를 따른다. 구현 전 문서 체크포인트는 Git 커밋 `3cecbe1`이다.
+별도의 loopback 개발 스택에서는 `bash scripts/up.sh`로 기동하고 `bash scripts/check.sh`로 전체 인수를 수행한다. 이 호스트의 운영 `.local`을 대상으로 실행하지 않으며, 여기서는 [격리 검사 도구](docs/CHECKS.md)를 사용한다. 브라우저에서 [http://localhost:18000](http://localhost:18000)을 열고 **관리자로 시작**을 누르면 비밀번호 없이 개발 화면을 사용할 수 있다. 개발자·사용자 계정 버튼도 제공한다. 실제 OAuth·MCP 검증과 준비 조건·결과 경로는 [실행 안내](docs/RUNNING.md)를 따른다. 구현 전 문서 체크포인트는 Git 커밋 `3cecbe1`이다.
 
-구현 범위와 확인한 동작은 [V0~V1 검증 결과](docs/IMPLEMENTATION-RESULTS.md)에 정리한다.
+당시 구현 범위와 확인한 동작은 [V0~V1 검증 결과](docs/IMPLEMENTATION-RESULTS.md)에 보존한다.
 
 ## 합의한 방향
 
@@ -52,18 +54,19 @@ Windows CLI는 회사 홈페이지의 `/cli/install`에서 [GUI 설치 파일](d
 
 전체 문서의 담당 범위와 보관 문서는 [문서 지도](docs/README.md)에 있다. 먼저 읽을 문서는 다음과 같다.
 
-- [PRD 초안](docs/PRD.md): 제품 정의, 합의 사항, 기능 요구사항과 인수 조건
+- [제품 요구사항](docs/PRD.md): 제품 정의, 합의 사항, 기능 요구사항과 인수 조건
+- [사내 최소 보안 설계](docs/APP-BOUNDARIES.md): 두 출처·세션 용도·호환성, 현재 필수와 후속, 발견된 문제·한계·전환·인수
 - [추진 계획](docs/PLAN.md): 다음 우선 작업표(유일한 순서 기준)와 제품 로드맵
 - [v1 적용 계획](docs/V1-ADOPTION.md): 공식 v1 검토 결과, 가져올 항목과 제외 항목
 - [UI/UX 이식 계획](docs/UIUX-MIGRATION.md): 기본 UI 이식 결과와 후속 UI 작업의 경계
 - [코어 안정화 계획](docs/CORE-HARDENING.md): 자원·복구·새 서버 인수의 완료 기준
 - [현재 플랫폼 서버 운영](docs/SERVER-OPERATIONS.md): 실제 접속 주소, CLI/MCP 연결, 배포 소스와 기록
-- [아키텍처 설명과 구성도](docs/architecture/README.md): [전체 구조 한 장](docs/architecture/00-platform-overview.png)과 상세 구성도
+- [현재 아키텍처](docs/architecture/README.md): 새 경계의 Mermaid 구성도와 과거 그림의 보관 위치
 
-구체적인 구현 기술은 검토 중이다. 관리 웹의 기본 제안은 TypeScript, React, Vite, TanStack Router, TanStack Query 조합이다. 합의된 제품 방향과 기술 기본안·미결정 사항은 PRD에서 구분한다.
+현재 플랫폼 웹은 TypeScript, React, Vite, TanStack Router를 사용한다. 확정된 제품 요구·검토 중인 보안 개선안·현행 구현의 차이는 [기술 구성](docs/STACK.md)과 PRD에서 구분한다.
 
 현재 앱 기본안은 Rust 백엔드와 React 정적 화면을 같은 Docker/OCI 이미지로 배포하고 내부 runner가 수명주기를 관리하는 방식이다. 정적 화면의 Rust 바이너리 내장은 선택안으로 두며 Kubernetes는 초기 구성에 포함하지 않는다.
 
-화면 통합은 신뢰한 앱의 React 모듈을 플랫폼 라우터에서 동적으로 로드하는 방식을 우선 검증한다. 별도 브라우저 격리가 필요한 앱의 실행 방식과 구분한다.
+독립 앱 화면은 iframe 없는 동적 모듈과 통합 라우터로 실행한다. 사내 승인 앱은 하나의 UI 신뢰 영역이며 앱 없는 관리·로그인 출처를 분리한다. 공통 ACL·SDK·토큰만으로 악성 앱 간 격리를 보장하지 않는다. 기존 MF·SDK·앱 데이터를 유지하고 전 앱 재개발·일괄 전환 없이 필요한 인증 변경만 적용하는 목표다.
 
 CLI 초기화는 Codex·Claude Code용 `miy-cli` 스킬과 `docs/CLI-REFERENCE.md`도 설치한다. 명령·옵션은 실행 파일의 정의에서 자동 생성하며 CLI 버전별로 잠근다. 전역 CLI 갱신 후 호환 프로젝트에서 `miy app setup`을 실행하면 동봉 CLI·스킬·매뉴얼을 함께 갱신한다. SDK 변경은 `app upgrade`로 구분한다. [운영 방법](docs/RUNNING.md#호환-도구-갱신과-이전-이름)

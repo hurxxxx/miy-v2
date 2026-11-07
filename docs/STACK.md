@@ -1,15 +1,15 @@
 # miy 기술 스택 추천안
 
 검토일: 2026-10-20  
-수정일: 2026-10-21  
-기준: PRD 0.5  
-상태: 채택 전 추천안 · 구현과 성능 검증은 아직 수행하지 않음
+수정일: 2026-11-06\
+기준: PRD 0.6\
+상태: 사내 신뢰 앱 중심의 기술 선택. iframe 없는 통합 UI 유지, 포털·콘솔 분리는 소스 구현·운영 미배포
 
 **Rust 코어·앱 백엔드, TypeScript·React 화면, PostgreSQL, Docker 기반 실행을 중심으로 구성하는 것을 추천한다.** 업무 앱은 Rust 서버와 정적 화면을 같은 OCI 이미지로 배포하고 일시 중단을 허용해 교체한다. 코어의 API·작업 처리·호스트 실행 제어는 필요한 권한과 실행 수명에 따라 별도 프로세스로 운영한다.
 
-기업별 단일 서버·VM, 사내·클라우드 설치, 개발사·파트너의 유지관리, 외부 앱 제작자의 개발 편의를 기준으로 선택했다. 플랫폼 코어와 개별 앱의 Rust 백엔드·Next.js와 MinIO 제외·내장 Hermes·공통 AI 연결과 사용자별 독립 세션은 합의한 방향이다. 구체적인 연동 방식과 도구는 아래의 추천이며 제품 요구사항의 확정 결정과 구분한다.
+회사 내부망의 단일 서버·VM과 회사가 통제하는 앱 개발·운영을 현재 범위로 삼는다. 외부 앱·외부 개발자 수용은 제외한다. Rust 코어·앱 백엔드, Next.js와 MinIO 제외, 내장 Hermes와 사용자별 세션 방향은 유지한다. 아래 장기 기술 추천이 현재 최소 보안 보완의 필수 구성이라는 뜻은 아니다.
 
-제품 전체 구성에 앞서 [집중 검증 계획](VALIDATION.md)의 최소 플랫폼·CLI·Codex·DB·Docker·UI 라우팅 경로를 구현·평가한다. 아래 구성 요소 전체를 선행 설치해야 한다는 뜻은 아니며, 검증 단계의 범위와 선택 버전을 먼저 고정한다.
+최초 최소 플랫폼·CLI·Codex·DB·Docker·UI 라우팅 검증은 [당시 계획](archive/VALIDATION-MODULE-FEDERATION.md)과 [실행 결과](IMPLEMENTATION-RESULTS.md)에 보존한다. 아래 표는 기존 구현과 장기 추천을 구분한다. 현재 적용할 최소 경계는 dev/prod 공통 포털과 관리·CLI 승인·Keycloak `/identity`를 묶은 콘솔의 두 출처다. 상세는 [앱 실행·관리 경계](APP-BOUNDARIES.md#확정-결정)가 관리하며 아직 운영에 적용되지 않았다.
 
 ## 추천 구성
 
@@ -19,20 +19,20 @@
 | 코어 백엔드 | Rust + Axum + Tokio + Tower | 인증된 API, 앱·환경·릴리스 관리, 정책 집행과 작업 제어를 공통 모듈로 구현 |
 | DB 접근 | SQLx + 버전이 있는 SQL migration | 배포 상태 전이·작업 큐·권한 조회의 SQL과 트랜잭션을 명시적으로 관리 |
 | 관리 웹 | TypeScript strict + React + Vite + TanStack Router·Query | Rust API를 사용하는 SPA. 라우팅·서버 상태 관리와 타입을 일관되게 구성 |
-| 앱 UI 통합 | 공통 앱 라우트 + 런타임 UI 로더, Module Federation 우선 검증 | 독립 빌드한 신뢰된 React 앱 모듈을 플랫폼 재빌드 없이 표시. 패키지·호환 버전은 검증 후 고정 |
+| 앱 UI 실행 | 독립 빌드한 MF 모듈·AppRoot + 플랫폼 라우터 + SDK 함수 | 회사가 통제하는 앱을 같은 포털의 dev/prod에서 실행. iframe·플랫폼 재빌드 없이 앱 추가를 유지 |
 | 공통 UI | Tailwind CSS + shadcn/ui 기반 `@miy/ui` | 디자인 토큰·필수 연동 컴포넌트는 버전 패키지로 제공하고 업무별 화면은 확장 |
 | API 계약·SDK | OpenAPI + utoipa + openapi-typescript·openapi-fetch | Rust API 스키마에서 TypeScript 타입·클라이언트 연결. manifest·공개 기능은 버전이 있는 JSON Schema로 검증 |
-| MCP | 공식 Rust SDK `rmcp` + Streamable HTTP | 외부 개발 에이전트에 개발 맥락과 도구 제공. HTTP API와 같은 권한 서비스를 호출 |
+| MCP | 공식 Rust SDK `rmcp` + Streamable HTTP | 사내 개발 담당자의 CLI·개발 에이전트에 맥락과 도구 제공. HTTP API와 같은 권한 서비스를 호출 |
 | CLI | Rust + clap + reqwest | 독립 실행 파일로 배포하며 초기화·로그인·검사·미리보기·릴리스·로그 명령 제공 |
 | 첫 앱 개발 프로필 | Rust + Axum + SQLx, React + Vite 정적 화면 | Rust 서버·정적 화면·작업·migration을 한 OCI 이미지로 배포. 정적 파일은 이미지에 포함하며 바이너리 내장은 선택안 |
-| 인증 | Keycloak + OIDC, MCP OAuth 연동은 조건부 | 로그인·SSO를 담당. 앱·환경·리소스 권한과 대행 범위는 miy 코어가 판단 |
+| 인증 | 단일 Keycloak/IdP + OIDC, 코어의 세션 용도·중앙 정책 | 포털과 콘솔 두 출처. Keycloak은 콘솔 `/identity`, CLI 승인도 콘솔. 앱 코드는 포털에서만 실행하고 브라우저 세션 용도를 서버가 검사 |
 | DB·벡터 검색 | PostgreSQL + pgvector | 플랫폼 상태, 앱 DB, 작업 상태와 문서 임베딩 저장. 앱·환경별 DB·역할 분리 |
 | 작업 큐 | PostgreSQL 영속 작업 테이블 + Rust worker | 예약·재시도·빌드·배포 작업을 기록. 실행할 앱 코드는 별도 격리 환경에서 구동 |
 | 소스·이미지 저장소 | Gitea + 내장 OCI Container Registry | 고객사 내부 Git과 배포 이미지를 함께 관리. 외부 GitHub·GitLab도 연결 |
 | 개발 자산 배포 | 버전 개발 번들 + Rust SDK crate + npm 호환 브라우저 SDK·UI 패키지 | CLI가 지침·SDK·UI까지 준비. 초기 Rust SDK는 번들에 포함하고 npm 패키지는 Gitea Registry 활용 검토 |
 | 빌드·실행 | Docker Engine + BuildKit + Compose | Compose로 고정 기반 서비스를 설치하고 별도 runner가 앱 컨테이너 수명주기를 관리 |
 | 자원·용량 제어 | Linux cgroup v2 + runner·코어 용량 관리 + 파일 예약·DB 측정 | 실행 전 서버·앱 예산 확인, CPU·메모리 제한, 저장량 경보·초과 대응. 공유 DB 용량은 관리 한도로 구분 |
-| 진입점·TLS | Caddy | 관리 웹·API·앱별 출처의 라우팅과 인증서 운영 |
+| 진입점·TLS | 단일 IP + 사설 CA HTTPS, 도메인 + 공인 인증서는 권장 | 포털/콘솔의 두 포트 구성 가능. 외부 도메인·내부 DNS·추가 IP 불필수. 쿠키는 포트로 격리되지 않으므로 세션 용도·Origin/CSRF·cookie 전달 차단을 함께 인수 |
 | 파일 저장 | miy Storage API + 로컬 영속 볼륨, S3 backend 선택 연결 | 초기 단일 서버에는 별도 객체 저장 서버 없이 시작. 저장 구현을 바꿔도 앱의 파일 API 계약 유지 |
 | 내장 챗봇 | Hermes의 Python 런타임 + miy 전용 어댑터 | Rust가 대화·실행·권한을 관리하고 Hermes가 모델·도구 루프를 수행. 브라우저에는 SSE로 이벤트 전달 |
 | 내부 AI 연결 | 공통 연결 어댑터 + 사용자별 공급자 세션 + 선택형 API·사내 모델 | 공급자 인증은 관리자 관리. miy 사용자·대화에 Codex thread를 매핑하고 실행·이벤트·도구 권한을 분리 |
@@ -55,7 +55,9 @@ utoipa는 Rust 기반 OpenAPI 생성을, openapi-typescript는 OpenAPI의 TypeSc
 
 CLI 기본 개발 번들에는 지침·SDK·UI·타입·예제를 포함한다. MCP는 설치 버전에 맞는 코어 공개 API 전체의 명세와 사용법을 검색·조회하고 허용된 작업을 호출하는 경로로 제공한다. 기본 개발은 CLI만으로도 가능하게 하며, 패키지 배포·버전 고정·맥락 동기화는 [개발 자산 제공 계획](DEVELOPMENT.md#개발-자산-제공과-mcp의-역할)을 따른다.
 
-앱은 manifest·UI 모듈·Rust 서버·작업·마이그레이션을 묶은 독립 패키지로 설치한다. 코어와 같은 언어여도 앱 백엔드 코드를 코어 서버 프로세스에 직접 로드하지 않고 등록 정보와 HTTP 계약으로 연결한다. 메뉴·통합형 UI·공개 API·작업과 수명주기는 [Rust 앱 개발 계획](DEVELOPMENT.md#rust-풀스택-앱의-플러그인-구조)에 정리한다.
+앱은 manifest·UI 모듈과 자산·Rust 서버·작업·마이그레이션을 묶은 독립 패키지로 설치한다. 코어와 같은 언어여도 앱 백엔드 코드를 코어 서버 프로세스에 직접 로드하지 않고 등록 정보와 HTTP 계약으로 연결한다. 메뉴·UI·공개 API·작업과 수명주기는 [Rust 앱 개발 계획](DEVELOPMENT.md#rust-풀스택-앱의-플러그인-구조)을 따른다.
+
+운영과 PoC는 단일 IP·사설 CA HTTPS를 지원한다. 기존 HTTP IP·loopback 결과는 새 보안 인수를 대신하지 않는다. 포털에는 dev/prod 앱을 함께 제공하고 콘솔에는 관리·CLI 승인·IdP만 둔다. 별도 IdP/dev 출처·사이트 분리·MFA 의무화는 후속 요구로 두며 지금 기능 개발의 선행 조건이 아니다. MF·SDK를 일괄 교체하지 않고 실제 변경 계약만 새 불변 버전으로 제공한다. 백업·복구는 [전환과 복구](APP-BOUNDARIES.md#전환과-복구)를 따른다.
 
 동기 API와 예약·백그라운드 작업은 같은 릴리스의 서로 다른 진입점으로 구성한다. 작업을 실행하는 프로세스에 다른 앱의 코드·파일·자격증명을 함께 넣지 않는다. 함수 실행 자원의 공유와 유휴 실행 중지는 실제 자원 사용을 측정한 뒤 최적화한다.
 
@@ -83,7 +85,7 @@ runner의 초기 실행 어댑터는 Docker Engine API 하나로 좁힌다. 패�
 
 서버 전체에서 기반 서비스·복구 여유를 먼저 제외하고 앱·작업·빌드의 자원 예약을 관리한다. Rootless 환경의 cgroup 지원·controller 위임과 실제 한도 집행을 설치 진단에 포함한다. 저장량·연결 수·DB 부하·캐시 정리와 단계별 효율화는 [용량 관리 계획](CAPACITY.md)을 따른다.
 
-Caddy는 공통 진입점으로 사용하고 앱 API와 릴리스별 UI 자산을 라우팅한다. 통합형 UI는 플랫폼 라우터에 로드하고, 분리형 UI는 별도 출처를 사용한다. 공개 도메인은 인증서 자동 발급 경로를, 사내 도메인은 고객사 인증서나 내부 CA의 신뢰 배포 절차를 설치 프로필에 포함한다. 사내 설치에서 공개 인증서 발급이 자동으로 가능하다고 가정하지 않는다. [Caddy HTTPS](https://caddyserver.com/docs/automatic-https)
+진입 프록시는 포털과 콘솔의 route를 구분하고 콘솔의 `/identity`를 기존 Keycloak에 연결한다. 콘솔에서는 앱 모듈·앱 HTML/SVG·활성 앱 콘텐츠를 제공하지 않는다. 앱 응답은 헤더 허용 목록을 유지하고 API 응답에만 CSP sandbox·nosniff를 적용하며, 통합 UI에는 앱 문자열의 안전한 표시와 frame 차단을 적용한다. Caddy는 최초 TLS 추천안이며 현재 운영 구성은 [운영 안내](SERVER-OPERATIONS.md)를 따른다. 사설 IP 인증서·CA 신뢰·갱신을 지원하되 모든 단말 등록이 자동 완료됐다고 가정하지 않는다. 포트 분리를 쿠키 격리로 설명하지 않는다. [Caddy HTTPS](https://caddyserver.com/docs/automatic-https)
 
 코어 업데이트는 앱 배포 큐와 별도 권한으로 수행한다. 호스트의 작은 업데이트 도구를 systemd 서비스 등으로 운영하여, 코어가 중지되어도 백업·버전 적용·정상 동작 확인·복구가 가능하게 설계한다. 업데이트 묶음에는 검증한 구성 요소의 버전·이미지 digest·앱 계약 호환 범위·migration 절차를 고정한다.
 
@@ -117,7 +119,7 @@ Rust 코어는 공통 연결·연결 세대와 별도로 사용자·대화·Herm
 
 초기 DB 백업은 `pg_dump`와 역할·설정 정보를 포함하고, 파일·Git·이미지 저장·필요한 복구 키는 정합성 있는 백업 묶음으로 restic 등에 보관한다. 실행 중 PostgreSQL 데이터 디렉터리를 일반 파일 백업으로 복사하는 것으로 DB 백업을 대신하지 않는다. 파일 변경과 DB 메타데이터의 일관성도 확인하고 새 서버의 실제 복원을 검증한다. 시점 복구 요구가 생기면 물리 백업·WAL 보관 구성을 추가한다. [PostgreSQL SQL Dump](https://www.postgresql.org/docs/current/backup-dump.html), [restic 백업 예제](https://restic.readthedocs.io/en/stable/080_examples.html)
 
-관측은 구조화 로그·작업 이력·상태 확인·메트릭부터 제공한다. OpenTelemetry 연동은 선택 모듈로 두고 언어·신호별 SDK 성숙도와 호환 버전을 따로 고정한다. 외부 수행자가 여러 고객사를 관리하더라도 로그·대화·데이터의 중앙 전송은 고객사 정책을 따른다. [OpenTelemetry 상태](https://opentelemetry.io/status/)
+관측은 구조화 로그·작업 이력·상태 확인·메트릭부터 제공한다. OpenTelemetry 연결은 필요할 때 추가하며 로그·대화·데이터의 외부 전송은 회사 정책에 따른다. 외부 유지관리자를 위한 다중 고객사 운영 기능은 현재 범위 밖이다. [OpenTelemetry 상태](https://opentelemetry.io/status/)
 
 ## 초기에 추가하지 않을 구성
 
@@ -138,11 +140,11 @@ Rust 코어는 공통 연결·연결 세대와 별도로 사용자·대화·Herm
 
 확정 전에 다음 네 가지를 우선 검증한다.
 
-1. **외부 개발 에이전트 인증:** Keycloak·rmcp·클라이언트별 실제 로그인, 대상 토큰 검사와 권한 회수.
+1. **개발 도구 인증:** 콘솔의 Keycloak·CLI 승인과 rmcp·클라이언트별 로그인, 대상 토큰 검사와 권한 회수.
 2. **앱 실행 프로필:** CLI 생성 → 완전한 로컬 실행 → 개발 영역 평가 → 커밋 릴리스 승격, 격리·자원 한도와 실패 복구.
 3. **설치·코어 업데이트·복원:** 사내·클라우드에서 설치하고 코어를 갱신한 뒤 기존 앱과 데이터를 유지하며 새 환경으로 복원.
-4. **공통 AI 연결과 독립 세션:** 공급자별 지원 조건과 Hermes 호환성, 같은 연결을 사용하는 여러 사용자의 thread·이벤트·도구 격리, 개별 취소와 공통 인증 만료·한도 초과 처리. 외부 개발 에이전트의 MCP 로그인과 별도로 검증.
+4. **공통 AI 연결과 독립 세션:** 공급자별 지원 조건과 Hermes 호환성, 사용자별 thread·이벤트·도구 권한·취소를 후속 AI 작업에서 검증. 현재 최소 보안 보완과 별도 단계다.
 
 라이선스 확인에서도 구성 요소와 배포 형태를 구분한다. Gitea 커뮤니티 프로젝트와 Hermes는 MIT, Keycloak 본체는 Apache-2.0으로 안내된다. 채택 버전과 포함 의존성·이미지의 고지 파일을 배포 목록에 기록하고, 별도 상용 제품·지원 계약의 조건과 혼동하지 않는다. [Gitea 프로젝트](https://docs.gitea.com/), [Hermes 라이선스](https://github.com/NousResearch/hermes-agent/blob/main/LICENSE), [Keycloak 라이선스](https://github.com/keycloak/keycloak/blob/main/LICENSE.txt)
 
-채택이 결정되면 PRD의 기술 기본안과 개발 계획을 갱신한다. 이 문서는 기술 선택을 제안하는 단계이며 구현 완료나 제품 전체의 호환성 검증을 뜻하지 않는다.
+새 기술을 채택하면 PRD와 해당 담당 문서에 반영한다. 이 문서의 추천이나 확정 설계는 구현 완료·운영 반영·제품 전체의 호환성 검증을 뜻하지 않는다.

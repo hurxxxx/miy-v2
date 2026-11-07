@@ -11,6 +11,7 @@ mod api_error;
 mod app_calls;
 mod app_cli;
 mod app_health;
+mod app_response;
 #[cfg(feature = "server")]
 mod audit;
 #[cfg(feature = "server")]
@@ -19,6 +20,12 @@ mod auth;
 mod auth_sessions;
 #[cfg(all(test, feature = "server"))]
 mod auth_sessions_regression;
+#[cfg(feature = "server")]
+mod browser_boundary;
+#[cfg(all(test, feature = "server"))]
+mod browser_boundary_migration_regression;
+#[cfg(all(test, feature = "server"))]
+mod browser_boundary_regression;
 mod bundle;
 #[cfg(feature = "server")]
 mod cli_auth;
@@ -421,13 +428,39 @@ async fn run_server(command: Command) -> Result<()> {
         artifacts: std::env::var("MIY_ARTIFACTS")?.into(),
     };
     let bind = std::env::var("MIY_BIND_ADDR").unwrap_or_else(|_| "127.0.0.1:18080".into());
+    let console_bind = std::env::var("MIY_CONSOLE_BIND_ADDR").map_err(|_| {
+        anyhow::anyhow!("MIY_CONSOLE_BIND_ADDR is required for the management listener")
+    })?;
+    anyhow::ensure!(bind != console_bind, "portal_and_console_binds_must_differ");
+    for address in [&bind, &console_bind] {
+        let socket: std::net::SocketAddr = address.parse()?;
+        anyhow::ensure!(
+            socket.ip().is_loopback(),
+            "core_listener_must_bind_loopback"
+        );
+    }
     let listener = tokio::net::TcpListener::bind(&bind).await?;
-    tracing::info!(event = "core_listening", address = %bind);
-    axum::serve(listener, http::router(state))
-        .with_graceful_shutdown(async {
-            let _ = tokio::signal::ctrl_c().await;
-        })
-        .await?;
+    let console_listener = tokio::net::TcpListener::bind(&console_bind).await?;
+    tracing::info!(event = "core_listening", address = %bind, console_address = %console_bind);
+    tokio::try_join!(
+        async {
+            axum::serve(listener, http::router(state.clone()))
+                .with_graceful_shutdown(async {
+                    let _ = tokio::signal::ctrl_c().await;
+                })
+                .await
+        },
+        async {
+            axum::serve(
+                console_listener,
+                http::router_for(state.clone(), auth::BrowserPurpose::Console),
+            )
+            .with_graceful_shutdown(async {
+                let _ = tokio::signal::ctrl_c().await;
+            })
+            .await
+        },
+    )?;
     Ok(())
 }
 

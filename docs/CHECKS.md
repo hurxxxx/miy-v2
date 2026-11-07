@@ -14,7 +14,7 @@
 
 GitHub Actions는 `cli-foundation.yml`(Linux 서버·Linux/macOS/Windows 클라이언트의 fmt·Clippy·test·CLI 검사)과 `web.yml`(정적 `scripts`·`web`)을 실행한다. 각 workflow가 실제 실행한 검사 범위를 구분하고, 이를 로컬 전체 스택·운영 검사의 통과로 옮기지 않는다.
 
-`runtime-regression.yml`은 main push·main 대상 PR에서 격리 Docker 회귀를 실행한다. 현재 기대값은 runtime 46·operations 6·CLI 6·auth 8·permissions 24·delegation 10, 총 100개 관찰이다. 권한 스냅샷 변경 중 실제 HTTP 목록·worker 재확인과 위임 발급·사용자 비활성화의 HTTP 경합도 포함한다. 로컬 실행의 PASS와 해당 commit의 GitHub 실행 결과는 따로 기록한다. CLI 응답 타입을 바꿀 때는 정적 검사 외에 실제 클라이언트 빌드로 출력·복구 검사까지 실행한다.
+`runtime-regression.yml`은 main push·main 대상 PR에서 격리 Docker 회귀를 실행한다. 현재 기대값은 runtime 46·operations 6·CLI 6·auth 8·permissions 24·delegation 10·boundary 10·migration 2, 총 112개 관찰이다. 권한 스냅샷 변경 중 실제 HTTP 목록·worker 재확인과 위임 발급·사용자 비활성화의 HTTP 경합도 포함한다. 로컬 실행의 PASS와 해당 commit의 GitHub 실행 결과는 따로 기록한다. CLI 응답 타입을 바꿀 때는 정적 검사 외에 실제 클라이언트 빌드로 출력·복구 검사까지 실행한다.
 
 `scripts/test-core-ops.py`는 백업 정리·연결 예산과 유지 관리하는 배포 도구(`scripts/core-rollout.py`, `scripts/ui-rollout.py`)의 실패 경계를 모든 외부 명령을 대체한 모의 시험으로 검사한다. 부분 서비스 장애 중 rollback 유휴 검사, 서로 다른 release의 같은 UI 대상 잠금, 무시된 public/환경 입력·심볼릭 링크와 빌드 중 입력 변경 거부도 포함한다.
 
@@ -26,7 +26,7 @@ GitHub Actions는 `cli-foundation.yml`(Linux 서버·Linux/macOS/Windows 클라�
 
 | 바꾼 것 | 최소 검사 | 해당할 때 추가 |
 | --- | --- | --- |
-| 문서만(`docs/`, `README.md`) | `python3 scripts/check-doc-links.py` | 상태·버전·commit을 바꿨다면 실제 증거와 대조 |
+| 문서만(`docs/`, `README.md`) | `python3 scripts/check-doc-links.py` | 상태·버전·commit을 바꿨다면 실제 증거와 대조. 검사기는 tracked 문서만 순회하므로 신규 untracked 문서의 링크·앵커도 별도 확인 |
 | 코어 서버 Rust(`crates/miy/src`의 서버 기능) | `check-static.sh rust` | 배포·이미지 적재·권한·위임: `python3 scripts/runtime-regression/run.py`. 개발 세션 DB: `python3 scripts/check-development-database.py`. 서버 빌드: `python3 scripts/check-server-builds.py`(셋 다 일회용 PostgreSQL·Docker). 실제 DB 복구 테스트는 로컬 개발 스택의 `check.sh` |
 | core migration(`migrations/core`) | `check-static.sh rust`, `run.py` | 이미 적용한 파일은 고치지 않고 새 번호로 추가(sqlx가 checksum 불일치를 거부). 운영 반영 전 `python3 scripts/core-backup.py create`로 대상 DB를 백업하고 `verify --migrate-with <서버 바이너리>`로 일회용 PostgreSQL에서 복원·migration 리허설 |
 | CLI 클라이언트(`--no-default-features` 경로) | `check-static.sh rust` | `cargo build --locked --no-default-features` 후 `python3 scripts/check-cli-output.py --cli target/debug/miy`, `check-cli-install.py`, `check-cli-recovery.py`. macOS·Windows는 CI 매트릭스 |
@@ -38,14 +38,21 @@ GitHub Actions는 `cli-foundation.yml`(Linux 서버·Linux/macOS/Windows 클라�
 | 서버 구성 생성(`bootstrap.py`, `render-server-config.py`, `configure-identity.py`) | `check-static.sh scripts`(`check-server-config.py` 포함) | 운영 `.local`에 bootstrap·seed·Keycloak 재설정을 실행하지 않는다 |
 | 운영 반영(v2.dwdcc.kr) | 위 해당 검사 전부, [배포 도구](SERVER-OPERATIONS.md#7-배포-도구)의 `inspect`(백업·별도 복원 확인과 연결 예산은 `core-rollout.py apply`가 수행) | health·설치 안내 버전, 게시 CLI로 `node scripts/check-platform-connection.mjs`, 읽기 위주 브라우저 확인, 운영 기록 갱신 |
 
+최소 보안 구현은 [경계 인수](APP-BOUNDARIES.md#경계-인수)의 필수 행을 검사한다. 업무 포털(dev/prod)과 콘솔+Keycloak 두 출처, portal/console 용도·기존 SDK/CLI 호환이 기준이다. 후속 BV-13·외부 앱 격리·별도 IdP·MFA 의무화·자동 CA는 현재 기능 개발의 선행 검사가 아니다. 같은 BV ID의 이전 iframe 결과는 이월하지 않으며 문서 PASS로 제품 NOT_RUN을 바꾸지 않는다.
+
+실제 Core·브라우저로 포털 세션의 관리 변경·legacy/device 승인 거부와 콘솔의 정상 승인, 기존 CLI start/exchange/poll/refresh·상대 verificationPath redirect를 확인한다. realm/sub·callback·MCP 호환, device와 legacy 회수, 사용자/그룹 권한 회수, API sandbox/nosniff·정상 JSON/MF/preview·Nginx anti-frame을 검사한다. 관리 계정의 포털 사용·dev 개발 편의가 유지되는지도 확인한다. 전면 CLI 중지나 개발자 앱 사용 금지는 기본 인수가 아니며 구 위험 경로를 임시 중지할 때만 영향·복구를 별도 시험한다.
+
+단일 IP HTTPS는 인증서 반입·CA 신뢰/IP SAN·만료 거부·수동 교체, 실제 OIDC/CLI, 포트 공유 쿠키·잘못된 목적/중복 인증 쿠키 거부·기본 복구를 확인한다. 쿠키 가용성 잔여를 기록하고 자동 CA·전 기기 스트레스는 후속으로 둔다. [공통 ACL·PLM 연계](CORE-PERMISSIONS.md#대표-인수와-검토할-결정)는 G4·G5·G6·Invoke·서비스·이벤트·파일의 해당 기능을 구현할 때 검사하며 모두를 최소 경계의 선행 조건으로 묶지 않는다. 기존 HTTP IP 결과로 새 HTTPS 인수를 대신하지 않는다.
+
 ## 루트 Playwright 설정
 
-루트 `playwright.config.ts`(`pnpm test:e2e`)는 실행 중인 로컬 개발 스택을 쓰는 `validation.spec.ts`, `development-login.spec.ts`만 실행한다. 다른 spec은 자기 설정과 서버를 함께 쓴다.
+루트 `playwright.config.ts`(`pnpm test:e2e`)는 명시적인 격리 상태·DB·origin·빌드 경로(`MIY_STATE_DIR`, `MIY_DATABASE_CONTAINER`, `MIY_TEST_ORIGIN`, `MIY_TEST_WEB_DIST`, `MIY_FIXTURE_DIST`, `MIY_BROWSER_CDP`)를 요구하는 `validation.spec.ts`, `development-login.spec.ts`만 실행한다. 운영 `.local`·DB와 `web/platform/dist`는 거부한다. 이 호스트에서는 `check.sh` 대신 정적/격리 도구를 사용한다. 다른 spec은 자기 설정과 서버를 함께 쓴다.
 
 | spec | 설정 | 서버 |
 | --- | --- | --- |
 | `runtime-health`, `platform-shell`, `runtime-confirmation`, `platform-css-isolation` | `scripts/runtime-regression/ui.config.ts` | 격리 빌드 preview + 모의 API |
 | `cli-experience`, `cli-install` | `tests/cli-experience.config.ts` | Vite dev 서버 + 모의 API |
+| `surface-boundaries` | `tests/surface-boundaries.config.ts` | 두 목적의 UI 계약·MF 미적재를 검사하는 모의 서버 |
 | `http-ip` | `scripts/runtime-regression/http-ui.config.ts` | 비 loopback IPv4의 격리 preview |
 | `server-ui` | `scripts/runtime-regression/server-ui.config.ts` | 일회용 PostgreSQL과 이 checkout의 core |
 | `stack-ui` | `scripts/runtime-regression/stack-ui.config.ts` | `stack-ui.sh`의 일회용 전체 스택 |

@@ -14,18 +14,28 @@ const accounts = [
   { name: "bob", label: /사용자 B/, admin: false },
 ];
 
+async function surfaces(context: BrowserContext) {
+  return (await (await context.request.get(origin + "/auth/options")).json()) as {
+    portalOrigin: string; consoleOrigin: string;
+  };
+}
+const developmentCookie = `${origin.startsWith("https:") ? "__Host-" : ""}miy_portal_development`;
+
 async function closeDevelopmentContext(context: BrowserContext) {
   try {
-    const response = await context.request.get(origin + "/api/v1/me");
-    if (response.status() === 401) return;
-    expect(response.status()).toBe(200);
-    const me = await response.json();
-    if (me.development !== true) return;
-    expect(typeof me.csrf).toBe("string");
-    const loggedOut = await context.request.post(origin + "/auth/logout", {
-      headers: { origin, "x-miy-csrf": me.csrf },
-    });
-    expect(loggedOut.status()).toBe(200);
+    const { portalOrigin, consoleOrigin } = await surfaces(context);
+    for (const current of [portalOrigin, consoleOrigin]) {
+      const response = await context.request.get(current + "/api/v1/me");
+      if (response.status() === 401) continue;
+      expect(response.status()).toBe(200);
+      const me = await response.json();
+      if (me.development !== true) continue;
+      expect(typeof me.csrf).toBe("string");
+      const loggedOut = await context.request.post(current + "/auth/logout", {
+        headers: { origin: current, "x-miy-csrf": me.csrf },
+      });
+      expect(loggedOut.status()).toBe(200);
+    }
   } finally {
     await context.close();
   }
@@ -54,10 +64,12 @@ test("all development account buttons sign in and out on the current origin with
       expect(response.status()).toBe(200);
       const me = await response.json();
       expect(me.name).toBe(account.name);
-      expect(me.admin).toBe(account.admin);
+      expect(me.admin).toBe(false);
+      expect(me.browserPurpose).toBe("portal");
+      if (account.admin) expect(me.canManageConsole).toBe(true);
       expect(me.development).toBe(true);
       const cookie = (await context.cookies(origin)).find(
-        (entry) => entry.name === "miy_development",
+        (entry) => entry.name === developmentCookie,
       );
       expect(cookie?.httpOnly).toBe(true);
       expect(cookie?.secure).toBe(new URL(origin).protocol === "https:");
@@ -72,7 +84,7 @@ test("all development account buttons sign in and out on the current origin with
       );
       expect(
         (await context.cookies(origin)).some(
-          (entry) => entry.name === "miy_development",
+          (entry) => entry.name === developmentCookie,
         ),
       ).toBe(false);
     }
@@ -102,7 +114,7 @@ test("development login rejects foreign origins and unknown accounts", async ({
     );
     expect(
       (await context.cookies(origin)).some(
-        (entry) => entry.name === "miy_development",
+        (entry) => entry.name === developmentCookie,
       ),
     ).toBe(false);
   } finally {
@@ -129,21 +141,23 @@ test("development account selection preserves ordinary CLI browser approval", as
     const device = await started.json();
     expect(device.id).toMatch(/^[a-f0-9-]{36}$/);
     expect(device.verificationPath).toBe(`/cli/device/${device.id}`);
-    const verificationUrl = origin + device.verificationPath;
+    const { consoleOrigin } = await surfaces(context);
+    const verificationUrl = consoleOrigin + device.verificationPath;
     const page = await context.newPage();
     const identityRequests: string[] = [];
     page.on("request", (entry) => {
       if (new URL(entry.url()).pathname.startsWith("/identity/"))
         identityRequests.push(entry.url());
     });
-    await page.goto(verificationUrl);
+    await page.goto(origin + device.verificationPath);
     await page.getByRole("button", { name: /사용자 A/ }).click();
     await expect(page).toHaveURL(verificationUrl);
     await expect(
       page.getByRole("heading", { name: "CLI 로그인 승인" }),
     ).toBeVisible();
     await expect(page.getByText(origin, { exact: true })).toBeVisible();
-    const meResponse = await context.request.get(origin + "/api/v1/me");
+    await expect(page.getByText(consoleOrigin, { exact: true })).toBeVisible();
+    const meResponse = await context.request.get(consoleOrigin + "/api/v1/me");
     expect(meResponse.status()).toBe(200);
     const me = await meResponse.json();
     expect(me.name).toBe("alice");

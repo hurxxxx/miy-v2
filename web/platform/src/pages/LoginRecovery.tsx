@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useLocation } from "@tanstack/react-router";
 import { request } from "@miy/sdk";
 import { Button, Panel } from "../ui";
+import { useSurface } from "../data/session";
 
 export function LoginRecovery() {
   const reason = new URLSearchParams(window.location.search).get("login");
@@ -25,6 +26,7 @@ type DeviceRequest = {
 };
 
 export function CliDeviceApproval({ user }: { user: User | null | undefined }) {
+  const { portalOrigin, consoleOrigin } = useSurface();
   const location = useLocation();
   const id = location.pathname.split("/").at(-1);
   const [code, setCode] = useState("");
@@ -138,8 +140,9 @@ export function CliDeviceApproval({ user }: { user: User | null | undefined }) {
     <Panel title="CLI 로그인 승인">
       <div className="cli-approval">
         <p>
-          서버: <strong>{window.location.origin}</strong>
+          플랫폼 서버: <strong>{portalOrigin}</strong>
         </p>
+        <p>승인 주소: <strong>{consoleOrigin}</strong></p>
         <p>
           <strong>{user?.name}</strong> 계정의 권한으로 CLI를 연결합니다.
         </p>
