@@ -1,15 +1,17 @@
 # 현재 플랫폼 서버 운영·연결 안내
 
-- 확인일: 2026-11-07
+- 확인일: 2026-11-09
 - 업무 포털: **https://v2.dwdcc.kr**
 - 관리·CLI 승인·로그인 콘솔: **https://v2.dwdcc.kr:9443**
 - CLI 설치 안내: **https://v2.dwdcc.kr/cli/install**
 - 실행 서버·게시 CLI: **0.7.0**, SDK 번들 **0.8.0**
-- 배포 소스: 서버·웹 화면 `a4ad37006c58bc80de61892517cd3e1a153208ba`(2026-11-07 반영), 게시 CLI `01e4d4924f8c8fc4e11720c1af81adf17ddb20bf` 유지
+- 배포 소스: 웹 화면 `f5210d1a7121cb080adce2a91d060b2a36ac9042`(2026-11-09), 서버·worker `a4ad37006c58bc80de61892517cd3e1a153208ba`(2026-11-07), 게시 CLI `01e4d4924f8c8fc4e11720c1af81adf17ddb20bf` 유지
 
 여기서 운영 반영은 이 프로젝트의 기존 서버에 변경분을 배포했다는 뜻이다. 제품 개발 완료나 정식 오픈을 선언한 것은 아니다. 현재 `:9443`은 기존 DNS·인증서를 그대로 쓰기 위한 선택이며, 도메인이 있으면 같은 IP·443의 별도 관리 호스트로 설정할 수 있다. 출처 배치 계약은 [경계 설계](APP-BOUNDARIES.md#영역과-설정)를 따른다.
 
 **현재 운영은 두 출처 경계를 적용했다.** [사내 업무 앱의 최소 보안 계약](APP-BOUNDARIES.md#확정-결정)에 따라 iframe 없는 MF·AppRoot·통합 라우팅을 유지하고, 기존 포털의 dev/prod 업무 UI와 `:9443` 콘솔의 관리·CLI 승인·Keycloak `/identity/realms/miy`를 분리했다. 단일 호스트의 포트는 origin을 나누지만 쿠키를 격리하지 않으므로 목적별 세션·정확한 Origin·CSRF·응답 제한을 함께 적용한다. 공개 운영 `v2.dwdcc.kr`을 회사 내부망 범위로 자동 인정하거나 같은 페이지 앱 간 격리를 보장하지 않는다.
+
+2026-11-09 08:11 KST에 포털↔콘솔·업무 앱 열기의 새 탭 동작을 웹 화면 `f5210d1`로 반영했다([배포 기록](releases/new-tab-navigation-2026-11-09-deployment.json)). 기존 UI 139개 파일을 별도 디렉터리에서 복원 확인한 뒤 자산 4개를 추가하고 `index.html`을 원자적으로 교체했다. 이전 자산 138개를 보존했고 공개 두 출처의 후보 파일 220건 해시가 일치했다. 서버·worker의 PID·시작 시각과 실행 파일, 인증 설정·게시 CLI는 유지했으며 서비스 재시작·DB migration은 수행하지 않았다. 이전 화면과 고정된 복구 도구는 `.local/release-f5210d1-new-tabs/ui/`에 보존했다. 실제 로그인·SSO·게시 CLI/MCP 연결 20개와 새 탭 이동 14개를 확인했으며 페이지 오류·업무 쓰기·세션 정리 실패는 없었다. 기존 탭은 새로고침하면 새 이동 동작을 사용한다.
 
 2026-11-07 사용자 요청으로 서버·UI `a4ad370`, core schema19→20, 두 listener·Nginx와 issuer/callback/logout 설정을 함께 전환했다([배포 기록](releases/internal-minimum-security-2026-11-07-deployment.json)). 게시 CLI `01e4d49`와 번들 0.8.0은 유지했다. 공유 개발 로그인은 끄고 일반 OIDC 로그인을 사용한다. 구 브라우저 세션·로그인 flow·미완료 CLI 승인은 무효화했으므로 다시 로그인한다. 기존 정상 CLI credential은 보존하며 의심 device/legacy credential은 콘솔 개인 CLI 목록에서 각각 회수한다.
 
@@ -150,7 +152,7 @@ Codex·Claude의 생성된 프로젝트 MCP는 프로젝트의 `.miy-tools/miy[.
 
 ## 3. 현재 배포 소스와 이 작업본의 차이
 
-실행 서버·worker·웹 화면은 `a4ad37006c58bc80de61892517cd3e1a153208ba`이고, 게시 CLI는 `01e4d4924f8c8fc4e11720c1af81adf17ddb20bf`다(모두 버전 0.7.0 / 번들 0.8.0). DB 역할 연결 한도·`application_name`·Docker 저장 공간 하한과 사용자·그룹 앱 권한·감사 조회 migration `0018`·`0019`는 2026-11-04 반영했다. 2026-11-05에는 다음 두 변경을 반영했다([배포 결과](releases/core-runtime-management-2026-11-05-deployment.json)).
+실행 서버·worker는 `a4ad37006c58bc80de61892517cd3e1a153208ba`, 웹 화면은 `f5210d1a7121cb080adce2a91d060b2a36ac9042`이며, 게시 CLI는 `01e4d4924f8c8fc4e11720c1af81adf17ddb20bf`다(모두 버전 0.7.0 / 번들 0.8.0). DB 역할 연결 한도·`application_name`·Docker 저장 공간 하한과 사용자·그룹 앱 권한·감사 조회 migration `0018`·`0019`는 2026-11-04 반영했다. 2026-11-05에는 다음 두 변경을 반영했다([배포 결과](releases/core-runtime-management-2026-11-05-deployment.json)).
 
 - 사용자 활성 상태 변경과 앱 등록 결정의 관리자 재확인·감사 기록(`user.enabled`·`user.disabled`, 등록 승인의 `grant.enabled`) — [검증 기록](releases/core-admin-recheck-2026-11-04-validation.json)
 - 회사 사용 중지된 앱을 관리자 실행 관리 목록(`GET /api/v1/runtime/installations`)과 실행 작업 조회에 남기는 변경, 관리 화면 "앱 실행 상태"의 사용 중지 표시 — [검증 기록](releases/core-runtime-management-2026-11-04-validation.json)

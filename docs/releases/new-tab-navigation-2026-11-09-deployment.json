@@ -1,0 +1,229 @@
+{
+  "date": "2026-11-09",
+  "status": "PASS",
+  "scope": "UI-only deployment of new-tab navigation on the existing v2 portal and console.",
+  "source": {
+    "ui": "f5210d1a7121cb080adce2a91d060b2a36ac9042",
+    "serverAndWorker": "a4ad37006c58bc80de61892517cd3e1a153208ba",
+    "publishedCli": "01e4d4924f8c8fc4e11720c1af81adf17ddb20bf",
+    "sdkBundle": "0.8.0",
+    "githubPush": "NOT_RUN: deployment requested; no new push requested"
+  },
+  "verificationBinding": {
+    "status": "PASS",
+    "priorValidation": "new-tab-navigation-2026-11-09-validation.json",
+    "method": "Every source/test/checker SHA-256 in the validation record matches the deployed commit bytes. Previous working-tree tests are bound to these identical files, not claimed as a new test run.",
+    "webBrowserCases": 62,
+    "scriptChecks": "PASS",
+    "remoteAppCssComparison": {
+      "nodes": 8,
+      "differences": 0
+    }
+  },
+  "build": {
+    "sourceCommit": "f5210d1a7121cb080adce2a91d060b2a36ac9042",
+    "sourceFiles": 46,
+    "sourceDigest": "4b8e36a2fc7552c32e689357caa953382da9a06169bbbe5e5cd8d2cd36aafee4",
+    "candidateFiles": 110,
+    "newAssets": 4,
+    "candidateIndexSha256": "11f4050473f5d5364d46d5c38ba9b559bb060a0aff0f882ec09c7bdf95393655",
+    "previousIndexSha256": "69489bb2b44c1e7df85d7f5b1b99722f92477a83594d095fb3f1e62093f73e01",
+    "manifestSha256": "f697acb6a0d00b5172d4416d455abf697253712d366c4ac73a34cc5bab102b15",
+    "rollbackToolSha256": "05c7a018a196cd7e4cc01ffbba9cd475cf446f7630bfb2d4e3fd09e28c914b20",
+    "command": "python3 /tmp/miy-ui-new-tabs-f5210d1/scripts/ui-rollout.py build --release-dir /projects/miy-v2/.local/release-f5210d1-new-tabs/ui --source-root /tmp/miy-ui-new-tabs-f5210d1 --commit f5210d1a7121cb080adce2a91d060b2a36ac9042",
+    "sourceCheckout": "separate clean detached worktree; pnpm install --offline --frozen-lockfile",
+    "releaseDirectory": ".local/release-f5210d1-new-tabs/ui"
+  },
+  "rehearsal": {
+    "status": "PASS",
+    "originalFiles": 139,
+    "method": "Copy live UI to an isolated directory, apply candidate, roll back using the maintained tool and verify every original file hash. Production UI unchanged during rehearsal.",
+    "record": ".local/evidence/new-tab-navigation-20261109-deploy/rehearsal.json"
+  },
+  "deployment": {
+    "startedAt": "2026-11-08T23:11:53.121625+00:00",
+    "finishedAt": "2026-11-08T23:11:53.264783+00:00",
+    "exitCode": 0,
+    "result": {
+      "phase": "applied",
+      "sourceCommit": "f5210d1a7121cb080adce2a91d060b2a36ac9042",
+      "backup": "/projects/miy-v2/.local/release-f5210d1-new-tabs/ui/production-backup",
+      "indexSha256": "11f4050473f5d5364d46d5c38ba9b559bb060a0aff0f882ec09c7bdf95393655"
+    }
+  },
+  "publicAndPreservation": {
+    "status": "PASS",
+    "uiSourceCommit": "f5210d1a7121cb080adce2a91d060b2a36ac9042",
+    "publicFilesPerOrigin": 110,
+    "publicAssetHashChecks": 220,
+    "preservedOldAssets": 138,
+    "serverAndWorkerProcessesUnchanged": true,
+    "serverAndPublishedCliHashesUnchanged": true,
+    "authOptionsUnchanged": true,
+    "newIndexSha256": "11f4050473f5d5364d46d5c38ba9b559bb060a0aff0f882ec09c7bdf95393655"
+  },
+  "postDeploymentChecks": [
+    {
+      "status": "PASS",
+      "command": "node scripts/check-platform-connection.mjs --origin https://v2.dwdcc.kr --cli /projects/miy-v2/.local/evidence/internal-boundaries-20261106/published-cli/miy --credentials-file /projects/miy-v2/.local/credentials.json --output /projects/miy-v2/.local/evidence/new-tab-navigation-20261109-deploy/connection-01",
+      "scope": "Ordinary OIDC, portal-to-console SSO, published CLI device approval/status/doctor, generated stdio MCP and own-session cleanup.",
+      "passCount": 20,
+      "cleanupFailures": [],
+      "harnessSha256": "26ec8b428d7eb6555b1d20ed23ae7411a06bb4d3358fbf725ebd9fa73de3f3ad",
+      "executionCliSha256": "47e1930cb3e6a2d278faf39e195b9da162a524b2f220c48ed05efd27e1198e85"
+    },
+    {
+      "status": "PASS",
+      "command": "node .local/evidence/new-tab-navigation-20261109-deploy/check-live-new-tabs.mjs --run-after-deploy --credentials-file /projects/miy-v2/.local/credentials.json --expected-commit f5210d1a7121cb080adce2a91d060b2a36ac9042 --include-admin --max-apps 2 --result-file /projects/miy-v2/.local/evidence/new-tab-navigation-20261109-deploy/live-new-tabs-01.json",
+      "scope": "Actual new tabs, original URL preserved, opener null, two-way SSO, two authorized running dev apps with MF, console managed/admin launch links and 390px mobile navigation.",
+      "passCount": 14,
+      "checks": [
+        {
+          "name": "developer_ordinary_portal_oidc_login",
+          "status": "PASS"
+        },
+        {
+          "name": "portal_console_new_tab_same_identity_sso_distinct_purpose",
+          "status": "PASS"
+        },
+        {
+          "name": "console_portal_new_tab_preserves_management_page",
+          "status": "PASS"
+        },
+        {
+          "name": "portal_home_app_new_tab_mf",
+          "status": "PASS",
+          "selectedAppIndex": 1
+        },
+        {
+          "name": "portal_rail_app_new_tab_mf",
+          "status": "PASS",
+          "selectedAppIndex": 1
+        },
+        {
+          "name": "managed_apps_portal_app_new_tab_mf",
+          "status": "PASS",
+          "selectedAppIndex": 1
+        },
+        {
+          "name": "portal_home_app_new_tab_mf",
+          "status": "PASS",
+          "selectedAppIndex": 2
+        },
+        {
+          "name": "portal_rail_app_new_tab_mf",
+          "status": "PASS",
+          "selectedAppIndex": 2
+        },
+        {
+          "name": "managed_apps_portal_app_new_tab_mf",
+          "status": "PASS",
+          "selectedAppIndex": 2
+        },
+        {
+          "name": "mobile_new_tab_to_console",
+          "status": "PASS"
+        },
+        {
+          "name": "mobile_new_tab_to_portal",
+          "status": "PASS"
+        },
+        {
+          "name": "console_portal_new_tab_same_identity_sso",
+          "status": "PASS"
+        },
+        {
+          "name": "admin_console_ordinary_login_internal_menu_same_tab",
+          "status": "PASS"
+        },
+        {
+          "name": "admin_portal_app_new_tab_mf",
+          "status": "PASS"
+        }
+      ],
+      "contexts": [
+        {
+          "role": "developer",
+          "blockedWrites": 0,
+          "blockedWebSockets": 0,
+          "blockedOtherOrigins": 0,
+          "guardFailures": 0,
+          "consoleBusinessRequests": 0,
+          "pageErrors": 0,
+          "artifact200": 63,
+          "artifactOther": 0
+        },
+        {
+          "role": "admin",
+          "blockedWrites": 0,
+          "blockedWebSockets": 0,
+          "blockedOtherOrigins": 0,
+          "guardFailures": 0,
+          "consoleBusinessRequests": 0,
+          "pageErrors": 0,
+          "artifact200": 11,
+          "artifactOther": 0
+        }
+      ],
+      "cleanup": [
+        {
+          "role": "admin",
+          "purpose": "console",
+          "status": "PASS"
+        },
+        {
+          "role": "admin",
+          "purpose": "portal",
+          "status": "PASS"
+        },
+        {
+          "role": "admin",
+          "purpose": "context",
+          "status": "PASS"
+        },
+        {
+          "role": "developer",
+          "purpose": "console",
+          "status": "PASS"
+        },
+        {
+          "role": "developer",
+          "purpose": "portal",
+          "status": "PASS"
+        },
+        {
+          "role": "developer",
+          "purpose": "context",
+          "status": "PASS"
+        }
+      ],
+      "harnessSha256": "f97757e6ca1874e8f905fb6e9bd1d9e1dd47adbc485e50799dc055968ef5205b"
+    }
+  ],
+  "rollback": {
+    "command": "python3 /projects/miy-v2/.local/release-f5210d1-new-tabs/ui/ui-rollout.py rollback --release-dir /projects/miy-v2/.local/release-f5210d1-new-tabs/ui",
+    "backup": ".local/release-f5210d1-new-tabs/ui/production-backup",
+    "productionRollbackUsed": false,
+    "behavior": "Restores previous index.html; keeps assets from both generations."
+  },
+  "noServiceRestart": true,
+  "noDatabaseMigrationOrConfigurationChange": true,
+  "notRun": [
+    {
+      "scope": "Windows/manual acceptance and access from a separate external PC",
+      "reason": "This deployment was checked using Linux Chrome on the host."
+    },
+    {
+      "scope": "Full isolated real-core/Keycloak/Docker suites and root validation",
+      "reason": "UI-only change; current required web/script checks and production read-only checks cover the deployed navigation. No backend change."
+    },
+    {
+      "scope": "GitHub CI for the deployment commit",
+      "reason": "No push performed; local source-bound validation and clean candidate build used."
+    },
+    {
+      "scope": "Ordinary-user personal CLI link and wrong-console-app-route guidance on production",
+      "reason": "Covered by shared link implementation and mocked UI tests; production browser checks used developer and administrator contexts."
+    }
+  ]
+}

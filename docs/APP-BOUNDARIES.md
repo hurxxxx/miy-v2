@@ -1,8 +1,8 @@
 # 사내 업무용 앱 실행·관리 보안
 
-- 수정일: 2026-11-07
+- 수정일: 2026-11-09
 - 상태: **사내 업무용 최소 설계 확정 · 최소 경계 구현 · 격리 검증 완료(실행 범위) · 2026-11-07 운영 반영**.
-- 변경 전 비교 기준: 소스 `22c219d`, CLI/core 0.7.0, 번들 0.8.0. 현재 운영은 서버/UI `a4ad370`, 게시 CLI `01e4d49`다. [격리 구현·검증 기록](releases/internal-minimum-security-implementation-2026-11-06-validation.json)과 [운영 배포 기록](releases/internal-minimum-security-2026-11-07-deployment.json)을 구분한다. 기존 포털을 유지하고 콘솔·issuer는 `https://v2.dwdcc.kr:9443`으로 옮겼으며 공유 개발 로그인은 껐다.
+- 변경 전 비교 기준: 소스 `22c219d`, CLI/core 0.7.0, 번들 0.8.0. 현재 운영은 서버 `a4ad370`, UI `f5210d1`, 게시 CLI `01e4d49`다. 새 탭 이동의 UI 배포는 [서버 운영 안내](SERVER-OPERATIONS.md)를 따른다. [격리 구현·검증 기록](releases/internal-minimum-security-implementation-2026-11-06-validation.json)과 [운영 배포 기록](releases/internal-minimum-security-2026-11-07-deployment.json)을 구분한다. 기존 포털을 유지하고 콘솔·issuer는 `https://v2.dwdcc.kr:9443`으로 옮겼으며 공유 개발 로그인은 껐다.
 - 적용 범위: 사내 제한 접속, 회사가 관리하는 개발자와 승인한 업무 앱. 외부망 공개·외부 개발자의 앱 수용을 위한 보안 인수는 포함하지 않는다.
 
 **동적 UI·통합 라우팅·단일 IP HTTPS와 개발 편의를 유지하며 필요한 보안부터 적용한다.** iframe 필수·MF 폐기·DNS/추가 IP 필수 결정은 철회했다. 이번 설계는 업무 포털과 관리·로그인 두 출처만 사용한다. 같은 페이지의 승인 앱은 하나의 UI 신뢰 영역이며 앱별 악성 JavaScript 격리는 제공하지 않는다.
