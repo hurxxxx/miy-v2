@@ -3,6 +3,7 @@ import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { readFileSync, readdirSync, writeFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
+import { openNewTab } from "./new-tab";
 
 function treeHash(root: string): string {
   const files: string[] = [];
@@ -139,11 +140,12 @@ test("runtime modules, OAuth session, permissions and DB preparation", async ({
   await page.getByRole("button", { name: "목록으로" }).click();
   await page.goBack();
   await expect(page.getByRole("heading", { name: "분류 상세" })).toBeVisible();
-  await page
-    .locator(`nav a[href="/environments/dev/apps/${appIds[1]}"]`)
-    .click();
-  await expect(page.getByTestId("app-root")).toBeVisible();
-  expect(await page.locator("iframe").count()).toBe(0);
+  const secondApp = await openNewTab(page, page.locator(`nav a[href="/environments/dev/apps/${appIds[1]}"]`));
+  secondApp.on("pageerror", (e) => errors.push(e.message));
+  await expect(secondApp.getByTestId("app-root")).toBeVisible();
+  expect(await secondApp.locator("iframe").count()).toBe(0);
+  await expect(page.getByRole("heading", { name: "분류 상세" })).toBeVisible();
+  await secondApp.close();
   await page.goto(`/apps/${appIds[0]}/crash`);
   await expect(
     page.getByRole("heading", { name: "앱을 열 수 없습니다" }),

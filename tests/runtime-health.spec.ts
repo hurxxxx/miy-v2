@@ -1,6 +1,7 @@
 import { browserUser, mockSurface } from "./browser-surface";
 import { test, expect } from "@playwright/test";
 import type { Installation } from "../packages/sdk/src/index";
+import { openNewTab } from "./new-tab";
 
 test("service health changes independently from process controls", async ({
   page,
@@ -47,6 +48,10 @@ test("service health changes independently from process controls", async ({
   await page.goto("/environments/dev");
   const status = page.getByRole("status", { name: "앱 실행 및 서비스 상태" });
   await expect(status).toContainText("컨테이너: running · 서비스: 정상");
+  await page.context().route("https://portal.example.test/**", (route) =>
+    route.fulfill({ contentType: "text/html", body: "<p>업무 앱</p>" }),
+  );
+  await (await openNewTab(page, page.getByRole("link", { name: "포털에서 앱 열기", exact: true }))).close();
   app.health = {
     ...app.health!,
     status: "degraded",
@@ -231,12 +236,12 @@ for (const target of ["app", "environment"] as const) {
     const harness = await appHarness(page);
     const pending = await harness.holdNextPoll();
     const next = target === "app" ? harness.second : harness.production;
-    if (target === "app")
-      await page.getByRole("link", { name: "두 번째 앱", exact: true }).click();
-    else {
-      await page.getByRole("link", { name: "운영 영역", exact: true }).click();
-      await page.getByRole("link", { name: "첫 번째 앱", exact: true }).click();
-    }
+    // Launch links now open another tab. Keep this regression about late
+    // responses in one document by exercising a browser-history route change.
+    await page.evaluate((path) => {
+      history.pushState({}, "", path);
+      window.dispatchEvent(new PopStateEvent("popstate"));
+    }, `/environments/${next.environment}/apps/${next.appId}`);
     await expect(page.getByTestId("installation")).toHaveText(next.id);
     harness.first.health = {
       ...harness.first.health!,

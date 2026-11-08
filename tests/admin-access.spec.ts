@@ -1,5 +1,6 @@
 import { browserUser, mockSurface } from "./browser-surface";
 import { test, expect, type Page } from "@playwright/test";
+import { openNewTab } from "./new-tab";
 
 // Admin UI for users, groups and app access with mocked APIs. These checks cover the
 // requests the screen sends and what it shows; server authorization is covered by the
@@ -389,6 +390,11 @@ test("a company-disabled app stays in runtime management but is not offered for 
   await expect(prod.getByRole("link", { name: "포털에서 앱 열기" })).toHaveCount(0);
   await expect(prod).toContainText("회사 사용 중지 중이라 열 수 없습니다.");
   await expect(panel("장부 · dev").getByRole("link", { name: "포털에서 앱 열기" })).toBeVisible();
+  const openDev = panel("장부 · dev").getByRole("link", { name: "포털에서 앱 열기" });
+  await page.context().route("https://portal.example.test/**", (route) =>
+    route.fulfill({ contentType: "text/html", body: "<p>업무 앱</p>" }),
+  );
+  await (await openNewTab(page, openDev)).close();
 
   await prod.getByRole("button", { name: "중지", exact: true }).click();
   await page.getByRole("dialog").getByRole("button", { name: "중지", exact: true }).click();

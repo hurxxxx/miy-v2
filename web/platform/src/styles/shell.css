@@ -83,6 +83,13 @@
   background: rgba(255, 255, 255, 0.08);
   color: #fff;
 }
+.rail-item > .new-tab-indicator:not(:where(.miy-app-root, .miy-app-root *)) {
+  position: absolute;
+  top: 4px;
+  right: 3px;
+  font-size: 11px;
+  line-height: 1;
+}
 .rail-item:focus-visible:not(:where(.miy-app-root, .miy-app-root *)) {
   outline: none;
   box-shadow: 0 0 0 2px #93c5fd;

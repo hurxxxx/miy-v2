@@ -1,0 +1,91 @@
+{
+  "date": "2026-11-09",
+  "scope": "Portal/console navigation and app launch links open a new tab while preserving the original page.",
+  "source": {
+    "baseCommit": "31fb15cc15ad000623d980e3db384f4e445c247c",
+    "workingTree": true,
+    "sha256": {
+      "scripts/runtime-regression/app-css-baseline.mjs": "595ea34a5b6f540fa0b76c177cfae75d1fc9a213e914efc704cb39b891237445",
+      "tests/admin-access.spec.ts": "c82e6ea1dc69edb611cadfb9ade50437dc95a155eed182c947992fbb6d7de1fd",
+      "tests/new-tab.ts": "c4f64335f3e1d889f29292d58a04efac3ddef5579b12ea691bf0fa643df637fc",
+      "tests/platform-shell.spec.ts": "5c4bfdc76229c3ede2b76a0c5f5e0c467cc4bc96be53beac85faf092f87f6a08",
+      "tests/runtime-health.spec.ts": "0be13d54aeab933f6e8b5173cb1a6d0ebc5f2e8dcd26643589d5ed08f8a76c71",
+      "tests/server-ui.spec.ts": "9f46b16a1daa9d31aea9006367d7bfd347299e8d33969a0cae3b077178e7c4ff",
+      "tests/stack-ui.spec.ts": "dd6af21e1658da8021b277451373bb01383f38747109017fee9aad217b012eef",
+      "tests/surface-boundaries.spec.ts": "92d662a492da3d9619138d5e56f88ac41026f176dc5837896c3932bb5a3623ab",
+      "tests/validation.spec.ts": "6893aa08fffccc9d98eb606362abc46979cac8c1695eb7b775345917523bbaeb",
+      "web/platform/src/components/NewTabLink.tsx": "5c6f2b71c6b33e8e74ed6bf6f728b9e7b6db47e000216f3c4f1e4ac60f9cdaef",
+      "web/platform/src/layout/Shell.tsx": "fd11dbdb2d551021e7ee8aa7df87988929c2e67ce740b1468347fe01f57cbd03",
+      "web/platform/src/pages/Admin.tsx": "e36f7fb97881794d73b71ac2235bd8247d591713969bbe9c110e421a4f3a5f79",
+      "web/platform/src/pages/Home.tsx": "6dd3c2b276ea963fc94af58971526d0518a6ccebbf9ac21c70d2115f23813099",
+      "web/platform/src/pages/ManagedApps.tsx": "fe10623dae207421fb9efc2abdb9d08fbbcf7d1302529ce432881b6d7ca5b29f",
+      "web/platform/src/styles/shell.css": "5cb2e58e017bdaa7dc2c05f221e11088b83d261c8da4766b856724af9fde0e57"
+    }
+  },
+  "implementation": [
+    "Shared native NewTabLink uses target=_blank, noopener noreferrer, an aria-hidden arrow and an accessible new-tab description.",
+    "Applies to portal/console rail links, personal CLI connection entry, home app cards and app rail, managed apps, platform administration and console app-route guidance.",
+    "Same-surface menus, in-app routing, login/logout and legacy console redirects retain same-tab navigation.",
+    "Opening a new tab does not trigger unsaved-input navigation confirmation on the original page."
+  ],
+  "checks": [
+    {
+      "command": "bash scripts/check-static.sh web",
+      "status": "PASS",
+      "scope": "TypeScript, isolated Vite builds and 62 browser cases with mocked APIs.",
+      "suites": {
+        "runtimeAndShell": 36,
+        "cliExperienceAndInstall": 14,
+        "surfaceBoundaries": 11,
+        "httpIp": 1
+      },
+      "log": ".local/evidence/new-tab-navigation-20261109/web-01.log"
+    },
+    {
+      "command": "bash scripts/check-static.sh scripts",
+      "status": "PASS",
+      "scope": "Script syntax, documentation links, API compatibility, stubbed operations and isolated server-configuration checks.",
+      "log": ".local/evidence/new-tab-navigation-20261109/scripts-01.log"
+    },
+    {
+      "command": "node scripts/runtime-regression/app-css-baseline.mjs 31fb15c",
+      "attempt": 1,
+      "status": "FAIL",
+      "reason": "Existing checker omitted /auth/options and browser-purpose fields; app-root timed out before comparison.",
+      "log": ".local/evidence/new-tab-css-verification-20261109/baseline-initial.log",
+      "artifacts": ".local/evidence/new-tab-css-verification-20261109/baseline-initial-fail"
+    },
+    {
+      "command": "node scripts/runtime-regression/app-css-baseline.mjs 31fb15c",
+      "attempt": 2,
+      "status": "PASS",
+      "scope": "Updated checker mocks to the current two-origin contract; 8 remote-app DOM elements, zero computed-style differences.",
+      "log": ".local/evidence/new-tab-css-verification-20261109/baseline-rerun.log",
+      "result": ".local/evidence/app-css-baseline/result.json"
+    },
+    {
+      "command": "git diff --check",
+      "status": "PASS"
+    }
+  ],
+  "notRun": [
+    {
+      "scope": "Real-core server-ui, full Keycloak/Docker stack-ui and root validation suites",
+      "reason": "Their existing scenarios were adapted to new-tab navigation; this UI-only change was verified by the required isolated web suite. No new backend or authentication behavior."
+    },
+    {
+      "scope": "Windows/manual browser acceptance",
+      "reason": "This run used Linux Chromium."
+    },
+    {
+      "scope": "Production UI deployment and production login/SSO revalidation",
+      "reason": "No deployment was performed for this change."
+    }
+  ],
+  "state": {
+    "committed": false,
+    "pushed": false,
+    "deployed": false
+  },
+  "evidencePreserved": ".local/evidence/app-css-baseline-preserved-20261108T225728308963Z"
+}

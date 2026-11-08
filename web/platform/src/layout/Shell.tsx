@@ -6,6 +6,7 @@ import { useSession, useSurface, type User } from "../data/session";
 import { currentEnvironment, environmentPath, isCliApprovalPath, isConsolePath, isAppPath, surfaceUrl, type Environment } from "../lib/paths";
 import { clearAllAppGuards, confirmLeaveAllApps } from "../lib/navigation-guards";
 import { LoadError } from "../components/LoadState";
+import { NewTabLink } from "../components/NewTabLink";
 import { Login } from "../pages/Login";
 import { CliInstall } from "../pages/CliInstall";
 import { AppMark, Badge, Button, Loading, Panel, monograms } from "../ui";
@@ -44,7 +45,7 @@ export function Shell() {
   if (options?.surface === "console" && isAppPath(location.pathname))
     return <main className="boot"><Panel title="업무 앱은 포털에서 열어 주세요">
       <p>관리 콘솔에서는 업무 앱을 실행하지 않습니다.</p>
-      <a href={surfaceUrl(options.portalOrigin, location.pathname)}>업무 포털에서 열기</a>
+      <NewTabLink href={surfaceUrl(options.portalOrigin, location.pathname)}>업무 포털에서 열기</NewTabLink>
     </Panel></main>;
   if (state.status === "loading")
     return (
@@ -81,7 +82,7 @@ export function Shell() {
 
 function ConsoleRedirect({ href }: { href: string }) {
   useEffect(() => { window.location.replace(href); }, [href]);
-  return <main className="boot"><p>관리 콘솔로 이동합니다. <a href={href}>계속</a></p></main>;
+  return <main className="boot"><p>관리 콘솔로 이동합니다. <NewTabLink href={href}>계속</NewTabLink></p></main>;
 }
 
 const ENVIRONMENTS: { id: Environment; label: string; badge: string }[] = [
@@ -113,21 +114,17 @@ function RailLink({
   short,
   icon,
   active,
+  newTab = false,
 }: {
   to: string;
   label: string;
   short?: string;
   icon: ReactNode;
   active: boolean;
+  newTab?: boolean;
 }) {
-  return (
-    <Link
-      to={to as "/"}
-      activeOptions={{ exact: true }}
-      className="rail-item"
-      aria-label={label}
-      aria-current={active ? "page" : undefined}
-    >
+  const content = (
+    <>
       <span className="rail-icon">{icon}</span>
       {short && short !== label ? (
         <>
@@ -137,6 +134,23 @@ function RailLink({
       ) : (
         <span className="rail-label">{label}</span>
       )}
+    </>
+  );
+  if (newTab)
+    return (
+      <NewTabLink href={to} className="rail-item" aria-label={label} aria-current={active ? "page" : undefined}>
+        {content}
+      </NewTabLink>
+    );
+  return (
+    <Link
+      to={to as "/"}
+      activeOptions={{ exact: true }}
+      className="rail-item"
+      aria-label={label}
+      aria-current={active ? "page" : undefined}
+    >
+      {content}
     </Link>
   );
 }
@@ -189,7 +203,8 @@ function SignedInLayout({ user, environment }: { user: User; environment: Enviro
     const item = (event.target as HTMLElement).closest<HTMLElement>(".rail-item");
     if (!item || window.matchMedia("(max-width: 767px)").matches) return;
     const rect = item.getBoundingClientRect();
-    setTooltip({ text: item.getAttribute("aria-label") ?? "", top: rect.top + rect.height / 2 });
+    const text = [item.getAttribute("aria-label"), item.getAttribute("aria-description")].filter(Boolean).join(" · ");
+    setTooltip({ text, top: rect.top + rect.height / 2 });
   }
   async function logout() {
     if (!confirmLeaveAllApps()) return;
@@ -231,6 +246,7 @@ function SignedInLayout({ user, environment }: { user: User; environment: Enviro
               label={a.name}
               icon={<AppMark mark={marks.get(a.id) ?? "?"} colorKey={a.appId} />}
               active={a.appId === activeAppId}
+              newTab
             />
           ))}
           {installations.items === null && (
@@ -244,14 +260,13 @@ function SignedInLayout({ user, environment }: { user: User; environment: Enviro
             <RailLink to="/admin" label="플랫폼 관리" short="관리" icon={<SettingsIcon />} active={pathname === "/admin"} />
           )}
           {isConsole && <RailLink to="/cli/sessions" label="내 CLI 연결" icon={<TerminalIcon />} active={pathname === "/cli/sessions"} />}
-          {!isConsole && <a className="rail-item" aria-label={user.canManageConsole ? "관리 콘솔" : "내 CLI 연결"}
-            href={surfaceUrl(options.consoleOrigin, user.canManageConsole ? environmentPath(environment) : "/cli/sessions")}
-            onClick={(event) => { if (!confirmLeaveAllApps()) event.preventDefault(); }}>
+          {!isConsole && <NewTabLink className="rail-item" aria-label={user.canManageConsole ? "관리 콘솔" : "내 CLI 연결"}
+            href={surfaceUrl(options.consoleOrigin, user.canManageConsole ? environmentPath(environment) : "/cli/sessions")}>
             <span className="rail-icon"><SettingsIcon /></span><span className="rail-label">{user.canManageConsole ? "관리 콘솔" : "내 CLI 연결"}</span>
-          </a>}
-          {isConsole && <a className="rail-item" aria-label="업무 포털" href={surfaceUrl(options.portalOrigin, environmentPath(environment))}>
+          </NewTabLink>}
+          {isConsole && <NewTabLink className="rail-item" aria-label="업무 포털" href={surfaceUrl(options.portalOrigin, environmentPath(environment))}>
             <span className="rail-icon"><HomeIcon /></span><span className="rail-label">업무 포털</span>
-          </a>}
+          </NewTabLink>}
           <RailLink
             to="/cli/install"
             label="CLI 설치"

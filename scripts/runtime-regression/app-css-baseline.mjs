@@ -53,14 +53,23 @@ async function measure(site, port) {
   const server = await serve(join(out, site), port);
   const browser = await chromium.launch();
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  const portalOrigin = `http://127.0.0.1:${port}`;
+  const consoleOrigin = "http://127.0.0.1:18153";
+  await page.route("**/auth/options", (r) => r.fulfill({ json: {
+    surface: "portal", portalOrigin, consoleOrigin, developmentLogin: false,
+    developmentOrigin: portalOrigin, accounts: [], oauthUrl: `${portalOrigin}/auth/login`,
+  } }));
   await page.route("**/artifacts/reference/**", (r) =>
     r.fulfill({ path: join(out, "remote", new URL(r.request().url()).pathname.slice("/artifacts/reference/".length)) }),
   );
   await page.route("**/api/**", (r) => {
     const path = new URL(r.request().url()).pathname;
-    return r.fulfill({ json: path === "/api/v1/me" ? { id: "u", name: "기준선", admin: false, csrf: "c" } : path === "/api/v1/installations" ? [app] : {} });
+    return r.fulfill({ json: path === "/api/v1/me" ? {
+      id: "u", name: "기준선", admin: false, csrf: "c", browserPurpose: "portal",
+      portalOrigin, consoleOrigin, canManageConsole: false,
+    } : path === "/api/v1/installations" ? [app] : {} });
   });
-  await page.goto(`http://127.0.0.1:${port}/environments/dev/apps/reference`);
+  await page.goto(`${portalOrigin}/environments/dev/apps/reference`);
   const rootNode = page.getByTestId("app-root");
   await rootNode.waitFor();
   await page.evaluate(() => document.fonts.ready);

@@ -1,5 +1,6 @@
 import { test, expect, type Page } from "@playwright/test";
 import { randomUUID } from "node:crypto";
+import { openNewTab } from "./new-tab";
 
 // UI-5: the new shell against the real core server (current source) and a
 // disposable database, using the explicit loopback development login.
@@ -32,19 +33,23 @@ test("admin signs in, sees an empty launcher, real directory data and survives r
   await expect(page.getByText("이 실행 환경에서 사용할 수 있는 앱이 없습니다.")).toBeVisible();
   await expect(page.getByRole("alert")).toHaveCount(0);
   const rail = page.locator("#platform-navigation");
-  await rail.getByRole("link", { name: "관리 콘솔", exact: true }).click();
-  await page.getByRole("button", { name: /관리자로 시작/ }).click();
-  await expect(page.getByRole("heading", { name: "내가 관리하는 앱", exact: true })).toBeVisible();
-  await rail.getByRole("link", { name: "플랫폼 관리", exact: true }).click();
-  await expect(page.getByRole("heading", { name: "플랫폼 관리" })).toBeVisible();
-  await expect(page.getByRole("combobox", { name: "사용자", exact: true })).toContainText("alice");
-  await expect(page.getByText("대기 중인 신청이 없습니다.")).toBeVisible();
-  await expect(page.getByText("배포된 앱이 없습니다.")).toBeVisible();
-  await page.reload();
-  await expect(page.getByRole("heading", { name: "플랫폼 관리" })).toBeVisible();
-  await page.getByRole("link", { name: "운영 영역", exact: true }).click();
-  await expect(page).toHaveURL(/\/environments\/prod$/);
-  await expect(page.getByRole("heading", { name: "내가 관리하는 앱", exact: true })).toBeVisible();
+  const consolePage = await openNewTab(page, rail.getByRole("link", { name: "관리 콘솔", exact: true }));
+  await consolePage.getByRole("button", { name: /관리자로 시작/ }).click();
+  await expect(consolePage.getByRole("heading", { name: "내가 관리하는 앱", exact: true })).toBeVisible();
+  await consolePage.locator("#platform-navigation").getByRole("link", { name: "플랫폼 관리", exact: true }).click();
+  await expect(consolePage.getByRole("heading", { name: "플랫폼 관리" })).toBeVisible();
+  await expect(consolePage.getByRole("combobox", { name: "사용자", exact: true })).toContainText("alice");
+  await expect(consolePage.getByText("대기 중인 신청이 없습니다.")).toBeVisible();
+  await expect(consolePage.getByText("배포된 앱이 없습니다.")).toBeVisible();
+  await consolePage.reload();
+  await expect(consolePage.getByRole("heading", { name: "플랫폼 관리" })).toBeVisible();
+  await consolePage.getByRole("link", { name: "운영 영역", exact: true }).click();
+  await expect(consolePage).toHaveURL(/\/environments\/prod$/);
+  await expect(consolePage.getByRole("heading", { name: "내가 관리하는 앱", exact: true })).toBeVisible();
+  const portalPage = await openNewTab(consolePage, consolePage.getByRole("link", { name: "업무 포털", exact: true }));
+  await expect(portalPage.getByRole("heading", { name: "운영 앱", exact: true })).toBeVisible();
+  await portalPage.close();
+  await consolePage.close();
 });
 
 test("admin grant form sends the session CSRF and shows the server's answer", async ({ page }) => {

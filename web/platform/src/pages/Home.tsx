@@ -1,9 +1,10 @@
 import { useMemo } from "react";
-import { Link, useLocation } from "@tanstack/react-router";
+import { useLocation } from "@tanstack/react-router";
 import type { Installation } from "@miy/sdk";
 import { installationsIn, useInstallationPolling, useInstallations } from "../data/installations";
 import { currentEnvironment, environmentPath } from "../lib/paths";
 import { LoadError, StaleNotice } from "../components/LoadState";
+import { NewTabLink } from "../components/NewTabLink";
 import { AppMark, EmptyState, Loading, Panel, monograms } from "../ui";
 
 export function Home() {
@@ -74,9 +75,9 @@ function AppCard({
       }
     >
       {openable && (
-        <Link className="app-card-open" to={environmentPath(environment, a.appId) as "/"}>
-          앱 열기 →
-        </Link>
+        <NewTabLink className="app-card-open" href={environmentPath(environment, a.appId)}>
+          앱 열기
+        </NewTabLink>
       )}
       {!openable && <p>지금은 앱을 사용할 수 없습니다. 담당자에게 문의하세요.</p>}
     </Panel>

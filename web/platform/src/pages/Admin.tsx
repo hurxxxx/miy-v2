@@ -3,6 +3,7 @@ import { request } from "@miy/sdk";
 import { useInstallations, useManagedInstallations } from "../data/installations";
 import { useUser, useSurface } from "../data/session";
 import { environmentPath, surfaceUrl } from "../lib/paths";
+import { NewTabLink } from "../components/NewTabLink";
 import { LoadError, StaleNotice } from "../components/LoadState";
 import { RuntimeHealth } from "../components/RuntimeHealth";
 import { RuntimeControls } from "../components/RuntimeControls";
@@ -199,7 +200,7 @@ function AdminConsole({ csrf }: { csrf: string }) {
                       {a.version} · DB {a.dbStatus}
                     </p>
                     {a.canOpen ? (
-                      <a href={surfaceUrl(portalOrigin, environmentPath(a.environment, a.appId))}>포털에서 앱 열기</a>
+                      <NewTabLink href={surfaceUrl(portalOrigin, environmentPath(a.environment, a.appId))}>포털에서 앱 열기</NewTabLink>
                     ) : (
                       <p className="ui-empty-inline">
                         {a.appDisabled

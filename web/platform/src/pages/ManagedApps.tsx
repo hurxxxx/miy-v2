@@ -5,6 +5,7 @@ import { useManagedInstallations } from "../data/installations";
 import { useSurface, useUser } from "../data/session";
 import { currentEnvironment, environmentPath, surfaceUrl } from "../lib/paths";
 import { LoadError, StaleNotice } from "../components/LoadState";
+import { NewTabLink } from "../components/NewTabLink";
 import { RuntimeControls } from "../components/RuntimeControls";
 import { RuntimeHealth } from "../components/RuntimeHealth";
 import {
@@ -131,15 +132,15 @@ export function ManagedApps() {
                   </div>
                   <RuntimeHealth app={app} />
                   {app.canOpen ? (
-                    <a
+                    <NewTabLink
                       className="app-card-open"
                       href={surfaceUrl(
                         portalOrigin,
                         environmentPath(environment, app.appId),
                       )}
                     >
-                      포털에서 앱 열기 →
-                    </a>
+                      포털에서 앱 열기
+                    </NewTabLink>
                   ) : (
                     <p className="ui-empty-inline">
                       {app.appDisabled

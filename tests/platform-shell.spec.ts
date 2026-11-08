@@ -1,6 +1,7 @@
-import { browserUser, mockSurface } from "./browser-surface";
-import { test, expect, type Page } from "@playwright/test";
+import { browserOptions, browserUser, mockSurface } from "./browser-surface";
+import { test, expect, type BrowserContext, type Page } from "@playwright/test";
 import type { Installation } from "../packages/sdk/src/index";
+import { openNewTab } from "./new-tab";
 
 // UI-1: the shell distinguishes loading, empty and failed reads with mocked APIs.
 // These checks cover presentation only; they are not evidence for server auth.
@@ -23,7 +24,7 @@ const app: Installation = {
 };
 
 type Reply = { status: number; json: unknown } | "abort";
-async function mock(page: Page, handlers: { me: () => Reply; installations: () => Reply }) {
+async function mock(page: Page | BrowserContext, handlers: { me: () => Reply; installations: () => Reply }) {
   await page.route("**/api/**", async (route) => {
     expect(route.request().method()).toBe("GET");
     const path = new URL(route.request().url()).pathname;
@@ -231,27 +232,29 @@ test("runtime confirmation is a keyboard modal: Escape cancels and focus returns
   expect(writes).toEqual(["/api/v1/apps/shell-app/runtime/preflight"]);
 });
 
-test("rail shows unique monograms with accessible names and marks the current app", async ({ page }) => {
+test("rail opens apps in a new tab with accessible names and marks the current app", async ({ page }) => {
   const apps: Installation[] = [
     { ...app, id: "a1", appId: "docs", name: "문서 관리" },
     { ...app, id: "a2", appId: "inquiry", name: "문의 게시판" },
     { ...app, id: "a3", appId: "long", name: "아주 긴 이름을 가진 업무 앱 이름 표시 검증" },
   ];
-  await mock(page, { me: () => ({ status: 200, json: user }), installations: () => ({ status: 200, json: apps }) });
+  await page.context().route("**/auth/options", (route) => route.fulfill({ json: browserOptions(route) }));
+  await mock(page.context(), { me: () => ({ status: 200, json: user }), installations: () => ({ status: 200, json: apps }) });
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto("/environments/dev");
   const rail = page.locator("#platform-navigation");
   await expect(rail.getByRole("link", { name: "문서 관리", exact: true })).toContainText("문서");
   await expect(rail.getByRole("link", { name: "문의 게시판", exact: true })).toContainText("문의");
   await rail.getByRole("link", { name: "문의 게시판", exact: true }).hover();
-  await expect(page.locator(".rail-tooltip")).toHaveText("문의 게시판");
-  await rail.getByRole("link", { name: "문서 관리", exact: true }).click();
-  await expect(rail.getByRole("link", { name: "문서 관리", exact: true })).toHaveAttribute("aria-current", "page");
-  await expect(page.locator("header")).toContainText("문서 관리");
+  await expect(page.locator(".rail-tooltip")).toHaveText("문의 게시판 · 새 탭에서 열립니다");
+  const appPage = await openNewTab(page, rail.getByRole("link", { name: "문서 관리", exact: true }));
+  await expect(appPage.locator("#platform-navigation").getByRole("link", { name: "문서 관리", exact: true })).toHaveAttribute("aria-current", "page");
+  await expect(appPage.locator("header")).toContainText("문서 관리");
   for (const width of [1440, 768, 390]) {
-    await page.setViewportSize({ width, height: 900 });
-    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await appPage.setViewportSize({ width, height: 900 });
+    expect(await appPage.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   }
+  await appPage.close();
 });
 
 test("mobile drawer closes on Escape and returns focus to the toggle", async ({ page }) => {
@@ -286,6 +289,11 @@ test("unsaved app input guards app switching and logout through the shell", asyn
   await expect(input).toHaveValue("저장된 제목");
   await input.fill("미저장 제목");
   const rail = page.locator("#platform-navigation");
+  await page.context().route("https://console.example.test/**", (route) =>
+    route.fulfill({ contentType: "text/html", body: "<p>관리 콘솔</p>" }),
+  );
+  await (await openNewTab(page, rail.getByRole("link", { name: "관리 콘솔", exact: true }))).close();
+  await expect(input).toHaveValue("미저장 제목");
   page.once("dialog", async (dialog) => {
     expect(dialog.message()).toContain("저장하지 않은 제목");
     await dialog.dismiss();

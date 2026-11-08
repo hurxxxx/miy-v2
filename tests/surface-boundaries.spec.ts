@@ -1,5 +1,6 @@
 import { test, expect, type Page } from "@playwright/test";
 import { browserOptions, browserUser, mockSurface } from "./browser-surface";
+import { openNewTab } from "./new-tab";
 
 // Mocked presentation/routing checks only. Backend purpose/Origin enforcement is
 // verified independently against the isolated core; these are not server auth proof.
@@ -66,7 +67,8 @@ test("portal shows business apps without management controls or operational meta
   await expect(
     page.getByRole("heading", { name: "운영 앱", exact: true }),
   ).toBeVisible();
-  await expect(page.getByRole("link", { name: "앱 열기 →" })).toBeVisible();
+  const appLink = page.getByRole("link", { name: "앱 열기", exact: true });
+  await expect(appLink).toBeVisible();
   await expect(
     page.getByRole("button", { name: /중지|재시작|제거|시작/ }),
   ).toHaveCount(0);
@@ -80,6 +82,14 @@ test("portal shows business apps without management controls or operational meta
   ).toHaveCount(0);
   expect(reads).not.toContain("/api/v1/runtime/installations");
   expect(reads).not.toContain("/api/v1/apps");
+  await page.context().route("**/environments/prod/apps/ledger", (route) =>
+    route.fulfill({ contentType: "text/html", body: "<p>업무 앱</p>" }),
+  );
+  await (await openNewTab(page, appLink)).close();
+  await page.context().route("https://console.example.test/**", (route) =>
+    route.fulfill({ contentType: "text/html", body: "<p>관리 콘솔</p>" }),
+  );
+  await (await openNewTab(page, page.getByRole("link", { name: "관리 콘솔", exact: true }))).close();
 });
 
 test("a non-admin console user sees manageable apps, including disabled and uninstalled apps", async ({
@@ -111,6 +121,10 @@ test("a non-admin console user sees manageable apps, including disabled and unin
   ).toBeVisible();
   await expect(page.locator("main script")).toHaveCount(0);
   expect(reads).not.toContain("/api/v1/installations");
+  await page.context().route("https://portal.example.test/**", (route) =>
+    route.fulfill({ contentType: "text/html", body: "<p>업무 포털</p>" }),
+  );
+  await (await openNewTab(page, page.getByRole("link", { name: "업무 포털", exact: true }))).close();
   await page.goto("/admin");
   await expect(
     page.getByRole("heading", { name: "관리자 권한이 필요합니다" }),
@@ -144,6 +158,10 @@ for (const path of [
       ),
     ).toEqual([]);
     await expect(page.locator("iframe")).toHaveCount(0);
+    await page.context().route("https://portal.example.test/**", (route) =>
+      route.fulfill({ contentType: "text/html", body: "<p>업무 앱</p>" }),
+    );
+    await (await openNewTab(page, page.getByRole("link", { name: "업무 포털에서 열기" }))).close();
   });
 }
 
