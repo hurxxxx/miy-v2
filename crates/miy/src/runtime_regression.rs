@@ -892,7 +892,7 @@ async fn isolated_runtime_regression() -> Result<()> {
     suite(
         "migration",
         Ok(migration),
-        json!({"suite":"migration","storage":"fresh isolated PostgreSQL and independent app database","fromSchema":19,"toSchema":21}),
+        json!({"suite":"migration","storage":"fresh isolated PostgreSQL and independent app database","fromSchema":19,"toSchema":22}),
     );
     sqlx::migrate!("../../migrations/core").run(&pool).await?;
     sqlx::query("INSERT INTO users(id,name,admin) VALUES('audit-admin','Synthetic admin',true),('audit-dev','Synthetic developer',false),('audit-user','Synthetic user',false) ON CONFLICT (id) DO NOTHING").execute(&pool).await?;
@@ -925,7 +925,12 @@ async fn isolated_runtime_regression() -> Result<()> {
     let console_origin = format!("http://{}", console_listener.local_addr()?);
     let dev_portal_listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
     let dev_portal_origin = format!("http://{}", dev_portal_listener.local_addr()?);
+    // App frame origins are port-pool names sent as Host to one frame listener.
+    let frame_listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
+    let frame_address = format!("http://{}", frame_listener.local_addr()?);
     unsafe {
+        std::env::set_var("MIY_APP_FRAME_ORIGIN", "http://127.0.0.1:{port}");
+        std::env::set_var("MIY_APP_FRAME_PORTS", "47100-47399");
         std::env::set_var("MIY_ORIGIN", &api_origin);
         std::env::set_var("MIY_CONSOLE_ORIGIN", &console_origin);
         std::env::set_var("MIY_DEV_PORTAL_ORIGIN", &dev_portal_origin);
@@ -945,6 +950,8 @@ async fn isolated_runtime_regression() -> Result<()> {
     let dev_portal_router = crate::http::router_for(s.clone(), auth::BrowserPurpose::DevPortal);
     let dev_portal_server =
         tokio::spawn(async move { axum::serve(dev_portal_listener, dev_portal_router).await });
+    let frame_router = crate::app_frames::router(s.clone());
+    let frame_server = tokio::spawn(async move { axum::serve(frame_listener, frame_router).await });
     let admin = actor("audit-admin");
     let dev = actor("audit-dev");
     let ordinary = actor("audit-user");
@@ -1634,9 +1641,10 @@ async fn isolated_runtime_regression() -> Result<()> {
             &api_origin,
             &console_origin,
             &dev_portal_origin,
+            &frame_address,
         )
         .await,
-        json!({"suite":"boundary","transport":"three fixed HTTP listeners","storage":"isolated PostgreSQL","identity":"synthetic development sessions","application":"signed loopback API and actual JS artifact"}),
+        json!({"suite":"boundary","transport":"three fixed HTTP listeners and the app frame listener","storage":"isolated PostgreSQL","identity":"synthetic development sessions","application":"signed loopback API and actual JS artifact"}),
     );
     suite(
         "auth",
@@ -1645,8 +1653,27 @@ async fn isolated_runtime_regression() -> Result<()> {
     );
     suite(
         "permissions",
-        crate::permissions_regression::run(&s, &client, &api_origin, &dev_portal_origin).await,
+        crate::permissions_regression::run(
+            &s,
+            &client,
+            &api_origin,
+            &dev_portal_origin,
+            &frame_address,
+        )
+        .await,
         json!({"suite":"permissions","transport":"HTTP and MCP","storage":"isolated PostgreSQL","runtime":"signed loopback app fixtures"}),
+    );
+    suite(
+        "frames",
+        crate::app_frames_regression::run(
+            &s,
+            &client,
+            &api_origin,
+            &dev_portal_origin,
+            &frame_address,
+        )
+        .await,
+        json!({"suite":"frames","transport":"portal, dev portal and app frame HTTP listeners; frame origins as Host names","storage":"isolated PostgreSQL","identity":"synthetic development sessions","runtime":"signed loopback app fixtures"}),
     );
     suite(
         "delegation",
@@ -1657,6 +1684,7 @@ async fn isolated_runtime_regression() -> Result<()> {
     api_server.abort();
     console_server.abort();
     dev_portal_server.abort();
+    frame_server.abort();
     oidc.abort();
     let failures = std::fs::read_to_string(root().join("evidence/results.jsonl"))?
         .lines()

@@ -24,10 +24,11 @@ export default function HealthApp({ runtime }: AppProps) {
   // Unsaved edits ask the host before leaving the app or signing out.
   useEffect(
     () =>
-      runtime.registerNavigationGuard(() =>
-        title !== saved ? "저장하지 않은 제목이 있습니다. 이동할까요?" : undefined,
-      ),
-    [runtime.registerNavigationGuard, title, saved],
+      runtime.setNavigationState({
+        dirty: title !== saved,
+        message: "저장하지 않은 제목이 있습니다. 이동할까요?",
+      }),
+    [runtime.setNavigationState, title, saved],
   );
   return (
     <section>

@@ -1,0 +1,41 @@
+/*
+ * The baseline app UIs rendered with inside the portal document (portal
+ * styles/tokens.css --miy-* variables and the .miy-app-root rules), re-declared
+ * for the app's own frame document. Platform shell styles never reach a frame.
+ */
+:root {
+  --miy-background: #f5f7fa;
+  --miy-text: #18283c;
+  --miy-accent: #244bff;
+  --miy-border: #dce3e9;
+  --miy-app-font: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+* {
+  box-sizing: border-box;
+}
+html,
+body {
+  height: 100%;
+  margin: 0;
+}
+body {
+  font-family: var(--miy-app-font);
+  font-size: 16px;
+  line-height: normal;
+  background: var(--miy-background);
+  color: var(--miy-text);
+}
+a {
+  color: var(--miy-accent);
+  text-decoration: none;
+}
+button {
+  font: inherit;
+}
+#miy-frame-root {
+  min-height: 100%;
+  min-width: 0;
+}
+.miy-frame-status {
+  padding: 24px;
+}

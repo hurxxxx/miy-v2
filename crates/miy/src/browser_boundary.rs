@@ -10,6 +10,9 @@ pub enum Access {
     Portal,
     Console,
     NonBrowser,
+    /// App code and data: CLI, delegation and backend continuation bearers on the
+    /// published portal address only. Browsers use app frames (`app_frames`).
+    PortalBearer,
     // Let MCP issue its published 401 + resource_metadata challenge before the
     // client has a bearer. The MCP guard never authenticates browser cookies.
     BearerChallenge,
@@ -40,12 +43,16 @@ pub fn access(route: &str, method: &Method) -> Option<Access> {
         | "/cli/device/{id}" => Access::Public,
         "/me" => Access::Shared,
         "/installations" if read => Access::Portal,
+        // Business app UIs run in their own frame origins (app_frames). A portal
+        // session only launches and renews frames; it never reaches app code or data.
+        "/app-frames" | "/app-frames/{id}/renew" => Access::Portal,
+        "/preview/apps/{app}/platform/directory"
+        | "/preview/apps/{app}/connections/{target}/api/{*path}" => Access::Portal,
+        // CLI, delegation and backend continuation bearers keep the published address.
         "/artifacts/{hash}/ui/{*path}"
         | "/installations/{id}/api/{*path}"
         | "/installations/{id}/platform/directory"
-        | "/installations/{id}/connections/{target}/api/{*path}"
-        | "/preview/apps/{app}/platform/directory"
-        | "/preview/apps/{app}/connections/{target}/api/{*path}" => Access::Portal,
+        | "/installations/{id}/connections/{target}/api/{*path}" => Access::PortalBearer,
         "/dev-sessions/{id}/database" => Access::NonBrowser,
         "/apps/{app}/dev-sessions"
         | "/dev-sessions/{id}"
@@ -139,6 +146,8 @@ pub fn allowed(
         Access::Portal => purpose == BrowserPurpose::Portal,
         Access::Console => purpose == BrowserPurpose::Console || (bearer && !origin_present),
         Access::NonBrowser => bearer && !origin_present,
+        // The console never serves application-controlled responses, bearer or not.
+        Access::PortalBearer => purpose == BrowserPurpose::Portal && bearer && !origin_present,
         Access::BearerChallenge => !origin_present,
     }
 }
@@ -203,6 +212,7 @@ mod tests {
             (Access::Portal, true),
             (Access::Console, false),
             (Access::NonBrowser, false),
+            (Access::PortalBearer, false),
             (Access::BearerChallenge, false),
         ] {
             for origin_present in [false, true] {
@@ -226,5 +236,46 @@ mod tests {
             false,
             true
         ));
+    }
+
+    #[test]
+    fn portal_sessions_launch_frames_but_never_reach_app_code_or_data() {
+        for route in [
+            "/artifacts/{hash}/ui/{*path}",
+            "/api/v1/installations/{id}/api/{*path}",
+            "/api/v1/installations/{id}/platform/directory",
+            "/api/v1/installations/{id}/connections/{target}/api/{*path}",
+        ] {
+            let rule = access(route, &Method::GET).unwrap();
+            for purpose in [
+                BrowserPurpose::Portal,
+                BrowserPurpose::DevPortal,
+                BrowserPurpose::Console,
+            ] {
+                assert!(!allowed(rule, purpose, false, false), "{route}");
+                assert!(!allowed(rule, purpose, false, true), "{route}");
+                assert!(!allowed(rule, purpose, true, true), "{route}");
+            }
+            // CLI, delegation and backend continuation bearers keep the portal address.
+            assert!(
+                allowed(rule, BrowserPurpose::Portal, true, false),
+                "{route}"
+            );
+            assert!(
+                !allowed(rule, BrowserPurpose::DevPortal, true, false),
+                "{route}"
+            );
+            // The console never serves app code or data, even to a bearer.
+            assert!(
+                !allowed(rule, BrowserPurpose::Console, true, false),
+                "{route}"
+            );
+        }
+        for route in ["/api/v1/app-frames", "/api/v1/app-frames/{id}/renew"] {
+            let rule = access(route, &Method::POST).unwrap();
+            assert!(allowed(rule, BrowserPurpose::Portal, false, true));
+            assert!(allowed(rule, BrowserPurpose::DevPortal, false, true));
+            assert!(!allowed(rule, BrowserPurpose::Console, false, true));
+        }
     }
 }

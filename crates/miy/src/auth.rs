@@ -99,6 +99,8 @@ pub struct Auth {
     pub issuer: String,
     pub development_origin: String,
     pub development_login: bool,
+    /// Per-installation business app frame origins (`app_frames`).
+    pub frames: crate::app_frames::Config,
     client: reqwest::Client,
     discovery: Discovery,
     web_secret: String,
@@ -158,6 +160,11 @@ impl Auth {
                 && Url::parse(&dev_portal_origin)?.scheme() == scheme,
             "browser_origin_transports_must_match"
         );
+        let frames = crate::app_frames::Config::from_env(
+            allow_http,
+            &scheme,
+            &[&origin, &console_origin, &dev_portal_origin],
+        )?;
         let issuer = crate::server_origin::issuer(&std::env::var("MIY_ISSUER")?, allow_http)?;
         let identity_origin = Url::parse(&issuer)?.origin();
         // The identity provider shares the trusted console origin, never a portal
@@ -228,6 +235,7 @@ impl Auth {
             origin,
             console_origin,
             dev_portal_origin,
+            frames,
             development_origin,
             development_login,
             issuer,

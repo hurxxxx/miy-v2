@@ -101,6 +101,12 @@ parser.add_argument('--console-https-port', type=port, default=port(os.getenv('M
 parser.add_argument('--dev-portal-http-port', type=port, default=port(os.getenv('MIY_DEV_PORTAL_HTTP_PORT', previous.get('devPortalHttpPort', 18002))))
 parser.add_argument('--dev-portal-https-port', type=port, default=port(os.getenv('MIY_DEV_PORTAL_HTTPS_PORT', previous.get('devPortalHttpsPort', 18445))))
 parser.add_argument('--proxy-bind', default=os.getenv('MIY_PROXY_BIND', previous.get('proxyBind', '127.0.0.1')))
+parser.add_argument('--app-frame-origin', default=os.getenv('MIY_APP_FRAME_ORIGIN', previous.get('appFrameOrigin')),
+                    help='Business app frame origins: one {key} host label (domain) or {port} (port pool); '
+                         'defaults to ports on the portal host')
+parser.add_argument('--app-frame-ports', default=os.getenv('MIY_APP_FRAME_PORTS', previous.get('appFramePorts')),
+                    help='Frame port pool first-last for a {port} template')
+parser.add_argument('--app-frame-bind', default=os.getenv('MIY_APP_FRAME_BIND_ADDR', previous.get('appFrameBind', '127.0.0.1:18083')))
 parser.add_argument('--ca-file', type=Path, default=os.getenv('MIY_CA_FILE') or None)
 args = parser.parse_args()
 if shared_login_env not in (None, '0', '1'):
@@ -121,8 +127,29 @@ try:
     args.bind = endpoint_bind(args.bind)
     args.console_bind = endpoint_bind(args.console_bind)
     args.dev_portal_bind = endpoint_bind(args.dev_portal_bind)
-    if len({args.bind, args.console_bind, args.dev_portal_bind}) != 3:
-        raise ValueError('Portal, console and dev portal internal binds must be distinct')
+    args.app_frame_bind = endpoint_bind(args.app_frame_bind)
+    if len({args.bind, args.console_bind, args.dev_portal_bind, args.app_frame_bind}) != 4:
+        raise ValueError('Portal, console, dev portal and app frame internal binds must be distinct')
+    # Business app frames: one origin per installation (docs/APP-FRAMES.md). Without
+    # a domain template, frames take ports from a pool on the portal host (P3).
+    portal_parts = urllib.parse.urlsplit(origin)
+    if not args.app_frame_origin:
+        args.app_frame_origin = f'{portal_parts.scheme}://{portal_parts.hostname}:{{port}}'
+        args.app_frame_ports = args.app_frame_ports or ('18320-18339' if args.profile == 'local' else '20000-20199')
+    frame_template = args.app_frame_origin
+    if (frame_template.count('{key}') + frame_template.count('{port}') != 1
+            or urllib.parse.urlsplit(frame_template.replace('{key}', 'k').replace('{port}', '1')).scheme != portal_parts.scheme):
+        raise ValueError('App frame origin needs one {key} or {port} and the portal scheme')
+    frame_ports = []
+    # Wildcards cover a whole leftmost label: a {key} host pattern is served and
+    # framed as *.<rest> (the portal frame-src cannot name only app hosts there).
+    frame_scheme, _, frame_rest = frame_template.partition('://')
+    frame_wildcard = f"{frame_scheme}://*.{frame_rest.split('.', 1)[-1]}"
+    if '{port}' in frame_template:
+        first, _, last = (args.app_frame_ports or '').partition('-')
+        frame_ports = list(range(port(first), port(last) + 1))
+        if not frame_ports:
+            raise ValueError('App frame port pool must be first-last')
     bind = urllib.parse.urlsplit('//' + args.bind)
     console_bind = urllib.parse.urlsplit('//' + args.console_bind)
     ipaddress.ip_address(args.proxy_bind)
@@ -163,6 +190,7 @@ config = {
     'httpPort': args.http_port, 'httpsPort': args.https_port, 'proxyBind': args.proxy_bind,
     'consoleHttpPort': args.console_http_port, 'consoleHttpsPort': args.console_https_port,
     'devPortalHttpPort': args.dev_portal_http_port, 'devPortalHttpsPort': args.dev_portal_https_port,
+    'appFrameOrigin': frame_template, 'appFramePorts': args.app_frame_ports, 'appFrameBind': args.app_frame_bind,
     'identityAdminUrl': f'http://127.0.0.1:{args.identity_port}/identity',
     'developmentOrigin': development_origin, 'developmentLogin': development_login,
     'sharedDevelopmentLogin': shared_development_login,
@@ -190,6 +218,13 @@ private_write(LOCAL / 'compose.env', env_text({
     'MIY_CONSOLE_PORT': urllib.parse.urlsplit(console_origin).port or (443 if parsed.scheme == 'https' else 80),
     'MIY_DEV_PORTAL_PORT': urllib.parse.urlsplit(dev_portal_origin).port or (443 if parsed.scheme == 'https' else 80),
     'MIY_PUBLIC_SCHEME': parsed.scheme,
+    # Caddy site addresses for every frame origin of the pool (or the host pattern),
+    # and the portal frame-src that names exactly those origins.
+    'MIY_APP_FRAME_SITES': ', '.join(frame_template.replace('{port}', str(value)) for value in frame_ports)
+        if frame_ports else frame_wildcard,
+    'MIY_APP_FRAME_SOURCES': ' '.join(frame_template.replace('{port}', str(value)) for value in frame_ports)
+        if frame_ports else frame_wildcard,
+    'MIY_APP_FRAME_CORE_UPSTREAM': args.app_frame_bind,
     'MIY_IDENTITY_UPSTREAM': f'127.0.0.1:{args.identity_port}',
     'MIY_CADDY_CONFIG': ROOT / 'ops' / ('Caddyfile' if local_tls else 'Caddyfile.http'),
 }))
@@ -200,6 +235,8 @@ runtime = {
     'MIY_ISSUER': console_origin + '/identity/realms/miy',
     'MIY_ALLOW_HTTP': '1' if args.allow_http else '0', 'MIY_BIND_ADDR': args.bind,
     'MIY_CONSOLE_BIND_ADDR': args.console_bind, 'MIY_DEV_PORTAL_BIND_ADDR': args.dev_portal_bind,
+    'MIY_APP_FRAME_ORIGIN': frame_template, 'MIY_APP_FRAME_BIND_ADDR': args.app_frame_bind,
+    'MIY_FRAME_RUNTIME_DIR': LOCAL / 'frame-runtime',
     'MIY_DEV_LOGIN': 'shared' if shared_development_login else '1' if development_login else '0',
     'MIY_DEV_ORIGIN': development_origin,
     'MIY_WEB_SECRET': s['web_client'], 'MIY_RESOURCE_SECRET': s['resource_client'],
@@ -207,6 +244,8 @@ runtime = {
     'MIY_CLI_RELEASE_DIR': config['cliReleaseDir'],
     'MIY_CLI_INSTALLER_DIR': config['cliInstallerDir'],
 }
+if frame_ports:
+    runtime['MIY_APP_FRAME_PORTS'] = args.app_frame_ports
 if ca_file:
     runtime['MIY_CA_FILE'] = ca_file
 private_write(LOCAL / 'runtime.env', env_text(runtime))

@@ -38,7 +38,7 @@ up() {
   if [ -n "$resources" ]; then
     echo "stack-ui resources already exist; refusing to adopt or remove them" >&2; exit 1
   fi
-  for port in 18300 18301 18302 18303 18304 18305 18306 18307 18308; do
+  for port in 18300 18301 18302 18303 18304 18305 18306 18307 18308 18309 $(seq 18320 18329); do
     if ss -ltn "sport = :$port" | grep -q LISTEN; then echo "port $port is in use" >&2; exit 1; fi
   done
   # The atomic mkdir is also the single-run lock. A rejected/concurrent run must
@@ -57,8 +57,11 @@ up() {
     --dev-portal-origin "$DEV_PORTAL_ORIGIN" --dev-portal-bind 127.0.0.1:18308 --dev-portal-http-port 18307 \
     --bind 127.0.0.1:18304 --console-bind 127.0.0.1:18306 \
     --postgres-port 18301 --identity-port 18302 --http-port 18300 --https-port 18303 \
-    --console-http-port 18305 --no-shared-development-login
+    --console-http-port 18305 --no-shared-development-login \
+    --app-frame-bind 127.0.0.1:18309 --app-frame-ports 18320-18329
   pnpm --filter @miy/platform exec vite build --mode production --outDir "$STATE/site" --emptyOutDir
+  # Business app frames load the platform frame runtime from their own origin.
+  pnpm --filter @miy/frame-runtime exec vite build --mode production --outDir "$STATE/frame-runtime" --emptyOutDir
   "${compose[@]}" up -d
   for _ in $(seq 1 120); do
     curl -fsS http://127.0.0.1:18302/identity/realms/miy/.well-known/openid-configuration >/dev/null 2>&1 && break

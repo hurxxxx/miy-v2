@@ -1,11 +1,11 @@
-# miy application bundle v0.8.0
+# miy application bundle v0.9.0
 
-This describes bundle 0.8.0 and Rust SDK 0.3.0 with contextual identities and core-mediated backend calls. Manifest and browser UI protocol versions remain unchanged. Existing apps must follow their installed protected SDK and use an explicit bundle upgrade before adopting new SDK methods. The upgrade also resolves the SDK's Rust dependency lock before committing any project changes. Project stdio MCP reports the installed bundle; the server HTTP contract describes the latest bundle.
+This describes bundle 0.9.0 and Rust SDK 0.3.0 with contextual identities and core-mediated backend calls. The UI runs in its own cross-origin frame (see "Frame execution"); the browser SDK adds `apiBlob` and `setNavigationState`. Manifest and UI contract versions remain unchanged. Existing apps must follow their installed protected SDK and use an explicit bundle upgrade before adopting new SDK methods. The upgrade also resolves the SDK's Rust dependency lock before committing any project changes. Project stdio MCP reports the installed bundle; the server HTTP contract describes the latest bundle.
 
 Backend: Rust 1.99.1, Axum 0.8.9, SQLx 0.8.6. UI: React 19.3.1, Vite 8.3.5, Module Federation.
 Keep manifest.json `miy.app/v1alpha1`, runtime `rust-web-v1`, UI `miy.ui/v1alpha1`, export `./AppRoot`.
 Set ui.moduleEntry to `mf-manifest.json`. The Federation manifest carries the ESM entry type and CSS asset metadata; remoteEntry.js alone is not the host registration document.
-The host provides AppProps.runtime with installationId, releaseId, basePath, location, api, navigate, theme.
+The host provides AppProps.runtime with installationId, appId, releaseId, basePath, location, api, apiBlob, platformApi, appApi, navigate, setNavigationState and theme.
 API paths passed to runtime.api are app relative (for example `/leaves`); the gateway forwards `/api/leaves` to Rust.
 The Rust SDK wraps your router under `/api`, so route definitions use `/leaves`, not `/api/leaves`.
 The SDK requires a valid short-lived platform identity signed for the installation/release. Extract `Extension<Identity>` in handlers. The identity retains `user_id: String` and `admin: bool`; `context` contains the receiving installation/release, optional environment, ordered caller app/installation/release history, and effective permissions. The user remains the original authenticated user through every hop. An admin flag does not grant an application permission to bypass the core's token and installation approval checks. Legacy gateway tokens remain readable but cannot delegate without a core-issued proof.
@@ -34,7 +34,11 @@ For backend calls use `identity.platform_api("directory").await` or `identity.ap
 
 The proof is a sensitive short-lived bearer credential. `Identity` debugging redacts it, and the SDK removes the identity header before dispatching the business handler. Do not serialize, return, persist or log `identity.delegation_token()`. The installation's gateway signing key cannot mint a core delegation proof. SDK call errors expose a stable local code and optional HTTP status, never raw server bodies or credentials. Native preview supplies a development identity without a delegation proof: backend calls return `delegation_unavailable`; its existing browser data-connection workflow remains separate. A deployed app needs the configured core origin to be reachable and trusted from its runtime; declaring permissions is not evidence of that connectivity.
 
-The UI executes trusted React code inside the platform's JavaScript context. CSS Modules and runtime helpers avoid accidental interference, but this is not a sandbox for hostile JavaScript. Use local styles, clean up global event listeners/timers in effects, and do not change document/body or platform navigation directly.
+## Frame execution
+
+The UI runs in its own cross-origin frame: one origin per installation, separate from the portal, the console and every other app. The platform frame runtime loads this release's `./AppRoot` and passes `runtime`; it shares only React and React DOM with the app. `runtime.api`, `apiBlob`, `platformApi` and `appApi` call this frame's own origin with a short in-memory credential; there are no cookies and no CSRF value. The frame cannot read portal pages, storage or another app, and another app's API is reachable only through `runtime.appApi` with an approved connection.
+
+Inside the frame: do not use `window.parent`, `window.top`, `history.pushState`/`replaceState`/`back` or `document.cookie` for credentials, and do not register service workers. Use `runtime.navigate` for app routes; plain links to app paths under `runtime.basePath` are routed by the portal, and external links open in a new tab. For downloads use `runtime.apiBlob(path)`, create an object URL and revoke it after use. The frame fills the portal work area at a fixed size; dialogs and overlays render inside it and the app scrolls internally. Keep local styles; the frame document has only a small baseline (font, background, link colors).
 
 ## Delivery
 
@@ -54,25 +58,26 @@ business extensions outside that directory. App check/build verifies both locks.
 
 ## Navigation and application lifecycle
 
-Register unsaved input or in-flight work with `runtime.registerNavigationGuard`.
-Return a message while leaving would discard work; otherwise return undefined.
-Register in an effect and return the disposer. Include every state used by the
-callback in effect dependencies, or read it through a current ref. Example:
+Report unsaved input or in-flight work with `runtime.setNavigationState` whenever
+it changes. The portal decides synchronously from the last reported state, so
+report it when the state changes, not when leaving. Example:
 
 ```tsx
-useEffect(() => runtime.registerNavigationGuard(() =>
-  dirty || saving ? "저장되지 않은 작업이 있습니다. 이동하시겠습니까?" : undefined
-), [runtime.registerNavigationGuard, dirty, saving]);
+useEffect(() => runtime.setNavigationState({
+  dirty: dirty || saving,
+  message: "저장되지 않은 작업이 있습니다. 이동하시겠습니까?",
+}), [runtime.setNavigationState, dirty, saving]);
 ```
 
 The platform and local preview apply this to runtime.navigate, host menu links,
 back/forward, and document unload. Browsers use their own unload message and may
 suppress prompts without user interaction. Do not add a second confirm around
 runtime.navigate or manipulate browser history directly. Remove the guard when
-work is saved/discarded; clean it up on unmount. Registration is required: hosts
-cannot infer application draft state. Old apps continue to run, without automatic
-draft protection. When a deployed release changes, the host retains the mounted
-view and blocks stale API calls until the user reloads.
+work is saved/discarded by reporting `dirty: false`. Reporting is required: hosts
+cannot infer application draft state. Apps on the 0.8 SDK still run; their
+callback guard cannot be evaluated across the frame, so the portal asks before
+every leave. When a deployed release changes, the frame blocks stale API calls
+and the portal asks the user to reload.
 
 `app dev-stop` requests shutdown of this project's runner, waits for the port and
 lock to be released, and stops its owned native backend and DB tunnel (or explicitly selected containers). Database data survives.

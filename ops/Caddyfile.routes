@@ -6,8 +6,16 @@
     +Content-Security-Policy "frame-ancestors 'none'"
   }
 }
+# Portals frame only business app frame origins and keep the launch POST Origin.
+(appframes_parent) {
+  header {
+    +Content-Security-Policy "frame-src {$MIY_APP_FRAME_SOURCES}"
+    >Referrer-Policy strict-origin-when-cross-origin
+  }
+}
 (portal) {
   import common_headers
+  import appframes_parent
   header +Content-Security-Policy "worker-src 'none'"
   @worker header Service-Worker script
   handle @worker {
@@ -43,6 +51,7 @@
 # CLI approval, MCP or OAuth metadata (the CLI and MCP keep the portal address).
 (devportal) {
   import common_headers
+  import appframes_parent
   header +Content-Security-Policy "worker-src 'none'"
   @worker header Service-Worker script
   handle @worker {
@@ -115,5 +124,24 @@
     root * /srv/platform
     try_files {path} /index.html
     file_server
+  }
+}
+# Business app frames (docs/APP-FRAMES.md): every frame origin goes to the frame
+# listener with its own Host (port included); Core accepts only registered origins.
+# No anti-frame headers here: frame documents name their portal in frame-ancestors.
+# No access log: asset paths carry a frame capability.
+(appframe) {
+  header >X-Content-Type-Options nosniff
+  @worker header Service-Worker script
+  handle @worker {
+    respond 403
+  }
+  handle {
+    reverse_proxy {$MIY_APP_FRAME_CORE_UPSTREAM:127.0.0.1:18083} {
+      header_up Host {hostport}
+      header_up X-Forwarded-Proto {$MIY_PUBLIC_SCHEME:http}
+      header_up -X-Forwarded-Host
+      header_up -Forwarded
+    }
   }
 }

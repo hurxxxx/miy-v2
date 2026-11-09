@@ -223,6 +223,74 @@ pub enum GroupSource {
     Local,
 }
 
+/// A one-time launch of one installation's app frame (`POST /api/v1/app-frames`).
+/// The portal submits `code` in a form POST to `launchUrl` inside a new iframe.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct AppFrameLaunch {
+    /// The frame this code opens; the portal renews it by this id.
+    pub frame_id: Uuid,
+    pub installation_id: Uuid,
+    pub release_id: Uuid,
+    /// The installation's own origin; never shared with another installation.
+    pub frame_origin: String,
+    pub launch_url: String,
+    pub code: String,
+    pub expires_at: DateTime<Utc>,
+}
+
+/// A one-time renew code for an open frame (`POST /api/v1/app-frames/{id}/renew`).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct AppFrameRenewal {
+    pub code: String,
+    pub expires_at: DateTime<Utc>,
+}
+
+/// A frame's new API token (`POST /_miy/renew` on the frame origin).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct AppFrameToken {
+    pub token: String,
+    pub token_expires_at: DateTime<Utc>,
+}
+
+/// The app location inside its base path.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct FrameLocation {
+    pub pathname: String,
+    pub search: String,
+    pub hash: String,
+}
+
+/// What the frame document carries for the platform frame runtime
+/// (`<script id="miy-frame-bootstrap" type="application/json">`).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct FrameBootstrap {
+    /// Bridge protocol, `miy.frame/v1`.
+    pub protocol: String,
+    pub frame_id: Uuid,
+    pub installation_id: Uuid,
+    pub app_id: String,
+    pub release_id: Uuid,
+    pub environment: Environment,
+    /// The only window the frame talks to.
+    pub parent_origin: String,
+    pub base_path: String,
+    pub location: FrameLocation,
+    pub token: String,
+    pub token_expires_at: DateTime<Utc>,
+    /// The frame session's fixed end; renewals never extend it.
+    pub frame_expires_at: DateTime<Utc>,
+    /// Same-origin prefix of the release UI files for this frame session.
+    pub asset_base: String,
+    pub module_entry: String,
+    pub module_export: String,
+    pub contract_version: String,
+}
+
 /// The response types this contract publishes, by schema name.
 #[cfg(test)]
 pub fn schema() -> serde_json::Value {
@@ -235,6 +303,10 @@ pub fn schema() -> serde_json::Value {
     generator.subschema_for::<RuntimeJobPage>();
     generator.subschema_for::<AuditPage>();
     generator.subschema_for::<Vec<Group>>();
+    generator.subschema_for::<AppFrameLaunch>();
+    generator.subschema_for::<AppFrameRenewal>();
+    generator.subschema_for::<AppFrameToken>();
+    generator.subschema_for::<FrameBootstrap>();
     serde_json::json!({
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "title": "miy API v1 responses",

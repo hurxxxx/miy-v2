@@ -493,3 +493,13 @@
   padding: 0;
   list-style: none;
 }
+
+/* Business apps run in their own frame origin and fill the work area. */
+.app-frame {
+  display: block;
+  width: 100%;
+  min-height: calc(100vh - 180px);
+  border: 0;
+  border-radius: var(--shell-radius-md, 8px);
+  background: transparent;
+}

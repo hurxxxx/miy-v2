@@ -22,11 +22,21 @@ export interface AppRuntime {
   location: { pathname: string; search: string; hash: string };
   navigate: (relative: string, options?: { replace?: boolean }) => void;
   api: <T>(path: string, init?: RequestInit) => Promise<T>;
+  /** A binary response of this app's own API (downloads, previews). */
+  apiBlob: (path: string, init?: RequestInit) => Promise<Blob>;
   platformApi: <T>(resource: "directory") => Promise<T>;
   appApi: <T>(appId: string, path: string, init?: RequestInit) => Promise<T>;
-  /** Register in an effect and return its disposer. Hosts guard app/shell/history/unload. */
-  registerNavigationGuard: (guard: () => string | undefined) => () => void;
+  /**
+   * Report unsaved input or work in progress whenever it changes. The platform asks
+   * before leaving the app, signing out or reloading while `dirty` is true.
+   */
+  setNavigationState: (state: NavigationState) => void;
   theme: "light";
+}
+export interface NavigationState {
+  dirty: boolean;
+  /** Shown when the user is asked to confirm leaving. */
+  message?: string;
 }
 export interface AppProps {
   runtime: AppRuntime;

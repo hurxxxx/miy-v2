@@ -15,3 +15,7 @@ import /etc/caddy/routes.caddy
   bind {$MIY_PROXY_BIND:127.0.0.1}
   import devportal
 }
+{$MIY_APP_FRAME_SITES} {
+  bind {$MIY_PROXY_BIND:127.0.0.1}
+  import appframe
+}

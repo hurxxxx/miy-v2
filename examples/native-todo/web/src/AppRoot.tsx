@@ -56,11 +56,12 @@ export default function AppRoot({ runtime }: AppProps) {
   const busy = loading || pending !== null;
   const titleLength = Array.from(draft.trim()).length;
 
-  useEffect(() => runtime.registerNavigationGuard(() => {
-    if (mutationLock.current) return "저장 중인 작업이 있습니다. 페이지를 이동하시겠습니까?";
-    if (draftRef.current.length > 0) return "작성 중인 할 일이 있습니다. 페이지를 이동하시겠습니까?";
-    return undefined;
-  }), [runtime.registerNavigationGuard]);
+  useEffect(() => runtime.setNavigationState({
+    dirty: busy || draft.length > 0,
+    message: busy
+      ? "저장 중인 작업이 있습니다. 페이지를 이동하시겠습니까?"
+      : "작성 중인 할 일이 있습니다. 페이지를 이동하시겠습니까?",
+  }), [runtime.setNavigationState, busy, draft]);
 
   const load = useCallback(async () => {
     if (mutationLock.current) return;

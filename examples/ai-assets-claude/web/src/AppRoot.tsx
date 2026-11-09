@@ -49,10 +49,11 @@ export default function AppRoot({ runtime }: AppProps) {
 
   useEffect(
     () =>
-      runtime.registerNavigationGuard(() =>
-        dirty || busy ? "저장되지 않은 작업이 있습니다. 이동하시겠습니까?" : undefined,
-      ),
-    [runtime.registerNavigationGuard, dirty, busy],
+      runtime.setNavigationState({
+        dirty: dirty || busy,
+        message: "저장되지 않은 작업이 있습니다. 이동하시겠습니까?",
+      }),
+    [runtime.setNavigationState, dirty, busy],
   );
 
   async function run(action: () => Promise<string>) {

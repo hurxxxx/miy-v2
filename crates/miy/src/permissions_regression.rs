@@ -412,6 +412,7 @@ pub async fn run(
     client: &Client,
     base: &str,
     dev_portal: &str,
+    frames: &str,
 ) -> Result<Vec<String>> {
     let mut h = Harness {
         state,
@@ -1117,8 +1118,9 @@ pub async fn run(
             .auth
             .cookie_name(auth::BrowserPurpose::Portal, "development")
     );
+    let prod_csrf = auth::random();
     sqlx::query("INSERT INTO development_sessions(id_hash,user_id,csrf,expires_at,browser_purpose) VALUES($1,$2,$3,now()+interval '5 minutes','portal')")
-        .bind(hash(&prod_session)).bind(&browser.id).bind(auth::random()).execute(&state.pool).await?;
+        .bind(hash(&prod_session)).bind(&browser.id).bind(&prod_csrf).execute(&state.pool).await?;
     let before = b.calls();
     denied(
         client
@@ -1126,6 +1128,21 @@ pub async fn run(
             .header("Cookie", &prod_cookie)
             .send()
             .await?,
+    )
+    .await?;
+    denied(
+        crate::app_frames_regression::launch_code(
+            client,
+            state,
+            &crate::app_frames_regression::PortalSession {
+                cookie: prod_session.clone(),
+                csrf: prod_csrf,
+                origin: base.to_owned(),
+            },
+            auth::BrowserPurpose::Portal,
+            a.installation,
+        )
+        .await?,
     )
     .await?;
     ensure!(
@@ -1142,10 +1159,27 @@ pub async fn run(
     );
     sqlx::query("INSERT INTO development_sessions(id_hash,user_id,csrf,expires_at,browser_purpose) VALUES($1,$2,$3,now()+interval '5 minutes','dev_portal')")
         .bind(hash(&session)).bind(&browser.id).bind(&csrf).execute(&state.pool).await?;
+    // Business apps run in frames: the dev portal session opens A's frame, and A's
+    // frame calls B through its approved connection.
+    let frame = crate::app_frames_regression::open(
+        client,
+        state,
+        frames,
+        &crate::app_frames_regression::PortalSession {
+            cookie: session.clone(),
+            csrf: csrf.clone(),
+            origin: dev_portal.to_owned(),
+        },
+        auth::BrowserPurpose::DevPortal,
+        a.installation,
+    )
+    .await?;
     let called = response(
-        client
-            .get(format!("{}{}", dev_portal, a.connection(&b)))
-            .header("Cookie", &cookie)
+        frame
+            .request(
+                Method::GET,
+                &format!("/_miy/connections/{}/api/probe", b.app),
+            )
             .send()
             .await?,
         200,

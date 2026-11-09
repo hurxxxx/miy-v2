@@ -103,6 +103,13 @@ impl Harness<'_> {
             .header("origin", self.origin(browser.purpose))
             .header("x-miy-csrf", &browser.csrf)
     }
+    fn portal_session(&self, browser: &Browser) -> crate::app_frames_regression::PortalSession {
+        crate::app_frames_regression::PortalSession {
+            cookie: browser.cookie.clone(),
+            csrf: browser.csrf.clone(),
+            origin: self.origin(browser.purpose).to_owned(),
+        }
+    }
     async fn user(&self, admin: bool) -> Result<String> {
         let id = format!("boundary-user-{}", Uuid::new_v4());
         sqlx::query("INSERT INTO users(id,name,admin) VALUES($1,$1,$2)")
@@ -254,8 +261,9 @@ pub async fn run(
     portal: &str,
     console: &str,
     dev_portal: &str,
+    frames: &str,
 ) -> Result<Vec<String>> {
-    for origin in [portal, console, dev_portal] {
+    for origin in [portal, console, dev_portal, frames] {
         let url = url::Url::parse(origin)?;
         ensure!(
             url.host_str()
@@ -583,24 +591,50 @@ pub async fn run(
     );
     passed.push("published relative legacy/device verification paths redirect to the fixed console origin with only the flow ID; unclassified HTTP routes fail closed and anonymous MCP preserves its 401 resource metadata challenge".into());
 
-    // The fixture is a dev installation: only the dev portal may run it.
+    // The fixture is a dev installation: only a frame launched from the dev portal
+    // may run it. Portal cookies never reach app code or data on any listener.
     let app = h.app("dev").await?;
     sqlx::query("INSERT INTO grants(user_id,app_id,environment,permission) SELECT $1,app_id,'dev','use' FROM installations WHERE id=$2")
         .bind(&user_id).bind(app.installation).execute(&state.pool).await?;
     let probe_path = format!("/api/v1/installations/{}/api/probe", app.installation);
+    for path in [&probe_path, &app.asset] {
+        for browser in [&dev_admin, &portal_admin, &console_admin] {
+            denied(
+                h.browser_request(browser, Method::GET, path).send().await?,
+                403,
+            )
+            .await?;
+        }
+        denied(
+            h.request(BrowserPurpose::Console, Method::GET, path)
+                .send()
+                .await?,
+            403,
+        )
+        .await?;
+    }
+    let frame = crate::app_frames_regression::open(
+        h.client,
+        state,
+        frames,
+        &h.portal_session(&dev_admin),
+        BrowserPurpose::DevPortal,
+        app.installation,
+    )
+    .await?;
     let probe = json_response(
-        h.browser_request(&dev_admin, Method::GET, &probe_path)
-            .send()
-            .await?,
+        frame.request(Method::GET, "/_miy/api/probe").send().await?,
         200,
     )
     .await?;
     ensure!(
         probe["boundaryProbe"] == true,
-        "portal app API fixture did not execute"
+        "dev frame app API fixture did not execute"
     );
     let asset = status(
-        h.browser_request(&dev_admin, Method::GET, &app.asset)
+        frame
+            .raw(Method::GET, &format!("{}boundary.js", frame.asset_base))
+            .header("sec-fetch-site", "same-origin")
             .send()
             .await?,
         200,
@@ -613,47 +647,39 @@ pub async fn run(
             .and_then(|v| v.to_str().ok())
             .unwrap_or("")
             .contains("sandbox"),
-        "app API sandbox broke the existing MF JavaScript asset path"
+        "app API sandbox broke the frame JavaScript asset path"
     );
     ensure!(
         asset.text().await? == "export const boundaryProbe = true;\n",
-        "portal app JavaScript changed"
+        "frame app JavaScript changed"
     );
-    for path in [&probe_path, &app.asset] {
-        denied(
-            h.browser_request(&console_admin, Method::GET, path)
-                .send()
-                .await?,
-            403,
-        )
-        .await?;
-        denied(
-            h.request(BrowserPurpose::Console, Method::GET, path)
-                .send()
-                .await?,
-            403,
-        )
-        .await?;
-        denied(
-            h.browser_request(&dev_admin, Method::GET, path)
-                .header("service-worker", "script")
-                .send()
-                .await?,
-            403,
-        )
-        .await?;
-        // The prod portal never loads or calls dev code, even for an administrator.
-        denied(
-            h.browser_request(&portal_admin, Method::GET, path)
-                .send()
-                .await?,
+    denied(
+        frame
+            .request(Method::GET, "/_miy/api/probe")
+            .header("service-worker", "script")
+            .send()
+            .await?,
+        403,
+    )
+    .await?;
+    // The prod portal and the console never launch dev code, even for an administrator.
+    for browser in [&portal_admin, &console_admin] {
+        status(
+            crate::app_frames_regression::launch_code(
+                h.client,
+                state,
+                &h.portal_session(browser),
+                browser.purpose,
+                app.installation,
+            )
+            .await?,
             403,
         )
         .await?;
     }
-    let html_path = format!("/api/v1/installations/{}/api/document", app.installation);
     let html = status(
-        h.browser_request(&dev_admin, Method::GET, &html_path)
+        frame
+            .request(Method::GET, "/_miy/api/document")
             .send()
             .await?,
         200,
@@ -683,30 +709,46 @@ pub async fn run(
                 .is_some_and(|v| v.contains("sandbox")),
         "active app API response was not sandboxed and protected from MIME sniffing"
     );
-    passed.push("existing dev app API and MF JavaScript work on the dev portal but are denied on the prod portal and the console; app response headers cannot set cookies, clear site data, redirect, relax CSP/CORS or register workers, and HTML API responses are sandboxed".into());
+    passed.push("a dev app's API and JavaScript run only in a frame launched from the dev portal; portal, dev portal and console cookies reach neither, the prod portal and console cannot launch it, and app response headers cannot set cookies, clear site data, redirect, relax CSP/CORS or register workers while HTML API responses stay sandboxed".into());
 
-    // A prod installation is the mirror image: prod portal only, with explicit use
-    // even for an administrator; the dev portal never reaches prod data.
+    // A prod installation is the mirror image: prod portal frames only, with explicit
+    // use even for an administrator; the dev portal never launches prod code.
     let prod = h.app("prod").await?;
     sqlx::query("INSERT INTO grants(user_id,app_id,environment,permission) SELECT $1,app_id,'prod','use' FROM installations WHERE id=$2")
         .bind(&admin_id).bind(prod.installation).execute(&state.pool).await?;
-    let prod_probe = format!("/api/v1/installations/{}/api/probe", prod.installation);
-    for path in [&prod_probe, &prod.asset] {
-        status(
-            h.browser_request(&portal_admin, Method::GET, path)
-                .send()
-                .await?,
-            200,
+    let prod_frame = crate::app_frames_regression::open(
+        h.client,
+        state,
+        frames,
+        &h.portal_session(&portal_admin),
+        BrowserPurpose::Portal,
+        prod.installation,
+    )
+    .await?;
+    ensure!(
+        prod_frame.origin != frame.origin,
+        "dev and prod installations shared a frame origin"
+    );
+    json_response(
+        prod_frame
+            .request(Method::GET, "/_miy/api/probe")
+            .send()
+            .await?,
+        200,
+    )
+    .await?;
+    status(
+        crate::app_frames_regression::launch_code(
+            h.client,
+            state,
+            &h.portal_session(&dev_admin),
+            BrowserPurpose::DevPortal,
+            prod.installation,
         )
-        .await?;
-        denied(
-            h.browser_request(&dev_admin, Method::GET, path)
-                .send()
-                .await?,
-            403,
-        )
-        .await?;
-    }
+        .await?,
+        403,
+    )
+    .await?;
     // The dev portal accepts no bearer credential and serves no management route.
     for path in [
         "/api/v1/users",
@@ -729,7 +771,7 @@ pub async fn run(
         403,
     )
     .await?;
-    passed.push("prod apps run only on the prod portal (explicit use, administrators included) and dev apps only on the dev portal; the dev portal refuses bearer credentials and management routes".into());
+    passed.push("prod apps run only in prod portal frames (explicit use, administrators included) and dev apps only in dev portal frames, each on its own origin; the dev portal refuses bearer credentials and management routes".into());
 
     // Even a console user cannot approve the retired legacy flow any more.
     let retired = json_response(

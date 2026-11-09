@@ -165,6 +165,16 @@ pub async fn authenticate(s: &State, token: &str) -> ApiResult<(Principal, Conte
     Ok((p, context))
 }
 
+const FRAME_ORIGIN: &str = concat!(
+    "SELECT EXISTS(SELECT 1 FROM app_frame_sessions f WHERE f.id::text=$1 AND f.user_id=$2 ",
+    "AND f.revoked_at IS NULL AND f.expires_at>clock_timestamp() ",
+    "AND EXISTS(SELECT 1 FROM users u WHERE u.id=f.user_id AND u.enabled) ",
+    "AND (EXISTS(SELECT 1 FROM sessions s WHERE s.id_hash=f.parent_session_hash AND s.user_id=f.user_id ",
+    "AND s.browser_purpose=f.browser_purpose AND s.created_at>clock_timestamp()-interval '8 hours') ",
+    "OR ($3::boolean AND EXISTS(SELECT 1 FROM development_sessions d WHERE d.id_hash=f.parent_development_hash ",
+    "AND d.user_id=f.user_id AND d.browser_purpose=f.browser_purpose AND d.expires_at>clock_timestamp()))))"
+);
+
 /// Revalidate all installations, releases and grants at each continuation. A
 /// revoked permission cannot return through an already issued child capability.
 async fn current(s: &State, p: &Principal, c: &Context) -> ApiResult<Vec<String>> {
@@ -192,14 +202,18 @@ async fn current(s: &State, p: &Principal, c: &Context) -> ApiResult<Vec<String>
             "legacy_cli" => {
                 "SELECT EXISTS(SELECT 1 FROM cli_tokens WHERE token_hash=$1 AND user_id=$2 AND expires_at>clock_timestamp())"
             }
+            // A chain started in an app frame lives only while that frame session
+            // and its parent portal session do (logout, revocation, disabled user).
+            "frame" => FRAME_ORIGIN,
             _ => return Err(ApiError::unauthorized()),
         };
-        if !sqlx::query_scalar::<_, bool>(sql)
+        let mut query = sqlx::query_scalar::<_, bool>(sql)
             .bind(&origin.digest)
-            .bind(&p.id)
-            .fetch_one(&s.pool)
-            .await?
-        {
+            .bind(&p.id);
+        if origin.kind == "frame" {
+            query = query.bind(s.auth.development_login);
+        }
+        if !query.fetch_one(&s.pool).await? {
             return Err(ApiError::unauthorized());
         }
     }

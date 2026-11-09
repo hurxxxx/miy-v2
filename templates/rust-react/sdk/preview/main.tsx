@@ -7,9 +7,17 @@ import {
   request,
   createNavigationGuards,
   type AppRuntime,
+  type NavigationState,
 } from "../browser";
 const history = createBrowserHistory();
+// The platform reads the app's reported input state; preview does the same.
+let navigationState: NavigationState = { dirty: false };
 const guards = createNavigationGuards();
+guards.register(() =>
+  navigationState.dirty
+    ? navigationState.message || "저장하지 않은 내용이 있습니다. 이동하시겠습니까?"
+    : undefined,
+);
 history.block({
   blockerFn: () => !guards.confirmNavigation(),
   enableBeforeUnload: () => !!guards.message(),
@@ -51,6 +59,18 @@ function Preview() {
       else history.push(to);
     },
     api: (path, init) => request("/__miy/api" + safe(path), context.csrf, init),
+    apiBlob: async (path, init) => {
+      const response = await fetch("/__miy/api" + safe(path), {
+        ...init,
+        credentials: "same-origin",
+        headers: { "x-miy-csrf": context.csrf, ...init?.headers },
+      });
+      if (!response.ok) {
+        const data = await response.json().catch(() => null);
+        throw new Error(data?.error?.code || `HTTP ${response.status}`);
+      }
+      return response.blob();
+    },
     platformApi: (resource) =>
       request("/__miy/platform/" + resource, context.csrf),
     appApi: (app, path, init) =>
@@ -59,7 +79,9 @@ function Preview() {
         context.csrf,
         init,
       ),
-    registerNavigationGuard: guards.register,
+    setNavigationState: (state) => {
+      navigationState = state;
+    },
     theme: "light",
   };
   return (

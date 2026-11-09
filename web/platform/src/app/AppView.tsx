@@ -1,27 +1,11 @@
-import React, { Component, Suspense, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useRouter } from "@tanstack/react-router";
-import { appTarget, createNavigationGuards, request, type AppRuntime, type Installation } from "@miy/sdk";
+import { UI_CONTRACT, createNavigationGuards, request, type Installation } from "@miy/sdk";
 import { Button, Loading, Notice, Panel } from "../ui";
 import { useUser } from "../data/session";
 import { currentEnvironment, environmentPath } from "../lib/paths";
 import { activeGuards } from "../lib/navigation-guards";
-import { remote } from "./remote";
-
-class Boundary extends Component<{ children: React.ReactNode }, { error: boolean }> {
-  state = { error: false };
-  static getDerivedStateFromError() {
-    return { error: true };
-  }
-  render() {
-    return this.state.error ? (
-      <Panel title="앱을 열 수 없습니다">
-        <p>앱을 다시 열거나 관리자에게 문의하세요.</p>
-      </Panel>
-    ) : (
-      this.props.children
-    );
-  }
-}
+import { AppFrame, leaveMessage, type FrameInput } from "./AppFrame";
 
 function AppAvailability({ health }: { health: Installation["health"] }) {
   if (health?.status !== "degraded" && health?.status !== "unhealthy") return null;
@@ -47,13 +31,18 @@ export function AppView() {
 function AppSession({ appId, environment, basePath }: { appId: string; environment: string; basePath: string }) {
   const user = useUser();
   const router = useRouter();
-  const location = useLocation();
   const [app, setApp] = useState<Installation | null>();
   const [loadFailed, setLoadFailed] = useState(false);
   const [attempt, setAttempt] = useState(0);
   const [health, setHealth] = useState<Installation["health"]>();
   const [updated, setUpdated] = useState(false);
-  const guards = useMemo(() => createNavigationGuards(), [app?.id, app?.releaseId]);
+  // The app reports its input state from its frame; leave checks read the last one.
+  const input = useRef<FrameInput>({ state: "unknown" });
+  const guards = useMemo(() => {
+    const created = createNavigationGuards();
+    created.register(() => leaveMessage(input.current));
+    return created;
+  }, [app?.id, app?.releaseId]);
   useEffect(() => {
     activeGuards.add(guards);
     const unblock = router.history.block({
@@ -120,59 +109,6 @@ function AppSession({ appId, environment, basePath }: { appId: string; environme
       controller.abort();
     };
   }, [app]);
-  const runtime = useMemo<AppRuntime | null>(
-    () =>
-      app
-        ? {
-            installationId: app.id,
-            appId: app.appId,
-            releaseId: app.releaseId,
-            basePath,
-            location: {
-              pathname: location.pathname.slice(basePath.length) || "/",
-              search: location.searchStr,
-              hash: location.hash,
-            },
-            navigate: (to, options) => {
-              const href = appTarget(basePath, to);
-              void router.navigate({ to: href as "/", replace: options?.replace });
-            },
-            api: async <T,>(path: string, init?: RequestInit) => {
-              if (updated) throw new Error("release_changed_reload_required");
-              if (app.runtimeStatus === "not_deployed") throw new Error("app_runtime_not_deployed");
-              if (app.runtimeStatus !== "running") throw new Error("app_runtime_not_running");
-              if (!path.startsWith("/") || path.startsWith("//") || path.includes(".."))
-                throw new Error("invalid_api_path");
-              return request<T>("/api/v1/installations/" + app.id + "/api" + path, user.csrf, {
-                ...init,
-                headers: { ...init?.headers, "x-miy-release": app.releaseId },
-              });
-            },
-            platformApi: <T,>(resource: "directory") => {
-              if (updated) throw new Error("release_changed_reload_required");
-              return request<T>(`/api/v1/installations/${app.id}/platform/${resource}`, user.csrf);
-            },
-            appApi: <T,>(target: string, path: string, init?: RequestInit) => {
-              if (updated) throw new Error("release_changed_reload_required");
-              if (
-                !/^[a-z][a-z0-9-]{0,47}$/.test(target) ||
-                !path.startsWith("/") ||
-                path.startsWith("//") ||
-                path.includes("..") ||
-                path.includes("\\")
-              )
-                throw new Error("invalid_api_path");
-              return request<T>(`/api/v1/installations/${app.id}/connections/${target}/api${path}`, user.csrf, {
-                ...init,
-                headers: { ...init?.headers, "x-miy-release": app.releaseId },
-              });
-            },
-            registerNavigationGuard: guards.register,
-            theme: "light",
-          }
-        : null,
-    [app, basePath, guards, location.pathname, location.searchStr, location.hash, updated, user.csrf, router],
-  );
   if (loadFailed)
     return (
       <Panel title="앱 정보를 불러오지 못했습니다">
@@ -190,7 +126,7 @@ function AppSession({ appId, environment, basePath }: { appId: string; environme
       </Panel>
     );
   if (app === undefined) return <Loading>앱을 불러오는 중…</Loading>;
-  if (!app || !runtime)
+  if (!app)
     return (
       <Panel title="앱에 접근할 수 없습니다">
         <p>앱이 없거나 접근 권한이 없습니다.</p>
@@ -203,16 +139,12 @@ function AppSession({ appId, environment, basePath }: { appId: string; environme
         <Link to={environmentPath(environment) as "/"}>홈으로</Link>
       </Panel>
     );
-  let View: ReturnType<typeof remote>;
-  try {
-    View = remote(app);
-  } catch {
+  if (app.ui.contractVersion !== UI_CONTRACT)
     return (
       <Panel title="지원하지 않는 앱 화면">
         <p>앱 계약을 확인하세요.</p>
       </Panel>
     );
-  }
   return (
     <>
       <div className="app-session-bar">
@@ -233,14 +165,15 @@ function AppSession({ appId, environment, basePath }: { appId: string; environme
         )}
         <AppAvailability health={health ?? app.health} />
       </div>
-      {/* Platform fallbacks stay outside the container excluded from shell CSS. */}
-      <Boundary key={app.releaseId}>
-        <Suspense fallback={<p>앱 화면을 불러오는 중…</p>}>
-          <div className="miy-app-root" data-miy-app={app.appId}>
-            <View key={app.id} runtime={runtime} />
-          </div>
-        </Suspense>
-      </Boundary>
+      <AppFrame
+        key={app.id + app.releaseId}
+        app={app}
+        basePath={basePath}
+        csrf={user.csrf}
+        input={input}
+        onReleaseChanged={() => setUpdated(true)}
+        confirmLeave={guards.confirmNavigation}
+      />
     </>
   );
 }

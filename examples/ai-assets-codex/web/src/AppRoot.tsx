@@ -16,7 +16,7 @@ export default function AppRoot({ runtime }: AppProps) {
   const [error, setError] = useState("");
   const [result, setResult] = useState("");
   const dirty = editing ? name !== editing.name || quantity !== String(editing.quantity) || location !== (editing.location ?? "") : name !== "" || quantity !== "0" || location !== "";
-  useEffect(() => runtime.registerNavigationGuard(() => dirty || busy ? "저장되지 않은 작업이 있습니다. 이동하시겠습니까?" : undefined), [runtime.registerNavigationGuard, dirty, busy]);
+  useEffect(() => runtime.setNavigationState({ dirty: dirty || busy, message: "저장되지 않은 작업이 있습니다. 이동하시겠습니까?" }), [runtime.setNavigationState, dirty, busy]);
   useEffect(() => {
     let active = true;
     const controller = new AbortController();

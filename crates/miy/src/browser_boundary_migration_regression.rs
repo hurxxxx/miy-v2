@@ -262,7 +262,7 @@ async fn check(pool: &PgPool, app_pool: &PgPool, f: &Fixture) -> Result<Vec<Stri
         sql_state(insert_dev_portal().await).as_deref() == Some("23514"),
         "schema 20 accepted the dev portal purpose before its migration"
     );
-    migrate_to(pool, None).await?;
+    migrate_to(pool, Some(21)).await?;
     let version: i64 =
         sqlx::query_scalar("SELECT max(version) FROM _sqlx_migrations WHERE success")
             .fetch_one(pool)

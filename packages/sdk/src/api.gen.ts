@@ -21,6 +21,34 @@ export interface AppDetail {
   installations: Installation[];
 }
 
+/**
+ * A one-time launch of one installation's app frame (`POST /api/v1/app-frames`).
+ * The portal submits `code` in a form POST to `launchUrl` inside a new iframe.
+ */
+export interface AppFrameLaunch {
+  code: string;
+  expiresAt: string;
+  /** The frame this code opens; the portal renews it by this id. */
+  frameId: string;
+  /** The installation's own origin; never shared with another installation. */
+  frameOrigin: string;
+  installationId: string;
+  launchUrl: string;
+  releaseId: string;
+}
+
+/** A one-time renew code for an open frame (`POST /api/v1/app-frames/{id}/renew`). */
+export interface AppFrameRenewal {
+  code: string;
+  expiresAt: string;
+}
+
+/** A frame's new API token (`POST /_miy/renew` on the frame origin). */
+export interface AppFrameToken {
+  token: string;
+  tokenExpiresAt: string;
+}
+
 export interface AuditEntry {
   action: string;
   actor: string | null;
@@ -38,6 +66,40 @@ export interface AuditPage {
 }
 
 export type Environment = "dev" | "prod";
+
+/**
+ * What the frame document carries for the platform frame runtime
+ * (`<script id="miy-frame-bootstrap" type="application/json">`).
+ */
+export interface FrameBootstrap {
+  appId: string;
+  /** Same-origin prefix of the release UI files for this frame session. */
+  assetBase: string;
+  basePath: string;
+  contractVersion: string;
+  environment: Environment;
+  /** The frame session's fixed end; renewals never extend it. */
+  frameExpiresAt: string;
+  frameId: string;
+  installationId: string;
+  location: FrameLocation;
+  moduleEntry: string;
+  moduleExport: string;
+  /** The only window the frame talks to. */
+  parentOrigin: string;
+  /** Bridge protocol, `miy.frame/v1`. */
+  protocol: string;
+  releaseId: string;
+  token: string;
+  tokenExpiresAt: string;
+}
+
+/** The app location inside its base path. */
+export interface FrameLocation {
+  hash: string;
+  pathname: string;
+  search: string;
+}
 
 export interface Group {
   active: boolean;

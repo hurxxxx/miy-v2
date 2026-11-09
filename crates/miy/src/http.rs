@@ -242,6 +242,14 @@ pub fn router_for(state: State, purpose: BrowserPurpose) -> Router {
             "/installations/{id}/api/{*path}",
             axum::routing::any(crate::runtime::proxy),
         )
+        .route(
+            "/app-frames",
+            axum::routing::post(crate::app_frames::launch_code),
+        )
+        .route(
+            "/app-frames/{id}/renew",
+            axum::routing::post(crate::app_frames::renew_code),
+        )
         .route_layer(middleware::from_fn_with_state(state.clone(), session_guard));
     let artifacts = Router::new()
         .route("/artifacts/{hash}/ui/{*path}", axum::routing::get(ui_asset))
@@ -409,21 +417,7 @@ async fn ui_asset(
     if !allowed {
         return Err(ApiError::forbidden());
     }
-    let file = s.artifacts.join(hash).join("ui").join(path);
-    let bytes = tokio::fs::read(&file)
-        .await
-        .map_err(|_| ApiError::not_found())?;
-    let mime = match file.extension().and_then(|e| e.to_str()).unwrap_or("") {
-        "js" | "mjs" => "text/javascript",
-        "css" => "text/css",
-        "json" => "application/json",
-        "svg" => "image/svg+xml",
-        "png" => "image/png",
-        "jpg" | "jpeg" => "image/jpeg",
-        "woff2" => "font/woff2",
-        "woff" => "font/woff",
-        _ => "application/octet-stream",
-    };
+    let (mime, bytes) = artifact_file(&s, &hash, &path).await?;
     Ok((
         [
             (header::CONTENT_TYPE, mime),
@@ -433,6 +427,38 @@ async fn ui_asset(
         bytes,
     )
         .into_response())
+}
+/// One file of an imported release artifact's UI directory. `hash` and `path` are
+/// validated here as well; callers decide access first.
+pub(crate) async fn artifact_file(
+    s: &State,
+    hash: &str,
+    path: &str,
+) -> ApiResult<(&'static str, Vec<u8>)> {
+    if hash.len() != 64
+        || !hash.bytes().all(|c| c.is_ascii_hexdigit())
+        || !contract::safe_relative(path)
+    {
+        return Err(ApiError::not_found());
+    }
+    let file = s.artifacts.join(hash).join("ui").join(path);
+    let bytes = tokio::fs::read(&file)
+        .await
+        .map_err(|_| ApiError::not_found())?;
+    Ok((mime(&file), bytes))
+}
+pub(crate) fn mime(file: &std::path::Path) -> &'static str {
+    match file.extension().and_then(|e| e.to_str()).unwrap_or("") {
+        "js" | "mjs" => "text/javascript",
+        "css" => "text/css",
+        "json" => "application/json",
+        "svg" => "image/svg+xml",
+        "png" => "image/png",
+        "jpg" | "jpeg" => "image/jpeg",
+        "woff2" => "font/woff2",
+        "woff" => "font/woff",
+        _ => "application/octet-stream",
+    }
 }
 /// Browser cookies are shared by every port of a host and SameSite treats those
 /// ports as one site, so another origin's code can make a cookie-bearing request

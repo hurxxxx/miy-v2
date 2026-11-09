@@ -10,6 +10,10 @@ mod api_error;
 #[cfg(feature = "server")]
 mod app_calls;
 mod app_cli;
+#[cfg(feature = "server")]
+mod app_frames;
+#[cfg(all(test, feature = "server"))]
+mod app_frames_regression;
 mod app_health;
 mod app_response;
 #[cfg(feature = "server")]
@@ -434,11 +438,18 @@ async fn run_server(command: Command) -> Result<()> {
     let dev_portal_bind = std::env::var("MIY_DEV_PORTAL_BIND_ADDR").map_err(|_| {
         anyhow::anyhow!("MIY_DEV_PORTAL_BIND_ADDR is required for the dev app portal listener")
     })?;
+    let frame_bind = std::env::var("MIY_APP_FRAME_BIND_ADDR").map_err(|_| {
+        anyhow::anyhow!("MIY_APP_FRAME_BIND_ADDR is required for the business app frame listener")
+    })?;
+    let binds = [&bind, &console_bind, &dev_portal_bind, &frame_bind];
     anyhow::ensure!(
-        bind != console_bind && bind != dev_portal_bind && console_bind != dev_portal_bind,
-        "portal_console_and_dev_portal_binds_must_differ"
+        binds
+            .iter()
+            .enumerate()
+            .all(|(i, a)| binds[i + 1..].iter().all(|b| a != b)),
+        "core_listener_binds_must_differ"
     );
-    for address in [&bind, &console_bind, &dev_portal_bind] {
+    for address in binds {
         let socket: std::net::SocketAddr = address.parse()?;
         anyhow::ensure!(
             socket.ip().is_loopback(),
@@ -448,7 +459,8 @@ async fn run_server(command: Command) -> Result<()> {
     let listener = tokio::net::TcpListener::bind(&bind).await?;
     let console_listener = tokio::net::TcpListener::bind(&console_bind).await?;
     let dev_portal_listener = tokio::net::TcpListener::bind(&dev_portal_bind).await?;
-    tracing::info!(event = "core_listening", address = %bind, console_address = %console_bind, dev_portal_address = %dev_portal_bind);
+    let frame_listener = tokio::net::TcpListener::bind(&frame_bind).await?;
+    tracing::info!(event = "core_listening", address = %bind, console_address = %console_bind, dev_portal_address = %dev_portal_bind, frame_address = %frame_bind);
     tokio::try_join!(
         async {
             axum::serve(listener, http::router(state.clone()))
@@ -476,6 +488,13 @@ async fn run_server(command: Command) -> Result<()> {
                 let _ = tokio::signal::ctrl_c().await;
             })
             .await
+        },
+        async {
+            axum::serve(frame_listener, app_frames::router(state.clone()))
+                .with_graceful_shutdown(async {
+                    let _ = tokio::signal::ctrl_c().await;
+                })
+                .await
         },
     )?;
     Ok(())

@@ -56,8 +56,25 @@ except KeyError:
 state = args.state_dir.resolve()
 settings = json.loads((state / 'server.json').read_text())
 origin = urllib.parse.urlsplit(settings['origin'])
-if not all(settings.get(key) for key in ('consoleOrigin', 'consoleBind', 'devPortalOrigin', 'devPortalBind')):
-    parser.error('Run bootstrap with distinct portal/console/dev portal origins and internal binds first')
+if not all(settings.get(key) for key in ('consoleOrigin', 'consoleBind', 'devPortalOrigin', 'devPortalBind',
+                                         'appFrameOrigin', 'appFrameBind')):
+    parser.error('Run bootstrap with distinct portal/console/dev portal origins, app frame origins and internal binds first')
+# Business app frames (docs/APP-FRAMES.md): a {key} host pattern (domain) or a
+# {port} pool on one host; Core accepts only origins registered to an installation.
+frame_template = settings['appFrameOrigin']
+frame_scheme, _, frame_rest = frame_template.partition('://')
+frame_ports = None
+if '{port}' in frame_template:
+    first, _, last = (settings.get('appFramePorts') or '').partition('-')
+    frame_ports = (int(first), int(last))
+    frame_sample = frame_template.replace('{port}', first)
+    frame_sources = ' '.join(frame_template.replace('{port}', str(value))
+                             for value in range(frame_ports[0], frame_ports[1] + 1))
+else:
+    frame_sample = frame_template.replace('{key}', '0' * 32)
+    frame_sources = f"{frame_scheme}://*.{frame_rest.split('.', 1)[-1]}"
+if frame_scheme != origin.scheme or frame_sample in [settings['origin'], settings['consoleOrigin'], settings['devPortalOrigin']]:
+    parser.error('App frame origins must use the portal transport and never a platform origin')
 console_origin = urllib.parse.urlsplit(settings['consoleOrigin'])
 dev_portal_origin = urllib.parse.urlsplit(settings['devPortalOrigin'])
 browser_origins = [settings['origin'], settings['consoleOrigin'], settings['devPortalOrigin']]
@@ -80,13 +97,14 @@ if origin.scheme == 'http' and not settings.get('allowHttp'):
         parser.error('The non-loopback HTTP profile must explicitly allow HTTP')
 if origin.scheme == 'https':
     try:
-        validate_certificate(browser_origins, args.certificate,
+        validate_certificate(browser_origins + [frame_sample], args.certificate,
                              args.key, args.ca_file or settings.get('caFile'))
     except (ValueError, OSError) as error:
         parser.error(str(error))
 core = 'http://' + settings['bind']
 console_core = 'http://' + settings['consoleBind']
 dev_portal_core = 'http://' + settings['devPortalBind']
+frame_core = 'http://' + settings['appFrameBind']
 identity = f"http://127.0.0.1:{settings['identityPort']}"
 upgrade_variable = '$' + args.service_prefix.replace('-', '_') + '_connection_upgrade'
 tls = ''
@@ -107,14 +125,20 @@ def forwarding(public):
 '''
 
 
-def security_headers(indent='    ', console=False):
+def security_headers(indent='    ', console=False, portal=False):
     policy = ("default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; "
               "img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; "
               "base-uri 'none'; frame-ancestors 'none'; worker-src 'none'; form-action 'self'"
               if console else "frame-ancestors 'none'; worker-src 'none'")
+    extra = ''
+    if portal:
+        # Portals frame only app frame origins. The launch form POST carries the
+        # portal Origin only under this referrer policy (not no-referrer).
+        policy += f'; frame-src {frame_sources}'
+        extra = f'{indent}add_header Referrer-Policy strict-origin-when-cross-origin always;\n'
     return (f'{indent}add_header X-Content-Type-Options nosniff always;\n'
             f'{indent}add_header X-Frame-Options DENY always;\n'
-            f'{indent}add_header Content-Security-Policy "{policy}" always;\n')
+            f'{indent}add_header Content-Security-Policy "{policy}" always;\n' + extra)
 
 
 def server(public, trusted=False, dev_portal=False):
@@ -170,7 +194,41 @@ def server(public, trusted=False, dev_portal=False):
         proxy_buffering off;
 {forwarding(public)}    }}
     location / {{
-{security_headers('        ', console=trusted)}        try_files $uri $uri/ /index.html;
+{security_headers('        ', console=trusted, portal=not trusted)}        try_files $uri $uri/ /index.html;
+    }}
+}}
+'''
+
+
+def frame_server():
+    """All app frame origins: one wildcard/regex host or one port-range listener."""
+    if frame_ports:
+        host = urllib.parse.urlsplit(frame_sample).hostname
+        listen = f"{'[::]:' if ':' in host else ''}{frame_ports[0]}-{frame_ports[1]}"
+        name = '[' + host + ']' if ':' in host else host
+    else:
+        public = urllib.parse.urlsplit(frame_sample)
+        listen = str(public.port or (443 if public.scheme == 'https' else 80))
+        prefix, suffix = frame_rest.split('{key}', 1)
+        name = '~^' + re.escape(prefix) + '[0-9a-f]{32}' + re.escape(suffix) + '$'
+    return f'''server {{
+    listen {listen}{' ssl' if tls else ''};
+    server_name {nginx(name)};
+{tls}    client_max_body_size 8m;
+    # Asset paths carry a frame capability: never write them to access logs.
+    access_log off;
+    # No anti-frame headers: frame documents name their portal in frame-ancestors.
+    if ($http_service_worker = "script") {{ return 403; }}
+    location / {{
+        proxy_pass {frame_core};
+        proxy_http_version 1.1;
+        proxy_read_timeout 60s;
+        proxy_buffering off;
+        proxy_set_header Host $http_host;
+        proxy_set_header X-Forwarded-Proto {frame_scheme};
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header X-Forwarded-Host "";
+        proxy_set_header Forwarded "";
     }}
 }}
 '''
@@ -181,7 +239,7 @@ map $http_upgrade {upgrade_variable} {{
     default upgrade;
     '' close;
 }}
-''' + server(origin) + server(console_origin, trusted=True) + server(dev_portal_origin, dev_portal=True)
+''' + server(origin) + server(console_origin, trusted=True) + server(dev_portal_origin, dev_portal=True) + frame_server()
 (state / 'nginx-miy.conf').write_text(nginx_text)
 for service in ['serve', 'worker']:
     text = f'''# Generated file. run-service.sh reads private runtime.env and removes unused secrets.
