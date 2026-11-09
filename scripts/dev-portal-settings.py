@@ -37,6 +37,7 @@ import urllib.request
 
 ROOT = Path(__file__).resolve().parent.parent
 SITE = Path('/etc/nginx/sites-available/v2.dwdcc.kr')
+ENABLED = Path('/etc/nginx/sites-enabled')
 FILES = ('server.json', 'runtime.env', 'compose.env')
 
 
@@ -205,14 +206,41 @@ def plan(state, dev_origin, dev_bind):
             'different_dev_portal_already_configured')
     public = urllib.parse.urlsplit(dev_origin)
     port = public.port or (443 if scheme == 'https' else 80)
+    # A port of the same host is a new listener and must be free. A separate hostname
+    # shares the existing HTTPS listener by name and must not be claimed elsewhere.
+    hosts = {urllib.parse.urlsplit(value).hostname for value in (portal, console)}
     return {
         'portalOrigin': portal, 'consoleOrigin': console, 'devPortalOrigin': dev_origin, 'devPortalBind': dev_bind,
-        'publicPort': port, 'alreadyConfigured': existing == dev_origin,
+        'publicPort': port, 'publicHost': public.hostname, 'separateHost': public.hostname not in hosts,
+        'alreadyConfigured': existing == dev_origin,
         'server': {'devPortalOrigin': dev_origin, 'devPortalBind': dev_bind},
         'runtime': {'MIY_DEV_PORTAL_ORIGIN': dev_origin, 'MIY_DEV_PORTAL_BIND_ADDR': dev_bind},
         'compose': {'MIY_DEV_PORTAL_ORIGIN': dev_origin, 'MIY_DEV_PORTAL_CORE_UPSTREAM': dev_bind,
                     'MIY_DEV_PORTAL_HOST': public.netloc, 'MIY_DEV_PORTAL_PORT': str(port)},
     }
+
+
+def name_unclaimed(hostname, enabled=None):
+    """No enabled Nginx site already serves this exact hostname."""
+    directory = enabled or ENABLED
+    for site in directory.iterdir() if directory.exists() else []:
+        try:
+            text = site.read_text()
+        except OSError:
+            raise RuntimeError('nginx_site_unreadable') from None
+        for line in text.splitlines():
+            words = line.strip().rstrip(';').split()
+            if words and words[0] == 'server_name' and hostname in words[1:]:
+                return False
+    return True
+
+
+def public_available(target, probe=None, enabled=None):
+    if target['alreadyConfigured']:
+        return True
+    if target['separateHost']:
+        return name_unclaimed(target['publicHost'], enabled)
+    return port_free(target['publicPort'], probe)
 
 
 def port_free(port, probe=None):
@@ -224,22 +252,22 @@ def port_free(port, probe=None):
         return sock.connect_ex(('127.0.0.1', port)) != 0
 
 
-def inspect(state, dev_origin, dev_bind, identity=Identity, probe=None):
+def inspect(state, dev_origin, dev_bind, identity=Identity, probe=None, enabled=None):
     target = plan(state, dev_origin, dev_bind)
-    require(target['alreadyConfigured'] or port_free(target['publicPort'], probe), 'dev_portal_port_in_use')
+    require(public_available(target, probe, enabled), 'dev_portal_address_in_use')
     snapshot = identity(state).snapshot()
     client = snapshot['client']
     return {'status': 'READY', 'devPortalOrigin': target['devPortalOrigin'], 'devPortalBind': target['devPortalBind'],
-            'alreadyConfigured': target['alreadyConfigured'],
+            'alreadyConfigured': target['alreadyConfigured'], 'separateHost': target['separateHost'],
             'identity': {'redirectUris': len(client.get('redirectUris', [])),
                          'webOrigins': len(client.get('webOrigins', [])),
                          'devPortalCallback': target['devPortalOrigin'] + '/auth/callback'
                          in client.get('redirectUris', [])}}
 
 
-def apply(state, release, dev_origin, dev_bind, identity=Identity, probe=None):
+def apply(state, release, dev_origin, dev_bind, identity=Identity, probe=None, enabled=None):
     target = plan(state, dev_origin, dev_bind)
-    require(target['alreadyConfigured'] or port_free(target['publicPort'], probe), 'dev_portal_port_in_use')
+    require(public_available(target, probe, enabled), 'dev_portal_address_in_use')
     backup = release / 'settings-backup'
     require(not backup.exists(), 'settings_backup_exists')
     release.mkdir(mode=0o700, parents=True, exist_ok=True)

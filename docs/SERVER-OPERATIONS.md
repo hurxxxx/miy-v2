@@ -281,7 +281,7 @@ python3 scripts/ui-rollout.py rollback --release-dir <같은 경로>
 
 **dev 포털 추가 전환(준비 완료, 운영 미실행).** 2026-11-09 결정한 dev 앱 전용 포털은 모든 변경이 더하기만 하고 이전 서버 바이너리가 각 단계 뒤에도 그대로 동작한다. 그래서 유지보수 화면 없이 아래 순서의 작은 단계로 진행하고 각 단계를 따로 되돌린다. 운영 주소(포트 또는 호스트명)와 실행은 사용자 확인 뒤에만 한다.
 
-1. `python3 scripts/dev-portal-settings.py inspect --dev-portal-origin <주소>`: 주소·내부 bind·공개 포트 사용 여부·Keycloak `miy-web` 상태를 읽기만 한다.
+1. `python3 scripts/dev-portal-settings.py inspect --dev-portal-origin <주소>`: 주소·내부 bind·Keycloak `miy-web` 상태를 읽기만 한다. 같은 호스트의 새 포트면 그 포트가 비어 있어야 하고, 별도 호스트명이면 기존 HTTPS 포트를 이름으로 함께 쓰므로 다른 활성 Nginx 사이트가 그 이름을 쓰지 않아야 한다. 이 서버는 `*.dwdcc.kr` DNS·인증서가 있어 `https://v2-dev.dwdcc.kr`(포트 없음)를 쓴다.
 2. `... apply --dev-portal-origin <주소> --release-dir .local/release-<commit>-dev-portal`: `server.json`·`runtime.env`·`compose.env`에 dev 포털 키만 줄 단위로 추가하고(다른 줄은 바이트 동일), Keycloak `miy-web`에 dev 포털 callback·logout URI만 더한다. web origins·secret·사용자는 바꾸지 않는다. 이전 바이너리는 새 키를 무시한다.
 3. `core-rollout.py apply --widen-migration 21 ...`: 정확한 SHA CI gate, 실제 dump의 복원·migration 리허설 뒤 서버를 바꾸고 고정된 `0021_dev_portal.sql`(제약 확장만)을 적용한다. 이 시점부터 기존 포털은 dev 앱을 거부한다.
 4. `dev-portal-settings.py nginx-apply --release-dir ... --certificate ... --key ...`: 다시 생성한 설정이 현재 운영 파일과 dev 포털 server 블록 하나만 다를 때만 설치하고 `nginx -t` 후 reload한다.

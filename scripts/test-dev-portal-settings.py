@@ -113,9 +113,26 @@ class DevPortalSettingsTests(unittest.TestCase):
                 with self.assertRaisesRegex(RuntimeError, code):
                     self.apply(origin, bind)
                 self.assertFalse(self.release.exists())
-        with self.assertRaisesRegex(RuntimeError, 'dev_portal_port_in_use'):
+        with self.assertRaisesRegex(RuntimeError, 'dev_portal_address_in_use'):
             tool.apply(self.state, self.release, DEV, '127.0.0.1:18183', identity=FakeIdentity, probe=lambda _p: False)
         self.assertEqual({name: (self.state / name).read_bytes() for name in tool.FILES}, before)
+
+    def test_a_separate_hostname_shares_the_https_listener_unless_another_site_claims_it(self):
+        enabled = self.root / 'sites-enabled'
+        enabled.mkdir()
+        (enabled / 'other').write_text('server {\n    listen 443 ssl;\n    server_name other.example.test;\n}\n')
+        host = 'https://v2-dev.example.test'
+        # The shared port is in use (probe False), but name-based hosting needs only the name.
+        result = tool.apply(self.state, self.release, host, '127.0.0.1:18183', identity=FakeIdentity,
+                            probe=lambda _p: False, enabled=enabled)
+        self.assertEqual(result['devPortalOrigin'], host)
+        self.assertIn('MIY_DEV_PORTAL_HOST=v2-dev.example.test', (self.state / 'compose.env').read_text())
+        tool.restore(self.state, self.release, identity=FakeIdentity)
+        shutil.rmtree(self.release)
+        (enabled / 'claimed').write_text('server {\n    server_name v2-dev.example.test www.example.test;\n}\n')
+        with self.assertRaisesRegex(RuntimeError, 'dev_portal_address_in_use'):
+            tool.apply(self.state, self.release, host, '127.0.0.1:18183', identity=FakeIdentity,
+                       probe=lambda _p: True, enabled=enabled)
 
     def test_identity_secret_change_is_refused(self):
         class Rotated(FakeIdentity):
