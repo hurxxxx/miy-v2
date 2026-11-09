@@ -9,6 +9,7 @@
 - 제품 계약은 [PRD](docs/PRD.md), 권한 계약은 [코어 권한](docs/CORE-PERMISSIONS.md)이 기준이다. 구현된 동작은 코드와 테스트가 최종 기준이다.
 
 - 앱 출처·세션·실행 계약을 바꿀 때 [사내 최소 보안 설계](docs/APP-BOUNDARIES.md)를 먼저 읽는다. iframe 없는 MF·통합 라우팅·단일 IP HTTPS를 유지한다. 업무 포털(dev/prod)과 관리·CLI 승인·Keycloak 콘솔 두 출처, portal/console 세션 용도는 서버·UI `a4ad370`으로 2026-11-07 운영에 반영했다([배포 기록](docs/releases/internal-minimum-security-2026-11-07-deployment.json)). 2026-11-09 후속 `027caab`(다른 출처 쿠키 요청 거부·legacy CLI 로그인 종료)도 운영에 반영했다. 운영 콘솔·issuer는 `https://v2-console.dwdcc.kr`(2026-11-09 이동, 옛 `:9443`은 redirect)이며 공유 개발 로그인은 꺼져 있다. 구현·격리 검증·운영 전환 상태를 구분한다. dev 앱 전용 포털 출처는 2026-11-09 사용자 결정으로 구현·운영 반영했다(포털 `https://v2.dwdcc.kr`은 prod만, dev 포털 `https://v2-dev.dwdcc.kr`은 dev만, schema 21). 별도 IdP 출처·외부 앱 격리·MFA 의무화·자동 CA를 기능 개발의 선행 조건으로 추가하지 않는다. 같은 페이지 앱 격리나 포트 쿠키 격리를 주장하지 않으며 공개 운영을 사내 전제로 자동 인정하지 않는다. 권한은 CORE-PERMISSIONS, 순서·상태는 PLAN을 따르고 게시 번들·현행·목표·역사를 구분한다.
+- 업무 앱만 설치별 출처 iframe에서 실행하는 구조는 [후보 설계](docs/APP-FRAMES.md)로 실증 중이다. 채택 결정 전에는 위 MF 기준이 현행이며, 실증 코드를 현행 계약이나 운영 반영에 섞지 않는다.
 
 ## 개발 단계 원칙 (실제 운영 전환 전까지)
 

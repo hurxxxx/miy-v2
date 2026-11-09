@@ -94,6 +94,8 @@ CLI 근거는 `cli_auth.rs`의 start/approve/exchange, `auth_sessions.rs`의 app
 | B 앱별 최상위 페이지 | 강한 앱 격리가 필요할 때 후속 검토 | 앱별 DOM 분리 가능, 통합 라우팅·상태 공유 변경 |
 | C 제한된 선언형 UI | 장기 대안, 현재 구현하지 않음 | 자유로운 React/DOM 계약과 개발 도구 변경 필요 |
 
+2026-11-09 사용자 요청으로, 플랫폼 화면은 그대로 두고 업무 앱만 설치별 출처 iframe에서 실행하는 혼합 구조를 [후보 설계](APP-FRAMES.md)로 실증한다. 채택 전까지 A가 현행이며 아래 "iframe은 자동 fallback으로 도입하지 않는다"도 유지한다.
+
 앱 ID 헤더·SDK·클로저·짧은 bearer·Shadow DOM·CSS·릴리스 서명은 같은 문서의 앱별 보안 주체를 만들지 않는다. A는 승인 앱의 사용자 권한 악용이나 앱 간 DOM 접근을 완전히 막는 모델이 아니다. 대상 서버의 사용자 ACL·backend 설치 승인·호출 체인은 계속 필요하다. iframe은 자동 fallback으로 도입하지 않는다.
 
 ## 출처와 자격증명
