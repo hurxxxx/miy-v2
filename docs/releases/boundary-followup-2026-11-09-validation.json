@@ -6,7 +6,8 @@
   "source": {
     "baseCommit": "0714c3128354402c722f9b895deafaefff4f444c",
     "workingTreeDirty": true,
-    "description": "Validated working tree on top of the base commit; the resulting commit is recorded with its CI in the deployment record."
+    "description": "Validated working tree on top of the base commit; the resulting commit is recorded with its CI in the deployment record.",
+    "resultCommit": "027caab0530e862e946159b78201614807aceb89"
   },
   "decisions": [
     {
@@ -87,9 +88,22 @@
     },
     {
       "id": "isolated-runtime-regression",
-      "command": "python3 scripts/runtime-regression/run.py (clean clone of the fix commit; exit status captured)",
-      "status": "PENDING",
-      "observed": "recorded after the rerun"
+      "command": "python3 scripts/runtime-regression/run.py (clean clone at 027caab; exit status captured)",
+      "status": "FAIL",
+      "exitCode": 1,
+      "observed": "Integration test passed; results.jsonl 113 PASS / 0 FAIL with the expected suite counts (boundary 11). The runner still returned 1 because its host-safety cleanup check found four baseline containers no longer inspectable: ephemeral GitLab runner job containers of another project on this host that finished during the run. Not caused by this change; not rerun locally. The exact-SHA GitHub runtime regression below is the passing run of this runner."
+    },
+    {
+      "id": "exact-sha-ci",
+      "command": "gh run list (main push of 027caab)",
+      "status": "PASS",
+      "observed": "027caab: web.yml 42553158125, cli-foundation.yml 42553158049, runtime-regression.yml 42553158002 all success. 14293fe runtime-regression.yml 42552606107 failed on the stale boundary=10 suite count (observations 113, boundary 11), preserved as the reason for 027caab."
+    },
+    {
+      "id": "cli-experience-first-run",
+      "command": "pnpm exec playwright test --config tests/cli-experience.config.ts (during later phase-2 work)",
+      "status": "FAIL",
+      "observed": "One test timed out after the Vite dev server failed to fetch main.tsx on a cold start; the immediate rerun passed 14/14. Recorded as a flaky harness start, not part of the phase-1 source."
     },
     {
       "id": "web-static",

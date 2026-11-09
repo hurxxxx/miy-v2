@@ -1,0 +1,47 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-11-09",
+  "status": "PASS",
+  "scope": "Production rollout of the phase-1 review follow-up to v2.dwdcc.kr after exact-SHA CI and isolated validation, as requested by the user (deploy once validation passes). Same schema (20); no settings, Keycloak or migration change.",
+  "sourceCommit": "027caab0530e862e946159b78201614807aceb89",
+  "implementationCommit": "14293fe1f3b924f2ed13ec79f1a1baf939d7af70",
+  "validationRecord": "boundary-followup-2026-11-09-validation.json",
+  "server": {
+    "previousSha256": "450a1709dea67803ce120bcc8c4fc55d9823f28006cf420378f312c93c26e5a2",
+    "serverSha256": "4715707662a87c5255582b0ca22cf754fae6e628d0f9a8c4428dd087b374ddb0",
+    "version": "0.7.0",
+    "build": "cargo build --release --locked in a separate clean clone at the source commit",
+    "tool": "scripts/core-rollout.py from that clone (inspect READY, then apply PASS); release directory .local/release-027caab-core",
+    "schema": 20
+  },
+  "ui": {
+    "previousIndexSha256": "11f4050473f5d5364d46d5c38ba9b559bb060a0aff0f882ec09c7bdf95393655",
+    "indexSha256": "9e4c74d6a525ad0fbef6e2d2d5d7b7bc10e6cd1ea741e9b44b3e38ed11ee01ec",
+    "tool": "scripts/ui-rollout.py build/inspect/apply --expected-commit; backup .local/release-027caab-ui/production-backup; 3 new assets, 106 identical",
+    "order": "server first, then UI (SERVER-OPERATIONS §7)"
+  },
+  "ci": {
+    "web.yml": {"runId": 42553158125, "conclusion": "success"},
+    "cli-foundation.yml": {"runId": 42553158049, "conclusion": "success"},
+    "runtime-regression.yml": {"runId": 42553158002, "conclusion": "success"},
+    "gate": "core-rollout.py preflight verified these runs for the exact commit (new CI gate)."
+  },
+  "postDeploymentChecks": [
+    {"check": "GET https://v2.dwdcc.kr/api/health", "status": "PASS", "observed": "{\"status\":\"ok\"}"},
+    {"check": "GET portal /api/v1/me without session", "status": "PASS", "observed": "401"},
+    {"check": "GET portal /api/v1/me with Sec-Fetch-Site: same-site", "status": "PASS", "observed": "403 before session lookup"},
+    {"check": "GET portal /api/v1/me with Origin of the console", "status": "PASS", "observed": "403"},
+    {"check": "GET console /api/v1/me with Sec-Fetch-Site: same-site", "status": "PASS", "observed": "403"},
+    {"check": "POST portal /auth/cli/start", "status": "PASS", "observed": "410 cli_upgrade_required; no login request created"},
+    {"check": "GET portal /auth/login with Sec-Fetch-Mode: no-cors", "status": "PASS", "observed": "403; no login flow created"},
+    {"check": "GET /auth/options on both origins", "status": "PASS", "observed": "portal and console surfaces with each other's fixed origin"},
+    {"check": "Served index.html hash", "status": "PASS", "observed": "matches the deployed candidate"},
+    {"check": "Headless Chromium load of both origins without signing in", "status": "PASS", "observed": "login screens rendered; /auth/options 200, /api/v1/me 401, no page errors"}
+  ],
+  "notRun": [
+    {"check": "Signed-in production browser use (portal apps, console approval, same-tab app navigation)", "reason": "No production credentials used by the agent; covered by isolated server-ui/stack-ui/http-server runs."},
+    {"check": "Existing legacy (pre-0.5) CLI users", "reason": "Not inventoried; their next login gets cli_upgrade_required, issued tokens expire within 8 hours."},
+    {"check": "External PC access, Windows acceptance", "reason": "User-performed acceptance."}
+  ],
+  "rollback": "python3 <clone>/scripts/core-rollout.py rollback --release-dir .local/release-027caab-core; python3 scripts/ui-rollout.py rollback --release-dir .local/release-027caab-ui. Not used."
+}
