@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Generate private server configuration; reuse credentials on every invocation."""
-import argparse, ipaddress, json, os, re, secrets, shlex, urllib.parse
+import argparse, ipaddress, json, os, re, secrets, shlex, sys, urllib.parse
 from pathlib import Path
 
 
@@ -243,3 +243,12 @@ for filename in ['init.sql','realm.json']:
     (LOCAL / filename).chmod(0o644)
 (LOCAL/'artifacts').mkdir(exist_ok=True)
 print('Private server configuration ready. Existing credentials were preserved.')
+# Port separation is a supported profile, not a security workaround. Say which
+# limits only separate hostnames remove (APP-BOUNDARIES "배치 프로필").
+hosts = {urllib.parse.urlsplit(value).hostname for value in [origin, console_origin, dev_portal_origin]}
+if len(hosts) < 3:
+    print('Deployment profile: port separation (supported). Origins on one host share cookies: '
+          'app code can plant another origin\'s session/login cookie or flood cookies. Separate '
+          'hostnames (a domain) remove this; no port-mode workaround is applied.', file=sys.stderr)
+else:
+    print('Deployment profile: separate hostnames (recommended).')
