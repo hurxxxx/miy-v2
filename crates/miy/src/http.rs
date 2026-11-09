@@ -300,11 +300,25 @@ pub fn router_for(state: State, purpose: BrowserPurpose) -> Router {
         .with_state(state)
 }
 
+/// Static file services mounted with `nest_service` (CLI downloads and installers)
+/// carry no `MatchedPath`. Only these fixed public prefixes are classified by the
+/// request path; every other unmatched request stays denied.
+fn static_route(path: &str) -> Option<&str> {
+    ["/cli/downloads", "/cli/installers"]
+        .iter()
+        .any(|prefix| {
+            path.strip_prefix(prefix)
+                .is_some_and(|rest| rest.is_empty() || rest.starts_with('/'))
+        })
+        .then_some(path)
+}
+
 async fn browser_boundary(S(purpose): S<BrowserPurpose>, request: Request, next: Next) -> Response {
     let route = request
         .extensions()
         .get::<axum::extract::MatchedPath>()
-        .map(|p| p.as_str());
+        .map(|p| p.as_str())
+        .or_else(|| static_route(request.uri().path()));
     let rule = route.and_then(|route| crate::browser_boundary::access(route, request.method()));
     let bearer = request
         .headers()
@@ -1252,6 +1266,58 @@ mod tests {
             Some(dev),
             &headers(&[("sec-fetch-site", "same-site"), ("origin", other)])
         ));
+    }
+
+    #[test]
+    fn only_the_fixed_static_prefixes_are_classified_without_a_matched_route() {
+        for path in [
+            "/cli/downloads",
+            "/cli/downloads/a/b.tar.gz",
+            "/cli/installers/x.exe",
+        ] {
+            assert_eq!(static_route(path), Some(path));
+        }
+        for path in [
+            "/cli/downloadsx",
+            "/api/v1/users",
+            "/cli/device/1",
+            "/",
+            "/cli",
+        ] {
+            assert_eq!(static_route(path), None);
+        }
+    }
+
+    // Regression: nested static services have no MatchedPath, which made the
+    // published CLI downloads answer 403 behind the route boundary.
+    #[tokio::test]
+    async fn the_boundary_serves_nested_cli_downloads_and_denies_other_unmatched_paths() {
+        let root = std::env::temp_dir().join(format!("miy-download-{}", Uuid::new_v4()));
+        std::fs::create_dir_all(root.join("commit")).unwrap();
+        std::fs::write(root.join("commit/miy.tar.gz"), "archive").unwrap();
+        for purpose in [
+            BrowserPurpose::Portal,
+            BrowserPurpose::DevPortal,
+            BrowserPurpose::Console,
+        ] {
+            let router: Router = Router::new()
+                .nest_service("/cli/downloads", tower_http::services::ServeDir::new(&root))
+                .layer(middleware::from_fn_with_state(purpose, browser_boundary));
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let address = listener.local_addr().unwrap();
+            let server = tokio::spawn(async move { axum::serve(listener, router).await });
+            let file = reqwest::get(format!("http://{address}/cli/downloads/commit/miy.tar.gz"))
+                .await
+                .unwrap();
+            assert_eq!(file.status(), 200);
+            assert_eq!(file.text().await.unwrap(), "archive");
+            let other = reqwest::get(format!("http://{address}/cli/downloadsx/commit/miy.tar.gz"))
+                .await
+                .unwrap();
+            assert_ne!(other.status(), 200);
+            server.abort();
+        }
+        std::fs::remove_dir_all(root).unwrap();
     }
 
     #[test]
