@@ -11,7 +11,7 @@
 
 2026-11-06 [최소 보안안](APP-BOUNDARIES.md#확정-결정)은 회사가 관리하는 개발자·앱과 내부망을 전제로 하며 최소 경계는 소스에 구현했다. iframe 없는 MF·AppRoot·라우팅과 게시 CLI/SDK 계약을 유지한다. 포털과 신뢰 콘솔 두 origin만 사용하고 Keycloak은 콘솔의 `/identity/realms/miy`에 둔다. 한 IP의 서로 다른 HTTPS 포트(예: 8443/9443)를 설정할 수 있으며 도메인·추가 IP·별도 IdP origin은 필수가 아니다.
 
-- legacy·device 브라우저 승인은 console 용도 세션·정확한 Origin·현재 CSRF로만 허용한다. 포털 세션으로 승인하거나 세션 용도를 바꿀 수 없게 한다. 일반 직원도 본인의 CLI 인증은 콘솔에서 할 수 있다.
+- device 브라우저 승인은 console 용도 세션·정확한 Origin·현재 CSRF와 사용자가 입력한 터미널 코드로만 허용한다. 포털 세션으로 승인하거나 세션 용도를 바꿀 수 없게 한다. 일반 직원도 본인의 CLI 인증은 콘솔에서 할 수 있다. 0.5 이전 CLI의 legacy 승인 흐름(start/approve/exchange)은 2026-11-09 종료했고 410 `cli_upgrade_required`로 응답한다.
 - 게시 CLI의 상대 `verificationPath`는 유지한다. 기존 경로는 설정된 콘솔 승인 화면으로만 고정 리디렉션하고 임의 return URL이나 token을 전달하지 않는다. start·exchange·poll·refresh 경로와 요청/응답 형식·context 설정·토큰 수명은 유지한다.
 - 기존 `miy-web` OIDC client·realm·사용자 `sub`를 보존하고 callback·issuer 설정을 두 origin에 맞게 갱신한다. 서버 변경 후 재로그인은 허용하지만 신규 CLI 형식이나 모든 앱의 SDK 전환을 요구하지 않는다.
 - 게시 CLI로 기존 로그인·승인 이동·교환·poll·refresh·철회와 MCP 연결을 확인한다. 단일 IP TLS는 인증서 반입·IP SAN/체인 검사·CA 신뢰 안내/확인이 최소 범위이며 자동 배포·갱신은 후속이다.

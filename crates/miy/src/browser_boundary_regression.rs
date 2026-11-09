@@ -20,10 +20,6 @@ struct Browser {
     csrf: String,
     purpose: BrowserPurpose,
 }
-struct Legacy {
-    id: Uuid,
-    verifier: String,
-}
 struct Device {
     id: Uuid,
     code: String,
@@ -122,23 +118,33 @@ impl Harness<'_> {
             purpose,
         })
     }
-    async fn legacy(&self) -> Result<Legacy> {
-        let verifier = auth::random();
-        let value = json_response(
-            self.request(BrowserPurpose::Portal, Method::POST, "/auth/cli/start")
-                .json(&json!({"challenge":hash(&verifier)}))
-                .send()
-                .await?,
-            200,
-        )
-        .await?;
-        let id: Uuid = field(&value, "id")?.parse()?;
-        ensure!(
-            value["verificationPath"] == format!("/cli/authorize/{id}")
-                && value["expiresIn"] == 300,
-            "legacy start changed its relative path or lifetime"
-        );
-        Ok(Legacy { id, verifier })
+    /// The pre-0.5 browser-approval login is retired. Credentials it issued before
+    /// retirement remain valid until expiry, so seed one directly.
+    async fn legacy_retired(&self, user: &str) -> Result<String> {
+        for (method, path) in [
+            (Method::POST, "/auth/cli/start"),
+            (Method::POST, "/auth/cli/exchange"),
+        ] {
+            let value = json_response(
+                self.request(BrowserPurpose::Portal, method, path)
+                    .json(&json!({"challenge":hash(auth::random())}))
+                    .send()
+                    .await?,
+                410,
+            )
+            .await?;
+            ensure!(
+                value["error"]["code"] == "cli_upgrade_required",
+                "retired legacy login lost its upgrade error"
+            );
+        }
+        let token = format!("miy_cli_{}", auth::random());
+        sqlx::query("INSERT INTO cli_tokens(token_hash,user_id) VALUES($1,$2)")
+            .bind(hash(&token))
+            .bind(user)
+            .execute(&self.state.pool)
+            .await?;
+        Ok(token)
     }
     async fn device(&self) -> Result<Device> {
         let value = json_response(
@@ -350,9 +356,64 @@ pub async fn run(
     }
     passed.push("separate HTTP listeners bind browser credentials to stored purpose, reject copied/renamed and duplicate cookies, and accept both legitimate same-host cookie names without authority mixing".into());
 
-    let legacy = h.legacy().await?;
+    // Same-host ports share cookies; code on one origin must not use the other's
+    // cookies even for reads. Reject before any session lookup.
+    for browser in [&portal_admin, &console_admin] {
+        let foreign = h.origin(if browser.purpose == BrowserPurpose::Portal {
+            BrowserPurpose::Console
+        } else {
+            BrowserPurpose::Portal
+        });
+        for headers in [
+            vec![("origin", foreign)],
+            vec![("sec-fetch-site", "same-site")],
+            vec![
+                ("sec-fetch-site", "same-site"),
+                ("sec-fetch-mode", "navigate"),
+            ],
+            vec![("sec-fetch-site", "cross-site"), ("origin", "null")],
+        ] {
+            let mut request = h.cookie_request(browser, Method::GET, "/api/v1/me");
+            for (name, value) in headers {
+                request = request.header(name, value);
+            }
+            denied(request.send().await?, 403).await?;
+        }
+        for site in ["same-origin", "none"] {
+            status(
+                h.cookie_request(browser, Method::GET, "/api/v1/me")
+                    .header("sec-fetch-site", site)
+                    .send()
+                    .await?,
+                200,
+            )
+            .await?;
+        }
+        status(
+            h.cookie_request(browser, Method::GET, "/api/v1/me")
+                .header("sec-fetch-site", "same-origin")
+                .header("origin", h.origin(browser.purpose))
+                .send()
+                .await?,
+            200,
+        )
+        .await?;
+    }
+    for mode in ["no-cors", "cors"] {
+        denied(
+            h.request(BrowserPurpose::Portal, Method::GET, "/auth/login")
+                .header("sec-fetch-mode", mode)
+                .send()
+                .await?,
+            403,
+        )
+        .await?;
+    }
+    passed.push("cookie-authenticated requests from another same-host origin, including reads and navigations, are rejected before session lookup; sign-in starts only from a navigation".into());
+
+    let legacy_token = h.legacy_retired(&user_id).await?;
     let device = h.device().await?;
-    let legacy_approval = format!("/api/v1/cli-authorizations/{}/approve", legacy.id);
+    let legacy_approval = format!("/api/v1/cli-authorizations/{}/approve", Uuid::new_v4());
     let device_approval = format!("/api/v1/cli/devices/{}/decision", device.id);
     for browser in [&portal_admin, &portal_user] {
         for path in [
@@ -384,11 +445,6 @@ pub async fn run(
         )
         .await?;
     }
-    let pending: bool =
-        sqlx::query_scalar("SELECT user_id IS NULL FROM cli_authorizations WHERE id=$1")
-            .bind(legacy.id)
-            .fetch_one(&state.pool)
-            .await?;
     let device_pending: bool = sqlx::query_scalar(
         "SELECT status='pending' AND user_id IS NULL FROM cli_device_authorizations WHERE id=$1",
     )
@@ -396,7 +452,7 @@ pub async fn run(
     .fetch_one(&state.pool)
     .await?;
     ensure!(
-        pending && device_pending,
+        device_pending,
         "portal rejection still changed a CLI approval"
     );
     let console_url = url::Url::parse(console)?;
@@ -461,7 +517,7 @@ pub async fn run(
     );
     passed.push("console mutations need exact Origin and synchronizer CSRF as well as current administrator authority; rejected attempts do not produce a management change and the authorized actor is audited".into());
 
-    for (kind, id) in [("authorize", legacy.id), ("device", device.id)] {
+    for (kind, id) in [("authorize", Uuid::new_v4()), ("device", device.id)] {
         let redirect = status(
             h.request(
                 BrowserPurpose::Portal,
@@ -604,39 +660,17 @@ pub async fn run(
     );
     passed.push("existing app API and MF JavaScript work on the portal but are denied on the console; app response headers cannot set cookies, clear site data, redirect, relax CSP/CORS or register workers, and HTML API responses are sandboxed".into());
 
-    let waiting = json_response(
-        h.request(BrowserPurpose::Portal, Method::POST, "/auth/cli/exchange")
-            .json(&json!({"id":legacy.id,"verifier":legacy.verifier}))
-            .send()
-            .await?,
-        200,
-    )
-    .await?;
-    ensure!(
-        waiting["status"] == "pending",
-        "legacy flow was approved without console consent"
-    );
-    json_response(
+    // Even a console user cannot approve the retired legacy flow any more.
+    let retired = json_response(
         h.browser_request(&console_user, Method::POST, &legacy_approval)
             .send()
             .await?,
-        200,
+        410,
     )
     .await?;
-    let legacy_value = json_response(
-        h.request(BrowserPurpose::Portal, Method::POST, "/auth/cli/exchange")
-            .json(&json!({"id":legacy.id,"verifier":legacy.verifier}))
-            .send()
-            .await?,
-        200,
-    )
-    .await?;
-    let legacy_token = field(&legacy_value, "token")?;
     ensure!(
-        legacy_value["status"] == "approved"
-            && legacy_value["expiresIn"] == 28800
-            && legacy_token.starts_with("miy_cli_"),
-        "legacy token wire shape or eight-hour lifetime changed"
+        retired["error"]["code"] == "cli_upgrade_required",
+        "retired legacy approval lost its upgrade error"
     );
     ensure!(
         h.bearer_me(&legacy_token, 200).await?["id"] == user_id,
@@ -648,14 +682,6 @@ pub async fn run(
             .send()
             .await?,
         200,
-    )
-    .await?;
-    denied(
-        h.request(BrowserPurpose::Portal, Method::POST, "/auth/cli/exchange")
-            .json(&json!({"id":legacy.id,"verifier":legacy.verifier}))
-            .send()
-            .await?,
-        401,
     )
     .await?;
     denied(
@@ -677,7 +703,7 @@ pub async fn run(
         )
         .await?;
     }
-    passed.push("an ordinary console user approves the unchanged legacy start/exchange flow once, retaining an eight-hour credential and original identity; browser Origin cannot turn CLI bearer access into management authority".into());
+    passed.push("the retired legacy start/approve/exchange flow answers 410 cli_upgrade_required even on the console, while a previously issued eight-hour legacy credential keeps its identity; browser Origin cannot turn CLI bearer access into management authority".into());
 
     // A browser logout is deliberately independent of existing CLI credentials.
     json_response(
@@ -935,6 +961,6 @@ pub async fn run(
     )
     .await?;
     passed.push("expired or disabled browser sessions require new authentication; restoring an account does not revive old portal/console cookies and a fresh purpose-bound session works".into());
-    ensure!(passed.len() == 10, "boundary observation count changed");
+    ensure!(passed.len() == 11, "boundary observation count changed");
     Ok(passed)
 }

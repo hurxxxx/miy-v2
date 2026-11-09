@@ -72,7 +72,7 @@ miy --yes context remove work
 
 로그아웃은 원격 철회 확인과 로컬 삭제 결과를 구분한다. `context remove`는 로컬 연결만 제거하고 원격 세션이나 앱 데이터를 삭제하지 않는다. 원격 철회가 필요하면 context 제거 전에 logout 또는 sessions revoke를 실행한다.
 
-후속 두 origin 전환에서도 저장된 CLI context·API 경로·응답 형식과 토큰 수명은 유지한다. legacy·device의 브라우저 승인만 콘솔 세션으로 처리하며, 게시 CLI가 받는 상대 `verificationPath`는 유지한 채 서버가 설정된 콘솔의 승인 페이지로 고정 리디렉션한다. 임의 목적지나 토큰을 URL에 넣지 않는다. start·exchange·poll·refresh는 기존 비브라우저 경로로 제공한다. 기존 `miy-web` OIDC client와 realm·사용자 `sub`를 유지하고 정확한 callback을 등록한다. 전환 시 재로그인은 허용하지만 새 CLI 설정 형식이나 앱 SDK 교체를 필수로 요구하지 않는다. 실제 호환성은 게시 CLI로 별도 인수해야 한다.
+후속 두 origin 전환에서도 저장된 CLI context·API 경로·응답 형식과 토큰 수명은 유지한다. device의 브라우저 승인만 콘솔 세션으로 처리하며, 게시 CLI가 받는 상대 `verificationPath`는 유지한 채 서버가 설정된 콘솔의 승인 페이지로 고정 리디렉션한다. 임의 목적지나 토큰을 URL에 넣지 않는다. device 시작·poll·refresh는 기존 비브라우저 경로로 제공한다. 0.5 이전 CLI의 legacy 로그인은 종료했으므로(410 `cli_upgrade_required`) 해당 CLI는 업그레이드한 뒤 `miy auth login`을 다시 실행한다. 기존 `miy-web` OIDC client와 realm·사용자 `sub`를 유지하고 정확한 callback을 등록한다. 전환 시 재로그인은 허용하지만 새 CLI 설정 형식이나 앱 SDK 교체를 필수로 요구하지 않는다. 실제 호환성은 게시 CLI로 별도 인수해야 한다.
 
 ## 새 앱 준비와 등록
 

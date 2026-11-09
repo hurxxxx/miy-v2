@@ -67,8 +67,11 @@ test("portal shows business apps without management controls or operational meta
   await expect(
     page.getByRole("heading", { name: "운영 앱", exact: true }),
   ).toBeVisible();
-  const appLink = page.getByRole("link", { name: "앱 열기", exact: true });
+  const appLink = page.getByRole("link", { name: "앱 열기 →", exact: true });
   await expect(appLink).toBeVisible();
+  // Same-origin app navigation stays in this tab; only other origins open a new tab.
+  await expect(appLink).not.toHaveAttribute("target");
+  await expect(appLink).toHaveAttribute("href", "/environments/prod/apps/ledger");
   await expect(
     page.getByRole("button", { name: /중지|재시작|제거|시작/ }),
   ).toHaveCount(0);
@@ -82,10 +85,6 @@ test("portal shows business apps without management controls or operational meta
   ).toHaveCount(0);
   expect(reads).not.toContain("/api/v1/runtime/installations");
   expect(reads).not.toContain("/api/v1/apps");
-  await page.context().route("**/environments/prod/apps/ledger", (route) =>
-    route.fulfill({ contentType: "text/html", body: "<p>업무 앱</p>" }),
-  );
-  await (await openNewTab(page, appLink)).close();
   await page.context().route("https://console.example.test/**", (route) =>
     route.fulfill({ contentType: "text/html", body: "<p>관리 콘솔</p>" }),
   );
@@ -270,24 +269,18 @@ test("console lists and revokes both device and legacy CLI connections with the 
   ]);
 });
 
-test("legacy CLI approval remains available to an ordinary user only on the console", async ({
+test("retired legacy CLI approval shows an upgrade notice and never posts an approval", async ({
   page,
 }) => {
   await setup(page, "console");
   const approvals: string[] = [];
-  await page.route(
-    "**/api/v1/cli-authorizations/request-id/approve",
-    (route) => {
-      approvals.push(route.request().headers()["x-miy-csrf"]!);
-      return route.fulfill({ json: { approved: true } });
-    },
-  );
+  await page.route("**/api/v1/cli-authorizations/**", (route) => {
+    approvals.push(route.request().url());
+    return route.fulfill({ status: 410, json: { error: { code: "cli_upgrade_required" } } });
+  });
   await page.goto("/cli/authorize/request-id");
-  await page
-    .getByRole("button", { name: "이 CLI 연결 승인", exact: true })
-    .click();
-  await expect(page.getByRole("status")).toContainText(
-    "CLI 연결을 승인했습니다",
-  );
-  expect(approvals).toEqual(["fixture-csrf"]);
+  await expect(page.getByRole("alert")).toContainText("더 이상 승인하지 않습니다");
+  await expect(page.getByText("miy auth login", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: /승인/ })).toHaveCount(0);
+  expect(approvals).toEqual([]);
 });

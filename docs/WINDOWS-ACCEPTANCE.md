@@ -20,7 +20,7 @@ miy --context internal auth login
 ```
 
 - 브라우저에서 포털 :8443과 콘솔 :9443 모두 인증서 경고 없이 열린다. DNS 이름 대신 실제 IP가 SAN에 있어야 한다. 브라우저를 재시작해 CA 신뢰를 적용하며 경고 무시·`--insecure`를 사용하지 않는다.
-- 기존 CLI가 안내한 포털의 `/cli/device/{id}` 또는 `/cli/authorize/{id}`에서 설정된 콘솔로 이동한다. Keycloak 로그인과 승인은 콘솔에서 처리되고 포털/콘솔은 각각 세션을 만든다.
+- 기존 CLI가 안내한 포털의 `/cli/device/{id}`에서 설정된 콘솔로 이동한다. 0.5 이전 CLI의 `/cli/authorize/{id}`는 콘솔의 업그레이드 안내만 표시한다. Keycloak 로그인과 승인은 콘솔에서 처리되고 포털/콘솔은 각각 세션을 만든다.
 - 명시적 use가 없는 prod 배포자는 콘솔에서 관리할 수 있지만 포털에서 그 앱에 입장하지 못한다. dev develop 미리보기와 기존 SDK 앱의 직접 링크/reload는 동작한다.
 - 콘솔 개인 CLI 화면에서 device와 legacy 연결을 확인하고 자기 연결만 회수한다. 브라우저 logout으로 독립 CLI가 자동 회수됐다고 판단하지 않는다.
 - 새 CA·인증서로 수동 교체한 뒤 브라우저와 `miy --context internal auth status`를 다시 확인한다. 만료·다른 IP 인증서는 거부돼야 한다. 원래 CA/인증서로 복구한 결과도 기록한다.

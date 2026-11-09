@@ -13,7 +13,7 @@
 | 범위 | 최소 확인 | 상태 |
 | --- | --- | --- |
 | 기존 OIDC | 기존 `miy-web` client·realm·사용자 `sub`와 권한 연결 보존, 두 origin의 정확한 callback·logout과 재로그인 | PASS: 격리 Keycloak·HTTP/단일 IP HTTPS 두 callback과 동일 sub. 운영 issuer 전환 NOT_RUN |
-| 게시 CLI | legacy·device 상대 `verificationPath`의 고정 콘솔 이동, 기존 start·exchange·poll·refresh·응답 형식·토큰 수명·MCP 연결 유지 | PASS: 게시01e4d49 CLI+새 서버 실제 HTTPS12개, 새 CLI HTTP/HTTPS 각12개. 외부 OAuth MCP issuer 전환은 NOT_RUN |
+| 게시 CLI | device 상대 `verificationPath`의 고정 콘솔 이동, device 시작·poll·refresh·응답 형식·토큰 수명·MCP 연결 유지. legacy start·approve·exchange는 410 `cli_upgrade_required` | 2026-11-07(`a4ad370`, legacy 종료 전) PASS: 게시01e4d49 CLI+새 서버 실제 HTTPS12개, 새 CLI HTTP/HTTPS 각12개. legacy 종료 후 결과는 2026-11-09 기록. 외부 OAuth MCP issuer 전환은 NOT_RUN |
 | 세션 용도 | portal/console 세션 교차 사용과 잘못된 Origin·CSRF 거부, 콘솔에서 앱 UI·활성 자산·앱 HTML을 제공하지 않음, Core/Keycloak 내부 포트 직접 접근 거부 | PASS: 실제 두 listener·cookie/Origin/CSRF·콘솔 콘텐츠 거부·loopback bind 검사 |
 | 권한·회수 | 현재 권한·사용자 활성 상태 및 명시적 CLI 철회 반영. legacy 토큰과 device refresh family를 구분하고 브라우저 logout을 CLI 회수로 간주하지 않음 | PASS: 격리 runtime 112개 중 auth·permissions·delegation·boundary, 실제 device/legacy 회수 |
 | 단일 IP TLS | 준비한 인증서 반입, IP SAN·체인·만료 검사, 브라우저/CLI의 CA 신뢰 확인. 불신 CA·IP 불일치 거부와 TLS 검증 해제 없음 | PASS: 실제 IP SAN·CA 신뢰·Core/CLI/Chrome 및 SAN/만료 거부. Windows·인증서 수동 교체 NOT_RUN |

@@ -264,6 +264,12 @@ class FakeHost:
         self.records_change_with_candidate = False
         self.budget_before = True
         self.budget_with_candidate = True
+        # Newest first, like the GitHub API. Each test may replace a run or its jobs.
+        self.ci_runs = [{'id': 7000 + index, 'path': '.github/workflows/' + name, 'head_sha': COMMIT,
+                         'head_branch': 'main', 'event': 'push', 'status': 'completed', 'conclusion': 'success',
+                         'run_attempt': 1, 'html_url': f'https://github.test/run/{index}'}
+                        for index, name in enumerate(test.rollout.REQUIRED_CI)]
+        self.ci_jobs = {run['id']: [{'status': 'completed', 'conclusion': 'success'}] for run in self.ci_runs}
 
     def candidate_running(self):
         return self.running == NEW_SHA and all(state == 'active' for state in self.states.values())
@@ -353,6 +359,11 @@ class FakeHost:
 
     def quiet(self, args):
         args = [str(a) for a in args]
+        if args[:2] == ['gh', 'api']:
+            self.test.assertIn(f'head_sha={COMMIT}&event=push', args[2])
+            return json.dumps({'workflow_runs': self.ci_runs})
+        if args[:3] == ['gh', 'run', 'view']:
+            return json.dumps({'jobs': self.ci_jobs[int(args[3])]})
         if args[0] == 'git':
             return self.head if 'rev-parse' in args else self.dirty
         if args[:4] == ['docker', 'inspect', '-f', '{{json .NetworkSettings.Networks}}']:
@@ -474,6 +485,14 @@ class CoreRolloutTests(OfflineTest):
             'source_schema_older_than_live': lambda: setattr(self.host, 'schema', 20),
             'database_settings_differ': lambda: setattr(self.host, 'max_connections', '100'),
             'identity_settings_differ': lambda: setattr(self.host, 'pool', '100'),
+            'ci_not_successful': lambda: self.host.ci_runs[0].update(conclusion='failure'),
+            'ci_source_mismatch': lambda: self.host.ci_runs[1].update(head_branch='feature'),
+            'ci_jobs_not_successful': lambda: self.host.ci_jobs[7002].append(
+                {'status': 'completed', 'conclusion': 'cancelled'}),
+            'required_ci_missing': lambda: self.host.ci_runs.pop(),
+            # A newer failed attempt is not hidden by an older successful run of the same workflow.
+            'ci_not_successful ': lambda: self.host.ci_runs.insert(0, {**self.host.ci_runs[0], 'id': 7100,
+                                                                        'conclusion': 'failure'}),
             'connection_budget_not_ready': lambda: setattr(self.host, 'budget_before', False),
             'active_work_prevents_rollout': lambda: setattr(self.host, 'work', [{**ZERO_WORK, 'runtime': 1}]),
         }
@@ -482,7 +501,7 @@ class CoreRolloutTests(OfflineTest):
                 self.reset()
                 change()
                 code, result, release = self.run_tool()
-                self.assertEqual((code, result['failure']), (1, code_name))
+                self.assertEqual((code, result['failure']), (1, code_name.strip()))
                 record = json.loads((release / 'deployment.json').read_text())
                 self.assertEqual(record['status'], 'PREFLIGHT_FAILED')
                 self.assertFalse(record['productionMutations'])

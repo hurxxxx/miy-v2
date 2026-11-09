@@ -83,6 +83,15 @@ pub fn origin(
 #[derive(Clone)]
 pub struct ForwardContext(pub Context);
 
+/// The chain started from a browser session (OIDC or development login), not a
+/// CLI credential. Browser-originated chains must not carry administrator status.
+pub fn browser_origin(context: &Context) -> bool {
+    context
+        .origin
+        .as_ref()
+        .is_some_and(|origin| origin.kind != "legacy_cli")
+}
+
 fn intersection(left: &[String], right: &[String]) -> Vec<String> {
     left.iter().filter(|p| right.contains(p)).cloned().collect()
 }

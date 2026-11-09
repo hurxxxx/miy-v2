@@ -40,7 +40,7 @@ GitHub Actions는 `cli-foundation.yml`(Linux 서버·Linux/macOS/Windows 클라�
 
 최소 보안 구현은 [경계 인수](APP-BOUNDARIES.md#경계-인수)의 필수 행을 검사한다. 업무 포털(dev/prod)과 콘솔+Keycloak 두 출처, portal/console 용도·기존 SDK/CLI 호환이 기준이다. 후속 BV-13·외부 앱 격리·별도 IdP·MFA 의무화·자동 CA는 현재 기능 개발의 선행 검사가 아니다. 같은 BV ID의 이전 iframe 결과는 이월하지 않으며 문서 PASS로 제품 NOT_RUN을 바꾸지 않는다.
 
-실제 Core·브라우저로 포털 세션의 관리 변경·legacy/device 승인 거부와 콘솔의 정상 승인, 기존 CLI start/exchange/poll/refresh·상대 verificationPath redirect를 확인한다. realm/sub·callback·MCP 호환, device와 legacy 회수, 사용자/그룹 권한 회수, API sandbox/nosniff·정상 JSON/MF/preview·Nginx anti-frame을 검사한다. 관리 계정의 포털 사용·dev 개발 편의가 유지되는지도 확인한다. 전면 CLI 중지나 개발자 앱 사용 금지는 기본 인수가 아니며 구 위험 경로를 임시 중지할 때만 영향·복구를 별도 시험한다.
+실제 Core·브라우저로 포털 세션의 관리 변경·device 승인 거부와 콘솔의 정상 승인, device 시작·poll/refresh·상대 verificationPath redirect, legacy start/approve/exchange의 410 종료를 확인한다. 같은 호스트 다른 출처의 쿠키 인증 요청(GET·탐색 포함)이 거부되는지도 확인한다. realm/sub·callback·MCP 호환, device와 legacy 회수, 사용자/그룹 권한 회수, API sandbox/nosniff·정상 JSON/MF/preview·Nginx anti-frame을 검사한다. 관리 계정의 포털 사용·dev 개발 편의가 유지되는지도 확인한다. 전면 CLI 중지나 개발자 앱 사용 금지는 기본 인수가 아니며 구 위험 경로를 임시 중지할 때만 영향·복구를 별도 시험한다.
 
 단일 IP HTTPS는 인증서 반입·CA 신뢰/IP SAN·만료 거부·수동 교체, 실제 OIDC/CLI, 포트 공유 쿠키·잘못된 목적/중복 인증 쿠키 거부·기본 복구를 확인한다. 쿠키 가용성 잔여를 기록하고 자동 CA·전 기기 스트레스는 후속으로 둔다. [공통 ACL·PLM 연계](CORE-PERMISSIONS.md#대표-인수와-검토할-결정)는 G4·G5·G6·Invoke·서비스·이벤트·파일의 해당 기능을 구현할 때 검사하며 모두를 최소 경계의 선행 조건으로 묶지 않는다. 기존 HTTP IP 결과로 새 HTTPS 인수를 대신하지 않는다.
 

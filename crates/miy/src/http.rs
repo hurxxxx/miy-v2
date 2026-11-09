@@ -420,6 +420,30 @@ async fn ui_asset(
     )
         .into_response())
 }
+/// Browser cookies are shared by every port of a host and SameSite treats those
+/// ports as one site, so another origin's code can make a cookie-bearing request
+/// to this listener. Reject such requests before any session lookup: only this
+/// listener's own pages (or a user-typed navigation) may use its cookies. A
+/// separate development web server is allowed only in the explicit development
+/// login profile. Browsers without Fetch Metadata that omit Origin remain a
+/// documented limit.
+fn foreign_cookie_request(own: &str, development: Option<&str>, headers: &HeaderMap) -> bool {
+    let value = |name: &str| {
+        headers
+            .get(name)
+            .map(|value| value.to_str().unwrap_or("\u{0}"))
+    };
+    let origin = value("origin");
+    let trusted = |origin: &str| origin == own || development == Some(origin);
+    if origin.is_some_and(|origin| !trusted(origin)) {
+        return true;
+    }
+    match value("sec-fetch-site") {
+        None | Some("same-origin" | "none") => false,
+        Some(_) => !origin.is_some_and(trusted),
+    }
+}
+
 async fn session_guard(S(state): S<State>, mut request: Request, next: Next) -> Response {
     let Some(purpose) = request.extensions().get::<BrowserPurpose>().copied() else {
         return ApiError::forbidden().into_response();
@@ -429,6 +453,17 @@ async fn session_guard(S(state): S<State>, mut request: Request, next: Next) -> 
         .get("authorization")
         .and_then(|v| v.to_str().ok())
         .and_then(|v| v.strip_prefix("Bearer "));
+    let development = (purpose == BrowserPurpose::Portal && state.auth.development_login)
+        .then_some(state.auth.development_origin.as_str());
+    if bearer.is_none()
+        && foreign_cookie_request(
+            state.auth.browser_origin(purpose),
+            development,
+            request.headers(),
+        )
+    {
+        return ApiError::forbidden().into_response();
+    }
     let result = if let Some(token) = bearer {
         // CLI credentials cannot be used as a browser cross-origin authentication bypass.
         if request.headers().contains_key("origin") {
@@ -928,10 +963,22 @@ async fn get_job(
 ) -> ApiResult<Json<Value>> {
     Ok(Json(domain::get_job(&s, &p, id).await?))
 }
+/// Sign-in is a top-level navigation. An image, script or fetch from another
+/// origin must not create login flows or clear the development cookie.
+fn login_navigation(headers: &HeaderMap) -> bool {
+    headers
+        .get("sec-fetch-mode")
+        .is_none_or(|mode| mode.as_bytes() == b"navigate")
+}
+
 async fn login(
     S(s): S<State>,
     axum::Extension(purpose): axum::Extension<BrowserPurpose>,
+    headers: HeaderMap,
 ) -> ApiResult<Response> {
+    if !login_navigation(&headers) {
+        return Err(ApiError::forbidden());
+    }
     let (url, value) = s.auth.login(&s, purpose).await?;
     let mut r = Redirect::to(&url).into_response();
     r.headers_mut().append(
@@ -1147,4 +1194,70 @@ async fn rename_app(
     Json(v): Json<crate::registration::DisplayName>,
 ) -> ApiResult<Json<Value>> {
     Ok(Json(crate::registration::rename(&s, &p, &app, v).await?))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn headers(pairs: &[(&str, &str)]) -> HeaderMap {
+        let mut headers = HeaderMap::new();
+        for (name, value) in pairs {
+            headers.insert(
+                axum::http::HeaderName::from_bytes(name.as_bytes()).unwrap(),
+                value.parse().unwrap(),
+            );
+        }
+        headers
+    }
+
+    #[test]
+    fn cookie_requests_from_another_origin_on_the_same_host_are_rejected() {
+        let own = "https://192.168.10.20:8443";
+        let other = "https://192.168.10.20:9443";
+        let dev = "http://127.0.0.1:5173";
+        for allowed in [
+            headers(&[]),
+            headers(&[("sec-fetch-site", "same-origin")]),
+            headers(&[("sec-fetch-site", "same-origin"), ("origin", own)]),
+            headers(&[("sec-fetch-site", "none")]),
+            headers(&[("origin", own)]),
+        ] {
+            assert!(!foreign_cookie_request(own, None, &allowed));
+        }
+        for rejected in [
+            headers(&[("sec-fetch-site", "same-site")]),
+            headers(&[("sec-fetch-site", "cross-site")]),
+            headers(&[("sec-fetch-site", "same-site"), ("origin", other)]),
+            headers(&[("origin", other)]),
+            headers(&[("origin", "null")]),
+            // A top-level navigation from another origin still carries cookies.
+            headers(&[
+                ("sec-fetch-site", "same-site"),
+                ("sec-fetch-mode", "navigate"),
+            ]),
+            headers(&[("sec-fetch-site", "same-site"), ("origin", dev)]),
+        ] {
+            assert!(foreign_cookie_request(own, None, &rejected));
+        }
+        let development = headers(&[("sec-fetch-site", "same-site"), ("origin", dev)]);
+        assert!(!foreign_cookie_request(own, Some(dev), &development));
+        assert!(foreign_cookie_request(
+            own,
+            Some(dev),
+            &headers(&[("sec-fetch-site", "same-site"), ("origin", other)])
+        ));
+    }
+
+    #[test]
+    fn sign_in_starts_only_from_a_navigation() {
+        assert!(login_navigation(&headers(&[])));
+        assert!(login_navigation(&headers(&[(
+            "sec-fetch-mode",
+            "navigate"
+        )])));
+        for mode in ["no-cors", "cors", "same-origin"] {
+            assert!(!login_navigation(&headers(&[("sec-fetch-mode", mode)])));
+        }
+    }
 }

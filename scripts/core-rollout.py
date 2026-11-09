@@ -16,6 +16,10 @@ A schema or settings rollout needs a reviewed extension with a real-dump rollbac
 
 Every apply attempt needs a new --release-dir under .local; it keeps the 0700 recovery data and
 the 0600 deployment record. apply/rollback run only after an explicit production request.
+
+The preflight requires the exact source commit to have passed every required main-push GitHub
+workflow (web, cli-foundation, runtime-regression), every job included. A local PASS or a run of
+another commit never substitutes for it.
 """
 import argparse
 import contextlib
@@ -45,6 +49,8 @@ PROCESS_PROPERTIES = ('Id', 'LoadState', 'ActiveState', 'Slice', 'ControlGroup',
 # Old-column projections of these tables must survive the rollout unchanged.
 STABLE_TABLES = ['users', 'apps', 'app_registrations', 'grants', 'installations', 'releases', 'release_checks',
                  'db_resources', 'groups', 'group_members', 'group_grants', 'app_admission', 'app_controls']
+REPOSITORY = 'hurxxxx/miy-v2'
+REQUIRED_CI = ('cli-foundation.yml', 'runtime-regression.yml', 'web.yml')
 HEX40 = re.compile(r'[0-9a-f]{40}')
 HEX64 = re.compile(r'[0-9a-f]{64}')
 REL = None  # release directory of this apply/rollback
@@ -292,6 +298,28 @@ def source_preflight(source, commit):
     require(quiet(['git', '-C', source, 'status', '--porcelain']) == '', 'source_worktree_dirty')
 
 
+def ci_gate(commit):
+    """The latest run of every required workflow for this exact commit on main passed. Read-only."""
+    runs = json.loads(quiet(['gh', 'api', f'repos/{REPOSITORY}/actions/runs?head_sha={commit}'
+                                          '&event=push&per_page=100']))['workflow_runs']
+    selected = {}
+    for run in runs:  # newest first: a later failed attempt is not hidden by an older success
+        name = run['path'].rsplit('/', 1)[-1]
+        if name not in REQUIRED_CI or name in selected:
+            continue
+        require(run['head_sha'] == commit and run['head_branch'] == 'main' and run['event'] == 'push',
+                'ci_source_mismatch')
+        require(run['status'] == 'completed' and run['conclusion'] == 'success', 'ci_not_successful')
+        jobs = json.loads(quiet(['gh', 'run', 'view', str(run['id']), '--repo', REPOSITORY,
+                                 '--json', 'jobs']))['jobs']
+        require(bool(jobs) and all(job['status'] == 'completed' and job['conclusion'] == 'success'
+                                   for job in jobs), 'ci_jobs_not_successful')
+        selected[name] = {'runId': run['id'], 'attempt': run['run_attempt'], 'url': run['html_url'],
+                          'headSha': run['head_sha'], 'conclusion': run['conclusion'], 'jobs': len(jobs)}
+    require(set(selected) == set(REQUIRED_CI), 'required_ci_missing')
+    return selected
+
+
 def source_facts(source):
     version = tomllib.loads((source / 'crates/miy/Cargo.toml').read_text())['package']['version']
     numbers = [int(path.name[:4]) for path in (source / 'migrations/core').iterdir()
@@ -408,6 +436,7 @@ def preflight(args):
     require(digest(pathlib.Path(__file__).resolve()) == digest(source / 'scripts/core-rollout.py'),
             'rollout_tool_differs_from_source')
     facts = source_facts(source)
+    facts['ci'] = ci_gate(args.commit)
     require(digest(args.candidate) == args.candidate_sha256, 'candidate_hash_mismatch')
     require(call([plain(args.candidate), '--version']) == f"miy {facts['version']}", 'candidate_version_mismatch')
     require(digest(installed()) == args.installed_sha256, 'installed_binary_changed')
@@ -435,7 +464,7 @@ def public(facts):
     containers = facts['appContainers'].values()
     return {'version': facts['version'], 'schema': facts['schema'], 'executables': facts['executables'],
             'cliGuide': facts['cliGuide'], 'connectionBudget': facts['connectionBudget'], 'idle': facts['idle'],
-            'appContainers': len(facts['appContainers']),
+            'ci': facts['ci'], 'appContainers': len(facts['appContainers']),
             'runningAppContainers': sum(c['status'] == 'running' for c in containers),
             'databaseNetworks': len(facts['databaseNetworks'])}
 

@@ -57,7 +57,7 @@ AB ID는 참조를 유지한다. 이전 iframe 설계나 보안 후보의 검사
 
 | 번호·중요도 | 사실·영향 | 이번 처리 |
 | --- | --- | --- |
-| 1 높음 | legacy 승인으로 8시간 CLI 토큰, device로 access 15분·refresh family 최대 30일 발급. 피해자의 현재 권한으로 동작. logout은 CLI를 회수하지 않고 목록에 legacy가 없음 | 두 승인 모두 콘솔로 이동. 기존 목록/회수 재사용, legacy 회수 누락 보완. 새 인증 관제 제품은 후속. 공격 NOT_RUN |
+| 1 높음 | legacy 승인으로 8시간 CLI 토큰, device로 access 15분·refresh family 최대 30일 발급. 피해자의 현재 권한으로 동작. logout은 CLI를 회수하지 않고 목록에 legacy가 없음 | 두 승인 모두 콘솔로 이동. 기존 목록/회수 재사용, legacy 회수 누락 보완. 2026-11-09 결정으로 0.5 이전 CLI의 legacy 승인 흐름은 종료(시작·승인·교환 410 `cli_upgrade_required`, 발급된 토큰은 만료까지 목록·회수 유지). 새 인증 관제 제품은 후속. 공격 NOT_RUN |
 | 2 높음 | 앱 코드와 IdP가 같은 출처. 리뷰상 오류 페이지 SAMEORIGIN, 실제 비밀번호 접근은 NOT_RUN | 앱 없는 콘솔 출처에 IdP 이동·frame 차단. 별도 IdP 출처는 후속. issuer/MCP/redirect/logout·realm/sub 보존은 필수 |
 | 3 중간 | 당시 운영 7b43789 이후 검토 HEAD까지 16커밋, crates/web 34파일 +3881/−735. 대상 SHA CI 확인 도구 미완료 | 이후 사용자 요청으로 검증한 `a4ad370` 전체 범위를 별도 전환 도구의 SHA·CI·백업/복원 gate 뒤 반영. 일반 `core-rollout.py`의 CI gate 통합은 후속이며 main 자동 배포는 하지 않음 |
 | 4 중간 | 플랫폼 격리 스택만 앱 인수 수단으로 요구하면 개발자·위임 에이전트가 수행하기 어려움 | 플랫폼 경계 검사는 격리 스택. 앱 개발은 기존 dev 설치·CLI/위임·승격 흐름 유지 |
@@ -66,6 +66,9 @@ AB ID는 참조를 유지한다. 이전 iframe 설계나 보안 후보의 검사
 | 7 낮음 | worker-src만으로 기존 서비스워커를 제거하지 못함 | worker 제한·콘텐츠 gateway의 Service-Worker: script 거부, 전환 대상의 기존 worker 정리. 전 기기 자동 정리는 후속 |
 | 8 낮음 | 권한 문서 현행 설명에 목표 prod Use가 혼재 | AB-05는 소스·운영 반영. 이전 `7b43789`와 새 서버 `a4ad370`의 정책을 구분 |
 | 9 낮음 | __Host-로 포트 공유·cookie tossing/bomb을 완전히 막지 못함. 400/431 장애 가능 | 쿠키 이름·목적·중복 거부·복구 안내. 잔여 한계 명시. 별도 사이트·광범위 스트레스 인수는 후속 |
+| 10 높음(2026-11-09) | 포트가 쿠키를 나누지 않아 다른 출처의 코드가 보낸 GET·탐색에도 쿠키 세션이 붙어 실행됨. 응답은 CORS로 읽지 못해도 부수 효과는 발생 | 쿠키 인증 요청은 세션 조회 전에 Fetch Metadata·Origin을 검사해 다른 출처 요청을 거부. `/auth/login`은 탐색만 허용 |
+| 11 중간(2026-11-09) | 앱 간 연결의 후속 hop이 브라우저 원 호출자에게도 서명 identity `admin=true`를 실음 | 원 자격증명이 브라우저 세션이면 모든 hop에서 `admin=false` |
+| 12 높음(2026-11-09) | dev 앱(승인 전 코드)이 prod 앱과 같은 포털 출처에서 실행되어 여는 사람의 prod Use를 행사 | dev 전용 포털 출처를 추가하고 기존 포털을 prod 전용으로 전환(PLAN의 경계 후속 작업). 구현·운영 전환 전까지 잔여 위험 |
 
 CLI 근거는 `cli_auth.rs`의 start/approve/exchange, `auth_sessions.rs`의 approve/issue/list_sessions, `0010_cli_sessions.sql`의 30일 family, `auth.rs`의 logout이다. 이 인증 소스는 `7b43789..22c219d`에서 변경되지 않았지만 운영 공격 입증은 아니다.
 
@@ -75,9 +78,10 @@ CLI 근거는 `cli_auth.rs`의 start/approve/exchange, `auth_sessions.rs`의 app
 
 - 사내 개발은 회사가 관리하는 앱·개발자와 제한된 접속 범위에서 진행한다. dev는 시험 데이터를 사용한다. 임의 외부 앱 실행·외부망 공개는 이 최소 기준의 대상이 아니다.
 - 구 구조에서는 관리·개발·배포 계정이 미검토 앱을 실행하지 않는다. 필요한 경우 관리용 계정/프로필과 시험용 계정/프로필을 구분한다. 두 출처 경계 인수 후에는 같은 계정으로 콘솔 관리와 허용된 포털 사용을 할 수 있다.
-- legacy/device 승인을 안전한 콘솔로 함께 옮기면 정상 CLI 인증을 유지한다. 별도 긴급 배포에서 안전한 승인을 제공할 수 없을 때만 구 승인 경로의 일시 중지를 선택하며, 영향·대체 인증·해제 조건을 기록한다. CLI 전면 중지나 모든 개발자의 앱 사용 금지를 사내 개발의 기본 절차로 두지 않는다.
+- CLI 승인은 콘솔의 device 방식만 사용하며 사용자가 자기 터미널의 코드를 입력한다. 0.5 이전 CLI의 legacy 승인 흐름은 2026-11-09 사용자 결정으로 종료했다(콘솔 페이지 한 번의 클릭으로 요청자에게 CLI 자격증명이 넘어갈 수 있어서). 0.5 이전 CLI 사용자는 업그레이드 후 다시 로그인한다. CLI 전면 중지나 모든 개발자의 앱 사용 금지를 사내 개발의 기본 절차로 두지 않는다.
 - 의심 CLI credential은 legacy/device와 연결 위임을 포함해 회수한다. 현재 device 목록만으로 전체 점검 완료를 선언하지 않는다. 브라우저 logout과 CLI 회수는 별개다. 미완료 승인 flow는 전환 시 무효화한다.
 - 공개 운영의 임시 대응 책임은 플랫폼 운영 관리자, 구현·검증은 플랫폼 개발 담당자다. 적용·미조치·예외를 기록한다. 기존 공개 위험의 최초 재검토는 2026-11-13(KST) 또는 다음 운영 변경 직전 중 이른 시점이며 미완료 동안 주기적으로 확인한다. MFA는 추가 완화이며 같은 페이지 세션 악용의 해결책으로 취급하지 않는다.
+- **노출 결정(2026-11-09, 사용자):** 포털(443)과 콘솔·Keycloak(9443)을 현재처럼 공개 상태로 유지한다. 근거는 접속 공인 IP가 사내망의 출구 IP라는 사용자 설명이다. 운영 Nginx 로그 관찰(11-09): 콘솔 IdP 로그인에 접속한 비 loopback 클라이언트는 사설 대역 0, 공인 대역 2(IP는 기록하지 않음). 호스트 방화벽은 비활성이고 9443은 모든 IPv4 주소에서 listen한다. 외부망 차단 여부는 확인하지 않았다(NOT_RUN). 11-13 재검토에서 이 결정을 다시 확인한다.
 
 신규 develop을 신뢰한 담당자에게만 부여하되 기존 사용자·그룹 정책을 전면 금지로 바꾸지 않는다. 공개 서버의 긴급 hotfix에는 운영 기준 소스·해당 SHA CI·변경 범위 백업/별도 복원 확인이 필요하다. 전체 hotfix 자동화나 이 공개 서버의 전환 완료를 사내 기능 개발의 일률적 선행 조건으로 두지 않는다.
 
@@ -133,7 +137,7 @@ P/A는 하나의 JavaScript 신뢰 영역이다. 그림의 박스가 앱 간 강
 | --- | --- | --- |
 | portal 세션 | 허용된 dev/prod 업무 앱·목록·개인 최소 정보 | 관리·기록·CLI 승인 거부 |
 | console 세션 | 자기 CLI 승인·허용된 앱 관리·플랫폼 관리 | 업무 UI/API 인증 거부. 콘솔 진입이 관리자 권한을 뜻하지 않음 |
-| CLI bearer | 기존 사용자 scope·앱·환경·action | legacy/device 승인만 콘솔로. 시작·교환·poll/refresh·수명 유지 |
+| CLI bearer | 기존 사용자 scope·앱·환경·action | device 승인만 콘솔로. device 시작·poll/refresh·수명 유지. legacy 시작·승인·교환은 410 `cli_upgrade_required`, 발급된 legacy 토큰은 만료까지 유지 |
 | 사용자 위임 | 현재 권한과 지정 대상·action·기간의 교집합 | 기존 계약 유지, 확대·재위임 금지 |
 | miy_call_ | 원래 사용자·설치 승인 체인을 보존한 backend 호출 | 기존 계약 유지, 브라우저 앱 신원 증명에 사용하지 않음 |
 | 서비스 계정(V1-A2) | 후속 기능에서 정할 앱·환경·업무 action | 미구현·기본 거부. 사용자 권한 실패의 대체 수단 아님 |
@@ -143,7 +147,7 @@ P/A는 하나의 JavaScript 신뢰 영역이다. 그림의 박스가 앱 간 강
 
 - 세션·로그인 보조 쿠키는 목적별 이름과 Secure·HttpOnly·__Host-·Path=/·Domain 없음을 사용한다. 인증 쿠키 중복은 거부하고 다른 목적 쿠키로 fallback하지 않는다. IdP 쿠키는 실제 속성과 로그인 호환을 확인한다.
 - 기존 route 등록에 허용할 브라우저 용도를 선언하고 누락은 거부한다. API뿐 아니라 auth·MCP·artifact·download·preview·WebSocket도 확인한다. 기존 비브라우저 CLI·위임·app-call 판정을 재사용한다.
-- 브라우저 쓰기에는 목적별 정확한 Origin과 기존 서버 synchronizer CSRF를 적용한다. credentialed cross-origin CORS는 열지 않는다. GET은 Origin이 없을 수 있으므로 목적지·세션·경로 검사로 보호한다. 비브라우저 CLI start/exchange/refresh는 기존 challenge/verifier·credential 검사로 유지한다.
+- 브라우저 쓰기에는 목적별 정확한 Origin과 기존 서버 synchronizer CSRF를 적용한다. credentialed cross-origin CORS는 열지 않는다. 같은 호스트의 다른 포트는 쿠키를 공유하므로, 쿠키 인증 요청은 세션 조회 전에 `Sec-Fetch-Site`·Origin을 검사한다. `Sec-Fetch-Site`가 same-origin/none이 아니거나 Origin이 해당 출처와 다르면 GET·탐색도 거부한다(명시적 개발 로그인 프로필의 개발 서버 출처만 예외). Fetch Metadata가 없는 구형 브라우저가 Origin 없이 보내는 GET은 잔여 한계다. `/auth/login`은 탐색 요청만 받는다. 비브라우저 CLI device 시작·poll/refresh는 기존 credential 검사로 유지한다.
 - 콘솔/IdP 경로를 포털에서 proxy하지 않는다. 기존 승인 URL은 고정 콘솔로 flow ID만 보내는 redirect만 허용한다. 민감 정보·credential은 URL에 넣지 않는다.
 - 브라우저 업무 WebSocket은 현재 미지원·기본 거부를 유지한다. CLI DB 터널은 기존 별도 자격증명으로 유지한다. 신규 업무 WebSocket은 해당 기능 때 Origin·만료·회수를 설계한다.
 
@@ -177,7 +181,7 @@ MF AppRoot·독립 OCI 릴리스·분할 자산·플랫폼 라우터 마운트�
 
 포털은 업무 목록·업무 사용, 콘솔은 기존 관리·개인 CLI 인증 기능을 담당한다. 담당 앱 목록에는 사용 중지·미설치 앱도 포함한다. canManage 하나가 모든 변경을 허용하지 않으며 목록·상세·접수·worker는 기존 중앙 정책으로 현재 권한을 검사한다.
 
-CLI context·공개 서버 발견·작업 추적·API 경로·응답 형태를 유지한다. 기존 `verificationPath`의 상대 경로를 절대 URL로 바꾸지 않고 서버 redirect로 콘솔에 연결한다. legacy/device의 승인만 console 세션으로 제한하며 정상 start/exchange/poll/refresh는 유지한다. MCP issuer metadata와 재로그인은 실제 IdP 이동에 맞춰 갱신한다.
+CLI context·공개 서버 발견·작업 추적·API 경로·응답 형태를 유지한다. 기존 `verificationPath`의 상대 경로를 절대 URL로 바꾸지 않고 서버 redirect로 콘솔에 연결한다. device 승인은 console 세션으로 제한하고 device 시작·poll/refresh는 유지한다. 0.5 이전 CLI의 legacy start/approve/exchange는 410 `cli_upgrade_required`로 종료했다. MCP issuer metadata와 재로그인은 실제 IdP 이동에 맞춰 갱신한다.
 
 기존 device 세션 조회·철회는 재사용하고 legacy 토큰의 사용자별 조회·회수 누락만 별도 보완한다. 기존 게시 CLI의 응답 형식은 바꾸지 않으며 비밀·토큰 hash는 반환하지 않는다. 전용 인증 관제 UI·전체 credential 형식 통합은 후속이다. 허용된 위임에 반복 사람 승인을 요구하지 않되 --yes를 권한 증거로 사용하지 않는다.
 
@@ -201,6 +205,7 @@ PLM·PMS·PDM·MES·DAS는 각자 개발·배포한다. **현재 공통 신원·
 - legacy CLI 개인 목록/회수는 `/api/v1/cli/legacy-sessions`와 `/{id}` DELETE에 추가했다. 응답은 공개 UUID·발급/만료 시각뿐이며 다른 사람의 토큰을 회수할 수 없다. 콘솔 개인 CLI 화면에 device·legacy를 함께 표시한다.
 - 포털은 업무 목록·앱과 개인 최소 정보, 콘솔은 담당 앱·플랫폼 관리·개인 CLI를 표시한다. 콘솔에서는 remote AppView를 import/실행하지 않고 앱 API/artifact를 서버와 proxy가 거부한다.
 - 앱 API/preview API는 Content-Type만 전달하고 sandbox·nosniff·no-store를 부여한다. MF UI/JS에는 API sandbox를 적용하지 않는다. 게시 SDK·번들·기존 migration은 바꾸지 않았다.
+- 2026-11-09 추가: 쿠키 인증 요청의 다른 출처 거부(`http.rs` `foreign_cookie_request`), `/auth/login`의 탐색 전용, 브라우저에서 시작한 앱 간 연결의 서명 identity `admin=false`(모든 hop), legacy CLI 승인 흐름 종료와 콘솔 안내 화면, 포털 안 앱 이동의 같은 탭 복귀(다른 출처 링크만 새 탭).
 
 ## 전환과 복구
 
@@ -231,7 +236,7 @@ PLM·PMS·PDM·MES·DAS는 각자 개발·배포한다. **현재 공통 신원·
 | BV-08 | 필수 AB-03·07 | 콘솔 /identity 실제 로그인/logout·realm/sub·miy-web 보존, 정확한 callback·MCP metadata·재인증·구 flow/worker 정리. MFA 의무화는 후속 | PASS: 격리 실제 Keycloak 양쪽 로그인/logout·동일 sub, metadata/401·schema 전환. 운영 일반 OIDC portal→console SSO·로그아웃 확인. 직접 외부 OAuth MCP issuer 재인증·구 worker 정리 NOT_RUN |
 | BV-09 | 필수 AB-04·07 | 기존 SDK의 iframe 없는 로딩·라우팅·직접 링크·reload·preview·인쇄/새 탭·업데이트 정상. 새 테마·선택기·파일 기능은 각 작업 때 | PASS: 격리 실제 MF 배포·직접 링크·갱신·미저장 입력·권한 회수. 운영 허용 dev 앱 2개 MF·iframe 0·뒤로/앞으로·reload 확인. 세 번째 운영 앱(허용 실행 대상 없음)·native UI 전체·인쇄/새 탭 인수 NOT_RUN |
 | BV-10 | 필수 AB-06 | 기존 제한 CLI/MCP·위임·DB 터널 정상, 권한 확대·미지원 service/AI credential 거부, 반복 사람 승인 추가 없음 | PASS: CLI·제한 위임·합성 MCP 정책, shared DB/WS lease16개. 실제 OAuth MCP·새 gateway 경유 전체 DB 터널 인수 NOT_RUN |
-| BV-11 | 필수 AB-06·07 | 게시 CLI의 상대 verificationPath·고정 콘솔 redirect, legacy/device start/exchange/poll/refresh·관리 API 호환. 포털 승인 fallback 거부 | PASS: 격리 게시 CLI01e4d49+새 서버 HTTPS12개·구/신 CLI wire·콘솔 redirect·poll/refresh/회수. 운영 OIDC·게시 CLI device 승인/status/doctor·생성 stdio MCP 등 연결 20개 PASS |
+| BV-11 | 필수 AB-06·07 | 게시 CLI의 상대 verificationPath·고정 콘솔 redirect, device start/poll/refresh·관리 API 호환, legacy 흐름의 410 종료와 발급 토큰 목록·회수. 포털 승인 fallback 거부 | 2026-11-07 소스 `a4ad370`(legacy 종료 전) PASS: 격리 게시 CLI01e4d49+새 서버 HTTPS12개·구/신 CLI wire·콘솔 redirect·poll/refresh/회수. 운영 OIDC·게시 CLI device 승인/status/doctor·생성 stdio MCP 등 연결 20개 PASS |
 | BV-12 | 필수 AB-07 | 변경 범위 백업/별도 복원·migration·앱 ID/DB/파일/릴리스 보존·실패 복구. 전체 앱 재개발·일괄 SDK 전환 없음 | PASS: 격리 schema19→20·기존 credential/앱 DB 보존·반복 migration, 운영 백업의 별도 복원(Core 40테이블·1,474행, identity 101테이블·1,279행), 운영 schema19→20·앱 컨테이너 7개·독립 CLI credential 보존. 실제 운영 DB rollback·전체 복구 제품 인수는 NOT_RUN |
 | BV-13 | 후속 AB-04·06·07 | 베타 전 독립 에이전트 3회 개발·검사·배포·갱신. 플랫폼 소스·관리자 credential·Docker socket·평가 구현 없이 수행. 실패·개입 기록 | NOT_RUN |
 | BV-14 | 문서 AB-08 | 사내 필수/후속/한계·미구현/운영 상태, 링크·도식·권한·호환성 일치, 기존 증거 보존 | PASS: 관련 문서 상태·권한·설정 동기화, 링크 검사·역사 파일198개 보존. 실행 상세는 검증 기록 |

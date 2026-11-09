@@ -52,6 +52,14 @@ impl ApiError {
             code: code.into(),
         }
     }
+    /// A retired contract: the caller must upgrade rather than retry.
+    #[cfg(feature = "server")]
+    pub fn gone(code: &str) -> Self {
+        Self {
+            status: StatusCode::GONE,
+            code: code.into(),
+        }
+    }
     pub fn conflict(code: &str) -> Self {
         Self {
             status: StatusCode::CONFLICT,

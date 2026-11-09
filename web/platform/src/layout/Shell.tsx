@@ -82,7 +82,8 @@ export function Shell() {
 
 function ConsoleRedirect({ href }: { href: string }) {
   useEffect(() => { window.location.replace(href); }, [href]);
-  return <main className="boot"><p>관리 콘솔로 이동합니다. <NewTabLink href={href}>계속</NewTabLink></p></main>;
+  // This page replaces itself; the fallback must not open a second tab.
+  return <main className="boot"><p>관리 콘솔로 이동합니다. <a href={href}>계속</a></p></main>;
 }
 
 const ENVIRONMENTS: { id: Environment; label: string; badge: string }[] = [
@@ -114,17 +115,23 @@ function RailLink({
   short,
   icon,
   active,
-  newTab = false,
 }: {
   to: string;
   label: string;
   short?: string;
   icon: ReactNode;
   active: boolean;
-  newTab?: boolean;
 }) {
-  const content = (
-    <>
+  // Same-origin navigation stays in this tab (integrated routing). Links to another
+  // origin (portal <-> console) use NewTabLink instead.
+  return (
+    <Link
+      to={to as "/"}
+      activeOptions={{ exact: true }}
+      className="rail-item"
+      aria-label={label}
+      aria-current={active ? "page" : undefined}
+    >
       <span className="rail-icon">{icon}</span>
       {short && short !== label ? (
         <>
@@ -134,23 +141,6 @@ function RailLink({
       ) : (
         <span className="rail-label">{label}</span>
       )}
-    </>
-  );
-  if (newTab)
-    return (
-      <NewTabLink href={to} className="rail-item" aria-label={label} aria-current={active ? "page" : undefined}>
-        {content}
-      </NewTabLink>
-    );
-  return (
-    <Link
-      to={to as "/"}
-      activeOptions={{ exact: true }}
-      className="rail-item"
-      aria-label={label}
-      aria-current={active ? "page" : undefined}
-    >
-      {content}
     </Link>
   );
 }
@@ -246,7 +236,6 @@ function SignedInLayout({ user, environment }: { user: User; environment: Enviro
               label={a.name}
               icon={<AppMark mark={marks.get(a.id) ?? "?"} colorKey={a.appId} />}
               active={a.appId === activeAppId}
-              newTab
             />
           ))}
           {installations.items === null && (

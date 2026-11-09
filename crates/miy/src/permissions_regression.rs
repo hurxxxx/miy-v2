@@ -1097,7 +1097,9 @@ pub async fn run(state: &State, client: &Client, base: &str) -> Result<Vec<Strin
             .await?,
     )
     .await?;
-    let browser = h.actor(false).await?;
+    // An administrator's portal session must not hand administrator status to
+    // the destination or to any continuation hop of the same browser chain.
+    let browser = h.actor(true).await?;
     for app in [&a, &b, &c] {
         h.grant(&browser, app, "dev").await?;
     }
@@ -1124,8 +1126,16 @@ pub async fn run(state: &State, client: &Client, base: &str) -> Result<Vec<Strin
         called["verified"] == true,
         "browser app call lacked signed identity"
     );
+    ensure!(
+        b.last_identity()?["sub"] == browser.id && b.last_identity()?["admin"] == false,
+        "portal browser call carried administrator status"
+    );
     let browser_proof = b.proof()?;
     h.call(&browser_proof, &b, &c).await?;
+    ensure!(
+        c.last_identity()?["sub"] == browser.id && c.last_identity()?["admin"] == false,
+        "browser-originated continuation carried administrator status"
+    );
     let browser_child = c.proof()?;
     response(
         client

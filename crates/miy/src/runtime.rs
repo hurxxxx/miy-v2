@@ -1137,9 +1137,14 @@ pub async fn proxy(
             .is_none(),
     )
     .await?;
+    // A continuation hop authenticates without a browser purpose. Carry the
+    // original credential instead: a portal-originated chain is never admin.
+    let forward = parts.extensions.get::<crate::app_calls::ForwardContext>();
+    let browser_chain = p.browser_purpose.is_some()
+        || forward.is_some_and(|f| crate::app_calls::browser_origin(&f.0));
     let token = crate::identity::sign_identity_context(
         &p.id,
-        domain::admin(&state, &p).await.is_ok(),
+        !browser_chain && domain::admin(&state, &p).await.is_ok(),
         id,
         release,
         &secret,

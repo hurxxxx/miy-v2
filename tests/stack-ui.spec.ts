@@ -2,7 +2,6 @@ import { test, expect, type Browser, type BrowserContext, type Page } from "@pla
 import { execFileSync } from "node:child_process";
 import { closeSync, copyFileSync, mkdirSync, openSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { openNewTab } from "./new-tab";
 // @ts-expect-error plain ESM helpers shared with the CLI regression scripts
 import { fixtureEnv, workflowArgs, workflowData } from "../scripts/lib/cli-workflow.mjs";
 // @ts-expect-error plain ESM helpers shared with the CLI regression scripts
@@ -156,15 +155,14 @@ test("Keycloak login and logout through the new shell", async ({ browser }) => {
 test("deployed Docker app opens in the portal and runtime controls stay on the console", async ({ browser }) => {
   const { context, page } = await signIn(browser, "admin");
   const manifests: number[] = [];
-  context.on("response", (r) => r.url().endsWith("mf-manifest.json") && manifests.push(r.status()));
+  page.on("response", (r) => r.url().endsWith("mf-manifest.json") && manifests.push(r.status()));
   const card = appCard(page);
   await expect(card.getByRole("button", { name: "중지" })).toHaveCount(0);
-  const appPage = await openNewTab(page, card.getByRole("link", { name: "앱 열기", exact: true }));
-  await expect(appPage).toHaveURL(new RegExp(`/environments/dev/apps/${appId}$`));
-  await expect(appPage.locator(`.miy-app-root[data-miy-app="${appId}"]`).getByTestId("probe-version")).toHaveText("UI5 probe 0.1.0");
-  await expect(appPage.locator("#platform-navigation").getByRole("link", { name: appName })).toHaveAttribute("aria-current", "page");
-  await expect(appPage.getByText(/컨테이너:|마지막 서비스 검사:/)).toHaveCount(0);
-  await expect(card).toBeVisible();
+  await card.getByRole("link", { name: "앱 열기 →" }).click();
+  await expect(page).toHaveURL(new RegExp(`/environments/dev/apps/${appId}$`));
+  await expect(page.locator(`.miy-app-root[data-miy-app="${appId}"]`).getByTestId("probe-version")).toHaveText("UI5 probe 0.1.0");
+  await expect(page.locator("#platform-navigation").getByRole("link", { name: appName })).toHaveAttribute("aria-current", "page");
+  await expect(page.getByText(/컨테이너:|마지막 서비스 검사:/)).toHaveCount(0);
   expect(manifests).toContain(200);
   // V1-O2: the deployment capped this installation's roles and the app tagged its connections.
   const sql = (query: string) =>
@@ -189,8 +187,8 @@ test("deployed Docker app opens in the portal and runtime controls stay on the c
   await managedCard.getByRole("button", { name: "중지" }).click();
   await expect(managedCard.locator(".app-card-meta")).toContainText("stopped", { timeout: 120000 });
   expect(running()).toBe("false");
-  await appPage.reload();
-  await expect(appPage.getByRole("heading", { name: "앱이 실행 중이 아닙니다" })).toBeVisible();
+  await page.goto(`/environments/dev/apps/${appId}`);
+  await expect(page.getByRole("heading", { name: "앱이 실행 중이 아닙니다" })).toBeVisible();
   await managedCard.getByRole("button", { name: "시작" }).click();
   await expect(managedCard.getByRole("status", { name: "앱 실행 및 서비스 상태" })).toContainText("컨테이너: running · 서비스: 정상", {
     timeout: 120000,
@@ -293,18 +291,16 @@ test("revoking a user's permission while the app is open", async ({ browser }) =
   expect((await grant(true)).ok()).toBeTruthy();
   const user = await signIn(browser, "alice");
   const rail = user.page.locator("#platform-navigation");
-  const appPage = await openNewTab(user.page, rail.getByRole("link", { name: appName }));
-  await expect(appPage.getByTestId("probe-version")).toHaveText("UI5 probe 0.2.0");
-  await expect(appCard(appPage)).toHaveCount(0);
-  await expect(appCard(user.page)).toBeVisible();
+  await rail.getByRole("link", { name: appName }).click();
+  await expect(user.page.getByTestId("probe-version")).toHaveText("UI5 probe 0.2.0");
+  await expect(appCard(user.page)).toHaveCount(0);
 
   expect((await grant(false)).ok()).toBeTruthy();
-  await expect(appPage.locator(".app-session-bar")).toContainText("앱 상태가 변경되었습니다", { timeout: 30000 });
-  await appPage.locator("#platform-navigation").getByRole("link", { name: "홈", exact: true }).click();
-  await expect(appPage.locator("#platform-navigation").getByRole("link", { name: appName })).toHaveCount(0);
+  await expect(user.page.locator(".app-session-bar")).toContainText("앱 상태가 변경되었습니다", { timeout: 30000 });
+  await rail.getByRole("link", { name: "홈", exact: true }).click();
   await expect(rail.getByRole("link", { name: appName })).toHaveCount(0);
-  await appPage.goto(`/environments/dev/apps/${appId}`);
-  await expect(appPage.getByRole("heading", { name: "앱에 접근할 수 없습니다" })).toBeVisible();
+  await user.page.goto(`/environments/dev/apps/${appId}`);
+  await expect(user.page.getByRole("heading", { name: "앱에 접근할 수 없습니다" })).toBeVisible();
   const visible = (await (await api(user.context, "/installations", "GET", undefined, "portal")).json()) as { appId: string }[];
   expect(visible.map((a) => a.appId)).not.toContain(appId);
   await user.context.close();

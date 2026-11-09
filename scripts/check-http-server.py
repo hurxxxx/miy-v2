@@ -105,7 +105,7 @@ def private_tls(fixture, address, run):
 BROWSER = r'''
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { createHash, randomBytes } from "node:crypto";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { chromium } from "@playwright/test";
@@ -250,25 +250,18 @@ try {
 
   const verifier=randomBytes(32).toString("hex");
   const start=await context.request.post(origin+"/auth/cli/start",{data:{challenge:createHash("sha256").update(verifier).digest("hex")}});
-  assert.equal(start.status(),200);
-  const legacy=await start.json();
-  assert.equal(legacy.verificationPath,"/cli/authorize/"+legacy.id);
-  const approvePath="/api/v1/cli-authorizations/"+legacy.id+"/approve";
+  assert.equal(start.status(),410);
+  assert.equal((await start.json()).error.code,"cli_upgrade_required");
+  const legacyId=randomUUID();
+  const approvePath="/api/v1/cli-authorizations/"+legacyId+"/approve";
   assert.equal((await context.request.post(origin+approvePath,{headers:{origin,"x-miy-csrf":me.csrf},data:{}})).status(),403);
-  const legacyRedirect=await context.request.get(origin+legacy.verificationPath,{maxRedirects:0});
-  assert.equal(legacyRedirect.headers().location,consoleOrigin+legacy.verificationPath);
-  assert.equal((await context.request.post(consoleOrigin+approvePath,{headers:{origin:consoleOrigin,"x-miy-csrf":consoleMe.csrf},data:{}})).status(),200);
-  const exchange=await context.request.post(origin+"/auth/cli/exchange",{data:{id:legacy.id,verifier}});
-  assert.equal(exchange.status(),200);
-  const legacyCredential=await exchange.json();
-  assert.equal(legacyCredential.expiresIn,28800);
-  assert.equal((await context.request.get(origin+"/api/v1/me",{headers:{authorization:"Bearer "+legacyCredential.token}})).status(),200);
+  const legacyRedirect=await context.request.get(origin+"/cli/authorize/"+legacyId,{maxRedirects:0});
+  assert.equal(legacyRedirect.headers().location,consoleOrigin+"/cli/authorize/"+legacyId);
+  assert.equal((await context.request.post(consoleOrigin+approvePath,{headers:{origin:consoleOrigin,"x-miy-csrf":consoleMe.csrf},data:{}})).status(),410);
+  assert.equal((await context.request.post(origin+"/auth/cli/exchange",{data:{id:legacyId,verifier}})).status(),410);
   const legacySessions=await (await context.request.get(consoleOrigin+"/api/v1/cli/legacy-sessions")).json();
-  assert.equal(legacySessions.sessions.length,1);
-  assert.equal((await context.request.delete(consoleOrigin+"/api/v1/cli/legacy-sessions/"+legacySessions.sessions[0].id,
-    {headers:{origin:consoleOrigin,"x-miy-csrf":consoleMe.csrf}})).status(),200);
-  assert.equal((await context.request.get(origin+"/api/v1/me",{headers:{authorization:"Bearer "+legacyCredential.token}})).status(),401);
-  pass("legacy start/exchange and 8-hour wire contract remain compatible; only console approval and explicit revocation work");
+  assert.equal(legacySessions.sessions.length,0);
+  pass("retired legacy start/approve/exchange answer 410 cli_upgrade_required; the published relative approval path still reaches the console notice");
 
   const logout = await context.request.post(origin+"/auth/logout",{headers:{origin,"x-miy-csrf":me.csrf},data:{}});
   assert.equal(logout.status(),200);

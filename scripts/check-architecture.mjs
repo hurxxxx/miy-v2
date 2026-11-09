@@ -952,41 +952,21 @@ try {
     ok(
       "UI assets require app access; migration files are not public artifacts",
     );
-    // Preserve coverage for the supported legacy 0.4 authorization protocol.
+    // The pre-0.5 browser-approval CLI login is retired (410 cli_upgrade_required).
     const challenge = createHash("sha256").update("x".repeat(40)).digest("hex");
-    const flow = await (
-      await fetch(origin + "/auth/cli/start", {
+    for (const [path, body] of [
+      ["/auth/cli/start", { challenge }],
+      ["/auth/cli/exchange", { id: crypto.randomUUID(), verifier: "x".repeat(40) }],
+    ]) {
+      const retired = await fetch(origin + path, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ challenge }),
-      })
-    ).json();
-    await api(developer, `/api/v1/cli-authorizations/${flow.id}/approve`, {});
-    const exchange = async (verifier) =>
-      fetch(origin + "/auth/cli/exchange", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ id: flow.id, verifier }),
+        body: JSON.stringify(body),
       });
-    assert.equal((await exchange("wrong".repeat(10))).status, 401);
-    const issued = await exchange("x".repeat(40));
-    assert.equal(issued.status, 200);
-    const { token } = await issued.json();
-    assert.equal((await exchange("x".repeat(40))).status, 401);
-    const revoked = await fetch(origin + "/api/v1/cli/logout", {
-      method: "POST",
-      headers: { authorization: "Bearer " + token },
-    });
-    assert.equal(revoked.status, 200);
-    assert.equal(
-      (
-        await fetch(origin + "/api/v1/me", {
-          headers: { authorization: "Bearer " + token },
-        })
-      ).status,
-      401,
-    );
-    ok("CLI verifier binding, single-use exchange and credential revocation");
+      assert.equal(retired.status, 410);
+      assert.equal((await retired.json()).error.code, "cli_upgrade_required");
+    }
+    ok("retired legacy CLI login answers 410 cli_upgrade_required");
     const unauthorized = await fetch(`${origin}/api/v1/apps/${app.id}/images`, {
       method: "POST",
       headers: {

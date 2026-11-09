@@ -236,12 +236,12 @@ for (const target of ["app", "environment"] as const) {
     const harness = await appHarness(page);
     const pending = await harness.holdNextPoll();
     const next = target === "app" ? harness.second : harness.production;
-    // Launch links now open another tab. Keep this regression about late
-    // responses in one document by exercising a browser-history route change.
-    await page.evaluate((path) => {
-      history.pushState({}, "", path);
-      window.dispatchEvent(new PopStateEvent("popstate"));
-    }, `/environments/${next.environment}/apps/${next.appId}`);
+    if (target === "app")
+      await page.getByRole("link", { name: "두 번째 앱", exact: true }).click();
+    else {
+      await page.getByRole("link", { name: "운영 영역", exact: true }).click();
+      await page.getByRole("link", { name: "첫 번째 앱", exact: true }).click();
+    }
     await expect(page.getByTestId("installation")).toHaveText(next.id);
     harness.first.health = {
       ...harness.first.health!,

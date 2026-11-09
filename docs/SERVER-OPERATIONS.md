@@ -18,7 +18,7 @@
 - 성공한 반영은 11:44:14~11:44:36 KST(02:44:14~02:44:36 UTC), 공개 업무 경로 제한은 약 22초였다. 서버 바이너리 SHA-256은 `450a1709dea67803ce120bcc8c4fc55d9823f28006cf420378f312c93c26e5a2`다.
 - 최종 Core 백업은 231,772 bytes, 40개 테이블·1,474행이며 별도 복원과 schema19→20 리허설을 통과했다. identity 101개 테이블·1,279행의 별도 덤프 복원도 PASS다. 이는 전체 호스트 복구 제품의 인수가 아니다.
 - 기존 Keycloak·PostgreSQL과 앱 컨테이너 7개(실행 5·중지 2)의 ID·상태, 독립 CLI credential을 보존했다. 컨테이너를 재생성하지 않고 Keycloak realm `frontendUrl`과 기존 `miy-web`의 정확한 callback/logout URI만 좁게 바꿔 realm·사용자 sub·client 신원을 유지했다. Core/Keycloak 내부 포트는 loopback이다.
-- 전환 전용 도구가 대상 SHA·필수 CI·후보/백업 해시를 확인하고 유지보수 응답 → 설정·DB·Core/UI 전환 → 보존/기능 확인 → 새 경로 공개 순서로 처리했다. 일반 `core-rollout.py`에 CI gate와 migration/설정 전환을 통합하는 일은 남아 있다.
+- 전환 전용 도구가 대상 SHA·필수 CI·후보/백업 해시를 확인하고 유지보수 응답 → 설정·DB·Core/UI 전환 → 보존/기능 확인 → 새 경로 공개 순서로 처리했다. 일반 `core-rollout.py`에는 2026-11-09 정확한 SHA CI gate를 추가했다. migration/설정 전환 통합은 남아 있다.
 - 첫 시도 `core/`는 02:41:43 UTC에 Nginx reload 준비 경쟁으로 DB 변경 전에 중단·자동 복귀했다. 보완 후 `core-02/`에서 성공했으며 두 기록을 보존한다. 실제 운영 DB restore/rollback은 실행하지 않았다.
 - 운영 후 일반 OIDC의 포털 로그인→콘솔 SSO, 게시 CLI의 device 승인·status·doctor, 기존 SDK 앱 초기화·생성 stdio MCP의 catalog/contract/components/help·자기 세션 정리 등 연결 20개 PASS다. 허용된 실행 dev 앱 2개에서 MF 로딩·iframe 0·뒤로/앞으로·reload를 확인했고, 정적 자산 63건은 200이었다. 콘솔 앱/remote 요청·페이지 오류·업무 쓰기/WS 시도는 0이며 포털 관리 API 403과 두 세션 로그아웃 후 401을 확인했다. 공개 7개 경로의 상태·헤더와 공유 개발 로그인 꺼짐도 확인했다. 세 번째 앱은 허용된 실행 대상이 없어 NOT_RUN이다.
 
@@ -245,7 +245,8 @@ python3 scripts/check-db-connections.py
 
 **서버 `scripts/core-rollout.py`**
 
-- **범위:** core migration 집합이 운영 DB와 같은 소스의 서버 바이너리 교체만 한다. 소스의 migration이 많거나 적으면 `migration_rollout_not_supported`·`source_schema_older_than_live`로 거부한다. PostgreSQL 연결 한도와 Keycloak 풀은 기대값(기본 200·10)과 같은지 확인만 하고 바꾸지 않는다. migration·설정 전환이 필요한 반영은 실제 덤프 rollback 리허설과 해당 SHA CI·전체 변경 범위 확인을 포함한 별도 검증 절차가 필요하다. 일반 도구의 해당 기능·CI gate 통합은 미구현이다.
+- **범위:** core migration 집합이 운영 DB와 같은 소스의 서버 바이너리 교체만 한다. 소스의 migration이 많거나 적으면 `migration_rollout_not_supported`·`source_schema_older_than_live`로 거부한다. PostgreSQL 연결 한도와 Keycloak 풀은 기대값(기본 200·10)과 같은지 확인만 하고 바꾸지 않는다. migration·설정 전환이 필요한 반영은 실제 덤프 rollback 리허설과 해당 SHA CI·전체 변경 범위 확인을 포함한 별도 검증 절차가 필요하며, 일반 도구의 migration·설정 전환은 미구현이다.
+- **CI gate(2026-11-09):** 사전 확인에서 `gh`로 대상 commit의 main push workflow(`web.yml`, `cli-foundation.yml`, `runtime-regression.yml`)의 최신 실행이 모두 completed/success이고 모든 job이 성공했는지 확인한다. 실패·누락·다른 branch면 `ci_not_successful`·`ci_jobs_not_successful`·`ci_source_mismatch`·`required_ci_missing`로 아무것도 바꾸지 않고 거부한다. 확인한 run ID·URL은 결과와 기록에 남긴다.
 - **`inspect`(기본):** 바꾸지 않고 `apply`의 사전 확인만 한다. 소스 commit·clean 상태, 실행 중인 도구와 소스 사본의 일치, 후보 해시·버전, 설치 파일과 serve·worker 실제 실행 파일의 해시, schema, 연결 설정·예산, health·게시 CLI 안내, 대기 작업 0, 앱 컨테이너를 확인한다. 서비스의 `Id`·`Slice`·cgroup 경로와 cgroup v2의 읽기 가능 여부도 중지 전에 점검한다.
 - **`apply`:** 같은 확인 후 코어를 멈추고 프로세스가 없음을 확인한 뒤 대기 작업을 다시 확인한다. 새 덤프를 일회용 PostgreSQL에 복원해 행 수와 후보의 migration(변경 없음)을 확인해야 설치한다. 시작 후 health·게시 CLI 안내·실행 파일 해시·schema·주요 레코드 해시·앱 컨테이너·연결 예산을 확인한다.
 - **실패 처리:** 후보 시작 전 실패도 실제 중지 검사를 통과해야 해시를 확인한 이전 바이너리를 다시 설치하고 코어를 시작한다(`ROLLED_BACK`). 중지 확인에 실패하면 `ROLLBACK_FAILED`로 수동 판단을 남기며, 잔류 프로세스를 강제 종료하거나 서비스를 시작하지 않는다. 시작 후 실패는 새로 받은 쓰기를 덮어쓰지 않도록 코어를 멈춘다(`POST_START_FAILED`). 운영자가 판단한 뒤 `rollback`으로 이전 바이너리를 다시 설치·시작한다. 보관한 바이너리 해시가 다르거나 설치 파일이 이 반영의 것이 아니면 시작하지 않는다. 시작 직후 사용자의 정상 쓰기도 레코드 해시 비교를 실패시킬 수 있으므로 이용이 적은 시간에 반영한다.
