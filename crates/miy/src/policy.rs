@@ -279,7 +279,7 @@ impl Facts {
 
     /// The environment's management grant: administrators, `develop` in dev, `deploy` in prod.
     pub fn manages(&self, app: &str, env: &str) -> bool {
-        if self.browser_purpose == Some(BrowserPurpose::Portal) {
+        if self.browser_purpose.is_some_and(BrowserPurpose::portal) {
             return false;
         }
         self.enabled_user().is_some_and(|user| {
@@ -296,7 +296,7 @@ impl Facts {
     /// The user's own right behind a delegated action: the management grant for
     /// management actions, any grant for reads.
     pub fn delegable(&self, app: &str, env: &str, action: Action) -> bool {
-        if self.browser_purpose == Some(BrowserPurpose::Portal) {
+        if self.browser_purpose.is_some_and(BrowserPurpose::portal) {
             return false;
         }
         let grants = self.grants(app, env);
@@ -326,11 +326,12 @@ impl Facts {
     }
 
     /// Console metadata lists apps with management read, even before installation or
-    /// while company-disabled. Portal metadata lists usable apps only. Non-browser
-    /// callers retain their existing discovery of apps with any effective grant.
+    /// while company-disabled. Portal metadata lists apps usable in that portal's
+    /// environment only. Non-browser callers retain their existing discovery of apps
+    /// with any effective grant.
     pub fn sees_app(&self, app: &str) -> bool {
         match self.browser_purpose {
-            Some(BrowserPurpose::Portal) => {
+            Some(BrowserPurpose::Portal | BrowserPurpose::DevPortal) => {
                 return ENVIRONMENTS
                     .iter()
                     .any(|env| self.decide(app, env, AppAction::Use).is_ok());
@@ -353,7 +354,13 @@ impl Facts {
     }
 
     pub fn decide(&self, app: &str, env: &str, action: AppAction) -> Result<(), Denial> {
-        if self.browser_purpose == Some(BrowserPurpose::Portal) && action != AppAction::Use {
+        // A portal session only uses apps, and only in its own environment: the prod
+        // portal never loads or calls dev code, the dev portal never reaches prod data.
+        // This one check covers app APIs, UI assets, directory, connections, lists and
+        // `canOpen`. Non-browser credentials keep both environments.
+        if let Some(purpose) = self.browser_purpose.filter(|p| p.portal())
+            && (action != AppAction::Use || purpose.environment() != Some(env))
+        {
             return Err(Denial::Forbidden);
         }
         match action {
@@ -488,7 +495,7 @@ impl Write {
         p: &Principal,
         action: PlatformAction,
     ) -> ApiResult<Decided> {
-        if p.browser_purpose == Some(BrowserPurpose::Portal) {
+        if p.browser_purpose.is_some_and(BrowserPurpose::portal) {
             return Err(ApiError::forbidden());
         }
         delegations::unrestricted(p)?;
@@ -768,6 +775,11 @@ mod tests {
         develop: false,
         deploy: false,
     };
+    const DEPLOY: Grants = Grants {
+        use_: false,
+        develop: false,
+        deploy: true,
+    };
 
     #[test]
     fn use_requires_explicit_prod_admission_even_for_admin() {
@@ -841,25 +853,58 @@ mod tests {
     }
 
     #[test]
-    fn portal_preserves_dev_preview_but_cannot_manage_or_delegate() {
-        for (admin, grants) in [(true, NONE), (false, DEVELOP)] {
-            let mut portal = facts(admin, grants, true);
-            portal.browser_purpose = Some(BrowserPurpose::Portal);
-            assert!(portal.decide("app", "dev", AppAction::Use).is_ok());
-            for env in ENVIRONMENTS {
-                for action in [
-                    AppAction::Develop,
-                    AppAction::Manage(Action::Read),
-                    AppAction::Manage(Action::Start),
-                    AppAction::Observe,
-                    AppAction::Request(Action::Promote),
-                    AppAction::Delegate(Action::Read),
-                ] {
-                    assert_eq!(portal.decide("app", env, action), Err(Denial::Forbidden));
+    fn each_portal_uses_only_its_own_environment_and_never_manages_or_delegates() {
+        // Dev preview (admin or develop, also while company-disabled) works only on the
+        // dev portal; the prod portal never loads or calls dev code.
+        for disabled in [false, true] {
+            for (admin, grants) in [(true, NONE), (false, DEVELOP)] {
+                let mut dev = facts(admin, grants, disabled);
+                dev.browser_purpose = Some(BrowserPurpose::DevPortal);
+                assert!(dev.decide("app", "dev", AppAction::Use).is_ok());
+                assert!(dev.flags("app", "dev").can_open);
+                assert!(dev.sees_app("app"));
+                let mut prod = facts(admin, grants, disabled);
+                prod.browser_purpose = Some(BrowserPurpose::Portal);
+                assert_eq!(
+                    prod.decide("app", "dev", AppAction::Use),
+                    Err(Denial::Forbidden)
+                );
+                assert!(!prod.flags("app", "dev").can_open);
+                assert!(!prod.sees_app("app"));
+            }
+        }
+        // An explicit use grant in both environments still opens only the matching one.
+        for (purpose, allowed, denied) in [
+            (BrowserPurpose::Portal, "prod", "dev"),
+            (BrowserPurpose::DevPortal, "dev", "prod"),
+        ] {
+            let mut portal = facts(false, USE, false);
+            portal.browser_purpose = Some(purpose);
+            assert!(portal.decide("app", allowed, AppAction::Use).is_ok());
+            assert_eq!(
+                portal.decide("app", denied, AppAction::Use),
+                Err(Denial::Forbidden)
+            );
+        }
+        for purpose in [BrowserPurpose::Portal, BrowserPurpose::DevPortal] {
+            for (admin, grants) in [(true, NONE), (false, DEVELOP), (false, DEPLOY)] {
+                let mut portal = facts(admin, grants, true);
+                portal.browser_purpose = Some(purpose);
+                for env in ENVIRONMENTS {
+                    for action in [
+                        AppAction::Develop,
+                        AppAction::Manage(Action::Read),
+                        AppAction::Manage(Action::Start),
+                        AppAction::Observe,
+                        AppAction::Request(Action::Promote),
+                        AppAction::Delegate(Action::Read),
+                    ] {
+                        assert_eq!(portal.decide("app", env, action), Err(Denial::Forbidden));
+                    }
+                    assert!(!portal.flags("app", env).can_manage);
+                    assert!(!portal.flags("app", env).can_promote);
+                    assert!(!portal.manages("app", env));
                 }
-                assert!(!portal.flags("app", env).can_manage);
-                assert!(!portal.flags("app", env).can_promote);
-                assert!(!portal.manages("app", env));
             }
         }
     }

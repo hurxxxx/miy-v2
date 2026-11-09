@@ -56,11 +56,13 @@ except KeyError:
 state = args.state_dir.resolve()
 settings = json.loads((state / 'server.json').read_text())
 origin = urllib.parse.urlsplit(settings['origin'])
-if not settings.get('consoleOrigin') or not settings.get('consoleBind'):
-    parser.error('Run bootstrap with distinct portal/console origins and internal binds first')
+if not all(settings.get(key) for key in ('consoleOrigin', 'consoleBind', 'devPortalOrigin', 'devPortalBind')):
+    parser.error('Run bootstrap with distinct portal/console/dev portal origins and internal binds first')
 console_origin = urllib.parse.urlsplit(settings['consoleOrigin'])
-if settings['origin'] == settings['consoleOrigin'] or origin.scheme != console_origin.scheme:
-    parser.error('Portal and console origins must be distinct and use the same transport')
+dev_portal_origin = urllib.parse.urlsplit(settings['devPortalOrigin'])
+browser_origins = [settings['origin'], settings['consoleOrigin'], settings['devPortalOrigin']]
+if len(set(browser_origins)) != 3 or {console_origin.scheme, dev_portal_origin.scheme} != {origin.scheme}:
+    parser.error('Portal, console and dev portal origins must be distinct and use the same transport')
 if origin.scheme == 'https' and (args.certificate is None or args.key is None):
     parser.error('HTTPS requires --certificate PATH and --key PATH')
 if origin.scheme not in ('http', 'https'):
@@ -74,16 +76,17 @@ if origin.scheme == 'http' and not settings.get('allowHttp'):
             return ipaddress.ip_address(public.hostname).is_loopback
         except ValueError:
             return False
-    if not all(loopback(value) for value in [origin, console_origin]):
+    if not all(loopback(value) for value in [origin, console_origin, dev_portal_origin]):
         parser.error('The non-loopback HTTP profile must explicitly allow HTTP')
 if origin.scheme == 'https':
     try:
-        validate_certificate([settings['origin'], settings['consoleOrigin']], args.certificate,
+        validate_certificate(browser_origins, args.certificate,
                              args.key, args.ca_file or settings.get('caFile'))
     except (ValueError, OSError) as error:
         parser.error(str(error))
 core = 'http://' + settings['bind']
 console_core = 'http://' + settings['consoleBind']
+dev_portal_core = 'http://' + settings['devPortalBind']
 identity = f"http://127.0.0.1:{settings['identityPort']}"
 upgrade_variable = '$' + args.service_prefix.replace('-', '_') + '_connection_upgrade'
 tls = ''
@@ -114,12 +117,19 @@ def security_headers(indent='    ', console=False):
             f'{indent}add_header Content-Security-Policy "{policy}" always;\n')
 
 
-def server(public, trusted=False):
+def server(public, trusted=False, dev_portal=False):
     public_port = public.port or (443 if public.scheme == 'https' else 80)
     public_host = '[' + public.hostname + ']' if ':' in public.hostname else public.hostname
     public_listen = f'[::]:{public_port}' if ':' in public.hostname else str(public_port)
-    upstream = console_core if trusted else core
-    if trusted:
+    upstream = console_core if trusted else dev_portal_core if dev_portal else core
+    if dev_portal:
+        # Dev app code runs here. Browser sign-in and dev app use only: no identity
+        # pages, CLI approval, MCP or OAuth metadata (CLI and MCP use the portal).
+        boundaries = '''    if ($http_service_worker = "script") { return 403; }
+    location /identity { return 404; }
+    location ~ ^/(cli/(authorize|device)|auth/cli|mcp|\\.well-known)(/|$) { return 404; }
+'''
+    elif trusted:
         boundaries = f'''    # No app content, even through direct URLs or SPA fallback.
     if ($http_service_worker = "script") {{ return 403; }}
     location ~ ^/(artifacts(/|$)|preview(/|$)|((environments/[^/]+/)?apps)(/|$)|api/v1/(preview(/|$)|installations/[^/]+/(api(/|$)|connections/[^/]+/api(/|$)))) {{
@@ -166,12 +176,12 @@ def server(public, trusted=False):
 '''
 
 
-nginx_text = f'''# Generated from fixed portal/console settings. Both sites are one boundary.
+nginx_text = f'''# Generated from fixed portal/console/dev-portal settings. One listener per browser purpose.
 map $http_upgrade {upgrade_variable} {{
     default upgrade;
     '' close;
 }}
-''' + server(origin) + server(console_origin, trusted=True)
+''' + server(origin) + server(console_origin, trusted=True) + server(dev_portal_origin, dev_portal=True)
 (state / 'nginx-miy.conf').write_text(nginx_text)
 for service in ['serve', 'worker']:
     text = f'''# Generated file. run-service.sh reads private runtime.env and removes unused secrets.

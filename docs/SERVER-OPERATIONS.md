@@ -279,4 +279,14 @@ python3 scripts/ui-rollout.py apply --release-dir <같은 경로> --expected-com
 python3 scripts/ui-rollout.py rollback --release-dir <같은 경로>
 ```
 
+**dev 포털 추가 전환(준비 완료, 운영 미실행).** 2026-11-09 결정한 dev 앱 전용 포털은 모든 변경이 더하기만 하고 이전 서버 바이너리가 각 단계 뒤에도 그대로 동작한다. 그래서 유지보수 화면 없이 아래 순서의 작은 단계로 진행하고 각 단계를 따로 되돌린다. 운영 주소(포트 또는 호스트명)와 실행은 사용자 확인 뒤에만 한다.
+
+1. `python3 scripts/dev-portal-settings.py inspect --dev-portal-origin <주소>`: 주소·내부 bind·공개 포트 사용 여부·Keycloak `miy-web` 상태를 읽기만 한다.
+2. `... apply --dev-portal-origin <주소> --release-dir .local/release-<commit>-dev-portal`: `server.json`·`runtime.env`·`compose.env`에 dev 포털 키만 줄 단위로 추가하고(다른 줄은 바이트 동일), Keycloak `miy-web`에 dev 포털 callback·logout URI만 더한다. web origins·secret·사용자는 바꾸지 않는다. 이전 바이너리는 새 키를 무시한다.
+3. `core-rollout.py apply --widen-migration 21 ...`: 정확한 SHA CI gate, 실제 dump의 복원·migration 리허설 뒤 서버를 바꾸고 고정된 `0021_dev_portal.sql`(제약 확장만)을 적용한다. 이 시점부터 기존 포털은 dev 앱을 거부한다.
+4. `dev-portal-settings.py nginx-apply --release-dir ... --certificate ... --key ...`: 다시 생성한 설정이 현재 운영 파일과 dev 포털 server 블록 하나만 다를 때만 설치하고 `nginx -t` 후 reload한다.
+5. `ui-rollout.py apply`: 새 UI는 dev 포털이 없는 구 서버에서도 동작하므로 순서상 위험이 없다.
+
+되돌릴 때는 역순으로 `ui-rollout.py rollback`, `nginx-restore`, `core-rollout.py rollback`(이전 바이너리는 schema 21에서 동작하며 DB는 되돌리지 않는다), `dev-portal-settings.py restore`를 실행한다. 각 도구는 적용 뒤 바뀐 파일·설정을 발견하면 되돌리지 않고 거부한다.
+
 같은 schema·같은 인증 계약의 일반 변경은 서버를 반영하고 확인한 다음 웹 화면을 반영한다. 이번처럼 세션·issuer·schema 계약이 함께 바뀌면 개별 적용 명령을 순서 없이 실행하지 않고 유지보수 응답 아래 검증한 하나의 전환 절차로 묶는다. 반영 후 읽기 위주 확인은 §5의 연결 검사와 별도 브라우저 확인으로 한다. 게시 CLI·Windows 설치 파일 교체는 이 도구의 범위가 아니다([CLI 릴리스](CLI-RELEASE.md)).

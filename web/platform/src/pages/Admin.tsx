@@ -25,7 +25,7 @@ export function Admin() {
 }
 
 function AdminConsole({ csrf }: { csrf: string }) {
-  const { portalOrigin } = useSurface();
+  const surface = useSurface();
   // The runtime panel uses the management list; the shared list feeds the rail.
   const installations = useInstallations();
   const managed = useManagedInstallations();
@@ -200,7 +200,7 @@ function AdminConsole({ csrf }: { csrf: string }) {
                       {a.version} · DB {a.dbStatus}
                     </p>
                     {a.canOpen ? (
-                      <NewTabLink href={surfaceUrl(portalOrigin, environmentPath(a.environment, a.appId))}>포털에서 앱 열기</NewTabLink>
+                      <NewTabLink href={surfaceUrl(a.environment === "prod" ? surface.portalOrigin : surface.devPortalOrigin, environmentPath(a.environment, a.appId))}>포털에서 앱 열기</NewTabLink>
                     ) : (
                       <p className="ui-empty-inline">
                         {a.appDisabled

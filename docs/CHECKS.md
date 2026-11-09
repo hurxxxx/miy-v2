@@ -38,7 +38,7 @@ GitHub Actions는 `cli-foundation.yml`(Linux 서버·Linux/macOS/Windows 클라�
 | 서버 구성 생성(`bootstrap.py`, `render-server-config.py`, `configure-identity.py`) | `check-static.sh scripts`(`check-server-config.py` 포함) | 운영 `.local`에 bootstrap·seed·Keycloak 재설정을 실행하지 않는다 |
 | 운영 반영(v2.dwdcc.kr) | 위 해당 검사 전부, [배포 도구](SERVER-OPERATIONS.md#7-배포-도구)의 `inspect`(백업·별도 복원 확인과 연결 예산은 `core-rollout.py apply`가 수행) | health·설치 안내 버전, 게시 CLI로 `node scripts/check-platform-connection.mjs`, 읽기 위주 브라우저 확인, 운영 기록 갱신 |
 
-최소 보안 구현은 [경계 인수](APP-BOUNDARIES.md#경계-인수)의 필수 행을 검사한다. 업무 포털(dev/prod)과 콘솔+Keycloak 두 출처, portal/console 용도·기존 SDK/CLI 호환이 기준이다. 후속 BV-13·외부 앱 격리·별도 IdP·MFA 의무화·자동 CA는 현재 기능 개발의 선행 검사가 아니다. 같은 BV ID의 이전 iframe 결과는 이월하지 않으며 문서 PASS로 제품 NOT_RUN을 바꾸지 않는다.
+최소 보안 구현은 [경계 인수](APP-BOUNDARIES.md#경계-인수)의 필수 행을 검사한다. 업무 포털(prod)·dev 포털(dev)·콘솔+Keycloak 세 출처, portal/dev_portal/console 용도·환경별 Use 판정·기존 SDK/CLI 호환이 기준이다. 후속 BV-13·외부 앱 격리·별도 IdP·MFA 의무화·자동 CA는 현재 기능 개발의 선행 검사가 아니다. 같은 BV ID의 이전 iframe 결과는 이월하지 않으며 문서 PASS로 제품 NOT_RUN을 바꾸지 않는다.
 
 실제 Core·브라우저로 포털 세션의 관리 변경·device 승인 거부와 콘솔의 정상 승인, device 시작·poll/refresh·상대 verificationPath redirect, legacy start/approve/exchange의 410 종료를 확인한다. 같은 호스트 다른 출처의 쿠키 인증 요청(GET·탐색 포함)이 거부되는지도 확인한다. realm/sub·callback·MCP 호환, device와 legacy 회수, 사용자/그룹 권한 회수, API sandbox/nosniff·정상 JSON/MF/preview·Nginx anti-frame을 검사한다. 관리 계정의 포털 사용·dev 개발 편의가 유지되는지도 확인한다. 전면 CLI 중지나 개발자 앱 사용 금지는 기본 인수가 아니며 구 위험 경로를 임시 중지할 때만 영향·복구를 별도 시험한다.
 

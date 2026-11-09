@@ -15,7 +15,7 @@ import { Loading } from "./ui";
 const AppView = lazy(() => import("./app/AppView").then((module) => ({ default: module.AppView })));
 function AppRoute() {
   const { surface } = useSurface();
-  if (surface !== "portal") return null;
+  if (surface === "console") return null;
   return <Suspense fallback={<Loading />}><AppView /></Suspense>;
 }
 function HomeRoute() {

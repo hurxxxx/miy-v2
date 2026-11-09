@@ -83,11 +83,13 @@ async fn main() -> anyhow::Result<()> {
   installationRow = (cli(["status"]) as { environment: string; id: string; releaseId: string }[]).find((v) => v.environment === "dev");
 }
 
-async function surfaceOrigin(context: BrowserContext, surface: "portal" | "console") {
+// The deployed fixture app is a dev installation: it runs only on the dev portal.
+type Surface = "portal" | "dev_portal" | "console";
+async function surfaceOrigin(context: BrowserContext, surface: Surface) {
   const options = await (await context.request.get(origin + "/auth/options")).json();
-  return (surface === "console" ? options.consoleOrigin : options.portalOrigin) as string;
+  return { portal: options.portalOrigin, dev_portal: options.devPortalOrigin, console: options.consoleOrigin }[surface] as string;
 }
-async function signInPage(context: BrowserContext, user: string, surface: "portal" | "console") {
+async function signInPage(context: BrowserContext, user: string, surface: Surface) {
   const selectedOrigin = await surfaceOrigin(context, surface);
   const page = await context.newPage();
   page.on("pageerror", (e) => console.log(`[${user}] pageerror: ${e.message}`));
@@ -107,11 +109,11 @@ async function signInPage(context: BrowserContext, user: string, surface: "porta
   await expect(page.getByRole("button", { name: "로그아웃" })).toBeVisible();
   return page;
 }
-async function signIn(browser: Browser, user: string, surface: "portal" | "console" = "portal"): Promise<{ context: BrowserContext; page: Page }> {
+async function signIn(browser: Browser, user: string, surface: Surface = "dev_portal"): Promise<{ context: BrowserContext; page: Page }> {
   const context = await browser.newContext();
   return { context, page: await signInPage(context, user, surface) };
 }
-async function api(context: BrowserContext, path: string, method = "GET", data?: unknown, surface: "portal" | "console" = "console") {
+async function api(context: BrowserContext, path: string, method = "GET", data?: unknown, surface: Surface = "console") {
   const selectedOrigin = await surfaceOrigin(context, surface);
   const csrf = (await (await context.request.get(selectedOrigin + "/api/v1/me")).json()).csrf;
   return context.request.fetch(selectedOrigin + "/api/v1" + path, { method, data, headers: { origin: selectedOrigin, "x-miy-csrf": csrf } });
@@ -147,7 +149,7 @@ test("Keycloak login and logout through the new shell", async ({ browser }) => {
   await expect(page.getByText("Invalid redirect uri", { exact: false })).toHaveCount(0);
   if (await page.locator("#kc-logout").count()) await page.locator("#kc-logout").click();
   await expect(page.getByRole("heading", { name: "로그인" })).toBeVisible();
-  expect((await context.request.get(origin + "/api/v1/me")).status()).toBe(401);
+  expect((await context.request.get((await surfaceOrigin(context, "dev_portal")) + "/api/v1/me")).status()).toBe(401);
   await context.close();
   checks.push("keycloak-login-logout");
 });
@@ -236,7 +238,8 @@ test("a real portal module cannot use console privileges or read the IdP, and AP
     const consoleMe = await context.request.get(consoleOrigin + "/api/v1/me");
     expect(consoleMe.status()).toBe(200);
     expect((await consoleMe.json()).browserPurpose).toBe("console");
-    await page.goto(`/environments/dev/apps/${appId}`);
+    const devOrigin = await surfaceOrigin(context, "dev_portal");
+    await page.goto(`${devOrigin}/environments/dev/apps/${appId}`);
     await expect(page.getByTestId("probe-version")).toHaveText("UI5 probe 0.2.0");
     await expect(page.locator("iframe")).toHaveCount(0);
     // This button and the fetch calls are part of the built, deployed MF module.
@@ -267,15 +270,18 @@ test("a real portal module cannot use console privileges or read the IdP, and AP
     await expect(page.locator("iframe")).toHaveCount(0);
 
     const apiPath = `/api/v1/installations/${installation().id}/api/boundary-html`;
-    const html = await context.request.get(origin + apiPath);
+    const html = await context.request.get(devOrigin + apiPath);
     expect(html.status()).toBe(200);
     expect(html.headers()["content-type"]).toContain("text/html");
     expect(html.headers()["content-security-policy"]).toContain("sandbox");
     expect(html.headers()["x-content-type-options"]).toBe("nosniff");
     const denied = await context.request.get(consoleOrigin + apiPath);
     expect([403, 404]).toContain(denied.status());
+    // The prod portal never serves a dev installation, even with a signed-in admin.
+    await signInPage(context, "admin", "portal");
+    expect((await context.request.get(origin + apiPath)).status()).toBe(403);
     const htmlPage = await context.newPage();
-    await htmlPage.goto(origin + apiPath);
+    await htmlPage.goto(devOrigin + apiPath);
     await expect(htmlPage.getByRole("heading", { name: "Boundary HTML probe", exact: true })).toBeVisible();
     expect(await htmlPage.evaluate(() => (window as typeof window & { __boundaryHtmlExecuted?: boolean }).__boundaryHtmlExecuted)).toBeUndefined();
     await htmlPage.close();
@@ -301,7 +307,7 @@ test("revoking a user's permission while the app is open", async ({ browser }) =
   await expect(rail.getByRole("link", { name: appName })).toHaveCount(0);
   await user.page.goto(`/environments/dev/apps/${appId}`);
   await expect(user.page.getByRole("heading", { name: "앱에 접근할 수 없습니다" })).toBeVisible();
-  const visible = (await (await api(user.context, "/installations", "GET", undefined, "portal")).json()) as { appId: string }[];
+  const visible = (await (await api(user.context, "/installations", "GET", undefined, "dev_portal")).json()) as { appId: string }[];
   expect(visible.map((a) => a.appId)).not.toContain(appId);
   await user.context.close();
   await admin.context.close();

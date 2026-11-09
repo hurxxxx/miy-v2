@@ -3,7 +3,7 @@ import { useLocation } from "@tanstack/react-router";
 import { request } from "@miy/sdk";
 import { useManagedInstallations } from "../data/installations";
 import { useSurface, useUser } from "../data/session";
-import { currentEnvironment, environmentPath, surfaceUrl } from "../lib/paths";
+import { currentEnvironment, environmentOrigin, environmentPath, surfaceUrl } from "../lib/paths";
 import { LoadError, StaleNotice } from "../components/LoadState";
 import { NewTabLink } from "../components/NewTabLink";
 import { RuntimeControls } from "../components/RuntimeControls";
@@ -31,7 +31,7 @@ async function readApps(path: string) {
 
 export function ManagedApps() {
   const user = useUser();
-  const { portalOrigin } = useSurface();
+  const surface = useSurface();
   const managed = useManagedInstallations();
   const environment = currentEnvironment(useLocation().pathname);
   const [catalog, setCatalog] = useState<AppPage>();
@@ -135,7 +135,7 @@ export function ManagedApps() {
                     <NewTabLink
                       className="app-card-open"
                       href={surfaceUrl(
-                        portalOrigin,
+                        environment === "invalid" ? surface.portalOrigin : environmentOrigin(surface, environment),
                         environmentPath(environment, app.appId),
                       )}
                     >

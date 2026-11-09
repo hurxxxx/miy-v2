@@ -1,0 +1,140 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-11-09",
+  "status": "PASS",
+  "scope": "Phase 2 of the 2026-11-09 review follow-up: a dev-only app portal origin. The existing portal runs prod apps only; dev (unapproved) app code never shares a JavaScript origin with prod apps. localhost and single-IP (port-separated) installs are the default; hostnames are optional. Source implementation and isolated validation only; production is not changed by this record.",
+  "decisions": [
+    {
+      "by": "user",
+      "date": "2026-11-09",
+      "decision": "Add a dev-only portal origin; the existing portal becomes prod-only."
+    },
+    {
+      "by": "user",
+      "date": "2026-11-09",
+      "decision": "Design for open-source installs without a domain: localhost or one IP, port-separated origins."
+    },
+    {
+      "by": "user",
+      "date": "2026-11-09",
+      "decision": "Production address and the production transition are confirmed by the user after this validation is reported."
+    }
+  ],
+  "source": {
+    "baseCommit": "d4a9eb3",
+    "workingTreeDirty": true
+  },
+  "changes": [
+    "Core: BrowserPurpose::DevPortal (serde snake_case dev_portal), helpers portal()/environment(); required MIY_DEV_PORTAL_ORIGIN and MIY_DEV_PORTAL_BIND_ADDR; three distinct same-transport origins, identity issuer never on a portal origin; a third fixed loopback listener.",
+    "Policy: one check in Facts::decide limits a portal session to Use in prod and a dev portal session to Use in dev, covering app APIs, UI assets, directory, connections, lists and canOpen. Bearer (CLI/MCP/preview/continuation) principals are unchanged.",
+    "Boundary: the dev portal listener serves only public sign-in, /me and portal (app) routes, and refuses every bearer credential.",
+    "Migration 0021_dev_portal.sql widens the three browser_purpose CHECK constraints only (no data change); older binaries keep working on schema 21.",
+    "Web: surface dev_portal with devPortalOrigin validation; prod portal sends dev and legacy /apps paths to the dev portal before sign-in or app import; per-environment origins for the environment switch and console links; a server without devPortalOrigin keeps the old two-origin behaviour so the UI can ship before the server transition.",
+    "Ops: bootstrap.py (dev portal origin/bind/ports, Keycloak callback and logout URIs, web origins unchanged), render-server-config.py (third Nginx server block), Caddy (devportal snippet), compose.yaml, configure-identity.py, check-server-config.py, check-server-tls.py, check-http-server.py, check-platform-connection.mjs, up.sh, stack-ui.sh, server-ui.mjs.",
+    "Rollout: core-rollout.py --widen-migration (pinned 0021 bytes; backup restore and migrate rehearsal first; rollback keeps schema 21); new scripts/dev-portal-settings.py for additive settings/identity/Nginx steps with restore, plus offline tests.",
+    "Tests: policy, domain, boundary unit tests; boundary, permissions and migration (19->20->21) regressions with three listeners; mocked and real-core UI specs moved to the dev portal; new redirect, configuration and pre-split compatibility UI tests.",
+    "Docs: APP-BOUNDARIES (three origins, enforcement, limits, status), CORE-PERMISSIONS, PRD, PLAN, CHECKS, RUNNING, SERVER-OPERATIONS (staged transition), AGENTS."
+  ],
+  "checks": [
+    {
+      "id": "rust-clippy-unit",
+      "command": "cargo clippy --workspace --all-targets --locked -- -D warnings; cargo test --workspace --locked",
+      "status": "PASS",
+      "observed": "No warnings; 190 unit tests (policy/domain/boundary/http)."
+    },
+    {
+      "id": "isolated-runtime-regression",
+      "command": "python3 scripts/runtime-regression/run.py (exit status captured)",
+      "status": "PASS",
+      "exitCode": 0,
+      "observed": "115 observations, suites runtime 46, operations 6, cli 6, auth 8, permissions 24, delegation 10, boundary 12, migration 3; cleanup errors none."
+    },
+    {
+      "id": "web-suite-first-run",
+      "command": "scripts/check-static.sh web",
+      "status": "FAIL",
+      "exitCode": 1,
+      "observed": "4 mocked UI tests still asserted the single portal (console links to dev apps, in-portal environment switch, cross-environment late poll); updated and rerun."
+    },
+    {
+      "id": "surface-boundaries-first-run",
+      "command": "pnpm exec playwright test --config tests/surface-boundaries.config.ts",
+      "status": "FAIL",
+      "observed": "Legacy /apps console link expected the prod portal; then the new pre-split test mocked /me with mismatched origins. Both corrected and rerun."
+    },
+    {
+      "id": "cli-experience-first-run",
+      "command": "pnpm exec playwright test --config tests/cli-experience.config.ts",
+      "status": "FAIL",
+      "observed": "Vite cold start failed to load main.tsx once (timeout); immediate rerun 14/14 passed."
+    },
+    {
+      "id": "check-static-all",
+      "command": "scripts/check-static.sh all",
+      "status": "PASS",
+      "observed": "rust, web (ui 36, cli-experience 14, surface-boundaries 14, http-ui 1) and scripts groups."
+    },
+    {
+      "id": "check-static-scripts-final",
+      "command": "scripts/check-static.sh scripts",
+      "status": "PASS",
+      "observed": "Includes test-core-ops 65 (widen migration apply, refusals, failed migrate rollback) and test-dev-portal-settings 9, Nginx/Caddy three-purpose proxy checks with single-IP HTTPS."
+    },
+    {
+      "id": "server-ui",
+      "command": "pnpm exec playwright test --config scripts/runtime-regression/server-ui.config.ts",
+      "status": "PASS",
+      "observed": "7 passed with three real core listeners; dev path on the prod portal moves to the dev portal, which has its own sign-in."
+    },
+    {
+      "id": "stack-ui",
+      "command": "bash scripts/runtime-regression/stack-ui.sh run",
+      "status": "PASS",
+      "observed": "6 passed with Keycloak, Caddy and a deployed dev Docker app on the dev portal; the prod portal returns 403 for the dev app API even for an administrator."
+    },
+    {
+      "id": "http-server-http-profile",
+      "command": "python3 scripts/check-http-server.py --binary target/debug/miy --web-dist .local/evidence/check-static/platform",
+      "status": "PASS",
+      "observed": "13 observations with real Keycloak, Chrome and the installed CLI, including dev portal SSO with its own session/callback, no management, and no use of portal cookies; cleanup succeeded."
+    },
+    {
+      "id": "production-render-compare",
+      "command": "sudo -n python3 scripts/render-server-config.py --state-dir <temp copy of production server.json + dev portal keys> ...",
+      "status": "PASS",
+      "observed": "Rendered portal and console server blocks are byte-identical to the live Nginx file (only the header comment differs); exactly one dev portal block is added."
+    },
+    {
+      "id": "production-inspect",
+      "command": "python3 scripts/dev-portal-settings.py inspect --dev-portal-origin https://v2.dwdcc.kr:9444",
+      "status": "PASS",
+      "observed": "READY: port 9444 free, miy-web has 2 callbacks and 2 web origins; read-only."
+    }
+  ],
+  "notRun": [
+    {
+      "scope": "check-http-server.py --https",
+      "reason": "certutil (NSS tools) is not installed on this production host."
+    },
+    {
+      "scope": "Root Playwright validation.spec.ts / development-login.spec.ts",
+      "reason": "Need a separately provisioned isolated local stack; updated to sign in on the dev portal."
+    },
+    {
+      "scope": "app-css-baseline.mjs",
+      "reason": "Not part of check-static; fixture moved to a prod app on the prod portal, not executed."
+    },
+    {
+      "scope": "Production dump rehearsal and transition",
+      "reason": "Recorded separately after commit/CI; the transition needs the user's address decision and confirmation."
+    },
+    {
+      "scope": "Windows acceptance, external PC access",
+      "reason": "User-performed acceptance."
+    }
+  ],
+  "limitations": [
+    "Same-host port separation shares cookies: dev code can still plant a portal session cookie when none exists (login CSRF) or flood cookies; hostnames are recommended where a domain exists.",
+    "Until the production transition, the existing portal still runs dev and prod apps together."
+  ]
+}

@@ -83,7 +83,14 @@ function validateBrowserOrigins(portal, options) {
     && consoleUrl.pathname === "/" && !consoleUrl.search && !consoleUrl.hash,
   "invalid_console_origin");
   requireThat(options.oauthUrl === portal + "/auth/login", "portal_oauth_url_mismatch");
-  return [{ purpose: "portal", origin: portal }, { purpose: "console", origin: consoleUrl.origin }];
+  let devPortalUrl;
+  try { devPortalUrl = new URL(options.devPortalOrigin); } catch { throw error("invalid_dev_portal_origin"); }
+  requireThat(devPortalUrl.origin === options.devPortalOrigin && devPortalUrl.origin !== portal
+    && devPortalUrl.origin !== consoleUrl.origin && devPortalUrl.protocol === new URL(portal).protocol
+    && !devPortalUrl.username && !devPortalUrl.password && devPortalUrl.pathname === "/"
+    && !devPortalUrl.search && !devPortalUrl.hash, "invalid_dev_portal_origin");
+  return [{ purpose: "portal", origin: portal }, { purpose: "console", origin: consoleUrl.origin },
+    { purpose: "dev_portal", origin: devPortalUrl.origin }];
 }
 
 async function browserJson(context, origin, path) {
@@ -243,8 +250,17 @@ try {
     && consoleOptions.consoleOrigin === consoleOrigin && consoleOptions.oauthUrl === consoleOrigin + "/auth/login",
   "console_auth_options_mismatch");
   requireThat((await publicJson(consoleOrigin + "/api/health")).status === "ok", "console_health_not_ready");
+  const devPortalOrigin = browserOrigins[2].origin;
+  const devPortalOptions = await publicJson(devPortalOrigin + "/auth/options");
+  requireThat(devPortalOptions.surface === "dev_portal" && devPortalOptions.portalOrigin === origin
+    && devPortalOptions.consoleOrigin === consoleOrigin && devPortalOptions.devPortalOrigin === devPortalOrigin
+    && devPortalOptions.oauthUrl === devPortalOrigin + "/auth/login", "dev_portal_auth_options_mismatch");
+  requireThat((await publicJson(devPortalOrigin + "/api/health")).status === "ok", "dev_portal_health_not_ready");
+  // The dev portal runs dev app code: no identity pages or MCP metadata there.
+  await publicResponse(devPortalOrigin + "/.well-known/oauth-protected-resource/mcp", 404);
   result.consoleOriginSha256 = hash(consoleOrigin);
-  passed("fixed_portal_and_console_auth_options_and_health");
+  result.devPortalOriginSha256 = hash(devPortalOrigin);
+  passed("fixed_portal_console_and_dev_portal_auth_options_and_health");
   const metadata = await publicJson(origin + "/.well-known/oauth-protected-resource/mcp");
   requireThat(metadata.resource === origin + "/mcp" && Array.isArray(metadata.authorization_servers) && metadata.authorization_servers.length === 1, "mcp_resource_metadata_mismatch");
   const issuer = new URL(metadata.authorization_servers[0]);
@@ -296,6 +312,21 @@ try {
     "portal_management_metadata_not_denied");
   const api = path => browserJson(context, consoleOrigin, path);
   passed("console_oidc_sso_same_identity_and_browser_purpose_separation");
+
+  stage = "dev_portal_oidc_sso_login";
+  requireThat((await context.request.get(devPortalOrigin + "/api/v1/me", { maxRedirects: 0 })).status() === 401,
+    "portal_session_authenticated_dev_portal");
+  await page.goto(devPortalOptions.oauthUrl);
+  try { await page.waitForURL(url => url.origin === devPortalOrigin && url.pathname === "/"); }
+  catch { throw error("dev_portal_oidc_sso_did_not_complete"); }
+  const devMe = await browserJson(context, devPortalOrigin, "/api/v1/me");
+  requireThat(devMe.id === me.id && devMe.admin === false && devMe.browserPurpose === "dev_portal"
+    && devMe.devPortalOrigin === devPortalOrigin && typeof devMe.csrf === "string"
+    && devMe.csrf !== me.csrf && devMe.csrf !== consoleMe.csrf, "dev_portal_oidc_identity_mismatch");
+  // A dev portal session is never a management credential.
+  requireThat((await context.request.get(devPortalOrigin + "/api/v1/runtime/installations", { maxRedirects: 0 })).status() === 403,
+    "dev_portal_management_not_denied");
+  passed("dev_portal_oidc_sso_same_identity_and_purpose_separation");
 
   stage = "cli_context_and_device_approval";
   await cli(["context", "init", "--url", origin]);

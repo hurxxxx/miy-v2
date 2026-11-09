@@ -48,7 +48,7 @@ test("service health changes independently from process controls", async ({
   await page.goto("/environments/dev");
   const status = page.getByRole("status", { name: "앱 실행 및 서비스 상태" });
   await expect(status).toContainText("컨테이너: running · 서비스: 정상");
-  await page.context().route("https://portal.example.test/**", (route) =>
+  await page.context().route("https://dev-portal.example.test/**", (route) =>
     route.fulfill({ contentType: "text/html", body: "<p>업무 앱</p>" }),
   );
   await (await openNewTab(page, page.getByRole("link", { name: "포털에서 앱 열기", exact: true }))).close();
@@ -229,19 +229,29 @@ test("health observations preserve SDK callbacks and unsaved input; release chan
   expect(apiCalls.length).toBe(reads);
 });
 
-for (const target of ["app", "environment"] as const) {
+// Environments are separate portal origins, so a late response can no longer cross
+// an environment inside one document; the switch opens the other portal instead.
+test("the environment switch on a portal opens the other environment's portal", async ({
+  page,
+}) => {
+  await appHarness(page);
+  const switcher = page
+    .getByRole("navigation", { name: "실행 환경" })
+    .filter({ visible: true });
+  const prod = switcher.getByRole("link", { name: "운영 영역" });
+  await expect(prod).toHaveAttribute("href", "https://portal.example.test/environments/prod");
+  await expect(prod).toHaveAttribute("target", "_blank");
+  await expect(switcher.getByRole("link", { name: "테스트 영역" })).not.toHaveAttribute("target");
+});
+
+for (const target of ["app"] as const) {
   test(`late polling response cannot cross the ${target} boundary`, async ({
     page,
   }) => {
     const harness = await appHarness(page);
     const pending = await harness.holdNextPoll();
-    const next = target === "app" ? harness.second : harness.production;
-    if (target === "app")
-      await page.getByRole("link", { name: "두 번째 앱", exact: true }).click();
-    else {
-      await page.getByRole("link", { name: "운영 영역", exact: true }).click();
-      await page.getByRole("link", { name: "첫 번째 앱", exact: true }).click();
-    }
+    const next = harness.second;
+    await page.getByRole("link", { name: "두 번째 앱", exact: true }).click();
     await expect(page.getByTestId("installation")).toHaveText(next.id);
     harness.first.health = {
       ...harness.first.health!,

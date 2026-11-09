@@ -126,7 +126,8 @@ test("runtime modules, OAuth session, permissions and DB preparation", async ({
       ).ok(),
     ).toBeTruthy();
   }
-  await login(page, "admin", "portal");
+  // Dev apps run only on the dev portal; prod-portal paths redirect there.
+  await login(page, "admin", "dev_portal");
   await page.goto(`/apps/${appIds[0]}`);
   await expect(page.getByTestId("app-root")).toBeVisible();
   await page.getByRole("button", { name: "사무 장비 보기" }).click();
@@ -155,8 +156,8 @@ test("runtime modules, OAuth session, permissions and DB preparation", async ({
   ).toEqual([]);
   const dev = await browser.newContext({ baseURL: origin });
   const devPage = await dev.newPage();
-  await login(devPage, "developer");
-  const visible = await (await api(dev, "/installations", "GET", undefined, "portal")).json();
+  await login(devPage, "developer", "dev_portal");
+  const visible = await (await api(dev, "/installations", "GET", undefined, "dev_portal")).json();
   expect(visible.map((a: any) => a.id)).toContain(installations[0].id);
   expect(visible.map((a: any) => a.id)).not.toContain(prod.id);
   await login(devPage, "developer", "console");
@@ -217,15 +218,15 @@ test("runtime modules, OAuth session, permissions and DB preparation", async ({
     );
   const alice = await browser.newContext({ baseURL: origin });
   const alicePage = await alice.newPage();
-  await login(alicePage, "alice");
+  await login(alicePage, "alice", "dev_portal");
   const bob = await browser.newContext({ baseURL: origin });
   const bobPage = await bob.newPage();
-  await login(bobPage, "bob");
+  await login(bobPage, "bob", "dev_portal");
   expect(
-    (await (await api(alice, "/installations", "GET", undefined, "portal")).json()).map((a: any) => a.id),
+    (await (await api(alice, "/installations", "GET", undefined, "dev_portal")).json()).map((a: any) => a.id),
   ).toContain(installations[0].id);
   expect(
-    (await (await api(bob, "/installations", "GET", undefined, "portal")).json()).map((a: any) => a.id),
+    (await (await api(bob, "/installations", "GET", undefined, "dev_portal")).json()).map((a: any) => a.id),
   ).not.toContain(installations[0].id);
   const aliceConsole = await alice.newPage();
   await login(aliceConsole, "alice", "console");

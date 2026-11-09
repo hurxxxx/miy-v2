@@ -16,7 +16,11 @@ const API_PORT = 18149;
 const ISSUER_PORT = 18150;
 const CONSOLE_UI_PORT = 18151;
 const CONSOLE_API_PORT = 18152;
+// 18153 belongs to app-css-baseline.mjs.
+const DEV_PORTAL_UI_PORT = 18154;
+const DEV_PORTAL_API_PORT = 18155;
 const origin = `http://127.0.0.1:${UI_PORT}`;
+const devPortalOrigin = `http://127.0.0.1:${DEV_PORTAL_UI_PORT}`;
 const issuer = `http://127.0.0.1:${ISSUER_PORT}/identity/realms/miy`;
 const consoleOrigin = `http://127.0.0.1:${CONSOLE_UI_PORT}`;
 const owner = `${process.pid}-${randomBytes(8).toString("hex")}`;
@@ -99,6 +103,8 @@ const env = {
   MIY_ORIGIN: origin,
   MIY_CONSOLE_ORIGIN: consoleOrigin,
   MIY_CONSOLE_BIND_ADDR: `127.0.0.1:${CONSOLE_API_PORT}`,
+  MIY_DEV_PORTAL_ORIGIN: devPortalOrigin,
+  MIY_DEV_PORTAL_BIND_ADDR: `127.0.0.1:${DEV_PORTAL_API_PORT}`,
   MIY_ISSUER: issuer,
   MIY_ALLOW_HTTP: "1",
   MIY_DEV_LOGIN: "1",
@@ -110,7 +116,7 @@ const env = {
   MIY_ARTIFACTS: join(evidence, "artifacts"),
   RUST_LOG: "miy=info",
 };
-writeFileSync(join(evidence, "environment.json"), JSON.stringify({ origin, consoleOrigin, issuer, apiPort: API_PORT, consoleApiPort: CONSOLE_API_PORT, database, databasePort: port }, null, 2));
+writeFileSync(join(evidence, "environment.json"), JSON.stringify({ origin, consoleOrigin, devPortalOrigin, issuer, apiPort: API_PORT, consoleApiPort: CONSOLE_API_PORT, devPortalApiPort: DEV_PORTAL_API_PORT, database, databasePort: port }, null, 2));
 execFileSync(binary, ["migrate"], { env, cwd: root, stdio: "inherit" });
 execFileSync(binary, ["seed"], { env, cwd: root, stdio: "inherit" });
 
@@ -128,7 +134,7 @@ server.on("exit", (code) => {
   process.exit(1);
 });
 
-// 4. Two fixed listeners; request headers cannot select another browser purpose.
+// 4. Three fixed listeners; request headers cannot select another browser purpose.
 const types = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".woff2": "font/woff2", ".json": "application/json", ".svg": "image/svg+xml" };
 function serveSurface(surfaceOrigin, uiPort, apiPort) {
 createServer((req, res) => {
@@ -157,3 +163,4 @@ createServer((req, res) => {
 }
 serveSurface(origin, UI_PORT, API_PORT);
 serveSurface(consoleOrigin, CONSOLE_UI_PORT, CONSOLE_API_PORT);
+serveSurface(devPortalOrigin, DEV_PORTAL_UI_PORT, DEV_PORTAL_API_PORT);

@@ -1,6 +1,6 @@
 //! Upgrade rehearsal on a fresh, disposable regression PostgreSQL instance.
-//! This checks migration 19 -> 20 and an independent app database fixture; it is
-//! not an operational backup/restore test. Private credential snapshots stay in RAM.
+//! This checks migrations 19 -> 20 -> 21 and an independent app database fixture; it
+//! is not an operational backup/restore test. Private credential snapshots stay in RAM.
 use anyhow::{Context, Result, ensure};
 use serde_json::{Value, json};
 use sqlx::PgPool;
@@ -134,12 +134,36 @@ async fn seed(pool: &PgPool, f: &Fixture) -> Result<()> {
     Ok(())
 }
 
+/// Apply the source migrations up to `version` (all when `None`).
+async fn migrate_to(pool: &PgPool, version: Option<i64>) -> Result<()> {
+    let mut migrator = sqlx::migrate!("../../migrations/core");
+    if let Some(version) = version {
+        migrator.migrations = Cow::Owned(
+            migrator
+                .iter()
+                .filter(|migration| migration.version <= version)
+                .cloned()
+                .collect(),
+        );
+    }
+    migrator.run(pool).await?;
+    Ok(())
+}
+
+fn sql_state(result: Result<sqlx::postgres::PgQueryResult, sqlx::Error>) -> Option<String> {
+    result.err().and_then(|error| {
+        error
+            .as_database_error()
+            .and_then(|db| db.code().map(|code| code.into_owned()))
+    })
+}
+
 async fn check(pool: &PgPool, app_pool: &PgPool, f: &Fixture) -> Result<Vec<String>> {
     let before = snapshot(pool, f).await?;
     let records: Vec<Value> = sqlx::query_scalar("SELECT payload FROM records ORDER BY id")
         .fetch_all(app_pool)
         .await?;
-    sqlx::migrate!("../../migrations/core").run(pool).await?;
+    migrate_to(pool, Some(20)).await?;
     ensure!(
         snapshot(pool, f).await? == before,
         "browser boundary migration changed durable user/app/ACL/resource or existing CLI credential data"
@@ -181,7 +205,7 @@ async fn check(pool: &PgPool, app_pool: &PgPool, f: &Fixture) -> Result<Vec<Stri
     let new_browser = crate::contract::hash(crate::auth::random());
     sqlx::query("INSERT INTO development_sessions(id_hash,user_id,csrf,expires_at,browser_purpose) VALUES($1,$2,$3,now()+interval '8 hours','console')")
         .bind(&new_browser).bind(&f.user).bind(crate::auth::random()).execute(pool).await?;
-    sqlx::migrate!("../../migrations/core").run(pool).await?;
+    migrate_to(pool, Some(20)).await?;
     ensure!(sqlx::query_scalar::<_,bool>("SELECT EXISTS(SELECT 1 FROM development_sessions WHERE id_hash=$1 AND browser_purpose='console')")
         .bind(&new_browser).fetch_one(pool).await?, "repeated migration invalidated a current browser session");
     let missing_purpose = sqlx::query("INSERT INTO sessions(id_hash,user_id,access_token,refresh_token,csrf,expires_at) VALUES('boundary-missing-purpose',$1,'fixture','fixture','fixture',now()+interval '1 minute')")
@@ -224,9 +248,63 @@ async fn check(pool: &PgPool, app_pool: &PgPool, f: &Fixture) -> Result<Vec<Stri
         snapshot(pool, f).await? == before,
         "constraint checks or repeated migration changed durable data"
     );
+
+    // 20 -> 21: the dev app portal purpose. Schema 20 rejects it; 21 accepts it in
+    // every purpose-bound table without touching existing sessions or durable data.
+    let dev_portal_session = crate::contract::hash(crate::auth::random());
+    let insert_dev_portal = || {
+        sqlx::query("INSERT INTO development_sessions(id_hash,user_id,csrf,expires_at,browser_purpose) VALUES($1,$2,'fixture',now()+interval '1 minute','dev_portal')")
+            .bind(&dev_portal_session)
+            .bind(&f.user)
+            .execute(pool)
+    };
+    ensure!(
+        sql_state(insert_dev_portal().await).as_deref() == Some("23514"),
+        "schema 20 accepted the dev portal purpose before its migration"
+    );
+    migrate_to(pool, None).await?;
+    let version: i64 =
+        sqlx::query_scalar("SELECT max(version) FROM _sqlx_migrations WHERE success")
+            .fetch_one(pool)
+            .await?;
+    ensure!(version == 21, "migration rehearsal did not reach schema 21");
+    insert_dev_portal().await?;
+    let dev_flow = sqlx::query("INSERT INTO login_flows(state_hash,verifier,nonce,expires_at,browser_purpose,callback_uri) VALUES($1,'fixture','fixture',now()+interval '1 minute','dev_portal','http://127.0.0.1:1/auth/callback')")
+        .bind(&f.flow_hash).execute(pool).await;
+    ensure!(
+        dev_flow.is_ok(),
+        "schema 21 rejected a dev portal login flow"
+    );
+    sqlx::query("DELETE FROM login_flows WHERE state_hash=$1")
+        .bind(&f.flow_hash)
+        .execute(pool)
+        .await?;
+    ensure!(
+        sqlx::query_scalar::<_, bool>("SELECT EXISTS(SELECT 1 FROM development_sessions WHERE id_hash=$1 AND browser_purpose='console')")
+            .bind(&new_browser).fetch_one(pool).await?,
+        "migration 21 invalidated an existing browser session"
+    );
+    let still_invalid = sqlx::query("INSERT INTO sessions(id_hash,user_id,access_token,refresh_token,csrf,expires_at,browser_purpose) VALUES('boundary-invalid-21',$1,'fixture','fixture','fixture',now()+interval '1 minute','invalid')")
+        .bind(&f.user).execute(pool).await;
+    ensure!(
+        sql_state(still_invalid).as_deref() == Some("23514"),
+        "schema 21 accepted an unknown browser purpose"
+    );
+    ensure!(
+        snapshot(pool, f).await? == before,
+        "migration 21 changed durable data"
+    );
+    let after_records: Vec<Value> = sqlx::query_scalar("SELECT payload FROM records ORDER BY id")
+        .fetch_all(app_pool)
+        .await?;
+    ensure!(
+        after_records == records,
+        "app database fixture data changed during migration 21"
+    );
     Ok(vec![
         "schema 19 to 20 preserves user/group/app/ACL/resource identities, existing legacy/device CLI credential rows and lifetimes, and independent app database fixture records while invalidating old browser sessions and pending login approvals".into(),
         "migration adds public legacy credential IDs, requires browser purpose and fixed callback data, rejects invalid purpose, and does not re-invalidate current sessions when migration runs again; owned fixtures are cleaned after checks".into(),
+        "schema 20 to 21 admits the dev portal purpose in sessions, development sessions and login flows only after its migration, keeps rejecting unknown purposes, and preserves existing sessions, durable records and app database data".into(),
     ])
 }
 

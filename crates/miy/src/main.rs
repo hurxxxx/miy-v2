@@ -431,8 +431,14 @@ async fn run_server(command: Command) -> Result<()> {
     let console_bind = std::env::var("MIY_CONSOLE_BIND_ADDR").map_err(|_| {
         anyhow::anyhow!("MIY_CONSOLE_BIND_ADDR is required for the management listener")
     })?;
-    anyhow::ensure!(bind != console_bind, "portal_and_console_binds_must_differ");
-    for address in [&bind, &console_bind] {
+    let dev_portal_bind = std::env::var("MIY_DEV_PORTAL_BIND_ADDR").map_err(|_| {
+        anyhow::anyhow!("MIY_DEV_PORTAL_BIND_ADDR is required for the dev app portal listener")
+    })?;
+    anyhow::ensure!(
+        bind != console_bind && bind != dev_portal_bind && console_bind != dev_portal_bind,
+        "portal_console_and_dev_portal_binds_must_differ"
+    );
+    for address in [&bind, &console_bind, &dev_portal_bind] {
         let socket: std::net::SocketAddr = address.parse()?;
         anyhow::ensure!(
             socket.ip().is_loopback(),
@@ -441,7 +447,8 @@ async fn run_server(command: Command) -> Result<()> {
     }
     let listener = tokio::net::TcpListener::bind(&bind).await?;
     let console_listener = tokio::net::TcpListener::bind(&console_bind).await?;
-    tracing::info!(event = "core_listening", address = %bind, console_address = %console_bind);
+    let dev_portal_listener = tokio::net::TcpListener::bind(&dev_portal_bind).await?;
+    tracing::info!(event = "core_listening", address = %bind, console_address = %console_bind, dev_portal_address = %dev_portal_bind);
     tokio::try_join!(
         async {
             axum::serve(listener, http::router(state.clone()))
@@ -454,6 +461,16 @@ async fn run_server(command: Command) -> Result<()> {
             axum::serve(
                 console_listener,
                 http::router_for(state.clone(), auth::BrowserPurpose::Console),
+            )
+            .with_graceful_shutdown(async {
+                let _ = tokio::signal::ctrl_c().await;
+            })
+            .await
+        },
+        async {
+            axum::serve(
+                dev_portal_listener,
+                http::router_for(state.clone(), auth::BrowserPurpose::DevPortal),
             )
             .with_graceful_shutdown(async {
                 let _ = tokio::signal::ctrl_c().await;

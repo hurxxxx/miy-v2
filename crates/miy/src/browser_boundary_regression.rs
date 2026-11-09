@@ -30,7 +30,13 @@ struct Harness<'a> {
     client: &'a Client,
     portal: &'a str,
     console: &'a str,
+    dev_portal: &'a str,
 }
+const PURPOSES: [BrowserPurpose; 3] = [
+    BrowserPurpose::Portal,
+    BrowserPurpose::DevPortal,
+    BrowserPurpose::Console,
+];
 struct AppFixture {
     installation: Uuid,
     asset: String,
@@ -73,6 +79,7 @@ impl Harness<'_> {
     fn origin(&self, purpose: BrowserPurpose) -> &str {
         match purpose {
             BrowserPurpose::Portal => self.portal,
+            BrowserPurpose::DevPortal => self.dev_portal,
             BrowserPurpose::Console => self.console,
         }
     }
@@ -178,7 +185,7 @@ impl Harness<'_> {
         )
         .await
     }
-    async fn app(&self) -> Result<AppFixture> {
+    async fn app(&self, environment: &str) -> Result<AppFixture> {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
         let port = i32::from(listener.local_addr()?.port());
         let router = Router::new()
@@ -230,8 +237,8 @@ impl Harness<'_> {
         });
         sqlx::query("INSERT INTO releases(id,app_id,version,artifact_hash,manifest) VALUES($1,$2,'1.0.0',$3,$4)")
             .bind(release).bind(&app).bind(&artifact).bind(manifest).execute(&self.state.pool).await?;
-        sqlx::query("INSERT INTO installations(id,app_id,environment,release_id,db_status,runtime_status,desired_state,runtime_port,runtime_secret) VALUES($1,$2,'dev',$3,'ready','running','running',$4,$5)")
-            .bind(id).bind(&app).bind(release).bind(port).bind(auth::encrypt(&auth::random())?)
+        sqlx::query("INSERT INTO installations(id,app_id,environment,release_id,db_status,runtime_status,desired_state,runtime_port,runtime_secret) VALUES($1,$2,$6,$3,'ready','running','running',$4,$5)")
+            .bind(id).bind(&app).bind(release).bind(port).bind(auth::encrypt(&auth::random())?).bind(environment)
             .execute(&self.state.pool).await?;
         Ok(AppFixture {
             installation: id,
@@ -246,8 +253,9 @@ pub async fn run(
     client: &Client,
     portal: &str,
     console: &str,
+    dev_portal: &str,
 ) -> Result<Vec<String>> {
-    for origin in [portal, console] {
+    for origin in [portal, console, dev_portal] {
         let url = url::Url::parse(origin)?;
         ensure!(
             url.host_str()
@@ -259,7 +267,10 @@ pub async fn run(
         state.auth.development_login
             && portal == state.auth.origin
             && console == state.auth.console_origin
-            && portal != console,
+            && dev_portal == state.auth.dev_portal_origin
+            && portal != console
+            && portal != dev_portal
+            && console != dev_portal,
         "boundary regression needs separate configured listeners and isolated development login"
     );
     let h = Harness {
@@ -267,18 +278,20 @@ pub async fn run(
         client,
         portal,
         console,
+        dev_portal,
     };
     let admin_id = h.user(true).await?;
     let user_id = h.user(false).await?;
     let other_id = h.user(false).await?;
     let portal_admin = h.browser(&admin_id, BrowserPurpose::Portal).await?;
     let console_admin = h.browser(&admin_id, BrowserPurpose::Console).await?;
+    let dev_admin = h.browser(&admin_id, BrowserPurpose::DevPortal).await?;
     let portal_user = h.browser(&user_id, BrowserPurpose::Portal).await?;
     let mut console_user = h.browser(&user_id, BrowserPurpose::Console).await?;
     let console_other = h.browser(&other_id, BrowserPurpose::Console).await?;
     let mut passed = Vec::new();
 
-    for browser in [&portal_admin, &console_admin] {
+    for browser in [&portal_admin, &dev_admin, &console_admin] {
         let me = json_response(
             h.cookie_request(browser, Method::GET, "/api/v1/me")
                 .send()
@@ -290,39 +303,37 @@ pub async fn run(
             me["id"] == browser.user
                 && me["browserPurpose"] == browser.purpose.as_str()
                 && me["portalOrigin"] == portal
-                && me["consoleOrigin"] == console,
+                && me["consoleOrigin"] == console
+                && me["devPortalOrigin"] == dev_portal,
             "browser identity lost its purpose or configured origins"
         );
         ensure!(
             me["admin"] == (browser.purpose == BrowserPurpose::Console),
             "portal exposed administrator authority"
         );
-        let other_purpose = if browser.purpose == BrowserPurpose::Portal {
-            BrowserPurpose::Console
-        } else {
-            BrowserPurpose::Portal
-        };
-        let renamed = format!(
-            "{}={}",
-            state.auth.cookie_name(other_purpose, "development"),
-            browser.cookie
-        );
-        denied(
-            h.request(other_purpose, Method::GET, "/api/v1/me")
-                .header("cookie", renamed)
-                .send()
-                .await?,
-            401,
-        )
-        .await?;
-        denied(
-            h.request(other_purpose, Method::GET, "/api/v1/me")
-                .header("cookie", h.cookie(browser))
-                .send()
-                .await?,
-            401,
-        )
-        .await?;
+        for other_purpose in PURPOSES.into_iter().filter(|p| *p != browser.purpose) {
+            let renamed = format!(
+                "{}={}",
+                state.auth.cookie_name(other_purpose, "development"),
+                browser.cookie
+            );
+            denied(
+                h.request(other_purpose, Method::GET, "/api/v1/me")
+                    .header("cookie", renamed)
+                    .send()
+                    .await?,
+                401,
+            )
+            .await?;
+            denied(
+                h.request(other_purpose, Method::GET, "/api/v1/me")
+                    .header("cookie", h.cookie(browser))
+                    .send()
+                    .await?,
+                401,
+            )
+            .await?;
+        }
         for duplicate in [&browser.cookie, "invalid-duplicate"] {
             let name = state.auth.cookie_name(browser.purpose, "development");
             denied(
@@ -342,7 +353,12 @@ pub async fn run(
             h.request(browser.purpose, Method::GET, "/api/v1/me")
                 .header(
                     "cookie",
-                    format!("{}; {}", h.cookie(&portal_admin), h.cookie(&console_admin)),
+                    format!(
+                        "{}; {}; {}",
+                        h.cookie(&portal_admin),
+                        h.cookie(&dev_admin),
+                        h.cookie(&console_admin)
+                    ),
                 )
                 .send()
                 .await?,
@@ -358,9 +374,9 @@ pub async fn run(
 
     // Same-host ports share cookies; code on one origin must not use the other's
     // cookies even for reads. Reject before any session lookup.
-    for browser in [&portal_admin, &console_admin] {
+    for browser in [&portal_admin, &dev_admin, &console_admin] {
         let foreign = h.origin(if browser.purpose == BrowserPurpose::Portal {
-            BrowserPurpose::Console
+            BrowserPurpose::DevPortal
         } else {
             BrowserPurpose::Portal
         });
@@ -567,12 +583,13 @@ pub async fn run(
     );
     passed.push("published relative legacy/device verification paths redirect to the fixed console origin with only the flow ID; unclassified HTTP routes fail closed and anonymous MCP preserves its 401 resource metadata challenge".into());
 
-    let app = h.app().await?;
+    // The fixture is a dev installation: only the dev portal may run it.
+    let app = h.app("dev").await?;
     sqlx::query("INSERT INTO grants(user_id,app_id,environment,permission) SELECT $1,app_id,'dev','use' FROM installations WHERE id=$2")
         .bind(&user_id).bind(app.installation).execute(&state.pool).await?;
     let probe_path = format!("/api/v1/installations/{}/api/probe", app.installation);
     let probe = json_response(
-        h.browser_request(&portal_admin, Method::GET, &probe_path)
+        h.browser_request(&dev_admin, Method::GET, &probe_path)
             .send()
             .await?,
         200,
@@ -583,7 +600,7 @@ pub async fn run(
         "portal app API fixture did not execute"
     );
     let asset = status(
-        h.browser_request(&portal_admin, Method::GET, &app.asset)
+        h.browser_request(&dev_admin, Method::GET, &app.asset)
             .send()
             .await?,
         200,
@@ -618,8 +635,16 @@ pub async fn run(
         )
         .await?;
         denied(
-            h.browser_request(&portal_admin, Method::GET, path)
+            h.browser_request(&dev_admin, Method::GET, path)
                 .header("service-worker", "script")
+                .send()
+                .await?,
+            403,
+        )
+        .await?;
+        // The prod portal never loads or calls dev code, even for an administrator.
+        denied(
+            h.browser_request(&portal_admin, Method::GET, path)
                 .send()
                 .await?,
             403,
@@ -628,7 +653,7 @@ pub async fn run(
     }
     let html_path = format!("/api/v1/installations/{}/api/document", app.installation);
     let html = status(
-        h.browser_request(&portal_admin, Method::GET, &html_path)
+        h.browser_request(&dev_admin, Method::GET, &html_path)
             .send()
             .await?,
         200,
@@ -658,7 +683,53 @@ pub async fn run(
                 .is_some_and(|v| v.contains("sandbox")),
         "active app API response was not sandboxed and protected from MIME sniffing"
     );
-    passed.push("existing app API and MF JavaScript work on the portal but are denied on the console; app response headers cannot set cookies, clear site data, redirect, relax CSP/CORS or register workers, and HTML API responses are sandboxed".into());
+    passed.push("existing dev app API and MF JavaScript work on the dev portal but are denied on the prod portal and the console; app response headers cannot set cookies, clear site data, redirect, relax CSP/CORS or register workers, and HTML API responses are sandboxed".into());
+
+    // A prod installation is the mirror image: prod portal only, with explicit use
+    // even for an administrator; the dev portal never reaches prod data.
+    let prod = h.app("prod").await?;
+    sqlx::query("INSERT INTO grants(user_id,app_id,environment,permission) SELECT $1,app_id,'prod','use' FROM installations WHERE id=$2")
+        .bind(&admin_id).bind(prod.installation).execute(&state.pool).await?;
+    let prod_probe = format!("/api/v1/installations/{}/api/probe", prod.installation);
+    for path in [&prod_probe, &prod.asset] {
+        status(
+            h.browser_request(&portal_admin, Method::GET, path)
+                .send()
+                .await?,
+            200,
+        )
+        .await?;
+        denied(
+            h.browser_request(&dev_admin, Method::GET, path)
+                .send()
+                .await?,
+            403,
+        )
+        .await?;
+    }
+    // The dev portal accepts no bearer credential and serves no management route.
+    for path in [
+        "/api/v1/users",
+        "/api/v1/runtime/installations",
+        "/api/v1/cli/sessions",
+    ] {
+        denied(
+            h.browser_request(&dev_admin, Method::GET, path)
+                .send()
+                .await?,
+            403,
+        )
+        .await?;
+    }
+    denied(
+        h.request(BrowserPurpose::DevPortal, Method::GET, &probe_path)
+            .bearer_auth(&legacy_token)
+            .send()
+            .await?,
+        403,
+    )
+    .await?;
+    passed.push("prod apps run only on the prod portal (explicit use, administrators included) and dev apps only on the dev portal; the dev portal refuses bearer credentials and management routes".into());
 
     // Even a console user cannot approve the retired legacy flow any more.
     let retired = json_response(
@@ -961,6 +1032,6 @@ pub async fn run(
     )
     .await?;
     passed.push("expired or disabled browser sessions require new authentication; restoring an account does not revive old portal/console cookies and a fresh purpose-bound session works".into());
-    ensure!(passed.len() == 11, "boundary observation count changed");
+    ensure!(passed.len() == 12, "boundary observation count changed");
     Ok(passed)
 }

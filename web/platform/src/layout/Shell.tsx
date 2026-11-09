@@ -2,8 +2,8 @@ import { useEffect, useMemo, useRef, useState, type ReactNode, type SyntheticEve
 import { Link, Outlet, useLocation } from "@tanstack/react-router";
 import { request } from "@miy/sdk";
 import { InstallationsProvider, installationsIn, useInstallations } from "../data/installations";
-import { useSession, useSurface, type User } from "../data/session";
-import { currentEnvironment, environmentPath, isCliApprovalPath, isConsolePath, isAppPath, surfaceUrl, type Environment } from "../lib/paths";
+import { useSession, useSurface, type LoginOptions, type User } from "../data/session";
+import { currentEnvironment, environmentOrigin, environmentPath, isCliApprovalPath, isConsolePath, isAppPath, pathEnvironment, portalEnvironment, surfaceUrl, type Environment } from "../lib/paths";
 import { clearAllAppGuards, confirmLeaveAllApps } from "../lib/navigation-guards";
 import { LoadError } from "../components/LoadState";
 import { NewTabLink } from "../components/NewTabLink";
@@ -40,12 +40,24 @@ export function Shell() {
         </main>
       </div>
     );
-  if (options?.surface === "portal" && isConsolePath(location.pathname))
-    return <ConsoleRedirect href={surfaceUrl(options.consoleOrigin, location.pathname)} />;
+  const ownEnvironment = options ? portalEnvironment(options.surface, options.legacyPortal) : null;
+  if (options && options.surface !== "console" && isConsolePath(location.pathname))
+    return <SurfaceRedirect href={surfaceUrl(options.consoleOrigin, location.pathname)} label="관리 콘솔" />;
+  // Each portal runs one environment. Published CLI links and bookmarks name the
+  // other environment's paths on this origin: move them before sign-in or any app
+  // import, in the same tab.
+  const requested = pathEnvironment(location.pathname);
+  if (options && ownEnvironment && requested && requested !== ownEnvironment)
+    return (
+      <SurfaceRedirect
+        href={surfaceUrl(environmentOrigin(options, requested), location.pathname)}
+        label={requested === "dev" ? "테스트 포털" : "업무 포털"}
+      />
+    );
   if (options?.surface === "console" && isAppPath(location.pathname))
     return <main className="boot"><Panel title="업무 앱은 포털에서 열어 주세요">
       <p>관리 콘솔에서는 업무 앱을 실행하지 않습니다.</p>
-      <NewTabLink href={surfaceUrl(options.portalOrigin, location.pathname)}>업무 포털에서 열기</NewTabLink>
+      <NewTabLink href={surfaceUrl(environmentOrigin(options, requested ?? "dev"), location.pathname)}>업무 포털에서 열기</NewTabLink>
     </Panel></main>;
   if (state.status === "loading")
     return (
@@ -63,13 +75,15 @@ export function Shell() {
       </main>
     );
   if (state.status === "anonymous") return <Login />;
-  const environment = currentEnvironment(location.pathname);
+  const environment = currentEnvironment(location.pathname, ownEnvironment ?? "dev");
   if (environment === "invalid")
     return (
       <main className="boot">
         <Panel title="존재하지 않는 실행 환경입니다">
           <p>테스트 또는 운영 영역의 주소를 사용하세요.</p>
-          <Link to={environmentPath("dev") as "/"}>테스트 영역으로</Link>
+          <Link to={environmentPath(ownEnvironment ?? "dev") as "/"}>
+            {ownEnvironment === "prod" ? "운영 영역으로" : "테스트 영역으로"}
+          </Link>
         </Panel>
       </main>
     );
@@ -80,10 +94,10 @@ export function Shell() {
   );
 }
 
-function ConsoleRedirect({ href }: { href: string }) {
+function SurfaceRedirect({ href, label }: { href: string; label: string }) {
   useEffect(() => { window.location.replace(href); }, [href]);
   // This page replaces itself; the fallback must not open a second tab.
-  return <main className="boot"><p>관리 콘솔로 이동합니다. <a href={href}>계속</a></p></main>;
+  return <main className="boot"><p>{label}(으)로 이동합니다. <a href={href}>계속</a></p></main>;
 }
 
 const ENVIRONMENTS: { id: Environment; label: string; badge: string }[] = [
@@ -91,20 +105,41 @@ const ENVIRONMENTS: { id: Environment; label: string; badge: string }[] = [
   { id: "prod", label: "운영 영역", badge: "운영 · PROD" },
 ];
 
-function EnvironmentSwitch({ environment, className }: { environment: Environment; className: string }) {
+function EnvironmentSwitch({
+  environment,
+  className,
+  options,
+}: {
+  environment: Environment;
+  className: string;
+  options: LoginOptions;
+}) {
+  const own = portalEnvironment(options.surface, options.legacyPortal);
   return (
     <nav aria-label="실행 환경" className={`env-switch ${className}`}>
-      {ENVIRONMENTS.map((item) => (
-        <Link
-          key={item.id}
-          to={environmentPath(item.id) as "/"}
-          activeOptions={{ exact: true }}
-          className={`env-option env-${item.id}`}
-          aria-current={item.id === environment ? "true" : undefined}
-        >
-          {item.label}
-        </Link>
-      ))}
+      {ENVIRONMENTS.map((item) =>
+        // On a portal the other environment is another origin (a new tab); the
+        // console manages both environments in place.
+        own && item.id !== own ? (
+          <NewTabLink
+            key={item.id}
+            href={surfaceUrl(environmentOrigin(options, item.id), environmentPath(item.id))}
+            className={`env-option env-${item.id}`}
+          >
+            {item.label}
+          </NewTabLink>
+        ) : (
+          <Link
+            key={item.id}
+            to={environmentPath(item.id) as "/"}
+            activeOptions={{ exact: true }}
+            className={`env-option env-${item.id}`}
+            aria-current={item.id === environment ? "true" : undefined}
+          >
+            {item.label}
+          </Link>
+        ),
+      )}
     </nav>
   );
 }
@@ -221,7 +256,7 @@ function SignedInLayout({ user, environment }: { user: User; environment: Enviro
         <Link to="/" activeOptions={{ exact: true }} className="brand rail-brand" aria-label="miy 홈">
           miy
         </Link>
-        <EnvironmentSwitch environment={environment} className="env-switch-drawer" />
+        <EnvironmentSwitch environment={environment} className="env-switch-drawer" options={options} />
         <nav aria-label="앱" className="rail-section rail-apps">
           <RailLink
             to={environmentPath(environment)}
@@ -253,7 +288,7 @@ function SignedInLayout({ user, environment }: { user: User; environment: Enviro
             href={surfaceUrl(options.consoleOrigin, user.canManageConsole ? environmentPath(environment) : "/cli/sessions")}>
             <span className="rail-icon"><SettingsIcon /></span><span className="rail-label">{user.canManageConsole ? "관리 콘솔" : "내 CLI 연결"}</span>
           </NewTabLink>}
-          {isConsole && <NewTabLink className="rail-item" aria-label="업무 포털" href={surfaceUrl(options.portalOrigin, environmentPath(environment))}>
+          {isConsole && <NewTabLink className="rail-item" aria-label="업무 포털" href={surfaceUrl(environmentOrigin(options, environment), environmentPath(environment))}>
             <span className="rail-icon"><HomeIcon /></span><span className="rail-label">업무 포털</span>
           </NewTabLink>}
           <RailLink
@@ -285,7 +320,7 @@ function SignedInLayout({ user, environment }: { user: User; environment: Enviro
             <span className="visually-hidden">{menuOpen ? "메뉴 닫기" : "메뉴 열기"}</span>
           </button>
           <div className="header-context">
-            <EnvironmentSwitch environment={environment} className="env-switch-header" />
+            <EnvironmentSwitch environment={environment} className="env-switch-header" options={options} />
             <span className="env-badge-mobile">
               <Badge tone={environment === "prod" ? "warning" : "info"}>{current.badge}</Badge>
             </span>

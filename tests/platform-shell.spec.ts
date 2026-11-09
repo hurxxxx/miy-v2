@@ -120,6 +120,8 @@ test("an older installation response cannot restore an app after a newer permiss
   await page.route("**/api/**", async (route) => {
     const path = new URL(route.request().url()).pathname;
     if (path === "/api/v1/me") return route.fulfill({ json: browserUser(route, user) });
+    // The CLI guide page is only a same-origin navigation target here.
+    if (path === "/api/v1/cli/install") return route.fulfill({ status: 503, json: { error: { code: "fixture" } } });
     expect(path).toBe("/api/v1/installations");
     const id = ++reads;
     if (id === 2) {
@@ -138,20 +140,14 @@ test("an older installation response cannot restore an app after a newer permiss
     ).toBeVisible();
     await olderStarted;
     // The navigation refresh observes revoked access while the earlier poll
-    // still holds a snapshot taken before revocation.
-    await page
-      .getByRole("navigation", { name: "실행 환경" })
-      .filter({ visible: true })
-      .getByRole("link", { name: "운영 영역" })
-      .click();
+    // still holds a snapshot taken before revocation. (The environment switch is
+    // another portal origin now; same-origin navigation exercises the refresh.)
+    const rail = page.locator("#platform-navigation");
+    await rail.getByRole("link", { name: "CLI 설치", exact: true }).click();
     await expect(
-      page.getByText("이 실행 환경에서 사용할 수 있는 앱이 없습니다."),
-    ).toBeVisible();
-    await page
-      .getByRole("navigation", { name: "실행 환경" })
-      .filter({ visible: true })
-      .getByRole("link", { name: "테스트 영역" })
-      .click();
+      page.getByRole("link", { name: app.name, exact: true }),
+    ).toHaveCount(0);
+    await rail.getByRole("link", { name: "홈", exact: true }).click();
     await expect(
       page.getByText("이 실행 환경에서 사용할 수 있는 앱이 없습니다."),
     ).toBeVisible();

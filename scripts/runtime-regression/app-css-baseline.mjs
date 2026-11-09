@@ -44,7 +44,7 @@ function serve(dir, port) {
 
 const app = {
   id: "60000000-0000-4000-8000-000000000001", appId: "reference", name: "기준정보", releaseId: "70000000-0000-4000-8000-000000000001",
-  environment: "dev", version: "1.0.0", dbStatus: "ready", runtimeStatus: "running", desiredState: "running", kind: "validation_fixture",
+  environment: "prod", version: "1.0.0", dbStatus: "ready", runtimeStatus: "running", desiredState: "running", kind: "validation_fixture",
   ui: { entry: "/artifacts/reference/mf-manifest.json", export: "./AppRoot", contractVersion: "miy.ui/v1alpha1" },
 };
 const PROPS = ["font-family", "font-size", "font-weight", "line-height", "letter-spacing", "color", "background-color", "margin", "padding", "border", "border-radius", "width"];
@@ -55,8 +55,11 @@ async function measure(site, port) {
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
   const portalOrigin = `http://127.0.0.1:${port}`;
   const consoleOrigin = "http://127.0.0.1:18153";
+  // A prod app on the prod portal works for builds before and after the dev portal
+  // split; older builds ignore devPortalOrigin.
+  const devPortalOrigin = "http://127.0.0.1:18156";
   await page.route("**/auth/options", (r) => r.fulfill({ json: {
-    surface: "portal", portalOrigin, consoleOrigin, developmentLogin: false,
+    surface: "portal", portalOrigin, consoleOrigin, devPortalOrigin, developmentLogin: false,
     developmentOrigin: portalOrigin, accounts: [], oauthUrl: `${portalOrigin}/auth/login`,
   } }));
   await page.route("**/artifacts/reference/**", (r) =>
@@ -66,10 +69,10 @@ async function measure(site, port) {
     const path = new URL(r.request().url()).pathname;
     return r.fulfill({ json: path === "/api/v1/me" ? {
       id: "u", name: "기준선", admin: false, csrf: "c", browserPurpose: "portal",
-      portalOrigin, consoleOrigin, canManageConsole: false,
+      portalOrigin, consoleOrigin, devPortalOrigin, canManageConsole: false,
     } : path === "/api/v1/installations" ? [app] : {} });
   });
-  await page.goto(`${portalOrigin}/environments/dev/apps/reference`);
+  await page.goto(`${portalOrigin}/environments/prod/apps/reference`);
   const rootNode = page.getByTestId("app-root");
   await rootNode.waitFor();
   await page.evaluate(() => document.fonts.ready);

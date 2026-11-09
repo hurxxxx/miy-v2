@@ -114,6 +114,7 @@ const settings = JSON.parse(readFileSync(join(fixture, "server.json"), "utf8"));
 const secrets = JSON.parse(readFileSync(join(fixture, "credentials.json"), "utf8"));
 const origin = settings.origin;
 const consoleOrigin = settings.consoleOrigin;
+const devOrigin = settings.devPortalOrigin;
 const secure = origin.startsWith("https://");
 const prefix = secure ? "__Host-" : "";
 const expectedUser = "00000000-0000-4000-8000-000000000002";
@@ -149,19 +150,22 @@ try {
   assert.equal((await forged.json()).serverUrl,origin);
   pass("installation guidance preserves the configured portal IP origin and ignores forged forwarding headers");
 
-  for (const [url,surface] of [[origin,"portal"],[consoleOrigin,"console"]]) {
+  for (const [url,surface] of [[origin,"portal"],[consoleOrigin,"console"],[devOrigin,"dev_portal"]]) {
     const options = await (await context.request.get(url+"/auth/options")).json();
     assert.equal(options.developmentLogin,false);
     assert.equal(options.accounts.length,0);
     assert.equal(options.oauthUrl,url+"/auth/login");
     assert.equal(options.surface,surface);
     assert.equal(options.consoleOrigin,consoleOrigin);
+    assert.equal(options.devPortalOrigin,devOrigin);
     assert.equal((await context.request.post(url+"/auth/development",{headers:{origin:url},data:{account:"developer"}})).status(),404);
   }
   assert.equal((await context.request.get(origin+"/identity/realms/miy/.well-known/openid-configuration")).status(),404);
+  assert.equal((await context.request.get(devOrigin+"/identity/realms/miy/.well-known/openid-configuration")).status(),404);
+  assert.equal((await context.request.get(devOrigin+"/mcp")).status(),404);
   assert.equal((await context.request.get(consoleOrigin+"/identity/admin/")).status(),404);
   assert.equal((await context.request.get(origin+"/api/v1/me")).status(),401);
-  pass("two fixed server purposes disable synthetic login and expose identity only on the trusted console");
+  pass("three fixed server purposes disable synthetic login and expose identity only on the trusted console");
 
   await page.goto(origin+"/auth/login");
   await page.locator("#username").waitFor();
@@ -198,6 +202,24 @@ try {
   assert(consoleHeaders["content-security-policy"].includes("script-src 'self'"));
   assert(consoleHeaders["content-security-policy"].includes("frame-ancestors 'none'"));
   pass("console OIDC uses its own session and callback; app content and embedding are refused");
+
+  // The dev portal: same identity through SSO, its own purpose-bound session and
+  // callback, no management authority, and cookies never cross to the portal.
+  assert.equal((await context.request.get(devOrigin+"/api/v1/me")).status(),401);
+  await page.goto(devOrigin+"/auth/login");
+  await page.waitForURL(url => url.origin === devOrigin && url.pathname === "/");
+  const devMe = await (await context.request.get(devOrigin+"/api/v1/me")).json();
+  assert.equal(devMe.id,expectedUser);
+  assert.equal(devMe.browserPurpose,"dev_portal");
+  assert.notEqual(devMe.csrf,me.csrf);
+  const devCookie = (await context.cookies(devOrigin)).find(item => item.name === prefix+"miy_dev_portal_session");
+  assert(devCookie && devCookie.httpOnly && devCookie.secure === secure);
+  assert.equal((await context.request.get(devOrigin+"/api/v1/runtime/installations")).status(),403);
+  assert.equal((await context.request.get(origin+"/api/v1/me",{headers:{origin:devOrigin}})).status(),403);
+  assert.equal((await context.request.post(devOrigin+"/auth/logout",{headers:{origin:devOrigin,"x-miy-csrf":devMe.csrf},data:{}})).status(),200);
+  assert.equal((await context.request.get(devOrigin+"/api/v1/me")).status(),401);
+  assert.equal((await context.request.get(origin+"/api/v1/me")).status(),200);
+  pass("dev portal OIDC uses its own session and callback, has no management authority and cannot use portal cookies");
 
   const flow = command(["auth","login","--device-code","--no-wait"]);
   assert.equal(flow.status,"pending");
@@ -312,10 +334,10 @@ def main():
     os.umask(0o077)
     env = clean_env()
     selected = set()
-    pg_port, identity_port, core_port, console_core_port = [free_port("127.0.0.1", selected) for _ in range(4)]
-    public_port, console_port = [free_port(address, selected) for _ in range(2)]
+    pg_port, identity_port, core_port, console_core_port, dev_core_port = [free_port("127.0.0.1", selected) for _ in range(5)]
+    public_port, console_port, dev_port = [free_port(address, selected) for _ in range(3)]
     scheme = 'https' if args.https else 'http'
-    origin, console_origin = [f'{scheme}://{address}:{number}' for number in [public_port, console_port]]
+    origin, console_origin, dev_origin = [f'{scheme}://{address}:{number}' for number in [public_port, console_port, dev_port]]
     binary = fixture / "miy-server"
     cli_binary = fixture / 'miy-client'
     shutil.copy2(args.binary, binary)
@@ -363,23 +385,26 @@ def main():
         passed("bootstrap rejects non-loopback HTTP before creating configuration without explicit opt-in")
         transport_options = ['--ca-file', str(ca)] if args.https else ['--allow-http']
         run([sys.executable, str(ROOT / "scripts/bootstrap.py"), "--profile", "server", "--origin", origin,
-             '--console-origin', console_origin, *transport_options,
+             '--console-origin', console_origin, '--dev-portal-origin', dev_origin, *transport_options,
              "--state-dir", str(fixture), "--bind", f"127.0.0.1:{core_port}",
              '--console-bind', f'127.0.0.1:{console_core_port}',
+             '--dev-portal-bind', f'127.0.0.1:{dev_core_port}',
              "--postgres-port", str(pg_port), "--identity-port", str(identity_port),
              "--proxy-bind", address],
             "bootstrap")
         settings = json.loads((fixture / "server.json").read_text())
         realm = json.loads((fixture / "realm.json").read_text())
         require(settings["origin"] == origin and settings['consoleOrigin'] == console_origin
+                and settings['devPortalOrigin'] == dev_origin
                 and settings["allowHttp"] == (not args.https) and settings["developmentLogin"] is False,
-                "Two-origin server bootstrap settings mismatch")
+                "Three-origin server bootstrap settings mismatch")
         require(realm["sslRequired"] == ('external' if args.https else 'none'), "Realm transport policy is incorrect")
         web = next(client for client in realm["clients"] if client["clientId"] == "miy-web")
-        require(web["redirectUris"] == [value + '/auth/callback' for value in [origin, console_origin]]
+        browser_origins = [origin, console_origin, dev_origin]
+        require(web["redirectUris"] == [value + '/auth/callback' for value in browser_origins]
                 and web["webOrigins"] == [origin, console_origin]
-                and web['attributes']['post.logout.redirect.uris'] == '##'.join(value+'/' for value in [origin, console_origin]),
-                "OIDC client did not use both exact callbacks and logout destinations")
+                and web['attributes']['post.logout.redirect.uris'] == '##'.join(value+'/' for value in browser_origins),
+                "OIDC client did not use the three exact callbacks and logout destinations")
         override = {"name": project, "networks": {"app_runtime": {"name": project + "-runtime"}},
                     "services": {"proxy": {"volumes": [str(fixture / "platform") + ":/srv/platform:ro"]}}}
         if args.https:
@@ -398,6 +423,11 @@ import /etc/caddy/routes.caddy
   bind {$MIY_PROXY_BIND}
   tls /miy-tls/server.pem /miy-tls/server-key.pem
   import console
+}
+{$MIY_DEV_PORTAL_ORIGIN} {
+  bind {$MIY_PROXY_BIND}
+  tls /miy-tls/server.pem /miy-tls/server-key.pem
+  import devportal
 }
 ''')
             override['services']['proxy']['volumes'].extend([
@@ -422,7 +452,7 @@ import /etc/caddy/routes.caddy
                     'An internal database/identity port is publicly bound')
         run(compose + ["up", "-d", "postgres", "keycloak", "proxy"], "compose-up", timeout=240)
         compose_started = True
-        passed("bootstrap preserves exact IP portal/console origins, callbacks and isolated Compose resources")
+        passed("bootstrap preserves exact IP portal/console/dev portal origins, callbacks and isolated Compose resources")
         discovery = wait_json(console_origin + "/identity/realms/miy/.well-known/openid-configuration")
         require(discovery["issuer"] == console_origin + "/identity/realms/miy", "Keycloak issuer is not canonical")
         require(discovery["authorization_endpoint"].startswith(console_origin + "/identity/"), "Wrong identity endpoint")
@@ -445,6 +475,7 @@ import /etc/caddy/routes.caddy
                                   stdin=subprocess.DEVNULL, stdout=server_log, stderr=subprocess.STDOUT)
         require(wait_json(origin + "/api/health", 30)["status"] == "ok", "Core readiness failed")
         require(wait_json(console_origin + '/api/health', 30)['status'] == 'ok', 'Console readiness failed')
+        require(wait_json(dev_origin + '/api/health', 30)['status'] == 'ok', 'Dev portal readiness failed')
         cli_env = {**env, "MIY_CONFIG_DIR": str(fixture / "cli-config"), "MIY_CREDENTIAL_BACKEND": "file"}
         if args.https:
             run([str(cli_binary), '--output', 'json', '--no-input', 'context', 'init', '--url', origin,
@@ -524,7 +555,7 @@ import /etc/caddy/routes.caddy
                 failed = (failed + "; " if failed else "") + str(error)
         else:
             cleanup_ok = True
-        summary = {"origin": origin, 'consoleOrigin': console_origin, 'https': args.https,
+        summary = {"origin": origin, 'consoleOrigin': console_origin, 'devPortalOrigin': dev_origin, 'https': args.https,
                    "serverSha256": binary_hash, 'cliSha256': cli_hash, 'cliSource': str(cli_source.resolve()),
                    'webSource': str(web_dist), "tests": passes,
                    "cleanupSucceeded": cleanup_ok, "error": failed}

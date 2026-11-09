@@ -9,15 +9,16 @@ realm=json.loads((local/'realm.json').read_text())
 settings=json.loads((local/'server.json').read_text())
 # Reject stale generated clients before making an administrative request. Keep
 # the realm, existing miy-web client and user subjects; only its exact approved
-# redirect/logout origins expand to the two browser purposes.
-origins=[settings['origin'],settings.get('consoleOrigin')]
-if not origins[1] or origins[0]==origins[1]:
- raise SystemExit('Identity requires distinct portal and console origins; rerun bootstrap')
+# redirect/logout origins expand to the three browser purposes. Web origins stay
+# portal+console: the confidential client exchanges codes on the server.
+origins=[settings['origin'],settings.get('consoleOrigin'),settings.get('devPortalOrigin')]
+if not all(origins) or len(set(origins))!=3:
+ raise SystemExit('Identity requires distinct portal, console and dev portal origins; rerun bootstrap')
 web=next((client for client in realm['clients'] if client['clientId']=='miy-web'),None)
 if (not web or web['redirectUris']!=[value+'/auth/callback' for value in origins]
-    or web['webOrigins']!=origins
+    or web['webOrigins']!=origins[:2]
     or web['attributes']['post.logout.redirect.uris']!='##'.join(value+'/' for value in origins)):
- raise SystemExit('Generated identity client does not match the two exact configured origins')
+ raise SystemExit('Generated identity client does not match the three exact configured origins')
 # Administrative credentials only cross a loopback connection. The public
 # issuer stays canonical even when the application's realm permits HTTP.
 origin=settings['identityAdminUrl']

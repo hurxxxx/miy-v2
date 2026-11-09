@@ -11,3 +11,7 @@ import /etc/caddy/routes.caddy
   bind {$MIY_PROXY_BIND:127.0.0.1}
   import console
 }
+{$MIY_DEV_PORTAL_ORIGIN:http://localhost:18002} {
+  bind {$MIY_PROXY_BIND:127.0.0.1}
+  import devportal
+}

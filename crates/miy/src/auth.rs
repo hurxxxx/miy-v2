@@ -28,10 +28,13 @@ pub struct Principal {
 }
 
 /// Set by a fixed core listener, never by Host, forwarded headers or app input.
+/// Business apps run on two portals: `Portal` (prod only) and `DevPortal` (dev
+/// only), so unapproved dev code never shares a JavaScript origin with prod apps.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Deserialize, Serialize)]
-#[serde(rename_all = "lowercase")]
+#[serde(rename_all = "snake_case")]
 pub enum BrowserPurpose {
     Portal,
+    DevPortal,
     Console,
 }
 
@@ -39,7 +42,23 @@ impl BrowserPurpose {
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Portal => "portal",
+            Self::DevPortal => "dev_portal",
             Self::Console => "console",
+        }
+    }
+    /// A business-app portal: it may only use apps, never manage them.
+    pub fn portal(self) -> bool {
+        match self {
+            Self::Portal | Self::DevPortal => true,
+            Self::Console => false,
+        }
+    }
+    /// The only app environment a portal may use; the console runs no apps.
+    pub fn environment(self) -> Option<&'static str> {
+        match self {
+            Self::Portal => Some("prod"),
+            Self::DevPortal => Some("dev"),
+            Self::Console => None,
         }
     }
 }
@@ -76,6 +95,7 @@ struct Introspection {
 pub struct Auth {
     pub origin: String,
     pub console_origin: String,
+    pub dev_portal_origin: String,
     pub issuer: String,
     pub development_origin: String,
     pub development_login: bool,
@@ -118,19 +138,34 @@ impl Auth {
             })?,
             allow_http,
         )?;
+        // Not MIY_DEV_ORIGIN: that is the local web development server for the
+        // explicit development login, not the dev app environment's portal.
+        let dev_portal_origin = crate::server_origin::validate(
+            &std::env::var("MIY_DEV_PORTAL_ORIGIN").map_err(|_| {
+                anyhow::anyhow!("MIY_DEV_PORTAL_ORIGIN is required for the dev app portal")
+            })?,
+            allow_http,
+        )?;
         anyhow::ensure!(
-            origin != console_origin,
-            "portal_and_console_origins_must_differ"
+            origin != console_origin
+                && origin != dev_portal_origin
+                && console_origin != dev_portal_origin,
+            "portal_console_and_dev_portal_origins_must_differ"
         );
+        let scheme = Url::parse(&origin)?.scheme().to_owned();
         anyhow::ensure!(
-            Url::parse(&origin)?.scheme() == Url::parse(&console_origin)?.scheme(),
-            "portal_and_console_transport_must_match"
+            Url::parse(&console_origin)?.scheme() == scheme
+                && Url::parse(&dev_portal_origin)?.scheme() == scheme,
+            "browser_origin_transports_must_match"
         );
         let issuer = crate::server_origin::issuer(&std::env::var("MIY_ISSUER")?, allow_http)?;
         let identity_origin = Url::parse(&issuer)?.origin();
+        // The identity provider shares the trusted console origin, never a portal
+        // origin that runs app code.
         anyhow::ensure!(
-            identity_origin != Url::parse(&origin)?.origin(),
-            "identity_must_not_share_the_application_portal_origin"
+            identity_origin != Url::parse(&origin)?.origin()
+                && identity_origin != Url::parse(&dev_portal_origin)?.origin(),
+            "identity_must_not_share_an_application_portal_origin"
         );
         let mut builder = reqwest::Client::builder()
             .redirect(reqwest::redirect::Policy::none())
@@ -184,10 +219,15 @@ impl Auth {
             std::env::var("MIY_DEV_LOGIN").ok().as_deref(),
             &console_origin,
             &console_origin,
+        ) && development_profile(
+            std::env::var("MIY_DEV_LOGIN").ok().as_deref(),
+            &dev_portal_origin,
+            &dev_portal_origin,
         );
         Ok(Self {
             origin,
             console_origin,
+            dev_portal_origin,
             development_origin,
             development_login,
             issuer,
@@ -201,6 +241,7 @@ impl Auth {
     pub fn browser_origin(&self, purpose: BrowserPurpose) -> &str {
         match purpose {
             BrowserPurpose::Portal => &self.origin,
+            BrowserPurpose::DevPortal => &self.dev_portal_origin,
             BrowserPurpose::Console => &self.console_origin,
         }
     }

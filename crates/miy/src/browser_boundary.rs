@@ -126,6 +126,12 @@ pub fn allowed(
     bearer: bool,
     origin_present: bool,
 ) -> bool {
+    // The dev portal runs unapproved dev app code. It serves only browser sign-in,
+    // the shared identity read and dev app use; CLI and MCP bearers keep using the
+    // published portal address, so every principal there is a dev-portal session.
+    if purpose == BrowserPurpose::DevPortal {
+        return !bearer && matches!(access, Access::Public | Access::Shared | Access::Portal);
+    }
     match access {
         Access::Public | Access::Shared => true,
         // The console never serves application-controlled active responses,
@@ -187,5 +193,38 @@ mod tests {
             access("/api/v1/installations", &Method::POST),
             Some(Access::Console)
         );
+    }
+
+    #[test]
+    fn the_dev_portal_serves_only_browser_app_use_and_never_bearer_or_management() {
+        for (access, expected) in [
+            (Access::Public, true),
+            (Access::Shared, true),
+            (Access::Portal, true),
+            (Access::Console, false),
+            (Access::NonBrowser, false),
+            (Access::BearerChallenge, false),
+        ] {
+            for origin_present in [false, true] {
+                assert_eq!(
+                    allowed(access, BrowserPurpose::DevPortal, false, origin_present),
+                    expected
+                );
+                // CLI/MCP bearers keep using the published portal address.
+                assert!(!allowed(
+                    access,
+                    BrowserPurpose::DevPortal,
+                    true,
+                    origin_present
+                ));
+            }
+        }
+        assert!(allowed(Access::Portal, BrowserPurpose::Portal, false, true));
+        assert!(!allowed(
+            Access::Portal,
+            BrowserPurpose::Console,
+            false,
+            true
+        ));
     }
 }

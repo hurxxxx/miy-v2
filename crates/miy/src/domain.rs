@@ -23,7 +23,7 @@ pub async fn seed(pool: &sqlx::PgPool) -> anyhow::Result<()> {
     Ok(())
 }
 pub async fn admin(state: &State, p: &Principal) -> ApiResult<()> {
-    if p.browser_purpose == Some(BrowserPurpose::Portal) {
+    if p.browser_purpose.is_some_and(BrowserPurpose::portal) {
         return Err(ApiError::forbidden());
     }
     crate::delegations::unrestricted(p)?;
@@ -61,7 +61,7 @@ pub async fn me(state: &State, p: &Principal) -> ApiResult<Value> {
                 .is_none_or(|d| g["appId"] == d.app_id && g["environment"] == d.environment)
         })
         .collect();
-    let portal = p.browser_purpose == Some(BrowserPurpose::Portal);
+    let portal = p.browser_purpose.is_some_and(BrowserPurpose::portal);
     let administrator = row.get::<bool, _>("admin") && p.delegation_id.is_none();
     // This is a navigation hint, never authority. Each console operation still
     // checks the current account and app/environment permissions on the server.
@@ -80,7 +80,7 @@ pub async fn me(state: &State, p: &Principal) -> ApiResult<Value> {
         "id":p.id,"name":row.get::<String,_>("name"),"admin":administrator && !portal,
         "grants":grants,"csrf":p.csrf,"development":p.development,"delegation":delegation,
         "browserPurpose":p.browser_purpose.map(|purpose| purpose.as_str()),
-        "portalOrigin":state.auth.origin,"consoleOrigin":state.auth.console_origin,
+        "portalOrigin":state.auth.origin,"consoleOrigin":state.auth.console_origin,"devPortalOrigin":state.auth.dev_portal_origin,
         "canManageConsole":can_manage_console,
     }))
 }
@@ -202,7 +202,7 @@ pub async fn installations(state: &State, p: &Principal) -> ApiResult<Value> {
 /// The company switch blocks use, not runtime control, so disabled apps stay listed;
 /// `canOpen` describes the user's portal admission, not a console app execution route.
 pub async fn managed_installations(state: &State, p: &Principal) -> ApiResult<Value> {
-    if p.browser_purpose == Some(BrowserPurpose::Portal) {
+    if p.browser_purpose.is_some_and(BrowserPurpose::portal) {
         return Err(ApiError::forbidden());
     }
     crate::auth_sessions::ensure_active(&state.pool, &p.id).await?;
@@ -524,6 +524,9 @@ mod tests {
             grants: HashMap::new(),
             disabled: HashSet::new(),
         };
+        // The prod portal never opens this dev installation; the dev portal does.
+        assert!(!installation_view(row.clone(), &facts).unwrap().can_open);
+        facts.browser_purpose = Some(BrowserPurpose::DevPortal);
         let portal = installation_view(row.clone(), &facts).unwrap();
         assert!(portal.can_open);
         assert!(!portal.can_manage && !portal.can_promote);

@@ -130,10 +130,11 @@ test("a non-admin console user sees manageable apps, including disabled and unin
   ).toBeVisible();
 });
 
-for (const path of [
-  "/apps/ledger/nested",
-  "/environments/prod/apps/ledger/nested",
-]) {
+// Legacy /apps paths are dev apps (dev portal); prod apps open on the prod portal.
+for (const [path, portal] of [
+  ["/apps/ledger/nested", "https://dev-portal.example.test"],
+  ["/environments/prod/apps/ledger/nested", "https://portal.example.test"],
+] as const) {
   test(`console rejects business route ${path} before importing the remote runtime`, async ({
     page,
   }) => {
@@ -148,7 +149,7 @@ for (const path of [
     ).toBeVisible();
     await expect(
       page.getByRole("link", { name: "업무 포털에서 열기" }),
-    ).toHaveAttribute("href", `https://portal.example.test${path}`);
+    ).toHaveAttribute("href", `${portal}${path}`);
     expect(reads.filter((entry) => entry !== "/api/v1/me")).toEqual([]);
     expect(
       loaded.filter(
@@ -157,7 +158,7 @@ for (const path of [
       ),
     ).toEqual([]);
     await expect(page.locator("iframe")).toHaveCount(0);
-    await page.context().route("https://portal.example.test/**", (route) =>
+    await page.context().route(`${portal}/**`, (route) =>
       route.fulfill({ contentType: "text/html", body: "<p>업무 앱</p>" }),
     );
     await (await openNewTab(page, page.getByRole("link", { name: "업무 포털에서 열기" }))).close();
@@ -217,6 +218,80 @@ test("missing or mismatched server surface configuration fails before loading an
     "서버에 연결하지 못했습니다",
   );
   await expect(page.locator(".miy-app-root")).toHaveCount(0);
+});
+
+test("the prod portal sends dev app paths to the dev portal before sign-in or any app import", async ({
+  page,
+}) => {
+  const loaded: string[] = [];
+  page.on("request", (request) => loaded.push(new URL(request.url()).pathname));
+  await page.route("**/auth/options", (route) =>
+    route.fulfill({ json: browserOptions(route, "portal") }),
+  );
+  await page.route("**/api/v1/me", (route) =>
+    route.fulfill({ status: 401, json: { error: { code: "unauthorized" } } }),
+  );
+  await page.context().route("https://dev-portal.example.test/**", (route) =>
+    route.fulfill({ contentType: "text/html", body: "<p>테스트 포털</p>" }),
+  );
+  for (const path of ["/environments/dev/apps/ledger", "/apps/ledger"]) {
+    await page.goto(`${path}?next=https://attacker.invalid`);
+    // Only the path crosses: the query is dropped and no app code is imported.
+    await expect(page).toHaveURL(`https://dev-portal.example.test${path}`);
+  }
+  expect(
+    loaded.filter(
+      (entry) => entry.startsWith("/artifacts/") || /\/AppView[-.]/.test(entry),
+    ),
+  ).toEqual([]);
+});
+
+test("a server from before the dev portal split keeps both environments on its portal", async ({
+  page,
+}) => {
+  // Deploying this UI ahead of the server transition must not break production.
+  await page.route("**/auth/options", (route) => {
+    const { devPortalOrigin: _omitted, ...options } = browserOptions(route, "portal");
+    return route.fulfill({ json: options });
+  });
+  await page.route("**/api/**", (route) => {
+    const path = new URL(route.request().url()).pathname;
+    if (path === "/api/v1/me") {
+      const { portalOrigin, consoleOrigin } = browserOptions(route, "portal");
+      return route.fulfill({
+        json: { ...user, browserPurpose: "portal", portalOrigin, consoleOrigin, canManageConsole: true },
+      });
+    }
+    return route.fulfill({ json: [] });
+  });
+  await page.goto("/environments/dev");
+  await expect(page).toHaveURL(/\/environments\/dev$/);
+  await expect(page.getByRole("button", { name: "로그아웃" })).toBeVisible();
+  const prod = page
+    .getByRole("navigation", { name: "실행 환경" })
+    .filter({ visible: true })
+    .getByRole("link", { name: "운영 영역" });
+  await expect(prod).not.toHaveAttribute("target");
+  await prod.click();
+  await expect(page).toHaveURL(/\/environments\/prod$/);
+});
+
+test("a dev portal origin that is missing or shared with another surface is rejected", async ({
+  page,
+}) => {
+  for (const change of [
+    (options: Record<string, unknown>) => ({ ...options, devPortalOrigin: undefined }),
+    (options: Record<string, unknown>) => ({ ...options, devPortalOrigin: options.portalOrigin }),
+    (options: Record<string, unknown>) => ({ ...options, devPortalOrigin: options.consoleOrigin }),
+  ]) {
+    await page.unroute("**/auth/options");
+    await page.route("**/auth/options", (route) =>
+      route.fulfill({ json: change(browserOptions(route, "dev_portal")) }),
+    );
+    await page.goto("/environments/dev");
+    await expect(page.getByRole("alert")).toContainText("서버에 연결하지 못했습니다");
+    await expect(page.locator(".miy-app-root")).toHaveCount(0);
+  }
 });
 
 test("console lists and revokes both device and legacy CLI connections with the current CSRF", async ({

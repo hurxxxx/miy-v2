@@ -39,6 +39,40 @@
     file_server
   }
 }
+# Dev app code runs here: browser sign-in and dev app use only. No identity pages,
+# CLI approval, MCP or OAuth metadata (the CLI and MCP keep the portal address).
+(devportal) {
+  import common_headers
+  header +Content-Security-Policy "worker-src 'none'"
+  @worker header Service-Worker script
+  handle @worker {
+    respond 403
+  }
+  @identity path /identity /identity/*
+  handle @identity {
+    respond 404
+  }
+  @private path_regexp private ^/(cli/(authorize|device)|auth/cli|mcp|\.well-known)(/|$)
+  handle @private {
+    respond 404
+  }
+  @core path /api/* /auth/* /artifacts/* /cli/downloads/* /cli/installers/*
+  handle @core {
+    reverse_proxy {$MIY_DEV_PORTAL_CORE_UPSTREAM:127.0.0.1:18082} {
+      header_up Host {$MIY_DEV_PORTAL_HOST:localhost:18002}
+      header_up X-Forwarded-Host {$MIY_DEV_PORTAL_HOST:localhost:18002}
+      header_up X-Forwarded-Proto {$MIY_PUBLIC_SCHEME:http}
+      header_up X-Forwarded-Port {$MIY_DEV_PORTAL_PORT:18002}
+      header_up X-Forwarded-For {remote_host}
+      header_up -Forwarded
+    }
+  }
+  handle {
+    root * /srv/platform
+    try_files {path} /index.html
+    file_server
+  }
+}
 (console) {
   import common_headers
   @worker header Service-Worker script

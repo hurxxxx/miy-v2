@@ -8,11 +8,20 @@ import {
   type ReactNode,
 } from "react";
 
-export type BrowserSurface = "portal" | "console";
+// Two business-app portals (prod and dev) and the management console are three
+// origins. Dev app code never shares a JavaScript origin with prod apps.
+export type BrowserSurface = "portal" | "dev_portal" | "console";
 export type LoginOptions = {
   surface: BrowserSurface;
   portalOrigin: string;
+  devPortalOrigin: string;
   consoleOrigin: string;
+  /**
+   * A server from before the dev portal split (no devPortalOrigin): its portal
+   * still serves both environments, so this UI keeps that behaviour. The server
+   * decides access either way; this only avoids breaking an older deployment.
+   */
+  legacyPortal?: boolean;
   developmentLogin: boolean;
   developmentOrigin: string;
   accounts: { account: string; label: string; description: string }[];
@@ -25,9 +34,21 @@ export type User = {
   csrf: string;
   browserPurpose: BrowserSurface | null;
   portalOrigin: string;
+  devPortalOrigin: string;
   consoleOrigin: string;
   canManageConsole: boolean;
 };
+
+export function surfaceOrigin(
+  options: Pick<LoginOptions, "portalOrigin" | "devPortalOrigin" | "consoleOrigin">,
+  surface: BrowserSurface,
+) {
+  return {
+    portal: options.portalOrigin,
+    dev_portal: options.devPortalOrigin,
+    console: options.consoleOrigin,
+  }[surface];
+}
 
 // A failed read is never shown as "signed out": only HTTP 401 means anonymous.
 export type SessionState =
@@ -44,18 +65,25 @@ type SessionContextValue = {
 
 const SessionContext = createContext<SessionContextValue | null>(null);
 
-function validateOptions(value: LoginOptions): LoginOptions {
-  if (value.surface !== "portal" && value.surface !== "console")
+function validateOptions(received: LoginOptions): LoginOptions {
+  if (!["portal", "dev_portal", "console"].includes(received.surface))
     throw new Error("invalid_surface");
-  for (const origin of [value.portalOrigin, value.consoleOrigin]) {
+  const legacyPortal =
+    received.devPortalOrigin === undefined && received.surface !== "dev_portal";
+  const value = legacyPortal
+    ? { ...received, devPortalOrigin: received.portalOrigin, legacyPortal }
+    : received;
+  const origins = legacyPortal
+    ? [value.portalOrigin, value.consoleOrigin]
+    : [value.portalOrigin, value.devPortalOrigin, value.consoleOrigin];
+  for (const origin of origins) {
     const url = new URL(origin);
     if (!/^https?:$/.test(url.protocol) || url.origin !== origin)
       throw new Error("invalid_surface_origin");
   }
   if (
-    value.portalOrigin === value.consoleOrigin ||
-    window.location.origin !==
-      (value.surface === "portal" ? value.portalOrigin : value.consoleOrigin)
+    new Set(origins).size !== origins.length ||
+    window.location.origin !== surfaceOrigin(value, value.surface)
   )
     throw new Error("invalid_surface_origin");
   return value.developmentLogin &&
@@ -78,6 +106,7 @@ async function readSession(
   if (
     user.browserPurpose !== options.surface ||
     user.portalOrigin !== options.portalOrigin ||
+    (!options.legacyPortal && user.devPortalOrigin !== options.devPortalOrigin) ||
     user.consoleOrigin !== options.consoleOrigin
   )
     throw new Error("session_surface_mismatch");

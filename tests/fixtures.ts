@@ -47,25 +47,27 @@ const publicConfig = JSON.parse(
 if (publicConfig.origin !== origin)
   throw new Error("test origin must match the selected state directory");
 
-export async function surfaceOrigin(
-  context: BrowserContext,
-  surface: "portal" | "console",
-) {
+export type Surface = "portal" | "dev_portal" | "console";
+export async function surfaceOrigin(context: BrowserContext, surface: Surface) {
   const options = await (
     await context.request.get(origin + "/auth/options")
   ).json();
   if (options.portalOrigin !== origin || options.surface !== "portal")
     throw new Error("test surface mismatch");
-  const consoleAddress = new URL(options.consoleOrigin);
-  if (
-    !["https:", "http:"].includes(consoleAddress.protocol) ||
-    !["localhost", "127.0.0.1", "[::1]"].includes(consoleAddress.hostname) ||
-    consoleAddress.origin !== options.consoleOrigin ||
-    options.consoleOrigin === origin
-  )
-    throw new Error("validation requires a separate loopback console origin");
+  for (const separate of [options.consoleOrigin, options.devPortalOrigin]) {
+    const address = new URL(separate);
+    if (
+      !["https:", "http:"].includes(address.protocol) ||
+      !["localhost", "127.0.0.1", "[::1]"].includes(address.hostname) ||
+      address.origin !== separate ||
+      separate === origin
+    )
+      throw new Error("validation requires separate loopback console and dev portal origins");
+  }
+  if (options.consoleOrigin === options.devPortalOrigin)
+    throw new Error("validation requires separate loopback console and dev portal origins");
   return (
-    surface === "console" ? options.consoleOrigin : options.portalOrigin
+    { portal: options.portalOrigin, dev_portal: options.devPortalOrigin, console: options.consoleOrigin }[surface]
   ) as string;
 }
 export const test = base.extend({
@@ -79,7 +81,7 @@ export { expect };
 export async function login(
   page: Page,
   user: string,
-  surface: "portal" | "console" = "portal",
+  surface: Surface = "portal",
 ) {
   const selectedOrigin = await surfaceOrigin(page.context(), surface);
   const credentials = JSON.parse(
@@ -99,7 +101,7 @@ export async function api(
   path: string,
   method = "GET",
   data?: unknown,
-  surface: "portal" | "console" = "console",
+  surface: Surface = "console",
 ) {
   const selectedOrigin = await surfaceOrigin(context, surface);
   const me = await context.request.get(selectedOrigin + "/api/v1/me");

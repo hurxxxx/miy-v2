@@ -2,7 +2,8 @@ import { useMemo } from "react";
 import { Link, useLocation } from "@tanstack/react-router";
 import type { Installation } from "@miy/sdk";
 import { installationsIn, useInstallationPolling, useInstallations } from "../data/installations";
-import { currentEnvironment, environmentPath } from "../lib/paths";
+import { currentEnvironment, environmentPath, portalEnvironment } from "../lib/paths";
+import { useSurface } from "../data/session";
 import { LoadError, StaleNotice } from "../components/LoadState";
 import { AppMark, EmptyState, Loading, Panel, monograms } from "../ui";
 
@@ -10,7 +11,11 @@ export function Home() {
   const installations = useInstallations();
   useInstallationPolling();
   const location = useLocation();
-  const environment = currentEnvironment(location.pathname);
+  const surface = useSurface();
+  const environment = currentEnvironment(
+    location.pathname,
+    portalEnvironment(surface.surface, surface.legacyPortal) ?? "dev",
+  );
   const refresh = () => void installations.refresh();
   const apps = installationsIn(installations.items, environment);
   const marks = useMemo(() => monograms(apps.map((a) => ({ key: a.id, name: a.name }))), [apps]);

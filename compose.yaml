@@ -47,13 +47,17 @@ services:
     environment:
       MIY_ORIGIN: ${MIY_ORIGIN:?run scripts/bootstrap.py}
       MIY_CONSOLE_ORIGIN: ${MIY_CONSOLE_ORIGIN:?run scripts/bootstrap.py}
+      MIY_DEV_PORTAL_ORIGIN: ${MIY_DEV_PORTAL_ORIGIN:?run scripts/bootstrap.py}
       MIY_CORE_UPSTREAM: ${MIY_CORE_UPSTREAM:-127.0.0.1:18080}
       MIY_CONSOLE_CORE_UPSTREAM: ${MIY_CONSOLE_CORE_UPSTREAM:-127.0.0.1:18081}
+      MIY_DEV_PORTAL_CORE_UPSTREAM: ${MIY_DEV_PORTAL_CORE_UPSTREAM:-127.0.0.1:18082}
       MIY_IDENTITY_UPSTREAM: ${MIY_IDENTITY_UPSTREAM:-127.0.0.1:18181}
       MIY_PORTAL_HOST: ${MIY_PORTAL_HOST:?run scripts/bootstrap.py}
       MIY_CONSOLE_HOST: ${MIY_CONSOLE_HOST:?run scripts/bootstrap.py}
+      MIY_DEV_PORTAL_HOST: ${MIY_DEV_PORTAL_HOST:?run scripts/bootstrap.py}
       MIY_PORTAL_PORT: ${MIY_PORTAL_PORT:?run scripts/bootstrap.py}
       MIY_CONSOLE_PORT: ${MIY_CONSOLE_PORT:?run scripts/bootstrap.py}
+      MIY_DEV_PORTAL_PORT: ${MIY_DEV_PORTAL_PORT:?run scripts/bootstrap.py}
       MIY_PUBLIC_SCHEME: ${MIY_PUBLIC_SCHEME:?run scripts/bootstrap.py}
       MIY_PROXY_BIND: ${MIY_PROXY_BIND:-127.0.0.1}
       MIY_HTTP_PORT: ${MIY_HTTP_PORT:-18000}

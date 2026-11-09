@@ -13,7 +13,7 @@
 
 | 영역 | 현재 필수 | 후속 권장·기능 작업 |
 | --- | --- | --- |
-| 배치 | 한 IP의 업무 포털 / 관리·로그인 두 HTTPS 출처. dev/prod는 같은 포털 | 별도 IdP 출처·사이트, dev/prod 포털 분리. 외부 노출·외부 앱 도입 전 재검토 |
+| 배치 | 한 IP의 업무 포털(prod) / dev 포털 / 관리·로그인 세 HTTPS 출처(2026-11-09 결정, dev 포털은 구현·격리 검증 완료·운영 전환 대기) | 별도 IdP 출처·사이트. 외부 노출·외부 앱 도입 전 재검토 |
 | 인증 | portal/console 세션 용도, 서버 경로 제한, 콘솔에서만 CLI 승인. 기존 OIDC·CLI 체계 재사용 | 전체 credential 모델 재설계, MFA 의무화, 세밀한 인증 관제 |
 | UI | MF/AppRoot·독립 빌드·통합 라우팅·게시 SDK 유지. 콘솔에 앱 코드 없음 | 불특정 앱 코드의 강제 격리. iframe 자동 도입은 없음 |
 | 권한 | 기존 사용자·그룹·use/develop/deploy, 현재 권한 재검사. prod 사용과 관리 분리 | 새 역할 체계·업무 action별 API Invoke·서비스 주체 |
@@ -68,7 +68,7 @@ AB ID는 참조를 유지한다. 이전 iframe 설계나 보안 후보의 검사
 | 9 낮음 | __Host-로 포트 공유·cookie tossing/bomb을 완전히 막지 못함. 400/431 장애 가능 | 쿠키 이름·목적·중복 거부·복구 안내. 잔여 한계 명시. 별도 사이트·광범위 스트레스 인수는 후속 |
 | 10 높음(2026-11-09) | 포트가 쿠키를 나누지 않아 다른 출처의 코드가 보낸 GET·탐색에도 쿠키 세션이 붙어 실행됨. 응답은 CORS로 읽지 못해도 부수 효과는 발생 | 쿠키 인증 요청은 세션 조회 전에 Fetch Metadata·Origin을 검사해 다른 출처 요청을 거부. `/auth/login`은 탐색만 허용 |
 | 11 중간(2026-11-09) | 앱 간 연결의 후속 hop이 브라우저 원 호출자에게도 서명 identity `admin=true`를 실음 | 원 자격증명이 브라우저 세션이면 모든 hop에서 `admin=false` |
-| 12 높음(2026-11-09) | dev 앱(승인 전 코드)이 prod 앱과 같은 포털 출처에서 실행되어 여는 사람의 prod Use를 행사 | dev 전용 포털 출처를 추가하고 기존 포털을 prod 전용으로 전환(PLAN의 경계 후속 작업). 구현·운영 전환 전까지 잔여 위험 |
+| 12 높음(2026-11-09) | dev 앱(승인 전 코드)이 prod 앱과 같은 포털 출처에서 실행되어 여는 사람의 prod Use를 행사 | dev 전용 포털 출처를 추가하고 기존 포털을 prod 전용으로 전환. 소스 구현·격리 검증 완료, 운영 전환 전까지 잔여 위험([영역과 설정](#영역과-설정)) |
 
 CLI 근거는 `cli_auth.rs`의 start/approve/exchange, `auth_sessions.rs`의 approve/issue/list_sessions, `0010_cli_sessions.sql`의 30일 family, `auth.rs`의 logout이다. 이 인증 소스는 `7b43789..22c219d`에서 변경되지 않았지만 운영 공격 입증은 아니다.
 
@@ -99,16 +99,24 @@ CLI 근거는 `cli_auth.rs`의 start/approve/exchange, `auth_sessions.rs`의 app
 
 ### 영역과 설정
 
-최소 구성은 **두 출처, 기존 Core·DB·Keycloak 재사용**이다. 포트는 아래 예시처럼 설정하며 기존 업무 포털 주소를 가능한 한 유지한다.
+구성은 **세 출처, 기존 Core·DB·Keycloak 재사용**이다(2026-11-09 사용자 결정으로 dev 포털 추가). 승인 전 dev 앱 코드가 prod 앱과 같은 JavaScript 출처에서 실행되지 않게, 업무 포털은 prod 앱만, dev 포털은 dev 앱만 실행한다. 도메인 없는 localhost·단일 IP 설치가 기본이며 포트로 출처를 나눈다. 포트는 아래 예시처럼 설정하며 기존 업무 포털 주소를 가능한 한 유지한다.
 
-| 배치 | 업무 포털(dev/prod 공통) | 관리·로그인 | IdP issuer |
-| --- | --- | --- | --- |
-| 단일 IP | https://192.168.10.20:8443 | https://192.168.10.20:9443 | https://192.168.10.20:9443/identity/realms/miy |
-| 도메인 사용 시 | 기존 업무 UI 호스트 | 관리 호스트 | 관리 호스트의 /identity/realms/miy |
+| 배치 | 업무 포털(prod) | dev 포털(dev) | 관리·로그인 | IdP issuer |
+| --- | --- | --- | --- | --- |
+| localhost | https://localhost:18443 | https://localhost:18445 | https://localhost:18444 | 관리 출처의 /identity/realms/miy |
+| 단일 IP | https://192.168.10.20:8443 | https://192.168.10.20:9444 | https://192.168.10.20:9443 | https://192.168.10.20:9443/identity/realms/miy |
+| 도메인 사용 시 | 기존 업무 UI 호스트 | dev 호스트(권장) 또는 포트 | 관리 호스트 | 관리 호스트의 /identity/realms/miy |
+
+**dev 포털 상태:** 소스 구현과 격리 검증까지 완료했고 운영 전환은 아직 하지 않았다. 운영 주소(포트 또는 호스트명)와 전환 실행은 리허설 결과를 보고한 뒤 사용자 확인으로 정한다. 전환 전 운영에서는 기존 포털이 dev와 prod를 함께 실행하며, 새 UI는 `devPortalOrigin`이 없는 구 서버에서도 그 동작을 유지한다.
+
+- **집행:** Core는 dev 포털용 listener를 따로 열고(`devPortalOrigin`·`devPortalBind`, `MIY_DEV_PORTAL_ORIGIN`·`MIY_DEV_PORTAL_BIND_ADDR`) 세션 용도 `dev_portal`을 저장한다(migration `0021_dev_portal.sql`, 제약 확장만). 정책 한 곳(`policy.rs` `decide`)에서 포털 세션은 prod Use만, dev 포털 세션은 dev Use만 허용한다. 앱 API·UI 자산·directory·연결·목록·`canOpen`이 모두 이 판정을 따른다. 관리자도 prod 포털에서 dev 앱을 열 수 없다.
+- **dev 포털이 제공하지 않는 것:** 관리 API, CLI·MCP bearer, CLI 승인, `/identity`, OAuth 메타데이터. CLI·MCP·로컬 preview는 기존 포털 주소를 계속 쓴다.
+- **UI:** 포털이 dev 경로(게시 CLI가 출력하는 `/environments/dev/...`와 구 `/apps/...` 포함)를 받으면 로그인 확인이나 앱 import 전에 dev 포털로 같은 탭 이동한다. 환경 전환과 콘솔의 "포털에서 앱 열기"는 환경별 출처의 새 탭이다.
+- **포트 구분의 한계:** 같은 호스트의 포트는 쿠키를 공유한다. 다른 출처 요청은 거부하지만(쿠키 요청 출처 검사), dev 코드가 포털에 HttpOnly 세션 쿠키가 없을 때 `__Host-miy_portal_session`을 미리 심어 피해자를 공격자 계정으로 로그인시키는 것(login CSRF)과 쿠키 대량 주입은 포트 구분으로 막지 못한다. 도메인이 있는 설치는 dev 포털에 별도 호스트명을 권장한다.
 
 출처는 호스트 또는 포트로 나눌 수 있다. 도메인이 있으면 `v2.dwdcc.kr`과 `v2-console.dwdcc.kr`처럼 같은 IP의 기본 HTTPS 포트 443을 함께 사용할 수 있다. 현재 서버의 `:9443`은 새 DNS 없이 기존 인증서로 배포하기 위해 선택한 구성이지, 단일 IP 지원 정책이 강제하는 포트가 아니다. 관리 하위 도메인 방식도 동일한 설정 계약을 사용한다.
 
-기존 `origin`/`MIY_ORIGIN`과 CLI 서버 주소를 유지하고 `consoleOrigin`/`MIY_CONSOLE_ORIGIN`을 추가했다. `identityIssuer`/`MIY_ISSUER`는 관리 출처의 고정 경로로 설정한다. 별도 dev 포털·IdP 포트·새 credential 발견 API는 요구하지 않는다. `consoleBind`/`MIY_CONSOLE_BIND_ADDR`를 추가했고 두 Core listener는 서로 다른 loopback 주소에 고정한다. `/auth/options`는 현재 surface와 고정된 두 origin을 반환한다. `bootstrap.py`·Nginx/Caddy 생성·IdP 구성과 `check-server-tls.py`가 이 설정을 사용한다.
+기존 `origin`/`MIY_ORIGIN`과 CLI 서버 주소를 유지하고 `consoleOrigin`/`MIY_CONSOLE_ORIGIN`을 추가했다. `identityIssuer`/`MIY_ISSUER`는 관리 출처의 고정 경로로 설정한다. 별도 IdP 포트·새 credential 발견 API는 요구하지 않는다. `consoleBind`/`MIY_CONSOLE_BIND_ADDR`와 `devPortalBind`/`MIY_DEV_PORTAL_BIND_ADDR`를 추가했고 세 Core listener는 서로 다른 loopback 주소에 고정한다. `/auth/options`는 현재 surface와 고정된 세 origin을 반환한다. `bootstrap.py`·Nginx/Caddy 생성·IdP 구성과 `check-server-tls.py`가 이 설정을 사용한다.
 
 - 사내 공유 서버는 HTTPS를 사용한다. 사설 IP는 IP SAN 사설 CA 인증서를 반입하고 체인·호스트·만료를 검사한다. Windows·브라우저·CLI의 신뢰 등록과 수동 교체 안내를 제공한다. TLS 경고 무시·검증 해제·HTTP fallback을 허용하지 않는다. 기존 loopback 개발 흐름과 공유 서버 인수는 구분한다.
 - Nginx의 출처별 경로를 명시한다. 관리 출처는 플랫폼 콘솔과 Keycloak 로그인/필수 리소스만 제공하고 앱 artifact·preview·업무 콘텐츠를 제공하지 않는다. Keycloak 관리 API/관리 콘솔은 내부 관리 접근으로 제한한다.
@@ -143,7 +151,7 @@ P/A는 하나의 JavaScript 신뢰 영역이다. 그림의 박스가 앱 간 강
 | 서비스 계정(V1-A2) | 후속 기능에서 정할 앱·환경·업무 action | 미구현·기본 거부. 사용자 권한 실패의 대체 수단 아님 |
 | AI 실행 | 소유 사용자 또는 구현된 서비스 주체의 제한 권한 | 기존 위임 재사용. 공급자 API 키를 업무 권한으로 취급하지 않음 |
 
-전체 인증 체계를 다시 만들지 않고 기존 Principal·sessions·login_flows에 브라우저 용도 `portal | console`을 추가한다. 로그인 flow의 용도·정확한 callback을 서버 설정에 결합한다. 기존 `miy-web` confidential client에 두 출처의 정확한 callback/logout URI를 등록하고 서버에서 code를 교환한다. realm·사용자 sub·기존 scope/토큰 수명을 유지한다.
+전체 인증 체계를 다시 만들지 않고 기존 Principal·sessions·login_flows에 브라우저 용도 `portal | dev_portal | console`을 추가한다. 로그인 flow의 용도·정확한 callback을 서버 설정에 결합한다. 기존 `miy-web` confidential client에 두 출처의 정확한 callback/logout URI를 등록하고 서버에서 code를 교환한다. realm·사용자 sub·기존 scope/토큰 수명을 유지한다.
 
 - 세션·로그인 보조 쿠키는 목적별 이름과 Secure·HttpOnly·__Host-·Path=/·Domain 없음을 사용한다. 인증 쿠키 중복은 거부하고 다른 목적 쿠키로 fallback하지 않는다. IdP 쿠키는 실제 속성과 로그인 호환을 확인한다.
 - 기존 route 등록에 허용할 브라우저 용도를 선언하고 누락은 거부한다. API뿐 아니라 auth·MCP·artifact·download·preview·WebSocket도 확인한다. 기존 비브라우저 CLI·위임·app-call 판정을 재사용한다.

@@ -7,12 +7,13 @@ import { openNewTab } from "./new-tab";
 // Not covered here: OIDC/Keycloak login, deployed Docker apps and remote app UIs.
 
 // Development login returns to the platform home; then open the target page.
+type Surface = "portal" | "dev_portal" | "console";
 async function serverOrigins(page: Page) {
-  return (await (await page.request.get("/auth/options")).json()) as { portalOrigin: string; consoleOrigin: string };
+  return (await (await page.request.get("/auth/options")).json()) as Record<"portalOrigin" | "devPortalOrigin" | "consoleOrigin", string>;
 }
-async function signIn(page: Page, label: RegExp, path?: string, surface: "portal" | "console" = "portal") {
+async function signIn(page: Page, label: RegExp, path?: string, surface: Surface = "portal") {
   const origins = await serverOrigins(page);
-  const origin = surface === "console" ? origins.consoleOrigin : origins.portalOrigin;
+  const origin = { portal: origins.portalOrigin, dev_portal: origins.devPortalOrigin, console: origins.consoleOrigin }[surface];
   await page.goto(origin + "/");
   await page.getByRole("button", { name: label }).click();
   await expect(page.getByRole("button", { name: "로그아웃" })).toBeVisible();
@@ -74,8 +75,13 @@ test("a regular user gets only what the server allows", async ({ page }) => {
   await page.goto((await serverOrigins(page)).consoleOrigin + "/admin");
   await expect(page.getByRole("heading", { name: "관리자 권한이 필요합니다" })).toBeVisible();
   expect((await page.request.get((await serverOrigins(page)).consoleOrigin + "/api/v1/users")).status()).toBe(403);
+  // Dev apps live on the dev portal only: the prod portal moves the path there,
+  // and the dev portal has its own sign-in.
   await page.goto("/environments/dev/apps/missing-app");
+  await expect(page).toHaveURL((await serverOrigins(page)).devPortalOrigin + "/environments/dev/apps/missing-app");
+  await signIn(page, /사용자 A/, "/environments/dev/apps/missing-app", "dev_portal");
   await expect(page.getByRole("heading", { name: "앱에 접근할 수 없습니다" })).toBeVisible();
+  expect((await page.request.get((await serverOrigins(page)).devPortalOrigin + "/api/v1/users")).status()).toBe(403);
   await page.goto("/environments/stage");
   await expect(page.getByText("존재하지 않는 실행 환경입니다")).toBeVisible();
 });

@@ -892,7 +892,7 @@ async fn isolated_runtime_regression() -> Result<()> {
     suite(
         "migration",
         Ok(migration),
-        json!({"suite":"migration","storage":"fresh isolated PostgreSQL and independent app database","fromSchema":19,"toSchema":20}),
+        json!({"suite":"migration","storage":"fresh isolated PostgreSQL and independent app database","fromSchema":19,"toSchema":21}),
     );
     sqlx::migrate!("../../migrations/core").run(&pool).await?;
     sqlx::query("INSERT INTO users(id,name,admin) VALUES('audit-admin','Synthetic admin',true),('audit-dev','Synthetic developer',false),('audit-user','Synthetic user',false) ON CONFLICT (id) DO NOTHING").execute(&pool).await?;
@@ -923,9 +923,12 @@ async fn isolated_runtime_regression() -> Result<()> {
     let api_origin = format!("http://{}", api_listener.local_addr()?);
     let console_listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
     let console_origin = format!("http://{}", console_listener.local_addr()?);
+    let dev_portal_listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
+    let dev_portal_origin = format!("http://{}", dev_portal_listener.local_addr()?);
     unsafe {
         std::env::set_var("MIY_ORIGIN", &api_origin);
         std::env::set_var("MIY_CONSOLE_ORIGIN", &console_origin);
+        std::env::set_var("MIY_DEV_PORTAL_ORIGIN", &dev_portal_origin);
         std::env::set_var("MIY_DEV_LOGIN", "1");
         std::env::set_var("MIY_DEV_ORIGIN", &api_origin);
     }
@@ -939,6 +942,9 @@ async fn isolated_runtime_regression() -> Result<()> {
     let console_router = crate::http::router_for(s.clone(), auth::BrowserPurpose::Console);
     let console_server =
         tokio::spawn(async move { axum::serve(console_listener, console_router).await });
+    let dev_portal_router = crate::http::router_for(s.clone(), auth::BrowserPurpose::DevPortal);
+    let dev_portal_server =
+        tokio::spawn(async move { axum::serve(dev_portal_listener, dev_portal_router).await });
     let admin = actor("audit-admin");
     let dev = actor("audit-dev");
     let ordinary = actor("audit-user");
@@ -1622,8 +1628,15 @@ async fn isolated_runtime_regression() -> Result<()> {
     );
     suite(
         "boundary",
-        crate::browser_boundary_regression::run(&s, &client, &api_origin, &console_origin).await,
-        json!({"suite":"boundary","transport":"two fixed HTTP listeners","storage":"isolated PostgreSQL","identity":"synthetic development sessions","application":"signed loopback API and actual JS artifact"}),
+        crate::browser_boundary_regression::run(
+            &s,
+            &client,
+            &api_origin,
+            &console_origin,
+            &dev_portal_origin,
+        )
+        .await,
+        json!({"suite":"boundary","transport":"three fixed HTTP listeners","storage":"isolated PostgreSQL","identity":"synthetic development sessions","application":"signed loopback API and actual JS artifact"}),
     );
     suite(
         "auth",
@@ -1632,7 +1645,7 @@ async fn isolated_runtime_regression() -> Result<()> {
     );
     suite(
         "permissions",
-        crate::permissions_regression::run(&s, &client, &api_origin).await,
+        crate::permissions_regression::run(&s, &client, &api_origin, &dev_portal_origin).await,
         json!({"suite":"permissions","transport":"HTTP and MCP","storage":"isolated PostgreSQL","runtime":"signed loopback app fixtures"}),
     );
     suite(
@@ -1643,6 +1656,7 @@ async fn isolated_runtime_regression() -> Result<()> {
     worker_recovery_boundaries(&s, &admin).await?;
     api_server.abort();
     console_server.abort();
+    dev_portal_server.abort();
     oidc.abort();
     let failures = std::fs::read_to_string(root().join("evidence/results.jsonl"))?
         .lines()

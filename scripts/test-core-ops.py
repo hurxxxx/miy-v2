@@ -264,6 +264,7 @@ class FakeHost:
         self.records_change_with_candidate = False
         self.budget_before = True
         self.budget_with_candidate = True
+        self.migrate_works = True
         # Newest first, like the GitHub API. Each test may replace a run or its jobs.
         self.ci_runs = [{'id': 7000 + index, 'path': '.github/workflows/' + name, 'head_sha': COMMIT,
                          'head_branch': 'main', 'event': 'push', 'status': 'completed', 'conclusion': 'success',
@@ -333,6 +334,13 @@ class FakeHost:
             manifest['migrationVersion'] = self.schema
             (out / 'manifest.json').write_text(json.dumps(manifest))
             return '{"status":"CREATED"}'
+        if args[0] == 'env' and args[-1] == 'migrate':
+            self.events.append('migrate')
+            self.test.assertEqual(args[1], 'MIY_BINARY=' + str(self.test.installed))
+            self.test.assertEqual(hashlib.sha256(self.test.installed.read_bytes()).hexdigest(), NEW_SHA)
+            if self.migrate_works:
+                self.schema += 1
+            return ''
         if args[0] == 'python3' and args[2] == 'verify':
             self.events.append('verify')
             self.test.assertEqual(args[-1], str(self.test.rollout.REL / 'rollback/miy-server.candidate'))
@@ -506,6 +514,51 @@ class CoreRolloutTests(OfflineTest):
                 self.assertEqual(record['status'], 'PREFLIGHT_FAILED')
                 self.assertFalse(record['productionMutations'])
                 self.assert_untouched(b'unexpected installed' if code_name == 'installed_binary_changed' else OLD)
+
+    def widen_fixture(self):
+        migration = self.source / 'migrations/core/0020_next.sql'
+        migration.write_text('ALTER TABLE fixture DROP CONSTRAINT fixture_check;\n')
+        pinned = hashlib.sha256(migration.read_bytes()).hexdigest()
+        patch.object(self.rollout, 'WIDEN_ONLY', {20: ('0020_next.sql', pinned)}).start()
+        self.host.verify['rehearsal'] = {'exitCode': 0, 'migrationVersionAfter': 20}
+        return migration
+
+    def test_widen_migration_applies_only_the_pinned_migration_after_a_verified_backup(self):
+        self.widen_fixture()
+        code, result, release = self.run_tool(widen_migration=20)
+        self.assertEqual((code, result['status'], result['schema']), (0, 'PASS', 20))
+        self.assertEqual(self.host.events, ['stop', 'backup', 'verify', 'migrate', 'start'])
+        record = json.loads((release / 'deployment.json').read_text())
+        self.assertEqual((record['liveSchema'], record['migratedSchema'], record['widenMigration']), (19, 20, 20))
+        # Rollback keeps the widened schema and reinstalls the previous binary.
+        code, result, _ = self.run_tool('rollback', release=release)
+        self.assertEqual((code, result['status']), (0, 'ROLLED_BACK'))
+        self.assertEqual((self.installed.read_bytes(), self.host.schema), (OLD, 20))
+
+    def test_widen_migration_refusals_change_nothing(self):
+        cases = {
+            'widen_migration_not_allowed': lambda m: {'widen_migration': 21},
+            'widen_migration_changed': lambda m: (m.write_text('ALTER TABLE other DROP COLUMN data;\n'),
+                                                  {'widen_migration': 20})[1],
+            'migration_rollout_not_supported': lambda m: {},
+        }
+        for code_name, change in cases.items():
+            with self.subTest(code_name):
+                self.reset()
+                options = change(self.widen_fixture() if code_name != 'widen_migration_changed' else self.widen_fixture())
+                code, result, _ = self.run_tool(**options)
+                self.assertEqual((code, result['failure']), (1, code_name))
+                self.assert_untouched()
+                self.assertEqual(self.host.schema, 19)
+
+    def test_a_widen_migration_that_does_not_apply_restores_the_previous_binary(self):
+        self.widen_fixture()
+        self.host.migrate_works = False
+        code, result, release = self.run_tool(widen_migration=20)
+        self.assertEqual((code, result['failure']), (1, 'widen_migration_not_applied'))
+        record = json.loads((release / 'deployment.json').read_text())
+        self.assertEqual(record['status'], 'ROLLED_BACK')
+        self.assertEqual((self.installed.read_bytes(), self.host.schema, self.host.started), (OLD, 19, [OLD_SHA]))
 
     def test_source_must_be_a_separate_checkout(self):
         code, result, _ = self.run_tool('inspect', source=self.root)

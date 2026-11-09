@@ -17,6 +17,11 @@ A schema or settings rollout needs a reviewed extension with a real-dump rollbac
 Every apply attempt needs a new --release-dir under .local; it keeps the 0700 recovery data and
 the 0600 deployment record. apply/rollback run only after an explicit production request.
 
+--widen-migration N allows exactly one pinned, constraint-widening migration (see WIDEN_ONLY): the
+backup is still restored and migrate-checked first, the candidate migrates the live database after
+core stops, and a later rollback reinstalls the previous binary on the widened schema, which that
+binary keeps using unchanged. No other migration, setting or identity change is ever applied.
+
 The preflight requires the exact source commit to have passed every required main-push GitHub
 workflow (web, cli-foundation, runtime-regression), every job included. A local PASS or a run of
 another commit never substitutes for it.
@@ -50,6 +55,9 @@ PROCESS_PROPERTIES = ('Id', 'LoadState', 'ActiveState', 'Slice', 'ControlGroup',
 STABLE_TABLES = ['users', 'apps', 'app_registrations', 'grants', 'installations', 'releases', 'release_checks',
                  'db_resources', 'groups', 'group_members', 'group_grants', 'app_admission', 'app_controls']
 REPOSITORY = 'hurxxxx/miy-v2'
+# Migrations an older binary keeps working with because they only widen constraints:
+# version -> (file, sha256 of its exact bytes).
+WIDEN_ONLY = {21: ('0021_dev_portal.sql', 'f2b2c022638d618bb337ca1ab53d6ea2f2e0cd7b2cce474ed8659c2f7060b82a')}
 REQUIRED_CI = ('cli-foundation.yml', 'runtime-regression.yml', 'web.yml')
 HEX40 = re.compile(r'[0-9a-f]{40}')
 HEX64 = re.compile(r'[0-9a-f]{64}')
@@ -445,8 +453,16 @@ def preflight(args):
     core_cgroup_population()
     facts['executables'] = executable_hashes(args.installed_sha256)
     live_schema = migrations()
-    require(live_schema == facts['schema'],
-            'migration_rollout_not_supported' if facts['schema'] > live_schema else 'source_schema_older_than_live')
+    facts['liveSchema'] = live_schema
+    if args.widen_migration is None:
+        require(live_schema == facts['schema'],
+                'migration_rollout_not_supported' if facts['schema'] > live_schema else 'source_schema_older_than_live')
+    else:
+        pinned = WIDEN_ONLY.get(args.widen_migration)
+        require(pinned is not None and facts['schema'] == args.widen_migration == live_schema + 1,
+                'widen_migration_not_allowed')
+        migration = source / 'migrations/core' / pinned[0]
+        require(migration.is_file() and digest(migration) == pinned[1], 'widen_migration_changed')
     require(int(sql('SHOW max_connections', 'postgres')) == args.max_connections, 'database_settings_differ')
     require(container_setting(KEYCLOAK, 'KC_DB_POOL_MAX_SIZE') == str(args.identity_pool), 'identity_settings_differ')
     require(get_json(ORIGIN + '/api/health') == {'status': 'ok'}, 'health_failed_before_rollout')
@@ -499,7 +515,8 @@ def apply(args):
         facts = preflight(args)
         schema, sha = facts['schema'], args.candidate_sha256
         before_containers = facts['appContainers']
-        REPORT.update({'version': facts['version'], 'schema': schema, 'previousExecutables': facts['executables'],
+        REPORT.update({'version': facts['version'], 'schema': schema, 'liveSchema': facts['liveSchema'],
+                       'widenMigration': args.widen_migration, 'previousExecutables': facts['executables'],
                        'cliGuide': facts['cliGuide'], 'connectionBudgetBefore': facts['connectionBudget'],
                        'idleBeforeStop': facts['idle'], 'appContainersBefore': before_containers,
                        'databaseNetworks': len(facts['databaseNetworks'])})
@@ -526,7 +543,7 @@ def apply(args):
         backup, tool = recovery() / 'core', source / 'scripts/core-backup.py'
         call(['python3', tool, 'create', '--db-container', DB, '--database', 'miy_core', '--out', backup])
         manifest = json.loads((backup / 'manifest.json').read_text())
-        require(manifest['migrationVersion'] == schema, 'backup_migration_version')
+        require(manifest['migrationVersion'] == facts['liveSchema'], 'backup_migration_version')
         REPORT['databaseBackup'] = {**manifest['dump'], 'migrationVersion': manifest['migrationVersion'],
                                     'tables': len(manifest['tables']), 'rows': sum(manifest['tables'].values())}
         verification = json.loads(call(['python3', tool, 'verify', backup, '--migrate-with', candidate]))
@@ -543,6 +560,13 @@ def apply(args):
         atomic_copy(candidate, installed())
         require(digest(installed()) == sha, 'installed_candidate_hash_mismatch')
         source_preflight(source, args.commit)
+        if args.widen_migration is not None:
+            # The verified candidate applies only the pinned widening migration while
+            # core is stopped. The previous binary keeps working on the result.
+            call(['env', f'MIY_BINARY={installed()}', 'bash', LIVE / 'scripts/run-service.sh', 'migrate'])
+            REPORT['migratedSchema'] = migrations()
+            save()
+            require(REPORT['migratedSchema'] == schema, 'widen_migration_not_applied')
         # From here a failed check must not discard writes the new API may have accepted.
         started = True
         start_core()
@@ -570,7 +594,7 @@ def apply(args):
             save()
             raise RuntimeError('post_start_failed_manual_assessment_required') from None
         try:
-            restore_previous(schema)
+            restore_previous(REPORT.get('migratedSchema', facts['liveSchema']))
         except (Exception, KeyboardInterrupt) as rollback_error:
             REPORT['status'] = 'ROLLBACK_FAILED'
             REPORT['rollbackFailureCategory'] = failure_code(rollback_error)
@@ -642,6 +666,7 @@ def main(argv=None):
     parser.add_argument('--release-dir', type=pathlib.Path, help='new directory under .local per apply attempt')
     parser.add_argument('--max-connections', type=int, default=200, help='expected; never changed')
     parser.add_argument('--identity-pool', type=int, default=10, help='expected KC_DB_POOL_MAX_SIZE; never changed')
+    parser.add_argument('--widen-migration', type=int, help='allow exactly this pinned constraint-widening migration')
     args = parser.parse_args(argv)
     try:
         if args.action == 'inspect':

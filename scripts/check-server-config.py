@@ -19,10 +19,11 @@ import urllib.request
 ROOT = Path(__file__).resolve().parent.parent
 ENV = {key: value for key, value in os.environ.items() if not key.startswith('MIY_')}
 CADDY = 'caddy:2.11.2@sha256:25cdc846626b62d05f6b633b9b40c2c9f6ef89b515dc76133cefd920f7dbe562'
-PUBLIC_PROXY_ENV = {'MIY_ORIGIN', 'MIY_CONSOLE_ORIGIN', 'MIY_CORE_UPSTREAM',
-                    'MIY_CONSOLE_CORE_UPSTREAM', 'MIY_IDENTITY_UPSTREAM',
-                    'MIY_PORTAL_HOST', 'MIY_CONSOLE_HOST', 'MIY_PORTAL_PORT',
-                    'MIY_CONSOLE_PORT', 'MIY_PUBLIC_SCHEME', 'MIY_PROXY_BIND', 'MIY_HTTP_PORT'}
+PUBLIC_PROXY_ENV = {'MIY_ORIGIN', 'MIY_CONSOLE_ORIGIN', 'MIY_DEV_PORTAL_ORIGIN', 'MIY_CORE_UPSTREAM',
+                    'MIY_CONSOLE_CORE_UPSTREAM', 'MIY_DEV_PORTAL_CORE_UPSTREAM', 'MIY_IDENTITY_UPSTREAM',
+                    'MIY_PORTAL_HOST', 'MIY_CONSOLE_HOST', 'MIY_DEV_PORTAL_HOST', 'MIY_PORTAL_PORT',
+                    'MIY_CONSOLE_PORT', 'MIY_DEV_PORTAL_PORT', 'MIY_PUBLIC_SCHEME', 'MIY_PROXY_BIND',
+                    'MIY_HTTP_PORT'}
 
 
 def require(condition, message):
@@ -154,24 +155,26 @@ def proxy_regression(state, kind, tls_material=None):
     reserved = []
     cidfile = state / 'caddy.cid'
     try:
-        for surface in ['portal', 'console', 'identity']:
+        for surface in ['portal', 'console', 'identity', 'dev_portal']:
             stub = http.server.ThreadingHTTPServer(('127.0.0.1', 0), Handler)
             stub.surface = surface
             thread = threading.Thread(target=stub.serve_forever, daemon=True)
             thread.start()
             stubs.append(stub)
             threads.append(thread)
-        for _ in range(2):
+        for _ in range(3):
             sock = socket.socket()
             sock.bind(('127.0.0.1', 0))
             reserved.append(sock)
         ports = [sock.getsockname()[1] for sock in reserved]
         scheme = 'https' if tls_material else 'http'
-        portal, console = [f'{scheme}://127.0.0.1:{number}' for number in ports]
+        portal, console, dev_portal = [f'{scheme}://127.0.0.1:{number}' for number in ports]
         tls_options = ['--ca-file', str(tls_material[0])] if tls_material else []
         bootstrap(state, '--profile', 'server' if tls_material else 'local', '--origin', portal, '--console-origin', console,
+                  '--dev-portal-origin', dev_portal,
                   '--bind', f'127.0.0.1:{stubs[0].server_port}',
                   '--console-bind', f'127.0.0.1:{stubs[1].server_port}',
+                  '--dev-portal-bind', f'127.0.0.1:{stubs[3].server_port}',
                   '--identity-port', str(stubs[2].server_port), *tls_options)
         site = state / 'site'
         site.mkdir()
@@ -228,7 +231,7 @@ def proxy_regression(state, kind, tls_material=None):
         else:
             raise AssertionError(f'{kind} did not start on its temporary ports: {last_error}')
 
-        for origin, surface in [(portal, 'portal'), (console, 'console')]:
+        for origin, surface in [(portal, 'portal'), (console, 'console'), (dev_portal, 'dev_portal')]:
             status, headers, body = fetch(origin, '/api/health', {
                 'X-Forwarded-Host': 'attacker.invalid', 'X-Forwarded-Proto': 'https',
                 'X-Forwarded-Port': '443', 'Forwarded': 'host=attacker.invalid;proto=https',
@@ -252,6 +255,23 @@ def proxy_regression(state, kind, tls_material=None):
                     'CLI verification redirect copied an untrusted destination or query')
         require(fetch(portal, '/identity/realms/miy/.well-known/openid-configuration')[0] == 404,
                 'Portal can still proxy identity')
+        # The dev portal runs dev app code: no identity pages, CLI approval, MCP or
+        # OAuth metadata. App API, assets and browser sign-in still reach its Core.
+        for path in ['/identity/realms/miy/.well-known/openid-configuration', '/identity/',
+                     '/cli/authorize/00000000-0000-4000-8000-000000000001',
+                     '/cli/device/00000000-0000-4000-8000-000000000001',
+                     '/auth/cli/device', '/mcp', '/.well-known/oauth-protected-resource/mcp']:
+            require(fetch(dev_portal, path)[0] == 404, 'Dev portal exposed a non-app surface: ' + path)
+        for path in ['/api/v1/installations/id/api/test', '/artifacts/hash/ui/remoteEntry.js', '/auth/options']:
+            status, _, body = fetch(dev_portal, path)
+            require(status == 200 and json.loads(body)['surface'] == 'dev_portal',
+                    'Dev portal did not route app content to its own fixed Core listener')
+        require(fetch(dev_portal, '/assets/worker.js', {'Service-Worker': 'script'})[0] == 403,
+                'Dev portal accepted a service-worker script request')
+        dev_headers = fetch(dev_portal, '/')[1]
+        require("worker-src 'none'" in ';'.join(dev_headers.get_all('Content-Security-Policy', []))
+                and "frame-ancestors 'none'" in ';'.join(dev_headers.get_all('Content-Security-Policy', [])),
+                'Dev portal shell permits new service workers or framing')
         for path in ['/identity/admin/', '/identity/realms/master/', '/identity/']:
             require(fetch(console, path)[0] == 404, 'Console exposed an internal identity endpoint')
         status, headers, body = fetch(console, '/identity/realms/miy/.well-known/openid-configuration')
@@ -357,8 +377,11 @@ def identity_sync(state):
     clients = [json.loads(body) for method, path, body in requests if method == 'PUT' and '/clients/' in path
                and not ('/protocol-mappers/' in path or '-client-scopes/' in path)]
     web = next(client for client in clients if client.get('clientId') == 'miy-web')
-    require(web['redirectUris'] == [settings[key] + '/auth/callback' for key in ['origin', 'consoleOrigin']],
-            'Existing miy-web client lost either exact callback')
+    require(web['redirectUris'] == [settings[key] + '/auth/callback'
+                                    for key in ['origin', 'consoleOrigin', 'devPortalOrigin']],
+            'Existing miy-web client lost an exact callback')
+    require(web['webOrigins'] == [settings['origin'], settings['consoleOrigin']],
+            'The dev portal gained identity provider CORS access')
     require(not any(method in ['PUT', 'DELETE'] and '/users/' in path for method, path, _ in requests),
             'Identity synchronization replaced existing user subjects')
 
@@ -382,6 +405,11 @@ with tempfile.TemporaryDirectory(prefix='miy-server-config-') as temporary:
         ['--bind', '127.0.0.1:18081', '--console-bind', '127.0.0.1:18081'],
         ['--bind', '0.0.0.0:18080'],
         ['--console-bind', '10.2.3.4:18081'],
+        ['--dev-portal-origin', 'https://platform.example'],
+        ['--dev-portal-origin', 'https://platform.example:9443'],
+        ['--dev-portal-origin', 'http://platform.example:9444', '--allow-http'],
+        ['--dev-portal-bind', '127.0.0.1:18081'],
+        ['--dev-portal-bind', '10.2.3.4:18082'],
     ]):
         rejected = root / f'boundary-refused-{index}'
         bootstrap(rejected, '--profile', 'server', '--origin', 'https://platform.example', *options, expected=2)
@@ -406,10 +434,15 @@ with tempfile.TemporaryDirectory(prefix='miy-server-config-') as temporary:
             and runtime['MIY_CONSOLE_BIND_ADDR'] == '127.0.0.1:18081'
             and runtime['MIY_ISSUER'] == runtime['MIY_CONSOLE_ORIGIN'] + '/identity/realms/miy',
             'Console/identity did not use the configured distinct listener')
+    require(runtime['MIY_DEV_PORTAL_ORIGIN'] == 'http://10.2.3.4:8082'
+            and runtime['MIY_DEV_PORTAL_BIND_ADDR'] == '127.0.0.1:18082',
+            'Dev portal did not use its own single-IP port and listener')
     require(realm['clients'][0]['redirectUris'] == [value + '/auth/callback' for value in
-            ['http://10.2.3.4:8080', 'http://10.2.3.4:8081']], 'Incorrect browser callbacks')
+            ['http://10.2.3.4:8080', 'http://10.2.3.4:8081', 'http://10.2.3.4:8082']], 'Incorrect browser callbacks')
+    require(realm['clients'][0]['webOrigins'] == ['http://10.2.3.4:8080', 'http://10.2.3.4:8081'],
+            'The dev portal gained identity provider CORS access')
     require(realm['clients'][0]['attributes']['post.logout.redirect.uris'] ==
-            'http://10.2.3.4:8080/##http://10.2.3.4:8081/', 'Logout destinations are not exact')
+            'http://10.2.3.4:8080/##http://10.2.3.4:8081/##http://10.2.3.4:8082/', 'Logout destinations are not exact')
     require(realm['clients'][2]['clientId'] == runtime['MIY_ORIGIN'] + '/mcp', 'MCP resource moved away from the portal')
     original_secrets = (state / 'credentials.json').read_bytes()
     bootstrap(state)
@@ -435,6 +468,8 @@ with tempfile.TemporaryDirectory(prefix='miy-server-config-') as temporary:
             'Proxy forwarding trusts a client-selected origin')
     require('listen 8081;' in proxy and 'proxy_pass http://127.0.0.1:18081;' in proxy,
             'Nginx console uses the wrong fixed-purpose listener')
+    require('listen 8082;' in proxy and 'proxy_pass http://127.0.0.1:18082;' in proxy,
+            'Nginx dev portal uses the wrong fixed-purpose listener')
     if shutil.which('nginx'):
         wrapper = state / 'nginx-validation.conf'
         wrapper.write_text(f'pid "{state / "nginx.pid"}"; error_log stderr; events {{}} http {{ access_log off; include "{state / "nginx-miy.conf"}"; }}')
@@ -501,7 +536,8 @@ with tempfile.TemporaryDirectory(prefix='miy-server-config-') as temporary:
     require(shared_runtime['MIY_DEV_LOGIN'] == 'shared' and shared_runtime['MIY_DEV_ORIGIN'] == shared_runtime['MIY_ORIGIN']
             and shared_runtime['MIY_ALLOW_HTTP'] == '0', 'Shared development runtime differs from the configured origin')
     require(json.loads(shared_realm)['clients'][0]['redirectUris'] ==
-            ['https://shared.example/auth/callback', 'https://shared.example:9443/auth/callback'],
+            ['https://shared.example/auth/callback', 'https://shared.example:9443/auth/callback',
+             'https://shared.example:9444/auth/callback'],
             'Shared development changed the normal OAuth callback')
     bootstrap(shared)
     require(load_env(shared, 'runtime.env') == shared_runtime, 'Shared development preference was not preserved on rerun')
@@ -551,11 +587,12 @@ with tempfile.TemporaryDirectory(prefix='miy-server-config-') as temporary:
     bootstrap(local, '--no-shared-development-login')
     runtime = load_env(local, 'runtime.env')
     require(runtime['MIY_DEV_LOGIN'] == '1' and runtime['MIY_DEV_ORIGIN'] == runtime['MIY_ORIGIN']
-            and runtime['MIY_CONSOLE_ORIGIN'] == 'https://localhost:18444',
-            'Local development did not use the two configured HTTPS purposes')
-    check_caddy_config(local, [18443, 18444, 18000])
+            and runtime['MIY_CONSOLE_ORIGIN'] == 'https://localhost:18444'
+            and runtime['MIY_DEV_PORTAL_ORIGIN'] == 'https://localhost:18445',
+            'Local development did not use the three configured HTTPS purposes')
+    check_caddy_config(local, [18443, 18444, 18445, 18000])
     bootstrap(local, '--origin', 'http://localhost:18000')
-    check_caddy_config(local, [18000, 18001])
+    check_caddy_config(local, [18000, 18001, 18002])
     bootstrap(local, '--origin', 'http://10.2.3.4:18000', '--allow-http')
     runtime = load_env(local, 'runtime.env')
     require(runtime['MIY_DEV_LOGIN'] == '0' and 'MIY_CA_FILE' not in runtime, 'Non-loopback HTTP enabled synthetic login or inherited CA')

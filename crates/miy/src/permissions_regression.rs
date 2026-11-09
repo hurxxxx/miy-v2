@@ -407,7 +407,12 @@ impl Harness<'_> {
     }
 }
 
-pub async fn run(state: &State, client: &Client, base: &str) -> Result<Vec<String>> {
+pub async fn run(
+    state: &State,
+    client: &Client,
+    base: &str,
+    dev_portal: &str,
+) -> Result<Vec<String>> {
     let mut h = Harness {
         state,
         client,
@@ -1103,19 +1108,43 @@ pub async fn run(state: &State, client: &Client, base: &str) -> Result<Vec<Strin
     for app in [&a, &b, &c] {
         h.grant(&browser, app, "dev").await?;
     }
+    // These are dev installations: only a dev-portal session may use them. The
+    // prod portal refuses the same browser chain before any app is called.
+    let prod_session = auth::random();
+    let prod_cookie = format!(
+        "{}={prod_session}",
+        state
+            .auth
+            .cookie_name(auth::BrowserPurpose::Portal, "development")
+    );
+    sqlx::query("INSERT INTO development_sessions(id_hash,user_id,csrf,expires_at,browser_purpose) VALUES($1,$2,$3,now()+interval '5 minutes','portal')")
+        .bind(hash(&prod_session)).bind(&browser.id).bind(auth::random()).execute(&state.pool).await?;
+    let before = b.calls();
+    denied(
+        client
+            .get(format!("{}{}", base, a.connection(&b)))
+            .header("Cookie", &prod_cookie)
+            .send()
+            .await?,
+    )
+    .await?;
+    ensure!(
+        b.calls() == before,
+        "the prod portal reached a dev installation"
+    );
     let session = auth::random();
     let csrf = auth::random();
     let cookie = format!(
         "{}={session}",
         state
             .auth
-            .cookie_name(auth::BrowserPurpose::Portal, "development")
+            .cookie_name(auth::BrowserPurpose::DevPortal, "development")
     );
-    sqlx::query("INSERT INTO development_sessions(id_hash,user_id,csrf,expires_at,browser_purpose) VALUES($1,$2,$3,now()+interval '5 minutes','portal')")
+    sqlx::query("INSERT INTO development_sessions(id_hash,user_id,csrf,expires_at,browser_purpose) VALUES($1,$2,$3,now()+interval '5 minutes','dev_portal')")
         .bind(hash(&session)).bind(&browser.id).bind(&csrf).execute(&state.pool).await?;
     let called = response(
         client
-            .get(format!("{}{}", base, a.connection(&b)))
+            .get(format!("{}{}", dev_portal, a.connection(&b)))
             .header("Cookie", &cookie)
             .send()
             .await?,
@@ -1139,10 +1168,10 @@ pub async fn run(state: &State, client: &Client, base: &str) -> Result<Vec<Strin
     let browser_child = c.proof()?;
     response(
         client
-            .post(format!("{base}/auth/logout"))
+            .post(format!("{dev_portal}/auth/logout"))
             .header("Cookie", &cookie)
             .header("x-miy-csrf", &csrf)
-            .header("Origin", base)
+            .header("Origin", dev_portal)
             .send()
             .await?,
         200,

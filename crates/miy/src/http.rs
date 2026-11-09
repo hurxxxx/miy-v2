@@ -1012,9 +1012,14 @@ async fn login_options(
         json!([])
     };
     Json(json!({"developmentLogin":s.auth.development_login,
-            "developmentOrigin":if purpose == BrowserPurpose::Portal { &s.auth.development_origin } else { &s.auth.console_origin },
+            "developmentOrigin":match purpose {
+                BrowserPurpose::Portal => &s.auth.development_origin,
+                BrowserPurpose::DevPortal => &s.auth.dev_portal_origin,
+                BrowserPurpose::Console => &s.auth.console_origin,
+            },
             "accounts":accounts,"oauthUrl":format!("{}/auth/login",s.auth.browser_origin(purpose)),
-            "surface":purpose,"portalOrigin":s.auth.origin,"consoleOrigin":s.auth.console_origin}))
+            "surface":purpose,"portalOrigin":s.auth.origin,"consoleOrigin":s.auth.console_origin,
+            "devPortalOrigin":s.auth.dev_portal_origin}))
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
