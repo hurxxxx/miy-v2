@@ -1,0 +1,46 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-11-09",
+  "status": "PASS",
+  "scope": "Production transition to a dev-only app portal at https://v2-dev.dwdcc.kr (separate hostname under the existing *.dwdcc.kr DNS and certificate, shared HTTPS port 443), requested by the user. The portal https://v2.dwdcc.kr now runs prod apps only. Includes a fix for a regression found while verifying: public CLI downloads had answered 403 since the 2026-11-07 boundary rollout.",
+  "validationRecord": "dev-portal-2026-11-09-validation.json",
+  "decision": {"by": "user", "address": "Recommended separate hostname (no port): https://v2-dev.dwdcc.kr", "transition": "explicitly requested"},
+  "steps": [
+    {"step": "settings and identity", "tool": "scripts/dev-portal-settings.py apply (commit 3760ef0)", "status": "APPLIED",
+     "observed": "server.json, runtime.env, compose.env gained only the dev portal keys (other lines byte-identical, 0600 kept); Keycloak miy-web redirect and post-logout URIs 2 -> 3, web origins unchanged, client id and secret hash unchanged. Backups in .local/release-3760ef0-dev-portal."},
+    {"step": "server and migration", "tool": "scripts/core-rollout.py apply --widen-migration 21 (commit 3760ef0)", "status": "PASS",
+     "observed": "Exact-SHA CI gate (3/3), fresh dump restored and migrate-checked, server 4715707662a8... -> 5efa52ac4c75..., schema 20 -> 21, health and stable records verified. Release dir .local/release-3760ef0-core."},
+    {"step": "nginx", "tool": "scripts/dev-portal-settings.py nginx-apply", "status": "NGINX_APPLIED",
+     "observed": "Rendered config equals the live file plus one server block (listen 443 ssl; server_name v2-dev.dwdcc.kr); nginx -t and reload. 828055e7d11e... -> cbaab80976b1..."},
+    {"step": "ui", "tool": "scripts/ui-rollout.py apply (commit 3760ef0)", "status": "applied",
+     "observed": "index 9e4c74d6a525... -> 7be37d0fddf2...; 3 new assets, previous assets kept; backup .local/release-3760ef0-ui/production-backup."},
+    {"step": "regression fix", "tool": "scripts/core-rollout.py apply (commit f9d4084, same schema 21)", "status": "PASS",
+     "observed": "Static CLI downloads/installers mounted with nest_service had no MatchedPath and were denied by the route boundary since 58cecff (deployed 2026-11-07). Fixed by classifying only those fixed prefixes by path; server 5efa52ac4c75... -> 13e937f9140a...; CI runs 42562759266, 42562759210, 42562759193 success."}
+  ],
+  "ci": {
+    "3760ef0": [42561495508, 42561495466, 42561495437],
+    "f9d4084": [42562759266, 42562759210, 42562759193]
+  },
+  "postDeploymentChecks": [
+    {"check": "Health and /auth/options on portal, dev portal and console", "status": "PASS", "observed": "surfaces portal / dev_portal / console, each with the same three fixed origins"},
+    {"check": "Dev portal refuses identity, MCP, OAuth metadata, CLI approval and CLI login paths", "status": "PASS", "observed": "404"},
+    {"check": "Dev portal refuses management API and any bearer", "status": "PASS", "observed": "403"},
+    {"check": "Portal keeps MCP metadata and CLI install guide", "status": "PASS", "observed": "200"},
+    {"check": "Chromium: prod portal dev paths", "status": "PASS", "observed": "/environments/dev and /apps/... on the portal land on the dev portal without the query string; login screens render without page errors"},
+    {"check": "Chromium: dev portal sign-in", "status": "PASS", "observed": "reaches the Keycloak login form on :9443 with redirect_uri https://v2-dev.dwdcc.kr/auth/callback accepted"},
+    {"check": "scripts/check-cli-downloads.py --origin https://v2.dwdcc.kr --expected-commit 01e4d49...", "status": "PASS", "observed": "7 downloads, 250,621,555 bytes verified after the fix (403 before it)"},
+    {"check": "Path traversal under /cli/downloads", "status": "PASS", "observed": "Nginx normalizes to the SPA page; core returns 404; no private file served"},
+    {"check": "node scripts/check-platform-connection.mjs (published CLI 0.7.0, checksum verified)", "status": "PASS",
+     "observed": "22 passes: real OIDC developer login on portal, console SSO and dev portal SSO with the same identity and separate purpose-bound sessions, CLI device login/status/doctor, generated stdio MCP, and cleanup of CLI, dev portal, console and portal sessions. Evidence under .local/evidence/dev-portal-connection-20261109T134533."}
+  ],
+  "notRun": [
+    {"check": "Opening a deployed dev app on the dev portal and a prod app on the portal with a real signed-in user in production", "reason": "No app use by the agent in production; covered in the isolated stack-ui and server checks."},
+    {"check": "External PC access and Windows acceptance", "reason": "User-performed."}
+  ],
+  "rollback": [
+    "python3 scripts/ui-rollout.py rollback --release-dir .local/release-3760ef0-ui",
+    "python3 scripts/dev-portal-settings.py nginx-restore --release-dir .local/release-3760ef0-dev-portal",
+    "python3 <clone>/scripts/core-rollout.py rollback --release-dir .local/release-f9d4084-core (then .local/release-3760ef0-core); schema 21 stays",
+    "python3 scripts/dev-portal-settings.py restore --release-dir .local/release-3760ef0-dev-portal"
+  ]
+}

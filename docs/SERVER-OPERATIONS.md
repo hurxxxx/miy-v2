@@ -2,14 +2,17 @@
 
 - 확인일: 2026-11-09
 - 업무 포털: **https://v2.dwdcc.kr**
+- 업무 dev 포털(dev 앱 미리보기·시험): **https://v2-dev.dwdcc.kr**
 - 관리·CLI 승인·로그인 콘솔: **https://v2.dwdcc.kr:9443**
 - CLI 설치 안내: **https://v2.dwdcc.kr/cli/install**
 - 실행 서버·게시 CLI: **0.7.0**, SDK 번들 **0.8.0**
-- 배포 소스: 서버·worker와 웹 화면 `027caab0530e862e946159b78201614807aceb89`(2026-11-09), 게시 CLI `01e4d4924f8c8fc4e11720c1af81adf17ddb20bf` 유지
+- 배포 소스: 서버·worker `f9d408490596935c460101e70a908c6621fab220`, 웹 화면 `3760ef044755c2018b70eacfaa0cb70954b694e2`(2026-11-09), core schema 21, 게시 CLI `01e4d4924f8c8fc4e11720c1af81adf17ddb20bf` 유지
 
 여기서 운영 반영은 이 프로젝트의 기존 서버에 변경분을 배포했다는 뜻이다. 제품 개발 완료나 정식 오픈을 선언한 것은 아니다. 현재 `:9443`은 기존 DNS·인증서를 그대로 쓰기 위한 선택이며, 도메인이 있으면 같은 IP·443의 별도 관리 호스트로 설정할 수 있다. 출처 배치 계약은 [경계 설계](APP-BOUNDARIES.md#영역과-설정)를 따른다.
 
 **현재 운영은 두 출처 경계를 적용했다.** [사내 업무 앱의 최소 보안 계약](APP-BOUNDARIES.md#확정-결정)에 따라 iframe 없는 MF·AppRoot·통합 라우팅을 유지하고, 기존 포털의 dev/prod 업무 UI와 `:9443` 콘솔의 관리·CLI 승인·Keycloak `/identity/realms/miy`를 분리했다. 단일 호스트의 포트는 origin을 나누지만 쿠키를 격리하지 않으므로 목적별 세션·정확한 Origin·CSRF·응답 제한을 함께 적용한다. 공개 운영 `v2.dwdcc.kr`을 회사 내부망 범위로 자동 인정하거나 같은 페이지 앱 간 격리를 보장하지 않는다.
+
+2026-11-09 사용자 요청으로 dev 앱 전용 포털 `https://v2-dev.dwdcc.kr`을 반영했다([배포 기록](releases/dev-portal-2026-11-09-deployment.json)). 설정·Keycloak URI 추가 → 서버와 migration 21 → Nginx dev 포털 블록 → UI 순서로 진행했고, 업무 포털은 이제 prod 앱만 실행한다. 확인 중 2026-11-07 경계 반영 이후 공개 CLI 다운로드가 403이던 회귀를 발견해 서버 `f9d4084`로 고쳤다. 실제 OIDC로 포털·콘솔·dev 포털 SSO와 CLI·MCP 연결 22개를 확인했다.
 
 2026-11-09 오후에 검토 후속 1단계를 서버·UI `027caab`로 반영했다([배포 기록](releases/boundary-followup-2026-11-09-deployment.json)). 같은 호스트 다른 출처의 쿠키 인증 요청(GET·탐색 포함) 거부, `/auth/login`의 탐색 전용, 브라우저에서 시작한 앱 연결의 `admin=false`, 0.5 이전 CLI의 legacy 로그인 종료(410 `cli_upgrade_required`), 포털 안 앱 이동의 같은 탭 복귀가 포함된다. 같은 schema(20)이며 설정·Keycloak은 바꾸지 않았다. `core-rollout.py`의 새 정확한 SHA CI gate를 처음 사용했다.
 
@@ -154,7 +157,7 @@ Codex·Claude의 생성된 프로젝트 MCP는 프로젝트의 `.miy-tools/miy[.
 
 ## 3. 현재 배포 소스와 이 작업본의 차이
 
-실행 서버·worker와 웹 화면은 `027caab0530e862e946159b78201614807aceb89`이며, 게시 CLI는 `01e4d4924f8c8fc4e11720c1af81adf17ddb20bf`다(모두 버전 0.7.0 / 번들 0.8.0). DB 역할 연결 한도·`application_name`·Docker 저장 공간 하한과 사용자·그룹 앱 권한·감사 조회 migration `0018`·`0019`는 2026-11-04 반영했다. 2026-11-05에는 다음 두 변경을 반영했다([배포 결과](releases/core-runtime-management-2026-11-05-deployment.json)).
+실행 서버·worker는 `f9d408490596935c460101e70a908c6621fab220`, 웹 화면은 `3760ef044755c2018b70eacfaa0cb70954b694e2`이며, 게시 CLI는 `01e4d4924f8c8fc4e11720c1af81adf17ddb20bf`다(모두 버전 0.7.0 / 번들 0.8.0). DB 역할 연결 한도·`application_name`·Docker 저장 공간 하한과 사용자·그룹 앱 권한·감사 조회 migration `0018`·`0019`는 2026-11-04 반영했다. 2026-11-05에는 다음 두 변경을 반영했다([배포 결과](releases/core-runtime-management-2026-11-05-deployment.json)).
 
 - 사용자 활성 상태 변경과 앱 등록 결정의 관리자 재확인·감사 기록(`user.enabled`·`user.disabled`, 등록 승인의 `grant.enabled`) — [검증 기록](releases/core-admin-recheck-2026-11-04-validation.json)
 - 회사 사용 중지된 앱을 관리자 실행 관리 목록(`GET /api/v1/runtime/installations`)과 실행 작업 조회에 남기는 변경, 관리 화면 "앱 실행 상태"의 사용 중지 표시 — [검증 기록](releases/core-runtime-management-2026-11-04-validation.json)
@@ -279,7 +282,7 @@ python3 scripts/ui-rollout.py apply --release-dir <같은 경로> --expected-com
 python3 scripts/ui-rollout.py rollback --release-dir <같은 경로>
 ```
 
-**dev 포털 추가 전환(준비 완료, 운영 미실행).** 2026-11-09 결정한 dev 앱 전용 포털은 모든 변경이 더하기만 하고 이전 서버 바이너리가 각 단계 뒤에도 그대로 동작한다. 그래서 유지보수 화면 없이 아래 순서의 작은 단계로 진행하고 각 단계를 따로 되돌린다. 운영 주소(포트 또는 호스트명)와 실행은 사용자 확인 뒤에만 한다.
+**dev 포털 추가 전환(2026-11-09 운영 실행 완료, 아래는 재사용 가능한 절차).** 2026-11-09 결정한 dev 앱 전용 포털은 모든 변경이 더하기만 하고 이전 서버 바이너리가 각 단계 뒤에도 그대로 동작한다. 그래서 유지보수 화면 없이 아래 순서의 작은 단계로 진행하고 각 단계를 따로 되돌린다. 운영 주소(포트 또는 호스트명)와 실행은 사용자 확인 뒤에만 한다.
 
 1. `python3 scripts/dev-portal-settings.py inspect --dev-portal-origin <주소>`: 주소·내부 bind·Keycloak `miy-web` 상태를 읽기만 한다. 같은 호스트의 새 포트면 그 포트가 비어 있어야 하고, 별도 호스트명이면 기존 HTTPS 포트를 이름으로 함께 쓰므로 다른 활성 Nginx 사이트가 그 이름을 쓰지 않아야 한다. 이 서버는 `*.dwdcc.kr` DNS·인증서가 있어 `https://v2-dev.dwdcc.kr`(포트 없음)를 쓴다.
 2. `... apply --dev-portal-origin <주소> --release-dir .local/release-<commit>-dev-portal`: `server.json`·`runtime.env`·`compose.env`에 dev 포털 키만 줄 단위로 추가하고(다른 줄은 바이트 동일), Keycloak `miy-web`에 dev 포털 callback·logout URI만 더한다. web origins·secret·사용자는 바꾸지 않는다. 이전 바이너리는 새 키를 무시한다.

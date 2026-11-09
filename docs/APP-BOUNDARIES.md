@@ -2,7 +2,7 @@
 
 - 수정일: 2026-11-09
 - 상태: **사내 업무용 최소 설계 확정 · 최소 경계 구현 · 격리 검증 완료(실행 범위) · 2026-11-07 운영 반영**.
-- 변경 전 비교 기준: 소스 `22c219d`, CLI/core 0.7.0, 번들 0.8.0. 현재 운영은 서버·UI `027caab`(2026-11-09 [후속 1단계 반영](releases/boundary-followup-2026-11-09-deployment.json)), 게시 CLI `01e4d49`다. [격리 구현·검증 기록](releases/internal-minimum-security-implementation-2026-11-06-validation.json)과 [운영 배포 기록](releases/internal-minimum-security-2026-11-07-deployment.json)을 구분한다. 기존 포털을 유지하고 콘솔·issuer는 `https://v2.dwdcc.kr:9443`으로 옮겼으며 공유 개발 로그인은 껐다.
+- 변경 전 비교 기준: 소스 `22c219d`, CLI/core 0.7.0, 번들 0.8.0. 현재 운영은 서버 `f9d4084`, UI `3760ef0`(2026-11-09 [dev 포털 전환](releases/dev-portal-2026-11-09-deployment.json), 그 전 [후속 1단계](releases/boundary-followup-2026-11-09-deployment.json)), schema 21, 게시 CLI `01e4d49`다. dev 앱 포털은 `https://v2-dev.dwdcc.kr`이다. [격리 구현·검증 기록](releases/internal-minimum-security-implementation-2026-11-06-validation.json)과 [운영 배포 기록](releases/internal-minimum-security-2026-11-07-deployment.json)을 구분한다. 기존 포털을 유지하고 콘솔·issuer는 `https://v2.dwdcc.kr:9443`으로 옮겼으며 공유 개발 로그인은 껐다.
 - 적용 범위: 사내 제한 접속, 회사가 관리하는 개발자와 승인한 업무 앱. 외부망 공개·외부 개발자의 앱 수용을 위한 보안 인수는 포함하지 않는다.
 
 **동적 UI·통합 라우팅·단일 IP HTTPS와 개발 편의를 유지하며 필요한 보안부터 적용한다.** iframe 필수·MF 폐기·DNS/추가 IP 필수 결정은 철회했다. 이번 설계는 업무 포털과 관리·로그인 두 출처만 사용한다. 같은 페이지의 승인 앱은 하나의 UI 신뢰 영역이며 앱별 악성 JavaScript 격리는 제공하지 않는다.
@@ -13,7 +13,7 @@
 
 | 영역 | 현재 필수 | 후속 권장·기능 작업 |
 | --- | --- | --- |
-| 배치 | 한 IP의 업무 포털(prod) / dev 포털 / 관리·로그인 세 HTTPS 출처(2026-11-09 결정, dev 포털은 구현·격리 검증 완료·운영 전환 대기) | 별도 IdP 출처·사이트. 외부 노출·외부 앱 도입 전 재검토 |
+| 배치 | 한 IP의 업무 포털(prod) / dev 포털 / 관리·로그인 세 HTTPS 출처(2026-11-09 결정·운영 반영, dev 포털 `https://v2-dev.dwdcc.kr`) | 별도 IdP 출처·사이트. 외부 노출·외부 앱 도입 전 재검토 |
 | 인증 | portal/console 세션 용도, 서버 경로 제한, 콘솔에서만 CLI 승인. 기존 OIDC·CLI 체계 재사용 | 전체 credential 모델 재설계, MFA 의무화, 세밀한 인증 관제 |
 | UI | MF/AppRoot·독립 빌드·통합 라우팅·게시 SDK 유지. 콘솔에 앱 코드 없음 | 불특정 앱 코드의 강제 격리. iframe 자동 도입은 없음 |
 | 권한 | 기존 사용자·그룹·use/develop/deploy, 현재 권한 재검사. prod 사용과 관리 분리 | 새 역할 체계·업무 action별 API Invoke·서비스 주체 |
@@ -68,7 +68,8 @@ AB ID는 참조를 유지한다. 이전 iframe 설계나 보안 후보의 검사
 | 9 낮음 | __Host-로 포트 공유·cookie tossing/bomb을 완전히 막지 못함. 400/431 장애 가능 | 쿠키 이름·목적·중복 거부·복구 안내. 잔여 한계 명시. 별도 사이트·광범위 스트레스 인수는 후속 |
 | 10 높음(2026-11-09) | 포트가 쿠키를 나누지 않아 다른 출처의 코드가 보낸 GET·탐색에도 쿠키 세션이 붙어 실행됨. 응답은 CORS로 읽지 못해도 부수 효과는 발생 | 쿠키 인증 요청은 세션 조회 전에 Fetch Metadata·Origin을 검사해 다른 출처 요청을 거부. `/auth/login`은 탐색만 허용 |
 | 11 중간(2026-11-09) | 앱 간 연결의 후속 hop이 브라우저 원 호출자에게도 서명 identity `admin=true`를 실음 | 원 자격증명이 브라우저 세션이면 모든 hop에서 `admin=false` |
-| 12 높음(2026-11-09) | dev 앱(승인 전 코드)이 prod 앱과 같은 포털 출처에서 실행되어 여는 사람의 prod Use를 행사 | dev 전용 포털 출처를 추가하고 기존 포털을 prod 전용으로 전환. 소스 구현·격리 검증 완료, 운영 전환 전까지 잔여 위험([영역과 설정](#영역과-설정)) |
+| 12 높음(2026-11-09) | dev 앱(승인 전 코드)이 prod 앱과 같은 포털 출처에서 실행되어 여는 사람의 prod Use를 행사 | dev 전용 포털 출처를 추가하고 기존 포털을 prod 전용으로 전환. 2026-11-09 운영 반영(`https://v2-dev.dwdcc.kr`, [영역과 설정](#영역과-설정)) |
+| 13 높음(2026-11-09 발견) | 2026-11-07 경계 반영(`58cecff`) 이후 `nest_service`로 제공하는 CLI 다운로드·설치 파일에 MatchedPath가 없어 경로 경계가 403으로 거부. 새 CLI 설치 불가 | 고정된 두 공개 접두사만 요청 경로로 분류하고 나머지 미일치 요청은 계속 거부. 실제 중첩 서비스 시험 추가, `f9d4084` 운영 반영 후 공개 다운로드 7개 검증([배포 기록](releases/dev-portal-2026-11-09-deployment.json)) |
 
 CLI 근거는 `cli_auth.rs`의 start/approve/exchange, `auth_sessions.rs`의 approve/issue/list_sessions, `0010_cli_sessions.sql`의 30일 family, `auth.rs`의 logout이다. 이 인증 소스는 `7b43789..22c219d`에서 변경되지 않았지만 운영 공격 입증은 아니다.
 
@@ -107,7 +108,7 @@ CLI 근거는 `cli_auth.rs`의 start/approve/exchange, `auth_sessions.rs`의 app
 | 단일 IP | https://192.168.10.20:8443 | https://192.168.10.20:9444 | https://192.168.10.20:9443 | https://192.168.10.20:9443/identity/realms/miy |
 | 도메인 사용 시 | 기존 업무 UI 호스트 | dev 호스트(권장) 또는 포트 | 관리 호스트 | 관리 호스트의 /identity/realms/miy |
 
-**dev 포털 상태:** 소스 구현과 격리 검증까지 완료했고 운영 전환은 아직 하지 않았다. 운영 주소(포트 또는 호스트명)와 전환 실행은 리허설 결과를 보고한 뒤 사용자 확인으로 정한다. 전환 전 운영에서는 기존 포털이 dev와 prod를 함께 실행하며, 새 UI는 `devPortalOrigin`이 없는 구 서버에서도 그 동작을 유지한다.
+**dev 포털 상태:** 2026-11-09 사용자 요청으로 운영에 반영했다([배포 기록](releases/dev-portal-2026-11-09-deployment.json)). 운영 주소는 권장안인 별도 호스트명 `https://v2-dev.dwdcc.kr`(기존 `*.dwdcc.kr` DNS·인증서, 포트 없음)이다. 업무 포털 `https://v2.dwdcc.kr`은 prod 앱만 실행하고, dev 경로는 dev 포털로 옮긴다. 새 UI는 `devPortalOrigin`이 없는 구 서버에서도 기존 두 출처 동작을 유지한다(구 서버로 되돌릴 때 대비).
 
 - **집행:** Core는 dev 포털용 listener를 따로 열고(`devPortalOrigin`·`devPortalBind`, `MIY_DEV_PORTAL_ORIGIN`·`MIY_DEV_PORTAL_BIND_ADDR`) 세션 용도 `dev_portal`을 저장한다(migration `0021_dev_portal.sql`, 제약 확장만). 정책 한 곳(`policy.rs` `decide`)에서 포털 세션은 prod Use만, dev 포털 세션은 dev Use만 허용한다. 앱 API·UI 자산·directory·연결·목록·`canOpen`이 모두 이 판정을 따른다. 관리자도 prod 포털에서 dev 앱을 열 수 없다.
 - **dev 포털이 제공하지 않는 것:** 관리 API, CLI·MCP bearer, CLI 승인, `/identity`, OAuth 메타데이터. CLI·MCP·로컬 preview는 기존 포털 주소를 계속 쓴다.
