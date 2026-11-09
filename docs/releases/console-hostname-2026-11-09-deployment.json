@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-11-09",
+  "status": "PASS",
+  "scope": "Move the management console and its OIDC issuer from https://v2.dwdcc.kr:9443 to https://v2-console.dwdcc.kr (separate hostname, shared HTTPS port 443, existing *.dwdcc.kr DNS and certificate), requested by the user. The server binary, UI and schema 21 are unchanged.",
+  "decision": {"by": "user", "address": "https://v2-console.dwdcc.kr", "policy": "Port separation stays supported for installs without a domain; limits only a domain removes are documented as a domain recommendation, with no port-mode workaround code."},
+  "sourceCommit": "33e76b8",
+  "ci": {"33e76b8": [42566928867, 42566928798, 42566928778]},
+  "rehearsal": {"status": "PASS", "observed": "Disposable quay.io/keycloak/keycloak:26.8.1 (same digest as production) with a bootstrap realm: the identity move replaced only the console callback, logout and web origin, kept the client secret, moved the discovery issuer to the new host, and the restore returned the client and issuer exactly. Container removed."},
+  "inspect": {"status": "READY", "observed": "Rendered Nginx differs from the live file only in the console block and the portal's CLI approval redirect target; identity client and idle core verified (read-only)."},
+  "apply": {
+    "tool": "scripts/console-origin-move.py apply --console-origin https://v2-console.dwdcc.kr --release-dir .local/release-33e76b8-console",
+    "status": "MOVED",
+    "observed": "Core stopped idle, Keycloak realm frontendUrl and miy-web console entries replaced (ids and secret kept), server.json/runtime.env/compose.env/realm.json patched line by line, Nginx installed (sha256 9643713ae299...) with a 301 site for the old :9443 origin, core started; health, issuer and MCP metadata verified by the tool.",
+    "firstAttempt": "The agent's permission classifier blocked the first apply as a production deploy; nothing was changed. The user then explicitly allowed it."
+  },
+  "postDeploymentChecks": [
+    {"check": "Health and /auth/options on portal, dev portal and console", "status": "PASS", "observed": "consoleOrigin https://v2-console.dwdcc.kr and devPortalOrigin https://v2-dev.dwdcc.kr on all three"},
+    {"check": "Issuer and MCP metadata", "status": "PASS", "observed": "https://v2-console.dwdcc.kr/identity/realms/miy in discovery and authorization_servers"},
+    {"check": "Old console origin", "status": "PASS", "observed": "301 to the same path and query on https://v2-console.dwdcc.kr, including /identity discovery"},
+    {"check": "Portal CLI approval redirect", "status": "PASS", "observed": "302 to https://v2-console.dwdcc.kr/cli/device/<id>"},
+    {"check": "Identity only on the console; app content refused on the console", "status": "PASS", "observed": "portal and dev portal /identity 404; console artifacts and /identity/admin 404; strict console CSP and X-Frame-Options DENY"},
+    {"check": "Public CLI download", "status": "PASS", "observed": "200"},
+    {"check": "node scripts/check-platform-connection.mjs (published CLI 0.7.0, checksum verified)", "status": "PASS",
+     "observed": "22 passes: developer OIDC login through the new issuer, console and dev portal SSO with separate purpose-bound sessions, CLI device login/status/doctor, stdio MCP, and cleanup of all sessions. Evidence .local/evidence/console-move-connection-20261109T143305."}
+  ],
+  "impact": "Every browser user signs in again once (new cookie host and issuer). CLI credentials are kept. External OAuth MCP clients must re-authenticate against the new issuer.",
+  "notRun": [
+    {"check": "Re-authentication of existing external OAuth MCP clients", "reason": "No such client session available to the agent."},
+    {"check": "External PC access and Windows acceptance", "reason": "User-performed."}
+  ],
+  "rollback": "python3 scripts/console-origin-move.py restore --release-dir .local/release-33e76b8-console (restores Keycloak, settings and Nginx, removes the redirect site and restarts core on the old origin)."
+}

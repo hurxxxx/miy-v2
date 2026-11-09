@@ -2,7 +2,7 @@
 
 - 작성일: 2026-10-20
 - 수정일: 2026-11-09
-- 상태: 코어 안정화 1·2차와 기본 UI 이식 UI-1~5, miy v1 기준 최소 데이터 보호·사용자/그룹 앱 권한·기본 감사와 사내 최소 보안 구현분을 운영에 반영했다. 현재 서버는 `f9d4084`, UI는 `3760ef0`(2026-11-09 dev 포털 전환, [배포 기록](releases/dev-portal-2026-11-09-deployment.json)), schema 21, 게시 CLI는 `01e4d49`다. dev 앱은 `https://v2-dev.dwdcc.kr`에서만 실행한다. 다음 기능은 디렉터리·공통 ACL이며, BV 표의 외부 환경·수동 전환 잔여 인수는 별도로 추적한다([배포 기록](releases/internal-minimum-security-2026-11-07-deployment.json)).
+- 상태: 코어 안정화 1·2차와 기본 UI 이식 UI-1~5, miy v1 기준 최소 데이터 보호·사용자/그룹 앱 권한·기본 감사와 사내 최소 보안 구현분을 운영에 반영했다. 현재 서버는 `f9d4084`, UI는 `3760ef0`(2026-11-09 dev 포털 전환, [배포 기록](releases/dev-portal-2026-11-09-deployment.json)), schema 21, 게시 CLI는 `01e4d49`다. dev 앱은 `https://v2-dev.dwdcc.kr`에서만 실행한다. 콘솔·issuer는 `https://v2-console.dwdcc.kr`로 옮겼다([기록](releases/console-hostname-2026-11-09-deployment.json)). 포트 분리는 정식 지원하고 쿠키 공유 한계는 도메인 권장으로 안내한다. 다음 기능은 디렉터리·공통 ACL이며, BV 표의 외부 환경·수동 전환 잔여 인수는 별도로 추적한다([배포 기록](releases/internal-minimum-security-2026-11-07-deployment.json)).
 
 현재 main 소스는 CLI **0.7.0 / 개발 번들 0.8.0**이다. 네이티브 로컬 개발, 서버 원격 빌드, dev 배포, 검증한 릴리스의 prod 승격, 설치/릴리스별 권한 승인을 구현했다. 운영 서버는 `f9d4084`, UI는 `3760ef0`, 게시 CLI는 `01e4d49`다([배포 기록](releases/internal-minimum-security-2026-11-07-deployment.json), [서버 운영 안내](SERVER-OPERATIONS.md)). 사용 중지 앱의 위임 실행·작업 조회와 배포 도구 보완을 포함해 반영했다. 일반 `core-rollout.py`는 2026-11-09부터 대상 SHA CI를 자동 확인하며, 2026-11-07 전환 전용 도구의 CI gate와 구분한다. main 소스 통합과 배포물의 출처는 따로 기록한다. 소스를 통합했다고 서버를 재배포한 것으로 표시하지 않는다. 최초 설계 로드맵은 [보관본](archive/PLAN-INITIAL-ROADMAP.md)에 있으며 모든 단계를 완료했다는 뜻이 아니다.
 

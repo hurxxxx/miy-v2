@@ -3,7 +3,7 @@
 - 확인일: 2026-11-09
 - 업무 포털: **https://v2.dwdcc.kr**
 - 업무 dev 포털(dev 앱 미리보기·시험): **https://v2-dev.dwdcc.kr**
-- 관리·CLI 승인·로그인 콘솔: **https://v2.dwdcc.kr:9443**
+- 관리·CLI 승인·로그인 콘솔: **https://v2-console.dwdcc.kr** (2026-11-09 이동, 옛 `https://v2.dwdcc.kr:9443`은 301로 넘김)
 - CLI 설치 안내: **https://v2.dwdcc.kr/cli/install**
 - 실행 서버·게시 CLI: **0.7.0**, SDK 번들 **0.8.0**
 - 배포 소스: 서버·worker `f9d408490596935c460101e70a908c6621fab220`, 웹 화면 `3760ef044755c2018b70eacfaa0cb70954b694e2`(2026-11-09), core schema 21, 게시 CLI `01e4d4924f8c8fc4e11720c1af81adf17ddb20bf` 유지
@@ -11,6 +11,8 @@
 여기서 운영 반영은 이 프로젝트의 기존 서버에 변경분을 배포했다는 뜻이다. 제품 개발 완료나 정식 오픈을 선언한 것은 아니다. 현재 `:9443`은 기존 DNS·인증서를 그대로 쓰기 위한 선택이며, 도메인이 있으면 같은 IP·443의 별도 관리 호스트로 설정할 수 있다. 출처 배치 계약은 [경계 설계](APP-BOUNDARIES.md#영역과-설정)를 따른다.
 
 **현재 운영은 두 출처 경계를 적용했다.** [사내 업무 앱의 최소 보안 계약](APP-BOUNDARIES.md#확정-결정)에 따라 iframe 없는 MF·AppRoot·통합 라우팅을 유지하고, 기존 포털의 dev/prod 업무 UI와 `:9443` 콘솔의 관리·CLI 승인·Keycloak `/identity/realms/miy`를 분리했다. 단일 호스트의 포트는 origin을 나누지만 쿠키를 격리하지 않으므로 목적별 세션·정확한 Origin·CSRF·응답 제한을 함께 적용한다. 공개 운영 `v2.dwdcc.kr`을 회사 내부망 범위로 자동 인정하거나 같은 페이지 앱 간 격리를 보장하지 않는다.
+
+2026-11-09 사용자 요청으로 콘솔과 로그인 issuer를 `https://v2-console.dwdcc.kr`로 옮겼다([배포 기록](releases/console-hostname-2026-11-09-deployment.json)). 서버·UI·schema는 그대로이고, 옛 `:9443`은 같은 경로로 301 redirect한다. 모든 브라우저 사용자는 한 번 다시 로그인하며 CLI credential은 유지된다. 외부 OAuth MCP 클라이언트는 새 issuer로 다시 인증한다. 실제 OIDC로 세 출처 SSO와 CLI·MCP 연결 22개를 확인했다.
 
 2026-11-09 사용자 요청으로 dev 앱 전용 포털 `https://v2-dev.dwdcc.kr`을 반영했다([배포 기록](releases/dev-portal-2026-11-09-deployment.json)). 설정·Keycloak URI 추가 → 서버와 migration 21 → Nginx dev 포털 블록 → UI 순서로 진행했고, 업무 포털은 이제 prod 앱만 실행한다. 확인 중 2026-11-07 경계 반영 이후 공개 CLI 다운로드가 403이던 회귀를 발견해 서버 `f9d4084`로 고쳤다. 실제 OIDC로 포털·콘솔·dev 포털 SSO와 CLI·MCP 연결 22개를 확인했다.
 
@@ -105,12 +107,12 @@ python3 scripts/render-server-config.py --state-dir /srv/miy-new \
 | --- | --- |
 | 대표 주소 | `https://v2.dwdcc.kr` |
 | 업무 웹·API·CLI 설치/다운로드 | 기존 대표 주소, 호스트 Nginx에서 전달 |
-| 관리·CLI 승인·로그인 | `https://v2.dwdcc.kr:9443`, 같은 호스트 Nginx의 별도 listener |
+| 관리·CLI 승인·로그인 | `https://v2-console.dwdcc.kr`, 같은 IP·443의 별도 호스트명(옛 `:9443`은 redirect 전용 사이트) |
 | 플랫폼 API/worker | systemd `miy-v2-serve`, `miy-v2-worker` |
 | 서버 실행 파일 | `/projects/miy-v2/.local/bin/miy-server` |
 | 포털 Core 내부 주소 | `127.0.0.1:18180` |
 | 콘솔 Core 내부 주소 | `127.0.0.1:18182` |
-| IdP | `https://v2.dwdcc.kr:9443/identity/realms/miy`, 내부 Keycloak `127.0.0.1:18181` |
+| IdP | `https://v2-console.dwdcc.kr/identity/realms/miy`(realm `frontendUrl`), 내부 Keycloak `127.0.0.1:18181` |
 | PostgreSQL | 호스트 loopback `127.0.0.1:15432` |
 | 상태·비밀 설정 | `/projects/miy-v2/.local/`, `server.json`, `runtime.env`, `credentials.json` |
 | 직접 HTTP MCP | `https://v2.dwdcc.kr/mcp`, IdP OAuth 인증 |
@@ -122,7 +124,7 @@ python3 scripts/render-server-config.py --state-dir /srv/miy-new \
 ```sh
 systemctl status miy-v2-serve miy-v2-worker --no-pager
 curl --fail --silent --show-error https://v2.dwdcc.kr/api/health
-curl --fail --silent --show-error https://v2.dwdcc.kr:9443/api/health
+curl --fail --silent --show-error https://v2-console.dwdcc.kr/api/health
 curl --fail --silent --show-error https://v2.dwdcc.kr/api/v1/capabilities
 sudo nginx -t
 ```

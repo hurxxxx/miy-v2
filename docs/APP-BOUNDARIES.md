@@ -2,7 +2,7 @@
 
 - 수정일: 2026-11-09
 - 상태: **사내 업무용 최소 설계 확정 · 최소 경계 구현 · 격리 검증 완료(실행 범위) · 2026-11-07 운영 반영**.
-- 변경 전 비교 기준: 소스 `22c219d`, CLI/core 0.7.0, 번들 0.8.0. 현재 운영은 서버 `f9d4084`, UI `3760ef0`(2026-11-09 [dev 포털 전환](releases/dev-portal-2026-11-09-deployment.json), 그 전 [후속 1단계](releases/boundary-followup-2026-11-09-deployment.json)), schema 21, 게시 CLI `01e4d49`다. dev 앱 포털은 `https://v2-dev.dwdcc.kr`이다. [격리 구현·검증 기록](releases/internal-minimum-security-implementation-2026-11-06-validation.json)과 [운영 배포 기록](releases/internal-minimum-security-2026-11-07-deployment.json)을 구분한다. 기존 포털을 유지하고 콘솔·issuer는 `https://v2.dwdcc.kr:9443`으로 옮겼으며 공유 개발 로그인은 껐다.
+- 변경 전 비교 기준: 소스 `22c219d`, CLI/core 0.7.0, 번들 0.8.0. 현재 운영은 서버 `f9d4084`, UI `3760ef0`(2026-11-09 [dev 포털 전환](releases/dev-portal-2026-11-09-deployment.json), 그 전 [후속 1단계](releases/boundary-followup-2026-11-09-deployment.json)), schema 21, 게시 CLI `01e4d49`다. dev 앱 포털은 `https://v2-dev.dwdcc.kr`, 콘솔·issuer는 `https://v2-console.dwdcc.kr`이다([콘솔 이동](releases/console-hostname-2026-11-09-deployment.json)). [격리 구현·검증 기록](releases/internal-minimum-security-implementation-2026-11-06-validation.json)과 [운영 배포 기록](releases/internal-minimum-security-2026-11-07-deployment.json)을 구분한다. 기존 포털을 유지하고 콘솔·issuer는 `https://v2.dwdcc.kr:9443`으로 옮겼으며 공유 개발 로그인은 껐다.
 - 적용 범위: 사내 제한 접속, 회사가 관리하는 개발자와 승인한 업무 앱. 외부망 공개·외부 개발자의 앱 수용을 위한 보안 인수는 포함하지 않는다.
 
 **동적 UI·통합 라우팅·단일 IP HTTPS와 개발 편의를 유지하며 필요한 보안부터 적용한다.** iframe 필수·MF 폐기·DNS/추가 IP 필수 결정은 철회했다. 이번 설계는 업무 포털과 관리·로그인 두 출처만 사용한다. 같은 페이지의 승인 앱은 하나의 UI 신뢰 영역이며 앱별 악성 JavaScript 격리는 제공하지 않는다.
@@ -115,7 +115,7 @@ CLI 근거는 `cli_auth.rs`의 start/approve/exchange, `auth_sessions.rs`의 app
 - **UI:** 포털이 dev 경로(게시 CLI가 출력하는 `/environments/dev/...`와 구 `/apps/...` 포함)를 받으면 로그인 확인이나 앱 import 전에 dev 포털로 같은 탭 이동한다. 환경 전환과 콘솔의 "포털에서 앱 열기"는 환경별 출처의 새 탭이다.
 - **포트 구분의 한계:** 포트 분리에서는 쿠키 심기(login CSRF)와 쿠키 대량 주입을 막지 못한다. 해결은 도메인이며 포트 환경용 우회 코드는 두지 않는다([배치 프로필](#배치-프로필-도메인권장과-포트-분리지원)).
 
-출처는 호스트 또는 포트로 나눌 수 있다. 도메인이 있으면 `v2.dwdcc.kr`과 `v2-console.dwdcc.kr`처럼 같은 IP의 기본 HTTPS 포트 443을 함께 사용할 수 있다. 현재 서버의 `:9443`은 새 DNS 없이 기존 인증서로 배포하기 위해 선택한 구성이지, 단일 IP 지원 정책이 강제하는 포트가 아니다. 관리 하위 도메인 방식도 동일한 설정 계약을 사용한다.
+출처는 호스트 또는 포트로 나눌 수 있다. 도메인이 있으면 `v2.dwdcc.kr`과 `v2-console.dwdcc.kr`처럼 같은 IP의 기본 HTTPS 포트 443을 함께 사용할 수 있다. 운영 서버는 2026-11-07 처음에는 새 DNS 없이 `:9443`을 썼고, 2026-11-09 와일드카드 DNS·인증서로 `v2-console.dwdcc.kr`로 옮겼다. 포트 번호는 단일 IP 지원 정책이 강제하는 값이 아니다. 관리 하위 도메인 방식도 동일한 설정 계약을 사용한다.
 
 기존 `origin`/`MIY_ORIGIN`과 CLI 서버 주소를 유지하고 `consoleOrigin`/`MIY_CONSOLE_ORIGIN`을 추가했다. `identityIssuer`/`MIY_ISSUER`는 관리 출처의 고정 경로로 설정한다. 별도 IdP 포트·새 credential 발견 API는 요구하지 않는다. `consoleBind`/`MIY_CONSOLE_BIND_ADDR`와 `devPortalBind`/`MIY_DEV_PORTAL_BIND_ADDR`를 추가했고 세 Core listener는 서로 다른 loopback 주소에 고정한다. `/auth/options`는 현재 surface와 고정된 세 origin을 반환한다. `bootstrap.py`·Nginx/Caddy 생성·IdP 구성과 `check-server-tls.py`가 이 설정을 사용한다.
 
@@ -135,7 +135,7 @@ CLI 근거는 `cli_auth.rs`의 start/approve/exchange, `auth_sessions.rs`의 app
 | 쿠키 대량 주입 | 같은 호스트의 다른 출처가 쿠키를 가득 채워 431/400으로 접속을 막을 수 있다 | 다른 호스트의 쿠키는 보내지 않는다. 같은 등록 도메인의 다른 사이트가 `Domain=` 쿠키를 거는 경우는 남으므로, 신뢰하지 않는 사이트와 등록 도메인을 공유하지 않는 것을 권장한다 |
 | 로그인 서버(IdP) 쿠키 | Keycloak 쿠키도 같은 호스트 쿠키 저장소에 있어 앱 코드가 덮어쓸 수 있다 | 콘솔·IdP 호스트를 분리하면 막힌다 |
 
-두 프로필에 공통으로 적용하는 방어는 우회가 아니라 일반 방어다: 출처별 세션 용도와 쿠키 이름, `__Host-`, 중복 인증 쿠키 거부, 쿠키 요청의 Fetch Metadata·Origin 검사(같은 사이트의 다른 호스트도 쿠키를 보내므로 도메인 환경에도 필요), 정확한 CSRF, 앱 응답 헤더 제한. 운영 서버 v2.dwdcc.kr은 도메인 프로필을 쓴다(업무 포털 `v2.dwdcc.kr`, dev 포털 `v2-dev.dwdcc.kr`, 콘솔 `v2-console.dwdcc.kr`로 전환 중).
+두 프로필에 공통으로 적용하는 방어는 우회가 아니라 일반 방어다: 출처별 세션 용도와 쿠키 이름, `__Host-`, 중복 인증 쿠키 거부, 쿠키 요청의 Fetch Metadata·Origin 검사(같은 사이트의 다른 호스트도 쿠키를 보내므로 도메인 환경에도 필요), 정확한 CSRF, 앱 응답 헤더 제한. 운영 서버 v2.dwdcc.kr은 도메인 프로필을 쓴다(업무 포털 `v2.dwdcc.kr`, dev 포털 `v2-dev.dwdcc.kr`, 콘솔 `v2-console.dwdcc.kr`, 2026-11-09 전환 완료).
 
 **포트는 DOM·JavaScript origin을 나누지만 쿠키를 나누지 않는다.** 이름·세션 용도·Origin·CSRF를 함께 검사하고 앱 backend에 원본 쿠키를 전달하지 않는다. cookie bomb/tossing의 완전 해결은 보장하지 않는다. 콘솔과 IdP도 같은 신뢰 영역이므로 콘솔 XSS가 IdP에 영향을 줄 수 있다. 별도 사이트·IdP 출처는 외부 노출·외부 앱 도입 시 다시 검토한다.
 
