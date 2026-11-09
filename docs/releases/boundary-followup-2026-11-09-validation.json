@@ -9,11 +9,38 @@
     "description": "Validated working tree on top of the base commit; the resulting commit is recorded with its CI in the deployment record."
   },
   "decisions": [
-    {"id": "dev-portal-origin", "by": "user", "date": "2026-11-09", "decision": "Add a dev-only portal origin; the existing portal becomes prod-only. Support localhost and single-IP (port-separated) installs as the default; hostnames optional.", "status": "phase 2, not in this record"},
-    {"id": "public-exposure", "by": "user", "date": "2026-11-09", "decision": "Keep the portal (443) and console/Keycloak (9443) publicly reachable; the user states the observed public client IPs are the company network's egress addresses.", "observation": "Production Nginx access logs on 2026-11-09: non-loopback clients that reached the console IdP login: private ranges 0, public ranges 2 (addresses not recorded). Host firewall inactive; 9443 listens on all IPv4 addresses. External network filtering not verified (NOT_RUN)."},
-    {"id": "legacy-cli-login", "by": "user", "date": "2026-11-09", "decision": "Retire the pre-0.5 legacy CLI browser-approval flow instead of adding a confirmation code (the request ID is visible in the approval URL, so a code would only add friction). Published CLI 0.7.0 uses the device flow."},
-    {"id": "new-tab-scope", "by": "user", "date": "2026-11-09", "decision": "In-portal app navigation returns to the same tab; only links to another origin open a new tab."},
-    {"id": "phase-1-rollout", "by": "user", "date": "2026-11-09", "decision": "Deploy phase 1 to production once isolated validation and exact-SHA CI pass."}
+    {
+      "id": "dev-portal-origin",
+      "by": "user",
+      "date": "2026-11-09",
+      "decision": "Add a dev-only portal origin; the existing portal becomes prod-only. Support localhost and single-IP (port-separated) installs as the default; hostnames optional.",
+      "status": "phase 2, not in this record"
+    },
+    {
+      "id": "public-exposure",
+      "by": "user",
+      "date": "2026-11-09",
+      "decision": "Keep the portal (443) and console/Keycloak (9443) publicly reachable; the user states the observed public client IPs are the company network's egress addresses.",
+      "observation": "Production Nginx access logs on 2026-11-09: non-loopback clients that reached the console IdP login: private ranges 0, public ranges 2 (addresses not recorded). Host firewall inactive; 9443 listens on all IPv4 addresses. External network filtering not verified (NOT_RUN)."
+    },
+    {
+      "id": "legacy-cli-login",
+      "by": "user",
+      "date": "2026-11-09",
+      "decision": "Retire the pre-0.5 legacy CLI browser-approval flow instead of adding a confirmation code (the request ID is visible in the approval URL, so a code would only add friction). Published CLI 0.7.0 uses the device flow."
+    },
+    {
+      "id": "new-tab-scope",
+      "by": "user",
+      "date": "2026-11-09",
+      "decision": "In-portal app navigation returns to the same tab; only links to another origin open a new tab."
+    },
+    {
+      "id": "phase-1-rollout",
+      "by": "user",
+      "date": "2026-11-09",
+      "decision": "Deploy phase 1 to production once isolated validation and exact-SHA CI pass."
+    }
   ],
   "changes": [
     "crates/miy/src/http.rs: foreign_cookie_request rejects cookie-authenticated requests whose Sec-Fetch-Site is not same-origin/none or whose Origin differs from the listener origin (GET and navigations included), before any session lookup; the explicit development-login web server origin stays allowed on the portal only. /auth/login accepts navigation requests only.",
@@ -27,23 +54,102 @@
     "Docs: APP-BOUNDARIES, CHECKS, CLI-IMPLEMENTATION-PLAN, CLI-VALIDATION-MATRIX, PRD, RUNNING, SERVER-OPERATIONS, UIUX-MIGRATION, WINDOWS-ACCEPTANCE, PLAN."
   ],
   "checks": [
-    {"id": "pushed-base-ci", "command": "git push origin main; gh run list", "status": "PASS", "observed": "0714c31 Web and scripts, CLI foundation and Isolated runtime regression completed/success (f5210d1 and 0714c31 were previously unpushed)."},
-    {"id": "rust-unit-new", "command": "cargo test --locked -p miy --bin miy http::tests", "status": "PASS", "observed": "2 passed (cookie origin matrix, sign-in navigation)."},
-    {"id": "rust-clippy-first-run", "command": "cargo clippy --workspace --all-targets --locked -- -D warnings", "status": "FAIL", "exitCode": 101, "observed": "needless_borrows_for_generic_args in browser_boundary_regression.rs; fixed and rerun below."},
-    {"id": "rust-static", "command": "scripts/check-static.sh rust", "status": "PASS", "observed": "bundle portability, write decisions, fmt, clippy (both feature sets), cargo test 189 + 118 passed."},
-    {"id": "isolated-runtime-regression", "command": "python3 scripts/runtime-regression/run.py", "status": "PASS", "observed": "results.jsonl 113 PASS, 0 FAIL; boundary suite 11 observations including the new cross-origin cookie and retired legacy observations; permissions suite includes the admin browser-chain assertions. Cleanup succeeded."},
-    {"id": "web-static", "command": "scripts/check-static.sh web", "status": "PASS", "observed": "typecheck, platform/fixture builds into .local/evidence/check-static, Playwright ui.config 36, cli-experience 14, surface-boundaries 11, http-ui 1 passed."},
-    {"id": "scripts-static-first-run", "command": "scripts/check-static.sh scripts", "status": "FAIL", "exitCode": 1, "observed": "check-write-decisions self-test: retired cli_auth.rs handlers still listed; allowlist fixed and rerun below."},
-    {"id": "scripts-static", "command": "scripts/check-static.sh scripts", "status": "PASS", "observed": "write decisions 18 transactions / 6 writers; test-core-ops 62 tests including the CI gate refusals; Nginx/Caddy fixed purposes and single-IP HTTPS proxy checks."},
-    {"id": "server-ui", "command": "pnpm exec playwright test --config scripts/runtime-regression/server-ui.config.ts", "status": "PASS", "observed": "7 passed against the real core and a disposable database."},
-    {"id": "stack-ui", "command": "bash scripts/runtime-regression/stack-ui.sh run", "status": "PASS", "observed": "6 passed with Keycloak, Caddy and a deployed Docker app; isolated resources removed."},
-    {"id": "http-server-http-profile", "command": "python3 scripts/check-http-server.py --binary target/debug/miy --web-dist .local/evidence/check-static/platform", "status": "PASS", "observed": "12 observations with real Keycloak, Chrome and the installed CLI, including the retired legacy flow; cleanupSucceeded true. HTTP compatibility profile only."}
+    {
+      "id": "pushed-base-ci",
+      "command": "git push origin main; gh run list",
+      "status": "PASS",
+      "observed": "0714c31 Web and scripts, CLI foundation and Isolated runtime regression completed/success (f5210d1 and 0714c31 were previously unpushed)."
+    },
+    {
+      "id": "rust-unit-new",
+      "command": "cargo test --locked -p miy --bin miy http::tests",
+      "status": "PASS",
+      "observed": "2 passed (cookie origin matrix, sign-in navigation)."
+    },
+    {
+      "id": "rust-clippy-first-run",
+      "command": "cargo clippy --workspace --all-targets --locked -- -D warnings",
+      "status": "FAIL",
+      "exitCode": 101,
+      "observed": "needless_borrows_for_generic_args in browser_boundary_regression.rs; fixed and rerun below."
+    },
+    {
+      "id": "rust-static",
+      "command": "scripts/check-static.sh rust",
+      "status": "PASS",
+      "observed": "bundle portability, write decisions, fmt, clippy (both feature sets), cargo test 189 + 118 passed."
+    },
+    {
+      "id": "isolated-runtime-regression-first-run",
+      "command": "python3 scripts/runtime-regression/run.py (started through a pipeline whose exit status was not the runner's)",
+      "status": "FAIL",
+      "observed": "results.jsonl had 113 PASS and 0 FAIL observations, but the runner's fixed suite-count check still expected boundary=10 while this change adds an 11th boundary observation, so the runner's own verdict is failure. The exit status was not captured; this was first reported as PASS in error and is corrected here. The expected count was updated in scripts/runtime-regression/run.py and the runner rerun from a clean clone (see isolated-runtime-regression)."
+    },
+    {
+      "id": "isolated-runtime-regression",
+      "command": "python3 scripts/runtime-regression/run.py (clean clone of the fix commit; exit status captured)",
+      "status": "PENDING",
+      "observed": "recorded after the rerun"
+    },
+    {
+      "id": "web-static",
+      "command": "scripts/check-static.sh web",
+      "status": "PASS",
+      "observed": "typecheck, platform/fixture builds into .local/evidence/check-static, Playwright ui.config 36, cli-experience 14, surface-boundaries 11, http-ui 1 passed."
+    },
+    {
+      "id": "scripts-static-first-run",
+      "command": "scripts/check-static.sh scripts",
+      "status": "FAIL",
+      "exitCode": 1,
+      "observed": "check-write-decisions self-test: retired cli_auth.rs handlers still listed; allowlist fixed and rerun below."
+    },
+    {
+      "id": "scripts-static",
+      "command": "scripts/check-static.sh scripts",
+      "status": "PASS",
+      "observed": "write decisions 18 transactions / 6 writers; test-core-ops 62 tests including the CI gate refusals; Nginx/Caddy fixed purposes and single-IP HTTPS proxy checks."
+    },
+    {
+      "id": "server-ui",
+      "command": "pnpm exec playwright test --config scripts/runtime-regression/server-ui.config.ts",
+      "status": "PASS",
+      "observed": "7 passed against the real core and a disposable database."
+    },
+    {
+      "id": "stack-ui",
+      "command": "bash scripts/runtime-regression/stack-ui.sh run",
+      "status": "PASS",
+      "observed": "6 passed with Keycloak, Caddy and a deployed Docker app; isolated resources removed."
+    },
+    {
+      "id": "http-server-http-profile",
+      "command": "python3 scripts/check-http-server.py --binary target/debug/miy --web-dist .local/evidence/check-static/platform",
+      "status": "PASS",
+      "observed": "12 observations with real Keycloak, Chrome and the installed CLI, including the retired legacy flow; cleanupSucceeded true. HTTP compatibility profile only."
+    }
   ],
   "notRun": [
-    {"scope": "check-http-server.py --https", "status": "NOT_RUN", "reason": "certutil (NSS tools) is not installed on this production host; system packages were not installed for this check."},
-    {"scope": "Root Playwright validation.spec.ts", "status": "NOT_RUN", "reason": "Needs a separately provisioned isolated local stack; same-tab assertions were restored to their pre-f5210d1 form."},
-    {"scope": "Attack reproduction, Windows acceptance, external-PC access", "status": "NOT_RUN", "reason": "Out of scope for this source validation."},
-    {"scope": "Dev-only portal origin", "status": "NOT_RUN", "reason": "Phase 2."}
+    {
+      "scope": "check-http-server.py --https",
+      "status": "NOT_RUN",
+      "reason": "certutil (NSS tools) is not installed on this production host; system packages were not installed for this check."
+    },
+    {
+      "scope": "Root Playwright validation.spec.ts",
+      "status": "NOT_RUN",
+      "reason": "Needs a separately provisioned isolated local stack; same-tab assertions were restored to their pre-f5210d1 form."
+    },
+    {
+      "scope": "Attack reproduction, Windows acceptance, external-PC access",
+      "status": "NOT_RUN",
+      "reason": "Out of scope for this source validation."
+    },
+    {
+      "scope": "Dev-only portal origin",
+      "status": "NOT_RUN",
+      "reason": "Phase 2."
+    }
   ],
   "limitations": [
     "Browsers without Fetch Metadata that send a cross-origin GET without an Origin header are not detected.",
