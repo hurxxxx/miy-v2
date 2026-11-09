@@ -22,7 +22,8 @@
   ],
   "source": {
     "baseCommit": "d4a9eb3",
-    "workingTreeDirty": true
+    "workingTreeDirty": true,
+    "resultCommit": "2ab1a9e"
   },
   "changes": [
     "Core: BrowserPurpose::DevPortal (serde snake_case dev_portal), helpers portal()/environment(); required MIY_DEV_PORTAL_ORIGIN and MIY_DEV_PORTAL_BIND_ADDR; three distinct same-transport origins, identity issuer never on a portal origin; a third fixed loopback listener.",
@@ -109,6 +110,18 @@
       "command": "python3 scripts/dev-portal-settings.py inspect --dev-portal-origin https://v2.dwdcc.kr:9444",
       "status": "PASS",
       "observed": "READY: port 9444 free, miy-web has 2 callbacks and 2 web origins; read-only."
+    },
+    {
+      "id": "production-dump-rehearsal",
+      "command": "python3 scripts/core-backup.py create --db-container miy-v2-validation-postgres-1 --database miy_core --out .local/release-2ab1a9e-rehearsal/core; python3 scripts/core-backup.py verify <out> --migrate-with <release build of 2ab1a9e>",
+      "status": "PASS",
+      "observed": "Read-only REPEATABLE READ snapshot of the live core DB (schema 20, 40 tables, 1,469 rows) restored into a disposable postgres:18.3 container with matching row counts; the candidate (sha256 5efa52ac4c7510c9a116b23a7345fba9abffc17b20c39bebdac6e2a4cee739b5, built in a clean clone at 2ab1a9e) migrated it to 21 with exit 0; container removed. Production unchanged."
+    },
+    {
+      "id": "exact-sha-ci",
+      "command": "gh run watch (main push of 2ab1a9e)",
+      "status": "PASS",
+      "observed": "runtime-regression 42555655576, cli-foundation 42555655563, web 42555655551 all success."
     }
   ],
   "notRun": [
@@ -125,12 +138,12 @@
       "reason": "Not part of check-static; fixture moved to a prod app on the prod portal, not executed."
     },
     {
-      "scope": "Production dump rehearsal and transition",
-      "reason": "Recorded separately after commit/CI; the transition needs the user's address decision and confirmation."
-    },
-    {
       "scope": "Windows acceptance, external PC access",
       "reason": "User-performed acceptance."
+    },
+    {
+      "scope": "Production transition",
+      "reason": "Awaiting the user's choice of production address (port :9444 or a hostname) and confirmation."
     }
   ],
   "limitations": [
