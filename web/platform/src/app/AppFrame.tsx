@@ -37,14 +37,12 @@ export function AppFrame({
   csrf,
   input,
   onReleaseChanged,
-  confirmLeave,
 }: {
   app: Installation;
   basePath: string;
   csrf: string;
   input: React.MutableRefObject<FrameInput>;
   onReleaseChanged: () => void;
-  confirmLeave: () => boolean;
 }) {
   const router = useRouter();
   const location = useLocation();
@@ -61,10 +59,13 @@ export function AppFrame({
   };
   const current = useRef(relative);
   current.current = relative;
+  // Messages go only to a frame that announced itself (not its initial about:blank).
+  const ready = useRef(false);
 
   // A new launch for each run: new frame, new code, state unknown until reported.
   useEffect(() => {
     let active = true;
+    ready.current = false;
     input.current = { state: "unknown" };
     setLaunch(undefined);
     setFailure(undefined);
@@ -89,7 +90,7 @@ export function AppFrame({
   }, [launch]);
 
   const send = (message: ParentMessage) => {
-    if (launch) frame.current?.contentWindow?.postMessage(envelope(message), launch.frameOrigin);
+    if (launch && ready.current) frame.current?.contentWindow?.postMessage(envelope(message), launch.frameOrigin);
   };
 
   // The portal router owns the address; the frame follows it.
@@ -106,6 +107,7 @@ export function AppFrame({
       if (!message) return;
       switch (message.type) {
         case "frame.ready":
+          ready.current = true;
           send({ type: "route.changed", payload: current.current });
           break;
         case "route.navigate": {
@@ -131,7 +133,9 @@ export function AppFrame({
           onReleaseChanged();
           break;
         case "frame.relaunch":
-          if (confirmLeave()) setRun((value) => value + 1);
+          // The frame document is already gone (reloaded or refused): nothing is
+          // left to protect, so open a fresh frame without asking.
+          setRun((value) => value + 1);
           break;
         case "frame.error":
           if (message.payload.code === "frame_session_ended") setFailure(message.payload.code);
@@ -150,7 +154,7 @@ export function AppFrame({
           role="alert"
           tone="danger"
           actions={
-            <Button size="sm" onClick={() => confirmLeave() && setRun((value) => value + 1)}>
+            <Button size="sm" onClick={() => setRun((value) => value + 1)}>
               다시 열기
             </Button>
           }

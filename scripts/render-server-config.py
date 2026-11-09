@@ -68,8 +68,9 @@ if '{port}' in frame_template:
     first, _, last = (settings.get('appFramePorts') or '').partition('-')
     frame_ports = (int(first), int(last))
     frame_sample = frame_template.replace('{port}', first)
-    frame_sources = ' '.join(frame_template.replace('{port}', str(value))
-                             for value in range(frame_ports[0], frame_ports[1] + 1))
+    # A pool is framed by the host's port wildcard; listing every origin exceeds
+    # Nginx parameter limits. Platform ports there keep frame-ancestors 'none'.
+    frame_sources = frame_template.replace('{port}', '*')
 else:
     frame_sample = frame_template.replace('{key}', '0' * 32)
     frame_sources = f"{frame_scheme}://*.{frame_rest.split('.', 1)[-1]}"

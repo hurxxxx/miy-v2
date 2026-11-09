@@ -172,7 +172,6 @@ function AppSession({ appId, environment, basePath }: { appId: string; environme
         csrf={user.csrf}
         input={input}
         onReleaseChanged={() => setUpdated(true)}
-        confirmLeave={guards.confirmNavigation}
       />
     </>
   );

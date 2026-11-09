@@ -37,6 +37,7 @@ pub async fn run() -> Result<Value> {
         Some("0.6.2") => include_str!("../bundles/0.6.2.json"),
         Some("0.7.0") => include_str!("../bundles/0.7.0.json"),
         Some("0.7.1") => include_str!("../bundles/0.7.1.json"),
+        Some("0.8.0") => include_str!("../bundles/0.8.0.json"),
         _ => anyhow::bail!(CliError::new(
             Category::Environment,
             "unsupported_old_bundle",
@@ -77,9 +78,13 @@ pub async fn run() -> Result<Value> {
     let protected = crate::bundle::protected_hashes();
     // Browser components remain compatible. The explicit Rust SDK migration
     // resolves only the SDK's new dependencies, before any project file changes.
+    // 0.9.0 runs the UI in its own frame: the browser SDK replaces the callback
+    // navigation guard with setNavigationState and adds apiBlob. App code that
+    // used registerNavigationGuard must change; `app check` reports it.
+    let frame_sdk = old["bundleVersion"].as_str() == Some("0.8.0");
     if matches!(
         old["bundleVersion"].as_str(),
-        Some("0.6.0" | "0.6.1" | "0.6.2" | "0.7.0" | "0.7.1")
+        Some("0.6.0" | "0.6.1" | "0.6.2" | "0.7.0" | "0.7.1" | "0.8.0")
     ) {
         let mut changes = crate::agent_tools::setup_changes(&root)?;
         for (path, content) in crate::bundle::template() {
@@ -92,7 +97,8 @@ pub async fn run() -> Result<Value> {
                 && !matches!(
                     *path,
                     "sdk/preview/main.tsx" | "sdk/rust/src/lib.rs" | "sdk/rust/Cargo.toml"
-                ))
+                )
+                && !(frame_sdk && *path == "sdk/browser/index.ts"))
                 || path.ends_with(".sql")
                 || *path == "miy.components.json"
             {
@@ -116,7 +122,8 @@ pub async fn run() -> Result<Value> {
                         | "sdk/preview/main.tsx"
                         | "sdk/rust/src/lib.rs"
                         | "sdk/rust/Cargo.toml"
-                ) || path.starts_with("docs/")
+                ) || (frame_sdk && *path == "sdk/browser/index.ts")
+                    || path.starts_with("docs/")
                     || path.starts_with(".agents/skills/")
                     || path.starts_with(".claude/skills/"),
                 CliError::new(

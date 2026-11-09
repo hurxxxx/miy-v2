@@ -23,7 +23,8 @@ PUBLIC_PROXY_ENV = {'MIY_ORIGIN', 'MIY_CONSOLE_ORIGIN', 'MIY_DEV_PORTAL_ORIGIN',
                     'MIY_CONSOLE_CORE_UPSTREAM', 'MIY_DEV_PORTAL_CORE_UPSTREAM', 'MIY_IDENTITY_UPSTREAM',
                     'MIY_PORTAL_HOST', 'MIY_CONSOLE_HOST', 'MIY_DEV_PORTAL_HOST', 'MIY_PORTAL_PORT',
                     'MIY_CONSOLE_PORT', 'MIY_DEV_PORTAL_PORT', 'MIY_PUBLIC_SCHEME', 'MIY_PROXY_BIND',
-                    'MIY_HTTP_PORT'}
+                    'MIY_HTTP_PORT', 'MIY_APP_FRAME_SITES', 'MIY_APP_FRAME_SOURCES',
+                    'MIY_APP_FRAME_CORE_UPSTREAM'}
 
 
 def require(condition, message):
@@ -143,7 +144,9 @@ def proxy_regression(state, kind, tls_material=None):
             if self.server.surface == 'identity':
                 self.send_header('X-Frame-Options', 'SAMEORIGIN')
                 self.send_header('Content-Security-Policy', "script-src 'self'")
-            else:
+            elif self.server.surface != 'frame':
+                # Core's browser listeners deny framing; the frame listener answers
+                # its own frame-ancestors per document instead.
                 self.send_header('X-Frame-Options', 'DENY')
             self.send_header('Content-Length', str(len(payload)))
             self.end_headers()
@@ -155,7 +158,7 @@ def proxy_regression(state, kind, tls_material=None):
     reserved = []
     cidfile = state / 'caddy.cid'
     try:
-        for surface in ['portal', 'console', 'identity', 'dev_portal']:
+        for surface in ['portal', 'console', 'identity', 'dev_portal', 'frame']:
             stub = http.server.ThreadingHTTPServer(('127.0.0.1', 0), Handler)
             stub.surface = surface
             thread = threading.Thread(target=stub.serve_forever, daemon=True)
@@ -167,14 +170,34 @@ def proxy_regression(state, kind, tls_material=None):
             sock.bind(('127.0.0.1', 0))
             reserved.append(sock)
         ports = [sock.getsockname()[1] for sock in reserved]
+        # Two consecutive free ports form the app frame pool (one origin each),
+        # below the kernel's ephemeral range where outgoing connections bind.
+        for base in range(29000, 30000, 2):
+            pair = []
+            try:
+                for number in (base, base + 1):
+                    sock = socket.socket()
+                    pair.append(sock)
+                    sock.bind(('127.0.0.1', number))
+            except OSError:
+                for sock in pair:
+                    sock.close()
+                continue
+            reserved.extend(pair)
+            break
+        frame_ports = [base, base + 1]
         scheme = 'https' if tls_material else 'http'
         portal, console, dev_portal = [f'{scheme}://127.0.0.1:{number}' for number in ports]
+        frame_origin = f'{scheme}://127.0.0.1:{frame_ports[0]}'
         tls_options = ['--ca-file', str(tls_material[0])] if tls_material else []
         bootstrap(state, '--profile', 'server' if tls_material else 'local', '--origin', portal, '--console-origin', console,
                   '--dev-portal-origin', dev_portal,
                   '--bind', f'127.0.0.1:{stubs[0].server_port}',
                   '--console-bind', f'127.0.0.1:{stubs[1].server_port}',
                   '--dev-portal-bind', f'127.0.0.1:{stubs[3].server_port}',
+                  '--app-frame-bind', f'127.0.0.1:{stubs[4].server_port}',
+                  '--app-frame-origin', scheme + '://127.0.0.1:{port}',
+                  '--app-frame-ports', f'{frame_ports[0]}-{frame_ports[1]}',
                   '--identity-port', str(stubs[2].server_port), *tls_options)
         site = state / 'site'
         site.mkdir()
@@ -191,7 +214,7 @@ def proxy_regression(state, kind, tls_material=None):
                                f'http {{ access_log off; include "{config}"; }}')
             command = ['nginx', '-c', str(wrapper), '-p', str(state), '-g', 'daemon off; master_process off;']
         else:
-            check_caddy_config(state, ports)
+            check_caddy_config(state, ports + frame_ports)
             command = caddy_command(state, 'run', '--config', '/etc/caddy/Caddyfile')
             command[command.index('none')] = 'host'
             command[2:2] = ['--cidfile', str(cidfile), '--tmpfs', '/data', '--tmpfs', '/config',
@@ -294,6 +317,27 @@ def proxy_regression(state, kind, tls_material=None):
         portal_headers = fetch(portal, '/')[1]
         require("worker-src 'none'" in ';'.join(portal_headers.get_all('Content-Security-Policy', [])),
                 'Portal shell permits new service workers')
+        # Business app frames: portals frame only frame origins and keep the launch
+        # POST Origin; frame origins reach the frame listener with their own Host
+        # and never get the anti-frame headers of the portal surfaces.
+        for shell in [portal, dev_portal]:
+            shell_headers = fetch(shell, '/')[1]
+            require(f'frame-src {scheme}://127.0.0.1:*' in ';'.join(shell_headers.get_all('Content-Security-Policy', []))
+                    and shell_headers.get_all('Referrer-Policy') == ['strict-origin-when-cross-origin'],
+                    'Portal shell does not frame app origins or may drop the launch Origin')
+        for number in frame_ports:
+            frame = f'{scheme}://127.0.0.1:{number}'
+            status, headers, body = fetch(frame, '/_miy/launch', {'X-Forwarded-Host': 'attacker.invalid'})
+            value = json.loads(body)
+            forwarded = {key.lower(): item for key, item in value['headers'].items()}
+            require(status == 200 and value['surface'] == 'frame' and forwarded['host'] == frame.split('://', 1)[1]
+                    and 'x-forwarded-host' not in forwarded and 'forwarded' not in forwarded,
+                    'Frame origin did not reach the frame listener with its own Host')
+            require(not headers.get_all('X-Frame-Options')
+                    and headers.get_all('X-Content-Type-Options') == ['nosniff'],
+                    'Proxy added anti-frame headers to app frames or lost nosniff')
+            require(fetch(frame, '/_miy/runtime/a.js', {'Service-Worker': 'script'})[0] == 403,
+                    'Frame origin accepted a service-worker script request')
         if tls_material:
             subprocess.run([sys.executable, str(ROOT / 'scripts/check-server-tls.py'), '--state-dir', str(state),
                             '--certificate', str(tls_material[1]), '--key', str(tls_material[2]), '--connect'],
@@ -437,6 +481,10 @@ with tempfile.TemporaryDirectory(prefix='miy-server-config-') as temporary:
     require(runtime['MIY_DEV_PORTAL_ORIGIN'] == 'http://10.2.3.4:8082'
             and runtime['MIY_DEV_PORTAL_BIND_ADDR'] == '127.0.0.1:18082',
             'Dev portal did not use its own single-IP port and listener')
+    require(runtime['MIY_APP_FRAME_ORIGIN'] == 'http://10.2.3.4:{port}'
+            and runtime['MIY_APP_FRAME_PORTS'] == '20000-20199'
+            and runtime['MIY_APP_FRAME_BIND_ADDR'] == '127.0.0.1:18083',
+            'App frames did not get a port pool on the single IP and their own listener')
     require(realm['clients'][0]['redirectUris'] == [value + '/auth/callback' for value in
             ['http://10.2.3.4:8080', 'http://10.2.3.4:8081', 'http://10.2.3.4:8082']], 'Incorrect browser callbacks')
     require(realm['clients'][0]['webOrigins'] == ['http://10.2.3.4:8080', 'http://10.2.3.4:8081'],
@@ -464,8 +512,20 @@ with tempfile.TemporaryDirectory(prefix='miy-server-config-') as temporary:
     require('listen 8080;' in proxy and 'ssl_certificate' not in proxy and 'Strict-Transport-Security' not in proxy,
             'HTTP render accidentally enabled TLS')
     require('cli/(downloads|installers)' in proxy and 'proxy_set_header Upgrade' in proxy, 'Download, installer or WebSocket route missing')
-    require('proxy_set_header Host $http_host' not in proxy and 'proxy_set_header X-Forwarded-Proto $scheme' not in proxy,
+    blocks = proxy.split('\nserver {')
+    frame_blocks = [block for block in blocks if 'proxy_pass http://127.0.0.1:18083;' in block]
+    require(len(frame_blocks) == 1, 'Nginx has no single app frame block')
+    frame_block = frame_blocks[0]
+    # Only the frame block passes the client Host: Core maps it to a registered
+    # installation origin; it never selects a purpose.
+    require(all('$http_host' not in block for block in blocks if block is not frame_block)
+            and 'proxy_set_header X-Forwarded-Proto $scheme' not in proxy,
             'Proxy forwarding trusts a client-selected origin')
+    require('listen 20000-20199;' in frame_block and 'proxy_set_header Host $http_host;' in frame_block
+            and 'access_log off;' in frame_block and 'X-Frame-Options' not in frame_block,
+            'Nginx app frame block lost its port pool, Host, log or framing rules')
+    require('frame-src http://10.2.3.4:*' in proxy and 'Referrer-Policy strict-origin-when-cross-origin' in proxy,
+            'Nginx portals do not frame app origins or keep the launch Origin')
     require('listen 8081;' in proxy and 'proxy_pass http://127.0.0.1:18081;' in proxy,
             'Nginx console uses the wrong fixed-purpose listener')
     require('listen 8082;' in proxy and 'proxy_pass http://127.0.0.1:18082;' in proxy,
@@ -590,9 +650,10 @@ with tempfile.TemporaryDirectory(prefix='miy-server-config-') as temporary:
             and runtime['MIY_CONSOLE_ORIGIN'] == 'https://localhost:18444'
             and runtime['MIY_DEV_PORTAL_ORIGIN'] == 'https://localhost:18445',
             'Local development did not use the three configured HTTPS purposes')
-    check_caddy_config(local, [18443, 18444, 18445, 18000])
+    # The local profile also serves its default app frame pool (18320-18339).
+    check_caddy_config(local, [18443, 18444, 18445, 18000, *range(18320, 18340)])
     bootstrap(local, '--origin', 'http://localhost:18000')
-    check_caddy_config(local, [18000, 18001, 18002])
+    check_caddy_config(local, [18000, 18001, 18002, *range(18320, 18340)])
     bootstrap(local, '--origin', 'http://10.2.3.4:18000', '--allow-http')
     runtime = load_env(local, 'runtime.env')
     require(runtime['MIY_DEV_LOGIN'] == '0' and 'MIY_CA_FILE' not in runtime, 'Non-loopback HTTP enabled synthetic login or inherited CA')

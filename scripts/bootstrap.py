@@ -101,10 +101,10 @@ parser.add_argument('--console-https-port', type=port, default=port(os.getenv('M
 parser.add_argument('--dev-portal-http-port', type=port, default=port(os.getenv('MIY_DEV_PORTAL_HTTP_PORT', previous.get('devPortalHttpPort', 18002))))
 parser.add_argument('--dev-portal-https-port', type=port, default=port(os.getenv('MIY_DEV_PORTAL_HTTPS_PORT', previous.get('devPortalHttpsPort', 18445))))
 parser.add_argument('--proxy-bind', default=os.getenv('MIY_PROXY_BIND', previous.get('proxyBind', '127.0.0.1')))
-parser.add_argument('--app-frame-origin', default=os.getenv('MIY_APP_FRAME_ORIGIN', previous.get('appFrameOrigin')),
+parser.add_argument('--app-frame-origin', default=os.getenv('MIY_APP_FRAME_ORIGIN'),
                     help='Business app frame origins: one {key} host label (domain) or {port} (port pool); '
                          'defaults to ports on the portal host')
-parser.add_argument('--app-frame-ports', default=os.getenv('MIY_APP_FRAME_PORTS', previous.get('appFramePorts')),
+parser.add_argument('--app-frame-ports', default=os.getenv('MIY_APP_FRAME_PORTS'),
                     help='Frame port pool first-last for a {port} template')
 parser.add_argument('--app-frame-bind', default=os.getenv('MIY_APP_FRAME_BIND_ADDR', previous.get('appFrameBind', '127.0.0.1:18083')))
 parser.add_argument('--ca-file', type=Path, default=os.getenv('MIY_CA_FILE') or None)
@@ -133,6 +133,10 @@ try:
     # Business app frames: one origin per installation (docs/APP-FRAMES.md). Without
     # a domain template, frames take ports from a pool on the portal host (P3).
     portal_parts = urllib.parse.urlsplit(origin)
+    # Stored frame settings belong to the stored portal origin, like the console.
+    if not args.app_frame_origin and origin == previous.get('origin'):
+        args.app_frame_origin = previous.get('appFrameOrigin')
+        args.app_frame_ports = args.app_frame_ports or previous.get('appFramePorts')
     if not args.app_frame_origin:
         args.app_frame_origin = f'{portal_parts.scheme}://{portal_parts.hostname}:{{port}}'
         args.app_frame_ports = args.app_frame_ports or ('18320-18339' if args.profile == 'local' else '20000-20199')
@@ -222,8 +226,9 @@ private_write(LOCAL / 'compose.env', env_text({
     # and the portal frame-src that names exactly those origins.
     'MIY_APP_FRAME_SITES': ', '.join(frame_template.replace('{port}', str(value)) for value in frame_ports)
         if frame_ports else frame_wildcard,
-    'MIY_APP_FRAME_SOURCES': ' '.join(frame_template.replace('{port}', str(value)) for value in frame_ports)
-        if frame_ports else frame_wildcard,
+    # CSP cannot list a whole pool compactly: frame-src takes the port wildcard of
+    # the frame host (platform ports there keep frame-ancestors 'none').
+    'MIY_APP_FRAME_SOURCES': frame_template.replace('{port}', '*') if frame_ports else frame_wildcard,
     'MIY_APP_FRAME_CORE_UPSTREAM': args.app_frame_bind,
     'MIY_IDENTITY_UPSTREAM': f'127.0.0.1:{args.identity_port}',
     'MIY_CADDY_CONFIG': ROOT / 'ops' / ('Caddyfile' if local_tls else 'Caddyfile.http'),
