@@ -10,6 +10,16 @@
 
 - 앱 출처·세션·실행 계약을 바꿀 때 [사내 최소 보안 설계](docs/APP-BOUNDARIES.md)를 먼저 읽는다. iframe 없는 MF·통합 라우팅·단일 IP HTTPS를 유지한다. 업무 포털(dev/prod)과 관리·CLI 승인·Keycloak 콘솔 두 출처, portal/console 세션 용도는 서버·UI `a4ad370`으로 2026-11-07 운영에 반영했다([배포 기록](docs/releases/internal-minimum-security-2026-11-07-deployment.json)). 2026-11-09 후속 `027caab`(다른 출처 쿠키 요청 거부·legacy CLI 로그인 종료)도 운영에 반영했다. 운영 콘솔·issuer는 `https://v2-console.dwdcc.kr`(2026-11-09 이동, 옛 `:9443`은 redirect)이며 공유 개발 로그인은 꺼져 있다. 구현·격리 검증·운영 전환 상태를 구분한다. dev 앱 전용 포털 출처는 2026-11-09 사용자 결정으로 구현·운영 반영했다(포털 `https://v2.dwdcc.kr`은 prod만, dev 포털 `https://v2-dev.dwdcc.kr`은 dev만, schema 21). 별도 IdP 출처·외부 앱 격리·MFA 의무화·자동 CA를 기능 개발의 선행 조건으로 추가하지 않는다. 같은 페이지 앱 격리나 포트 쿠키 격리를 주장하지 않으며 공개 운영을 사내 전제로 자동 인정하지 않는다. 권한은 CORE-PERMISSIONS, 순서·상태는 PLAN을 따르고 게시 번들·현행·목표·역사를 구분한다.
 
+## 개발 단계 원칙 (실제 운영 전환 전까지)
+
+v2.dwdcc.kr은 "운영" 주소로 부르지만 **아직 개발 중인 서버**다. 실제 서비스 운영으로 바뀌면 사용자가 이 절을 다시 정한다. 그 전까지는 운영을 고려한 의사결정을 하지 않는다.
+
+- 서비스 재시작, 짧은 중단, 사용자 재로그인, 외부 클라이언트 재인증을 이유로 설계를 미루거나 바꾸지 않는다. 유지보수 창이나 무중단 전환을 계획하지 않는다.
+- 리팩토링·아키텍처 변경에서 하위 호환을 유지하지 않아도 된다. 구 API·구 CLI·구 번들·구 설정 형식을 위한 호환 경로, 이전 형식 fallback, 단계적 전환 계층을 기본으로 넣지 않는다. 필요하면 새 버전으로 끊고 CLI·SDK·웹·문서를 함께 바꾼다.
+- 게시된 산출물(CLI·SDK 번들·공용 UI)의 바이트는 다시 쓰지 않고 새 버전을 추가한다. 새 버전이 옛 버전과 호환될 필요는 없다.
+- 그대로 지키는 것: 기본 거부 권한 모델, 비밀 취급, DB·앱 데이터 보존(데이터를 바꾸는 반영 전 변경 범위 백업, 적용된 migration 수정 금지), 다른 작업자 변경 보호, 검증 보고 규칙, 운영 반영은 사용자가 요청할 때만.
+- 문서의 호환 보존 문구(예: APP-BOUNDARIES의 AB-06·07)는 이 단계에서는 필수 조건이 아니다.
+
 ## 이 호스트의 운영 경계
 
 이 checkout의 `.local`은 v2.dwdcc.kr 운영 상태이고, Nginx는 `web/platform/dist`를 그대로 서빙한다.
@@ -18,7 +28,7 @@
 - 운영 `.local`을 대상으로 다음을 실행하지 않는다: `scripts/check.sh`(origin 가드로 거부됨), `services.py`, `up.sh`, `down.sh`, `compose up`, `bootstrap.py`, `seed`, `configure-identity.py`.
 - 일회용 검증은 격리 도구만 쓴다: `check-static.sh`, `runtime-regression/run.py`, `server-ui.config.ts`, `stack-ui.sh`. 격리 스택은 `MIY_STATE_DIR`과 `MIY_DATABASE_CONTAINER`를 반드시 따로 지정한다(기본값은 운영 DB 컨테이너).
 - 운영 컨테이너(`miy-v2-validation-*`, 운영 `miy-app-*`)·네트워크·볼륨과 운영 DB를 변경하거나 지우지 않는다.
-- 운영 반영, 서비스 재시작, DB migration 적용은 사용자의 명시적 요청이 있을 때만 하고, 변경 범위의 백업과 별도 영역 복원 확인을 먼저 한다.
+- 운영 반영(서비스 재시작 포함)과 DB migration 적용은 사용자가 요청할 때 한다. 요청된 반영에 따르는 재시작·짧은 중단·재로그인은 따로 확인받지 않는다. DB나 데이터를 바꾸는 반영만 변경 범위의 백업과 별도 영역 복원 확인을 먼저 한다.
 
 ## 비밀
 
