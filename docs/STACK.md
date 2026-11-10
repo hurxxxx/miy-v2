@@ -9,7 +9,7 @@
 
 회사 내부망의 단일 서버·VM과 회사가 통제하는 앱 개발·운영을 현재 범위로 삼는다. 외부 앱·외부 개발자 수용은 제외한다. Rust 코어·앱 백엔드, Next.js와 MinIO 제외, 내장 Hermes와 사용자별 세션 방향은 유지한다. 아래 장기 기술 추천이 현재 최소 보안 보완의 필수 구성이라는 뜻은 아니다.
 
-최초 최소 플랫폼·CLI·Codex·DB·Docker·UI 라우팅 검증은 [당시 계획](archive/VALIDATION-MODULE-FEDERATION.md)과 [실행 결과](IMPLEMENTATION-RESULTS.md)에 보존한다. 아래 표는 기존 구현과 장기 추천을 구분한다. 현재 적용할 최소 경계는 dev/prod 공통 포털과 관리·CLI 승인·Keycloak `/identity`를 묶은 콘솔의 두 출처다. 상세는 [앱 실행·관리 경계](APP-BOUNDARIES.md#확정-결정)가 관리하며 아직 운영에 적용되지 않았다.
+최초 최소 플랫폼·CLI·Codex·DB·Docker·UI 라우팅 검증은 [당시 계획](archive/VALIDATION-MODULE-FEDERATION.md)과 [실행 결과](IMPLEMENTATION-RESULTS.md)에 보존한다. 아래 표는 기존 구현과 장기 추천을 구분한다. 현재 경계는 prod 포털·dev 포털·관리/CLI 승인/Keycloak 콘솔의 세 출처이며 구현·운영 반영했다. 상세 계약과 배포 상태는 [앱 실행·관리 경계](APP-BOUNDARIES.md#확정-결정)가 관리한다.
 
 ## 추천 구성
 
@@ -19,13 +19,13 @@
 | 코어 백엔드 | Rust + Axum + Tokio + Tower | 인증된 API, 앱·환경·릴리스 관리, 정책 집행과 작업 제어를 공통 모듈로 구현 |
 | DB 접근 | SQLx + 버전이 있는 SQL migration | 배포 상태 전이·작업 큐·권한 조회의 SQL과 트랜잭션을 명시적으로 관리 |
 | 관리 웹 | TypeScript strict + React + Vite + TanStack Router·Query | Rust API를 사용하는 SPA. 라우팅·서버 상태 관리와 타입을 일관되게 구성 |
-| 앱 UI 실행 | 독립 빌드한 MF 모듈·AppRoot + 플랫폼 라우터 + SDK 함수 | 회사가 통제하는 앱을 같은 포털의 dev/prod에서 실행. iframe·플랫폼 재빌드 없이 앱 추가를 유지 |
+| 앱 UI 실행 | 독립 빌드한 MF 모듈·AppRoot + 플랫폼 라우터 + SDK 함수 | 회사가 통제하는 앱을 dev/prod 각각의 포털에서 실행. iframe·플랫폼 재빌드 없이 앱 추가를 유지 |
 | 공통 UI | Tailwind CSS + shadcn/ui 기반 `@miy/ui` | 디자인 토큰·필수 연동 컴포넌트는 버전 패키지로 제공하고 업무별 화면은 확장 |
 | API 계약·SDK | OpenAPI + utoipa + openapi-typescript·openapi-fetch | Rust API 스키마에서 TypeScript 타입·클라이언트 연결. manifest·공개 기능은 버전이 있는 JSON Schema로 검증 |
 | MCP | 공식 Rust SDK `rmcp` + Streamable HTTP | 사내 개발 담당자의 CLI·개발 에이전트에 맥락과 도구 제공. HTTP API와 같은 권한 서비스를 호출 |
 | CLI | Rust + clap + reqwest | 독립 실행 파일로 배포하며 초기화·로그인·검사·미리보기·릴리스·로그 명령 제공 |
 | 첫 앱 개발 프로필 | Rust + Axum + SQLx, React + Vite 정적 화면 | Rust 서버·정적 화면·작업·migration을 한 OCI 이미지로 배포. 정적 파일은 이미지에 포함하며 바이너리 내장은 선택안 |
-| 인증 | 단일 Keycloak/IdP + OIDC, 코어의 세션 용도·중앙 정책 | 포털과 콘솔 두 출처. Keycloak은 콘솔 `/identity`, CLI 승인도 콘솔. 앱 코드는 포털에서만 실행하고 브라우저 세션 용도를 서버가 검사 |
+| 인증 | 단일 Keycloak/IdP + OIDC, 코어의 세션 용도·중앙 정책 | prod 포털·dev 포털·콘솔 세 출처. Keycloak과 device CLI 승인은 콘솔. 앱 코드는 포털에서만 실행하고 브라우저 세션 용도를 서버가 검사 |
 | DB·벡터 검색 | PostgreSQL + pgvector | 플랫폼 상태, 앱 DB, 작업 상태와 문서 임베딩 저장. 앱·환경별 DB·역할 분리 |
 | 작업 큐 | PostgreSQL 영속 작업 테이블 + Rust worker | 예약·재시도·빌드·배포 작업을 기록. 실행할 앱 코드는 별도 격리 환경에서 구동 |
 | 소스·이미지 저장소 | Gitea + 내장 OCI Container Registry | 고객사 내부 Git과 배포 이미지를 함께 관리. 외부 GitHub·GitLab도 연결 |
@@ -57,7 +57,7 @@ CLI 기본 개발 번들에는 지침·SDK·UI·타입·예제를 포함한다. 
 
 앱은 manifest·UI 모듈과 자산·Rust 서버·작업·마이그레이션을 묶은 독립 패키지로 설치한다. 코어와 같은 언어여도 앱 백엔드 코드를 코어 서버 프로세스에 직접 로드하지 않고 등록 정보와 HTTP 계약으로 연결한다. 메뉴·UI·공개 API·작업과 수명주기는 [Rust 앱 개발 계획](DEVELOPMENT.md#rust-풀스택-앱의-플러그인-구조)을 따른다.
 
-운영과 PoC는 단일 IP·사설 CA HTTPS를 지원한다. 기존 HTTP IP·loopback 결과는 새 보안 인수를 대신하지 않는다. 포털에는 dev/prod 앱을 함께 제공하고 콘솔에는 관리·CLI 승인·IdP만 둔다. 별도 IdP/dev 출처·사이트 분리·MFA 의무화는 후속 요구로 두며 지금 기능 개발의 선행 조건이 아니다. MF·SDK를 일괄 교체하지 않고 실제 변경 계약만 새 불변 버전으로 제공한다. 백업·복구는 [전환과 복구](APP-BOUNDARIES.md#전환과-복구)를 따른다.
+단일 IP·사설 CA HTTPS를 지원한다. 기존 HTTP IP·loopback 결과는 새 보안 인수를 대신하지 않는다. prod와 dev 앱은 별도 포털에서, 관리·device CLI 승인·IdP는 콘솔에서 제공한다. 별도 IdP·사이트 분리·MFA 의무화는 후속이며 기능 개발의 선행 조건이 아니다. 계약 변경은 새 불변 버전으로 제공하고 개발 단계의 구 버전 호환은 강제하지 않는다. 데이터 보존·백업/복구는 [전환과 복구](APP-BOUNDARIES.md#전환과-복구)를 따른다.
 
 동기 API와 예약·백그라운드 작업은 같은 릴리스의 서로 다른 진입점으로 구성한다. 작업을 실행하는 프로세스에 다른 앱의 코드·파일·자격증명을 함께 넣지 않는다. 함수 실행 자원의 공유와 유휴 실행 중지는 실제 자원 사용을 측정한 뒤 최적화한다.
 

@@ -8,9 +8,9 @@
 - 실행 서버·게시 CLI: **0.7.0**, SDK 번들 **0.8.0**
 - 배포 소스: 서버·worker `f9d408490596935c460101e70a908c6621fab220`, 웹 화면 `3760ef044755c2018b70eacfaa0cb70954b694e2`(2026-11-09), core schema 21, 게시 CLI `01e4d4924f8c8fc4e11720c1af81adf17ddb20bf` 유지
 
-여기서 운영 반영은 이 프로젝트의 기존 서버에 변경분을 배포했다는 뜻이다. 제품 개발 완료나 정식 오픈을 선언한 것은 아니다. 현재 `:9443`은 기존 DNS·인증서를 그대로 쓰기 위한 선택이며, 도메인이 있으면 같은 IP·443의 별도 관리 호스트로 설정할 수 있다. 출처 배치 계약은 [경계 설계](APP-BOUNDARIES.md#영역과-설정)를 따른다.
+여기서 운영 반영은 이 프로젝트의 기존 개발 서버에 변경분을 배포했다는 뜻이다. 제품 개발 완료나 정식 오픈을 선언한 것은 아니다. 현재 세 출처는 같은 IP의 HTTPS 443을 공유하는 별도 호스트명이며, 도메인 없는 설치는 별도 포트를 지원한다. 출처 배치 계약은 [경계 설계](APP-BOUNDARIES.md#영역과-설정)를 따른다.
 
-**현재 운영은 두 출처 경계를 적용했다.** [사내 업무 앱의 최소 보안 계약](APP-BOUNDARIES.md#확정-결정)에 따라 iframe 없는 MF·AppRoot·통합 라우팅을 유지하고, 기존 포털의 dev/prod 업무 UI와 `:9443` 콘솔의 관리·CLI 승인·Keycloak `/identity/realms/miy`를 분리했다. 단일 호스트의 포트는 origin을 나누지만 쿠키를 격리하지 않으므로 목적별 세션·정확한 Origin·CSRF·응답 제한을 함께 적용한다. 공개 운영 `v2.dwdcc.kr`을 회사 내부망 범위로 자동 인정하거나 같은 페이지 앱 간 격리를 보장하지 않는다.
+**현재 서버는 prod 포털·dev 포털·관리/로그인 콘솔의 세 출처 경계를 적용했다.** [사내 최소 계약](APP-BOUNDARIES.md#확정-결정)에 따라 iframe 없는 MF·AppRoot·통합 라우팅을 유지한다. 앱 코드는 해당 환경의 포털에서만 실행하고 관리·device CLI 승인·Keycloak은 콘솔에서 제공한다. portal/dev_portal/console 세션 용도·환경·정확한 Origin·CSRF·응답 제한을 서버가 검사한다. 별도 호스트여도 같은 상위 도메인의 쿠키 영향은 남고, 포트는 쿠키를 격리하지 않는다. 공개 서버를 내부망 범위로 자동 인정하거나 같은 포털 안의 앱 격리를 보장하지 않는다.
 
 2026-11-09 사용자 요청으로 콘솔과 로그인 issuer를 `https://v2-console.dwdcc.kr`로 옮겼다([배포 기록](releases/console-hostname-2026-11-09-deployment.json)). 서버·UI·schema는 그대로이고, 옛 `:9443`은 같은 경로로 301 redirect한다. 모든 브라우저 사용자는 한 번 다시 로그인하며 CLI credential은 유지된다. 외부 OAuth MCP 클라이언트는 새 issuer로 다시 인증한다. 실제 OIDC로 세 출처 SSO와 CLI·MCP 연결 22개를 확인했다.
 
@@ -18,7 +18,7 @@
 
 2026-11-09 오후에 검토 후속 1단계를 서버·UI `027caab`로 반영했다([배포 기록](releases/boundary-followup-2026-11-09-deployment.json)). 같은 호스트 다른 출처의 쿠키 인증 요청(GET·탐색 포함) 거부, `/auth/login`의 탐색 전용, 브라우저에서 시작한 앱 연결의 `admin=false`, 0.5 이전 CLI의 legacy 로그인 종료(410 `cli_upgrade_required`), 포털 안 앱 이동의 같은 탭 복귀가 포함된다. 같은 schema(20)이며 설정·Keycloak은 바꾸지 않았다. `core-rollout.py`의 새 정확한 SHA CI gate를 처음 사용했다.
 
-2026-11-09 08:11 KST에 포털↔콘솔·업무 앱 열기의 새 탭 동작을 웹 화면 `f5210d1`로 반영했다([배포 기록](releases/new-tab-navigation-2026-11-09-deployment.json)). 기존 UI 139개 파일을 별도 디렉터리에서 복원 확인한 뒤 자산 4개를 추가하고 `index.html`을 원자적으로 교체했다. 이전 자산 138개를 보존했고 공개 두 출처의 후보 파일 220건 해시가 일치했다. 서버·worker의 PID·시작 시각과 실행 파일, 인증 설정·게시 CLI는 유지했으며 서비스 재시작·DB migration은 수행하지 않았다. 이전 화면과 고정된 복구 도구는 `.local/release-f5210d1-new-tabs/ui/`에 보존했다. 실제 로그인·SSO·게시 CLI/MCP 연결 20개와 새 탭 이동 14개를 확인했으며 페이지 오류·업무 쓰기·세션 정리 실패는 없었다. 기존 탭은 새로고침하면 새 이동 동작을 사용한다.
+현재 탐색은 포털 내부 앱 이동을 같은 탭으로, 포털↔콘솔 및 prod↔dev 포털 이동을 새 탭으로 처리한다. [UI 계약](UIUX-MIGRATION.md)의 결정과 [후속 검증](releases/boundary-followup-2026-11-09-validation.json)을 따른다. 앱도 새 탭으로 열던 `f5210d1` 배포는 [이전 기록](releases/new-tab-navigation-2026-11-09-deployment.json)이며 현재 동작의 검증 근거로 쓰지 않는다.
 
 2026-11-07 사용자 요청으로 서버·UI `a4ad370`, core schema19→20, 두 listener·Nginx와 issuer/callback/logout 설정을 함께 전환했다([배포 기록](releases/internal-minimum-security-2026-11-07-deployment.json)). 게시 CLI `01e4d49`와 번들 0.8.0은 유지했다. 공유 개발 로그인은 끄고 일반 OIDC 로그인을 사용한다. 구 브라우저 세션·로그인 flow·미완료 CLI 승인은 무효화했으므로 다시 로그인한다. 기존 정상 CLI credential은 보존하며 의심 device/legacy credential은 콘솔 개인 CLI 목록에서 각각 회수한다.
 
@@ -77,14 +77,15 @@
 
 
 
-## 새 두 출처 설정과 전환 준비
+## 새 세 출처 설정과 전환 준비
 
 아래는 **새 구현을 사용할 별도 서버/상태 경로**의 준비 명령이다. 이 호스트의 운영 `.local`에는 실행하지 않는다. 사내 공유 서버의 표준은 IP SAN 인증서를 반입한 HTTPS이며 서버의 OS·브라우저·CLI 신뢰는 각각 확인한다. 키·암호·runtime.env를 출력하지 않는다.
 
 ```sh
 python3 scripts/bootstrap.py --profile server --state-dir /srv/miy-new \
   --origin https://192.168.10.20:8443 --console-origin https://192.168.10.20:9443 \
-  --bind 127.0.0.1:18080 --console-bind 127.0.0.1:18081 \
+  --dev-portal-origin https://192.168.10.20:9444 \
+  --bind 127.0.0.1:18080 --console-bind 127.0.0.1:18081 --dev-portal-bind 127.0.0.1:18082 \
   --ca-file /etc/miy-tls/company-ca.pem
 python3 scripts/check-server-tls.py --state-dir /srv/miy-new \
   --certificate /etc/miy-tls/server-chain.pem --key /etc/miy-tls/server.key
@@ -93,20 +94,21 @@ python3 scripts/render-server-config.py --state-dir /srv/miy-new \
   --certificate /etc/miy-tls/server-chain.pem --key /etc/miy-tls/server.key
 ```
 
-생성된 Nginx 설정·서비스 파일을 검토한 뒤 해당 서버의 반영 절차를 따른다. `consoleOrigin`과 `consoleBind`를 생략해 구 1출처 설정으로 Core를 시작하는 fallback은 없다. `miy-web`의 callback/logout URI는 두 origin의 정확한 경로만 등록한다. 기존 realm·사용자 sub·secret을 재생성하지 않고, issuer는 콘솔 `/identity/realms/miy`로 옮긴다. CLI context의 포털 URL은 그대로이고 MCP 클라이언트는 새 issuer 발견·필요한 재로그인을 확인한다. 내부 Core/Keycloak listener는 loopback이며 생성 proxy만 고정 목적 listener로 전달한다.
+생성된 Nginx 설정·서비스 파일을 검토한 뒤 해당 서버의 반영 절차를 따른다. Core에는 세 출처와 각 고정 목적 listener가 필요하다. `miy-web`의 callback/logout URI는 세 origin의 정확한 경로만 등록한다. 기존 realm·사용자 sub·secret을 재생성하지 않고 issuer는 콘솔 `/identity/realms/miy`에 둔다. CLI context의 서버 주소는 prod 포털이며 MCP 클라이언트는 새 issuer 발견·필요한 재로그인을 확인한다. 내부 Core/Keycloak listener는 loopback이며 생성 proxy만 고정 목적 listener로 전달한다.
 
-새 서버 또는 후속 전환 전 변경 범위의 백업·별도 복원과 필요한 migration 리허설을 수행한다. 이 호스트의 migration 0020 전환은 2026-11-07 완료했다. 0020은 브라우저 세션·로그인 flow·미완료 CLI 승인을 무효화하므로 재로그인을 안내한다. 앱/사용자/그룹 데이터와 독립 CLI 세션은 유지된다. 의심 자격증명은 콘솔의 개인 CLI 목록에서 device·legacy를 각각 회수한다. 게시 CLI/SDK를 전면 교체하거나 앱 데이터를 다시 만들지 않는다.
+DB·데이터를 변경하는 반영 전에는 변경 범위의 백업·별도 복원과 필요한 migration 리허설을 수행한다. 이 호스트는 migration 0020의 브라우저 세션·로그인 flow·미완료 승인 무효화와 0021의 dev_portal 목적 추가를 반영해 schema 21이다. 앱/사용자/그룹 데이터와 독립 CLI 세션은 유지했다. 의심 자격증명은 콘솔의 개인 CLI 목록에서 device·legacy를 각각 회수한다. 개발 단계에서 CLI·SDK·설정 호환 보존은 필수가 아니지만 게시물 바이트·앱 데이터는 보존한다.
 
 이미 앱 코드를 실행했던 포털의 브라우저별 개발자 도구에서 해당 origin의 Service Worker 등록을 해제하고 cache/storage를 정리한 뒤 새 로그인으로 확인한다. 콘솔은 앱 코드가 실행되지 않았던 새 origin을 쓴다. 일회성 서버 정리가 필요하면 **해당 origin에만** `Clear-Site-Data: "cache", "storage"`를 사용한다. `"cookies"`/`"*"`는 등록 도메인과 다른 포트 서비스에 영향을 주므로 금지한다. 알려진 구 `miy_session`·`miy_development`(/)·`miy_login`(/auth)만 만료시키고 새 목적별 쿠키나 IdP 쿠키를 일괄 지우지 않는다. 중복 쿠키/431이 남은 기기는 해당 호스트의 사이트 데이터 정리를 사용자에게 안내한다. 미접속 기기 정리 완료를 주장하지 않는다.
 
-인증서를 교체할 때에는 새 인증서·키를 별도 파일에 두고 `check-server-tls.py`로 체인·IP SAN·만료·키 일치를 검사한다. 새 CA라면 단말/CLI 신뢰를 먼저 등록하고 원본 경로를 보존한 뒤 proxy의 설정 검사·재적재 절차를 따른다. 이후 같은 검사에 `--connect`를 붙여 두 HTTPS health를 확인한다. 실패하면 보존한 인증서·키·proxy 설정으로 되돌린다. 자동 CA 설치/갱신과 실제 Windows 검증은 이번 구현 범위 밖이다.
+인증서를 교체할 때에는 새 인증서·키를 별도 파일에 두고 `check-server-tls.py`로 체인·IP SAN·만료·키 일치를 검사한다. 새 CA라면 단말/CLI 신뢰를 먼저 등록하고 원본 경로를 보존한 뒤 proxy의 설정 검사·재적재 절차를 따른다. 이후 같은 검사에 `--connect`를 붙여 세 HTTPS health를 확인한다. 실패하면 보존한 인증서·키·proxy 설정으로 되돌린다. 자동 CA 설치/갱신과 실제 Windows 검증은 이번 구현 범위 밖이다.
 
 ## 1. 서버 주소와 실행 구성
 
 | 항목 | 현재 구성 |
 | --- | --- |
 | 대표 주소 | `https://v2.dwdcc.kr` |
-| 업무 웹·API·CLI 설치/다운로드 | 기존 대표 주소, 호스트 Nginx에서 전달 |
+| 업무 웹·API·CLI 설치/다운로드 | prod 포털인 대표 주소, 호스트 Nginx에서 전달 |
+| dev 업무 웹·API | `https://v2-dev.dwdcc.kr`, dev 앱 전용 포털 |
 | 관리·CLI 승인·로그인 | `https://v2-console.dwdcc.kr`, 같은 IP·443의 별도 호스트명(옛 `:9443`은 redirect 전용 사이트) |
 | 플랫폼 API/worker | systemd `miy-v2-serve`, `miy-v2-worker` |
 | 서버 실행 파일 | `/projects/miy-v2/.local/bin/miy-server` |
@@ -117,7 +119,7 @@ python3 scripts/render-server-config.py --state-dir /srv/miy-new \
 | 상태·비밀 설정 | `/projects/miy-v2/.local/`, `server.json`, `runtime.env`, `credentials.json` |
 | 직접 HTTP MCP | `https://v2.dwdcc.kr/mcp`, IdP OAuth 인증 |
 
-대표 주소는 `MIY_ORIGIN`, 콘솔은 `MIY_CONSOLE_ORIGIN`, 로그인 issuer는 `MIY_ISSUER`로 관리한다. Core의 고정 목적 listener는 `MIY_BIND_ADDR`·`MIY_CONSOLE_BIND_ADDR`이며 `server.json`의 `origin`·`consoleOrigin`·`bind`·`consoleBind`와 일치시킨다. Keycloak은 두 출처의 정확한 callback/logout URI만 허용하고 issuer는 콘솔에 둔다. MCP resource/audience와 CLI context·설치 안내의 서버 주소는 기존 포털을 유지한다. API와 DB의 내부 포트는 사용자 PC의 CLI 설정에 입력하지 않는다. 비밀 설정 파일이나 그 전체 내용을 문서·채팅·Git에 복사하지 않는다.
+대표 주소는 `MIY_ORIGIN`, dev 포털은 `MIY_DEV_PORTAL_ORIGIN`, 콘솔은 `MIY_CONSOLE_ORIGIN`, 로그인 issuer는 `MIY_ISSUER`로 관리한다. Core의 고정 목적 listener는 `MIY_BIND_ADDR`·`MIY_DEV_PORTAL_BIND_ADDR`·`MIY_CONSOLE_BIND_ADDR`이며 `server.json`의 `origin`·`devPortalOrigin`·`consoleOrigin`과 `bind`·`devPortalBind`·`consoleBind`에 맞춘다. Keycloak은 세 출처의 정확한 callback/logout URI만 허용하고 issuer는 콘솔에 둔다. MCP resource/audience와 CLI context·설치 안내의 서버 주소는 prod 포털을 유지한다. API와 DB의 내부 포트는 사용자 PC의 CLI 설정에 입력하지 않는다. 비밀 설정 파일이나 그 전체 내용을 문서·채팅·Git에 복사하지 않는다.
 
 서버 상태는 다음 읽기 명령으로 확인한다.
 
@@ -284,16 +286,16 @@ python3 scripts/ui-rollout.py apply --release-dir <같은 경로> --expected-com
 python3 scripts/ui-rollout.py rollback --release-dir <같은 경로>
 ```
 
-**dev 포털 추가 전환(2026-11-09 운영 실행 완료, 아래는 재사용 가능한 절차).** 2026-11-09 결정한 dev 앱 전용 포털은 모든 변경이 더하기만 하고 이전 서버 바이너리가 각 단계 뒤에도 그대로 동작한다. 그래서 유지보수 화면 없이 아래 순서의 작은 단계로 진행하고 각 단계를 따로 되돌린다. 운영 주소(포트 또는 호스트명)와 실행은 사용자 확인 뒤에만 한다.
+**dev 포털 추가 전환(`scripts/dev-portal-settings.py`).** 이 호스트의 실제 반영은 [2026-11-09 배포 기록](releases/dev-portal-2026-11-09-deployment.json)에 있고 아래는 도구의 현재 절차다. 개발 단계에서는 짧은 중단·재로그인을 허용하므로 구 바이너리 호환이나 무중단 전환을 새 요구로 만들지 않는다. 운영 반영은 사용자 요청 범위에서 수행한다.
 
-1. `python3 scripts/dev-portal-settings.py inspect --dev-portal-origin <주소>`: 주소·내부 bind·Keycloak `miy-web` 상태를 읽기만 한다. 같은 호스트의 새 포트면 그 포트가 비어 있어야 하고, 별도 호스트명이면 기존 HTTPS 포트를 이름으로 함께 쓰므로 다른 활성 Nginx 사이트가 그 이름을 쓰지 않아야 한다. 이 서버는 `*.dwdcc.kr` DNS·인증서가 있어 `https://v2-dev.dwdcc.kr`(포트 없음)를 쓴다.
-2. `... apply --dev-portal-origin <주소> --release-dir .local/release-<commit>-dev-portal`: `server.json`·`runtime.env`·`compose.env`에 dev 포털 키만 줄 단위로 추가하고(다른 줄은 바이트 동일), Keycloak `miy-web`에 dev 포털 callback·logout URI만 더한다. web origins·secret·사용자는 바꾸지 않는다. 이전 바이너리는 새 키를 무시한다.
+1. `python3 scripts/dev-portal-settings.py inspect --dev-portal-origin <주소>`: 주소·내부 bind·Keycloak `miy-web` 상태를 읽는다. 새 포트는 비어 있어야 하고 호스트명은 다른 활성 Nginx 사이트와 충돌하지 않아야 한다. 현재 소스는 따옴표·여러 줄·대소문자와 주석을 처리해 정확한 `server_name` 충돌을 검사한다. wildcard·정규식 이름 충돌 검사는 이 보완 범위가 아니다. 이 호스트의 dev 주소는 `https://v2-dev.dwdcc.kr`이다.
+2. `... apply --dev-portal-origin <주소> --release-dir .local/release-<commit>-dev-portal`: 변경 전에 세 설정 파일의 원본 백업과 복구 manifest를 저장하고, 그 뒤 `server.json`·`runtime.env`·`compose.env`에 dev 키를 추가하며 Keycloak `miy-web`에 dev callback·logout URI를 더한다. 기존 callback/logout URI·web origins·secret·사용자는 보존한다. 현재 소스의 부분 실패 복원은 아래 보완 설명을 따른다.
 3. `core-rollout.py apply --widen-migration 21 ...`: 정확한 SHA CI gate, 실제 dump의 복원·migration 리허설 뒤 서버를 바꾸고 고정된 `0021_dev_portal.sql`(제약 확장만)을 적용한다. 이 시점부터 기존 포털은 dev 앱을 거부한다.
 4. `dev-portal-settings.py nginx-apply --release-dir ... --certificate ... --key ...`: 다시 생성한 설정이 현재 운영 파일과 dev 포털 server 블록 하나만 다를 때만 설치하고 `nginx -t` 후 reload한다.
-5. `ui-rollout.py apply`: 새 UI는 dev 포털이 없는 구 서버에서도 동작하므로 순서상 위험이 없다.
+5. `ui-rollout.py apply`: 해당 서버의 세 출처 설정에 맞는 UI를 반영하고 환경별 직접 링크·새 탭 이동·로그인을 확인한다. 게시 UI `3760ef0`의 구 서버 fallback은 당시 구현 사실이며 향후 유지 조건이 아니다.
 
-되돌릴 때는 역순으로 `ui-rollout.py rollback`, `nginx-restore`, `core-rollout.py rollback`(이전 바이너리는 schema 21에서 동작하며 DB는 되돌리지 않는다), `dev-portal-settings.py restore`를 실행한다. 각 도구는 적용 뒤 바뀐 파일·설정을 발견하면 되돌리지 않고 거부한다.
+되돌릴 때는 역순으로 `ui-rollout.py rollback`, `nginx-restore`, `core-rollout.py rollback`, `dev-portal-settings.py restore`를 실행한다. schema 21을 읽을 수 있는 이전 서버로 되돌리는 경우 DB는 되돌리지 않는다. 예상하지 못한 제3의 파일·설정 변경은 덮어쓰지 않고 거부한다. dev 설정의 `restore`는 저장한 변경 전·후 상태를 둘 다 허용하므로 적용·복원이 중간에 실패해도 같은 명령으로 다시 실행할 수 있다. 대상 IdP callback/logout URI가 원래부터 있었는지는 복구 manifest와 원본 IdP 백업(`settings-backup/identity.json`)을 함께 사용해 보존·복원한다. **이 부분 실패·재시도 보완은 현재 소스의 [검증 기록](releases/boundary-review-fixes-2026-11-09-validation.json)이며 실제 운영 재실행은 NOT_RUN이다.**
 
 **콘솔 출처 이동(`scripts/console-origin-move.py`).** 콘솔은 OIDC issuer(Keycloak `/identity`)도 함께 제공하고 core는 시작할 때 issuer의 discovery를 읽으므로, 짧은 점검 시간 한 번으로 옮긴다. `inspect`는 대상 주소, 현재 Nginx 파일, 새로 생성한 설정(콘솔 블록과 포털의 CLI 승인 redirect의 콘솔 주소만 바뀌는지), Keycloak `miy-web`, 유휴 core를 읽기만 한다. `apply`는 core를 멈춘 뒤 realm `frontendUrl`과 `miy-web`의 콘솔 callback·logout·web origin만 바꾸고(ids·secret·사용자 유지) 설정 파일을 줄 단위로 고친다. 이어서 Nginx에 새 콘솔과 옛 콘솔 주소의 301 redirect 사이트를 설치하고 core를 시작해 health·issuer·MCP 메타데이터를 확인한다. 어느 단계든 실패하면 Keycloak·파일·Nginx를 백업으로 되돌리고 옛 주소로 core를 시작한다. 나중의 되돌리기는 `restore`다. 모든 브라우저 사용자는 한 번 다시 로그인하고 CLI credential은 유지된다.
 
-같은 schema·같은 인증 계약의 일반 변경은 서버를 반영하고 확인한 다음 웹 화면을 반영한다. 이번처럼 세션·issuer·schema 계약이 함께 바뀌면 개별 적용 명령을 순서 없이 실행하지 않고 유지보수 응답 아래 검증한 하나의 전환 절차로 묶는다. 반영 후 읽기 위주 확인은 §5의 연결 검사와 별도 브라우저 확인으로 한다. 게시 CLI·Windows 설치 파일 교체는 이 도구의 범위가 아니다([CLI 릴리스](CLI-RELEASE.md)).
+같은 schema·같은 인증 계약의 일반 변경은 서버를 반영하고 확인한 다음 웹 화면을 반영한다. 세션·issuer·schema가 함께 바뀌면 변경 범위의 백업·별도 복원 확인과 각 도구의 선행 조건을 지키며 검증한 순서로 수행한다. 짧은 중단·재로그인을 허용하며 유지보수 창·무중단 전환을 별도 요구로 추가하지 않는다. 반영 후 확인은 §5의 연결 검사와 별도 브라우저 확인으로 한다. 게시 CLI·Windows 설치 파일 교체는 이 도구의 범위가 아니다([CLI 릴리스](CLI-RELEASE.md)).

@@ -2,11 +2,11 @@
 
 검토일: 2026-10-20  
 앱 실행 최소 경계 확정: 2026-11-06\
-상태: 사내 신뢰 앱의 iframe 없는 통합 UI·두 출처 설계 확정. 출처·세션 분리는 소스 구현·2026-11-07 기존 서버 반영
+상태: 사내 신뢰 앱의 iframe 없는 통합 UI·세 출처 설계 확정. prod/dev/console 분리 구현·2026-11-09 기존 서버 반영
 
 Rust 백엔드와 분리된 관리 웹에는 **TypeScript + React + Vite + TanStack Router + TanStack Query**를 우선 추천한다. [PRD](PRD.md)의 사내 사용자와 회사가 통제하는 앱 개발·운영을 위한 구성이다. 외부 앱·외부 개발자 수용과 공개 콘텐츠의 검색 노출·서버 렌더링은 현재 범위 밖이다.
 
-이 문서는 프론트엔드 기술 비교를 담당한다. 출처·세션·권한과 전환 기준은 [앱 실행·관리 경계](APP-BOUNDARIES.md#확정-결정)가 관리한다. 회사가 통제하는 앱을 같은 포털에 적재하고 관리·CLI 승인·Keycloak `/identity`는 앱 코드 없는 콘솔에 둔다. 독립 앱 빌드·동적 로딩·통합 라우팅과 단일 IP·사설 CA 지원을 유지하며, 별도 IdP/dev 포털이나 강한 앱 격리를 현재 기능의 선행 조건으로 두지 않는다.
+이 문서는 프론트엔드 기술 비교를 담당한다. 출처·세션·권한과 전환 기준은 [앱 실행·관리 경계](APP-BOUNDARIES.md#확정-결정)가 관리한다. 회사가 통제하는 앱을 해당 dev/prod 포털에 적재하고 관리·device CLI 승인·Keycloak `/identity`는 앱 코드 없는 콘솔에 둔다. 독립 앱 빌드·동적 로딩·통합 라우팅과 단일 IP·사설 CA 지원을 유지하며 별도 IdP나 강한 앱 격리를 기능 개발의 선행 조건으로 두지 않는다.
 
 ## 앱 개발 템플릿과 공통 UI
 
@@ -73,7 +73,7 @@ SSR이 핵심 요구라면 TanStack Start 또는 React Router Framework Mode를 
 
 앱 UI는 **iframe 없이 독립 빌드한 React 모듈을 플랫폼 라우터에 직접 로드**한다. 플랫폼은 메뉴·공통 레이아웃·상위 경로를 유지하고, 등록된 설치·릴리스 정보로 앱을 연결한다. 새 앱을 추가할 때 플랫폼 소스 수정이나 전체 프런트엔드 재빌드를 요구하지 않는다. 단일 Rust 코어·IdP와 앱별 Rust 백엔드·단일 이미지 배포도 유지한다.
 
-현행 구현은 Module Federation의 `./AppRoot`를 직접 마운트한다. [기존 검증 계획](archive/VALIDATION-MODULE-FEDERATION.md)의 iframe 없는 통합 UI 요구를 유지한다. 후속 보완은 dev/prod 공통 포털과 관리·CLI 승인·IdP를 담은 콘솔의 두 출처 및 브라우저 세션 용도 분리다. 이 경계는 소스에 구현했으며 운영에는 배포하지 않았다. 당시 기능 PASS를 이번 보안 인수로 옮기지 않는다.
+현행 구현은 Module Federation의 `./AppRoot`를 직접 마운트한다. [기존 검증 계획](archive/VALIDATION-MODULE-FEDERATION.md)의 iframe 없는 통합 UI 요구를 유지한다. 현재 prod 포털·dev 포털·관리/CLI 승인/IdP 콘솔의 세 출처 및 브라우저 세션 용도·환경 분리를 구현·운영 반영했다. 당시 기능 PASS를 새로운 보안 인수로 옮기지 않는다.
 
 ### 화면 통합 방식 비교
 
@@ -97,16 +97,22 @@ flowchart TB
   Core["단일 Rust 코어 · 중앙 정책"] --> Registry["허용된 설치 · 환경 · 릴리스"]
   subgraph Browser["브라우저"]
     Management["콘솔 출처 · 관리/CLI 승인/identity<br/>앱 코드 로드 금지"]
-    Portal["포털 출처 · dev/prod 공통<br/>React 라우터"]
-    AppModule["독립 빌드한 AppRoot<br/>포털과 실행 공간 공유"]
+    Portal["prod 포털 출처<br/>React 라우터"]
+    DevPortal["dev 포털 출처<br/>React 라우터"]
+    AppModule["prod AppRoot<br/>prod 포털과 실행 공간 공유"]
+    DevModule["dev AppRoot<br/>dev 포털과 실행 공간 공유"]
     Portal -->|"MF 동적 로딩"| AppModule
+    DevPortal -->|"MF 동적 로딩"| DevModule
   end
   Registry --> Portal
+  Registry --> DevPortal
   Management -->|"관리 API"| Core
   AppModule -->|"SDK · 업무 API"| Gateway["현재 사용자 · 앱 · 환경 · 승인 검사"]
+  DevModule -->|"SDK · dev 업무 API"| Gateway
   Gateway --> Backend["앱·환경별 Rust 컨테이너"]
   Release["동일 릴리스 OCI 이미지<br/>Rust 실행 파일 + UI 모듈·자산"] --> Backend
   Release --> AppModule
+  Release --> DevModule
 ```
 
 - 템플릿의 `AppRoot`와 로컬 개발 화면은 같은 업무 UI 코드를 사용한다. 앱 소스가 플랫폼 내부 코드를 가져다 쓰지 않도록 SDK·공용 UI를 버전으로 관리한다.
@@ -114,7 +120,7 @@ flowchart TB
 - 포털의 공통 앱 진입점은 상대 경로·직접 링크·뒤로 가기·검색 파라미터·미저장 입력을 SDK 함수와 연결한다. 앱 내부 라우트 전체를 포털의 컴파일 시점 타입으로 보장하지 않는다.
 - 테마·언어·탐색·인쇄·파일 선택기는 공용 UI와 타입이 있는 SDK로 일관되게 제공한다. 함수 표면을 제한해도 같은 페이지 앱의 DOM·fetch 접근이 보안상 제한됐다고 주장하지 않는다.
 - G4는 공통 디렉터리와 현재 그룹 확인 계약을 사용하며, F1은 선택 파일의 좁은 권한을 서버에서 집행한다. 공통 ACL·파일 연계는 후속 미구현 범위이고 iframe 브리지 구현을 선행 조건으로 두지 않는다.
-- 단일 IP·사설 CA HTTPS에서 포털·콘솔 두 출처를 구성하고 IdP는 콘솔의 `/identity`를 사용한다. 별도 IdP/dev 포털은 지금 만들지 않는다. 포트는 DOM 출처만 나누므로 세션 용도·정확한 Origin/CSRF·쿠키 미전달을 함께 검사한다. 도메인은 권장하며 외부 도메인 구매·내부 DNS·추가 IP는 필수가 아니다.
+- 단일 IP·사설 CA HTTPS에서 prod 포털·dev 포털·콘솔 세 출처를 구성하고 IdP는 콘솔 `/identity`를 사용한다. 별도 IdP는 선행 조건이 아니다. 포트는 DOM 출처만 나누므로 세션 용도·환경·정확한 Origin/CSRF·쿠키 미전달을 함께 검사한다. 도메인은 권장하며 외부 도메인 구매·내부 DNS·추가 IP는 필수가 아니다. 같은 상위 도메인의 쿠키 영향은 별도 호스트에서도 남는다.
 
 ### 독립 배포와 사용 중 화면 교체
 
@@ -122,12 +128,12 @@ flowchart TB
 
 일반 릴리스 교체는 이미지 확보·검사, 기존 실행 종료, migration, 새 실행·정상 확인을 거친다. UI와 API의 릴리스가 어긋나면 새로고침을 요구한다. 릴리스별 정적 자산과 복구용 산출물은 보존 정책에 따라 관리한다. 보관 비용은 [용량 관리](CAPACITY.md)를 따른다.
 
-MF 제거·전체 앱의 iframe SDK 전환·새 앱 런타임 재작성은 하지 않는다. 기존 SDK·AppRuntime을 유지하며 실제 인증/API 변경에 필요한 부분만 새 불변 버전으로 추가한다. 앱 담당자는 같은 포털의 dev 설치에서 확인하고 검증한 digest를 prod로 승격한다. 앱·설치 ID·DB·파일·적용 SQL과 게시물·과거 검증 기록을 보존하며 상세 전환은 [전환과 복구](APP-BOUNDARIES.md#전환과-복구)를 따른다.
+MF 제거·전체 앱의 iframe SDK 전환·새 앱 런타임 재작성은 하지 않는다. 기존 SDK·AppRuntime을 유지하며 실제 인증/API 변경에 필요한 부분만 새 불변 버전으로 추가한다. 앱 담당자는 dev 포털의 설치에서 확인하고 검증한 digest를 prod로 승격한다. 앱·설치 ID·DB·파일·적용 SQL과 게시물·과거 검증 기록을 보존하며 상세 전환은 [전환과 복구](APP-BOUNDARIES.md#전환과-복구)를 따른다.
 
 ### 격리와 적용 범위
 
 **같은 페이지에 로드한 앱 UI는 플랫폼과 브라우저 실행 공간을 공유한다.** 파일을 다른 도메인에서 내려받아도 플랫폼 페이지에서 실행하면 격리되지 않는다. Docker는 서버 프로세스 경계이며 CSS Modules·Shadow DOM·React 오류 경계는 보안 샌드박스가 아니다. 짧은 앱 토큰·SDK 함수·CSP만으로 같은 페이지의 악성 모듈이 다른 모듈의 권한을 쓸 수 없다고 보장하지 않는다.
 
-현재 제품 범위는 사내망에서 회사가 소스·의존성·릴리스를 통제하는 앱이다. 포털에는 이 앱들의 dev/prod UI를 통합하고 콘솔에는 앱 코드를 적재하지 않는다. 관리·개발 담당자의 dev 미리보기 편의를 유지하고, 관리자라는 이유만으로 prod 업무 데이터 권한을 부여하지 않는다. 외부 앱·외부 개발자 수용과 강한 앱 간 격리는 후속 범위이며 현재 공통 ACL·디렉터리 구현을 지연시키는 선행 조건이 아니다.
+현재 제품 범위는 사내망에서 회사가 소스·의존성·릴리스를 통제하는 앱이다. 각 포털에는 해당 환경의 앱 UI를 통합하고 콘솔에는 앱 코드를 적재하지 않는다. 관리·개발 담당자의 dev 미리보기 편의를 유지하고, 관리자라는 이유만으로 prod 업무 데이터 권한을 부여하지 않는다. 외부 앱·외부 개발자 수용과 강한 앱 간 격리는 후속 범위이며 현재 공통 ACL·디렉터리 구현을 지연시키는 선행 조건이 아니다.
 
-최소 보안 보완은 앱 문자열의 안전한 텍스트 표시, 포털/콘솔의 frame 차단, 앱 응답 헤더 허용 목록, 앱/preview API에 한정한 CSP sandbox·nosniff를 포함한다. MF 자산·통합 UI·preview UI 전체에 sandbox를 적용하지 않는다. 두 세션 용도, 콘솔의 CLI 승인·`/identity`, 일반 앱 사용과 dev 미리보기·prod 권한, 기존 라우팅을 함께 검사하며 현재 신규 인수는 NOT_RUN이다. 별도 사이트·IdP·dev 출처나 MFA 의무화·복잡한 자동화는 현재 최소 인수에 추가하지 않는다.
+최소 보안 구현은 앱 문자열의 안전한 텍스트 표시, 세 출처의 frame 차단, 앱 응답 헤더 허용 목록, 앱/preview API에 한정한 CSP sandbox·nosniff를 포함한다. MF 자산·통합 UI·preview UI 전체에 sandbox를 적용하지 않는다. portal/dev_portal/console 세션 용도·환경 제한, 콘솔 device 승인·`/identity`, dev 미리보기·prod 권한과 통합 라우팅의 격리 검증·운영 반영 범위는 [경계 인수](APP-BOUNDARIES.md#경계-인수)를 따른다. Windows·외부 환경 등 미실행 항목을 구분하며 별도 사이트·IdP·MFA 의무화·복잡한 자동화를 기능 개발의 선행 조건으로 추가하지 않는다.

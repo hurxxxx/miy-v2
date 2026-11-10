@@ -6,11 +6,11 @@
 
 이전 후보의 절차와 기록은 [0.6.3 인수](WINDOWS-0.6.3-ACCEPTANCE.md)에 보존한다. Windows Server CI 통과를 Windows 11 통과로 옮기지 않는다. 설치 파일의 동작 설명은 [설치기 설명](WINDOWS-INSTALLER.md)을 따른다.
 
-이 절차는 **현재 게시된 0.7.0**을 대상으로 한다. 후속 [내부 업무 앱 최소안](APP-BOUNDARIES.md#확정-결정)은 iframe 없는 앱 통합·게시 CLI/SDK 계약을 유지하고 단일 IP의 포털·신뢰 콘솔 두 HTTPS origin을 사용한다. Keycloak과 CLI 승인은 콘솔에 두며 도메인·내부 DNS·추가 IP는 필수가 아니다. Windows 최소 인수는 준비한 인증서의 IP SAN/체인 확인, 브라우저·CLI의 CA 신뢰 설정, 기존 CLI의 상대 승인 경로 이동·로그인·갱신·철회다. 자동 CA 배포·자동 갱신은 후속이며 [전환·복구](APP-BOUNDARIES.md#전환과-복구)와 사용자 수행 인수는 `NOT_RUN`이다. 기존 HTTP IP 결과를 새 HTTPS 보안 계약의 통과로 쓰지 않고 게시 설치기도 변경하지 않는다.
+이 절차는 **현재 게시된 0.7.0**을 대상으로 한다. 서버의 [사내 최소 계약](APP-BOUNDARIES.md#확정-결정)은 iframe 없는 앱 통합과 단일 IP HTTPS의 prod 포털·dev 포털·관리/로그인 콘솔 세 출처다. Keycloak과 device CLI 승인은 콘솔에 두며 도메인·내부 DNS·추가 IP는 필수가 아니다. 현재 서버 반영 여부와 주소는 [운영 안내](SERVER-OPERATIONS.md)를 따른다. 아래 Windows 검사는 사용자 수행 NOT_RUN이며 Linux·기존 HTTP IP 결과를 이 인수로 이월하지 않는다. 게시 설치기 바이트는 변경하지 않는다.
 
-## 두 HTTPS 출처의 Windows 확인 항목
+## 세 HTTPS 출처의 Windows 확인 항목
 
-새 경계 서버가 별도로 준비됐을 때 수행한다. 아래 주소와 CA 경로는 운영 담당자가 확인한 값으로 바꾸며 현재 게시 서버가 전환됐다고 가정하지 않는다. 회사 CA의 공개 인증서만 사용하고 서버 개인 키를 PC로 복사하지 않는다.
+검증할 서버의 세 출처와 CA 경로를 운영 담당자가 확인한 값으로 바꾼다. 아래 IP 예시는 실제 운영 도메인과 별개인 사설 CA 환경이다. 회사 CA의 공개 인증서만 사용하고 서버 개인 키를 PC로 복사하지 않는다.
 
 ```powershell
 # 조직에서 확인한 CA 인증서를 현재 사용자의 신뢰 저장소에 등록
@@ -19,9 +19,9 @@ miy context add internal --url https://192.168.10.20:8443 --ca-file C:\miy-certs
 miy --context internal auth login
 ```
 
-- 브라우저에서 포털 :8443과 콘솔 :9443 모두 인증서 경고 없이 열린다. DNS 이름 대신 실제 IP가 SAN에 있어야 한다. 브라우저를 재시작해 CA 신뢰를 적용하며 경고 무시·`--insecure`를 사용하지 않는다.
-- 기존 CLI가 안내한 포털의 `/cli/device/{id}`에서 설정된 콘솔로 이동한다. 0.5 이전 CLI의 `/cli/authorize/{id}`는 콘솔의 업그레이드 안내만 표시한다. Keycloak 로그인과 승인은 콘솔에서 처리되고 포털/콘솔은 각각 세션을 만든다.
-- 명시적 use가 없는 prod 배포자는 콘솔에서 관리할 수 있지만 포털에서 그 앱에 입장하지 못한다. dev develop 미리보기와 기존 SDK 앱의 직접 링크/reload는 동작한다.
+- 브라우저에서 prod 포털 :8443, dev 포털 :9444, 콘솔 :9443 모두 인증서 경고 없이 열린다. IP 배치라면 실제 IP가 SAN에 있어야 한다. 브라우저를 재시작해 CA 신뢰를 적용하며 경고 무시·`--insecure`를 사용하지 않는다.
+- 기존 CLI가 안내한 포털의 `/cli/device/{id}`에서 설정된 콘솔로 이동한다. 0.5 이전 CLI의 `/cli/authorize/{id}`는 콘솔의 업그레이드 안내만 표시한다. Keycloak 로그인과 승인은 콘솔에서 처리되고 prod/dev/console은 각각 목적별 세션을 만든다.
+- 명시적 use가 없는 prod 배포자는 콘솔에서 관리할 수 있지만 포털에서 그 앱에 입장하지 못한다. dev develop 미리보기는 dev 포털에서만 동작하고 prod 포털의 dev 경로는 dev 포털로 이동한다. 각 환경 앱의 직접 링크/reload를 확인한다.
 - 콘솔 개인 CLI 화면에서 device와 legacy 연결을 확인하고 자기 연결만 회수한다. 브라우저 logout으로 독립 CLI가 자동 회수됐다고 판단하지 않는다.
 - 새 CA·인증서로 수동 교체한 뒤 브라우저와 `miy --context internal auth status`를 다시 확인한다. 만료·다른 IP 인증서는 거부돼야 한다. 원래 CA/인증서로 복구한 결과도 기록한다.
 

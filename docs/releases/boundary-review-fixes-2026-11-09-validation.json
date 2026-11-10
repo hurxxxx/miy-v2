@@ -1,0 +1,116 @@
+{
+  "date": "2026-11-09",
+  "scope": "Settings recovery, hostname collision checks and current boundary documentation after review of 0714c31..0b8c22f",
+  "source": {
+    "baseCommit": "0b8c22f",
+    "state": "working tree changes; no commit or deployment performed by this validation",
+    "areas": [
+      "scripts/dev-portal-settings.py",
+      "scripts/bootstrap.py",
+      "scripts/test-dev-portal-settings.py",
+      "scripts/test-console-origin-move.py",
+      "current documentation and AGENTS.md"
+    ],
+    "testedCodeSha256": {
+      "scripts/dev-portal-settings.py": "fd9e8497cb066062dae77a099cc4444360f8eb4b14b6d10fc1be3ee89b3ddd03",
+      "scripts/bootstrap.py": "11e001f2dced0b774adb2f1d0747e2d59f17a3ea91d406a64895ca1d1fb4c888",
+      "scripts/test-dev-portal-settings.py": "b5257e6a67da16cc848f38f0d0eb833ca992b78b8b850c0095614cd6c4baaf60",
+      "scripts/test-console-origin-move.py": "d04d59b0263168b93443cc0801dc667101c2527f4442ad83e165291cb78cca37"
+    }
+  },
+  "fixes": [
+    {
+      "id": "partial-settings-recovery",
+      "change": "Prepare all original backups and the recovery manifest before changing any live settings or IdP state. Restore accepts either the recorded before or after contents, rejects unrelated edits and supports retry after an interrupted restore."
+    },
+    {
+      "id": "existing-identity-uris",
+      "change": "Restore the original membership of the dev callback and logout URI independently. Preserve unrelated current URIs, web origins and attributes, including reapplication to an already configured dev portal."
+    },
+    {
+      "id": "quoted-hostname-collision",
+      "change": "Parse quoted and multiline Nginx server_name directives, ignore comments and compare names case-insensitively. Verify both real renderer output and the console move preflight."
+    },
+    {
+      "id": "cookie-profile-guidance",
+      "change": "Explain host-only cookie separation while retaining the parent-domain cookie flooding limitation for sibling hostnames."
+    },
+    {
+      "id": "current-document-contract",
+      "change": "Synchronize current guidance to prod/dev/console origins and portal/dev_portal/console session purposes, current console issuer, legacy CLI retirement, same-tab app navigation and implemented exact-SHA CI gate. Keep historical results and deployment evidence unchanged."
+    }
+  ],
+  "checks": [
+    {
+      "command": "python3 scripts/test-dev-portal-settings.py",
+      "stage": "regression tests added before fixing the implementation",
+      "status": "FAIL",
+      "result": "17 tests; 12 subtest/test assertion failures and 3 errors reproduced missing recovery manifests, removal of existing callback/logout URIs and missed hostname collisions.",
+      "log": ".local/evidence/boundary-review-fixes-20261109-xcdTzb/regressions-before.log"
+    },
+    {
+      "command": "bash scripts/check-static.sh scripts",
+      "stage": "after code fixes and expanded failure injection tests",
+      "status": "PASS",
+      "result": "Complete script check passed, including 20 dev portal tests, 5 console move tests, 65 core operations tests, syntax and API checks, and isolated server configuration/TLS/Nginx/Caddy checks.",
+      "log": ".local/evidence/boundary-review-fixes-20261109-xcdTzb/scripts-check.log"
+    },
+    {
+      "command": "python3 scripts/check-doc-links.py",
+      "stage": "after final documentation edits",
+      "status": "PASS",
+      "result": "762 relative links and anchors in 61 tracked Markdown files; no new Markdown files added.",
+      "log": ".local/evidence/boundary-review-fixes-20261109-xcdTzb/doc-links-final.log"
+    },
+    {
+      "command": "git diff --check",
+      "stage": "after final integration",
+      "status": "PASS"
+    },
+    {
+      "command": "git diff --exit-code -- docs/archive docs/releases registry templates",
+      "stage": "historical and published artifact preservation",
+      "status": "PASS",
+      "result": "Existing tracked history and published artifacts unchanged. This new validation record is additive."
+    }
+  ],
+  "failureCoverage": [
+    "Backup or initial manifest write failure leaves settings and IdP unchanged",
+    "Failure before IdP PUT, after the update and during verification remains recoverable",
+    "Partial settings application and partial restore can be restored repeatedly",
+    "Completion-record failure does not invalidate the prepared recovery manifest",
+    "Reapplying the same dev origin preserves existing IdP callback and logout entries",
+    "Callback and logout membership are restored independently while unrelated IdP changes survive",
+    "Unrelated settings edits and changed backups are rejected before restoration",
+    "An originally absent logout attribute is removed on restoration",
+    "Quoted, multiline, case-variant, commented and malformed hostname directives",
+    "Actual generated Nginx configuration and console move collision rejection"
+  ],
+  "independentReview": {
+    "status": "PASS",
+    "scope": "Latest recovery implementation and tests, hostname parser and shared console-move caller",
+    "result": "No additional blocking defect found by the independent operations review."
+  },
+  "documentationReview": {
+    "status": "PASS",
+    "changedMarkdownFiles": 28,
+    "method": "Compare current boundary, product and permission contracts with source and existing deployment records; scan current guides for stale two-origin, shared dev/prod, unimplemented CI gate and future prod Use wording.",
+    "additionalCorrections": [
+      "CORE-PERMISSIONS now describes prod automatic Use removal as implemented, with dev preview exceptions separated",
+      "AB-07 and SDK transition wording now distinguish deployed boundaries, immutable artifacts and optional development-stage compatibility",
+      "The former console port 9443 exposure observation is explicitly historical",
+      "FRONTEND describes three session purposes and links to execution-scoped acceptance results"
+    ],
+    "limits": "Document consistency and links do not constitute new runtime, OIDC or production acceptance."
+  },
+  "notRun": [
+    {
+      "scope": "Live settings, Keycloak, service restart, deployment and database migration",
+      "reason": "User requested improvements, not a live rollout. Tests use temporary state, fake IdP and isolated proxy fixtures."
+    },
+    {
+      "scope": "Rust and web test suites, full runtime/OIDC stack and Windows acceptance",
+      "reason": "No Rust, web, migration or published artifact changes. Their prior PASS results are not reused as validation of this change."
+    }
+  ]
+}

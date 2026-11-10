@@ -8,9 +8,9 @@ CLI로 앱의 기본 구조를 만들고, 자신의 개발 에이전트를 MCP�
 
 ## 현재 단계
 
-2026-11-06 [사내 최소 보안 설계](docs/APP-BOUNDARIES.md)를 확정했다. **iframe 없는 MF/AppRoot·통합 라우팅·독립 빌드와 단일 IP HTTPS를 유지한다.** 업무 포털(dev/prod)과 관리·CLI 승인·Keycloak 콘솔 두 출처로 좁히고 기존 SDK·CLI·OIDC를 재사용한다. 필수 보안 다음에 공통 ACL 등 기능 개발을 진행하며 별도 IdP·외부 앱 격리·자동 CA는 후속이다. 최소 경계는 2026-11-07 운영에 반영했다([배포 기록](docs/releases/internal-minimum-security-2026-11-07-deployment.json)). 공개 서버를 사내 범위로 자동 인정하지 않으며 외부 앱 수용과 같은 페이지 앱 격리의 한계는 남는다.
+현재 [사내 최소 보안 설계](docs/APP-BOUNDARIES.md)는 **iframe 없는 MF/AppRoot·통합 라우팅·독립 빌드와 단일 IP HTTPS**를 유지한다. 업무 포털(prod)·dev 포털(dev)·관리/CLI 승인/Keycloak 콘솔의 세 출처와 목적별 세션을 사용하며 2026-11-09 [dev 포털 배포](docs/releases/dev-portal-2026-11-09-deployment.json)와 [콘솔 이동](docs/releases/console-hostname-2026-11-09-deployment.json)을 반영했다. 다음 기능은 공통 디렉터리·ACL이며 별도 IdP·외부 앱 격리·자동 CA는 선행 조건이 아니다. 현재 서버는 개발 중이며 공개 서버를 사내 범위로 자동 인정하거나 같은 포털 안의 앱 격리를 보장하지 않는다.
 
-현재 호스트의 플랫폼은 [https://v2.dwdcc.kr](https://v2.dwdcc.kr)이며, [CLI 설치 안내](https://v2.dwdcc.kr/cli/install)에서 서버에 맞는 배포물을 제공한다. 실행 서버·UI는 `a4ad370`(2026-11-07 반영), 게시 CLI는 **0.7.0 / 번들 0.8.0**(source `01e4d49`, 2026-11-03 게시)이다. 관리·CLI 승인·로그인은 [콘솔](https://v2.dwdcc.kr:9443)에서 처리한다. 공유 개발 계정 선택은 껐으며 기존 브라우저 세션은 다시 로그인해야 한다. CLI의 서버 주소와 게시 배포물은 유지한다. 이후 소스 commit과 게시 배포물의 출처는 구분한다. 서버 주소·CLI/MCP 연결과 배포 소스의 구분은 [현재 서버 운영 안내](docs/SERVER-OPERATIONS.md)를 따른다.
+현재 호스트의 prod 포털은 [v2.dwdcc.kr](https://v2.dwdcc.kr), dev 앱은 [dev 포털](https://v2-dev.dwdcc.kr), 관리·device CLI 승인·로그인은 [콘솔](https://v2-console.dwdcc.kr)에서 제공한다. [CLI 설치 안내](https://v2.dwdcc.kr/cli/install)는 현재 게시 CLI **0.7.0 / 번들 0.8.0**을 제공하며 CLI의 서버 주소는 prod 포털이다. 공유 개발 로그인은 꺼져 있다. 실행 서버·UI와 게시 배포물의 출처 commit은 [현재 서버 운영 안내](docs/SERVER-OPERATIONS.md)를 따른다.
 
 [코어 권한 계약](docs/CORE-PERMISSIONS.md)은 설치/릴리스별 명시 승인, 제한된 사용자 위임, 앱 후속 호출을 설명한다. 코어 안정화 1·2차와 [기본 UI 이식](docs/UIUX-MIGRATION.md) UI-1~5를 마치고 v2.dwdcc.kr에 반영했다. 다음 작업 순서는 [추진 계획](docs/PLAN.md#다음-우선-작업)의 작업표 하나로 관리한다. 공식 v1(`../miy`)에서 가져올 규칙과 제외할 구조는 [v1 적용 계획](docs/V1-ADOPTION.md)에 정리했다.
 
@@ -55,7 +55,7 @@ Windows CLI는 회사 홈페이지의 `/cli/install`에서 [GUI 설치 파일](d
 전체 문서의 담당 범위와 보관 문서는 [문서 지도](docs/README.md)에 있다. 먼저 읽을 문서는 다음과 같다.
 
 - [제품 요구사항](docs/PRD.md): 제품 정의, 합의 사항, 기능 요구사항과 인수 조건
-- [사내 최소 보안 설계](docs/APP-BOUNDARIES.md): 두 출처·세션 용도·호환성, 현재 필수와 후속, 발견된 문제·한계·전환·인수
+- [사내 최소 보안 설계](docs/APP-BOUNDARIES.md): 세 출처·세션 용도·개발 단계 계약, 현재 필수와 후속, 발견된 문제·한계·전환·인수
 - [추진 계획](docs/PLAN.md): 다음 우선 작업표(유일한 순서 기준)와 제품 로드맵
 - [v1 적용 계획](docs/V1-ADOPTION.md): 공식 v1 검토 결과, 가져올 항목과 제외 항목
 - [UI/UX 이식 계획](docs/UIUX-MIGRATION.md): 기본 UI 이식 결과와 후속 UI 작업의 경계

@@ -6,10 +6,11 @@ run in this order with the maintained server/UI rollouts in between:
 
   inspect        read-only: validate the requested origin/bind against server.json, the free
                  public port, the identity client and the live Nginx file. Prints public data.
-  apply          back up and patch server.json, runtime.env and compose.env line by line (other
-                 lines byte-identical), then add only the dev portal callback and post-logout URI
-                 to Keycloak's miy-web client (web origins unchanged; ids and secret verified).
-  restore        undo apply from its backups, refusing if a file changed since apply.
+  apply          save all backups and a recovery manifest before patching server.json, runtime.env
+                 and compose.env, then add only the dev portal callback and post-logout URI to
+                 Keycloak's miy-web client (web origins unchanged; ids and secret verified).
+  restore        undo even a partially failed apply from its backups. Preserve pre-existing IdP
+                 URIs and refuse unrelated file edits. A partially failed restore can be retried.
   nginx-apply    render the fixed-purpose Nginx config, require it to equal the live file plus
                  one dev portal server block, install it with a backup, test and reload Nginx.
   nginx-restore  reinstall the backed-up Nginx file, test and reload.
@@ -26,7 +27,6 @@ import json
 import os
 from pathlib import Path
 import shlex
-import shutil
 import socket
 import ssl
 import subprocess
@@ -164,23 +164,34 @@ def logout_uris(client):
     return [item for item in value.split('##') if item]
 
 
+def uri_membership(values, uri, present):
+    if present:
+        return list(values) if uri in values else [*values, uri]
+    return [item for item in values if item != uri]
+
+
 def identity_change(api, original, dev_origin, add):
-    """Add or remove only the dev portal callback/logout URI; verify ids and secret."""
+    """Add the dev URIs or restore their original membership; preserve unrelated changes."""
     current = api.snapshot()
     require(current['client']['id'] == original['client']['id']
             and current['clientSecretSha256'] == original['clientSecretSha256'], 'identity_id_or_secret_changed')
     callback, logout = dev_origin + '/auth/callback', dev_origin + '/'
     client = current['client']
-    redirects = [item for item in client.get('redirectUris', []) if item != callback]
-    logouts = [item for item in logout_uris(client) if item != logout]
-    if add:
-        redirects.append(callback)
-        logouts.append(logout)
+    redirects = uri_membership(client.get('redirectUris', []), callback,
+                               add or callback in original['client'].get('redirectUris', []))
+    logouts = uri_membership(logout_uris(client), logout,
+                            add or logout in logout_uris(original['client']))
     attributes = dict(client.get('attributes', {}))
-    attributes['post.logout.redirect.uris'] = '##'.join(logouts)
-    api.update(client['id'], {'redirectUris': redirects, 'webOrigins': client.get('webOrigins', []),
-                              'attributes': attributes})
-    after = api.snapshot()
+    if not logouts and 'post.logout.redirect.uris' not in original['client'].get('attributes', {}):
+        attributes.pop('post.logout.redirect.uris', None)
+    else:
+        attributes['post.logout.redirect.uris'] = '##'.join(logouts)
+    if redirects != client.get('redirectUris', []) or attributes != client.get('attributes', {}):
+        api.update(client['id'], {'redirectUris': redirects, 'webOrigins': client.get('webOrigins', []),
+                                  'attributes': attributes})
+        after = api.snapshot()
+    else:
+        after = current
     require(after['client']['id'] == original['client']['id']
             and after['clientSecretSha256'] == original['clientSecretSha256'], 'identity_id_or_secret_not_preserved')
     require(sorted(after['client'].get('redirectUris', [])) == sorted(redirects)
@@ -188,7 +199,7 @@ def identity_change(api, original, dev_origin, add):
             and sorted(after['client'].get('webOrigins', [])) == sorted(client.get('webOrigins', [])),
             'identity_change_not_verified')
     return {'redirectUris': len(redirects), 'postLogoutUris': len(logouts),
-            'devPortalCallback': callback in after['client']['redirectUris']}
+            'devPortalCallback': callback in after['client'].get('redirectUris', [])}
 
 
 def plan(state, dev_origin, dev_bind):
@@ -221,17 +232,30 @@ def plan(state, dev_origin, dev_bind):
 
 
 def name_unclaimed(hostname, enabled=None):
-    """No enabled Nginx site already serves this exact hostname."""
+    """Check exact server_name directives, including quoted names and multiline lists."""
     directory = enabled or ENABLED
     for site in directory.iterdir() if directory.exists() else []:
         try:
             text = site.read_text()
         except OSError:
             raise RuntimeError('nginx_site_unreadable') from None
-        for line in text.splitlines():
-            words = line.strip().rstrip(';').split()
-            if words and words[0] == 'server_name' and hostname in words[1:]:
-                return False
+        lexer = shlex.shlex(text, posix=True, punctuation_chars=';{}')
+        lexer.whitespace_split = True
+        words = []
+        try:
+            for token in lexer:
+                if token and all(char in ';{}' for char in token):
+                    for delimiter in token:
+                        if words and words[0] == 'server_name':
+                            require(delimiter == ';', 'nginx_site_unparseable')
+                            if hostname.lower() in (name.lower() for name in words[1:]):
+                                return False
+                        words = []
+                else:
+                    words.append(token)
+            require(not words, 'nginx_site_unparseable')
+        except ValueError:
+            raise RuntimeError('nginx_site_unparseable') from None
     return True
 
 
@@ -269,18 +293,19 @@ def apply(state, release, dev_origin, dev_bind, identity=Identity, probe=None, e
     target = plan(state, dev_origin, dev_bind)
     require(public_available(target, probe, enabled), 'dev_portal_address_in_use')
     backup = release / 'settings-backup'
-    require(not backup.exists(), 'settings_backup_exists')
+    manifest = release / 'settings.json'
+    require(not backup.exists() and not manifest.exists(), 'settings_backup_exists')
     release.mkdir(mode=0o700, parents=True, exist_ok=True)
     backup.mkdir(mode=0o700)
     api = identity(state)
     original_identity = api.snapshot()
-    (backup / 'identity.json').write_text(json.dumps(original_identity))
-    (backup / 'identity.json').chmod(0o600)
-    record = {'devPortalOrigin': target['devPortalOrigin'], 'devPortalBind': target['devPortalBind'], 'files': {}}
+    private_write(backup / 'identity.json', json.dumps(original_identity).encode())
+    record = {'devPortalOrigin': target['devPortalOrigin'], 'devPortalBind': target['devPortalBind'],
+              'phase': 'prepared', 'files': {}}
+    pending = {}
     for name in FILES:
         original = (state / name).read_bytes()
-        shutil.copy2(state / name, backup / name)
-        (backup / name).chmod(0o600)
+        private_write(backup / name, original)
         if name == 'server.json':
             settings = json.loads(original)
             settings.update(target['server'])
@@ -288,23 +313,37 @@ def apply(state, release, dev_origin, dev_bind, identity=Identity, probe=None, e
         else:
             written = env_patch(original, target['runtime' if name == 'runtime.env' else 'compose'])
             require(env_values(written).keys() >= env_values(original).keys(), 'environment_patch_lost_keys')
-        private_write(state / name, written)
         record['files'][name] = {'before': digest(original), 'after': digest(written)}
+        pending[name] = written
+    # The complete recovery plan must exist before any live file or IdP change.
+    private_write(manifest, (json.dumps(record, indent=2) + '\n').encode())
+    for name, written in pending.items():
+        require(digest((state / name).read_bytes()) == record['files'][name]['before'],
+                'settings_changed_during_apply:' + name)
+        private_write(state / name, written)
     record['identity'] = identity_change(api, original_identity, target['devPortalOrigin'], add=True)
-    (release / 'settings.json').write_text(json.dumps(record, indent=2))
+    record['phase'] = 'applied'
+    private_write(manifest, (json.dumps(record, indent=2) + '\n').encode())
     return {'status': 'APPLIED', **{key: record[key] for key in ('devPortalOrigin', 'devPortalBind', 'identity')}}
 
 
 def restore(state, release, identity=Identity):
     record = json.loads((release / 'settings.json').read_text())
     backup = release / 'settings-backup'
+    require(set(record['files']) == set(FILES), 'settings_manifest_incomplete')
     for name, hashes in record['files'].items():
-        require(digest((state / name).read_bytes()) == hashes['after'], 'settings_changed_since_apply:' + name)
+        require(digest((state / name).read_bytes()) in (hashes['before'], hashes['after']),
+                'settings_changed_since_apply:' + name)
         require(digest((backup / name).read_bytes()) == hashes['before'], 'settings_backup_changed:' + name)
     original_identity = json.loads((backup / 'identity.json').read_text())
     result = identity_change(identity(state), original_identity, record['devPortalOrigin'], add=False)
-    for name in record['files']:
-        private_write(state / name, (backup / name).read_bytes())
+    for name, hashes in record['files'].items():
+        current = digest((state / name).read_bytes())
+        require(current in (hashes['before'], hashes['after']), 'settings_changed_since_apply:' + name)
+        if current != hashes['before']:
+            private_write(state / name, (backup / name).read_bytes())
+    record['phase'] = 'restored'
+    private_write(release / 'settings.json', (json.dumps(record, indent=2) + '\n').encode())
     return {'status': 'RESTORED', 'identity': result}
 
 

@@ -1,18 +1,18 @@
 # miy-v2 문서 지도
 
-- 정리일: 2026-11-07
+- 정리일: 2026-11-09
 
 주제마다 **담당 문서 하나**가 현재 기준을 관리한다. 다른 문서는 그 문서로 연결하고 같은 내용을 따로 유지하지 않는다. 구현된 동작은 코드와 테스트가 최종 기준이다. 작업 순서는 [추진 계획](PLAN.md#다음-우선-작업)의 작업표 하나만 따른다.
 
 기본 UI 이식 UI-1~5는 ai-do 기반으로 완료한 이력이다. 향후 설계는 공식 miy v1을 기준으로 하며, 플랫폼의 사용자·그룹별 앱 사용 권한과 앱 내부의 선택적 데이터 공간을 적용한다. 원본 변경을 기존 UI 검증 결과의 변경으로 표시하지 않는다.
 
-현재 기준은 세 문서다. [APP-BOUNDARIES](APP-BOUNDARIES.md)는 사내 업무용 최소 설계로 두 출처·세션 용도·CLI 승인 보호와 호환성, 필수/후속·한계·인수를 관리한다. [CORE-PERMISSIONS](CORE-PERMISSIONS.md)는 권한과 PLM 등 독립 앱의 공통 ACL, [PLAN](PLAN.md)은 작업 순서를 담당한다. iframe 없는 MF·단일 IP HTTPS를 유지하며 별도 IdP/dev 출처·외부 앱 격리·자동 CA는 후속이다. 격리 환경의 검증 뒤 서버·UI `a4ad370`으로 2026-11-07 운영에 반영했다([배포 기록](releases/internal-minimum-security-2026-11-07-deployment.json)). 게시 CLI `01e4d49`는 유지하며 운영 콘솔은 `https://v2.dwdcc.kr:9443`, 공유 개발 로그인은 꺼짐 상태다. 공개 서버를 사내 범위로 자동 인정하지 않고 현행 배포와 역사 증거는 구분한다.
+현재 기준은 세 문서다. [APP-BOUNDARIES](APP-BOUNDARIES.md)는 사내 업무용 세 출처(prod 포털·dev 포털·관리/로그인 콘솔), 세션 용도·CLI 승인 보호, 필수/후속·한계·인수를 관리한다. [CORE-PERMISSIONS](CORE-PERMISSIONS.md)는 권한과 PLM 등 독립 앱의 공통 ACL, [PLAN](PLAN.md)은 작업 순서를 담당한다. iframe 없는 MF·단일 IP HTTPS를 유지하며 별도 IdP·외부 앱 격리·자동 CA는 후속이다. 현재 서버는 `f9d4084`, UI는 `3760ef0`, schema 21, 게시 CLI는 `01e4d49`다. 포털은 `https://v2.dwdcc.kr`, dev 포털은 `https://v2-dev.dwdcc.kr`, 콘솔·issuer는 `https://v2-console.dwdcc.kr`이며 공유 개발 로그인은 꺼져 있다. [dev 포털 배포](releases/dev-portal-2026-11-09-deployment.json)·[콘솔 이동](releases/console-hostname-2026-11-09-deployment.json)과 초기 두 출처 이력을 구분한다. 개발 단계의 호환성 방침은 루트 AGENTS를 따른다.
 
 ## 현재 기준 문서
 
 | 주제 | 담당 문서 | 관리하는 내용 |
 | --- | --- | --- |
-| 앱 실행·관리 경계 | [APP-BOUNDARIES.md](APP-BOUNDARIES.md) | 사내 두 출처 최소 설계·기존 SDK/CLI 호환, 필수/후속/한계·AB 결정·임시 기준·전환·BV 인수와 V0~V7 승계 |
+| 앱 실행·관리 경계 | [APP-BOUNDARIES.md](APP-BOUNDARIES.md) | 사내 세 출처 최소 설계·SDK/CLI 계약, 필수/후속/한계·AB 결정·임시 기준·전환·BV 인수와 V0~V7 승계 |
 | 앱 실행 후보(iframe) | [APP-FRAMES.md](APP-FRAMES.md) | 업무 앱만 설치별 출처 iframe에서 실행하는 후보 설계: 원칙 AF, 실행·자격증명·브리지 계약, 배치 프로필별 격리 수준, 실증 FV와 결정 D. 채택 전 현행 기준은 APP-BOUNDARIES |
 | 제품 요구사항 | [PRD.md](PRD.md) | 제품 정의, 합의 사항, 기능 요구사항, 인수 조건, 후속 범위 |
 | 작업 순서 | [PLAN.md](PLAN.md) | 다음 우선 작업표·진행 상태, 코어 묶음 요약, 보류 중인 사용성 개선. 최초 로드맵은 archive |

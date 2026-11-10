@@ -52,7 +52,7 @@ GitHub Actions는 `cli-foundation.yml`(Linux 서버·Linux/macOS/Windows 클라�
 | --- | --- | --- |
 | `runtime-health`, `platform-shell`, `runtime-confirmation`, `platform-css-isolation` | `scripts/runtime-regression/ui.config.ts` | 격리 빌드 preview + 모의 API |
 | `cli-experience`, `cli-install` | `tests/cli-experience.config.ts` | Vite dev 서버 + 모의 API |
-| `surface-boundaries` | `tests/surface-boundaries.config.ts` | 두 목적의 UI 계약·MF 미적재를 검사하는 모의 서버 |
+| `surface-boundaries` | `tests/surface-boundaries.config.ts` | 세 목적의 UI·환경별 이동 계약과 콘솔의 MF 미적재를 검사하는 모의 서버 |
 | `http-ip` | `scripts/runtime-regression/http-ui.config.ts` | 비 loopback IPv4의 격리 preview |
 | `server-ui` | `scripts/runtime-regression/server-ui.config.ts` | 일회용 PostgreSQL과 이 checkout의 core |
 | `stack-ui` | `scripts/runtime-regression/stack-ui.config.ts` | `stack-ui.sh`의 일회용 전체 스택 |

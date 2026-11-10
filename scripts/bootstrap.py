@@ -243,12 +243,14 @@ for filename in ['init.sql','realm.json']:
     (LOCAL / filename).chmod(0o644)
 (LOCAL/'artifacts').mkdir(exist_ok=True)
 print('Private server configuration ready. Existing credentials were preserved.')
-# Port separation is a supported profile, not a security workaround. Say which
-# limits only separate hostnames remove (APP-BOUNDARIES "배치 프로필").
+# Port separation is supported. Explain host-only cookie separation without
+# implying that sibling hostnames prevent parent-domain cookie flooding.
 hosts = {urllib.parse.urlsplit(value).hostname for value in [origin, console_origin, dev_portal_origin]}
 if len(hosts) < 3:
     print('Deployment profile: port separation (supported). Origins on one host share cookies: '
           'app code can plant another origin\'s session/login cookie or flood cookies. Separate '
-          'hostnames (a domain) remove this; no port-mode workaround is applied.', file=sys.stderr)
+          'hostnames separate host-only cookies; no port-mode workaround is applied.', file=sys.stderr)
 else:
-    print('Deployment profile: separate hostnames (recommended).')
+    print('Deployment profile: separate hostnames (recommended). Host-only cookies are separated.')
+print('Hostnames under the same registrable domain can still receive parent-domain cookies, '
+      'so cookie flooding remains possible.', file=sys.stderr)

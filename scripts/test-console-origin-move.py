@@ -214,7 +214,7 @@ class ConsoleMoveTests(unittest.TestCase):
         self.assertFalse(self.legacy_link.exists())
 
     def test_refusals_change_nothing(self):
-        (self.enabled / 'other').write_text('server {\n  server_name v2-claimed.example.test;\n}\n')
+        (self.enabled / 'other').write_text('server {\n  server_name "v2-claimed.example.test";\n}\n')
         files = {name: (self.state / name).read_bytes() for name in tool.FILES}
         for origin, code in [(PORTAL, 'console_origin_must_be_distinct'), (DEV, 'console_origin_must_be_distinct'),
                              ('http://v2-console.example.test', 'console_origin_must_be_distinct'),

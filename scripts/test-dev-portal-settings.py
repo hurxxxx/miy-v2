@@ -5,6 +5,8 @@ import importlib.util
 import json
 from pathlib import Path
 import shutil
+import subprocess
+import sys
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -98,6 +100,150 @@ class DevPortalSettingsTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, 'settings_changed_since_apply:runtime.env'):
             tool.restore(self.state, self.release, identity=FakeIdentity)
 
+    def test_identity_failure_before_or_after_update_leaves_a_restorable_plan(self):
+        for failure in ('before_update', 'after_update', 'verification'):
+            with self.subTest(failure=failure):
+                before = {name: (self.state / name).read_bytes() for name in tool.FILES}
+                client_before = copy.deepcopy(FakeIdentity.clients['miy-web'])
+
+                class FailingIdentity(FakeIdentity):
+                    updated = False
+
+                    def update(self, client_id, body):
+                        if failure != 'before_update':
+                            super().update(client_id, body)
+                            self.updated = True
+                        if failure == 'verification':
+                            return
+                        raise RuntimeError('injected_identity_failure')
+
+                    def snapshot(self):
+                        if self.updated:
+                            raise RuntimeError('injected_identity_failure')
+                        return super().snapshot()
+
+                release = self.state / ('identity-failure-' + failure)
+                with self.assertRaisesRegex(RuntimeError, 'injected_identity_failure'):
+                    tool.apply(self.state, release, DEV, '127.0.0.1:18183',
+                               identity=FailingIdentity, probe=lambda _p: True)
+                self.assertEqual(tool.restore(self.state, release, identity=FakeIdentity)['status'], 'RESTORED')
+                self.assertEqual({name: (self.state / name).read_bytes() for name in tool.FILES}, before)
+                self.assertEqual(FakeIdentity.clients['miy-web'], client_before)
+
+    def test_backup_or_manifest_failure_changes_nothing(self):
+        before = {name: (self.state / name).read_bytes() for name in tool.FILES}
+        client_before = copy.deepcopy(FakeIdentity.clients['miy-web'])
+        private_write = tool.private_write
+        for target in ('settings-backup/compose.env', 'settings.json'):
+            with self.subTest(target=target):
+                self.release = self.state / target.replace('/', '-')
+
+                def fail_preparation(path, data):
+                    if path == self.release / target:
+                        raise OSError('injected_preparation_failure')
+                    private_write(path, data)
+
+                with patch.object(tool, 'private_write', fail_preparation), \
+                        self.assertRaisesRegex(OSError, 'injected_preparation_failure'):
+                    self.apply()
+                self.assertEqual({name: (self.state / name).read_bytes() for name in tool.FILES}, before)
+                self.assertEqual(FakeIdentity.clients['miy-web'], client_before)
+
+    def test_failure_to_record_completion_still_allows_restore(self):
+        before = {name: (self.state / name).read_bytes() for name in tool.FILES}
+        client_before = copy.deepcopy(FakeIdentity.clients['miy-web'])
+        private_write = tool.private_write
+
+        def fail_completion(path, data):
+            if path == self.release / 'settings.json' and json.loads(data)['phase'] == 'applied':
+                raise OSError('injected_completion_failure')
+            private_write(path, data)
+
+        with patch.object(tool, 'private_write', fail_completion), \
+                self.assertRaisesRegex(OSError, 'injected_completion_failure'):
+            self.apply()
+        tool.restore(self.state, self.release, identity=FakeIdentity)
+        self.assertEqual({name: (self.state / name).read_bytes() for name in tool.FILES}, before)
+        self.assertEqual(FakeIdentity.clients['miy-web'], client_before)
+
+    def test_interrupted_apply_and_restore_can_be_restored_repeatedly(self):
+        before = {name: (self.state / name).read_bytes() for name in tool.FILES}
+        client_before = copy.deepcopy(FakeIdentity.clients['miy-web'])
+        private_write = tool.private_write
+
+        def fail_after_writing_one_file(path, data):
+            if path == self.state / 'runtime.env':
+                raise OSError('injected_write_failure')
+            private_write(path, data)
+
+        with patch.object(tool, 'private_write', fail_after_writing_one_file), \
+                self.assertRaisesRegex(OSError, 'injected_write_failure'):
+            self.apply()
+        tool.restore(self.state, self.release, identity=FakeIdentity)
+        self.assertEqual({name: (self.state / name).read_bytes() for name in tool.FILES}, before)
+        self.assertEqual(FakeIdentity.clients['miy-web'], client_before)
+        self.release = self.state / 'second-apply'
+        self.apply()
+        with patch.object(tool, 'private_write', fail_after_writing_one_file), \
+                self.assertRaisesRegex(OSError, 'injected_write_failure'):
+            tool.restore(self.state, self.release, identity=FakeIdentity)
+        for _ in range(2):
+            tool.restore(self.state, self.release, identity=FakeIdentity)
+            self.assertEqual({name: (self.state / name).read_bytes() for name in tool.FILES}, before)
+            self.assertEqual(FakeIdentity.clients['miy-web'], client_before)
+
+    def test_reapply_and_restore_preserves_an_existing_dev_portal(self):
+        self.apply()
+        before = {name: (self.state / name).read_bytes() for name in tool.FILES}
+        client_before = copy.deepcopy(FakeIdentity.clients['miy-web'])
+        self.release = self.state / 'reapply'
+        self.apply()
+        tool.restore(self.state, self.release, identity=FakeIdentity)
+        self.assertEqual({name: (self.state / name).read_bytes() for name in tool.FILES}, before)
+        self.assertEqual(FakeIdentity.clients['miy-web'], client_before)
+
+    def test_restore_preserves_each_existing_uri_and_unrelated_identity_changes(self):
+        original = copy.deepcopy(FakeIdentity.clients['miy-web'])
+        for callback, logout in ((True, False), (False, True), (True, True), (False, False)):
+            with self.subTest(callback=callback, logout=logout):
+                FakeIdentity.clients['miy-web'] = copy.deepcopy(original)
+                client = FakeIdentity.clients['miy-web']
+                if callback:
+                    client['redirectUris'].insert(0, DEV + '/auth/callback')
+                if logout:
+                    client['attributes']['post.logout.redirect.uris'] = DEV + '/##' + \
+                        client['attributes']['post.logout.redirect.uris']
+                self.release = self.state / f'uris-{callback}-{logout}'
+                self.apply()
+                client['redirectUris'].append('https://another.example.test/auth/callback')
+                client['webOrigins'].append('https://another.example.test')
+                client['attributes']['other'] = 'preserved'
+                client['attributes']['post.logout.redirect.uris'] += '##https://another.example.test/'
+                tool.restore(self.state, self.release, identity=FakeIdentity)
+                self.assertEqual(DEV + '/auth/callback' in client['redirectUris'], callback)
+                self.assertEqual(DEV + '/' in tool.logout_uris(client), logout)
+                self.assertIn('https://another.example.test/auth/callback', client['redirectUris'])
+                self.assertIn('https://another.example.test/', tool.logout_uris(client))
+                self.assertIn('https://another.example.test', client['webOrigins'])
+                self.assertEqual(client['attributes']['other'], 'preserved')
+
+    def test_restore_validates_all_backups_before_changing_identity_or_files(self):
+        self.apply()
+        before = {name: (self.state / name).read_bytes() for name in tool.FILES}
+        client_before = copy.deepcopy(FakeIdentity.clients['miy-web'])
+        (self.release / 'settings-backup' / 'compose.env').write_text('changed\n')
+        with self.assertRaisesRegex(RuntimeError, 'settings_backup_changed:compose.env'):
+            tool.restore(self.state, self.release, identity=FakeIdentity)
+        self.assertEqual({name: (self.state / name).read_bytes() for name in tool.FILES}, before)
+        self.assertEqual(FakeIdentity.clients['miy-web'], client_before)
+
+    def test_restore_does_not_leave_a_new_logout_attribute(self):
+        del FakeIdentity.clients['miy-web']['attributes']['post.logout.redirect.uris']
+        before = copy.deepcopy(FakeIdentity.clients['miy-web'])
+        self.apply()
+        tool.restore(self.state, self.release, identity=FakeIdentity)
+        self.assertEqual(FakeIdentity.clients['miy-web'], before)
+
     def test_invalid_or_conflicting_targets_change_nothing(self):
         before = {name: (self.state / name).read_bytes() for name in tool.FILES}
         cases = [
@@ -133,6 +279,44 @@ class DevPortalSettingsTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, 'dev_portal_address_in_use'):
             tool.apply(self.state, self.release, host, '127.0.0.1:18183', identity=FakeIdentity,
                        probe=lambda _p: True, enabled=enabled)
+
+    def test_hostname_check_handles_quotes_multiline_and_comments(self):
+        enabled = self.root / 'sites-enabled'
+        enabled.mkdir()
+        site = enabled / 'other'
+        for directive in (
+                'server_name "v2-dev.example.test";',
+                "server_name 'v2-dev.example.test' alias.example.test;",
+                'server_name\n # comment\n "v2-dev.example.test"\n alias.example.test;',
+                'server_name V2-DEV.EXAMPLE.TEST;'):
+            with self.subTest(directive=directive):
+                site.write_text('server { ' + directive + ' }')
+                self.assertFalse(tool.name_unclaimed('v2-dev.example.test', enabled))
+        site.write_text('# server_name "v2-dev.example.test";\nserver { server_name other.example.test; }')
+        self.assertTrue(tool.name_unclaimed('v2-dev.example.test', enabled))
+        site.write_text('server { server_name "unterminated; }')
+        with self.assertRaisesRegex(RuntimeError, 'nginx_site_unparseable'):
+            tool.name_unclaimed('v2-dev.example.test', enabled)
+
+    def test_hostname_check_rejects_names_in_the_actual_rendered_config(self):
+        rendered = self.root / 'rendered'
+        rendered.mkdir()
+        hosts = ('portal.example.test', 'console.example.test', 'dev.example.test')
+        settings = {'origin': 'http://' + hosts[0], 'consoleOrigin': 'http://' + hosts[1],
+                    'devPortalOrigin': 'http://' + hosts[2], 'allowHttp': True,
+                    'bind': '127.0.0.1:18180', 'consoleBind': '127.0.0.1:18182',
+                    'devPortalBind': '127.0.0.1:18183', 'identityPort': 18181}
+        (rendered / 'server.json').write_text(json.dumps(settings))
+        result = subprocess.run([sys.executable, str(ROOT / 'scripts/render-server-config.py'),
+                                 '--state-dir', str(rendered)], capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        enabled = self.root / 'sites-enabled'
+        enabled.mkdir()
+        shutil.copyfile(rendered / 'nginx-miy.conf', enabled / 'miy')
+        for hostname in hosts:
+            with self.subTest(hostname=hostname):
+                self.assertFalse(tool.name_unclaimed(hostname, enabled))
+        self.assertTrue(tool.name_unclaimed('unused.example.test', enabled))
 
     def test_identity_secret_change_is_refused(self):
         class Rotated(FakeIdentity):

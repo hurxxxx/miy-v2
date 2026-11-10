@@ -2,7 +2,7 @@
 
 현재 게시 후보는 **CLI 0.7.0 / 번들 0.8.0**이다. 사용자 실행은 [현재 Windows 11 인수 절차](WINDOWS-ACCEPTANCE.md)와 그 후보 파일을 기준으로 하며 아직 `NOT_RUN`이다. 아래 버전별 빌드 명령·해시·PASS는 당시 이력으로 보존하고 현재 후보에 이월하지 않는다.
 
-[내부 업무 앱 최소안](APP-BOUNDARIES.md#확정-결정)은 회사가 관리하는 앱·개발자와 내부망을 대상으로 iframe 없는 MF·라우터 및 기존 CLI/SDK 계약을 유지한다. 포털(dev/prod 공통)과 Keycloak·CLI 승인이 있는 신뢰 콘솔 두 HTTPS origin을 단일 IP에서 사용하며 도메인·추가 IP·별도 IdP origin은 필수가 아니다. IP SAN/체인·CA 신뢰 확인, 기존 OIDC와 CLI 승인 경로 호환·세션 용도 거부·철회가 최소 검사다. 자동 CA 배포·자동 갱신은 후속이고 [전환·복구](APP-BOUNDARIES.md#전환과-복구) 및 [신규 인수](APP-BOUNDARIES.md#경계-인수)는 `NOT_RUN`이다. 게시 SDK·설치 파일과 아래 과거 실행 기록은 바꾸지 않으며 기존 HTTP IP·통합 MF 결과를 새 보안 PASS로 옮기지 않는다.
+현재 서버 계약은 [앱 실행·관리 경계](APP-BOUNDARIES.md#확정-결정), 사용자 Windows 확인 항목은 [현재 Windows 인수](WINDOWS-ACCEPTANCE.md)를 따른다. prod 포털·dev 포털·콘솔 세 출처의 서버 반영과 Windows 사용자 실행 NOT_RUN을 구분한다. 아래 게시 SDK·설치 파일·버전별 실행 이력은 보존하며 기존 HTTP IP·통합 MF 결과를 새 HTTPS 보안 PASS로 옮기지 않는다.
 
 ## 2026-11-03 코어 권한 보강 후보 준비 이력
 

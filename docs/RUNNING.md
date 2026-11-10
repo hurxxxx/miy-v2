@@ -4,7 +4,7 @@
 
 이 문서는 현행 CLI의 사용 계약을 설명한다. 설치된 실행 파일의 `miy --version`, `miy describe`와 서버 capability가 실제 사용 가능한 범위를 결정한다. 명령 구현과 해당 환경의 검증 통과를 구분한다. 실행 결과는 [구현 결과](IMPLEMENTATION-RESULTS.md), 미실행·외부 환경 항목은 [검증 행렬](CLI-VALIDATION-MATRIX.md)과 [Windows 안내](WINDOWS-VALIDATION.md)를 따른다. CLI 완료가 V7 전체 인수를 뜻하지 않는다.
 
-**게시 배포물과 새 최소 경계 소스 구현을 구분한다.** [내부 업무 앱의 최소 보안안](APP-BOUNDARIES.md#확정-결정)은 회사가 관리하는 개발자·앱을 내부망에서 사용하는 범위다. iframe 없는 MF·AppRoot·라우터 통합과 기존 SDK/CLI 계약을 유지하고, 단일 IP HTTPS에서 포털과 신뢰 콘솔 두 origin으로 나눈다. dev/prod 업무 UI는 같은 포털에 두고 Keycloak은 콘솔의 `/identity/realms/miy`에서 제공한다. 아래 명령·게시 번들·템플릿 계약은 유지한다. 새 소스는 관리·CLI 승인 경로를 콘솔로 제한한다. 소스 구현·격리 [인수](APP-BOUNDARIES.md#경계-인수)와 운영 [전환](APP-BOUNDARIES.md#전환과-복구) `NOT_RUN`을 구분한다.
+**게시 배포물·현재 실행 서버·작업본을 구분한다.** [사내 최소 보안 계약](APP-BOUNDARIES.md#확정-결정)은 회사가 관리하는 개발자·앱과 제한된 사내 접속을 대상으로 한다. iframe 없는 MF·AppRoot·라우터와 단일 IP HTTPS를 유지하고 prod 포털·dev 포털·콘솔 세 출처를 사용한다. Keycloak과 device CLI 승인은 콘솔에서 제공하고 legacy 로그인은 410으로 종료했다. 세 출처는 운영에 반영했으며 실제 배포 상태·격리 검사·외부 환경 NOT_RUN은 [경계 인수](APP-BOUNDARIES.md#경계-인수)와 [운영 안내](SERVER-OPERATIONS.md)를 따른다. 개발 단계의 구 버전 호환은 강제하지 않는다.
 
 ## 설치와 발견
 
@@ -72,7 +72,7 @@ miy --yes context remove work
 
 로그아웃은 원격 철회 확인과 로컬 삭제 결과를 구분한다. `context remove`는 로컬 연결만 제거하고 원격 세션이나 앱 데이터를 삭제하지 않는다. 원격 철회가 필요하면 context 제거 전에 logout 또는 sessions revoke를 실행한다.
 
-후속 두 origin 전환에서도 저장된 CLI context·API 경로·응답 형식과 토큰 수명은 유지한다. device의 브라우저 승인만 콘솔 세션으로 처리하며, 게시 CLI가 받는 상대 `verificationPath`는 유지한 채 서버가 설정된 콘솔의 승인 페이지로 고정 리디렉션한다. 임의 목적지나 토큰을 URL에 넣지 않는다. device 시작·poll·refresh는 기존 비브라우저 경로로 제공한다. 0.5 이전 CLI의 legacy 로그인은 종료했으므로(410 `cli_upgrade_required`) 해당 CLI는 업그레이드한 뒤 `miy auth login`을 다시 실행한다. 기존 `miy-web` OIDC client와 realm·사용자 `sub`를 유지하고 정확한 callback을 등록한다. 전환 시 재로그인은 허용하지만 새 CLI 설정 형식이나 앱 SDK 교체를 필수로 요구하지 않는다. 실제 호환성은 게시 CLI로 별도 인수해야 한다.
+CLI context·API의 대표 주소는 prod 포털이며 device의 브라우저 승인만 콘솔 세션으로 처리한다. 게시 CLI가 받는 상대 `verificationPath`는 서버가 설정된 콘솔의 승인 페이지로 고정 리디렉션한다. 임의 목적지나 토큰을 URL에 넣지 않는다. device 시작·poll·refresh는 비브라우저 경로로 제공한다. 0.5 이전 CLI의 legacy 로그인은 종료했으므로(410 `cli_upgrade_required`) 업그레이드 후 `miy auth login`을 다시 실행한다. `miy-web` OIDC client에는 prod/dev/console 세 출처의 정확한 callback/logout URI를 등록한다. 현재 게시 CLI 0.7.0은 유지했으나 개발 단계의 후속 변경에 구 형식 호환을 요구하지 않는다.
 
 ## 새 앱 준비와 등록
 
@@ -198,11 +198,11 @@ miy --app my-app grant set --input @grant.json
 
 ## 현행 서버 구성: HTTPS 도메인과 사내 HTTP IP
 
-이 절의 명령은 현행 도구의 설치 절차다. 후속 최소안은 **외부 도메인 구매·내부 DNS·추가 IP 없이 단일 IP와 사설 CA HTTPS로 PoC·운영**을 지원한다. 포털 `https://192.168.10.20:8443`, 콘솔 `https://192.168.10.20:9443`은 설정 가능한 포트의 예시이며, IdP는 콘솔의 `/identity/realms/miy`를 사용한다. 별도 IdP origin이나 dev 포털은 초기 필수 구성이 아니다. Core·Keycloak의 내부 포트는 외부에 직접 공개하지 않고 프록시를 통해서만 접근한다.
+이 절의 명령은 현행 도구의 설치 절차다. **외부 도메인 구매·내부 DNS·추가 IP 없이 단일 IP와 사설 CA HTTPS**를 지원한다. prod 포털 `https://192.168.10.20:8443`, dev 포털 `https://192.168.10.20:9444`, 콘솔 `https://192.168.10.20:9443`은 설정 가능한 포트의 예시다. IdP는 콘솔 `/identity/realms/miy`에 두며 별도 IdP 출처는 요구하지 않는다. Core·Keycloak 내부 포트는 외부에 직접 공개하지 않고 프록시를 통해서만 접근한다.
 
-최소 설치 범위는 운영자가 준비한 **IP SAN이 있는 서버 인증서·키의 반입, 체인/만료/IP 일치 검사, 단말과 CLI의 CA 신뢰 설정 안내 및 연결 확인**이다. 자동 CA 배포·자동 갱신은 후속이며 운영자는 갱신 후 같은 검사를 수행한다. 도메인 배치는 권장하지만 필수는 아니다. 포트 차이는 DOM origin을 구분할 뿐 쿠키를 격리하지 않으므로 서버의 portal/console 세션 용도와 정확한 Origin·현재 CSRF 검사가 필요하다. 아래 HTTP 절차의 성공을 이 인수로 옮기지 않으며 TLS 검증 해제·인증서 경고 무시·자동 HTTP fallback을 제공하지 않는다. 상세는 [출처와 자격증명](APP-BOUNDARIES.md#출처와-자격증명)을 따른다.
+최소 설치 범위는 운영자가 준비한 **IP SAN이 있는 서버 인증서·키의 반입, 체인/만료/IP 일치 검사, 단말과 CLI의 CA 신뢰 설정 안내 및 연결 확인**이다. 자동 CA 배포·자동 갱신은 후속이며 운영자는 갱신 후 같은 검사를 수행한다. 도메인 배치는 권장하지만 필수는 아니다. 포트 차이는 DOM origin을 구분할 뿐 쿠키를 격리하지 않으므로 서버의 portal/dev_portal/console 세션 용도와 정확한 Origin·현재 CSRF 검사가 필요하다. 아래 HTTP 절차의 성공을 이 인수로 옮기지 않으며 TLS 검증 해제·인증서 경고 무시·자동 HTTP fallback을 제공하지 않는다. 상세는 [출처와 자격증명](APP-BOUNDARIES.md#출처와-자격증명)을 따른다.
 
-서버 대표 주소(prod 업무 포털)는 운영자가 `MIY_ORIGIN`으로, 관리·로그인 출처는 `MIY_CONSOLE_ORIGIN`으로, dev 앱 포털은 `MIY_DEV_PORTAL_ORIGIN`으로 명시한다(2026-11-09 추가). 도메인이 없으면 같은 IP의 포트로 나누며 `--dev-portal-origin`을 생략하면 포털 HTTPS 443/8443에 대해 :9444, 그 밖에는 포털 포트+2를 제안한다. 로컬 프로필은 https://localhost:18445(HTTP 18002)를 쓴다. 포트 분리는 정식 지원하지만 쿠키를 공유하므로, 쿠키 심기·대량 주입 같은 문제는 도메인(출처별 호스트명)으로만 해결된다. `bootstrap.py`가 포트 분리 프로필을 알리며, 포트 환경용 우회 코드는 두지 않는다([배치 프로필](APP-BOUNDARIES.md#배치-프로필-도메인권장과-포트-분리지원)). 단일 IP HTTPS의 새 구성·인증서 검사·전환은 [서버 구성 절차](SERVER-OPERATIONS.md#새-두-출처-설정과-전환-준비)를 따른다. 아래 기본 `.local` 예시는 **별도 새 서버에서만** 실행하며 이 checkout의 운영 `.local`에는 적용하지 않는다. 서버 구성 스크립트의 `--profile server`는 첫 구성 시 주소가 없으면 실패한다. 기존 구성 재실행은 저장된 주소·포트·자격증명을 유지한다. 이 서버 설정은 홈페이지 설치 명령에 인자로 전달되며 클라이언트 실행 파일의 기본 주소가 되지 않는다.
+서버 대표 주소(prod 업무 포털)는 운영자가 `MIY_ORIGIN`으로, 관리·로그인 출처는 `MIY_CONSOLE_ORIGIN`으로, dev 앱 포털은 `MIY_DEV_PORTAL_ORIGIN`으로 명시한다(2026-11-09 추가). 도메인이 없으면 같은 IP의 포트로 나누며 `--dev-portal-origin`을 생략하면 포털 HTTPS 443/8443에 대해 :9444, 그 밖에는 포털 포트+2를 제안한다. 로컬 프로필은 https://localhost:18445(HTTP 18002)를 쓴다. 포트 분리는 정식 지원하지만 쿠키를 공유하므로, 별도 호스트명으로 호스트 전용 쿠키 공유를 줄이는 배치를 권장한다. 같은 상위 도메인의 `Domain=` 쿠키 간섭·대량 주입 한계는 남는다. `bootstrap.py`가 포트 분리 프로필을 알리며, 포트 환경용 우회 코드는 두지 않는다([배치 프로필](APP-BOUNDARIES.md#배치-프로필-도메인권장과-포트-분리지원)). 단일 IP HTTPS의 새 구성·인증서 검사·전환은 [서버 구성 절차](SERVER-OPERATIONS.md#새-세-출처-설정과-전환-준비)를 따른다. 아래 기본 `.local` 예시는 **별도 새 서버에서만** 실행하며 이 checkout의 운영 `.local`에는 적용하지 않는다. 서버 구성 스크립트의 `--profile server`는 첫 구성 시 주소가 없으면 실패한다. 기존 구성 재실행은 저장된 주소·포트·자격증명을 유지한다. 이 서버 설정은 홈페이지 설치 명령에 인자로 전달되며 클라이언트 실행 파일의 기본 주소가 되지 않는다.
 
 서버의 Docker Engine과 CLI는 `network connect --gw-priority`를 지원하는 28 이상을 사용한다. 앱별 네트워크를 PostgreSQL에 연결할 때 기존 기본 경로보다 낮은 우선순위를 주어 코어의 열린 DB 연결을 유지한다. 지원하지 않는 엔진에서는 우선순위 없이 연결을 재시도하지 않는다. 이 옵션은 [Docker 28 릴리스](https://docs.docker.com/engine/release-notes/28/)에 추가되었다. 기존 네트워크 연결은 자동으로 끊거나 다시 구성하지 않는다.
 
@@ -224,7 +224,7 @@ python3 scripts/render-server-config.py --binary "$PWD/target/release/miy" \
   --key /etc/miy-tls/server.key
 ```
 
-인증서는 두 origin의 hostname을 모두 SAN에 포함해야 하며 사설 CA는 `--ca-file`로 지정한다. 마지막 명령은 `.local/nginx-miy.conf`, `.local/miy-v2-serve.service`, `.local/miy-v2-worker.service`를 생성한다. 기존 Nginx 사이트를 수정하거나 서비스를 시작하지 않는다. 생성 파일을 검토하여 전용 사이트·unit으로 설치하고, `nginx -t` 통과 후 Nginx reload 및 두 unit 시작을 수행한다. `/identity`는 콘솔에서만 loopback Keycloak 포트로, API·MCP·WebSocket·다운로드는 목적별 core bind 주소로, 나머지는 빌드한 플랫폼 UI로 연결된다. 이미지 업로드 한도는 core와 동일한 1 GiB이며 WebSocket 전달과 스트리밍 응답을 지원한다. 서비스 wrapper는 private runtime.env를 읽고 serve에서 DB 관리자 연결을, worker에서 OIDC client secret을 제거한다.
+인증서는 세 origin의 hostname을 모두 SAN에 포함해야 하며 사설 CA는 `--ca-file`로 지정한다. 마지막 명령은 `.local/nginx-miy.conf`, `.local/miy-v2-serve.service`, `.local/miy-v2-worker.service`를 생성한다. 기존 Nginx 사이트를 수정하거나 서비스를 시작하지 않는다. 생성 파일을 검토하여 전용 사이트·unit으로 설치하고, `nginx -t` 통과 후 Nginx reload 및 두 unit 시작을 수행한다. `/identity`는 콘솔에서만 loopback Keycloak 포트로, API·MCP·WebSocket·다운로드는 목적별 core bind 주소로, 나머지는 빌드한 플랫폼 UI로 연결된다. 이미지 업로드 한도는 core와 동일한 1 GiB이며 WebSocket 전달과 스트리밍 응답을 지원한다. 서비스 wrapper는 private runtime.env를 읽고 serve에서 DB 관리자 연결을, worker에서 OIDC client secret을 제거한다.
 
 서버 빌드 기능 도입 시에는 새 서버 바이너리와 `0015_server_builds.sql`까지의 코어 마이그레이션을 적용하고 serve/worker를 함께 갱신한다. 이 마이그레이션은 빌드 작업·요청·로그 테이블을 추가하며 앱 DB를 변경하지 않는다. 소스는 `MIY_ARTIFACTS/.builds` 아래 private 디렉터리에 저장하며 업로드 한도는 64 MiB, 파일 수는 4,096개, 저장 로그는 작업당 2 MiB다. 대기·실행 작업은 사용자당 2개, 전체 8개로 제한한다. 작업자는 서버 소유 Dockerfile을 사용하며 소스의 패키지 스크립트·Rust 테스트는 Docker 내부에서 실행한다. worker가 중단된 작업은 검증 가능한 완성 이미지가 있으면 복구하고, 그렇지 않으면 중단 실패로 기록한다. 불확실한 기존 빌드를 자동으로 다시 시작하지 않는다.
 
@@ -245,7 +245,7 @@ HTTP는 내부망용이며 통신이 암호화되지 않는다. 이 구성은 `M
 
 운영자가 공유 개발 로그인을 켜면 설정된 서버 주소의 로그인 화면에 `admin`, `developer`, `alice`, `bob` 버튼이 나타난다. 해당 서버에 접속한 사람은 비밀번호 입력 없이 선택한 개발 계정으로 로그인할 수 있다. 계정 비밀번호를 화면이나 문서에 공개하지 않으며 기존 OAuth 로그인도 계속 사용할 수 있다. 공유 개발 로그인은 새 서버에서 기본으로 꺼져 있고, 도메인이나 접속 위치만으로 활성화되지 않는다.
 
-이미 **새 두 출처 계약으로 구성된 별도 개발 서버**에서만 같은 명시적 상태 경로에 적용한다. 이 checkout의 운영 `.local`에 bootstrap을 실행하지 않는다. 구 운영 7b43789는 아래 명령과 serve 재시작만으로 전환할 수 없으며 [서버 전환 절차](SERVER-OPERATIONS.md#새-두-출처-설정과-전환-준비)를 따른다.
+이미 **세 출처 계약으로 구성된 별도 개발 서버**에서만 같은 명시적 상태 경로에 적용한다. 이 checkout의 운영 `.local`에 bootstrap을 실행하지 않는다. 구 운영 7b43789는 아래 명령과 serve 재시작만으로 전환할 수 없으며 [서버 전환 절차](SERVER-OPERATIONS.md#새-세-출처-설정과-전환-준비)를 따른다.
 
 ```sh
 python3 scripts/bootstrap.py --state-dir /srv/miy-dev --shared-development-login

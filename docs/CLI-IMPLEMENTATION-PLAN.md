@@ -9,14 +9,14 @@
 
 ## 내부 업무 앱 최소안의 CLI 호환 범위
 
-2026-11-06 [최소 보안안](APP-BOUNDARIES.md#확정-결정)은 회사가 관리하는 개발자·앱과 내부망을 전제로 하며 최소 경계는 소스에 구현했다. iframe 없는 MF·AppRoot·라우팅과 게시 CLI/SDK 계약을 유지한다. 포털과 신뢰 콘솔 두 origin만 사용하고 Keycloak은 콘솔의 `/identity/realms/miy`에 둔다. 한 IP의 서로 다른 HTTPS 포트(예: 8443/9443)를 설정할 수 있으며 도메인·추가 IP·별도 IdP origin은 필수가 아니다.
+[최소 보안안](APP-BOUNDARIES.md#확정-결정)은 회사가 관리하는 개발자·앱과 내부망을 전제로 하며 현재 세 출처 경계를 구현·운영 반영했다. iframe 없는 MF·AppRoot·라우팅을 유지하고 prod 포털·dev 포털·신뢰 콘솔을 분리한다. Keycloak은 콘솔의 `/identity/realms/miy`에 둔다. 한 IP의 서로 다른 HTTPS 포트(예: prod 8443/dev 9444/console 9443)를 지원하며 도메인·추가 IP·별도 IdP 출처는 필수가 아니다.
 
 - device 브라우저 승인은 console 용도 세션·정확한 Origin·현재 CSRF와 사용자가 입력한 터미널 코드로만 허용한다. 포털 세션으로 승인하거나 세션 용도를 바꿀 수 없게 한다. 일반 직원도 본인의 CLI 인증은 콘솔에서 할 수 있다. 0.5 이전 CLI의 legacy 승인 흐름(start/approve/exchange)은 2026-11-09 종료했고 410 `cli_upgrade_required`로 응답한다.
-- 게시 CLI의 상대 `verificationPath`는 유지한다. 기존 경로는 설정된 콘솔 승인 화면으로만 고정 리디렉션하고 임의 return URL이나 token을 전달하지 않는다. start·exchange·poll·refresh 경로와 요청/응답 형식·context 설정·토큰 수명은 유지한다.
-- 기존 `miy-web` OIDC client·realm·사용자 `sub`를 보존하고 callback·issuer 설정을 두 origin에 맞게 갱신한다. 서버 변경 후 재로그인은 허용하지만 신규 CLI 형식이나 모든 앱의 SDK 전환을 요구하지 않는다.
+- 현재 게시 CLI의 상대 `verificationPath`는 설정된 콘솔 device 승인 화면으로만 고정 리디렉션하고 임의 return URL이나 token을 전달하지 않는다. device 시작·poll·refresh·철회와 context·토큰 수명은 현재 계약을 유지했으며 legacy start/exchange는 지원하지 않는다.
+- `miy-web` OIDC client·realm·사용자 `sub`는 유지했고 callback/logout URI를 세 origin에 등록하며 issuer는 콘솔에 둔다. 개발 단계에서는 새 CLI·SDK·설정 계약으로 끊을 수 있으며 게시물 바이트와 앱 데이터는 보존한다.
 - 게시 CLI로 기존 로그인·승인 이동·교환·poll·refresh·철회와 MCP 연결을 확인한다. 단일 IP TLS는 인증서 반입·IP SAN/체인 검사·CA 신뢰 안내/확인이 최소 범위이며 자동 배포·갱신은 후속이다.
 
-이번 소스의 검사는 APP-BOUNDARIES의 인수표와 구현 검증 기록을 따른다. 운영 반영·Windows 검사는 `NOT_RUN`이다. 아래 0.5의 명령 개편·구현 기록은 당시 범위로 보존하며, 이를 이번 보안 변경에서 호환성을 깨도 된다는 근거로 사용하지 않는다.
+현재 경계의 구현·배포 및 미실행 환경은 [경계 인수](APP-BOUNDARIES.md#경계-인수)를 따른다. Windows 사용자 실행은 NOT_RUN이다. 아래 0.5의 명령 개편·구현 기록은 당시 범위로 보존하며 현재 CLI 계약은 [실행 안내](RUNNING.md)와 서버 capability로 확인한다. 개발 단계의 변경은 구 버전 호환을 강제하지 않는다.
 
 ## 1. 확정 범위와 지원 환경
 
