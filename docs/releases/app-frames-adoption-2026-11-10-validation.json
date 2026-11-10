@@ -11,6 +11,7 @@
     "branch": "poc/app-frames",
     "base": "44411a3",
     "commits": [
+      "717124f",
       "this commit"
     ]
   },
@@ -24,12 +25,16 @@
   "checks": [
     {
       "check": "scripts/runtime-regression/run.py (isolated PostgreSQL and Docker)",
-      "status": "FAIL",
-      "observed": "127 observations PASS (frames 12: new checks 11 fixture/stopped launch and 12 pruning); run.py exited 1 because its cleanup compared a pre-existing container that disappeared during the run: a GitLab CI runner job container of another project (runner-…-wait-for-service) removed by its own runner. The 13 regression resources were removed",
+      "status": "PASS",
+      "observed": "127 observations (runtime 46, operations 6, cli 6, auth 8, permissions 24, delegation 10, boundary 12, migration 3, frames 12: new checks 11 fixture/stopped launch and 12 pruning), exit 0 with clean cleanup, on the 717124f Rust and migrations",
       "history": [
         {
           "status": "PASS",
           "observed": "126 observations with frames 11 before the pruning change"
+        },
+        {
+          "status": "FAIL",
+          "observed": "127 observations PASS but run.py exited 1: its cleanup compared a pre-existing container that disappeared during the run, a GitLab CI runner job container of another project (runner-…-wait-for-service) removed by its own runner. The 13 regression resources were removed"
         }
       ]
     },
@@ -85,13 +90,25 @@
       "check": "scripts/check-static.sh",
       "status": "PASS",
       "observed": "all: doc links, script syntax, cleanup/release/API/ops tests (core ops 67, app frame settings 12, dev portal settings, console move), check-server-config, bundle portability, write decisions, fmt, clippy (server and client), cargo test 197 server-build and 118 client-build, typecheck, isolated web builds, Playwright ui 34, cli-experience 14, surface-boundaries 14, http-ui 1"
+    },
+    {
+      "check": "tests/app-frames.spec.ts on a fresh stack-ui (port profile), Chromium, Firefox and WebKit",
+      "status": "PASS",
+      "observed": "18/18 on a second fresh stack, with frame console errors now logged by the spec (only the probe's deliberate refusals, the portal 401 before sign-in and the 410 relaunch document appeared)",
+      "history": [
+        {
+          "status": "FAIL",
+          "observed": "First fresh stack: Chromium FV-01 (the first frame opened after the deploys) showed the frame runtime's render error boundary instead of the app; Firefox and WebKit 12/12 PASS on the same apps, the remaining 5 Chromium tests did not run (serial). Core logs of that run were lost: the FV-09 restart rewrites serve.log"
+        },
+        {
+          "status": "PASS",
+          "observed": "Chromium rerun on the same stack 6/6"
+        }
+      ],
+      "openObservation": "The first-open render failure did not reproduce in two later runs; its cause is unknown. Watch for it in the first production opens (the frame now reports frame.error app_render_failed to the portal)"
     }
   ],
   "notRun": [
-    {
-      "check": "tests/app-frames.spec.ts rerun",
-      "reason": "Running on a fresh stack-ui when this commit was made; recorded in the next commit"
-    },
     {
       "check": "A same-registrable-domain hostname profile (P2) in a browser",
       "reason": "The P2 proxy routing is checked with real Nginx and Caddy; a browser run needs a test domain with Domain= cookies and was not set up"

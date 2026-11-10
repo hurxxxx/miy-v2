@@ -212,7 +212,7 @@ v2.dwdcc.kr은 개발 단계 서버이므로 짧은 중단·재로그인은 허�
 3. `app-frame-settings.py nginx-apply --certificate … --key …`: 렌더한 설정이 기존 파일에 프레임 서버 블록 하나와 포털·dev 포털의 `frame-src`·Referrer-Policy만 더했는지 확인한다. 그 뒤 설치·`nginx -t`·reload한다.
 4. `ui-rollout.py build/apply --target frame-runtime`: 프레임 런타임을 처음 설치한다. Core는 프레임 문서마다 `index.html`을 읽으므로 재시작이 필요 없다.
 5. `ui-rollout.py build/apply`: 포털 UI를 `AppFrame` 실행으로 교체한다.
-6. 확인: health, prod·dev 포털에서 앱 열기(프레임 출처 `v2-app-<키>.dwdcc.kr`, 포털 출처가 아님), 운영 앱 전체 실행, 포털 쿠키 업무 API 403, CLI bearer 업무 API 200, 콘솔·IdP `frame-ancestors 'none'` 유지.
+6. 확인: health, prod·dev 포털에서 앱 열기(프레임 출처 `v2-app-<키>.dwdcc.kr`, 포털 출처가 아님), 운영 앱 전체 실행, 포털 쿠키 업무 API 403, CLI bearer 업무 API 200, 콘솔·IdP `frame-ancestors 'none'` 유지. 첫 실행의 렌더 실패도 본다(격리 실행에서 배포 직후 첫 프레임이 한 번 실패했고 이후 재현되지 않았다, [채택 후속 기록](releases/app-frames-adoption-2026-11-10-validation.json)).
 
 **되돌리기.** 역순으로 실행한다: 포털 UI rollback → `ui-rollout.py rollback --target frame-runtime`(index만 제거) → `nginx-restore` → `core-rollout.py rollback` → `app-frame-settings.py restore`.
 

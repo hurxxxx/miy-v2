@@ -183,6 +183,10 @@ async function signIn(browser: Browser, user: string): Promise<{ context: Browse
   const context = await browser.newContext({ acceptDownloads: true });
   const page = await context.newPage();
   page.on("pageerror", (e) => console.log(`[${user}] pageerror: ${e.message}`));
+  // Frame documents log here too: a failed app load names its cause.
+  page.on("console", (m) => {
+    if (m.type() === "error") console.log(`[${user}] console error (${new URL(m.location().url || "about:blank").origin}): ${m.text().slice(0, 300)}`);
+  });
   await page.goto(devPortal + "/");
   await page.getByRole("link", { name: /^(OAuth로 로그인|로그인)$/ }).click();
   await page.locator("#username").waitFor({ state: "visible" });
