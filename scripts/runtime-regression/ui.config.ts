@@ -1,7 +1,7 @@
 import { defineConfig } from "@playwright/test";
 export default defineConfig({
   testDir: "../../tests",
-  testMatch: ["runtime-health.spec.ts", "platform-shell.spec.ts", "runtime-confirmation.spec.ts", "platform-css-isolation.spec.ts", "admin-access.spec.ts"],
+  testMatch: ["runtime-health.spec.ts", "platform-shell.spec.ts", "runtime-confirmation.spec.ts", "admin-access.spec.ts"],
   workers: 1,
   timeout: 60000,
   expect: { timeout: 10000 },

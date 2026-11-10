@@ -2,6 +2,7 @@ import { browserUser, mockSurface } from "./browser-surface";
 import { test, expect, type BrowserContext, type Page } from "@playwright/test";
 import type { Installation } from "../packages/sdk/src/index";
 import { openNewTab } from "./new-tab";
+import { mockFrames } from "./frame-mock";
 
 // UI-1: the shell distinguishes loading, empty and failed reads with mocked APIs.
 // These checks cover presentation only; they are not evidence for server auth.
@@ -181,26 +182,24 @@ test("app screen read failure is not reported as missing permission", async ({ p
   await expect(page.getByText("접근 권한이 없습니다")).toHaveCount(0);
 });
 
-test("remote apps mount inside a dedicated container, not as shell main content", async ({ page }) => {
-  const { resolve, sep } = await import("node:path");
-  const remote = resolve(".local/evidence/runtime-health-ui/remote");
-  await page.route("**/artifacts/health-fixture/**", async (route) => {
-    const path = resolve(remote, new URL(route.request().url()).pathname.slice("/artifacts/health-fixture/".length));
-    expect(path.startsWith(remote + sep)).toBe(true);
-    await route.fulfill({ path });
-  });
+test("business apps run in their own frame origin, not in the shell document", async ({ page }) => {
   await mock(page, { me: () => ({ status: 200, json: user }), installations: () => ({ status: 200, json: [app] }) });
+  await mockFrames(page, () => [app], () => ({ json: { title: "저장된 제목" } }));
   await page.goto("/environments/dev/apps/shell-app");
-  await expect(page.getByLabel("문서 제목")).toHaveValue("저장된 제목");
-  const container = page.locator('.workspace > main > .miy-app-root[data-miy-app="shell-app"]');
-  await expect(container).toHaveCount(1);
-  expect(await container.evaluate((node) => node.childElementCount)).toBeGreaterThan(0);
-  // Directly inside main: the app container and the shell's session bar only.
-  expect(
-    await page.locator(".workspace > main > *").evaluateAll((nodes) =>
-      nodes.filter((node) => !node.classList.contains("miy-app-root") && !node.classList.contains("app-session-bar")).length,
-    ),
-  ).toBe(0);
+  const frame = page.frameLocator("iframe.app-frame");
+  await expect(frame.getByLabel("문서 제목")).toHaveValue("저장된 제목");
+  // No app code or app root in the shell document; the frame has its own origin.
+  await expect(page.locator(".miy-app-root, [data-miy-app]")).toHaveCount(0);
+  await expect(page.locator(".workspace > main iframe.app-frame")).toHaveCount(1);
+  await expect(page.locator("iframe.app-frame")).toHaveAttribute("title", "셸 검증 앱");
+  const app_frame = page.frames().find((value) => value.url().endsWith("/_miy/launch"))!;
+  expect(new URL(app_frame.url()).origin).not.toBe(new URL(page.url()).origin);
+  // Shell styles never reach the app document: it loads only its own origin's styles.
+  const sheets = await app_frame.evaluate(() => ({
+    own: location.origin,
+    hrefs: [...document.styleSheets].map((sheet) => sheet.href ?? "inline"),
+  }));
+  expect(sheets.hrefs.every((href) => href === "inline" || new URL(href).origin === sheets.own)).toBe(true);
 });
 
 test("runtime confirmation is a keyboard modal: Escape cancels and focus returns", async ({ page }) => {
@@ -235,6 +234,7 @@ test("rail opens apps in the same tab with accessible names and marks the curren
     { ...app, id: "a3", appId: "long", name: "아주 긴 이름을 가진 업무 앱 이름 표시 검증" },
   ];
   await mock(page, { me: () => ({ status: 200, json: user }), installations: () => ({ status: 200, json: apps }) });
+  await mockFrames(page, () => apps, () => ({ json: { title: "저장된 제목" } }));
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto("/environments/dev");
   const rail = page.locator("#platform-navigation");
@@ -269,20 +269,15 @@ test("mobile drawer closes on Escape and returns focus to the toggle", async ({ 
 });
 
 test("unsaved app input guards app switching and logout through the shell", async ({ page }) => {
-  const { resolve, sep } = await import("node:path");
-  const remote = resolve(".local/evidence/runtime-health-ui/remote");
-  await page.route("**/artifacts/health-fixture/**", async (route) => {
-    const path = resolve(remote, new URL(route.request().url()).pathname.slice("/artifacts/health-fixture/".length));
-    expect(path.startsWith(remote + sep)).toBe(true);
-    await route.fulfill({ path });
-  });
   await mock(page, { me: () => ({ status: 200, json: user }), installations: () => ({ status: 200, json: [app] }) });
+  await mockFrames(page, () => [app], () => ({ json: { title: "저장된 제목" } }));
   const logouts: string[] = [];
   page.on("request", (r) => {
     if (new URL(r.url()).pathname === "/auth/logout") logouts.push(r.method());
   });
   await page.goto("/environments/dev/apps/shell-app");
-  const input = page.getByLabel("문서 제목");
+  // The app reports its input state from its own frame; the shell decides from it.
+  const input = page.frameLocator("iframe.app-frame").getByLabel("문서 제목");
   await expect(input).toHaveValue("저장된 제목");
   await input.fill("미저장 제목");
   const rail = page.locator("#platform-navigation");

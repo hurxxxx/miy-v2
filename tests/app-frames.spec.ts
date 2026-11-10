@@ -1,6 +1,6 @@
 import { test, expect, type Browser, type BrowserContext, type Frame, type Page } from "@playwright/test";
 import { execFileSync } from "node:child_process";
-import { closeSync, copyFileSync, cpSync, mkdirSync, openSync, readFileSync, writeFileSync } from "node:fs";
+import { closeSync, copyFileSync, cpSync, existsSync, mkdirSync, openSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 // @ts-expect-error plain ESM helpers shared with the CLI regression scripts
 import { fixtureEnv, workflowArgs, workflowData } from "../scripts/lib/cli-workflow.mjs";
@@ -10,19 +10,25 @@ import { cliData } from "../scripts/lib/cli-result.mjs";
 // Business app frames (docs/APP-FRAMES.md FV-01/02/04/05/06/07/08/10) on the
 // disposable full stack (scripts/runtime-regression/stack-ui.sh): Keycloak login,
 // CLI-deployed Docker apps, the dev portal and per-installation frame origins (P3:
-// ports of one host). A real business app (examples/native-todo) and a probe app.
-const origin = "http://localhost:18300";
-const devPortal = "http://localhost:18307";
+// ports of one host, or hostnames with STACK_UI_HOSTS=1). A real business app
+// (examples/native-todo), a probe app and a second plain app for multi-app costs.
+const origin = process.env.MIY_STACK_ORIGIN || "http://localhost:18300";
+const devPortal = process.env.MIY_STACK_DEV_PORTAL || "http://localhost:18307";
 const root = resolve(__dirname, "..");
 const state = join(root, ".local/stack-ui");
 const evidence = join(root, ".local/evidence/app-frames");
 const credentials = JSON.parse(readFileSync(join(state, "credentials.json"), "utf8")) as Record<string, string>;
 const suffix = Date.now().toString(36);
-// MIY_FRAME_APPS=todoId,probeId reuses apps an earlier run deployed: every
+// Apps are deployed once per stack and shared by every browser project: each
 // installation takes a Docker network from the host's limited address pools.
-const reuse = process.env.MIY_FRAME_APPS?.split(",");
+const deployed = join(state, "frame-apps.json");
+const reuse = existsSync(deployed)
+  ? (JSON.parse(readFileSync(deployed, "utf8")) as string[])
+  : process.env.MIY_FRAME_APPS?.split(",");
 const todoId = reuse?.[0] ?? "ui5-todo" + suffix;
 const probeId = reuse?.[1] ?? "ui5-probe" + suffix;
+const plainId = reuse?.[2] ?? "ui5-plain" + suffix;
+const frameOrigins = new Set<string>();
 const work = join(state, "work", "frames-" + suffix);
 const adminDir = join(work, "admin");
 const env = fixtureEnv(work, {
@@ -64,6 +70,7 @@ return <section><h1 data-testid="probe">Frame probe</h1>
 <input aria-label="probe draft" data-testid="draft" value={draft} onChange={e=>{setDraft(e.target.value);runtime.setNavigationState({dirty:!!e.target.value,message:'probe draft unsaved'});}}/>
 <button onClick={probes}>run probes</button><button onClick={download}>download</button>
 <button onClick={()=>alert('frame-modal')}>modal</button>
+<button onClick={()=>{let printed='no';const mark=()=>{printed='beforeprint'};addEventListener('beforeprint',mark,{once:true});try{window.print();}catch(e){printed=(e as Error).name;}setOut(JSON.stringify({print:printed}));}}>print</button>
 <a href="https://example.invalid/outside">outside link</a>
 <a href={runtime.basePath+'/detail?x=1'}>inside link</a>
 <output data-testid="location">{runtime.location.pathname+runtime.location.search}</output>
@@ -124,11 +131,27 @@ test.beforeAll(async () => {
   writeFileSync(join(probe, "web/src/AppRoot.tsx"), PROBE);
   writeFileSync(join(probe, "src/main.rs"), PROBE_RUST);
   deploy(probe);
+  deploy(scaffold(plainId, "기본 앱 " + suffix));
+  writeFileSync(deployed, JSON.stringify([todoId, probeId, plainId]));
 });
 
+const profile = process.env.STACK_UI_HOSTS === "1" ? "hosts" : "ports";
 test.afterAll(() => {
-  writeFileSync(join(evidence, `observations-${test.info().project.name}.json`), JSON.stringify(observations, null, 2));
+  observations.profile = profile;
+  observations.frameOrigins = [...frameOrigins];
+  writeFileSync(
+    join(evidence, `observations-${profile}-${test.info().project.name}.json`),
+    JSON.stringify(observations, null, 2),
+  );
 });
+
+/** Resident memory of this run's Playwright-managed browser processes, in MiB. */
+function browserRssMb(name: string) {
+  const marker = `ms-playwright/${name === "chromium" ? "chromium" : name}`;
+  const rows = execFileSync("ps", ["-eo", "rss=,args="], { encoding: "utf8" }).split("\n");
+  const kib = rows.filter((row) => row.includes(marker)).reduce((sum, row) => sum + Number(row.trim().split(/\s+/)[0] || 0), 0);
+  return Math.round(kib / 1024);
+}
 
 async function signIn(browser: Browser, user: string): Promise<{ context: BrowserContext; page: Page }> {
   const context = await browser.newContext({ acceptDownloads: true });
@@ -149,7 +172,10 @@ async function appFrame(page: Page): Promise<Frame> {
   const element = page.locator("iframe.app-frame");
   await expect(element).toBeVisible();
   const frame = await (await element.elementHandle())!.contentFrame();
-  await expect.poll(() => frame?.url() ?? "").toMatch(/^http:\/\/localhost:183(2\d)\/_miy\/launch$/);
+  await expect.poll(() => frame?.url() ?? "").toMatch(/^http:\/\/[^/]+\/_miy\/launch$/);
+  const frameOrigin = new URL(frame!.url()).origin;
+  expect([origin, devPortal]).not.toContain(frameOrigin);
+  frameOrigins.add(frameOrigin);
   return frame!;
 }
 
@@ -277,5 +303,95 @@ test("FV-04/06/07/10: the frame cannot reach the portal, abuse the bridge or use
     (row: { appId: string }) => row.appId === probeId,
   );
   expect((await context.request.get(`${devPortal}/api/v1/installations/${installation.id}/api/ping`)).status()).toBe(403);
+  await context.close();
+});
+
+test("FV-07: print, keyboard focus and an accessible frame name", async ({ browser }, info) => {
+  const { context, page } = await signIn(browser, "developer");
+  const lines: string[] = [];
+  page.on("console", (message) => lines.push(message.text()));
+  await page.goto(appPath(probeId));
+  const frame = await appFrame(page);
+  await expect(frame.getByTestId("probe")).toBeVisible();
+  // Assistive technology names the frame after the app.
+  await expect(page.locator("iframe.app-frame")).toHaveAttribute("title", /\S/);
+  // Keyboard: Tab from the portal reaches the app input inside the frame, and
+  // Shift+Tab from there returns to the portal (the frame does not trap focus).
+  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+  const inFrame = () => page.evaluate(() => document.activeElement?.tagName === "IFRAME");
+  let entered = false;
+  for (let step = 0; step < 40 && !entered; step++) {
+    await page.keyboard.press("Tab");
+    entered = (await inFrame()) && (await frame.evaluate(() => document.activeElement?.getAttribute("data-testid"))) === "draft";
+  }
+  let left = false;
+  for (let step = 0; step < 5 && entered && !left; step++) {
+    await page.keyboard.press("Shift+Tab");
+    left = !(await inFrame());
+  }
+  observations.keyboard = { entered, left };
+  expect(entered && left).toBe(true);
+  // Printing is allowed inside the sandbox (allow-modals). Headless Firefox opens a
+  // real print dialog that blocks the frame and later breaks the automation's
+  // dialog handling, so print runs only in the other browsers.
+  if (info.project.name === "firefox") {
+    observations.print = "skipped: headless Firefox opens a blocking print dialog (not refused by the sandbox)";
+    await context.close();
+    return;
+  }
+  await Promise.race([frame.getByRole("button", { name: "print" }).click(), page.waitForTimeout(5000)]);
+  await page.waitForTimeout(500);
+  observations.print = await Promise.race([
+    frame.getByTestId("result").textContent(),
+    page.waitForTimeout(2000).then(() => "blocked by a print dialog"),
+  ]);
+  expect(lines.filter((line) => /sandbox|allow-modals/i.test(line) && /print/i.test(line))).toEqual([]);
+  await context.close();
+});
+
+test("FV-08: open time and memory with one to three apps, one frame or all kept", async ({ browser }, info) => {
+  test.setTimeout(600000);
+  const { context, page } = await signIn(browser, "developer");
+  const name = info.project.name;
+  const apps = [todoId, probeId, plainId];
+  const baseline = browserRssMb(name);
+  // Current policy: leaving an app removes its frame, so one frame is alive.
+  const sequential: { app: number; openMs: number; rssMb: number }[] = [];
+  for (const [index, id] of apps.entries()) {
+    const started = Date.now();
+    await page.goto(appPath(id));
+    const frame = await appFrame(page);
+    await frame.locator("#miy-frame-root *").first().waitFor();
+    sequential.push({ app: index + 1, openMs: Date.now() - started, rssMb: browserRssMb(name) });
+  }
+  // The keep-alive alternative (D5): every opened app's frame stays alive.
+  const kept: { frames: number; rssMb: number }[] = [];
+  for (const [index, id] of apps.entries()) {
+    const tab = index === 0 ? page : await context.newPage();
+    if (index) await tab.goto(appPath(id));
+    await (await appFrame(tab)).locator("#miy-frame-root *").first().waitFor();
+    kept.push({ frames: index + 1, rssMb: browserRssMb(name) });
+  }
+  observations.multiApp = { baselineRssMb: baseline, sequential, kept };
+  await context.close();
+});
+
+test("FV-09: an installation keeps its frame origin across a Core restart", async ({ browser }) => {
+  test.setTimeout(300000);
+  const { context, page } = await signIn(browser, "developer");
+  await page.goto(appPath(todoId));
+  const before = new URL((await appFrame(page)).url()).origin;
+  const services = { ...process.env, MIY_STATE_DIR: state, MIY_DATABASE_CONTAINER: "miy-stack-ui-postgres-1" };
+  execFileSync("python3", ["scripts/services.py", "stop", "serve"], { cwd: root, env: services });
+  execFileSync("python3", ["scripts/services.py", "start", "serve"], { cwd: root, env: services });
+  await expect
+    .poll(async () => (await context.request.get(devPortal + "/api/health").catch(() => null))?.status() ?? 0, {
+      timeout: 60000,
+    })
+    .toBe(200);
+  await page.reload();
+  const after = new URL((await appFrame(page)).url()).origin;
+  observations.restartOrigin = { before, after };
+  expect(after).toBe(before);
   await context.close();
 });

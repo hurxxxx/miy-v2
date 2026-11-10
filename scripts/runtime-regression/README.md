@@ -59,13 +59,7 @@ Run UI harness ownership checks with mocked Docker/service commands, without a D
 python3 scripts/runtime-regression/test_ui_cleanup.py
 ```
 
-Remote app rendering before and after a shell change:
-
-```sh
-node scripts/runtime-regression/app-css-baseline.mjs <base-commit>
-```
-
-It builds the base platform in a temporary git worktree, loads the reference fixture app in both shells with mocked APIs and writes computed-style differences and screenshots to `.local/evidence/app-css-baseline/`.
+Business apps run in their own frame origin (docs/APP-FRAMES.md), so shell CSS no longer reaches app elements; `tests/platform-shell.spec.ts` checks that the app document loads only its own origin's styles.
 
 The CLI 0.5 suites additionally check permission-scoped pagination, atomic event cursors, preflight/expected-state and confirmation rejection, typed retry, idempotent upload receipts, bounded worker logs, concurrent real CLI refresh, typed JSON input and request-ID resume. Two blocked log diagnostics must allow a production start to complete; the owned app prints 2 MiB so collection must truncate to 1 MiB. Neither test reads an unrelated container's logs.
 

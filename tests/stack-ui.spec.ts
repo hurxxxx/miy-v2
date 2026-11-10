@@ -11,6 +11,10 @@ import { cliData } from "../scripts/lib/cli-result.mjs";
 // Keycloak login, a CLI-deployed Docker app with real health, controls and release
 // change, and permission revocation while the app is open.
 const origin = "http://localhost:18300";
+const devPortalOrigin = "http://localhost:18307";
+const consoleOrigin = "http://localhost:18305";
+// Business apps run in their own frame origin (docs/APP-FRAMES.md).
+const appFrame = (page: Page) => page.frameLocator("iframe.app-frame");
 const root = resolve(__dirname, "..");
 const state = join(root, ".local/stack-ui");
 const credentials = JSON.parse(readFileSync(join(state, "credentials.json"), "utf8")) as Record<string, string>;
@@ -55,11 +59,11 @@ function writeApp(version: string) {
     `import {useState,useEffect} from 'react';import type {AppProps} from '@miy/sdk';
 export default function AppRoot({runtime}:AppProps){const [draft,setDraft]=useState('');
 const [boundary,setBoundary]=useState('');
-async function checkBoundary(){const me=await (await fetch('/api/v1/me')).json();
-const changed=await fetch('/api/v1/apps',{method:'POST',headers:{'Content-Type':'application/json','x-miy-csrf':me.csrf},body:JSON.stringify({id:'boundary-${appId}',name:'경계 확인 앱'})});
-let consoleReadable=false;try{await fetch(me.consoleOrigin+'/api/v1/me',{credentials:'include'});consoleReadable=true;}catch{}
-setBoundary(JSON.stringify({managementStatus:changed.status,consoleReadable}));}
-useEffect(()=>runtime.registerNavigationGuard(()=>draft?'저장하지 않은 입력이 있습니다':undefined),[runtime.registerNavigationGuard,draft]);
+async function checkBoundary(){let portalReadable=false;try{await (await fetch('${devPortalOrigin}/api/v1/me',{credentials:'include'})).json();portalReadable=true;}catch{}
+let managementStatus=0;try{managementStatus=(await fetch('${devPortalOrigin}/api/v1/apps',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:'boundary-${appId}',name:'경계 확인 앱'})})).status;}catch{managementStatus=-1;}
+let consoleReadable=false;try{await fetch('${consoleOrigin}/api/v1/me',{credentials:'include'});consoleReadable=true;}catch{}
+setBoundary(JSON.stringify({portalReadable,managementStatus,consoleReadable}));}
+useEffect(()=>runtime.setNavigationState({dirty:!!draft,message:'저장하지 않은 입력이 있습니다'}),[runtime.setNavigationState,draft]);
 return <section><h1 data-testid="probe-version">UI5 probe ${version}</h1><input aria-label="메모" data-testid="draft" value={draft} onChange={e=>setDraft(e.target.value)}/><button onClick={checkBoundary}>경계 확인</button><output data-testid="boundary-result">{boundary}</output></section>;}`,
   );
   writeFileSync(join(appDir, "src/main.rs"), `use axum::{Json, Router, response::Html, routing::get};
@@ -162,7 +166,8 @@ test("deployed Docker app opens in the portal and runtime controls stay on the c
   await expect(card.getByRole("button", { name: "중지" })).toHaveCount(0);
   await card.getByRole("link", { name: "앱 열기 →" }).click();
   await expect(page).toHaveURL(new RegExp(`/environments/dev/apps/${appId}$`));
-  await expect(page.locator(`.miy-app-root[data-miy-app="${appId}"]`).getByTestId("probe-version")).toHaveText("UI5 probe 0.1.0");
+  await expect(appFrame(page).getByTestId("probe-version")).toHaveText("UI5 probe 0.1.0");
+  await expect(page.locator(".miy-app-root")).toHaveCount(0);
   await expect(page.locator("#platform-navigation").getByRole("link", { name: appName })).toHaveAttribute("aria-current", "page");
   await expect(page.getByText(/컨테이너:|마지막 서비스 검사:/)).toHaveCount(0);
   expect(manifests).toContain(200);
@@ -211,24 +216,24 @@ test("unsaved input blocks shell navigation, and a new release asks for a reload
     await d[answer]();
   });
   await page.goto(`/environments/dev/apps/${appId}`);
-  await page.getByTestId("draft").fill("작성 중");
+  await appFrame(page).getByTestId("draft").fill("작성 중");
   await page.locator("#platform-navigation").getByRole("link", { name: "홈", exact: true }).click();
   await expect.poll(() => dialogs.length).toBe(1);
   await expect(page).toHaveURL(new RegExp(`/apps/${appId}$`));
-  await expect(page.getByTestId("draft")).toHaveValue("작성 중");
+  await expect(appFrame(page).getByTestId("draft")).toHaveValue("작성 중");
 
   writeApp("0.2.0");
   await expect(page.locator(".app-session-bar")).toContainText("앱 상태가 변경되었습니다", { timeout: 30000 });
   answer = "accept";
   await page.getByRole("button", { name: "새로고침" }).click();
-  await expect(page.getByTestId("probe-version")).toHaveText("UI5 probe 0.2.0", { timeout: 60000 });
+  await expect(appFrame(page).getByTestId("probe-version")).toHaveText("UI5 probe 0.2.0", { timeout: 60000 });
   await expect(page.getByText(/컨테이너:|마지막 서비스 검사:/)).toHaveCount(0);
   await page.screenshot({ path: join(root, ".local/evidence/stack-ui/app.png"), fullPage: true });
   await context.close();
   checks.push("navigation-guard", "release-change");
 });
 
-test("a real portal module cannot use console privileges or read the IdP, and API HTML cannot execute", async ({ browser }) => {
+test("a real app frame cannot use portal or console sessions or read the IdP, and portal cookies cannot reach app APIs", async ({ browser }) => {
   const { context, page } = await signIn(browser, "admin");
   try {
     // Keep both purpose cookies in the same browser context. A CORS failure with
@@ -240,11 +245,14 @@ test("a real portal module cannot use console privileges or read the IdP, and AP
     expect((await consoleMe.json()).browserPurpose).toBe("console");
     const devOrigin = await surfaceOrigin(context, "dev_portal");
     await page.goto(`${devOrigin}/environments/dev/apps/${appId}`);
-    await expect(page.getByTestId("probe-version")).toHaveText("UI5 probe 0.2.0");
-    await expect(page.locator("iframe")).toHaveCount(0);
-    // This button and the fetch calls are part of the built, deployed MF module.
-    await page.getByRole("button", { name: "경계 확인", exact: true }).click();
-    await expect(page.getByTestId("boundary-result")).toHaveText(JSON.stringify({ managementStatus: 403, consoleReadable: false }));
+    await expect(appFrame(page).getByTestId("probe-version")).toHaveText("UI5 probe 0.2.0");
+    await expect(page.locator("iframe")).toHaveCount(1);
+    // This button and the fetch calls are part of the built, deployed app, running
+    // on its own frame origin: portal and console sessions are other origins.
+    await appFrame(page).getByRole("button", { name: "경계 확인", exact: true }).click();
+    await expect(appFrame(page).getByTestId("boundary-result")).toHaveText(
+      JSON.stringify({ portalReadable: false, managementStatus: -1, consoleReadable: false }),
+    );
 
     const identityUrl = consoleOrigin + "/identity/realms/miy/protocol/openid-connect/auth";
     const identity = await context.request.get(identityUrl);
@@ -267,26 +275,17 @@ test("a real portal module cannot use console privileges or read the IdP, and AP
       });
     }, identityUrl);
     expect(frame).toEqual({ loaded: true, readable: false });
-    await expect(page.locator("iframe")).toHaveCount(0);
+    await expect(page.locator("iframe")).toHaveCount(1);
 
+    // Portal and console cookies no longer reach app APIs (app frames use their
+    // own credential; API HTML sandboxing is covered by the isolated regression).
     const apiPath = `/api/v1/installations/${installation().id}/api/boundary-html`;
-    const html = await context.request.get(devOrigin + apiPath);
-    expect(html.status()).toBe(200);
-    expect(html.headers()["content-type"]).toContain("text/html");
-    expect(html.headers()["content-security-policy"]).toContain("sandbox");
-    expect(html.headers()["x-content-type-options"]).toBe("nosniff");
-    const denied = await context.request.get(consoleOrigin + apiPath);
-    expect([403, 404]).toContain(denied.status());
-    // The prod portal never serves a dev installation, even with a signed-in admin.
+    expect((await context.request.get(devOrigin + apiPath)).status()).toBe(403);
+    expect([403, 404]).toContain((await context.request.get(consoleOrigin + apiPath)).status());
     await signInPage(context, "admin", "portal");
     expect((await context.request.get(origin + apiPath)).status()).toBe(403);
-    const htmlPage = await context.newPage();
-    await htmlPage.goto(devOrigin + apiPath);
-    await expect(htmlPage.getByRole("heading", { name: "Boundary HTML probe", exact: true })).toBeVisible();
-    expect(await htmlPage.evaluate(() => (window as typeof window & { __boundaryHtmlExecuted?: boolean }).__boundaryHtmlExecuted)).toBeUndefined();
-    await htmlPage.close();
     await consolePage.close();
-    checks.push("real-mf-portal-management-denied", "authenticated-console-cross-origin-read-denied", "idp-dom-and-framing-denied", "api-html-sandbox-nosniff");
+    checks.push("real-app-frame-portal-and-management-denied", "authenticated-console-cross-origin-read-denied", "idp-dom-and-framing-denied", "portal-cookie-app-api-denied");
   } finally { await context.close(); }
 });
 
@@ -298,7 +297,7 @@ test("revoking a user's permission while the app is open", async ({ browser }) =
   const user = await signIn(browser, "alice");
   const rail = user.page.locator("#platform-navigation");
   await rail.getByRole("link", { name: appName }).click();
-  await expect(user.page.getByTestId("probe-version")).toHaveText("UI5 probe 0.2.0");
+  await expect(appFrame(user.page).getByTestId("probe-version")).toHaveText("UI5 probe 0.2.0");
   await expect(appCard(user.page)).toHaveCount(0);
 
   expect((await grant(false)).ok()).toBeTruthy();

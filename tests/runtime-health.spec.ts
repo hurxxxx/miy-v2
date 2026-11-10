@@ -2,6 +2,7 @@ import { browserUser, mockSurface } from "./browser-surface";
 import { test, expect } from "@playwright/test";
 import type { Installation } from "../packages/sdk/src/index";
 import { openNewTab } from "./new-tab";
+import { mockFrames } from "./frame-mock";
 
 test("service health changes independently from process controls", async ({
   page,
@@ -100,7 +101,8 @@ test("service health changes independently from process controls", async ({
   expect(writes).toBe(0);
 });
 
-// Load a real Federation module, with synthetic API data and no platform writes.
+const app = (page: import("@playwright/test").Page) => page.frameLocator("iframe.app-frame");
+// Load a real Federation module in its frame, with synthetic API data and no platform writes.
 async function appHarness(page: import("@playwright/test").Page) {
   await mockSurface(page);
   const { resolve, sep } = await import("node:path");
@@ -144,16 +146,6 @@ async function appHarness(page: import("@playwright/test").Page) {
   const apps = [first, second, production],
     apiCalls: string[] = [];
   let hold: ((route: import("@playwright/test").Route) => void) | undefined;
-  await page.route("**/artifacts/health-fixture/**", async (route) => {
-    const path = resolve(
-      remote,
-      new URL(route.request().url()).pathname.slice(
-        "/artifacts/health-fixture/".length,
-      ),
-    );
-    expect(path.startsWith(remote + sep)).toBe(true);
-    await route.fulfill({ path });
-  });
   await page.route("**/api/**", async (route) => {
     expect(route.request().method()).toBe("GET");
     const path = new URL(route.request().url()).pathname;
@@ -163,8 +155,6 @@ async function appHarness(page: import("@playwright/test").Page) {
       pending(route);
       return;
     }
-    if (path.includes("/api/document") || path.includes("/api/probe"))
-      apiCalls.push(path);
     await route.fulfill({
       json:
         path === "/api/v1/me"
@@ -174,8 +164,16 @@ async function appHarness(page: import("@playwright/test").Page) {
             : { title: "저장된 제목" },
     });
   });
+  // Apps run in their own frames; their API reaches this mock by frame origin. A
+  // call signed with an old release is refused like the server does (409).
+  await mockFrames(page, () => apps, (installation, path, _method, release) => {
+    if (release !== installation.releaseId)
+      return { status: 409, json: { error: { code: "release_changed_reload_required" } } };
+    apiCalls.push(`/api/v1/installations/${installation.id}/api${path}`);
+    return { json: { title: "저장된 제목" } };
+  });
   await page.goto("/environments/dev/apps/first-app");
-  await expect(page.getByLabel("문서 제목")).toHaveValue("저장된 제목");
+  await expect(app(page).getByLabel("문서 제목")).toHaveValue("저장된 제목");
   return {
     apps,
     first,
@@ -193,7 +191,7 @@ test("health observations preserve SDK callbacks and unsaved input; release chan
   page,
 }) => {
   const { first, apiCalls } = await appHarness(page);
-  const input = page.getByLabel("문서 제목");
+  const input = app(page).getByLabel("문서 제목");
   await input.fill("미저장 내용");
   const reads = apiCalls.length;
   first.health = {
@@ -221,10 +219,12 @@ test("health observations preserve SDK callbacks and unsaved input; release chan
   expect(apiCalls.length).toBe(reads);
   first.releaseId = "30000000-0000-4000-8000-000000000001";
   await expect(page.getByText("앱 상태가 변경되었습니다")).toBeVisible();
-  await page.getByRole("button", { name: "API 확인" }).click();
-  await expect(page.getByTestId("api-error")).toContainText(
+  // The frame's call carries its launched release: refused, and the frame stops.
+  await app(page).getByRole("button", { name: "API 확인" }).click();
+  await expect(app(page).getByTestId("api-error")).toContainText(
     "release_changed_reload_required",
   );
+  await app(page).getByRole("button", { name: "API 확인" }).click();
   await expect(input).toHaveValue("미저장 내용");
   expect(apiCalls.length).toBe(reads);
 });
@@ -252,17 +252,17 @@ for (const target of ["app"] as const) {
     const pending = await harness.holdNextPoll();
     const next = harness.second;
     await page.getByRole("link", { name: "두 번째 앱", exact: true }).click();
-    await expect(page.getByTestId("installation")).toHaveText(next.id);
+    await expect(app(page).getByTestId("installation")).toHaveText(next.id);
     harness.first.health = {
       ...harness.first.health!,
       checkedAt: new Date(Date.now() + 5000).toISOString(),
     };
     await pending.fulfill({ json: harness.apps });
-    await page.getByRole("button", { name: "API 확인" }).click();
+    await app(page).getByRole("button", { name: "API 확인" }).click();
     await expect
       .poll(() => harness.apiCalls.at(-1))
       .toBe(`/api/v1/installations/${next.id}/api/probe`);
-    await expect(page.getByTestId("installation")).toHaveText(next.id);
+    await expect(app(page).getByTestId("installation")).toHaveText(next.id);
     await expect(page).toHaveURL(
       new RegExp(`/environments/${next.environment}/apps/${next.appId}$`),
     );

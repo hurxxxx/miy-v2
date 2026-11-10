@@ -430,6 +430,9 @@ pub async fn run(
     let a = h.app(&a_id, &a_permissions).await?;
     let b = h.app(&b_id, &b_permissions).await?;
     let c = h.app(&c_id, std::slice::from_ref(&directory)).await?;
+    // Later installations for origin reuse and pool exhaustion (frames borrow h).
+    let d = h.app(&format!("frame-d-{suffix}"), &[]).await?;
+    let e = h.app(&format!("frame-e-{suffix}"), &[]).await?;
     let user = h.user().await?;
     for app in [&a, &b, &c] {
         h.grant(&user, app).await?;
@@ -1098,5 +1101,71 @@ pub async fn run(
     )
     .await?;
     passed.push("portal cookie sessions no longer reach app APIs, connections, directory or UI artifacts; CLI bearers keep the published Core address".into());
+
+    // 9. A removed installation's origin stops resolving and is never reassigned.
+    let c_frame = h.open(&dev, &c).await?;
+    sqlx::query("UPDATE app_frame_origins SET installation_id=NULL WHERE origin=$1")
+        .bind(&c_frame.origin)
+        .execute(&state.pool)
+        .await?;
+    status(
+        c_frame
+            .request(Method::GET, "/_miy/platform/directory")
+            .send()
+            .await?,
+        404,
+    )
+    .await?;
+    h.grant(&user, &d).await?;
+    let d_frame = h.open(&dev, &d).await?;
+    let taken: Vec<String> = sqlx::query_scalar("SELECT origin FROM app_frame_origins")
+        .fetch_all(&state.pool)
+        .await?;
+    ensure!(
+        d_frame.origin != c_frame.origin
+            && taken.iter().filter(|o| **o == d_frame.origin).count() == 1,
+        "a removed installation's frame origin was handed to another installation"
+    );
+    passed.push("a removed installation's frame origin stops resolving and is never handed to another installation".into());
+
+    // 10. An exhausted port pool refuses launches explicitly, never sharing origins.
+    let prefix = d_frame
+        .origin
+        .rsplit_once(':')
+        .context("pool origin port")?
+        .0
+        .to_owned();
+    let filled = sqlx::query("INSERT INTO app_frame_origins(origin,port) SELECT $1||':'||p,p FROM generate_series(1,65535) p WHERE p BETWEEN 47100 AND 47399 ON CONFLICT DO NOTHING")
+        .bind(&prefix)
+        .execute(&state.pool)
+        .await?
+        .rows_affected();
+    h.grant(&user, &e).await?;
+    let exhausted = json(
+        launch_code(
+            client,
+            state,
+            &dev,
+            auth::BrowserPurpose::DevPortal,
+            e.installation,
+        )
+        .await?,
+        503,
+    )
+    .await?;
+    ensure!(
+        exhausted["error"]["code"] == "app_frame_origin_pool_exhausted",
+        "pool exhaustion lost its stable code"
+    );
+    sqlx::query("DELETE FROM app_frame_origins WHERE installation_id IS NULL AND port BETWEEN 47100 AND 47399 AND origin<>$1")
+        .bind(&c_frame.origin)
+        .execute(&state.pool)
+        .await?;
+    let e_frame = h.open(&dev, &e).await?;
+    ensure!(
+        filled > 0 && e_frame.origin != c_frame.origin,
+        "the pool did not recover or reused a removed origin"
+    );
+    passed.push("an exhausted frame port pool refuses launches with app_frame_origin_pool_exhausted instead of sharing an origin, and recovers when ports are free".into());
     Ok(passed)
 }

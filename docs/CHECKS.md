@@ -31,7 +31,7 @@ GitHub Actions는 `cli-foundation.yml`(Linux 서버·Linux/macOS/Windows 클라�
 | core migration(`migrations/core`) | `check-static.sh rust`, `run.py` | 이미 적용한 파일은 고치지 않고 새 번호로 추가(sqlx가 checksum 불일치를 거부). 운영 반영 전 `python3 scripts/core-backup.py create`로 대상 DB를 백업하고 `verify --migrate-with <서버 바이너리>`로 일회용 PostgreSQL에서 복원·migration 리허설 |
 | CLI 클라이언트(`--no-default-features` 경로) | `check-static.sh rust` | `cargo build --locked --no-default-features` 후 `python3 scripts/check-cli-output.py --cli target/debug/miy`, `check-cli-install.py`, `check-cli-recovery.py`. macOS·Windows는 CI 매트릭스 |
 | 개발 번들·템플릿·CLI 지침(`templates/`, `crates/miy/guidance/`, `registry/`) | `check-static.sh rust`(번들 바이트 검사 포함) | 지침·업그레이드: 이전 기준 CLI를 `MIY_PREVIOUS_BUNDLE_CLI`로 지정하고 `node scripts/check-cli-guidance.mjs`. 번들 버전 변경은 [CLI 릴리스](CLI-RELEASE.md) 절차 |
-| 플랫폼 웹(`web/platform`) | `check-static.sh web` | 셸 CSS: `node scripts/runtime-regression/app-css-baseline.mjs <기준 commit>`. 실제 core 연동: `cargo build` 후 `pnpm exec playwright test --config scripts/runtime-regression/server-ui.config.ts`. 인증·앱 배포 전체: `stack-ui.sh run` |
+| 플랫폼 웹(`web/platform`) | `check-static.sh web` | 업무 앱 프레임: `stack-ui.sh up` 후 `pnpm exec playwright test -c scripts/runtime-regression/app-frames.config.ts`(브라우저는 `MIY_FRAME_BROWSERS`). 실제 core 연동: `cargo build` 후 `pnpm exec playwright test --config scripts/runtime-regression/server-ui.config.ts`. 인증·앱 배포 전체: `stack-ui.sh run` |
 | SDK·공용 UI(`packages/sdk`, `registry/components`) | `check-static.sh web` | 게시된 불변 버전 디렉터리는 수정하지 않고 새 버전을 추가. 컴포넌트 설치·갱신 흐름: 로컬 개발 스택에서 `node scripts/check-components.mjs` |
 | 검증·정리 스크립트(`scripts/`) | `check-static.sh scripts` | 자원을 지우는 스크립트는 소유 표식·기존 자원 보존을 stub 테스트로 확인 |
 | 릴리스·설치 파일(`scripts/package-*`, `stage-*`, 릴리스 workflow) | `check-static.sh scripts` | GitHub Actions 후보 실행(`publish=false`) 후 `package-cli-release.py verify`, `package-windows-installer.py verify`. Windows 11 실제 설치는 [Windows 인수](WINDOWS-ACCEPTANCE.md)로 사용자가 수행 |
@@ -50,7 +50,7 @@ GitHub Actions는 `cli-foundation.yml`(Linux 서버·Linux/macOS/Windows 클라�
 
 | spec | 설정 | 서버 |
 | --- | --- | --- |
-| `runtime-health`, `platform-shell`, `runtime-confirmation`, `platform-css-isolation` | `scripts/runtime-regression/ui.config.ts` | 격리 빌드 preview + 모의 API |
+| `runtime-health`, `platform-shell`, `runtime-confirmation` | `scripts/runtime-regression/ui.config.ts` | 격리 빌드 preview + 모의 API·모의 앱 프레임(`tests/frame-mock.ts`) |
 | `cli-experience`, `cli-install` | `tests/cli-experience.config.ts` | Vite dev 서버 + 모의 API |
 | `surface-boundaries` | `tests/surface-boundaries.config.ts` | 세 목적의 UI·환경별 이동 계약과 콘솔의 MF 미적재를 검사하는 모의 서버 |
 | `http-ip` | `scripts/runtime-regression/http-ui.config.ts` | 비 loopback IPv4의 격리 preview |

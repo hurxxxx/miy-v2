@@ -13,6 +13,18 @@ PROJECT=miy-stack-ui
 ORIGIN=http://localhost:18300
 CONSOLE_ORIGIN=http://localhost:18305
 DEV_PORTAL_ORIGIN=http://localhost:18307
+# App frames: a port pool on the portal host (P3), or with STACK_UI_HOSTS=1 every
+# surface and frame on its own *.localhost hostname (browsers treat these as
+# separate sites, like an app domain).
+FRAME_ARGS=(--app-frame-ports 18320-18329)
+FRAME_PORTS=$(seq 18320 18329)
+if [ "${STACK_UI_HOSTS:-0}" = 1 ]; then
+  ORIGIN=http://portal.localhost:18300
+  CONSOLE_ORIGIN=http://console.localhost:18305
+  DEV_PORTAL_ORIGIN=http://dev.localhost:18307
+  FRAME_ARGS=(--allow-http --app-frame-origin 'http://v2-app-{key}.localhost:18330')
+  FRAME_PORTS=18330
+fi
 DB=$PROJECT-postgres-1
 EVIDENCE=$ROOT/.local/evidence/stack-ui
 OWNER_FILE=$STATE/.stack-ui-owner
@@ -38,7 +50,7 @@ up() {
   if [ -n "$resources" ]; then
     echo "stack-ui resources already exist; refusing to adopt or remove them" >&2; exit 1
   fi
-  for port in 18300 18301 18302 18303 18304 18305 18306 18307 18308 18309 $(seq 18320 18329); do
+  for port in 18300 18301 18302 18303 18304 18305 18306 18307 18308 18309 $FRAME_PORTS; do
     if ss -ltn "sport = :$port" | grep -q LISTEN; then echo "port $port is in use" >&2; exit 1; fi
   done
   # The atomic mkdir is also the single-run lock. A rejected/concurrent run must
@@ -58,7 +70,7 @@ up() {
     --bind 127.0.0.1:18304 --console-bind 127.0.0.1:18306 \
     --postgres-port 18301 --identity-port 18302 --http-port 18300 --https-port 18303 \
     --console-http-port 18305 --no-shared-development-login \
-    --app-frame-bind 127.0.0.1:18309 --app-frame-ports 18320-18329
+    --app-frame-bind 127.0.0.1:18309 "${FRAME_ARGS[@]}"
   pnpm --filter @miy/platform exec vite build --mode production --outDir "$STATE/site" --emptyOutDir
   # Business app frames load the platform frame runtime from their own origin.
   pnpm --filter @miy/frame-runtime exec vite build --mode production --outDir "$STATE/frame-runtime" --emptyOutDir
