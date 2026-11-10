@@ -22,7 +22,9 @@ if [ "${STACK_UI_HOSTS:-0}" = 1 ]; then
   ORIGIN=http://portal.localhost:18300
   CONSOLE_ORIGIN=http://console.localhost:18305
   DEV_PORTAL_ORIGIN=http://dev.localhost:18307
-  FRAME_ARGS=(--allow-http --app-frame-origin 'http://v2-app-{key}.localhost:18330')
+  # Hostnames are not "localhost", so the CLI fixture's development accounts need
+  # the explicit shared development login (browsers still sign in with Keycloak).
+  FRAME_ARGS=(--allow-http --app-frame-origin 'http://v2-app-{key}.localhost:18330' --shared-development-login)
   FRAME_PORTS=18330
 fi
 DB=$PROJECT-postgres-1

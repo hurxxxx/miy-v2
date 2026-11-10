@@ -95,10 +95,36 @@ async fn main() -> anyhow::Result<()> {
 }
 `;
 
-function scaffold(id: string, name: string) {
+// The CLI's development accounts work only for a loopback origin; on hostnames the
+// fixture signs the CLI in through the real device approval in the console.
+const loopback = ["localhost", "127.0.0.1"].includes(new URL(origin).hostname);
+async function cliLogin(browser: Browser, account: string, dir: string) {
+  if (loopback) return cli(["auth", "login", "--account", account, "--url", origin], dir);
+  const pending = cli(["auth", "login", "--url", origin], dir) as { loginId: string; userCode: string; verificationUrl: string };
+  const context = await browser.newContext();
+  const page = await context.newPage();
+  await page.goto(pending.verificationUrl);
+  const signIn = page.getByRole("link", { name: /^(OAuth로 로그인|로그인)$/ });
+  await Promise.race([signIn.waitFor(), page.getByLabel("인증 코드").waitFor()]);
+  if (await signIn.isVisible()) {
+    await signIn.click();
+    await page.locator("#username").fill(account);
+    await page.locator("#password").fill(credentials[account]!);
+    await page.locator("#kc-login").click();
+    await expect(page.getByRole("button", { name: "로그아웃" })).toBeVisible();
+    if (!(await page.getByLabel("인증 코드").isVisible())) await page.goto(pending.verificationUrl);
+  }
+  await page.getByLabel("인증 코드").fill(pending.userCode);
+  await page.getByRole("button", { name: "이 계정으로 CLI 연결 승인" }).click();
+  await expect(page.getByRole("status")).toContainText("CLI 연결을 승인했습니다");
+  await context.close();
+  return cli(["auth", "wait", pending.loginId], dir);
+}
+
+async function scaffold(browser: Browser, id: string, name: string) {
   const dir = join(work, id);
   cli(["init", dir, "--id", id, "--name", name], work);
-  cli(["auth", "login", "--account", "developer", "--url", origin], dir);
+  await cliLogin(browser, "developer", dir);
   cli(["component", "sync"], dir);
   const registration = cli(["register"], dir) as { id: string };
   cli(["registration", "approve", registration.id], adminDir);
@@ -114,24 +140,24 @@ function deploy(dir: string) {
 
 test.describe.configure({ mode: "serial" });
 
-test.beforeAll(async () => {
+test.beforeAll(async ({ browser }) => {
   test.setTimeout(1800000);
   mkdirSync(adminDir, { recursive: true });
   mkdirSync(evidence, { recursive: true });
   if (reuse) return;
   copyFileSync(join(root, "target/debug/miy"), binary);
-  cli(["auth", "login", "--account", "admin", "--url", origin], adminDir);
+  await cliLogin(browser, "admin", adminDir);
   cli(["component", "publish", join(root, "registry/components/ui/1.0.1")], adminDir);
   // The real business app: examples/native-todo business files on a fresh scaffold.
-  const todo = scaffold(todoId, "할 일 실증 " + suffix);
+  const todo = await scaffold(browser, todoId, "할 일 실증 " + suffix);
   for (const part of ["src", "web/src", "migrations/0002_todos.sql"])
     cpSync(join(root, "examples/native-todo", part), join(todo, part), { recursive: true });
   deploy(todo);
-  const probe = scaffold(probeId, "프레임 프로브 " + suffix);
+  const probe = await scaffold(browser, probeId, "프레임 프로브 " + suffix);
   writeFileSync(join(probe, "web/src/AppRoot.tsx"), PROBE);
   writeFileSync(join(probe, "src/main.rs"), PROBE_RUST);
   deploy(probe);
-  deploy(scaffold(plainId, "기본 앱 " + suffix));
+  deploy(await scaffold(browser, plainId, "기본 앱 " + suffix));
   writeFileSync(deployed, JSON.stringify([todoId, probeId, plainId]));
 });
 

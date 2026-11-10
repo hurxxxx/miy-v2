@@ -1,7 +1,7 @@
 # 업무 앱 iframe 실행 후보 설계
 
 - 작성일: 2026-11-09
-- 상태: **후보 설계 · 브랜치 `poc/app-frames`에서 1차 실증(PARTIAL).** 격리 DB 회귀 123개(frames 8 포함), 서버 설정 검사, Chromium·Firefox 브라우저 실증(P3)은 PASS이다. WebKit·P2 브라우저·일부 FV-07/08/09와 같은 페이지 전제 모의 UI 시험의 이식은 남아 있다([실증 기록](releases/app-frames-poc-2026-11-10-validation.json)). 운영 반영은 없고, 채택(D1) 전까지 main의 현재 기준은 [APP-BOUNDARIES](APP-BOUNDARIES.md)의 같은 페이지 MF 실행이다.
+- 상태: **후보 설계 · 브랜치 `poc/app-frames`에서 2차 실증(PARTIAL).** 격리 DB 회귀 125개(frames 10 포함), 서버 설정 검사, 포트 프로필과 호스트명 프로필(`*.localhost`, 별도 사이트)에서 Chromium·Firefox·WebKit 각 18개, 프레임으로 옮긴 모의 UI·실제 스택 UI 시험이 PASS이다. 같은 등록 도메인(P2) 브라우저 실행, 화면낭독 출력, 검증용 fixture 앱(`validation.spec`)의 프레임 이식은 남아 있다([1차](releases/app-frames-poc-2026-11-10-validation.json), [2차](releases/app-frames-poc-2026-11-10-second-validation.json)). 운영 반영은 없고, 채택(D1) 전까지 main의 현재 기준은 [APP-BOUNDARIES](APP-BOUNDARIES.md)의 같은 페이지 MF 실행이다.
 - 배경: 2026-11-09 사용자가 iframe과 현행 구조의 장기 비교를 요청했다. 검토 결과 업무 앱만 별도 출처 iframe으로 분리하는 혼합 구조를 실증하기로 했고, 외부 검토 의견(보안 효과 과장, 인증서 범위, 공유 출처, 복잡성, 불완전 격리)을 아래 원칙에 반영했다.
 - 범위: 업무 앱 UI의 브라우저 실행 계약. 권한 행렬·공통 ACL은 [CORE-PERMISSIONS](CORE-PERMISSIONS.md), 작업 순서는 [PLAN](PLAN.md)을 따른다.
 
@@ -186,7 +186,7 @@ flowchart LR
 | D2 | v2.dwdcc.kr의 앱 출처 프로필 | 실증 후 첫 반영은 P2(기존 인증서·DNS). 외부 앱·외부 개발자를 수용하기 전에 P1(앱 전용 도메인)의 별도 인수를 거쳐 옮긴다. 이번 실증은 P2·P3이며 P4는 후속이다 |
 | D3 | 자산 보호 방식 | 실증 기본 확정: 프레임 세션별 능력값·고정 접두사·매 요청 현재 권한 검사(§3.3). 실행 간 캐시 공유 최적화는 FV-05·08 측정 이후 후속 검토한다. 사용자·릴리스 공통 능력값은 부모 세션별 회수를 약화하므로 초기 범위에서 제외한다. 내용 해시만으로 공개하는 방식도 현행 Use 보호를 없애므로 제외한다 |
 | D4 | 앱 빌드 형태 | 실증은 기존 MF를 프레임 런타임이 읽는다. 구 산출물의 로딩 비교와 새 SDK를 적용한 앱의 입력 보호·바이너리 검증을 구분한다. 프레임워크 자유와 런타임의 React 버전 결합 제거는 앱이 자기 문서를 제공하는 장기안과 비교해 정한다 |
-| D5 | 프레임 유지 정책 | FV-08 결과로 정한다(떠날 때 제거 또는 최근 N개 유지) |
+| D5 | 프레임 유지 정책 | 실증 결과 떠날 때 제거(현재 구현)를 기본으로 권고한다. 한 프레임만 살아 있으면 앱을 옮길 때 약 15–25MiB·120–320ms이고, 프레임을 유지하면 탭 하나당 약 130–200MiB(Chromium·Firefox), 330–470MiB(WebKit)가 늘었다([2차 기록](releases/app-frames-poc-2026-11-10-second-validation.json)) |
 
 ## 8. 채택 시 함께 바꿀 문서
 

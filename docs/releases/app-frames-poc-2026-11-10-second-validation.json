@@ -1,0 +1,249 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-11-10",
+  "status": "PARTIAL",
+  "scope": "Second run of the app frame proof of concept (docs/APP-FRAMES.md), requested by the user: WebKit, a hostname profile in browsers, the remaining FV-07/08/09 checks and the migration of same-page UI suites. The first run stays in app-frames-poc-2026-11-10-validation.json. Isolated tools only; no production state, service, container or database was changed.",
+  "decisions": {
+    "by": "user",
+    "webkit": "Install the WebKit host libraries on this host and verify",
+    "remaining": "Proceed with the remaining proof of concept"
+  },
+  "hostChange": {
+    "action": "sudo apt-get install --no-install-recommends libevent-2.1-7t64 libavif16 libmanette-0.2-0 (and their dependencies)",
+    "approvedBy": "user",
+    "afterwards": "Nginx active, https://v2.dwdcc.kr/api/health 200"
+  },
+  "source": {
+    "branch": "poc/app-frames",
+    "commits": [
+      "c255aaa",
+      "this commit"
+    ]
+  },
+  "checks": [
+    {
+      "check": "scripts/runtime-regression/run.py (isolated PostgreSQL and Docker)",
+      "status": "PASS",
+      "observed": "125 observations: runtime 46, operations 6, cli 6, auth 8, permissions 24, delegation 10, boundary 12, migration 3, frames 10 (new: a removed installation's origin stops resolving and is never reassigned; an exhausted port pool answers 503 app_frame_origin_pool_exhausted instead of sharing an origin and recovers)"
+    },
+    {
+      "check": "Browser run tests/app-frames.spec.ts, port profile (P3, stack-ui on localhost ports)",
+      "status": "PASS",
+      "observed": "Chromium, Firefox and WebKit 18/18 (6 tests each)."
+    },
+    {
+      "check": "Browser run tests/app-frames.spec.ts, hostname profile (STACK_UI_HOSTS=1: portal, dev portal, console and frames on *.localhost; frames on separate sites like an app domain)",
+      "status": "PASS",
+      "observed": "Chromium, Firefox and WebKit 18/18. The fixture CLI signs in through the real console device approval because CLI development accounts are loopback-only.",
+      "history": [
+        {
+          "status": "FAIL",
+          "observed": "CLI development login is refused for non-loopback hostnames (development_login_requires_loopback_origin); the fixture now uses device approval"
+        }
+      ]
+    },
+    {
+      "check": "scripts/check-static.sh web",
+      "status": "FAIL",
+      "observed": "ui.config 34 passed (mocked frames via tests/frame-mock.ts), then tests/cli-experience.config.ts 13 passed 1 failed: the known Vite dev-server cold start ('@vitejs/plugin-react can't detect preamble'); the script stopped there"
+    },
+    {
+      "check": "pnpm exec playwright test --config tests/cli-experience.config.ts (rerun)",
+      "status": "PASS",
+      "observed": "14 passed"
+    },
+    {
+      "check": "pnpm exec playwright test --config tests/surface-boundaries.config.ts",
+      "status": "PASS",
+      "observed": "14 passed"
+    },
+    {
+      "check": "pnpm exec playwright test --config scripts/runtime-regression/http-ui.config.ts",
+      "status": "PASS",
+      "observed": "1 passed"
+    },
+    {
+      "check": "stack-ui spec (tests/stack-ui.spec.ts) migrated to frames and SDK 0.9.0",
+      "status": "PASS",
+      "observed": "Chromium 6/6 on a fresh port stack: Keycloak login/logout, a CLI-deployed Docker app in its frame with console controls, unsaved input and release change, the app frame cannot use portal or console sessions or read the IdP and portal cookies cannot reach app APIs, grant revocation while open, app removal"
+    }
+  ],
+  "observations": {
+    "openTimesMs": {
+      "ports": {
+        "chromium": {
+          "first": 488,
+          "reopen": 878
+        },
+        "firefox": {
+          "first": 508,
+          "reopen": 961
+        },
+        "webkit": {
+          "first": 655,
+          "reopen": 891
+        }
+      },
+      "hosts": {
+        "chromium": {
+          "first": 486,
+          "reopen": 886
+        },
+        "firefox": {
+          "first": 1042,
+          "reopen": 1026
+        },
+        "webkit": {
+          "first": 1005,
+          "reopen": 932
+        }
+      },
+      "note": "first includes the portal route, launch and app render after sign-in; reopen includes a full portal reload"
+    },
+    "multiApp": {
+      "method": "RSS of the Playwright-managed browser processes. Sequential: one tab visiting three apps (current policy removes the left frame). Kept: one more tab per app keeps every frame alive, so it also counts each tab's portal page and overstates frame-only cost.",
+      "ports": {
+        "chromium": {
+          "sequentialOpenMs": [
+            118,
+            155,
+            118
+          ],
+          "sequentialRssMb": [
+            526,
+            543,
+            555
+          ],
+          "keptRssMb": [
+            556,
+            698,
+            829
+          ]
+        },
+        "firefox": {
+          "sequentialOpenMs": [
+            226,
+            301,
+            203
+          ],
+          "sequentialRssMb": [
+            1037,
+            1055,
+            1075
+          ],
+          "keptRssMb": [
+            1075,
+            1255,
+            1446
+          ]
+        },
+        "webkit": {
+          "sequentialOpenMs": [
+            151,
+            159,
+            153
+          ],
+          "sequentialRssMb": [
+            613,
+            623,
+            637
+          ],
+          "keptRssMb": [
+            637,
+            969,
+            1294
+          ]
+        }
+      },
+      "hosts": {
+        "chromium": {
+          "sequentialOpenMs": [
+            161,
+            151,
+            163
+          ],
+          "sequentialRssMb": [
+            524,
+            542,
+            557
+          ],
+          "keptRssMb": [
+            557,
+            688,
+            827
+          ]
+        },
+        "firefox": {
+          "sequentialOpenMs": [
+            276,
+            315,
+            270
+          ],
+          "sequentialRssMb": [
+            1058,
+            1083,
+            1099
+          ],
+          "keptRssMb": [
+            1099,
+            1241,
+            1443
+          ]
+        },
+        "webkit": {
+          "sequentialOpenMs": [
+            189,
+            258,
+            177
+          ],
+          "sequentialRssMb": [
+            943,
+            954,
+            976
+          ],
+          "keptRssMb": [
+            977,
+            1378,
+            1845
+          ]
+        }
+      },
+      "reading": "Switching apps with one live frame costs about 15-25 MiB per visited app and 120-320 ms per open. Keeping frames alive costs about 130-200 MiB (Chromium/Firefox) and 330-470 MiB (WebKit) per extra tab, so removing a left frame (current policy) stays the default for D5."
+    },
+    "cookieInterference": {
+      "ports": "a cookie the frame writes is visible to the portal origin (same host)",
+      "hosts": "not visible to the portal (separate sites)"
+    },
+    "keyboard": "Tab from the portal reaches the app input inside the frame and Shift+Tab returns to the portal in all three browsers (headless Firefox keeps Tab on the last element when nothing follows the frame)",
+    "print": "Allowed by the sandbox in every browser: Chromium fires beforeprint, WebKit returns without a dialog, headless Firefox opens a blocking print dialog (that step is skipped in Firefox because the dialog breaks the automation afterwards)",
+    "restart": "An installation keeps its frame origin across a Core restart in both profiles",
+    "accessibility": "The frame carries the app name as its title; screen reader output itself was not inspected"
+  },
+  "migrated": [
+    "tests/frame-mock.ts mocks the launch API, frame origins, the built frame runtime and the fixture remote for portal UI suites",
+    "platform-shell and runtime-health tests run apps in mocked frames; the same-document CSS isolation spec and app-css-baseline.mjs are removed (the shell spec checks that the app document loads only its own styles)",
+    "tests/stack-ui.spec.ts follows SDK 0.9.0 (setNavigationState) and frames (app probe from its own origin, portal cookies refused on app APIs)"
+  ],
+  "notRun": [
+    {
+      "check": "tests/validation.spec.ts (scripts/check.sh full stack)",
+      "reason": "It opens UI-only validation fixtures (no runtime); the frame launch requires a running installation, so the fixture model needs its own design before this suite can move to frames"
+    },
+    {
+      "check": "A same-registrable-domain hostname profile (P2) in a browser",
+      "reason": "*.localhost hostnames are separate sites; same-site behaviour is covered by the port profile and P2-specific Domain= cookie tossing was not set up"
+    },
+    {
+      "check": "Screen reader output",
+      "reason": "No assistive technology in the headless run"
+    },
+    {
+      "check": "Theme propagation",
+      "reason": "The portal has one light theme (U2 not implemented); theme.changed is defined but unused"
+    },
+    {
+      "check": "Production",
+      "reason": "Out of scope; nothing deployed"
+    }
+  ]
+}
