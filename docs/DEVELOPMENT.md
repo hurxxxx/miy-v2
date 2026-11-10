@@ -1,10 +1,10 @@
 # miy 앱 개발 흐름과 CLI 계획
 
-**2026-11-09 사내 개발 기준:** 회사가 통제하는 내부 앱을 iframe 없이 `AppRoot`·플랫폼 라우터에 동적으로 로드한다. **prod 포털·dev 포털·관리/CLI 승인/Keycloak 콘솔 세 출처**를 사용한다. 단일 IP·사설 CA HTTPS를 지원하며 외부 도메인·내부 DNS·추가 IP는 필수가 아니다. 이 경계는 운영에 반영했으나 현재 서버는 개발 중이다. 실행 서버와 게시 CLI·번들의 배포 소스·주소는 [운영 안내](SERVER-OPERATIONS.md), 실행 계약은 [앱 실행·관리 경계](APP-BOUNDARIES.md#확정-결정)를 따른다.
+**2026-11-09 사내 개발 기준:** 회사가 통제하는 내부 앱의 `AppRoot`를 설치별 출처의 프레임에서 실행하고 플랫폼 라우터와 경로를 동기화한다([앱 프레임 설계](APP-FRAMES.md), 운영 반영 전 서버는 같은 페이지 MF). **prod 포털·dev 포털·관리/CLI 승인/Keycloak 콘솔 세 출처**를 사용한다. 단일 IP·사설 CA HTTPS를 지원하며 외부 도메인·내부 DNS·추가 IP는 필수가 아니다. 이 경계는 운영에 반영했으나 현재 서버는 개발 중이다. 실행 서버와 게시 CLI·번들의 배포 소스·주소는 [운영 안내](SERVER-OPERATIONS.md), 실행 계약은 [앱 실행·관리 경계](APP-BOUNDARIES.md#확정-결정)를 따른다.
 
 2026-10-27 후속 구현 범위는 [CLI 0.5 개선과 Windows 네이티브 지원](CLI-IMPLEMENTATION-PLAN.md)으로 확정했다. 다중 서버 운영, 사람/AI 공통 명령·출력, 사용자 세션 인증, 작업·로그, Windows 11 x64 PowerShell 개발·관리의 상세 계약은 해당 계획을 따른다. CLI 0.5.0 / 번들 0.6.2 작업 트리에 루트 명령, context·세션 인증, preflight·journal·작업 관찰·제한된 로그와 OS 경계를 구현 중이다. 구현 존재와 검증 완료를 구분하며 실제 Windows 11·별도 Linux 서버·IdP 전파·독립 AI 인수는 각각 증거가 필요하다. 다른 환경에서 이어갈 작업 순서는 [CLI 개발 인계](archive/CLI-HANDOFF.md)에 있다. 이 문서의 장기 설계 예시와 현재 명령은 구분한다.
 
-현재 SDK bundle 0.6 계열은 앱의 미저장 상태를 `runtime.registerNavigationGuard`로 등록받아 셸·앱·브라우저 기록 이동을 보호한다. 로컬 preview와 같은 계약이며 앱의 명시적 등록·effect cleanup이 필요하다. 플랫폼 표시 이름은 관리자 메타데이터로 관리하고 배포 이름과 구분한다. 인수 기록은 정확한 릴리스별 검사 범위·실행 계정·결과를 제공한다. 실제 계약·예제는 [번들 계약](../templates/rust-react/docs/CONTRACT.md)과 [검사 기록 형식](../templates/rust-react/docs/ACCEPTANCE.md)을 따른다.
+SDK 번들 0.9.0은 앱의 미저장 상태를 `runtime.setNavigationState`로 받아 셸·앱·브라우저 기록 이동을 보호한다. 0.8.0의 `registerNavigationGuard`는 프레임에서 상태를 알 수 없음(unknown)으로 처리한다. 로컬 preview와 같은 계약이며 앱의 명시적 등록·effect cleanup이 필요하다. 플랫폼 표시 이름은 관리자 메타데이터로 관리하고 배포 이름과 구분한다. 인수 기록은 정확한 릴리스별 검사 범위·실행 계정·결과를 제공한다. 실제 계약·예제는 [번들 계약](../templates/rust-react/docs/CONTRACT.md)과 [검사 기록 형식](../templates/rust-react/docs/ACCEPTANCE.md)을 따른다.
 
 작성일: 2026-10-20  
 수정일: 2026-11-06
@@ -302,7 +302,7 @@ miy의 기본 프로필에는 비관리자 실행, 읽기 전용 앱 코드, 제
 
 ### 포털에 앱 화면을 통합하는 방법
 
-앱 화면은 iframe 없이 Module Federation으로 `AppRoot`를 플랫폼 React 트리에 마운트한다. 독립 빌드·동적 로딩·통합 라우팅을 유지하며 당시 인수 범위는 [구현 결과](IMPLEMENTATION-RESULTS.md)에 남긴다. dev는 dev 포털에서, prod는 업무 포털에서 실행한다. 콘솔은 관리·device CLI 승인·IdP `/identity`를 담당하고 앱 모듈이나 능동 앱 콘텐츠를 적재하지 않는다. 세 출처·세션 용도·환경 제한은 [앱 실행 계약](APP-BOUNDARIES.md#앱-실행-계약)을 따른다.
+앱 화면은 설치별 출처의 프레임에서 플랫폼 런타임이 Module Federation으로 `AppRoot`를 마운트한다(운영 반영 전 서버는 플랫폼 React 트리에 직접 마운트). 독립 빌드·동적 로딩·통합 라우팅을 유지하며 당시 인수 범위는 [구현 결과](IMPLEMENTATION-RESULTS.md)에 남긴다. dev는 dev 포털에서, prod는 업무 포털에서 실행한다. 콘솔은 관리·device CLI 승인·IdP `/identity`를 담당하고 앱 모듈이나 능동 앱 콘텐츠를 적재하지 않는다. 세 출처·세션 용도·환경 제한은 [앱 실행 계약](APP-BOUNDARIES.md#앱-실행-계약)을 따른다.
 
 포털은 현재 사용자가 열 수 있는 앱의 메뉴·이름·활성 릴리스·모듈 진입 정보를 조회한다. 공통 앱 라우트와 로더가 새 앱을 연결하므로 앱마다 플랫폼 화면을 다시 빌드하지 않는다. 상대 경로·이동 요청·테마·언어·미저장 입력은 SDK의 타입이 있는 함수로 연결한다. 같은 페이지의 JavaScript는 실행 공간을 공유하므로 SDK의 공개 함수 제한을 악성 코드 격리로 해석하지 않는다.
 

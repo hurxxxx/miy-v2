@@ -231,8 +231,9 @@ def plan(state, dev_origin, dev_bind):
     }
 
 
-def name_unclaimed(hostname, enabled=None):
-    """Check exact server_name directives, including quoted names and multiline lists."""
+def server_names(enabled=None):
+    """Names of every server_name directive in the enabled sites, including quoted names
+    and multiline lists; an unparseable site refuses instead of being skipped."""
     directory = enabled or ENABLED
     for site in directory.iterdir() if directory.exists() else []:
         try:
@@ -248,15 +249,18 @@ def name_unclaimed(hostname, enabled=None):
                     for delimiter in token:
                         if words and words[0] == 'server_name':
                             require(delimiter == ';', 'nginx_site_unparseable')
-                            if hostname.lower() in (name.lower() for name in words[1:]):
-                                return False
+                            yield from (name.lower() for name in words[1:])
                         words = []
                 else:
                     words.append(token)
             require(not words, 'nginx_site_unparseable')
         except ValueError:
             raise RuntimeError('nginx_site_unparseable') from None
-    return True
+
+
+def name_unclaimed(hostname, enabled=None):
+    """Check exact server_name directives, including quoted names and multiline lists."""
+    return hostname.lower() not in set(server_names(enabled))
 
 
 def public_available(target, probe=None, enabled=None):

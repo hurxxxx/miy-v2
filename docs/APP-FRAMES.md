@@ -1,7 +1,7 @@
 # 업무 앱 iframe 실행 설계
 
 - 작성일: 2026-11-09
-- 상태: **채택(D1, 2026-11-10) · 구현은 브랜치 `poc/app-frames`(main 병합 대기) · 운영 미반영.** 사용자가 2차 실증 보고를 받고 채택 후속 단계 진행을 지시했다. 격리 DB 회귀 127개(frames 12 포함), 서버 설정 검사(P2 호스트 패턴과 P3 포트 풀), 포트·호스트명 프로필의 Chromium·Firefox·WebKit 각 18개, 프레임으로 옮긴 모의 UI·실제 스택 UI 시험, 검증용 fixture 앱(`validation.spec`)과 번들 0.8.0 앱의 프레임 실행이 PASS이다. 같은 등록 도메인(P2) 브라우저 실행과 화면낭독 출력은 남아 있다([1차](releases/app-frames-poc-2026-11-10-validation.json), [2차](releases/app-frames-poc-2026-11-10-second-validation.json), [채택 후속](releases/app-frames-adoption-2026-11-10-validation.json)). 운영(서버 `f9d4084`·UI `3760ef0`·schema 21)은 아직 같은 페이지 MF로 실행하며 §9 절차로 반영한다. 현행 문서 개정은 §8을 따른다.
+- 상태: **채택(D1, 2026-11-10) · 소스 구현(2026-11-11 main 병합) · 운영 미반영.** 사용자가 2차 실증 보고를 받고 채택 후속 단계 진행을 지시했다. 격리 DB 회귀 127개(frames 12 포함), 서버 설정 검사(P2 호스트 패턴과 P3 포트 풀), 포트·호스트명 프로필의 Chromium·Firefox·WebKit 각 18개, 프레임으로 옮긴 모의 UI·실제 스택 UI 시험, 검증용 fixture 앱(`validation.spec`)과 번들 0.8.0 앱의 프레임 실행이 PASS이다. 같은 등록 도메인(P2) 브라우저 실행과 화면낭독 출력은 남아 있다([1차](releases/app-frames-poc-2026-11-10-validation.json), [2차](releases/app-frames-poc-2026-11-10-second-validation.json), [채택 후속](releases/app-frames-adoption-2026-11-10-validation.json)). 운영(서버 `f9d4084`·UI `3760ef0`·schema 21)은 아직 같은 페이지 MF로 실행하며 §9 절차로 반영한다. 현행 문서는 §8대로 개정했다.
 - 배경: 2026-11-09 사용자가 iframe과 현행 구조의 장기 비교를 요청했다. 검토 결과 업무 앱만 별도 출처 iframe으로 분리하는 혼합 구조를 실증하기로 했고, 외부 검토 의견(보안 효과 과장, 인증서 범위, 공유 출처, 복잡성, 불완전 격리)을 아래 원칙에 반영했다.
 - 범위: 업무 앱 UI의 브라우저 실행 계약. 권한 행렬·공통 ACL은 [CORE-PERMISSIONS](CORE-PERMISSIONS.md), 작업 순서는 [PLAN](PLAN.md)을 따른다.
 
@@ -161,7 +161,7 @@ flowchart LR
 
 ## 6. 실증 계획
 
-격리 스택에서 수행하고 운영 서버는 바꾸지 않는다. 코드는 브랜치 `poc/app-frames`에 두고 채택(D1) 뒤 main에 합친다. 브라우저는 Chromium·Firefox·WebKit을 사용한다. 프로필은 P3(포트)와 P2 대응(시험용 호스트명과 시험 인증서)으로 한정한다. 앱은 실제 업무 앱 하나와 차단 확인용 프로브 앱 하나를 쓰고, 후속 호출 회수에는 최소 C backend fixture를 추가한다. 기존 MF 산출물은 로딩·기본 API 비교에 사용하고 입력 보호·바이너리 검증은 새 SDK로 빌드한 앱에서 수행한다. 실증 코드는 채택 전까지 운영 반영 대상이 아니다. P4는 후속이며 P1은 활성화 전 별도 인수를 수행한다.
+격리 스택에서 수행하고 운영 서버는 바꾸지 않는다. 코드는 브랜치 `poc/app-frames`에서 만들었고 채택(D1) 뒤 2026-11-11 main에 합쳤다. 브라우저는 Chromium·Firefox·WebKit을 사용한다. 프로필은 P3(포트)와 P2 대응(시험용 호스트명과 시험 인증서)으로 한정한다. 앱은 실제 업무 앱 하나와 차단 확인용 프로브 앱 하나를 쓰고, 후속 호출 회수에는 최소 C backend fixture를 추가한다. 기존 MF 산출물은 로딩·기본 API 비교에 사용하고 입력 보호·바이너리 검증은 새 SDK로 빌드한 앱에서 수행한다. 실증 코드는 채택 전까지 운영 반영 대상이 아니다. P4는 후속이며 P1은 활성화 전 별도 인수를 수행한다.
 
 | ID | 시험과 판정 기준 |
 | --- | --- |
@@ -190,7 +190,7 @@ flowchart LR
 
 ## 8. 현행 문서 개정
 
-채택에 따라 APP-BOUNDARIES(AB-04, 앱 실행 계약, 선택기와 브리지 소유, iframe 없는 방안 비교), PRD의 브라우저 실행·통합 UI 요구·인수, FRONTEND의 모듈 로딩 절, UIUX-MIGRATION의 앱 화면 원칙, CORE-PERMISSIONS의 "브라우저 직접 요청의 발신 앱 증명 없음" 문구, 루트 AGENTS·README의 "iframe 없는 MF 유지"와 각 문서 머리말의 같은 문구를 이 설계로 바꾼다. 템플릿 번들(0.9.0)·CHECKS는 구현과 함께 바뀌었다. 같은 작업본의 다른 작업자가 이 문서들을 미커밋으로 고치고 있어 그 변경이 커밋된 뒤 main 병합과 함께 개정한다. 개정 전까지 main 문서의 같은 페이지 MF 서술은 현재 운영 사실로만 읽는다.
+채택에 따라 APP-BOUNDARIES(AB-04, 앱 실행 계약, 선택기와 브리지 소유, iframe 없는 방안 비교), PRD의 브라우저 실행·통합 UI 요구·인수, FRONTEND의 모듈 로딩 절, UIUX-MIGRATION의 앱 화면 원칙, CORE-PERMISSIONS의 "브라우저 직접 요청의 발신 앱 증명 없음" 문구, 루트 AGENTS·README의 "iframe 없는 MF 유지"와 각 문서 머리말의 같은 문구를 이 설계로 바꾼다. 템플릿 번들(0.9.0)·CHECKS는 구현과 함께 바뀌었다. 2026-11-11 main 병합과 함께 개정했다. 문서의 같은 페이지 MF 서술은 운영 반영 전까지의 운영 사실이다.
 
 ## 9. 운영 반영 계획
 

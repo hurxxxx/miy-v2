@@ -134,18 +134,9 @@ def plan(state, template, bind, ports=None, runtime_dir=None):
 
 
 def names_unclaimed(prefix_host, enabled=None):
-    """No enabled Nginx site already names a host of the frame label prefix."""
-    directory = enabled or ENABLED
-    for site in directory.iterdir() if directory.exists() else []:
-        try:
-            text = site.read_text()
-        except OSError:
-            raise RuntimeError('nginx_site_unreadable') from None
-        for line in text.splitlines():
-            words = line.strip().rstrip(';').split()
-            if words and words[0] == 'server_name' and any(prefix_host in word for word in words[1:]):
-                return False
-    return True
+    """No enabled Nginx site already names a host (or pattern) with the frame label prefix."""
+    prefix = prefix_host.lower()
+    return not any(prefix in name for name in _shared.server_names(enabled))
 
 
 def available(target, probe=None, enabled=None):

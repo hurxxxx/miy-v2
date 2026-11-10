@@ -9,9 +9,10 @@
   },
   "source": {
     "branch": "poc/app-frames",
-    "base": "44411a3",
+    "base": "40bfced",
     "commits": [
-      "717124f",
+      "ac28815",
+      "912bc9e",
       "this commit"
     ]
   },
@@ -106,6 +107,22 @@
         }
       ],
       "openObservation": "The first-open render failure did not reproduce in two later runs; its cause is unknown. Watch for it in the first production opens (the frame now reports frame.error app_render_failed to the portal)"
+    },
+    {
+      "check": "Current docs adoption (.local/doc-adoption/apply.py, 58 phrase replacements) and scripts/check-doc-links.py",
+      "status": "PASS",
+      "observed": "AGENTS, README, APP-BOUNDARIES, PRD, FRONTEND, CORE-PERMISSIONS, PLAN and the intros of 13 more docs now state frame execution and that production runs same-page MF until the rollout; links and anchors PASS"
+    },
+    {
+      "check": "scripts/check-static.sh on the tree merged with 1c7893e and the revised docs",
+      "status": "PASS",
+      "observed": "all: script tests (dev portal settings 20, app frame settings 12, core ops 67, console move 5, ...), check-server-config, fmt, clippy, cargo test 197 and 118, typecheck, web builds, Playwright ui 34, cli-experience 14, surface-boundaries 14, http-ui 1",
+      "history": [
+        {
+          "status": "FAIL",
+          "observed": "test-dev-portal-settings (added in 1c7893e) rendered the real config without app frame settings, which the renderer now requires; its fixture gained them. The Nginx server_name parser of 1c7893e is now shared with app-frame-settings.py (quoted, multiline and unparseable sites)"
+        }
+      ]
     }
   ],
   "notRun": [
@@ -120,10 +137,12 @@
     {
       "check": "Production rollout",
       "reason": "Planned in docs/APP-FRAMES.md section 9; runs only on the user's request after main is merged, pushed and passes main-push CI"
-    },
-    {
-      "check": "Current docs adoption and merge into main",
-      "reason": "Another worker has uncommitted changes to the same docs and to docs/CHECKS.md and scripts/bootstrap.py in the shared checkout; waiting for that commit"
     }
-  ]
+  ],
+  "merge": {
+    "into": "main",
+    "on": "2026-11-11",
+    "base": "1c7893e",
+    "note": "The uncommitted changes in the shared checkout were completed Codex work from 2026-11-09 (boundary review fixes), not a live session; they were re-verified (git diff --check, check-static.sh scripts PASS) and committed unchanged as 1c7893e before the rebase"
+  }
 }

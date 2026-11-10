@@ -305,7 +305,9 @@ class DevPortalSettingsTests(unittest.TestCase):
         settings = {'origin': 'http://' + hosts[0], 'consoleOrigin': 'http://' + hosts[1],
                     'devPortalOrigin': 'http://' + hosts[2], 'allowHttp': True,
                     'bind': '127.0.0.1:18180', 'consoleBind': '127.0.0.1:18182',
-                    'devPortalBind': '127.0.0.1:18183', 'identityPort': 18181}
+                    'devPortalBind': '127.0.0.1:18183', 'identityPort': 18181,
+                    # The renderer also needs business app frame origins (docs/APP-FRAMES.md).
+                    'appFrameOrigin': 'http://v2-app-{key}.example.test', 'appFrameBind': '127.0.0.1:18184'}
         (rendered / 'server.json').write_text(json.dumps(settings))
         result = subprocess.run([sys.executable, str(ROOT / 'scripts/render-server-config.py'),
                                  '--state-dir', str(rendered)], capture_output=True, text=True)

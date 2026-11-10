@@ -2,7 +2,7 @@
 
 게시된 **0.7.0 / SDK 번들 0.8.0** 설치기를 사용자 PC에서 확인하려면 [현재 Windows 11 인수 절차](WINDOWS-ACCEPTANCE.md)를 따른다. 후보·출처·해시는 [후보 파일](releases/windows-candidate.json)과 해당 절차에 고정한다. PowerShell 5.1·7 사전·후검사 도구는 다운로드·출처 검증과 보존 비교만 수행하며, GUI 설치·갱신·제거는 사용자가 직접 실행한다. 이번 사용자 Windows 검증은 나중에 수행할 **NOT_RUN** 상태다.
 
-서버의 [현재 실행·인증 계약](APP-BOUNDARIES.md#확정-결정)은 iframe 없는 앱 통합과 단일 IP HTTPS의 prod 포털·dev 포털·관리/로그인 콘솔 세 출처다. Keycloak·device CLI 승인은 콘솔에서 제공하고 legacy 로그인은 종료했다. 설치기 context의 서버 주소는 prod 포털이며 도메인·내부 DNS·추가 IP는 필수가 아니다. 실제 Windows 확인은 [현재 인수 절차](WINDOWS-ACCEPTANCE.md)를 따르고 아직 사용자 실행 NOT_RUN이다. 게시 파일과 아래 설치기 이력은 보존하며 서버의 반영 상태는 [운영 안내](SERVER-OPERATIONS.md)에서 구분한다. 인증서 경고 무시나 TLS 검증 해제는 지원 방식이 아니다.
+서버의 [현재 실행·인증 계약](APP-BOUNDARIES.md#확정-결정)은 업무 앱 프레임 실행과 단일 IP HTTPS의 prod 포털·dev 포털·관리/로그인 콘솔 세 출처다. Keycloak·device CLI 승인은 콘솔에서 제공하고 legacy 로그인은 종료했다. 설치기 context의 서버 주소는 prod 포털이며 도메인·내부 DNS·추가 IP는 필수가 아니다. 실제 Windows 확인은 [현재 인수 절차](WINDOWS-ACCEPTANCE.md)를 따르고 아직 사용자 실행 NOT_RUN이다. 게시 파일과 아래 설치기 이력은 보존하며 서버의 반영 상태는 [운영 안내](SERVER-OPERATIONS.md)에서 구분한다. 인증서 경고 무시나 TLS 검증 해제는 지원 방식이 아니다.
 
 ## 이전 설치 후보 — 0.6.3
 

@@ -12,8 +12,13 @@
   "source": {
     "branch": "poc/app-frames",
     "base": "f3911fd",
-    "commits": ["add7541", "1e5af6d", "619b5f3"],
-    "note": "The final isolated regression and server configuration check ran on 619b5f3 content (Rust identical to 1e5af6d); the browser run ran on the 619b5f3 tree."
+    "commits": [
+      "add7541",
+      "1e5af6d",
+      "619b5f3"
+    ],
+    "note": "The final isolated regression and server configuration check ran on 619b5f3 content (Rust identical to 1e5af6d); the browser run ran on the 619b5f3 tree.",
+    "rebasedAs": "Rebased on 1c7893e (which adds the 2026-11-09 script and doc fixes) before the 2026-11-11 merge into main; crates, web, packages, tests and migrations are byte-identical; commits named here map to: add7541 -> bd38ba0, 1e5af6d -> 107ea3e, 619b5f3 -> 4394915"
   },
   "changes": [
     "Core: migration 0022 (frame origins never reassigned, frame sessions bound to user, parent portal session, installation, environment and release, one-time launch/renew codes with a fixed frame id), fourth listener for /_miy/* only, request-type Origin/Fetch Metadata rules, Host checked against the registered origin, relaunch document, frame-origin continuation rechecks",
@@ -22,32 +27,87 @@
     "bootstrap, Caddy and Nginx app frame origins (P2 host pattern or P3 port pool), portal frame-src and Referrer-Policy"
   ],
   "checks": [
-    {"check": "cargo fmt, clippy (server and client builds, -D warnings), cargo test", "status": "PASS", "observed": "197 server-build and 118 client-build unit tests"},
-    {"check": "check-write-decisions, check-bundle-portability, API schema and generated types, pnpm typecheck", "status": "PASS"},
-    {"check": "scripts/runtime-regression/run.py (isolated PostgreSQL and Docker)", "status": "PASS",
-     "observed": "123 observations: runtime 46, operations 6, cli 6, auth 8, permissions 24, delegation 10, boundary 12, migration 3, frames 8",
-     "history": [
-       {"status": "FAIL", "observed": "First run: boundary, permissions and frames suites stopped. A console listener served app routes to CLI bearers after the reclassification (fixed with a portal-only bearer access class), launch codes could fail their lifetime CHECK by reading the clock twice (one reading now), and a test sent a duplicate x-miy-release header"},
-       {"status": "PASS", "observed": "Second run 123/123 before the fixed-frame-id change; the final run above is after it"}
-     ]},
-    {"check": "scripts/check-server-config.py (Nginx HTTP, Nginx single-IP TLS, Caddy)", "status": "PASS",
-     "observed": "Frame origins reach the frame listener with their own Host; proxies add no anti-frame header to frames and refuse service workers; portals send frame-src and Referrer-Policy strict-origin-when-cross-origin",
-     "history": [
-       {"status": "FAIL", "observed": "frame-src listing 200 pool origins exceeded an Nginx parameter limit (now the host port wildcard)"},
-       {"status": "FAIL", "observed": "The check's frame pool sat in the kernel ephemeral range and could not be bound (pools now stay below it)"},
-       {"status": "FAIL", "observed": "The check's stub sent X-Frame-Options for the frame surface; the real frame listener does not"}
-     ]},
-    {"check": "Browser run tests/app-frames.spec.ts on stack-ui (P3 ports, real Keycloak, CLI-deployed apps: examples/native-todo and a probe app)", "status": "PASS",
-     "observed": "Chromium 156 3/3 and Firefox 157 3/3. Frame on its own origin (not the dev portal), launch adds no history entry, direct link with query, in-app navigation updates the portal URL, back/forward reaches the frame, frame self-reload relaunches, page reload reopens the same origin with persisted data, assets from the frame capability path; unsaved input asks before rail navigation and clean input leaves; probe: parent DOM, top href, portal storage and top navigation SecurityError, cookie fetch to the portal fails, frame API without token 401, forged/out-of-app route messages ignored, in-app links routed by the portal, external links open a new tab, apiBlob download, alert dialog; portal cookie on the app API 403",
-     "timings": {"chromium": {"firstOpenMs": 482, "reopenMs": 880}, "firefox": {"firstOpenMs": 537, "reopenMs": 926}},
-     "history": [
-       {"status": "FAIL", "observed": "Test expectations: trailing slash dropped by the portal router, probe Rust not rustfmt-formatted, alert handled after the click, unresolvable external host"},
-       {"status": "FAIL", "observed": "Design: a frame that reloads itself while it reported busy made the portal ask before relaunching, but its document was already gone; relaunch no longer asks"},
-       {"status": "FAIL", "observed": "Firefox applies the parent's frame-src to an app frame's <a download href=blob:>; portals now allow blob: in frame-src (frame documents keep frame-src none)"},
-       {"status": "FAIL", "observed": "Repeated runs deployed one Docker network per installation until the host's predefined address pools were exhausted; the stack was removed (7 production app networks remained) and later runs reused deployed apps"}
-     ]},
-    {"check": "scripts/check-static.sh web (mocked UI suites)", "status": "FAIL",
-     "observed": "runtime-regression/ui.config.ts: 28 passed, 8 failed; all 8 encode the same-page model (platform CSS isolation of remote app elements, .miy-app-root mount, rail/app guards on in-document app input, SDK callbacks and polling across the in-document app boundary). The script stopped there."}
+    {
+      "check": "cargo fmt, clippy (server and client builds, -D warnings), cargo test",
+      "status": "PASS",
+      "observed": "197 server-build and 118 client-build unit tests"
+    },
+    {
+      "check": "check-write-decisions, check-bundle-portability, API schema and generated types, pnpm typecheck",
+      "status": "PASS"
+    },
+    {
+      "check": "scripts/runtime-regression/run.py (isolated PostgreSQL and Docker)",
+      "status": "PASS",
+      "observed": "123 observations: runtime 46, operations 6, cli 6, auth 8, permissions 24, delegation 10, boundary 12, migration 3, frames 8",
+      "history": [
+        {
+          "status": "FAIL",
+          "observed": "First run: boundary, permissions and frames suites stopped. A console listener served app routes to CLI bearers after the reclassification (fixed with a portal-only bearer access class), launch codes could fail their lifetime CHECK by reading the clock twice (one reading now), and a test sent a duplicate x-miy-release header"
+        },
+        {
+          "status": "PASS",
+          "observed": "Second run 123/123 before the fixed-frame-id change; the final run above is after it"
+        }
+      ]
+    },
+    {
+      "check": "scripts/check-server-config.py (Nginx HTTP, Nginx single-IP TLS, Caddy)",
+      "status": "PASS",
+      "observed": "Frame origins reach the frame listener with their own Host; proxies add no anti-frame header to frames and refuse service workers; portals send frame-src and Referrer-Policy strict-origin-when-cross-origin",
+      "history": [
+        {
+          "status": "FAIL",
+          "observed": "frame-src listing 200 pool origins exceeded an Nginx parameter limit (now the host port wildcard)"
+        },
+        {
+          "status": "FAIL",
+          "observed": "The check's frame pool sat in the kernel ephemeral range and could not be bound (pools now stay below it)"
+        },
+        {
+          "status": "FAIL",
+          "observed": "The check's stub sent X-Frame-Options for the frame surface; the real frame listener does not"
+        }
+      ]
+    },
+    {
+      "check": "Browser run tests/app-frames.spec.ts on stack-ui (P3 ports, real Keycloak, CLI-deployed apps: examples/native-todo and a probe app)",
+      "status": "PASS",
+      "observed": "Chromium 156 3/3 and Firefox 157 3/3. Frame on its own origin (not the dev portal), launch adds no history entry, direct link with query, in-app navigation updates the portal URL, back/forward reaches the frame, frame self-reload relaunches, page reload reopens the same origin with persisted data, assets from the frame capability path; unsaved input asks before rail navigation and clean input leaves; probe: parent DOM, top href, portal storage and top navigation SecurityError, cookie fetch to the portal fails, frame API without token 401, forged/out-of-app route messages ignored, in-app links routed by the portal, external links open a new tab, apiBlob download, alert dialog; portal cookie on the app API 403",
+      "timings": {
+        "chromium": {
+          "firstOpenMs": 482,
+          "reopenMs": 880
+        },
+        "firefox": {
+          "firstOpenMs": 537,
+          "reopenMs": 926
+        }
+      },
+      "history": [
+        {
+          "status": "FAIL",
+          "observed": "Test expectations: trailing slash dropped by the portal router, probe Rust not rustfmt-formatted, alert handled after the click, unresolvable external host"
+        },
+        {
+          "status": "FAIL",
+          "observed": "Design: a frame that reloads itself while it reported busy made the portal ask before relaunching, but its document was already gone; relaunch no longer asks"
+        },
+        {
+          "status": "FAIL",
+          "observed": "Firefox applies the parent's frame-src to an app frame's <a download href=blob:>; portals now allow blob: in frame-src (frame documents keep frame-src none)"
+        },
+        {
+          "status": "FAIL",
+          "observed": "Repeated runs deployed one Docker network per installation until the host's predefined address pools were exhausted; the stack was removed (7 production app networks remained) and later runs reused deployed apps"
+        }
+      ]
+    },
+    {
+      "check": "scripts/check-static.sh web (mocked UI suites)",
+      "status": "FAIL",
+      "observed": "runtime-regression/ui.config.ts: 28 passed, 8 failed; all 8 encode the same-page model (platform CSS isolation of remote app elements, .miy-app-root mount, rail/app guards on in-document app input, SDK callbacks and polling across the in-document app boundary). The script stopped there."
+    }
   ],
   "coverage": {
     "FV-01": "PASS in Chromium and Firefox on P3",
@@ -62,11 +122,26 @@
     "FV-10": "PASS (regression and browser)"
   },
   "notRun": [
-    {"check": "WebKit", "reason": "Playwright WebKit needs host libraries (libevent-2.1-7t64, libavif16, libmanette-0.2-0); installing system packages on this production host was not part of the approval"},
-    {"check": "P2 hostnames in a browser", "reason": "The isolated stack uses localhost origins; a hostname profile stack was not built in this run"},
-    {"check": "Remaining mocked UI suites (cli-experience, surface-boundaries, http-ui) and the existing stack-ui spec", "reason": "check-static stopped at the first failing suite; these suites still assume same-page apps and were not migrated"},
-    {"check": "Print, keyboard focus, screen reader, theme propagation, multi-app memory", "reason": "Not implemented in the browser spec yet"},
-    {"check": "Production", "reason": "Out of scope; nothing deployed"}
+    {
+      "check": "WebKit",
+      "reason": "Playwright WebKit needs host libraries (libevent-2.1-7t64, libavif16, libmanette-0.2-0); installing system packages on this production host was not part of the approval"
+    },
+    {
+      "check": "P2 hostnames in a browser",
+      "reason": "The isolated stack uses localhost origins; a hostname profile stack was not built in this run"
+    },
+    {
+      "check": "Remaining mocked UI suites (cli-experience, surface-boundaries, http-ui) and the existing stack-ui spec",
+      "reason": "check-static stopped at the first failing suite; these suites still assume same-page apps and were not migrated"
+    },
+    {
+      "check": "Print, keyboard focus, screen reader, theme propagation, multi-app memory",
+      "reason": "Not implemented in the browser spec yet"
+    },
+    {
+      "check": "Production",
+      "reason": "Out of scope; nothing deployed"
+    }
   ],
   "limitations": [
     "P3 is one site: no process isolation guarantee and frames share the host cookie jar (credentials are never cookies).",

@@ -6,7 +6,7 @@
 
 이전 후보의 절차와 기록은 [0.6.3 인수](WINDOWS-0.6.3-ACCEPTANCE.md)에 보존한다. Windows Server CI 통과를 Windows 11 통과로 옮기지 않는다. 설치 파일의 동작 설명은 [설치기 설명](WINDOWS-INSTALLER.md)을 따른다.
 
-이 절차는 **현재 게시된 0.7.0**을 대상으로 한다. 서버의 [사내 최소 계약](APP-BOUNDARIES.md#확정-결정)은 iframe 없는 앱 통합과 단일 IP HTTPS의 prod 포털·dev 포털·관리/로그인 콘솔 세 출처다. Keycloak과 device CLI 승인은 콘솔에 두며 도메인·내부 DNS·추가 IP는 필수가 아니다. 현재 서버 반영 여부와 주소는 [운영 안내](SERVER-OPERATIONS.md)를 따른다. 아래 Windows 검사는 사용자 수행 NOT_RUN이며 Linux·기존 HTTP IP 결과를 이 인수로 이월하지 않는다. 게시 설치기 바이트는 변경하지 않는다.
+이 절차는 **현재 게시된 0.7.0**을 대상으로 한다. 서버의 [사내 최소 계약](APP-BOUNDARIES.md#확정-결정)은 업무 앱 프레임 실행과 단일 IP HTTPS의 prod 포털·dev 포털·관리/로그인 콘솔 세 출처다. Keycloak과 device CLI 승인은 콘솔에 두며 도메인·내부 DNS·추가 IP는 필수가 아니다. 현재 서버 반영 여부와 주소는 [운영 안내](SERVER-OPERATIONS.md)를 따른다. 아래 Windows 검사는 사용자 수행 NOT_RUN이며 Linux·기존 HTTP IP 결과를 이 인수로 이월하지 않는다. 게시 설치기 바이트는 변경하지 않는다.
 
 ## 세 HTTPS 출처의 Windows 확인 항목
 

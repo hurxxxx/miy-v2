@@ -13,7 +13,7 @@
 | 주제 | 담당 문서 | 관리하는 내용 |
 | --- | --- | --- |
 | 앱 실행·관리 경계 | [APP-BOUNDARIES.md](APP-BOUNDARIES.md) | 사내 세 출처 최소 설계·SDK/CLI 계약, 필수/후속/한계·AB 결정·임시 기준·전환·BV 인수와 V0~V7 승계 |
-| 앱 실행 후보(iframe) | [APP-FRAMES.md](APP-FRAMES.md) | 업무 앱만 설치별 출처 iframe에서 실행하는 후보 설계: 원칙 AF, 실행·자격증명·브리지 계약, 배치 프로필별 격리 수준, 실증 FV와 결정 D. 채택 전 현행 기준은 APP-BOUNDARIES |
+| 앱 실행(iframe) | [APP-FRAMES.md](APP-FRAMES.md) | 업무 앱 UI를 설치별 출처 iframe에서 실행하는 설계(2026-11-10 채택): 원칙 AF, 실행·자격증명·브리지 계약, 배치 프로필별 격리 수준, 실증 FV, 결정 D, 운영 반영 계획 |
 | 제품 요구사항 | [PRD.md](PRD.md) | 제품 정의, 합의 사항, 기능 요구사항, 인수 조건, 후속 범위 |
 | 작업 순서 | [PLAN.md](PLAN.md) | 다음 우선 작업표·진행 상태, 코어 묶음 요약, 보류 중인 사용성 개선. 최초 로드맵은 archive |
 | 검사 | [CHECKS.md](CHECKS.md) | 변경 영역별 최소 검사, 정적·격리 Docker·로컬 스택·운영 검사의 구분. 플랫폼 개발 규칙은 루트 `AGENTS.md` |

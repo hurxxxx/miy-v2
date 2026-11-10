@@ -142,8 +142,12 @@ class AppFrameSettingsTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, 'app_frame_address_in_use'):
             self.apply(template='https://v2.example.test:{port}', ports='20000-20003',
                        probe=lambda port: port != 20002)
-        (self.enabled / 'claimed').write_text('server {\n    server_name v2-app-old.example.test;\n}\n')
-        with self.assertRaisesRegex(RuntimeError, 'app_frame_address_in_use'):
+        for directive in ('server_name v2-app-old.example.test;', 'server_name\n  other.example.test\n  "V2-APP-old.example.test";'):
+            (self.enabled / 'claimed').write_text('server {\n    ' + directive + '\n}\n')
+            with self.subTest(directive=directive), self.assertRaisesRegex(RuntimeError, 'app_frame_address_in_use'):
+                self.apply()
+        (self.enabled / 'claimed').write_text('server { server_name "unterminated; }')
+        with self.assertRaisesRegex(RuntimeError, 'nginx_site_unparseable'):
             self.apply()
         self.unchanged()
 

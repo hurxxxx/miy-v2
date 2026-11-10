@@ -18,7 +18,8 @@
     "commits": [
       "c255aaa",
       "this commit"
-    ]
+    ],
+    "rebasedAs": "Rebased on 1c7893e (which adds the 2026-11-09 script and doc fixes) before the 2026-11-11 merge into main; crates, web, packages, tests and migrations are byte-identical; commits named here map to: c255aaa -> a06af4f"
   },
   "checks": [
     {

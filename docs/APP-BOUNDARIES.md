@@ -5,7 +5,7 @@
 - 변경 전 비교 기준: 소스 `22c219d`, CLI/core 0.7.0, 번들 0.8.0. 현재 운영은 서버 `f9d4084`, UI `3760ef0`([dev 포털 배포](releases/dev-portal-2026-11-09-deployment.json)), schema 21, 게시 CLI `01e4d49`다. prod 포털은 `https://v2.dwdcc.kr`, dev 포털은 `https://v2-dev.dwdcc.kr`, 콘솔·issuer는 `https://v2-console.dwdcc.kr`이다([콘솔 이동](releases/console-hostname-2026-11-09-deployment.json)). 공유 개발 로그인은 꺼져 있고 옛 `:9443`은 새 콘솔로 redirect한다. 초기 두 출처 배포와 후속 변경의 실행 이력은 releases에 보존하며 현재 계약과 구분한다. 이 서버는 아직 개발 단계이며 정식 오픈을 뜻하지 않는다.
 - 적용 범위: 사내 제한 접속, 회사가 관리하는 개발자와 승인한 업무 앱. 외부망 공개·외부 개발자의 앱 수용을 위한 보안 인수는 포함하지 않는다.
 
-**동적 UI·통합 라우팅·단일 IP HTTPS와 개발 편의를 유지하며 필요한 보안부터 적용한다.** iframe 필수·MF 폐기·DNS/추가 IP 필수 결정은 철회했다. 업무 포털(prod), dev 포털(dev), 관리·로그인 콘솔의 세 출처를 사용한다. 각 포털 안의 앱 코드는 하나의 UI 신뢰 영역을 공유하며 앱별 악성 JavaScript 격리는 제공하지 않는다.
+**동적 UI·통합 라우팅·단일 IP HTTPS와 개발 편의를 유지하며 필요한 보안부터 적용한다.** iframe 필수·MF 폐기·DNS/추가 IP 필수 결정은 철회했다. 2026-11-10 업무 앱 UI만 설치별 출처 iframe에서 실행하는 [앱 프레임 설계](APP-FRAMES.md)를 채택했다. 앱 실행 계약은 그 문서가, 출처·세션·인증은 이 문서가 담당한다. 운영은 반영 전까지 같은 페이지 MF로 실행하므로 아래 같은 페이지 신뢰 모델은 그동안의 운영 사실이다. 업무 포털(prod), dev 포털(dev), 관리·로그인 콘솔의 세 출처를 사용한다. 각 포털 안의 앱 코드는 하나의 UI 신뢰 영역을 공유하며 앱별 악성 JavaScript 격리는 제공하지 않는다.
 
 이 문서가 실행·인증·호환성의 정본이다. 상세 권한과 업무 ACL은 [CORE-PERMISSIONS](CORE-PERMISSIONS.md), 작업 순서는 [PLAN](PLAN.md)이 담당한다. 공개 중인 v2.dwdcc.kr을 이 사내 전제에 해당한다고 간주하거나, 문서 확정을 제품 구현·운영 배포로 표시하지 않는다.
 
@@ -15,7 +15,7 @@
 | --- | --- | --- |
 | 배치 | 한 IP의 업무 포털(prod) / dev 포털 / 관리·로그인 세 HTTPS 출처(2026-11-09 결정·운영 반영, dev 포털 `https://v2-dev.dwdcc.kr`) | 별도 IdP 출처·사이트. 외부 노출·외부 앱 도입 전 재검토 |
 | 인증 | portal/dev_portal/console 세션 용도, 서버 경로·환경 제한, 콘솔에서만 device CLI 승인. legacy 로그인은 410 종료 | 전체 credential 모델 재설계, MFA 의무화, 세밀한 인증 관제 |
-| UI | MF/AppRoot·독립 빌드·통합 라우팅·게시 SDK 유지. 콘솔에 앱 코드 없음 | 불특정 앱 코드의 강제 격리. iframe 자동 도입은 없음 |
+| UI | 업무 앱은 설치별 출처 iframe의 AppRoot([앱 프레임 설계](APP-FRAMES.md), 번들 0.9.0·0.8.0 앱 실행), 플랫폼 화면·독립 빌드·통합 라우팅 유지. 콘솔에 앱 코드 없음 | 외부 앱 수용 전 앱 전용 도메인(P1) 인수. 운영 반영은 APP-FRAMES §9 |
 | 권한 | 기존 사용자·그룹·use/develop/deploy, 현재 권한 재검사. prod 사용과 관리 분리 | 새 역할 체계·업무 action별 API Invoke·서비스 주체 |
 | TLS | IP SAN 인증서 반입, CA·만료 검사와 단말/CLI 신뢰 등록 안내. 수동 교체 절차 | CA 신뢰 일괄 배포·인증서 자동 발급/갱신 |
 | 방어·복구 | Origin/CSRF, 쿠키 용도, 안전한 응답 헤더·텍스트, 기존 credential 회수 보완, 변경 범위 백업/복원 | 정교한 탐지·모든 기기 조합 시험·대규모 일괄 전환 도구 |
@@ -32,7 +32,7 @@ AB ID는 참조를 유지한다. 이전 iframe 설계나 보안 후보의 검사
 | AB-01 | 업무 포털 / 앱 관리 / 플랫폼 관리의 책임 분리. 두 관리 영역과 Keycloak 로그인은 하나의 신뢰 출처에 배치 | 소스 구현·격리 검사 PASS, 2026-11-07 운영 반영. 외부 인수 별도 |
 | AB-02 | 단일 IP·사설 CA HTTPS. 외부 도메인·내부 DNS·추가 IP 불필수. 기존 포털 주소·포트 유지 가능 | 단일 IP HTTPS·실제 Keycloak/CLI 인수 PASS, Windows 별도 |
 | AB-03 | portal/dev_portal/console 브라우저 용도와 경로·환경을 서버가 검사. device CLI 승인은 콘솔만, legacy 시작·승인·교환은 410. 기존 인증·위임·토큰 수명 재사용 | 세 출처 소스·격리 검사와 2026-11-09 운영 반영. 외부 인수 별도 |
-| AB-04 | 회사가 승인한 앱의 MF/AppRoot·통합 라우팅 유지. 같은 페이지 UI 코드 전체를 신뢰하며 강제 격리를 주장하지 않음 | 신뢰 모델 확정 |
+| AB-04 | 업무 앱 UI는 설치별 출처 iframe에서 실행. 앱 코드는 포털·다른 앱의 문서·세션에 접근하지 못하고 다른 앱 API는 승인 연결로만 호출. 같은 사이트 쿠키 간섭·프로세스 분리는 주장하지 않음 | 2026-11-10 채택, 소스 구현·격리 검증(APP-FRAMES FV). 운영 미반영(반영 전 운영은 같은 페이지 MF·UI 신뢰 영역) |
 | AB-05 | prod 사용과 관리 분리, 운영 기록은 관리 권한. dev 개발 미리보기 편의·앱 내부 ACL 독립 유지 | 정책 소스 구현·격리 검사 PASS, 2026-11-07 운영 반영. 외부 인수 별도 |
 | AB-06 | 기존 CLI/MCP·제한 위임·생성 타입·개발/승격 흐름 재사용. 매 배포마다 새 사람 승인 절차를 추가하지 않음 | 기존 기반 재사용 |
 | AB-07 | 앱 데이터·게시 번들 바이트 보존. 개발 단계의 API/CLI 변경은 새 버전으로 끊을 수 있고 재로그인 허용 | migration 0020·0021 운영 적용. 현재 게시 CLI 0.7.0·번들 0.8.0 유지, legacy 로그인 종료 |
@@ -88,13 +88,15 @@ CLI 근거는 `cli_auth.rs`의 start/approve/exchange, `auth_sessions.rs`의 app
 
 ## iframe 없는 보안 방안 비교
 
+> 채택 전 비교 이력이다. 2026-11-10부터 업무 앱 실행은 [앱 프레임 설계](APP-FRAMES.md)를 따른다. 아래 A는 반영 전 운영의 사실로만 읽는다.
+
 | 방안 | 현재 결정 | 보장 범위·비용 |
 | --- | --- | --- |
 | A 승인한 기업 앱 통합 | **채택**. MF/AppRoot 유지, 관리·로그인을 앱 없는 출처로 이동 | UI 호환·독립 배포 유지. 같은 페이지 앱 전체를 신뢰해야 함 |
 | B 앱별 최상위 페이지 | 강한 앱 격리가 필요할 때 후속 검토 | 앱별 DOM 분리 가능, 통합 라우팅·상태 공유 변경 |
 | C 제한된 선언형 UI | 장기 대안, 현재 구현하지 않음 | 자유로운 React/DOM 계약과 개발 도구 변경 필요 |
 
-2026-11-09 사용자 요청으로, 플랫폼 화면은 그대로 두고 업무 앱만 설치별 출처 iframe에서 실행하는 혼합 구조를 [후보 설계](APP-FRAMES.md)로 실증한다. 채택 전까지 A가 현행이며 아래 "iframe은 자동 fallback으로 도입하지 않는다"도 유지한다.
+2026-11-09 사용자 요청으로, 플랫폼 화면은 그대로 두고 업무 앱만 설치별 출처 iframe에서 실행하는 혼합 구조를 [앱 프레임 설계](APP-FRAMES.md)로 실증했고 2026-11-10 채택했다. 앱 프레임은 명시적인 실행 구조이며 같은 페이지 실패 시의 자동 fallback이 아니다.
 
 앱 ID 헤더·SDK·클로저·짧은 bearer·Shadow DOM·CSS·릴리스 서명은 같은 문서의 앱별 보안 주체를 만들지 않는다. A는 승인 앱의 사용자 권한 악용이나 앱 간 DOM 접근을 완전히 막는 모델이 아니다. 대상 서버의 사용자 ACL·backend 설치 승인·호출 체인은 계속 필요하다. iframe은 자동 fallback으로 도입하지 않는다.
 
@@ -180,7 +182,7 @@ P/A와 D/DA는 각각 하나의 JavaScript 신뢰 영역이다. prod와 dev는 �
 
 ## 앱 실행 계약
 
-MF AppRoot·독립 OCI 릴리스·분할 자산·플랫폼 라우터 마운트를 유지한다. 활성 digest·경로와 접근 허용은 서버가 결정한다. 직접 링크·reload·뒤로 가기·업데이트·preview가 정상 동작해야 한다. 별도 launch token·iframe bootstrap·postMessage 브리지·앱별 메모리 bearer를 추가하지 않는다.
+업무 앱의 브라우저 실행 계약(실행 코드, 프레임 bearer, 브리지 v1, 능력값 자산, 프레임 listener)은 [앱 프레임 설계](APP-FRAMES.md) §3이 담당한다. AppRoot·독립 OCI 릴리스·분할 자산을 유지하고, 활성 digest·경로와 접근 허용은 서버가 결정한다. 직접 링크·reload·뒤로 가기·업데이트·preview가 정상 동작해야 한다. 포털 쿠키는 앱 업무 API·연결·디렉터리·UI 산출물에 쓰이지 않는다.
 
 게시 SDK·번들·migration은 불변이다. 이번 경계 때문에 앱의 업무 코드·데이터 모델을 재개발하거나 정적 UI의 현행 Use 보호를 제거하지 않는다. 기존 SDK 계약을 우선 유지하고 실제 추가 기능에만 새 버전을 발행한다.
 
@@ -194,7 +196,7 @@ MF AppRoot·독립 OCI 릴리스·분할 자산·플랫폼 라우터 마운트�
 
 ### 선택기와 브리지 소유
 
-제목은 기존 링크를 유지한다. iframe 브리지 대신 기존 SDK의 타입 있는 함수와 공용 UI를 사용한다. 함수 호출 자체는 보안 경계가 아니다.
+제목은 기존 링크를 유지한다. 앱은 SDK의 타입 있는 함수와 공용 UI를 사용하고, 포털이 소유하는 기능은 프레임 런타임이 브리지 v1 메시지로 요청한다(APP-FRAMES §3.4). 함수 표면 자체는 보안 경계가 아니며 서버가 권한을 다시 확인한다.
 
 | 기능 | 적용 방식 |
 | --- | --- |
@@ -261,7 +263,7 @@ PLM·PMS·PDM·MES·DAS는 각자 개발·배포한다. **현재 공통 신원·
 | BV-06 | 필수 AB-05 | prod 관리자/deploy 자동 Use 제거·명시적 use/all·앱 ACL 독립, dev 개발 미리보기 정상·회사 중지 정책 유지 | PASS: 권한 행렬·실제 DB 회수·prod 명시 use·dev 미리보기. 업무 리소스 ACL은 후속 |
 | BV-07 | 필수 AB-05 | Use만으로 운영 기록 거부, 관리 action·목록·상세·접수·worker 현재 권한 일치 | PASS: Use-only 기록 거부와 관리 목록/상세·worker·회수·CLI status 호환 |
 | BV-08 | 필수 AB-03·07 | 콘솔 /identity 실제 로그인/logout·realm/sub·miy-web 보존, 세 출처 callback·MCP metadata·재인증·구 flow/worker 정리. MFA 의무화는 후속 | 새 콘솔 issuer의 배포 후 OIDC 세 출처 SSO·별도 세션·로그아웃, CLI·stdio MCP 연결 22개 PASS. 직접 외부 OAuth MCP issuer 재인증·구 worker 정리 NOT_RUN |
-| BV-09 | 필수 AB-04·07 | iframe 없는 로딩·라우팅·직접 링크·reload·preview·업데이트, 포털 내부 같은 탭·다른 출처 링크 새 탭. 새 테마·선택기·파일 기능은 각 작업 때 | 세 출처 격리 MF·입력 보호 PASS. 같은 탭 복귀는 [후속 검증](releases/boundary-followup-2026-11-09-validation.json). 초기 운영 dev 앱 2개 검사는 이전 두 출처 범위이며 새 배포의 실제 dev/prod 앱 열기·native UI 전체·인쇄 인수는 NOT_RUN |
+| BV-09 | 필수 AB-04·07 | 업무 앱 로딩·라우팅(2026-11-10부터 앱 프레임 기준, 결과는 APP-FRAMES FV-01·09 기록이며 BV로 옮기지 않음)·직접 링크·reload·preview·업데이트, 포털 내부 같은 탭·다른 출처 링크 새 탭. 새 테마·선택기·파일 기능은 각 작업 때 | 세 출처 격리 MF·입력 보호 PASS. 같은 탭 복귀는 [후속 검증](releases/boundary-followup-2026-11-09-validation.json). 초기 운영 dev 앱 2개 검사는 이전 두 출처 범위이며 새 배포의 실제 dev/prod 앱 열기·native UI 전체·인쇄 인수는 NOT_RUN |
 | BV-10 | 필수 AB-06 | 기존 제한 CLI/MCP·위임·DB 터널 정상, 권한 확대·미지원 service/AI credential 거부, 반복 사람 승인 추가 없음 | PASS: CLI·제한 위임·합성 MCP 정책, shared DB/WS lease16개. 실제 OAuth MCP·새 gateway 경유 전체 DB 터널 인수 NOT_RUN |
 | BV-11 | 필수 AB-06·07 | 게시 CLI의 상대 verificationPath·고정 콘솔 redirect, device start/poll/refresh·관리 API, legacy 흐름의 410 종료와 발급 토큰 목록·회수. 포털 승인 fallback 거부 | legacy 410·회수는 후속 격리 검증. 현재 콘솔 issuer의 배포 후 게시 CLI device 승인/status/doctor·stdio MCP 포함 22개 PASS. 초기 게시 CLI 단일 IP HTTPS12개는 `a4ad370` 범위 |
 | BV-12 | 필수 AB-07 | 변경 범위 백업/별도 복원·migration·앱 ID/DB/파일/릴리스 보존·실패 복구. 전체 앱 재개발·일괄 SDK 전환 없음 | PASS: 격리 schema19→20·기존 credential/앱 DB 보존·반복 migration, 운영 백업의 별도 복원(Core 40테이블·1,474행, identity 101테이블·1,279행), 운영 schema19→20·앱 컨테이너 7개·독립 CLI credential 보존. 실제 운영 DB rollback·전체 복구 제품 인수는 NOT_RUN |
@@ -304,7 +306,7 @@ archive·실행 결과·게시 번들은 보존한다. 이전 iframe·보안 후
 
 ## 참고 자료
 
-- [v1 적용](V1-ADOPTION.md), [플랫폼 사례](RESEARCH.md#앱-사용과-관리-영역-분리): 공통 인증·최소 권한을 참고하되 iframe을 채택하지 않음.
+- [v1 적용](V1-ADOPTION.md), [플랫폼 사례](RESEARCH.md#앱-사용과-관리-영역-분리): 공통 인증·최소 권한을 참고. 플랫폼 화면에는 iframe을 쓰지 않고 업무 앱은 [앱 프레임 설계](APP-FRAMES.md)를 따름.
 - [HTML origin](https://html.spec.whatwg.org/multipage/browsers.html#origin), [cookie와 port](https://httpwg.org/specs/rfc6265.html#weak-confidentiality), [CSP sandbox](https://www.w3.org/TR/CSP3/#directive-sandbox), [Clear-Site-Data](https://www.w3.org/TR/clear-site-data/), [서비스워커](https://www.w3.org/TR/service-workers/).
 - [Keycloak hostname](https://www.keycloak.org/server/hostname), [reverse proxy](https://www.keycloak.org/server/reverseproxy), [공인 인증서의 IP 제한](https://cabforum.org/working-groups/server/baseline-requirements/requirements/).
 - 기존 [브라우저 관찰](releases/browser-boundary-review-2026-11-06-validation.json), [최초 정리](releases/app-boundaries-docs-2026-11-06-validation.json), [통합](releases/app-boundaries-consolidation-2026-11-06-validation.json), [15건 보완](releases/app-boundaries-review-fixes-2026-11-06-validation.json), [noiframe·PLM 검토](releases/noiframe-security-plm-review-2026-11-06-validation.json). 당시 결과 범위를 보존한다.

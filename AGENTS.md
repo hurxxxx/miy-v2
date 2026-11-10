@@ -8,8 +8,8 @@
 - [변경별 검사 지도](docs/CHECKS.md): 바꾼 영역에 맞는 최소 검사.
 - 제품 계약은 [PRD](docs/PRD.md), 권한 계약은 [코어 권한](docs/CORE-PERMISSIONS.md)이 기준이다. 구현된 동작은 코드와 테스트가 최종 기준이다.
 
-- 앱 출처·세션·실행 계약을 바꿀 때 [사내 최소 보안 설계](docs/APP-BOUNDARIES.md)를 먼저 읽는다. iframe 없는 MF·통합 라우팅·단일 IP HTTPS를 유지한다. 현재는 업무 포털(prod)·dev 포털(dev)·관리/CLI 승인/Keycloak 콘솔의 세 출처와 `portal | dev_portal | console` 세션 용도를 사용한다. 운영 주소는 각각 `https://v2.dwdcc.kr`, `https://v2-dev.dwdcc.kr`, `https://v2-console.dwdcc.kr`이며 공유 개발 로그인은 꺼져 있다. 서버 `f9d4084`·UI `3760ef0`·schema 21의 [dev 포털 배포](docs/releases/dev-portal-2026-11-09-deployment.json)와 [콘솔·issuer 이동](docs/releases/console-hostname-2026-11-09-deployment.json)을 구현·격리 검증과 구분한다. 다른 출처 쿠키 요청은 거부하고 legacy CLI 로그인은 종료했다. 별도 IdP 출처·외부 앱 격리·MFA 의무화·자동 CA를 기능 개발의 선행 조건으로 추가하지 않는다. 같은 페이지 앱 격리나 포트 쿠키 격리를 주장하지 않으며 공개 운영을 사내 전제로 자동 인정하지 않는다. 권한은 CORE-PERMISSIONS, 순서·상태는 PLAN을 따르고 게시 번들·현행·목표·역사를 구분한다.
-- 업무 앱만 설치별 출처 iframe에서 실행하는 구조는 [후보 설계](docs/APP-FRAMES.md)로 실증 중이다. 채택 결정 전에는 위 MF 기준이 현행이며, 실증 코드를 현행 계약이나 운영 반영에 섞지 않는다.
+- 앱 출처·세션·실행 계약을 바꿀 때 [사내 최소 보안 설계](docs/APP-BOUNDARIES.md)를 먼저 읽는다. 업무 앱 UI는 설치별 출처 iframe에서 실행하고([앱 프레임 설계](docs/APP-FRAMES.md), 2026-11-10 채택), 플랫폼 화면·통합 라우팅·단일 IP HTTPS는 유지한다. 현재는 업무 포털(prod)·dev 포털(dev)·관리/CLI 승인/Keycloak 콘솔의 세 출처와 `portal | dev_portal | console` 세션 용도를 사용한다. 운영 주소는 각각 `https://v2.dwdcc.kr`, `https://v2-dev.dwdcc.kr`, `https://v2-console.dwdcc.kr`이며 공유 개발 로그인은 꺼져 있다. 서버 `f9d4084`·UI `3760ef0`·schema 21의 [dev 포털 배포](docs/releases/dev-portal-2026-11-09-deployment.json)와 [콘솔·issuer 이동](docs/releases/console-hostname-2026-11-09-deployment.json)을 구현·격리 검증과 구분한다. 다른 출처 쿠키 요청은 거부하고 legacy CLI 로그인은 종료했다. 별도 IdP 출처·외부 앱 격리·MFA 의무화·자동 CA를 기능 개발의 선행 조건으로 추가하지 않는다. 같은 사이트 앱 프레임(P2·P3)의 쿠키 격리나 프로세스 분리를 주장하지 않으며 공개 운영을 사내 전제로 자동 인정하지 않는다. 권한은 CORE-PERMISSIONS, 순서·상태는 PLAN을 따르고 게시 번들·현행·목표·역사를 구분한다.
+- 운영(v2.dwdcc.kr)은 앱 프레임 반영 전까지 같은 페이지 MF로 실행한다. 반영은 사용자가 요청할 때 [APP-FRAMES §9](docs/APP-FRAMES.md#9-운영-반영-계획) 절차로 하고, 소스 구현·격리 검증·운영 반영을 구분해 기록한다.
 
 ## 개발 단계 원칙 (실제 운영 전환 전까지)
 

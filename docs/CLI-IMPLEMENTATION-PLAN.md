@@ -9,7 +9,7 @@
 
 ## 내부 업무 앱 최소안의 CLI 호환 범위
 
-[최소 보안안](APP-BOUNDARIES.md#확정-결정)은 회사가 관리하는 개발자·앱과 내부망을 전제로 하며 현재 세 출처 경계를 구현·운영 반영했다. iframe 없는 MF·AppRoot·라우팅을 유지하고 prod 포털·dev 포털·신뢰 콘솔을 분리한다. Keycloak은 콘솔의 `/identity/realms/miy`에 둔다. 한 IP의 서로 다른 HTTPS 포트(예: prod 8443/dev 9444/console 9443)를 지원하며 도메인·추가 IP·별도 IdP 출처는 필수가 아니다.
+[최소 보안안](APP-BOUNDARIES.md#확정-결정)은 회사가 관리하는 개발자·앱과 내부망을 전제로 하며 현재 세 출처 경계를 구현·운영 반영했다. 업무 앱 프레임 실행([앱 프레임 설계](APP-FRAMES.md))과 통합 라우팅을 사용하고 prod 포털·dev 포털·신뢰 콘솔을 분리한다. Keycloak은 콘솔의 `/identity/realms/miy`에 둔다. 한 IP의 서로 다른 HTTPS 포트(예: prod 8443/dev 9444/console 9443)를 지원하며 도메인·추가 IP·별도 IdP 출처는 필수가 아니다.
 
 - device 브라우저 승인은 console 용도 세션·정확한 Origin·현재 CSRF와 사용자가 입력한 터미널 코드로만 허용한다. 포털 세션으로 승인하거나 세션 용도를 바꿀 수 없게 한다. 일반 직원도 본인의 CLI 인증은 콘솔에서 할 수 있다. 0.5 이전 CLI의 legacy 승인 흐름(start/approve/exchange)은 2026-11-09 종료했고 410 `cli_upgrade_required`로 응답한다.
 - 현재 게시 CLI의 상대 `verificationPath`는 설정된 콘솔 device 승인 화면으로만 고정 리디렉션하고 임의 return URL이나 token을 전달하지 않는다. device 시작·poll·refresh·철회와 context·토큰 수명은 현재 계약을 유지했으며 legacy start/exchange는 지원하지 않는다.
