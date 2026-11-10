@@ -1,4 +1,4 @@
-import { test, expect, login, api, origin, stateDir, webDist, databaseContainer } from "./fixtures";
+import { test, expect, login, api, origin, stateDir, webDist, databaseContainer, surfaceOrigin } from "./fixtures";
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { readFileSync, readdirSync, writeFileSync, mkdirSync } from "node:fs";
@@ -128,27 +128,35 @@ test("runtime modules, OAuth session, permissions and DB preparation", async ({
   }
   // Dev apps run only on the dev portal; prod-portal paths redirect there.
   await login(page, "admin", "dev_portal");
+  // UI-only fixtures run in their installation's frame (docs/APP-FRAMES.md) like
+  // Docker apps; only their API calls need a runtime.
+  const appFrame = page.frameLocator("iframe.app-frame");
   await page.goto(`/apps/${appIds[0]}`);
-  await expect(page.getByTestId("app-root")).toBeVisible();
-  await page.getByRole("button", { name: "사무 장비 보기" }).click();
+  await expect(appFrame.getByTestId("app-root")).toBeVisible();
+  await appFrame.getByRole("button", { name: "사무 장비 보기" }).click();
   await expect(page).toHaveURL(
     new RegExp(`/apps/${appIds[0]}/detail/1\\?view=full`),
   );
-  await expect(page.getByRole("heading", { name: "분류 상세" })).toBeVisible();
+  await expect(appFrame.getByRole("heading", { name: "분류 상세" })).toBeVisible();
   await page.reload();
-  await expect(page.getByRole("heading", { name: "분류 상세" })).toBeVisible();
-  await page.getByRole("button", { name: "목록으로" }).click();
+  await expect(appFrame.getByRole("heading", { name: "분류 상세" })).toBeVisible();
+  await appFrame.getByRole("button", { name: "목록으로" }).click();
+  // In-app navigation reaches the portal router by message: wait for it before
+  // going back, or back would leave the entry that was current before it.
+  await expect(page).toHaveURL(new RegExp(`/apps/${appIds[0]}/?$`));
   await page.goBack();
-  await expect(page.getByRole("heading", { name: "분류 상세" })).toBeVisible();
+  await expect(appFrame.getByRole("heading", { name: "분류 상세" })).toBeVisible();
   await page
     .locator(`nav a[href="/environments/dev/apps/${appIds[1]}"]`)
     .click();
-  await expect(page.getByTestId("app-root")).toBeVisible();
-  expect(await page.locator("iframe").count()).toBe(0);
+  await expect(appFrame.getByTestId("app-root")).toBeVisible();
+  // One frame, on an origin of its own (never the portal's).
+  await expect(page.locator("iframe")).toHaveCount(1);
+  const frameOrigins = page.frames().filter((f) => f !== page.mainFrame()).map((f) => new URL(f.url()).origin);
+  expect(frameOrigins).toHaveLength(1);
+  expect(frameOrigins[0]).not.toBe(new URL(page.url()).origin);
   await page.goto(`/apps/${appIds[0]}/crash`);
-  await expect(
-    page.getByRole("heading", { name: "앱을 열 수 없습니다" }),
-  ).toBeVisible();
+  await expect(appFrame.getByRole("alert")).toContainText("앱 화면을 표시할 수 없습니다");
   await expect(page.locator("header")).toBeVisible();
   await page.locator("nav").getByText("홈", { exact: true }).click();
   expect(
@@ -238,6 +246,8 @@ test("runtime modules, OAuth session, permissions and DB preparation", async ({
       })
     ).status(),
   ).toBe(403);
+  // Alice signed in on the dev portal: logout returns there and ends that session.
+  const aliceDevPortal = await surfaceOrigin(alice, "dev_portal");
   await alicePage.getByRole("button", { name: "로그아웃" }).click();
   await alicePage.waitForURL((url) =>
     url.pathname.includes("/protocol/openid-connect/logout"),
@@ -247,10 +257,10 @@ test("runtime modules, OAuth session, permissions and DB preparation", async ({
   ).toHaveCount(0);
   if (await alicePage.locator("#kc-logout").count())
     await alicePage.locator("#kc-logout").click();
-  await alicePage.waitForURL(origin + "/");
+  await alicePage.waitForURL(aliceDevPortal + "/");
   await expect(alicePage.getByRole("link", { name: /로그인/ })).toBeVisible();
   await expect
-    .poll(async () => (await alice.request.get(origin + "/api/v1/me")).status())
+    .poll(async () => (await alice.request.get(aliceDevPortal + "/api/v1/me")).status())
     .toBe(401);
   // Access tokens last 45s. This request must use a refreshed server-side session.
   await new Promise((r) => setTimeout(r, 47000));
@@ -295,7 +305,7 @@ test("runtime modules, OAuth session, permissions and DB preparation", async ({
           "reload",
           "back",
           "app-switch",
-          "no-iframe",
+          "own-origin-frame",
           "error-boundary",
           "permissions",
           "db-idempotency",
@@ -313,7 +323,7 @@ test("runtime modules, OAuth session, permissions and DB preparation", async ({
     ),
   );
   await page.goto(`/apps/${appIds[0]}`);
-  await expect(page.getByTestId("app-root")).toBeVisible();
+  await expect(appFrame.getByTestId("app-root")).toBeVisible();
   await page.screenshot({
     path: join(stateDir, "evidence", "runtime-ui.png"),
     fullPage: true,

@@ -110,10 +110,16 @@ async fn control_loop(pool: &sqlx::PgPool) -> Result<()> {
         .execute(pool)
         .await?;
     let mut last_reconcile = std::time::Instant::now();
+    crate::app_frames::prune(pool).await?;
+    let mut last_prune = std::time::Instant::now();
     loop {
         if last_reconcile.elapsed().as_secs() >= 5 {
             crate::runtime::reconcile(pool).await?;
             last_reconcile = std::time::Instant::now();
+        }
+        if last_prune.elapsed().as_secs() >= 600 {
+            crate::app_frames::prune(pool).await?;
+            last_prune = std::time::Instant::now();
         }
         if !database_tick(pool).await?
             && !crate::development::tick(pool).await?

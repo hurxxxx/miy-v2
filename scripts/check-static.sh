@@ -53,6 +53,7 @@ script_checks() {
   python3 scripts/test-agent-acceptance-proxy.py
   python3 scripts/test-core-ops.py
   python3 scripts/test-dev-portal-settings.py
+  python3 scripts/test-app-frame-settings.py
   python3 scripts/test-console-origin-move.py
   python3 scripts/check-server-config.py
 }

@@ -14,9 +14,9 @@
 
 GitHub Actions는 `cli-foundation.yml`(Linux 서버·Linux/macOS/Windows 클라이언트의 fmt·Clippy·test·CLI 검사)과 `web.yml`(정적 `scripts`·`web`)을 실행한다. 각 workflow가 실제 실행한 검사 범위를 구분하고, 이를 로컬 전체 스택·운영 검사의 통과로 옮기지 않는다.
 
-`runtime-regression.yml`은 main push·main 대상 PR에서 격리 Docker 회귀를 실행한다. 현재 기대값은 runtime 46·operations 6·CLI 6·auth 8·permissions 24·delegation 10·boundary 10·migration 2, 총 112개 관찰이다. 권한 스냅샷 변경 중 실제 HTTP 목록·worker 재확인과 위임 발급·사용자 비활성화의 HTTP 경합도 포함한다. 로컬 실행의 PASS와 해당 commit의 GitHub 실행 결과는 따로 기록한다. CLI 응답 타입을 바꿀 때는 정적 검사 외에 실제 클라이언트 빌드로 출력·복구 검사까지 실행한다.
+`runtime-regression.yml`은 main push·main 대상 PR에서 격리 Docker 회귀를 실행한다. 현재 기대값은 runtime 46·operations 6·CLI 6·auth 8·permissions 24·delegation 10·boundary 12·migration 3·frames 12, 총 127개 관찰이다. 권한 스냅샷 변경 중 실제 HTTP 목록·worker 재확인과 위임 발급·사용자 비활성화의 HTTP 경합도 포함한다. 로컬 실행의 PASS와 해당 commit의 GitHub 실행 결과는 따로 기록한다. CLI 응답 타입을 바꿀 때는 정적 검사 외에 실제 클라이언트 빌드로 출력·복구 검사까지 실행한다.
 
-`scripts/test-core-ops.py`는 백업 정리·연결 예산과 유지 관리하는 배포 도구(`scripts/core-rollout.py`, `scripts/ui-rollout.py`)의 실패 경계를 모든 외부 명령을 대체한 모의 시험으로 검사한다. 부분 서비스 장애 중 rollback 유휴 검사, 서로 다른 release의 같은 UI 대상 잠금, 무시된 public/환경 입력·심볼릭 링크와 빌드 중 입력 변경 거부도 포함한다.
+`scripts/test-core-ops.py`는 백업 정리·연결 예산과 유지 관리하는 배포 도구(`scripts/core-rollout.py`, `scripts/ui-rollout.py`)의 실패 경계를 모든 외부 명령을 대체한 모의 시험으로 검사한다. 부분 서비스 장애 중 rollback 유휴 검사, 서로 다른 release의 같은 UI 대상 잠금, 무시된 public/환경 입력·심볼릭 링크와 빌드 중 입력 변경 거부, `ui-rollout.py --target frame-runtime`의 첫 설치·rollback도 포함한다. `scripts/test-app-frame-settings.py`는 앱 프레임 설정 도구(`scripts/app-frame-settings.py`)의 설정 패치·복원과 Nginx 차이 검사를 실제 렌더러 출력까지 포함해 검사한다.
 
 코어 중지 검사는 `failed`·`inactive` 표시와 실제 프로세스 부재를 구분한다. `reset-failed` 전후의 `MainPID`·`ControlPID`, 하위 cgroup을 포함하는 cgroup v2 `populated` 값, 고정 서비스 경로를 확인한다. 잔류 프로세스·읽기 실패·판정 불가 시 배포·복구가 중단되고, 이미 중지된 코어의 rollback 유휴 검사 생략도 실제로 비어 있을 때만 허용되는지 검사한다. 범위와 실행 결과는 [서버 운영 안내](SERVER-OPERATIONS.md#7-배포-도구)와 [중지 확인 검증](releases/core-stop-quiescence-2026-11-05-validation.json)에 기록한다.
 
@@ -46,7 +46,7 @@ GitHub Actions는 `cli-foundation.yml`(Linux 서버·Linux/macOS/Windows 클라�
 
 ## 루트 Playwright 설정
 
-루트 `playwright.config.ts`(`pnpm test:e2e`)는 명시적인 격리 상태·DB·origin·빌드 경로(`MIY_STATE_DIR`, `MIY_DATABASE_CONTAINER`, `MIY_TEST_ORIGIN`, `MIY_TEST_WEB_DIST`, `MIY_FIXTURE_DIST`, `MIY_BROWSER_CDP`)를 요구하는 `validation.spec.ts`, `development-login.spec.ts`만 실행한다. 운영 `.local`·DB와 `web/platform/dist`는 거부한다. 이 호스트에서는 `check.sh` 대신 정적/격리 도구를 사용한다. 다른 spec은 자기 설정과 서버를 함께 쓴다.
+루트 `playwright.config.ts`(`pnpm test:e2e`)는 명시적인 격리 상태·DB·origin·빌드 경로(`MIY_STATE_DIR`, `MIY_DATABASE_CONTAINER`, `MIY_TEST_ORIGIN`, `MIY_TEST_WEB_DIST`, `MIY_FIXTURE_DIST`, `MIY_BROWSER_CDP`)를 요구하는 `validation.spec.ts`, `development-login.spec.ts`만 실행한다. 운영 `.local`·DB와 `web/platform/dist`는 거부한다. 이 호스트에서는 `check.sh` 대신 정적/격리 도구를 사용한다. `validation.spec.ts`는 `stack-ui.sh up` 뒤 그 상태(`MIY_STATE_DIR=.local/stack-ui`, `MIY_DATABASE_CONTAINER=miy-stack-ui-postgres-1`, `MIY_TEST_ORIGIN=http://localhost:18300`, `MIY_TEST_WEB_DIST=.local/stack-ui/site`), 별도 fixture 빌드와 CDP로 연 Chromium으로도 실행할 수 있다. 다른 spec은 자기 설정과 서버를 함께 쓴다.
 
 | spec | 설정 | 서버 |
 | --- | --- | --- |

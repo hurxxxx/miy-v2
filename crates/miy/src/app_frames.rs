@@ -253,6 +253,15 @@ async fn ensure_origin(
     Ok(origin)
 }
 
+/// A Docker app opens only while it runs. A UI-only validation fixture (a release
+/// without an image) has no runtime and opens like before; its API calls still
+/// require a running runtime in `runtime::proxy`.
+fn running_or_fixture(inst: &sqlx::postgres::PgRow) -> bool {
+    inst.get::<bool, _>("fixture")
+        || (inst.get::<String, _>("runtime_status") == "running"
+            && inst.get::<String, _>("desired_state") == "running")
+}
+
 /// The parent browser session of a portal request, as `session_guard` recorded it.
 struct Parent {
     session: Option<String>,
@@ -286,6 +295,19 @@ pub struct LaunchRequest {
     pub installation_id: Uuid,
 }
 
+/// Worker bookkeeping: expired frame credentials have no further use (codes live
+/// 60 seconds, frames at most 8 hours). Removing a frame session also removes
+/// its renew codes; continuations of a removed frame are refused like expired ones.
+pub async fn prune(pool: &sqlx::PgPool) -> anyhow::Result<()> {
+    sqlx::query("DELETE FROM app_frame_codes WHERE expires_at < now() - interval '1 hour'")
+        .execute(pool)
+        .await?;
+    sqlx::query("DELETE FROM app_frame_sessions WHERE expires_at < now() - interval '1 hour'")
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
 /// `POST /api/v1/app-frames`: a one-time code that opens one frame of an
 /// installation the portal session may use now.
 pub async fn launch_code(
@@ -305,7 +327,7 @@ pub async fn launch_code(
         .to_owned();
     let mut tx = policy::Write::begin(&s.pool).await?;
     let inst = sqlx::query(
-        "SELECT i.app_id,i.environment,i.release_id,i.runtime_status,i.desired_state FROM installations i WHERE i.id=$1 FOR SHARE",
+        "SELECT i.app_id,i.environment,i.release_id,i.runtime_status,i.desired_state,r.image_id IS NULL AS fixture FROM installations i JOIN releases r ON r.id=i.release_id WHERE i.id=$1 FOR SHARE OF i",
     )
     .bind(input.installation_id)
     .fetch_optional(&mut *tx)
@@ -315,9 +337,7 @@ pub async fn launch_code(
     if purpose.environment() != Some(env.as_str()) {
         return Err(ApiError::forbidden());
     }
-    if inst.get::<String, _>("runtime_status") != "running"
-        || inst.get::<String, _>("desired_state") != "running"
-    {
+    if !running_or_fixture(&inst) {
         return Err(ApiError::unavailable("app_runtime_not_running"));
     }
     let frame_origin = ensure_origin(&mut tx, &s.auth.frames, input.installation_id).await?;
@@ -952,7 +972,7 @@ async fn open_frame(
         .filter(|d| *d > Utc::now())
         .ok_or_else(ApiError::unauthorized)?;
     let inst = sqlx::query(
-        "SELECT i.app_id,i.environment,i.release_id,i.runtime_status,i.desired_state,r.manifest->'ui' AS ui FROM installations i JOIN releases r ON r.id=i.release_id WHERE i.id=$1 FOR SHARE OF i",
+        "SELECT i.app_id,i.environment,i.release_id,i.runtime_status,i.desired_state,r.image_id IS NULL AS fixture,r.manifest->'ui' AS ui FROM installations i JOIN releases r ON r.id=i.release_id WHERE i.id=$1 FOR SHARE OF i",
     )
     .bind(site.installation_id)
     .fetch_one(&mut *tx)
@@ -960,9 +980,7 @@ async fn open_frame(
     if inst.get::<Uuid, _>("release_id") != release {
         return Err(ApiError::conflict("release_changed_reload_required"));
     }
-    if inst.get::<String, _>("runtime_status") != "running"
-        || inst.get::<String, _>("desired_state") != "running"
-    {
+    if !running_or_fixture(&inst) {
         return Err(ApiError::unavailable("app_runtime_not_running"));
     }
     let (app, env): (String, String) = (inst.get("app_id"), inst.get("environment"));

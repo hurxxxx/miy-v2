@@ -41,9 +41,10 @@ export const webDist = realpathSync(required("MIY_TEST_WEB_DIST"));
 if (webDist === canonical("web/platform/dist"))
   throw new Error("validation requires an isolated web build");
 required("MIY_FIXTURE_DIST");
+// bootstrap.py records the portal origin of the state directory in server.json.
 const publicConfig = JSON.parse(
-  readFileSync(join(stateDir, "public.json"), "utf8"),
-);
+  readFileSync(join(stateDir, "server.json"), "utf8"),
+) as { origin: string };
 if (publicConfig.origin !== origin)
   throw new Error("test origin must match the selected state directory");
 

@@ -1,0 +1,112 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-11-10",
+  "status": "PARTIAL",
+  "scope": "Follow-up after the user adopted business app frames (D1, docs/APP-FRAMES.md): UI-only validation fixtures in frames, existing bundle 0.8.0 apps in frames, expired frame credential cleanup, and production rollout tooling and plan for P2 https://v2-app-{key}.dwdcc.kr. Isolated tools only; production was inspected read-only and not changed. The earlier proof of concept records stay in app-frames-poc-2026-11-10-validation.json and app-frames-poc-2026-11-10-second-validation.json.",
+  "decisions": {
+    "by": "user",
+    "adoption": "After the second proof of concept report listed the steps that follow adoption, the user asked to proceed with the next steps (D1 adopted). Production rollout stays a plan until the user requests it."
+  },
+  "source": {
+    "branch": "poc/app-frames",
+    "base": "44411a3",
+    "commits": [
+      "this commit"
+    ]
+  },
+  "changes": [
+    "Core: UI-only validation fixtures (releases without an image) open in their frame without a runtime; their API calls still need a running runtime. A stopped Docker app still refuses launches",
+    "Worker: expired frame codes and sessions are pruned every 10 minutes (one hour after expiry); a pruned frame's token and continuations are refused",
+    "render-server-config.py: the P2 host pattern server_name is built from validated DNS labels and quoted (it was refused for containing $ and braces, so a domain profile never rendered); check-server-config.py now runs Nginx and Caddy with a host-pattern frame profile",
+    "scripts/app-frame-settings.py (inspect/apply/restore/nginx-apply/nginx-restore) with offline tests; ui-rollout.py --target frame-runtime (first install creates .local/frame-runtime, rollback removes only index.html); core-rollout.py pins migration 0022 as additive",
+    "tests/validation.spec.ts runs the fixtures in frames; tests/fixtures.ts reads the state origin from server.json (public.json was never written since 58cecff); dev portal logout returns to the dev portal"
+  ],
+  "checks": [
+    {
+      "check": "scripts/runtime-regression/run.py (isolated PostgreSQL and Docker)",
+      "status": "FAIL",
+      "observed": "127 observations PASS (frames 12: new checks 11 fixture/stopped launch and 12 pruning); run.py exited 1 because its cleanup compared a pre-existing container that disappeared during the run: a GitLab CI runner job container of another project (runner-…-wait-for-service) removed by its own runner. The 13 regression resources were removed",
+      "history": [
+        {
+          "status": "PASS",
+          "observed": "126 observations with frames 11 before the pruning change"
+        }
+      ]
+    },
+    {
+      "check": "scripts/check-server-config.py",
+      "status": "PASS",
+      "observed": "Includes the new Nginx and Caddy host-pattern frame runs: only exact v2-app-<32 hex> names reach the Nginx frame listener, frames keep their own Host and get no anti-frame headers, portals frame-src the host wildcard"
+    },
+    {
+      "check": "python3 scripts/test-app-frame-settings.py",
+      "status": "PASS",
+      "observed": "12 tests, including the frame-only Nginx difference check against real renderer output for the P2 and P3 profiles"
+    },
+    {
+      "check": "python3 scripts/test-core-ops.py",
+      "status": "PASS",
+      "observed": "67 tests (frame-runtime first install, rollback and asset base)"
+    },
+    {
+      "check": "tests/validation.spec.ts on stack-ui (port profile), Chromium headless shell over CDP",
+      "status": "PASS",
+      "observed": "1 test passed twice in a row: runtime loading, deep link, reload, back, app switch, one frame on its own origin, in-frame error boundary, permissions, DB preparation idempotency, session refresh, grant revocation, unauthorized rejection, catalog consistency, user separation, logout",
+      "history": [
+        {
+          "status": "FAIL",
+          "observed": "tests/fixtures.ts read public.json, which nothing writes (since 58cecff)"
+        },
+        {
+          "status": "FAIL",
+          "observed": "The Playwright Chromium for CDP was not installed (only the headless shell); then the headless shell needed --no-sandbox like Playwright's own launches"
+        },
+        {
+          "status": "FAIL",
+          "observed": "Alice signs in on the dev portal but the spec expected logout to return to the portal (stale since the dev portal move); fixed"
+        },
+        {
+          "status": "FAIL",
+          "observed": "Flaky once: in-app navigation reaches the portal router by message, and back ran before the portal URL changed; the spec now waits for the URL"
+        }
+      ]
+    },
+    {
+      "check": "App built and deployed with main's CLI (f3911fd: miy 0.7.0, bundle 0.8.0, examples/native-todo with registerNavigationGuard) on stack-ui",
+      "status": "PASS",
+      "observed": "Opens in its own frame origin, creates an item through the frame API, in-app navigation updates the portal URL. The legacy guard reports an unknown state, so leaving asks even without input (dismiss stays, accept leaves). One-off spec, not committed"
+    },
+    {
+      "check": "scripts/app-frame-settings.py inspect on the production state (read-only)",
+      "status": "PASS",
+      "observed": "READY for https://v2-app-{key}.dwdcc.kr with bind 127.0.0.1:18184: bind port free, no enabled Nginx site names v2-app-, frame runtime not installed yet. Arbitrary *.dwdcc.kr names resolve to the server and the certificate SAN is *.dwdcc.kr (valid until 2027-01-23)"
+    },
+    {
+      "check": "scripts/check-static.sh",
+      "status": "PASS",
+      "observed": "all: doc links, script syntax, cleanup/release/API/ops tests (core ops 67, app frame settings 12, dev portal settings, console move), check-server-config, bundle portability, write decisions, fmt, clippy (server and client), cargo test 197 server-build and 118 client-build, typecheck, isolated web builds, Playwright ui 34, cli-experience 14, surface-boundaries 14, http-ui 1"
+    }
+  ],
+  "notRun": [
+    {
+      "check": "tests/app-frames.spec.ts rerun",
+      "reason": "Running on a fresh stack-ui when this commit was made; recorded in the next commit"
+    },
+    {
+      "check": "A same-registrable-domain hostname profile (P2) in a browser",
+      "reason": "The P2 proxy routing is checked with real Nginx and Caddy; a browser run needs a test domain with Domain= cookies and was not set up"
+    },
+    {
+      "check": "Screen reader output",
+      "reason": "No assistive technology in the headless run"
+    },
+    {
+      "check": "Production rollout",
+      "reason": "Planned in docs/APP-FRAMES.md section 9; runs only on the user's request after main is merged, pushed and passes main-push CI"
+    },
+    {
+      "check": "Current docs adoption and merge into main",
+      "reason": "Another worker has uncommitted changes to the same docs and to docs/CHECKS.md and scripts/bootstrap.py in the shared checkout; waiting for that commit"
+    }
+  ]
+}

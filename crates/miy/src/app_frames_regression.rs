@@ -433,6 +433,8 @@ pub async fn run(
     // Later installations for origin reuse and pool exhaustion (frames borrow h).
     let d = h.app(&format!("frame-d-{suffix}"), &[]).await?;
     let e = h.app(&format!("frame-e-{suffix}"), &[]).await?;
+    // A UI-only fixture and a stopped Docker app (check 11).
+    let f = h.app(&format!("frame-f-{suffix}"), &[]).await?;
     let user = h.user().await?;
     for app in [&a, &b, &c] {
         h.grant(&user, app).await?;
@@ -1167,5 +1169,82 @@ pub async fn run(
         "the pool did not recover or reused a removed origin"
     );
     passed.push("an exhausted frame port pool refuses launches with app_frame_origin_pool_exhausted instead of sharing an origin, and recovers when ports are free".into());
+
+    // 11. A stopped Docker app refuses launches; a UI-only validation fixture (a
+    //     release without an image) opens without a runtime, its API still needs one.
+    h.grant(&user, &f).await?;
+    sqlx::query("UPDATE releases SET image_id='sha256:'||repeat('0',64) WHERE id=$1")
+        .bind(f.release)
+        .execute(&state.pool)
+        .await?;
+    sqlx::query(
+        "UPDATE installations SET runtime_status='stopped',desired_state='stopped' WHERE id=$1",
+    )
+    .bind(f.installation)
+    .execute(&state.pool)
+    .await?;
+    let stopped = json(
+        launch_code(
+            client,
+            state,
+            &dev,
+            auth::BrowserPurpose::DevPortal,
+            f.installation,
+        )
+        .await?,
+        503,
+    )
+    .await?;
+    ensure!(
+        stopped["error"]["code"] == "app_runtime_not_running",
+        "a stopped Docker app was launched"
+    );
+    sqlx::query("UPDATE releases SET image_id=NULL WHERE id=$1")
+        .bind(f.release)
+        .execute(&state.pool)
+        .await?;
+    let f_frame = h.open(&dev, &f).await?;
+    let refused = json(
+        f_frame
+            .request(Method::GET, "/_miy/api/probe")
+            .send()
+            .await?,
+        503,
+    )
+    .await?;
+    ensure!(
+        refused["error"]["code"] == "app_runtime_not_running" && f.calls() == 0,
+        "a fixture frame reached a runtime that is not running"
+    );
+    passed.push("a stopped Docker app refuses frame launches; a UI-only validation fixture opens in its frame without a runtime and its API calls still refuse".into());
+
+    // 12. The worker prunes expired frame credentials and keeps live frames.
+    sqlx::query("UPDATE app_frame_sessions SET created_at=created_at-interval '10 hours',expires_at=expires_at-interval '10 hours',token_expires_at=token_expires_at-interval '10 hours' WHERE id=$1")
+        .bind(f_frame.id)
+        .execute(&state.pool)
+        .await?;
+    crate::app_frames::prune(&state.pool).await?;
+    let left: Vec<Uuid> = sqlx::query_scalar("SELECT id FROM app_frame_sessions WHERE id=ANY($1)")
+        .bind(vec![f_frame.id, e_frame.id])
+        .fetch_all(&state.pool)
+        .await?;
+    let stale_codes: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM app_frame_codes WHERE expires_at < now() - interval '1 hour'",
+    )
+    .fetch_one(&state.pool)
+    .await?;
+    ensure!(
+        left == vec![e_frame.id] && stale_codes == 0,
+        "expired frame credentials were kept or a live frame was pruned"
+    );
+    status(
+        f_frame
+            .request(Method::GET, "/_miy/platform/directory")
+            .send()
+            .await?,
+        401,
+    )
+    .await?;
+    passed.push("the worker prunes expired frame sessions and codes, keeps live frames, and a pruned frame's token is refused".into());
     Ok(passed)
 }

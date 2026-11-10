@@ -212,11 +212,16 @@ def frame_server():
     else:
         public = urllib.parse.urlsplit(frame_sample)
         listen = str(public.port or (443 if public.scheme == 'https' else 80))
+        # server_name matches the Host without its port. The regex needs "{", "}"
+        # and "$", so it is built only from validated DNS characters and quoted.
         prefix, suffix = frame_rest.split('{key}', 1)
-        name = '~^' + re.escape(prefix) + '[0-9a-f]{32}' + re.escape(suffix) + '$'
+        suffix = suffix.split(':', 1)[0]
+        if not (re.fullmatch(r'[a-z0-9-]*', prefix) and re.fullmatch(r'(\.[a-z0-9-]+)+', suffix)):
+            raise SystemExit('App frame host pattern must use lowercase DNS labels')
+        name = '"~^' + re.escape(prefix) + '[0-9a-f]{32}' + re.escape(suffix) + '$"'
     return f'''server {{
     listen {listen}{' ssl' if tls else ''};
-    server_name {nginx(name)};
+    server_name {name if not frame_ports else nginx(name)};
 {tls}    client_max_body_size 8m;
     # Asset paths carry a frame capability: never write them to access logs.
     access_log off;

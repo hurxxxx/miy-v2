@@ -17,7 +17,7 @@ A schema or settings rollout needs a reviewed extension with a real-dump rollbac
 Every apply attempt needs a new --release-dir under .local; it keeps the 0700 recovery data and
 the 0600 deployment record. apply/rollback run only after an explicit production request.
 
---widen-migration N allows exactly one pinned, constraint-widening migration (see WIDEN_ONLY): the
+--widen-migration N allows exactly one pinned, constraint-widening or additive migration (see WIDEN_ONLY): the
 backup is still restored and migrate-checked first, the candidate migrates the live database after
 core stops, and a later rollback reinstalls the previous binary on the widened schema, which that
 binary keeps using unchanged. No other migration, setting or identity change is ever applied.
@@ -55,9 +55,11 @@ PROCESS_PROPERTIES = ('Id', 'LoadState', 'ActiveState', 'Slice', 'ControlGroup',
 STABLE_TABLES = ['users', 'apps', 'app_registrations', 'grants', 'installations', 'releases', 'release_checks',
                  'db_resources', 'groups', 'group_members', 'group_grants', 'app_admission', 'app_controls']
 REPOSITORY = 'hurxxxx/miy-v2'
-# Migrations an older binary keeps working with because they only widen constraints:
+# Migrations an older binary keeps working with because they only widen constraints or add
+# tables it never reads (0022: app frame origins, sessions and codes):
 # version -> (file, sha256 of its exact bytes).
-WIDEN_ONLY = {21: ('0021_dev_portal.sql', 'f2b2c022638d618bb337ca1ab53d6ea2f2e0cd7b2cce474ed8659c2f7060b82a')}
+WIDEN_ONLY = {21: ('0021_dev_portal.sql', 'f2b2c022638d618bb337ca1ab53d6ea2f2e0cd7b2cce474ed8659c2f7060b82a'),
+              22: ('0022_app_frames.sql', 'cfb73c37f2bb795345518cce8f813ce8d538b13876e819a376c2bbe007dc57a6')}
 REQUIRED_CI = ('cli-foundation.yml', 'runtime-regression.yml', 'web.yml')
 HEX40 = re.compile(r'[0-9a-f]{40}')
 HEX64 = re.compile(r'[0-9a-f]{64}')

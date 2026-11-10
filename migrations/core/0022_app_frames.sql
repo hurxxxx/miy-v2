@@ -1,4 +1,4 @@
--- Business app UIs run in per-installation cross-origin frames (candidate design
+-- Business app UIs run in per-installation cross-origin frames (design
 -- docs/APP-FRAMES.md). An origin belongs to one installation and is never given to
 -- another one, even after the installation is gone. Frame credentials are opaque,
 -- hash-only and die with the parent portal session (logout or disabled user).

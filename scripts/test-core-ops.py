@@ -989,7 +989,8 @@ class UiRolloutTests(OfflineTest):
             (out / 'assets').mkdir(parents=True)
             (out / 'assets/old.js').write_text('old')
             (out / 'assets/new.js').write_text('new')
-            (out / 'index.html').write_text('<script type="module" src="/assets/new.js"></script>')
+            base = getattr(self, 'base', '/')
+            (out / 'index.html').write_text(f'<script type="module" src="{base}assets/new.js"></script>')
             if self.during_build:
                 self.during_build()
         elif argv[1:] == ['--version']:
@@ -1150,7 +1151,7 @@ class UiRolloutTests(OfflineTest):
 
         def arguments(action, release):
             return SimpleNamespace(action=action, release_dir=release, manifest=None, candidate=None,
-                                   live=self.live, backup=None, expected_commit=COMMIT)
+                                   live=self.live, backup=None, expected_commit=COMMIT, target='platform')
 
         # Real flock on separate file descriptors, with two distinct release directories.
         # Only subprocesses (git inspection) are mocked; index/backup/receipt writes are real temporary files.
@@ -1171,6 +1172,41 @@ class UiRolloutTests(OfflineTest):
                 self.assertEqual(running.result(timeout=5)['phase'], 'applied')
             if competing_action == 'rollback':
                 self.assertEqual(self.ui.run(arguments('rollback', second))['phase'], 'rolled_back')
+
+    def frame_runtime_fixture(self):
+        (self.root / 'web/frame-runtime/src').mkdir(parents=True)
+        (self.root / 'web/frame-runtime/src/main.tsx').write_text('frame')
+        self.tracked = ['package.json', 'web/frame-runtime/src/main.tsx']
+        self.base = '/_miy/runtime/'
+        return self.root / '.local/frame-runtime'
+
+    def test_frame_runtime_first_install_creates_its_directory_and_rollback_removes_only_the_index(self):
+        live = self.frame_runtime_fixture()
+        code, built = self.tool('build', '--commit', COMMIT, '--target', 'frame-runtime')
+        self.assertEqual((code, built['target'], built['newAssets']), (0, 'frame-runtime', 3))
+        manifest = json.loads((self.release / 'manifest.json').read_text())
+        self.assertEqual((manifest['target'], manifest['expectedLiveIndexSha256']), ('frame-runtime', None))
+        self.assertEqual(sorted(manifest['sourceFiles']), ['package.json', 'web/frame-runtime/src/main.tsx'])
+        self.assertTrue(any('@miy/frame-runtime' in argv for argv in self.commands if argv[0] == 'pnpm'))
+        self.assertEqual(self.tool('apply', '--expected-commit', COMMIT)[1]['error'],
+                         'manifest belongs to another target')
+        self.assertFalse(live.exists())
+        code, applied = self.tool('apply', '--expected-commit', COMMIT, '--target', 'frame-runtime')
+        self.assertEqual((code, applied['phase']), (0, 'applied'))
+        self.assertIn('/_miy/runtime/assets/new.js', (live / 'index.html').read_text())
+        self.assertEqual((live / 'assets/new.js').read_text(), 'new')
+        self.assertEqual(self.ui.inventory(self.live)['index.html'],
+                         hashlib.sha256(b'<script type="module" src="/assets/old.js"></script>').hexdigest())
+        code, rolled = self.tool('rollback', '--target', 'frame-runtime')
+        self.assertEqual((code, rolled['phase'], rolled['indexSha256']), (0, 'rolled_back', None))
+        self.assertFalse((live / 'index.html').exists())
+        self.assertEqual((live / 'assets/new.js').read_text(), 'new')
+
+    def test_frame_runtime_index_must_reference_assets_under_its_base(self):
+        self.frame_runtime_fixture()
+        self.base = '/'
+        code, result = self.tool('build', '--commit', COMMIT, '--target', 'frame-runtime')
+        self.assertEqual((code, result['error']), (1, 'index asset outside the target base'))
 
     def test_common_live_lock_blocks_other_release_apply_before_check(self):
         self.assert_common_publication_lock('apply', 'check')

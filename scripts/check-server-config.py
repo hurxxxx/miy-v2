@@ -129,8 +129,11 @@ def check_caddy_config(state, expected_ports):
                 'Caddy could automatically open another redirect listener')
 
 
-def proxy_regression(state, kind, tls_material=None):
-    """Exercise real proxies against disposable loopback HTTP stubs, without DB/apps."""
+def proxy_regression(state, kind, tls_material=None, hosts=False):
+    """Exercise real proxies against disposable loopback HTTP stubs, without DB/apps.
+
+    hosts: app frames on a {key} host pattern sharing the portal port (P2) instead of
+    a port pool (P3); requests carry the frame Host to the loopback listener."""
     class Handler(http.server.BaseHTTPRequestHandler):
         def log_message(self, *_args):
             pass
@@ -172,7 +175,7 @@ def proxy_regression(state, kind, tls_material=None):
         ports = [sock.getsockname()[1] for sock in reserved]
         # Two consecutive free ports form the app frame pool (one origin each),
         # below the kernel's ephemeral range where outgoing connections bind.
-        for base in range(29000, 30000, 2):
+        for base in range(29000, 30000, 2) if not hosts else []:
             pair = []
             try:
                 for number in (base, base + 1):
@@ -185,19 +188,25 @@ def proxy_regression(state, kind, tls_material=None):
                 continue
             reserved.extend(pair)
             break
-        frame_ports = [base, base + 1]
+        frame_ports = [base, base + 1] if not hosts else []
         scheme = 'https' if tls_material else 'http'
         portal, console, dev_portal = [f'{scheme}://127.0.0.1:{number}' for number in ports]
-        frame_origin = f'{scheme}://127.0.0.1:{frame_ports[0]}'
         tls_options = ['--ca-file', str(tls_material[0])] if tls_material else []
+        if hosts:
+            frame_options = ['--app-frame-origin', f'{scheme}://v2-app-{{key}}.localhost:{ports[0]}']
+            frames = [f'{scheme}://v2-app-{key}.localhost:{ports[0]}' for key in ('0' * 32, 'ab' * 16)]
+            frame_sources = f'{scheme}://*.localhost:{ports[0]}'
+        else:
+            frame_options = ['--app-frame-origin', scheme + '://127.0.0.1:{port}',
+                             '--app-frame-ports', f'{frame_ports[0]}-{frame_ports[1]}']
+            frames = [f'{scheme}://127.0.0.1:{number}' for number in frame_ports]
+            frame_sources = f'{scheme}://127.0.0.1:*'
         bootstrap(state, '--profile', 'server' if tls_material else 'local', '--origin', portal, '--console-origin', console,
                   '--dev-portal-origin', dev_portal,
                   '--bind', f'127.0.0.1:{stubs[0].server_port}',
                   '--console-bind', f'127.0.0.1:{stubs[1].server_port}',
                   '--dev-portal-bind', f'127.0.0.1:{stubs[3].server_port}',
-                  '--app-frame-bind', f'127.0.0.1:{stubs[4].server_port}',
-                  '--app-frame-origin', scheme + '://127.0.0.1:{port}',
-                  '--app-frame-ports', f'{frame_ports[0]}-{frame_ports[1]}',
+                  '--app-frame-bind', f'127.0.0.1:{stubs[4].server_port}', *frame_options,
                   '--identity-port', str(stubs[2].server_port), *tls_options)
         site = state / 'site'
         site.mkdir()
@@ -322,12 +331,14 @@ def proxy_regression(state, kind, tls_material=None):
         # and never get the anti-frame headers of the portal surfaces.
         for shell in [portal, dev_portal]:
             shell_headers = fetch(shell, '/')[1]
-            require(f'frame-src {scheme}://127.0.0.1:*' in ';'.join(shell_headers.get_all('Content-Security-Policy', []))
+            require(f'frame-src {frame_sources} ' in ';'.join(shell_headers.get_all('Content-Security-Policy', []))
                     and shell_headers.get_all('Referrer-Policy') == ['strict-origin-when-cross-origin'],
                     'Portal shell does not frame app origins or may drop the launch Origin')
-        for number in frame_ports:
-            frame = f'{scheme}://127.0.0.1:{number}'
-            status, headers, body = fetch(frame, '/_miy/launch', {'X-Forwarded-Host': 'attacker.invalid'})
+        for frame in frames:
+            # Host-pattern frames resolve to the loopback listener by their Host.
+            target = portal if hosts else frame
+            host = {'Host': frame.split('://', 1)[1]} if hosts else {}
+            status, headers, body = fetch(target, '/_miy/launch', {'X-Forwarded-Host': 'attacker.invalid', **host})
             value = json.loads(body)
             forwarded = {key.lower(): item for key, item in value['headers'].items()}
             require(status == 200 and value['surface'] == 'frame' and forwarded['host'] == frame.split('://', 1)[1]
@@ -336,8 +347,14 @@ def proxy_regression(state, kind, tls_material=None):
             require(not headers.get_all('X-Frame-Options')
                     and headers.get_all('X-Content-Type-Options') == ['nosniff'],
                     'Proxy added anti-frame headers to app frames or lost nosniff')
-            require(fetch(frame, '/_miy/runtime/a.js', {'Service-Worker': 'script'})[0] == 403,
+            require(fetch(target, '/_miy/runtime/a.js', {'Service-Worker': 'script', **host})[0] == 403,
                     'Frame origin accepted a service-worker script request')
+        if hosts and kind == 'nginx':
+            # Only names of the exact pattern reach frames; others stay on the portal.
+            # (Caddy serves the whole wildcard label; Core refuses unregistered hosts.)
+            for name in ['v2-app-short.localhost', 'v2-app-' + '0' * 32 + '.localhost.evil', 'x.v2-app-' + '0' * 32 + '.localhost']:
+                value = json.loads(fetch(portal, '/api/x', {'Host': f'{name}:{ports[0]}'})[2])
+                require(value['surface'] != 'frame', 'A host outside the app frame pattern reached the frame listener')
         if tls_material:
             subprocess.run([sys.executable, str(ROOT / 'scripts/check-server-tls.py'), '--state-dir', str(state),
                             '--certificate', str(tls_material[1]), '--key', str(tls_material[2]), '--connect'],
@@ -664,7 +681,11 @@ with tempfile.TemporaryDirectory(prefix='miy-server-config-') as temporary:
         print('PASS Nginx fixed purposes, scoped IdP, CLI redirects, content denial and security headers')
         proxy_regression(root / 'nginx-single-ip-tls', 'nginx', (ca, certificate, key))
         print('PASS actual single-IP HTTPS portal/console proxy and client trust checks')
+        proxy_regression(root / 'nginx-frame-hosts', 'nginx', hosts=True)
+        print('PASS Nginx app frames on a host pattern: exact regex names only, own Host, no anti-frame headers')
     else:
         print('NOT_RUN Nginx proxy checks: nginx is not installed')
     proxy_regression(root / 'caddy-http-boundaries', 'caddy')
     print('PASS Caddy fixed purposes, scoped IdP, CLI redirects, content denial and security headers')
+    proxy_regression(root / 'caddy-frame-hosts', 'caddy', hosts=True)
+    print('PASS Caddy app frames on a host pattern with their own Host')
