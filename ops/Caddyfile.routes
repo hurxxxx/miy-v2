@@ -9,7 +9,8 @@
 # Portals frame only business app frame origins and keep the launch POST Origin.
 (appframes_parent) {
   header {
-    +Content-Security-Policy "frame-src {$MIY_APP_FRAME_SOURCES}"
+    # blob: covers an app frame's own download link (Firefox checks the parent).
+    +Content-Security-Policy "frame-src {$MIY_APP_FRAME_SOURCES} blob:"
     >Referrer-Policy strict-origin-when-cross-origin
   }
 }

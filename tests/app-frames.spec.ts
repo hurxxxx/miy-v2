@@ -18,8 +18,11 @@ const state = join(root, ".local/stack-ui");
 const evidence = join(root, ".local/evidence/app-frames");
 const credentials = JSON.parse(readFileSync(join(state, "credentials.json"), "utf8")) as Record<string, string>;
 const suffix = Date.now().toString(36);
-const todoId = "ui5-todo" + suffix;
-const probeId = "ui5-probe" + suffix;
+// MIY_FRAME_APPS=todoId,probeId reuses apps an earlier run deployed: every
+// installation takes a Docker network from the host's limited address pools.
+const reuse = process.env.MIY_FRAME_APPS?.split(",");
+const todoId = reuse?.[0] ?? "ui5-todo" + suffix;
+const probeId = reuse?.[1] ?? "ui5-probe" + suffix;
 const work = join(state, "work", "frames-" + suffix);
 const adminDir = join(work, "admin");
 const env = fixtureEnv(work, {
@@ -108,6 +111,7 @@ test.beforeAll(async () => {
   test.setTimeout(1800000);
   mkdirSync(adminDir, { recursive: true });
   mkdirSync(evidence, { recursive: true });
+  if (reuse) return;
   copyFileSync(join(root, "target/debug/miy"), binary);
   cli(["auth", "login", "--account", "admin", "--url", origin], adminDir);
   cli(["component", "publish", join(root, "registry/components/ui/1.0.1")], adminDir);
@@ -168,14 +172,21 @@ test("FV-01/05/08: a real app runs in its own frame origin with routing, reload 
   await frame.locator("#todo-title").fill(title);
   await frame.getByRole("button", { name: "+ 추가하기" }).click();
   await expect(frame.getByText(title)).toBeVisible();
+  // The app reports loading as unsaved work; leave only once it settled, or the
+  // portal rightly asks first.
+  const settled = () => expect(frame.getByRole("button", { name: "새로고침" })).toBeEnabled();
+  await settled();
   await frame.getByRole("button", { name: /^전체/ }).click();
   // The portal router drops a trailing slash, as it always did for app routes.
   await expect(page).toHaveURL(new RegExp(`${appPath(todoId)}/?$`));
+  await expect(frame.getByRole("button", { name: /^전체/ })).toHaveAttribute("aria-current", "page");
+  await settled();
   await page.goBack();
   await expect(page).toHaveURL(new RegExp(`${appPath(todoId)}/?\\?view=active$`));
   await expect(frame.getByRole("button", { name: /^할 일/ })).toHaveAttribute("aria-current", "page");
   // The frame reloading itself resends its consumed code: it relaunches cleanly.
   // The relaunch replaces the iframe element, so content is located afresh.
+  await settled();
   const content = page.frameLocator("iframe.app-frame");
   await frame.evaluate(() => location.reload());
   await expect(content.getByText(title)).toBeVisible();
@@ -205,7 +216,6 @@ test("FV-02: unsaved input in the frame asks before the portal leaves the app", 
     dialogs.push(dialog.message());
     void dialog.dismiss();
   });
-  await page.goto(devPortal + "/").catch(() => undefined);
   await page.locator("#platform-navigation a").first().click();
   await expect.poll(() => dialogs.length).toBeGreaterThan(0);
   expect(page.url()).toContain(probeId);
@@ -241,18 +251,25 @@ test("FV-04/06/07/10: the frame cannot reach the portal, abuse the bridge or use
   await frame.getByRole("link", { name: "inside link" }).click();
   await expect(page).toHaveURL(appPath(probeId) + "/detail?x=1");
   await expect(frame.getByTestId("location")).toHaveText("/detail?x=1");
+  // The external host does not resolve here; the new tab's request proves the target.
   const popup = page.waitForEvent("popup");
+  const outside = context.waitForEvent("request", (request) => request.url().includes("example.invalid"));
   await frame.getByRole("link", { name: "outside link" }).click();
-  expect((await popup).url()).toContain("example.invalid");
+  await popup;
+  expect((await outside).url()).toBe("https://example.invalid/outside");
+  expect(page.url()).toBe(appPath(probeId) + "/detail?x=1");
   // Downloads through apiBlob and app dialogs stay usable inside the sandbox.
   const download = page.waitForEvent("download");
   await frame.getByRole("button", { name: "download" }).click();
   expect((await download).suggestedFilename()).toBe("frame-probe.txt");
-  const dialog = page.waitForEvent("dialog");
+  // An alert blocks the click until dismissed, so handle it before clicking.
+  let modal = "";
+  page.once("dialog", (dialog) => {
+    modal = dialog.message();
+    void dialog.dismiss();
+  });
   await frame.getByRole("button", { name: "modal" }).click();
-  const shown = await dialog;
-  expect(shown.message()).toBe("frame-modal");
-  await shown.dismiss();
+  expect(modal).toBe("frame-modal");
   // FV-06 (record, not a fix): a cookie written by the frame on another port.
   observations.portalSeesFrameCookie = (await context.cookies(devPortal)).some((c) => c.name === "frame_probe_toss");
   // FV-10: the portal cookie session no longer reaches app APIs.

@@ -135,7 +135,9 @@ def security_headers(indent='    ', console=False, portal=False):
     if portal:
         # Portals frame only app frame origins. The launch form POST carries the
         # portal Origin only under this referrer policy (not no-referrer).
-        policy += f'; frame-src {frame_sources}'
+        # blob: covers an app frame's own download link (Firefox applies the
+        # parent's frame-src to it).
+        policy += f'; frame-src {frame_sources} blob:'
         extra = f'{indent}add_header Referrer-Policy strict-origin-when-cross-origin always;\n'
     return (f'{indent}add_header X-Content-Type-Options nosniff always;\n'
             f'{indent}add_header X-Frame-Options DENY always;\n'
