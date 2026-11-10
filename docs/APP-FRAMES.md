@@ -1,7 +1,7 @@
 # 업무 앱 iframe 실행 후보 설계
 
 - 작성일: 2026-11-09
-- 상태: **후보 설계 · 실증 전.** 구현·격리 검증·운영 반영은 없다. 현재 기준은 [APP-BOUNDARIES](APP-BOUNDARIES.md)의 같은 페이지 MF 실행이며, 이 문서는 실증 결과로 채택 여부를 정하기 위한 후보다. 채택 전에는 현행 문서의 "iframe 없는 MF 유지"를 바꾸지 않는다.
+- 상태: **후보 설계 · 브랜치 `poc/app-frames`에서 1차 실증(PARTIAL).** 격리 DB 회귀 123개(frames 8 포함), 서버 설정 검사, Chromium·Firefox 브라우저 실증(P3)은 PASS이다. WebKit·P2 브라우저·일부 FV-07/08/09와 같은 페이지 전제 모의 UI 시험의 이식은 남아 있다([실증 기록](releases/app-frames-poc-2026-11-10-validation.json)). 운영 반영은 없고, 채택(D1) 전까지 main의 현재 기준은 [APP-BOUNDARIES](APP-BOUNDARIES.md)의 같은 페이지 MF 실행이다.
 - 배경: 2026-11-09 사용자가 iframe과 현행 구조의 장기 비교를 요청했다. 검토 결과 업무 앱만 별도 출처 iframe으로 분리하는 혼합 구조를 실증하기로 했고, 외부 검토 의견(보안 효과 과장, 인증서 범위, 공유 출처, 복잡성, 불완전 격리)을 아래 원칙에 반영했다.
 - 범위: 업무 앱 UI의 브라우저 실행 계약. 권한 행렬·공통 ACL은 [CORE-PERMISSIONS](CORE-PERMISSIONS.md), 작업 순서는 [PLAN](PLAN.md)을 따른다.
 
