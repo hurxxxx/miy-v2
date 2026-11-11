@@ -1,7 +1,7 @@
 # 업무 앱 iframe 실행 설계
 
 - 작성일: 2026-11-09
-- 상태: **채택(D1, 2026-11-10) · 소스 구현(2026-11-11 main 병합) · 운영 미반영.** 사용자가 2차 실증 보고를 받고 채택 후속 단계 진행을 지시했다. 격리 DB 회귀 127개(frames 12 포함), 서버 설정 검사(P2 호스트 패턴과 P3 포트 풀), 포트·호스트명 프로필의 Chromium·Firefox·WebKit 각 18개, 프레임으로 옮긴 모의 UI·실제 스택 UI 시험, 검증용 fixture 앱(`validation.spec`)과 번들 0.8.0 앱의 프레임 실행이 PASS이다. 같은 등록 도메인(P2) 브라우저 실행과 화면낭독 출력은 남아 있다([1차](releases/app-frames-poc-2026-11-10-validation.json), [2차](releases/app-frames-poc-2026-11-10-second-validation.json), [채택 후속](releases/app-frames-adoption-2026-11-10-validation.json)). 운영(서버 `f9d4084`·UI `3760ef0`·schema 21)은 아직 같은 페이지 MF로 실행하며 §9 절차로 반영한다. 현행 문서는 §8대로 개정했다.
+- 상태: **채택(D1, 2026-11-10) · 소스 구현(2026-11-11 main 병합) · 2026-11-12 운영 반영.** 사용자가 2차 실증 보고를 받고 채택 후속 단계 진행을 지시했다. 격리 DB 회귀 127개(frames 12 포함), 서버 설정 검사(P2 호스트 패턴과 P3 포트 풀), 포트·호스트명 프로필의 Chromium·Firefox·WebKit 각 18개, 프레임으로 옮긴 모의 UI·실제 스택 UI 시험, 검증용 fixture 앱(`validation.spec`)과 번들 0.8.0 앱의 프레임 실행이 PASS이다. 같은 등록 도메인(P2) 브라우저 실행과 화면낭독 출력은 남아 있다([1차](releases/app-frames-poc-2026-11-10-validation.json), [2차](releases/app-frames-poc-2026-11-10-second-validation.json), [채택 후속](releases/app-frames-adoption-2026-11-10-validation.json)). 운영에는 2026-11-12 §9 절차로 반영했다(서버·UI `bcb6356`, schema 22, [배포 기록](releases/app-frames-2026-11-12-deployment.json), 앱 4개를 prod·dev 포털에서 읽기 전용으로 열어 확인). 현행 문서는 §8대로 개정했다.
 - 배경: 2026-11-09 사용자가 iframe과 현행 구조의 장기 비교를 요청했다. 검토 결과 업무 앱만 별도 출처 iframe으로 분리하는 혼합 구조를 실증하기로 했고, 외부 검토 의견(보안 효과 과장, 인증서 범위, 공유 출처, 복잡성, 불완전 격리)을 아래 원칙에 반영했다.
 - 범위: 업무 앱 UI의 브라우저 실행 계약. 권한 행렬·공통 ACL은 [CORE-PERMISSIONS](CORE-PERMISSIONS.md), 작업 순서는 [PLAN](PLAN.md)을 따른다.
 
@@ -190,11 +190,11 @@ flowchart LR
 
 ## 8. 현행 문서 개정
 
-채택에 따라 APP-BOUNDARIES(AB-04, 앱 실행 계약, 선택기와 브리지 소유, iframe 없는 방안 비교), PRD의 브라우저 실행·통합 UI 요구·인수, FRONTEND의 모듈 로딩 절, UIUX-MIGRATION의 앱 화면 원칙, CORE-PERMISSIONS의 "브라우저 직접 요청의 발신 앱 증명 없음" 문구, 루트 AGENTS·README의 "iframe 없는 MF 유지"와 각 문서 머리말의 같은 문구를 이 설계로 바꾼다. 템플릿 번들(0.9.0)·CHECKS는 구현과 함께 바뀌었다. 2026-11-11 main 병합과 함께 개정했다. 문서의 같은 페이지 MF 서술은 운영 반영 전까지의 운영 사실이다.
+채택에 따라 APP-BOUNDARIES(AB-04, 앱 실행 계약, 선택기와 브리지 소유, iframe 없는 방안 비교), PRD의 브라우저 실행·통합 UI 요구·인수, FRONTEND의 모듈 로딩 절, UIUX-MIGRATION의 앱 화면 원칙, CORE-PERMISSIONS의 "브라우저 직접 요청의 발신 앱 증명 없음" 문구, 루트 AGENTS·README의 "iframe 없는 MF 유지"와 각 문서 머리말의 같은 문구를 이 설계로 바꾼다. 템플릿 번들(0.9.0)·CHECKS는 구현과 함께 바뀌었다. 2026-11-11 main 병합과 함께 개정했다. 문서의 같은 페이지 MF 서술은 2026-11-12 반영 전 운영의 사실이다.
 
 ## 9. 운영 반영 계획
 
-v2.dwdcc.kr은 개발 단계 서버이므로 짧은 중단·재로그인은 허용한다([개발 단계 원칙](../AGENTS.md#개발-단계-원칙-실제-운영-전환-전까지)). 반영은 사용자가 요청할 때만 하고, DB를 바꾸는 단계는 변경 범위 백업과 별도 영역 복원 확인을 먼저 한다.
+v2.dwdcc.kr은 개발 단계 서버이므로 짧은 중단·재로그인은 허용한다([개발 단계 원칙](../AGENTS.md#개발-단계-원칙-실제-운영-전환-전까지)). 반영은 사용자가 요청할 때만 하고, DB를 바꾸는 단계는 변경 범위 백업과 별도 영역 복원 확인을 먼저 한다. 2026-11-12 이 절차로 반영했다([배포 기록](releases/app-frames-2026-11-12-deployment.json)). 아래는 그 절차와 되돌리기 기준이다.
 
 | 항목 | 값과 확인 결과(2026-11-10, 읽기 전용) |
 | --- | --- |
@@ -205,13 +205,13 @@ v2.dwdcc.kr은 개발 단계 서버이므로 짧은 중단·재로그인은 허�
 
 **선행 조건.** main 병합 후 정확한 반영 커밋을 push하고 main-push CI(web, cli-foundation, runtime-regression)가 그 커밋에서 통과해야 한다(`core-rollout.py` preflight). 새 앱 개발용 CLI 릴리스(번들 0.9.0)는 별도로 게시한다. 기존 0.8.0 앱은 다시 빌드하지 않아도 프레임에서 실행되고 API 쓰기·이동이 동작한다. 다만 입력 상태가 unknown이라 앱을 떠날 때마다 확인을 묻는다. 0.9.0 SDK로 다시 빌드하면 해소된다.
 
-**병합 후 반영 전 주의.** `compose.yaml`이 프레임 변수(`MIY_APP_FRAME_SITES`·`MIY_APP_FRAME_SOURCES`)를 필수로 요구한다. 그래서 1단계 전까지 운영 `compose.env`로 실행하는 `docker compose` 명령은 변수 오류로 멈춘다. 실행 중인 Postgres·Keycloak 컨테이너에는 영향이 없고, 1단계가 키를 추가한다.
+**병합 후 반영 전 주의.** `compose.yaml`이 프레임 변수(`MIY_APP_FRAME_SITES`·`MIY_APP_FRAME_SOURCES`)를 필수로 요구한다. 그래서 1단계 전까지 운영 `compose.env`로 실행하는 `docker compose` 명령은 변수 오류로 멈춘다. 실행 중인 Postgres·Keycloak 컨테이너에는 영향이 없고, 1단계가 키를 추가한다(2026-11-12 추가함).
 
 **순서.** 각 단계는 상태 디렉터리 아래 새 release 디렉터리에 백업·영수증을 남긴다.
 
 1. `app-frame-settings.py apply`: server.json·runtime.env·compose.env를 백업하고 프레임 키만 추가한다. 이전 바이너리는 새 키를 무시한다.
 2. `core-rollout.py apply --widen-migration 22`: 새 core를 설치하고 migration을 적용한다. 이 시점부터 이전 포털 UI의 앱 화면은 포털 쿠키 업무 API 거부로 열리지 않는다. 5단계까지의 짧은 중단이다.
-3. `app-frame-settings.py nginx-apply --certificate … --key …`: 렌더한 설정이 기존 파일에 프레임 서버 블록 하나와 포털·dev 포털의 `frame-src`·Referrer-Policy만 더했는지 확인한다. 그 뒤 설치·`nginx -t`·reload한다.
+3. `app-frame-settings.py nginx-apply --certificate … --key …`: 렌더한 설정이 기존 파일에 프레임 서버 블록 하나와 포털·dev 포털의 `frame-src`·Referrer-Policy만 더했는지 확인한다. 그 뒤 설치·`nginx -t`·reload한다. 렌더러는 실행한 checkout의 `web/platform/dist`를 정적 경로로 쓰므로 이 단계는 운영 checkout(main)의 같은 도구로 실행한다.
 4. `ui-rollout.py build/apply --target frame-runtime`: 프레임 런타임을 처음 설치한다. Core는 프레임 문서마다 `index.html`을 읽으므로 재시작이 필요 없다.
 5. `ui-rollout.py build/apply`: 포털 UI를 `AppFrame` 실행으로 교체한다.
 6. 확인: health, prod·dev 포털에서 앱 열기(프레임 출처 `v2-app-<키>.dwdcc.kr`, 포털 출처가 아님), 운영 앱 전체 실행, 포털 쿠키 업무 API 403, CLI bearer 업무 API 200, 콘솔·IdP `frame-ancestors 'none'` 유지. 첫 실행의 렌더 실패도 본다(격리 실행에서 배포 직후 첫 프레임이 한 번 실패했고 이후 재현되지 않았다, [채택 후속 기록](releases/app-frames-adoption-2026-11-10-validation.json)).

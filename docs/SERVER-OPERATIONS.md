@@ -6,11 +6,11 @@
 - 관리·CLI 승인·로그인 콘솔: **https://v2-console.dwdcc.kr** (2026-11-09 이동, 옛 `https://v2.dwdcc.kr:9443`은 301로 넘김)
 - CLI 설치 안내: **https://v2.dwdcc.kr/cli/install**
 - 실행 서버·게시 CLI: **0.7.0**, SDK 번들 **0.8.0**
-- 배포 소스: 서버·worker `f9d408490596935c460101e70a908c6621fab220`, 웹 화면 `3760ef044755c2018b70eacfaa0cb70954b694e2`(2026-11-09), core schema 21, 게시 CLI `01e4d4924f8c8fc4e11720c1af81adf17ddb20bf` 유지
+- 배포 소스: 서버·worker와 웹 화면·프레임 런타임 `bcb6356a3c643807df8eb59592259f5a88b7f103`(2026-11-12), core schema 22, 게시 CLI `01e4d4924f8c8fc4e11720c1af81adf17ddb20bf` 유지
 
 여기서 운영 반영은 이 프로젝트의 기존 개발 서버에 변경분을 배포했다는 뜻이다. 제품 개발 완료나 정식 오픈을 선언한 것은 아니다. 현재 세 출처는 같은 IP의 HTTPS 443을 공유하는 별도 호스트명이며, 도메인 없는 설치는 별도 포트를 지원한다. 출처 배치 계약은 [경계 설계](APP-BOUNDARIES.md#영역과-설정)를 따른다.
 
-**현재 서버는 prod 포털·dev 포털·관리/로그인 콘솔의 세 출처 경계를 적용했다.** [사내 최소 계약](APP-BOUNDARIES.md#확정-결정)에 따라 현재 운영은 같은 페이지 MF·AppRoot·통합 라우팅으로 실행한다. 채택한 업무 앱 프레임은 [반영 계획](APP-FRAMES.md#9-운영-반영-계획)으로 사용자가 요청할 때 반영한다. 앱 코드는 해당 환경의 포털에서만 실행하고 관리·device CLI 승인·Keycloak은 콘솔에서 제공한다. portal/dev_portal/console 세션 용도·환경·정확한 Origin·CSRF·응답 제한을 서버가 검사한다. 별도 호스트여도 같은 상위 도메인의 쿠키 영향은 남고, 포트는 쿠키를 격리하지 않는다. 공개 서버를 내부망 범위로 자동 인정하거나 같은 포털 안의 앱 격리를 보장하지 않는다.
+**현재 서버는 prod 포털·dev 포털·관리/로그인 콘솔의 세 출처 경계를 적용했다.** [사내 최소 계약](APP-BOUNDARIES.md#확정-결정)에 따라 업무 앱은 2026-11-12부터 앱마다 `https://v2-app-<키>.dwdcc.kr` 출처의 프레임에서 실행한다([배포 기록](releases/app-frames-2026-11-12-deployment.json), [반영 절차](APP-FRAMES.md#9-운영-반영-계획)). 프레임 listener는 `127.0.0.1:18184`, 프레임 런타임은 `.local/frame-runtime`이다. 앱 코드는 해당 환경의 포털에서만 실행하고 관리·device CLI 승인·Keycloak은 콘솔에서 제공한다. portal/dev_portal/console 세션 용도·환경·정확한 Origin·CSRF·응답 제한을 서버가 검사한다. 별도 호스트여도 같은 상위 도메인의 쿠키 영향은 남고, 포트는 쿠키를 격리하지 않는다. 공개 서버를 내부망 범위로 자동 인정하거나 같은 포털 안의 앱 격리를 보장하지 않는다.
 
 2026-11-09 사용자 요청으로 콘솔과 로그인 issuer를 `https://v2-console.dwdcc.kr`로 옮겼다([배포 기록](releases/console-hostname-2026-11-09-deployment.json)). 서버·UI·schema는 그대로이고, 옛 `:9443`은 같은 경로로 301 redirect한다. 모든 브라우저 사용자는 한 번 다시 로그인하며 CLI credential은 유지된다. 외부 OAuth MCP 클라이언트는 새 issuer로 다시 인증한다. 실제 OIDC로 세 출처 SSO와 CLI·MCP 연결 22개를 확인했다.
 
@@ -161,7 +161,7 @@ Codex·Claude의 생성된 프로젝트 MCP는 프로젝트의 `.miy-tools/miy[.
 
 ## 3. 현재 배포 소스와 이 작업본의 차이
 
-실행 서버·worker는 `f9d408490596935c460101e70a908c6621fab220`, 웹 화면은 `3760ef044755c2018b70eacfaa0cb70954b694e2`이며, 게시 CLI는 `01e4d4924f8c8fc4e11720c1af81adf17ddb20bf`다(모두 버전 0.7.0 / 번들 0.8.0). DB 역할 연결 한도·`application_name`·Docker 저장 공간 하한과 사용자·그룹 앱 권한·감사 조회 migration `0018`·`0019`는 2026-11-04 반영했다. 2026-11-05에는 다음 두 변경을 반영했다([배포 결과](releases/core-runtime-management-2026-11-05-deployment.json)).
+실행 서버·worker와 웹 화면은 `bcb6356a3c643807df8eb59592259f5a88b7f103`(2026-11-12)이며, 게시 CLI는 `01e4d4924f8c8fc4e11720c1af81adf17ddb20bf`다(모두 버전 0.7.0 / 번들 0.8.0). DB 역할 연결 한도·`application_name`·Docker 저장 공간 하한과 사용자·그룹 앱 권한·감사 조회 migration `0018`·`0019`는 2026-11-04 반영했다. 2026-11-05에는 다음 두 변경을 반영했다([배포 결과](releases/core-runtime-management-2026-11-05-deployment.json)).
 
 - 사용자 활성 상태 변경과 앱 등록 결정의 관리자 재확인·감사 기록(`user.enabled`·`user.disabled`, 등록 승인의 `grant.enabled`) — [검증 기록](releases/core-admin-recheck-2026-11-04-validation.json)
 - 회사 사용 중지된 앱을 관리자 실행 관리 목록(`GET /api/v1/runtime/installations`)과 실행 작업 조회에 남기는 변경, 관리 화면 "앱 실행 상태"의 사용 중지 표시 — [검증 기록](releases/core-runtime-management-2026-11-04-validation.json)
@@ -295,6 +295,8 @@ python3 scripts/ui-rollout.py rollback --release-dir <같은 경로>
 5. `ui-rollout.py apply`: 해당 서버의 세 출처 설정에 맞는 UI를 반영하고 환경별 직접 링크·새 탭 이동·로그인을 확인한다. 게시 UI `3760ef0`의 구 서버 fallback은 당시 구현 사실이며 향후 유지 조건이 아니다.
 
 되돌릴 때는 역순으로 `ui-rollout.py rollback`, `nginx-restore`, `core-rollout.py rollback`, `dev-portal-settings.py restore`를 실행한다. schema 21을 읽을 수 있는 이전 서버로 되돌리는 경우 DB는 되돌리지 않는다. 예상하지 못한 제3의 파일·설정 변경은 덮어쓰지 않고 거부한다. dev 설정의 `restore`는 저장한 변경 전·후 상태를 둘 다 허용하므로 적용·복원이 중간에 실패해도 같은 명령으로 다시 실행할 수 있다. 대상 IdP callback/logout URI가 원래부터 있었는지는 복구 manifest와 원본 IdP 백업(`settings-backup/identity.json`)을 함께 사용해 보존·복원한다. **이 부분 실패·재시도 보완은 현재 소스의 [검증 기록](releases/boundary-review-fixes-2026-11-09-validation.json)이며 실제 운영 재실행은 NOT_RUN이다.**
+
+**업무 앱 프레임(`scripts/app-frame-settings.py`, `ui-rollout.py --target frame-runtime`).** 2026-11-12 반영은 [배포 기록](releases/app-frames-2026-11-12-deployment.json), 절차는 [APP-FRAMES §9](APP-FRAMES.md#9-운영-반영-계획)를 따른다. `app-frame-settings.py`의 `inspect`·`apply`·`restore`는 프레임 출처 템플릿(`https://v2-app-{key}.dwdcc.kr`)·내부 bind(`127.0.0.1:18184`)·프레임 런타임 경로를 세 설정 파일에 줄 단위로 추가·복원하며 IdP는 바꾸지 않는다. `nginx-apply`는 다시 생성한 설정이 프레임 server 블록 하나와 포털·dev 포털의 `frame-src`·Referrer-Policy만 더할 때 설치한다. 렌더러가 실행한 checkout의 정적 경로를 쓰므로 운영 checkout의 도구로 실행한다. `ui-rollout.py --target frame-runtime`은 `.local/frame-runtime`에 자산을 추가하고 `index.html`을 교체한다(첫 rollback은 index만 제거). Core가 프레임 문서마다 index를 읽으므로 재시작은 필요 없다.
 
 **콘솔 출처 이동(`scripts/console-origin-move.py`).** 콘솔은 OIDC issuer(Keycloak `/identity`)도 함께 제공하고 core는 시작할 때 issuer의 discovery를 읽으므로, 짧은 점검 시간 한 번으로 옮긴다. `inspect`는 대상 주소, 현재 Nginx 파일, 새로 생성한 설정(콘솔 블록과 포털의 CLI 승인 redirect의 콘솔 주소만 바뀌는지), Keycloak `miy-web`, 유휴 core를 읽기만 한다. `apply`는 core를 멈춘 뒤 realm `frontendUrl`과 `miy-web`의 콘솔 callback·logout·web origin만 바꾸고(ids·secret·사용자 유지) 설정 파일을 줄 단위로 고친다. 이어서 Nginx에 새 콘솔과 옛 콘솔 주소의 301 redirect 사이트를 설치하고 core를 시작해 health·issuer·MCP 메타데이터를 확인한다. 어느 단계든 실패하면 Keycloak·파일·Nginx를 백업으로 되돌리고 옛 주소로 core를 시작한다. 나중의 되돌리기는 `restore`다. 모든 브라우저 사용자는 한 번 다시 로그인하고 CLI credential은 유지된다.
 

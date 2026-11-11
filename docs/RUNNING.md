@@ -4,7 +4,7 @@
 
 이 문서는 현행 CLI의 사용 계약을 설명한다. 설치된 실행 파일의 `miy --version`, `miy describe`와 서버 capability가 실제 사용 가능한 범위를 결정한다. 명령 구현과 해당 환경의 검증 통과를 구분한다. 실행 결과는 [구현 결과](IMPLEMENTATION-RESULTS.md), 미실행·외부 환경 항목은 [검증 행렬](CLI-VALIDATION-MATRIX.md)과 [Windows 안내](WINDOWS-VALIDATION.md)를 따른다. CLI 완료가 V7 전체 인수를 뜻하지 않는다.
 
-**게시 배포물·현재 실행 서버·작업본을 구분한다.** [사내 최소 보안 계약](APP-BOUNDARIES.md#확정-결정)은 회사가 관리하는 개발자·앱과 제한된 사내 접속을 대상으로 한다. 업무 앱의 설치별 출처 프레임 실행([앱 프레임 설계](APP-FRAMES.md), 운영 미반영)과 단일 IP HTTPS를 사용하고 prod 포털·dev 포털·콘솔 세 출처를 사용한다. Keycloak과 device CLI 승인은 콘솔에서 제공하고 legacy 로그인은 410으로 종료했다. 세 출처는 운영에 반영했으며 실제 배포 상태·격리 검사·외부 환경 NOT_RUN은 [경계 인수](APP-BOUNDARIES.md#경계-인수)와 [운영 안내](SERVER-OPERATIONS.md)를 따른다. 개발 단계의 구 버전 호환은 강제하지 않는다.
+**게시 배포물·현재 실행 서버·작업본을 구분한다.** [사내 최소 보안 계약](APP-BOUNDARIES.md#확정-결정)은 회사가 관리하는 개발자·앱과 제한된 사내 접속을 대상으로 한다. 업무 앱의 설치별 출처 프레임 실행([앱 프레임 설계](APP-FRAMES.md), 2026-11-12 운영 반영)과 단일 IP HTTPS를 사용하고 prod 포털·dev 포털·콘솔 세 출처를 사용한다. Keycloak과 device CLI 승인은 콘솔에서 제공하고 legacy 로그인은 410으로 종료했다. 세 출처는 운영에 반영했으며 실제 배포 상태·격리 검사·외부 환경 NOT_RUN은 [경계 인수](APP-BOUNDARIES.md#경계-인수)와 [운영 안내](SERVER-OPERATIONS.md)를 따른다. 개발 단계의 구 버전 호환은 강제하지 않는다.
 
 ## 설치와 발견
 

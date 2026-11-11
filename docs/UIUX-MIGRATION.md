@@ -1,6 +1,6 @@
 # 플랫폼 영역과 후속 UI 계약
 
-- 기준: 2026-11-09 [사내 앱 실행·관리 경계](APP-BOUNDARIES.md). **회사 통제 앱의 프레임 실행(2026-11-10 채택, 운영 미반영)·prod/dev/console 세 출처 분리 구현과 운영 반영**([dev 포털 배포](releases/dev-portal-2026-11-09-deployment.json), [콘솔 이동](releases/console-hostname-2026-11-09-deployment.json)).
+- 기준: 2026-11-09 [사내 앱 실행·관리 경계](APP-BOUNDARIES.md). **회사 통제 앱의 프레임 실행(2026-11-10 채택, 2026-11-12 운영 반영)·prod/dev/console 세 출처 분리 구현과 운영 반영**([dev 포털 배포](releases/dev-portal-2026-11-09-deployment.json), [콘솔 이동](releases/console-hostname-2026-11-09-deployment.json)).
 - UI-1~5의 ai-do 기반 이식·후속 리뷰는 [완료 이력](archive/UIUX-MIGRATION-UI1-5.md)에 보존한다. 후속 원본은 miy v1이며 독립 앱의 iframe 방식을 v2의 필수 UI 계약으로 이식하지 않는다.
 
 ## 세 영역의 화면 책임

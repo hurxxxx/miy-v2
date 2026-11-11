@@ -1,0 +1,72 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-11-12",
+  "status": "PASS",
+  "scope": "Production rollout of business app frames (docs/APP-FRAMES.md section 9) on v2.dwdcc.kr: per-installation frame origins https://v2-app-{key}.dwdcc.kr (P2), frame listener 127.0.0.1:18184, migration 0022, frame runtime and the AppFrame portal UI. Requested by the user after push.",
+  "validationRecord": "docs/releases/app-frames-adoption-2026-11-10-validation.json",
+  "decision": {"by": "user", "request": "push and roll out to production"},
+  "source": {"commit": "bcb6356a3c643807df8eb59592259f5a88b7f103", "frozenCheckout": ".local/release-bcb6356-source", "push": "0b8c22f..bcb6356 to origin/main"},
+  "ci": {"bcb6356": {"cli-foundation": 43110037824, "runtime-regression": 43110037794, "web": 43110037972, "status": "all success"}},
+  "steps": [
+    {
+      "step": "settings",
+      "tool": "scripts/app-frame-settings.py apply (frozen checkout)",
+      "status": "APPLIED",
+      "observed": "server.json gained appFrameOrigin/appFrameBind, runtime.env MIY_APP_FRAME_ORIGIN/MIY_APP_FRAME_BIND_ADDR/MIY_FRAME_RUNTIME_DIR, compose.env MIY_APP_FRAME_CORE_UPSTREAM/SITES/SOURCES; other lines byte-identical, 0600 kept. Backups in .local/release-bcb6356-app-frames. Inspect beforehand: READY (bind port free, no enabled Nginx site names v2-app-)"
+    },
+    {
+      "step": "server and migration",
+      "tool": "scripts/core-rollout.py apply --widen-migration 22 (frozen checkout)",
+      "status": "PASS",
+      "observed": "Exact-SHA CI gate 3/3; idle before and after stop (0 jobs); fresh dump (40 tables, 1,476 rows, schema 21) restored in a disposable container and migrate-checked; server 13e937f9140a... -> ec7dc0c76425..., schema 21 -> 22; health, CLI guide, stable records, 7 app containers and connection budget (worst case 90 of 197) unchanged. Release dir .local/release-bcb6356-core. Core stopped about 10 seconds (22:28:24-22:28:34Z)"
+    },
+    {
+      "step": "nginx",
+      "tool": "scripts/app-frame-settings.py nginx-apply (main checkout at bcb6356)",
+      "status": "NGINX_APPLIED",
+      "observed": "Rendered config equals the live file plus one frame server block (listen 443 ssl; regex server_name ^v2-app-[0-9a-f]{32}.dwdcc.kr$, access_log off, no anti-frame headers, proxy to 127.0.0.1:18184) and frame-src https://*.dwdcc.kr blob: with Referrer-Policy strict-origin-when-cross-origin in the portal and dev portal shells; nginx -t and reload. 9643713ae299... -> 640d3712990d...",
+      "history": [
+        {"status": "FAIL", "observed": "First run from the frozen checkout refused before installing anything (rendered_nginx_changes_more_than_app_frames): the renderer builds the static root from the checkout it runs in, so the clone's web/platform/dist differed from the live root. Rerun from the main checkout with byte-identical tool and renderer"}
+      ]
+    },
+    {
+      "step": "frame runtime",
+      "tool": "scripts/ui-rollout.py apply --target frame-runtime",
+      "status": "applied",
+      "observed": "First install of .local/frame-runtime: 17 files, index 724d93876de5...; release .local/release-bcb6356-frame-runtime-2 (the first build attempt failed before building: the main checkout lacked dependencies for the new workspace package; pnpm install --frozen-lockfile fixed it)"
+    },
+    {
+      "step": "portal ui",
+      "tool": "scripts/ui-rollout.py apply",
+      "status": "applied",
+      "observed": "index 7be37d0fddf2... -> b18ec0745221...; 4 new assets, 92 identical, previous assets kept; backup .local/release-bcb6356-ui/production-backup"
+    }
+  ],
+  "postDeploymentChecks": [
+    {"check": "Health on portal, dev portal and console", "status": "PASS", "observed": "200 each"},
+    {"check": "Unregistered frame host and Core API on a frame host", "status": "PASS", "observed": "https://v2-app-<zeros>.dwdcc.kr/_miy/runtime/x.js and /api/v1/me answer 404"},
+    {"check": "Portal headers", "status": "PASS", "observed": "portal and dev portal send frame-src https://*.dwdcc.kr blob: and Referrer-Policy strict-origin-when-cross-origin; console CSP unchanged with frame-ancestors 'none'"},
+    {"check": "node scripts/check-platform-connection.mjs (published CLI 0.7.0, checksum verified)", "status": "PASS", "observed": "22 passes: real OIDC developer login on portal, console SSO and dev portal SSO, CLI device login/status/doctor, generated stdio MCP; cleanup failures 0"},
+    {
+      "check": "Read-only Chromium check as the developer account (.local/release-bcb6356-checks/frames-check.mjs)",
+      "status": "PASS",
+      "observed": "Two prod apps and two dev apps each opened in their own frame origin (https://v2-app-<32 hex>.dwdcc.kr, about 3-4 s), with no error alert; the portal cookie on each app API answered 403. Browser errors only the 401 before sign-in and the deliberate 403s. No input was typed; sessions were logged out",
+      "history": [
+        {"status": "FAIL", "observed": "The check script opened prod apps at /apps/<id>, which the prod portal treats as a dev path and sends to the dev portal (behaviour since the dev portal rollout); the script now uses /environments/prod/apps/<id>"}
+      ]
+    },
+    {"check": "Server logs after the rollout", "status": "PASS", "observed": "No WARN/ERROR entries in miy-v2-serve; serve and worker active"}
+  ],
+  "notRun": [
+    {"check": "App writes, connections between apps and input protection in production", "reason": "The agent does not use apps in production; covered on the isolated stacks"},
+    {"check": "Bundle 0.9.0 CLI publication", "reason": "Not part of this request; published CLI stays 0.7.0 / bundle 0.8.0. Existing 0.8.0 apps run in frames but ask before every leave"},
+    {"check": "External PC browsers and Windows", "reason": "User-performed"}
+  ],
+  "rollback": [
+    "python3 scripts/ui-rollout.py rollback --release-dir .local/release-bcb6356-ui",
+    "python3 scripts/ui-rollout.py rollback --target frame-runtime --release-dir .local/release-bcb6356-frame-runtime-2",
+    "python3 scripts/app-frame-settings.py nginx-restore --release-dir /projects/miy-v2/.local/release-bcb6356-app-frames",
+    "python3 .local/release-bcb6356-source/scripts/core-rollout.py rollback --release-dir .local/release-bcb6356-core (schema 22 stays; the previous server never reads the frame tables)",
+    "python3 scripts/app-frame-settings.py restore --release-dir /projects/miy-v2/.local/release-bcb6356-app-frames"
+  ]
+}

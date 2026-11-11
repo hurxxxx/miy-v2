@@ -2,7 +2,7 @@
 
 검토일: 2026-10-20  
 앱 실행 최소 경계 확정: 2026-11-06\
-상태: 업무 앱의 설치별 출처 iframe 실행(2026-11-10 채택, 운영 미반영)·세 출처 설계 확정. prod/dev/console 분리 구현·2026-11-09 기존 서버 반영
+상태: 업무 앱의 설치별 출처 iframe 실행(2026-11-10 채택, 2026-11-12 운영 반영)·세 출처 설계 확정. prod/dev/console 분리 구현·2026-11-09 기존 서버 반영
 
 Rust 백엔드와 분리된 관리 웹에는 **TypeScript + React + Vite + TanStack Router + TanStack Query**를 우선 추천한다. [PRD](PRD.md)의 사내 사용자와 회사가 통제하는 앱 개발·운영을 위한 구성이다. 외부 앱·외부 개발자 수용과 공개 콘텐츠의 검색 노출·서버 렌더링은 현재 범위 밖이다.
 
@@ -73,7 +73,7 @@ SSR이 핵심 요구라면 TanStack Start 또는 React Router Framework Mode를 
 
 앱 UI는 **독립 빌드한 React 모듈을 설치별 출처의 프레임에서 실행**하고 플랫폼 라우터와 경로를 동기화한다([앱 프레임 설계](APP-FRAMES.md)). 플랫폼은 메뉴·공통 레이아웃·상위 경로를 유지하고, 등록된 설치·릴리스 정보로 앱을 연결한다. 새 앱을 추가할 때 플랫폼 소스 수정이나 전체 프런트엔드 재빌드를 요구하지 않는다. 단일 Rust 코어·IdP와 앱별 Rust 백엔드·단일 이미지 배포도 유지한다.
 
-포털의 `AppFrame`이 실행 코드를 받아 프레임을 열고, 프레임 출처의 플랫폼 런타임이 Module Federation으로 앱의 `./AppRoot`를 마운트한다. 운영 반영 전의 서버는 포털 문서에 `./AppRoot`를 직접 마운트한다([기존 검증 계획](archive/VALIDATION-MODULE-FEDERATION.md)). 현재 prod 포털·dev 포털·관리/CLI 승인/IdP 콘솔의 세 출처 및 브라우저 세션 용도·환경 분리를 구현·운영 반영했다. 당시 기능 PASS를 새로운 보안 인수로 옮기지 않는다.
+포털의 `AppFrame`이 실행 코드를 받아 프레임을 열고, 프레임 출처의 플랫폼 런타임이 Module Federation으로 앱의 `./AppRoot`를 마운트한다. 2026-11-12 운영 반영 전에는 포털 문서에 `./AppRoot`를 직접 마운트했다([기존 검증 계획](archive/VALIDATION-MODULE-FEDERATION.md)). 현재 prod 포털·dev 포털·관리/CLI 승인/IdP 콘솔의 세 출처 및 브라우저 세션 용도·환경 분리를 구현·운영 반영했다. 당시 기능 PASS를 새로운 보안 인수로 옮기지 않는다.
 
 ### 화면 통합 방식 비교
 

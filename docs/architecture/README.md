@@ -1,6 +1,6 @@
 # 현재 아키텍처 읽기
 
-- 기준: 2026-11-09 사내 최소 경계. **회사 통제 앱·업무 앱 프레임 실행(2026-11-10 채택, 운영 미반영)·단일 IP HTTPS, prod/dev/console 세 출처 구현·운영 반영**([dev 포털 배포](../releases/dev-portal-2026-11-09-deployment.json)).
+- 기준: 2026-11-09 사내 최소 경계. **회사 통제 앱·업무 앱 프레임 실행(2026-11-10 채택, 2026-11-12 운영 반영)·단일 IP HTTPS, prod/dev/console 세 출처 구현·운영 반영**([dev 포털 배포](../releases/dev-portal-2026-11-09-deployment.json)).
 
 현재 계약의 Mermaid 원본은 [앱 실행·관리 경계](../APP-BOUNDARIES.md#출처와-자격증명)에 있다. 복제 그림을 별도 정본으로 유지하지 않는다. 권한은 [코어 권한](../CORE-PERMISSIONS.md#확정-권한-행렬), 작업 순서는 [추진 계획](../PLAN.md)을 따른다.
 

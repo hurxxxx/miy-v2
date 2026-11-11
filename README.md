@@ -8,9 +8,9 @@ CLI로 앱의 기본 구조를 만들고, 자신의 개발 에이전트를 MCP�
 
 ## 현재 단계
 
-현재 [사내 최소 보안 설계](docs/APP-BOUNDARIES.md)는 **업무 앱 UI의 설치별 출처 iframe 실행([앱 프레임 설계](docs/APP-FRAMES.md), 2026-11-10 채택·운영 미반영), 플랫폼 화면의 통합 라우팅·독립 빌드와 단일 IP HTTPS**를 유지한다. 업무 포털(prod)·dev 포털(dev)·관리/CLI 승인/Keycloak 콘솔의 세 출처와 목적별 세션을 사용하며 2026-11-09 [dev 포털 배포](docs/releases/dev-portal-2026-11-09-deployment.json)와 [콘솔 이동](docs/releases/console-hostname-2026-11-09-deployment.json)을 반영했다. 다음 기능은 공통 디렉터리·ACL이며 별도 IdP·외부 앱 격리·자동 CA는 선행 조건이 아니다. 현재 서버는 개발 중이며 공개 서버를 사내 범위로 자동 인정하거나 같은 포털 안의 앱 격리를 보장하지 않는다.
+현재 [사내 최소 보안 설계](docs/APP-BOUNDARIES.md)는 **업무 앱 UI의 설치별 출처 iframe 실행([앱 프레임 설계](docs/APP-FRAMES.md), 2026-11-10 채택·2026-11-12 운영 반영), 플랫폼 화면의 통합 라우팅·독립 빌드와 단일 IP HTTPS**를 유지한다. 업무 포털(prod)·dev 포털(dev)·관리/CLI 승인/Keycloak 콘솔의 세 출처와 목적별 세션을 사용하며 2026-11-09 [dev 포털 배포](docs/releases/dev-portal-2026-11-09-deployment.json)와 [콘솔 이동](docs/releases/console-hostname-2026-11-09-deployment.json)을 반영했다. 다음 기능은 공통 디렉터리·ACL이며 별도 IdP·외부 앱 격리·자동 CA는 선행 조건이 아니다. 현재 서버는 개발 중이며 공개 서버를 사내 범위로 자동 인정하거나 같은 포털 안의 앱 격리를 보장하지 않는다.
 
-현재 호스트의 prod 포털은 [v2.dwdcc.kr](https://v2.dwdcc.kr), dev 앱은 [dev 포털](https://v2-dev.dwdcc.kr), 관리·device CLI 승인·로그인은 [콘솔](https://v2-console.dwdcc.kr)에서 제공한다. [CLI 설치 안내](https://v2.dwdcc.kr/cli/install)는 현재 게시 CLI **0.7.0 / 번들 0.8.0**을 제공하며 CLI의 서버 주소는 prod 포털이다. 공유 개발 로그인은 꺼져 있다. 실행 서버·UI와 게시 배포물의 출처 commit은 [현재 서버 운영 안내](docs/SERVER-OPERATIONS.md)를 따른다.
+현재 호스트의 prod 포털은 [v2.dwdcc.kr](https://v2.dwdcc.kr), dev 앱은 [dev 포털](https://v2-dev.dwdcc.kr), 관리·device CLI 승인·로그인은 [콘솔](https://v2-console.dwdcc.kr)에서 제공한다. [CLI 설치 안내](https://v2.dwdcc.kr/cli/install)는 현재 게시 CLI **0.7.0 / 번들 0.8.0**을 제공하며 CLI의 서버 주소는 prod 포털이다. 공유 개발 로그인은 꺼져 있다. 업무 앱은 앱마다 `https://v2-app-<키>.dwdcc.kr` 출처의 프레임에서 열린다. 실행 서버·UI와 게시 배포물의 출처 commit은 [현재 서버 운영 안내](docs/SERVER-OPERATIONS.md)를 따른다.
 
 [코어 권한 계약](docs/CORE-PERMISSIONS.md)은 설치/릴리스별 명시 승인, 제한된 사용자 위임, 앱 후속 호출을 설명한다. 코어 안정화 1·2차와 [기본 UI 이식](docs/UIUX-MIGRATION.md) UI-1~5를 마치고 v2.dwdcc.kr에 반영했다. 다음 작업 순서는 [추진 계획](docs/PLAN.md#다음-우선-작업)의 작업표 하나로 관리한다. 공식 v1(`../miy`)에서 가져올 규칙과 제외할 구조는 [v1 적용 계획](docs/V1-ADOPTION.md)에 정리했다.
 
@@ -67,6 +67,6 @@ Windows CLI는 회사 홈페이지의 `/cli/install`에서 [GUI 설치 파일](d
 
 현재 앱 기본안은 Rust 백엔드와 React 정적 화면을 같은 Docker/OCI 이미지로 배포하고 내부 runner가 수명주기를 관리하는 방식이다. 정적 화면의 Rust 바이너리 내장은 선택안으로 두며 Kubernetes는 초기 구성에 포함하지 않는다.
 
-독립 앱 화면은 설치별 출처의 iframe에서 실행하고 포털이 메뉴·경로를 유지한다. 앱 코드는 포털·다른 앱의 문서와 세션에 접근하지 못하며 다른 앱 API는 승인된 연결로만 호출한다. 같은 사이트 배치의 쿠키 간섭은 남고 관리·로그인 출처에는 앱 코드가 없다. 운영 반영 전의 서버는 같은 페이지 MF로 실행한다. 기존 MF·SDK·앱 데이터를 유지하고 전 앱 재개발·일괄 전환 없이 필요한 인증 변경만 적용했다. 공통 ACL 등 미구현 범위는 추진 계획을 따른다.
+독립 앱 화면은 설치별 출처의 iframe에서 실행하고 포털이 메뉴·경로를 유지한다. 앱 코드는 포털·다른 앱의 문서와 세션에 접근하지 못하며 다른 앱 API는 승인된 연결로만 호출한다. 같은 사이트 배치의 쿠키 간섭은 남고 관리·로그인 출처에는 앱 코드가 없다. 운영에는 2026-11-12 반영했다([앱 프레임 배포](docs/releases/app-frames-2026-11-12-deployment.json)). 기존 MF·SDK·앱 데이터를 유지하고 전 앱 재개발·일괄 전환 없이 필요한 인증 변경만 적용했다. 공통 ACL 등 미구현 범위는 추진 계획을 따른다.
 
 CLI 초기화는 Codex·Claude Code용 `miy-cli` 스킬과 `docs/CLI-REFERENCE.md`도 설치한다. 명령·옵션은 실행 파일의 정의에서 자동 생성하며 CLI 버전별로 잠근다. 전역 CLI 갱신 후 호환 프로젝트에서 `miy app setup`을 실행하면 동봉 CLI·스킬·매뉴얼을 함께 갱신한다. SDK 변경은 `app upgrade`로 구분한다. [운영 방법](docs/RUNNING.md#호환-도구-갱신과-이전-이름)
