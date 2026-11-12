@@ -2,7 +2,7 @@
 
 - 수정일: 2026-11-09
 - 상태: **사내 업무용 최소 설계 확정 · 세 출처 경계 구현 · 격리 검증 완료(실행 범위) · 2026-11-09 후속 운영 반영**.
-- 변경 전 비교 기준: 소스 `22c219d`, CLI/core 0.7.0, 번들 0.8.0. 현재 운영은 서버·UI `bcb6356`([앱 프레임 배포](releases/app-frames-2026-11-12-deployment.json), 그 전 [dev 포털 배포](releases/dev-portal-2026-11-09-deployment.json)), schema 22, 게시 CLI `01e4d49`다. prod 포털은 `https://v2.dwdcc.kr`, dev 포털은 `https://v2-dev.dwdcc.kr`, 콘솔·issuer는 `https://v2-console.dwdcc.kr`이다([콘솔 이동](releases/console-hostname-2026-11-09-deployment.json)). 공유 개발 로그인은 꺼져 있고 옛 `:9443`은 새 콘솔로 redirect한다. 초기 두 출처 배포와 후속 변경의 실행 이력은 releases에 보존하며 현재 계약과 구분한다. 이 서버는 아직 개발 단계이며 정식 오픈을 뜻하지 않는다.
+- 변경 전 비교 기준: 소스 `22c219d`, CLI/core 0.7.0, 번들 0.8.0. 현재 운영은 서버·UI·프레임 런타임 `7defdb0`([리뷰 보완 배포](releases/app-frames-review-fixes-2026-11-12-deployment.json)), schema 22, 게시 CLI `01e4d49`·번들 0.8.0이다. 번들 0.9.0과 구 번들 업그레이드 보완을 포함한 CLI는 아직 게시하지 않았다. prod 포털은 `https://v2.dwdcc.kr`, dev 포털은 `https://v2-dev.dwdcc.kr`, 콘솔·issuer는 `https://v2-console.dwdcc.kr`이다([콘솔 이동](releases/console-hostname-2026-11-09-deployment.json)). 공유 개발 로그인은 꺼져 있고 옛 `:9443`은 새 콘솔로 redirect한다. 초기 두 출처·[dev 포털](releases/dev-portal-2026-11-09-deployment.json)·[앱 프레임 최초 배포](releases/app-frames-2026-11-12-deployment.json)와 후속 변경의 실행 이력은 releases에 보존하며 현재 계약과 구분한다. 이 서버는 아직 개발 단계이며 정식 오픈을 뜻하지 않는다.
 - 적용 범위: 사내 제한 접속, 회사가 관리하는 개발자와 승인한 업무 앱. 외부망 공개·외부 개발자의 앱 수용을 위한 보안 인수는 포함하지 않는다.
 
 **동적 UI·통합 라우팅·단일 IP HTTPS와 개발 편의를 유지하며 필요한 보안부터 적용한다.** 2026-11-10 업무 앱 UI만 설치별 출처 iframe에서 실행하는 [앱 프레임 설계](APP-FRAMES.md)를 채택했고 2026-11-12 운영에 반영했다([배포 기록](releases/app-frames-2026-11-12-deployment.json)). MF 산출물은 앱 프레임 안에서 읽으며 플랫폼 화면은 기존 구조를 유지한다. 앱 실행 계약은 APP-FRAMES가, 포털·콘솔 출처와 세션·인증은 이 문서가 담당한다. 업무 포털(prod), dev 포털(dev), 관리·로그인 콘솔의 세 출처와 설치별 앱 출처를 사용한다. 같은 사이트 배치(P2·P3)의 쿠키 간섭은 남으며 별도 사이트 격리와 구분한다. 같은 페이지 앱들이 UI 신뢰 영역을 공유했던 구조와 iframe 철회 결정은 채택 전 비교 이력이다.
@@ -238,7 +238,7 @@ PLM·PMS·PDM·MES·DAS는 각자 개발·배포한다. **현재 공통 신원·
 
 ## 전환과 복구
 
-2026-11-09 당시 세 출처와 schema 21은 [dev 포털 배포](releases/dev-portal-2026-11-09-deployment.json) 및 [콘솔 이동](releases/console-hostname-2026-11-09-deployment.json)에 기록되어 있다. 현재 운영은 앱 프레임을 반영한 서버·UI `bcb6356`·schema 22이며 [APP-FRAMES §9](APP-FRAMES.md#9-운영-반영-계획)가 전환·되돌리기를 관리한다. 초기 schema19→20 전환·백업/복원·실패 후 재시도는 [2026-11-07 배포 이력](releases/internal-minimum-security-2026-11-07-deployment.json)에 보존한다. 아래는 후속 변경에도 적용할 원칙이다. 개발 서버의 재시작·재로그인·짧은 중단을 피하기 위한 호환 계층이나 무중단 전환은 요구하지 않는다.
+2026-11-09 당시 세 출처와 schema 21은 [dev 포털 배포](releases/dev-portal-2026-11-09-deployment.json) 및 [콘솔 이동](releases/console-hostname-2026-11-09-deployment.json)에 기록되어 있다. 현재 운영은 앱 프레임 리뷰 보완을 반영한 서버·UI·프레임 런타임 `7defdb0`·schema 22이며 [수정 배포 기록](releases/app-frames-review-fixes-2026-11-12-deployment.json)과 [APP-FRAMES §9](APP-FRAMES.md#9-운영-반영-계획)가 같은 schema 갱신·되돌리기를 관리한다. 최초 프레임 도입의 `bcb6356`·schema 21→22와 초기 schema19→20 전환·백업/복원·실패 후 재시도는 각각 [첫 프레임 배포](releases/app-frames-2026-11-12-deployment.json)와 [2026-11-07 배포 이력](releases/internal-minimum-security-2026-11-07-deployment.json)에 보존한다. 아래는 후속 변경에도 적용할 원칙이다. 개발 서버의 재시작·재로그인·짧은 중단을 피하기 위한 호환 계층이나 무중단 전환은 요구하지 않는다.
 
 1. 세 출처 설정·브라우저 용도·경로/환경 제한과 해당 버전의 CLI/OIDC 흐름을 격리 환경에서 먼저 인수한다. 각 환경의 포털은 해당 환경의 앱 프레임만 열고 콘솔/IdP에는 앱 코드를 적재하지 않는다.
 2. 변경할 설정·DB·파일의 백업과 별도 복원을 확인한다. 기존 migration을 수정하지 않고 용도 필드 등을 새 migration으로 추가한다. realm/sub·사용자/그룹·앱 DB·ID·릴리스·게시 번들은 보존한다.
@@ -251,7 +251,7 @@ PLM·PMS·PDM·MES·DAS는 각자 개발·배포한다. **현재 공통 신원·
 
 ## 경계 인수
 
-**필수 행은 현재 최소 계약의 인수, 후속 행은 해당 기능/베타 단계의 인수다.** 아래 초기 결과는 `a4ad370` 범위이며, 세 출처 후속 결과는 [dev 포털 격리 검증](releases/dev-portal-2026-11-09-validation.json), 운영 확인은 [dev 포털 배포](releases/dev-portal-2026-11-09-deployment.json)·[콘솔 이동](releases/console-hostname-2026-11-09-deployment.json)을 따른다. 과거 두 출처나 iframe 결과를 세 출처 전체의 PASS로 옮기지 않는다.
+**필수 행은 현재 최소 계약의 인수, 후속 행은 해당 기능/베타 단계의 인수다.** 아래 초기 결과는 `a4ad370` 범위이며, 세 출처 후속 결과는 [dev 포털 격리 검증](releases/dev-portal-2026-11-09-validation.json), 운영 확인은 [dev 포털 배포](releases/dev-portal-2026-11-09-deployment.json)·[콘솔 이동](releases/console-hostname-2026-11-09-deployment.json)을 따른다. `7defdb0` 반영 후 확인은 [리뷰 보완 배포 기록](releases/app-frames-review-fixes-2026-11-12-deployment.json)에 별도로 남긴다. 과거 두 출처나 iframe 결과를 세 출처 전체나 새 배포의 PASS로 옮기지 않는다.
 
 | ID | 단계·설계 | 시험과 판정 기준 | 현재 결과 |
 | --- | --- | --- | --- |
@@ -265,7 +265,7 @@ PLM·PMS·PDM·MES·DAS는 각자 개발·배포한다. **현재 공통 신원·
 | BV-08 | 필수 AB-03·07 | 콘솔 /identity 실제 로그인/logout·realm/sub·miy-web 보존, 세 출처 callback·MCP metadata·재인증·구 flow/worker 정리. MFA 의무화는 후속 | 새 콘솔 issuer의 배포 후 OIDC 세 출처 SSO·별도 세션·로그아웃, CLI·stdio MCP 연결 22개 PASS. 직접 외부 OAuth MCP issuer 재인증·구 worker 정리 NOT_RUN |
 | BV-09 | 필수 AB-04·07 | 업무 앱 로딩·라우팅(2026-11-10부터 앱 프레임 기준, 결과는 APP-FRAMES FV-01·09 기록이며 BV로 옮기지 않음)·직접 링크·reload·preview·업데이트, 포털 내부 같은 탭·다른 출처 링크 새 탭. 새 테마·선택기·파일 기능은 각 작업 때 | 세 출처 격리 MF·입력 보호 PASS. 같은 탭 복귀는 [후속 검증](releases/boundary-followup-2026-11-09-validation.json). 초기 운영 dev 앱 2개 검사는 이전 두 출처 범위. 11-09 배포 당시 실제 dev/prod 앱 열기는 NOT_RUN이었고 11-12 앱 프레임 배포의 앱 4개 읽기 전용 열기는 별도 기록. 운영 native UI 전체·인쇄 인수는 NOT_RUN |
 | BV-10 | 필수 AB-06 | 기존 제한 CLI/MCP·위임·DB 터널 정상, 권한 확대·미지원 service/AI credential 거부, 반복 사람 승인 추가 없음 | PASS: CLI·제한 위임·합성 MCP 정책, shared DB/WS lease16개. 실제 OAuth MCP·새 gateway 경유 전체 DB 터널 인수 NOT_RUN |
-| BV-11 | 필수 AB-06·07 | 게시 CLI의 상대 verificationPath·고정 콘솔 redirect, device start/poll/refresh·관리 API, legacy 흐름의 410 종료와 발급 토큰 목록·회수. 포털 승인 fallback 거부 | legacy 410·회수는 후속 격리 검증. 현재 콘솔 issuer의 배포 후 게시 CLI device 승인/status/doctor·stdio MCP 포함 22개 PASS. 초기 게시 CLI 단일 IP HTTPS12개는 `a4ad370` 범위 |
+| BV-11 | 필수 AB-06·07 | 게시 CLI의 상대 verificationPath·고정 콘솔 redirect, device start/poll/refresh·관리 API, legacy 흐름의 410 종료와 발급 토큰 목록·회수. 포털 승인 fallback 거부 | legacy 410·회수는 후속 격리 검증. 2026-11-09 콘솔 issuer 이동 후 게시 CLI device 승인/status/doctor·stdio MCP 포함 22개 PASS. 초기 게시 CLI 단일 IP HTTPS12개는 `a4ad370` 범위 |
 | BV-12 | 필수 AB-07 | 변경 범위 백업/별도 복원·migration·앱 ID/DB/파일/릴리스 보존·실패 복구. 전체 앱 재개발·일괄 SDK 전환 없음 | PASS: 격리 schema19→20·기존 credential/앱 DB 보존·반복 migration, 운영 백업의 별도 복원(Core 40테이블·1,474행, identity 101테이블·1,279행), 운영 schema19→20·앱 컨테이너 7개·독립 CLI credential 보존. 실제 운영 DB rollback·전체 복구 제품 인수는 NOT_RUN |
 | BV-13 | 후속 AB-04·06·07 | 베타 전 독립 에이전트 3회 개발·검사·배포·갱신. 플랫폼 소스·관리자 credential·Docker socket·평가 구현 없이 수행. 실패·개입 기록 | NOT_RUN |
 | BV-14 | 문서 AB-08 | 사내 필수/후속/한계·미구현/운영 상태, 링크·도식·권한·개발 단계 계약 일치, 기존 증거 보존 | 초기 문서 검사의 PASS와 역사 파일198개 보존은 당시 이력. 세 출처 정합성 보완과 이번 검사는 [보완 검증 기록](releases/boundary-review-fixes-2026-11-09-validation.json)에서 구분하며 제품·운영 인수를 대신하지 않음 |
@@ -294,7 +294,7 @@ archive와 당시 결과는 고정 이력이다. 원래 iframe 없는 UI 요구�
 
 실행 기록은 docs/releases에 SHA·문서판·환경·명령·결과·한계를 남긴다. 미실행 NOT_RUN, 실행 실패 FAIL이며 실패 이력은 보존한다. 문서 링크 PASS는 BV-14 범위뿐이다. 비밀·쿠키·CSRF·토큰·hash·DB 문자열·복구 키는 기록하지 않는다.
 
-세 출처·세션 용도·콘솔 device 승인·prod 사용/관리 분리는 소스 구현·격리 검증 후 운영에 반영했다. 현재 콘솔 issuer에서 일반 OIDC·세 출처 SSO·게시 CLI·stdio MCP 연결 22개를 확인했다. 2026-11-12 앱 프레임 배포에서는 prod·dev 앱 4개를 읽기 전용으로 열어 확인했다. 운영 앱 쓰기·연결·미저장 입력 검사는 그 배포에서 NOT_RUN이며 격리 검증과 구분한다. 공통 ACL·PLM 업무 연계·실제 Windows·전체 복구 제품·기존 기기 worker 정리·직접 외부 OAuth MCP 재로그인도 NOT_RUN이다. 합성 계정/앱·격리 서버의 거부 결과를 운영 침해나 비밀번호/토큰 탈취 증거로 확대하지 않는다.
+세 출처·세션 용도·콘솔 device 승인·prod 사용/관리 분리는 소스 구현·격리 검증 후 운영에 반영했다. 2026-11-09 콘솔 issuer 이동 후 일반 OIDC·세 출처 SSO·게시 CLI·stdio MCP 연결 22개를 확인했다. 2026-11-12 최초 앱 프레임 배포(`bcb6356`)에서는 prod·dev 앱 4개를 읽기 전용으로 열어 확인했다. 운영 앱 쓰기·연결·미저장 입력 검사는 그 배포에서 NOT_RUN이며 격리 검증과 구분한다. 이번 `7defdb0` 반영 후 확인과 미실행 범위는 [리뷰 보완 배포 기록](releases/app-frames-review-fixes-2026-11-12-deployment.json)을 따른다. 공통 ACL·PLM 업무 연계·실제 Windows·전체 복구 제품·기존 기기 worker 정리·직접 외부 OAuth MCP 재로그인도 NOT_RUN이다. 합성 계정/앱·격리 서버의 거부 결과를 운영 침해나 비밀번호/토큰 탈취 증거로 확대하지 않는다.
 
 현재 경계의 명령·실패·잔여 검사는 [후속 보완](releases/boundary-followup-2026-11-09-validation.json)과 [dev 포털 검증](releases/dev-portal-2026-11-09-validation.json)에 있다. [초기 구현](releases/internal-minimum-security-implementation-2026-11-06-validation.json)과 [초기 문서 설계 검사](releases/internal-minimum-security-design-2026-11-06-validation.json)는 해당 시점의 이력이다. 이번 문서 정리의 실행 결과를 과거 PASS로 대신하지 않는다.
 

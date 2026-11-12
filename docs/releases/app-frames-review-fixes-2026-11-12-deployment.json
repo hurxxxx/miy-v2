@@ -1,0 +1,206 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-11-12",
+  "status": "PASS",
+  "scope": "Deploy reviewed app-frame fixes to the existing miy-v2 development server; not a production launch or downloadable CLI publication.",
+  "decision": {
+    "by": "user",
+    "request": "개발 배포 진행해줘"
+  },
+  "source": {
+    "commit": "7defdb0de19ff1d0c3cbf34c9127cb7d3cf85877",
+    "previousDeployedCommit": "bcb6356a3c643807df8eb59592259f5a88b7f103",
+    "frozenCheckout": ".local/release-7defdb0-source",
+    "push": "67c2aa8..7defdb0 to origin/main"
+  },
+  "validationRecord": "docs/releases/app-frames-review-fixes-2026-11-12-validation.json",
+  "previousDeploymentRecord": "docs/releases/app-frames-2026-11-12-deployment.json",
+  "ci": {
+    "web.yml": {
+      "runId": 43134229524,
+      "attempt": 1,
+      "url": "https://github.com/hurxxxx/miy-v2/actions/runs/43134229524",
+      "headSha": "7defdb0de19ff1d0c3cbf34c9127cb7d3cf85877",
+      "conclusion": "success",
+      "jobs": 1
+    },
+    "cli-foundation.yml": {
+      "runId": 43134229538,
+      "attempt": 1,
+      "url": "https://github.com/hurxxxx/miy-v2/actions/runs/43134229538",
+      "headSha": "7defdb0de19ff1d0c3cbf34c9127cb7d3cf85877",
+      "conclusion": "success",
+      "jobs": 5
+    },
+    "runtime-regression.yml": {
+      "runId": 43134229448,
+      "attempt": 1,
+      "url": "https://github.com/hurxxxx/miy-v2/actions/runs/43134229448",
+      "headSha": "7defdb0de19ff1d0c3cbf34c9127cb7d3cf85877",
+      "conclusion": "success",
+      "jobs": 1
+    }
+  },
+  "builds": [
+    {
+      "command": "env -u CARGO_TARGET_DIR cargo build --offline --release --locked (frozen checkout)",
+      "status": "FAIL",
+      "exitCode": 127,
+      "observed": "Cargo absent from the noninteractive shell PATH; no source or live service change.",
+      "log": ".local/release-7defdb0-checks/core-build.log"
+    },
+    {
+      "command": "env -u CARGO_TARGET_DIR PATH=/home/dwdcc/.cargo/bin:$PATH cargo build --offline --release --locked (frozen checkout)",
+      "status": "PASS",
+      "observed": "Rebuilt from clean tracked 7defdb0 source after copying the prior dependency target cache.",
+      "log": ".local/release-7defdb0-checks/core-build-retry.log"
+    },
+    {
+      "command": "pnpm install --frozen-lockfile; ui-rollout.py build/inspect --source-root <frozen checkout> --commit <source> for frame-runtime and platform",
+      "status": "PASS",
+      "observed": "Separate release directories; tracked input bytes and candidates bound to exact commit. Live baselines matched; no immutable asset collisions."
+    }
+  ],
+  "steps": [
+    {
+      "step": "core",
+      "tool": "scripts/core-rollout.py inspect/apply from frozen checkout, without --widen-migration",
+      "status": "PASS",
+      "releaseDirectory": ".local/release-7defdb0-core",
+      "startedAt": "2026-11-12T01:32:33Z",
+      "finishedAt": "2026-11-12T01:32:44Z",
+      "previousSha256": "ec7dc0c76425795399c718fe403ce77b3e8996bcb5141325b276f5bd5c7d073c",
+      "serverSha256": "7e699d5635a8b827fdfb790f52178be0b21e620910020644925ea30cf6acebcb",
+      "schemaBefore": 22,
+      "schemaAfter": 22,
+      "backup": {
+        "verifiedByRestore": true,
+        "tables": 43,
+        "rows": 1490,
+        "separateRestoreContainerRemoved": true
+      },
+      "observed": "Exact-SHA main-push CI 3/3 and all 7 jobs successful; pending work 0 before/after stop. Fresh dump restored and migration-checked without schema changes. Installed binary and serve/worker processes match. Stable core records, 7 app containers (5 running), database container/networks and connection budget preserved.",
+      "connectionBudget": {
+        "status": "PASS",
+        "worstCase": 90,
+        "usableConnections": 197
+      },
+      "rollbackUsed": false
+    },
+    {
+      "step": "nginx",
+      "tool": ".local/release-7defdb0-checks/nginx-log-rollout.py prepare/apply",
+      "status": "PASS",
+      "releaseDirectory": ".local/release-7defdb0-nginx",
+      "previousSha256": "640d3712990d7fd18f275838013449ebf7d571b840a4f6a6a0c2a500a92ffe1c",
+      "nginxSha256": "03d75555fbd8b3c7eab5619dd558fe542b24fab7a0474591b09152350c55fd53",
+      "observed": "Only error_log /dev/null; added to the existing app-frame server. Removing that line reproduces previous bytes. Baseline recheck, private backup/candidate/phase record, nginx -t and reload passed; rendered copy equals installed site. Initial nginx-apply was not reused because it requires adding a new server block."
+    },
+    {
+      "target": "frame-runtime",
+      "status": "PASS",
+      "releaseDirectory": ".local/release-7defdb0-frame-runtime",
+      "previousIndexSha256": "724d93876de52666fda89e8d98452f55a9d4a92db34b4bc271c07c897ee95d78",
+      "indexSha256": "8bab738237f41cdd9868ce897ff586c46a897369bcae6c86b54de424333d872f",
+      "candidateFiles": 17,
+      "previousImmutableAssetsPreserved": true
+    },
+    {
+      "target": "platform",
+      "status": "PASS",
+      "releaseDirectory": ".local/release-7defdb0-ui",
+      "previousIndexSha256": "b18ec0745221281a3a7c85296e8a6b6a487bc58e21a2f6ec71a3be9c506ba0c9",
+      "indexSha256": "54c3c7438615e73316e904fcfecd399b051729463596caca3a332f19577fd8ba",
+      "candidateFiles": 97,
+      "previousImmutableAssetsPreserved": true
+    }
+  ],
+  "unchanged": {
+    "schema": 22,
+    "publishedCliCommit": "01e4d4924f8c8fc4e11720c1af81adf17ddb20bf",
+    "publishedCliVersion": "0.7.0",
+    "publishedBundleVersion": "0.8.0",
+    "settingsAndIdentity": "No server.json/runtime.env/compose.env/Keycloak/DNS/certificate changes; no application deployment, data migration or app-container replacement."
+  },
+  "postDeploymentChecks": [
+    {
+      "check": "Public health, deployed index and CSP on three portals; unknown frame host refusals; exact Nginx candidate",
+      "status": "PASS",
+      "count": 12,
+      "evidence": ".local/release-7defdb0-checks/public-checks.json"
+    },
+    {
+      "check": "node scripts/check-platform-connection.mjs from frozen checkout using checksum-verified currently published CLI",
+      "status": "PASS",
+      "count": 22,
+      "cleanupFailures": 0,
+      "observed": "Real OIDC login, portal/console/dev SSO, CLI device approval/login/status/doctor, generated stdio MCP and own-session cleanup. Published CLI remains 01e4d49.",
+      "evidence": ".local/release-7defdb0-checks/platform-connection/result.json"
+    },
+    {
+      "check": "node .local/release-7defdb0-checks/frames-check.mjs",
+      "status": "PASS",
+      "observed": "Read-only Chromium: two prod and two dev apps rendered in distinct installation frame origins in 3-4.4 seconds. Portal-cookie app API returned 403. Only expected unauthenticated 401 and intentional 403 console errors; own browser sessions revoked. No business input typed or saved.",
+      "evidence": ".local/release-7defdb0-checks/frames-check.json"
+    },
+    {
+      "check": "serve/worker activity and journal counts since rollout start",
+      "status": "PASS",
+      "observed": "Both active; WARN/ERROR counts 0. Raw messages not published.",
+      "evidence": ".local/release-7defdb0-checks/services-check.json"
+    },
+    {
+      "check": "Evidence-generation immutable-asset inventory, first attempt",
+      "status": "FAIL",
+      "observed": "The verification script incorrectly treated backup-root receipt.json as a live asset; stopped with FileNotFoundError before writing the deployment record. No deployed file changed."
+    },
+    {
+      "check": "Evidence-generation immutable-asset inventory, corrected source",
+      "status": "PASS",
+      "observed": "Used each production-backup/receipt.json files manifest; every prior non-index asset has identical bytes in both live targets. Both index hashes match deployed candidates. Every saved pre-deployment file under both production-backup/dist directories also matches its backup manifest."
+    }
+  ],
+  "notRun": [
+    {
+      "check": "Live business writes, connection-chain attacks, release races and dirty-input loss",
+      "status": "NOT_RUN",
+      "reason": "Preserve existing app data; covered by linked isolated validation and exact-source CI."
+    },
+    {
+      "check": "Downloadable CLI/bundle 0.9.0 publication",
+      "status": "NOT_RUN",
+      "reason": "Separate release task. Expanded old-bundle upgrade fix is committed and CI-tested but absent from the published 01e4d49 CLI."
+    },
+    {
+      "check": "External Windows installation/update/uninstall and user-device browser acceptance",
+      "status": "NOT_RUN",
+      "reason": "User-performed checks; successful Windows/macOS CI does not substitute for external device acceptance."
+    },
+    {
+      "check": "P1 separate-site profile, P2 cookie-interference stress and screen-reader output",
+      "status": "NOT_RUN",
+      "reason": "Unchanged follow-up scope; existing P2 host profile retained."
+    }
+  ],
+  "rollback": [
+    "python3 /projects/miy-v2/.local/release-7defdb0-source/scripts/ui-rollout.py rollback --release-dir /projects/miy-v2/.local/release-7defdb0-ui",
+    "python3 /projects/miy-v2/.local/release-7defdb0-source/scripts/ui-rollout.py rollback --target frame-runtime --release-dir /projects/miy-v2/.local/release-7defdb0-frame-runtime",
+    "python3 /projects/miy-v2/.local/release-7defdb0-source/scripts/app-frame-settings.py nginx-restore --state-dir /projects/miy-v2/.local --release-dir /projects/miy-v2/.local/release-7defdb0-nginx",
+    "python3 /projects/miy-v2/.local/release-7defdb0-source/scripts/core-rollout.py rollback --release-dir /projects/miy-v2/.local/release-7defdb0-core"
+  ],
+  "rollbackNote": "Keep schema22 and existing frame/identity settings. Restore prior runtime and portal index; both asset generations retained. Ordinary binary rollback does not restore the live DB dump.",
+  "documentation": {
+    "status": "PASS",
+    "checks": [
+      {
+        "command": "python3 scripts/check-doc-links.py",
+        "result": "834 relative links in 62 tracked Markdown files passed"
+      },
+      {
+        "command": "git diff --check",
+        "result": "PASS"
+      }
+    ],
+    "observed": "Current status synchronized in 8 owner documents. Previous validation and deployment JSON files remain unchanged; the documentation-only follow-up commit is not the running server source."
+  }
+}

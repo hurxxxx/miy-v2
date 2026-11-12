@@ -1,7 +1,7 @@
 # 업무 앱 iframe 실행 설계
 
 - 작성일: 2026-11-09
-- 상태: **채택(D1, 2026-11-10) · 소스 구현(2026-11-11 main 병합) · 2026-11-12 운영 반영.** 사용자가 2차 실증 보고를 받고 채택 후속 단계 진행을 지시했다. 격리 DB 회귀 127개(frames 12 포함), 서버 설정 검사(P2 호스트 패턴과 P3 포트 풀), 포트·호스트명 프로필의 Chromium·Firefox·WebKit 각 18개, 프레임으로 옮긴 모의 UI·실제 스택 UI 시험, 검증용 fixture 앱(`validation.spec`)과 번들 0.8.0 앱의 프레임 실행이 PASS이다. 같은 등록 도메인(P2)의 쿠키 간섭(FV-06)과 화면낭독 출력 확인은 남아 있다([1차](releases/app-frames-poc-2026-11-10-validation.json), [2차](releases/app-frames-poc-2026-11-10-second-validation.json), [채택 후속](releases/app-frames-adoption-2026-11-10-validation.json)). 운영에는 2026-11-12 §9 절차로 반영했다(서버·UI `bcb6356`, schema 22, [배포 기록](releases/app-frames-2026-11-12-deployment.json), 앱 4개를 prod·dev 포털에서 읽기 전용으로 열어 확인). 현행 문서는 §8대로 개정했다. [11-12 리뷰 보완](releases/app-frames-review-fixes-2026-11-12-validation.json)은 소스·검증 범위이며 운영에는 아직 반영하지 않았다.
+- 상태: **채택(D1, 2026-11-10) · 소스 구현(2026-11-11 main 병합) · 최초 도입과 리뷰 보완 운영 반영(2026-11-12).** 사용자가 2차 실증 보고를 받고 채택 후속 단계 진행을 지시했다. 채택 당시 격리 DB 회귀 127개(frames 12 포함), 서버 설정 검사(P2 호스트 패턴과 P3 포트 풀), 포트·호스트명 프로필의 Chromium·Firefox·WebKit 각 18개, 프레임으로 옮긴 모의 UI·실제 스택 UI 시험, 검증용 fixture 앱(`validation.spec`)과 번들 0.8.0 앱의 프레임 실행이 PASS였다. 같은 등록 도메인(P2)의 쿠키 간섭(FV-06)과 화면낭독 출력 확인은 남아 있다([1차](releases/app-frames-poc-2026-11-10-validation.json), [2차](releases/app-frames-poc-2026-11-10-second-validation.json), [채택 후속](releases/app-frames-adoption-2026-11-10-validation.json)). 최초 운영 반영은 2026-11-12 §9 절차로 수행했다(서버·UI `bcb6356`, schema 21→22, [첫 배포 기록](releases/app-frames-2026-11-12-deployment.json), 당시 앱 4개를 prod·dev 포털에서 읽기 전용으로 열어 확인). 현행 문서는 §8대로 개정했다. [11-12 리뷰 보완 검증](releases/app-frames-review-fixes-2026-11-12-validation.json) 후 서버·UI·프레임 런타임을 `7defdb0`으로 갱신하고 Nginx error log 차단을 반영했다(schema 22 유지, [수정 배포 기록](releases/app-frames-review-fixes-2026-11-12-deployment.json)). 게시 CLI는 `01e4d49`·번들 0.8.0이며 번들 0.9.0과 구 번들 업그레이드 보완을 포함한 CLI는 아직 게시하지 않았다.
 - 배경: 2026-11-09 사용자가 iframe과 현행 구조의 장기 비교를 요청했다. 검토 결과 업무 앱만 별도 출처 iframe으로 분리하는 혼합 구조를 실증하기로 했고, 외부 검토 의견(보안 효과 과장, 인증서 범위, 공유 출처, 복잡성, 불완전 격리)을 아래 원칙에 반영했다.
 - 범위: 업무 앱 UI의 브라우저 실행 계약. 권한 행렬·공통 ACL은 [CORE-PERMISSIONS](CORE-PERMISSIONS.md), 작업 순서는 [PLAN](PLAN.md)을 따른다.
 
@@ -194,7 +194,11 @@ flowchart LR
 
 ## 9. 운영 반영 계획
 
-v2.dwdcc.kr은 개발 단계 서버이므로 짧은 중단·재로그인은 허용한다([개발 단계 원칙](../AGENTS.md#개발-단계-원칙-실제-운영-전환-전까지)). 반영은 사용자가 요청할 때만 하고, DB를 바꾸는 단계는 변경 범위 백업과 별도 영역 복원 확인을 먼저 한다. 2026-11-12 이 절차로 반영했다([배포 기록](releases/app-frames-2026-11-12-deployment.json)). 아래는 그 절차와 되돌리기 기준이다.
+v2.dwdcc.kr은 개발 단계 서버이므로 짧은 중단·재로그인은 허용한다([개발 단계 원칙](../AGENTS.md#개발-단계-원칙-실제-운영-전환-전까지)). 반영은 사용자가 요청할 때만 하고, DB를 바꾸는 단계는 변경 범위 백업과 별도 영역 복원 확인을 먼저 한다.
+
+**현재 갱신(`7defdb0`, schema 22 유지).** 2026-11-12 리뷰 보완은 정확한 SHA CI와 후보 검사를 거쳐 core → 기존 Nginx 프레임 블록에 `error_log /dev/null;` 한 줄 추가 → 프레임 런타임 → 포털 UI 순서로 반영했다. `app-frame-settings.py apply`와 `--widen-migration`은 사용하지 않았고 프레임 설정·DB schema는 유지했다. core 도구의 새 백업·별도 복원 확인 후 적용했으며, 후속 연결 검사의 범위는 [수정 배포 기록](releases/app-frames-review-fixes-2026-11-12-deployment.json)을 따른다. 되돌리기는 포털 UI → 프레임 런타임 → Nginx 백업 복원 → core의 역순이며 설정 restore나 DB 복원은 포함하지 않는다. `nginx-apply`는 프레임 블록을 처음 추가하는 도구라 이번 기존 블록의 한 줄 갱신에는 사용하지 않았다.
+
+**최초 도입(`bcb6356`, schema 21→22).** 아래 표와 단계는 2026-11-12의 [첫 배포](releases/app-frames-2026-11-12-deployment.json) 절차와 되돌리기 기준이다. 현재의 같은 schema 갱신과 구분한다.
 
 | 항목 | 값과 확인 결과(2026-11-10, 읽기 전용) |
 | --- | --- |
@@ -203,11 +207,11 @@ v2.dwdcc.kr은 개발 단계 서버이므로 짧은 중단·재로그인은 허�
 | 사전 점검 | `scripts/app-frame-settings.py inspect --app-frame-origin 'https://v2-app-{key}.dwdcc.kr'` READY: listener 포트 비어 있음, 활성 Nginx 사이트에 `v2-app-` 이름 없음 |
 | migration | 0022는 새 표만 추가한다. `core-rollout.py`가 `--widen-migration 22`로 고정 해시를 확인하고, core 중지 → DB 백업 → 별도 컨테이너 복원·migrate 확인 → 적용 순서로 실행한다. 되돌릴 때 이전 바이너리는 새 표를 읽지 않으므로 넓어진 schema에서 그대로 동작한다 |
 
-**선행 조건.** main 병합 후 정확한 반영 커밋을 push하고 main-push CI(web, cli-foundation, runtime-regression)가 그 커밋에서 통과해야 한다(`core-rollout.py` preflight). 새 앱 개발용 CLI 릴리스(번들 0.9.0)는 별도로 게시한다. 기존 0.8.0 앱은 다시 빌드하지 않아도 프레임에서 실행되고 API 쓰기·이동이 동작한다. 다만 입력 상태가 unknown이라 앱을 떠날 때마다 확인을 묻는다. 0.9.0 SDK로 다시 빌드하면 해소된다.
+**선행 조건.** main 병합 후 정확한 반영 커밋을 push하고 main-push CI(web, cli-foundation, runtime-regression)가 그 커밋에서 통과해야 한다(`core-rollout.py` preflight). 새 앱 개발용 CLI 릴리스(번들 0.9.0 및 구 번들 업그레이드 보완)는 별도 게시 대상이며 아직 게시하지 않았다. 기존 0.8.0 앱은 다시 빌드하지 않아도 프레임에서 실행되고 API 쓰기·이동이 동작한다. 다만 입력 상태가 unknown이라 앱을 떠날 때마다 확인을 묻는다. 0.9.0 SDK로 다시 빌드하면 해소된다.
 
-**병합 후 반영 전 주의.** `compose.yaml`이 프레임 변수(`MIY_APP_FRAME_SITES`·`MIY_APP_FRAME_SOURCES`)를 필수로 요구한다. 그래서 1단계 전까지 운영 `compose.env`로 실행하는 `docker compose` 명령은 변수 오류로 멈춘다. 실행 중인 Postgres·Keycloak 컨테이너에는 영향이 없고, 1단계가 키를 추가한다(2026-11-12 추가함).
+**최초 도입 전 주의.** `compose.yaml`이 프레임 변수(`MIY_APP_FRAME_SITES`·`MIY_APP_FRAME_SOURCES`)를 필수로 요구한다. 그래서 1단계 전까지 운영 `compose.env`로 실행하는 `docker compose` 명령은 변수 오류로 멈춘다. 실행 중인 Postgres·Keycloak 컨테이너에는 영향이 없고, 1단계가 키를 추가한다(2026-11-12 추가함).
 
-**순서.** 각 단계는 상태 디렉터리 아래 새 release 디렉터리에 백업·영수증을 남긴다.
+**최초 도입 순서.** 각 단계는 상태 디렉터리 아래 새 release 디렉터리에 백업·영수증을 남긴다.
 
 1. `app-frame-settings.py apply`: server.json·runtime.env·compose.env의 전체 백업과 변경 전후 digest·복구 기록을 먼저 확정한 뒤 프레임 키만 추가한다. 부분 적용·부분 복원 뒤에는 `restore`를 재시도할 수 있어야 한다. 이전 바이너리는 새 키를 무시한다.
 2. `core-rollout.py apply --widen-migration 22`: 새 core를 설치하고 migration을 적용한다. 이 시점부터 이전 포털 UI의 앱 화면은 포털 쿠키 업무 API 거부로 열리지 않는다. 5단계까지의 짧은 중단이다.
@@ -216,7 +220,7 @@ v2.dwdcc.kr은 개발 단계 서버이므로 짧은 중단·재로그인은 허�
 5. `ui-rollout.py build/apply`: 포털 UI를 `AppFrame` 실행으로 교체한다.
 6. 확인: health, prod·dev 포털에서 앱 열기(프레임 출처 `v2-app-<키>.dwdcc.kr`, 포털 출처가 아님), 운영 앱 전체 실행, 포털 쿠키 업무 API 403, CLI bearer 업무 API 200, 콘솔·IdP `frame-ancestors 'none'` 유지. 첫 실행의 렌더 실패도 본다(격리 실행에서 배포 직후 첫 프레임이 한 번 실패했고 이후 재현되지 않았다, [채택 후속 기록](releases/app-frames-adoption-2026-11-10-validation.json)).
 
-**되돌리기.** 역순으로 실행한다: 포털 UI rollback → `ui-rollout.py rollback --target frame-runtime`(첫 설치였다면 index만 제거) → `nginx-restore` → `core-rollout.py rollback` → `app-frame-settings.py restore`. 첫 설치 롤백·중단으로 index 없이 자산만 남아도 다음 빌드·적용은 가능해야 하며, 남은 자산의 digest·동일 이름 충돌 검사는 유지한다.
+**최초 도입 되돌리기.** 역순으로 실행한다: 포털 UI rollback → `ui-rollout.py rollback --target frame-runtime`(첫 설치였다면 index만 제거) → `nginx-restore` → `core-rollout.py rollback` → `app-frame-settings.py restore`. 첫 설치 롤백·중단으로 index 없이 자산만 남아도 다음 빌드·적용은 가능해야 하며, 남은 자산의 digest·동일 이름 충돌 검사는 유지한다.
 
 **P2 잔여 한계.** 포털 `frame-src`가 `https://*.dwdcc.kr`이다. 그래서 포털 문서는 같은 서버의 다른 `*.dwdcc.kr` 사이트도 frame할 수 있고, 실제 방어는 그 사이트들의 `frame-ancestors`·X-Frame-Options이다. 앱과 포털이 같은 사이트라 `Domain=dwdcc.kr` 쿠키 간섭과 같은 프로세스 배치 가능성이 남는다(FV-06 P2 브라우저 실행은 NOT_RUN). 외부 앱 수용 전에는 P1로 옮긴다(D2).
 
