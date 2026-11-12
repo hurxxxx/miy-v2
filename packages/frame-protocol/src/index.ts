@@ -16,12 +16,26 @@ export interface FrameLocation {
 /** `unknown` until the current frame reports; a legacy guard keeps it unknown. */
 export type InputState = "clean" | "dirty" | "unknown";
 
+export type RenewalFailure =
+  | "frame_session_ended"
+  | "frame_access_denied"
+  | "release_changed_reload_required"
+  | "token_renewal_unavailable";
+
+/** Only the renewal endpoints can establish why a frame cannot continue. */
+export function renewalFailure(status: number, code?: unknown): RenewalFailure {
+  if (status === 409 && code === "release_changed_reload_required") return code;
+  if (status === 401 || status === 404) return "frame_session_ended";
+  if (status === 403) return "frame_access_denied";
+  return "token_renewal_unavailable";
+}
+
 /** Messages the portal sends into a frame. */
 export type ParentMessage =
   | { type: "route.changed"; payload: FrameLocation }
   | { type: "theme.changed"; payload: { theme: "light" | "dark" } }
   | { type: "token.code"; payload: { code: string } }
-  | { type: "token.failed"; payload: { reason: string } };
+  | { type: "token.failed"; payload: { reason: RenewalFailure } };
 
 /** Messages a frame sends to its portal. */
 export type FrameMessage =
@@ -87,7 +101,10 @@ export function readParentMessage(data: unknown): ParentMessage | null {
     case "token.code":
       return object(p) && text(p.code, 64) ? { type: m.type, payload: { code: p.code } } : null;
     case "token.failed":
-      return object(p) && text(p.reason, 64) ? { type: m.type, payload: { reason: p.reason } } : null;
+      return object(p) &&
+        (p.reason === "frame_session_ended" || p.reason === "frame_access_denied" ||
+          p.reason === "release_changed_reload_required" || p.reason === "token_renewal_unavailable")
+        ? { type: m.type, payload: { reason: p.reason } } : null;
   }
   return null;
 }

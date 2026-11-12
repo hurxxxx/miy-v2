@@ -1,0 +1,247 @@
+{
+  "date": "2026-11-12",
+  "status": "PASS",
+  "scope": "Post-adoption app frame review fixes; source changes only, no deployment",
+  "source": {
+    "baseCommit": "67c2aa8",
+    "state": "working tree changes",
+    "productionUnchanged": "server/UI bcb6356, schema 22; published CLI 01e4d49",
+    "publishedArtifactsUnchanged": true,
+    "testedCodeSha256": {
+      "crates/miy/src/app_calls.rs": "7aa3aea2911d02e847093bbe47a5886bdf499402c7bf543151b3cb83d2a738a0",
+      "crates/miy/src/app_frames.rs": "674c8f9c9ed56f90dd8e0103888c1898795e4a6a34bf3cf687d20766d247640f",
+      "crates/miy/src/app_frames_regression.rs": "e022d9e6bb6a3ae36bee793952d74f1b85e598d26d4aa15afe28b3c690212b2e",
+      "crates/miy/src/upgrade.rs": "a2f5d50f9ffaab9322a48ccd83cc405d0f57399ceb62c72ddccb31be3742ef73",
+      "packages/frame-protocol/src/index.ts": "eaa3ebe11fe0ae3a61ae5be83d8a9937fafcb824a9424da3be7ef34ae4a320b7",
+      "scripts/app-frame-settings.py": "86ee97a477aa5c0eb32ed7b1c3a463f0a22715d2ad2816bc652e1890670808ec",
+      "scripts/check-server-config.py": "df25699f344ca15fc32d0b78bf2e4fc641cef1bf6d9fe9af6f9e192865c1dd73",
+      "scripts/check-static.sh": "36f8aabce401a5a5ee2e5a59261c3b04a175aa5f9ca5474466b105cb90b80745",
+      "scripts/render-server-config.py": "3c24516a69629c3a13afd3498aabdfc80e4b81b4f4af6064d8da971c5fb7a850",
+      "scripts/runtime-regression/run.py": "9490abf6dc85149f8868b9bfa7777789f1da033d5c4964782c5ebf68c678df03",
+      "scripts/test-app-frame-settings.py": "e595acda44c984ddbabc9b390a6393e6559b53ed4281d84bb0a071377e8ccee5",
+      "scripts/test-core-ops.py": "6dea3e60a7040ef7a652ad4a2fbd0c639f42109f642bfaaaccf6082ed64e6738",
+      "scripts/ui-rollout.py": "a5a7c136077c5c6ca23510f1f20d2c269b01bf57413c6a4cb92302d8d9ab89a8",
+      "tests/app-frames.spec.ts": "063a059678777f3a62b0cf4db73d7acde6949f9b3d104c20cab801880cf4bfad",
+      "tests/frame-mock.ts": "3f255a715222c623cbdbec5c57381d5019d38129a4d9917239c6645416ba1c51",
+      "tests/runtime-health.spec.ts": "b2660b0bbc3da6ac8e313b44e6d803b3f47d4412d2a63b282bcab39e2794463f",
+      "tests/stack-ui.spec.ts": "2d525d5ac5fcf14d146637fe117e6e8eda1dfe469bb0bcf0772d7ca27d4f956a",
+      "web/frame-runtime/src/main.tsx": "391a840e5a17dadb3008539ae20488f1f8a8efa62261ef9c16d06825371144a5",
+      "web/platform/src/app/AppFrame.tsx": "5fe3eb18fdbc52e33d3eba2840a65e614ccfbc63ebfddf187c7d716244263a8e",
+      "scripts/lib/frame-diagnostics.mjs": "ae62b1d6e75bfa280cb3024d57b6c526a2193462d5d11402c5839a5826acf2f0",
+      "scripts/test-frame-diagnostics.mjs": "412c65da200f14e2c3ca3ed75a30a8486bf94755406228833a19b3c32958596b"
+    },
+    "note": "Behavioral full-stack browser run preceded only the separately tested diagnostic reporter changes in app-frames.spec.ts and stack-ui.spec.ts. All product source stayed unchanged after its relevant successful checks.",
+    "changedMarkdownFiles": [
+      "docs/APP-BOUNDARIES.md",
+      "docs/APP-FRAMES.md",
+      "docs/CHECKS.md",
+      "docs/CORE-PERMISSIONS.md",
+      "docs/DEVELOPMENT.md",
+      "docs/PLAN.md",
+      "docs/README.md",
+      "scripts/runtime-regression/README.md"
+    ]
+  },
+  "checks": [
+    {
+      "command": "cargo test --offline --locked -p miy upgrade::tests",
+      "status": "FAIL",
+      "result": "Interrupted implementation had missing chrono Duration import and ApiError conversions in the frame regression tests. Preserved before correction.",
+      "log": ".local/evidence/app-frames-review-fixes-2026-11-12/upgrade-unit.log"
+    },
+    {
+      "command": "python3 scripts/runtime-regression/run.py",
+      "status": "FAIL",
+      "result": "First continuation build failed on missing Duration import; corrected before successful integration observations. Cleanup completed.",
+      "log": "/tmp/miy-runtime-regression-rm5gnrml/evidence/cli-build.log"
+    },
+    {
+      "command": "python3 scripts/runtime-regression/run.py",
+      "status": "FAIL",
+      "result": "129/129 behavioral observations passed; whole-command cleanup comparison failed when 4 unrelated CI containers ended. This preceded the expanded frame negative/positive controls.",
+      "log": "/tmp/miy-runtime-regression-mp0_jsk4/evidence/integration.log"
+    },
+    {
+      "command": "python3 scripts/runtime-regression/run.py",
+      "status": "FAIL",
+      "result": "Final expanded frame source: 129/129 observations passed. Whole command failed only because the separately owned stack-ui test normally removed 3 baseline containers concurrently. Its own 13 resources were removed, no owned leftovers, and 43 other baseline containers were unchanged.",
+      "log": "/tmp/miy-runtime-regression-d8tlamy9/evidence/frame-review-summary.json"
+    },
+    {
+      "command": "python3 scripts/test-app-frame-settings.py (injected parent-directory sync failure)",
+      "status": "FAIL",
+      "result": "The recovery path could become visible without being durable before settings changed. Failure retained before directory-sync correction.",
+      "log": ".local/evidence/app-frames-review-ops-20261111T233031Z/recovery-parent-sync-before-fix.log"
+    },
+    {
+      "command": "python3 scripts/test-app-frame-settings.py (interrupted sync retries)",
+      "status": "FAIL",
+      "result": "Retry after interrupted directory or restored-file fsync failed the durability expectations; subsequent corrections were verified.",
+      "log": ".local/evidence/app-frames-review-ops-20261111T233031Z/recovery-sync-retries-before-fix.log"
+    },
+    {
+      "command": "bash scripts/check-static.sh rust",
+      "status": "PASS",
+      "result": "Server/default: 198 passed, 7 ignored; client/no-default-features: 119 passed. Both Clippy profiles, formatting, bundle-byte and write-decision checks passed. The final expanded ignored DB regression is checked separately.",
+      "log": ".local/evidence/app-frames-review-fixes-2026-11-12/static-rust.log"
+    },
+    {
+      "command": "cargo fmt --all -- --check && cargo clippy --workspace --all-targets --locked -- -D warnings",
+      "status": "PASS",
+      "result": "Rechecked after the final frame regression expansion.",
+      "log": ".local/evidence/app-frames-review-fixes-2026-11-12/clippy-final.log"
+    },
+    {
+      "command": "cargo build --offline --locked --no-default-features",
+      "status": "PASS",
+      "result": "Built the client-only CLI.",
+      "log": ".local/evidence/app-frames-review-fixes-2026-11-12/client-build.log"
+    },
+    {
+      "command": "python3 scripts/check-cli-output.py --cli target/debug/miy",
+      "status": "PASS",
+      "result": "15 checks; temporary fixtures and no live service mutations.",
+      "log": ".local/evidence/app-frames-review-fixes-2026-11-12/cli-output.log"
+    },
+    {
+      "command": "python3 scripts/check-cli-install.py --cli target/debug/miy",
+      "status": "PASS",
+      "result": "17 checks; temporary fixtures and no live service mutations.",
+      "log": ".local/evidence/app-frames-review-fixes-2026-11-12/cli-install.log"
+    },
+    {
+      "command": "python3 scripts/check-cli-recovery.py --cli target/debug/miy",
+      "status": "PASS",
+      "result": "7 checks; temporary fixtures and no live service mutations.",
+      "log": ".local/evidence/app-frames-review-fixes-2026-11-12/cli-recovery.log"
+    },
+    {
+      "command": "MIY_CLI_BINARY=target/debug/miy MIY_PREVIOUS_BUNDLE_CLI=<historical-bundle-fixture-wrapper> node scripts/check-cli-guidance.mjs",
+      "status": "PASS",
+      "result": "5 checks including actual CLI 0.7.1 -> 0.9.0 upgrade, business/CRLF SQL/component preservation, dependency versions, managed-file conflict and MCP discovery. Fixture templates came from 5802c96^ and were verified against immutable bundles/0.7.1.json; current CLI scaffolds tooling, so old CLI runtime behavior is not claimed.",
+      "log": ".local/evidence/app-frames-review-fixes-2026-11-12/cli-guidance.log"
+    },
+    {
+      "command": "pnpm exec playwright test --config scripts/runtime-regression/ui.config.ts tests/runtime-health.spec.ts",
+      "status": "PASS",
+      "result": "23 tests including 17 new expiry/renewal/input-preservation regressions using the actual frame runtime with mocked Core responses.",
+      "log": ".local/evidence/frame-review-browser-20261112/run-2.log"
+    },
+    {
+      "command": "bash scripts/check-static.sh web",
+      "status": "PASS",
+      "result": "Typecheck, platform/fixture builds in isolated output directories; UI 51, CLI UI 14, surface boundaries 14 and HTTP-IP 1 passed.",
+      "log": ".local/evidence/app-frames-review-fixes-2026-11-12/static-web.log"
+    },
+    {
+      "command": "stack-ui.sh up; MIY_FRAME_BROWSERS=chromium,firefox,webkit pnpm exec playwright test -c scripts/runtime-regression/app-frames.config.ts; stack-ui.sh down",
+      "status": "PASS",
+      "result": "P3 full stack with Keycloak and deployed app backends: 18/18 tests (6 per browser); owned stack cleanup passed with no leftovers. This run preceded a diagnostic-only test-logger sanitization; the product code was unchanged afterward. That logger is checked separately.",
+      "log": ".local/evidence/app-frames-review-fixes-2026-11-12/frame-stack-result.json"
+    },
+    {
+      "command": "node scripts/test-frame-diagnostics.mjs (first attempt)",
+      "status": "FAIL",
+      "result": "A synthetic credential adjacent to a preceding word escaped the initial regex. Removed the word-boundary requirement; no live credential was involved.",
+      "log": ".local/evidence/app-frames-review-fixes-2026-11-12/frame-diagnostics-first-failure.log"
+    },
+    {
+      "command": "node scripts/test-frame-diagnostics.mjs",
+      "status": "PASS",
+      "result": "Asset URL and known bearer values are redacted, including repeated/adjacent text and before truncation; ordinary diagnostic paths remain readable.",
+      "log": ".local/evidence/app-frames-review-fixes-2026-11-12/frame-diagnostics-final.log"
+    },
+    {
+      "command": "bash scripts/check-static.sh scripts",
+      "status": "PASS",
+      "result": "Final source: settings 20/20, core operations 72/72, real Nginx P2/P3 HTTP/TLS upstream-failure logging checks, Caddy, API/schema/syntax/packaging/cleanup checks and the diagnostic redaction regression.",
+      "log": ".local/evidence/app-frames-review-fixes-2026-11-12/static-scripts-final.log"
+    },
+    {
+      "command": "python3 scripts/runtime-regression/run.py (final unshared run)",
+      "status": "PASS",
+      "result": "129/129 behavioral observations passed, including 14 frame observations; complete runner exited 0 and cleanup errors were empty. Other owned Docker suites had finished before this run.",
+      "log": ".local/evidence/app-frames-review-fixes-2026-11-12/runtime-final-alone.log",
+      "evidence": "/tmp/miy-runtime-regression-adh5erpa/evidence"
+    },
+    {
+      "command": "python3 scripts/check-doc-links.py",
+      "status": "PASS",
+      "result": "PASS 818 relative links in 62 tracked Markdown files",
+      "log": ".local/evidence/app-frames-review-fixes-2026-11-12/doc-links-final.log"
+    },
+    {
+      "command": "git diff --check",
+      "status": "PASS",
+      "result": "No whitespace errors in the final working tree."
+    },
+    {
+      "command": "git diff --exit-code -- docs/archive registry templates crates/miy/bundles",
+      "status": "PASS",
+      "result": "Historical records, published template/SDK/component bytes and existing bundle locks unchanged."
+    }
+  ],
+  "notRun": [
+    {
+      "scope": "Production commit/push/deployment or migration",
+      "reason": "Not requested in this correction task; operational files/services/data were not changed."
+    },
+    {
+      "scope": "Windows/macOS acceptance",
+      "reason": "Current host is Linux; Windows remains user-run per the project instructions."
+    },
+    {
+      "scope": "P1 separate registered domain, P2 cookie-interference stress, external OAuth MCP and screen reader output",
+      "reason": "Existing explicitly deferred acceptance; P3 and source-review results do not replace it."
+    }
+  ],
+  "fixes": [
+    {
+      "id": "frame-log-confidentiality",
+      "change": "Disable raw frame Nginx error/access logs. Redact frame asset capabilities and known bearer prefixes from browser test diagnostics before truncation/reporting."
+    },
+    {
+      "id": "immutable-frame-call-origin",
+      "change": "Carry the authenticated installation/environment/release through body collection and verify it against the first caller at every backend continuation; reject old frames while permitting a newly launched frame."
+    },
+    {
+      "id": "preserve-unsaved-input",
+      "change": "Keep the frame mounted during terminal error/reload notices; require explicit confirmation before replacing dirty or unknown input. Ignore late renewal replies to replaced windows."
+    },
+    {
+      "id": "renewal-and-expiry-notices",
+      "change": "Classify renewal denial, release change and transient failure; report absolute expiry even while waiting/retrying, and do not infer platform logout from a business API 401."
+    },
+    {
+      "id": "recover-partial-settings",
+      "change": "Persist all backup paths/bytes and prepared digest records before live changes. Restore accepts before/after states, rejects unrelated changes and persists original bytes again when resuming an interrupted sync."
+    },
+    {
+      "id": "redeploy-after-first-rollback",
+      "change": "Allow a frame runtime with no index but retained immutable assets to be built/applied/rolled back; keep complete inventory, symlink and collision checks."
+    },
+    {
+      "id": "supported-sdk-upgrade",
+      "change": "Apply the explicit browser/preview/Rust SDK migration to every supported guidance-era bundle; keep original protected-byte verification, SQL/component/business preservation and dependency checks."
+    },
+    {
+      "id": "current-document-contract",
+      "change": "Align the documentation map and active contracts to adopted app frames and deployed schema 22, preserve dated historical results and mark these source fixes as not deployed."
+    }
+  ],
+  "evidenceHandling": {
+    "logs": ".local/evidence/app-frames-review-fixes-2026-11-12/evidence-redaction.json",
+    "note": "Raw capability diagnostics observed during the full-stack test were redacted in retained evidence and reporters now redact before output. Conservative credential-pattern redaction also matched some public build filenames; no live production credential was used."
+  },
+  "independentReview": {
+    "scope": "CLI migration allowlist and document current/history distinction",
+    "result": "No additional migration defect; remaining stale schema/iframe/operating-app-test statements corrected in APP-BOUNDARIES. Published bundle/template/registry bytes unchanged."
+  },
+  "finalCleanup": {
+    "status": "PASS",
+    "runtimeEvidence": "/tmp/miy-runtime-regression-adh5erpa/evidence/cleanup.json",
+    "stackEvidence": ".local/evidence/app-frames-review-fixes-2026-11-12/frame-stack-result.json",
+    "operationsEvidence": ".local/evidence/app-frames-review-ops-20261111T233031Z/cleanup-summary.json",
+    "note": "Only test-owned resources were removed. Earlier FAIL records remain; the final unshared runtime run completed with no baseline changes."
+  }
+}

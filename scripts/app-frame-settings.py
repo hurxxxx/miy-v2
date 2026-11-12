@@ -8,7 +8,8 @@ Frames never sign in, so nothing here touches the identity provider. Steps:
                  ports. Prints public data only.
   apply          back up and patch server.json, runtime.env and compose.env line by line (other
                  lines byte-identical).
-  restore        undo apply from its backups, refusing if a file changed since apply.
+  restore        undo complete or interrupted apply; retry interrupted restore. Refuses
+                 files that match neither the original nor the applied digest.
   nginx-apply    render the fixed-purpose Nginx config and require it to differ from the live
                  file only by one app frame server block and the portal frame-src and
                  Referrer-Policy headers; install it with a backup, test and reload Nginx.
@@ -27,7 +28,6 @@ import json
 import os
 from pathlib import Path
 import re
-import shutil
 import sys
 import tempfile
 import urllib.parse
@@ -164,18 +164,43 @@ def inspect(state, template, bind, ports=None, runtime_dir=None, probe=None, ena
     return {'status': 'READY', **public(target), 'frameRuntimeIndex': (runtime / 'index.html').is_file()}
 
 
+def directory_sync(path):
+    descriptor = os.open(path, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
+
+
+def private_directory(path):
+    """Persist every new directory entry before recovery files can be relied on."""
+    if not path.is_dir():
+        private_directory(path.parent)
+        path.mkdir(mode=0o700)
+    # An earlier attempt may have created this directory but failed its fsync.
+    directory_sync(path.parent)
+
+
+def settings_write(path, data):
+    """Persist both bytes and the atomic rename before changing another live file."""
+    private_write(path, data)
+    with path.open('rb') as handle:
+        os.fsync(handle.fileno())
+    directory_sync(path.parent)
+
+
 def apply(state, release, template, bind, ports=None, runtime_dir=None, probe=None, enabled=None):
     target = plan(state, template, bind, ports, runtime_dir)
     require(available(target, probe, enabled), 'app_frame_address_in_use')
     backup = release / 'settings-backup'
-    require(not backup.exists(), 'settings_backup_exists')
-    release.mkdir(mode=0o700, parents=True, exist_ok=True)
-    backup.mkdir(mode=0o700)
-    record = {**public(target), 'files': {}}
+    manifest = release / 'settings.json'
+    require(not backup.exists() and not manifest.exists(), 'settings_backup_exists')
+    private_directory(backup)
+    record = {**public(target), 'phase': 'prepared', 'files': {}}
+    pending = {}
     for name in FILES:
         original = (state / name).read_bytes()
-        shutil.copy2(state / name, backup / name)
-        (backup / name).chmod(0o600)
+        settings_write(backup / name, original)
         if name == 'server.json':
             settings = json.loads(original)
             settings.update(target['server'])
@@ -183,20 +208,38 @@ def apply(state, release, template, bind, ports=None, runtime_dir=None, probe=No
         else:
             written = env_patch(original, target['runtime' if name == 'runtime.env' else 'compose'])
             require(env_values(written).keys() >= env_values(original).keys(), 'environment_patch_lost_keys')
-        private_write(state / name, written)
         record['files'][name] = {'before': digest(original), 'after': digest(written)}
-    (release / 'settings.json').write_text(json.dumps(record, indent=2))
+        pending[name] = written
+    # Recovery must be complete and durable before the first live change. The
+    # prepared record also recovers a failed write of the final applied record.
+    settings_write(manifest, (json.dumps(record, indent=2) + '\n').encode())
+    for name, written in pending.items():
+        require(digest((state / name).read_bytes()) == record['files'][name]['before'],
+                'settings_changed_during_apply:' + name)
+        settings_write(state / name, written)
+    record['phase'] = 'applied'
+    settings_write(manifest, (json.dumps(record, indent=2) + '\n').encode())
     return {'status': 'APPLIED', **public(target)}
 
 
 def restore(state, release):
     record = json.loads((release / 'settings.json').read_text())
     backup = release / 'settings-backup'
+    require(set(record['files']) == set(FILES), 'settings_manifest_incomplete')
+    originals = {}
     for name, hashes in record['files'].items():
-        require(digest((state / name).read_bytes()) == hashes['after'], 'settings_changed_since_apply:' + name)
-        require(digest((backup / name).read_bytes()) == hashes['before'], 'settings_backup_changed:' + name)
-    for name in record['files']:
-        private_write(state / name, (backup / name).read_bytes())
+        require(digest((state / name).read_bytes()) in (hashes['before'], hashes['after']),
+                'settings_changed_since_apply:' + name)
+        originals[name] = (backup / name).read_bytes()
+        require(digest(originals[name]) == hashes['before'], 'settings_backup_changed:' + name)
+    for name, hashes in record['files'].items():
+        current = digest((state / name).read_bytes())
+        require(current in (hashes['before'], hashes['after']), 'settings_changed_since_apply:' + name)
+        # The original bytes can be visible after an interrupted fsync. Persist
+        # them again before recording success even when the digest already matches.
+        settings_write(state / name, originals[name])
+    record['phase'] = 'restored'
+    settings_write(release / 'settings.json', (json.dumps(record, indent=2) + '\n').encode())
     return {'status': 'RESTORED', 'appFrameOrigin': record['appFrameOrigin']}
 
 
@@ -208,6 +251,7 @@ def frame_only_change(live, candidate, sources):
     directives = [line.strip() for line in frame.split('\n') if line.strip() and not line.strip().startswith('#')]
     # Frame documents send their own frame-ancestors: the proxy adds no headers here.
     require(any(line.startswith('proxy_pass ') for line in directives) and 'access_log off;' in directives
+            and 'error_log /dev/null;' in directives
             and not any(line.startswith('add_header ') for line in directives), 'rendered_frame_block_unexpected')
     added = f'; frame-src {sources} blob:'
     referrer = 'add_header Referrer-Policy strict-origin-when-cross-origin always;'

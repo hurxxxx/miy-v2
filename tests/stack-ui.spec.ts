@@ -6,6 +6,8 @@ import { join, resolve } from "node:path";
 import { fixtureEnv, workflowArgs, workflowData } from "../scripts/lib/cli-workflow.mjs";
 // @ts-expect-error plain ESM helpers shared with the CLI regression scripts
 import { cliData } from "../scripts/lib/cli-result.mjs";
+// @ts-expect-error plain ESM helper shared with the evidence regression checks
+import { frameDiagnostic } from "../scripts/lib/frame-diagnostics.mjs";
 
 // UI-5 on the disposable full stack (scripts/runtime-regression/stack-ui.sh):
 // Keycloak login, a CLI-deployed Docker app with real health, controls and release
@@ -96,8 +98,8 @@ async function surfaceOrigin(context: BrowserContext, surface: Surface) {
 async function signInPage(context: BrowserContext, user: string, surface: Surface) {
   const selectedOrigin = await surfaceOrigin(context, surface);
   const page = await context.newPage();
-  page.on("pageerror", (e) => console.log(`[${user}] pageerror: ${e.message}`));
-  page.on("console", (m) => m.type() === "error" && console.log(`[${user}] console: ${m.text()}`));
+  page.on("pageerror", (e) => console.log(`[${user}] pageerror: ${frameDiagnostic(e.message)}`));
+  page.on("console", (m) => m.type() === "error" && console.log(`[${user}] console: ${frameDiagnostic(m.text())}`));
   await page.goto(selectedOrigin + "/");
   await page.getByRole("link", { name: /^(OAuth로 로그인|로그인)$/ }).click();
   await Promise.race([

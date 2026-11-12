@@ -12,7 +12,7 @@ The runner creates a fresh temporary evidence directory, a PostgreSQL container 
 
 The Docker shim injects an error for container lookup and kills only the test worker immediately after successful removal of its exact test container ID. Tests cover ownership refusal, confirmed absence, retry after interruption, service failure/recovery, manual stop, audit transitions, and existing deployment/data-preservation boundaries. Twelve gated HTTP fixtures also verify that the real worker can start a different app before their responses arrive, uses bounded concurrency, and discards observations from before a same-release lifecycle change. These additional service fixtures use synthetic installation metadata, not twelve deployed app containers.
 
-Expected observations: runtime 46, operations 6, CLI 6, auth 8, permissions 24, delegation 10 browser boundary 10 and migration 2 (112 total). The boundary suite exercises actual fixed portal/console HTTP listeners with purpose-bound browser sessions, both CLI approval formats, legacy revocation, application API/header isolation and unchanged CLI credential lifetimes. It uses synthetic identity metadata, not real OIDC.
+Expected observations: runtime 46, operations 6, CLI 6, auth 8, permissions 24, delegation 10, browser boundary 12, migration 3 and frames 14 (129 total). The boundary suite exercises actual fixed portal/console HTTP listeners with purpose-bound browser sessions, both CLI approval formats, legacy revocation, application API/header isolation and unchanged CLI credential lifetimes. It uses synthetic identity metadata, not real OIDC.
 
 Any failed observation or missing results file makes the command fail. Cleanup runs even when setup fails. It uses test labels and the private Docker journal when database evidence is unavailable, checks ownership before removing resources, and verifies original running containers retained their IDs, images and start times. Repeated cleanup is safe. Keep the printed evidence directory; check `cleanup.log` on failure.
 
@@ -30,7 +30,7 @@ The process/service UI can be checked without using the running platform:
 pnpm exec playwright test --config scripts/runtime-regression/ui.config.ts
 ```
 
-This builds the platform and a real Federation test app into `.local/evidence/runtime-health-ui/` and starts its own preview on `127.0.0.1:18147` (fails if occupied). It does not replace the running platform's build. API requests are intercepted with fixtures. Tests cover health displays, unsaved input and SDK callback stability, release-change API blocking, and late responses across app and environment navigation. It does not send mutations to a platform API.
+This builds the platform and a real Federation test app into `.local/evidence/runtime-health-ui/` and starts its own preview on `127.0.0.1:18147` (fails if occupied). It does not replace the running platform's build. API requests are intercepted with fixtures. Tests cover health displays, unsaved input, frame renewal and expiry failures, release-change API blocking, and late responses across app and environment navigation. A terminal frame error preserves the current document; reopening dirty or unknown input requires confirmation. Transient renewal failures retry without ending the frame. It does not send mutations to a platform API.
 
 The platform shell can also be checked against the real core server of this checkout:
 

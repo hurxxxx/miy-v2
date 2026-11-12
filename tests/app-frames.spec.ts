@@ -6,6 +6,8 @@ import { join, resolve } from "node:path";
 import { fixtureEnv, workflowArgs, workflowData } from "../scripts/lib/cli-workflow.mjs";
 // @ts-expect-error plain ESM helpers shared with the CLI regression scripts
 import { cliData } from "../scripts/lib/cli-result.mjs";
+// @ts-expect-error plain ESM helper shared with the evidence regression checks
+import { frameDiagnostic } from "../scripts/lib/frame-diagnostics.mjs";
 
 // Business app frames (docs/APP-FRAMES.md FV-01/02/04/05/06/07/08/10) on the
 // disposable full stack (scripts/runtime-regression/stack-ui.sh): Keycloak login,
@@ -182,10 +184,10 @@ function browserRssMb(name: string) {
 async function signIn(browser: Browser, user: string): Promise<{ context: BrowserContext; page: Page }> {
   const context = await browser.newContext({ acceptDownloads: true });
   const page = await context.newPage();
-  page.on("pageerror", (e) => console.log(`[${user}] pageerror: ${e.message}`));
+  page.on("pageerror", (e) => console.log(`[${user}] pageerror: ${frameDiagnostic(e.message)}`));
   // Frame documents log here too: a failed app load names its cause.
   page.on("console", (m) => {
-    if (m.type() === "error") console.log(`[${user}] console error (${new URL(m.location().url || "about:blank").origin}): ${m.text().slice(0, 300)}`);
+    if (m.type() === "error") console.log(`[${user}] console error (${new URL(m.location().url || "about:blank").origin}): ${frameDiagnostic(m.text()).slice(0, 300)}`);
   });
   await page.goto(devPortal + "/");
   await page.getByRole("link", { name: /^(OAuth로 로그인|로그인)$/ }).click();
@@ -339,7 +341,7 @@ test("FV-04/06/07/10: the frame cannot reach the portal, abuse the bridge or use
 test("FV-07: print, keyboard focus and an accessible frame name", async ({ browser }, info) => {
   const { context, page } = await signIn(browser, "developer");
   const lines: string[] = [];
-  page.on("console", (message) => lines.push(message.text()));
+  page.on("console", (message) => lines.push(frameDiagnostic(message.text())));
   await page.goto(appPath(probeId));
   const frame = await appFrame(page);
   await expect(frame.getByTestId("probe")).toBeVisible();

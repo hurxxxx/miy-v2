@@ -24,7 +24,7 @@ CONSOLE_CSP = 'add_header Content-Security-Policy "default-src \'self\'; frame-a
 LIVE_NGINX = ('# Generated from fixed portal/console/dev-portal settings.\nmap $x $y {}\n'
               f'server {{\n  portal\n    {CSP}\n}}\nserver {{\n  console\n    {CONSOLE_CSP}\n}}\n'
               f'server {{\n  dev\n    {CSP}\n}}\n')
-FRAME_BLOCK = ('server {\n    listen 443 ssl;\n    access_log off;\n    location / {\n'
+FRAME_BLOCK = ('server {\n    listen 443 ssl;\n    access_log off;\n    error_log /dev/null;\n    location / {\n'
                '        proxy_pass http://127.0.0.1:18184;\n    }\n}\n')
 REFERRER = '    add_header Referrer-Policy strict-origin-when-cross-origin always;\n'
 
@@ -103,6 +103,140 @@ class AppFrameSettingsTests(unittest.TestCase):
         self.apply()
         self.assertEqual(tool.restore(self.state, self.release)['status'], 'RESTORED')
         self.unchanged()
+
+    def test_recovery_record_and_all_backups_exist_before_any_live_change(self):
+        write = tool.private_write
+
+        def inspect_write(path, data):
+            if path.parent == self.state:
+                record = json.loads((self.release / 'settings.json').read_text())
+                self.assertEqual(record['phase'], 'prepared')
+                self.assertEqual(set(record['files']), set(tool.FILES))
+                for name in tool.FILES:
+                    self.assertEqual((self.release / 'settings-backup' / name).read_bytes(), self.before[name])
+                    self.assertEqual(record['files'][name]['before'], tool.digest(self.before[name]))
+            write(path, data)
+
+        with patch.object(tool, 'private_write', inspect_write):
+            self.apply()
+        self.assertEqual(json.loads((self.release / 'settings.json').read_text())['phase'], 'applied')
+        self.assertEqual((self.release / 'settings.json').stat().st_mode & 0o777, 0o600)
+
+    def test_backup_or_prepared_manifest_failure_changes_no_live_files(self):
+        write = tool.private_write
+        for failed in ['settings-backup/runtime.env', 'settings.json']:
+            with self.subTest(failed=failed):
+                self.release = self.state / ('release-' + failed.replace('/', '-'))
+
+                def fail_write(path, data):
+                    if path == self.release / failed:
+                        raise OSError('synthetic preparation failure')
+                    write(path, data)
+
+                with patch.object(tool, 'private_write', fail_write), self.assertRaises(OSError):
+                    self.apply()
+                self.unchanged()
+
+    def test_recovery_parent_sync_failure_changes_no_live_files(self):
+        self.release = self.state / 'new-releases' / 'app-frames'
+        parent = self.state.stat()
+        fsync = tool.os.fsync
+
+        def fail_parent_sync(descriptor):
+            current = tool.os.fstat(descriptor)
+            if (current.st_dev, current.st_ino) == (parent.st_dev, parent.st_ino):
+                raise OSError('synthetic recovery directory sync failure')
+            fsync(descriptor)
+
+        for attempt in range(2):
+            with self.subTest(attempt=attempt):
+                with patch.object(tool.os, 'fsync', fail_parent_sync), self.assertRaises(OSError):
+                    self.apply()
+                self.unchanged()
+
+    def test_interrupted_apply_can_be_restored_and_applied_in_a_new_release(self):
+        write = tool.private_write
+
+        def fail_write(path, data):
+            if path == self.state / 'runtime.env':
+                raise OSError('synthetic live write failure')
+            write(path, data)
+
+        with patch.object(tool, 'private_write', fail_write), self.assertRaises(OSError):
+            self.apply()
+        self.assertNotEqual((self.state / 'server.json').read_bytes(), self.before['server.json'])
+        self.assertEqual((self.state / 'runtime.env').read_bytes(), self.before['runtime.env'])
+        self.assertEqual(tool.restore(self.state, self.release)['status'], 'RESTORED')
+        self.unchanged()
+        self.release = self.state / 'release-retry'
+        self.assertEqual(self.apply()['status'], 'APPLIED')
+
+    def test_applied_manifest_failure_keeps_prepared_record_restorable(self):
+        write = tool.private_write
+
+        def fail_write(path, data):
+            if path == self.release / 'settings.json' and json.loads(data)['phase'] == 'applied':
+                raise OSError('synthetic final record failure')
+            write(path, data)
+
+        with patch.object(tool, 'private_write', fail_write), self.assertRaises(OSError):
+            self.apply()
+        self.assertEqual(json.loads((self.release / 'settings.json').read_text())['phase'], 'prepared')
+        self.assertTrue(all((self.state / name).read_bytes() != self.before[name] for name in tool.FILES))
+        self.assertEqual(tool.restore(self.state, self.release)['status'], 'RESTORED')
+        self.unchanged()
+
+    def test_interrupted_restore_can_be_retried_including_its_final_record(self):
+        self.apply()
+        write = tool.private_write
+        for failed in [self.state / 'runtime.env', self.release / 'settings.json']:
+            with self.subTest(failed=failed.name):
+                def fail_write(path, data):
+                    if path == failed:
+                        raise OSError('synthetic restore failure')
+                    write(path, data)
+
+                with patch.object(tool, 'private_write', fail_write), self.assertRaises(OSError):
+                    tool.restore(self.state, self.release)
+                self.assertEqual((self.state / 'server.json').read_bytes(), self.before['server.json'])
+        self.assertEqual(tool.restore(self.state, self.release)['status'], 'RESTORED')
+        self.assertEqual(tool.restore(self.state, self.release)['status'], 'RESTORED')
+        self.unchanged()
+        self.assertEqual(json.loads((self.release / 'settings.json').read_text())['phase'], 'restored')
+
+    def test_restore_retries_sync_after_bytes_were_already_restored(self):
+        self.apply()
+        fsync = tool.os.fsync
+
+        def fail_restored_file_sync(descriptor):
+            current = tool.os.fstat(descriptor)
+            restored = (self.state / 'runtime.env').stat()
+            if (current.st_dev, current.st_ino) == (restored.st_dev, restored.st_ino):
+                raise OSError('synthetic restored file sync failure')
+            fsync(descriptor)
+
+        for attempt in range(2):
+            with self.subTest(attempt=attempt):
+                with patch.object(tool.os, 'fsync', fail_restored_file_sync), self.assertRaises(OSError):
+                    tool.restore(self.state, self.release)
+        self.assertEqual(tool.restore(self.state, self.release)['status'], 'RESTORED')
+        self.unchanged()
+
+    def test_restore_validates_complete_manifest_and_all_backups_before_changing_files(self):
+        self.apply()
+        after = {name: (self.state / name).read_bytes() for name in tool.FILES}
+        manifest = self.release / 'settings.json'
+        original = manifest.read_bytes()
+        record = json.loads(original)
+        del record['files']['compose.env']
+        manifest.write_text(json.dumps(record))
+        with self.assertRaisesRegex(RuntimeError, 'settings_manifest_incomplete'):
+            tool.restore(self.state, self.release)
+        manifest.write_bytes(original)
+        (self.release / 'settings-backup/compose.env').write_text('changed fixture backup')
+        with self.assertRaisesRegex(RuntimeError, 'settings_backup_changed:compose.env'):
+            tool.restore(self.state, self.release)
+        self.assertEqual({name: (self.state / name).read_bytes() for name in tool.FILES}, after)
 
     def test_restore_refuses_a_file_changed_after_apply(self):
         self.apply()
@@ -201,6 +335,7 @@ class AppFrameSettingsTests(unittest.TestCase):
             'rendered_nginx_changes_more_than_app_frames ': candidate_nginx(extra=FRAME_BLOCK),
             'rendered_frame_block_unexpected': candidate_nginx().replace(
                 '    access_log off;\n', '    add_header X-Frame-Options DENY always;\n'),
+            'rendered_frame_block_unexpected ': candidate_nginx().replace('    error_log /dev/null;\n', ''),
             'portal_frame_headers_missing': candidate_nginx().replace(REFERRER, '', 1),
         }.items():
             with self.subTest(code):

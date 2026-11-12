@@ -1,8 +1,8 @@
 import { browserUser, mockSurface } from "./browser-surface";
-import { test, expect } from "@playwright/test";
+import { test, expect, type Page } from "@playwright/test";
 import type { Installation } from "../packages/sdk/src/index";
 import { openNewTab } from "./new-tab";
-import { mockFrames } from "./frame-mock";
+import { mockFrames, type FrameApi, type FrameMockOptions } from "./frame-mock";
 
 test("service health changes independently from process controls", async ({
   page,
@@ -101,12 +101,10 @@ test("service health changes independently from process controls", async ({
   expect(writes).toBe(0);
 });
 
-const app = (page: import("@playwright/test").Page) => page.frameLocator("iframe.app-frame");
+const app = (page: Page) => page.frameLocator("iframe.app-frame");
 // Load a real Federation module in its frame, with synthetic API data and no platform writes.
-async function appHarness(page: import("@playwright/test").Page) {
+async function appHarness(page: Page, options: FrameMockOptions = {}, api?: FrameApi) {
   await mockSurface(page);
-  const { resolve, sep } = await import("node:path");
-  const remote = resolve(".local/evidence/runtime-health-ui/remote");
   const first: Installation = {
     id: "10000000-0000-4000-8000-000000000001",
     appId: "first-app",
@@ -166,12 +164,12 @@ async function appHarness(page: import("@playwright/test").Page) {
   });
   // Apps run in their own frames; their API reaches this mock by frame origin. A
   // call signed with an old release is refused like the server does (409).
-  await mockFrames(page, () => apps, (installation, path, _method, release) => {
+  const frames = await mockFrames(page, () => apps, (installation, path, method, release) => {
     if (release !== installation.releaseId)
       return { status: 409, json: { error: { code: "release_changed_reload_required" } } };
     apiCalls.push(`/api/v1/installations/${installation.id}/api${path}`);
-    return { json: { title: "저장된 제목" } };
-  });
+    return api?.(installation, path, method, release) ?? { json: { title: "저장된 제목" } };
+  }, options);
   await page.goto("/environments/dev/apps/first-app");
   await expect(app(page).getByLabel("문서 제목")).toHaveValue("저장된 제목");
   return {
@@ -180,12 +178,200 @@ async function appHarness(page: import("@playwright/test").Page) {
     second,
     production,
     apiCalls,
+    frames,
     holdNextPoll: () =>
       new Promise<import("@playwright/test").Route>((resolve) => {
         hold = resolve;
       }),
   };
 }
+
+async function reopenFrame(page: Page, decision: "accept" | "dismiss", message = "저장하지 않은 제목") {
+  const pending = page.waitForEvent("dialog");
+  const click = page.getByRole("button", { name: "다시 열기", exact: true }).click();
+  const dialog = await pending;
+  expect(dialog.type()).toBe("confirm");
+  expect(dialog.message()).toContain(message);
+  await dialog[decision]();
+  await click;
+}
+
+test("absolute frame expiry preserves dirty input until an explicitly confirmed relaunch", async ({ page }) => {
+  await page.clock.install();
+  const { apiCalls, frames } = await appHarness(page, { tokenLifetimeMs: 20_000, frameLifetimeMs: 20_000 });
+  const input = app(page).getByLabel("문서 제목");
+  await input.fill("만료 후에도 남을 입력");
+  await page.clock.fastForward(20_100);
+  await expect(page.getByRole("alert")).toContainText("앱 세션이 끝났습니다");
+  await expect(input).toHaveValue("만료 후에도 남을 입력");
+  expect(frames).toEqual({ launches: 1, portal: 0, exchange: 0 });
+  const reads = apiCalls.length;
+  await app(page).getByRole("button", { name: "API 확인" }).click();
+  await expect(app(page).getByTestId("api-error")).toContainText("frame_session_ended");
+  expect(apiCalls).toHaveLength(reads);
+  await reopenFrame(page, "dismiss");
+  await expect(input).toHaveValue("만료 후에도 남을 입력");
+  expect(frames.launches).toBe(1);
+  await reopenFrame(page, "accept");
+  await expect(input).toHaveValue("저장된 제목");
+  await expect(page.getByRole("alert")).toHaveCount(0);
+  expect(frames.launches).toBe(2);
+});
+
+for (const stage of ["portal", "exchange"] as const) {
+  for (const failure of [
+    { status: 401, code: "unauthorized", expected: "frame_session_ended", notice: "앱 세션이 끝났습니다" },
+    { status: 404, code: "not_found", expected: "frame_session_ended", notice: "앱 세션이 끝났습니다" },
+    { status: 403, code: "forbidden", expected: "frame_access_denied", notice: "앱 사용 권한을 확인할 수 없습니다" },
+    { status: 409, code: "release_changed_reload_required", expected: "release_changed_reload_required", notice: "앱 상태가 변경되었습니다" },
+  ]) {
+    test(`frame renewal ${stage} ${failure.status} reports the reason without discarding input`, async ({ page }) => {
+      await page.clock.install();
+      const { apiCalls, frames } = await appHarness(page, {
+        tokenLifetimeMs: 90_000,
+        renewal: (current) => current === stage
+          ? { status: failure.status, json: { error: { code: failure.code } } }
+          : undefined,
+      });
+      const input = app(page).getByLabel("문서 제목");
+      await input.fill("갱신 거부 중 작성 내용");
+      // Exercise the runtime's scheduled renewal, not a synthetic frame.error.
+      await page.clock.fastForward(30_100);
+      await expect(page.getByText(failure.notice, { exact: false })).toBeVisible();
+      await expect(input).toHaveValue("갱신 거부 중 작성 내용");
+      const reads = apiCalls.length;
+      await app(page).getByRole("button", { name: "API 확인" }).click();
+      await expect(app(page).getByTestId("api-error")).toContainText(failure.expected);
+      expect(apiCalls).toHaveLength(reads);
+      expect(frames).toEqual({ launches: 1, portal: 1, exchange: stage === "exchange" ? 1 : 0 });
+      if (failure.status !== 409) {
+        await reopenFrame(page, "dismiss");
+        await expect(input).toHaveValue("갱신 거부 중 작성 내용");
+        expect(frames.launches).toBe(1);
+      } else {
+        await expect(page.getByText("앱 세션이 끝났습니다", { exact: false })).toHaveCount(0);
+        const pending = page.waitForEvent("dialog");
+        const reload = page.getByRole("button", { name: "새로고침", exact: true }).click();
+        const dialog = await pending;
+        expect(dialog.type()).toBe("beforeunload");
+        await dialog.dismiss();
+        await reload;
+        await expect(input).toHaveValue("갱신 거부 중 작성 내용");
+      }
+      await page.clock.fastForward(60_000);
+      expect(frames.portal).toBe(1);
+    });
+  }
+
+  test(`transient ${stage} renewal failure retries without ending or replacing the frame`, async ({ page }) => {
+    await page.clock.install();
+    const { apiCalls, frames } = await appHarness(page, {
+      tokenLifetimeMs: 90_000,
+      renewal: (current, attempt) => current === stage && attempt === 1 ? "network_error" : undefined,
+    });
+    const input = app(page).getByLabel("문서 제목");
+    await input.fill("통신 복구 후에도 남을 입력");
+    await page.clock.fastForward(30_100);
+    await expect.poll(() => frames[stage]).toBe(1);
+    await expect(page.getByRole("alert")).toHaveCount(0);
+    await expect(input).toHaveValue("통신 복구 후에도 남을 입력");
+    await page.clock.fastForward(30_100);
+    await expect.poll(() => frames[stage]).toBe(2);
+    await expect.poll(() => frames.exchange).toBe(stage === "exchange" ? 2 : 1);
+    const reads = apiCalls.length;
+    await app(page).getByRole("button", { name: "API 확인" }).click();
+    await expect.poll(() => apiCalls.length).toBe(reads + 1);
+    await expect(page.getByRole("alert")).toHaveCount(0);
+    await expect(input).toHaveValue("통신 복구 후에도 남을 입력");
+    expect(frames.launches).toBe(1);
+  });
+}
+
+test("absolute frame expiry interrupts a pending renewal without accepting a late success", async ({ page }) => {
+  await page.clock.install();
+  let completeRenewal: ((value: undefined) => void) | undefined;
+  const { apiCalls, frames } = await appHarness(page, {
+    tokenLifetimeMs: 10_000,
+    frameLifetimeMs: 20_000,
+    renewal: (stage) => stage === "exchange"
+      ? new Promise<undefined>((resolve) => { completeRenewal = resolve; })
+      : undefined,
+  });
+  const input = app(page).getByLabel("문서 제목");
+  await input.fill("절대 만료 경계의 입력");
+  await page.clock.fastForward(5_100);
+  await expect.poll(() => frames.exchange).toBe(1);
+  await page.clock.fastForward(15_000);
+  await expect(page.getByRole("alert")).toContainText("앱 세션이 끝났습니다");
+  completeRenewal!(undefined);
+  const reads = apiCalls.length;
+  await app(page).getByRole("button", { name: "API 확인" }).click();
+  await expect(app(page).getByTestId("api-error")).toContainText("frame_session_ended");
+  await expect(input).toHaveValue("절대 만료 경계의 입력");
+  expect(apiCalls).toHaveLength(reads);
+  expect(frames.launches).toBe(1);
+});
+
+test("absolute frame expiry is reported while a transient renewal waits to retry", async ({ page }) => {
+  await page.clock.install();
+  const { frames } = await appHarness(page, {
+    tokenLifetimeMs: 10_000,
+    frameLifetimeMs: 20_000,
+    renewal: () => "network_error",
+  });
+  const input = app(page).getByLabel("문서 제목");
+  await input.fill("재시도 대기 중 입력");
+  await page.clock.fastForward(5_100);
+  await expect.poll(() => frames.portal).toBe(1);
+  await page.clock.fastForward(15_000);
+  await expect(page.getByRole("alert")).toContainText("앱 세션이 끝났습니다");
+  await expect(input).toHaveValue("재시도 대기 중 입력");
+  await page.clock.fastForward(30_000);
+  expect(frames).toEqual({ launches: 1, portal: 1, exchange: 0 });
+});
+
+for (const state of ["dirty", "unknown", "clean"] as const) {
+  test(`frame relaunch messages preserve ${state} input protection`, async ({ page }) => {
+    const { frames } = await appHarness(page);
+    const input = app(page).getByLabel("문서 제목");
+    if (state !== "clean") await input.fill("재실행 요청 중 입력");
+    await input.evaluate((element, { state, origin }) => {
+      const frame = element.ownerDocument.defaultView!;
+      const post = (type: string, payload: Record<string, unknown>) => frame.parent.postMessage({
+        protocol: "miy.frame/v1", id: "relaunch-fixture", type, payload,
+      }, origin);
+      // Simulate the unknown state of an old SDK and the server's relaunch
+      // document. Session failures above always come from the real runtime.
+      if (state === "unknown") post("guard.state", { state });
+      post("frame.relaunch", {});
+    }, { state, origin: new URL(page.url()).origin });
+    if (state === "clean") {
+      await expect.poll(() => frames.launches).toBe(2);
+      await expect(input).toHaveValue("저장된 제목");
+      await expect(page.getByRole("alert")).toHaveCount(0);
+    } else {
+      await expect(page.getByRole("alert")).toContainText("앱을 다시 열어야 합니다");
+      await expect(input).toHaveValue("재실행 요청 중 입력");
+      await reopenFrame(page, "dismiss", state === "unknown" ? "저장 상태를 확인할 수 없습니다" : "저장하지 않은 제목");
+      await expect(input).toHaveValue("재실행 요청 중 입력");
+      expect(frames.launches).toBe(1);
+    }
+  });
+}
+
+test("business API unauthorized responses do not claim that a renewable frame session ended", async ({ page }) => {
+  const { frames, apiCalls } = await appHarness(page, {}, (_installation, path) => path === "/probe"
+    ? { status: 401, json: { error: { code: "business_login_required" } } }
+    : { json: { title: "저장된 제목" } });
+  await app(page).getByLabel("문서 제목").fill("업무 권한과 별개인 입력");
+  const reads = apiCalls.length;
+  await app(page).getByRole("button", { name: "API 확인" }).click();
+  await expect(app(page).getByTestId("api-error")).toContainText("business_login_required");
+  expect(apiCalls).toHaveLength(reads + 2);
+  expect(frames).toEqual({ launches: 1, portal: 1, exchange: 1 });
+  await expect(page.getByRole("alert")).toHaveCount(0);
+  await expect(app(page).getByLabel("문서 제목")).toHaveValue("업무 권한과 별개인 입력");
+});
 
 test("health observations preserve SDK callbacks and unsaved input; release change still blocks APIs", async ({
   page,

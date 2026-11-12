@@ -1,4 +1,4 @@
-import type { Page } from "@playwright/test";
+import type { Page, Route } from "@playwright/test";
 import { readFileSync } from "node:fs";
 import { extname, resolve, sep } from "node:path";
 import type { Installation } from "../packages/sdk/src/index";
@@ -28,14 +28,39 @@ export type FrameApi = (
   release: string | undefined,
 ) => FrameReply | Promise<FrameReply>;
 
+type RenewalStage = "portal" | "exchange";
+type RenewalReply = FrameReply | "network_error" | undefined;
+export interface FrameMockOptions {
+  tokenLifetimeMs?: number;
+  frameLifetimeMs?: number;
+  renewal?: (stage: RenewalStage, attempt: number) => RenewalReply | Promise<RenewalReply>;
+}
+
 function file(root: string, relative: string) {
   const path = resolve(root, relative);
   if (!path.startsWith(root + sep)) throw new Error("mock path escaped its directory");
   return { body: readFileSync(path), contentType: types[extname(path)] ?? "application/octet-stream" };
 }
 
-export async function mockFrames(page: Page, apps: () => Installation[], api: FrameApi) {
+export async function mockFrames(page: Page, apps: () => Installation[], api: FrameApi, options: FrameMockOptions = {}) {
+  const requests = { launches: 0, portal: 0, exchange: 0 };
   const origins = new Map<string, Installation>();
+  const frameExpiries = new Map<string, number>();
+  const tokenLifetimeMs = options.tokenLifetimeMs ?? 600_000;
+  const frameLifetimeMs = options.frameLifetimeMs ?? 8 * 3_600_000;
+  const renewalReply = async (stage: RenewalStage, route: Route) => {
+    const attempt = ++requests[stage];
+    const reply = await options.renewal?.(stage, attempt);
+    if (reply === "network_error") {
+      await route.abort("failed");
+      return true;
+    }
+    if (reply) {
+      await route.fulfill({ status: reply.status ?? 200, json: reply.json });
+      return true;
+    }
+    return false;
+  };
   const originOf = (installation: Installation) => {
     for (const [origin, value] of origins) if (value.id === installation.id) return origin;
     const origin = `http://127.0.0.1:${18190 + origins.size}`;
@@ -44,6 +69,7 @@ export async function mockFrames(page: Page, apps: () => Installation[], api: Fr
   };
   // Registered after the suite's own "**/api/**" mock, so it answers first.
   await page.route("**/api/v1/app-frames", async (route) => {
+    requests.launches++;
     const { installationId } = route.request().postDataJSON() as { installationId: string };
     const installation = apps().find((value) => value.id === installationId);
     if (!installation) return route.fulfill({ status: 404, json: { error: { code: "not_found" } } });
@@ -60,11 +86,18 @@ export async function mockFrames(page: Page, apps: () => Installation[], api: Fr
       },
     });
   });
+  await page.route("**/api/v1/app-frames/*/renew", async (route) => {
+    if (await renewalReply("portal", route)) return;
+    await route.fulfill({ json: { code: "r".repeat(43) } });
+  });
   await page.route(/^http:\/\/127\.0\.0\.1:1819\d\//, async (route) => {
     const url = new URL(route.request().url());
     const installation = origins.get(url.origin);
     if (!installation) return route.fulfill({ status: 404, body: "" });
     if (url.pathname === "/_miy/launch") {
+      // Match the browser clock so tests can advance real runtime timers.
+      const now = await page.evaluate(() => Date.now());
+      frameExpiries.set(url.origin, now + frameLifetimeMs);
       const form = new URLSearchParams(route.request().postData() ?? "");
       const bootstrap = {
         protocol: "miy.frame/v1",
@@ -77,8 +110,8 @@ export async function mockFrames(page: Page, apps: () => Installation[], api: Fr
         basePath: form.get("basePath") ?? "/",
         location: { pathname: form.get("pathname") || "/", search: form.get("search") ?? "", hash: form.get("hash") ?? "" },
         token: "miy_frame_" + "t".repeat(43),
-        tokenExpiresAt: new Date(Date.now() + 600_000).toISOString(),
-        frameExpiresAt: new Date(Date.now() + 8 * 3_600_000).toISOString(),
+        tokenExpiresAt: new Date(now + Math.min(tokenLifetimeMs, frameLifetimeMs)).toISOString(),
+        frameExpiresAt: new Date(now + frameLifetimeMs).toISOString(),
         assetBase: "/_miy/a/capability/ui/",
         moduleEntry: "mf-manifest.json",
         moduleExport: "./AppRoot",
@@ -89,6 +122,14 @@ export async function mockFrames(page: Page, apps: () => Installation[], api: Fr
         `<script id="miy-frame-bootstrap" type="application/json">${JSON.stringify(bootstrap).replaceAll("<", "\\u003c")}</script></head>`,
       );
       return route.fulfill({ contentType: "text/html", body: html });
+    }
+    if (url.pathname === "/_miy/renew") {
+      if (await renewalReply("exchange", route)) return;
+      const now = await page.evaluate(() => Date.now());
+      return route.fulfill({ json: {
+        token: "miy_frame_" + "u".repeat(43),
+        tokenExpiresAt: new Date(Math.min(now + tokenLifetimeMs, frameExpiries.get(url.origin)!)).toISOString(),
+      } });
     }
     if (url.pathname.startsWith("/_miy/runtime/"))
       return route.fulfill(file(runtimeDir, url.pathname.slice("/_miy/runtime/".length)));
@@ -105,4 +146,5 @@ export async function mockFrames(page: Page, apps: () => Installation[], api: Fr
     }
     return route.fulfill({ status: 404, body: "" });
   });
+  return requests;
 }

@@ -168,6 +168,7 @@ pub async fn authenticate(s: &State, token: &str) -> ApiResult<(Principal, Conte
 const FRAME_ORIGIN: &str = concat!(
     "SELECT EXISTS(SELECT 1 FROM app_frame_sessions f WHERE f.id::text=$1 AND f.user_id=$2 ",
     "AND f.revoked_at IS NULL AND f.expires_at>clock_timestamp() ",
+    "AND f.installation_id=$4 AND f.release_id=$5 AND f.environment=$6 ",
     "AND EXISTS(SELECT 1 FROM users u WHERE u.id=f.user_id AND u.enabled) ",
     "AND (EXISTS(SELECT 1 FROM sessions s WHERE s.id_hash=f.parent_session_hash AND s.user_id=f.user_id ",
     "AND s.browser_purpose=f.browser_purpose AND s.created_at>clock_timestamp()-interval '8 hours') ",
@@ -202,8 +203,8 @@ async fn current(s: &State, p: &Principal, c: &Context) -> ApiResult<Vec<String>
             "legacy_cli" => {
                 "SELECT EXISTS(SELECT 1 FROM cli_tokens WHERE token_hash=$1 AND user_id=$2 AND expires_at>clock_timestamp())"
             }
-            // A chain started in an app frame lives only while that frame session
-            // and its parent portal session do (logout, revocation, disabled user).
+            // The first caller remains bound to the original frame's installation,
+            // release and environment, as well as its live parent portal session.
             "frame" => FRAME_ORIGIN,
             _ => return Err(ApiError::unauthorized()),
         };
@@ -211,7 +212,16 @@ async fn current(s: &State, p: &Principal, c: &Context) -> ApiResult<Vec<String>
             .bind(&origin.digest)
             .bind(&p.id);
         if origin.kind == "frame" {
-            query = query.bind(s.auth.development_login);
+            let (installation, release) = c
+                .callers
+                .first()
+                .map(|caller| (caller.installation_id, caller.release_id))
+                .unwrap_or((c.installation_id, c.release_id));
+            query = query
+                .bind(s.auth.development_login)
+                .bind(installation)
+                .bind(release)
+                .bind(&c.environment);
         }
         if !query.fetch_one(&s.pool).await? {
             return Err(ApiError::unauthorized());
@@ -339,8 +349,18 @@ pub async fn identity(
             origin: origin.cloned(),
         },
     };
-    if context.installation_id != id || context.release_id != release {
+    if context.installation_id != id || context.environment != inst.get::<String, _>("environment")
+    {
         return Err(ApiError::forbidden());
+    }
+    if context.release_id != release {
+        return Err(
+            if context.origin.as_ref().is_some_and(|o| o.kind == "frame") {
+                ApiError::conflict("release_changed_reload_required")
+            } else {
+                ApiError::forbidden()
+            },
+        );
     }
     let effective = current(s, p, &context).await?;
     let token = if issue

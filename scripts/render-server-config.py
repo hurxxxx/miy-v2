@@ -223,8 +223,10 @@ def frame_server():
     listen {listen}{' ssl' if tls else ''};
     server_name {name if not frame_ports else nginx(name)};
 {tls}    client_max_body_size 8m;
-    # Asset paths carry a frame capability: never write them to access logs.
+    # Asset paths carry a frame capability. Nginx cannot redact its error log
+    # request URI, including upstream failures, so disable both logs here.
     access_log off;
+    error_log /dev/null;
     # No anti-frame headers: frame documents name their portal in frame-ancestors.
     if ($http_service_worker = "script") {{ return 403; }}
     location / {{

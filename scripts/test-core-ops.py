@@ -1208,6 +1208,70 @@ class UiRolloutTests(OfflineTest):
         code, result = self.tool('build', '--commit', COMMIT, '--target', 'frame-runtime')
         self.assertEqual((code, result['error']), (1, 'index asset outside the target base'))
 
+    def test_frame_runtime_can_be_redeployed_after_its_first_rollback(self):
+        live = self.frame_runtime_fixture()
+        self.assertEqual(self.tool('build', '--commit', COMMIT, '--target', 'frame-runtime')[0], 0)
+        self.assertEqual(self.tool('apply', '--expected-commit', COMMIT, '--target', 'frame-runtime')[0], 0)
+        self.assertEqual(self.tool('rollback', '--target', 'frame-runtime')[0], 0)
+        retained = self.ui.assets(live)
+        self.assertEqual(set(retained), {'assets/new.js', 'assets/old.js'})
+        self.release = self.root / '.local/redeploy-frame-runtime'
+        code, built = self.tool('build', '--commit', COMMIT, '--target', 'frame-runtime')
+        self.assertEqual((code, built['newAssets']), (0, 1))
+        code, inspected = self.tool('inspect', '--target', 'frame-runtime')
+        self.assertEqual((code, inspected['identicalAssets'], inspected['currentIndexSha256']), (0, 2, None))
+        self.assertEqual(self.tool('apply', '--expected-commit', COMMIT, '--target', 'frame-runtime')[0], 0)
+        backup = json.loads((self.release / 'production-backup/manifest.json').read_text())
+        self.assertEqual(backup['files'], retained)
+        self.assertEqual(self.tool('rollback', '--target', 'frame-runtime')[0], 0)
+        self.assertEqual(self.ui.assets(live), retained)
+
+    def test_frame_runtime_can_be_redeployed_after_interrupted_first_apply(self):
+        live = self.frame_runtime_fixture()
+        self.assertEqual(self.tool('build', '--commit', COMMIT, '--target', 'frame-runtime')[0], 0)
+        with patch.object(self.ui, 'replace_index', side_effect=RuntimeError('synthetic publication failure')):
+            code, result = self.tool('apply', '--expected-commit', COMMIT, '--target', 'frame-runtime')
+        self.assertEqual((code, result['error']), (1, 'synthetic publication failure'))
+        retained = self.ui.assets(live)
+        self.assertTrue(retained and 'index.html' not in retained)
+        self.release = self.root / '.local/retry-frame-runtime'
+        self.assertEqual(self.tool('build', '--commit', COMMIT, '--target', 'frame-runtime')[0], 0)
+        self.assertEqual(self.tool('apply', '--expected-commit', COMMIT, '--target', 'frame-runtime')[0], 0)
+        self.assertEqual(self.tool('rollback', '--target', 'frame-runtime')[0], 0)
+        self.assertEqual(self.ui.assets(live), retained)
+
+    def test_frame_runtime_indexless_assets_still_refuse_immutable_collisions(self):
+        live = self.frame_runtime_fixture()
+        (live / 'assets').mkdir(parents=True)
+        (live / 'assets/new.js').write_text('retained bytes from another build')
+        retained = self.ui.assets(live)
+        self.assertEqual(self.tool('build', '--commit', COMMIT, '--target', 'frame-runtime')[0], 0)
+        for arguments in [('inspect',), ('apply', '--expected-commit', COMMIT)]:
+            code, result = self.tool(*arguments, '--target', 'frame-runtime')
+            self.assertEqual((code, result['error']), (1, 'immutable asset collision: assets/new.js'))
+            self.assertEqual(self.ui.assets(live), retained)
+        self.assertFalse((self.release / 'production-backup').exists())
+
+    def test_frame_runtime_indexless_assets_still_refuse_symlinks(self):
+        live = self.frame_runtime_fixture()
+        (live / 'assets').mkdir(parents=True)
+        (live / 'assets/link.js').symlink_to(self.live / 'assets/old.js')
+        code, result = self.tool('build', '--commit', COMMIT, '--target', 'frame-runtime')
+        self.assertEqual((code, result['error']), (1, 'symlink asset refused'))
+        self.assertFalse((live / 'index.html').exists())
+
+    def test_frame_runtime_rollback_verifies_indexless_backup_assets(self):
+        live = self.frame_runtime_fixture()
+        (live / 'assets').mkdir(parents=True)
+        (live / 'assets/retained.js').write_text('retained')
+        self.assertEqual(self.tool('build', '--commit', COMMIT, '--target', 'frame-runtime')[0], 0)
+        self.assertEqual(self.tool('apply', '--expected-commit', COMMIT, '--target', 'frame-runtime')[0], 0)
+        applied = self.ui.inventory(live)
+        (self.release / 'production-backup/dist/assets/retained.js').write_text('changed backup')
+        code, result = self.tool('rollback', '--target', 'frame-runtime')
+        self.assertEqual((code, result['error']), (1, 'backup bytes changed'))
+        self.assertEqual(self.ui.inventory(live), applied)
+
     def test_common_live_lock_blocks_other_release_apply_before_check(self):
         self.assert_common_publication_lock('apply', 'check')
 

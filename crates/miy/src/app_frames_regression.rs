@@ -5,7 +5,13 @@
 //! is not a real browser, TLS or DNS test. Credentials stay in memory.
 use crate::{State, auth, contract::hash};
 use anyhow::{Context, Result, ensure};
-use axum::{Json, Router, extract::State as S, http::HeaderMap, routing::any};
+use axum::{
+    Json, Router,
+    body::{Body, Bytes},
+    extract::{Path, State as S},
+    http::{HeaderMap, Request},
+    routing::any,
+};
 use reqwest::{Client, Method, RequestBuilder, Response};
 use serde_json::{Value, json};
 use std::sync::{Arc, Mutex};
@@ -394,6 +400,62 @@ impl Harness<'_> {
             .send()
             .await?)
     }
+}
+
+/// Drive the real handler with a deferred empty body. The DB change runs when
+/// the proxy collects that body, after the frame has authenticated. This models
+/// request/deployment scheduling without sleeps or production test hooks; it is
+/// a handler regression, not a claim that browser GETs can send request bodies.
+async fn release_change_during_request(
+    state: &State,
+    frame: &FrameClient<'_>,
+    app: &App,
+    next: Uuid,
+    method: Method,
+    expected_release: Uuid,
+) -> Result<()> {
+    sqlx::query("UPDATE installations SET release_id=$2 WHERE id=$1")
+        .bind(app.installation)
+        .bind(app.release)
+        .execute(&state.pool)
+        .await?;
+    let pool = state.pool.clone();
+    let installation = app.installation;
+    let body = Body::from_stream(futures_util::stream::once(async move {
+        sqlx::query("UPDATE installations SET release_id=$2 WHERE id=$1")
+            .bind(installation)
+            .bind(next)
+            .execute(&pool)
+            .await?;
+        Ok::<_, sqlx::Error>(Bytes::new())
+    }));
+    let read = matches!(method, Method::GET | Method::HEAD);
+    let mut request = Request::builder()
+        .method(method)
+        .uri("/_miy/api/probe")
+        .header("host", &frame.host)
+        .header("authorization", format!("Bearer {}", frame.token))
+        .header("x-miy-release", expected_release.to_string());
+    request = if read {
+        request.header("sec-fetch-site", "same-origin")
+    } else {
+        request.header("origin", &frame.origin)
+    };
+    let before = app.calls();
+    let response =
+        crate::app_frames::api(S(state.clone()), Path("probe".into()), request.body(body)?).await;
+    ensure!(
+        response.status().as_u16() == 409 && app.calls() == before,
+        "a request crossed its authenticated frame release: HTTP {}",
+        response.status().as_u16()
+    );
+    let response = axum::body::to_bytes(response.into_body(), 4096).await?;
+    let value: Value = serde_json::from_slice(&response)?;
+    ensure!(
+        value["error"]["code"] == "release_changed_reload_required",
+        "in-flight release change must require a new frame"
+    );
+    Ok(())
 }
 
 pub async fn run(
@@ -825,6 +887,23 @@ pub async fn run(
     let next = Uuid::new_v4();
     sqlx::query("INSERT INTO releases(id,app_id,version,artifact_hash,manifest) SELECT $1,app_id,'1.0.1',artifact_hash,manifest FROM releases WHERE id=$2")
         .bind(next).bind(a.release).execute(&state.pool).await?;
+    // Both releases have approvals, so these checks cannot pass merely because
+    // the replacement release lacks a connection or directory permission.
+    sqlx::query("INSERT INTO installation_permissions(installation_id,release_id,revision,permissions,approved_by) SELECT installation_id,$1,revision,permissions,approved_by FROM installation_permissions WHERE installation_id=$2 AND release_id=$3")
+        .bind(next).bind(a.installation).bind(a.release).execute(&state.pool).await?;
+    json(
+        frame
+            .request(Method::GET, &format!("/_miy/connections/{b_id}/api/probe"))
+            .send()
+            .await?,
+        200,
+    )
+    .await?;
+    let proof = b.proof()?;
+    // Keep a previously validated context as an in-flight backend request would.
+    let (principal, mut continuation) = crate::app_calls::authenticate(state, &proof)
+        .await
+        .map_err(|error| anyhow::anyhow!("continuation authentication failed: {}", error.code))?;
     sqlx::query("UPDATE installations SET release_id=$2 WHERE id=$1")
         .bind(a.installation)
         .bind(next)
@@ -839,6 +918,105 @@ pub async fn run(
         changed["error"]["code"] == "release_changed_reload_required",
         "release change lost its reload code"
     );
+    let before = (a.calls(), b.calls());
+    let connection = format!("/_miy/connections/{b_id}/api/probe");
+    for (method, path) in [
+        (Method::HEAD, "/_miy/api/probe"),
+        (Method::POST, "/_miy/api/probe"),
+        (Method::GET, connection.as_str()),
+        (Method::HEAD, connection.as_str()),
+        (Method::POST, connection.as_str()),
+        (Method::GET, "/_miy/platform/directory"),
+    ] {
+        status(frame.request(method, path).send().await?, 409).await?;
+    }
+    ensure!(
+        (a.calls(), b.calls()) == before,
+        "an old frame reached a backend after its source release changed"
+    );
+    let before = c.calls();
+    status(h.call(&proof, &b, &c).await?, 403).await?;
+    ensure!(
+        c.calls() == before,
+        "a continuation survived a source release change"
+    );
+
+    // Re-resolving the first caller to the replacement release must also fail:
+    // every hop remains bound to the immutable source frame, not just to whatever
+    // installation/release pair the immediate caller context happens to carry.
+    continuation.callers[0].release_id = next;
+    let rebound =
+        crate::app_calls::require(state, &principal, &continuation, b.installation, &directory)
+            .await;
+    ensure!(
+        rebound.is_err(),
+        "a continuation rebound its original frame to another release"
+    );
+    let origin = continuation
+        .origin
+        .as_ref()
+        .context("continuation without origin")?;
+    for installation in [a.installation, b.installation] {
+        let row = crate::domain::installation(state, &principal, installation)
+            .await
+            .map_err(|error| anyhow::anyhow!("installation lookup failed: {}", error.code))?;
+        ensure!(
+            crate::app_calls::identity(state, &principal, &row, None, Some(origin), true)
+                .await
+                .is_err(),
+            "a frame origin was accepted for a different installation or release"
+        );
+    }
+    // An explicitly reopened frame can use the replacement release and its
+    // approvals. Rejecting old frames must not disable legitimate new requests.
+    let replacement = h.open(&dev, &a).await?;
+    ensure!(
+        replacement.release == next,
+        "new frame kept the old release"
+    );
+    for method in [Method::GET, Method::HEAD, Method::POST] {
+        status(
+            replacement
+                .request(method, "/_miy/api/probe")
+                .send()
+                .await?,
+            200,
+        )
+        .await?;
+    }
+    ensure!(
+        a.last()?["release_id"] == json!(next),
+        "new frame identity did not use its authenticated release"
+    );
+    json(
+        replacement.request(Method::GET, &connection).send().await?,
+        200,
+    )
+    .await?;
+    ensure!(
+        b.last()?["callers"][0]["release_id"] == json!(next),
+        "new frame connection did not start at the replacement release"
+    );
+    json(h.call(&b.proof()?, &b, &c).await?, 200).await?;
+    json(
+        replacement
+            .request(Method::GET, "/_miy/platform/directory")
+            .send()
+            .await?,
+        200,
+    )
+    .await?;
+    passed.push("source release changes refuse old frame API reads/writes, connections, directory and issued backend continuations; re-resolved callers cannot rebind the original frame, while a newly opened frame uses the replacement release and its approvals".into());
+
+    for (method, expected_release) in [
+        (Method::GET, a.release),
+        (Method::HEAD, a.release),
+        (Method::POST, a.release),
+        (Method::POST, next),
+    ] {
+        release_change_during_request(state, &frame, &a, next, method, expected_release).await?;
+    }
+    passed.push("in-flight frame GET, HEAD and POST requests retain the authenticated release through body collection, refuse a concurrent release change and cannot adopt a replacement release through the write header".into());
     sqlx::query("UPDATE installations SET release_id=$2 WHERE id=$1")
         .bind(a.installation)
         .bind(a.release)

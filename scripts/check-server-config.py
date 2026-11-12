@@ -359,6 +359,30 @@ def proxy_regression(state, kind, tls_material=None, hosts=False):
             subprocess.run([sys.executable, str(ROOT / 'scripts/check-server-tls.py'), '--state-dir', str(state),
                             '--certificate', str(tls_material[1]), '--key', str(tls_material[2]), '--connect'],
                            env=ENV, check=True, capture_output=True, timeout=30)
+        if kind == 'nginx':
+            # A refused upstream writes the raw request URI to Nginx's error
+            # log unless the frame server overrides the inherited logger. Use
+            # only a synthetic capability; preserve errors on the portal as a
+            # control so a globally disabled logger cannot pass this check.
+            frame_stub, frame_thread = stubs.pop(), threads.pop()
+            frame_stub.shutdown()
+            frame_stub.server_close()
+            frame_thread.join()
+            capability_path = '/_miy/a/' + 'fixture-capability-'.ljust(43, 'x') + '/ui/remoteEntry.js'
+            for frame in frames:
+                target = portal if hosts else frame
+                host = {'Host': frame.split('://', 1)[1]} if hosts else {}
+                require(fetch(target, capability_path, host)[0] == 502,
+                        'Frame upstream failure did not reach the proxy error path')
+            portal_stub, portal_thread = stubs.pop(0), threads.pop(0)
+            portal_stub.shutdown()
+            portal_stub.server_close()
+            portal_thread.join()
+            control_path = '/api/isolated-proxy-error-log-control'
+            require(fetch(portal, control_path)[0] == 502, 'Portal error log control did not fail upstream')
+            logged = (state / 'proxy.log').read_text()
+            require(control_path in logged, 'Portal proxy errors were disabled with app frame logs')
+            require(capability_path not in logged, 'Frame capability appeared in proxy logs on upstream failure')
     finally:
         for sock in reserved:
             sock.close()
@@ -539,7 +563,8 @@ with tempfile.TemporaryDirectory(prefix='miy-server-config-') as temporary:
             and 'proxy_set_header X-Forwarded-Proto $scheme' not in proxy,
             'Proxy forwarding trusts a client-selected origin')
     require('listen 20000-20199;' in frame_block and 'proxy_set_header Host $http_host;' in frame_block
-            and 'access_log off;' in frame_block and 'X-Frame-Options' not in frame_block,
+            and 'access_log off;' in frame_block and 'error_log /dev/null;' in frame_block
+            and 'X-Frame-Options' not in frame_block,
             'Nginx app frame block lost its port pool, Host, log or framing rules')
     require('frame-src http://10.2.3.4:*' in proxy and 'Referrer-Policy strict-origin-when-cross-origin' in proxy,
             'Nginx portals do not frame app origins or keep the launch Origin')
@@ -682,7 +707,7 @@ with tempfile.TemporaryDirectory(prefix='miy-server-config-') as temporary:
         proxy_regression(root / 'nginx-single-ip-tls', 'nginx', (ca, certificate, key))
         print('PASS actual single-IP HTTPS portal/console proxy and client trust checks')
         proxy_regression(root / 'nginx-frame-hosts', 'nginx', hosts=True)
-        print('PASS Nginx app frames on a host pattern: exact regex names only, own Host, no anti-frame headers')
+        print('PASS Nginx app frames on a host pattern: exact names, own Host, framing, capability-free error logs')
     else:
         print('NOT_RUN Nginx proxy checks: nginx is not installed')
     proxy_regression(root / 'caddy-http-boundaries', 'caddy')

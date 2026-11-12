@@ -65,9 +65,10 @@ def plain(path):
     return path
 
 
-def inventory(root, absent_ok=False):
+def inventory(root, index_optional=False):
+    """Keep every asset digest even when a frame runtime has no published index."""
     root = plain(root)
-    if absent_ok and not root.exists():
+    if index_optional and not root.exists():
         return {}
     require(root.is_dir(), 'missing directory: ' + str(root))
     values = {}
@@ -77,20 +78,13 @@ def inventory(root, absent_ok=False):
             continue
         require(stat.S_ISREG(path.stat().st_mode), 'non-regular asset refused')
         values[path.relative_to(root).as_posix()] = digest(path)
-    require('index.html' in values, 'index.html missing')
+    require(index_optional or 'index.html' in values, 'index.html missing')
     return values
 
 
 def assets(root):
     """Inventory of a live directory whose index.html may not exist yet."""
-    root = plain(root)
-    values = {}
-    for path in sorted(root.rglob('*')):
-        require(not path.is_symlink(), 'symlink asset refused')
-        if path.is_file():
-            require(stat.S_ISREG(path.stat().st_mode), 'non-regular asset refused')
-            values[path.relative_to(root).as_posix()] = digest(path)
-    return values
+    return inventory(root, index_optional=True)
 
 
 def save(path, value):
@@ -232,7 +226,7 @@ def check(candidate, live, manifest):
     target = target_of(manifest)
     new = inventory(candidate)
     require(new == manifest['candidateFiles'], 'candidate bytes changed since build')
-    old = inventory(live, absent_ok=target == 'frame-runtime')
+    old = inventory(live, index_optional=target == 'frame-runtime')
     collisions = [name for name in new if name != 'index.html' and name in old and new[name] != old[name]]
     require(not collisions, 'immutable asset collision: ' + ', '.join(collisions))
     references(candidate / 'index.html', new, TARGETS[target][3])
@@ -318,7 +312,7 @@ def build(release, args):
     require(build_inputs(root, target) == files, 'build input bytes changed during build')
     new = inventory(candidate)
     references(candidate / 'index.html', new, TARGETS[target][3])
-    old = inventory(live, absent_ok=target == 'frame-runtime')
+    old = inventory(live, index_optional=target == 'frame-runtime')
     tools = {name: subprocess.run([name, '--version'], cwd=root, capture_output=True, text=True).stdout.strip()
              for name in ('node', 'pnpm')}
     manifest = {
@@ -372,10 +366,10 @@ def run(args):
                 live.mkdir(mode=0o755, exist_ok=True)
             else:
                 shutil.copytree(live, backup / 'dist', symlinks=False)
-            require(inventory(backup / 'dist', absent_ok=first) == old if not first
-                    else not any((backup / 'dist').iterdir()), 'backup restore verification failed')
-            require(inventory(live, absent_ok=first) == old if not first
-                    else not (live / 'index.html').exists(), 'live tree changed during backup')
+            require(inventory(backup / 'dist', index_optional=args.target == 'frame-runtime') == old,
+                    'backup restore verification failed')
+            require(inventory(live, index_optional=args.target == 'frame-runtime') == old,
+                    'live tree changed during backup')
             record = {'sourceCommit': manifest['sourceCommit'], 'livePath': str(live), 'files': old,
                       'candidateIndexSha256': new['index.html'], 'phase': 'backup_verified'}
             save(backup / 'manifest.json', record)
@@ -394,8 +388,9 @@ def run(args):
             record = json.loads((backup / 'manifest.json').read_text())
             require(record['livePath'] == str(live) and record['sourceCommit'] == manifest['sourceCommit'],
                     'backup belongs to another deployment')
-            first = not record['files']
-            require((inventory(backup / 'dist') if not first else {}) == record['files'], 'backup bytes changed')
+            first = 'index.html' not in record['files']
+            require(inventory(backup / 'dist', index_optional=args.target == 'frame-runtime') == record['files'],
+                    'backup bytes changed')
             current = current_index(live)
             require(current in (record['candidateIndexSha256'], record['files'].get('index.html')),
                     'live index belongs to another deployment')

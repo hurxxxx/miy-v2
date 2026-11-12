@@ -29,8 +29,10 @@ import {
   envelope,
   readParentMessage,
   relativePath,
+  renewalFailure,
   type FrameLocation,
   type FrameMessage,
+  type RenewalFailure,
 } from "@miy/frame-protocol";
 
 function readBootstrap(): FrameBootstrap {
@@ -49,21 +51,39 @@ const post = (message: FrameMessage) => window.parent.postMessage(envelope(messa
 let token = boot.token;
 let tokenExpiresAt = Date.parse(boot.tokenExpiresAt);
 const frameExpiresAt = Date.parse(boot.frameExpiresAt);
-let released = false;
+let stopped: Exclude<RenewalFailure, "token_renewal_unavailable"> | null = null;
 let renewal: Promise<void> | null = null;
 let pending: { resolve: (code: string) => void; reject: (error: Error) => void } | null = null;
 let timer: ReturnType<typeof setTimeout> | undefined;
+let expiryTimer: ReturnType<typeof setTimeout> | undefined;
+
+function renewalError(reason: RenewalFailure): Error {
+  if (reason !== "token_renewal_unavailable" && !stopped) {
+    stopped = reason;
+    clearTimeout(timer);
+    clearTimeout(expiryTimer);
+    pending?.reject(new Error(reason));
+    if (reason === "release_changed_reload_required") post({ type: "release.changed", payload: {} });
+    else post({ type: "frame.error", payload: { code: reason } });
+  }
+  return new Error(reason);
+}
 
 /** One renewal at a time: ask the portal for a code, exchange it on this origin. */
 function renew(): Promise<void> {
+  if (stopped) return Promise.reject(new Error(stopped));
   if (renewal) return renewal;
-  if (Date.now() >= frameExpiresAt) return Promise.reject(new Error("frame_session_ended"));
+  if (Date.now() >= frameExpiresAt) return Promise.reject(renewalError("frame_session_ended"));
+  let timeout: ReturnType<typeof setTimeout>;
   renewal = new Promise<string>((resolve, reject) => {
     pending = { resolve, reject };
     post({ type: "token.renew", payload: {} });
-    setTimeout(() => reject(new Error("token_renewal_timeout")), 15_000);
+    timeout = setTimeout(() => reject(new Error("token_renewal_unavailable")), 15_000);
   })
     .then(async (code) => {
+      clearTimeout(timeout);
+      if (stopped) throw new Error(stopped);
+      if (Date.now() >= frameExpiresAt) throw renewalError("frame_session_ended");
       const response = await fetch("/_miy/renew", {
         method: "POST",
         mode: "same-origin",
@@ -72,13 +92,27 @@ function renew(): Promise<void> {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ code }),
       });
-      if (!response.ok) throw new Error("token_renewal_refused");
+      if (!response.ok) {
+        const value = await response.json().catch(() => null);
+        throw renewalError(renewalFailure(response.status, value?.error?.code));
+      }
       const value = (await response.json()) as AppFrameToken;
+      if (stopped) throw new Error(stopped);
+      if (Date.now() >= frameExpiresAt) throw renewalError("frame_session_ended");
       token = value.token;
       tokenExpiresAt = Date.parse(value.tokenExpiresAt);
       schedule();
     })
+    .catch((error: unknown) => {
+      const reason = error instanceof Error ? error.message : "";
+      throw renewalError(
+        reason === "frame_session_ended" || reason === "frame_access_denied" || reason === "release_changed_reload_required"
+          ? reason
+          : "token_renewal_unavailable",
+      );
+    })
     .finally(() => {
+      clearTimeout(timeout);
       renewal = null;
       pending = null;
     });
@@ -86,10 +120,19 @@ function renew(): Promise<void> {
 }
 function schedule() {
   clearTimeout(timer);
+  if (stopped) return;
   if (tokenExpiresAt >= frameExpiresAt) return;
   const wait = Math.max(5_000, tokenExpiresAt - Date.now() - 60_000);
-  timer = setTimeout(() => void renew().catch(() => undefined), wait);
+  timer = setTimeout(scheduledRenewal, wait);
 }
+function scheduledRenewal() {
+  void renew().catch(() => {
+    // A transient failure does not end the frame or rotate it into a new session.
+    if (!stopped) timer = setTimeout(scheduledRenewal, 30_000);
+  });
+}
+// Absolute expiry also applies while renewal is pending or waiting to retry.
+expiryTimer = setTimeout(() => renewalError("frame_session_ended"), Math.max(0, frameExpiresAt - Date.now()));
 schedule();
 
 function apiPath(path: string) {
@@ -100,9 +143,12 @@ function apiPath(path: string) {
 
 /** A request to this frame origin only: no cookies, the frame token, its release. */
 async function call(path: string, init: RequestInit = {}): Promise<Response> {
-  if (released) throw new Error("release_changed_reload_required");
+  if (stopped) throw new Error(stopped);
+  if (Date.now() >= frameExpiresAt) throw renewalError("frame_session_ended");
   if (Date.now() > tokenExpiresAt - 5_000) await renew();
   const send = () => {
+    if (stopped) throw new Error(stopped);
+    if (Date.now() >= frameExpiresAt) throw renewalError("frame_session_ended");
     const headers = new Headers(init.headers);
     if (typeof init.body === "string" && !headers.has("Content-Type"))
       headers.set("Content-Type", "application/json");
@@ -126,12 +172,11 @@ async function call(path: string, init: RequestInit = {}): Promise<Response> {
       .clone()
       .json()
       .catch(() => null);
-    if (data?.error?.code === "release_changed_reload_required" && !released) {
-      released = true;
-      post({ type: "release.changed", payload: {} });
-    }
+    if (data?.error?.code === "release_changed_reload_required") renewalError("release_changed_reload_required");
   }
-  if (response.status === 401) post({ type: "frame.error", payload: { code: "frame_session_ended" } });
+  // A business API can also return 401. Only a refused renewal or absolute
+  // frame expiry establishes that the platform session ended.
+  if (Date.now() >= frameExpiresAt) throw renewalError("frame_session_ended");
   return response;
 }
 async function json<T>(path: string, init?: RequestInit): Promise<T> {

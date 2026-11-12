@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import { useLocation, useRouter } from "@tanstack/react-router";
-import { appTarget, request, type AppFrameLaunch, type AppFrameRenewal, type Installation } from "@miy/sdk";
+import { appTarget, request, type AppFrameLaunch, type Installation } from "@miy/sdk";
 import {
   envelope,
   readFrameMessage,
+  renewalFailure,
   type InputState,
   type ParentMessage,
 } from "@miy/frame-protocol";
@@ -93,6 +94,12 @@ export function AppFrame({
     if (launch && ready.current) frame.current?.contentWindow?.postMessage(envelope(message), launch.frameOrigin);
   };
 
+  const restart = () => {
+    const message = launch && leaveMessage(input.current);
+    if (message && !window.confirm(message)) return;
+    setRun((value) => value + 1);
+  };
+
   // The portal router owns the address; the frame follows it.
   useEffect(() => {
     send({ type: "route.changed", payload: relative });
@@ -101,6 +108,13 @@ export function AppFrame({
 
   useEffect(() => {
     if (!launch) return;
+    let active = true;
+    const launchedWindow = frame.current?.contentWindow;
+    const reply = (message: ParentMessage) => {
+      // A late renewal response belongs only to the document that requested it.
+      if (active && ready.current && launchedWindow === frame.current?.contentWindow)
+        launchedWindow?.postMessage(envelope(message), launch.frameOrigin);
+    };
     const onMessage = (event: MessageEvent) => {
       if (event.source !== frame.current?.contentWindow || event.origin !== launch.frameOrigin) return;
       const message = readFrameMessage(event.data);
@@ -125,51 +139,70 @@ export function AppFrame({
           break;
         case "token.renew":
           // The renewal target is this portal's own launch, never a frame claim.
-          request<AppFrameRenewal>(`/api/v1/app-frames/${launch.frameId}/renew`, csrf, { method: "POST" })
-            .then((value) => send({ type: "token.code", payload: { code: value.code } }))
-            .catch((error: Error) => send({ type: "token.failed", payload: { reason: error.message.slice(0, 64) } }));
+          void fetch(`/api/v1/app-frames/${launch.frameId}/renew`, {
+            method: "POST",
+            credentials: "same-origin",
+            headers: { "x-miy-csrf": csrf },
+          })
+            .then(async (response) => {
+              const value = await response.json().catch(() => null);
+              if (!response.ok)
+                reply({ type: "token.failed", payload: { reason: renewalFailure(response.status, value?.error?.code) } });
+              else if (typeof value?.code === "string")
+                reply({ type: "token.code", payload: { code: value.code } });
+              else reply({ type: "token.failed", payload: { reason: "token_renewal_unavailable" } });
+            })
+            .catch(() => reply({ type: "token.failed", payload: { reason: "token_renewal_unavailable" } }));
           break;
         case "release.changed":
           onReleaseChanged();
           break;
         case "frame.relaunch":
-          // The frame document is already gone (reloaded or refused): nothing is
-          // left to protect, so open a fresh frame without asking.
-          setRun((value) => value + 1);
+          // A bridge message is not consent to discard dirty or unknown input.
+          // Clean reloads remain automatic; other cases need the explicit button.
+          if (input.current.state === "clean") setRun((value) => value + 1);
+          else setFailure("frame_reload_required");
           break;
         case "frame.error":
-          if (message.payload.code === "frame_session_ended") setFailure(message.payload.code);
+          if (message.payload.code === "frame_session_ended" || message.payload.code === "frame_access_denied")
+            setFailure(message.payload.code);
           break;
       }
     };
     window.addEventListener("message", onMessage);
-    return () => window.removeEventListener("message", onMessage);
+    return () => {
+      active = false;
+      window.removeEventListener("message", onMessage);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [launch, basePath, csrf, router]);
 
-  if (failure)
-    return (
-      <Panel title="앱을 열 수 없습니다">
-        <Notice
-          role="alert"
-          tone="danger"
-          actions={
-            <Button size="sm" onClick={() => setRun((value) => value + 1)}>
-              다시 열기
-            </Button>
-          }
-        >
-          <p>
-            {failure === "frame_session_ended"
-              ? "앱 세션이 끝났습니다. 다시 열거나 다시 로그인하세요."
-              : "앱을 다시 열거나 관리자에게 문의하세요."}
-          </p>
-        </Notice>
-      </Panel>
-    );
   return (
     <>
-      {!launch && <Loading>앱을 여는 중…</Loading>}
+      {failure && (
+        <Panel title={launch ? "앱 연결을 확인하세요" : "앱을 열 수 없습니다"}>
+          <Notice
+            role="alert"
+            tone="danger"
+            actions={
+              <Button size="sm" onClick={restart}>
+                다시 열기
+              </Button>
+            }
+          >
+            <p>
+              {failure === "frame_session_ended"
+                ? "앱 세션이 끝났습니다. 다시 열거나 다시 로그인하세요."
+                : failure === "frame_access_denied"
+                  ? "앱 사용 권한을 확인할 수 없습니다. 작성 중인 내용을 확인한 뒤 다시 열어주세요."
+                  : failure === "frame_reload_required"
+                    ? "앱을 다시 열어야 합니다. 작성 중인 내용을 확인한 뒤 다시 열어주세요."
+                    : "앱을 다시 열거나 관리자에게 문의하세요."}
+            </p>
+          </Notice>
+        </Panel>
+      )}
+      {!launch && !failure && <Loading>앱을 여는 중…</Loading>}
       <iframe
         key={name}
         ref={frame}

@@ -81,7 +81,6 @@ pub async fn run() -> Result<Value> {
     // 0.9.0 runs the UI in its own frame: the browser SDK replaces the callback
     // navigation guard with setNavigationState and adds apiBlob. App code that
     // used registerNavigationGuard must change; `app check` reports it.
-    let frame_sdk = old["bundleVersion"].as_str() == Some("0.8.0");
     if matches!(
         old["bundleVersion"].as_str(),
         Some("0.6.0" | "0.6.1" | "0.6.2" | "0.7.0" | "0.7.1" | "0.8.0")
@@ -93,45 +92,10 @@ pub async fn run() -> Result<Value> {
             }
             let unchanged = hashes.get(*path).and_then(Value::as_str)
                 == Some(crate::contract::hash(content).as_str());
-            if (path.starts_with("sdk/")
-                && !matches!(
-                    *path,
-                    "sdk/preview/main.tsx" | "sdk/rust/src/lib.rs" | "sdk/rust/Cargo.toml"
-                )
-                && !(frame_sdk && *path == "sdk/browser/index.ts"))
-                || path.ends_with(".sql")
-                || *path == "miy.components.json"
-            {
-                ensure!(
-                    unchanged,
-                    CliError::new(
-                        Category::Environment,
-                        "guidance_upgrade_runtime_changed",
-                        "This upgrade cannot change unrelated SDK files, SQL or component defaults."
-                    )
-                );
-            }
+            validate_guidance_change(path, unchanged)?;
             if unchanged {
                 continue;
             }
-            ensure!(
-                matches!(
-                    *path,
-                    "AGENTS.md"
-                        | "CLAUDE.md"
-                        | "sdk/preview/main.tsx"
-                        | "sdk/rust/src/lib.rs"
-                        | "sdk/rust/Cargo.toml"
-                ) || (frame_sdk && *path == "sdk/browser/index.ts")
-                    || path.starts_with("docs/")
-                    || path.starts_with(".agents/skills/")
-                    || path.starts_with(".claude/skills/"),
-                CliError::new(
-                    Category::Environment,
-                    "guidance_upgrade_runtime_changed",
-                    "This upgrade requires an explicit migration for changed runtime files."
-                )
-            );
             if !hashes.contains_key(*path) && root.join(path).exists() {
                 ensure!(
                     read_input(path, &mut expected_files)? == content.as_bytes(),
@@ -372,6 +336,34 @@ pub async fn run() -> Result<Value> {
     )
 }
 
+// All supported guidance-era bundles use the explicit browser/preview and Rust
+// SDK migration. Other SDK files, component defaults and SQL stay immutable.
+fn validate_guidance_change(path: &str, unchanged: bool) -> Result<()> {
+    if unchanged {
+        return Ok(());
+    }
+    ensure!(
+        !path.ends_with(".sql")
+            && (matches!(
+                path,
+                "AGENTS.md"
+                    | "CLAUDE.md"
+                    | "sdk/browser/index.ts"
+                    | "sdk/preview/main.tsx"
+                    | "sdk/rust/src/lib.rs"
+                    | "sdk/rust/Cargo.toml"
+            ) || path.starts_with("docs/")
+                || path.starts_with(".agents/skills/")
+                || path.starts_with(".claude/skills/")),
+        CliError::new(
+            Category::Environment,
+            "guidance_upgrade_runtime_changed",
+            "This upgrade requires an explicit migration for changed runtime files."
+        )
+    );
+    Ok(())
+}
+
 fn sdk_upgrade_manifest(manifest: &toml::Value) -> Result<()> {
     ensure!(
         matches!(
@@ -600,6 +592,42 @@ fn collect_component_files(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn supported_guidance_bundles_can_migrate_all_protected_changes() {
+        let current = crate::bundle::protected_hashes();
+        for previous in [
+            include_str!("../bundles/0.6.0.json"),
+            include_str!("../bundles/0.6.1.json"),
+            include_str!("../bundles/0.6.2.json"),
+            include_str!("../bundles/0.7.0.json"),
+            include_str!("../bundles/0.7.1.json"),
+            include_str!("../bundles/0.8.0.json"),
+        ] {
+            let old: Value = serde_json::from_str(previous).unwrap();
+            for (path, hash) in &current {
+                let unchanged = old["protectedFiles"][*path].as_str() == Some(hash.as_str());
+                validate_guidance_change(path, unchanged).unwrap_or_else(|error| {
+                    panic!(
+                        "{} -> {}: {path}: {error}",
+                        old["bundleVersion"],
+                        crate::bundle::VERSION
+                    )
+                });
+            }
+        }
+        // Extending the supported SDK migration must not silently rewrite SQL,
+        // component defaults or files that have no explicit runtime migration.
+        for path in [
+            "migrations/0001_initial.sql",
+            "miy.components.json",
+            "sdk/ui/index.tsx",
+            "sdk/browser/unrelated.ts",
+            "package.json",
+        ] {
+            assert!(validate_guidance_change(path, false).is_err(), "{path}");
+        }
+    }
 
     #[test]
     fn sdk_lock_upgrade_preserves_every_existing_external_package() {

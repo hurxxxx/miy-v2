@@ -21,7 +21,7 @@ use axum::{
     middleware::{self, Next},
     response::{IntoResponse, Response},
 };
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Duration, Utc};
 use schemars::JsonSchema;
 use serde::Deserialize;
 use sqlx::Row;
@@ -538,6 +538,27 @@ impl Frame {
             digest: self.id.to_string(),
         }
     }
+
+    /// Preserve the authenticated release through body collection, connection
+    /// resolution and the final authorization check. A later installation read
+    /// must never turn an old frame into a caller of a newly deployed release.
+    async fn context(&self, s: &State) -> ApiResult<crate::app_calls::Context> {
+        Ok(crate::app_calls::Context {
+            installation_id: self.installation_id,
+            release_id: self.release_id,
+            environment: self.environment.clone(),
+            callers: vec![],
+            permissions_used: vec![],
+            effective_permissions: crate::permissions::effective(
+                &s.pool,
+                self.installation_id,
+                self.release_id,
+            )
+            .await?,
+            expires_at: Utc::now() + Duration::seconds(30),
+            origin: Some(self.origin()),
+        })
+    }
 }
 
 /// Whether the frame's parent portal session is still signed in (logout and a
@@ -614,7 +635,7 @@ async fn authenticate(
     s: &State,
     method: &Method,
     headers: &HeaderMap,
-) -> ApiResult<(Frame, Principal)> {
+) -> ApiResult<(Frame, Principal, crate::app_calls::Context)> {
     let site = site(s, headers).await?;
     if !browser_request_allowed(method, headers, &site.origin) {
         return Err(ApiError::forbidden());
@@ -636,7 +657,9 @@ async fn authenticate(
     if tokens.next().is_some() {
         return Err(ApiError::unauthorized());
     }
-    load_frame(s, &site, "token_hash", token, true).await
+    let (frame, p) = load_frame(s, &site, "token_hash", token, true).await?;
+    let context = frame.context(s).await?;
+    Ok((frame, p, context))
 }
 
 async fn audit(s: &State, actor: &str, method: &Method, status: StatusCode, target: String) {
@@ -656,13 +679,19 @@ async fn audit(s: &State, actor: &str, method: &Method, status: StatusCode, targ
     }
 }
 
-async fn api(S(s): S<State>, Path(path): Path<String>, mut request: Request) -> Response {
+pub(crate) async fn api(
+    S(s): S<State>,
+    Path(path): Path<String>,
+    mut request: Request,
+) -> Response {
     let (method, headers) = (request.method().clone(), request.headers().clone());
-    let (frame, p) = match authenticate(&s, &method, &headers).await {
+    let (frame, p, context) = match authenticate(&s, &method, &headers).await {
         Ok(v) => v,
         Err(e) => return e.into_response(),
     };
-    request.extensions_mut().insert(frame.origin());
+    request
+        .extensions_mut()
+        .insert(crate::app_calls::ForwardContext(context));
     let target = format!("frame:/installations/{}/api/{path}", frame.installation_id);
     let response = crate::runtime::proxy(
         S(s.clone()),
@@ -682,11 +711,11 @@ async fn connection(
     mut request: Request,
 ) -> Response {
     let (method, headers) = (request.method().clone(), request.headers().clone());
-    let (frame, p) = match authenticate(&s, &method, &headers).await {
+    let (frame, p, context) = match authenticate(&s, &method, &headers).await {
         Ok(v) => v,
         Err(e) => return e.into_response(),
     };
-    request.extensions_mut().insert(frame.origin());
+    request.extensions_mut().insert(context);
     let audit_target = format!(
         "frame:/installations/{}/connections/{target}/api/{path}",
         frame.installation_id
@@ -703,12 +732,13 @@ async fn connection(
     response
 }
 
-async fn directory(S(s): S<State>, request: Request) -> Response {
+async fn directory(S(s): S<State>, mut request: Request) -> Response {
     let (method, headers) = (request.method().clone(), request.headers().clone());
-    let (frame, p) = match authenticate(&s, &method, &headers).await {
+    let (frame, p, context) = match authenticate(&s, &method, &headers).await {
         Ok(v) => v,
         Err(e) => return e.into_response(),
     };
+    request.extensions_mut().insert(context);
     let target = format!(
         "frame:/installations/{}/platform/directory",
         frame.installation_id

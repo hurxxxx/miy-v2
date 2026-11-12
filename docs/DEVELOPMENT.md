@@ -4,7 +4,7 @@
 
 2026-10-27 후속 구현 범위는 [CLI 0.5 개선과 Windows 네이티브 지원](CLI-IMPLEMENTATION-PLAN.md)으로 확정했다. 다중 서버 운영, 사람/AI 공통 명령·출력, 사용자 세션 인증, 작업·로그, Windows 11 x64 PowerShell 개발·관리의 상세 계약은 해당 계획을 따른다. CLI 0.5.0 / 번들 0.6.2 작업 트리에 루트 명령, context·세션 인증, preflight·journal·작업 관찰·제한된 로그와 OS 경계를 구현 중이다. 구현 존재와 검증 완료를 구분하며 실제 Windows 11·별도 Linux 서버·IdP 전파·독립 AI 인수는 각각 증거가 필요하다. 다른 환경에서 이어갈 작업 순서는 [CLI 개발 인계](archive/CLI-HANDOFF.md)에 있다. 이 문서의 장기 설계 예시와 현재 명령은 구분한다.
 
-SDK 번들 0.9.0은 앱의 미저장 상태를 `runtime.setNavigationState`로 받아 셸·앱·브라우저 기록 이동을 보호한다. 0.8.0의 `registerNavigationGuard`는 프레임에서 상태를 알 수 없음(unknown)으로 처리한다. 로컬 preview와 같은 계약이며 앱의 명시적 등록·effect cleanup이 필요하다. 플랫폼 표시 이름은 관리자 메타데이터로 관리하고 배포 이름과 구분한다. 인수 기록은 정확한 릴리스별 검사 범위·실행 계정·결과를 제공한다. 실제 계약·예제는 [번들 계약](../templates/rust-react/docs/CONTRACT.md)과 [검사 기록 형식](../templates/rust-react/docs/ACCEPTANCE.md)을 따른다.
+SDK 번들 0.9.0은 앱의 미저장 상태를 `runtime.setNavigationState`로 받아 셸·앱·브라우저 기록 이동을 보호한다. `app upgrade`는 지원하는 0.6.0·0.6.1·0.6.2·0.7.0·0.7.1·0.8.0 번들의 브라우저/preview·Rust SDK를 명시적으로 전환하고 업무 코드·기존 SQL·컴포넌트 설정을 보존한다. 업무 코드의 옛 `registerNavigationGuard` 호출은 개발자가 `setNavigationState`로 바꾼 뒤 검사한다. 이 업그레이드 보완은 [리뷰 보완 소스](releases/app-frames-review-fixes-2026-11-12-validation.json)이며 새 CLI 게시와 구분한다. 0.8.0의 `registerNavigationGuard`는 프레임에서 상태를 알 수 없음(unknown)으로 처리한다. 로컬 preview와 같은 계약이며 앱의 명시적 등록·effect cleanup이 필요하다. 플랫폼 표시 이름은 관리자 메타데이터로 관리하고 배포 이름과 구분한다. 인수 기록은 정확한 릴리스별 검사 범위·실행 계정·결과를 제공한다. 실제 계약·예제는 [번들 계약](../templates/rust-react/docs/CONTRACT.md)과 [검사 기록 형식](../templates/rust-react/docs/ACCEPTANCE.md)을 따른다.
 
 작성일: 2026-10-20  
 수정일: 2026-11-06

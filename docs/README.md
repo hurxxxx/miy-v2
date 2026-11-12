@@ -1,12 +1,12 @@
 # miy-v2 문서 지도
 
-- 정리일: 2026-11-09
+- 정리일: 2026-11-12
 
 주제마다 **담당 문서 하나**가 현재 기준을 관리한다. 다른 문서는 그 문서로 연결하고 같은 내용을 따로 유지하지 않는다. 구현된 동작은 코드와 테스트가 최종 기준이다. 작업 순서는 [추진 계획](PLAN.md#다음-우선-작업)의 작업표 하나만 따른다.
 
 기본 UI 이식 UI-1~5는 ai-do 기반으로 완료한 이력이다. 향후 설계는 공식 miy v1을 기준으로 하며, 플랫폼의 사용자·그룹별 앱 사용 권한과 앱 내부의 선택적 데이터 공간을 적용한다. 원본 변경을 기존 UI 검증 결과의 변경으로 표시하지 않는다.
 
-현재 기준은 세 문서다. [APP-BOUNDARIES](APP-BOUNDARIES.md)는 사내 업무용 세 출처(prod 포털·dev 포털·관리/로그인 콘솔), 세션 용도·CLI 승인 보호, 필수/후속·한계·인수를 관리한다. [CORE-PERMISSIONS](CORE-PERMISSIONS.md)는 권한과 PLM 등 독립 앱의 공통 ACL, [PLAN](PLAN.md)은 작업 순서를 담당한다. iframe 없는 MF·단일 IP HTTPS를 유지하며 별도 IdP·외부 앱 격리·자동 CA는 후속이다. 현재 서버는 `f9d4084`, UI는 `3760ef0`, schema 21, 게시 CLI는 `01e4d49`다. 포털은 `https://v2.dwdcc.kr`, dev 포털은 `https://v2-dev.dwdcc.kr`, 콘솔·issuer는 `https://v2-console.dwdcc.kr`이며 공유 개발 로그인은 꺼져 있다. [dev 포털 배포](releases/dev-portal-2026-11-09-deployment.json)·[콘솔 이동](releases/console-hostname-2026-11-09-deployment.json)과 초기 두 출처 이력을 구분한다. 개발 단계의 호환성 방침은 루트 AGENTS를 따른다.
+현재 기준은 네 문서다. [APP-BOUNDARIES](APP-BOUNDARIES.md)는 사내 업무용 세 출처(prod 포털·dev 포털·관리/로그인 콘솔), 세션 용도·CLI 승인 보호를, [APP-FRAMES](APP-FRAMES.md)는 업무 앱의 설치별 출처 iframe·프레임 자격증명·브리지를 관리한다. [CORE-PERMISSIONS](CORE-PERMISSIONS.md)는 권한과 PLM 등 독립 앱의 공통 ACL, [PLAN](PLAN.md)은 작업 순서를 담당한다. 플랫폼 화면·통합 라우팅·단일 IP HTTPS는 유지하며 별도 IdP·외부 앱 수용을 위한 별도 사이트 인수·자동 CA는 후속이다. 현재 운영 서버·UI는 `bcb6356`, schema 22, 게시 CLI는 `01e4d49`다([앱 프레임 배포](releases/app-frames-2026-11-12-deployment.json)). 포털은 `https://v2.dwdcc.kr`, dev 포털은 `https://v2-dev.dwdcc.kr`, 콘솔·issuer는 `https://v2-console.dwdcc.kr`이며 공유 개발 로그인은 꺼져 있다. 앱은 `https://v2-app-<키>.dwdcc.kr`에서 실행한다. 이전 [dev 포털 배포](releases/dev-portal-2026-11-09-deployment.json)·[콘솔 이동](releases/console-hostname-2026-11-09-deployment.json)과 새 소스의 검증을 현재 운영 상태와 구분한다. 개발 단계의 호환성 방침은 루트 AGENTS를 따른다.
 
 ## 현재 기준 문서
 
