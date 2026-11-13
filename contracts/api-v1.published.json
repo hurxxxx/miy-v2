@@ -1,8 +1,7 @@
 {
   "publishedCli": {
-    "version": "0.7.0",
-    "sourceCommit": "01e4d4924f8c8fc4e11720c1af81adf17ddb20bf",
-    "note": "The contract was introduced after CLI 0.7.0 was published. 0.7.0 reads these responses as untyped JSON; every field below is protected from the contract's first commit on."
+    "version": "0.9.0",
+    "sourceCommit": "173c6d5cfd35f9d1313fe643701d4af3f374377f"
   },
   "removable": [],
   "$defs": {
@@ -70,6 +69,82 @@
       "required": [
         "app",
         "installations"
+      ],
+      "type": "object"
+    },
+    "AppFrameLaunch": {
+      "description": "A one-time launch of one installation's app frame (`POST /api/v1/app-frames`).\nThe portal submits `code` in a form POST to `launchUrl` inside a new iframe.",
+      "properties": {
+        "code": {
+          "type": "string"
+        },
+        "expiresAt": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "frameId": {
+          "description": "The frame this code opens; the portal renews it by this id.",
+          "format": "uuid",
+          "type": "string"
+        },
+        "frameOrigin": {
+          "description": "The installation's own origin; never shared with another installation.",
+          "type": "string"
+        },
+        "installationId": {
+          "format": "uuid",
+          "type": "string"
+        },
+        "launchUrl": {
+          "type": "string"
+        },
+        "releaseId": {
+          "format": "uuid",
+          "type": "string"
+        }
+      },
+      "required": [
+        "frameId",
+        "installationId",
+        "releaseId",
+        "frameOrigin",
+        "launchUrl",
+        "code",
+        "expiresAt"
+      ],
+      "type": "object"
+    },
+    "AppFrameRenewal": {
+      "description": "A one-time renew code for an open frame (`POST /api/v1/app-frames/{id}/renew`).",
+      "properties": {
+        "code": {
+          "type": "string"
+        },
+        "expiresAt": {
+          "format": "date-time",
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "expiresAt"
+      ],
+      "type": "object"
+    },
+    "AppFrameToken": {
+      "description": "A frame's new API token (`POST /_miy/renew` on the frame origin).",
+      "properties": {
+        "token": {
+          "type": "string"
+        },
+        "tokenExpiresAt": {
+          "format": "date-time",
+          "type": "string"
+        }
+      },
+      "required": [
+        "token",
+        "tokenExpiresAt"
       ],
       "type": "object"
     },
@@ -148,6 +223,107 @@
         "prod"
       ],
       "type": "string"
+    },
+    "FrameBootstrap": {
+      "description": "What the frame document carries for the platform frame runtime\n(`<script id=\"miy-frame-bootstrap\" type=\"application/json\">`).",
+      "properties": {
+        "appId": {
+          "type": "string"
+        },
+        "assetBase": {
+          "description": "Same-origin prefix of the release UI files for this frame session.",
+          "type": "string"
+        },
+        "basePath": {
+          "type": "string"
+        },
+        "contractVersion": {
+          "type": "string"
+        },
+        "environment": {
+          "$ref": "#/$defs/Environment"
+        },
+        "frameExpiresAt": {
+          "description": "The frame session's fixed end; renewals never extend it.",
+          "format": "date-time",
+          "type": "string"
+        },
+        "frameId": {
+          "format": "uuid",
+          "type": "string"
+        },
+        "installationId": {
+          "format": "uuid",
+          "type": "string"
+        },
+        "location": {
+          "$ref": "#/$defs/FrameLocation"
+        },
+        "moduleEntry": {
+          "type": "string"
+        },
+        "moduleExport": {
+          "type": "string"
+        },
+        "parentOrigin": {
+          "description": "The only window the frame talks to.",
+          "type": "string"
+        },
+        "protocol": {
+          "description": "Bridge protocol, `miy.frame/v1`.",
+          "type": "string"
+        },
+        "releaseId": {
+          "format": "uuid",
+          "type": "string"
+        },
+        "token": {
+          "type": "string"
+        },
+        "tokenExpiresAt": {
+          "format": "date-time",
+          "type": "string"
+        }
+      },
+      "required": [
+        "protocol",
+        "frameId",
+        "installationId",
+        "appId",
+        "releaseId",
+        "environment",
+        "parentOrigin",
+        "basePath",
+        "location",
+        "token",
+        "tokenExpiresAt",
+        "frameExpiresAt",
+        "assetBase",
+        "moduleEntry",
+        "moduleExport",
+        "contractVersion"
+      ],
+      "type": "object"
+    },
+    "FrameLocation": {
+      "description": "The app location inside its base path.",
+      "properties": {
+        "hash": {
+          "type": "string"
+        },
+        "pathname": {
+          "type": "string"
+        },
+        "search": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "pathname",
+        "search",
+        "hash"
+      ],
+      "type": "object"
     },
     "Group": {
       "properties": {

@@ -293,6 +293,8 @@ Storage도 검증된 호출 문맥의 설치·환경과 fileId의 소유 관계�
 
 **분류: 확인된 릴리스 미완료 / 공동 개발 인수·새 기능 게시에 필요.**
 
+**게시(2026-11-13):** CLI 0.9.0 / 번들 0.9.0(`173c6d5`)을 서버 0.9.0과 함께 다운로드 서버에 게시했다. CLI 버전 검사 PASS, 5개 OS/CPU 후보·Windows 설치기 CI 성공. 정식 GitHub Release와 Windows 11 사용자 인수는 남아 있다([배포 기록](../releases/cli-0.9.0-2026-11-13-deployment.json)).
+
 소스의 SDK bundle은 0.9.0이지만 게시 CLI는 0.7.0/bundle 0.8.0이다. 현재 CLI 소스 버전도 0.7.0이다. 이번에 `check-cli-version.py --candidate HEAD`를 실행했고 변경된 client 입력 22개에 대해 `client_inputs_changed_without_version_bump`로 **FAIL**했다.
 
 따라서 최신 runtime 기능을 사용하는 예제를 기존 다운로드 CLI로 생성한 프로젝트가 그대로 사용할 것이라고 약속할 수 없다. 플랫폼에 서버·프레임을 반영한 것과 개발 번들을 게시한 것은 다른 단계다.

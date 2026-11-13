@@ -1,0 +1,64 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-11-13",
+  "status": "PASS",
+  "scope": "Publish CLI 0.9.0 (SDK bundle 0.9.0 with app frames) on the v2.dwdcc.kr download server together with server 0.9.0, because the install guide offers only the CLI of the server's own version. This is a server download publication, not a public GitHub Release.",
+  "decision": {"by": "user", "request": "0.9.0 CLI 게시 진행하세요; paused once (\"스톱\", \"잠시 중지\") and resumed (\"계속\")"},
+  "source": {
+    "commit": "173c6d5cfd35f9d1313fe643701d4af3f374377f",
+    "changes": "Cargo version 0.7.0 -> 0.9.0; core-rollout.py --cli-downloads/--cli-installers publishes a staged CLI release while core is stopped and refuses a version change without one",
+    "frozenCheckout": ".local/release-173c6d5-source"
+  },
+  "ci": {
+    "mainPush": {
+      "web.yml": {"runId": 43394966432, "conclusion": "success"},
+      "cli-foundation.yml": {"runId": 43394966434, "conclusion": "success"},
+      "runtime-regression.yml": {"runId": 43394966515, "attempt": 2, "conclusion": "success",
+        "history": [{"attempt": 1, "status": "FAIL", "observed": "The cli suite stopped after 1 of 6 observations; CI keeps neither the failed observation nor results.jsonl, so the cause is unknown. The same commit passed 129/129 (cli 6) in the local isolated regression; only the failed job was rerun"}]}
+    },
+    "cliCandidate": {"workflow": "cli-release.yml", "runId": 43394975993, "conclusion": "success", "publish": false, "releaseTag": "v0.9.0"},
+    "windowsInstaller": {"workflow": "windows-installer.yml", "runId": 43397724560, "conclusion": "success"}
+  },
+  "preDeploymentChecks": [
+    {"check": "scripts/check-static.sh (release commit)", "status": "PASS", "observed": "cargo test 206 server-build and 127 client-build, core ops 77 (5 new CLI publication tests), Playwright ui 53, cli-experience 14, surface-boundaries 14, http-ui 1"},
+    {"check": "scripts/runtime-regression/run.py (release commit)", "status": "PASS", "observed": "129 observations: runtime 46, operations 6, cli 6, auth 8, permissions 24, delegation 10, boundary 12, migration 3, frames 14"},
+    {"check": "scripts/check-cli-version.py --candidate HEAD", "status": "PASS"},
+    {"check": "scripts/package-cli-release.py verify (downloaded aggregate)", "status": "PASS", "observed": "5 targets and 2 DB tunnel helpers, version 0.9.0, one source commit"},
+    {"check": "scripts/package-windows-installer.py verify", "status": "PASS", "observed": "MiySetup-0.9.0-windows-x64.exe, 6,268,416 bytes, SHA-256 2777af4027cf5418487883eaf02c2bcd0be0d6f181adaf6b2e711ade445b5af4; embedded ZIP b4adc4ba5a86932d7efea8c3cd8701565333e7cd65220a553e13afd0066e5f12, miy.exe 1786125d408933f72335dfb630ef1a634d307ce0566c2d68fe694ea1d4009efc"},
+    {"check": "stage-cli-release.py and stage-windows-installer.py into .local/release-173c6d5-cli/staging (separate from the live download directories)", "status": "PASS"},
+    {"check": "core-rollout.py inspect with --cli-downloads/--cli-installers", "status": "READY", "observed": "CI gate 3/3, idle 0 jobs, 7 app containers (5 running), guide 0.7.0/01e4d49 -> expected 0.9.0/173c6d5"}
+  ],
+  "deployment": {
+    "tool": "core-rollout.py apply from the frozen checkout with the staged CLI release",
+    "status": "PASS",
+    "startedAt": "2026-11-13T09:04:58Z",
+    "finishedAt": "2026-11-13T09:05:08Z",
+    "releaseDirectory": ".local/release-173c6d5-core",
+    "previousSha256": "3fe648bc63a4733c7b33b9040108ae50ed19f419f4e319f38af3c4e57c534f82",
+    "serverSha256": "467bb0d2f58c9df575aff8df947d411450204ad4dbceef29e683e1df535b9f54",
+    "schemaBefore": 22,
+    "schemaAfter": 22,
+    "backup": {"verifiedBySeparateRestore": true, "tables": 43, "rows": 1507, "dumpBytes": 230617},
+    "stableRecordsPreserved": true,
+    "appContainers": {"before": 7, "after": 7},
+    "connectionBudget": {"worstCase": 90, "usableConnections": 197},
+    "cliIndexes": "release-index.json and installer-index.json backed up to the release directory, commit directories 173c6d5... added, both indexes replaced while core was stopped; the new guide was required after start",
+    "unchanged": "portal UI 7defdb0 and frame runtime from 18ce038 (no web source changes since)"
+  },
+  "postDeploymentChecks": [
+    {"check": "Health on portal, dev portal and console", "status": "PASS", "observed": "200 each"},
+    {"check": "Install guide", "status": "PASS", "observed": "cliVersion 0.9.0, sourceCommit 173c6d5, MiySetup-0.9.0-windows-x64.exe, 5 CLI downloads"},
+    {"check": "scripts/check-cli-downloads.py --origin https://v2.dwdcc.kr --expected-commit 173c6d5...", "status": "PASS", "observed": "7 files, 250,963,545 bytes, hashes verified"},
+    {"check": "node scripts/check-platform-connection.mjs with the published 0.9.0 Linux CLI (checksum verified)", "status": "PASS", "observed": "22 passes: real OIDC developer login on portal, console SSO and dev portal SSO, CLI device login/status/doctor, generated stdio MCP; cleanup failures 0"},
+    {"check": "Read-only Chromium frame check as the developer account", "status": "PASS", "observed": "Two prod and two dev apps opened in their own frame origins in about 3-4 s; the portal cookie on each app API answered 403"}
+  ],
+  "notRun": [
+    {"check": "Public GitHub Release", "reason": "The release gate needs real Windows 11 PowerShell 5.1/7 with Docker Desktop and fresh Codex/Claude Code sessions on three OSes; not performed"},
+    {"check": "Windows 11 user acceptance of MiySetup-0.9.0", "reason": "User-performed (docs/WINDOWS-ACCEPTANCE.md)"},
+    {"check": "Creating and deploying a new app with the published 0.9.0 CLI against this server", "reason": "Avoids creating production apps; app creation, deployment and frame use with the 0.9.0 bundle were checked on isolated stacks"}
+  ],
+  "rollback": [
+    "python3 .local/release-173c6d5-source/scripts/core-rollout.py rollback --release-dir .local/release-173c6d5-core (reinstalls server 3fe648bc... and restores both 0.7.0 indexes; schema 22 stays; the added 0.9.0 commit directories stay as immutable files)"
+  ],
+  "users": "CLI users update with the install guide or `miy` update commands; existing 0.8.0 app projects can move to bundle 0.9.0 with `miy app upgrade`."
+}

@@ -1,6 +1,6 @@
 # CLI와 독립 앱 개발·운영 실행 안내
 
-현행 CLI의 설치·인증·앱 개발·운영 사용법을 모은다. 설치된 실행 파일의 `miy --version`, `miy describe`와 서버 capability가 실제 사용 가능한 범위를 결정한다. 게시 CLI는 **0.7.0 / 번들 0.8.0**, 작업본은 **CLI 0.7.0 / 번들 0.9.0**으로 서로 다르며 새 후보에는 버전 인상이 필요하다. 게시 출처와 남은 조건은 [CLI-RELEASE](CLI-RELEASE.md), 실제 서버 상태는 [SERVER-OPERATIONS](SERVER-OPERATIONS.md)를 따른다.
+현행 CLI의 설치·인증·앱 개발·운영 사용법을 모은다. 설치된 실행 파일의 `miy --version`, `miy describe`와 서버 capability가 실제 사용 가능한 범위를 결정한다. 게시 CLI와 작업본은 모두 **CLI 0.9.0 / 번들 0.9.0**이다(2026-11-13 게시). 게시 출처와 남은 조건은 [CLI-RELEASE](CLI-RELEASE.md), 실제 서버 상태는 [SERVER-OPERATIONS](SERVER-OPERATIONS.md)를 따른다.
 
 검사 선택은 [CHECKS](CHECKS.md), 사용자 Windows 설치·인수는 [WINDOWS-ACCEPTANCE](WINDOWS-ACCEPTANCE.md)에 모은다. 명령 구현·특정 환경 PASS·전체 V7 인수는 구분한다. 현재 [실행·인증 계약](APP-BOUNDARIES.md#확정-결정)은 prod 포털·dev 포털·관리/CLI 승인/Keycloak 콘솔 세 출처다. 원격 업무 앱은 설치별 출처 프레임에서 실행하며 단일 IP HTTPS도 지원한다. CLI의 대표 서버 주소는 prod 포털이고 브라우저 승인만 콘솔에서 처리한다.
 

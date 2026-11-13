@@ -5,8 +5,8 @@
 - 업무 dev 포털(dev 앱 미리보기·시험): **https://v2-dev.dwdcc.kr**
 - 관리·CLI 승인·로그인 콘솔: **https://v2-console.dwdcc.kr** (2026-11-09 이동, 옛 `https://v2.dwdcc.kr:9443`은 301로 넘김)
 - CLI 설치 안내: **https://v2.dwdcc.kr/cli/install**
-- 실행 서버·게시 CLI 버전: **0.7.0**. 게시 CLI의 SDK 번들은 **0.8.0**이며, 번들 0.9.0과 구 번들 업그레이드 보완을 포함한 CLI는 아직 게시하지 않았다
-- 배포 소스: 서버·worker·프레임 런타임 `18ce0382165ba67f46dfae89c55c1d9750d50ce9`(2026-11-13), 포털 UI `7defdb0`(2026-11-12) 유지. core schema 22와 게시 CLI `01e4d4924f8c8fc4e11720c1af81adf17ddb20bf` 유지([응답 보완 배포](releases/app-api-response-2026-11-13-deployment.json))
+- 실행 서버·게시 CLI 버전: **0.9.0**, 게시 CLI의 SDK 번들 **0.9.0**(2026-11-13, [CLI 0.9.0 배포](releases/cli-0.9.0-2026-11-13-deployment.json)). 다운로드 서버 게시이며 정식 GitHub Release는 아니다
+- 배포 소스: 서버·worker와 게시 CLI `173c6d5cfd35f9d1313fe643701d4af3f374377f`(2026-11-13), 프레임 런타임 `18ce0382165ba67f46dfae89c55c1d9750d50ce9`, 포털 UI `7defdb0`(2026-11-12) 유지. core schema 22
 
 여기서 운영 반영은 이 프로젝트의 기존 개발 서버에 변경분을 배포했다는 뜻이다. 제품 개발 완료나 정식 오픈을 선언한 것은 아니다. 현재 세 출처는 같은 IP의 HTTPS 443을 공유하는 별도 호스트명이며, 도메인 없는 설치는 별도 포트를 지원한다. 출처 배치 계약은 [경계 설계](APP-BOUNDARIES.md#영역과-설정)를 따른다.
 
@@ -166,7 +166,7 @@ Codex·Claude의 생성된 프로젝트 MCP는 프로젝트의 `.miy-tools/miy[.
 
 ## 3. 현재 배포 소스와 이 작업본의 차이
 
-실행 서버·worker·프레임 런타임은 `18ce0382165ba67f46dfae89c55c1d9750d50ce9`(2026-11-13, [응답 보완 배포](releases/app-api-response-2026-11-13-deployment.json)), 포털 웹 화면은 `7defdb0`이며, 게시 CLI는 `01e4d4924f8c8fc4e11720c1af81adf17ddb20bf`다. 실행 서버와 게시 CLI의 버전 문자열은 모두 0.7.0이지만 게시 CLI의 번들은 0.8.0이며, 번들 0.9.0과 구 번들 업그레이드 보완을 포함한 CLI는 아직 게시하지 않았다. DB 역할 연결 한도·`application_name`·Docker 저장 공간 하한과 사용자·그룹 앱 권한·감사 조회 migration `0018`·`0019`는 2026-11-04 반영했다. 2026-11-05에는 다음 두 변경을 반영했다([배포 결과](releases/core-runtime-management-2026-11-05-deployment.json)).
+실행 서버·worker와 게시 CLI는 `173c6d5cfd35f9d1313fe643701d4af3f374377f`(2026-11-13, [CLI 0.9.0 배포](releases/cli-0.9.0-2026-11-13-deployment.json)), 프레임 런타임은 `18ce0382165ba67f46dfae89c55c1d9750d50ce9`([응답 보완 배포](releases/app-api-response-2026-11-13-deployment.json)), 포털 웹 화면은 `7defdb0`이다. 실행 서버와 게시 CLI는 모두 0.9.0이며 게시 CLI의 번들도 0.9.0이다. DB 역할 연결 한도·`application_name`·Docker 저장 공간 하한과 사용자·그룹 앱 권한·감사 조회 migration `0018`·`0019`는 2026-11-04 반영했다. 2026-11-05에는 다음 두 변경을 반영했다([배포 결과](releases/core-runtime-management-2026-11-05-deployment.json)).
 
 - 사용자 활성 상태 변경과 앱 등록 결정의 관리자 재확인·감사 기록(`user.enabled`·`user.disabled`, 등록 승인의 `grant.enabled`) — [검증 기록](releases/core-admin-recheck-2026-11-04-validation.json)
 - 회사 사용 중지된 앱을 관리자 실행 관리 목록(`GET /api/v1/runtime/installations`)과 실행 작업 조회에 남기는 변경, 관리 화면 "앱 실행 상태"의 사용 중지 표시 — [검증 기록](releases/core-runtime-management-2026-11-04-validation.json)

@@ -2,23 +2,17 @@
 
 CLI·Windows 설치기의 후보 빌드, 서버 다운로드 게시, 정식 GitHub Release 조건을 관리한다. 사용자 설치·개발은 [RUNNING](RUNNING.md), Windows GUI·수동 ZIP 설치와 실제 사용자 인수는 [WINDOWS-ACCEPTANCE](WINDOWS-ACCEPTANCE.md)를 따른다. 검사 종류는 [CHECKS](CHECKS.md), 버전별 과거 결과는 [CLI 검증 이력](archive/results/CLI-VALIDATION-MATRIX.md)에 모은다.
 
-서버의 현재 [실행·인증 계약](APP-BOUNDARIES.md#확정-결정)은 prod 포털·dev 포털·관리/로그인 콘솔의 세 출처다. device CLI 승인은 콘솔에서만 처리하고 legacy 시작·승인·교환은 410 `cli_upgrade_required`로 종료했다. 게시 CLI 0.7.0의 실제 연결 인수·현재 배포는 [경계 인수](APP-BOUNDARIES.md#경계-인수)와 [운영 안내](SERVER-OPERATIONS.md)를 따른다. 개발 단계의 구 형식 호환은 강제하지 않지만 게시 파일·해시는 불변이다. 후보 생성·서버 다운로드 게시·정식 공개는 서로 다른 단계다.
+서버의 현재 [실행·인증 계약](APP-BOUNDARIES.md#확정-결정)은 prod 포털·dev 포털·관리/로그인 콘솔의 세 출처다. device CLI 승인은 콘솔에서만 처리하고 legacy 시작·승인·교환은 410 `cli_upgrade_required`로 종료했다. 게시 CLI 0.9.0의 실제 연결 인수·현재 배포는 [경계 인수](APP-BOUNDARIES.md#경계-인수)와 [운영 안내](SERVER-OPERATIONS.md)를 따른다. 개발 단계의 구 형식 호환은 강제하지 않지만 게시 파일·해시는 불변이다. 후보 생성·서버 다운로드 게시·정식 공개는 서로 다른 단계다.
 
-## 현재 0.7.0 게시 후보
+## 현재 0.9.0 게시
 
-`01e4d4924f8c8fc4e11720c1af81adf17ddb20bf`의 [CLI CI 41613023015](https://github.com/hurxxxx/miy-v2/actions/runs/41613023015)(5개 target, 공개 Release 없음)와 같은 CLI 출처·해시로 만든 [설치 파일 CI 41614954095](https://github.com/hurxxxx/miy-v2/actions/runs/41614954095)를 검증해 2026-11-03 [설치 안내](https://v2.dwdcc.kr/cli/install)에 게시했다. SDK 번들은 0.8.0이다. 해시와 반영 절차는 [0.7.0 배포 기록](releases/core-0.7.0-deployment.json)과 [서버 운영 안내](SERVER-OPERATIONS.md)에 있다. Windows 11 사용자 인수는 [현재 후보 절차](WINDOWS-ACCEPTANCE.md)를 쓰며 아직 `NOT_RUN`이다.
+`173c6d5cfd35f9d1313fe643701d4af3f374377f`의 [CLI CI 43394975993](https://github.com/hurxxxx/miy-v2/actions/runs/43394975993)(5개 target과 Linux DB 연결 helper 2개, 공개 Release 없음)와 같은 CLI 출처·해시로 만든 [설치 파일 CI 43397724560](https://github.com/hurxxxx/miy-v2/actions/runs/43397724560)을 검증했다. 2026-11-13 서버 0.9.0과 함께 [설치 안내](https://v2.dwdcc.kr/cli/install)에 게시했다([0.9.0 배포 기록](releases/cli-0.9.0-2026-11-13-deployment.json)). SDK 번들도 0.9.0이며 앱 프레임 SDK(`setNavigationState`·`apiBlob`)와 구 번들 업그레이드를 포함한다. 기존 0.8.0 앱은 `miy app upgrade`로 옮긴다. Windows 11 사용자 인수는 [현재 후보 절차](WINDOWS-ACCEPTANCE.md)를 쓰며 아직 `NOT_RUN`이다. 이전 0.7.0 게시는 [0.7.0 배포 기록](releases/core-0.7.0-deployment.json)에 있다.
 
 새 후보를 게시하면 [Windows 후보 파일](releases/windows-candidate.json)을 그 CI 해시로 갱신한다. Windows 인수 검사기는 이 파일을 기대값으로 쓴다.
 
 같은 커밋에서 `python3 scripts/check-api-compat.py --refresh 버전 소스커밋`으로 [게시 CLI 응답 계약](../contracts/api-v1.published.json)도 그 소스의 스키마로 갱신한다. 이후 서버 응답은 이 파일보다 필드를 추가만 할 수 있다(`check-static.sh scripts`). 이전 서버가 보내지 않는 필드는 CLI가 기본값으로 읽는다([계약 타입](../crates/miy/src/api_contract.rs)).
 
 호환 검사는 필드·필수 여부·enum뿐 아니라 정수와 실수, Rust 정수 표현 범위와 명시된 수치 한도, UUID·날짜 형식을 비교한다(nullable·배열 포함). 기존 독자가 읽지 못하는 값으로의 확장은 거부하고 표현 범위 축소는 허용한다. CLI 출력·복구 검사의 모의 작업 응답도 `RuntimeJob` 계약의 필수 필드를 갖추며, 실제 CLI로 종료 코드·유실 응답 복구·중복 제출 방지를 검사한다.
-
-## 소스 구현 완료·새 후보 준비 대기
-
-현재 소스의 개발 번들은 **0.9.0**이며 프레임 SDK와 구 번들 업그레이드 보완을 구현·[검증](releases/app-frames-review-fixes-2026-11-12-validation.json)했다. 서버·UI·프레임 런타임을 `7defdb0`으로 반영한 것은 CLI 다운로드 게시와 별개다. 게시 CLI는 위의 **0.7.0 / 번들 0.8.0**을 유지한다.
-
-새 CLI는 게시만 남은 상태가 아니다. 현재 소스의 Cargo 버전도 0.7.0이어서, 변경된 클라이언트 입력으로 같은 버전의 후보를 만들면 `check-cli-version.py`가 `client_inputs_changed_without_version_bump`로 거부한다. 게시본보다 높은 CLI 버전과 후보 commit을 확정한 뒤 5개 OS/CPU CLI·Linux helper와 Windows 설치기 후보를 생성·검증하고, 같은 출처의 index·해시로 게시해야 한다. 기존 게시 파일은 덮어쓰지 않는다. 사용자 Windows 인수와 정식 GitHub Release 게이트는 별도 미완료 항목이다. 착수 순서는 [PLAN](PLAN.md#다음-우선-작업)을 따른다.
 
 ## 배포 후보 생성
 
@@ -65,7 +59,7 @@ Windows에서 같은 후보를 직접 빌드·검사할 때도 버전과 출처�
 
 후보에는 다섯 네이티브 CLI와 Linux amd64/arm64 DB 연결 helper가 함께 있어야 한다. Helper의 archive SHA-256, config SHA-256, 플랫폼, 소스 commit과 태그를 검증하며 개발 작업 트리용 helper는 게시하지 않는다. Docker 저장 방식에 따라 달라지는 image ID는 검증된 config 내용과 대조한 후 해당 컴퓨터의 불변 ID로 실행한다.
 
-검증한 aggregate 디렉터리를 서버의 `MIY_CLI_RELEASE_DIR`(기본 `<state>/cli-downloads`)에 게시한다. 다음 명령의 commit은 CLI 후보 소스이며, 이후 서버 전용 수정이나 증거 문서 commit과 혼동하지 않는다.
+검증한 aggregate 디렉터리를 서버의 `MIY_CLI_RELEASE_DIR`(기본 `<state>/cli-downloads`)에 게시한다. 설치 안내는 서버 자신의 버전과 같은 CLI만 제공하므로, CLI 버전이 바뀌는 게시는 아래 도구로 운영 디렉터리와 분리된 staging에 먼저 놓고 `core-rollout.py apply --cli-downloads … --cli-installers …`로 같은 버전의 서버와 함께 반영한다([배포 도구](SERVER-OPERATIONS.md#7-배포-도구)). 같은 버전의 파일을 다시 게시할 때만 운영 디렉터리를 직접 대상으로 한다. 다음 명령의 commit은 CLI 후보 소스이며, 이후 서버 전용 수정이나 증거 문서 commit과 혼동하지 않는다.
 
 ```sh
 python3 scripts/stage-cli-release.py --source /path/to/aggregate --destination /path/to/cli-downloads --commit CLI_CANDIDATE_40_HEX_COMMIT
