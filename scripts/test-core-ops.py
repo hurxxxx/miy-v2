@@ -265,6 +265,8 @@ class FakeHost:
         self.budget_before = True
         self.budget_with_candidate = True
         self.migrate_works = True
+        # The install guide offers only the CLI of the running server's version.
+        self.server_versions = {OLD_SHA: '0.7.0', NEW_SHA: '0.7.0'}
         # Newest first, like the GitHub API. Each test may replace a run or its jobs.
         self.ci_runs = [{'id': 7000 + index, 'path': '.github/workflows/' + name, 'head_sha': COMMIT,
                          'head_branch': 'main', 'event': 'push', 'status': 'completed', 'conclusion': 'success',
@@ -393,7 +395,16 @@ class FakeHost:
                 return {'status': 'error'}
             return {'status': 'ok'}
         if url.endswith('/api/v1/cli/install'):
-            return {'cliVersion': '0.7.0', 'sourceCommit': 'a' * 40, 'windowsInstaller': {'sha256': 'b' * 64}}
+            downloads = self.test.root / '.local/cli-downloads/release-index.json'
+            if not downloads.exists():
+                return {'cliVersion': '0.7.0', 'sourceCommit': 'a' * 40, 'windowsInstaller': {'sha256': 'b' * 64}}
+            release = json.loads(downloads.read_text())
+            installer = json.loads((self.test.root / '.local/cli-installers/installer-index.json').read_text())
+            version = self.server_versions[self.running]
+            if release['version'] != version or installer['version'] != version:
+                raise OSError('cli_release_version_mismatch')
+            return {'cliVersion': version, 'sourceCommit': release['commit'],
+                    'windowsInstaller': {'sha256': installer['sha256']}}
         self.test.fail('unexpected URL ' + url)
 
     def executable_hashes(self, expected):
@@ -665,6 +676,139 @@ class CoreRolloutTests(OfflineTest):
         self.assertEqual(self.host.started, [NEW_SHA, OLD_SHA])
         receipt = json.loads(next(release.glob('rollback-*.json')).read_text())
         self.assertEqual((receipt['status'], receipt['fromSha256']), ('ROLLED_BACK', NEW_SHA))
+
+    def cli_release(self, version='0.9.0', commit='e' * 40, installer_commit='f' * 40):
+        """Live 0.7.0 indexes and a staged release like the stage tools produce."""
+        sha = lambda data: hashlib.sha256(data).hexdigest()
+        def release(root, version, commit, installer_commit):
+            downloads, installers = root / 'cli-downloads', root / 'cli-installers'
+            (downloads / commit).mkdir(parents=True)
+            (installers / installer_commit).mkdir(parents=True)
+            assets = []
+            for target in ('x86_64-unknown-linux-gnu', 'x86_64-pc-windows-msvc'):
+                data = f'{version} {target}'.encode()
+                file = f'miy-{version}-{target}.zip'
+                (downloads / commit / file).write_bytes(data)
+                assets.append({'target': target, 'file': file, 'sha256': sha(data), 'binarySha256': sha(data + b'bin'),
+                               'commit': commit, 'version': version, 'schemaVersion': 1})
+            helper = f'{version} helper'.encode()
+            (downloads / commit / 'helper.tar').write_bytes(helper)
+            index = {'schemaVersion': 1, 'version': version, 'commit': commit, 'assets': assets,
+                     'tunnelImages': [{'file': 'helper.tar', 'sha256': sha(helper)}]}
+            (downloads / 'release-index.json').write_text(json.dumps(index))
+            (downloads / commit / 'release-index.json').write_text(json.dumps(index))
+            exe = f'{version} installer'.encode()
+            (installers / installer_commit / f'MiySetup-{version}.exe').write_bytes(exe)
+            windows = assets[1]
+            (installers / 'installer-index.json').write_text(json.dumps({
+                'schemaVersion': 1, 'version': version, 'cliCommit': commit, 'installerCommit': installer_commit,
+                'file': f'MiySetup-{version}.exe', 'sha256': sha(exe), 'archiveSha256': windows['sha256'],
+                'cliBinarySha256': windows['binarySha256']}))
+            return downloads, installers
+        release(self.root / '.local', '0.7.0', 'a' * 40, 'a' * 40)
+        staging = self.root / '.local/release-staging'
+        downloads, installers = release(staging, version, commit, installer_commit)
+        (self.source / 'crates/miy/Cargo.toml').write_text(f'[package]\nname = "miy"\nversion = "{version}"\n')
+        self.host.version = f'miy {version}'
+        self.host.server_versions[NEW_SHA] = version
+        return {'cli_downloads': downloads, 'cli_installers': installers}
+
+    def live_indexes(self):
+        return {name: (self.root / '.local' / name / index).read_text()
+                for name, index in (('cli-downloads', 'release-index.json'), ('cli-installers', 'installer-index.json'))}
+
+    def test_cli_release_is_published_with_the_candidate_while_core_is_stopped(self):
+        staged = self.cli_release()
+        before = self.live_indexes()
+        code, result, release = self.run_tool(**staged)
+        self.assertEqual((code, result['status']), (0, 'PASS'))
+        self.assertEqual(self.host.events, ['stop', 'backup', 'verify', 'start'])
+        for name, text in self.live_indexes().items():
+            self.assertEqual(json.loads(text)['version'], '0.9.0', name)
+        self.assertTrue((self.root / '.local/cli-downloads' / ('a' * 40)).is_dir())
+        self.assertEqual(sorted(p.name for p in (self.root / '.local/cli-downloads' / ('e' * 40)).iterdir()),
+                         ['helper.tar', 'miy-0.9.0-x86_64-pc-windows-msvc.zip',
+                          'miy-0.9.0-x86_64-unknown-linux-gnu.zip', 'release-index.json'])
+        record = json.loads((release / 'deployment.json').read_text())
+        self.assertTrue(record['cliIndexesReplaced'])
+        self.assertEqual(record['expectedCliGuide']['cliVersion'], '0.9.0')
+        self.assertEqual((release / 'rollback/cli-downloads/release-index.json').read_text(), before['cli-downloads'])
+        code, result, _ = self.run_tool('rollback', release=release)
+        self.assertEqual((code, result['status']), (0, 'ROLLED_BACK'))
+        self.assertEqual(self.live_indexes(), before)
+        self.assertEqual(self.installed.read_bytes(), OLD)
+
+    def test_a_version_change_without_a_cli_release_is_refused_before_any_change(self):
+        (self.source / 'crates/miy/Cargo.toml').write_text('[package]\nname = "miy"\nversion = "0.9.0"\n')
+        self.host.version = 'miy 0.9.0'
+        code, result, _ = self.run_tool()
+        self.assertEqual((code, result['failure']), (1, 'cli_release_required_for_version_change'))
+        self.assert_untouched()
+
+    def test_inconsistent_cli_releases_are_refused_before_any_change(self):
+        def tamper_file(staged):
+            (staged['cli_downloads'] / ('e' * 40) / 'helper.tar').write_bytes(b'tampered')
+        def other_cli_commit(staged):
+            path = staged['cli_installers'] / 'installer-index.json'
+            path.write_text(json.dumps({**json.loads(path.read_text()), 'cliCommit': 'd' * 40}))
+        def windows_hash(staged):
+            path = staged['cli_installers'] / 'installer-index.json'
+            path.write_text(json.dumps({**json.loads(path.read_text()), 'archiveSha256': '0' * 64}))
+        def published_directory_differs(staged):
+            shutil.copytree(staged['cli_downloads'] / ('e' * 40), self.root / '.local/cli-downloads' / ('e' * 40))
+            (self.root / '.local/cli-downloads' / ('e' * 40) / 'helper.tar').write_bytes(b'other bytes')
+        cases = {
+            'cli_release_version_mismatch': (lambda staged: None, {'version': '0.8.0'}),
+            'cli_release_file_mismatch': (tamper_file, {}),
+            'cli_release_commit_mismatch': (other_cli_commit, {}),
+            'cli_installer_mismatch': (windows_hash, {}),
+            'cli_release_commit_directory_differs': (published_directory_differs, {}),
+        }
+        for code_name, (change, options) in cases.items():
+            with self.subTest(code_name):
+                for name in ('cli-downloads', 'cli-installers', 'release-staging'):
+                    shutil.rmtree(self.root / '.local' / name, ignore_errors=True)
+                self.reset()
+                staged = self.cli_release()
+                if options.get('version'):
+                    for key, name in (('cli_downloads', 'release-index.json'), ('cli_installers', 'installer-index.json')):
+                        path = staged[key] / name
+                        path.write_text(json.dumps({**json.loads(path.read_text()), 'version': options['version']}))
+                change(staged)
+                before = self.live_indexes()
+                code, result, _ = self.run_tool(**staged)
+                self.assertEqual((code, result['failure']), (1, code_name))
+                self.assert_untouched()
+                self.assertEqual(self.live_indexes(), before)
+
+    def test_a_failure_while_swapping_indexes_restores_both_and_the_previous_binary(self):
+        staged = self.cli_release()
+        before = self.live_indexes()
+        original = self.rollout.atomic_copy
+        def failing(source, destination):
+            if destination.name == 'installer-index.json' and 'release-staging' in str(source):
+                raise OSError('disk full')
+            return original(source, destination)
+        with patch.object(self.rollout, 'atomic_copy', failing):
+            code, result, release = self.run_tool(**staged)
+        self.assertEqual(code, 1)
+        self.assertEqual(self.live_indexes(), before)
+        self.assertEqual(self.installed.read_bytes(), OLD)
+        self.assertEqual(self.host.started, [OLD_SHA])
+        record = json.loads((release / 'deployment.json').read_text())
+        self.assertEqual((record['status'], record['cliIndexesRestored']), ('ROLLED_BACK', True))
+
+    def test_a_candidate_failing_after_start_keeps_core_stopped_and_rollback_restores_indexes(self):
+        staged = self.cli_release()
+        before = self.live_indexes()
+        self.host.healthy_candidate = False
+        code, result, release = self.run_tool(**staged)
+        self.assertEqual((code, result['failure']), (1, 'post_start_failed_manual_assessment_required'))
+        self.assertEqual(json.loads(self.live_indexes()['cli-downloads'])['version'], '0.9.0')
+        code, result, _ = self.run_tool('rollback', release=release)
+        self.assertEqual((code, result['status']), (0, 'ROLLED_BACK'))
+        self.assertEqual(self.live_indexes(), before)
+        self.assertEqual(self.installed.read_bytes(), OLD)
 
     def test_operator_rollback_refuses_another_rollouts_binary(self):
         code, _, release = self.run_tool()

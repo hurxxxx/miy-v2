@@ -22,6 +22,14 @@ backup is still restored and migrate-checked first, the candidate migrates the l
 core stops, and a later rollback reinstalls the previous binary on the widened schema, which that
 binary keeps using unchanged. No other migration, setting or identity change is ever applied.
 
+--cli-downloads DIR --cli-installers DIR publish a CLI release with the candidate: the output of
+scripts/stage-cli-release.py and scripts/stage-windows-installer.py in private staging directories.
+The server's install guide offers only the CLI of its own version, so a version change needs this.
+Both indexes must name the candidate's version and one CLI commit with matching Windows hashes, and
+every listed file must match its hash. While core is stopped the commit directories are added next
+to the live ones (never overwritten) and the two indexes are replaced; core must then serve the new
+guide. A failure before the candidate starts, and a later rollback, restore the previous indexes.
+
 The preflight requires the exact source commit to have passed every required main-push GitHub
 workflow (web, cli-foundation, runtime-regression), every job included. A local PASS or a run of
 another commit never substitutes for it.
@@ -330,6 +338,90 @@ def ci_gate(commit):
     return selected
 
 
+CLI_INDEXES = {'cli-downloads': 'release-index.json', 'cli-installers': 'installer-index.json'}
+WINDOWS_TARGET = 'x86_64-pc-windows-msvc'
+
+
+def live_cli(name):
+    return LIVE / '.local' / name
+
+
+def tree(root):
+    """Relative file -> SHA-256 of a regular-file directory (no symlinks)."""
+    files = {}
+    for path in sorted(root.rglob('*')):
+        require(not path.is_symlink(), 'symlink_path_refused')
+        if path.is_file():
+            files[path.relative_to(root).as_posix()] = digest(path)
+    return files
+
+
+def staged_cli(args, version):
+    """Check a staged CLI release against the candidate. Read-only."""
+    require(args.cli_downloads is not None and args.cli_installers is not None, 'cli_release_needs_both_indexes')
+    staged = {'cli-downloads': plain(args.cli_downloads), 'cli-installers': plain(args.cli_installers)}
+    for name, root in staged.items():
+        require(root.is_dir() and root != live_cli(name) and live_cli(name) not in (root, *root.parents)
+                and root not in live_cli(name).parents, 'cli_staging_must_be_separate')
+    release = json.loads((staged['cli-downloads'] / CLI_INDEXES['cli-downloads']).read_text())
+    installer = json.loads((staged['cli-installers'] / CLI_INDEXES['cli-installers']).read_text())
+    commit, installer_commit = release.get('commit') or '', installer.get('installerCommit') or ''
+    require(release.get('version') == installer.get('version') == version, 'cli_release_version_mismatch')
+    require(HEX40.fullmatch(commit) is not None and installer.get('cliCommit') == commit
+            and HEX40.fullmatch(installer_commit) is not None, 'cli_release_commit_mismatch')
+    windows = [row for row in release.get('assets', []) if row.get('target') == WINDOWS_TARGET]
+    require(len(windows) == 1 and windows[0].get('sha256') == installer.get('archiveSha256')
+            and windows[0].get('binarySha256') == installer.get('cliBinarySha256'), 'cli_installer_mismatch')
+    listed = {f"cli-downloads/{commit}/{row['file']}": row['sha256']
+              for row in release.get('assets', []) + release.get('tunnelImages', [])}
+    listed[f"cli-installers/{installer_commit}/{installer['file']}"] = installer['sha256']
+    directories = {'cli-downloads': commit, 'cli-installers': installer_commit}
+    trees = {name: tree(staged[name] / directory) for name, directory in directories.items()}
+    for relative, expected in listed.items():
+        name, directory, file = relative.split('/', 2)
+        require(trees[name].get(file) == expected, 'cli_release_file_mismatch')
+    for name, directory in directories.items():
+        # Published commit directories are immutable: an existing one must be identical.
+        live = live_cli(name) / directory
+        require(not live.exists() or tree(live) == trees[name], 'cli_release_commit_directory_differs')
+        require((live_cli(name) / CLI_INDEXES[name]).is_file(), 'cli_live_index_missing')
+    return {'version': version, 'commit': commit, 'installerCommit': installer_commit,
+            'windowsInstallerSha256': installer['sha256'],
+            'staged': {name: str(root) for name, root in staged.items()}, 'directories': directories,
+            'indexes': {name: digest(staged[name] / CLI_INDEXES[name]) for name in staged}}
+
+
+def publish_cli(release):
+    """With core stopped: add the commit directories, then replace both indexes atomically."""
+    for name, directory in release['directories'].items():
+        source, live = pathlib.Path(release['staged'][name]) / directory, live_cli(name) / directory
+        if not live.exists():
+            temporary = live_cli(name) / f'.rollout-{directory}'
+            shutil.rmtree(temporary, ignore_errors=True)
+            shutil.copytree(source, temporary, symlinks=False)
+            require(tree(temporary) == tree(source), 'cli_release_copy_mismatch')
+            os.rename(temporary, live)
+        require(tree(live) == tree(source), 'cli_release_commit_directory_differs')
+    # Recorded first: a failure between the two replacements must still restore both.
+    REPORT['cliIndexesReplaced'] = True
+    save()
+    for name, index in CLI_INDEXES.items():
+        staged = pathlib.Path(release['staged'][name]) / index
+        require(digest(staged) == release['indexes'][name], 'cli_staged_index_changed')
+        atomic_copy(staged, live_cli(name) / index)
+        require(digest(live_cli(name) / index) == release['indexes'][name], 'cli_index_install_mismatch')
+
+
+def restore_cli_indexes(previous, candidate):
+    """Put the backed-up indexes back; refuse an index that belongs to neither release."""
+    for name, index in CLI_INDEXES.items():
+        live, backup = live_cli(name) / index, recovery() / name / index
+        require(digest(backup) == previous[name], 'cli_index_backup_changed')
+        require(digest(live) in (previous[name], candidate[name]), 'cli_index_belongs_to_another_release')
+        atomic_copy(backup, live)
+        require(digest(live) == previous[name], 'cli_index_restore_mismatch')
+
+
 def source_facts(source):
     version = tomllib.loads((source / 'crates/miy/Cargo.toml').read_text())['package']['version']
     numbers = [int(path.name[:4]) for path in (source / 'migrations/core').iterdir()
@@ -469,6 +561,14 @@ def preflight(args):
     require(container_setting(KEYCLOAK, 'KC_DB_POOL_MAX_SIZE') == str(args.identity_pool), 'identity_settings_differ')
     require(get_json(ORIGIN + '/api/health') == {'status': 'ok'}, 'health_failed_before_rollout')
     facts['cliGuide'] = cli_guide()
+    if args.cli_downloads is not None or args.cli_installers is not None:
+        facts['cliRelease'] = staged_cli(args, facts['version'])
+        facts['expectedCliGuide'] = {'cliVersion': facts['version'], 'sourceCommit': facts['cliRelease']['commit'],
+                                     'windowsInstallerSha256': facts['cliRelease']['windowsInstallerSha256']}
+    else:
+        # The guide offers only the CLI of the running server's version.
+        require(facts['cliGuide']['cliVersion'] == facts['version'], 'cli_release_required_for_version_change')
+        facts['expectedCliGuide'] = facts['cliGuide']
     # The rollout does not change the budget; never start a candidate into a failing one.
     facts['connectionBudget'] = connection_budget(source, 0)
     facts['idle'] = idle()
@@ -481,7 +581,8 @@ def preflight(args):
 def public(facts):
     containers = facts['appContainers'].values()
     return {'version': facts['version'], 'schema': facts['schema'], 'executables': facts['executables'],
-            'cliGuide': facts['cliGuide'], 'connectionBudget': facts['connectionBudget'], 'idle': facts['idle'],
+            'cliGuide': facts['cliGuide'], 'expectedCliGuide': facts['expectedCliGuide'],
+            'connectionBudget': facts['connectionBudget'], 'idle': facts['idle'],
             'ci': facts['ci'], 'appContainers': len(facts['appContainers']),
             'runningAppContainers': sum(c['status'] == 'running' for c in containers),
             'databaseNetworks': len(facts['databaseNetworks'])}
@@ -497,6 +598,9 @@ def restore_previous(schema):
     if digest(installed()) != previous:
         atomic_copy(recovery() / 'miy-server', installed())
     require(digest(installed()) == previous, 'rollback_install_mismatch')
+    if REPORT.get('cliIndexesReplaced'):
+        restore_cli_indexes(REPORT['cliRelease']['previousIndexes'], REPORT['cliRelease']['indexes'])
+        REPORT['cliIndexesRestored'] = True
     start_core()
     wait(lambda: get_json(ORIGIN + '/api/health') == {'status': 'ok'}, 90, 'rollback_health_failed')
     require_core_state('active')
@@ -528,6 +632,16 @@ def apply(args):
                 'candidate_changed')
         shutil.copy2(installed(), recovery() / 'miy-server')
         require(digest(recovery() / 'miy-server') == args.installed_sha256, 'binary_backup_changed')
+        REPORT['expectedCliGuide'] = facts['expectedCliGuide']
+        if 'cliRelease' in facts:
+            previous = {}
+            for name, index in CLI_INDEXES.items():
+                (recovery() / name).mkdir(mode=0o700)
+                shutil.copy2(live_cli(name) / index, recovery() / name / index)
+                previous[name] = digest(recovery() / name / index)
+                require(digest(live_cli(name) / index) == previous[name], 'cli_index_backup_changed')
+            REPORT['cliRelease'] = {**facts['cliRelease'], 'previousIndexes': previous}
+            save()
     except (Exception, KeyboardInterrupt) as error:
         REPORT.update({'status': 'PREFLIGHT_FAILED', 'failureCategory': failure_code(error),
                        'productionMutations': False, 'finishedAt': now()})
@@ -569,10 +683,12 @@ def apply(args):
             REPORT['migratedSchema'] = migrations()
             save()
             require(REPORT['migratedSchema'] == schema, 'widen_migration_not_applied')
+        if 'cliRelease' in REPORT:
+            publish_cli(REPORT['cliRelease'])
         # From here a failed check must not discard writes the new API may have accepted.
         started = True
         start_core()
-        wait(lambda: healthy(facts['cliGuide']), 90, 'post_deployment_health_failed')
+        wait(lambda: healthy(facts['expectedCliGuide']), 90, 'post_deployment_health_failed')
         require_core_state('active')
         REPORT['runningExecutables'] = executable_hashes(sha)
         require(migrations() == schema, 'schema_changed_after_start')
@@ -622,6 +738,12 @@ def rollback():
         require(digest(recovery() / 'miy-server') == previous, 'rollback_binary_changed')
         require(digest(installed()) in (candidate, previous), 'installed_binary_belongs_to_another_rollout')
         require(migrations() == schema, 'schema_changed_since_rollout')
+        release = deployment.get('cliRelease') if deployment.get('cliIndexesReplaced') else None
+        if release:
+            for name, index in CLI_INDEXES.items():
+                require(digest(recovery() / name / index) == release['previousIndexes'][name], 'cli_index_backup_changed')
+                require(digest(live_cli(name) / index) in (release['previousIndexes'][name], release['indexes'][name]),
+                        'cli_index_belongs_to_another_release')
         check_idle = any(state not in STOPPED_STATES for state in service_states().values())
         if check_idle:
             # A failed service does not mean its peer has stopped accepting or processing work.
@@ -640,6 +762,9 @@ def rollback():
             REPORT['idleAfterStop'] = idle()
         atomic_copy(recovery() / 'miy-server', installed())
         require(digest(installed()) == previous, 'rollback_install_mismatch')
+        if release:
+            restore_cli_indexes(release['previousIndexes'], release['indexes'])
+            REPORT['cliIndexesRestored'] = True
         start_core()
         wait(lambda: get_json(ORIGIN + '/api/health') == {'status': 'ok'}, 90, 'rollback_health_failed')
         require_core_state('active')
@@ -669,6 +794,8 @@ def main(argv=None):
     parser.add_argument('--max-connections', type=int, default=200, help='expected; never changed')
     parser.add_argument('--identity-pool', type=int, default=10, help='expected KC_DB_POOL_MAX_SIZE; never changed')
     parser.add_argument('--widen-migration', type=int, help='allow exactly this pinned constraint-widening migration')
+    parser.add_argument('--cli-downloads', type=pathlib.Path, help='staged CLI release (stage-cli-release.py output)')
+    parser.add_argument('--cli-installers', type=pathlib.Path, help='staged Windows installer (stage-windows-installer.py output)')
     args = parser.parse_args(argv)
     try:
         if args.action == 'inspect':
