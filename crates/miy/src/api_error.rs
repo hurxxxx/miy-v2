@@ -60,6 +60,13 @@ impl ApiError {
             code: code.into(),
         }
     }
+    /// An upstream app answered something the gateway refuses to pass on.
+    pub fn bad_gateway(code: &str) -> Self {
+        Self {
+            status: StatusCode::BAD_GATEWAY,
+            code: code.into(),
+        }
+    }
     pub fn conflict(code: &str) -> Self {
         Self {
             status: StatusCode::CONFLICT,

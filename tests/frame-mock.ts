@@ -20,7 +20,7 @@ const types: Record<string, string> = {
   ".woff2": "font/woff2",
 };
 
-export type FrameReply = { status?: number; json: unknown };
+export type FrameReply = { status?: number; json: unknown; headers?: Record<string, string> };
 export type FrameApi = (
   installation: Installation,
   path: string,
@@ -142,7 +142,7 @@ export async function mockFrames(page: Page, apps: () => Installation[], api: Fr
         route.request().method(),
         route.request().headers()["x-miy-release"],
       );
-      return route.fulfill({ status: reply.status ?? 200, json: reply.json });
+      return route.fulfill({ status: reply.status ?? 200, json: reply.json, headers: reply.headers });
     }
     return route.fulfill({ status: 404, body: "" });
   });

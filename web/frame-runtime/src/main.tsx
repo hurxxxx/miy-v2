@@ -141,6 +141,9 @@ function apiPath(path: string) {
   return path;
 }
 
+/** Core's mark on its own 401 (crates/miy/src/app_frames.rs CREDENTIAL_REFUSED). */
+const CREDENTIAL_REFUSED = "x-miy-frame-credential";
+
 /** A request to this frame origin only: no cookies, the frame token, its release. */
 async function call(path: string, init: RequestInit = {}): Promise<Response> {
   if (stopped) throw new Error(stopped);
@@ -163,7 +166,14 @@ async function call(path: string, init: RequestInit = {}): Promise<Response> {
     });
   };
   let response = await send();
-  if (response.status === 401 && Date.now() < frameExpiresAt) {
+  // Only a 401 that Core marks as a refused frame credential is resent: that
+  // request never reached the app, so resending cannot repeat a business write.
+  // An app's own 401 is a business answer and is returned as it is.
+  if (
+    response.status === 401 &&
+    response.headers.get(CREDENTIAL_REFUSED) === "rejected" &&
+    Date.now() < frameExpiresAt
+  ) {
     await renew();
     response = await send();
   }

@@ -833,10 +833,7 @@ async fn forward(
         .map_err(|_| ApiError::unavailable("preview_upstream_failed"))?;
     let status = response.status();
     let ct = response.headers().get(header::CONTENT_TYPE).cloned();
-    let body = response
-        .bytes()
-        .await
-        .map_err(|_| ApiError::unavailable("preview_response_failed"))?;
+    let body = crate::app_response::read(response, "preview").await?;
     Ok(crate::app_response::api(status, ct, body))
 }
 

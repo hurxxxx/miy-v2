@@ -454,6 +454,10 @@ pub fn router(state: State) -> Router {
         .with_state(state)
 }
 
+/// Set by the frame listener on 401 responses that Core produced before any
+/// app saw the request (web/frame-runtime resends only those).
+pub const CREDENTIAL_REFUSED: &str = "x-miy-frame-credential";
+
 async fn frame_headers(request: Request, next: Next) -> Response {
     // Frames never register service workers (no worker exception in the PoC).
     let mut response = if request.headers().contains_key("service-worker") {
@@ -461,7 +465,19 @@ async fn frame_headers(request: Request, next: Next) -> Response {
     } else {
         next.run(request).await
     };
+    // A 401 that Core produced means the request never reached the app, so the
+    // frame runtime may renew and resend it whatever the method. An app's own
+    // 401 carries no mark: app headers never pass the gateway.
+    let refused = response.status() == StatusCode::UNAUTHORIZED
+        && response
+            .extensions()
+            .get::<crate::app_response::FromApp>()
+            .is_none();
     let headers = response.headers_mut();
+    headers.remove(CREDENTIAL_REFUSED);
+    if refused {
+        headers.insert(CREDENTIAL_REFUSED, HeaderValue::from_static("rejected"));
+    }
     headers.insert(
         header::X_CONTENT_TYPE_OPTIONS,
         HeaderValue::from_static("nosniff"),

@@ -1175,10 +1175,7 @@ pub async fn proxy(
         .map_err(|_| ApiError::unavailable("app_runtime_unreachable"))?;
     let status = response.status();
     let content_type = response.headers().get(header::CONTENT_TYPE).cloned();
-    let bytes = response
-        .bytes()
-        .await
-        .map_err(|_| ApiError::unavailable("app_response_failed"))?;
+    let bytes = crate::app_response::read(response, "app").await?;
     Ok(crate::app_response::api(status, content_type, bytes))
 }
 

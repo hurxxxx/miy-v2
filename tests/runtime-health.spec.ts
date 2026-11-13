@@ -367,10 +367,49 @@ test("business API unauthorized responses do not claim that a renewable frame se
   const reads = apiCalls.length;
   await app(page).getByRole("button", { name: "API 확인" }).click();
   await expect(app(page).getByTestId("api-error")).toContainText("business_login_required");
-  expect(apiCalls).toHaveLength(reads + 2);
-  expect(frames).toEqual({ launches: 1, portal: 1, exchange: 1 });
+  // An app's own 401 is a business answer: sent once, no renewal.
+  expect(apiCalls).toHaveLength(reads + 1);
+  expect(frames).toEqual({ launches: 1, portal: 0, exchange: 0 });
   await expect(page.getByRole("alert")).toHaveCount(0);
   await expect(app(page).getByLabel("문서 제목")).toHaveValue("업무 권한과 별개인 입력");
+});
+
+test("a business 401 on a write is never resent", async ({ page }) => {
+  const writes: string[] = [];
+  const { frames } = await appHarness(page, {}, (_installation, path, method) => {
+    if (method === "PUT") {
+      writes.push(path);
+      // Even an app that copies Core's mark cannot make the runtime resend:
+      // app headers never pass the real gateway, and this mock reply has none.
+      return { status: 401, json: { error: { code: "external_system_login_required" } } };
+    }
+    return { json: { title: "저장된 제목" } };
+  });
+  await app(page).getByLabel("문서 제목").fill("한 번만 저장");
+  await app(page).getByRole("button", { name: "저장" }).click();
+  await expect(app(page).getByTestId("api-error")).toContainText("external_system_login_required");
+  expect(writes).toEqual(["/document"]);
+  expect(frames).toEqual({ launches: 1, portal: 0, exchange: 0 });
+});
+
+test("a frame credential that Core refused is renewed and the write resent once", async ({ page }) => {
+  const writes: string[] = [];
+  const { frames } = await appHarness(page, {}, (_installation, path, method) => {
+    if (method === "PUT") {
+      writes.push(path);
+      // Core refused the token before the app saw the request.
+      return writes.length === 1
+        ? { status: 401, json: { error: { code: "unauthorized" } }, headers: { "x-miy-frame-credential": "rejected" } }
+        : { json: { ok: true } };
+    }
+    return { json: { title: "저장된 제목" } };
+  });
+  await app(page).getByLabel("문서 제목").fill("갱신 뒤 저장");
+  await app(page).getByRole("button", { name: "저장" }).click();
+  await expect.poll(() => writes.length).toBe(2);
+  await expect(app(page).getByTestId("api-error")).toHaveText("");
+  expect(frames).toEqual({ launches: 1, portal: 1, exchange: 1 });
+  await expect(app(page).getByLabel("문서 제목")).toHaveValue("갱신 뒤 저장");
 });
 
 test("health observations preserve SDK callbacks and unsaved input; release change still blocks APIs", async ({

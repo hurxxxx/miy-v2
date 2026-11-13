@@ -45,6 +45,17 @@ export default function HealthApp({ runtime }: AppProps) {
       >
         API 확인
       </button>
+      <button
+        onClick={() => {
+          setError("");
+          void runtime
+            .api("/document", { method: "PUT", body: JSON.stringify({ title }) })
+            .then(() => setSaved(title))
+            .catch((error) => setError(String(error)));
+        }}
+      >
+        저장
+      </button>
       <output data-testid="api-error">{error}</output>
     </section>
   );

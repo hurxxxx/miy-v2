@@ -182,7 +182,33 @@ struct Backend {
     secret: String,
     capture: Arc<Mutex<Vec<Value>>>,
 }
-async fn probe(S(backend): S<Backend>, headers: HeaderMap) -> Json<Value> {
+async fn probe(
+    S(backend): S<Backend>,
+    Path(path): Path<String>,
+    headers: HeaderMap,
+) -> axum::response::Response {
+    use axum::response::IntoResponse;
+    let limit = crate::app_response::LIMIT;
+    match path.as_str() {
+        // A business 401 that copies Core's refusal mark; the gateway drops it.
+        "business-401" => {
+            return (
+                axum::http::StatusCode::UNAUTHORIZED,
+                [(crate::app_frames::CREDENTIAL_REFUSED, "rejected")],
+                Json(json!({"error":{"code":"business_login_required"}})),
+            )
+                .into_response();
+        }
+        "at-limit" => return vec![b'x'; limit].into_response(),
+        "large-declared" => return vec![b'x'; limit + 1].into_response(),
+        // No Content-Length: the gateway must count what it receives.
+        "large-chunked" => {
+            let chunks = (0..=limit / 65536)
+                .map(|_| Ok::<_, std::io::Error>(Bytes::from(vec![b'x'; 65536])));
+            return Body::from_stream(futures_util::stream::iter(chunks)).into_response();
+        }
+        _ => {}
+    }
     let claims = headers
         .get("x-miy-identity")
         .and_then(|value| value.to_str().ok())
@@ -201,9 +227,9 @@ async fn probe(S(backend): S<Backend>, headers: HeaderMap) -> Json<Value> {
     match claims {
         Some(claims) => {
             backend.capture.lock().unwrap().push(claims);
-            Json(json!({"verified":true}))
+            Json(json!({"verified":true})).into_response()
         }
-        None => Json(json!({"verified":false})),
+        None => Json(json!({"verified":false})).into_response(),
     }
 }
 
@@ -733,7 +759,59 @@ pub async fn run(
             "frame token used outside its frame: HTTP {code}"
         );
     }
-    passed.push("frame requests need their registered installation host, same-origin Fetch Metadata for reads and the exact frame Origin for writes; null, portal and sibling Origins, another installation's host, unregistered pool origins and other Core APIs refuse a frame token".into());
+    // A 401 that Core produced is marked (the frame runtime resends only those);
+    // an app's own 401 never is, even when the app sets the same header.
+    let refused = status(
+        frame
+            .raw(Method::POST, "/_miy/api/probe")
+            .bearer_auth(format!("miy_frame_{}", "x".repeat(43)))
+            .header("origin", &frame.origin)
+            .send()
+            .await?,
+        401,
+    )
+    .await?;
+    ensure!(
+        refused.headers().get(crate::app_frames::CREDENTIAL_REFUSED)
+            == Some(&axum::http::HeaderValue::from_static("rejected")),
+        "Core's frame credential refusal lost its mark"
+    );
+    let business = status(
+        frame
+            .request(Method::POST, "/_miy/api/business-401")
+            .send()
+            .await?,
+        401,
+    )
+    .await?;
+    ensure!(
+        business
+            .headers()
+            .get(crate::app_frames::CREDENTIAL_REFUSED)
+            .is_none(),
+        "an app's 401 carried Core's refusal mark"
+    );
+    // App responses are bounded whatever Content-Length says.
+    let at_limit = status(
+        frame
+            .request(Method::GET, "/_miy/api/at-limit")
+            .send()
+            .await?,
+        200,
+    )
+    .await?;
+    ensure!(
+        at_limit.bytes().await?.len() == crate::app_response::LIMIT,
+        "a response at the limit was cut"
+    );
+    for path in ["/_miy/api/large-declared", "/_miy/api/large-chunked"] {
+        let refused = json(frame.request(Method::GET, path).send().await?, 502).await?;
+        ensure!(
+            refused["error"]["code"] == "app_response_too_large",
+            "an oversized app response lost its stable code"
+        );
+    }
+    passed.push("frame requests need their registered installation host, same-origin Fetch Metadata for reads and the exact frame Origin for writes; null, portal and sibling Origins, another installation's host, unregistered pool origins and other Core APIs refuse a frame token; only Core's own 401 carries the refusal mark, and app responses stop at 4 MiB with or without Content-Length".into());
 
     // 3. Another app only through the approved connection; callers start at A.
     let before = b.calls();

@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-11-13",
+  "status": "PASS",
+  "scope": "R01 and R02 of docs/reviews/CORE-PLATFORM-READINESS-2026-11-13.md: bounded app API responses in the gateways, and a frame runtime that resends only 401s Core produced before any app saw the request. Isolated tools only; not deployed.",
+  "decision": {"by": "user", "request": "start implementing (R01, R02)"},
+  "source": {"base": "d1e564c", "branch": "fix/app-api-limits", "commits": ["this commit"]},
+  "changes": [
+    "app_response::read reads an app response chunk by chunk and stops at 4 MiB (app_response::LIMIT) whatever Content-Length says; at most 64 bodies are read at once (10 s wait, then 503 app_gateway_busy). runtime::proxy (CLI and delegated bearers, frame /_miy/api, app-to-app connections) and the local preview use it. Oversized answers are 502 app_response_too_large / preview_response_too_large; the existing 15 s (Core) and 20 s (preview) timeouts still bound slow bodies",
+    "app_response::api marks app answers with an internal FromApp extension (never sent). The frame listener adds x-miy-frame-credential: rejected only to 401 responses Core produced; app headers never pass the gateway, so an app cannot produce the mark",
+    "web/frame-runtime resends after renewal only a marked 401; an app's own 401 (any method) is returned once. Renewal 5 s before token expiry stays",
+    "Fixture HealthApp gained a PUT save button; tests/frame-mock.ts replies can carry headers"
+  ],
+  "checks": [
+    {"check": "cargo test -p miy app_response", "status": "PASS", "observed": "3 tests: 4 MiB fits and 4 MiB + 1 is refused with and without Content-Length (chunked); app answers carry FromApp"},
+    {"check": "cargo clippy -p miy --all-targets (server and --no-default-features), -D warnings", "status": "PASS"},
+    {"check": "scripts/runtime-regression/run.py (isolated PostgreSQL and Docker)", "status": "PASS", "observed": "129 observations (frames 14). The frames request-rule observation now also checks: an invalid frame token's 401 carries the mark, a probe app's 401 that sets the same header arrives without it, a 4 MiB answer passes whole, 4 MiB + 1 with Content-Length and a chunked answer without it are 502 app_response_too_large"},
+    {"check": "pnpm typecheck", "status": "PASS"},
+    {"check": "scripts/check-static.sh", "status": "PASS", "observed": "all: script tests, check-server-config, fmt, clippy, cargo test 200 server-build and 121 client-build, web builds, Playwright ui 53 (new: a business 401 is sent once and not renewed; a business 401 on a PUT is never resent; a Core-refused credential renews and resends the PUT once), cli-experience 14, surface-boundaries 14, http-ui 1"}
+  ],
+  "notRun": [
+    {"check": "Memory measurement under many concurrent large responses", "reason": "The bound is enforced by construction and checked per response; no load test was run"},
+    {"check": "Real browser frame suite on stack-ui", "reason": "The change is covered by the mocked frame tests and the server regression; not rerun on a full stack"},
+    {"check": "Deployment", "reason": "Not requested"}
+  ]
+}
