@@ -22,6 +22,8 @@ GitHub Actions는 `cli-foundation.yml`(Linux 서버·Linux/macOS/Windows 클라�
 
 모의 시험은 운영 배포를 실행하지 않는다. 실제 Vite 빌드와 실제 HTTP·PostgreSQL 위임 검증은 별도 실행으로 기록한다. `docs/releases/evidence/`의 배포별 도구 사본은 당시 기록이며 검사 대상이 아니다. 격리 runtime 도구는 CLI와 테스트 실행 파일을 검증 디렉터리에 복사해 고정하며, worker 자식도 같은 테스트 실행 파일을 사용한다. 다른 Cargo 빌드가 공유 `target`을 바꿔도 실행 중인 회귀의 자식 파일 경로가 사라지지 않게 한다.
 
+앱 응답의 4MiB 한도·64개 슬롯·Bytes clone/slice 수명·오류/취소 반환은 모든 OS의 `app_response` 단위 검사에서 확인한다. 작은 TCP 송수신 버퍼로 느린 클라이언트를 만드는 추가 시험은 Unix에서만 실행한다. Windows에서는 이 설정에도 OS가 본문 전체를 받아갈 수 있어 애플리케이션 버퍼가 반드시 남는다는 전제가 성립하지 않았다(커밋 `7952c8e`의 CI 실패). Windows의 실제 전송 지연·전체 RSS 검증은 이 시험의 PASS로 대신하지 않는다.
+
 ## 변경 영역별 최소 검사
 
 | 바꾼 것 | 최소 검사 | 해당할 때 추가 |

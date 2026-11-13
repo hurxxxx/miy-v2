@@ -220,6 +220,10 @@ mod tests {
         assert_eq!(SLOTS.available_permits(), 1);
     }
 
+    // Windows can accept the whole body into OS buffers despite these socket
+    // hints. Only assert Unix TCP backpressure here; the ownership, capacity and
+    // cancellation tests above/below run on every supported OS.
+    #[cfg(unix)]
     #[tokio::test]
     async fn slow_tcp_client_keeps_the_slot_until_disconnect() {
         use axum::{Router, routing::get};
