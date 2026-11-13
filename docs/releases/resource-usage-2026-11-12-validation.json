@@ -1,0 +1,288 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-11-12",
+  "finishedAt": "2026-11-12T06:24:24.938838+00:00",
+  "status": "PASS",
+  "scope": "Bound Keycloak memory and prevent regression workspaces from accumulating large payloads on tmpfs.",
+  "source": {
+    "baseCommit": "d1e564c6e7c7d6c15771eb9dc7f6302b804f9ad7",
+    "workingTree": true,
+    "sha256": {
+      "compose.yaml": "ce6dd1d0d4d3217dba8f3a5cf24efb5b4375bb14cca709897d6c5e3ef657bcb1",
+      "scripts/runtime-regression/run.py": "b458e63e632063194acffbfe8d071ec8449960f4b3291dcc6f34f5eb270c36fd",
+      "scripts/runtime-regression/cleanup.py": "5364ea2cf0239b96ad7ec60138812e69afd97400808bf8af4469b955fea65744",
+      "scripts/runtime-regression/workdir.py": "3d6f5a3f9ad9c87d68c45c417d6f16d0c0e103cc5b6637f3f5c6cae591da1e91",
+      "scripts/runtime-regression/test_cleanup.py": "8fd9dde1006b553e0c084aa136e6867f39906574d4165f49499454c4a11b66a4"
+    }
+  },
+  "deployment": {
+    "kind": "Resource configuration only; no new core or UI deployment.",
+    "serverUiFrameRuntimeSource": "7defdb0de19ff1d0c3cbf34c9127cb7d3cf85877",
+    "schema": 22,
+    "keycloakConfigurationApplied": true,
+    "commitAndPush": "NOT_RUN; changes remain in the working tree."
+  },
+  "keycloak": {
+    "container": "miy-v2-validation-keycloak-1",
+    "containerId": "79f20a06fee43c5b9b05692baca5bb5c29d3b871caaa5db6c8e8c391d77add69",
+    "imageId": "sha256:79c623a22abacf3fe6c00a5fb30f5b7843d717b234033b80995891c06116d244",
+    "role": "Live v2 authentication service despite the validation name.",
+    "method": "Stop the same container, docker update --memory 2g --memory-swap 2g, then start and verify. No compose recreation or realm initialization.",
+    "before": {
+      "rssBytes": 12836057088,
+      "memoryLimitBytes": 0,
+      "memorySwapLimitBytes": 0,
+      "heap": {
+        "InitialHeapSize": 66135785472,
+        "MaxHeapSize": 92610232320
+      },
+      "cgroup": {
+        "memory.current": "12891193344",
+        "memory.max": "max",
+        "memory.swap.max": "max",
+        "memory.events": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0\nsock_throttled 0"
+      }
+    },
+    "after": {
+      "memoryLimitBytes": 2147483648,
+      "memorySwapLimitBytes": 2147483648,
+      "additionalSwapBytes": 0,
+      "heap": {
+        "InitialHeapSize": 1073741824,
+        "MaxHeapSize": 1503657984
+      },
+      "javaRssBytes": 695099392,
+      "observedAt": "2026-11-12T06:22:32.064411+00:00",
+      "running": true,
+      "oomKilled": false,
+      "cgroup": {
+        "memory.current": "680685568",
+        "memory.max": "2147483648",
+        "memory.swap.max": "0",
+        "memory.events": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0\nsock_throttled 0"
+      }
+    },
+    "preserved": [
+      "container ID",
+      "image",
+      "environment and command",
+      "mounts",
+      "all HostConfig fields except memory/swap"
+    ],
+    "attempts": [
+      {
+        "status": "FAIL",
+        "evidence": ".local/resource-limits-20261112/keycloak-memory.json",
+        "reason": "The cap and issuer readiness succeeded, but the verifier assumed JVM PID 1. After restart PID 1 was kc.sh, so jcmd failed. Not an OOM.",
+        "recovery": "Stopped the same container and temporarily raised both limits to 4GiB; issuer became ready."
+      },
+      {
+        "status": "PASS",
+        "evidence": ".local/resource-limits-20261112/keycloak-memory-attempt2.json",
+        "reason": "Discovered the actual Java process in the container cgroup, reapplied 2GiB and verified cgroup, heap and issuer."
+      }
+    ],
+    "checks": [
+      {
+        "status": "PASS",
+        "command": "docker compose config --format json (captured in memory; values not printed)",
+        "result": "Keycloak memory and memory+swap normalize to 2147483648 bytes."
+      },
+      {
+        "status": "PASS",
+        "command": "Disposable pinned Keycloak image JVM with --memory 2g --memory-swap 2g",
+        "result": "Container support enabled; initial heap 1073741824 bytes, max heap 1503657984 bytes."
+      },
+      {
+        "status": "PASS",
+        "command": "Read live container cgroup, Docker memory settings and actual JVM VM.flags",
+        "evidence": ".local/resource-limits-20261112/keycloak-final-snapshot.json"
+      }
+    ],
+    "recovery": "If this budget proves insufficient, stop the same authentication container, raise both limits to 4g, start and verify readiness/authentication/OOM. In this Docker version update with memory=0/swap=0 preserves the limits; it does not clear them.",
+    "references": [
+      "https://www.keycloak.org/server/containers#_specifying_different_memory_settings",
+      "https://docs.docker.com/engine/containers/resource_constraints/#--memory-swap-details"
+    ]
+  },
+  "regressionWorkspace": {
+    "defaultParent": ".local/evidence/runtime-regression",
+    "parentOverride": "MIY_RUNTIME_REGRESSION_DIR",
+    "hostTmpFilesystem": "tmpfs",
+    "binaryHashing": "Streaming SHA-256; no whole-binary read_bytes allocation.",
+    "retention": "Cleanup reproducible binaries, image build inputs/archives, disposable app artifacts and private fixtures after success, failure or SIGINT/SIGTERM. Keep logs, results, identities and immutable per-attempt cleanup summaries.",
+    "safety": "Private owned root, exclusive lock, process-group reaping, live process/bind-mount checks, symlink refusal and explicit payload allowlist.",
+    "debugOverride": "MIY_RUNTIME_KEEP_WORK=1",
+    "sigkill": "NOT automatic; inspect the owned run and explicitly retry cleanup.",
+    "command": "env -u MIY_RUNTIME_KEEP_WORK -u MIY_RUNTIME_REGRESSION_DIR PATH=\"/home/dwdcc/.cargo/bin:$PATH\" python3 scripts/runtime-regression/run.py",
+    "attempts": [
+      {
+        "status": "FAIL",
+        "evidenceDirectory": ".local/evidence/runtime-regression/miy-runtime-regression-f649pefi/evidence",
+        "runnerResult": {
+          "testExitCode": 101,
+          "cleanupExitCode": 0,
+          "exitCode": 101
+        },
+        "passedObservations": 3,
+        "explanation": "FAIL: unchanged Docker storage guard refused image import at 132.53GiB available / 14.15%, below the 15% floor. Removed inactive reproducible Rust incremental cache; did not change the guard.",
+        "cleanup": {
+          "status": "PASS",
+          "errors": [],
+          "removedPayloadBytes": 712583407,
+          "baselineContainers": 42,
+          "baselineUnchanged": true,
+          "retainedBytes": 415163
+        }
+      },
+      {
+        "status": "FAIL",
+        "evidenceDirectory": ".local/evidence/runtime-regression/miy-runtime-regression-rmbakuym/evidence",
+        "runnerResult": {
+          "testExitCode": 101,
+          "cleanupExitCode": 0,
+          "exitCode": 101
+        },
+        "passedObservations": 7,
+        "explanation": "FAIL: an initial runner-wide umask 077 made fixture directories/files unreadable to the non-root app container. Removed the global umask while retaining the private 0700 work root and 0600 private environment; added a fixture-permission regression test.",
+        "cleanup": {
+          "status": "PASS",
+          "errors": [],
+          "removedPayloadBytes": 712584144,
+          "baselineContainers": 42,
+          "baselineUnchanged": true,
+          "retainedBytes": 422619
+        }
+      },
+      {
+        "status": "PASS",
+        "evidenceDirectory": ".local/evidence/runtime-regression/miy-runtime-regression-_kyuv10d/evidence",
+        "runnerResult": {
+          "testExitCode": 0,
+          "cleanupExitCode": 0,
+          "exitCode": 0
+        },
+        "passedObservations": 129,
+        "explanation": "PASS: final source; all 129 observations and cleanup passed.",
+        "cleanup": {
+          "status": "PASS",
+          "errors": [],
+          "removedPayloadBytes": 712587658,
+          "baselineContainers": 42,
+          "baselineUnchanged": true,
+          "retainedBytes": 571198
+        }
+      }
+    ],
+    "finalSuites": {
+      "runtime": 46,
+      "operations": 6,
+      "cli": 6,
+      "auth": 8,
+      "permissions": 24,
+      "delegation": 10,
+      "boundary": 12,
+      "migration": 3,
+      "frames": 14
+    },
+    "legacyCleanup": {
+      "status": "PASS",
+      "evidence": ".local/resource-limits-20261112/legacy-artifacts-cleanup.json",
+      "removedFileCount": 12,
+      "removedAllocatedBytes": 2137669632,
+      "checks": "Exact 12 regular files, uid/device/inode/hash checks, full /proc references and Docker mounts; no active or unreadable process references.",
+      "preserved": "All log/JSON evidence and directories; only twelve explicitly listed binaries/image archives removed",
+      "remainingLegacyDirectories": 4,
+      "remainingLegacyBytes": 1913420
+    },
+    "incrementalCacheCleanup": {
+      "status": "PASS",
+      "path": "/projects/miy-v2/target/debug/incremental",
+      "files": 13694,
+      "purpose": "Restore the unchanged Docker free-space floor by deleting only reproducible inactive Rust incremental cache; compiled executables and evidence retained.",
+      "allocatedBytesByPath": 21347995648,
+      "note": "Per-path allocated bytes can count shared hardlinks more than once; do not report this as exact filesystem space reclaimed.",
+      "after": {
+        "dockerAvailableGiB": 149.7,
+        "dockerAvailablePercent": 15.98
+      }
+    }
+  },
+  "validation": [
+    {
+      "status": "PASS",
+      "command": "python3 scripts/runtime-regression/test_cleanup.py",
+      "tests": 15,
+      "evidence": ".local/evidence/runtime-memory-cleanup-2026-11-12/unit-final-5.log"
+    },
+    {
+      "status": "FAIL",
+      "command": "Fixture-permission regression against the initial global umask implementation",
+      "evidence": ".local/evidence/runtime-memory-cleanup-2026-11-12/fixture-permissions-before-fix.log",
+      "followUp": "Fixed and included in the final 15 passing tests; failure evidence retained."
+    },
+    {
+      "status": "PASS",
+      "command": "python3 -m py_compile scripts/runtime-regression/run.py scripts/runtime-regression/cleanup.py scripts/runtime-regression/workdir.py scripts/runtime-regression/test_cleanup.py"
+    },
+    {
+      "status": "PASS",
+      "command": "bash scripts/check-static.sh scripts",
+      "evidence": ".local/resource-limits-20261112/static-scripts-final.log"
+    },
+    {
+      "status": "PASS",
+      "command": "python3 scripts/runtime-regression/run.py",
+      "observations": 129,
+      "evidence": ".local/resource-limits-20261112/runtime-regression-final.log",
+      "cleanupExitCode": 0
+    },
+    {
+      "status": "PASS",
+      "command": "node scripts/check-platform-connection.mjs --origin https://v2.dwdcc.kr --cli .local/release-bcb6356-checks/cli/miy --credentials-file <private-file> --output .local/resource-limits-20261112/platform-connection",
+      "scope": "Real OIDC, portal/dev portal/console sessions, CLI and MCP after the 2GiB live limit.",
+      "observations": 22,
+      "cleanupFailures": [],
+      "evidence": ".local/resource-limits-20261112/platform-connection/result.json"
+    }
+  ],
+  "notRun": [
+    {
+      "check": "Sustained high-concurrency authentication load",
+      "status": "NOT_RUN",
+      "reason": "This task verifies current development usage and connection flows; it does not establish production capacity."
+    },
+    {
+      "check": "GitHub CI, commit and push",
+      "status": "NOT_RUN",
+      "reason": "Local resource remediation and verification only."
+    },
+    {
+      "check": "Core/UI rebuild and deployment, DB migration",
+      "status": "NOT_RUN",
+      "reason": "No core/UI/schema change in this task."
+    }
+  ],
+  "finalChecks": [
+    {
+      "status": "PASS",
+      "command": "python3 scripts/check-doc-links.py",
+      "result": "838 relative links in 62 tracked Markdown files"
+    },
+    {
+      "status": "FAIL",
+      "command": "git diff --check",
+      "result": "Trailing whitespace on the updated CAPACITY date line; changed Markdown line-break syntax."
+    },
+    {
+      "status": "PASS",
+      "command": "git diff --check",
+      "result": "After the Markdown line-break fix."
+    },
+    {
+      "status": "PASS",
+      "command": "Final JSON, code/configuration SHA-256 and payload-retention assertions",
+      "result": "Only logs/results and small ownership/configuration evidence remain."
+    }
+  ]
+}

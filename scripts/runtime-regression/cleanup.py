@@ -6,8 +6,11 @@ import pathlib
 import re
 import subprocess
 import uuid
+from workdir import lock, process_users, prune, require
 
-root = pathlib.Path(os.environ["MIY_AUDIT_ROOT"]).resolve()
+root = pathlib.Path(os.environ["MIY_AUDIT_ROOT"])
+owner_lock = lock(root)
+require(not process_users(root.resolve()), 'workspace_process_still_running')
 ev = root / "evidence"
 removed, errors, notes = [], [], []
 
@@ -116,6 +119,16 @@ if baseline.exists():
         attempt("baseline " + b["Id"], compare)
 (ev / "after-containers.json").write_text(json.dumps(after, indent=2))
 summary = {"completedAt": datetime.datetime.now(datetime.timezone.utc).isoformat(), "removed": removed, "baselineComparison": comparisons, "notes": notes, "errors": errors}
+if os.environ.get('MIY_RUNTIME_KEEP_WORK') == '1':
+    summary['workspace'] = {'status': 'KEPT', 'reason': 'MIY_RUNTIME_KEEP_WORK=1'}
+else:
+    def remove_work():
+        summary['workspace'] = {'status': 'PASS', **prune(root, docker)}
+    summary['workspace'] = {'status': 'FAIL'}
+    attempt('workspace files', remove_work)
+summary['attemptFile'] = 'cleanup-' + datetime.datetime.now(datetime.timezone.utc).strftime('%Y%m%dT%H%M%S%fZ') + '.json'
+with (ev / summary['attemptFile']).open('x') as record:
+    json.dump(summary, record, indent=2)
 (ev / "cleanup.json").write_text(json.dumps(summary, indent=2))
 print(json.dumps(summary, indent=2))
 raise SystemExit(1 if errors else 0)

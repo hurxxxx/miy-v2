@@ -19,6 +19,10 @@ services:
       retries: 40
   keycloak:
     image: quay.io/keycloak/keycloak:26.8.1@sha256:79c623a22abacf3fe6c00a5fb30f5b7843d717b234033b80995891c06116d244
+    # Keycloak sizes its JVM heap from the container limit (initial 50%, max 70%).
+    # Bound the whole process and disable extra swap, including disposable UI stacks.
+    mem_limit: 2g
+    memswap_limit: 2g
     command: ["start", "--import-realm", "--features=resource-indicators"]
     environment:
       KC_DB: postgres
