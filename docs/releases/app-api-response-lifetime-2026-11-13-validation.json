@@ -1,0 +1,121 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-11-13",
+  "status": "PASS",
+  "scope": "Review follow-up for R01 response slot lifetime and historical/current R01/R02 documentation. Only the shared app_response Rust module changed; no deployment.",
+  "source": {
+    "baseCommit": "69a8170a4e0c828eab253f4c80459b7bf4ddb6b1",
+    "state": "uncommitted working tree on baseCommit; unrelated document/resource changes are preserved",
+    "files": {
+      "crates/miy/src/app_response.rs": "ce60533549edea8134b3e31a2d59b1aca555ee6827760b49abaaf706938ac2f7",
+      "crates/miy/src/runtime.rs": "32ee355341c9b45bfad22770fd09f11f401f014da9b830d705102a11832a70ec",
+      "crates/miy/src/preview.rs": "09aaeb6300f42e3cc0d979b360c82045db6ffa3e9f64bf8344bbad9ecfc3b705",
+      "Cargo.lock": "5c0ef7e9a21bbb59d905312d8627de7640de13abc58dccbc4ee6ad3c0b0efbd8",
+      "docs/reviews/CORE-PLATFORM-READINESS-2026-11-13.md": "4e52545dbeee488d561accaaf25e1728bbc4a7d074230e89b47c5e80732c68c5",
+      "docs/CAPACITY.md": "05c6901198290ba445758254c3705a1e976c787ec33ad38f1fd2bb70b5b53949",
+      "docs/PLAN.md": "04a3eea063ea115f5a6d2b542d96ab8fe499356a8781a900daad27685b18d16f"
+    }
+  },
+  "changes": [
+    "app_response::read returns Bytes whose owner holds the Vec allocation and semaphore permit; Body handoff, Bytes clones and slices retain the permit until the last owner releases the allocation",
+    "The per-process limit remains 64 buffered responses and the per-response limit remains 4 MiB; wait remains 10 seconds with existing app/preview_gateway_busy codes",
+    "Geometric reserve_exact growth is clamped to the body limit instead of allowing Vec growth to double past it",
+    "Six new regression tests cover response/transport lifetime, bounded concurrency, actual slow TCP, wait timeout, cancellation and failed collection; three existing tests are retained",
+    "The single readiness review separates d1e564c findings, 69a8170 implementation and this working tree; the historical Node probe reads the pinned d1e564c source",
+    "CAPACITY and PLAN distinguish this verified source change from the deployed development server"
+  ],
+  "checks": [
+    {
+      "command": "cargo test -p miy --locked app_response -- --nocapture",
+      "status": "PASS",
+      "result": "9 passed; 0 failed; 204 filtered out",
+      "scenarios": [
+        "4 MiB success and 4 MiB + 1 rejection, declared length and chunked HTTP responses",
+        "64 completed unread response Bodies retain all slots; the 65th read waits and resumes after one is dropped",
+        "A data frame retains its slot after Body EOF/drop until the last Bytes clone or nonempty slice is dropped",
+        "Slot wait timeout and waiting-future cancellation preserve capacity for app and preview",
+        "Cancellation during upstream collection releases the slot",
+        "Upstream body failure and streamed oversize release the slot for app and preview",
+        "Real loopback TCP with 4096-byte send/receive buffers: unread 4 MiB response holds a slot, another response is busy, disconnect frees it, and a normal client then receives all 4 MiB",
+        "Existing FromApp marker and API document security headers remain intact"
+      ]
+    },
+    {
+      "command": "bash scripts/check-static.sh rust",
+      "exitCode": 0,
+      "status": "PASS",
+      "elapsedSeconds": 29.48,
+      "result": "fmt; clippy server/client with -D warnings; server 206 passed, 7 ignored; client 127 passed; source bundle portability and 18 transaction/6 writer static checks",
+      "log": ".local/evidence/app-api-lifetime-jabtem09/rust-static.log"
+    },
+    {
+      "command": "pinned historical Node reproduction extracted from docs/reviews/CORE-PLATFORM-READINESS-2026-11-13.md",
+      "source": "d1e564c:web/frame-runtime/src/main.tsx",
+      "status": "PASS",
+      "exitCode": 0,
+      "stdout": "{\"sentRequests\":2,\"identicalBodies\":true,\"renewals\":1}",
+      "stderr": "",
+      "scope": "Historical behavior only; not a PASS for the current frame runtime"
+    },
+    {
+      "command": "Compare the prior app-api-limits validation JSON with HEAD via git show",
+      "status": "PASS",
+      "result": "Prior validation file unchanged; its historical claims/results are preserved."
+    },
+    {
+      "command": "python3 scripts/check-doc-links.py",
+      "status": "PASS",
+      "exitCode": 0,
+      "stdout": "PASS 909 relative links in 62 tracked Markdown files",
+      "stderr": "",
+      "scope": "Temporary Git index includes the existing uncommitted documentation moves and the reviewed source; real index untouched."
+    },
+    {
+      "command": "git diff --cached --check",
+      "status": "PASS",
+      "exitCode": 0,
+      "stdout": "",
+      "stderr": "",
+      "scope": "Temporary Git index includes the existing uncommitted documentation moves and the reviewed source; real index untouched."
+    },
+    {
+      "command": "Compare real Git index entries before/after temporary-index checks",
+      "status": "PASS",
+      "result": "Unchanged"
+    }
+  ],
+  "priorReview": {
+    "baseCommit": "69a8170",
+    "permitProbe": "65 completed 1 KiB response Bodies retained at once (66560 bytes); 65th read completed, confirming premature permit release",
+    "historicalProbeBeforeFix": {
+      "status": "FAIL",
+      "error": "ReferenceError: CREDENTIAL_REFUSED is not defined",
+      "reason": "The old reproduction extracted the current call() without its new external constant; it now reads d1e564c explicitly"
+    },
+    "localEvidence": ".local/evidence/app-api-review-ps_vtwy0/review-result.json",
+    "preservedValidation": "docs/releases/app-api-limits-2026-11-13-validation.json"
+  },
+  "notRun": [
+    {
+      "check": "Full Docker/PostgreSQL integration, including runtime-regression/run.py (129 observations) and the 7 service-dependent ignored Rust tests",
+      "reason": "This follow-up changes response buffer ownership only; no authentication, policy, DB, deployment or image-loading changes. Current Rust suite and real TCP regression ran; prior runtime PASS is not transferred."
+    },
+    {
+      "check": "Browser/OIDC/Windows/full new-server acceptance",
+      "reason": "No browser, authentication or installer source changes in this follow-up; their prior results are not transferred."
+    },
+    {
+      "check": "Host RSS load test and cross-app/management API availability under saturation",
+      "reason": "The new tests exercise buffer ownership and one deliberately slow TCP connection, not total process memory or aggregate availability."
+    },
+    {
+      "check": "Commit, push, release publication and development-server deployment",
+      "reason": "Not requested in this turn; no live services or DB were changed."
+    }
+  ],
+  "limits": [
+    "The slots cover buffered response payloads, not request bodies, pending upstream connections, HTTP/socket/allocator buffers or total RSS.",
+    "Slow clients can occupy all slots; app-level fairness and downstream write deadlines remain outside this change."
+  ],
+  "statusMeaning": "The listed executed checks passed for this source snapshot; NOT_RUN scopes and historical FAILs remain explicitly separate."
+}
