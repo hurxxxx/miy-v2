@@ -1,6 +1,8 @@
 # 구현과 검증 결과
 
-> 실행 이력 전용. 각 절의 날짜·소스·버전 범위에서만 유효하다. 현재 설계·전환·새 인수는 [APP-BOUNDARIES](APP-BOUNDARIES.md)를 따른다. 과거 MF·같은 출처·iframe 없는 실행 결과를 새 경계의 통과 근거로 이월하지 않는다.
+> 보관 기록 — 아래 결과는 실행 당시의 소스·환경 범위에만 적용한다. 현재 상태·순서는 [PLAN](../../PLAN.md), 현재 검사는 [CHECKS](../../CHECKS.md)를 따른다.
+
+> 실행 이력 전용. 각 절의 날짜·소스·버전 범위에서만 유효하다. 현재 설계·전환·새 인수는 [APP-BOUNDARIES](../../APP-BOUNDARIES.md)를 따른다. 과거 MF·같은 출처·iframe 없는 실행 결과를 새 경계의 통과 근거로 이월하지 않는다.
 
 ## 사내 최소 경계의 기존 서버 배포 (2026-11-07)
 
@@ -10,7 +12,7 @@
 
 첫 시도는 Nginx 재적재 직후 아직 이전 프로세스가 응답하는 것을 접속 제한 실패로 판단해 DB 변경 전에 자동 복귀했다. 두 주소의 실제 503 준비 상태를 기다리도록 보완하고 새 시도로 배포했다. 최종 접속 제한은 약 22초(11:44:14~11:44:36 KST)였으며 실패 기록과 복구 자료를 보존했다.
 
-배포 후 일반 OIDC·콘솔 SSO·게시 CLI 승인/doctor·생성 stdio MCP·검사용 세션 정리 20개 검사를 통과했다. 접근 가능한 실행 중 dev 앱 2개의 MF 화면·iframe 없음·뒤로/앞으로·새로고침과 자산 63건의 HTTP 200을 확인했다. 콘솔에는 앱 콘텐츠 요청·브라우저 오류가 없고 포털 관리 API는 403이었다. Windows 11 실제 설치, 별도 외부 PC의 9443 접속, 기존 외부 OAuth MCP 재인증, 모든 기존 기기의 worker 정리와 실제 운영 DB 복구 실행은 `NOT_RUN`이다. 상세 명령·CI·실패·복구 경로는 [배포 기록](releases/internal-minimum-security-2026-11-07-deployment.json)에 있다.
+배포 후 일반 OIDC·콘솔 SSO·게시 CLI 승인/doctor·생성 stdio MCP·검사용 세션 정리 20개 검사를 통과했다. 접근 가능한 실행 중 dev 앱 2개의 MF 화면·iframe 없음·뒤로/앞으로·새로고침과 자산 63건의 HTTP 200을 확인했다. 콘솔에는 앱 콘텐츠 요청·브라우저 오류가 없고 포털 관리 API는 403이었다. Windows 11 실제 설치, 별도 외부 PC의 9443 접속, 기존 외부 OAuth MCP 재인증, 모든 기존 기기의 worker 정리와 실제 운영 DB 복구 실행은 `NOT_RUN`이다. 상세 명령·CI·실패·복구 경로는 [배포 기록](../../releases/internal-minimum-security-2026-11-07-deployment.json)에 있다.
 
 
 ## 사내 최소 경계 구현 (2026-11-06, 작업본)
@@ -19,19 +21,19 @@
 
 Rust 서버187·클라이언트118, 통합 회귀112(schema19→20 보존 포함), 실제 Core UI7·전체 스택6, 새 CLI HTTP/HTTPS 각12·게시 CLI01e4d49와 새 서버 HTTPS12, CLI 출력15·설치17·복구7, shared DB/WS16·서버 빌드API8그룹을 검사했다. UI mock36·경계11·CLI14·HTTP1과 마지막 AppView 관련17개 재검사를 구분한다. 중복 보안 헤더·CLI 관리 상세 누락·구 테스트 가정은 보완했고 최초 FAIL을 보존했다.
 
-운영·Git 게시·기존 SDK/번들·사용자 Windows 환경은 변경하지 않았다. 기존 운영 backup/restore·issuer/MCP 재인증·기기 worker 정리·인증서 교체와 전체 native UI/Windows 인수는 별도다. 명령·환경·바이너리 출처·관찰·실패/NOT_RUN은 [구조화 검증 기록](releases/internal-minimum-security-implementation-2026-11-06-validation.json)에 있다.
+운영·Git 게시·기존 SDK/번들·사용자 Windows 환경은 변경하지 않았다. 기존 운영 backup/restore·issuer/MCP 재인증·기기 worker 정리·인증서 교체와 전체 native UI/Windows 인수는 별도다. 명령·환경·바이너리 출처·관찰·실패/NOT_RUN은 [구조화 검증 기록](../../releases/internal-minimum-security-implementation-2026-11-06-validation.json)에 있다.
 
 ## 코어 안정화 2차 — 설치 승인·사용자 위임·앱 호출 (2026-11-03)
 
 구현 `5802c96`은 CLI/core 0.7.0, 번들 0.8.0, Rust SDK 0.3.0이다. 설치/릴리스별 명시 승인과 변경 이력·CAS, 앱/환경/행위/만료가 제한된 사용자 위임, 작업 큐의 원래 위임 보존, 원래 사용자와 모든 호출 단계의 권한을 유지하는 짧은 수명의 Core 증표를 구현했다. SDK 갱신은 기존 앱 코드·SQL과 SDK 외 기존 의존성을 보존한다. miy-v1과 UI 이식은 포함하지 않는다.
 
-서버 단위159개(ignored6), 클라이언트113개, SDK5개와 fmt·양쪽 Clippy, 격리 PostgreSQL/HTTP/Docker70개 관찰, 서버 빌드 API8그룹, CLI/MCP 안내·기존 번들 전환5개 관찰을 검증했다. 추가 리뷰에서 preview의 body 대기 중 철회, 다른 개발 세션 종료, 만료 증표의 한도 집계, 빌드 이력 조회 뒤 권한 재검사 경계를 보완했다. [권한 계약·전환과 실행 한계](CORE-PERMISSIONS.md), [구조화 검증 기록](releases/core-permissions-2026-11-03-validation.json)을 따른다.
+서버 단위159개(ignored6), 클라이언트113개, SDK5개와 fmt·양쪽 Clippy, 격리 PostgreSQL/HTTP/Docker70개 관찰, 서버 빌드 API8그룹, CLI/MCP 안내·기존 번들 전환5개 관찰을 검증했다. 추가 리뷰에서 preview의 body 대기 중 철회, 다른 개발 세션 종료, 만료 증표의 한도 집계, 빌드 이력 조회 뒤 권한 재검사 경계를 보완했다. [권한 계약·전환과 실행 한계](../../CORE-PERMISSIONS.md), [구조화 검증 기록](../../releases/core-permissions-2026-11-03-validation.json)을 따른다.
 
-실제 운영 서버·migration·게시 CLI는 변경하지 않았다. 기존 설치의 외부 호출을 자동 승인하지 않으므로 운영 적용에는 설치/릴리스별 승인 전환이 필요하다. Windows 사용자 실행, 실제 운영 Docker 네트워크의 SDK 후속 호출, 서비스 계정, 진행 중 부작용 강제 롤백은 이번 완료 범위가 아니다. 이후 2026-11-03 사용자 결정으로 [기본 UI/UX 이식](archive/UIUX-MIGRATION-UI1-5.md)을 진행했다. UI-1~5의 구현·검증 및 후속 리뷰는 해당 문서, 웹 화면만 반영한 이력은 [운영 안내](SERVER-OPERATIONS.md)를 따른다. 전체 서버 자원 예산과 실행 허용 판단 등 남은 운영 기반은 [코어 안정화 계획](CORE-HARDENING.md)에서 계속 추적한다.
+실제 운영 서버·migration·게시 CLI는 변경하지 않았다. 기존 설치의 외부 호출을 자동 승인하지 않으므로 운영 적용에는 설치/릴리스별 승인 전환이 필요하다. Windows 사용자 실행, 실제 운영 Docker 네트워크의 SDK 후속 호출, 서비스 계정, 진행 중 부작용 강제 롤백은 이번 완료 범위가 아니다. 이후 2026-11-03 사용자 결정으로 [기본 UI/UX 이식](../UIUX-MIGRATION-UI1-5.md)을 진행했다. UI-1~5의 구현·검증 및 후속 리뷰는 해당 문서, 웹 화면만 반영한 이력은 [운영 안내](../../SERVER-OPERATIONS.md)를 따른다. 전체 서버 자원 예산과 실행 허용 판단 등 남은 운영 기반은 [코어 안정화 계획](../../CORE-HARDENING.md)에서 계속 추적한다.
 
 ## 코어 안정화 1차 (2026-11-03)
 
-miy-v1과 UI 이식에 앞서 worker의 제어·빌드 실행을 분리하고 DB 준비의 typed 오류를 보존했다. 구현 `9967265`는 서버 단위152개(ignored6), 클라이언트110개, fmt·양쪽 Clippy와 실제 격리 PostgreSQL/Docker58개 관찰을 통과했다. 빌드 복구 잠금 대기, 소유권 유실 후 워커 교체, SIGTERM 종료와 잠금 해제를 확인했다. [상세 결과·한계](CORE-HARDENING.md)와 [구조화 증거](releases/core-hardening-2026-11-03-validation.json)를 보존한다. 실제 장기 컴파일 중 지연 측정과 권한·자원·백업 등 2~5차는 후속이며 운영 서버 재배포는 수행하지 않았다.
+miy-v1과 UI 이식에 앞서 worker의 제어·빌드 실행을 분리하고 DB 준비의 typed 오류를 보존했다. 구현 `9967265`는 서버 단위152개(ignored6), 클라이언트110개, fmt·양쪽 Clippy와 실제 격리 PostgreSQL/Docker58개 관찰을 통과했다. 빌드 복구 잠금 대기, 소유권 유실 후 워커 교체, SIGTERM 종료와 잠금 해제를 확인했다. [상세 결과·한계](../../CORE-HARDENING.md)와 [구조화 증거](../../releases/core-hardening-2026-11-03-validation.json)를 보존한다. 실제 장기 컴파일 중 지연 측정과 권한·자원·백업 등 2~5차는 후속이며 운영 서버 재배포는 수행하지 않았다.
 
 ## main 통합·Windows 준비·독립 AI 개발 인수 (2026-11-02)
 
@@ -41,17 +43,17 @@ Linux의 독립 Codex·Claude가 각각 새 비품대장을 구현하고 v1→v2
 
 ## 현재 서버의 CLI·MCP 연결 재확인 (2026-11-02)
 
-현재 호스트는 `https://v2.dwdcc.kr`의 플랫폼 서버이며 서버·게시 CLI 0.6.3 / 번들 0.7.1을 사용한다. `main`의 0.6.0 소스를 재배포하지 않고 기존 0.6.3의 실제 연결을 확인했다. 배포 소스는 `8d7d04271f9467d8bbdd16308e73715b33e4dc0c`이며 [현재 서버 운영 안내](SERVER-OPERATIONS.md)에 주소·서비스·배포 소스 경계를 기록했다.
+현재 호스트는 `https://v2.dwdcc.kr`의 플랫폼 서버이며 서버·게시 CLI 0.6.3 / 번들 0.7.1을 사용한다. `main`의 0.6.0 소스를 재배포하지 않고 기존 0.6.3의 실제 연결을 확인했다. 배포 소스는 `8d7d04271f9467d8bbdd16308e73715b33e4dc0c`이며 [현재 서버 운영 안내](../../SERVER-OPERATIONS.md)에 주소·서비스·배포 소스 경계를 기록했다.
 
 일반 IdP 개발자 로그인, 같은 브라우저 계정의 CLI device 승인, auth status·operate 진단, 생성 프로젝트 stdio MCP의 계약/API/컴포넌트/도움말 대조와 자기 세션 정리까지 **17개 확인을 통과**했다. CLI5종·helper2종과 Windows 설치 파일을 실제 다운로드해 게시 hash와 대조했고, Unix 임시 설치의 서버 등록도 확인했다. 서비스 PID·시작 시각·재시작 횟수와 기존 컨테이너23개, 앱·릴리스·설치·배포/업로드/빌드 작업·migration 수를 전후 보존했다.
 
-[비밀값 없는 실행 증거](releases/platform-server-2026-11-02-validation.json)에 실제 CLI·서버 바이너리 hash, 검사기 파일 hash, 개별 확인과 미실행 범위를 남겼다. 다른 PC의 인수, 독립 AI 실행, 인증된 직접 HTTP MCP 도구, OAuth callback 재사용과 앱 재배포는 이번 실행 범위가 아니다. 현재 공유 개발 로그인은 명시적으로 켜져 있으며 일반 사용자별 운영 전환 시 별도로 관리한다.
+[비밀값 없는 실행 증거](../../releases/platform-server-2026-11-02-validation.json)에 실제 CLI·서버 바이너리 hash, 검사기 파일 hash, 개별 확인과 미실행 범위를 남겼다. 다른 PC의 인수, 독립 AI 실행, 인증된 직접 HTTP MCP 도구, OAuth callback 재사용과 앱 재배포는 이번 실행 범위가 아니다. 현재 공유 개발 로그인은 명시적으로 켜져 있으며 일반 사용자별 운영 전환 시 별도로 관리한다.
 
 아래 구현 결과는 각 시점의 이력이다.
 
 다음 이전 기록의 코드 기준은 CLI 0.4.2 / 개발 번들 0.6.1이다. [에이전트 진입 안내 보완](#에이전트-진입-안내-보완-2026-10-23-cli-042--bundle-061)과 [런타임 관찰·앱 실행 경계 보완](#런타임-관찰과-앱-실행-경계-보완-2026-10-24)까지의 구현 이력을 유지하며, 이후 변경은 [CLI 0.5 기반 구현](#cli-05-기반-구현-착수-2026-10-27)과 [공통 출력·오류](#cli-공통-출력과-오류-계약-2026-10-27)에 기록한다. 아래 실행 상태와 검증 결과는 각 기록일 기준이며 현재 서버의 가동 상태를 뜻하지 않는다.
 
-2026-10-27에 합의한 [CLI 0.5·Windows 지원 계획](CLI-IMPLEMENTATION-PLAN.md)은 첫 OS·빌드 기반 구현에 착수했다. 전체 0.5 기능·Windows 지원은 미완료이며 [기반 구현 기록](#cli-05-기반-구현-착수-2026-10-27)을 따른다. 다른 환경에서 이어갈 기준 코드와 기존 검사 결과는 [개발 인계](archive/CLI-HANDOFF.md)를 따른다.
+2026-10-27에 합의한 [CLI 0.5·Windows 지원 계획](../cli/CLI-0.5-IMPLEMENTATION-PLAN.md)은 첫 OS·빌드 기반 구현에 착수했다. 전체 0.5 기능·Windows 지원은 미완료이며 [기반 구현 기록](#cli-05-기반-구현-착수-2026-10-27)을 따른다. 다른 환경에서 이어갈 기준 코드와 기존 검사 결과는 [개발 인계](../CLI-HANDOFF.md)를 따른다.
 
 당시 실행 상태(2026-10-22 플랫폼·CLI 개선 후): 앱 `my-cli-test`는 메모 0.1.1에서 메모·할 일 0.2.0으로 dev 업데이트됐으며 prod 설치는 없다. 아래 [독립 Codex 세션 재검토](#독립-codex-세션-재검토-2026-10-22)와 [할 일 추가 요청 검토](#할-일-추가-요청과-업데이트-배포-검토)에 실제 실행 상태와 보완점을 기록했다. 이후 플랫폼·CLI에 적용한 수정은 [운영 개선 결과](#플랫폼cli-운영-개선-cli-040--bundle-060)를 따른다.
 
@@ -67,7 +69,7 @@ Linux의 독립 Codex·Claude가 각각 새 비품대장을 구현하고 v1→v2
 
 Rust 코어·인증·API/MCP·앱 등록 정보, 별도 DB 실행기, React 플랫폼과 런타임 UI 로더를 구현했다. 대상은 로컬 Docker 기반의 V0~V1이며, 제품 전체와 앱 OCI 배포를 완료한 결과는 아니다.
 
-구현 전 문서·아키텍처·검증 계획은 원격 `main`의 체크포인트 `3cecbe1`에 보존했다. 실행 방법은 [RUNNING](RUNNING.md), 요구 범위는 [IMPLEMENTATION](archive/IMPLEMENTATION-V0-V1.md)을 따른다.
+구현 전 문서·아키텍처·검증 계획은 원격 `main`의 체크포인트 `3cecbe1`에 보존했다. 실행 방법은 [RUNNING](../../RUNNING.md), 요구 범위는 [IMPLEMENTATION](../IMPLEMENTATION-V0-V1.md)을 따른다.
 
 ## 확인한 동작
 
@@ -438,7 +440,7 @@ Rust 단위 검사 12개, Clippy 경고 금지, 포맷·TypeScript 검사와 양
 
 최종 실행 증거는 `.local/evidence/operations/mvjnmndy/`의 result.json, mcp-and-startup.json, 개별 명령 로그다. 합성 앱·설치·DB·권한·등록과 preview 컨테이너·볼륨은 종료 후 정리했다. 기존 설치의 릴리스·이미지가 검사 전후 같음을 확인했다. 사용자 목록에는 기존 my-cli-test dev 0.2.0만 유지한다.
 
-전역 CLI를 0.4.0으로 설치했고 플랫폼 코어에는 추가 migration 0007과 변경을 반영했다. 플랫폼 자체 코드 반영을 위해 코어 서비스를 재시작했으며, 그 후 합성 앱 배포 중에는 core PID가 유지됨을 별도로 검증했다. 기존 프로젝트의 동봉 CLI·SDK는 그대로 두었으므로 새 SDK 기능은 [명시적 업그레이드](RUNNING.md#호환-도구-갱신과-이전-이름) 후 사용할 수 있다. 다른 OS/CPU 검증이나 새로운 Codex 업무 앱 생성은 이번 작업 범위가 아니다.
+전역 CLI를 0.4.0으로 설치했고 플랫폼 코어에는 추가 migration 0007과 변경을 반영했다. 플랫폼 자체 코드 반영을 위해 코어 서비스를 재시작했으며, 그 후 합성 앱 배포 중에는 core PID가 유지됨을 별도로 검증했다. 기존 프로젝트의 동봉 CLI·SDK는 그대로 두었으므로 새 SDK 기능은 [명시적 업그레이드](../../RUNNING.md#호환-도구-갱신과-이전-이름) 후 사용할 수 있다. 다른 OS/CPU 검증이나 새로운 Codex 업무 앱 생성은 이번 작업 범위가 아니다.
 
 ## CLI 사용법 스킬과 버전 동기화 (2026-10-23, CLI 0.4.1)
 
@@ -452,7 +454,7 @@ Rust 단위 검사 12개, Clippy 경고 금지, 포맷·TypeScript 검사와 양
 
 `scripts/check-cli-guidance.mjs`에서 새 프로젝트 생성, 실제 --help와 생성 참조의 일치, JSON/Markdown/stdio MCP의 버전·내용 일치, 두 에이전트 파일 일치, 문서 수정 거부·누락 복구·반복 setup을 통과했다. 별도 0.4.0 CLI / bundle 0.6 프로젝트에서 0.4.1 전환을 검사했고, 미커밋 업무 수정과 SDK 보호 파일을 보존했다. 관리 스킬과 충돌하는 파일이 있으면 실행 파일 교체 전 거부했고, 같은 SDK의 app upgrade도 실제 동봉 CLI를 갱신했다. 로컬 개발 로그인·컴포넌트 설치 후 전체 app check도 통과했다. 앱 등록·배포는 수행하지 않았다.
 
-Rust 단위 검사 17개(기존 장기 DB 통합 1개 제외), Clippy 경고 금지, fmt, 생성된 양쪽 스킬 형식 검사를 통과했다. 증거는 `.local/evidence/cli-guidance/mvk5b9l9/`다. 기존 사용자 앱 소스·SDK·배포는 유지했다. 전역 CLI는 0.4.1로 갱신했으며 기존 프로젝트 도구는 자동 변경하지 않는다. 실행 방법은 [CLI 스킬·매뉴얼 동기화](RUNNING.md#호환-도구-갱신과-이전-이름)를 따른다.
+Rust 단위 검사 17개(기존 장기 DB 통합 1개 제외), Clippy 경고 금지, fmt, 생성된 양쪽 스킬 형식 검사를 통과했다. 증거는 `.local/evidence/cli-guidance/mvk5b9l9/`다. 기존 사용자 앱 소스·SDK·배포는 유지했다. 전역 CLI는 0.4.1로 갱신했으며 기존 프로젝트 도구는 자동 변경하지 않는다. 실행 방법은 [CLI 스킬·매뉴얼 동기화](../../RUNNING.md#호환-도구-갱신과-이전-이름)를 따른다.
 
 ## 에이전트 진입 안내 보완 (2026-10-23, CLI 0.4.2 / bundle 0.6.1)
 
@@ -479,7 +481,7 @@ HTTP 상태 검사를 단일 제어 큐에서 분리했다. worker에 종속된 
 - Docker 모의 실행으로 준비 실패 3개 지점, DB가 없는 상태의 정리, 기록되지 않은 이미지 정리와 반복 실행을 통과했다.
 - Rust 단위 검사 19개, TypeScript, fmt, Clippy 경고 금지, diff 검사를 통과했다. 기본 Rust 실행에서 제외되는 기존 공유 DB 통합 검사 1개는 재실행하지 않았고, 격리 회귀 및 자식 worker 검사는 전용 실행기로 수행했다.
 
-실제 회귀 증거는 `.local/evidence/runtime-boundaries/miy-runtime-regression-fb87f84_/`의 results.jsonl·cleanup.json이다. UI 증거는 `.local/evidence/runtime-health-ui/results/`에 있다. 기존 실행 서비스와 사용자 앱 소스는 유지했으며 이번 변경을 현재 서버에 재배포하거나 migration 0008을 적용하지 않았다. 재현 명령은 [격리 런타임 회귀 안내](../scripts/runtime-regression/README.md)를 따른다.
+실제 회귀 증거는 `.local/evidence/runtime-boundaries/miy-runtime-regression-fb87f84_/`의 results.jsonl·cleanup.json이다. UI 증거는 `.local/evidence/runtime-health-ui/results/`에 있다. 기존 실행 서비스와 사용자 앱 소스는 유지했으며 이번 변경을 현재 서버에 재배포하거나 migration 0008을 적용하지 않았다. 재현 명령은 [격리 런타임 회귀 안내](../../../scripts/runtime-regression/README.md)를 따른다.
 
 
 ## CLI 0.5 기반 구현 착수 (2026-10-27)
@@ -568,7 +570,7 @@ Windows 전용 안내와 기반 구현을 `fbbd087`로 커밋·푸시한 뒤, 1B
 
 ## CLI 0.5 운영 계약 구현과 상세 검사 (2026-10-27)
 
-사용자 지시에 따라 공통 계약→context/인증→작업/업로드/로그→실행 전 검사→Windows/프로젝트 갱신·배포 준비 순서로 구현했다. 코드 버전은 **CLI 0.5.0 / bundle 0.6.2**다. 기존 서버를 재배포하거나 기존 서비스 DB에 migration을 적용한 결과가 아니다. [인계](archive/CLI-HANDOFF.md), [상세 검증](CLI-VALIDATION-MATRIX.md), [Windows 사용자 실행](WINDOWS-VALIDATION.md), [배포 후보](CLI-RELEASE.md)로 현재 절차를 나눠 관리한다.
+사용자 지시에 따라 공통 계약→context/인증→작업/업로드/로그→실행 전 검사→Windows/프로젝트 갱신·배포 준비 순서로 구현했다. 코드 버전은 **CLI 0.5.0 / bundle 0.6.2**다. 기존 서버를 재배포하거나 기존 서비스 DB에 migration을 적용한 결과가 아니다. [인계](../CLI-HANDOFF.md), [상세 검증](CLI-VALIDATION-MATRIX.md), [Windows 사용자 실행](WINDOWS-VALIDATION.md), [배포 후보](../../CLI-RELEASE.md)로 현재 절차를 나눠 관리한다.
 
 - 역할별 루트 명령과 프로젝트 밖 운영, JSON/JSONL envelope, 종료 코드, typed JSON 입력/fields, context·원격 목록 cursor, 선택형 describe/schema/completion/doctor를 연결했다. 이전 명령은 대체 경로를 안내하고 거부한다.
 - device/browser 승인, 전역 context/vault, access 15분·고정 30일 refresh family, 회전·동시 갱신·재사용 철회·logout/self sessions를 구현했다. Core users.enabled가 비활성화 기준이며 Keycloak 상태 자동 전파를 주장하지 않는다. 갱신 결과 유실은 이전 토큰 재사용 대신 재로그인을 요구한다.
@@ -617,4 +619,4 @@ Windows 전용 안내와 기반 구현을 `fbbd087`로 커밋·푸시한 뒤, 1B
 
 `0fe94a4b9d851e7cf71dc9c8e91fb469423134e2`의 [기본 CI 40460546995](https://github.com/hurxxxx/miy-v2/actions/runs/40460546995)는 Linux 서버·클라이언트, macOS, Windows MSVC, OS 간 번들 비교 **5개 job 모두 성공**했다. Linux 서버103개(외부3개 ignored), Linux 클라이언트91개, macOS89개, Windows87개 단위 검사를 통과했다. Windows debug 실행·출력10묶음까지 통과해 발견했던 스택 초과를 재확인했다. Linux 출력11묶음과 요청 복구6묶음은 1MiB 스택 제한으로 통과했다. 같은 clean commit의 실제 HTTP/PostgreSQL/Docker/CLI 통합52개 결과와 binary hash는 위 로컬 검사 및 [검증 행렬](CLI-VALIDATION-MATRIX.md)에 기록했다.
 
-같은 소스의 [5개 target release candidate CI 40460582868](https://github.com/hurxxxx/miy-v2/actions/runs/40460582868)도 candidate·native5개·aggregate 모두 성공했다. Linux x64/ARM64 단위 각91개·출력 각11묶음, macOS x64/ARM64 단위 각89개·출력 각11묶음, Windows x64 단위87개·출력10묶음을 통과했다. Windows PS5.1/7 설치기는 각각6시나리오를 통과했고, 다섯 번들의 hash가 일치했다. 아카이브·바이너리 hash, CPU, provenance, 소스 commit은 CI aggregate와 내려받은 파일의 로컬 verifier 양쪽에서 확인했다. [후보 artifact](https://github.com/hurxxxx/miy-v2/actions/runs/40460582868/artifacts/12715067551), [배포물별 SHA-256](releases/cli-0.5.0-candidate.json)을 보존한다. 공개 `publish` job은 명시한 `false`에 따라 SKIP했으며, Windows 11·별도 원격/실제 OIDC·독립 AI 인수는 여전히 미실행이다.
+같은 소스의 [5개 target release candidate CI 40460582868](https://github.com/hurxxxx/miy-v2/actions/runs/40460582868)도 candidate·native5개·aggregate 모두 성공했다. Linux x64/ARM64 단위 각91개·출력 각11묶음, macOS x64/ARM64 단위 각89개·출력 각11묶음, Windows x64 단위87개·출력10묶음을 통과했다. Windows PS5.1/7 설치기는 각각6시나리오를 통과했고, 다섯 번들의 hash가 일치했다. 아카이브·바이너리 hash, CPU, provenance, 소스 commit은 CI aggregate와 내려받은 파일의 로컬 verifier 양쪽에서 확인했다. [후보 artifact](https://github.com/hurxxxx/miy-v2/actions/runs/40460582868/artifacts/12715067551), [배포물별 SHA-256](../../releases/cli-0.5.0-candidate.json)을 보존한다. 공개 `publish` job은 명시한 `false`에 따라 SKIP했으며, Windows 11·별도 원격/실제 OIDC·독립 AI 인수는 여전히 미실행이다.

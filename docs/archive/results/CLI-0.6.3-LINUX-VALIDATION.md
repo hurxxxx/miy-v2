@@ -1,6 +1,8 @@
 # CLI 0.6.3 Linux 검증과 서버 반영 — 2026-10-29
 
-`https://v2.dwdcc.kr`의 API·worker·플랫폼 UI와 CLI/Windows 설치기 다운로드를 **0.6.3**으로 반영했다. SDK 번들은 **0.7.1**이다. 자동 검사는 통과했으며, 실제 IdP 정상 로그인과 그 로그인에서 소비한 OAuth 콜백의 재사용은 **NOT_RUN**으로 남긴다. [명령·종료 코드·해시·범위 JSON](releases/cli-0.6.3-linux-validation.json)을 함께 확인한다.
+> 보관 기록 — 아래 결과는 실행 당시의 소스·환경 범위에만 적용한다. 현재 상태·순서는 [PLAN](../../PLAN.md), 현재 검사는 [CHECKS](../../CHECKS.md)를 따른다.
+
+`https://v2.dwdcc.kr`의 API·worker·플랫폼 UI와 CLI/Windows 설치기 다운로드를 **0.6.3**으로 반영했다. SDK 번들은 **0.7.1**이다. 자동 검사는 통과했으며, 실제 IdP 정상 로그인과 그 로그인에서 소비한 OAuth 콜백의 재사용은 **NOT_RUN**으로 남긴다. [명령·종료 코드·해시·범위 JSON](../../releases/cli-0.6.3-linux-validation.json)을 함께 확인한다.
 
 ## 소스와 배포물
 
@@ -9,7 +11,7 @@
 - 기존 `/projects/miy-v2`의 추적 파일은 그대로 보존했다. 강제 reset, core SQL 변경·migrate·seed, Keycloak 초기화를 수행하지 않았다. 적용 SQL 15개는 이전 서버 `1775eac`과 바이트가 같다.
 - [CLI CI 40826960538](https://github.com/hurxxxx/miy-v2/actions/runs/40826960538): 다섯 CLI와 두 Linux helper 성공, publish 단계 skipped. Artifact `12876804133`을 내려받아 aggregate 전체를 다시 검증했다.
 - [Windows 설치기 CI 40830813012](https://github.com/hurxxxx/miy-v2/actions/runs/40830813012): workflow ref는 지정 브랜치, `installer_commit`과 `cli_commit`은 모두 `8d7d042…`, `cli_run_id=40826960538`. 정확한 CI Windows 행의 해시를 전달했다. Artifact `12878084842`의 내장 ZIP·PE·provenance를 Linux에서 재검증했다.
-- [CLI index](releases/cli-0.6.3-candidate.json)와 [설치기 index](releases/windows-installer-0.6.3-candidate.json)에 전체 해시를 보존한다. Windows 로컬 `0db21c3` 후보의 해시를 사용하지 않았다. 공개 GitHub Release/tag는 생성하지 않았다.
+- [CLI index](../../releases/cli-0.6.3-candidate.json)와 [설치기 index](../../releases/windows-installer-0.6.3-candidate.json)에 전체 해시를 보존한다. Windows 로컬 `0db21c3` 후보의 해시를 사용하지 않았다. 공개 GitHub Release/tag는 생성하지 않았다.
 
 | 파일 | SHA-256 |
 | --- | --- |
@@ -22,7 +24,7 @@
 
 ## 이번 Linux 실행 결과
 
-검사마다 빈 `MIY_CONFIG_DIR`를 사용했다. Windows의 앞선 검사 수를 이월하지 않았다. 아래 최종 명령은 모두 종료 코드 **0**이며, 정확한 argv와 실패했던 시도는 [Rust 명령](releases/evidence/cli-0.6.3-linux/rust-commands.json), [UI 명령](releases/evidence/cli-0.6.3-linux/ui-summary.json), [서버 반영·실제 브라우저 명령](releases/evidence/cli-0.6.3-linux/root-commands.jsonl)에 있다.
+검사마다 빈 `MIY_CONFIG_DIR`를 사용했다. Windows의 앞선 검사 수를 이월하지 않았다. 아래 최종 명령은 모두 종료 코드 **0**이며, 정확한 argv와 실패했던 시도는 [Rust 명령](../../releases/evidence/cli-0.6.3-linux/rust-commands.json), [UI 명령](../../releases/evidence/cli-0.6.3-linux/ui-summary.json), [서버 반영·실제 브라우저 명령](../../releases/evidence/cli-0.6.3-linux/root-commands.jsonl)에 있다.
 
 | 검사 | 결과 |
 | --- | --- |
@@ -38,13 +40,13 @@
 | CI Windows 설치기 / Linux 패키지 검사 | **24 / 19 PASS**. 사용자 Windows 11의 새 CI 파일 실행과 구분 |
 | 공개 다운로드 | CLI 5 + helper 2 = **7개**, 249,147,486 bytes 실제 다운로드·SHA-256 PASS. EXE도 별도 실제 다운로드·SHA-256 PASS |
 
-새 `device_status` 검사는 실제 격리 HTTP·PostgreSQL에서 실행됐다. 로그인 없는 요청 401, CLI bearer 403, 승인된 다른 사용자 404, `no-store`, 비밀·인증 코드 없는 정확한 5개 공개 필드를 검사했다. 같은 조건을 배포한 실제 서버에서도 다시 확인했다. 자연스럽게 5분이 지난 요청은 `expired`, `expiresIn=0`으로 관찰했다. [인증 증거](releases/evidence/cli-0.6.3-linux/rust-auth-coverage.json)를 보존한다.
+새 `device_status` 검사는 실제 격리 HTTP·PostgreSQL에서 실행됐다. 로그인 없는 요청 401, CLI bearer 403, 승인된 다른 사용자 404, `no-store`, 비밀·인증 코드 없는 정확한 5개 공개 필드를 검사했다. 같은 조건을 배포한 실제 서버에서도 다시 확인했다. 자연스럽게 5분이 지난 요청은 `expired`, `expiresIn=0`으로 관찰했다. [인증 증거](../../releases/evidence/cli-0.6.3-linux/rust-auth-coverage.json)를 보존한다.
 
 ## 서버 반영과 Todo 보존
 
 기존 서버 바이너리·UI·두 index·설정의 사본과 해시를 먼저 보존했다. 두 stage 도구로 소스 commit별 불변 디렉터리를 만들고 반복 실행의 동일성도 검사했다. 기존 systemd의 `miy-v2-serve`, `miy-v2-worker`만 중지한 뒤 CLI/installer index, 서버 바이너리, UI를 반영하고 다시 시작했다. 반영은 **2026-10-29 15:53:02–15:53:04 KST**에 수행했다. 실패 시 이전 파일로 되돌리는 절차를 준비했으며 rollback은 사용하지 않았다.
 
-`miy --version`은 `miy 0.6.3`, `/api/health`는 `{"status":"ok"}`, `/api/v1/cli/install`은 동일한 0.6.3/CLI commit/Windows ZIP·바이너리 해시를 반환한다. Nginx·systemd unit·runtime.env·server.json의 해시는 보존됐다. 기존 앱·PostgreSQL·Keycloak 컨테이너 7개의 ID·이미지·시작 시각도 동일하다. [반영 증거](releases/evidence/cli-0.6.3-linux/deployment.json), [보존 증거](releases/evidence/cli-0.6.3-linux/preservation-after.json).
+`miy --version`은 `miy 0.6.3`, `/api/health`는 `{"status":"ok"}`, `/api/v1/cli/install`은 동일한 0.6.3/CLI commit/Windows ZIP·바이너리 해시를 반환한다. Nginx·systemd unit·runtime.env·server.json의 해시는 보존됐다. 기존 앱·PostgreSQL·Keycloak 컨테이너 7개의 ID·이미지·시작 시각도 동일하다. [반영 증거](../../releases/evidence/cli-0.6.3-linux/deployment.json), [보존 증거](../../releases/evidence/cli-0.6.3-linux/preservation-after.json).
 
 대상 앱은 [기존 Todo dev URL](https://v2.dwdcc.kr/environments/dev/apps/todo-win-20261029)이다. 이번 작업에서는 앱 빌드·배포·버전 증가를 요청하지 않았다. 새 build/deploy job ID는 없으며 아래 기존 값이 전후 동일하다.
 
@@ -59,7 +61,7 @@
 
 DB schema generation/fingerprint, installation generation, Todo 생성·수정 시각까지 동일하다. 다른 앱 release나 DB를 변경하지 않았고 운영 승격도 하지 않았다.
 
-실제 화면: [데스크톱](releases/evidence/cli-0.6.3-linux/live-todo-desktop.png), [390px Todo](releases/evidence/cli-0.6.3-linux/live-todo-390px.png), [펼친 메뉴](releases/evidence/cli-0.6.3-linux/live-menu-390px.png), [만료 요청](releases/evidence/cli-0.6.3-linux/live-expired-request-390px.png), [이미 승인된 요청](releases/evidence/cli-0.6.3-linux/live-consumed-request-390px.png), [OAuth 실패 복구](releases/evidence/cli-0.6.3-linux/live-oauth-recovery-390px.png), [설치 안내](releases/evidence/cli-0.6.3-linux/live-install-guide-390px.png). 내장 Browser가 연결되지 않아 Linux Playwright Chromium을 사용했다. 입력한 인증 코드나 cookie를 화면·로그로 보존하지 않았다.
+실제 화면: [데스크톱](../../releases/evidence/cli-0.6.3-linux/live-todo-desktop.png), [390px Todo](../../releases/evidence/cli-0.6.3-linux/live-todo-390px.png), [펼친 메뉴](../../releases/evidence/cli-0.6.3-linux/live-menu-390px.png), [만료 요청](../../releases/evidence/cli-0.6.3-linux/live-expired-request-390px.png), [이미 승인된 요청](../../releases/evidence/cli-0.6.3-linux/live-consumed-request-390px.png), [OAuth 실패 복구](../../releases/evidence/cli-0.6.3-linux/live-oauth-recovery-390px.png), [설치 안내](../../releases/evidence/cli-0.6.3-linux/live-install-guide-390px.png). 내장 Browser가 연결되지 않아 Linux Playwright Chromium을 사용했다. 입력한 인증 코드나 cookie를 화면·로그로 보존하지 않았다.
 
 ## 실패, 수정, 정리와 남은 범위
 
@@ -69,7 +71,7 @@ DB schema generation/fingerprint, installation generation, Todo 생성·수정 �
 
 각 Docker 실행의 소유 자원 13개를 제거했고 기존 전체 컨테이너 23개의 ID·이미지·시작 시각을 보존했다. server-build API 컨테이너도 제거했다. 검사 CLI 설정은 비어 있고, 실제 화면 검사의 CLI 세션은 철회·개발 로그인은 logout했다. 초기 읽기 전용 baseline의 브라우저는 logout 보완 전에 닫혀 **개발 로그인 세션 1개가 정상 8시간 만료를 기다린다**. 그 cookie/token은 보존하지 않았고 다른 사용자 세션을 지우는 SQL 정리는 하지 않았다. 만료된 device 요청은 후속 정상 요청의 서버 정리 대상이다. 되돌림 파일과 합성 fixture 증거는 `/projects/miy-cli-experience-run-20261029/private`에 보존하고 Git에는 넣지 않았다.
 
-**NOT_RUN:** 실제 IdP 정상 로그인, 정상 로그인에서 소비한 실제 OAuth callback 재방문, 사용자 Windows 11에서 새 CI 설치기 실행, 관련 없는 opt-in DB integration/shared-development/network harness 3개. 실패·누락·unknown-state 콜백의 303 고정 redirect/쿠키 삭제 검사는 실제 서버와 격리 suite에서 통과했으나 실제 IdP 콜백 재사용 성공으로 확대하지 않는다. [실제 IdP 로그인 화면](releases/evidence/cli-0.6.3-linux/live-idp-login-awaiting-user.png) 도달까지만 자동 확인했고 사용자에게 [정상 로그인](https://v2.dwdcc.kr/auth/login) 직접 확인을 요청했다. 비밀번호·code·state·콜백 URL을 로그나 답변에 공유하지 않는다.
+**NOT_RUN:** 실제 IdP 정상 로그인, 정상 로그인에서 소비한 실제 OAuth callback 재방문, 사용자 Windows 11에서 새 CI 설치기 실행, 관련 없는 opt-in DB integration/shared-development/network harness 3개. 실패·누락·unknown-state 콜백의 303 고정 redirect/쿠키 삭제 검사는 실제 서버와 격리 suite에서 통과했으나 실제 IdP 콜백 재사용 성공으로 확대하지 않는다. [실제 IdP 로그인 화면](../../releases/evidence/cli-0.6.3-linux/live-idp-login-awaiting-user.png) 도달까지만 자동 확인했고 사용자에게 [정상 로그인](https://v2.dwdcc.kr/auth/login) 직접 확인을 요청했다. 비밀번호·code·state·콜백 URL을 로그나 답변에 공유하지 않는다.
 
 ## Windows에서 재확인
 

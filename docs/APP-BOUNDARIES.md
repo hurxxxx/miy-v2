@@ -1,8 +1,8 @@
 # 사내 업무용 앱 실행·관리 보안
 
-- 수정일: 2026-11-09
-- 상태: **사내 업무용 최소 설계 확정 · 세 출처 경계 구현 · 격리 검증 완료(실행 범위) · 2026-11-09 후속 운영 반영**.
-- 변경 전 비교 기준: 소스 `22c219d`, CLI/core 0.7.0, 번들 0.8.0. 현재 운영은 서버·UI·프레임 런타임 `7defdb0`([리뷰 보완 배포](releases/app-frames-review-fixes-2026-11-12-deployment.json)), schema 22, 게시 CLI `01e4d49`·번들 0.8.0이다. 번들 0.9.0과 구 번들 업그레이드 보완을 포함한 CLI는 아직 게시하지 않았다. prod 포털은 `https://v2.dwdcc.kr`, dev 포털은 `https://v2-dev.dwdcc.kr`, 콘솔·issuer는 `https://v2-console.dwdcc.kr`이다([콘솔 이동](releases/console-hostname-2026-11-09-deployment.json)). 공유 개발 로그인은 꺼져 있고 옛 `:9443`은 새 콘솔로 redirect한다. 초기 두 출처·[dev 포털](releases/dev-portal-2026-11-09-deployment.json)·[앱 프레임 최초 배포](releases/app-frames-2026-11-12-deployment.json)와 후속 변경의 실행 이력은 releases에 보존하며 현재 계약과 구분한다. 이 서버는 아직 개발 단계이며 정식 오픈을 뜻하지 않는다.
+- 수정일: 2026-11-13
+- 상태: **사내 업무용 최소 설계 확정 · 세 출처 경계와 설치별 앱 프레임 구현 · 격리 검증 완료(실행 범위) · 2026-11-12 리뷰 보완까지 개발 서버 반영**.
+- 변경 전 비교 기준: 소스 `22c219d`, CLI/core 0.7.0, 번들 0.8.0. 이 비교 기준을 현행 구현으로 읽지 않는다. 실제 주소·배포 소스·schema는 [운영 안내](SERVER-OPERATIONS.md), CLI 게시 상태는 [릴리스 안내](CLI-RELEASE.md)가 관리한다. 초기 두 출처·dev 포털·콘솔 이동·앱 프레임 도입과 후속 변경은 [실행별 기록](releases/)에 보존한다. 이 서버는 개발 단계이며 정식 오픈을 뜻하지 않는다.
 - 적용 범위: 사내 제한 접속, 회사가 관리하는 개발자와 승인한 업무 앱. 외부망 공개·외부 개발자의 앱 수용을 위한 보안 인수는 포함하지 않는다.
 
 **동적 UI·통합 라우팅·단일 IP HTTPS와 개발 편의를 유지하며 필요한 보안부터 적용한다.** 2026-11-10 업무 앱 UI만 설치별 출처 iframe에서 실행하는 [앱 프레임 설계](APP-FRAMES.md)를 채택했고 2026-11-12 운영에 반영했다([배포 기록](releases/app-frames-2026-11-12-deployment.json)). MF 산출물은 앱 프레임 안에서 읽으며 플랫폼 화면은 기존 구조를 유지한다. 앱 실행 계약은 APP-FRAMES가, 포털·콘솔 출처와 세션·인증은 이 문서가 담당한다. 업무 포털(prod), dev 포털(dev), 관리·로그인 콘솔의 세 출처와 설치별 앱 출처를 사용한다. 같은 사이트 배치(P2·P3)의 쿠키 간섭은 남으며 별도 사이트 격리와 구분한다. 같은 페이지 앱들이 UI 신뢰 영역을 공유했던 구조와 iframe 철회 결정은 채택 전 비교 이력이다.
@@ -104,7 +104,7 @@ CLI 근거는 `cli_auth.rs`의 start/approve/exchange, `auth_sessions.rs`의 app
 
 ### 영역과 설정
 
-구성은 **세 출처, 기존 Core·DB·Keycloak 재사용**이다(2026-11-09 사용자 결정으로 dev 포털 추가). 승인 전 dev 앱 코드가 prod 앱과 같은 JavaScript 출처에서 실행되지 않게, 업무 포털은 prod 앱만, dev 포털은 dev 앱만 실행한다. 도메인 없는 localhost·단일 IP 설치가 기본이며 포트로 출처를 나눈다. 포트는 아래 예시처럼 설정하며 기존 업무 포털 주소를 가능한 한 유지한다.
+플랫폼은 **세 출처에서 기존 Core·DB·Keycloak을 재사용**하고 업무 앱에는 설치별 프레임 출처를 추가한다. 2026-11-09 사용자 결정으로 추가한 dev 포털은 dev 설치, 업무 포털은 prod 설치의 실행만 발급한다. 도메인 없는 localhost·단일 IP 배치는 포트로 출처를 나누며, 앱별 포트 배정은 [프레임 배치 프로필](APP-FRAMES.md#4-배치-프로필과-격리-수준)을 따른다. 아래 표는 플랫폼 세 출처의 예시이며 기존 업무 포털 주소를 가능한 한 유지한다.
 
 | 배치 | 업무 포털(prod) | dev 포털(dev) | 관리·로그인 | IdP issuer |
 | --- | --- | --- | --- | --- |
@@ -112,7 +112,7 @@ CLI 근거는 `cli_auth.rs`의 start/approve/exchange, `auth_sessions.rs`의 app
 | 단일 IP | https://192.168.10.20:8443 | https://192.168.10.20:9444 | https://192.168.10.20:9443 | https://192.168.10.20:9443/identity/realms/miy |
 | 도메인 사용 시 | 기존 업무 UI 호스트 | dev 호스트(권장) 또는 포트 | 관리 호스트 | 관리 호스트의 /identity/realms/miy |
 
-**dev 포털 상태:** 2026-11-09 사용자 요청으로 운영에 반영했다([배포 기록](releases/dev-portal-2026-11-09-deployment.json)). 운영 주소는 권장안인 별도 호스트명 `https://v2-dev.dwdcc.kr`(기존 `*.dwdcc.kr` DNS·인증서, 포트 없음)이다. 업무 포털 `https://v2.dwdcc.kr`은 prod 앱만 실행하고, dev 경로는 dev 포털로 옮긴다. 게시 UI `3760ef0`에는 `devPortalOrigin`이 없는 구 서버용 fallback이 남아 있지만 향후 호환 유지 요구는 아니다.
+**dev 포털 상태:** 2026-11-09 사용자 요청으로 운영에 반영했다([배포 기록](releases/dev-portal-2026-11-09-deployment.json)). 운영 주소는 권장안인 별도 호스트명 `https://v2-dev.dwdcc.kr`(기존 `*.dwdcc.kr` DNS·인증서, 포트 없음)이다. 업무 포털 `https://v2.dwdcc.kr`은 prod 앱만 실행하고, dev 경로는 dev 포털로 옮긴다. 당시 게시 UI `3760ef0`의 `devPortalOrigin`이 없는 구 서버용 fallback은 과거 구현 사실이며 현재의 호환 유지 요구가 아니다.
 
 - **집행:** Core는 dev 포털용 listener를 따로 열고(`devPortalOrigin`·`devPortalBind`, `MIY_DEV_PORTAL_ORIGIN`·`MIY_DEV_PORTAL_BIND_ADDR`) 세션 용도 `dev_portal`을 저장한다(migration `0021_dev_portal.sql`, 제약 확장만). 정책 한 곳(`policy.rs` `decide`)에서 포털 세션은 prod Use만, dev 포털 세션은 dev Use만 허용한다. 앱 API·UI 자산·directory·연결·목록·`canOpen`이 모두 이 판정을 따른다. 관리자도 prod 포털에서 dev 앱을 열 수 없다.
 - **dev 포털이 제공하지 않는 것:** 관리 API, CLI·MCP bearer, CLI 승인, `/identity`, OAuth 메타데이터. CLI·MCP·로컬 preview는 기존 포털 주소를 계속 쓴다.
@@ -148,24 +148,28 @@ flowchart LR
   U[사내 사용자] --> P[업무 포털: prod]
   U --> D[dev 포털: dev]
   U --> C[관리 출처: 콘솔과 Keycloak]
-  P --> A[prod MF AppRoot와 통합 라우터]
-  D --> DA[dev MF AppRoot와 통합 라우터]
-  P --> G[기존 Core: 세션 용도와 권한 검사]
+  P -- 실행·갱신 코드 --> A[prod 앱 프레임: 설치별 출처의 MF AppRoot]
+  D -- 실행·갱신 코드 --> DA[dev 앱 프레임: 설치별 출처의 MF AppRoot]
+  P --> G[Core 포털·콘솔 listener: 세션 용도와 권한 검사]
   D --> G
   C --> G
   CLI[기존 CLI와 제한 위임] --> G
+  A --> F[Core 프레임 listener: 설치 결합·현재 권한·연결 승인 검사]
+  DA --> F
   G --> B[앱별 backend와 DB]
+  F --> B
 ```
 
-P/A와 D/DA는 각각 하나의 JavaScript 신뢰 영역이다. prod와 dev는 다른 출처이지만 각 포털 내부의 앱 간 강제 격리를 뜻하지 않는다.
+포털 셸과 각 앱 프레임은 다른 출처이며, dev와 prod를 포함한 설치끼리도 출처를 공유하지 않는다. 프레임 토큰은 자기 설치와 승인된 연결에만 사용할 수 있다. P2·P3의 같은 사이트 쿠키 간섭과 프로세스 분리 한계는 남는다([앱 프레임 배치 프로필](APP-FRAMES.md#4-배치-프로필과-격리-수준)).
 
 ### 자격증명과 경로 분류
 
 | 자격증명 | 허용 범위 | 이번 변경 |
 | --- | --- | --- |
-| portal 세션 | 허용된 prod 업무 앱·목록·개인 최소 정보 | dev 사용·관리·기록·CLI 승인 거부 |
-| dev_portal 세션 | 허용된 dev 업무 앱·목록·개인 최소 정보 | prod 사용·관리·기록·CLI 승인 거부. dev 포털은 CLI/MCP bearer도 받지 않음 |
+| portal 세션 | 허용된 prod 앱 목록·개인 최소 정보·앱 실행/갱신 코드 발급 | dev 사용·관리·기록·CLI 승인과 기존 업무 데이터 경로의 쿠키 인증 거부 |
+| dev_portal 세션 | 허용된 dev 앱 목록·개인 최소 정보·앱 실행/갱신 코드 발급 | prod 사용·관리·기록·CLI 승인과 기존 업무 데이터 경로의 쿠키 인증 거부. dev 포털은 CLI/MCP bearer도 받지 않음 |
 | console 세션 | 자기 CLI 승인·허용된 앱 관리·플랫폼 관리 | 업무 UI/API 인증 거부. 콘솔 진입이 관리자 권한을 뜻하지 않음 |
+| 프레임 토큰 | 자기 설치의 앱 출처에서 업무 API·승인된 연결·디렉터리 | 부모 세션·설치·환경·릴리스와 현재 권한을 재검사. 포털·콘솔·CLI 경로 사용 거부 |
 | CLI bearer | 기존 사용자 scope·앱·환경·action | device 승인만 콘솔로. device 시작·poll/refresh·수명 유지. legacy 시작·승인·교환은 410 `cli_upgrade_required`, 발급된 legacy 토큰은 만료까지 유지 |
 | 사용자 위임 | 현재 권한과 지정 대상·action·기간의 교집합 | 기존 계약 유지, 확대·재위임 금지 |
 | miy_call_ | 원래 사용자·설치 승인 체인을 보존한 backend 호출 | 기존 계약 유지, 브라우저 앱 신원 증명에 사용하지 않음 |
@@ -191,7 +195,7 @@ P/A와 D/DA는 각각 하나의 JavaScript 신뢰 영역이다. prod와 dev는 �
 - app/preview API는 기본 헤더 미전달, 검증한 Content-Type만 허용한다. Set-Cookie·Clear-Site-Data·Location·Refresh·CSP·CORS·Service-Worker-Allowed는 upstream에서 그대로 넘기지 않는다. 파일 헤더는 해당 기능 때 별도 허용한다.
 - app/preview **API**에 gateway의 CSP sandbox·nosniff를 적용한다. 정상 JSON fetch를 유지하고 HTML/SVG 직접 탐색 시 능동 실행을 제한한다. MF UI/JS·preview UI 전체에 sandbox를 걸지 않는다.
 - 포털·콘솔·IdP HTML에 HTTP 응답의 frame-ancestors none을 적용한다. Nginx 정적 응답도 포함하며 실제 로그인 호환을 확인한다.
-- 콘솔의 앱 이름·로그·오류·메모는 텍스트로 표시하고 raw HTML·inline SVG를 실행하지 않는다. 콘솔 CSP는 script-src self, object-src none, base-uri none과 inline/eval 제한을 기준으로 실제 빌드와 검증한다. 포털의 강화 CSP는 MF·HMR 호환을 확인하며 승인 앱을 격리한다고 주장하지 않는다.
+- 콘솔의 앱 이름·로그·오류·메모는 텍스트로 표시하고 raw HTML·inline SVG를 실행하지 않는다. 콘솔 CSP는 script-src self, object-src none, base-uri none과 inline/eval 제한을 기준으로 실제 빌드와 검증한다. 포털은 허용된 앱 출처를 frame-src로 제한하며 앱 MF는 프레임 안에서 읽는다. 프레임 문서·자산의 CSP와 sandbox는 [APP-FRAMES §3.5](APP-FRAMES.md#35-헤더와-iframe-속성)를 따른다.
 - 현행 앱 콘텐츠의 worker-src 제한·Service-Worker: script 요청 거부와 기존 worker 정리를 확인한다. 전체 기기 자동 정리 제품이나 새 PWA 지원은 이번 범위가 아니다.
 
 ### 선택기와 브리지 소유
@@ -306,7 +310,7 @@ archive·실행 결과·게시 번들은 보존한다. 이전 iframe·보안 후
 
 ## 참고 자료
 
-- [v1 적용](V1-ADOPTION.md), [플랫폼 사례](RESEARCH.md#앱-사용과-관리-영역-분리): 공통 인증·최소 권한을 참고. 플랫폼 화면에는 iframe을 쓰지 않고 업무 앱은 [앱 프레임 설계](APP-FRAMES.md)를 따름.
+- [v1 적용](V1-ADOPTION.md), [플랫폼 사례](reference/RESEARCH.md#앱-사용과-관리-영역-분리): 공통 인증·최소 권한을 참고. 플랫폼 화면에는 iframe을 쓰지 않고 업무 앱은 [앱 프레임 설계](APP-FRAMES.md)를 따름.
 - [HTML origin](https://html.spec.whatwg.org/multipage/browsers.html#origin), [cookie와 port](https://httpwg.org/specs/rfc6265.html#weak-confidentiality), [CSP sandbox](https://www.w3.org/TR/CSP3/#directive-sandbox), [Clear-Site-Data](https://www.w3.org/TR/clear-site-data/), [서비스워커](https://www.w3.org/TR/service-workers/).
 - [Keycloak hostname](https://www.keycloak.org/server/hostname), [reverse proxy](https://www.keycloak.org/server/reverseproxy), [공인 인증서의 IP 제한](https://cabforum.org/working-groups/server/baseline-requirements/requirements/).
 - 기존 [브라우저 관찰](releases/browser-boundary-review-2026-11-06-validation.json), [최초 정리](releases/app-boundaries-docs-2026-11-06-validation.json), [통합](releases/app-boundaries-consolidation-2026-11-06-validation.json), [15건 보완](releases/app-boundaries-review-fixes-2026-11-06-validation.json), [noiframe·PLM 검토](releases/noiframe-security-plm-review-2026-11-06-validation.json). 당시 결과 범위를 보존한다.

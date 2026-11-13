@@ -1,0 +1,225 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-11-13",
+  "status": "PASS",
+  "scope": "Consolidate current documentation, archive historical plans/results and repair internal navigation. No product or deployment change.",
+  "source": {
+    "baseCommit": "d1e564c6e7c7d6c15771eb9dc7f6302b804f9ad7",
+    "workingTree": true,
+    "snapshot": ".local/evidence/docs-cleanup-20261113/run-b30h3yig"
+  },
+  "structure": {
+    "topLevelDocsBefore": 33,
+    "topLevelDocsAfter": 17,
+    "topLevelLinesBefore": 6867,
+    "topLevelLinesAfter": 3953,
+    "currentEntry": "docs/README.md",
+    "statusOwner": "docs/PLAN.md",
+    "archiveEntry": "docs/archive/README.md"
+  },
+  "movedDocuments": [
+    {
+      "old": "docs/IMPLEMENTATION-RESULTS.md",
+      "new": "docs/archive/results/IMPLEMENTATION-RESULTS.md",
+      "originalSha256": "ab7b12d7b148bbd08209590cca28ce1315e7d23a4e35cff21c95a5e30e2b7e09",
+      "originalBodyPreservedExceptRelativeLinks": true
+    },
+    {
+      "old": "docs/CLI-0.6.3-LINUX-VALIDATION.md",
+      "new": "docs/archive/results/CLI-0.6.3-LINUX-VALIDATION.md",
+      "originalSha256": "cc25c14e217dabe4c812d63e36d9649dfbbe21474155aee3a7678ecb9b7f9c73",
+      "originalBodyPreservedExceptRelativeLinks": true
+    },
+    {
+      "old": "docs/INDEPENDENT-AGENTS-0.6.3-ACCEPTANCE.md",
+      "new": "docs/archive/results/INDEPENDENT-AGENTS-0.6.3-ACCEPTANCE.md",
+      "originalSha256": "f0531dc6983d40574ec2aa1c61e0bf3c18b786dae047c7cb721ba0ad8eaeb128",
+      "originalBodyPreservedExceptRelativeLinks": true
+    },
+    {
+      "old": "docs/LEAVE-LEDGER-RESULTS.md",
+      "new": "docs/archive/results/LEAVE-LEDGER-RESULTS.md",
+      "originalSha256": "1da1c2cb9456d815f6a451e3f6483d4b11fddcb33b1b297fdf540d684cb7b835",
+      "originalBodyPreservedExceptRelativeLinks": true
+    },
+    {
+      "old": "docs/CLI-IMPLEMENTATION-PLAN.md",
+      "new": "docs/archive/cli/CLI-0.5-IMPLEMENTATION-PLAN.md",
+      "originalSha256": "aa93d0460461c35a1cd0fcc8d3361068661f1a0078950f5b64ed2b5555ddf305",
+      "originalBodyPreservedExceptRelativeLinks": true
+    },
+    {
+      "old": "docs/CLI-VALIDATION-MATRIX.md",
+      "new": "docs/archive/results/CLI-VALIDATION-MATRIX.md",
+      "originalSha256": "d57e148626412bb466de2bc5b3a116e7e0e130bfe91100c59fa166398dbf9cb1",
+      "originalBodyPreservedExceptRelativeLinks": true
+    },
+    {
+      "old": "docs/CORE-TESTING.md",
+      "new": "docs/archive/results/CORE-TESTING-0.6.md",
+      "originalSha256": "95bc9eec268990cd3bb4ae86fd2cb9f2e7e2165a3ae7423c465a883e45aade97",
+      "originalBodyPreservedExceptRelativeLinks": true
+    },
+    {
+      "old": "docs/NATIVE-DEVELOPMENT.md",
+      "new": "docs/archive/cli/NATIVE-DEVELOPMENT-0.6.md",
+      "originalSha256": "b84f01d4a64b222daac6b34218bd1e93fff896c91f2c6b6624ea101575cc9dae",
+      "originalBodyPreservedExceptRelativeLinks": true
+    },
+    {
+      "old": "docs/WINDOWS-VALIDATION.md",
+      "new": "docs/archive/results/WINDOWS-VALIDATION.md",
+      "originalSha256": "243517d66924c924109fd6054990603017738173820b749b936a517c45c03dff",
+      "originalBodyPreservedExceptRelativeLinks": true
+    },
+    {
+      "old": "docs/WINDOWS-0.6.3-ACCEPTANCE.md",
+      "new": "docs/archive/results/WINDOWS-0.6.3-ACCEPTANCE.md",
+      "originalSha256": "e692b8c7a130334f293432f9cb906e18d3a855c6f94212f56c1099185b1ac155",
+      "originalBodyPreservedExceptRelativeLinks": true
+    },
+    {
+      "old": "docs/WINDOWS-INSTALLER.md",
+      "new": "docs/archive/cli/WINDOWS-INSTALLER.md",
+      "originalSha256": "d9e9f5676b6600aec4b95089fb776e05be28fceef9ca33ff6ab04a250193f408",
+      "originalBodyPreservedExceptRelativeLinks": true
+    },
+    {
+      "old": "docs/FRONTEND.md",
+      "new": "docs/archive/design/FRONTEND.md",
+      "originalSha256": "4eaffc081d9d2dd320e88d8b69813c23e85ca878851c601049871c452b6f5a37",
+      "originalBodyPreservedExceptRelativeLinks": true
+    },
+    {
+      "old": "docs/UIUX-MIGRATION.md",
+      "new": "docs/archive/design/UIUX-MIGRATION.md",
+      "originalSha256": "32825f354227abf26c6dc42969742e8b52bc390a2a196c344c2f88cdf448507b",
+      "originalBodyPreservedExceptRelativeLinks": true
+    },
+    {
+      "old": "docs/RESEARCH.md",
+      "new": "docs/reference/RESEARCH.md",
+      "originalSha256": "9476347f49f9d7abd484beb60c1d21f2e4ca26045ddae6beda9ab69198842b3e",
+      "originalBodyPreservedExceptRelativeLinks": true
+    }
+  ],
+  "removedRedirects": {
+    "docs/IMPLEMENTATION.md": "docs/PLAN.md#다음-우선-작업",
+    "docs/VALIDATION.md": "docs/APP-BOUNDARIES.md#경계-인수"
+  },
+  "consolidations": [
+    {
+      "owner": "docs/RUNNING.md",
+      "content": "Unix installation, native/Docker development, remote build, DB preservation and preview/frame differences."
+    },
+    {
+      "owner": "docs/CHECKS.md",
+      "content": "Applicable CLI/OS/independent-agent checks previously scattered across historical plans."
+    },
+    {
+      "owner": "docs/CLI-RELEASE.md",
+      "content": "Candidate generation, Windows packaging, immutable publication and release gates."
+    },
+    {
+      "owner": "docs/WINDOWS-ACCEPTANCE.md",
+      "content": "GUI and ZIP/PowerShell installation, upgrade, removal, recovery and current user acceptance."
+    },
+    {
+      "owner": "docs/STACK.md",
+      "content": "Frontend technology choices and shared UI responsibility; detailed comparison retained in archive."
+    },
+    {
+      "owner": "docs/V1-ADOPTION.md#9-플랫폼-화면과-ui-후속-계약",
+      "content": "Three UI areas, navigation, UI follow-up ownership and acceptance boundaries."
+    }
+  ],
+  "preservation": {
+    "priorReleaseJsonFilesUnchanged": 130,
+    "movedOriginalBodiesVerified": 14,
+    "failuresAndNotRunPreserved": true,
+    "publishedTemplatesComponentsUnchanged": true,
+    "historicalSourcePathAndHashFields": "Retained exactly as recorded, even when their referenced Markdown has moved.",
+    "frozenMarkdownFilesUnchanged": 11,
+    "priorResourceSourceFilesUnchanged": 5,
+    "historicalCandidateSectionsPreserved": 3,
+    "v1IdRowOrderPreserved": true
+  },
+  "linkRewrite": {
+    "files": 32,
+    "links": 276,
+    "details": ".local/evidence/docs-cleanup-20261113/run-b30h3yig/link-rewrites.json"
+  },
+  "checks": [
+    {
+      "check": "Initial full proposed-tree whitespace check",
+      "command": "GIT_INDEX_FILE=<temporary validation index> git diff --cached --check",
+      "status": "FAIL",
+      "finding": "One added blank line at EOF in docs/archive/results/CLI-VALIDATION-MATRIX.md. Removed that line and reran the full check.",
+      "log": ".local/evidence/docs-cleanup-20261113/run-b30h3yig/diff-check-full.log"
+    },
+    {
+      "check": "Final document links, whitespace and preservation",
+      "command": "python3 .local/evidence/docs-cleanup-20261113/run-b30h3yig/verify-final.py",
+      "status": "PASS",
+      "details": {
+        "status": "PASS",
+        "movedOriginalBodiesPreserved": 14,
+        "priorReleaseJsonFilesUnchanged": 130,
+        "frozenMarkdownFilesUnchanged": 11,
+        "priorResourceSourceFilesUnchanged": 5,
+        "historicalCandidateSectionsPreserved": 3,
+        "v1IdRowOrderPreserved": true,
+        "relativeImages": 7,
+        "realIndexStagingUnchanged": true,
+        "topLevelDocsAfter": 17,
+        "topLevelLinesAfter": 3953,
+        "checks": [
+          {
+            "check": "doc-links-final",
+            "command": "python3 scripts/check-doc-links.py",
+            "status": "PASS",
+            "exitCode": 0,
+            "output": "PASS 902 relative links in 61 tracked Markdown files\n"
+          },
+          {
+            "check": "diff-check-full-final",
+            "command": "git diff --cached --check",
+            "status": "PASS",
+            "exitCode": 0,
+            "output": ""
+          },
+          {
+            "check": "diff-check-worktree-final",
+            "command": "git diff --check",
+            "status": "PASS",
+            "exitCode": 0,
+            "output": ""
+          }
+        ]
+      }
+    },
+    {
+      "check": "Independent content review",
+      "status": "PASS",
+      "scope": "Entry maps, PLAN, archive index, RUNNING, CHECKS, CLI-RELEASE and WINDOWS-ACCEPTANCE. CLI version/new candidate/publication, Windows NOT_RUN and public release gates, missing fresh-server frame runtime, lifecycle/restoration and independent-agent acceptance remain explicit. Core work completion details remain in CORE-HARDENING."
+    }
+  ],
+  "notRun": [
+    {
+      "status": "NOT_RUN",
+      "check": "Product builds, runtime/browser/Windows tests or live-server operations",
+      "reason": "Documentation organization only; no product/configuration change in this task."
+    },
+    {
+      "status": "NOT_RUN",
+      "check": "Commit, push or release publication",
+      "reason": "Not requested in this documentation cleanup."
+    }
+  ],
+  "finishedAt": "2026-11-13T13:16:17+09:00",
+  "validationEnvironment": {
+    "description": "The existing link checker reads git ls-files. A temporary Git index included the proposed moved/new documentation tree; the real index and its staging were unchanged.",
+    "temporaryIndex": ".local/evidence/docs-cleanup-20261113/run-b30h3yig/validation-final.index",
+    "realIndexStagingUnchanged": true
+  }
+}

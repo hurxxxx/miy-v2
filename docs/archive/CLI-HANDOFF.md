@@ -8,7 +8,7 @@
 
 운영 0.6.3 통합 이후 현재 작업본은 코어 권한 보강을 포함한 **0.7.0 / 번들 0.8.0**이다. [권한 계약과 설치 전환](../CORE-PERMISSIONS.md)을 먼저 확인한다. 운영 중인 실행 파일은 별도 checkout에서 검증한 `8d7d042` 출처를 유지한다. 통합 자체로 서버·worker·UI를 재배포하지 않는다. CLI·MCP는 공개 설치 안내가 제공하는 버전을 사용해 서버 연결을 확인한다. 현재 공유 개발 로그인은 명시적으로 활성화된 상태이며, 실제 사용자별 인증으로 운영 전환할 때 그 설정도 함께 검토한다.
 
-통합 commit `a6fae06`의 CI 5개 job과 [독립 Codex·Claude 개발 인수](../INDEPENDENT-AGENTS-0.6.3-ACCEPTANCE.md)는 완료했다. 두 앱의 v1→v2 원격 빌드·dev 배포·데이터 보존과 초기 평가환경 보완을 구분했다. [Windows 게시 설치기 실행](../WINDOWS-0.6.3-ACCEPTANCE.md)은 사용자 추후 검증으로 남긴다.
+통합 commit `a6fae06`의 CI 5개 job과 [독립 Codex·Claude 개발 인수](results/INDEPENDENT-AGENTS-0.6.3-ACCEPTANCE.md)는 완료했다. 두 앱의 v1→v2 원격 빌드·dev 배포·데이터 보존과 초기 평가환경 보완을 구분했다. [Windows 게시 설치기 실행](results/WINDOWS-0.6.3-ACCEPTANCE.md)은 사용자 추후 검증으로 남긴다.
 
 아래는 CLI 0.5 당시의 인계·검증 이력이다. 해당 시점의 미배포·미검증 설명은 현재 서버의 상태가 아니다.
 
@@ -16,9 +16,9 @@
 
 - 갱신: 2026-10-27
 - 코드 버전: CLI **0.5.0** / 개발 번들 **0.6.2**
-- 구현 기준: [구현 계획](../CLI-IMPLEMENTATION-PLAN.md). 실행 증거는 [구현 결과](../IMPLEMENTATION-RESULTS.md), 세부 요구·검사는 [검증 행렬](../CLI-VALIDATION-MATRIX.md).
+- 구현 기준: [구현 계획](cli/CLI-0.5-IMPLEMENTATION-PLAN.md). 실행 증거는 [구현 결과](results/IMPLEMENTATION-RESULTS.md), 세부 요구·검사는 [검증 행렬](results/CLI-VALIDATION-MATRIX.md).
 
-계획의 코드 구현과 명령·지침 이전을 완료하고 로컬 자동 검사·기본 CI·5개 배포 후보 CI를 통과했다. **이번 0.5의 실제 Windows 11 검증과 정식 릴리스 승인은 아직 완료하지 않았다. 기존 0.4.2의 실제 Windows 기반 검사 성공 이력은 문서 끝에 보존한다.** Windows 빌드·운영 검증은 사용자가 [전용 안내](../WINDOWS-VALIDATION.md)에 따라 수행한 뒤 결과를 전달하면 문서를 갱신한다. 현재 개발 환경의 기존 플랫폼 서비스는 재배포하거나 migration하지 않았다.
+계획의 코드 구현과 명령·지침 이전을 완료하고 로컬 자동 검사·기본 CI·5개 배포 후보 CI를 통과했다. **이번 0.5의 실제 Windows 11 검증과 정식 릴리스 승인은 아직 완료하지 않았다. 기존 0.4.2의 실제 Windows 기반 검사 성공 이력은 문서 끝에 보존한다.** Windows 빌드·운영 검증은 사용자가 [전용 안내](results/WINDOWS-VALIDATION.md)에 따라 수행한 뒤 결과를 전달하면 문서를 갱신한다. 현재 개발 환경의 기존 플랫폼 서비스는 재배포하거나 migration하지 않았다.
 
 검증 대상 소스는 `0fe94a4b9d851e7cf71dc9c8e91fb469423134e2`다. clean 작업본의 실제 HTTP/PostgreSQL/Docker/CLI 통합52개, [기본 CI](https://github.com/hurxxxx/miy-v2/actions/runs/40460546995), [5개 target 후보 CI](https://github.com/hurxxxx/miy-v2/actions/runs/40460582868)를 통과했다. [후보 artifact](https://github.com/hurxxxx/miy-v2/actions/runs/40460582868/artifacts/12715067551)와 [파일별 hash](../releases/cli-0.5.0-candidate.json)가 준비되어 있다. 검증 결과만 추가한 문서 commit과 이 소스 commit을 구분한다. 공개 릴리스는 발행하지 않았다.
 
@@ -69,14 +69,14 @@ pnpm exec playwright test --config scripts/runtime-regression/ui.config.ts
 - 사용자 Windows 11의 PowerShell 5.1·7, Credential Manager/DPAPI·ACL, 콘솔 Ctrl+C, Docker Desktop, 실제 Codex/Claude 프로젝트 MCP.
 - 별도 Linux 서버에서 실제 OIDC 로그인, 업로드·배포·운영 승격 및 실제 업무 UI/API. loopback 개발 로그인은 실제 IdP 로그인을 대체하지 않는다.
 - Codex·Claude 각각 OS별 독립 새 세션 3회 평가. 기존 에이전트 구현 작업이나 MCP fixture 성공은 이 평가가 아니다.
-- 전체 제품 V2~V7의 독립 설치·재시작·v1→v2 데이터 보존 인수는 [전체 검증 계획](../VALIDATION.md)으로 계속 관리한다.
+- 전체 제품 V2~V7의 독립 설치·재시작·v1→v2 데이터 보존 인수는 [전체 검증 계획](../APP-BOUNDARIES.md#경계-인수)으로 계속 관리한다.
 
-과거 기반/출력 커밋과 CI 기록은 [구현 결과](../IMPLEMENTATION-RESULTS.md)에 이력으로 보존한다. 새 결과의 요구 ID·환경·명령·종료 코드·바이너리 hash·증거 위치를 남기고 미실행은 이유와 함께 `NOT_RUN`으로 기록한다.
+과거 기반/출력 커밋과 CI 기록은 [구현 결과](results/IMPLEMENTATION-RESULTS.md)에 이력으로 보존한다. 새 결과의 요구 ID·환경·명령·종료 코드·바이너리 hash·증거 위치를 남기고 미실행은 이유와 함께 `NOT_RUN`으로 기록한다.
 
 ## 2026-10-27 실제 Windows 기반 검증 결과
 
 `fb42b384081afe8b77eab7b2af419f5c1e79c3ec`를 실제 Windows 11 Pro build 26200 x64 일반 사용자 환경에서 검사했다. PowerShell 7.6.5와 Windows PowerShell 5.1.26100.9711에서 각각 fmt·Windows MSVC check·Clippy 경고 금지·단위 검사 **37개**·release build·번들/Git 왕복·공통 출력 블랙박스 **9개**·오프라인 앱 생성/반복 setup·stdio MCP·ZIP/체크섬/압축 해제 실행을 통과했다. 추가 Node CLI 결과 파서 검사 4개도 통과했다. 두 셸은 같은 target을 순차 사용하며 PowerShell 5.1의 build는 최신 산출물을 재사용했다.
 
-Rust 1.99.1/MSVC/SDK는 사용자 승인으로 준비했다. MSVC 설치기의 3010 재부팅 요청 후 이번 검사는 재부팅 없이 수행했다. [실행 기록](../WINDOWS-VALIDATION.md#windows-실행-기록)에 환경·명령·종료 코드·로컬 증거 경로·exe/ZIP SHA-256과 미실행 사유가 있다. 원본 로그·바이너리·ZIP은 이 PC의 `.local/`에만 있고 Git에는 결과 문서만 포함한다.
+Rust 1.99.1/MSVC/SDK는 사용자 승인으로 준비했다. MSVC 설치기의 3010 재부팅 요청 후 이번 검사는 재부팅 없이 수행했다. [실행 기록](results/WINDOWS-VALIDATION.md#windows-실행-기록)에 환경·명령·종료 코드·로컬 증거 경로·exe/ZIP SHA-256과 미실행 사유가 있다. 원본 로그·바이너리·ZIP은 이 PC의 `.local/`에만 있고 Git에는 결과 문서만 포함한다.
 
 실제 Codex/Claude MCP 승인·세션 유지, Windows 콘솔 Ctrl+C, Docker Desktop 전체 개발·배포, 실제 인증·원격 운영과 재부팅 후 검증은 남아 있다. 이번 commit의 다른 OS manifest가 없어 로컬 OS 간 비교는 수행하지 않았다. 전체 1A/5/6 단계나 정식 지원·릴리스 완료로 체크하지 않는다.

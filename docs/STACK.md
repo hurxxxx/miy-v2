@@ -1,15 +1,15 @@
 # miy 기술 스택 추천안
 
 검토일: 2026-10-20  
-수정일: 2026-11-07\
+수정일: 2026-11-13\
 기준: PRD 0.6\
-상태: 사내 신뢰 앱 중심의 기술 선택. 업무 앱의 설치별 출처 iframe 실행(2026-11-10 채택, 2026-11-12 운영 반영)과 플랫폼 화면 통합, 포털·콘솔 분리는 소스 구현·2026-11-07 기존 서버 반영
+상태: 사내 신뢰 앱 중심의 기술 선택과 장기 추천. 구현·검증·게시·운영 반영 여부는 [추진 계획](PLAN.md)과 [서버 운영 안내](SERVER-OPERATIONS.md)에서 구분
 
 **Rust 코어·앱 백엔드, TypeScript·React 화면, PostgreSQL, Docker 기반 실행을 중심으로 구성하는 것을 추천한다.** 업무 앱은 Rust 서버와 정적 화면을 같은 OCI 이미지로 배포하고 일시 중단을 허용해 교체한다. 코어의 API·작업 처리·호스트 실행 제어는 필요한 권한과 실행 수명에 따라 별도 프로세스로 운영한다.
 
 회사 내부망의 단일 서버·VM과 회사가 통제하는 앱 개발·운영을 현재 범위로 삼는다. 외부 앱·외부 개발자 수용은 제외한다. Rust 코어·앱 백엔드, Next.js와 MinIO 제외, 내장 Hermes와 사용자별 세션 방향은 유지한다. 아래 장기 기술 추천이 현재 최소 보안 보완의 필수 구성이라는 뜻은 아니다.
 
-최초 최소 플랫폼·CLI·Codex·DB·Docker·UI 라우팅 검증은 [당시 계획](archive/VALIDATION-MODULE-FEDERATION.md)과 [실행 결과](IMPLEMENTATION-RESULTS.md)에 보존한다. 아래 표는 기존 구현과 장기 추천을 구분한다. 현재 경계는 prod 포털·dev 포털·관리/CLI 승인/Keycloak 콘솔의 세 출처이며 구현·운영 반영했다. 상세 계약과 배포 상태는 [앱 실행·관리 경계](APP-BOUNDARIES.md#확정-결정)가 관리한다.
+최초 최소 플랫폼·CLI·Codex·DB·Docker·UI 라우팅 검증은 [당시 계획](archive/VALIDATION-MODULE-FEDERATION.md)과 [실행 결과](archive/results/IMPLEMENTATION-RESULTS.md)에 보존한다. 이 문서는 기술 선택의 이유를 관리한다. 출처·세션·권한은 [앱 실행·관리 경계](APP-BOUNDARIES.md#확정-결정), 업무 앱 실행은 [앱 프레임 설계](APP-FRAMES.md), SDK·빌드·라우팅 계약은 [앱 개발 계획](DEVELOPMENT.md)이 정본이다.
 
 ## 추천 구성
 
@@ -19,20 +19,20 @@
 | 코어 백엔드 | Rust + Axum + Tokio + Tower | 인증된 API, 앱·환경·릴리스 관리, 정책 집행과 작업 제어를 공통 모듈로 구현 |
 | DB 접근 | SQLx + 버전이 있는 SQL migration | 배포 상태 전이·작업 큐·권한 조회의 SQL과 트랜잭션을 명시적으로 관리 |
 | 관리 웹 | TypeScript strict + React + Vite + TanStack Router·Query | Rust API를 사용하는 SPA. 라우팅·서버 상태 관리와 타입을 일관되게 구성 |
-| 앱 UI 실행 | 독립 빌드한 MF 모듈·AppRoot + 플랫폼 라우터 + SDK 함수 | 회사가 통제하는 앱을 dev/prod 각각의 포털에서 실행. iframe·플랫폼 재빌드 없이 앱 추가를 유지 |
+| 앱 UI 실행 | 설치별 출처 프레임의 MF·AppRoot + 브리지 v1 + 플랫폼 라우터 | 포털은 앱 프레임을 열고 경로·화면 상태를 동기화. 앱 추가에 플랫폼 재빌드를 요구하지 않음 |
 | 공통 UI | Tailwind CSS + shadcn/ui 기반 `@miy/ui` | 디자인 토큰·필수 연동 컴포넌트는 버전 패키지로 제공하고 업무별 화면은 확장 |
 | API 계약·SDK | OpenAPI + utoipa + openapi-typescript·openapi-fetch | Rust API 스키마에서 TypeScript 타입·클라이언트 연결. manifest·공개 기능은 버전이 있는 JSON Schema로 검증 |
 | MCP | 공식 Rust SDK `rmcp` + Streamable HTTP | 사내 개발 담당자의 CLI·개발 에이전트에 맥락과 도구 제공. HTTP API와 같은 권한 서비스를 호출 |
 | CLI | Rust + clap + reqwest | 독립 실행 파일로 배포하며 초기화·로그인·검사·미리보기·릴리스·로그 명령 제공 |
 | 첫 앱 개발 프로필 | Rust + Axum + SQLx, React + Vite 정적 화면 | Rust 서버·정적 화면·작업·migration을 한 OCI 이미지로 배포. 정적 파일은 이미지에 포함하며 바이너리 내장은 선택안 |
-| 인증 | 단일 Keycloak/IdP + OIDC, 코어의 세션 용도·중앙 정책 | prod 포털·dev 포털·콘솔 세 출처. Keycloak과 device CLI 승인은 콘솔. 앱 코드는 포털에서만 실행하고 브라우저 세션 용도를 서버가 검사 |
+| 인증 | 단일 Keycloak/IdP + OIDC, 코어의 세션 용도·중앙 정책 | prod 포털·dev 포털·콘솔 세 출처. Keycloak과 device CLI 승인은 콘솔. 앱 코드는 설치별 출처 프레임에서 실행하고 목적별 포털 세션으로 실행을 발급 |
 | DB·벡터 검색 | PostgreSQL + pgvector | 플랫폼 상태, 앱 DB, 작업 상태와 문서 임베딩 저장. 앱·환경별 DB·역할 분리 |
 | 작업 큐 | PostgreSQL 영속 작업 테이블 + Rust worker | 예약·재시도·빌드·배포 작업을 기록. 실행할 앱 코드는 별도 격리 환경에서 구동 |
 | 소스·이미지 저장소 | Gitea + 내장 OCI Container Registry | 고객사 내부 Git과 배포 이미지를 함께 관리. 외부 GitHub·GitLab도 연결 |
 | 개발 자산 배포 | 버전 개발 번들 + Rust SDK crate + npm 호환 브라우저 SDK·UI 패키지 | CLI가 지침·SDK·UI까지 준비. 초기 Rust SDK는 번들에 포함하고 npm 패키지는 Gitea Registry 활용 검토 |
 | 빌드·실행 | Docker Engine + BuildKit + Compose | Compose로 고정 기반 서비스를 설치하고 별도 runner가 앱 컨테이너 수명주기를 관리 |
 | 자원·용량 제어 | Linux cgroup v2 + runner·코어 용량 관리 + 파일 예약·DB 측정 | 실행 전 서버·앱 예산 확인, CPU·메모리 제한, 저장량 경보·초과 대응. 공유 DB 용량은 관리 한도로 구분 |
-| 진입점·TLS | 단일 IP + 사설 CA HTTPS, 도메인 + 공인 인증서는 권장 | 포털/콘솔의 두 포트 구성 가능. 외부 도메인·내부 DNS·추가 IP 불필수. 쿠키는 포트로 격리되지 않으므로 세션 용도·Origin/CSRF·cookie 전달 차단을 함께 인수 |
+| 진입점·TLS | 단일 IP + 사설 CA HTTPS, 도메인 + 공인 인증서는 권장 | prod/dev/console 세 출처와 설치별 프레임 출처. 단일 IP는 [앱 프레임 배치 프로필](APP-FRAMES.md)에 따라 포트를 배정하며 외부 도메인·내부 DNS·추가 IP 불필수. 포트 쿠키 공유 한계는 별도 인수 |
 | 파일 저장 | miy Storage API + 로컬 영속 볼륨, S3 backend 선택 연결 | 초기 단일 서버에는 별도 객체 저장 서버 없이 시작. 저장 구현을 바꿔도 앱의 파일 API 계약 유지 |
 | 내장 챗봇 | Hermes의 Python 런타임 + miy 전용 어댑터 | Rust가 대화·실행·권한을 관리하고 Hermes가 모델·도구 루프를 수행. 브라우저에는 SSE로 이벤트 전달 |
 | 내부 AI 연결 | 공통 연결 어댑터 + 사용자별 공급자 세션 + 선택형 API·사내 모델 | 공급자 인증은 관리자 관리. miy 사용자·대화에 Codex thread를 매핑하고 실행·이벤트·도구 권한을 분리 |
@@ -44,6 +44,14 @@ Axum은 Tokio·Tower와 결합하는 HTTP 라이브러리이며 SQLx는 비동�
 React 공식 안내는 Vite, TanStack Router·Query를 SPA 구성 선택지로 소개한다. shadcn/ui의 편집 가능한 컴포넌트를 제품의 UI 계약에 맞게 관리하되, 공통 부분은 각 앱이 별도 복사·수정하기보다 `@miy/ui`로 제공하는 것을 추천한다. [React 구성 안내](https://react.dev/learn/build-a-react-app-from-scratch), [shadcn/ui](https://ui.shadcn.com/docs)
 
 utoipa는 Rust 기반 OpenAPI 생성을, openapi-typescript는 OpenAPI의 TypeScript 타입 생성을 지원한다. 생성 타입은 런타임 입력 검증을 대신하지 않으므로 서버와 앱의 계약 검사를 별도로 둔다. [utoipa](https://github.com/juhaku/utoipa), [openapi-typescript](https://openapi-ts.dev/introduction)
+
+## 프론트엔드 선택과 공통 UI
+
+관리 웹과 첫 업무 앱 템플릿은 TypeScript 엄격 모드·React·Vite를 사용해 독립적으로 빌드한다. Rust API를 호출하는 정적 SPA가 기본이며 Next.js는 제외한다. 공개 콘텐츠의 검색 노출과 SSR은 현재 범위 밖이다. SSR이 제품 요구가 되면 TanStack Start·React Router Framework Mode를 다시 비교한다.
+
+React 선택은 기존 UI 자산과 생태계, 타입 검사에 기반한 개발 편의성을 고려한 판단이다. 특정 AI 모델의 결과 품질을 보장하지 않는다. TanStack Router로 화면 이동의 타입을 연결하고 TanStack Query를 서버 데이터 조회·캐시의 선택으로 둔다. 구체적인 의존성 버전은 호환성을 검사해 고정하고 타입 검사와 실제 화면 검증으로 결과를 확인한다.
+
+공통 UI 자산에는 디자인 토큰, 인증·앱 실행 연결, 입력 폼·목록·상세 예제, 로딩·오류·권한 부족 상태와 접근성 지침을 둔다. 필수 연동 규칙과 권장 스타일을 구분하며 앱은 업무에 맞는 컴포넌트와 호환 UI 라이브러리를 추가할 수 있다. 플랫폼 내부 코드를 직접 가져오지 않고 버전 SDK·UI 자산으로 연결한다. UI 기능별 적용 범위는 [v1 적용 계획](V1-ADOPTION.md#35-공용-ui테마언어sdk-ui-7-1), 비교 과정은 [프론트엔드 검토 보관본](archive/design/FRONTEND.md)에 둔다.
 
 ## 코어와 앱 개발 언어
 
@@ -81,7 +89,7 @@ Compose는 PostgreSQL·Keycloak·Gitea·Hermes·miy 등 설치 기반 서비스�
 
 앱·미리보기·빌드의 파일·네트워크·자격증명을 분리하고 CPU·메모리·작업 동시 실행 한도를 적용한다. Docker 소켓은 앱과 공개 API 컨테이너에 전달하지 않는다. Engine 제어는 좁은 명령 계약을 가진 내부 runner가 담당한다. Rootless 실행을 우선 검증하되 대상 OS의 자원 제한·네트워크·볼륨 기능까지 확인한다. Rootless 자체를 앱 간 완전한 격리 보장으로 간주하지 않는다. [Docker Rootless](https://docs.docker.com/engine/security/rootless/)
 
-runner의 초기 실행 어댑터는 Docker Engine API 하나로 좁힌다. 패키지 계약·관리형 자원 연결은 Cloudron, 수명주기와 앱 관리 경험은 Synology·Dokku·Coolify에서 참고한다. Podman Quadlet·호스트 systemd·Wasm 플러그인·Nomad는 적용 범위가 다른 비교 후보로 남긴다. 제품 전체 도입과 개념 차용을 구분한 근거는 [런타임 설치·업데이트 기술 비교](RESEARCH.md#런타임-앱-설치와-업데이트-기술-비교)에 정리한다.
+runner의 초기 실행 어댑터는 Docker Engine API 하나로 좁힌다. 패키지 계약·관리형 자원 연결은 Cloudron, 수명주기와 앱 관리 경험은 Synology·Dokku·Coolify에서 참고한다. Podman Quadlet·호스트 systemd·Wasm 플러그인·Nomad는 적용 범위가 다른 비교 후보로 남긴다. 제품 전체 도입과 개념 차용을 구분한 근거는 [런타임 설치·업데이트 기술 비교](reference/RESEARCH.md#런타임-앱-설치와-업데이트-기술-비교)에 정리한다.
 
 서버 전체에서 기반 서비스·복구 여유를 먼저 제외하고 앱·작업·빌드의 자원 예약을 관리한다. Rootless 환경의 cgroup 지원·controller 위임과 실제 한도 집행을 설치 진단에 포함한다. 저장량·연결 수·DB 부하·캐시 정리와 단계별 효율화는 [용량 관리 계획](CAPACITY.md)을 따른다.
 

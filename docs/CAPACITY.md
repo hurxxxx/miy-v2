@@ -1,13 +1,13 @@
 # miy 인프라 용량 관리와 효율화 계획
 
 작성일: 2026-10-20  
-수정일: 2026-10-21  
+수정일: 2026-11-13\
 기준: PRD 0.5  
-상태: 설계 기본안 · 자원 수치와 지원 규모는 파일럿에서 결정
+상태: 전체 자원 예약은 설계 기본안 · 연결 예산, 앱 API 응답·인증 서버 메모리 한도와 회귀 작업물 정리는 아래 현행 구현을 따름
 
 **서버 전체의 여유를 먼저 확보하고, 앱별 한도·실행 전 용량 확인·초과 대응을 함께 적용한다.** CPU·메모리, 파일, DB는 제한하는 방법과 보장 범위가 다르다. 기업별 단일 Linux 서버·VM에서 시작하며 사내·클라우드에 같은 관리 원칙을 적용한다.
 
-[PRD](PRD.md)의 자원 요구사항, [개발 계획](DEVELOPMENT.md)의 앱·DB 계약, [기술 스택](STACK.md)의 Rust runner·Docker·PostgreSQL 구성을 구체화한다. 현재는 문서 설계이며 실제 서버 설정을 변경하지 않는다.
+[PRD](PRD.md)의 자원 요구사항, [개발 계획](DEVELOPMENT.md)의 앱·DB 계약, [기술 스택](STACK.md)의 Rust runner·Docker·PostgreSQL 구성을 구체화한다. 전체 예약·지원 규모와 현재 적용한 개별 한도를 구분한다.
 
 ## 관리 주체와 실행 흐름
 
@@ -39,6 +39,24 @@ Rust 코어에 용량·정책 판단 기능을 두고, 내부 runner가 호스�
 Docker는 기본적으로 컨테이너 자원을 제한하지 않으므로 runner가 실행 설정을 반드시 지정한다. CPU 상한은 사용할 수 있는 CPU 시간의 최대치이며 특정 물리 코어의 독점 할당이나 최소 성능 보장은 아니다. 메모리 상한 초과는 해당 컨테이너의 프로세스 종료로 이어질 수 있다. [Docker 자원 제한](https://docs.docker.com/engine/containers/resource_constraints/)
 
 Rootless Docker의 자원 제한에는 cgroup v2·systemd와 필요한 controller 위임이 필요하다. 호스트 설치 진단에서 지원 여부와 실제 제한 동작을 확인하고, 적용되지 않는 옵션을 저장만 한 상태로 배포하지 않는다. [Docker Rootless 자원 제한](https://docs.docker.com/engine/security/rootless/tips/#limiting-resources)
+
+## 앱 API 응답의 현재 메모리 보호
+
+코어의 업무 API·프레임 API·앱 간 연결과 로컬 preview는 공통 `app_response::read`로 응답 본문을 수집한다. 본문은 응답별 4MiB이며 Content-Length가 없거나 chunked여도 실제 바이트 수로 초과를 거부한다. 초과는 502 `app_response_too_large` / `preview_response_too_large`다. 별도 파일 스트리밍은 아직 미구현이며 이 한도만 올려 대용량 파일을 지원하지 않는다.
+
+프로세스당 최대 64개 응답이 수집·보유 슬롯을 공유한다. 슬롯은 수집 함수 반환 때 해제하지 않고 실제 응답 바이트의 마지막 참조가 사라질 때 반환한다. 전송 대기 중인 응답과 복제·분할한 Bytes도 포함하고, 수집 실패·크기 초과·취소에서는 반환한다. 버퍼 예약 크기의 증가도 4MiB 안으로 제한한다. 슬롯을 10초 안에 얻지 못하면 503 `app_gateway_busy` / `preview_gateway_busy`다.
+
+이는 수집한 앱 응답 데이터의 보호이며 요청 본문·대기 중인 upstream 연결·HTTP/소켓 버퍼·할당기 여유와 전체 프로세스 RSS의 상한은 아니다. 느린 클라이언트가 모든 슬롯을 점유할 때 다른 앱 호출의 대기는 가능하며 앱별 공정성·전체 부하 인수는 별도다. 응답별 제한은 `69a8170`, 바이트 수명 보완은 그 위 작업본에서 구현·검증했고 **아직 개발 서버에 반영하지 않았다**. 실제 TCP 지연·연결 취소를 포함한 검사와 미실행 범위는 [응답 수명 보완 기록](releases/app-api-response-lifetime-2026-11-13-validation.json)에 둔다.
+
+## 인증 서버와 회귀 테스트의 현재 메모리 한도
+
+`compose.yaml`의 Keycloak은 `mem_limit: 2g`, `memswap_limit: 2g`를 사용한다. 컨테이너 전체 RAM 상한은 2GiB이고 추가 swap은 허용하지 않는다. 기본 JVM 비율(초기 50%, 최대 70%)은 이 한도 안에서 초기 힙 1GiB·최대 약 1.4GiB로 계산된다. `-Xmx`만 제한하는 것과 달리 비힙 메모리도 컨테이너 한도에 포함된다. 새 설치와 공통 Compose를 상속하는 격리 UI 스택에 같은 기본값을 적용한다. 이는 소규모 개발 환경의 시작값이며 사용자 수·동시 로그인 부하의 인수 결과는 아니다. [Keycloak 메모리 설정](https://www.keycloak.org/server/containers#_specifying_different_memory_settings), [Docker memory/swap](https://docs.docker.com/engine/containers/resource_constraints/#--memory-swap-details)
+
+기존 인증 서버에는 요청에 따라 컨테이너를 보존한 채 stop → memory/swap 상한 변경 → start로 적용했다. 크게 할당된 JVM에 실행 중 더 작은 한도를 바로 걸지 않는다. 실제 cgroup·JVM 힙·인증 검사는 [자원 보완 기록](releases/resource-usage-2026-11-12-validation.json)을 따른다. 이 변경으로 코어의 전체 자원 예약이나 다른 서비스의 메모리 한도까지 구현됐다고 판단하지 않는다.
+
+회귀 테스트 작업물은 기본적으로 `.local/evidence/runtime-regression/` 아래 고유 디렉터리에 만든다. 이 호스트의 `/tmp`는 tmpfs이므로, 수백 MB의 실행 파일을 그곳에 누적하면 RAM·swap도 점유한다. 작업 위치 변경은 `MIY_RUNTIME_REGRESSION_DIR`로 지정하며 디스크 경로를 사용한다. 바이너리 해시는 파일을 통째로 메모리에 읽지 않고 스트리밍으로 계산한다.
+
+일반 종료·시험 실패·SIGINT/SIGTERM 뒤에는 소유권·잠금·활성 프로세스·컨테이너 참조를 확인한 후 재생성 가능한 바이너리·이미지 아카이브·임시 비밀 파일을 제거한다. 로그·관찰 JSON·바이너리/아카이브 해시와 정리 시도별 기록은 보존한다. `MIY_RUNTIME_KEEP_WORK=1`은 조사 목적으로 작업물을 명시적으로 유지할 때만 사용한다. SIGKILL이나 정리 거부 뒤에는 해당 실행 경로를 확인해 다시 정리하며, 이전 실행이나 다른 프로젝트의 디렉터리를 자동으로 일괄 삭제하지 않는다. 명령과 검사 범위는 [회귀 실행 안내](../scripts/runtime-regression/README.md)를 따른다.
 
 ## 서버 전체 예산과 실행 전 확인
 

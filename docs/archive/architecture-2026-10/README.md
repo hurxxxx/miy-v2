@@ -1,6 +1,6 @@
 # miy 아키텍처 설명
 
-> 이력 전용 — `22c219d`의 docs/architecture/README.md에서 보관한 당시 계약·계획이다. 새 구현의 지침이 아니다. [현재 경계 설계](../../APP-BOUNDARIES.md)와 [현재 인수 기준](../../VALIDATION.md)을 따른다. 수치·결과는 당시 범위로만 해석한다.
+> 이력 전용 — `22c219d`의 docs/architecture/README.md에서 보관한 당시 계약·계획이다. 새 구현의 지침이 아니다. [현재 경계 설계](../../APP-BOUNDARIES.md)와 [현재 인수 기준](../../APP-BOUNDARIES.md#경계-인수)을 따른다. 수치·결과는 당시 범위로만 해석한다.
 
 도식 작성일: 2026-10-20 · PRD 0.3  
 설명 보완일: 2026-10-21 · PRD 0.5

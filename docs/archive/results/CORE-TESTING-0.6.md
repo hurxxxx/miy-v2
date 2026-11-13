@@ -1,6 +1,8 @@
+> 보관 문서 — 2026-11-13 정리. CLI 0.6 계열의 사용자·독립 AI 인수 절차와 결과를 보존한다. 현재 앱 개발 사용법은 [RUNNING](../../RUNNING.md), 검사 선택은 [CHECKS](../../CHECKS.md), 새 Windows 인수는 [WINDOWS-ACCEPTANCE](../../WINDOWS-ACCEPTANCE.md)를 따른다. 당시 PASS를 새 후보나 전체 V7로 이월하지 않는다.
+
 # CLI 0.6 핵심 흐름 사용자 테스트
 
-대상은 CLI **0.6.3** / 개발 번들 **0.7.1**이다. 이 인수 당시 운영 서버와 게시 CLI의 artifact source는 `8d7d042`였고 main 통합 commit과 별도로 기록했다. 현재 배포 소스는 [운영 안내](SERVER-OPERATIONS.md)를 따른다. 기본 네이티브 실행과 서버 빌드 경로에는 Docker Desktop·WSL·SSH가 필요하지 않다. 서버는 `app.builds.v1`을 제공해야 한다. 이번 인수는 Codex·Claude 각각의 새 업무 앱 개발·서버 원격 빌드·dev 배포·데이터 보존까지이며, 화면·사용성 개선은 [보류 중인 사용성 개선](PLAN.md#보류-중인-사용성-개선)에 기록한다.
+대상은 CLI **0.6.3** / 개발 번들 **0.7.1**이다. 이 인수 당시 운영 서버와 게시 CLI의 artifact source는 `8d7d042`였고 main 통합 commit과 별도로 기록했다. 현재 배포 소스는 [운영 안내](../../SERVER-OPERATIONS.md)를 따른다. 기본 네이티브 실행과 서버 빌드 경로에는 Docker Desktop·WSL·SSH가 필요하지 않다. 서버는 `app.builds.v1`을 제공해야 한다. 이번 인수는 Codex·Claude 각각의 새 업무 앱 개발·서버 원격 빌드·dev 배포·데이터 보존까지이며, 화면·사용성 개선은 [보류 중인 사용성 개선](../../PLAN.md#보류-중인-사용성-개선)에 기록한다.
 
 2026-11-02 Linux에서 Codex·Claude 각각의 독립 개발과 v1→v2 인수를 완료했다. 각 도구는 새 폴더·앱 ID·대화로 비품대장 v1을 개발하고 자신의 같은 대화를 재개하여 v2의 보관 위치 기능을 추가했다. 실제 Rust/앱 검사, 서버 원격 빌드와 dev 배포를 수행했으며 최종 v2 평가에서 API CRUD·입력 검증·소유권, 브라우저 생성·수정·삭제·새로고침, 동일 DB와 v1 레코드 보존을 확인했다. v1과 v2에서 각각 실행한 검사의 차이와 source/build/job/release/image는 [독립 AI 인수 결과](INDEPENDENT-AGENTS-0.6.3-ACCEPTANCE.md)를 따른다.
 
@@ -14,11 +16,11 @@ Windows 설치기 구현과 새 CI 배포물 검증 절차는 [준비 완료](WI
 
 ## 설치와 로그인
 
-현재 게시된 [CLI 설치 안내](https://v2.dwdcc.kr/cli/install)에서 0.6.3 설치기와 해당 OS의 CLI를 받는다. 실제 내려받은 파일의 버전·source·SHA-256을 [게시 기록](CLI-VALIDATION-MATRIX.md)과 대조하고, 설치 후 실행 경로와 실행 파일 SHA-256도 기록한다. 게시 배포물과 소스에서 직접 빌드한 실행 파일을 구분한다. 아래 `miy`는 설치된 CLI이며, 생성 프로젝트의 `.miy-tools/miy` 또는 `.miy-tools/miy.exe`를 사용할 때에도 실제 실행 경로와 버전을 확인한다.
+아래는 0.6.3 인수 당시의 재현 절차다. 새 인수에서는 [CLI 설치 안내](https://v2.dwdcc.kr/cli/install)의 현재 후보를 [CLI 배포 문서](../../CLI-RELEASE.md)와 대조하고 해당 소스·버전으로 별도 결과를 남긴다. 이 문서의 0.6.3 PASS를 새 후보에 이월하지 않는다. 실제 내려받은 파일의 버전·source·SHA-256과 설치 후 실행 경로·파일 SHA-256을 기록하며 소스에서 직접 빌드한 실행 파일과 구분한다. 아래 `miy`는 당시 설치된 CLI이며, 생성 프로젝트의 `.miy-tools/miy` 또는 `.miy-tools/miy.exe`를 사용할 때에도 실제 실행 경로와 버전을 확인한다.
 
-Windows 사용자는 [0.6.3 실제 인수 절차](WINDOWS-0.6.3-ACCEPTANCE.md)와 [GUI 설치 안내](WINDOWS-INSTALLER.md)에 따라 다음 실제 인수를 추후 수행한다. 일반 사용자 여부·Windows 버전·PowerShell 5.1/7을 기록하고 최초 설치, 기존 설치의 갱신, 제거와 재설치를 각각 확인한다. 갱신 전후 실행 경로·버전·파일 해시와 기존 context·프로젝트 보존을 비교하며 원격 앱 DB 보존은 별도로 확인한다. 제거 시에는 실행 파일·설치 등록·PATH 정리와 사용자 데이터 보존을 구분하여 기록한다. 제거 후 이어서 앱을 개발하려면 먼저 재설치한다. 아직 실행하지 않은 단계는 `NOT_RUN`으로 둔다.
+Windows 사용자의 새 실행은 [현재 인수 절차](../../WINDOWS-ACCEPTANCE.md)와 [GUI 설치 안내](../cli/WINDOWS-INSTALLER.md)를 따르며 [0.6.3 절차](WINDOWS-0.6.3-ACCEPTANCE.md)는 이력이다. 일반 사용자 여부·Windows 버전·PowerShell 5.1/7을 기록하고 최초 설치, 기존 설치의 갱신, 제거와 재설치를 각각 확인한다. 갱신 전후 실행 경로·버전·파일 해시와 기존 context·프로젝트 보존을 비교하며 원격 앱 DB 보존은 별도로 확인한다. 제거 시에는 실행 파일·설치 등록·PATH 정리와 사용자 데이터 보존을 구분하여 기록한다. 제거 후 이어서 앱을 개발하려면 먼저 재설치한다. 아직 실행하지 않은 단계는 `NOT_RUN`으로 둔다.
 
-네이티브 로컬 개발에는 Rust, Node, 지정된 pnpm과 Git을 준비하며 Windows에서는 MSVC·Windows SDK도 필요하다. Linux의 준비 조건은 [네이티브 개발 안내](NATIVE-DEVELOPMENT.md)를 따른다. CLI에는 기본 서버 주소가 없다. 기존 context가 있으면 보존하고 새 서버는 명시적으로 등록한다.
+네이티브 로컬 개발에는 Rust, Node, 지정된 pnpm과 Git을 준비하며 Windows에서는 MSVC·Windows SDK도 필요하다. Linux의 준비 조건은 [네이티브 개발 안내](../cli/NATIVE-DEVELOPMENT-0.6.md)를 따른다. CLI에는 기본 서버 주소가 없다. 기존 context가 있으면 보존하고 새 서버는 명시적으로 등록한다.
 
 ```powershell
 miy --version
@@ -60,7 +62,7 @@ v1 배포를 별도로 평가하고 보존할 레코드를 만든 뒤 같은 대
 3. v1 배포의 API CRUD·잘못된 입력 거부·사용자 소유권과 브라우저 표시를 별도로 검사한다. 보존할 레코드를 만들고 ID·비품명·수량, DB 식별자, installation·release·image와 원격 빌드·배포 작업을 기록한다.
 4. 같은 도구의 v1 대화를 재개하여 v2 기능과 새 migration을 추가하고 manifest version을 올린다. 검사·커밋·서버 원격 빌드·dev 배포를 반복한다. v2의 source commit·build·deploy job·image가 실제 installation과 일치하는지 확인한다.
 5. v2에서 같은 DB·installation을 유지한 채 release가 바뀌었는지, 보존한 UUID·비품명·수량이 같은지 확인한다. 새 보관 위치의 생성·수정, 다른 사용자의 조회·수정·삭제 거부, 브라우저 폼의 생성·수정·삭제·새로고침과 DB 반영을 검사한다. 행 수만으로 데이터 보존을 판정하지 않는다.
-6. 실제 확인한 결과만 [인수 기록](../templates/rust-react/docs/ACCEPTANCE.md) 형식으로 남긴다. `miy app accept` 제출 여부는 별도로 기록하고, 실행하지 않은 명령을 완료 목록에 넣지 않는다.
+6. 실제 확인한 결과만 [인수 기록](../../../templates/rust-react/docs/ACCEPTANCE.md) 형식으로 남긴다. `miy app accept` 제출 여부는 별도로 기록하고, 실행하지 않은 명령을 완료 목록에 넣지 않는다.
 
 이번 인수는 dev까지다. prod 승격과 dev/prod DB 분리 검사는 별도 작업으로 수행하며, 이후 명시된 범위와 운영 권한을 확인한 뒤 검증한 동일 이미지를 승격한다.
 

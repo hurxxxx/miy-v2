@@ -1,12 +1,62 @@
-# 게시 CLI Windows 11 인수 (현재 후보)
+# Windows 설치와 사용자 인수
 
-- 작성일: 2026-11-03
+- 작성일: 2026-11-03 · 정리일: 2026-11-13
 - 대상: [후보 파일](releases/windows-candidate.json)에 고정한 현재 게시 후보. 지금은 CLI **0.7.0** / SDK 번들 **0.8.0**, source `01e4d4924f8c8fc4e11720c1af81adf17ddb20bf`
-- 상태: **절차·검사기 준비 완료. 사용자 Windows 11 실행은 `NOT_RUN`.** 사용자가 실행한 뒤 결과를 §결과에 추가한다.
+- 상태: **절차·검사기 준비 완료. 사용자 Windows 11 실행은 `NOT_RUN`.** 사용자가 실행한 뒤 실행별 기록은 `docs/releases/`에 남기고 아래 결과표의 현재 상태를 갱신한다.
 
-이전 후보의 절차와 기록은 [0.6.3 인수](WINDOWS-0.6.3-ACCEPTANCE.md)에 보존한다. Windows Server CI 통과를 Windows 11 통과로 옮기지 않는다. 설치 파일의 동작 설명은 [설치기 설명](WINDOWS-INSTALLER.md)을 따른다.
+Windows 사용자의 GUI·수동 설치, 갱신·제거와 실제 PC 인수는 이 문서에서 관리한다. 설치 파일의 빌드·출처 검증·서버 게시는 [CLI 릴리스](CLI-RELEASE.md)가 담당한다. 이전 후보의 [0.6.3 인수 절차](archive/results/WINDOWS-0.6.3-ACCEPTANCE.md), [버전별 검증 기록](archive/results/WINDOWS-VALIDATION.md), [설치기 도입 기록](archive/cli/WINDOWS-INSTALLER.md)은 보관 이력이다. Windows Server CI와 과거 Windows PASS를 현재 후보의 Windows 11 통과로 옮기지 않는다.
 
 이 절차는 **현재 게시된 0.7.0**을 대상으로 한다. 서버의 [사내 최소 계약](APP-BOUNDARIES.md#확정-결정)은 업무 앱 프레임 실행과 단일 IP HTTPS의 prod 포털·dev 포털·관리/로그인 콘솔 세 출처다. Keycloak과 device CLI 승인은 콘솔에 두며 도메인·내부 DNS·추가 IP는 필수가 아니다. 현재 서버 반영 여부와 주소는 [운영 안내](SERVER-OPERATIONS.md)를 따른다. 아래 Windows 검사는 사용자 수행 NOT_RUN이며 Linux·기존 HTTP IP 결과를 이 인수로 이월하지 않는다. 게시 설치기 바이트는 변경하지 않는다.
+
+## 설치기 동작과 일반 설치
+
+일반 사용자는 회사 MIY 홈페이지의 `/cli/install`에서 검증된 Windows x64 GUI 설치 파일을 받는다. 설치 파일에는 CLI와 설치 스크립트가 포함되어 있어 설치 중 GitHub에서 다시 받을 필요가 없다. 서버 주소는 파일에 내장하지 않으므로 같은 검증 파일을 여러 회사가 배포할 수 있다. Windows에 포함된 .NET Framework를 사용하는 GUI이며, 현재 후보는 Authenticode 미서명 상태다. 출처·해시를 확인하고 조직 정책에 따라 실행한다.
+
+1. 아래 [후보와 출처](#후보와-출처)를 대조한 파일을 연다. 사용자 인수 결과를 남길 때는 [공개 파일 준비](#공개-파일-준비-두-powershell에서-각각-실행)를 먼저 수행한다.
+2. 회사의 **prod 포털** HTTPS 주소를 입력하고 연결을 확인한다. 기본 도메인·IP는 없으며 [HTTPS 확인 항목](#세-https-출처의-windows-확인-항목)의 사설 CA·IP SAN 조건을 따른다.
+3. **설치**를 누른다. GUI는 `%LOCALAPPDATA%\Programs\miy\bin`과 사용자 PATH를 관리한다. 폴더·연결 이름·PATH 선택란은 제공하지 않는다.
+4. 설치 후 같은 버전의 설치 버튼은 비활성화되고 **CLI 제거**가 활성화된다. 새 버전 파일에서는 갱신할 수 있다.
+5. 새 PowerShell에서 `miy auth login`을 실행해 브라우저에서 승인하고 `miy auth status`로 확인한다. GUI에는 로그인 버튼이 없다. 앱 개발은 [실행 안내](RUNNING.md)를 따른다.
+
+기존 연결·인증정보는 보존한다. 같은 서버 주소는 기존 연결을 재사용하고 새 주소의 연결 이름은 충돌 없이 정한다. 관리자로 승격하거나 시스템 PATH를 바꾸지 않는다. 실행 파일이 사용 중이면 CLI/MCP를 정상 종료한 뒤 재시도하며 강제 종료하지 않는다. 제거 대상은 GUI가 설치한 CLI와 그 사용자 PATH 항목이며 설정·인증정보·프로젝트·앱 데이터는 남긴다. 사용자 지정 경로의 기존 스크립트 설치는 아래 수동 경로로 관리한다.
+
+## 수동 ZIP 설치·갱신·제거
+
+사용자 지정 경로나 진단을 위한 보조 경로다. 수동 설치의 실행 결과는 GUI 인수와 별도로 기록한다. 아래 GUI용 사전·후검사만으로 사용자 지정 경로의 수동 설치를 검증했다고 판단하지 않는다.
+
+ZIP을 신뢰한 배포 위치에서 받고 게시된 SHA-256과 대조한 다음 별도 디렉터리에 풀어 설치 스크립트를 실행한다. ZIP 내부에는 `miy.exe`, `release.json`, 설치·갱신·제거 스크립트와 공통 라이브러리가 있다. 설치 스크립트 자체도 검증한 ZIP 또는 확인한 소스 checkout에서 사용한다.
+
+일반 사용자 계정의 Windows x64 PowerShell 5.1/7에서 다음과 같이 실행한다. 기본 설치 위치는 `%LOCALAPPDATA%\Programs\miy\bin`이다. 예제의 파일명은 현재 0.7.0 후보 기준이며 SHA-256은 별도로 확인한 게시 값으로 대체한다. 새 후보에서는 파일명과 해시를 함께 확인한다.
+
+```powershell
+$ExpectedSha256 = 'REPLACE_WITH_PUBLISHED_SHA256'
+$Archive = (Resolve-Path '.\miy-0.7.0-x86_64-pc-windows-msvc.zip').Path
+if ((Get-FileHash -LiteralPath $Archive -Algorithm SHA256).Hash -ne $ExpectedSha256) { throw 'ZIP checksum mismatch' }
+Expand-Archive -LiteralPath $Archive -DestinationPath '.\miy-release-0.7.0'
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File '.\miy-release-0.7.0\install-cli.ps1' -ArchivePath $Archive -Sha256 $ExpectedSha256
+if ($LASTEXITCODE -ne 0) { throw "Install failed: $LASTEXITCODE" }
+& "$env:LOCALAPPDATA\Programs\miy\bin\miy.exe" --version
+if ($LASTEXITCODE -ne 0) { throw "CLI failed: $LASTEXITCODE" }
+```
+
+`-ExecutionPolicy Bypass`는 위 자식 PowerShell 프로세스에만 적용된다. 설치기는 시스템/사용자 실행 정책이나 profile을 변경하지 않는다. PowerShell 7에서는 `powershell.exe` 대신 `pwsh`를 사용할 수 있다. 조직의 적용 정책으로 스크립트 실행이 제한된 환경은 그 정책에 맞는 실행 방식을 사용한다.
+
+설치기에 `-AddToPath`를 명시한 경우에만 사용자 PATH에 설치 경로를 추가한다. 현재 터미널의 PATH는 자동으로 바꾸지 않는다. 다른 드라이브나 한글/공백이 있는 경로는 `-InstallDir 'D:\도구 모음\miy'`로 지정한다. 기존 사용자 파일이 있는 미관리 디렉터리, junction/symlink를 통과하는 경로, 다른 사용자가 수정할 수 있는 설치 디렉터리는 거부한다.
+
+업데이트는 검증한 새 배포물의 외부 스크립트로 실행한다.
+
+```powershell
+pwsh -NoProfile -ExecutionPolicy Bypass -File '.\miy-release-0.7.0\update-cli.ps1' -ArchivePath $Archive -Sha256 $ExpectedSha256
+if ($LASTEXITCODE -ne 0) { throw "Update failed: $LASTEXITCODE" }
+pwsh -NoProfile -ExecutionPolicy Bypass -File '.\miy-release-0.7.0\uninstall-cli.ps1'
+if ($LASTEXITCODE -ne 0) { throw "Uninstall failed: $LASTEXITCODE" }
+```
+
+사용자 PATH 항목도 제거하려면 제거 명령에 `-RemoveFromPath`를 명시한다. 사용자 지정 설치 경로는 갱신·제거에서도 같은 `-InstallDir`를 전달한다. 명시적인 `-Version VERSION`을 사용하면 신뢰한 기존 설치기가 명시 버전의 ZIP과 체크섬을 GitHub Releases에서 받아 검증한다. `latest`를 자동 선택하지 않는다. 공개 릴리스가 아직 없으면 이 원격 경로는 사용할 수 없다.
+
+설치기는 SHA-256, ZIP 경로, PE x64 header, 내부 binary hash, 실제 `--version`을 먼저 검사한다. 실행 중인 CLI/MCP 때문에 파일을 교체할 수 없으면 종료 코드 6으로 거부한다. 프로세스를 강제로 종료하거나 실행 중인 CLI가 자기 파일을 덮어쓰게 하지 않는다. 실행 파일 교체와 제거는 설치 디렉터리의 소유한 `miy.exe`와 metadata를 대상으로 한다. `-Server`를 전달한 설치는 사용자 설정이 없을 때만 기본 연결을 추가하며, 기존 설정·인증·프로젝트·앱 데이터와 사용자 파일은 보존한다. 이전 버전 backup도 남긴다.
+
+중단 기록은 `.miy-install-journal.json`, backup은 `.miy-backups/ID/`에 있다. 다음 외부 설치/갱신/제거가 기록을 확인해 회복한다. 다른 프로세스의 파일 잠금이나 사용자 수정·backup 변조로 복구가 불가능하면 journal과 backup을 유지하고 오류를 반환한다. 그 경우 설치 디렉터리를 지우지 말고 원인을 해결한 뒤 재실행한다. PowerShell 5.1은 native 명령의 실패만으로 자동 중단하지 않으므로 각 명령 직후 `$LASTEXITCODE`를 검사한다.
 
 ## 세 HTTPS 출처의 Windows 확인 항목
 
@@ -189,9 +239,9 @@ if ($LASTEXITCODE -ne 0) { throw 'AfterRemove failed; retain evidence.' }
 | 이전 버전(0.6.3)에서 GUI 갱신 | NOT_RUN | Before/AfterUpdate |
 | 기존 context·인증 사용성·프로젝트 보존 | NOT_RUN | 지문 비교와 사용자 auth 결과, vault 미검사 구분 |
 | GUI 제거·PATH 정리·기존 자료 보존 | NOT_RUN | Before/AfterRemove와 사용자 관찰 |
-| 원격 앱 DB 보존·사내 HTTP IP 접속 | NOT_RUN | 해당 환경에서 별도 확인 |
+| 원격 앱 DB 보존·단일 IP/사설 CA HTTPS 접속 | NOT_RUN | 해당 환경에서 별도 확인. 이전 HTTP IP 결과를 이월하지 않음 |
 
-각 실행을 아래 형식으로 기존 기록 뒤에 추가한다. 실패나 미실행 기록을 나중 성공으로 덮어쓰지 않는다.
+실행별 기록은 아래 형식으로 `docs/releases/`의 새 결과 파일에 남기고 위 표에는 현재 후보의 상태만 반영한다. 실패나 미실행 기록을 나중 성공으로 덮어쓰지 않는다.
 
 ```text
 실행 UTC / 로컬 시간:

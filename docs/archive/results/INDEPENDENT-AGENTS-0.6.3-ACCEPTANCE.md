@@ -1,14 +1,16 @@
 # CLI 0.6.3 독립 Codex·Claude 개발 인수
 
+> 보관 기록 — 아래 결과는 실행 당시의 소스·환경 범위에만 적용한다. 현재 상태·순서는 [PLAN](../../PLAN.md), 현재 검사는 [CHECKS](../../CHECKS.md)를 따른다.
+
 2026-11-02 Linux에서 **두 도구 모두 평가환경 보완 후 최종 인수를 통과**했다. 각자 새 앱·작업 폴더·대화에서 비품대장을 구현하고, 자신의 대화를 재개하여 보관 위치를 추가한 v2를 배포했다. 실제 원격 빌드·dev 배포, API·브라우저 CRUD, 사용자 소유권과 v1→v2 데이터 보존을 확인했다. 최초 시도 무개입 성공이나 제품 전체 V7 완료를 의미하지 않는다.
 
 사용자가 요청한 1~3번의 결과는 다음과 같다.
 
 | 작업 | 결과·증거 |
 | --- | --- |
-| 운영 소스 main 통합 | `a6fae065ed627bb63798cf74ea8a2c73a744c104` 게시. [CI 41447528061](https://github.com/hurxxxx/miy-v2/actions/runs/41447528061) 5개 job 성공. [로컬 검사·출처](releases/cli-0.6.3-main-integration.json) |
+| 운영 소스 main 통합 | `a6fae065ed627bb63798cf74ea8a2c73a744c104` 게시. [CI 41447528061](https://github.com/hurxxxx/miy-v2/actions/runs/41447528061) 5개 job 성공. [로컬 검사·출처](../../releases/cli-0.6.3-main-integration.json) |
 | Windows 설치기 | 구현과 [사용자 실행 안내](WINDOWS-0.6.3-ACCEPTANCE.md) 준비. 사용자 지시에 따라 실제 Windows 설치·갱신·제거는 `NOT_RUN` |
-| 독립 AI 개발 | Codex·Claude 각각 v1·v2 서버 빌드·dev 배포와 최종 독립 검사 PASS. [구조화 증거](releases/cli-0.6.3-independent-agents-validation.json) |
+| 독립 AI 개발 | Codex·Claude 각각 v1·v2 서버 빌드·dev 배포와 최종 독립 검사 PASS. [구조화 증거](../../releases/cli-0.6.3-independent-agents-validation.json) |
 
 서버·게시 CLI는 **0.6.3 / SDK 번들 0.7.1**, 배포 artifact source는 `8d7d04271f9467d8bbdd16308e73715b33e4dc0c`다. Linux 게시 CLI SHA-256은 `86d0d6294eb751ab88e7d7ed1d6925c0a477b4e71686e1cb087f17f5026bbf54`다. main 통합·문서 추가를 서버 재배포로 기록하지 않는다.
 
@@ -26,13 +28,13 @@
 | v2 release | `99663bc6-669a-471d-b8e9-08fc0ca0215f` | `ccd6ea3e-3b99-4e2b-96a2-7110a22a5338` |
 | 동일 DB·installation UUID | `9dbde4bf-23e1-4625-ad90-2829ad554359` | `f0ddc8fd-0ad9-4766-9032-f745c854ffca` |
 | 업무 단위 검사 v1→v2 | 4→7개 통과 | 7→10개 통과 |
-| 업무 소스 원본 | [Codex 예제](../examples/ai-assets-codex/README.md) | [Claude 예제](../examples/ai-assets-claude/README.md) |
+| 업무 소스 원본 | [Codex 예제](../../../examples/ai-assets-codex/README.md) | [Claude 예제](../../../examples/ai-assets-claude/README.md) |
 
 [Codex 앱](https://v2.dwdcc.kr/environments/dev/apps/qa-ai-codex-mvz9422x)과 [Claude 앱](https://v2.dwdcc.kr/environments/dev/apps/qa-ai-claude-mvz9422x)은 dev에 남겨뒀다. 검증용 developer 소유의 보존 레코드가 앱마다 하나씩 있다. 다른 사용자로 로그인하면 자기 데이터만 보이는 것이 정상이다. 보존 레코드의 UUID·이름·수량과 전체 이미지 digest는 구조화 증거에 있다.
 
-![Codex v2 실제 화면](releases/independent-agents-0.6.3/codex-v2.png)
+![Codex v2 실제 화면](../../releases/independent-agents-0.6.3/codex-v2.png)
 
-![Claude v2 실제 화면](releases/independent-agents-0.6.3/claude-v2.png)
+![Claude v2 실제 화면](../../releases/independent-agents-0.6.3/claude-v2.png)
 
 ## 검사 범위와 판정
 
@@ -58,7 +60,7 @@ v1은 UUID·비품명·정수 수량과 SDK Identity 소유권을 구현했다. 
 
 - 첫 시도는 프록시의 업로드 본문 짧은 읽기, 컴파일러 `cc` 별칭 누락과 Codex 신뢰 설정 때문에 배포를 완료하지 못했다. 실패 기록을 보존하고 평가환경을 수정한 뒤 각 도구의 원래 대화를 재개했다. 평가자가 앱 업무 코드·SDK를 작성하거나 복구하지 않았다.
 - Codex의 초기 네이티브 MCP 일부는 `context_not_found`, 이후에는 프록시 환경변수 누락으로 실패했다. 초기 직접 stdio 호출과 네이티브 호출을 구분했다. 격리용 기본 context와 MCP 환경변수 전달을 수정한 뒤 읽기 전용 대화 재개에서 `get_contract`, `search_api`, `list_components`, `get_cli_help` 네 가지가 모두 유효 JSON으로 완료됐다. 이전 네이티브 실패9건도 증거에 남겼다. 환경변수 전달은 [공식 MCP의 env_vars 설정](https://learn.chatgpt.com/docs/extend/mcp)에 따른다.
-- Claude는 네이티브 MCP를 사용했다. 전체 계약119,525자는 클라이언트 인라인 출력 한도를 넘어 `tool-results` 파일에 저장되었다. 평가자가 이 파일의 JSON·버전을 확인했으며, 인라인 전체 전달 성공으로 표시하지 않는다. 계약 요약·섹션 조회는 [보류 중인 사용성 개선](PLAN.md#보류-중인-사용성-개선)에 기록했다.
+- Claude는 네이티브 MCP를 사용했다. 전체 계약119,525자는 클라이언트 인라인 출력 한도를 넘어 `tool-results` 파일에 저장되었다. 평가자가 이 파일의 JSON·버전을 확인했으며, 인라인 전체 전달 성공으로 표시하지 않는다. 계약 요약·섹션 조회는 [보류 중인 사용성 개선](../../PLAN.md#보류-중인-사용성-개선)에 기록했다.
 - 평가기 자체의 동시 결과 저장, 사용자 경계 검사 위치, 행 내부/상단 폼과 접근성 버튼 이름 선택도 보완했다. 최종 v2는 두 UI 모두 실제 브라우저 CRUD를 재실행했다. 이전 v1 결과의 범위를 v2 검사로 소급 확대하지 않았다.
 - 이후 리뷰에서 프록시 refresh 동시성과 준비 중 실패한 세션 추적·오래된 PASS 재사용을 보완했다. 최종 프록시 회귀6개와 실패 재평가의 PASS 대체 검사를 수행했다. 이 마지막 보완 뒤 AI 개발·배포를 새로 반복하지는 않았다.
 
@@ -66,10 +68,10 @@ v1은 UUID·비품명·정수 수량과 SDK Identity 소유권을 구현했다. 
 
 ## 재사용 도구와 남은 검사
 
-- [`run-agent-acceptance.mjs`](../scripts/run-agent-acceptance.mjs): 새 앱·일반 OIDC/device 인증 준비, 버전별 API/DB/브라우저 평가, 이번 MIY 세션 정리. `prepare`, `evaluate-v1`, `evaluate-v2`, `cleanup`을 제공한다. `cleanup`의 PASS는 앱 보고서와 MIY 세션 정리 범위이며 provider 사본·프록시 종료 확인 및 실제 네이티브 도구 로그 검토를 대신하지 않는다.
-- [`agent-acceptance-sandbox.py`](../scripts/agent-acceptance-sandbox.py): Linux bubblewrap 격리·새 프로필·프록시 연결·실행 제한시간·비공개 로그. `--check`는 실제 namespace·직접 TCP 차단·컴파일러·MCP 등록을 검사한다. provider CLI와 기존 정상 로그인, 생성 앱·synthetic MIY context·실행 중 프록시가 필요하다.
-- [`agent-acceptance-proxy.py`](../scripts/agent-acceptance-proxy.py): 평가자만 읽을 수 있는 실제 developer 토큰을 upstream에 적용한다. 비밀 파일과 소켓은 앱 밖에 두며 모델 종료→프록시 종료→최신 refresh token 철회→인증 사본 제거 순서로 정리한다.
-- [`test-agent-acceptance-proxy.py`](../scripts/test-agent-acceptance-proxy.py): 외부 서비스 없이 프록시 회귀6개를 실행한다. `python3 -B scripts/test-agent-acceptance-proxy.py`.
+- [`run-agent-acceptance.mjs`](../../../scripts/run-agent-acceptance.mjs): 새 앱·일반 OIDC/device 인증 준비, 버전별 API/DB/브라우저 평가, 이번 MIY 세션 정리. `prepare`, `evaluate-v1`, `evaluate-v2`, `cleanup`을 제공한다. `cleanup`의 PASS는 앱 보고서와 MIY 세션 정리 범위이며 provider 사본·프록시 종료 확인 및 실제 네이티브 도구 로그 검토를 대신하지 않는다.
+- [`agent-acceptance-sandbox.py`](../../../scripts/agent-acceptance-sandbox.py): Linux bubblewrap 격리·새 프로필·프록시 연결·실행 제한시간·비공개 로그. `--check`는 실제 namespace·직접 TCP 차단·컴파일러·MCP 등록을 검사한다. provider CLI와 기존 정상 로그인, 생성 앱·synthetic MIY context·실행 중 프록시가 필요하다.
+- [`agent-acceptance-proxy.py`](../../../scripts/agent-acceptance-proxy.py): 평가자만 읽을 수 있는 실제 developer 토큰을 upstream에 적용한다. 비밀 파일과 소켓은 앱 밖에 두며 모델 종료→프록시 종료→최신 refresh token 철회→인증 사본 제거 순서로 정리한다.
+- [`test-agent-acceptance-proxy.py`](../../../scripts/test-agent-acceptance-proxy.py): 외부 서비스 없이 프록시 회귀6개를 실행한다. `python3 -B scripts/test-agent-acceptance-proxy.py`.
 
 이 도구는 실제 서버에 앱·DB·빌드·배포를 만드는 인수용이다. 기존 앱을 대상으로 실행하지 않고 항상 새 출력 폴더와 앱 ID를 사용한다. 원래 계정 전체 세션을 철회하는 이전 검사기로 정리를 대신하지 않는다.
 

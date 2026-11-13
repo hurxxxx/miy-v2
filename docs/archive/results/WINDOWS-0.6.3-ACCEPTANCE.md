@@ -1,8 +1,10 @@
+> 보관 이력 — 2026-11-13 문서 정리 전 본문을 보존했다. 이 문서의 버전·현재 상태·PASS/FAIL은 당시 범위다. 새 설치·사용자 PC 인수는 [Windows 설치와 사용자 인수](../../WINDOWS-ACCEPTANCE.md), 후보 생성·게시는 [CLI 릴리스](../../CLI-RELEASE.md)를 따른다.
+
 # 게시된 CLI 0.6.3 Windows 11 인수 준비
 
-> 이 문서는 CLI **0.6.3 / source `8d7d042`** 후보의 당시 절차와 기록이다. 2026-11-03부터 [검사기](../scripts/check-windows-published-installer.ps1)는 [후보 파일](releases/windows-candidate.json)(현재 0.7.0)을 기대값으로 쓰므로, 아래 명령은 현재 후보를 검사한다. 현재 후보 절차는 [Windows 인수](WINDOWS-ACCEPTANCE.md)를 따른다. 0.6.3 당시 검사기는 commit `4a5980b` 이전 이력에 있다. 원래 대상과 해시는 당시 기록으로 보존한다.
+> 이 문서는 CLI **0.6.3 / source `8d7d042`** 후보의 당시 절차와 기록이다. 2026-11-03부터 [검사기](../../../scripts/check-windows-published-installer.ps1)는 [후보 파일](../../releases/windows-candidate.json)(현재 0.7.0)을 기대값으로 쓰므로, 아래 명령은 현재 후보를 검사한다. 현재 후보 절차는 [Windows 인수](../../WINDOWS-ACCEPTANCE.md)를 따른다. 0.6.3 당시 검사기는 commit `4a5980b` 이전 이력에 있다. 원래 대상과 해시는 당시 기록으로 보존한다.
 
-이 문서는 **구현·실행 절차 준비 완료, 이번 사용자 Windows 실행은 `NOT_RUN`** 상태다. 사용자가 나중에 Windows에서 실행한 뒤 결과를 추가한다. Windows Server CI 통과를 이 표의 Windows 11 통과로 옮기지 않는다. 기존 [Windows 검증](WINDOWS-VALIDATION.md), [이전 0.6.3 Windows 게시 후 확인](releases/cli-0.6.3-windows-postdeploy-validation.json), [설치기 설명](WINDOWS-INSTALLER.md)은 별도 이력이며 덮어쓰지 않는다.
+이 문서는 **구현·실행 절차 준비 완료, 이번 사용자 Windows 실행은 `NOT_RUN`** 상태다. 사용자가 나중에 Windows에서 실행한 뒤 결과를 추가한다. Windows Server CI 통과를 이 표의 Windows 11 통과로 옮기지 않는다. 기존 [Windows 검증](WINDOWS-VALIDATION.md), [이전 0.6.3 Windows 게시 후 확인](../../releases/cli-0.6.3-windows-postdeploy-validation.json), [설치기 설명](../cli/WINDOWS-INSTALLER.md)은 별도 이력이며 덮어쓰지 않는다.
 
 대상은 CLI **0.6.3**, SDK bundle **0.7.1**, [공개 설치 안내](https://v2.dwdcc.kr/cli/install)다. 2026-11-02에 읽은 [공개 API](https://v2.dwdcc.kr/api/v1/cli/install)는 아래 출처를 반환했다. 저장소를 main에 통합한 commit과 이미 게시한 바이너리의 source commit은 서로 다를 수 있다. 설치 파일의 출처를 main HEAD로 다시 표시하지 않는다.
 
@@ -25,7 +27,7 @@ Windows PowerShell 5.1(`powershell.exe`)과 PowerShell 7 x64(`pwsh.exe`)를 각�
 
 저장소를 로컬 디스크의 한글·공백 경로에 checkout하면 경로 처리를 함께 확인할 수 있다. 심볼릭 링크·junction·UNC 경로는 사용하지 않는다. 이미 설치한 CLI와 프로젝트를 지우며 새 설치 환경을 만들지 않는다. 새 설치는 기존 MIY 설치가 없는 별도 일반 사용자 프로필/시험 PC에서, 갱신은 이전 버전이 이미 있는 환경에서 진행한다. 같은 0.6.3 재실행은 중복 설치 방지 확인이며 버전 갱신 통과가 아니다. 이전 버전 환경이 없으면 갱신은 `NOT_RUN`으로 둔다. 검사를 위해 현재 설치를 자동 downgrade하지 않는다.
 
-[사전·후검사 스크립트](../scripts/check-windows-published-installer.ps1)는 다음만 수행한다.
+[사전·후검사 스크립트](../../../scripts/check-windows-published-installer.ps1)는 다음만 수행한다.
 
 - 공개 EXE/ZIP 다운로드와 출처 검증. 다운로드된 코드·GUI·CLI는 실행하지 않는다.
 - OS/CPU/PowerShell 환경, 단계, 종료코드, 파일 해시와 보존 비교 결과 기록.

@@ -1,8 +1,8 @@
 # CLI 배포 후보와 Windows 설치기
 
-이 문서는 배포 도구의 사용법과 현재 후보를 기록한다. 후보 게시와 정식 GitHub Release 발행은 구분한다. 실제 수행 범위는 [검증 행렬](CLI-VALIDATION-MATRIX.md), 아직 남은 사용자 PC 실행은 [Windows 검증](WINDOWS-VALIDATION.md)을 따른다.
+CLI·Windows 설치기의 후보 빌드, 서버 다운로드 게시, 정식 GitHub Release 조건을 관리한다. 사용자 설치·개발은 [RUNNING](RUNNING.md), Windows GUI·수동 ZIP 설치와 실제 사용자 인수는 [WINDOWS-ACCEPTANCE](WINDOWS-ACCEPTANCE.md)를 따른다. 검사 종류는 [CHECKS](CHECKS.md), 버전별 과거 결과는 [CLI 검증 이력](archive/results/CLI-VALIDATION-MATRIX.md)에 모은다.
 
-서버의 현재 [실행·인증 계약](APP-BOUNDARIES.md#확정-결정)은 prod 포털·dev 포털·관리/로그인 콘솔의 세 출처다. device CLI 승인은 콘솔에서만 처리하고 legacy 시작·승인·교환은 410 `cli_upgrade_required`로 종료했다. 게시 CLI 0.7.0의 실제 연결 인수·현재 배포는 [경계 인수](APP-BOUNDARIES.md#경계-인수)와 [운영 안내](SERVER-OPERATIONS.md)를 따른다. 개발 단계의 구 형식 호환은 강제하지 않지만 게시 파일·해시는 불변이며 아래 릴리스 이력은 당시 범위로 보존한다.
+서버의 현재 [실행·인증 계약](APP-BOUNDARIES.md#확정-결정)은 prod 포털·dev 포털·관리/로그인 콘솔의 세 출처다. device CLI 승인은 콘솔에서만 처리하고 legacy 시작·승인·교환은 410 `cli_upgrade_required`로 종료했다. 게시 CLI 0.7.0의 실제 연결 인수·현재 배포는 [경계 인수](APP-BOUNDARIES.md#경계-인수)와 [운영 안내](SERVER-OPERATIONS.md)를 따른다. 개발 단계의 구 형식 호환은 강제하지 않지만 게시 파일·해시는 불변이다. 후보 생성·서버 다운로드 게시·정식 공개는 서로 다른 단계다.
 
 ## 현재 0.7.0 게시 후보
 
@@ -14,25 +14,11 @@
 
 호환 검사는 필드·필수 여부·enum뿐 아니라 정수와 실수, Rust 정수 표현 범위와 명시된 수치 한도, UUID·날짜 형식을 비교한다(nullable·배열 포함). 기존 독자가 읽지 못하는 값으로의 확장은 거부하고 표현 범위 축소는 허용한다. CLI 출력·복구 검사의 모의 작업 응답도 `RuntimeJob` 계약의 필수 필드를 갖추며, 실제 CLI로 종료 코드·유실 응답 복구·중복 제출 방지를 검사한다.
 
-## 이전 0.6.3 검증 후보
+## 소스 구현 완료·새 후보 준비 대기
 
-`8d7d04271f9467d8bbdd16308e73715b33e4dc0c`의 [CLI CI 40826960538](https://github.com/hurxxxx/miy-v2/actions/runs/40826960538)와 같은 CLI 출처·해시를 사용한 [설치기 CI 40830813012](https://github.com/hurxxxx/miy-v2/actions/runs/40830813012)가 성공했다. 다섯 CLI·두 Linux helper·Windows EXE를 검증해 [설치 안내](https://v2.dwdcc.kr/cli/install)에 게시하고 서버·UI도 0.6.3으로 반영했다. SDK 번들은 0.7.1이다. [Linux 검사·실제 다운로드·Todo 보존·NOT_RUN](CLI-0.6.3-LINUX-VALIDATION.md), [CLI index](releases/cli-0.6.3-candidate.json), [설치기 index](releases/windows-installer-0.6.3-candidate.json)를 함께 보존한다. 공개 GitHub Release/tag는 생성하지 않았다.
+현재 소스의 개발 번들은 **0.9.0**이며 프레임 SDK와 구 번들 업그레이드 보완을 구현·[검증](releases/app-frames-review-fixes-2026-11-12-validation.json)했다. 서버·UI·프레임 런타임을 `7defdb0`으로 반영한 것은 CLI 다운로드 게시와 별개다. 게시 CLI는 위의 **0.7.0 / 번들 0.8.0**을 유지한다.
 
-## 이전 0.6.0 검증 후보
-
-CLI 소스 `b67798bfb84f299257ba4326beaf034b125cde7a`의 [기반 CI](https://github.com/hurxxxx/miy-v2/actions/runs/40602323702)와 [후보 CI](https://github.com/hurxxxx/miy-v2/actions/runs/40602334949)가 모두 통과했다. 다섯 네이티브 CLI와 두 Linux helper를 검증해 [현재 서버 설치 화면](https://v2.dwdcc.kr/cli/install)에 게시했다. [전체 후보 artifact](https://github.com/hurxxxx/miy-v2/actions/runs/40602334949/artifacts/12779751510)와 [배포물별 SHA-256·소스 index](releases/cli-0.6.0-candidate.json)를 보존한다. 실제 공개 경로의 일곱 파일 해시와 홈페이지 명령·다운로드 링크도 확인했다.
-
-Windows Server 2022에서 네이티브 단위 95개, 출력 11그룹, 서버 등록 9그룹, PowerShell 5.1.20348.5756과 7.6.8의 설치 검사 각각 9개가 통과했다. 사용자 Windows 11·Docker Desktop·독립 AI 세션 인수는 별도다. `publish=false`로 실행했으므로 정식 GitHub Release나 공개 tag를 생성하지 않았다. 시작 절차는 [핵심 흐름 테스트](CORE-TESTING.md)를 따른다.
-
-핵심 흐름을 검증한 서버 소스는 이미지 식별자 호환성과 PostgreSQL 네트워크 연결 보존을 수정한 `5ca4047`이며 [서버 CI](https://github.com/hurxxxx/miy-v2/actions/runs/40606859082)가 통과했다. 게시된 CLI `b67798b`와 함께 실제 Rust/React 앱의 로컬 개발 DB CRUD·dev 데이터 유지·별도 prod DB 승격과 CRUD를 검증했다. [두 소스와 실제 수행 범위](releases/cli-0.6.0-core-validation.json)를 별도로 기록하며 CLI 후보 파일을 서버 소스 commit으로 다시 표시하지 않는다.
-
-Windows GUI 설치 파일과 설치 안내 API는 이후 `92fc608` / 서버 `2f7d453`으로 추가했다. 현재 GUI 후보 `94a02c7`은 설치 상태에 따른 버튼 활성화와 서버 주소만 입력하는 화면으로 개선했다. [네이티브 설치 검사와 다운로드 증거](releases/windows-installer-0.6.0-candidate.json)를 별도로 기록한다. 기존 CLI·DB·앱 런타임의 검증 범위를 새 설치기 검증으로 대체하지 않는다.
-
-## 이전 0.5 검증 후보
-
-2026-10-27 소스 `0fe94a4b9d851e7cf71dc9c8e91fb469423134e2`의 [CI 40460582868](https://github.com/hurxxxx/miy-v2/actions/runs/40460582868)가 5개 native build와 aggregate 검사를 모두 통과했다. [전체 후보 artifact](https://github.com/hurxxxx/miy-v2/actions/runs/40460582868/artifacts/12715067551)를 내려받아 Actions의 바깥 ZIP을 풀면 OS/CPU별 아카이브·`.sha256`·`SHA256SUMS`·provenance를 얻는다. [배포물별 SHA-256과 소스 index](releases/cli-0.5.0-candidate.json)도 저장소에 보존한다. 이 index는 공개 승인 증거 JSON이 아니다.
-
-Windows 사용자 검증에는 [Windows 전용 후보 및 실행 안내](WINDOWS-VALIDATION.md)를 사용한다. `publish=false`로 실행했으므로 GitHub Release와 공개 tag를 만들지 않았다. Actions artifact는 보존 기간이 있는 검증용 파일이다.
+새 CLI는 게시만 남은 상태가 아니다. 현재 소스의 Cargo 버전도 0.7.0이어서, 변경된 클라이언트 입력으로 같은 버전의 후보를 만들면 `check-cli-version.py`가 `client_inputs_changed_without_version_bump`로 거부한다. 게시본보다 높은 CLI 버전과 후보 commit을 확정한 뒤 5개 OS/CPU CLI·Linux helper와 Windows 설치기 후보를 생성·검증하고, 같은 출처의 index·해시로 게시해야 한다. 기존 게시 파일은 덮어쓰지 않는다. 사용자 Windows 인수와 정식 GitHub Release 게이트는 별도 미완료 항목이다. 착수 순서는 [PLAN](PLAN.md#다음-우선-작업)을 따른다.
 
 ## 배포 후보 생성
 
@@ -58,11 +44,28 @@ python3 scripts/package-cli-release.py package --binary target/x86_64-unknown-li
 
 다섯 target의 결과를 같은 디렉터리에 모은 뒤 `python3 scripts/package-cli-release.py verify --directory DIR`로 검증한다. 하나의 OS에서 다른 target 바이너리를 실제 실행한 것으로 기록하지 않는다.
 
+## Windows 설치기 후보 생성
+
+[Windows installer workflow](../.github/workflows/windows-installer.yml)에 설치기 소스 `installer_commit`(40자리), 성공한 CLI 후보의 `cli_run_id`, `cli_version`, `cli_commit`(40자리), `cli_archive_sha256`, `cli_binary_sha256`을 명시한다. 검증한 Windows CLI ZIP을 내장하고 Windows 네이티브 설치 검사·화면 렌더 결과를 artifact로 남긴다. 이 workflow는 다운로드 서버나 GitHub Release에 자동 게시하지 않는다.
+
+Windows에서 같은 후보를 직접 빌드·검사할 때도 버전과 출처·해시를 명시한다. 값은 검증한 CLI `release.json`과 별도로 확인한 체크섬에서 가져온다.
+
+```powershell
+& ./ops/windows-installer/build.ps1 -ArchivePath $Archive -Sha256 $ArchiveSha256 `
+  -OutputDirectory $BuildDirectory -InstallerCommit $InstallerCommit `
+  -Version $CliVersion -CliCommit $CliCommit -CliBinarySha256 $CliBinarySha256
+& ./ops/windows-installer/test.ps1 -InstallerPath $Installer -ArchivePath $Archive `
+  -OutputDirectory $EvidenceDirectory -Version $CliVersion `
+  -CliCommit $CliCommit -CliBinarySha256 $CliBinarySha256
+```
+
+설치기 소스 `installerCommit`과 내장 CLI 소스 `cliCommit`은 별개다. GUI 변경으로 내장 CLI의 출처를 바꾸지 않는다. EXE·`.sha256`·`installer-index.json`을 함께 보존하고 `python3 scripts/package-windows-installer.py verify --directory DIR`로 패키지를 검사한다. metadata·체크섬은 Authenticode 서명을 대신하지 않는다. Windows Server runner의 자동 결과와 [실제 Windows 11 사용자 인수](WINDOWS-ACCEPTANCE.md)는 구분한다.
+
 ## 서버의 다운로드 게시
 
-CLI 0.6 후보에는 다섯 네이티브 CLI와 Linux amd64/arm64 DB 연결 helper가 함께 있어야 한다. Helper의 archive SHA-256, config SHA-256, 플랫폼, 소스 commit과 태그를 검증하며 개발 작업 트리용 helper는 게시하지 않는다. Docker 저장 방식에 따라 달라지는 image ID는 검증된 config 내용과 대조한 후 해당 컴퓨터의 불변 ID로 실행한다.
+후보에는 다섯 네이티브 CLI와 Linux amd64/arm64 DB 연결 helper가 함께 있어야 한다. Helper의 archive SHA-256, config SHA-256, 플랫폼, 소스 commit과 태그를 검증하며 개발 작업 트리용 helper는 게시하지 않는다. Docker 저장 방식에 따라 달라지는 image ID는 검증된 config 내용과 대조한 후 해당 컴퓨터의 불변 ID로 실행한다.
 
-검증한 aggregate 디렉터리를 서버의 `MIY_CLI_RELEASE_DIR`에 게시한다. 다음 명령의 commit은 CLI 후보 소스이며, 이후 서버 전용 수정이나 증거 문서 commit과 혼동하지 않는다.
+검증한 aggregate 디렉터리를 서버의 `MIY_CLI_RELEASE_DIR`(기본 `<state>/cli-downloads`)에 게시한다. 다음 명령의 commit은 CLI 후보 소스이며, 이후 서버 전용 수정이나 증거 문서 commit과 혼동하지 않는다.
 
 ```sh
 python3 scripts/stage-cli-release.py --source /path/to/aggregate --destination /path/to/cli-downloads --commit CLI_CANDIDATE_40_HEX_COMMIT
@@ -71,60 +74,16 @@ python3 scripts/check-cli-downloads.py --origin https://PLATFORM --expected-comm
 
 게시 도구는 모든 파일을 다시 검증한 뒤 commit별 불변 디렉터리를 만들고 최상위 index를 원자적으로 교체한다. 같은 commit의 파일을 다른 내용으로 덮어쓰지 않는다. 설치 안내는 `/cli/downloads/COMMIT/FILE`을 사용하며 Windows 명령은 다운로드·해시 대조·압축 해제·명시적 서버 등록을 포함한다. 이 테스트용 서버 게시와 검증 완료 후의 정식 GitHub Release 공개는 별개다.
 
-## Unix 설치
-
-자신의 OS/CPU tar.gz와 `.sha256`을 받고 SHA-256을 비교한 뒤 새 디렉터리에 푼다. 그 디렉터리에서 `bash install-cli.sh --prefix "$HOME/.local/bin"`을 실행한다. 동봉된 `release.json`과 `miy`가 있으면 Rust 빌드 없이 바이너리를 설치한다. 명시적인 다른 파일은 `--from /absolute/path/to/miy`로 지정한다. 소스 checkout에서 실행하는 경우에만 `--no-default-features` 클라이언트를 빌드한다. shell profile/PATH는 자동 변경하지 않는다.
-
-## 서버 주소가 포함된 설치 안내
-
-이번 변경을 포함한 새 배포물은 플랫폼의 `/cli/install` 안내에서 서버 주소가 채워진 명령을 복사할 수 있다. Unix에서는 검증한 배포물을 푼 디렉터리에서 다음 형태로 실행한다.
+Windows GUI 설치기는 `MIY_CLI_INSTALLER_DIR`(기본 `<state>/cli-installers`)의 `installer-index.json`으로 제공한다. Nginx/Caddy의 `/cli/installers/*`는 API 서버로 전달해야 하며 설정 생성기는 이 경로를 포함한다. 새 경로 설정·서비스 반영은 [서버 운영 안내](SERVER-OPERATIONS.md)를 따른다.
 
 ```sh
-bash ./install-cli.sh --server https://PLATFORM
-miy auth login
+python3 scripts/stage-windows-installer.py --source /path/to/installer-artifact/package --destination /path/to/cli-installers \
+  --installer-commit INSTALLER_40_HEX_COMMIT --cli-commit CLI_40_HEX_COMMIT
 ```
 
-서버는 `MIY_ORIGIN`으로 설치 안내의 주소를 결정한다. 실행 파일이나 설치기에 특정 도메인을 내장하지 않으며, 브라우저 Host로 주소를 추측하지 않는다. 서버 인수는 설치된 CLI의 `context init --url`로 전달된다. 사용자 설정이 없으면 `default` 연결을 만들고 선택하며, 기존 설정이 있으면 바이트를 그대로 보존한다. 초기화 실패는 비정상 종료와 함께 실행 파일은 이미 설치되었음을 알린다. 서버 인수를 생략한 대화형 설치는 URL을 입력받고, 비대화형 설치는 실행 파일만 설치한 뒤 `miy context init`을 안내한다. 위에 기록된 `0fe94a4` 후보에는 새 옵션이 포함되지 않으므로 새 설치기와 새 CLI를 함께 배포해야 한다.
+게시 도구는 EXE·내장 ZIP·CLI 해시와 metadata를 검사하고 commit별 불변 디렉터리와 원자적 index 교체를 사용한다. CLI 다섯 대상 aggregate와 설치기 index의 **CLI 버전·CLI commit·Windows ZIP SHA-256·내장 실행 파일 SHA-256**이 모두 같아야 한다. `/api/v1/cli/install`도 이 일치를 확인한 설치기만 안내한다. 설치기 index가 없으면 ZIP·PowerShell 안내를 제공한다. 기존 CLI·helper·설치기 바이트는 덮어쓰지 않는다.
 
-Windows의 `install-cli.ps1`과 `update-cli.ps1`에는 `-Server https://PLATFORM`을 추가할 수 있다. 아래처럼 `$Archive`와 `$ExpectedSha256`을 준비한 다음, 플랫폼 안내에 나온 주소가 포함된 명령을 실행한다. 기존 context·활성 연결·사용자·인증서·자격증명은 보존한다.
-
-## Windows 설치·갱신·제거
-
-일반 사용자는 [Windows GUI 설치 파일](WINDOWS-INSTALLER.md)을 사용한다. 회사 홈페이지에서 내려받아 서버 주소 입력·연결 확인·설치를 진행한 뒤 새 터미널에서 `miy auth login`을 실행한다. 다음 ZIP·PowerShell 방식은 수동 설치와 진단을 위한 보조 경로다.
-
-ZIP을 신뢰한 배포 위치에서 받고 게시된 SHA-256과 대조한 다음 별도 디렉터리에 풀어 설치 스크립트를 실행한다. ZIP 내부에는 `miy.exe`, `release.json`, 설치·갱신·제거 스크립트와 공통 라이브러리가 있다. 설치 스크립트 자체도 검증한 ZIP 또는 확인한 소스 checkout에서 사용한다.
-
-일반 사용자 계정의 Windows x64 PowerShell 5.1/7에서 다음과 같이 실행한다. 기본 설치 위치는 `%LOCALAPPDATA%\Programs\miy\bin`이다. 예제의 SHA-256은 별도로 확인한 게시 값으로 대체한다.
-
-```powershell
-$ExpectedSha256 = 'REPLACE_WITH_PUBLISHED_SHA256'
-$Archive = (Resolve-Path '.\miy-0.6.0-x86_64-pc-windows-msvc.zip').Path
-if ((Get-FileHash -LiteralPath $Archive -Algorithm SHA256).Hash -ne $ExpectedSha256) { throw 'ZIP checksum mismatch' }
-Expand-Archive -LiteralPath $Archive -DestinationPath '.\miy-release-0.6.0'
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File '.\miy-release-0.6.0\install-cli.ps1' -ArchivePath $Archive -Sha256 $ExpectedSha256
-if ($LASTEXITCODE -ne 0) { throw "Install failed: $LASTEXITCODE" }
-& "$env:LOCALAPPDATA\Programs\miy\bin\miy.exe" --version
-if ($LASTEXITCODE -ne 0) { throw "CLI failed: $LASTEXITCODE" }
-```
-
-`-ExecutionPolicy Bypass`는 위 자식 PowerShell 프로세스에만 적용된다. 설치기는 시스템/사용자 실행 정책이나 profile을 변경하지 않는다. PowerShell 7에서는 `powershell.exe` 대신 `pwsh`를 사용할 수 있다. 조직의 적용 정책으로 스크립트 실행이 제한된 환경은 그 정책에 맞는 실행 방식을 사용한다.
-
-설치기에 `-AddToPath`를 명시한 경우에만 사용자 PATH에 설치 경로를 추가한다. 현재 터미널의 PATH는 자동으로 바꾸지 않는다. 다른 드라이브나 한글/공백이 있는 경로는 `-InstallDir 'D:\도구 모음\miy'`로 지정한다. 기존 사용자 파일이 있는 미관리 디렉터리, junction/symlink를 통과하는 경로, 다른 사용자가 수정할 수 있는 설치 디렉터리는 거부한다.
-
-업데이트는 검증한 새 배포물의 외부 스크립트로 실행한다.
-
-```powershell
-pwsh -NoProfile -ExecutionPolicy Bypass -File '.\miy-release-0.6.0\update-cli.ps1' -ArchivePath $Archive -Sha256 $ExpectedSha256
-if ($LASTEXITCODE -ne 0) { throw "Update failed: $LASTEXITCODE" }
-pwsh -NoProfile -ExecutionPolicy Bypass -File '.\miy-release-0.6.0\uninstall-cli.ps1'
-if ($LASTEXITCODE -ne 0) { throw "Uninstall failed: $LASTEXITCODE" }
-```
-
-사용자 PATH 항목도 제거하려면 제거 명령에 `-RemoveFromPath`를 명시한다. 사용자 지정 설치 경로는 갱신·제거에서도 같은 `-InstallDir`를 전달한다. `-Version 0.5.0`을 사용하면 신뢰한 기존 설치기가 명시 버전의 ZIP과 체크섬을 GitHub Releases에서 받아 검증한다. `latest`를 자동 선택하지 않는다. 공개 릴리스가 아직 없으면 이 원격 경로는 사용할 수 없다.
-
-설치기는 SHA-256, ZIP 경로, PE x64 header, 내부 binary hash, 실제 `--version`을 먼저 검사한다. 실행 중인 CLI/MCP 때문에 파일을 교체할 수 없으면 종료 코드 6으로 거부한다. 프로세스를 강제로 종료하거나 실행 중인 CLI가 자기 파일을 덮어쓰게 하지 않는다. 실행 파일 교체와 제거는 설치 디렉터리의 소유한 `miy.exe`와 metadata를 대상으로 한다. `-Server`를 전달한 설치는 사용자 설정이 없을 때만 기본 연결을 추가하며, 기존 설정·인증·프로젝트·앱 데이터와 사용자 파일은 보존한다. 이전 버전 backup도 남긴다.
-
-중단 기록은 `.miy-install-journal.json`, backup은 `.miy-backups/ID/`에 있다. 다음 외부 설치/갱신/제거가 기록을 확인해 회복한다. 다른 프로세스의 파일 잠금이나 사용자 수정·backup 변조로 복구가 불가능하면 journal과 backup을 유지하고 오류를 반환한다. 그 경우 설치 디렉터리를 지우지 말고 원인을 해결한 뒤 재실행한다. PowerShell 5.1은 native 명령의 실패만으로 자동 중단하지 않으므로 각 명령 직후 `$LASTEXITCODE`를 검사한다.
+회사 서버 주소는 `MIY_ORIGIN`에서 설치 안내의 `--server`/`-Server` 인자로 전달하고 실행 파일이나 설치기에 특정 주소를 내장하지 않는다. 같은 설치 파일을 여러 서버에서 배포할 수 있다. 실제 사용자 설치·연결 보존 동작은 [RUNNING](RUNNING.md#설치와-발견), GUI 동작은 [Windows 일반 설치](WINDOWS-ACCEPTANCE.md#설치기-동작과-일반-설치), 수동 경로는 [ZIP 설치·갱신·제거](WINDOWS-ACCEPTANCE.md#수동-zip-설치갱신제거)를 따른다.
 
 ## 공개 릴리스 게이트
 

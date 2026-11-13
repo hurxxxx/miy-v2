@@ -16,13 +16,13 @@ Paperclip은 에이전트 업무·예산 관리, Windmill은 CLI 기반 앱 개�
 
 앱 설치·업데이트 구조는 Cloudron의 manifest·관리형 자원 연결과 Synology의 패키지 수명주기를 우선 참고한다. 초기 실행 기반은 Docker Engine으로 좁히고, miy가 설치 정보·권한·DB 변경·복구·관리 화면을 담당하는 방향을 추천한다. 근거와 대안은 [런타임 앱 설치와 업데이트 기술 비교](#런타임-앱-설치와-업데이트-기술-비교)에 정리한다.
 
-Windmill에서는 프로젝트 생성·개발 지침·타입·의존성 관리·배포 흐름을 차용한다. miy는 공통 UI·데이터 계약 안에서 자유롭게 개발하고, 로컬 앱 실행과 플랫폼 개발 영역 평가를 모두 제공한다. 구체적인 사용자 흐름은 [개발 계획](DEVELOPMENT.md)에 정리한다.
+Windmill에서는 프로젝트 생성·개발 지침·타입·의존성 관리·배포 흐름을 차용한다. miy는 공통 UI·데이터 계약 안에서 자유롭게 개발하고, 로컬 앱 실행과 플랫폼 개발 영역 평가를 모두 제공한다. 구체적인 사용자 흐름은 [개발 계획](../DEVELOPMENT.md)에 정리한다.
 
-아래의 기능 설명은 연결된 공식 문서·저장소를 기준으로 하며, 차용 방향은 miy를 위한 설계 판단이다. 제품 범위와 요구사항은 [PRD](PRD.md)에서 관리한다.
+아래의 기능 설명은 연결된 공식 문서·저장소를 기준으로 하며, 차용 방향은 miy를 위한 설계 판단이다. 제품 범위와 요구사항은 [PRD](../PRD.md)에서 관리한다.
 
 ## 앱 사용과 관리 영역 분리
 
-외부 제품 조사일은 2026-11-06이다. 비교 사실은 이 문서가 관리하고 miy의 현재 적용 범위는 [앱 실행·관리 경계](APP-BOUNDARIES.md)가 관리한다. 사내망·회사 통제 앱의 업무 앱 프레임 실행([앱 프레임 설계](APP-FRAMES.md))·단일 IP HTTPS를 사용하며 현재는 prod 포털·dev 포털·관리/CLI 승인/Keycloak 콘솔의 세 출처를 구현·운영 반영했다. 당시 비교 조사를 새 구현의 검증 결과로 사용하지 않는다.
+외부 제품 조사일은 2026-11-06이다. 비교 사실은 이 문서가 관리하고 miy의 현재 적용 범위는 [앱 실행·관리 경계](../APP-BOUNDARIES.md)가 관리한다. 사내망·회사 통제 앱의 업무 앱 프레임 실행([앱 프레임 설계](../APP-FRAMES.md))·단일 IP HTTPS를 사용하며 현재는 prod 포털·dev 포털·관리/CLI 승인/Keycloak 콘솔의 세 출처를 구현·운영 반영했다. 당시 비교 조사를 새 구현의 검증 결과로 사용하지 않는다.
 
 ### 사례 비교
 
@@ -42,7 +42,7 @@ Windmill에서는 프로젝트 생성·개발 지침·타입·의존성 관리·
 
 ### 적용 방향
 
-miy에는 업무 앱의 설치별 출처 프레임 실행·통합 라우팅, 단일 IP·사설 CA HTTPS와 use/develop/deploy 구분을 적용한다. prod와 dev 앱은 별도 포털에서 실행하고 콘솔은 관리·device CLI 승인·Keycloak `/identity`를 담당한다. 콘솔에는 앱 코드·능동 앱 콘텐츠를 제공하지 않는다. 회사 통제 앱을 전제로 하며 외부 앱·외부 개발자 수용, 별도 사이트·IdP, MFA 의무화와 강한 앱 격리는 후속이다. 대형 플랫폼의 복잡한 인증·승인 체계를 기본 기능의 선행 조건으로 가져오지 않는다. 상세는 [현재 경계](APP-BOUNDARIES.md#확정-결정), 순서는 PLAN을 따른다.
+miy에는 업무 앱의 설치별 출처 프레임 실행·통합 라우팅, 단일 IP·사설 CA HTTPS와 use/develop/deploy 구분을 적용한다. prod와 dev 앱은 별도 포털에서 실행하고 콘솔은 관리·device CLI 승인·Keycloak `/identity`를 담당한다. 콘솔에는 앱 코드·능동 앱 콘텐츠를 제공하지 않는다. 회사 통제 앱을 전제로 하며 외부 앱·외부 개발자 수용, 별도 사이트·IdP, MFA 의무화와 강한 앱 격리는 후속이다. 대형 플랫폼의 복잡한 인증·승인 체계를 기본 기능의 선행 조건으로 가져오지 않는다. 상세는 [현재 경계](../APP-BOUNDARIES.md#확정-결정), 순서는 PLAN을 따른다.
 
 ### 추가 의견의 사례 검증
 
@@ -56,14 +56,14 @@ miy에는 업무 앱의 설치별 출처 프레임 실행·통합 라우팅, 단
 | Mendix·OutSystems는 prod 배포마다 MFA를 강제한다 | Mendix [Portal 2FA](https://docs.mendix.com/developerportal/deploy/two-factor-authentication/)는 인증 세션을 8시간 유지하며 [Deploy API](https://docs.mendix.com/apidocs-mxsdk/apidocs/deploy-api-2/)는 자동화에 2FA 예외를 명시한다. OutSystems는 [O11 외부 OIDC](https://success.outsystems.com/documentation/11/managing_outsystems_platform_and_application_lifecycle/manage_it_users/it_users_integration_with_external_idp_via_openid_connect/)의 조건·도구별 제약이 있다 | 배포 실행 권한·사람의 승인·재인증·자동화 자격증명을 서로 구분한다. 모든 경로의 배포별 MFA 강제라는 주장은 채택하지 않는다 |
 | Retool·Budibase는 작은 플랫폼이라 모드 전환과 관리자 전권만 있다 | Retool의 [권한 구성](https://docs.retool.com/permissions/quickstart)은 요금제별로 다르고, Budibase는 위 표의 사용자 포털과 역할을 제공한다 | 플랫폼 규모만으로 보안 구조를 분류하지 않는다. 각 제품의 권한 상속·관리자 예외는 별도로 평가한다 |
 
-브라우저 경계는 제품 사례와 별도로 확인한다. 출처에는 port가 포함되지만 쿠키에는 포트 경계가 없다([동일 출처 정책](https://developer.mozilla.org/en-US/docs/Web/Security/Defenses/Same-origin_policy), [RFC 6265 §8.5](https://www.rfc-editor.org/rfc/rfc6265#section-8.5)). 단일 IP의 포털/콘솔 분리는 DOM 출처와 서버가 검사하는 세션 용도를 나누는 설계이며 쿠키 격리를 주장하지 않는다. HttpOnly·Secure와 정확한 Origin·CSRF, 앱 backend로의 쿠키 미전달을 함께 적용한다. 회사 통제 앱의 버그·XSS를 방어하는 범위와 미신뢰 앱을 강제로 격리하는 범위를 구분하며 후자는 현재 기능의 선행 조건이 아니다. 이전 관찰은 [당시 기록](releases/browser-boundary-review-2026-11-06-validation.json)으로 보존한다.
+브라우저 경계는 제품 사례와 별도로 확인한다. 출처에는 port가 포함되지만 쿠키에는 포트 경계가 없다([동일 출처 정책](https://developer.mozilla.org/en-US/docs/Web/Security/Defenses/Same-origin_policy), [RFC 6265 §8.5](https://www.rfc-editor.org/rfc/rfc6265#section-8.5)). 단일 IP의 포털/콘솔 분리는 DOM 출처와 서버가 검사하는 세션 용도를 나누는 설계이며 쿠키 격리를 주장하지 않는다. HttpOnly·Secure와 정확한 Origin·CSRF, 앱 backend로의 쿠키 미전달을 함께 적용한다. 회사 통제 앱의 버그·XSS를 방어하는 범위와 미신뢰 앱을 강제로 격리하는 범위를 구분하며 후자는 현재 기능의 선행 조건이 아니다. 이전 관찰은 [당시 기록](../releases/browser-boundary-review-2026-11-06-validation.json)으로 보존한다.
 
 ### 브라우저 경계의 기술 근거
 
 2026-11-06 설계 보완에서 확인한 표준의 제약이다. 이 목록의 모든 기술을 지금 구현한다는 뜻은 아니다. 사내 최소 경계와 후속 범위는 APP-BOUNDARIES가 관리한다.
 
 - [HTTP 쿠키 표준](https://httpwg.org/http-extensions/draft-ietf-httpbis-rfc6265bis.html#name-the-__host-prefix): __Host-는 Secure·Path=/·Domain 없음이 함께 필요하다. SameSite는 같은 사이트인 형제 하위 도메인을 별도 신뢰 경계로 만들지 않는다.
-- [HTML 인쇄](https://html.spec.whatwg.org/multipage/timers-and-user-prompts.html#printing)와 [사용자 활성화](https://html.spec.whatwg.org/multipage/interaction.html#tracking-user-activation): 비동기 메시지가 실제 클릭의 활성화를 계속 보유한다고 가정하지 않는다. iframe sandbox의 인쇄 제약은 이전 후보의 근거이며 현재 통합 UI에 allow-modals를 요구하지 않는다.
+- [HTML 인쇄](https://html.spec.whatwg.org/multipage/timers-and-user-prompts.html#printing)와 [사용자 활성화](https://html.spec.whatwg.org/multipage/interaction.html#tracking-user-activation): 비동기 메시지가 실제 클릭의 활성화를 계속 보유한다고 가정하지 않는다. 업무 앱 iframe 채택 후의 sandbox·인쇄·새 탭 정책과 실증 범위는 [앱 프레임 설계](../APP-FRAMES.md)가 관리한다.
 - [브라우저 WebSocket 인터페이스](https://websockets.spec.whatwg.org/#the-websocket-interface): 생성자에는 URL·protocols가 있고 일반 fetch처럼 임의 Authorization 헤더를 지정하는 인자가 없다. 비브라우저 연결과 같은 인증 전달 방법으로 취급하지 않는다.
 - [Clear-Site-Data와 서비스워커](https://www.w3.org/TR/clear-site-data/#service-workers): 네트워크 응답에서의 정리와 서비스워커가 만든 응답을 구분한다. 헤더 한 번으로 모든 클라이언트의 기존 실행 상태가 정리됐다는 결론은 도출하지 않는다.
 - [DNS-01 인증](https://letsencrypt.org/docs/challenge-types/#dns-01-challenge): 와일드카드 발급과 DNS API 자동화·검증 영역 위임을 지원한다. 서버 설치와 직원 단말의 사설 CA 신뢰 배포는 별도 작업이다.
@@ -144,7 +144,7 @@ Hermes는 miy 사이트의 내장 챗봇을 구동하는 백엔드 엔진으로 
 
 ## 풀스택 앱 실행 방식 재검토
 
-조사일: 2026-10-21. 아래는 기술 비교와 추천이며 실제 구현이나 성능 검증은 수행하지 않았다. 현재 [개발 계획](DEVELOPMENT.md#rust-풀스택-앱의-플러그인-구조)의 기본안은 Rust 서버와 React 정적 화면을 같은 OCI 이미지로 배포하고 앱별 컨테이너를 중지 후 교체하는 방식이다. 정적 파일의 바이너리 내장은 선택안이다.
+조사일: 2026-10-21. 아래는 기술 비교와 추천이며 실제 구현이나 성능 검증은 수행하지 않았다. 현재 [개발 계획](../DEVELOPMENT.md#rust-풀스택-앱의-플러그인-구조)의 기본안은 Rust 서버와 React 정적 화면을 같은 OCI 이미지로 배포하고 앱별 컨테이너를 중지 후 교체하는 방식이다. 정적 파일의 바이너리 내장은 선택안이다.
 
 ### 개발 단위와 실행 단위를 분리
 
@@ -156,7 +156,7 @@ Hermes는 miy 사이트의 내장 챗봇을 구동하는 백엔드 엔진으로 
 | 배포 단위 | 화면·백엔드·DB 변경을 같은 릴리스로 추적하고 호환성을 검증 |
 | 화면 제공 | React SPA는 정적 자산으로 빌드. 현재처럼 앱 서버에서 제공하거나 공용 자산 서버에서 앱별 origin으로 제공 가능 |
 | 백엔드 실행 | 독립 Rust 서버와 작업을 앱·환경별 컨테이너로 실행 |
-| 화면 통합·격리 | 업무 앱은 설치별 출처 프레임의 AppRoot(2026-11-10 채택), 플랫폼 화면은 라우터 통합. prod 포털·dev 포털·관리/CLI 승인/IdP 콘솔 세 출처를 구현·반영했으며 각 포털 내부의 강한 앱 격리는 후속 |
+| 화면 통합·격리 | 업무 앱은 설치별 출처 프레임의 AppRoot(2026-11-10 채택), 플랫폼 화면은 라우터 통합. prod 포털·dev 포털·관리/CLI 승인/IdP 콘솔과 앱 프레임의 DOM·자격증명 경계를 구현·반영. 같은 사이트 쿠키 간섭·프로세스 분리와 외부 앱 수용은 별도 후속 |
 | 데이터 격리 | 실행 엔진을 공유하더라도 앱·환경별 DB 역할·비밀값·권한은 계속 분리 |
 
 Rust 앱 서버 하나가 정적 화면과 API를 함께 제공할 수 있다. 앱별 컨테이너는 앱별 VM과 다르며 호스트 커널을 공유하는 프로세스 실행 방식이다. 비용은 컨테이너 개수나 언어만으로 판단하지 않고 실제 프로세스 메모리·의존성·DB 연결 풀·작업량을 함께 측정해야 한다. [Docker 컨테이너 설명](https://docs.docker.com/get-started/docker-concepts/the-basics/what-is-a-container/)
@@ -180,7 +180,7 @@ Rust 템플릿은 OpenAPI 기반 TypeScript 타입 생성을 제안한다. 플�
 
 하나의 풀스택 프로젝트와 릴리스 계약을 유지하고, 첫 구현은 Rust 서버와 React 정적 화면을 같은 Docker 이미지에 넣는 구성으로 좁힌다. 실행 파일과 정적 파일을 이미지 안에서 분리하면 화면만 바뀔 때 Rust 빌드 결과를 재사용할 수 있다. 바이너리 내장도 가능하지만 서버의 컨테이너 관리 단위는 같으므로 필수 조건으로 두지 않는다. React SPA에 별도의 상시 프런트 서버를 요구하지 않고, SSR이 필요한 앱은 별도 요구로 다룬다.
 
-공유 실행 엔진을 검토하더라도 앱 백엔드 코드를 Rust 코어 서버 프로세스에 적재하지 않는다. 코어와 별도의 앱 실행 서비스로 연결하고, 앱 실행 서비스의 교체·장애가 코어의 관리·복구 기능을 중단시키지 않도록 한다. 브라우저는 iframe 없는 동적 통합을 유지하며 [보안 후보와 한계](APP-BOUNDARIES.md), [통합 인수](APP-BOUNDARIES.md#경계-인수)에서 관리 보호와 실제 배포·라우팅을 확인한다.
+공유 실행 엔진을 검토하더라도 앱 백엔드 코드를 Rust 코어 서버 프로세스에 적재하지 않는다. 코어와 별도의 앱 실행 서비스로 연결하고, 앱 실행 서비스의 교체·장애가 코어의 관리·복구 기능을 중단시키지 않도록 한다. 현재 브라우저 계약은 설치별 출처 프레임 안의 동적 모듈 실행과 포털 라우팅 동기화다. [앱 프레임 설계](../APP-FRAMES.md), [보안 경계와 한계](../APP-BOUNDARIES.md), [통합 인수](../APP-BOUNDARIES.md#경계-인수)에서 실제 배포·라우팅과 검증 범위를 구분한다.
 
 중지 후 교체와 메인 플랫폼의 시작·중지·재시작·삭제를 먼저 검증한다. 무중단 배포를 첫 출시의 전제조건으로 삼지 않는다.
 
@@ -195,7 +195,7 @@ Rust 템플릿은 OpenAPI 기반 TypeScript 타입 생성을 제안한다. 플�
 | 오류·권한 경계 | 무한 루프·메모리 초과·금지된 파일/네트워크 접근이 다른 앱에 미치는 영향 |
 | 개발·배포 경험 | 로컬과 플랫폼 실행의 차이, 의존성 호환성, DB 마이그레이션, 로그·디버깅·백업 복구 |
 
-실험 전에는 앱당 메모리, 지원 앱 수, 절감률을 확정하지 않는다. Rust라는 이유만으로 특정 자원 절감률을 보장하지 않으며 실제 업무 앱으로 판단한 후 [기술 스택](STACK.md)과 [개발 계획](DEVELOPMENT.md)을 갱신한다.
+실험 전에는 앱당 메모리, 지원 앱 수, 절감률을 확정하지 않는다. Rust라는 이유만으로 특정 자원 절감률을 보장하지 않으며 실제 업무 앱으로 판단한 후 [기술 스택](../STACK.md)과 [개발 계획](../DEVELOPMENT.md)을 갱신한다.
 
 ## 런타임 앱 설치와 업데이트 기술 비교
 
@@ -255,7 +255,7 @@ flowchart LR
 4. 새 컨테이너를 시작해 정상 상태를 확인한다. 성공하면 활성 버전 기록과 라우팅·작업 허용을 갱신한다.
 5. 실패하면 이전 이미지와 현재 DB의 호환성을 확인한다. 호환되면 이전 버전을 시작하고, 그렇지 않으면 앱을 복구 필요 상태로 두고 명시적 데이터 복구 절차를 수행한다.
 
-원래 중지한 앱은 업데이트 후에도 중지 상태를 유지한다. DB 변경에 필요한 일회성 작업만 실행하며 앱 서버와 예약 작업을 자동으로 켜지 않는다. 앱 삭제와 데이터 영구 삭제를 구분하고, 일반 삭제는 업무 데이터를 기본 보존한다. 상세 상태·권한·실패 처리는 [개발 계획의 운영 계약](DEVELOPMENT.md#메인-플랫폼의-앱-운영-화면과-제어-계약)에 따른다.
+원래 중지한 앱은 업데이트 후에도 중지 상태를 유지한다. DB 변경에 필요한 일회성 작업만 실행하며 앱 서버와 예약 작업을 자동으로 켜지 않는다. 앱 삭제와 데이터 영구 삭제를 구분하고, 일반 삭제는 업무 데이터를 기본 보존한다. 상세 상태·권한·실패 처리는 [개발 계획의 운영 계약](../DEVELOPMENT.md#메인-플랫폼의-앱-운영-화면과-제어-계약)에 따른다.
 
 Podman auto-update는 이미지 변경을 감지해 systemd 서비스를 재시작하고 시작 실패 시 이전 이미지로 되돌리는 기능을 제공한다. 그러나 준비 완료 신호가 없으면 실패 감지가 불충분할 수 있고, 이미지 복구는 업무 DB 복구를 뜻하지 않는다. miy는 변경 가능한 `latest` 태그 추적을 기본 배포 정책으로 사용하지 않고, 검증된 digest의 승격·명시적 업데이트 작업을 기준으로 삼는다. [Podman auto-update와 rollback](https://docs.podman.io/en/latest/markdown/podman-auto-update.1.html)
 
@@ -279,11 +279,11 @@ miy에는 HTTP API·버전이 있는 개발 자산을 공통 기준으로 두고
 
 Gitea의 npm Package Registry는 scope 패키지의 게시·설치를 지원하므로 SDK·UI의 사내 배포 후보로 활용할 수 있다. CLI가 설치 대상의 호환 버전을 고르고 패키지 인증을 연결하는 기능은 miy에서 구현해야 한다. 외부 npm 의존성의 자동 미러링까지 제공한다고 해석하지 않는다. [Gitea npm Registry](https://docs.gitea.com/usage/packages/npm/)
 
-제공 자산, 버전 고정, MCP API 정보와 갱신 정책은 [개발 자산 제공 계획](DEVELOPMENT.md#개발-자산-제공과-mcp의-역할)에 정리한다.
+제공 자산, 버전 고정, MCP API 정보와 갱신 정책은 [개발 자산 제공 계획](../DEVELOPMENT.md#개발-자산-제공과-mcp의-역할)에 정리한다.
 
 ## 기존 miy에서 참고할 계약
 
-2026-10-20에 정리한 기존 miy(v1)의 참고 계약, 내장 챗봇 경로, 구독 연결·사용자별 세션 조사는 2026-11-03 [v1 적용 계획](V1-ADOPTION.md)으로 옮겼다. 그 문서가 v1 전체 검토 결과와 적용·제외 판단을 함께 관리한다. 공통 연결과 사용자별 세션의 설계 기준은 [내부 AI 계획](AI.md)이다. Codex App Server의 thread·turn API와 공급자별 계정 조건에 대한 공식 문서 근거는 [AI 계획](AI.md)과 [v1 적용 계획](V1-ADOPTION.md) V1-I6에서 다룬다.
+2026-10-20에 정리한 기존 miy(v1)의 참고 계약, 내장 챗봇 경로, 구독 연결·사용자별 세션 조사는 2026-11-03 [v1 적용 계획](../V1-ADOPTION.md)으로 옮겼다. 그 문서가 v1 전체 검토 결과와 적용·제외 판단을 함께 관리한다. 공통 연결과 사용자별 세션의 설계 기준은 [내부 AI 계획](../AI.md)이다. Codex App Server의 thread·turn API와 공급자별 계정 조건에 대한 공식 문서 근거는 [AI 계획](../AI.md)과 [v1 적용 계획](../V1-ADOPTION.md) V1-I6에서 다룬다.
 
 ## 도입 판단 원칙
 

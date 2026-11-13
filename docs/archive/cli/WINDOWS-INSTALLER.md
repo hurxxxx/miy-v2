@@ -1,20 +1,22 @@
+> 보관 이력 — 2026-11-13 문서 정리 전 본문을 보존했다. 이 문서의 버전·현재 상태·PASS/FAIL은 당시 범위다. 새 설치·사용자 PC 인수는 [Windows 설치와 사용자 인수](../../WINDOWS-ACCEPTANCE.md), 후보 생성·게시는 [CLI 릴리스](../../CLI-RELEASE.md)를 따른다.
+
 # Windows GUI 설치 파일
 
-게시된 **0.7.0 / SDK 번들 0.8.0** 설치기를 사용자 PC에서 확인하려면 [현재 Windows 11 인수 절차](WINDOWS-ACCEPTANCE.md)를 따른다. 후보·출처·해시는 [후보 파일](releases/windows-candidate.json)과 해당 절차에 고정한다. PowerShell 5.1·7 사전·후검사 도구는 다운로드·출처 검증과 보존 비교만 수행하며, GUI 설치·갱신·제거는 사용자가 직접 실행한다. 이번 사용자 Windows 검증은 나중에 수행할 **NOT_RUN** 상태다.
+게시된 **0.7.0 / SDK 번들 0.8.0** 설치기를 사용자 PC에서 확인하려면 [현재 Windows 11 인수 절차](../../WINDOWS-ACCEPTANCE.md)를 따른다. 후보·출처·해시는 [후보 파일](../../releases/windows-candidate.json)과 해당 절차에 고정한다. PowerShell 5.1·7 사전·후검사 도구는 다운로드·출처 검증과 보존 비교만 수행하며, GUI 설치·갱신·제거는 사용자가 직접 실행한다. 이번 사용자 Windows 검증은 나중에 수행할 **NOT_RUN** 상태다.
 
-서버의 [현재 실행·인증 계약](APP-BOUNDARIES.md#확정-결정)은 업무 앱 프레임 실행과 단일 IP HTTPS의 prod 포털·dev 포털·관리/로그인 콘솔 세 출처다. Keycloak·device CLI 승인은 콘솔에서 제공하고 legacy 로그인은 종료했다. 설치기 context의 서버 주소는 prod 포털이며 도메인·내부 DNS·추가 IP는 필수가 아니다. 실제 Windows 확인은 [현재 인수 절차](WINDOWS-ACCEPTANCE.md)를 따르고 아직 사용자 실행 NOT_RUN이다. 게시 파일과 아래 설치기 이력은 보존하며 서버의 반영 상태는 [운영 안내](SERVER-OPERATIONS.md)에서 구분한다. 인증서 경고 무시나 TLS 검증 해제는 지원 방식이 아니다.
+서버의 [현재 실행·인증 계약](../../APP-BOUNDARIES.md#확정-결정)은 업무 앱 프레임 실행과 단일 IP HTTPS의 prod 포털·dev 포털·관리/로그인 콘솔 세 출처다. Keycloak·device CLI 승인은 콘솔에서 제공하고 legacy 로그인은 종료했다. 설치기 context의 서버 주소는 prod 포털이며 도메인·내부 DNS·추가 IP는 필수가 아니다. 실제 Windows 확인은 [현재 인수 절차](../../WINDOWS-ACCEPTANCE.md)를 따르고 아직 사용자 실행 NOT_RUN이다. 게시 파일과 아래 설치기 이력은 보존하며 서버의 반영 상태는 [운영 안내](../../SERVER-OPERATIONS.md)에서 구분한다. 인증서 경고 무시나 TLS 검증 해제는 지원 방식이 아니다.
 
 ## 이전 설치 후보 — 0.6.3
 
-당시 CLI·설치기 소스는 `8d7d04271f9467d8bbdd16308e73715b33e4dc0c`다. [CLI CI 40826960538](https://github.com/hurxxxx/miy-v2/actions/runs/40826960538)의 정확한 Windows 행을 [설치기 CI 40830813012](https://github.com/hurxxxx/miy-v2/actions/runs/40830813012)에 전달했다. 네이티브 검사 24개와 Linux 패키지 검사 19개가 통과했고, 실제 서버에 동일한 CLI/installer index와 0.6.3 서버/UI를 반영했다. [Linux 검증 보고서](CLI-0.6.3-LINUX-VALIDATION.md)에 검사·출처·남은 IdP 확인 범위를 기록한다.
+당시 CLI·설치기 소스는 `8d7d04271f9467d8bbdd16308e73715b33e4dc0c`다. [CLI CI 40826960538](https://github.com/hurxxxx/miy-v2/actions/runs/40826960538)의 정확한 Windows 행을 [설치기 CI 40830813012](https://github.com/hurxxxx/miy-v2/actions/runs/40830813012)에 전달했다. 네이티브 검사 24개와 Linux 패키지 검사 19개가 통과했고, 실제 서버에 동일한 CLI/installer index와 0.6.3 서버/UI를 반영했다. [Linux 검증 보고서](../results/CLI-0.6.3-LINUX-VALIDATION.md)에 검사·출처·남은 IdP 확인 범위를 기록한다.
 
-[이전 설치 파일](https://v2.dwdcc.kr/cli/installers/8d7d04271f9467d8bbdd16308e73715b33e4dc0c/MiySetup-0.6.3-windows-x64.exe): 6,105,600 bytes, SHA-256 `662f8a59c098ac4b2cbde4041799a99f0c6e21f193bbe8b31d2098f6095233af`. [index](releases/windows-installer-0.6.3-candidate.json)의 CLI ZIP/실행 파일 해시도 당시 게시 CLI와 일치했다. 기존 0.6.0 파일은 되돌림을 위해 보존했다. 사용자 Windows 11에서 이 CI 파일의 새 실행은 별도 확인 사항이다.
+[이전 설치 파일](https://v2.dwdcc.kr/cli/installers/8d7d04271f9467d8bbdd16308e73715b33e4dc0c/MiySetup-0.6.3-windows-x64.exe): 6,105,600 bytes, SHA-256 `662f8a59c098ac4b2cbde4041799a99f0c6e21f193bbe8b31d2098f6095233af`. [index](../../releases/windows-installer-0.6.3-candidate.json)의 CLI ZIP/실행 파일 해시도 당시 게시 CLI와 일치했다. 기존 0.6.0 파일은 되돌림을 위해 보존했다. 사용자 Windows 11에서 이 CI 파일의 새 실행은 별도 확인 사항이다.
 
 ## CLI 0.6.3 Windows 구현·로컬 후보 준비 이력
 
 `codex/cli-experience-improvements`의 설치기 빌드는 0.6.0 배포물에 고정하지 않고 검증한 후보의 버전·CLI 소스 commit·ZIP SHA-256·실행 파일 SHA-256을 명시적으로 받는다. 설치기와 CLI의 출처는 계속 별도로 검증한다. 이 Windows 로컬 준비 단계에서는 당시 공개 설치 파일을 교체하지 않았다. 이후 Linux 게시 결과는 위 0.6.3 이력 절을 따른다.
 
-Windows 11에서 로컬 0.6.3 파일을 생성해 PowerShell 5.1의 실제 설치·갱신·보존·제거 **24개**와 잘못된 후보 입력 거부 **4개**를 통과했다. [결과와 해시](releases/cli-0.6.3-experience-validation.json)를 확인한다. 파일은 이 PC의 `.local/releases/cli-0.6.3-local-0db21c3/`에 있으며 공개 게시 전 후보로 구분한다.
+Windows 11에서 로컬 0.6.3 파일을 생성해 PowerShell 5.1의 실제 설치·갱신·보존·제거 **24개**와 잘못된 후보 입력 거부 **4개**를 통과했다. [결과와 해시](../../releases/cli-0.6.3-experience-validation.json)를 확인한다. 파일은 이 PC의 `.local/releases/cli-0.6.3-local-0db21c3/`에 있으며 공개 게시 전 후보로 구분한다.
 
 ```powershell
 # 깨끗한 CLI 소스 checkout에서 package-cli-release.py package로 생성한 ZIP을 사용한다.
@@ -37,19 +39,19 @@ Windows 11 x64 사용자는 회사 MIY 홈페이지의 `/cli/install`에서 **Wi
 
 Windows Server 2022 / PowerShell 5.1에서 실제 설치 파일의 24개 검사가 통과했다. 설치 전·설치 후·재실행·제거 후, 다른 버전·복구 대기·설정 오류·작업 중의 버튼 상태와 자동 연결 선택을 확인했다. 화면에는 서버 주소 입력 하나와 연결 확인·설치·제거 버튼만 표시한다. 상태 확인은 설치 파일·설정·ACL을 변경하지 않는다.
 
-별도 패키지 검사 19개, TypeScript 검사, 설치 안내 브라우저 검사 6개와 실제 홈페이지 버튼을 통한 다운로드·SHA-256도 확인했다. 설치 전·후 네이티브 창과 홈페이지 PC·모바일 화면을 검토했다. [파일 해시·출처·수행 범위](releases/windows-installer-0.6.0-candidate.json)를 보존한다. 실제 사용자 Windows 11의 클릭·CLI 로그인·Docker Desktop 개발 인수는 아직 남아 있다.
+별도 패키지 검사 19개, TypeScript 검사, 설치 안내 브라우저 검사 6개와 실제 홈페이지 버튼을 통한 다운로드·SHA-256도 확인했다. 설치 전·후 네이티브 창과 홈페이지 PC·모바일 화면을 검토했다. [파일 해시·출처·수행 범위](../../releases/windows-installer-0.6.0-candidate.json)를 보존한다. 실제 사용자 Windows 11의 클릭·CLI 로그인·Docker Desktop 개발 인수는 아직 남아 있다.
 
 ## 설치와 서버 등록
 
-1. 홈페이지에 표시된 회사 서버 주소를 복사하고 `MiySetup-0.6.3-windows-x64.exe`를 실행한다.
-2. 빈 서버 주소 입력란에 `https://회사도메인` 또는 `http://사내IP:포트`를 입력하고 연결을 확인한다. 기본 도메인이나 IP는 없다.
+1. 홈페이지에 표시된 회사 서버 주소를 복사하고 [현재 후보](../../WINDOWS-ACCEPTANCE.md#후보와-출처)의 해시를 확인한 설치 파일(현재 `MiySetup-0.7.0-windows-x64.exe`)을 실행한다.
+2. 빈 서버 주소 입력란에 `https://회사도메인` 또는 `https://사내IP:포트`의 prod 포털 주소를 입력하고 연결을 확인한다. 단일 IP·사설 CA 환경에서는 먼저 회사 CA를 신뢰하고 IP SAN을 확인한다. 기본 도메인이나 IP는 없다.
 3. **설치**를 누른다. 설치 폴더·연결 이름·사용자 PATH는 자동으로 관리한다.
 4. 설치가 완료되면 설치 버튼은 비활성화되고 **CLI 제거** 버튼이 활성화된다. 설치 전에는 제거 버튼이 비활성화된다.
-5. 새 PowerShell에서 `miy auth login`을 실행하고 열린 브라우저에서 승인한다. 설치 창에는 로그인 버튼이 없다. `miy auth status`로 확인한 뒤 [핵심 흐름 테스트](CORE-TESTING.md)를 진행한다.
+5. 새 PowerShell에서 `miy auth login`을 실행하고 열린 브라우저에서 승인한다. 설치 창에는 로그인 버튼이 없다. `miy auth status`로 확인한 뒤 [핵심 흐름 테스트](../results/CORE-TESTING-0.6.md)를 진행한다.
 
 기존 설정이 있으면 현재 서버를 표시하고 설정과 인증정보를 보존한다. 설치할 서버 주소를 입력하면 같은 주소의 연결을 재사용하고, 필요한 새 연결 이름은 기존 이름과 겹치지 않게 자동으로 정한다. 이미 같은 CLI가 설치되어 있으면 설치 버튼을 비활성화하며, 새 버전 설치 파일에서는 업데이트할 수 있다. 갱신할 설치 파일도 회사 MIY 홈페이지나 사내 배포 경로에서 받는다.
 
-GUI 설치 위치는 `%LOCALAPPDATA%\Programs\miy\bin`으로 고정하고 사용자 PATH에 자동으로 등록한다. 설치 폴더·연결 이름·PATH 선택 항목은 화면에 표시하지 않는다. 제거하면 해당 사용자 PATH 항목도 정리한다. 기존 사용자 지정 경로의 스크립트 설치는 [수동 설치·갱신·제거](CLI-RELEASE.md#windows-설치갱신제거) 방식으로 관리한다. 관리자 권한 설치, 시스템 PATH 변경, 실행 중인 CLI 강제 종료를 하지 않는다. 실행 파일이 사용 중이면 해당 CLI/MCP를 정상 종료하고 재시도한다. 제거 기능은 설치한 CLI만 대상으로 하며 설정·인증정보·프로젝트·앱 데이터는 남긴다.
+GUI 설치 위치는 `%LOCALAPPDATA%\Programs\miy\bin`으로 고정하고 사용자 PATH에 자동으로 등록한다. 설치 폴더·연결 이름·PATH 선택 항목은 화면에 표시하지 않는다. 제거하면 해당 사용자 PATH 항목도 정리한다. 기존 사용자 지정 경로의 스크립트 설치는 [수동 설치·갱신·제거](../../WINDOWS-ACCEPTANCE.md#수동-zip-설치갱신제거) 방식으로 관리한다. 관리자 권한 설치, 시스템 PATH 변경, 실행 중인 CLI 강제 종료를 하지 않는다. 실행 파일이 사용 중이면 해당 CLI/MCP를 정상 종료하고 재시도한다. 제거 기능은 설치한 CLI만 대상으로 하며 설정·인증정보·프로젝트·앱 데이터는 남긴다.
 
 설치 파일은 Windows에 포함된 .NET Framework를 사용한다. Windows 11의 .NET Framework 포함 범위는 [Microsoft 문서](https://learn.microsoft.com/en-us/dotnet/framework/install/on-windows-and-server)를 참고한다. 이 후보에는 Authenticode 서명이 없으므로 Windows가 게시자를 확인할 수 없다는 경고를 표시할 수 있다. 회사 배포 위치와 게시된 SHA-256을 확인한다.
 
@@ -72,6 +74,6 @@ python3 scripts/stage-windows-installer.py --source /path/to/installer-artifact/
 
 ## 빌드와 검증
 
-[Windows installer workflow](../.github/workflows/windows-installer.yml)는 40자리 설치기 소스 commit과 검증한 Windows CLI ZIP으로 Windows x64 설치 파일을 만든다. 기존 다섯 OS/CPU CLI와 Linux DB helper 배포 묶음은 그대로 유지한다. Windows 네이티브 설치 검사와 화면 렌더 결과를 artifact에 보존한다.
+[Windows installer workflow](../../../.github/workflows/windows-installer.yml)는 40자리 설치기 소스 commit과 검증한 Windows CLI ZIP으로 Windows x64 설치 파일을 만든다. 기존 다섯 OS/CPU CLI와 Linux DB helper 배포 묶음은 그대로 유지한다. Windows 네이티브 설치 검사와 화면 렌더 결과를 artifact에 보존한다.
 
-호스티드 Windows Server의 자동 검사는 사용자 Windows 11에서의 실제 클릭·브라우저 승인·Docker Desktop·앱 개발 인수를 대신하지 않는다. 해당 결과는 [Windows 검증](WINDOWS-VALIDATION.md)에 실제 실행 후 기록한다. Linux/macOS 설치 편의 개선은 이후 단계다.
+호스티드 Windows Server의 자동 검사는 사용자 Windows 11에서의 실제 클릭·브라우저 승인·Docker Desktop·앱 개발 인수를 대신하지 않는다. 해당 결과는 [Windows 검증](../results/WINDOWS-VALIDATION.md)에 실제 실행 후 기록한다. Linux/macOS 설치 편의 개선은 이후 단계다.

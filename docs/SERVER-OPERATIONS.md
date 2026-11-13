@@ -10,7 +10,7 @@
 
 여기서 운영 반영은 이 프로젝트의 기존 개발 서버에 변경분을 배포했다는 뜻이다. 제품 개발 완료나 정식 오픈을 선언한 것은 아니다. 현재 세 출처는 같은 IP의 HTTPS 443을 공유하는 별도 호스트명이며, 도메인 없는 설치는 별도 포트를 지원한다. 출처 배치 계약은 [경계 설계](APP-BOUNDARIES.md#영역과-설정)를 따른다.
 
-**현재 서버는 prod 포털·dev 포털·관리/로그인 콘솔의 세 출처 경계를 적용했다.** [사내 최소 계약](APP-BOUNDARIES.md#확정-결정)에 따라 업무 앱은 2026-11-12부터 앱마다 `https://v2-app-<키>.dwdcc.kr` 출처의 프레임에서 실행한다([배포 기록](releases/app-frames-2026-11-12-deployment.json), [반영 절차](APP-FRAMES.md#9-운영-반영-계획)). 프레임 listener는 `127.0.0.1:18184`, 프레임 런타임은 `.local/frame-runtime`이다. 앱 코드는 해당 환경의 포털에서만 실행하고 관리·device CLI 승인·Keycloak은 콘솔에서 제공한다. portal/dev_portal/console 세션 용도·환경·정확한 Origin·CSRF·응답 제한을 서버가 검사한다. 별도 호스트여도 같은 상위 도메인의 쿠키 영향은 남고, 포트는 쿠키를 격리하지 않는다. 공개 서버를 내부망 범위로 자동 인정하거나 같은 포털 안의 앱 격리를 보장하지 않는다.
+**현재 서버는 prod 포털·dev 포털·관리/로그인 콘솔의 세 출처 경계를 적용했다.** [사내 최소 계약](APP-BOUNDARIES.md#확정-결정)에 따라 업무 앱은 2026-11-12부터 앱마다 `https://v2-app-<키>.dwdcc.kr` 출처의 프레임에서 실행한다([배포 기록](releases/app-frames-2026-11-12-deployment.json), [반영 절차](APP-FRAMES.md#9-운영-반영-계획)). 프레임 listener는 `127.0.0.1:18184`, 프레임 런타임은 `.local/frame-runtime`이다. 포털은 자기 환경의 설치별 앱 프레임을 열고 관리·device CLI 승인·Keycloak은 콘솔에서 제공한다. portal/dev_portal/console 세션 용도·환경·정확한 Origin·CSRF·응답 제한을 서버가 검사한다. 앱별 DOM·저장소·자격증명 경계와 달리 같은 사이트의 쿠키 간섭·프로세스 분리는 보장하지 않는다. 공개 서버를 내부망 범위로 자동 인정하지 않는다.
 
 현재 `7defdb0` 배포에는 프레임 릴리스 결합·입력 보호·갱신 오류 안내와 프레임 Nginx error log 차단을 반영했다. schema 22와 프레임 설정은 유지했으며 실제 적용·백업 복원 확인·후속 연결 검사의 범위는 [리뷰 보완 배포 기록](releases/app-frames-review-fixes-2026-11-12-deployment.json)을 따른다. 최초 도입 및 아래 과거 배포의 검사 결과를 이번 배포의 PASS로 옮기지 않는다.
 
@@ -20,7 +20,7 @@
 
 2026-11-09 오후에 검토 후속 1단계를 서버·UI `027caab`로 반영했다([배포 기록](releases/boundary-followup-2026-11-09-deployment.json)). 같은 호스트 다른 출처의 쿠키 인증 요청(GET·탐색 포함) 거부, `/auth/login`의 탐색 전용, 브라우저에서 시작한 앱 연결의 `admin=false`, 0.5 이전 CLI의 legacy 로그인 종료(410 `cli_upgrade_required`), 포털 안 앱 이동의 같은 탭 복귀가 포함된다. 같은 schema(20)이며 설정·Keycloak은 바꾸지 않았다. `core-rollout.py`의 새 정확한 SHA CI gate를 처음 사용했다.
 
-현재 탐색은 포털 내부 앱 이동을 같은 탭으로, 포털↔콘솔 및 prod↔dev 포털 이동을 새 탭으로 처리한다. [UI 계약](UIUX-MIGRATION.md)의 결정과 [후속 검증](releases/boundary-followup-2026-11-09-validation.json)을 따른다. 앱도 새 탭으로 열던 `f5210d1` 배포는 [이전 기록](releases/new-tab-navigation-2026-11-09-deployment.json)이며 현재 동작의 검증 근거로 쓰지 않는다.
+현재 탐색은 포털 내부 앱 이동을 같은 탭으로, 포털↔콘솔 및 prod↔dev 포털 이동을 새 탭으로 처리한다. [UI 계약](V1-ADOPTION.md#9-플랫폼-화면과-ui-후속-계약)의 결정과 [후속 검증](releases/boundary-followup-2026-11-09-validation.json)을 따른다. 앱도 새 탭으로 열던 `f5210d1` 배포는 [이전 기록](releases/new-tab-navigation-2026-11-09-deployment.json)이며 현재 동작의 검증 근거로 쓰지 않는다.
 
 2026-11-07 사용자 요청으로 서버·UI `a4ad370`, core schema19→20, 두 listener·Nginx와 issuer/callback/logout 설정을 함께 전환했다([배포 기록](releases/internal-minimum-security-2026-11-07-deployment.json)). 게시 CLI `01e4d49`와 번들 0.8.0은 유지했다. 공유 개발 로그인은 끄고 일반 OIDC 로그인을 사용한다. 구 브라우저 세션·로그인 flow·미완료 CLI 승인은 무효화했으므로 다시 로그인한다. 기존 정상 CLI credential은 보존하며 의심 device/legacy credential은 콘솔 개인 CLI 목록에서 각각 회수한다.
 
@@ -63,7 +63,7 @@
 - 되돌리기: `.local/release-0.7.0/rollback/`에 이전 바이너리·CLI/설치 index·DB 덤프(0600)를 보존했다. 배포 스크립트의 `restore()`가 서비스 중지 → 파일 복원 → `pg_restore --clean --single-transaction` → 시작 순서로 되돌린다.
 - 기존 사용자 PC의 0.6.3 CLI는 서버에서 차단되지 않지만 새 기능·번들 0.8.0은 [설치 안내](https://v2.dwdcc.kr/cli/install)의 0.7.0으로 갱신해야 한다. 기존 앱은 `miy app upgrade`로 번들을 전환한다. Windows 설치 파일의 실제 실행은 사용자 수행 범위로 남는다.
 
-2026-11-03 웹 화면만 [기본 UI 이식](UIUX-MIGRATION.md) 결과(소스 `98a31cc`)로 교체했다. 이 시점의 서버·worker 실행 파일과 DB는 0.6.3(`8d7d042`)이었고, 같은 날 위 0.7.0 반영으로 교체했다. 새 화면이 쓰는 API 경로·SDK·공유 모듈 설정은 `8d7d042` 화면과 같음을 확인했다. 교체 전 `web/platform/dist`는 `.local/platform-dist-backups/dist-20261103T183736`(파일 해시 목록 `.sha256` 포함)에 보존했고, 열린 탭이 이전 파일을 계속 읽도록 이전 `assets/`와 `remoteEntry`도 새 산출물에 남겼다. 공개 주소에서 공유 개발 로그인으로 홈·앱 레일·기존 앱 화면·운영 영역·관리 화면·모바일 서랍·공개 CLI 설치 화면을 읽기만 하여 확인했고 페이지 오류는 없었다(검사 세션은 로그아웃). 되돌리려면 `mv web/platform/dist web/platform/dist.failed && cp -a .local/platform-dist-backups/dist-20261103T183736 web/platform/dist`를 실행한다. Nginx·서비스 재시작은 필요 없다.
+2026-11-03 웹 화면만 [기본 UI 이식](V1-ADOPTION.md#9-플랫폼-화면과-ui-후속-계약) 결과(소스 `98a31cc`)로 교체했다. 이 시점의 서버·worker 실행 파일과 DB는 0.6.3(`8d7d042`)이었고, 같은 날 위 0.7.0 반영으로 교체했다. 새 화면이 쓰는 API 경로·SDK·공유 모듈 설정은 `8d7d042` 화면과 같음을 확인했다. 교체 전 `web/platform/dist`는 `.local/platform-dist-backups/dist-20261103T183736`(파일 해시 목록 `.sha256` 포함)에 보존했고, 열린 탭이 이전 파일을 계속 읽도록 이전 `assets/`와 `remoteEntry`도 새 산출물에 남겼다. 공개 주소에서 공유 개발 로그인으로 홈·앱 레일·기존 앱 화면·운영 영역·관리 화면·모바일 서랍·공개 CLI 설치 화면을 읽기만 하여 확인했고 페이지 오류는 없었다(검사 세션은 로그아웃). 되돌리려면 `mv web/platform/dist web/platform/dist.failed && cp -a .local/platform-dist-backups/dist-20261103T183736 web/platform/dist`를 실행한다. Nginx·서비스 재시작은 필요 없다.
 
 2026-11-03 21:43 KST(12:43 UTC) 웹 화면을 [UI 후속 리뷰](archive/UIUX-MIGRATION-UI1-5.md#9-ui-이식-후속-리뷰-2026-11-03) 보완 소스 `3876d43`으로 다시 교체했다. 서버·worker·DB·게시 CLI는 0.7.0 그대로다. 교체 전에 격리 전체 스택(`scripts/runtime-regression/stack-ui.sh run`)을 이 소스로 다시 실행해 5건 PASS, 정리 후 남은 자원 0, 실행 전후 호스트 비교 차이 0을 확인했다.
 
@@ -117,11 +117,14 @@ DB·데이터를 변경하는 반영 전에는 변경 범위의 백업·별도 �
 | 포털 Core 내부 주소 | `127.0.0.1:18180` |
 | 콘솔 Core 내부 주소 | `127.0.0.1:18182` |
 | IdP | `https://v2-console.dwdcc.kr/identity/realms/miy`(realm `frontendUrl`), 내부 Keycloak `127.0.0.1:18181` |
+| Keycloak 자원 | 컨테이너 RAM 2GiB, 추가 swap 0. JVM 초기 힙 1GiB·최대 약 1.4GiB([용량 기준](CAPACITY.md#인증-서버와-회귀-테스트의-현재-메모리-한도)) |
 | PostgreSQL | 호스트 loopback `127.0.0.1:15432` |
 | 상태·비밀 설정 | `/projects/miy-v2/.local/`, `server.json`, `runtime.env`, `credentials.json` |
 | 직접 HTTP MCP | `https://v2.dwdcc.kr/mcp`, IdP OAuth 인증 |
 
 대표 주소는 `MIY_ORIGIN`, dev 포털은 `MIY_DEV_PORTAL_ORIGIN`, 콘솔은 `MIY_CONSOLE_ORIGIN`, 로그인 issuer는 `MIY_ISSUER`로 관리한다. Core의 고정 목적 listener는 `MIY_BIND_ADDR`·`MIY_DEV_PORTAL_BIND_ADDR`·`MIY_CONSOLE_BIND_ADDR`이며 `server.json`의 `origin`·`devPortalOrigin`·`consoleOrigin`과 `bind`·`devPortalBind`·`consoleBind`에 맞춘다. Keycloak은 세 출처의 정확한 callback/logout URI만 허용하고 issuer는 콘솔에 둔다. MCP resource/audience와 CLI context·설치 안내의 서버 주소는 prod 포털을 유지한다. API와 DB의 내부 포트는 사용자 PC의 CLI 설정에 입력하지 않는다. 비밀 설정 파일이나 그 전체 내용을 문서·채팅·Git에 복사하지 않는다.
+
+Keycloak 한도는 현재 컨테이너의 Docker 설정과 저장소 `compose.yaml`에 반영했다([적용·검사 기록](releases/resource-usage-2026-11-12-validation.json)). 코어·UI의 배포 소스와 schema 22는 바뀌지 않았다. 한도 변경은 사용자가 요청했을 때 해당 인증 컨테이너만 정지 → `docker update --memory 2g --memory-swap 2g` → 시작하며, 전체 Compose 재생성이나 realm 초기화를 하지 않는다. 실제 JVM PID는 cgroup의 Java 프로세스로 찾고 PID 1로 고정하지 않는다. 부족할 경우 정지 후 두 상한을 함께 4GiB로 임시 확대하고 인증·OOM 상태를 확인한다. 이 Docker에서 `docker update --memory 0 --memory-swap 0`은 기존 값을 유지하므로 상한 해제 명령으로 사용하지 않는다.
 
 서버 상태는 다음 읽기 명령으로 확인한다.
 
@@ -192,7 +195,7 @@ Windows·macOS의 실제 사용자 PC에서 설치·인증·개발·배포를 �
 
 2026-11-03의 [코어 안정화 1차](CORE-HARDENING.md)는 소스 `9967265`와 격리 회귀 결과다. 실행 중 서버·worker와 공개 배포물의 `8d7d042` 출처는 유지하며, 같은 0.6.3 버전 문자열만 보고 새 코어 수정이 운영에 반영됐다고 판단하지 않는다.
 
-이 절은 앱 생성 없는 연결 재검사의 이력이다. 이후 main 통합과 별도 새 앱 두 개의 [독립 AI 개발 인수](INDEPENDENT-AGENTS-0.6.3-ACCEPTANCE.md)를 완료했다. 후속 인수는 의도적으로 dev 앱·빌드·배포를 추가했으며 기존 서비스·컨테이너·installation의 보존과 검증용 세션 정리를 별도로 기록했다.
+이 절은 앱 생성 없는 연결 재검사의 이력이다. 이후 main 통합과 별도 새 앱 두 개의 [독립 AI 개발 인수](archive/results/INDEPENDENT-AGENTS-0.6.3-ACCEPTANCE.md)를 완료했다. 후속 인수는 의도적으로 dev 앱·빌드·배포를 추가했으며 기존 서비스·컨테이너·installation의 보존과 검증용 세션 정리를 별도로 기록했다.
 
 현재 Linux 호스트에서 공개 HTTPS 주소로 접속했다. [비밀값을 제외한 실행 기록](releases/platform-server-2026-11-02-validation.json)에 버전·소스·바이너리/검사 코드 SHA-256·통과 항목·보존 결과를 기록했다.
 
@@ -252,14 +255,14 @@ python3 scripts/check-db-connections.py
 
 ## 7. 배포 도구
 
-같은 schema의 일반 서버·UI 반영은 저장소에서 계속 관리하는 두 도구로 한다. 2026-11-07의 schema19→20·설정·issuer 전환은 검증한 전용 조정 도구로 수행했으며 [배포 기록](releases/internal-minimum-security-2026-11-07-deployment.json)을 따른다. 이를 일반 `core-rollout.py`의 migration/설정 전환 또는 CI gate 기능 완료로 표시하지 않는다. 반영할 commit의 별도 clean checkout에 있는 사본을 실행하며, `scripts/test-core-ops.py`가 같은 파일의 실패 경계를 모의 시험한다. 배포별 증거 디렉터리의 이전 도구(`core-0.7.0-linux`, `core-0.7.0-7d3c66a-linux`, `core-review-20261104-linux`)는 실행 당시 기록이므로 고치거나 다시 쓰지 않는다.
+같은 schema의 일반 서버·UI 반영은 저장소에서 계속 관리하는 두 도구로 한다. 2026-11-07의 schema19→20·설정·issuer 전환은 검증한 전용 조정 도구로 수행했으며 [배포 기록](releases/internal-minimum-security-2026-11-07-deployment.json)을 따른다. 현재 `core-rollout.py`에는 정확한 SHA CI gate와 고정된 migration 21·22의 한 단계 확장 예외가 구현되어 있다. 임의 migration·설정·issuer를 한꺼번에 전환하는 일반 도구는 미구현이다. 반영할 commit의 별도 clean checkout에 있는 사본을 실행하며, `scripts/test-core-ops.py`가 같은 파일의 실패 경계를 모의 시험한다. 배포별 증거 디렉터리의 이전 도구(`core-0.7.0-linux`, `core-0.7.0-7d3c66a-linux`, `core-review-20261104-linux`)는 실행 당시 기록이므로 고치거나 다시 쓰지 않는다.
 
 **서버 `scripts/core-rollout.py`**
 
-- **범위:** core migration 집합이 운영 DB와 같은 소스의 서버 바이너리 교체만 한다. 소스의 migration이 많거나 적으면 `migration_rollout_not_supported`·`source_schema_older_than_live`로 거부한다. PostgreSQL 연결 한도와 Keycloak 풀은 기대값(기본 200·10)과 같은지 확인만 하고 바꾸지 않는다. migration·설정 전환이 필요한 반영은 실제 덤프 rollback 리허설과 해당 SHA CI·전체 변경 범위 확인을 포함한 별도 검증 절차가 필요하며, 일반 도구의 migration·설정 전환은 미구현이다.
+- **범위:** 기본은 core migration 집합이 운영 DB와 같은 소스의 서버 바이너리 교체다. 다른 schema는 `migration_rollout_not_supported`·`source_schema_older_than_live`로 거부한다. 예외인 `--widen-migration 21|22`는 소스에 고정한 SQL 해시가 일치하고 현재 schema보다 정확히 한 단계 높을 때만 허용한다. 적용 전 실제 덤프의 별도 복원·migration 검사를 거치며, 그 배포의 rollback은 확장한 schema를 유지하고 이전 바이너리만 복구한다. 임의 migration이나 DB 하향 복구를 지원하는 기능은 아니다. PostgreSQL 연결 한도와 Keycloak 풀은 기대값(기본 200·10)과 같은지 확인만 하고 바꾸지 않는다. 일반 migration·설정 전환은 별도 구현·검증 과제다.
 - **CI gate(2026-11-09):** 사전 확인에서 `gh`로 대상 commit의 main push workflow(`web.yml`, `cli-foundation.yml`, `runtime-regression.yml`)의 최신 실행이 모두 completed/success이고 모든 job이 성공했는지 확인한다. 실패·누락·다른 branch면 `ci_not_successful`·`ci_jobs_not_successful`·`ci_source_mismatch`·`required_ci_missing`로 아무것도 바꾸지 않고 거부한다. 확인한 run ID·URL은 결과와 기록에 남긴다.
 - **`inspect`(기본):** 바꾸지 않고 `apply`의 사전 확인만 한다. 소스 commit·clean 상태, 실행 중인 도구와 소스 사본의 일치, 후보 해시·버전, 설치 파일과 serve·worker 실제 실행 파일의 해시, schema, 연결 설정·예산, health·게시 CLI 안내, 대기 작업 0, 앱 컨테이너를 확인한다. 서비스의 `Id`·`Slice`·cgroup 경로와 cgroup v2의 읽기 가능 여부도 중지 전에 점검한다.
-- **`apply`:** 같은 확인 후 코어를 멈추고 프로세스가 없음을 확인한 뒤 대기 작업을 다시 확인한다. 새 덤프를 일회용 PostgreSQL에 복원해 행 수와 후보의 migration(변경 없음)을 확인해야 설치한다. 시작 후 health·게시 CLI 안내·실행 파일 해시·schema·주요 레코드 해시·앱 컨테이너·연결 예산을 확인한다.
+- **`apply`:** 같은 확인 후 코어를 멈추고 프로세스가 없음을 확인한 뒤 대기 작업을 다시 확인한다. 새 덤프를 일회용 PostgreSQL에 복원해 행 수와 후보의 migration(기본은 변경 없음, 위 확장 예외는 고정된 한 단계)을 확인해야 설치한다. 시작 후 health·게시 CLI 안내·실행 파일 해시·schema·주요 레코드 해시·앱 컨테이너·연결 예산을 확인한다.
 - **실패 처리:** 후보 시작 전 실패도 실제 중지 검사를 통과해야 해시를 확인한 이전 바이너리를 다시 설치하고 코어를 시작한다(`ROLLED_BACK`). 중지 확인에 실패하면 `ROLLBACK_FAILED`로 수동 판단을 남기며, 잔류 프로세스를 강제 종료하거나 서비스를 시작하지 않는다. 시작 후 실패는 새로 받은 쓰기를 덮어쓰지 않도록 코어를 멈춘다(`POST_START_FAILED`). 운영자가 판단한 뒤 `rollback`으로 이전 바이너리를 다시 설치·시작한다. 보관한 바이너리 해시가 다르거나 설치 파일이 이 반영의 것이 아니면 시작하지 않는다. 시작 직후 사용자의 정상 쓰기도 레코드 해시 비교를 실패시킬 수 있으므로 이용이 적은 시간에 반영한다.
 - **`rollback` 유휴 검사:** 실행 중일 수 있는 서비스(`active`·`activating` 등)가 하나라도 있으면 중지 전에 대기·실행 작업을 검사한다. serve가 실패하고 worker만 살아 있는 경우도 포함하며, 중지 직후 다시 검사한다. 후자의 검사에서 작업이 발견되면 바이너리를 교체하지 않고 코어를 중지 상태로 남겨 수동 판단한다. 모든 서비스가 `inactive` 또는 `failed`여도 아래 PID·cgroup 검사로 실제 프로세스가 없음을 먼저 확인해야 유휴 검사를 생략할 수 있다. 이 경우에만 운영자가 평가한 복구 경로로 취급해 남은 작업을 이전 바이너리가 이어받는다.
 - **중지 확인:** `systemctl stop` 뒤 모든 서비스가 `inactive` 또는 `failed`이고, `MainPID`·`ControlPID`가 모두 0이며 서비스 cgroup에 프로세스가 없음을 확인한다. `cgroup.events`의 `populated=0`은 하위 cgroup까지 포함한다. 확인 후 `failed`로 남은 unit만 `systemctl reset-failed`로 정리하고, 모든 서비스의 `inactive`와 PID·cgroup을 다시 확인한다. 시작 제한 횟수도 초기화되며 실패 내용은 journal에 남는다. 프로세스 잔류, 읽기 실패, 상태 판정 불가 시 배포·복구를 중단하고 바이너리 교체·서비스 시작을 진행하지 않는다.

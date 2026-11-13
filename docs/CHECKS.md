@@ -44,6 +44,20 @@ GitHub Actions는 `cli-foundation.yml`(Linux 서버·Linux/macOS/Windows 클라�
 
 단일 IP HTTPS는 인증서 반입·CA 신뢰/IP SAN·만료 거부·수동 교체, 실제 OIDC/CLI, 포트 공유 쿠키·잘못된 목적/중복 인증 쿠키 거부·기본 복구를 확인한다. 쿠키 가용성 잔여를 기록하고 자동 CA·전 기기 스트레스는 후속으로 둔다. [공통 ACL·PLM 연계](CORE-PERMISSIONS.md#대표-인수와-검토할-결정)는 G4·G5·G6·Invoke·서비스·이벤트·파일의 해당 기능을 구현할 때 검사하며 모두를 최소 경계의 선행 조건으로 묶지 않는다. 기존 HTTP IP 결과로 새 HTTPS 인수를 대신하지 않는다.
 
+## CLI·앱 개발 인수의 구분
+
+CLI 0.5 계획·과거 검증표의 실행 이력은 [보관 결과](archive/results/CLI-VALIDATION-MATRIX.md)에 둔다. 새 변경은 위 최소 검사를 선택하고 아래 실제 사용 경계를 해당 후보의 소스·바이너리·환경별로 확인한다.
+
+| 범위 | 별도로 확인할 결과 |
+| --- | --- |
+| CLI 자동화 계약 | help·describe·입력 타입과 실제 명령 일치, UTF-8 JSON stdout/stderr 분리·종료 코드, pagination·오류 복구 인수. 업로드/작업 응답 유실·resume·retry에서 중복 변경 없음 |
+| 인증·권한·운영 | 실제 OIDC/device 승인·갱신·철회, context 혼동과 비밀 출력 거부, 최소 권한 개발자와 관리자 결과 구분. dry-run·권한 거부·확인 누락의 변경 없음과 접수/worker 재검사. Core 사용자 비활성화와 상위 IdP의 실제 전파 증거는 구분 |
+| 네이티브 개발과 원격 배포 | 로컬 `app dev`의 실제 CRUD·인증·종료, 원격 build·dev 재배포 뒤 같은 DB UUID와 레코드 보존, 새 migration. 로컬 preview와 원격 설치별 프레임 브라우저 인수는 각각 실행. 명시적 Docker runtime은 별도 경로 |
+| 설치·OS | 같은 후보의 네이티브 바이너리·번들 해시, 경로/인코딩·프로세스 종료·자격증명 보호·파일 잠금/복구·설정 보존. Windows Server CI는 실제 Windows 11 PowerShell 5.1/7 인수를 대신하지 않음 |
+| 독립 AI 앱 개발 | 도구별 새 폴더·앱 ID·대화에서 v1 개발, 자신의 대화로 v2 변경, 실제 호출·개입·소스/build/job/release/image와 데이터 보존을 별도 평가. 기존 대화를 다른 도구/반복의 새 세션으로 재집계하지 않음 |
+
+사용자 Windows 실행은 [WINDOWS-ACCEPTANCE](WINDOWS-ACCEPTANCE.md)로 인계하며, 새 후보를 만들었다는 이유로 남은 `NOT_RUN`을 지우지 않는다. OS·독립 AI 반복·별도 서버 등 정식 공개에 필요한 전체 조건은 [CLI-RELEASE의 공개 게이트](CLI-RELEASE.md#공개-릴리스-게이트)를 따른다. 독립 AI의 앱 개발 평가는 플랫폼 Hermes 실행 기능이나 전체 V7 인수의 완료 증거가 아니다. 새 서버는 프레임 런타임 설치를 포함한 전체 경로로 인수해야 하며 `up.sh`·플랫폼 빌드 성공만으로 완료 처리하지 않는다([실행 안내](RUNNING.md#현행-서버-구성-https-도메인과-사내-http-ip)).
+
 ## 루트 Playwright 설정
 
 루트 `playwright.config.ts`(`pnpm test:e2e`)는 명시적인 격리 상태·DB·origin·빌드 경로(`MIY_STATE_DIR`, `MIY_DATABASE_CONTAINER`, `MIY_TEST_ORIGIN`, `MIY_TEST_WEB_DIST`, `MIY_FIXTURE_DIST`, `MIY_BROWSER_CDP`)를 요구하는 `validation.spec.ts`, `development-login.spec.ts`만 실행한다. 운영 `.local`·DB와 `web/platform/dist`는 거부한다. 이 호스트에서는 `check.sh` 대신 정적/격리 도구를 사용한다. `validation.spec.ts`는 `stack-ui.sh up` 뒤 그 상태(`MIY_STATE_DIR=.local/stack-ui`, `MIY_DATABASE_CONTAINER=miy-stack-ui-postgres-1`, `MIY_TEST_ORIGIN=http://localhost:18300`, `MIY_TEST_WEB_DIST=.local/stack-ui/site`), 별도 fixture 빌드와 CDP로 연 Chromium으로도 실행할 수 있다. 다른 spec은 자기 설정과 서버를 함께 쓴다.

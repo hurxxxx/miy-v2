@@ -1,12 +1,12 @@
 # V0~V1 구현 계획
 
-> 이력 전용 — `22c219d`의 docs/IMPLEMENTATION.md에서 보관한 당시 계약·계획이다. 새 구현의 지침이 아니다. [현재 경계 설계](../APP-BOUNDARIES.md)와 [현재 인수 기준](../VALIDATION.md)을 따른다. 수치·결과는 당시 범위로만 해석한다.
+> 이력 전용 — `22c219d`의 docs/IMPLEMENTATION.md에서 보관한 당시 계약·계획이다. 새 구현의 지침이 아니다. [현재 경계 설계](../APP-BOUNDARIES.md)와 [현재 인수 기준](../APP-BOUNDARIES.md#경계-인수)을 따른다. 수치·결과는 당시 범위로만 해석한다.
 
 확정일: 2026-10-21  
 기준: [핵심 검증 계획](VALIDATION-MODULE-FEDERATION.md), PRD 0.5  
 상태: V0~V1 구현·통합 검증 통과 · 최초 계획은 Git `3cecbe1`에 보존
 
-실행 결과와 남은 범위는 [검증 결과](../IMPLEMENTATION-RESULTS.md), 재현 방법은 [실행 안내](../RUNNING.md)를 따른다.
+실행 결과와 남은 범위는 [검증 결과](results/IMPLEMENTATION-RESULTS.md), 재현 방법은 [실행 안내](../RUNNING.md)를 따른다.
 
 ## 목적과 범위
 

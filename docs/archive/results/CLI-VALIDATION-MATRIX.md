@@ -1,12 +1,14 @@
+> 보관 문서 — 2026-11-13 정리. 버전별 CLI 검증·실패·미실행 기록을 보존한다. 현재 검사 지도는 [CHECKS](../../CHECKS.md), 게시 후보와 공개 조건은 [CLI-RELEASE](../../CLI-RELEASE.md), 사용자 Windows 인수는 [WINDOWS-ACCEPTANCE](../../WINDOWS-ACCEPTANCE.md)를 따른다. 아래 결과는 각 기록의 소스·환경에만 적용한다.
+
 # CLI 상세 검증 기록
 
 - 갱신: 2026-11-02
-- 이 문서의 마지막 연결 검사 대상(2026-11-02): 실제 서버·게시 CLI **0.6.3 / 번들 0.7.1**, 배포 소스 `8d7d04271f9467d8bbdd16308e73715b33e4dc0c`. 당시 운영 소스의 `main` 통합 후 소스 버전도 CLI 0.6.3 / 번들 0.7.1이었다. 이후 0.7.0 연결 검사와 현재 배포 소스는 [운영 안내](SERVER-OPERATIONS.md)와 배포 기록을 따른다. 배포 바이너리의 출처 commit과 후속 통합 commit은 구분한다.
-- 범위: [구현 계획](CLI-IMPLEMENTATION-PLAN.md). V0~V7 등 기존 결과의 적용 범위는 [기존 검증의 승계](APP-BOUNDARIES.md#기존-검증의-승계)를 따른다.
+- 이 문서의 마지막 연결 검사 대상(2026-11-02): 실제 서버·게시 CLI **0.6.3 / 번들 0.7.1**, 배포 소스 `8d7d04271f9467d8bbdd16308e73715b33e4dc0c`. 당시 운영 소스의 `main` 통합 후 소스 버전도 CLI 0.6.3 / 번들 0.7.1이었다. 이후 0.7.0 연결 검사와 현재 배포 소스는 [운영 안내](../../SERVER-OPERATIONS.md)와 배포 기록을 따른다. 배포 바이너리의 출처 commit과 후속 통합 commit은 구분한다.
+- 범위: [구현 계획](../cli/CLI-0.5-IMPLEMENTATION-PLAN.md). V0~V7 등 기존 결과의 적용 범위는 [기존 검증의 승계](../../APP-BOUNDARIES.md#기존-검증의-승계)를 따른다.
 
 실제 실행 결과와 남은 환경 검사를 구분한다. 최신 연결 검사와 이전 0.6 결과를 먼저 기록하고, CLI 0.5 / 번들 0.6.2와 `0fe94a4`의 검증은 아래 이력에 보존한다. `PASS`는 명시한 소스·바이너리·fixture·환경·assertion 범위에만 적용하고, 다른 장비/원격 서버/AI 세션을 대신하지 않는다.
 
-현재 실행·인증 계약과 결과는 [APP-BOUNDARIES](APP-BOUNDARIES.md#경계-인수)가 관리한다. prod 포털·dev 포털·콘솔 세 출처는 운영에 반영했고 legacy 로그인은 종료했다. 아래 두 출처 경계와 버전별 PASS/NOT_RUN은 당시 실행 범위이며 현재 세 출처나 Windows 인수로 이월하지 않는다. 현재 배포 소스·주소는 [운영 안내](SERVER-OPERATIONS.md)를 따른다.
+현재 실행·인증 계약과 결과는 [APP-BOUNDARIES](../../APP-BOUNDARIES.md#경계-인수)가 관리한다. prod 포털·dev 포털·콘솔 세 출처는 운영에 반영했고 legacy 로그인은 종료했다. 아래 두 출처 경계와 버전별 PASS/NOT_RUN은 당시 실행 범위이며 현재 세 출처나 Windows 인수로 이월하지 않는다. 현재 배포 소스·주소는 [운영 안내](../../SERVER-OPERATIONS.md)를 따른다.
 
 ## 내부 최소안의 추가 호환 검사
 
@@ -24,19 +26,19 @@
 
 ## 운영 소스 main 통합 — 2026-11-02
 
-운영 소스 계열을 main에 병합하고 겹치는 검증 문서의 양쪽 이력을 보존했다. 당시 소스는 CLI **0.6.3 / 번들 0.7.1**이며 `crates/`, `migrations/`, `templates/`가 게시 후보 `8d7d042`와 바이트상 일치한다. [통합 검사 기록](releases/cli-0.6.3-main-integration.json)에 명령과 결과를 보존한다. 서버 단위143개(별도opt-in6개 ignored), 클라이언트110개, 양쪽 Clippy 경고 금지·fmt, TypeScript·격리 출력 경로의 플랫폼 production build가 통과했다. source 통합은 운영 서버·게시 배포물의 교체가 아니다.
+운영 소스 계열을 main에 병합하고 겹치는 검증 문서의 양쪽 이력을 보존했다. 당시 소스는 CLI **0.6.3 / 번들 0.7.1**이며 `crates/`, `migrations/`, `templates/`가 게시 후보 `8d7d042`와 바이트상 일치한다. [통합 검사 기록](../../releases/cli-0.6.3-main-integration.json)에 명령과 결과를 보존한다. 서버 단위143개(별도opt-in6개 ignored), 클라이언트110개, 양쪽 Clippy 경고 금지·fmt, TypeScript·격리 출력 경로의 플랫폼 production build가 통과했다. source 통합은 운영 서버·게시 배포물의 교체가 아니다.
 
 통합 commit `a6fae065ed627bb63798cf74ea8a2c73a744c104`의 [CI 41447528061](https://github.com/hurxxxx/miy-v2/actions/runs/41447528061)은 5개 job 모두 성공했다. Windows 실제 실행은 사용자 요청으로 추후 수행하며 [별도 인수 안내](WINDOWS-0.6.3-ACCEPTANCE.md)를 준비했다.
 
 ## 독립 Codex·Claude 앱 개발 — 2026-11-02
 
-[상세 결과](INDEPENDENT-AGENTS-0.6.3-ACCEPTANCE.md)와 [구조화 증거](releases/cli-0.6.3-independent-agents-validation.json)에 각 도구의 새 v1 앱·대화, 자신의 대화를 재개한 v2, 실제 원격 빌드·dev 배포와 같은 DB·레코드 보존을 기록했다. 최종 v2는 API·잘못된 입력·다른 사용자의 조회/수정/삭제 거부와 브라우저 폼 CRUD·새로고침·DB 반영을 통과했다. 실제 업무 검사 수는 Codex 4→7개, Claude 7→10개다.
+[상세 결과](INDEPENDENT-AGENTS-0.6.3-ACCEPTANCE.md)와 [구조화 증거](../../releases/cli-0.6.3-independent-agents-validation.json)에 각 도구의 새 v1 앱·대화, 자신의 대화를 재개한 v2, 실제 원격 빌드·dev 배포와 같은 DB·레코드 보존을 기록했다. 최종 v2는 API·잘못된 입력·다른 사용자의 조회/수정/삭제 거부와 브라우저 폼 CRUD·새로고침·DB 반영을 통과했다. 실제 업무 검사 수는 Codex 4→7개, Claude 7→10개다.
 
 평가환경과 평가기를 보완한 후의 최종 PASS다. Codex 초기 네이티브 MCP 실패와 이후 네 가지 도구의 읽기 전용 재확인, Claude 계약 응답의 파일 전환을 구분했다. 평가자는 앱 업무 코드를 작성·수정하지 않았다. 기존 서비스·23개 컨테이너·5개 installation 배포 상태를 보존하고 검증용 세션·프록시·인증 사본을 정리했다. Windows 실제 실행, 이번 두 앱의 로컬 `app dev`, prod·전체 V7·독립3회 반복은 `NOT_RUN`이다.
 
 ## 현재 플랫폼 서버 연결 — 2026-11-02
 
-현재 호스트의 `https://v2.dwdcc.kr`는 서버·worker·웹·CLI 다운로드가 이미 0.6.3으로 반영된 상태다. 이 실행에서는 게시된 CLI의 출처·hash를 확인하고 새 격리 설정으로 실제 연결만 검증했다. [운영·재실행 안내](SERVER-OPERATIONS.md), [비밀값 없는 결과 JSON](releases/platform-server-2026-11-02-validation.json)을 보존한다.
+현재 호스트의 `https://v2.dwdcc.kr`는 서버·worker·웹·CLI 다운로드가 이미 0.6.3으로 반영된 상태다. 이 실행에서는 게시된 CLI의 출처·hash를 확인하고 새 격리 설정으로 실제 연결만 검증했다. [운영·재실행 안내](../../SERVER-OPERATIONS.md), [비밀값 없는 결과 JSON](../../releases/platform-server-2026-11-02-validation.json)을 보존한다.
 
 | 검사 | 실제 결과 |
 | --- | --- |
@@ -52,23 +54,23 @@
 
 ## CLI 0.6.3 Windows 서버 반영 재확인 — 2026-10-30
 
-[결과 JSON](releases/cli-0.6.3-windows-postdeploy-validation.json)에 공개 설치 파일/ZIP/내장 CLI 해시와 출처, 새 CLI 실행·기존 인증, Todo release·레코드 보존, 실제 390px 메뉴·만료/오류 복구 화면 PASS를 보존한다. 앱 데이터·전역 CLI 설치는 변경하지 않았다. 새 CI 설치기의 사용자 PC 실제 설치와 실제 IdP 정상 로그인/소비 콜백 재사용은 별도 NOT_RUN이다.
+[결과 JSON](../../releases/cli-0.6.3-windows-postdeploy-validation.json)에 공개 설치 파일/ZIP/내장 CLI 해시와 출처, 새 CLI 실행·기존 인증, Todo release·레코드 보존, 실제 390px 메뉴·만료/오류 복구 화면 PASS를 보존한다. 앱 데이터·전역 CLI 설치는 변경하지 않았다. 새 CI 설치기의 사용자 PC 실제 설치와 실제 IdP 정상 로그인/소비 콜백 재사용은 별도 NOT_RUN이다.
 
 ## CLI 0.6.3 Linux 검증·서버 반영 — 2026-10-29
 
-[보고서](CLI-0.6.3-LINUX-VALIDATION.md)와 [구조화 증거](releases/cli-0.6.3-linux-validation.json)를 보존한다. Linux 서버 단위 **143개**, 클라이언트 **110개**, 출력/원격 빌드/복구 **14/10/6그룹**, Docker runtime **55개**(auth **8그룹** 포함), server-build API **8그룹**, Chromium fixture **14개**, 실제 개발 로그인 **3개**, 실제 HTTPS 화면 **8그룹** PASS다. Windows 수치를 이월하지 않았다. auth 기대값 7→8 집계 수정 후 전체 runtime을 재실행했다.
+[보고서](CLI-0.6.3-LINUX-VALIDATION.md)와 [구조화 증거](../../releases/cli-0.6.3-linux-validation.json)를 보존한다. Linux 서버 단위 **143개**, 클라이언트 **110개**, 출력/원격 빌드/복구 **14/10/6그룹**, Docker runtime **55개**(auth **8그룹** 포함), server-build API **8그룹**, Chromium fixture **14개**, 실제 개발 로그인 **3개**, 실제 HTTPS 화면 **8그룹** PASS다. Windows 수치를 이월하지 않았다. auth 기대값 7→8 집계 수정 후 전체 runtime을 재실행했다.
 
 CLI CI **40826960538**, Windows 설치기 CI **40830813012** 성공. 5 CLI·2 helper·EXE provenance/해시와 실제 공개 다운로드를 검증했다. API/worker/UI를 0.6.3으로 반영했고 기존 Todo 0.1.2 release·image·DB UUID·원본 레코드는 그대로다. 390px Todo와 OAuth 실패 복구를 실제 서버에서 확인했다. 실제 IdP 정상 로그인·소비된 실제 callback 재방문, 사용자 Windows 11의 새 CI 설치기 실행은 **NOT_RUN**이다. 공개 GitHub Release/tag·다른 앱 변경·운영 승격은 하지 않았다.
 
 ## CLI 0.6.3 Windows 개선 검증 — 2026-10-29
 
-[상세 결과](WINDOWS-VALIDATION.md)·[결과 JSON](releases/cli-0.6.3-experience-validation.json)·[Linux 후속 작업](archive/CLI-EXPERIENCE-SERVER-HANDOFF.md)을 보존한다. Windows 단위 106개, fmt/Clippy/release, debug/release 출력 13그룹, 원격 빌드 fixture 10그룹, 복구 6그룹 PASS. 로컬 Chrome 화면/API fixture 14개, TypeScript/플랫폼 build PASS. 실제 0.6.3 Windows GUI 설치 파일의 PowerShell 5.1 네이티브 검사 24개와 잘못된 출처·해시 거부 4개 PASS. 패키지 검사 15개 PASS, Linux 게시 4개 SKIP.
+[상세 결과](WINDOWS-VALIDATION.md)·[결과 JSON](../../releases/cli-0.6.3-experience-validation.json)·[Linux 후속 작업](../CLI-EXPERIENCE-SERVER-HANDOFF.md)을 보존한다. Windows 단위 106개, fmt/Clippy/release, debug/release 출력 13그룹, 원격 빌드 fixture 10그룹, 복구 6그룹 PASS. 로컬 Chrome 화면/API fixture 14개, TypeScript/플랫폼 build PASS. 실제 0.6.3 Windows GUI 설치 파일의 PowerShell 5.1 네이티브 검사 24개와 잘못된 출처·해시 거부 4개 PASS. 패키지 검사 15개 PASS, Linux 게시 4개 SKIP.
 
 `8d7d042`의 [기반 CI 40826944825](https://github.com/hurxxxx/miy-v2/actions/runs/40826944825)는 Linux 서버, Linux/macOS/Windows 클라이언트와 OS 간 번들 비교 전체 PASS다. 5대상 배포 후보 CI와 실제 Linux 인증 DB/IdP 회귀·플랫폼 UI 재배포·다운로드 게시를 별도로 관리한다. 새 화면의 모바일 검사는 모의 API 경계이며 실제 서버의 모바일 Todo 재검증을 대신하지 않는다.
 
 ## CLI 0.6.2 Windows 실제 서버 빌드 — 2026-10-29
 
-Windows 11 Pro x64의 비승격 PowerShell 7.6.5에서 Docker Desktop 없이 검증했다. [상세 결과](WINDOWS-VALIDATION.md#2026-10-29-cli-062-windows--서버-빌드--dev-배포-검증), [구조화 증거](releases/cli-0.6.2-windows-server-build-validation.json), [배포 화면](releases/evidence/cli-0.6.2-windows-server-build/deployed-final.jpg)을 함께 보존한다. CLI를 프로젝트에 소스 빌드로 갱신했으며 공개 GUI 설치기는 새로 게시하지 않았다.
+Windows 11 Pro x64의 비승격 PowerShell 7.6.5에서 Docker Desktop 없이 검증했다. [상세 결과](WINDOWS-VALIDATION.md#2026-10-29-cli-062-windows--서버-빌드--dev-배포-검증), [구조화 증거](../../releases/cli-0.6.2-windows-server-build-validation.json), [배포 화면](../../releases/evidence/cli-0.6.2-windows-server-build/deployed-final.jpg)을 함께 보존한다. CLI를 프로젝트에 소스 빌드로 갱신했으며 공개 GUI 설치기는 새로 게시하지 않았다.
 
 | 검증 대상 | 실제 인수 상태 |
 | --- | --- |
@@ -80,7 +82,7 @@ Windows 11 Pro x64의 비승격 PowerShell 7.6.5에서 Docker Desktop 없이 검
 | DB 보존·종료 | 같은 DB UUID·스키마, 기존/새 레코드 유지. 서버 변경을 로컬 재시작에서도 확인. 임시 데이터만 삭제하고 로컬 프로세스·포트·서버 개발 세션 정리 PASS |
 | 남은 범위 | admin 계정으로 검사. 개발자/일반 사용자·PS5.1 새 전체 흐름·실콘솔 Ctrl+C/워커 crash/실제 통신 장애·모바일/이탈 방지·운영 승격은 NOT_RUN |
 
-서버가 Linux에서 수행한 이전 검증은 [별도 결과](releases/cli-0.6.2-server-build-validation.json)에 남긴다. 이번 Windows 결과로 해당 서버의 전체 회귀를 다시 수행했다고 기록하지 않는다. 해당 앱 release에는 실제 범위를 명시한 구조화 인수를 저장했다.
+서버가 Linux에서 수행한 이전 검증은 [별도 결과](../../releases/cli-0.6.2-server-build-validation.json)에 남긴다. 이번 Windows 결과로 해당 서버의 전체 회귀를 다시 수행했다고 기록하지 않는다. 해당 앱 release에는 실제 범위를 명시한 구조화 인수를 저장했다.
 
 ## CLI 0.6.0 검증 이력 — 2026-10-28
 
@@ -107,7 +109,7 @@ Windows 11 Pro x64의 비승격 PowerShell 7.6.5에서 Docker Desktop 없이 검
 | --- | --- |
 | 네이티브 후보 5종 | Linux x64/ARM64, macOS x64/ARM64, Windows x64의 fmt/check/Clippy·단위·최적화 빌드·실행 파일/번들 검사 PASS. aggregate는 5개 CLI와 Linux helper 2개의 버전·소스·CPU·아카이브/내부 hash를 검증하고 5개 내장 번들의 일치를 확인 |
 | Windows Server 2022 | [Windows release job](https://github.com/hurxxxx/miy-v2/actions/runs/40602334949/job/122533455640): 단위 95개, 출력 계약 11그룹, 서버 등록 9그룹, 내장/Git 파일 31개 PASS. PowerShell 5.1.20348.5756과 7.6.8의 설치/갱신·등록·기존 설정 보존·실패/잠금/복구·제거 검사 각각 9개 PASS. Windows 11/Docker Desktop 인수는 NOT_RUN |
-| 서버 게시·실제 다운로드 | [후보 artifact 12779751510](https://github.com/hurxxxx/miy-v2/actions/runs/40602334949/artifacts/12779751510)을 내려받아 재검증하고 원자적으로 게시. `check-cli-downloads.py`가 `https://v2.dwdcc.kr`의 commit 고정 URL 7개, 총 247,218,991바이트의 SHA-256 일치를 확인. [보존한 배포 index](releases/cli-0.6.0-candidate.json)는 게시 index와 동일 |
+| 서버 게시·실제 다운로드 | [후보 artifact 12779751510](https://github.com/hurxxxx/miy-v2/actions/runs/40602334949/artifacts/12779751510)을 내려받아 재검증하고 원자적으로 게시. `check-cli-downloads.py`가 `https://v2.dwdcc.kr`의 commit 고정 URL 7개, 총 247,218,991바이트의 SHA-256 일치를 확인. [보존한 배포 index](../../releases/cli-0.6.0-candidate.json)는 게시 index와 동일 |
 | 깨끗한 CLI 후보의 격리 회귀 | `b67798b`, `workingTreeDirty=false`. runtime 33 + operations 6 + CLI 6 + auth 7 = **52개 PASS**. `/tmp/miy-runtime-regression-k67e8rtg/evidence/`의 `cli-identity.json`, `results.jsonl`, `cleanup.json`. 기존 실행 컨테이너 22개 보존, 소유 리소스 12개 정리, cleanup errors 0 |
 | 깨끗한 CLI 후보의 공유 개발 DB | `b67798b`, `workingTreeDirty=false`. 실제 PostgreSQL·HTTP/WS **16개 PASS**. `.local/development-regression-96d5ba1371/identity.json`, `test.log`; 임시 컨테이너 제거 확인. 첫 세션 DB 생성·같은 DB/레코드의 dev 배포 재사용·prod DB/역할 분리, 임시 CRUD 권한, DDL/다른 DB 차단, 만료·권한/CLI 세션/사용자 철회, SQL 부분 실패·복구·인수 스키마 경계 확인 |
 | 서버 이미지 이식성 수정 작업 트리 | 기준 commit `b67798b`, **`workingTreeDirty=true`**. runtime 35 + operations 6 + CLI 6 + auth 7 = **54개 PASS**. `/tmp/miy-runtime-regression-0ay807qu/evidence/`의 `cli-identity.json`, `results.jsonl`, `portable-image-import.json`, `cleanup.json`. 기존 실행 컨테이너 22개 보존, cleanup errors 0. 이 실행은 깨끗한 `1c6ba50` 실행이나 게시한 CLI 실행으로 기록하지 않음 |
@@ -122,7 +124,7 @@ Windows 11 Pro x64의 비승격 PowerShell 7.6.5에서 Docker Desktop 없이 검
 
 ### 현재 서버의 실제 Rust/React 전체 흐름
 
-검사 도구는 `scripts/check-server-development-flow.mjs`이며 CLI는 게시된 Linux 네이티브 후보 `b67798b`, 서버는 `5ca4047`이다. 서버 바이너리 SHA-256은 `bc4d772f04477bb459cd0b650bc1679b83c553ed53785eb6b996923e49ad8cbb`다. 클라이언트와 플랫폼은 같은 Linux 호스트에서 실행했고, 공개 도메인의 HTTPS/Nginx·실제 Keycloak·Docker DB 터널을 사용했다. 별도 PC 네트워크나 실제 AI 세션을 검증한 것으로 기록하지 않는다. [커밋한 결과 요약](releases/cli-0.6.0-core-validation.json)에 두 소스·해시·관찰·미실행 범위를 보존한다.
+검사 도구는 `scripts/check-server-development-flow.mjs`이며 CLI는 게시된 Linux 네이티브 후보 `b67798b`, 서버는 `5ca4047`이다. 서버 바이너리 SHA-256은 `bc4d772f04477bb459cd0b650bc1679b83c553ed53785eb6b996923e49ad8cbb`다. 클라이언트와 플랫폼은 같은 Linux 호스트에서 실행했고, 공개 도메인의 HTTPS/Nginx·실제 Keycloak·Docker DB 터널을 사용했다. 별도 PC 네트워크나 실제 AI 세션을 검증한 것으로 기록하지 않는다. [커밋한 결과 요약](../../releases/cli-0.6.0-core-validation.json)에 두 소스·해시·관찰·미실행 범위를 보존한다.
 
 | 실행 | 관찰과 결과 |
 | --- | --- |
@@ -131,7 +133,7 @@ Windows 11 Pro x64의 비승격 PowerShell 7.6.5에서 Docker Desktop 없이 검
 | 실제 프로젝트 MCP | 신규 앱의 생성 `.mcp.json`으로 stdio 프로세스를 실행. `get_contract`의 보호 파일 19개, `search_api`의 API 51개, `list_components`의 컴포넌트 1개, `get_cli_help`의 `app dev` 도움말을 실제 브라우저 API/CLI 결과와 대조하여 PASS. 두 AI 제품의 독립 실행은 NOT_RUN |
 | 정리·서비스 보존 | 두 실행의 dev/prod 런타임을 정상 중지하고 테스트 DB는 보존. 각 실행에서 사용한 두 CLI 세션을 철회. 서버 수정 반영 후 PG·Keycloak ID/이미지/시작 시각 보존과 serve/worker의 재시작 횟수 0 확인 |
 
-후보 workflow의 `publish=false`에 따라 정식 GitHub Release/tag는 발행하지 않았다. 실제 Windows 11·PowerShell 5.1/7·Docker Desktop, 독립 Codex/Claude, 서로 다른 호스트의 원격 개발, HTTP IP에서의 MCP/WS DB/전체 배포 흐름은 여전히 NOT_RUN이다. 사용자 테스트는 [핵심 흐름 테스트](CORE-TESTING.md)에서 시작한다.
+후보 workflow의 `publish=false`에 따라 정식 GitHub Release/tag는 발행하지 않았다. 실제 Windows 11·PowerShell 5.1/7·Docker Desktop, 독립 Codex/Claude, 서로 다른 호스트의 원격 개발, HTTP IP에서의 MCP/WS DB/전체 배포 흐름은 여전히 NOT_RUN이다. 사용자 테스트는 [핵심 흐름 테스트](CORE-TESTING-0.6.md)에서 시작한다.
 
 ### 앞선 0.6 구현 작업 트리 검증 이력
 
@@ -153,7 +155,7 @@ DB 연결 helper는 Docker classic/containerd의 서로 다른 로컬 image ID �
 
 추가 검토에서 발견한 컨테이너 루프백 URL은 서버 DB 모드의 빌드·DB 요청 전에 명확한 오류로 거부하도록 수정했다. 주소 가드 단위 검사에 루프백 IPv4/IPv6·매핑 주소·미지정 주소·localhost 별칭과 정상 사내 IP/도메인을 포함했다. 쿼리 취소·장시간 마이그레이션의 즉시 중단은 지원 범위에서 제외하고 RUNNING에 기록했다.
 
-사용자 테스트의 시작 순서는 [핵심 흐름 테스트](CORE-TESTING.md)를 따른다.
+사용자 테스트의 시작 순서는 [핵심 흐름 테스트](CORE-TESTING-0.6.md)를 따른다.
 
 ## 이력 — CLI 0.5 로컬 결과와 설치 개선
 
@@ -228,7 +230,7 @@ G1/G2 증거는 `.local/evidence/cli-guidance/mvq9xhg4/result.json`, G3는 `.loc
 | 별도 원격 Linux | NOT_RUN — 실제 네트워크/CA/이미지 전송과 생성 앱 업무 UI/API·데이터; loopback fixture를 원격 실증으로 세지 않음 |
 | 실제 IdP | NOT_RUN — 실제 OIDC 승인 + Core 사용자 비활성화 후 발급/갱신/API/worker 차단. Keycloak 비활성화 자동 전달은 구현된 계약이 아님 |
 | 독립 AI | NOT_RUN — Codex/Claude 각 Windows/Linux/macOS 새 세션 3회, 동일 후보 commit·업무 인수·호출/문서량/개입/복구 측정 |
-| 공개 릴리스 | NOT_RUN — 위 증거를 갖춘 뒤 [candidate 공개 게이트](CLI-RELEASE.md) 통과 필요 |
+| 공개 릴리스 | NOT_RUN — 위 증거를 갖춘 뒤 [candidate 공개 게이트](../../CLI-RELEASE.md) 통과 필요 |
 
 Windows 사용자는 [Windows 안내](WINDOWS-VALIDATION.md)의 각 명령·종료 코드·환경·hash·증거를 전달한다. 자동 CI의 Windows Server 결과와 실제 Windows 11 결과를 구분한다. fixture 성공을 실제 보안 저장소 서비스나 실제 OIDC 로그인 성공으로 확대하지 않는다.
 
@@ -302,7 +304,31 @@ Windows 환경은 Windows Server 2022 Datacenter `10.0.20348`, runner image `202
 모든 target의 fmt/check/Clippy 경고 금지와 release build가 통과했다. aggregate는 5개 아카이브의 SHA-256, 내부 바이너리 hash·CPU header·버전·동일 소스 commit·내외부 provenance를 검증하고, 다섯 native build의 내장 bundle/scaffold hash 일치를 확인했다. 최종 artifact를 이 Linux 환경에 내려받아 `python3 scripts/package-cli-release.py verify --directory .local/evidence/cli05/release-0fe94a4`로 아카이브 검증을 다시 통과했다. 다른 OS 바이너리를 Linux에서 실행한 결과는 아니다.
 
 - [전체 후보 artifact](https://github.com/hurxxxx/miy-v2/actions/runs/40460582868/artifacts/12715067551)
-- [커밋한 배포물별 SHA-256·binary hash·source index](releases/cli-0.5.0-candidate.json)
+- [커밋한 배포물별 SHA-256·binary hash·source index](../../releases/cli-0.5.0-candidate.json)
 - Windows Server 설치기 환경과 ZIP hash는 [Windows 안내](WINDOWS-VALIDATION.md)에 별도로 기록했다.
 
 이로써 이전 0.5 후보의 로컬 자동 검사·기본 CI·5개 배포 후보 생성 검사를 완료했다. 당시 외부 인수의 `NOT_RUN`과 정식 릴리스 미발행 상태를 이력으로 보존한다. 결과 문서만 수정한 후속 commit을 검증 대상 소스 commit으로 바꿔 기록하지 않는다.
+
+## 배포 후보 게시 이력 — CLI-RELEASE에서 보관
+
+2026-11-13 문서 정리 때 릴리스 담당 문서에서 옮긴 원문이다. 아래 후보·버전·게시 상태는 각각 당시 시점의 기록이다.
+
+## 이전 0.6.3 검증 후보
+
+`8d7d04271f9467d8bbdd16308e73715b33e4dc0c`의 [CLI CI 40826960538](https://github.com/hurxxxx/miy-v2/actions/runs/40826960538)와 같은 CLI 출처·해시를 사용한 [설치기 CI 40830813012](https://github.com/hurxxxx/miy-v2/actions/runs/40830813012)가 성공했다. 다섯 CLI·두 Linux helper·Windows EXE를 검증해 [설치 안내](https://v2.dwdcc.kr/cli/install)에 게시하고 서버·UI도 0.6.3으로 반영했다. SDK 번들은 0.7.1이다. [Linux 검사·실제 다운로드·Todo 보존·NOT_RUN](CLI-0.6.3-LINUX-VALIDATION.md), [CLI index](../../releases/cli-0.6.3-candidate.json), [설치기 index](../../releases/windows-installer-0.6.3-candidate.json)를 함께 보존한다. 공개 GitHub Release/tag는 생성하지 않았다.
+
+## 이전 0.6.0 검증 후보
+
+CLI 소스 `b67798bfb84f299257ba4326beaf034b125cde7a`의 [기반 CI](https://github.com/hurxxxx/miy-v2/actions/runs/40602323702)와 [후보 CI](https://github.com/hurxxxx/miy-v2/actions/runs/40602334949)가 모두 통과했다. 다섯 네이티브 CLI와 두 Linux helper를 검증해 [현재 서버 설치 화면](https://v2.dwdcc.kr/cli/install)에 게시했다. [전체 후보 artifact](https://github.com/hurxxxx/miy-v2/actions/runs/40602334949/artifacts/12779751510)와 [배포물별 SHA-256·소스 index](../../releases/cli-0.6.0-candidate.json)를 보존한다. 실제 공개 경로의 일곱 파일 해시와 홈페이지 명령·다운로드 링크도 확인했다.
+
+Windows Server 2022에서 네이티브 단위 95개, 출력 11그룹, 서버 등록 9그룹, PowerShell 5.1.20348.5756과 7.6.8의 설치 검사 각각 9개가 통과했다. 사용자 Windows 11·Docker Desktop·독립 AI 세션 인수는 별도다. `publish=false`로 실행했으므로 정식 GitHub Release나 공개 tag를 생성하지 않았다. 시작 절차는 [핵심 흐름 테스트](CORE-TESTING-0.6.md)를 따른다.
+
+핵심 흐름을 검증한 서버 소스는 이미지 식별자 호환성과 PostgreSQL 네트워크 연결 보존을 수정한 `5ca4047`이며 [서버 CI](https://github.com/hurxxxx/miy-v2/actions/runs/40606859082)가 통과했다. 게시된 CLI `b67798b`와 함께 실제 Rust/React 앱의 로컬 개발 DB CRUD·dev 데이터 유지·별도 prod DB 승격과 CRUD를 검증했다. [두 소스와 실제 수행 범위](../../releases/cli-0.6.0-core-validation.json)를 별도로 기록하며 CLI 후보 파일을 서버 소스 commit으로 다시 표시하지 않는다.
+
+Windows GUI 설치 파일과 설치 안내 API는 이후 `92fc608` / 서버 `2f7d453`으로 추가했다. 현재 GUI 후보 `94a02c7`은 설치 상태에 따른 버튼 활성화와 서버 주소만 입력하는 화면으로 개선했다. [네이티브 설치 검사와 다운로드 증거](../../releases/windows-installer-0.6.0-candidate.json)를 별도로 기록한다. 기존 CLI·DB·앱 런타임의 검증 범위를 새 설치기 검증으로 대체하지 않는다.
+
+## 이전 0.5 검증 후보
+
+2026-10-27 소스 `0fe94a4b9d851e7cf71dc9c8e91fb469423134e2`의 [CI 40460582868](https://github.com/hurxxxx/miy-v2/actions/runs/40460582868)가 5개 native build와 aggregate 검사를 모두 통과했다. [전체 후보 artifact](https://github.com/hurxxxx/miy-v2/actions/runs/40460582868/artifacts/12715067551)를 내려받아 Actions의 바깥 ZIP을 풀면 OS/CPU별 아카이브·`.sha256`·`SHA256SUMS`·provenance를 얻는다. [배포물별 SHA-256과 소스 index](../../releases/cli-0.5.0-candidate.json)도 저장소에 보존한다. 이 index는 공개 승인 증거 JSON이 아니다.
+
+Windows 사용자 검증에는 [Windows 전용 후보 및 실행 안내](WINDOWS-VALIDATION.md)를 사용한다. `publish=false`로 실행했으므로 GitHub Release와 공개 tag를 만들지 않았다. Actions artifact는 보존 기간이 있는 검증용 파일이다.

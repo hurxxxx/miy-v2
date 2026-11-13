@@ -1,14 +1,12 @@
 # CLI와 독립 앱 개발·운영 실행 안내
 
-현재 호스트는 `https://v2.dwdcc.kr`에서 **서버·게시 CLI 0.7.0 / 번들 0.8.0**을 제공한다. 실제 배포물의 출처 commit·서버 유지관리·접속은 [현재 서버 운영 안내](SERVER-OPERATIONS.md)를 먼저 확인한다. 작업본의 후속 변경을 게시 배포물에 포함된 것으로 간주하지 않는다.
+현행 CLI의 설치·인증·앱 개발·운영 사용법을 모은다. 설치된 실행 파일의 `miy --version`, `miy describe`와 서버 capability가 실제 사용 가능한 범위를 결정한다. 게시 CLI는 **0.7.0 / 번들 0.8.0**, 작업본은 **CLI 0.7.0 / 번들 0.9.0**으로 서로 다르며 새 후보에는 버전 인상이 필요하다. 게시 출처와 남은 조건은 [CLI-RELEASE](CLI-RELEASE.md), 실제 서버 상태는 [SERVER-OPERATIONS](SERVER-OPERATIONS.md)를 따른다.
 
-이 문서는 현행 CLI의 사용 계약을 설명한다. 설치된 실행 파일의 `miy --version`, `miy describe`와 서버 capability가 실제 사용 가능한 범위를 결정한다. 명령 구현과 해당 환경의 검증 통과를 구분한다. 실행 결과는 [구현 결과](IMPLEMENTATION-RESULTS.md), 미실행·외부 환경 항목은 [검증 행렬](CLI-VALIDATION-MATRIX.md)과 [Windows 안내](WINDOWS-VALIDATION.md)를 따른다. CLI 완료가 V7 전체 인수를 뜻하지 않는다.
-
-**게시 배포물·현재 실행 서버·작업본을 구분한다.** [사내 최소 보안 계약](APP-BOUNDARIES.md#확정-결정)은 회사가 관리하는 개발자·앱과 제한된 사내 접속을 대상으로 한다. 업무 앱의 설치별 출처 프레임 실행([앱 프레임 설계](APP-FRAMES.md), 2026-11-12 운영 반영)과 단일 IP HTTPS를 사용하고 prod 포털·dev 포털·콘솔 세 출처를 사용한다. Keycloak과 device CLI 승인은 콘솔에서 제공하고 legacy 로그인은 410으로 종료했다. 세 출처는 운영에 반영했으며 실제 배포 상태·격리 검사·외부 환경 NOT_RUN은 [경계 인수](APP-BOUNDARIES.md#경계-인수)와 [운영 안내](SERVER-OPERATIONS.md)를 따른다. 개발 단계의 구 버전 호환은 강제하지 않는다.
+검사 선택은 [CHECKS](CHECKS.md), 사용자 Windows 설치·인수는 [WINDOWS-ACCEPTANCE](WINDOWS-ACCEPTANCE.md)에 모은다. 명령 구현·특정 환경 PASS·전체 V7 인수는 구분한다. 현재 [실행·인증 계약](APP-BOUNDARIES.md#확정-결정)은 prod 포털·dev 포털·관리/CLI 승인/Keycloak 콘솔 세 출처다. 원격 업무 앱은 설치별 출처 프레임에서 실행하며 단일 IP HTTPS도 지원한다. CLI의 대표 서버 주소는 prod 포털이고 브라우저 승인만 콘솔에서 처리한다.
 
 ## 설치와 발견
 
-소스 빌드에는 Rust가 필요하지만, 배포받은 클라이언트로 원격 운영만 수행할 때는 Rust·Node·Docker가 필요하지 않다. 앱 개발에는 해당 도구가 별도로 필요하다. 사용자 전용 설치 경로를 사용하고 시스템 전역 PATH·인코딩·TLS 신뢰 설정을 임의로 변경하지 않는다.
+배포받은 클라이언트로 원격 운영만 수행할 때는 Rust·Node·Docker가 필요하지 않다. CLI를 소스에서 빌드할 때는 Rust 도구체인과 OS의 네이티브 링크 도구가 필요하다. 앱 개발 도구는 아래 [개발 방식별 조건](#로컬-개발-빌드와-dev-배포)을 따른다. 사용자 전용 설치 경로를 사용하고 시스템 전역 PATH·인코딩·TLS 신뢰 설정을 임의로 변경하지 않는다.
 
 ```sh
 bash scripts/install-cli.sh --from /path/to/miy --server https://PLATFORM
@@ -21,7 +19,7 @@ miy describe --search deploy
 miy describe --command "app deploy"
 ```
 
-소스 설치는 `bash scripts/install-cli.sh`를 사용한다. Windows 클라이언트의 네이티브 빌드·설치·PowerShell 인코딩과 검증 범위는 Windows 안내를 따른다. 프로젝트 실행 파일은 Unix에서 `.miy-tools/miy`, Windows에서 `.miy-tools/miy.exe`다.
+Unix 배포물은 해당 OS/CPU의 tar.gz와 게시 SHA-256을 확인한 뒤 새 디렉터리에 푼다. 그 안에서 `bash ./install-cli.sh --prefix "$HOME/.local/bin" --server https://PLATFORM`을 실행하면 동봉된 `release.json`과 바이너리를 사용하고 Rust 빌드를 하지 않는다. 별도 실행 파일은 `--from /absolute/path/to/miy`로 지정한다. 소스 checkout의 `bash scripts/install-cli.sh`만 클라이언트를 빌드한다. shell profile/PATH는 자동 변경하지 않는다. Windows의 GUI·수동 ZIP 설치와 PowerShell 조건은 [Windows 안내](WINDOWS-ACCEPTANCE.md)를 따른다. 프로젝트 실행 파일은 Unix에서 `.miy-tools/miy`, Windows에서 `.miy-tools/miy.exe`다.
 
 플랫폼의 **CLI 설치** 화면(`/cli/install`)은 서버 `MIY_ORIGIN`에서 읽은 주소를 Unix의 `--server` 또는 Windows의 `-Server`에 넣은 명령을 제공한다. 검증한 배포물을 풀어 그 디렉터리에서 명령을 실행한다. 공통 실행 파일에 특정 운영 도메인을 내장하지 않으므로 같은 CLI를 다른 서버에도 사용할 수 있다. 설치 안내 API는 `GET /api/v1/cli/install`이며 요청의 Host나 브라우저 주소를 서버 설정 대신 사용하지 않는다.
 
@@ -55,9 +53,11 @@ miy doctor --for operate
 
 선택 순서는 `--context`, `MIY_CONTEXT`, 프로젝트 binding, 활성 context다. 잘못된 명시적 context를 다른 서버로 대체하지 않는다. `--project PATH`는 작업 프로젝트를 지정한다. 운영 명령은 로컬 소스 없이 `--app APP_ID`로 실행할 수 있다. `doctor --for operate`는 인증·연결·서버 기능을 검사하며 개발 도구 설치를 요구하지 않는다.
 
-설치기는 `miy --output json context init --url URL`을 사용한다. 이 명령은 네트워크 접속 없이 명시된 URL을 검증하고 사용자 설정이 없는 경우에만 연결을 생성한다. `--url`을 생략하면 대화형 터미널에서 주소를 받으며 비대화형 실행은 등록 필요 오류를 반환한다. `--context`, `MIY_CONTEXT`, 프로젝트 binding은 초기화 대상에 영향을 주지 않는다. 기존 파일이 잘못된 형식이면 덮어쓰지 않고 실패하며, 설치기는 실행 파일 설치와 연결 초기화 실패를 구분해 알린다. 사설 CA가 필요한 수동 초기화에는 `context init --url URL --ca-file PATH`를 사용할 수 있다.
+설치기는 `miy --output json context init --url URL`을 사용한다. 이 명령은 네트워크 접속 없이 명시된 URL을 검증하고 사용자 설정이 없는 경우에만 연결을 생성한다. `--url`을 생략하면 대화형 터미널에서 주소를 받으며 비대화형 실행은 등록 필요 오류를 반환한다. `--context`, `MIY_CONTEXT`, 프로젝트 binding은 초기화 대상에 영향을 주지 않는다. 기존 파일이 잘못된 형식이면 덮어쓰지 않고 실패한다. 연결 초기화가 실패하면 설치기는 비정상 종료와 함께 실행 파일은 이미 설치되었음을 구분해 알린다. 사설 CA가 필요한 수동 초기화에는 `context init --url URL --ca-file PATH`를 사용할 수 있다.
 
 로그인 요청은 5분 동안 유효하다. 공개 출력은 URL·userCode·login ID뿐이며 device secret·access/refresh token은 출력하지 않는다. 비TTY, `--no-input`, `--no-wait` 로그인은 pending을 즉시 반환한다. 대화형 기본은 브라우저를 열고 기다릴 수 있고, `--device-code`·`--no-open`은 자동 브라우저 실행을 생략한다. `auth wait`는 서버의 poll 간격과 slow-down을 따르며 Ctrl-C 시 남은 요청을 보존한다.
+
+설정 루트는 `MIY_CONFIG_DIR`를 우선하고, Unix는 `$XDG_CONFIG_HOME/miy` 또는 `~/.config/miy`, Windows는 `%APPDATA%\miy`를 사용한다. Windows와 WSL의 자격증명을 자동 공유하지 않는다. 프로젝트에는 연결 이름만 기록하고 토큰을 두지 않는다.
 
 Access token은 최대 15분, 회전하는 refresh 세션은 최대 30일이다. 원본 origin/user에 묶인 자격증명을 OS 저장소와 보호된 fallback에 보관한다. 프로젝트 소스나 일반 출력에 저장하지 않는다. 프로세스 간 잠금으로 갱신을 직렬화하며 갱신 응답이 유실되면 사용한 refresh token을 반복 제출하지 않고 다시 로그인한다. 서버의 Core `users.enabled` 검사는 상위 IdP 비활성화가 이미 전파됐다는 증거가 아니다. 실제 원천과 전파 지연은 별도 검증한다.
 
@@ -91,7 +91,7 @@ miy --app my-app grant set --user USER_ID --permission use --environment dev
 
 선택한 context가 있으면 init이 프로젝트에 그 연결 이름을 기록한다. context 없이 로컬 프로젝트를 생성할 수 있지만 원격 작업 전에는 context를 추가·선택하고 로그인해야 한다. 등록 요청만으로 권한이 생기지 않는다. 관리자의 승인은 요청자에게 dev/develop 권한만 부여하며 prod/deploy는 별도다.
 
-`doctor --for develop`는 manifest·번들·CLI 지침·컴포넌트 잠금과 Rust/Node/pnpm/Git/Docker 버전, Docker Linux 모드, 엔진/서버 아키텍처를 검사한다. 필수 검사 실패는 exit 7과 개별 결과로 반환한다. 새 앱은 로그인 후 component sync를 먼저 해야 컴포넌트 검사를 통과할 수 있다.
+`doctor --for develop`의 기본 runtime은 native다. manifest·번들·CLI 지침·컴포넌트 잠금, Rust/Node/pnpm/Git, 실제 Rust 링크와 프로젝트 MCP 시작을 검사한다. Docker 버전·Linux 모드·엔진/서버 아키텍처 검사는 `--runtime docker`를 명시했을 때 추가한다. 필수 검사 실패는 exit 7과 개별 결과로 반환한다. 새 앱은 로그인 후 component sync를 먼저 해야 컴포넌트 검사를 통과할 수 있다.
 
 생성기는 SDK·지침·스킬과 프로젝트 Codex/Claude MCP 설정을 제공한다. 호환 CLI로 `app setup`을 실행하면 프로젝트 실행 파일·설정·CLI 지침을 함께 갱신한다. 일반 `codex` 또는 `claude`로 앱 폴더를 열고 각 클라이언트의 프로젝트 신뢰/MCP 승인을 정상적으로 진행한다. 전역 모델·권한 설정을 우회하지 않는다. 루트 `miy mcp` stdio 서버는 선택한 CLI context/session으로 계약과 허용된 API·컴포넌트 목록을 읽는다. API 사용 지침과 실제 배포 실행을 구분한다.
 
@@ -110,6 +110,13 @@ Sync는 고정 버전을 복원하며 자동 업그레이드하지 않는다. Ad
 
 ## 로컬 개발, 빌드와 dev 배포
 
+| 방식 | 개발 PC에 필요한 도구 | 실행·DB 위치 |
+| --- | --- | --- |
+| 기본 `app dev` | Rust와 네이티브 링크 도구, Node, 프로젝트 지정 pnpm, Git. Windows는 MSVC·Windows SDK | 로컬 Rust·React preview, 서버의 해당 앱 dev DB. Docker Desktop·WSL·로컬 PostgreSQL 불필요 |
+| `app dev --runtime docker` | 위 개발 도구와 Linux 컨테이너용 Docker | 로컬 컨테이너, 기본은 서버 dev DB. 별도 DB는 `--database local`을 명시 |
+| 기본 `app build` | Git·로컬 Docker와 대상 Linux CPU를 빌드할 수 있는 환경 | 로컬에서 불변 Linux 이미지 생성 |
+| `app build --remote` | CLI·Git·서버 로그인, 서버의 `app.builds.v1` | 서버 Docker에서 검사·빌드. PC의 Docker·Rust·Node·SSH 불필요 |
+
 ```sh
 miy app fmt
 miy app check
@@ -127,13 +134,28 @@ miy job watch JOB_UUID
 miy app status
 ```
 
-Check는 프로젝트 Rust 테스트와 프런트 도구를 실행하고 의존성·빌드 산출물을 쓴다. 정적 검사 통과가 실제 브라우저·DB 인수를 대신하지 않는다. Dev는 작업 트리를 빌드하여 로컬 백엔드·게이트웨이를 실행하고 서버의 해당 앱 개발 DB에 연결한다. 같은 플랫폼 주소의 WS/WSS 터널을 사용하며 로컬 SQL에 운영 DB·관리자 권한을 제공하지 않는다. 앱당 한 개발 세션만 허용하며, `app dev-stop`으로 연결을 해제한 후 개발 배포하면 같은 DB와 데이터를 사용한다. 연결 실패 시 로컬 DB로 자동 전환하지 않는다. 별도 로컬 DB가 필요한 경우에만 `app dev --database local`을 명시한다. 종료는 소유 프로세스·컨테이너를 정리하고 DB·기존 로컬 볼륨은 보존한다. 스키마 변경은 서버가 적용하며 변경된 이전 SQL 이력을 거부한다. 준비/종료 대기는 성공 완료와 구분한다.
+Check는 프로젝트 Rust 테스트와 프런트 도구를 실행하고 의존성·빌드 산출물을 쓴다. 정적 검사 통과가 실제 브라우저·DB 인수를 대신하지 않는다. 기본 Dev는 작업 트리를 빌드하여 네이티브 백엔드·게이트웨이·DB 터널을 loopback에서 실행하고 서버의 해당 앱 개발 DB에 연결한다. 변경 파일을 자동 재빌드하는 HMR은 제공하지 않으므로 수정 후 중지·재실행한다. 같은 플랫폼 주소의 WS/WSS 터널을 사용하며 로컬 SQL에 운영 DB·관리자 권한을 제공하지 않는다. 앱당 한 개발 세션만 허용하며, `app dev-stop`으로 연결을 해제한 후 개발 배포하면 같은 DB와 데이터를 사용한다. 연결 실패 시 로컬 DB로 자동 전환하지 않는다. 별도 로컬 DB가 필요한 경우에만 `app dev --runtime docker --database local`을 명시한다. 종료는 소유 프로세스·컨테이너를 정리하고 DB·기존 로컬 볼륨은 보존한다. 스키마 변경은 서버가 적용하며 변경된 이전 SQL 이력을 거부한다. 준비/종료 대기는 성공 완료와 구분한다.
 
-서버 개발 DB 연결에는 Docker에서 접근 가능한 서버 IP·도메인이 필요하다. `localhost`, 루프백·미지정 IP는 컨테이너 자신의 주소이므로 기본 서버 DB 모드에서 빌드·DB 요청 전에 거부한다. 로컬 플랫폼 fixture의 별도 로컬 DB 검증에는 `--database local`을 명시한다. PostgreSQL 쿼리 취소 패킷은 지원하지 않으며 연결 종료 또는 `app dev-stop`을 사용한다. 이미 진행 중인 장시간 서버 마이그레이션은 중지 요청·CLI 대기 시간과 별개로 완료를 기다릴 수 있다. 임시 접속 권한의 만료와 마이그레이션 작업 취소는 구분한다.
+Docker runtime의 서버 DB 연결에는 컨테이너에서 접근 가능한 서버 IP·도메인이 필요하다. 이 조합에서는 `localhost`, 루프백·미지정 IP를 빌드·DB 요청 전에 거부한다. 기본 native runtime에는 이 Docker 주소 제한을 적용하지 않는다. PostgreSQL 쿼리 취소 패킷은 지원하지 않으며 연결 종료 또는 `app dev-stop`을 사용한다. 이미 진행 중인 장시간 서버 마이그레이션은 중지 요청·CLI 대기 시간과 별개로 완료를 기다릴 수 있다. 임시 접속 권한의 만료와 마이그레이션 작업 취소는 구분한다.
+
+로컬 preview는 앱 하나의 `AppRoot`와 AppRuntime을 같은 loopback 문서에서 실행하며 원격 자격증명을 앱 코드에 전달하지 않는다. 원격 dev/prod의 설치별 출처 iframe 브리지를 재현하는 검사가 아니다. preview의 UI·API 성공과 원격 프레임의 DOM·자격증명·메시지 경계 인수를 구분한다.
 
 Build는 깨끗이 커밋한 소스로 불변 Linux 이미지를 만든다. 배포는 manifest·커밋·이미지·번들 영수증을 확인하며 이미지 platform이 서버 `runtimePlatform`과 같아야 한다. 다른 CPU의 빌드에는 명시적 `--platform`과 실제로 동작하는 빌더가 필요하다. 플래그만으로 에뮬레이션을 설치하지 않는다.
 
-CLI 0.6.2의 `app build --remote`는 선택한 서버의 Docker Engine에서 검사와 빌드를 수행한다. Windows에 Docker나 SSH가 없어도 동작하며, 기존 로컬 빌드는 `app build`로 유지한다. 원격 빌드의 `--platform`은 서버의 실제 `runtimePlatform`과 같아야 한다. `--no-wait`, `job get/watch/logs/resume`으로 작업과 로그를 다시 조회할 수 있다. 성공한 서버 빌드 영수증을 사용한 dev 배포는 로컬 Docker 이미지 전송을 생략한다. 자세한 Windows 명령은 [네이티브 개발](NATIVE-DEVELOPMENT.md)을 참고한다.
+`app build --remote`는 선택한 서버의 Docker Engine에서 검사와 빌드를 수행한다. `--platform`은 서버의 실제 `runtimePlatform`과 같아야 한다. 성공한 서버 빌드 영수증으로 dev 배포하면 로컬 이미지 전송을 생략한다. 로컬 개발 세션을 종료하고 소스를 커밋한 뒤 다음 순서로 실행한다.
+
+```sh
+miy app build --remote --no-wait
+miy job watch BUILD_JOB_UUID --timeout 1800
+miy job logs BUILD_JOB_UUID --after 0
+miy app deploy --environment dev --no-wait
+miy job watch DEPLOY_JOB_UUID --timeout 600
+miy app status
+```
+
+원격 빌드는 깨끗한 Git HEAD의 허용된 업무·SDK·migration·잠금 파일만 올린다. 인증 설정·`.git`·`.miy`·`.miy-tools`·빌드 산출물·`.env`·개인 키 파일을 제외하고 심볼릭 링크와 하위 저장소를 거부한다. 임의 업무 파일에 하드코딩한 비밀을 모두 찾는 기능은 아니다. 서버는 소스 크기·SHA-256·개발 권한·SDK/컴포넌트 원본·적용 SQL 이력을 검사한다. 빌드 자체는 개발 DB를 변경하지 않는다. 커밋 ID는 CLI가 제공한 출처이며 서명된 증명이 아니고, 실제 전송 바이트는 SHA-256으로 식별한다.
+
+빌드 영수증은 서버·사용자·앱·커밋·소스 해시·불변 이미지에 묶인다. 연결이 끊기면 `job resume REQUEST_OR_JOB_UUID --environment dev`로 원래 작업을 조회한다. 같은 소스·커밋·플랫폼의 진행/성공 작업은 재사용한다. 실패한 빌드의 resume은 원래 실패를 반환하며, 원인을 해결한 뒤 `app build --remote`를 명시적으로 다시 실행해야 새 시도를 요청한다.
 
 Dry-run은 예상 상태·계획된 변경·worker에서 남은 검사를 반환한다. 이미지 업로드나 runtime job은 생성하지 않는다. 실제 실행은 context/origin/user/app, 요청 키, payload와 expected-state를 먼저 journal에 기록한다. 이미지 archive 상한은 1 GiB다. 업로드 접수·ID 조회부터 runtime 제출까지 복구 대상이며, 전송 바이트의 일부부터 이어 보내는 기능은 제공하지 않는다.
 
@@ -174,7 +196,7 @@ miy --app my-app app logs --environment dev --request LOG_REQUEST_UUID
 miy app rename --name '관리 화면 표시 이름'
 ```
 
-로그는 제한된 스냅샷이다. Truncation과 회전에 따른 누락 가능성을 표시하며 영구 보관을 약속하지 않는다. Timeout/중단 시 알려진 요청 ID로 같은 로그 결과를 다시 관찰한다. Rename은 관리자 표시 이름만 바꾸며 소스 manifest·앱 ID를 바꾸지 않는다.
+로그는 기본 100줄, 요청당 최대 1,000줄/1 MiB의 제한된 스냅샷이다. 해당 앱·환경의 관리 권한을 확인하고 만료되는 결과를 반환한다. Truncation과 회전에 따른 누락 가능성을 표시하며 연속 follow나 영구 보관을 제공하지 않는다. Timeout/중단 시 알려진 요청 ID로 같은 로그 결과를 다시 관찰한다. Rename은 관리자 표시 이름만 바꾸며 소스 manifest·앱 ID를 바꾸지 않는다.
 
 ## 자동화 계약
 
@@ -198,7 +220,7 @@ miy --app my-app grant set --input @grant.json
 
 ## 현행 서버 구성: HTTPS 도메인과 사내 HTTP IP
 
-이 절의 명령은 현행 도구의 설치 절차다. **외부 도메인 구매·내부 DNS·추가 IP 없이 단일 IP와 사설 CA HTTPS**를 지원한다. prod 포털 `https://192.168.10.20:8443`, dev 포털 `https://192.168.10.20:9444`, 콘솔 `https://192.168.10.20:9443`은 설정 가능한 포트의 예시다. IdP는 콘솔 `/identity/realms/miy`에 두며 별도 IdP 출처는 요구하지 않는다. Core·Keycloak 내부 포트는 외부에 직접 공개하지 않고 프록시를 통해서만 접근한다.
+이 절의 명령은 서버 구성의 준비 절차이며, 앱 프레임 도입 후의 새 서버 전체 설치 인수는 아직 `NOT_RUN`이다. **외부 도메인 구매·내부 DNS·추가 IP 없이 단일 IP와 사설 CA HTTPS**를 지원한다. prod 포털 `https://192.168.10.20:8443`, dev 포털 `https://192.168.10.20:9444`, 콘솔 `https://192.168.10.20:9443`은 설정 가능한 포트의 예시다. IdP는 콘솔 `/identity/realms/miy`에 두며 별도 IdP 출처는 요구하지 않는다. Core·Keycloak 내부 포트는 외부에 직접 공개하지 않고 프록시를 통해서만 접근한다.
 
 최소 설치 범위는 운영자가 준비한 **IP SAN이 있는 서버 인증서·키의 반입, 체인/만료/IP 일치 검사, 단말과 CLI의 CA 신뢰 설정 안내 및 연결 확인**이다. 자동 CA 배포·자동 갱신은 후속이며 운영자는 갱신 후 같은 검사를 수행한다. 도메인 배치는 권장하지만 필수는 아니다. 포트 차이는 DOM origin을 구분할 뿐 쿠키를 격리하지 않으므로 서버의 portal/dev_portal/console 세션 용도와 정확한 Origin·현재 CSRF 검사가 필요하다. 아래 HTTP 절차의 성공을 이 인수로 옮기지 않으며 TLS 검증 해제·인증서 경고 무시·자동 HTTP fallback을 제공하지 않는다. 상세는 [출처와 자격증명](APP-BOUNDARIES.md#출처와-자격증명)을 따른다.
 
@@ -224,7 +246,9 @@ python3 scripts/render-server-config.py --binary "$PWD/target/release/miy" \
   --key /etc/miy-tls/server.key
 ```
 
-인증서는 세 origin의 hostname을 모두 SAN에 포함해야 하며 사설 CA는 `--ca-file`로 지정한다. 마지막 명령은 `.local/nginx-miy.conf`, `.local/miy-v2-serve.service`, `.local/miy-v2-worker.service`를 생성한다. 기존 Nginx 사이트를 수정하거나 서비스를 시작하지 않는다. 생성 파일을 검토하여 전용 사이트·unit으로 설치하고, `nginx -t` 통과 후 Nginx reload 및 두 unit 시작을 수행한다. `/identity`는 콘솔에서만 loopback Keycloak 포트로, API·MCP·WebSocket·다운로드는 목적별 core bind 주소로, 나머지는 빌드한 플랫폼 UI로 연결된다. 이미지 업로드 한도는 core와 동일한 1 GiB이며 WebSocket 전달과 스트리밍 응답을 지원한다. 서비스 wrapper는 private runtime.env를 읽고 serve에서 DB 관리자 연결을, worker에서 OIDC client secret을 제거한다.
+위 `@miy/platform build`만으로 업무 앱 프레임 런타임은 설치되지 않는다. `bootstrap.py`는 앱 출처를 지정하지 않으면 P3 포트 풀을 설정하고 `MIY_FRAME_RUNTIME_DIR`을 상태 디렉터리의 `frame-runtime`으로 지정한다. 앱 실행까지 준비하려면 프레임 출처·포트 풀 또는 호스트 패턴·인증서와 별도의 프레임 런타임 빌드·설치가 필요하다. 현재 검증한 기존 서버 반영 도구와 범위는 [서버 운영 안내](SERVER-OPERATIONS.md#7-배포-도구)와 [APP-FRAMES §9](APP-FRAMES.md#9-운영-반영-계획)에 있다. 이를 새 서버 설치 전체의 PASS로 옮기지 않으며, 새 설치 경로의 통합은 [추진 계획의 새 서버 인수](PLAN.md#다음-우선-작업)에서 추적한다.
+
+플랫폼 인증서는 세 origin의 hostname/IP를 포함해야 하며, 앱 출처도 선택한 프로필에 맞는 인증서로 검사한다. 앱 전용 도메인의 별도 인증서와 같은 호스트의 포트 풀에 쓰는 IP SAN 인증서를 구분한다([배치 프로필](APP-FRAMES.md#4-배치-프로필과-격리-수준)). 사설 CA는 `--ca-file`로 지정한다. 마지막 명령은 `.local/nginx-miy.conf`, `.local/miy-v2-serve.service`, `.local/miy-v2-worker.service`를 생성한다. 기존 Nginx 사이트를 수정하거나 서비스를 시작하지 않는다. 생성 파일을 검토하여 전용 사이트·unit으로 설치하고, `nginx -t` 통과 후 Nginx reload 및 두 unit 시작을 수행한다. `/identity`는 콘솔에서만 loopback Keycloak 포트로, API·MCP·WebSocket·다운로드는 목적별 core bind 주소로, 나머지는 빌드한 플랫폼 UI로 연결된다. 앱 프레임 출처는 별도 Core 프레임 listener가 제공한다. 이미지 업로드 한도는 core와 동일한 1 GiB이며 WebSocket 전달과 스트리밍 응답을 지원한다. 서비스 wrapper는 private runtime.env를 읽고 serve에서 DB 관리자 연결을, worker에서 OIDC client secret을 제거한다.
 
 서버 빌드 기능 도입 시에는 새 서버 바이너리와 `0015_server_builds.sql`까지의 코어 마이그레이션을 적용하고 serve/worker를 함께 갱신한다. 이 마이그레이션은 빌드 작업·요청·로그 테이블을 추가하며 앱 DB를 변경하지 않는다. 소스는 `MIY_ARTIFACTS/.builds` 아래 private 디렉터리에 저장하며 업로드 한도는 64 MiB, 파일 수는 4,096개, 저장 로그는 작업당 2 MiB다. 대기·실행 작업은 사용자당 2개, 전체 8개로 제한한다. 작업자는 서버 소유 Dockerfile을 사용하며 소스의 패키지 스크립트·Rust 테스트는 Docker 내부에서 실행한다. worker가 중단된 작업은 검증 가능한 완성 이미지가 있으면 복구하고, 그렇지 않으면 중단 실패로 기록한다. 불확실한 기존 빌드를 자동으로 다시 시작하지 않는다.
 
@@ -239,7 +263,7 @@ python3 scripts/render-server-config.py --binary "$PWD/target/release/miy"
 
 HTTP는 내부망용이며 통신이 암호화되지 않는다. 이 구성은 `MIY_ALLOW_HTTP=1`을 기록하고 CA·TLS 리다이렉트·HSTS를 요구하지 않는다. 일반 로그인·권한·CSRF 검사는 유지한다. HTTPS 구성은 시스템 신뢰 저장소를 사용하며 사설 CA는 `--ca-file` 또는 `MIY_CA_FILE`로 추가한다. TLS 검증을 끄거나 HTTPS 실패를 HTTP로 대체하지 않는다. Keycloak 대표 주소와 MIY realm SSL 정책도 함께 적용하며 master realm은 변경하지 않는다. 관리 API 접근은 loopback으로 제한한다.
 
-`MIY_STATE_DIR`/`--state-dir`는 private 상태 위치, `MIY_BINARY`/`--binary`는 서버 실행 파일을 지정한다. `MIY_CLI_RELEASE_DIR`는 검증된 CLI 다운로드 묶음을 제공할 위치이며 기본은 상태 디렉터리의 `cli-downloads`다. `MIY_CLI_INSTALLER_DIR`는 Windows GUI 설치 파일의 게시 위치이며 기본은 상태 디렉터리의 `cli-installers`다. 검증한 설치 파일이 없으면 기존 ZIP·스크립트 안내를 제공한다. [Windows 설치 파일 배포](WINDOWS-INSTALLER.md)를 참고한다. PostgreSQL과 Keycloak 호스트 포트는 loopback에만 공개한다. `credentials.json`, runtime/compose env는 0600이고 상태 디렉터리는 0700이다. 컨테이너에 개별 읽기 전용 mount하는 init.sql/realm.json은 컨테이너 UID가 읽을 수 있도록 0644이며 호스트에서는 상태 디렉터리의 접근 제한을 받는다.
+`MIY_STATE_DIR`/`--state-dir`는 private 상태 위치, `MIY_BINARY`/`--binary`는 서버 실행 파일을 지정한다. `MIY_CLI_RELEASE_DIR`는 검증된 CLI 다운로드 묶음을 제공할 위치이며 기본은 상태 디렉터리의 `cli-downloads`다. `MIY_CLI_INSTALLER_DIR`는 Windows GUI 설치 파일의 게시 위치이며 기본은 상태 디렉터리의 `cli-installers`다. 검증한 설치 파일이 없으면 기존 ZIP·스크립트 안내를 제공한다. [CLI·Windows 설치기 게시](CLI-RELEASE.md#서버의-다운로드-게시)를 참고한다. PostgreSQL과 Keycloak 호스트 포트는 loopback에만 공개한다. `credentials.json`, runtime/compose env는 0600이고 상태 디렉터리는 0700이다. 컨테이너에 개별 읽기 전용 mount하는 init.sql/realm.json은 컨테이너 UID가 읽을 수 있도록 0644이며 호스트에서는 상태 디렉터리의 접근 제한을 받는다.
 
 ## 공유 개발 서버의 계정 버튼
 
@@ -261,6 +285,8 @@ CLI에서는 평소처럼 `miy auth login`을 실행한다. 열린 브라우저�
 
 저장소의 `bash scripts/up.sh --profile local`는 로컬 PostgreSQL·Keycloak·Caddy와 코어/worker/UI 검증 기반을 준비한다. 이 로컬 검증 프로필은 포털 `https://localhost:18443`과 콘솔 `https://localhost:18444`를 제공하며 클라이언트의 서버 기본값과 관계없다. HTTP 검증에는 `--origin http://IP:18000 --allow-http --proxy-bind 0.0.0.0`을 명시한다. 외부 Nginx를 구성한 서버에서는 `--profile server --origin URL`을 사용하며 로컬 Caddy·브라우저 컨테이너는 시작하지 않는다. `bash scripts/down.sh`는 저장 데이터를 보존하며 해당 기반을 중지한다. 이 도구의 기존 환경 기록을 모든 OS의 지원 증거로 확대하지 않는다. `.local/credentials.json`과 `.local/runtime.env`는 로컬 비밀 설정이므로 출력·게시하지 않는다.
 
+현재 `up.sh`의 루트 `pnpm build`도 플랫폼·검증 fixture만 빌드하고 프레임 런타임을 설치하지 않는다. 따라서 이 보조 도구의 성공을 새 프레임 앱 실행까지 완료한 것으로 보고하지 않는다. 플랫폼 작업의 실제 프레임 검증에는 [검사 지도](CHECKS.md)의 격리 `stack-ui.sh`와 앱 프레임 브라우저 설정을 사용한다.
+
 명시적으로 켠 loopback 개발 프로필은 설정된 포털/콘솔의 합성 계정 버튼과 `miy auth login --account developer`를 제공한다. 실제 OAuth 승인/기업 SSO 검증과 구분한다. 사설 CA의 CLI 설정과 브라우저 신뢰는 별개이며 TLS 검증을 끄지 않는다.
 
-전체 검사와 격리 회귀의 준비·정리 경계는 [검증 행렬](CLI-VALIDATION-MATRIX.md) 및 [런타임 회귀 안내](../scripts/runtime-regression/README.md)를 따른다. 과거 [휴가 관리 실증](LEAVE-LEDGER-RESULTS.md)·[구현 결과](IMPLEMENTATION-RESULTS.md)는 해당 시점의 증거다. 이 안내를 갱신한 사실만으로 별도 Linux 서버·실제 Windows 11·독립 AI·실제 IdP 전파 검사를 완료한 것으로 기록하지 않는다.
+전체 검사와 격리 회귀의 준비·정리 경계는 [검사 지도](CHECKS.md) 및 [런타임 회귀 안내](../scripts/runtime-regression/README.md)를 따른다. 과거 실행은 [보관 결과](archive/README.md)에 소스·환경별로 남긴다. 이 안내를 갱신한 사실만으로 별도 Linux 서버·실제 Windows 11·독립 AI·실제 IdP 전파 검사를 완료한 것으로 기록하지 않는다.

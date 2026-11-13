@@ -1,19 +1,19 @@
 # v1(miy) 검토와 v2 적용 계획
 
 - 작성일: 2026-11-03 (같은 날 원문 대조 재검증·보완, §8)
-- 최소 경계 기준: 2026-11-09. 회사가 관리하는 앱의 MF/AppRoot·통합 라우팅·단일 IP HTTPS를 유지한다. prod 포털·dev 포털·관리/CLI 승인/Keycloak 콘솔 세 출처, portal/dev_portal/console 세션·환경 제한과 prod 입장/관리 분리를 구현·운영 반영했다([배포](releases/dev-portal-2026-11-09-deployment.json)). 별도 IdP·외부 앱 격리·자동 CA는 후속이며 게시 CLI `01e4d49`·번들은 유지했다. 개발 단계의 하위 호환은 강제하지 않는다. 정본은 [앱 실행·관리 경계](APP-BOUNDARIES.md#확정-결정)
+- 현재 경계의 정본: [앱 실행·관리 경계](APP-BOUNDARIES.md#확정-결정)와 [앱 프레임 설계](APP-FRAMES.md). 업무 앱은 설치별 출처 프레임에서 실행하고 통합 라우팅·단일 IP HTTPS를 유지한다. 세 출처·세션 용도와 prod 입장/관리 분리를 따른다. 실제 배포·게시 버전은 [서버 운영 안내](SERVER-OPERATIONS.md), 다음 작업과 미완료 범위는 [추진 계획](PLAN.md)이 관리한다.
 - 검토 대상: 공식 v1 저장소 `/projects/miy` main `188a8cef`(2026-10-12, VERSION 0.1.1). `origin/dev`(`7d845743`, 10-14)는 main보다 API 코드가 오래됐고 Workbench와 Hermes 런타임 업그레이드(v0.21.7)만 앞서 있다. 그 차이가 판단에 영향을 주는 곳만 따로 적었다.
 - 보조 조사 이력: `../ai-do/dev` `dfc7fb9e16e`(2026-11-03). 이미 구현한 기본 UI의 참조 이력이며, 이후 기능·권한·공간 설계의 기준은 miy v1이다.
 - 최초 비교 기준: v2 main `3876d43` (CLI/core 0.7.0, 번들 0.8.0). §3의 비교 열은 이 시점의 조사 결과이며 현재 구현 상태는 §7을 따른다.
-- 상태: **검토·재검증 완료, 최소 보호·그룹 앱 권한과 기본 감사 조회를 적용 중.** 착수 순서는 [추진 계획](PLAN.md)이 관리한다. 사용자 결정이 필요한 사항은 §5에 모았다.
+- 상태: **검토·재검증 완료. 최소 보호·그룹 앱 권한·기본 감사 조회와 앱 프레임의 구현분은 운영 반영했으며, 공통 디렉터리·업무 ACL과 후속 기능은 남아 있다.** 항목별 구현 범위는 §7, 착수 순서는 [추진 계획](PLAN.md)이 관리한다. 사용자 결정이 필요한 사항은 §5에 모았다.
 
 v1은 Python API·Nx 모노레포·공유 DB 위에 공식 업무 앱 12종, Hermes 챗봇, RAG, Workbench까지 구현했다. 자체 dev/prod 환경은 운영했지만 고객 출시 전 단계다([PRD](PRD.md)). v2는 Rust 코어·앱별 컨테이너/DB·CLI/MCP 중심으로 새로 만든 후속 제품이다. 이 문서는 v1의 **계약·운영 규칙·실패 교훈**을 v2 구조에 맞춰 어떤 순서로 가져올지 정한다. v1 코드나 데이터 모델을 그대로 옮기는 계획이 아니다.
 
-**사용자 지시에 따라 이후 적용 기준은 miy v1으로 통일한다.** 이미 완료한 기본 UI가 `../ai-do/dev`를 참고했다는 사실과 검증 증거는 [UI 이식 계획](UIUX-MIGRATION.md)에 보존한다. 후속 공용 UI·다국어·알림·편집기와 조직·그룹·권한은 v1을 검토 원본으로 삼고 v2 계약에 맞춰 구현한다. ai-do의 변경을 자동으로 채택하지 않는다.
+**사용자 지시에 따라 이후 적용 기준은 miy v1으로 통일한다.** 이미 완료한 기본 UI가 `../ai-do/dev`를 참고했다는 사실과 검증 증거는 [UI-1~5 완료 이력](archive/UIUX-MIGRATION-UI1-5.md)에 보존한다. 후속 공용 UI·다국어·알림·편집기와 조직·그룹·권한은 v1을 검토 원본으로 삼고 v2 계약에 맞춰 구현한다. ai-do의 변경을 자동으로 채택하지 않는다. 현행 화면 책임과 UI 후속 계약은 [§9](#9-플랫폼-화면과-ui-후속-계약)에 통합한다.
 
 v1 ADR 0012는 **플랫폼 워크스페이스를 제거하고 앱이 업무 컨테이너와 ACL을 소유**하도록 정했다. PMS의 공간처럼 앱 내부 데이터 분리 단위는 남아 있다. v2도 플랫폼에서 사용자·그룹별 앱 사용 권한을 관리하고, 필요한 앱이 자기 DB에서 공간·멤버·리소스 권한을 관리한다. 모든 앱에 공간이나 숨김 글로벌 공간을 강제하지 않는다. 제품 요구사항은 [PRD](PRD.md)의 앱 사용 권한·앱 내부 데이터 권한 계약이 관리한다.
 
-v1 근거는 `miy:<경로>`, ai-do 근거는 `ai-do:<경로>`로 적는다. 각각 `/projects/miy`, `/projects/ai-do/dev`를 뜻한다. 이 문서는 2026-10-20 [RESEARCH](RESEARCH.md)에 있던 "기존 miy에서 참고할 계약" 절을 흡수했다. 당시 링크는 더 이상 없는 `../miy/dev` 경로를 가리켰다.
+v1 근거는 `miy:<경로>`, ai-do 근거는 `ai-do:<경로>`로 적는다. 각각 `/projects/miy`, `/projects/ai-do/dev`를 뜻한다. 이 문서는 2026-10-20 [RESEARCH](reference/RESEARCH.md)에 있던 "기존 miy에서 참고할 계약" 절을 흡수했다. 당시 링크는 더 이상 없는 `../miy/dev` 경로를 가리켰다.
 
 ## 1. 결론
 
@@ -94,10 +94,10 @@ v1 근거는 `miy:<경로>`, ai-do 근거는 `ai-do:<경로>`로 적는다. 각�
 | V1-G1 | 사용자·단일 그룹을 앱 권한 주체로 사용. 인사 주 소속 정확 일치·수동 사용자 배정, 계층·책임자·하위 부서의 자동 권한 상속 없음. 계층 변경은 잠금 후 순환 검사 | `miy:docs/domains/organization/README.md`, `miy:adr/0012-company-app-access-without-workspaces.md`, `miy:WORKSPACE_ACL_REVIEW.md` 43행 | 사용자 단위 `grants`(use/develop/deploy)만 있음 | 변형 적용: 기본 거부·기존 개발/배포 권한 유지, 파생 권한은 현재 멤버십으로 계산. 그룹 정본·동기화는 §5 | P1 |
 | V1-G2 | 앱 입장 대상(전체/선택, 사용자∪그룹)과 앱별 회사 중지 스위치. 설정이 없거나 대상이 비면 거부. v1 관리자는 대상 선택만 우회하고 중지 스위치는 우회 못 함 | `miy:docs/domains/app-platform/README.md` §App Admission | 최초 비교에서는 미구현. 현재 적용 범위는 §7과 [코어 권한](CORE-PERMISSIONS.md) 참조 | 변형 적용: "전체"는 명시 선택만. 2026-11-06 목표에서는 prod 관리자·deploy의 자동 Use도 제거하고 명시적 use/전체 허용만 인정. 관리/업무 경계 인수 후 dev 관리자/develop의 개발 미리보기와 use@dev 시험 입장, 앱 내부 ACL은 별도 유지. 새 정책은 2026-11-07 운영 반영 | P1 |
 | V1-G3 | 그룹·계정 변경 시 영향받는 사용자만 무효화하고 대기 작업을 다시 확인 | `miy:WORKSPACE_ACL_REVIEW.md` 42행 | 사용자 단위 위임 재확인은 있음([CORE-PERMISSIONS](CORE-PERMISSIONS.md)) | 적용 | P1 |
-| V1-G4 | 디렉터리 선택기 DTO: 활성 대상만, 페이지 처리, 보안 필드 제외. 디렉터리 조회 가능 여부와 콘텐츠 권한은 별개. SDK와 공용 UI에 사용자·그룹 선택기 제공 | `miy:packages/platform-web/src/directory/DirectoryPicker.tsx`, organization README | `connections.rs` `directory_data`가 활성 사용자 전체의 id·이름을 반환 | 변형 적용: 기존 동적 UI·SDK에서 선택기·DTO·서버 현재 멤버십 확인 제공. 구현된 세 출처 경계 위에서 진행하며 별도 앱 bearer·iframe 브리지는 추가하지 않음 | P2 |
+| V1-G4 | 디렉터리 선택기 DTO: 활성 대상만, 페이지 처리, 보안 필드 제외. 디렉터리 조회 가능 여부와 콘텐츠 권한은 별개. SDK와 공용 UI에 사용자·그룹 선택기 제공 | `miy:packages/platform-web/src/directory/DirectoryPicker.tsx`, organization README | 기본 활성 사용자 id·이름 조회는 있음. 그룹 DTO·페이지 처리·선택기·현재 멤버십 확인 계약은 미구현 | 변형 적용: 서버 DTO·현재 멤버십 확인과 SDK·공용 선택 UI를 구현한다. 앱 데이터 요청은 프레임 출처의 인증 경로를 사용하고 포털 소유 UI 요청만 브리지 v1 계약에 맞춘다. 브리지를 범용 API 대행 경로로 만들지 않음 | P2 |
 | V1-G5 | 필요 앱만 자기 DB에서 공간·멤버·역할·리소스 ACL을 관리. 플랫폼 워크스페이스 테이블·전역 선택기·필수 숨김 공간 없음. 공간 ID는 앱·환경 범위 안에서만 해석 | ADR 0012, `miy:WORKSPACE_ACL_REVIEW.md` 29~30행 | 앱별 DB는 있음. 공간 권한과 공용 선택 UI·SDK 지원은 후속 | 변형 적용: 플랫폼의 공통 authorize SDK·서버 미들웨어·그룹 확인·공유/회수·감사 도구를 검토. ACL 관계와 업무 규칙은 앱 DB에 유지. 아래 PLM 추가 요구와 함께 미구현 | P1 |
 | V1-G6 | 실사용 인수 LIVE-01~17을 v2에 맞게 재작성. 같은 앱에 들어가는 두 사용자의 서로 다른 공간 접근, 공간 없는 앱, 그룹 회수 후 직접 URL·API·대기 작업 거부, 앱/환경 간 공간 ID 오용을 확인 | `miy:docs/product/core-platform-user-acceptance.md` | 없음 | 변형 적용: 프로젝트·업무 대표 앱의 실제 서버 판정으로 인수. 별도의 PLM→PDM/MES 소규모 연계 인수 추가는 아래 신규 요구이며 NOT_RUN | P2 |
-| V1-G7 | 독립 앱의 별도 출처 iframe과 일회용 launch 교환. v1 전체 내장 앱이 격리됐다는 뜻은 아님 | `miy:docs/domains/app-platform/README.md`, `miy:apps/web/src/platform/apps/IndependentAppHost.tsx` | 현행 같은 페이지 MF. 세 출처 경계 2026-11-09 운영 반영 | iframe 채택 철회. v2는 사내 승인 앱의 MF·단일 IP HTTPS, prod 포털·dev 포털·콘솔+Keycloak 세 출처 최소안을 선택. 앱별 강제 격리·전체 MF 앱 폐기·SDK 일괄 교체 없음. [정본](APP-BOUNDARIES.md#확정-결정) 참고 | 순서는 PLAN |
+| V1-G7 | 독립 앱의 별도 출처 iframe과 일회용 launch 교환. v1 전체 내장 앱이 격리됐다는 뜻은 아님 | `miy:docs/domains/app-platform/README.md`, `miy:apps/web/src/platform/apps/IndependentAppHost.tsx` | 2026-11-10 채택, 2026-11-12 업무 앱의 설치별 출처 프레임 구현·리뷰 보완 운영 반영. 상세 범위는 §7 | 변형 적용: 플랫폼 화면·통합 라우팅을 유지하고 업무 앱만 분리한다. 프레임 토큰·부모 세션 결합·연결 승인·화면 브리지를 사용한다. P2·P3의 쿠키 간섭 한계와 외부 앱 수용 전 P1 별도 인수를 구분. [정본](APP-FRAMES.md) 참고 | 순서는 PLAN |
 
 2026-11-06 PLM·PMS·PDM·MES·DAS 연계는 **v1에서 확인한 구현 사실이 아닌 신규 제품 요구**다. 상세는 [공통 업무 권한](CORE-PERMISSIONS.md#공통-업무-권한과-앱-연계)을 따른다. 최소 보안 다음 G4·G5·G6에서 현재 그룹 확인·공통 ACL·대표 프로젝트/업무 앱을 인수한다. A2·API Invoke·업무 이벤트·파일은 해당 후속 기능 때 작은 PLM→PDM/MES 연계로 확인하며 전부를 경계 완료의 선행 조건으로 두지 않는다. 알림 projection과 업무 outbox/중복 방지는 별개이고 신규 기능 검사는 NOT_RUN이다.
 
@@ -114,13 +114,13 @@ v1 근거는 `miy:<경로>`, ai-do 근거는 `ai-do:<경로>`로 적는다. 각�
 | ID | 항목 | 근거(miy v1 기준) | v2 현재 | 판정 | 우선 |
 | --- | --- | --- | --- | --- | --- |
 | V1-U1 | 업무 UI 원칙: 밀도 높은 화면, 평면 표, 한 줄 도구 모음, 모바일 전역 메뉴와 현재 앱 메뉴 분리. 템플릿 지침에도 넣는다 | `miy:docs/product/ui-design-principles.md` | 규칙 문서 없음 | 적용 | P1 |
-| V1-U2 | 다크/시스템 테마: SDK의 테마 상태·변경 알림, `--miy-*` 다크 토큰, 강조색 전경 누락 검사 | `miy:scripts/check-web-dark-mode-tokens.mjs`, `miy:packages/platform-web/src/theme/document-theme.ts` | `theme: "light"` 고정 | 변형 적용: MF/AppRuntime을 유지하는 SDK 확장으로 검토. 게시된 기존 SDK·UI 버전은 수정하지 않음 | P1 |
+| V1-U2 | 다크/시스템 테마: SDK의 테마 상태·변경 알림, `--miy-*` 다크 토큰, 강조색 전경 누락 검사 | `miy:scripts/check-web-dark-mode-tokens.mjs`, `miy:packages/platform-web/src/theme/document-theme.ts` | `theme: "light"` 고정. 프레임의 `theme.changed` 메시지 계약은 있으나 테마 전환 제품 기능은 미구현 | 변형 적용: AppRuntime·프레임 런타임·브리지 v1을 함께 확장. 게시된 기존 SDK·UI 버전은 수정하지 않음 | P1 |
 | V1-U3 | 한국어/영어 메시지 목록, 런타임 `locale`, 하드코딩 문자열 검사 | `miy:scripts/check-web-i18n-messages.mjs`, `miy:packages/platform-web/src/i18n/resources.ts` | 한국어만 | 변형 적용 | P1 |
 | V1-U4 | 공용 primitive: dialog, confirm/prompt, data-table, 빈 상태·skeleton, 검색 필드, 필터 바, 탭, 상세 drawer, split pane. 새 불변 registry 버전(1.1.x)으로 게시하고 i18n 의존성은 넣지 않음 | `miy:packages/ui/src/lib/` | registry에는 `Panel`·`Button`만 있음 | 변형 적용 | P1 |
 | V1-U5 | 날짜·시간대 유틸과 한국 공휴일(정적 데이터, 지원 범위 밖이면 null) | `miy:packages/platform-web/src/time/korean-holidays.ts`, `miy:docs/product/korean-holidays.md` | 없음 | 적용 | P2 |
 | V1-U6 | SDK 확장: 테마·언어 변경 알림, 다른 앱으로 이동 제안(사용자 확인 필수, 자동 이동 없음), 저장 대기 신호 | `miy:platform-redesign/SDK_NAVIGATION.md`, `miy:apps/official-suite/README.md` | 앱 내부 `navigate`, `registerNavigationGuard` | 변형 적용 | P2 |
 
-U1~U6은 기존 MF/AppRuntime과 SDK를 유지하는 기능 개발이다. 독립 UI 자산·테마·언어는 호환 검사를 하며 병행하고 인증·권한 변경과 겹치는 부분만 최소 경계와 맞춘다. 구현된 세 출처 계약 위에서 진행하고 iframe 브리지·모든 후속 보안 완료를 기다리지 않는다. 실제 추가 계약만 새 불변 SDK/UI 버전으로 발행하며 순서·상태는 PLAN을 따른다.
+공용 UI와 권한·업무 기능의 후속 경계는 [§9의 7-1~7-3 분류](#ui-후속-작업의-경계)를 따른다. 구현된 테마 메시지를 다크/시스템 테마 완료로 보지 않으며, 실제 순서·상태는 PLAN이 관리한다.
 
 ### 3.6 공통 업무 기능 (UI §7-3)
 
@@ -200,7 +200,7 @@ v1은 회사 소개 자료 `MIY 소개 및 사례_20261002.pdf`를 v1 구현과 
 | Beat heartbeat | v2 worker 소유권 감시(1차)가 대신함 |
 | Bento·draw.io 기반 다이어그램 | 필요할 때 별도 origin 원칙으로 다시 검토 |
 
-v1의 iframe 실행을 v2 필수 계약으로 채택했던 결정은 철회했다. 동적 로딩을 유지하며 현재 최소안은 prod 포털·dev 포털·관리/로그인 콘솔 세 출처와 기존 OIDC의 브라우저 용도·환경 구분이다. 새 앱 launch/PKCE 브리지는 만들지 않고 기존 로그인 PKCE를 재사용한다. 같은 포털 앱 격리나 포트 쿠키 격리를 주장하지 않는다. [출처와 자격증명](APP-BOUNDARIES.md#출처와-자격증명), [전환과 복구](APP-BOUNDARIES.md#전환과-복구)에 따라 데이터·게시물 바이트를 보존하되 개발 단계의 구 CLI·SDK 호환은 강제하지 않는다. 허용된 자동화 promote마다 새 사람 승인을 요구하지 않는다.
+v1의 실행 구현을 그대로 복사하지는 않는다. 업무 앱 iframe은 2026-11-10 채택한 [앱 프레임 설계](APP-FRAMES.md)에 따라 v2에 구현·운영 반영했다. OIDC는 세 포털 용도를 구분하고 앱 실행에는 별도의 일회용 코드·프레임 토큰·화면 브리지를 사용한다. 같은 페이지 MF 마운트는 제거했으며 앱 모듈의 동적 로딩은 프레임 안에서 유지한다. 설치별 출처 분리와 P2·P3의 쿠키·사이트 격리 한계는 구분한다. [출처와 자격증명](APP-BOUNDARIES.md#출처와-자격증명), [전환과 복구](APP-BOUNDARIES.md#전환과-복구)에 따라 데이터·게시물 바이트를 보존하되 개발 단계의 구 CLI·SDK 호환은 강제하지 않는다. 허용된 자동화 promote마다 새 사람 승인을 요구하지 않는다.
 
 ## 5. 결정이 필요한 사항
 
@@ -222,7 +222,7 @@ v1의 iframe 실행을 v2 필수 계약으로 채택했던 결정은 철회했�
 
 ## 7. 적용 상태
 
-착수한 항목의 현재 구현 범위와 남은 부분을 적는다. 소스 구현·일부 구현은 전체 완료나 운영 반영을 뜻하지 않는다. 표에 없는 항목은 미착수다. 후속 리뷰의 구현·검증 결과는 [2026-11-04 기록](releases/core-review-2026-11-04-validation.json)에 있다. 구현분은 같은 날 서버·UI `3406d9f`로 [운영 반영](releases/core-review-2026-11-04-deployment.json)했다. 후속 보완·최소 보안 경계는 2026-11-07 서버·UI `a4ad370`으로 [운영 반영](releases/internal-minimum-security-2026-11-07-deployment.json)했다. 아래 일부 구현 항목의 남은 범위는 그대로다.
+착수한 항목의 현재 구현 범위와 남은 부분을 적는다. 소스 구현·일부 구현은 전체 완료나 운영 반영을 뜻하지 않는다. 표에 없는 항목은 해당 v1 적용 묶음에 미착수한 것이며 기존 기반 기능도 없다는 뜻은 아니다. 최소 보호·그룹 권한·감사의 구현·검증 결과는 [2026-11-04 기록](releases/core-review-2026-11-04-validation.json)과 [당시 배포](releases/core-review-2026-11-04-deployment.json)에, 후속 최소 보안은 [11-07 배포](releases/internal-minimum-security-2026-11-07-deployment.json)에 보존한다. 현재 배포 소스·schema·게시물은 [서버 운영 안내](SERVER-OPERATIONS.md)를 따른다. 아래 일부 구현 항목의 남은 범위는 그대로다.
 
 | ID | 상태 | 반영 | 확인 |
 | --- | --- | --- | --- |
@@ -235,6 +235,8 @@ v1의 iframe 실행을 v2 필수 계약으로 채택했던 결정은 철회했�
 | V1-G1 | 구현분 운영 반영 | migration `0018_groups_and_app_access.sql`의 조직·수동 그룹, 주 소속, 그룹 권한(`use`·`develop`), 관리 API·화면. 변경 커밋 전 현재 관리자 권한을 잠그고 재검사 | 잠금 대기 중 회수·감사 원자성, 앱/그룹 선택 전환의 지연 응답 회귀 |
 | V1-G2 | 구현분 운영 반영 | 앱·환경별 입장 대상(`selected`/`all`), 회사 사용 중지(관리자 포함 차단, 개발자는 dev에서 수정). 사용 중지 중 실행 관리 유지와 관리자 실행 관리 목록(`appDisabled`·`canOpen`)은 2026-11-05 운영 반영. 위임 실행의 접수 응답·작업 목록/상세 권한 일치와 prod 관리자/deploy 자동 Use 제거는 2026-11-07 운영 반영 | 같은 회귀, `access_decision` 단위 테스트, [후속 검증](releases/core-review-followup-2026-11-05-validation.json) |
 | V1-G3 | 구현분 운영 반영 | `effective_grants` 뷰를 매번 계산해 다음 요청과 대기 작업에 반영(캐시 무효화 불필요) | 멤버 해제 즉시 회수 관찰 |
+| V1-G4 | 사용자 디렉터리 기반 있음, 확장 미착수 | 설치 승인·위임을 검사한 활성 사용자 id/name 조회와 프레임·SDK 호출 경로 | 앱용 그룹 DTO·현재 멤버십 확인·공통 선택기·선택 브리지 메시지는 후속. 관리용 그룹 API를 앱의 권한 확인 API로 대신하지 않음 |
+| V1-G7 | 구현·격리 검증·운영 반영, CLI 게시와 잔여 인수 대기 | 설치별 출처 iframe, 일회용 실행/갱신 코드, 프레임 토큰·부모 세션·릴리스 결합, 연결 승인 재검사, 화면 브리지 | [리뷰 검증](releases/app-frames-review-fixes-2026-11-12-validation.json)·[배포 후 실제 앱 확인](releases/app-frames-review-fixes-2026-11-12-deployment.json). CLI 게시 대기와 P2 쿠키 간섭·화면낭독 확인, P1 활성화 전 인수는 남음. 게시 버전은 운영 안내, 다음 작업은 PLAN을 따름 |
 | V1-A1 | 일부 구현·운영 반영 | `GET /api/v1/audit`(기간·행위자·동작 접두어, id cursor), 감사 화면, migration `0019_audit_query.sql`(인덱스). 개인·그룹 권한 변경은 같은 트랜잭션에 기록하고 주 소속 변경은 이전/새 그룹을 기록. 사용자 활성 상태 변경과 앱 등록 승인으로 생기는 develop 권한도 관리자 재확인 후 기록(2026-11-05 운영 반영) | 조회·권한·원자성·검색 실패 회귀. 별도 대상 종류·결과·요약 필드와 보존 정책은 남음. 보존 기간은 PRD 미결정 |
 | V1-Q4 | 일부 구현 | CLI 후보 workflow의 `scripts/check-cli-version.py`: 게시본(`releases/windows-candidate.json`) 이후 클라이언트 빌드 입력이 바뀌면 더 높은 버전을 요구. 응답 계약은 `scripts/check-api-compat.py`로 게시 CLI 기준 추가만 허용(2026-11-05 소스) | `scripts/test-cli-version.py`, `scripts/test-api-compat.py`. 번들·템플릿 버전과 릴리스 증거의 일치는 남음 |
 | V1-Q3 | 완료 | `scripts/check-static.sh`, `.github/workflows/web.yml`, `check.sh` origin 가드, 루트 Playwright 설정 축소 | 로컬에서 `scripts`·`rust`·`web` 모두 PASS. `check.sh`가 운영 `.local`을 거부함을 확인. GitHub `Web and scripts` run 41645608115 success |
@@ -263,3 +265,31 @@ v1의 iframe 실행을 v2 필수 계약으로 채택했던 결정은 철회했�
   - 대외 자료 제품 요구(§3.8)
   - AI 독립 운영(V1-I14)
   - `origin/dev`와의 차이
+
+## 9. 플랫폼 화면과 UI 후속 계약
+
+기본 UI-1~5는 ai-do를 참고한 완료 이력이며, 공식 miy v1의 V1-U1~U6 적용은 미착수다. 기존 프레임·테마 메시지·기본 컴포넌트가 있다는 사실을 이 여섯 항목의 완료로 보지 않는다. 후속 구현은 v1의 요구를 현재 v2 계약에 맞춰 적용하고 v1 코드를 그대로 복사하지 않는다.
+
+### 세 영역의 화면 책임
+
+| 영역 | 화면 계약 |
+| --- | --- |
+| 업무 포털·dev 포털 | 업무 포털은 prod 목록·앱, dev 포털은 권한 있는 사용자의 dev 미리보기·시험 앱을 제공. 각 포털에서 통합 라우팅하며 기술 상태·DB·이미지·관리 작업은 콘솔에서 제공 |
+| 앱 관리 콘솔 | 담당 앱·환경, 미설치/사용 중지 앱, 릴리스·작업·진단과 개인 CLI 승인. 서버가 제공한 동작별 권한 사용 |
+| 플랫폼 관리 | 같은 콘솔 안의 사용자·그룹·권한·등록·설치 승인·감사·공용 자산. Keycloak 로그인은 콘솔 `/identity`에서 제공 |
+
+플랫폼 화면은 같은 페이지에 두고 업무 앱 화면은 프레임에서 실행한다. UI 확장은 [앱 프레임 설계](APP-FRAMES.md)와 [개발 계약](DEVELOPMENT.md)을 따르며 콘솔에 앱 코드·활성 앱 콘텐츠를 제공하지 않는다. 테마·언어·탐색·입력 유실·선택기는 SDK·프레임 런타임·공용 UI의 담당 기능에서 확장하고, API를 화면 브리지로 대행하지 않는다. dev 확인도 해당 권한을 따르며 prod 입장은 명시적 use/all과 앱 ACL로 판정한다. 세션·권한과 단일 IP의 포트·쿠키 한계는 [경계 설계](APP-BOUNDARIES.md)와 [코어 권한](CORE-PERMISSIONS.md)이 관리한다.
+
+**다른 출처로 가는 링크만 새 탭으로 연다.** 포털↔콘솔·prod↔dev 포털 이동, 콘솔의 "포털에서 앱 열기"·앱 경로 안내, 포털의 관리 콘솔·개인 CLI 연결이 해당한다. 홈의 앱 열기·앱 레일과 각 영역 내부 메뉴·앱 내부 라우팅·로그인/로그아웃·기존 주소의 자동 이동은 같은 탭을 유지한다. 새 탭 링크는 `↗` 표시·접근성 안내와 `noopener noreferrer`를 사용하며 원래 문서를 떠나지 않으므로 입력 유실 확인을 띄우지 않는다. 결정과 인수 근거는 [11-09 기록](releases/boundary-followup-2026-11-09-validation.json)에 보존한다.
+
+### UI 후속 작업의 경계
+
+기존 참조 번호 7-1~7-3은 기능 분류로 유지한다. 착수 순서는 [PLAN 작업표](PLAN.md#다음-우선-작업) 하나가 정한다.
+
+- **7-1 공용 UI:** U1·U4·U5의 독립 UI 자산은 병행할 수 있다. U2·U3·U6은 구현된 AppRuntime·프레임 런타임·브리지 v1에 맞춰 확장한다. 현재 라이트 테마와 테마 메시지를 다크/시스템 테마·다국어 완료로 해석하지 않는다. 언어 변경·앱 이동 제안 등 새 계약은 해당 기능에서 추가하고 게시 SDK·UI 자산은 새 불변 버전으로 확장한다. 모든 후속 보안 인수를 기다리는 것은 아니다.
+- **7-2 권한 기반:** 공통 디렉터리·현재 그룹 확인과 앱 소유 ACL의 공통 SDK·회수·감사 계약을 구현한다. 전역 워크스페이스를 만들지 않는다. PLM 등 독립 업무 앱도 이 기능을 사용하며 서비스 계정·API Invoke·업무 이벤트·대용량 파일은 PLAN의 후속 작업이다. 전체 PLM을 현재 보안 단계의 완료 조건으로 두지 않는다.
+- **7-3 공통 업무 기능:** Storage·파일·알림·편집기·선택 업무 앱. 경계 정리를 대규모 디자인 개편이나 v1 코드 복사의 근거로 삼지 않는다.
+
+### UI 검증과 상태
+
+동적 앱 추가·통합 라우팅의 인수 요구를 유지한다. 실행·인증·입력 보호와 브라우저별 UI 인수는 [프레임 인수](APP-FRAMES.md#6-실증-계획)를 따른다. 실제 Windows, 기존 기기 worker 정리, 운영 인쇄 전체 인수, P2 쿠키 간섭·화면낭독 출력 등 미실행 범위를 구분하고 이전 PASS를 새 인수로 옮기지 않는다. 운영에서 앱 몇 개를 읽기 전용으로 연 결과를 전체 업무 인수로 보지 않는다. 운영 dist 보호와 Windows 사용자 수행 원칙은 각각 서버·Windows 운영 안내를 따른다. 기존 실행·배포 기록은 [UI 계약 보관본](archive/design/UIUX-MIGRATION.md)에 보존한다.

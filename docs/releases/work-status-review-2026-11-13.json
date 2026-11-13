@@ -1,0 +1,823 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-11-13",
+  "status": "PASS",
+  "scope": "Whole-repository documentation status review and synchronization, not product revalidation or deployment.",
+  "source": {
+    "baseCommit": "d1e564c6e7c7d6c15771eb9dc7f6302b804f9ad7",
+    "workingTree": true,
+    "preExistingResourceChangesPreserved": [
+      "compose.yaml",
+      "docs/CAPACITY.md",
+      "docs/SERVER-OPERATIONS.md",
+      "scripts/runtime-regression/README.md",
+      "scripts/runtime-regression/cleanup.py",
+      "scripts/runtime-regression/run.py",
+      "scripts/runtime-regression/test_cleanup.py",
+      "docs/releases/resource-usage-2026-11-12-validation.json",
+      "scripts/runtime-regression/workdir.py"
+    ],
+    "codeAndComposeMatchResourceValidation": true
+  },
+  "coverage": {
+    "trackedMarkdownFiles": 62,
+    "docsMarkdownFiles": 44,
+    "releaseJsonMetadataFiles": 129,
+    "topLevelReleaseJsonFiles": 57,
+    "method": "Read current owner documents and cross-check selected code and latest evidence. Inspect historical material and frozen artifact guidance in their original scope. Parse all release JSON and review their status metadata; do not re-execute every historical assertion.",
+    "markdownFiles": [
+      "AGENTS.md",
+      "CLAUDE.md",
+      "README.md",
+      "crates/miy/guidance/miy-cli/SKILL.md",
+      "crates/miy/guidance/miy-cli/references/workflow.md",
+      "docs/AI.md",
+      "docs/APP-BOUNDARIES.md",
+      "docs/APP-FRAMES.md",
+      "docs/CAPACITY.md",
+      "docs/CHECKS.md",
+      "docs/CLI-0.6.3-LINUX-VALIDATION.md",
+      "docs/CLI-IMPLEMENTATION-PLAN.md",
+      "docs/CLI-RELEASE.md",
+      "docs/CLI-VALIDATION-MATRIX.md",
+      "docs/CORE-HARDENING.md",
+      "docs/CORE-PERMISSIONS.md",
+      "docs/CORE-TESTING.md",
+      "docs/DEVELOPMENT.md",
+      "docs/FRONTEND.md",
+      "docs/IMPLEMENTATION-RESULTS.md",
+      "docs/IMPLEMENTATION.md",
+      "docs/INDEPENDENT-AGENTS-0.6.3-ACCEPTANCE.md",
+      "docs/LEAVE-LEDGER-RESULTS.md",
+      "docs/NATIVE-DEVELOPMENT.md",
+      "docs/PLAN.md",
+      "docs/PRD.md",
+      "docs/README.md",
+      "docs/RESEARCH.md",
+      "docs/RUNNING.md",
+      "docs/SERVER-OPERATIONS.md",
+      "docs/STACK.md",
+      "docs/UIUX-MIGRATION.md",
+      "docs/V1-ADOPTION.md",
+      "docs/VALIDATION.md",
+      "docs/WINDOWS-0.6.3-ACCEPTANCE.md",
+      "docs/WINDOWS-ACCEPTANCE.md",
+      "docs/WINDOWS-INSTALLER.md",
+      "docs/WINDOWS-VALIDATION.md",
+      "docs/architecture/README.md",
+      "docs/archive/CLI-EXPERIENCE-SERVER-HANDOFF.md",
+      "docs/archive/CLI-HANDOFF.md",
+      "docs/archive/CORE-PERMISSIONS-0.7.0.md",
+      "docs/archive/IMPLEMENTATION-V0-V1.md",
+      "docs/archive/LINUX-TODO-HANDOFF.md",
+      "docs/archive/PLAN-INITIAL-ROADMAP.md",
+      "docs/archive/UIUX-MIGRATION-UI1-5.md",
+      "docs/archive/VALIDATION-MODULE-FEDERATION.md",
+      "docs/archive/architecture-2026-10/README.md",
+      "docs/releases/evidence/internal-minimum-security-20261107/README.md",
+      "examples/ai-assets-claude/README.md",
+      "examples/ai-assets-codex/README.md",
+      "examples/native-todo/README.md",
+      "registry/components/ui/1.0.0/README.md",
+      "registry/components/ui/1.0.1/README.md",
+      "scripts/runtime-regression/README.md",
+      "templates/rust-react/.agents/skills/miy-app/SKILL.md",
+      "templates/rust-react/.claude/skills/miy-app/SKILL.md",
+      "templates/rust-react/AGENTS.md",
+      "templates/rust-react/CLAUDE.md",
+      "templates/rust-react/docs/ACCEPTANCE.md",
+      "templates/rust-react/docs/CLI.md",
+      "templates/rust-react/docs/CONTRACT.md"
+    ],
+    "releaseJsonInventory": [
+      {
+        "path": "docs/releases/api-contract-2026-11-05-validation.json",
+        "status": "PASS"
+      },
+      {
+        "path": "docs/releases/app-boundaries-consolidation-2026-11-06-validation.json",
+        "status": "PASS"
+      },
+      {
+        "path": "docs/releases/app-boundaries-docs-2026-11-06-validation.json",
+        "status": "PASS"
+      },
+      {
+        "path": "docs/releases/app-boundaries-review-fixes-2026-11-06-validation.json",
+        "status": "PASS"
+      },
+      {
+        "path": "docs/releases/app-frames-2026-11-12-deployment.json",
+        "status": "PASS"
+      },
+      {
+        "path": "docs/releases/app-frames-adoption-2026-11-10-validation.json",
+        "status": "PARTIAL"
+      },
+      {
+        "path": "docs/releases/app-frames-poc-2026-11-10-second-validation.json",
+        "status": "PARTIAL"
+      },
+      {
+        "path": "docs/releases/app-frames-poc-2026-11-10-validation.json",
+        "status": "PARTIAL"
+      },
+      {
+        "path": "docs/releases/app-frames-review-fixes-2026-11-12-deployment.json",
+        "status": "PASS"
+      },
+      {
+        "path": "docs/releases/app-frames-review-fixes-2026-11-12-validation.json",
+        "status": "PASS"
+      },
+      {
+        "path": "docs/releases/boundary-followup-2026-11-09-deployment.json",
+        "status": "PASS"
+      },
+      {
+        "path": "docs/releases/boundary-followup-2026-11-09-validation.json",
+        "status": "PASS"
+      },
+      {
+        "path": "docs/releases/boundary-review-fixes-2026-11-09-validation.json",
+        "status": null
+      },
+      {
+        "path": "docs/releases/browser-boundary-review-2026-11-06-validation.json",
+        "status": null
+      },
+      {
+        "path": "docs/releases/cli-0.5.0-candidate.json",
+        "status": null
+      },
+      {
+        "path": "docs/releases/cli-0.6.0-candidate.json",
+        "status": null
+      },
+      {
+        "path": "docs/releases/cli-0.6.0-core-validation.json",
+        "status": null
+      },
+      {
+        "path": "docs/releases/cli-0.6.1-native-windows-validation.json",
+        "status": "partial_acceptance"
+      },
+      {
+        "path": "docs/releases/cli-0.6.2-server-build-validation.json",
+        "status": "PASSED_WITH_DOCUMENTED_LIMITS"
+      },
+      {
+        "path": "docs/releases/cli-0.6.2-windows-server-build-validation.json",
+        "status": "PASSED_WITH_DOCUMENTED_LIMITS"
+      },
+      {
+        "path": "docs/releases/cli-0.6.3-candidate.json",
+        "status": null
+      },
+      {
+        "path": "docs/releases/cli-0.6.3-experience-validation.json",
+        "status": "PASSED_LOCAL_WITH_SERVER_FOLLOWUP"
+      },
+      {
+        "path": "docs/releases/cli-0.6.3-independent-agents-validation.json",
+        "status": "PASS"
+      },
+      {
+        "path": "docs/releases/cli-0.6.3-linux-validation.json",
+        "status": "DEPLOYED_AND_AUTOMATED_CHECKS_PASSED_WITH_NOT_RUN_ITEMS"
+      },
+      {
+        "path": "docs/releases/cli-0.6.3-main-integration.json",
+        "status": "PASS"
+      },
+      {
+        "path": "docs/releases/cli-0.6.3-windows-postdeploy-validation.json",
+        "status": "DEPLOYMENT_CONFIRMED_WITH_NOT_RUN_ITEMS"
+      },
+      {
+        "path": "docs/releases/cli-evidence.example.json",
+        "status": null
+      },
+      {
+        "path": "docs/releases/console-hostname-2026-11-09-deployment.json",
+        "status": "PASS"
+      },
+      {
+        "path": "docs/releases/core-0.7.0-deployment.json",
+        "status": "PASS"
+      },
+      {
+        "path": "docs/releases/core-admin-recheck-2026-11-04-validation.json",
+        "status": "PASS"
+      },
+      {
+        "path": "docs/releases/core-followup-fixes-2026-11-05-validation.json",
+        "status": "PASS"
+      },
+      {
+        "path": "docs/releases/core-foundation-review-2026-11-06-validation.json",
+        "status": "PASS"
+      },
+      {
+        "path": "docs/releases/core-hardening-2026-11-03-validation.json",
+        "status": "PASS"
+      },
+      {
+        "path": "docs/releases/core-permissions-2026-11-03-validation.json",
+        "status": null
+      },
+      {
+        "path": "docs/releases/core-policy-2026-11-05-validation.json",
+        "status": "PASS"
+      },
+      {
+        "path": "docs/releases/core-policy-consistency-2026-11-05-validation.json",
+        "status": "PASS"
+      },
+      {
+        "path": "docs/releases/core-policy-followup-2026-11-05-validation.json",
+        "status": "PASS"
+      },
+      {
+        "path": "docs/releases/core-policy-transactions-2026-11-05-validation.json",
+        "status": "PASS"
+      },
+      {
+        "path": "docs/releases/core-review-2026-11-04-deployment.json",
+        "status": "PASS"
+      },
+      {
+        "path": "docs/releases/core-review-2026-11-04-validation.json",
+        "status": "PASS"
+      },
+      {
+        "path": "docs/releases/core-review-followup-2026-11-05-validation.json",
+        "status": "PASS"
+      },
+      {
+        "path": "docs/releases/core-runtime-management-2026-11-04-validation.json",
+        "status": "PASS"
+      },
+      {
+        "path": "docs/releases/core-runtime-management-2026-11-05-deployment.json",
+        "status": "PASS"
+      },
+      {
+        "path": "docs/releases/core-stop-quiescence-2026-11-05-validation.json",
+        "status": "PASS"
+      },
+      {
+        "path": "docs/releases/dev-portal-2026-11-09-deployment.json",
+        "status": "PASS"
+      },
+      {
+        "path": "docs/releases/dev-portal-2026-11-09-validation.json",
+        "status": "PASS"
+      },
+      {
+        "path": "docs/releases/evidence/cli-0.6.2-server-build/browser-validation.json",
+        "status": "passed"
+      },
+      {
+        "path": "docs/releases/evidence/cli-0.6.2-server-build/linux-handoff-report.json",
+        "status": "PASSED_WITH_FINDINGS"
+      },
+      {
+        "path": "docs/releases/evidence/cli-0.6.2-server-build/server-api-regression.json",
+        "status": null
+      },
+      {
+        "path": "docs/releases/evidence/cli-0.6.3-linux/artifact-dispatch-windows-installer.command.json",
+        "status": null
+      },
+      {
+        "path": "docs/releases/evidence/cli-0.6.3-linux/artifact-installer-final-run.command.json",
+        "status": null
+      },
+      {
+        "path": "docs/releases/evidence/cli-0.6.3-linux/artifact-installer-runs-after.command.json",
+        "status": null
+      },
+      {
+        "path": "docs/releases/evidence/cli-0.6.3-linux/artifact-installer-runs-before.command.json",
+        "status": null
+      },
+      {
+        "path": "docs/releases/evidence/cli-0.6.3-linux/artifact-native-linux-version.command.json",
+        "status": null
+      },
+      {
+        "path": "docs/releases/evidence/cli-0.6.3-linux/artifact-stage-cli-repeat.command.json",
+        "status": null
+      },
+      {
+        "path": "docs/releases/evidence/cli-0.6.3-linux/artifact-stage-cli.command.json",
+        "status": null
+      },
+      {
+        "path": "docs/releases/evidence/cli-0.6.3-linux/artifact-stage-installer-repeat.command.json",
+        "status": null
+      },
+      {
+        "path": "docs/releases/evidence/cli-0.6.3-linux/artifact-stage-installer.command.json",
+        "status": null
+      },
+      {
+        "path": "docs/releases/evidence/cli-0.6.3-linux/artifact-verify-cli.command.json",
+        "status": null
+      },
+      {
+        "path": "docs/releases/evidence/cli-0.6.3-linux/artifact-verify-installer.command.json",
+        "status": null
+      },
+      {
+        "path": "docs/releases/evidence/cli-0.6.3-linux/artifacts-cli-file-hashes.json",
+        "status": null
+      },
+      {
+        "path": "docs/releases/evidence/cli-0.6.3-linux/artifacts-exact-ci-windows-row.json",
+        "status": null
+      },
+      {
+        "path": "docs/releases/evidence/cli-0.6.3-linux/artifacts-installer-workflow.json",
+        "status": "completed"
+      },
+      {
+        "path": "docs/releases/evidence/cli-0.6.3-linux/artifacts-native-linux-binary.json",
+        "status": null
+      },
+      {
+        "path": "docs/releases/evidence/cli-0.6.3-linux/artifacts-staged-file-hashes.json",
+        "status": null
+      },
+      {
+        "path": "docs/releases/evidence/cli-0.6.3-linux/artifacts-summary.json",
+        "status": "STAGED_VERIFIED"
+      },
+      {
+        "path": "docs/releases/evidence/cli-0.6.3-linux/deployment.json",
+        "status": "PASS"
+      },
+      {
+        "path": "docs/releases/evidence/cli-0.6.3-linux/live-after.json",
+        "status": "PASS"
+      },
+      {
+        "path": "docs/releases/evidence/cli-0.6.3-linux/live-development-login-results.json",
+        "status": null
+      },
+      {
+        "path": "docs/releases/evidence/cli-0.6.3-linux/loaded-services.json",
+        "status": null
+      },
+      {
+        "path": "docs/releases/evidence/cli-0.6.3-linux/preservation-after.json",
+        "status": null
+      },
+      {
+        "path": "docs/releases/evidence/cli-0.6.3-linux/rust-auth-coverage.json",
+        "status": null
+      },
+      {
+        "path": "docs/releases/evidence/cli-0.6.3-linux/rust-commands.json",
+        "status": null
+      },
+      {
+        "path": "docs/releases/evidence/cli-0.6.3-linux/rust-runtime-final-cleanup.json",
+        "status": null
+      },
+      {
+        "path": "docs/releases/evidence/cli-0.6.3-linux/rust-runtime-final-observations.json",
+        "status": null
+      },
+      {
+        "path": "docs/releases/evidence/cli-0.6.3-linux/rust-server-build-api-summary.json",
+        "status": null
+      },
+      {
+        "path": "docs/releases/evidence/cli-0.6.3-linux/rust-server-build-cleanup.json",
+        "status": null
+      },
+      {
+        "path": "docs/releases/evidence/cli-0.6.3-linux/rust-source-and-migrations.json",
+        "status": null
+      },
+      {
+        "path": "docs/releases/evidence/cli-0.6.3-linux/rust-summary.json",
+        "status": "PASS"
+      },
+      {
+        "path": "docs/releases/evidence/cli-0.6.3-linux/ui-summary.json",
+        "status": "PASS"
+      },
+      {
+        "path": "docs/releases/evidence/core-foundation-review-20261106-linux/client-identity.json",
+        "status": null
+      },
+      {
+        "path": "docs/releases/evidence/core-foundation-review-20261106-linux/review-policy-sql-reproduction.json",
+        "status": "REPRODUCED"
+      },
+      {
+        "path": "docs/releases/evidence/core-foundation-review-20261106-linux/runtime-cleanup.json",
+        "status": null
+      },
+      {
+        "path": "docs/releases/evidence/core-foundation-review-20261106-linux/runtime-test-identity.json",
+        "status": null
+      },
+      {
+        "path": "docs/releases/evidence/core-foundation-review-20261106-linux/server-cli-identity.json",
+        "status": null
+      },
+      {
+        "path": "docs/releases/evidence/core-review-20261104-linux/connection-budget-after.json",
+        "status": "PASS"
+      },
+      {
+        "path": "docs/releases/evidence/core-review-20261104-linux/connection-budget-before.json",
+        "status": "FAIL"
+      },
+      {
+        "path": "docs/releases/evidence/core-review-20261104-linux/first-deploy-attempt.json",
+        "status": "PREFLIGHT_FAILED"
+      },
+      {
+        "path": "docs/releases/evidence/core-review-20261104-linux/platform-connection.json",
+        "status": "passed"
+      },
+      {
+        "path": "docs/releases/evidence/core-review-20261104-linux/postdeploy-preservation.json",
+        "status": "PASS"
+      },
+      {
+        "path": "docs/releases/evidence/core-review-20261104-linux/preflight-proof-checks.json",
+        "status": null
+      },
+      {
+        "path": "docs/releases/evidence/core-review-20261104-linux/preflight-restore-migrate.json",
+        "status": "PASS"
+      },
+      {
+        "path": "docs/releases/evidence/core-review-20261104-linux/published-cli-provenance.json",
+        "status": "PASS"
+      },
+      {
+        "path": "docs/releases/evidence/core-review-20261104-linux/rollback-rehearsal.json",
+        "status": "PASS"
+      },
+      {
+        "path": "docs/releases/evidence/core-review-20261104-linux/server-build.json",
+        "status": null
+      },
+      {
+        "path": "docs/releases/evidence/core-review-20261104-linux/ui-build-manifest.json",
+        "status": null
+      },
+      {
+        "path": "docs/releases/evidence/core-review-20261104-linux/ui-postdeploy-smoke.json",
+        "status": null
+      },
+      {
+        "path": "docs/releases/evidence/core-review-20261104-linux/ui-rollout-rehearsal.json",
+        "status": null
+      },
+      {
+        "path": "docs/releases/evidence/core-review-followup-20261105-linux/cleanup.json",
+        "status": null
+      },
+      {
+        "path": "docs/releases/evidence/core-review-followup-20261105-linux/cli-identity.json",
+        "status": null
+      },
+      {
+        "path": "docs/releases/evidence/core-review-followup-20261105-linux/delegated-http.json",
+        "status": "PASS"
+      },
+      {
+        "path": "docs/releases/evidence/core-review-followup-20261105-linux/live-after.json",
+        "status": null
+      },
+      {
+        "path": "docs/releases/evidence/core-review-followup-20261105-linux/live-before.json",
+        "status": null
+      },
+      {
+        "path": "docs/releases/evidence/core-review-followup-20261105-linux/runtime-observations.json",
+        "status": null
+      },
+      {
+        "path": "docs/releases/evidence/core-review-followup-20261105-linux/test-identity.json",
+        "status": null
+      },
+      {
+        "path": "docs/releases/evidence/core-review-followup-20261105-linux/ui-real-vite.json",
+        "status": "PASS"
+      },
+      {
+        "path": "docs/releases/evidence/core-runtime-management-20261105-linux/core-deployment-summary.json",
+        "status": "PASS"
+      },
+      {
+        "path": "docs/releases/evidence/core-runtime-management-20261105-linux/core-inspect.json",
+        "status": "READY"
+      },
+      {
+        "path": "docs/releases/evidence/core-runtime-management-20261105-linux/platform-connection.json",
+        "status": "passed"
+      },
+      {
+        "path": "docs/releases/evidence/core-runtime-management-20261105-linux/postdeploy-preservation.json",
+        "status": "PASS"
+      },
+      {
+        "path": "docs/releases/evidence/core-runtime-management-20261105-linux/published-cli-provenance.json",
+        "status": "PASS"
+      },
+      {
+        "path": "docs/releases/evidence/core-runtime-management-20261105-linux/server-build.json",
+        "status": null
+      },
+      {
+        "path": "docs/releases/evidence/core-runtime-management-20261105-linux/ui-build-manifest.json",
+        "status": null
+      },
+      {
+        "path": "docs/releases/evidence/core-runtime-management-20261105-linux/ui-postdeploy-smoke.json",
+        "status": null
+      },
+      {
+        "path": "docs/releases/evidence/core-runtime-management-20261105-linux/ui-rollout.json",
+        "status": null
+      },
+      {
+        "path": "docs/releases/evidence/core-stop-quiescence-20261105-linux/independent-reproduction.json",
+        "status": "PASS"
+      },
+      {
+        "path": "docs/releases/evidence/core-stop-quiescence-20261105-linux/live-probe.json",
+        "status": "PASS"
+      },
+      {
+        "path": "docs/releases/evidence/core-stop-quiescence-20261105-linux/prefixed-regression.json",
+        "status": "PASS"
+      },
+      {
+        "path": "docs/releases/internal-minimum-security-2026-11-07-deployment.json",
+        "status": "PASS"
+      },
+      {
+        "path": "docs/releases/internal-minimum-security-design-2026-11-06-validation.json",
+        "status": "PASS"
+      },
+      {
+        "path": "docs/releases/internal-minimum-security-implementation-2026-11-06-validation.json",
+        "status": "PASS"
+      },
+      {
+        "path": "docs/releases/new-tab-navigation-2026-11-09-deployment.json",
+        "status": "PASS"
+      },
+      {
+        "path": "docs/releases/new-tab-navigation-2026-11-09-validation.json",
+        "status": null
+      },
+      {
+        "path": "docs/releases/noiframe-security-plm-review-2026-11-06-validation.json",
+        "status": "PASS"
+      },
+      {
+        "path": "docs/releases/platform-server-2026-11-02-validation.json",
+        "status": "PASS"
+      },
+      {
+        "path": "docs/releases/resource-usage-2026-11-12-validation.json",
+        "status": "PASS"
+      },
+      {
+        "path": "docs/releases/windows-candidate.json",
+        "status": null
+      },
+      {
+        "path": "docs/releases/windows-installer-0.6.0-candidate.json",
+        "status": "candidate"
+      },
+      {
+        "path": "docs/releases/windows-installer-0.6.3-candidate.json",
+        "status": null
+      }
+    ],
+    "excluded": "Generated dependency/build directories, private live state and visually re-rendering archived PNG/SVG/PDF diagrams. Archived diagram contracts are covered by their Markdown index and current replacements."
+  },
+  "currentState": {
+    "developmentServer": {
+      "source": "7defdb0de19ff1d0c3cbf34c9127cb7d3cf85877",
+      "schema": 22
+    },
+    "publishedCli": {
+      "source": "01e4d4924f8c8fc4e11720c1af81adf17ddb20bf",
+      "cliVersion": "0.7.0",
+      "bundleVersion": "0.8.0"
+    },
+    "sourceCli": {
+      "cliVersion": "0.7.0",
+      "bundleVersion": "0.9.0",
+      "releaseReady": false
+    },
+    "keycloakMemoryLimitBytes": 2147483648,
+    "productComplete": false,
+    "summaryOwner": "docs/PLAN.md#전체-작업-현황",
+    "orderingOwner": "docs/PLAN.md#다음-우선-작업"
+  },
+  "findings": [
+    {
+      "id": "DS-01",
+      "status": "DOCUMENTS_CORRECTED",
+      "finding": "Current documentation still described iframe rejection, direct portal MF execution, missing frame credentials and old source/schema values.",
+      "resolution": "Synchronized the current contracts and diagrams with deployed installation-origin frames. Kept historical archive/evidence and immutable published artifact bytes unchanged."
+    },
+    {
+      "id": "DS-02",
+      "status": "OPEN_RELEASE_PREPARATION",
+      "finding": "The 0.9.0 bundle and upgrade code are implemented, but current CLI version 0.7.0 equals the already-published version despite changed client inputs.",
+      "evidence": ".local/evidence/work-status-review-20261113/cli-version-candidate.log",
+      "required": "Bump CLI version, make a clean candidate commit, build/verify new OS artifacts and publish explicitly. Existing published bytes must not be overwritten."
+    },
+    {
+      "id": "DS-03",
+      "status": "OPEN_IMPLEMENTATION_AND_ACCEPTANCE",
+      "finding": "The fresh-server RUNNING/up.sh path builds platform/fixtures but does not install the frame runtime named by bootstrap.",
+      "sourceReferences": [
+        "scripts/up.sh:46",
+        "package.json",
+        "scripts/bootstrap.py:244",
+        "docs/RUNNING.md"
+      ],
+      "required": "Assemble frame runtime build, settings and installation into the new-server path, then exercise fresh-server app launch. Existing-server deployment PASS is insufficient."
+    },
+    {
+      "id": "DS-04",
+      "status": "STATUS_CLARIFIED",
+      "finding": "G4 already has approved active-user id/name directory calls via Core, frames and SDKs. App-facing groups, current membership verification, shared picker and picker bridge messages are absent.",
+      "sourceReferences": [
+        "crates/miy/src/connections.rs:36",
+        "crates/miy/src/app_frames.rs:735",
+        "web/frame-runtime/src/main.tsx:312",
+        "crates/miy/src/groups.rs:225",
+        "packages/frame-protocol/src/index.ts:35"
+      ],
+      "required": "Continue G4 extensions, then G5/G6 common ACL and representative app acceptance. Administrative group endpoints are not the app-facing authorization contract."
+    },
+    {
+      "id": "DS-05",
+      "status": "STATUS_CLARIFIED",
+      "finding": "Basic ai-do UI migration, independent component distribution and frame theme messages do not complete the official miy-v1 U1-U6 package, dark theme or multilingual product functions."
+    },
+    {
+      "id": "DS-06",
+      "status": "STATUS_CLARIFIED",
+      "finding": "Older Windows and independent Codex/Claude app-development evidence does not prove the current Windows candidate, new frame flow, internal Hermes AI or independent three-run acceptance."
+    },
+    {
+      "id": "DS-07",
+      "status": "OPEN_REVIEW_OR_DECISION",
+      "finding": "APP-BOUNDARIES public-exposure review is due 2026-11-13; access scope on the new console hostname remains unverified/undecided.",
+      "required": "Track separately from routine feature development. This document review makes no new risk-acceptance decision and changes no exposure or MFA setting."
+    },
+    {
+      "id": "DS-08",
+      "status": "FOLLOW_UP_AT_NEW_ARTIFACT_VERSION",
+      "finding": "Frozen UI component 1.0.0/1.0.1 READMEs contain the removed app components update spelling; the template quick-reference heading retains CLI 0.6.",
+      "sourceReferences": [
+        "registry/components/ui/1.0.0/README.md",
+        "registry/components/ui/1.0.1/README.md",
+        "templates/rust-react/docs/CLI.md"
+      ],
+      "required": "Reconcile guidance when issuing an appropriate new immutable component/bundle. Do not rewrite previously published bytes during documentation cleanup."
+    }
+  ],
+  "currentOwnerDocumentsEdited": [
+    "README.md",
+    "docs/APP-BOUNDARIES.md",
+    "docs/APP-FRAMES.md",
+    "docs/CLI-RELEASE.md",
+    "docs/CORE-HARDENING.md",
+    "docs/CORE-PERMISSIONS.md",
+    "docs/CORE-TESTING.md",
+    "docs/DEVELOPMENT.md",
+    "docs/FRONTEND.md",
+    "docs/IMPLEMENTATION.md",
+    "docs/NATIVE-DEVELOPMENT.md",
+    "docs/PLAN.md",
+    "docs/PRD.md",
+    "docs/README.md",
+    "docs/RESEARCH.md",
+    "docs/RUNNING.md",
+    "docs/SERVER-OPERATIONS.md",
+    "docs/STACK.md",
+    "docs/UIUX-MIGRATION.md",
+    "docs/V1-ADOPTION.md",
+    "docs/WINDOWS-ACCEPTANCE.md",
+    "docs/WINDOWS-INSTALLER.md",
+    "docs/architecture/README.md"
+  ],
+  "detailedEvidence": [
+    "docs/releases/app-frames-review-fixes-2026-11-12-validation.json",
+    "docs/releases/app-frames-review-fixes-2026-11-12-deployment.json",
+    "docs/releases/app-frames-2026-11-12-deployment.json",
+    "docs/releases/app-frames-adoption-2026-11-10-validation.json",
+    "docs/releases/dev-portal-2026-11-09-deployment.json",
+    "docs/releases/console-hostname-2026-11-09-deployment.json",
+    "docs/releases/resource-usage-2026-11-12-validation.json"
+  ],
+  "checks": [
+    {
+      "status": "PASS",
+      "command": "Read-only Git history/status, Markdown inventories, code references and release JSON parsing",
+      "result": "62 tracked Markdown files inventoried; 129 release JSON parsed without error."
+    },
+    {
+      "status": "FAIL",
+      "command": "python3 scripts/check-cli-version.py --candidate HEAD",
+      "exitCode": 1,
+      "result": "client_inputs_changed_without_version_bump; published and candidate both 0.7.0; 22 changed client inputs.",
+      "evidence": ".local/evidence/work-status-review-20261113/cli-version-candidate.log"
+    },
+    {
+      "status": "FAIL",
+      "command": "python3 scripts/check-doc-links.py (intermediate document-edit pass)",
+      "result": "UIUX-MIGRATION referenced missing APP-FRAMES #6-검증용-최소-구현. Corrected to #6-실증-계획; final check recorded separately."
+    },
+    {
+      "status": "PASS",
+      "command": "python3 scripts/check-doc-links.py (after initial synchronization)",
+      "result": "874 relative links in 62 tracked Markdown files",
+      "evidence": ".local/evidence/work-status-review-20261113/doc-links-final.log"
+    },
+    {
+      "status": "PASS",
+      "command": "python3 scripts/check-doc-links.py (after final startup and status wording corrections)",
+      "result": "875 relative links in 62 tracked Markdown files",
+      "evidence": ".local/evidence/work-status-review-20261113/doc-links-final-2.log"
+    },
+    {
+      "status": "PASS",
+      "command": "git diff --check",
+      "result": "All tracked changes pass whitespace/error-marker checks."
+    },
+    {
+      "status": "PASS",
+      "command": "Independent read-only review of PLAN against CORE-HARDENING and current evidence",
+      "result": "No overstated completion/progress found. Added remaining API response/OpenAPI work and distinguished version-checker implementation from the failing candidate."
+    },
+    {
+      "status": "PASS",
+      "command": "Source SHA-256, immutable path and JSON parsing assertions",
+      "result": "All five configuration/script hashes still match the previous resource-usage validation; no archive/template/registry/example edits; 130 release JSON files including this new record parse successfully."
+    }
+  ],
+  "notRun": [
+    {
+      "status": "NOT_RUN",
+      "check": "Product Rust/browser/runtime/authentication regression or live load test",
+      "reason": "Only documentation changed in this task. Previous execution results remain tied to their recorded source and environment."
+    },
+    {
+      "status": "NOT_RUN",
+      "check": "Fresh server assembly and full lifecycle, Windows/macOS manual acceptance, independent three-run acceptance",
+      "reason": "Outstanding product/real-environment work, recorded in PLAN and acceptance owners."
+    },
+    {
+      "status": "NOT_RUN",
+      "check": "Deployment, credential/exposure/MFA changes, commit, push or CLI release publication",
+      "reason": "Not requested as part of the status/documentation review."
+    }
+  ],
+  "conclusion": "Current status is consolidated in PLAN. Core/app development and execution foundations are implemented; shared business capabilities and beta acceptance are incomplete. CLI candidate version failure and fresh-server frame-runtime assembly remain open.",
+  "documentSha256": {
+    "README.md": "6bf1b7571cd3d25415ff8b998f45727ed17bfa2775eec7a5b7c4ae69d8f33b66",
+    "docs/APP-BOUNDARIES.md": "24dc1775ced121ad8bd553d1baffd36b4802fbf3c60259cc097f8e3e3aa70528",
+    "docs/APP-FRAMES.md": "792813ad2900777098e24c9349344e66b85731d2a6454417ff511a12f1547de3",
+    "docs/CLI-RELEASE.md": "74b40384cfaebb5d3da673c4b5fe28623947a2efbb96bd9477dfd02e28454acb",
+    "docs/CORE-HARDENING.md": "a3987297aed58404a93602fb6cc6b1ba7a5813aff125215a1c3b1d35ed76ad26",
+    "docs/CORE-PERMISSIONS.md": "88fe858380a03855fc6e3a98081eba8479a303650ba60f3e92095896f7832622",
+    "docs/CORE-TESTING.md": "95bc9eec268990cd3bb4ae86fd2cb9f2e7e2165a3ae7423c465a883e45aade97",
+    "docs/DEVELOPMENT.md": "21ac68d3cb225e5be6f2fcb3e85ab565cf3149afcfcbe1a2fd8e1963106f7ddc",
+    "docs/FRONTEND.md": "4eaffc081d9d2dd320e88d8b69813c23e85ca878851c601049871c452b6f5a37",
+    "docs/IMPLEMENTATION.md": "481a51d9645f457a4f51881fd7a53fe1d7fb0ec3186a5568ee4f96134534100e",
+    "docs/NATIVE-DEVELOPMENT.md": "b84f01d4a64b222daac6b34218bd1e93fff896c91f2c6b6624ea101575cc9dae",
+    "docs/PLAN.md": "b1a11c3ef23325eecbadee6c31bcd10876327824b1064c910c72331a14ae09d5",
+    "docs/PRD.md": "3cc80a963102cbc34d02a3a7a47624febb1749e1d6bb27047059241218e4ad41",
+    "docs/README.md": "df9e174d4d7732adc1db903695f99411a16c3b1874a04154467103f3a01a46fb",
+    "docs/RESEARCH.md": "9476347f49f9d7abd484beb60c1d21f2e4ca26045ddae6beda9ab69198842b3e",
+    "docs/RUNNING.md": "8481650b1029ae524194fbeec8d6dfbad0fe57f1ab2bafc4a8ddc3c23f3e88fb",
+    "docs/SERVER-OPERATIONS.md": "c85ef1914b17a5f80ac378211b8dff3819a92096d11bafc703365b6b138721f4",
+    "docs/STACK.md": "20fab3b461cf538c294d68053546689ebaaf315a0846a738ca18e50e4db3b223",
+    "docs/UIUX-MIGRATION.md": "32825f354227abf26c6dc42969742e8b52bc390a2a196c344c2f88cdf448507b",
+    "docs/V1-ADOPTION.md": "77cd4e14a90bf943f0fff6ad4fff7517476f636fe8fc53280ed8bbb7d82f49da",
+    "docs/WINDOWS-ACCEPTANCE.md": "3f51fd6a95b2982659cd2e7d15af0810053cd17b836e05d45653c06c31b24339",
+    "docs/WINDOWS-INSTALLER.md": "d9e9f5676b6600aec4b95089fb776e05be28fceef9ca33ff6ab04a250193f408",
+    "docs/architecture/README.md": "5b4b39d2e6185af99fdd29502b53d12d13ada9bbe80425191b09ff0fb8b229fb"
+  },
+  "preservedArtifacts": "No changes to historical release records, docs/archive, published registry/template bytes or example app sources."
+}
