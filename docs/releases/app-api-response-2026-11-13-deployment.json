@@ -1,0 +1,285 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-11-13",
+  "status": "PASS",
+  "scope": "Deploy app response size/lifetime limits and Core-only frame 401 retry to the existing development server; preserve business apps and data. This is not a production launch or CLI publication.",
+  "authorization": {
+    "by": "user",
+    "request": "배포까지 진행하고 변경에 대한 테스트를 진행해줘"
+  },
+  "source": {
+    "commit": "18ce0382165ba67f46dfae89c55c1d9750d50ce9",
+    "initialRequestedCommit": "7952c8e2242d329f103228dd002993c9abaa601d",
+    "previousServerAndFrameCommit": "7defdb0de19ff1d0c3cbf34c9127cb7d3cf85877",
+    "platformUiCommitUnchanged": "7defdb0de19ff1d0c3cbf34c9127cb7d3cf85877",
+    "frozenCheckout": ".local/release-18ce038-source",
+    "sourceInputSha256": {
+      "crates/miy/src/app_response.rs": "e3b31268af75d275960e3e833aa1fc4149de33ac048c8f86439655ca80d090bd",
+      "crates/miy/src/app_frames.rs": "7725f88cafaf13a302ede698bca4dd36d1d74dd91da8979cd40374b56e45d41d",
+      "web/frame-runtime/src/main.tsx": "b89a8089c1552e09cfab0d1a93c4f13420a37f7f3642f7c4dd9ab7b2b0cecd6b",
+      "Cargo.lock": "5c0ef7e9a21bbb59d905312d8627de7640de13abc58dccbc4ee6ad3c0b0efbd8"
+    }
+  },
+  "ci": {
+    "web.yml": {
+      "runId": 43377435719,
+      "attempt": 1,
+      "url": "https://github.com/hurxxxx/miy-v2/actions/runs/43377435719",
+      "headSha": "18ce0382165ba67f46dfae89c55c1d9750d50ce9",
+      "conclusion": "success",
+      "jobs": 1
+    },
+    "cli-foundation.yml": {
+      "runId": 43377435769,
+      "attempt": 1,
+      "url": "https://github.com/hurxxxx/miy-v2/actions/runs/43377435769",
+      "headSha": "18ce0382165ba67f46dfae89c55c1d9750d50ce9",
+      "conclusion": "success",
+      "jobs": 5
+    },
+    "runtime-regression.yml": {
+      "runId": 43377435849,
+      "attempt": 1,
+      "url": "https://github.com/hurxxxx/miy-v2/actions/runs/43377435849",
+      "headSha": "18ce0382165ba67f46dfae89c55c1d9750d50ce9",
+      "conclusion": "success",
+      "jobs": 1
+    }
+  },
+  "failedAttemptsPreserved": [
+    {
+      "sourceCommit": "7952c8e2242d329f103228dd002993c9abaa601d",
+      "status": "FAIL",
+      "runs": [
+        {
+          "conclusion": "success",
+          "databaseId": 43376172722,
+          "status": "completed",
+          "url": "https://github.com/hurxxxx/miy-v2/actions/runs/43376172722",
+          "workflowName": "Web and scripts"
+        },
+        {
+          "conclusion": "failure",
+          "databaseId": 43376172809,
+          "status": "completed",
+          "url": "https://github.com/hurxxxx/miy-v2/actions/runs/43376172809",
+          "workflowName": "CLI foundation"
+        },
+        {
+          "conclusion": "success",
+          "databaseId": 43376172723,
+          "status": "completed",
+          "url": "https://github.com/hurxxxx/miy-v2/actions/runs/43376172723",
+          "workflowName": "Isolated runtime regression"
+        }
+      ],
+      "failure": {
+        "runId": 43376172809,
+        "jobId": 131723073900,
+        "job": "Windows MSVC client",
+        "test": "app_response::tests::slow_tcp_client_keeps_the_slot_until_disconnect",
+        "observed": "122 passed, 1 failed; available_permits was 1, expected 0 after the first response byte and 25 ms",
+        "cause": "The TCP test assumed small SO_SNDBUF/SO_RCVBUF settings necessarily leave application-owned bytes outstanding. Windows does not provide that test guarantee; shared payload ownership tests passed.",
+        "resolution": "Restrict this socket-pressure fixture to Unix; keep portable body-lifetime, concurrency, cancellation and error tests on Windows. Require successful CI for the new commit."
+      }
+    },
+    {
+      "status": "FAIL",
+      "command": "systemctl --user is-active miy-v2-serve",
+      "exitCode": 4,
+      "reason": "Verification harness selected the user manager, but these are system services; no service was changed."
+    },
+    {
+      "status": "FAIL",
+      "check": "Documentation update helper, first attempt",
+      "reason": "An expected old review-table sentence differed from the current file. Stopped before changing that paragraph; completed the remaining edits with the actual text. No runtime operation."
+    }
+  ],
+  "preDeploymentChecks": [
+    {
+      "command": "bash scripts/check-static.sh rust",
+      "exitCode": 0,
+      "status": "PASS",
+      "elapsedSeconds": 17.76,
+      "sourceCommit": "18ce0382165ba67f46dfae89c55c1d9750d50ce9",
+      "observed": "Identical final Rust inputs: fmt, Clippy for server/client, server 206 passed with 7 ignored service suites, client 127 passed. Includes 9 app_response regressions on this Linux host."
+    },
+    {
+      "command": "bash scripts/check-static.sh scripts",
+      "exitCode": 0,
+      "status": "PASS",
+      "elapsedSeconds": 46.11,
+      "sourceCommit": "18ce0382165ba67f46dfae89c55c1d9750d50ce9",
+      "observed": "All script checks passed, including cleanup ownership/failure tests, API/bundle contracts, rollout/rollback tests and isolated Nginx/Caddy checks."
+    },
+    {
+      "command": "bash scripts/check-static.sh web",
+      "exitCode": 0,
+      "status": "PASS",
+      "elapsedSeconds": 124.18,
+      "sourceCommit": "18ce0382165ba67f46dfae89c55c1d9750d50ce9",
+      "observed": "Typecheck, isolated Vite builds; runtime/platform browser 53, CLI browser 14, boundary browser 14 and IP browser 1 passed (82 total). Includes business GET/PUT 401 never resent and Core-refused PUT renewed/resubmitted once."
+    },
+    {
+      "command": "python3 scripts/runtime-regression/run.py",
+      "exitCode": 0,
+      "status": "PASS",
+      "elapsedSeconds": 246.73,
+      "sourceCommit": "18ce0382165ba67f46dfae89c55c1d9750d50ce9",
+      "observed": "129/129 observations passed, including 4 MiB and oversized/chunked response behavior and app-forged credential-rejection header removal. Cleanup and baseline container preservation checks passed.",
+      "evidence": ".local/evidence/runtime-regression/miy-runtime-regression-n0f7v6e6/evidence",
+      "cleanup": {
+        "exitCode": 0,
+        "errors": [],
+        "removedReproduciblePayloadBytes": 715040114
+      }
+    },
+    {
+      "command": "cargo build --offline --release --locked from frozen checkout; ui-rollout.py build/inspect --target frame-runtime",
+      "status": "PASS",
+      "observed": "Separate candidate outputs, exact tracked source, live baseline and immutable asset collision checks passed. Platform UI build inputs match 7defdb0, so no platform UI replacement."
+    }
+  ],
+  "deployment": {
+    "core": {
+      "tool": "scripts/core-rollout.py inspect/apply from frozen source, without --widen-migration",
+      "status": "PASS",
+      "startedAt": "2026-11-13T06:25:07Z",
+      "finishedAt": "2026-11-13T06:25:17Z",
+      "releaseDirectory": ".local/release-18ce038-core",
+      "previousSha256": "7e699d5635a8b827fdfb790f52178be0b21e620910020644925ea30cf6acebcb",
+      "serverSha256": "3fe648bc63a4733c7b33b9040108ae50ed19f419f4e319f38af3c4e57c534f82",
+      "schemaBefore": 22,
+      "schemaAfter": 22,
+      "backup": {
+        "verifiedBySeparateRestore": true,
+        "tables": 43,
+        "rows": 1500,
+        "dumpBytes": 230262
+      },
+      "stableRecordsPreserved": true,
+      "appContainersPreserved": true,
+      "appContainerCount": 7,
+      "runningAppContainerCount": 5,
+      "idleBeforeStop": {
+        "runtime": 0,
+        "builds": 0,
+        "database": 0,
+        "development": 0,
+        "uploads": 0
+      },
+      "idleAfterStop": {
+        "runtime": 0,
+        "builds": 0,
+        "database": 0,
+        "development": 0,
+        "uploads": 0
+      },
+      "connectionBudgetAfter": {
+        "status": "PASS",
+        "worstCase": 90,
+        "usableConnections": 197
+      },
+      "rollbackUsed": false
+    },
+    "frameRuntime": {
+      "tool": "scripts/ui-rollout.py apply --target frame-runtime",
+      "status": "PASS",
+      "releaseDirectory": ".local/release-18ce038-frame-runtime",
+      "indexSha256": "7795901352148bf117e3214230c1cb8964dbb8850866b46143317b66d67ba5a6",
+      "previousIndexSha256": "8bab738237f41cdd9868ce897ff586c46a897369bcae6c86b54de424333d872f",
+      "candidateFiles": 17,
+      "previousImmutableAssetsAndBackupVerified": true
+    },
+    "unchanged": {
+      "schema": 22,
+      "platformUiCommit": "7defdb0de19ff1d0c3cbf34c9127cb7d3cf85877",
+      "publishedCliCommit": "01e4d4924f8c8fc4e11720c1af81adf17ddb20bf",
+      "publishedCliVersion": "0.7.0",
+      "publishedBundleVersion": "0.8.0",
+      "settings": "server.json/runtime.env/compose.env byte hashes unchanged. No Nginx, issuer, DNS, certificate or app deployment operation performed.",
+      "keycloak": "Same running container and previously applied 2 GiB RAM/memory+swap limits; no Keycloak restart or Compose recreation."
+    }
+  },
+  "postDeploymentChecks": [
+    {
+      "check": "Public health, unchanged three portal indexes/anti-framing, protected settings hashes, server/frame candidates, old frame assets/backup, Keycloak identity and limits",
+      "status": "PASS",
+      "count": 17,
+      "evidence": ".local/deployment-app-api-20261113/public-checks.json"
+    },
+    {
+      "check": "Real OIDC for portal/dev/console, CLI device approval/status/doctor and generated stdio MCP, using checksum-verified published CLI",
+      "status": "PASS",
+      "count": 22,
+      "cleanupFailures": 0,
+      "evidence": ".local/deployment-app-api-20261113/platform-connection/result.json"
+    },
+    {
+      "check": "Read-only Chromium frames for every running app visible to the developer: two prod and two dev apps",
+      "status": "PASS",
+      "assertions": 47,
+      "cleanupFailures": 0,
+      "observed": "4 distinct frame origins rendered with runtime/app assets and no uncaught page errors. Portal-cookie app requests returned 403; invalid synthetic frame bearer returned 401 with x-miy-frame-credential: rejected over the public proxy. Business writes guarded; zero writes attempted/blocked. Only this check's platform sessions were revoked.",
+      "evidence": ".local/deployment-app-api-20261113/frames-check.json"
+    },
+    {
+      "check": "System serve/worker status and journal since deployment start",
+      "status": "PASS",
+      "units": {
+        "miy-v2-serve": "active",
+        "miy-v2-worker": "active"
+      },
+      "journalMessageCount": 72,
+      "warnings": 0,
+      "errors": 0,
+      "evidence": ".local/deployment-app-api-20261113/services-check.json"
+    }
+  ],
+  "notRun": [
+    {
+      "check": "Live business writes, intentional oversized traffic against real apps, full RSS/concurrent-app saturation",
+      "status": "NOT_RUN",
+      "reason": "Protect existing business data and service capacity; changed size/marker paths tested against isolated upstreams, and real TCP lifetime tested locally."
+    },
+    {
+      "check": "Real slow-TCP/RSS acceptance on Windows, external Windows installation/update/uninstall",
+      "status": "NOT_RUN",
+      "reason": "Windows CI covers portable lifetime/concurrency/cancellation tests; Unix socket-pressure test is explicitly Unix-only. User device acceptance remains separate."
+    },
+    {
+      "check": "Full app-frame stack suite on every browser/profile, authenticated direct HTTP MCP tools and beta/full-host acceptance",
+      "status": "NOT_RUN",
+      "reason": "This response/401 change was verified by current source CI, isolated server/browser suites and deployed Chromium/OIDC/stdio MCP checks. No change to identity/profile/installer contracts."
+    },
+    {
+      "check": "Published CLI/SDK bundle 0.9.0 replacement",
+      "status": "NOT_RUN",
+      "reason": "Separate release task; published artifact bytes remain unchanged."
+    }
+  ],
+  "rollback": [
+    "python3 /projects/miy-v2/.local/release-18ce038-source/scripts/ui-rollout.py rollback --target frame-runtime --release-dir /projects/miy-v2/.local/release-18ce038-frame-runtime",
+    "python3 /projects/miy-v2/.local/release-18ce038-source/scripts/core-rollout.py rollback --release-dir /projects/miy-v2/.local/release-18ce038-core"
+  ],
+  "rollbackNote": "Restore the previous frame index and core binary in that order, preserving schema 22, settings, app data and both asset generations. No automatic live DB dump restoration.",
+  "openTabs": "Already open frames retain their old JavaScript. Reopen/reload an app to use the new frame runtime; active user input is not forcibly discarded.",
+  "documentation": {
+    "status": "PASS",
+    "checks": [
+      {
+        "command": "python3 scripts/check-doc-links.py",
+        "status": "PASS",
+        "exitCode": 0,
+        "result": "PASS 913 relative links in 62 tracked Markdown files"
+      },
+      {
+        "command": "git diff --check",
+        "status": "PASS",
+        "exitCode": 0,
+        "result": ""
+      }
+    ],
+    "observed": "Current server/frame source, unchanged platform UI, rollout/rollback and review status updated in 6 documents. Historical validation JSON remains unchanged. The documentation commit is not the deployed binary source."
+  }
+}

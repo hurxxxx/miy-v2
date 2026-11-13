@@ -196,7 +196,9 @@ flowchart LR
 
 v2.dwdcc.kr은 개발 단계 서버이므로 짧은 중단·재로그인은 허용한다([개발 단계 원칙](../AGENTS.md#개발-단계-원칙-실제-운영-전환-전까지)). 반영은 사용자가 요청할 때만 하고, DB를 바꾸는 단계는 변경 범위 백업과 별도 영역 복원 확인을 먼저 한다.
 
-**현재 갱신(`7defdb0`, schema 22 유지).** 2026-11-12 리뷰 보완은 정확한 SHA CI와 후보 검사를 거쳐 core → 기존 Nginx 프레임 블록에 `error_log /dev/null;` 한 줄 추가 → 프레임 런타임 → 포털 UI 순서로 반영했다. `app-frame-settings.py apply`와 `--widen-migration`은 사용하지 않았고 프레임 설정·DB schema는 유지했다. core 도구의 새 백업·별도 복원 확인 후 적용했으며, 후속 연결 검사의 범위는 [수정 배포 기록](releases/app-frames-review-fixes-2026-11-12-deployment.json)을 따른다. 되돌리기는 포털 UI → 프레임 런타임 → Nginx 백업 복원 → core의 역순이며 설정 restore나 DB 복원은 포함하지 않는다. `nginx-apply`는 프레임 블록을 처음 추가하는 도구라 이번 기존 블록의 한 줄 갱신에는 사용하지 않았다.
+**현재 갱신(`18ce038`, schema 22 유지).** 2026-11-13에는 앱 응답 크기·수명 예산과 Core 거부 401만 재전송하는 변경을 core → 프레임 런타임 순서로 반영했다. 정확한 SHA의 필수 CI, 로컬 Rust·스크립트·웹·격리 runtime 검사를 통과했고 core 도구가 새 DB 백업을 별도 복원해 확인했다. 포털 UI는 입력 변경이 없어 `7defdb0` 유지, Nginx·설정·IdP·schema·게시 CLI는 바꾸지 않았다. 실제 연결·앱 4개 검사는 [배포 기록](releases/app-api-response-2026-11-13-deployment.json)을 따른다. 되돌리기는 해당 release의 프레임 런타임 index → core 바이너리 순서이며 DB 복원·설정 restore는 하지 않는다. 이미 열린 프레임은 새로고침/다시 열기 뒤 새 런타임을 사용한다.
+
+**직전 갱신(`7defdb0`, schema 22 유지).** 2026-11-12 리뷰 보완은 정확한 SHA CI와 후보 검사를 거쳐 core → 기존 Nginx 프레임 블록에 `error_log /dev/null;` 한 줄 추가 → 프레임 런타임 → 포털 UI 순서로 반영했다. `app-frame-settings.py apply`와 `--widen-migration`은 사용하지 않았고 프레임 설정·DB schema는 유지했다. core 도구의 새 백업·별도 복원 확인 후 적용했으며, 후속 연결 검사의 범위는 [수정 배포 기록](releases/app-frames-review-fixes-2026-11-12-deployment.json)을 따른다. 되돌리기는 포털 UI → 프레임 런타임 → Nginx 백업 복원 → core의 역순이며 설정 restore나 DB 복원은 포함하지 않는다. `nginx-apply`는 프레임 블록을 처음 추가하는 도구라 이번 기존 블록의 한 줄 갱신에는 사용하지 않았다.
 
 **최초 도입(`bcb6356`, schema 21→22).** 아래 표와 단계는 2026-11-12의 [첫 배포](releases/app-frames-2026-11-12-deployment.json) 절차와 되돌리기 기준이다. 현재의 같은 schema 갱신과 구분한다.
 
