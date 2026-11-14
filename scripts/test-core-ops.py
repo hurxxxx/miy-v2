@@ -7,19 +7,23 @@ run; per-release evidence copies under docs/releases/evidence stay as history.
 """
 import contextlib
 from concurrent.futures import ThreadPoolExecutor
+import fcntl
 import hashlib
 import io
 import json
 import os
 from pathlib import Path
 import shutil
+import struct
 import subprocess
 import sys
+import tarfile
 import tempfile
 import threading
 from types import ModuleType, SimpleNamespace
 import unittest
 from unittest.mock import Mock, patch
+import zipfile
 
 sys.dont_write_bytecode = True
 ROOT = Path(__file__).resolve().parent.parent
@@ -34,9 +38,127 @@ def load(name, path):
 
 backup = load('backup_under_test', ROOT / 'scripts/core-backup.py')
 budget = load('budget_under_test', ROOT / 'scripts/check-db-connections.py')
+cli_package = load('cli_package_fixture', ROOT / 'scripts/package-cli-release.py')
+installer_package = load('installer_package_fixture', ROOT / 'scripts/package-windows-installer.py')
 CID = 'a' * 64
 TOKEN = 'b' * 16
 COUNTS = {'migrationVersion': 17, 'tables': {'fixture': 1}}
+
+
+def fixture_pe(gui=False):
+    data = bytearray(512)
+    data[:2] = b'MZ'
+    struct.pack_into('<I', data, 60, 64)
+    data[64:68] = b'PE\0\0'
+    struct.pack_into('<H', data, 68, 0x8664)
+    struct.pack_into('<H', data, 84, 240)
+    struct.pack_into('<H', data, 88, 0x20B)
+    struct.pack_into('<H', data, 156, 2 if gui else 3)
+    return bytes(data)
+
+
+def fixture_tar(path, entries, mode='w'):
+    with tarfile.open(path, mode) as archive:
+        for name, contents in entries.items():
+            entry = tarfile.TarInfo(name)
+            entry.size = len(contents)
+            entry.mode = 0o755 if name in ('miy', 'install-cli.sh') else 0o644
+            archive.addfile(entry, io.BytesIO(contents))
+
+
+def cli_publication_fixture(root, version, commit, installer_commit):
+    """Tiny real archives: five CLI targets, two helper images and a bound GUI PE/ZIP.
+
+    No compiler or external process runs. The production package verifiers check these
+    bytes, including the embedded Windows CLI and the helper config provenance.
+    """
+    downloads, installers = root / 'cli-downloads', root / 'cli-installers'
+    aggregate, installer_dir = downloads / commit, installers / installer_commit
+    aggregate.mkdir(parents=True)
+    installer_dir.mkdir(parents=True)
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    for target, (binary_name, extension, kind, machine) in cli_package.TARGETS.items():
+        binary = bytearray(fixture_pe() if kind == 'pe' else bytes(512))
+        if kind == 'elf':
+            binary[:6] = b'\x7fELF\x02\x01'
+            struct.pack_into('<H', binary, 18, machine)
+        elif kind == 'mach':
+            binary[:4] = b'\xcf\xfa\xed\xfe'
+            struct.pack_into('<I', binary, 4, machine)
+        stamp = f'{version} {commit} {target}'.encode()
+        binary[300:300 + len(stamp)] = stamp
+        metadata = {'schemaVersion': 1, 'version': version, 'commit': commit,
+                    'target': target, 'binarySha256': sha(binary)}
+        entries = {binary_name: bytes(binary), 'release.json': cli_package.metadata_bytes(metadata)}
+        entries.update({name: b'# synthetic script\n' for name in
+                        (cli_package.WINDOWS_SCRIPTS if extension == 'zip' else ('install-cli.sh',))})
+        filename = f'miy-{version}-{target}.{extension}'
+        path = aggregate / filename
+        if extension == 'zip':
+            with zipfile.ZipFile(path, 'w', compression=zipfile.ZIP_DEFLATED) as archive:
+                for name, contents in sorted(entries.items()):
+                    archive.writestr(name, contents)
+        else:
+            fixture_tar(path, entries, 'w:gz')
+        (aggregate / (filename + '.sha256')).write_text(f'{sha(path.read_bytes())}  {filename}\n')
+        (aggregate / f'provenance-{target}.json').write_bytes(cli_package.metadata_bytes(metadata))
+    for arch in ('amd64', 'arm64'):
+        tag = f'miy-db-tunnel:{commit}-{arch}'
+        config = json.dumps({'os': 'linux', 'architecture': arch, 'config': {'Labels': {
+            'org.miy.component': 'db-tunnel', 'org.opencontainers.image.revision': commit}}}).encode()
+        config_hash = sha(config)
+        name = f'blobs/sha256/{config_hash}'
+        filename = f'miy-db-tunnel-{version}-{arch}.oci.tar'
+        path = aggregate / filename
+        fixture_tar(path, {'manifest.json': json.dumps([{'Config': name, 'RepoTags': [tag], 'Layers': []}]).encode(),
+                           name: config})
+        helper = {'schemaVersion': 1, 'platform': f'linux/{arch}', 'version': version, 'commit': commit,
+                  'imageTag': tag, 'imageId': 'sha256:' + 'd' * 64, 'configSha256': config_hash,
+                  'file': filename, 'sha256': sha(path.read_bytes()), 'development': False}
+        (aggregate / f'tunnel-{arch}.json').write_bytes(cli_package.metadata_bytes(helper))
+        (aggregate / (filename + '.sha256')).write_text(f"{helper['sha256']}  {filename}\n")
+    release = cli_package.verify(aggregate)
+    (downloads / 'release-index.json').write_bytes((aggregate / 'release-index.json').read_bytes())
+    windows = next(row for row in release['assets'] if row['target'] == 'x86_64-pc-windows-msvc')
+    payload = (aggregate / windows['file']).read_bytes()
+    installer = {'schemaVersion': 1, 'platform': 'windows-x64', 'version': version,
+                 'installerCommit': installer_commit, 'cliCommit': commit,
+                 'archiveSha256': windows['sha256'], 'cliBinarySha256': windows['binarySha256'],
+                 'file': f'MiySetup-{version}-windows-x64.exe'}
+    executable = (fixture_pe(gui=True) + b'fixture resource header\0' + payload
+                  + b'resource footer\0' + installer_package.provenance_bytes(installer))
+    installer.update(sha256=sha(executable), bytes=len(executable))
+    (installer_dir / installer['file']).write_bytes(executable)
+    (installer_dir / (installer['file'] + '.sha256')).write_text(f"{installer['sha256']}  {installer['file']}\n")
+    for path in (installer_dir, installers):
+        (path / 'installer-index.json').write_bytes(installer_package.metadata_bytes(installer))
+    assert installer_package.verify(installer_dir, installer_commit, commit) == installer
+    return downloads, installers
+
+
+def fixture_install_guide(downloads, installers, version):
+    """Do not let the fake HTTP guide accept a package the real server would reject.
+
+    CLI verification regenerates its index, so run it on a disposable copy; the live
+    fixture remains read-only. Installer verification is read-only already.
+    """
+    release = json.loads((downloads / 'release-index.json').read_bytes())
+    installer = json.loads((installers / 'installer-index.json').read_bytes())
+    if release['version'] != version or installer['version'] != version:
+        raise OSError('cli_release_version_mismatch')
+    with tempfile.TemporaryDirectory(prefix='miy-core-guide-check-') as directory:
+        copied = Path(directory) / 'cli'
+        shutil.copytree(downloads / release['commit'], copied)
+        if cli_package.verify(copied) != release:
+            raise OSError('invalid_cli_release_index')
+    checked = installer_package.verify(installers / installer['installerCommit'],
+                                       installer['installerCommit'], release['commit'])
+    windows = next(row for row in release['assets'] if row['target'] == 'x86_64-pc-windows-msvc')
+    if (checked != installer or installer['archiveSha256'] != windows['sha256']
+            or installer['cliBinarySha256'] != windows['binarySha256']):
+        raise OSError('invalid_cli_installer_index')
+    return {'cliVersion': version, 'sourceCommit': release['commit'],
+            'windowsInstaller': {'sha256': installer['sha256']}}
 
 
 class OfflineTest(unittest.TestCase):
@@ -398,13 +520,8 @@ class FakeHost:
             downloads = self.test.root / '.local/cli-downloads/release-index.json'
             if not downloads.exists():
                 return {'cliVersion': '0.7.0', 'sourceCommit': 'a' * 40, 'windowsInstaller': {'sha256': 'b' * 64}}
-            release = json.loads(downloads.read_text())
-            installer = json.loads((self.test.root / '.local/cli-installers/installer-index.json').read_text())
-            version = self.server_versions[self.running]
-            if release['version'] != version or installer['version'] != version:
-                raise OSError('cli_release_version_mismatch')
-            return {'cliVersion': version, 'sourceCommit': release['commit'],
-                    'windowsInstaller': {'sha256': installer['sha256']}}
+            return fixture_install_guide(downloads.parent, self.test.root / '.local/cli-installers',
+                                         self.server_versions[self.running])
         self.test.fail('unexpected URL ' + url)
 
     def executable_hashes(self, expected):
@@ -445,7 +562,8 @@ class CoreRolloutTests(OfflineTest):
     def reset(self):
         self.installed.write_bytes(OLD)
         self.candidate.write_bytes(NEW)
-        shutil.copyfile(ROOT / 'scripts/core-rollout.py', self.source / 'scripts/core-rollout.py')
+        for name in ('core-rollout.py', 'package-cli-release.py', 'package-windows-installer.py', 'db_tunnel_package.py'):
+            shutil.copyfile(ROOT / 'scripts' / name, self.source / 'scripts' / name)
         (self.source / 'migrations/core/0020_next.sql').unlink(missing_ok=True)
         self.host = FakeHost(self)
 
@@ -679,35 +797,9 @@ class CoreRolloutTests(OfflineTest):
 
     def cli_release(self, version='0.9.0', commit='e' * 40, installer_commit='f' * 40):
         """Live 0.7.0 indexes and a staged release like the stage tools produce."""
-        sha = lambda data: hashlib.sha256(data).hexdigest()
-        def release(root, version, commit, installer_commit):
-            downloads, installers = root / 'cli-downloads', root / 'cli-installers'
-            (downloads / commit).mkdir(parents=True)
-            (installers / installer_commit).mkdir(parents=True)
-            assets = []
-            for target in ('x86_64-unknown-linux-gnu', 'x86_64-pc-windows-msvc'):
-                data = f'{version} {target}'.encode()
-                file = f'miy-{version}-{target}.zip'
-                (downloads / commit / file).write_bytes(data)
-                assets.append({'target': target, 'file': file, 'sha256': sha(data), 'binarySha256': sha(data + b'bin'),
-                               'commit': commit, 'version': version, 'schemaVersion': 1})
-            helper = f'{version} helper'.encode()
-            (downloads / commit / 'helper.tar').write_bytes(helper)
-            index = {'schemaVersion': 1, 'version': version, 'commit': commit, 'assets': assets,
-                     'tunnelImages': [{'file': 'helper.tar', 'sha256': sha(helper)}]}
-            (downloads / 'release-index.json').write_text(json.dumps(index))
-            (downloads / commit / 'release-index.json').write_text(json.dumps(index))
-            exe = f'{version} installer'.encode()
-            (installers / installer_commit / f'MiySetup-{version}.exe').write_bytes(exe)
-            windows = assets[1]
-            (installers / 'installer-index.json').write_text(json.dumps({
-                'schemaVersion': 1, 'version': version, 'cliCommit': commit, 'installerCommit': installer_commit,
-                'file': f'MiySetup-{version}.exe', 'sha256': sha(exe), 'archiveSha256': windows['sha256'],
-                'cliBinarySha256': windows['binarySha256']}))
-            return downloads, installers
-        release(self.root / '.local', '0.7.0', 'a' * 40, 'a' * 40)
+        cli_publication_fixture(self.root / '.local', '0.7.0', 'a' * 40, 'a' * 40)
         staging = self.root / '.local/release-staging'
-        downloads, installers = release(staging, version, commit, installer_commit)
+        downloads, installers = cli_publication_fixture(staging, version, commit, installer_commit)
         (self.source / 'crates/miy/Cargo.toml').write_text(f'[package]\nname = "miy"\nversion = "{version}"\n')
         self.host.version = f'miy {version}'
         self.host.server_versions[NEW_SHA] = version
@@ -716,6 +808,30 @@ class CoreRolloutTests(OfflineTest):
     def live_indexes(self):
         return {name: (self.root / '.local' / name / index).read_text()
                 for name, index in (('cli-downloads', 'release-index.json'), ('cli-installers', 'installer-index.json'))}
+
+    @contextlib.contextmanager
+    def held_cli_lock(self, name):
+        fd = os.open(self.root / '.local' / name / '.publish.lock',
+                     os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            yield
+        finally:
+            os.close(fd)
+
+    def assert_cli_locks_held(self):
+        for name in ('cli-downloads', 'cli-installers'):
+            fd = os.open(self.root / '.local' / name / '.publish.lock', os.O_RDWR)
+            try:
+                with self.assertRaises(BlockingIOError, msg=name):
+                    fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            finally:
+                os.close(fd)
+
+    def assert_cli_locks_released(self):
+        for name in ('cli-downloads', 'cli-installers'):
+            with self.held_cli_lock(name):
+                pass
 
     def test_cli_release_is_published_with_the_candidate_while_core_is_stopped(self):
         staged = self.cli_release()
@@ -727,8 +843,7 @@ class CoreRolloutTests(OfflineTest):
             self.assertEqual(json.loads(text)['version'], '0.9.0', name)
         self.assertTrue((self.root / '.local/cli-downloads' / ('a' * 40)).is_dir())
         self.assertEqual(sorted(p.name for p in (self.root / '.local/cli-downloads' / ('e' * 40)).iterdir()),
-                         ['helper.tar', 'miy-0.9.0-x86_64-pc-windows-msvc.zip',
-                          'miy-0.9.0-x86_64-unknown-linux-gnu.zip', 'release-index.json'])
+                         sorted(p.name for p in (staged['cli_downloads'] / ('e' * 40)).iterdir()))
         record = json.loads((release / 'deployment.json').read_text())
         self.assertTrue(record['cliIndexesReplaced'])
         self.assertEqual(record['expectedCliGuide']['cliVersion'], '0.9.0')
@@ -747,7 +862,7 @@ class CoreRolloutTests(OfflineTest):
 
     def test_inconsistent_cli_releases_are_refused_before_any_change(self):
         def tamper_file(staged):
-            (staged['cli_downloads'] / ('e' * 40) / 'helper.tar').write_bytes(b'tampered')
+            (staged['cli_downloads'] / ('e' * 40) / 'miy-db-tunnel-0.9.0-amd64.oci.tar').write_bytes(b'tampered')
         def other_cli_commit(staged):
             path = staged['cli_installers'] / 'installer-index.json'
             path.write_text(json.dumps({**json.loads(path.read_text()), 'cliCommit': 'd' * 40}))
@@ -756,7 +871,7 @@ class CoreRolloutTests(OfflineTest):
             path.write_text(json.dumps({**json.loads(path.read_text()), 'archiveSha256': '0' * 64}))
         def published_directory_differs(staged):
             shutil.copytree(staged['cli_downloads'] / ('e' * 40), self.root / '.local/cli-downloads' / ('e' * 40))
-            (self.root / '.local/cli-downloads' / ('e' * 40) / 'helper.tar').write_bytes(b'other bytes')
+            (self.root / '.local/cli-downloads' / ('e' * 40) / 'miy-db-tunnel-0.9.0-amd64.oci.tar').write_bytes(b'other bytes')
         cases = {
             'cli_release_version_mismatch': (lambda staged: None, {'version': '0.8.0'}),
             'cli_release_file_mismatch': (tamper_file, {}),
@@ -785,10 +900,13 @@ class CoreRolloutTests(OfflineTest):
         staged = self.cli_release()
         before = self.live_indexes()
         original = self.rollout.atomic_copy
-        def failing(source, destination):
-            if destination.name == 'installer-index.json' and 'release-staging' in str(source):
+        def failing(source, destination, expected=None):
+            if destination.name in ('release-index.json', 'installer-index.json'):
+                self.assert_cli_locks_held()
+            if (destination == self.root / '.local/cli-installers/installer-index.json'
+                    and source.read_bytes() != before['cli-installers'].encode()):
                 raise OSError('disk full')
-            return original(source, destination)
+            return original(source, destination, expected=expected)
         with patch.object(self.rollout, 'atomic_copy', failing):
             code, result, release = self.run_tool(**staged)
         self.assertEqual(code, 1)
@@ -797,6 +915,7 @@ class CoreRolloutTests(OfflineTest):
         self.assertEqual(self.host.started, [OLD_SHA])
         record = json.loads((release / 'deployment.json').read_text())
         self.assertEqual((record['status'], record['cliIndexesRestored']), ('ROLLED_BACK', True))
+        self.assert_cli_locks_released()
 
     def test_a_candidate_failing_after_start_keeps_core_stopped_and_rollback_restores_indexes(self):
         staged = self.cli_release()
@@ -809,6 +928,284 @@ class CoreRolloutTests(OfflineTest):
         self.assertEqual((code, result['status']), (0, 'ROLLED_BACK'))
         self.assertEqual(self.live_indexes(), before)
         self.assertEqual(self.installed.read_bytes(), OLD)
+
+    def test_cli_snapshot_keeps_verified_bytes_when_original_staging_changes(self):
+        staged = self.cli_release()
+        expected = {name: self.rollout.tree(staged[key] / directory)
+                    for name, key, directory in (('cli-downloads', 'cli_downloads', 'e' * 40),
+                                                  ('cli-installers', 'cli_installers', 'f' * 40))}
+        def change_inputs_after_backup():
+            for key, directory, filename in (
+                    ('cli_downloads', 'e' * 40, 'miy-db-tunnel-0.9.0-amd64.oci.tar'),
+                    ('cli_installers', 'f' * 40, 'MiySetup-0.9.0-windows-x64.exe')):
+                (staged[key] / directory / filename).write_bytes(b'changed after preflight')
+            (staged['cli_downloads'] / 'release-index.json').write_text('{}')
+        self.host.on_verify = change_inputs_after_backup
+        code, result, release = self.run_tool(**staged)
+        self.assertEqual((code, result['status']), (0, 'PASS'))
+        for name, directory in (('cli-downloads', 'e' * 40), ('cli-installers', 'f' * 40)):
+            self.assertEqual(self.rollout.tree(self.root / '.local' / name / directory), expected[name])
+        record = json.loads((release / 'deployment.json').read_text())
+        for root in record['cliRelease']['staged'].values():
+            self.assertTrue(Path(root).is_relative_to(release / 'rollback/cli-candidate'))
+        self.assertEqual(self.host.started, [NEW_SHA])
+
+    def test_cli_change_while_snapshot_is_copied_is_refused_before_stop(self):
+        staged = self.cli_release()
+        before, raced = self.live_indexes(), []
+        original = self.rollout.shutil.copytree
+        def copy(source, destination, *args, **kwargs):
+            result = original(source, destination, *args, **kwargs)
+            if Path(source) == staged['cli_downloads'] / ('e' * 40):
+                (Path(destination) / 'miy-db-tunnel-0.9.0-amd64.oci.tar').write_bytes(b'changed during copy')
+                raced.append(True)
+            return result
+        with patch.object(self.rollout.shutil, 'copytree', copy):
+            code, result, _ = self.run_tool(**staged)
+        self.assertTrue(raced)
+        self.assertEqual((code, result['failure']), (1, 'cli_staged_files_changed'))
+        self.assert_untouched()
+        self.assertEqual(self.live_indexes(), before)
+        self.assert_cli_locks_released()
+
+    def test_changed_index_copy_never_replaces_a_live_index_and_rolls_back(self):
+        for name, index in (('cli-downloads', 'release-index.json'), ('cli-installers', 'installer-index.json')):
+            with self.subTest(name=name):
+                for folder in ('cli-downloads', 'cli-installers', 'release-staging'):
+                    shutil.rmtree(self.root / '.local' / folder, ignore_errors=True)
+                self.reset()
+                staged = self.cli_release()
+                before, raced, installed_hashes = self.live_indexes(), [], []
+                allowed = {self.root / '.local' / folder / filename: {
+                                hashlib.sha256(before[folder].encode()).hexdigest(),
+                                hashlib.sha256((staged[key] / filename).read_bytes()).hexdigest()}
+                           for folder, key, filename in (('cli-downloads', 'cli_downloads', 'release-index.json'),
+                                                         ('cli-installers', 'cli_installers', 'installer-index.json'))}
+                original_copy, original_replace = self.rollout.shutil.copy2, self.rollout.os.replace
+                def copying(source, destination, *args, **kwargs):
+                    source, destination = Path(source), Path(destination)
+                    if (source.name == index and 'cli-candidate' in source.parts
+                            and destination.parent == self.root / '.local' / name):
+                        source.write_bytes(b'{"changed":"after digest, before copy"}')
+                        raced.append(True)
+                    return original_copy(source, destination, *args, **kwargs)
+                def replacing(source, destination, *args, **kwargs):
+                    target = Path(destination)
+                    if target in allowed:
+                        actual = hashlib.sha256(Path(source).read_bytes()).hexdigest()
+                        installed_hashes.append(actual)
+                        self.assertIn(actual, allowed[target], 'unverified index reached atomic replacement')
+                    return original_replace(source, destination, *args, **kwargs)
+                with patch.object(self.rollout.shutil, 'copy2', copying), \
+                        patch.object(self.rollout.os, 'replace', replacing):
+                    code, result, release = self.run_tool(**staged)
+                self.assertTrue(raced)
+                self.assertTrue(installed_hashes)
+                self.assertEqual((code, result['failure']), (1, 'copy_source_changed'))
+                self.assertEqual(json.loads((release / 'deployment.json').read_text())['status'], 'ROLLED_BACK')
+                self.assertEqual(self.live_indexes(), before)
+                self.assertEqual(self.installed.read_bytes(), OLD)
+                self.assertEqual(self.host.started, [OLD_SHA])
+                self.assert_cli_locks_released()
+
+    def test_changed_cli_snapshot_is_refused_before_start_and_previous_release_restored(self):
+        for name, directory, filename in (
+                ('cli-downloads', 'e' * 40, 'miy-db-tunnel-0.9.0-amd64.oci.tar'),
+                ('cli-installers', 'f' * 40, 'MiySetup-0.9.0-windows-x64.exe')):
+            with self.subTest(name=name):
+                for folder in ('cli-downloads', 'cli-installers', 'release-staging'):
+                    shutil.rmtree(self.root / '.local' / folder, ignore_errors=True)
+                self.reset()
+                staged = self.cli_release()
+                before = self.live_indexes()
+                def change_fixed_candidate():
+                    root = Path(self.rollout.REPORT['cliRelease']['staged'][name])
+                    (root / directory / filename).write_bytes(b'tampered fixed candidate')
+                self.host.on_verify = change_fixed_candidate
+                code, result, release = self.run_tool(**staged)
+                self.assertEqual((code, result['failure']), (1, 'cli_candidate_files_changed'))
+                record = json.loads((release / 'deployment.json').read_text())
+                self.assertEqual(record['status'], 'ROLLED_BACK')
+                self.assertEqual(self.host.started, [OLD_SHA])
+                self.assertEqual(self.installed.read_bytes(), OLD)
+                self.assertEqual(self.live_indexes(), before)
+                self.assertFalse((self.root / '.local/cli-downloads' / ('e' * 40)).exists())
+                self.assertFalse((self.root / '.local/cli-installers' / ('f' * 40)).exists())
+                self.assert_cli_locks_released()
+
+    def test_incomplete_or_invalid_cli_packages_are_refused_before_service_changes(self):
+        def index_change(staged, key, filename, directory, change):
+            root = staged[key]
+            value = json.loads((root / filename).read_text())
+            change(value)
+            for path in (root / filename, root / directory / filename):
+                path.write_bytes(cli_package.metadata_bytes(value))
+        def release_change(staged, change):
+            index_change(staged, 'cli_downloads', 'release-index.json', 'e' * 40, change)
+        def installer_change(staged, change):
+            index_change(staged, 'cli_installers', 'installer-index.json', 'f' * 40, change)
+        def rename_archive(staged):
+            root = staged['cli_downloads'] / ('e' * 40)
+            (root / 'miy-0.9.0-aarch64-apple-darwin.tar.gz').rename(root / 'renamed.tar.gz')
+            release_change(staged, lambda value: value['assets'][0].update(file='renamed.tar.gz'))
+        def change_embedded_zip(staged):
+            root = staged['cli_installers'] / ('f' * 40)
+            path = root / 'MiySetup-0.9.0-windows-x64.exe'
+            data = bytearray(path.read_bytes())
+            data[data.index(b'PK\x03\x04') + 100] ^= 1
+            path.write_bytes(data)
+            sha = hashlib.sha256(data).hexdigest()
+            (root / (path.name + '.sha256')).write_text(f'{sha}  {path.name}\n')
+            installer_change(staged, lambda value: value.update(sha256=sha))
+        missing = lambda name: lambda staged: (staged['cli_downloads'] / ('e' * 40) / name).unlink()
+        cases = {
+            'missing target row': lambda staged: release_change(staged, lambda value: value['assets'].pop(0)),
+            'missing target archive': missing('miy-0.9.0-aarch64-apple-darwin.tar.gz'),
+            'missing helper row': lambda staged: release_change(staged, lambda value: value['tunnelImages'].pop()),
+            'missing helper file': missing('miy-db-tunnel-0.9.0-arm64.oci.tar'),
+            'wrong schema': lambda staged: release_change(staged, lambda value: value.update(schemaVersion=2)),
+            'boolean schema': lambda staged: release_change(staged, lambda value: value.update(schemaVersion=True)),
+            'wrong target commit': lambda staged: release_change(staged, lambda value: value['assets'][0].update(commit='d' * 40)),
+            'wrong target version': lambda staged: release_change(staged, lambda value: value['assets'][0].update(version='0.8.0')),
+            'wrong target filename': rename_archive,
+            'missing checksum': missing('miy-0.9.0-aarch64-apple-darwin.tar.gz.sha256'),
+            'wrong checksum': lambda staged: (staged['cli_downloads'] / ('e' * 40)
+                                               / 'miy-0.9.0-aarch64-apple-darwin.tar.gz.sha256').write_text('wrong'),
+            'missing provenance': missing('provenance-aarch64-apple-darwin.json'),
+            'wrong helper provenance': lambda staged: (staged['cli_downloads'] / ('e' * 40)
+                                                       / 'tunnel-arm64.json').write_text('{}'),
+            'wrong installer platform': lambda staged: installer_change(staged, lambda value: value.update(platform='other')),
+            'wrong installer byte size': lambda staged: installer_change(staged, lambda value: value.update(bytes=1)),
+            'wrong embedded Windows ZIP': change_embedded_zip,
+            'different outer and inner index': lambda staged: (staged['cli_downloads'] / ('e' * 40)
+                                                               / 'release-index.json').write_text('{}'),
+        }
+        for label, change in cases.items():
+            with self.subTest(label=label):
+                for name in ('cli-downloads', 'cli-installers', 'release-staging'):
+                    shutil.rmtree(self.root / '.local' / name, ignore_errors=True)
+                self.reset()
+                staged = self.cli_release()
+                before = self.live_indexes()
+                change(staged)
+                code, result, _ = self.run_tool(**staged)
+                self.assertEqual(code, 1, result)
+                self.assertIn(result['failure'], ('cli_release_invalid', 'cli_release_file_mismatch',
+                                                  'cli_release_index_mismatch'))
+                self.assert_untouched()
+                self.assertEqual(self.live_indexes(), before)
+                self.assert_cli_locks_released()
+
+    def test_inspect_uses_temporary_cli_copies_without_retaining_or_rewriting_them(self):
+        staged = self.cli_release()
+        before = {key: self.rollout.tree(root) for key, root in staged.items()}
+        checked = []
+        original = self.rollout.staged_cli
+        def capture(*args, **kwargs):
+            result = original(*args, **kwargs)
+            checked.extend(Path(root) for root in result['staged'].values())
+            return result
+        with patch.object(self.rollout, 'staged_cli', capture):
+            code, result, release = self.run_tool('inspect', **staged)
+        self.assertEqual((code, result['status']), (0, 'READY'))
+        self.assertTrue(checked)
+        self.assertTrue(all(not root.exists() for root in checked))
+        self.assertFalse(release.exists())
+        self.assertEqual({key: self.rollout.tree(root) for key, root in staged.items()}, before)
+        self.assert_untouched()
+
+    def test_cli_verification_uses_frozen_sibling_helpers_not_an_imported_live_module(self):
+        staged = self.cli_release()
+        helper = self.source / 'scripts/db_tunnel_package.py'
+        # The source identity check is mocked. This sentinel proves the verifier comes
+        # from this frozen fixture, not the live checkout or an earlier module import.
+        helper.write_text('def verify_helpers(*args):\n    raise ValueError("frozen helper selected")\n')
+        code, result, _ = self.run_tool('inspect', **staged)
+        self.assertEqual((code, result['failure']), (1, 'cli_release_invalid'))
+        self.assert_untouched()
+        shutil.copyfile(ROOT / 'scripts/db_tunnel_package.py', helper)
+        foreign = ModuleType('db_tunnel_package')
+        foreign.verify_helpers = Mock(side_effect=AssertionError('foreign module selected'))
+        with patch.dict(sys.modules, {'db_tunnel_package': foreign}):
+            code, result, _ = self.run_tool('inspect', **staged)
+        self.assertEqual((code, result['status']), (0, 'READY'))
+        foreign.verify_helpers.assert_not_called()
+        self.assert_untouched()
+
+    def test_live_cli_publication_locks_block_apply_and_release_partial_acquisitions(self):
+        staged = self.cli_release()
+        before = self.live_indexes()
+        for name in ('cli-downloads', 'cli-installers'):
+            with self.subTest(name=name):
+                with self.held_cli_lock(name):
+                    code, result, _ = self.run_tool(**staged)
+                    self.assertEqual((code, result['failure']), (1, 'cli_publication_busy'))
+                    # On the second lock's conflict, the first acquisition must be released.
+                    if name == 'cli-installers':
+                        with self.held_cli_lock('cli-downloads'):
+                            pass
+                self.assert_untouched()
+                self.assertEqual(self.live_indexes(), before)
+                self.assert_cli_locks_released()
+
+    def test_live_cli_publication_locks_also_block_server_only_apply(self):
+        self.cli_release(version='0.7.0')
+        before = self.live_indexes()
+        for name in ('cli-downloads', 'cli-installers'):
+            with self.subTest(name=name), self.held_cli_lock(name):
+                code, result, _ = self.run_tool()
+                self.assertEqual((code, result['failure']), (1, 'cli_publication_busy'))
+                self.assert_untouched()
+                self.assertEqual(self.live_indexes(), before)
+        self.assert_cli_locks_released()
+
+    def test_live_cli_publication_locks_block_rollback_before_service_changes(self):
+        staged = self.cli_release()
+        code, _, release = self.run_tool(**staged)
+        self.assertEqual(code, 0)
+        before, events = self.live_indexes(), list(self.host.events)
+        for name in ('cli-downloads', 'cli-installers'):
+            with self.subTest(name=name), self.held_cli_lock(name):
+                code, result, _ = self.run_tool('rollback', release=release)
+                self.assertEqual((code, result['failure']), (1, 'cli_publication_busy'))
+                self.assertEqual(self.host.events, events)
+                self.assertEqual(self.installed.read_bytes(), NEW)
+                self.assertEqual(self.live_indexes(), before)
+        self.assert_cli_locks_released()
+
+    def test_cli_locks_cover_preflight_backup_index_swap_and_apply_rollback_receipts(self):
+        staged = self.cli_release()
+        observed = []
+        original_preflight, original_copy, original_save = self.rollout.preflight, self.rollout.atomic_copy, self.rollout.save
+        def preflight(*args, **kwargs):
+            self.assert_cli_locks_held()
+            observed.append('preflight')
+            return original_preflight(*args, **kwargs)
+        def copy(source, destination, expected=None):
+            if destination in (self.root / '.local/cli-downloads/release-index.json',
+                                self.root / '.local/cli-installers/installer-index.json'):
+                self.assert_cli_locks_held()
+                observed.append('index-copy')
+            return original_copy(source, destination, expected=expected)
+        def save():
+            if self.rollout.REPORT.get('status') in ('PASS', 'ROLLED_BACK'):
+                self.assert_cli_locks_held()
+                observed.append(self.rollout.REPORT['status'])
+            return original_save()
+        self.host.on_stop = self.assert_cli_locks_held
+        self.host.on_verify = self.assert_cli_locks_held
+        with patch.object(self.rollout, 'preflight', preflight), patch.object(self.rollout, 'atomic_copy', copy), \
+                patch.object(self.rollout, 'save', save):
+            code, result, release = self.run_tool(**staged)
+            self.assertEqual((code, result['status']), (0, 'PASS'))
+            self.assert_cli_locks_released()
+            code, result, _ = self.run_tool('rollback', release=release)
+            self.assertEqual((code, result['status']), (0, 'ROLLED_BACK'))
+        self.assertIn('preflight', observed)
+        self.assertEqual(observed.count('index-copy'), 4)
+        self.assertIn('PASS', observed)
+        self.assertIn('ROLLED_BACK', observed)
+        self.assert_cli_locks_released()
 
     def test_operator_rollback_refuses_another_rollouts_binary(self):
         code, _, release = self.run_tool()

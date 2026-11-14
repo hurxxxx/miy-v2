@@ -3,6 +3,7 @@
 import argparse
 import gzip
 import hashlib
+import importlib.util
 import io
 import json
 import re
@@ -156,8 +157,12 @@ def verify(directory):
     (directory / "SHA256SUMS").write_text("".join(f"{row['sha256']}  {row['file']}\n" for row in rows), encoding="ascii")
     index = {"schemaVersion": 1, "version": versions.pop(), "commit": commits.pop(), "assets": rows}
     if tuple(map(int, index["version"].split("."))) >= (0, 6, 0):
-        from db_tunnel_package import verify_helpers
-        index["tunnelImages"] = verify_helpers(directory, index["commit"], index["version"])
+        # A frozen rollout must use this package's helper verifier, not a different
+        # checkout already imported or earlier on sys.path.
+        spec = importlib.util.spec_from_file_location("miy_release_tunnel", Path(__file__).with_name("db_tunnel_package.py"))
+        helpers = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(helpers)
+        index["tunnelImages"] = helpers.verify_helpers(directory, index["commit"], index["version"])
     (directory / "release-index.json").write_bytes(metadata_bytes(index))
     return index
 

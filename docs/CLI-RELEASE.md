@@ -59,7 +59,7 @@ Windows에서 같은 후보를 직접 빌드·검사할 때도 버전과 출처�
 
 후보에는 다섯 네이티브 CLI와 Linux amd64/arm64 DB 연결 helper가 함께 있어야 한다. Helper의 archive SHA-256, config SHA-256, 플랫폼, 소스 commit과 태그를 검증하며 개발 작업 트리용 helper는 게시하지 않는다. Docker 저장 방식에 따라 달라지는 image ID는 검증된 config 내용과 대조한 후 해당 컴퓨터의 불변 ID로 실행한다.
 
-검증한 aggregate 디렉터리를 서버의 `MIY_CLI_RELEASE_DIR`(기본 `<state>/cli-downloads`)에 게시한다. 설치 안내는 서버 자신의 버전과 같은 CLI만 제공하므로, CLI 버전이 바뀌는 게시는 아래 도구로 운영 디렉터리와 분리된 staging에 먼저 놓고 `core-rollout.py apply --cli-downloads … --cli-installers …`로 같은 버전의 서버와 함께 반영한다([배포 도구](SERVER-OPERATIONS.md#7-배포-도구)). 같은 버전의 파일을 다시 게시할 때만 운영 디렉터리를 직접 대상으로 한다. 다음 명령의 commit은 CLI 후보 소스이며, 이후 서버 전용 수정이나 증거 문서 commit과 혼동하지 않는다.
+검증한 aggregate 디렉터리를 서버의 `MIY_CLI_RELEASE_DIR`(기본 `<state>/cli-downloads`)에 게시한다. 설치 안내는 서버 자신의 버전과 같은 CLI만 제공하므로, CLI 버전이 바뀌는 게시는 아래 도구로 운영 디렉터리와 분리된 staging에 먼저 놓고 `core-rollout.py apply --cli-downloads … --cli-installers …`로 같은 버전의 서버와 함께 반영한다([배포 도구](SERVER-OPERATIONS.md#7-배포-도구)). 같은 버전의 파일을 다시 게시할 때만 운영 디렉터리를 직접 대상으로 한다. core 도구는 중지 전에 별도 후보를 복사·완전 검증하고 그 바이트만 게시한다. 두 stage 도구의 `.publish.lock`을 함께 사용하므로 core 배포·복구와 직접 게시가 겹치지 않는다. 다음 명령의 commit은 CLI 후보 소스이며, 이후 서버 전용 수정이나 증거 문서 commit과 혼동하지 않는다.
 
 ```sh
 python3 scripts/stage-cli-release.py --source /path/to/aggregate --destination /path/to/cli-downloads --commit CLI_CANDIDATE_40_HEX_COMMIT

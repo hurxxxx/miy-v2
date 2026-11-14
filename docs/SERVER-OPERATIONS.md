@@ -1,6 +1,6 @@
 # 현재 플랫폼 서버 운영·연결 안내
 
-- 확인일: 2026-11-13
+- 확인일: 2026-11-14
 - 업무 포털: **https://v2.dwdcc.kr**
 - 업무 dev 포털(dev 앱 미리보기·시험): **https://v2-dev.dwdcc.kr**
 - 관리·CLI 승인·로그인 콘솔: **https://v2-console.dwdcc.kr** (2026-11-09 이동, 옛 `https://v2.dwdcc.kr:9443`은 301로 넘김)
@@ -12,7 +12,7 @@
 
 **현재 서버는 prod 포털·dev 포털·관리/로그인 콘솔의 세 출처 경계를 적용했다.** [사내 최소 계약](APP-BOUNDARIES.md#확정-결정)에 따라 업무 앱은 2026-11-12부터 앱마다 `https://v2-app-<키>.dwdcc.kr` 출처의 프레임에서 실행한다([배포 기록](releases/app-frames-2026-11-12-deployment.json), [반영 절차](APP-FRAMES.md#9-운영-반영-계획)). 프레임 listener는 `127.0.0.1:18184`, 프레임 런타임은 `.local/frame-runtime`이다. 포털은 자기 환경의 설치별 앱 프레임을 열고 관리·device CLI 승인·Keycloak은 콘솔에서 제공한다. portal/dev_portal/console 세션 용도·환경·정확한 Origin·CSRF·응답 제한을 서버가 검사한다. 앱별 DOM·저장소·자격증명 경계와 달리 같은 사이트의 쿠키 간섭·프로세스 분리는 보장하지 않는다. 공개 서버를 내부망 범위로 자동 인정하지 않는다.
 
-현재 `18ce038` 배포는 앱 응답별 4MiB와 실제 바이트 수명에 맞춘 64개 슬롯, Core가 앱 전달 전에 거부한 401만 갱신·재전송하는 프레임 동작을 반영했다. 정확한 SHA의 CI 세 개와 로컬 격리 검사를 통과한 뒤 core → 프레임 런타임 순서로 적용했다. core DB 백업·별도 복원, 기존 앱 컨테이너 7개·schema 22·설정·게시 CLI 보존, 연결 22개와 업무 앱 4개의 읽기 검사를 확인했다([배포 기록](releases/app-api-response-2026-11-13-deployment.json)). 포털 UI는 변경 입력이 없어 `7defdb0`을 유지한다. 이미 열린 앱은 새로고침/다시 열기 뒤 새 프레임 런타임을 사용한다. `7defdb0`의 릴리스 결합·입력 보호·갱신 안내·Nginx log 보완은 [직전 기록](releases/app-frames-review-fixes-2026-11-12-deployment.json)에 보존한다.
+2026-11-13 `18ce038` 배포에서는 앱 응답별 4MiB와 실제 바이트 수명에 맞춘 64개 슬롯, Core가 앱 전달 전에 거부한 401만 갱신·재전송하는 프레임 동작을 반영했다. 정확한 SHA의 CI 세 개와 로컬 격리 검사를 통과한 뒤 core → 프레임 런타임 순서로 적용했다. core DB 백업·별도 복원, 기존 앱 컨테이너 7개·schema 22·설정·당시 게시 CLI 보존, 연결 22개와 업무 앱 4개의 읽기 검사를 확인했다([배포 기록](releases/app-api-response-2026-11-13-deployment.json)). 포털 UI는 변경 입력이 없어 `7defdb0`을 유지한다. 이미 열린 앱은 새로고침/다시 열기 뒤 새 프레임 런타임을 사용한다. 같은 날 후속 `173c6d5` 배포에서 서버·게시 CLI를 위의 0.9.0으로 갱신했다. `7defdb0`의 릴리스 결합·입력 보호·갱신 안내·Nginx log 보완은 [직전 기록](releases/app-frames-review-fixes-2026-11-12-deployment.json)에 보존한다.
 
 2026-11-09 사용자 요청으로 콘솔과 로그인 issuer를 `https://v2-console.dwdcc.kr`로 옮겼다([배포 기록](releases/console-hostname-2026-11-09-deployment.json)). 서버·UI·schema는 그대로이고, 옛 `:9443`은 같은 경로로 301 redirect한다. 모든 브라우저 사용자는 한 번 다시 로그인하며 CLI credential은 유지된다. 외부 OAuth MCP 클라이언트는 새 issuer로 다시 인증한다. 실제 OIDC로 세 출처 SSO와 CLI·MCP 연결 22개를 확인했다.
 
@@ -179,7 +179,7 @@ Codex·Claude의 생성된 프로젝트 MCP는 프로젝트의 `.miy-tools/miy[.
 
 서버를 갱신할 때는 먼저 배포 대상 소스 commit과 현재 실행 파일을 확인한다. 같은 버전 문자열이라도 실제 source commit·빌드 경계·설치된 SQL과 게시된 배포물의 출처를 함께 확인한다. 새 배포는 검증한 소스의 별도 checkout에서 빌드하고, 서버/worker·UI·게시 index를 같은 검증 기록에 묶어 반영한다.
 
-현재 서버 바이너리 SHA-256은 `3fe648bc63a4733c7b33b9040108ae50ed19f419f4e319f38af3c4e57c534f82`다. 후보·설치 파일·serve/worker 실행 파일 대조와 직전 바이너리의 복구 경로는 [응답 보완 배포 기록](releases/app-api-response-2026-11-13-deployment.json)을 따른다. 2026-11-07의 `450a1709…` 바이너리와 그 이전 `7b43789`는 [당시 배포 기록](releases/internal-minimum-security-2026-11-07-deployment.json)의 이력이다. 게시 CLI의 source commit과 target별 hash는 `GET /api/v1/cli/install`로 확인한다. 서버 바이너리는 default features 빌드이므로 클라이언트 전용 바이너리와 hash가 다르다.
+현재 서버 바이너리 SHA-256은 `467bb0d2f58c9df575aff8df947d411450204ad4dbceef29e683e1df535b9f54`다. 후보·설치 파일·serve/worker 실행 파일 대조와 복구 경로는 [CLI 0.9.0 배포 기록](releases/cli-0.9.0-2026-11-13-deployment.json)을 따른다. 이 배포의 rollback은 `.local/release-173c6d5-source/scripts/core-rollout.py`와 `.local/release-173c6d5-core`의 기록으로 직전 서버 `3fe648bc…`와 CLI·설치기 0.7.0 index를 함께 복원한다. schema 22·앱 데이터·추가한 0.9.0 파일은 보존한다. 이전 `18ce038` 배포의 복구 명령은 현재 서버·CLI 동시 복구를 대신하지 않는다. 게시 CLI의 source commit과 target별 hash는 `GET /api/v1/cli/install`로 확인한다. 서버 바이너리는 default features 빌드이므로 클라이언트 전용 바이너리와 hash가 다르다.
 
 배포와 이전 검증의 상세 이력은 [운영 소스의 0.6.3 반영 기록](https://github.com/hurxxxx/miy-v2/blob/7617246/docs/CLI-0.6.3-LINUX-VALIDATION.md)에 있다. 이 문서의 실제 연결 재검사 결과는 아래에 추가한다.
 
@@ -268,7 +268,7 @@ python3 scripts/check-db-connections.py
 - **중지 확인:** `systemctl stop` 뒤 모든 서비스가 `inactive` 또는 `failed`이고, `MainPID`·`ControlPID`가 모두 0이며 서비스 cgroup에 프로세스가 없음을 확인한다. `cgroup.events`의 `populated=0`은 하위 cgroup까지 포함한다. 확인 후 `failed`로 남은 unit만 `systemctl reset-failed`로 정리하고, 모든 서비스의 `inactive`와 PID·cgroup을 다시 확인한다. 시작 제한 횟수도 초기화되며 실패 내용은 journal에 남는다. 프로세스 잔류, 읽기 실패, 상태 판정 불가 시 배포·복구를 중단하고 바이너리 교체·서비스 시작을 진행하지 않는다.
 - **중지 판정의 호스트 조건:** 이 도구는 cgroup v2와 `system.slice`의 고정 서비스 경로를 사용한다. systemd `Id`가 `<서비스명>.service`, `Slice`가 `system.slice`인지 확인하고, `ControlGroup`은 `/system.slice/<Id>` 또는 빈 값만 허용한다. 값이 비어도 `/sys/fs/cgroup/system.slice/<Id>`를 계속 검사한다. cgroup v2 표식과 부모 `system.slice`를 읽을 수 있고 해당 서비스 경로가 실제로 사라진 경우에만 빈 것으로 인정한다. cgroup v1·별도 slice·예상과 다른 경로·존재하는 cgroup의 events 누락 등은 안전하게 판정할 수 없으므로 거부한다.
 - **기록:** 시도마다 `.local` 아래 새 `--release-dir`(0700)에 이전·후보 바이너리와 덤프(`rollback/`), 명령·종료 코드만 담은 `deployment.json`(0600)을 남긴다. 출력과 기록에 비밀값·행 내용을 넣지 않는다.
-- **CLI 게시 동시 반영(`--cli-downloads DIR --cli-installers DIR`):** 설치 안내는 서버 자신의 버전과 같은 CLI만 제공한다. 그래서 서버 버전이 바뀌는 반영은 이 옵션 없이 `cli_release_required_for_version_change`로 거부한다. 두 디렉터리는 `stage-cli-release.py`·`stage-windows-installer.py`로 운영 다운로드 디렉터리와 분리된 곳에 만든 결과다. 사전 확인에서 두 index의 버전이 후보와 같은지, CLI commit이 하나인지, Windows ZIP·실행 파일 해시가 설치기와 일치하는지, 나열된 모든 파일의 해시와 이미 게시된 같은 commit 디렉터리의 동일성을 검사한다. 적용 시 기존 index를 `rollback/`에 백업한다. core가 멈춘 동안 새 commit 디렉터리를 추가하고(덮어쓰지 않음) 두 index를 원자적으로 교체한 뒤, 시작 후 새 설치 안내(버전·CLI commit·설치기 해시)를 확인한다. 후보 시작 전 실패와 `rollback`은 이전 index로 되돌린다. 추가한 commit 디렉터리는 불변 기록으로 남긴다.
+- **CLI 게시 동시 반영(`--cli-downloads DIR --cli-installers DIR`):** 설치 안내는 서버 자신의 버전과 같은 CLI만 제공하므로 버전 변경은 이 옵션 없이 거부한다. 두 입력은 stage 도구로 운영 다운로드 경로와 분리해 준비한다. 코어 중지 전에 별도 후보로 복사해 5개 CLI·2개 helper, 체크섬·provenance·설치기 내장 ZIP과 두 index의 연결을 해당 소스의 패키지 검사기로 확인한다. `inspect`의 임시 복사본은 정리하고, `apply`는 `rollback/cli-candidate/`에 고정한 파일·해시만 게시한다. 원본 staging이 이후 바뀌어도 새 바이트를 채택하지 않으며, 후보가 바뀌면 거부한다. `apply`·`rollback`은 기존 stage 도구와 같은 두 `.publish.lock`을 고정 순서로 잡아 검사·백업·게시·복구 확인을 마칠 때까지 유지한다. 다른 게시 작업이 있으면 서비스 변경 전에 `cli_publication_busy`로 거부한다. 기존 index를 `rollback/`에 백업하고, core 중지 중 새 commit 디렉터리를 추가한 뒤 두 index를 차례로 원자 교체한다. index는 교체 전 임시 파일의 해시까지 검사한다. 시작 후 새 설치 안내를 확인하며, 후보 시작 전 실패와 `rollback`은 이전 index·바이너리·설치 안내를 복구한다. 추가한 commit 디렉터리는 불변 기록으로 남긴다. 이 후보 고정·검증·잠금 보완은 2026-11-14 소스 검사 범위이며 운영 재실행은 NOT_RUN이다([검증 기록](releases/cli-rollout-review-fixes-2026-11-14-validation.json)).
 
 ```sh
 python3 <checkout>/scripts/core-rollout.py inspect --source <checkout> --commit <commit> \
@@ -306,4 +306,4 @@ python3 scripts/ui-rollout.py rollback --release-dir <같은 경로>
 
 **콘솔 출처 이동(`scripts/console-origin-move.py`).** 콘솔은 OIDC issuer(Keycloak `/identity`)도 함께 제공하고 core는 시작할 때 issuer의 discovery를 읽으므로, 짧은 점검 시간 한 번으로 옮긴다. `inspect`는 대상 주소, 현재 Nginx 파일, 새로 생성한 설정(콘솔 블록과 포털의 CLI 승인 redirect의 콘솔 주소만 바뀌는지), Keycloak `miy-web`, 유휴 core를 읽기만 한다. `apply`는 core를 멈춘 뒤 realm `frontendUrl`과 `miy-web`의 콘솔 callback·logout·web origin만 바꾸고(ids·secret·사용자 유지) 설정 파일을 줄 단위로 고친다. 이어서 Nginx에 새 콘솔과 옛 콘솔 주소의 301 redirect 사이트를 설치하고 core를 시작해 health·issuer·MCP 메타데이터를 확인한다. 어느 단계든 실패하면 Keycloak·파일·Nginx를 백업으로 되돌리고 옛 주소로 core를 시작한다. 나중의 되돌리기는 `restore`다. 모든 브라우저 사용자는 한 번 다시 로그인하고 CLI credential은 유지된다.
 
-같은 schema·같은 인증 계약의 일반 변경은 서버를 반영하고 확인한 다음 웹 화면을 반영한다. 세션·issuer·schema가 함께 바뀌면 변경 범위의 백업·별도 복원 확인과 각 도구의 선행 조건을 지키며 검증한 순서로 수행한다. 짧은 중단·재로그인을 허용하며 유지보수 창·무중단 전환을 별도 요구로 추가하지 않는다. 반영 후 확인은 §5의 연결 검사와 별도 브라우저 확인으로 한다. 게시 CLI·Windows 설치 파일 교체는 이 도구의 범위가 아니다([CLI 릴리스](CLI-RELEASE.md)).
+같은 schema·같은 인증 계약의 일반 변경은 서버를 반영하고 확인한 다음 웹 화면을 반영한다. 세션·issuer·schema가 함께 바뀌면 변경 범위의 백업·별도 복원 확인과 각 도구의 선행 조건을 지키며 검증한 순서로 수행한다. 짧은 중단·재로그인을 허용하며 유지보수 창·무중단 전환을 별도 요구로 추가하지 않는다. 반영 후 확인은 §5의 연결 검사와 별도 브라우저 확인으로 한다. 게시 CLI·Windows 설치 파일은 [CLI 릴리스](CLI-RELEASE.md) 절차로 staging을 준비하고, 서버 버전 변경 시 위 CLI 동시 반영 옵션으로 함께 게시한다. 웹 화면 반영 도구는 CLI를 바꾸지 않는다.

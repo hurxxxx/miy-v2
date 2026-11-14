@@ -25,9 +25,11 @@ binary keeps using unchanged. No other migration, setting or identity change is 
 --cli-downloads DIR --cli-installers DIR publish a CLI release with the candidate: the output of
 scripts/stage-cli-release.py and scripts/stage-windows-installer.py in private staging directories.
 The server's install guide offers only the CLI of its own version, so a version change needs this.
-Both indexes must name the candidate's version and one CLI commit with matching Windows hashes, and
-every listed file must match its hash. While core is stopped the commit directories are added next
-to the live ones (never overwritten) and the two indexes are replaced; core must then serve the new
+Before stopping core, both packages are copied to a private candidate and fully verified, including
+all five native targets, two helpers, checksums, provenance and the embedded Windows CLI. Only those
+fixed bytes may be published. Apply and rollback hold both existing publishers' .publish.lock files
+through verification and recovery. While core is stopped the commit directories are added next to
+the live ones (never overwritten) and the two indexes are replaced; core must then serve the new
 guide. A failure before the candidate starts, and a later rollback, restore the previous indexes.
 
 The preflight requires the exact source commit to have passed every required main-push GitHub
@@ -38,11 +40,13 @@ import argparse
 import contextlib
 import fcntl
 import hashlib
+import importlib.util
 import json
 import os
 import pathlib
 import re
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
@@ -153,12 +157,13 @@ def digest(path):
         return hashlib.file_digest(handle, 'sha256').hexdigest()
 
 
-def atomic_copy(source, destination):
+def atomic_copy(source, destination, expected=None):
     fd, name = tempfile.mkstemp(prefix=destination.name + '.rollout-', dir=destination.parent)
     os.close(fd)
     temporary = pathlib.Path(name)
     try:
         shutil.copy2(source, temporary)
+        require(expected is None or digest(temporary) == expected, 'copy_source_changed')
         with temporary.open('rb') as handle:
             os.fsync(handle.fileno())
         os.replace(temporary, destination)
@@ -346,25 +351,61 @@ def live_cli(name):
     return LIVE / '.local' / name
 
 
+@contextlib.contextmanager
+def cli_publication_locks():
+    """Share the stage tools' locks, in a fixed order, through apply/rollback recovery."""
+    with contextlib.ExitStack() as stack:
+        for name in CLI_INDEXES:
+            root = plain(live_cli(name))
+            if not root.exists():
+                continue
+            require(root.is_dir(), 'cli_live_directory_invalid')
+            fd = os.open(root / '.publish.lock', os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
+            stack.callback(os.close, fd)
+            try:
+                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                raise RuntimeError('cli_publication_busy') from None
+        yield
+
+
 def tree(root):
     """Relative file -> SHA-256 of a regular-file directory (no symlinks)."""
+    root = plain(root)
+    require(root.is_dir(), 'cli_directory_missing')
     files = {}
     for path in sorted(root.rglob('*')):
         require(not path.is_symlink(), 'symlink_path_refused')
-        if path.is_file():
+        mode = path.stat().st_mode
+        require(stat.S_ISREG(mode) or stat.S_ISDIR(mode), 'cli_special_file_refused')
+        if stat.S_ISREG(mode):
             files[path.relative_to(root).as_posix()] = digest(path)
     return files
 
 
-def staged_cli(args, version):
-    """Check a staged CLI release against the candidate. Read-only."""
+def release_tool(filename, directory=None):
+    spec = importlib.util.spec_from_file_location(filename.replace('-', '_'),
+                                                 (directory or pathlib.Path(__file__).parent) / filename)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def staged_cli(args, version, candidate_root=None, tool_directory=None):
+    """Validate fixed package copies. Inspect discards them; apply keeps its own candidate."""
     require(args.cli_downloads is not None and args.cli_installers is not None, 'cli_release_needs_both_indexes')
     staged = {'cli-downloads': plain(args.cli_downloads), 'cli-installers': plain(args.cli_installers)}
     for name, root in staged.items():
-        require(root.is_dir() and root != live_cli(name) and live_cli(name) not in (root, *root.parents)
-                and root not in live_cli(name).parents, 'cli_staging_must_be_separate')
-    release = json.loads((staged['cli-downloads'] / CLI_INDEXES['cli-downloads']).read_text())
-    installer = json.loads((staged['cli-installers'] / CLI_INDEXES['cli-installers']).read_text())
+        require(root.is_dir() and all(live not in (root, *root.parents) and root not in live.parents
+                                     for live in map(live_cli, CLI_INDEXES)), 'cli_staging_must_be_separate')
+    package = release_tool('package-cli-release.py', tool_directory)
+    setup = release_tool('package-windows-installer.py', tool_directory)
+    # Read once: parsing, validation and the recorded index hashes all refer to these bytes.
+    index_bytes = {name: setup.read_regular(plain(root / CLI_INDEXES[name]), 65536)
+                   for name, root in staged.items()}
+    release = setup.parse_json(index_bytes['cli-downloads'])
+    installer = setup.parse_json(index_bytes['cli-installers'])
+    require(isinstance(release, dict) and isinstance(installer, dict), 'cli_release_invalid')
     commit, installer_commit = release.get('commit') or '', installer.get('installerCommit') or ''
     require(release.get('version') == installer.get('version') == version, 'cli_release_version_mismatch')
     require(HEX40.fullmatch(commit) is not None and installer.get('cliCommit') == commit
@@ -372,6 +413,9 @@ def staged_cli(args, version):
     windows = [row for row in release.get('assets', []) if row.get('target') == WINDOWS_TARGET]
     require(len(windows) == 1 and windows[0].get('sha256') == installer.get('archiveSha256')
             and windows[0].get('binarySha256') == installer.get('cliBinarySha256'), 'cli_installer_mismatch')
+    require(type(release.get('schemaVersion')) is int and release['schemaVersion'] == 1
+            and all(type(row.get('schemaVersion')) is int and row['schemaVersion'] == 1
+                    for row in release.get('assets', []) + release.get('tunnelImages', [])), 'cli_release_invalid')
     listed = {f"cli-downloads/{commit}/{row['file']}": row['sha256']
               for row in release.get('assets', []) + release.get('tunnelImages', [])}
     listed[f"cli-installers/{installer_commit}/{installer['file']}"] = installer['sha256']
@@ -384,31 +428,77 @@ def staged_cli(args, version):
         # Published commit directories are immutable: an existing one must be identical.
         live = live_cli(name) / directory
         require(not live.exists() or tree(live) == trees[name], 'cli_release_commit_directory_differs')
-        require((live_cli(name) / CLI_INDEXES[name]).is_file(), 'cli_live_index_missing')
+        require(plain(live_cli(name) / CLI_INDEXES[name]).is_file(), 'cli_live_index_missing')
+    indexes = {name: hashlib.sha256(data).hexdigest() for name, data in index_bytes.items()}
+    with contextlib.ExitStack() as stack:
+        if candidate_root is None:
+            candidate_root = pathlib.Path(stack.enter_context(tempfile.TemporaryDirectory(prefix='miy-cli-check-')))
+        else:
+            candidate_root = plain(candidate_root)
+            for name, directory in directories.items():
+                source = staged[name] / directory
+                require(source not in (candidate_root, *candidate_root.parents)
+                        and candidate_root not in source.parents, 'cli_candidate_must_be_separate')
+            candidate_root.mkdir(mode=0o700)
+        fixed = {}
+        for name, directory in directories.items():
+            root = candidate_root / name
+            root.mkdir(mode=0o700)
+            target = root / directory
+            shutil.copytree(staged[name] / directory, target, symlinks=True)
+            require(tree(target) == trees[name], 'cli_staged_files_changed')
+            require(trees[name].get(CLI_INDEXES[name]) == indexes[name], 'cli_release_index_mismatch')
+            (root / CLI_INDEXES[name]).write_bytes(index_bytes[name])
+            fixed[name] = str(root)
+        # verify() regenerates the CLI index and SHA256SUMS, only inside this private copy.
+        # Matching the whole tree afterwards proves that it did not silently repair bad input.
+        try:
+            downloads = candidate_root / 'cli-downloads' / commit
+            installers = candidate_root / 'cli-installers' / installer_commit
+            filenames = {'release-index.json', 'SHA256SUMS'}
+            for target, (_, extension, *_) in package.TARGETS.items():
+                filename = f'miy-{version}-{target}.{extension}'
+                filenames.update((filename, filename + '.sha256', f'provenance-{target}.json'))
+            for arch in ('amd64', 'arm64'):
+                filename = f'miy-db-tunnel-{version}-{arch}.oci.tar'
+                filenames.update((filename, filename + '.sha256', f'tunnel-{arch}.json'))
+            require(set(trees['cli-downloads']) == filenames, 'cli_release_invalid')
+            require(set(trees['cli-installers']) == {'installer-index.json', installer['file'],
+                                                   installer['file'] + '.sha256'}, 'cli_release_invalid')
+            require(package.verify(downloads) == release, 'cli_release_invalid')
+            require(setup.verify(installers, installer_commit, commit) == installer, 'cli_release_invalid')
+            require(all(tree(candidate_root / name / directory) == trees[name]
+                        for name, directory in directories.items()), 'cli_release_invalid')
+        except Exception:
+            raise RuntimeError('cli_release_invalid') from None
     return {'version': version, 'commit': commit, 'installerCommit': installer_commit,
             'windowsInstallerSha256': installer['sha256'],
-            'staged': {name: str(root) for name, root in staged.items()}, 'directories': directories,
-            'indexes': {name: digest(staged[name] / CLI_INDEXES[name]) for name in staged}}
+            'staged': fixed, 'directories': directories, 'trees': trees, 'indexes': indexes}
 
 
 def publish_cli(release):
-    """With core stopped: add the commit directories, then replace both indexes atomically."""
+    """With core stopped and publisher locks held: publish only the verified candidate bytes."""
+    for name, directory in release['directories'].items():
+        source = pathlib.Path(release['staged'][name]) / directory
+        require(tree(source) == release['trees'][name], 'cli_candidate_files_changed')
+        require(digest(plain(source.parent / CLI_INDEXES[name])) == release['indexes'][name],
+                'cli_staged_index_changed')
     for name, directory in release['directories'].items():
         source, live = pathlib.Path(release['staged'][name]) / directory, live_cli(name) / directory
         if not live.exists():
-            temporary = live_cli(name) / f'.rollout-{directory}'
-            shutil.rmtree(temporary, ignore_errors=True)
-            shutil.copytree(source, temporary, symlinks=False)
-            require(tree(temporary) == tree(source), 'cli_release_copy_mismatch')
-            os.rename(temporary, live)
-        require(tree(live) == tree(source), 'cli_release_commit_directory_differs')
+            with tempfile.TemporaryDirectory(prefix='.rollout-', dir=live_cli(name)) as temporary:
+                copied = pathlib.Path(temporary) / directory
+                shutil.copytree(source, copied, symlinks=True)
+                require(tree(copied) == release['trees'][name], 'cli_release_copy_mismatch')
+                os.rename(copied, live)
+        require(tree(live) == release['trees'][name], 'cli_release_commit_directory_differs')
     # Recorded first: a failure between the two replacements must still restore both.
     REPORT['cliIndexesReplaced'] = True
     save()
     for name, index in CLI_INDEXES.items():
-        staged = pathlib.Path(release['staged'][name]) / index
-        require(digest(staged) == release['indexes'][name], 'cli_staged_index_changed')
-        atomic_copy(staged, live_cli(name) / index)
+        staged = pathlib.Path(release['staged'][name]) / release['directories'][name] / index
+        require(digest(plain(staged)) == release['indexes'][name], 'cli_staged_index_changed')
+        atomic_copy(staged, live_cli(name) / index, expected=release['indexes'][name])
         require(digest(live_cli(name) / index) == release['indexes'][name], 'cli_index_install_mismatch')
 
 
@@ -418,7 +508,7 @@ def restore_cli_indexes(previous, candidate):
         live, backup = live_cli(name) / index, recovery() / name / index
         require(digest(backup) == previous[name], 'cli_index_backup_changed')
         require(digest(live) in (previous[name], candidate[name]), 'cli_index_belongs_to_another_release')
-        atomic_copy(backup, live)
+        atomic_copy(backup, live, expected=previous[name])
         require(digest(live) == previous[name], 'cli_index_restore_mismatch')
 
 
@@ -525,8 +615,8 @@ def connection_budget(source, seconds):
         time.sleep(1)
 
 
-def preflight(args):
-    """Every check apply needs before it may stop anything. Read-only."""
+def preflight(args, cli_candidate=None):
+    """Check before stopping anything; CLI copies are private, never in live download roots."""
     for name in ('source', 'commit', 'candidate', 'candidate_sha256', 'installed_sha256'):
         require(getattr(args, name) is not None, 'missing_' + name)
     require(HEX40.fullmatch(args.commit) is not None, 'invalid_source_commit')
@@ -562,7 +652,7 @@ def preflight(args):
     require(get_json(ORIGIN + '/api/health') == {'status': 'ok'}, 'health_failed_before_rollout')
     facts['cliGuide'] = cli_guide()
     if args.cli_downloads is not None or args.cli_installers is not None:
-        facts['cliRelease'] = staged_cli(args, facts['version'])
+        facts['cliRelease'] = staged_cli(args, facts['version'], cli_candidate, source / 'scripts')
         facts['expectedCliGuide'] = {'cliVersion': facts['version'], 'sourceCommit': facts['cliRelease']['commit'],
                                      'windowsInstallerSha256': facts['cliRelease']['windowsInstallerSha256']}
     else:
@@ -602,7 +692,7 @@ def restore_previous(schema):
         restore_cli_indexes(REPORT['cliRelease']['previousIndexes'], REPORT['cliRelease']['indexes'])
         REPORT['cliIndexesRestored'] = True
     start_core()
-    wait(lambda: get_json(ORIGIN + '/api/health') == {'status': 'ok'}, 90, 'rollback_health_failed')
+    wait(lambda: healthy(REPORT['cliGuide']), 90, 'rollback_health_failed')
     require_core_state('active')
     require(migrations() == schema, 'rollback_migration_version')
     REPORT['rollbackExecutables'] = executable_hashes(previous)
@@ -618,7 +708,7 @@ def apply(args):
     source = plain(args.source)
     candidate = recovery() / 'miy-server.candidate'
     try:
-        facts = preflight(args)
+        facts = preflight(args, recovery() / 'cli-candidate')
         schema, sha = facts['schema'], args.candidate_sha256
         before_containers = facts['appContainers']
         REPORT.update({'version': facts['version'], 'schema': schema, 'liveSchema': facts['liveSchema'],
@@ -766,7 +856,7 @@ def rollback():
             restore_cli_indexes(release['previousIndexes'], release['indexes'])
             REPORT['cliIndexesRestored'] = True
         start_core()
-        wait(lambda: get_json(ORIGIN + '/api/health') == {'status': 'ok'}, 90, 'rollback_health_failed')
+        wait(lambda: healthy(deployment['cliGuide']), 90, 'rollback_health_failed')
         require_core_state('active')
         REPORT['runningExecutables'] = executable_hashes(previous)
         require(migrations() == schema, 'rollback_migration_version')
@@ -805,10 +895,10 @@ def main(argv=None):
             REL = plain(args.release_dir)
             if args.action == 'apply':
                 REPORT_FILE = REL / 'deployment.json'
-                with rollout_lock(fresh=True):
+                with rollout_lock(fresh=True), cli_publication_locks():
                     result = apply(args)
             else:
-                with rollout_lock(fresh=False):
+                with rollout_lock(fresh=False), cli_publication_locks():
                     REPORT_FILE = REL / time.strftime('rollback-%Y%m%dT%H%M%SZ.json', time.gmtime())
                     require(not REPORT_FILE.exists(), 'rollback_record_exists')
                     result = rollback()

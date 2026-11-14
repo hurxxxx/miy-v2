@@ -1,0 +1,125 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-11-14",
+  "status": "PASS",
+  "scope": "Review fixes for the CLI publication rollout tool and current-state documentation; no new CLI build or operational deployment.",
+  "source": {
+    "baseCommit": "f05ea9fc065b104c32ba7f1563520ee9836be349",
+    "state": "Uncommitted working tree on this base; input hashes identify the tested implementation.",
+    "sha256": {
+      "scripts/core-rollout.py": "babeb19f24c98566b37c20d4ad35da3bd82ab8da31780bbf3a41f1ca30824093",
+      "scripts/package-cli-release.py": "6a1d2bc5b6f9c40418963133b1838af7903fd19edff841727dc604bf7d2ab5ac",
+      "scripts/test-core-ops.py": "6785146ae9918fd2e1e6b3d6744dbd05ac52949987d533faaa7f875451cd02f2"
+    }
+  },
+  "fixes": [
+    {
+      "review": "Verified files could change before publication",
+      "result": "Before stopping core, copy and fully verify a private CLI candidate. Publish only that candidate against the recorded file/index hashes; reject changes during copying or publication."
+    },
+    {
+      "review": "Incomplete staged releases passed preflight",
+      "result": "Reuse the exact source package verifiers for all five native archives, both DB helpers, checksums, provenance and the Windows installer embedded payload. Original and generated indexes/checksum inventories must agree."
+    },
+    {
+      "review": "Core and stage tools had independent publication locks",
+      "result": "Apply and rollback acquire both existing .publish.lock files in a fixed order before preflight, retaining them through backup, publication, recovery checks and receipts. Partial acquisitions are released on failure."
+    },
+    {
+      "review": "Current hash, recovery instructions and CLI status were stale",
+      "result": "Current server hash and server/CLI index recovery point to 173c6d5; CLI/bundle 0.9.0 publication is complete, G4 is next, and historical FAIL and remaining Windows/public-release acceptance are separate."
+    },
+    {
+      "review": "Follow-up failure boundaries",
+      "result": "Validate temporary index bytes before atomic replacement, verify the restored guide, and load helper verifiers from the frozen source rather than another checkout/import cache."
+    }
+  ],
+  "checks": [
+    {
+      "command": [
+        "bash",
+        "scripts/check-static.sh",
+        "scripts"
+      ],
+      "exitCode": 0,
+      "status": "PASS",
+      "elapsedSeconds": 47.57,
+      "evidence": ".local/evidence/cli-rollout-review-20261114-ywd7e30f/static-scripts.log",
+      "observed": "All script checks passed, including 88 core operations regressions (11 added tests), package/download/installer checks, API contracts, cleanup ownership and isolated Nginx/Caddy checks."
+    },
+    {
+      "command": "python3 scripts/test-core-ops.py",
+      "status": "PASS",
+      "tests": 88,
+      "observed": "Actual package fixtures; original input changes after snapshot, copy/snapshot/index mutations, 17 malformed package cases rejected before service changes, inspect cleanup, frozen helper imports and apply/rollback shared lock lifetime. External commands are mocked."
+    },
+    {
+      "command": "python3 (inline): core_rollout.staged_cli(args, \"0.9.0\")",
+      "status": "PASS",
+      "input": ".local/release-173c6d5-cli/staging",
+      "evidence": ".local/evidence/cli-rollout-review-20261114-ywd7e30f/existing-package-check.json",
+      "observed": {
+        "sourceCommit": "173c6d5cfd35f9d1313fe643701d4af3f374377f",
+        "files": {
+          "cli-downloads": 23,
+          "cli-installers": 3
+        },
+        "temporaryCopiesRemoved": true,
+        "inputTreesUnchanged": true,
+        "operationalMutations": false
+      }
+    },
+    {
+      "command": "python3 scripts/test-core-ops.py (five selected review regressions)",
+      "status": "PASS",
+      "tests": 5,
+      "observed": "Independent reviewer repeated frozen verifier binding, index copy mutation, original staging mutation, candidate mutation and complete apply/rollback lock lifetime tests."
+    }
+  ],
+  "failedAttemptsPreserved": [
+    {
+      "status": "FAIL",
+      "scope": "Regression fixture authoring",
+      "observed": "Three selected tests initially errored because synthetic tar entries lacked executable modes. Correct fixture modes restored the intended package contract; final suite passed.",
+      "evidence": "Implementation subagent report; no operational execution."
+    },
+    {
+      "status": "FAIL",
+      "scope": "Regression wrapper integration",
+      "observed": "Two mock wrappers failed after atomic_copy gained the expected hash argument. Updated wrapper signatures and reran the full suite successfully.",
+      "evidence": "Implementation subagent report; no operational execution."
+    }
+  ],
+  "notRun": [
+    {
+      "check": "Operational apply/rollback, service restart, database writes or new CLI publication",
+      "status": "NOT_RUN",
+      "reason": "This request covers review fixes. Production mutation tests use isolated fixtures; the running server and published bytes were not changed."
+    },
+    {
+      "check": "Windows 11 installation/update/uninstall",
+      "status": "NOT_RUN",
+      "reason": "User-performed acceptance; no Windows device session in this environment. Package byte verification is not native installation acceptance."
+    },
+    {
+      "check": "New GitHub candidate workflow, full Rust/runtime/browser regressions",
+      "status": "NOT_RUN",
+      "reason": "Changes affect Python deployment/package verification and documentation, not executable/SDK/UI sources. The relevant script suite ran; this working tree has not been committed or pushed. Existing CI PASS is not claimed for these changes."
+    }
+  ],
+  "evidenceDirectory": ".local/evidence/cli-rollout-review-20261114-ywd7e30f",
+  "documentationChecks": [
+    {
+      "command": "python3 scripts/check-doc-links.py",
+      "status": "PASS",
+      "exitCode": 0,
+      "result": "PASS 920 relative links in 62 tracked Markdown files"
+    },
+    {
+      "command": "git diff --check",
+      "status": "PASS",
+      "exitCode": 0,
+      "result": ""
+    }
+  ]
+}
