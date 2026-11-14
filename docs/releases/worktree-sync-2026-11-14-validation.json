@@ -1,0 +1,380 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-11-14T05:17:06.696127+00:00",
+  "request": "Commit and push all pending miy-v2 worktree changes, apply them to the operational host, and audit/merge/clean branches.",
+  "verifiedSourceCommit": "1686939c0ab23756cbbda413581d727f01f377e6",
+  "repository": {
+    "branch": "main",
+    "pushed": true,
+    "committedFiles": [
+      "docs/AI-DO-COMMON-MIGRATION.md",
+      "docs/PLAN.md",
+      "docs/README.md",
+      "docs/V1-ADOPTION.md"
+    ],
+    "registeredWorktrees": [
+      {
+        "path": "/projects/miy-v2",
+        "commit": "1686939c0ab23756cbbda413581d727f01f377e6",
+        "ref": "refs/heads/main",
+        "clean": true,
+        "disposition": "preserved"
+      },
+      {
+        "path": "/projects/miy-v2/.local/release-18ce038-source",
+        "commit": "18ce0382165ba67f46dfae89c55c1d9750d50ce9",
+        "ref": "detached",
+        "clean": true,
+        "disposition": "preserved"
+      },
+      {
+        "path": "/projects/miy-v2/.local/release-7b43789/source",
+        "commit": "7b437890030f0da6f10dc6a76881891f353f31cf",
+        "ref": "detached",
+        "clean": true,
+        "disposition": "preserved"
+      },
+      {
+        "path": "/projects/miy-v2/.local/release-7defdb0-source",
+        "commit": "7defdb0de19ff1d0c3cbf34c9127cb7d3cf85877",
+        "ref": "detached",
+        "clean": true,
+        "disposition": "preserved"
+      },
+      {
+        "path": "/projects/miy-v2/.local/release-review-20261104/source",
+        "commit": "3406d9f5b9c8afbc55a0e3e8752cb178c61db0de",
+        "ref": "detached",
+        "clean": true,
+        "disposition": "preserved"
+      },
+      {
+        "path": "/tmp/miy-release-58cecff",
+        "commit": "a4ad37006c58bc80de61892517cd3e1a153208ba",
+        "ref": "detached",
+        "clean": true,
+        "disposition": "preserved"
+      },
+      {
+        "path": "/tmp/miy-ui-new-tabs-f5210d1",
+        "commit": "f5210d1a7121cb080adce2a91d060b2a36ac9042",
+        "ref": "detached",
+        "clean": true,
+        "disposition": "preserved"
+      }
+    ],
+    "worktreeObservation": "All seven registered worktrees were clean after the source commit; the only pending changes before that commit were the four documentation files in main. Detached source checkouts were preserved.",
+    "branchAudit": {
+      "openPullRequests": 0,
+      "pullRequestCheck": "GitHub repository search: repo:hurxxxx/miy-v2 is:pr is:open",
+      "mergeRequired": false,
+      "retiredBranches": [
+        {
+          "scope": "remote",
+          "branch": "codex/cli-experience-improvements",
+          "commit": "7617246bd69861d71dd2bba07b9cad0acc82a327"
+        },
+        {
+          "scope": "remote",
+          "branch": "codex/native-local-preview",
+          "commit": "d3ee532ac85845d63b1a82d1b73bba67014aa2cd"
+        },
+        {
+          "scope": "remote",
+          "branch": "codex/server-docker-build",
+          "commit": "1775eacac8ce04cbefc234b4e58de513016acfef"
+        },
+        {
+          "scope": "remote",
+          "branch": "codex/windows-server-build-validation",
+          "commit": "c69c335d4e2f96b38cbb6b04676fea8507c33fad"
+        },
+        {
+          "scope": "local",
+          "branch": "codex/cli-experience-linux-validation",
+          "commit": "7617246bd69861d71dd2bba07b9cad0acc82a327"
+        }
+      ],
+      "verification": "Each deleted ref was an ancestor of main, with no unique commits or unapplied patches. Remote deletion used one atomic push with exact old-SHA leases; local deletion used git branch -d.",
+      "remainingLocalBranches": [
+        "main"
+      ],
+      "remainingRemoteBranches": [
+        "main"
+      ]
+    }
+  },
+  "operationalApplication": {
+    "runtimeDisposition": "unchanged_inputs",
+    "sourceCheckoutUpdated": true,
+    "runtimeDeploymentPerformed": false,
+    "reason": "All server/worker, platform UI and frame-runtime build inputs match the already deployed sources. The additional executable changes affect deployment/package tools only and are used from a new frozen source checkout on the next rollout.",
+    "buildInputComparisons": [
+      {
+        "target": "server_worker",
+        "deployedSourceCommit": "173c6d5cfd35f9d1313fe643701d4af3f374377f",
+        "comparedSourceCommit": "1686939c0ab23756cbbda413581d727f01f377e6",
+        "paths": [
+          "Cargo.toml",
+          "Cargo.lock",
+          "crates",
+          "templates",
+          "packages",
+          "migrations",
+          "registry",
+          ".cargo",
+          "rust-toolchain.toml"
+        ],
+        "changedFiles": []
+      },
+      {
+        "target": "platform_ui",
+        "deployedSourceCommit": "7defdb0de19ff1d0c3cbf34c9127cb7d3cf85877",
+        "comparedSourceCommit": "1686939c0ab23756cbbda413581d727f01f377e6",
+        "paths": [
+          "package.json",
+          "pnpm-lock.yaml",
+          "pnpm-workspace.yaml",
+          "tsconfig.json",
+          "packages",
+          "web/platform"
+        ],
+        "changedFiles": []
+      },
+      {
+        "target": "frame_runtime",
+        "deployedSourceCommit": "18ce0382165ba67f46dfae89c55c1d9750d50ce9",
+        "comparedSourceCommit": "1686939c0ab23756cbbda413581d727f01f377e6",
+        "paths": [
+          "package.json",
+          "pnpm-lock.yaml",
+          "pnpm-workspace.yaml",
+          "tsconfig.json",
+          "packages",
+          "web/frame-runtime"
+        ],
+        "changedFiles": []
+      }
+    ],
+    "deployedServerAndWorkerSourceCommit": "173c6d5cfd35f9d1313fe643701d4af3f374377f",
+    "deployedPlatformUiSourceCommit": "7defdb0de19ff1d0c3cbf34c9127cb7d3cf85877",
+    "deployedFrameRuntimeSourceCommit": "18ce0382165ba67f46dfae89c55c1d9750d50ce9",
+    "publishedCliSourceCommit": "173c6d5cfd35f9d1313fe643701d4af3f374377f",
+    "publishedCliVersion": "0.9.0",
+    "schema": 22,
+    "installedBinarySha256": "467bb0d2f58c9df575aff8df947d411450204ad4dbceef29e683e1df535b9f54",
+    "platformIndexSha256": "54c3c7438615e73316e904fcfecd399b051729463596caca3a332f19577fd8ba",
+    "frameIndexSha256": "7795901352148bf117e3214230c1cb8964dbb8850866b46143317b66d67ba5a6",
+    "serviceRestarted": false,
+    "binaryOrWebAssetsReplaced": false,
+    "migrationApplied": false,
+    "businessDataChanged": false,
+    "sessionScope": "The connection check created and revoked only its own browser/CLI sessions; it did not register or deploy any app.",
+    "existingRecoverySourcesPreserved": true
+  },
+  "checks": [
+    {
+      "command": "git status / git worktree list / git merge-base --is-ancestor / git cherry / git ls-remote --heads origin",
+      "status": "PASS",
+      "observed": "Seven clean worktrees at the source commit; all retired branches contained in main; only main remains locally and remotely."
+    },
+    {
+      "command": "git diff --name-only <deployed-source> 1686939 -- <build-inputs>",
+      "status": "PASS",
+      "observed": "No server/worker, platform UI, frame runtime or migration input changes."
+    },
+    {
+      "command": "bash scripts/check-static.sh scripts",
+      "exitCode": 0,
+      "status": "PASS",
+      "elapsedSeconds": 50.04,
+      "attempt": 2,
+      "evidence": ".local/evidence/worktree-sync-20261114-z7jn9ip2/static-scripts-retry.log",
+      "observed": "Full script suite including mocked rollout/package failure boundaries and isolated Nginx/Caddy proxy checks."
+    },
+    {
+      "command": "systemctl show miy-v2-serve miy-v2-worker; compare installed and /proc/<pid>/exe SHA-256; SELECT max(version) FROM _sqlx_migrations",
+      "status": "PASS",
+      "observed": {
+        "services": [
+          {
+            "ActiveState": "active",
+            "SubState": "running",
+            "MainPID": "2789936",
+            "ExecMainStartTimestamp": "Fri 2026-11-13 18:05:06 KST",
+            "name": "miy-v2-serve",
+            "binarySha256": "467bb0d2f58c9df575aff8df947d411450204ad4dbceef29e683e1df535b9f54"
+          },
+          {
+            "ActiveState": "active",
+            "SubState": "running",
+            "MainPID": "2789937",
+            "ExecMainStartTimestamp": "Fri 2026-11-13 18:05:06 KST",
+            "name": "miy-v2-worker",
+            "binarySha256": "467bb0d2f58c9df575aff8df947d411450204ad4dbceef29e683e1df535b9f54"
+          }
+        ],
+        "installedBinarySha256": "467bb0d2f58c9df575aff8df947d411450204ad4dbceef29e683e1df535b9f54",
+        "health": [
+          {
+            "origin": "https://v2.dwdcc.kr",
+            "httpStatus": 200,
+            "status": "ok"
+          },
+          {
+            "origin": "https://v2-dev.dwdcc.kr",
+            "httpStatus": 200,
+            "status": "ok"
+          },
+          {
+            "origin": "https://v2-console.dwdcc.kr",
+            "httpStatus": 200,
+            "status": "ok"
+          }
+        ],
+        "schema": 22,
+        "status": "PASS"
+      }
+    },
+    {
+      "command": "HTTPS GET / and /api/health on portal, dev portal and console; compare live platform/frame indexes to deployment records",
+      "status": "PASS",
+      "observed": {
+        "status": "PASS",
+        "portalPages": [
+          {
+            "origin": "https://v2.dwdcc.kr",
+            "httpStatus": 200,
+            "indexSha256": "54c3c7438615e73316e904fcfecd399b051729463596caca3a332f19577fd8ba",
+            "frameAncestorsNone": true
+          },
+          {
+            "origin": "https://v2-dev.dwdcc.kr",
+            "httpStatus": 200,
+            "indexSha256": "54c3c7438615e73316e904fcfecd399b051729463596caca3a332f19577fd8ba",
+            "frameAncestorsNone": true
+          },
+          {
+            "origin": "https://v2-console.dwdcc.kr",
+            "httpStatus": 200,
+            "indexSha256": "54c3c7438615e73316e904fcfecd399b051729463596caca3a332f19577fd8ba",
+            "frameAncestorsNone": true
+          }
+        ],
+        "platformIndexSha256": "54c3c7438615e73316e904fcfecd399b051729463596caca3a332f19577fd8ba",
+        "frameIndexSha256": "7795901352148bf117e3214230c1cb8964dbb8850866b46143317b66d67ba5a6"
+      }
+    },
+    {
+      "command": "sudo -n nginx -t",
+      "status": "PASS"
+    },
+    {
+      "command": "python3 scripts/check-cli-downloads.py --origin https://v2.dwdcc.kr --expected-commit 173c6d5cfd35f9d1313fe643701d4af3f374377f",
+      "status": "PASS",
+      "observed": {
+        "verified": true,
+        "serverUrl": "https://v2.dwdcc.kr",
+        "commit": "173c6d5cfd35f9d1313fe643701d4af3f374377f",
+        "version": "0.9.0",
+        "downloads": 7,
+        "bytes": 250963545
+      }
+    },
+    {
+      "command": "node scripts/check-platform-connection.mjs --origin https://v2.dwdcc.kr --cli <checksum-verified published Linux CLI> --credentials-file <private file> --output <new private evidence directory>",
+      "status": "PASS",
+      "passes": 22,
+      "cleanupFailures": 0,
+      "observed": "Real OIDC login, portal/console/dev-portal SSO and session purpose separation, CLI device approval/status/doctor and generated stdio MCP. Same Linux host against public HTTPS origins; no other-device acceptance claimed.",
+      "evidence": ".local/evidence/worktree-sync-20261114-z7jn9ip2/platform-connection/result.json"
+    },
+    {
+      "command": "gh run list/view for verifiedSourceCommit",
+      "status": "PASS",
+      "observed": "All three main-push workflows succeeded for 1686939. The later record-only commit is not covered by these run IDs.",
+      "runs": [
+        {
+          "conclusion": "success",
+          "databaseId": 43560024575,
+          "event": "push",
+          "headBranch": "main",
+          "headSha": "1686939c0ab23756cbbda413581d727f01f377e6",
+          "status": "completed",
+          "url": "https://github.com/hurxxxx/miy-v2/actions/runs/43560024575",
+          "workflowName": "Web and scripts"
+        },
+        {
+          "conclusion": "success",
+          "databaseId": 43560024574,
+          "event": "push",
+          "headBranch": "main",
+          "headSha": "1686939c0ab23756cbbda413581d727f01f377e6",
+          "status": "completed",
+          "url": "https://github.com/hurxxxx/miy-v2/actions/runs/43560024574",
+          "workflowName": "CLI foundation"
+        },
+        {
+          "conclusion": "success",
+          "databaseId": 43560024598,
+          "event": "push",
+          "headBranch": "main",
+          "headSha": "1686939c0ab23756cbbda413581d727f01f377e6",
+          "status": "completed",
+          "url": "https://github.com/hurxxxx/miy-v2/actions/runs/43560024598",
+          "workflowName": "Isolated runtime regression"
+        }
+      ]
+    }
+  ],
+  "failedAttemptsPreserved": [
+    {
+      "command": "bash scripts/check-static.sh scripts",
+      "exitCode": 1,
+      "status": "FAIL",
+      "elapsedSeconds": 40.91,
+      "evidence": ".local/evidence/worktree-sync-20261114-z7jn9ip2/static-scripts.log",
+      "cause": "Pinned Caddy image was absent from the local Docker image cache; docker run --pull=never exited 125 before the disposable Caddy checks.",
+      "resolution": "Pulled caddy:2.11.2@sha256:25cdc846626b62d05f6b633b9b40c2c9f6ef89b515dc76133cefd920f7dbe562 and reran the entire script suite successfully. No source change or live container restart was required."
+    }
+  ],
+  "notRun": [
+    {
+      "check": "New core/UI build and production rollout inspect/apply/rollback",
+      "status": "NOT_RUN",
+      "reason": "Runtime inputs match deployed sources; no new candidate was built or installed. In particular, the new core-rollout publication fixes are covered by script regressions, not a new production apply/rollback."
+    },
+    {
+      "check": "Operational backup/restore rehearsal and database migration",
+      "status": "NOT_RUN",
+      "reason": "No schema or business-data-changing deployment was performed."
+    },
+    {
+      "check": "Windows 11/macOS native installation acceptance and interactive business-app workflows",
+      "status": "NOT_RUN",
+      "reason": "This request changed documentation and deployment tooling. CI client checks and same-host Linux connection checks do not replace native installation or business-app acceptance."
+    }
+  ],
+  "evidenceDirectory": ".local/evidence/worktree-sync-20261114-z7jn9ip2",
+  "documentationChecks": [
+    {
+      "command": [
+        "python3",
+        "scripts/check-doc-links.py"
+      ],
+      "status": "PASS",
+      "exitCode": 0,
+      "observed": "PASS 929 relative links in 63 tracked Markdown files"
+    },
+    {
+      "command": [
+        "git",
+        "diff",
+        "--check"
+      ],
+      "status": "PASS",
+      "exitCode": 0,
+      "observed": "No whitespace errors"
+    }
+  ]
+}

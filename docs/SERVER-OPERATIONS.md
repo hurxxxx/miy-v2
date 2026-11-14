@@ -173,6 +173,8 @@ Codex·Claude의 생성된 프로젝트 MCP는 프로젝트의 `.miy-tools/miy[.
 
 이후 `main` 변경은 자동 배포되지 않는다. 운영 반영은 사용자 요청과 별도 기록으로 하며 §7의 도구(서버 바이너리 교체, 웹 자산 추가·index 교체)를 쓴다.
 
+2026-11-14 운영 반영 요청에서는 문서 변경을 `1686939`로 커밋·푸시하고, 기존 배포 도구 보완을 포함한 작업본과 현행 운영을 다시 확인했다([작업본 정리·운영 확인](releases/worktree-sync-2026-11-14-validation.json)). 서버·포털 UI·프레임 런타임의 빌드 입력은 각각 위 운영 소스와 동일하므로 실행 파일·웹 자산 교체나 서비스 재시작은 하지 않았다. 배포 도구 보완은 다음 배포의 새 소스 checkout에서 사용하며, 기존 복구 도구 사본은 유지한다. 이 확인을 새 서버 배포나 보완된 도구의 운영 `apply/rollback` 실행으로 간주하지 않는다.
+
 2026-11-05 후속 리뷰 보완은 **2026-11-07 운영 반영**했다. 사용 중지 앱의 위임 실행 요청이 접수 후 403이 되는 문제와 작업 목록·상세 권한 차이를 수정했다. 배포 도구에는 무시된 public/환경 파일의 빌드 유입 차단, 같은 웹 대상의 공통 잠금, 부분 서비스 장애 중 rollback 유휴 검사를 추가했다. 검증 결과는 [후속 리뷰 보완 기록](releases/core-review-followup-2026-11-05-validation.json)에 있다. 이어서 stop 뒤에도 `failed`로 남는 unit 때문에 rollback이 끝나지 않던 문제와 CLI 소스의 Windows lint 오류를 고쳤다([추가 보완 기록](releases/core-followup-fixes-2026-11-05-validation.json)). 이 변경에 migration·게시 CLI·Windows 설치 파일 변경은 없다.
 
 서비스의 `failed`·`inactive` 표시만으로 프로세스가 없다고 판단하지 않도록 중지 확인도 보완했다. `reset-failed` 전후에 PID와 서비스 cgroup의 실제 상태를 확인하고, 프로세스가 남거나 확인할 수 없으면 배포·복구를 중단한다([중지 확인 검증](releases/core-stop-quiescence-2026-11-05-validation.json)). 이 보완은 2026-11-07 전환 도구에도 사용했고 당시 서버·UI를 `a4ad370`으로 바꿨다.
