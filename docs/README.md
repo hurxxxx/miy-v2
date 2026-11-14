@@ -1,6 +1,6 @@
 # 문서 지도
 
-- 정리일: 2026-11-13
+- 정리일: 2026-11-14
 
 먼저 [PLAN](PLAN.md#전체-작업-현황)에서 현재 상태와 다음 작업을 확인하고, 제품 범위가 필요하면 [PRD](PRD.md)를 읽는다. 작업에 해당하는 아래 담당 문서만 추가로 읽는다. 플랫폼 개발 규칙은 [AGENTS.md](../AGENTS.md)를 따른다.
 
@@ -15,7 +15,8 @@
 | 업무 앱 화면과 브리지 | [APP-FRAMES](APP-FRAMES.md) | 설치별 출처·프레임 인증·브리지·배치·FV 인수 |
 | 앱 접근·위임·공통 업무 ACL | [CORE-PERMISSIONS](CORE-PERMISSIONS.md) | 권한 행렬·현재 집행·앱 소유 ACL의 후속 계약 |
 | 앱·릴리스·데이터 개발 계약 | [DEVELOPMENT](DEVELOPMENT.md) | 앱 구현 계약과 명시적으로 구분한 장기 설계 |
-| v1 기능과 공용 UI 이식 | [V1-ADOPTION](V1-ADOPTION.md) | V1 ID·채택/제외·UI 책임·부분 구현. ai-do UI-1~5 이력과 구분 |
+| AI-DO의 UX·공통 기능을 무엇부터 옮기나 | [AI-DO-COMMON-MIGRATION](AI-DO-COMMON-MIGRATION.md) | 최신 dev 소스별 대상·현재 v2 공백·보존할 UX·플랫폼/공용 UI/앱 책임·인수 기준 |
+| miy v1에서 참고할 계약과 기존 적용 ID | [V1-ADOPTION](V1-ADOPTION.md) | V1 ID·채택/제외·권한/운영 교훈·UI 책임·부분 구현. 현재 AI-DO 이식 대상과 과거 UI-1~5 이력을 구분 |
 | 자원·복구·새 서버의 완료 조건 | [CORE-HARDENING](CORE-HARDENING.md), [CAPACITY](CAPACITY.md) | 코어 안정화/종합 인수와 자원 예산·개별 제한 |
 | 내장 AI 설계 | [AI](AI.md) | 공통 연결·Hermes·사용자별 세션·도구 승인. 개발 에이전트 인수와 구분 |
 | 기술 선택 | [STACK](STACK.md) | 현재 선택과 선택 근거, 아직 구현되지 않은 기술 구분 |
