@@ -132,7 +132,7 @@
 | C09 감사·활동 이력 | `api:domains/auth/access.py:1342`, `api:domains/admin/router.py:8970`. 주체·행동·대상·일자별 조회 | **부분.** 기존 관리 감사 재사용, 앱 업무 이력은 별도 권한. 공통 이벤트 형식·목록 UI 후보이며 업무 본문·비밀을 중앙 로그로 수집하지 않음. A1 후속 |
 | C10 즐겨찾기·최근 열람·보관/복구 | `api:domains/docs/router.py:2208`, `api:domains/docs/router.py:2339`, `api:domains/docs/router.py:1537`, `api:domains/auth/app_spaces_service.py:298` | **없음(공통 업무 패턴).** 공용 상태/메뉴·앱 adapter 후보. 앱 레일 즐겨찾기는 플랫폼 설정, 문서 즐겨찾기·휴지통·복원은 앱 소유. 전역 휴지통/파일 버전 서비스가 원본에 완성된 것으로 보지 않음 |
 | C11 외부 연결·서비스 키·앱 간 연계 | `api:domains/auth/platform_api_keys.py:32`, `api:domains/admin/api_keys_router.py:190`, `api:domains/groupware/sessions.py:118` | **부분.** v2 설치 승인·원래 사용자 보존 connections는 재사용. 서비스 주체·API Invoke는 후속 A2. 원본 키 scope는 HR/근태 중심이므로 범용 권한 모델로 복사하지 않음. 그룹웨어 비밀번호 hook·공유 쿠키 전달도 제외 |
-| C12 사용 통계·분석 | `web:platform/analytics/matomo.ts:5`·`:144`(`matomo.dwdcc.kr`에 사용자 ID·로그인 ID·이름·앱·경로를 사용자 정의 차원으로 전송), `api:domains/usage/router.py:47`(앱·이벤트·자원 제목·경로를 담은 사용 이벤트), `api:domains/usage/app_rollup.py:26`, `web:platform/admin/admin-usage-section.tsx:2038` | **없음, 채택 결정 필요.** 프레임 CSP(`script-src`·`connect-src 'self'`)로 앱 안에서는 외부 분석 스크립트를 실행할 수 없다. 포털 셸은 앱 열기·경로 단위만 기록할 수 있다. Core는 사용자·앱별 프레임 실행을 알지만 만료 1시간 뒤 정리하므로, 채택하면 별도 집계(일별 건수 등)가 필요하다. 로그인 ID·이름·자원 제목을 외부 분석 도구로 보내지 않는 것을 기본으로 하고 보존 기간·조회 권한(관리자)·거부를 함께 정한다. PLAN에 아직 없음 |
+| C12 사용 통계·분석 | `web:platform/analytics/matomo.ts:5`·`:144`(`matomo.dwdcc.kr`에 사용자 ID·로그인 ID·이름·앱·경로를 사용자 정의 차원으로 전송), `api:domains/usage/router.py:47`(앱·이벤트·자원 제목·경로를 담은 사용 이벤트), `api:domains/usage/app_rollup.py:26`, `web:platform/admin/admin-usage-section.tsx:2038` | **없음, 채택 결정 필요.** 프레임 CSP(`script-src`·`connect-src 'self'`)로 앱 안에서는 외부 분석 스크립트를 실행할 수 없다. 포털 셸은 앱 열기·경로 단위만 기록할 수 있다. Core는 사용자·앱별 프레임 실행을 알지만 만료 1시간 뒤 정리하므로, 채택하면 별도 집계(일별 건수 등)가 필요하다. 로그인 ID·이름·자원 제목을 외부 분석 도구로 보내지 않는 것을 기본으로 하고 보존 기간·조회 권한(관리자)·거부를 함께 정한다. [PLAN의 결정 대기](PLAN.md#결정이-필요한-사항)로 추적 |
 | C13 통합 일정 | `api:domains/calendar/router.py:35`, `api:domains/calendar/source_catalog.py:32`, `api:domains/calendar/query_policy.py:14`, `web:platform/calendar/calendar-events-session.ts:40`. meeting·PMS·Planner·Google feed의 **본인 일정**을 합성. 타인 일정 공유는 없음, 종료 시각 제외·최대 366일 조회 | **없음.** 앱별 ACL 적용 일정 provider로 연결. Google은 OAuth가 아니라 사용자별 비밀 iCal URL의 암호화 저장·단방향 읽기(`api:domains/planner/google_calendar.py:264`). 개인 피드 연결은 C11, 서비스 주체 A2와 구분하며 OAuth는 신규 선택사항. U08은 화면만, PLAN 4 연계 |
 | C14 조직·인사 마스터와 부서 정책 | `web:platform/admin/admin-hr-master-section.tsx:635`, `web:platform/admin/admin-department-policy-section.tsx:58`, `web:platform/department-policy/work-org-approval-api.ts:56`, `api:domains/hr/department_policy_service.py:1`. 인사 마스터, 부서 기준, 업무 조직 승인 흐름 | **부분.** v2는 코어 DB가 그룹·주 소속·수동 멤버의 정본이며 상위 부서 자동 상속을 하지 않는다(PLAN 결정 2). 사용자·그룹 관리 화면 표현은 C01·§4.5로 옮기고, 인사 동기화는 출처·회수 계약을 정한 커넥터로 추가한다. 부서 계층 상속·업무 조직 승인은 인사 앱·커넥터 범위이며 코어 기본값으로 들이지 않는다. G4 |
 | C15 공통 요청·오류·취소·스트리밍 | `web:platform/api/client.ts:3`, `web:platform/api/client.ts:30`, `web:platform/api/sse-parser.ts:227`, `web:platform/workspaces/workspaces-api.ts:300`. 상태/payload를 보존한 오류, 204·FormData·언어 처리, UTF-8 분할 SSE·중단, 계정 변경 시 이전 응답 폐기 | **부분.** v2 API 타입/SDK 인증을 재사용하고 UI용 오류·수명 모델을 맞춤. 업무 401을 전체 로그아웃이나 쓰기 재전송으로 처리하지 않음. 현재 응답 버퍼링 경로는 SSE 전송 기능이 아니며 F7/AI 단계에서 별도 계약 필요. 캐시·진행 요청은 사용자·설치·환경·권한 수명에 결합. U3·U6·F7 |
@@ -204,20 +204,20 @@ AI-DO Desktop과 inference gateway의 별도 저장소는 이번 공통 웹/API 
 
 ## 6. 기존 계획에 연결하는 구현 묶음
 
-아래는 이 목록을 기존 PLAN에 연결한 표다. 새 병렬 로드맵을 만들지 않는다. S/U/C/A는 이 문서 대상 번호, `V1-*`는 기존 작업 번호다. 신규 후보는 해당 묶음에서 범위를 확정하며 모두를 코어의 필수 기능으로 자동 편입하지 않는다.
+이 절은 대상 ID와 [PLAN의 통합 작업표](PLAN.md#다음-우선-작업)를 연결한다. **순서·상태는 PLAN만 갱신하고, 이 문서는 원본 소스·책임·세부 인수를 관리한다.** 신규 후보를 모두 코어 필수 기능으로 편입하지 않는다.
 
-| PLAN 위치 | 이 목록에서 진행할 범위 | 묶음을 닫는 기준 |
-| --- | --- | --- |
-| 2의 다음 작업 G4 | C01·U06, 선택기 상태에 필요한 U01~03, C14의 그룹 정본 범위와 §4.5의 사용자·그룹 화면. 그룹/현재 멤버십/최소 공개 DTO·검색/페이지 처리 | 대표 앱에서 담당자·공유 대상 선택→서버 저장→계정/그룹 회수 후 거부까지. 관리용 사용자 API를 앱 directory로 대신하지 않음 |
-| 2의 G5·G6 | C02·S07 및 앱 내부 멤버/공유 UI, 필요한 U17 댓글 권한 | 대표 프로젝트·업무 앱이 자기 DB에 공간·ACL을 소유. 다른 두 사용자의 목록/상세/파일/대기 작업 권한과 회수 일치. 공간 없는 앱도 정상 동작 |
-| 3의 U1~U6, 독립 UI 병행 | S01~06·S08~10·S12, U01~09·U14, U15~17의 독립 UI·C15 요청/오류 모델. S11·S13 후보는 필요 범위 확정 | 기존 셸 위에 AI-DO 표현·조작 적용. 다른 앱 이동·테마/언어는 SDK/프레임과 함께 인수. 사용하지 않는 무거운 모듈은 기본 앱에서 제외 |
-| 4의 Storage·F1/F2/F4 | C03·C04·U10·U11, U15 내보내기 파일 | 업로드→첨부→미리보기/다운로드→회수→고아 정리. 크기·메모리·전송 취소/실패·파일명을 검증. 대용량 CAD는 별도 전송 계약으로 검증 |
-| 4의 F3·F5·F7·F8 및 업무 이벤트 | C05~10·C13·U12·U13, C15 SSE·U17 알림/활동 연계 | 알림·검색·실시간·작업 각각 실제 provider를 연결해 ACL·재접속·실패 확인. 편집 UI/Markdown 변환과 협업 서버, parser와 스트리밍 전송 완료를 구분 |
-| 2의 A2/Invoke 및 4의 연결 | C11의 서비스 주체는 A2, C13의 개인 비밀 피드 연결은 4 | 기존 connections·원래 사용자 보존 유지. 개인 피드 비밀과 서비스 계정은 별도 종류로 관리하며 허용된 사용자/앱/환경/동작 밖에서 거부 |
-| 4-1·5의 AI | A01, AI에 필요한 U13 | UI를 내장 AI 서비스와 연결하고 사용자별 대화 격리·중지·도구/쓰기 승인까지 인수. 화면 복사로 AI 실행 완료를 선언하지 않음 |
-| PLAN에 없음(결정 필요) | C12 | 사용 통계를 채택할지, 외부 도구로 보낼 식별자·보존 기간·조회 권한을 사용자가 정한 뒤 PLAN에 넣는다 |
+| PLAN 묶음 | 대상 ID·책임 범위 |
+| --- | --- |
+| 2 / G4 | C01·U06, 선택기용 U01~03, C14의 그룹 정본·§4.5 사용자/그룹 화면 |
+| 2 / G5·G6 | C02·S07, 앱 내부 멤버·공유, U17의 댓글 권한 |
+| 2 / A2·Invoke | C11의 서비스 주체. 개인 비밀 피드와 구분 |
+| 3 / 공용 UI·셸·SDK | S01~06·S08~10·S12, U01~09·U14, U15~17의 표현 부분, C15 요청/오류 모델 |
+| 4 / Storage·파일 | C03·C04·U10·U11, U15의 내보내기 파일 |
+| 4 / 업무 서비스·연결 | C05~10·C13·U12·U13, C15 SSE, U17 알림/활동. C14의 인사 동기화는 별도 커넥터 계약 |
+| 병행 4-1 / 5 AI | A01, AI에 필요한 U13 |
+| 결정 대기 | S11 홈/공지·S13 개인 도킹 도구·C12 사용 통계. 채택 범위와 수집/보존/조회 정책을 결정한 뒤 해당 묶음으로 이동 |
 
-**첫 실제 이식은 G4의 사용자·그룹 선택기를 대표 앱에 연결하는 범위가 적절하다.** 이미 있는 사용자 목록 API를 보완하면서 공용 UI 패키징·프레임 연결·현재 권한 확인을 함께 검증할 수 있다. 로그인 기반이나 앱 런처를 처음부터 다시 만들 필요는 없다. 날짜·토큰·기본 폼처럼 독립된 UI 추출은 이 작업과 병행할 수 있다.
+첫 이식은 G4 사용자·그룹 선택기를 대표 앱에 연결해 공용 UI·프레임·현재 권한 판정을 함께 확인한다. 로그인 기반이나 앱 런처를 다시 만들지 않는다. 독립된 기본 폼·날짜·토큰 추출은 병행할 수 있으며, 각 기능의 완료 조건은 아래 인수 기준과 해당 담당 계약을 따른다.
 
 ## 7. UX와 권한 인수 기준
 

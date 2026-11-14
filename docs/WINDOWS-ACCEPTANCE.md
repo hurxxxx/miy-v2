@@ -229,14 +229,15 @@ if ($LASTEXITCODE -ne 0) { throw 'AfterRemove failed; retain evidence.' }
 
 두 셸의 실행은 별도 run으로 기록한다. GUI 조작은 눈으로 본 결과와 도구 결과를 구분하고, 같은 GUI 사건을 두 셸에서 중복 집계하지 않는다.
 
+2026-11-03의 Linux PowerShell 7.6.9 조건식 평가·변조 해시 거부와 Parser 문법 검사 PASS는 과거 검사기 확인 이력이다. 이를 현재 0.9.0 후보의 공개 파일 확인이나 Windows 실기로 옮기지 않는다. 아래 공개 파일 대조는 [후보와 출처](#후보와-출처)의 2026-11-14 Linux 읽기 확인이며, 문서 정리에서 새 검사를 실행한 결과가 아니다.
+
 | 항목 | 현재 상태 | 근거 |
 |---|---|---|
-| 공개 API·CI 고정 해시 대조 | PASS (2026-11-03, Linux에서 읽기만, PowerShell 7.6.9로 검사기 조건식 평가, 변조 해시 거부 확인) | 이 문서의 후보 표 |
-| 검사기 PowerShell 7 문법 검사 | PASS (Linux portable PowerShell 7.6.9 Parser) | 네이티브 Windows 실행과 별도 |
+| 현재 후보 공개 API·파일·CI 고정 해시 대조 | PASS (2026-11-14, Linux에서 읽기만) | [후보와 출처](#후보와-출처), [0.9.0 게시 기록](releases/cli-0.9.0-2026-11-13-deployment.json). Windows에서 파일을 실행한 결과가 아님 |
 | Windows 11 PS5.1 다운로드·출처 검사 | NOT_RUN | run/step, PS·OS build, exit code |
 | Windows 11 PS7 다운로드·출처 검사 | NOT_RUN | 별도 run/step |
 | 새 GUI 설치·같은 버전 재실행 | NOT_RUN | Before/AfterInstall, 버튼 상태, 새 셸 버전 |
-| 이전 버전(0.6.3)에서 GUI 갱신 | NOT_RUN | Before/AfterUpdate |
+| 사용자 기존 설치 버전에서 현재 후보로 GUI 갱신 | NOT_RUN | Before/AfterUpdate. 검사를 위한 자동 downgrade 없음 |
 | 기존 context·인증 사용성·프로젝트 보존 | NOT_RUN | 지문 비교와 사용자 auth 결과, vault 미검사 구분 |
 | GUI 제거·PATH 정리·기존 자료 보존 | NOT_RUN | Before/AfterRemove와 사용자 관찰 |
 | 원격 앱 DB 보존·단일 IP/사설 CA HTTPS 접속 | NOT_RUN | 해당 환경에서 별도 확인. 이전 HTTP IP 결과를 이월하지 않음 |

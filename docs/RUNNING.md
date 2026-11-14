@@ -72,7 +72,7 @@ miy --yes context remove work
 
 로그아웃은 원격 철회 확인과 로컬 삭제 결과를 구분한다. `context remove`는 로컬 연결만 제거하고 원격 세션이나 앱 데이터를 삭제하지 않는다. 원격 철회가 필요하면 context 제거 전에 logout 또는 sessions revoke를 실행한다.
 
-CLI context·API의 대표 주소는 prod 포털이며 device의 브라우저 승인만 콘솔 세션으로 처리한다. 게시 CLI가 받는 상대 `verificationPath`는 서버가 설정된 콘솔의 승인 페이지로 고정 리디렉션한다. 임의 목적지나 토큰을 URL에 넣지 않는다. device 시작·poll·refresh는 비브라우저 경로로 제공한다. 0.5 이전 CLI의 legacy 로그인은 종료했으므로(410 `cli_upgrade_required`) 업그레이드 후 `miy auth login`을 다시 실행한다. `miy-web` OIDC client에는 prod/dev/console 세 출처의 정확한 callback/logout URI를 등록한다. 현재 게시 CLI 0.7.0은 유지했으나 개발 단계의 후속 변경에 구 형식 호환을 요구하지 않는다.
+CLI context·API의 대표 주소는 prod 포털이며 device의 브라우저 승인만 콘솔 세션으로 처리한다. 게시 CLI가 받는 상대 `verificationPath`는 서버가 설정된 콘솔의 승인 페이지로 고정 리디렉션한다. 임의 목적지나 토큰을 URL에 넣지 않는다. device 시작·poll·refresh는 비브라우저 경로로 제공한다. 0.5 이전 CLI의 legacy 로그인은 종료했으므로(410 `cli_upgrade_required`) 업그레이드 후 `miy auth login`을 다시 실행한다. `miy-web` OIDC client에는 prod/dev/console 세 출처의 정확한 callback/logout URI를 등록한다. 개발 단계의 후속 변경에 구 형식 호환을 요구하지 않는다. 게시 버전과 후보 출처는 [CLI 릴리스](CLI-RELEASE.md)를 따른다.
 
 ## 새 앱 준비와 등록
 
@@ -159,7 +159,7 @@ miy app status
 
 Dry-run은 예상 상태·계획된 변경·worker에서 남은 검사를 반환한다. 이미지 업로드나 runtime job은 생성하지 않는다. 실제 실행은 context/origin/user/app, 요청 키, payload와 expected-state를 먼저 journal에 기록한다. 이미지 archive 상한은 1 GiB다. 업로드 접수·ID 조회부터 runtime 제출까지 복구 대상이며, 전송 바이트의 일부부터 이어 보내는 기능은 제공하지 않는다.
 
-CLI 0.6의 runtime 명령은 `runtime.preflight.v2`를 요구한다. 이 계약은 실행 앱 상태에 더해 독립적인 DB 식별자와 스키마 변경 이력을 비교한다. 이전 CLI나 서버 조합은 capability 오류로 업그레이드를 안내하며, 알 수 없는 상태를 무시하고 배포하지 않는다.
+현행 runtime 명령은 `runtime.preflight.v2`를 요구한다. 이 계약은 실행 앱 상태에 더해 독립적인 DB 식별자와 스키마 변경 이력을 비교한다. 이전 CLI나 서버 조합은 capability 오류로 업그레이드를 안내하며, 알 수 없는 상태를 무시하고 배포하지 않는다.
 
 ```sh
 miy job list --limit 20
@@ -269,7 +269,7 @@ HTTP는 내부망용이며 통신이 암호화되지 않는다. 이 구성은 `M
 
 운영자가 공유 개발 로그인을 켜면 설정된 서버 주소의 로그인 화면에 `admin`, `developer`, `alice`, `bob` 버튼이 나타난다. 해당 서버에 접속한 사람은 비밀번호 입력 없이 선택한 개발 계정으로 로그인할 수 있다. 계정 비밀번호를 화면이나 문서에 공개하지 않으며 기존 OAuth 로그인도 계속 사용할 수 있다. 공유 개발 로그인은 새 서버에서 기본으로 꺼져 있고, 도메인이나 접속 위치만으로 활성화되지 않는다.
 
-이미 **세 출처 계약으로 구성된 별도 개발 서버**에서만 같은 명시적 상태 경로에 적용한다. 이 checkout의 운영 `.local`에 bootstrap을 실행하지 않는다. 구 운영 7b43789는 아래 명령과 serve 재시작만으로 전환할 수 없으며 [서버 전환 절차](SERVER-OPERATIONS.md#새-세-출처-설정과-전환-준비)를 따른다.
+이미 **세 출처 계약으로 구성된 별도 개발 서버**에서만 같은 명시적 상태 경로에 적용한다. 이 checkout의 운영 `.local`에 bootstrap을 실행하지 않는다. 구 단일 출처 설정은 아래 명령과 serve 재시작만으로 전환할 수 없으며 [서버 전환 절차](SERVER-OPERATIONS.md#새-세-출처-설정과-전환-준비)를 따른다.
 
 ```sh
 python3 scripts/bootstrap.py --state-dir /srv/miy-dev --shared-development-login
@@ -283,7 +283,7 @@ CLI에서는 평소처럼 `miy auth login`을 실행한다. 열린 브라우저�
 
 ## 로컬 플랫폼 보조 도구와 검증
 
-저장소의 `bash scripts/up.sh --profile local`는 로컬 PostgreSQL·Keycloak·Caddy와 코어/worker/UI 검증 기반을 준비한다. 이 로컬 검증 프로필은 포털 `https://localhost:18443`과 콘솔 `https://localhost:18444`를 제공하며 클라이언트의 서버 기본값과 관계없다. HTTP 검증에는 `--origin http://IP:18000 --allow-http --proxy-bind 0.0.0.0`을 명시한다. 외부 Nginx를 구성한 서버에서는 `--profile server --origin URL`을 사용하며 로컬 Caddy·브라우저 컨테이너는 시작하지 않는다. `bash scripts/down.sh`는 저장 데이터를 보존하며 해당 기반을 중지한다. 이 도구의 기존 환경 기록을 모든 OS의 지원 증거로 확대하지 않는다. `.local/credentials.json`과 `.local/runtime.env`는 로컬 비밀 설정이므로 출력·게시하지 않는다.
+저장소의 `bash scripts/up.sh --profile local`는 로컬 PostgreSQL·Keycloak·Caddy와 코어/worker/UI 검증 기반을 준비한다. 이 로컬 검증 프로필은 포털 `https://localhost:18443`, dev 포털 `https://localhost:18445`, 콘솔 `https://localhost:18444`를 제공하며 클라이언트의 서버 기본값과 관계없다. HTTP 검증에는 `--origin http://IP:18000 --allow-http --proxy-bind 0.0.0.0`을 명시한다. 외부 Nginx를 구성한 서버에서는 `--profile server --origin URL`을 사용하며 로컬 Caddy·브라우저 컨테이너는 시작하지 않는다. `bash scripts/down.sh`는 저장 데이터를 보존하며 해당 기반을 중지한다. 이 도구의 기존 환경 기록을 모든 OS의 지원 증거로 확대하지 않는다. `.local/credentials.json`과 `.local/runtime.env`는 로컬 비밀 설정이므로 출력·게시하지 않는다.
 
 현재 `up.sh`의 루트 `pnpm build`도 플랫폼·검증 fixture만 빌드하고 프레임 런타임을 설치하지 않는다. 따라서 이 보조 도구의 성공을 새 프레임 앱 실행까지 완료한 것으로 보고하지 않는다. 플랫폼 작업의 실제 프레임 검증에는 [검사 지도](CHECKS.md)의 격리 `stack-ui.sh`와 앱 프레임 브라우저 설정을 사용한다.
 

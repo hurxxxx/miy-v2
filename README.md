@@ -25,4 +25,4 @@ CLI와 MCP로 독립 Rust/React 앱을 만들고 로컬 개발 → dev 배포 �
 
 이 호스트의 `.local`과 `web/platform/dist`는 실제 개발 서버가 사용한다. 검증은 [CHECKS](docs/CHECKS.md)의 격리 도구를 쓰고, 서버 반영은 [운영 절차](docs/SERVER-OPERATIONS.md)를 따른다. 새 서버 설치 경로의 프레임 런타임 준비와 사용자 Windows 인수는 아직 남아 있다.
 
-현재 기술 선택은 [STACK](docs/STACK.md), 기능 이식 기준은 [공식 miy v1 적용 계획](docs/V1-ADOPTION.md)에 있다. 과거 시험과 최초 설계는 [archive](docs/archive/README.md), 실행별 증거는 [releases](docs/releases/)에서 보존한다. 과거 PASS를 현재 소스나 새로운 환경의 결과로 이월하지 않는다.
+현재 기술 선택은 [STACK](docs/STACK.md), 공통 기능·UX 이식 원본과 대상은 [AI-DO 이식 목록](docs/AI-DO-COMMON-MIGRATION.md), v1의 운영·권한 교훈과 기존 작업 ID는 [V1 적용 계획](docs/V1-ADOPTION.md)에 있다. 과거 시험과 최초 설계는 [archive](docs/archive/README.md), 실행별 증거는 [releases](docs/releases/)에서 보존한다. 과거 PASS를 현재 소스나 새로운 환경의 결과로 이월하지 않는다.

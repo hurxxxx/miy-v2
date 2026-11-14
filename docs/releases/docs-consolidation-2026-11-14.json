@@ -1,0 +1,347 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-11-14",
+  "recordedAt": "2026-11-14T05:37:37.738959+00:00",
+  "scope": "Documentation consolidation only: completed work, partial foundations, remaining implementation, environment-specific acceptance and product decisions. No product or deployment change.",
+  "source": {
+    "baseCommit": "e7a5ff0343a17c0f1f94c140685e5fa76749b495",
+    "workingTree": true,
+    "evidenceDirectory": ".local/evidence/docs-consolidation-20261114-yozvkcu4"
+  },
+  "coverage": {
+    "trackedMarkdownFiles": 63,
+    "trackedMarkdownLines": 9729,
+    "existingReleaseJsonFiles": 137,
+    "method": "Inventory all tracked Markdown; read current contract/plan/review documents in three independent subject reviews; compare relevant historical acceptance/TODO sections and deployment evidence; preserve versioned generated-app guidance, component and example documents. Existing release JSON was parsed and hashed; relevant current evidence was read for status. External linked websites and old binary diagrams were not revalidated."
+  },
+  "organization": {
+    "statusAndOrderOwner": "docs/PLAN.md",
+    "sections": [
+      "completed summary",
+      "partially implemented foundations",
+      "one implementation order",
+      "validation/application waiting",
+      "decided versus pending product scope",
+      "unresolved usability/compatibility observations"
+    ],
+    "actualProgress": "No new feature implementation is evidenced as actively in progress in the reviewed checkout/records; partial foundations and planned work are not relabeled as active implementation.",
+    "runtimeStateOwner": "docs/SERVER-OPERATIONS.md",
+    "publicationOwner": "docs/CLI-RELEASE.md",
+    "migrationSourceOwner": "docs/AI-DO-COMMON-MIGRATION.md",
+    "historicalV1ContractIds": "docs/V1-ADOPTION.md",
+    "readinessReview": "R03-R13 are mapped to existing PLAN phases; unresolved design/acceptance detail remains in the review. R01/R02 and CLI publication completion are separated from remaining acceptance."
+  },
+  "reconciledItems": [
+    "Removed obsolete current server/frame SHA and CLI-unpublished statements from contract introductions; actual deployment/publication sources remain with their owners.",
+    "Replaced pre-first-phase CORE-HARDENING status with completed foundations and remaining work; condensed completed policy-fix history into existing evidence references.",
+    "Mapped all 46 AI-DO target groups to existing phases or explicit adoption decisions; retained all 235 source-reference expressions unchanged.",
+    "Carried forward usage analytics C12, optional S11/S13, business background/scheduled execution and V1-Q4-Q9 procedure/guidance work without making them blanket common-UI prerequisites.",
+    "Separated current Windows candidate public-file provenance from historical PowerShell checker PASS and unexecuted Windows 11 installation acceptance.",
+    "Preserved expired public-exposure review deadline as pending; no risk acceptance, deadline extension, credential review or exposure change was performed.",
+    "Kept current guides focused on current operation/contracts; archive snapshots and release evidence retain previous FAIL/NOT_RUN and source identities."
+  ],
+  "archive": {
+    "newPath": "docs/archive/results/SERVER-OPERATIONS-2026-11-14.md",
+    "originalPath": "docs/SERVER-OPERATIONS.md",
+    "originalCommit": "e7a5ff0343a17c0f1f94c140685e5fa76749b495",
+    "originalSha256": "6e0337a2e31529c6add73a90f154982e5bf5a6b805a65db200dd15b649f7f55e",
+    "treatment": "Full pre-edit body preserved, relative Markdown links rebased, historical status banner added. Reverse-rebased body hash matches original."
+  },
+  "checks": [
+    {
+      "command": "git ls-files; Markdown inventory; parse/hash existing docs/releases JSON",
+      "status": "PASS",
+      "observed": {
+        "markdown": 63,
+        "existingReleaseJson": 137
+      }
+    },
+    {
+      "command": "Compare historical/published document hashes and reverse-rebase operational archive",
+      "status": "PASS",
+      "observed": {
+        "status": "PASS",
+        "originalReleaseJsonFilesUnchangedAndValid": 137,
+        "historicalAndPublishedMarkdownUnchanged": 36,
+        "operationalArchiveMatchesOriginalAfterLinkRebase": true,
+        "sourceMarkdownCount": 63
+      }
+    },
+    {
+      "command": "Compare AI-DO inventory target IDs and source-reference expressions with baseCommit",
+      "status": "PASS",
+      "observed": {
+        "uniqueTargetIds": 46,
+        "sourceReferenceExpressionsUnchanged": 235
+      }
+    },
+    {
+      "command": "Independent subject reviews and read-only PLAN cross-check against V1, AI-DO and readiness review IDs",
+      "status": "PASS",
+      "observed": "Missing Q4-Q9 carried forward; optional candidates and incomplete acceptance remain distinct from completed implementations."
+    },
+    {
+      "command": [
+        "python3",
+        "scripts/check-doc-links.py"
+      ],
+      "status": "PASS",
+      "exitCode": 0,
+      "observed": "PASS 916 relative links in 63 tracked Markdown files",
+      "evidence": ".local/evidence/docs-consolidation-20261114-yozvkcu4/doc-links-final.log"
+    },
+    {
+      "command": [
+        "git",
+        "diff",
+        "--check"
+      ],
+      "status": "PASS",
+      "exitCode": 0,
+      "observed": "No whitespace errors",
+      "evidence": ".local/evidence/docs-consolidation-20261114-yozvkcu4/whitespace-final.log"
+    },
+    {
+      "command": "Check the new untracked archive links and PLAN migration-ID coverage",
+      "status": "PASS",
+      "observed": {
+        "status": "PASS",
+        "newArchiveRelativeLinks": 52,
+        "allMigrationTargetGroupsMappedInPlan": 46
+      }
+    },
+    {
+      "command": "git diff --name-only; original release/published/archive hash comparison; normative headings retained",
+      "status": "PASS",
+      "observed": {
+        "changedTrackedMarkdown": 19,
+        "existingReleaseJsonUnchanged": 137,
+        "historicalAndPublishedMarkdownUnchanged": 36,
+        "normativeDocumentsWithOriginalHeadingsPreserved": 6
+      }
+    }
+  ],
+  "failedAttemptsPreserved": [
+    {
+      "command": "git diff --check on the operations-document edit",
+      "status": "FAIL",
+      "observed": "Two whitespace errors in the initial documentation edit were corrected; the contributor reran its scope successfully. No product/operational failure."
+    }
+  ],
+  "notRun": [
+    {
+      "check": "Rust, browser, runtime, authentication and load regressions",
+      "status": "NOT_RUN",
+      "reason": "Only documentation was changed. Prior product checks remain tied to their original source/environment."
+    },
+    {
+      "check": "Windows/macOS manual installation, fresh-host assembly, independent repeated acceptance, public-exposure/credential audit",
+      "status": "NOT_RUN",
+      "reason": "These remain tracked product, environment or policy work; document consolidation does not execute or approve them."
+    },
+    {
+      "check": "External source website freshness and archived binary diagram rendering",
+      "status": "NOT_RUN",
+      "reason": "This pass consolidates repository status/ownership using local source and recorded evidence; it does not reissue external research or historical visual artifacts."
+    },
+    {
+      "check": "Commit, push, release publication, service restart, configuration/data migration or deployment",
+      "status": "NOT_RUN",
+      "reason": "This request concerns documentation organization; no new operational change is needed."
+    }
+  ],
+  "status": "PASS",
+  "changedTrackedDocuments": [
+    "AGENTS.md",
+    "README.md",
+    "docs/AI-DO-COMMON-MIGRATION.md",
+    "docs/APP-BOUNDARIES.md",
+    "docs/APP-FRAMES.md",
+    "docs/CAPACITY.md",
+    "docs/CORE-HARDENING.md",
+    "docs/CORE-PERMISSIONS.md",
+    "docs/DEVELOPMENT.md",
+    "docs/PLAN.md",
+    "docs/PRD.md",
+    "docs/README.md",
+    "docs/RUNNING.md",
+    "docs/SERVER-OPERATIONS.md",
+    "docs/STACK.md",
+    "docs/V1-ADOPTION.md",
+    "docs/WINDOWS-ACCEPTANCE.md",
+    "docs/archive/README.md",
+    "docs/reviews/CORE-PLATFORM-READINESS-2026-11-13.md"
+  ],
+  "newDocuments": [
+    "docs/archive/results/SERVER-OPERATIONS-2026-11-14.md",
+    "docs/releases/docs-consolidation-2026-11-14.json"
+  ],
+  "currentDocumentSize": {
+    "docs/PLAN.md": {
+      "beforeBytes": 27328,
+      "afterBytes": 19019,
+      "reductionPercent": 30.4
+    },
+    "docs/SERVER-OPERATIONS.md": {
+      "beforeBytes": 58625,
+      "afterBytes": 36782,
+      "reductionPercent": 37.3
+    },
+    "docs/CORE-HARDENING.md": {
+      "beforeBytes": 32192,
+      "afterBytes": 27725,
+      "reductionPercent": 13.9
+    }
+  },
+  "updatedMarkdownSha256": {
+    "AGENTS.md": "9356cbaeec117c616a7b3d6eb0ba56649e3020a7940a0fa7fc44c7c5d97b6c4c",
+    "README.md": "fcf7379e541d2b1c6b91cc50cf130f8cacd9a1d75f8d8b069a10489ff4b8bead",
+    "docs/AI-DO-COMMON-MIGRATION.md": "38df913ecd4b525c968764090f8d649689fed4036f8cde61fae531154d3626c2",
+    "docs/APP-BOUNDARIES.md": "abc61b6d74b67ec0f6abdbea853fee2636975e595e8a1e163d15091c174ac1f9",
+    "docs/APP-FRAMES.md": "8bcd42ef43bccf352ae59f2f552c05449d0cb3ced443ba628f8403b55f45136b",
+    "docs/CAPACITY.md": "2d2b0917a7ee21db37cbddde0f250ea60c6417e5779a0729ab73e83953200f7f",
+    "docs/CORE-HARDENING.md": "ad02fc8edffcff6b0178af032f4addb55bf20ac2f30f8413e40068fa4784ff4d",
+    "docs/CORE-PERMISSIONS.md": "b25e0b3b2bf28bad16086475facb007805c73841240fab4d626906ce4373e501",
+    "docs/DEVELOPMENT.md": "ca6117b7dbf9bd32203905f9f821d9329fd157e8eaa4778d1be72f09c3b9b176",
+    "docs/PLAN.md": "3dbdac0976d89f3c329ed9540bec37c817e9ac1f1bbdc30da30111033d0230ec",
+    "docs/PRD.md": "d23cf8e26f1bc03a6ab5ff6d01ca633ee943a7aedf13d9d889ca5529ffb64c1b",
+    "docs/README.md": "546bda094b1abde108d4e832b297bf9738581dcd3871f34ba46327cb76594c2d",
+    "docs/RUNNING.md": "8540e355e048a8dbc95661824818b072dbe879e341e68fef865038d75729c570",
+    "docs/SERVER-OPERATIONS.md": "cc9029336ccf83c823b272955d53154266d542401a19f124a7639af23b130d0f",
+    "docs/STACK.md": "d262f306dbdd398b02b1c32d11854a256cb2f36cf5070e71640315c5823d2e81",
+    "docs/V1-ADOPTION.md": "ce546e0a5f1266e9867ba7eb1ce6e6746363795941770f6e5c5c14ca7a7a42c7",
+    "docs/WINDOWS-ACCEPTANCE.md": "6c1cb36101379e3e6d28d11a8f4febe72229bc120072a78f19ef2d454bbb9876",
+    "docs/archive/README.md": "e48e141bd9297ca08caa899e7c42af1b17776ae23b101603606c503e1fe85ae3",
+    "docs/reviews/CORE-PLATFORM-READINESS-2026-11-13.md": "f3062a21d8e933c55fe8a824c6715daf9b89df7969f16fd2e19b787eb32fa275",
+    "docs/archive/results/SERVER-OPERATIONS-2026-11-14.md": "589513387b28e9a339a3b3045aa6e672f38bceab8c835c7fbb3e857538fc1373"
+  },
+  "completedAt": "2026-11-14T06:02:27.366502+00:00",
+  "reviewFollowup": {
+    "completedAt": "2026-11-14T06:02:27.366502+00:00",
+    "scope": "User-requested documentation review corrections 1-6; no product or operational changes.",
+    "evidenceDirectory": ".local/evidence/docs-review-followup-20261114-mrvmubte",
+    "beforeReview": {
+      "record": ".local/evidence/docs-review-followup-20261114-mrvmubte/consolidation-before.json",
+      "sha256": "e7d2e009b8a480e3aff2b7fe26174a8b41bd10edc6e937024ee69ab05feb27da",
+      "completedAt": "2026-11-14T05:40:18.043271+00:00",
+      "checksScope": "Top-level checks and failedAttemptsPreserved describe the initial consolidation. Its 916-link and original-heading results are historical; the follow-up results below apply to the refreshed Markdown hashes."
+    },
+    "corrections": [
+      {
+        "finding": 1,
+        "files": [
+          "docs/CORE-HARDENING.md"
+        ],
+        "resolution": "Replaced the removed foundation-row reference with the completed summary, partial API-contract work and canonical implementation order in PLAN."
+      },
+      {
+        "finding": 2,
+        "files": [
+          "docs/PLAN.md"
+        ],
+        "resolution": "Restored the 2026-10-28 IdP observation, error names and original request ID from baseCommit; reproduction and recovery acceptance remain pending."
+      },
+      {
+        "finding": 3,
+        "files": [
+          "docs/PLAN.md"
+        ],
+        "resolution": "Restored the link to work-status-review-2026-11-13.json and identified it as evidence for its original source and execution scope."
+      },
+      {
+        "finding": 4,
+        "files": [
+          "docs/APP-BOUNDARIES.md",
+          "docs/APP-FRAMES.md",
+          "docs/reviews/CORE-PLATFORM-READINESS-2026-11-13.md"
+        ],
+        "resolution": "Replaced relative-time wording with current-contract or dated implementation-stage wording. Distinguished the uncommitted lifetime-test source from its later b79ebd7 commit and 18ce038 deployment. Existing FAIL/NOT_RUN entries are unchanged."
+      },
+      {
+        "finding": 5,
+        "files": [
+          "docs/PLAN.md"
+        ],
+        "resolution": "Separated confirmed decisions, pending decisions, compatibility observations and usability backlog into top-level sections; retained every pre-review PLAN heading anchor. Hermes adoption is confirmed while integration-cost evaluation remains pending."
+      },
+      {
+        "finding": 6,
+        "files": [
+          "AGENTS.md",
+          "docs/PLAN.md"
+        ],
+        "resolution": "Restored original prerequisite scope and source/test/deployment/target-state distinctions. All AGENTS rules from the development-stage section onward remain byte-identical to baseCommit; deployment history remains in its owner documents."
+      }
+    ],
+    "headingRenames": [
+      {
+        "file": "docs/APP-BOUNDARIES.md",
+        "from": "변경 전과 이번 구현의 차이",
+        "to": "변경 전과 현행 구현의 차이",
+        "updatedInboundFiles": [
+          "docs/APP-FRAMES.md"
+        ]
+      },
+      {
+        "file": "docs/reviews/CORE-PLATFORM-READINESS-2026-11-13.md",
+        "from": "9. 이번 검토의 증거와 한계",
+        "to": "9. 검토 단계별 증거와 한계",
+        "updatedInboundFiles": []
+      }
+    ],
+    "verificationCommand": [
+      "python3",
+      ".local/evidence/docs-review-followup-20261114-mrvmubte/verify-followup.py"
+    ],
+    "verificationScriptSha256": "762f1ecd0cdfd1bd9a0bdcf69b264f7789aa3e66cabe3d00385c3d4d540c2fee",
+    "verification": {
+      "status": "PASS",
+      "checks": [
+        {
+          "command": [
+            "python3",
+            "scripts/check-doc-links.py"
+          ],
+          "exitCode": 0,
+          "status": "PASS",
+          "observed": "PASS 919 relative links in 63 tracked Markdown files",
+          "evidence": ".local/evidence/docs-review-followup-20261114-mrvmubte/doc-links.log"
+        },
+        {
+          "command": [
+            "git",
+            "diff",
+            "--check"
+          ],
+          "exitCode": 0,
+          "status": "PASS",
+          "observed": "No whitespace errors",
+          "evidence": ".local/evidence/docs-review-followup-20261114-mrvmubte/whitespace.log"
+        }
+      ],
+      "newArchiveRelativeLinks": 52,
+      "originalReleaseJsonFilesUnchangedAndValid": 137,
+      "otherOriginalMarkdownUnchanged": 44,
+      "operationalArchiveUnchangedSinceConsolidation": true,
+      "operationalArchiveOriginalSourceHashMatches": true,
+      "reviewFindingsChecked": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6
+      ],
+      "originalPlanHeadingAnchorsRetained": true,
+      "originalAgentRulesSuffixByteIdentical": true,
+      "restoredAgentRuleClausesMatchedAgainstBase": 4,
+      "reviewFailureAndNotRunCountsUnchanged": true,
+      "planV1AndReviewIdReferencesUnchanged": true,
+      "aiDoTargetIdsPreservedAndMapped": 46,
+      "aiDoSourceReferencesPreserved": 235,
+      "changedTrackedMarkdown": 19,
+      "newDocuments": 2
+    },
+    "notRun": "The top-level NOT_RUN scope still applies. Product tests, live-server checks, commit, push and deployment were not performed in this follow-up."
+  }
+}

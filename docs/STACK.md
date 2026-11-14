@@ -1,7 +1,7 @@
 # miy 기술 스택 추천안
 
 검토일: 2026-10-20  
-수정일: 2026-11-13\
+수정일: 2026-11-14\
 기준: PRD 0.6\
 상태: 사내 신뢰 앱 중심의 기술 선택과 장기 추천. 구현·검증·게시·운영 반영 여부는 [추진 계획](PLAN.md)과 [서버 운영 안내](SERVER-OPERATIONS.md)에서 구분
 
@@ -71,6 +71,8 @@ CLI 기본 개발 번들에는 지침·SDK·UI·타입·예제를 포함한다. 
 
 ## 인증과 MCP: 먼저 검증할 조합
 
+이 절은 인증 조합의 인수 조건이며 새 작업 순서를 정하지 않는다. 현행 OIDC·CLI·생성 stdio MCP 확인과 직접 HTTP MCP의 클라이언트별 미실행 범위는 [운영 안내](SERVER-OPERATIONS.md#5-실제-연결-확인)에서 구분한다.
+
 Keycloak은 로그인·계정 인증·OIDC 연결을 담당하고 miy는 앱·환경·리소스·대행 범위의 실효 권한을 담당하도록 추천한다. 고객사가 인증 제품의 관리자 화면을 일상적으로 다루지 않도록 설치와 기본 계정 관리를 miy 운영 경험에 통합한다. Keycloak의 운영 프로세스·DB·업데이트도 유지관리 범위에 포함해야 한다. [Keycloak OIDC](https://www.keycloak.org/securing-apps/oidc-layers)
 
 **Keycloak의 최신 MCP 인증 연동은 확정 전 검증이 필요하다.** 확인한 공식 문서는 Resource Indicators와 Client ID Metadata Documents를 실험 기능으로 분류하며 MCP 2025-06-18·2025-11-25·2026-07-28 적합성도 실험 단계로 표시한다. 일반 OIDC 지원을 개발 에이전트 전체의 MCP 인증 호환으로 해석하지 않는다. [Keycloak MCP 연동](https://www.keycloak.org/securing-apps/mcp-authz-server)
@@ -81,7 +83,7 @@ Keycloak은 로그인·계정 인증·OIDC 연결을 담당하고 miy는 앱·�
 
 ## 실행·배포·코어 업데이트
 
-Compose는 PostgreSQL·Keycloak·Gitea·Hermes·miy 등 설치 기반 서비스를 묶는 데 사용한다. 고객 앱의 설치·삭제·승격은 별도 Rust runner가 Docker Engine을 제어하도록 한다. 빌드는 BuildKit으로 수행하고 커밋·빌드 결과·OCI 이미지 digest를 릴리스에 연결한다. [Compose 운영 배포](https://docs.docker.com/compose/how-tos/production/), [BuildKit](https://docs.docker.com/build/buildkit/)
+장기 구성에서는 Compose로 PostgreSQL·Keycloak·Gitea·Hermes·miy 등 설치 기반 서비스를 묶는다. Gitea·Hermes가 현행 설치에 포함되었다는 뜻은 아니며 실제 구성은 [운영 안내](SERVER-OPERATIONS.md#1-서버-주소와-실행-구성)를 따른다. 고객 앱의 설치·삭제·승격은 별도 Rust runner가 Docker Engine을 제어하도록 한다. 빌드는 BuildKit으로 수행하고 커밋·빌드 결과·OCI 이미지 digest를 릴리스에 연결한다. [Compose 운영 배포](https://docs.docker.com/compose/how-tos/production/), [BuildKit](https://docs.docker.com/build/buildkit/)
 
 관리 화면·CLI·API에서 앱·환경별 시작·중지·재시작·업데이트·삭제와 상태·로그·자원 조회를 제공한다. 코어는 목표 상태·작업을 저장하고 runner는 실제 컨테이너 상태를 대조해 실행한다. 중지 상태는 요청·예약·호스트 재시작으로 자동 해제하지 않는다. 앱 제거와 데이터 영구 삭제는 구분하며 DB·파일은 기본 보존한다.
 
@@ -146,7 +148,7 @@ Rust 코어는 공통 연결·연결 세대와 별도로 사용자·대화·Herm
 
 실제 버전은 지원되는 안정 릴리스를 대상으로 SDK·MCP·DB·런타임의 호환 조합을 고정한다. Rust 도구체인·대상 CPU·Cargo 의존성을 고정하고 화면 빌드용 Node는 지원 중인 LTS, Python은 선택한 Hermes 릴리스의 지원 버전을 사용한다. 새 릴리스가 있다는 이유만으로 고객사 설치를 자동 갱신하지 않는다.
 
-확정 전에 다음 네 가지를 우선 검증한다.
+구성 요소를 채택하거나 변경할 때 아래 영역별 인수 범위를 확인한다. 현재 구현·검증 상태와 착수 순서는 [PLAN](PLAN.md)에서 관리하며, 이미 완료한 기본 흐름을 이 목록 때문에 다시 미완료로 분류하지 않는다.
 
 1. **개발 도구 인증:** 콘솔의 Keycloak·CLI 승인과 rmcp·클라이언트별 로그인, 대상 토큰 검사와 권한 회수.
 2. **앱 실행 프로필:** CLI 생성 → 완전한 로컬 실행 → 개발 영역 평가 → 커밋 릴리스 승격, 격리·자원 한도와 실패 복구.

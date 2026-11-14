@@ -1,13 +1,13 @@
 # 업무 앱 iframe 실행 설계
 
-- 작성일: 2026-11-09
-- 상태: **채택(D1, 2026-11-10) · 소스 구현(2026-11-11 main 병합) · 최초 도입과 리뷰 보완 운영 반영(2026-11-12).** 사용자가 2차 실증 보고를 받고 채택 후속 단계 진행을 지시했다. 채택 당시 격리 DB 회귀 127개(frames 12 포함), 서버 설정 검사(P2 호스트 패턴과 P3 포트 풀), 포트·호스트명 프로필의 Chromium·Firefox·WebKit 각 18개, 프레임으로 옮긴 모의 UI·실제 스택 UI 시험, 검증용 fixture 앱(`validation.spec`)과 번들 0.8.0 앱의 프레임 실행이 PASS였다. 같은 등록 도메인(P2)의 쿠키 간섭(FV-06)과 화면낭독 출력 확인은 남아 있다([1차](releases/app-frames-poc-2026-11-10-validation.json), [2차](releases/app-frames-poc-2026-11-10-second-validation.json), [채택 후속](releases/app-frames-adoption-2026-11-10-validation.json)). 최초 운영 반영은 2026-11-12 §9 절차로 수행했다(서버·UI `bcb6356`, schema 21→22, [첫 배포 기록](releases/app-frames-2026-11-12-deployment.json), 당시 앱 4개를 prod·dev 포털에서 읽기 전용으로 열어 확인). 현행 문서는 §8대로 개정했다. [11-12 리뷰 보완 검증](releases/app-frames-review-fixes-2026-11-12-validation.json) 후 서버·UI·프레임 런타임을 `7defdb0`으로 갱신하고 Nginx error log 차단을 반영했다(schema 22 유지, [수정 배포 기록](releases/app-frames-review-fixes-2026-11-12-deployment.json)). 게시 CLI는 `01e4d49`·번들 0.8.0이며 번들 0.9.0과 구 번들 업그레이드 보완을 포함한 CLI는 아직 게시하지 않았다.
+- 작성일: 2026-11-09 · 정리일: 2026-11-14
+- 상태: **채택(D1, 2026-11-10) · 소스 구현·필수 격리 실증과 개발 서버 최초 도입/리뷰 보완 완료.** CLI 0.9.0·번들 0.9.0도 게시했다. 같은 등록 도메인(P2)의 쿠키 간섭(FV-06), 화면낭독 등 남은 인수는 §6과 PLAN에서 구분한다. 현재 서버·UI·프레임 배포 소스는 [운영 안내](SERVER-OPERATIONS.md), 게시·실기 인수는 [CLI 릴리스](CLI-RELEASE.md)가 관리한다.
 - 배경: 2026-11-09 사용자가 iframe과 현행 구조의 장기 비교를 요청했다. 검토 결과 업무 앱만 별도 출처 iframe으로 분리하는 혼합 구조를 실증하기로 했고, 외부 검토 의견(보안 효과 과장, 인증서 범위, 공유 출처, 복잡성, 불완전 격리)을 아래 원칙에 반영했다.
 - 범위: 업무 앱 UI의 브라우저 실행 계약. 권한 행렬·공통 ACL은 [CORE-PERMISSIONS](CORE-PERMISSIONS.md), 작업 순서는 [PLAN](PLAN.md)을 따른다.
 
 ## 1. 다시 검토하는 이유
 
-**전환 전 한계(당시 코드로 확인).** 2026-11-12 앱 프레임 반영 전에는 같은 포털의 앱 코드가 하나의 JavaScript 출처를 공유했다. 앱 A의 코드는 `GET /api/v1/me`에서 CSRF 값을, `GET /api/v1/installations`에서 B의 설치·릴리스를 읽는다. 그 뒤 포털 쿠키로 `/api/v1/installations/{B}/api/...`를 직접 호출할 수 있다. `runtime::proxy`(`crates/miy/src/runtime.rs:1074`)는 사용자의 B Use와 쓰기 릴리스만 검사한다. 그래서 A의 연결 승인(`connections/{B}`)이 우회되고, B는 `callers=[]`를 받는다. 서버가 요청을 보낸 앱을 구별할 수 없는 구조라 같은 페이지에서는 보완할 수 없다([기존 관찰](APP-BOUNDARIES.md#변경-전과-이번-구현의-차이)).
+**전환 전 한계(당시 코드로 확인).** 2026-11-12 앱 프레임 반영 전에는 같은 포털의 앱 코드가 하나의 JavaScript 출처를 공유했다. 앱 A의 코드는 `GET /api/v1/me`에서 CSRF 값을, `GET /api/v1/installations`에서 B의 설치·릴리스를 읽는다. 그 뒤 포털 쿠키로 `/api/v1/installations/{B}/api/...`를 직접 호출할 수 있다. `runtime::proxy`(`crates/miy/src/runtime.rs:1074`)는 사용자의 B Use와 쓰기 릴리스만 검사한다. 그래서 A의 연결 승인(`connections/{B}`)이 우회되고, B는 `callers=[]`를 받는다. 서버가 요청을 보낸 앱을 구별할 수 없는 구조라 같은 페이지에서는 보완할 수 없다([기존 관찰](APP-BOUNDARIES.md#변경-전과-현행-구현의-차이)).
 
 **목표의 변화.** PLM·PDM·MES처럼 독립 개발되는 앱이 늘고, 오픈소스 공개와 외부 개발자 앱 수용, AI가 생성한 앱 실행이 예정되어 있다. 이 경우 앱마다 신뢰 경계가 필요하다. 2026-11-06에 iframe 설계를 철회한 근거는 iframe 없는 통합 UI 요구와 기존 SDK·호환 유지였다. 지금은 [개발 단계 원칙](../AGENTS.md#개발-단계-원칙-실제-운영-전환-전까지)으로 호환이 필수가 아니고, 운영 서버에 `*.dwdcc.kr` DNS와 인증서가 있다.
 
@@ -138,7 +138,7 @@ flowchart LR
 | 프로필 | 앱 출처 예 | 격리 수준 | 필요 조건 |
 | --- | --- | --- | --- |
 | P1 별도 등록 도메인(권장) | `<설치키>.<앱 전용 도메인>` | 설치별 출처, 그리고 포털·콘솔과 **다른 사이트**. 브라우저 사이트 격리로 프로세스 분리를 기대할 수 있다. 앱 코드가 포털·콘솔·Keycloak·사내 다른 서비스에 `Domain=` 쿠키를 심지 못한다 | 앱 전용 등록 도메인, 와일드카드 DNS·인증서. 포털용과 별도로 앱 인증서를 설정·검사하며 활성화 전 다른 사이트 인수 필요 |
-| P2 같은 등록 도메인의 한 단계 이름 | `v2-app-<설치키>.dwdcc.kr` | 설치별 출처. 포털과 같은 사이트라 `Domain=dwdcc.kr` 쿠키 간섭(콘솔·Keycloak과 `dwdcc.kr`의 다른 사내 서비스 포함)과 같은 프로세스 배치 가능성이 남는다. 지금 포털에서 실행되는 앱 코드도 같은 간섭이 가능하므로 악화는 아니다. CSP host 와일드카드는 맨 왼쪽 라벨 전체에만 쓸 수 있어 포털 `frame-src`를 앱 호스트로 좁히지 못하고 `https://*.dwdcc.kr`이 된다. 실제 방어는 대상 문서의 `frame-ancestors`이며 콘솔·IdP는 `'none'`을 유지한다 | 기존 `*.dwdcc.kr` 인증서로 가능. 두 단계 이름(`*.apps.dwdcc.kr`)은 현재 인증서가 포함하지 않는다. 사내 다른 호스트와 이름 충돌을 검사해야 한다 |
+| P2 같은 등록 도메인의 한 단계 이름 | `v2-app-<설치키>.dwdcc.kr` | 설치별 출처. 포털과 같은 사이트라 `Domain=dwdcc.kr` 쿠키 간섭(콘솔·Keycloak과 `dwdcc.kr`의 다른 사내 서비스 포함)과 같은 프로세스 배치 가능성이 남는다. CSP host 와일드카드는 맨 왼쪽 라벨 전체에만 쓸 수 있어 포털 `frame-src`를 앱 호스트로 좁히지 못하고 `https://*.dwdcc.kr`이 된다. 실제 방어는 대상 문서의 `frame-ancestors`이며 콘솔·IdP는 `'none'`을 유지한다 | 기존 `*.dwdcc.kr` 인증서로 가능. 두 단계 이름(`*.apps.dwdcc.kr`)은 현재 인증서가 포함하지 않는다. 사내 다른 호스트와 이름 충돌을 검사해야 한다 |
 | P3 포트 분리(도메인 없음, 지원) | `https://<IP>:<설치별 포트>` | 설치별 출처와 저장소 분리. 인증은 쿠키에 의존하지 않지만 앱의 `document.cookie`와 같은 호스트 요청의 자동 쿠키 전송은 남는다. 쿠키 주입·요청 크기 초과는 다른 앱·포털·콘솔·IdP에 영향을 줄 수 있다. 같은 사이트라 프로세스 분리도 보장하지 않는다 | 클라이언트가 신뢰하는 IP SAN 인증서(포트와 무관하게 하나로 충분), 포트 풀 개방, 영속 매핑·출처 비재사용. 풀 전체를 서버 블록 하나로 받는다(Nginx 1.28 포트 범위 `listen`) |
 | P4 sandbox 고유 출처(후속 비교안) | 환경별 앱 제공 출처 하나 + `allow-same-origin` 없는 sandbox | 프레임마다 opaque origin이며 메시지·요청 Origin은 `null`이다. 이번 AF-02·04와 정확한 targetOrigin 계약을 그대로 적용할 수 없다. 별도 브리지·CORS·저장소 설계가 필요하다 | 이번 실증에서 제외. P3 운영의 구체적인 장애가 확인되면 별도 설계로 검토하며 자동 fallback은 금지 |
 | 금지 | 모든 설치가 한 출처, dev·prod가 같은 출처 | 같은 출처 앱끼리 실행 문맥·저장소에 접근할 수 있다. 이번에 확보한 환경 분리도 되돌린다 | 지원하지 않음 |
@@ -161,7 +161,9 @@ flowchart LR
 
 ## 6. 실증 계획
 
-격리 스택에서 수행하고 운영 서버는 바꾸지 않는다. 코드는 브랜치 `poc/app-frames`에서 만들었고 채택(D1) 뒤 2026-11-11 main에 합쳤다. 브라우저는 Chromium·Firefox·WebKit을 사용한다. 프로필은 P3(포트)와 P2 대응(시험용 호스트명과 시험 인증서)으로 한정한다. 앱은 실제 업무 앱 하나와 차단 확인용 프로브 앱 하나를 쓰고, 후속 호출 회수에는 최소 C backend fixture를 추가한다. 기존 MF 산출물은 로딩·기본 API 비교에 사용하고 입력 보호·바이너리 검증은 새 SDK로 빌드한 앱에서 수행한다. 실증 코드는 채택 전까지 운영 반영 대상이 아니다. P4는 후속이며 P1은 활성화 전 별도 인수를 수행한다.
+아래는 채택에 사용한 실증 기준이며 후속 변경의 회귀 기준으로 유지한다. 최초 실증은 운영 서버를 바꾸지 않고 격리 스택의 P3(포트)와 P2 대응(시험용 호스트명·인증서)에서 Chromium·Firefox·WebKit으로 수행했다. 실제 업무 앱·차단 프로브 앱·후속 호출용 최소 C backend fixture를 사용하고, 기존 MF 산출물의 로딩/기본 API와 새 SDK의 입력 보호/바이너리를 구분해 검증했다. 코드는 `poc/app-frames`에서 만들어 채택(D1) 뒤 2026-11-11 main에 합쳤다.
+
+[1차 실증](releases/app-frames-poc-2026-11-10-validation.json)·[2차 실증](releases/app-frames-poc-2026-11-10-second-validation.json)·[채택 후속](releases/app-frames-adoption-2026-11-10-validation.json)은 각 소스와 환경의 기록이다. `*.localhost`의 P2 대응 결과를 실제 같은 등록 도메인의 쿠키 간섭 인수로 옮기지 않는다. FV-06의 실제 P2 쿠키 간섭, FV-07의 화면낭독 출력·테마 전달은 남아 있으며 테마 기능은 해당 공용 UI 작업과 연결한다. P4는 후속 비교이고 P1은 활성화 전 별도 인수를 수행한다.
 
 | ID | 시험과 판정 기준 |
 | --- | --- |
@@ -180,25 +182,29 @@ flowchart LR
 
 ## 7. 결정이 필요한 사항
 
-| ID | 결정 | 권고 |
+제목과 D1~D5 ID는 기존 참조를 위해 유지한다. D1·D2·D3·D5의 현행 선택은 확정됐으며, D4의 독립 문서 형태와 각 행의 후속 최적화는 별도 검토 범위다.
+
+| ID | 결정 | 확정 내용·후속 검토 |
 | --- | --- | --- |
-| D1 | 채택 여부 | **채택(2026-11-10, 사용자).** 근거는 FV-01~05·09·10 PASS, FV-06 한계 기록, FV-07·08 결과다. APP-BOUNDARIES 등 현행 문서는 §8로 개정한다. P1 도입 전의 별도 인수는 P2·P3 결과로 대신하지 않는다 |
-| D2 | v2.dwdcc.kr의 앱 출처 프로필 | 첫 반영은 P2 `https://v2-app-{key}.dwdcc.kr`(기존 인증서·DNS, §9). 외부 앱·외부 개발자를 수용하기 전에 P1(앱 전용 도메인)의 별도 인수를 거쳐 옮긴다. P4는 후속이다 |
+| D1 | 채택 여부 | **채택(2026-11-10, 사용자).** 근거는 FV-01~05·09·10 PASS, FV-06 한계 기록, FV-07·08 결과다. APP-BOUNDARIES 등 현행 문서는 §8에 따라 개정했다. P1 도입 전의 별도 인수는 P2·P3 결과로 대신하지 않는다 |
+| D2 | v2.dwdcc.kr의 앱 출처 프로필 | P2 `https://v2-app-{key}.dwdcc.kr`로 첫 반영 완료(기존 인증서·DNS, §9). 외부 앱·외부 개발자를 수용하기 전에 P1(앱 전용 도메인)의 별도 인수를 거쳐 옮긴다. P4는 후속이다 |
 | D3 | 자산 보호 방식 | 실증 기본 확정: 프레임 세션별 능력값·고정 접두사·매 요청 현재 권한 검사(§3.3). 실행 간 캐시 공유 최적화는 FV-05·08 측정 이후 후속 검토한다. 사용자·릴리스 공통 능력값은 부모 세션별 회수를 약화하므로 초기 범위에서 제외한다. 내용 해시만으로 공개하는 방식도 현행 Use 보호를 없애므로 제외한다 |
 | D4 | 앱 빌드 형태 | 실증은 기존 MF를 프레임 런타임이 읽는다. 구 산출물의 로딩 비교와 새 SDK를 적용한 앱의 입력 보호·바이너리 검증을 구분한다. 프레임워크 자유와 런타임의 React 버전 결합 제거는 앱이 자기 문서를 제공하는 장기안과 비교해 정한다 |
-| D5 | 프레임 유지 정책 | 실증 결과 떠날 때 제거(현재 구현)를 기본으로 권고한다. 한 프레임만 살아 있으면 앱을 옮길 때 약 15–25MiB·120–320ms이고, 프레임을 유지하면 탭 하나당 약 130–200MiB(Chromium·Firefox), 330–470MiB(WebKit)가 늘었다([2차 기록](releases/app-frames-poc-2026-11-10-second-validation.json)) |
+| D5 | 프레임 유지 정책 | 현행 기본은 떠날 때 제거다. 실증 당시 한 프레임만 살아 있으면 앱을 옮길 때 약 15–25MiB·120–320ms이고, 프레임을 유지하면 탭 하나당 약 130–200MiB(Chromium·Firefox), 330–470MiB(WebKit)가 늘었다([2차 기록](releases/app-frames-poc-2026-11-10-second-validation.json)). 현재 소스 전체의 성능 보증으로 확대하지 않는다 |
 
 ## 8. 현행 문서 개정
 
-채택에 따라 APP-BOUNDARIES(AB-04, 앱 실행 계약, 선택기와 브리지 소유, iframe 없는 방안 비교), PRD의 브라우저 실행·통합 UI 요구·인수, FRONTEND의 모듈 로딩 절, UIUX-MIGRATION의 앱 화면 원칙, CORE-PERMISSIONS의 "브라우저 직접 요청의 발신 앱 증명 없음" 문구, 루트 AGENTS·README의 "iframe 없는 MF 유지"와 각 문서 머리말의 같은 문구를 이 설계로 바꾼다. 템플릿 번들(0.9.0)·CHECKS는 구현과 함께 바뀌었다. 2026-11-11 main 병합 때 개정을 시작했고, 2026-11-13 전체 현황 점검에서 남은 현행 서술과 도식을 동기화했다. 같은 페이지 MF에 대한 보관 기록은 2026-11-12 반영 전 운영의 사실이다.
+채택에 따라 APP-BOUNDARIES·PRD·CORE-PERMISSIONS의 실행/권한 설명, 프론트엔드·UI 이식 안내, 루트 AGENTS·README와 템플릿 번들(0.9.0)·CHECKS를 이 설계로 개정했다. 2026-11-11 main 병합부터 개정해 2026-11-13 현행 서술과 도식을 동기화했다. 같은 페이지 MF 기록은 전환 전 이력으로 보존하며 현재 기능의 순서·상태는 PLAN에서만 관리한다.
 
 ## 9. 운영 반영 계획
 
 v2.dwdcc.kr은 개발 단계 서버이므로 짧은 중단·재로그인은 허용한다([개발 단계 원칙](../AGENTS.md#개발-단계-원칙-실제-운영-전환-전까지)). 반영은 사용자가 요청할 때만 하고, DB를 바꾸는 단계는 변경 범위 백업과 별도 영역 복원 확인을 먼저 한다.
 
-**현재 갱신(`18ce038`, schema 22 유지).** 2026-11-13에는 앱 응답 크기·수명 예산과 Core 거부 401만 재전송하는 변경을 core → 프레임 런타임 순서로 반영했다. 정확한 SHA의 필수 CI, 로컬 Rust·스크립트·웹·격리 runtime 검사를 통과했고 core 도구가 새 DB 백업을 별도 복원해 확인했다. 포털 UI는 입력 변경이 없어 `7defdb0` 유지, Nginx·설정·IdP·schema·게시 CLI는 바꾸지 않았다. 실제 연결·앱 4개 검사는 [배포 기록](releases/app-api-response-2026-11-13-deployment.json)을 따른다. 되돌리기는 해당 release의 프레임 런타임 index → core 바이너리 순서이며 DB 복원·설정 restore는 하지 않는다. 이미 열린 프레임은 새로고침/다시 열기 뒤 새 런타임을 사용한다.
+현재 배포 소스와 게시 상태는 운영·릴리스 안내를 따른다. 아래는 프레임 최초 도입과 각 후속 배포의 변경 범위·되돌리기 기록이며, 뒤의 서버/CLI 갱신을 이전 프레임 배포와 혼동하지 않는다.
 
-**직전 갱신(`7defdb0`, schema 22 유지).** 2026-11-12 리뷰 보완은 정확한 SHA CI와 후보 검사를 거쳐 core → 기존 Nginx 프레임 블록에 `error_log /dev/null;` 한 줄 추가 → 프레임 런타임 → 포털 UI 순서로 반영했다. `app-frame-settings.py apply`와 `--widen-migration`은 사용하지 않았고 프레임 설정·DB schema는 유지했다. core 도구의 새 백업·별도 복원 확인 후 적용했으며, 후속 연결 검사의 범위는 [수정 배포 기록](releases/app-frames-review-fixes-2026-11-12-deployment.json)을 따른다. 되돌리기는 포털 UI → 프레임 런타임 → Nginx 백업 복원 → core의 역순이며 설정 restore나 DB 복원은 포함하지 않는다. `nginx-apply`는 프레임 블록을 처음 추가하는 도구라 이번 기존 블록의 한 줄 갱신에는 사용하지 않았다.
+**2026-11-13 응답 보완(`18ce038`, schema 22 유지).** 앱 응답 크기·수명 예산과 Core 거부 401만 재전송하는 변경을 core → 프레임 런타임 순서로 반영했다. 정확한 SHA의 필수 CI, 로컬 Rust·스크립트·웹·격리 runtime 검사를 통과했고 core 도구가 새 DB 백업을 별도 복원해 확인했다. 당시 포털 UI는 입력 변경이 없어 `7defdb0` 유지, Nginx·설정·IdP·schema·게시 CLI는 바꾸지 않았다. 실제 연결·앱 4개 검사는 [배포 기록](releases/app-api-response-2026-11-13-deployment.json)을 따른다. 해당 배포의 되돌리기는 프레임 런타임 index → core 바이너리 순서이며 DB 복원·설정 restore는 하지 않는다. 이미 열린 프레임은 새로고침/다시 열기 뒤 새 런타임을 사용한다.
+
+**2026-11-12 리뷰 보완(`7defdb0`, schema 22 유지).** 정확한 SHA CI와 후보 검사를 거쳐 core → 기존 Nginx 프레임 블록에 `error_log /dev/null;` 한 줄 추가 → 프레임 런타임 → 포털 UI 순서로 반영했다. `app-frame-settings.py apply`와 `--widen-migration`은 사용하지 않았고 프레임 설정·DB schema는 유지했다. core 도구의 새 백업·별도 복원 확인 후 적용했으며, 후속 연결 검사의 범위는 [수정 배포 기록](releases/app-frames-review-fixes-2026-11-12-deployment.json)을 따른다. 해당 배포의 되돌리기는 포털 UI → 프레임 런타임 → Nginx 백업 복원 → core의 역순이며 설정 restore나 DB 복원은 포함하지 않는다. `nginx-apply`는 프레임 블록을 처음 추가하는 도구라 기존 블록의 한 줄 갱신에는 사용하지 않았다.
 
 **최초 도입(`bcb6356`, schema 21→22).** 아래 표와 단계는 2026-11-12의 [첫 배포](releases/app-frames-2026-11-12-deployment.json) 절차와 되돌리기 기준이다. 현재의 같은 schema 갱신과 구분한다.
 
@@ -209,7 +215,7 @@ v2.dwdcc.kr은 개발 단계 서버이므로 짧은 중단·재로그인은 허�
 | 사전 점검 | `scripts/app-frame-settings.py inspect --app-frame-origin 'https://v2-app-{key}.dwdcc.kr'` READY: listener 포트 비어 있음, 활성 Nginx 사이트에 `v2-app-` 이름 없음 |
 | migration | 0022는 새 표만 추가한다. `core-rollout.py`가 `--widen-migration 22`로 고정 해시를 확인하고, core 중지 → DB 백업 → 별도 컨테이너 복원·migrate 확인 → 적용 순서로 실행한다. 되돌릴 때 이전 바이너리는 새 표를 읽지 않으므로 넓어진 schema에서 그대로 동작한다 |
 
-**선행 조건.** main 병합 후 정확한 반영 커밋을 push하고 main-push CI(web, cli-foundation, runtime-regression)가 그 커밋에서 통과해야 한다(`core-rollout.py` preflight). 새 앱 개발용 CLI 릴리스(번들 0.9.0 및 구 번들 업그레이드 보완)는 별도 게시 대상이며 아직 게시하지 않았다. 기존 0.8.0 앱은 다시 빌드하지 않아도 프레임에서 실행되고 API 쓰기·이동이 동작한다. 다만 입력 상태가 unknown이라 앱을 떠날 때마다 확인을 묻는다. 0.9.0 SDK로 다시 빌드하면 해소된다.
+**최초 도입의 선행 조건과 후속 게시.** 정확한 반영 커밋을 push하고 main-push CI(web, cli-foundation, runtime-regression)가 그 커밋에서 통과해야 한다(`core-rollout.py` preflight). 최초 도입 당시 새 CLI는 별도 게시 대기였으며, 번들 0.9.0·구 번들 업그레이드 보완을 포함한 CLI 0.9.0은 이후 [11-13에 게시했다](releases/cli-0.9.0-2026-11-13-deployment.json). 기존 0.8.0 앱은 다시 빌드하지 않아도 프레임에서 실행되고 API 쓰기·이동이 동작한다. 다만 입력 상태가 unknown이라 앱을 떠날 때마다 확인을 묻는다. 0.9.0 SDK로 다시 빌드하면 해소된다.
 
 **최초 도입 전 주의.** `compose.yaml`이 프레임 변수(`MIY_APP_FRAME_SITES`·`MIY_APP_FRAME_SOURCES`)를 필수로 요구한다. 그래서 1단계 전까지 운영 `compose.env`로 실행하는 `docker compose` 명령은 변수 오류로 멈춘다. 실행 중인 Postgres·Keycloak 컨테이너에는 영향이 없고, 1단계가 키를 추가한다(2026-11-12 추가함).
 

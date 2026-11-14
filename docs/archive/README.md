@@ -14,6 +14,7 @@
 | [독립 Codex·Claude 인수](results/INDEPENDENT-AGENTS-0.6.3-ACCEPTANCE.md) | 별도 에이전트가 만든 앱의 당시 검사 |
 | [0.6 핵심 흐름 사용자 테스트](results/CORE-TESTING-0.6.md) | 당시 앱 개발·배포 인수 절차 |
 | [휴가 앱 실증](results/LEAVE-LEDGER-RESULTS.md) | 초기 독립 앱·권한·배포의 실증 범위 |
+| [서버 운영·연결 이력 스냅샷](results/SERVER-OPERATIONS-2026-11-14.md) | 2026-11-14 정리 전 운영 안내의 고정본. 날짜별 배포·옛 연결 검사·당시 복구 절차를 보존하며 현재 명령은 SERVER-OPERATIONS를 사용 |
 
 수치·실패·미실행 범위는 원문대로 보존한다. 새 실행은 [releases](../releases/)에 새 기록으로 추가한다. 현재 사용자는 [실행 안내](../RUNNING.md), [Windows 인수](../WINDOWS-ACCEPTANCE.md), [CLI 릴리스](../CLI-RELEASE.md)를 사용한다.
 
@@ -39,3 +40,5 @@
 ## 경로와 증거 보존
 
 2026-11-13 정리에서 문서 본문과 실행 사실은 보존하고 분류·상대 링크를 조정했다. 이전 경로와 새 위치의 전체 대응은 [정리 기록](../releases/docs-cleanup-2026-11-13.json)에 있다. 과거 JSON의 source/file/hash 값과 증거 파일은 당시 출처 그대로이며 이동한 Markdown의 현행 해시로 덮어쓰지 않는다. 게시 SDK·템플릿·공용 컴포넌트는 이번 정리 대상이 아니다.
+
+2026-11-14에는 완료 요약·남은 작업을 PLAN에 통합하고 운영 안내의 누적 이력을 위 스냅샷으로 분리했다. 기존 보관 본문과 실행 증거는 갱신하지 않았다([통합 기록](../releases/docs-consolidation-2026-11-14.json)).

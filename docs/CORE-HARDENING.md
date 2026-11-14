@@ -1,35 +1,31 @@
 # 코어 안정화 계획
 
-- 작성일: 2026-11-03 · 수정일: 2026-11-13
+- 작성일: 2026-11-03 · 수정일: 2026-11-14
 - 기준: [PLAN](PLAN.md)의 작업 순서. 실제 서버 반영은 [운영 안내](SERVER-OPERATIONS.md), CLI 소스·게시 차이는 [릴리스 안내](CLI-RELEASE.md)에서 확인한다.
 - 상태: **1·2차와 구조 기반의 완료한 구현 묶음은 검증·개발 서버 반영했다. API 계약 이전의 나머지 응답, 전체 자원 예약·백업 제품·호스트 updater와 새 서버 종합 인수는 후속이다.**
 
 이 문서는 앱 개발·원격 빌드·배포 기반의 **1) worker/오류, 2) 설치 승인 권한/호출자, 3) 용량, 4) 백업·복원/updater, 5) 새 서버·수명주기 인수** 작업 묶음을 관리한다. 번호는 기존 증거와 연결하기 위해 유지한다. 착수 순서는 [추진 계획](PLAN.md#다음-우선-작업)이 관리한다. 3·4차에는 v1의 Docker 저장소 점검·DB 연결 예산·전환/롤백·불확실한 커밋 처리·설정 스키마 규칙(V1-O1~O5)을, 5차에는 호스트 진단·공개 전 점검·검증 자원 분리(V1-O6~O8)를 함께 적용한다([v1 적용 계획](V1-ADOPTION.md) §3.2).
 
-우선 디스크·DB 연결 보호를 마련하고 실제 데이터 변경 전 해당 범위의 최소 백업과 별도 영역 복원 확인을 수행한다. 전체 백업 제품·호스트 updater·나머지 자원 예약·빈 서버 종합 인수는 베타 전 과제다. [사내 최소 보안](APP-BOUNDARIES.md)은 prod 포털·dev 포털·콘솔 세 출처와 목적별 세션·환경 제한·콘솔 device 승인을 구현·반영했다. 별도 IdP·전 credential 재설계·자동 CA·전 앱 전환 도구를 먼저 만들지 않는다. 다음 기능인 공통 ACL 등은 PLAN 순서를 따른다.
+디스크·DB 연결 보호와 변경 범위의 최소 백업·별도 영역 복원 확인은 구현해 사용하고 있다. 실제 데이터 변경 때마다 이 보호를 수행하며, 전체 백업 제품·호스트 updater·나머지 자원 예약·빈 서버 종합 인수는 베타 전 과제로 구분한다. [사내 최소 보안](APP-BOUNDARIES.md)은 prod 포털·dev 포털·콘솔 세 출처와 목적별 세션·환경 제한·콘솔 device 승인을 구현·반영했다. 별도 IdP·전 credential 재설계·자동 CA·전 앱 전환 도구를 먼저 만들지 않는다. 다음 기능인 공통 ACL 등은 PLAN 순서를 따른다.
 
-2026-11-03 사용자 결정에 따라 1·2차 이후 [기본 UI/UX 이식](V1-ADOPTION.md#9-플랫폼-화면과-ui-후속-계약)을 진행했다. ai-do를 원본으로 라이트 테마·한국어·새 설치 기준의 UI-1~4를 구현하고 UI-5 통합 검증을 마쳤으며, v2.dwdcc.kr에 웹 화면과 0.7.0 서버·migration 17·공개 CLI를 반영했다([배포 기록](releases/core-0.7.0-deployment.json)). 후속 설계 기준은 공식 miy v1이며, 플랫폼의 사용자·그룹별 앱 사용 권한과 앱 내부의 선택적 데이터 공간을 적용한다. 각 기능의 회귀 검사는 계속 수행하고 현재 실행 순서는 [추진 계획](PLAN.md)을 따른다.
+2026-11-03 사용자 결정에 따라 1·2차 이후 [기본 UI/UX 이식](V1-ADOPTION.md#9-플랫폼-화면과-ui-후속-계약)을 진행했다. ai-do를 원본으로 라이트 테마·한국어·새 설치 기준의 UI-1~4를 구현하고 UI-5 통합 검증을 마쳤으며, v2.dwdcc.kr에 웹 화면과 0.7.0 서버·migration 17·공개 CLI를 반영했다([배포 기록](releases/core-0.7.0-deployment.json)). 운영·권한 교훈은 공식 miy v1에서 참고하며, 현재 공통 기능·UX의 직접 이식 원본은 [AI-DO 대상 목록](AI-DO-COMMON-MIGRATION.md)을 따른다. 플랫폼의 사용자·그룹별 앱 사용 권한과 앱 내부의 선택적 데이터 공간을 유지한다. 각 기능의 회귀 검사는 계속 수행하고 현재 실행 순서는 [추진 계획](PLAN.md)을 따른다.
 
 운영 서버·UI와 게시 CLI의 현재 배포 소스는 [운영 안내](SERVER-OPERATIONS.md)를 따른다. 문서·소스 수정만으로 후속 배포를 주장하지 않으며 기존 서비스·데이터 보존 경계를 지킨다. 새 인수는 격리 환경에서 수행하고 사용자 Windows 11 검증은 추후 사용자가 수행한다. 현재 절차·출처 검사기는 [Windows 인수](WINDOWS-ACCEPTANCE.md)에 준비했고 실행은 NOT_RUN이다. [0.6.3 인수 기록](archive/results/WINDOWS-0.6.3-ACCEPTANCE.md)은 당시 범위로 보존한다.
 
 ## 현재 구현과 기존 증거
 
-아래는 새 1차 변경 전 기반이다. 기존 검사의 PASS를 새 코드나 더 넓은 기능의 통과로 이월하지 않는다.
+아래는 완료한 구현 범위와 남은 인수를 구분한 요약이다. 실행 순서와 작업 상태는 PLAN, 상세 완료 기준은 아래 1~5차와 구조 기반 절을 따른다. 기존 검사의 PASS를 새 코드나 더 넓은 기능의 통과로 이월하지 않는다.
 
-| 영역 | 구현된 기반 | 아직 입증하지 않은 범위 |
+| 영역 | 구현·검증한 범위 | 남은 구현·인수 |
 | --- | --- | --- |
-| 앱 제어·복구 | [runtime](../crates/miy/src/runtime.rs)의 앱·환경별 상태/작업, 멱등성·기대 상태 검사, worker 소유권·재시작 복구. 상태와 로그 관찰 작업은 분리 | 긴 서버 빌드 중 제어 작업의 독립 진행, 분리된 worker 전체의 종료/복구 |
-| 서버 빌드 | [server_build](../crates/miy/src/server_build.rs)의 사용자당 2개/전체 8개 접수 제한, 소스 64MiB, 로그 2MiB, 고정 worker recipe·이미지 출처 검사. 중단 시 확인 가능한 결과 복구 | 빌드 CPU/RAM 예산, 서버 전체 예약, 장시간 빌드와 앱 제어의 동시성 |
-| 권한·호출 | 사용자 활성 상태·토큰·dev/prod 관리 권한 검사. [connections](../crates/miy/src/connections.rs)는 manifest 요청 권한과 대상 앱의 사용자 권한, 동일 환경을 검사 | manifest 요청과 별도로 승인한 설치 권한 저장·집행, 호출 앱 식별을 보존하는 다단계 위임 계약 |
-| 앱 자원 | runtime 컨테이너 256MiB·1CPU·128PID, 읽기 전용 root·16MiB tmpfs, 로그 회전 5MiB×2. 템플릿 DB 풀 5개, 개발 세션 역할 연결 16개 | 전체 서버 예산·원자적 예약·disk/inode·공유 DB 보호, 실제 부하에서 한도 집행·복구 |
-| 설치·운영 | [bootstrap](../scripts/bootstrap.py)의 명시적 서버 주소·private 설정·기존 비밀 재사용, [서비스 설정 생성](../scripts/render-server-config.py), SQLx core migration | 빈 호스트의 반복 설치·복원, 코어가 중단돼도 작동하는 제품 updater·정합성 백업 |
+| 앱 제어·복구 | 제어·빌드 future 분리, 소유권 감시·취소·재시작 복구와 타입 기반 DB 오류. 실제 worker·PostgreSQL 잠금 대기 중 제어 진행과 소유권 상실·종료 정리를 확인(1차) | 실제 장시간 Rust Docker 컴파일 중 지연 측정, provision DB 네트워크 장애 주입, 새 호스트 전체 수명주기 인수 |
+| 서버 빌드 | 사용자당 2개/전체 8개 접수 제한, 소스 64MiB·로그 2MiB, 고정 recipe·이미지 출처 검사, 중단 뒤 결과 복구 | 빌드 CPU/RAM 예산, 서버 전체 원자적 자원 예약과 실제 복합 부하(3차) |
+| 권한·호출 | 설치·릴리스 승인, 사용자 위임·원래 호출자와 후속 증표, 중앙 정책·트랜잭션 안 재판정. 프레임 도입 후 브라우저 직접 API도 자기 설치로 제한(2차·구조 기반) | G4 확장·G5/G6 업무 ACL, 서비스 주체·API Invoke·업무 이벤트는 해당 기능의 후속 범위 |
+| 앱 자원 | 컨테이너 256MiB·1CPU·128PID, 읽기 전용 root·16MiB tmpfs·로그 회전. Docker 공간 하한·DB 연결 예산, 앱 응답 4MiB와 Bytes 수명의 64개 슬롯 보호 | 전체 RAM/디스크·inode/WAL·DB 부하 예산, 실제 OOM·throttling·PID/디스크 부족·RSS/앱 간 공정성과 복구 인수(3차) |
+| 설치·운영 | 명시적 설정·기존 비밀 재사용·core migration, 변경 범위 core DB 백업/별도 복원, 정확한 SHA CI gate와 core/UI 반영·복구 도구를 실제 배포에 사용 | 프레임 런타임을 포함한 새 설치 조립(R12), 전체 DB·파일·설정·키 정합성 백업 제품·호스트 updater·새 서버 복원(4~5차) |
+| API·개발 번들 | 설치·실행 작업·감사·그룹의 Rust/JSON Schema/TS 공통 타입, CLI 버전 검사와 0.9.0/번들 0.9.0 게시 | 나머지 응답 타입·OpenAPI 연결은 해당 API 변경 때. 정식 GitHub Release·Windows 사용자 인수는 별도 |
 
-기존 검증 근거는 다음 범위로만 사용한다.
-
-- [2026-11-02 main 통합 기록](releases/cli-0.6.3-main-integration.json): 서버 Rust 143개 PASS/6개 ignored, 클라이언트 110개 PASS, 두 feature 경계 Clippy·fmt·UI 검사, 통합 commit CI 5개 job 성공. ignored 검사를 통과에 합치지 않는다.
-- [0.6.3 Linux 기록](releases/cli-0.6.3-linux-validation.json): 격리 runtime/operations/CLI/auth 55개 관찰, 서버 빌드 API fixture 8그룹 등의 증거가 있다. 해당 API fixture는 `dockerBuildExecuted=false`이며 실제 빌드 실행 증거와 구분한다.
-- [독립 AI 인수](archive/results/INDEPENDENT-AGENTS-0.6.3-ACCEPTANCE.md): Codex·Claude 각각 실제 원격 빌드·dev 배포와 v1→v2 레코드 보존을 확인했다. 평가환경 보완 후 통과이며 새 서버 복원, 전체 V7, 실제 콘솔 장애 인수는 아니다.
-- [runtime 회귀 코드](../crates/miy/src/runtime_regression.rs)는 Docker 설정의 Memory/NanoCpus/ReadonlyRootfs 등을 확인한다. 설정값 확인을 실제 OOM·CPU throttling·프로세스 폭주·호스트 과부하 실험의 통과로 해석하지 않는다.
+최소 데이터 보호의 근거는 [11-04 배포](releases/core-review-2026-11-04-deployment.json), 응답 예산은 [11-13 배포](releases/app-api-response-2026-11-13-deployment.json)에 있다. worker·권한·API의 근거는 각 절에 연결한다. 이전 [0.6.3 main 통합](releases/cli-0.6.3-main-integration.json)·[Linux 인수](releases/cli-0.6.3-linux-validation.json)·[독립 AI 인수](archive/results/INDEPENDENT-AGENTS-0.6.3-ACCEPTANCE.md)는 당시 환경의 고정 기록이다. API fixture의 `dockerBuildExecuted=false`, ignored·수동 보정·NOT_RUN을 성공에 합치지 않으며 Docker 설정값 확인을 실제 과부하 집행 인수로 해석하지 않는다.
 
 ## 1차: worker 제어·빌드 실행 분리와 DB 오류 계약
 
@@ -44,26 +40,16 @@
 1. 격리 fixture에서 빌드를 의도적으로 대기시킨 상태로 다른 앱 stop/start·상태 대조를 요청한다. **빌드 대기를 해제하기 전에** 제어 작업이 완료되고, 미리 정한 제한 시간 안에 결과가 관찰돼야 한다. API 요청 접수만으로 통과시키지 않는다.
 2. 두 worker의 동시 시작, 소유 worker 종료·재시작, 대기/실행 중 작업 복구를 확인한다. 같은 작업의 중복 빌드·중복 migration·타 worker 소유 작업 회수가 없어야 한다. 종료 때 소유 자식과 DB lock이 정리되는지도 확인한다.
 3. DB 준비 경로에서 원래 타입으로 분류된 오류를 보존한다. 명시적인 `DatabaseUnavailable`은 새 preflight 후 retry 대상으로 유지하고, migration 이력 불일치·SQL 실행 실패·미분류 오류는 각각 구분하여 재시도를 허용하지 않는다. 임의 오류 문자열에 포함된 단어로 재시도 권한을 부여하지 않는다.
-4. 내부 DB job과 외부 runtime job에 같은 안정된 code를 기록하고 기존 API/CLI의 retry 계약으로 제공한다. SQL 원문·bind 값·DB 접속 문자열·사용자 비밀을 응답에 반영하지 않는다. DB 오류라는 이유만으로 변경 명령을 자동 재전송하지 않는다. 모든 공개 API의 일반 SQL 오류 매핑은 이번 좁은 DB 준비 수정과 구분한다.
+4. 내부 DB job과 외부 runtime job에 같은 안정된 code를 기록하고 기존 API/CLI의 retry 계약으로 제공한다. SQL 원문·bind 값·DB 접속 문자열·사용자 비밀을 응답에 반영하지 않는다. DB 오류라는 이유만으로 변경 명령을 자동 재전송하지 않는다. 모든 공개 API의 일반 SQL 오류 매핑은 1차의 좁은 DB 준비 보완과 구분한다.
 5. 변경 관련 단위 검사와 두 feature 경계의 fmt/Clippy, 격리 동시성·오류·기존 lifecycle 회귀를 최종 소스에서 수행한다. 실제 명령·종료코드·통과/실패/ignored·source commit을 연결한 뒤 상태를 갱신한다.
 
 1차의 완료는 scheduler 응답성과 오류 계약의 완료다. 다음 절의 설치 승인 권한, 전체 자원 제한, 백업·복원은 별도다.
 
 ### 2026-11-03 실행 결과
 
-구현 commit은 `99672655721af202fe0bc981163a15bb145b1dff`다. [구조화 증거](releases/core-hardening-2026-11-03-validation.json)에 구현 파일 hash·실행 checkout·로그 hash·관찰 결과와 한계를 남겼다. 로컬 검사는 commit 전 변경 작업본에서 실행했으며 기록한 구현 파일이 이 commit과 바이트상 일치함을 확인했다.
+`9967265`의 [구조화 증거](releases/core-hardening-2026-11-03-validation.json)에 구현 파일·로그 hash, 명령, 세부 관찰과 한계를 보존한다. 당시 서버 단위 152 PASS/6 ignored, 클라이언트 110 PASS, 두 feature 정적 검사와 실제 PostgreSQL·Docker 격리 58개 관찰이 PASS였다. 빌드 잠금 중 제어 진행, 소유권 상실·후속 worker 복구, SIGTERM 종료·lock 정리와 SQL 실패의 retry 금지·데이터 보존을 확인했다. 로컬 검사는 commit 전 작업본이며 기록한 구현 파일과 해당 commit의 바이트 일치를 확인한 결과다.
 
-| 검사 | 실제 결과 |
-| --- | --- |
-| 서버 단위 검사 | 152 PASS, 6 ignored. 신규 scheduler4·DB 오류3·임시 경로/취소2개는 152개에 포함 |
-| 클라이언트 단위 검사 | 110 PASS, ignored0 |
-| 정적 검사 | fmt, 서버/클라이언트 feature 각각 Clippy 경고 금지 PASS |
-| 실제 PostgreSQL·Docker 격리 인수 | runtime38·operations6·CLI6·auth8, 총58개 관찰 PASS |
-| 새 워커 관찰3개 | 빌드 잠금 대기 중 앱 제어와 해제 후 복구, 복구 SQL 잠금 대기 중 소유권 상실·후속 워커 제어, SIGTERM 종료0·advisory lock0 |
-| 기존 SQL 실패 검사 보강 | 실제 SQL 실패와 이전 schema 릴리스의 오류 코드·retry 불가를 확인하고 데이터 보존 유지 |
-| 정리·보존 | 임시 자원 정리 실패0, 기존 running 컨테이너25개와 플랫폼 서비스 PID·시작·재시작 횟수·설치 바이너리 유지 |
-
-새 동시성 인수는 실제 워커·PostgreSQL의 잠금 대기를 사용한다. 실제 장시간 Rust Docker 컴파일 중 start/stop 지연 측정은 수행하지 않았다. 타입으로 분류한 DB 연결 장애의 retry 보존은 단위 검사이며, 실제 provision DB 네트워크 장애 주입을 대신하지 않는다. SIGKILL에는 RAII가 실행되지 않아 임시 경로가 남을 수 있고, 그 자동 정리는 3차 용량 정책에서 다룬다. 새 권한 모델·자원 예산·백업·updater·새 호스트 전체 인수는 여전히 2~5차다.
+이 동시성 인수는 실제 worker·PostgreSQL의 잠금 대기를 사용했다. 실제 장시간 Rust Docker 컴파일 중 지연 측정과 provision DB 네트워크 장애 주입은 NOT_RUN이다. SIGKILL에는 RAII가 실행되지 않아 임시 경로가 남을 수 있으며 자동 정리는 3차 용량 정책 범위다. 설치 승인 권한·자원 예산·백업·updater·새 호스트 전체 인수를 이 실행의 완료로 합치지 않는다.
 
 ## 2차: 설치 승인 권한과 원래 호출자 유지
 
@@ -128,7 +114,7 @@ Windows 사용자 인수, 실제 콘솔 신호, 다른 OS 또는 Docker Desktop 
 
 ## 구조 기반
 
-회귀 상시화·권한 판정 단일화·API 계약 단일 원본이다. **현재 상태(2026-11-09): 1의 회귀 workflow·일반 `core-rollout.py` 정확한 SHA CI gate, 2·4 완료. 3은 첫 묶음과 리뷰 보완 완료.** 2026-11-05 후속 리뷰에서 드러난 권한·API 불일치와 CI 실패 중 배포의 구조적 원인을 정리했다. 후속 범위와 순서는 [추진 계획](PLAN.md#다음-우선-작업)의 "기반" 행을 따른다.
+회귀 상시화·권한 판정 단일화·API 계약 단일 원본이다. **완료 범위: 1의 회귀 workflow·일반 `core-rollout.py` 정확한 SHA CI gate, 2·4. 3은 첫 묶음과 리뷰 보완까지다.** 2026-11-05 후속 리뷰에서 드러난 권한·API 불일치와 CI 실패 중 배포의 구조적 원인을 정리했다. 완료분은 [PLAN의 완료 요약](PLAN.md#완료한-작업)의 "구조 기반·최소 데이터 보호"에, 나머지 API 계약은 [일부 구현된 작업](PLAN.md#일부-구현된-작업)에 연결한다. 해당 기능을 변경할 때의 착수 순서는 [통합 작업표](PLAN.md#다음-우선-작업)를 따른다.
 
 완료 기준:
 
@@ -146,35 +132,26 @@ Windows 사용자 인수, 실제 콘솔 신호, 다른 OS 또는 Docker Desktop 
    - 게시된 CLI가 읽는 필드의 호환 규칙(추가만 허용, 제거는 유예 후)을 정하고 검사한다.
 4. **CLI 버전 일치(V1-Q4 확장):** 게시 CLI의 source 이후 클라이언트 빌드에 들어가는 코드가 바뀌었는데 버전이 같으면 검사가 실패한다.
 
-진행 상태(2026-11-07, 아래 구현분 운영 반영):
-- **1:** `.github/workflows/runtime-regression.yml`과 일반 `core-rollout.py`의 대상 commit 필수 CI 성공 확인을 구현했다. 정확한 SHA CI gate는 [2026-11-09 검증](releases/boundary-followup-2026-11-09-validation.json) 후 배포에 사용했다. migration/설정 전환의 일반화는 별도 후속이다. Docker classic store의 native export digest 호환성은 [PLAN의 미해결 관찰](PLAN.md#미해결-호환성-관찰)과 별개이며 제품 검증을 완화하지 않았다.
-- **2의 첫 단계(판정 이전):**
-  - `crates/miy/src/policy.rs`를 만들었다. `domain`의 `authorize`·`access_decision`·`can_manage`·`manage`·`manage_action`과 `runtime`의 `authorize_request`·`authorize_job`을 지우고, 호출부 30여 곳이 동작을 지정하게 했다.
-  - 앱·설치·작업 목록의 SQL 권한 조건과 설치 목록 표시값도 같은 판정으로 옮겼다. 설치 목록의 행마다 반복하던 판정 질의도 없앴다.
-  - 옛 판정을 그대로 옮긴 기준 구현과 3만여 조합을 오류 코드까지 대조하는 단위 시험을 두었다. 실제 HTTP·PostgreSQL에서 목록·상세·표시값을 대조하는 행렬 관찰도 격리 회귀 권한 suite에 추가했다.
-  - 동작 변경은 위임 자격증명의 표시값뿐이다([코어 권한](CORE-PERMISSIONS.md)의 "표시값").
-  - 정적 검사와 격리 회귀(관찰 88개)가 통과했다([검증 기록](releases/core-policy-2026-11-05-validation.json)).
-- **4:** `scripts/check-cli-version.py`를 릴리스 후보 workflow에 연결했다.
-- **3(API 계약 단일 원본):**
-  - [계약 타입](../crates/miy/src/api_contract.rs)에 설치(설치 목록·실행 관리 목록·앱 상세)·실행 작업·감사·그룹 응답을 두었다. 서버는 이 타입으로 응답하고, CLI는 작업·앱 상세를 이 타입으로 읽는다.
-  - [JSON Schema](../contracts/api-v1.schema.json)와 SDK의 `packages/sdk/src/api.gen.ts`는 이 타입에서 생성한다. Rust 단위 시험과 `node scripts/api-types.mjs --check`가 어긋남을 막는다. 플랫폼 화면의 설치·감사·그룹 타입은 생성 타입을 쓴다.
-  - 호환 규칙: 응답은 필드를 추가만 한다. 게시 CLI가 읽을 수 있는 필드는 [게시 계약](../contracts/api-v1.published.json)에 두고 `scripts/check-api-compat.py`가 제거·필수 해제·값 확장을 막는다. 제거는 그 파일의 `removable`에 이유를 적은 뒤에만 한다. 이전 서버(0.7.0)가 보내지 않는 필드는 CLI가 기본값으로 읽는다.
-  - 남은 범위: 나머지 응답(설치 권한, 그룹 구성원·권한, 앱 접근 등)의 타입 이전과 OpenAPI 응답 스키마 연결([검증 기록](releases/api-contract-2026-11-05-validation.json)).
-- **2의 둘째 단계(불일치 수정):** 판정 정리 중 확인한 불일치다. 고친 항목은 줄을 긋고 고친 내용을 적었다([1·4 검증 기록](releases/core-policy-followup-2026-11-05-validation.json), [2·3·5~8 검증 기록](releases/core-policy-consistency-2026-11-05-validation.json)). 9는 3에서 다룬다.
-  1. ~~DB 준비(`prepare`)는 작업을 넣은 뒤 `read`를 확인한다.~~ 고침: 접수 전에 `Request(prepare_database)`로 판정한다.
-  2. ~~설치 권한 변경은 커밋한 뒤 결과 조회에서 사용 중지된 prod 앱이면 `403 app_disabled`가 된다. 관리자는 실행 관리 목록에 보이는 그 설치의 권한을 읽지 못한다.~~ 고침: 승인 기록 조회를 `Observe`로 모으고 변경 응답은 커밋 전에 같은 트랜잭션에서 만든다. 당시 Observe의 Use 허용은 후속 AB-05에서 제거했으며 현재는 관리 읽기만 허용한다.
-  3. ~~관리자 쓰기 중 앱 생성·앱 이름 변경·공용 컴포넌트 게시는 커밋 전 잠금 재확인이 없다.~~ 고침: 셋 다 트랜잭션 안에서 쓰고 커밋 전에 `admin_locked`로 다시 확인한다.
-  4. ~~위임 자격증명의 관리자 여부가 경로마다 다르다. `GET /grants`는 위임 범위 앱·환경의 모든 사용자 직접 권한을 보여 준다.~~ 고침: 위임된 관리자는 자기 권한만 본다.
-  5. ~~DB 작업 worker의 재확인은 dev 개발 권한만 인정한다. prod 배포 담당자의 DB 작업이 재시작 후 다시 대기열에 오르면 거부될 수 있다. 코드 판독 결과이며 실행하지 않았다.~~ 고침: 다른 대기 작업과 같은 재확인(`recheck_queued`)을 쓴다. 고치기 전 코드에서는 다시 대기열에 오른 prod 배포 담당자의 DB 작업이 `permission_revoked`로 실패하고 설치의 DB 상태를 `failed`로 바꿨다. 이제 거부된 DB 작업은 실행한 것이 없으므로 설치 상태를 바꾸지 않는다.
-  6. ~~릴리스 시험 결과 기록은 `accept`만 요구하고 `read`와 잠금 후 재확인이 없다.~~ 고침: `Request(accept)`로 접수하고, 실행 잠금과 앱 상태 확인을 기다린 뒤 기록 직전에 트랜잭션 안에서 다시 판정한다.
-  7. ~~`GET /dev-sessions/by-request`는 소유자 필터만 있고 권한 판정이 없다.~~ 고침: 세션 조회와 같은 `Manage(dev_session)` 판정을 한다.
-  8. ~~대기 작업 재확인의 횟수와 실패 분류가 작업 종류마다 다르다. 빌드·로그 요청은 DB 장애도 `permission_revoked`로 분류한다.~~ 고침: 모든 대기 작업이 시작 전과 긴 대기 뒤에 `recheck_queued` 하나를 부른다. 확정 거부는 `user_disabled`·`permission_revoked`이고, 권한을 읽지 못하면 `database_unavailable`(로그는 `diagnostic_unavailable`)이다. 이미지 적재는 이 코드를 `image_import_failed`로 덮지 않는다. 고치기 전 분류는 코드 판독이고 실행으로 재현하지 않았다. 고친 뒤의 분류는 단위 시험으로 확인했다.
-  9. ~~`GET /installations`는 질의가 있는지에 따라 응답 형식이 다른 두 구현으로 나뉜다. 3에서 한 형식으로 합친다.~~ 고침(3): 기본·페이지·실행 관리 목록과 앱 상세가 같은 SQL 행과 변환 하나(`api_contract::Installation`)를 쓴다.
-- **2의 셋째 단계(트랜잭션 안 판정):** 권한이 필요한 쓰기는 `policy::Write`로만 커밋한다. 쓰기와 잠금 뒤 같은 트랜잭션에서 판정하고, 판정을 통과한 트랜잭션(`Decided`)만 커밋할 수 있다. 관리자 재확인(`admin_locked`)과 실행 접수 재판정을 이 타입 하나로 바꿨다.
-  - 판정은 행위자의 사용자 행·위임 행을 커밋까지 공유 잠금한다. 권한·그룹 행은 잠그지 않는다(보기 `effective_grants`가 합집합이라 행 잠금이 안 되고, 관리 변경과의 잠금 순서 문제를 만들지 않기 위해서다).
-  - 목록 밖의 직접 트랜잭션과 주체 쓰기는 `scripts/check-write-decisions.py`가 막는다([검증 기록](releases/core-policy-transactions-2026-11-05-validation.json)).
-  - 후속 리뷰 보완: 권한 사실과 위임 유효 상태를 한 SELECT로 읽으며, 쓰기는 필요한 행 잠금 대기 뒤 새 스냅샷으로 판정한다. 위임 발급의 사용자→부모 세션 잠금 순서를 복원했다. 실제 HTTP·worker 동시성 회귀를 추가했다.
-- **3의 후속 리뷰 보완:** CLI 출력·복구 모의 응답을 공유 계약과 맞추고, API 호환 검사에 정수/실수·정수 범위·UUID/날짜 형식 확장 차단을 추가했다. 네 보완의 실행 결과·이전 실패·남은 환경 검사는 [구조 기반 리뷰 보완 기록](releases/core-foundation-review-2026-11-06-validation.json)을 따른다.
+구현 범위와 후속:
+
+| 항목 | 완료한 범위 | 후속·증거 |
+| --- | --- | --- |
+| 1 회귀 상시화 | 격리 회귀 workflow, 일반 `core-rollout.py`의 정확한 대상 SHA 필수 CI gate를 구현해 배포에 사용 | [11-09 검증](releases/boundary-followup-2026-11-09-validation.json). migration/설정 전환 일반화와 [Docker classic store 관찰](PLAN.md#미해결-호환성-관찰)은 별도 |
+| 2 중앙 정책 | 호출부·목록 SQL·표시값을 같은 정책으로 통합하고 실제 HTTP/PostgreSQL 행렬로 대조. 쓰기는 잠금 뒤 같은 트랜잭션에서 `policy::Write`로 판정하고 통과한 `Decided`만 커밋 | [정책 이전](releases/core-policy-2026-11-05-validation.json)·[트랜잭션 판정](releases/core-policy-transactions-2026-11-05-validation.json). 아래 불일치 9건은 해결했으며 새 권한 기능은 [코어 권한](CORE-PERMISSIONS.md)을 따름 |
+| 3 API 계약 | 설치·실행 작업·감사·그룹의 [Rust 타입](../crates/miy/src/api_contract.rs), [JSON Schema](../contracts/api-v1.schema.json), 생성 TS를 서버·CLI·화면에서 공유. 생성물/호환 검사와 CLI 출력·모의 응답 보완 완료 | [첫 묶음](releases/api-contract-2026-11-05-validation.json). 설치 권한·그룹 구성원/권한·앱 접근 등 나머지 응답 타입과 OpenAPI 응답 스키마는 해당 기능 변경 때 연결 |
+| 4 CLI 버전 | `scripts/check-cli-version.py`를 릴리스 후보 workflow에 연결. CLI 0.9.0/번들 0.9.0 게시 완료 | 현재 게시·실기 인수 범위는 [CLI 릴리스](CLI-RELEASE.md)가 관리 |
+
+2에서 완료한 불일치 수정은 다음과 같다. **기존 항목 번호 1~9는 증거 추적용이며 새 작업 목록이 아니다.**
+
+| 기존 번호 | 완료 요약 | 당시 증거 |
+| --- | --- | --- |
+| 1·4 | DB 준비의 접수 전 판정, 위임된 관리자의 권한 조회 범위 제한 | [후속 검증](releases/core-policy-followup-2026-11-05-validation.json) |
+| 2·3·5~8 | 승인 기록의 관리 조회와 커밋 전 응답, 관리자 쓰기의 재확인, DB/대기 작업의 공통 재판정·오류 분류, 시험 결과 기록의 잠금 후 판정, 개발 세션 조회 권한 일치 | [일관성 검증](releases/core-policy-consistency-2026-11-05-validation.json). 당시 Observe의 Use 허용은 후속 AB-05에서 제거했으며 현재는 관리 읽기만 허용 |
+| 9 | 기본·페이지·실행 관리 설치 목록과 앱 상세를 같은 SQL 행/응답 타입으로 통합 | 위 3의 API 계약 첫 묶음 |
+
+쓰기는 행위자·위임 행을 커밋까지 공유 잠금하고 권한 사실·위임 유효 상태를 한 SELECT로 읽는다. 필요한 잠금 대기 뒤 새 스냅샷으로 판정하며, 직접 트랜잭션·주체 쓰기의 우회는 `scripts/check-write-decisions.py`가 검사한다. 위임 발급 잠금 순서·HTTP/worker 동시성, API 숫자 범위·UUID/날짜 형식 검사 등의 후속 보완과 이전 실패·남은 환경 검사는 [구조 기반 리뷰 보완 기록](releases/core-foundation-review-2026-11-06-validation.json)에 보존한다.
+
+현재 API 호환 검사기는 [게시 계약](../contracts/api-v1.published.json)의 필드 제거·필수 해제·값 확장을 검사하고, 제거 근거는 `removable`에 기록한다. 이 구현을 개발 단계 전체의 하위 호환 의무로 확대하지 않는다. 계약을 끊는 변경은 개발 단계 원칙에 따라 새 버전의 CLI·SDK·웹·문서를 함께 갱신하고 게시된 바이트는 유지한다.
 
 보류한 것:
 - core/CLI crate 분리: 클라이언트도 로컬 preview·MCP에 axum·sqlx·rmcp를 쓴다. 3의 계약 타입을 별도 모듈로 모으는 데까지만 한다.
