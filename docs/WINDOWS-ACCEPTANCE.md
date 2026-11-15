@@ -1,12 +1,12 @@
 # Windows 설치와 사용자 인수
 
-- 작성일: 2026-11-03 · 정리일: 2026-11-14
-- 대상: [후보 파일](releases/windows-candidate.json)에 고정한 현재 게시 후보. 지금은 CLI **0.9.0** / SDK 번들 **0.9.0**, source `173c6d5cfd35f9d1313fe643701d4af3f374377f`
+- 작성일: 2026-11-03 · 정리일: 2026-11-15
+- 대상: [후보 파일](releases/windows-candidate.json)에 고정한 현재 게시 후보. 지금은 CLI **0.10.0** / SDK 번들 **0.10.0**, source `9133d700369c43b11abeee1738541e6abda5b4d6`
 - 상태: **절차·검사기 준비 완료. 사용자 Windows 11 실행은 `NOT_RUN`.** 사용자가 실행한 뒤 실행별 기록은 `docs/releases/`에 남기고 아래 결과표의 현재 상태를 갱신한다.
 
 Windows 사용자의 GUI·수동 설치, 갱신·제거와 실제 PC 인수는 이 문서에서 관리한다. 설치 파일의 빌드·출처 검증·서버 게시는 [CLI 릴리스](CLI-RELEASE.md)가 담당한다. 이전 후보의 [0.6.3 인수 절차](archive/results/WINDOWS-0.6.3-ACCEPTANCE.md), [버전별 검증 기록](archive/results/WINDOWS-VALIDATION.md), [설치기 도입 기록](archive/cli/WINDOWS-INSTALLER.md)은 보관 이력이다. Windows Server CI와 과거 Windows PASS를 현재 후보의 Windows 11 통과로 옮기지 않는다.
 
-이 절차는 **현재 게시된 0.9.0**을 대상으로 한다. 서버의 [사내 최소 계약](APP-BOUNDARIES.md#확정-결정)은 업무 앱 프레임 실행과 단일 IP HTTPS의 prod 포털·dev 포털·관리/로그인 콘솔 세 출처다. Keycloak과 device CLI 승인은 콘솔에 두며 도메인·내부 DNS·추가 IP는 필수가 아니다. 현재 서버 반영 여부와 주소는 [운영 안내](SERVER-OPERATIONS.md)를 따른다. 아래 Windows 검사는 사용자 수행 NOT_RUN이며 Linux·기존 HTTP IP 결과를 이 인수로 이월하지 않는다. 게시 설치기 바이트는 변경하지 않는다.
+이 절차는 **현재 게시된 0.10.0**을 대상으로 한다. 서버의 [사내 최소 계약](APP-BOUNDARIES.md#확정-결정)은 업무 앱 프레임 실행과 단일 IP HTTPS의 prod 포털·dev 포털·관리/로그인 콘솔 세 출처다. Keycloak과 device CLI 승인은 콘솔에 두며 도메인·내부 DNS·추가 IP는 필수가 아니다. 현재 서버 반영 여부와 주소는 [운영 안내](SERVER-OPERATIONS.md)를 따른다. 아래 Windows 검사는 사용자 수행 NOT_RUN이며 Linux·기존 HTTP IP 결과를 이 인수로 이월하지 않는다. 게시 설치기 바이트는 변경하지 않는다.
 
 ## 설치기 동작과 일반 설치
 
@@ -26,14 +26,14 @@ Windows 사용자의 GUI·수동 설치, 갱신·제거와 실제 PC 인수는 �
 
 ZIP을 신뢰한 배포 위치에서 받고 게시된 SHA-256과 대조한 다음 별도 디렉터리에 풀어 설치 스크립트를 실행한다. ZIP 내부에는 `miy.exe`, `release.json`, 설치·갱신·제거 스크립트와 공통 라이브러리가 있다. 설치 스크립트 자체도 검증한 ZIP 또는 확인한 소스 checkout에서 사용한다.
 
-일반 사용자 계정의 Windows x64 PowerShell 5.1/7에서 다음과 같이 실행한다. 기본 설치 위치는 `%LOCALAPPDATA%\Programs\miy\bin`이다. 예제의 파일명은 현재 0.9.0 후보 기준이며 SHA-256은 별도로 확인한 게시 값으로 대체한다. 새 후보에서는 파일명과 해시를 함께 확인한다.
+일반 사용자 계정의 Windows x64 PowerShell 5.1/7에서 다음과 같이 실행한다. 기본 설치 위치는 `%LOCALAPPDATA%\Programs\miy\bin`이다. 예제의 파일명은 현재 0.10.0 후보 기준이며 SHA-256은 별도로 확인한 게시 값으로 대체한다. 새 후보에서는 파일명과 해시를 함께 확인한다.
 
 ```powershell
 $ExpectedSha256 = 'REPLACE_WITH_PUBLISHED_SHA256'
-$Archive = (Resolve-Path '.\miy-0.9.0-x86_64-pc-windows-msvc.zip').Path
+$Archive = (Resolve-Path '.\miy-0.10.0-x86_64-pc-windows-msvc.zip').Path
 if ((Get-FileHash -LiteralPath $Archive -Algorithm SHA256).Hash -ne $ExpectedSha256) { throw 'ZIP checksum mismatch' }
-Expand-Archive -LiteralPath $Archive -DestinationPath '.\miy-release-0.9.0'
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File '.\miy-release-0.9.0\install-cli.ps1' -ArchivePath $Archive -Sha256 $ExpectedSha256
+Expand-Archive -LiteralPath $Archive -DestinationPath '.\miy-release-0.10.0'
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File '.\miy-release-0.10.0\install-cli.ps1' -ArchivePath $Archive -Sha256 $ExpectedSha256
 if ($LASTEXITCODE -ne 0) { throw "Install failed: $LASTEXITCODE" }
 & "$env:LOCALAPPDATA\Programs\miy\bin\miy.exe" --version
 if ($LASTEXITCODE -ne 0) { throw "CLI failed: $LASTEXITCODE" }
@@ -46,9 +46,9 @@ if ($LASTEXITCODE -ne 0) { throw "CLI failed: $LASTEXITCODE" }
 업데이트는 검증한 새 배포물의 외부 스크립트로 실행한다.
 
 ```powershell
-pwsh -NoProfile -ExecutionPolicy Bypass -File '.\miy-release-0.9.0\update-cli.ps1' -ArchivePath $Archive -Sha256 $ExpectedSha256
+pwsh -NoProfile -ExecutionPolicy Bypass -File '.\miy-release-0.10.0\update-cli.ps1' -ArchivePath $Archive -Sha256 $ExpectedSha256
 if ($LASTEXITCODE -ne 0) { throw "Update failed: $LASTEXITCODE" }
-pwsh -NoProfile -ExecutionPolicy Bypass -File '.\miy-release-0.9.0\uninstall-cli.ps1'
+pwsh -NoProfile -ExecutionPolicy Bypass -File '.\miy-release-0.10.0\uninstall-cli.ps1'
 if ($LASTEXITCODE -ne 0) { throw "Uninstall failed: $LASTEXITCODE" }
 ```
 
@@ -83,12 +83,12 @@ miy --context internal auth login
 
 | 항목 | 후보 파일 값 | 출처 |
 | --- | --- | --- |
-| 설치 파일 | `MiySetup-0.9.0-windows-x64.exe`, 6,268,416 bytes, SHA-256 `2777af4027cf5418487883eaf02c2bcd0be0d6f181adaf6b2e711ade445b5af4` | Windows 설치 파일 CI run `43397724560` |
-| CLI ZIP | `miy-0.9.0-x86_64-pc-windows-msvc.zip`, SHA-256 `b4adc4ba5a86932d7efea8c3cd8701565333e7cd65220a553e13afd0066e5f12` | CLI 후보 CI run `43394975993` |
-| ZIP 안 `miy.exe` | SHA-256 `1786125d408933f72335dfb630ef1a634d307ce0566c2d68fe694ea1d4009efc` | 같은 run |
-| 기록 | [0.9.0 배포 기록](releases/cli-0.9.0-2026-11-13-deployment.json) | 2026-11-13 다운로드 서버 게시 |
+| 설치 파일 | `MiySetup-0.10.0-windows-x64.exe`, 6,391,296 bytes, SHA-256 `b285566727d1ad558715a7d44543f51dcb54ade9ce716b07d968c14be6cf2aa9` | Windows 설치 파일 CI run `43674150699` |
+| CLI ZIP | `miy-0.10.0-x86_64-pc-windows-msvc.zip`, SHA-256 `f6e8ef33ee0b2d1b43cb52d77b4a5536b2b985bff720c95296fefbb8701c63d6` | CLI 후보 CI run `43672504526` |
+| ZIP 안 `miy.exe` | SHA-256 `173879802f59e45c5ce2229df6676cf6fd1e8469571adf299331c5cfe1be30c4` | 같은 run |
+| 기록 | [0.10.0 배포 기록](releases/pilot-0.10.0-2026-11-15-deployment.json) | 2026-11-15 다운로드 서버 게시 |
 
-2026-11-14 Linux에서 공개 API·EXE·ZIP·`.sha256`을 읽어 위 후보의 버전·출처·파일 해시·EXE 크기가 일치함을 확인했다. 파일을 실행하지 않았으며 Windows 사용자 인수를 대신하지 않는다. 검사기는 실행할 때마다 API를 다시 읽고 다음을 모두 확인한다. API가 다른 후보로 바뀌었거나 후보 파일과 다르면 중단한다.
+2026-11-15 Linux에서 공개 API·EXE·ZIP·`.sha256`을 읽어 위 후보의 버전·출처·파일 해시·EXE 크기가 일치함을 확인했다. 파일을 실행하지 않았으며 Windows 사용자 인수를 대신하지 않는다. 검사기는 실행할 때마다 API를 다시 읽고 다음을 모두 확인한다. API가 다른 후보로 바뀌었거나 후보 파일과 다르면 중단한다.
 - 버전과 source commit
 - EXE와 ZIP의 관계, 각 `.sha256`
 - 실제 파일 해시와 CI 고정 해시
@@ -185,7 +185,7 @@ $beforeInstall = 'step-실제성공출력'
 if ($LASTEXITCODE -ne 0) { throw 'AfterInstall failed; preserve the evidence and inspect before retrying.' }
 ```
 
-새 PowerShell 창에서 `miy --version`이 후보 버전(`miy 0.9.0`)인지, 새 사용자 PATH로 실행되는지 확인하고 종료코드만 기록한다. 원본 PATH는 저장하지 않는다.
+새 PowerShell 창에서 `miy --version`이 후보 버전(`miy 0.10.0`)인지, 새 사용자 PATH로 실행되는지 확인하고 종료코드만 기록한다. 원본 PATH는 저장하지 않는다.
 
 ## GUI 갱신과 기존 연결·인증·프로젝트 보존
 
@@ -206,7 +206,7 @@ if ($LASTEXITCODE -ne 0) { throw 'AfterUpdate failed; do not erase the old state
 갱신 후 확인:
 - 새 셸에서 `miy --version`, `miy auth status`를 실행하고 각각 `$LASTEXITCODE`를 확인한다.
 - 기존 context가 남았는지, 기존 인증을 재로그인 없이 쓸 수 있는지 따로 기록한다. 파일 보존 성공과 인증 사용성 실패는 합치지 않는다.
-- 기존 앱은 `miy app upgrade`로 번들 0.9.0으로 전환할 수 있는지 별도로 확인한다.
+- 기존 앱은 `miy app upgrade`로 번들 0.10.0으로 전환할 수 있는지 별도로 확인한다.
 
 파일 잠금, 중단·복구, 변조 거부 같은 파괴적 실패를 실제 사용자 설치에 주입하지 않는다.
 
@@ -229,11 +229,11 @@ if ($LASTEXITCODE -ne 0) { throw 'AfterRemove failed; retain evidence.' }
 
 두 셸의 실행은 별도 run으로 기록한다. GUI 조작은 눈으로 본 결과와 도구 결과를 구분하고, 같은 GUI 사건을 두 셸에서 중복 집계하지 않는다.
 
-2026-11-03의 Linux PowerShell 7.6.9 조건식 평가·변조 해시 거부와 Parser 문법 검사 PASS는 과거 검사기 확인 이력이다. 이를 현재 0.9.0 후보의 공개 파일 확인이나 Windows 실기로 옮기지 않는다. 아래 공개 파일 대조는 [후보와 출처](#후보와-출처)의 2026-11-14 Linux 읽기 확인이며, 문서 정리에서 새 검사를 실행한 결과가 아니다.
+2026-11-03의 Linux PowerShell 7.6.9 조건식 평가·변조 해시 거부와 Parser 문법 검사 PASS는 과거 검사기 확인 이력이다. 이를 현재 0.10.0 후보의 공개 파일 확인이나 Windows 실기로 옮기지 않는다. 아래 공개 파일 대조는 [후보와 출처](#후보와-출처)의 2026-11-15 Linux 읽기 확인이다(게시 EXE·ZIP을 내려받아 해시만 계산).
 
 | 항목 | 현재 상태 | 근거 |
 |---|---|---|
-| 현재 후보 공개 API·파일·CI 고정 해시 대조 | PASS (2026-11-14, Linux에서 읽기만) | [후보와 출처](#후보와-출처), [0.9.0 게시 기록](releases/cli-0.9.0-2026-11-13-deployment.json). Windows에서 파일을 실행한 결과가 아님 |
+| 현재 후보 공개 API·파일·CI 고정 해시 대조 | PASS (2026-11-15, Linux에서 읽기만) | [후보와 출처](#후보와-출처), [0.10.0 게시 기록](releases/pilot-0.10.0-2026-11-15-deployment.json). Windows에서 파일을 실행한 결과가 아님 |
 | Windows 11 PS5.1 다운로드·출처 검사 | NOT_RUN | run/step, PS·OS build, exit code |
 | Windows 11 PS7 다운로드·출처 검사 | NOT_RUN | 별도 run/step |
 | 새 GUI 설치·같은 버전 재실행 | NOT_RUN | Before/AfterInstall, 버튼 상태, 새 셸 버전 |

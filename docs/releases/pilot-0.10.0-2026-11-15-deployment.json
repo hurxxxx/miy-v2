@@ -1,0 +1,245 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-11-15",
+  "status": "PASS",
+  "scope": "Bring v2.dwdcc.kr to server and CLI 0.10.0 (SDK bundle 0.10.0, Rust SDK 0.4.0, shared UI 1.1.0, core schema 23) with the pilot readiness fixes, and accept one new app from the published CLI to its frame. This is a server download publication on the development server; it is not a public GitHub Release and not a declaration of production service.",
+  "decision": {
+    "by": "user",
+    "request": "개선 진행하고 개선 후 개선 내용문서화 해놔줘 반영까지 모두 진행해줘"
+  },
+  "source": {
+    "serverAndCliCommit": "9133d700369c43b11abeee1738541e6abda5b4d6",
+    "frameRuntimeCommit": "9133d700369c43b11abeee1738541e6abda5b4d6",
+    "portalUiCommit": "1976005eebe1c765aae322e191d99f4410b4835c",
+    "frozenCheckouts": [".local/release-9133d70-source", ".local/release-1976005-source"],
+    "note": "32b4abf and 1976005 change only the portal user registration form, tests, the CI workflow and two check scripts. Rust, SDK, frame runtime, migrations and registry inputs are identical to 9133d70, so the server, CLI and frame runtime stay at 9133d70.",
+    "validationRecords": [
+      "docs/releases/common-components-2026-11-14-validation.json",
+      "docs/releases/common-components-2026-11-15-review-fixes.json",
+      "docs/releases/pilot-readiness-2026-11-15-validation.json",
+      "docs/releases/pilot-improvements-2026-11-15-validation.json"
+    ]
+  },
+  "ci": {
+    "9133d70": {
+      "web.yml": { "runId": 43672497391, "conclusion": "success" },
+      "cli-foundation.yml": { "runId": 43672497445, "conclusion": "success" },
+      "runtime-regression.yml": {
+        "runId": 43672497528,
+        "attempt": 2,
+        "conclusion": "success",
+        "history": [
+          {
+            "attempt": 1,
+            "status": "FAIL",
+            "observed": "The isolated regression and the SDK ACL check passed; the representative app check failed after 16 s. That workflow kept no evidence. The same failure on 32b4abf, with evidence uploaded, was fixture_sql_failed: the check asked database readiness on the container's Unix socket, where the image's temporary initialization server answers before it restarts. Not a product fault. The check passed in the clean frozen checkout under Python 3.14 and 3.12."
+          }
+        ]
+      },
+      "cliCandidate": { "workflow": "cli-release.yml", "runId": 43672504526, "conclusion": "success", "publish": false, "releaseTag": "v0.10.0" },
+      "windowsInstaller": { "workflow": "windows-installer.yml", "runId": 43674150699, "conclusion": "success" }
+    },
+    "32b4abf": {
+      "web.yml": "success",
+      "cli-foundation.yml": "success",
+      "runtime-regression.yml": { "runId": 43674892220, "conclusion": "failure", "observed": "fixture_sql_failed in the representative app check (see above); nothing was deployed from this commit." }
+    },
+    "1976005": {
+      "web.yml": { "runId": 43675602610, "conclusion": "success" },
+      "cli-foundation.yml": { "runId": 43675602566, "conclusion": "success" },
+      "runtime-regression.yml": { "runId": 43675602657, "conclusion": "success", "attempt": 1 }
+    }
+  },
+  "preDeploymentChecks": [
+    {
+      "check": "Local checks on the release source",
+      "status": "PASS",
+      "record": "docs/releases/pilot-improvements-2026-11-15-validation.json"
+    },
+    { "check": "scripts/check-cli-version.py --candidate HEAD (9133d70)", "status": "PASS" },
+    {
+      "check": "scripts/core-backup.py create and verify --migrate-with the candidate",
+      "status": "PASS",
+      "observed": "Live core dump (schema 22, 43 tables, 1521 rows) restored into a disposable PostgreSQL with matching counts; the candidate's migration brought the copy to schema 23; the container was removed."
+    },
+    {
+      "check": "package-cli-release.py verify (downloaded aggregate)",
+      "status": "PASS",
+      "observed": "5 targets and 2 DB tunnel helpers, version 0.10.0, one source commit"
+    },
+    {
+      "check": "package-windows-installer.py verify",
+      "status": "PASS",
+      "observed": "MiySetup-0.10.0-windows-x64.exe, 6,391,296 bytes, SHA-256 b285566727d1ad558715a7d44543f51dcb54ade9ce716b07d968c14be6cf2aa9; embedded ZIP f6e8ef33ee0b2d1b43cb52d77b4a5536b2b985bff720c95296fefbb8701c63d6, miy.exe 173879802f59e45c5ce2229df6676cf6fd1e8469571adf299331c5cfe1be30c4"
+    },
+    {
+      "check": "stage-cli-release.py and stage-windows-installer.py into .local/release-9133d70-cli/staging",
+      "status": "PASS"
+    },
+    {
+      "check": "core-rollout.py inspect with --widen-migration 23, --cli-downloads and --cli-installers",
+      "status": "READY",
+      "observed": "CI gate 3/3, idle 0 jobs, 7 app containers (5 running), connection budget 90 of 197, guide 0.9.0/173c6d5 -> expected 0.10.0/9133d70"
+    },
+    {
+      "check": "Existing apps before the rollout (read only)",
+      "status": "PASS",
+      "observed": "Two prod and two dev apps opened in their own frame origins on the 0.9.0 server; the portal cookie was refused on each app API."
+    }
+  ],
+  "steps": [
+    {
+      "step": "core",
+      "tool": "scripts/core-rollout.py apply from the frozen checkout with --widen-migration 23 and the staged CLI release",
+      "status": "PASS",
+      "startedAt": "2026-11-15T03:53:35Z",
+      "finishedAt": "2026-11-15T03:53:46Z",
+      "releaseDirectory": ".local/release-9133d70-core",
+      "previousSha256": "467bb0d2f58c9df575aff8df947d411450204ad4dbceef29e683e1df535b9f54",
+      "serverSha256": "fc98d5abaf30e8ca8ed0cfcade52af0d5e5d1b5339c71690090b2f59fbbcae61",
+      "schemaBefore": 22,
+      "schemaAfter": 23,
+      "backup": { "verifiedBySeparateRestore": true, "tables": 43, "rows": 1521, "dumpBytes": 231327 },
+      "stableRecordsPreserved": true,
+      "appContainers": { "before": 7, "after": 7 },
+      "connectionBudget": { "worstCase": 90, "usableConnections": 197 },
+      "cliIndexes": "release-index.json and installer-index.json backed up, commit directories 9133d70... added, both indexes replaced while core was stopped; the new guide was required after start"
+    },
+    {
+      "step": "nginx",
+      "tool": ".local/release-9133d70-checks/nginx-file-routes-rollout.py prepare/apply",
+      "status": "PASS",
+      "releaseDirectory": ".local/release-9133d70-nginx",
+      "previousSha256": "03d75555fbd8b3c7eab5619dd558fe542b24fab7a0474591b09152350c55fd53",
+      "nginxSha256": "cf12f0866dd86ab29375accaaeee6502062b87cb32d0251429e630e258ab7cd9",
+      "observed": "The configuration rendered by render-server-config.py at 9133d70 differed from the installed site only by the streaming file-transfer location on the portal and the dev portal, /_miy/files/ on the app-frame server, file routes in the console's denial pattern and one comment; removing exactly those reproduced the installed bytes. nginx -t and reload passed; the rendered copy equals the installed site.",
+      "history": [
+        {
+          "status": "FAIL",
+          "observed": "The first prepare rendered with the frozen checkout and was refused before anything was installed (rendered_nginx_changes_more_than_file_routes): the renderer writes its own checkout's static directory. Rendering with the serving checkout at the same commit passed."
+        }
+      ]
+    },
+    {
+      "target": "frame-runtime",
+      "tool": "scripts/ui-rollout.py apply --target frame-runtime",
+      "status": "PASS",
+      "releaseDirectory": ".local/release-9133d70-frame-runtime",
+      "previousIndexSha256": "7795901352148bf117e3214230c1cb8964dbb8850866b46143317b66d67ba5a6",
+      "indexSha256": "726e2a7b20108c4b0379e5ede475a36af6ac9f7fe2a87fc0e54e517efc4d309b",
+      "candidateFiles": 17
+    },
+    {
+      "target": "platform",
+      "tool": "scripts/ui-rollout.py apply",
+      "status": "PASS",
+      "releaseDirectory": ".local/release-9133d70-ui",
+      "previousIndexSha256": "54c3c7438615e73316e904fcfecd399b051729463596caca3a332f19577fd8ba",
+      "indexSha256": "454dd70f367684ff5d88387d43b909686d98c9599a16a6c73f8a451227a3c5a5",
+      "candidateFiles": 97
+    },
+    {
+      "step": "shared component",
+      "tool": "miy component publish as the administrator (inside check-pilot-flow.mjs --publish-component)",
+      "status": "PASS",
+      "observed": "ui 1.1.0, SHA-256 f03807c61d3e97fcc490011ae3f716ce999b62e2ba483c979aef4670338dedc0, from the frozen checkout's registry/components/ui/1.1.0. ui 1.0.1 is unchanged."
+    },
+    {
+      "target": "platform",
+      "tool": "scripts/ui-rollout.py apply (follow-up)",
+      "status": "PASS",
+      "releaseDirectory": ".local/release-1976005-ui",
+      "previousIndexSha256": "454dd70f367684ff5d88387d43b909686d98c9599a16a6c73f8a451227a3c5a5",
+      "indexSha256": "09aee017bb67d0dfdad48ea1ae112d7a645b80306b9a6788b54c9c73ff2a17fe",
+      "reason": "On the deployed console the new user registration form drew its checkbox as a full-size field and stretched the name input. Found by looking at the live screen, fixed in 32b4abf, deployed from 1976005 after its CI passed."
+    }
+  ],
+  "postDeploymentChecks": [
+    { "check": "Health on portal, dev portal and console", "status": "PASS", "observed": "200 each, after each step" },
+    {
+      "check": "Install guide and capabilities",
+      "status": "PASS",
+      "observed": "serverVersion 0.10.0; cliVersion 0.10.0, sourceCommit 9133d70, MiySetup-0.10.0-windows-x64.exe, 5 CLI downloads; core schema 23 with app_files"
+    },
+    {
+      "check": "scripts/check-cli-downloads.py --origin https://v2.dwdcc.kr --expected-commit 9133d70...",
+      "status": "PASS",
+      "observed": "7 files, 252,950,762 bytes, hashes verified"
+    },
+    {
+      "check": "Proxy routes",
+      "status": "PASS",
+      "observed": "The console answers 404 on installation file and platform file paths; the portal passes the file route to Core, which refuses a request without credentials (403)."
+    },
+    { "check": "scripts/check-db-connections.py", "status": "PASS", "observed": "worst case 90 of 197 usable connections" },
+    {
+      "check": "Existing apps after the rollout (read only)",
+      "status": "PASS",
+      "evidence": ".local/release-9133d70-checks/frames-after/frames-check.json",
+      "observed": "The same two prod and two dev apps opened in their own frame origins; the portal cookie was refused on each app API."
+    },
+    {
+      "check": "node scripts/check-platform-connection.mjs with the published 0.10.0 Linux CLI (binary hash found in the install guide)",
+      "status": "PASS",
+      "observed": "22 passes: real OIDC developer login on portal, console SSO and dev portal SSO, CLI device login/status/doctor, generated stdio MCP tools against the live contract, API catalog, components and CLI help; cleanup failures 0"
+    },
+    {
+      "check": "node scripts/check-pilot-flow.mjs --build remote --publish-component ... with the published 0.10.0 Linux CLI",
+      "status": "PASS",
+      "evidence": [".local/release-9133d70-checks/pilot-flow-1/result.json", ".local/release-9133d70-checks/pilot-flow-1/app-frame.png"],
+      "observed": "8 passes: the published CLI matches the server and its install guide; administrator and developer signed in with ordinary OIDC and approved their CLI on the console; the administrator published ui 1.1.0; app init with generated SDK and project MCP configuration, component sync of ui 1.1.0; the developer could not approve the registration and the administrator did; the server built the committed source (31 s with a warm Docker cache); dev deployment running; the generated app rendered in its own frame origin on the dev portal. The app pilot-8e4b32b9 was stopped afterwards; its registration, dev database and release remain.",
+      "limits": "Same Linux host as the server, fixture accounts admin and developer, unmodified template app, no app dev preview, no prod promotion, no AI agent."
+    },
+    {
+      "check": "User accounts on the console (read mostly; no account created or changed)",
+      "status": "PASS",
+      "evidence": [".local/release-9133d70-checks/users-check/users-check.json", ".local/release-9133d70-checks/users-check/user-accounts-section-after-fix.png"],
+      "observed": "Registration without a session 401; a developer's registration, role change and account list 403; an administrator's invalid subject ID 400 invalid_user_id; the console shows the registration form and all four accounts. After the follow-up UI the form's inputs are aligned."
+    }
+  ],
+  "notRun": [
+    {
+      "check": "Registering a new real person and that person's sign-in on this server",
+      "reason": "It needs a new account in the identity provider, which the operator creates, and would leave a permanent user row. Covered against PostgreSQL in the permissions regression and by the refusals above."
+    },
+    {
+      "check": "Windows 11 user acceptance of MiySetup-0.10.0, macOS, private CA trust",
+      "reason": "User-performed (docs/WINDOWS-ACCEPTANCE.md); this host is Linux."
+    },
+    {
+      "check": "An AI agent (Codex or Claude Code) building an app through the project MCP",
+      "reason": "Not run for 0.10.0; the generated stdio MCP tools were checked by the connection check only."
+    },
+    {
+      "check": "app dev preview against the server, prod promotion, the common directory/sharing/attachment features in a deployed frame",
+      "reason": "The pilot flow deploys the unmodified template to dev. The common features were validated in isolation (common-components records)."
+    },
+    {
+      "check": "Direct HTTP MCP with an external OAuth client",
+      "reason": "Only the 401 challenge and discovery were read."
+    },
+    {
+      "check": "Public GitHub Release",
+      "reason": "The release gate needs the Windows and fresh AI session evidence above."
+    },
+    {
+      "check": "A separate pilot server",
+      "reason": "No other server was named; the existing development server was updated."
+    }
+  ],
+  "serverStateChanges": [
+    "core schema 23 (table app_files); server and worker 0.10.0",
+    "CLI and installer indexes point to 0.10.0; the 0.9.0 commit directories remain",
+    "component_releases: ui 1.1.0 added by the administrator account",
+    "one new app pilot-8e4b32b9 with a develop grant for the developer account, a dev database, one release and a stopped dev installation",
+    "users: unchanged (4)"
+  ],
+  "rollback": [
+    "python3 scripts/ui-rollout.py rollback --release-dir .local/release-1976005-ui (portal UI back to 9133d70), then the same with .local/release-9133d70-ui (back to 7defdb0)",
+    "python3 scripts/ui-rollout.py rollback --target frame-runtime --release-dir .local/release-9133d70-frame-runtime",
+    "python3 .local/release-9133d70-checks/nginx-file-routes-rollout.py restore /projects/miy-v2/.local/release-9133d70-nginx",
+    "python3 .local/release-9133d70-source/scripts/core-rollout.py rollback --release-dir .local/release-9133d70-core (reinstalls server 467bb0d2... and restores both 0.9.0 indexes; schema 23, ui 1.1.0 and the pilot app stay)"
+  ],
+  "rollbackNote": "Roll back in this order. None of these was run. A 0.9.0 server with schema 23 was not exercised; migration 0023 only adds a table and two indexes that 0.9.0 never reads.",
+  "users": "CLI users update with the install guide or the update commands. Existing 0.9.0 app projects move to bundle 0.10.0 with `miy app upgrade`; new projects install ui 1.1.0 by default."
+}

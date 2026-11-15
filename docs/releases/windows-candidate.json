@@ -1,22 +1,22 @@
 {
   "schemaVersion": 1,
   "origin": "https://v2.dwdcc.kr",
-  "version": "0.9.0",
-  "bundleVersion": "0.9.0",
-  "sourceCommit": "173c6d5cfd35f9d1313fe643701d4af3f374377f",
+  "version": "0.10.0",
+  "bundleVersion": "0.10.0",
+  "sourceCommit": "9133d700369c43b11abeee1738541e6abda5b4d6",
   "installer": {
-    "file": "MiySetup-0.9.0-windows-x64.exe",
-    "bytes": 6268416,
-    "sha256": "2777af4027cf5418487883eaf02c2bcd0be0d6f181adaf6b2e711ade445b5af4"
+    "file": "MiySetup-0.10.0-windows-x64.exe",
+    "bytes": 6391296,
+    "sha256": "b285566727d1ad558715a7d44543f51dcb54ade9ce716b07d968c14be6cf2aa9"
   },
   "archive": {
-    "file": "miy-0.9.0-x86_64-pc-windows-msvc.zip",
-    "sha256": "b4adc4ba5a86932d7efea8c3cd8701565333e7cd65220a553e13afd0066e5f12",
-    "binarySha256": "1786125d408933f72335dfb630ef1a634d307ce0566c2d68fe694ea1d4009efc"
+    "file": "miy-0.10.0-x86_64-pc-windows-msvc.zip",
+    "sha256": "f6e8ef33ee0b2d1b43cb52d77b4a5536b2b985bff720c95296fefbb8701c63d6",
+    "binarySha256": "173879802f59e45c5ce2229df6676cf6fd1e8469571adf299331c5cfe1be30c4"
   },
   "provenance": {
-    "cliReleaseRun": 43394975993,
-    "windowsInstallerRun": 43397724560,
-    "record": "cli-0.9.0-2026-11-13-deployment.json"
+    "cliReleaseRun": 43672504526,
+    "windowsInstallerRun": 43674150699,
+    "record": "pilot-0.10.0-2026-11-15-deployment.json"
   }
 }

@@ -200,5 +200,10 @@
       "finding": "The ownership boundary inside a generated project is enforced by three hash locks but described incompletely: the protected path lists are kept by hand in four places, recovery output and the UI 1.1.0 README name the removed command 'app components' (crates/miy/src/component_cli.rs:694, scripts/build-ui-component.mjs:41), and a remote build silently leaves out tracked files outside its allowlist (crates/miy/src/source_archive.rs:169-171)."
     }
   ],
-  "boundaryReviewMethod": "Two read-only code reviews (generated project/CLI/MCP, and server enforcement/isolation); the claims listed above were then checked against the code, and rank 1 against PostgreSQL."
+  "boundaryReviewMethod": "Two read-only code reviews (generated project/CLI/MCP, and server enforcement/isolation); the claims listed above were then checked against the code, and rank 1 against PostgreSQL.",
+  "followUp": {
+    "improvements": "docs/releases/pilot-improvements-2026-11-15-validation.json",
+    "deployment": "docs/releases/pilot-0.10.0-2026-11-15-deployment.json",
+    "note": "Gaps P1 to P3 and boundary findings 1, 2 (first part), 4 and 5 were fixed; P4 was closed by the real-server pilot flow with the published 0.10.0 CLI. Boundary finding 3 (egress) and the unverified SDK of locally built images remain open decisions. The check-server-development-flow.mjs tool named under notRun predates app frames; check-pilot-flow.mjs was used instead."
+  }
 }

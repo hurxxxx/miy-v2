@@ -3,7 +3,7 @@
   "status": "FIXES_APPLIED_WITH_VALIDATION_LIMITS",
   "request": "Fix what the pilot readiness check found, document the fixes and carry them through to the server (user: \"개선 진행하고 개선 후 개선 내용문서화 해놔줘 반영까지 모두 진행해줘\").",
   "baseCommit": "a5d714f",
-  "source": "Working tree before the release commit: the 0.10.0 candidate, the 2026-11-15 review fixes and the changes below. Deployment is recorded separately.",
+  "source": "Working tree before the release commit 9133d70: the 0.10.0 candidate, the 2026-11-15 review fixes and the changes below.",
   "previousRecord": "docs/releases/pilot-readiness-2026-11-15-validation.json",
   "evidenceDirectory": ".local/evidence/pilot-improvements-20261115",
   "changes": [
@@ -278,5 +278,21 @@
       "scope": "scripts/up.sh on a new server.",
       "reason": "It starts a platform on the host; only the build command it now runs is used by the disposable stack."
     }
-  ]
+  ],
+  "followUp": {
+    "releaseCommit": "9133d700369c43b11abeee1738541e6abda5b4d6",
+    "deploymentRecord": "docs/releases/pilot-0.10.0-2026-11-15-deployment.json",
+    "laterCommits": [
+      {
+        "commit": "32b4abf",
+        "change": "The user registration form's eligibility choice became a select and the form stopped stretching its fields; the browser test compares the two inputs' boxes. Found on the deployed console. The runtime regression workflow uploads the SDK ACL and representative app evidence on failure.",
+        "verification": "scripts/check-static.sh web PASS (.local/evidence/pilot-improvements-20261115/check-static-web-3.log)"
+      },
+      {
+        "commit": "1976005",
+        "change": "scripts/check-common-work.py and scripts/test-sdk-acl.py ask database readiness over TCP. They asked on the Unix socket, where the image's temporary initialization server answers before it restarts; CI failed this way on 9133d70 (attempt 1) and 32b4abf.",
+        "verification": "Both checks PASS locally; CI on 1976005 passed on its first attempt."
+      }
+    ]
+  }
 }

@@ -2,15 +2,13 @@
 
 CLI·Windows 설치기의 후보 빌드, 서버 다운로드 게시, 정식 GitHub Release 조건을 관리한다. 사용자 설치·개발은 [RUNNING](RUNNING.md), Windows GUI·수동 ZIP 설치와 실제 사용자 인수는 [WINDOWS-ACCEPTANCE](WINDOWS-ACCEPTANCE.md)를 따른다. 검사 종류는 [CHECKS](CHECKS.md), 버전별 과거 결과는 [CLI 검증 이력](archive/results/CLI-VALIDATION-MATRIX.md)에 모은다.
 
-서버의 현재 [실행·인증 계약](APP-BOUNDARIES.md#확정-결정)은 prod 포털·dev 포털·관리/로그인 콘솔의 세 출처다. device CLI 승인은 콘솔에서만 처리하고 legacy 시작·승인·교환은 410 `cli_upgrade_required`로 종료했다. 게시 CLI 0.9.0의 실제 연결 인수·현재 배포는 [경계 인수](APP-BOUNDARIES.md#경계-인수)와 [운영 안내](SERVER-OPERATIONS.md)를 따른다. 개발 단계의 구 형식 호환은 강제하지 않지만 게시 파일·해시는 불변이다. 후보 생성·서버 다운로드 게시·정식 공개는 서로 다른 단계다.
+서버의 현재 [실행·인증 계약](APP-BOUNDARIES.md#확정-결정)은 prod 포털·dev 포털·관리/로그인 콘솔의 세 출처다. device CLI 승인은 콘솔에서만 처리하고 legacy 시작·승인·교환은 410 `cli_upgrade_required`로 종료했다. 게시 CLI 0.10.0의 실제 연결 인수·현재 배포는 [운영 안내](SERVER-OPERATIONS.md)를, 경계 인수의 범위는 [경계 인수](APP-BOUNDARIES.md#경계-인수)를 따른다. 개발 단계의 구 형식 호환은 강제하지 않지만 게시 파일·해시는 불변이다. 후보 생성·서버 다운로드 게시·정식 공개는 서로 다른 단계다.
 
-## 작업본 0.10.0 후보
+## 현재 0.10.0 게시
 
-G4·공통 ACL·작은 첨부를 포함한 CLI/번들 0.10.0, Rust SDK 0.4.0, UI 1.1.0을 준비한다. 현재는 소스·격리 검증 후보이며 게시/운영 반영하지 않았다. 기존 0.9.0 CLI·번들·UI 바이트는 그대로 보존한다. 0.9.0 보호 파일 명세는 실제 게시 소스 `173c6d5`의 바이트로 추가했다. 새 기능은 새 SDK/UI로 명시적으로 옮겨 사용한다. 후보의 검사 범위는 [공통 기능 검증](releases/common-components-2026-11-14-validation.json)과 [리뷰 후속 기록](releases/common-components-2026-11-15-review-fixes.json)을 따른다.
+`9133d700369c43b11abeee1738541e6abda5b4d6`의 [CLI CI 43672504526](https://github.com/hurxxxx/miy-v2/actions/runs/43672504526)(5개 target과 Linux DB 연결 helper 2개, 공개 Release 없음)와 같은 CLI 출처·해시로 만든 [설치 파일 CI 43674150699](https://github.com/hurxxxx/miy-v2/actions/runs/43674150699)를 검증했다. 2026-11-15 서버 0.10.0·schema 23과 함께 [설치 안내](https://v2.dwdcc.kr/cli/install)에 게시했다([0.10.0 반영 기록](releases/pilot-0.10.0-2026-11-15-deployment.json)). SDK 번들 0.10.0은 G4 디렉터리·공통 ACL·작은 첨부의 typed SDK(Rust SDK 0.4.0)를 포함하고, 새 프로젝트는 공용 UI 1.1.0을 기본으로 설치한다. 기존 0.9.0 앱은 `miy app upgrade`로 명시적으로 옮긴다. 0.9.0 CLI·번들·UI 1.0.1 바이트는 그대로 보존한다.
 
-## 현재 0.9.0 게시
-
-`173c6d5cfd35f9d1313fe643701d4af3f374377f`의 [CLI CI 43394975993](https://github.com/hurxxxx/miy-v2/actions/runs/43394975993)(5개 target과 Linux DB 연결 helper 2개, 공개 Release 없음)와 같은 CLI 출처·해시로 만든 [설치 파일 CI 43397724560](https://github.com/hurxxxx/miy-v2/actions/runs/43397724560)을 검증했다. 2026-11-13 서버 0.9.0과 함께 [설치 안내](https://v2.dwdcc.kr/cli/install)에 게시했다([0.9.0 배포 기록](releases/cli-0.9.0-2026-11-13-deployment.json)). SDK 번들도 0.9.0이며 앱 프레임 SDK(`setNavigationState`·`apiBlob`)와 구 번들 업그레이드를 포함한다. 기존 0.8.0 앱은 `miy app upgrade`로 옮긴다. Windows 11 사용자 인수는 [현재 후보 절차](WINDOWS-ACCEPTANCE.md)를 쓰며 아직 `NOT_RUN`이다. 이전 0.7.0 게시는 [0.7.0 배포 기록](releases/core-0.7.0-deployment.json)에 있다.
+게시 CLI로 실서버에 새 앱을 만들어 서버 빌드·dev 배포·프레임 표시까지 확인했다(같은 Linux 호스트, [pilot 흐름](SERVER-OPERATIONS.md#5-실제-연결-확인)). Windows 11 사용자 인수는 [현재 후보 절차](WINDOWS-ACCEPTANCE.md)를 쓰며 아직 `NOT_RUN`이다. 이전 게시는 [0.9.0 배포 기록](releases/cli-0.9.0-2026-11-13-deployment.json), [0.7.0 배포 기록](releases/core-0.7.0-deployment.json)에 있다. 다음 번들 버전을 준비할 때 0.10.0 보호 파일 명세(`crates/miy/bundles/0.10.0.json`)를 게시 소스 `9133d70`의 바이트로 추가한다.
 
 새 후보를 게시하면 [Windows 후보 파일](releases/windows-candidate.json)을 그 CI 해시로 갱신한다. Windows 인수 검사기는 이 파일을 기대값으로 쓴다.
 

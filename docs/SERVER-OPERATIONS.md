@@ -1,6 +1,6 @@
 # 현재 플랫폼 서버 운영·연결 안내
 
-- 정리일: 2026-11-14 · 실제 운영 확인의 최신 근거: [작업본·운영 확인](releases/worktree-sync-2026-11-14-validation.json)
+- 정리일: 2026-11-15 · 실제 운영 확인의 최신 근거: [0.10.0 반영 기록](releases/pilot-0.10.0-2026-11-15-deployment.json)
 - 역할: 현재 서버·복구·반영 절차. 전체 완료/진행/잔여와 착수 순서는 [PLAN](PLAN.md), CLI 후보·게시는 [CLI-RELEASE](CLI-RELEASE.md)가 관리한다.
 
 이 프로젝트의 “운영” 주소는 아직 개발 서버다. 운영 반영은 이 서버의 변경분 배포를 뜻하며 제품 개발 완료나 정식 오픈 선언이 아니다. 이 checkout의 `.local`과 `web/platform/dist`는 실제 제공 상태이므로 검증 도구·빌드는 [AGENTS](../AGENTS.md)의 격리 경계를 지킨다.
@@ -32,7 +32,7 @@
 
 대표 주소는 `MIY_ORIGIN`, dev 포털은 `MIY_DEV_PORTAL_ORIGIN`, 콘솔은 `MIY_CONSOLE_ORIGIN`, 로그인 issuer는 `MIY_ISSUER`로 관리한다. Core의 고정 목적 listener는 `MIY_BIND_ADDR`·`MIY_DEV_PORTAL_BIND_ADDR`·`MIY_CONSOLE_BIND_ADDR`이며 `server.json`의 `origin`·`devPortalOrigin`·`consoleOrigin`과 `bind`·`devPortalBind`·`consoleBind`에 맞춘다. Keycloak은 세 출처의 정확한 callback/logout URI만 허용하고 issuer는 콘솔에 둔다. MCP resource/audience와 CLI context·설치 안내의 서버 주소는 prod 포털을 유지한다. API와 DB의 내부 포트는 사용자 PC의 CLI 설정에 입력하지 않는다. 비밀 설정 파일이나 그 전체 내용을 문서·채팅·Git에 복사하지 않는다.
 
-Keycloak 한도는 현재 컨테이너의 Docker 설정과 저장소 `compose.yaml`에 반영했다([적용·검사 기록](releases/resource-usage-2026-11-12-validation.json)). 코어·UI의 배포 소스와 schema 22는 바뀌지 않았다. 한도 변경은 사용자가 요청했을 때 해당 인증 컨테이너만 정지 → `docker update --memory 2g --memory-swap 2g` → 시작하며, 전체 Compose 재생성이나 realm 초기화를 하지 않는다. 실제 JVM PID는 cgroup의 Java 프로세스로 찾고 PID 1로 고정하지 않는다. 부족할 경우 정지 후 두 상한을 함께 4GiB로 임시 확대하고 인증·OOM 상태를 확인한다. 이 Docker에서 `docker update --memory 0 --memory-swap 0`은 기존 값을 유지하므로 상한 해제 명령으로 사용하지 않는다.
+Keycloak 한도는 현재 컨테이너의 Docker 설정과 저장소 `compose.yaml`에 반영했다([적용·검사 기록](releases/resource-usage-2026-11-12-validation.json)). 그 적용에서 코어·UI의 배포 소스와 schema는 바뀌지 않았다. 한도 변경은 사용자가 요청했을 때 해당 인증 컨테이너만 정지 → `docker update --memory 2g --memory-swap 2g` → 시작하며, 전체 Compose 재생성이나 realm 초기화를 하지 않는다. 실제 JVM PID는 cgroup의 Java 프로세스로 찾고 PID 1로 고정하지 않는다. 부족할 경우 정지 후 두 상한을 함께 4GiB로 임시 확대하고 인증·OOM 상태를 확인한다. 이 Docker에서 `docker update --memory 0 --memory-swap 0`은 기존 값을 유지하므로 상한 해제 명령으로 사용하지 않는다.
 
 서버 상태는 다음 읽기 명령으로 확인한다.
 
@@ -76,18 +76,20 @@ Codex·Claude의 생성된 프로젝트 MCP는 프로젝트의 `.miy-tools/miy[.
 
 | 대상 | 현재 배포 소스·상태 | 근거 |
 | --- | --- | --- |
-| 서버·worker, 게시 CLI | `173c6d5cfd35f9d1313fe643701d4af3f374377f`, 서버·CLI 0.9.0 / SDK 번들 0.9.0 | [CLI 0.9.0 배포](releases/cli-0.9.0-2026-11-13-deployment.json). 다운로드 서버 게시이며 정식 GitHub Release는 아님 |
-| 프레임 런타임 | `18ce0382165ba67f46dfae89c55c1d9750d50ce9` | [응답 보호·401 재전송 보완 배포](releases/app-api-response-2026-11-13-deployment.json) |
-| 포털 UI | `7defdb0de19ff1d0c3cbf34c9127cb7d3cf85877` | [프레임 리뷰 보완 배포](releases/app-frames-review-fixes-2026-11-12-deployment.json) |
-| core DB | schema 22 | [최초 프레임 도입](releases/app-frames-2026-11-12-deployment.json) 이후 위 반영에서도 유지 |
+| 서버·worker, 게시 CLI | `9133d700369c43b11abeee1738541e6abda5b4d6`, 서버·CLI 0.10.0 / SDK 번들 0.10.0 / Rust SDK 0.4.0 | [0.10.0 반영](releases/pilot-0.10.0-2026-11-15-deployment.json). 다운로드 서버 게시이며 정식 GitHub Release는 아님 |
+| 프레임 런타임 | `9133d700369c43b11abeee1738541e6abda5b4d6` | 같은 기록 |
+| 포털 UI | `1976005eebe1c765aae322e191d99f4410b4835c` | 같은 기록(사용자 등록 폼 보완을 뒤이어 반영) |
+| 프록시 | 포털·dev 포털의 파일 전송 경로, 프레임의 `/_miy/files/`, 콘솔의 파일 경로 차단 | 같은 기록. `.local/nginx-miy.conf`가 설치된 사이트와 같다 |
+| 공용 UI 컴포넌트 | `ui` 1.0.1, 1.1.0(새 프로젝트 기본) | 같은 기록. 1.1.0은 관리자 계정이 게시 |
+| core DB | schema 23 | 같은 기록. 0023은 `app_files` 표와 색인 두 개 추가 |
 
-2026-11-14에는 문서 변경 `1686939`와 현행 운영의 빌드 입력·실행 파일·웹 자산을 대조했다. 입력이 같아 바이너리·웹 자산 교체나 서비스 재시작은 하지 않았고, 기록을 `e7a5ff0`으로 남겼다([작업본·운영 확인](releases/worktree-sync-2026-11-14-validation.json)). CLI 게시 후보 고정·검증·잠금 보완은 다음 배포의 새 소스 checkout에서 사용하며 실제 운영 `apply/rollback` 재실행은 `NOT_RUN`이다.
+2026-11-15에 공통 업무 기능 후보와 파일럿 준비 보완을 함께 반영했고, 게시 CLI로 새 앱 하나를 만들어 서버 빌드·dev 배포·프레임 표시까지 인수했다(`pilot-8e4b32b9`, 중지 상태로 남김). `1976005`는 `9133d70`과 Rust·SDK·프레임 런타임·migration 입력이 같아 포털 UI만 그 커밋에서 반영했다. 그 전 2026-11-14에는 문서 변경 `1686939`와 당시 운영의 빌드 입력·실행 파일·웹 자산을 대조했다. 입력이 같아 바이너리·웹 자산 교체나 서비스 재시작은 하지 않았고, 기록을 `e7a5ff0`으로 남겼다([작업본·운영 확인](releases/worktree-sync-2026-11-14-validation.json)). CLI 게시 후보 고정·검증·잠금 보완은 다음 배포의 새 소스 checkout에서 사용하며 실제 운영 `apply/rollback` 재실행은 `NOT_RUN`이다.
 
 `main` 변경은 자동 배포되지 않는다. 서버를 갱신할 때에는 같은 버전 문자열이라도 대상 source commit·빌드 입력·설치된 SQL·게시물의 출처를 함께 확인한다. 검증한 소스의 별도 checkout에서 빌드하고 §7의 도구로 서버/worker·UI·게시 index를 같은 기록에 묶어 반영한다.
 
-**현재 서버·CLI 복구:** 서버 바이너리 SHA-256은 `467bb0d2f58c9df575aff8df947d411450204ad4dbceef29e683e1df535b9f54`다. [CLI 0.9.0 배포 기록](releases/cli-0.9.0-2026-11-13-deployment.json)의 `.local/release-173c6d5-source/scripts/core-rollout.py`와 `.local/release-173c6d5-core`를 사용하면 직전 서버 `3fe648bc…`와 CLI·설치기 0.7.0 index를 함께 복원한다. schema 22·앱 데이터·추가한 0.9.0 파일은 보존한다. 이전 `18ce038` 배포의 복구 명령은 현재 서버·CLI 동시 복구를 대신하지 않는다. 실행 당시 복구 도구 사본은 최신 도구로 덮어쓰지 않는다.
+**현재 서버·CLI 복구:** 서버 바이너리 SHA-256은 `fc98d5abaf30e8ca8ed0cfcade52af0d5e5d1b5339c71690090b2f59fbbcae61`다. [0.10.0 반영 기록](releases/pilot-0.10.0-2026-11-15-deployment.json)의 순서(포털 UI → 프레임 런타임 → 프록시 → core)로 되돌린다. `.local/release-9133d70-source/scripts/core-rollout.py rollback --release-dir .local/release-9133d70-core`는 직전 서버 `467bb0d2…`(0.9.0)와 CLI·설치기 0.9.0 index를 함께 복원한다. schema 23·앱 데이터·게시한 `ui` 1.1.0·추가한 0.10.0 파일은 보존한다. 0.9.0 서버를 schema 23에서 실행하는 복구는 수행한 적이 없다(0023은 0.9.0이 읽지 않는 표만 추가). 이전 배포의 복구 명령은 현재 서버·CLI 동시 복구를 대신하지 않는다. 실행 당시 복구 도구 사본은 최신 도구로 덮어쓰지 않는다.
 
-현재 프레임 런타임과 포털 UI의 복구는 각각 위 표의 배포 기록을 따른다. 게시 CLI source commit과 target별 hash는 `GET /api/v1/cli/install`로 확인한다. 서버는 default features 빌드이므로 클라이언트 전용 바이너리와 hash가 다르다.
+현재 프레임 런타임·포털 UI·프록시의 복구 명령도 같은 기록에 있다. 게시 CLI source commit과 target별 hash는 `GET /api/v1/cli/install`로 확인한다. 서버는 default features 빌드이므로 클라이언트 전용 바이너리와 hash가 다르다.
 
 ## 4. 공유 개발 로그인과 운영 전환
 
@@ -108,7 +110,7 @@ Codex·Claude의 생성된 프로젝트 MCP는 프로젝트의 `.miy-tools/miy[.
 
 ## 5. 실제 연결 확인
 
-최근 실제 확인에서는 세 출처 health·페이지, 서버/worker 실행 파일·schema, 게시 CLI 5종·helper 2종의 해시와 일반 OIDC/SSO·CLI·생성 stdio MCP 연결 22항목을 검사했다([2026-11-14 기록](releases/worktree-sync-2026-11-14-validation.json)). 같은 Linux 호스트에서 공개 HTTPS 주소로 실행한 결과이며 다른 PC·업무 앱 전체·직접 외부 OAuth MCP 인수와 구분한다. 이번 문서 정리에서 이 검사를 새로 실행하지 않았다.
+최근 실제 확인(2026-11-15, [0.10.0 반영 기록](releases/pilot-0.10.0-2026-11-15-deployment.json))에서는 세 출처 health, 서버/worker 실행 파일·schema, 게시 CLI 5종·helper 2종의 해시, 일반 OIDC/SSO·CLI·생성 stdio MCP 연결 22항목, 기존 앱 4개의 프레임 실행, 게시 CLI로 새 앱 하나의 생성·서버 빌드·dev 배포·프레임 표시 8항목을 검사했다. 같은 Linux 호스트에서 공개 HTTPS 주소로 실행한 결과이며 다른 PC·Windows·AI 에이전트 세션·직접 외부 OAuth MCP 인수와 구분한다.
 
 검증할 CLI의 공개 checksum/provenance와 [CLI 릴리스](CLI-RELEASE.md)의 게시 출처를 먼저 대조하고 절대 경로를 전달한다. `pnpm` 의존성과 Chrome이 필요하며 출력 디렉터리는 새 경로여야 한다.
 
