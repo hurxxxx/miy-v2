@@ -89,7 +89,7 @@
   handle @worker {
     respond 403
   }
-  @appContent path_regexp appContent ^/(artifacts(/|$)|preview(/|$)|((environments/[^/]+/)?apps)(/|$)|api/v1/(preview(/|$)|installations/[^/]+/(api(/|$)|connections/[^/]+/api(/|$))))
+  @appContent path_regexp appContent ^/(artifacts(/|$)|preview(/|$)|((environments/[^/]+/)?apps)(/|$)|api/v1/(preview(/|$)|installations/[^/]+/(api(/|$)|files(/|$)|platform/files(/|$)|connections/[^/]+/(api|files)(/|$))))
   handle @appContent {
     respond 404
   }

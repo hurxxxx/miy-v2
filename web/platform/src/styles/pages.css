@@ -288,6 +288,43 @@
   grid-column: 1 / -1;
   justify-content: flex-end;
 }
+.user-option:not(:where(.miy-app-root, .miy-app-root *)) {
+  display: flex;
+  align-items: center;
+  gap: var(--shell-space-2);
+}
+.user-accounts:not(:where(.miy-app-root, .miy-app-root *)) {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.user-account:not(:where(.miy-app-root, .miy-app-root *)) {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--shell-space-2) var(--shell-space-3);
+  padding: var(--shell-space-3) 0;
+  border-top: 1px solid var(--shell-border);
+}
+.user-account:first-child:not(:where(.miy-app-root, .miy-app-root *)) {
+  border-top: 0;
+}
+.user-account-name:not(:where(.miy-app-root, .miy-app-root *)) {
+  display: flex;
+  flex: 1 1 14rem;
+  flex-direction: column;
+  min-width: 0;
+}
+.user-account-name code:not(:where(.miy-app-root, .miy-app-root *)) {
+  overflow-wrap: anywhere;
+  color: var(--shell-ink-subtle);
+}
+.user-account-badges:not(:where(.miy-app-root, .miy-app-root *)),
+.user-account-actions:not(:where(.miy-app-root, .miy-app-root *)) {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--shell-space-2);
+}
 .status-message:not(:where(.miy-app-root, .miy-app-root *)) {
   margin: var(--shell-space-4) 0;
   color: var(--shell-ink-muted);

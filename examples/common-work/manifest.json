@@ -1,0 +1,11 @@
+{
+  "contractVersion": "miy.app/v1alpha1",
+  "id": "common-work",
+  "name": "프로젝트와 업무",
+  "version": "0.1.0",
+  "runtime": { "profile": "rust-web-v1" },
+  "ui": { "delivery": "module", "moduleEntry": "mf-manifest.json", "moduleExport": "./AppRoot", "contractVersion": "miy.ui/v1alpha1" },
+  "resources": { "database": "postgresql" },
+  "migrations": { "directory": "migrations" },
+  "requestedPermissions": ["database", "platform:directory:read", "platform:files:read", "platform:files:write"]
+}

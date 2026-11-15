@@ -89,6 +89,8 @@ miy user list
 miy --app my-app grant set --user USER_ID --permission use --environment dev
 ```
 
+사람은 관리자가 Core에 등록한 뒤에만 로그인할 수 있다. 운영자가 로그인 서버(콘솔 `/identity`의 Keycloak 관리 화면)에서 계정을 만들고, 관리자가 콘솔 **플랫폼 관리 → 사용자 계정**에서 그 계정의 ID(사용자 상세의 UUID)와 표시 이름을 등록한다. 같은 화면에서 관리자 지정, 앱 등록 신청 자격(`앱 개발 허용`), 사용 중지를 바꾼다. 등록만으로는 앱 권한이 생기지 않는다. API는 `POST /api/v1/users`, `PATCH /api/v1/users/{id}`이며 CLI 명령은 `user list`만 있다.
+
 선택한 context가 있으면 init이 프로젝트에 그 연결 이름을 기록한다. context 없이 로컬 프로젝트를 생성할 수 있지만 원격 작업 전에는 context를 추가·선택하고 로그인해야 한다. 등록 요청만으로 권한이 생기지 않는다. 관리자의 승인은 요청자에게 dev/develop 권한만 부여하며 prod/deploy는 별도다.
 
 `doctor --for develop`의 기본 runtime은 native다. manifest·번들·CLI 지침·컴포넌트 잠금, Rust/Node/pnpm/Git, 실제 Rust 링크와 프로젝트 MCP 시작을 검사한다. Docker 버전·Linux 모드·엔진/서버 아키텍처 검사는 `--runtime docker`를 명시했을 때 추가한다. 필수 검사 실패는 exit 7과 개별 결과로 반환한다. 새 앱은 로그인 후 component sync를 먼저 해야 컴포넌트 검사를 통과할 수 있다.
@@ -153,11 +155,11 @@ miy job watch DEPLOY_JOB_UUID --timeout 600
 miy app status
 ```
 
-원격 빌드는 깨끗한 Git HEAD의 허용된 업무·SDK·migration·잠금 파일만 올린다. 인증 설정·`.git`·`.miy`·`.miy-tools`·빌드 산출물·`.env`·개인 키 파일을 제외하고 심볼릭 링크와 하위 저장소를 거부한다. 임의 업무 파일에 하드코딩한 비밀을 모두 찾는 기능은 아니다. 서버는 소스 크기·SHA-256·개발 권한·SDK/컴포넌트 원본·적용 SQL 이력을 검사한다. 빌드 자체는 개발 DB를 변경하지 않는다. 커밋 ID는 CLI가 제공한 출처이며 서명된 증명이 아니고, 실제 전송 바이트는 SHA-256으로 식별한다.
+원격 빌드는 깨끗한 Git HEAD의 허용된 업무·SDK·migration·잠금 파일만 올린다. 인증 설정·`.git`·`.miy`·`.miy-tools`·빌드 산출물·`.env`·개인 키 파일을 제외하고 심볼릭 링크와 하위 저장소를 거부한다. 커밋했지만 이 범위 밖이라 보내지 않는 파일은 CLI가 올리기 전에 stderr로 이름을 알린다. 임의 업무 파일에 하드코딩한 비밀을 모두 찾는 기능은 아니다. 서버는 소스 크기·SHA-256·개발 권한·SDK/컴포넌트 원본·적용 SQL 이력을 검사한다. 빌드 자체는 개발 DB를 변경하지 않는다. 커밋 ID는 CLI가 제공한 출처이며 서명된 증명이 아니고, 실제 전송 바이트는 SHA-256으로 식별한다.
 
 빌드 영수증은 서버·사용자·앱·커밋·소스 해시·불변 이미지에 묶인다. 연결이 끊기면 `job resume REQUEST_OR_JOB_UUID --environment dev`로 원래 작업을 조회한다. 같은 소스·커밋·플랫폼의 진행/성공 작업은 재사용한다. 실패한 빌드의 resume은 원래 실패를 반환하며, 원인을 해결한 뒤 `app build --remote`를 명시적으로 다시 실행해야 새 시도를 요청한다.
 
-Dry-run은 예상 상태·계획된 변경·worker에서 남은 검사를 반환한다. 이미지 업로드나 runtime job은 생성하지 않는다. 실제 실행은 context/origin/user/app, 요청 키, payload와 expected-state를 먼저 journal에 기록한다. 이미지 archive 상한은 1 GiB다. 업로드 접수·ID 조회부터 runtime 제출까지 복구 대상이며, 전송 바이트의 일부부터 이어 보내는 기능은 제공하지 않는다.
+Dry-run은 예상 상태·계획된 변경·worker에서 남은 검사를 반환한다. 이미지 업로드나 runtime job은 생성하지 않는다. 실제 실행은 context/origin/user/app, 요청 키, payload와 expected-state를 먼저 journal에 기록한다. 이미지 archive 상한은 1 GiB다. 이미지의 `/miy`(manifest·build.json·migrations·ui)는 디렉터리와 일반 파일만 허용하며 10,000개·파일당 64MiB·합계 256MiB를 넘거나 링크·장치·파이프가 있으면 `invalid_image_contract`로 거부한다. 배포의 migration은 기본 잠금 대기 30초로 시작하고 서버의 전체 한도(기본 10분, `MIY_MIGRATION_TIMEOUT_SECONDS`)를 넘으면 중단·롤백되어 `migration_failed`가 된다. 업로드 접수·ID 조회부터 runtime 제출까지 복구 대상이며, 전송 바이트의 일부부터 이어 보내는 기능은 제공하지 않는다.
 
 현행 runtime 명령은 `runtime.preflight.v2`를 요구한다. 이 계약은 실행 앱 상태에 더해 독립적인 DB 식별자와 스키마 변경 이력을 비교한다. 이전 CLI나 서버 조합은 capability 오류로 업그레이드를 안내하며, 알 수 없는 상태를 무시하고 배포하지 않는다.
 
@@ -220,7 +222,7 @@ miy --app my-app grant set --input @grant.json
 
 ## 현행 서버 구성: HTTPS 도메인과 사내 HTTP IP
 
-이 절의 명령은 서버 구성의 준비 절차이며, 앱 프레임 도입 후의 새 서버 전체 설치 인수는 아직 `NOT_RUN`이다. **외부 도메인 구매·내부 DNS·추가 IP 없이 단일 IP와 사설 CA HTTPS**를 지원한다. prod 포털 `https://192.168.10.20:8443`, dev 포털 `https://192.168.10.20:9444`, 콘솔 `https://192.168.10.20:9443`은 설정 가능한 포트의 예시다. IdP는 콘솔 `/identity/realms/miy`에 두며 별도 IdP 출처는 요구하지 않는다. Core·Keycloak 내부 포트는 외부에 직접 공개하지 않고 프록시를 통해서만 접근한다.
+이 절의 명령은 서버 구성의 준비 절차이며, 앱 프레임 도입 후의 새 서버 전체 설치 인수는 아직 `NOT_RUN`이다. `scripts/up.sh`는 포털과 함께 프레임 런타임을 `<state>/frame-runtime`에 빌드하고, seed는 `registry/components/ui`의 모든 공용 UI 버전을 게시한다(2026-11-15). 런타임이 없으면 앱 프레임은 빈 화면 대신 `frame_runtime_missing` 안내를 표시하고 Core가 같은 이름의 경고를 기록한다. **외부 도메인 구매·내부 DNS·추가 IP 없이 단일 IP와 사설 CA HTTPS**를 지원한다. prod 포털 `https://192.168.10.20:8443`, dev 포털 `https://192.168.10.20:9444`, 콘솔 `https://192.168.10.20:9443`은 설정 가능한 포트의 예시다. IdP는 콘솔 `/identity/realms/miy`에 두며 별도 IdP 출처는 요구하지 않는다. Core·Keycloak 내부 포트는 외부에 직접 공개하지 않고 프록시를 통해서만 접근한다.
 
 최소 설치 범위는 운영자가 준비한 **IP SAN이 있는 서버 인증서·키의 반입, 체인/만료/IP 일치 검사, 단말과 CLI의 CA 신뢰 설정 안내 및 연결 확인**이다. 자동 CA 배포·자동 갱신은 후속이며 운영자는 갱신 후 같은 검사를 수행한다. 도메인 배치는 권장하지만 필수는 아니다. 포트 차이는 DOM origin을 구분할 뿐 쿠키를 격리하지 않으므로 서버의 portal/dev_portal/console 세션 용도와 정확한 Origin·현재 CSRF 검사가 필요하다. 아래 HTTP 절차의 성공을 이 인수로 옮기지 않으며 TLS 검증 해제·인증서 경고 무시·자동 HTTP fallback을 제공하지 않는다. 상세는 [출처와 자격증명](APP-BOUNDARIES.md#출처와-자격증명)을 따른다.
 

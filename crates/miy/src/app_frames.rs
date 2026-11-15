@@ -445,6 +445,10 @@ pub fn router(state: State) -> Router {
         .route("/_miy/a/{capability}/ui/{*path}", axum::routing::get(asset))
         .route("/_miy/api/{*path}", axum::routing::any(api))
         .route(
+            "/_miy/files/{*path}",
+            axum::routing::any(files).layer(axum::extract::DefaultBodyLimit::disable()),
+        )
+        .route(
             "/_miy/connections/{target}/api/{*path}",
             axum::routing::any(connection),
         )
@@ -693,6 +697,31 @@ async fn audit(s: &State, actor: &str, method: &Method, status: StatusCode, targ
     {
         tracing::error!(event = "audit_write_failed");
     }
+}
+
+async fn files(S(s): S<State>, Path(path): Path<String>, mut request: Request) -> Response {
+    let (method, headers) = (request.method().clone(), request.headers().clone());
+    let (frame, p, context) = match authenticate(&s, &method, &headers).await {
+        Ok(v) => v,
+        Err(e) => return e.into_response(),
+    };
+    request
+        .extensions_mut()
+        .insert(crate::app_calls::ForwardContext(context));
+    let target = format!(
+        "frame:/installations/{}/files/{path}",
+        frame.installation_id
+    );
+    let response = crate::file_gateway::proxy(
+        S(s.clone()),
+        axum::Extension(p.clone()),
+        Path((frame.installation_id, path)),
+        request,
+    )
+    .await
+    .into_response();
+    audit(&s, &p.id, &method, response.status(), target).await;
+    response
 }
 
 pub(crate) async fn api(
@@ -1084,7 +1113,7 @@ async fn open_frame(
 }
 
 /// The frame document: the built runtime page with the bootstrap JSON added, or a
-/// bare page carrying only the bootstrap when no runtime is configured.
+/// page carrying the bootstrap and a visible notice when no runtime is installed.
 fn frame_document(s: &State, portal: &str, bootstrap: &FrameBootstrap) -> ApiResult<Response> {
     let script = format!(
         "<script id=\"miy-frame-bootstrap\" type=\"application/json\">{}</script>",
@@ -1098,9 +1127,14 @@ fn frame_document(s: &State, portal: &str, bootstrap: &FrameBootstrap) -> ApiRes
         .and_then(|dir| std::fs::read_to_string(dir.join("index.html")).ok());
     let html = match page.as_deref().and_then(|p| p.split_once("</head>")) {
         Some((head, rest)) => format!("{head}{script}</head>{rest}"),
-        None => format!(
-            "<!doctype html><html lang=\"ko\"><head><meta charset=\"utf-8\">{script}</head><body></body></html>"
-        ),
+        // The launch is valid but nothing can run the app: say so instead of
+        // leaving an empty frame for the person and no trace for the operator.
+        None => {
+            tracing::warn!(event = "frame_runtime_missing");
+            format!(
+                "<!doctype html><html lang=\"ko\"><head><meta charset=\"utf-8\">{script}</head><body><p role=\"alert\" data-miy-error=\"frame_runtime_missing\">앱 실행 화면이 이 서버에 설치되지 않았습니다. 관리자에게 알려 주세요. (frame_runtime_missing)</p></body></html>"
+            )
+        }
     };
     Ok((
         StatusCode::OK,

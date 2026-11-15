@@ -133,6 +133,8 @@ test.beforeAll(async () => {
   mkdirSync(adminDir, { recursive: true });
   copyFileSync(join(root, "target/debug/miy"), binary);
   cli(["auth", "login", "--account", "admin", "--url", origin], adminDir);
+  // Publishing an already seeded version is accepted unchanged. The new project
+  // below installs the template's default UI version from the seed alone.
   cli(["component", "publish", join(root, "registry/components/ui/1.0.1")], adminDir);
   cli(["init", appDir, "--id", appId, "--name", appName], work);
   cli(["auth", "login", "--account", "developer", "--url", origin]);

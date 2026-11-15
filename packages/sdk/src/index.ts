@@ -1,4 +1,8 @@
 export { createNavigationGuards, type NavigationGuard } from "./navigation";
+export { ApiError, checkedResponse, fetchResponse, readJson, readBlob, request, requestBlob, requestResponse, requestHeaders, withAbort,
+  type ApiErrorKind } from "./transport";
+export { completeDirectoryPage, directoryQuery, type DirectoryQuery, type DirectoryRequestOptions, type DirectoryReader } from "./directory";
+import type { DirectoryQuery, DirectoryReader, DirectoryRequestOptions } from "./directory";
 export const UI_CONTRACT = "miy.ui/v1alpha1" as const;
 export type {
   AcceptanceRecord,
@@ -14,6 +18,9 @@ export type {
   Environment,
   Group,
   GroupSource,
+  DirectoryPage,
+  DirectoryUser,
+  DirectoryGroup,
   Health,
   HealthStatus,
   Installation,
@@ -35,7 +42,15 @@ export interface AppRuntime {
   api: <T>(path: string, init?: RequestInit) => Promise<T>;
   /** A binary response of this app's own API (downloads, previews). */
   apiBlob: (path: string, init?: RequestInit) => Promise<Blob>;
-  platformApi: <T>(resource: "directory") => Promise<T>;
+  /** App-owned file routes with the platform's separate bounded binary gateway. */
+  fileApi: (path: string, init?: RequestInit) => Promise<Response>;
+  /**
+   * Untyped directory read. Without a query it reads one page and rejects with
+   * `directory_page_incomplete` when more entries exist; use `directory` to
+   * search and follow `nextCursor`.
+   */
+  platformApi: <T>(resource: "directory", query?: DirectoryQuery, options?: DirectoryRequestOptions) => Promise<T>;
+  directory: DirectoryReader;
   appApi: <T>(appId: string, path: string, init?: RequestInit) => Promise<T>;
   /**
    * Report unsaved input or work in progress whenever it changes. The portal asks
@@ -62,23 +77,4 @@ export function appTarget(basePath: string, relative: string): string {
   )
     throw new Error("Navigation outside this app is denied");
   return u.pathname + u.search + u.hash;
-}
-export async function request<T>(
-  path: string,
-  csrf?: string,
-  init: RequestInit = {},
-): Promise<T> {
-  const response = await fetch(path, {
-    ...init,
-    credentials: "same-origin",
-    headers: {
-      "Content-Type": "application/json",
-      ...(csrf ? { "x-miy-csrf": csrf } : {}),
-      ...init.headers,
-    },
-  });
-  const data = await response.json();
-  if (!response.ok)
-    throw new Error(data.error?.code || `HTTP ${response.status}`);
-  return data;
 }

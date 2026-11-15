@@ -18,11 +18,22 @@ import { createRoot } from "react-dom/client";
 import { loadRemote, registerRemotes } from "@module-federation/enhanced/runtime";
 import {
   UI_CONTRACT,
+  ApiError,
+  checkedResponse,
+  completeDirectoryPage,
+  directoryQuery,
+  fetchResponse,
+  readBlob,
+  readJson,
+  requestHeaders,
+  withAbort,
   type AppFrameToken,
   type AppProps,
   type AppRuntime,
   type FrameBootstrap,
   type NavigationState,
+  type DirectoryQuery,
+  type DirectoryRequestOptions,
 } from "@miy/sdk";
 import {
   PROTOCOL,
@@ -146,18 +157,18 @@ const CREDENTIAL_REFUSED = "x-miy-frame-credential";
 
 /** A request to this frame origin only: no cookies, the frame token, its release. */
 async function call(path: string, init: RequestInit = {}): Promise<Response> {
+  if (init.signal?.aborted) throw new ApiError("abort", "request_aborted");
   if (stopped) throw new Error(stopped);
   if (Date.now() >= frameExpiresAt) throw renewalError("frame_session_ended");
-  if (Date.now() > tokenExpiresAt - 5_000) await renew();
+  if (Date.now() > tokenExpiresAt - 5_000) await withAbort(renew(), init.signal);
   const send = () => {
+    if (init.signal?.aborted) throw new ApiError("abort", "request_aborted");
     if (stopped) throw new Error(stopped);
     if (Date.now() >= frameExpiresAt) throw renewalError("frame_session_ended");
-    const headers = new Headers(init.headers);
-    if (typeof init.body === "string" && !headers.has("Content-Type"))
-      headers.set("Content-Type", "application/json");
+    const headers = requestHeaders(init);
     headers.set("Authorization", `Bearer ${token}`);
     headers.set("x-miy-release", boot.releaseId);
-    return fetch(path, {
+    return fetchResponse(path, {
       ...init,
       headers,
       mode: "same-origin",
@@ -172,9 +183,11 @@ async function call(path: string, init: RequestInit = {}): Promise<Response> {
   if (
     response.status === 401 &&
     response.headers.get(CREDENTIAL_REFUSED) === "rejected" &&
-    Date.now() < frameExpiresAt
+    Date.now() < frameExpiresAt &&
+    !(typeof ReadableStream !== "undefined" && init.body instanceof ReadableStream)
   ) {
-    await renew();
+    await response.body?.cancel().catch(() => {});
+    await withAbort(renew(), init.signal);
     response = await send();
   }
   if (response.status === 409) {
@@ -190,18 +203,10 @@ async function call(path: string, init: RequestInit = {}): Promise<Response> {
   return response;
 }
 async function json<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await call(path, init);
-  const data = await response.json().catch(() => null);
-  if (!response.ok) throw new Error(data?.error?.code || `HTTP ${response.status}`);
-  return data as T;
+  return readJson<T>(await call(path, init), init);
 }
 async function blob(path: string, init?: RequestInit): Promise<Blob> {
-  const response = await call(path, init);
-  if (!response.ok) {
-    const data = await response.json().catch(() => null);
-    throw new Error(data?.error?.code || `HTTP ${response.status}`);
-  }
-  return response.blob();
+  return readBlob(await call(path, init), init);
 }
 
 // The bridge listener: only the parent window at the expected origin, only
@@ -319,10 +324,13 @@ function FrameApp({ View }: { View: ComponentType<AppProps> }) {
         },
         api: <T,>(path: string, init?: RequestInit) => json<T>("/_miy/api" + apiPath(path), init),
         apiBlob: (path: string, init?: RequestInit) => blob("/_miy/api" + apiPath(path), init),
-        platformApi: <T,>(resource: "directory") => {
+        fileApi: async (path: string, init?: RequestInit) =>
+          checkedResponse(await call("/_miy/files" + apiPath(path), init), init),
+        platformApi: async <T,>(resource: "directory", query?: DirectoryQuery, options?: DirectoryRequestOptions) => {
           if (resource !== "directory") throw new Error("unknown_platform_resource");
-          return json<T>("/_miy/platform/directory");
+          return completeDirectoryPage(await json<T>("/_miy/platform/directory" + directoryQuery(query), options), query);
         },
+        directory: (query, options) => json("/_miy/platform/directory" + directoryQuery(query), options),
         appApi: <T,>(target: string, path: string, init?: RequestInit) => {
           if (!/^[a-z][a-z0-9-]{0,47}$/.test(target)) throw new Error("invalid_api_path");
           return json<T>(`/_miy/connections/${target}/api${apiPath(path)}`, init);

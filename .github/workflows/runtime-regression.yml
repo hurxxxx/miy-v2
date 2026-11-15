@@ -53,10 +53,16 @@ jobs:
       - name: Install the pinned Rust toolchain
         run: rustup toolchain install 1.99.1 --profile minimal --component rustfmt --component clippy
       - name: Fetch locked crates for the offline regression build
-        run: cargo fetch --locked
+        run: |
+          cargo fetch --locked
+          cargo fetch --locked --manifest-path templates/rust-react/Cargo.toml
       - name: Pull the fixed regression images
         run: |
           docker pull postgres:18.3
           docker pull python:3.14-slim
       - name: Run the isolated regression
         run: python3 scripts/runtime-regression/run.py
+      - name: Verify application ACL with an owned PostgreSQL
+        run: python3 scripts/test-sdk-acl.py
+      - name: Verify the representative project and attachment app
+        run: python3 scripts/check-common-work.py

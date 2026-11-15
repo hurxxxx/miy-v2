@@ -23,6 +23,7 @@ rust_checks() {
 
 web_checks() {
   pnpm typecheck
+  pnpm exec playwright test --config packages/ui/tests/playwright.config.ts
   pnpm --filter @miy/platform exec vite build --mode production --outDir "$OUT/platform" --emptyOutDir
   for mode in reference diagnosis; do
     pnpm --filter @miy/fixtures exec vite build --mode "$mode" --outDir "$OUT/fixtures-$mode" --emptyOutDir
@@ -46,6 +47,8 @@ script_checks() {
   python3 scripts/test-cli-version.py
   python3 scripts/test-write-decisions.py
   node scripts/api-types.mjs --check
+  node scripts/build-ui-component.mjs --check
+  node scripts/test-sdk-transport.mjs
   python3 scripts/check-api-compat.py
   python3 scripts/test-api-compat.py
   python3 scripts/test-cli-downloads.py

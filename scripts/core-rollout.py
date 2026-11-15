@@ -68,10 +68,12 @@ STABLE_TABLES = ['users', 'apps', 'app_registrations', 'grants', 'installations'
                  'db_resources', 'groups', 'group_members', 'group_grants', 'app_admission', 'app_controls']
 REPOSITORY = 'hurxxxx/miy-v2'
 # Migrations an older binary keeps working with because they only widen constraints or add
-# tables it never reads (0022: app frame origins, sessions and codes):
+# tables it never reads (0022: app frame origins, sessions and codes; 0023: app file
+# reservations and their two indexes):
 # version -> (file, sha256 of its exact bytes).
 WIDEN_ONLY = {21: ('0021_dev_portal.sql', 'f2b2c022638d618bb337ca1ab53d6ea2f2e0cd7b2cce474ed8659c2f7060b82a'),
-              22: ('0022_app_frames.sql', 'cfb73c37f2bb795345518cce8f813ce8d538b13876e819a376c2bbe007dc57a6')}
+              22: ('0022_app_frames.sql', 'cfb73c37f2bb795345518cce8f813ce8d538b13876e819a376c2bbe007dc57a6'),
+              23: ('0023_app_files.sql', '8985c40e0dacdd85df173f225a8d64a0f938efb9b6eddd145652d88c6f6980e2')}
 REQUIRED_CI = ('cli-foundation.yml', 'runtime-regression.yml', 'web.yml')
 HEX40 = re.compile(r'[0-9a-f]{40}')
 HEX64 = re.compile(r'[0-9a-f]{64}')

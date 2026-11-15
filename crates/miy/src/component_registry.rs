@@ -71,12 +71,84 @@ pub async fn publish(
         .await?;
     Ok(Json(stored))
 }
+/// Publish the shared components a new server starts with: every version under
+/// `registry/components/ui`, oldest first, so projects created from any bundle
+/// (each pins its own default version) can synchronize. `MIY_COMPONENT_SEED`
+/// names one package directory instead.
 pub async fn seed(pool: &sqlx::PgPool) -> Result<()> {
-    let root = std::env::var("MIY_COMPONENT_SEED")
-        .unwrap_or_else(|_| "registry/components/ui/1.0.1".into());
-    let p = read_source(FsPath::new(&root)).context("read_component_seed")?;
-    store(&mut *pool.acquire().await?, "bootstrap", p)
-        .await
-        .map_err(|e| anyhow::anyhow!("component_seed: {}", e.code))?;
+    let roots = match std::env::var_os("MIY_COMPONENT_SEED") {
+        Some(root) => vec![std::path::PathBuf::from(root)],
+        None => seed_versions(FsPath::new("registry/components/ui"))?,
+    };
+    let mut connection = pool.acquire().await?;
+    for root in roots {
+        let package = read_source(&root).context("read_component_seed")?;
+        store(&mut connection, "bootstrap", package)
+            .await
+            .map_err(|e| anyhow::anyhow!("component_seed: {}", e.code))?;
+    }
     Ok(())
+}
+
+fn seed_versions(root: &FsPath) -> Result<Vec<std::path::PathBuf>> {
+    let mut versions = Vec::new();
+    for entry in std::fs::read_dir(root).context("read_component_seed")? {
+        let entry = entry?;
+        if !entry.file_type()?.is_dir() {
+            continue;
+        }
+        let name = entry.file_name();
+        let parts: Option<Vec<u64>> = name
+            .to_str()
+            .map(|name| name.split('.').map(|part| part.parse().ok()).collect())
+            .unwrap_or_default();
+        match parts {
+            Some(parts) if parts.len() == 3 => versions.push((parts, entry.path())),
+            _ => anyhow::bail!("component_seed_version_directory"),
+        }
+    }
+    anyhow::ensure!(!versions.is_empty(), "component_seed_empty");
+    versions.sort();
+    Ok(versions.into_iter().map(|(_, path)| path).collect())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn seed_holds_every_version_in_order_including_the_template_default() {
+        let root = tempfile::tempdir().unwrap();
+        for version in ["1.10.0", "1.9.0", "1.0.1"] {
+            std::fs::create_dir(root.path().join(version)).unwrap();
+        }
+        let names: Vec<_> = seed_versions(root.path())
+            .unwrap()
+            .into_iter()
+            .map(|path| path.file_name().unwrap().to_str().unwrap().to_owned())
+            .collect();
+        assert_eq!(names, ["1.0.1", "1.9.0", "1.10.0"]);
+        std::fs::create_dir(root.path().join("draft")).unwrap();
+        assert!(seed_versions(root.path()).is_err());
+
+        // A project created from this source must find its default UI version
+        // on a server seeded from the same source.
+        let repository = FsPath::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let defaults: Value = serde_json::from_slice(
+            &std::fs::read(repository.join("templates/rust-react/miy.components.json")).unwrap(),
+        )
+        .unwrap();
+        let wanted = defaults["defaults"]["ui"].as_str().unwrap();
+        let seeded = seed_versions(&repository.join("registry/components/ui")).unwrap();
+        assert!(
+            seeded
+                .iter()
+                .any(|path| path.file_name().unwrap() == wanted),
+            "template default ui {wanted} is not seeded"
+        );
+        for path in seeded {
+            let package = read_source(&path).unwrap();
+            assert_eq!(package.name, "ui");
+        }
+    }
 }

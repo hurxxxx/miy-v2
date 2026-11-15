@@ -68,7 +68,9 @@ if(previous){
  writeFileSync(join(old,'src/main.rs'),readFileSync(join(old,'src/main.rs'),'utf8')+'\n// business change must survive upgrade\n');
  writeFileSync(join(old,'migrations/0002_preserved.sql'),'-- existing applied bytes\r\nCREATE TABLE app.preserved(id integer);\r\n');
  mkdirSync(join(old,'platform-components/custom'),{recursive:true});writeFileSync(join(old,'platform-components/custom/source.ts'),'export const business = "preserve";\n');
- const preserved=['src/main.rs','web/src/AppRoot.tsx','manifest.json','Cargo.toml','package.json','pnpm-lock.yaml','tsconfig.json','migrations/0001_initial.sql','migrations/0002_preserved.sql','platform-components/custom/source.ts','miy.components.json'];
+ // Component defaults are part of the new bundle; installed component bytes
+ // and application SQL remain unchanged until an explicit component update.
+ const preserved=['src/main.rs','web/src/AppRoot.tsx','manifest.json','Cargo.toml','package.json','pnpm-lock.yaml','tsconfig.json','migrations/0001_initial.sql','migrations/0002_preserved.sql','platform-components/custom/source.ts'];
  const previousCargo=cargoPackages(readFileSync(join(old,'Cargo.lock'),'utf8'));
  const hashes=preserved.map(path=>hash(join(old,path)));
  run('git',['init'],old);run('git',['add','.'],old);run('git',['-c','user.name=MIY regression','-c','user.email=fixture@localhost','commit','-m','Preserved application fixture'],old);

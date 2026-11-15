@@ -675,6 +675,11 @@ async fn durable_server_build_api() -> Result<()> {
         std::env::set_var("MIY_CONSOLE_ORIGIN", &issuer);
         std::env::set_var("MIY_ISSUER", &issuer);
         std::env::set_var("MIY_DEV_LOGIN", "0");
+        // Core requires the dev portal and a frame origin pool to start. This
+        // regression never opens them; the names are loopback and never bound.
+        std::env::set_var("MIY_DEV_PORTAL_ORIGIN", "http://127.0.0.1:2");
+        std::env::set_var("MIY_APP_FRAME_ORIGIN", "http://127.0.0.1:{port}");
+        std::env::set_var("MIY_APP_FRAME_PORTS", "3-9");
     }
     let state = State {
         pool: pool.clone(),

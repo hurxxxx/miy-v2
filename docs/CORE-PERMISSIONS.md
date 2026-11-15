@@ -30,7 +30,7 @@
 
 ## 설치가 요청한 권한과 관리자가 승인한 권한
 
-manifest의 `requestedPermissions`는 요구 사항이다. 인증된 backend `connections` 경로의 다른 앱 호출·directory 조회는 **현재 사용자 권한 ∩ 위임 자격증명 범위 ∩ 현재 릴리스 요청 ∩ 해당 설치/릴리스 승인 ∩ 대상 앱 사용자 정책**을 모두 만족해야 한다.
+manifest의 `requestedPermissions`는 요구 사항이다. 인증된 backend `connections` 경로의 다른 앱 호출·directory 조회·소유 앱 Storage는 **현재 사용자 권한 ∩ 위임 자격증명 범위 ∩ 현재 릴리스 요청 ∩ 해당 설치/릴리스 승인 ∩ 대상 앱 사용자 정책**을 모두 만족해야 한다.
 
 앱 프레임의 업무 API는 프레임 토큰으로 발신 설치를 증명한다. 프레임은 자기 설치의 API만 직접 부르고, 다른 앱은 A의 설치 승인을 거친 연결(`callers=[A]`)로만 호출한다. 포털 쿠키는 업무 API에 쓰이지 않는다. 2026-11-12 운영 반영 전의 같은 페이지 MF에서는 발신 앱을 증명하지 못했다. 이 한계와 사내 승인 앱 신뢰는 APP-BOUNDARIES를 따르며 backend 연결 검증의 PASS를 브라우저 발신 앱 격리로 확대하지 않는다.
 
@@ -91,13 +91,16 @@ HTTP MCP의 `get_installation_permissions`, `set_installation_permissions`도 �
 - **표시값:** 서버가 계산하는 안내 값이며, 실제 요청은 서버가 다시 판정한다.
   - `canOpen`은 사용 판정이다. `canManage`는 관리 읽기(`Manage(read)`), `canPromote`는 prod 승격 요청 접수(`Request(promote)`) 판정이다. `acceptance`는 `canManage`일 때만 담는다.
   - 위임 자격증명도 같은 판정을 따른다. 범위에 `read`가 있고 해당 환경의 관리 권한이 있으면 `canManage`가 참이다. `canPromote`는 위임 범위의 `promote`·`read`에 더해 실제 `deploy` 권한과 `miy.dev`까지 본다. 이전에는 위임이면 `canManage`가 항상 거짓이었고, 페이지 목록의 `canPromote`는 위임 범위만 봤다.
-- **관리:** 위임되지 않은 관리자만 바꿀 수 있다. 그룹·앱 정책·개인 권한 변경, 사용자 활성 상태 변경, 앱 등록 승인·거절, 앱 생성·표시 이름 변경, 공용 컴포넌트 게시는 커밋 전에 현재 `admin AND enabled`를 다시 확인하고 사용자 행 잠금을 커밋까지 유지한다. 대상 잠금을 기다리는 동안 관리자 권한이 회수됐다면 변경과 감사 기록을 함께 취소한다. 주 소속·사용자 활성 상태 변경은 행위자·대상 사용자 행을 같은 ID 순서로 잠근다. 사용자 활성 상태는 변경 전에 확인하므로 관리자가 자신의 계정을 비활성화할 수 있다(마지막 활성 관리자는 제외).
-- **감사:** 개인 권한(`grant.enabled`·`grant.disabled`. 앱 등록 승인으로 요청자에게 생기는 dev `develop` 포함), 그룹·그룹 권한(`group.*`·`group_grant.*`), 사용자 활성 상태(`user.enabled`·`user.disabled`)와 주 소속(`user.primary_group_set`), 앱 정책(`app.admission_set`·`app.disabled`·`app.enabled`) 변경을 같은 트랜잭션에 기록한다. 개인 권한에는 사용자·앱·환경·권한, 사용자 활성 상태·주 소속에는 변경 전후 값을 남긴다. 플랫폼 관리 화면의 "사용자·그룹 권한"에서 다룬다.
+- **사용자 등록:** 로그인 서버(Keycloak)는 인증만 한다. 사람은 관리자가 그 계정의 subject ID(소문자 UUID)와 표시 이름으로 Core에 등록한 뒤에만 로그인할 수 있다. 로그인 시도만으로는 아무 행도 만들지 않는다. 등록된 사람은 사용 중 상태의 비관리자이며 앱 권한이 없다. 관리자 지정과 앱 등록 신청 자격(`canDevelop`)은 별도 변경이고, 사용 중인 마지막 관리자의 관리자 지정은 해제할 수 없다. 플랫폼 관리 화면의 "사용자 계정"에서 다룬다. 계정 자체의 생성·비밀번호는 로그인 서버의 관리 화면이 담당한다.
+- **관리:** 위임되지 않은 관리자만 바꿀 수 있다. 사용자 등록·이름·관리자·앱 등록 신청 자격 변경, 그룹·앱 정책·개인 권한 변경, 사용자 활성 상태 변경, 앱 등록 승인·거절, 앱 생성·표시 이름 변경, 공용 컴포넌트 게시는 커밋 전에 현재 `admin AND enabled`를 다시 확인하고 사용자 행 잠금을 커밋까지 유지한다. 대상 잠금을 기다리는 동안 관리자 권한이 회수됐다면 변경과 감사 기록을 함께 취소한다. 주 소속·사용자 활성 상태·역할 변경은 행위자·대상 사용자 행을 같은 ID 순서로 잠근다. 사용자 활성 상태는 변경 전에 확인하므로 관리자가 자신의 계정을 비활성화할 수 있다(마지막 활성 관리자는 제외).
+- **감사:** 개인 권한(`grant.enabled`·`grant.disabled`. 앱 등록 승인으로 요청자에게 생기는 dev `develop` 포함), 그룹·그룹 권한(`group.*`·`group_grant.*`), 사용자 등록·이름·역할(`user.registered`·`user.renamed`·`user.admin.enabled|disabled`·`user.developer.enabled|disabled`. 값이 실제로 바뀐 때만), 사용자 활성 상태(`user.enabled`·`user.disabled`)와 주 소속(`user.primary_group_set`), 앱 정책(`app.admission_set`·`app.disabled`·`app.enabled`) 변경을 같은 트랜잭션에 기록한다. 개인 권한에는 사용자·앱·환경·권한, 사용자 활성 상태·주 소속에는 변경 전후 값을 남긴다. 플랫폼 관리 화면의 "사용자·그룹 권한"에서 다룬다.
 
 ```text
 GET|POST /api/v1/groups                  PATCH /api/v1/groups/{id}
 PUT /api/v1/groups/{id}/parent            GET|PUT /api/v1/groups/{id}/members
-PUT /api/v1/users/{id}/primary-group      GET|PUT /api/v1/group-grants
+GET|POST /api/v1/users                   PATCH /api/v1/users/{id}
+POST /api/v1/users/{id}/state             PUT /api/v1/users/{id}/primary-group
+GET|PUT /api/v1/group-grants
 GET /api/v1/apps/{app}/access             PUT /api/v1/apps/{app}/admission
 PUT /api/v1/apps/{app}/control            GET /api/v1/runtime/installations
 ```
@@ -143,11 +146,11 @@ Core가 앱에 전달하는 서명된 identity에는 원래 사용자·수신 �
 
 앱이 가진 `MIY_GATEWAY_SECRET`은 자기 앱에서 Core의 요청을 확인하는 용도다. 앱이 이 키로 만든 JWT를 Core 인증이나 다른 사용자 위임으로 사용할 수 없다. 후속 호출에는 Core가 별도로 발급하고 hash만 저장한 `miy_call_` 증표가 필요하다. 이 증표는 원래 만료를 연장하지 않고 최대 30초 동안 유효하다.
 
-후속 호출은 증표를 받은 설치의 `connections/.../api/...`와 읽기 directory 경로에만 허용한다. 직접 대상 API·권한 승인·작업·관리 API에는 사용할 수 없다. 각 단계는 원래 사용자 권한, 원본 CLI/browser/frame/legacy 세션, 모든 이전 설치의 현재 릴리스·승인 및 이전 호출에 사용한 권한을 다시 검사한다. 프레임에서 시작한 체인은 원 프레임의 설치·환경·릴리스와 첫 호출자의 결합도 다시 검사한다. 최초 인증 뒤 배포가 겹쳐도 요청 문맥을 새 릴리스로 바꾸지 않는다. 이 결합 보완은 [리뷰 보완 소스·검증](releases/app-frames-review-fixes-2026-11-12-validation.json)을 거쳐 운영 `7defdb0`에 반영했다([배포 기록](releases/app-frames-review-fixes-2026-11-12-deployment.json)). 원본 로그아웃이나 중간 앱 권한 철회도 기존 증표의 다음 사용을 거부한다. IdP 변경을 Core 사용자 상태에 자동 동기화하는 기능은 아니다.
+후속 호출은 증표를 받은 설치의 `connections/.../api/...`와 읽기 directory, 소유 앱의 `platform/files` 경로에만 허용한다. 직접 대상 API·권한 승인·작업·관리 API에는 사용할 수 없다. 각 단계는 원래 사용자 권한, 원본 CLI/browser/frame/legacy 세션, 모든 이전 설치의 현재 릴리스·승인 및 이전 호출에 사용한 권한을 다시 검사한다. 프레임에서 시작한 체인은 원 프레임의 설치·환경·릴리스와 첫 호출자의 결합도 다시 검사한다. 최초 인증 뒤 배포가 겹쳐도 요청 문맥을 새 릴리스로 바꾸지 않는다. 이 결합 보완은 [리뷰 보완 소스·검증](releases/app-frames-review-fixes-2026-11-12-validation.json)을 거쳐 운영 `7defdb0`에 반영했다([배포 기록](releases/app-frames-review-fixes-2026-11-12-deployment.json)). 원본 로그아웃이나 중간 앱 권한 철회도 기존 증표의 다음 사용을 거부한다. IdP 변경을 Core 사용자 상태에 자동 동기화하는 기능은 아니다.
 
 다음 단계의 유효 권한은 이전 유효 권한과 수신 앱의 승인 권한의 교집합이다. 예를 들어 A→B→C 호출에는 A와 B 모두 C 호출 권한을 요청·승인받아야 한다. B만 가진 더 강한 권한으로 A를 대신할 수 없다. 순환 호출과 8 hop을 넘는 확장은 거부한다. 한 사용자당 살아 있는 증표는 1,000개로 제한하고 만료된 증표는 발급 중 정리한다.
 
-요청 본문은 최대 4MiB·15초로 수집한 뒤 실제 전달 직전에 권한과 호출 경로를 다시 검사한다. 이미 앱으로 전달한 요청의 롤백까지 보장하지는 않는다.
+일반 JSON 연결 요청 본문은 최대 4MiB·15초로 수집한 뒤 실제 전달 직전에 권한과 호출 경로를 다시 검사한다. 이미 앱으로 전달한 요청의 롤백까지 보장하지는 않는다.
 
 Rust SDK의 `Identity.context`로 검증된 호출자 정보를 읽는다. `Identity::app_api`와 `platform_api("directory")`는 비공개 증표와 현재 release를 붙여 `MIY_CORE_ORIGIN`으로 요청한다. 런타임은 서버의 명시적인 origin을 전달한다. 기본 HTTPS이며 서버가 HTTP를 명시적으로 허용한 경우에만 `MIY_CORE_ALLOW_HTTP=1`을 전달한다. redirect는 따라가지 않고 오류·Debug 출력에 증표나 응답 body를 포함하지 않는다. 실제 설치 환경에서는 앱 컨테이너에서 이 origin에 접근할 수 있어야 한다.
 
@@ -155,28 +158,40 @@ Rust SDK의 `Identity.context`로 검증된 호출자 정보를 읽는다. `Iden
 
 ## 공통 업무 권한과 앱 연계
 
-**상태: 공통 ACL과 업무 연계의 후속 기능 계약. 공통 ACL·API 전용 Invoke·서비스 자동화·업무 이벤트·파일 연계는 미구현, 신규 인수 NOT_RUN이다.** 최소 보안 다음에 G4 디렉터리·현재 그룹 확인과 G5·G6 공통 ACL을 진행한다. A2·Invoke·이벤트·대용량 파일은 각 기능 순서에 개발하며 이번 브라우저 경계의 선행 조건이 아니다. PLM·PMS·PDM·MES·DAS는 독립 앱이고 아래 요구 전체가 v1에서 구현된 기능이라는 뜻은 아니다.
+**상태: G4 디렉터리, 앱 소유 G5·G6 ACL·공유와 작은 첨부 Storage는 새 소스 후보에 구현했다.** 게시·개발 서버 반영과 구분하며 검사 범위는 [공통 기능 검증 기록](releases/common-components-2026-11-14-validation.json)에 남긴다. API 전용 Invoke·서비스 자동화·업무 이벤트는 아직 미구현이다. A2·Invoke·이벤트·대용량 파일은 각 기능 순서에 개발하며 이번 브라우저 경계의 선행 조건이 아니다. PLM·PMS·PDM·MES·DAS는 독립 앱이고 아래 요구 전체가 v1에서 구현된 기능이라는 뜻은 아니다.
 
 ### 현행 기반과 공백
 
 | 영역 | 확인한 현행 | 개선할 부분 |
 | --- | --- | --- |
-| 공통 인증·앱 입장 | 사용자·그룹과 앱/환경 권한, 앱별 DB, 원래 사용자 identity 제공 | 앱 내부 리소스 ACL을 일관되게 집행하는 공통 SDK·미들웨어는 없음 |
-| 디렉터리 | `connections.rs`의 directory 경로는 설치 승인·위임을 검사하고 `directory_data`에서 활성 사용자 ID·이름을 제공. 프레임의 `/_miy/platform/directory`와 브라우저/Rust SDK의 directory 호출도 연결됨 | 앱용 그룹 선택 DTO·현재 멤버십 확인·포털 선택기와 해당 브리지 메시지는 없음. 선택기 표시와 권한 판정을 분리해야 함(V1-G4·G5) |
+| 공통 인증·앱 입장 | 사용자·그룹과 앱/환경 권한, 앱별 DB, 원래 사용자 identity 제공 | 앱 DB의 자원·역할·grant를 SDK `Acl`로 집행. 각 앱 handler가 반드시 연결하며 플랫폼 admin을 앱 owner로 승격하지 않음 |
+| 디렉터리 | `directory.rs`의 사용자·그룹·현재 원사용자 멤버십 DTO, 검색·cursor·ids 조회와 브라우저/Rust SDK를 제공. 설치 승인·현재 Use·위임을 매 요청 재확인 | 선택기는 앱 프레임 안의 공용 UI. 서버의 현재 판정과 구분하며 관리자 API를 대행하지 않음. HR/로컬 그룹 자동 상속 없음 |
 | backend 앱 간 호출 | connections 경로에서 같은 환경 대상 Use, 설치/릴리스 요청·승인과 호출 체인을 검사. app read/write는 GET·HEAD와 나머지 메서드 구분 | API Invoke·업무 action별 승인은 후속. 브라우저 발신 설치의 증명과 직접 API 제한은 앱 프레임 계약에서 집행 |
 | 실행 주체·비동기 | 사용자 대행·제한 위임은 구현. runtime job은 배포·승격·시작·중지 등의 운영 작업 | 서비스 계정(V1-A2), 업무 이벤트·outbox·재시도 제품은 미구현. 운영 worker를 업무 큐로 간주하지 않음 |
-| 데이터 전달 | Rust SDK JSON 연결은 요청·응답 4MiB, 15초 timeout, 자동 재시도 없음 | 대용량 CAD/도면·장기 업무 처리와 공통 Storage API는 별도 계약 필요(V1-F1·F2) |
+| 데이터 전달 | Rust SDK JSON 연결은 요청·응답 4MiB, 15초 timeout, 자동 재시도 없음 | 작은 첨부는 별도 10MiB 스트리밍 경로. 대용량 CAD/도면·장기 처리·재개 전송은 후속 |
 
 현행 prod 대상 `Use`는 명시적 use 또는 전체 허용 정책을 요구하며 관리자·deploy만으로 허용하지 않는다(AB-05 운영 반영). dev는 관리자 또는 해당 앱 develop 미리보기와 명시적 use@dev를 허용하고, 브라우저에서는 dev_portal 용도만 사용할 수 있다. backend 연결도 현재 대상 Use를 요구하며 API 전용 Invoke는 후속이다.
 
 ### 공통 ACL과 앱의 책임
 
-- 플랫폼은 인증된 사용자·그룹의 정본, 앱·환경 진입과 설치 승인, 기존 위임·감사를 제공한다. 앱 서버용 현재 멤버십 확인과 서비스 주체는 후속 기능이다. 앱이 클라이언트 입력의 사용자 ID·그룹·역할을 그대로 믿지 않도록 공통 ACL에 필요한 검증된 context를 확장한다.
-- 플랫폼 제공 SDK·서버 미들웨어는 공통 `authorize(subject, action, resource, context)` 개념, 생성 DTO, 기본 거부·공유·회수·감사와 검증 도구를 제공하는 방향으로 설계한다. 이 표기는 아직 게시 API나 wire schema가 아니다. 앱은 동일 도구를 사용하되 실제 판정은 앱 서버에서 수행하며, UI 버튼·SDK 호출 관례만으로 우회 경로를 닫았다고 판단하지 않는다.
+- 플랫폼은 인증된 사용자·그룹의 정본, 앱·환경 진입과 설치 승인, 기존 위임·감사를 제공한다. 앱 서버용 현재 멤버십 확인은 구현했고 서비스 주체는 후속이다. 앱이 클라이언트 입력의 사용자 ID·그룹·역할을 그대로 믿지 않도록 공통 ACL에 필요한 검증된 context를 확장한다.
+- SDK `Acl`은 `create_resource_in`, `require/require_in`, `list_resources`, `sharing/replace_in/replacement_result`를 제공한다. 앱이 역할→동작을 선언하고 SDK SQL을 새 앱 migration으로 적용한다. 플랫폼이 미리 만든 `app` 스키마를 사용하며 migration owner에 DB CREATE 권한을 요구하지 않는다. 업무 생성/변경과 ACL·감사·결과 기록을 같은 트랜잭션에 묶고 현재 멤버십을 조회한다. `acl.manage`와 revision·requestId로 공유 변경을 직렬화하며 보호된 생성자와 활성 직접 사용자 관리자를 유지한다. 앱은 동일 도구를 사용하되 실제 판정은 앱 서버에서 수행하며, UI 버튼·SDK 호출 관례만으로 우회 경로를 닫았다고 판단하지 않는다.
 - 앱은 업무 데이터와 선택적 공간·멤버·역할·자원 ACL 관계를 자기 앱/환경 DB에서 소유한다. 공간이 없는 앱도 지원한다. 코어에 전역 워크스페이스나 모든 업무 ACL 저장소를 추가하지 않는다. 같은 이름의 역할이나 같은 공간 ID가 다른 앱 권한으로 자동 이어지지 않는다. 사용자·그룹·서비스 주체는 플랫폼의 안정된 ID로 참조하고, 업무 역할·자원·ACL 관계는 대상 앱·환경 범위 안에서 해석한다.
 - 목록·검색·상세·다운로드·수정·대기 작업 모두 같은 현재 권한을 확인한다. 목록의 제목·건수·cursor도 접근 불가 자원을 드러내지 않아야 한다. 계정·그룹 멤버십·앱 사용·리소스 ACL 회수 뒤의 요청과 작업은 다시 판정하며, 과거 토큰·선택 값·파생 권한 복사로 접근을 유지하지 않는다. 멤버십 확인 실패 시 허용하지 않는다.
 - PLM의 설계 변경 승인 가능 상태·자기 승인 금지 같은 업무 규칙은 PLM이 소유한다. 공통 ACL이 `approve`를 허용해도 업무 상태 검사를 생략하지 않는다. 플랫폼 admin이 앱 owner·설계 승인자·공간 관리자가 되지는 않는다.
-- **앱 코드 신뢰와 사용자 ACL은 다른 경계다.** 현재 업무 앱은 설치별 출처 프레임으로 포털·다른 앱의 DOM과 프레임 자격증명에서 분리한다. 공통 ACL은 그 안에서 사용자·자원 권한을 집행하는 후속 도구이며 출처 격리를 대신하지 않는다. 같은 사이트 배치의 쿠키 간섭·프로세스 분리 한계와 외부 앱 수용 조건은 [앱 프레임 설계](APP-FRAMES.md)를 따른다. 같은 JavaScript 실행 공간을 공유한 것은 전환 전 MF 구조의 이력이다.
+- **앱 코드 신뢰와 사용자 ACL은 다른 경계다.** 현재 업무 앱은 설치별 출처 프레임으로 포털·다른 앱의 DOM과 프레임 자격증명에서 분리한다. 공통 ACL은 그 안에서 사용자·자원 권한을 집행하는 도구이며 출처 격리를 대신하지 않는다. 같은 사이트 배치의 쿠키 간섭·프로세스 분리 한계와 외부 앱 수용 조건은 [앱 프레임 설계](APP-FRAMES.md)를 따른다. 같은 JavaScript 실행 공간을 공유한 것은 전환 전 MF 구조의 이력이다.
+
+### 디렉터리·작은 첨부의 현행 계약
+
+디렉터리는 `kind=users|groups|memberships`, 검색 `q`, 1~100의 `limit`(생략하면 50), cursor, 최대 100개의 `ids`를 받는다. 쿼리 없는 SDK의 비정형 호출(`platformApi("directory")`, `platform_api("directory")`)은 한 페이지만 읽고, 항목이 더 있으면 잘린 목록을 돌려주지 않고 `directory_page_incomplete`로 실패한다. memberships는 원사용자만 조회하며 사용자 지정 매개변수를 받지 않는다. 사용자 id/name/primaryGroup, 그룹 id/name/source와 subjectId/installationId/environment를 반환한다. 권한을 가진 앱에 공개하는 DTO이며 비활성 사용자·관리자 플래그·인사 비밀 필드를 내보내지 않는다. ACL은 조회 실패 때 거부하고 그룹을 사용자 목록으로 영구 복제하지 않는다.
+
+파일은 앱 backend가 자원 ACL을 판정한 뒤 `platform:files:read/write` 승인을 가진 후속 증표로 Storage를 사용한다. 일반 브라우저/CLI의 Storage 직접 접근은 거부한다. 프레임 `/_miy/files/...`는 **소유 앱** `/api/files/...`로만 전달한다. 별도의 preview capability는 현재 개발자와 승인된 dev 설치의 directory/files만 허용하며 브라우저에 노출하지 않는다. 프리뷰는 실제 dev installationId와 로컬 release를 구분한다.
+
+Core schema 23 후보가 파일 metadata를 소유하고 bytes는 artifacts의 `.files/<installation UUID>/<file UUID>.blob`(미완료는 `.part`)에 보관한다. 앱 DB는 자원 연결과 ACL을 소유한다. 10MiB/파일, 256MiB/설치·1,000개, 1GiB/Core·10,000개, 각 전송 단계 4개 슬롯·20초 상한이며 일반 JSON 4MiB/15초 제한을 확대하지 않는다. 실제 파일명은 경로로 사용하지 않는다. 파일 응답은 content/integrity 헤더 허용 목록과 sandbox/nosniff만 통과시키며 쿠키·Clear-Site-Data는 전달하지 않는다.
+
+예약 requestId와 첨부 requestId는 독립적이며 충돌/결과 조회를 제공한다. 앱은 예약 의도를 먼저 저장하고, bytes ready 후 앱 참조를 커밋한 다음 Core attach를 기록한다. 응답 유실은 조회로 해결하고 자동 재시도·보상 삭제를 하지 않는다. incomplete pending만 24시간 만료 대상이고 ready/attached는 자동 고아 삭제하지 않는다. 만료 시각이 지난 예약은 즉시 `expired`로 보이고 quota에서 빠진다. bytes 삭제와 명시 취소 후 남은 정리는 요청 경로가 아니라 worker가 약 1분마다 수행한다. 한 파일의 삭제 실패는 그 파일만 남기고 나머지 정리와 다른 앱의 예약을 막지 않으며, 감사에는 사용자 없이 플랫폼 행위(`file.expired`·`file.cancelled`)로 남는다. 실패하거나 끊긴 업로드는 예약이 만료되기 전까지 같은 예약으로 다시 보낼 수 있다. 전송 중인 파일의 상태를 바꾸려는 요청은 몇 초 기다린 뒤 409 `file_upload_in_progress`를 받는다. 예약·첨부·취소는 lock을 쥔 채 DB 연결을 추가로 얻지 않고, 디스크 여유는 트랜잭션 밖에서 측정한다. 명시 취소는 먼저 복구 가능한 내부 cancelling 상태를 커밋해 첨부를 차단한 뒤 bytes를 삭제하고 quota를 반환한다. 정리 실패는 재조회/재실행으로 이어지며 삭제 후 ready로 되돌아가지 않는다. 앱 참조가 있으면 Core가 ready여도 취소를 거부해야 한다. 첨부된 파일은 취소로 지울 수 없다. 앱이 자기 참조를 삭제한 트랜잭션을 커밋한 뒤 첨부 때의 reference로 `detach`를 호출하면 Core가 bytes를 삭제하고 quota를 반환한다(결과는 `cancelled`, 다시 호출해도 안전). reference가 다르면 거부한다. 앱 제거는 bytes를 보존한다. 읽기/전송 시작과 업로드 완료의 현재 권한을 검사하지만 이미 전송된 바이트를 회수한다고 주장하지 않는다. Core metadata·bytes·앱 참조를 함께 백업/복원해야 하며 전체 백업 제품은 PLAN의 별도 잔여다.
+
+SDK 사용·마이그레이션 예시는 [앱 계약](../templates/rust-react/docs/CONTRACT.md)과 [대표 프로젝트·업무 앱](../examples/common-work/README.md)에 있다. PLM/PDM 대형 파일, 서비스 주체·업무 이벤트·서버 간 파일 공유는 이 작은 첨부 구현의 완료 범위가 아니다.
 
 ### 앱 간 업무 호출과 자동화
 
@@ -194,13 +209,15 @@ V1-G5·G6의 대표 앱은 기존 결정인 프로젝트·업무 앱을 유지�
 
 | 인수 | 통과 조건 | 상태 |
 | --- | --- | --- |
-| G4·G5·G6 공통 ACL | 같은 앱에 입장한 두 사용자의 자원 접근 차이, 공간 없는 앱, 다른 앱/환경 ID 오용 거부. 그룹 회수 후 직접 API·목록·검색·다운로드·대기 작업 차단 | NOT_RUN |
+| G4·G5·G6 공통 ACL | 같은 앱에 입장한 두 사용자의 자원 접근 차이, 공간 없는 앱, 다른 앱/환경 ID 오용 거부. 그룹 회수 후 직접 API·목록·검색·다운로드·대기 작업 차단 | Core 디렉터리 회귀·SDK 실DB·대표 앱 HTTP/실DB·브라우저 모의 HTTP 범위 PASS. 실제 인증/프레임/preview 전체 연결과 미구현 업무 대기 작업은 NOT_RUN |
 | PLM→PDM 사용자 대행 | 원래 사용자·호출 앱·설치 승인 보존과 대상 파일/자원 ACL 집행. 플랫폼 관리자도 앱 owner로 취급하지 않음 | NOT_RUN |
 | PLM→MES Invoke | MES UI Use 없이 허용된 action·자원만 실행. 다른 action·환경·자원과 미승인 호출 거부. PLM 자기 승인·잘못된 업무 상태 거부 | NOT_RUN |
 | A2·업무 이벤트 | 서비스 주체의 범위·만료·회수 적용, 사용자 실패의 자동 권한 상승 금지, 중복 이벤트·재시도에도 업무 효과 중복 방지와 감사 | NOT_RUN |
-| F1·F2 파일 연계 | 파일 ID·버전·주체·앱/환경 제한, 다운로드 전 회수 반영, JSON 한도와 대용량 파일 경로 구분 | NOT_RUN |
+| F1·F2 파일 연계 | 파일 ID·버전·주체·앱/환경 제한, 다운로드 전 회수 반영, JSON 한도와 대용량 파일 경로 구분 | 소유 앱의 작은 첨부·별도 5MiB 전송·회수·응답 유실 복구 PASS. 실제 전체 연결·앱 간 파일 전달·대용량 CAD·통합 복원 제품은 NOT_RUN |
 
-공통 SDK의 최초 역할/관계 범위는 G5·G6 구현 때 정한다. Invoke와 현행 Use의 호환, 서비스 주체 수명주기, 이벤트 전달·재처리, 파일 크기·전송/복원은 각 기능을 구현할 때 확정한다. 이 후속 결정을 모두 마쳐야 G4나 최소 보안을 진행할 수 있는 것은 아니다. 실제 순서는 PLAN에서만 관리한다.
+세부 명령·증거·실패 이력은 [공통 기능 검증 기록](releases/common-components-2026-11-14-validation.json)과 그 뒤의 [리뷰 후속 기록](releases/common-components-2026-11-15-review-fixes.json)을 따른다. 분리한 Core·대표 앱·브라우저 시험은 실제 배포 전체 경로 인수와 구분한다.
+
+공통 SDK는 앱 선언 역할과 직접 사용자/그룹 grant를 지원한다. 중첩 관계·익명 링크·관리자 소유권 복구는 기본 기능에 포함하지 않는다. Invoke와 현행 Use의 호환, 서비스 주체 수명주기, 이벤트 전달·재처리, 대용량 전송/통합 복원은 각 기능을 구현할 때 확정한다. 이 후속 결정을 모두 마쳐야 G4나 최소 보안을 진행할 수 있는 것은 아니다. 실제 순서는 PLAN에서만 관리한다.
 
 ## SDK 전환
 

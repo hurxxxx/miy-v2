@@ -2,6 +2,7 @@
 
 - 작성일: 2026-11-09 · 정리일: 2026-11-14
 - 상태: **채택(D1, 2026-11-10) · 소스 구현·필수 격리 실증과 개발 서버 최초 도입/리뷰 보완 완료.** CLI 0.9.0·번들 0.9.0도 게시했다. 같은 등록 도메인(P2)의 쿠키 간섭(FV-06), 화면낭독 등 남은 인수는 §6과 PLAN에서 구분한다. 현재 서버·UI·프레임 배포 소스는 [운영 안내](SERVER-OPERATIONS.md), 게시·실기 인수는 [CLI 릴리스](CLI-RELEASE.md)가 관리한다.
+- 새 기능 후보: 확장 directory·`fileApi`·preview backend capability는 CLI/번들 0.10.0 작업본에 추가했으며 아직 게시하거나 개발 서버에 반영하지 않았다. 아래 경로 표는 이 후보를 포함한다.
 - 배경: 2026-11-09 사용자가 iframe과 현행 구조의 장기 비교를 요청했다. 검토 결과 업무 앱만 별도 출처 iframe으로 분리하는 혼합 구조를 실증하기로 했고, 외부 검토 의견(보안 효과 과장, 인증서 범위, 공유 출처, 복잡성, 불완전 격리)을 아래 원칙에 반영했다.
 - 범위: 업무 앱 UI의 브라우저 실행 계약. 권한 행렬·공통 ACL은 [CORE-PERMISSIONS](CORE-PERMISSIONS.md), 작업 순서는 [PLAN](PLAN.md)을 따른다.
 
@@ -62,7 +63,7 @@ flowchart LR
 
 ### 3.2 Core 변경 범위
 
-- **앱 프레임 listener:** 브라우저 용도는 listener에 고정한다(기존 원칙). 허용 경로는 `/_miy/launch`, `/_miy/renew`, `/_miy/runtime/...`, `/_miy/a/<능력값>/...`, `/_miy/api/...`, `/_miy/connections/{대상}/api/...`, `/_miy/platform/directory`뿐이다. 경로별 허용 메서드 외에는 거부하고 쿠키 인증을 하지 않는다. Host는 용도 선택에 쓰지 않는다. 신뢰한 proxy 설정의 scheme·Host·port로 설치 출처와 정확히 대조하며, 미등록 Host와 외부의 임의 forwarded 헤더는 거부한다.
+- **앱 프레임 listener:** 브라우저 용도는 listener에 고정한다(기존 원칙). 허용 경로는 `/_miy/launch`, `/_miy/renew`, `/_miy/runtime/...`, `/_miy/a/<능력값>/...`, `/_miy/api/...`, `/_miy/files/...`, `/_miy/connections/{대상}/api/...`, `/_miy/platform/directory`뿐이다. 경로별 허용 메서드 외에는 거부하고 쿠키 인증을 하지 않는다. Host는 용도 선택에 쓰지 않는다. 신뢰한 proxy 설정의 scheme·Host·port로 설치 출처와 정확히 대조하며, 미등록 Host와 외부의 임의 forwarded 헤더는 거부한다.
 - **포털:** 실행·갱신 API를 추가한다. 채택 후 포털의 `/artifacts/` 제공과 쿠키 세션의 업무 데이터 API 접근을 제거한다. CLI·위임·backend 연결이 쓰는 기존 Core 주소와 API 경로는 아래 표의 비브라우저 인증으로 유지한다. 앱 코드가 포털 출처에서 실행되지 않으므로 앱이 `/api/v1/me`의 CSRF 값을 읽는 경로도 사라진다.
 - **자격증명:** `0022_app_frames.sql`로 프레임 세션과 1회용 코드 저장소를 추가했고 현재 개발 서버에도 적용했다. 프레임 토큰은 CLI bearer와 다른 종류다. 기존 CLI bearer의 Origin 거부 규칙은 유지하고, 프레임 인증에만 아래 요청별 검사를 적용한다. 프레임 토큰을 포털·콘솔·CLI API에 제시하면 거부한다.
 - **호출 체인:** `app_calls::origin/current/identity`와 proxy의 브라우저 판정을 함께 확장한다. 서버가 만든 `frame` 원 자격증명 문맥에 프레임 세션과 부모 세션의 결합을 보존하고, 모든 `miy_call_` 후속 호출에서 두 세션·현재 사용자 권한·설치·환경·릴리스·연결 승인을 재확인한다. 프레임을 `legacy_cli`로 분류하거나 원 문맥을 생략하지 않는다. 원 프레임의 설치·환경·릴리스는 호출 체인의 출발점과 일치해야 한다. 요청 본문 수집 중 배포가 겹쳐도 이전 프레임을 새 릴리스 문맥으로 바꾸지 않는다. 브라우저에서 시작한 체인은 모든 hop에서 `admin=false`이며 backend 증표를 프레임에 전달하지 않는다.
@@ -76,7 +77,7 @@ flowchart LR
 | `POST /_miy/launch` | 발급한 포털 세션에 묶인 1회용 실행 코드 | 코드에 결합된 포털 Origin 필수. 포털→앱의 정상 교차 출처 form 제출을 허용. 거부 시 §3.1의 재실행 안내 문서(자격증명·업무 데이터 없음) |
 | `POST /_miy/renew` | 기존 프레임에 묶인 1회용 갱신 코드 | 해당 앱 Origin 필수 |
 | API·connections의 POST·PUT·PATCH·DELETE | 프레임 토큰 | 해당 앱 Origin 필수 |
-| API·connections·directory의 GET·HEAD(각 경로가 지원하는 메서드만) | 프레임 토큰 | `Sec-Fetch-Site: same-origin` 필수. Origin은 없어도 허용하며, 있으면 해당 앱 Origin과 일치해야 함 |
+| API·files·connections·directory의 GET·HEAD(각 경로가 지원하는 메서드만) | 프레임 토큰 | `Sec-Fetch-Site: same-origin` 필수. Origin은 없어도 허용하며, 있으면 해당 앱 Origin과 일치해야 함 |
 | `/_miy/a/<능력값>/...`의 GET·HEAD | 프레임 세션별 자산 능력값 | 위 읽기 조건과 동일. 현재 세션·Use·릴리스 확인 후 응답 |
 | `/_miy/runtime/<버전>/...`의 GET·HEAD | 인증 불필요한 플랫폼 공용 정적 코드 | 등록된 앱 출처와 알려진 버전·경로만 허용. 사용자·앱 데이터나 자격증명은 포함하지 않음 |
 
@@ -86,11 +87,11 @@ flowchart LR
 
 | 자격증명 | 허용 경로와 제한 |
 | --- | --- |
-| portal/dev_portal 세션 | 해당 환경의 앱 목록·개인 정보와 실행·갱신 코드 발급. 기존 `/api/v1/installations/{id}/api/...`, `connections/...`, `platform/directory`의 쿠키 인증은 거부 |
+| portal/dev_portal 세션 | 해당 환경의 앱 목록·개인 정보와 실행·갱신 코드 발급. 기존 `/api/v1/installations/{id}/api/...`, `connections/...`, `files/...`, `platform/files`·`platform/directory`의 쿠키 인증은 거부 |
 | console 세션 | 기존 관리·CLI 승인 경로. 프레임 실행·업무 데이터 인증은 거부 |
-| 프레임 토큰 | 해당 앱 출처의 자기 `/_miy/api/...`, 승인된 `/_miy/connections/{대상}/api/...`, `/_miy/platform/directory`만 허용 |
-| CLI·사용자 위임 bearer | 기존 Core 주소의 `/api/v1/installations/{id}/api/...`, `connections/...`, `platform/directory`를 현재 scope·앱·환경·action·경로 제한의 교집합으로 허용. 프레임 경로에는 사용할 수 없음 |
-| `miy_call_` | 기존 Core 주소에서 증표의 설치에 결합된 `connections/...`와 `platform/directory`만 허용. 모든 hop의 원 자격증명·연결 승인 재검사를 유지 |
+| 프레임 토큰 | 해당 앱 출처의 자기 `/_miy/api/...`·`/_miy/files/...`, 승인된 `/_miy/connections/{대상}/api/...`, `/_miy/platform/directory`만 허용 |
+| CLI·사용자 위임 bearer | 기존 Core 주소의 `/api/v1/installations/{id}/api/...`, `connections/...`, 소유 앱 `files/...`, `platform/directory`를 현재 scope·앱·환경·action·경로 제한의 교집합으로 허용. 프레임 경로와 backend 전용 Storage에는 사용할 수 없음 |
+| `miy_call_` | 기존 Core 주소에서 증표의 설치에 결합된 `connections/...`와 `platform/directory`, 소유 앱 backend 전용 `platform/files`만 허용. 모든 hop의 원 자격증명·연결 승인 재검사를 유지 |
 | 실행 코드·갱신 코드·자산 능력값 | 각각 위 요청 표의 한 용도만 허용. 일반 API 토큰으로 사용할 수 없음 |
 
 ### 3.3 자산 제공
@@ -112,14 +113,14 @@ flowchart LR
 | `navigate(relative, {replace})` | `route.navigate`. 부모는 앱 basePath 아래의 상대 경로만 받는다. 절대 URL과 다른 앱·플랫폼 경로는 거부한다 | 프레임→부모 |
 | `registerNavigationGuard` → 신규 `setNavigationState({dirty, message?})` | 앱이 입력·저장·진행 중 작업의 합산 상태를 바꿀 때 `guard.state`를 보낸다. 콜백을 부모가 동기 실행하는 기존 계약은 새 SDK에서 교체 | 프레임→부모 |
 | `theme` | `theme.changed`. 언어는 U3 때 `locale.changed`를 추가한다 | 부모→프레임 |
-| `api`·`platformApi`·`appApi`·신규 `apiBlob(path, init?)` | 브리지 미사용. 앱 출처로 직접 요청. JSON과 바이너리 응답을 구분 | 없음 |
+| `api`·`platformApi`·`directory`·`appApi`·`apiBlob`·`fileApi` | 브리지 미사용. 앱 출처로 직접 요청. JSON과 바이너리 응답을 구분 | 없음 |
 | (신규) 실행 상태 | `frame.ready`, `frame.error`, `release.changed` | 프레임→부모 |
 | (신규) 토큰 갱신 | `token.renew` 요청 → `token.code` 응답(1회용, 앱 출처로만 전송) 또는 분류된 `token.failed` | 양방향 |
 
 - **검증:** 부모는 `event.source === iframe.contentWindow`이고 `event.origin`이 그 설치의 출처일 때만 받는다. 프레임은 `window.parent`에서 온 메시지이고 출처가 부트스트랩의 부모 출처일 때만 받는다. 보낼 때는 항상 대상 출처를 지정하고 `"*"`를 쓰지 않는다. 형식 검증, 크기 상한(예: 16KiB), 알 수 없는 type은 무시하고 집계한다.
 - **위치:** 프레임 런타임은 부모가 보낸 메모리 location만 쓰고 `history.pushState`·`replaceState`·`back`을 호출하지 않는다. iframe의 history 항목은 부모와 같은 세션 기록에 쌓여 뒤로 가기를 꼬이게 하기 때문이다. 처음 빈 iframe에 form POST로 실행하면 항목이 늘지 않는다(2026-11-10 Chromium 실측). 앱 지침도 history API 직접 사용을 금지하고 `runtime.navigate`만 쓰게 한다.
 - **입력 보호:** 부모는 시작·재로딩 때 상태를 `unknown`으로 두고 현재 프레임의 첫 `guard.state`를 받은 뒤 `clean/dirty`로 바꾼다. `dirty` 또는 `unknown`이면 레일 이동·로그아웃·재실행 전에 확인한다. 탭 닫기는 브라우저의 beforeunload 제한에 따라 기본 경고를 요청하며 사용자 정의 문구나 모든 종료 상황의 경고를 보장하지 않는다. 오류 안내 중에도 기존 iframe을 유지하며 재실행은 사용자의 확인 후 새 iframe과 등록 정보로 만든다. `frame.relaunch`는 clean 상태에서만 자동 처리하고 dirty·unknown이면 명시적인 다시 열기를 기다린다. 옛 창의 지연 메시지와 갱신 응답은 무시한다. 구 콜백 API의 비교용 어댑터는 상태를 `unknown`으로 유지하며 새 입력 보호의 PASS로 인정하지 않는다.
-- **바이너리:** `apiBlob`은 JSON API와 같은 자기 설치·상대 경로·토큰 검사로 `Promise<Blob>`을 돌려준다. 작은 서버 파일을 인증된 fetch로 받은 뒤 앱 안에서 object URL과 다운로드 링크를 만들고 사용 후 해제한다. URL에 API 토큰을 넣거나 부모에게 다운로드를 대행시키지 않는다. 일반 새 탭 링크에 bearer를 붙일 수 있다고 가정하지 않는다. 대용량 스트리밍·파일 공유 URL은 후속 Storage 계약에서 다룬다.
+- **바이너리:** `apiBlob`은 JSON API와 같은 자기 설치·상대 경로·토큰 검사로 `Promise<Blob>`을 돌려준다. 작은 서버 파일을 인증된 fetch로 받은 뒤 앱 안에서 object URL과 다운로드 링크를 만들고 사용 후 해제한다. URL에 API 토큰을 넣거나 부모에게 다운로드를 대행시키지 않는다. 일반 새 탭 링크에 bearer를 붙일 수 있다고 가정하지 않는다. `fileApi`는 작은 첨부의 별도 10MiB 스트리밍 gateway이며 소유 앱의 ACL을 거친다. Core Storage 직접 접근이나 파일 공유 URL은 제공하지 않는다. 대용량/재개 전송은 후속이다([파일 계약](CORE-PERMISSIONS.md#디렉터리작은-첨부의-현행-계약)).
 - **하지 않는 것:** HTTP 요청 대행, 다른 앱으로 메시지 중계, 부모 DOM·저장소 접근 제공, 쿠키·포털 CSRF 전달.
 - 프레임은 업무 영역 전체를 차지하는 고정 크기로 둔다. 높이 자동 조절 메시지는 두지 않으며, 앱 내부에서 스크롤한다. 모달·오버레이는 프레임 영역 안에 그려지며, 이것은 알려진 UX 변화다.
 
@@ -157,7 +158,7 @@ flowchart LR
 | 제거(채택 후) | 같은 페이지 MF 마운트, 셸 CSS의 `.miy-app-root` 제외 규칙과 CSS 격리 시험, 포털의 `/artifacts/` 경로 |
 | 고칠 시험 | `tests/platform-shell`, `surface-boundaries`, `stack-ui`, `validation`, `runtime-health`의 같은 페이지 전제(`.miy-app-root`, iframe 0개 검사)와 `platform-css-isolation`, `app-css-baseline.mjs`. Rust `browser_boundary_regression`의 MF 자산 검사, `check-server-config.py`의 frame 헤더 기대값 |
 
-로컬 preview(`miy app dev`)는 이미 `AppRoot`를 독립 문서로 실행한다(`templates/rust-react/sdk/preview/main.tsx`). 프레임 런타임은 이 구조를 재사용할 수 있다. 새 SDK의 `setNavigationState`·`apiBlob`은 preview 호스트에도 구현하되 preview의 자격증명·origin 계약은 바꾸지 않는다. 프레임 전용 fetch 설정을 기존 preview 인증에 그대로 적용하지 않는다.
+로컬 preview(`miy app dev`)는 이미 `AppRoot`를 독립 문서로 실행한다(`templates/rust-react/sdk/preview/main.tsx`). 프레임 런타임은 이 구조를 재사용할 수 있다. 새 SDK의 `setNavigationState`·`apiBlob`은 preview 호스트에도 구현하되 preview 브라우저의 쿠키·Origin 계약은 유지한다. 0.10.0 후보는 backend용 private capability/listener를 별도로 추가하며 browser에 노출하지 않는다. 프레임 전용 fetch 설정을 기존 preview 인증에 그대로 적용하지 않는다.
 
 ## 6. 실증 계획
 

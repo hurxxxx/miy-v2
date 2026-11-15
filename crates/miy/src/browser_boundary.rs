@@ -52,6 +52,15 @@ pub fn access(route: &str, method: &Method) -> Option<Access> {
         "/artifacts/{hash}/ui/{*path}"
         | "/installations/{id}/api/{*path}"
         | "/installations/{id}/platform/directory"
+        | "/installations/{id}/files/{*path}"
+        | "/installations/{id}/platform/files"
+        | "/installations/{id}/platform/files/by-request/{request}"
+        | "/installations/{id}/platform/files/{file}"
+        | "/installations/{id}/platform/files/{file}/content"
+        | "/installations/{id}/platform/files/{file}/attach"
+        | "/installations/{id}/platform/files/{file}/detach"
+        | "/preview/apps/{app}/platform/files"
+        | "/preview/apps/{app}/platform/files/{*path}"
         | "/installations/{id}/connections/{target}/api/{*path}" => Access::PortalBearer,
         "/dev-sessions/{id}/database" => Access::NonBrowser,
         "/apps/{app}/dev-sessions"
@@ -85,6 +94,7 @@ pub fn access(route: &str, method: &Method) -> Option<Access> {
         | "/app-registrations"
         | "/app-registrations/{id}/decision"
         | "/users"
+        | "/users/{id}"
         | "/users/{id}/state"
         | "/apps/{app}/releases"
         | "/installations"
@@ -244,6 +254,11 @@ mod tests {
             "/artifacts/{hash}/ui/{*path}",
             "/api/v1/installations/{id}/api/{*path}",
             "/api/v1/installations/{id}/platform/directory",
+            "/api/v1/installations/{id}/files/{*path}",
+            "/api/v1/installations/{id}/platform/files",
+            "/api/v1/installations/{id}/platform/files/{file}/content",
+            "/api/v1/preview/apps/{app}/platform/files",
+            "/api/v1/preview/apps/{app}/platform/files/{*path}",
             "/api/v1/installations/{id}/connections/{target}/api/{*path}",
         ] {
             let rule = access(route, &Method::GET).unwrap();

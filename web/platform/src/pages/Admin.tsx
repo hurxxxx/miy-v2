@@ -8,8 +8,9 @@ import { LoadError, StaleNotice } from "../components/LoadState";
 import { RuntimeHealth } from "../components/RuntimeHealth";
 import { RuntimeControls } from "../components/RuntimeControls";
 import { Badge, Button, EmptyState, Field, Loading, Panel } from "../ui";
-import { AppAccessAdmin, GroupAdmin, useGroups, type DirectoryUser } from "./AdminAccess";
+import { AppAccessAdmin, GroupAdmin, useGroups } from "./AdminAccess";
 import { AuditLog } from "./AdminAudit";
+import { UserAdmin, type Account } from "./AdminUsers";
 
 type Registration = { id: string; appId: string; name: string; status: string; requester: string };
 
@@ -21,16 +22,16 @@ export function Admin() {
         <p>관리자로 로그인하세요.</p>
       </Panel>
     );
-  return <AdminConsole csrf={user.csrf} />;
+  return <AdminConsole csrf={user.csrf} selfId={user.id} />;
 }
 
-function AdminConsole({ csrf }: { csrf: string }) {
+function AdminConsole({ csrf, selfId }: { csrf: string; selfId: string }) {
   const surface = useSurface();
   // The runtime panel uses the management list; the shared list feeds the rail.
   const installations = useInstallations();
   const managed = useManagedInstallations();
   const [requests, setRequests] = useState<Registration[] | null>(null);
-  const [users, setUsers] = useState<DirectoryUser[] | null>(null);
+  const [users, setUsers] = useState<Account[] | null>(null);
   const [loadError, setLoadError] = useState(false);
   const [message, setMessage] = useState("");
   const groups = useGroups(setMessage);
@@ -38,7 +39,7 @@ function AdminConsole({ csrf }: { csrf: string }) {
     try {
       const [nextRequests, nextUsers] = await Promise.all([
         request<Registration[]>("/api/v1/app-registrations"),
-        request<DirectoryUser[]>("/api/v1/users"),
+        request<Account[]>("/api/v1/users"),
       ]);
       setRequests(nextRequests);
       setUsers(nextUsers);
@@ -94,7 +95,7 @@ function AdminConsole({ csrf }: { csrf: string }) {
       <div className="page-header">
         <div>
           <h1>플랫폼 관리</h1>
-          <p>앱 등록 신청, 사용자·그룹의 앱 권한과 회사 사용 상태, 실행 중인 앱을 관리합니다.</p>
+          <p>앱 등록 신청, 사용자 계정, 사용자·그룹의 앱 권한과 회사 사용 상태, 실행 중인 앱을 관리합니다.</p>
         </div>
       </div>
       {loadError && <LoadError message="앱 등록 신청 또는 사용자 목록을 불러오지 못했습니다." onRetry={refresh} />}
@@ -167,6 +168,10 @@ function AdminConsole({ csrf }: { csrf: string }) {
             </div>
           </form>
         </Panel>
+      </div>
+      <h2 className="page-section-title">사용자 계정</h2>
+      <div className="admin-grid">
+        <UserAdmin csrf={csrf} selfId={selfId} users={users} report={setMessage} refresh={refresh} />
       </div>
       <h2 className="page-section-title">사용자·그룹 권한</h2>
       <div className="admin-grid">

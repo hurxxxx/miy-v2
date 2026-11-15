@@ -11,7 +11,6 @@ use axum::{
     extract::{Path, Request, State as S},
     response::Response,
 };
-use serde_json::{Value, json};
 use sqlx::Row;
 use uuid::Uuid;
 
@@ -38,20 +37,26 @@ pub async fn directory(
     axum::Extension(p): axum::Extension<Principal>,
     Path(id): Path<Uuid>,
     req: Request,
-) -> ApiResult<Json<Value>> {
-    source(&s, &p, id, "platform:directory:read").await?;
+) -> ApiResult<Json<crate::api_contract::DirectoryPage>> {
+    let inst = source(&s, &p, id, "platform:directory:read").await?;
     if let Some(c) = req.extensions().get::<crate::app_calls::Context>() {
         crate::app_calls::require(&s, &p, c, id, "platform:directory:read").await?;
     }
-    directory_data(&s).await
-}
-pub async fn directory_data(s: &State) -> ApiResult<Json<Value>> {
-    let users: Vec<Value> = sqlx::query_scalar(
-        "SELECT jsonb_build_object('id',id,'name',name) FROM users WHERE enabled ORDER BY name",
-    )
-    .fetch_all(&s.pool)
-    .await?;
-    Ok(Json(json!({"users":users})))
+    let query = crate::directory::DirectoryQuery::from_uri(req.uri())?;
+    let environment = inst
+        .get::<&str, _>("environment")
+        .parse()
+        .map_err(|_| ApiError::unavailable("invalid_installation_environment"))?;
+    let page =
+        crate::directory::read(&s, &p.id, id, inst.get("release_id"), environment, query).await?;
+    let current = source(&s, &p, id, "platform:directory:read").await?;
+    if current.get::<Uuid, _>("release_id") != inst.get::<Uuid, _>("release_id") {
+        return Err(ApiError::conflict("release_changed_reload_required"));
+    }
+    if let Some(c) = req.extensions().get::<crate::app_calls::Context>() {
+        crate::app_calls::require(&s, &p, c, id, "platform:directory:read").await?;
+    }
+    Ok(Json(page))
 }
 pub async fn connect(
     S(s): S<State>,
@@ -92,14 +97,7 @@ pub async fn preview_connect(
     Path((app, target, path)): Path<(String, String, String)>,
     mut req: Request,
 ) -> ApiResult<Response> {
-    policy::require(
-        &s,
-        &p,
-        &app,
-        "dev",
-        AppAction::Manage(crate::delegations::Action::DevSession),
-    )
-    .await?;
+    require_preview(&s, &p, &app).await?;
     let id = dev_installation(&s, &app).await?;
     let access = if matches!(
         *req.method(),
@@ -125,23 +123,27 @@ pub async fn preview_directory(
     S(s): S<State>,
     axum::Extension(p): axum::Extension<Principal>,
     Path(app): Path<String>,
-) -> ApiResult<Json<Value>> {
-    policy::require(
+    req: Request,
+) -> ApiResult<Json<crate::api_contract::DirectoryPage>> {
+    require_preview(&s, &p, &app).await?;
+    let id = dev_installation(&s, &app).await?;
+    let inst = source(&s, &p, id, "platform:directory:read").await?;
+    let query = crate::directory::DirectoryQuery::from_uri(req.uri())?;
+    let page = crate::directory::read(
         &s,
-        &p,
-        &app,
-        "dev",
-        AppAction::Manage(crate::delegations::Action::DevSession),
+        &p.id,
+        id,
+        inst.get("release_id"),
+        crate::runtime_contract::Environment::Dev,
+        query,
     )
     .await?;
-    source(
-        &s,
-        &p,
-        dev_installation(&s, &app).await?,
-        "platform:directory:read",
-    )
-    .await?;
-    directory_data(&s).await
+    require_preview(&s, &p, &app).await?;
+    let current = source(&s, &p, id, "platform:directory:read").await?;
+    if current.get::<Uuid, _>("release_id") != inst.get::<Uuid, _>("release_id") {
+        return Err(ApiError::conflict("release_changed_reload_required"));
+    }
+    Ok(Json(page))
 }
 async fn forward(
     s: &State,
@@ -198,15 +200,33 @@ pub struct PreviewCall {
     release_id: Uuid,
     permission: String,
 }
-pub async fn recheck_preview(s: &State, p: &Principal, call: &PreviewCall) -> ApiResult<()> {
+/// The local preview carries a CLI or scoped delegation credential. Recheck the
+/// actual credential after body reads, not just the user's still-existing grants.
+pub(crate) async fn require_preview(s: &State, p: &Principal, app: &str) -> ApiResult<()> {
+    if p.browser_purpose.is_some() {
+        return Err(ApiError::forbidden());
+    }
+    if let Some(session) = p.cli_session_id {
+        let live: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM cli_sessions WHERE id=$1 AND user_id=$2 AND revoked_at IS NULL AND expires_at>clock_timestamp())")
+            .bind(session).bind(&p.id).fetch_one(&s.pool).await?;
+        if !live {
+            return Err(ApiError::unauthorized());
+        }
+    } else if p.delegation_id.is_none() {
+        return Err(ApiError::forbidden());
+    }
     policy::require(
         s,
         p,
-        &call.app_id,
+        app,
         "dev",
         AppAction::Manage(crate::delegations::Action::DevSession),
     )
-    .await?;
+    .await
+}
+
+pub async fn recheck_preview(s: &State, p: &Principal, call: &PreviewCall) -> ApiResult<()> {
+    require_preview(s, p, &call.app_id).await?;
     let inst = source(s, p, call.installation_id, &call.permission).await?;
     if inst.get::<Uuid, _>("release_id") != call.release_id
         || inst.get::<String, _>("environment") != "dev"

@@ -68,6 +68,46 @@ pub fn router_for(state: State, purpose: BrowserPurpose) -> Router {
             axum::routing::get(crate::connections::directory),
         )
         .route(
+            "/installations/{id}/platform/files",
+            axum::routing::post(crate::storage::reserve),
+        )
+        .route(
+            "/installations/{id}/platform/files/by-request/{request}",
+            axum::routing::get(crate::storage::by_request),
+        )
+        .route(
+            "/installations/{id}/platform/files/{file}",
+            axum::routing::get(crate::storage::metadata).delete(crate::storage::cancel),
+        )
+        .route(
+            "/installations/{id}/platform/files/{file}/content",
+            axum::routing::get(crate::storage::download)
+                .put(crate::storage::upload)
+                .layer(axum::extract::DefaultBodyLimit::disable()),
+        )
+        .route(
+            "/installations/{id}/platform/files/{file}/attach",
+            axum::routing::post(crate::storage::attach),
+        )
+        .route(
+            "/installations/{id}/platform/files/{file}/detach",
+            axum::routing::post(crate::storage::detach),
+        )
+        .route(
+            "/installations/{id}/files/{*path}",
+            axum::routing::any(crate::file_gateway::proxy)
+                .layer(axum::extract::DefaultBodyLimit::disable()),
+        )
+        .route(
+            "/preview/apps/{app}/platform/files",
+            axum::routing::post(crate::storage::preview_reserve),
+        )
+        .route(
+            "/preview/apps/{app}/platform/files/{*path}",
+            axum::routing::any(crate::storage::preview_file)
+                .layer(axum::extract::DefaultBodyLimit::disable()),
+        )
+        .route(
             "/installations/{id}/connections/{target}/api/{*path}",
             axum::routing::any(crate::connections::connect),
         )
@@ -169,7 +209,8 @@ pub fn router_for(state: State, purpose: BrowserPurpose) -> Router {
             "/app-registrations/{id}/decision",
             axum::routing::post(decide_registration),
         )
-        .route("/users", axum::routing::get(users))
+        .route("/users", axum::routing::get(users).post(register_user))
+        .route("/users/{id}", axum::routing::patch(update_user))
         .route("/users/{id}/state", axum::routing::post(set_user_state))
         .route("/apps/{app}/releases", axum::routing::post(create_release))
         .route(
@@ -572,6 +613,7 @@ async fn session_guard(S(state): S<State>, mut request: Request, next: Next) -> 
                 .map(|p| p.as_str())
                 .unwrap_or("");
             let allowed = p.delegation_id.is_none() || delegated_route(route, request.method());
+            let audited_read = audited_read_route(route);
             request.extensions_mut().insert(p);
             let mut response = if allowed {
                 next.run(request).await
@@ -588,10 +630,7 @@ async fn session_guard(S(state): S<State>, mut request: Request, next: Next) -> 
                 .headers_mut()
                 .insert("x-request-id", id.parse().unwrap());
             tracing::info!(event="api_request",request_id=%id,actor=%actor,method=%method,path=%path,status=response.status().as_u16());
-            if (method != "GET"
-                || !response.status().is_success()
-                || path.contains("/connections/")
-                || path.ends_with("/platform/directory"))
+            if (method != "GET" || !response.status().is_success() || audited_read)
                 && sqlx::query(
                     "INSERT INTO audit(actor,action,target,request_id) VALUES($1,$2,$3,$4)",
                 )
@@ -610,6 +649,24 @@ async fn session_guard(S(state): S<State>, mut request: Request, next: Next) -> 
         Err(e) => e.into_response(),
     }
 }
+/// Successful reads that still leave an audit row: directory, file and app
+/// connection reads. The matched route template decides. A caller-chosen path
+/// that merely contains `/files/` or `/connections/` is not one of them.
+fn audited_read_route(route: &str) -> bool {
+    matches!(
+        route.strip_prefix("/api/v1").unwrap_or(route),
+        "/installations/{id}/platform/directory"
+            | "/preview/apps/{app}/platform/directory"
+            | "/installations/{id}/platform/files/by-request/{request}"
+            | "/installations/{id}/platform/files/{file}"
+            | "/installations/{id}/platform/files/{file}/content"
+            | "/installations/{id}/files/{*path}"
+            | "/preview/apps/{app}/platform/files/{*path}"
+            | "/installations/{id}/connections/{target}/api/{*path}"
+            | "/preview/apps/{app}/connections/{target}/api/{*path}"
+    )
+}
+
 // Only routes with explicit delegated action/resource checks may accept a
 // restricted credential. A future unrelated account/admin API stays denied.
 fn delegated_route(route: &str, method: &axum::http::Method) -> bool {
@@ -667,6 +724,15 @@ fn delegated_route(route: &str, method: &axum::http::Method) -> bool {
         (
             _,
             "/installations/{id}/api/{*path}"
+            | "/installations/{id}/files/{*path}"
+            | "/installations/{id}/platform/files"
+            | "/installations/{id}/platform/files/by-request/{request}"
+            | "/installations/{id}/platform/files/{file}"
+            | "/installations/{id}/platform/files/{file}/content"
+            | "/installations/{id}/platform/files/{file}/attach"
+            | "/installations/{id}/platform/files/{file}/detach"
+            | "/preview/apps/{app}/platform/files"
+            | "/preview/apps/{app}/platform/files/{*path}"
             | "/installations/{id}/connections/{target}/api/{*path}"
             | "/preview/apps/{app}/connections/{target}/api/{*path}",
         ) => matches!(
@@ -751,6 +817,21 @@ async fn set_user_state(
     Ok(Json(
         json!({"userId":id,"enabled":input.enabled,"source":"core","sessionsRevoked":!input.enabled}),
     ))
+}
+async fn register_user(
+    S(s): S<State>,
+    axum::Extension(p): P,
+    Json(input): Json<crate::user_admin::Registration>,
+) -> ApiResult<Json<Value>> {
+    Ok(Json(crate::user_admin::register(&s, &p, input).await?))
+}
+async fn update_user(
+    S(s): S<State>,
+    axum::Extension(p): P,
+    Path(id): Path<String>,
+    Json(input): Json<crate::user_admin::Update>,
+) -> ApiResult<Json<Value>> {
+    Ok(Json(crate::user_admin::update(&s, &p, &id, input).await?))
 }
 async fn registrations(
     S(s): S<State>,
@@ -1254,6 +1335,28 @@ mod tests {
             );
         }
         headers
+    }
+
+    #[test]
+    fn successful_reads_are_audited_by_route_template_not_by_path_text() {
+        for route in [
+            "/api/v1/installations/{id}/platform/directory",
+            "/api/v1/installations/{id}/platform/files/{file}/content",
+            "/api/v1/installations/{id}/files/{*path}",
+            "/installations/{id}/connections/{target}/api/{*path}",
+        ] {
+            assert!(audited_read_route(route));
+        }
+        // A request below these templates may carry `/files/` or `/connections/`
+        // in its own path; that text selects nothing.
+        for route in [
+            "/api/v1/installations/{id}/api/{*path}",
+            "/artifacts/{hash}/ui/{*path}",
+            "/api/v1/me",
+            "",
+        ] {
+            assert!(!audited_read_route(route));
+        }
     }
 
     #[test]

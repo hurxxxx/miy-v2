@@ -1,0 +1,282 @@
+{
+  "date": "2026-11-15",
+  "status": "FIXES_APPLIED_WITH_VALIDATION_LIMITS",
+  "request": "Fix what the pilot readiness check found, document the fixes and carry them through to the server (user: \"개선 진행하고 개선 후 개선 내용문서화 해놔줘 반영까지 모두 진행해줘\").",
+  "baseCommit": "a5d714f",
+  "source": "Working tree before the release commit: the 0.10.0 candidate, the 2026-11-15 review fixes and the changes below. Deployment is recorded separately.",
+  "previousRecord": "docs/releases/pilot-readiness-2026-11-15-validation.json",
+  "evidenceDirectory": ".local/evidence/pilot-improvements-20261115",
+  "changes": [
+    {
+      "finding": "Boundary 1 (critical): a server build read the app-owned migration history as the provisioning superuser.",
+      "change": "worker::verify_development_migrations connects as the app's own migration login and acts as its schema owner (worker::app_owner_connection). A session that authenticated as a superuser is not used with SET ROLE, because a function called by the read can return to the session user. The read is abandoned after 15 seconds and only that session is ended.",
+      "files": [
+        "crates/miy/src/worker.rs",
+        "crates/miy/src/development_regression.rs"
+      ],
+      "verification": "Isolated PostgreSQL (check-development-database.py): a view over the history whose function reports success only to a non-superuser reader passes; a view that sleeps is refused as build_database_history_unavailable within the limit and leaves no active session."
+    },
+    {
+      "finding": "Boundary 4 (high): developer migrations had no time bound in the sequential control lane.",
+      "change": "Migrations run on the app-owner connection with lock_timeout 30s and inside MIY_MIGRATION_TIMEOUT_SECONDS (30..86400, default 600). At the limit the app's migration sessions in that database are ended, the resource is marked failed and the job fails as migration_failed.",
+      "files": [
+        "crates/miy/src/worker.rs"
+      ],
+      "verification": "Normal migrations: runtime regression, development-database and the disposable full stack. The timeout branch itself was not exercised (NOT_RUN)."
+    },
+    {
+      "finding": "Boundary 2 (high): Docker extracted an uploaded image's /miy onto the platform disk without size or file-type limits, and files were read whole.",
+      "change": "runtime::copy_image_contract streams `docker cp CONTAINER:/miy/. -` into a bounded private tar file and contract::unpack_artifact writes only directories and regular files with safe relative names (10,000 entries, 64 MiB per file, 256 MiB total). contract::artifact_hash refuses any entry that is not a regular file or directory, applies the same limits and hashes by streaming.",
+      "files": [
+        "crates/miy/src/contract.rs",
+        "crates/miy/src/runtime.rs"
+      ],
+      "verification": "Unit tests for links, pipes, devices, parent and absolute paths, duplicates and an oversized declared member; real image imports in the runtime regression and the disposable full stack."
+    },
+    {
+      "finding": "Gap P1: no way to register real users.",
+      "change": "POST /api/v1/users registers a person by the identity provider's subject ID (lowercase UUID) and display name as an enabled non-administrator without app permissions; PATCH /api/v1/users/{id} changes name, administrator role and app-registration eligibility, keeping the last enabled administrator. Both are administrator-only writes decided through policy::Write with audit rows (user.registered, user.renamed, user.admin.*, user.developer.*). The console's platform management page has a user accounts section. GET /api/v1/users also returns enabled. No CLI command was added.",
+      "files": [
+        "crates/miy/src/user_admin.rs",
+        "crates/miy/src/http.rs",
+        "crates/miy/src/browser_boundary.rs",
+        "crates/miy/src/domain.rs",
+        "crates/miy/src/registration.rs",
+        "crates/miy/src/permissions_regression.rs",
+        "web/platform/src/pages/AdminUsers.tsx",
+        "web/platform/src/pages/Admin.tsx",
+        "web/platform/src/pages/AdminAudit.tsx",
+        "web/platform/src/styles/pages.css",
+        "tests/admin-access.spec.ts"
+      ],
+      "verification": "Unit test for ID and name validation; permissions regression against PostgreSQL (refusals, creation, conflict, no grants, role changes, audit rows); mocked console UI test.",
+      "limits": "Core does not create or read identity-provider accounts. An operator creates the account in Keycloak and copies its ID. Sign-in of a newly registered real account on the server is covered only by the deployment acceptance, not by this record."
+    },
+    {
+      "finding": "Gap P3: a seeded registry lacked the UI version the template installs.",
+      "change": "component_registry::seed publishes every version directory under registry/components/ui in version order unless MIY_COMPONENT_SEED names one package. A unit test requires the template's default UI version to be among them.",
+      "files": [
+        "crates/miy/src/component_registry.rs",
+        "tests/stack-ui.spec.ts"
+      ],
+      "verification": "The disposable full stack no longer publishes the template's UI version itself; a new project synchronizes from the seed."
+    },
+    {
+      "finding": "Gap P2 (R12, partly): a server started with up.sh had no frame runtime and showed an empty page.",
+      "change": "scripts/up.sh builds @miy/frame-runtime into STATE/frame-runtime. Without a runtime the frame document shows a notice with data-miy-error=frame_runtime_missing and Core logs the same event.",
+      "files": [
+        "scripts/up.sh",
+        "crates/miy/src/app_frames.rs"
+      ],
+      "verification": "Runtime regression frame suite and the disposable full stack with a built runtime.",
+      "limits": "up.sh itself was not run (it starts a platform); a new server's frame origin, proxy and full installation acceptance stay open under PLAN order 6."
+    },
+    {
+      "finding": "Boundary 5 (medium): incomplete description of the project boundary.",
+      "change": "Recovery text and the UI 1.1.0 package README name `miy component ...` instead of the removed `app components`. A server build names on stderr the committed files outside its source set, except the generator's own local tool files. A unit test holds the hash-locked file set, the server build source set and the line-ending rules together; the lists stay separate because they have different jobs.",
+      "files": [
+        "crates/miy/src/component_cli.rs",
+        "scripts/build-ui-component.mjs",
+        "registry/components/ui/1.1.0/README.md",
+        "crates/miy/src/source_archive.rs",
+        "crates/miy/src/cli_build.rs",
+        "crates/miy/src/cli_guidance.rs"
+      ],
+      "verification": "Unit tests; build-ui-component.mjs --check."
+    },
+    {
+      "finding": "Deployment tooling.",
+      "change": "core-rollout.py accepts --widen-migration 23 for the pinned bytes of 0023_app_files.sql (one new table and two indexes that an older binary never reads). scripts/check-pilot-flow.mjs is a real-server acceptance for one new app from app init to its frame.",
+      "files": [
+        "scripts/core-rollout.py",
+        "scripts/check-pilot-flow.mjs"
+      ],
+      "verification": "test-core-ops.py within check-static scripts; the pilot script's own run is in the deployment record."
+    },
+    {
+      "finding": "Documentation.",
+      "change": "CORE-PERMISSIONS (user registration, audit names, API list), APP-BOUNDARIES (findings 14 to 18), RUNNING (who can sign in, image and migration limits, left-out files notice, new-server assembly), SERVER-OPERATIONS (adding users, pilot acceptance, widen 23), CHECKS, PLAN, the app CONTRACT and the CLI workflow guidance.",
+      "files": [
+        "docs/CORE-PERMISSIONS.md",
+        "docs/APP-BOUNDARIES.md",
+        "docs/RUNNING.md",
+        "docs/SERVER-OPERATIONS.md",
+        "docs/CHECKS.md",
+        "docs/PLAN.md",
+        "templates/rust-react/docs/CONTRACT.md",
+        "crates/miy/guidance/miy-cli/references/workflow.md"
+      ]
+    }
+  ],
+  "notChanged": [
+    {
+      "finding": "Boundary 3 (high): no egress restriction for app containers.",
+      "reason": "App backends call Core at MIY_CORE_ORIGIN, the public portal address, so an internal-only network would cut every app off from Core. It needs an internal Core route and an allowlist design. Recorded as APP-BOUNDARIES finding 17 and a PLAN decision."
+    },
+    {
+      "finding": "Boundary 2, second part: a locally built image's SDK and components are not verified by the server.",
+      "reason": "By contract the bundle lock is a reproducibility check. Whether prod promotion should require a server-built image is a product decision (APP-BOUNDARIES finding 18, PLAN decision)."
+    },
+    {
+      "finding": "Control lane is still sequential; build CPU/RAM budget and per-app fairness.",
+      "reason": "Now bounded per migration, not separated per app. Resource budgets stay in CAPACITY and PLAN order 6."
+    },
+    {
+      "finding": "Whole-file locks on AGENTS.md and CLAUDE.md, exact bundle version match, ACL SQL copied into a user migration, iframe allow-popups-to-escape-sandbox.",
+      "reason": "Existing documented design (bundle contract, APP-FRAMES 3.5); not defects of this candidate."
+    }
+  ],
+  "checks": [
+    {
+      "name": "Rust static checks and unit tests",
+      "command": "bash scripts/check-static.sh rust",
+      "status": "PASS",
+      "evidence": [
+        ".local/evidence/pilot-improvements-20261115/check-static-rust-2.log"
+      ],
+      "observed": "Bundle portability, write decisions, rustfmt, clippy for both feature sets, 224 server-build tests (7 ignored) and 137 client-build tests. Run on the final tree; an earlier run before the last edits also passed (.local/evidence/pilot-improvements-20261115/check-static-rust.log)."
+    },
+    {
+      "name": "Shared development database with the build history boundary",
+      "command": "CARGO_NET_OFFLINE=true python3 scripts/check-development-database.py",
+      "status": "PASS",
+      "evidence": [
+        ".local/evidence/pilot-improvements-20261115/development-database-2.log",
+        ".local/development-regression-9fe3b4f169/test.log"
+      ],
+      "observed": "17 passes on the final tree, including: build history is read as the app's own role, bounded in time, never as the provisioning superuser."
+    },
+    {
+      "name": "Server build persistence and API",
+      "command": "CARGO_NET_OFFLINE=true python3 scripts/check-server-builds.py",
+      "status": "PASS",
+      "evidence": [
+        ".local/evidence/pilot-improvements-20261115/server-builds-2.log"
+      ],
+      "observed": "7 passes on the final tree."
+    },
+    {
+      "name": "Isolated runtime regression",
+      "command": "python3 scripts/runtime-regression/run.py",
+      "status": "PASS",
+      "evidence": [
+        ".local/evidence/pilot-improvements-20261115/runtime-regression-2.log"
+      ],
+      "observed": "131 observations on the final tree (runtime 46, operations 6, cli 6, auth 8, permissions 26, delegation 10, boundary 12, migration 3, frames 14), exit 0. The first run failed; see preservedFailures."
+    },
+    {
+      "name": "Web checks",
+      "command": "bash scripts/check-static.sh web",
+      "status": "PASS",
+      "evidence": [
+        ".local/evidence/pilot-improvements-20261115/check-static-web-rerun.log"
+      ],
+      "observed": "Typecheck, isolated builds, Playwright: UI package 29, platform 54 (including the new user accounts test), cli-experience 14, surface-boundaries 14, http-ui 1. The first run failed; see preservedFailures."
+    },
+    {
+      "name": "Script checks",
+      "command": "bash scripts/check-static.sh scripts",
+      "status": "PASS",
+      "evidence": [
+        ".local/evidence/pilot-improvements-20261115/check-static-scripts-2.log"
+      ],
+      "observed": "Run on the final tree, with scripts/check-pilot-flow.mjs present."
+    },
+    {
+      "name": "CLI contracts on a client build",
+      "command": "cargo build --locked --no-default-features; check-bundle-portability.py check; check-cli-output.py; check-cli-install.py; check-cli-recovery.py",
+      "status": "PASS",
+      "evidence": [
+        ".local/evidence/pilot-improvements-20261115/cli-output.log",
+        ".local/evidence/pilot-improvements-20261115/cli-install.log",
+        ".local/evidence/pilot-improvements-20261115/cli-recovery.log",
+        ".local/evidence/pilot-improvements-20261115/bundle-portability.log"
+      ],
+      "observed": "39 embedded files verified; output 15, install 17, recovery 7."
+    },
+    {
+      "name": "SDK ACL and the representative app",
+      "command": "python3 scripts/test-sdk-acl.py; python3 scripts/check-common-work.py",
+      "status": "PASS",
+      "evidence": [
+        ".local/evidence/pilot-improvements-20261115/sdk-acl.log",
+        ".local/evidence/pilot-improvements-20261115/common-work.log"
+      ]
+    },
+    {
+      "name": "CLI guidance, project MCP discovery and 0.9.0 to 0.10.0 upgrade",
+      "command": "MIY_PREVIOUS_BUNDLE_CLI=/projects/miy-v2/.local/bin/miy-server CARGO_NET_OFFLINE=true node scripts/check-cli-guidance.mjs",
+      "status": "PASS",
+      "evidence": [
+        ".local/evidence/pilot-improvements-20261115/cli-guidance.log",
+        ".local/evidence/cli-guidance/mwh9loq4/result.json"
+      ],
+      "observed": "5 passes. Run before the test-only fix in permissions_regression.rs; the CLI guidance source did not change afterwards. The executable copies it left were removed."
+    },
+    {
+      "name": "Disposable full stack",
+      "command": "bash scripts/runtime-regression/stack-ui.sh run",
+      "status": "PASS",
+      "evidence": [
+        ".local/evidence/pilot-improvements-20261115/stack-ui.log"
+      ],
+      "observed": "6 of 6; leftover resources 0; running platform unchanged. A new project synchronized UI 1.1.0 from the seed alone, images were imported through the bounded copy and migrations ran on the app-owner connection. Run before the test-only fix in permissions_regression.rs."
+    },
+    {
+      "name": "Pilot flow on a disposable stack with a server build",
+      "command": "bash scripts/runtime-regression/stack-ui.sh up; node scripts/check-pilot-flow.mjs --origin http://localhost:18300 --cli target/debug/miy --credentials-file .local/stack-ui/credentials.json --output ... --unpublished true --build remote; stack-ui.sh down",
+      "status": "PASS",
+      "evidence": [
+        ".local/evidence/pilot-improvements-20261115/pilot-flow-isolated-1/result.json",
+        ".local/evidence/pilot-improvements-20261115/pilot-flow-isolated-1/app-frame.png"
+      ],
+      "observed": "7 passes on the final tree: administrator and developer signed in with Keycloak and approved their CLI on the console; app init; component sync of UI 1.1.0; a developer could not approve the registration, the administrator did; the server compiled and built the committed source (36 s with a warm Docker cache); dev deployment running; the generated app rendered in its own frame origin on the dev portal. The app was stopped and the stack removed (leftover resources 0).",
+      "limits": "HTTP on localhost, working-tree CLI that is not in an install guide, fixture accounts in a new Keycloak realm."
+    },
+    {
+      "name": "Existing apps before the rollout (read only)",
+      "command": "node .local/evidence/pilot-improvements-20261115/frames-check.mjs",
+      "status": "PASS",
+      "evidence": [
+        ".local/evidence/pilot-improvements-20261115/frames-before/frames-check.json"
+      ],
+      "observed": "On the running 0.9.0 server two prod and two dev apps opened in their own frame origins and the portal cookie was refused on each app API. Baseline for the deployment record."
+    }
+  ],
+  "preservedFailures": [
+    {
+      "status": "FAIL",
+      "area": "scripts/check-static.sh web, first run",
+      "evidence": [
+        ".local/evidence/pilot-improvements-20261115/check-static-web.log"
+      ],
+      "reason": "1 of 54 browser tests: the audit filter test looked for the option label this change renamed. The test was updated; the rerun passed."
+    },
+    {
+      "status": "FAIL",
+      "area": "scripts/runtime-regression/run.py, first run",
+      "evidence": [
+        ".local/evidence/pilot-improvements-20261115/runtime-regression.log",
+        ".local/evidence/runtime-regression/miy-runtime-regression-g831a7li"
+      ],
+      "reason": "The permissions suite stopped at the new registration test: it used the token of a user whose sessions an earlier step of the same test had revoked (HTTP 401 where 403 was expected). A fault of the new test, not of the server; 105 other observations passed. The test now uses a live non-administrator."
+    }
+  ],
+  "notRun": [
+    {
+      "status": "NOT_RUN",
+      "scope": "The migration timeout branch (a migration that exceeds the limit).",
+      "reason": "Would add minutes to a regression; the bounded history read exercises the same termination pattern."
+    },
+    {
+      "status": "NOT_RUN",
+      "scope": "A hostile image or migration submitted through a real server build or deployment.",
+      "reason": "The unit and PostgreSQL checks above cover the changed functions; no end-to-end attack was staged."
+    },
+    {
+      "status": "NOT_RUN",
+      "scope": "scripts/up.sh on a new server.",
+      "reason": "It starts a platform on the host; only the build command it now runs is used by the disposable stack."
+    }
+  ]
+}

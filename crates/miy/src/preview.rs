@@ -159,6 +159,8 @@ struct Preview {
     csrf: String,
     origin: String,
     cookie_name: String,
+    backend_origin: String,
+    backend_capability: String,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Shutdown {
@@ -316,12 +318,21 @@ async fn serve_preview(
         return Ok(());
     }
     // This endpoint checks developer authority, even when the app has no deployed release yet.
-    app_cli::api(
+    let preview_directory = app_cli::api(
         &session,
         &format!("/api/v1/preview/apps/{}/platform/directory", m.id),
         None,
     )
     .await?;
+    ensure!(
+        preview_directory["environment"] == "dev" && preview_directory["subjectId"] == user["id"],
+        "invalid_preview_directory_scope"
+    );
+    let installation: Uuid = preview_directory["installationId"]
+        .as_str()
+        .context("missing_preview_installation")?
+        .parse()
+        .context("invalid_preview_installation")?;
     app_cli::run("pnpm", &["build:preview"])?;
     app_cli::save(
         "dist/build.json",
@@ -369,6 +380,22 @@ async fn serve_preview(
     } else {
         None
     };
+    // The backend listener is reachable only on loopback or this project's own
+    // Docker bridge gateway. No all-interface listener or browser credential is used.
+    let gateway = if runtime == Runtime::Docker {
+        Some(preview_bridge_address(&project).await?)
+    } else {
+        None
+    };
+    let (backend_listener, backend_reachable) = bind_backend(gateway).await?;
+    if !backend_reachable {
+        eprintln!(
+            "{}",
+            json!({"notice":"preview_platform_backend_unavailable","detail":"This Docker engine keeps its bridge gateway off the host (Docker Desktop or rootless). The preview runs, but backend platform directory/file calls are refused; use the default native runtime for them."})
+        );
+    }
+    let backend_origin = format!("http://{}", backend_listener.local_addr()?);
+    let backend_capability = auth::random();
     let serving = async {
         let database_url = if let Some(ref remote) = remote {
             remote.database_url.clone()
@@ -376,7 +403,16 @@ async fn serve_preview(
             local_database(&project, &m).await?
         };
         let mut native = if let Some(ref executable) = executable {
-            Some(crate::native_preview::Backend::start(executable, &database_url).await?)
+            Some(
+                crate::native_preview::Backend::start(
+                    executable,
+                    &database_url,
+                    installation,
+                    &backend_origin,
+                    &backend_capability,
+                )
+                .await?,
+            )
         } else {
             None
         };
@@ -388,7 +424,14 @@ async fn serve_preview(
                 backend.release,
             ))
         } else {
-            start_app(&project, &image, &database_url).await
+            start_app(
+                &project,
+                &image,
+                &database_url,
+                installation,
+                backend_reachable.then_some((backend_origin.as_str(), backend_capability.as_str())),
+            )
+            .await
         };
         let (backend_port, secret, installation, release) = match result {
             Ok(v) => v,
@@ -415,6 +458,8 @@ async fn serve_preview(
             csrf: auth::random(),
             origin: origin.clone(),
             cookie_name: format!("miy_preview_{port}"),
+            backend_origin,
+            backend_capability,
         });
         let url = format!("{origin}/?preview={}", state.cookie);
         // Only the short-lived preview entry token appears locally; no platform credential does.
@@ -429,6 +474,7 @@ async fn serve_preview(
         let app = Router::new()
             .route("/__miy/context", axum::routing::get(context))
             .route("/__miy/api/{*path}", axum::routing::any(backend))
+            .route("/__miy/files/{*path}", axum::routing::any(files))
             .route("/__miy/platform/directory", axum::routing::get(directory))
             .route(
                 "/__miy/connections/{target}/api/{*path}",
@@ -438,7 +484,24 @@ async fn serve_preview(
                 ServeDir::new("dist/preview").fallback(ServeFile::new("dist/preview/index.html")),
             )
             .layer(middleware::from_fn_with_state(state.clone(), guard))
+            .with_state(state.clone());
+        let backend_app = Router::new()
+            .route("/platform/directory", axum::routing::get(directory))
+            .route("/platform/files", axum::routing::any(platform_files_root))
+            .route(
+                "/platform/files/{*path}",
+                axum::routing::any(platform_files),
+            )
+            .layer(middleware::from_fn_with_state(state.clone(), backend_guard))
             .with_state(state);
+        let mut backend_shutdown = shutdown.clone();
+        let backend_server = axum::serve(backend_listener, backend_app)
+            .with_graceful_shutdown(async move {
+                let _ = backend_shutdown
+                    .wait_for(|reason| *reason != Shutdown::Running)
+                    .await;
+            })
+            .into_future();
         if !no_open {
             let _ = crate::platform::open_browser(&url);
         }
@@ -449,10 +512,15 @@ async fn serve_preview(
                     .await;
             })
             .into_future();
+        let servers = async {
+            tokio::try_join!(server, backend_server)
+                .map(|_| ())
+                .map_err(anyhow::Error::from)
+        };
         let result = if let Some(ref mut backend) = native {
-            tokio::select! { result = server => result.map_err(anyhow::Error::from), result = backend.exited() => result }
+            tokio::select! { result = servers => result, result = backend.exited() => result }
         } else {
-            server.await.map_err(anyhow::Error::from)
+            servers.await
         };
         if let Some(ref mut backend) = native {
             backend.stop().await?;
@@ -493,6 +561,52 @@ async fn ensure_network(project: &str) -> Result<()> {
         );
     }
     Ok(())
+}
+
+/// Bind the private backend listener. A native backend uses loopback. A
+/// container reaches the host through its bridge gateway, which is a host
+/// address only with a native Linux engine. Docker Desktop and rootless engines
+/// keep it inside their own network: the listener then stays on loopback and
+/// the result is `false`, so the preview starts without backend platform calls
+/// instead of failing outright.
+async fn bind_backend(
+    gateway: Option<std::net::Ipv4Addr>,
+) -> Result<(tokio::net::TcpListener, bool)> {
+    if let Some(address) = gateway {
+        match tokio::net::TcpListener::bind((address, 0)).await {
+            Ok(listener) => return Ok((listener, true)),
+            Err(error) if error.kind() == std::io::ErrorKind::AddrNotAvailable => {}
+            Err(error) => return Err(error).context("preview_backend_listener_unavailable"),
+        }
+    }
+    let listener = tokio::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0))
+        .await
+        .context("preview_backend_listener_unavailable")?;
+    Ok((listener, gateway.is_none()))
+}
+
+async fn preview_bridge_address(project: &str) -> Result<std::net::Ipv4Addr> {
+    let network: Value =
+        serde_json::from_str(&runtime::docker(&["network", "inspect", project]).await?)?;
+    ensure!(
+        network[0]["Labels"]["org.miy.preview"] == project,
+        "unmanaged_preview_network"
+    );
+    let address = network[0]["IPAM"]["Config"]
+        .as_array()
+        .and_then(|values| {
+            values
+                .iter()
+                .filter_map(|value| {
+                    value["Gateway"]
+                        .as_str()?
+                        .parse::<std::net::Ipv4Addr>()
+                        .ok()
+                })
+                .find(std::net::Ipv4Addr::is_private)
+        })
+        .context("preview_bridge_gateway_unavailable")?;
+    Ok(address)
 }
 
 async fn local_database(project: &str, m: &contract::Manifest) -> Result<String> {
@@ -606,15 +720,25 @@ async fn start_app(
     project: &str,
     image: &str,
     database_url: &str,
+    installation: Uuid,
+    platform: Option<(&str, &str)>,
 ) -> Result<(i32, String, Uuid, Uuid)> {
     let secret = auth::random();
-    let installation = Uuid::new_v4();
     let release = Uuid::new_v4();
     let env = std::env::current_dir()?.join(".miy/preview-app.env");
+    // Without a reachable backend listener the SDK reports that platform calls
+    // are unavailable instead of waiting on an address inside the container.
+    let platform = platform
+        .map(|(origin, capability)| {
+            format!(
+                "MIY_PREVIEW_PLATFORM_ORIGIN={origin}\nMIY_PREVIEW_PLATFORM_CAPABILITY={capability}\n"
+            )
+        })
+        .unwrap_or_default();
     private_env(
         &env,
         &format!(
-            "DATABASE_URL={database_url}\nMIY_GATEWAY_SECRET={secret}\nMIY_INSTALLATION_ID={installation}\nMIY_RELEASE_ID={release}\n"
+            "DATABASE_URL={database_url}\nMIY_GATEWAY_SECRET={secret}\nMIY_INSTALLATION_ID={installation}\nMIY_RELEASE_ID={release}\n{platform}"
         ),
     )?;
     let name = format!("{project}-app");
@@ -713,12 +837,68 @@ async fn guard(State(s): State<Arc<Preview>>, req: Request, next: Next) -> Respo
         .insert(header::CACHE_CONTROL, "no-store".parse().unwrap());
     response
 }
+fn backend_authorized(s: &Preview, request: &Request) -> bool {
+    let expected_host = s.backend_origin.strip_prefix("http://").unwrap_or_default();
+    let capability = request
+        .headers()
+        .get(header::AUTHORIZATION)
+        .and_then(|h| h.to_str().ok())
+        .and_then(|value| value.strip_prefix("Bearer "))
+        .unwrap_or_default();
+    let equal_capability = capability.len() == s.backend_capability.len()
+        && capability
+            .bytes()
+            .zip(s.backend_capability.bytes())
+            .fold(0u8, |difference, (left, right)| difference | (left ^ right))
+            == 0;
+    !request.headers().contains_key(header::ORIGIN)
+        && !request.headers().contains_key(header::COOKIE)
+        && request
+            .headers()
+            .get(header::HOST)
+            .and_then(|h| h.to_str().ok())
+            == Some(expected_host)
+        && request
+            .headers()
+            .get("x-miy-preview-user")
+            .and_then(|h| h.to_str().ok())
+            == s.user["id"].as_str()
+        && request
+            .headers()
+            .get("x-miy-release")
+            .and_then(|h| h.to_str().ok())
+            == Some(s.release.to_string().as_str())
+        && equal_capability
+}
+
+async fn current_user(s: &Preview) -> ApiResult<Value> {
+    let user = app_cli::api(&s.session, "/api/v1/me", None)
+        .await
+        .map_err(|_| ApiError::unauthorized())?;
+    if user["id"].as_str().is_none() || user["id"] != s.user["id"] {
+        return Err(ApiError::unauthorized());
+    }
+    Ok(user)
+}
+
+async fn backend_guard(State(s): State<Arc<Preview>>, request: Request, next: Next) -> Response {
+    if !backend_authorized(&s, &request) {
+        return ApiError::forbidden().into_response();
+    }
+    if let Err(error) = current_user(&s).await {
+        return error.into_response();
+    }
+    let mut response = next.run(request).await;
+    crate::file_transfer::secure_headers(response.headers_mut());
+    response
+}
+
 async fn context(State(s): State<Arc<Preview>>) -> Json<Value> {
     Json(
         json!({"appId":s.manifest.id,"installationId":s.installation,"releaseId":s.release,"user":{"id":s.user["id"],"name":s.user["name"]},"csrf":s.csrf}),
     )
 }
-async fn directory(State(s): State<Arc<Preview>>) -> ApiResult<Json<Value>> {
+async fn directory(State(s): State<Arc<Preview>>, req: Request) -> ApiResult<Json<Value>> {
     if !s
         .manifest
         .requested_permissions
@@ -729,7 +909,14 @@ async fn directory(State(s): State<Arc<Preview>>) -> ApiResult<Json<Value>> {
     Ok(Json(
         app_cli::api(
             &s.session,
-            &format!("/api/v1/preview/apps/{}/platform/directory", s.manifest.id),
+            &format!(
+                "/api/v1/preview/apps/{}/platform/directory{}",
+                s.manifest.id,
+                req.uri()
+                    .query()
+                    .map(|query| format!("?{query}"))
+                    .unwrap_or_default()
+            ),
             None,
         )
         .await?,
@@ -741,9 +928,7 @@ async fn backend(
     req: Request,
 ) -> ApiResult<Response> {
     // Revalidate the actual CLI user on each API request; expiration/revocation is effective locally too.
-    let user = app_cli::api(&s.session, "/api/v1/me", None)
-        .await
-        .map_err(|_| ApiError::unauthorized())?;
+    let user = current_user(&s).await?;
     let token = auth::sign_identity(
         user["id"].as_str().ok_or_else(ApiError::unauthorized)?,
         user["admin"] == true,
@@ -759,6 +944,168 @@ async fn backend(
     )
     .await
 }
+/// Browser file bytes go only to the owning app; that backend checks the
+/// current resource/file ACL before using the process-only Storage capability.
+async fn files(
+    State(s): State<Arc<Preview>>,
+    Path(path): Path<String>,
+    req: Request,
+) -> ApiResult<Response> {
+    let user = current_user(&s).await?;
+    let token = auth::sign_identity(
+        user["id"].as_str().ok_or_else(ApiError::unauthorized)?,
+        user["admin"] == true,
+        s.installation,
+        s.release,
+        &s.secret,
+    )?;
+    let url = file_url(
+        &format!("http://127.0.0.1:{}", s.port),
+        &["api", "files"],
+        &path,
+        req.uri().query(),
+    )?;
+    file_forward(&s, url, req, Some(token)).await
+}
+
+fn file_url(
+    origin: &str,
+    prefix: &[&str],
+    path: &str,
+    query: Option<&str>,
+) -> ApiResult<reqwest::Url> {
+    if path.contains('\\')
+        || path.split('/').any(|part| matches!(part, "." | ".."))
+        || path.chars().any(char::is_control)
+    {
+        return Err(ApiError::bad("invalid_file_api_path"));
+    }
+    let mut url = reqwest::Url::parse(origin)?;
+    {
+        let mut segments = url
+            .path_segments_mut()
+            .map_err(|_| ApiError::bad("invalid_file_api_path"))?;
+        segments.clear();
+        for segment in prefix {
+            segments.push(segment);
+        }
+        if !path.is_empty() {
+            for segment in path.split('/') {
+                segments.push(segment);
+            }
+        }
+    }
+    url.set_query(query);
+    Ok(url)
+}
+
+async fn platform_files_root(
+    State(s): State<Arc<Preview>>,
+    request: Request,
+) -> ApiResult<Response> {
+    platform_files_request(&s, "", request).await
+}
+async fn platform_files(
+    State(s): State<Arc<Preview>>,
+    Path(path): Path<String>,
+    request: Request,
+) -> ApiResult<Response> {
+    platform_files_request(&s, &path, request).await
+}
+/// `path` is what follows `/platform/files/`. Core's own Storage route list
+/// decides, so the local proxy cannot drift from it.
+fn platform_file_method(path: &str, method: &axum::http::Method) -> bool {
+    let suffix = if path.is_empty() {
+        "platform/files".to_owned()
+    } else {
+        format!("platform/files/{path}")
+    };
+    crate::storage_contract::allowed_route(&suffix, method)
+}
+async fn platform_files_request(s: &Preview, path: &str, request: Request) -> ApiResult<Response> {
+    if !platform_file_method(path, request.method()) || request.uri().query().is_some() {
+        return Err(ApiError::bad("invalid_file_api_path"));
+    }
+    let access = if request.method() == axum::http::Method::GET {
+        "read"
+    } else {
+        "write"
+    };
+    if !s
+        .manifest
+        .requested_permissions
+        .contains(&format!("platform:files:{access}"))
+    {
+        return Err(ApiError::forbidden());
+    }
+    let url = file_url(
+        &s.session.origin,
+        &[
+            "api",
+            "v1",
+            "preview",
+            "apps",
+            &s.manifest.id,
+            "platform",
+            "files",
+        ],
+        path,
+        None,
+    )?;
+    file_forward(s, url, request, None).await
+}
+async fn file_forward(
+    s: &Preview,
+    url: reqwest::Url,
+    request: Request,
+    token: Option<String>,
+) -> ApiResult<Response> {
+    let slot = if token.is_some() {
+        crate::file_transfer::acquire()?
+    } else {
+        crate::file_transfer::acquire_backend()?
+    };
+    crate::file_transfer::check_length(request.headers())?;
+    let (parts, body) = request.into_parts();
+    let client = if token.is_some() {
+        reqwest::Client::builder()
+            .no_proxy()
+            .redirect(reqwest::redirect::Policy::none())
+            .retry(reqwest::retry::never())
+            .timeout(std::time::Duration::from_secs(
+                crate::storage_contract::TRANSFER_SECONDS,
+            ))
+            .build()
+            .map_err(|_| ApiError::unavailable("preview_upstream_failed"))?
+    } else {
+        crate::cli_client::client(
+            s.session.ca_file.as_deref(),
+            crate::storage_contract::TRANSFER_SECONDS,
+        )?
+    };
+    let mut target = client
+        .request(parts.method, url)
+        .body(crate::file_transfer::request_body(body));
+    for name in [header::CONTENT_TYPE, header::CONTENT_LENGTH] {
+        if let Some(value) = parts.headers.get(&name) {
+            target = target.header(name, value);
+        }
+    }
+    target = if let Some(token) = token {
+        target.header("x-miy-identity", token)
+    } else {
+        let session = crate::cli_login::refreshed(&s.session)
+            .await
+            .map_err(|_| ApiError::unauthorized())?;
+        crate::cli_client::authenticate(&session, target)
+    };
+    let upstream = target
+        .send()
+        .await
+        .map_err(|_| ApiError::unavailable("preview_upstream_failed"))?;
+    crate::file_transfer::response(upstream, slot)
+}
+
 async fn connection(
     State(s): State<Arc<Preview>>,
     Path((target, path)): Path<(String, String)>,
@@ -841,6 +1188,105 @@ async fn forward(
 mod tests {
     use super::*;
     use std::future::{pending, ready};
+
+    fn test_preview() -> Preview {
+        Preview {
+            session: serde_json::from_value(json!({"origin":"http://127.0.0.1:1"})).unwrap(),
+            manifest: serde_json::from_value(json!({"contractVersion":contract::VERSION,"id":"test-app","name":"test","version":"1.0.0","runtime":{"profile":"rust-web-v1"},"ui":{"delivery":"module","moduleEntry":"mf-manifest.json","moduleExport":"./AppRoot","contractVersion":"miy.ui/v1alpha1"},"resources":{"database":"postgresql"},"migrations":{"directory":"migrations"}})).unwrap(),
+            user:json!({"id":"original-user","name":"Test"}), installation:Uuid::new_v4(), release:Uuid::new_v4(), port:1,
+            secret:"unused".into(),cookie:"unused".into(),csrf:"unused".into(),origin:"http://127.0.0.1:2".into(),cookie_name:"preview-test".into(),
+            backend_origin:"http://127.0.0.1:3".into(),backend_capability:"test-process-only-capability-000000000001".into(),
+        }
+    }
+    fn private_request(s: &Preview) -> Request {
+        Request::builder()
+            .uri("/platform/directory")
+            .header(header::HOST, "127.0.0.1:3")
+            .header(
+                header::AUTHORIZATION,
+                format!("Bearer {}", s.backend_capability),
+            )
+            .header("x-miy-preview-user", "original-user")
+            .header("x-miy-release", s.release.to_string())
+            .body(axum::body::Body::empty())
+            .unwrap()
+    }
+    #[test]
+    fn preview_backend_requires_private_capability_fixed_actor_release_and_no_browser_origin() {
+        let s = test_preview();
+        assert!(backend_authorized(&s, &private_request(&s)));
+        for (header, value) in [
+            ("origin", "null"),
+            ("cookie", "irrelevant=1"),
+            ("host", "127.0.0.1:4"),
+            ("authorization", "Bearer invalid"),
+            ("x-miy-preview-user", "other-user"),
+            ("x-miy-release", "00000000-0000-4000-8000-000000000001"),
+        ] {
+            let mut req = private_request(&s);
+            req.headers_mut().insert(header, value.parse().unwrap());
+            assert!(!backend_authorized(&s, &req), "header {header}");
+        }
+        for header in [
+            "authorization",
+            "x-miy-preview-user",
+            "x-miy-release",
+            "host",
+        ] {
+            let mut req = private_request(&s);
+            req.headers_mut().remove(header);
+            assert!(!backend_authorized(&s, &req));
+        }
+    }
+    #[test]
+    fn file_proxy_keeps_decoded_path_characters_out_of_origin_and_query() {
+        let url = file_url(
+            "http://127.0.0.1:3",
+            &["api", "files"],
+            "a?overwrite=true#fragment",
+            Some("download=1"),
+        )
+        .unwrap();
+        assert_eq!(url.host_str(), Some("127.0.0.1"));
+        assert_eq!(url.path(), "/api/files/a%3Foverwrite=true%23fragment");
+        assert_eq!(url.query(), Some("download=1"));
+        assert!(url.fragment().is_none());
+        for path in ["../directory", "id/../../admin", "id\\content"] {
+            assert!(file_url("http://127.0.0.1:3", &["api", "files"], path, None).is_err());
+        }
+    }
+    #[test]
+    fn preview_platform_file_methods_are_a_closed_allowlist() {
+        use axum::http::Method;
+        let id = "00000000-0000-4000-8000-000000000001";
+        assert!(platform_file_method("", &Method::POST));
+        assert!(platform_file_method(&format!("{id}/content"), &Method::PUT));
+        assert!(platform_file_method(&format!("{id}/content"), &Method::GET));
+        assert!(platform_file_method(
+            &format!("by-request/{id}"),
+            &Method::GET
+        ));
+        for path in ["../directory", "directory", "admin", "by-request/not-uuid"] {
+            assert!(!platform_file_method(path, &Method::GET));
+        }
+        assert!(!platform_file_method(
+            &format!("{id}/content"),
+            &Method::POST
+        ));
+        assert!(!platform_file_method(id, &Method::PATCH));
+        assert!(platform_file_method(&format!("{id}/detach"), &Method::POST));
+    }
+
+    #[tokio::test]
+    async fn backend_listener_falls_back_when_the_gateway_is_not_a_host_address() {
+        let (listener, reachable) = bind_backend(None).await.unwrap();
+        assert!(reachable && listener.local_addr().unwrap().ip().is_loopback());
+        // TEST-NET-1 is never assigned to a local interface, like a bridge
+        // gateway that exists only inside Docker Desktop's own network.
+        let gateway = std::net::Ipv4Addr::new(192, 0, 2, 1);
+        let (listener, reachable) = bind_backend(Some(gateway)).await.unwrap();
+        assert!(!reachable && listener.local_addr().unwrap().ip().is_loopback());
+    }
 
     #[tokio::test]
     async fn cooperative_stop_and_interrupt_have_distinct_completion_reasons() {

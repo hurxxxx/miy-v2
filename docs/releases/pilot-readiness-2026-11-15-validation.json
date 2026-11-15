@@ -1,0 +1,204 @@
+{
+  "date": "2026-11-15",
+  "status": "CHECKED_WITH_OPEN_GAPS",
+  "request": "Check whether the project can be put on a pilot server and used by real developers (install CLI, connect MCP, develop, deploy), and review the boundary between core/platform and user code.",
+  "baseCommit": "a5d714f",
+  "source": "Working tree: uncommitted 0.10.0 candidate plus the 2026-11-15 review fixes. The public server runs 0.9.0 from 173c6d5 and was only read.",
+  "productionChanged": false,
+  "published": false,
+  "committed": false,
+  "pushed": false,
+  "evidenceDirectory": ".local/evidence/pilot-readiness-20261115",
+  "checks": [
+    {
+      "name": "Public server, read only",
+      "command": "curl of /api/health on the portal, dev portal and console; /api/v1/capabilities; /api/v1/cli/install; /mcp and /.well-known/oauth-protected-resource; systemctl is-active miy-v2-serve miy-v2-worker",
+      "status": "PASS",
+      "observed": "Three health endpoints 200; serverVersion 0.9.0; cliVersion 0.9.0 from 173c6d5 with 5 downloads, 2 tunnel images and the Windows installer; /mcp answers 401 with protected-resource metadata naming the console issuer; both services active."
+    },
+    {
+      "name": "Published CLI downloads",
+      "command": "python3 scripts/check-cli-downloads.py --origin https://v2.dwdcc.kr --expected-commit 173c6d5cfd35f9d1313fe643701d4af3f374377f",
+      "status": "PASS",
+      "observed": "7 downloads, 250,963,545 bytes, version 0.9.0, commit and hashes match."
+    },
+    {
+      "name": "Disposable full stack: server assembly, Keycloak login, CLI build and deploy, app frame",
+      "command": "CARGO_BUILD_JOBS=2 bash scripts/runtime-regression/stack-ui.sh run",
+      "status": "PASS",
+      "evidence": [
+        ".local/evidence/pilot-readiness-20261115/stack-ui.log",
+        ".local/evidence/stack-ui/result.json"
+      ],
+      "passed": 6,
+      "scope": "bootstrap of an empty state directory, platform and frame-runtime builds, PostgreSQL/Keycloak/Caddy, migrate, seed, serve and worker; then with the working-tree CLI: login, component publish, app init, component sync, register, approve, commit, app build, app deploy (two releases), status; then in a browser: Keycloak login, the deployed app in its frame on the dev portal, health, stop/start, unsaved-input guard, release change, frame isolation from portal/console/IdP, permission revocation while open, removal.",
+      "limits": "HTTP on localhost with a port pool for frames; CLI login through the fixture development accounts, not a device approval; local Docker build, not --remote; no app dev preview, no MCP client, no prod promotion.",
+      "cleanup": "stack removed, leftover resources 0, running platform unchanged"
+    },
+    {
+      "name": "CLI discovery, project MCP and published-bundle upgrade",
+      "command": "MIY_PREVIOUS_BUNDLE_CLI=/projects/miy-v2/.local/bin/miy-server CARGO_NET_OFFLINE=true CARGO_BUILD_JOBS=2 node scripts/check-cli-guidance.mjs",
+      "status": "PASS",
+      "evidence": [
+        ".local/evidence/pilot-readiness-20261115/cli-guidance.log",
+        ".local/evidence/cli-guidance/mwh3uqcg/result.json"
+      ],
+      "passed": 5,
+      "scope": "offline: command discovery and manuals, MCP default/command/search discovery against the installed CLI, setup repeatability, project MCP configuration, explicit 0.9.0 to 0.10.0 upgrade preserving business code, applied SQL, components and dependency versions",
+      "note": "The installed 0.9.0 server binary was only read as the baseline. The four executable copies this run left in its evidence directory were removed; result.json is kept."
+    },
+    {
+      "name": "Shared development database sessions (app dev)",
+      "command": "CARGO_BUILD_JOBS=2 CARGO_NET_OFFLINE=true python3 scripts/check-development-database.py",
+      "status": "PASS",
+      "evidence": [
+        ".local/evidence/pilot-readiness-20261115/development-database.log",
+        ".local/development-regression-fd7369e64f/test.log"
+      ],
+      "passed": 16,
+      "scope": "disposable PostgreSQL; second run, after the fixture change below"
+    },
+    {
+      "name": "Server build persistence and API (app build --remote)",
+      "command": "CARGO_BUILD_JOBS=2 CARGO_NET_OFFLINE=true python3 scripts/check-server-builds.py",
+      "status": "PASS",
+      "evidence": [
+        ".local/evidence/pilot-readiness-20261115/server-builds.log",
+        ".local/server-build-regression-c65831dca15f/summary.json"
+      ],
+      "passed": 7,
+      "scope": "disposable PostgreSQL: request dedup, upload, permissions and revocation, queue limits, logs. No real Rust compile on a server worker is part of this check; second run, after the fixture change below"
+    },
+    {
+      "name": "PostgreSQL semantics of the build-time migration history read",
+      "command": "disposable postgres:18.3 container (--network none, tmpfs, removed afterwards): the role layout of worker.rs prepare_resource, a migration run as the app owner that renames _sqlx_migrations and replaces it with a view calling its own function, then the exact statements of verify_development_migrations as the postgres superuser",
+      "status": "CONFIRMED",
+      "observed": "As the app owner the function reports is_superuser=off and cannot read pg_authid. In the platform's read-only repeatable-read transaction as the provisioning superuser the same function runs with current_user=postgres, is_superuser=on and reads pg_authid.",
+      "limits": "Only the read side was exercised. A complete hostile migration applied by sqlx and a real server build were not run."
+    }
+  ],
+  "fixtureChanges": [
+    {
+      "file": "tests/stack-ui.spec.ts",
+      "change": "Publishes the UI version named by templates/rust-react/miy.components.json instead of the fixed 1.0.1.",
+      "why": "The candidate template defaults to ui 1.1.0 while a seeded registry holds only 1.0.1, so component sync of a new project failed."
+    },
+    {
+      "file": "crates/miy/src/development_regression.rs",
+      "change": "Sets MIY_DEV_PORTAL_ORIGIN, MIY_APP_FRAME_ORIGIN and MIY_APP_FRAME_PORTS for the fixture Core.",
+      "why": "Core has required the dev portal origin since 2ab1a9e and a frame origin since the app-frame work; this ignored test is run only by its script and is not in CI."
+    },
+    {
+      "file": "crates/miy/src/server_build_regression.rs",
+      "change": "Same three settings.",
+      "why": "Same cause."
+    }
+  ],
+  "preservedFailures": [
+    {
+      "status": "FAIL",
+      "area": "First disposable full-stack run",
+      "evidence": [
+        ".local/evidence/pilot-readiness-20261115/stack-ui-attempt-1-fail.log",
+        ".local/evidence/pilot-readiness-20261115/stack-ui-attempt-1-results"
+      ],
+      "reason": "component sync failed in the new project during test setup; 1 failed, 5 did not run. The command's own error text was in the removed state directory and was not kept; the cause is inferred from the template default (1.1.0), the seed (1.0.1) and the passing rerun after publishing 1.1.0."
+    },
+    {
+      "status": "FAIL",
+      "area": "First runs of check-development-database.py and check-server-builds.py",
+      "evidence": [
+        ".local/evidence/pilot-readiness-20261115/development-database-attempt-1-fail.log",
+        ".local/evidence/pilot-readiness-20261115/server-builds-attempt-1-fail.log"
+      ],
+      "reason": "MIY_DEV_PORTAL_ORIGIN is required for the dev app portal. Present on HEAD before the candidate; not caused by it."
+    }
+  ],
+  "openGaps": [
+    {
+      "id": "P1",
+      "gap": "No way to register real users.",
+      "evidence": "Login requires an existing enabled row in core users (crates/miy/src/auth.rs:412). Only seed inserts users, four fixed accounts (crates/miy/src/domain.rs:13). The API lists users and changes enabled and primary group; nothing creates a user or sets admin or can_develop."
+    },
+    {
+      "id": "P2",
+      "gap": "A new server started with scripts/up.sh has no frame runtime.",
+      "evidence": "up.sh runs the root build (platform and fixtures only) and never builds @miy/frame-runtime into the state directory; stack-ui.sh does it by hand. Tracked as R12 in docs/PLAN.md order 6."
+    },
+    {
+      "id": "P3",
+      "gap": "A registry seeded from the candidate lacks the UI version its template installs.",
+      "evidence": "component_registry::seed reads registry/components/ui/1.0.1 unless MIY_COMPONENT_SEED is set (crates/miy/src/component_registry.rs:74); templates/rust-react/miy.components.json defaults to 1.1.0."
+    },
+    {
+      "id": "P4",
+      "gap": "The published 0.9.0 CLI has not created and deployed a new app on the real server.",
+      "evidence": "docs/releases/cli-0.9.0-2026-11-13-deployment.json notRun; this check did not run it either."
+    }
+  ],
+  "notRun": [
+    {
+      "status": "NOT_RUN",
+      "scope": "Deploying the project to a separate pilot server",
+      "reason": "No pilot server was named and no deployment was requested; the request was read as a readiness check."
+    },
+    {
+      "status": "NOT_RUN",
+      "scope": "New app created and deployed on https://v2.dwdcc.kr with the published CLI (check-server-development-flow.mjs --run)",
+      "reason": "It creates an app, grants, a database and a deployment on the running server."
+    },
+    {
+      "status": "NOT_RUN",
+      "scope": "A user's PC: Windows 11 installer, macOS, private CA trust",
+      "reason": "This host is Linux; Windows acceptance is user-performed."
+    },
+    {
+      "status": "NOT_RUN",
+      "scope": "An AI agent session (Codex or Claude Code) building an app through the project MCP",
+      "reason": "Not run for 0.9.0 or the candidate; last recorded for 0.6.3."
+    },
+    {
+      "status": "NOT_RUN",
+      "scope": "Direct HTTP MCP with an external OAuth client after the issuer moved to the console",
+      "reason": "Only the 401 challenge and metadata were read."
+    },
+    {
+      "status": "NOT_RUN",
+      "scope": "app dev native preview end to end and prod promotion",
+      "reason": "Not part of the disposable full-stack test."
+    }
+  ],
+  "boundaryFindings": [
+    {
+      "rank": 1,
+      "severity": "critical",
+      "verified": "code read and isolated PostgreSQL check",
+      "finding": "A server build reads app._sqlx_migrations of the app's dev database as the provisioning superuser (crates/miy/src/worker.rs:417-434, called from server_build_worker.rs:408 and :540; PROVISION_DATABASE_URL is the postgres superuser in scripts/bootstrap.py:238). That relation is owned by the role that runs developer migrations (worker.rs:636), and migration SQL is checked only for transaction control. Developer-defined code can therefore run as database superuser, above the core, identity and every app database."
+    },
+    {
+      "rank": 2,
+      "severity": "high",
+      "verified": "code read; the failure scenarios were not run",
+      "finding": "A locally built, uploaded image is checked for labels, platform, manifest, migrations, UI and commit only (crates/miy/src/runtime.rs:616-685). /miy is copied out with no size or file-type limit and regular files are read whole in the worker's sequential control lane (crates/miy/src/contract.rs:108-131). The protected SDK and components are verified only by app build --remote (crates/miy/src/source_archive.rs); the contract says the bundle lock is a reproducibility check, not a security boundary (templates/rust-react/docs/CONTRACT.md:19)."
+    },
+    {
+      "rank": 3,
+      "severity": "high",
+      "verified": "code read",
+      "finding": "No egress restriction for app containers: each installation gets a bridge network with the shared PostgreSQL attached as 'postgres' and ordinary outbound access (crates/miy/src/runtime.rs:966-1005)."
+    },
+    {
+      "rank": 4,
+      "severity": "high",
+      "verified": "reported by the server-side review; not re-read here",
+      "finding": "Migrations run without a statement or lock timeout in the worker's sequential control loop, so one app's long migration delays every app's operations."
+    },
+    {
+      "rank": 5,
+      "severity": "medium",
+      "verified": "code read for the items named",
+      "finding": "The ownership boundary inside a generated project is enforced by three hash locks but described incompletely: the protected path lists are kept by hand in four places, recovery output and the UI 1.1.0 README name the removed command 'app components' (crates/miy/src/component_cli.rs:694, scripts/build-ui-component.mjs:41), and a remote build silently leaves out tracked files outside its allowlist (crates/miy/src/source_archive.rs:169-171)."
+    }
+  ],
+  "boundaryReviewMethod": "Two read-only code reviews (generated project/CLI/MCP, and server enforcement/isolation); the claims listed above were then checked against the code, and rank 1 against PostgreSQL."
+}

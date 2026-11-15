@@ -89,7 +89,10 @@ pub fn validate(m: &Manifest) -> Result<(), String> {
     Ok(())
 }
 pub fn valid_permission(p: &str) -> bool {
-    if matches!(p, "database" | "platform:directory:read") {
+    if matches!(
+        p,
+        "database" | "platform:directory:read" | "platform:files:read" | "platform:files:write"
+    ) {
         return true;
     }
     let parts: Vec<_> = p.split(':').collect();
@@ -101,18 +104,48 @@ pub fn valid_permission(p: &str) -> bool {
 pub fn hash(s: impl AsRef<[u8]>) -> String {
     hex::encode(Sha256::digest(s.as_ref()))
 }
+/// Limits of the platform contract directory (`/miy`) a release carries:
+/// manifest, build record, migrations and the UI module.
+#[cfg(any(feature = "server", test))]
+pub const MAX_ARTIFACT_BYTES: u64 = 256 * 1024 * 1024;
+#[cfg(any(feature = "server", test))]
+pub const MAX_ARTIFACT_FILE_BYTES: u64 = 64 * 1024 * 1024;
+#[cfg(any(feature = "server", test))]
+pub const MAX_ARTIFACT_ENTRIES: usize = 10_000;
+
+#[cfg(any(feature = "server", test))]
+fn hash_file(path: &Path) -> anyhow::Result<String> {
+    let mut hasher = Sha256::new();
+    std::io::copy(&mut std::fs::File::open(path)?, &mut hasher)?;
+    Ok(hex::encode(hasher.finalize()))
+}
+
+/// Only directories and regular files within the limits are an artifact. A
+/// link, pipe, socket or device is refused instead of skipped: later readers
+/// open files by name and must never meet one.
 #[cfg(any(feature = "server", test))]
 pub fn artifact_hash(root: &Path) -> anyhow::Result<String> {
-    fn visit(root: &Path, path: &Path, out: &mut Vec<(String, String)>) -> anyhow::Result<()> {
+    fn visit(
+        root: &Path,
+        path: &Path,
+        out: &mut Vec<(String, String)>,
+        seen: &mut (usize, u64),
+    ) -> anyhow::Result<()> {
         for ent in std::fs::read_dir(path)? {
             let ent = ent?;
             let p = ent.path();
             crate::platform::reject_reparse(&p)?;
             let meta = std::fs::symlink_metadata(&p)?;
             anyhow::ensure!(!meta.file_type().is_symlink(), "symlink_in_artifact");
+            seen.0 += 1;
+            anyhow::ensure!(seen.0 <= MAX_ARTIFACT_ENTRIES, "artifact_entry_limit");
             if meta.is_dir() {
-                visit(root, &p, out)?;
-            } else if meta.is_file() {
+                visit(root, &p, out, seen)?;
+            } else {
+                anyhow::ensure!(meta.is_file(), "unsupported_artifact_entry");
+                anyhow::ensure!(meta.len() <= MAX_ARTIFACT_FILE_BYTES, "artifact_size_limit");
+                seen.1 += meta.len();
+                anyhow::ensure!(seen.1 <= MAX_ARTIFACT_BYTES, "artifact_size_limit");
                 let rel = p
                     .strip_prefix(root)?
                     .components()
@@ -125,13 +158,13 @@ pub fn artifact_hash(root: &Path) -> anyhow::Result<String> {
                     .collect::<anyhow::Result<Vec<_>>>()?
                     .join("/");
                 anyhow::ensure!(safe_relative(&rel), "invalid_artifact_path");
-                out.push((rel, hash(std::fs::read(p)?)));
+                out.push((rel, hash_file(&p)?));
             }
         }
         Ok(())
     }
     let mut entries = vec![];
-    visit(root, root, &mut entries)?;
+    visit(root, root, &mut entries, &mut (0, 0))?;
     entries.sort();
     Ok(hash(
         entries
@@ -139,6 +172,52 @@ pub fn artifact_hash(root: &Path) -> anyhow::Result<String> {
             .map(|(p, h)| format!("{p}\0{h}\n"))
             .collect::<String>(),
     ))
+}
+
+/// Unpack the tar stream of an image's `/miy` directory into a new directory.
+/// The image is developer supplied: only directories and regular files with
+/// safe relative names are written, within the artifact limits, so a link,
+/// device, pipe or oversized member never reaches the platform's disk.
+#[cfg(any(feature = "server", test))]
+pub fn unpack_artifact(archive: impl std::io::Read, destination: &Path) -> anyhow::Result<()> {
+    use std::io::Read;
+    let mut tar = tar::Archive::new(archive);
+    let (mut entries, mut total) = (0usize, 0u64);
+    for entry in tar.entries()? {
+        let mut entry = entry?;
+        entries += 1;
+        anyhow::ensure!(entries <= MAX_ARTIFACT_ENTRIES, "artifact_entry_limit");
+        let raw = std::str::from_utf8(&entry.path_bytes())
+            .map_err(|_| anyhow::anyhow!("non_utf8_path"))?
+            .to_owned();
+        let name = raw.strip_prefix("./").unwrap_or(&raw).trim_end_matches('/');
+        let kind = entry.header().entry_type();
+        if kind.is_dir() {
+            if !name.is_empty() {
+                anyhow::ensure!(safe_relative(name), "invalid_artifact_path");
+                std::fs::create_dir_all(destination.join(name))?;
+            }
+            continue;
+        }
+        anyhow::ensure!(kind.is_file(), "unsupported_artifact_entry");
+        anyhow::ensure!(safe_relative(name), "invalid_artifact_path");
+        let size = entry.size();
+        anyhow::ensure!(size <= MAX_ARTIFACT_FILE_BYTES, "artifact_size_limit");
+        total += size;
+        anyhow::ensure!(total <= MAX_ARTIFACT_BYTES, "artifact_size_limit");
+        let path = destination.join(name);
+        std::fs::create_dir_all(
+            path.parent()
+                .ok_or_else(|| anyhow::anyhow!("invalid_artifact_path"))?,
+        )?;
+        let mut file = std::fs::OpenOptions::new()
+            .create_new(true)
+            .write(true)
+            .open(&path)?;
+        let written = std::io::copy(&mut (&mut entry).take(size), &mut file)?;
+        anyhow::ensure!(written == size, "truncated_artifact_member");
+    }
+    Ok(())
 }
 #[cfg(feature = "server")]
 pub fn verified_artifact(root: &Path, id: &str) -> anyhow::Result<std::path::PathBuf> {
@@ -161,6 +240,119 @@ pub fn get_contract() -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+    fn archive(members: &[(&str, tar::EntryType, &[u8])]) -> Vec<u8> {
+        let mut builder = tar::Builder::new(Vec::new());
+        for (name, kind, bytes) in members {
+            let mut header = tar::Header::new_gnu();
+            header.set_entry_type(*kind);
+            header.set_size(bytes.len() as u64);
+            header.set_mode(0o644);
+            if kind.is_symlink() || kind.is_hard_link() {
+                header.set_link_name("manifest.json").unwrap();
+            }
+            // Raw name bytes: the builder's own path checks must not hide a bad member.
+            let field = &mut header.as_old_mut().name;
+            field[..name.len()].copy_from_slice(name.as_bytes());
+            header.set_cksum();
+            builder.append(&header, *bytes).unwrap();
+        }
+        builder.into_inner().unwrap()
+    }
+
+    #[test]
+    fn image_contract_unpacks_only_bounded_regular_files() {
+        use tar::EntryType as Kind;
+        let root = tempfile::tempdir().unwrap();
+        let good = archive(&[
+            ("./", Kind::Directory, b""),
+            ("./manifest.json", Kind::Regular, b"{}"),
+            ("./ui/", Kind::Directory, b""),
+            ("./ui/assets/entry.js", Kind::Regular, b"export{}"),
+        ]);
+        let target = root.path().join("good");
+        std::fs::create_dir(&target).unwrap();
+        unpack_artifact(good.as_slice(), &target).unwrap();
+        assert_eq!(
+            std::fs::read(target.join("ui/assets/entry.js")).unwrap(),
+            b"export{}"
+        );
+        artifact_hash(&target).unwrap();
+        for (label, members, code) in [
+            (
+                "symlink",
+                vec![("./manifest.json", Kind::Symlink, &b""[..])],
+                "unsupported_artifact_entry",
+            ),
+            (
+                "hard link",
+                vec![("./build.json", Kind::Link, &b""[..])],
+                "unsupported_artifact_entry",
+            ),
+            (
+                "pipe",
+                vec![("./manifest.json", Kind::Fifo, &b""[..])],
+                "unsupported_artifact_entry",
+            ),
+            (
+                "device",
+                vec![("./manifest.json", Kind::Char, &b""[..])],
+                "unsupported_artifact_entry",
+            ),
+            (
+                "parent",
+                vec![("./../escape", Kind::Regular, &b"x"[..])],
+                "invalid_artifact_path",
+            ),
+            (
+                "absolute",
+                vec![("/etc/escape", Kind::Regular, &b"x"[..])],
+                "invalid_artifact_path",
+            ),
+            (
+                "duplicate",
+                vec![
+                    ("./a", Kind::Regular, &b"x"[..]),
+                    ("./a", Kind::Regular, &b"y"[..]),
+                ],
+                "",
+            ),
+        ] {
+            let target = root.path().join(label);
+            std::fs::create_dir(&target).unwrap();
+            let error = unpack_artifact(archive(&members).as_slice(), &target).unwrap_err();
+            if !code.is_empty() {
+                assert_eq!(error.to_string(), code, "{label}");
+            }
+            assert!(!root.path().join("escape").exists(), "{label}");
+        }
+        // A declared size above the per-file limit is refused before any byte is read.
+        let mut header = tar::Header::new_gnu();
+        header.set_entry_type(Kind::Regular);
+        header.set_size(MAX_ARTIFACT_FILE_BYTES + 1);
+        header.set_mode(0o644);
+        header.as_old_mut().name[..5].copy_from_slice(b"./big");
+        header.set_cksum();
+        let target = root.path().join("large");
+        std::fs::create_dir(&target).unwrap();
+        let error = unpack_artifact(header.as_bytes().as_slice(), &target).unwrap_err();
+        assert_eq!(error.to_string(), "artifact_size_limit");
+        assert!(!target.join("big").exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn artifact_hash_refuses_entries_that_are_not_files_or_directories() {
+        let root = tempfile::tempdir().unwrap();
+        std::fs::write(root.path().join("manifest.json"), "{}").unwrap();
+        artifact_hash(root.path()).unwrap();
+        let socket = root.path().join("build.json");
+        let _listener = std::os::unix::net::UnixListener::bind(&socket).unwrap();
+        assert_eq!(
+            artifact_hash(root.path()).unwrap_err().to_string(),
+            "unsupported_artifact_entry"
+        );
+    }
+
     #[test]
     fn paths_are_bounded() {
         for s in [

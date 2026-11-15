@@ -522,6 +522,11 @@ pub async fn run(
             .into(),
     );
 
+    directory_contract(&h, &user, &a).await?;
+    passed.push("app directory pages expose only bounded active user/group DTOs; literal search, scoped cursors, original-user membership and immediate group/account revocation are enforced".into());
+    storage_contract(&mut h, &admin, &user).await?;
+    passed.push("file storage enforces backend-only current approvals, original user authority, bounded immutable uploads that can be sent again after a failure, idempotent request lookup, attachment retention, explicit cancellation, reference-checked detach, reservation quotas and housekeeping without a user actor".into());
+
     for invalid in [
         vec!["database".into()],
         vec![format!("app:{}:write", c.app)],
@@ -721,12 +726,17 @@ pub async fn run(
         preview["verified"] == true && b.last_identity()?.get("delegation_token").is_none(),
         "preview backend did not receive a signed identity without a continuation proof"
     );
-    for boundary in ["development grant", "installation approval"] {
+    for boundary in ["development grant", "installation approval", "CLI session"] {
         let before = b.calls();
         let mut pending = h.pending_body(&user, a.release, &preview_path).await?;
         if boundary == "development grant" {
             sqlx::query("DELETE FROM grants WHERE user_id=$1 AND app_id=$2 AND environment='dev' AND permission='develop'")
                 .bind(&user.id).bind(&a.app).execute(&state.pool).await?;
+        } else if boundary == "CLI session" {
+            sqlx::query("UPDATE cli_sessions SET revoked_at=clock_timestamp() WHERE id=$1")
+                .bind(user.session)
+                .execute(&state.pool)
+                .await?;
         } else {
             h.replace(&admin, &a, a.release, &[]).await?;
         }
@@ -736,11 +746,21 @@ pub async fn run(
             .await
             .context("held preview request did not finish")??;
         ensure!(
-            result.starts_with(b"HTTP/1.1 403 ") && b.calls() == before,
+            result.starts_with(if boundary == "CLI session" {
+                b"HTTP/1.1 401 "
+            } else {
+                b"HTTP/1.1 403 "
+            }) && b.calls() == before,
             "preview {boundary} revoked during body read reached the target backend"
         );
         sqlx::query("INSERT INTO grants(user_id,app_id,environment,permission) VALUES($1,$2,'dev','develop') ON CONFLICT DO NOTHING")
             .bind(&user.id).bind(&a.app).execute(&state.pool).await?;
+        if boundary == "CLI session" {
+            sqlx::query("UPDATE cli_sessions SET revoked_at=NULL WHERE id=$1")
+                .bind(user.session)
+                .execute(&state.pool)
+                .await?;
+        }
         h.replace(&admin, &a, a.release, &a_permissions).await?;
     }
     sqlx::query("DELETE FROM grants WHERE user_id=$1 AND app_id=$2 AND environment='dev' AND permission='develop'")
@@ -1280,6 +1300,989 @@ pub async fn run(
     }
     ensure!(stopped.is_empty(), "{}", stopped.join("; "));
     Ok(passed)
+}
+
+async fn storage_contract(h: &mut Harness<'_>, admin: &Actor, user: &Actor) -> Result<()> {
+    async fn fresh_proof(h: &Harness<'_>, user: &Actor, app: &App) -> Result<String> {
+        let gateway = format!("/api/v1/installations/{}/files/probe", app.installation);
+        response(
+            h.request(&user.token, Method::GET, &gateway).send().await?,
+            200,
+        )
+        .await?;
+        app.proof()
+    }
+    let permissions = vec!["platform:files:read".into(), "platform:files:write".into()];
+    let app = h
+        .app(
+            format!("files-{}", &Uuid::new_v4().simple().to_string()[..12]),
+            "dev",
+            &permissions,
+        )
+        .await?;
+    h.grant(user, &app, "dev").await?;
+    let base = format!("/api/v1/installations/{}/platform/files", app.installation);
+    let gateway = format!("/api/v1/installations/{}/files/probe", app.installation);
+    let reservation = |id: Uuid, name: &str, size: usize| json!({"requestId":id,"name":name,"mime":"text/plain","size":size});
+    // Even a valid ordinary CLI credential must enter its owning app ACL first.
+    for token in [&user.token, &admin.token] {
+        denied(
+            h.request(token, Method::POST, &base)
+                .json(&reservation(Uuid::new_v4(), "blocked.txt", 1))
+                .send()
+                .await?,
+        )
+        .await?;
+    }
+    response(
+        h.request(&user.token, Method::GET, &gateway).send().await?,
+        200,
+    )
+    .await?;
+    ensure!(
+        app.last_identity()?.get("delegation_token").is_none(),
+        "an app without approved permissions received a continuation proof"
+    );
+    // Empty effective permissions intentionally issue no proof. Grant read only
+    // to obtain a real limited proof, then prove it cannot reserve/write bytes.
+    h.replace(admin, &app, app.release, &["platform:files:read".into()])
+        .await?;
+    response(
+        h.request(&user.token, Method::GET, &gateway).send().await?,
+        200,
+    )
+    .await?;
+    denied(
+        h.request(&app.proof()?, Method::POST, &base)
+            .json(&reservation(Uuid::new_v4(), "unapproved.txt", 1))
+            .send()
+            .await?,
+    )
+    .await?;
+    h.replace(admin, &app, app.release, &permissions).await?;
+    response(
+        h.request(&user.token, Method::GET, &gateway).send().await?,
+        200,
+    )
+    .await?;
+    let proof = app.proof()?;
+    let request_id = Uuid::new_v4();
+    let input = reservation(request_id, "검토.txt", 5);
+    let first = h
+        .json(&proof, Method::POST, &base, input.clone(), 200)
+        .await?;
+    let duplicate = h.json(&proof, Method::POST, &base, input, 200).await?;
+    ensure!(
+        first["id"] == duplicate["id"] && first["status"] == "pending" && first["sha256"].is_null(),
+        "file reservation was not idempotent"
+    );
+    h.json(
+        &proof,
+        Method::POST,
+        &base,
+        reservation(request_id, "different.txt", 5),
+        409,
+    )
+    .await?;
+    let lookup = response(
+        h.request(
+            &proof,
+            Method::GET,
+            &format!("{base}/by-request/{request_id}"),
+        )
+        .send()
+        .await?,
+        200,
+    )
+    .await?;
+    ensure!(
+        lookup["id"] == first["id"],
+        "lost reservation cannot be looked up by request id"
+    );
+    let file = first["id"].as_str().context("stored file id")?;
+    let path = format!("{base}/{file}");
+    let uploaded = response(
+        h.request(&proof, Method::PUT, &format!("{path}/content"))
+            .body("hello")
+            .send()
+            .await?,
+        200,
+    )
+    .await?;
+    ensure!(
+        uploaded["status"] == "ready"
+            && uploaded["sha256"] == hash("hello")
+            && uploaded["expiresAt"].is_null(),
+        "ready file metadata or retention is invalid"
+    );
+    let download = h
+        .request(&proof, Method::GET, &format!("{path}/content"))
+        .send()
+        .await?;
+    ensure!(
+        download.status().as_u16() == 200
+            && download
+                .headers()
+                .get("content-security-policy")
+                .is_some_and(|v| v.to_str().is_ok_and(|s| s.starts_with("sandbox")))
+            && download
+                .headers()
+                .get("x-content-type-options")
+                .is_some_and(|v| v == "nosniff")
+            && download
+                .headers()
+                .get("content-disposition")
+                .is_some_and(|v| v.to_str().is_ok_and(|s| s.starts_with("attachment;")))
+            && !download.headers().contains_key("set-cookie")
+            && !download.headers().contains_key("clear-site-data"),
+        "file response headers are unsafe"
+    );
+    ensure!(
+        download.bytes().await?.as_ref() == b"hello",
+        "stored file bytes changed"
+    );
+    response(
+        h.request(&proof, Method::PUT, &format!("{path}/content"))
+            .body("hello")
+            .send()
+            .await?,
+        409,
+    )
+    .await?;
+    // Use a real 100-Continue barrier to revoke approval after upload started,
+    // before any bytes are completed. No timing sleep or credential output.
+    let held = h
+        .json(
+            &proof,
+            Method::POST,
+            &base,
+            reservation(Uuid::new_v4(), "held.txt", 2),
+            200,
+        )
+        .await?;
+    let held_id = held["id"].as_str().context("held file id")?;
+    let parsed_base = url::Url::parse(h.base)?;
+    ensure!(
+        parsed_base.scheme() == "http" && parsed_base.host_str() == Some("127.0.0.1"),
+        "storage fixture requires isolated loopback server"
+    );
+    let port = parsed_base.port().context("storage fixture port")?;
+    let mut held_stream = tokio::net::TcpStream::connect(("127.0.0.1", port)).await?;
+    let request = format!(
+        "PUT {base}/{held_id}/content HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nAuthorization: Bearer {proof}\r\nContent-Length: 2\r\nExpect: 100-continue\r\nConnection: close\r\n\r\n"
+    );
+    held_stream.write_all(request.as_bytes()).await?;
+    let mut interim = Vec::new();
+    tokio::time::timeout(Duration::from_secs(5), async {
+        while !interim.ends_with(b"\r\n\r\n") {
+            ensure!(interim.len() < 4096, "oversized file interim response");
+            interim.push(held_stream.read_u8().await?);
+        }
+        Ok::<_, anyhow::Error>(())
+    })
+    .await
+    .context("file upload did not begin body read")??;
+    ensure!(
+        interim.starts_with(b"HTTP/1.1 100 "),
+        "file upload body barrier missing"
+    );
+    h.replace(admin, &app, app.release, &[]).await?;
+    held_stream.write_all(b"xy").await?;
+    let mut rejected = Vec::new();
+    tokio::time::timeout(
+        Duration::from_secs(5),
+        held_stream.read_to_end(&mut rejected),
+    )
+    .await??;
+    ensure!(
+        rejected.starts_with(b"HTTP/1.1 403 "),
+        "file upload committed after approval revocation"
+    );
+    h.replace(admin, &app, app.release, &permissions).await?;
+    let not_ready = response(
+        h.request(&proof, Method::GET, &format!("{base}/{held_id}"))
+            .send()
+            .await?,
+        200,
+    )
+    .await?;
+    ensure!(
+        not_ready["status"] == "pending" && not_ready["sha256"].is_null(),
+        "revoked upload became ready"
+    );
+    // The failed attempt left the internal `uploading` state behind. The same
+    // reservation must accept the bytes again instead of answering 409 forever.
+    let retried = response(
+        h.request(&proof, Method::PUT, &format!("{base}/{held_id}/content"))
+            .body("xy")
+            .send()
+            .await?,
+        200,
+    )
+    .await?;
+    ensure!(
+        retried["status"] == "ready" && retried["sha256"] == hash("xy"),
+        "a failed upload could not be sent again"
+    );
+    response(
+        h.request(&proof, Method::DELETE, &format!("{base}/{held_id}"))
+            .send()
+            .await?,
+        200,
+    )
+    .await?;
+    let attach_id = Uuid::new_v4();
+    let attach = json!({"requestId":attach_id,"reference":"document:fixture"});
+    let attached = h
+        .json(
+            &proof,
+            Method::POST,
+            &format!("{path}/attach"),
+            attach.clone(),
+            200,
+        )
+        .await?;
+    ensure!(
+        attached["status"] == "attached",
+        "app reference did not attach"
+    );
+    h.json(&proof, Method::POST, &format!("{path}/attach"), attach, 200)
+        .await?;
+    h.json(
+        &proof,
+        Method::POST,
+        &format!("{path}/attach"),
+        json!({"requestId":Uuid::new_v4(),"reference":"different"}),
+        409,
+    )
+    .await?;
+    response(h.request(&proof, Method::DELETE, &path).send().await?, 409).await?;
+    let old = h
+        .json(
+            &proof,
+            Method::POST,
+            &base,
+            reservation(Uuid::new_v4(), "unfinished.txt", 3),
+            200,
+        )
+        .await?;
+    let old_id = Uuid::parse_str(old["id"].as_str().context("unfinished file")?)?;
+    sqlx::query(
+        "UPDATE app_files SET expires_at=clock_timestamp()-interval '1 second' WHERE id=$1",
+    )
+    .bind(old_id)
+    .execute(&h.state.pool)
+    .await?;
+    let next = h
+        .json(
+            &proof,
+            Method::POST,
+            &base,
+            reservation(Uuid::new_v4(), "cancel.txt", 3),
+            200,
+        )
+        .await?;
+    let expired = response(
+        h.request(&proof, Method::GET, &format!("{base}/{old_id}"))
+            .send()
+            .await?,
+        200,
+    )
+    .await?;
+    ensure!(
+        expired["status"] == "expired",
+        "unfinished reservation was not reclaimed"
+    );
+    response(
+        h.request(&proof, Method::PUT, &format!("{base}/{old_id}/content"))
+            .body("old")
+            .send()
+            .await?,
+        409,
+    )
+    .await?;
+    let still_attached = response(h.request(&proof, Method::GET, &path).send().await?, 200).await?;
+    ensure!(
+        still_attached["status"] == "attached",
+        "expiry removed an attached file"
+    );
+    let cancel_path = format!("{base}/{}", next["id"].as_str().context("cancel file")?);
+    response(
+        h.request(&proof, Method::PUT, &format!("{cancel_path}/content"))
+            .body("bad!")
+            .send()
+            .await?,
+        400,
+    )
+    .await?;
+    response(
+        h.request(&proof, Method::PUT, &format!("{cancel_path}/content"))
+            .body("abc")
+            .send()
+            .await?,
+        200,
+    )
+    .await?;
+    let cancel_id = Uuid::parse_str(next["id"].as_str().context("cancel file id")?)?;
+    let store = h
+        .state
+        .artifacts
+        .join(".files")
+        .join(app.installation.to_string());
+    let blob = store.join(format!("{cancel_id}.blob"));
+    let saved = store.join(format!("{cancel_id}.saved"));
+    tokio::fs::rename(&blob, &saved).await?;
+    h.json(
+        &proof,
+        Method::POST,
+        &format!("{cancel_path}/attach"),
+        json!({"requestId":Uuid::new_v4(),"reference":"missing-bytes"}),
+        503,
+    )
+    .await?;
+    let unchanged: String = sqlx::query_scalar("SELECT status FROM app_files WHERE id=$1")
+        .bind(cancel_id)
+        .fetch_one(&h.state.pool)
+        .await?;
+    ensure!(unchanged == "ready", "missing bytes were attached");
+    // Force cleanup to fail after the durable cancellation tombstone commits.
+    tokio::fs::create_dir(&blob).await?;
+    response(
+        h.request(&proof, Method::DELETE, &cancel_path)
+            .send()
+            .await?,
+        503,
+    )
+    .await?;
+    let tombstone: String = sqlx::query_scalar("SELECT status FROM app_files WHERE id=$1")
+        .bind(cancel_id)
+        .fetch_one(&h.state.pool)
+        .await?;
+    ensure!(
+        tombstone == "cancelling",
+        "failed cleanup rolled cancellation back to ready"
+    );
+    h.json(
+        &proof,
+        Method::POST,
+        &format!("{cancel_path}/attach"),
+        json!({"requestId":Uuid::new_v4(),"reference":"cancelled-bytes"}),
+        409,
+    )
+    .await?;
+    tokio::fs::remove_dir(&blob).await?;
+    tokio::fs::rename(&saved, &blob).await?;
+    let cancelled = response(
+        h.request(&proof, Method::DELETE, &cancel_path)
+            .send()
+            .await?,
+        200,
+    )
+    .await?;
+    ensure!(
+        cancelled["status"] == "cancelled",
+        "explicit app cancellation did not release reservation"
+    );
+    response(
+        h.request(&proof, Method::GET, &format!("{cancel_path}/content"))
+            .send()
+            .await?,
+        404,
+    )
+    .await?;
+    // Installation scope is fixed by the opaque continuation, not by a chosen id.
+    denied(
+        h.request(
+            &proof,
+            Method::GET,
+            &format!(
+                "/api/v1/installations/{}/platform/files/{file}",
+                Uuid::new_v4()
+            ),
+        )
+        .send()
+        .await?,
+    )
+    .await?;
+    h.replace(admin, &app, app.release, &[]).await?;
+    denied(h.request(&proof, Method::GET, &path).send().await?).await?;
+    h.replace(admin, &app, app.release, &permissions).await?;
+    response(
+        h.request(&user.token, Method::GET, &gateway).send().await?,
+        200,
+    )
+    .await?;
+    let proof = app.proof()?;
+    sqlx::query("DELETE FROM grants WHERE user_id=$1 AND app_id=$2 AND permission='use'")
+        .bind(&user.id)
+        .bind(&app.app)
+        .execute(&h.state.pool)
+        .await?;
+    denied(h.request(&proof, Method::GET, &path).send().await?).await?;
+    h.grant(user, &app, "dev").await?;
+    // An attached file is released only by detach with the attached reference.
+    // Cancel never deletes it, and detach never applies to an unattached file.
+    let unattached = h
+        .json(
+            &fresh_proof(h, user, &app).await?,
+            Method::POST,
+            &base,
+            reservation(Uuid::new_v4(), "unattached.txt", 2),
+            200,
+        )
+        .await?;
+    let unattached_path = format!(
+        "{base}/{}",
+        unattached["id"].as_str().context("unattached file id")?
+    );
+    response(
+        h.request(
+            &fresh_proof(h, user, &app).await?,
+            Method::PUT,
+            &format!("{unattached_path}/content"),
+        )
+        .body("ok")
+        .send()
+        .await?,
+        200,
+    )
+    .await?;
+    let not_attached = h
+        .json(
+            &fresh_proof(h, user, &app).await?,
+            Method::POST,
+            &format!("{unattached_path}/detach"),
+            json!({"reference":"document:fixture"}),
+            409,
+        )
+        .await?;
+    ensure!(
+        not_attached["error"]["code"] == "file_not_attached",
+        "detach accepted a file that was never attached"
+    );
+    response(
+        h.request(
+            &fresh_proof(h, user, &app).await?,
+            Method::DELETE,
+            &unattached_path,
+        )
+        .send()
+        .await?,
+        200,
+    )
+    .await?;
+    let wrong = h
+        .json(
+            &fresh_proof(h, user, &app).await?,
+            Method::POST,
+            &format!("{path}/detach"),
+            json!({"reference":"document:other"}),
+            409,
+        )
+        .await?;
+    ensure!(
+        wrong["error"]["code"] == "file_reference_conflict",
+        "detach accepted a reference the file was not attached with"
+    );
+    let before_detach: i64 = sqlx::query_scalar(
+        "SELECT COALESCE(sum(size),0)::bigint FROM app_files WHERE installation_id=$1 AND status IN ('ready','attached','cancelling')",
+    )
+    .bind(app.installation)
+    .fetch_one(&h.state.pool)
+    .await?;
+    for _ in 0..2 {
+        let detached = h
+            .json(
+                &fresh_proof(h, user, &app).await?,
+                Method::POST,
+                &format!("{path}/detach"),
+                json!({"reference":"document:fixture"}),
+                200,
+            )
+            .await?;
+        ensure!(
+            detached["status"] == "cancelled" && detached["reference"].is_null(),
+            "detach did not release the attached file"
+        );
+    }
+    let after_detach: i64 = sqlx::query_scalar(
+        "SELECT COALESCE(sum(size),0)::bigint FROM app_files WHERE installation_id=$1 AND status IN ('ready','attached','cancelling')",
+    )
+    .bind(app.installation)
+    .fetch_one(&h.state.pool)
+    .await?;
+    ensure!(
+        before_detach - after_detach == 5
+            && !tokio::fs::try_exists(
+                h.state
+                    .artifacts
+                    .join(".files")
+                    .join(app.installation.to_string())
+                    .join(format!("{file}.blob"))
+            )
+            .await?,
+        "detach kept the bytes or the quota of a released file"
+    );
+    response(
+        h.request(
+            &fresh_proof(h, user, &app).await?,
+            Method::GET,
+            &format!("{path}/content"),
+        )
+        .send()
+        .await?,
+        404,
+    )
+    .await?;
+    // Exercise bytes above the unchanged JSON gateway's 4 MiB ceiling. Each
+    // storage request receives a newly minted short-lived backend proof.
+    let large_payload = vec![0xabu8; 5 * 1024 * 1024];
+    let large_digest = hash(&large_payload);
+    let large = h
+        .json(
+            &fresh_proof(h, user, &app).await?,
+            Method::POST,
+            &base,
+            reservation(Uuid::new_v4(), "large-stream.bin", large_payload.len()),
+            200,
+        )
+        .await?;
+    let large_id = large["id"].as_str().context("large file id")?;
+    let large_path = format!("{base}/{large_id}");
+    let uploaded = response(
+        h.request(
+            &fresh_proof(h, user, &app).await?,
+            Method::PUT,
+            &format!("{large_path}/content"),
+        )
+        .body(large_payload)
+        .send()
+        .await?,
+        200,
+    )
+    .await?;
+    ensure!(
+        uploaded["size"] == 5 * 1024 * 1024 && uploaded["sha256"] == large_digest,
+        "5 MiB storage upload was truncated or changed"
+    );
+    let downloaded = h
+        .request(
+            &fresh_proof(h, user, &app).await?,
+            Method::GET,
+            &format!("{large_path}/content"),
+        )
+        .send()
+        .await?;
+    ensure!(
+        downloaded.status().as_u16() == 200,
+        "5 MiB storage download was rejected"
+    );
+    let bytes = downloaded.bytes().await?;
+    ensure!(
+        bytes.len() == 5 * 1024 * 1024 && hash(&bytes) == large_digest,
+        "5 MiB storage download hash differs"
+    );
+    let cancelled = response(
+        h.request(
+            &fresh_proof(h, user, &app).await?,
+            Method::DELETE,
+            &large_path,
+        )
+        .send()
+        .await?,
+        200,
+    )
+    .await?;
+    ensure!(
+        cancelled["status"] == "cancelled",
+        "5 MiB temporary file was not cancelled before quota tests"
+    );
+    let proof = fresh_proof(h, user, &app).await?;
+    // Fixed-size reservations count before bytes arrive, so parallel upload starts
+    // cannot exceed the installation quota. Fixture rows never create disk bytes.
+    for _ in 0..25 {
+        sqlx::query("INSERT INTO app_files(id,installation_id,request_id,created_by,input_hash,name,mime,size,status,expires_at) VALUES($1,$2,$3,$4,'quota-fixture','quota.bin','application/octet-stream',10485760,'pending',clock_timestamp()+interval '1 day')")
+            .bind(Uuid::new_v4()).bind(app.installation).bind(Uuid::new_v4()).bind(&user.id).execute(&h.state.pool).await?;
+    }
+    let too_large = reservation(Uuid::new_v4(), "quota.bin", 7 * 1024 * 1024);
+    let quota = h.json(&proof, Method::POST, &base, too_large, 409).await?;
+    ensure!(
+        quota["error"]["code"] == "file_quota_exceeded",
+        "installation reserved-byte quota was not enforced"
+    );
+    sqlx::query("DELETE FROM app_files WHERE installation_id=$1 AND input_hash='quota-fixture'")
+        .bind(app.installation)
+        .execute(&h.state.pool)
+        .await?;
+    // 1,020 MiB of elapsed reservations in five abandoned installations would
+    // leave no room for another 8 MiB under the global quota. They stop counting
+    // when they elapse, before any housekeeping removes them.
+    let mut abandoned = Vec::new();
+    let mut abandoned_part = None;
+    let mut stuck = None;
+    for index in 0..5 {
+        let other = h
+            .app(
+                format!(
+                    "abandoned-{index}-{}",
+                    &Uuid::new_v4().simple().to_string()[..8]
+                ),
+                "dev",
+                &[],
+            )
+            .await?;
+        let count = if index == 4 { 2 } else { 25 };
+        for _ in 0..count {
+            let file = Uuid::new_v4();
+            sqlx::query("INSERT INTO app_files(id,installation_id,request_id,created_by,input_hash,name,mime,size,status,expires_at) VALUES($1,$2,$3,$4,'global-expiry-fixture','quota.bin','application/octet-stream',10485760,'pending',clock_timestamp()-interval '1 second')")
+                .bind(file).bind(other.installation).bind(Uuid::new_v4()).bind(&user.id).execute(&h.state.pool).await?;
+            let directory = h
+                .state
+                .artifacts
+                .join(".files")
+                .join(other.installation.to_string());
+            if abandoned.is_empty() {
+                tokio::fs::create_dir_all(&directory).await?;
+                let path = directory.join(format!("{file}.part"));
+                tokio::fs::write(&path, b"incomplete fixture bytes").await?;
+                abandoned_part = Some(path);
+            } else if abandoned.len() == 1 {
+                // A directory where bytes belong makes this one removal fail.
+                let path = directory.join(format!("{file}.blob"));
+                tokio::fs::create_dir_all(&path).await?;
+                stuck = Some((file, path));
+            }
+            abandoned.push(file);
+        }
+    }
+    let (stuck_file, stuck_path) = stuck.context("stuck fixture file")?;
+    let reclaimed = h
+        .json(
+            &proof,
+            Method::POST,
+            &base,
+            reservation(Uuid::new_v4(), "after-expiry.bin", 8 * 1024 * 1024),
+            200,
+        )
+        .await?;
+    ensure!(
+        reclaimed["status"] == "pending",
+        "elapsed reservations of abandoned installations retained global quota"
+    );
+    let expired_count = |pool: sqlx::PgPool, files: Vec<Uuid>| async move {
+        sqlx::query_scalar::<_, i64>(
+            "SELECT count(*) FROM app_files WHERE id=ANY($1) AND status='expired'",
+        )
+        .bind(files)
+        .fetch_one(&pool)
+        .await
+    };
+    // One removal that cannot succeed is reported and skipped. It neither stops
+    // the other 101 files nor makes a reservation fail.
+    let report = crate::storage::sweep(&h.state.pool, &h.state.artifacts)
+        .await
+        .map_err(|error| anyhow::anyhow!("file sweep failed: {}", error.code))?;
+    let stuck_status: String = sqlx::query_scalar("SELECT status FROM app_files WHERE id=$1")
+        .bind(stuck_file)
+        .fetch_one(&h.state.pool)
+        .await?;
+    ensure!(
+        report.failed == 1
+            && stuck_status == "pending"
+            && expired_count(h.state.pool.clone(), abandoned.clone()).await? == 101,
+        "one failed removal stopped the sweep of the other files"
+    );
+    h.json(
+        &proof,
+        Method::POST,
+        &base,
+        reservation(Uuid::new_v4(), "during-failed-sweep.bin", 0),
+        200,
+    )
+    .await?;
+    tokio::fs::remove_dir(&stuck_path).await?;
+    let report = crate::storage::sweep(&h.state.pool, &h.state.artifacts)
+        .await
+        .map_err(|error| anyhow::anyhow!("file sweep failed: {}", error.code))?;
+    ensure!(
+        report.failed == 0 && expired_count(h.state.pool.clone(), abandoned.clone()).await? == 102,
+        "a recovered file was not swept on the next pass"
+    );
+    ensure!(
+        !tokio::fs::try_exists(abandoned_part.context("abandoned fixture bytes")?).await?,
+        "global expiry left incomplete bytes behind"
+    );
+    // Housekeeping is the platform's act, never the next caller's.
+    let targets: Vec<String> = abandoned
+        .iter()
+        .map(|file| format!("file:{file}"))
+        .collect();
+    let (system, attributed): (i64, i64) = sqlx::query_as(
+        "SELECT count(*) FILTER(WHERE actor IS NULL), count(*) FILTER(WHERE actor IS NOT NULL) FROM audit WHERE action='file.expired' AND target=ANY($1)",
+    )
+    .bind(&targets)
+    .fetch_one(&h.state.pool)
+    .await?;
+    ensure!(
+        system == 102 && attributed == 0,
+        "file expiry was attributed to a user"
+    );
+    Ok(())
+}
+
+async fn directory_contract(h: &Harness<'_>, caller: &Actor, app: &App) -> Result<()> {
+    async fn get(
+        h: &Harness<'_>,
+        actor: &Actor,
+        app: &App,
+        query: &[(&str, &str)],
+        expected: u16,
+    ) -> Result<Value> {
+        response(
+            h.request(&actor.token, Method::GET, &app.directory())
+                .query(query)
+                .send()
+                .await?,
+            expected,
+        )
+        .await
+    }
+
+    let subject = h.actor(false).await?;
+    h.grant(&subject, app, "dev").await?;
+    let second = h.actor(false).await?;
+    let third = h.actor(false).await?;
+    let disabled = h.actor(false).await?;
+    let literal = h.actor(false).await?;
+    let marker = format!("directory-{}", Uuid::new_v4().simple());
+    for actor in [&subject, &second, &third, &disabled] {
+        sqlx::query("UPDATE users SET name=$2 WHERE id=$1")
+            .bind(&actor.id)
+            .bind(&marker)
+            .execute(&h.state.pool)
+            .await?;
+    }
+    sqlx::query("UPDATE users SET enabled=false WHERE id=$1")
+        .bind(&disabled.id)
+        .execute(&h.state.pool)
+        .await?;
+    sqlx::query("UPDATE users SET name=$2 WHERE id=$1")
+        .bind(&literal.id)
+        .bind(format!("literal-only-{} %_", Uuid::new_v4()))
+        .execute(&h.state.pool)
+        .await?;
+
+    let first = get(h, &subject, app, &[("q", &marker), ("limit", "1")], 200).await?;
+    let keys: Vec<_> = first
+        .as_object()
+        .context("directory page is not an object")?
+        .keys()
+        .map(String::as_str)
+        .collect();
+    ensure!(
+        keys == [
+            "environment",
+            "groups",
+            "installationId",
+            "kind",
+            "nextCursor",
+            "subjectId",
+            "users"
+        ] && first["subjectId"] == subject.id
+            && first["installationId"] == json!(app.installation)
+            && first["environment"] == "dev"
+            && first["kind"] == "users"
+            && first["groups"] == json!([]),
+        "directory response exposed fields outside its public DTO"
+    );
+    let mut seen = Vec::new();
+    let mut page = first.clone();
+    loop {
+        let users = page["users"]
+            .as_array()
+            .context("directory users missing")?;
+        ensure!(users.len() == 1, "directory page limit was ignored");
+        let row = &users[0];
+        ensure!(
+            row.as_object().is_some_and(|row| row.len() == 3)
+                && row["id"].is_string()
+                && row["name"] == marker
+                && row["primaryGroup"].is_null(),
+            "directory user DTO leaked administrator, email, or grant information"
+        );
+        seen.push(
+            row["id"]
+                .as_str()
+                .context("directory id missing")?
+                .to_owned(),
+        );
+        let Some(cursor) = page["nextCursor"].as_str() else {
+            break;
+        };
+        ensure!(seen.len() <= 3, "directory pagination did not terminate");
+        page = get(
+            h,
+            &subject,
+            app,
+            &[("q", &marker), ("limit", "1"), ("cursor", cursor)],
+            200,
+        )
+        .await?;
+    }
+    let mut expected = vec![subject.id.clone(), second.id.clone(), third.id.clone()];
+    expected.sort();
+    ensure!(
+        seen == expected,
+        "same-name directory cursor skipped or duplicated users"
+    );
+    let cursor = first["nextCursor"]
+        .as_str()
+        .context("directory cursor missing")?;
+    get(h, caller, app, &[("q", &marker), ("cursor", cursor)], 400).await?;
+    get(
+        h,
+        &subject,
+        app,
+        &[("q", "another"), ("cursor", cursor)],
+        400,
+    )
+    .await?;
+    for query in [
+        vec![("userId", caller.id.as_str())],
+        vec![("subjectId", caller.id.as_str())],
+        vec![("limit", "0")],
+        vec![("limit", "101")],
+        vec![("kind", "memberships"), ("q", "query")],
+        vec![("kind", "groups"), ("ids", "not-a-uuid")],
+    ] {
+        get(h, &subject, app, &query, 400).await?;
+    }
+    let filtered = get(h, &subject, app, &[("q", "%_")], 200).await?;
+    ensure!(
+        filtered["users"]
+            .as_array()
+            .is_some_and(|users| users.len() == 1)
+            && filtered["users"][0]["id"] == literal.id,
+        "directory literal percent/underscore search became a wildcard"
+    );
+    let ids = format!("{},{}", subject.id, disabled.id);
+    let filtered = get(h, &subject, app, &[("ids", &ids)], 200).await?;
+    ensure!(
+        filtered["users"]
+            .as_array()
+            .is_some_and(|users| users.len() == 1)
+            && filtered["users"][0]["id"] == subject.id,
+        "candidate recheck exposed a disabled user"
+    );
+
+    let parent = Uuid::new_v4();
+    let child = Uuid::new_v4();
+    let local = Uuid::new_v4();
+    let inactive = Uuid::new_v4();
+    for (id, name, source, active, ancestor) in [
+        (parent, "parent", "hr", true, None),
+        (child, "child", "hr", true, Some(parent)),
+        (local, "local", "local", true, None),
+        (inactive, "inactive", "local", false, None),
+    ] {
+        sqlx::query("INSERT INTO groups(id,name,source,active,parent_id) VALUES($1,$2,$3,$4,$5)")
+            .bind(id)
+            .bind(format!("{marker}-{name}"))
+            .bind(source)
+            .bind(active)
+            .bind(ancestor)
+            .execute(&h.state.pool)
+            .await?;
+    }
+    sqlx::query("UPDATE users SET primary_group_id=$2 WHERE id=$1")
+        .bind(&subject.id)
+        .bind(child)
+        .execute(&h.state.pool)
+        .await?;
+    for group in [local, inactive] {
+        sqlx::query("INSERT INTO group_members(group_id,user_id) VALUES($1,$2)")
+            .bind(group)
+            .bind(&subject.id)
+            .execute(&h.state.pool)
+            .await?;
+    }
+    let groups = get(h, &subject, app, &[("kind", "groups"), ("q", &marker)], 200).await?;
+    ensure!(
+        groups["users"] == json!([])
+            && groups["groups"]
+                .as_array()
+                .is_some_and(|groups| groups.len() == 3
+                    && groups
+                        .iter()
+                        .all(|group| group.as_object().is_some_and(|group| group.len() == 3))),
+        "directory groups leaked inactive groups or administrative metadata"
+    );
+    let with_department = get(h, &subject, app, &[("ids", &subject.id)], 200).await?;
+    ensure!(
+        with_department["users"][0]["primaryGroup"]
+            == json!({"id":child,"name":format!("{marker}-child")}),
+        "directory primary HR group is missing or exposes extra fields"
+    );
+    let ids = format!("{parent},{child},{local},{inactive}");
+    let query = [("kind", "memberships"), ("ids", ids.as_str())];
+    let members = get(h, &subject, app, &query, 200).await?;
+    let mut group_ids: Vec<_> = members["groups"]
+        .as_array()
+        .context("memberships groups missing")?
+        .iter()
+        .map(|group| group["id"].as_str().unwrap_or_default())
+        .collect();
+    group_ids.sort();
+    let mut expected = vec![child.to_string(), local.to_string()];
+    expected.sort();
+    ensure!(
+        group_ids == expected,
+        "membership inherited an ancestor or inactive group"
+    );
+    let caller_members = get(h, caller, app, &query, 200).await?;
+    ensure!(
+        caller_members["groups"] == json!([]),
+        "membership leaked a different user's groups"
+    );
+
+    sqlx::query("DELETE FROM group_members WHERE group_id=$1 AND user_id=$2")
+        .bind(local)
+        .bind(&subject.id)
+        .execute(&h.state.pool)
+        .await?;
+    let after_local_revoke = get(h, &subject, app, &query, 200).await?;
+    ensure!(
+        after_local_revoke["groups"]
+            .as_array()
+            .is_some_and(|groups| groups.len() == 1)
+            && after_local_revoke["groups"][0]["id"] == child.to_string(),
+        "membership kept a removed local member"
+    );
+    sqlx::query("UPDATE groups SET active=false WHERE id=$1")
+        .bind(child)
+        .execute(&h.state.pool)
+        .await?;
+    ensure!(
+        get(h, &subject, app, &query, 200).await?["groups"] == json!([]),
+        "membership kept a disabled HR group"
+    );
+    ensure!(
+        get(h, &subject, app, &[("ids", &subject.id)], 200).await?["users"][0]["primaryGroup"]
+            .is_null(),
+        "inactive primary group was exposed"
+    );
+    sqlx::query("UPDATE users SET enabled=false WHERE id=$1")
+        .bind(&subject.id)
+        .execute(&h.state.pool)
+        .await?;
+    denied(
+        h.request(&subject.token, Method::GET, &app.directory())
+            .query(&query)
+            .send()
+            .await?,
+    )
+    .await?;
+    Ok(())
 }
 
 /// Neither the initial nor the final state permits this user to read/manage the app:
@@ -2868,6 +3871,144 @@ async fn grant_and_primary_audit(
             "user state audit lost its user or before/after state"
         );
     }
+    // A person the identity provider authenticates is admitted only by an
+    // administrator's registration; nothing is created by a sign-in attempt.
+    let subject = Uuid::new_v4().to_string();
+    // The user above lost its sessions when it was disabled.
+    let bystander = h.actor(false).await?;
+    for (body, code) in [
+        (
+            json!({"id":"not-a-subject","name":"New person"}),
+            "invalid_user_id",
+        ),
+        (
+            json!({"id":subject.to_uppercase(),"name":"New person"}),
+            "invalid_user_id",
+        ),
+        (json!({"id":subject,"name":"  "}), "invalid_user_name"),
+    ] {
+        let refused = h
+            .json(&operator.token, Method::POST, "/api/v1/users", body, 400)
+            .await?;
+        ensure!(
+            refused["error"]["code"] == code,
+            "registration accepted {code}"
+        );
+    }
+    h.json(
+        &bystander.token,
+        Method::POST,
+        "/api/v1/users",
+        json!({"id":subject,"name":"New person"}),
+        403,
+    )
+    .await?;
+    let created = h
+        .json(
+            &operator.token,
+            Method::POST,
+            "/api/v1/users",
+            json!({"id":subject,"name":" New person ","canDevelop":true}),
+            200,
+        )
+        .await?;
+    ensure!(
+        created
+            == json!({"id":subject,"name":"New person","admin":false,"canDevelop":true,"enabled":true}),
+        "registration did not create an enabled non-administrator"
+    );
+    ensure!(
+        audited("user.registered", format!("user:{subject}:developer:true")).await?,
+        "registration left no audit row"
+    );
+    let again = h
+        .json(
+            &operator.token,
+            Method::POST,
+            "/api/v1/users",
+            json!({"id":subject,"name":"Other"}),
+            409,
+        )
+        .await?;
+    ensure!(again["error"]["code"] == "user_exists");
+    let grants: i64 = sqlx::query_scalar("SELECT count(*) FROM effective_grants WHERE user_id=$1")
+        .bind(&subject)
+        .fetch_one(&h.state.pool)
+        .await?;
+    ensure!(grants == 0, "registration granted an app permission");
+    let path = format!("/api/v1/users/{subject}");
+    let empty = h
+        .json(&operator.token, Method::PATCH, &path, json!({}), 400)
+        .await?;
+    ensure!(empty["error"]["code"] == "no_user_change");
+    h.json(
+        &bystander.token,
+        Method::PATCH,
+        &path,
+        json!({"admin":true}),
+        403,
+    )
+    .await?;
+    h.json(
+        &operator.token,
+        Method::PATCH,
+        "/api/v1/users/00000000-0000-4000-8000-00000000ffff",
+        json!({"admin":true}),
+        404,
+    )
+    .await?;
+    let changed = h
+        .json(
+            &operator.token,
+            Method::PATCH,
+            &path,
+            json!({"name":"Renamed","admin":true,"canDevelop":false}),
+            200,
+        )
+        .await?;
+    ensure!(
+        changed
+            == json!({"id":subject,"name":"Renamed","admin":true,"canDevelop":false,"enabled":true})
+    );
+    for action in [
+        "user.admin.enabled",
+        "user.developer.disabled",
+        "user.renamed",
+    ] {
+        ensure!(
+            audited(action, format!("user:{subject}")).await?,
+            "{action} left no audit row"
+        );
+    }
+    let unchanged = h
+        .json(
+            &operator.token,
+            Method::PATCH,
+            &path,
+            json!({"admin":true}),
+            200,
+        )
+        .await?;
+    ensure!(unchanged["admin"] == true);
+    let repeats: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM audit WHERE action='user.admin.enabled' AND target=$1",
+    )
+    .bind(format!("user:{subject}"))
+    .fetch_one(&h.state.pool)
+    .await?;
+    ensure!(repeats == 1, "an unchanged role was audited as a change");
+    h.json(
+        &operator.token,
+        Method::PATCH,
+        &path,
+        json!({"admin":false}),
+        200,
+    )
+    .await?;
+    ensure!(
+        audited("user.admin.disabled", format!("user:{subject}")).await?,
+        "administrator removal left no audit row"
+    );
     let registration = Uuid::new_v4();
     let registered = format!("permission-a-{}", Uuid::new_v4().simple());
     sqlx::query("INSERT INTO app_registrations(id,app_id,name,actor) VALUES($1,$2,$2,$3)")

@@ -49,6 +49,12 @@ export interface AppFrameToken {
   tokenExpiresAt: string;
 }
 
+export interface AttachFile {
+  /** Opaque app-owned reference. The core does not interpret it as a path or ACL. */
+  reference: string;
+  requestId: string;
+}
+
 export interface AuditEntry {
   action: string;
   actor: string | null;
@@ -65,7 +71,55 @@ export interface AuditPage {
   nextCursor: number | null;
 }
 
+/**
+ * Release an attached file. The app sends this only after the transaction that
+ * removed its own reference has committed; Core then deletes the bytes.
+ */
+export interface DetachFile {
+  /** The reference given at attach. A different value is refused. */
+  reference: string;
+}
+
+/** An active group suitable for selection or current membership checks. */
+export interface DirectoryGroup {
+  id: string;
+  name: string;
+  source: GroupSource;
+}
+
+/** Safe display information for an active primary HR group. */
+export interface DirectoryGroupRef {
+  id: string;
+  name: string;
+}
+
+/** The explicitly requested view of the app-facing directory. */
+export type DirectoryKind = "users" | "groups" | "memberships";
+
+/**
+ * A bounded, name/id ordered app directory page. Only the requested collection is
+ * populated. Membership pages always belong to `subjectId`; selection is not an ACL.
+ */
+export interface DirectoryPage {
+  environment: Environment;
+  groups: DirectoryGroup[];
+  installationId: string;
+  kind: DirectoryKind;
+  nextCursor: string | null;
+  subjectId: string;
+  users: DirectoryUser[];
+}
+
+/** An active user's public directory fields. No administrator or grant data. */
+export interface DirectoryUser {
+  id: string;
+  name: string;
+  primaryGroup: DirectoryGroupRef | null;
+}
+
 export type Environment = "dev" | "prod";
+
+export type FileStatus = "pending" | "ready" | "attached" | "cancelled" | "expired";
 
 /**
  * What the frame document carries for the platform frame runtime
@@ -188,6 +242,13 @@ export interface RecordedCheck {
   scope: string;
 }
 
+export interface ReserveFile {
+  mime: string;
+  name: string;
+  requestId: string;
+  size: number;
+}
+
 /** A runtime job: the receipt of a runtime request and every job read. */
 export interface RuntimeJob {
   action: string;
@@ -212,6 +273,21 @@ export interface RuntimeJob {
 export interface RuntimeJobPage {
   jobs: RuntimeJob[];
   nextCursor: string | null;
+}
+
+export interface StoredFile {
+  /** Only incomplete uploads expire. Ready and attached bytes are retained. */
+  expiresAt: string | null;
+  id: string;
+  installationId: string;
+  mime: string;
+  name: string;
+  reference: string | null;
+  requestId: string;
+  sha256: string | null;
+  size: number;
+  status: FileStatus;
+  version: number;
 }
 
 /** Where the platform loads the app's UI module. */

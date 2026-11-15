@@ -97,6 +97,15 @@ Codex·Claude의 생성된 프로젝트 MCP는 프로젝트의 `.miy-tools/miy[.
 
 공개 접근 범위와 남은 credential/기기 점검은 [경계 설계](APP-BOUNDARIES.md#전환-전-임시-운영)와 [PLAN의 검증·결정 대기](PLAN.md#검증과-반영-대기)에서 추적한다. 일반 OIDC 성공이나 공유 개발 로그인 비활성화만으로 이 위험 검토를 완료 처리하지 않는다.
 
+### 사용자 추가
+
+실제 사용자는 두 단계로 추가한다. Core는 로그인 서버의 계정을 만들거나 읽지 않는다.
+
+1. 로그인 서버: 콘솔 `/identity`의 Keycloak 관리 화면에서 realm `miy`에 계정을 만들고 비밀번호를 정한다. 사용자 상세의 **ID**(UUID)가 Core가 받는 subject다.
+2. Core: 관리자가 콘솔 **플랫폼 관리 → 사용자 계정**에서 그 ID와 표시 이름을 등록한다(`POST /api/v1/users`). 필요하면 `앱 개발 허용`·`관리자 지정`을 따로 바꾼다. 앱 사용·개발·배포 권한은 기존 권한 화면이나 `miy grant set`으로 부여한다.
+
+등록하지 않은 계정의 로그인은 403이다. 사용을 막을 때는 로그인 서버가 아니라 Core의 `사용 중지`가 기준이다(세션·CLI·대기 작업 차단). 감사에는 `user.registered`·`user.admin.*`·`user.developer.*`·`user.renamed`가 남는다.
+
 ## 5. 실제 연결 확인
 
 최근 실제 확인에서는 세 출처 health·페이지, 서버/worker 실행 파일·schema, 게시 CLI 5종·helper 2종의 해시와 일반 OIDC/SSO·CLI·생성 stdio MCP 연결 22항목을 검사했다([2026-11-14 기록](releases/worktree-sync-2026-11-14-validation.json)). 같은 Linux 호스트에서 공개 HTTPS 주소로 실행한 결과이며 다른 PC·업무 앱 전체·직접 외부 OAuth MCP 인수와 구분한다. 이번 문서 정리에서 이 검사를 새로 실행하지 않았다.
@@ -120,7 +129,18 @@ python3 scripts/check-cli-downloads.py --origin https://v2.dwdcc.kr \
   --expected-commit CLI_CANDIDATE_40_HEX_COMMIT
 ```
 
-`check-mcp.mjs`는 로컬 검증 계정의 전체 세션을 철회하므로 일반 플랫폼 연결 확인에 사용하지 않는다. `check-server-development-flow.mjs --run`도 새 앱·권한·DB·배포를 만드는 전체 인수 도구다. Windows·macOS 사용자 PC, 직접 HTTP MCP 인증, 업무 앱 작성/승격·DB 보존은 해당 범위의 별도 인수로 기록한다.
+`check-mcp.mjs`는 로컬 검증 계정의 전체 세션을 철회하므로 일반 플랫폼 연결 확인에 사용하지 않는다.
+
+새 앱을 실제로 만들어 배포까지 확인할 때는 `check-pilot-flow.mjs`를 쓴다. 관리자·개발자가 일반 OIDC로 콘솔에 로그인해 CLI를 device 승인하고, 게시 CLI로 `app init` → `component sync` → 등록 → 관리자 승인 → 서버 빌드(`--build remote`, 기본) 또는 로컬 Docker 빌드 → dev 배포 → dev 포털의 앱 프레임 표시까지 수행한다. **서버를 바꾼다:** 실행마다 `pilot-*` 앱 하나(등록·dev develop 권한·dev DB·릴리스·컨테이너)가 생기고, 끝날 때 앱을 중지한다(`--keep-running true`로 유지). 앱 행과 DB는 남는다. `--publish-component DIR`을 주면 관리자가 그 공용 컴포넌트 버전을 먼저 게시한다.
+
+```sh
+node scripts/check-pilot-flow.mjs --origin https://v2.dwdcc.kr \
+  --cli /absolute/path/to/verified/miy \
+  --credentials-file /projects/miy-v2/.local/credentials.json \
+  --output /projects/miy-v2/.local/evidence/new-pilot-flow-run
+```
+
+`check-server-development-flow.mjs --run`은 앱 프레임 도입 전의 계약(포털 쿠키로 앱 업무 API 호출)으로 작성된 이전 전체 인수 도구이며 현행 서버에 맞게 갱신하지 않았다. Windows·macOS 사용자 PC, 직접 HTTP MCP 인증, 업무 앱 작성/승격·DB 보존은 해당 범위의 별도 인수로 기록한다.
 
 ## 6. 변경 전 최소 백업과 복원 확인
 
@@ -142,11 +162,11 @@ python3 scripts/check-db-connections.py
 
 ## 7. 배포 도구
 
-같은 schema의 일반 서버·UI 반영은 저장소에서 계속 관리하는 두 도구로 한다. 2026-11-07의 schema19→20·설정·issuer 전환은 검증한 전용 조정 도구로 수행했으며 [배포 기록](releases/internal-minimum-security-2026-11-07-deployment.json)을 따른다. 현재 `core-rollout.py`에는 정확한 SHA CI gate와 고정된 migration 21·22의 한 단계 확장 예외가 구현되어 있다. 임의 migration·설정·issuer를 한꺼번에 전환하는 일반 도구는 미구현이다. 반영할 commit의 별도 clean checkout에 있는 사본을 실행하며, `scripts/test-core-ops.py`가 같은 파일의 실패 경계를 모의 시험한다. 배포별 증거 디렉터리의 이전 도구(`core-0.7.0-linux`, `core-0.7.0-7d3c66a-linux`, `core-review-20261104-linux`)는 실행 당시 기록이므로 고치거나 다시 쓰지 않는다.
+같은 schema의 일반 서버·UI 반영은 저장소에서 계속 관리하는 두 도구로 한다. 2026-11-07의 schema19→20·설정·issuer 전환은 검증한 전용 조정 도구로 수행했으며 [배포 기록](releases/internal-minimum-security-2026-11-07-deployment.json)을 따른다. 현재 `core-rollout.py`에는 정확한 SHA CI gate와 고정된 migration 21·22·23의 한 단계 확장 예외가 구현되어 있다. 임의 migration·설정·issuer를 한꺼번에 전환하는 일반 도구는 미구현이다. 반영할 commit의 별도 clean checkout에 있는 사본을 실행하며, `scripts/test-core-ops.py`가 같은 파일의 실패 경계를 모의 시험한다. 배포별 증거 디렉터리의 이전 도구(`core-0.7.0-linux`, `core-0.7.0-7d3c66a-linux`, `core-review-20261104-linux`)는 실행 당시 기록이므로 고치거나 다시 쓰지 않는다.
 
 **서버 `scripts/core-rollout.py`**
 
-- **범위:** 기본은 core migration 집합이 운영 DB와 같은 소스의 서버 바이너리 교체다. 다른 schema는 `migration_rollout_not_supported`·`source_schema_older_than_live`로 거부한다. 예외인 `--widen-migration 21|22`는 소스에 고정한 SQL 해시가 일치하고 현재 schema보다 정확히 한 단계 높을 때만 허용한다. 적용 전 실제 덤프의 별도 복원·migration 검사를 거치며, 그 배포의 rollback은 확장한 schema를 유지하고 이전 바이너리만 복구한다. 임의 migration이나 DB 하향 복구를 지원하는 기능은 아니다. PostgreSQL 연결 한도와 Keycloak 풀은 기대값(기본 200·10)과 같은지 확인만 하고 바꾸지 않는다. 일반 migration·설정 전환은 별도 구현·검증 과제다.
+- **범위:** 기본은 core migration 집합이 운영 DB와 같은 소스의 서버 바이너리 교체다. 다른 schema는 `migration_rollout_not_supported`·`source_schema_older_than_live`로 거부한다. 예외인 `--widen-migration 21|22|23`(23은 `app_files` 표와 색인 두 개만 추가)은 소스에 고정한 SQL 해시가 일치하고 현재 schema보다 정확히 한 단계 높을 때만 허용한다. 적용 전 실제 덤프의 별도 복원·migration 검사를 거치며, 그 배포의 rollback은 확장한 schema를 유지하고 이전 바이너리만 복구한다. 임의 migration이나 DB 하향 복구를 지원하는 기능은 아니다. PostgreSQL 연결 한도와 Keycloak 풀은 기대값(기본 200·10)과 같은지 확인만 하고 바꾸지 않는다. 일반 migration·설정 전환은 별도 구현·검증 과제다.
 - **CI gate(2026-11-09):** 사전 확인에서 `gh`로 대상 commit의 main push workflow(`web.yml`, `cli-foundation.yml`, `runtime-regression.yml`)의 최신 실행이 모두 completed/success이고 모든 job이 성공했는지 확인한다. 실패·누락·다른 branch면 `ci_not_successful`·`ci_jobs_not_successful`·`ci_source_mismatch`·`required_ci_missing`로 아무것도 바꾸지 않고 거부한다. 확인한 run ID·URL은 결과와 기록에 남긴다.
 - **`inspect`(기본):** 바꾸지 않고 `apply`의 사전 확인만 한다. 소스 commit·clean 상태, 실행 중인 도구와 소스 사본의 일치, 후보 해시·버전, 설치 파일과 serve·worker 실제 실행 파일의 해시, schema, 연결 설정·예산, health·게시 CLI 안내, 대기 작업 0, 앱 컨테이너를 확인한다. 서비스의 `Id`·`Slice`·cgroup 경로와 cgroup v2의 읽기 가능 여부도 중지 전에 점검한다.
 - **`apply`:** 같은 확인 후 코어를 멈추고 프로세스가 없음을 확인한 뒤 대기 작업을 다시 확인한다. 새 덤프를 일회용 PostgreSQL에 복원해 행 수와 후보의 migration(기본은 변경 없음, 위 확장 예외는 고정된 한 단계)을 확인해야 설치한다. 시작 후 health·게시 CLI 안내·실행 파일 해시·schema·주요 레코드 해시·앱 컨테이너·연결 예산을 확인한다.
@@ -214,7 +234,7 @@ python3 scripts/render-server-config.py --state-dir /srv/miy-new \
 
 생성된 Nginx 설정·서비스 파일을 검토한 뒤 해당 서버의 반영 절차를 따른다. Core에는 세 출처와 각 고정 목적 listener가 필요하다. `miy-web`의 callback/logout URI는 세 origin의 정확한 경로만 등록한다. 기존 realm·사용자 sub·secret을 재생성하지 않고 issuer는 콘솔 `/identity/realms/miy`에 둔다. CLI context의 서버 주소는 prod 포털이며 MCP 클라이언트는 새 issuer 발견·필요한 재로그인을 확인한다. 내부 Core/Keycloak listener는 loopback이며 생성 proxy만 고정 목적 listener로 전달한다.
 
-이 구성 명령만으로 업무 앱 프레임 런타임이 빌드·설치되지는 않는다. 새 서버의 프레임 출처·런타임 조립과 전체 설치 인수는 [실행 안내](RUNNING.md#현행-서버-구성-https-도메인과-사내-http-ip)와 [PLAN](PLAN.md#다음-우선-작업)의 남은 범위다. 기존 서버 전환 성공을 새 서버 전체 설치 PASS로 옮기지 않는다.
+위 세 명령은 설정만 만든다. `scripts/up.sh`로 시작하는 새 상태 경로는 포털과 함께 프레임 런타임을 `<state>/frame-runtime`에 빌드하고 `registry/components/ui`의 모든 공용 UI 버전을 seed한다(2026-11-15). 설치된 바이너리와 생성한 서비스 파일로 조립하는 서버는 같은 빌드(`pnpm --filter @miy/frame-runtime exec vite build --outDir <state>/frame-runtime`)를 직접 수행한다. 새 서버의 프레임 출처·프록시 조립과 전체 설치 인수는 [실행 안내](RUNNING.md#현행-서버-구성-https-도메인과-사내-http-ip)와 [PLAN](PLAN.md#다음-우선-작업)의 남은 범위다. 기존 서버 전환 성공을 새 서버 전체 설치 PASS로 옮기지 않는다.
 
 DB·데이터를 변경하는 반영 전에는 변경 범위의 백업·별도 복원과 필요한 migration 리허설을 수행한다. 의심 자격증명은 콘솔의 개인 CLI 목록에서 device·legacy를 각각 회수한다. 개발 단계에서 CLI·SDK·설정 호환 보존은 필수가 아니지만 게시물 바이트·앱 데이터는 보존한다.
 

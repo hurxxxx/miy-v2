@@ -143,6 +143,24 @@
       ],
       "type": "object"
     },
+    "AttachFile": {
+      "additionalProperties": false,
+      "properties": {
+        "reference": {
+          "description": "Opaque app-owned reference. The core does not interpret it as a path or ACL.",
+          "type": "string"
+        },
+        "requestId": {
+          "format": "uuid",
+          "type": "string"
+        }
+      },
+      "required": [
+        "requestId",
+        "reference"
+      ],
+      "type": "object"
+    },
     "AuditEntry": {
       "properties": {
         "action": {
@@ -212,10 +230,162 @@
       ],
       "type": "object"
     },
+    "DetachFile": {
+      "additionalProperties": false,
+      "description": "Release an attached file. The app sends this only after the transaction that\nremoved its own reference has committed; Core then deletes the bytes.",
+      "properties": {
+        "reference": {
+          "description": "The reference given at attach. A different value is refused.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "reference"
+      ],
+      "type": "object"
+    },
+    "DirectoryGroup": {
+      "description": "An active group suitable for selection or current membership checks.",
+      "properties": {
+        "id": {
+          "format": "uuid",
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "source": {
+          "$ref": "#/$defs/GroupSource"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "source"
+      ],
+      "type": "object"
+    },
+    "DirectoryGroupRef": {
+      "description": "Safe display information for an active primary HR group.",
+      "properties": {
+        "id": {
+          "format": "uuid",
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "name"
+      ],
+      "type": "object"
+    },
+    "DirectoryKind": {
+      "description": "The explicitly requested view of the app-facing directory.",
+      "oneOf": [
+        {
+          "enum": [
+            "users",
+            "groups"
+          ],
+          "type": "string"
+        },
+        {
+          "const": "memberships",
+          "description": "Current groups of the authenticated original user, never a supplied user id.",
+          "type": "string"
+        }
+      ]
+    },
+    "DirectoryPage": {
+      "description": "A bounded, name/id ordered app directory page. Only the requested collection is\npopulated. Membership pages always belong to `subjectId`; selection is not an ACL.",
+      "properties": {
+        "environment": {
+          "$ref": "#/$defs/Environment"
+        },
+        "groups": {
+          "items": {
+            "$ref": "#/$defs/DirectoryGroup"
+          },
+          "type": "array"
+        },
+        "installationId": {
+          "format": "uuid",
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/$defs/DirectoryKind"
+        },
+        "nextCursor": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "subjectId": {
+          "type": "string"
+        },
+        "users": {
+          "items": {
+            "$ref": "#/$defs/DirectoryUser"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "kind",
+        "subjectId",
+        "installationId",
+        "environment",
+        "users",
+        "groups",
+        "nextCursor"
+      ],
+      "type": "object"
+    },
+    "DirectoryUser": {
+      "description": "An active user's public directory fields. No administrator or grant data.",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "primaryGroup": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/DirectoryGroupRef"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "primaryGroup"
+      ],
+      "type": "object"
+    },
     "Environment": {
       "enum": [
         "dev",
         "prod"
+      ],
+      "type": "string"
+    },
+    "FileStatus": {
+      "enum": [
+        "pending",
+        "ready",
+        "attached",
+        "cancelled",
+        "expired"
       ],
       "type": "string"
     },
@@ -640,6 +810,33 @@
       ],
       "type": "object"
     },
+    "ReserveFile": {
+      "additionalProperties": false,
+      "properties": {
+        "mime": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "requestId": {
+          "format": "uuid",
+          "type": "string"
+        },
+        "size": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "requestId",
+        "name",
+        "mime",
+        "size"
+      ],
+      "type": "object"
+    },
     "RuntimeJob": {
       "description": "A runtime job: the receipt of a runtime request and every job read.",
       "properties": {
@@ -752,6 +949,74 @@
       "required": [
         "jobs",
         "nextCursor"
+      ],
+      "type": "object"
+    },
+    "StoredFile": {
+      "properties": {
+        "expiresAt": {
+          "description": "Only incomplete uploads expire. Ready and attached bytes are retained.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "id": {
+          "format": "uuid",
+          "type": "string"
+        },
+        "installationId": {
+          "format": "uuid",
+          "type": "string"
+        },
+        "mime": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "reference": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "requestId": {
+          "format": "uuid",
+          "type": "string"
+        },
+        "sha256": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "size": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "status": {
+          "$ref": "#/$defs/FileStatus"
+        },
+        "version": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "id",
+        "version",
+        "installationId",
+        "requestId",
+        "name",
+        "mime",
+        "size",
+        "sha256",
+        "status",
+        "reference",
+        "expiresAt"
       ],
       "type": "object"
     },

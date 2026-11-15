@@ -1,0 +1,381 @@
+{
+  "date": "2026-11-15",
+  "status": "REVIEW_FIXES_APPLIED_WITH_VALIDATION_LIMITS",
+  "follows": "common-components-2026-11-14-validation.json",
+  "baseCommit": "a5d714f",
+  "scope": "Code-review follow-up on the uncommitted common-components candidate (CLI/bundle 0.10.0, Rust SDK 0.4.0, UI 1.1.0, core schema 23). Source changes and isolated checks only.",
+  "candidateVersions": {
+    "cli": "0.10.0",
+    "bundle": "0.10.0",
+    "rustSdk": "0.4.0",
+    "ui": "1.1.0",
+    "coreSchema": 23
+  },
+  "productionChanged": false,
+  "published": false,
+  "committed": false,
+  "pushed": false,
+  "evidenceDirectory": ".local/evidence/common-review-20261115",
+  "review": {
+    "method": "Static review of the working tree against a5d714f, then each finding compared with the code before it was changed.",
+    "findings": 15
+  },
+  "fixes": [
+    {
+      "id": 1,
+      "finding": "A failed or interrupted upload left the internal uploading state, and every later PUT for that reservation answered 409 while the API and UI still offered to send again.",
+      "change": "An upload may start from pending or uploading until the reservation expires. The row lock, not the status, excludes a second upload. Leftover part bytes and a blob whose ready commit did not happen are removed at the start of the next attempt; the part is removed when an attempt fails.",
+      "files": [
+        "crates/miy/src/storage.rs"
+      ]
+    },
+    {
+      "id": 2,
+      "finding": "Reservation, attach, cancel and upload opened a transaction (the global reservation lock or a file row lock), then ran df and took a second pooled connection for an authorization recheck. With a pool of ten, concurrent requests could leave every connection held by a transaction waiting for another connection.",
+      "change": "Disk space is measured before the transaction. Reservation, attach, cancel and detach recheck authorization immediately before a short transaction and take no second connection inside it. Only the recheck after an upload transfer still does, bounded by the four transfer slots. A state change that meets a running upload waits five seconds and answers 409 file_upload_in_progress instead of holding a connection for the whole transfer.",
+      "files": [
+        "crates/miy/src/storage.rs"
+      ]
+    },
+    {
+      "id": 3,
+      "finding": "Every reservation first swept elapsed and cancelling files of all installations and propagated any removal error, so one file that could not be removed made every app's reservation fail, repeatedly, on the same row.",
+      "change": "Housekeeping moved to a worker task that runs about once a minute. It pages past a file whose removal fails and reports it. Elapsed reservations stop counting toward quota and report expired at once, so quota does not depend on when housekeeping runs.",
+      "files": [
+        "crates/miy/src/storage.rs",
+        "crates/miy/src/worker.rs",
+        "scripts/check-write-decisions.py"
+      ]
+    },
+    {
+      "id": 4,
+      "finding": "Common UI created request and client IDs with crypto.randomUUID, which does not exist in an app frame served over internal HTTP.",
+      "change": "requestId() in the common UI uses crypto.getRandomValues. Files, sharing and the representative app use it.",
+      "files": [
+        "packages/ui/src/utilities.ts",
+        "packages/ui/src/files.tsx",
+        "packages/ui/src/sharing.tsx",
+        "examples/common-work/web/src/AppRoot.tsx"
+      ]
+    },
+    {
+      "id": 5,
+      "finding": "ShareEditor gave a newly added subject the first listed role, and the SDK listed roles alphabetically: editor for the representative app, owner for an owner/reader app.",
+      "change": "The SDK lists roles in declared order and names defaultRole only when exactly one role is the least (its actions are a subset of every other role's and it cannot manage sharing). ShareEditor preselects only that role; otherwise the person must choose a role before saving.",
+      "files": [
+        "templates/rust-react/sdk/rust/src/acl.rs",
+        "packages/ui/src/sharing.tsx"
+      ]
+    },
+    {
+      "id": 6,
+      "finding": "The Docker-runtime preview bound its backend listener to the bridge gateway address, which is not a host address with Docker Desktop or a rootless engine, so the whole preview could fail to start.",
+      "change": "When that address cannot be bound the preview starts with the listener on loopback and without backend platform calls, and prints a notice. Not reproduced: this host is Linux with a native engine; only the fallback selection is unit tested.",
+      "files": [
+        "crates/miy/src/preview.rs"
+      ]
+    },
+    {
+      "id": 7,
+      "finding": "The untyped platformApi(\"directory\") and platform_api(\"directory\") calls now return a first page of at most 50 entries and cannot continue it.",
+      "change": "Without a query these calls fail with directory_page_incomplete when more entries exist. Typed directory reads are unchanged. Apps on an older SDK still receive the first page from the server.",
+      "files": [
+        "templates/rust-react/sdk/rust/src/lib.rs",
+        "packages/sdk/src/directory.ts",
+        "templates/rust-react/sdk/browser/directory.ts",
+        "web/frame-runtime/src/main.tsx",
+        "templates/rust-react/sdk/preview/main.tsx"
+      ]
+    },
+    {
+      "id": 8,
+      "finding": "No API released an attached file, so the per-installation quota only ever grew.",
+      "change": "POST .../platform/files/{file}/detach with the attached reference deletes the bytes and returns the quota; cancel still refuses attached files. Rust SDK files_detach. The representative app does not use it yet.",
+      "files": [
+        "crates/miy/src/storage.rs",
+        "crates/miy/src/storage_contract.rs",
+        "crates/miy/src/http.rs",
+        "crates/miy/src/browser_boundary.rs",
+        "crates/miy/src/api_contract.rs",
+        "contracts/api-v1.schema.json",
+        "packages/sdk/src/api.gen.ts",
+        "templates/rust-react/sdk/rust/src/storage.rs"
+      ]
+    },
+    {
+      "id": 9,
+      "finding": "The SDK accepted uppercase UUIDs but compared them byte for byte with Core's lowercase answers (group membership, file ID, group grants).",
+      "change": "Group membership and file ID comparisons ignore ASCII case; group IDs in grants are stored in lowercase.",
+      "files": [
+        "templates/rust-react/sdk/rust/src/directory.rs",
+        "templates/rust-react/sdk/rust/src/storage.rs",
+        "templates/rust-react/sdk/rust/src/acl.rs"
+      ]
+    },
+    {
+      "id": 10,
+      "finding": "Housekeeping of other installations' files was audited under whichever user made the next reservation.",
+      "change": "file.expired and file.cancelled written by housekeeping have no actor.",
+      "files": [
+        "crates/miy/src/storage.rs"
+      ]
+    },
+    {
+      "id": 11,
+      "finding": "Successful GETs were audited when the request path contained /files/ or /connections/ anywhere, including app API and artifact paths.",
+      "change": "The matched route template decides which successful reads are audited.",
+      "files": [
+        "crates/miy/src/http.rs"
+      ]
+    },
+    {
+      "id": 12,
+      "finding": "In the representative app a create request that never reached the server kept the form locked: the lookup could only say the result was unknown.",
+      "change": "When the lookup shows nothing was created, the same request can be sent again under its original ID or cancelled, for projects and tasks.",
+      "files": [
+        "examples/common-work/web/src/AppRoot.tsx"
+      ]
+    },
+    {
+      "id": 13,
+      "finding": "DirectoryPicker read the directory on every keystroke; each read is authorized and audited by the server.",
+      "change": "Typing reads once after a 250 ms pause. Opening the list reads at once.",
+      "files": [
+        "packages/ui/src/directory.tsx"
+      ]
+    },
+    {
+      "id": 14,
+      "finding": "Acl::require, sharing and replacement_result held a pooled connection and the resource lock across the Core directory call (up to 15 seconds).",
+      "change": "They read the grants in a short transaction and return the connection before the directory call. require_in, replace_in and create_resource_in still call the directory inside the caller's transaction, which the lock they provide requires.",
+      "files": [
+        "templates/rust-react/sdk/rust/src/acl.rs"
+      ]
+    },
+    {
+      "id": 15,
+      "finding": "The file gateway repeated the JSON gateway's admission checks, and the Storage route list existed separately in Core and in the CLI preview proxy.",
+      "change": "Both gateways call runtime::app_target; Core admission, the preview endpoint and the CLI proxy use storage_contract::allowed_route.",
+      "files": [
+        "crates/miy/src/runtime.rs",
+        "crates/miy/src/file_gateway.rs",
+        "crates/miy/src/storage_contract.rs",
+        "crates/miy/src/preview.rs"
+      ]
+    }
+  ],
+  "checks": [
+    {
+      "name": "Core/CLI Rust static and unit checks",
+      "command": "CARGO_BUILD_JOBS=2 CARGO_NET_OFFLINE=true bash scripts/check-static.sh rust",
+      "status": "PASS",
+      "evidence": ".local/evidence/common-review-20261115/static-rust-final.log",
+      "server": {
+        "passed": 219,
+        "ignored": 7
+      },
+      "client": {
+        "passed": 134,
+        "ignored": 0
+      },
+      "scope": [
+        "source portability",
+        "write-decision coverage",
+        "fmt",
+        "Clippy server/client",
+        "unit tests server/client"
+      ],
+      "note": "Run on the final sources. Earlier attempts are under preservedFailures and the evidence directory."
+    },
+    {
+      "name": "Core isolated runtime regression",
+      "command": "CARGO_BUILD_JOBS=2 python3 scripts/runtime-regression/run.py",
+      "status": "PASS",
+      "evidence": [
+        ".local/evidence/common-review-20261115/runtime-regression-final.log",
+        ".local/evidence/runtime-regression/miy-runtime-regression-t0d27bei/evidence/runner-result.json"
+      ],
+      "testStatus": "PASS",
+      "observations": 131,
+      "suites": {
+        "runtime": 46,
+        "operations": 6,
+        "cli": 6,
+        "auth": 8,
+        "permissions": 26,
+        "delegation": 10,
+        "boundary": 12,
+        "migration": 3,
+        "frames": 14
+      },
+      "testExitCode": 0,
+      "cleanupExitCode": 0,
+      "exitCode": 0,
+      "cleanup": {
+        "ownedResources": "PASS",
+        "baselinePreservation": "PASS: 38 baseline containers kept their IDs and start times",
+        "removedPayloadBytes": 730650186
+      },
+      "scope": "Real Core HTTP and PostgreSQL in an isolated runner. The permissions suite now also proves: a failed upload is sent again on the same reservation; an elapsed reservation is expired and unusable before any sweep; detach requires the attached reference, deletes the bytes and returns quota, and refuses unattached files; elapsed reservations of other installations do not hold global quota; a sweep skips one file whose removal fails, completes the other 101, lets a reservation succeed meanwhile and finishes on the next pass; file.expired audit rows have no actor.",
+      "note": "Second run, on the final sources. The first run after the fixes passed all 131 observations but failed its cleanup baseline comparison; it is kept under preservedFailures."
+    },
+    {
+      "name": "Platform/browser static suite",
+      "command": "CARGO_BUILD_JOBS=2 bash scripts/check-static.sh web",
+      "status": "PASS",
+      "evidence": ".local/evidence/common-review-20261115/static-web.log",
+      "counts": {
+        "commonUi": 29,
+        "platform": 53,
+        "cli": 14,
+        "surfaceBoundaries": 14,
+        "httpIp": 1
+      },
+      "scope": "typecheck and isolated builds; mocked HTTP/browser fixtures, no live dist write",
+      "note": "Three common UI tests are new: one directory read per typing pause; no role by position for a new share subject; a create request that never reached the server is sent again under the same ID or cancelled. The main representative-app flow now runs with crypto.randomUUID removed."
+    },
+    {
+      "name": "Script contracts and actual isolated proxy checks",
+      "command": "CARGO_BUILD_JOBS=2 CARGO_NET_OFFLINE=true bash scripts/check-static.sh scripts",
+      "status": "PASS",
+      "evidence": ".local/evidence/common-review-20261115/static-scripts.log",
+      "scope": [
+        "doc links",
+        "script syntax/cleanup tests",
+        "API type generation and compatibility with 0.9.0",
+        "immutable UI generation (1.1.0 candidate regenerated from source)",
+        "SDK transport: 11 behavior groups",
+        "actual isolated Nginx/Caddy routing"
+      ]
+    },
+    {
+      "name": "SDK ACL PostgreSQL",
+      "command": "CARGO_BUILD_JOBS=2 python3 scripts/test-sdk-acl.py --evidence .local/evidence/common-review-20261115/sdk-acl",
+      "status": "PASS",
+      "evidence": ".local/evidence/common-review-20261115/sdk-acl/result.json",
+      "behaviorGroups": 14,
+      "scope": "real app-owned ACL SQL and transactions with a local Core directory fixture, after require/sharing/replacement_result stopped holding a connection across the directory call"
+    },
+    {
+      "name": "SDK Rust units",
+      "command": "CARGO_BUILD_JOBS=2 CARGO_TARGET_DIR=/projects/miy-v2/target cargo test --manifest-path .local/evidence/common-review-20261115/sdk/Cargo.toml --offline",
+      "status": "PASS",
+      "passed": 14,
+      "ignored": 1,
+      "evidence": ".local/evidence/common-review-20261115/sdk-units.log",
+      "note": "Copy of templates/rust-react/sdk/rust with an empty [workspace] table. The ignored real-PostgreSQL case is the test-sdk-acl.py run above."
+    },
+    {
+      "name": "Representative app under real migration/runtime roles",
+      "command": "CARGO_BUILD_JOBS=2 CARGO_NET_OFFLINE=true CARGO_TARGET_DIR=/projects/miy-v2/target python3 scripts/check-common-work.py --evidence .local/evidence/common-review-20261115/common-work",
+      "status": "PASS",
+      "evidence": ".local/evidence/common-review-20261115/common-work/result.json",
+      "behaviorGroups": 11,
+      "scope": "actual SQLx migrator, separate minimal runtime role, real app HTTP and PostgreSQL; local Core directory/Storage fixture"
+    }
+  ],
+  "preservedFailures": [
+    {
+      "status": "FAIL",
+      "area": "First Rust static run after the fixes",
+      "evidence": ".local/evidence/common-review-20261115/static-rust-attempt-1-fail.log",
+      "reason": "browser_boundary::tests::each_declared_core_route_has_a_policy_and_unknown_routes_are_denied: the new detach route had no browser-boundary classification.",
+      "resolution": "Classified it with the other Storage routes (never served to a browser session). Rerun PASS."
+    },
+    {
+      "status": "FAIL",
+      "area": "First isolated runtime run after the fixes",
+      "evidence": [
+        ".local/evidence/common-review-20261115/runtime-regression.log",
+        ".local/evidence/runtime-regression/miy-runtime-regression-vuv2ngvh/evidence/runner-result.json",
+        ".local/evidence/runtime-regression/miy-runtime-regression-vuv2ngvh/evidence/cleanup.json"
+      ],
+      "testStatus": "PASS",
+      "observations": 131,
+      "testExitCode": 0,
+      "cleanupExitCode": 1,
+      "exitCode": 1,
+      "reason": "Baseline preservation: four GitLab CI job containers ended during the run, and the five ai-do-prod compose containers restarted at 2026-11-15T00:00:15Z. The runner's own resources were removed and its 289 recorded Docker commands name none of those containers. miy-v2-validation and miy-app containers kept their IDs and start times.",
+      "resolution": "Not relabelled. The run was repeated on the final sources; see checks."
+    }
+  ],
+  "notRun": [
+    {
+      "status": "NOT_RUN",
+      "scope": "Docker Desktop or rootless Docker preview",
+      "reason": "This host is Linux with a native engine. Only the listener fallback selection is unit tested; the preview itself was not started on such an engine."
+    },
+    {
+      "status": "NOT_RUN",
+      "scope": "Real OIDC + native/Docker preview + deployed app frame combined directory/sharing/file flow",
+      "reason": "No deployment was requested. Unchanged from the 2026-11-14 record."
+    },
+    {
+      "status": "NOT_RUN",
+      "scope": "Windows/macOS device acceptance and GitHub CI",
+      "reason": "Not pushed or published."
+    },
+    {
+      "status": "NOT_RUN",
+      "scope": "Production schema 23 migration, publication and service restart",
+      "reason": "Not requested. Live schema 22 and published 0.9.0 are unchanged."
+    },
+    {
+      "status": "NOT_RUN",
+      "scope": "Concurrency load against the Storage connection discipline",
+      "reason": "The removal of nested connection use is by construction and covered by the functional regression; no load test with a saturated pool was run."
+    },
+    {
+      "status": "NOT_RUN",
+      "scope": "An app flow that uses detach",
+      "reason": "Core and SDK only. The representative app keeps attached files."
+    }
+  ],
+  "sourceSha256": {
+    "contracts/api-v1.schema.json": "4ac001464c1a759a75c4666f63306348c596775d61b8176e081f7850f886cad3",
+    "crates/miy/src/api_contract.rs": "bdd0a352239abfc18d2469f6ad675895ad489ded6352ddf26cfecbb1b89395c7",
+    "crates/miy/src/browser_boundary.rs": "b011ef047a182a4878dd75963f052332bc64b49425cf5a1e492308b5b343d372",
+    "crates/miy/src/file_gateway.rs": "a4ee329decc09fd8c6ad681c76de7293b58eb775307d1390db9ec346f38254cf",
+    "crates/miy/src/http.rs": "dd0a384d35255b3c7f7ad4473db71cac5b5735a350bd5fe5a32bbb15b0a4e1b0",
+    "crates/miy/src/permissions_regression.rs": "9bead701f61973b38e59ec15d015224886a18ae6a8eea8a4fbf682366c7b654a",
+    "crates/miy/src/preview.rs": "9aca4e69f5dc504c10d00124e8c2bd2463b16e6e0fe9d8982534453a50c1057a",
+    "crates/miy/src/runtime.rs": "a808d1adcf9cac5c038c835290d9a6a2218483256bb0d1327880df3c083372fa",
+    "crates/miy/src/storage.rs": "774868fb3f1b43975d1441444db756630ac2b4cdbba62c47b95df650135e3c88",
+    "crates/miy/src/storage_contract.rs": "a3e497231330c859ad42f5f3661a68e8c34a3dee818d0bb17fe4cd3c2830e97f",
+    "crates/miy/src/worker.rs": "c2291cfde1aee9b32f20a36547529e162f1d43033ab92dfdb315dff583133576",
+    "docs/AI-DO-COMMON-MIGRATION.md": "e0d503c69ff8ce5720c5dc01990de2453663c25abf4fc078a13199fafa9ff917",
+    "docs/CLI-RELEASE.md": "d64d784ee488cc1ea2e585d56c54f909066248594f49e4b950e00c14ad2ed27c",
+    "docs/CORE-PERMISSIONS.md": "0e8a9330c2ed7de6fa0d44e4b0917ff0aeb6672784f0a14634edd156a2303b83",
+    "docs/PLAN.md": "a6b0769b68082ea234b838a39137ace98d8045fef54d0736c0b13296a26e0c1b",
+    "docs/V1-ADOPTION.md": "97305f5b14fdaaf8e58491255afdfa199ebfec17d7b0c463907e84c8070bd1e8",
+    "examples/common-work/README.md": "5f50af5affc09ecbc98a150b053f612402b2255387790bb4cc7ffd6d3f221c7c",
+    "examples/common-work/web/src/AppRoot.tsx": "9df37849ef13d5f60a286d845156b4f1f3a6002549f6d7027f9bfc20b960828f",
+    "packages/sdk/src/api.gen.ts": "ade732df8c482375b548cddfd0684f93cc77eda2f4b9777abf1e832af8f77038",
+    "packages/sdk/src/directory.ts": "1dcf17124f2e476e3f45e4bc12964ad1d2905c4aa262c619c1b281e4def3c94d",
+    "packages/sdk/src/index.ts": "79d12fa800aa86d6b1c8fbd9ea6d5df6ba3f494b9e3c10385956c62a3e636bad",
+    "packages/ui/README.md": "8211122c6b83bada018f3cc687b649ff8863ba9276ac92fc9e49c977a84db220",
+    "packages/ui/src/directory.tsx": "9adad4955d9c0d8766b7cfa396726eb90270bce0ea728a48a87e45fe47fac2f0",
+    "packages/ui/src/files.tsx": "869d73ac913232e5062d9b6572b2a05888a5d0035cc653fabfc7ea8e8ded4b42",
+    "packages/ui/src/sharing.tsx": "d557cc7869f9faf96b0db2a0a12df167a07184bdb2cca75999ea2503dcaa27bc",
+    "packages/ui/src/utilities.ts": "34438dafd50bf7a237650794f676f2942efd1a81e7337678dfe15410328b41df",
+    "packages/ui/tests/common-ui.spec.ts": "573824ce0140d8324a1e1fcd77e6a5978f734be51d18f6c68306db781055cd52",
+    "packages/ui/tests/common-work.spec.ts": "52d702e7661c605976752ff201b45d53dd19de9d5467a8c2aa6fdb74d0e3115e",
+    "packages/ui/tests/sharing.spec.ts": "bf28ab17b5927777a8136240b5a03581251d02634efecb9b398b08f6f9e6e539",
+    "registry/components/ui/1.1.0/directory.tsx": "9adad4955d9c0d8766b7cfa396726eb90270bce0ea728a48a87e45fe47fac2f0",
+    "registry/components/ui/1.1.0/files.tsx": "869d73ac913232e5062d9b6572b2a05888a5d0035cc653fabfc7ea8e8ded4b42",
+    "registry/components/ui/1.1.0/sharing.tsx": "d557cc7869f9faf96b0db2a0a12df167a07184bdb2cca75999ea2503dcaa27bc",
+    "registry/components/ui/1.1.0/utilities.ts": "34438dafd50bf7a237650794f676f2942efd1a81e7337678dfe15410328b41df",
+    "scripts/check-write-decisions.py": "f9021c35768b9d3584c50ed5375bbfbe6781e0062a217120fe852a0547be3831",
+    "scripts/test-sdk-transport.mjs": "a5aedae64e6430129ce888f69d1d675275bbfac5f6f3c742418f6d640702901c",
+    "templates/rust-react/docs/CONTRACT.md": "cb2533da71bcfe142fea54e82d4914132a1672cf0ac962027003a654b484c8cd",
+    "templates/rust-react/sdk/browser/directory.ts": "1dcf17124f2e476e3f45e4bc12964ad1d2905c4aa262c619c1b281e4def3c94d",
+    "templates/rust-react/sdk/browser/index.ts": "72f7a88320854e0e939493080e78ba70b89dff0f899c3191ce5deb8e45ee5432",
+    "templates/rust-react/sdk/preview/main.tsx": "cd0829d4316e9dd86a00b1ef5fac4097dda050df5a58bd419a61adb15ff72db3",
+    "templates/rust-react/sdk/rust/src/acl.rs": "3ca0ec0f05bfdc0c6ca5f4054e5d56121e02443c82df5b3b9f4ad6e4cbfa1946",
+    "templates/rust-react/sdk/rust/src/directory.rs": "9593577353b84f8a551ca3a031c20b5d67362ec325a24b4c8d687bb54604d5ff",
+    "templates/rust-react/sdk/rust/src/lib.rs": "2f9d7eead890549ba11f7b78c15fbe35ecd6732a002b037cc44f40bc3296a26d",
+    "templates/rust-react/sdk/rust/src/storage.rs": "23d921e374f8eacb051e668c6cd841504599efba35146464c68682c9b6ad56be",
+    "web/frame-runtime/src/main.tsx": "b8eb56c8a2de33f2e4f0ea88690bfb9bf6c835165317f79651182d6099596def"
+  },
+  "sourceManifestNote": "Working-tree hashes of the files this follow-up changed, excluding this record and the pointer added to the 2026-11-14 record. Files of the candidate that were not changed keep the hashes in that record."
+}

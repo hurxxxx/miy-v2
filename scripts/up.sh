@@ -44,6 +44,9 @@ bash scripts/run-service.sh migrate
 bash scripts/run-service.sh seed
 pnpm install --frozen-lockfile
 pnpm build
+# Business apps run in frames that load this runtime from the frame origin
+# (MIY_FRAME_RUNTIME_DIR). Without it an opened app shows only a notice.
+pnpm --filter @miy/frame-runtime exec vite build --mode production --outDir "$MIY_STATE_DIR/frame-runtime" --emptyOutDir
 python3 scripts/services.py start
 curl_options=()
 if [ -n "$ca" ]; then curl_options+=(--cacert "$ca"); fi

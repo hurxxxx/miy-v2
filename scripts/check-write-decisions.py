@@ -45,6 +45,7 @@ TRANSACTIONS = {
     ("server_build.rs", "logs"): "snapshot",
     ("server_build.rs", "append_log"): "worker",
     ("runtime_health.rs", "persist"): "worker",
+    ("storage.rs", "sweep"): "worker",
     ("server_build_worker.rs", "tick"): "worker",
     ("worker.rs", "verify_development_migrations"): "worker",
     ("policy.rs", "begin"): "write-type",

@@ -71,12 +71,17 @@ mod delivery;
 #[cfg(feature = "server")]
 mod development;
 mod development_client;
+#[cfg(feature = "server")]
+mod directory;
 mod docker;
 #[cfg(feature = "server")]
 mod docker_storage;
 #[cfg(feature = "server")]
 mod domain;
+#[cfg(feature = "server")]
+mod file_gateway;
 mod file_transaction;
+mod file_transfer;
 #[cfg(feature = "server")]
 mod groups;
 mod helper_image;
@@ -131,7 +136,12 @@ mod server_build_worker;
 #[cfg(feature = "server")]
 mod server_origin;
 mod source_archive;
+#[cfg(feature = "server")]
+mod storage;
+mod storage_contract;
 mod upgrade;
+#[cfg(feature = "server")]
+mod user_admin;
 #[cfg(feature = "server")]
 mod worker;
 

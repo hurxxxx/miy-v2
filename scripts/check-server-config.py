@@ -294,7 +294,7 @@ def proxy_regression(state, kind, tls_material=None, hosts=False):
                      '/cli/device/00000000-0000-4000-8000-000000000001',
                      '/auth/cli/device', '/mcp', '/.well-known/oauth-protected-resource/mcp']:
             require(fetch(dev_portal, path)[0] == 404, 'Dev portal exposed a non-app surface: ' + path)
-        for path in ['/api/v1/installations/id/api/test', '/artifacts/hash/ui/remoteEntry.js', '/auth/options']:
+        for path in ['/api/v1/installations/id/api/test', '/api/v1/installations/id/files/report/content', '/api/v1/installations/id/platform/files/file/content', '/artifacts/hash/ui/remoteEntry.js', '/auth/options']:
             status, _, body = fetch(dev_portal, path)
             require(status == 200 and json.loads(body)['surface'] == 'dev_portal',
                     'Dev portal did not route app content to its own fixed Core listener')
@@ -313,7 +313,8 @@ def proxy_regression(state, kind, tls_material=None, hosts=False):
                 'Public identity discovery or login anti-frame protection failed')
         for path in ['/artifacts/hash/ui/remoteEntry.js', '/preview/app', '/apps/app',
                      '/environments/dev/apps/app', '/api/v1/preview/apps/app/platform/directory',
-                     '/api/v1/installations/id/api/test', '/api/v1/installations/id/connections/target/api/test']:
+                     '/api/v1/installations/id/api/test', '/api/v1/installations/id/connections/target/api/test',
+                     '/api/v1/installations/id/files/report/content', '/api/v1/installations/id/platform/files/file/content']:
             require(fetch(console, path)[0] == 404, 'Console returned app content or SPA fallback')
         status, headers, _ = fetch(console, '/')
         csp = ';'.join(headers.get_all('Content-Security-Policy', []))
@@ -553,6 +554,9 @@ with tempfile.TemporaryDirectory(prefix='miy-server-config-') as temporary:
     require('listen 8080;' in proxy and 'ssl_certificate' not in proxy and 'Strict-Transport-Security' not in proxy,
             'HTTP render accidentally enabled TLS')
     require('cli/(downloads|installers)' in proxy and 'proxy_set_header Upgrade' in proxy, 'Download, installer or WebSocket route missing')
+    require('platform/files/[^/]+/content$|files/' in proxy
+            and 'proxy_request_buffering off;' in proxy,
+            'Core storage byte routes must stream through the proxy')
     blocks = proxy.split('\nserver {')
     frame_blocks = [block for block in blocks if 'proxy_pass http://127.0.0.1:18083;' in block]
     require(len(frame_blocks) == 1, 'Nginx has no single app frame block')
@@ -566,6 +570,12 @@ with tempfile.TemporaryDirectory(prefix='miy-server-config-') as temporary:
             and 'access_log off;' in frame_block and 'error_log /dev/null;' in frame_block
             and 'X-Frame-Options' not in frame_block,
             'Nginx app frame block lost its port pool, Host, log or framing rules')
+    require('client_max_body_size 8m;' in frame_block
+            and 'location /_miy/files/ {' in frame_block
+            and 'client_max_body_size 12m;' in frame_block
+            and 'proxy_request_buffering off;' in frame_block
+            and 'proxy_send_timeout 65s;' in frame_block,
+            'File streaming must have a bounded dedicated location without widening the app JSON gateway')
     require('frame-src http://10.2.3.4:*' in proxy and 'Referrer-Policy strict-origin-when-cross-origin' in proxy,
             'Nginx portals do not frame app origins or keep the launch Origin')
     require('listen 8081;' in proxy and 'proxy_pass http://127.0.0.1:18081;' in proxy,

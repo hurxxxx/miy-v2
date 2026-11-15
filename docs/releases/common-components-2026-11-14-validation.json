@@ -1,0 +1,450 @@
+{
+  "date": "2026-11-14",
+  "status": "IMPLEMENTED_WITH_VALIDATION_LIMITS",
+  "baseCommit": "a5d714fd0cba93038b203e04c56ccfc6d8222671",
+  "scope": [
+    "G4 directory and current original-user memberships",
+    "typed browser/Rust SDK and frame/preview adapters",
+    "basic common UI and directory picker",
+    "G5/G6 app-owned ACL and sharing/revocation",
+    "small attachments with separate bounded binary gateway",
+    "representative project/task app"
+  ],
+  "candidateVersions": {
+    "cli": "0.10.0",
+    "bundle": "0.10.0",
+    "rustSdk": "0.4.0",
+    "ui": "1.1.0",
+    "coreSchema": 23
+  },
+  "productionChanged": false,
+  "published": false,
+  "committed": false,
+  "pushed": false,
+  "evidenceDirectory": ".local/evidence/common-components-20261114T071332Z",
+  "summary": "Requested first common-feature implementation is complete in source. Independent Core, app/PostgreSQL and browser suites validate different layers; they do not constitute one real-OIDC deployed-frame end-to-end run. One runtime runner cleanup-baseline failure is retained below.",
+  "checks": [
+    {
+      "name": "Core/CLI Rust static and unit checks",
+      "command": "CARGO_BUILD_JOBS=2 CARGO_NET_OFFLINE=true bash scripts/check-static.sh rust",
+      "status": "PASS",
+      "evidence": ".local/evidence/common-components-20261114T071332Z/static-rust-complete.log",
+      "server": {
+        "passed": 215,
+        "ignored": 7
+      },
+      "client": {
+        "passed": 132,
+        "ignored": 0
+      },
+      "scope": [
+        "source portability",
+        "write-decision coverage",
+        "fmt",
+        "Clippy server/client",
+        "unit tests server/client"
+      ]
+    },
+    {
+      "name": "Platform/browser static suite",
+      "command": "CARGO_BUILD_JOBS=2 bash scripts/check-static.sh web",
+      "status": "PASS",
+      "evidence": ".local/evidence/common-components-20261114T071332Z/static-web.log",
+      "counts": {
+        "commonUiAtThisRun": 21,
+        "platform": 53,
+        "cli": 14,
+        "surfaceBoundaries": 14,
+        "httpIp": 1
+      },
+      "scope": "typecheck and isolated builds; mocked HTTP/browser fixtures, no live dist write",
+      "note": "The later common UI run below includes five additional representative-app tests. Counts overlap and are not summed."
+    },
+    {
+      "name": "Final common UI and representative AppRoot browser tests",
+      "command": "pnpm exec playwright test --config packages/ui/tests/playwright.config.ts",
+      "status": "PASS",
+      "evidence": ".local/evidence/common-ui/results/.last-run.json",
+      "passed": 26,
+      "scope": "21 common UI tests and 5 actual AppRoot tests using HTTP fixtures and the real SDK transport",
+      "visualEvidence": [
+        ".local/evidence/common-ui/common-work-desktop.png",
+        ".local/evidence/common-ui/common-work-mobile.png"
+      ],
+      "notes": [
+        "390px mobile and desktop inspected; no horizontal overflow",
+        "browser fixture/AppRoot strict TypeScript passed; Node spec typechecking is separately recorded below"
+      ]
+    },
+    {
+      "name": "Script contracts and actual isolated proxy checks",
+      "command": "CARGO_BUILD_JOBS=2 CARGO_NET_OFFLINE=true bash scripts/check-static.sh scripts",
+      "status": "PASS",
+      "evidence": ".local/evidence/common-components-20261114T071332Z/static-scripts-complete.log",
+      "scope": [
+        "script syntax/cleanup tests",
+        "API type generation and compatibility",
+        "immutable UI generation",
+        "SDK transport: 10 behavior groups",
+        "release/rollout/settings mock tests",
+        "actual isolated Nginx/Caddy routing including console file-path denial"
+      ]
+    },
+    {
+      "name": "SDK ACL PostgreSQL",
+      "command": "CARGO_BUILD_JOBS=2 python3 scripts/test-sdk-acl.py",
+      "status": "PASS",
+      "evidence": ".local/evidence/sdk-acl-20261114T080135Z/result.json",
+      "behaviorGroups": 14,
+      "scope": "real app-owned ACL SQL and transactions with Core directory fixture; fresh membership, revocation, default deny, scope, idempotence, rollback and business lock"
+    },
+    {
+      "name": "SDK Rust units",
+      "command": "CARGO_BUILD_JOBS=2 CARGO_TARGET_DIR=/projects/miy-v2/target $HOME/.cargo/bin/cargo test --manifest-path .local/evidence/common-sdk-contracts-20261114/sdk/Cargo.toml --offline",
+      "status": "PASS",
+      "passed": 12,
+      "ignored": 1,
+      "evidence": "agent tool execution output; no separate log file saved",
+      "note": "The ignored real-PostgreSQL case was executed by test-sdk-acl.py above."
+    },
+    {
+      "name": "Representative app under real migration/runtime roles",
+      "command": "CARGO_BUILD_JOBS=2 CARGO_NET_OFFLINE=true CARGO_TARGET_DIR=/projects/miy-v2/target python3 scripts/check-common-work.py --evidence .local/evidence/common-components-20261114T071332Z/common-work-complete",
+      "status": "PASS",
+      "evidence": ".local/evidence/common-components-20261114T071332Z/common-work-complete/result.json",
+      "behaviorGroups": 11,
+      "scope": "actual SQLx migrator, separate minimal runtime role, real app HTTP and PostgreSQL; local Core directory/Storage fixture",
+      "assertions": [
+        "template SDK + business overlay + UI registry candidate assembled; real Rust app compiled",
+        "actual SQLx migrations run as non-login app owner without database CREATE permission",
+        "runtime cannot create/drop schemas or tables, read/change migration history, or SET ROLE owner",
+        "unsigned backend requests and unshared list/detail/task are denied",
+        "viewer/editor ACL actions and sharing result lookup are enforced by app HTTP",
+        "reservation response loss recovers by request ID; 5 MiB streamed upload/download hashes and header allowlist match",
+        "committed app reference survives uncertain Core attach and blocks compensating delete",
+        "sharing revocation immediately removes list/detail/task/file reads and writes",
+        "fresh platform membership revocation invalidates group-based app sharing",
+        "environment-scoped ACL and signed installation binding reject scope mismatch",
+        "independent database restore retains exact project/file/attach request references and ACL rows"
+      ]
+    },
+    {
+      "name": "Core isolated runtime with 5 MiB file payload",
+      "command": "CARGO_BUILD_JOBS=2 python3 scripts/runtime-regression/run.py",
+      "status": "FAIL",
+      "evidence": [
+        ".local/evidence/common-components-20261114T071332Z/runtime-large-final.log",
+        ".local/evidence/runtime-regression/miy-runtime-regression-8h8hsvft/evidence/runner-result.json",
+        ".local/evidence/common-components-20261114T071332Z/runtime-cleanup-followup.json"
+      ],
+      "testStatus": "PASS",
+      "observations": 131,
+      "suites": {
+        "runtime": 46,
+        "operations": 6,
+        "cli": 6,
+        "auth": 8,
+        "permissions": 26,
+        "delegation": 10,
+        "boundary": 12,
+        "migration": 3,
+        "frames": 14
+      },
+      "testExitCode": 0,
+      "cleanupExitCode": 1,
+      "exitCode": 1,
+      "cleanup": {
+        "ownedResources": "PASS",
+        "largePayloadCleanup": "PASS",
+        "removedPayloadBytes": 728176991,
+        "baselinePreservation": "FAIL: four unrelated CI runner containers were no longer present at final inspection",
+        "detail": ".local/evidence/common-components-20261114T071332Z/runtime-cleanup-followup.json"
+      },
+      "note": "Preserve the runner failure; do not relabel the command PASS. All 131 functional observations passed. The previous complete run, before increasing the file fixture to 5 MiB, has test/cleanup/runner exit 0 in miy-runtime-regression-rn6tefs7."
+    },
+    {
+      "name": "CLI discovery/MCP and actual published-bundle upgrade",
+      "command": "MIY_PREVIOUS_BUNDLE_CLI=/projects/miy-v2/.local/bin/miy-server CARGO_NET_OFFLINE=true CARGO_BUILD_JOBS=2 node scripts/check-cli-guidance.mjs",
+      "status": "PASS",
+      "evidence": [
+        ".local/evidence/common-components-20261114T071332Z/cli-guidance.log",
+        ".local/evidence/cli-guidance/mwg3lqh6/result.json"
+      ],
+      "behaviorGroups": 5,
+      "scope": "candidate 0.10.0 with published 0.9.0 baseline; business code/applied SQL/component bytes/dependency versions preserved; SDK and component default explicitly updated",
+      "note": "Only read the installed baseline executable; no live service changes. Runs before the final removal of duplicate schema creation from new SDK SQL; latest candidate bytes are covered by the final Rust bundle checks and real-role app migration test."
+    },
+    {
+      "name": "Independent app UI, preview and frame runtime builds",
+      "command": "pnpm exec tsc --noEmit; pnpm exec vite build --outDir <isolated-evidence>; pnpm exec vite build --config sdk/preview/vite.config.ts --outDir <isolated-evidence>; pnpm --filter @miy/frame-runtime exec vite build --outDir <isolated-evidence>",
+      "status": "PASS",
+      "evidence": [
+        ".local/evidence/common-components-20261114T071332Z/common-work/ui-typecheck.log",
+        ".local/evidence/common-components-20261114T071332Z/common-work/ui-build.log",
+        ".local/evidence/common-components-20261114T071332Z/common-work/preview-build.log",
+        ".local/evidence/common-components-20261114T071332Z/frame-runtime-build.log"
+      ],
+      "note": "Commands ran from their respective assembled app/workspace directories; all output directories were isolated. Command list describes separate invocations, not one shell invocation."
+    },
+    {
+      "name": "Published bytes and applied migrations preserved",
+      "command": "compare base a5d714fd0cba93038b203e04c56ccfc6d8222671 registry/components, bundles and core migrations against working tree",
+      "status": "PASS",
+      "evidence": ".local/evidence/common-components-20261114T071332Z/protected-check.json",
+      "protectedFiles": 37
+    },
+    {
+      "name": "Final document links",
+      "status": "PASS",
+      "command": "python3 scripts/check-doc-links.py; separate untracked Markdown link/anchor scan",
+      "trackedMarkdownFiles": 64,
+      "trackedRelativeLinks": 987,
+      "untrackedMarkdownFiles": 3,
+      "untrackedRelativeLinks": 4,
+      "evidence": ".local/evidence/common-components-20261114T071332Z/new-doc-links.json",
+      "note": "External URLs were not fetched."
+    },
+    {
+      "name": "Final example formatting and diff whitespace",
+      "status": "PASS",
+      "command": "$HOME/.cargo/bin/rustfmt --check --edition 2024 examples/common-work/src/main.rs; git diff --check",
+      "evidence": "tool execution output"
+    }
+  ],
+  "reviewFixes": [
+    "Separate preview outer/inner transfer slot budgets to prevent a nested-call deadlock.",
+    "Commit durable cancelling state before byte deletion; retain quota until deletion completes; refuse attach after cancellation.",
+    "Global reserve-time sweep reclaims expired incomplete uploads across installations and resumes interrupted cancellation; ready/attached files are never automatically orphan-deleted.",
+    "Recheck original CLI/dev session permissions at preview file completion; test revocation while request body is held.",
+    "Verify actual blob existence/size at attach rather than accepting metadata alone.",
+    "Persist app reservation intent before Core reserve and app reference before Core attach; query unknown outcomes rather than retrying writes or compensating deletion.",
+    "Run SQLx migration and business HTTP with actual separate minimal DB roles. Remove redundant CREATE SCHEMA from new ACL/example SQL; the platform already provisions app schema."
+  ],
+  "preservedFailures": [
+    {
+      "status": "FAIL",
+      "area": "Core compile/setup iterations",
+      "evidence": [
+        ".local/evidence/common-components-20261114T071332Z/api-contract.log",
+        ".local/evidence/common-components-20261114T071332Z/api-contract-retry.log",
+        ".local/evidence/common-components-20261114T071332Z/static-rust.log",
+        ".local/evidence/common-components-20261114T071332Z/static-rust-retry.log",
+        ".local/evidence/common-components-20261114T071332Z/static-rust-retry-2.log"
+      ],
+      "resolution": "Added exact historical bundle descriptor, split large schema JSON construction, fixed preview handler shadowing and Clippy/fmt findings; final static Rust PASS."
+    },
+    {
+      "status": "FAIL",
+      "area": "First runtime setup",
+      "evidence": ".local/evidence/common-components-20261114T071332Z/runtime.log",
+      "resolution": "Required python:3.14-slim test image was absent; fetched the fixed image and reran."
+    },
+    {
+      "status": "FAIL",
+      "area": "First expanded permissions regression",
+      "evidence": ".local/evidence/common-components-20261114T071332Z/runtime-retry.log",
+      "resolution": "Test incorrectly expected a continuation proof before any approval. Changed fixture to verify no proof, read-only approval refusing write, then both approvals. Product approval policy was not weakened."
+    },
+    {
+      "status": "FAIL",
+      "area": "UI first attempts",
+      "evidence": [
+        ".local/evidence/common-ui/attempt-1",
+        ".local/evidence/common-ui/common-work-attempt-1"
+      ],
+      "resolution": "Fixed picker focus/blur behavior and test selectors; final browser run 26/26 PASS."
+    },
+    {
+      "status": "FAIL",
+      "area": "Optional strict TypeScript check including Node Playwright spec",
+      "reason": "TS2591: @types/node not installed in that browser-only type environment",
+      "resolution": "Browser fixture/AppRoot strict check and actual Playwright execution PASS. No claim that this optional Node-spec typecheck passed."
+    },
+    {
+      "status": "FAIL",
+      "area": "Real migration-role first run",
+      "evidence": ".local/evidence/common-components-20261114T071332Z/common-work-roles-initial/result.json",
+      "resolution": "CREATE SCHEMA IF NOT EXISTS app still requires DB CREATE for the real owner. Removed it only from new unapplied SDK/example SQL; final real-role run 11 checks PASS."
+    },
+    {
+      "status": "FAIL",
+      "area": "Example rustfmt check",
+      "evidence": "tool execution output",
+      "resolution": "Used the actual edition 2024, formatted the new multiline filename predicate, and reran representative app acceptance on final source."
+    },
+    {
+      "status": "FAIL",
+      "area": "Final runtime baseline-preservation phase",
+      "evidence": ".local/evidence/common-components-20261114T071332Z/runtime-cleanup-followup.json",
+      "resolution": "Own resource/payload cleanup confirmed. Four external CI containers disappeared during execution. Original runner exit 1 retained; no change to cleanup safety policy."
+    }
+  ],
+  "notRun": [
+    {
+      "status": "NOT_RUN",
+      "scope": "Real OIDC + native/Docker preview + deployed app frame combined directory/sharing/file flow",
+      "reason": "Source and isolated layer verification only; no deployment requested for this feature task."
+    },
+    {
+      "status": "NOT_RUN",
+      "scope": "Candidate Windows/macOS device acceptance and GitHub CI",
+      "reason": "Current host is Linux and candidate has not been pushed/published."
+    },
+    {
+      "status": "NOT_RUN",
+      "scope": "Production schema 23 migration, artifact publication and service restart",
+      "reason": "Not performed; live schema22 and published0.9.0 remain unchanged."
+    },
+    {
+      "status": "NOT_RUN",
+      "scope": "AI-DO exact live-data visual comparison and screen-reader/device matrix",
+      "reason": "Current checks cover common component fixtures and representative desktop/mobile UI."
+    },
+    {
+      "status": "NOT_RUN",
+      "scope": "Full Core metadata + file bytes + app DB backup/restore product",
+      "reason": "App DB independent restore and reference/ACL preservation tested; integrated platform backup product remains in PLAN."
+    },
+    {
+      "status": "NOT_RUN",
+      "scope": "Large CAD/resumable/S3/cross-app file transfer, Invoke/service accounts/events and entire 46-group migration",
+      "reason": "Outside the requested first implementation scope; retained in PLAN."
+    }
+  ],
+  "limits": {
+    "fileBytes": 10485760,
+    "installationBytes": 268435456,
+    "installationFiles": 1000,
+    "coreBytes": 1073741824,
+    "coreFiles": 10000,
+    "transferSlotsPerStage": 4,
+    "transferTimeoutSeconds": 20,
+    "ordinaryJsonBytes": 4194304,
+    "ordinaryJsonTimeoutSeconds": 15,
+    "incompleteExpiryHours": 24,
+    "readyOrAttachedAutoDelete": false
+  },
+  "cleanup": {
+    "liveStateTouched": false,
+    "runtimeOwnedPayload": "removed by runner",
+    "cliGuidanceOwnedBinaryCopiesRemovedBytes": 1259670096,
+    "cliGuidanceEvidence": ".local/evidence/cli-guidance/mwg3lqh6/binary-cleanup.json",
+    "representativeAndSdkPostgres": "removed by their runners",
+    "note": "Keep source/result/log evidence; do not remove unrelated CI or operational resources."
+  },
+  "sourceSha256": {
+    ".github/workflows/runtime-regression.yml": "174eca29f7c4cd2d45fd8a8ecd3b6599969d81af6fb23fd7f73d26492d214740",
+    "Cargo.lock": "dd5c608d65ff47b2638a0ec5655cddfc9a0e81aa2c9c7dab1e9454d3b30ef4f9",
+    "contracts/api-v1.schema.json": "b0c83246757cc5d0a9a1f2e25dc524e63eb862ec7244fb3b4d9928143ae859ac",
+    "crates/miy/Cargo.toml": "3bbe4e5e26cb33b51e0996fa67d55b3b99bf94773411f3cd738765caba6c5e0b",
+    "crates/miy/bundles/0.9.0.json": "6c43d390e763558efc4503f8751f60c87a1d4dbb2acf377c6ece3377c7731183",
+    "crates/miy/src/api_contract.rs": "13654f1f0cb505bcb6a5ad79a17b3b749098814bc15a877b341f75ee996a46e3",
+    "crates/miy/src/app_calls.rs": "4717356c9977a765c9df7752ddda432421bf4ba1e576c95d7cfcb5ff46046f3a",
+    "crates/miy/src/app_frames.rs": "fd6a03d15093be302a465ea65c855c4c0adbebd7ee26304cb72f893c1a47b090",
+    "crates/miy/src/browser_boundary.rs": "c4093b9ff96ea1a8fae71bf21c20fa147f7b1edf82651e77b5d436e4ac63c4c8",
+    "crates/miy/src/bundle.rs": "71b56dec257ef04355f35862e21089ae488a9dd343ea2f22917eedb2620c0184",
+    "crates/miy/src/connections.rs": "097d63b7e1ee46ee4ff3020ff3fd9ce9c65e88ab14ea5a93032fe1bb95da7716",
+    "crates/miy/src/contract.rs": "02f3bf56d1c671cdf1b441f2a228c8bd9b2f6873ef0d9c6f0ac76c6f85022324",
+    "crates/miy/src/directory.rs": "25f8608d9455195a41ce48532ac5b655859f7b2983b941b77df5dcb389ce17b1",
+    "crates/miy/src/domain.rs": "3b4184a91007151ab64fdfee2e9d359322e6443f2924cde05e88a12bc7f0a14a",
+    "crates/miy/src/file_gateway.rs": "ba3f3645a7bad8a89302af697a71bc2c24d1d2f218d485057f74ac302d660f25",
+    "crates/miy/src/file_transfer.rs": "7e5a0e046f955fff9cf24095e2db6a75b69feea8f0bc1c363bbc3bafe7aa1ace",
+    "crates/miy/src/http.rs": "b40d57b95adab03855105c149a05146b80f32f9ad6bb3adac8502909991a1db5",
+    "crates/miy/src/main.rs": "dc33039aab559dfbc547f9dca2a2d0f0c8aa9a851e6162b0b87dfb0ac510ef45",
+    "crates/miy/src/native_preview.rs": "135ee7f56bb4121387e5ca40cf0ae60d6d1ed49e8d05aec031e7aee80fb30c3f",
+    "crates/miy/src/permissions_regression.rs": "b333d01795bfb48a436933237a09f9492df8ecc2e6bb1e275c561cf86e8a662d",
+    "crates/miy/src/preview.rs": "032d7c98a49f467ee9f84fd0923c2916a642beb8754441a4462a0420b68e9dd3",
+    "crates/miy/src/storage.rs": "5dd4464c340f602cae048a5d7e0e725ecc4a38f2c07202e075ee820479b7c0fa",
+    "crates/miy/src/storage_contract.rs": "919dd6eb98d3fe1b3dfd48031bdb642799860f3cbd38671aed6227f454031c59",
+    "crates/miy/src/upgrade.rs": "d0fe6f5eefff290c0eaa5e423d310bfdf6ed4b91db93885f24bd3014ea64cea8",
+    "docs/AI-DO-COMMON-MIGRATION.md": "1a953883f71c9be8c1acec7a161ba12f582a628a57d192a48be11c3b4a394627",
+    "docs/APP-FRAMES.md": "1e149e95dc7f691f6dd9f56338b9a0378d0de63d96d2f2cc6f37be31343314d6",
+    "docs/CHECKS.md": "2b66a659785f78373c79dc868ea32d76e80f94d735e4bb0f66db2d5f5793f627",
+    "docs/CLI-RELEASE.md": "9961eb56dce79e37bb7f16c7453d96fde4ad50dc2b69fd7bca835acb98f7a584",
+    "docs/CORE-PERMISSIONS.md": "2fb92ec6f4ff3f28a0c8c2fa6cbc593c1930194a047975d9a1af6ef9857c4ec9",
+    "docs/DEVELOPMENT.md": "cb274eff26e67c0e5d4b067185b43e4126b1ca293bd4a7c02142dd61cf5742af",
+    "docs/PLAN.md": "e4bedf3414a7567cb6d8fbee3f9f0a71092a7cc5bb301c23008e098d369e0ed0",
+    "docs/PRD.md": "edaea183f88b998182425510fddb384bb6ef97a329bb932cf16bd89e793abd55",
+    "docs/README.md": "14e44dda8b1cd926442abf423ba97dbf6aa76e5ccba9e35d5d1c86575ce47e79",
+    "docs/V1-ADOPTION.md": "3cd1f01cff3c3fb9a553e5c11eee11e4578e660f4e358f61daef94a66941d2ea",
+    "examples/common-work/README.md": "597a5cb2281d7eb73324a3f7d5024a9013142e17e903f487f7db18453ad164dd",
+    "examples/common-work/manifest.json": "507950a5b4bb18764bc688db64ab6deb271fc615f2132b3c4e9b15fd8cdbee81",
+    "examples/common-work/migrations/0002_work.sql": "7bc4a92a351149bc106d67dff2d2d53f66a9b9460bbbfd65ffcca1c5173d1669",
+    "examples/common-work/migrations/0003_acl.sql": "603b59ac977d8b54623c3cbba445197d03db5c6629ab23138cca456b331277a8",
+    "examples/common-work/src/main.rs": "bab1cbaa25ad9c56ea3a83d36f987278e3ed9ed30383b27cb75bc748c3e16ac7",
+    "examples/common-work/src/work.rs": "dd23ac2abf72c9372996d499521b367d8f8f081dfacc79ce9404917b07f1ac2b",
+    "examples/common-work/web/src/AppRoot.tsx": "c6c6130c25b4a5d60ce058ec76cb6ec2b6354333dbf02ca320867286491800ce",
+    "migrations/core/0023_app_files.sql": "8985c40e0dacdd85df173f225a8d64a0f938efb9b6eddd145652d88c6f6980e2",
+    "ops/Caddyfile.routes": "4646be196d086a358185b96bfd0b6a52abd3350c6a3972521f398ffa34a84d2a",
+    "packages/sdk/src/api.gen.ts": "100857fafab6e16a40ba21d0d7de057240517faa8466b08de980719655c14f57",
+    "packages/sdk/src/directory.ts": "a3fa72fd08d388364fb035d2e9b9a00cc03d00bf3e7a6a6b3909c9f9668c1fee",
+    "packages/sdk/src/index.ts": "7f2c613c828801abce7795aeb1f0acb1882ac9c469a3508fd96b31db170d256a",
+    "packages/sdk/src/transport.ts": "704dc334c3d3b14f3d422d79d9dc947b7d56ddea402d17d0db06a3abfafea35e",
+    "packages/ui/README.md": "652e578e2ebabf89c760e4e6975ce6a673b43c2001fc34951d3a69f13636671f",
+    "packages/ui/package.json": "2ed2373d0d6e4edc11b961c06756966813e196b178442d80b21199d36a5a66f0",
+    "packages/ui/src/assets.d.ts": "35d26ea66c86da9701e4f4b467913481ffeae910761cea34c775c5dacb7f8eaa",
+    "packages/ui/src/dialog.tsx": "37c0a58d5d8dcdd7eb9db7a2959004fe8ac6b82e50bf1b6b4900bd7c8361e7cd",
+    "packages/ui/src/directory.tsx": "b612aed47bc266514ff574a1a20e22f27bf444355fd1b2cf2fe04ef3cb7fb182",
+    "packages/ui/src/files.tsx": "f7251952224df439fc3959e8ac8a2bb10deab5a3c7ef3aa11e1e079cf4265b36",
+    "packages/ui/src/index.tsx": "05f90b261136ac479f2a13671269b31b732f814adee7edbe917cf4d603745abb",
+    "packages/ui/src/primitives.tsx": "fec44a186e97a96e6528deb42985f90aa251786475db22c6904c0854f58d7794",
+    "packages/ui/src/sharing.tsx": "bf8f6e87611c376f00c59583d3b6fca260c5580c7b041cde6e0d4036fc1f519d",
+    "packages/ui/src/styles.css": "511645fc8d654f9e176051bbdc9a15bd8d575081996f540f7559fec6dea0d088",
+    "packages/ui/src/utilities.ts": "4b7a701e053f3095906f01e0711abdb58df997fb6fb70eafafc99b5b7568d166",
+    "packages/ui/tests/common-ui.spec.ts": "8fcd549054c018ee6370daa6d69e9f9800ce1c0b859e499a5c5a84cc0823decc",
+    "packages/ui/tests/common-work-fixture.tsx": "be57118d95880c7c188a5aaaab9f59ae431f3dbed4fcfc8f0720afd6ba6720e5",
+    "packages/ui/tests/common-work.html": "d38cab7d8a2314d0ff08ed082c124eed6d17833f175efe871918d1480d2a8796",
+    "packages/ui/tests/common-work.spec.ts": "ef1922085ff6dce46b95f5512efbfd8b27b9277df886302f7b46d9f21a385e35",
+    "packages/ui/tests/files.spec.ts": "0f57488d38fe81016590190ec018b05c4a4e165eb6be75fd7071fca187da675d",
+    "packages/ui/tests/fixture.tsx": "7f15a7deb4ec5dc9e791293436148491f3e2039a2fb4db17df3ca47447ec9db1",
+    "packages/ui/tests/index.html": "dbdfdb8b89cfe23eceb41b4e80ce0624cfc7f19263c312d83f3a103b6421e1f7",
+    "packages/ui/tests/playwright.config.ts": "91c740b32861508343b5f94deb8568316d277a240c458179dddf44d041d393cd",
+    "packages/ui/tests/server.mjs": "0f6f00f31aab091e3bc8f102b7fffec277e39938f3233213f4603e492f654f93",
+    "packages/ui/tests/sharing.spec.ts": "fa9ba8a2d5db4bc5d1646b7fa6d42ca856b97d7dd7a1e9f4f05d5d17d0161bd2",
+    "registry/components/ui/1.1.0/README.md": "a562c5d27100c5e785c94a29a3ca52c7ef6751c71581bba54a7f5fbbd2b1bb65",
+    "registry/components/ui/1.1.0/assets.d.ts": "35d26ea66c86da9701e4f4b467913481ffeae910761cea34c775c5dacb7f8eaa",
+    "registry/components/ui/1.1.0/component.json": "1952dc468e760c4a312d89f23b4bbbf57fb6f255aeb35f13d8ea329e16e21541",
+    "registry/components/ui/1.1.0/dialog.tsx": "37c0a58d5d8dcdd7eb9db7a2959004fe8ac6b82e50bf1b6b4900bd7c8361e7cd",
+    "registry/components/ui/1.1.0/directory.tsx": "b612aed47bc266514ff574a1a20e22f27bf444355fd1b2cf2fe04ef3cb7fb182",
+    "registry/components/ui/1.1.0/files.tsx": "f7251952224df439fc3959e8ac8a2bb10deab5a3c7ef3aa11e1e079cf4265b36",
+    "registry/components/ui/1.1.0/index.tsx": "05f90b261136ac479f2a13671269b31b732f814adee7edbe917cf4d603745abb",
+    "registry/components/ui/1.1.0/primitives.tsx": "fec44a186e97a96e6528deb42985f90aa251786475db22c6904c0854f58d7794",
+    "registry/components/ui/1.1.0/sharing.tsx": "bf8f6e87611c376f00c59583d3b6fca260c5580c7b041cde6e0d4036fc1f519d",
+    "registry/components/ui/1.1.0/styles.css": "511645fc8d654f9e176051bbdc9a15bd8d575081996f540f7559fec6dea0d088",
+    "registry/components/ui/1.1.0/tokens.css": "744db55a81f37f74c482cd912d5c0091233c9426432cb643dceaea565aff4e6d",
+    "registry/components/ui/1.1.0/utilities.ts": "4b7a701e053f3095906f01e0711abdb58df997fb6fb70eafafc99b5b7568d166",
+    "scripts/api-types.mjs": "a0ffe408a4b94ef66725fdd1f3b3058d334277767b15deabdf4d60478881e102",
+    "scripts/build-ui-component.mjs": "881af85dd7fd89b2906502aa4ae960add110c96406f2145fe4d622c7736d3e9e",
+    "scripts/check-cli-guidance.mjs": "4212e1687ac63c46bff27aad116d521d2c2e77f45a33e2883f2a7cc536d69ef2",
+    "scripts/check-common-work.py": "146fccb0c16424c68bf9dba5f8ff6a751828a195dae8993761b99dce5d5b0d8f",
+    "scripts/check-server-config.py": "99b0fd78e6f76d566fdbecadf0b928b49756c13974b385dc2723cf1a6ea9384f",
+    "scripts/check-static.sh": "1981ddc588ad23ab4af17d075fee6598c2f9cb4af847d61a62bd9b4cd6c46e9b",
+    "scripts/render-server-config.py": "c321d67d796f591c1129b4ba653ded573429c26323ff9886a9de00abe58976d8",
+    "scripts/runtime-regression/README.md": "49b295405530b619ff5e739b2bde7e71e367fd0928b9ecab30cab67897903a78",
+    "scripts/runtime-regression/run.py": "9c0a0582a90754bd5c8dfb678c92ab077387f78aef861566be85412e94a43b16",
+    "scripts/test-sdk-acl.py": "618b05dec8abf6fc66b832e363d11c73543ef1d66f3ac3505cfc76c649eb8470",
+    "scripts/test-sdk-transport.mjs": "be4e88d5a476220024e0ccddcb9d01a452335581884302027293151ae1a9e9c1",
+    "templates/rust-react/Cargo.lock": "97cc4976876ed7a2f6f26774259f6aabf8efb4dd64710b68de7818525365c915",
+    "templates/rust-react/docs/CONTRACT.md": "431654a045e6a40e900609434721101fa27a4c6e2e3f26bb1d4e310e3c8f8638",
+    "templates/rust-react/miy.components.json": "5967e9919f3ddf68588cb01b8af41dd8b8b14ddb6459fd9baf0e246370fcb82e",
+    "templates/rust-react/sdk/browser/api.gen.ts": "a7881c75bcc5308cfe57cf9c9d117336831f8f5a05ffefffa81ae1c6563ba977",
+    "templates/rust-react/sdk/browser/directory.ts": "a3fa72fd08d388364fb035d2e9b9a00cc03d00bf3e7a6a6b3909c9f9668c1fee",
+    "templates/rust-react/sdk/browser/index.ts": "c0db98c16a37c736416bcdd4324a9e664385ec92c4caaf01dbb356b062470034",
+    "templates/rust-react/sdk/browser/transport.ts": "704dc334c3d3b14f3d422d79d9dc947b7d56ddea402d17d0db06a3abfafea35e",
+    "templates/rust-react/sdk/preview/main.tsx": "990be5ecb14193c126abdc443957a6cfc10d5a6b19f4ecc4d2a1f6125fb0c4c0",
+    "templates/rust-react/sdk/rust/Cargo.toml": "9915da28534094db4d0f033ec67ba5681954c770cfeddedd09c6c0cb2e29e9e3",
+    "templates/rust-react/sdk/rust/src/acl.rs": "f2f8f7221dc91ea501a11961626078a8cffa3d3377a7370713d94a3c8a225c00",
+    "templates/rust-react/sdk/rust/src/acl.sql": "603b59ac977d8b54623c3cbba445197d03db5c6629ab23138cca456b331277a8",
+    "templates/rust-react/sdk/rust/src/acl_postgres_tests.rs": "c0d823b4727e2682fcb92f801829d50e49ffe72fab6e118f71ed300842fd5cfa",
+    "templates/rust-react/sdk/rust/src/directory.rs": "06bdea54255a19f7064f542f1a9854f75ec645b2cb836ae6dd36d58ba2f9d3aa",
+    "templates/rust-react/sdk/rust/src/lib.rs": "3581e134eff26b3ef6396661dd807bc36dce25a2daa77ea2cab630ec7888d623",
+    "templates/rust-react/sdk/rust/src/storage.rs": "537fe3e946f53faaf511b8db46ba23b1b30d18fa8ba532cdc7b0fedd29da58c3",
+    "templates/rust-react/sdk/ui/index.tsx": "0f2c18cbd9f1391864e6acf098ad401ea6e1a850f943068812a78250ac16c41f",
+    "web/frame-runtime/src/main.tsx": "f255aa097ed15da260de7558f42ea7bb129016caf6ecfa23d4daf85e1e707fad"
+  },
+  "sourceManifestNote": "Final working-tree hashes excluding this self-referential report. Individual execution evidence records its own scope/source snapshot; previous PASS is not broadened to unexecuted environments.",
+  "followUp": {
+    "record": "common-components-2026-11-15-review-fixes.json",
+    "note": "A code review on 2026-11-15 changed some of the sources hashed above. The results in this record describe the 2026-11-14 tree only; the follow-up record lists the changed files and the checks rerun on them."
+  }
+}

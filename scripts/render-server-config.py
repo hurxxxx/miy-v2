@@ -159,7 +159,7 @@ def server(public, trusted=False, dev_portal=False):
     elif trusted:
         boundaries = f'''    # No app content, even through direct URLs or SPA fallback.
     if ($http_service_worker = "script") {{ return 403; }}
-    location ~ ^/(artifacts(/|$)|preview(/|$)|((environments/[^/]+/)?apps)(/|$)|api/v1/(preview(/|$)|installations/[^/]+/(api(/|$)|connections/[^/]+/api(/|$)))) {{
+    location ~ ^/(artifacts(/|$)|preview(/|$)|((environments/[^/]+/)?apps)(/|$)|api/v1/(preview(/|$)|installations/[^/]+/(api(/|$)|files(/|$)|platform/files(/|$)|connections/[^/]+/(api|files)(/|$)))) {{
         return 404;
     }}
     # Keep Keycloak's own script CSP and add the anti-frame policy.
@@ -178,6 +178,18 @@ def server(public, trusted=False, dev_portal=False):
     }}
     location ~ ^/cli/(authorize|device)(/|$) {{ return 404; }}
 '''
+    file_routes = '' if trusted else f'''    # Backend storage and app file transfers keep request bodies streaming.
+    location ~ ^/api/v1/(installations/[^/]+|preview/apps/[^/]+)/(platform/files/[^/]+/content$|files/) {{
+        client_max_body_size 12m;
+        client_body_timeout 60s;
+        proxy_pass {upstream};
+        proxy_http_version 1.1;
+        proxy_read_timeout 65s;
+        proxy_send_timeout 65s;
+        proxy_request_buffering off;
+        proxy_buffering off;
+{forwarding(public)}    }}
+'''
     return f'''server {{
     listen {public_listen}{' ssl' if tls else ''};
     server_name {nginx(public_host)};
@@ -187,7 +199,7 @@ def server(public, trusted=False, dev_portal=False):
     proxy_hide_header X-Content-Type-Options;
     proxy_hide_header X-Frame-Options;
 {security_headers()}
-{boundaries}    location ~ ^/(api(/|$)|auth(/|$)|mcp(/|$)|\\.well-known(/|$)|artifacts(/|$)|cli/(downloads|installers)(/|$)) {{
+{boundaries}{file_routes}    location ~ ^/(api(/|$)|auth(/|$)|mcp(/|$)|\\.well-known(/|$)|artifacts(/|$)|cli/(downloads|installers)(/|$)) {{
         proxy_pass {upstream};
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
@@ -229,6 +241,23 @@ def frame_server():
     error_log /dev/null;
     # No anti-frame headers: frame documents name their portal in frame-ancestors.
     if ($http_service_worker = "script") {{ return 403; }}
+    # Small business attachments have their own bounded streaming gateway. The
+    # normal app JSON route keeps its existing Core and proxy limits.
+    location /_miy/files/ {{
+        client_max_body_size 12m;
+        client_body_timeout 60s;
+        proxy_pass {frame_core};
+        proxy_http_version 1.1;
+        proxy_send_timeout 65s;
+        proxy_read_timeout 65s;
+        proxy_request_buffering off;
+        proxy_buffering off;
+        proxy_set_header Host $http_host;
+        proxy_set_header X-Forwarded-Proto {frame_scheme};
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header X-Forwarded-Host "";
+        proxy_set_header Forwarded "";
+    }}
     location / {{
         proxy_pass {frame_core};
         proxy_http_version 1.1;

@@ -28,6 +28,7 @@ pub async fn run(pool: sqlx::PgPool) -> Result<()> {
     let _log_monitor = crate::runtime_logs::start(pool.clone());
     let _health_monitor = crate::runtime_health::start(pool.clone())?;
     let _development_monitor = crate::development::start(pool.clone());
+    let _file_sweeper = crate::storage::start(pool.clone())?;
     // Direct futures share ownership of this scope: a failed lane or lost
     // session lock drops every other lane before the ownership connection.
     // Build recovery can itself take minutes and must not delay control startup.
@@ -396,7 +397,11 @@ pub(crate) fn desired_fingerprint(migrator: &sqlx::migrate::Migrator) -> Result<
 }
 
 /// A build may add migrations, but must preserve every already applied SQL file.
-/// This connection is read only: no provisioning, schema changes, or migrations.
+/// The history relation belongs to the role that runs developer migrations, so
+/// a migration can replace it with a view over its own function. It is read as
+/// that app's migration login, never as the provisioning superuser: a session
+/// that authenticated as a superuser can return to it from inside such a
+/// function, whatever role was set first. Read only and bounded in time.
 pub(crate) async fn verify_development_migrations(
     pool: &sqlx::PgPool,
     app: &str,
@@ -404,41 +409,122 @@ pub(crate) async fn verify_development_migrations(
 ) -> Result<()> {
     crate::bundle::migrations(migrations)?;
     let desired = sqlx::migrate::Migrator::new(migrations).await?;
-    let Some(database) = sqlx::query_scalar::<_, String>(
-        "SELECT database_name FROM db_resources WHERE app_id=$1 AND environment='dev'",
-    )
-    .bind(app)
-    .fetch_optional(pool)
-    .await?
+    let Some(row) = sqlx::query("SELECT * FROM db_resources WHERE app_id=$1 AND environment='dev'")
+        .bind(app)
+        .fetch_optional(pool)
+        .await?
     else {
         return Ok(());
     };
-    let mut address = url::Url::parse(&std::env::var("PROVISION_DATABASE_URL")?)?;
-    address.set_path(&database);
-    let mut conn = sqlx::PgConnection::connect(address.as_str())
-        .await
-        .map_err(|_| anyhow::anyhow!("build_database_history_unavailable"))?;
-    let mut tx = conn.begin().await?;
-    sqlx::query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY")
-        .execute(&mut *tx)
-        .await?;
-    let exists: bool = sqlx::query_scalar("SELECT to_regclass('app._sqlx_migrations') IS NOT NULL")
-        .fetch_one(&mut *tx)
-        .await?;
-    if exists {
-        let applied = sqlx::query(
-            "SELECT version,checksum,success FROM app._sqlx_migrations ORDER BY version",
-        )
-        .fetch_all(&mut *tx)
-        .await?;
-        for row in applied {
-            let version: i64 = row.get("version");
-            let checksum: Vec<u8> = row.get("checksum");
-            anyhow::ensure!(row.get::<bool,_>("success") && desired.iter().any(|m| m.version == version && m.checksum.as_ref() == checksum.as_slice()), "migration_history_mismatch");
+    let resource = resource(row);
+    let unavailable = || anyhow::anyhow!("build_database_history_unavailable");
+    let mut conn = match app_owner_connection(&resource).await {
+        Ok(conn) => conn,
+        // Roles and database are created before the first migration is recorded.
+        Err(_) if !database_exists(&resource.database).await? => return Ok(()),
+        Err(_) => return Err(unavailable()),
+    };
+    let read = async {
+        let backend: i32 = sqlx::query_scalar("SELECT pg_catalog.pg_backend_pid()")
+            .fetch_one(&mut conn)
+            .await?;
+        let rows = async {
+            let mut tx = conn.begin().await?;
+            sqlx::query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY")
+                .execute(&mut *tx)
+                .await?;
+            let exists: bool =
+                sqlx::query_scalar("SELECT to_regclass('app._sqlx_migrations') IS NOT NULL")
+                    .fetch_one(&mut *tx)
+                    .await?;
+            let applied = if exists {
+                sqlx::query(
+                    "SELECT version,checksum,success FROM app._sqlx_migrations ORDER BY version",
+                )
+                .fetch_all(&mut *tx)
+                .await?
+            } else {
+                Vec::new()
+            };
+            tx.commit().await?;
+            anyhow::Ok(applied)
+        };
+        // The app can make this read arbitrarily slow; the build lane must not
+        // wait for it, and the abandoned statement must not keep a session.
+        match tokio::time::timeout(HISTORY_READ_TIMEOUT, rows).await {
+            Ok(applied) => applied,
+            Err(_) => {
+                let mut admin =
+                    sqlx::PgConnection::connect(&std::env::var("PROVISION_DATABASE_URL")?).await?;
+                sqlx::query("SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE pid=$1 AND usename=$2 AND datname=$3")
+                    .bind(backend)
+                    .bind(&resource.migration)
+                    .bind(&resource.database)
+                    .execute(&mut admin)
+                    .await?;
+                anyhow::bail!("history_read_timeout")
+            }
         }
+    };
+    let applied = read.await.map_err(|_| unavailable())?;
+    for row in applied {
+        let (version, checksum, success) = (
+            row.try_get::<i64, _>("version"),
+            row.try_get::<Vec<u8>, _>("checksum"),
+            row.try_get::<bool, _>("success"),
+        );
+        let (Ok(version), Ok(checksum), Ok(true)) = (version, checksum, success) else {
+            anyhow::bail!("migration_history_mismatch");
+        };
+        anyhow::ensure!(
+            desired
+                .iter()
+                .any(|m| m.version == version && m.checksum.as_ref() == checksum.as_slice()),
+            "migration_history_mismatch"
+        );
     }
-    tx.commit().await?;
     Ok(())
+}
+
+const HISTORY_READ_TIMEOUT: Duration = Duration::from_secs(15);
+
+/// `MIY_MIGRATION_TIMEOUT_SECONDS` (30..=86400), 600 by default.
+fn migration_timeout() -> Duration {
+    let seconds = std::env::var("MIY_MIGRATION_TIMEOUT_SECONDS")
+        .ok()
+        .and_then(|value| value.parse::<u64>().ok())
+        .filter(|seconds| (30..=86_400).contains(seconds))
+        .unwrap_or(600);
+    Duration::from_secs(seconds)
+}
+
+async fn database_exists(database: &str) -> Result<bool> {
+    let mut admin = sqlx::PgConnection::connect(&std::env::var("PROVISION_DATABASE_URL")?).await?;
+    Ok(
+        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM pg_database WHERE datname=$1)")
+            .bind(database)
+            .fetch_one(&mut admin)
+            .await?,
+    )
+}
+
+/// The only connection on which the platform touches relations an app owns:
+/// the app's own migration login acting as its schema owner.
+pub(crate) async fn app_owner_connection(
+    resource: &DatabaseResource,
+) -> Result<sqlx::PgConnection> {
+    let mut target = url::Url::parse(&std::env::var("PROVISION_DATABASE_URL")?)?;
+    target.set_path(&resource.database);
+    target
+        .set_username(&resource.migration)
+        .map_err(|_| anyhow::anyhow!("invalid_role"))?;
+    target
+        .set_password(Some(&auth::decrypt(&resource.migration_secret)?))
+        .map_err(|_| anyhow::anyhow!("invalid_secret"))?;
+    let mut conn = sqlx::PgConnection::connect(target.as_str()).await?;
+    conn.execute(format!("SET ROLE {}", resource.owner).as_str())
+        .await?;
+    Ok(conn)
 }
 
 /// A self-consistent lock alone is insufficient: it must name published bytes.
@@ -625,17 +711,40 @@ pub(crate) async fn prepare_resource(
     if let Some(job) = job {
         step(pool, job, "migrating").await?;
     }
-    target
-        .set_username(migration)
-        .map_err(|_| anyhow::anyhow!("invalid_role"))?;
-    target
-        .set_password(Some(&mp))
-        .map_err(|_| anyhow::anyhow!("invalid_secret"))?;
-    let mut conn = sqlx::PgConnection::connect(target.as_str()).await?;
-    conn.execute(format!("SET ROLE {owner}").as_str()).await?;
-    let migrator = sqlx::migrate::Migrator::new(migrations).await?;
-    let applied = migrator.run(&mut conn).await;
-    record_schema(pool, resource, &mut conn, applied.is_ok()).await?;
+    drop(conn);
+    // Developer SQL runs only as the app's own roles and inside one overall
+    // limit: this lane is shared, so one app's migration must not hold every
+    // other app's deployment, start and stop without bound.
+    let limit = migration_timeout();
+    let outcome = tokio::time::timeout(limit, async {
+        let mut conn = app_owner_connection(resource).await?;
+        // A migration waiting behind the running app's locks fails instead of
+        // queueing for the whole limit. A migration may set its own value.
+        conn.execute("SET lock_timeout='30s'").await?;
+        let migrator = sqlx::migrate::Migrator::new(migrations).await?;
+        let applied = migrator.run(&mut conn).await;
+        record_schema(pool, resource, &mut conn, applied.is_ok()).await?;
+        anyhow::Ok(applied)
+    })
+    .await;
+    let applied = match outcome {
+        Ok(applied) => applied?,
+        Err(_) => {
+            // Dropping the client does not stop a statement that is still
+            // running; end the app's migration sessions so their locks go.
+            sqlx::query("SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE usename=$1 AND datname=$2 AND pid<>pg_backend_pid()")
+                .bind(migration)
+                .bind(db)
+                .execute(&mut admin)
+                .await?;
+            sqlx::query("UPDATE db_resources SET status='failed' WHERE id=$1")
+                .bind(resource.id)
+                .execute(pool)
+                .await?;
+            tracing::error!(event = "migration_timeout", seconds = limit.as_secs());
+            anyhow::bail!(RuntimeFailure::new(FailureCode::MigrationFailed));
+        }
+    };
     applied.context("migration_failed")?;
     if let Some(job) = job {
         step(pool, job, "migrations_applied").await?;

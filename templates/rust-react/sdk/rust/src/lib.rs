@@ -1,4 +1,4 @@
-//! miy runtime SDK v0.3.0. Verified user context and bounded core-mediated calls.
+//! miy runtime SDK v0.4.0. Verified user context and bounded core-mediated calls.
 use axum::{
     Json, Router,
     extract::Request,
@@ -12,6 +12,15 @@ use serde::Deserialize;
 use serde_json::json;
 use sqlx::{PgPool, postgres::PgPoolOptions};
 use std::time::Duration;
+
+pub mod acl;
+pub mod storage;
+pub use storage::{FileCreate, FileMetadata, FileStatus};
+mod directory;
+pub use directory::{
+    DirectoryGroup, DirectoryGroupRef, DirectoryGroupSource, DirectoryKind, DirectoryPage,
+    DirectoryQuery, DirectoryUser,
+};
 
 pub use reqwest::Method;
 
@@ -197,6 +206,63 @@ fn valid_uuid(value: &str) -> bool {
             }
         })
 }
+
+fn backend_client(timeout: Duration) -> Result<reqwest::Client, CallError> {
+    reqwest::Client::builder()
+        .no_proxy()
+        .redirect(reqwest::redirect::Policy::none())
+        .retry(reqwest::retry::never())
+        .timeout(timeout)
+        .build()
+        .map_err(|_| call_error("core_client_unavailable"))
+}
+
+fn preview_url(origin: &str, suffix: &str) -> Result<reqwest::Url, CallError> {
+    let base = reqwest::Url::parse(origin).map_err(|_| call_error("invalid_preview_origin"))?;
+    let local = match base.host_str().and_then(|host| {
+        host.trim_matches(['[', ']'])
+            .parse::<std::net::IpAddr>()
+            .ok()
+    }) {
+        Some(std::net::IpAddr::V4(ip)) => ip.is_loopback() || ip.is_private(),
+        Some(std::net::IpAddr::V6(ip)) => ip.is_loopback(),
+        _ => false,
+    };
+    if base.scheme() != "http"
+        || !local
+        || !base.username().is_empty()
+        || base.password().is_some()
+        || base.path() != "/"
+        || base.query().is_some()
+        || base.fragment().is_some()
+    {
+        return Err(call_error("invalid_preview_origin"));
+    }
+    let path = suffix.split('?').next().unwrap_or_default();
+    if !(path == "platform/directory"
+        || path == "platform/files"
+        || path.starts_with("platform/files/"))
+        || suffix.contains(['\\', '#'])
+        || suffix.bytes().any(|c| c.is_ascii_control())
+        || path.split('/').any(|part| matches!(part, "." | ".."))
+        || ["%2e", "%2f", "%5c", "%25"]
+            .iter()
+            .any(|v| path.to_ascii_lowercase().contains(v))
+    {
+        return Err(call_error("preview_backend_resource_not_supported"));
+    }
+    let url = base
+        .join(&format!("/{suffix}"))
+        .map_err(|_| call_error("invalid_preview_origin"))?;
+    if url.origin() != base.origin() || url.path() != format!("/{path}") {
+        return Err(call_error("invalid_preview_origin"));
+    }
+    Ok(url)
+}
+fn first_page_only(page: &serde_json::Value) -> bool {
+    page.get("nextCursor")
+        .is_some_and(|cursor| !cursor.is_null())
+}
 fn app_suffix(app: &str, path: &str) -> Result<String, CallError> {
     if !valid_app_id(app)
         || !path.starts_with('/')
@@ -253,11 +319,19 @@ impl Identity {
         self.call(&app_suffix(app, path)?, method, body).await
     }
 
+    /// Untyped read of the first directory page. It cannot pass a cursor, so a
+    /// directory that does not fit in one page is an error (`directory_page_incomplete`)
+    /// rather than a silently shortened list. Use [`Identity::directory`] to
+    /// search and to follow `next_cursor`.
     pub async fn platform_api(&self, resource: &str) -> Result<serde_json::Value, CallError> {
         if resource != "directory" {
             return Err(call_error("unknown_platform_resource"));
         }
-        self.call("platform/directory", Method::GET, None).await
+        let page = self.call("platform/directory", Method::GET, None).await?;
+        if first_page_only(&page) {
+            return Err(call_error("directory_page_incomplete"));
+        }
+        Ok(page)
     }
 
     async fn call(
@@ -266,16 +340,69 @@ impl Identity {
         method: Method,
         body: Option<&serde_json::Value>,
     ) -> Result<serde_json::Value, CallError> {
-        if self.delegation_token().is_none_or(str::is_empty) {
-            return Err(call_error("delegation_unavailable"));
-        }
-        let origin =
-            std::env::var("MIY_CORE_ORIGIN").map_err(|_| call_error("core_origin_unavailable"))?;
-        let allow_http = std::env::var("MIY_CORE_ALLOW_HTTP").as_deref() == Ok("1");
-        self.call_at(&origin, allow_http, suffix, method, body)
-            .await
+        let request = self.backend_request(suffix, method, Duration::from_secs(15))?;
+        Self::send_json(request, body).await
     }
 
+    /// Shared, fixed-origin backend transport. Preview has a separate process
+    /// capability and cannot claim an installed release or call arbitrary apps.
+    pub(crate) fn backend_request(
+        &self,
+        suffix: &str,
+        method: Method,
+        timeout: Duration,
+    ) -> Result<reqwest::RequestBuilder, CallError> {
+        if self
+            .delegation_token()
+            .is_some_and(|token| !token.is_empty())
+        {
+            let origin = std::env::var("MIY_CORE_ORIGIN")
+                .map_err(|_| call_error("core_origin_unavailable"))?;
+            let allow_http = std::env::var("MIY_CORE_ALLOW_HTTP").as_deref() == Ok("1");
+            return self.backend_request_at(&origin, allow_http, suffix, method, timeout);
+        }
+        if self.context.environment.as_deref() != Some("dev") {
+            return Err(call_error("delegation_unavailable"));
+        }
+        let origin = std::env::var("MIY_PREVIEW_PLATFORM_ORIGIN")
+            .map_err(|_| call_error("delegation_unavailable"))?;
+        let capability = std::env::var("MIY_PREVIEW_PLATFORM_CAPABILITY")
+            .map_err(|_| call_error("delegation_unavailable"))?;
+        if capability.len() < 32
+            || capability
+                .bytes()
+                .any(|c| !c.is_ascii_alphanumeric() && c != b'-' && c != b'_')
+        {
+            return Err(call_error("invalid_preview_capability"));
+        }
+        let url = preview_url(&origin, suffix)?;
+        Ok(backend_client(timeout)?
+            .request(method, url)
+            .bearer_auth(capability)
+            .header("x-miy-preview-user", &self.user_id)
+            .header("x-miy-release", &self.context.release_id))
+    }
+
+    fn backend_request_at(
+        &self,
+        origin: &str,
+        allow_http: bool,
+        suffix: &str,
+        method: Method,
+        timeout: Duration,
+    ) -> Result<reqwest::RequestBuilder, CallError> {
+        let token = self
+            .delegation_token()
+            .filter(|token| !token.is_empty())
+            .ok_or_else(|| call_error("delegation_unavailable"))?;
+        let url = core_url(origin, &self.context.installation_id, suffix, allow_http)?;
+        Ok(backend_client(timeout)?
+            .request(method, url)
+            .bearer_auth(token)
+            .header("x-miy-release", &self.context.release_id))
+    }
+
+    #[cfg(test)]
     async fn call_at(
         &self,
         origin: &str,
@@ -284,22 +411,15 @@ impl Identity {
         method: Method,
         body: Option<&serde_json::Value>,
     ) -> Result<serde_json::Value, CallError> {
-        let token = self
-            .delegation_token()
-            .filter(|token| !token.is_empty())
-            .ok_or_else(|| call_error("delegation_unavailable"))?;
-        let url = core_url(origin, &self.context.installation_id, suffix, allow_http)?;
-        let client = reqwest::Client::builder()
-            .no_proxy()
-            .redirect(reqwest::redirect::Policy::none())
-            .retry(reqwest::retry::never())
-            .timeout(Duration::from_secs(15))
-            .build()
-            .map_err(|_| call_error("core_client_unavailable"))?;
-        let mut request = client
-            .request(method, url)
-            .bearer_auth(token)
-            .header("x-miy-release", &self.context.release_id);
+        let request =
+            self.backend_request_at(origin, allow_http, suffix, method, Duration::from_secs(15))?;
+        Self::send_json(request, body).await
+    }
+
+    async fn send_json(
+        mut request: reqwest::RequestBuilder,
+        body: Option<&serde_json::Value>,
+    ) -> Result<serde_json::Value, CallError> {
         if let Some(body) = body {
             let bytes = serde_json::to_vec(body).map_err(|_| call_error("invalid_api_body"))?;
             if bytes.len() > 4 * 1024 * 1024 {
@@ -385,6 +505,46 @@ mod tests {
         .unwrap()
     }
     #[test]
+    fn preview_backend_transport_is_local_and_has_a_closed_resource_set() {
+        for origin in [
+            "http://127.0.0.1:12000",
+            "http://172.22.0.1:12001",
+            "http://[::1]:12002",
+        ] {
+            let url =
+                preview_url(origin, "platform/directory?kind=memberships&ids=example").unwrap();
+            assert_eq!(url.path(), "/platform/directory");
+            assert!(
+                preview_url(
+                    origin,
+                    "platform/files/00000000-0000-4000-8000-000000000001/content"
+                )
+                .is_ok()
+            );
+        }
+        for origin in [
+            "http://external.example",
+            "http://8.8.8.8",
+            "https://127.0.0.1",
+            "http://user@127.0.0.1",
+            "http://127.0.0.1/platform",
+            "http://127.0.0.1?override=1",
+        ] {
+            assert!(preview_url(origin, "platform/directory").is_err());
+        }
+        for suffix in [
+            "connections/other/api/secret",
+            "platform/directory/../admin",
+            "platform/files/%2e%2e/admin",
+            "platform/files/../../admin",
+            "//external.example",
+            "platform/files?ok=1#fragment",
+        ] {
+            assert!(preview_url("http://127.0.0.1", suffix).is_err());
+        }
+    }
+
+    #[test]
     fn contextual_identity_preserves_original_user_and_redacts_proof() {
         let mut value = claims();
         value["environment"] = json!("dev");
@@ -415,6 +575,12 @@ mod tests {
             identity.platform_api("directory").await.unwrap_err().code,
             "delegation_unavailable"
         );
+    }
+    #[test]
+    fn untyped_directory_read_reports_a_page_it_cannot_continue() {
+        assert!(first_page_only(&json!({"users":[],"nextCursor":"next"})));
+        assert!(!first_page_only(&json!({"users":[],"nextCursor":null})));
+        assert!(!first_page_only(&json!({"users":[]})));
     }
     #[test]
     fn expired_wrong_audience_and_excessive_depth_are_rejected() {

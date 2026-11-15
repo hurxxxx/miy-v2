@@ -22,6 +22,8 @@ pub struct Packed {
     pub archive_hash: String,
     pub size_bytes: u64,
     pub manifest: Manifest,
+    /// Committed files that are not part of a server build's source.
+    pub excluded: Vec<String>,
 }
 
 pub fn valid_commit(value: &str) -> bool {
@@ -110,6 +112,15 @@ pub fn allowed(path: &str) -> bool {
     .any(|prefix| path.starts_with(prefix))
 }
 
+/// Files the project generator writes for local tools. A server build never
+/// reads them, so leaving them out is not worth a notice on every build.
+fn local_tooling(path: &str) -> bool {
+    matches!(
+        path,
+        ".gitignore" | ".gitattributes" | ".dockerignore" | "miy.cli.json"
+    )
+}
+
 fn no_private_key(bytes: &[u8]) -> Result<()> {
     // Reject high-confidence credentials even when accidentally committed under
     // a business filename. Arbitrary secrets cannot be identified by filename.
@@ -163,10 +174,15 @@ pub fn pack(root: &Path, destination: &Path) -> Result<Packed> {
     };
     let tree = git(root, &["ls-tree", "-r", "-z", "--full-tree", &tree_id])?;
     let mut selected = Vec::new();
+    let mut excluded = Vec::new();
     for entry in tree.split(|b| *b == 0).filter(|e| !e.is_empty()) {
         let entry = std::str::from_utf8(entry).context("source_path_not_utf8")?;
         let (meta, path) = entry.split_once('\t').context("invalid_source_tree")?;
         if !allowed(path) {
+            // Never dropped without telling the developer: the caller reports them.
+            if !local_tooling(path) {
+                excluded.push(path.to_owned());
+            }
             continue;
         }
         let parts: Vec<_> = meta.split(' ').collect();
@@ -237,6 +253,7 @@ pub fn pack(root: &Path, destination: &Path) -> Result<Packed> {
             archive_hash: digest(destination)?,
             size_bytes,
             manifest,
+            excluded,
         })
     })();
     if result.is_err() {
@@ -504,6 +521,43 @@ mod tests {
                 .contains("dependency")
         );
     }
+    /// The platform-owned files of a project are named in three places with
+    /// different jobs (hash lock, server build source, line endings). They are
+    /// kept separate; this holds them together.
+    #[test]
+    fn every_protected_file_is_built_by_the_server_and_keeps_its_bytes() {
+        let rules: Vec<&str> = crate::cli_guidance::GIT_ATTRIBUTES
+            .lines()
+            .filter_map(|line| line.split_whitespace().next())
+            .collect();
+        let protected = crate::bundle::protected_hashes();
+        assert!(protected.len() > 10);
+        for path in protected.keys() {
+            assert!(
+                allowed(path),
+                "{path} is locked but not sent to a server build"
+            );
+            let covered = rules.iter().any(|rule| {
+                rule.strip_prefix('/')
+                    .is_some_and(|rule| match rule.strip_suffix("/**") {
+                        Some(directory) => path.starts_with(&format!("{directory}/")),
+                        None => rule == *path,
+                    })
+                    || (*rule == "*.sql" && path.ends_with(".sql"))
+            });
+            assert!(
+                covered,
+                "{path} is locked by hash but has no line-ending rule"
+            );
+        }
+        for lock in [
+            "miy.bundle.json",
+            "miy.components.json",
+            "miy.components.lock.json",
+        ] {
+            assert!(allowed(lock), "{lock}");
+        }
+    }
     #[test]
     fn pack_is_deterministic_committed_filtered_and_rejects_dirty_source() {
         let tmp = fixture();
@@ -525,6 +579,15 @@ mod tests {
         extract(&out.path().join("one.tar"), &out.path().join("source")).unwrap();
         assert!(!out.path().join("source/.env").exists());
         assert!(!out.path().join("source/.git").exists());
+        // What is left out is reported to the caller, not dropped silently.
+        assert!(first.excluded.contains(&".env".to_owned()));
+        assert!(first.excluded.iter().all(|path| !allowed(path)));
+        // A project as generated reports nothing: every generated file is
+        // either built by the server or a local tool file.
+        for (path, _) in crate::bundle::template() {
+            assert!(allowed(path) || local_tooling(path), "{path}");
+        }
+        assert!(local_tooling("miy.cli.json") && !local_tooling("notes.txt"));
         std::fs::write(tmp.path().join("src/new.rs"), "// uncommitted").unwrap();
         assert!(pack(tmp.path(), &out.path().join("dirty.tar")).is_err());
     }

@@ -6,7 +6,7 @@ use std::{
     collections::{BTreeMap, BTreeSet},
     path::Path,
 };
-pub const VERSION: &str = "0.9.0";
+pub const VERSION: &str = "0.10.0";
 // The contextual Rust SDK changes independently of the compatible browser/UI
 // component contract. SDK bundle upgrades remain explicit and hash checked.
 pub fn component_compatible(version: &str) -> bool {

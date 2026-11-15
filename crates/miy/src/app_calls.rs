@@ -104,6 +104,9 @@ pub fn allowed_route(context: &Context, path: &str, method: &Method) -> bool {
     if suffix == "platform/directory" {
         return *method == Method::GET;
     }
+    if crate::storage::allowed_route(suffix, method) {
+        return true;
+    }
     suffix.strip_prefix("connections/").is_some_and(|p| {
         p.split_once("/api/")
             .is_some_and(|(target, tail)| contract::valid_id(target) && !tail.is_empty())

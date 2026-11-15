@@ -5,6 +5,10 @@ import AppRoot from "../../web/src/AppRoot";
 import {
   appTarget,
   request,
+  requestBlob,
+  requestResponse,
+  completeDirectoryPage,
+  directoryQuery,
   createNavigationGuards,
   type AppRuntime,
   type NavigationState,
@@ -59,20 +63,17 @@ function Preview() {
       else history.push(to);
     },
     api: (path, init) => request("/__miy/api" + safe(path), context.csrf, init),
-    apiBlob: async (path, init) => {
-      const response = await fetch("/__miy/api" + safe(path), {
-        ...init,
-        credentials: "same-origin",
-        headers: { "x-miy-csrf": context.csrf, ...init?.headers },
-      });
-      if (!response.ok) {
-        const data = await response.json().catch(() => null);
-        throw new Error(data?.error?.code || `HTTP ${response.status}`);
-      }
-      return response.blob();
+    apiBlob: (path, init) => requestBlob("/__miy/api" + safe(path), context.csrf, init),
+    fileApi: (path, init) => requestResponse("/__miy/files" + safe(path), context.csrf, init),
+    platformApi: async (resource, query, options) => {
+      if (resource !== "directory") throw new Error("unknown_platform_resource");
+      return completeDirectoryPage(
+        await request("/__miy/platform/directory" + directoryQuery(query), context.csrf, options),
+        query,
+      );
     },
-    platformApi: (resource) =>
-      request("/__miy/platform/" + resource, context.csrf),
+    directory: (query, options) =>
+      request("/__miy/platform/directory" + directoryQuery(query), context.csrf, options),
     appApi: (app, path, init) =>
       request(
         "/__miy/connections/" + app + "/api" + safe(path),

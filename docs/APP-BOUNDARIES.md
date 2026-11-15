@@ -70,6 +70,11 @@ AB ID는 참조를 유지한다. 이전 iframe 설계나 보안 후보의 검사
 | 11 중간(2026-11-09) | 앱 간 연결의 후속 hop이 브라우저 원 호출자에게도 서명 identity `admin=true`를 실음 | 원 자격증명이 브라우저 세션이면 모든 hop에서 `admin=false` |
 | 12 높음(2026-11-09) | dev 앱(승인 전 코드)이 prod 앱과 같은 포털 출처에서 실행되어 여는 사람의 prod Use를 행사 | dev 전용 포털 출처를 추가하고 기존 포털을 prod 전용으로 전환. 2026-11-09 운영 반영(`https://v2-dev.dwdcc.kr`, [영역과 설정](#영역과-설정)) |
 | 13 높음(2026-11-09 발견) | 2026-11-07 경계 반영(`58cecff`) 이후 `nest_service`로 제공하는 CLI 다운로드·설치 파일에 MatchedPath가 없어 경로 경계가 403으로 거부. 새 CLI 설치 불가 | 고정된 두 공개 접두사만 요청 경로로 분류하고 나머지 미일치 요청은 계속 거부. 실제 중첩 서비스 시험 추가, `f9d4084` 운영 반영 후 공개 다운로드 7개 검증([배포 기록](releases/dev-portal-2026-11-09-deployment.json)) |
+| 14 심각(2026-11-15) | 서버 빌드가 앱 dev DB의 `app._sqlx_migrations`를 provisioning superuser 연결로 읽음. 이 관계는 개발자 migration을 실행하는 owner 역할 소유라, 함수 호출 뷰로 바꾸면 그 함수가 DB superuser로 실행됨(코어·IdP·모든 앱 DB 위). 격리 PostgreSQL에서 읽기 쪽 확인, 실제 서버 빌드 경로의 공격은 NOT_RUN | 플랫폼이 앱 소유 관계를 건드리는 연결은 그 앱의 migration 로그인 하나뿐(`worker::app_owner_connection`). superuser로 인증한 세션은 `SET ROLE` 뒤에도 함수 안에서 되돌릴 수 있어 쓰지 않음. 이력 조회는 15초 뒤 포기하고 해당 세션만 종료. 격리 PostgreSQL 회귀 추가 |
+| 15 높음(2026-11-15) | 업로드 이미지의 `/miy`를 Docker가 크기·파일 종류 제한 없이 플랫폼 디스크에 풀고 worker가 파일을 통째로 읽음. 링크·파이프·대용량 파일로 제어 lane 정지·디스크 소진 가능(시나리오 NOT_RUN) | `/miy`를 제한된 tar 흐름으로 받아 디렉터리·일반 파일만 기록(10,000개, 파일 64MiB, 합계 256MiB). 그 밖은 `invalid_image_contract`. 해시는 스트리밍, 일반 파일·디렉터리 아닌 항목은 거부 |
+| 16 높음(2026-11-15) | 개발자 migration에 시간 제한이 없고 제어 lane이 직렬이라 한 앱의 긴 migration이 모든 앱의 배포·시작·중지를 지연 | 기본 `lock_timeout` 30초, 전체 한도 `MIY_MIGRATION_TIMEOUT_SECONDS`(기본 600). 초과 시 그 앱의 migration 세션을 종료하고 `migration_failed`. 제어 lane 자체의 앱별 분리는 후속 |
+| 17 높음(2026-11-15, 미해결) | 앱 컨테이너의 외부 통신 제한 없음. 설치별 bridge에서 임의 외부·사내 주소로 나갈 수 있음 | **결정 대기.** 앱 backend는 `MIY_CORE_ORIGIN`(공개 포털 주소)으로 Core를 호출하므로 `--internal` 네트워크로 단순 차단할 수 없음. Core 전용 내부 경로와 허용 목록 egress 설계가 필요. 그때까지 신뢰하는 사내 개발자의 코드만 배포한다는 전제를 유지 |
+| 18 중간(2026-11-15, 계약상 한계) | 로컬에서 빌드해 올린 이미지는 SDK·컴포넌트 무결성을 서버가 검증하지 않음(`app build --remote`만 검증). 번들 잠금은 재현성 검사 | 앱은 설치별 컨테이너·DB 역할·서명 identity·프레임으로 격리되므로 플랫폼 경계는 SDK 무결성에 의존하지 않음. prod 승격을 서버 빌드 산출물로 제한할지는 결정 대기 |
 
 CLI 근거는 `cli_auth.rs`의 start/approve/exchange, `auth_sessions.rs`의 approve/issue/list_sessions, `0010_cli_sessions.sql`의 30일 family, `auth.rs`의 logout이다. 이 인증 소스는 `7b43789..22c219d`에서 변경되지 않았지만 운영 공격 입증은 아니다.
 

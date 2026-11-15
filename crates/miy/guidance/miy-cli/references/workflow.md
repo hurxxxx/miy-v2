@@ -138,6 +138,9 @@ miy --app my-app grant set --user USER_ID --permission use --environment dev
 
 Registration creates no immediate access. Approval creates the app and grants its
 requester develop permission in dev; production deploy permission is separate.
+A person can sign in only after an administrator registered their identity-provider
+account in the console (Platform management, user accounts); `user list` shows
+registered people. Registration alone grants no app permission.
 The operate doctor checks authentication/server capabilities without requiring
 Rust, Node or Docker. Develop additionally checks project integrity, components,
 Rust/Node/pnpm/Git versions, rustfmt, an actual tiny Rust link (MSVC/Windows
@@ -194,6 +197,9 @@ a working Docker emulation/builder; the flag alone does not install emulation.
 For Docker-free clients use `app build --remote --no-wait` (CLI 0.6.2,
 server capability `app.builds.v1`). This uploads up to 64 MiB of clean committed
 source, excluding credentials, `.git`, `.miy`, dependencies and build output.
+Other committed files outside the application source set are not sent either;
+the CLI names them on stderr before uploading, so move anything the build needs
+under `src/`, `web/`, `assets/` or another listed source directory.
 The worker verifies source, SDK, published components and applied SQL history;
 Rust tests and React checks/build execute inside its trusted Docker recipe.
 The build never applies SQL or changes an installation. Use `job get BUILD_ID`,

@@ -642,12 +642,7 @@ async fn execute(pool: &sqlx::PgPool, job: &sqlx::postgres::PgRow) -> Result<()>
         &local_image,
     ])
     .await?;
-    let copied = docker(&[
-        "cp",
-        &format!("{extraction}:/miy/."),
-        temporary.to_str().context("invalid_path")?,
-    ])
-    .await;
+    let copied = copy_image_contract(&extraction, &temporary).await;
     let removed = docker(&["rm", &extraction]).await;
     copied?;
     removed?;
@@ -787,6 +782,52 @@ struct ResolvedImage<'a> {
 /// Preserve failures classified at their origin. Migration errors are terminal,
 /// including connection errors raised while executing a migration: only an
 /// explicitly classified availability failure may grant retry permission.
+/// Copy the image's `/miy` directory through a bounded tar stream. Docker's own
+/// extraction would write whatever the developer's image holds (any size, links,
+/// pipes) onto the platform disk before the contract is examined.
+async fn copy_image_contract(container: &str, destination: &std::path::Path) -> Result<()> {
+    use tokio::io::AsyncReadExt;
+    let invalid = || RuntimeFailure::new(FailureCode::InvalidImageContract);
+    // Tar framing adds a header per member and block padding to the content.
+    let limit = contract::MAX_ARTIFACT_BYTES + contract::MAX_ARTIFACT_ENTRIES as u64 * 2048;
+    let archive = destination.with_extension("tar");
+    let _archive_cleanup = RemoveFileOnDrop(archive.clone());
+    let mut command = tokio::process::Command::new("docker");
+    command
+        .args(["cp", &format!("{container}:/miy/."), "-"])
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null())
+        .kill_on_drop(true);
+    let (mut child, _process_guard) = crate::owned_process::spawn(&mut command)
+        .await
+        .map_err(|_| RuntimeFailure::new(FailureCode::DockerUnavailable))?;
+    let stdout = child.stdout.take().context("docker_output_unavailable")?;
+    let transfer = async {
+        let mut file = tokio::fs::File::create(&archive).await?;
+        let bytes = tokio::io::copy(&mut stdout.take(limit + 1), &mut file).await?;
+        file.sync_all().await?;
+        anyhow::Ok(bytes)
+    };
+    let bytes = tokio::time::timeout(std::time::Duration::from_secs(90), transfer)
+        .await
+        .map_err(|_| RuntimeFailure::new(FailureCode::DockerTimeout))??;
+    if bytes > limit {
+        // Dropping the child ends the copy; the rest of the stream is never read.
+        anyhow::bail!(invalid());
+    }
+    let status = tokio::time::timeout(std::time::Duration::from_secs(30), child.wait())
+        .await
+        .map_err(|_| RuntimeFailure::new(FailureCode::DockerTimeout))??;
+    anyhow::ensure!(status.success(), invalid());
+    let destination = destination.to_owned();
+    tokio::task::spawn_blocking(move || {
+        contract::unpack_artifact(std::fs::File::open(&archive)?, &destination)
+    })
+    .await?
+    .map_err(|_| invalid())?;
+    Ok(())
+}
+
 pub(crate) fn classify_database_prepare_failure(error: anyhow::Error) -> RuntimeFailure {
     if let Some(failure) = error.downcast_ref::<RuntimeFailure>() {
         return failure.clone();
@@ -1071,6 +1112,86 @@ fn published_port(meta: &Value) -> Result<i32> {
         .context("missing_runtime_port")?
         .parse()?)
 }
+/// What both app gateways (JSON API and files) decide before a request reaches
+/// the owning app: the app is running, a write names the current release, the
+/// path stays inside the app, the credential may still act, and the app gets a
+/// signed identity. Returns the app's loopback port and that identity token.
+pub(crate) async fn app_target(
+    state: &State,
+    p: &Principal,
+    id: Uuid,
+    parts: &axum::http::request::Parts,
+    path: &str,
+    invalid_path: &str,
+) -> ApiResult<(i32, String)> {
+    let preview = parts.extensions.get::<crate::connections::PreviewCall>();
+    if let Some(preview) = preview {
+        crate::connections::recheck_preview(state, p, preview).await?;
+    }
+    let inst = domain::installation(state, p, id).await?;
+    if inst.get::<String, _>("runtime_status") != "running"
+        || inst.get::<String, _>("desired_state") != "running"
+    {
+        return Err(ApiError::unavailable("app_runtime_not_running"));
+    }
+    let release: Uuid = inst.get("release_id");
+    let write = !matches!(parts.method, Method::GET | Method::HEAD);
+    if write
+        && parts
+            .headers
+            .get("x-miy-release")
+            .and_then(|v| v.to_str().ok())
+            != Some(release.to_string().as_str())
+    {
+        return Err(ApiError::conflict("release_changed_reload_required"));
+    }
+    if path.contains('\\') || path.split('/').any(|p| p == ".." || p == ".") {
+        return Err(ApiError::bad(invalid_path));
+    }
+    let port: i32 = inst
+        .get::<Option<i32>, _>("runtime_port")
+        .ok_or_else(|| ApiError::unavailable("app_runtime_not_running"))?;
+    let secret = auth::decrypt(
+        inst.get::<Option<&str>, _>("runtime_secret")
+            .ok_or_else(ApiError::not_found)?,
+    )?;
+    crate::delegations::check(
+        state,
+        p,
+        inst.get("app_id"),
+        inst.get("environment"),
+        if write {
+            crate::delegations::Action::AppWrite
+        } else {
+            crate::delegations::Action::AppRead
+        },
+    )
+    .await?;
+    // A continuation hop authenticates without a browser purpose. Carry the
+    // original credential instead: a portal-originated chain is never admin.
+    let forward = parts.extensions.get::<crate::app_calls::ForwardContext>();
+    let context = crate::app_calls::identity(
+        state,
+        p,
+        &inst,
+        forward,
+        parts.extensions.get::<crate::app_calls::Origin>(),
+        preview.is_none(),
+    )
+    .await?;
+    let browser_chain = p.browser_purpose.is_some()
+        || forward.is_some_and(|f| crate::app_calls::browser_origin(&f.0));
+    let token = crate::identity::sign_identity_context(
+        &p.id,
+        !browser_chain && domain::admin(state, p).await.is_ok(),
+        id,
+        release,
+        &secret,
+        &context,
+    )?;
+    Ok((port, token))
+}
+
 pub async fn proxy(
     S(state): S<State>,
     Extension(p): Extension<Principal>,
@@ -1084,72 +1205,7 @@ pub async fn proxy(
         .map_err(|_| ApiError::bad("request_too_large"))?;
     // Authorization and every upstream approval are checked after bounded body
     // collection, immediately before issuing the signed target identity.
-    if let Some(preview) = parts.extensions.get::<crate::connections::PreviewCall>() {
-        crate::connections::recheck_preview(&state, &p, preview).await?;
-    }
-    let inst = domain::installation(&state, &p, id).await?;
-    if inst.get::<String, _>("runtime_status") != "running"
-        || inst.get::<String, _>("desired_state") != "running"
-    {
-        return Err(ApiError::unavailable("app_runtime_not_running"));
-    }
-    let release: Uuid = inst.get("release_id");
-    if !matches!(parts.method, Method::GET | Method::HEAD)
-        && parts
-            .headers
-            .get("x-miy-release")
-            .and_then(|v| v.to_str().ok())
-            != Some(release.to_string().as_str())
-    {
-        return Err(ApiError::conflict("release_changed_reload_required"));
-    }
-    if path.contains('\\') || path.split('/').any(|p| p == ".." || p == ".") {
-        return Err(ApiError::bad("invalid_api_path"));
-    }
-    let port: i32 = inst
-        .get::<Option<i32>, _>("runtime_port")
-        .ok_or_else(|| ApiError::unavailable("app_runtime_not_running"))?;
-    let secret = auth::decrypt(
-        inst.get::<Option<&str>, _>("runtime_secret")
-            .ok_or_else(ApiError::not_found)?,
-    )?;
-    crate::delegations::check(
-        &state,
-        &p,
-        inst.get("app_id"),
-        inst.get("environment"),
-        if matches!(parts.method, Method::GET | Method::HEAD) {
-            crate::delegations::Action::AppRead
-        } else {
-            crate::delegations::Action::AppWrite
-        },
-    )
-    .await?;
-    let context = crate::app_calls::identity(
-        &state,
-        &p,
-        &inst,
-        parts.extensions.get::<crate::app_calls::ForwardContext>(),
-        parts.extensions.get::<crate::app_calls::Origin>(),
-        parts
-            .extensions
-            .get::<crate::connections::PreviewCall>()
-            .is_none(),
-    )
-    .await?;
-    // A continuation hop authenticates without a browser purpose. Carry the
-    // original credential instead: a portal-originated chain is never admin.
-    let forward = parts.extensions.get::<crate::app_calls::ForwardContext>();
-    let browser_chain = p.browser_purpose.is_some()
-        || forward.is_some_and(|f| crate::app_calls::browser_origin(&f.0));
-    let token = crate::identity::sign_identity_context(
-        &p.id,
-        !browser_chain && domain::admin(&state, &p).await.is_ok(),
-        id,
-        release,
-        &secret,
-        &context,
-    )?;
+    let (port, token) = app_target(&state, &p, id, &parts, &path, "invalid_api_path").await?;
     let query = parts
         .uri
         .query()

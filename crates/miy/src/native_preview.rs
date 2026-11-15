@@ -57,11 +57,16 @@ pub struct Backend {
 }
 
 impl Backend {
-    pub async fn start(executable: &std::path::Path, database_url: &str) -> Result<Self> {
+    pub async fn start(
+        executable: &std::path::Path,
+        database_url: &str,
+        installation: Uuid,
+        platform_origin: &str,
+        platform_capability: &str,
+    ) -> Result<Self> {
         let listener = tokio::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0)).await?;
         let port = listener.local_addr()?.port();
         let secret = identity::random();
-        let installation = Uuid::new_v4();
         let release = Uuid::new_v4();
         let mut command = tokio::process::Command::new(executable);
         command
@@ -69,6 +74,8 @@ impl Backend {
             .env("MIY_GATEWAY_SECRET", &secret)
             .env("MIY_INSTALLATION_ID", installation.to_string())
             .env("MIY_RELEASE_ID", release.to_string())
+            .env("MIY_PREVIEW_PLATFORM_ORIGIN", platform_origin)
+            .env("MIY_PREVIEW_PLATFORM_CAPABILITY", platform_capability)
             .env("MIY_BIND_ADDR", format!("127.0.0.1:{port}"))
             .stdin(Stdio::null())
             .stdout(Stdio::from(std::io::stderr()))

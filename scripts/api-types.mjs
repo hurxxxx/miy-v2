@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Generate packages/sdk/src/api.gen.ts from contracts/api-v1.schema.json, the JSON
+// Generate workspace and app SDK types from contracts/api-v1.schema.json, the JSON
 // Schema of crates/miy/src/api_contract.rs. `--check` fails when the committed file
 // differs, so the SDK and platform types cannot drift from the Rust responses.
 // Covers the schema forms the contract uses: objects, arrays, nullable types, string
@@ -10,7 +10,34 @@ import { fileURLToPath } from "node:url";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const schemaPath = join(root, "contracts/api-v1.schema.json");
-const outputPath = join(root, "packages/sdk/src/api.gen.ts");
+const outputs = [
+  { path: "packages/sdk/src/api.gen.ts" },
+  { path: "templates/rust-react/sdk/browser/api.gen.ts", roots: ["DirectoryPage", "StoredFile", "ReserveFile", "AttachFile"] },
+];
+
+// App bundles receive only their public contract and its referenced definitions,
+// rather than the platform's administrator and deployment response inventory.
+export function selectDefinitions(schema, roots) {
+  const selected = new Set();
+  function visit(name) {
+    if (selected.has(name)) return;
+    const definition = schema.$defs[name];
+    if (!definition) throw new Error(`Unknown contract type: ${name}`);
+    selected.add(name);
+    function scan(value) {
+      if (!value || typeof value !== "object") return;
+      if (typeof value.$ref === "string") {
+        if (!value.$ref.startsWith("#/$defs/"))
+          throw new Error(`Unsupported contract reference: ${value.$ref}`);
+        visit(value.$ref.slice("#/$defs/".length));
+      }
+      for (const child of Object.values(value)) scan(child);
+    }
+    scan(definition);
+  }
+  for (const name of roots) visit(name);
+  return { ...schema, $defs: Object.fromEntries([...selected].sort().map(name => [name, schema.$defs[name]])) };
+}
 
 function literal(value) {
   return JSON.stringify(value);
@@ -88,23 +115,30 @@ export function generate(schema) {
 }
 
 function main() {
-  const generated = generate(JSON.parse(readFileSync(schemaPath, "utf8")));
-  if (process.argv.includes("--check")) {
-    let committed = "";
-    try {
-      committed = readFileSync(outputPath, "utf8");
-    } catch {
-      // A missing file is stale too.
+  const schema = JSON.parse(readFileSync(schemaPath, "utf8"));
+  const check = process.argv.includes("--check");
+  let stale = false;
+  for (const output of outputs) {
+    const generated = generate(output.roots ? selectDefinitions(schema, output.roots) : schema);
+    const outputPath = join(root, output.path);
+    if (check) {
+      let committed = "";
+      try {
+        committed = readFileSync(outputPath, "utf8");
+      } catch {
+        // A missing file is stale too.
+      }
+      if (committed !== generated) {
+        console.error(`${output.path} is stale: run node scripts/api-types.mjs`);
+        stale = true;
+      }
+    } else {
+      writeFileSync(outputPath, generated);
+      console.log(`wrote ${outputPath}`);
     }
-    if (committed !== generated) {
-      console.error("packages/sdk/src/api.gen.ts is stale: run node scripts/api-types.mjs");
-      process.exit(1);
-    }
-    console.log("PASS api types match contracts/api-v1.schema.json");
-    return;
   }
-  writeFileSync(outputPath, generated);
-  console.log(`wrote ${outputPath}`);
+  if (stale) process.exit(1);
+  if (check) console.log("PASS workspace and app SDK types match contracts/api-v1.schema.json");
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) main();

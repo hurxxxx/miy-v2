@@ -76,6 +76,11 @@ async fn fixture_auth() -> Result<(
         std::env::set_var("MIY_ORIGIN", "http://127.0.0.1:1");
         std::env::set_var("MIY_CONSOLE_ORIGIN", &origin);
         std::env::set_var("MIY_ISSUER", &issuer);
+        // Core requires the dev portal and a frame origin pool to start. This
+        // regression never opens them; the names are loopback and never bound.
+        std::env::set_var("MIY_DEV_PORTAL_ORIGIN", "http://127.0.0.1:2");
+        std::env::set_var("MIY_APP_FRAME_ORIGIN", "http://127.0.0.1:{port}");
+        std::env::set_var("MIY_APP_FRAME_PORTS", "3-9");
     }
     let metadata = json!({"issuer":issuer,"authorization_endpoint":format!("{origin}/authorize"),"token_endpoint":format!("{origin}/token"),"jwks_uri":format!("{origin}/jwks"),"introspection_endpoint":format!("{origin}/introspect"),"end_session_endpoint":format!("{origin}/logout")});
     let router = axum::Router::new()
@@ -515,6 +520,65 @@ async fn shared_development_database() -> Result<()> {
     );
     passed(
         "schema changes invalidate snapshots, keep old deployment stopped, and recover partial SQL failures without resetting data",
+    );
+    // The history relation belongs to the app: a migration can replace it with a
+    // view over its own function. This view reports success only to a reader
+    // that is not a superuser, so the build-time check passes only when it runs
+    // as the app's role instead of the provisioning superuser.
+    let history = migration_directory(recovered_id)?;
+    let history_resource = worker::resource_by_id(
+        &pool,
+        sqlx::query_scalar(
+            "SELECT id FROM db_resources WHERE app_id='shared-dev-test' AND environment='dev'",
+        )
+        .fetch_one(&pool)
+        .await?,
+    )
+    .await?;
+    worker::verify_development_migrations(&pool, "shared-dev-test", &history).await?;
+    let mut owner = worker::app_owner_connection(&history_resource).await?;
+    for sql in [
+        "ALTER TABLE app._sqlx_migrations RENAME TO history_fixture",
+        "CREATE FUNCTION app.reader_is_plain() RETURNS boolean LANGUAGE sql AS $$ SELECT current_setting('is_superuser')='off' AND NOT EXISTS(SELECT 1 FROM pg_roles WHERE rolname=current_user AND rolsuper) $$",
+        "CREATE VIEW app._sqlx_migrations AS SELECT version,description,installed_on,success AND app.reader_is_plain() AS success,checksum,execution_time FROM app.history_fixture",
+    ] {
+        owner.execute(sql).await?;
+    }
+    worker::verify_development_migrations(&pool, "shared-dev-test", &history).await?;
+    // A read the app stalls is abandoned and its session ended, not waited for.
+    for sql in [
+        "CREATE FUNCTION app.reader_stalls() RETURNS boolean LANGUAGE sql AS $$ SELECT pg_sleep(600) IS NOT NULL $$",
+        "CREATE OR REPLACE VIEW app._sqlx_migrations AS SELECT version,description,installed_on,success AND app.reader_stalls() AS success,checksum,execution_time FROM app.history_fixture",
+    ] {
+        owner.execute(sql).await?;
+    }
+    let stalled = std::time::Instant::now();
+    let refused = worker::verify_development_migrations(&pool, "shared-dev-test", &history)
+        .await
+        .unwrap_err();
+    anyhow::ensure!(
+        refused.to_string() == "build_database_history_unavailable"
+            && stalled.elapsed() < std::time::Duration::from_secs(40)
+    );
+    let mut admin = sqlx::PgConnection::connect(&std::env::var("PROVISION_DATABASE_URL")?).await?;
+    let left: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM pg_stat_activity WHERE usename=$1 AND query LIKE '%_sqlx_migrations%' AND state='active'",
+    )
+    .bind(&history_resource.migration)
+    .fetch_one(&mut admin)
+    .await?;
+    anyhow::ensure!(left == 0, "stalled history read kept its session");
+    for sql in [
+        "DROP VIEW app._sqlx_migrations",
+        "DROP FUNCTION app.reader_stalls()",
+        "DROP FUNCTION app.reader_is_plain()",
+        "ALTER TABLE app.history_fixture RENAME TO _sqlx_migrations",
+    ] {
+        owner.execute(sql).await?;
+    }
+    drop(owner);
+    passed(
+        "build history is read as the app's own role, bounded in time, never as the provisioning superuser",
     );
     let lease = new(&s, parent, "lease", &[FIRST, SECOND, THIRD, FIXED]).await?;
     let lease_id = Uuid::parse_str(lease["id"].as_str().unwrap())?;

@@ -223,6 +223,57 @@ pub enum GroupSource {
     Local,
 }
 
+/// The explicitly requested view of the app-facing directory.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum DirectoryKind {
+    #[default]
+    Users,
+    Groups,
+    /// Current groups of the authenticated original user, never a supplied user id.
+    Memberships,
+}
+
+/// Safe display information for an active primary HR group.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct DirectoryGroupRef {
+    pub id: Uuid,
+    pub name: String,
+}
+
+/// An active user's public directory fields. No administrator or grant data.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct DirectoryUser {
+    pub id: String,
+    pub name: String,
+    pub primary_group: Option<DirectoryGroupRef>,
+}
+
+/// An active group suitable for selection or current membership checks.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct DirectoryGroup {
+    pub id: Uuid,
+    pub name: String,
+    pub source: GroupSource,
+}
+
+/// A bounded, name/id ordered app directory page. Only the requested collection is
+/// populated. Membership pages always belong to `subjectId`; selection is not an ACL.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct DirectoryPage {
+    pub kind: DirectoryKind,
+    pub subject_id: String,
+    pub installation_id: Uuid,
+    pub environment: Environment,
+    pub users: Vec<DirectoryUser>,
+    pub groups: Vec<DirectoryGroup>,
+    pub next_cursor: Option<String>,
+}
+
 /// A one-time launch of one installation's app frame (`POST /api/v1/app-frames`).
 /// The portal submits `code` in a form POST to `launchUrl` inside a new iframe.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -303,6 +354,11 @@ pub fn schema() -> serde_json::Value {
     generator.subschema_for::<RuntimeJobPage>();
     generator.subschema_for::<AuditPage>();
     generator.subschema_for::<Vec<Group>>();
+    generator.subschema_for::<DirectoryPage>();
+    generator.subschema_for::<crate::storage_contract::StoredFile>();
+    generator.subschema_for::<crate::storage_contract::ReserveFile>();
+    generator.subschema_for::<crate::storage_contract::AttachFile>();
+    generator.subschema_for::<crate::storage_contract::DetachFile>();
     generator.subschema_for::<AppFrameLaunch>();
     generator.subschema_for::<AppFrameRenewal>();
     generator.subschema_for::<AppFrameToken>();

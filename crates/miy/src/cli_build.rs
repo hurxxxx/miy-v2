@@ -532,6 +532,26 @@ pub async fn execute(platform: Option<String>, no_wait: bool, timeout: u64) -> R
         CliError::new(category, crate::cli_error::safe_code(&code).unwrap_or("invalid_build_source"),
             "Prepare a clean committed application with intact SDK/components before requesting a server build.")
     })?;
+    if !packed.excluded.is_empty() {
+        // The server builds only the application source set. Say which committed
+        // files it will not see, so a build that needs one does not fail silently.
+        let shown: Vec<_> = packed
+            .excluded
+            .iter()
+            .take(10)
+            .map(String::as_str)
+            .collect();
+        eprintln!(
+            "note: {} committed file(s) are outside the server build source and were not sent: {}{}",
+            packed.excluded.len(),
+            shown.join(", "),
+            if packed.excluded.len() > shown.len() {
+                ", ..."
+            } else {
+                ""
+            }
+        );
+    }
     let (context, user) = crate::cli_journal::actor(&session)?;
     let mut entry = Entry {
         schema_version: 1,

@@ -38,6 +38,7 @@ pub async fn run() -> Result<Value> {
         Some("0.7.0") => include_str!("../bundles/0.7.0.json"),
         Some("0.7.1") => include_str!("../bundles/0.7.1.json"),
         Some("0.8.0") => include_str!("../bundles/0.8.0.json"),
+        Some("0.9.0") => include_str!("../bundles/0.9.0.json"),
         _ => anyhow::bail!(CliError::new(
             Category::Environment,
             "unsupported_old_bundle",
@@ -83,7 +84,7 @@ pub async fn run() -> Result<Value> {
     // used registerNavigationGuard must change; `app check` reports it.
     if matches!(
         old["bundleVersion"].as_str(),
-        Some("0.6.0" | "0.6.1" | "0.6.2" | "0.7.0" | "0.7.1" | "0.8.0")
+        Some("0.6.0" | "0.6.1" | "0.6.2" | "0.7.0" | "0.7.1" | "0.8.0" | "0.9.0")
     ) {
         let mut changes = crate::agent_tools::setup_changes(&root)?;
         for (path, content) in crate::bundle::template() {
@@ -337,24 +338,33 @@ pub async fn run() -> Result<Value> {
 }
 
 // All supported guidance-era bundles use the explicit browser/preview and Rust
-// SDK migration. Other SDK files, component defaults and SQL stay immutable.
+// SDK migration. Application migrations and unrelated runtime files stay immutable.
 fn validate_guidance_change(path: &str, unchanged: bool) -> Result<()> {
     if unchanged {
         return Ok(());
     }
     ensure!(
-        !path.ends_with(".sql")
-            && (matches!(
-                path,
-                "AGENTS.md"
-                    | "CLAUDE.md"
-                    | "sdk/browser/index.ts"
-                    | "sdk/preview/main.tsx"
-                    | "sdk/rust/src/lib.rs"
-                    | "sdk/rust/Cargo.toml"
-            ) || path.starts_with("docs/")
-                || path.starts_with(".agents/skills/")
-                || path.starts_with(".claude/skills/")),
+        matches!(
+            path,
+            "AGENTS.md"
+                | "CLAUDE.md"
+                | "sdk/browser/index.ts"
+                | "sdk/browser/api.gen.ts"
+                | "sdk/browser/directory.ts"
+                | "sdk/browser/transport.ts"
+                | "sdk/preview/main.tsx"
+                | "sdk/rust/src/lib.rs"
+                | "sdk/rust/src/directory.rs"
+                | "sdk/rust/src/storage.rs"
+                | "sdk/rust/src/acl.rs"
+                | "sdk/rust/src/acl_postgres_tests.rs"
+                | "sdk/rust/src/acl.sql"
+                | "sdk/rust/Cargo.toml"
+                | "sdk/ui/index.tsx"
+                | "miy.components.json"
+        ) || path.starts_with("docs/")
+            || path.starts_with(".agents/skills/")
+            || path.starts_with(".claude/skills/"),
         CliError::new(
             Category::Environment,
             "guidance_upgrade_runtime_changed",
@@ -603,6 +613,7 @@ mod tests {
             include_str!("../bundles/0.7.0.json"),
             include_str!("../bundles/0.7.1.json"),
             include_str!("../bundles/0.8.0.json"),
+            include_str!("../bundles/0.9.0.json"),
         ] {
             let old: Value = serde_json::from_str(previous).unwrap();
             for (path, hash) in &current {
@@ -616,12 +627,12 @@ mod tests {
                 });
             }
         }
-        // Extending the supported SDK migration must not silently rewrite SQL,
-        // component defaults or files that have no explicit runtime migration.
+        // The new ACL SQL is an SDK reference, not an applied app migration.
+        // Applied migrations and unrelated files remain outside this allowlist.
         for path in [
             "migrations/0001_initial.sql",
-            "miy.components.json",
-            "sdk/ui/index.tsx",
+            "migrations/0003_acl.sql",
+            "sdk/rust/src/unrelated.sql",
             "sdk/browser/unrelated.ts",
             "package.json",
         ] {

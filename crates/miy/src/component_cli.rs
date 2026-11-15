@@ -177,7 +177,7 @@ fn inspect(root: &Path, lock: &Lock, allow_missing: bool) -> Result<()> {
             if allow_missing && !path.try_exists()? {
                 continue;
             }
-            regular(&path).context("component_file_missing: run app components sync")?;
+            regular(&path).context("component_file_missing: run miy component sync")?;
             ensure!(
                 std::fs::metadata(&path)?.len() <= 512 * 1024,
                 "component_file_too_large"
@@ -231,10 +231,10 @@ pub fn verify(root: &Path) -> Result<Value> {
 fn verify_local(root: &Path) -> Result<Value> {
     ensure!(
         !root.join(".miy/components-backup").exists(),
-        "component_update_interrupted: run app components sync"
+        "component_update_interrupted: run miy component sync"
     );
     let lock =
-        load(root)?.context("components_not_installed: log in and run app components sync")?;
+        load(root)?.context("components_not_installed: log in and run miy component sync")?;
     for name in defaults(root)?.defaults.keys() {
         ensure!(
             lock.components.contains_key(name),
@@ -689,9 +689,9 @@ async fn change(
             CliError::new(
                 Category::Environment,
                 "components_not_installed",
-                "Run app components sync before modifying installed components.",
+                "Run miy component sync before modifying installed components.",
             )
-            .with_recovery("miy", &["app", "components", "sync"])
+            .with_recovery("miy", &["component", "sync"])
         })?;
     if lock.registry != s.origin {
         return Err(CliError::new(
@@ -710,7 +710,7 @@ async fn change(
         } else {
             (
                 "component_already_installed",
-                "The component is already installed; use app components update.",
+                "The component is already installed; use miy component update.",
             )
         };
         return Err(CliError::new(Category::Environment, code, message).into());

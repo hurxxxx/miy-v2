@@ -50,6 +50,10 @@ async function mock(page: Page) {
       permission: string;
     }[],
   };
+  const accounts = [
+    { id: "admin", name: "관리자", admin: true, canDevelop: false, enabled: true },
+    { id: "alice", name: "앨리스", admin: false, canDevelop: false, enabled: true },
+  ];
   const apps = [{ id: "ledger", name: "장부" }];
   const accessByApp: Record<string, typeof access> = { ledger: access };
   // Administrator runtime list (GET /api/v1/runtime/installations); empty unless a test fills it.
@@ -145,6 +149,21 @@ async function mock(page: Page) {
         groups.find((g) => g.id === member[1])!.members = list.length;
         return route.fulfill({ status: 200, json: { updated: true } });
       }
+      if (path === "/api/v1/users" && method === "POST") {
+        if (accounts.some((account) => account.id === body.id))
+          return route.fulfill({ status: 409, json: { error: { code: "user_exists" } } });
+        const created = { id: body.id, name: body.name, admin: false, canDevelop: body.canDevelop, enabled: true };
+        accounts.push(created);
+        return route.fulfill({ status: 200, json: created });
+      }
+      const account = path.match(/^\/api\/v1\/users\/([^/]+)(\/state)?$/);
+      if (account) {
+        const target = accounts.find((item) => item.id === account[1])!;
+        if (body.admin === false && accounts.filter((item) => item.admin && item.enabled).length <= 1)
+          return route.fulfill({ status: 409, json: { error: { code: "last_enabled_administrator" } } });
+        Object.assign(target, body);
+        return route.fulfill({ status: 200, json: target });
+      }
       if (path.endsWith("/runtime/preflight"))
         return route.fulfill({ status: 200, json: { canSubmit: true, expectedState: {}, changes: [] } });
       if (path.endsWith("/runtime")) return route.fulfill({ status: 200, json: { id: "runtime-job" } });
@@ -182,10 +201,7 @@ async function mock(page: Page) {
               : path === "/api/v1/app-registrations"
             ? []
             : path === "/api/v1/users"
-              ? [
-                  { id: "admin", name: "관리자" },
-                  { id: "alice", name: "앨리스" },
-                ]
+              ? accounts
               : path === "/api/v1/groups"
                 ? groups
                 : path.match(/^\/api\/v1\/groups\/[^/]+\/members$/)
@@ -203,6 +219,7 @@ async function mock(page: Page) {
     await route.fulfill({ status: 200, json: reply });
   });
   return {
+    accounts,
     sent,
     access,
     managed,
@@ -355,7 +372,7 @@ test("the audit log pages backwards and filters by actor, action and period", as
     { id: 7, at: "2026-11-03T07:00:00Z", actor: "admin", actorName: "관리자", action: "user.enabled", target: "user:alice:from:false:to:true", requestId: "r7" },
     { id: 6, at: "2026-11-03T06:00:00Z", actor: "admin", actorName: "관리자", action: "user.disabled", target: "user:alice:from:true:to:false", requestId: "r6" },
   );
-  await expect(panel.getByLabel("동작").locator("option", { hasText: "사용자 상태·주 소속" })).toHaveAttribute("value", "user.");
+  await expect(panel.getByLabel("동작").locator("option", { hasText: "사용자 계정·주 소속" })).toHaveAttribute("value", "user.");
   await panel.getByLabel("동작").selectOption("user.");
   await panel.getByRole("button", { name: "조회", exact: true }).click();
   await expect(panel.getByText("사용자 다시 사용", { exact: true })).toBeVisible();
@@ -678,4 +695,57 @@ test("failed audit filters discard the previous cursor and retry from the new fi
   await expect(panel.getByRole("row")).toHaveCount(2);
   expect(auditQueries.at(-1)?.get("cursor")).toBeNull();
   expect(auditQueries.at(-1)?.get("action")).toBe("app.");
+});
+
+test("an administrator registers a person, sets roles and suspends the account", async ({ page }) => {
+  const { sent } = await mock(page);
+  await page.goto("/admin");
+  const subject = "3f0e2c5a-9d1b-4c7e-8a55-0123456789ab";
+  const form = page.locator(".ui-panel").filter({ has: page.getByRole("heading", { name: "사용자 등록", exact: true }) });
+  await form.getByLabel("로그인 계정 ID").fill(subject);
+  await form.getByLabel("표시 이름").fill("새 직원");
+  await form.getByLabel("새 앱 등록을 신청할 수 있음").check();
+  await form.getByRole("button", { name: "사용자 등록" }).click();
+  await expect(page.getByRole("status")).toHaveText("사용자를 등록했습니다. 앱 권한은 아래에서 따로 부여하세요.");
+  expect(sent.at(-1)).toMatchObject({
+    method: "POST",
+    path: "/api/v1/users",
+    body: { id: subject, name: "새 직원", canDevelop: true },
+    csrf: "fixture-csrf",
+  });
+  await expect(form.getByLabel("로그인 계정 ID")).toHaveValue("");
+
+  const list = page.locator(".ui-panel").filter({ has: page.getByRole("heading", { name: "사용자 계정", exact: true }) });
+  const row = list.getByRole("listitem").filter({ hasText: "새 직원" });
+  await expect(row).toContainText(subject);
+  await expect(row.getByText("앱 개발", { exact: true })).toBeVisible();
+
+  // The same ID again is refused by the server and explained.
+  await form.getByLabel("로그인 계정 ID").fill(subject);
+  await form.getByLabel("표시 이름").fill("중복");
+  await form.getByRole("button", { name: "사용자 등록" }).click();
+  await expect(page.getByRole("status")).toHaveText("이미 등록된 로그인 계정 ID입니다.");
+
+  await row.getByRole("button", { name: "관리자 지정" }).click();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog).toContainText("모든 앱의 배포·제어");
+  await dialog.getByRole("button", { name: "취소" }).click();
+  expect(sent.filter((item) => item.method === "PATCH" && item.path === `/api/v1/users/${subject}`)).toHaveLength(0);
+  await row.getByRole("button", { name: "관리자 지정" }).click();
+  await dialog.getByRole("button", { name: "관리자 지정" }).click();
+  await expect(page.getByRole("status")).toHaveText("관리자로 지정했습니다.");
+  expect(sent.at(-1)).toMatchObject({ method: "PATCH", path: `/api/v1/users/${subject}`, body: { admin: true } });
+  await expect(row.getByText("관리자", { exact: true })).toBeVisible();
+
+  await row.getByRole("button", { name: "앱 개발 해제" }).click();
+  await expect(page.getByRole("status")).toHaveText("앱 개발 신청 자격을 해제했습니다.");
+  expect(sent.at(-1)).toMatchObject({ method: "PATCH", path: `/api/v1/users/${subject}`, body: { canDevelop: false } });
+
+  await row.getByRole("button", { name: "사용 중지" }).click();
+  await expect(dialog).toContainText("로그인·CLI·진행 중인 작업이 모두 차단");
+  await dialog.getByRole("button", { name: "사용 중지" }).click();
+  await expect(page.getByRole("status")).toHaveText("계정 사용을 중지했습니다.");
+  expect(sent.at(-1)).toMatchObject({ method: "POST", path: `/api/v1/users/${subject}/state`, body: { enabled: false } });
+  await expect(row.getByText("사용 중지", { exact: true }).first()).toBeVisible();
+  await expect(row.getByRole("button", { name: "사용 재개" })).toBeVisible();
 });

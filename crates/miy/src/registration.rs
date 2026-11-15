@@ -113,7 +113,7 @@ pub async fn decide(s: &State, p: &Principal, id: Uuid, decision: Decision) -> A
 }
 pub async fn users(s: &State, p: &Principal) -> ApiResult<Value> {
     domain::admin(s, p).await?;
-    let rows: Vec<Value> = sqlx::query_scalar("SELECT jsonb_build_object('id',id,'name',name,'admin',admin,'canDevelop',can_develop) FROM users ORDER BY name").fetch_all(&s.pool).await?;
+    let rows: Vec<Value> = sqlx::query_scalar("SELECT jsonb_build_object('id',id,'name',name,'admin',admin,'canDevelop',can_develop,'enabled',enabled) FROM users ORDER BY name,id").fetch_all(&s.pool).await?;
     Ok(json!(rows))
 }
 
