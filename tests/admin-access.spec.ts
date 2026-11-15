@@ -704,7 +704,7 @@ test("an administrator registers a person, sets roles and suspends the account",
   const form = page.locator(".ui-panel").filter({ has: page.getByRole("heading", { name: "사용자 등록", exact: true }) });
   await form.getByLabel("로그인 계정 ID").fill(subject);
   await form.getByLabel("표시 이름").fill("새 직원");
-  await form.getByLabel("새 앱 등록을 신청할 수 있음").check();
+  await form.getByLabel("새 앱 등록 신청").selectOption("true");
   await form.getByRole("button", { name: "사용자 등록" }).click();
   await expect(page.getByRole("status")).toHaveText("사용자를 등록했습니다. 앱 권한은 아래에서 따로 부여하세요.");
   expect(sent.at(-1)).toMatchObject({
@@ -714,6 +714,11 @@ test("an administrator registers a person, sets roles and suspends the account",
     csrf: "fixture-csrf",
   });
   await expect(form.getByLabel("로그인 계정 ID")).toHaveValue("");
+  // Inputs side by side keep one height: a hint under one must not stretch the other.
+  const idBox = await form.getByLabel("로그인 계정 ID").boundingBox();
+  const nameBox = await form.getByLabel("표시 이름").boundingBox();
+  expect(Math.abs(idBox!.height - nameBox!.height)).toBeLessThan(2);
+  expect(Math.abs(idBox!.y - nameBox!.y)).toBeLessThan(2);
 
   const list = page.locator(".ui-panel").filter({ has: page.getByRole("heading", { name: "사용자 계정", exact: true }) });
   const row = list.getByRole("listitem").filter({ hasText: "새 직원" });

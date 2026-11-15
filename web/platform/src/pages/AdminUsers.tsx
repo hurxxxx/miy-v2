@@ -56,7 +56,7 @@ export function UserAdmin({ csrf, selfId, users, report, refresh }: Props) {
       {
         id: String(data.get("id")).trim(),
         name: String(data.get("name")).trim(),
-        canDevelop: data.get("canDevelop") === "on",
+        canDevelop: data.get("canDevelop") === "true",
       },
       "사용자를 등록했습니다. 앱 권한은 아래에서 따로 부여하세요.",
     );
@@ -105,17 +105,18 @@ export function UserAdmin({ csrf, selfId, users, report, refresh }: Props) {
   return (
     <>
       <Panel title="사용자 등록">
-        <form className="grant-form" onSubmit={register}>
+        <form className="grant-form user-form" onSubmit={register}>
           <Field label="로그인 계정 ID" hint="로그인 서버(Keycloak) 사용자 상세의 ID. 계정은 로그인 서버에서 먼저 만듭니다.">
             <input name="id" required pattern={SUBJECT} autoComplete="off" spellCheck={false} placeholder="00000000-0000-0000-0000-000000000000" />
           </Field>
           <Field label="표시 이름">
             <input name="name" required maxLength={120} autoComplete="off" />
           </Field>
-          <Field label="앱 개발">
-            <label className="user-option">
-              <input type="checkbox" name="canDevelop" /> 새 앱 등록을 신청할 수 있음
-            </label>
+          <Field label="새 앱 등록 신청">
+            <select name="canDevelop" defaultValue="false">
+              <option value="false">허용 안 함</option>
+              <option value="true">허용</option>
+            </select>
           </Field>
           <div className="grant-form-actions">
             <Button type="submit" variant="primary" disabled={busy}>

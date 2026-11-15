@@ -66,3 +66,13 @@ jobs:
         run: python3 scripts/test-sdk-acl.py
       - name: Verify the representative project and attachment app
         run: python3 scripts/check-common-work.py
+      # These two checks redact their own passwords, tokens and database URLs.
+      - name: Upload the redacted ACL and representative app evidence
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-check-evidence
+          path: |
+            .local/evidence/sdk-acl-*/
+            .local/evidence/common-work-*/
+          if-no-files-found: ignore
