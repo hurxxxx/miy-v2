@@ -328,8 +328,10 @@ def main() -> int:
                 require(created_result.returncode == 0, "fixture_database_start_failed")
                 created = True
                 envfile.unlink()
+                # The image first runs a temporary server on its Unix socket and restarts;
+                # only the final server answers on TCP, so readiness is asked there.
                 deadline = time.monotonic() + 45
-                while run(["docker", "exec", name, "pg_isready", "-q", "-U", "postgres", "-d", "common_work"], timeout=5).returncode:
+                while run(["docker", "exec", name, "pg_isready", "-q", "-h", "127.0.0.1", "-U", "postgres", "-d", "common_work"], timeout=5).returncode:
                     require(time.monotonic() < deadline, "fixture_database_timeout")
                     time.sleep(0.2)
                 published = run(["docker", "port", name, "5432/tcp"], timeout=10).stdout.strip()
