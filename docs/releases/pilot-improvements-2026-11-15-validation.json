@@ -50,7 +50,7 @@
         "tests/admin-access.spec.ts"
       ],
       "verification": "Unit test for ID and name validation; permissions regression against PostgreSQL (refusals, creation, conflict, no grants, role changes, audit rows); mocked console UI test.",
-      "limits": "Core does not create or read identity-provider accounts. An operator creates the account in Keycloak and copies its ID. Sign-in of a newly registered real account on the server is covered only by the deployment acceptance, not by this record."
+      "limits": "Core does not create or read identity-provider accounts. An operator creates the account in Keycloak and copies its ID. Sign-in of a newly registered real account on the server is NOT_RUN in both this record and the deployment acceptance. Existing fixture-account OIDC sign-in is a different check."
     },
     {
       "finding": "Gap P3: a seeded registry lacked the UI version the template installs.",
@@ -282,6 +282,13 @@
   "followUp": {
     "releaseCommit": "9133d700369c43b11abeee1738541e6abda5b4d6",
     "deploymentRecord": "docs/releases/pilot-0.10.0-2026-11-15-deployment.json",
+    "reviewCorrections": {
+      "date": "2026-11-15",
+      "record": "docs/releases/pilot-review-fixes-2026-11-15-validation.json",
+      "newUserLogin": "Corrected the earlier wording that implied deployment acceptance covered a newly registered real person's sign-in. It remains NOT_RUN.",
+      "databaseBoundary": "The deployed app-login fix handles bootstrap's userinfo URL. A later review found SQLx query parameters could override the rewritten credentials/database in a non-default DSN. The follow-up source forces parsed connection options and tests session_user and RESET ROLE; its verification/deployment state is separate from the PASS entries above.",
+      "evidenceIdentifiers": "The deployed pilot harness wrote the component publication pass name as ui because details.name overwrote the step name. Its successful action remains valid, but future receipts keep the stable step name and details separately. Original result files are preserved."
+    },
     "laterCommits": [
       {
         "commit": "32b4abf",

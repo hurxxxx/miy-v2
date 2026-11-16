@@ -1,12 +1,12 @@
 # 코어 안정화 계획
 
-- 작성일: 2026-11-03 · 수정일: 2026-11-14
+- 작성일: 2026-11-03 · 수정일: 2026-11-15
 - 기준: [PLAN](PLAN.md)의 작업 순서. 실제 서버 반영은 [운영 안내](SERVER-OPERATIONS.md), CLI 소스·게시 차이는 [릴리스 안내](CLI-RELEASE.md)에서 확인한다.
 - 상태: **1·2차와 구조 기반의 완료한 구현 묶음은 검증·개발 서버 반영했다. API 계약 이전의 나머지 응답, 전체 자원 예약·백업 제품·호스트 updater와 새 서버 종합 인수는 후속이다.**
 
 이 문서는 앱 개발·원격 빌드·배포 기반의 **1) worker/오류, 2) 설치 승인 권한/호출자, 3) 용량, 4) 백업·복원/updater, 5) 새 서버·수명주기 인수** 작업 묶음을 관리한다. 번호는 기존 증거와 연결하기 위해 유지한다. 착수 순서는 [추진 계획](PLAN.md#다음-우선-작업)이 관리한다. 3·4차에는 v1의 Docker 저장소 점검·DB 연결 예산·전환/롤백·불확실한 커밋 처리·설정 스키마 규칙(V1-O1~O5)을, 5차에는 호스트 진단·공개 전 점검·검증 자원 분리(V1-O6~O8)를 함께 적용한다([v1 적용 계획](V1-ADOPTION.md) §3.2).
 
-디스크·DB 연결 보호와 변경 범위의 최소 백업·별도 영역 복원 확인은 구현해 사용하고 있다. 실제 데이터 변경 때마다 이 보호를 수행하며, 전체 백업 제품·호스트 updater·나머지 자원 예약·빈 서버 종합 인수는 베타 전 과제로 구분한다. [사내 최소 보안](APP-BOUNDARIES.md)은 prod 포털·dev 포털·콘솔 세 출처와 목적별 세션·환경 제한·콘솔 device 승인을 구현·반영했다. 별도 IdP·전 credential 재설계·자동 CA·전 앱 전환 도구를 먼저 만들지 않는다. 다음 기능인 공통 ACL 등은 PLAN 순서를 따른다.
+디스크·DB 연결 보호와 변경 범위의 최소 백업·별도 영역 복원 확인은 구현해 사용하고 있다. 실제 데이터 변경 때마다 이 보호를 수행하며, 전체 백업 제품·호스트 updater·나머지 자원 예약·빈 서버 종합 인수는 베타 전 과제로 구분한다. [사내 최소 보안](APP-BOUNDARIES.md)은 prod 포털·dev 포털·콘솔 세 출처와 목적별 세션·환경 제한·콘솔 device 승인을 구현·반영했다. 별도 IdP·전 credential 재설계·자동 CA·전 앱 전환 도구를 먼저 만들지 않는다. 공통 기능의 잔여 인수와 후속 구현은 PLAN 순서를 따른다.
 
 2026-11-03 사용자 결정에 따라 1·2차 이후 [기본 UI/UX 이식](V1-ADOPTION.md#9-플랫폼-화면과-ui-후속-계약)을 진행했다. ai-do를 원본으로 라이트 테마·한국어·새 설치 기준의 UI-1~4를 구현하고 UI-5 통합 검증을 마쳤으며, v2.dwdcc.kr에 웹 화면과 0.7.0 서버·migration 17·공개 CLI를 반영했다([배포 기록](releases/core-0.7.0-deployment.json)). 운영·권한 교훈은 공식 miy v1에서 참고하며, 현재 공통 기능·UX의 직접 이식 원본은 [AI-DO 대상 목록](AI-DO-COMMON-MIGRATION.md)을 따른다. 플랫폼의 사용자·그룹별 앱 사용 권한과 앱 내부의 선택적 데이터 공간을 유지한다. 각 기능의 회귀 검사는 계속 수행하고 현재 실행 순서는 [추진 계획](PLAN.md)을 따른다.
 
@@ -20,10 +20,10 @@
 | --- | --- | --- |
 | 앱 제어·복구 | 제어·빌드 future 분리, 소유권 감시·취소·재시작 복구와 타입 기반 DB 오류. 실제 worker·PostgreSQL 잠금 대기 중 제어 진행과 소유권 상실·종료 정리를 확인(1차) | 실제 장시간 Rust Docker 컴파일 중 지연 측정, provision DB 네트워크 장애 주입, 새 호스트 전체 수명주기 인수 |
 | 서버 빌드 | 사용자당 2개/전체 8개 접수 제한, 소스 64MiB·로그 2MiB, 고정 recipe·이미지 출처 검사, 중단 뒤 결과 복구 | 빌드 CPU/RAM 예산, 서버 전체 원자적 자원 예약과 실제 복합 부하(3차) |
-| 권한·호출 | 설치·릴리스 승인, 사용자 위임·원래 호출자와 후속 증표, 중앙 정책·트랜잭션 안 재판정. 프레임 도입 후 브라우저 직접 API도 자기 설치로 제한(2차·구조 기반) | G4 확장·G5/G6 업무 ACL, 서비스 주체·API Invoke·업무 이벤트는 해당 기능의 후속 범위 |
+| 권한·호출 | 설치·릴리스 승인, 사용자 위임·원래 호출자와 후속 증표, 중앙 정책·트랜잭션 안 재판정. 프레임 API의 설치 제한, G4 디렉터리·G5/G6 앱 소유 ACL 첫 구현 | 배포 프레임·preview의 공통 기능 전체 인수, 공간/복합 ACL 확장, 서비스 주체·API Invoke·업무 이벤트는 해당 기능의 후속 범위 |
 | 앱 자원 | 컨테이너 256MiB·1CPU·128PID, 읽기 전용 root·16MiB tmpfs·로그 회전. Docker 공간 하한·DB 연결 예산, 앱 응답 4MiB와 Bytes 수명의 64개 슬롯 보호 | 전체 RAM/디스크·inode/WAL·DB 부하 예산, 실제 OOM·throttling·PID/디스크 부족·RSS/앱 간 공정성과 복구 인수(3차) |
 | 설치·운영 | 명시적 설정·기존 비밀 재사용·core migration, 변경 범위 core DB 백업/별도 복원, 정확한 SHA CI gate와 core/UI 반영·복구 도구를 실제 배포에 사용 | 프레임 런타임을 포함한 새 설치 조립(R12), 전체 DB·파일·설정·키 정합성 백업 제품·호스트 updater·새 서버 복원(4~5차) |
-| API·개발 번들 | 설치·실행 작업·감사·그룹의 Rust/JSON Schema/TS 공통 타입, CLI 버전 검사와 0.9.0/번들 0.9.0 게시 | 나머지 응답 타입·OpenAPI 연결은 해당 API 변경 때. 정식 GitHub Release·Windows 사용자 인수는 별도 |
+| API·개발 번들 | 설치·실행 작업·감사·그룹의 Rust/JSON Schema/TS 공통 타입, CLI 버전 검사와 공통 기능 CLI/번들 게시 | 나머지 응답 타입·OpenAPI 연결은 해당 API 변경 때. 정식 GitHub Release·Windows 사용자 인수는 별도 |
 
 최소 데이터 보호의 근거는 [11-04 배포](releases/core-review-2026-11-04-deployment.json), 응답 예산은 [11-13 배포](releases/app-api-response-2026-11-13-deployment.json)에 있다. worker·권한·API의 근거는 각 절에 연결한다. 이전 [0.6.3 main 통합](releases/cli-0.6.3-main-integration.json)·[Linux 인수](releases/cli-0.6.3-linux-validation.json)·[독립 AI 인수](archive/results/INDEPENDENT-AGENTS-0.6.3-ACCEPTANCE.md)는 당시 환경의 고정 기록이다. API fixture의 `dockerBuildExecuted=false`, ignored·수동 보정·NOT_RUN을 성공에 합치지 않으며 Docker 설정값 확인을 실제 과부하 집행 인수로 해석하지 않는다.
 
@@ -139,7 +139,7 @@ Windows 사용자 인수, 실제 콘솔 신호, 다른 OS 또는 Docker Desktop 
 | 1 회귀 상시화 | 격리 회귀 workflow, 일반 `core-rollout.py`의 정확한 대상 SHA 필수 CI gate를 구현해 배포에 사용 | [11-09 검증](releases/boundary-followup-2026-11-09-validation.json). migration/설정 전환 일반화와 [Docker classic store 관찰](PLAN.md#미해결-호환성-관찰)은 별도 |
 | 2 중앙 정책 | 호출부·목록 SQL·표시값을 같은 정책으로 통합하고 실제 HTTP/PostgreSQL 행렬로 대조. 쓰기는 잠금 뒤 같은 트랜잭션에서 `policy::Write`로 판정하고 통과한 `Decided`만 커밋 | [정책 이전](releases/core-policy-2026-11-05-validation.json)·[트랜잭션 판정](releases/core-policy-transactions-2026-11-05-validation.json). 아래 불일치 9건은 해결했으며 새 권한 기능은 [코어 권한](CORE-PERMISSIONS.md)을 따름 |
 | 3 API 계약 | 설치·실행 작업·감사·그룹의 [Rust 타입](../crates/miy/src/api_contract.rs), [JSON Schema](../contracts/api-v1.schema.json), 생성 TS를 서버·CLI·화면에서 공유. 생성물/호환 검사와 CLI 출력·모의 응답 보완 완료 | [첫 묶음](releases/api-contract-2026-11-05-validation.json). 설치 권한·그룹 구성원/권한·앱 접근 등 나머지 응답 타입과 OpenAPI 응답 스키마는 해당 기능 변경 때 연결 |
-| 4 CLI 버전 | `scripts/check-cli-version.py`를 릴리스 후보 workflow에 연결. CLI 0.9.0/번들 0.9.0 게시 완료 | 현재 게시·실기 인수 범위는 [CLI 릴리스](CLI-RELEASE.md)가 관리 |
+| 4 CLI 버전 | `scripts/check-cli-version.py`를 릴리스 후보 workflow에 연결. 현행 CLI/번들 게시 완료 | 현재 게시·실기 인수 범위는 [CLI 릴리스](CLI-RELEASE.md)가 관리 |
 
 2에서 완료한 불일치 수정은 다음과 같다. **기존 항목 번호 1~9는 증거 추적용이며 새 작업 목록이 아니다.**
 

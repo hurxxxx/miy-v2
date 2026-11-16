@@ -237,9 +237,18 @@
   "rollback": [
     "python3 scripts/ui-rollout.py rollback --release-dir .local/release-1976005-ui (portal UI back to 9133d70), then the same with .local/release-9133d70-ui (back to 7defdb0)",
     "python3 scripts/ui-rollout.py rollback --target frame-runtime --release-dir .local/release-9133d70-frame-runtime",
-    "python3 .local/release-9133d70-checks/nginx-file-routes-rollout.py restore /projects/miy-v2/.local/release-9133d70-nginx",
+    "python3 scripts/file-routes-rollout.py restore /projects/miy-v2/.local/release-9133d70-nginx (reviewed recovery tool; uses the original backup and candidate)",
     "python3 .local/release-9133d70-source/scripts/core-rollout.py rollback --release-dir .local/release-9133d70-core (reinstalls server 467bb0d2... and restores both 0.9.0 indexes; schema 23, ui 1.1.0 and the pilot app stay)"
   ],
-  "rollbackNote": "Roll back in this order. None of these was run. A 0.9.0 server with schema 23 was not exercised; migration 0023 only adds a table and two indexes that 0.9.0 never reads.",
+  "rollbackNote": "Roll back in this order. None of these was run. The Nginx recovery command was updated after review; see rollbackReview. A 0.9.0 server with schema 23 was not exercised; migration 0023 only adds a table and two indexes that 0.9.0 never reads.",
+  "rollbackReview": {
+    "date": "2026-11-15",
+    "record": "docs/releases/pilot-review-fixes-2026-11-15-validation.json",
+    "originalNginxCommand": "python3 .local/release-9133d70-checks/nginx-file-routes-rollout.py restore /projects/miy-v2/.local/release-9133d70-nginx",
+    "reason": "The original restore could not resume after nginx test/reload or rendered-copy updates failed. The maintained scripts/file-routes-rollout.py supports guarded recovery from recognized before/after states with the same release backup.",
+    "sourceStatus": "Follow-up working-tree source, separate from deployed commit 9133d70. Use its validation record; this does not claim the recovery tool was used for the original deployment.",
+    "productionRollbackStatus": "NOT_RUN",
+    "originalToolAndBackupChanged": false
+  },
   "users": "CLI users update with the install guide or the update commands. Existing 0.9.0 app projects move to bundle 0.10.0 with `miy app upgrade`; new projects install ui 1.1.0 by default."
 }

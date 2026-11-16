@@ -1,0 +1,379 @@
+{
+  "date": "2026-11-15",
+  "status": "PASS",
+  "baseCommit": "600a56fd9ef170432ac743f78c6df4aefbd49fc5",
+  "sourceState": "Uncommitted follow-up working tree; not the deployed 9133d70 binaries.",
+  "productionChanged": false,
+  "published": false,
+  "committed": false,
+  "pushed": false,
+  "changes": [
+    {
+      "area": "app_database_boundary",
+      "files": [
+        "crates/miy/src/worker.rs",
+        "crates/miy/src/development_regression.rs"
+      ],
+      "problem": "SQLx user/password/dbname query parameters overrode URL userinfo/path replacements. The bootstrap URL has no such parameters.",
+      "fix": "Parse PgConnectOptions first, then force the migration login, its password and the app database. The privileged schema-provisioning connection also forces the app database after parsing.",
+      "verification": "Actual session_user/current_user/database, RESET ROLE from an app-owned function, a negative control using a superuser login plus SET ROLE, query DSNs, maintenance namespace/public ACL preservation, prod schema ownership and the existing history-read timeout."
+    },
+    {
+      "area": "retryable_nginx_recovery",
+      "files": [
+        "scripts/file-routes-rollout.py",
+        "scripts/test-file-routes-rollout.py"
+      ],
+      "problem": "The original per-release restore required both live copies to remain at the deployed hash, so partial restore failures prevented retry.",
+      "fix": "Maintain the tool in scripts, bind original backup/candidate hashes and the narrow diff, record progress/failure, atomically install, and allow each live copy at its recognized before/after generation. Restore can resume/recheck after failures at install, nginx test, reload, copy and journal writes. Unknown edits and symlinks are refused.",
+      "verification": "24 offline fault-injection tests plus read-only loading of the existing release record. No Nginx mutation or reload was executed."
+    },
+    {
+      "area": "pilot_cleanup_and_evidence",
+      "files": [
+        "scripts/check-pilot-flow.mjs",
+        "scripts/lib/pilot-lifecycle.mjs",
+        "scripts/test-pilot-flow.mjs"
+      ],
+      "problem": "Cleanup required a saved installation ID, so response loss/status failure after deployment could skip stopping the app. Component details.name could overwrite the receipt step name.",
+      "fix": "Submit deploy once with --no-wait; observe accepted jobs and app state by appId/dev. Wait for active work before one stop submission. Unknown/failed cleanup makes the overall run fail. Explicit --keep-running true skips cleanup. Evidence schema 2 stores {name, details}; only validated public job/request UUIDs survive errors. A command timeout kills the CLI and waits for close before cleanup.",
+      "verification": "19 stateful mock CLI scenarios including delayed/lost acknowledgements, status errors, pagination, another accepted action, stop failures and stable receipt names. Real-server v2 pilot execution remains NOT_RUN."
+    },
+    {
+      "area": "documentation",
+      "fix": "PLAN remains the only status/order table. Current contracts now distinguish published/deployed 0.10.0 common features, this undeployed follow-up and real-environment acceptance gaps. Corrected new-user login to NOT_RUN; recorded that core-rollout apply already ran while rollback did not. Updated the recommended Nginx recovery command and preserved its original command, historical results, tool and backup."
+    }
+  ],
+  "sourceSha256": {
+    "crates/miy/src/worker.rs": "5c2732b1831708392a2d79a50245b99526ab364a0640b90caffaa7bb32f6e03b",
+    "crates/miy/src/development_regression.rs": "9c30803f8f83d7367e655fb32b2fc48845beb7d1b4bf830534d433ef0d09c63a",
+    "scripts/check-pilot-flow.mjs": "4aa6539598ad10d7d8a64ce0c7e76c285a88cd2fc355795af53d27dc6246463a",
+    "scripts/lib/pilot-lifecycle.mjs": "ceb587af2214d39540ae6b6663993d5aeb7a82673448b8d63aabf8a3c5ec2f45",
+    "scripts/test-pilot-flow.mjs": "df8443f2a7ac3976c612ea829721f4b6e44331add5bee6a168418dd44b2e54c0",
+    "scripts/file-routes-rollout.py": "faa0eb0a7d0b97d7f38bcc6ba3fd33892c9240f1a8cd21594654277749679f0d",
+    "scripts/test-file-routes-rollout.py": "8389ce3701da00a24555633c4f87b7f6d31254ed3c7e542e4a7e2c43c0a116d7",
+    "scripts/check-static.sh": "d0ea9096431edc969a8c902e8e239d8089c69849441c7fbbfdfcc8ed4f75e10d"
+  },
+  "checks": [
+    {
+      "command": "CARGO_BUILD_JOBS=2 CARGO_NET_OFFLINE=true bash scripts/check-static.sh rust",
+      "status": "PASS",
+      "log": ".local/evidence/pilot-review-fixes-20261115/static-rust-final.log",
+      "serverTestsPassed": 225,
+      "serverTestsIgnored": 7,
+      "clientTestsPassed": 137,
+      "scope": "Portability, write decisions, fmt, server/client Clippy and unit tests on the final Rust source. Ignored integration tests are separate."
+    },
+    {
+      "command": "CARGO_BUILD_JOBS=2 CARGO_NET_OFFLINE=true python3 scripts/check-development-database.py",
+      "status": "PASS",
+      "log": ".local/evidence/pilot-review-fixes-20261115/development-database-final.log",
+      "evidence": ".local/development-regression-a8719d0d04/test.log",
+      "observations": 17,
+      "scope": "Owned disposable PostgreSQL, including the final schema-provisioning DB fix."
+    },
+    {
+      "command": "CARGO_BUILD_JOBS=2 CARGO_NET_OFFLINE=true python3 scripts/check-server-builds.py",
+      "status": "PASS",
+      "log": ".local/evidence/pilot-review-fixes-20261115/server-builds-final.log",
+      "evidence": ".local/server-build-regression-1233f92a3e90/test.log",
+      "scope": "Real loopback HTTP and disposable PostgreSQL; this suite does not perform a Docker app build."
+    },
+    {
+      "command": "node scripts/test-pilot-flow.mjs",
+      "status": "PASS",
+      "log": ".local/evidence/pilot-review-fixes-20261115/pilot-flow.log",
+      "scenarios": 19,
+      "scope": "Mock CLI state machine; no remote app creation."
+    },
+    {
+      "command": "python3 scripts/test-file-routes-rollout.py",
+      "status": "PASS",
+      "log": ".local/evidence/pilot-review-fixes-20261115/file-routes-rollout-final.log",
+      "tests": 24,
+      "scope": "Temporary files; all external commands mocked."
+    },
+    {
+      "status": "PASS",
+      "scope": "Syntax only; repeated by the scripts suite.",
+      "commands": [
+        "python3 -m py_compile scripts/file-routes-rollout.py scripts/test-file-routes-rollout.py",
+        "node --check scripts/check-pilot-flow.mjs",
+        "node --check scripts/lib/pilot-lifecycle.mjs",
+        "node --check scripts/test-pilot-flow.mjs"
+      ]
+    },
+    {
+      "command": "Read-only runpy load/recovery-input validation of .local/release-9133d70-nginx",
+      "status": "PASS",
+      "evidence": ".local/evidence/pilot-review-fixes-20261115/nginx-recovery-inputs.json",
+      "scope": "Original record, backup, candidate and historical script hashes unchanged; installed/copy files recognized. No prepare/apply/restore called."
+    },
+    {
+      "command": "CARGO_BUILD_JOBS=2 CARGO_NET_OFFLINE=true bash scripts/check-static.sh scripts",
+      "status": "PASS",
+      "log": ".local/evidence/pilot-review-fixes-20261115/static-scripts.log",
+      "scope": "All script syntax, API/SDK byte checks, ownership/cleanup tests, rollout fault injection, server configuration and isolated Nginx/Caddy HTTPS proxy checks; includes the new 19 pilot scenarios and 24 file-route tests."
+    },
+    {
+      "command": "CARGO_BUILD_JOBS=2 CARGO_NET_OFFLINE=true python3 scripts/runtime-regression/run.py",
+      "status": "PASS",
+      "log": ".local/evidence/pilot-review-fixes-20261115/runtime-regression-final.log",
+      "evidence": ".local/evidence/runtime-regression/miy-runtime-regression-mu2g0r_j/evidence",
+      "observations": 131,
+      "suites": {
+        "runtime": 46,
+        "operations": 6,
+        "cli": 6,
+        "auth": 8,
+        "permissions": 26,
+        "delegation": 10,
+        "boundary": 12,
+        "migration": 3,
+        "frames": 14
+      },
+      "scope": "Final Rust source. Disposable PostgreSQL/Docker and pinned CLI/test binaries. Test workspace/resources removed; all baseline containers unchanged."
+    },
+    {
+      "command": "python3 scripts/check-doc-links.py",
+      "status": "PASS",
+      "log": ".local/evidence/pilot-review-fixes-20261115/doc-links-final.log",
+      "result": "PASS 1011 relative links in 67 tracked Markdown files"
+    },
+    {
+      "command": "git diff --check",
+      "status": "PASS",
+      "log": ".local/evidence/pilot-review-fixes-20261115/diff-check.log"
+    },
+    {
+      "check": "Independent integration document review and source/evidence consistency",
+      "status": "PASS",
+      "scope": "Deployed source versus working tree, v1 live pilot versus v2 mocks, preserved historical results/NOT_RUN, current source hashes and evidence paths. No additional confirmed contradiction found."
+    }
+  ],
+  "attemptHistory": [
+    {
+      "command": "bash scripts/check-static.sh rust",
+      "status": "FAIL",
+      "log": ".local/evidence/pilot-review-fixes-20261115/static-rust.log",
+      "reason": "New test used assert_eq on PgSslMode, which does not implement PartialEq. Replaced with matches!; this compile failure is retained."
+    },
+    {
+      "command": "bash scripts/check-static.sh rust",
+      "status": "PASS",
+      "log": ".local/evidence/pilot-review-fixes-20261115/static-rust-retry.log",
+      "sourceScope": "Before the additional privileged provisioning connection fix; superseded by static-rust-final.log."
+    },
+    {
+      "command": "python3 scripts/check-development-database.py",
+      "status": "PASS",
+      "log": ".local/evidence/pilot-review-fixes-20261115/development-database.log",
+      "observations": 17,
+      "sourceScope": "Before the additional privileged provisioning connection fix; rerun on final source."
+    },
+    {
+      "command": "python3 scripts/check-server-builds.py",
+      "status": "PASS",
+      "log": ".local/evidence/pilot-review-fixes-20261115/server-builds.log",
+      "sourceScope": "Before the additional privileged provisioning connection fix; rerun on final source."
+    },
+    {
+      "command": "python3 scripts/runtime-regression/run.py",
+      "status": "PASS",
+      "log": ".local/evidence/pilot-review-fixes-20261115/runtime-regression.log",
+      "evidence": ".local/evidence/runtime-regression/miy-runtime-regression-thi4lrw7/evidence",
+      "observations": 131,
+      "sourceScope": "Pinned binaries before the additional privileged provisioning connection fix; not used as final-source PASS. CLI and test binaries were copied before later edits.",
+      "sourceSha256": {
+        "crates/miy/src/worker.rs": "f9472f9675ab544d445e8374a8856b7706fb86acc7d290cf1d86517976884f84",
+        "crates/miy/src/development_regression.rs": "96d7b46b4deca532da164ea7bb3f981fe797cad240c127277a8fe21e11f4972a"
+      }
+    },
+    {
+      "command": "python3 scripts/test-file-routes-rollout.py",
+      "status": "PASS",
+      "log": ".local/evidence/pilot-review-fixes-20261115/file-routes-rollout.log",
+      "tests": 22,
+      "sourceScope": "Before adding non-regular-file and atomic-install failure tests."
+    },
+    {
+      "command": "python3 scripts/test-file-routes-rollout.py",
+      "status": "FAIL",
+      "observation": "Agent tool execution; no separate log saved. Ran 24 tests in 0.167s; FAILED (errors=2).",
+      "reason": "Directory input reached fdopen before the regular-file check; subsequent fixture reset hit the retained directory. Moved fstat before fdopen with guaranteed descriptor close. Final 24-test PASS is logged separately."
+    }
+  ],
+  "notRun": [
+    {
+      "check": "Commit, push, live deployment and actual Nginx rollback",
+      "status": "NOT_RUN",
+      "reason": "This turn requests implementation and documentation fixes. Live artifacts, original rollout tool and backup were preserved."
+    },
+    {
+      "check": "Pilot harness v2 on a real server",
+      "status": "NOT_RUN",
+      "reason": "The harness creates an app, grants and a database on the target. This turn verifies its failure handling with mocks; the earlier live v1 pilot is separate evidence."
+    },
+    {
+      "check": "Newly registered real-user sign-in and combined directory/sharing/files in deployed frame and native/Docker preview",
+      "status": "NOT_RUN",
+      "reason": "Outstanding product acceptance preserved in PLAN; existing fixture OIDC and separated component tests do not satisfy it."
+    },
+    {
+      "check": "Full web/UI build and browser suite; Windows/macOS user acceptance",
+      "status": "NOT_RUN",
+      "reason": "No frontend, SDK, template or client source was changed. Existing environment-specific gaps remain; operating web/platform/dist was not rebuilt."
+    }
+  ],
+  "preserved": {
+    "appliedMigrations": true,
+    "publishedSdkTemplatesAndRegistry": true,
+    "originalPilotResults": true,
+    "originalNginxToolAndBackup": true,
+    "operatingDatabaseAndServices": true
+  },
+  "summary": "Implementation, isolated verification and current-document synchronization completed. Deployment, actual rollback and real-server pilot v2 remain NOT_RUN.",
+  "cleanup": {
+    "evidence": ".local/evidence/runtime-regression/miy-runtime-regression-mu2g0r_j/evidence/cleanup.json",
+    "errors": [],
+    "baselineContainersPreserved": 28,
+    "temporaryWorkspaceBytesRemoved": 734379386
+  },
+  "changedFiles": [
+    "crates/miy/src/development_regression.rs",
+    "crates/miy/src/worker.rs",
+    "docs/AI-DO-COMMON-MIGRATION.md",
+    "docs/APP-BOUNDARIES.md",
+    "docs/APP-FRAMES.md",
+    "docs/CHECKS.md",
+    "docs/CORE-HARDENING.md",
+    "docs/CORE-PERMISSIONS.md",
+    "docs/DEVELOPMENT.md",
+    "docs/PLAN.md",
+    "docs/PRD.md",
+    "docs/README.md",
+    "docs/SERVER-OPERATIONS.md",
+    "docs/V1-ADOPTION.md",
+    "docs/releases/pilot-0.10.0-2026-11-15-deployment.json",
+    "docs/releases/pilot-improvements-2026-11-15-validation.json",
+    "docs/releases/pilot-review-fixes-2026-11-15-validation.json",
+    "docs/reviews/CORE-PLATFORM-READINESS-2026-11-13.md",
+    "examples/common-work/README.md",
+    "scripts/check-pilot-flow.mjs",
+    "scripts/check-static.sh",
+    "scripts/file-routes-rollout.py",
+    "scripts/lib/pilot-lifecycle.mjs",
+    "scripts/test-file-routes-rollout.py",
+    "scripts/test-pilot-flow.mjs"
+  ],
+  "documentSha256": {
+    "docs/AI-DO-COMMON-MIGRATION.md": "19fce2a7c8be644a1abcf56435fd9b0c2e46fb36c5e86fd17d4c05f3eda92c5a",
+    "docs/APP-BOUNDARIES.md": "02636237d30ccca7eb662f585a3926abc73ec1ecb42c2462e11d8d11c3129517",
+    "docs/APP-FRAMES.md": "c55ba88958109dcc48104f8bdfb9ccdd743c2bf8017d5fe0795023ca0a9a00f0",
+    "docs/CHECKS.md": "73e828bb1522d0f905fc9be8acf12928f4711bfee3145b00a816159e6160bad4",
+    "docs/CORE-HARDENING.md": "99a4b224cd56eda692b13a07b2017c4612272c55d60085ba6f4eb02d52db2b2a",
+    "docs/CORE-PERMISSIONS.md": "b3da32f23f59c03520fe1270a55b139f72e6b2bbedc33595390beb6b90d99da0",
+    "docs/DEVELOPMENT.md": "4dea9535e217d8b97ee79bd2da6bdbd517ac995c1edfbc9d4d7ebeeb57b401b7",
+    "docs/PLAN.md": "26b1b466bca0050c24f15b53d17acdd693b46f51160f112a1c44f6aca29c2289",
+    "docs/PRD.md": "c9e3020366020a138a5fb7ebc0111ee10293a34106cc0439e99406b558e36ce4",
+    "docs/README.md": "15525b382dcf0614115f2cc48634c47f5dd426492b640faca2ce97153a31fd33",
+    "docs/SERVER-OPERATIONS.md": "a4840492dd566e4831e829e2d05406e4e85fb6d82fe4b5601a1631df7356032c",
+    "docs/V1-ADOPTION.md": "11c3218ec70b6d9bcb1179db78e141846e94a337d87fc0babf60946e539f071e",
+    "docs/releases/pilot-0.10.0-2026-11-15-deployment.json": "f68c91bf6cdefcebed42ec3bb18109de004df5a2e72dd47621e2ae30f4ff7ca2",
+    "docs/releases/pilot-improvements-2026-11-15-validation.json": "5de9c2f3483324a985bce25fa9b6f961c299798e5742e1977c9313eaf506226f",
+    "docs/reviews/CORE-PLATFORM-READINESS-2026-11-13.md": "af4b81c63e1fbd0d743b5ae8f7b185558b1ccc0e76fdd65c9ff68ebb6ba01f95",
+    "examples/common-work/README.md": "8dfd2ceab5ffb93795c7a32716fb932d2bc2d7369f8a0667c3b7ce184b5a308b"
+  },
+  "logSha256": {
+    ".local/evidence/pilot-review-fixes-20261115/development-database-final.log": "d7fc04ee900ed7090a1ea288f54b36f3ff8c34ce7c9dafa88b0522d899bea585",
+    ".local/evidence/pilot-review-fixes-20261115/development-database.log": "442ea748a6281dd537e93e6d18e421d55b50d8089857deda18ca63fd1fcc4030",
+    ".local/evidence/pilot-review-fixes-20261115/diff-check.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    ".local/evidence/pilot-review-fixes-20261115/doc-links-final.log": "36dc0efe62587e8de966efaa72d3f003e398d5c298678714f5bc5d2e9ca6a470",
+    ".local/evidence/pilot-review-fixes-20261115/doc-links.log": "e864a496028c41d8c33b216ffd929dc5d7b824f5aff272fa3d0a1d180965db07",
+    ".local/evidence/pilot-review-fixes-20261115/file-routes-rollout-final.log": "c9d44cf4b76966de7bb4a81ac44845266a5ff14b4d624769effac2b71b768156",
+    ".local/evidence/pilot-review-fixes-20261115/file-routes-rollout.log": "75f6c01d7e1e198dd04b254cbb76470c7c07db32078770bbc2396e62cbdf96c5",
+    ".local/evidence/pilot-review-fixes-20261115/nginx-recovery-inputs.json": "410e6ae2136f2ac06418020ac74d44a5726f2af4fb84ef100c7cd9657af2c990",
+    ".local/evidence/pilot-review-fixes-20261115/pilot-flow.log": "06a2e0c0678f62a41b4ce331c99e5b328fa9e440896d5cca1ace369cdba5ae1d",
+    ".local/evidence/pilot-review-fixes-20261115/runtime-regression-final.log": "739924e036768a029c3cc881dd2eb3758958c8abf5f9a60cc1ef495e2ecd46e7",
+    ".local/evidence/pilot-review-fixes-20261115/runtime-regression.log": "19fa0219564d383cb88a579343d3206c8b21461107ca913e3d538e13253a3248",
+    ".local/evidence/pilot-review-fixes-20261115/server-builds-final.log": "b7105269faf2ca08f4cb2078639c443e4d71b2e98a13d8439b8de110540c7700",
+    ".local/evidence/pilot-review-fixes-20261115/server-builds.log": "5d0655d35fbd6f4cf83c95e4d8c381edc8b33f67de1a904356f76685c8fce378",
+    ".local/evidence/pilot-review-fixes-20261115/static-rust-final.log": "891213115a958832974fb194af1b93feecc932c4ce3199a6819f66fe765a2d1b",
+    ".local/evidence/pilot-review-fixes-20261115/static-rust-retry.log": "a5272e4cd196c7492875c3b5a5b6fadb20a9c6d51dfeed6cca998c02f2480e5f",
+    ".local/evidence/pilot-review-fixes-20261115/static-rust.log": "2ad844bdd8e1d9bd4bed325180995af5799f3ddca21e968b4385248f73b6f6ce",
+    ".local/evidence/pilot-review-fixes-20261115/static-scripts.log": "2d0a08b5dedd21c1eb21e2babdbbc30209b387b9748fbc33c020cdc80ad8c2e9"
+  },
+  "mergedBeforeCommit": {
+    "date": "2026-11-16",
+    "reason": "A later session committed and pushed this work at the user's request. Commit 42324ad (server-only builds, CLI/bundle 0.11.0) had reached main in between and changed eight of the files recorded above.",
+    "mergedFiles": [
+      "crates/miy/src/worker.rs",
+      "scripts/check-pilot-flow.mjs",
+      "docs/APP-BOUNDARIES.md",
+      "docs/CHECKS.md",
+      "docs/CORE-PERMISSIONS.md",
+      "docs/DEVELOPMENT.md",
+      "docs/PLAN.md",
+      "docs/SERVER-OPERATIONS.md"
+    ],
+    "effect": "The committed bytes of these eight files differ from sourceSha256 and documentSha256 above; every other recorded file is byte-identical. Everything above this section describes the tree before the merge (base 600a56f): its checks ran there, and committed/pushed false was the state then.",
+    "method": "Three-way merge per file. docs/PLAN.md (three places) and docs/SERVER-OPERATIONS.md (one paragraph) were changed at the same lines by both sides and keep both sides' text. For each of the eight files the follow-up's added and removed line counts are the same before and after the merge. In check-pilot-flow.mjs the --build option is gone, as in 42324ad: the pilot always builds on the server.",
+    "checksOnMergedTree": [
+      {
+        "command": "bash scripts/check-static.sh rust",
+        "status": "PASS",
+        "log": ".local/evidence/pilot-review-fixes-merged-20261116/static-rust.log",
+        "serverTestsPassed": 225,
+        "serverTestsIgnored": 7,
+        "clientTestsPassed": 138
+      },
+      {
+        "command": "bash scripts/check-static.sh scripts",
+        "status": "PASS",
+        "log": ".local/evidence/pilot-review-fixes-merged-20261116/static-scripts.log",
+        "scope": "Includes node scripts/test-pilot-flow.mjs (19 scenarios) and python3 scripts/test-file-routes-rollout.py (24 tests)."
+      },
+      {
+        "command": "python3 scripts/check-development-database.py",
+        "status": "PASS",
+        "log": ".local/evidence/pilot-review-fixes-merged-20261116/devdb.log",
+        "evidence": ".local/development-regression-a43033a60d/test.log",
+        "observations": 17
+      },
+      {
+        "command": "python3 scripts/check-server-builds.py",
+        "status": "PASS",
+        "log": ".local/evidence/pilot-review-fixes-merged-20261116/server-builds.log",
+        "evidence": ".local/server-build-regression-9bf2ebab12f2/test.log"
+      },
+      {
+        "command": "python3 scripts/runtime-regression/run.py",
+        "status": "FAIL",
+        "log": ".local/evidence/pilot-review-fixes-merged-20261116/runtime.log",
+        "evidence": ".local/evidence/runtime-regression/miy-runtime-regression-_psr_65o/evidence",
+        "observations": 126,
+        "reason": "The CLI suite stopped at its first check group: one of two concurrent `miy auth status` processes exited 3 with reauthentication_required. cli_login::session reads the saved credential without the interprocess lock, so a process that starts while another is renewing the token can read the uncertain state that the renewal stores before it sends. That code is the same in 600a56f and is not touched by this follow-up or by 42324ad. Not fixed here; recorded as an open defect."
+      },
+      {
+        "command": "python3 scripts/runtime-regression/run.py",
+        "status": "PASS",
+        "log": ".local/evidence/pilot-review-fixes-merged-20261116/runtime-2.log",
+        "evidence": ".local/evidence/runtime-regression/miy-runtime-regression-m7j_z7h1/evidence",
+        "observations": 131,
+        "suites": {
+          "runtime": 47,
+          "operations": 5,
+          "cli": 6,
+          "auth": 8,
+          "permissions": 26,
+          "delegation": 10,
+          "boundary": 12,
+          "migration": 3,
+          "frames": 14
+        },
+        "note": "Rerun of the same tree: testExitCode 0. The runner exited 1 because cleanup found twelve baseline containers gone; all twelve were GitLab runner job containers of another project. No other baseline container changed."
+      }
+    ],
+    "notRunOnMergedTree": "Web checks, the client CLI contract checks and the disposable full stack. This follow-up does not change their inputs; they ran on 42324ad alone (docs/releases/server-build-only-2026-11-16-validation.json) and run in CI after the push. Deployment, the actual proxy restore and the pilot harness on a real server remain NOT_RUN as recorded above."
+  }
+}

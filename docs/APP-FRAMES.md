@@ -1,8 +1,8 @@
 # 업무 앱 iframe 실행 설계
 
-- 작성일: 2026-11-09 · 정리일: 2026-11-14
-- 상태: **채택(D1, 2026-11-10) · 소스 구현·필수 격리 실증과 개발 서버 최초 도입/리뷰 보완 완료.** CLI 0.9.0·번들 0.9.0도 게시했다. 같은 등록 도메인(P2)의 쿠키 간섭(FV-06), 화면낭독 등 남은 인수는 §6과 PLAN에서 구분한다. 현재 서버·UI·프레임 배포 소스는 [운영 안내](SERVER-OPERATIONS.md), 게시·실기 인수는 [CLI 릴리스](CLI-RELEASE.md)가 관리한다.
-- 새 기능 후보: 확장 directory·`fileApi`·preview backend capability는 CLI/번들 0.10.0 작업본에 추가했으며 아직 게시하거나 개발 서버에 반영하지 않았다. 아래 경로 표는 이 후보를 포함한다.
+- 작성일: 2026-11-09 · 정리일: 2026-11-15
+- 상태: **채택(D1, 2026-11-10) · 소스 구현·필수 격리 실증과 개발 서버 최초 도입/리뷰 보완 완료.** 프레임용 CLI·SDK도 게시했다. 같은 등록 도메인(P2)의 쿠키 간섭(FV-06), 화면낭독 등 남은 인수는 §6과 PLAN에서 구분한다. 현재 서버·UI·프레임 배포 소스는 [운영 안내](SERVER-OPERATIONS.md), 게시·실기 인수는 [CLI 릴리스](CLI-RELEASE.md)가 관리한다.
+- 공통 기능: 확장 directory·`fileApi`·preview backend capability는 0.10.0에 포함해 게시·개발 서버에 반영했다. 아래 경로 표는 해당 계약을 포함한다. 배포 프레임·preview에서 선택/공유/첨부를 함께 사용하는 전체 인수는 [PLAN](PLAN.md#검증과-반영-대기)에 남아 있다.
 - 배경: 2026-11-09 사용자가 iframe과 현행 구조의 장기 비교를 요청했다. 검토 결과 업무 앱만 별도 출처 iframe으로 분리하는 혼합 구조를 실증하기로 했고, 외부 검토 의견(보안 효과 과장, 인증서 범위, 공유 출처, 복잡성, 불완전 격리)을 아래 원칙에 반영했다.
 - 범위: 업무 앱 UI의 브라우저 실행 계약. 권한 행렬·공통 ACL은 [CORE-PERMISSIONS](CORE-PERMISSIONS.md), 작업 순서는 [PLAN](PLAN.md)을 따른다.
 
@@ -158,7 +158,7 @@ flowchart LR
 | 제거(채택 후) | 같은 페이지 MF 마운트, 셸 CSS의 `.miy-app-root` 제외 규칙과 CSS 격리 시험, 포털의 `/artifacts/` 경로 |
 | 고칠 시험 | `tests/platform-shell`, `surface-boundaries`, `stack-ui`, `validation`, `runtime-health`의 같은 페이지 전제(`.miy-app-root`, iframe 0개 검사)와 `platform-css-isolation`, `app-css-baseline.mjs`. Rust `browser_boundary_regression`의 MF 자산 검사, `check-server-config.py`의 frame 헤더 기대값 |
 
-로컬 preview(`miy app dev`)는 이미 `AppRoot`를 독립 문서로 실행한다(`templates/rust-react/sdk/preview/main.tsx`). 프레임 런타임은 이 구조를 재사용할 수 있다. 새 SDK의 `setNavigationState`·`apiBlob`은 preview 호스트에도 구현하되 preview 브라우저의 쿠키·Origin 계약은 유지한다. 0.10.0 후보는 backend용 private capability/listener를 별도로 추가하며 browser에 노출하지 않는다. 프레임 전용 fetch 설정을 기존 preview 인증에 그대로 적용하지 않는다.
+로컬 preview(`miy app dev`)는 이미 `AppRoot`를 독립 문서로 실행한다(`templates/rust-react/sdk/preview/main.tsx`). 프레임 런타임은 이 구조를 재사용할 수 있다. SDK의 `setNavigationState`·`apiBlob`은 preview 호스트에도 구현하며 preview 브라우저의 쿠키·Origin 계약을 유지한다. 0.10.0은 backend용 private capability/listener를 별도로 제공하며 browser에 노출하지 않는다. 프레임 전용 fetch 설정을 기존 preview 인증에 그대로 적용하지 않는다.
 
 ## 6. 실증 계획
 

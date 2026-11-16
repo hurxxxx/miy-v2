@@ -1,6 +1,6 @@
 # 코어 권한 계약과 설치 전환
 
-- 정리일: 2026-11-14. **AB-05 정책과 prod/dev/console 세 용도, 설치별 앱 프레임의 권한 집행을 구현·격리 검증·개발 서버에 반영했다.** 현재 배포 소스는 [운영 안내](SERVER-OPERATIONS.md), 작업 상태와 순서는 [PLAN](PLAN.md)이 관리한다.
+- 정리일: 2026-11-15. **AB-05 정책과 prod/dev/console 세 용도, 설치별 앱 프레임의 권한 집행을 구현·격리 검증·개발 서버에 반영했다.** 현재 배포 소스는 [운영 안내](SERVER-OPERATIONS.md), 작업 상태와 순서는 [PLAN](PLAN.md)이 관리한다.
 - 이 문서는 권한 판정의 정본이다. 출처·세션·실행·호환 전환은 [앱 경계 설계](APP-BOUNDARIES.md)가 담당한다.
 - 변경 전 소스 `22c219d`의 계약은 [소스 스냅샷(CLI/core 0.7.0)](archive/CORE-PERMISSIONS-0.7.0.md)에 보존한다. 아래의 변경되지 않은 설치 승인·위임·원래 호출자 계약은 재사용한다. AB-05 최초 구현의 실행 범위는 [초기 구현·검증 기록](releases/internal-minimum-security-implementation-2026-11-06-validation.json)에 기록했다.
 
@@ -159,7 +159,7 @@ Rust SDK의 `Identity.context`로 검증된 호출자 정보를 읽는다. `Iden
 
 ## 공통 업무 권한과 앱 연계
 
-**상태: G4 디렉터리, 앱 소유 G5·G6 ACL·공유와 작은 첨부 Storage는 새 소스 후보에 구현했다.** 게시·개발 서버 반영과 구분하며 검사 범위는 [공통 기능 검증 기록](releases/common-components-2026-11-14-validation.json)에 남긴다. API 전용 Invoke·서비스 자동화·업무 이벤트는 아직 미구현이다. A2·Invoke·이벤트·대용량 파일은 각 기능 순서에 개발하며 이번 브라우저 경계의 선행 조건이 아니다. PLM·PMS·PDM·MES·DAS는 독립 앱이고 아래 요구 전체가 v1에서 구현된 기능이라는 뜻은 아니다.
+**상태: G4 디렉터리, 앱 소유 G5·G6 ACL·공유와 작은 첨부 Storage는 구현·게시·개발 서버 반영을 마쳤다.** [공통 기능 격리 검증](releases/common-components-2026-11-14-validation.json)과 [0.10.0 반영](releases/pilot-0.10.0-2026-11-15-deployment.json)을 구분한다. 배포 프레임·preview에서 이 기능들을 함께 사용하는 전체 경로는 아직 미인수다. API 전용 Invoke·서비스 자동화·업무 이벤트는 미구현이며 A2·Invoke·이벤트·대용량 파일은 각 기능 순서에 개발한다. PLM·PMS·PDM·MES·DAS는 독립 앱이고 아래 요구 전체가 v1에서 구현된 기능이라는 뜻은 아니다.
 
 ### 현행 기반과 공백
 

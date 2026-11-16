@@ -1,7 +1,7 @@
 # miy 추진 계획
 
 - 작성일: 2026-10-20 · 정리일: 2026-11-16
-- 기준: 2026-11-15 개발 서버 반영(`9133d70`, 포털 UI `1976005`) 이후의 작업본과 실행 기록. 소스 구현·격리 검증·게시·개발 서버 반영을 구분한다.
+- 기준: 2026-11-15 개발 서버 반영(`9133d70`, 포털 UI `1976005`)과 파일럿 리뷰 후속 작업본. 소스 구현·격리 검증·게시·개발 서버 반영을 구분한다.
 
 이 문서가 **완료 요약·진행 상태·남은 작업·착수 순서의 정본**이다. 상세 설계와 인수 기준은 [문서 지도](README.md)의 담당 문서, 실제 배포 상태는 [서버 운영 안내](SERVER-OPERATIONS.md), CLI 후보·게시 상태는 [CLI 릴리스](CLI-RELEASE.md)가 관리한다.
 
@@ -20,6 +20,8 @@
 
 **공통 기능 첫 구현과 파일럿 준비 보완을 2026-11-15 개발 서버에 반영했다.** CLI/번들 0.10.0·Rust SDK 0.4.0·UI 1.1.0·schema 23을 게시·반영했고, 게시 CLI로 새 앱 하나를 만들어 서버 빌드·dev 배포·프레임 표시까지 확인했다([반영 기록](releases/pilot-0.10.0-2026-11-15-deployment.json)). **대기:** 배포된 프레임·preview에서 디렉터리 선택/공유/첨부를 함께 쓰는 전체 경로, 새로 등록한 실제 사용자의 로그인, Windows·AI 에이전트 인수. Core HTTP·실제 PostgreSQL·브라우저 검사는 각각 분리한 환경에서 수행했으며 하나의 실제 서버 전체 인수로 합산하지 않는다([검증 기록](releases/common-components-2026-11-14-validation.json), [리뷰 후속 기록](releases/common-components-2026-11-15-review-fixes.json)). 파일럿 준비 점검에서 찾은 공백과 그 보완(앱 DB 권한 경계, 이미지 계약 추출 제한, migration 시간 한도, 사용자 등록, 새 서버 seed·프레임 런타임)은 [점검 기록](releases/pilot-readiness-2026-11-15-validation.json)과 [보완 기록](releases/pilot-improvements-2026-11-15-validation.json)에 있다.
 
+**후속 보완의 구현·격리 검증을 완료했다.** 앱 DB의 로그인·대상 DB 고정, 프록시 복구 재시도, 파일럿 실패 정리와 결과 식별자를 보완했다. 이 수정은 아직 서버에 반영하지 않았으며 [후속 검증 기록](releases/pilot-review-fixes-2026-11-15-validation.json)에서 배포된 0.10.0과 구분한다.
+
 **서버 배포를 서버 빌드 산출물로 한정하는 변경의 구현·격리 검증을 완료했다(2026-11-16, CLI/번들 0.11.0 후보).** 로컬 배포용 빌드와 이미지 업로드를 제거해 `app build`는 항상 서버에서 검사·빌드하고, 서버는 그 앱의 성공한 서버 빌드가 만든 이미지만 dev에 배포하고 prod로 승격한다. 앱 컨테이너의 외부 통신은 플랫폼이 제한하지 않고 네트워크·호스트 방화벽이 담당하는 것으로 확정했다. 이 후보는 아직 게시하거나 개발 서버에 반영하지 않았다([검증 기록](releases/server-build-only-2026-11-16-validation.json)).
 
 ## 완료한 작업
@@ -34,10 +36,11 @@
 | 구조 기반·최소 데이터 보호 | worker 제어/빌드 분리, 권한 판정 단일화·트랜잭션 재확인, API 생성 계약 첫 묶음, CI 회귀·정확한 배포 SHA 확인, core DB 백업·별도 복원, 디스크 하한·DB 연결 예산 | 종전 순서 0·1·기반의 완료분. 전체 자원 예약·통합 백업·host updater와 구분. [코어 안정화](CORE-HARDENING.md) |
 | 응답·자원 보호 | 앱 응답 4MiB·바이트 수명에 결합한 64개 슬롯, 업무 401 자동 재전송 금지(R01·R02), Keycloak 2GiB, 회귀 작업물 자동 정리·스트리밍 해시 | 개발 서버 반영 범위는 [응답 보완](releases/app-api-response-2026-11-13-deployment.json)·[자원 보완](releases/resource-usage-2026-11-12-validation.json). 전체 RSS·복합 부하는 별도 |
 | 프레임용 CLI·SDK 게시 | CLI 0.9.0·번들 0.9.0, 구 번들 전환 보완, 서버와 다운로드·설치기 게시 | [게시 기록](releases/cli-0.9.0-2026-11-13-deployment.json). 정식 GitHub Release·Windows 실기는 대기 |
-| 배포 도구 리뷰 보완 | 후보 패키지 고정·완전 검증, 게시 잠금 공유, index 변경 거부·복구 확인 구현 및 모의·스크립트 검사 | [검증 기록](releases/cli-rollout-review-fixes-2026-11-14-validation.json). 보완 후 실제 운영 apply/rollback 실행과 구분 |
+| 배포 도구 리뷰 보완 | 후보 패키지 고정·완전 검증, 게시 잠금 공유, index 변경 거부·복구 확인 구현 및 모의·스크립트 검사 | [검증 기록](releases/cli-rollout-review-fixes-2026-11-14-validation.json). 실제 apply는 0.10.0 반영 때 수행, 실제 rollback은 NOT_RUN |
 | 공통 기능 조사·저장소 정리 | AI-DO 이식 대상 46개 식별·책임/인수 분류, 기존 변경 커밋·푸시, 병합된 브랜치 정리, 운영과 빌드 입력 대조 | [이식 대상](AI-DO-COMMON-MIGRATION.md), [작업본·운영 확인](releases/worktree-sync-2026-11-14-validation.json). 조사나 문서 변경은 기능 구현·신규 배포가 아님 |
 | 공통 업무 기능 첫 구현 | G4 검색/페이지·현재 멤버십·선택기, typed SDK, 기본 UI, 앱 소유 ACL·공유/회수, 10MiB 첨부·별도 전송 경로와 대표 프로젝트·업무 앱 구현·격리 검증. CLI/번들 0.10.0·UI 1.1.0·schema 23 게시·개발 서버 반영 | 제한된 migration/runtime DB 역할, 권한 회수·응답 유실·5MiB 전송·앱 DB 별도 복원 확인. [검증 기록](releases/common-components-2026-11-14-validation.json), [반영 기록](releases/pilot-0.10.0-2026-11-15-deployment.json). 배포 프레임·preview의 전체 경로와 대용량/전체 복원 제품은 별도 |
 | 파일럿 준비 보완 | 서버 빌드의 migration 이력 조회를 앱 자신의 역할로 전환, 이미지 `/miy` 제한 추출, migration 시간 한도, 관리자의 사용자 등록·역할 변경과 콘솔 화면, 모든 공용 UI 버전 seed, `up.sh`의 프레임 런타임 빌드, 게시 CLI로 실서버 새 앱 인수 도구 | [보완 기록](releases/pilot-improvements-2026-11-15-validation.json), [반영 기록](releases/pilot-0.10.0-2026-11-15-deployment.json). 당시 결정 대기였던 앱 egress·서버 빌드 한정은 2026-11-16 확정(결정 8·9). 새 서버 전체 설치 인수는 순서 6 |
+| 파일럿 리뷰 후속 보완 | 쿼리 DSN의 앱 DB·로그인 덮어쓰기 차단, 최초 DB 준비 대상 고정, 중간 실패 후 재시도 가능한 프록시 복구, 배포 응답 유실 시 파일럿 정리와 고정 결과 이름. 소스·격리 검증 완료 | [후속 검증](releases/pilot-review-fixes-2026-11-15-validation.json). 미배포이며 실제 복구·파일럿 v2 인수는 아래 대기 표에서 추적 |
 | 서버 빌드 전용 배포 | 배포·승격 접수, 사전 점검, worker 실행에서 그 앱의 성공한 서버 빌드 산출물만 허용(`server_build_required`). 이미지 업로드 API·적재 worker·위임 action `upload`와 CLI의 로컬 배포용 빌드·이미지 전송 제거. CLI/번들 0.11.0 후보와 0.10.0에서의 `app upgrade` 경로. 소스·격리 검증 완료 | [검증 기록](releases/server-build-only-2026-11-16-validation.json). schema 변경 없음(23 유지). 게시·개발 서버 반영 전이며 아래 대기 표에서 추적 |
 
 ## 일부 구현된 작업
@@ -74,6 +77,7 @@
 
 | 대기 묶음 | 남은 확인 | 수행 시점·정본 |
 | --- | --- | --- |
+| 파일럿 리뷰 후속 | DB 로그인 경계 보완의 서버 반영, 새 프록시 복구 도구의 실제 복구, 새 파일럿 검사의 실서버 실행 | [후속 검증](releases/pilot-review-fixes-2026-11-15-validation.json). 기존 배포물과 .local의 당시 도구·백업을 보존하며, 확인만을 위해 운영 복구를 실행하지 않음 |
 | 공통 기능 전체 경로 | 실제 OIDC·native/Docker preview·배포 프레임에서 디렉터리 선택/공유/첨부를 함께 쓰는 연결. 새로 등록한 실제 사용자의 로그인 | 게시·서버 반영과 템플릿 새 앱의 생성→서버 빌드→dev 배포→프레임은 [2026-11-15 반영 기록](releases/pilot-0.10.0-2026-11-15-deployment.json)으로 완료. 모의 Core 대표 앱·Core 단독 회귀·모의 HTTP 브라우저의 PASS를 전체 연결 PASS로 바꾸지 않음 |
 | Windows·실제 사용자 환경 | 현재 후보의 Windows 11 PS5.1/7 설치·갱신·제거, 기존 context/프로젝트·인증 보존, 단일 IP/사설 CA HTTPS. macOS 실기·별도 서버도 미완료 범위를 유지 | Windows는 사용자 수행. [WINDOWS-ACCEPTANCE](WINDOWS-ACCEPTANCE.md). 이전 후보나 CI PASS를 실기 결과로 이월하지 않음 |
 | 정식 CLI 공개 | 동일 후보·실제 환경·도구/OS별 독립 새 세션 3회, Windows 11 실기 등 공개 게이트. 게시 CLI로 실서버 새 앱 생성/배포는 같은 Linux 호스트에서 확인(2026-11-15) | [CLI-RELEASE](CLI-RELEASE.md#공개-릴리스-게이트). 다운로드 서버 게시와 정식 GitHub Release를 구분(R13) |

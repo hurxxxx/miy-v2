@@ -6,7 +6,9 @@
 //
 // This CHANGES the selected server: it creates one pilot-* app (registration,
 // develop grant, dev database, release, container). The app is stopped at the
-// end unless --keep-running is given; its records and database remain.
+// end unless --keep-running true is given; its records and database remain.
+// A lost deployment response is observed without resubmission before cleanup;
+// an unconfirmed outcome is a cleanup failure, never a successful stop.
 // Passwords, cookies, device codes and tokens are never printed or stored.
 //
 // Usage: node scripts/check-pilot-flow.mjs --origin https://PLATFORM --cli /abs/miy
@@ -19,6 +21,7 @@ import { chmod, copyFile, lstat, mkdir, readFile, readdir, writeFile } from "nod
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium } from "@playwright/test";
+import { createPilotLifecycle, finalizePilotResult, pilotCliFailure, pilotReceipt } from "./lib/pilot-lifecycle.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const hash = value => createHash("sha256").update(value).digest("hex");
@@ -34,19 +37,23 @@ function command(program, args, { env, cwd, timeout = 120000 } = {}) {
     const keep = list => chunk => { size += chunk.length; if (size <= 16 << 20) list.push(chunk); };
     child.stdout.on("data", keep(out));
     child.stderr.on("data", keep(err));
-    const timer = setTimeout(() => { child.kill("SIGKILL"); failed(error("command_timeout")); }, timeout);
+    let timedOut = false;
+    // Wait for close after killing the CLI: cleanup must not race a surviving
+    // local process that can still submit the original request.
+    const timer = setTimeout(() => { timedOut = true; child.kill("SIGKILL"); }, timeout);
     child.on("error", () => { clearTimeout(timer); failed(error("command_unavailable")); });
     child.on("close", code => {
       clearTimeout(timer);
+      if (timedOut) { failed(error("command_timeout")); return; }
       done({ code, stdout: Buffer.concat(out).toString("utf8"), stderr: Buffer.concat(err).toString("utf8") });
     });
   });
 }
 
-const result = { schemaVersion: 1, harness: "pilot-flow-v1", startedAt: new Date().toISOString(), finishedAt: null,
+const result = { schemaVersion: 2, harness: "pilot-flow-v2", startedAt: new Date().toISOString(), finishedAt: null,
   status: "running", passes: [], cleanupFailures: [] };
-const passed = (name, details = {}) => { result.passes.push({ name, ...details }); console.log("PASS " + name); };
-let stage = "arguments", output, browser, executable, appId;
+const passed = (name, details = {}) => { result.passes.push(pilotReceipt(name, details)); console.log("PASS " + name); };
+let stage = "arguments", output, browser, executable, appId, lifecycle;
 const sessions = {};
 
 async function cli(account, args, { cwd, timeout, expectFailure } = {}) {
@@ -57,7 +64,7 @@ async function cli(account, args, { cwd, timeout, expectFailure } = {}) {
   let envelope;
   try { envelope = JSON.parse(run.stdout || run.stderr); } catch { throw error("cli_invalid_json"); }
   if (expectFailure) return envelope;
-  if (run.code !== 0 || envelope?.ok !== true) throw error(safe(envelope?.error?.code));
+  if (run.code !== 0 || envelope?.ok !== true) throw pilotCliFailure(envelope?.error?.code, envelope?.error?.details);
   return envelope.data;
 }
 
@@ -107,6 +114,7 @@ try {
     values[flag] = value;
   }
   requireThat(["--origin", "--cli", "--credentials-file", "--output"].every(key => values[key]), "required_arguments_missing");
+  requireThat(["--keep-running", "--unpublished"].every(key => values[key] === undefined || ["true", "false"].includes(values[key])), "invalid_boolean_argument");
   requireThat(isAbsolute(values["--cli"]) && isAbsolute(values["--credentials-file"]), "absolute_private_input_paths_required");
   const origin = new URL(values["--origin"]).origin;
   output = resolve(values["--output"]);
@@ -201,10 +209,10 @@ try {
   passed("server_build_from_committed_source", { seconds: result.buildSeconds });
 
   stage = "dev_deployment";
-  await cli("developer", ["app", "deploy", "--environment", "dev"], { cwd: project, timeout: 1800000 });
-  const status = await cli("developer", ["app", "status"], { cwd: project });
-  const installation = (status.installations || []).find(item => item.environment === "dev");
-  requireThat(installation && installation.runtimeStatus === "running", "dev_installation_not_running");
+  lifecycle = createPilotLifecycle({ appId, keepRunning: values["--keep-running"] === "true",
+    cli: (args, options) => cli("developer", args, { cwd: project, ...options }) });
+  result.runtime = lifecycle.state;
+  const installation = await lifecycle.deploy();
   result.installationId = installation.id;
   passed("dev_deployment_running", { installationId: installation.id });
 
@@ -233,17 +241,18 @@ try {
   console.error("FAIL " + stage + ": " + result.failure.code);
 } finally {
   const cleanup = async (name, action) => { try { await action(); } catch { result.cleanupFailures.push(name); } };
-  if (appId && result.installationId && !process.argv.includes("--keep-running"))
-    await cleanup("stop_pilot_app", async () => {
-      await cli("developer", ["--app", appId, "--yes", "app", "stop", "--environment", "dev"], { timeout: 600000 });
-      result.stopped = true;
-    });
+  if (lifecycle) {
+    result.pilotCleanup = await lifecycle.cleanup();
+    result.stopped = result.pilotCleanup.stopped;
+    if (result.pilotCleanup.status === "failed") result.cleanupFailures.push("pilot_app:" + result.pilotCleanup.code);
+  }
   for (const account of Object.keys(sessions))
     if (sessions[account].cli) await cleanup(account + "_cli_logout", () => cli(account, ["auth", "logout"]));
   if (browser) await cleanup("browser_close", () => browser.close());
   result.finishedAt = new Date().toISOString();
+  const exitCode = finalizePilotResult(result);
   if (output) await writeFile(join(output, "result.json"), JSON.stringify(result, null, 2) + "\n", { mode: 0o600 }).catch(() => {});
   console.log(JSON.stringify({ status: result.status, appId: result.appId ?? null, passed: result.passes.length,
     cleanupFailures: result.cleanupFailures.length, evidence: output ?? null }));
-  process.exit(result.status === "passed" && result.cleanupFailures.length === 0 ? 0 : 1);
+  process.exit(exitCode);
 }

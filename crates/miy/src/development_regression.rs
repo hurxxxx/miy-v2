@@ -441,15 +441,52 @@ async fn shared_development_database() -> Result<()> {
         .await?;
     anyhow::ensure!(record == "created locally");
     let prod = worker::ensure_resource(&pool, "shared-dev-test", "prod", None).await?;
-    worker::prepare_resource(&pool, &prod, &migration_directory(id)?, None).await?;
+    // A dbname query parameter must not send schema provisioning back to the
+    // maintenance DB. Its namespace and existing public permissions stay put.
+    let provision = std::env::var("PROVISION_DATABASE_URL")?;
+    let mut maintenance = sqlx::PgConnection::connect(&provision).await?;
+    let (maintenance_database, app_exists, public_acl): (String, bool, Option<String>) =
+        sqlx::query_as("SELECT current_database(), to_regnamespace('app') IS NOT NULL, nspacl::text FROM pg_namespace WHERE nspname='public'")
+            .fetch_one(&mut maintenance)
+            .await?;
+    anyhow::ensure!(
+        !app_exists,
+        "fixture maintenance DB already has an app schema"
+    );
+    let mut address = url::Url::parse(&provision)?;
+    address
+        .query_pairs_mut()
+        .append_pair("dbname", &maintenance_database);
+    let prod_migrations = migration_directory(id)?;
+    unsafe { std::env::set_var("PROVISION_DATABASE_URL", address.as_str()) };
+    let prepared = worker::prepare_resource(&pool, &prod, &prod_migrations, None).await;
+    unsafe { std::env::set_var("PROVISION_DATABASE_URL", &provision) };
+    let (app_exists, after_acl): (bool, Option<String>) =
+        sqlx::query_as("SELECT to_regnamespace('app') IS NOT NULL, nspacl::text FROM pg_namespace WHERE nspname='public'")
+            .fetch_one(&mut maintenance)
+            .await?;
+    anyhow::ensure!(
+        !app_exists && public_acl == after_acl,
+        "provisioning modified the maintenance database"
+    );
+    drop(maintenance);
+    prepared?;
     let mut prod_db = app_admin(&prod.database).await?;
+    let (database, owner): (String, String) = sqlx::query_as(
+        "SELECT current_database(), pg_get_userbyid(nspowner) FROM pg_namespace WHERE nspname='app'",
+    )
+    .fetch_one(&mut prod_db)
+    .await?;
+    anyhow::ensure!(database == prod.database && owner == prod.owner);
     let count: i64 = sqlx::query_scalar("SELECT count(*) FROM app.records")
         .fetch_one(&mut prod_db)
         .await?;
     anyhow::ensure!(
         count == 0 && prod.database != deployed.database && prod.runtime != deployed.runtime
     );
-    passed("dev deployment reuses locally written records; production has separate DB and roles");
+    passed(
+        "dev deployment reuses local records; query DSN provisioning stays in the separate production DB",
+    );
     let health_listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
     let health_port = i32::from(health_listener.local_addr()?.port());
     let health = axum::Router::new().route(
@@ -522,9 +559,8 @@ async fn shared_development_database() -> Result<()> {
         "schema changes invalidate snapshots, keep old deployment stopped, and recover partial SQL failures without resetting data",
     );
     // The history relation belongs to the app: a migration can replace it with a
-    // view over its own function. This view reports success only to a reader
-    // that is not a superuser, so the build-time check passes only when it runs
-    // as the app's role instead of the provisioning superuser.
+    // view over its own function. Check the authenticated identity as well as
+    // the effective role: SET ROLE alone cannot contain a superuser session.
     let history = migration_directory(recovered_id)?;
     let history_resource = worker::resource_by_id(
         &pool,
@@ -539,13 +575,86 @@ async fn shared_development_database() -> Result<()> {
     let mut owner = worker::app_owner_connection(&history_resource).await?;
     for sql in [
         "ALTER TABLE app._sqlx_migrations RENAME TO history_fixture",
-        "CREATE FUNCTION app.reader_is_plain() RETURNS boolean LANGUAGE sql AS $$ SELECT current_setting('is_superuser')='off' AND NOT EXISTS(SELECT 1 FROM pg_roles WHERE rolname=current_user AND rolsuper) $$",
+        "CREATE FUNCTION app.reader_is_plain() RETURNS boolean LANGUAGE plpgsql AS $$ BEGIN EXECUTE 'RESET ROLE'; RETURN current_setting('is_superuser')='off' AND current_user=session_user AND NOT EXISTS(SELECT 1 FROM pg_roles WHERE rolname IN (current_user,session_user) AND rolsuper); END $$",
         "CREATE VIEW app._sqlx_migrations AS SELECT version,description,installed_on,success AND app.reader_is_plain() AS success,checksum,execution_time FROM app.history_fixture",
     ] {
         owner.execute(sql).await?;
     }
-    worker::verify_development_migrations(&pool, "shared-dev-test", &history).await?;
+    drop(owner);
+    // Negative control: the old superuser login plus SET ROLE must fail this
+    // fixture even in a read-only transaction, after the function resets role.
+    let mut privileged = app_admin(&history_resource.database).await?;
+    let mut tx = privileged.begin().await?;
+    tx.execute("SET TRANSACTION READ ONLY").await?;
+    tx.execute(format!("SET ROLE {}", history_resource.owner).as_str())
+        .await?;
+    let plain: bool = sqlx::query_scalar("SELECT app.reader_is_plain()")
+        .fetch_one(&mut *tx)
+        .await?;
+    anyhow::ensure!(
+        !plain,
+        "history fixture failed to detect the superuser login"
+    );
+    tx.rollback().await?;
+    drop(privileged);
+
+    // The disposable harness supplies a generated hexadecimal password. Keep
+    // credentials in memory and exercise both SQLx query identity overrides and
+    // its separate database override through the real connection helper.
+    let provision = std::env::var("PROVISION_DATABASE_URL")?;
+    let mut addresses = vec![provision.clone()];
+    for include_database in [false, true] {
+        let mut address = url::Url::parse(&provision)?;
+        let user = address.username().to_owned();
+        let password = address
+            .password()
+            .context("fixture_password_required")?
+            .to_owned();
+        let database = address.path().trim_start_matches('/').to_owned();
+        address
+            .query_pairs_mut()
+            .append_pair("user", &user)
+            .append_pair("password", &password);
+        if include_database {
+            address.query_pairs_mut().append_pair("dbname", &database);
+        }
+        addresses.push(address.to_string());
+    }
+    for address in addresses {
+        // This opt-in regression runs alone against its owned cluster.
+        unsafe { std::env::set_var("PROVISION_DATABASE_URL", address) };
+        let checked: Result<()> = async {
+            let mut reader = worker::app_owner_connection(&history_resource).await?;
+            let (database, session, role): (String, String, String) =
+                sqlx::query_as("SELECT current_database(), session_user, current_user")
+                    .fetch_one(&mut reader)
+                    .await?;
+            anyhow::ensure!(
+                database == history_resource.database
+                    && session == history_resource.migration
+                    && role == history_resource.owner,
+                "history reader escaped app database or login"
+            );
+            let plain: bool = sqlx::query_scalar("SELECT app.reader_is_plain()")
+                .fetch_one(&mut reader)
+                .await?;
+            let role: String = sqlx::query_scalar("SELECT current_user")
+                .fetch_one(&mut reader)
+                .await?;
+            anyhow::ensure!(
+                plain && role == history_resource.migration,
+                "RESET ROLE escaped the migration login"
+            );
+            reader.close().await?;
+            worker::verify_development_migrations(&pool, "shared-dev-test", &history).await?;
+            Ok(())
+        }
+        .await;
+        unsafe { std::env::set_var("PROVISION_DATABASE_URL", &provision) };
+        checked?;
+    }
     // A read the app stalls is abandoned and its session ended, not waited for.
+    let mut owner = worker::app_owner_connection(&history_resource).await?;
     for sql in [
         "CREATE FUNCTION app.reader_stalls() RETURNS boolean LANGUAGE sql AS $$ SELECT pg_sleep(600) IS NOT NULL $$",
         "CREATE OR REPLACE VIEW app._sqlx_migrations AS SELECT version,description,installed_on,success AND app.reader_stalls() AS success,checksum,execution_time FROM app.history_fixture",
@@ -578,7 +687,7 @@ async fn shared_development_database() -> Result<()> {
     }
     drop(owner);
     passed(
-        "build history is read as the app's own role, bounded in time, never as the provisioning superuser",
+        "build history uses the app's migration login even with query DSNs, cannot regain superuser through RESET ROLE, and is bounded in time",
     );
     let lease = new(&s, parent, "lease", &[FIRST, SECOND, THIRD, FIXED]).await?;
     let lease_id = Uuid::parse_str(lease["id"].as_str().unwrap())?;

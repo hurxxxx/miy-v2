@@ -509,18 +509,31 @@ async fn database_exists(database: &str) -> Result<bool> {
 pub(crate) async fn app_owner_connection(
     resource: &DatabaseResource,
 ) -> Result<sqlx::PgConnection> {
-    let mut target = url::Url::parse(&std::env::var("PROVISION_DATABASE_URL")?)?;
-    target.set_path(&resource.database);
-    target
-        .set_username(&resource.migration)
-        .map_err(|_| anyhow::anyhow!("invalid_role"))?;
-    target
-        .set_password(Some(&auth::decrypt(&resource.migration_secret)?))
-        .map_err(|_| anyhow::anyhow!("invalid_secret"))?;
-    let mut conn = sqlx::PgConnection::connect(target.as_str()).await?;
+    let options = app_owner_connect_options(
+        &std::env::var("PROVISION_DATABASE_URL")?,
+        &resource.database,
+        &resource.migration,
+        &auth::decrypt(&resource.migration_secret)?,
+    )?;
+    let mut conn = sqlx::PgConnection::connect_with(&options).await?;
     conn.execute(format!("SET ROLE {}", resource.owner).as_str())
         .await?;
     Ok(conn)
+}
+
+fn app_owner_connect_options(
+    provision: &str,
+    database: &str,
+    migration: &str,
+    password: &str,
+) -> Result<sqlx::postgres::PgConnectOptions> {
+    // SQLx lets query parameters override URL userinfo and the database path.
+    // Resolve all provisioning options before enforcing the app's identity.
+    Ok(provision
+        .parse::<sqlx::postgres::PgConnectOptions>()?
+        .database(database)
+        .username(migration)
+        .password(password))
 }
 
 /// A self-consistent lock alone is insufficient: it must name published bytes.
@@ -689,9 +702,10 @@ pub(crate) async fn prepare_resource(
             std::process::exit(86);
         }
     }
-    let mut target = url::Url::parse(&provision)?;
-    target.set_path(db);
-    let mut conn = sqlx::PgConnection::connect(target.as_str()).await?;
+    let options = provision
+        .parse::<sqlx::postgres::PgConnectOptions>()?
+        .database(db);
+    let mut conn = sqlx::PgConnection::connect_with(&options).await?;
     conn.execute("REVOKE ALL ON SCHEMA public FROM PUBLIC")
         .await?;
     conn.execute(format!("CREATE SCHEMA IF NOT EXISTS app AUTHORIZATION {owner}").as_str())
@@ -749,6 +763,36 @@ pub(crate) async fn prepare_resource(
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod connection_tests {
+    use super::*;
+    use sqlx::{ConnectOptions, postgres::PgSslMode};
+
+    #[test]
+    fn app_identity_overrides_provision_url_and_query_parameters() {
+        for provision in [
+            "postgres://postgres:adminsecret@db.example:15432/postgres?sslmode=require&application_name=miy-worker",
+            "postgres://db.example:15432/?user=postgres&password=adminsecret&dbname=postgres&sslmode=require&application_name=miy-worker",
+            "postgres://unused:unused@db.example:15432/unused?user=unused&%75ser=postgres&password=adminsecret&dbname=postgres&sslmode=require&application_name=miy-worker",
+        ] {
+            let options = app_owner_connect_options(
+                provision,
+                "miy_app_fixture",
+                "miy_m_fixture",
+                "appsecret",
+            )
+            .unwrap();
+            assert_eq!(options.get_database(), Some("miy_app_fixture"));
+            assert_eq!(options.get_username(), "miy_m_fixture");
+            assert_eq!(options.to_url_lossy().password(), Some("appsecret"));
+            assert_eq!(options.get_host(), "db.example");
+            assert_eq!(options.get_port(), 15432);
+            assert!(matches!(options.get_ssl_mode(), PgSslMode::Require));
+            assert_eq!(options.get_application_name(), Some("miy-worker"));
+        }
+    }
 }
 
 #[cfg(test)]

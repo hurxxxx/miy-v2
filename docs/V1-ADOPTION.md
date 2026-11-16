@@ -5,7 +5,7 @@
 - 검토 대상: 공식 v1 저장소 `/projects/miy` main `188a8cef`(2026-10-12, VERSION 0.1.1). `origin/dev`(`7d845743`, 10-14)는 main보다 API 코드가 오래됐고 Workbench와 Hermes 런타임 업그레이드(v0.21.7)만 앞서 있다. 그 차이가 판단에 영향을 주는 곳만 따로 적었다.
 - 보조 조사 이력: `../ai-do/dev` `dfc7fb9e16e`(2026-11-03)은 이미 구현한 기본 UI의 참조 소스다. 2026-11-14 사용자가 지정한 최신 AI-DO 공통 기능·UX의 직접 조사 기준은 [별도 대상 목록](AI-DO-COMMON-MIGRATION.md)에 둔다. 이 문서의 v1 운영·권한 교훈과 구분한다.
 - 최초 비교 기준: v2 main `3876d43` (CLI/core 0.7.0, 번들 0.8.0). §3의 비교 열은 이 시점의 조사 결과이며 현재 구현 상태는 §7을 따른다.
-- 상태: **검토·재검증 완료. 최소 보호·그룹 앱 권한·기본 감사 조회와 앱 프레임의 구현분은 운영 반영했으며, 공통 디렉터리·업무 ACL과 후속 기능은 남아 있다.** 항목별 구현 범위는 §7, 착수 순서는 [추진 계획](PLAN.md)이 관리한다. 사용자 결정이 필요한 사항은 §5에 모았다.
+- 상태: **검토·재검증 완료. 최소 보호·그룹 앱 권한·기본 감사·앱 프레임과 공통 디렉터리·업무 ACL·작은 첨부의 첫 구현은 개발 서버에 반영했다.** 실제 환경의 전체 연결 인수와 후속 기능은 남아 있다. 항목별 구현 범위는 §7, 착수 순서는 [추진 계획](PLAN.md)이 관리한다. 사용자 결정이 필요한 사항은 §5에 모았다.
 
 v1은 Python API·Nx 모노레포·공유 DB 위에 공식 업무 앱 12종, Hermes 챗봇, RAG, Workbench까지 구현했다. 자체 dev/prod 환경은 운영했지만 고객 출시 전 단계다([PRD](PRD.md)). v2는 Rust 코어·앱별 컨테이너/DB·CLI/MCP 중심으로 새로 만든 후속 제품이다. 이 문서는 v1의 **계약·운영 규칙·실패 교훈**과 적용 ID를 관리하며 착수 순서는 PLAN에 맡긴다. v1 코드나 데이터 모델을 그대로 옮기는 계획이 아니다.
 
@@ -237,9 +237,9 @@ v1의 실행 구현을 그대로 복사하지는 않는다. 업무 앱 iframe은
 | V1-G1 | 구현분 운영 반영 | migration `0018_groups_and_app_access.sql`의 조직·수동 그룹, 주 소속, 그룹 권한(`use`·`develop`), 관리 API·화면. 변경 커밋 전 현재 관리자 권한을 잠그고 재검사 | 잠금 대기 중 회수·감사 원자성, 앱/그룹 선택 전환의 지연 응답 회귀 |
 | V1-G2 | 구현분 운영 반영 | 앱·환경별 입장 대상(`selected`/`all`), 회사 사용 중지(관리자 포함 차단, 개발자는 dev에서 수정). 사용 중지 중 실행 관리 유지와 관리자 실행 관리 목록(`appDisabled`·`canOpen`)은 2026-11-05 운영 반영. 위임 실행의 접수 응답·작업 목록/상세 권한 일치와 prod 관리자/deploy 자동 Use 제거는 2026-11-07 운영 반영 | 같은 회귀, `access_decision` 단위 테스트, [후속 검증](releases/core-review-followup-2026-11-05-validation.json) |
 | V1-G3 | 구현분 운영 반영 | `effective_grants` 뷰를 매번 계산해 다음 요청과 대기 작업에 반영(캐시 무효화 불필요) | 멤버 해제 즉시 회수 관찰 |
-| V1-G4 | 소스 후보 구현 | 안전한 사용자·그룹 DTO, 검색/페이지·현재 원사용자 멤버십, 브라우저/Rust SDK·앱 내부 선택기 | 관리 API를 앱에 노출하지 않음. [공통 기능 검증](releases/common-components-2026-11-14-validation.json)의 후보와 운영을 구분 |
-| V1-G5·G6 | 소스 후보 구현 | 앱 DB resource/grant·앱 선언 역할·현재 멤버십, 공유 revision/requestId·회수·감사·결과 조회. 대표 프로젝트/업무 앱 | 공간 관리 UI·익명 링크·소유권 복구는 별도. 앱 Use를 공유로 자동 부여하지 않음 |
-| V1-F1·F2·F4 | 작은 첨부 후보 구현 | 10MiB Storage·별도 파일 gateway·명시 승인·앱 ACL, 순차 전송·취소·참조 연결/해제·복구·raster 미리보기 | 대형 CAD·재개 전송·외부 공유 핸들·전체 백업 제품은 미구현. 자동 고아 삭제는 incomplete에만 적용 |
+| V1-G4 | 구현분 게시·반영 | 안전한 사용자·그룹 DTO, 검색/페이지·현재 원사용자 멤버십, 브라우저/Rust SDK·앱 내부 선택기 | 관리 API를 앱에 노출하지 않음. [공통 기능 검증](releases/common-components-2026-11-14-validation.json)·[0.10.0 반영](releases/pilot-0.10.0-2026-11-15-deployment.json) 완료 범위와 실제 프레임/preview 전체 인수를 구분 |
+| V1-G5·G6 | 구현분 게시·반영 | 앱 DB resource/grant·앱 선언 역할·현재 멤버십, 공유 revision/requestId·회수·감사·결과 조회. 대표 프로젝트/업무 앱 | 공간 관리 UI·익명 링크·소유권 복구는 별도. 앱 Use를 공유로 자동 부여하지 않음 |
+| V1-F1·F2·F4 | 작은 첨부 구현·반영 | 10MiB Storage·별도 파일 gateway·명시 승인·앱 ACL, 순차 전송·취소·참조 연결/해제·복구·raster 미리보기 | 대형 CAD·재개 전송·외부 공유 핸들·전체 백업 제품은 미구현. 자동 고아 삭제는 incomplete에만 적용 |
 | V1-G7 | 구현·격리 검증·운영 반영 및 CLI 게시 완료, 잔여 인수 대기 | 설치별 출처 iframe, 일회용 실행/갱신 코드, 프레임 토큰·부모 세션·릴리스 결합, 연결 승인 재검사, 화면 브리지 | [리뷰 검증](releases/app-frames-review-fixes-2026-11-12-validation.json)·[배포 후 실제 앱 확인](releases/app-frames-review-fixes-2026-11-12-deployment.json). 프레임용 CLI·번들 0.9.0 게시 완료. P2 쿠키 간섭·화면낭독 확인, P1 활성화 전 인수와 Windows 실기·정식 GitHub Release는 별도 대기. 게시 상태는 [CLI 릴리스](CLI-RELEASE.md), 다음 작업은 PLAN을 따름 |
 | V1-A1 | 일부 구현·운영 반영 | `GET /api/v1/audit`(기간·행위자·동작 접두어, id cursor), 감사 화면, migration `0019_audit_query.sql`(인덱스). 개인·그룹 권한 변경은 같은 트랜잭션에 기록하고 주 소속 변경은 이전/새 그룹을 기록. 사용자 활성 상태 변경과 앱 등록 승인으로 생기는 develop 권한도 관리자 재확인 후 기록(2026-11-05 운영 반영) | 조회·권한·원자성·검색 실패 회귀. 별도 대상 종류·결과·요약 필드와 보존 정책은 남음. 보존 기간은 PRD 미결정 |
 | V1-Q4 | 일부 구현 | CLI 후보 workflow의 `scripts/check-cli-version.py`: 게시본(`releases/windows-candidate.json`) 이후 클라이언트 빌드 입력이 바뀌면 더 높은 버전을 요구. 응답 계약은 `scripts/check-api-compat.py`로 게시 CLI 기준 추가만 허용(2026-11-05 소스) | `scripts/test-cli-version.py`, `scripts/test-api-compat.py`. 번들·템플릿 버전과 릴리스 증거의 일치는 남음 |
