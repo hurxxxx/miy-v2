@@ -49,7 +49,7 @@ Core는 `MIY_CLI_RELEASE_DIR/release-index.json`을 검증하여 `/api/v1/cli/in
 | 배포물 | 네이티브 runner |
 | --- | --- |
 | Linux x64 / ARM64 | `ubuntu-24.04` / `ubuntu-24.04-arm` |
-| macOS x64 / ARM64 | `macos-15-intel` / `macos-15` |
+| macOS x64 / ARM64 | `macos-15-intel` / `macos-26` |
 | Windows x64 MSVC | `windows-2022` |
 
 runner 명칭과 CPU 구분은 [GitHub 공식 목록](https://docs.github.com/en/actions/reference/runners/github-hosted-runners)을 따른다. Windows Server runner의 검사와 실제 Windows 11/Docker Desktop 인수를 구분한다.
