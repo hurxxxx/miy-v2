@@ -72,7 +72,7 @@ export function SupportReports({ csrf }: { csrf: string }) {
         <Field label="처리 상태"><select name="status" defaultValue={entry.status} disabled={busy}>
           {Object.entries(statuses).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
         </select></Field>
-        <Field label="조사·해결 메모"><textarea name="note" maxLength={4000} rows={4} defaultValue={entry.note} disabled={busy} /></Field>
+        <Field label="조사·해결 메모"><textarea className="ui-input" name="note" maxLength={4000} rows={4} defaultValue={entry.note} disabled={busy} /></Field>
         <Button type="submit" disabled={busy}>처리 저장</Button>
       </form>
     </details>)}

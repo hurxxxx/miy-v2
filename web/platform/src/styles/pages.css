@@ -483,6 +483,14 @@
   margin-bottom: var(--shell-space-3);
   font-size: 0.85rem;
 }
+.access-table-scroll:not(:where(.miy-app-root, .miy-app-root *)) {
+  max-width: 100%;
+  overflow-x: auto;
+}
+.support-report textarea:not(:where(.miy-app-root, .miy-app-root *)) {
+  padding: var(--shell-space-2) var(--shell-space-3);
+  resize: vertical;
+}
 .access-table:not(:where(.miy-app-root, .miy-app-root *)) {
   width: 100%;
   border-collapse: collapse;

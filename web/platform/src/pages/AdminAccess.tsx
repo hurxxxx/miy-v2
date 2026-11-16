@@ -154,44 +154,46 @@ export function GroupAdmin({ csrf, users, report, directory }: AdminAccessProps)
       ) : groups.length === 0 ? (
         <p className="ui-empty-inline">그룹이 없습니다.</p>
       ) : (
-        <table className="access-table">
-          <thead>
-            <tr>
-              <th scope="col">이름</th>
-              <th scope="col">유형</th>
-              <th scope="col">상위 조직</th>
-              <th scope="col">구성원</th>
-              <th scope="col">상태</th>
-              <th scope="col">
-                <span className="visually-hidden">동작</span>
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            {groups.map((g) => (
-              <tr key={g.id} aria-current={g.id === selected ? "true" : undefined}>
-                <td>{g.name}</td>
-                <td>{sourceLabel[g.source]}</td>
-                <td>{groups.find((p) => p.id === g.parentId)?.name ?? "—"}</td>
-                <td>{g.members}</td>
-                <td>{g.active ? "사용" : <Badge tone="warning">비활성</Badge>}</td>
-                <td className="access-actions">
-                  <Button size="sm" onClick={() => setSelected(g.id === selected ? null : g.id)} aria-expanded={g.id === selected}>
-                    구성원
-                  </Button>
-                  <Button
-                    size="sm"
-                    onClick={() =>
-                      void apply(`/api/v1/groups/${g.id}`, "PATCH", { active: !g.active }, g.active ? "그룹을 비활성화했습니다." : "그룹을 다시 사용합니다.")
-                    }
-                  >
-                    {g.active ? "비활성화" : "다시 사용"}
-                  </Button>
-                </td>
+        <div className="access-table-scroll" role="region" aria-label="그룹 목록" tabIndex={0}>
+          <table className="access-table">
+            <thead>
+              <tr>
+                <th scope="col">이름</th>
+                <th scope="col">유형</th>
+                <th scope="col">상위 조직</th>
+                <th scope="col">구성원</th>
+                <th scope="col">상태</th>
+                <th scope="col">
+                  <span className="visually-hidden">동작</span>
+                </th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {groups.map((g) => (
+                <tr key={g.id} aria-current={g.id === selected ? "true" : undefined}>
+                  <td>{g.name}</td>
+                  <td>{sourceLabel[g.source]}</td>
+                  <td>{groups.find((p) => p.id === g.parentId)?.name ?? "—"}</td>
+                  <td>{g.members}</td>
+                  <td>{g.active ? "사용" : <Badge tone="warning">비활성</Badge>}</td>
+                  <td className="access-actions">
+                    <Button size="sm" onClick={() => setSelected(g.id === selected ? null : g.id)} aria-expanded={g.id === selected}>
+                      구성원
+                    </Button>
+                    <Button
+                      size="sm"
+                      onClick={() =>
+                        void apply(`/api/v1/groups/${g.id}`, "PATCH", { active: !g.active }, g.active ? "그룹을 비활성화했습니다." : "그룹을 다시 사용합니다.")
+                      }
+                    >
+                      {g.active ? "비활성화" : "다시 사용"}
+                    </Button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
       {group && (
         <section className="access-detail" aria-label={`${group.name} 구성원`}>

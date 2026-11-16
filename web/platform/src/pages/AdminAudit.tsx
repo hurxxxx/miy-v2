@@ -146,28 +146,30 @@ export function AuditLog({ users, report }: { users: DirectoryUser[] | null; rep
       ) : entries.length === 0 ? (
         <p className="ui-empty-inline">조건에 맞는 기록이 없습니다.</p>
       ) : (
-        <table className="access-table">
-          <thead>
-            <tr>
-              <th scope="col">시각</th>
-              <th scope="col">행위자</th>
-              <th scope="col">동작</th>
-              <th scope="col">대상</th>
-            </tr>
-          </thead>
-          <tbody>
-            {entries.map((e) => (
-              <tr key={e.id}>
-                <td>{new Date(e.at).toLocaleString("ko-KR")}</td>
-                <td>{e.actorName ?? e.actor ?? "시스템"}</td>
-                <td>{describe(e.action)}</td>
-                <td>
-                  <code>{e.target ?? "—"}</code>
-                </td>
+        <div className="access-table-scroll" role="region" aria-label="감사 기록 목록" tabIndex={0}>
+          <table className="access-table">
+            <thead>
+              <tr>
+                <th scope="col">시각</th>
+                <th scope="col">행위자</th>
+                <th scope="col">동작</th>
+                <th scope="col">대상</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {entries.map((e) => (
+                <tr key={e.id}>
+                  <td>{new Date(e.at).toLocaleString("ko-KR")}</td>
+                  <td>{e.actorName ?? e.actor ?? "시스템"}</td>
+                  <td>{describe(e.action)}</td>
+                  <td>
+                    <code>{e.target ?? "—"}</code>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
       {result && result.nextCursor !== null && (
         <div className="grant-form-actions">
