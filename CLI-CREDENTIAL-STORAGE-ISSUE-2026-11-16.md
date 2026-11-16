@@ -63,6 +63,66 @@
 
 doctor의 `rustfmt` 실패와 이후 `app fmt`·`app check` 성공이 함께 관찰됐다. 이 차이의 원인도 확인하지 않았고 인증 저장소 오류와의 인과관계를 주장하지 않는다. 서버 capability 조회와 로컬 검사의 성공 역시 인증된 서버 접근 성공을 뜻하지 않는다.
 
+## 추가 관찰 — 2026-11-16 22:10~22:11 KST
+
+원인 구분을 돕기 위해 자격증명 저장소를 열지 않고 OS·실행 파일·프로세스 세션의 공개 메타데이터와 오류 발생 시간을 확인했다. **주요 추가 단서는 CLI 실행 세션이 `Background`라는 점이다.** 키체인이 실제 backend인지, 이 세션이 오류 원인인지는 아직 확인하지 않았다.
+
+### OS와 실행 파일
+
+| 명령 / 항목 | 실제 결과 |
+| --- | --- |
+| `sw_vers` | macOS `26.6.2`, build `25G83` |
+| `uname -m` / `file .miy-tools/miy` | `arm64` / `Mach-O 64-bit executable arm64` |
+| `.miy-tools/miy --version` | `miy 0.11.0` |
+| `shasum -a 256 .miy-tools/miy` | `84c10356c4589cb4284d310c90716bed41413ba6355590bb12fe53001a9af60f` |
+| CLI 파일 권한·소유자·크기 | `-rwxr-xr-x`, `edward:staff`, `17434704` bytes |
+| `codesign -dv --verbose=2 .miy-tools/miy` | `Signature=adhoc`, `flags=0x20002(adhoc,linker-signed)`, `TeamIdentifier=not set`, identifier `miy-15b00bdffb95902a` |
+| `codesign --verify --strict --verbose=2 .miy-tools/miy` | PASS, 종료 코드 0. `valid on disk`, `satisfies its Designated Requirement` |
+
+서명 검사의 PASS는 디스크상의 코드 서명 검증 결과다. 자격증명 저장소 접근 권한이나 해당 서명 방식의 적합성을 검증한 결과가 아니다. 실패 당시 사용한 바이너리를 후보 빌드와 구분할 수 있도록 해시를 기록했다.
+
+### Codex 실행 세션
+
+| 명령 / 항목 | 실제 결과 |
+| --- | --- |
+| `id -u`, `id -ru` | 둘 다 `501`; root 실행 아님 |
+| `launchctl managername` | `Background` |
+| `launchctl manageruid`, `launchctl managerpid` | `501`, `1` |
+| `stat -f 'console_owner=%Su' /dev/console` | `console_owner=edward` |
+| 환경 변수 존재 여부만 확인 | `SSH_CONNECTION`, `SSH_TTY` 존재. 값은 출력하지 않음 |
+| context/config 환경 변수 존재 여부 | `MIY_CONTEXT`, `MIY_CONFIG_DIR` 없음 |
+| 실행 부모 계보 | Python 진단 프로세스 → Codex 데몬 → Codex 데몬 → `/sbin/launchd` |
+| Codex 실행 파일 | `/Users/edward/.codex/packages/app-server-daemon/releases/0.169.0-aarch64-apple-darwin/bin/codex` |
+| Codex 부모 프로세스의 TTY | 두 프로세스 모두 `??` |
+
+프로세스 계보는 `ps`의 PID·PPID·UID·TTY·`comm`만 사용했다. 인자 전체와 환경 변수 전체는 출력하지 않았다. SSH 변수의 존재만으로 현재 SSH 접속을 통해 실행된다고 단정하지 않는다. 명확히 관찰한 사실은 launchd manager가 `Background`이며 Codex 데몬 아래에서 실행된다는 점이다.
+
+### 같은 명령의 실행 조건 비교
+
+명령은 모두 `.miy-tools/miy --context default auth status --output json`이다. Python `time.monotonic()`으로 자식 프로세스 실행부터 종료까지 측정했다.
+
+| 시작 시각 (UTC) | 조건 | 소요 시간 | 결과 |
+| --- | --- | --- | --- |
+| `2026-11-16T13:10:50.083403Z` | 기본 login shell, 비-PTY, 출력 캡처 | `13.22 ms` | FAIL, 종료 코드 7, `credential_storage_unavailable`, `details: {}`, stderr 비어 있음 |
+| `2026-11-16T13:11:20.032473Z` | non-login shell, PTY 할당, 자식 출력 캡처 | `12.56 ms` | FAIL, 같은 오류, stderr 비어 있음 |
+| `2026-11-16T13:11:48.164095Z` | non-login shell, PTY의 입출력을 CLI에 그대로 상속. `stdin_is_tty=true`, `stdout_is_tty=true` 확인 | `13.10 ms` | FAIL, 같은 오류 |
+
+PTY를 할당하고 실제 CLI 입출력을 터미널에 연결해도 재현됐다. 다만 모두 같은 Codex 실행 환경이므로 GUI 터미널 실행과 동등한 시험은 아니다. 빠른 실패는 관찰값일 뿐, 네트워크 요청 부재나 특정 내부 함수의 실패를 입증하지 않는다.
+
+같은 시점에 MCP `get_contract({})`도 재실행했고 동일한 오류와 `auth login`·`doctor --for develop`를 권하는 안내가 반환됐다. 신규 로그인, 키체인 잠금 해제, 저장소 변경 또는 환경 우회는 하지 않았다.
+
+### 서버 측 대조에 사용할 공개 로그인 요청 정보
+
+- 이전 `auth login`의 공개 `loginId`: `23a3e73c-360a-478f-8f58-55fdbaefcbef`
+- 응답의 `expiresAt`: `1794834130` = `2026-11-16T13:02:10Z` = `2026-11-16 22:02:10 KST`
+- 응답의 `expiresIn`: `300`초. 이를 역산한 발급 시각은 약 `12:57:10 UTC`이며, 정확한 서버 이벤트 시각은 별도 확인이 필요하다.
+- 승인 완료는 사용자 확인이며, 승인·교환·로컬 저장의 각 단계 성공을 서버 기록으로 검증하지는 않았다. 서버 담당자는 위 공개 요청 ID로 해당 단계의 처리 여부를 대조할 수 있다.
+- private device code, access/refresh token, credential 파일, 쿠키는 수집하거나 기록하지 않았다.
+
+### 개발자에게 전달할 비교 조건
+
+진단 필드를 추가한 후보로 **같은 UID·같은 바이너리·같은 context의 GUI 터미널 실행과 Codex `Background` 실행**을 비교하면 이번 관찰을 좁힐 수 있다. backend 초기화·자격증명 읽기·세션 갱신·자격증명 쓰기를 구분하고, 해당 OS 오류가 있을 때 안전한 숫자 코드와 오류 도메인을 남기는 것이 유용하다. 현재 정보로 임의의 `OSStatus` 값을 원인으로 지정하거나 저장소 우회를 권하지 않는다.
+
 ## 조사 시 확인할 사항
 
 아래는 후속 조사 항목이며 아직 수행 결과가 아니다. 전체 작업 순서는 기존 [추진 계획](docs/PLAN.md)을 따른다.
