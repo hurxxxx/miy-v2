@@ -50,7 +50,7 @@ def main():
             env.pop("MIY_CONTEXT", None)
 
             def run(*args, exit_code=0):
-                result = subprocess.run([cli, "--output", "json", *args], cwd=root, env=env, capture_output=True, text=True)
+                result = subprocess.run([cli, "--output", "json", *args], cwd=root, env=env, capture_output=True, text=True, encoding="utf-8")
                 assert result.returncode == exit_code, (args[0:2], result.returncode)
                 assert "PRIVATE-SENTINEL" not in result.stdout + result.stderr
                 assert not result.stderr, "unexpected CLI diagnostics"
