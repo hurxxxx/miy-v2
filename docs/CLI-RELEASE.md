@@ -6,13 +6,17 @@ CLI·Windows 설치기의 후보 빌드, 서버 다운로드 게시, 정식 GitH
 
 ## 온라인 설치 제공
 
-Core는 `MIY_CLI_RELEASE_DIR/release-index.json`을 검증하여 `/api/v1/cli/install.sh`와 `/api/v1/cli/install.ps1`을 제공한다. 각 응답은 한 번 읽은 후보의 immutable URL·아카이브/바이너리 SHA-256·버전과 설정된 `MIY_ORIGIN`을 포함한다. URL·해시는 실행 중 별도 mutable index에서 다시 읽지 않는다. 5개 CLI·2개 helper가 완성된 후보를 기존 `stage-cli-release.py`로 게시해야 하며, 미게시 상태에서는 503으로 종료한다. 온라인 스크립트는 Core에 포함되므로 서버 바이너리 교체가 필요하다. 기존 게시 패키지는 다시 쓰지 않는다.
+Core는 `MIY_CLI_RELEASE_DIR/release-index.json`을 검증하여 `/api/v1/cli/install.sh`와 `/api/v1/cli/install.ps1`을 제공한다. 각 응답은 한 번 읽은 후보의 immutable URL·아카이브/바이너리 SHA-256·버전과 설정된 `MIY_ORIGIN`을 포함한다. URL·해시는 실행 중 별도 mutable index에서 다시 읽지 않는다. 5개 CLI·2개 helper가 완성된 후보를 기존 `stage-cli-release.py`로 게시해야 하며, 미게시 상태나 실행 중인 Core와 index의 CLI 버전이 다르면 503으로 종료한다. 버전 변경은 모든 target을 먼저 준비한 뒤 Core·worker를 중지한 동안 catalog와 바이너리를 함께 교체한다. 복구할 때도 이전 Core·catalog를 함께 복원한다. 온라인 스크립트는 Core에 포함되므로 서버 바이너리 교체가 필요하다. 기존 게시 패키지는 다시 쓰지 않는다.
 
 설치 화면은 명령 한 줄을 우선 표시하고, 패키지·GUI 설치기 직접 다운로드는 접힌 추가 선택지로 제공한다. `scripts/install-cli-online.sh`·`.ps1`은 서버가 값을 넣는 템플릿이므로 저장소 원문을 직접 실행하지 않는다. 사용법과 사용자 PATH 정책은 [RUNNING](RUNNING.md#설치와-발견)에 있다.
 
-## miy.works 0.11.0 게시
+## miy.works 0.12.0 게시
 
-**다음 후보: CLI 0.12.0.** 비로그인 고장 신고·로컬 재전송·관리자 처리와 macOS 저장소 오류 진단을 구현하고 Linux CLI/실제 격리 DB·웹 검사를 통과했다([검증 기록](releases/support-reports-2026-11-16-validation.json), [사용 계약](SUPPORT-REPORTS.md)). SDK 번들은 0.11.0을 유지하며 새 서버 기능은 schema 24를 요구한다. 아직 게시·실서버 반영하지 않았고 Mac Keychain 복구도 미확인이다. 아래 0.11.0 게시 기록을 후보 결과로 바꾸지 않는다.
+2026-11-16에 `06f2fd7988b818017d5a690ec54f5e856aec17eb`의 [CLI CI 43884479668](https://github.com/hurxxxx/miy-v2/actions/runs/43884479668)에서 5개 target·Linux helper 2개를 검증하고 게시했다. Core·worker·웹과 schema 24도 반영했다. 비로그인 고장 신고·로컬 재전송·관리자 처리, macOS 저장소 오류 진단이 포함된다([사용 계약](SUPPORT-REPORTS.md), [반영 기록](releases/support-reports-2026-11-16-deployment.json)). SDK 번들은 0.11.0 바이트를 유지한다. 공개 HTTPS 설치·실제 비로그인 신고와 관리자 처리·CLI 인증·생성 stdio MCP를 이 Linux 호스트에서 확인했다. 실제 Mac Keychain 원인·복구, 외부 Windows/macOS 데스크톱 인수는 아직 미확인이다.
+
+Core 빌드 입력은 `ec65ce5`이며 CLI 소스 `06f2fd7`은 Windows 검사기의 UTF-8 디코딩만 바꾼다. 웹은 모바일 표 너비·신고 메모 표시를 보완한 `f408261`이다. Workflow `33b6f93`은 ARM runner 배정 실패 후 macOS 26을 선택하며 CLI 후보는 `06f2fd7`로 고정했다. GitHub 정식 Release와 Windows GUI EXE는 게시하지 않았다. 기존 프로젝트는 새 전역 CLI에서 `miy app setup`을 실행하고 에이전트를 재시작해야 프로젝트 CLI·MCP도 갱신된다.
+
+## miy.works 0.11.0 게시 이력
 
 2026-11-16에 `9897f6385ff1228c43fbc28a4f42b4d7a75f59a4`의 [CLI CI 43865661806](https://github.com/hurxxxx/miy-v2/actions/runs/43865661806)를 실행해 5개 target과 Linux helper 2개를 검증하고 `https://portal.miy.works`에 게시했다. `/cli/install`에서 curl/Bash 또는 PowerShell 한 줄로 설치한다. Core·설치 화면과 공개 HTTPS 설치 검증은 [반영 기록](releases/online-cli-2026-11-16-deployment.json)에 있다. 정식 GitHub Release와 0.11.0 GUI EXE는 게시하지 않았다.
 

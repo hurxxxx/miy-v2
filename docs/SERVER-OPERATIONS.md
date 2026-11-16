@@ -7,7 +7,7 @@
 | 항목 | 새 호스트 구성 |
 | --- | --- |
 | 서버 | `185.223.207.238`, Ubuntu 26.04.1 LTS, 3 vCPU, 약 12GiB RAM |
-| 소스 | `/projects/miy-v2/prod`, 최초 설치 `9897f6385ff1228c43fbc28a4f42b4d7a75f59a4`, Core/CLI 0.11.0 |
+| 소스 | `/projects/miy-v2/prod`, Core `ec65ce5`, 웹 `f408261`, 게시 CLI `06f2fd7`; Core/CLI 0.12.0, SDK 번들 0.11.0, schema 24 |
 | 업무 포털 | `https://portal.miy.works` |
 | 관리·CLI 승인·IdP | `https://console.miy.works` |
 | 내부 앱 개발 포털 | `https://dev.miy.works` |
@@ -64,6 +64,8 @@ nginx -t && systemctl reload nginx
 ```
 
 설치·검증 결과는 `/srv/miy-prod/evidence`와 이 저장소의 `docs/releases/miy-works-setup-2026-11-16.json`에 기록한다. 2026-11-16에 CLI 0.11.0의 5개 OS/CPU 패키지와 Linux helper 2개를 CI 43865661806에서 검증하여 `/srv/miy-prod/cli-downloads`에 게시했다. [CLI 설치 안내](https://portal.miy.works/cli/install)는 curl/Bash와 PowerShell 한 줄 설치를 제공한다. Core의 `/api/v1/cli/install.sh`·`install.ps1`은 현재 `MIY_ORIGIN`과 immutable 패키지 해시로 생성된다. Core 바이너리와 웹을 함께 반영했고, 이전 바이너리·웹은 `/srv/miy-prod/evidence/online-cli-20261116/before`에 보관했다. DB·계정·주소 설정과 앱 런타임은 변경하지 않았다. 상세 출처·검사·미실행 범위는 [온라인 설치 반영 기록](releases/online-cli-2026-11-16-deployment.json)에 있다. Windows GUI EXE는 이 호스트에 게시하지 않았다.
+
+2026-11-16 후속 반영으로 CLI 0.12.0의 5개 패키지·helper 2개와 Core/worker·관리 화면·schema 24를 게시했다([신고 기능 반영 기록](releases/support-reports-2026-11-16-deployment.json)). 현재 설치 명령은 같은 주소에서 0.12.0을 제공한다. 비로그인 신고는 DB에 저장되며 콘솔의 플랫폼 관리 → 고장 신고에서 관리한다. Core DB 백업의 44개 표·510개 행을 별도 PostgreSQL로 복원하고 23→24 migration을 확인했다. 이전 Core·웹·CLI index와 DB 백업은 `/srv/miy-prod/evidence/support-reports-20261116`에 있다. Core와 CLI catalog는 버전이 같아야 하므로 교체·복구 시 함께 반영한다. 이전 DB로 되돌려 신규 신고를 잃지 않도록 additive schema 24·신고 데이터는 보존한다. 계정·주소·기존 앱은 유지했고 공개 설치·신고 접수/처리·OIDC·CLI·MCP·기존 앱 프레임을 확인했다. 실제 Mac 자격증명 저장소 복구는 별도 확인이 남아 있다.
 
 ---
 

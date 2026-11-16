@@ -1,6 +1,6 @@
 # CLI 고장 신고
 
-소스 후보 CLI 0.12.0과 core schema 24의 기능이다. 게시·서버 반영 여부는 [CLI 릴리스](CLI-RELEASE.md)와 [서버 운영 안내](SERVER-OPERATIONS.md)를 따른다. SDK 번들은 0.11.0 바이트를 유지한다.
+CLI 0.12.0과 core schema 24의 기능이며 2026-11-16 miy.works에 게시·반영했다([반영 기록](releases/support-reports-2026-11-16-deployment.json)). 게시·서버 반영 여부는 [CLI 릴리스](CLI-RELEASE.md)와 [서버 운영 안내](SERVER-OPERATIONS.md)를 따른다. SDK 번들은 0.11.0 바이트를 유지한다.
 
 ## 사용자
 
@@ -50,9 +50,9 @@ miy report --outbox "$HOME/miy-reports" retry <신고-UUID>
 
 [클라이언트 관찰 기록](../CLI-CREDENTIAL-STORAGE-ISSUE-2026-11-16.md)에 CLI 0.11.0과 Codex Background 세션의 실패가 있다. 서버 대조에서는 해당 device 요청이 `consumed`이고 세션·refresh 자격증명 발급이 완료됐다. 교환 후 쓰기 실패는 다른 오류 코드로 반환하는 0.11.0 코드와 대조하면 기존 자격증명을 읽는 경로로 좁힐 수 있다. 실제 backend와 OS 거부 원인은 아직 미확인이다.
 
-0.12.0 후보는 저장소 오류에서 `operation`(read/write/remove), 허용된 `reason`, Keychain 실패의 `backend=macos_keychain`과 숫자 `osStatus`를 보존한다. 교환 후 기존 자격증명 읽기가 실패하면 새 서버 세션의 회수를 시도하고 결과도 반환한다. 저장소가 고장 나면 MCP가 반복 로그인을 권하지 않는다. Keychain 항목을 삭제하거나 backend를 몰래 바꾸지 않는다.
+0.12.0은 저장소 오류에서 `operation`(read/write/remove), 허용된 `reason`, Keychain 실패의 `backend=macos_keychain`과 숫자 `osStatus`를 보존한다. 교환 후 기존 자격증명 읽기가 실패하면 새 서버 세션의 회수를 시도하고 결과도 반환한다. 저장소가 고장 나면 MCP가 반복 로그인을 권하지 않는다. Keychain 항목을 삭제하거나 backend를 몰래 바꾸지 않는다.
 
-후보를 배포한 뒤 같은 OS 사용자·context에서 **같은 바이너리**의 일반 GUI 터미널과 Codex 실행을 비교해야 한다. 전역 CLI 갱신만으로 이미 설치한 프로젝트 `.miy-tools/miy`와 실행 중인 MCP가 갱신되는 것은 아니다. 프로젝트 폴더에서 새 전역 `miy app setup`을 실행하고 에이전트를 다시 시작한 뒤 다음을 실행한다.
+게시 CLI로 갱신한 뒤 같은 OS 사용자·context에서 **같은 바이너리**의 일반 GUI 터미널과 Codex 실행을 비교해야 한다. 전역 CLI 갱신만으로 이미 설치한 프로젝트 `.miy-tools/miy`와 실행 중인 MCP가 갱신되는 것은 아니다. 프로젝트 폴더에서 새 전역 `miy app setup`을 실행하고 에이전트를 다시 시작한 뒤 다음을 실행한다.
 
 ```sh
 ./.miy-tools/miy auth status --output json

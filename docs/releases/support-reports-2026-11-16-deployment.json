@@ -1,0 +1,198 @@
+{
+  "status": "PASS",
+  "completedAt": "2026-11-16T14:50:48.556234+00:00",
+  "origin": "https://portal.miy.works",
+  "version": "0.12.0",
+  "bundleVersion": "0.11.0",
+  "sourceCommit": "06f2fd7988b818017d5a690ec54f5e856aec17eb",
+  "coreSourceCommit": "ec65ce52d00c56f52249bb0b2f869ffaa4c7a8c9",
+  "webSourceCommit": "f408261dc9c30bb5afcde2ee89ff488e7b71dd9f",
+  "sourceRelationship": "06f2fd7 changes only the Windows test subprocess UTF-8 decoding; compiled Core and client inputs equal ec65ce5. Web follow-up f408261 contains admin table scroll containment and report textarea styling.",
+  "ci": {
+    "runId": 43884479668,
+    "url": "https://github.com/hurxxxx/miy-v2/actions/runs/43884479668",
+    "status": "PASS",
+    "workflowCommit": "33b6f93773b2da143f44f6f8e0557f33b6d28ee9",
+    "candidateCommit": "06f2fd7988b818017d5a690ec54f5e856aec17eb",
+    "nativeTargets": 5,
+    "linuxHelpers": 2,
+    "githubReleasePublished": false,
+    "nativeJobConclusions": {
+      "candidate": "success",
+      "x86_64-apple-darwin": "success",
+      "aarch64-apple-darwin": "success",
+      "x86_64-unknown-linux-gnu": "success",
+      "aarch64-unknown-linux-gnu": "success",
+      "x86_64-pc-windows-msvc": "success",
+      "aggregate": "success",
+      "publish": "skipped"
+    }
+  },
+  "changes": [
+    "Anonymous explicit CLI report submission, private local outbox and same-ID retry without opening the credential store",
+    "Schema 24 PostgreSQL report storage with bounded input and global intake limits; current administrators alone read and triage",
+    "Console report list, diagnostics, status and revision-protected notes",
+    "Safe credential operation, reason and macOS OSStatus diagnostics; newly issued session revocation attempt on failed prior-credential read",
+    "MCP storage failures no longer recommend repeating browser approval",
+    "Five native CLI 0.12.0 packages and two Linux helpers published; immutable SDK bundle 0.11.0 unchanged"
+  ],
+  "sourceValidation": "support-reports-2026-11-16-validation.json",
+  "validation": [
+    {
+      "status": "PASS",
+      "command": "core-backup.py create/verify with explicit miy-prod-postgres-1 and isolated restore",
+      "evidence": "backup-restore-rehearsal.json",
+      "scope": "44 tables, 510 rows restored exactly; schema 23 to 24 rehearsed on disposable PostgreSQL"
+    },
+    {
+      "status": "PASS",
+      "command": "python3 /root/miy-setup/apply-support-reports.py",
+      "evidence": "deploy-result.json",
+      "scope": "Stopped Core/worker, published complete matching CLI catalog, retained additive schema 24, atomically replaced Core and web"
+    },
+    {
+      "status": "PASS",
+      "command": "python3 scripts/check-cli-downloads.py --origin https://portal.miy.works --expected-commit 06f2fd7988b818017d5a690ec54f5e856aec17eb",
+      "evidence": "download-result.json",
+      "scope": "Public HTTPS identity, seven package/helper downloads and SHA-256"
+    },
+    {
+      "status": "PASS",
+      "command": "python3 /root/miy-setup/check-support-install.py",
+      "evidence": "install-result.json",
+      "scope": "Actual curl one-line install in empty Linux home, reinstall, PATH, unauthenticated server context"
+    },
+    {
+      "status": "PASS",
+      "command": "node /root/miy-setup/check-support-live.mjs",
+      "evidence": "live-report-result.json",
+      "scope": "Published CLI anonymous report/retry, unauthenticated read denial, ordinary administrator OIDC, UI resolution, desktop/mobile layout"
+    },
+    {
+      "status": "PASS",
+      "command": "node check-admin-connection.mjs with published CLI and private admin credentials",
+      "evidence": "admin-connection/result.json",
+      "scope": "Active administrator OIDC, purpose boundaries, device login, doctor, local project and generated stdio MCP; no new remote app"
+    },
+    {
+      "status": "PASS",
+      "command": "node check-live-ui.mjs",
+      "evidence": "live-ui-result.json",
+      "scope": "Public install page commands, copy and responsive layout"
+    },
+    {
+      "status": "PASS",
+      "command": "node check-frame-after.mjs",
+      "evidence": "frame-after-result.json",
+      "scope": "Existing pilot app, ordinary OIDC and app frame"
+    },
+    {
+      "status": "PASS",
+      "command": "pnpm typecheck; isolated vite build; playwright admin-access.spec.ts",
+      "evidence": "web-responsive-deploy.json",
+      "scope": "Responsive web follow-up: type checking, 12 admin browser checks, isolated build and atomic web index replacement"
+    },
+    {
+      "status": "PASS",
+      "command": "final host state check",
+      "evidence": "final-state.json",
+      "scope": "Installed/running Core hashes, worker, web, schema, public catalog, updated global CLI and existing app"
+    },
+    {
+      "status": "PASS",
+      "command": "runuser -u miy -- bash scripts/check-static.sh web",
+      "evidence": "web-responsive-all.log",
+      "sourceCommit": "f408261dc9c30bb5afcde2ee89ff488e7b71dd9f",
+      "scope": "Type checking, isolated production builds, all 113 web browser checks after responsive fixes"
+    },
+    {
+      "status": "PASS",
+      "command": "runuser -u miy -- env CARGO_BUILD_JOBS=2 CARGO_PROFILE_DEV_DEBUG=0 MIY_RUNTIME_REGRESSION_DIR=<private-isolated> python3 scripts/runtime-regression/run.py",
+      "evidence": "runtime-followup-result.json",
+      "scope": "All 131 isolated PostgreSQL/Docker/runtime/CLI observations passed, including six CLI observations; cleanup passed. Compiled Core source hashes match deployed candidate; publication docs were uncommitted. Earlier CI failure did not reproduce; original cause remains unconfirmed."
+    }
+  ],
+  "failuresRetained": [
+    {
+      "status": "FAIL",
+      "runId": 43877286280,
+      "reason": "Windows fixture decoded UTF-8 JSON with CP1252. Test-only encoding fix committed as 06f2fd7; first overall run then cancelled"
+    },
+    {
+      "status": "FAIL",
+      "runId": 43878986454,
+      "attempt": 1,
+      "evidence": "ci-attempt2.json",
+      "reason": "macOS ARM hosted runner not acquired after multiple attempts; Intel job cancelled. Failed jobs rerun without changing candidate"
+    },
+    {
+      "status": "FAIL",
+      "runId": 43878986454,
+      "attempt": 2,
+      "evidence": "ci-attempt3.json",
+      "reason": "Intel passed on retry; ARM again could not acquire a hosted runner. Workflow 33b6f93 selects macOS 26 for ARM; new run builds the same source candidate"
+    },
+    {
+      "status": "FAIL",
+      "evidence": "live-ui-result-attempt1.json",
+      "reason": "Initial Core 0.12.0 with old catalog 0.11.0 made installation endpoint return 503. Old Core/web restored and installer verified; additive schema/data retained. Final deployment coordinates complete CLI catalog with Core"
+    },
+    {
+      "status": "FAIL",
+      "evidence": "live-report-result-attempt1.json",
+      "reason": "Actual report intake and admin triage passed, but pre-existing admin audit table expanded the mobile page to 750px. Responsive table wrappers and report textarea styling fixed in f408261; full live report flow reran successfully. Read-only layout investigation retained in live-report-layout-result.json."
+    },
+    {
+      "status": "FAIL",
+      "runId": 43884460062,
+      "reason": "Separate CLI foundation run at workflow-only commit 33b6f93 could not acquire macOS 15 ARM runner. Other foundation jobs passed; release candidate 43884479668 passed all five native targets including macOS 26 ARM."
+    },
+    {
+      "status": "FAIL",
+      "runId": 43884460086,
+      "evidence": "ci-runtime-workflow-followup-failure.log",
+      "reason": "Separate runtime regression at workflow-only commit 33b6f93 reported one CLI-suite observation failure. CI printed only the tail and did not retain that observation detail. Same runtime inputs passed CI 43878987576 at 06f2fd7; local isolated follow-up recorded separately."
+    },
+    {
+      "status": "FAIL",
+      "evidence": "runtime-followup.log",
+      "reason": "Local follow-up preflight lacked python:3.14-slim; pulled required test image and retried in a new isolated directory."
+    }
+  ],
+  "notRun": [
+    {
+      "status": "NOT_RUN",
+      "scope": "Actual incident Mac Keychain recovery and GUI terminal versus Codex Background comparison",
+      "reason": "Remote client is not attached. Native CI does not establish actual user Keychain cause or recovery"
+    },
+    {
+      "status": "NOT_RUN",
+      "scope": "External Windows 11/macOS desktop online installation and Codex/Claude acceptance",
+      "reason": "Native package CI and local Linux HTTPS acceptance are scoped separately"
+    },
+    {
+      "status": "NOT_RUN",
+      "scope": "GitHub Release, Windows GUI EXE publication and new remote app deployment",
+      "reason": "This delivery publishes the CLI package catalog and reporting server; existing app and generated local MCP were checked"
+    }
+  ],
+  "deployment": {
+    "evidenceDirectory": "/srv/miy-prod/evidence/support-reports-20261116",
+    "backupDirectory": "/srv/miy-prod/evidence/support-reports-20261116/before",
+    "coreBackupDirectory": "/srv/miy-prod/evidence/support-reports-20261116/core-backup",
+    "schema": 24,
+    "serverSha256": "8739c995ff8f3c0fb9ea494f6574ac46471979b24e0a5ed379e915498301fede",
+    "webIndexSha256": "a1ba8c1dc5a8770ce47ab795795735e6c114e23c3dbf3609a959d573acc55666",
+    "reportVerificationId": "bbb5a437-f1e1-4ed5-837b-2973190ee1d1",
+    "earlierVerificationReportId": "d81cdce1-1e51-4232-9747-3d1b90b171a8",
+    "reportVerificationStatus": "resolved",
+    "rollback": "Restore prior Core, web index and CLI catalog together; retain schema 24 and reports. Do not restore an older DB over newer reports.",
+    "initialWebIndexSha256": "57eb498dcc63d4151cdf4de3df6a2c5f212fb45683b8f3fad8cd04e6b96db5c1",
+    "webSourceFiles": {
+      "web/platform/src/pages/AdminAccess.tsx": "3c6b79629ed8bced604d754f54015fbcf7acbaefb40b213ad4597ce06e4f6b5c",
+      "web/platform/src/pages/AdminAudit.tsx": "8b11e53ea11f0ab77191a316edb4a47078f9e758e808dacaa5832d2bc6006ca2",
+      "web/platform/src/pages/AdminReports.tsx": "a53676462a2710ba7d787c917ff4a3bd46edda814f1059310e40d81733fedc7f",
+      "web/platform/src/styles/pages.css": "98248dee6ad11adbf2e1510602a3c6f9ed8e62452eede0aee3883765849fafb8"
+    }
+  }
+}

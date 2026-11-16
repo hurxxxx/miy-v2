@@ -151,7 +151,7 @@ PTY를 할당하고 실제 CLI 입출력을 터미널에 연결해도 재현됐�
 
 1. 같은 사용자·프로젝트·실행 파일로 일반 터미널과 Codex 실행 환경에서 `auth status`를 비교한다. 현재는 Codex의 비-PTY·PTY 실행 결과만 있다.
 2. 자격증명 값이나 파일 내용을 노출하지 않는 진단으로 실제 backend, 실패한 작업 종류와 OS 오류 코드를 확인한다. 현재의 빈 `details`와 일반 메시지만으로는 복구 조치를 정하기 어렵다.
-3. 브라우저 승인 후 로컬 저장이 실패하는 경우의 로그인 요청·서버 세션 상태와 안전한 복구 절차를 확인한다. 이번 관찰만으로 세션 교환 성공 여부나 새 로그인 필요 여부를 단정하지 않는다.
+3. 서버 대조로 이번 요청의 세션 교환 완료는 확인했다. 남은 확인은 새 진단 CLI로 실제 Mac의 기존 자격증명 읽기 실패 원인을 확인하고 저장소 접근을 복구하는 것이다. 새 로그인 필요 여부는 복구 후 상태로 판단한다.
 4. 원인을 확인한 뒤 `auth status`, MCP `get_contract`·`search_api`, `component sync`를 다시 실행한다. 실패 기록을 지우지 않고 후속 결과를 추가한다.
 5. 인증 복구 후 Todo 구현·검사와 등록/승인·preview·서버 빌드·dev 배포를 진행하고 실제 release/image 및 브라우저 결과를 기록한다.
 
@@ -164,3 +164,23 @@ PTY를 할당하고 실제 CLI 입출력을 터미널에 연결해도 재현됐�
 - **NOT_RUN:** 실제 DB·브라우저 업무 통합 검사. 기본 템플릿 검사 PASS를 해당 범위로 확대하지 않는다.
 
 관련 기준: [플랫폼 개발 규칙](AGENTS.md), [변경별 검사 지도](docs/CHECKS.md). 이 문서는 사용자 요청에 따라 저장소 루트에 단일 오류 보고서로 남긴다.
+
+
+## 진단 CLI 게시·서버 반영 — 2026-11-16
+
+CLI 0.12.0을 `https://portal.miy.works`에 게시했고 비로그인 신고 서버·관리 화면도 반영했다([반영 기록](docs/releases/support-reports-2026-11-16-deployment.json)). 앞선 NOT_RUN은 당시 클라이언트 조사의 범위이며 서버 소스 수정·패키지 게시는 후속으로 완료했다. 실제 사용자 Mac에서 저장소 원인을 확정하거나 복구한 것은 아니다.
+
+```sh
+curl -fsSL https://portal.miy.works/api/v1/cli/install.sh | bash
+# 기존 앱 프로젝트 폴더에서 실행
+miy app setup
+```
+
+Codex/Claude Code를 재시작하고 같은 프로젝트 CLI를 일반 GUI 터미널과 Codex 실행 환경에서 각각 확인한다. 로그인 승인을 반복하기 전에 아래 진단을 보낸다. 신고는 자격증명 저장소를 열지 않는다.
+
+```sh
+./.miy-tools/miy auth status --output json
+./.miy-tools/miy report send --message "인증 저장소 오류: 실행 환경(GUI 터미널/Codex)과 증상"
+```
+
+서버의 실제 공개 HTTPS 검사에서는 새 설치의 비로그인 신고·동일 ID 재전송과 관리자 조회·해결 처리를 확인했다. native macOS CI 통과를 사용자 Keychain 복구 증거로 대신하지 않는다.
