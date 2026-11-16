@@ -10,9 +10,13 @@ Core는 `MIY_CLI_RELEASE_DIR/release-index.json`을 검증하여 `/api/v1/cli/in
 
 설치 화면은 명령 한 줄을 우선 표시하고, 패키지·GUI 설치기 직접 다운로드는 접힌 추가 선택지로 제공한다. `scripts/install-cli-online.sh`·`.ps1`은 서버가 값을 넣는 템플릿이므로 저장소 원문을 직접 실행하지 않는다. 사용법과 사용자 PATH 정책은 [RUNNING](RUNNING.md#설치와-발견)에 있다.
 
-## miy.works 0.12.0 게시
+## miy.works 0.12.1 게시
 
-**다음 후보 0.12.1:** [CLI 업데이트와 MCP 갱신](RUNNING.md#cli-업데이트와-mcp-갱신)을 CLI·MCP·생성 가이드·설치 화면에 통합한다. `miy describe --topic updates`와 로컬 MCP `get_cli_help({"topic":"updates"})`는 로그인·설정 읽기 없이 안내하며, 원격 HTTP MCP는 인증된 `get_cli_update_guide`를 제공한다. 전역 설치만으로 프로젝트 실행 파일·실행 중 MCP가 바뀌지 않는 점과 기존 인증 보존을 명시한다. SDK 번들은 0.11.0 바이트를 유지한다. 아직 아래 게시 기록을 후보 결과로 대체하지 않는다.
+[CLI 업데이트와 MCP 갱신](RUNNING.md#cli-업데이트와-mcp-갱신)을 CLI·MCP·생성 가이드·설치 화면에 반영했다. `miy describe --topic updates`와 로컬 MCP `get_cli_help({"topic":"updates"})`는 로그인·네트워크·설정 읽기 없이 안내한다. 원격 HTTP MCP는 인증된 `get_cli_update_guide`에서 설정된 포털의 설치 주소를 함께 제공한다. 전역 설치 → 프로젝트별 새 전역 `miy app setup` → 에이전트 재시작 → 버전/인증 상태 확인 순서이며, 업데이트만으로 재로그인을 요구하지 않는다.
+
+`fa0d48de28014397aca2b91f7c53529fa60cf42a`의 [CLI CI 43979915250](https://github.com/hurxxxx/miy-v2/actions/runs/43979915250)에서 5개 네이티브 패키지·helper 2개를 검증한 뒤 miy.works 다운로드와 Core·worker·웹에 반영했다([반영 기록](releases/cli-updates-2026-11-16-deployment.json)). SDK 번들 0.11.0과 schema 24는 유지한다. 공개 HTTPS 설치·재설치, 활성 관리자 device 인증, 생성 stdio MCP 안내, HTTP MCP OAuth와 새 안내 도구, 실제 설치 화면을 확인했다. 실제 사용자 Mac 저장소 복구·외부 데스크톱 인수·정식 GitHub Release는 별도다.
+
+## miy.works 0.12.0 게시
 
 2026-11-16에 `06f2fd7988b818017d5a690ec54f5e856aec17eb`의 [CLI CI 43884479668](https://github.com/hurxxxx/miy-v2/actions/runs/43884479668)에서 5개 target·Linux helper 2개를 검증하고 게시했다. Core·worker·웹과 schema 24도 반영했다. 비로그인 고장 신고·로컬 재전송·관리자 처리, macOS 저장소 오류 진단이 포함된다([사용 계약](SUPPORT-REPORTS.md), [반영 기록](releases/support-reports-2026-11-16-deployment.json)). SDK 번들은 0.11.0 바이트를 유지한다. 공개 HTTPS 설치·실제 비로그인 신고와 관리자 처리·CLI 인증·생성 stdio MCP를 이 Linux 호스트에서 확인했다. 실제 Mac Keychain 원인·복구, 외부 Windows/macOS 데스크톱 인수는 아직 미확인이다.
 

@@ -1,9 +1,9 @@
 {
   "schemaVersion": 1,
   "origin": "https://portal.miy.works",
-  "version": "0.12.0",
+  "version": "0.12.1",
   "bundleVersion": "0.11.0",
-  "sourceCommit": "06f2fd7988b818017d5a690ec54f5e856aec17eb",
-  "cliReleaseRun": 43884479668,
-  "record": "support-reports-2026-11-16-deployment.json"
+  "sourceCommit": "fa0d48de28014397aca2b91f7c53529fa60cf42a",
+  "cliReleaseRun": 43979915250,
+  "record": "cli-updates-2026-11-16-deployment.json"
 }

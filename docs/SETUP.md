@@ -623,6 +623,8 @@ git commit -m 'Initialize setup check application'
 
 ## 10. 개발 PC용 CLI 다운로드 게시 — 선택
 
+이미 설치한 개발 PC는 같은 설치 명령을 다시 실행한 뒤, 각 프로젝트에서 새 전역 CLI로 `miy app setup`을 실행하고 Codex·Claude Code를 재시작한다. 기존 인증은 보존한다. 상세 순서와 CLI·MCP에서 안내를 조회하는 방법은 [CLI 업데이트와 MCP 갱신](RUNNING.md#cli-업데이트와-mcp-갱신)을 따른다.
+
 §9까지는 GitHub Actions/Release 권한 없이 가능하다. 여러 PC에 소스 빌드 없이 설치하거나 `app dev --runtime docker`의 DB tunnel helper를 제공하려면 **동일 소스의 전체 CLI aggregate**를 게시한다. 브라우저의 `/cli/install`은 그 후 Linux·macOS의 curl/Bash와 Windows의 PowerShell 한 줄 설치 명령을 제공한다. 개발 PC에서 패키지를 수동으로 내려받거나 압축을 풀 필요가 없다. Windows GUI EXE는 추가 선택이고 ZIP/PowerShell만으로도 설치할 수 있다.
 
 GitHub CLI가 설치되고 해당 저장소 Actions 실행 권한이 있는 작업 PC에서 후보를 만든다. 이 선택 단계에는 Python 3.11 이상도 필요하다. 이 명령은 GitHub Release를 공개하지 않는다. 작업 PC의 실제 clone 경로와 **서버 설치 시 기록한 40자리 commit**을 넣는다. 현재 PC의 HEAD를 대신 사용하지 않는다.

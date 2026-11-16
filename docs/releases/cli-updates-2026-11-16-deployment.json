@@ -1,0 +1,181 @@
+{
+  "status": "PASS",
+  "completedAt": "2026-11-16T23:50:57.055647+00:00",
+  "origin": "https://portal.miy.works",
+  "version": "0.12.1",
+  "bundleVersion": "0.11.0",
+  "sourceCommit": "fa0d48de28014397aca2b91f7c53529fa60cf42a",
+  "coreSourceCommit": "fa0d48de28014397aca2b91f7c53529fa60cf42a",
+  "webSourceCommit": "fa0d48de28014397aca2b91f7c53529fa60cf42a",
+  "schema": 24,
+  "ci": {
+    "runId": 43979915250,
+    "url": "https://github.com/hurxxxx/miy-v2/actions/runs/43979915250",
+    "status": "PASS",
+    "candidateCommit": "fa0d48de28014397aca2b91f7c53529fa60cf42a",
+    "nativeTargets": 5,
+    "linuxHelpers": 2,
+    "githubReleasePublished": false,
+    "jobConclusions": {
+      "candidate": "success",
+      "aarch64-unknown-linux-gnu": "success",
+      "x86_64-unknown-linux-gnu": "success",
+      "x86_64-pc-windows-msvc": "success",
+      "x86_64-apple-darwin": "success",
+      "aarch64-apple-darwin": "success",
+      "aggregate": "success",
+      "publish": "skipped"
+    }
+  },
+  "changes": [
+    "Shared offline CLI update guide exposed by describe --topic updates and local MCP get_cli_help topic updates",
+    "Authenticated HTTP MCP get_cli_update_guide returns the guide and configured portal install URL",
+    "Install page, generated CLI manuals and both agent skill references explain global reinstall, per-project setup, restart and conditional reauthentication",
+    "Same-bundle app upgrade reports managed guidance conflicts as setup_failed and preserves files",
+    "SDK bundle 0.11.0, schema 24 and configured domain/IP-port support retained"
+  ],
+  "sourceValidation": "cli-updates-2026-11-16-validation.json",
+  "sourceRelationship": "Identical runtime inputs to locally validated 687431b before rebase; only compose/setup script changes from ef6404d were added.",
+  "validation": [
+    {
+      "status": "PASS",
+      "command": "python3 /root/miy-setup/apply-cli-updates.py",
+      "evidence": "deploy-result.json",
+      "scope": "Matching Core/catalog and atomic web replacement; schema 24 retained without migration"
+    },
+    {
+      "status": "PASS",
+      "command": "python3 scripts/check-cli-downloads.py --origin https://portal.miy.works --expected-commit fa0d48de28014397aca2b91f7c53529fa60cf42a",
+      "evidence": "download-result.json",
+      "scope": "All five native archives and both Linux helpers downloaded over public HTTPS with expected SHA-256"
+    },
+    {
+      "status": "PASS",
+      "command": "python3 /root/miy-setup/check-updates-install.py",
+      "evidence": "install-result.json",
+      "scope": "Actual curl install into isolated empty Linux home, repeat install with preserved context/profile and new shell PATH"
+    },
+    {
+      "status": "PASS",
+      "command": "node check-admin-connection.mjs with published CLI and private admin credentials",
+      "evidence": "admin-connection/result.json",
+      "scope": "Ordinary administrator OIDC, device login, purpose boundaries, generated stdio MCP; update help equals CLI and both agent guide files"
+    },
+    {
+      "status": "PASS",
+      "command": "node check-http-mcp.mjs",
+      "evidence": "mcp-result.json",
+      "scope": "HTTP MCP PKCE authentication, matching issuer/audience, new get_cli_update_guide result with actual portal installation URL"
+    },
+    {
+      "status": "PASS",
+      "command": "node check-live-ui.mjs",
+      "evidence": "live-ui-result.json",
+      "scope": "Public install/update instructions, exact copied commands, manual download links, desktop and mobile layout"
+    },
+    {
+      "status": "PASS",
+      "command": "node check-frame-after.mjs",
+      "evidence": "frame-after-result.json",
+      "scope": "Existing pilot app frame and ordinary portal/console/dev SSO"
+    },
+    {
+      "status": "PASS",
+      "command": "python3 /root/miy-setup/finish-updates-rollout.py",
+      "evidence": "final-state.json",
+      "scope": "Published global CLI, running Core/worker hashes, web, schema, three healthy origins and existing app"
+    },
+    {
+      "status": "PASS",
+      "command": "runuser -u miy -- bash scripts/check-static.sh scripts",
+      "evidence": "scripts-after-pull.log",
+      "scope": "Re-ran after merging ef6404d setup state-path and DB readiness changes; runtime build inputs are identical to the validated local source"
+    }
+  ],
+  "failuresRetained": [
+    {
+      "status": "FAIL",
+      "evidence": "guidance.log",
+      "reason": "Same-bundle app upgrade returned internal_error for modified managed guidance. Wrapped local setup validation so the actual conflict is reported; rerun passed."
+    }
+  ],
+  "notRun": [
+    {
+      "status": "NOT_RUN",
+      "scope": "Actual incident Mac credential-storage recovery",
+      "reason": "No user desktop attached; update instructions do not claim the storage incident was repaired"
+    },
+    {
+      "status": "NOT_RUN",
+      "scope": "External Windows 11/macOS desktop and fresh Codex/Claude application acceptance",
+      "reason": "Native CI and Linux live MCP checks are narrower evidence"
+    },
+    {
+      "status": "NOT_RUN",
+      "scope": "Formal GitHub Release and Windows GUI EXE publication",
+      "reason": "Server download packages published; formal release gates remain separate"
+    }
+  ],
+  "artifacts": {
+    "serverSha256": "1da04a3e5e360c91b4e4663cb3a4240a830efbc2cb74d435e1bf6ec789052a71",
+    "linuxCliSha256": "873607706e141a2b03deeeb245bef67f033d1a7ffabf8203bfa2d9311581365d",
+    "webIndexSha256": "68cd1483848455a81709d03b9fd394f0824b14a44ccc0de55fca699cf9a0c7eb"
+  },
+  "backupDirectory": "/srv/miy-prod/evidence/cli-updates-20261116/before",
+  "evidenceDirectory": "/srv/miy-prod/evidence/cli-updates-20261116",
+  "databaseChanged": false,
+  "ci-other-results": [
+    {
+      "runId": 43979914990,
+      "status": "PASS",
+      "url": "https://github.com/hurxxxx/miy-v2/actions/runs/43979914990",
+      "sourceCommit": "fa0d48de28014397aca2b91f7c53529fa60cf42a",
+      "jobs": [
+        {
+          "name": "Typecheck, isolated builds, mocked browser suites and script tests",
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "runId": 43979915089,
+      "status": "PASS",
+      "url": "https://github.com/hurxxxx/miy-v2/actions/runs/43979915089",
+      "sourceCommit": "fa0d48de28014397aca2b91f7c53529fa60cf42a",
+      "jobs": [
+        {
+          "name": "macOS client",
+          "conclusion": "success"
+        },
+        {
+          "name": "Windows MSVC client",
+          "conclusion": "success"
+        },
+        {
+          "name": "Linux client",
+          "conclusion": "success"
+        },
+        {
+          "name": "Linux server (default features)",
+          "conclusion": "success"
+        },
+        {
+          "name": "Compare embedded bundle hashes across operating systems",
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "runId": 43979915149,
+      "status": "PASS",
+      "url": "https://github.com/hurxxxx/miy-v2/actions/runs/43979915149",
+      "sourceCommit": "fa0d48de28014397aca2b91f7c53529fa60cf42a",
+      "jobs": [
+        {
+          "name": "Permissions, delegation and runtime against PostgreSQL and Docker",
+          "conclusion": "success"
+        }
+      ]
+    }
+  ]
+}
