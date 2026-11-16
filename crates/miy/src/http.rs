@@ -209,6 +209,11 @@ pub fn router_for(state: State, purpose: BrowserPurpose) -> Router {
             axum::routing::get(crate::read_api::grants).put(grant),
         )
         .route("/audit", axum::routing::get(audit_list))
+        .route("/support/reports", axum::routing::get(crate::support::list))
+        .route(
+            "/support/reports/{id}",
+            axum::routing::patch(crate::support::update),
+        )
         .route(
             "/groups",
             axum::routing::get(groups_list).post(groups_create),
@@ -290,6 +295,7 @@ pub fn router_for(state: State, purpose: BrowserPurpose) -> Router {
         )
         .route("/api/v1/capabilities", axum::routing::get(capabilities))
         .merge(crate::cli_install::router(state.auth.origin.clone()))
+        .merge(crate::support::public_router())
         .route(
             "/auth/cli/device",
             axum::routing::post(crate::auth_sessions::start),

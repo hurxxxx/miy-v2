@@ -2,7 +2,7 @@
 // Never reads .local/runtime.env, never touches the running platform, its DB or networks.
 import { execFileSync, spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { createReadStream, existsSync, mkdirSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { copyFileSync, createReadStream, existsSync, mkdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { createServer, request } from "node:http";
 import { dirname, extname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -26,7 +26,8 @@ const consoleOrigin = `http://127.0.0.1:${CONSOLE_UI_PORT}`;
 const owner = `${process.pid}-${randomBytes(8).toString("hex")}`;
 const label = `miy.server-ui=${owner}`;
 const database = `miy-server-ui-${owner}`;
-const binary = resolve(root, "target/debug/miy");
+const sourceBinary = resolve(root, "target/debug/miy");
+const binary = join(evidence, "miy-server-fixture");
 const children = [];
 let ownsDatabase = false;
 let ownsLock = false;
@@ -50,7 +51,7 @@ function cleanup() {
 for (const signal of ["SIGTERM", "SIGINT", "SIGHUP"]) process.on(signal, () => (cleanup(), process.exit(0)));
 process.on("exit", cleanup);
 
-if (!existsSync(binary)) throw new Error("build the core first: cargo build");
+if (!existsSync(sourceBinary)) throw new Error("build the core first: cargo build");
 mkdirSync(dirname(evidence), { recursive: true });
 // Ports and evidence paths are fixed; fail before touching another run's files.
 mkdirSync(lock);
@@ -59,6 +60,8 @@ ownsLock = true;
 // successfully created container; interrupted runs require explicit inspection.
 rmSync(evidence, { recursive: true, force: true });
 mkdirSync(join(evidence, "artifacts"), { recursive: true });
+// A simultaneous client build must not replace this run's server executable.
+copyFileSync(sourceBinary, binary);
 
 // 1. Disposable PostgreSQL: random loopback port, tmpfs storage, labelled for cleanup.
 const password = randomBytes(18).toString("hex");
@@ -105,6 +108,9 @@ const env = {
   MIY_CONSOLE_BIND_ADDR: `127.0.0.1:${CONSOLE_API_PORT}`,
   MIY_DEV_PORTAL_ORIGIN: devPortalOrigin,
   MIY_DEV_PORTAL_BIND_ADDR: `127.0.0.1:${DEV_PORTAL_API_PORT}`,
+  MIY_APP_FRAME_ORIGIN: "http://127.0.0.1:{port}",
+  MIY_APP_FRAME_PORTS: "19300-19399",
+  MIY_APP_FRAME_BIND_ADDR: "127.0.0.1:18156",
   MIY_ISSUER: issuer,
   MIY_ALLOW_HTTP: "1",
   MIY_DEV_LOGIN: "1",

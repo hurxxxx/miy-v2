@@ -1,0 +1,8 @@
+{
+  "origin": "https://portal.example.com",
+  "consoleOrigin": "https://console.example.com",
+  "devPortalOrigin": "https://dev.example.com",
+  "appFrameOrigin": "https://app-{key}.example.com",
+  "appFramePorts": null,
+  "allowHttp": false
+}

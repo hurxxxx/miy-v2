@@ -207,19 +207,22 @@ fn credential_key(context: &cli_config::Context, user: &str) -> String {
 }
 
 fn vault_get(root: &Path, key: &str) -> Result<Option<String>> {
-    credential_store::get(root, key).map_err(|_| storage_error().into())
+    credential_store::get(root, key).map_err(|e| storage_failure(e, "read").into())
 }
 fn vault_set(root: &Path, key: &str, value: &str) -> Result<()> {
-    credential_store::set(root, key, value).map_err(|_| storage_error().into())
+    credential_store::set(root, key, value).map_err(|e| storage_failure(e, "write").into())
 }
 fn vault_remove(root: &Path, key: &str) -> Result<()> {
-    credential_store::remove(root, key).map_err(|_| storage_error().into())
+    credential_store::remove(root, key).map_err(|e| storage_failure(e, "remove").into())
+}
+fn storage_failure(error: anyhow::Error, operation: &str) -> CliError {
+    storage_error().with_details(credential_store::diagnostic(&error, operation))
 }
 fn storage_error() -> CliError {
     CliError::new(
         Category::Environment,
         "credential_storage_unavailable",
-        "The credential store is unavailable. Check its OS service, backend and private file permissions.",
+        "The credential store is unavailable. Repeating browser login does not repair local storage. Check the safe diagnostic details; report send works without authentication. Never read or print credential files.",
     )
 }
 
@@ -836,12 +839,25 @@ async fn wait(id: Uuid) -> Result<Value> {
                     .into());
                 }
                 let key = credential_key(&context, &credential.user_id);
-                let previous = vault_get(&root, &key)?;
-                if persist(&root, &context, &credential).is_err() {
+                let previous = match vault_get(&root, &key) {
+                    Ok(previous) => previous,
+                    Err(error) => {
+                        // Device exchange already issued a session. A failure reading
+                        // the previous credential must not leave it silently active.
+                        let revoked = revoke_issued(&context, &credential).await;
+                        let mut safe = crate::cli_error::classify(&error);
+                        safe.details["phase"] = json!("after_device_exchange");
+                        safe.details["remoteSessionRevoked"] = json!(revoked);
+                        return Err(safe.into());
+                    }
+                };
+                if let Err(error) = persist(&root, &context, &credential) {
                     let revoked = revoke_issued(&context, &credential).await;
+                    let mut details = crate::cli_error::classify(&error).details;
+                    details["credentialStored"] = json!(false);
+                    details["remoteSessionRevoked"] = json!(revoked);
                     return Err(CliError::new(Category::Environment,"login_credential_not_saved","The issued session could not be saved. Repair credential storage and start a new login.")
-                        .with_details(json!({"credentialStored":false,"remoteSessionRevoked":revoked}))
-                        .with_recovery("miy",&["auth","login"]).into());
+                        .with_details(details).into());
                 }
                 if cli_config::set_user(&flow.context, Some(credential.user_id.clone())).is_err() {
                     let restored = match previous {

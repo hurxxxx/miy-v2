@@ -1,12 +1,30 @@
 # CLI와 독립 앱 개발·운영 실행 안내
 
-현행 CLI의 설치·인증·앱 개발·운영 사용법을 모은다. 설치된 실행 파일의 `miy --version`, `miy describe`와 서버 capability가 실제 사용 가능한 범위를 결정한다. 게시 CLI/번들은 **0.10.0**, 현재 작업본은 **0.11.0 후보**다. 이 안내의 서버 빌드 전용 배포는 0.11.0 계약이며 게시 서버에는 반영 전이다. 게시 출처와 남은 조건은 [CLI-RELEASE](CLI-RELEASE.md), 실제 서버 상태는 [SERVER-OPERATIONS](SERVER-OPERATIONS.md)를 따른다.
+현행 CLI의 설치·인증·앱 개발·운영 사용법을 모은다. 설치된 실행 파일의 `miy --version`, `miy describe`와 서버 capability가 실제 사용 가능한 범위를 결정한다. miy.works의 게시 CLI/번들은 **0.11.0**이며 서버 빌드 전용 배포와 한 줄 설치를 제공한다. 기존 v2.dwdcc.kr 호스트의 게시본은 0.10.0이므로 연결할 서버의 안내를 확인한다. 게시 출처와 남은 조건은 [CLI-RELEASE](CLI-RELEASE.md), 실제 서버 상태는 [SERVER-OPERATIONS](SERVER-OPERATIONS.md)를 따른다.
 
 검사 선택은 [CHECKS](CHECKS.md), 사용자 Windows 설치·인수는 [WINDOWS-ACCEPTANCE](WINDOWS-ACCEPTANCE.md)에 모은다. 명령 구현·특정 환경 PASS·전체 V7 인수는 구분한다. 현재 [실행·인증 계약](APP-BOUNDARIES.md#확정-결정)은 prod 포털·dev 포털·관리/CLI 승인/Keycloak 콘솔 세 출처다. 원격 업무 앱은 설치별 출처 프레임에서 실행하며 단일 IP HTTPS도 지원한다. CLI의 대표 서버 주소는 prod 포털이고 브라우저 승인만 콘솔에서 처리한다.
 
 ## 설치와 발견
 
 배포받은 클라이언트로 원격 운영만 수행할 때는 Rust·Node·Docker가 필요하지 않다. CLI를 소스에서 빌드할 때는 Rust 도구체인과 OS의 네이티브 링크 도구가 필요하다. 앱 개발 도구는 아래 [개발 방식별 조건](#로컬-개발-빌드와-dev-배포)을 따른다. 사용자 전용 설치 경로를 사용하고 시스템 전역 PATH·인코딩·TLS 신뢰 설정을 임의로 변경하지 않는다.
+
+서버의 **CLI 설치** 화면(`/cli/install`)에서 운영체제에 맞는 명령 한 줄을 복사한다. 브라우저에서 패키지를 먼저 내려받거나 압축을 풀 필요가 없다. 예를 들어 서버가 `https://PLATFORM`이라면 다음과 같다(실제 주소로 바꾼다).
+
+```sh
+curl -fsSL 'https://PLATFORM/api/v1/cli/install.sh' | bash
+```
+
+Windows x64 PowerShell:
+
+```powershell
+& ([scriptblock]::Create((Invoke-RestMethod -Uri 'https://PLATFORM/api/v1/cli/install.ps1')))
+```
+
+온라인 설치기는 OS/CPU에 맞는 게시 패키지를 다운로드하고 SHA-256과 바이너리 해시·버전을 확인한 뒤 **그 패키지에 포함된 설치기**를 실행한다. 서버 주소는 `MIY_ORIGIN`에서 주입하며 도메인을 내장하지 않는다. HTTP IP·포트와 HTTPS 도메인을 모두 지원한다. 서버에 전체 CLI 패키지가 게시되지 않았거나 검증에 실패하면 실행 스크립트를 제공하지 않는다(503). 사설 CA는 먼저 PC의 curl/PowerShell과 CLI에서 신뢰하도록 등록하고 TLS 검증을 끄지 않는다.
+
+Unix는 `~/.local/bin`과 사용자 셸 PATH를 설정한다. 새 터미널에서 `miy auth login`을 실행하거나 설치기가 출력하는 절대 경로로 바로 로그인한다. 경로 변경은 `curl … | bash -s -- --prefix /absolute/path`, 셸 파일을 수정하지 않으려면 `--no-modify-path`를 사용한다. Windows는 사용자 설치 폴더·PATH를 설정하고 현재 PowerShell에서도 명령을 사용할 수 있게 한다. 기존 연결·인증 정보는 보존하며 다른 서버를 사용 중이었다면 `miy context list`로 확인하고 새 연결을 명시적으로 추가·선택한다.
+
+오프라인 패키지 또는 소스 설치는 아래 방식도 지원한다. 이 오프라인 Unix 설치기는 셸 설정을 수정하지 않는다.
 
 ```sh
 bash scripts/install-cli.sh --from /path/to/miy --server https://PLATFORM
@@ -35,6 +53,8 @@ miy completion powershell
 ```
 
 ## 서버 context와 인증
+
+주소 고정과 이전 시의 context·CLI 세션·HTTP MCP OAuth 영향은 [서버 주소 설정](SERVER-ADDRESSES.md)을 참고한다. 프로젝트의 `miy mcp` stdio와 `<업무 포털>/mcp` HTTP 연결은 구분한다.
 
 설치 명령에 서버 주소가 포함되어 있었다면 `miy context show`로 명시적으로 등록된 연결을 확인하고 로그인한다. 주소를 등록하지 않았다면 먼저 `miy context init`으로 입력한다. URL을 별도로 등록하거나 다른 서버를 추가할 때에는 아래 명령을 사용한다.
 

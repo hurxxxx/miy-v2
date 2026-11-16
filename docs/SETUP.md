@@ -149,6 +149,8 @@ pnpm --version
 
 ## 3. 공개 주소 선택
 
+도메인은 선택 사항이며 IP·포트 분리를 계속 지원한다. 세 화면의 역할, 하나의 JSON 파일로 주소를 설정하는 방법, 기존 설치의 주소 변경은 [서버 주소 설정](SERVER-ADDRESSES.md)을 따른다. 아래 A/B의 환경변수 방식도 같은 구성이다. 업무 앱의 dev 포털과 별도 플랫폼 코어 개발 인스턴스는 구분한다.
+
 아래 **A 또는 B 하나만** 실행한다. 모든 주소는 사용자 PC뿐 아니라 서버 자신에서도 접근 가능해야 한다. **앱 컨테이너에서도 업무 포털 주소로 HTTPS 연결**이 가능해야 한다. 앱 백엔드는 dev 설치라도 이 공개 포털 주소로 디렉터리·파일·앱 간 API를 호출한다. 포트·이름은 인증서 발급 전에 정한다. 내부 포트는 다음 절의 기본값을 사용한다.
 
 ### A. 도메인 없이 고정 IP 하나
@@ -621,7 +623,7 @@ git commit -m 'Initialize setup check application'
 
 ## 10. 개발 PC용 CLI 다운로드 게시 — 선택
 
-§9까지는 GitHub Actions/Release 권한 없이 가능하다. 여러 PC에 소스 빌드 없이 설치하거나 `app dev --runtime docker`의 DB tunnel helper를 제공하려면 **동일 소스의 전체 CLI aggregate**를 게시한다. 브라우저의 `/cli/install`은 그 후 설치 명령을 제공한다. Windows GUI EXE는 추가 선택이고 ZIP/PowerShell만으로도 설치할 수 있다.
+§9까지는 GitHub Actions/Release 권한 없이 가능하다. 여러 PC에 소스 빌드 없이 설치하거나 `app dev --runtime docker`의 DB tunnel helper를 제공하려면 **동일 소스의 전체 CLI aggregate**를 게시한다. 브라우저의 `/cli/install`은 그 후 Linux·macOS의 curl/Bash와 Windows의 PowerShell 한 줄 설치 명령을 제공한다. 개발 PC에서 패키지를 수동으로 내려받거나 압축을 풀 필요가 없다. Windows GUI EXE는 추가 선택이고 ZIP/PowerShell만으로도 설치할 수 있다.
 
 GitHub CLI가 설치되고 해당 저장소 Actions 실행 권한이 있는 작업 PC에서 후보를 만든다. 이 선택 단계에는 Python 3.11 이상도 필요하다. 이 명령은 GitHub Release를 공개하지 않는다. 작업 PC의 실제 clone 경로와 **서버 설치 시 기록한 40자리 commit**을 넣는다. 현재 PC의 HEAD를 대신 사용하지 않는다.
 

@@ -72,6 +72,7 @@ test("a regular user gets only what the server allows", async ({ page }) => {
   await expect(page.locator("#platform-navigation").getByRole("link", { name: "플랫폼 관리" })).toHaveCount(0);
   await page.goto("/admin");
   await page.getByRole("button", { name: /사용자 A/ }).click();
+  await expect(page.getByRole("button", { name: "로그아웃" })).toBeVisible();
   await page.goto((await serverOrigins(page)).consoleOrigin + "/admin");
   await expect(page.getByRole("heading", { name: "관리자 권한이 필요합니다" })).toBeVisible();
   expect((await page.request.get((await serverOrigins(page)).consoleOrigin + "/api/v1/users")).status()).toBe(403);
@@ -127,4 +128,60 @@ test("signed-in CLI install page reads the server guide", async ({ page }) => {
   await page.locator("#platform-navigation").getByRole("link", { name: "CLI 설치", exact: true }).click();
   await expect(page.getByRole("heading", { name: "CLI 설치", exact: true })).toBeVisible();
   await expect(page.getByTestId("cli-install-server")).toHaveText("http://127.0.0.1:18148");
+});
+
+test("anonymous reports persist once, stay private and support administrator triage", async ({ page, playwright, baseURL }) => {
+  const client = await playwright.request.newContext({ baseURL });
+  try {
+    const input = {
+      schemaVersion: 1, id: randomUUID(), message: "Mac 인증 오류\npassword=PRIVATE-SENTINEL\n<script>alert(1)</script>",
+      diagnostics: { cliVersion: "0.12.0", bundleVersion: "0.11.0", os: "macos", arch: "aarch64", configSource: "home", executable: "project", lastError: null },
+    };
+    const endpoint = "/api/v1/support/reports";
+    expect((await client.post(endpoint, { data: input, headers: { authorization: "Bearer broken" } })).status()).toBe(201);
+    expect((await client.post(endpoint, { data: input })).status()).toBe(200);
+    expect((await client.post(endpoint, { data: { ...input, message: "changed" } })).status()).toBe(409);
+    expect((await client.get(endpoint)).status()).toBe(403);
+    expect((await client.patch(`${endpoint}/${input.id}`, { data: { status: "resolved", note: "", revision: 1 } })).status()).toBe(403);
+    expect((await client.post(endpoint, { data: input, headers: { origin: String(baseURL) } })).status()).toBe(403);
+    expect((await client.post(endpoint, { data: { ...input, id: randomUUID(), credentials: "disallowed" } })).status()).toBe(422);
+    expect((await client.post(endpoint, { data: { ...input, id: randomUUID(), message: "x".repeat(17000) } })).status()).toBe(413);
+    const origins = await serverOrigins(page);
+    expect((await client.get(origins.consoleOrigin + endpoint)).status()).toBe(401);
+    expect((await client.post(origins.devPortalOrigin + endpoint, { data: input })).status()).toBe(403);
+    expect((await client.post(origins.consoleOrigin + endpoint, { data: input })).status()).toBe(403);
+    await signIn(page, /사용자 A/, "/admin", "console");
+    expect((await page.request.get(origins.consoleOrigin + endpoint)).status()).toBe(403);
+    await page.getByRole("button", { name: "로그아웃" }).click();
+    await expect(page.getByRole("heading", { name: "로그인", exact: true })).toBeVisible();
+    await signIn(page, /관리자로 시작/, "/admin", "console");
+    await page.getByRole("button", { name: "신고 조회", exact: true }).click();
+    const report = page.locator("details.support-report").filter({ hasText: input.id });
+    await report.locator(":scope > summary").click();
+    await expect(report.getByText(input.id, { exact: true })).toBeVisible();
+    await expect(report).not.toContainText("PRIVATE-SENTINEL");
+    await expect(report).toContainText("[redacted sensitive line]");
+    expect(await report.locator("script").count()).toBe(0);
+    await report.getByRole("combobox", { name: "처리 상태" }).selectOption("investigating");
+    await report.getByLabel("조사·해결 메모").fill("안전한 OS 오류 코드를 확인 중");
+    await report.getByRole("button", { name: "처리 저장" }).click();
+    await expect(page.getByText("처리 상태와 메모를 저장했습니다.")).toBeVisible();
+    const me = await (await page.request.get(origins.consoleOrigin + "/api/v1/me")).json();
+    const update = { status: "resolved", note: "해결 확인", revision: 1 };
+    expect((await page.request.patch(origins.consoleOrigin + endpoint + `/${input.id}`, { data: update, headers: { origin: origins.consoleOrigin, "x-miy-csrf": me.csrf } })).status()).toBe(409);
+    expect((await page.request.patch(origins.consoleOrigin + endpoint + `/${input.id}`, { data: { ...update, revision: 2 } })).status()).toBe(403);
+    await page.reload();
+    await page.getByRole("button", { name: "신고 조회", exact: true }).click();
+    await report.locator(":scope > summary").click();
+    await expect(report.getByLabel("조사·해결 메모")).toHaveValue("안전한 OS 오류 코드를 확인 중");
+    const entries = await (await page.request.get(origins.consoleOrigin + endpoint)).json();
+    expect(entries.entries.filter((entry: {id: string}) => entry.id === input.id)).toHaveLength(1);
+    // Fill the bounded hourly intake in this disposable database only.
+    for (let i = 0; i < 119; i++) {
+      expect((await client.post(endpoint, { data: { ...input, id: randomUUID(), message: "rate fixture" } })).status()).toBe(201);
+    }
+    expect((await client.post(endpoint, { data: { ...input, id: randomUUID() } })).status()).toBe(429);
+    // A receipt retry still succeeds at capacity, without another row.
+    expect((await client.post(endpoint, { data: input })).status()).toBe(200);
+  } finally { await client.dispose(); }
 });

@@ -571,6 +571,12 @@ fn job_schema() -> Value {
 
 fn behavior(command: &str) -> Value {
     match command {
+        "report send" | "report retry" => json!({
+            "authentication":"None; never reads credentials or starts login.",
+            "diagnostics":"CLI/bundle versions, OS/architecture, configuration source and last safe error code/operation/OS status. No credentials, logs, environment values, source or personal paths.",
+            "delivery":"Private outbox before submission; retry preserves the ID and original destination. report_queued means not acknowledged, with a recovery argument vector.",
+            "preview":"report send --dry-run previews the redacted payload without saving or sending; --save-only saves without sending.",
+            "server":"Selected context, or explicit --server with optional --ca-file. Domain, IP and port origins use the same contract."}),
         "context init" => json!({
             "freshConfiguration":"Creates and selects the default context from the explicitly supplied URL; no built-in server address.",
             "missingUrl":"Prompts for an explicit HTTP/HTTPS URL only on a terminal. Noninteractive or --no-input returns server_url_required; blank input cancels with exit 130 without configuration writes.",
@@ -788,6 +794,19 @@ fn policy(command: &str, group: bool) -> Policy {
         };
     }
     match command {
+        "report send" | "report retry" => {
+            policy.source = "crates/miy/src/cli_report.rs";
+            policy.local_effects = &[
+                "Saves a private redacted report before sending; records delivery acknowledgement. --dry-run does neither, --save-only only saves.",
+            ];
+            policy.remote_effects = &[
+                "Explicit anonymous support report submission; administrator-only reading and triage. Repeated IDs with identical content do not create duplicates.",
+            ];
+        }
+        "report list" | "report show" => {
+            policy.source = "crates/miy/src/cli_report.rs";
+            policy.local_effects = &["Reads the private local report outbox."];
+        }
         "describe" | "app describe" => policy.source = "crates/miy/src/cli_discovery.rs",
         "completion" => {
             policy.source = "crates/miy/src/cli_discovery.rs";

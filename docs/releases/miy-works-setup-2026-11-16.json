@@ -1,0 +1,204 @@
+{
+  "schemaVersion": 1,
+  "host": "185.223.207.238",
+  "recordedAt": "2026-11-16T04:40:26.047109+00:00",
+  "sourceCommit": "9897f6385ff1228c43fbc28a4f42b4d7a75f59a4",
+  "coreVersion": "0.11.0",
+  "scope": "Fresh prod platform installation; platform-core development currently applies directly to prod. Separate dev platform deferred by user. Both app dev/prod environments belong to this one platform.",
+  "platformDevelopmentCheckout": {
+    "path": "/projects/miy-v2/dev",
+    "sourceUpdated": true,
+    "frontendDependenciesInstalled": true,
+    "servicesStarted": false
+  },
+  "configuration": {
+    "source": "/projects/miy-v2/prod",
+    "state": "/srv/miy-prod",
+    "serviceUser": "miy",
+    "services": [
+      "miy-prod-serve",
+      "miy-prod-worker"
+    ],
+    "composeProject": "miy-prod",
+    "postgresContainer": "miy-prod-postgres-1",
+    "postgresVolume": "miy-prod_pgdata",
+    "network": "miy-prod-app-runtime",
+    "portal": "https://prod.miy.works",
+    "console": "https://prod-console.miy.works",
+    "appDevelopmentPortal": "https://prod-dev.miy.works",
+    "appFrameTemplate": "https://prod-app-{key}.miy.works",
+    "databaseContainerOverride": "MIY_DATABASE_CONTAINER=miy-prod-postgres-1"
+  },
+  "installed": {
+    "os": "Ubuntu 26.04.1 LTS",
+    "docker": "29.9.3",
+    "compose": "5.7.1",
+    "buildx": "0.39.0",
+    "rust": "1.99.1",
+    "node": "22.23.5",
+    "pnpm": "10.34.5",
+    "postgres": "18.3 pinned repository image",
+    "keycloak": "26.8.1 pinned repository image",
+    "nginx": "1.28.3",
+    "certbot": "4.0.0",
+    "browser": "Google Chrome for headless acceptance"
+  },
+  "tls": {
+    "type": "public CA wildcard",
+    "names": [
+      "*.miy.works"
+    ],
+    "expiresAt": "2027-02-14T03:29:32Z",
+    "issuance": "DNS-01 manual TXT completed by user",
+    "automaticRenewal": false,
+    "reason": "No Spaceship DNS API credential/authentication hook configured",
+    "nginxReloadDeployHook": true
+  },
+  "checks": [
+    {
+      "status": "PASS",
+      "command": "git pull --ff-only (both checkouts)",
+      "detail": "5e9ee34 -> 9897f63; existing worktrees clean before update"
+    },
+    {
+      "status": "PASS",
+      "command": "authoritative DNS lookup and public DNS lookup",
+      "detail": "Wildcard subdomains resolve to server. Apex miy.works resolves elsewhere and is not used."
+    },
+    {
+      "status": "PASS",
+      "command": "cargo build --release --locked -p miy; client-only build with --no-default-features in separate target",
+      "detail": "Server executable copied into private bin directory; same-source CLI installed for miy."
+    },
+    {
+      "status": "PASS",
+      "command": "pnpm install --frozen-lockfile; platform build; frame-runtime build",
+      "detail": "Both checkouts have frontend dependencies. Live platform and frame runtime built from prod."
+    },
+    {
+      "status": "PASS",
+      "command": "run-service.sh migrate; run-service.sh seed",
+      "detail": "23 migrations applied successfully; initial accounts and UI registry seeded."
+    },
+    {
+      "status": "PASS",
+      "command": "check-server-tls.py --connect; nginx -t",
+      "detail": "Trusted wildcard chain and matching key, three hostname checks, three HTTPS health endpoints."
+    },
+    {
+      "status": "PASS",
+      "command": "/srv/miy-prod/evidence/check-login.mjs",
+      "detail": "Real admin OIDC and SSO across console/portal/dev_portal; purpose separation; shared development login disabled; rerun after service restart."
+    },
+    {
+      "status": "PASS",
+      "command": "/srv/miy-prod/evidence/setup-pilot.mjs",
+      "detail": "Existing pilot-flow harness adapted solely to use local module imports and label source-built initial-install CLI instead of unpublished isolated-stack CLI. Optional published-download binding was not claimed.",
+      "passedChecks": 7,
+      "appId": "pilot-69697002",
+      "installationId": "108a6874-3b93-4eb8-8af0-4ca0e6710cd1",
+      "buildSeconds": 112
+    },
+    {
+      "status": "PASS",
+      "command": "manage-setup.mjs stop-pilot",
+      "detail": "Pilot stopped through authenticated CLI after successful deployment and frame check. App records, release, and DB retained."
+    },
+    {
+      "status": "PASS",
+      "command": "miy-prod-backup; miy-prod-verify-backup /srv/miy-backups/prod-20261116T043633Z",
+      "detail": "Cold PostgreSQL/state/UI/source/images/services/TLS backup; isolated no-network restoration; core and identity row counts matched. Baseline taken before disabling sample accounts."
+    },
+    {
+      "status": "PASS",
+      "command": "manage-setup.mjs disable-examples",
+      "detail": "developer, alice, bob disabled in both Core and Keycloak. Initial admin remains enabled."
+    },
+    {
+      "status": "PASS",
+      "command": "Docker probe on installation network with public CA bundle and openssl s_client verification",
+      "detail": "Container DNS, public-IP return path, verified TLS and /api/health HTTP 200. This is a transport probe, not a full SDK common-API test."
+    },
+    {
+      "status": "PASS",
+      "command": "systemctl is-enabled; container restart-policy inspect; backup stop/start; post-restart HTTPS/login",
+      "detail": "Docker/nginx/Core/worker enabled; PostgreSQL and Keycloak unless-stopped. Processes and login recover after stop/start."
+    },
+    {
+      "status": "PASS",
+      "command": "private file modes, listening sockets, unauthenticated admin-route checks",
+      "detail": "State directory 0700, credentials/runtime/context 0600; DB/IdP/Core loopback only; public ports 22/80/443; Keycloak admin/master public routes 404."
+    },
+    {
+      "status": "PASS",
+      "command": "git diff --check; bash -n management scripts",
+      "detail": "Only local host instructions, operations documentation and evidence changed in source checkouts."
+    }
+  ],
+  "resolvedFailures": [
+    {
+      "status": "FAIL",
+      "step": "Initial Chrome installation as miy",
+      "cause": "Browser OS package installation requires root; resolved by installing Chrome as root, tests run as miy."
+    },
+    {
+      "status": "FAIL",
+      "step": "Initial custom login check",
+      "cause": "Test incorrectly expected admin=true on portal sessions. Code intentionally reports admin only on console; expectation corrected and all three purposes passed. No platform behavior changed."
+    },
+    {
+      "status": "FAIL",
+      "step": "Initial container TLS probe using PostgreSQL image trust directory",
+      "cause": "Probe image lacks the required public CA trust bundle. Repeated with host public CA bundle mounted read-only; verified TLS and health passed. Application uses bundled Rust webpki roots, not this probe image."
+    }
+  ],
+  "notRun": [
+    {
+      "status": "NOT_RUN",
+      "scope": "Actual host reboot",
+      "reason": "Active remote agent/control sessions run on this host; enabled-state and full component stop/start were checked, not a host reboot."
+    },
+    {
+      "status": "NOT_RUN",
+      "scope": "Separate platform dev stack",
+      "reason": "User explicitly deferred until actual operation begins."
+    },
+    {
+      "status": "NOT_RUN",
+      "scope": "Public wildcard certificate automatic renewal",
+      "reason": "DNS API authentication is not configured; manual renewal required before expiry."
+    },
+    {
+      "status": "NOT_RUN",
+      "scope": "Multi-OS CLI aggregate and Windows installers",
+      "reason": "Optional SETUP section 10; same-source server-side Linux CLI installed and tested. No old server artifacts reused."
+    },
+    {
+      "status": "NOT_RUN",
+      "scope": "Real employee onboarding and external Windows/macOS/browser acceptance",
+      "reason": "Only seeded admin/developer setup flow tested on server-side Chrome; real employee identity details not supplied."
+    },
+    {
+      "status": "NOT_RUN",
+      "scope": "Full SDK directory/files API acceptance and full recovery on separate host",
+      "reason": "Default template ping/frame and installation-network HTTPS are verified; these wider functional/disaster-recovery tests require separate acceptance."
+    }
+  ],
+  "backups": [
+    "/srv/miy-backups/prod-20261116T043633Z",
+    "/srv/miy-backups/prod-20261116T043840Z"
+  ],
+  "finalBackupRestore": "PASS: /srv/miy-backups/prod-20261116T043840Z; checksum, isolated DB restore and row counts verified; final three-origin TLS and real OIDC login passed after restart",
+  "evidence": {
+    "privateRoot": "/srv/miy-prod/evidence",
+    "pilot": "/srv/miy-prod/evidence/pilot-1/result.json",
+    "login": "/srv/miy-prod/evidence/login-result.json"
+  },
+  "secrets": "No secret values, connection strings, cookies or tokens included.",
+  "artifactHashes": {
+    "server": "d91970d5727df66156e731123a196e45c5f2ffc06a6a3da627fa71f83462af26",
+    "linuxCli": "40bdfa9edab4cb12c095daab9873a4de3132acff112bf9e6fff10339ed8c4ab6",
+    "platformIndex": "09aee017bb67d0dfdad48ea1ae112d7a645b80306b9a6788b54c9c73ff2a17fe",
+    "frameIndex": "726e2a7b20108c4b0379e5ede475a36af6ac9f7fe2a87fc0e54e517efc4d309b"
+  }
+}

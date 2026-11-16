@@ -194,6 +194,8 @@ def proxy_regression(state, kind, tls_material=None, hosts=False):
         tls_options = ['--ca-file', str(tls_material[0])] if tls_material else []
         if hosts:
             frame_options = ['--app-frame-origin', f'{scheme}://v2-app-{{key}}.localhost:{ports[0]}']
+            if scheme == 'http':
+                frame_options.append('--allow-http')
             frames = [f'{scheme}://v2-app-{key}.localhost:{ports[0]}' for key in ('0' * 32, 'ab' * 16)]
             frame_sources = f'{scheme}://*.localhost:{ports[0]}'
         else:
@@ -403,8 +405,12 @@ def proxy_regression(state, kind, tls_material=None, hosts=False):
             thread.join()
 
 
-def identity_sync(state):
+def identity_sync(state, previous_origin=None):
     realm = json.loads((state / 'realm.json').read_text())
+    current_clients = [{**client, 'id': str(index)} for index, client in enumerate(realm['clients'])]
+    if previous_origin:
+        current_clients[2] = {**current_clients[2], 'clientId': previous_origin + '/mcp',
+                              'attributes': {'resource_url': previous_origin + '/mcp'}}
     requests = []
 
     class Handler(http.server.BaseHTTPRequestHandler):
@@ -417,15 +423,19 @@ def identity_sync(state):
             data = None
             if self.path.endswith('/realms/master/protocol/openid-connect/token'):
                 data = {'access_token': 'fixture-admin-token'}
+            elif method == 'PUT' and self.path == '/identity/admin/realms/miy/clients/2':
+                current_clients[2] = json.loads(body)
             elif method == 'GET':
-                if self.path.endswith('/client-scopes'):
+                if self.path == '/identity/admin/realms/miy':
+                    data = {'attributes': {'frontendUrl': 'https://old.example/identity', 'keep': 'present'}}
+                elif self.path.endswith('/client-scopes'):
                     data = [{'id': name, 'name': name} for name in ['miy.read', 'miy.dev', 'offline_access']]
                 elif self.path.endswith('/roles'):
                     data = [{'id': 'offline', 'name': 'offline_access'}]
                 elif self.path.endswith('/roles/offline_access'):
                     data = {'id': 'offline', 'name': 'offline_access'}
                 elif self.path.endswith('/clients'):
-                    data = [{**client, 'id': str(index)} for index, client in enumerate(realm['clients'])]
+                    data = current_clients
                 else:
                     data = []
             payload = json.dumps(data).encode() if data is not None else b''
@@ -447,7 +457,8 @@ def identity_sync(state):
     settings['identityAdminUrl'] = f'http://127.0.0.1:{server.server_port}/identity'
     (state / 'server.json').write_text(json.dumps(settings))
     try:
-        result = subprocess.run([sys.executable, str(ROOT / 'scripts/configure-identity.py')],
+        result = subprocess.run([sys.executable, str(ROOT / 'scripts/configure-identity.py'),
+                                 *(['--previous-origin', previous_origin] if previous_origin else [])],
                                 env={**ENV, 'MIY_STATE_DIR': str(state)},
                                 capture_output=True, timeout=15)
         require(result.returncode == 0, 'Identity configuration did not complete')
@@ -457,7 +468,9 @@ def identity_sync(state):
         thread.join()
     updates = [json.loads(body) for method, path, body in requests
                if method == 'PUT' and path == '/identity/admin/realms/miy']
-    require(updates == [{'sslRequired': 'none'}], 'Existing realm HTTP policy was not updated')
+    require(updates == [{'sslRequired': 'none', 'attributes': {
+        'frontendUrl': settings['consoleOrigin'] + '/identity', 'keep': 'present'}}],
+        'Existing realm HTTP policy/frontend URL was not updated or other attributes were lost')
     require(not any('/admin/realms/master' in path for _, path, _ in requests),
             'Configuration changed the master realm')
     clients = [json.loads(body) for method, path, body in requests if method == 'PUT' and '/clients/' in path
@@ -470,6 +483,11 @@ def identity_sync(state):
             'The dev portal gained identity provider CORS access')
     require(not any(method in ['PUT', 'DELETE'] and '/users/' in path for method, path, _ in requests),
             'Identity synchronization replaced existing user subjects')
+    resource = next(client for client in clients if client.get('clientId') == settings['origin'] + '/mcp')
+    require(resource['id'] == '2' and resource['secret'] == realm['clients'][2]['secret'],
+            'Moving the MCP resource changed the internal client ID or secret')
+    require(not any(method == 'POST' and path.endswith('/clients') for method, path, _ in requests),
+            'Identity move created a duplicate resource client')
 
 
 with tempfile.TemporaryDirectory(prefix='miy-server-config-') as temporary:
@@ -598,6 +616,7 @@ with tempfile.TemporaryDirectory(prefix='miy-server-config-') as temporary:
                        env=ENV, check=True, capture_output=True, timeout=15)
     print('PASS HTTP Nginx and systemd rendering without live changes')
     identity_sync(state)
+    identity_sync(state, 'http://old.example:8080')
     print('PASS existing realm HTTP settings via internal administration only')
 
     secure = root / 'https'
@@ -614,10 +633,16 @@ with tempfile.TemporaryDirectory(prefix='miy-server-config-') as temporary:
     require(result.returncode == 2, 'HTTPS renderer accepted missing certificates')
     ca, certificate, key = tls_fixture(root / 'tls-material')
     bootstrap(secure, '--ca-file', str(ca))
+    live_certificate, live_key = ca.parent / 'live-certificate.pem', ca.parent / 'live-key.pem'
+    live_certificate.symlink_to(certificate)
+    live_key.symlink_to(key)
     subprocess.run([sys.executable, str(ROOT / 'scripts/render-server-config.py'), '--state-dir', str(secure),
-                    '--certificate', str(certificate), '--key', str(key)],
+                    '--certificate', str(live_certificate), '--key', str(live_key)],
                    env=ENV, check=True, capture_output=True, timeout=15)
     proxy = (secure / 'nginx-miy.conf').read_text()
+    require(f'ssl_certificate "{live_certificate}";' in proxy
+            and f'ssl_certificate_key "{live_key}";' in proxy,
+            'TLS rendering pinned the resolved certificate version instead of its renewable symlink')
     require('listen 443 ssl;' in proxy and 'ssl_certificate_key' in proxy and 'server_name "platform.example";' in proxy,
             'HTTPS renderer did not retain the configured domain and TLS')
     for bad_certificate, bad_key, extra in [

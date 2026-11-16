@@ -1,0 +1,142 @@
+{
+  "status": "PASS",
+  "scope": "Source implementation and isolated validation only; not publication or live deployment",
+  "sourceCommit": "61ce2863226d17a81a45b74d52f8227b5ffce8c8",
+  "workingTreeDirty": true,
+  "cliVersion": "0.12.0",
+  "bundleVersion": "0.11.0",
+  "candidateSchema": 24,
+  "publishedCliVersion": "0.11.0",
+  "liveSchema": 23,
+  "evidenceDirectory": "/srv/miy-prod/evidence/support-reports-20261116",
+  "checks": [
+    {
+      "name": "rust",
+      "status": "PASS",
+      "command": "scripts/check-static.sh rust",
+      "log": "rust-final.log",
+      "scope": "229 server tests passed, 7 isolated suites ignored; 141 client tests passed; fmt and both clippy profiles passed"
+    },
+    {
+      "name": "web",
+      "status": "PASS",
+      "command": "scripts/check-static.sh web",
+      "log": "web.log",
+      "scope": "Type checking and 113 browser checks across the existing isolated suites"
+    },
+    {
+      "name": "scripts",
+      "status": "PASS",
+      "command": "scripts/check-static.sh scripts",
+      "log": "scripts.log",
+      "scope": "Script, contract, configuration, PostgreSQL/proxy checks"
+    },
+    {
+      "name": "cliReports",
+      "status": "PASS",
+      "command": "python3 scripts/check-cli-reports.py --cli <client-candidate>",
+      "log": "cli-reports-final.json",
+      "scope": "8 native CLI loopback/outbox cases; no credential store required"
+    },
+    {
+      "name": "cliOutput",
+      "status": "PASS",
+      "command": "python3 scripts/check-cli-output.py --cli <client-candidate>",
+      "log": "cli-output-final.log",
+      "scope": "16 checks including safe storage diagnostics and revocation after device exchange"
+    },
+    {
+      "name": "cliInstall",
+      "status": "PASS",
+      "command": "python3 scripts/check-cli-install.py --cli target/debug/miy",
+      "log": "cli-install.log",
+      "scope": "17 Unix installer/bootstrap checks"
+    },
+    {
+      "name": "cliRecovery",
+      "status": "PASS",
+      "command": "python3 scripts/check-cli-recovery.py --cli target/debug/miy",
+      "log": "cli-recovery.log",
+      "scope": "9 lifecycle/wire recovery checks"
+    },
+    {
+      "name": "actualCoreAndBrowser",
+      "status": "PASS",
+      "command": "pnpm exec playwright test --config scripts/runtime-regression/server-ui.config.ts",
+      "log": "server-ui-retry2.log",
+      "scope": "8 tests with disposable PostgreSQL: migration 24, anonymous submit/dedup/size/rate limits, current admin read and triage, CSRF and revision conflict, text rendering"
+    },
+    {
+      "name": "coreBackupRestoreRehearsal",
+      "status": "PASS",
+      "command": "scripts/core-backup.py create/verify with explicit miy-prod-postgres-1 and isolated restore",
+      "log": "backup-restore-rehearsal.json",
+      "scope": "44 tables and 510 rows restored exactly; schema 23 to 24 on disposable PostgreSQL; verification container removed"
+    }
+  ],
+  "earlierAttempts": [
+    {
+      "status": "FAIL",
+      "log": "rust.log",
+      "reason": "New nested conditionals failed clippy collapsible_if; fixed without changing behavior"
+    },
+    {
+      "status": "FAIL",
+      "log": "cli-reports.log",
+      "reason": "New fixture used context init --server instead of existing --url; fixture corrected"
+    },
+    {
+      "status": "FAIL",
+      "log": "server-ui.log",
+      "reason": "Existing server UI harness omitted required frame settings; added isolated loopback frame configuration"
+    },
+    {
+      "status": "FAIL",
+      "log": "server-ui-retry.log",
+      "reason": "Existing login navigation race and new test expected 401 on portal management route that correctly denies with 403; corrected fixtures/assertions"
+    }
+  ],
+  "notRun": [
+    {
+      "scope": "macOS Keychain and GUI versus Background execution; actual client recovery",
+      "status": "NOT_RUN",
+      "reason": "This host is Linux; client OSStatus has not been obtained"
+    },
+    {
+      "scope": "Windows native and macOS native CI package checks",
+      "status": "NOT_RUN",
+      "reason": "Candidate source has not yet been pushed or published"
+    },
+    {
+      "scope": "Live migration, new core/web rollout and public CLI package publication",
+      "status": "NOT_RUN",
+      "reason": "Publication and deployment approved; rollout follows this isolated validation record"
+    }
+  ],
+  "macIncident": {
+    "sourceObservationCommit": "61ce2863226d17a81a45b74d52f8227b5ffce8c8",
+    "loginId": "23a3e73c-360a-478f-8f58-55fdbaefcbef",
+    "serverDeviceStatus": "consumed",
+    "serverDeviceCreatedAt": "2026-11-16T12:57:10.197052Z",
+    "lastPollAt": "2026-11-16T12:59:25.490809Z",
+    "sessionCreatedAt": "2026-11-16T12:59:25.490050Z",
+    "sessionRevokedAtObservation": false,
+    "refreshRecordPresent": true,
+    "refreshUsedAtObservation": false,
+    "inference": "The observed code after completed exchange identifies the previous-credential read path; backend and OS cause remain unconfirmed",
+    "secretsQueried": false,
+    "existingSessionsMutated": false
+  },
+  "sourceFiles": {
+    "crates/miy/src/cli_report.rs": "f418287e2faefb90098b309c317309f9a6b92500b907adbc599198959494c22e",
+    "crates/miy/src/support.rs": "2a51b7c5f84833599328a670bffee0c5515b896b6795c736fd98cc99e91f9c04",
+    "crates/miy/src/support_contract.rs": "1879ae098f47a32ff43f6fbb1420dea6c014da82c7f4e97a62d9922a58ddc70c",
+    "crates/miy/src/cli_login.rs": "8e50ce822ad2c565fccdea99c79e352a5c5646157f0374305ae2f43e96ea09d5",
+    "crates/miy/src/credential_store.rs": "2d12f53196202e65ea328d4aa419a5ba5d73e4946eee07c8f7e9475e53e0ca31",
+    "crates/miy/src/agent_tools.rs": "a08dcf0d524d79721b3b2e0a29b38dc789376bf7eaa741c117df8618ec23fd8e",
+    "migrations/core/0024_support_reports.sql": "9370f724435f0037e6ead5ab6c6257721d5e17101e4cd57aa9642ac7c45a894a",
+    "web/platform/src/pages/AdminReports.tsx": "74c2cd44517a568837845c050ce547608c2bd1e29c26553c0f24f5b23b33edfd"
+  },
+  "clientCandidateSha256": "51fb2640f876026eec183582e2065fa444b2afa5111783cfab7ba662e8b7bf81",
+  "publicationApproved": true
+}

@@ -22,7 +22,9 @@
 | 내장 AI 설계 | [AI](AI.md) | 공통 연결·Hermes·사용자별 세션·도구 승인. 개발 에이전트 인수와 구분 |
 | 기술 선택 | [STACK](STACK.md) | 현재 선택과 선택 근거, 아직 구현되지 않은 기술 구분 |
 | 빈 서버의 최초 설치와 최소 운영 | [SETUP](SETUP.md) | OS·DB/IdP·계정·TLS·Core/worker·웹/프레임·첫 앱·재접속·수동 백업/갱신의 순서 |
+| 주소 선택·변경과 클라이언트 영향 | [SERVER-ADDRESSES](SERVER-ADDRESSES.md) | 도메인/IP·포트 설정, 세 화면의 역할, 후보 생성·기존 프레임 이전·재로그인 |
 | CLI·로컬 개발·앱 배포 사용법 | [RUNNING](RUNNING.md) | 네이티브 개발·DB 보존·원격 빌드·승격·로컬 보조 도구 |
+| CLI 고장 신고·인증 저장소 진단 | [SUPPORT-REPORTS](SUPPORT-REPORTS.md) | 비로그인 접수, 로컬 재전송, 관리자 처리와 안전한 오류 정보 |
 | 실제 서버와 반영·복구 | [SERVER-OPERATIONS](SERVER-OPERATIONS.md) | 주소·배포 소스·schema·실제 설정·반영 도구 |
 | CLI 후보·게시·패키징 | [CLI-RELEASE](CLI-RELEASE.md) | 소스와 게시 버전·후보 검사·배포물·릴리스 절차 |
 | Windows 설치·갱신·제거 인수 | [WINDOWS-ACCEPTANCE](WINDOWS-ACCEPTANCE.md) | 현재 후보·설치기 계약·사용자 수행 절차·NOT_RUN 범위 |

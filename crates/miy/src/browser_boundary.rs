@@ -24,9 +24,13 @@ pub fn access(route: &str, method: &Method) -> Option<Access> {
     let read = matches!(*method, Method::GET | Method::HEAD);
     let route = route.strip_prefix("/api/v1").unwrap_or(route);
     Some(match route {
+        "/support/reports" if *method == Method::POST => Access::Public,
+        "/support/reports" | "/support/reports/{id}" => Access::Console,
         "/api/health"
         | "/capabilities"
         | "/cli/install"
+        | "/cli/install.sh"
+        | "/cli/install.ps1"
         | "/auth/login"
         | "/auth/options"
         | "/auth/development"

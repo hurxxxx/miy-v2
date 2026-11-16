@@ -5,10 +5,13 @@ const serverUrl = "https://configured-platform.example:8443";
 const guide = {
   schemaVersion: 1,
   serverUrl,
-  cliVersion: "0.6.0",
+  cliVersion: "0.11.0",
+  downloads: ["x86_64-unknown-linux-gnu", "x86_64-pc-windows-msvc"].map((target) => ({
+    target, file: `miy-${target}`, sha256: "b".repeat(64), url: `/cli/downloads/fixture/miy-${target}`, checksumUrl: `/cli/downloads/fixture/miy-${target}.sha256`,
+  })),
   commands: {
-    unix: `bash ./install-cli.sh --server '${serverUrl}'`,
-    windows: `powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\\install-cli.ps1 -ArchivePath $Archive -Sha256 $ExpectedSha256 -Server '${serverUrl}'`,
+    unix: `curl -fsSL '${serverUrl}/api/v1/cli/install.sh' | bash`,
+    windows: `& ([scriptblock]::Create((Invoke-RestMethod -Uri '${serverUrl}/api/v1/cli/install.ps1')))`,
     login: "miy auth login",
   },
 };
@@ -52,7 +55,7 @@ test("public installation guide uses server configuration and copies exact comma
   await expect(page.getByLabel("Windows 설치 명령", { exact: true })).toHaveText(guide.commands.windows);
   await expect(page.getByLabel("CLI 로그인 명령", { exact: true })).toHaveText("miy auth login");
   await expect(page.getByText("CLI에는 기본 IP나 도메인이 없습니다.", { exact: false })).toBeVisible();
-  await expect(page.getByText("설치 파일을 준비 중입니다.", { exact: false })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "1. 명령 한 줄로 설치", exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Windows 설치 명령 복사", exact: true }).click();
   await expect.poll(() => page.evaluate(() => (window as typeof window & { copiedCommand?: string }).copiedCommand)).toBe(guide.commands.windows);
   await page.getByRole("button", { name: "CLI 로그인 명령 복사", exact: true }).click();
@@ -93,6 +96,7 @@ test("published candidate exposes immutable archive and checksum links with its 
     downloads: [{ target: "x86_64-pc-windows-msvc", file, sha256: "b".repeat(64), url, checksumUrl: `${url}.sha256` }],
   } }));
   await page.goto("/cli/install");
+  await page.getByText("설치 파일 직접 다운로드", { exact: true }).click();
   await expect(page.getByRole("link", { name: file, exact: true })).toHaveAttribute("href", url);
   await expect(page.getByRole("link", { name: "SHA-256", exact: true })).toHaveAttribute("href", `${url}.sha256`);
   await expect(page.getByLabel("Windows 설치 명령", { exact: true })).toHaveText(command);
@@ -100,7 +104,7 @@ test("published candidate exposes immutable archive and checksum links with its 
   await expect(page.getByText("설치 파일을 준비 중입니다.", { exact: false })).toHaveCount(0);
 });
 
-test("Windows setup is the primary download and requires the displayed company URL", async ({ page }, testInfo) => {
+test("one-line commands stay primary when a Windows GUI installer is also published", async ({ page }, testInfo) => {
   await setup(page);
   await page.addInitScript(() => {
     Object.defineProperty(navigator, "clipboard", {
@@ -118,6 +122,8 @@ test("Windows setup is the primary download and requires the displayed company U
     windowsInstaller: { file, url, checksumUrl: `${url}.sha256`, sha256: "e".repeat(64) },
   } }));
   await page.goto("/cli/install");
+  await expect(page.getByLabel("Windows 설치 명령", { exact: true })).toBeVisible();
+  await page.getByText("설치 파일 직접 다운로드", { exact: true }).click();
   const download = page.getByRole("link", { name: "Windows 설치 파일 다운로드", exact: true });
   await expect(download).toHaveAttribute("href", url);
   await expect(download).toHaveAttribute("download", file);
@@ -126,12 +132,12 @@ test("Windows setup is the primary download and requires the displayed company U
   await expect(page.getByLabel("설치에 입력할 서버 주소", { exact: true })).toHaveText(serverUrl);
   await page.getByRole("button", { name: "설치에 입력할 서버 주소 복사", exact: true }).click();
   await expect.poll(() => page.evaluate(() => (window as typeof window & { copiedCommand?: string }).copiedCommand)).toBe(serverUrl);
-  await expect(page.getByLabel("Windows 설치 명령", { exact: true })).not.toBeVisible();
+  await expect(page.getByLabel("Windows 설치 명령", { exact: true })).toBeVisible();
   await page.screenshot({ path: testInfo.outputPath("windows-installer-desktop.png"), fullPage: true });
   await page.setViewportSize({ width: 390, height: 844 });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   await page.screenshot({ path: testInfo.outputPath("windows-installer-mobile.png"), fullPage: true });
-  await page.getByText("스크립트 설치와 다른 운영체제", { exact: true }).click();
+  await page.getByText("설치 파일 직접 다운로드", { exact: true }).click();
   await expect(page.getByLabel("Windows 설치 명령", { exact: true })).toHaveText(guide.commands.windows);
 });
 
@@ -144,6 +150,18 @@ test("Windows setup guidance supports company HTTP IP servers without substituti
   } }));
   await page.goto("/cli/install");
   await expect(page.getByTestId("cli-install-server")).toHaveText(companyUrl);
+  await page.getByText("설치 파일 직접 다운로드", { exact: true }).click();
   await expect(page.getByLabel("설치에 입력할 서버 주소", { exact: true })).toHaveText(companyUrl);
   await expect(page.getByText("이 서버는 사내망 HTTP 구성으로 통신이 암호화되지 않습니다.")).toBeVisible();
+});
+
+
+test("missing packages do not advertise commands that cannot install", async ({ page }) => {
+  await setup(page);
+  await page.route("**/api/v1/cli/install", (route) => route.fulfill({ json: { ...guide, downloads: [] } }));
+  await page.goto("/cli/install");
+  await expect(page.getByText("이 서버에 Linux·macOS CLI 패키지가 아직 게시되지 않았습니다.", { exact: false })).toBeVisible();
+  await expect(page.getByText("이 서버에 Windows CLI 패키지가 아직 게시되지 않았습니다.", { exact: false })).toBeVisible();
+  await expect(page.getByLabel("Linux·macOS 설치 명령", { exact: true })).toHaveCount(0);
+  await expect(page.getByLabel("Windows 설치 명령", { exact: true })).toHaveCount(0);
 });

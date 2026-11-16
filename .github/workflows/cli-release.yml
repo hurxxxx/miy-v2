@@ -121,6 +121,7 @@ jobs:
       - name: Verify the executable, output contract and portable bundle
         run: |
           python scripts/check-cli-output.py --cli target/${{ matrix.target }}/release/${{ matrix.executable }}
+          python scripts/check-cli-reports.py --cli target/${{ matrix.target }}/release/${{ matrix.executable }}
           python scripts/check-cli-install.py --cli target/${{ matrix.target }}/release/${{ matrix.executable }}
           python scripts/check-bundle-portability.py check --cli target/${{ matrix.target }}/release/${{ matrix.executable }} --output .local/release-bundle/bundle.json
       - name: Package binary, provenance and SHA-256

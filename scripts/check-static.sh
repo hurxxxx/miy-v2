@@ -43,6 +43,7 @@ script_checks() {
     scripts/*.py scripts/runtime-regression/*.py
   python3 scripts/runtime-regression/test_cleanup.py
   python3 scripts/runtime-regression/test_ui_cleanup.py
+  python3 scripts/test-online-cli-install.py
   python3 scripts/test-cli-release.py
   python3 scripts/test-cli-version.py
   python3 scripts/test-write-decisions.py
@@ -61,6 +62,7 @@ script_checks() {
   python3 scripts/test-dev-portal-settings.py
   python3 scripts/test-app-frame-settings.py
   python3 scripts/test-console-origin-move.py
+  python3 scripts/test-server-addresses.py
   python3 scripts/check-server-config.py
 }
 

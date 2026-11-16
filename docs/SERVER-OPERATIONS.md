@@ -1,5 +1,76 @@
 # 현재 플랫폼 서버 운영·연결 안내
 
+## miy.works 호스트 (2026-11-16)
+
+기존 `v2.dwdcc.kr`와 별도로 새로 설치한 서버다. 현재 사용자 결정은 **플랫폼 하나를 prod 작업본에서 직접 개발·사용하고, 실제 업무 운영 전에 플랫폼 자체의 dev를 분리**하는 것이다. 아래 앱 개발 포털은 이 플랫폼 내부의 앱 dev 환경이며 별도 플랫폼 코어 개발 서버가 아니다. 이전 호스트의 명령은 이 절의 실제 이름·경로로 검토 없이 실행하지 않는다.
+
+| 항목 | 새 호스트 구성 |
+| --- | --- |
+| 서버 | `185.223.207.238`, Ubuntu 26.04.1 LTS, 3 vCPU, 약 12GiB RAM |
+| 소스 | `/projects/miy-v2/prod`, 최초 설치 `9897f6385ff1228c43fbc28a4f42b4d7a75f59a4`, Core/CLI 0.11.0 |
+| 업무 포털 | `https://portal.miy.works` |
+| 관리·CLI 승인·IdP | `https://console.miy.works` |
+| 내부 앱 개발 포털 | `https://dev.miy.works` |
+| 설치별 앱 프레임 | `https://app-<32자리 키>.miy.works` |
+| 서비스·계정 | `miy-prod-serve`, `miy-prod-worker`, OS 사용자 `miy` |
+| 상태·바이너리 | `/srv/miy-prod`(0700), `/srv/miy-prod/bin/miy-server` |
+| CLI 설치 안내·HTTP MCP | `https://portal.miy.works/cli/install`, `https://portal.miy.works/mcp` |
+| 사용자 CLI | `/home/miy/.local/bin/miy`; `default` context → 업무 포털 |
+| DB·Keycloak | `miy-prod-postgres-1`, `miy-prod-keycloak-1`; loopback 15432, 18181 |
+| Core 내부 포트 | 업무 18080, 콘솔 18081, 앱 개발 18082, 프레임 18083; 모두 loopback |
+| Compose | `miy-prod-compose` wrapper; 프로젝트 `miy-prod`, 볼륨 `miy-prod_pgdata`, 네트워크 `miy-prod-app-runtime` |
+| Nginx | `/etc/nginx/conf.d/miy-prod.conf`, 정적 파일은 prod 작업본의 `web/platform/dist` |
+| TLS | Let's Encrypt `*.miy.works`, `/etc/letsencrypt/live/miy.works/`, 만료 2027-02-14 |
+| 플랫폼 dev 작업본 | `/projects/miy-v2/dev`; 의존성만 설치. 별도 DB·서비스 미기동 |
+
+`miy.works` 루트 A 레코드는 2026-11-16 재확인 시 두 권한 DNS 모두 `185.223.207.238`을 반환했다. 최초 설치 때 다른 IP였다는 기록은 현재 DNS 상태가 아니다. DNS 일치만으로 다른 하위 도메인의 관리 주체까지 확인한 것은 아니며, 이 설치의 접속 주소는 위 하위 도메인이다. Docker는 실제 OS에 맞는 공식 `resolute` 패키지를 사용하며, SETUP.md의 Ubuntu 24.04용 `noble` 항목을 그대로 사용하지 않았다.
+
+```bash
+systemctl status miy-prod-serve miy-prod-worker --no-pager
+miy-prod-compose ps
+curl --fail --silent --show-error https://portal.miy.works/api/health
+curl --fail --silent --show-error https://console.miy.works/api/health
+curl --fail --silent --show-error https://dev.miy.works/api/health
+```
+
+공통 주소 설정과 이전 절차는 [SERVER-ADDRESSES](SERVER-ADDRESSES.md)를 따른다. 2026-11-16에 위 역할별 주소로 실제 전환했다. `prod.miy.works`·`prod-console.miy.works`·`prod-dev.miy.works`의 첫 화면과 `/cli/install`은 각 새 주소로 302 안내하고, 옛 API·인증 경로는 410으로 종료한다. 프레임은 새 `app-<키>` 주소를 사용한다. 이 호스트에서는 `--service-prefix miy-prod`, `MIY_DATABASE_CONTAINER=miy-prod-postgres-1`과 기존 Compose wrapper를 사용한다. 현재 주소 입력은 `/srv/miy-prod/addresses.json`에 저장했다. 파일 변경 뒤 `bootstrap.py --state-dir /srv/miy-prod --addresses-file /srv/miy-prod/addresses.json --check`로 먼저 검사하고 후보 생성·이전 절차를 따른다. 파일 편집만으로 실행 중인 서비스가 바뀌지는 않는다.
+
+상태 파일을 다루는 명령에는 `MIY_STATE_DIR=/srv/miy-prod`, 앱 DB 관리에는 `MIY_DATABASE_CONTAINER=miy-prod-postgres-1`을 지정한다. systemd drop-in에 DB 이름과 도구 PATH가 고정되어 있다. 기본 Compose 명령이나 이전 호스트 전용 `core-rollout.py`를 사용하지 않는다. 소스/설정 재생성 시 이 명시적 DB 이름과 Compose override를 유지한다.
+
+Cargo·pnpm은 OS 사용자 `miy`로 실행한다. 검증 웹 빌드는 별도 outDir를 지정한다. 실제 화면을 바꾸려면 기존 정적 파일·서버 바이너리를 먼저 보관하고 사용자에게 요청받은 반영 범위에서 교체·재시작한다. 초기 설치는 빈 DB였으며 기존 서버의 데이터·계정·릴리스를 복사하지 않았다.
+
+최초 설치 검사에서 `pilot-69697002` 앱을 서버 빌드·앱 dev 배포·HTTPS 프레임까지 확인한 뒤 중지했다. DB·앱 기록은 보존했다. 예시 계정 `developer`·`alice`·`bob`은 Core와 Keycloak 양쪽에서 비활성화했다.
+
+주소 변경은 `/srv/miy-backups/prod-20261116T052653Z`의 전체 백업을 별도 PostgreSQL에 복원하고 프레임 이전 SQL을 리허설한 뒤 수행했다. 기존 프레임 주소는 예약을 남기고 연결만 해제했다. 당시 실행 중이던 `pilot-69697002`의 dev 설치는 같은 서버 빌드 이미지로 컨테이너를 재생성해 `MIY_CORE_ORIGIN`도 새 포털로 변경했으며, 설치·릴리스·DB ID와 스키마는 유지했다. 이 앱은 현재 실행 중이다. Keycloak의 realm·사용자 subject·활성 상태·클라이언트 내부 ID와 비밀도 보존했다. 실제 OIDC·CLI device 승인·MCP OAuth/도구 호출·프레임 실행 검사는 [주소 전환 기록](releases/miy-works-address-move-2026-11-16.json)에 있다.
+
+서버 사용자 `miy`의 CLI `default` context는 새 포털로 변경했다. 외부 개발 PC는 자동 변경되지 않으므로 새 context를 등록하고 재로그인한다. 프로젝트 stdio MCP는 로컬 CLI context를 확인하고, 직접 HTTP MCP 연결은 새 URL로 재인증한다. 브라우저도 새 주소에서 다시 로그인한다.
+
+```bash
+miy context add portal --url https://portal.miy.works
+miy --context portal auth login
+```
+
+첫 플랫폼 관리자는 `admin`이다. 초기 비밀번호는 비공개 `/srv/miy-prod/credentials.json`의 `admin` 항목, 내부 Keycloak 관리 비밀번호는 `identity_admin` 항목에만 보관한다. 값을 문서·대화·Git에 복사하지 않는다. 계정 관리 절차는 SETUP.md §8을 따르되 상태 경로와 내부 주소는 이 설치 값을 사용한다.
+
+`miy-prod-backup`의 복구 대기는 `server.json`의 현재 콘솔 주소를 읽는다. 백업은 앱을 CLI로 중지하고 개발 세션·작업·파일 업로드를 정리한 뒤 root에서 `miy-prod-backup`으로 만든다. 이 도구는 실행 중 앱/작업이 있으면 거부하고, Nginx·Core·worker·DB/IdP를 잠시 중지해 DB 볼륨·상태·정적 웹·이미지·소스·서비스 설정·TLS를 `/srv/miy-backups/prod-<UTC시각>`에 보관한 뒤 다시 기동한다. 다른 운영자와 사용자의 변경도 먼저 중지한다.
+
+`miy-prod-verify-backup /srv/miy-backups/prod-<UTC시각>`은 해시를 확인하고 새 임시 볼륨·네트워크 없는 컨테이너에서 DB 사본을 열어 주요 개수를 비교한다. 성공 시 자신이 만든 임시 자원만 지우고, 실패 시 조사용으로 보존한다. 이 검사와 같은 호스트의 백업만으로 별도 호스트 전체 복원·장비 장애 대비를 완료했다고 보지 않는다. 백업에는 비밀이 포함되므로 외부 보관은 암호화해서 수행한다.
+
+TLS는 DNS TXT 수동 검증으로 발급했다. **DNS API 연동이 없으므로 자동 갱신되지 않는다.** 만료 전에 root로 아래 명령을 실행하고 표시된 새 TXT 값을 Spaceship에 등록한다. 기존 TXT 값을 재사용하지 않는다. DNS-01 갱신을 자동화하려면 별도 DNS API 인증 구성이 필요하다. 성공한 갱신 후 deploy hook이 `nginx -t`와 reload를 실행한다.
+
+```bash
+certbot certonly --manual --preferred-challenges dns --cert-name miy.works -d '*.miy.works'
+nginx -t && systemctl reload nginx
+```
+
+설치·검증 결과는 `/srv/miy-prod/evidence`와 이 저장소의 `docs/releases/miy-works-setup-2026-11-16.json`에 기록한다. 2026-11-16에 CLI 0.11.0의 5개 OS/CPU 패키지와 Linux helper 2개를 CI 43865661806에서 검증하여 `/srv/miy-prod/cli-downloads`에 게시했다. [CLI 설치 안내](https://portal.miy.works/cli/install)는 curl/Bash와 PowerShell 한 줄 설치를 제공한다. Core의 `/api/v1/cli/install.sh`·`install.ps1`은 현재 `MIY_ORIGIN`과 immutable 패키지 해시로 생성된다. Core 바이너리와 웹을 함께 반영했고, 이전 바이너리·웹은 `/srv/miy-prod/evidence/online-cli-20261116/before`에 보관했다. DB·계정·주소 설정과 앱 런타임은 변경하지 않았다. 상세 출처·검사·미실행 범위는 [온라인 설치 반영 기록](releases/online-cli-2026-11-16-deployment.json)에 있다. Windows GUI EXE는 이 호스트에 게시하지 않았다.
+
+---
+
+## 기존 v2.dwdcc.kr 호스트 안내
+
+이하의 주소·`.local`·서비스명·복구 절차는 기존 호스트에 관한 기록이다.
+
 - 정리일: 2026-11-15 · 실제 운영 확인의 최신 근거: [0.10.0 반영 기록](releases/pilot-0.10.0-2026-11-15-deployment.json)
 - 역할: 현재 서버·복구·반영 절차. 전체 완료/진행/잔여와 착수 순서는 [PLAN](PLAN.md), CLI 후보·게시는 [CLI-RELEASE](CLI-RELEASE.md)가 관리한다.
 

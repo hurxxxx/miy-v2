@@ -78,6 +78,9 @@ jobs:
       - name: Verify installer server bootstrap and existing configuration preservation
         if: matrix.client
         run: python scripts/check-cli-install.py --cli "${{ matrix.binary }}"
+      - name: Verify anonymous reports and private outbox recovery
+        if: matrix.client
+        run: python scripts/check-cli-reports.py --cli "${{ matrix.binary }}"
       - name: Verify lost acknowledgements and lifecycle recovery
         if: matrix.id == 'linux-client'
         run: |

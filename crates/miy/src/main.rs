@@ -50,6 +50,7 @@ mod cli_permissions;
 #[cfg(all(test, feature = "server"))]
 mod cli_regression;
 mod cli_remote;
+mod cli_report;
 mod component_cli;
 mod component_contract;
 #[cfg(feature = "server")]
@@ -131,6 +132,9 @@ mod source_archive;
 #[cfg(feature = "server")]
 mod storage;
 mod storage_contract;
+#[cfg(feature = "server")]
+mod support;
+mod support_contract;
 mod upgrade;
 #[cfg(feature = "server")]
 mod user_admin;
@@ -172,6 +176,14 @@ enum Command {
     },
     /// Diagnose the requirements for remote operation or local development.
     Doctor(cli_doctor::DoctorArgs),
+    /// Report a problem without authentication, or inspect the private local outbox.
+    Report {
+        /// Separate private outbox if the normal configuration directory is broken.
+        #[arg(long, global = true)]
+        outbox: Option<std::path::PathBuf>,
+        #[command(subcommand)]
+        command: cli_report::ReportCommand,
+    },
     /// Discover command inputs, outputs, permissions and effects.
     Describe(cli_discovery::DescribeArgs),
     /// Generate completion for a supported shell.
@@ -300,6 +312,9 @@ async fn main() -> Result<()> {
         Command::Auth { command } => Box::pin(cli_login::execute(command))
             .await
             .map(cli_output::Outcome::Data),
+        Command::Report { command, outbox } => Box::pin(cli_report::execute(command, outbox))
+            .await
+            .map(cli_output::Outcome::Data),
         Command::Component { command } => Box::pin(component_cli::execute(command))
             .await
             .map(cli_output::Outcome::Data),
@@ -356,6 +371,11 @@ async fn main() -> Result<()> {
             }
         }
     };
+    if !command_name.starts_with("report ")
+        && let Err(error) = &result
+    {
+        cli_report::remember(error);
+    }
     let code = cli_output::emit(mode, &command_name, &result, raw)?;
     if code != 0 {
         std::process::exit(code);

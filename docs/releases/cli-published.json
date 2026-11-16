@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "origin": "https://portal.miy.works",
+  "version": "0.11.0",
+  "bundleVersion": "0.11.0",
+  "sourceCommit": "9897f6385ff1228c43fbc28a4f42b4d7a75f59a4",
+  "cliReleaseRun": 43865661806,
+  "record": "online-cli-2026-11-16-deployment.json"
+}

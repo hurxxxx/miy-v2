@@ -1,6 +1,6 @@
 //! Public installation guidance bound to the configured platform origin.
 use crate::api_error::{ApiError, ApiResult};
-use axum::{Json, Router, extract::State, routing::get};
+use axum::{Json, Router, extract::State, http::header, routing::get};
 use serde::Serialize;
 use serde_json::{Value, json};
 
@@ -36,14 +36,14 @@ fn powershell_quote(value: &str) -> String {
 fn guide(origin: &str) -> ApiResult<InstallGuide> {
     let server_url = crate::cli_client::origin(origin)
         .map_err(|_| ApiError::unavailable("invalid_platform_origin"))?;
-    let mut commands = Commands {
+    let commands = Commands {
         unix: format!(
-            "bash ./install-cli.sh --server {}",
-            shell_quote(&server_url)
+            "curl -fsSL {} | bash",
+            shell_quote(&format!("{server_url}/api/v1/cli/install.sh"))
         ),
         windows: format!(
-            "powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\\install-cli.ps1 -ArchivePath $Archive -Sha256 $ExpectedSha256 -Server {}",
-            powershell_quote(&server_url)
+            "& ([scriptblock]::Create((Invoke-RestMethod -Uri {})))",
+            powershell_quote(&format!("{server_url}/api/v1/cli/install.ps1"))
         ),
         login: "miy auth login",
     };
@@ -87,21 +87,6 @@ fn guide(origin: &str) -> ApiResult<InstallGuide> {
             }
             source_commit = Some(commit.to_owned());
         }
-    }
-    if let Some(windows) = downloads
-        .iter()
-        .find(|item| item["target"] == "x86_64-pc-windows-msvc")
-    {
-        let file = windows["file"].as_str().unwrap();
-        let url = format!("{}{}", server_url, windows["url"].as_str().unwrap());
-        let hash = windows["sha256"].as_str().unwrap();
-        commands.windows = format!(
-            "$Archive = Join-Path $env:TEMP {}\n$ExpectedSha256 = {}\nInvoke-WebRequest -UseBasicParsing -Uri {} -OutFile $Archive\nif ((Get-FileHash -Algorithm SHA256 -LiteralPath $Archive).Hash.ToLowerInvariant() -ne $ExpectedSha256) {{ throw 'CLI checksum mismatch' }}\n$MiyExtract = Join-Path $env:TEMP ('miy-install-' + [Guid]::NewGuid().ToString('N'))\nExpand-Archive -LiteralPath $Archive -DestinationPath $MiyExtract\npowershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $MiyExtract 'install-cli.ps1') -ArchivePath $Archive -Sha256 $ExpectedSha256 -Server {} -AddToPath\nif ($LASTEXITCODE -ne 0) {{ throw 'CLI installation or server registration failed' }}",
-            powershell_quote(file),
-            powershell_quote(hash),
-            powershell_quote(&url),
-            powershell_quote(&server_url)
-        );
     }
     let windows_installer = match std::env::var("MIY_CLI_INSTALLER_DIR") {
         Ok(root) => load_windows_installer(
@@ -259,6 +244,84 @@ fn asset_file(row: &Value) -> ApiResult<&str> {
     Ok(file)
 }
 
+// Each response pins all URLs and hashes to one validated catalog snapshot.
+// Scripts need neither jq/Python nor a second mutable index fetch on the PC.
+fn online_script(guide: &InstallGuide, windows: bool) -> ApiResult<String> {
+    if guide.downloads.is_empty() {
+        return Err(ApiError::unavailable("cli_release_unavailable"));
+    }
+    let find = |target: &str| {
+        guide
+            .downloads
+            .iter()
+            .find(|row| row["target"] == target)
+            .ok_or_else(|| ApiError::unavailable("cli_release_unavailable"))
+    };
+    let field = |row: &Value, key: &str| -> ApiResult<String> {
+        row[key]
+            .as_str()
+            .map(str::to_owned)
+            .ok_or_else(|| ApiError::unavailable("invalid_cli_release_index"))
+    };
+    if windows {
+        let row = find("x86_64-pc-windows-msvc")?;
+        Ok(include_str!("../../../scripts/install-cli-online.ps1")
+            .replace("@MIY_SERVER@", &powershell_quote(&guide.server_url))
+            .replace("@MIY_VERSION@", &powershell_quote(guide.cli_version))
+            .replace(
+                "@MIY_URL@",
+                &powershell_quote(&format!("{}{}", guide.server_url, field(row, "url")?)),
+            )
+            .replace("@MIY_SHA256@", &powershell_quote(&field(row, "sha256")?))
+            .replace(
+                "@MIY_BINARY_SHA256@",
+                &powershell_quote(&field(row, "binarySha256")?),
+            ))
+    } else {
+        let mut cases = Vec::new();
+        for (pattern, target) in [
+            ("Linux:x86_64", "x86_64-unknown-linux-gnu"),
+            ("Linux:aarch64|Linux:arm64", "aarch64-unknown-linux-gnu"),
+            ("Darwin:x86_64", "x86_64-apple-darwin"),
+            ("Darwin:arm64|Darwin:aarch64", "aarch64-apple-darwin"),
+        ] {
+            let row = find(target)?;
+            cases.push(format!(
+                "    {pattern}) url={}; sha256={}; binary_sha256={} ;;",
+                shell_quote(&format!("{}{}", guide.server_url, field(row, "url")?)),
+                shell_quote(&field(row, "sha256")?),
+                shell_quote(&field(row, "binarySha256")?)
+            ));
+        }
+        Ok(include_str!("../../../scripts/install-cli-online.sh")
+            .replace("@MIY_SERVER@", &shell_quote(&guide.server_url))
+            .replace("@MIY_VERSION@", &shell_quote(guide.cli_version))
+            .replace("# @MIY_ASSETS@", &cases.join("\n")))
+    }
+}
+
+async fn unix_script(State(origin): State<String>) -> ApiResult<impl axum::response::IntoResponse> {
+    Ok((
+        [
+            (header::CONTENT_TYPE, "text/plain; charset=utf-8"),
+            (header::CACHE_CONTROL, "no-store"),
+        ],
+        online_script(&guide(&origin)?, false)?,
+    ))
+}
+
+async fn windows_script(
+    State(origin): State<String>,
+) -> ApiResult<impl axum::response::IntoResponse> {
+    Ok((
+        [
+            (header::CONTENT_TYPE, "text/plain; charset=utf-8"),
+            (header::CACHE_CONTROL, "no-store"),
+        ],
+        online_script(&guide(&origin)?, true)?,
+    ))
+}
+
 async fn install(State(origin): State<String>) -> ApiResult<Json<InstallGuide>> {
     guide(&origin).map(Json)
 }
@@ -266,6 +329,8 @@ async fn install(State(origin): State<String>) -> ApiResult<Json<InstallGuide>> 
 pub fn router<S: Clone + Send + Sync + 'static>(origin: String) -> Router<S> {
     let mut router = Router::new()
         .route("/api/v1/cli/install", get(install))
+        .route("/api/v1/cli/install.sh", get(unix_script))
+        .route("/api/v1/cli/install.ps1", get(windows_script))
         .with_state(origin);
     if let Ok(root) = std::env::var("MIY_CLI_RELEASE_DIR") {
         router = router.nest_service("/cli/downloads", tower_http::services::ServeDir::new(root));
@@ -431,13 +496,13 @@ mod tests {
             assert_eq!(result.cli_version, env!("CARGO_PKG_VERSION"));
             assert_eq!(
                 result.commands.unix,
-                format!("bash ./install-cli.sh --server '{expected}'")
+                format!("curl -fsSL '{expected}/api/v1/cli/install.sh' | bash")
             );
             assert!(
                 result
                     .commands
                     .windows
-                    .ends_with(&format!("-Server '{expected}'"))
+                    .contains(&format!("'{expected}/api/v1/cli/install.ps1'"))
             );
         }
         for invalid in [
@@ -451,6 +516,49 @@ mod tests {
                 guide(invalid).err().unwrap().code,
                 "invalid_platform_origin"
             );
+        }
+    }
+
+    #[test]
+    fn online_installers_pin_all_targets_and_preserve_ip_port_origins() {
+        for origin in [
+            "https://configured.example",
+            "http://192.168.1.10:8080",
+            "http://[::1]:8080",
+        ] {
+            let mut fixture = guide(origin).unwrap();
+            assert_eq!(
+                online_script(&fixture, false).unwrap_err().code,
+                "cli_release_unavailable"
+            );
+            for target in [
+                "x86_64-unknown-linux-gnu",
+                "aarch64-unknown-linux-gnu",
+                "x86_64-apple-darwin",
+                "aarch64-apple-darwin",
+                "x86_64-pc-windows-msvc",
+            ] {
+                fixture.downloads.push(json!({"target": target, "url": format!("/cli/downloads/{}/{target}", "a".repeat(40)), "sha256": "b".repeat(64), "binarySha256": "c".repeat(64)}));
+            }
+            for windows in [false, true] {
+                let script = online_script(&fixture, windows).unwrap();
+                assert!(!script.contains("@MIY_"));
+                assert!(script.contains(&format!("{origin}/cli/downloads/{}", "a".repeat(40))));
+                assert!(script.contains(&"b".repeat(64)));
+                assert!(script.contains(&"c".repeat(64)));
+                if !windows {
+                    let file = tempfile::NamedTempFile::new().unwrap();
+                    std::fs::write(file.path(), script).unwrap();
+                    assert!(
+                        std::process::Command::new("bash")
+                            .arg("-n")
+                            .arg(file.path())
+                            .status()
+                            .unwrap()
+                            .success()
+                    );
+                }
+            }
         }
     }
 
@@ -502,9 +610,15 @@ mod tests {
         assert_eq!(body["serverUrl"], "https://configured.example");
         assert_eq!(
             body["commands"]["unix"],
-            "bash ./install-cli.sh --server 'https://configured.example'"
+            "curl -fsSL 'https://configured.example/api/v1/cli/install.sh' | bash"
         );
         assert!(!body.to_string().contains("untrusted.example"));
+        for extension in ["sh", "ps1"] {
+            let response = reqwest::get(format!("http://{address}/api/v1/cli/install.{extension}"))
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+        }
         stop.send(()).unwrap();
         server.await.unwrap();
     }

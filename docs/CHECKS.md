@@ -30,6 +30,10 @@ GitHub Actions는 `cli-foundation.yml`(Linux 서버·Linux/macOS/Windows 클라�
 
 앱 응답의 4MiB 한도·64개 슬롯·Bytes clone/slice 수명·오류/취소 반환은 모든 OS의 `app_response` 단위 검사에서 확인한다. 작은 TCP 송수신 버퍼로 느린 클라이언트를 만드는 추가 시험은 Unix에서만 실행한다. Windows에서는 이 설정에도 OS가 본문 전체를 받아갈 수 있어 애플리케이션 버퍼가 반드시 남는다는 전제가 성립하지 않았다(커밋 `7952c8e`의 CI 실패). Windows의 실제 전송 지연·전체 RSS 검증은 이 시험의 PASS로 대신하지 않는다.
 
+`scripts/test-server-addresses.py`는 도메인 없는 IPv4/IPv6·포트와 도메인 입력, 충돌 거부, 읽기 전용 검사·후보 설정의 원본 보존, 임시 PostgreSQL에서 실제 프레임 이전 SQL의 트랜잭션·기존 주소 예약·세션 회수·스냅샷 변경 거부를 검사한다. `check-server-config.py`는 Keycloak frontendUrl·MCP client ID 보존과 TLS symlink 경로도 확인한다. 실제 호스트의 주소 전환이나 외부 PC 재로그인은 이 격리 검사와 별도다.
+
+`test-online-cli-install.py`는 임시 홈·HTTP 서버에서 실제 패키지 설치 스크립트를 호출해 다운로드·해시 거부·기존 파일 보존·서버 등록 인자·PATH 중복 방지와 OS 선택을 검사한다. CLI 실행 파일은 fixture이며 실제 공개 패키지 설치와 Windows/macOS 실기 인수를 대신하지 않는다. Core Rust 검사는 원본 Host 대신 설정한 도메인/IPv4/IPv6·포트 사용과 템플릿 렌더링·미게시 503을, 웹 검사는 명령 복사·미게시 상태·직접 다운로드의 접힌 구성을 확인한다.
+
 ## 변경 영역별 최소 검사
 
 | 바꾼 것 | 최소 검사 | 해당할 때 추가 |
@@ -53,6 +57,8 @@ GitHub Actions는 `cli-foundation.yml`(Linux 서버·Linux/macOS/Windows 클라�
 단일 IP HTTPS는 인증서 반입·CA 신뢰/IP SAN·만료 거부·수동 교체, 실제 OIDC/CLI, 포트 공유 쿠키·잘못된 목적/중복 인증 쿠키 거부·기본 복구를 확인한다. 쿠키 가용성 잔여를 기록하고 자동 CA·전 기기 스트레스는 후속으로 둔다. [공통 ACL·PLM 연계](CORE-PERMISSIONS.md#대표-인수와-검토할-결정)는 G4·G5·G6·Invoke·서비스·이벤트·파일의 해당 기능을 구현할 때 검사하며 모두를 최소 경계의 선행 조건으로 묶지 않는다. 기존 HTTP IP 결과로 새 HTTPS 인수를 대신하지 않는다.
 
 ## CLI·앱 개발 인수의 구분
+
+고장 신고·인증 저장소 변경은 `python3 scripts/check-cli-reports.py --cli target/debug/miy`(비로그인 전송·저장소 장애·응답 유실·재전송·크기 제한)와 `check-cli-output.py`의 교환 후 저장소 읽기 실패/새 세션 회수 경로를 추가한다. 실제 DB·관리자 조회·CSRF·중복·접수량·화면 처리는 `server-ui.config.ts`의 신고 인수에서 검사한다. 이 검사들은 Mac의 Keychain/Background 복구를 대신하지 않는다.
 
 CLI 0.5 계획·과거 검증표의 실행 이력은 [보관 결과](archive/results/CLI-VALIDATION-MATRIX.md)에 둔다. 새 변경은 위 최소 검사를 선택하고 아래 실제 사용 경계를 해당 후보의 소스·바이너리·환경별로 확인한다.
 

@@ -10,6 +10,7 @@ import argparse
 from contextlib import contextmanager
 from http.server import BaseHTTPRequestHandler, HTTPServer
 import json
+import hashlib
 from datetime import datetime, timedelta, timezone
 from urllib.parse import urlsplit, parse_qs
 import os
@@ -467,6 +468,31 @@ def check(cli):
                 require(not (Path(env["MIY_CONFIG_DIR"]) / "login-flows" / (pending["loginId"] + ".json")).exists(), "Expired flow metadata was retained")
                 require("miy_device_" not in json.dumps(failure), "Expired login leaked its private device secret")
             ok("server and local device expiry clean the flow and expose context-bound fresh-login recovery")
+
+            # A device code can be exchanged while the existing session record is
+            # unreadable. Preserve it and revoke only the newly issued session.
+            state.device_reply = "approved"
+            state.login_seconds = 300
+            state.access_seconds = 900
+            key = hashlib.sha256(f"session\0{origin}\0{state.actor}".encode()).hexdigest()
+            record = Path(env["MIY_CONFIG_DIR"]) / "credentials" / f"{key}.json"
+            backup = record.with_suffix(".fixture-backup")
+            record.rename(backup)
+            try:
+                record.write_text("invalid synthetic record")
+                record.chmod(0o600)
+                pending = run(["auth", "login", "--no-wait"], cwd=remote)["data"]
+                before = state.requests.count(("POST", "/auth/cli/revoke"))
+                failure = run(["auth", "wait", pending["loginId"]], cwd=remote, expected=7)["error"]
+                require(failure["code"] == "credential_storage_unavailable", "Storage failure lost its error code")
+                require(failure["details"]["reason"] == "credential_record_invalid" and failure["details"]["operation"] == "read", "Storage read reason was discarded")
+                require(failure["details"]["phase"] == "after_device_exchange" and failure["details"]["remoteSessionRevoked"] is True, "Newly issued session was left active after previous-credential failure")
+                require(state.requests.count(("POST", "/auth/cli/revoke")) == before + 1, "Expected one revocation request")
+                require(record.read_text() == "invalid synthetic record", "Failed login overwrote the previous credential")
+            finally:
+                record.unlink(missing_ok=True)
+                backup.rename(record)
+            ok("failed previous credential read preserves diagnostics and revokes newly issued session")
 
     print(json.dumps({"passed": len(passed), "liveServicesUsed": False, "temporaryProjectsRemoved": True}))
 

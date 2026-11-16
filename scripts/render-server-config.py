@@ -8,6 +8,7 @@ import pwd
 import re
 import urllib.parse
 from server_tls import validate_certificate
+from server_addresses import validate_addresses
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -40,6 +41,7 @@ def nginx(value):
 
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--state-dir', type=Path, default=Path(os.getenv('MIY_STATE_DIR', str(ROOT / '.local'))))
+parser.add_argument('--settings-dir', type=Path, help='Read candidate server.json and write rendered files here; service state stays --state-dir')
 parser.add_argument('--binary', type=Path, default=Path(os.getenv('MIY_BINARY', str(ROOT / 'target/release/miy'))))
 parser.add_argument('--user', default=pwd.getpwuid(os.getuid()).pw_name)
 parser.add_argument('--service-prefix', default='miy-v2')
@@ -54,28 +56,22 @@ try:
 except KeyError:
     parser.error('--user must name an existing service account')
 state = args.state_dir.resolve()
-settings = json.loads((state / 'server.json').read_text())
+output = args.settings_dir.resolve() if args.settings_dir else state
+settings = json.loads((output / 'server.json').read_text())
 origin = urllib.parse.urlsplit(settings['origin'])
 if not all(settings.get(key) for key in ('consoleOrigin', 'consoleBind', 'devPortalOrigin', 'devPortalBind',
                                          'appFrameOrigin', 'appFrameBind')):
     parser.error('Run bootstrap with distinct portal/console/dev portal origins, app frame origins and internal binds first')
 # Business app frames (docs/APP-FRAMES.md): a {key} host pattern (domain) or a
 # {port} pool on one host; Core accepts only origins registered to an installation.
+try:
+    frame = validate_addresses(settings)
+except ValueError as error:
+    parser.error(str(error))
 frame_template = settings['appFrameOrigin']
 frame_scheme, _, frame_rest = frame_template.partition('://')
-frame_ports = None
-if '{port}' in frame_template:
-    first, _, last = (settings.get('appFramePorts') or '').partition('-')
-    frame_ports = (int(first), int(last))
-    frame_sample = frame_template.replace('{port}', first)
-    # A pool is framed by the host's port wildcard; listing every origin exceeds
-    # Nginx parameter limits. Platform ports there keep frame-ancestors 'none'.
-    frame_sources = frame_template.replace('{port}', '*')
-else:
-    frame_sample = frame_template.replace('{key}', '0' * 32)
-    frame_sources = f"{frame_scheme}://*.{frame_rest.split('.', 1)[-1]}"
-if frame_scheme != origin.scheme or frame_sample in [settings['origin'], settings['consoleOrigin'], settings['devPortalOrigin']]:
-    parser.error('App frame origins must use the portal transport and never a platform origin')
+frame_ports = tuple(map(int, settings['appFramePorts'].split('-'))) if frame['pool'] else None
+frame_sample, frame_sources = frame['sample'], frame['sources']
 console_origin = urllib.parse.urlsplit(settings['consoleOrigin'])
 dev_portal_origin = urllib.parse.urlsplit(settings['devPortalOrigin'])
 browser_origins = [settings['origin'], settings['consoleOrigin'], settings['devPortalOrigin']]
@@ -110,8 +106,8 @@ identity = f"http://127.0.0.1:{settings['identityPort']}"
 upgrade_variable = '$' + args.service_prefix.replace('-', '_') + '_connection_upgrade'
 tls = ''
 if origin.scheme == 'https':
-    tls = f'''    ssl_certificate {nginx(args.certificate.resolve())};
-    ssl_certificate_key {nginx(args.key.resolve())};
+    tls = f'''    ssl_certificate {nginx(args.certificate.absolute())};
+    ssl_certificate_key {nginx(args.key.absolute())};
     ssl_protocols TLSv1.2 TLSv1.3;
 '''
 
@@ -279,7 +275,7 @@ map $http_upgrade {upgrade_variable} {{
     '' close;
 }}
 ''' + server(origin) + server(console_origin, trusted=True) + server(dev_portal_origin, dev_portal=True) + frame_server()
-(state / 'nginx-miy.conf').write_text(nginx_text)
+(output / 'nginx-miy.conf').write_text(nginx_text)
 for service in ['serve', 'worker']:
     text = f'''# Generated file. run-service.sh reads private runtime.env and removes unused secrets.
 [Unit]
@@ -304,5 +300,5 @@ UMask=0077
 [Install]
 WantedBy=multi-user.target
 '''
-    (state / f'{args.service_prefix}-{service}.service').write_text(text)
+    (output / f'{args.service_prefix}-{service}.service').write_text(text)
 print('Nginx and systemd files rendered in the private state directory; no services were changed.')

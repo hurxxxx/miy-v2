@@ -365,7 +365,10 @@ class AppFrameSettingsTests(unittest.TestCase):
                 settings = {'origin': 'http://localhost:18000', 'consoleOrigin': 'http://localhost:18001',
                             'devPortalOrigin': 'http://localhost:18002', 'bind': '127.0.0.1:18080',
                             'consoleBind': '127.0.0.1:18081', 'devPortalBind': '127.0.0.1:18082',
-                            'appFrameBind': '127.0.0.1:18083', 'identityPort': 18181, 'appFrameOrigin': template}
+                            # Core treats only the exact localhost name as loopback;
+                            # frame subdomains need the same explicit HTTP opt-in.
+                            'allowHttp': True, 'appFrameBind': '127.0.0.1:18083',
+                            'identityPort': 18181, 'appFrameOrigin': template}
                 if ports:
                     settings['appFramePorts'] = ports
                 (state / 'server.json').write_text(json.dumps(settings))

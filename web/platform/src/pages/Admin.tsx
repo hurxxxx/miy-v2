@@ -10,6 +10,7 @@ import { RuntimeControls } from "../components/RuntimeControls";
 import { Badge, Button, EmptyState, Field, Loading, Panel } from "../ui";
 import { AppAccessAdmin, GroupAdmin, useGroups } from "./AdminAccess";
 import { AuditLog } from "./AdminAudit";
+import { SupportReports } from "./AdminReports";
 import { UserAdmin, type Account } from "./AdminUsers";
 
 type Registration = { id: string; appId: string; name: string; status: string; requester: string };
@@ -178,6 +179,7 @@ function AdminConsole({ csrf, selfId }: { csrf: string; selfId: string }) {
         <GroupAdmin csrf={csrf} users={users} report={setMessage} directory={groups} />
         <AppAccessAdmin csrf={csrf} users={users} report={setMessage} directory={groups} />
       </div>
+      <SupportReports csrf={csrf} />
       <AuditLog users={users} report={setMessage} />
       <h2 className="page-section-title">앱 실행 상태</h2>
       {managed.items === null ? (

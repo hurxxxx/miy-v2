@@ -2,31 +2,7 @@
 """Generate private server configuration; reuse credentials on every invocation."""
 import argparse, ipaddress, json, os, re, secrets, shlex, sys, urllib.parse
 from pathlib import Path
-
-
-def canonical_origin(value, allow_http):
-    parsed = urllib.parse.urlsplit(value)
-    if (parsed.scheme not in ('http', 'https') or not parsed.hostname
-            or parsed.username is not None or parsed.password is not None
-            or parsed.path not in ('', '/') or parsed.query or parsed.fragment
-            or any(c.isspace() or c == chr(92) for c in value)):
-        raise ValueError('Use an explicit http:// or https:// origin without credentials or a path')
-    hostname = parsed.hostname.encode('idna').decode('ascii').lower()
-    try:
-        address = ipaddress.ip_address(hostname)
-        loopback = address.is_loopback
-        hostname = '[' + address.compressed + ']' if address.version == 6 else str(address)
-    except ValueError:
-        if not re.fullmatch(r'[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?\.?', hostname):
-            raise ValueError('Invalid server hostname') from None
-        loopback = hostname == 'localhost'
-    if parsed.scheme == 'http' and not loopback and not allow_http:
-        raise ValueError('HTTP outside loopback requires MIY_ALLOW_HTTP=1 or --allow-http')
-    port = parsed.port
-    if port == 0:
-        raise ValueError('Server port must be between 1 and 65535')
-    suffix = '' if port in (None, 443 if parsed.scheme == 'https' else 80) else ':' + str(port)
-    return parsed.scheme + '://' + hostname + suffix
+from server_addresses import canonical_origin, load_addresses, validate_addresses
 
 
 def port(value):
@@ -72,18 +48,26 @@ def env_text(values):
 
 ROOT = Path(__file__).resolve().parent.parent
 initial = argparse.ArgumentParser(add_help=False)
+initial.add_argument('--addresses-file', type=Path)
 initial.add_argument('--state-dir', type=Path, default=Path(os.getenv('MIY_STATE_DIR', str(ROOT / '.local'))))
 state_options, _ = initial.parse_known_args()
 previous_file = state_options.state_dir.resolve() / 'server.json'
 previous = json.loads(previous_file.read_text()) if previous_file.exists() else {}
+try:
+    addresses = load_addresses(state_options.addresses_file) if state_options.addresses_file else {}
+except (OSError, ValueError) as error:
+    initial.error(str(error))
 parser = argparse.ArgumentParser(description=__doc__)
+parser.add_argument('--addresses-file', type=Path, help='Complete public address JSON; overrides environment defaults')
+parser.add_argument('--check', action='store_true', help='Validate and print public addresses without writing state')
+parser.add_argument('--output-dir', type=Path, help='Write a candidate elsewhere, retaining paths under --state-dir')
 parser.add_argument('--profile', choices=['local', 'server'], default=os.getenv('MIY_SERVER_PROFILE', previous.get('profile', 'local')))
-parser.add_argument('--origin', default=os.getenv('MIY_ORIGIN', previous.get('origin')))
-parser.add_argument('--console-origin', default=os.getenv('MIY_CONSOLE_ORIGIN'),
+parser.add_argument('--origin', default=addresses.get('origin', os.getenv('MIY_ORIGIN', previous.get('origin'))))
+parser.add_argument('--console-origin', default=addresses.get('consoleOrigin', os.getenv('MIY_CONSOLE_ORIGIN')),
                     help='Trusted console and identity origin; defaults to a separate port on the portal host')
-parser.add_argument('--dev-portal-origin', default=os.getenv('MIY_DEV_PORTAL_ORIGIN'),
+parser.add_argument('--dev-portal-origin', default=addresses.get('devPortalOrigin', os.getenv('MIY_DEV_PORTAL_ORIGIN')),
                     help='Dev app portal origin (dev apps never share the prod portal origin); defaults to another port on the portal host')
-parser.add_argument('--allow-http', action='store_true', default=os.getenv('MIY_ALLOW_HTTP', '1' if previous.get('allowHttp') else '0') == '1')
+parser.add_argument('--allow-http', action=argparse.BooleanOptionalAction, default=addresses.get('allowHttp', os.getenv('MIY_ALLOW_HTTP', '1' if previous.get('allowHttp') else '0') == '1'))
 shared_login_env = os.getenv('MIY_SHARED_DEVELOPMENT_LOGIN')
 parser.add_argument('--shared-development-login', action=argparse.BooleanOptionalAction,
                     default=None if shared_login_env is None else shared_login_env == '1',
@@ -101,10 +85,10 @@ parser.add_argument('--console-https-port', type=port, default=port(os.getenv('M
 parser.add_argument('--dev-portal-http-port', type=port, default=port(os.getenv('MIY_DEV_PORTAL_HTTP_PORT', previous.get('devPortalHttpPort', 18002))))
 parser.add_argument('--dev-portal-https-port', type=port, default=port(os.getenv('MIY_DEV_PORTAL_HTTPS_PORT', previous.get('devPortalHttpsPort', 18445))))
 parser.add_argument('--proxy-bind', default=os.getenv('MIY_PROXY_BIND', previous.get('proxyBind', '127.0.0.1')))
-parser.add_argument('--app-frame-origin', default=os.getenv('MIY_APP_FRAME_ORIGIN'),
+parser.add_argument('--app-frame-origin', default=addresses.get('appFrameOrigin', os.getenv('MIY_APP_FRAME_ORIGIN')),
                     help='Business app frame origins: one {key} host label (domain) or {port} (port pool); '
                          'defaults to ports on the portal host')
-parser.add_argument('--app-frame-ports', default=os.getenv('MIY_APP_FRAME_PORTS'),
+parser.add_argument('--app-frame-ports', default=addresses.get('appFramePorts') if addresses else os.getenv('MIY_APP_FRAME_PORTS'),
                     help='Frame port pool first-last for a {port} template')
 parser.add_argument('--app-frame-bind', default=os.getenv('MIY_APP_FRAME_BIND_ADDR', previous.get('appFrameBind', '127.0.0.1:18083')))
 parser.add_argument('--ca-file', type=Path, default=os.getenv('MIY_CA_FILE') or None)
@@ -138,38 +122,59 @@ try:
         args.app_frame_origin = previous.get('appFrameOrigin')
         args.app_frame_ports = args.app_frame_ports or previous.get('appFramePorts')
     if not args.app_frame_origin:
-        args.app_frame_origin = f'{portal_parts.scheme}://{portal_parts.hostname}:{{port}}'
+        frame_host = '[' + portal_parts.hostname + ']' if ':' in portal_parts.hostname else portal_parts.hostname
+        args.app_frame_origin = f'{portal_parts.scheme}://{frame_host}:{{port}}'
         args.app_frame_ports = args.app_frame_ports or ('18320-18339' if args.profile == 'local' else '20000-20199')
     frame_template = args.app_frame_origin
-    if (frame_template.count('{key}') + frame_template.count('{port}') != 1
-            or urllib.parse.urlsplit(frame_template.replace('{key}', 'k').replace('{port}', '1')).scheme != portal_parts.scheme):
-        raise ValueError('App frame origin needs one {key} or {port} and the portal scheme')
-    frame_ports = []
-    # Wildcards cover a whole leftmost label: a {key} host pattern is served and
-    # framed as *.<rest> (the portal frame-src cannot name only app hosts there).
-    frame_scheme, _, frame_rest = frame_template.partition('://')
-    frame_wildcard = f"{frame_scheme}://*.{frame_rest.split('.', 1)[-1]}"
-    if '{port}' in frame_template:
-        first, _, last = (args.app_frame_ports or '').partition('-')
-        frame_ports = list(range(port(first), port(last) + 1))
-        if not frame_ports:
-            raise ValueError('App frame port pool must be first-last')
+    frame = validate_addresses({'origin': origin, 'consoleOrigin': console_origin,
+        'devPortalOrigin': dev_portal_origin, 'allowHttp': args.allow_http,
+        'appFrameOrigin': frame_template, 'appFramePorts': args.app_frame_ports})
+    frame_ports = frame['pool']
+    frame_wildcard = frame['sources']
     bind = urllib.parse.urlsplit('//' + args.bind)
     console_bind = urllib.parse.urlsplit('//' + args.console_bind)
     ipaddress.ip_address(args.proxy_bind)
 except (ValueError, argparse.ArgumentTypeError) as error:
     parser.error(str(error))
+if args.check:
+    print(json.dumps({'origin': origin, 'consoleOrigin': console_origin, 'devPortalOrigin': dev_portal_origin,
+        'appFrameOrigin': frame_template, 'appFramePorts': args.app_frame_ports, 'allowHttp': args.allow_http,
+        'issuer': console_origin + '/identity/realms/miy', 'mcp': origin + '/mcp',
+        'cliInstall': origin + '/cli/install'}, indent=2))
+    sys.exit(0)
 LOCAL = args.state_dir.resolve()
-LOCAL.mkdir(mode=0o700, parents=True, exist_ok=True)
-LOCAL.chmod(0o700)
+OUTPUT = args.output_dir.absolute() if args.output_dir else LOCAL
+if args.output_dir and (OUTPUT.exists() or OUTPUT.is_symlink()):
+    parser.error('--output-dir must be a new directory')
+OUTPUT.mkdir(mode=0o700, parents=True, exist_ok=True)
+OUTPUT.chmod(0o700)
 os.umask(0o077)
 secret_file = LOCAL / 'credentials.json'
 if secret_file.exists():
-    s = json.loads(secret_file.read_text())
+    credential_text = secret_file.read_text()
+    s = json.loads(credential_text)
 else:
     s = {k: secrets.token_hex(24) for k in ['pg_admin', 'core', 'identity', 'identity_admin', 'web_client', 'resource_client', 'admin', 'developer', 'alice', 'bob']}
     s['encryption_key'] = secrets.token_hex(32)
-    secret_file.write_text(json.dumps(s, indent=2))
+    credential_text = json.dumps(s, indent=2)
+private_write(OUTPUT / 'credentials.json', credential_text)
+
+
+def existing_env(name):
+    # Preserve installation-specific settings such as the actual DB container and
+    # runtime network. Managed values below replace their previous values.
+    path = LOCAL / name
+    result = {}
+    if path.exists():
+        for line in path.read_text().splitlines():
+            if not line.strip() or line.lstrip().startswith('#'):
+                continue
+            key, separator, value = line.partition('=')
+            if not separator or not re.fullmatch(r'[A-Z][A-Z0-9_]*', key):
+                raise ValueError('Invalid environment setting in ' + name)
+            result[key] = ' '.join(shlex.split(value))
+    return result
+
 parsed = urllib.parse.urlsplit(origin)
 local_tls = args.profile == 'local' and parsed.scheme == 'https'
 previous_ca = previous.get('caFile') if origin == previous.get('origin') and parsed.scheme == 'https' else None
@@ -203,8 +208,8 @@ config = {
     'cliReleaseDir': os.getenv('MIY_CLI_RELEASE_DIR', previous.get('cliReleaseDir', str(LOCAL / 'cli-downloads'))),
     'cliInstallerDir': os.getenv('MIY_CLI_INSTALLER_DIR', previous.get('cliInstallerDir', str(LOCAL / 'cli-installers'))),
 }
-private_write(LOCAL / 'server.json', json.dumps(config, indent=2) + '\n')
-private_write(LOCAL / 'compose.env', env_text({
+private_write(OUTPUT / 'server.json', json.dumps(config, indent=2) + '\n')
+private_write(OUTPUT / 'compose.env', env_text({**existing_env('compose.env'),
     'MIY_PG_ADMIN_PASSWORD': s['pg_admin'], 'MIY_IDENTITY_PASSWORD': s['identity'],
     'MIY_IDENTITY_ADMIN_PASSWORD': s['identity_admin'],
     'MIY_ORIGIN': origin, 'MIY_CONSOLE_ORIGIN': console_origin, 'MIY_DEV_PORTAL_ORIGIN': dev_portal_origin,
@@ -233,7 +238,8 @@ private_write(LOCAL / 'compose.env', env_text({
     'MIY_IDENTITY_UPSTREAM': f'127.0.0.1:{args.identity_port}',
     'MIY_CADDY_CONFIG': ROOT / 'ops' / ('Caddyfile' if local_tls else 'Caddyfile.http'),
 }))
-runtime = {
+runtime = {**{key: value for key, value in existing_env('runtime.env').items()
+                    if key not in ('MIY_CA_FILE', 'MIY_APP_FRAME_PORTS')},
     'DATABASE_URL': f"postgres://miy_core:{s['core']}@127.0.0.1:{args.postgres_port}/miy_core",
     'PROVISION_DATABASE_URL': f"postgres://postgres:{s['pg_admin']}@127.0.0.1:{args.postgres_port}/postgres",
     'MIY_ORIGIN': origin, 'MIY_CONSOLE_ORIGIN': console_origin, 'MIY_DEV_PORTAL_ORIGIN': dev_portal_origin,
@@ -253,8 +259,8 @@ if frame_ports:
     runtime['MIY_APP_FRAME_PORTS'] = args.app_frame_ports
 if ca_file:
     runtime['MIY_CA_FILE'] = ca_file
-private_write(LOCAL / 'runtime.env', env_text(runtime))
-(LOCAL / 'init.sql').write_text(f"""
+private_write(OUTPUT / 'runtime.env', env_text(runtime))
+(OUTPUT / 'init.sql').write_text(f"""
 REVOKE CONNECT, TEMPORARY ON DATABASE postgres FROM PUBLIC;
 REVOKE CONNECT, TEMPORARY ON DATABASE template1 FROM PUBLIC;
 CREATE ROLE miy_core LOGIN PASSWORD '{s['core']}' NOSUPERUSER NOCREATEDB NOCREATEROLE;
@@ -275,17 +281,18 @@ clients = [
 ]
 for c in clients:
     c.update({'enabled':True,'protocol':'openid-connect','fullScopeAllowed':False,'defaultClientScopes':['miy.read'],'optionalClientScopes':['miy.dev','offline_access']})
-realm = {'realm':'miy','enabled':True,'sslRequired':'none' if parsed.scheme == 'http' else 'external','registrationAllowed':False,'accessTokenLifespan':45,'ssoSessionIdleTimeout':1800,'revokeRefreshToken':True,'refreshTokenMaxReuse':0,
+realm = {'realm':'miy','enabled':True,'attributes':{'frontendUrl':console_origin+'/identity'},'sslRequired':'none' if parsed.scheme == 'http' else 'external','registrationAllowed':False,'accessTokenLifespan':45,'ssoSessionIdleTimeout':1800,'revokeRefreshToken':True,'refreshTokenMaxReuse':0,
  'clients':clients,'clientScopes':[{'name':n,'protocol':'openid-connect','attributes':{'include.in.token.scope':'true'},'protocolMappers':[subject]} for n in ['miy.read','miy.dev','offline_access']],
  'roles':{'realm':[{'name':'offline_access','description':'Allow explicit developer OAuth refresh grants'}]},
  'users':[{'id':f'00000000-0000-4000-8000-{i:012d}','username':n,'enabled':True,'emailVerified':True,'firstName':n,'lastName':'Validation','email':n+'@miy.invalid','realmRoles':['offline_access'] if n=='developer' else [],'credentials':[{'type':'password','value':s[n],'temporary':False}]} for i,n in enumerate(['admin','developer','alice','bob'],1)]}
-(LOCAL / 'realm.json').write_text(json.dumps(realm,indent=2))
-(LOCAL / 'credentials.json').chmod(0o600)
+(OUTPUT / 'realm.json').write_text(json.dumps(realm,indent=2))
+(OUTPUT / 'credentials.json').chmod(0o600)
 # These individual files are read-only container mounts under other UIDs. Their
 # host directory remains 0700; other host users cannot traverse to these files.
 for filename in ['init.sql','realm.json']:
-    (LOCAL / filename).chmod(0o644)
-(LOCAL/'artifacts').mkdir(exist_ok=True)
+    (OUTPUT / filename).chmod(0o644)
+if not args.output_dir:
+    (LOCAL/'artifacts').mkdir(exist_ok=True)
 print('Private server configuration ready. Existing credentials were preserved.')
 # Port separation is supported. Explain host-only cookie separation without
 # implying that sibling hostnames prevent parent-domain cookie flooding.

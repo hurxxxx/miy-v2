@@ -1,0 +1,107 @@
+{
+  "timestamp": "2026-11-16T05:19:04.054513+00:00",
+  "sourceCommit": "9897f6385ff1228c43fbc28a4f42b4d7a75f59a4",
+  "workingTreeChanges": true,
+  "scope": "Configurable public addresses: domain and IP/port profiles, offline candidates and frame migration SQL",
+  "status": "PASS",
+  "sourceSha256": {
+    "scripts/bootstrap.py": "0db12686fd547203a97caad11dbcd213837f73328c32be298ef2767dba9b9ccc",
+    "scripts/configure-identity.py": "809b59e54a6e89949244e933ebb86c8722e63c25e1d2879c16677e85ec7a0a52",
+    "scripts/render-server-config.py": "f45df59796c22a54d4f904f27ffc7409a0d4c090283674a813771fa2c13c744a",
+    "scripts/server_addresses.py": "da1a187d6af00aef1479152e1e284df49513225f3bca932158181d14872dae0e",
+    "scripts/plan-frame-origin-move.py": "e01d7d56ac2a4ba04dd32b3615d2f476528615e32a3c9552cf15c3b58bb19c8f",
+    "scripts/test-server-addresses.py": "c10fabd89df9cfa5f1842aa9206a8ccc5b7c69ef5a2ef7312881f05142dc1bf0",
+    "scripts/check-server-config.py": "3a78d6d4f02f03bb7f8f34ab922bbccf4a87833cde796aae695d6568424884c1",
+    "scripts/test-app-frame-settings.py": "b60579beb2ccc9d676972b7436222778a9f72e8044d610568b34481c1a85264c",
+    "scripts/check-static.sh": "f0e89e9ca183ba3ab92c6aa43c37d2086c27b3cc67df73e307f995a4b76e7f9a",
+    "ops/addresses.ports.example.json": "85e6be6c2ae4fd020a67a076fe9aaa1380d7774715341632c5803623d3124237",
+    "ops/addresses.domains.example.json": "0e5c64b4447ec28a7b272c8399e8f2f2a76150dfac6a3a11a56a62170f6af61d"
+  },
+  "checks": [
+    {
+      "command": "runuser -u miy -- bash scripts/check-static.sh scripts",
+      "status": "PASS",
+      "log": "/srv/miy-prod/evidence/server-addresses/check-static-scripts.log",
+      "logSha256": "fbc3caa96e7d39ae847cc87eea4792296077b6c92269bb8ad4417128b1fa1fcd"
+    },
+    {
+      "command": "python3 scripts/test-server-addresses.py (included in scripts suite)",
+      "status": "PASS",
+      "tests": 4,
+      "observations": [
+        "IPv4/IPv6 IP-port and domain validation, collisions and blocked/exhausted pools",
+        "check creates no state; candidate keeps live files, logical paths and credentials",
+        "Nginx candidate forwards new fixed hosts and console redirect; systemd retains live state path",
+        "Actual migration 0022 schema in temporary PostgreSQL, no network or host ports",
+        "Domain to port and port to domain migration; original origins/ports retained",
+        "Affected frame tokens revoked, codes deleted, installation/release identities retained",
+        "Injected insert failure rolls back all earlier changes; stale snapshot refused"
+      ]
+    },
+    {
+      "command": "python3 scripts/check-server-config.py (included in scripts suite)",
+      "status": "PASS",
+      "observations": [
+        "HTTP and single-IP HTTPS Nginx proxies and TLS verification",
+        "Caddy HTTP port and hostname frame routing",
+        "Mock Keycloak API preserves resource client ID/secret and other realm attributes while changing frontendUrl/audience",
+        "Nginx certificate paths retain renewable symlinks"
+      ]
+    },
+    {
+      "command": "bootstrap.py --state-dir /srv/miy-prod --addresses-file /srv/miy-prod/addresses.json --check",
+      "status": "PASS",
+      "liveServicesChanged": false
+    },
+    {
+      "command": "Authoritative DNS queries to launch1.spaceship.net and launch2.spaceship.net",
+      "status": "PASS",
+      "apexIPv4": "185.223.207.238"
+    }
+  ],
+  "resolvedFailures": [
+    {
+      "status": "FAIL_THEN_FIXED",
+      "detail": "Mock identity synchronization exposed a reused client lookup variable; separated client and scope maps."
+    },
+    {
+      "status": "FAIL_THEN_FIXED",
+      "detail": "Doc link checker rejected the pre-existing parent AGENTS Markdown link; retained the path as inline text."
+    },
+    {
+      "status": "FAIL_THEN_FIXED",
+      "detail": "Pinned Caddy image was absent on this host; pulled its existing repository digest."
+    },
+    {
+      "status": "FAIL_THEN_FIXED",
+      "detail": "Two older HTTP frame hostname fixtures lacked explicit allowHttp required by Core; fixtures now opt in."
+    },
+    {
+      "status": "FAIL_THEN_FIXED",
+      "detail": "Isolated PostgreSQL readiness observed its temporary initialization server; now waits for final initialization marker and readiness."
+    }
+  ],
+  "notRun": [
+    {
+      "status": "NOT_RUN",
+      "scope": "Live host address migration and recovery",
+      "reason": "Current addresses remain selected; no live DB/IdP/proxy mutation requested for new names."
+    },
+    {
+      "status": "NOT_RUN",
+      "scope": "Real Keycloak address migration and external PC reauthentication",
+      "reason": "Keycloak changes tested against mock Admin API; domain transition acceptance remains separate."
+    },
+    {
+      "status": "NOT_RUN",
+      "scope": "External IPv6 end-to-end deployment",
+      "reason": "IPv6 parsing/configuration covered; no public IPv6 deployment configured."
+    },
+    {
+      "status": "NOT_RUN",
+      "scope": "Rust/web build and browser app flow",
+      "reason": "No Rust, SDK, platform UI or frame runtime code changed."
+    }
+  ],
+  "liveChange": "Added /srv/miy-prod/addresses.json with current public settings only; no restart, domain switch or DB changes."
+}

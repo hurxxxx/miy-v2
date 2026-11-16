@@ -1,0 +1,181 @@
+{
+  "timestamp": "2026-11-16T05:40:41.813424+00:00",
+  "status": "PASS",
+  "sourceCommit": "9897f6385ff1228c43fbc28a4f42b4d7a75f59a4",
+  "workingTreeChanges": true,
+  "scope": "Live miy.works platform origin migration; no Core binary, schema, UI bundle or landing release replacement",
+  "before": {
+    "portal": "https://prod.miy.works",
+    "console": "https://prod-console.miy.works",
+    "devPortal": "https://prod-dev.miy.works",
+    "appFrames": "https://prod-app-{key}.miy.works"
+  },
+  "after": {
+    "portal": "https://portal.miy.works",
+    "console": "https://console.miy.works",
+    "devPortal": "https://dev.miy.works",
+    "appFrames": "https://app-{key}.miy.works",
+    "issuer": "https://console.miy.works/identity/realms/miy",
+    "cliInstall": "https://portal.miy.works/cli/install",
+    "httpMcp": "https://portal.miy.works/mcp"
+  },
+  "backup": "/srv/miy-backups/prod-20261116T052653Z",
+  "evidenceDirectory": "/srv/miy-prod/evidence/address-move-20261116",
+  "checks": [
+    {
+      "name": "DNS and TLS",
+      "status": "PASS",
+      "details": "New hosts resolve to 185.223.207.238; no AAAA; existing trusted wildcard certificate validated for all origins."
+    },
+    {
+      "name": "Cold backup and isolated restore/migration rehearsal",
+      "status": "PASS",
+      "details": {
+        "status": "PASS",
+        "backup": "/srv/miy-backups/prod-20261116T052653Z",
+        "frameOrigin": "https://app-108a68743b934eb88af04ca0e6710cd1.miy.works",
+        "preservedCoreTables": [
+          "users",
+          "apps",
+          "installations",
+          "releases",
+          "db_resources"
+        ],
+        "applicationDatabaseCount": 1,
+        "applicationTableCount": 2
+      }
+    },
+    {
+      "name": "Existing frame database mapping",
+      "status": "PASS",
+      "details": "One installation moved; old origin retained as unassigned reservation; frame sessions revoked by transactional SQL."
+    },
+    {
+      "name": "Keycloak identity preservation",
+      "status": "PASS",
+      "details": {
+        "status": "PASS",
+        "checks": {
+          "clientIds": true,
+          "realmId": true,
+          "oldResourceAbsent": true,
+          "resourceSecret": true,
+          "webSecret": true,
+          "userSubjectsAndEnabledFlags": true,
+          "frontendUrl": true,
+          "callbacks": true,
+          "webOrigins": true
+        },
+        "preservedUserCount": 4
+      }
+    },
+    {
+      "name": "OIDC and CLI device login",
+      "status": "PASS",
+      "details": "Console login, portal/dev SSO, device approval redirect to new console, CLI login/status and temporary session revocation."
+    },
+    {
+      "name": "HTTP MCP OAuth and protocol",
+      "status": "PASS",
+      "details": "Real PKCE authorization with new issuer/resource, JWT audience, initialize, tools/list and get_contract; tested fresh login and existing SSO callback; temporary OAuth grant revoked."
+    },
+    {
+      "name": "Existing app runtime recreation",
+      "status": "PASS",
+      "details": {
+        "status": "PASS",
+        "appId": "pilot-69697002",
+        "installationId": "108a6874-3b93-4eb8-8af0-4ca0e6710cd1",
+        "imageId": "sha256:f987a2bf190c8a0c39abbf08e80a2543d49951c978bd2f65d2497c2b6568a915",
+        "releaseId": "bf4fc624-3e99-4c1b-a514-8b241e8f20d8",
+        "databaseId": "108a6874-3b93-4eb8-8af0-4ca0e6710cd1",
+        "schemaFingerprint": "2163f0cdda86dc781a3ffaac9a0c19141995cdb4477b6595c4bb576d95ae7a97",
+        "jobId": "82c4dc5d-445e-45ed-9176-0e1786483cf7"
+      }
+    },
+    {
+      "name": "App backend configured origin",
+      "status": "PASS",
+      "details": "Only MIY_CORE_ORIGIN selected from container environment for private comparison; value is https://portal.miy.works."
+    },
+    {
+      "name": "Final browser app frame",
+      "status": "PASS",
+      "details": {
+        "status": "PASS",
+        "checks": [
+          "ordinary_console_login",
+          "portal_sso_and_boundary",
+          "dev_portal_sso_and_boundary",
+          "existing_app_renders_in_new_frame_origin"
+        ],
+        "startedAt": "2026-11-16T05:38:25.366Z",
+        "frameOrigin": "https://app-108a68743b934eb88af04ca0e6710cd1.miy.works",
+        "finishedAt": "2026-11-16T05:38:27.675Z"
+      }
+    },
+    {
+      "name": "Nginx, health, install guide and landing",
+      "status": "PASS",
+      "details": "nginx -t; all three health endpoints; CLI guide new origin; old bookmarks 302; landing KO/EN/JA bytes match existing published files."
+    },
+    {
+      "name": "Host CLI and backup helper",
+      "status": "PASS",
+      "details": "miy default context now uses portal origin; backup readiness reads configured console; bash -n passed."
+    }
+  ],
+  "resolvedFailures": [
+    {
+      "status": "FAIL_THEN_RESOLVED",
+      "details": "Initial address-only Nginx comparison missed the escaped regex label; corrected comparison before installation."
+    },
+    {
+      "status": "FAIL_THEN_RESOLVED",
+      "details": "First immediate public discovery check following Nginx reload failed; recheck passed, then Core/worker started and all new endpoints verified."
+    },
+    {
+      "status": "FAIL_THEN_RESOLVED",
+      "details": "Browser test navigation threw on an immediate SSO loopback callback with no actual callback listener. Harness now accepts only an observed expected callback and still verifies state, code, token issuer/audience and authenticated MCP calls."
+    },
+    {
+      "status": "FAIL_THEN_RESOLVED",
+      "details": "Keycloak returned callback/web-origin lists in a different order; exact set comparison passed with client IDs, secrets and subjects preserved."
+    },
+    {
+      "status": "FAIL_THEN_RESOLVED",
+      "details": "app start reused old MIY_CORE_ORIGIN. Redeployed the exact same succeeded server-build image through authenticated Console preflight/deployment API; same release, installation and DB identity/schema retained; container env verified."
+    }
+  ],
+  "notRun": [
+    {
+      "status": "NOT_RUN",
+      "scope": "External developer PC context migration and re-login",
+      "reason": "Those PCs are outside this server session; new URLs and required reauthentication documented."
+    },
+    {
+      "status": "NOT_RUN",
+      "scope": "Production-environment app migration acceptance",
+      "reason": "This platform currently has one dev installation and no prod app installation."
+    },
+    {
+      "status": "NOT_RUN",
+      "scope": "Actual recovery of the live database",
+      "reason": "Isolated restore and migration rehearsal passed; live rollback was not necessary."
+    },
+    {
+      "status": "NOT_RUN",
+      "scope": "Backup helper full backup after change",
+      "reason": "Only readiness URL lookup changed and syntax/current discovery were checked; no additional shutdown of the restored running app needed."
+    }
+  ],
+  "privateEvidenceSha256": {
+    "apply-result.json": "091b3ed97d7ce04aee752696d22da291e9e9791f7a5315ae2f08f513a1287582",
+    "restore-rehearsal.json": "f11d6ebecafd887a6bd91cb18c913b9b9a7383c778df83803b3b176d4088725b",
+    "identity-after.json": "75256b932283a4c96f4121e3869671ba26b715f47d7fe44c7d7fec59ecd9555f",
+    "acceptance-result.json": "605913f4d537e1d08a2a6cc6bfe38d1f916bf5e983e9ddaa3f36117b5ca33925",
+    "mcp-result.json": "a34c7fa35c8fd28931153d86aacc5059e7985e185437f1f71aa9df929e700bd7",
+    "recreate-app-result.json": "6b64ae778c054958e9e431af0bb093db4e08bb7ee066b9ffad2b6fe128006c03",
+    "final-browser-result.json": "fa85c0dde76111d54585d8465b01ef50873fd15ef5df00806794a585a684dccc"
+  }
+}

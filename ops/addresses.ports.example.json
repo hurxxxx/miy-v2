@@ -1,0 +1,8 @@
+{
+  "origin": "https://192.0.2.10:8443",
+  "consoleOrigin": "https://192.0.2.10:9443",
+  "devPortalOrigin": "https://192.0.2.10:9444",
+  "appFrameOrigin": "https://192.0.2.10:{port}",
+  "appFramePorts": "20000-20199",
+  "allowHttp": false
+}

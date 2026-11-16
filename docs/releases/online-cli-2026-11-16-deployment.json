@@ -1,0 +1,164 @@
+{
+  "status": "PASS",
+  "completedAt": "2026-11-16T12:43:40.040446+00:00",
+  "origin": "https://portal.miy.works",
+  "version": "0.11.0",
+  "sourceCommit": "9897f6385ff1228c43fbc28a4f42b4d7a75f59a4",
+  "coreSourceDirty": true,
+  "ci": {
+    "runId": 43865661806,
+    "url": "https://github.com/hurxxxx/miy-v2/actions/runs/43865661806",
+    "status": "PASS",
+    "nativeTargets": 5,
+    "linuxHelpers": 2,
+    "githubReleasePublished": false
+  },
+  "changes": [
+    "Public configured-origin shell and PowerShell bootstrap endpoints with immutable archive/binary SHA-256 and version checks",
+    "OS/CPU selection, user installation/PATH, server registration, preservation of existing context and credentials",
+    "One-line commands are primary; manual downloads remain optional",
+    "All five native CLI packages and two Linux helpers published on miy.works",
+    "Published CLI version gate now uses cli-published.json independently of the older Windows GUI candidate"
+  ],
+  "commands": {
+    "unix": "curl -fsSL 'https://portal.miy.works/api/v1/cli/install.sh' | bash",
+    "windows": "& ([scriptblock]::Create((Invoke-RestMethod -Uri 'https://portal.miy.works/api/v1/cli/install.ps1')))",
+    "login": "miy auth login"
+  },
+  "validation": [
+    {
+      "status": "PASS",
+      "command": "MIY_CONFIG_DIR=<isolated> CARGO_BUILD_JOBS=2 CARGO_PROFILE_DEV_DEBUG=0 bash scripts/check-static.sh rust",
+      "serverTests": 226,
+      "clientTests": 138,
+      "serverIgnored": 7,
+      "log": "rust-retry.log"
+    },
+    {
+      "status": "PASS",
+      "command": "bash scripts/check-static.sh web",
+      "browserTests": 113,
+      "log": "web-retry.log"
+    },
+    {
+      "status": "PASS",
+      "command": "bash scripts/check-static.sh scripts",
+      "log": "scripts-final.log"
+    },
+    {
+      "status": "PASS",
+      "command": "cargo build --release --locked -p miy",
+      "runAs": "miy",
+      "log": "build-server.log"
+    },
+    {
+      "status": "PASS",
+      "command": "stage-cli-release.py --source <CI aggregate> --destination /srv/miy-prod/cli-downloads --commit 9897f6385ff1228c43fbc28a4f42b4d7a75f59a4",
+      "evidence": "stage-result.json"
+    },
+    {
+      "status": "PASS",
+      "command": "check-cli-downloads.py --origin https://portal.miy.works --expected-commit 9897f6385ff1228c43fbc28a4f42b4d7a75f59a4",
+      "downloads": 7,
+      "bytes": 252603208
+    },
+    {
+      "status": "PASS",
+      "command": "python3 /root/miy-setup/check-online-cli.py",
+      "scope": "Actual public HTTPS Linux x64 installation into isolated home, reinstallation, profile PATH, configured portal context",
+      "evidence": "install-result.json"
+    },
+    {
+      "status": "PASS",
+      "command": "node check-admin-connection.mjs --origin https://portal.miy.works --cli <online-installed CLI> --credentials-file <private> --output <private>",
+      "scope": "Active administrator OIDC, three browser purposes, device approval, CLI doctor operate, local project init, generated stdio MCP and authenticated live tools; no remote app registration/deployment",
+      "passCount": 22,
+      "evidence": "admin-connection/result.json"
+    },
+    {
+      "status": "PASS",
+      "command": "node check-live-ui.mjs",
+      "scope": "Public installed page, exact clipboard commands, desktop/mobile, optional downloads",
+      "evidence": "live-ui-result.json"
+    },
+    {
+      "status": "PASS",
+      "command": "node check-frame-after.mjs",
+      "scope": "Ordinary active administrator login and existing pilot app frame after deployment",
+      "evidence": "frame-after-result.json"
+    },
+    {
+      "status": "PASS",
+      "scope": "PowerShell 7.7 on Linux with Windows installer subprocess mocked: valid package, archive mismatch, binary mismatch, cleanup",
+      "evidence": "powershell-fixture/result.json"
+    },
+    {
+      "status": "PASS",
+      "scope": "Windows native CI uses PowerShell 5.1 and 7 for the packaged installer; online wrapper native Windows acceptance is separate"
+    },
+    {
+      "status": "PASS",
+      "scope": "Running serve/worker executable hashes match candidate; Nginx active; existing app running; schema 23 unchanged; runtime.env/server.json byte-identical to before"
+    }
+  ],
+  "failuresRetained": [
+    {
+      "check": "web",
+      "log": "web.log",
+      "reason": "Playwright Chromium headless shell missing; installed under miy and reran"
+    },
+    {
+      "check": "rust",
+      "log": "rust.log",
+      "reason": "CLI output test read existing user context; reran with isolated MIY_CONFIG_DIR"
+    },
+    {
+      "check": "PowerShell fixture",
+      "log": "powershell-fixture/result-attempt-1.json",
+      "reason": "Fixture script variable scope; fixed harness; product script unchanged"
+    },
+    {
+      "status": "FAIL",
+      "check": "Original developer-only platform connection harness",
+      "evidence": "platform-connection/result.json",
+      "reason": "Seed developer account was intentionally disabled in initial setup; account remains disabled. Separate active-admin harness passed; not claimed as a developer-account pass."
+    }
+  ],
+  "notRun": [
+    {
+      "status": "NOT_RUN",
+      "scope": "External Windows 11/macOS desktop online-install and Codex/Claude sessions",
+      "reason": "No external desktops attached; native CI and Linux PowerShell fixture results are scoped above"
+    },
+    {
+      "status": "NOT_RUN",
+      "scope": "Enabled non-admin developer account connection acceptance",
+      "reason": "Seed developer is disabled; no user or permission changes were needed for installing CLI"
+    },
+    {
+      "status": "NOT_RUN",
+      "scope": "New remote app registration/build/deployment using this published artifact",
+      "reason": "Installer change; local project/MCP and existing app frame checked without adding an app"
+    },
+    {
+      "status": "NOT_RUN",
+      "scope": "Live rollback and fresh DB restore rehearsal",
+      "reason": "Successful binary/web/download publication; no DB/schema/settings changes. Prior binary/web backups were byte-verified."
+    }
+  ],
+  "deployment": {
+    "evidenceDirectory": "/srv/miy-prod/evidence/online-cli-20261116",
+    "backupDirectory": "/srv/miy-prod/evidence/online-cli-20261116/before",
+    "binarySha256": "e960ee01d1bb7a814ec119c7ca96ccd00fc78fd6435503aaee16af710827fe86",
+    "webIndexSha256": "09dcc99a8e6246eac3d21b2e815c0d820cc539b5f39a3bcfced268c8dd1bd5b8",
+    "schema": 23,
+    "sourceFiles": {
+      "crates/miy/src/cli_install.rs": "4a19321ae8d21e88dbe85dd13e6d57b1c846885e619d39c02100d12614c53715",
+      "crates/miy/src/browser_boundary.rs": "440507d76cdf39fcdcc38646c346c38751bb1f6877cd87f9c8066aad6e865bff",
+      "scripts/install-cli-online.sh": "c6a33fdec58c580c32b8ecf39a0af5b52b60ffc08cbf616dddaf5176bb7c097b",
+      "scripts/install-cli-online.ps1": "fd910e6466227e3084131b929b6eda9bacc0bc219e2ba1a476ea6c8a0c2dbeee",
+      "web/platform/src/pages/CliInstall.tsx": "662562d18777249eb37e3d4bb2208170c4c730258635b68881cd1bf7154e7133"
+    },
+    "sourcePatch": "/srv/miy-prod/evidence/online-cli-20261116/source.patch"
+  }
+}

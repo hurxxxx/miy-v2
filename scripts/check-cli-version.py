@@ -81,7 +81,7 @@ def check(root, published, candidate):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--published", default="docs/releases/windows-candidate.json",
+    parser.add_argument("--published", default="docs/releases/cli-published.json",
                         help="record of the published CLI (version and sourceCommit)")
     parser.add_argument("--candidate", default="HEAD", help="candidate source revision")
     args = parser.parse_args()

@@ -21,6 +21,7 @@ import re
 import sys
 
 REASONS = {
+    "support-intake": "explicit anonymous report intake; bounded unverified data, no authenticated authority or identity",
     "identity": "signs a user in or issues a session; identity, not an app decision",
     "own": "reduces the caller's own credential or lease; the owner condition is in the statement",
     "snapshot": "read-only snapshot transaction",
@@ -30,6 +31,7 @@ REASONS = {
 
 # (module, function): reason key
 TRANSACTIONS = {
+    ("support.rs", "submit"): "support-intake",
     ("auth.rs", "callback"): "identity",
     ("auth.rs", "development_session"): "identity",
     ("auth.rs", "session"): "identity",

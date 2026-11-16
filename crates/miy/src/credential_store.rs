@@ -16,6 +16,73 @@ const MAX_SECRET: usize = 64 * 1024;
 const MAX_RECORD: u64 = 512 * 1024;
 const LOCK_TIMEOUT: Duration = Duration::from_secs(5);
 
+/// Safe numeric OS failures, with no credential, account, path or OS error text.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+#[derive(Debug)]
+struct OsFailure {
+    reason: &'static str,
+    status: i32,
+}
+impl std::fmt::Display for OsFailure {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.reason)
+    }
+}
+impl std::error::Error for OsFailure {}
+
+pub fn diagnostic(error: &anyhow::Error, operation: &str) -> serde_json::Value {
+    if let Some(os) = error.downcast_ref::<OsFailure>() {
+        return serde_json::json!({"operation":operation,"reason":os.reason,"backend":"macos_keychain","osStatus":os.status});
+    }
+    // The allowlist intentionally excludes arbitrary Display/context strings.
+    let text = error.to_string();
+    let reason = match text.as_str() {
+        "credential_backend_invalid"
+        | "credential_backend_unsupported"
+        | "credential_directory_unavailable"
+        | "credential_dpapi_data_invalid"
+        | "credential_dpapi_failed"
+        | "credential_input_unavailable"
+        | "credential_key_invalid"
+        | "credential_keychain_data_invalid"
+        | "credential_keychain_read_failed"
+        | "credential_keychain_remove_failed"
+        | "credential_keychain_unavailable"
+        | "credential_keychain_write_failed"
+        | "credential_lock_busy"
+        | "credential_lock_failed"
+        | "credential_lock_unavailable"
+        | "credential_output_too_large"
+        | "credential_read_failed"
+        | "credential_record_invalid"
+        | "credential_record_too_large"
+        | "credential_record_version_unsupported"
+        | "credential_remove_failed"
+        | "credential_root_unavailable"
+        | "credential_storage_failed"
+        | "credential_storage_invalid_path"
+        | "credential_storage_linked_file"
+        | "credential_storage_permissions"
+        | "credential_storage_unavailable"
+        | "credential_value_too_large" => text.as_str(),
+        _ => "credential_storage_failed",
+    };
+    serde_json::json!({"operation":operation,"reason":reason})
+}
+
+fn write_error(error: NativeWriteError) -> anyhow::Error {
+    #[cfg(target_os = "macos")]
+    if let NativeWriteError::Status(status) = error {
+        return OsFailure {
+            reason: "credential_keychain_write_failed",
+            status,
+        }
+        .into();
+    }
+    let _ = error;
+    anyhow!("credential_keychain_write_failed")
+}
+
 #[derive(Clone, Copy, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
 enum Backend {
@@ -258,8 +325,7 @@ impl Store {
                 Backend::Native => {
                     // A timeout/outage never moves an existing credential to a
                     // different backend, even if an override has since changed.
-                    native::set(&self.namespace, &self.key, value)
-                        .map_err(|_| anyhow!("credential_keychain_write_failed"))?;
+                    native::set(&self.namespace, &self.key, value).map_err(write_error)?;
                 }
                 Backend::UnixFile => {
                     ensure!(cfg!(unix), "credential_backend_unsupported");
@@ -292,7 +358,11 @@ impl Store {
         match native::set(&self.namespace, &self.key, value) {
             Ok(()) => Ok(()),
             Err(NativeWriteError::Unavailable) => self.write(&self.file_record(value)?),
-            Err(NativeWriteError::Failed) => bail!("credential_keychain_write_failed"),
+            #[cfg(target_os = "macos")]
+            Err(NativeWriteError::Status(-25291 | -25294 | -25308)) => {
+                self.write(&self.file_record(value)?)
+            }
+            Err(error) => Err(write_error(error)),
         }
     }
 
@@ -313,8 +383,11 @@ impl Store {
 #[derive(Debug)]
 enum NativeWriteError {
     // Only a definite unavailable/unsupported operation can choose a fallback.
+    #[cfg_attr(target_os = "macos", allow(dead_code))]
     Unavailable,
     Failed,
+    #[cfg(target_os = "macos")]
+    Status(i32),
 }
 
 #[cfg(all(unix, not(target_os = "macos")))]
@@ -893,7 +966,13 @@ mod native {
         if status == NOT_FOUND {
             return Ok(None);
         }
-        ensure!(status == 0, "credential_keychain_read_failed");
+        if status != 0 {
+            return Err(OsFailure {
+                reason: "credential_keychain_read_failed",
+                status,
+            }
+            .into());
+        }
         let result = owned(result)?;
         unsafe {
             ensure!(
@@ -940,8 +1019,7 @@ mod native {
         })();
         match result {
             Ok(0) => Ok(()),
-            // errSecNotAvailable, errSecNoSuchKeychain, errSecInteractionNotAllowed.
-            Ok(-25291 | -25294 | -25308) => Err(NativeWriteError::Unavailable),
+            Ok(status) => Err(NativeWriteError::Status(status)),
             _ => Err(NativeWriteError::Failed),
         }
     }
@@ -951,10 +1029,13 @@ mod native {
         let account = string(key)?;
         let query = dictionary(&query(&service, &account))?;
         let status = unsafe { SecItemDelete(query.0) };
-        ensure!(
-            status == 0 || status == NOT_FOUND,
-            "credential_keychain_remove_failed"
-        );
+        if status != 0 && status != NOT_FOUND {
+            return Err(OsFailure {
+                reason: "credential_keychain_remove_failed",
+                status,
+            }
+            .into());
+        }
         Ok(())
     }
 }
@@ -976,6 +1057,26 @@ mod native {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn diagnostic_preserves_only_known_reasons_and_numeric_os_status() {
+        assert_eq!(
+            diagnostic(&anyhow!("credential_storage_permissions"), "read")["reason"],
+            "credential_storage_permissions"
+        );
+        let unknown =
+            diagnostic(&anyhow!("credential_raw_secret=do-not-copy"), "write").to_string();
+        assert!(!unknown.contains("do-not-copy"));
+        let os: anyhow::Error = OsFailure {
+            reason: "credential_keychain_read_failed",
+            status: -25308,
+        }
+        .into();
+        let safe = diagnostic(&os, "read");
+        assert_eq!(safe["backend"], "macos_keychain");
+        assert_eq!(safe["osStatus"], -25308);
+        assert_eq!(safe["operation"], "read");
+    }
 
     fn key(value: &str) -> String {
         hex::encode(Sha256::digest(value))

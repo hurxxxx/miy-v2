@@ -2,17 +2,31 @@
 
 CLI·Windows 설치기의 후보 빌드, 서버 다운로드 게시, 정식 GitHub Release 조건을 관리한다. 사용자 설치·개발은 [RUNNING](RUNNING.md), Windows GUI·수동 ZIP 설치와 실제 사용자 인수는 [WINDOWS-ACCEPTANCE](WINDOWS-ACCEPTANCE.md)를 따른다. 검사 종류는 [CHECKS](CHECKS.md), 버전별 과거 결과는 [CLI 검증 이력](archive/results/CLI-VALIDATION-MATRIX.md)에 모은다.
 
-서버의 현재 [실행·인증 계약](APP-BOUNDARIES.md#확정-결정)은 prod 포털·dev 포털·관리/로그인 콘솔의 세 출처다. device CLI 승인은 콘솔에서만 처리하고 legacy 시작·승인·교환은 410 `cli_upgrade_required`로 종료했다. 게시 CLI 0.10.0의 실제 연결 인수·현재 배포는 [운영 안내](SERVER-OPERATIONS.md)를, 경계 인수의 범위는 [경계 인수](APP-BOUNDARIES.md#경계-인수)를 따른다. 개발 단계의 구 형식 호환은 강제하지 않지만 게시 파일·해시는 불변이다. 후보 생성·서버 다운로드 게시·정식 공개는 서로 다른 단계다.
+서버의 현재 [실행·인증 계약](APP-BOUNDARIES.md#확정-결정)은 prod 포털·dev 포털·관리/로그인 콘솔의 세 출처다. device CLI 승인은 콘솔에서만 처리하고 legacy 시작·승인·교환은 410 `cli_upgrade_required`로 종료했다. 호스트별 게시 CLI의 실제 연결 인수·현재 배포는 [운영 안내](SERVER-OPERATIONS.md)를, 경계 인수의 범위는 [경계 인수](APP-BOUNDARIES.md#경계-인수)를 따른다. 개발 단계의 구 형식 호환은 강제하지 않지만 게시 파일·해시는 불변이다. 후보 생성·서버 다운로드 게시·정식 공개는 서로 다른 단계다.
 
-## 현재 0.10.0 게시
+## 온라인 설치 제공
+
+Core는 `MIY_CLI_RELEASE_DIR/release-index.json`을 검증하여 `/api/v1/cli/install.sh`와 `/api/v1/cli/install.ps1`을 제공한다. 각 응답은 한 번 읽은 후보의 immutable URL·아카이브/바이너리 SHA-256·버전과 설정된 `MIY_ORIGIN`을 포함한다. URL·해시는 실행 중 별도 mutable index에서 다시 읽지 않는다. 5개 CLI·2개 helper가 완성된 후보를 기존 `stage-cli-release.py`로 게시해야 하며, 미게시 상태에서는 503으로 종료한다. 온라인 스크립트는 Core에 포함되므로 서버 바이너리 교체가 필요하다. 기존 게시 패키지는 다시 쓰지 않는다.
+
+설치 화면은 명령 한 줄을 우선 표시하고, 패키지·GUI 설치기 직접 다운로드는 접힌 추가 선택지로 제공한다. `scripts/install-cli-online.sh`·`.ps1`은 서버가 값을 넣는 템플릿이므로 저장소 원문을 직접 실행하지 않는다. 사용법과 사용자 PATH 정책은 [RUNNING](RUNNING.md#설치와-발견)에 있다.
+
+## miy.works 0.11.0 게시
+
+**다음 후보: CLI 0.12.0.** 비로그인 고장 신고·로컬 재전송·관리자 처리와 macOS 저장소 오류 진단을 구현하고 Linux CLI/실제 격리 DB·웹 검사를 통과했다([검증 기록](releases/support-reports-2026-11-16-validation.json), [사용 계약](SUPPORT-REPORTS.md)). SDK 번들은 0.11.0을 유지하며 새 서버 기능은 schema 24를 요구한다. 아직 게시·실서버 반영하지 않았고 Mac Keychain 복구도 미확인이다. 아래 0.11.0 게시 기록을 후보 결과로 바꾸지 않는다.
+
+2026-11-16에 `9897f6385ff1228c43fbc28a4f42b4d7a75f59a4`의 [CLI CI 43865661806](https://github.com/hurxxxx/miy-v2/actions/runs/43865661806)를 실행해 5개 target과 Linux helper 2개를 검증하고 `https://portal.miy.works`에 게시했다. `/cli/install`에서 curl/Bash 또는 PowerShell 한 줄로 설치한다. Core·설치 화면과 공개 HTTPS 설치 검증은 [반영 기록](releases/online-cli-2026-11-16-deployment.json)에 있다. 정식 GitHub Release와 0.11.0 GUI EXE는 게시하지 않았다.
+
+[게시 CLI 기록](releases/cli-published.json)은 같은 CLI 버전에 변경된 클라이언트 코드를 다시 게시하지 않도록 버전 검사기의 기준으로 사용한다. [Windows GUI 인수 후보](releases/windows-candidate.json)는 기존 v2.dwdcc.kr의 0.10.0 EXE 기록을 유지한다. Windows 네이티브 CI의 PowerShell 5.1/7 패키지 검사와 실제 사용자 Windows 11 인수는 별도다.
+
+## 기존 v2.dwdcc.kr 0.10.0 게시
 
 `9133d700369c43b11abeee1738541e6abda5b4d6`의 [CLI CI 43672504526](https://github.com/hurxxxx/miy-v2/actions/runs/43672504526)(5개 target과 Linux DB 연결 helper 2개, 공개 Release 없음)와 같은 CLI 출처·해시로 만든 [설치 파일 CI 43674150699](https://github.com/hurxxxx/miy-v2/actions/runs/43674150699)를 검증했다. 2026-11-15 서버 0.10.0·schema 23과 함께 [설치 안내](https://v2.dwdcc.kr/cli/install)에 게시했다([0.10.0 반영 기록](releases/pilot-0.10.0-2026-11-15-deployment.json)). SDK 번들 0.10.0은 G4 디렉터리·공통 ACL·작은 첨부의 typed SDK(Rust SDK 0.4.0)를 포함하고, 새 프로젝트는 공용 UI 1.1.0을 기본으로 설치한다. 기존 0.9.0 앱은 `miy app upgrade`로 명시적으로 옮긴다. 0.9.0 CLI·번들·UI 1.0.1 바이트는 그대로 보존한다.
 
 게시 CLI로 실서버에 새 앱을 만들어 서버 빌드·dev 배포·프레임 표시까지 확인했다(같은 Linux 호스트, [pilot 흐름](SERVER-OPERATIONS.md#5-실제-연결-확인)). Windows 11 사용자 인수는 [현재 후보 절차](WINDOWS-ACCEPTANCE.md)를 쓰며 아직 `NOT_RUN`이다. 이전 게시는 [0.9.0 배포 기록](releases/cli-0.9.0-2026-11-13-deployment.json), [0.7.0 배포 기록](releases/core-0.7.0-deployment.json)에 있다. 0.10.0 보호 파일 명세(`crates/miy/bundles/0.10.0.json`)는 게시 소스 `9133d70`의 바이트로 추가했다(같은 생성 규칙으로 `173c6d5`에서 만든 결과가 기존 0.9.0 명세와 바이트까지 같음을 확인).
 
-## 작업본 0.11.0 후보
+## 0.11.0 변경
 
-서버 배포를 서버 빌드 산출물로 한정하는 CLI/번들 0.11.0을 준비했다. 소스·격리 검증 후보이며 게시하거나 개발 서버에 반영하지 않았다([검증 기록](releases/server-build-only-2026-11-16-validation.json)). 0.10.0 CLI·번들·UI 1.1.0 바이트는 그대로 보존한다.
+서버 배포를 서버 빌드 산출물로 한정하는 CLI/번들 0.11.0을 준비했다. 최초 소스·격리 검증은 [검증 기록](releases/server-build-only-2026-11-16-validation.json)에 있고, 현재 miy.works의 서버와 CLI에 반영했다. 0.10.0 CLI·번들·UI 1.1.0 바이트는 그대로 보존한다.
 
 - `miy app build`는 항상 선택한 서버에서 빌드한다. `--remote`·`--platform`과 로컬 배포용 Docker 빌드는 없다. 로컬 테스트는 `app dev`(기본 native, `--runtime docker`)다.
 - `miy app deploy`는 프로젝트의 서버 빌드 영수증을 요구한다. 없으면 서버에 요청하기 전에 `server_build_required`로 끝난다. 이미지 export·업로드는 없다.
@@ -20,9 +34,9 @@ CLI·Windows 설치기의 후보 빌드, 서버 다운로드 게시, 정식 GitH
 - 번들 0.11.0은 0.10.0과 SDK·UI가 같고 보호 안내 문서(`AGENTS.md`, `CLAUDE.md`, `docs/CONTRACT.md`, `docs/CLI.md`, 앱 skill)만 다르다. 0.10.0 프로젝트는 `miy app upgrade`로 옮기고, 공용 UI 1.1.0(번들 0.10.0용 게시물)은 0.11.0에서도 호환으로 받는다.
 - 이전 CLI가 남긴 작업 기록(journal)은 읽는다. 로컬 이미지를 올리던 배포 기록의 `job resume`은 `local_image_deployment_removed`로 거부하고 `miy app build`를 안내한다.
 
-게시 순서는 종전과 같다: CI 후보 생성 → 서버·worker와 CLI·설치기를 한 기록으로 반영 → `windows-candidate.json`과 `contracts/api-v1.published.json` 갱신. 다음 번들 버전을 준비할 때는 0.11.0 보호 파일 명세를 그 게시 소스의 바이트로 추가한다.
+게시 순서는 종전과 같다: CI 후보 생성 → 서버·worker와 CLI·설치기를 한 기록으로 반영 → `cli-published.json`과 `contracts/api-v1.published.json` 갱신(GUI EXE도 게시할 때 `windows-candidate.json` 갱신). 다음 번들 버전을 준비할 때는 0.11.0 보호 파일 명세를 그 게시 소스의 바이트로 추가한다.
 
-새 후보를 게시하면 [Windows 후보 파일](releases/windows-candidate.json)을 그 CI 해시로 갱신한다. Windows 인수 검사기는 이 파일을 기대값으로 쓴다.
+새 Windows GUI 설치기를 게시하면 [Windows 후보 파일](releases/windows-candidate.json)을 그 CI 해시로 갱신한다. Windows 인수 검사기는 이 파일을 기대값으로 쓴다.
 
 같은 커밋에서 `python3 scripts/check-api-compat.py --refresh 버전 소스커밋`으로 [게시 CLI 응답 계약](../contracts/api-v1.published.json)도 그 소스의 스키마로 갱신한다. 이후 서버 응답은 이 파일보다 필드를 추가만 할 수 있다(`check-static.sh scripts`). 이전 서버가 보내지 않는 필드는 CLI가 기본값으로 읽는다([계약 타입](../crates/miy/src/api_contract.rs)).
 
@@ -30,7 +44,7 @@ CLI·Windows 설치기의 후보 빌드, 서버 다운로드 게시, 정식 GitH
 
 ## 배포 후보 생성
 
-[CLI release candidate workflow](../.github/workflows/cli-release.yml)는 수동 실행한다. `candidate_commit`에는 전체 40자리 소스 commit, `release_tag`에는 해당 Cargo 버전 앞에 `v`를 붙인 값을 입력한다. `publish=false`가 기본값이다. 버전이 다른 tag, 변경된 checkout, 다른 CPU의 바이너리, 누락된 배포물은 거부한다. 게시본([Windows 후보 파일](releases/windows-candidate.json)의 버전·source) 이후 클라이언트 빌드 입력이 바뀌었는데 버전이 같거나 낮으면 `scripts/check-cli-version.py`가 후보 생성을 거부한다. 설치기와 갱신이 같은 버전을 이미 설치된 것으로 보기 때문이다. 서버 전용 모듈(`main.rs`에서 `feature = "server"`로만 컴파일)은 세지 않고, 공용 모듈은 서버·시험 부분만 바뀌어도 센다. 서버 배포는 버전을 유지할 수 있다.
+[CLI release candidate workflow](../.github/workflows/cli-release.yml)는 수동 실행한다. `candidate_commit`에는 전체 40자리 소스 commit, `release_tag`에는 해당 Cargo 버전 앞에 `v`를 붙인 값을 입력한다. `publish=false`가 기본값이다. 버전이 다른 tag, 변경된 checkout, 다른 CPU의 바이너리, 누락된 배포물은 거부한다. 게시본([게시 CLI 기록](releases/cli-published.json)의 버전·source) 이후 클라이언트 빌드 입력이 바뀌었는데 버전이 같거나 낮으면 `scripts/check-cli-version.py`가 후보 생성을 거부한다. 설치기와 갱신이 같은 버전을 이미 설치된 것으로 보기 때문이다. 서버 전용 모듈(`main.rs`에서 `feature = "server"`로만 컴파일)은 세지 않고, 공용 모듈은 서버·시험 부분만 바뀌어도 센다. 서버 배포는 버전을 유지할 수 있다.
 
 | 배포물 | 네이티브 runner |
 | --- | --- |

@@ -199,9 +199,33 @@ struct CliHelpInput {
 }
 fn result(v: Result<Value>) -> Result<CallToolResult, McpError> {
     Ok(match v {
-        Ok(v)=>CallToolResult::success(vec![ContentBlock::text(v.to_string())]),
-        Err(e)=>CallToolResult::error(vec![ContentBlock::text(json!({"error":e.to_string(),"hint":"Register an explicit server with miy context init if needed, then run .miy-tools/miy auth login and doctor --for develop in this app directory (.exe on Windows). Never read or print credential files."}).to_string())])
+        Ok(v) => CallToolResult::success(vec![ContentBlock::text(v.to_string())]),
+        Err(e) => {
+            crate::cli_report::remember(&e);
+            let error = crate::cli_error::classify(&e);
+            let hint = failure_hint(&error.code);
+            CallToolResult::error(vec![ContentBlock::text(
+                json!({"error":error,"hint":hint}).to_string(),
+            )])
+        }
     })
+}
+
+fn failure_hint(code: &str) -> &'static str {
+    match code {
+        "credential_storage_unavailable" | "login_credential_not_saved" => {
+            "Local credential storage failed. Do not repeat browser approval or read credential files. Inspect the safe error details; use this project's CLI report send --message <description> to submit a report without authentication."
+        }
+        "login_required" | "reauthentication_required" | "unauthorized" => {
+            "Run this project's CLI auth login, then auth status. Use the same OS user, configuration directory and selected context as this MCP process."
+        }
+        "context_required" | "no_active_context" => {
+            "Register an explicit server with miy context init, then select the intended context."
+        }
+        _ => {
+            "Inspect the structured error code and recovery arguments. Do not repeat login for unrelated failures. A manual report send --message <description> works without authentication."
+        }
+    }
 }
 #[derive(Deserialize, schemars::JsonSchema)]
 struct Search {
@@ -382,6 +406,13 @@ pub async fn serve() -> Result<()> {
 #[cfg(test)]
 mod configuration_tests {
     use super::*;
+
+    #[test]
+    fn storage_and_network_failures_do_not_instruct_repeated_login() {
+        assert!(!failure_hint("credential_storage_unavailable").contains("auth login"));
+        assert!(!failure_hint("network_request_failed").contains("auth login"));
+        assert!(failure_hint("login_required").contains("auth login"));
+    }
 
     #[test]
     fn actual_mcp_configuration_rejects_wrong_targets_duplicates_and_private_extra_fields() {
