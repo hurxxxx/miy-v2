@@ -24,6 +24,8 @@ GitHub Actions는 `cli-foundation.yml`(Linux 서버·Linux/macOS/Windows 클라�
 
 `scripts/test-file-routes-rollout.py`는 유지관리 프록시 도구의 검사·reload·사본 갱신·기록 저장 실패와 부분 복원 재시도를 임시 파일·모의 외부 명령으로 확인한다. 당시 `.local` 배포 도구와 백업은 수정하지 않는다. `node scripts/test-pilot-flow.mjs`는 배포 응답 유실·상태 조회 실패·진행 중 작업·중지 실패와 결과 식별자를 모의 CLI 상태로 확인하며 서버에 앱을 만들지 않는다. 둘 다 `check-static.sh scripts`에 포함한다.
 
+새 서버 안내는 [SETUP](SETUP.md)을 따른다. 별도 VM에서 설치 도중 재접속과 변수/배열 복구, DB/IdP 준비·재부팅, 직원의 첫 암호 변경·중지, 앱 컨테이너의 공통 API 연결, 인증서 갱신, 백업·복원·버전 갱신을 인수한다. 문서 명령/격리 설정 검사를 실제 새 호스트 설치·재부팅 PASS로 확대하지 않는다. 2026-11-16 후속 보완은 사용자가 VM 검증을 맡기로 하여 문서만 반영하며 추가 실행 검사는 NOT_RUN이다.
+
 앱 DB 로그인 경계를 바꾸면 정적 Rust 검사 외에 `scripts/check-development-database.py`를 실행한다. 실제 `session_user`·DB 결합, `RESET ROLE` 뒤에도 비관리자인지, 쿼리의 사용자/암호/DB 이름이 앱 계정을 덮지 못하는지 확인한다. 최초 준비의 관리자 연결도 지정된 앱 DB만 설정하며 관리용 DB의 스키마·기존 권한을 보존하는지 검사한다. 현재 역할만 확인하는 시험으로는 관리자 로그인 후 `SET ROLE`을 구분할 수 없다.
 
 앱 응답의 4MiB 한도·64개 슬롯·Bytes clone/slice 수명·오류/취소 반환은 모든 OS의 `app_response` 단위 검사에서 확인한다. 작은 TCP 송수신 버퍼로 느린 클라이언트를 만드는 추가 시험은 Unix에서만 실행한다. Windows에서는 이 설정에도 OS가 본문 전체를 받아갈 수 있어 애플리케이션 버퍼가 반드시 남는다는 전제가 성립하지 않았다(커밋 `7952c8e`의 CI 실패). Windows의 실제 전송 지연·전체 RSS 검증은 이 시험의 PASS로 대신하지 않는다.

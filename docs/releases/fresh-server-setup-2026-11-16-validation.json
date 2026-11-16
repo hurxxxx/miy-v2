@@ -1,0 +1,148 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-11-16",
+  "recordedAt": "2026-11-16T02:04:00.673784+00:00",
+  "scope": "Fresh-server setup guide and minimal setup-tool corrections; no deployment",
+  "source": {
+    "baseCommit": "5e9ee3433b07c3142cfc4af1b807c55d6b1c1541",
+    "workingTree": true,
+    "sha256": {
+      "README.md": "0fb0e4c44c3ad491081531b3d5e1d0a58d7c633238c1337dec19385239e716d6",
+      "compose.yaml": "055c1efbf477af20df3199f095bdeb91e3d731f34a8c7583fc47b86905f92b68",
+      "docs/APP-FRAMES.md": "8e220dc33a38ef35faa977e206fef82ef882b76e86ce4ccca366e848dd936c34",
+      "docs/CHECKS.md": "b6c66401ece0aadfcee776c19b52e9163b36cd98088bb91a4673ed682da4090e",
+      "docs/CLI-RELEASE.md": "a353f99841577f7905bc750e20f6f4370f89e2d022865f9293c0e2e643f811de",
+      "docs/CORE-HARDENING.md": "3ae1d6dda91aa35bd977c67b0390fd99d59254be3ecb687b30cb37e388fec2fc",
+      "docs/PLAN.md": "3828b54eec8f306385ff9c0a44fa2ba586edd31827dfbed44c91c56e32b354f2",
+      "docs/README.md": "7045498a0f9e04769af468fc8a5cc24a3e7badb3d596ac88b27fd40b9b08e3b2",
+      "docs/RUNNING.md": "5fadcdaceeeb94c707d19dea739beffc16499c5095a2019e267c02e453553f50",
+      "docs/SERVER-OPERATIONS.md": "1502f141e5a4167d2a2e2bdae8827f9711f02536f39f6d577abfafa4c8d5c444",
+      "docs/SETUP.md": "f4eb130ebb18c792d465b334a682942e8a8c73fae209df7f37897d8cf9d26503",
+      "scripts/check-server-config.py": "7b61a9daace170e53105daad6a5584fe650e46f4e6c141fa9bf85637f37263ec",
+      "scripts/check-static.sh": "3a7f5afc32a7dcda0cbc391a9ee288956dc718eecdbd6e74a797fddcf193938f",
+      "scripts/up.sh": "69eb1b9a5427bd90c87608ceb22a1a6581e2586ca6e3b9c4f3a2595bc2926967",
+      "scripts/test-up-state-dir.py": "548ae73867353b90c17da69ef48019c08c7f8db74f83e10933d05be5bbc4fce1"
+    }
+  },
+  "changes": [
+    "SETUP.md is the single complete fresh-install procedure, from tools/clone through DB/IdP, first accounts, HTTPS, core/worker, portal/frame runtime, systemd, native CLI and first dev app.",
+    "Public-domain certificate and single-IP/private-CA branches; disclose that deployed app SDK private-CA trust propagation is not implemented.",
+    "Source-built native CLI is independent from optional aggregate publication. Pin server and CLI binaries to separate paths.",
+    "Replace incomplete duplicate setup commands and unreachable public Keycloak admin-UI instructions in current documentation.",
+    "Normalize up.sh state paths before bootstrap/build/services; reject an empty --state-dir=.",
+    "PostgreSQL/Keycloak restart unless explicitly stopped; PostgreSQL health waits for TCP after first initialization."
+  ],
+  "checks": [
+    {
+      "command": "bash scripts/check-static.sh scripts",
+      "status": "PASS",
+      "log": ".local/evidence/fresh-server-setup-20261116/static-scripts.log",
+      "scope": "All configured script checks, including 8 mocked up.sh cases and 14 existing isolated server/proxy check groups. Expanded Compose checks verify restart policies and TCP readiness without printing fixture secrets."
+    },
+    {
+      "command": "python3 .local/evidence/fresh-server-setup-20261116/check-tls-bootstrap-guide.py",
+      "status": "PASS",
+      "counts": {
+        "nginx_systemd_render": 2,
+        "offline_tls_checks": 2,
+        "password_propagation": 2,
+        "password_rejection_atomicity": 12,
+        "private_ca_branches": 2
+      },
+      "scope": "Actual extracted guide commands, temporary state and generated keys only; getpass mocked; no daemon/network/trust-store changes."
+    },
+    {
+      "command": "python3 .local/evidence/fresh-server-setup-20261116/review-employee-setup.py",
+      "status": "PASS",
+      "tests": 16,
+      "snippetSha256": "97eb54b42a92e55326dab500776612426d94641fa9468151d4374708d053deca",
+      "scope": "Extracted employee provisioning snippet; mocked HTTP and terminal/input; UUID-only output, loopback/no-proxy/no-redirect, invalid-input and HTTP failure cases."
+    },
+    {
+      "command": "python3 .local/evidence/fresh-server-setup-20261116/check-guide-syntax.py",
+      "status": "PASS",
+      "bashBlocks": 26,
+      "inlinePythonBlocks": 2,
+      "newDocumentRelativeLinks": 6,
+      "scope": "Syntax, relative links/anchors and version lookup from selected source commit; no installation commands executed."
+    },
+    {
+      "command": "python3 scripts/check-doc-links.py",
+      "status": "PASS",
+      "trackedMarkdownFiles": 67,
+      "relativeLinks": 1033,
+      "scope": "Tracked-document links including incoming SETUP links. New SETUP outgoing links checked separately."
+    },
+    {
+      "command": "git diff --check",
+      "status": "PASS"
+    }
+  ],
+  "preservedFailures": [
+    {
+      "status": "FAIL",
+      "stage": "Initial private-password guide rehearsal",
+      "cause": "pathlib.Path.open does not accept opener; TypeError before saving passwords.",
+      "resolution": "Use built-in open with mode 0600 opener. Both address branches and 12 rejection/atomicity cases passed after correction."
+    },
+    {
+      "status": "FAIL",
+      "stage": "Initial employee guide snippet (reconstructed original)",
+      "cause": "input() reads exhausted stdin after python3 here-document; EOFError before the HTTP call.",
+      "resolution": "Explicit /dev/tty input with non-TTY rejection; 16 fixture cases passed.",
+      "evidence": ".local/evidence/fresh-server-setup-20261116/employee-setup-initial-failure.json"
+    },
+    {
+      "status": "FAIL",
+      "stage": "Old up.sh negative-control result classifier (verification harness)",
+      "cause": "Initial classifier assumed all four relative-path cases fail by missing frame output; one instead fails while reading settings through a missing intermediate path.",
+      "resolution": "Classified the baseline failures as three missing-frame cases and one settings-read failure. This was a harness assertion, not a failure of the corrected up.sh."
+    }
+  ],
+  "reviewCorrections": [
+    "Read version from crates/miy/Cargo.toml at the server installation commit, not missing workspace.package or an unrelated work-PC HEAD.",
+    "Wait for Keycloak before configure-identity and public issuer before Core; check all three health endpoints before is-active.",
+    "New employee accounts use loopback identity administration; public /identity/admin and master realm remain blocked.",
+    "Default app acceptance covers ping, DB connection/migration and installation state, not business-record CRUD/backup.",
+    "Nginx port-range rendering does not require 1.28-specific syntax; target-host nginx -t remains required."
+  ],
+  "notRun": [
+    {
+      "scope": "Full empty Ubuntu host installation, apt/toolchain downloads, OS CA installation, service installation/reboot, actual first OIDC login and first app on that host",
+      "status": "NOT_RUN",
+      "reason": "Current host contains the live development deployment; no separate blank server was provided. Isolated configuration tests do not substitute for this acceptance."
+    },
+    {
+      "scope": "Deployed app SDK callbacks using a private CA (directory/files/app-to-app)",
+      "status": "NOT_RUN",
+      "reason": "Source review found no CA propagation to the app runtime/SDK client. Recorded as remaining work; public-CA domain deployment is the documented current path for common backend APIs."
+    },
+    {
+      "scope": "Rust build/unit/runtime suites and web build/browser suites for this change",
+      "status": "NOT_RUN",
+      "reason": "No Rust, SDK, platform UI or migration implementation changed; targeted setup/scripts/config tests were run."
+    },
+    {
+      "scope": "New CLI artifact CI/publishing, Windows/macOS client acceptance, Git commit/push and current-host deployment",
+      "status": "NOT_RUN",
+      "reason": "This task documents fresh setup and fixes its tooling; those external/deployment actions were not requested."
+    }
+  ],
+  "deployment": {
+    "performed": false,
+    "liveDataChanged": false,
+    "liveServicesRestarted": false
+  },
+  "localEvidenceSha256": {
+    ".local/evidence/fresh-server-setup-20261116/check-guide-syntax.log": "f090fe41668700d38cfd5ec85f34ad8a5b68207cccf5f5fa8360964e0fbe4a5b",
+    ".local/evidence/fresh-server-setup-20261116/check-guide-syntax.py": "414cfe462bf814cc17c5f1b80fc486752a53d418c4c022b720a7c6a5942acfe9",
+    ".local/evidence/fresh-server-setup-20261116/check-tls-bootstrap-guide.log": "d9452426871abc59ec09ac791f5c78db64aa05971bcc8b0296e6a4e624c4b22e",
+    ".local/evidence/fresh-server-setup-20261116/check-tls-bootstrap-guide.py": "8bcdbaf19681a50e18c7d55e3b546bd9e8b02e7d3563791285f6a1d056a302c5",
+    ".local/evidence/fresh-server-setup-20261116/doc-links.log": "39b393c1870b14f7675c6b0eb8e66a7b94f5d1490a8dda63bdf1102f4ea7f8be",
+    ".local/evidence/fresh-server-setup-20261116/employee-setup-initial-failure.json": "480c1b196105bc91f6b836d6cddcce8097016c90cabb7ee75772e78efc08e33f",
+    ".local/evidence/fresh-server-setup-20261116/employee-setup-validation.json": "3572d8525c30559d2a4aedec8921f452cd83376c7e3d95c7147f2356031be1bb",
+    ".local/evidence/fresh-server-setup-20261116/employee-setup.log": "214447d8dd032c768bbc34571191dfcc058cc7474767bff19b0cb901ad102d4e",
+    ".local/evidence/fresh-server-setup-20261116/review-employee-setup.py": "adae3f98b6387e6a39fee19834a5806422d54534043a36264cd657c92b9eff7b",
+    ".local/evidence/fresh-server-setup-20261116/static-scripts.log": "a677c563c41b63051ce472787541a5de7b83e081dfcef3f74da9d705bdece59a"
+  }
+}

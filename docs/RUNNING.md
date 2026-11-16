@@ -1,6 +1,6 @@
 # CLI와 독립 앱 개발·운영 실행 안내
 
-현행 CLI의 설치·인증·앱 개발·운영 사용법을 모은다. 설치된 실행 파일의 `miy --version`, `miy describe`와 서버 capability가 실제 사용 가능한 범위를 결정한다. 게시 CLI와 작업본은 모두 **CLI 0.10.0 / 번들 0.10.0**이다(2026-11-15 게시). 게시 출처와 남은 조건은 [CLI-RELEASE](CLI-RELEASE.md), 실제 서버 상태는 [SERVER-OPERATIONS](SERVER-OPERATIONS.md)를 따른다.
+현행 CLI의 설치·인증·앱 개발·운영 사용법을 모은다. 설치된 실행 파일의 `miy --version`, `miy describe`와 서버 capability가 실제 사용 가능한 범위를 결정한다. 게시 CLI/번들은 **0.10.0**, 현재 작업본은 **0.11.0 후보**다. 이 안내의 서버 빌드 전용 배포는 0.11.0 계약이며 게시 서버에는 반영 전이다. 게시 출처와 남은 조건은 [CLI-RELEASE](CLI-RELEASE.md), 실제 서버 상태는 [SERVER-OPERATIONS](SERVER-OPERATIONS.md)를 따른다.
 
 검사 선택은 [CHECKS](CHECKS.md), 사용자 Windows 설치·인수는 [WINDOWS-ACCEPTANCE](WINDOWS-ACCEPTANCE.md)에 모은다. 명령 구현·특정 환경 PASS·전체 V7 인수는 구분한다. 현재 [실행·인증 계약](APP-BOUNDARIES.md#확정-결정)은 prod 포털·dev 포털·관리/CLI 승인/Keycloak 콘솔 세 출처다. 원격 업무 앱은 설치별 출처 프레임에서 실행하며 단일 IP HTTPS도 지원한다. CLI의 대표 서버 주소는 prod 포털이고 브라우저 승인만 콘솔에서 처리한다.
 
@@ -89,7 +89,7 @@ miy user list
 miy --app my-app grant set --user USER_ID --permission use --environment dev
 ```
 
-사람은 관리자가 Core에 등록한 뒤에만 로그인할 수 있다. 운영자가 로그인 서버(콘솔 `/identity`의 Keycloak 관리 화면)에서 계정을 만들고, 관리자가 콘솔 **플랫폼 관리 → 사용자 계정**에서 그 계정의 ID(사용자 상세의 UUID)와 표시 이름을 등록한다. 같은 화면에서 관리자 지정, 앱 등록 신청 자격(`앱 개발 허용`), 사용 중지를 바꾼다. 등록만으로는 앱 권한이 생기지 않는다. API는 `POST /api/v1/users`, `PATCH /api/v1/users/{id}`이며 CLI 명령은 `user list`만 있다.
+사람은 관리자가 Core에 등록한 뒤에만 로그인할 수 있다. 운영자가 [SETUP §8의 내부 Keycloak API 절차](SETUP.md#8-기동-확인과-첫-로그인)로 계정을 만들고, 관리자가 콘솔 **플랫폼 관리 → 사용자 계정**에서 그 계정의 UUID와 표시 이름을 등록한다. 공개 `/identity`는 로그인 경로만 허용하며 Keycloak master 관리 화면은 열지 않는다. 같은 miy 화면에서 관리자 지정, 앱 등록 신청 자격(`앱 개발 허용`), 사용 중지를 바꾼다. 등록만으로는 앱 권한이 생기지 않는다. API는 `POST /api/v1/users`, `PATCH /api/v1/users/{id}`이며 CLI 명령은 `user list`만 있다.
 
 선택한 context가 있으면 init이 프로젝트에 그 연결 이름을 기록한다. context 없이 로컬 프로젝트를 생성할 수 있지만 원격 작업 전에는 context를 추가·선택하고 로그인해야 한다. 등록 요청만으로 권한이 생기지 않는다. 관리자의 승인은 요청자에게 dev/develop 권한만 부여하며 prod/deploy는 별도다.
 
@@ -213,50 +213,15 @@ miy --app my-app grant set --input @grant.json
 
 ## 현행 서버 구성: HTTPS 도메인과 사내 HTTP IP
 
-이 절의 명령은 서버 구성의 준비 절차이며, 앱 프레임 도입 후의 새 서버 전체 설치 인수는 아직 `NOT_RUN`이다. `scripts/up.sh`는 포털과 함께 프레임 런타임을 `<state>/frame-runtime`에 빌드하고, seed는 `registry/components/ui`의 모든 공용 UI 버전을 게시한다(2026-11-15). 런타임이 없으면 앱 프레임은 빈 화면 대신 `frame_runtime_missing` 안내를 표시하고 Core가 같은 이름의 경고를 기록한다. **외부 도메인 구매·내부 DNS·추가 IP 없이 단일 IP와 사설 CA HTTPS**를 지원한다. prod 포털 `https://192.168.10.20:8443`, dev 포털 `https://192.168.10.20:9444`, 콘솔 `https://192.168.10.20:9443`은 설정 가능한 포트의 예시다. IdP는 콘솔 `/identity/realms/miy`에 두며 별도 IdP 출처는 요구하지 않는다. Core·Keycloak 내부 포트는 외부에 직접 공개하지 않고 프록시를 통해서만 접근한다.
+빈 서버의 설치 명령은 **[새 서버 설치 안내](SETUP.md)** 한 곳에서 관리한다. Ubuntu 도구 설치·Git clone 이후의 PostgreSQL/Keycloak 초기화·첫 관리자·TLS·Core/worker·포털/프레임 빌드·Nginx/systemd·재부팅·첫 앱까지 순서대로 따른다. 기존 개발 호스트를 갱신할 때는 [서버 운영 안내](SERVER-OPERATIONS.md)를 사용한다. 기존 배포 도구를 새 서버 설치기로 실행하지 않는다.
 
-최소 설치 범위는 운영자가 준비한 **IP SAN이 있는 서버 인증서·키의 반입, 체인/만료/IP 일치 검사, 단말과 CLI의 CA 신뢰 설정 안내 및 연결 확인**이다. 자동 CA 배포·자동 갱신은 후속이며 운영자는 갱신 후 같은 검사를 수행한다. 도메인 배치는 권장하지만 필수는 아니다. 포트 차이는 DOM origin을 구분할 뿐 쿠키를 격리하지 않으므로 서버의 portal/dev_portal/console 세션 용도와 정확한 Origin·현재 CSRF 검사가 필요하다. 아래 HTTP 절차의 성공을 이 인수로 옮기지 않으며 TLS 검증 해제·인증서 경고 무시·자동 HTTP fallback을 제공하지 않는다. 상세는 [출처와 자격증명](APP-BOUNDARIES.md#출처와-자격증명)을 따른다.
+새 사내 서버는 HTTPS이며 도메인 또는 단일 IP+포트 풀을 선택할 수 있다. IdP는 콘솔 `/identity/realms/miy`, CLI context의 대표 주소는 prod 포털이다. Core·Keycloak·PostgreSQL은 loopback에 두며 정확한 목적별 프록시로 연결한다. 사설 CA의 서버/브라우저/CLI 신뢰는 각각 설정하고 TLS 검증을 끄지 않는다. HTTP는 명시적 로컬/호환 검증용이며 새 서버 기본 경로가 아니다.
 
-서버 대표 주소(prod 업무 포털)는 운영자가 `MIY_ORIGIN`으로, 관리·로그인 출처는 `MIY_CONSOLE_ORIGIN`으로, dev 앱 포털은 `MIY_DEV_PORTAL_ORIGIN`으로 명시한다(2026-11-09 추가). 도메인이 없으면 같은 IP의 포트로 나누며 `--dev-portal-origin`을 생략하면 포털 HTTPS 443/8443에 대해 :9444, 그 밖에는 포털 포트+2를 제안한다. 로컬 프로필은 https://localhost:18445(HTTP 18002)를 쓴다. 포트 분리는 정식 지원하지만 쿠키를 공유하므로, 별도 호스트명으로 호스트 전용 쿠키 공유를 줄이는 배치를 권장한다. 같은 상위 도메인의 `Domain=` 쿠키 간섭·대량 주입 한계는 남는다. `bootstrap.py`가 포트 분리 프로필을 알리며, 포트 환경용 우회 코드는 두지 않는다([배치 프로필](APP-BOUNDARIES.md#배치-프로필-도메인권장과-포트-분리지원)). 단일 IP HTTPS의 새 구성·인증서 검사·전환은 [서버 구성 절차](SERVER-OPERATIONS.md#새-세-출처-설정과-전환-준비)를 따른다. 아래 기본 `.local` 예시는 **별도 새 서버에서만** 실행하며 이 checkout의 운영 `.local`에는 적용하지 않는다. 서버 구성 스크립트의 `--profile server`는 첫 구성 시 주소가 없으면 실패한다. 기존 구성 재실행은 저장된 주소·포트·자격증명을 유지한다. 이 서버 설정은 홈페이지 설치 명령에 인자로 전달되며 클라이언트 실행 파일의 기본 주소가 되지 않는다.
+사설 CA를 배포 앱 컨테이너/SDK에 전달하는 기능은 아직 없어 앱 백엔드의 공통 API까지 쓸 때는 보완이 필요하다. 신규 서버에서 공통 기능을 바로 사용하는 경로는 공개 CA 도메인 배치이며, 사설 CA의 실제 앱 통신은 별도 인수 대상이다([SETUP](SETUP.md)).
 
-서버의 Docker Engine과 CLI는 `network connect --gw-priority`를 지원하는 28 이상을 사용한다. 앱별 네트워크를 PostgreSQL에 연결할 때 기존 기본 경로보다 낮은 우선순위를 주어 코어의 열린 DB 연결을 유지한다. 지원하지 않는 엔진에서는 우선순위 없이 연결을 재시도하지 않는다. 이 옵션은 [Docker 28 릴리스](https://docs.docker.com/engine/release-notes/28/)에 추가되었다. 기존 네트워크 연결은 자동으로 끊거나 다시 구성하지 않는다.
+`--state-dir`/`MIY_STATE_DIR`는 private 상태 경로, `--binary`/`MIY_BINARY`는 서버 실행 파일이다. 프레임 런타임의 `MIY_FRAME_RUNTIME_DIR`은 `<state>/frame-runtime`이며 포털 빌드와 별도로 설치한다. bootstrap 재실행은 기존 비밀을 재사용하지만 DB/Keycloak의 기존 암호를 바꾸는 도구가 아니다. 서버 빌드는 커밋된 소스를 받아 worker의 Docker에서 검사·빌드한다. Docker Engine과 CLI는 `network connect --gw-priority`를 지원하는 28 이상이어야 한다.
 
-```sh
-python3 scripts/bootstrap.py --profile server \
-  --origin https://portal.example.com --console-origin https://console.example.com \
-  --dev-portal-origin https://dev.example.com \
-  --bind 127.0.0.1:18180 --console-bind 127.0.0.1:18081 --dev-portal-bind 127.0.0.1:18082 \
-  --identity-port 18181 --postgres-port 15432
-docker compose --env-file .local/compose.env up -d postgres keycloak
-python3 scripts/configure-identity.py
-cargo build --release --locked
-pnpm install --frozen-lockfile
-pnpm --filter @miy/platform build
-MIY_BINARY="$PWD/target/release/miy" bash scripts/run-service.sh migrate
-MIY_BINARY="$PWD/target/release/miy" bash scripts/run-service.sh seed
-python3 scripts/render-server-config.py --binary "$PWD/target/release/miy" \
-  --certificate /etc/miy-tls/server-chain.pem \
-  --key /etc/miy-tls/server.key
-```
-
-위 `@miy/platform build`만으로 업무 앱 프레임 런타임은 설치되지 않는다. `bootstrap.py`는 앱 출처를 지정하지 않으면 P3 포트 풀을 설정하고 `MIY_FRAME_RUNTIME_DIR`을 상태 디렉터리의 `frame-runtime`으로 지정한다. 앱 실행까지 준비하려면 프레임 출처·포트 풀 또는 호스트 패턴·인증서와 별도의 프레임 런타임 빌드·설치가 필요하다. 현재 검증한 기존 서버 반영 도구와 범위는 [서버 운영 안내](SERVER-OPERATIONS.md#7-배포-도구)와 [APP-FRAMES §9](APP-FRAMES.md#9-운영-반영-계획)에 있다. 이를 새 서버 설치 전체의 PASS로 옮기지 않으며, 새 설치 경로의 통합은 [추진 계획의 새 서버 인수](PLAN.md#다음-우선-작업)에서 추적한다.
-
-플랫폼 인증서는 세 origin의 hostname/IP를 포함해야 하며, 앱 출처도 선택한 프로필에 맞는 인증서로 검사한다. 앱 전용 도메인의 별도 인증서와 같은 호스트의 포트 풀에 쓰는 IP SAN 인증서를 구분한다([배치 프로필](APP-FRAMES.md#4-배치-프로필과-격리-수준)). 사설 CA는 `--ca-file`로 지정한다. 마지막 명령은 `.local/nginx-miy.conf`, `.local/miy-v2-serve.service`, `.local/miy-v2-worker.service`를 생성한다. 기존 Nginx 사이트를 수정하거나 서비스를 시작하지 않는다. 생성 파일을 검토하여 전용 사이트·unit으로 설치하고, `nginx -t` 통과 후 Nginx reload 및 두 unit 시작을 수행한다. `/identity`는 콘솔에서만 loopback Keycloak 포트로, API·MCP·WebSocket·다운로드는 목적별 core bind 주소로, 나머지는 빌드한 플랫폼 UI로 연결된다. 앱 프레임 출처는 별도 Core 프레임 listener가 제공한다. 이미지 업로드 한도는 core와 동일한 1 GiB이며 WebSocket 전달과 스트리밍 응답을 지원한다. 서비스 wrapper는 private runtime.env를 읽고 serve에서 DB 관리자 연결을, worker에서 OIDC client secret을 제거한다.
-
-서버 빌드 기능 도입 시에는 새 서버 바이너리와 `0015_server_builds.sql`까지의 코어 마이그레이션을 적용하고 serve/worker를 함께 갱신한다. 이 마이그레이션은 빌드 작업·요청·로그 테이블을 추가하며 앱 DB를 변경하지 않는다. 소스는 `MIY_ARTIFACTS/.builds` 아래 private 디렉터리에 저장하며 업로드 한도는 64 MiB, 파일 수는 4,096개, 저장 로그는 작업당 2 MiB다. 대기·실행 작업은 사용자당 2개, 전체 8개로 제한한다. 작업자는 서버 소유 Dockerfile을 사용하며 소스의 패키지 스크립트·Rust 테스트는 Docker 내부에서 실행한다. worker가 중단된 작업은 검증 가능한 완성 이미지가 있으면 복구하고, 그렇지 않으면 중단 실패로 기록한다. 불확실한 기존 빌드를 자동으로 다시 시작하지 않는다.
-
-기존 HTTP 호환 프로필을 명시적으로 검증할 때에만 주소와 HTTP 허용을 지정한다. 새 사내 공유 서버의 기본은 위 HTTPS 구성이다.
-
-```sh
-python3 scripts/bootstrap.py --profile server \
-  --origin http://192.168.0.10:8080 --allow-http \
-  --bind 127.0.0.1:18180 --identity-port 18181 --postgres-port 15432
-python3 scripts/render-server-config.py --binary "$PWD/target/release/miy"
-```
-
-HTTP는 내부망용이며 통신이 암호화되지 않는다. 이 구성은 `MIY_ALLOW_HTTP=1`을 기록하고 CA·TLS 리다이렉트·HSTS를 요구하지 않는다. 일반 로그인·권한·CSRF 검사는 유지한다. HTTPS 구성은 시스템 신뢰 저장소를 사용하며 사설 CA는 `--ca-file` 또는 `MIY_CA_FILE`로 추가한다. TLS 검증을 끄거나 HTTPS 실패를 HTTP로 대체하지 않는다. Keycloak 대표 주소와 MIY realm SSL 정책도 함께 적용하며 master realm은 변경하지 않는다. 관리 API 접근은 loopback으로 제한한다.
-
-`MIY_STATE_DIR`/`--state-dir`는 private 상태 위치, `MIY_BINARY`/`--binary`는 서버 실행 파일을 지정한다. `MIY_CLI_RELEASE_DIR`는 검증된 CLI 다운로드 묶음을 제공할 위치이며 기본은 상태 디렉터리의 `cli-downloads`다. `MIY_CLI_INSTALLER_DIR`는 Windows GUI 설치 파일의 게시 위치이며 기본은 상태 디렉터리의 `cli-installers`다. 검증한 설치 파일이 없으면 기존 ZIP·스크립트 안내를 제공한다. [CLI·Windows 설치기 게시](CLI-RELEASE.md#서버의-다운로드-게시)를 참고한다. PostgreSQL과 Keycloak 호스트 포트는 loopback에만 공개한다. `credentials.json`, runtime/compose env는 0600이고 상태 디렉터리는 0700이다. 컨테이너에 개별 읽기 전용 mount하는 init.sql/realm.json은 컨테이너 UID가 읽을 수 있도록 0644이며 호스트에서는 상태 디렉터리의 접근 제한을 받는다.
+설치 절차·설정 검사·개발 도구의 PASS와 **별도 빈 서버의 전체 설치/재부팅 인수**를 구분한다. 후자는 [PLAN](PLAN.md#검증과-반영-대기)에서 추적하며, 새 서버 실행 결과를 받기 전에는 NOT_RUN이다.
 
 ## 공유 개발 서버의 계정 버튼
 
@@ -278,7 +243,7 @@ CLI에서는 평소처럼 `miy auth login`을 실행한다. 열린 브라우저�
 
 저장소의 `bash scripts/up.sh --profile local`는 로컬 PostgreSQL·Keycloak·Caddy와 코어/worker/UI 검증 기반을 준비한다. 이 로컬 검증 프로필은 포털 `https://localhost:18443`, dev 포털 `https://localhost:18445`, 콘솔 `https://localhost:18444`를 제공하며 클라이언트의 서버 기본값과 관계없다. HTTP 검증에는 `--origin http://IP:18000 --allow-http --proxy-bind 0.0.0.0`을 명시한다. 외부 Nginx를 구성한 서버에서는 `--profile server --origin URL`을 사용하며 로컬 Caddy·브라우저 컨테이너는 시작하지 않는다. `bash scripts/down.sh`는 저장 데이터를 보존하며 해당 기반을 중지한다. 이 도구의 기존 환경 기록을 모든 OS의 지원 증거로 확대하지 않는다. `.local/credentials.json`과 `.local/runtime.env`는 로컬 비밀 설정이므로 출력·게시하지 않는다.
 
-현재 `up.sh`의 루트 `pnpm build`도 플랫폼·검증 fixture만 빌드하고 프레임 런타임을 설치하지 않는다. 따라서 이 보조 도구의 성공을 새 프레임 앱 실행까지 완료한 것으로 보고하지 않는다. 플랫폼 작업의 실제 프레임 검증에는 [검사 지도](CHECKS.md)의 격리 `stack-ui.sh`와 앱 프레임 브라우저 설정을 사용한다.
+`up.sh`는 루트 빌드 뒤 프레임 런타임도 `<state>/frame-runtime`에 빌드한다. pnpm의 패키지 작업 경로와 혼동되지 않도록 `--state-dir`/`MIY_STATE_DIR`는 **절대 경로**를 사용한다. 이 개발 보조 도구는 TLS 반입·외부 Nginx·systemd 설치를 대신하지 않으므로 새 서버는 [SETUP](SETUP.md)을 따른다. 플랫폼 작업의 실제 프레임 검증에는 [검사 지도](CHECKS.md)의 격리 `stack-ui.sh`와 앱 프레임 브라우저 설정을 사용한다.
 
 명시적으로 켠 loopback 개발 프로필은 설정된 포털/콘솔의 합성 계정 버튼과 `miy auth login --account developer`를 제공한다. 실제 OAuth 승인/기업 SSO 검증과 구분한다. 사설 CA의 CLI 설정과 브라우저 신뢰는 별개이며 TLS 검증을 끄지 않는다.
 

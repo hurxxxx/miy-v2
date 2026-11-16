@@ -22,7 +22,7 @@
 | 서버 빌드 | 사용자당 2개/전체 8개 접수 제한, 소스 64MiB·로그 2MiB, 고정 recipe·이미지 출처 검사, 중단 뒤 결과 복구 | 빌드 CPU/RAM 예산, 서버 전체 원자적 자원 예약과 실제 복합 부하(3차) |
 | 권한·호출 | 설치·릴리스 승인, 사용자 위임·원래 호출자와 후속 증표, 중앙 정책·트랜잭션 안 재판정. 프레임 API의 설치 제한, G4 디렉터리·G5/G6 앱 소유 ACL 첫 구현 | 배포 프레임·preview의 공통 기능 전체 인수, 공간/복합 ACL 확장, 서비스 주체·API Invoke·업무 이벤트는 해당 기능의 후속 범위 |
 | 앱 자원 | 컨테이너 256MiB·1CPU·128PID, 읽기 전용 root·16MiB tmpfs·로그 회전. Docker 공간 하한·DB 연결 예산, 앱 응답 4MiB와 Bytes 수명의 64개 슬롯 보호 | 전체 RAM/디스크·inode/WAL·DB 부하 예산, 실제 OOM·throttling·PID/디스크 부족·RSS/앱 간 공정성과 복구 인수(3차) |
-| 설치·운영 | 명시적 설정·기존 비밀 재사용·core migration, 변경 범위 core DB 백업/별도 복원, 정확한 SHA CI gate와 core/UI 반영·복구 도구를 실제 배포에 사용 | 프레임 런타임을 포함한 새 설치 조립(R12), 전체 DB·파일·설정·키 정합성 백업 제품·호스트 updater·새 서버 복원(4~5차) |
+| 설치·운영 | 명시적 설정·기존 비밀 재사용·core migration, 변경 범위 core DB 백업/별도 복원, 정확한 SHA CI gate와 core/UI 반영·복구 도구를 실제 배포에 사용 | 문서대로 새 설치하는 별도 서버 실기(R12), 전체 DB·파일·설정·키 정합성 백업 제품·호스트 updater·새 서버 복원(4~5차) |
 | API·개발 번들 | 설치·실행 작업·감사·그룹의 Rust/JSON Schema/TS 공통 타입, CLI 버전 검사와 공통 기능 CLI/번들 게시 | 나머지 응답 타입·OpenAPI 연결은 해당 API 변경 때. 정식 GitHub Release·Windows 사용자 인수는 별도 |
 
 최소 데이터 보호의 근거는 [11-04 배포](releases/core-review-2026-11-04-deployment.json), 응답 예산은 [11-13 배포](releases/app-api-response-2026-11-13-deployment.json)에 있다. worker·권한·API의 근거는 각 절에 연결한다. 이전 [0.6.3 main 통합](releases/cli-0.6.3-main-integration.json)·[Linux 인수](releases/cli-0.6.3-linux-validation.json)·[독립 AI 인수](archive/results/INDEPENDENT-AGENTS-0.6.3-ACCEPTANCE.md)는 당시 환경의 고정 기록이다. API fixture의 `dockerBuildExecuted=false`, ignored·수동 보정·NOT_RUN을 성공에 합치지 않으며 Docker 설정값 확인을 실제 과부하 집행 인수로 해석하지 않는다.
@@ -101,7 +101,7 @@
 
 ## 5차: 새 서버·수명주기 독립 인수
 
-**현재 상태: 앱 개발·배포·부분 복구의 기존 실증은 있으나 아래 새 전체 실행은 NOT_RUN.**
+**현재 상태: [SETUP](SETUP.md)에 빈 Ubuntu 서버의 전체 설치·재접속·DB 준비/재부팅·최소 운영 순서를 정리했다. 절대 상태 경로와 명시적인 컨테이너 재시작 정책을 사용한다. 문서 보완을 자동 설치/host updater 구현 완료로 보지 않으며, 아래 별도 서버 전체 실행은 NOT_RUN이다.**
 
 완료 기준:
 

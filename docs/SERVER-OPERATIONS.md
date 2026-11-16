@@ -116,7 +116,7 @@ Codex·Claude의 생성된 프로젝트 MCP는 프로젝트의 `.miy-tools/miy[.
 
 실제 사용자는 두 단계로 추가한다. Core는 로그인 서버의 계정을 만들거나 읽지 않는다.
 
-1. 로그인 서버: 콘솔 `/identity`의 Keycloak 관리 화면에서 realm `miy`에 계정을 만들고 비밀번호를 정한다. 사용자 상세의 **ID**(UUID)가 Core가 받는 subject다.
+1. 로그인 서버: 서버 내부 Keycloak Admin API로 realm `miy`에 계정을 만들고 첫 로그인 때 바꿀 임시 암호를 정한다. [SETUP §8](SETUP.md#8-기동-확인과-첫-로그인)은 UUID 조회·암호 재설정·로그인 계정 중지도 다룬다. 생성한 UUID가 Core가 받는 subject이며 토큰·암호는 출력하지 않는다. 공개 프록시는 Keycloak master 관리 화면/API를 차단하므로 콘솔 `/identity`의 관리 화면을 안내하지 않는다.
 2. Core: 관리자가 콘솔 **플랫폼 관리 → 사용자 계정**에서 그 ID와 표시 이름을 등록한다(`POST /api/v1/users`). 필요하면 `앱 개발 허용`·`관리자 지정`을 따로 바꾼다. 앱 사용·개발·배포 권한은 기존 권한 화면이나 `miy grant set`으로 부여한다.
 
 등록하지 않은 계정의 로그인은 403이다. 사용을 막을 때는 로그인 서버가 아니라 Core의 `사용 중지`가 기준이다(세션·CLI·대기 작업 차단). 감사에는 `user.registered`·`user.admin.*`·`user.developer.*`·`user.renamed`가 남는다.
@@ -236,24 +236,9 @@ python3 scripts/ui-rollout.py rollback --release-dir <같은 경로>
 
 ## 새 세 출처 설정과 전환 준비
 
-아래는 **새 구현을 사용할 별도 서버/상태 경로**의 준비 명령이다. 이 호스트의 운영 `.local`에는 실행하지 않는다. 사내 공유 서버의 표준은 IP SAN 인증서를 반입한 HTTPS이며 서버의 OS·브라우저·CLI 신뢰는 각각 확인한다. 키·암호·runtime.env를 출력하지 않는다.
+**아무것도 없는 별도 서버는 [새 서버 설치 안내](SETUP.md)를 따른다.** DB·Keycloak·첫 관리자·TLS·프레임 런타임·Nginx/systemd와 첫 앱까지 한 문서에 있으며, 이 호스트의 고정 경로를 가진 배포 도구를 사용하지 않는다. 기존 서버에서 새 출처로 바꾸는 작업과 빈 DB의 첫 설치는 다르다.
 
-```sh
-python3 scripts/bootstrap.py --profile server --state-dir /srv/miy-new \
-  --origin https://192.168.10.20:8443 --console-origin https://192.168.10.20:9443 \
-  --dev-portal-origin https://192.168.10.20:9444 \
-  --bind 127.0.0.1:18080 --console-bind 127.0.0.1:18081 --dev-portal-bind 127.0.0.1:18082 \
-  --ca-file /etc/miy-tls/company-ca.pem
-python3 scripts/check-server-tls.py --state-dir /srv/miy-new \
-  --certificate /etc/miy-tls/server-chain.pem --key /etc/miy-tls/server.key
-python3 scripts/render-server-config.py --state-dir /srv/miy-new \
-  --binary /opt/miy/miy --service-prefix miy-internal \
-  --certificate /etc/miy-tls/server-chain.pem --key /etc/miy-tls/server.key
-```
-
-생성된 Nginx 설정·서비스 파일을 검토한 뒤 해당 서버의 반영 절차를 따른다. Core에는 세 출처와 각 고정 목적 listener가 필요하다. `miy-web`의 callback/logout URI는 세 origin의 정확한 경로만 등록한다. 기존 realm·사용자 sub·secret을 재생성하지 않고 issuer는 콘솔 `/identity/realms/miy`에 둔다. CLI context의 서버 주소는 prod 포털이며 MCP 클라이언트는 새 issuer 발견·필요한 재로그인을 확인한다. 내부 Core/Keycloak listener는 loopback이며 생성 proxy만 고정 목적 listener로 전달한다.
-
-위 세 명령은 설정만 만든다. `scripts/up.sh`로 시작하는 새 상태 경로는 포털과 함께 프레임 런타임을 `<state>/frame-runtime`에 빌드하고 `registry/components/ui`의 모든 공용 UI 버전을 seed한다(2026-11-15). 설치된 바이너리와 생성한 서비스 파일로 조립하는 서버는 같은 빌드(`pnpm --filter @miy/frame-runtime exec vite build --outDir <state>/frame-runtime`)를 직접 수행한다. 새 서버의 프레임 출처·프록시 조립과 전체 설치 인수는 [실행 안내](RUNNING.md#현행-서버-구성-https-도메인과-사내-http-ip)와 [PLAN](PLAN.md#다음-우선-작업)의 남은 범위다. 기존 서버 전환 성공을 새 서버 전체 설치 PASS로 옮기지 않는다.
+기존 서버 전환에는 세 목적별 listener·인증서·프록시·`miy-web`의 정확한 callback/logout URI를 함께 맞춘다. 기존 realm·사용자 sub·secret을 재생성하지 않고 issuer는 콘솔 `/identity/realms/miy`에 둔다. CLI context는 prod 포털이고 MCP 클라이언트는 새 issuer 발견·필요한 재로그인을 확인한다. Core는 시작할 때 public issuer를 읽으므로 새 Nginx/Keycloak discovery가 준비된 뒤 시작한다. 위 §7의 해당 전환 도구와 되돌리기를 적용하고 새 서버 전체 설치 PASS로 옮기지 않는다.
 
 DB·데이터를 변경하는 반영 전에는 변경 범위의 백업·별도 복원과 필요한 migration 리허설을 수행한다. 의심 자격증명은 콘솔의 개인 CLI 목록에서 device·legacy를 각각 회수한다. 개발 단계에서 CLI·SDK·설정 호환 보존은 필수가 아니지만 게시물 바이트·앱 데이터는 보존한다.
 

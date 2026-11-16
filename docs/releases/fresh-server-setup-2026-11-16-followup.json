@@ -1,0 +1,47 @@
+{
+  "date": "2026-11-16",
+  "scope": "Documentation-only follow-up for installation on an empty Ubuntu server",
+  "sourceBaseline": "5e9ee3433b07c3142cfc4af1b807c55d6b1c1541",
+  "userDirection": "Update documentation, commit and push. The user will perform VM validation separately.",
+  "primaryDocument": "docs/SETUP.md",
+  "changes": [
+    "Use a child Bash for errexit and persist explicitly selected non-secret setup variables and arrays for reconnection",
+    "Install the repository-pinned Rust toolchain explicitly",
+    "Document app-container DNS, firewall and public portal connectivity separately from host connectivity",
+    "Wait explicitly for PostgreSQL TCP readiness and apply container restart policies with existing commands",
+    "Extend the inline local Keycloak procedure with exact UUID lookup, temporary password reset and account disable/enable",
+    "Require first-login password change for employees and retire sample accounts in both Core and Keycloak",
+    "Document the shared privileged service-account simplification and the distinction between IdP disable and platform credential revocation",
+    "Add manual cold backup, isolated DB restore instructions, source-version update order and rollback limits",
+    "Add certificate expiry checks and same-CA leaf renewal with recovery instructions"
+  ],
+  "excludedFromCommit": [
+    "compose.yaml",
+    "scripts/up.sh",
+    "scripts/check-server-config.py",
+    "scripts/check-static.sh",
+    "scripts/test-up-state-dir.py",
+    "New helper scripts drafted before the documentation-only instruction"
+  ],
+  "validation": {
+    "revisedGuideExecution": "NOT_RUN",
+    "additionalAutomatedChecksAfterUserDirection": "NOT_RUN",
+    "freshVmInstallation": "NOT_RUN",
+    "firstLoginAndFirstApp": "NOT_RUN",
+    "reboot": "NOT_RUN",
+    "backupRestoreAndVersionUpdate": "NOT_RUN",
+    "certificateRenewal": "NOT_RUN",
+    "reason": "User reserved execution and VM validation for a separate task. A prepared disposable VM was shut down before guest installation, builds or acceptance commands."
+  },
+  "historicalEvidence": {
+    "path": "docs/releases/fresh-server-setup-2026-11-16-validation.json",
+    "interpretation": "Records an earlier working-tree snapshot including code changes. Its PASS results and hashes are preserved, do not describe the revised guide, and do not prove complete installation. Code changes from that snapshot are excluded from this documentation-only commit."
+  },
+  "remaining": [
+    "User-run Ubuntu VM acceptance of the revised guide including interruption and recovery",
+    "Private-CA propagation to deployed app containers and SDK HTTP clients is not implemented",
+    "Full new-host recovery of files, images, keys, authentication and application records remains unverified",
+    "Automated host updater, automated backup product and CA renewal remain separate work"
+  ],
+  "deployment": "NOT_RUN"
+}
