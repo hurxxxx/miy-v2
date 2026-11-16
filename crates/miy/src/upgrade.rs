@@ -39,6 +39,7 @@ pub async fn run() -> Result<Value> {
         Some("0.7.1") => include_str!("../bundles/0.7.1.json"),
         Some("0.8.0") => include_str!("../bundles/0.8.0.json"),
         Some("0.9.0") => include_str!("../bundles/0.9.0.json"),
+        Some("0.10.0") => include_str!("../bundles/0.10.0.json"),
         _ => anyhow::bail!(CliError::new(
             Category::Environment,
             "unsupported_old_bundle",
@@ -82,9 +83,10 @@ pub async fn run() -> Result<Value> {
     // 0.9.0 runs the UI in its own frame: the browser SDK replaces the callback
     // navigation guard with setNavigationState and adds apiBlob. App code that
     // used registerNavigationGuard must change; `app check` reports it.
+    // 0.11.0 changes guidance only: builds run on the server and nothing is uploaded.
     if matches!(
         old["bundleVersion"].as_str(),
-        Some("0.6.0" | "0.6.1" | "0.6.2" | "0.7.0" | "0.7.1" | "0.8.0" | "0.9.0")
+        Some("0.6.0" | "0.6.1" | "0.6.2" | "0.7.0" | "0.7.1" | "0.8.0" | "0.9.0" | "0.10.0")
     ) {
         let mut changes = crate::agent_tools::setup_changes(&root)?;
         for (path, content) in crate::bundle::template() {
@@ -614,6 +616,7 @@ mod tests {
             include_str!("../bundles/0.7.1.json"),
             include_str!("../bundles/0.8.0.json"),
             include_str!("../bundles/0.9.0.json"),
+            include_str!("../bundles/0.10.0.json"),
         ] {
             let old: Value = serde_json::from_str(previous).unwrap();
             for (path, hash) in &current {

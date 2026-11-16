@@ -100,7 +100,7 @@ function businessPrompt(agent, phase, appId) {
     `빈 이름·음수/실수 수량·잘못된 타입은 거부하세요. 새 SQL migration으로 app 스키마에 테이블을 만드세요. ` +
     `화면 제목은 '비품대장', 입력 label은 '비품명'과 '수량', 등록 버튼은 '등록'으로 하고 목록·수정·삭제·저장 결과/오류를 제공하세요. ` +
     `제공된 공용 컴포넌트와 SDK runtime.api를 사용하세요. 의미 있는 업무 단위 검사를 추가하고 app fmt, app check 및 해당 검사를 실행하세요. ` +
-    `소스를 Git에 커밋한 뒤 app build --remote --no-wait로 서버 빌드를 제출하고 job watch/get/logs로 성공을 확인하세요. ` +
+    `소스를 Git에 커밋한 뒤 app build --no-wait로 서버 빌드를 제출하고 job watch/get/logs로 성공을 확인하세요. ` +
     `완료된 receipt로 app deploy --environment dev --no-wait를 실행하고 job watch 및 app status로 실제 running 상태까지 확인하세요. ` +
     `단계가 실패하면 진단/복구 안내를 사용하고 실패를 숨기거나 검사를 제거하지 마세요. ` +
     `최종 답변은 실제 수행한 검사·source commit·build/job/release/image 식별자와 dev URL을 요약하세요.\n`;

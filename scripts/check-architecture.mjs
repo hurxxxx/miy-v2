@@ -398,7 +398,7 @@ try {
       assert(Object.keys(meta)[0].startsWith("miy-runtime-"));
       ok(
         app.id +
-          ": CLI upload, DB creation, runtime deploy, private app network",
+          ": server build, DB creation, runtime deploy, private app network",
       );
     }
     assert.notEqual(
@@ -782,28 +782,9 @@ try {
       app.path,
       "update-commit",
     );
-    const build = cli(app, ["build"], "update-build");
-    // Deliberately remove only the NEW, unused synthetic image after Docker save.
-    // Successful deployment must load the transferred archive instead of relying on a shared cache.
-    const docker = command("which", ["docker"], root, "docker-path").trim();
-    const bin = join(evidence, "client-bin");
-    mkdirSync(bin, { recursive: true });
-    const marker = join(evidence, "archive-only-transfer.txt");
-    writeFileSync(
-      join(bin, "docker"),
-      `#!/bin/sh\nreal='${docker}'\nif [ "$1" = save ]; then\n  "$real" "$@" || exit $?\n  for arg in "$@"; do last="$arg"; done\n  if [ "$last" = "$MIY_EXPECTED_TRANSFER_IMAGE" ]; then\n    "$real" image rm -f "$last" >/dev/null || exit $?\n    if "$real" image inspect "$last" >/dev/null 2>&1; then exit 9; fi\n    echo 'new image absent before HTTP upload' > '${marker}'\n  fi\nelse\n  exec "$real" "$@"\nfi\n`,
-      { mode: 0o755 },
-    );
-    const priorPath = env.PATH;
-    env.PATH = bin + ":" + priorPath;
-    env.MIY_EXPECTED_TRANSFER_IMAGE = build.imageId;
-    try {
-      assert.equal(cli(app, ["deploy"], "update-deploy").status, "succeeded");
-    } finally {
-      env.PATH = priorPath;
-      delete env.MIY_EXPECTED_TRANSFER_IMAGE;
-    }
-    assert(existsSync(marker));
+    cli(app, ["build"], "update-build");
+    // The server builds the image itself; nothing is exported or sent by the client.
+    assert.equal(cli(app, ["deploy"], "update-deploy").status, "succeeded");
     await page
       .getByRole("heading", { name: "앱 상태가 변경되었습니다" })
       .waitFor();
@@ -967,20 +948,6 @@ try {
       assert.equal((await retired.json()).error.code, "cli_upgrade_required");
     }
     ok("retired legacy CLI login answers 410 cli_upgrade_required");
-    const unauthorized = await fetch(`${origin}/api/v1/apps/${app.id}/images`, {
-      method: "POST",
-      headers: {
-        cookie: alice.cookie,
-        origin,
-        "x-miy-csrf": alice.csrf,
-        "content-type": "application/x-tar",
-        "x-miy-image": app.image.imageId,
-        "x-miy-archive-sha256": "0".repeat(64),
-      },
-      body: "bad",
-    });
-    assert.equal(unauthorized.status, 403);
-    ok("unauthorized image upload is rejected before archive import");
     const context = await browser.newContext();
     await context.request.post(origin + "/auth/development", {
       headers: { origin },

@@ -97,6 +97,26 @@ async fn submit(
         .map_err(|e| anyhow::anyhow!(e.code))?;
     Ok(serde_json::from_value(v["id"].clone())?)
 }
+/// This suite's images are built by its runner, not by the server. Record one as the
+/// app's succeeded server build: the only image source a deployment accepts.
+pub(crate) async fn server_built(
+    pool: &sqlx::PgPool,
+    app: &str,
+    actor: &str,
+    image: &str,
+) -> Result<()> {
+    sqlx::query("INSERT INTO app_builds(id,app_id,actor,request_id,source_commit,archive_hash,size_bytes,platform,status,step,image_id,version,bundle_version,finished_at) VALUES($1,$2,$3,$1,repeat('0',40),$4,1,$5,'succeeded','succeeded',$6,'0.0.0',$7,now())")
+        .bind(Uuid::new_v4())
+        .bind(app)
+        .bind(actor)
+        .bind(crate::contract::hash(image))
+        .bind(crate::runtime_platform::server().context("unsupported_server_platform")?)
+        .bind(image)
+        .bind(crate::bundle::VERSION)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
 async fn job(pool: &sqlx::PgPool, id: Uuid) -> Result<Value> {
     Ok(sqlx::query_scalar("SELECT jsonb_build_object('id',id,'status',status,'step',step,'errorCode',error_code,'releaseId',release_id,'failureClass',failure_class,'retryable',retryable) FROM runtime_jobs WHERE id=$1").bind(id).fetch_one(pool).await?)
 }
@@ -969,18 +989,64 @@ async fn isolated_runtime_regression() -> Result<()> {
         .execute(&pool)
         .await?;
     let image = |name: &str| cfg["images"][name]["id"].as_str().unwrap().to_owned();
-    let (first, first_local, import_evidence) = crate::image_import_regression::run(
+    let first = image("v1");
+    // An image the server did not build is refused before any job exists, in the plan
+    // and at submission, and by the worker for a job an earlier server had queued.
+    let plan = crate::runtime_preflight::inspect(
         &s,
         &dev,
-        &image("v1"),
-        &format!("{}:legacy-v1", cfg["prefix"].as_str().unwrap()),
+        "audit-runtime",
+        serde_json::from_value(json!({"target":{"appId":"audit-runtime","environment":"dev"},"action":"deploy","imageId":first}))?,
     )
+    .await
+    .map_err(|e| anyhow::anyhow!(e.code))?;
+    let plan = serde_json::to_value(plan)?;
+    let unbuilt = runtime::request(
+        &s,
+        &dev,
+        "audit-runtime",
+        req("deploy", "dev", Some(&first), None, "unbuilt"),
+    )
+    .await;
+    let queued = Uuid::new_v4();
+    sqlx::query("INSERT INTO runtime_jobs(id,app_id,environment,actor,action,image_id,idempotency_key,input_hash) VALUES($1,'audit-runtime','dev','audit-dev','deploy',$2,'queued-before-server-builds','fixture')")
+        .bind(queued)
+        .bind(&first)
+        .execute(&pool)
+        .await?;
+    let refused = finish(&pool, queued).await?;
+    let untouched: i64 = sqlx::query_scalar(
+        "SELECT (SELECT count(*) FROM installations)+(SELECT count(*) FROM releases)",
+    )
+    .fetch_one(&pool)
     .await?;
+    sqlx::query("DELETE FROM runtime_jobs WHERE id=$1")
+        .bind(queued)
+        .execute(&pool)
+        .await?;
     report(
-        "classic Docker archive resolves a verified immutable server image",
-        true,
-        import_evidence,
+        "an image without a succeeded server build of the app is refused in the plan, at submission and by the worker",
+        plan["canSubmit"] == false
+            && plan["checks"].as_array().is_some_and(|checks| {
+                checks.iter().any(|check| {
+                    check["name"] == "image"
+                        && check["status"] == "failed"
+                        && check["code"] == "server_build_required"
+                })
+            })
+            && unbuilt
+                .as_ref()
+                .err()
+                .is_some_and(|e| e.code == "server_build_required")
+            && refused["status"] == "failed"
+            && refused["errorCode"] == "server_build_required"
+            && untouched == 0,
+        json!({"plan":plan["checks"],"submission":unbuilt.err().map(|e|e.code),"queuedJob":refused,"installationsAndReleases":untouched}),
     );
+    // Another app's build of the same image does not make it this app's build.
+    for name in cfg["images"].as_object().context("images")?.keys() {
+        server_built(&pool, "audit-runtime", "audit-admin", &image(name)).await?;
+    }
     let denied = runtime::request(
         &s,
         &ordinary,
@@ -1047,12 +1113,12 @@ async fn isolated_runtime_regression() -> Result<()> {
         .await?;
     report(
         "real Docker deployment and resource configuration",
-        docker["Image"] == first_local
+        docker["Image"] == first
             && initial["runtimeImage"] == first
             && docker["HostConfig"]["Memory"] == 268435456_i64
             && docker["HostConfig"]["NanoCpus"] == 1000000000_i64
             && docker["HostConfig"]["ReadonlyRootfs"] == true,
-        json!({"installation":initial,"serverLocalImage":docker["Image"],"memory":docker["HostConfig"]["Memory"],"nanoCpus":docker["HostConfig"]["NanoCpus"],"pidsLimit":docker["HostConfig"]["PidsLimit"],"user":docker["Config"]["User"]}),
+        json!({"installation":initial,"containerImage":docker["Image"],"memory":docker["HostConfig"]["Memory"],"nanoCpus":docker["HostConfig"]["NanoCpus"],"pidsLimit":docker["HostConfig"]["PidsLimit"],"user":docker["Config"]["User"]}),
     );
     // Installations prepared before per-role caps receive them when a runner starts.
     let (runtime_role, migration_role): (String, String) = sqlx::query_as(
@@ -1103,7 +1169,7 @@ async fn isolated_runtime_regression() -> Result<()> {
             && after_restart["runtimeImage"] == first
             && after_restart["runtimeStatus"] == "running"
             && after_restart["healthStatus"] == "healthy",
-        json!({"job":restarted,"installation":after_restart,"serverLocalImageId":first_local}),
+        json!({"job":restarted,"installation":after_restart,"imageId":first}),
     );
     // Planning is a read: no runtime/job/installation mutation, and observations do not change a control revision.
     let before_plan = crate::runtime_preflight::snapshot(&pool, "audit-runtime", "dev")
@@ -1236,6 +1302,60 @@ async fn isolated_runtime_regression() -> Result<()> {
         wrong_perm.is_err(),
         json!({"error":wrong_perm.err().map(|e|e.code)}),
     );
+    // Acceptance does not stand in for the build: a release whose image the server did
+    // not build (one uploaded before server-only builds) stays out of prod.
+    sqlx::query(
+        "UPDATE app_builds SET status='failed' WHERE app_id='audit-runtime' AND image_id=$1",
+    )
+    .bind(&first)
+    .execute(&pool)
+    .await?;
+    let plan = crate::runtime_preflight::inspect(
+        &s,
+        &admin,
+        "audit-runtime",
+        serde_json::from_value(json!({"target":{"appId":"audit-runtime","environment":"prod"},"action":"promote","releaseId":release}))?,
+    )
+    .await
+    .map_err(|e| anyhow::anyhow!(e.code))?;
+    let plan = serde_json::to_value(plan)?;
+    let unbuilt_release = runtime::request(
+        &s,
+        &admin,
+        "audit-runtime",
+        req("promote", "prod", None, Some(release), "unbuilt-release"),
+    )
+    .await;
+    sqlx::query(
+        "UPDATE app_builds SET status='succeeded' WHERE app_id='audit-runtime' AND image_id=$1",
+    )
+    .bind(&first)
+    .execute(&pool)
+    .await?;
+    let check = |name: &str| {
+        plan["checks"]
+            .as_array()
+            .and_then(|checks| checks.iter().find(|check| check["name"] == name))
+            .cloned()
+            .unwrap_or_default()
+    };
+    report(
+        "an accepted release whose image the server did not build cannot be promoted",
+        plan["canSubmit"] == false
+            && check("releaseAcceptance")["status"] == "passed"
+            && check("image")["code"] == "server_build_required"
+            && unbuilt_release
+                .as_ref()
+                .err()
+                .is_some_and(|e| e.code == "server_build_required")
+            && sqlx::query_scalar::<_, i64>(
+                "SELECT count(*) FROM installations WHERE environment='prod'",
+            )
+            .fetch_one(&pool)
+            .await?
+                == 0,
+        json!({"plan":plan["checks"],"submission":unbuilt_release.err().map(|e|e.code)}),
+    );
     let pid = submit(
         &s,
         &admin,
@@ -1260,11 +1380,11 @@ async fn isolated_runtime_regression() -> Result<()> {
     report(
         "exact image promotion and independent prod data",
         prod["runtimeImage"] == initial["runtimeImage"]
-            && prod_container["Image"] == first_local
+            && prod_container["Image"] == first
             && prod["releaseId"] == initial["releaseId"]
             && prod["id"] != initial["id"]
             && prodcount == 0,
-        json!({"dev":initial,"prod":prod,"serverLocalImage":prod_container["Image"],"initialProdRows":prodcount}),
+        json!({"dev":initial,"prod":prod,"containerImage":prod_container["Image"],"initialProdRows":prodcount}),
     );
     disabled_app_runtime_control(&s, &admin, &ordinary).await?;
     let (requeued, evidence) = requeued_database_job(&s).await?;

@@ -287,7 +287,6 @@ pub async fn run(s: &State, base: &str) -> Result<Vec<String>> {
     passed.push("real CLI project-free pagination/projection, project binding, registration approval and strict typed grant input".into());
 
     let jobs = count(s, "runtime_jobs").await?;
-    let uploads = count(s, "image_uploads").await?;
     let plan = cli
         .call(
             &[
@@ -350,10 +349,12 @@ pub async fn run(s: &State, base: &str) -> Result<Vec<String>> {
     )
     .await?;
     ensure!(
-        count(s, "runtime_jobs").await? == jobs && count(s, "image_uploads").await? == uploads,
+        count(s, "runtime_jobs").await? == jobs,
         "Dry-run or missing target/confirmation created remote work"
     );
-    passed.push("real CLI dry-run and missing explicit targets/confirmation create no upload or runtime job".into());
+    passed.push(
+        "real CLI dry-run and missing explicit targets/confirmation create no runtime job".into(),
+    );
 
     let submitted = cli
         .call(&["--app", "audit-runtime", "app", "stop", "--no-wait"], 0)

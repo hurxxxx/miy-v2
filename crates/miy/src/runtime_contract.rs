@@ -94,9 +94,8 @@ string_enum!(FailureCode {
     DockerUnavailable => "docker_unavailable",
     DockerTimeout => "docker_timeout",
     NetworkUnavailable => "network_unavailable",
-    ImageImportFailed => "image_import_failed",
-    ArchiveHashMismatch => "archive_hash_mismatch",
-    UploadExpired => "upload_expired",
+    /// The image is not the output of this app's own succeeded server build.
+    ServerBuildRequired => "server_build_required",
     RetryNotAllowed => "retry_not_allowed",
     DockerStorageLow => "docker_storage_low",
     DockerStorageUnknown => "docker_storage_unknown",
@@ -982,6 +981,51 @@ mod tests {
             )
             .is_err()
         );
+    }
+
+    /// The server reports an image it did not build as a failed image check: the plan
+    /// cannot be submitted, and the failure is never one a retry may repeat.
+    #[test]
+    fn an_image_the_server_did_not_build_blocks_the_plan() {
+        let snapshot = current();
+        for (action, environment) in [
+            (Operation::Deploy, Environment::Dev),
+            (Operation::Promote, Environment::Prod),
+        ] {
+            let mut checks = authorized();
+            if action == Operation::Promote {
+                checks.push(PreflightCheck::passed(CheckName::ReleaseAcceptance));
+            }
+            let mut request = input(action, environment);
+            let mut snapshot = snapshot.clone();
+            snapshot.target.environment = environment;
+            request.target.environment = environment;
+            assert!(
+                preflight(&request, &snapshot, checks.clone())
+                    .unwrap()
+                    .can_submit
+            );
+            checks.push(PreflightCheck::failed(
+                CheckName::Image,
+                FailureCode::ServerBuildRequired,
+            ));
+            let plan = preflight(&request, &snapshot, checks).unwrap();
+            assert!(!plan.can_submit);
+            assert!(
+                plan.checks
+                    .iter()
+                    .any(|check| check.name == CheckName::Image
+                        && check.code == Some(FailureCode::ServerBuildRequired))
+            );
+        }
+        assert_eq!(
+            FailureCode::from_code("server_build_required"),
+            FailureCode::ServerBuildRequired
+        );
+        assert!(!can_retry(
+            JobStatus::Failed,
+            &RuntimeFailure::new(FailureCode::ServerBuildRequired)
+        ));
     }
 
     #[test]

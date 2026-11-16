@@ -15,8 +15,8 @@ The generated [CLI-REFERENCE.md](CLI-REFERENCE.md) contains the installed workfl
 | Permissions | `user list`, `grant list`, `grant set`, `grant revoke` | Administrator grants are scoped to app/environment |
 | Develop | `app fmt`, `app check`, `app dev`, `app dev-stop` | After app approval, preview uses the server dev DB; stop before deployment; --runtime docker --database local is explicit |
 | Components | `component list/show/add/update/sync/check/publish` | Lock exact sources; publishing needs administrator authority |
-| Build | `app build [--platform linux/amd64]` | Clean committed source; Linux image must match the server platform |
-| Deploy | `app deploy --environment dev --dry-run`, `app deploy --no-wait` | Preflight then image receipt/job journal; no prod deployment shortcut |
+| Build | `app build [--no-wait]` | Clean committed source, built and checked on the server; only server builds deploy |
+| Deploy | `app deploy --environment dev --dry-run`, `app deploy --no-wait` | Preflight then server build receipt/job journal; no prod deployment shortcut |
 | Observe | `job list/get/watch`, `job resume ID` | Resume the same request; Ctrl-C does not cancel remote work |
 | Retry | `job retry ID` | Only typed retryable terminal failures, with fresh checks/confirmation |
 | Accept | `app accept --note 'observed checks' --report FILE`, `app accept --input @FILE` | Exact release and actual evidence; see [ACCEPTANCE.md](ACCEPTANCE.md) |
@@ -43,7 +43,7 @@ Local preview and development deployment share the same server DB and rows. The 
 
 Prod changes and every app removal require explicit `--context`, `--app` and
 `--environment`, including dry-run and retry. Dry-run skips confirmation and does
-not upload or create work. Other executions confirm interactively or require
+not create work. Other executions confirm interactively or require
 `--yes`. Permission, release acceptance and expected-state checks still apply.
 
 Upload response recovery covers the receipt before the runtime job exists. Only

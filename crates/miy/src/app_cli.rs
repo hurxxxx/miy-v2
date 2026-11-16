@@ -53,14 +53,11 @@ pub enum AppCommand {
     },
     /// Stop this project's owned development processes; preserve its database volume.
     DevStop,
-    /// Build a Linux image locally with Docker; use --remote to build on the server without Docker.
+    /// Build clean committed source on the selected server. The server runs the format
+    /// check, tests and integrity checks; only its builds can be deployed. For local
+    /// testing use `app dev`.
     Build {
-        #[arg(long,value_parser=["linux/amd64","linux/arm64"])]
-        platform: Option<String>,
-        /// Build committed source on the selected server without local Docker or language tools.
         #[arg(long)]
-        remote: bool,
-        #[arg(long, requires = "remote")]
         no_wait: bool,
         #[arg(long, default_value = "1800", value_parser=clap::value_parser!(u64).range(1..=86400))]
         timeout: u64,
@@ -495,77 +492,8 @@ pub async fn execute(command: AppCommand) -> Result<Outcome> {
                 json!({"valid":true,"appId":m.id,"bundleVersion":bundle::VERSION,"checks":["manifest","bundle-integrity","cli-guidance-integrity","component-integrity","migration-contract","rust-format","rust-tests","frozen-dependencies","typescript","ui-build","federation-assets"],"browserIntegration":"requires platform acceptance test"}),
             ));
         }
-        AppCommand::Build {
-            platform,
-            remote,
-            no_wait,
-            timeout,
-        } => {
-            if remote {
-                return crate::cli_build::execute(platform, no_wait, timeout).await;
-            }
-            let platform = crate::runtime_platform::build_target(platform.as_deref()).await?;
-            let m = manifest()?;
-            let commit = output("git", &["rev-parse", "HEAD"])?;
-            anyhow::ensure!(
-                output("git", &["status", "--porcelain"])?.is_empty(),
-                CliError::new(
-                    Category::Conflict,
-                    "commit_source_before_building",
-                    "commit_source_before_building"
-                )
-            );
-            check()?;
-            anyhow::ensure!(
-                output("git", &["status", "--porcelain"])?.is_empty(),
-                CliError::new(
-                    Category::Conflict,
-                    "check_modified_source",
-                    "check_modified_source: review and commit before building"
-                )
-            );
-            anyhow::ensure!(
-                Path::new("dist/ui").join(&m.ui.module_entry).is_file(),
-                CliError::new(
-                    Category::Environment,
-                    "missing_ui_entry",
-                    "missing_ui_entry"
-                )
-            );
-            save(
-                "dist/build.json",
-                &json!({"bundleVersion":bundle::VERSION,"sourceCommit":commit,"appId":m.id,"version":m.version}),
-            )?;
-            let tag = format!("miy-app/{}:{}", m.id, m.version);
-            run(
-                "docker",
-                &[
-                    "build",
-                    "--platform",
-                    &platform,
-                    "--build-arg",
-                    &format!("MIY_APP_ID={}", m.id),
-                    "--build-arg",
-                    &format!("MIY_SOURCE_COMMIT={commit}"),
-                    "-t",
-                    &tag,
-                    ".",
-                ],
-            )?;
-            let image = output("docker", &["image", "inspect", "--format", "{{.Id}}", &tag])?;
-            let metadata: Value =
-                serde_json::from_str(&output("docker", &["image", "inspect", &image])?)?;
-            anyhow::ensure!(
-                crate::runtime_platform::image(&metadata[0]).as_deref() == Some(platform.as_str()),
-                CliError::new(
-                    Category::Environment,
-                    "built_image_platform_mismatch",
-                    "Docker produced an image for a different platform."
-                )
-            );
-            let value = json!({"platform":platform,"imageId":image,"tag":tag,"sourceCommit":commit,"appId":m.id,"version":m.version,"bundleVersion":bundle::VERSION});
-            save("dist/image.json", &value)?;
-            return Ok(Outcome::Data(value));
+        AppCommand::Build { no_wait, timeout } => {
+            return crate::cli_build::execute(no_wait, timeout).await;
         }
         AppCommand::Register => {
             let m = manifest()?;

@@ -405,16 +405,17 @@ pub async fn execute_app(command: RemoteAppCommand) -> Result<Outcome> {
             no_wait,
             dry_run,
         } => {
-            let (app, image) = local_build()?;
+            let (app, receipt) = server_build()?;
             mutate(
                 Operation::Deploy,
                 environment,
-                Some(image),
+                Some(receipt.image_id.clone()),
                 None,
                 no_wait,
                 dry_run,
                 Some(app),
                 None,
+                Some(receipt),
             )
             .await
         }
@@ -431,6 +432,7 @@ pub async fn execute_app(command: RemoteAppCommand) -> Result<Outcome> {
                 Some(release),
                 no_wait,
                 dry_run,
+                None,
                 None,
                 None,
             )
@@ -460,11 +462,13 @@ async fn lifecycle(action: Operation, args: OperationArgs) -> Result<Outcome> {
         args.dry_run,
         None,
         None,
+        None,
     )
     .await
 }
 
-fn local_build() -> Result<(String, String)> {
+/// The committed project's server build: the only image a deployment may name.
+fn server_build() -> Result<(String, crate::cli_build::ServerBuildReceipt)> {
     let manifest = app_cli::manifest()?;
     if cli_config::options()
         .app
@@ -482,28 +486,28 @@ fn local_build() -> Result<(String, String)> {
         CliError::new(
             Category::Environment,
             "build_required",
-            "Build and commit the current project before deploying.",
+            "Commit the current project and run `miy app build` before deploying.",
         )
     })?)
     .map_err(|_| {
         CliError::new(
             Category::Environment,
             "invalid_build_metadata",
-            "The local build metadata is invalid; build the project again.",
+            "The saved build metadata is invalid; build the project again.",
         )
     })?;
     let build: Value = serde_json::from_slice(&std::fs::read("dist/build.json").map_err(|_| {
         CliError::new(
             Category::Environment,
             "build_required",
-            "The local build receipt is missing.",
+            "The saved build record is missing; build the project again.",
         )
     })?)
     .map_err(|_| {
         CliError::new(
             Category::Environment,
             "invalid_build_metadata",
-            "The local build receipt is invalid.",
+            "The saved build record is invalid; build the project again.",
         )
     })?;
     let git = |args: &[&str]| -> Result<String> {
@@ -551,31 +555,39 @@ fn local_build() -> Result<(String, String)> {
         )
         .into());
     }
-    if let Some(receipt) = image.get("serverBuild") {
-        let receipt: crate::cli_build::ServerBuildReceipt = serde_json::from_value(receipt.clone())
-            .map_err(|_| {
-                CliError::new(
-                    Category::Environment,
-                    "invalid_server_build_receipt",
-                    "The saved server build receipt is invalid.",
-                )
-            })?;
-        if receipt.app_id != manifest.id
-            || receipt.version != manifest.version
-            || receipt.source_commit != image["sourceCommit"]
-            || receipt.bundle_version != crate::bundle::VERSION
-            || receipt.image_id != image_id
-            || receipt.platform != image["platform"]
-        {
-            return Err(CliError::new(
-                Category::Conflict,
-                "stale_server_build",
-                "The server build receipt differs from the committed project's build metadata.",
+    // A project built by an earlier CLI may hold a locally built image. The server
+    // runs only its own builds, so name the one command that produces one.
+    let receipt = image.get("serverBuild").ok_or_else(|| {
+        CliError::new(
+            Category::Conflict,
+            "server_build_required",
+            "Only a server build can be deployed. Run `miy app build`, then deploy again.",
+        )
+        .with_recovery("miy", &["app", "build"])
+    })?;
+    let receipt: crate::cli_build::ServerBuildReceipt = serde_json::from_value(receipt.clone())
+        .map_err(|_| {
+            CliError::new(
+                Category::Environment,
+                "invalid_server_build_receipt",
+                "The saved server build receipt is invalid.",
             )
-            .into());
-        }
+        })?;
+    if receipt.app_id != manifest.id
+        || receipt.version != manifest.version
+        || receipt.source_commit != image["sourceCommit"]
+        || receipt.bundle_version != crate::bundle::VERSION
+        || receipt.image_id != image_id
+        || receipt.platform != image["platform"]
+    {
+        return Err(CliError::new(
+            Category::Conflict,
+            "stale_server_build",
+            "The server build receipt differs from the committed project's build metadata.",
+        )
+        .into());
     }
-    Ok((manifest.id, image_id.into()))
+    Ok((manifest.id, receipt))
 }
 
 fn environment(action: Operation, value: Option<&str>) -> Result<Environment> {
@@ -651,6 +663,7 @@ async fn mutate(
     dry_run: bool,
     app: Option<String>,
     retry: Option<Uuid>,
+    server_build: Option<crate::cli_build::ServerBuildReceipt>,
 ) -> Result<Outcome> {
     let app = app.map(Ok).unwrap_or_else(selected_app)?;
     let environment = environment(action, environment_flag.as_deref())?;
@@ -672,26 +685,6 @@ async fn mutate(
         )
     })?;
     let session = app_cli::session()?;
-    let server_build = if action == Operation::Deploy && retry.is_none() {
-        let metadata: Value = serde_json::from_slice(&std::fs::read("dist/image.json")?)?;
-        metadata
-            .get("serverBuild")
-            .map(|value| -> Result<crate::cli_build::ServerBuildReceipt> {
-                Ok(
-                    serde_json::from_value::<crate::cli_build::ServerBuildReceipt>(value.clone())
-                        .map_err(|_| {
-                        CliError::new(
-                            Category::Environment,
-                            "invalid_server_build_receipt",
-                            "The saved server build receipt is invalid.",
-                        )
-                    })?,
-                )
-            })
-            .transpose()?
-    } else {
-        None
-    };
     if let Some(receipt) = &server_build {
         crate::cli_build::validate_receipt_identity(
             receipt,
@@ -705,40 +698,18 @@ async fn mutate(
     if !no_wait {
         features.push("runtime.events.v1");
     }
-    if action == Operation::Deploy && retry.is_none() {
-        features.push(if server_build.is_some() {
-            "app.builds.v1"
-        } else {
-            "images.idempotency.v1"
-        });
+    if server_build.is_some() {
+        features.push("app.builds.v1");
     }
     if retry.is_some() {
         features.push("runtime.retry.v1");
     }
     let capabilities = require_features(&session, &features).await?;
-    if action == Operation::Deploy && retry.is_none() {
-        let metadata: Value =
-            serde_json::from_slice(&std::fs::read("dist/image.json")?).map_err(|_| {
-                CliError::new(
-                    Category::Environment,
-                    "invalid_build_metadata",
-                    "The local image metadata is invalid.",
-                )
-            })?;
-        let platform = metadata["platform"]
-            .as_str()
-            .filter(|platform| matches!(*platform, "linux/amd64" | "linux/arm64"))
-            .ok_or_else(|| {
-                CliError::new(
-                    Category::Environment,
-                    "build_platform_required",
-                    "Rebuild this app with the current CLI to record its immutable image platform.",
-                )
-            })?;
-        if capabilities["runtimePlatform"] != platform {
-            return Err(CliError::new(Category::Environment,"image_platform_mismatch","The built image platform must match the selected server runtime platform.")
-                .with_details(json!({"imagePlatform":platform,"serverPlatform":capabilities["runtimePlatform"].as_str().filter(|p|matches!(*p,"linux/amd64"|"linux/arm64"))})).into());
-        }
+    if let Some(receipt) = &server_build
+        && capabilities["runtimePlatform"] != receipt.platform
+    {
+        return Err(CliError::new(Category::Environment,"image_platform_mismatch","The built image platform must match the selected server runtime platform.")
+            .with_details(json!({"imagePlatform":receipt.platform,"serverPlatform":capabilities["runtimePlatform"].as_str().filter(|p|matches!(*p,"linux/amd64"|"linux/arm64"))})).into());
     }
     let hash = cli_journal::operation_hash(&session, &input, retry)?;
     let lock = if dry_run {
@@ -756,12 +727,7 @@ async fn mutate(
                     Some("failed")=>{},
                     _=>{drop(lock);return if no_wait {data(job)}else{watch(&session,id,None,600,OutputMode::Json).await};}
                 }
-        } else if entry.submission_status != "rejected"
-            && !entry
-                .upload
-                .as_ref()
-                .is_some_and(|upload| upload.status == "failed")
-        {
+        } else if entry.submission_status != "rejected" {
             return Err(journal_error(
                 &entry,
                 Category::Conflict,
@@ -773,6 +739,21 @@ async fn mutate(
     let plan = preflight(&session, &input).await?;
     if dry_run {
         return data(serde_json::to_value(plan)?);
+    }
+    if plan
+        .checks
+        .iter()
+        .any(|check| check.code == Some(crate::runtime_contract::FailureCode::ServerBuildRequired))
+    {
+        // Typically a release whose image an earlier CLI uploaded.
+        return Err(CliError::new(
+            Category::Conflict,
+            "server_build_required",
+            "The server runs only images it built itself. Run `miy app build`, deploy that build to dev and accept it before promoting.",
+        )
+        .with_details(serde_json::to_value(plan)?)
+        .with_recovery("miy", &["app", "build"])
+        .into());
     }
     if !plan.can_submit {
         return Err(CliError::new(
@@ -807,9 +788,6 @@ async fn mutate(
     entry.payload_hash = Some(crate::contract::hash(serde_json::to_vec(&payload)?));
     entry.payload = Some(payload);
     cli_journal::publish(&entry)?;
-    if action == Operation::Deploy && retry.is_none() && entry.server_build.is_none() {
-        crate::cli_upload::ensure(&session, &mut entry, false).await?;
-    }
     let job = submit(&session, &mut entry).await?;
     let id = entry.job_id.unwrap();
     drop(lock);
@@ -1150,6 +1128,7 @@ pub async fn execute_job(command: JobCommand, mode: OutputMode) -> Result<Outcom
                 dry_run,
                 Some(app),
                 Some(id),
+                None,
             )
             .await
         }
@@ -1231,12 +1210,8 @@ async fn resume(
         job.clone()
     } else {
         let mut features = vec!["runtime.preflight.v2"];
-        if entry.intent.action == Operation::Deploy && entry.retry_of.is_none() {
-            features.push(if entry.server_build.is_some() {
-                "app.builds.v1"
-            } else {
-                "images.idempotency.v1"
-            });
+        if entry.server_build.is_some() {
+            features.push("app.builds.v1");
         }
         if entry.retry_of.is_some() {
             features.push("runtime.retry.v1");
@@ -1274,12 +1249,8 @@ async fn resume(
                 entry.intent.action, entry.app_id, entry.intent.target.environment
             ))?;
         }
-        if entry.intent.action == Operation::Deploy && entry.retry_of.is_none() {
-            if let Some(receipt) = &entry.server_build {
-                crate::cli_build::verify_receipt(session, receipt).await?;
-            } else {
-                crate::cli_upload::ensure(session, &mut entry, true).await?;
-            }
+        if let Some(receipt) = &entry.server_build {
+            crate::cli_build::verify_receipt(session, receipt).await?;
         }
         submit(session, &mut entry).await?
     };

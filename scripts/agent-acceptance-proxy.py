@@ -15,8 +15,8 @@ proxyToken, never the real tokens. A socket mount alone does not isolate a host:
 the caller must also deny host network, source, secrets and management sockets.
 
 No app registration, production, global auth, grants, user administration,
-local image upload, DB preparation or development tunnel endpoint is exposed.
-Remote builds and deployment do not require a client Docker socket. Browser
+DB preparation or development tunnel endpoint is exposed.
+Server builds and deployment do not require a client Docker socket. Browser
 acceptance runs separately, outside the development agent's filesystem.
 """
 

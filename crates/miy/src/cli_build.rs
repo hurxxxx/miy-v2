@@ -501,7 +501,7 @@ pub async fn verify_receipt(session: &Session, receipt: &ServerBuildReceipt) -> 
     Ok(())
 }
 
-pub async fn execute(platform: Option<String>, no_wait: bool, timeout: u64) -> Result<Outcome> {
+pub async fn execute(no_wait: bool, timeout: u64) -> Result<Outcome> {
     let session = app_cli::session()?;
     let capabilities = crate::cli_remote::require_features(&session, &["app.builds.v1"]).await?;
     let required = capabilities["runtimePlatform"]
@@ -514,15 +514,6 @@ pub async fn execute(platform: Option<String>, no_wait: bool, timeout: u64) -> R
                 "The server must advertise a supported Linux build platform.",
             )
         })?;
-    if platform.as_deref().is_some_and(|value| value != required) {
-        return Err(CliError::new(
-            Category::Usage,
-            "build_platform_mismatch",
-            "The requested platform must match the selected server's runtime platform.",
-        )
-        .with_details(json!({"requiredPlatform":required}))
-        .into());
-    }
     let request_id = Uuid::new_v4();
     let archive = archive_path(request_id)?;
     let root = std::env::current_dir()?.canonicalize()?;

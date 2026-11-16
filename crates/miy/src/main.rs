@@ -50,7 +50,6 @@ mod cli_permissions;
 #[cfg(all(test, feature = "server"))]
 mod cli_regression;
 mod cli_remote;
-mod cli_upload;
 mod component_cli;
 mod component_contract;
 #[cfg(feature = "server")]
@@ -66,8 +65,6 @@ mod db_tunnel;
 mod delegation_regression;
 #[cfg(feature = "server")]
 mod delegations;
-#[cfg(feature = "server")]
-mod delivery;
 #[cfg(feature = "server")]
 mod development;
 mod development_client;
@@ -88,11 +85,6 @@ mod helper_image;
 #[cfg(feature = "server")]
 mod http;
 mod identity;
-mod image_contract;
-#[cfg(feature = "server")]
-mod image_import;
-#[cfg(all(test, feature = "server"))]
-mod image_import_regression;
 #[cfg(all(test, feature = "server"))]
 mod integration;
 #[cfg(feature = "server")]

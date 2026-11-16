@@ -8,7 +8,19 @@ CLI·Windows 설치기의 후보 빌드, 서버 다운로드 게시, 정식 GitH
 
 `9133d700369c43b11abeee1738541e6abda5b4d6`의 [CLI CI 43672504526](https://github.com/hurxxxx/miy-v2/actions/runs/43672504526)(5개 target과 Linux DB 연결 helper 2개, 공개 Release 없음)와 같은 CLI 출처·해시로 만든 [설치 파일 CI 43674150699](https://github.com/hurxxxx/miy-v2/actions/runs/43674150699)를 검증했다. 2026-11-15 서버 0.10.0·schema 23과 함께 [설치 안내](https://v2.dwdcc.kr/cli/install)에 게시했다([0.10.0 반영 기록](releases/pilot-0.10.0-2026-11-15-deployment.json)). SDK 번들 0.10.0은 G4 디렉터리·공통 ACL·작은 첨부의 typed SDK(Rust SDK 0.4.0)를 포함하고, 새 프로젝트는 공용 UI 1.1.0을 기본으로 설치한다. 기존 0.9.0 앱은 `miy app upgrade`로 명시적으로 옮긴다. 0.9.0 CLI·번들·UI 1.0.1 바이트는 그대로 보존한다.
 
-게시 CLI로 실서버에 새 앱을 만들어 서버 빌드·dev 배포·프레임 표시까지 확인했다(같은 Linux 호스트, [pilot 흐름](SERVER-OPERATIONS.md#5-실제-연결-확인)). Windows 11 사용자 인수는 [현재 후보 절차](WINDOWS-ACCEPTANCE.md)를 쓰며 아직 `NOT_RUN`이다. 이전 게시는 [0.9.0 배포 기록](releases/cli-0.9.0-2026-11-13-deployment.json), [0.7.0 배포 기록](releases/core-0.7.0-deployment.json)에 있다. 다음 번들 버전을 준비할 때 0.10.0 보호 파일 명세(`crates/miy/bundles/0.10.0.json`)를 게시 소스 `9133d70`의 바이트로 추가한다.
+게시 CLI로 실서버에 새 앱을 만들어 서버 빌드·dev 배포·프레임 표시까지 확인했다(같은 Linux 호스트, [pilot 흐름](SERVER-OPERATIONS.md#5-실제-연결-확인)). Windows 11 사용자 인수는 [현재 후보 절차](WINDOWS-ACCEPTANCE.md)를 쓰며 아직 `NOT_RUN`이다. 이전 게시는 [0.9.0 배포 기록](releases/cli-0.9.0-2026-11-13-deployment.json), [0.7.0 배포 기록](releases/core-0.7.0-deployment.json)에 있다. 0.10.0 보호 파일 명세(`crates/miy/bundles/0.10.0.json`)는 게시 소스 `9133d70`의 바이트로 추가했다(같은 생성 규칙으로 `173c6d5`에서 만든 결과가 기존 0.9.0 명세와 바이트까지 같음을 확인).
+
+## 작업본 0.11.0 후보
+
+서버 배포를 서버 빌드 산출물로 한정하는 CLI/번들 0.11.0을 준비했다. 소스·격리 검증 후보이며 게시하거나 개발 서버에 반영하지 않았다([검증 기록](releases/server-build-only-2026-11-16-validation.json)). 0.10.0 CLI·번들·UI 1.1.0 바이트는 그대로 보존한다.
+
+- `miy app build`는 항상 선택한 서버에서 빌드한다. `--remote`·`--platform`과 로컬 배포용 Docker 빌드는 없다. 로컬 테스트는 `app dev`(기본 native, `--runtime docker`)다.
+- `miy app deploy`는 프로젝트의 서버 빌드 영수증을 요구한다. 없으면 서버에 요청하기 전에 `server_build_required`로 끝난다. 이미지 export·업로드는 없다.
+- 서버는 이미지 업로드 API를 제공하지 않고 capability `images.idempotency.v1`을 광고하지 않는다. 위임 action `upload`도 없다.
+- 번들 0.11.0은 0.10.0과 SDK·UI가 같고 보호 안내 문서(`AGENTS.md`, `CLAUDE.md`, `docs/CONTRACT.md`, `docs/CLI.md`, 앱 skill)만 다르다. 0.10.0 프로젝트는 `miy app upgrade`로 옮기고, 공용 UI 1.1.0(번들 0.10.0용 게시물)은 0.11.0에서도 호환으로 받는다.
+- 이전 CLI가 남긴 작업 기록(journal)은 읽는다. 로컬 이미지를 올리던 배포 기록의 `job resume`은 `local_image_deployment_removed`로 거부하고 `miy app build`를 안내한다.
+
+게시 순서는 종전과 같다: CI 후보 생성 → 서버·worker와 CLI·설치기를 한 기록으로 반영 → `windows-candidate.json`과 `contracts/api-v1.published.json` 갱신. 다음 번들 버전을 준비할 때는 0.11.0 보호 파일 명세를 그 게시 소스의 바이트로 추가한다.
 
 새 후보를 게시하면 [Windows 후보 파일](releases/windows-candidate.json)을 그 CI 해시로 갱신한다. Windows 인수 검사기는 이 파일을 기대값으로 쓴다.
 

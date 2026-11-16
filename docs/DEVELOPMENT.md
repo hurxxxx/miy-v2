@@ -496,7 +496,7 @@ miy app register
 miy app dev
 miy app dev-stop
 miy app check
-# 앱 버전과 소스를 커밋한 뒤:
+# 앱 버전과 소스를 커밋한 뒤(서버에서 검사·빌드):
 miy app build
 miy app deploy --environment dev --dry-run
 miy app deploy --no-wait
@@ -507,9 +507,9 @@ miy --context work --app purchase --yes app promote --environment prod --release
 
 비TTY 로그인은 브라우저를 자동 실행하지 않고 pending을 반환한다. `--account developer`는 명시적으로 켠 HTTP loopback 개발 프로필에 한해 같은 device 승인 흐름을 자동 진행하는 검사 예외다. Access token은 최대 15분, 회전 refresh 세션은 최대 30일이며 origin/user별 보호 저장소에 보관한다. 갱신 응답 유실은 재로그인으로 복구한다. Core 사용자 활성 상태와 상위 IdP 비활성화의 전파·지연을 구분한다.
 
-빌드는 깨끗이 커밋된 소스로 불변 Linux 이미지를 만들며 `dist/image.json`의 platform과 서버 runtimePlatform을 비교한다. Docker 엔진 CPU가 서버와 다르면 `app build --platform linux/amd64|linux/arm64`를 명시하고 실제 빌더/에뮬레이션을 준비한다. Dry-run은 expected-state와 변경 계획을 조회하며 이미지 업로드·runtime job을 생성하지 않는다.
+빌드는 깨끗이 커밋된 소스를 서버로 보내 서버가 검사하고 불변 Linux 이미지를 만든다(CLI 0.11.0부터 로컬 배포용 빌드와 이미지 업로드는 없다). 서버는 자신이 빌드한 이미지만 dev에 배포하고 prod로 승격하며, 그렇지 않은 이미지는 `server_build_required`로 거부한다. 로컬 테스트는 `app dev`로 하고 그 결과물은 배포하지 않는다. Dry-run은 expected-state와 변경 계획을 조회하며 runtime job을 생성하지 않는다.
 
-Runtime payload와 원본 request key는 context/origin/user/app에 묶인 journal에 먼저 저장한다. 이미지 접수·ID 조회를 포함한 응답 유실은 `job resume REQUEST_OR_JOB_ID`로 복구한다. 부분 바이트 재개는 지원하지 않는다. `job watch`는 cursor/JSONL 재연결을 제공하며 Ctrl-C는 원격 작업을 취소하지 않는다. `job retry`는 타입상 허용된 terminal failure만 새 preflight 후 재시도한다. Prod 및 모든 app remove의 실행·retry·미접수 재전송은 명시적 context/app/environment와 확인이 필요하며, 이미 접수된 job의 관찰은 새 승인 없이 가능하다.
+Runtime payload, 원본 request key와 서버 빌드 영수증은 context/origin/user/app에 묶인 journal에 먼저 저장한다. 응답 유실은 `job resume REQUEST_OR_JOB_ID`로 복구한다. `job watch`는 cursor/JSONL 재연결을 제공하며 Ctrl-C는 원격 작업을 취소하지 않는다. `job retry`는 타입상 허용된 terminal failure만 새 preflight 후 재시도한다. Prod 및 모든 app remove의 실행·retry·미접수 재전송은 명시적 context/app/environment와 확인이 필요하며, 이미 접수된 job의 관찰은 새 승인 없이 가능하다.
 
 ```sh
 miy describe --command "job retry"

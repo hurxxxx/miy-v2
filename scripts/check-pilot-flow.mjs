@@ -11,7 +11,7 @@
 //
 // Usage: node scripts/check-pilot-flow.mjs --origin https://PLATFORM --cli /abs/miy
 //   --credentials-file /abs/credentials.json --output NEW_DIRECTORY
-//   [--build remote|local] [--publish-component DIRECTORY] [--keep-running true]
+//   [--publish-component DIRECTORY] [--keep-running true]
 //   [--unpublished true]   isolated stacks only: the CLI is not in an install guide
 import { spawn } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
@@ -102,14 +102,12 @@ try {
   const values = {};
   for (let i = 2; i < process.argv.length; i += 2) {
     const flag = process.argv[i], value = process.argv[i + 1];
-    requireThat(["--origin", "--cli", "--credentials-file", "--output", "--build", "--publish-component", "--keep-running", "--unpublished"].includes(flag)
+    requireThat(["--origin", "--cli", "--credentials-file", "--output", "--publish-component", "--keep-running", "--unpublished"].includes(flag)
       && value && !value.startsWith("--") && values[flag] === undefined, "invalid_arguments");
     values[flag] = value;
   }
   requireThat(["--origin", "--cli", "--credentials-file", "--output"].every(key => values[key]), "required_arguments_missing");
   requireThat(isAbsolute(values["--cli"]) && isAbsolute(values["--credentials-file"]), "absolute_private_input_paths_required");
-  const build = values["--build"] || "remote";
-  requireThat(["remote", "local"].includes(build), "invalid_build_mode");
   const origin = new URL(values["--origin"]).origin;
   output = resolve(values["--output"]);
   let existing;
@@ -122,7 +120,7 @@ try {
   await copyFile(values["--cli"], executable);
   await chmod(executable, 0o700);
   result.cliSha256 = hash(await readFile(executable));
-  result.build = build;
+  result.build = "server";
 
   stage = "published_cli_binding";
   const publicJson = async url => {
@@ -196,11 +194,11 @@ try {
   await git(["add", "."]);
   await git(["commit", "-qm", "Pilot acceptance app"]);
   const started = Date.now();
-  const built = await cli("developer", build === "remote" ? ["app", "build", "--remote", "--timeout", "2400"] : ["app", "build"],
+  const built = await cli("developer", ["app", "build", "--timeout", "2400"],
     { cwd: project, timeout: 2700000 });
   result.buildSeconds = Math.round((Date.now() - started) / 1000);
   result.imageId = built.imageId ?? built.image?.id ?? null;
-  passed(build === "remote" ? "server_build_from_committed_source" : "local_docker_build", { seconds: result.buildSeconds });
+  passed("server_build_from_committed_source", { seconds: result.buildSeconds });
 
   stage = "dev_deployment";
   await cli("developer", ["app", "deploy", "--environment", "dev"], { cwd: project, timeout: 1800000 });

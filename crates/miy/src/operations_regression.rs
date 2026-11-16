@@ -481,7 +481,7 @@ async fn admission_and_retry(
 ) -> Result<()> {
     let dev = h.snapshot("dev").await?;
     let prod = h.snapshot("prod").await?;
-    let before:Value=sqlx::query_scalar("SELECT jsonb_build_object('jobs',(SELECT count(*) FROM runtime_jobs),'uploads',(SELECT count(*) FROM image_uploads),'logs',(SELECT count(*) FROM runtime_log_requests))").fetch_one(&h.state.pool).await?;
+    let before:Value=sqlx::query_scalar("SELECT jsonb_build_object('jobs',(SELECT count(*) FROM runtime_jobs),'logs',(SELECT count(*) FROM runtime_log_requests))").fetch_one(&h.state.pool).await?;
     for (action, env) in [("stop", "dev"), ("remove", "dev"), ("stop", "prod")] {
         let plan = response(
             h.request(
@@ -516,7 +516,7 @@ async fn admission_and_retry(
     stale["installation"]["generation"] =
         json!(stale["installation"]["generation"].as_u64().unwrap() + 1);
     error(h.request(manager,Method::POST,"/api/v1/apps/audit-runtime/runtime").json(&json!({"action":"stop","environment":"dev","idempotencyKey":Uuid::new_v4(),"expectedState":stale})).send().await?,409,"state_changed").await?;
-    let after:Value=sqlx::query_scalar("SELECT jsonb_build_object('jobs',(SELECT count(*) FROM runtime_jobs),'uploads',(SELECT count(*) FROM image_uploads),'logs',(SELECT count(*) FROM runtime_log_requests))").fetch_one(&h.state.pool).await?;
+    let after:Value=sqlx::query_scalar("SELECT jsonb_build_object('jobs',(SELECT count(*) FROM runtime_jobs),'logs',(SELECT count(*) FROM runtime_log_requests))").fetch_one(&h.state.pool).await?;
     ensure!(
         before == after && dev == h.snapshot("dev").await? && prod == h.snapshot("prod").await?,
         "preflight or rejected requests created a side effect"
@@ -678,119 +678,6 @@ async fn admission_and_retry(
     Ok(())
 }
 
-async fn uploads(
-    h: &Harness<'_>,
-    manager: &Actor,
-    peer: &Actor,
-    passed: &mut Vec<String>,
-) -> Result<Uuid> {
-    let image:String=sqlx::query_scalar("SELECT runtime_image FROM installations WHERE app_id='audit-runtime' AND environment='dev'").fetch_one(&h.state.pool).await?;
-    let bytes = b"isolated transport fixture; intentionally not an image archive";
-    let digest = hash(bytes);
-    let key = Uuid::new_v4();
-    let upload = |actor: &Actor, digest: &str| {
-        h.request(actor, Method::POST, "/api/v1/apps/audit-runtime/images")
-            .header("x-miy-image", &image)
-            .header("x-miy-archive-sha256", digest)
-            .header("x-miy-request-id", key.to_string())
-            .body(bytes.to_vec())
-    };
-    let lost = upload(manager, &digest).send().await?;
-    ensure!(
-        lost.status().is_success(),
-        "initial upload was not accepted"
-    );
-    drop(lost);
-    let lookup = format!("/api/v1/apps/audit-runtime/image-uploads/by-request/{key}");
-    let recovered = response(h.request(manager, Method::GET, &lookup).send().await?, 200).await?;
-    let original = id(&recovered)?;
-    ensure!(
-        recovered["archiveHash"] == digest
-            && recovered["sizeBytes"] == bytes.len()
-            && recovered["status"] == "pending",
-        "lost-receipt lookup changed archive identity"
-    );
-    let duplicate = response(upload(manager, &digest).send().await?, 200).await?;
-    ensure!(
-        id(&duplicate)? == original,
-        "same upload key created a duplicate receipt"
-    );
-    error(
-        upload(manager, &hash(b"changed identity")).send().await?,
-        409,
-        "idempotency_conflict",
-    )
-    .await?;
-    error(
-        h.request(peer, Method::GET, &lookup).send().await?,
-        404,
-        "not_found",
-    )
-    .await?;
-    error(
-        h.request(
-            peer,
-            Method::GET,
-            &format!("/api/v1/image-uploads/{original}"),
-        )
-        .send()
-        .await?,
-        403,
-        "forbidden",
-    )
-    .await?;
-    let other = response(upload(peer, &digest).send().await?, 200).await?;
-    let other = id(&other)?;
-    ensure!(
-        other != original,
-        "upload request IDs were globally shared across actors"
-    );
-    ensure!(
-        sqlx::query_scalar::<_, i64>(
-            "SELECT count(*) FROM image_uploads WHERE actor=$1 AND request_id=$2"
-        )
-        .bind(&manager.id)
-        .bind(key)
-        .fetch_one(&h.state.pool)
-        .await?
-            == 1,
-        "duplicate archive reception was persisted"
-    );
-    sqlx::query(
-        "UPDATE image_uploads SET status='failed',error_code='fixture_complete' WHERE id=$1",
-    )
-    .bind(other)
-    .execute(&h.state.pool)
-    .await?;
-    tokio::fs::remove_file(
-        h.state
-            .artifacts
-            .join(".uploads")
-            .join(format!("{other}.tar")),
-    )
-    .await?;
-    sqlx::query(
-        "UPDATE image_uploads SET expires_at=clock_timestamp()-interval '1 second' WHERE id=$1",
-    )
-    .bind(original)
-    .execute(&h.state.pool)
-    .await?;
-    error(
-        h.request(manager, Method::GET, &lookup).send().await?,
-        409,
-        "upload_expired",
-    )
-    .await?;
-    error(
-        upload(manager, &digest).send().await?,
-        409,
-        "upload_expired",
-    )
-    .await?;
-    passed.push("lost upload receipt recovery, exact immutable identity, per-actor privacy and expired-key rejection".into());
-    Ok(original)
-}
-
 fn worker(root: &Path, gate: &Path) -> Result<tokio::process::Child> {
     let log = std::fs::OpenOptions::new()
         .create(true)
@@ -831,7 +718,6 @@ async fn diagnostics(
     manager: &Actor,
     peer: &Actor,
     viewer: &Actor,
-    expired_upload: Uuid,
     passed: &mut Vec<String>,
 ) -> Result<()> {
     let dev = sqlx::query(
@@ -1058,22 +944,6 @@ async fn diagnostics(
         )
         .await?;
         h.grant(manager, "audit-runtime", "dev", "develop").await?;
-        let upload = sqlx::query("SELECT status,error_code FROM image_uploads WHERE id=$1")
-            .bind(expired_upload)
-            .fetch_one(&h.state.pool)
-            .await?;
-        ensure!(
-            upload.get::<String, _>("status") == "failed"
-                && upload.get::<Option<String>, _>("error_code").as_deref()
-                    == Some("upload_expired")
-                && !h
-                    .state
-                    .artifacts
-                    .join(".uploads")
-                    .join(format!("{expired_upload}.tar"))
-                    .exists(),
-            "worker imported or retained an expired pending archive"
-        );
         ensure!(
             sqlx::query_scalar::<_, i64>("SELECT count(*) FROM runtime_log_requests WHERE id=$1")
                 .bind(expired)
@@ -1157,10 +1027,7 @@ pub async fn run(state: &State, client: &Client, base: &str) -> Result<Vec<Strin
     admission_and_retry(&h, &manager, &viewer, &mut passed)
         .await
         .context("operation admission/retry")?;
-    let expired = uploads(&h, &manager, &peer, &mut passed)
-        .await
-        .context("operation upload recovery")?;
-    diagnostics(&h, &manager, &peer, &viewer, expired, &mut passed)
+    diagnostics(&h, &manager, &peer, &viewer, &mut passed)
         .await
         .context("worker diagnostics")?;
     Ok(passed)

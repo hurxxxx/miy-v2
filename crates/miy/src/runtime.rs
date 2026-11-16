@@ -117,6 +117,22 @@ pub async fn check_release(
         json!({"releaseId":v.release_id,"tested":true,"recordedBy":p.id,"checks":v.checks,"structured":!v.checks.is_empty(),"note":v.note.trim(),"meaning":"User-recorded test acceptance plus runtime health; not automatic business correctness verification"}),
     )
 }
+/// Only the output of this app's own succeeded server build runs on the server. That
+/// build accepted committed source and verified the SDK, components, tests and
+/// migration history; an image built anywhere else carries no such record.
+pub(crate) async fn server_built(
+    pool: &sqlx::PgPool,
+    app: &str,
+    image: &str,
+) -> sqlx::Result<bool> {
+    sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM app_builds WHERE app_id=$1 AND image_id=$2 AND status='succeeded')",
+    )
+    .bind(app)
+    .bind(image)
+    .fetch_one(pool)
+    .await
+}
 pub(crate) async fn checked_image(pool: &sqlx::PgPool, app: &str, release: Uuid) -> Result<String> {
     let image: Option<String> = sqlx::query_scalar("SELECT r.image_id FROM releases r JOIN release_checks c ON c.release_id=r.id JOIN db_resources d ON d.app_id=r.app_id AND d.environment='dev' WHERE r.id=$1 AND r.app_id=$2 AND d.status='ready' AND c.schema_fingerprint IS NOT NULL AND c.schema_fingerprint=d.schema_fingerprint AND NOT EXISTS(SELECT 1 FROM app_dev_sessions s WHERE s.app_id=r.app_id AND s.status IN ('queued','preparing','ready') AND s.expires_at>now()) AND EXISTS(SELECT 1 FROM runtime_jobs j WHERE j.release_id=r.id AND j.environment='dev' AND j.action='deploy' AND j.status='succeeded')")
         .bind(release).bind(app).fetch_optional(pool).await?.flatten();
@@ -170,6 +186,11 @@ pub async fn request(
     } else {
         v.image_id.clone()
     };
+    if let Some(image) = &image
+        && !server_built(&state.pool, app, image).await?
+    {
+        return Err(ApiError::conflict("server_build_required"));
+    }
     let request_data = serde_json::to_value(&v)?;
     let input = if v.expected_state.is_some() {
         contract::hash(serde_json::to_vec(
@@ -607,14 +628,16 @@ async fn execute(pool: &sqlx::PgPool, job: &sqlx::postgres::PgRow) -> Result<()>
         .context("missing_image")?;
     anyhow::ensure!(image_id(&image), "invalid_image");
     step(pool, id, "verifying_image").await?;
-    let local_image = crate::image_import::resolve(pool, &app, &image)
-        .await
-        .map_err(|_| RuntimeFailure::new(FailureCode::ImageUnavailable))?;
-    let meta = inspect(&local_image)
+    // Admission checked this too; a job queued by an earlier server did not.
+    anyhow::ensure!(
+        server_built(pool, &app, &image).await?,
+        RuntimeFailure::new(FailureCode::ServerBuildRequired)
+    );
+    let meta = inspect(&image)
         .await
         .map_err(|_| RuntimeFailure::new(FailureCode::ImageUnavailable))?;
     anyhow::ensure!(
-        meta["Id"] == local_image && meta["Config"]["Labels"]["org.miy.app.id"] == app,
+        meta["Id"] == image && meta["Config"]["Labels"]["org.miy.app.id"] == app,
         RuntimeFailure::new(FailureCode::InvalidImageContract)
     );
     anyhow::ensure!(
@@ -633,15 +656,7 @@ async fn execute(pool: &sqlx::PgPool, job: &sqlx::postgres::PgRow) -> Result<()>
     if inspect(&extraction).await.is_ok() {
         docker(&["rm", "-f", &extraction]).await?;
     }
-    docker(&[
-        "create",
-        "--name",
-        &extraction,
-        "--network",
-        "none",
-        &local_image,
-    ])
-    .await?;
+    docker(&["create", "--name", &extraction, "--network", "none", &image]).await?;
     let copied = copy_image_contract(&extraction, &temporary).await;
     let removed = docker(&["rm", &extraction]).await;
     copied?;
@@ -735,19 +750,7 @@ async fn execute(pool: &sqlx::PgPool, job: &sqlx::postgres::PgRow) -> Result<()>
             .map_err(|_| RuntimeFailure::new(FailureCode::InvalidRequest))?,
     )
     .await?;
-    let result = deploy_installation(
-        pool,
-        id,
-        installation,
-        release,
-        ResolvedImage {
-            original: &image,
-            local: &local_image,
-        },
-        &actor,
-        &inst,
-    )
-    .await;
+    let result = deploy_installation(pool, id, installation, release, &image, &actor, &inst).await;
     sqlx::query("SELECT pg_advisory_unlock(hashtextextended($1,0))")
         .bind(installation.to_string())
         .execute(&mut *lock)
@@ -774,11 +777,6 @@ async fn execute(pool: &sqlx::PgPool, job: &sqlx::postgres::PgRow) -> Result<()>
     }
     result
 }
-struct ResolvedImage<'a> {
-    original: &'a str,
-    local: &'a str,
-}
-
 /// Preserve failures classified at their origin. Migration errors are terminal,
 /// including connection errors raised while executing a migration: only an
 /// explicitly classified availability failure may grant retry permission.
@@ -848,12 +846,10 @@ async fn deploy_installation(
     job: Uuid,
     installation: Uuid,
     release: Uuid,
-    images: ResolvedImage<'_>,
+    image: &str,
     actor: &str,
     inst: &sqlx::postgres::PgRow,
 ) -> Result<()> {
-    let image = images.original;
-    let local_image = images.local;
     runtime_health::record(pool, installation, Observation::Inactive).await?;
     step(pool, job, "stopping_previous").await?;
     // Deployment is a replacement, not a request to stop the previous release.
@@ -967,19 +963,21 @@ async fn deploy_installation(
         "max-size=5m",
         "--log-opt",
         "max-file=2",
-        local_image,
+        image,
     ])
     .await;
     std::fs::remove_file(&env_path)?;
     created?;
-    sqlx::query("UPDATE installations SET runtime_container=$2,runtime_image=$3,runtime_secret=$4,runtime_local_image=$5,desired_state='running',runtime_status='starting' WHERE id=$1").bind(installation).bind(&name).bind(image).bind(auth::encrypt(&secret)?).bind(local_image).execute(pool).await?;
+    // A server-built image runs under its own ID. `runtime_local_image` differs only on
+    // installations last deployed from an imported archive, before server-only builds.
+    sqlx::query("UPDATE installations SET runtime_container=$2,runtime_image=$3,runtime_secret=$4,runtime_local_image=$3,desired_state='running',runtime_status='starting' WHERE id=$1").bind(installation).bind(&name).bind(image).bind(auth::encrypt(&secret)?).execute(pool).await?;
     #[cfg(test)]
     crate::runtime_regression::deployment_write_ack(job, "before_start")?;
     step(pool, job, "starting_container").await?;
     docker(&["start", &name]).await?;
     let meta = owned(&name, installation).await?;
     anyhow::ensure!(
-        meta["Image"] == local_image,
+        meta["Image"] == image,
         RuntimeFailure::new(FailureCode::InvalidImageContract)
     );
     let port = published_port(&meta)?;

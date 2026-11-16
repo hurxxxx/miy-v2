@@ -346,23 +346,23 @@ def check(cli):
         original_path = env.get("PATH", "")
         empty_tools = root / "no-local-build-tools"
         empty_tools.mkdir()
-        # CreateProcess also searches the application's directory and System32.
-        # An empty PATH alone cannot hide the hosted Windows runner's Docker.
+        # Builds run on the server and a deployment names its server build, so neither
+        # command may look for Docker, Rust or Node on this computer. CreateProcess
+        # also searches the application's directory, so run a copy from an empty one.
         probe_cli = empty_tools / cli.name
         shutil.copy2(cli, probe_cli)
-        if os.name == "nt":
-            # The same trusted CLI rejects Docker's info arguments with exit 2.
-            # Its placement beside the probe wins over the system Docker engine.
-            shutil.copy2(cli, empty_tools / "docker.exe")
         env["PATH"] = str(empty_tools)
         try:
             failure = run(["app", "build"], cwd=project, expected=7, executable=probe_cli)["error"]
-            require(failure["code"] == "docker_daemon_unavailable" and "miy app build --remote" in failure["message"], "Missing Docker must explain server build (" + failure["code"] + ")")
-            require(failure["recovery"]["args"] == ["app", "build", "--remote"], "Missing Docker must expose an executable recovery command")
-            require(not (project / "dist/image.json").exists(), "Missing Docker created a deployment receipt")
+            require(failure["code"] == "context_required" and failure["recovery"]["args"] == ["context", "init"], "A build must need only a server context (" + failure["code"] + ")")
+            failure = run(["app", "deploy"], cwd=project, expected=7, executable=probe_cli)["error"]
+            require(failure["code"] == "build_required" and "miy app build" in failure["message"], "A deployment without a build must name the build command (" + failure["code"] + ")")
+            require(not (project / "dist/image.json").exists(), "A refused build or deployment created a receipt")
+            rejected = run(["app", "build", "--remote"], cwd=project, expected=2, executable=probe_cli)["error"]
+            require(rejected["code"] == "invalid_arguments", "The removed local/remote build switch must be a usage error")
         finally:
             env["PATH"] = original_path
-        ok("missing local Docker offers explicit remote build without compiling or uploading")
+        ok("build and deploy need no local Docker or language tools: a build needs a server context, a deployment its server build")
         manifest = json.loads((project / "manifest.json").read_bytes())
         require(manifest["name"] == "한글 앱", "UTF-8 app identity was not preserved")
         run(["app", "setup"], cwd=project, command="app setup")

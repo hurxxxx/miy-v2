@@ -107,9 +107,6 @@ async fn control_loop(pool: &sqlx::PgPool) -> Result<()> {
         .await?;
     crate::runtime::recover(pool).await?;
     crate::development::recover(pool).await?;
-    sqlx::query("UPDATE image_uploads SET status='pending' WHERE status='loading'")
-        .execute(pool)
-        .await?;
     let mut last_reconcile = std::time::Instant::now();
     crate::app_frames::prune(pool).await?;
     let mut last_prune = std::time::Instant::now();
@@ -124,7 +121,6 @@ async fn control_loop(pool: &sqlx::PgPool) -> Result<()> {
         }
         if !database_tick(pool).await?
             && !crate::development::tick(pool).await?
-            && !crate::delivery::tick(pool).await?
             && !crate::runtime::tick(pool).await?
         {
             tokio::time::sleep(std::time::Duration::from_millis(300)).await;

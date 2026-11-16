@@ -1,0 +1,362 @@
+{
+  "date": "2026-11-16",
+  "status": "IMPLEMENTED_WITH_VALIDATION_LIMITS",
+  "request": "Decide the two open app execution boundary questions and carry out the decisions (user: \"1번은 일반적으로 모두 허용하지 않나? ... 네트워크 인프라 환경의 방화벽에서 막아야지 앱이 막을 건 아닌듯\", \"2번은 로컬빌드는 로컬에서 테스트 하기 위함이고 서버 배포는 당연히 서버에서 ci 검증 빌드 배포가 되야 하지 않을까 ?\", then \"진행\"). Source change, documentation and isolated checks only: nothing was published, pushed or deployed.",
+  "baseCommit": "600a56f",
+  "source": "A separate worktree at 600a56f plus this change. The main checkout held another worker's uncommitted follow-up (pilot review fixes); it was not part of the checked source and is not in this commit.",
+  "previousRecord": "docs/releases/pilot-improvements-2026-11-15-validation.json",
+  "evidenceDirectory": ".local/evidence/server-build-only-20261116",
+  "versions": {
+    "cli": "0.11.0",
+    "bundle": "0.11.0",
+    "rustSdk": "0.4.0 (unchanged)",
+    "ui": "1.1.0 (unchanged, accepted as compatible)",
+    "coreSchema": "23 (unchanged)"
+  },
+  "decisions": [
+    {
+      "id": "PLAN decision 8, APP-BOUNDARIES finding 17",
+      "decision": "The platform does not restrict outbound traffic from app containers. Where blocking is needed, the network or host firewall does it.",
+      "basis": "Allowing container egress is the usual default. The platform's own boundary does not depend on it.",
+      "observed": [
+        "sudo ss -ltnp on the development host: the Core listeners (miy-server) are 127.0.0.1:18180/18182/18183/18184, the PostgreSQL publish is 127.0.0.1:15432 and every app container publishes on 127.0.0.1 only.",
+        "A disposable container on the default Docker bridge connected to the gateway address: ports 443, 8000 and 9090 accepted, 18180 and 15432 refused. ufw is inactive and INPUT is ACCEPT."
+      ],
+      "consequence": "No platform code change. A perimeter firewall does not see traffic from a container to other services on the same host, so SERVER-OPERATIONS names a dedicated host or a host firewall rule as an installation condition. The development host has neither and runs unrelated services on all addresses; accepted for the development server."
+    },
+    {
+      "id": "PLAN decision 9, APP-BOUNDARIES finding 18",
+      "decision": "A server deployment accepts only the output of a server build. A local build is for local testing.",
+      "basis": "The server build takes committed source only, on a fixed recipe with locked dependencies and no network during the build, and runs cargo fmt --check, cargo test, pnpm typecheck, the SDK/component integrity checks and the migration history check. A locally built image carried none of that.",
+      "consequence": "Implemented below as CLI/bundle 0.11.0. It does not run clippy or frontend tests; that is unchanged."
+    }
+  ],
+  "changes": [
+    {
+      "area": "Server admission",
+      "change": "runtime::server_built: an image is deployable only when a succeeded app_builds row of the same app produced it. Checked in the plan (runtime_preflight: a failed image check with server_build_required), at submission (409 server_build_required for deploy and for promote, after authorization) and by the worker before it inspects the image (a job queued by an earlier server fails with server_build_required). Another app's build of the same image does not count. A retry passes through the same submission.",
+      "files": [
+        "crates/miy/src/runtime.rs",
+        "crates/miy/src/runtime_preflight.rs",
+        "crates/miy/src/runtime_contract.rs",
+        "crates/miy/src/domain.rs"
+      ]
+    },
+    {
+      "area": "Image upload removed",
+      "change": "Removed POST /api/v1/apps/{app}/images, GET /api/v1/image-uploads/{id}, GET /api/v1/apps/{app}/image-uploads/by-request/{request}, the worker's archive import tick, the archive verifier and the original-to-local image mapping, the capability images.idempotency.v1, the delegation action upload and the failure codes image_import_failed, archive_hash_mismatch and upload_expired. A deployment runs the image under its own ID.",
+      "files": [
+        "crates/miy/src/delivery.rs (deleted)",
+        "crates/miy/src/image_import.rs (deleted)",
+        "crates/miy/src/image_import_regression.rs (deleted)",
+        "crates/miy/src/image_contract.rs (deleted)",
+        "crates/miy/src/http.rs",
+        "crates/miy/src/browser_boundary.rs",
+        "crates/miy/src/worker.rs",
+        "crates/miy/src/delegations.rs",
+        "crates/miy/src/policy.rs",
+        "crates/miy/src/cli_login.rs",
+        "crates/miy/src/main.rs"
+      ]
+    },
+    {
+      "area": "CLI build and deploy",
+      "change": "miy app build always builds on the selected server; --remote, --platform and the local release image build are gone, and no client needs Docker, Rust or pnpm to build or deploy. miy app deploy requires the project's server build receipt and otherwise ends before any request with server_build_required and the recovery command miy app build. A plan that fails for this reason (typically promoting a release whose image an earlier CLI uploaded) reports the same code and recovery. The image export and upload client is deleted.",
+      "files": [
+        "crates/miy/src/app_cli.rs",
+        "crates/miy/src/cli_build.rs",
+        "crates/miy/src/cli_remote.rs",
+        "crates/miy/src/cli_upload.rs (deleted)",
+        "crates/miy/src/runtime_platform.rs",
+        "crates/miy/src/cli_discovery.rs"
+      ]
+    },
+    {
+      "area": "CLI recovery records",
+      "change": "A record written by an earlier CLI still loads: its upload key is read and never written. A deployment record must name the server build of its image; one that uploaded a local image is refused on resume with local_image_deployment_removed and the recovery command miy app build.",
+      "files": [
+        "crates/miy/src/cli_journal.rs"
+      ]
+    },
+    {
+      "area": "Version and bundle",
+      "change": "CLI and bundle 0.11.0. crates/miy/bundles/0.10.0.json records the published 0.10.0 protected files from 9133d70 (the same rule applied to 173c6d5 reproduces the committed 0.9.0 record byte for byte). miy app upgrade moves a 0.10.0 project to 0.11.0; only guidance files differ (AGENTS.md, CLAUDE.md, docs/CONTRACT.md, docs/CLI.md and the app skill). UI 1.1.0, published for bundle 0.10.0, is accepted by 0.11.0.",
+      "files": [
+        "crates/miy/Cargo.toml",
+        "Cargo.lock",
+        "crates/miy/src/bundle.rs",
+        "crates/miy/src/upgrade.rs",
+        "crates/miy/bundles/0.10.0.json",
+        "templates/rust-react/AGENTS.md",
+        "templates/rust-react/CLAUDE.md",
+        "templates/rust-react/docs/CONTRACT.md",
+        "templates/rust-react/docs/CLI.md",
+        "templates/rust-react/.agents/skills/miy-app/SKILL.md",
+        "templates/rust-react/.claude/skills/miy-app/SKILL.md",
+        "crates/miy/guidance/miy-cli/SKILL.md",
+        "crates/miy/guidance/miy-cli/references/workflow.md"
+      ]
+    },
+    {
+      "area": "Regression and script checks",
+      "change": "The runtime regression records its runner-built images as the app's succeeded server builds and adds two observations: an image without that record is refused in the plan, at submission and by the worker; an accepted release of such an image cannot be promoted. The archive import observation and the image upload recovery observation are removed (runtime 47, operations 5, 131 in total). check-cli-recovery.py now drives deployments from a synthetic server build receipt, with Docker on PATH only to prove it is never called. check-cli-output.py checks that build and deploy need no local tools. check-pilot-flow.mjs has no local build option.",
+      "files": [
+        "crates/miy/src/runtime_regression.rs",
+        "crates/miy/src/operations_regression.rs",
+        "crates/miy/src/cli_regression.rs",
+        "scripts/runtime-regression/run.py",
+        "scripts/runtime-regression/README.md",
+        "scripts/check-cli-recovery.py",
+        "scripts/check-cli-output.py",
+        "scripts/check-cli-build.py",
+        "scripts/check-pilot-flow.mjs",
+        "scripts/check-architecture.mjs",
+        "scripts/run-agent-acceptance.mjs",
+        "scripts/agent-acceptance-proxy.py"
+      ]
+    },
+    {
+      "area": "Documents",
+      "change": "PLAN (decisions 8 and 9, the completed row, the pending 0.11.0 row, the Docker 28 export observation no longer applies to this candidate), APP-BOUNDARIES findings 17 and 18, CORE-PERMISSIONS (execution target rule, upload action removed), SERVER-OPERATIONS (app container network conditions, the unreleased candidate and what it changes for existing installations), RUNNING, DEVELOPMENT, CHECKS, CLI-RELEASE.",
+      "files": [
+        "docs/PLAN.md",
+        "docs/APP-BOUNDARIES.md",
+        "docs/CORE-PERMISSIONS.md",
+        "docs/SERVER-OPERATIONS.md",
+        "docs/RUNNING.md",
+        "docs/DEVELOPMENT.md",
+        "docs/CHECKS.md",
+        "docs/CLI-RELEASE.md"
+      ]
+    }
+  ],
+  "notChanged": [
+    {
+      "item": "Core schema",
+      "reason": "No migration. The tables image_uploads and image_imports and the column installations.runtime_local_image stay; nothing writes the tables any more. An applied migration is not edited, and dropping them would leave the previous server binary unable to run after a rollback."
+    },
+    {
+      "item": "Installations running an uploaded image",
+      "reason": "Start, stop, restart and removal use the existing container and still compare it with the stored local image ID. Only a new deployment or a promotion needs a server build."
+    },
+    {
+      "item": "App container egress",
+      "reason": "Decision 8: not a platform control."
+    },
+    {
+      "item": "The published 0.10.0 CLI, bundle and UI 1.1.0 bytes, contracts/api-v1.published.json and docs/releases/windows-candidate.json",
+      "reason": "They describe what is published. They change when 0.11.0 is published."
+    },
+    {
+      "item": "scripts/build-ui-component.mjs bundleVersion 0.10.0",
+      "reason": "It regenerates the immutable UI 1.1.0 release, which was built for bundle 0.10.0."
+    }
+  ],
+  "checks": [
+    {
+      "name": "Rust static checks and unit tests",
+      "command": "bash scripts/check-static.sh rust",
+      "status": "PASS",
+      "evidence": [
+        ".local/evidence/server-build-only-20261116/static-rust.log"
+      ],
+      "observed": "Bundle portability, write decisions, rustfmt, clippy for both feature sets, 224 server-build tests (7 ignored) and 138 client-build tests. Run on the final tree; an earlier run before the last edits also passed (.local/evidence/server-build-only-20261116/static-rust-1.log)."
+    },
+    {
+      "name": "Isolated runtime regression",
+      "command": "python3 scripts/runtime-regression/run.py",
+      "status": "PASS",
+      "evidence": [
+        ".local/evidence/server-build-only-20261116/run-3.log",
+        ".local/evidence/server-build-only-20261116/runtime-regression-3/results.jsonl",
+        ".local/evidence/server-build-only-20261116/runtime-regression-3/runner-result.json"
+      ],
+      "observed": "Third run, on the final tree: 131 observations, all PASS (runtime 47, operations 5, CLI 6, auth 8, permissions 26, delegation 10, boundary 12, migration 3, frames 14); test and cleanup exit 0. Includes: an image without a succeeded server build of the app is refused in the plan, at submission and by the worker; an accepted release whose image the server did not build cannot be promoted. The first two runs are under preservedFailures."
+    },
+    {
+      "name": "Development session database",
+      "command": "python3 scripts/check-development-database.py",
+      "status": "PASS",
+      "evidence": [
+        ".local/evidence/server-build-only-20261116/devdb.log",
+        ".local/evidence/server-build-only-20261116/development-regression/test.log"
+      ],
+      "observed": "17 observations on an owned disposable PostgreSQL."
+    },
+    {
+      "name": "Server build persistence and API",
+      "command": "python3 scripts/check-server-builds.py",
+      "status": "PASS",
+      "evidence": [
+        ".local/evidence/server-build-only-20261116/server-builds.log",
+        ".local/evidence/server-build-only-20261116/server-build-regression/summary.json",
+        ".local/evidence/server-build-only-20261116/server-build-regression/test.log"
+      ],
+      "observed": "7 PASS lines; real loopback HTTP and an owned disposable PostgreSQL. This suite does not run a Docker build."
+    },
+    {
+      "name": "Client build and its CLI contracts",
+      "command": "cargo build --locked --no-default-features; python3 scripts/check-cli-output.py --cli target/debug/miy; check-cli-install.py; check-cli-recovery.py; check-bundle-portability.py check",
+      "status": "PASS",
+      "evidence": [
+        ".local/evidence/server-build-only-20261116/client-build.log",
+        ".local/evidence/server-build-only-20261116/cli-output.log",
+        ".local/evidence/server-build-only-20261116/cli-install.log",
+        ".local/evidence/server-build-only-20261116/cli-recovery.log",
+        ".local/evidence/server-build-only-20261116/bundle.log",
+        ".local/evidence/server-build-only-20261116/bundle.json"
+      ],
+      "observed": "Output 15 (build and deploy run with an empty PATH: a build needs only a server context, a deployment its server build, and --remote is a usage error). Install 17. Recovery 9: a locally built image is refused before any request; an unfinished, other-image or other-source build is refused before preflight; a lost submission keeps its identity; resume confirms the build again and resubmits the original key and payload once; promotion of a release the server did not build is refused from the plan. Docker was on PATH and was called 0 times. Bundle: 39 embedded files."
+    },
+    {
+      "name": "CLI guidance, project MCP discovery and 0.10.0 to 0.11.0 upgrade",
+      "command": "MIY_PREVIOUS_BUNDLE_CLI=.local/release-9133d70-source/target/release/miy node scripts/check-cli-guidance.mjs",
+      "status": "PASS",
+      "evidence": [
+        ".local/evidence/server-build-only-20261116/cli-guidance.log"
+      ],
+      "observed": "5 PASS. The previous CLI is the binary built from the published commit 9133d70 (SHA-256 fc98d5ab...). The explicit upgrade keeps business code, CRLF SQL, components and existing dependency versions."
+    },
+    {
+      "name": "Script checks",
+      "command": "bash scripts/check-static.sh scripts",
+      "status": "PASS",
+      "evidence": [
+        ".local/evidence/server-build-only-20261116/static-scripts.log"
+      ],
+      "observed": "Document links, script syntax, harness tests, API type generation and compatibility with the published 0.10.0 contract, proxy configuration checks. Run while the record file held a placeholder; the links were checked again after the record was written."
+    },
+    {
+      "name": "Web checks",
+      "command": "bash scripts/check-static.sh web",
+      "status": "PASS",
+      "evidence": [
+        ".local/evidence/server-build-only-20261116/static-web.log"
+      ],
+      "observed": "Typecheck, isolated builds, UI 29, platform 54, CLI experience 14, surface boundaries 14, HTTP address 1."
+    },
+    {
+      "name": "Application ACL and the representative app",
+      "command": "python3 scripts/test-sdk-acl.py; python3 scripts/check-common-work.py",
+      "status": "PASS",
+      "evidence": [
+        ".local/evidence/server-build-only-20261116/sdk-acl.log",
+        ".local/evidence/server-build-only-20261116/sdk-acl/result.json",
+        ".local/evidence/server-build-only-20261116/common-work.log",
+        ".local/evidence/server-build-only-20261116/common-work/result.json"
+      ],
+      "observed": "Both PASS on the final tree; neither path is changed by this work."
+    },
+    {
+      "name": "Disposable full stack",
+      "command": "cargo build --locked; scripts/runtime-regression/stack-ui.sh run",
+      "status": "PASS",
+      "evidence": [
+        ".local/evidence/server-build-only-20261116/build-server.log",
+        ".local/evidence/server-build-only-20261116/stack-ui-run.log"
+      ],
+      "observed": "6 of 6. Keycloak, proxy, Core serve and worker; the probe app is built on the stack's server and deployed twice by the working tree CLI (miy app build, miy app deploy). The running platform was unchanged afterwards."
+    },
+    {
+      "name": "New app flow on a disposable full stack",
+      "command": "scripts/runtime-regression/stack-ui.sh up; node scripts/check-pilot-flow.mjs --origin http://localhost:18300 --cli target/debug/miy --credentials-file .local/stack-ui/credentials.json --output ... --unpublished true",
+      "status": "PASS",
+      "evidence": [
+        ".local/evidence/server-build-only-20261116/stack-ui-up.log",
+        ".local/evidence/server-build-only-20261116/pilot-flow.log",
+        ".local/evidence/server-build-only-20261116/pilot-flow/result.json",
+        ".local/evidence/server-build-only-20261116/pilot-flow/app-frame.png"
+      ],
+      "observed": "7 of 7 with CLI and server 0.11.0: OIDC sign-in and console device approval for an administrator and a developer, app init and component sync, registration refused to the developer and approved by the administrator, server build from committed source in 30 seconds, dev deployment running, the app rendered in its own frame origin."
+    },
+    {
+      "name": "App frames on the same stack",
+      "command": "pnpm exec playwright test -c scripts/runtime-regression/app-frames.config.ts",
+      "status": "PASS",
+      "evidence": [
+        ".local/evidence/server-build-only-20261116/app-frames.log"
+      ],
+      "observed": "12 of 12; three apps built on the server and deployed by the working tree CLI."
+    },
+    {
+      "name": "Server state of that stack",
+      "command": "GET /api/v1/capabilities; SQL counts in the stack's core database; stack-ui.sh down",
+      "status": "PASS",
+      "evidence": [
+        ".local/evidence/server-build-only-20261116/stack-ui-down.log"
+      ],
+      "observed": "serverVersion 0.11.0; images.idempotency.v1 is not advertised and app.builds.v1 is. After the pilot flow and the frame apps: 4 succeeded builds, 4 Docker releases, 0 releases without a succeeded server build of their app, 0 rows in image_uploads and image_imports. The stack was removed with 0 leftover resources. Observed in the session; the counts are not in a saved file."
+    }
+  ],
+  "preservedFailures": [
+    {
+      "status": "FAIL",
+      "area": "scripts/runtime-regression/run.py, first run",
+      "evidence": [
+        ".local/evidence/server-build-only-20261116/run-1.log",
+        ".local/evidence/server-build-only-20261116/runtime-regression-1/runner-result.json",
+        ".local/evidence/server-build-only-20261116/runtime-regression-1/cleanup.json"
+      ],
+      "reason": "130 observations, all PASS, but the runner exited 1. The runner had started before its expected counts were edited and still expected 6 operations observations where the suite, without the removed image upload scenario, reported 5. Cleanup also exited 1: three GitLab runner job containers of another project, present at the baseline, ended during the run."
+    },
+    {
+      "status": "FAIL",
+      "area": "scripts/runtime-regression/run.py, second run",
+      "evidence": [
+        ".local/evidence/server-build-only-20261116/run-2.log",
+        ".local/evidence/server-build-only-20261116/runtime-regression-2/runner-result.json",
+        ".local/evidence/server-build-only-20261116/runtime-regression-2/cleanup.json"
+      ],
+      "reason": "testExitCode 0 with 130 observations and matching counts, but cleanup exited 1: four GitLab runner job containers of another project ended during the run. The source then gained the promotion observation; the third run is the result for the final tree."
+    },
+    {
+      "status": "FAIL",
+      "area": "python3 scripts/check-cli-build.py --cli target/debug/miy",
+      "evidence": [],
+      "reason": "Stops at its own sign-in fixture (Missing fixture authentication). The unchanged script fails at the same point with the main checkout's existing 0.10.0 build, so the failure predates this change: the script is from 2026-10-29, before console device approval, and is in neither CI nor CHECKS. Its --remote arguments were updated mechanically. Client recovery of a lost build acknowledgement therefore has no passing script check; the server side is covered by check-server-builds.py."
+    }
+  ],
+  "notRun": [
+    {
+      "status": "NOT_RUN",
+      "scope": "The real server (v2.dwdcc.kr), publication of CLI 0.11.0 and CI for this commit.",
+      "reason": "Not requested: nothing was pushed, published or deployed. The server still runs 0.10.0 and still accepts image uploads."
+    },
+    {
+      "status": "NOT_RUN",
+      "scope": "macOS and Windows client builds and their CLI contract checks.",
+      "reason": "They run in the CI matrix after a push."
+    },
+    {
+      "status": "NOT_RUN",
+      "scope": "scripts/check-architecture.mjs, check-operations.mjs, check-components.mjs.",
+      "reason": "They need the loopback local development stack, which this host cannot run (check.sh refuses it), and nothing calls them. check-architecture.mjs lost its archive transfer and image upload sections without being run."
+    },
+    {
+      "status": "NOT_RUN",
+      "scope": "The published 0.10.0 CLI against a 0.11.0 server.",
+      "reason": "Expected from the code: a local image deployment stops on the missing capability images.idempotency.v1, and a server build of a 0.10.0 project stops on the bundle version until miy app upgrade. Not exercised."
+    },
+    {
+      "status": "NOT_RUN",
+      "scope": "Promotion of a real release that was deployed from an uploaded image.",
+      "reason": "Covered by the regression with a build record marked failed, not with data from an earlier server."
+    },
+    {
+      "status": "NOT_RUN",
+      "scope": "A host firewall rule for app containers.",
+      "reason": "Decision 8 leaves it to the installation. Documented as a condition; the development host has none."
+    },
+    {
+      "status": "NOT_RUN",
+      "scope": "The main checkout after this commit is merged with another worker's uncommitted files.",
+      "reason": "The checks above ran on this commit alone, in a separate worktree."
+    }
+  ],
+  "followUp": {
+    "publishAndDeploy": "On request: CLI candidate CI for 0.11.0, then server, worker, CLI and installer in one rollout record; refresh docs/releases/windows-candidate.json and contracts/api-v1.published.json from that source. No schema change, so no database backup is needed for this rollout.",
+    "atRollout": "Check MIY_ARTIFACTS/.uploads for archives left by an interrupted upload: nothing removes them any more. core-rollout.py still refuses to start while an upload is active on the old server.",
+    "users": "Update the CLI, then run miy app upgrade in each project (guidance files only). A release deployed from an uploaded image keeps running and can be started, stopped, restarted and removed, but cannot be promoted or deployed again: run miy app build and deploy that build.",
+    "later": "Add crates/miy/bundles/0.11.0.json from the published 0.11.0 source when the next bundle version is prepared. Repair or retire scripts/check-cli-build.py."
+  }
+}

@@ -46,6 +46,17 @@ sudo nginx -t
 
 HTTP 주소 `http://v2.dwdcc.kr`는 현재 410을 반환한다. 사용자 접속·설치 안내에는 위 HTTPS 주소를 사용한다. 두 MIY 서비스는 부팅 시 시작하도록 enabled 상태다. 최근 실제 확인의 범위는 [작업본·운영 확인 기록](releases/worktree-sync-2026-11-14-validation.json)에 있으며, 문서 정리를 새 운영 검사로 간주하지 않는다.
 
+### 앱 컨테이너의 네트워크
+
+앱 컨테이너에서 밖으로 나가는 통신은 플랫폼이 제한하지 않는다([결정 8](PLAN.md#확정된-결정)). 차단이 필요하면 네트워크·호스트 방화벽에서 한다. 플랫폼 자체의 경계는 이 제한에 의존하지 않는다. Core listener(위 표의 `127.0.0.1` 주소), PostgreSQL 게시 포트와 앱 컨테이너 게시 포트가 모두 loopback에만 열려 있어 앱 컨테이너가 프록시를 거치지 않고 Core에 닿을 수 없다. PostgreSQL은 설치별 Docker 네트워크로 앱에 연결되며 앱은 자기 DB 역할만 받는다.
+
+외곽 방화벽은 호스트 밖으로 나가는 통신만 본다. 앱 컨테이너에서 **같은 호스트의 다른 서비스**(모든 주소로 열린 포트)로 가는 통신은 호스트에서 막아야 한다. 실제 운영 서버는 다음 중 하나를 설치 조건으로 둔다.
+
+- miy 전용 호스트로 두고 다른 서비스를 모든 주소로 열지 않는다.
+- 호스트 방화벽에서 Docker bridge 대역이 호스트의 다른 포트로 들어오는 것을 막는다(프록시 443과 설치별 네트워크의 PostgreSQL은 허용).
+
+현재 개발 호스트는 miy와 무관한 서비스 여러 개가 모든 주소로 열려 있고 위 규칙이 없다(2026-11-16 `ss -ltn` 확인). 개발 서버 범위에서 수용한 상태이며 운영 전환 때 위 조건을 적용한다.
+
 ## 2. 사용자 PC의 CLI와 MCP
 
 Windows에서는 [설치 화면](https://v2.dwdcc.kr/cli/install)의 설치 파일을 사용하고 서버 주소에 `https://v2.dwdcc.kr`를 입력한다. 다른 OS도 같은 화면이 제공하는 해당 OS/CPU 배포물과 체크섬을 사용한다. 설치한 뒤 새 터미널에서 다음을 실행한다.
@@ -84,6 +95,8 @@ Codex·Claude의 생성된 프로젝트 MCP는 프로젝트의 `.miy-tools/miy[.
 | core DB | schema 23 | 같은 기록. 0023은 `app_files` 표와 색인 두 개 추가 |
 
 2026-11-15에 공통 업무 기능 후보와 파일럿 준비 보완을 함께 반영했고, 게시 CLI로 새 앱 하나를 만들어 서버 빌드·dev 배포·프레임 표시까지 인수했다(`pilot-8e4b32b9`, 중지 상태로 남김). `1976005`는 `9133d70`과 Rust·SDK·프레임 런타임·migration 입력이 같아 포털 UI만 그 커밋에서 반영했다. 그 전 2026-11-14에는 문서 변경 `1686939`와 당시 운영의 빌드 입력·실행 파일·웹 자산을 대조했다. 입력이 같아 바이너리·웹 자산 교체나 서비스 재시작은 하지 않았고, 기록을 `e7a5ff0`으로 남겼다([작업본·운영 확인](releases/worktree-sync-2026-11-14-validation.json)). CLI 게시 후보 고정·검증·잠금 보완은 다음 배포의 새 소스 checkout에서 사용하며 실제 운영 `apply/rollback` 재실행은 `NOT_RUN`이다.
+
+**이 작업본의 다음 후보(미게시·미반영):** CLI/번들 0.11.0은 서버 배포를 서버 빌드 산출물로 한정한다([검증 기록](releases/server-build-only-2026-11-16-validation.json)). schema는 23 그대로다. 반영하면 서버·worker와 게시 CLI를 함께 갱신해야 하고, 사용자는 CLI를 갱신한 뒤 각 프로젝트에서 `miy app upgrade`를 실행한다(안내 문서만 바뀐다). 이전에 올린 이미지로 실행 중인 설치의 시작·중지·재시작·제거는 그대로 동작하지만, 그 릴리스를 prod로 승격하거나 같은 이미지를 다시 배포할 수는 없고 `miy app build`로 서버에서 다시 빌드해 배포해야 한다.
 
 `main` 변경은 자동 배포되지 않는다. 서버를 갱신할 때에는 같은 버전 문자열이라도 대상 source commit·빌드 입력·설치된 SQL·게시물의 출처를 함께 확인한다. 검증한 소스의 별도 checkout에서 빌드하고 §7의 도구로 서버/worker·UI·게시 index를 같은 기록에 묶어 반영한다.
 
@@ -133,7 +146,7 @@ python3 scripts/check-cli-downloads.py --origin https://v2.dwdcc.kr \
 
 `check-mcp.mjs`는 로컬 검증 계정의 전체 세션을 철회하므로 일반 플랫폼 연결 확인에 사용하지 않는다.
 
-새 앱을 실제로 만들어 배포까지 확인할 때는 `check-pilot-flow.mjs`를 쓴다. 관리자·개발자가 일반 OIDC로 콘솔에 로그인해 CLI를 device 승인하고, 게시 CLI로 `app init` → `component sync` → 등록 → 관리자 승인 → 서버 빌드(`--build remote`, 기본) 또는 로컬 Docker 빌드 → dev 배포 → dev 포털의 앱 프레임 표시까지 수행한다. **서버를 바꾼다:** 실행마다 `pilot-*` 앱 하나(등록·dev develop 권한·dev DB·릴리스·컨테이너)가 생기고, 끝날 때 앱을 중지한다(`--keep-running true`로 유지). 앱 행과 DB는 남는다. `--publish-component DIR`을 주면 관리자가 그 공용 컴포넌트 버전을 먼저 게시한다.
+새 앱을 실제로 만들어 배포까지 확인할 때는 `check-pilot-flow.mjs`를 쓴다. 관리자·개발자가 일반 OIDC로 콘솔에 로그인해 CLI를 device 승인하고, 게시 CLI로 `app init` → `component sync` → 등록 → 관리자 승인 → 서버 빌드 → dev 배포 → dev 포털의 앱 프레임 표시까지 수행한다. **서버를 바꾼다:** 실행마다 `pilot-*` 앱 하나(등록·dev develop 권한·dev DB·릴리스·컨테이너)가 생기고, 끝날 때 앱을 중지한다(`--keep-running true`로 유지). 앱 행과 DB는 남는다. `--publish-component DIR`을 주면 관리자가 그 공용 컴포넌트 버전을 먼저 게시한다.
 
 ```sh
 node scripts/check-pilot-flow.mjs --origin https://v2.dwdcc.kr \

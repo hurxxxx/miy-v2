@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""CLI wire recovery against portal/console loopback fixtures with synthetic archives.
+"""CLI wire recovery against portal/console loopback fixtures with a synthetic server build.
 
-Runs the real CLI's export/hash/upload/journal/resume paths. A temporary fake Docker
-executable only writes a fixture archive; this does not validate Docker, image
-import, worker execution, or deployed services. Those require runtime regression.
+Runs the real CLI's receipt check/journal/submit/resume paths. A deployment names the
+server build that produced its image, so a temporary fake Docker executable only
+records that it was called: it must never be. This does not validate server builds,
+worker execution, or deployed services. Those require runtime regression.
 Only Python's standard library and Git are needed. No global settings are changed.
 """
 
@@ -37,8 +38,6 @@ REFRESH = "miy_refresh_" + "r" * 48
 DEVICE = "miy_device_" + "d" * 48
 APP = "recovery-probe"
 IMAGE = "sha256:" + "a" * 64
-ARCHIVE = (b"CLI wire fixture, not a Docker image\0\r\n" * 4096)
-ARCHIVE_HASH = hashlib.sha256(ARCHIVE).hexdigest()
 
 
 def canonical(value):
@@ -46,18 +45,16 @@ def canonical(value):
 
 
 def install_fake_docker(root, env):
+    """Docker is on PATH only to prove that building and deploying never call it."""
     directory = root / "fake-tools"
     directory.mkdir()
     script = directory / ("docker.py" if os.name == "nt" else "docker")
     script.write_text(
         "#!/usr/bin/env python3\n"
-        "import os, sys\nfrom pathlib import Path\n"
-        f"expected_image = {IMAGE!r}\n"
-        "if len(sys.argv) != 5 or sys.argv[1:3] != ['save', '--output'] or sys.argv[4] != expected_image:\n"
-        "    raise SystemExit(97)\n"
-        f"Path(sys.argv[3]).write_bytes({ARCHIVE[:len(ARCHIVE)//4096]!r} * 4096)\n"
+        "import os, sys\n"
         "with open(os.environ['MIY_RECOVERY_DOCKER_LOG'], 'a', encoding='utf-8') as log:\n"
-        "    log.write('save\\n')\n",
+        "    log.write(' '.join(sys.argv[1:]) + '\\n')\n"
+        "raise SystemExit(97)\n",
         encoding="utf-8",
     )
     script.chmod(0o700)
@@ -74,26 +71,36 @@ class Fixture:
         self.config = config
         self.login_id = str(uuid.uuid4())
         self.session_id = str(uuid.uuid4())
-        self.upload = None
+        self.build_id = str(uuid.uuid4())
+        self.receipt = None
+        self.build_override = {}
+        self.build_checks = 0
+        self.request_id = None
         self.job = None
         self.requests = []
         self.surface_requests = []
         self.failures = []
-        self.upload_posts = 0
         self.runtime_posts = 0
         self.lifecycle_posts = 0
         self.lifecycle_preflights = 0
+        self.promote_preflights = 0
         self.lifecycle_jobs = []
         self.lifecycle_permission_restored = False
         self.lifecycle_generation = 1
         self.installation_id = str(uuid.uuid4())
         self.release_id = str(uuid.uuid4())
-        self.receipt_override = {"archiveHash": "0" * 64}
         self.first_submission = None
+
+    def build(self):
+        """The succeeded server build the project's receipt names."""
+        return {"id": self.build_id, "action": "build", "environment": "dev", "actor": "fixture-user", "userId": "fixture-user",
+                "appId": APP, "sourceCommit": self.receipt["sourceCommit"], "archiveHash": self.receipt["archiveHash"],
+                "sizeBytes": 1024, "platform": "linux/amd64", "status": "succeeded", "imageId": IMAGE,
+                "version": self.receipt["version"], "bundleVersion": self.receipt["bundleVersion"], **self.build_override}
 
     def journal(self, request_id):
         path = self.config / "journal" / f"{request_id}.json"
-        require(path.is_file(), "Upload arrived before a durable request journal existed")
+        require(path.is_file(), "Submission arrived before a durable request journal existed")
         entry = json.loads(path.read_bytes())
         require(entry["requestId"] == request_id, "Journal request identity differs")
         require(entry["context"] == "fixture" and entry["appId"] == APP, "Journal target differs")
@@ -102,6 +109,8 @@ class Fixture:
         require(entry["payload"]["idempotencyKey"] == request_id, "Checked submission key missing")
         expected_image = IMAGE if entry["intent"]["action"] == "deploy" else None
         require(entry["payload"]["imageId"] == expected_image, "Checked image differs")
+        require("upload" not in entry, "Journal still records an image upload")
+        require(entry.get("serverBuild") == (self.receipt if expected_image else None), "Journal does not name the server build of its image")
         require(entry["payload"]["expectedState"]["target"] == {"appId": APP, "environment": "dev"}, "Expected target missing")
         require(entry["payloadHash"] == hashlib.sha256(canonical(entry["payload"])).hexdigest(), "Checked payload hash missing or different")
         head = self.config / "journal" / f"head-{entry['inputHash']}.json"
@@ -174,17 +183,16 @@ def fixture_server(config):
             if path != "/api/v1/capabilities":
                 self.authenticated()
             if path == "/api/v1/capabilities":
-                self.send_json(200, {"schemaVersion": 1, "cliContractVersion": 1, "runtimePlatform": "linux/amd64", "features": ["auth.device.v1", "auth.sessions.v1", "runtime.preflight.v2", "runtime.jobs.v1", "runtime.events.v1", "images.idempotency.v1"]})
+                self.send_json(200, {"schemaVersion": 1, "cliContractVersion": 1, "runtimePlatform": "linux/amd64", "features": ["auth.device.v1", "auth.sessions.v1", "runtime.preflight.v2", "runtime.jobs.v1", "runtime.events.v1", "app.builds.v1"]})
             elif path == "/api/v1/me":
                 self.send_json(200, {"id": "fixture-user", "csrf": "fixture-csrf"})
-            elif path.startswith(f"/api/v1/apps/{APP}/image-uploads/by-request/") or path.startswith("/api/v1/image-uploads/"):
-                require(state.upload is not None, "Upload receipt requested before acceptance")
-                identifier = path.rsplit("/", 1)[-1]
-                require(identifier in [state.upload["id"], state.upload["requestId"]], "Receipt lookup changed identity")
-                self.send_json(200, {**state.upload, **state.receipt_override})
+            elif path == f"/api/v1/builds/{state.build_id}":
+                require(state.receipt is not None, "Build receipt checked before the project had one")
+                state.build_checks += 1
+                self.send_json(200, state.build())
             elif path == "/api/v1/runtime/jobs":
                 require(query.get("appId") == [APP], "Recovery lookup omitted app scope")
-                require(state.upload and query.get("requestId") == [state.upload["requestId"]], "Recovery lookup changed request identity")
+                require(state.request_id and query.get("requestId") == [state.request_id], "Recovery lookup changed request identity")
                 self.send_json(200, {"jobs": [state.job] if state.job else [], "nextCursor": None})
             elif known_job:
                 self.send_json(200, known_job)
@@ -225,19 +233,6 @@ def fixture_server(config):
             if self.server.surface == "console":
                 self.send_json(403, {"error": {"code": "wrong_browser_purpose"}})
                 return
-            if self.path == f"/api/v1/apps/{APP}/images":
-                self.authenticated()
-                state.upload_posts += 1
-                request_id = self.headers.get("x-miy-request-id")
-                require(str(uuid.UUID(request_id)) == request_id, "Upload key must be a UUID")
-                require(self.headers.get("x-miy-image") == IMAGE, "Upload image changed")
-                require(raw == ARCHIVE and hashlib.sha256(raw).hexdigest() == ARCHIVE_HASH, "Exported archive bytes changed")
-                require(self.headers.get("x-miy-archive-sha256") == ARCHIVE_HASH, "Upload digest differs from bytes")
-                entry = state.journal(request_id)
-                require(entry["upload"]["archiveHash"] == ARCHIVE_HASH and entry["upload"]["sizeBytes"] == len(raw), "Upload metadata not durable before transfer")
-                state.upload = {"id": str(uuid.uuid4()), "requestId": request_id, "appId": APP, "imageId": IMAGE, "archiveHash": ARCHIVE_HASH, "sizeBytes": len(raw), "status": "ready"}
-                self.lose_ack()
-                return
             body = json.loads(raw or b"{}")
             if self.path == "/auth/cli/device":
                 self.send_json(200, {"id": state.login_id, "deviceCode": DEVICE, "userCode": "ABCDE-FGHJK", "verificationPath": f"/cli/device/{state.login_id}", "expiresIn": 300, "interval": 1})
@@ -246,6 +241,11 @@ def fixture_server(config):
             elif self.path == f"/api/v1/apps/{APP}/runtime/preflight":
                 self.authenticated()
                 installation = None
+                if body["action"] == "promote":
+                    # A release whose image an earlier CLI uploaded: accepted in dev, not built by the server.
+                    state.promote_preflights += 1
+                    self.send_json(200, {"input": body, "expectedState": {"target": body["target"], "installation": None}, "checks": [{"name": "authorization", "status": "passed", "code": None, "reason": None}, {"name": "releaseAcceptance", "status": "passed", "code": None, "reason": None}, {"name": "image", "status": "failed", "code": "server_build_required", "reason": None}], "changes": [], "canSubmit": False, "fullyChecked": False, "desiredState": "running", "requiresConfirmation": True, "preservesDatabase": True})
+                    return
                 if body["action"] in ["start", "stop"]:
                     state.lifecycle_preflights += 1
                     installation = {"installationId": state.installation_id, "releaseId": state.release_id, "generation": state.lifecycle_generation, "desiredState": "running", "runtimeStatus": "running", "dbStatus": "ready", "imageId": IMAGE}
@@ -256,11 +256,16 @@ def fixture_server(config):
                     self.lifecycle(body)
                     return
                 state.runtime_posts += 1
-                require(state.upload and body["idempotencyKey"] == state.upload["requestId"], "Runtime key differs from uploaded request")
                 entry = state.journal(body["idempotencyKey"])
                 require(entry["payload"] == body and entry["submissionStatus"] == "sending", "Runtime POST preceded durable sending state")
                 require(body["action"] == "deploy" and body["imageId"] == IMAGE, "Runtime changed checked input")
-                state.first_submission = body
+                if state.first_submission is None:
+                    # The first request is lost before the server records anything.
+                    state.first_submission = body
+                    state.request_id = body["idempotencyKey"]
+                    self.lose_ack()
+                    return
+                require(body == state.first_submission, "Resubmission changed the saved key or payload")
                 # One complete RuntimeJob is shared by detail, page and events.
                 state.job = {
                     "id": str(uuid.uuid4()),
@@ -355,27 +360,43 @@ def check(cli):
             bundle = json.loads((project / "miy.bundle.json").read_bytes())["bundleVersion"]
             metadata = {"appId": APP, "version": manifest["version"], "sourceCommit": git("rev-parse", "HEAD"), "bundleVersion": bundle, "imageId": IMAGE, "platform": "linux/amd64"}
             (project / "dist").mkdir(exist_ok=True)
-            for name in ["image.json", "build.json"]:
-                (project / "dist" / name).write_text(json.dumps(metadata), encoding="utf-8")
-            require(git("status", "--porcelain") == "", "Synthetic metadata unexpectedly dirtied source")
-            state.requests.clear()
 
-            result = run(["--context", "fixture", "app", "deploy", "--no-wait"], cwd=project, expected=8, command="app deploy")
+            def save_build(image):
+                (project / "dist/image.json").write_text(json.dumps(image), encoding="utf-8")
+                (project / "dist/build.json").write_text(json.dumps(metadata), encoding="utf-8")
+                require(git("status", "--porcelain") == "", "Synthetic metadata unexpectedly dirtied source")
+
+            deploy = ["--context", "fixture", "app", "deploy", "--no-wait"]
+            # What an earlier CLI left behind: a locally built image with no server build.
+            save_build(metadata)
+            state.requests.clear()
+            result = run(deploy, cwd=project, expected=6, command="app deploy")
+            require(result["error"]["code"] == "server_build_required", "A locally built image was not refused")
+            require(result["error"]["recovery"]["args"] == ["app", "build"], "The refusal must name the server build command")
+            require(not state.requests and not (config / "journal").exists(), "A refused local image reached the server or left a request")
+            ok("a locally built image is refused before any request; recovery names app build")
+
+            state.receipt = {"context": "fixture", "origin": origin, "userId": "fixture-user", "jobId": state.build_id, "appId": APP,
+                             "version": manifest["version"], "bundleVersion": bundle, "sourceCommit": metadata["sourceCommit"],
+                             "archiveHash": "c" * 64, "platform": "linux/amd64", "imageId": IMAGE}
+            save_build({**metadata, "serverBuild": state.receipt})
+            for override in [{"status": "running", "imageId": None}, {"imageId": "sha256:" + "b" * 64}, {"sourceCommit": "d" * 40}]:
+                state.build_override = override
+                result = run(deploy, cwd=project, expected=6, command="app deploy")
+                require(result["error"]["code"] == "server_build_not_ready", "An unconfirmed build receipt was accepted")
+            require(state.build_checks == 3 and state.runtime_posts == 0 and not (config / "journal").exists(), "An unconfirmed receipt created a request")
+            ok("unfinished, other-image and other-source builds are refused before preflight or submission")
+
+            state.build_override = {}
+            result = run(deploy, cwd=project, expected=8, command="app deploy")
             require(not state.failures, "Fixture contract checks failed: " + "; ".join(state.failures))
-            require(result["error"]["code"] == "upload_receipt_mismatch", "Mismatched receipt was accepted")
-            require(state.upload_posts == 1 and state.runtime_posts == 0, "Lost upload acknowledgement caused duplicate or premature mutation")
-            request_id = state.upload["requestId"]
-            require(result["error"]["details"]["requestId"] == request_id, "Upload error lost recovery identity")
-            ok("complete checked journal precedes upload; lost acknowledgement uses receipt lookup without another POST")
+            require(result["error"]["code"] == "submission_result_unknown", "A lost submission was not recoverable")
+            require(state.runtime_posts == 1 and state.job is None, "The lost submission was not sent exactly once")
+            request_id = state.request_id
+            require(result["error"]["details"]["requestId"] == request_id, "Submission error lost recovery identity")
+            ok("complete checked journal naming the server build precedes submission; a lost request keeps its identity")
 
             resume = ["--context", "fixture", "--app", APP, "job", "resume", request_id, "--environment", "dev", "--no-wait"]
-            for override in [{"requestId": str(uuid.uuid4())}, {"imageId": "sha256:" + "b" * 64}, {"archiveHash": "f" * 64}]:
-                state.receipt_override = override
-                result = run(resume, cwd=project, expected=8, command="job resume")
-                require(result["error"]["code"] == "upload_receipt_mismatch", "Receipt binding mismatch escaped validation")
-            require(state.upload_posts == 1 and state.runtime_posts == 0, "Receipt mismatch triggered remote mutation")
-            ok("receipt request ID, immutable image and archive hash mismatches are rejected")
-
             for flag, value in [("--app", "different-app"), ("--environment", "prod")]:
                 wrong = list(resume)
                 wrong[wrong.index(flag) + 1] = value
@@ -385,17 +406,21 @@ def check(cli):
                 require(not any(method == "POST" for method, _ in state.requests[before:]), "Mismatched target caused mutation")
             ok("explicit app and environment mismatch cannot resume a dev mutation")
 
-            state.receipt_override = {}
+            state.build_override = {"status": "failed", "imageId": None}
+            result = run(resume, cwd=project, expected=6, command="job resume")
+            require(result["error"]["code"] == "server_build_not_ready", "Resume resubmitted without confirming its server build")
+            require(state.runtime_posts == 1, "An unconfirmed receipt was resubmitted")
+            state.build_override = {}
             result = run(resume, cwd=project, expected=8, command="job resume")
             require(not state.failures, "Fixture contract checks failed: " + "; ".join(state.failures))
             require(result["error"]["code"] == "submission_result_unknown", "Lost runtime acknowledgement was not recoverable")
-            require(state.upload_posts == state.runtime_posts == 1, "Original upload/runtime requests were duplicated")
+            require(state.runtime_posts == 2 and state.job, "Resume did not resubmit the original request exactly once")
             recovered = run(resume, cwd=project, command="job resume")["data"]
             require(recovered["id"] == state.job["id"], "Resume did not recover the accepted job")
             entry = state.journal(request_id)
             require(entry["jobId"] == state.job["id"] and entry["payload"] == state.first_submission, "Resume changed the saved request or lost the job")
-            require(not Path(entry["upload"]["archivePath"]).exists(), "Ready receipt retained unnecessary archive bytes")
-            ok("runtime acknowledgement loss resumes the original request and job without reupload or resubmission")
+            require(state.runtime_posts == 2, "Recovering the accepted job submitted again")
+            ok("resume confirms the build again, resubmits the original key and payload once, then recovers the accepted job")
 
             before = len(state.requests)
             timed_out = run(["--context", "fixture", "job", "watch", state.job["id"], "--timeout", "1"], cwd=project, expected=8, command="job watch")
@@ -407,10 +432,9 @@ def check(cli):
             completed = run(resume[:-1], cwd=project, command="job resume")["data"]
             require(completed["id"] == recovered["id"] and completed["status"] == "succeeded", "Observation failed to resume the same remote job")
             require(state.journal(request_id)["sequence"] == 2, "Event cursor did not advance across timeout recovery")
-            require(state.upload_posts == state.runtime_posts == 1, "Recovery repeated an accepted mutation")
-            require((root / "docker-calls.txt").read_text().splitlines() == ["save"], "Resume exported the image again")
+            require(state.runtime_posts == 2, "Recovery repeated an accepted mutation")
             require(not state.failures, "Fixture contract checks failed: " + "; ".join(state.failures))
-            ok("timeout only stops observation; cursor resume completes the same job with one export and one POST per stage")
+            ok("timeout only stops observation; cursor resume completes the same job without another submission")
 
             # A new explicit lifecycle command may perform fresh admission after
             # permission/state recovery. It is distinct from retrying a Never job.
@@ -430,10 +454,18 @@ def check(cli):
                 require(state.lifecycle_preflights == before + 1, "Fresh lifecycle skipped current admission")
                 require(state.journal(fresh["requestId"])["payload"]["expectedState"]["installation"]["generation"] == state.lifecycle_generation, "Fresh lifecycle journal retained the failed expected state")
             require(state.lifecycle_preflights == state.lifecycle_posts == 4, "Lifecycle scenario created unexpected admission/mutation counts")
-            require(state.upload_posts == state.runtime_posts == 1, "Lifecycle recovery replayed deployment requests")
+            require(state.runtime_posts == 2, "Lifecycle recovery replayed deployment requests")
+            require(not (root / "docker-calls.txt").exists(), "Deployment or recovery invoked Docker")
             require(not state.failures, "Fixture contract checks failed: " + "; ".join(state.failures))
             ok("failed start/stop remains nonretryable; restored explicit commands use fresh preflight and new request/job IDs")
-            counts = {"deployment": {"exports": 1, "uploadPosts": state.upload_posts, "runtimePosts": state.runtime_posts}, "lifecycle": {"preflights": state.lifecycle_preflights, "runtimePosts": state.lifecycle_posts, "failedJobs": 2, "freshSuccessfulJobs": 2}}
+            posts = sum(1 for method, _ in state.requests if method == "POST")
+            promote = ["--context", "fixture", "--app", APP, "--yes", "app", "promote", "--environment", "prod", "--release", state.release_id, "--no-wait"]
+            refused = run(promote, cwd=project, expected=6, command="app promote")["error"]
+            require(refused["code"] == "server_build_required" and refused["recovery"]["args"] == ["app", "build"], "A release the server did not build must name the server build command")
+            require(state.promote_preflights == 1 and sum(1 for method, path in state.requests if method == "POST") == posts + 1, "A refused promotion did more than read its plan")
+            require(not state.failures, "Fixture contract checks failed: " + "; ".join(state.failures))
+            ok("promotion of a release whose image the server did not build is refused from the plan and names app build")
+            counts = {"deployment": {"dockerCalls": 0, "buildReceiptChecks": state.build_checks, "runtimePosts": state.runtime_posts}, "lifecycle": {"preflights": state.lifecycle_preflights, "runtimePosts": state.lifecycle_posts, "failedJobs": 2, "freshSuccessfulJobs": 2}}
 
     print(json.dumps({"passed": len(passed), "scope": "CLI wire/client recovery", "counts": counts, "liveServicesUsed": False, "realDockerUsed": False, "temporaryProjectsRemoved": True}))
 

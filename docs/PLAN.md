@@ -1,6 +1,6 @@
 # miy 추진 계획
 
-- 작성일: 2026-10-20 · 정리일: 2026-11-15
+- 작성일: 2026-10-20 · 정리일: 2026-11-16
 - 기준: 2026-11-15 개발 서버 반영(`9133d70`, 포털 UI `1976005`) 이후의 작업본과 실행 기록. 소스 구현·격리 검증·게시·개발 서버 반영을 구분한다.
 
 이 문서가 **완료 요약·진행 상태·남은 작업·착수 순서의 정본**이다. 상세 설계와 인수 기준은 [문서 지도](README.md)의 담당 문서, 실제 배포 상태는 [서버 운영 안내](SERVER-OPERATIONS.md), CLI 후보·게시 상태는 [CLI 릴리스](CLI-RELEASE.md)가 관리한다.
@@ -20,6 +20,8 @@
 
 **공통 기능 첫 구현과 파일럿 준비 보완을 2026-11-15 개발 서버에 반영했다.** CLI/번들 0.10.0·Rust SDK 0.4.0·UI 1.1.0·schema 23을 게시·반영했고, 게시 CLI로 새 앱 하나를 만들어 서버 빌드·dev 배포·프레임 표시까지 확인했다([반영 기록](releases/pilot-0.10.0-2026-11-15-deployment.json)). **대기:** 배포된 프레임·preview에서 디렉터리 선택/공유/첨부를 함께 쓰는 전체 경로, 새로 등록한 실제 사용자의 로그인, Windows·AI 에이전트 인수. Core HTTP·실제 PostgreSQL·브라우저 검사는 각각 분리한 환경에서 수행했으며 하나의 실제 서버 전체 인수로 합산하지 않는다([검증 기록](releases/common-components-2026-11-14-validation.json), [리뷰 후속 기록](releases/common-components-2026-11-15-review-fixes.json)). 파일럿 준비 점검에서 찾은 공백과 그 보완(앱 DB 권한 경계, 이미지 계약 추출 제한, migration 시간 한도, 사용자 등록, 새 서버 seed·프레임 런타임)은 [점검 기록](releases/pilot-readiness-2026-11-15-validation.json)과 [보완 기록](releases/pilot-improvements-2026-11-15-validation.json)에 있다.
 
+**서버 배포를 서버 빌드 산출물로 한정하는 변경의 구현·격리 검증을 완료했다(2026-11-16, CLI/번들 0.11.0 후보).** 로컬 배포용 빌드와 이미지 업로드를 제거해 `app build`는 항상 서버에서 검사·빌드하고, 서버는 그 앱의 성공한 서버 빌드가 만든 이미지만 dev에 배포하고 prod로 승격한다. 앱 컨테이너의 외부 통신은 플랫폼이 제한하지 않고 네트워크·호스트 방화벽이 담당하는 것으로 확정했다. 이 후보는 아직 게시하거나 개발 서버에 반영하지 않았다([검증 기록](releases/server-build-only-2026-11-16-validation.json)).
+
 ## 완료한 작업
 
 완료된 작업은 아래에만 요약한다. 과거 실행별 수치·실패·NOT_RUN은 [releases](releases/)와 [보관 문서](archive/README.md)에 유지한다.
@@ -35,7 +37,8 @@
 | 배포 도구 리뷰 보완 | 후보 패키지 고정·완전 검증, 게시 잠금 공유, index 변경 거부·복구 확인 구현 및 모의·스크립트 검사 | [검증 기록](releases/cli-rollout-review-fixes-2026-11-14-validation.json). 보완 후 실제 운영 apply/rollback 실행과 구분 |
 | 공통 기능 조사·저장소 정리 | AI-DO 이식 대상 46개 식별·책임/인수 분류, 기존 변경 커밋·푸시, 병합된 브랜치 정리, 운영과 빌드 입력 대조 | [이식 대상](AI-DO-COMMON-MIGRATION.md), [작업본·운영 확인](releases/worktree-sync-2026-11-14-validation.json). 조사나 문서 변경은 기능 구현·신규 배포가 아님 |
 | 공통 업무 기능 첫 구현 | G4 검색/페이지·현재 멤버십·선택기, typed SDK, 기본 UI, 앱 소유 ACL·공유/회수, 10MiB 첨부·별도 전송 경로와 대표 프로젝트·업무 앱 구현·격리 검증. CLI/번들 0.10.0·UI 1.1.0·schema 23 게시·개발 서버 반영 | 제한된 migration/runtime DB 역할, 권한 회수·응답 유실·5MiB 전송·앱 DB 별도 복원 확인. [검증 기록](releases/common-components-2026-11-14-validation.json), [반영 기록](releases/pilot-0.10.0-2026-11-15-deployment.json). 배포 프레임·preview의 전체 경로와 대용량/전체 복원 제품은 별도 |
-| 파일럿 준비 보완 | 서버 빌드의 migration 이력 조회를 앱 자신의 역할로 전환, 이미지 `/miy` 제한 추출, migration 시간 한도, 관리자의 사용자 등록·역할 변경과 콘솔 화면, 모든 공용 UI 버전 seed, `up.sh`의 프레임 런타임 빌드, 게시 CLI로 실서버 새 앱 인수 도구 | [보완 기록](releases/pilot-improvements-2026-11-15-validation.json), [반영 기록](releases/pilot-0.10.0-2026-11-15-deployment.json). 앱 egress 제한·prod 승격의 서버 빌드 한정은 결정 대기. 새 서버 전체 설치 인수는 순서 6 |
+| 파일럿 준비 보완 | 서버 빌드의 migration 이력 조회를 앱 자신의 역할로 전환, 이미지 `/miy` 제한 추출, migration 시간 한도, 관리자의 사용자 등록·역할 변경과 콘솔 화면, 모든 공용 UI 버전 seed, `up.sh`의 프레임 런타임 빌드, 게시 CLI로 실서버 새 앱 인수 도구 | [보완 기록](releases/pilot-improvements-2026-11-15-validation.json), [반영 기록](releases/pilot-0.10.0-2026-11-15-deployment.json). 당시 결정 대기였던 앱 egress·서버 빌드 한정은 2026-11-16 확정(결정 8·9). 새 서버 전체 설치 인수는 순서 6 |
+| 서버 빌드 전용 배포 | 배포·승격 접수, 사전 점검, worker 실행에서 그 앱의 성공한 서버 빌드 산출물만 허용(`server_build_required`). 이미지 업로드 API·적재 worker·위임 action `upload`와 CLI의 로컬 배포용 빌드·이미지 전송 제거. CLI/번들 0.11.0 후보와 0.10.0에서의 `app upgrade` 경로. 소스·격리 검증 완료 | [검증 기록](releases/server-build-only-2026-11-16-validation.json). schema 변경 없음(23 유지). 게시·개발 서버 반영 전이며 아래 대기 표에서 추적 |
 
 ## 일부 구현된 작업
 
@@ -77,6 +80,7 @@
 | 경계·프레임 잔여 | 같은 등록 도메인 P2 쿠키 간섭(FV-06), 화면낭독 출력, 실제 CA/단말 인수, IdP 비활성화·소비한 OAuth callback 재사용·새 issuer 외부 HTTP MCP 인증 | [BV](APP-BOUNDARIES.md#경계-인수)·[FV](APP-FRAMES.md#6-실증-계획). 해당 환경/기능 변경 시 실행. P2 `*.localhost` 실증과 실제 등록 도메인의 쿠키 시험을 구분. P1은 활성화 전 인수 |
 | 자원·호환 | Windows 실제 TCP/RSS, 여러 앱·관리 API 복합 부하, 전체 자원 예약/회수·호스트 지원 규모 | 코어 3~5차와 해당 제한 변경 때 수행. [CAPACITY](CAPACITY.md). 현재 설정값·Linux 결과를 전체 성능 보장으로 확대하지 않음 |
 | 배포 도구 실제 실행 | dev 포털 설정 부분 실패 복원, 앱 프레임 설정 복구 보완의 실제 운영 apply/rollback, CLI 동시 게시의 rollback | CLI 후보 고정·게시 잠금을 포함한 `core-rollout.py apply`는 2026-11-15 반영에서 실제 수행. 나머지는 모의·격리 검증 범위로 보존하며 확인만을 위해 운영을 재전환하지 않음 |
+| 0.11.0 후보(서버 빌드 전용 배포) | CLI 0.11.0 게시와 서버·worker 반영, 게시 CLI로 실서버 새 앱의 서버 빌드→dev 배포, 기존 0.10.0 앱의 `app upgrade`. 반영 후에는 이전에 올린 이미지의 릴리스를 승격할 수 없고 서버 빌드로 다시 배포해야 함 | 반영 요청 시 수행. schema 변경이 없어 DB 백업 대상이 아님. [검증 기록](releases/server-build-only-2026-11-16-validation.json)의 격리 PASS를 실서버 PASS로 옮기지 않음 |
 | 공개 접근 위험 확인 | 공개 콘솔 외부 접근 범위, 전 사용자 credential·기존 기기 worker 점검, 공격 경로 실증 | 운영 책임자 확인/결정 대기. 재검토 기한 2026-11-13은 지났고 이번 정리로 연장하거나 위험 수용으로 처리하지 않음. [운영 위험 계약](APP-BOUNDARIES.md#전환-전-임시-운영) |
 
 ## 확정된 결정
@@ -90,6 +94,8 @@
 | 5 | Hermes 채택 유지 | 채택은 확정. 어댑터·upstream 공백 처리의 통합 비용은 4-1 실험에서 확인 |
 | 6 | 사내 최소 보안·개발 편의, 세 출처·세션과 prod Use/관리 분리 | 별도 IdP·MFA 의무화·자동 CA·전체 앱 전환은 기능 개발의 선행 조건이 아님. 공개 서버를 사내 신뢰 범위로 자동 인정하지 않음. 미지원 service/AI credential·업무 WebSocket은 기본 거부 |
 | 7 | 업무 앱만 설치별 출처 iframe | 현재 [앱 프레임 계약](APP-FRAMES.md) 적용. 플랫폼 자체 화면·라우팅 유지, 같은 사이트/포트의 쿠키 격리·프로세스 분리 보장 없음 |
+| 8 (2026-11-16) | 앱 컨테이너의 외부 통신은 플랫폼이 제한하지 않는다. 필요한 차단은 네트워크·호스트 방화벽이 한다 | 플랫폼 코드 변경 없음. 플랫폼 경계는 이 제한에 의존하지 않는다(Core·DB·앱 게시 포트는 loopback). 같은 호스트의 다른 서비스로 가는 통신은 외곽 방화벽이 보지 못하므로 전용 호스트 또는 호스트 방화벽 규칙을 설치 조건으로 둔다. [경계 발견 17](APP-BOUNDARIES.md#추가-발견-사항과-처리-방향), [서버 운영 안내](SERVER-OPERATIONS.md) |
+| 9 (2026-11-16) | 서버 배포는 서버 빌드 산출물만 받는다. 로컬 빌드는 로컬 테스트용이다 | dev 배포·prod 승격 모두 그 앱의 성공한 서버 빌드 이미지만 허용. 로컬 테스트는 `app dev`. CLI/번들 0.11.0 후보에 구현, 게시·반영 대기. [권한 계약](CORE-PERMISSIONS.md), [경계 발견 18](APP-BOUNDARIES.md#추가-발견-사항과-처리-방향) |
 
 ## 결정이 필요한 사항
 
@@ -101,11 +107,10 @@
 | 5. Hermes 통합 비용 | 채택은 확정. 어댑터·upstream 공백 처리 비용은 4-1 실험에서 평가 |
 | AI-DO 선택 후보 | S11 홈/공지·S13 개인 도킹 도구·C12 사용 통계의 플랫폼/앱 책임과 채택 범위. C12는 외부 수집 식별자·보존 기간·조회 권한까지 결정. [대상 목록](AI-DO-COMMON-MIGRATION.md) |
 | 운영·업무 정책 | 공개 접근 범위, 설치되지 않은 앱의 권한 부여 정책, 감사 보존 기간, 별도 인사 동기화/선택적 오프라인 제공 범위. 기능 설계·인수 전에 해당 정본에서 확정 |
-| 앱 실행 경계(2026-11-15 점검) | 앱 컨테이너의 외부 통신 제한 방식(Core 전용 내부 경로와 허용 목록), prod 승격을 서버 빌드 산출물로 제한할지. [경계 발견 17·18](APP-BOUNDARIES.md#추가-발견-사항과-처리-방향). 정하기 전에는 신뢰하는 사내 개발자의 코드만 배포한다는 전제를 유지 |
 
 ## 미해결 호환성 관찰
 
-Docker 28 classic image store의 native `docker save`는 image `.Id`의 config digest와 OCI manifest digest가 달라 현재 native export 검사에 실패한다. 해결 PASS로 표시하거나 제품 digest 검증을 완화하지 않는다. containerd image store 범위의 회귀와 생성한 classic archive import는 모든 저장소의 raw native export 지원 증거가 아니다. [회귀 환경과 한계](../scripts/runtime-regression/README.md)를 따른다.
+Docker 28 classic image store의 native `docker save` 결과를 서버가 가져오지 못하던 관찰은 **해결이 아니라 대상에서 빠졌다.** 0.11.0 후보부터 서버는 이미지 archive를 받지 않고 자신이 빌드한 이미지만 실행하므로 앱 배포에는 해당 경로가 없다. 0.10.0이 반영된 현재 개발 서버에는 그 경로가 남아 있으며 관찰도 그대로다. [회귀 환경과 한계](../scripts/runtime-regression/README.md)를 따른다.
 
 ## 보류 중인 사용성 개선
 

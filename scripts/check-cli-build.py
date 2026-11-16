@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Real CLI remote-build recovery against an isolated loopback fault fixture.
+"""Real CLI server-build recovery against an isolated loopback fault fixture.
 
 Validates source transfer, provenance, journals and direct-image deploy without
 executing Docker or language tools. Actual worker builds are validated separately.
@@ -239,7 +239,7 @@ def check(cli):
                     self.authenticated()
                     entry = json.loads((config / 'journal' / (body['idempotencyKey'] + '.json')).read_text(encoding='utf-8'))
                     require(entry['payload'] == body and entry['submissionStatus'] == 'sending', 'Deployment preceded durable payload')
-                    require(entry['upload'] is None and entry['serverBuild']['imageId'] == IMAGE, 'Server build attempted image upload')
+                    require('upload' not in entry and entry['serverBuild']['imageId'] == IMAGE, 'Deployment journal does not name its server build')
                     require(body['imageId'] == IMAGE and body['action'] == 'deploy', 'Deployment did not use server image directly')
                     state['runtime_posts'].append(body)
                     if state['lose_runtime_ack']:
@@ -293,12 +293,12 @@ def check(cli):
             git('commit', '--quiet', '-m', 'Committed synthetic app')
             dirty = project / 'src/uncommitted.rs'
             dirty.write_text('// uncommitted source must not reach server', encoding='utf-8', newline='\n')
-            invalid = call(['--context', 'fixture', 'app', 'build', '--remote', '--no-wait'], expected=6)
+            invalid = call(['--context', 'fixture', 'app', 'build', '--no-wait'], expected=6)
             require(invalid['error']['code'] == 'commit_source_before_building' and not state['uploads'], 'Dirty source was submitted')
             dirty.unlink()
             ok('dirty source is rejected before upload without local tool execution')
 
-            result = call(['--context', 'fixture', 'app', 'build', '--remote', '--no-wait'], expected=8)
+            result = call(['--context', 'fixture', 'app', 'build', '--no-wait'], expected=8)
             require(result['error']['code'] == 'build_submission_unknown', 'Lost acknowledgement lost recovery semantics')
             request = result['error']['details']['requestId']
             require(len(state['uploads']) == 1 and (config / 'build-journal' / (request + '.tar')).is_file(), 'Lost acknowledgement duplicated upload or discarded source')
@@ -307,7 +307,7 @@ def check(cli):
             resumed = call(['--context', 'fixture', 'job', 'resume', request, '--no-wait'])['data']
             build_id = resumed['id']
             call(['--context', 'fixture', 'job', 'get', build_id])
-            call(['--context', 'fixture', 'app', 'build', '--remote', '--no-wait'])
+            call(['--context', 'fixture', 'app', 'build', '--no-wait'])
             require(len(state['uploads']) == 1, 'Resume/repeated build duplicated accepted source transfer')
             state['override'] = {'archiveHash': 'f' * 64}
             call(['--context', 'fixture', 'job', 'resume', request, '--no-wait'], expected=8)
@@ -357,7 +357,7 @@ def check(cli):
             ok('malformed build receipt preserves typed validation error without deployment')
 
             change_source('timeout fixture')
-            result = call(['--context', 'fixture', 'app', 'build', '--remote', '--timeout', '1'], expected=8)
+            result = call(['--context', 'fixture', 'app', 'build', '--timeout', '1'], expected=8)
             request = result['error']['details']['requestId']
             pending = call(['--context', 'fixture', 'job', 'resume', request, '--no-wait'])['data']
             require(pending['status'] == 'queued', 'Timeout cancelled accepted build')
@@ -365,13 +365,13 @@ def check(cli):
             state['jobs'][pending['id']].update(status='failed', errorCode='fixture_build_failed')
             call(['--context', 'fixture', 'job', 'resume', request, '--no-wait'], expected=9)
             require(len(state['uploads']) == count, 'Resuming terminal failure started another build')
-            call(['--context', 'fixture', 'app', 'build', '--remote', '--no-wait'])
+            call(['--context', 'fixture', 'app', 'build', '--no-wait'])
             require(len(state['uploads']) == count + 1 and state['uploads'][-1][0] != request, 'Explicit new build reused failed request')
             ok('timeout preserves remote work; terminal failure resumes without rebuilding; explicit build starts new attempt')
 
             change_source('receiving fixture')
             state['next_status'] = 'receiving'
-            received = call(['--context', 'fixture', 'app', 'build', '--remote', '--no-wait'])['data']
+            received = call(['--context', 'fixture', 'app', 'build', '--no-wait'])['data']
             call(['--context', 'fixture', 'job', 'resume', received['requestId'], '--no-wait'])
             require(state['uploads'][-1] == state['uploads'][-2], 'Receiving recovery changed the source or request identity')
             ok('interrupted receiving state resumes the same whole source archive and request')
@@ -379,7 +379,7 @@ def check(cli):
             change_source('network observation fixture')
             state['next_status'] = 'queued'
             state['fail_get_once'] = 1
-            result = call(['--context', 'fixture', 'app', 'build', '--remote'], expected=8)
+            result = call(['--context', 'fixture', 'app', 'build'], expected=8)
             require(result['error']['details']['requestId'] and result['error']['recovery']['args'], 'Network failure lost build recovery identity')
             count = len(state['uploads'])
             call(['--context', 'fixture', 'job', 'resume', result['error']['details']['requestId'], '--no-wait'])
@@ -390,7 +390,7 @@ def check(cli):
                 change_source('interrupt fixture')
                 state['next_status'] = 'queued'
                 count = len(state['uploads'])
-                process = subprocess.Popen([str(cli), '--output', 'json', '--no-input', '--context', 'fixture', 'app', 'build', '--remote'],
+                process = subprocess.Popen([str(cli), '--output', 'json', '--no-input', '--context', 'fixture', 'app', 'build'],
                                            cwd=project, env=env, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
                 try:
                     deadline = time.monotonic() + 30

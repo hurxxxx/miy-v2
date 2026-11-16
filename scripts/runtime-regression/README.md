@@ -2,7 +2,7 @@
 
 Run from the repository root with Rust 1.99.1, Python 3, OpenSSL, Docker, and cached `postgres:18.3` / `python:3.14-slim` images:
 
-The reference server for this suite uses Docker Engine 28 or later with the **containerd image store** (`docker info --format '{{json .DriverStatus}}'` includes `["driver-type","io.containerd.snapshotter.v1"]`). CI explicitly selects and checks this store on its disposable runner before pulling images. Do not change the Docker store on this checkout's production host to run a test. The suite verifies native OCI identity and a generated classic Docker archive imported into the reference store; it does not prove raw native exports from every Docker store are compatible. In particular, Docker 28's classic store writes an OCI index while reporting the config digest as image `.Id`; those distinct identities currently fail the native-export check. That compatibility work is separate from this CI environment correction, and the product's digest validation remains unchanged.
+The reference server for this suite uses Docker Engine 28 or later with the **containerd image store** (`docker info --format '{{json .DriverStatus}}'` includes `["driver-type","io.containerd.snapshotter.v1"]`). CI explicitly selects and checks this store on its disposable runner before pulling images. Do not change the Docker store on this checkout's production host to run a test. The runner builds the suite's app images itself and records each as the app's succeeded server build, the only image source a deployment accepts; the suite also checks that an image without that record is refused in the plan, at submission and by the worker, and that an accepted release of such an image cannot be promoted. The server no longer imports image archives, so the earlier archive-import and native-export observations (including the Docker 28 classic-store export mismatch) no longer apply. Actual server builds are covered by `scripts/check-server-builds.py`.
 
 ```sh
 python3 scripts/runtime-regression/run.py
@@ -12,7 +12,7 @@ The runner creates a private execution directory under `.local/evidence/runtime-
 
 The Docker shim injects an error for container lookup and kills only the test worker immediately after successful removal of its exact test container ID. Tests cover ownership refusal, confirmed absence, retry after interruption, service failure/recovery, manual stop, audit transitions, and existing deployment/data-preservation boundaries. Twelve gated HTTP fixtures also verify that the real worker can start a different app before their responses arrive, uses bounded concurrency, and discards observations from before a same-release lifecycle change. These additional service fixtures use synthetic installation metadata, not twelve deployed app containers.
 
-Expected observations: runtime 46, operations 6, CLI 6, auth 8, permissions 26, delegation 10, browser boundary 12, migration 3 and frames 14 (131 total). The boundary suite exercises actual fixed portal/console HTTP listeners with purpose-bound browser sessions, both CLI approval formats, legacy revocation, application API/header isolation and unchanged CLI credential lifetimes. It uses synthetic identity metadata, not real OIDC.
+Expected observations: runtime 47, operations 5, CLI 6, auth 8, permissions 26, delegation 10, browser boundary 12, migration 3 and frames 14 (131 total). The boundary suite exercises actual fixed portal/console HTTP listeners with purpose-bound browser sessions, both CLI approval formats, legacy revocation, application API/header isolation and unchanged CLI credential lifetimes. It uses synthetic identity metadata, not real OIDC.
 
 Any failed observation or missing results file makes the command fail. Cleanup runs even when setup fails or the runner receives SIGINT/SIGTERM. The runner reaps its own child process groups first; cleanup uses test labels and the private Docker journal when database evidence is unavailable, checks ownership before removing resources, and verifies original running containers retained their IDs, images and start times. Repeated cleanup is safe.
 
@@ -73,7 +73,7 @@ Client transport failures can also be checked without Docker/PostgreSQL:
 python3 scripts/check-cli-recovery.py --cli target/debug/miy
 ```
 
-That separate check uses a synthetic Docker export and loopback HTTP fault fixture; it proves CLI journal/ACK recovery and request counts, not a real image import. Browser fixtures also cover device approval/CSRF and production confirmation/state conflicts.
+That separate check uses a synthetic server build receipt and loopback HTTP fault fixture; it proves CLI journal/ACK recovery and request counts, not a real server build. Browser fixtures also cover device approval/CSRF and production confirmation/state conflicts.
 
 Imported single-IP HTTPS and actual Keycloak/CLI/browser authentication can be checked without touching the deployed UI:
 

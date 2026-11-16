@@ -78,7 +78,7 @@ publishing a long-running build result. A running irreversible action is not und
 
 Read metadata requires `read`; app requests additionally require `app_read` or
 `app_write`, and directory access requires `directory_read`. Other actions are
-`build`, `upload`, `dev_session`, `prepare_database`, `accept`, `deploy`, `promote`,
+`build`, `dev_session`, `prepare_database`, `accept`, `deploy`, `promote`,
 `start`, `stop`, `restart`, `remove` and `logs`. Production operations still require
 explicit target confirmation. Local stdio MCP uses the selected CLI credential;
 the HTTP MCP endpoint accepts the same scoped Core access credential as well as
@@ -189,13 +189,12 @@ belongs outside managed files. Publishing requires administrator authority and
 never updates an installed or running app automatically.
 
 For an update, stop local preview, increment manifest version, preserve applied
-SQL bytes, commit clean source and run `app build`. It builds one immutable Rust/React Linux image. The
-image platform must match the selected server. When local Docker has another CPU,
-choose `app build --platform linux/amd64` (or `linux/arm64`) explicitly and configure
-a working Docker emulation/builder; the flag alone does not install emulation.
-
-For Docker-free clients use `app build --remote --no-wait` (CLI 0.6.2,
-server capability `app.builds.v1`). This uploads up to 64 MiB of clean committed
+SQL bytes, commit clean source and run `app build` (add `--no-wait` to return at
+once). It builds one immutable Rust/React Linux image on the selected server, for
+that server's platform (server capability `app.builds.v1`). The server runs only
+images it built itself: there is no local release build and no image upload, so
+test locally with `app dev` and deploy what `app build` produced. The build
+uploads up to 64 MiB of clean committed
 source, excluding credentials, `.git`, `.miy`, dependencies and build output.
 Other committed files outside the application source set are not sent either;
 the CLI names them on stderr before uploading, so move anything the build needs
@@ -207,11 +206,11 @@ The build never applies SQL or changes an installation. Use `job get BUILD_ID`,
 `job resume BUILD_OR_REQUEST_ID --environment dev` for durable observations.
 JSONL watch emits log sequence cursors. Duplicate input recovers existing work.
 After terminal failure, resume observes the original result; a new explicit
-`app build --remote` starts a new attempt. A successful result writes a receipt
+`app build` starts a new attempt. A successful result writes a receipt
 bound to context, actor, app, source hash/commit and immutable image. Dev deploy
-and deployment resume validate it and use that server image directly, without
-Docker image download/export/upload on the client. `job list` remains the
-lifecycle job list; save build/request IDs returned by remote build.
+and deployment resume validate it and use that server image directly; without it
+`app deploy` fails with `server_build_required`. `job list` remains the
+lifecycle job list; save build/request IDs returned by the build.
 
 ```sh
 miy app deploy --environment dev --dry-run
@@ -223,18 +222,18 @@ miy job resume JOB_OR_REQUEST_UUID
 ```
 
 Dry-run returns checked state, planned changes and checks still deferred to the
-worker. It creates no image upload or runtime job. Actual submission persists the
+worker. It creates no runtime job. Actual submission persists the
 original request key, actor/context, target, payload and expected state first.
-Image exports are limited to 1 GiB. Upload receipt lookup and runtime request lookup
-recover a lost acknowledgement. Only explicit `job resume` may retransmit an
-unacknowledged archive/request after lookup, using its original key and payload.
-This is whole-archive recovery, not byte-range continuation.
+The server refuses an image, or a release for promotion, that is not the output of
+this app's succeeded server build (`server_build_required`). Runtime request lookup
+recovers a lost acknowledgement. Only explicit `job resume` may resubmit an
+unacknowledged request after lookup, using its original key and payload.
 
 Watch cursors reconnect to events. Ctrl-C/timeout stops local observation, not the
 remote job. Inspect terminal failure before `job retry JOB_UUID`; only the server's
 typed transient classes permit it. Retry performs fresh preflight and preserves
-its link to the failed job. A terminal failed image receipt has no runtime job to
-retry: inspect it, then explicitly start a new `app deploy` for a new upload.
+its link to the failed job. A failed build has no runtime job to
+retry: inspect `job logs BUILD_ID`, fix and commit the source, then run `app build` again.
 Use `app status`/`show`, release/image/version and the real deployed URL as evidence;
 an old running installation or an accepted submission is not proof of success.
 
@@ -287,4 +286,4 @@ and `deploy --environment prod` are invalid; use `job retry` and `app promote`.
 
 `context list --limit/--cursor` pages the local context map and restarts when configuration changes. `component list` returns `{components,nextCursor}`; it retrieves the complete authenticated catalog before paging locally. Fields such as `components.name` and `contexts.work-prod.origin` select keys from the authorized result.
 
-Local development defaults to native Rust plus the built React preview and an in-process tunnel to the server dev DB. Docker Desktop, WSL and local PostgreSQL are not needed for `app dev` or `doctor --for develop`. Explicit `--runtime docker` selects the container workflow. `app build --remote` uses the selected server Linux Docker engine with the existing login; Windows needs no local Docker or SSH. The default `app build` retains local Docker behavior. Native preview is not a releasable Linux image.
+Local development defaults to native Rust plus the built React preview and an in-process tunnel to the server dev DB. Docker Desktop, WSL and local PostgreSQL are not needed for `app dev` or `doctor --for develop`. Explicit `--runtime docker` selects the container workflow for local testing only. `app build` always builds on the selected server's Linux Docker engine with the existing login; no client needs local Docker or SSH, and only a server build can be deployed. A local preview, native or Docker, is not a releasable image.

@@ -16,18 +16,6 @@ use uuid::Uuid;
 
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct Upload {
-    pub request_id: Uuid,
-    pub image_id: String,
-    pub archive_path: PathBuf,
-    pub archive_hash: Option<String>,
-    pub size_bytes: Option<u64>,
-    pub receipt_id: Option<Uuid>,
-    pub status: String,
-}
-
-#[derive(Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Entry {
     pub schema_version: u32,
     pub request_id: Uuid,
@@ -46,7 +34,10 @@ pub struct Entry {
     pub job_id: Option<Uuid>,
     pub cursor: Option<String>,
     pub sequence: Option<u64>,
-    pub upload: Option<Upload>,
+    /// Records written before server-only builds carry this key. It is read so those
+    /// records still load, never written, and a record that used it cannot resume.
+    #[serde(default, skip_serializing)]
+    pub upload: Option<serde::de::IgnoredAny>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub server_build: Option<crate::cli_build::ServerBuildReceipt>,
 }
@@ -299,11 +290,21 @@ pub fn validate(entry: &Entry, session: &Session) -> Result<()> {
             .into());
         }
     }
+    // A deployment names the server build that produced its image. A record without
+    // one was written by a CLI that uploaded a locally built image.
+    let deployment = entry.intent.action == crate::runtime_contract::Operation::Deploy
+        && entry.retry_of.is_none();
+    if entry.upload.is_some() || (deployment && entry.server_build.is_none()) {
+        return Err(CliError::new(
+            Category::Conflict,
+            "local_image_deployment_removed",
+            "This saved request deployed a locally built image, which the server no longer accepts. Run `miy app build`, then `miy app deploy`.",
+        )
+        .with_recovery("miy", &["app", "build"])
+        .into());
+    }
     if let Some(receipt) = &entry.server_build {
-        if entry.intent.action != crate::runtime_contract::Operation::Deploy
-            || entry.upload.is_some()
-            || entry.retry_of.is_some()
-        {
+        if !deployment {
             return Err(CliError::new(
                 Category::Environment,
                 "journal_build_invalid",
@@ -317,23 +318,6 @@ pub fn validate(entry: &Entry, session: &Session) -> Result<()> {
             &entry.app_id,
             entry.intent.image_id.as_deref().unwrap_or(""),
         )?;
-    }
-    if let Some(upload) = &entry.upload {
-        let expected = archive_path(entry.request_id)?;
-        if upload.request_id != entry.request_id
-            || upload.archive_path != expected
-            || entry.intent.image_id.as_deref() != Some(&upload.image_id)
-            || upload.archive_hash.as_ref().is_some_and(|hash| {
-                hash.len() != 64 || !hash.bytes().all(|byte| byte.is_ascii_hexdigit())
-            })
-        {
-            return Err(CliError::new(
-                Category::Environment,
-                "journal_upload_invalid",
-                "The saved upload does not match its runtime request.",
-            )
-            .into());
-        }
     }
     Ok(())
 }
@@ -368,13 +352,6 @@ pub fn latest(
         Some(id) => load(session, id).map(Some),
         None => Ok(None),
     }
-}
-
-pub fn archive_path(id: Uuid) -> Result<PathBuf> {
-    let directory = directory()?.join("archives");
-    crate::platform::reject_reparse(&directory)?;
-    std::fs::create_dir_all(&directory)?;
-    Ok(directory.join(format!("{id}.tar")))
 }
 
 pub async fn operation_lock(hash: &str) -> Result<std::fs::File> {
@@ -513,5 +490,61 @@ mod tests {
         );
         entry.payload.as_mut().unwrap()["action"] = json!("remove");
         assert!(validate(&entry, &session).is_err());
+    }
+
+    /// A record written before server-only builds still loads: its `upload` key is
+    /// read and never written back. Only a deployment that names the server build of
+    /// its image can resume; one that uploaded a locally built image cannot.
+    #[test]
+    fn deployment_records_require_a_server_build_and_earlier_records_still_load() {
+        let session = session("alice");
+        let image = format!("sha256:{}", "a".repeat(64));
+        let code = |entry: &Entry| {
+            validate(entry, &session)
+                .unwrap_err()
+                .downcast_ref::<CliError>()
+                .unwrap()
+                .code
+                .clone()
+        };
+        let record = |intent: &PreflightInput, upload: Value| {
+            json!({"schemaVersion":1,"requestId":Uuid::new_v4(),"context":"dev","origin":session.origin,
+                "userId":"alice","appId":"demo","inputHash":intent_hash(&session, intent).unwrap(),"intent":intent,
+                "payload":null,"payloadHash":null,"submitPath":null,"retryOf":null,"submissionStatus":"prepared",
+                "createdAt":0,"jobId":null,"cursor":null,"sequence":null,"upload":upload})
+        };
+        let stop: Entry = serde_json::from_value(record(&intent(), Value::Null)).unwrap();
+        assert!(validate(&stop, &session).is_ok());
+        assert!(serde_json::to_value(&stop).unwrap().get("upload").is_none());
+
+        let mut deploy = intent();
+        deploy.action = Operation::Deploy;
+        deploy.image_id = Some(image.clone());
+        let uploaded: Entry = serde_json::from_value(record(
+            &deploy,
+            json!({"requestId":Uuid::new_v4(),"imageId":image,"archivePath":"/tmp/a.tar","archiveHash":null,"sizeBytes":null,"receiptId":null,"status":"preparing"}),
+        ))
+        .unwrap();
+        assert_eq!(code(&uploaded), "local_image_deployment_removed");
+        let mut built: Entry = serde_json::from_value(record(&deploy, Value::Null)).unwrap();
+        assert_eq!(code(&built), "local_image_deployment_removed");
+        built.server_build = Some(crate::cli_build::ServerBuildReceipt {
+            context: "dev".into(),
+            origin: session.origin.clone(),
+            user_id: "alice".into(),
+            job_id: Uuid::new_v4(),
+            app_id: "demo".into(),
+            version: "1.0.0".into(),
+            bundle_version: crate::bundle::VERSION.into(),
+            source_commit: "b".repeat(40),
+            archive_hash: "c".repeat(64),
+            platform: "linux/amd64".into(),
+            image_id: image,
+        });
+        assert!(validate(&built, &session).is_ok());
+        // A receipt belongs to a deployment, never to another operation.
+        let mut misplaced = stop;
+        misplaced.server_build = built.server_build.clone();
+        assert_eq!(code(&misplaced), "journal_build_invalid");
     }
 }

@@ -1151,7 +1151,6 @@ mod tests {
             Action::Start,
             Action::Promote,
             Action::Build,
-            Action::Upload,
             Action::Logs,
             Action::DevSession,
             Action::PrepareDatabase,

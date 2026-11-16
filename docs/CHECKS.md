@@ -14,7 +14,7 @@
 
 GitHub Actions는 `cli-foundation.yml`(Linux 서버·Linux/macOS/Windows 클라이언트의 fmt·Clippy·test·CLI 검사)과 `web.yml`(정적 `scripts`·`web`)을 실행한다. 각 workflow가 실제 실행한 검사 범위를 구분하고, 이를 로컬 전체 스택·운영 검사의 통과로 옮기지 않는다.
 
-`runtime-regression.yml`은 main push·main 대상 PR에서 격리 Docker 회귀를 실행한다. 현재 기대값은 runtime 46·operations 6·CLI 6·auth 8·permissions 26·delegation 10·boundary 12·migration 3·frames 14, 총 131개 관찰이다. 권한 스냅샷 변경 중 실제 HTTP 목록·worker 재확인과 위임 발급·사용자 비활성화의 HTTP 경합도 포함한다. 프레임 인증 뒤 본문 수집 중 릴리스가 바뀌는 handler 검사와 발급된 후속 호출의 원 프레임 결합 검사도 포함하며, 브라우저가 GET 본문을 보낸다는 전제는 쓰지 않는다. 로컬 실행의 PASS와 해당 commit의 GitHub 실행 결과는 따로 기록한다. CLI 응답 타입을 바꿀 때는 정적 검사 외에 실제 클라이언트 빌드로 출력·복구 검사까지 실행한다.
+`runtime-regression.yml`은 main push·main 대상 PR에서 격리 Docker 회귀를 실행한다. 현재 기대값은 runtime 47·operations 5·CLI 6·auth 8·permissions 26·delegation 10·boundary 12·migration 3·frames 14, 총 131개 관찰이다. 권한 스냅샷 변경 중 실제 HTTP 목록·worker 재확인과 위임 발급·사용자 비활성화의 HTTP 경합도 포함한다. 프레임 인증 뒤 본문 수집 중 릴리스가 바뀌는 handler 검사와 발급된 후속 호출의 원 프레임 결합 검사도 포함하며, 브라우저가 GET 본문을 보낸다는 전제는 쓰지 않는다. 로컬 실행의 PASS와 해당 commit의 GitHub 실행 결과는 따로 기록한다. CLI 응답 타입을 바꿀 때는 정적 검사 외에 실제 클라이언트 빌드로 출력·복구 검사까지 실행한다.
 
 `scripts/test-core-ops.py`는 백업 정리·연결 예산과 유지 관리하는 배포 도구(`scripts/core-rollout.py`, `scripts/ui-rollout.py`)의 실패 경계를 모든 외부 명령을 대체한 모의 시험으로 검사한다. 부분 서비스 장애 중 rollback 유휴 검사, 서로 다른 release의 같은 UI 대상 잠금, 무시된 public/환경 입력·심볼릭 링크와 빌드 중 입력 변경 거부, `core-rollout.py`의 CLI 게시 동시 반영(실제 패키지 검사기를 통과하는 5개 CLI·2개 helper·설치기 fixture, 불완전한 자료·체크섬 거부, 후보 복사·검증 뒤 변경 거부, 기존 게시 도구와 공유하는 잠금 및 실패 시 해제, index 교체 중 실패·시작 후 실패의 복원), `ui-rollout.py --target frame-runtime`의 첫 설치·rollback 뒤 새 빌드, 중단 뒤 index 없이 남은 자산의 보존·충돌 검사도 포함한다. `scripts/test-app-frame-settings.py`는 앱 프레임 설정 도구(`scripts/app-frame-settings.py`)의 설정 패치·복원, 백업/복구 기록 실패와 부분 적용·부분 복원 뒤 재시도, Nginx 차이 검사를 실제 렌더러 출력까지 포함해 검사한다. 프록시 검사에는 upstream 장애 시 앱 자산 능력값이 access/error log에 남지 않는지도 포함한다. `test-frame-diagnostics.mjs`는 브라우저 오류 메시지를 증거로 기록하기 전에 자산 능력값·자격증명을 가리는지 검사한다.
 
@@ -29,7 +29,7 @@ GitHub Actions는 `cli-foundation.yml`(Linux 서버·Linux/macOS/Windows 클라�
 | 바꾼 것 | 최소 검사 | 해당할 때 추가 |
 | --- | --- | --- |
 | 문서만(`docs/`, `README.md`) | `python3 scripts/check-doc-links.py` | 상태·버전·commit을 바꿨다면 실제 증거와 대조. 검사기는 tracked 문서만 순회하므로 신규 untracked 문서의 링크·앵커도 별도 확인 |
-| 코어 서버 Rust(`crates/miy/src`의 서버 기능) | `check-static.sh rust` | 배포·이미지 적재·권한·위임: `python3 scripts/runtime-regression/run.py`. 개발 세션 DB: `python3 scripts/check-development-database.py`. 서버 빌드: `python3 scripts/check-server-builds.py`(셋 다 일회용 PostgreSQL·Docker). 실제 DB 복구 테스트는 로컬 개발 스택의 `check.sh` |
+| 코어 서버 Rust(`crates/miy/src`의 서버 기능) | `check-static.sh rust` | 배포(서버 빌드 산출물만 접수)·권한·위임: `python3 scripts/runtime-regression/run.py`. 개발 세션 DB: `python3 scripts/check-development-database.py`. 서버 빌드: `python3 scripts/check-server-builds.py`(셋 다 일회용 PostgreSQL·Docker). 실제 DB 복구 테스트는 로컬 개발 스택의 `check.sh` |
 | core migration(`migrations/core`) | `check-static.sh rust`, `run.py` | 이미 적용한 파일은 고치지 않고 새 번호로 추가(sqlx가 checksum 불일치를 거부). 운영 반영 전 `python3 scripts/core-backup.py create`로 대상 DB를 백업하고 `verify --migrate-with <서버 바이너리>`로 일회용 PostgreSQL에서 복원·migration 리허설 |
 | CLI 클라이언트(`--no-default-features` 경로) | `check-static.sh rust` | `cargo build --locked --no-default-features` 후 `python3 scripts/check-cli-output.py --cli target/debug/miy`, `check-cli-install.py`, `check-cli-recovery.py`. macOS·Windows는 CI 매트릭스 |
 | 개발 번들·템플릿·CLI 지침(`templates/`, `crates/miy/guidance/`, `registry/`) | `check-static.sh rust`(번들 바이트 검사 포함) | 지침·업그레이드: 이전 기준 CLI를 `MIY_PREVIOUS_BUNDLE_CLI`로 지정하고 `node scripts/check-cli-guidance.mjs`. 번들 버전 변경은 [CLI 릴리스](CLI-RELEASE.md) 절차 |
@@ -52,7 +52,7 @@ CLI 0.5 계획·과거 검증표의 실행 이력은 [보관 결과](archive/res
 
 | 범위 | 별도로 확인할 결과 |
 | --- | --- |
-| CLI 자동화 계약 | help·describe·입력 타입과 실제 명령 일치, UTF-8 JSON stdout/stderr 분리·종료 코드, pagination·오류 복구 인수. 업로드/작업 응답 유실·resume·retry에서 중복 변경 없음 |
+| CLI 자동화 계약 | help·describe·입력 타입과 실제 명령 일치, UTF-8 JSON stdout/stderr 분리·종료 코드, pagination·오류 복구 인수. 빌드·작업 응답 유실·resume·retry에서 중복 변경 없음 |
 | 인증·권한·운영 | 실제 OIDC/device 승인·갱신·철회, context 혼동과 비밀 출력 거부, 최소 권한 개발자와 관리자 결과 구분. dry-run·권한 거부·확인 누락의 변경 없음과 접수/worker 재검사. Core 사용자 비활성화와 상위 IdP의 실제 전파 증거는 구분 |
 | 네이티브 개발과 원격 배포 | 로컬 `app dev`의 실제 CRUD·인증·종료, 원격 build·dev 재배포 뒤 같은 DB UUID와 레코드 보존, 새 migration. 로컬 preview와 원격 설치별 프레임 브라우저 인수는 각각 실행. 명시적 Docker runtime은 별도 경로 |
 | 설치·OS | 같은 후보의 네이티브 바이너리·번들 해시, 경로/인코딩·프로세스 종료·자격증명 보호·파일 잠금/복구·설정 보존. Windows Server CI는 실제 Windows 11 PowerShell 5.1/7 인수를 대신하지 않음 |

@@ -116,8 +116,9 @@ Sync는 고정 버전을 복원하며 자동 업그레이드하지 않는다. Ad
 | --- | --- | --- |
 | 기본 `app dev` | Rust와 네이티브 링크 도구, Node, 프로젝트 지정 pnpm, Git. Windows는 MSVC·Windows SDK | 로컬 Rust·React preview, 서버의 해당 앱 dev DB. Docker Desktop·WSL·로컬 PostgreSQL 불필요 |
 | `app dev --runtime docker` | 위 개발 도구와 Linux 컨테이너용 Docker | 로컬 컨테이너, 기본은 서버 dev DB. 별도 DB는 `--database local`을 명시 |
-| 기본 `app build` | Git·로컬 Docker와 대상 Linux CPU를 빌드할 수 있는 환경 | 로컬에서 불변 Linux 이미지 생성 |
-| `app build --remote` | CLI·Git·서버 로그인, 서버의 `app.builds.v1` | 서버 Docker에서 검사·빌드. PC의 Docker·Rust·Node·SSH 불필요 |
+| `app build` | CLI·Git·서버 로그인, 서버의 `app.builds.v1` | 서버 Docker에서 검사·빌드. PC의 Docker·Rust·Node·SSH 불필요 |
+
+서버는 **자신이 빌드한 이미지만 실행한다.** 로컬에서 배포용 이미지를 만들거나 이미지를 올리는 경로는 없다(CLI 0.11.0부터). 로컬 테스트는 `app dev`로 하고, 서버에 올릴 것은 커밋한 소스를 `app build`로 서버에서 빌드한다. 로컬 preview(native·Docker)의 결과물은 배포할 수 없다.
 
 ```sh
 miy app fmt
@@ -126,13 +127,12 @@ miy app dev --no-open
 # 작업 종료 시 별도 터미널에서:
 miy app dev-stop
 # 변경된 앱 버전을 manifest에 반영하고 소스를 커밋한 다음:
-miy app build
-# Docker 엔진 CPU와 서버 CPU가 다르면 동작하는 빌더/에뮬레이션을 준비하고 명시:
-miy app build --platform linux/amd64
+miy app build --no-wait
+miy job watch BUILD_JOB_UUID --timeout 1800
+miy job logs BUILD_JOB_UUID --after 0
 miy app deploy --environment dev --dry-run
 miy app deploy --environment dev --no-wait
-miy job get JOB_UUID
-miy job watch JOB_UUID
+miy job watch DEPLOY_JOB_UUID --timeout 600
 miy app status
 ```
 
@@ -142,24 +142,15 @@ Docker runtime의 서버 DB 연결에는 컨테이너에서 접근 가능한 서
 
 로컬 preview는 앱 하나의 `AppRoot`와 AppRuntime을 같은 loopback 문서에서 실행하며 원격 자격증명을 앱 코드에 전달하지 않는다. 원격 dev/prod의 설치별 출처 iframe 브리지를 재현하는 검사가 아니다. preview의 UI·API 성공과 원격 프레임의 DOM·자격증명·메시지 경계 인수를 구분한다.
 
-Build는 깨끗이 커밋한 소스로 불변 Linux 이미지를 만든다. 배포는 manifest·커밋·이미지·번들 영수증을 확인하며 이미지 platform이 서버 `runtimePlatform`과 같아야 한다. 다른 CPU의 빌드에는 명시적 `--platform`과 실제로 동작하는 빌더가 필요하다. 플래그만으로 에뮬레이션을 설치하지 않는다.
+`app build`는 깨끗이 커밋한 소스를 선택한 서버로 보내고, 서버의 Docker Engine이 서버 소유 빌드 절차로 검사·빌드한다. 잠긴 의존성만 받은 뒤 네트워크를 끊고 Rust 포맷 검사·테스트와 React 타입 검사·빌드를 실행하며, SDK·공용 컴포넌트 원본과 적용 SQL 이력을 확인한다. 이미지는 서버의 `runtimePlatform`용으로 만든다. 로컬 개발 세션을 종료하고 소스를 커밋한 뒤 실행한다. 기본은 완료까지 기다리고(`--timeout`, 기본 1800초) `--no-wait`는 접수한 빌드 작업을 바로 반환한다.
 
-`app build --remote`는 선택한 서버의 Docker Engine에서 검사와 빌드를 수행한다. `--platform`은 서버의 실제 `runtimePlatform`과 같아야 한다. 성공한 서버 빌드 영수증으로 dev 배포하면 로컬 이미지 전송을 생략한다. 로컬 개발 세션을 종료하고 소스를 커밋한 뒤 다음 순서로 실행한다.
+배포는 manifest·커밋·이미지·번들과 **서버 빌드 영수증**을 확인한다. 영수증이 없는 프로젝트(이전 CLI가 로컬에서 만든 이미지 포함)의 `app deploy`는 서버에 요청하기 전에 `server_build_required`로 끝나고 `miy app build`를 안내한다. 서버도 배포(dev)와 승격(prod) 접수·사전 점검·worker 실행에서 그 앱의 성공한 서버 빌드가 만든 이미지인지 다시 확인하며, 아니면 `server_build_required`로 거부한다.
 
-```sh
-miy app build --remote --no-wait
-miy job watch BUILD_JOB_UUID --timeout 1800
-miy job logs BUILD_JOB_UUID --after 0
-miy app deploy --environment dev --no-wait
-miy job watch DEPLOY_JOB_UUID --timeout 600
-miy app status
-```
+빌드는 깨끗한 Git HEAD의 허용된 업무·SDK·migration·잠금 파일만 올린다. 인증 설정·`.git`·`.miy`·`.miy-tools`·빌드 산출물·`.env`·개인 키 파일을 제외하고 심볼릭 링크와 하위 저장소를 거부한다. 커밋했지만 이 범위 밖이라 보내지 않는 파일은 CLI가 올리기 전에 stderr로 이름을 알린다. 임의 업무 파일에 하드코딩한 비밀을 모두 찾는 기능은 아니다. 서버는 소스 크기·SHA-256·개발 권한·SDK/컴포넌트 원본·적용 SQL 이력을 검사한다. 빌드 자체는 개발 DB를 변경하지 않는다. 커밋 ID는 CLI가 제공한 출처이며 서명된 증명이 아니고, 실제 전송 바이트는 SHA-256으로 식별한다.
 
-원격 빌드는 깨끗한 Git HEAD의 허용된 업무·SDK·migration·잠금 파일만 올린다. 인증 설정·`.git`·`.miy`·`.miy-tools`·빌드 산출물·`.env`·개인 키 파일을 제외하고 심볼릭 링크와 하위 저장소를 거부한다. 커밋했지만 이 범위 밖이라 보내지 않는 파일은 CLI가 올리기 전에 stderr로 이름을 알린다. 임의 업무 파일에 하드코딩한 비밀을 모두 찾는 기능은 아니다. 서버는 소스 크기·SHA-256·개발 권한·SDK/컴포넌트 원본·적용 SQL 이력을 검사한다. 빌드 자체는 개발 DB를 변경하지 않는다. 커밋 ID는 CLI가 제공한 출처이며 서명된 증명이 아니고, 실제 전송 바이트는 SHA-256으로 식별한다.
+빌드 영수증은 서버·사용자·앱·커밋·소스 해시·불변 이미지에 묶인다. 연결이 끊기면 `job resume REQUEST_OR_JOB_UUID --environment dev`로 원래 작업을 조회한다. 같은 소스·커밋·플랫폼의 진행/성공 작업은 재사용한다. 실패한 빌드의 resume은 원래 실패를 반환하며, 원인을 해결하고 커밋한 뒤 `app build`를 명시적으로 다시 실행해야 새 시도를 요청한다.
 
-빌드 영수증은 서버·사용자·앱·커밋·소스 해시·불변 이미지에 묶인다. 연결이 끊기면 `job resume REQUEST_OR_JOB_UUID --environment dev`로 원래 작업을 조회한다. 같은 소스·커밋·플랫폼의 진행/성공 작업은 재사용한다. 실패한 빌드의 resume은 원래 실패를 반환하며, 원인을 해결한 뒤 `app build --remote`를 명시적으로 다시 실행해야 새 시도를 요청한다.
-
-Dry-run은 예상 상태·계획된 변경·worker에서 남은 검사를 반환한다. 이미지 업로드나 runtime job은 생성하지 않는다. 실제 실행은 context/origin/user/app, 요청 키, payload와 expected-state를 먼저 journal에 기록한다. 이미지 archive 상한은 1 GiB다. 이미지의 `/miy`(manifest·build.json·migrations·ui)는 디렉터리와 일반 파일만 허용하며 10,000개·파일당 64MiB·합계 256MiB를 넘거나 링크·장치·파이프가 있으면 `invalid_image_contract`로 거부한다. 배포의 migration은 기본 잠금 대기 30초로 시작하고 서버의 전체 한도(기본 10분, `MIY_MIGRATION_TIMEOUT_SECONDS`)를 넘으면 중단·롤백되어 `migration_failed`가 된다. 업로드 접수·ID 조회부터 runtime 제출까지 복구 대상이며, 전송 바이트의 일부부터 이어 보내는 기능은 제공하지 않는다.
+Dry-run은 예상 상태·계획된 변경·worker에서 남은 검사를 반환하고 runtime job을 생성하지 않는다. 실제 실행은 context/origin/user/app, 요청 키, payload, expected-state와 서버 빌드 영수증을 먼저 journal에 기록한다. 이미지의 `/miy`(manifest·build.json·migrations·ui)는 디렉터리와 일반 파일만 허용하며 10,000개·파일당 64MiB·합계 256MiB를 넘거나 링크·장치·파이프가 있으면 `invalid_image_contract`로 거부한다. 배포의 migration은 기본 잠금 대기 30초로 시작하고 서버의 전체 한도(기본 10분, `MIY_MIGRATION_TIMEOUT_SECONDS`)를 넘으면 중단·롤백되어 `migration_failed`가 된다. runtime 요청의 접수 여부 조회부터 재제출까지가 복구 대상이다.
 
 현행 runtime 명령은 `runtime.preflight.v2`를 요구한다. 이 계약은 실행 앱 상태에 더해 독립적인 DB 식별자와 스키마 변경 이력을 비교한다. 이전 CLI나 서버 조합은 capability 오류로 업그레이드를 안내하며, 알 수 없는 상태를 무시하고 배포하지 않는다.
 
@@ -171,7 +162,7 @@ miy job get FAILED_JOB_UUID
 miy job retry FAILED_JOB_UUID
 ```
 
-응답 유실은 원래 요청을 먼저 조회한다. `job resume`만 조회 후 미접수인 원본 archive/payload를 같은 키로 명시적으로 다시 보낼 수 있다. 새 deploy를 반복해 불명확한 작업을 만들지 않는다. Watch의 Ctrl-C/timeout은 로컬 관찰만 끝내며 원격 작업을 취소하지 않는다. 터미널 runtime 실패는 타입이 허용한 transient 분류만 fresh preflight 후 `job retry`로 재시도한다. Runtime job이 생기기 전 업로드 자체가 terminal 실패한 경우, 원인을 확인하고 새로운 `app deploy`를 명시적으로 실행한다.
+응답 유실은 원래 요청을 먼저 조회한다. `job resume`만 조회 후 미접수인 원본 요청을 같은 키로 명시적으로 다시 보낼 수 있으며, 다시 보내기 전에 서버 빌드 영수증을 서버에서 재확인한다. 새 deploy를 반복해 불명확한 작업을 만들지 않는다. Watch의 Ctrl-C/timeout은 로컬 관찰만 끝내며 원격 작업을 취소하지 않는다. 터미널 runtime 실패는 타입이 허용한 transient 분류만 fresh preflight 후 `job retry`로 재시도한다. 빌드가 실패하면 runtime job이 없으므로 `job logs BUILD_JOB_UUID`로 원인을 확인하고 소스를 고쳐 커밋한 뒤 `app build`를 다시 실행한다.
 
 상태의 release/image/version과 실제 배포 URL을 검사한다. 이전 릴리스가 실행 중이거나 job 접수만 성공한 상태를 새 배포 성공으로 보고하지 않는다. UI 변경 반영을 위해 플랫폼 코어를 재시작하거나 플랫폼 UI를 다시 빌드하지 않는다.
 

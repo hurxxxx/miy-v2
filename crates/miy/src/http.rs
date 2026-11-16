@@ -166,11 +166,6 @@ pub fn router_for(state: State, purpose: BrowserPurpose) -> Router {
             axum::routing::post(check_release),
         )
         .route(
-            "/apps/{app}/images",
-            axum::routing::post(crate::delivery::upload)
-                .layer(axum::extract::DefaultBodyLimit::disable()),
-        )
-        .route(
             "/apps/{app}/builds",
             axum::routing::post(crate::server_build::upload)
                 .layer(axum::extract::DefaultBodyLimit::disable()),
@@ -186,14 +181,6 @@ pub fn router_for(state: State, purpose: BrowserPurpose) -> Router {
         .route(
             "/apps/{app}/build-requests/{request}",
             axum::routing::get(crate::server_build::by_request),
-        )
-        .route(
-            "/image-uploads/{id}",
-            axum::routing::get(crate::delivery::status),
-        )
-        .route(
-            "/apps/{app}/image-uploads/by-request/{request}",
-            axum::routing::get(crate::delivery::by_request),
         )
         .route(
             "/apps",
@@ -695,8 +682,6 @@ fn delegated_route(route: &str, method: &axum::http::Method) -> bool {
             | "/builds/{id}"
             | "/builds/{id}/logs"
             | "/apps/{app}/build-requests/{request}"
-            | "/image-uploads/{id}"
-            | "/apps/{app}/image-uploads/by-request/{request}"
             | "/dev-sessions/{id}"
             | "/apps/{app}/dev-sessions/by-request/{request}"
             | "/artifacts/{hash}/ui/{*path}",
@@ -709,7 +694,6 @@ fn delegated_route(route: &str, method: &axum::http::Method) -> bool {
             | "/runtime/jobs/{id}/retry"
             | "/apps/{app}/logs"
             | "/apps/{app}/builds"
-            | "/apps/{app}/images"
             | "/apps/{app}/dev-sessions"
             | "/dev-sessions/{id}/heartbeat"
             | "/apps/{app}/test-acceptance"
@@ -754,7 +738,7 @@ async fn capabilities() -> Json<Value> {
         "runtimePlatform":crate::runtime_platform::server(),
         "userActivationSource":"core.users.enabled",
         "userActivationPropagation":"each authenticated request and queued operation; no Keycloak synchronization implied",
-        "features":["installation.permissions.v1","auth.delegations.v1","app.calls.v1","app.builds.v1","runtime.preflight.v2","development.sessions.v1","auth.sessions.v1","auth.device.v1","runtime.jobs.v1","runtime.events.v1","runtime.retry.v1","images.idempotency.v1","runtime.logs.v1","lists.pagination.v1"]}),
+        "features":["installation.permissions.v1","auth.delegations.v1","app.calls.v1","app.builds.v1","runtime.preflight.v2","development.sessions.v1","auth.sessions.v1","auth.device.v1","runtime.jobs.v1","runtime.events.v1","runtime.retry.v1","runtime.logs.v1","lists.pagination.v1"]}),
     )
 }
 #[derive(serde::Deserialize)]

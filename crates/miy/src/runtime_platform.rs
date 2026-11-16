@@ -1,6 +1,4 @@
 //! A Linux image target is independent of the CLI host OS and CPU.
-use crate::cli_error::{Category, CliError};
-use anyhow::Result;
 use serde_json::Value;
 pub fn normalize(os: &str, arch: &str) -> Option<String> {
     if os != "linux" {
@@ -22,66 +20,6 @@ pub fn server() -> Option<String> {
 }
 pub fn image(meta: &Value) -> Option<String> {
     normalize(meta["Os"].as_str()?, meta["Architecture"].as_str()?)
-}
-pub async fn build_target(explicit: Option<&str>) -> Result<String> {
-    let info: Value = serde_json::from_str(
-        &crate::docker::docker(&["info", "--format", "{{json .}}"])
-            .await
-            .map_err(|_| {
-                CliError::new(
-                    Category::Environment,
-                    "docker_daemon_unavailable",
-                    "Local builds require a running Linux Docker engine. To build on the selected server without installing Docker, run: miy app build --remote",
-                )
-                .with_recovery("miy", &["app", "build", "--remote"])
-            })?,
-    )?;
-    let local = normalize(
-        info["OSType"].as_str().unwrap_or(""),
-        info["Architecture"].as_str().unwrap_or(""),
-    )
-    .ok_or_else(|| {
-        CliError::new(
-            Category::Environment,
-            "linux_docker_required",
-            "Local builds require a Linux container engine (amd64 or arm64). To use the selected server instead, run: miy app build --remote",
-        )
-        .with_recovery("miy", &["app", "build", "--remote"])
-    })?;
-    let target = if let Some((_, context)) = crate::cli_config::optional_selected()? {
-        let response = crate::cli_client::client(context.ca_file.as_deref(), 15)?
-            .get(format!("{}/api/v1/capabilities", context.origin))
-            .send()
-            .await?;
-        let value = crate::cli_error::response(response).await?;
-        value["runtimePlatform"]
-            .as_str()
-            .filter(|p| ["linux/amd64", "linux/arm64"].contains(p))
-            .ok_or_else(|| {
-                CliError::new(
-                    Category::Environment,
-                    "unsupported_capability",
-                    "The server does not advertise a supported runtime platform.",
-                )
-            })?
-            .to_owned()
-    } else {
-        local.clone()
-    };
-    if let Some(explicit) = explicit {
-        if explicit != target {
-            return Err(CliError::new(
-                Category::Usage,
-                "build_platform_mismatch",
-                "The explicit build platform must match the selected server's runtime platform.",
-            )
-            .with_details(serde_json::json!({"requiredPlatform":target}))
-            .into());
-        }
-    } else if local != target {
-        return Err(CliError::new(Category::Environment,"build_platform_required","Local Docker and the selected server use different CPUs. Choose --platform explicitly and configure Docker emulation if needed.").with_details(serde_json::json!({"localPlatform":local,"requiredPlatform":target})).into());
-    }
-    Ok(target)
 }
 #[cfg(test)]
 mod tests {

@@ -86,11 +86,11 @@ pub async fn inspect(
             PreflightCheck::passed(CheckName::PendingOperation)
         },
     ];
-    if input.action == runtime_contract::Operation::Promote {
+    let image = if input.action == runtime_contract::Operation::Promote {
         let accepted = crate::runtime::checked_image(&state.pool, app, input.release_id.unwrap())
             .await
-            .is_ok();
-        checks.push(if accepted {
+            .ok();
+        checks.push(if accepted.is_some() {
             PreflightCheck::passed(CheckName::ReleaseAcceptance)
         } else {
             PreflightCheck::failed(
@@ -98,6 +98,18 @@ pub async fn inspect(
                 runtime_contract::FailureCode::ReleaseNotAccepted,
             )
         });
+        accepted
+    } else {
+        input.image_id.clone()
+    };
+    // Submission refuses the same image; the worker still verifies the image itself.
+    if let Some(image) = image
+        && !crate::runtime::server_built(&state.pool, app, &image).await?
+    {
+        checks.push(PreflightCheck::failed(
+            CheckName::Image,
+            runtime_contract::FailureCode::ServerBuildRequired,
+        ));
     }
     runtime_contract::preflight(&input, &current, checks)
         .map_err(|_| ApiError::bad("invalid_runtime_request"))

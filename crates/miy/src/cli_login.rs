@@ -67,7 +67,7 @@ pub enum DelegationCommand {
         app: String,
         #[arg(long, value_parser=["dev","prod"])]
         environment: String,
-        #[arg(long="action", required=true, value_parser=["read","app_read","app_write","directory_read","build","upload","dev_session","prepare_database","accept","deploy","promote","start","stop","restart","remove","logs"])]
+        #[arg(long="action", required=true, value_parser=["read","app_read","app_write","directory_read","build","dev_session","prepare_database","accept","deploy","promote","start","stop","restart","remove","logs"])]
         actions: Vec<String>,
         #[arg(long)]
         name: String,
