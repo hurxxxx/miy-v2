@@ -84,6 +84,7 @@ fn main() {
     for relative in [
         "guidance/miy-cli/SKILL.md",
         "guidance/miy-cli/references/workflow.md",
+        "guidance/miy-cli/references/updating.md",
     ] {
         let path = Path::new(&manifest_dir).join(relative);
         verify_text(&path);

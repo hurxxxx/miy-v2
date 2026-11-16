@@ -152,7 +152,10 @@ use std::io::IsTerminal;
 use std::{path::PathBuf, sync::Arc};
 
 #[derive(Parser)]
-#[command(version)]
+#[command(
+    version,
+    after_help = "CLI updates: miy describe --topic updates\nRe-run your server's installer, run the new global miy app setup in each project, then restart Codex/Claude Code."
+)]
 struct Args {
     #[command(flatten)]
     options: cli_config::Options,

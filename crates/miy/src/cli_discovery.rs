@@ -6,8 +6,18 @@ use serde::Serialize;
 use serde_json::{Map, Value, json};
 use std::{any::TypeId, collections::BTreeSet, io::Write, path::PathBuf};
 
+#[derive(Clone, Copy, Debug, clap::ValueEnum, serde::Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum HelpTopic {
+    /// Update the global CLI, each project's executable and agent MCP sessions.
+    Updates,
+}
+
 #[derive(clap::Args, Debug, Default)]
 pub struct DescribeArgs {
+    /// Read an offline workflow guide without authentication.
+    #[arg(long, value_enum, conflicts_with_all = ["command", "search", "all"])]
+    pub topic: Option<HelpTopic>,
     /// Inspect one command, for example --command "app deploy".
     #[arg(long, conflicts_with_all = ["search", "all"])]
     pub command: Option<String>,
@@ -27,14 +37,18 @@ fn inspect_tree(mut root: Command, args: DescribeArgs) -> Result<Value> {
     if usize::from(args.command.is_some())
         + usize::from(args.search.is_some())
         + usize::from(args.all)
+        + usize::from(args.topic.is_some())
         > 1
     {
         return Err(CliError::new(
             Category::Usage,
             "conflicting_discovery_options",
-            "Choose one of --command, --search or --all.",
+            "Choose one of --topic, --command, --search or --all.",
         )
         .into());
+    }
+    if let Some(HelpTopic::Updates) = args.topic {
+        return Ok(crate::cli_guidance::update_guide());
     }
     root.build();
     if let Some(query) = args.command {
@@ -95,6 +109,8 @@ fn inspect_tree(mut root: Command, args: DescribeArgs) -> Result<Value> {
         "cliVersion":env!("CARGO_PKG_VERSION"),
         "scope":if args.all { "all" } else if args.search.is_some() { "search" } else { "summary" },
         "commands":commands,
+        "topics":[{"topic":"updates","command":"miy describe --topic updates",
+            "description":"Update the global CLI, project tooling and agent MCP sessions without resetting authentication."}],
     }))
 }
 

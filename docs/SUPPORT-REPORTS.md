@@ -52,7 +52,7 @@ miy report --outbox "$HOME/miy-reports" retry <신고-UUID>
 
 0.12.0은 저장소 오류에서 `operation`(read/write/remove), 허용된 `reason`, Keychain 실패의 `backend=macos_keychain`과 숫자 `osStatus`를 보존한다. 교환 후 기존 자격증명 읽기가 실패하면 새 서버 세션의 회수를 시도하고 결과도 반환한다. 저장소가 고장 나면 MCP가 반복 로그인을 권하지 않는다. Keychain 항목을 삭제하거나 backend를 몰래 바꾸지 않는다.
 
-게시 CLI로 갱신한 뒤 같은 OS 사용자·context에서 **같은 바이너리**의 일반 GUI 터미널과 Codex 실행을 비교해야 한다. 전역 CLI 갱신만으로 이미 설치한 프로젝트 `.miy-tools/miy`와 실행 중인 MCP가 갱신되는 것은 아니다. 프로젝트 폴더에서 새 전역 `miy app setup`을 실행하고 에이전트를 다시 시작한 뒤 다음을 실행한다.
+[CLI 업데이트와 MCP 갱신 절차](RUNNING.md#cli-업데이트와-mcp-갱신)로 전역·프로젝트 CLI를 갱신하고 에이전트를 재시작한다. 그 뒤 같은 OS 사용자·context에서 **같은 바이너리**의 일반 GUI 터미널과 Codex 실행을 비교해야 한다. 전역 CLI 갱신만으로 이미 설치한 프로젝트 `.miy-tools/miy`와 실행 중인 MCP가 갱신되는 것은 아니다. 프로젝트 폴더에서 새 전역 `miy app setup`을 실행하고 에이전트를 다시 시작한 뒤 다음을 실행한다.
 
 ```sh
 ./.miy-tools/miy auth status --output json

@@ -134,7 +134,7 @@ pub(crate) fn setup_result(root: &Path) -> Result<Value> {
     let guidance = crate::cli_guidance::verify(root)?;
     let mcp = verify_setup(root)?;
     Ok(
-        json!({"cliGuidance":guidance,"mcpConfiguration":mcp,"cliVersion":crate::cli_guidance::VERSION,"configured":["Codex","Claude Code"],"transport":"stdio MCP using CLI login","next":["miy auth login","codex or claude; accept project trust and MCP prompts"],"globalSettingsChanged":false}),
+        json!({"cliGuidance":guidance,"mcpConfiguration":mcp,"cliVersion":crate::cli_guidance::VERSION,"configured":["Codex","Claude Code"],"transport":"stdio MCP using CLI login","next":["Restart Codex/Claude Code to load the project executable and guidance; accept normal project trust/MCP prompts.","Run the project CLI auth status; use auth login only when login_required or reauthentication_required is reported."],"agentRestartRequired":true,"authenticationChanged":false,"globalSettingsChanged":false}),
     )
 }
 
@@ -189,6 +189,8 @@ struct Tools {
 #[derive(Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 struct CliHelpInput {
+    /// Read offline update instructions, including global CLI and project MCP refresh.
+    topic: Option<crate::cli_discovery::HelpTopic>,
     /// One command, for example "app deploy". Omit for a short root command list.
     command: Option<String>,
     /// Search command names and descriptions.
@@ -305,7 +307,7 @@ impl Tools {
         )
     }
     #[tool(
-        description = "Discover CLI commands, inspect one typed command contract, or search by keyword. The default returns a short command list; all explicitly requests the full reference.",
+        description = "Discover CLI commands, inspect a typed command, or search. Use topic=updates for offline CLI update and project MCP restart instructions; no login is needed. The default is a short list; all requests the full reference.",
         annotations(read_only_hint = true)
     )]
     async fn get_cli_help(
@@ -314,6 +316,7 @@ impl Tools {
     ) -> Result<CallToolResult, McpError> {
         result(crate::cli_discovery::inspect(
             crate::cli_discovery::DescribeArgs {
+                topic: input.topic,
                 command: input.command,
                 search: input.search,
                 all: input.all,
@@ -387,7 +390,7 @@ impl ServerHandler for Tools {
     fn get_info(&self) -> ServerConfig {
         let mut c = ServerConfig::default();
         c.capabilities = ServerCapabilities::builder().enable_tools().build();
-        c.with_instructions("Read get_contract and get_cli_help before development. Use the project miy-cli skill for CLI workflows; docs/CLI-REFERENCE.md matches the installed executable. Use the installed CLI for checks, local preview and authorized deployment. Never read credential files or modify the protected SDK bundle. This MCP only supplies guidance; it does not deploy applications.")
+        c.with_instructions("Read get_contract and get_cli_help before development. For CLI updates call get_cli_help with topic=updates; it works without login. Update the global CLI from the selected portal's installer, run the new global miy app setup in each compatible project, then restart Codex/Claude Code. Updating does not require repeating browser approval. Use the project miy-cli skill and docs/CLI-REFERENCE.md for the installed executable. Never read credential files or modify the protected SDK bundle. This MCP only supplies guidance; it does not deploy applications.")
     }
 }
 pub async fn serve() -> Result<()> {

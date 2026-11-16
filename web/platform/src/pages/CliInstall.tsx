@@ -78,10 +78,18 @@ export function CliInstall() {
             <Command label="설치에 입력할 서버 주소" command={guide.serverUrl} />
           </>}
         </details>
+        <Panel title="기존 CLI 업데이트">
+          <p>로컬 미리보기와 CLI를 사용하는 Codex·Claude Code를 종료한 뒤, 위 설치 명령을 같은 사용자로 다시 실행하세요. 기존 연결과 인증 정보는 유지됩니다.</p>
+          <Command label="전역 CLI 버전 확인" command="miy --version" />
+          <p>위에 표시된 버전인지 확인하고, 각 앱 프로젝트 폴더에서 새 전역 CLI로 실행하세요. 프로젝트의 기존 실행 파일로 실행하면 새 버전으로 바뀌지 않습니다.</p>
+          <Command label="프로젝트 CLI·MCP 갱신" command="miy app setup" />
+          <p>Codex·Claude Code를 다시 열어 MCP와 가이드를 새로 불러오세요. SDK 번들이 다르다는 오류가 나오면 변경을 검토·커밋한 뒤 명시적으로 <code>miy app upgrade</code>를 사용하세요.</p>
+          <p>프로젝트 실행 파일(<code>.miy-tools/miy</code>, Windows는 <code>.miy-tools/miy.exe</code>)의 버전과 <code>auth status</code>를 확인하세요. 업데이트만으로 재로그인이 필요한 것은 아닙니다. 인증 저장소 오류가 계속되면 같은 실행 파일의 <code>report send --message "인증 저장소 오류"</code>로 로그인 없이 신고할 수 있습니다.</p>
+        </Panel>
         <Panel title="2. CLI 로그인">
           <p>위 명령은 이 서버 주소를 연결로 등록합니다. CLI에는 기본 IP나 도메인이 없습니다. 기존 연결과 인증 정보는 유지합니다.</p>
           {guide.serverUrl.startsWith("http://") && <p>이 서버는 사내망 HTTP 구성으로 통신이 암호화되지 않습니다.</p>}
-          <p>PATH가 설정된 터미널에서 실행하고, 열린 브라우저에서 계정과 인증 코드를 확인해 연결을 승인하세요.</p>
+          <p>처음 인증하거나 재인증이 필요하다는 오류가 있을 때 실행하세요. 열린 브라우저에서 계정과 인증 코드를 확인해 연결을 승인합니다.</p>
           <Command label="CLI 로그인 명령" command={guide.commands.login} />
           <p>기존 연결이 있다면 <code>miy context list</code>로 로그인할 서버를 먼저 확인하세요.</p>
         </Panel>

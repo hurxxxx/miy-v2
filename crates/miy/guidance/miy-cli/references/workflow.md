@@ -271,10 +271,18 @@ log request ID and use `app logs --environment dev --request ID` to observe it.
 
 ## Tooling updates and removed commands
 
+Use `miy describe --topic updates` or MCP `get_cli_help({"topic":"updates"})`
+for the complete offline update procedure. Re-run the selected portal's
+`/cli/install` command to update the global CLI first; this preserves contexts
+and credentials. Stop processes using the executable before replacing it.
+
 Global installation does not update every project's pinned CLI. In a compatible
 project run the intended new global `miy app setup`; for a different SDK bundle,
 commit clean source and use explicit `miy app upgrade`. Review changes and check
-again. Applied SQL and user business files must be preserved. Keep managed files
+again. Restart Codex/Claude Code to reload the new project MCP executable and
+guidance, then verify the project CLI version and `auth status`. Reauthenticate
+only when the authentication error requires it. Applied SQL and user business
+files must be preserved. Keep managed files
 LF, component/SQL byte hashes intact, and credentials/executables out of Git.
 
 Old `app login/logout/doctor/describe/components/mcp/registrations/approve/reject/users/grant`

@@ -32,6 +32,9 @@ pub enum AppCommand {
         ca_file: Option<PathBuf>,
     },
     /// Transactionally update the compatible project CLI, guidance and MCP settings.
+    #[command(
+        long_about = "Copy this executable and its CLI guidance into the current compatible project, and configure Codex/Claude MCP. First update the global CLI using your server's installer, then run the new global miy app setup here. This command does not download a newer CLI or reset authentication. Restart the agent afterward. See miy describe --topic updates; a different SDK bundle requires an explicit app upgrade."
+    )]
     Setup,
     /// Upgrade a supported SDK bundle while preserving business code and applied SQL.
     Upgrade,

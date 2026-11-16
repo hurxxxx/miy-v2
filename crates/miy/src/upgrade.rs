@@ -22,7 +22,9 @@ pub async fn run() -> Result<Value> {
     let old: Value = serde_json::from_slice(&read_input("miy.bundle.json", &mut expected_files)?)?;
     if old["bundleVersion"] == crate::bundle::VERSION {
         crate::cli_error::validation(crate::bundle::verify(Path::new(".")), "bundle_invalid")?;
-        let receipt = transaction.commit(crate::agent_tools::setup_changes(&root)?)?;
+        let changes =
+            crate::cli_error::validation(crate::agent_tools::setup_changes(&root), "setup_failed")?;
+        let receipt = transaction.commit(changes)?;
         let setup = crate::agent_tools::setup_result(&root)?;
         return Ok(
             json!({"alreadyCurrent":true,"bundleVersion":crate::bundle::VERSION,"cliVersion":crate::cli_guidance::VERSION,"setup":setup,"transaction":receipt}),

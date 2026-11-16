@@ -1,0 +1,91 @@
+{
+  "status": "PASS",
+  "scope": "Source and local validation before package publication",
+  "sourceBase": "3bae7ea041e598f63ccb57ed4d5b233924c7982b",
+  "workingTreeDirty": true,
+  "cliVersion": "0.12.1",
+  "bundleVersion": "0.11.0",
+  "schema": 24,
+  "checks": [
+    {
+      "name": "rust",
+      "status": "PASS",
+      "evidence": "rust-final.log",
+      "scope": "229 server tests, 7 ignored; 141 client tests; fmt and both Clippy profiles"
+    },
+    {
+      "name": "web",
+      "status": "PASS",
+      "evidence": "web.log",
+      "scope": "type checking, isolated production builds and 113 browser tests"
+    },
+    {
+      "name": "scripts",
+      "status": "PASS",
+      "evidence": "scripts-full-path.log",
+      "scope": "script/contract/configuration checks including actual isolated Nginx and Caddy"
+    },
+    {
+      "name": "cliOutput",
+      "status": "PASS",
+      "evidence": "cli-output-final.log",
+      "scope": "17 actual CLI checks including offline update guide with invalid configuration"
+    },
+    {
+      "name": "cliInstall",
+      "status": "PASS",
+      "evidence": "cli-install-final.log",
+      "scope": "17 native Unix installer checks"
+    },
+    {
+      "name": "cliRecovery",
+      "status": "PASS",
+      "evidence": "cli-recovery-final.log",
+      "scope": "9 CLI lifecycle and wire recovery checks"
+    },
+    {
+      "name": "guidance",
+      "status": "PASS",
+      "evidence": "guidance-final.log",
+      "scope": "6 guidance checks: offline stdio MCP with invalid configuration, generated manuals, old 0.12.0 CLI project setup, preservation and explicit upgrade conflict"
+    }
+  ],
+  "failuresRetained": [
+    {
+      "status": "FAIL",
+      "evidence": "guidance.log",
+      "reason": "Same-bundle app upgrade returned internal_error for modified managed guidance. Wrapped local setup validation so the actual conflict is reported; rerun passed."
+    }
+  ],
+  "earlierScopeLimits": [
+    {
+      "status": "NOT_RUN",
+      "evidence": "scripts.log",
+      "scope": "Nginx checks",
+      "reason": "Restricted PATH omitted /usr/sbin; scripts-full-path.log includes and passes them."
+    }
+  ],
+  "notRun": [
+    {
+      "status": "NOT_RUN",
+      "scope": "Native package publication and live server rollout",
+      "reason": "Follows this local validation record"
+    },
+    {
+      "status": "NOT_RUN",
+      "scope": "Actual incident Mac credential-storage recovery and external desktop acceptance",
+      "reason": "This update documents and exposes the workflow; no remote user desktop is attached"
+    }
+  ],
+  "evidenceDirectory": "/srv/miy-prod/evidence/cli-updates-20261116",
+  "guidanceEvidence": "/projects/miy-v2/prod/.local/evidence/cli-guidance/mwjw78ez",
+  "sourceFiles": {
+    "crates/miy/src/cli_guidance.rs": "e691a88400832423df0f64a4eec0cc44e75da2121147600e10fd1758689fa1f8",
+    "crates/miy/src/cli_discovery.rs": "ec38659b9b308de81c0c9cec95ab44ee4b381f3d6eacd560c09d5db49ae98a5b",
+    "crates/miy/src/agent_tools.rs": "320cdf3eb058509896dfa7458e7a9ef99956ae145f70bcc90d6c7656af1456b2",
+    "crates/miy/src/mcp.rs": "1fa8b83a857702a9dbd9ec9fb6f86022ddf80861af9d59ca4cdc58b98b55586a",
+    "crates/miy/src/upgrade.rs": "2521e4c123e2088b6eabf522b589cc718bb051df452a714f8c90c9139e008461",
+    "crates/miy/guidance/miy-cli/references/updating.md": "4b275f6b9fb0bbc09b74071f2971811f446e25512bdbf24550f86f19bd7b7836",
+    "web/platform/src/pages/CliInstall.tsx": "349302855cefd5e420dffcb42f5ca63cbc588824edaecaafa3dce0cf89ba80c0"
+  }
+}

@@ -1,6 +1,6 @@
 # CLI와 독립 앱 개발·운영 실행 안내
 
-현행 CLI의 설치·인증·앱 개발·운영 사용법을 모은다. 설치된 실행 파일의 `miy --version`, `miy describe`와 서버 capability가 실제 사용 가능한 범위를 결정한다. miy.works의 게시 CLI/번들은 **0.11.0**이며 서버 빌드 전용 배포와 한 줄 설치를 제공한다. 기존 v2.dwdcc.kr 호스트의 게시본은 0.10.0이므로 연결할 서버의 안내를 확인한다. 게시 출처와 남은 조건은 [CLI-RELEASE](CLI-RELEASE.md), 실제 서버 상태는 [SERVER-OPERATIONS](SERVER-OPERATIONS.md)를 따른다.
+현행 CLI의 설치·인증·앱 개발·운영 사용법을 모은다. 설치된 실행 파일의 `miy --version`, `miy describe`와 서버 capability가 실제 사용 가능한 범위를 결정한다. miy.works의 게시 CLI는 **0.12.0**, SDK 번들은 **0.11.0**이며 서버 빌드 전용 배포·한 줄 설치·비로그인 신고를 제공한다. 기존 v2.dwdcc.kr 호스트의 게시본은 0.10.0이므로 연결할 서버의 안내를 확인한다. 게시 출처와 남은 조건은 [CLI-RELEASE](CLI-RELEASE.md), 실제 서버 상태는 [SERVER-OPERATIONS](SERVER-OPERATIONS.md)를 따른다.
 
 검사 선택은 [CHECKS](CHECKS.md), 사용자 Windows 설치·인수는 [WINDOWS-ACCEPTANCE](WINDOWS-ACCEPTANCE.md)에 모은다. 명령 구현·특정 환경 PASS·전체 V7 인수는 구분한다. 현재 [실행·인증 계약](APP-BOUNDARIES.md#확정-결정)은 prod 포털·dev 포털·관리/CLI 승인/Keycloak 콘솔 세 출처다. 원격 업무 앱은 설치별 출처 프레임에서 실행하며 단일 IP HTTPS도 지원한다. CLI의 대표 서버 주소는 prod 포털이고 브라우저 승인만 콘솔에서 처리한다.
 
@@ -51,6 +51,47 @@ miy completion zsh
 miy completion fish
 miy completion powershell
 ```
+
+## CLI 업데이트와 MCP 갱신
+
+전역 CLI 설치, 프로젝트에 복사된 CLI, 실행 중인 MCP는 각각 갱신해야 한다. CLI 0.12.1부터 `miy describe --topic updates`와 프로젝트 MCP의 `get_cli_help({"topic":"updates"})`로 로그인·네트워크 없이 이 절차를 읽을 수 있다. 원격 HTTP MCP에는 `get_cli_update_guide`가 있으며 해당 HTTP 연결의 인증은 필요하다.
+
+1. `miy context show`의 업무 포털 origin을 확인하고 그 서버의 `/cli/install`을 연다. 도메인 또는 IP·포트를 그대로 사용한다. 설정을 읽지 못하면 관리자에게 공개 포털 주소를 확인한다.
+2. 로컬 미리보기와 CLI를 사용하는 Codex·Claude Code를 종료한다. 특히 Windows는 실행 중인 파일을 교체할 수 없다. 같은 OS 사용자의 일반 터미널에서 **기존 설치 명령을 다시 실행**한다. 기존 context·자격증명은 보존된다. 사용자 지정 설치 경로를 사용했다면 같은 경로를 지정한다.
+
+```sh
+# https://PLATFORM을 선택한 서버 origin으로 바꾼다.
+curl -fsSL 'https://PLATFORM/api/v1/cli/install.sh' | bash
+miy --version
+```
+
+Windows PowerShell:
+
+```powershell
+& ([scriptblock]::Create((Invoke-RestMethod -Uri 'https://PLATFORM/api/v1/cli/install.ps1')))
+miy --version
+```
+
+설치 화면의 버전과 일치하는지 확인한다. 이전 버전이 나오면 새 터미널을 열고 `command -v miy` 또는 PowerShell의 `Get-Command miy`로 실제 실행 경로를 확인한다. 설치기가 출력한 새 실행 파일의 절대 경로도 사용할 수 있다. 오프라인 환경은 검증한 새 패키지에 동봉된 설치기를 사용한다. 사설 HTTPS는 기존 CA 신뢰를 사용하며 TLS 검증을 끄지 않는다.
+
+3. **각 앱 프로젝트 폴더에서 새 전역 CLI로** 아래 명령을 실행한다. `app setup` 자체는 새 CLI를 다운로드하지 않으며, 실행한 바이너리를 프로젝트에 복사한다. 기존 `.miy-tools/miy app setup`을 실행하면 이전 버전을 다시 복사하므로 전역 설치와 구분한다.
+
+```sh
+miy app setup
+```
+
+SDK 번들이 같으면 이것으로 충분하다. 번들이 다르면 변경을 검토하고 깨끗한 커밋을 만든 뒤 명시적으로 `miy app upgrade`를 사용한다. 게시 SDK 파일을 직접 고치지 않는다.
+
+4. **Codex·Claude Code를 재시작**하여 프로젝트 MCP와 가이드를 다시 불러온다. 같은 OS 사용자·context로 프로젝트 실행 파일을 확인한다.
+
+```sh
+./.miy-tools/miy --version
+./.miy-tools/miy auth status --output json
+```
+
+Windows는 `.\.miy-tools\miy.exe`를 사용한다. 업데이트만으로 재로그인을 요구하지 않는다. `login_required`·`reauthentication_required` 등 인증이 필요하다는 결과일 때 로그인한다. 인증 저장소 오류라면 브라우저 승인을 반복하지 말고 안전한 진단 필드를 확인한 뒤 같은 실행 파일의 `report send --message "인증 저장소 오류"`로 [비로그인 신고](SUPPORT-REPORTS.md)를 보낸다.
+
+위 프로젝트 갱신은 로컬 stdio MCP에 해당한다. 업무 포털 `/mcp`에 직접 연결한 HTTP MCP는 서버에서 실행되고 인증도 별도다. 로컬 CLI 업데이트가 HTTP MCP 서버나 OAuth 세션을 갱신하지는 않는다.
 
 ## 서버 context와 인증
 

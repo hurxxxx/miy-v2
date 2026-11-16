@@ -31,7 +31,7 @@ async function mcp(cwd){
  try{
   assert((await call('initialize',{protocolVersion:'2025-03-26',capabilities:{},clientInfo:{name:'guidance-regression',version:'1'}})).result);
   child.stdin.write(JSON.stringify({jsonrpc:'2.0',method:'notifications/initialized'})+'\n');
-  for(const [arguments_,args] of [[{},['describe']],[{command:'app deploy'},['describe','--command','app deploy']],[{search:'job'},['describe','--search','job']]]){
+  for(const [arguments_,args] of [[{},['describe']],[{command:'app deploy'},['describe','--command','app deploy']],[{search:'job'},['describe','--search','job']],[{topic:'updates'},['describe','--topic','updates']]]){
    const reply=await call('tools/call',{name:'get_cli_help',arguments:arguments_});assert(!reply.result.isError);assert.deepEqual(JSON.parse(reply.result.content[0].text),cli(args,cwd));
   }
  }finally{child.stdin.end();await new Promise(resolve=>child.on('exit',resolve));}
@@ -49,7 +49,13 @@ const manual=readFileSync(join(fresh,'docs/CLI-REFERENCE.md'),'utf8');assert(man
 fails(['app','deploy','--environment','prod'],fresh,CLI_EXIT.usage,/invalid_arguments/);
 fails(['app','login'],fresh,CLI_EXIT.usage,/removed_command/);
 ok('compact discovery and installed manuals cover actual visible commands; removed names and prod deploy are refused');
-await mcp(fresh);ok('MCP default, command and search discovery exactly match the installed CLI');
+const updateGuide=cli(['describe','--topic','updates'],fresh);
+assert(manual.includes(updateGuide.guide));
+for(const client of ['.agents','.claude'])assert.equal(readFileSync(join(fresh,client,'skills/miy-cli/references/updating.md'),'utf8'),updateGuide.guide);
+mkdirSync(env.MIY_CONFIG_DIR,{recursive:true});const configPath=join(env.MIY_CONFIG_DIR,'config.json'),savedConfig=existsSync(configPath)?readFileSync(configPath):null;
+try{writeFileSync(configPath,'invalid configuration');await mcp(fresh);assert.equal(readFileSync(configPath,'utf8'),'invalid configuration');}
+finally{if(savedConfig)writeFileSync(configPath,savedConfig);else rmSync(configPath);}
+ok('MCP default, command, search and update guidance match CLI and generated manuals even with broken configuration');
 const manualPath=join(fresh,'docs/CLI-REFERENCE.md'),oldBinary=hash(join(fresh,'.miy-tools/miy'+suffix));
 writeFileSync(manualPath,'custom local notes');fails(['app','setup'],fresh,CLI_EXIT.environment,/cli_guidance_modified_or_conflict/);assert.equal(hash(join(fresh,'.miy-tools/miy'+suffix)),oldBinary);assert.equal(readFileSync(manualPath,'utf8'),'custom local notes');writeFileSync(manualPath,manual);
 rmSync(join(fresh,'.claude/skills/miy-cli/references/commands.md'));app(['setup'],fresh);assert(existsSync(join(fresh,'.claude/skills/miy-cli/references/commands.md')));
@@ -63,6 +69,15 @@ if(process.platform!=='win32')for(const path of [codex,claude])assert.equal(stat
 ok('tooling transaction preserves unrelated private MCP configuration and installs root mcp arguments');
 const previous=process.env.MIY_PREVIOUS_BUNDLE_CLI||process.env.MIY_PREVIOUS_CLI;
 if(previous){
+ const tooling=join(out,'previous-tooling');run(previous,['app','init',tooling,'--id','tooling-probe','--name','Previous tooling']);
+ const toolingBundle=readFileSync(join(tooling,'miy.bundle.json'));
+ if(JSON.parse(toolingBundle).bundleVersion===bundle.bundleVersion){
+  const business=join(tooling,'src/main.rs');writeFileSync(business,readFileSync(business,'utf8')+'\n// uncommitted business work must survive tooling setup\n');const businessHash=hash(business);
+  const configured=app(['setup'],tooling);assert.equal(configured.authenticationChanged,false);assert.equal(configured.agentRestartRequired,true);
+  assert.deepEqual(readFileSync(join(tooling,'miy.bundle.json')),toolingBundle);assert.equal(hash(business),businessHash);
+  assert.equal(run(join(tooling,'.miy-tools/miy'+suffix),['--version'],tooling),`miy ${summary.cliVersion}\n`);
+  await mcp(tooling);ok('new global app setup updates prior project CLI and offline MCP guidance without SDK upgrade or losing uncommitted business work');
+ }
  const old=join(out,'previous');run(previous,['app','init',old,'--id','upgrade-probe','--name','Previous bundle']);
  const oldLock=JSON.parse(readFileSync(join(old,'miy.bundle.json')));
  writeFileSync(join(old,'src/main.rs'),readFileSync(join(old,'src/main.rs'),'utf8')+'\n// business change must survive upgrade\n');

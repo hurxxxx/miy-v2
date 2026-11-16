@@ -12,6 +12,8 @@ Core는 `MIY_CLI_RELEASE_DIR/release-index.json`을 검증하여 `/api/v1/cli/in
 
 ## miy.works 0.12.0 게시
 
+**다음 후보 0.12.1:** [CLI 업데이트와 MCP 갱신](RUNNING.md#cli-업데이트와-mcp-갱신)을 CLI·MCP·생성 가이드·설치 화면에 통합한다. `miy describe --topic updates`와 로컬 MCP `get_cli_help({"topic":"updates"})`는 로그인·설정 읽기 없이 안내하며, 원격 HTTP MCP는 인증된 `get_cli_update_guide`를 제공한다. 전역 설치만으로 프로젝트 실행 파일·실행 중 MCP가 바뀌지 않는 점과 기존 인증 보존을 명시한다. SDK 번들은 0.11.0 바이트를 유지한다. 아직 아래 게시 기록을 후보 결과로 대체하지 않는다.
+
 2026-11-16에 `06f2fd7988b818017d5a690ec54f5e856aec17eb`의 [CLI CI 43884479668](https://github.com/hurxxxx/miy-v2/actions/runs/43884479668)에서 5개 target·Linux helper 2개를 검증하고 게시했다. Core·worker·웹과 schema 24도 반영했다. 비로그인 고장 신고·로컬 재전송·관리자 처리, macOS 저장소 오류 진단이 포함된다([사용 계약](SUPPORT-REPORTS.md), [반영 기록](releases/support-reports-2026-11-16-deployment.json)). SDK 번들은 0.11.0 바이트를 유지한다. 공개 HTTPS 설치·실제 비로그인 신고와 관리자 처리·CLI 인증·생성 stdio MCP를 이 Linux 호스트에서 확인했다. 실제 Mac Keychain 원인·복구, 외부 Windows/macOS 데스크톱 인수는 아직 미확인이다.
 
 Core 빌드 입력은 `ec65ce5`이며 CLI 소스 `06f2fd7`은 Windows 검사기의 UTF-8 디코딩만 바꾼다. 웹은 모바일 표 너비·신고 메모 표시를 보완한 `f408261`이다. Workflow `33b6f93`은 ARM runner 배정 실패 후 macOS 26을 선택하며 CLI 후보는 `06f2fd7`로 고정했다. GitHub 정식 Release와 Windows GUI EXE는 게시하지 않았다. 기존 프로젝트는 새 전역 CLI에서 `miy app setup`을 실행하고 에이전트를 재시작해야 프로젝트 CLI·MCP도 갱신된다.

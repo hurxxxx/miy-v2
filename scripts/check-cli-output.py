@@ -302,6 +302,21 @@ def check(cli):
             require(isinstance(response["data"].get("cliVersion"), str), "Describe must expose CLI version")
         ok("auto nonTTY and global JSON options return one versioned envelope")
 
+        config = Path(env["MIY_CONFIG_DIR"])
+        config.mkdir(mode=0o700)
+        broken_config = config / "config.json"
+        broken_config.write_text("invalid configuration", encoding="utf-8")
+        updates = run(["describe", "--topic", "updates"], command="describe")["data"]
+        require(updates["authenticationRequired"] is False and updates["localEffects"] == []
+                and updates["remoteEffects"] == [], "Update guidance must be offline and read-only")
+        require("/api/v1/cli/install.sh" in updates["guide"] and "miy app setup" in updates["guide"]
+                and "Restart" in updates["guide"], "Update guidance must cover global, project and agent steps")
+        require(broken_config.read_text(encoding="utf-8") == "invalid configuration", "Discovery changed configuration")
+        broken_config.unlink()
+        config.rmdir()
+        run(["describe", "--topic", "updates", "--all"], expected=2)
+        ok("update guidance remains available with broken configuration, without login or mutation")
+
         text_result = subprocess.run(
             [str(cli), "describe", "--output", "text"], cwd=root, env=env,
             stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=30,

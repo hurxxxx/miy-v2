@@ -70,6 +70,18 @@ struct PermissionSet {
 #[tool_router]
 impl Mcp {
     #[tool(
+        description = "Read CLI update instructions: selected portal installer, project app setup, agent restart and authentication diagnostics. Does not install or modify anything. HTTP MCP authentication remains separate from the local CLI.",
+        annotations(read_only_hint = true)
+    )]
+    async fn get_cli_update_guide(&self) -> Result<CallToolResult, McpError> {
+        let mut guide = crate::cli_guidance::update_guide();
+        guide["serverUrl"] = json!(self.state.auth.origin);
+        guide["installationPage"] = json!(format!("{}/cli/install", self.state.auth.origin));
+        // The content is public guidance, but this HTTP transport still requires authentication.
+        guide["authenticationRequired"] = json!(true);
+        result(Ok(guide))
+    }
+    #[tool(
         description = "Read explicit external-call approvals for one installation/release; requested permissions are not grants.",
         annotations(read_only_hint = true)
     )]
@@ -270,7 +282,7 @@ impl ServerHandler for Mcp {
             .enable_tools()
             .enable_resources()
             .build();
-        info.with_instructions("Use get_contract first, then search_api/get_api for supported public APIs. Work only within your assigned app and environment. Permissions in a manifest are requests, not grants. Never connect to core or another app's DB. Use registered releases and inspect job results; do not claim a DB job is an app deployment.")
+        info.with_instructions("Use get_contract first, then search_api/get_api for supported public APIs. Use get_cli_update_guide for the portal installer, project CLI refresh and agent restart instructions. Direct HTTP MCP authentication is separate from local CLI authentication. Work only within your assigned app and environment. Permissions in a manifest are requests, not grants. Never connect to core or another app's DB. Use registered releases and inspect job results; do not claim a DB job is an app deployment.")
     }
     async fn list_resources(
         &self,
