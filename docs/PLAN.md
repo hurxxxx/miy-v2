@@ -43,7 +43,7 @@
 | 파일럿 리뷰 후속 보완 | 쿼리 DSN의 앱 DB·로그인 덮어쓰기 차단, 최초 DB 준비 대상 고정, 중간 실패 후 재시도 가능한 프록시 복구, 배포 응답 유실 시 파일럿 정리와 고정 결과 이름. 소스·격리 검증 완료 | [후속 검증](releases/pilot-review-fixes-2026-11-15-validation.json). 미배포이며 실제 복구·파일럿 v2 인수는 아래 대기 표에서 추적 |
 | 서버 빌드 전용 배포 | 배포·승격 접수, 사전 점검, worker 실행에서 그 앱의 성공한 서버 빌드 산출물만 허용(`server_build_required`). 이미지 업로드 API·적재 worker·위임 action `upload`와 CLI의 로컬 배포용 빌드·이미지 전송 제거. CLI/번들 0.11.0 후보와 0.10.0에서의 `app upgrade` 경로. 소스·격리 검증 완료 | [검증 기록](releases/server-build-only-2026-11-16-validation.json). schema 변경 없음(23 유지). miy.works 서버·CLI 반영 완료. 기존 v2.dwdcc.kr 갱신과 후속 인수는 아래 대기 표에서 추적 |
 | 개발 PC 한 줄 CLI 설치 | curl/Bash·PowerShell 온라인 설치, OS/CPU 선택, 패키지·바이너리 해시 검증, 사용자 PATH·서버 등록과 기존 설정 보존 | miy.works에 CLI 0.11.0 5종·helper 2종과 Core·설치 화면 반영. [반영 기록](releases/online-cli-2026-11-16-deployment.json). 외부 Windows/macOS 실기는 별도 |
-| 설치 주소 설정·이전 | 도메인/IP·포트 공통 JSON 입력·검증, 현재 설정을 보존한 후보 생성, Nginx/Keycloak 주소 갱신, 기존 프레임 예약·앱 데이터를 보존하는 SQL 계획 도구와 격리 검사 | [주소 안내](SERVER-ADDRESSES.md), [검증 기록](releases/server-addresses-2026-11-16-validation.json). miy.works는 역할별 도메인으로 실제 이전하고 OIDC·CLI·MCP·기존 dev 앱을 확인했다([전환 기록](releases/miy-works-address-move-2026-11-16.json)). 외부 PC 재인증은 별도 |
+| 설치 주소 설정·이전 | 도메인/IP·포트 공통 JSON 입력·검증, 현재 설정을 보존한 후보 생성, Nginx/Keycloak 주소 갱신, 기존 프레임 예약·앱 데이터를 보존하는 SQL 계획 도구와 격리 검사 | [주소 안내](SERVER-ADDRESSES.md), [검증 기록](releases/server-addresses-2026-11-16-validation.json). miy.works는 역할별 도메인으로 실제 이전하고 OIDC·CLI·MCP·기존 dev 앱을 확인했다([전환 기록](releases/miy-works-address-move-2026-11-16.json)). dwdcc.kr은 기존 v2 이름을 유지한 채 주소 파일 관리로 통합하고 DNS·TLS·프록시 일치를 확인했다([반영 기록](releases/dwdcc-subdomains-2026-11-17-deployment.json)). 외부 PC 재인증은 별도 |
 
 ## 일부 구현된 작업
 

@@ -24,7 +24,7 @@ v2.dwdcc.kr은 "운영" 주소로 부르지만 **아직 개발 중인 서버**�
 
 ## 이 호스트의 운영 경계
 
-**miy.works 호스트 주의:** 이 작업본은 `/projects/miy-v2/prod`이며, 현재 플랫폼은 `/projects/miy-v2/prod` 소스와 `/srv/miy-prod` 상태를 사용한다. 서비스는 `miy-prod-serve`·`miy-prod-worker`, DB는 `miy-prod-postgres-1`이다. 공통 호스트 규칙은 상위 `../AGENTS.md`, 세부 운영 안내는 [서버 운영 안내의 miy.works 절](docs/SERVER-OPERATIONS.md#miyworks-호스트-2026-11-16)을 따른다. 아래 `.local`·`miy-v2-validation-*` 설명은 **기존 v2.dwdcc.kr 호스트**에 관한 것이며 이 호스트의 경로/이름으로 추정하지 않는다.
+**호스트 구분:** 저장소를 받았다는 이유로 현재 호스트를 `miy.works`로 간주하지 않는다. 실제 checkout·상태 경로·서비스를 먼저 확인한다. **dwdcc.kr 사내 호스트**는 `/projects/miy-v2`·`.local`·`miy-v2-*`를 사용하고 공개 주소의 입력 정본은 `.local/addresses.json`이다. **별도 miy.works 호스트에서만** `/projects/miy-v2/prod`·`/srv/miy-prod`·`miy-prod-serve`·`miy-prod-worker`·`miy-prod-postgres-1`과 그 호스트의 상위 `../AGENTS.md`가 적용된다. 세부 사항은 [서버 운영 안내](docs/SERVER-OPERATIONS.md)를 따르며 서로의 경로·도메인·서비스명을 복사하지 않는다.
 
 이 checkout의 `.local`은 v2.dwdcc.kr 운영 상태이고, Nginx는 `web/platform/dist`를 그대로 서빙한다.
 

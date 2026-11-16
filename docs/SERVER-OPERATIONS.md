@@ -73,7 +73,7 @@ nginx -t && systemctl reload nginx
 
 이하의 주소·`.local`·서비스명·복구 절차는 기존 호스트에 관한 기록이다.
 
-- 정리일: 2026-11-15 · 실제 운영 확인의 최신 근거: [0.10.0 반영 기록](releases/pilot-0.10.0-2026-11-15-deployment.json)
+- 정리일: 2026-11-17 · 서버/CLI 배포 근거: [0.10.0 반영 기록](releases/pilot-0.10.0-2026-11-15-deployment.json). 최신 DNS·TLS·주소 설정 점검은 [서브도메인 관리 반영](releases/dwdcc-subdomains-2026-11-17-deployment.json)이며 서버 버전 갱신과 구분한다.
 - 역할: 현재 서버·복구·반영 절차. 전체 완료/진행/잔여와 착수 순서는 [PLAN](PLAN.md), CLI 후보·게시는 [CLI-RELEASE](CLI-RELEASE.md)가 관리한다.
 
 이 프로젝트의 “운영” 주소는 아직 개발 서버다. 운영 반영은 이 서버의 변경분 배포를 뜻하며 제품 개발 완료나 정식 오픈 선언이 아니다. 이 checkout의 `.local`과 `web/platform/dist`는 실제 제공 상태이므로 검증 도구·빌드는 [AGENTS](../AGENTS.md)의 격리 경계를 지킨다.
@@ -104,6 +104,18 @@ nginx -t && systemctl reload nginx
 | 직접 HTTP MCP | `https://v2.dwdcc.kr/mcp`, IdP OAuth 인증 |
 
 대표 주소는 `MIY_ORIGIN`, dev 포털은 `MIY_DEV_PORTAL_ORIGIN`, 콘솔은 `MIY_CONSOLE_ORIGIN`, 로그인 issuer는 `MIY_ISSUER`로 관리한다. Core의 고정 목적 listener는 `MIY_BIND_ADDR`·`MIY_DEV_PORTAL_BIND_ADDR`·`MIY_CONSOLE_BIND_ADDR`이며 `server.json`의 `origin`·`devPortalOrigin`·`consoleOrigin`과 `bind`·`devPortalBind`·`consoleBind`에 맞춘다. Keycloak은 세 출처의 정확한 callback/logout URI만 허용하고 issuer는 콘솔에 둔다. MCP resource/audience와 CLI context·설치 안내의 서버 주소는 prod 포털을 유지한다. API와 DB의 내부 포트는 사용자 PC의 CLI 설정에 입력하지 않는다. 비밀 설정 파일이나 그 전체 내용을 문서·채팅·Git에 복사하지 않는다.
+
+### dwdcc.kr 주소 설정 정본
+
+공개 주소 입력은 **`/projects/miy-v2/.local/addresses.json`** 한 파일에서 관리한다. 2026-11-17에 실행 중인 서버의 공개 주소 6개 필드와 같은 내용으로 설치했으며, `appFramePorts`는 도메인 프로필이므로 `null`, `allowHttp`는 `false`다. 이후 설정 후보를 만들 때 [서버 주소 설정](SERVER-ADDRESSES.md)의 `--addresses-file`에 이 파일을 지정한다. Core가 이 파일을 실시간으로 읽지는 않으며 편집 후에는 후보 생성·비교·반영 절차가 필요하다. 일반 bootstrap을 운영 상태에 직접 재실행하지 않는다.
+
+현재 이름은 `v2.dwdcc.kr`·`v2-console.dwdcc.kr`·`v2-dev.dwdcc.kr`·`v2-app-{key}.dwdcc.kr`을 유지한다. `dev.dwdcc.kr`은 기존 별도 서비스가 사용하므로 `miy.works`의 짧은 이름을 그대로 옮기지 않는다. 기존 서비스와의 충돌을 확인하지 않고 형제 서브도메인을 점유하지 않는다.
+
+Gabia 권한 NS 3곳에서 와일드카드 `*.dwdcc.kr`의 A는 `128.1.253.101`로 일치했고, 점검한 호스트에는 AAAA·CNAME이 없었다. TLS SAN은 `*.dwdcc.kr`·`dwdcc.kr`, 만료는 **2027-01-23 22:22:12 UTC**다. 인증서는 `/etc/lego/production/certificates/dwdcc.kr.crt`, 키는 같은 위치의 `.key`이며 비밀값을 출력하지 않는다. 이 확인은 발급/갱신 자동화 검증을 포함하지 않는다.
+
+현 Nginx는 이미 최신 렌더러 출력과 바이트가 같다. 변경 후보 비교는 현재 `server.json`을 새 비공개 폴더로 복사하고 `render-server-config.py --state-dir /projects/miy-v2/.local --settings-dir <후보 폴더>`에 **기존 바이너리·인증서·키·사용자**를 지정한다. 인증서 키의 접근 권한은 유지하고 필요 시 렌더러만 `sudo`로 실행한다. 생성된 systemd 파일을 불필요하게 설치하지 않는다.
+
+이번 반영은 주소 입력 파일 추가뿐이며 DNS·Nginx·인증서·DB·Keycloak·앱 매핑을 변경하거나 서비스를 재시작하지 않았다. 활성 앱 출처 5개가 모두 현재 패턴과 일치했다. 원격 코드의 0.12.0 기능을 이 호스트에 배포한 것으로 해석하지 않는다.
 
 Keycloak 한도는 현재 컨테이너의 Docker 설정과 저장소 `compose.yaml`에 반영했다([적용·검사 기록](releases/resource-usage-2026-11-12-validation.json)). 그 적용에서 코어·UI의 배포 소스와 schema는 바뀌지 않았다. 한도 변경은 사용자가 요청했을 때 해당 인증 컨테이너만 정지 → `docker update --memory 2g --memory-swap 2g` → 시작하며, 전체 Compose 재생성이나 realm 초기화를 하지 않는다. 실제 JVM PID는 cgroup의 Java 프로세스로 찾고 PID 1로 고정하지 않는다. 부족할 경우 정지 후 두 상한을 함께 4GiB로 임시 확대하고 인증·OOM 상태를 확인한다. 이 Docker에서 `docker update --memory 0 --memory-swap 0`은 기존 값을 유지하므로 상한 해제 명령으로 사용하지 않는다.
 

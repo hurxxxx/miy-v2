@@ -1,0 +1,170 @@
+{
+  "date": "2026-11-17",
+  "timezone": "Asia/Seoul",
+  "sourceCommit": "ef6404d0a0723b9820ef73ce67346116808e36fe",
+  "scope": "Adopt the unified address input file for the existing dwdcc.kr installation; inspect DNS, TLS and the active proxy",
+  "result": "PASS",
+  "evidenceDirectory": "/projects/miy-v2/.local/evidence/dwdcc-subdomains-20261117",
+  "addressFile": "/projects/miy-v2/.local/addresses.json",
+  "addresses": {
+    "origin": "https://v2.dwdcc.kr",
+    "consoleOrigin": "https://v2-console.dwdcc.kr",
+    "devPortalOrigin": "https://v2-dev.dwdcc.kr",
+    "appFrameOrigin": "https://v2-app-{key}.dwdcc.kr",
+    "appFramePorts": null,
+    "allowHttp": false
+  },
+  "applied": {
+    "atUtc": "2026-11-16T23:29:12.762736+00:00",
+    "action": "Atomically created a new mode-0600 addresses.json whose six public fields match the existing runtime settings",
+    "sha256": "ea8a95a5458bdceaea23a105cdf8449610958281f38b739999a1cef9b8a447a1",
+    "configurationRole": "Input for future --addresses-file configuration generation; not a file watched by the running Core",
+    "nginxReload": false,
+    "coreWorkerRestart": false,
+    "dnsOrCertificateChange": false,
+    "databaseOrIdentityMutation": false,
+    "appOriginOrContainerChange": false,
+    "reason": "Existing subdomains and mappings already match the requested configuration; the installed Nginx site is byte-identical to the latest renderer output"
+  },
+  "dns": {
+    "status": "PASS",
+    "authoritativeServers": [
+      "ns.gabia.co.kr",
+      "ns1.gabia.co.kr",
+      "ns.gabia.net"
+    ],
+    "wildcard": "*.dwdcc.kr",
+    "ipv4": "128.1.253.101",
+    "ttlSeconds": 600,
+    "checkedAAAA": "No answers for the checked hostnames",
+    "checkedCNAME": "No answers for the checked hostnames",
+    "scope": "Authoritative dig queries for the three current portal names, a synthetic app host, wildcard and proposed alternative hostnames"
+  },
+  "tls": {
+    "status": "PASS",
+    "san": [
+      "*.dwdcc.kr",
+      "dwdcc.kr"
+    ],
+    "expiresAtUtc": "2027-01-23T22:22:12Z",
+    "certificateSha256": "9e5c4176140e0baa37e5239ed904216427d00b585faf1cff650a303120539821",
+    "verification": "Normal trust-chain and hostname verification; no TLS bypass",
+    "privateKeyContentsPrinted": false
+  },
+  "checks": [
+    {
+      "status": "PASS",
+      "command": "bootstrap.py --check with the candidate settings copy and explicit addresses file",
+      "scope": "Canonical origins, frame pattern and derived issuer/MCP/install addresses; no live state regeneration"
+    },
+    {
+      "status": "PASS",
+      "command": "sudo render-server-config.py --state-dir /projects/miy-v2/.local --settings-dir <private candidate> with the current binary and TLS paths",
+      "scope": "TLS material validation and isolated Nginx/systemd generation"
+    },
+    {
+      "status": "PASS",
+      "command": "Byte comparison of the live v2 Nginx site and generated candidate",
+      "sha256": "cf12f0866dd86ab29375accaaeee6502062b87cb32d0251429e630e258ab7cd9",
+      "scope": "Identical output; no replacement or reload needed"
+    },
+    {
+      "status": "PASS",
+      "command": "sudo nginx -t",
+      "scope": "Current configuration before and after address-file adoption"
+    },
+    {
+      "status": "PASS",
+      "command": "Unauthenticated HTTPS GET /api/health on the three current origins",
+      "scope": "All returned 200 before and after adoption"
+    },
+    {
+      "status": "PASS",
+      "command": "Unauthenticated console OIDC discovery and portal MCP metadata GET",
+      "scope": "Issuer, resource and authorization-server URLs match the configured dwdcc.kr origins"
+    },
+    {
+      "status": "PASS",
+      "command": "Synthetic unregistered app hostname HTTPS request",
+      "scope": "TLS verified and /_miy/launch returned 404 as expected for an unregistered installation"
+    },
+    {
+      "status": "PASS",
+      "command": "PostgreSQL read-only transaction counting schema, origin mappings and active jobs",
+      "scope": "Schema 23; five active origins, zero retired origins, all five follow the current template; zero queued/running runtime or build jobs"
+    },
+    {
+      "status": "PASS",
+      "command": "Protected-file digest comparison and systemctl show",
+      "scope": "Eight existing configuration/binary/UI files unchanged; Nginx and Core/worker remain active with unchanged process IDs"
+    },
+    {
+      "status": "PASS",
+      "command": "Unauthenticated GET /api/v1/cli/install",
+      "scope": "Still publishes CLI 0.10.0 source 9133d700369c43b11abeee1738541e6abda5b4d6 for https://v2.dwdcc.kr; this work does not deploy CLI/Core 0.12.0"
+    },
+    {
+      "status": "PASS",
+      "command": "python3 scripts/check-doc-links.py",
+      "scope": "1085 relative links in 71 tracked Markdown files; the new deployment record exists as a link target"
+    },
+    {
+      "status": "PASS",
+      "command": "git diff --check",
+      "scope": "Whitespace/error-marker check for the documentation changes"
+    }
+  ],
+  "repositoryIntegration": {
+    "remoteCommit": "fa0d48de28014397aca2b91f7c53529fa60cf42a",
+    "action": "Rebased the documentation commit onto the concurrently published CLI guidance change; no runtime deployment was performed by this integration.",
+    "checks": [
+      {
+        "status": "PASS",
+        "command": "python3 scripts/check-doc-links.py",
+        "scope": "After rebase: 1088 relative links in 72 tracked Markdown files. The earlier 1085-link result remains recorded for its original source."
+      },
+      {
+        "status": "PASS",
+        "command": "git diff --check HEAD^ HEAD",
+        "scope": "Rebased documentation commit"
+      }
+    ]
+  },
+  "failuresRetained": [
+    {
+      "status": "FAIL",
+      "phase": "First candidate preparation",
+      "reason": "The older domain configuration omits optional appFramePorts. Initial extraction used a required-key lookup and stopped; the dependent check found no candidate. No live file changed.",
+      "resolution": "Normalized the missing optional field to null for the complete address input; the next preparation and check passed."
+    },
+    {
+      "status": "FAIL",
+      "phase": "Unprivileged candidate render",
+      "reason": "The existing TLS material is not readable by the normal account; the renderer could not validate it.",
+      "resolution": "Ran only the candidate renderer with sudo; key permissions were not changed and no key bytes were printed."
+    }
+  ],
+  "otherServices": {
+    "existingDevHostname": "dev.dwdcc.kr is configured for a different existing service",
+    "alternativeHostnameResponses": "portal/console/app-* returned 410 and dev returned 404 on the sampled paths; wildcard DNS does not establish that a hostname is unowned",
+    "policy": "Keep the current v2-prefixed names and do not repurpose another service's subdomain"
+  },
+  "notRun": [
+    {
+      "status": "NOT_RUN",
+      "scope": "External employee PC/network acceptance and authenticated app/CLI login",
+      "reason": "Address names, identity, frame mappings and runtime services did not change; checks were limited to the host and public read-only endpoints."
+    },
+    {
+      "status": "NOT_RUN",
+      "scope": "Certificate issuance/renewal automation, DNS writes and VM installation",
+      "reason": "Not required for the current address-profile adoption."
+    },
+    {
+      "status": "NOT_RUN",
+      "scope": "Full test suite, database restore or new server binary deployment",
+      "reason": "No runtime code, database or protected existing configuration changed."
+    }
+  ],
+  "rollback": "The only installed state addition is addresses.json. Verify its recorded SHA-256 and remove only that file to undo this adoption; no DB/IdP/DNS/service rollback is needed. Existing files and the Nginx candidate comparison are retained in the private evidence directory."
+}
