@@ -558,8 +558,16 @@ with tempfile.TemporaryDirectory(prefix='miy-server-config-') as temporary:
     require(load_env(state, 'runtime.env') == runtime, 'Stored configuration was not preserved')
     require(state.stat().st_mode & 0o077 == 0 and all((state / file).stat().st_mode & 0o077 == 0 for file in ['credentials.json','runtime.env','compose.env']), 'Private file permissions changed')
     require(all((state / file).stat().st_mode & 0o777 == 0o644 for file in ['realm.json','init.sql']), 'Container seed files cannot be read under container UIDs')
-    subprocess.run(['docker', 'compose', '--env-file', str(state / 'compose.env'), 'config', '--quiet'],
-                   cwd=ROOT, env=ENV, check=True, capture_output=True, timeout=15)
+    # Capture expanded configuration in memory only: it contains fixture secrets.
+    configured = subprocess.run(
+        ['docker', 'compose', '--env-file', str(state / 'compose.env'), 'config', '--format', 'json'],
+        cwd=ROOT, env=ENV, check=True, capture_output=True, timeout=15)
+    services = json.loads(configured.stdout)['services']
+    require(all(services[name]['restart'] == 'unless-stopped' for name in ['postgres', 'keycloak']),
+            'Persistent database/identity services will not resume after a host reboot')
+    require(services['postgres']['healthcheck']['test'] ==
+            ['CMD-SHELL', 'pg_isready -h 127.0.0.1 -U postgres'],
+            'Database readiness must wait for TCP, not the first-init temporary socket server')
     subprocess.run(['docker', 'run', '--rm', '--read-only', '--network', 'none', '--user', '65534:65534',
                     '--entrypoint', 'sh', '-v', f'{state / "init.sql"}:/miy-init.sql:ro',
                     '-v', f'{state / "realm.json"}:/miy-realm.json:ro', 'postgres:18.3',

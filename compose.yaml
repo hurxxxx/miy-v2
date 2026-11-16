@@ -1,6 +1,7 @@
 name: miy-v2-validation
 services:
   postgres:
+    restart: unless-stopped
     image: postgres:18.3@sha256:7e32e9833a6fb1c92c32552794cb6ed569d51b445a54907d35fc112ef39684db
     # Core, identity, every installation's role limits and development sessions share this
     # cluster; 100 leaves no room for one more installation (docs/CAPACITY.md).
@@ -13,11 +14,14 @@ services:
       - pgdata:/var/lib/postgresql
       - ${MIY_STATE_DIR:-./.local}/init.sql:/docker-entrypoint-initdb.d/10-miy.sql:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      # The first initialization uses a temporary socket-only server. Wait for
+      # the final TCP listener before starting Keycloak against the new DB.
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U postgres"]
       interval: 2s
       timeout: 3s
       retries: 40
   keycloak:
+    restart: unless-stopped
     image: quay.io/keycloak/keycloak:26.8.1@sha256:79c623a22abacf3fe6c00a5fb30f5b7843d717b234033b80995891c06116d244
     # Keycloak sizes its JVM heap from the container limit (initial 50%, max 70%).
     # Bound the whole process and disable extra swap, including disposable UI stacks.

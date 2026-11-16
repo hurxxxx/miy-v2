@@ -63,6 +63,7 @@ script_checks() {
   python3 scripts/test-app-frame-settings.py
   python3 scripts/test-console-origin-move.py
   python3 scripts/test-server-addresses.py
+  python3 scripts/test-up-state-dir.py
   python3 scripts/check-server-config.py
 }
 

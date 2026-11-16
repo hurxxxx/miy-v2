@@ -7,12 +7,15 @@ bootstrap_args=("$@")
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --state-dir) export MIY_STATE_DIR="${2:?--state-dir requires a path}"; shift 2 ;;
-    --state-dir=*) export MIY_STATE_DIR="${1#--state-dir=}"; shift ;;
+    --state-dir=*) export MIY_STATE_DIR="${1#--state-dir=}"; : "${MIY_STATE_DIR:?--state-dir requires a path}"; shift ;;
     *) shift ;;
   esac
 done
+# pnpm exec changes to the selected package directory. Match bootstrap's
+# resolved state path before passing it to builds and service wrappers.
+MIY_STATE_DIR="$(python3 -c 'from pathlib import Path; import sys; print(Path(sys.argv[1]).resolve())' "${MIY_STATE_DIR:-$PWD/.local}")"
+export MIY_STATE_DIR
 python3 scripts/bootstrap.py "${bootstrap_args[@]}"
-export MIY_STATE_DIR="${MIY_STATE_DIR:-$PWD/.local}"
 readarray -t settings < <(python3 - "$MIY_STATE_DIR/server.json" <<'CONFIG'
 import json,sys
 v=json.load(open(sys.argv[1]))
