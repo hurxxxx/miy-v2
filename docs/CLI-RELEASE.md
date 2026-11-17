@@ -30,7 +30,9 @@ Core 빌드 입력은 `ec65ce5`이며 CLI 소스 `06f2fd7`은 Windows 검사기�
 
 ## 기존 v2.dwdcc.kr 0.10.0 게시
 
-`9133d700369c43b11abeee1738541e6abda5b4d6`의 [CLI CI 43672504526](https://github.com/hurxxxx/miy-v2/actions/runs/43672504526)(5개 target과 Linux DB 연결 helper 2개, 공개 Release 없음)와 같은 CLI 출처·해시로 만든 [설치 파일 CI 43674150699](https://github.com/hurxxxx/miy-v2/actions/runs/43674150699)를 검증했다. 2026-11-15 서버 0.10.0·schema 23과 함께 [설치 안내](https://v2.dwdcc.kr/cli/install)에 게시했다([0.10.0 반영 기록](releases/pilot-0.10.0-2026-11-15-deployment.json)). SDK 번들 0.10.0은 G4 디렉터리·공통 ACL·작은 첨부의 typed SDK(Rust SDK 0.4.0)를 포함하고, 새 프로젝트는 공용 UI 1.1.0을 기본으로 설치한다. 기존 0.9.0 앱은 `miy app upgrade`로 명시적으로 옮긴다. 0.9.0 CLI·번들·UI 1.0.1 바이트는 그대로 보존한다.
+이 호스트는 2026-11-17 주소만 `portal.dwdcc.kr`로 변경했다. 아래 0.10.0 게시물의 바이트·버전은 유지하며 현재 설치 주소는 [서버 운영 안내](SERVER-OPERATIONS.md)를 따른다.
+
+`9133d700369c43b11abeee1738541e6abda5b4d6`의 [CLI CI 43672504526](https://github.com/hurxxxx/miy-v2/actions/runs/43672504526)(5개 target과 Linux DB 연결 helper 2개, 공개 Release 없음)와 같은 CLI 출처·해시로 만든 [설치 파일 CI 43674150699](https://github.com/hurxxxx/miy-v2/actions/runs/43674150699)를 검증했다. 2026-11-15 서버 0.10.0·schema 23과 함께 [현재 설치 안내](https://portal.dwdcc.kr/cli/install)에 게시했다([0.10.0 반영 기록](releases/pilot-0.10.0-2026-11-15-deployment.json)). SDK 번들 0.10.0은 G4 디렉터리·공통 ACL·작은 첨부의 typed SDK(Rust SDK 0.4.0)를 포함하고, 새 프로젝트는 공용 UI 1.1.0을 기본으로 설치한다. 기존 0.9.0 앱은 `miy app upgrade`로 명시적으로 옮긴다. 0.9.0 CLI·번들·UI 1.0.1 바이트는 그대로 보존한다.
 
 게시 CLI로 실서버에 새 앱을 만들어 서버 빌드·dev 배포·프레임 표시까지 확인했다(같은 Linux 호스트, [pilot 흐름](SERVER-OPERATIONS.md#5-실제-연결-확인)). Windows 11 사용자 인수는 [현재 후보 절차](WINDOWS-ACCEPTANCE.md)를 쓰며 아직 `NOT_RUN`이다. 이전 게시는 [0.9.0 배포 기록](releases/cli-0.9.0-2026-11-13-deployment.json), [0.7.0 배포 기록](releases/core-0.7.0-deployment.json)에 있다. 0.10.0 보호 파일 명세(`crates/miy/bundles/0.10.0.json`)는 게시 소스 `9133d70`의 바이트로 추가했다(같은 생성 규칙으로 `173c6d5`에서 만든 결과가 기존 0.9.0 명세와 바이트까지 같음을 확인).
 

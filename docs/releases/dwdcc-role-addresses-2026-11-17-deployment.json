@@ -1,0 +1,341 @@
+{
+  "date": "2026-11-17",
+  "timezone": "Asia/Seoul",
+  "status": "PASS",
+  "sourceCommit": "204d7e7b0c41a8d05ec4ed03a4c4921d1a62f3ce",
+  "scope": "Apply role-based dwdcc.kr subdomains; preserve the existing Core/CLI/UI release and application data.",
+  "requestedDecision": "User chose dev2 because dev.dwdcc.kr serves the separate AI-DO installation.",
+  "startedAtUtc": "2026-11-17T03:04:18.977669+00:00",
+  "addressesReadyAtUtc": "2026-11-17T03:04:30.330882+00:00",
+  "before": {
+    "portal": "https://v2.dwdcc.kr",
+    "console": "https://v2-console.dwdcc.kr",
+    "devPortal": "https://v2-dev.dwdcc.kr",
+    "appFrames": "https://v2-app-{key}.dwdcc.kr"
+  },
+  "after": {
+    "portal": "https://portal.dwdcc.kr",
+    "console": "https://console.dwdcc.kr",
+    "devPortal": "https://dev2.dwdcc.kr",
+    "appFrames": "https://app-{key}.dwdcc.kr",
+    "issuer": "https://console.dwdcc.kr/identity/realms/miy",
+    "cliInstall": "https://portal.dwdcc.kr/cli/install",
+    "httpMcp": "https://portal.dwdcc.kr/mcp"
+  },
+  "installed": {
+    "addressInput": "/projects/miy-v2/.local/addresses.json",
+    "addressInputRole": "Input for candidate generation; the running Core reads runtime configuration, not this input file directly.",
+    "settings": [
+      "server.json",
+      "runtime.env",
+      "compose.env",
+      "realm.json",
+      "nginx-miy.conf"
+    ],
+    "nginxSite": "/etc/nginx/sites-available/v2.dwdcc.kr",
+    "legacy9443Redirect": "https://console.dwdcc.kr",
+    "old443Origins": "410 from the default site; no old-origin API aliases",
+    "keycloakHostname": "https://console.dwdcc.kr/identity",
+    "coreAndWorkerRestarted": true,
+    "keycloakRecreated": true,
+    "nginxReloaded": true,
+    "dnsAndCertificateChanged": false
+  },
+  "retainedRelease": {
+    "coreAndCliVersion": "0.10.0",
+    "publishedSourceCommit": "9133d700369c43b11abeee1738541e6abda5b4d6",
+    "schema": 23,
+    "corePortalAndFrameEntryHashesUnchanged": {
+      "bin/miy-server": true,
+      "frame-runtime/index.html": true,
+      "portal-index": true
+    },
+    "newServerOrCliReleaseDeployed": false
+  },
+  "backup": {
+    "privateDirectory": "/projects/miy-v2/.local/address-move-20261117-dev2/backup",
+    "databases": 10,
+    "tables": 164,
+    "totalDumpBytes": 585198,
+    "contents": "Core, identity and eight application database dumps; roles, original settings, identity representations, Docker metadata, Nginx/TLS/systemd backup. Private files are not committed.",
+    "restoreEnvironment": {
+      "memoryBytes": 536870912,
+      "tmpfsLimitBytes": 1073741824,
+      "network": "none",
+      "publishedPorts": false,
+      "containerRemoved": true
+    }
+  },
+  "checks": [
+    {
+      "name": "Authoritative DNS, TLS and active Nginx name collision audit",
+      "status": "PASS",
+      "commands": [
+        "dig A/AAAA/CNAME against all three Gabia authoritative nameservers",
+        "TLS connections with normal certificate and hostname verification",
+        "Filtered nginx -T inspection"
+      ],
+      "details": {
+        "ipv4": "128.1.253.101",
+        "nameservers": [
+          "ns.gabia.co.kr",
+          "ns1.gabia.co.kr",
+          "ns.gabia.net"
+        ],
+        "san": [
+          "*.dwdcc.kr",
+          "dwdcc.kr"
+        ],
+        "certificateExpiresAtUtc": "2027-01-23T22:22:12Z",
+        "conflictingTargetNames": 0
+      }
+    },
+    {
+      "name": "Candidate generation and configuration comparison",
+      "status": "PASS",
+      "commands": [
+        "bootstrap.py --state-dir <live> --addresses-file <new input> --no-shared-development-login --output-dir <new private candidate>",
+        "render-server-config.py --settings-dir <candidate> with the existing binary and certificate",
+        "nginx -t -c <isolated candidate includes>"
+      ],
+      "details": "Source credentials untouched; runtime DSNs, secrets, bind/data paths and database/network settings preserved. Nginx candidate differs only by the intended hostnames. Keycloak environment differs only in KC_HOSTNAME; image/pool/resource limits/restart policy preserved."
+    },
+    {
+      "name": "Cold backup, complete restore comparison and frame SQL rehearsal",
+      "status": "PASS",
+      "command": "freeze-backup.py importing verify-backups.py; pg_dump plus table snapshots; isolated pg_restore and plan-frame-origin-move SQL",
+      "details": {
+        "databases": 10,
+        "tables": 164,
+        "allRowsAndHashesMatch": true,
+        "frameMigration": {
+          "activeOrigins": 5,
+          "movedOrigins": 5,
+          "oldReservationsPreserved": true,
+          "activeTargetsMatch": true,
+          "changedInstallationsCredentialsRevoked": true,
+          "unrelatedTablesUnchanged": 41,
+          "onlyPermittedTablesChanged": true
+        }
+      }
+    },
+    {
+      "name": "Frame origin transaction and identity update",
+      "status": "PASS",
+      "command": "apply-addresses.py: reviewed frame SQL, atomic configuration installation and minimal Keycloak Admin API PUTs",
+      "details": {
+        "frameMigration": {
+          "activeOrigins": 5,
+          "movedOrigins": 5,
+          "oldReservationsPreserved": true,
+          "activeTargetsMatch": true,
+          "changedInstallationsCredentialsRevoked": true
+        },
+        "identity": {
+          "realmAndClientIdsPreserved": true,
+          "userSubjectsAndSettingsPreserved": true,
+          "clientSecretsPreserved": true,
+          "users": 4,
+          "minimalPutRequests": 4
+        },
+        "activeOriginsAfterChecks": 5,
+        "retiredReservationsAfterChecks": 5,
+        "realmUsersOrPasswordsReset": false,
+        "identityScopeRoleResynchronizationRun": false
+      }
+    },
+    {
+      "name": "Three public health endpoints, discovery, install guide and prior URLs",
+      "status": "PASS",
+      "commands": [
+        "HTTPS GET /api/health on portal, console and dev2",
+        "HTTPS GET console OIDC discovery and portal CLI/MCP metadata",
+        "HTTPS GET old v2 names without following redirects",
+        "nginx -t"
+      ],
+      "details": "All new health endpoints return 200; canonical issuer/resource/install origin match. The 9443 redirect returns 301 directly to console.dwdcc.kr; other old HTTPS names return 410."
+    },
+    {
+      "name": "OIDC/SSO, CLI device login and project stdio MCP",
+      "status": "PASS",
+      "command": "node scripts/check-platform-connection.mjs --origin https://portal.dwdcc.kr --cli <verified published 0.10.0 CLI> --credentials-file <private existing file> --output <new private directory>",
+      "details": {
+        "passCount": 22,
+        "cleanupFailures": 0,
+        "credentialScope": "Fresh isolated browser and CLI sessions; only those sessions logged out."
+      }
+    },
+    {
+      "name": "Authenticated HTTP MCP on the new issuer and resource",
+      "status": "PASS",
+      "command": "node <private>/http-mcp-check.mjs",
+      "details": {
+        "status": "PASS",
+        "checks": [
+          "PKCE token new issuer and MCP resource audience",
+          "Authenticated HTTP MCP initialize and tools/list",
+          "Only this OAuth session logged out"
+        ],
+        "cleanupFailures": []
+      }
+    },
+    {
+      "name": "Existing app frames on new domains",
+      "status": "PASS",
+      "command": "node <private>/frames-check.mjs frames-check-2.json",
+      "details": {
+        "applications": 4,
+        "environments": [
+          "prod",
+          "dev"
+        ],
+        "checks": 6,
+        "newPerInstallationOrigins": true,
+        "portalCookieAppApiStatus": 403,
+        "pageErrors": 0,
+        "cleanupFailures": 0
+      }
+    },
+    {
+      "name": "Origin-bearing stopped pilot runtime recreation",
+      "status": "PASS",
+      "command": "node <private>/recreate-pilot.mjs; authenticated console preflight/deploy/stop APIs",
+      "details": {
+        "appId": "pilot-8e4b32b9",
+        "sameImageReleaseInstallationAndDatabase": true,
+        "recreatedCount": 1,
+        "finalState": "stopped",
+        "reason": "This stopped pilot alone contained MIY_CORE_ORIGIN pointing at the old portal. The other seven containers contain no old public origin and were retained."
+      }
+    },
+    {
+      "name": "Application data, platform entities, runtime states and other services",
+      "status": "PASS",
+      "command": "Read-only SNAPSHOT_SQL/installation queries, selected Docker metadata and file digests",
+      "details": {
+        "applicationDatabases": 8,
+        "allApplicationRowsAndHashesMatch": true,
+        "selectedStableCoreTables": 15,
+        "stableCoreTablesMatch": true,
+        "installations": {
+          "count": 8,
+          "sameIdSet": true,
+          "appEnvironmentReleaseImageDatabasePreserved": true,
+          "desiredStatesPreserved": true,
+          "originalRuntimeStatesRestored": true,
+          "running": 5,
+          "stopped": 3,
+          "portChanges": 6
+        },
+        "keycloak": {
+          "running": true,
+          "memory2GiB": true,
+          "memorySwap2GiB": true,
+          "pool10": true,
+          "restartPolicyNo": true,
+          "newConsoleHostname": true
+        },
+        "unrelatedNginxConfigurationsPreserved": 7,
+        "aiDoDevPublicStatus": 200
+      }
+    },
+    {
+      "name": "Documentation validation",
+      "status": "PASS",
+      "commands": [
+        "python3 scripts/check-doc-links.py",
+        "git diff --check"
+      ],
+      "details": "1105 relative links in 72 tracked Markdown files; no whitespace errors."
+    }
+  ],
+  "failuresRetained": [
+    {
+      "status": "FAIL",
+      "phase": "Initial read-only job query",
+      "reason": "Queried nonexistent build_jobs; the deployed schema uses app_builds.",
+      "resolution": "Read the migration and repeated the idle check using app_builds; zero active jobs. The failed transaction was read-only."
+    },
+    {
+      "status": "FAIL",
+      "phase": "Initial candidate resource comparison and dependent Nginx check",
+      "reason": "Compose JSON exposes memory limits as strings; direct comparison with Docker integer values failed. The following candidate Nginx check found no generated include file.",
+      "resolution": "Normalized memory values to integers, regenerated the candidate include and reran nginx -t successfully before any live setting change."
+    },
+    {
+      "status": "FAIL",
+      "phase": "First business-app browser checker",
+      "reason": "The checker treated a present but empty role=alert element as a rendered app error.",
+      "resolution": "A focused diagnostic found no failed request, page/console error or frame error; the alert text was empty. Checked nonempty alert text instead, preserving the first failure file. All four visible dev/prod app frames then passed."
+    }
+  ],
+  "clientFollowup": {
+    "browser": "Open the new portal/console/dev2 URLs and sign in again with the existing account.",
+    "cli": "Add/update the context to https://portal.dwdcc.kr and authenticate; external PC context files are not changed automatically.",
+    "httpMcp": "Use https://portal.dwdcc.kr/mcp and reauthorize against the new console issuer.",
+    "stdioMcp": "The local miy mcp command stays the same; update its CLI server context and authentication."
+  },
+  "rollback": {
+    "liveExecution": "NOT_RUN",
+    "privateGuardedFrameSql": "/projects/miy-v2/.local/address-move-20261117-dev2/rollback-frame-origins.sql",
+    "steps": [
+      "Stop Core/worker after checking that no runtime/build/database jobs are active; preserve any later user writes and take a fresh scoped backup.",
+      "Review the guarded rollback frame SQL against the current mapping snapshot. It reattaches the same original installations and revokes frame credentials; the new addresses remain reserved. A changed mapping causes refusal. Do not restore the entire old Core dump over later user data.",
+      "Restore the original four settings files, addresses.json and Nginx copies from the private backup; do not overwrite credentials.json or init.sql. Apply the recorded identity-revert-plan.json PUTs using the loopback admin endpoint.",
+      "Recreate only Keycloak with the recorded compose-keycloak-rollback.json and old compose.env; preserve its exact image, network, mount and limits. Restore the saved 9443 redirect, validate Nginx and reload.",
+      "Start the previously running app containers and Core/worker with matching old origins. Recreate the same pilot image through the old console API if its stored Core origin must be reverted, then restore its stopped state. Verify old OIDC, health, CLI/MCP, mappings and app DB preservation."
+    ]
+  },
+  "notRun": [
+    {
+      "status": "NOT_RUN",
+      "scope": "External employee Windows/macOS PC and external client context migration",
+      "reason": "Server-side browser, CLI and HTTP MCP checks ran on this Linux host. External clients require their own address update and login."
+    },
+    {
+      "status": "NOT_RUN",
+      "scope": "Fresh VM setup, certificate renewal/issuance automation and full repository regression suite",
+      "reason": "Address migration only; no product binary, UI bundle or schema release was changed."
+    },
+    {
+      "status": "NOT_RUN",
+      "scope": "UI acceptance of every user-specific installation and real live rollback",
+      "reason": "Browser checks opened the four running applications visible to the existing developer. All five running app backends passed health; the remaining UI needs its assigned user. Backup restoration and the forward SQL were rehearsed, live rollback was unnecessary."
+    }
+  ],
+  "privateEvidenceDirectory": "/projects/miy-v2/.local/address-move-20261117-dev2",
+  "privateEvidenceSha256": {
+    "candidate-check.json": "15a3f1e76ce54ec46589774652c0b7cdc91dec5f64af21b23b831b2b82596765",
+    "freeze-result.json": "f6528188ebd06aa7553d314c9c83ef695be514785236b2ec5f23f2f597da1c20",
+    "restore-rehearsal.json": "cd0f3ec06ad2bb527c7072022b23b54b810dc4a24369ab89a7ebfffed1b1ef75",
+    "apply-result.json": "28e2acc023b99a8c622e35a61258606acab3f3ea854f190259e5a4cc7a8f4cbf",
+    "frames-check.json": "d0b816b634473e6cff4c98f961122ca2eba112c45c16d5020a0165f245e8327f",
+    "frame-diagnostic.json": "51b24d594062f39b324f5b7a20bff99b7d4874e1642ff41a73918e652ec00962",
+    "frames-check-2.json": "e8fe3a748eb9cf45ab3c5c77e2b7b58712d4b698ab98bb177cb338380bb7acf3",
+    "http-mcp-check.json": "85ab9e5a092d082b536d66f50cd088a66e0f73515bd8713b7caacc12f781d5bc",
+    "recreate-pilot-result.json": "0b8a726aec2fc399371d331b3aa8d89e342233dbd57eb3cd5a0461c94504b5f8",
+    "post-data-check.json": "f9929d8675567ba88b8dbc28d4888f9022d192066d0d5c72d349f104cb600794",
+    "legacy-address-check.json": "e4314aebf956166b07958d58c985aca25fb415c2b692b6091292835497d467ff",
+    "move_common.py": "5294bbc1bb0b830c22155e4fd43c160d4c6a27c8bc59ce9bdd6e00f949b5f5d2",
+    "freeze-backup.py": "44e7e6fd2c15571d0994d534bfe6d0c86ddc6b8ed77a4389e68fbc5a3f6332c0",
+    "verify-backups.py": "7b55f19b14b14a9dac264c419526a0d30877148f52d03eec6532a804f6d29e94",
+    "apply-addresses.py": "7e2eb265b7f492a88d3051b65b8f76905a3b25de3def7d3f42e9dcd03c8f0252",
+    "rollback-frame-origins.sql": "97059a1f9ee7d8427cfb6210ecdc117e894f496b56887b8b743166a0840592d3"
+  },
+  "repositoryIntegration": {
+    "remoteCommit": "0c3fe873197f63d9f98580cb46cd211b09d5bcb5",
+    "action": "Rebased documentation onto the concurrent CLI 0.12.1 publication record. Resolved the RUNNING introduction by preserving miy.works CLI 0.12.1 and the dwdcc portal origin with CLI 0.10.0. No additional runtime deployment.",
+    "checks": [
+      {
+        "status": "PASS",
+        "command": "python3 scripts/check-doc-links.py",
+        "scope": "After integration: 1109 relative links in 72 tracked Markdown files. The earlier 1105-link result remains for the pre-integration source."
+      },
+      {
+        "status": "PASS",
+        "command": "git diff --check HEAD^ HEAD",
+        "scope": "Integrated documentation commit"
+      }
+    ]
+  }
+}

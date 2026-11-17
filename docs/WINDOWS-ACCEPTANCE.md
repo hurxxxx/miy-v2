@@ -177,7 +177,7 @@ $beforeInstall = 'step-실제성공출력'
 사용자가 탐색기에서 `$installer`에 해당하는 **검증된 파일을 직접 열고** 다음을 확인한다. 검사기는 GUI를 열거나 버튼을 누르지 않는다.
 
 1. 설치 전 서버 주소 입력란, 연결 확인, 설치, CLI 제거 상태를 관찰한다.
-2. `https://v2.dwdcc.kr`를 입력하고 연결 확인 후 **설치**를 누른다. 관리자 승격 없이 `%LOCALAPPDATA%\Programs\miy\bin`에 설치되는지 확인한다.
+2. dwdcc.kr 호스트는 `https://portal.dwdcc.kr`를 입력하고 연결 확인 후 **설치**를 누른다. 다른 설치는 해당 업무 포털 주소를 사용한다. 관리자 승격 없이 `%LOCALAPPDATA%\Programs\miy\bin`에 설치되는지 확인한다.
 3. 완료 화면을 확인한다. 같은 버전의 설치 버튼이 비활성화되고 CLI 제거가 활성화되는지 보고, 창을 다시 열어도 같은지 기록한다.
 
 ```powershell

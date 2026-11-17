@@ -14,7 +14,7 @@
 
 ## 개발 단계 원칙 (실제 운영 전환 전까지)
 
-v2.dwdcc.kr은 "운영" 주소로 부르지만 **아직 개발 중인 서버**다. 실제 서비스 운영으로 바뀌면 사용자가 이 절을 다시 정한다. 그 전까지는 운영을 고려한 의사결정을 하지 않는다.
+`dwdcc.kr`의 miy 서버는 "운영" 주소로 부르지만 **아직 개발 중인 서버**다. 실제 서비스 운영으로 바뀌면 사용자가 이 절을 다시 정한다. 그 전까지는 운영을 고려한 의사결정을 하지 않는다.
 
 - 서비스 재시작, 짧은 중단, 사용자 재로그인, 외부 클라이언트 재인증을 이유로 설계를 미루거나 바꾸지 않는다. 유지보수 창이나 무중단 전환을 계획하지 않는다.
 - 리팩토링·아키텍처 변경에서 하위 호환을 유지하지 않아도 된다. 구 API·구 CLI·구 번들·구 설정 형식을 위한 호환 경로, 이전 형식 fallback, 단계적 전환 계층을 기본으로 넣지 않는다. 필요하면 새 버전으로 끊고 CLI·SDK·웹·문서를 함께 바꾼다.
@@ -26,7 +26,7 @@ v2.dwdcc.kr은 "운영" 주소로 부르지만 **아직 개발 중인 서버**�
 
 **호스트 구분:** 저장소를 받았다는 이유로 현재 호스트를 `miy.works`로 간주하지 않는다. 실제 checkout·상태 경로·서비스를 먼저 확인한다. **dwdcc.kr 사내 호스트**는 `/projects/miy-v2`·`.local`·`miy-v2-*`를 사용하고 공개 주소의 입력 정본은 `.local/addresses.json`이다. **별도 miy.works 호스트에서만** `/projects/miy-v2/prod`·`/srv/miy-prod`·`miy-prod-serve`·`miy-prod-worker`·`miy-prod-postgres-1`과 그 호스트의 상위 `../AGENTS.md`가 적용된다. 세부 사항은 [서버 운영 안내](docs/SERVER-OPERATIONS.md)를 따르며 서로의 경로·도메인·서비스명을 복사하지 않는다.
 
-이 checkout의 `.local`은 v2.dwdcc.kr 운영 상태이고, Nginx는 `web/platform/dist`를 그대로 서빙한다.
+이 checkout의 `.local`은 `portal.dwdcc.kr`·`console.dwdcc.kr`·`dev2.dwdcc.kr`의 운영 상태이고, Nginx는 `web/platform/dist`를 그대로 서빙한다. `dev.dwdcc.kr`은 별도 AI-DO 서비스이며 이 프로젝트의 주소로 사용하지 않는다.
 
 - `pnpm build`나 기본 `vite build`로 `web/platform/dist`를 덮어쓰지 않는다. 검증 빌드는 `--outDir .local/evidence/...` 또는 `scripts/check-static.sh`를 쓴다. 운영 화면 교체는 [서버 운영 안내](docs/SERVER-OPERATIONS.md)의 백업·추가·`index.html` 교체 절차로만 한다.
 - 운영 `.local`을 대상으로 다음을 실행하지 않는다: `scripts/check.sh`(origin 가드로 거부됨), `services.py`, `up.sh`, `down.sh`, `compose up`, `bootstrap.py`, `seed`, `configure-identity.py`.

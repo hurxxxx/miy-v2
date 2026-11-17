@@ -45,7 +45,7 @@ python3 scripts/bootstrap.py --profile server --state-dir /srv/miy \
 
 주소 입력 우선순위는 **명령행의 개별 옵션 → 주소 파일 → 환경변수/저장된 설정/기본값**이다. 파일은 오타·중복 키·누락 필드를 거부한다. 기존 `--origin`, `--console-origin`, `--dev-portal-origin`, `--app-frame-origin`, `--app-frame-ports`도 유지한다. 파일을 수정한 것만으로 실행 중인 서비스가 바뀌지는 않는다. `--check`는 주소 문법·경계 검사이며 실제 DNS·인증서·포트 사용 여부를 확인하는 기능은 아니다.
 
-`dwdcc.kr` 사내 호스트의 실제 입력 파일은 `.local/addresses.json`이며 `v2`·`v2-console`·`v2-dev`·`v2-app-{key}`를 사용한다. 최신 방식으로 관리하기 위해 기존 이름을 바꿀 필요는 없다. 이 호스트의 DNS·인증서·실행 설정과 반영 범위는 [dwdcc.kr 운영 기준](SERVER-OPERATIONS.md#dwdcckr-주소-설정-정본)을 따른다. `miy.works`의 호스트 이름은 별도 설치 사례다.
+`dwdcc.kr` 사내 호스트의 실제 입력 파일은 `.local/addresses.json`이며 **`portal.dwdcc.kr`·`console.dwdcc.kr`·`dev2.dwdcc.kr`·`app-{key}.dwdcc.kr`**를 사용한다. 2026-11-17에 설정 파일뿐 아니라 Nginx·IdP·기존 프레임 매핑까지 옮겼다([전환 기록](releases/dwdcc-role-addresses-2026-11-17-deployment.json)). `dev.dwdcc.kr`은 기존 AI-DO가 사용하므로 앱 개발 포털은 `dev2`로 정했다. 이 호스트의 실제 구성·복구는 [dwdcc.kr 운영 기준](SERVER-OPERATIONS.md#dwdcckr-주소-설정-정본)을 따른다. `miy.works`는 별도 설치이며 그 호스트의 `dev.miy.works`와 구분한다.
 
 | 생성되는 값 | 입력과 관계 |
 | --- | --- |

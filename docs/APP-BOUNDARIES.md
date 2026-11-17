@@ -7,7 +7,7 @@
 
 **동적 UI·통합 라우팅·단일 IP HTTPS와 개발 편의를 유지하며 필요한 보안부터 적용한다.** 2026-11-10 업무 앱 UI만 설치별 출처 iframe에서 실행하는 [앱 프레임 설계](APP-FRAMES.md)를 채택했고 2026-11-12 운영에 반영했다([배포 기록](releases/app-frames-2026-11-12-deployment.json)). MF 산출물은 앱 프레임 안에서 읽으며 플랫폼 화면은 기존 구조를 유지한다. 앱 실행 계약은 APP-FRAMES가, 포털·콘솔 출처와 세션·인증은 이 문서가 담당한다. 업무 포털(prod), dev 포털(dev), 관리·로그인 콘솔의 세 출처와 설치별 앱 출처를 사용한다. 같은 사이트 배치(P2·P3)의 쿠키 간섭은 남으며 별도 사이트 격리와 구분한다. 같은 페이지 앱들이 UI 신뢰 영역을 공유했던 구조와 iframe 철회 결정은 채택 전 비교 이력이다.
 
-이 문서가 포털·콘솔 경계와 인증·호환성의 정본이며 업무 앱 실행은 APP-FRAMES가 담당한다. 상세 권한과 업무 ACL은 [CORE-PERMISSIONS](CORE-PERMISSIONS.md), 작업 순서는 [PLAN](PLAN.md)이 담당한다. 공개 중인 v2.dwdcc.kr을 이 사내 전제에 해당한다고 간주하거나, 문서 확정을 제품 구현·운영 배포로 표시하지 않는다.
+이 문서가 포털·콘솔 경계와 인증·호환성의 정본이며 업무 앱 실행은 APP-FRAMES가 담당한다. 상세 권한과 업무 ACL은 [CORE-PERMISSIONS](CORE-PERMISSIONS.md), 작업 순서는 [PLAN](PLAN.md)이 담당한다. 공개 중인 개발 서버를 이 사내 전제에 해당한다고 간주하거나, 문서 확정을 제품 구현·운영 배포로 표시하지 않는다.
 
 주소를 설정하는 실제 절차와 세 포털의 사용자·CLI/MCP 접점은 [서버 주소 설정](SERVER-ADDRESSES.md)을 따른다. 도메인 없는 포트 프로필도 동일한 세 용도·권한 경계를 유지한다.
 
@@ -17,7 +17,7 @@
 
 | 영역 | 현재 필수 | 후속 권장·기능 작업 |
 | --- | --- | --- |
-| 배치 | 한 IP의 업무 포털(prod) / dev 포털 / 관리·로그인 세 HTTPS 출처(2026-11-09 결정·운영 반영, dev 포털 `https://v2-dev.dwdcc.kr`) | 별도 IdP 출처·사이트. 외부 노출·외부 앱 도입 전 재검토 |
+| 배치 | 한 IP의 업무 포털(prod) / dev 포털 / 관리·로그인 세 HTTPS 출처(2026-11-09 결정·운영 반영, 실제 주소는 [운영 안내](SERVER-OPERATIONS.md)) | 별도 IdP 출처·사이트. 외부 노출·외부 앱 도입 전 재검토 |
 | 인증 | portal/dev_portal/console 세션 용도, 서버 경로·환경 제한, 콘솔에서만 device CLI 승인. legacy 로그인은 410 종료 | 전체 credential 모델 재설계, MFA 의무화, 세밀한 인증 관제 |
 | UI | 업무 앱은 설치별 출처 iframe의 AppRoot([앱 프레임 설계](APP-FRAMES.md)), 플랫폼 화면·독립 빌드·통합 라우팅 유지. 콘솔에 앱 코드 없음 | 외부 앱 수용 전 앱 전용 도메인(P1) 인수. 최초 프레임 도입은 2026-11-12 |
 | 권한 | 기존 사용자·그룹·use/develop/deploy, 현재 권한 재검사. prod 사용과 관리 분리 | 새 역할 체계·업무 action별 API Invoke·서비스 주체 |
@@ -121,7 +121,7 @@ CLI 근거는 `cli_auth.rs`의 start/approve/exchange, `auth_sessions.rs`의 app
 | 단일 IP | https://192.168.10.20:8443 | https://192.168.10.20:9444 | https://192.168.10.20:9443 | https://192.168.10.20:9443/identity/realms/miy |
 | 도메인 사용 시 | 기존 업무 UI 호스트 | dev 호스트(권장) 또는 포트 | 관리 호스트 | 관리 호스트의 /identity/realms/miy |
 
-**dev 포털 상태:** 2026-11-09 사용자 요청으로 운영에 반영했다([배포 기록](releases/dev-portal-2026-11-09-deployment.json)). 운영 주소는 권장안인 별도 호스트명 `https://v2-dev.dwdcc.kr`(기존 `*.dwdcc.kr` DNS·인증서, 포트 없음)이다. 업무 포털 `https://v2.dwdcc.kr`은 prod 앱만 실행하고, dev 경로는 dev 포털로 옮긴다. 당시 게시 UI `3760ef0`의 `devPortalOrigin`이 없는 구 서버용 fallback은 과거 구현 사실이며 현재의 호환 유지 요구가 아니다.
+**dev 포털 상태:** 2026-11-09 사용자 요청으로 운영에 반영했다([배포 기록](releases/dev-portal-2026-11-09-deployment.json)). 당시 주소는 별도 호스트명 `https://v2-dev.dwdcc.kr`이었으며, 2026-11-17에는 `https://dev2.dwdcc.kr`로 변경했다. 업무 포털 `https://portal.dwdcc.kr`은 prod 앱만 실행한다. 실제 주소·인증 설정은 [운영 안내](SERVER-OPERATIONS.md)를 따른다. 당시 게시 UI `3760ef0`의 `devPortalOrigin`이 없는 구 서버용 fallback은 과거 구현 사실이며 현재의 호환 유지 요구가 아니다.
 
 - **집행:** Core는 dev 포털용 listener를 따로 열고(`devPortalOrigin`·`devPortalBind`, `MIY_DEV_PORTAL_ORIGIN`·`MIY_DEV_PORTAL_BIND_ADDR`) 세션 용도 `dev_portal`을 저장한다(migration `0021_dev_portal.sql`, 제약 확장만). 정책 한 곳(`policy.rs` `decide`)에서 포털 세션은 prod Use만, dev 포털 세션은 dev Use만 허용한다. 앱 API·UI 자산·directory·연결·목록·`canOpen`이 모두 이 판정을 따른다. 관리자도 prod 포털에서 dev 앱을 열 수 없다.
 - **dev 포털이 제공하지 않는 것:** 관리 API, CLI·MCP bearer, CLI 승인, `/identity`, OAuth 메타데이터. CLI·MCP·로컬 preview는 기존 포털 주소를 계속 쓴다.
@@ -148,7 +148,7 @@ CLI 근거는 `cli_auth.rs`의 start/approve/exchange, `auth_sessions.rs`의 app
 | 쿠키 대량 주입 | 같은 호스트의 다른 출처가 쿠키를 가득 채워 431/400으로 접속을 막을 수 있다 | 다른 호스트의 쿠키는 보내지 않는다. 같은 등록 도메인의 다른 사이트가 `Domain=` 쿠키를 거는 경우는 남으므로, 신뢰하지 않는 사이트와 등록 도메인을 공유하지 않는 것을 권장한다 |
 | 로그인 서버(IdP) 쿠키 | Keycloak 쿠키도 같은 호스트 쿠키 저장소에 있어 앱 코드가 간섭할 수 있다 | 별도 호스트는 호스트 전용 쿠키 공유를 줄인다. Keycloak 쿠키의 실제 속성과 같은 상위 도메인의 `Domain=` 쿠키 영향은 별도이며 완전 격리를 보장하지 않는다 |
 
-두 프로필에 공통으로 적용하는 방어는 우회가 아니라 일반 방어다: 출처별 세션 용도와 쿠키 이름, `__Host-`, 중복 인증 쿠키 거부, 쿠키 요청의 Fetch Metadata·Origin 검사(같은 사이트의 다른 호스트도 쿠키를 보내므로 도메인 환경에도 필요), 정확한 CSRF, 앱 응답 헤더 제한. 운영 서버 v2.dwdcc.kr은 도메인 프로필을 쓴다(업무 포털 `v2.dwdcc.kr`, dev 포털 `v2-dev.dwdcc.kr`, 콘솔 `v2-console.dwdcc.kr`, 2026-11-09 전환 완료).
+두 프로필에 공통으로 적용하는 방어는 우회가 아니라 일반 방어다: 출처별 세션 용도와 쿠키 이름, `__Host-`, 중복 인증 쿠키 거부, 쿠키 요청의 Fetch Metadata·Origin 검사(같은 사이트의 다른 호스트도 쿠키를 보내므로 도메인 환경에도 필요), 정확한 CSRF, 앱 응답 헤더 제한. dwdcc.kr 서버는 도메인 프로필을 쓴다. 2026-11-09의 최초 전환과 2026-11-17의 역할별 주소 변경은 [운영 안내](SERVER-OPERATIONS.md)에서 구분한다.
 
 **포트는 DOM·JavaScript origin을 나누지만 쿠키를 나누지 않는다.** 이름·세션 용도·Origin·CSRF를 함께 검사하고 앱 backend에 원본 쿠키를 전달하지 않는다. cookie bomb/tossing의 완전 해결은 보장하지 않는다. 콘솔과 IdP도 같은 신뢰 영역이므로 콘솔 XSS가 IdP에 영향을 줄 수 있다. 별도 사이트·IdP 출처는 외부 노출·외부 앱 도입 시 다시 검토한다.
 
