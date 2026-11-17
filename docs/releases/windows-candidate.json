@@ -1,22 +1,22 @@
 {
   "schemaVersion": 1,
-  "origin": "https://v2.dwdcc.kr",
-  "version": "0.10.0",
-  "bundleVersion": "0.10.0",
-  "sourceCommit": "9133d700369c43b11abeee1738541e6abda5b4d6",
+  "origin": "https://portal.dwdcc.kr",
+  "version": "0.12.1",
+  "bundleVersion": "0.11.0",
+  "sourceCommit": "fa0d48de28014397aca2b91f7c53529fa60cf42a",
   "installer": {
-    "file": "MiySetup-0.10.0-windows-x64.exe",
-    "bytes": 6391296,
-    "sha256": "b285566727d1ad558715a7d44543f51dcb54ade9ce716b07d968c14be6cf2aa9"
+    "file": "MiySetup-0.12.1-windows-x64.exe",
+    "bytes": 6464512,
+    "sha256": "6fd4356b09d69a6b0169724cc1b12d1d2094b08d31b8425f0dc5327d56063a15"
   },
   "archive": {
-    "file": "miy-0.10.0-x86_64-pc-windows-msvc.zip",
-    "sha256": "f6e8ef33ee0b2d1b43cb52d77b4a5536b2b985bff720c95296fefbb8701c63d6",
-    "binarySha256": "173879802f59e45c5ce2229df6676cf6fd1e8469571adf299331c5cfe1be30c4"
+    "file": "miy-0.12.1-x86_64-pc-windows-msvc.zip",
+    "sha256": "6809de06325f67c42b60f8e09eb65a2843ccd7b2552d40a90da7f4034f598179",
+    "binarySha256": "6b6d89bc3c74ba0b56866d1fe6a88fc89619a630f5a6e31551d8ec70acf5ec0b"
   },
   "provenance": {
-    "cliReleaseRun": 43672504526,
-    "windowsInstallerRun": 43674150699,
-    "record": "pilot-0.10.0-2026-11-15-deployment.json"
+    "cliReleaseRun": 43979915250,
+    "windowsInstallerRun": 44034693750,
+    "record": "dwdcc-0.12.1-2026-11-17-deployment.json"
   }
 }

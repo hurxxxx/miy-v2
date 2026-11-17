@@ -1,0 +1,251 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-11-17",
+  "status": "PASS",
+  "startedAt": "2026-11-17T07:05:53Z",
+  "coreFinishedAt": "2026-11-17T07:06:04Z",
+  "verifiedAt": "2026-11-17T07:07:12Z",
+  "scope": "Deploy the current 0.12.1 Core/worker, portal UI and published CLI/Windows installer to the dwdcc.kr development host. Preserve configured domains, identity, existing apps and app data. This is not a formal GitHub Release or production-service opening.",
+  "request": "버전에 맞게 배포 해야 할듯",
+  "origins": {
+    "portal": "https://portal.dwdcc.kr",
+    "console": "https://console.dwdcc.kr",
+    "dev": "https://dev2.dwdcc.kr",
+    "appFrameTemplate": "https://app-{key}.dwdcc.kr"
+  },
+  "versions": {
+    "server": "0.12.1",
+    "cli": "0.12.1",
+    "sdkBundle": "0.11.0",
+    "rustSdk": "0.4.0",
+    "sharedUi": "1.1.0",
+    "schemaBefore": 23,
+    "schemaAfter": 24
+  },
+  "source": {
+    "serverAndWebCommit": "09dca970cb8aee079445861b1de007aa1acbfec9",
+    "cliAndInstallerCommit": "fa0d48de28014397aca2b91f7c53529fa60cf42a",
+    "frameRuntimeCommit": "9133d700369c43b11abeee1738541e6abda5b4d6",
+    "frozenCheckout": ".local/release-0121-20261117-source",
+    "note": "Runtime/CLI input files are unchanged between fa0d48d and 09dca97; later commits change docs, publication metadata and maintained rollout checks. Published CLI bytes were reused from their original CI. Frame-runtime build inputs are unchanged since 9133d70; its installed bytes are preserved."
+  },
+  "ci": {
+    "runtime-regression.yml": {
+      "runId": 44034843598,
+      "attempt": 1,
+      "url": "https://github.com/hurxxxx/miy-v2/actions/runs/44034843598",
+      "headSha": "09dca970cb8aee079445861b1de007aa1acbfec9",
+      "conclusion": "success",
+      "jobs": 1
+    },
+    "web.yml": {
+      "runId": 44034843604,
+      "attempt": 1,
+      "url": "https://github.com/hurxxxx/miy-v2/actions/runs/44034843604",
+      "headSha": "09dca970cb8aee079445861b1de007aa1acbfec9",
+      "conclusion": "success",
+      "jobs": 1
+    },
+    "cli-foundation.yml": {
+      "runId": 44034843544,
+      "attempt": 1,
+      "url": "https://github.com/hurxxxx/miy-v2/actions/runs/44034843544",
+      "headSha": "09dca970cb8aee079445861b1de007aa1acbfec9",
+      "conclusion": "success",
+      "jobs": 5
+    }
+  },
+  "artifacts": {
+    "serverSha256": "eb7ec98a1374cf51d106d8672226dab17f302076ddd2f224945a9e614e148f71",
+    "webIndexSha256": "68cd1483848455a81709d03b9fd394f0824b14a44ccc0de55fca699cf9a0c7eb",
+    "linuxCliSha256": "873607706e141a2b03deeeb245bef67f033d1a7ffabf8203bfa2d9311581365d",
+    "cliRun": 43979915250,
+    "windowsInstallerRun": 44034693750,
+    "windowsInstaller": {
+      "status": "PASS",
+      "version": "0.12.1",
+      "sourceCommit": "fa0d48de28014397aca2b91f7c53529fa60cf42a",
+      "file": "MiySetup-0.12.1-windows-x64.exe",
+      "bytes": 6464512,
+      "sha256": "6fd4356b09d69a6b0169724cc1b12d1d2094b08d31b8425f0dc5327d56063a15",
+      "expectedSource": "GitHub Windows installer candidate 44034693750"
+    },
+    "nativeWindowsChecks": 24,
+    "nativeWindowsEnvironment": "Windows Server 2022, PowerShell 5.1.20348.5773"
+  },
+  "preDeploymentChecks": [
+    {
+      "status": "PASS",
+      "command": "python3 scripts/test-core-ops.py",
+      "scope": "95 mocked tests, including configured origins, required dependency restart policies and pinned migration 24/rollback."
+    },
+    {
+      "status": "PASS",
+      "command": "bash scripts/check-static.sh scripts",
+      "evidence": ".local/release-0121-20261117-checks/scripts.log"
+    },
+    {
+      "status": "PASS",
+      "command": "CARGO_BUILD_JOBS=4 cargo build --release --locked with the installed Rust toolchain in PATH",
+      "evidence": ".local/release-0121-20261117-checks/server-build-2.log"
+    },
+    {
+      "status": "PASS",
+      "command": "core-backup.py create; verify --migrate-with the candidate",
+      "evidence": ".local/release-0121-20261117-checks/prebackup-verify.json",
+      "tables": 44,
+      "rows": 1773,
+      "schemaAfterRehearsal": 24,
+      "temporaryContainerRemoved": true
+    },
+    {
+      "status": "READY",
+      "command": "core-rollout.py inspect --widen-migration 24 with staged CLI and installer",
+      "evidence": ".local/release-0121-20261117-checks/core-inspect.json",
+      "pendingJobs": 0
+    }
+  ],
+  "steps": [
+    {
+      "status": "PASS",
+      "tool": "scripts/core-rollout.py apply",
+      "releaseDirectory": ".local/release-0121-20261117-core",
+      "liveSchemaBefore": 23,
+      "schemaAfter": 24,
+      "backup": {
+        "bytes": 276669,
+        "tables": 44,
+        "rows": 1773,
+        "migrationVersion": 23
+      },
+      "separateRestoreAndMigrationVerified": true,
+      "oldColumnStableRecordsPreserved": true,
+      "appContainersUnchanged": true,
+      "connectionBudget": {
+        "status": "PASS",
+        "worstCase": 98,
+        "usableConnections": 197
+      },
+      "cliPublication": "Added immutable fa0d48d directories and atomically replaced CLI and Windows installer indexes while Core was stopped; both old indexes are backed up."
+    },
+    {
+      "status": "PASS",
+      "tool": "scripts/ui-rollout.py apply",
+      "releaseDirectory": ".local/release-0121-20261117-ui",
+      "sourceCommit": "09dca970cb8aee079445861b1de007aa1acbfec9",
+      "indexSha256": "68cd1483848455a81709d03b9fd394f0824b14a44ccc0de55fca699cf9a0c7eb",
+      "scope": "Backed up the existing site; added three new hashed assets and atomically replaced index.html. Existing assets retained."
+    }
+  ],
+  "postDeploymentChecks": [
+    {
+      "status": "PASS",
+      "command": "check-cli-downloads.py --origin https://portal.dwdcc.kr --expected-commit fa0d48de28014397aca2b91f7c53529fa60cf42a",
+      "evidence": ".local/release-0121-20261117-checks/downloads.json",
+      "scope": "All five native archives and two Linux helpers downloaded and hashed."
+    },
+    {
+      "status": "PASS",
+      "command": "Public Windows EXE and checksum download compared with CI candidate",
+      "evidence": ".local/release-0121-20261117-checks/windows-public.json"
+    },
+    {
+      "status": "PASS",
+      "command": "check-online-install.py",
+      "evidence": ".local/release-0121-20261117-checks/online-install/result.json",
+      "scope": "Public Bash installer into an isolated prefix/config, exact binary hash/version and portal context; repeat install preserves config and shell profiles."
+    },
+    {
+      "status": "PASS",
+      "command": "node scripts/check-platform-connection.mjs with published 0.12.1 CLI",
+      "evidence": ".local/release-0121-20261117-checks/platform-connection/result.json",
+      "checks": 22,
+      "cleanupFailures": 0
+    },
+    {
+      "status": "PASS",
+      "command": "check-features.mjs --run",
+      "evidence": ".local/release-0121-20261117-checks/features-1/result.json",
+      "checks": 7,
+      "scope": "Install/update UI and actual clipboard, ordinary admin/developer OIDC, SDK 0.11.0, anonymous test report/admin resolution/developer denial, authenticated HTTP MCP update guide.",
+      "supportReport": {
+        "id": "d6092e00-a8a2-473c-b0a2-195eeebab13d",
+        "purpose": "deployment_acceptance",
+        "submitted": true,
+        "resolved": true,
+        "preserved": true
+      },
+      "cleanupFailures": 0
+    },
+    {
+      "status": "PASS",
+      "command": "frames-check.mjs frames-after-0121.json",
+      "evidence": ".local/address-move-20261117-dev2/frames-after-0121.json",
+      "checks": 6,
+      "scope": "Two visible prod and two visible dev apps in expected installation origins; portal cookie direct app API refused; no browser page errors.",
+      "cleanupFailures": 0
+    },
+    {
+      "status": "PASS",
+      "command": "check-preservation.py after",
+      "evidence": ".local/release-0121-20261117-checks/preservation-result.json",
+      "scope": "All eight app DBs full-row snapshots and installation identities/releases/runtime states unchanged; address/runtime/compose/Nginx config and frame entry bytes unchanged."
+    },
+    {
+      "status": "PASS",
+      "command": "Public health/version/web byte check and running Core/worker executable hashes; read-only DB status",
+      "evidence": ".local/release-0121-20261117-checks/final-state.json",
+      "healthOrigins": 3,
+      "healthyRunningApps": 5,
+      "stoppedApps": 3,
+      "schema": 24
+    }
+  ],
+  "rebootRecovery": "dwdcc-reboot-recovery-2026-11-17.json",
+  "dependencyRestartPolicies": {
+    "PostgreSQL": "unless-stopped",
+    "Keycloak": "unless-stopped",
+    "preflightRequiresRunning": true
+  },
+  "failuresRetained": [
+    {
+      "status": "FAIL",
+      "evidence": ".local/release-0121-20261117-checks/server-build.log",
+      "exitCode": 127,
+      "reason": "Initial noninteractive PATH omitted cargo; repeated with explicit toolchain PATH and passed. No production mutation."
+    }
+  ],
+  "rollback": {
+    "status": "NOT_RUN",
+    "reason": "Deployment and acceptance passed; no live rollback was needed. Mocked recovery checks do not claim a live rollback.",
+    "order": [
+      "python3 .local/release-0121-20261117-source/scripts/ui-rollout.py rollback --release-dir .local/release-0121-20261117-ui",
+      "python3 .local/release-0121-20261117-source/scripts/core-rollout.py rollback --release-dir .local/release-0121-20261117-core"
+    ],
+    "result": "Restores 0.10.0 Core/worker, previous CLI/Windows installer indexes and previous portal entry. Retains additive schema 24, support reports, app data, current portal/console/dev2 domain configuration, identity and restart policies. Frame runtime was not changed.",
+    "warning": "Do not restore an older database dump or a pre-address-move Nginx/config backup for this version rollback."
+  },
+  "notRun": [
+    {
+      "status": "NOT_RUN",
+      "scope": "Windows11/macOS user desktop and fresh external AI client acceptance",
+      "reason": "Native CI and this Linux-host browser/CLI/MCP run are narrower evidence."
+    },
+    {
+      "status": "NOT_RUN",
+      "scope": "Host/VM reboot verification",
+      "reason": "Actual restart policies and running services verified; user will separately validate a VM reboot."
+    },
+    {
+      "status": "NOT_RUN",
+      "scope": "New live pilot app creation/build/deploy and full common ACL/file/preview journey",
+      "reason": "Existing apps were preserved and opened. Exact-commit isolated runtime and representative-app CI passed; no additional live app/DB was created."
+    },
+    {
+      "status": "NOT_RUN",
+      "scope": "Formal GitHub Release",
+      "reason": "Published server downloads and installer only."
+    }
+  ],
+  "evidenceDirectory": ".local/release-0121-20261117-checks"
+}

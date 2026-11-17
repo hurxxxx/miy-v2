@@ -26,11 +26,17 @@ Core 빌드 입력은 `ec65ce5`이며 CLI 소스 `06f2fd7`은 Windows 검사기�
 
 2026-11-16에 `9897f6385ff1228c43fbc28a4f42b4d7a75f59a4`의 [CLI CI 43865661806](https://github.com/hurxxxx/miy-v2/actions/runs/43865661806)를 실행해 5개 target과 Linux helper 2개를 검증하고 `https://portal.miy.works`에 게시했다. `/cli/install`에서 curl/Bash 또는 PowerShell 한 줄로 설치한다. Core·설치 화면과 공개 HTTPS 설치 검증은 [반영 기록](releases/online-cli-2026-11-16-deployment.json)에 있다. 정식 GitHub Release와 0.11.0 GUI EXE는 게시하지 않았다.
 
-[게시 CLI 기록](releases/cli-published.json)은 같은 CLI 버전에 변경된 클라이언트 코드를 다시 게시하지 않도록 버전 검사기의 기준으로 사용한다. [Windows GUI 인수 후보](releases/windows-candidate.json)는 기존 v2.dwdcc.kr의 0.10.0 EXE 기록을 유지한다. Windows 네이티브 CI의 PowerShell 5.1/7 패키지 검사와 실제 사용자 Windows 11 인수는 별도다.
+[게시 CLI 기록](releases/cli-published.json)은 같은 CLI 버전에 변경된 클라이언트 코드를 다시 게시하지 않도록 버전 검사기의 기준으로 사용한다. [Windows GUI 인수 후보](releases/windows-candidate.json)는 현재 dwdcc.kr의 0.12.1 EXE를 가리키며 과거 0.10.0 출처는 당시 반영 기록에 보존한다. Windows 네이티브 CI의 PowerShell 5.1/7 패키지 검사와 실제 사용자 Windows 11 인수는 별도다.
+
+## dwdcc.kr 0.12.1 게시
+
+2026-11-17 [0.12.1 반영](releases/dwdcc-0.12.1-2026-11-17-deployment.json)으로 `https://portal.dwdcc.kr/cli/install`에 같은 `fa0d48d`의 CLI 5종·helper 2종과 새 Windows GUI 설치기를 게시했다. CLI 원본은 CI 43979915250이며 바이트를 다시 만들지 않았다. GUI 설치기는 [CI 44034693750](https://github.com/hurxxxx/miy-v2/actions/runs/44034693750)에서 같은 CLI를 내장해 검증했다. Core·worker·웹은 배포 도구 보완을 포함한 `09dca97`, 버전 0.12.1·SDK 번들 0.11.0·schema 24다.
+
+공개 패키지 7개와 EXE·체크섬을 CI 기대값과 대조하고 실제 Linux 온라인 설치·재설치, 일반 OIDC/CLI/stdio·HTTP MCP, 설치 화면의 업데이트·복사 안내를 확인했다. Windows Server 2022 CI 24항목은 PASS이며 Windows 11 사용자 인수는 NOT_RUN이다. 기존 0.10.0 게시 파일은 보존했다. 현행 Windows 후보는 [고정 명세](releases/windows-candidate.json)와 [인수 절차](WINDOWS-ACCEPTANCE.md)를 따른다. 정식 GitHub Release는 게시하지 않았다.
 
 ## 기존 v2.dwdcc.kr 0.10.0 게시
 
-이 호스트는 2026-11-17 주소만 `portal.dwdcc.kr`로 변경했다. 아래 0.10.0 게시물의 바이트·버전은 유지하며 현재 설치 주소는 [서버 운영 안내](SERVER-OPERATIONS.md)를 따른다.
+아래는 과거 0.10.0 게시 이력이다. 2026-11-17에 주소 전환 후 별도 0.12.1 갱신을 수행했으며, 0.10.0 파일은 이전 commit 디렉터리에 보존한다. 현행 상태는 위 0.12.1 절과 [서버 운영 안내](SERVER-OPERATIONS.md)를 따른다.
 
 `9133d700369c43b11abeee1738541e6abda5b4d6`의 [CLI CI 43672504526](https://github.com/hurxxxx/miy-v2/actions/runs/43672504526)(5개 target과 Linux DB 연결 helper 2개, 공개 Release 없음)와 같은 CLI 출처·해시로 만든 [설치 파일 CI 43674150699](https://github.com/hurxxxx/miy-v2/actions/runs/43674150699)를 검증했다. 2026-11-15 서버 0.10.0·schema 23과 함께 [현재 설치 안내](https://portal.dwdcc.kr/cli/install)에 게시했다([0.10.0 반영 기록](releases/pilot-0.10.0-2026-11-15-deployment.json)). SDK 번들 0.10.0은 G4 디렉터리·공통 ACL·작은 첨부의 typed SDK(Rust SDK 0.4.0)를 포함하고, 새 프로젝트는 공용 UI 1.1.0을 기본으로 설치한다. 기존 0.9.0 앱은 `miy app upgrade`로 명시적으로 옮긴다. 0.9.0 CLI·번들·UI 1.0.1 바이트는 그대로 보존한다.
 
@@ -38,7 +44,7 @@ Core 빌드 입력은 `ec65ce5`이며 CLI 소스 `06f2fd7`은 Windows 검사기�
 
 ## 0.11.0 변경
 
-서버 배포를 서버 빌드 산출물로 한정하는 CLI/번들 0.11.0을 준비했다. 최초 소스·격리 검증은 [검증 기록](releases/server-build-only-2026-11-16-validation.json)에 있고, 현재 miy.works의 서버와 CLI에 반영했다. 0.10.0 CLI·번들·UI 1.1.0 바이트는 그대로 보존한다.
+서버 배포를 서버 빌드 산출물로 한정하는 CLI/번들 0.11.0을 준비했다. 최초 소스·격리 검증은 [검증 기록](releases/server-build-only-2026-11-16-validation.json)에 있고, 현재 miy.works와 dwdcc.kr의 0.12.1 서버·CLI에 포함했다. 0.10.0 CLI·번들·UI 1.1.0 바이트는 그대로 보존한다.
 
 - `miy app build`는 항상 선택한 서버에서 빌드한다. `--remote`·`--platform`과 로컬 배포용 Docker 빌드는 없다. 로컬 테스트는 `app dev`(기본 native, `--runtime docker`)다.
 - `miy app deploy`는 프로젝트의 서버 빌드 영수증을 요구한다. 없으면 서버에 요청하기 전에 `server_build_required`로 끝난다. 이미지 export·업로드는 없다.

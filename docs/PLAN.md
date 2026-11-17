@@ -1,7 +1,7 @@
 # miy 추진 계획
 
-- 작성일: 2026-10-20 · 정리일: 2026-11-16
-- 기준: 2026-11-15 개발 서버 반영(`9133d70`, 포털 UI `1976005`)과 파일럿 리뷰 후속 작업본. 소스 구현·격리 검증·게시·개발 서버 반영을 구분한다.
+- 작성일: 2026-10-20 · 정리일: 2026-11-17
+- 기준: 소스 구현·격리 검증·게시·개발 서버 반영을 구분한다. 2026-11-17 dwdcc.kr의 0.12.1 반영까지 포함하며 호스트별 소스·버전·복구 경로는 SERVER-OPERATIONS가 관리한다.
 
 이 문서가 **완료 요약·진행 상태·남은 작업·착수 순서의 정본**이다. 상세 설계와 인수 기준은 [문서 지도](README.md)의 담당 문서, 실제 배포 상태는 [서버 운영 안내](SERVER-OPERATIONS.md), CLI 후보·게시 상태는 [CLI 릴리스](CLI-RELEASE.md)가 관리한다.
 
@@ -20,7 +20,7 @@
 
 **공통 기능 첫 구현과 파일럿 준비 보완을 2026-11-15 개발 서버에 반영했다.** CLI/번들 0.10.0·Rust SDK 0.4.0·UI 1.1.0·schema 23을 게시·반영했고, 게시 CLI로 새 앱 하나를 만들어 서버 빌드·dev 배포·프레임 표시까지 확인했다([반영 기록](releases/pilot-0.10.0-2026-11-15-deployment.json)). **대기:** 배포된 프레임·preview에서 디렉터리 선택/공유/첨부를 함께 쓰는 전체 경로, 새로 등록한 실제 사용자의 로그인, Windows·AI 에이전트 인수. Core HTTP·실제 PostgreSQL·브라우저 검사는 각각 분리한 환경에서 수행했으며 하나의 실제 서버 전체 인수로 합산하지 않는다([검증 기록](releases/common-components-2026-11-14-validation.json), [리뷰 후속 기록](releases/common-components-2026-11-15-review-fixes.json)). 파일럿 준비 점검에서 찾은 공백과 그 보완(앱 DB 권한 경계, 이미지 계약 추출 제한, migration 시간 한도, 사용자 등록, 새 서버 seed·프레임 런타임)은 [점검 기록](releases/pilot-readiness-2026-11-15-validation.json)과 [보완 기록](releases/pilot-improvements-2026-11-15-validation.json)에 있다.
 
-**후속 보완의 구현·격리 검증을 완료했다.** 앱 DB의 로그인·대상 DB 고정, 프록시 복구 재시도, 파일럿 실패 정리와 결과 식별자를 보완했다. 이 수정은 dwdcc.kr 사내 호스트에는 아직 반영하지 않았으며 miy.works의 2026-11-16 초기 설치에는 포함했다. 원래 검증은 [후속 검증 기록](releases/pilot-review-fixes-2026-11-15-validation.json)에서 배포된 0.10.0과 구분한다.
+**후속 보완의 구현·격리 검증을 완료했다.** 앱 DB의 로그인·대상 DB 고정, 프록시 복구 재시도, 파일럿 실패 정리와 결과 식별자를 보완했다. 이 수정은 miy.works의 2026-11-16 초기 설치와 dwdcc.kr의 [2026-11-17 반영](releases/dwdcc-0.12.1-2026-11-17-deployment.json)에 포함했다. 새 복구 도구·파일럿 검사 v2의 실제 실행은 별도로 남는다. 원래 검증은 [후속 검증 기록](releases/pilot-review-fixes-2026-11-15-validation.json)에서 배포된 0.10.0과 구분한다.
 
 **서버 배포를 서버 빌드 산출물로 한정하는 변경의 구현·격리 검증을 완료했다(2026-11-16, CLI/번들 0.11.0 후보).** 로컬 배포용 빌드와 이미지 업로드를 제거해 `app build`는 항상 서버에서 검사·빌드하고, 서버는 그 앱의 성공한 서버 빌드가 만든 이미지만 dev에 배포하고 prod로 승격한다. 앱 컨테이너의 외부 통신은 플랫폼이 제한하지 않고 네트워크·호스트 방화벽이 담당하는 것으로 확정했다. miy.works에는 서버·worker와 CLI 0.11.0을 반영하고 한 줄 설치로 게시했다([반영 기록](releases/online-cli-2026-11-16-deployment.json)). 최초 격리 결과는 [검증 기록](releases/server-build-only-2026-11-16-validation.json)에 보존한다.
 
@@ -36,14 +36,14 @@
 | 구조 기반·최소 데이터 보호 | worker 제어/빌드 분리, 권한 판정 단일화·트랜잭션 재확인, API 생성 계약 첫 묶음, CI 회귀·정확한 배포 SHA 확인, core DB 백업·별도 복원, 디스크 하한·DB 연결 예산 | 종전 순서 0·1·기반의 완료분. 전체 자원 예약·통합 백업·host updater와 구분. [코어 안정화](CORE-HARDENING.md) |
 | 응답·자원 보호 | 앱 응답 4MiB·바이트 수명에 결합한 64개 슬롯, 업무 401 자동 재전송 금지(R01·R02), Keycloak 2GiB, 회귀 작업물 자동 정리·스트리밍 해시 | 개발 서버 반영 범위는 [응답 보완](releases/app-api-response-2026-11-13-deployment.json)·[자원 보완](releases/resource-usage-2026-11-12-validation.json). 전체 RSS·복합 부하는 별도 |
 | 프레임용 CLI·SDK 게시 | CLI 0.9.0·번들 0.9.0, 구 번들 전환 보완, 서버와 다운로드·설치기 게시 | [게시 기록](releases/cli-0.9.0-2026-11-13-deployment.json). 정식 GitHub Release·Windows 실기는 대기 |
-| 배포 도구 리뷰 보완 | 후보 패키지 고정·완전 검증, 게시 잠금 공유, index 변경 거부·복구 확인 구현 및 모의·스크립트 검사 | [검증 기록](releases/cli-rollout-review-fixes-2026-11-14-validation.json). 실제 apply는 0.10.0 반영 때 수행, 실제 rollback은 NOT_RUN |
+| 배포 도구 리뷰 보완 | 후보 패키지 고정·완전 검증, 게시 잠금 공유, index 변경 거부·복구 확인 구현 및 모의·스크립트 검사 | [검증 기록](releases/cli-rollout-review-fixes-2026-11-14-validation.json). 실제 apply는 0.10.0과 0.12.1 반영 때 수행, 실제 rollback은 NOT_RUN |
 | 공통 기능 조사·저장소 정리 | AI-DO 이식 대상 46개 식별·책임/인수 분류, 기존 변경 커밋·푸시, 병합된 브랜치 정리, 운영과 빌드 입력 대조 | [이식 대상](AI-DO-COMMON-MIGRATION.md), [작업본·운영 확인](releases/worktree-sync-2026-11-14-validation.json). 조사나 문서 변경은 기능 구현·신규 배포가 아님 |
 | 공통 업무 기능 첫 구현 | G4 검색/페이지·현재 멤버십·선택기, typed SDK, 기본 UI, 앱 소유 ACL·공유/회수, 10MiB 첨부·별도 전송 경로와 대표 프로젝트·업무 앱 구현·격리 검증. CLI/번들 0.10.0·UI 1.1.0·schema 23 게시·개발 서버 반영 | 제한된 migration/runtime DB 역할, 권한 회수·응답 유실·5MiB 전송·앱 DB 별도 복원 확인. [검증 기록](releases/common-components-2026-11-14-validation.json), [반영 기록](releases/pilot-0.10.0-2026-11-15-deployment.json). 배포 프레임·preview의 전체 경로와 대용량/전체 복원 제품은 별도 |
 | 파일럿 준비 보완 | 서버 빌드의 migration 이력 조회를 앱 자신의 역할로 전환, 이미지 `/miy` 제한 추출, migration 시간 한도, 관리자의 사용자 등록·역할 변경과 콘솔 화면, 모든 공용 UI 버전 seed, `up.sh`의 프레임 런타임 빌드, 게시 CLI로 실서버 새 앱 인수 도구 | [보완 기록](releases/pilot-improvements-2026-11-15-validation.json), [반영 기록](releases/pilot-0.10.0-2026-11-15-deployment.json). 당시 결정 대기였던 앱 egress·서버 빌드 한정은 2026-11-16 확정(결정 8·9). 새 서버 전체 설치 인수는 순서 6 |
-| 파일럿 리뷰 후속 보완 | 쿼리 DSN의 앱 DB·로그인 덮어쓰기 차단, 최초 DB 준비 대상 고정, 중간 실패 후 재시도 가능한 프록시 복구, 배포 응답 유실 시 파일럿 정리와 고정 결과 이름. 소스·격리 검증 완료 | [후속 검증](releases/pilot-review-fixes-2026-11-15-validation.json). 미배포이며 실제 복구·파일럿 v2 인수는 아래 대기 표에서 추적 |
-| 서버 빌드 전용 배포 | 배포·승격 접수, 사전 점검, worker 실행에서 그 앱의 성공한 서버 빌드 산출물만 허용(`server_build_required`). 이미지 업로드 API·적재 worker·위임 action `upload`와 CLI의 로컬 배포용 빌드·이미지 전송 제거. CLI/번들 0.11.0 후보와 0.10.0에서의 `app upgrade` 경로. 소스·격리 검증 완료 | [검증 기록](releases/server-build-only-2026-11-16-validation.json). schema 변경 없음(23 유지). miy.works 서버·CLI 반영 완료. dwdcc.kr 사내 호스트의 바이너리 갱신과 후속 인수는 아래 대기 표에서 추적 |
-| 개발 PC 한 줄 CLI 설치 | curl/Bash·PowerShell 온라인 설치, OS/CPU 선택, 패키지·바이너리 해시 검증, 사용자 PATH·서버 등록과 기존 설정 보존 | miy.works에 CLI 0.11.0 5종·helper 2종과 Core·설치 화면 반영. [반영 기록](releases/online-cli-2026-11-16-deployment.json). 외부 Windows/macOS 실기는 별도 |
-| 설치 주소 설정·이전 | 도메인/IP·포트 공통 JSON 입력·검증, 현재 설정을 보존한 후보 생성, Nginx/Keycloak 주소 갱신, 기존 프레임 예약·앱 데이터를 보존하는 SQL 계획 도구와 격리 검사 | [주소 안내](SERVER-ADDRESSES.md), [검증 기록](releases/server-addresses-2026-11-16-validation.json). miy.works는 역할별 도메인으로 실제 이전하고 OIDC·CLI·MCP·기존 dev 앱을 확인했다([전환 기록](releases/miy-works-address-move-2026-11-16.json)). dwdcc.kr은 [주소 파일 도입](releases/dwdcc-subdomains-2026-11-17-deployment.json)에 이어 `portal`·`console`·`dev2`·`app-*`로 실제 전환했다. 10개 DB의 별도 복원·프레임 이전 리허설 후 설정·IdP·기존 프레임 5개를 이전했고 서버/CLI 0.10.0·schema 23은 유지했다([전환 기록](releases/dwdcc-role-addresses-2026-11-17-deployment.json)). 외부 PC 재인증은 별도 |
+| 파일럿 리뷰 후속 보완 | 쿼리 DSN의 앱 DB·로그인 덮어쓰기 차단, 최초 DB 준비 대상 고정, 중간 실패 후 재시도 가능한 프록시 복구, 배포 응답 유실 시 파일럿 정리와 고정 결과 이름. 소스·격리 검증 완료 | [후속 검증](releases/pilot-review-fixes-2026-11-15-validation.json). 두 호스트의 현행 소스에 포함. 실제 복구·파일럿 v2 인수는 아래 대기 표에서 추적 |
+| 서버 빌드 전용 배포 | 배포·승격 접수, 사전 점검, worker 실행에서 그 앱의 성공한 서버 빌드 산출물만 허용(`server_build_required`). 이미지 업로드 API·적재 worker·위임 action `upload`와 CLI의 로컬 배포용 빌드·이미지 전송 제거. CLI/번들 0.11.0 후보와 0.10.0에서의 `app upgrade` 경로. 소스·격리 검증 완료 | [검증 기록](releases/server-build-only-2026-11-16-validation.json). 이 기능 자체의 schema 변경은 없음. miy.works와 dwdcc.kr의 현행 0.12.1 서버·CLI에 포함(현행 schema는 운영 안내 기준). 새 실서버 앱 배포와 공통 기능 전체 경로 인수는 아래 대기 표에서 추적 |
+| 개발 PC 한 줄 CLI 설치 | curl/Bash·PowerShell 온라인 설치, OS/CPU 선택, 패키지·바이너리 해시 검증, 사용자 PATH·서버 등록과 기존 설정 보존 | miy.works와 dwdcc.kr에 현행 CLI 0.12.1 5종·helper 2종과 Core·설치 화면 반영. [최초 반영](releases/online-cli-2026-11-16-deployment.json), [dwdcc.kr 갱신](releases/dwdcc-0.12.1-2026-11-17-deployment.json). 외부 Windows/macOS 실기는 별도 |
+| 설치 주소 설정·이전 | 도메인/IP·포트 공통 JSON 입력·검증, 현재 설정을 보존한 후보 생성, Nginx/Keycloak 주소 갱신, 기존 프레임 예약·앱 데이터를 보존하는 SQL 계획 도구와 격리 검사 | [주소 안내](SERVER-ADDRESSES.md), [검증 기록](releases/server-addresses-2026-11-16-validation.json). miy.works는 역할별 도메인으로 실제 이전하고 OIDC·CLI·MCP·기존 dev 앱을 확인했다([전환 기록](releases/miy-works-address-move-2026-11-16.json)). dwdcc.kr은 [주소 파일 도입](releases/dwdcc-subdomains-2026-11-17-deployment.json)에 이어 `portal`·`console`·`dev2`·`app-*`로 실제 전환했다. 10개 DB의 별도 복원·프레임 이전 리허설 후 설정·IdP·기존 프레임 5개를 이전했고 주소 전환 당시 서버/CLI 0.10.0·schema 23은 유지했다([전환 기록](releases/dwdcc-role-addresses-2026-11-17-deployment.json)). 외부 PC 재인증은 별도 |
 
 ## 일부 구현된 작업
 
@@ -55,6 +55,8 @@
 | 코어 안정화 3~5차 | 개별 자원 제한·최소 백업/복원·기존 서버 반영 도구. 새 서버의 seed·프레임 런타임 준비와 [전체 설치·수동 운영 안내](SETUP.md) | 원자적 전체 예약·파일/앱 DB 복원·host updater·별도 새 서버 설치/종합 인수 → 순서 6 |
 
 ## 다음 우선 작업
+
+2026-11-17 dwdcc.kr의 **0.12.1 버전 갱신을 완료했다**([반영 기록](releases/dwdcc-0.12.1-2026-11-17-deployment.json)). 서버·worker·웹·게시 CLI/Windows 설치기와 schema 24를 맞추고 기존 앱 8개의 데이터·실행 상태를 보존했다. OIDC/CLI/stdio·HTTP MCP·신고 처리·기존 앱 프레임을 확인했다. 재부팅 뒤 DB/IdP 미기동 문제도 기존 컨테이너의 재시작 정책으로 복구했다([기록](releases/dwdcc-reboot-recovery-2026-11-17.json)). 새 앱 전체 흐름·Windows 사용자 실기·OS 재부팅은 별도 인수다.
 
 사용자 요청 후속(2026-11-16): **CLI 업데이트 절차의 CLI·MCP·생성 가이드·설치 화면 반영과 0.12.1 게시를 완료했다.** 전역 설치 → 각 프로젝트의 새 전역 `app setup` → 에이전트 재시작 → 버전/인증 확인을 안내한다. 5개 네이티브 패키지와 Core·worker·웹을 함께 갱신했고, SDK 번들 0.11.0·schema 24를 유지했다. 실제 공개 설치·CLI 인증·stdio/HTTP MCP와 화면 검사는 [반영 기록](releases/cli-updates-2026-11-16-deployment.json)에 있다. 사용자 Mac 저장소 복구는 아래 별도 인수로 남는다.
 
@@ -83,7 +85,7 @@
 
 | 대기 묶음 | 남은 확인 | 수행 시점·정본 |
 | --- | --- | --- |
-| 파일럿 리뷰 후속 | DB 로그인 경계 보완의 서버 반영, 새 프록시 복구 도구의 실제 복구, 새 파일럿 검사의 실서버 실행 | [후속 검증](releases/pilot-review-fixes-2026-11-15-validation.json). 기존 배포물과 .local의 당시 도구·백업을 보존하며, 확인만을 위해 운영 복구를 실행하지 않음 |
+| 파일럿 리뷰 후속 | 서버 반영 완료. 남은 것은 새 프록시 복구 도구의 실제 복구와 새 파일럿 검사의 실서버 실행 | [후속 검증](releases/pilot-review-fixes-2026-11-15-validation.json). 기존 배포물과 .local의 당시 도구·백업을 보존하며, 확인만을 위해 운영 복구를 실행하지 않음 |
 | 공통 기능 전체 경로 | 실제 OIDC·native/Docker preview·배포 프레임에서 디렉터리 선택/공유/첨부를 함께 쓰는 연결. 새로 등록한 실제 사용자의 로그인 | 게시·서버 반영과 템플릿 새 앱의 생성→서버 빌드→dev 배포→프레임은 [2026-11-15 반영 기록](releases/pilot-0.10.0-2026-11-15-deployment.json)으로 완료. 모의 Core 대표 앱·Core 단독 회귀·모의 HTTP 브라우저의 PASS를 전체 연결 PASS로 바꾸지 않음 |
 | 빈 새 서버 설치 | [SETUP](SETUP.md)만 따라 별도 Ubuntu 서버의 DB/IdP·TLS·첫 로그인·첫 앱·재부팅과 재접속·계정/인증서 관리·백업/복원·갱신을 확인. 사설 CA의 앱 컨테이너/SDK 전달은 미구현이므로 공통 backend API 인수 전에 보완 | 이전 작업본의 문서 명령·격리 설정 검사는 [설치 안내 검증](releases/fresh-server-setup-2026-11-16-validation.json), 문서만 반영하는 범위와 인수 인계는 [후속 보완](releases/fresh-server-setup-2026-11-16-followup.json)에 기록. 사용자가 별도 VM 인수를 수행하며 전체 실행·사설 CA 앱 통신은 NOT_RUN. 공통 기능 즉시 사용은 공개 CA 배치 |
 | Windows·실제 사용자 환경 | 현재 후보의 Windows 11 PS5.1/7 설치·갱신·제거, 기존 context/프로젝트·인증 보존, 단일 IP/사설 CA HTTPS. macOS 실기·별도 서버도 미완료 범위를 유지 | Windows는 사용자 수행. [WINDOWS-ACCEPTANCE](WINDOWS-ACCEPTANCE.md). 이전 후보나 CI PASS를 실기 결과로 이월하지 않음 |
@@ -91,7 +93,7 @@
 | 경계·프레임 잔여 | 같은 등록 도메인 P2 쿠키 간섭(FV-06), 화면낭독 출력, 실제 CA/단말 인수, IdP 비활성화·소비한 OAuth callback 재사용·새 issuer 외부 HTTP MCP 인증 | [BV](APP-BOUNDARIES.md#경계-인수)·[FV](APP-FRAMES.md#6-실증-계획). 해당 환경/기능 변경 시 실행. P2 `*.localhost` 실증과 실제 등록 도메인의 쿠키 시험을 구분. P1은 활성화 전 인수 |
 | 자원·호환 | Windows 실제 TCP/RSS, 여러 앱·관리 API 복합 부하, 전체 자원 예약/회수·호스트 지원 규모 | 코어 3~5차와 해당 제한 변경 때 수행. [CAPACITY](CAPACITY.md). 현재 설정값·Linux 결과를 전체 성능 보장으로 확대하지 않음 |
 | 배포 도구 실제 실행 | dev 포털 설정 부분 실패 복원, 앱 프레임 설정 복구 보완의 실제 운영 apply/rollback, CLI 동시 게시의 rollback | CLI 후보 고정·게시 잠금을 포함한 `core-rollout.py apply`는 2026-11-15 반영에서 실제 수행. 나머지는 모의·격리 검증 범위로 보존하며 확인만을 위해 운영을 재전환하지 않음 |
-| 0.11.0 후속 인수·기존 호스트 갱신 | 게시 CLI로 새 앱의 서버 빌드→dev 배포, 기존 0.10.0 앱의 `app upgrade`, dwdcc.kr 사내 호스트의 바이너리 갱신 | miy.works 서버·worker와 CLI 게시·온라인 설치·활성 관리자 CLI/MCP 연결은 완료. 초기 설치의 로컬 빌드 CLI 앱 인수와 이번 CI 패키지의 새 앱 배포 인수를 합치지 않음 |
+| 서버 빌드 전용 배포 후속 인수 | 현행 게시 CLI로 새 앱의 서버 빌드→dev 배포, 기존 0.10.0 앱의 `app upgrade` | 두 호스트의 서버·worker·게시 CLI 갱신과 온라인 설치·CLI/MCP 연결은 완료. dwdcc.kr의 0.12.1 반영은 기존 앱 보존·프레임을 확인했으며 새 앱 배포와 구 앱 upgrade의 실서버 인수를 대신하지 않음 |
 | 공개 접근 위험 확인 | 공개 콘솔 외부 접근 범위, 전 사용자 credential·기존 기기 worker 점검, 공격 경로 실증 | 운영 책임자 확인/결정 대기. 재검토 기한 2026-11-13은 지났고 이번 정리로 연장하거나 위험 수용으로 처리하지 않음. [운영 위험 계약](APP-BOUNDARIES.md#전환-전-임시-운영) |
 
 ## 확정된 결정
@@ -106,7 +108,7 @@
 | 6 | 사내 최소 보안·개발 편의, 세 출처·세션과 prod Use/관리 분리 | 별도 IdP·MFA 의무화·자동 CA·전체 앱 전환은 기능 개발의 선행 조건이 아님. 공개 서버를 사내 신뢰 범위로 자동 인정하지 않음. 미지원 service/AI credential·업무 WebSocket은 기본 거부 |
 | 7 | 업무 앱만 설치별 출처 iframe | 현재 [앱 프레임 계약](APP-FRAMES.md) 적용. 플랫폼 자체 화면·라우팅 유지, 같은 사이트/포트의 쿠키 격리·프로세스 분리 보장 없음 |
 | 8 (2026-11-16) | 앱 컨테이너의 외부 통신은 플랫폼이 제한하지 않는다. 필요한 차단은 네트워크·호스트 방화벽이 한다 | 플랫폼 코드 변경 없음. 플랫폼 경계는 이 제한에 의존하지 않는다(Core·DB·앱 게시 포트는 loopback). 같은 호스트의 다른 서비스로 가는 통신은 외곽 방화벽이 보지 못하므로 전용 호스트 또는 호스트 방화벽 규칙을 설치 조건으로 둔다. [경계 발견 17](APP-BOUNDARIES.md#추가-발견-사항과-처리-방향), [서버 운영 안내](SERVER-OPERATIONS.md) |
-| 9 (2026-11-16) | 서버 배포는 서버 빌드 산출물만 받는다. 로컬 빌드는 로컬 테스트용이다 | dev 배포·prod 승격 모두 그 앱의 성공한 서버 빌드 이미지만 허용. 로컬 테스트는 `app dev`. CLI/번들 0.11.0에 구현, miy.works 게시·반영 완료. dwdcc.kr 사내 호스트의 바이너리 갱신은 별도. [권한 계약](CORE-PERMISSIONS.md), [경계 발견 18](APP-BOUNDARIES.md#추가-발견-사항과-처리-방향) |
+| 9 (2026-11-16) | 서버 배포는 서버 빌드 산출물만 받는다. 로컬 빌드는 로컬 테스트용이다 | dev 배포·prod 승격 모두 그 앱의 성공한 서버 빌드 이미지만 허용. 로컬 테스트는 `app dev`. CLI/번들 0.11.0에 구현, 두 호스트의 현행 0.12.1 게시·반영에 포함. [권한 계약](CORE-PERMISSIONS.md), [경계 발견 18](APP-BOUNDARIES.md#추가-발견-사항과-처리-방향) |
 
 ## 결정이 필요한 사항
 
@@ -121,7 +123,7 @@
 
 ## 미해결 호환성 관찰
 
-Docker 28 classic image store의 native `docker save` 결과를 서버가 가져오지 못하던 관찰은 **해결이 아니라 대상에서 빠졌다.** 0.11.0 후보부터 서버는 이미지 archive를 받지 않고 자신이 빌드한 이미지만 실행하므로 앱 배포에는 해당 경로가 없다. 0.10.0이 반영된 dwdcc.kr 사내 호스트에는 그 경로가 남아 있으며 관찰도 그대로다. [회귀 환경과 한계](../scripts/runtime-regression/README.md)를 따른다.
+Docker 28 classic image store의 native `docker save` 결과를 서버가 가져오지 못하던 관찰은 **해결이 아니라 대상에서 빠졌다.** 0.11.0 후보부터 서버는 이미지 archive를 받지 않고 자신이 빌드한 이미지만 실행하므로 앱 배포에는 해당 경로가 없다. dwdcc.kr도 0.12.1로 갱신되어 해당 경로를 제공하지 않는다. 예전 Docker archive 관찰을 해결 완료로 바꾸지는 않는다. [회귀 환경과 한계](../scripts/runtime-regression/README.md)를 따른다.
 
 ## 보류 중인 사용성 개선
 

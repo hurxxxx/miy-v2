@@ -75,7 +75,7 @@ CLI 업데이트 안내 후속으로 Core·worker·웹과 CLI 0.12.1을 같은 �
 
 이하의 주소·`.local`·서비스명·복구 절차는 `/projects/miy-v2`의 사내 호스트에 적용한다. 2026-11-17에 `v2` 계열에서 역할별 이름으로 옮겼으며 위 `miy.works` 서버와 별개다.
 
-- 정리일: 2026-11-17 · 서버/CLI 배포 근거: [0.10.0 반영 기록](releases/pilot-0.10.0-2026-11-15-deployment.json). 현행 주소·DNS·TLS·DB/IdP 전환은 [역할별 주소 반영](releases/dwdcc-role-addresses-2026-11-17-deployment.json)이며 서버 버전 갱신과 구분한다. 앞선 [주소 파일 도입](releases/dwdcc-subdomains-2026-11-17-deployment.json)은 기존 이름을 유지했던 중간 단계 기록이다.
+- 정리일: 2026-11-17 · 서버/CLI 배포 근거: [0.12.1 반영 기록](releases/dwdcc-0.12.1-2026-11-17-deployment.json). 현행 주소·DNS·TLS·DB/IdP 전환은 [역할별 주소 반영](releases/dwdcc-role-addresses-2026-11-17-deployment.json)이며 서버 버전 갱신과 구분한다. 앞선 [주소 파일 도입](releases/dwdcc-subdomains-2026-11-17-deployment.json)은 기존 이름을 유지했던 중간 단계 기록이다.
 - 역할: 현재 서버·복구·반영 절차. 전체 완료/진행/잔여와 착수 순서는 [PLAN](PLAN.md), CLI 후보·게시는 [CLI-RELEASE](CLI-RELEASE.md)가 관리한다.
 
 이 프로젝트의 “운영” 주소는 아직 개발 서버다. 운영 반영은 이 서버의 변경분 배포를 뜻하며 제품 개발 완료나 정식 오픈 선언이 아니다. 이 checkout의 `.local`과 `web/platform/dist`는 실제 제공 상태이므로 검증 도구·빌드는 [AGENTS](../AGENTS.md)의 격리 경계를 지킨다.
@@ -122,7 +122,7 @@ Gabia 권한 NS 3곳에서 와일드카드 `*.dwdcc.kr`의 A는 `128.1.253.101`�
 
 주소 전환 전에 **`/projects/miy-v2/.local/address-move-20261117-dev2/backup`**에 10개 DB·설정을 백업하고, 별도 영역에서 164개 표의 복원 확인과 프레임 이전 리허설을 수행했다. 기존 사용자·클라이언트 식별자·비밀을 보존하면서 IdP와 설정을 갱신하고 활성 프레임 출처 5개를 새 패턴으로 옮겼다. 옛 프레임 출처는 재사용하지 않도록 예약을 남겼다. 새 세 출처의 health는 200이다. 브라우저·CLI·앱 연결과 외부 PC 인수는 [전환 기록](releases/dwdcc-role-addresses-2026-11-17-deployment.json)의 실행 범위대로 구분한다.
 
-이 작업은 주소 전환이다. 서버·게시 CLI는 **0.10.0 `9133d70`**, core schema는 **23**, 포털 UI·프레임 런타임의 게시 바이트는 그대로이며 원격 코드의 0.12.0 기능을 배포한 것으로 해석하지 않는다. 주소를 되돌릴 때는 위 백업과 전환 기록을 기준으로 **설정·IdP·프레임 매핑·앱의 Core 연결 주소를 함께** 맞춘다. 과거 배포의 바이너리나 Nginx 백업만 복구하면 현재 주소 계약과 어긋날 수 있으므로 이전 rollback 명령을 그대로 실행하지 않는다.
+주소 전환 당시에는 서버·게시 CLI **0.10.0 `9133d70`**·schema **23**과 UI·프레임 바이트를 유지했다. 그 뒤 별도 [0.12.1 버전 반영](releases/dwdcc-0.12.1-2026-11-17-deployment.json)으로 서버·CLI·포털 UI와 schema 24를 갱신했다. 현행 버전은 아래 §3을 따른다. 주소를 되돌릴 때는 위 백업과 전환 기록을 기준으로 **설정·IdP·프레임 매핑·앱의 Core 연결 주소를 함께** 맞춘다. 과거 배포의 바이너리나 Nginx 백업만 복구하면 현재 주소 계약과 어긋날 수 있으므로 이전 rollback 명령을 그대로 실행하지 않는다.
 
 Keycloak 한도는 현재 컨테이너의 Docker 설정과 저장소 `compose.yaml`에 반영했다([적용·검사 기록](releases/resource-usage-2026-11-12-validation.json)). 그 적용에서 코어·UI의 배포 소스와 schema는 바뀌지 않았다. 한도 변경은 사용자가 요청했을 때 해당 인증 컨테이너만 정지 → `docker update --memory 2g --memory-swap 2g` → 시작하며, 전체 Compose 재생성이나 realm 초기화를 하지 않는다. 실제 JVM PID는 cgroup의 Java 프로세스로 찾고 PID 1로 고정하지 않는다. 부족할 경우 정지 후 두 상한을 함께 4GiB로 임시 확대하고 인증·OOM 상태를 확인한다. 이 Docker에서 `docker update --memory 0 --memory-swap 0`은 기존 값을 유지하므로 상한 해제 명령으로 사용하지 않는다.
 
@@ -180,22 +180,29 @@ Codex·Claude의 생성된 프로젝트 MCP는 프로젝트의 `.miy-tools/miy[.
 
 | 대상 | 현재 배포 소스·상태 | 근거 |
 | --- | --- | --- |
-| 서버·worker, 게시 CLI | `9133d700369c43b11abeee1738541e6abda5b4d6`, 서버·CLI 0.10.0 / SDK 번들 0.10.0 / Rust SDK 0.4.0 | [0.10.0 반영](releases/pilot-0.10.0-2026-11-15-deployment.json). 다운로드 서버 게시이며 정식 GitHub Release는 아님 |
-| 프레임 런타임 | `9133d700369c43b11abeee1738541e6abda5b4d6` | 같은 기록 |
-| 포털 UI | `1976005eebe1c765aae322e191d99f4410b4835c` | 같은 기록(사용자 등록 폼 보완을 뒤이어 반영) |
-| 프록시·주소 | 포털·dev 포털의 파일 전송 경로, 프레임의 `/_miy/files/`, 콘솔의 파일 경로 차단. 주소는 `portal`·`console`·`dev2`·`app-*` | 경로 계약은 0.10.0 기록, 현행 주소·IdP·프레임 매핑은 [2026-11-17 전환 기록](releases/dwdcc-role-addresses-2026-11-17-deployment.json). `.local/nginx-miy.conf`가 설치된 사이트와 같다 |
-| 공용 UI 컴포넌트 | `ui` 1.0.1, 1.1.0(새 프로젝트 기본) | 같은 기록. 1.1.0은 관리자 계정이 게시 |
-| core DB | schema 23 | 같은 기록. 0023은 `app_files` 표와 색인 두 개 추가 |
+| 서버·worker, 포털 UI | `09dca970cb8aee079445861b1de007aa1acbfec9`, Core 0.12.1 | [0.12.1 반영](releases/dwdcc-0.12.1-2026-11-17-deployment.json). 해당 commit의 필수 CI 3개 모두 성공 |
+| 게시 CLI·Windows 설치기 | `fa0d48de28014397aca2b91f7c53529fa60cf42a`, CLI 0.12.1 / SDK 번들 0.11.0 / Rust SDK 0.4.0 | 원본 CLI CI 43979915250의 5종·helper 2종, Windows 설치기 CI 44034693750. 서버 다운로드 게시이며 정식 GitHub Release는 아님 |
+| 프레임 런타임 | `9133d700369c43b11abeee1738541e6abda5b4d6` | 이후 빌드 입력이 같아 기존 바이트 보존. 0.12.1 서버·웹에서 기존 앱 프레임 재확인 |
+| 프록시·주소 | `portal`·`console`·`dev2`·`app-*`; 파일 전송 경로와 콘솔 차단 유지 | [주소 전환 기록](releases/dwdcc-role-addresses-2026-11-17-deployment.json). 버전 갱신에서 설정·IdP·Nginx 변경 없음 |
+| 공용 UI 컴포넌트 | `ui` 1.0.1, 1.1.0(새 프로젝트 기본) | 기존 게시 바이트 보존 |
+| core DB | schema 24 | `0024_support_reports.sql`로 신고 표·색인 추가. 최종 백업 44개 표·1,773행의 별도 복원과 23→24 리허설 후 적용 |
 
-2026-11-15에 공통 업무 기능과 파일럿 준비 보완을 반영했고, 게시 CLI로 새 앱 하나의 서버 빌드·dev 배포·프레임 표시를 인수했다(`pilot-8e4b32b9`, 중지 상태로 보존). `1976005`는 `9133d70`과 Rust·SDK·프레임 런타임·migration 입력이 같아 포털 UI만 그 커밋에서 반영했다. CLI 후보 고정·검증·게시 잠금을 포함한 `core-rollout.py apply`는 이 배포에서 실행했다. 실제 `rollback`과 후속 복구 도구의 운영 실행은 `NOT_RUN`이다.
+0.12.1은 서버 빌드 전용 앱 배포, 비로그인 CLI 고장 신고·관리자 처리, 온라인 설치와 CLI/MCP 업데이트 안내를 포함한다. 사용자는 [설치 화면](https://portal.dwdcc.kr/cli/install)에서 전역 CLI를 갱신한 뒤 각 프로젝트에서 새 전역 CLI의 `miy app setup`을 실행하고 에이전트를 다시 시작한다. 기존 0.10.0 프로젝트의 개발 안내는 `miy app upgrade`로 번들 0.11.0에 맞춘다. 기존 릴리스로 실행 중인 앱의 시작·중지·재시작은 유지되며, 이후 배포·prod 승격은 그 앱의 성공한 서버 빌드 산출물만 받는다.
 
-**이 호스트에 아직 반영하지 않은 후속 기능:** CLI/번들 0.11.0부터는 서버 배포를 서버 빌드 산출물로 한정한다([검증 기록](releases/server-build-only-2026-11-16-validation.json)). schema는 23 그대로다. 반영하면 서버·worker와 게시 CLI를 함께 갱신해야 하고, 사용자는 CLI를 갱신한 뒤 각 프로젝트에서 `miy app upgrade`를 실행한다(안내 문서만 바뀐다). 이전에 올린 이미지로 실행 중인 설치의 시작·중지·재시작·제거는 그대로 동작하지만, 그 릴리스를 prod로 승격하거나 같은 이미지를 다시 배포할 수는 없고 `miy app build`로 서버에서 다시 빌드해 배포해야 한다.
+기존 앱 8개의 DB·설치·릴리스와 5개 실행/3개 중지 상태를 보존했다. 검증용 신고 1건은 관리자 화면에서 해결 처리하고 시험 기록으로 남겼다. 실제 새 앱 생성·배포, Windows 11 사용자 인수, OS 재부팅과 실제 rollback은 이번 범위에서 NOT_RUN이다. 이전 파일럿 보완 코드도 새 서버에 포함하지만 프록시 복구·파일럿 검사 v2의 실제 실행을 완료한 것으로 해석하지 않는다.
 
-`main` 변경은 자동 배포되지 않는다. 서버를 갱신할 때에는 같은 버전 문자열이라도 대상 source commit·빌드 입력·설치된 SQL·게시물의 출처를 함께 확인한다. 검증한 소스의 별도 checkout에서 빌드하고 §7의 도구로 서버/worker·UI·게시 index를 같은 기록에 묶어 반영한다.
+`main` 변경은 자동 배포되지 않는다. 같은 버전 문자열이어도 source commit·빌드 입력·SQL·게시물의 출처를 확인한다. CLI는 원래 게시된 `fa0d48d`의 바이트를 재사용했다. 이후 `09dca97`까지 Rust·CLI·웹 입력은 같고 문서·게시 메타데이터·배포 도구만 달라졌다. 서버 SHA-256은 `eb7ec98a1374cf51d106d8672226dab17f302076ddd2f224945a9e614e148f71`, 웹 index는 `68cd1483848455a81709d03b9fd394f0824b14a44ccc0de55fca699cf9a0c7eb`다.
 
-**서버·CLI 바이너리와 이전 복구 기록:** 현재 서버 바이너리 SHA-256은 `fc98d5abaf30e8ca8ed0cfcade52af0d5e5d1b5339c71690090b2f59fbbcae61`다. [0.10.0 반영 기록](releases/pilot-0.10.0-2026-11-15-deployment.json)의 당시 복구 순서는 포털 UI → 프레임 런타임 → 프록시 → core였다. 그 기록의 `.local/release-9133d70-source/scripts/core-rollout.py rollback --release-dir .local/release-9133d70-core`는 직전 서버 `467bb0d2…`(0.9.0)와 CLI·설치기 0.9.0 index를 함께 복원하는 명령이다. schema 23·앱 데이터·게시한 `ui` 1.1.0·추가한 0.10.0 파일은 보존한다. 0.9.0 서버를 schema 23에서 실행하는 복구는 수행한 적이 없다(0023은 0.9.0이 읽지 않는 표만 추가). **이 명령은 주소 전환의 rollback이 아니며 현행 주소에서 사용할 수 있는지 먼저 검토한다.** 실행 당시 복구 도구 사본은 최신 도구로 덮어쓰지 않는다.
+**이 버전의 복구:** 새 신고와 앱 데이터를 보존하면서 포털 entry → Core·worker·CLI/설치기 index 순서로 되돌린다. 아래 도구는 현행 `server.json`의 주소를 읽는다. 프레임·Nginx·IdP·주소와 재시작 정책은 이 반영에서 바꾸지 않았으므로 그대로 둔다.
 
-당시 프레임 런타임·포털 UI·프록시의 복구 순서도 같은 기록에 있다. Nginx의 옛 `file-routes-rollout.py restore` 대상 `.local/release-9133d70-nginx`는 **`v2` 계열 주소의 백업**이므로 현재 서버에 그대로 복원하지 않는다. 후속 도구의 실제 복구는 아직 실행하지 않았다([후속 검증](releases/pilot-review-fixes-2026-11-15-validation.json)). 원래 `.local` 도구는 재시도 결함이 있어 실행 이력으로만 보존한다. 현행 주소 전환 복구는 [주소 설정 정본](#dwdcckr-주소-설정-정본)의 별도 백업·IdP·프레임 매핑 기준을 따른다. 게시 CLI source commit과 target별 hash는 `GET /api/v1/cli/install`로 확인한다. 서버는 default features 빌드이므로 클라이언트 전용 바이너리와 hash가 다르다.
+```sh
+python3 .local/release-0121-20261117-source/scripts/ui-rollout.py rollback \
+  --release-dir .local/release-0121-20261117-ui
+python3 .local/release-0121-20261117-source/scripts/core-rollout.py rollback \
+  --release-dir .local/release-0121-20261117-core
+```
+
+이 명령은 직전 0.10.0 바이너리·게시 index·웹 entry를 복원하고 additive schema 24·신고 데이터·기존 앱 DB를 유지한다. 복구 자료는 각 release 디렉터리의 `production-backup/`·`rollback/`이다. **실제 rollback은 NOT_RUN**이며 모의 검사 PASS와 구분한다. 이전 DB dump로 덮어써 신규 신고를 잃거나, 옛 `v2` 주소 Nginx 백업을 버전 복구에 사용하지 않는다. 과거 0.10.0과 그 이전 복구 이력은 [당시 반영 기록](releases/pilot-0.10.0-2026-11-15-deployment.json)에 보존하며 주소 자체의 복구는 [주소 설정 정본](#dwdcckr-주소-설정-정본)을 따른다.
 
 ## 4. 공유 개발 로그인과 운영 전환
 
@@ -216,7 +223,7 @@ Codex·Claude의 생성된 프로젝트 MCP는 프로젝트의 `.miy-tools/miy[.
 
 ## 5. 실제 연결 확인
 
-2026-11-15의 [0.10.0 배포 인수](releases/pilot-0.10.0-2026-11-15-deployment.json)에서는 당시 주소의 세 health, 서버/worker 실행 파일·schema, 게시 CLI 5종·helper 2종의 해시, 일반 OIDC/SSO·CLI·생성 stdio MCP 연결 22항목, 기존 앱 4개의 프레임 실행, 게시 CLI로 새 앱 하나의 생성·서버 빌드·dev 배포·프레임 표시 8항목을 검사했다. 현재 주소의 결과는 [2026-11-17 주소 전환 기록](releases/dwdcc-role-addresses-2026-11-17-deployment.json)에서 확인하며 옛 주소의 PASS를 이월하지 않는다. 같은 Linux 호스트의 검사를 다른 PC·Windows·AI 에이전트 세션·직접 외부 OAuth MCP 인수와 구분한다.
+2026-11-17 [0.12.1 반영 인수](releases/dwdcc-0.12.1-2026-11-17-deployment.json)에서 세 health·실행 파일·schema, CLI 5종/helper 2종/Windows EXE의 공개 해시, 격리 설치 경로의 실제 온라인 설치·재설치, OIDC/SSO·CLI·stdio MCP 22항목, 업데이트 화면/복사·신고 권한/처리·HTTP MCP 업데이트 안내 7항목과 기존 앱 4개의 프레임을 확인했다. 기존 앱 8개 DB의 전체 행 비교와 설치·설정·프레임 바이트 보존도 통과했다. 새 Windows EXE의 Windows Server CI 24항목은 Windows 11 사용자 실기와 구분한다. 새 앱 생성·배포는 이번에 실행하지 않았으며, 2026-11-15 파일럿의 당시 인수는 [0.10.0 기록](releases/pilot-0.10.0-2026-11-15-deployment.json)에 남긴다. 같은 Linux 호스트의 결과를 다른 PC·Windows·신규 AI 에이전트 세션 인수로 확대하지 않는다.
 
 검증할 CLI의 공개 checksum/provenance와 [CLI 릴리스](CLI-RELEASE.md)의 게시 출처를 먼저 대조하고 절대 경로를 전달한다. `pnpm` 의존성과 Chrome이 필요하며 출력 디렉터리는 새 경로여야 한다.
 
