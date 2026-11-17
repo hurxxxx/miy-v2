@@ -1,0 +1,64 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-11-17",
+  "status": "PASS",
+  "scope": "Restore the dwdcc.kr development platform after a host reboot; preserve database, identity and app data. This record precedes the separate 0.12.1 version rollout.",
+  "origins": [
+    "https://portal.dwdcc.kr",
+    "https://console.dwdcc.kr",
+    "https://dev2.dwdcc.kr"
+  ],
+  "incident": {
+    "hostBootLocalTime": "2026-11-17T13:35:59+09:00",
+    "cause": "Existing PostgreSQL and Keycloak containers had Docker restart policy no. They stayed stopped after reboot, while enabled Core/worker units retried. Portal APIs and IdP discovery returned 502.",
+    "userSymptom": "Server connection failed; existing login state was retained."
+  },
+  "actions": [
+    "Stopped the retrying Core and worker units.",
+    "Changed only the existing PostgreSQL and Keycloak containers restart policies to unless-stopped.",
+    "Started PostgreSQL and waited for TCP readiness; started Keycloak and waited for configured issuer discovery.",
+    "Started Core and worker and checked all three public health endpoints."
+  ],
+  "preserved": [
+    "Container identities, images, mounts, networks and memory limits",
+    "Database records and schema 23; no migration or reseed",
+    "Server and CLI 0.10.0; portal and frame asset bytes",
+    "Five running healthy apps and three intentionally stopped apps"
+  ],
+  "verification": [
+    {
+      "status": "PASS",
+      "command": "Normalized docker inspect comparison plus systemctl is-enabled and public HTTPS health",
+      "evidence": ".local/reboot-recovery-20261117/verification.json",
+      "observed": "Both dependencies running with unless-stopped; Docker/Core/worker enabled; three health responses 200; existing app states preserved."
+    },
+    {
+      "status": "PASS",
+      "command": "node scripts/check-platform-connection.mjs --origin https://portal.dwdcc.kr --cli .local/release-9133d70-checks/cli/miy --credentials-file .local/credentials.json --output .local/reboot-recovery-20261117/platform-connection",
+      "evidence": ".local/reboot-recovery-20261117/platform-connection/result.json",
+      "checks": 22,
+      "cleanupFailures": 0,
+      "observed": "Ordinary OIDC, purpose-separated sessions, CLI device approval and generated stdio MCP."
+    }
+  ],
+  "failuresRetained": [
+    {
+      "status": "FAIL",
+      "evidence": ".local/reboot-recovery-20261117/recovery.json",
+      "reason": "First preservation assertion compared mount list order. Recovery had completed; normalization by mount destination confirmed the same mounts and other checked metadata. Original failure record retained."
+    }
+  ],
+  "notRun": [
+    {
+      "status": "NOT_RUN",
+      "scope": "A second host/VM reboot and external Windows/macOS acceptance",
+      "reason": "No reboot was performed for testing; restart policy and running services were inspected. User will perform separate VM validation."
+    }
+  ],
+  "recurrencePrevention": {
+    "desiredConfiguration": "compose.yaml already declares unless-stopped for PostgreSQL and Keycloak. Check actual installed container policies, not only the Compose source.",
+    "historicalOverride": ".local/address-move-20261117-dev2/compose-keycloak-override.json records the old restart:no state. Keep it as historical evidence, do not reuse it as a current recreation override.",
+    "rolloutPreflight": "The subsequent maintained rollout tool change requires both dependencies running with unless-stopped before a core upgrade."
+  },
+  "privateEvidenceDirectory": ".local/reboot-recovery-20261117"
+}

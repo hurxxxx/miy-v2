@@ -363,6 +363,9 @@ class FakeHost:
         self.version = 'miy 0.7.0'
         self.max_connections = '200'
         self.pool = '10'
+        self.dependencies = {name: {'running': True, 'status': 'running', 'restartPolicy': 'unless-stopped'}
+                             for name in (test.rollout.DB, test.rollout.KEYCLOAK)}
+        self.http_urls = []
         self.work = [ZERO_WORK]
         self.stop_works = True
         self.fail_on_stop = set()  # units a stop leaves failed, e.g. after a stop timeout
@@ -504,12 +507,15 @@ class FakeHost:
             return 'database-container'
         if args[:4] == ['docker', 'inspect', '-f', '{{json .Config.Env}}']:
             return json.dumps([f'KC_DB_POOL_MAX_SIZE={self.pool}', 'KC_DB_PASSWORD=private-sentinel'])
+        if args[:3] == ['docker', 'inspect', '-f'] and '{{json .State.Running}}' in args[3]:
+            return json.dumps(self.dependencies[args[-1]])
         if args[:2] == ['docker', 'inspect'] and args[2] == APP_CONTAINER:
             return json.dumps([{'Name': '/' + APP_CONTAINER, 'Id': 'app-container', 'Image': 'sha256:app',
                                 'State': {'Status': 'running', 'StartedAt': 'fixture'}, 'RestartCount': self.restarts}])
         self.test.fail('unexpected inspection: ' + ' '.join(args))
 
     def get_json(self, url):
+        self.http_urls.append(url)
         if url.endswith('/api/health'):
             if not all(state == 'active' for state in self.states.values()):
                 raise OSError('core unavailable')
@@ -562,6 +568,9 @@ class CoreRolloutTests(OfflineTest):
     def reset(self):
         self.installed.write_bytes(OLD)
         self.candidate.write_bytes(NEW)
+        settings = self.root / '.local/server.json'
+        settings.unlink(missing_ok=True)
+        settings.write_text(json.dumps({'origin': 'https://portal.example.test', 'allowHttp': False}))
         for name in ('core-rollout.py', 'package-cli-release.py', 'package-windows-installer.py', 'db_tunnel_package.py'):
             shutil.copyfile(ROOT / 'scripts' / name, self.source / 'scripts' / name)
         (self.source / 'migrations/core/0020_next.sql').unlink(missing_ok=True)
@@ -608,6 +617,80 @@ class CoreRolloutTests(OfflineTest):
         self.assertEqual(self.host.events, [])
         self.assert_untouched()
         self.assertFalse(release.exists())
+
+    def test_health_and_cli_checks_follow_the_installed_origin_including_rollback(self):
+        for origin, allow_http in (('https://portal.dwdcc.kr', False),
+                                   ('https://192.0.2.10:8443', False),
+                                   ('http://portal.example.test:8080', True)):
+            with self.subTest(origin=origin):
+                self.reset()
+                (self.root / '.local/server.json').write_text(json.dumps({'origin': origin, 'allowHttp': allow_http}))
+                code, result, release = self.run_tool()
+                self.assertEqual((code, result['status']), (0, 'PASS'))
+                record = json.loads((release / 'deployment.json').read_text())
+                self.assertEqual(record['origin'], origin)
+                self.assertEqual(record['dependencyContainers'], self.host.dependencies)
+                code, result, _ = self.run_tool('rollback', release=release)
+                self.assertEqual((code, result['status']), (0, 'ROLLED_BACK'))
+                self.assertEqual(set(self.host.http_urls),
+                                 {origin + '/api/health', origin + '/api/v1/cli/install'})
+
+    def test_missing_or_invalid_installed_origins_fail_before_service_changes(self):
+        cases = [None, 'not-json', '[]', '{}', '{"origin":123}',
+                 '{"origin":"https://portal.example.test","allowHttp":"false"}',
+                 '{"origin":"https://portal.example.test","origin":"https://other.example.test"}']
+        cases.extend(json.dumps({'origin': value}) for value in (
+            'https://user:private-sentinel@portal.example.test',
+            'https://portal.example.test/path', 'https://portal.example.test?x=private-sentinel',
+            'https://portal.example.test#fragment', 'https://PORTAL.example.test',
+            'https://portal.example.test/', 'http://portal.example.test'))
+        for raw in cases:
+            with self.subTest(raw=raw):
+                self.reset()
+                path = self.root / '.local/server.json'
+                path.unlink() if raw is None else path.write_text(raw)
+                code, result, release = self.run_tool()
+                self.assertEqual((code, result['failure']), (1, 'installed_origin_invalid'))
+                self.assert_untouched()
+                self.assertEqual(self.host.http_urls, [])
+                self.assertNotIn('private-sentinel', (release / 'deployment.json').read_text())
+
+    def test_installed_origin_symlink_is_refused_before_service_changes(self):
+        path = self.root / '.local/server.json'
+        target = self.root / 'other-settings.json'
+        target.write_bytes(path.read_bytes())
+        path.unlink()
+        path.symlink_to(target)
+        code, result, _ = self.run_tool()
+        self.assertEqual((code, result['failure']), (1, 'symlink_path_refused'))
+        self.assert_untouched()
+        self.assertEqual(self.host.http_urls, [])
+
+    def test_database_and_identity_must_both_run_with_boot_restart_policy(self):
+        cases = [({'restartPolicy': 'no'}, 'dependency_restart_policy_invalid'),
+                 ({'restartPolicy': 'always'}, 'dependency_restart_policy_invalid'),
+                 ({'running': False, 'status': 'exited'}, 'dependency_container_not_running'),
+                 ({'running': True, 'status': 'paused'}, 'dependency_container_not_running'),
+                 ({'running': 'true'}, 'dependency_container_not_running')]
+        for name in (self.rollout.DB, self.rollout.KEYCLOAK):
+            for change, expected in cases:
+                with self.subTest(container=name, change=change):
+                    self.reset()
+                    self.host.dependencies[name].update(change)
+                    code, result, release = self.run_tool()
+                    self.assertEqual((code, result['failure']), (1, expected))
+                    self.assert_untouched()
+                    record = json.loads((release / 'deployment.json').read_text())
+                    self.assertEqual((record['status'], record['productionMutations']), ('PREFLIGHT_FAILED', False))
+
+    def test_unknown_dependency_state_is_not_treated_as_running(self):
+        for state in (None, {}, {'running': True}, []):
+            with self.subTest(state=state):
+                self.reset()
+                self.host.dependencies[self.rollout.KEYCLOAK] = state
+                code, result, _ = self.run_tool('inspect')
+                self.assertEqual((code, result['failure']), (1, 'dependency_container_state_unknown'))
+                self.assert_untouched()
 
     def test_preflight_refusals_change_nothing(self):
         cases = {
@@ -663,6 +746,39 @@ class CoreRolloutTests(OfflineTest):
         code, result, _ = self.run_tool('rollback', release=release)
         self.assertEqual((code, result['status']), (0, 'ROLLED_BACK'))
         self.assertEqual((self.installed.read_bytes(), self.host.schema), (OLD, 20))
+
+    def support_reports_fixture(self):
+        filename, expected = self.rollout.WIDEN_ONLY[24]
+        self.assertEqual(filename, '0024_support_reports.sql')
+        path = ROOT / 'migrations/core' / filename
+        self.assertEqual(hashlib.sha256(path.read_bytes()).hexdigest(), expected)
+        target = self.source / 'migrations/core' / filename
+        shutil.copyfile(path, target)
+        self.host.schema = 23
+        self.host.verify['rehearsal'] = {'exitCode': 0, 'migrationVersionAfter': 24}
+        return target
+
+    def test_support_reports_pinned_migration_and_old_binary_rollback_keep_schema_24(self):
+        self.support_reports_fixture()
+        code, result, release = self.run_tool(widen_migration=24)
+        self.assertEqual((code, result['status'], result['schema']), (0, 'PASS', 24))
+        self.assertEqual(self.host.events, ['stop', 'backup', 'verify', 'migrate', 'start'])
+        record = json.loads((release / 'deployment.json').read_text())
+        self.assertEqual((record['liveSchema'], record['migratedSchema'], record['widenMigration']), (23, 24, 24))
+        code, result, _ = self.run_tool('rollback', release=release)
+        self.assertEqual((code, result['status']), (0, 'ROLLED_BACK'))
+        self.assertEqual((self.installed.read_bytes(), self.host.schema), (OLD, 24))
+
+    def test_support_reports_migration_requires_exact_bytes_and_adjacent_schema(self):
+        for change, expected in ((lambda path: path.write_text(path.read_text() + '-- changed\n'),
+                                  'widen_migration_changed'),
+                                 (lambda path: setattr(self.host, 'schema', 22), 'widen_migration_not_allowed')):
+            with self.subTest(expected=expected):
+                self.reset()
+                change(self.support_reports_fixture())
+                code, result, _ = self.run_tool(widen_migration=24)
+                self.assertEqual((code, result['failure']), (1, expected))
+                self.assert_untouched()
 
     def test_widen_migration_refusals_change_nothing(self):
         cases = {

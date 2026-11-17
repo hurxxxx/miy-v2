@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Maintained core rollout for this host (v2.dwdcc.kr): replace the server binary, same schema.
+"""Maintained core rollout for this dwdcc.kr host: replace the server binary, same schema.
 
 Run the copy inside the frozen source checkout of the commit being deployed; any other copy is
 refused. The candidate's source must carry exactly the live core migration set. This tool never
@@ -54,10 +54,11 @@ import time
 import tomllib
 import urllib.request
 
+from server_addresses import canonical_origin
+
 LIVE = pathlib.Path('/projects/miy-v2')
 DB = 'miy-v2-validation-postgres-1'
 KEYCLOAK = 'miy-v2-validation-keycloak-1'
-ORIGIN = 'https://v2.dwdcc.kr'
 SERVICES = ['miy-v2-serve', 'miy-v2-worker']
 # These states require an independent process check: failed/inactive can retain cgroup processes.
 STOPPED_STATES = ('inactive', 'failed')
@@ -69,11 +70,12 @@ STABLE_TABLES = ['users', 'apps', 'app_registrations', 'grants', 'installations'
 REPOSITORY = 'hurxxxx/miy-v2'
 # Migrations an older binary keeps working with because they only widen constraints or add
 # tables it never reads (0022: app frame origins, sessions and codes; 0023: app file
-# reservations and their two indexes):
+# reservations and their two indexes; 0024: support reports and their indexes):
 # version -> (file, sha256 of its exact bytes).
 WIDEN_ONLY = {21: ('0021_dev_portal.sql', 'f2b2c022638d618bb337ca1ab53d6ea2f2e0cd7b2cce474ed8659c2f7060b82a'),
               22: ('0022_app_frames.sql', 'cfb73c37f2bb795345518cce8f813ce8d538b13876e819a376c2bbe007dc57a6'),
-              23: ('0023_app_files.sql', '8985c40e0dacdd85df173f225a8d64a0f938efb9b6eddd145652d88c6f6980e2')}
+              23: ('0023_app_files.sql', '8985c40e0dacdd85df173f225a8d64a0f938efb9b6eddd145652d88c6f6980e2'),
+              24: ('0024_support_reports.sql', '9370f724435f0037e6ead5ab6c6257721d5e17101e4cd57aa9642ac7c45a894a')}
 REQUIRED_CI = ('cli-foundation.yml', 'runtime-regression.yml', 'web.yml')
 HEX40 = re.compile(r'[0-9a-f]{40}')
 HEX64 = re.compile(r'[0-9a-f]{64}')
@@ -115,6 +117,26 @@ def recovery():
 
 def installed():
     return LIVE / '.local/bin/miy-server'
+
+
+def installed_origin():
+    """Read this installation at call time; never fall back to an old hostname."""
+    def unique(pairs):
+        result = {}
+        for key, value in pairs:
+            require(key not in result, 'installed_origin_invalid')
+            result[key] = value
+        return result
+
+    try:
+        settings = json.loads(plain(LIVE / '.local/server.json').read_text(), object_pairs_hook=unique)
+        require(isinstance(settings, dict), 'installed_origin_invalid')
+        origin, allow_http = settings.get('origin'), settings.get('allowHttp', False)
+        require(isinstance(origin, str) and type(allow_http) is bool, 'installed_origin_invalid')
+        require(canonical_origin(origin, allow_http) == origin, 'installed_origin_invalid')
+    except (OSError, UnicodeError, ValueError, TypeError):
+        raise RuntimeError('installed_origin_invalid') from None
+    return origin
 
 
 @contextlib.contextmanager
@@ -209,6 +231,25 @@ def container_setting(name, key):
     # The environment holds secrets: read it without the command log and return one key only.
     env = json.loads(quiet(['docker', 'inspect', '-f', '{{json .Config.Env}}', name]))
     return dict(item.split('=', 1) for item in env).get(key)
+
+
+def dependency_containers():
+    """Running services alone do not prove that their DB/IdP survive the next boot."""
+    result = {}
+    template = ('{"running":{{json .State.Running}},"status":{{json .State.Status}},'
+                '"restartPolicy":{{json .HostConfig.RestartPolicy.Name}}}')
+    for name in (DB, KEYCLOAK):
+        try:
+            state = json.loads(quiet(['docker', 'inspect', '-f', template, name]))
+        except (ValueError, TypeError):
+            raise RuntimeError('dependency_container_state_unknown') from None
+        require(isinstance(state, dict) and set(state) == {'running', 'status', 'restartPolicy'},
+                'dependency_container_state_unknown')
+        require(state['running'] is True and state['status'] == 'running',
+                'dependency_container_not_running')
+        require(state['restartPolicy'] == 'unless-stopped', 'dependency_restart_policy_invalid')
+        result[name] = state
+    return result
 
 
 def service_states():
@@ -591,13 +632,13 @@ def executable_hashes(expected):
 
 
 def cli_guide():
-    guide = get_json(ORIGIN + '/api/v1/cli/install')
+    guide = get_json(installed_origin() + '/api/v1/cli/install')
     return {'cliVersion': guide['cliVersion'], 'sourceCommit': guide['sourceCommit'],
             'windowsInstallerSha256': guide['windowsInstaller']['sha256']}
 
 
 def healthy(guide):
-    return get_json(ORIGIN + '/api/health') == {'status': 'ok'} and cli_guide() == guide
+    return get_json(installed_origin() + '/api/health') == {'status': 'ok'} and cli_guide() == guide
 
 
 def connection_budget(source, seconds):
@@ -630,10 +671,12 @@ def preflight(args, cli_candidate=None):
     require(digest(pathlib.Path(__file__).resolve()) == digest(source / 'scripts/core-rollout.py'),
             'rollout_tool_differs_from_source')
     facts = source_facts(source)
+    facts['origin'] = installed_origin()
     facts['ci'] = ci_gate(args.commit)
     require(digest(args.candidate) == args.candidate_sha256, 'candidate_hash_mismatch')
     require(call([plain(args.candidate), '--version']) == f"miy {facts['version']}", 'candidate_version_mismatch')
     require(digest(installed()) == args.installed_sha256, 'installed_binary_changed')
+    facts['dependencyContainers'] = dependency_containers()
     require_core_state('active')
     core_units()
     core_cgroup_population()
@@ -651,7 +694,7 @@ def preflight(args, cli_candidate=None):
         require(migration.is_file() and digest(migration) == pinned[1], 'widen_migration_changed')
     require(int(sql('SHOW max_connections', 'postgres')) == args.max_connections, 'database_settings_differ')
     require(container_setting(KEYCLOAK, 'KC_DB_POOL_MAX_SIZE') == str(args.identity_pool), 'identity_settings_differ')
-    require(get_json(ORIGIN + '/api/health') == {'status': 'ok'}, 'health_failed_before_rollout')
+    require(get_json(facts['origin'] + '/api/health') == {'status': 'ok'}, 'health_failed_before_rollout')
     facts['cliGuide'] = cli_guide()
     if args.cli_downloads is not None or args.cli_installers is not None:
         facts['cliRelease'] = staged_cli(args, facts['version'], cli_candidate, source / 'scripts')
@@ -672,7 +715,8 @@ def preflight(args, cli_candidate=None):
 
 def public(facts):
     containers = facts['appContainers'].values()
-    return {'version': facts['version'], 'schema': facts['schema'], 'executables': facts['executables'],
+    return {'version': facts['version'], 'schema': facts['schema'], 'origin': facts['origin'],
+            'dependencyContainers': facts['dependencyContainers'], 'executables': facts['executables'],
             'cliGuide': facts['cliGuide'], 'expectedCliGuide': facts['expectedCliGuide'],
             'connectionBudget': facts['connectionBudget'], 'idle': facts['idle'],
             'ci': facts['ci'], 'appContainers': len(facts['appContainers']),
@@ -714,6 +758,7 @@ def apply(args):
         schema, sha = facts['schema'], args.candidate_sha256
         before_containers = facts['appContainers']
         REPORT.update({'version': facts['version'], 'schema': schema, 'liveSchema': facts['liveSchema'],
+                       'origin': facts['origin'], 'dependencyContainers': facts['dependencyContainers'],
                        'widenMigration': args.widen_migration, 'previousExecutables': facts['executables'],
                        'cliGuide': facts['cliGuide'], 'connectionBudgetBefore': facts['connectionBudget'],
                        'idleBeforeStop': facts['idle'], 'appContainersBefore': before_containers,
