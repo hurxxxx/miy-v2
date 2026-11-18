@@ -11,6 +11,22 @@ use std::{path::Path, time::Duration};
 use uuid::Uuid;
 
 const STATE: &str = ".miy/remote-dev.json";
+
+fn preparation_error(state: &Value, id: Uuid, code: &str, message: &str) -> CliError {
+    let error = if state["errorCode"] == "official_schema_requires_release" {
+        CliError::new(
+            Category::Conflict,
+            "official_schema_requires_release",
+            "Deploy the matching official release to dev before opening its shared development database. For local schema changes use miy app dev --runtime docker --database local or an organization app with its own ID.",
+        )
+    } else {
+        CliError::new(Category::RemoteFailure, code, message)
+    };
+    error.with_details(
+        json!({"sessionId":id,"status":state["status"],"errorCode":state["errorCode"]}),
+    )
+}
+
 #[derive(Clone, Copy, Debug, clap::ValueEnum, PartialEq, Eq)]
 pub enum DatabaseMode {
     Server,
@@ -214,9 +230,18 @@ impl Remote {
         let id: Uuid = serde_json::from_value(created["id"].clone())?;
         saved.id = Some(id);
         crate::platform::write_private(Path::new(STATE), &serde_json::to_vec(&saved)?)?;
-        ensure!(matches!(created["status"].as_str(), Some("queued" | "preparing" | "ready")),
-            CliError::new(Category::RemoteFailure, "development_session_ended", "The saved development session has ended. Run app dev-stop to clear its local recovery state, then start development again.")
-                .with_details(json!({"sessionId":id,"status":created["status"],"errorCode":created["errorCode"]})));
+        ensure!(
+            matches!(
+                created["status"].as_str(),
+                Some("queued" | "preparing" | "ready")
+            ),
+            preparation_error(
+                &created,
+                id,
+                "development_session_ended",
+                "The saved development session has ended. Run app dev-stop to clear its local recovery state, then start development again."
+            )
+        );
         let database_id: Uuid = serde_json::from_value(created["databaseId"].clone())?;
         let connection = &created["connection"];
         let database = connection["database"]
@@ -246,8 +271,7 @@ impl Remote {
             match state["status"].as_str() {
                 Some("ready") => break,
                 Some("queued" | "preparing") => {},
-                _ => return Err(CliError::new(Category::RemoteFailure, "development_preparation_failed", "The server could not prepare this development database. Inspect the failure and preserve the migration history.")
-                    .with_details(json!({"sessionId":id,"errorCode":state["errorCode"]})).into()),
+                _ => return Err(preparation_error(&state, id, "development_preparation_failed", "The server could not prepare this development database. Inspect the failure and preserve the migration history.").into()),
             }
             ensure!(
                 tokio::time::Instant::now() < deadline,

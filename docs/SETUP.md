@@ -384,6 +384,7 @@ install -D -m 0755 target/release/miy "$MIY_STATE_DIR/bin/miy-server"
 export MIY_BINARY="$MIY_STATE_DIR/bin/miy-server"
 bash scripts/run-service.sh migrate
 bash scripts/run-service.sh seed
+bash scripts/run-service.sh catalog-sync --file registry/apps/catalog.json
 
 pnpm install --frozen-lockfile
 pnpm --filter @miy/platform build
@@ -459,7 +460,7 @@ docker compose --env-file "$MIY_STATE_DIR/compose.env" exec -T postgres \
   psql -U postgres -d miy_core -c 'SELECT version,success FROM _sqlx_migrations ORDER BY version;'
 ```
 
-세 HTTPS `/api/health`가 성공하고 migration의 `success`가 모두 참이어야 한다. 현재 소스는 schema 23이며 앞으로는 checkout의 migration 목록이 기준이다. CLI 게시 전 `sourceCommit: null`, `downloads: 0`은 정상이다. **0.10.0 게시물을 0.11.0 서버에 복사하면 버전 불일치가 되므로 기존 서버에서 가져오지 않는다.**
+세 HTTPS `/api/health`가 성공하고 migration의 `success`가 모두 참이어야 한다. 현재 후보는 schema 25이며 설치하는 checkout의 마지막 migration을 기준으로 확인한다. CLI 게시 전 `sourceCommit: null`, `downloads: 0`은 정상이다. CLI 게시물은 실행 중인 Core와 같은 버전을 사용한다.
 
 브라우저에서 다음을 확인한다.
 
@@ -587,6 +588,8 @@ miy auth status
 SSH에서는 CLI가 표시한 승인 주소를 사용자 PC 브라우저에서 연다. 관리자 `admin`으로 로그인해 요청 코드를 대조하고 승인한다. Unix 설치기에는 `--ca-file` 옵션이 없으므로 context에 지정한다. 이 CA 파일은 CLI가 계속 읽을 수 있는 절대 경로에 보관한다. 이미 `new-server` context가 있다면 다른 이름을 쓰고 그 이름을 선택한다.
 
 파이프/비대화형 환경에서 로그인 결과가 `pending`이면 승인 뒤 출력된 login ID로 `miy auth wait LOGIN_ID`를 실행하고 `auth status`를 다시 확인한다.
+
+§7의 `catalog-sync`는 공식 제품을 등록한다. 저장소 루트에서 `python3 scripts/official-apps.py plan`으로 기본 설치 대상과 출시 여부를 확인한다. 현재 기본 목록의 플래너·메신저는 버전 게시 전이라 `unreleased`로 표시된다. 공식 소스와 카탈로그 버전을 받은 뒤에는 `install --context new-server`로 dev에 준비하고 인수 후 prod에 승격한다. 설치할 제품 선택, 소스 경로, 중지 상태 보존과 승인 명령은 [공식 앱 공급과 설치](RUNNING.md#공식-앱-공급과-설치)를 따른다.
 
 첫 연결 검사는 관리자 계정 하나로 수행할 수 있다. 이후 앱 개발은 §8에서 추가한 개발 계정으로 진행한다.
 
@@ -847,6 +850,7 @@ git worktree add --detach "$MIY_UPDATE_ROOT" "$MIY_UPDATE_COMMIT"
 
 ```bash
 cd "$MIY_SETUP_ROOT"
+export MIY_BINARY="$MIY_STATE_DIR/bin/miy-server"
 git switch --detach "$MIY_UPDATE_COMMIT"
 install -m 0755 "$MIY_UPDATE_ROOT/target/release/miy" "$MIY_STATE_DIR/bin/miy-server"
 mv web/platform/dist "$MIY_BACKUP/previous-portal-dist"
@@ -860,10 +864,12 @@ bash scripts/run-service.sh migrate
 bash scripts/run-service.sh seed
 ```
 
+schema 25로 갱신할 때는 복원 사본에서 후보 서버 실행 파일과 회사가 선택한 카탈로그로 동기화를 먼저 확인한다. 실제 DB에서도 같은 실행 파일과 파일을 사용한다. 저장소 기본 목록을 쓰면 위 블록의 `MIY_BINARY`가 지정된 셸에서 `bash scripts/run-service.sh catalog-sync --file "$MIY_UPDATE_ROOT/registry/apps/catalog.json"`을 실행한다. 별도 제품 목록을 공급받은 서버는 해당 파일 경로를 지정한다. 조직 앱 ID와 충돌하면 해당 조직 앱과 데이터를 보존하고 공급자와 다른 제품 ID를 정한다. [공식 앱 공급과 설치](RUNNING.md#공식-앱-공급과-설치)
+
 5. §13의 재개는 DB/IdP→Nginx→issuer 확인→Core/worker 순서로 진행한다. §8의 health·로그인, 기존 앱과 레코드, §9의 CLI를 확인한다. CLI/번들 버전이 바뀌면 같은 후보의 CLI를 §9에서 다시 만들고, 게시하려면 §10에서 새 aggregate도 준비한다. 이전 다운로드를 새 서버 버전으로 취급하지 않는다.
 6. 성공 후에만 `MIY_SETUP_COMMIT="$MIY_UPDATE_COMMIT"`으로 바꾸고, §5의 `declare -p`와 같은 변수 목록을 **새 임시 파일에** 써서 `setup-context.sh`와 교체한다. 이전 입력 파일은 백업 안에 있다. 설치 기록에는 이전/새 SHA, 백업 위치, migration, 확인 결과를 남긴다. 후보 checkout은 문제 확인이 끝날 때까지 보존한다.
 
-**되돌릴 때:** DB나 registry를 변경하지 않았다면 이전 commit·실행 파일·포털/프레임·설정을 백업에서 함께 되돌린다. `migrate`/`seed` 후에는 바이너리만 되돌리지 않고, 서비스를 중지한 채 같은 시점의 DB·state·UI·설정을 한 묶음으로 복원한다. 재개 후 추가된 데이터를 임의로 버리지 않으며, 중지 후 추가 백업과 복구 방침을 먼저 정한다. 이 수동 순서는 미검증이며 무중단 갱신이나 자동 host updater의 완성을 뜻하지 않는다.
+**되돌릴 때:** DB나 registry를 변경하지 않았다면 이전 commit·실행 파일·포털/프레임·설정을 백업에서 함께 되돌린다. `migrate`/`seed` 후에는 바이너리만 되돌리지 않고, 서비스를 중지한 채 같은 시점의 DB·state·UI·설정을 한 묶음으로 복원한다. 공식 제품·버전이 등록된 DB에서 0.12.1과 같이 공식 릴리스 보호 기능이 없는 서버를 재기동하면 정책을 지킬 수 없다. 이 경우 호환되는 서버로 전진 복구하거나 등록 이전의 검증된 전체 백업을 사용한다. 재개 후 추가된 데이터를 임의로 버리지 않으며, 중지 후 추가 백업과 복구 방침을 먼저 정한다. 이 수동 순서는 미검증이며 무중단 갱신이나 자동 host updater의 완성을 뜻하지 않는다.
 
 ## 15. 인증서 만료 확인과 갱신
 

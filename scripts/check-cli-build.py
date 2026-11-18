@@ -5,9 +5,11 @@ Validates source transfer, provenance, journals and direct-image deploy without
 executing Docker or language tools. Actual worker builds are validated separately.
 """
 import argparse
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 import hashlib
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from http.server import BaseHTTPRequestHandler
+import importlib.util
 import io
 import json
 import os
@@ -18,11 +20,14 @@ import subprocess
 import tarfile
 import tempfile
 import threading
-import time
+from types import SimpleNamespace
 from urllib.parse import parse_qs, urlsplit
 import uuid
 
 ROOT = Path(__file__).resolve().parent.parent
+spec = importlib.util.spec_from_file_location('cli_output_contract', Path(__file__).with_name('check-cli-output.py'))
+output_contract = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(output_contract)
 APP = 'remote-build-fixture'
 USER = 'fixture-developer'
 ACCESS = 'miy_access_' + 'a' * 48
@@ -30,6 +35,7 @@ REFRESH = 'miy_refresh_' + 'r' * 48
 DEVICE = 'miy_device_' + 'd' * 48
 SECRET = 'fixture-secret-must-not-upload'
 IMAGE = 'sha256:' + 'a' * 64
+COMMAND_TIMEOUT = 120
 
 
 def require(condition, message):
@@ -57,6 +63,7 @@ def component_fixture(project):
 
 def check(cli):
     passed = []
+    not_run = []
 
     def ok(name):
         passed.append(name)
@@ -66,6 +73,8 @@ def check(cli):
         root = Path(temporary).resolve()
         config = root / 'private-config'
         project = root / '한글 committed project'
+        git_config = root / 'fixture.gitconfig'
+        git_config.write_text('[core]\n\tautocrlf = false\n', encoding='utf-8', newline='\n')
         tools = root / 'forbidden-tools'
         tools.mkdir()
         tool_log = root / 'forbidden-tool-calls'
@@ -78,12 +87,13 @@ def check(cli):
                 (tools / tool).chmod(0o700)
         env = {**os.environ, 'MIY_CONFIG_DIR': str(config), 'MIY_CREDENTIAL_BACKEND': 'file',
                'RUST_LOG': 'off', 'NO_PROXY': '127.0.0.1,localhost', 'no_proxy': '127.0.0.1,localhost',
-               'GIT_CONFIG_NOSYSTEM': '1', 'GIT_CONFIG_GLOBAL': os.devnull,
+               'GIT_CONFIG_NOSYSTEM': '1', 'GIT_CONFIG_GLOBAL': str(git_config),
                'PATH': str(tools) + os.pathsep + os.environ.get('PATH', ''), 'MIY_FORBIDDEN_TOOL_LOG': str(tool_log)}
         env.pop('MIY_CONTEXT', None)
         state = {'jobs': {}, 'requests': {}, 'uploads': [], 'runtime_posts': [], 'runtime_job': None,
                  'failures': [], 'lose_build_ack': True, 'hide_lookup': 1, 'lose_runtime_ack': True,
-                 'next_status': 'queued', 'override': {}, 'get_paths': [], 'fail_get_once': 0}
+                 'next_status': 'queued', 'override': {}, 'fail_get_once': 0, 'reject_once': None}
+        build_observed = threading.Event()
         login_id = str(uuid.uuid4())
         session_id = str(uuid.uuid4())
 
@@ -93,20 +103,22 @@ def check(cli):
 
             def reply(self, status, value, cookie=False):
                 encoded = json.dumps(value).encode()
-                self.send_response(status)
-                self.send_header('Content-Type', 'application/json')
-                self.send_header('Content-Length', str(len(encoded)))
-                if cookie:
-                    self.send_header('Set-Cookie', 'fixture=synthetic; Path=/; HttpOnly')
-                self.end_headers()
                 try:
+                    self.send_response(status)
+                    self.send_header('Content-Type', 'application/json')
+                    self.send_header('Content-Length', str(len(encoded)))
+                    if cookie:
+                        self.send_header('Set-Cookie', 'fixture=synthetic; Path=/; HttpOnly')
+                    self.end_headers()
                     self.wfile.write(encoded)
-                except (BrokenPipeError, ConnectionResetError):
+                except ConnectionError:
                     pass
 
             def authenticated(self):
-                require(self.headers.get('Authorization') == 'Bearer ' + ACCESS
-                        or self.headers.get('Cookie') == 'fixture=synthetic', 'Missing fixture authentication')
+                if self.server.surface == 'console':
+                    require(self.headers.get('Cookie') == 'fixture=synthetic', 'Missing console fixture session')
+                else:
+                    require(self.headers.get('Authorization') == 'Bearer ' + ACCESS, 'Missing fixture authentication')
 
             def drop(self):
                 self.close_connection = True
@@ -126,7 +138,11 @@ def check(cli):
             def get(self):
                 parsed = urlsplit(self.path)
                 path, query = parsed.path, parse_qs(parsed.query)
-                state['get_paths'].append(path)
+                if path == '/auth/options':
+                    self.reply(200, {'developmentLogin': True, 'surface': self.server.surface,
+                                     'portalOrigin': surfaces.portal_origin, 'consoleOrigin': surfaces.console_origin})
+                    return
+                require(self.server.surface == 'portal' or path == '/api/v1/me', 'Unexpected console read')
                 if path != '/api/v1/capabilities':
                     self.authenticated()
                 if path == '/api/v1/capabilities':
@@ -162,6 +178,7 @@ def check(cli):
                     else:
                         # The canonical GET identity can differ from a deduplicated request alias.
                         self.reply(200, {**job, 'requestId': job['canonicalRequestId'], **state['override']})
+                        build_observed.set()
                 elif path == '/api/v1/runtime/jobs':
                     job = state['runtime_job']
                     self.reply(200, {'jobs': [job] if job and query.get('requestId') == [job['requestId']] else [], 'nextCursor': None})
@@ -179,6 +196,10 @@ def check(cli):
 
             def post(self):
                 raw = self.rfile.read(int(self.headers.get('Content-Length', '0')))
+                browser_path = self.path in ('/auth/development', f'/api/v1/cli/devices/{login_id}/decision')
+                require(browser_path == (self.server.surface == 'console'), 'Unexpected fixture surface')
+                if browser_path:
+                    require(self.headers.get('Origin') == surfaces.console_origin, 'Missing console Origin')
                 if self.path == f'/api/v1/apps/{APP}/builds':
                     self.authenticated()
                     request = self.headers.get('x-miy-request-id')
@@ -199,6 +220,11 @@ def check(cli):
                                 'Private/generated files entered source archive')
                         require(SECRET.encode() not in raw, 'Known credential fixture was uploaded')
                     state['uploads'].append((request, hashlib.sha256(raw).hexdigest()))
+                    if state['reject_once']:
+                        code = state['reject_once']
+                        state['reject_once'] = None
+                        self.reply(409, {'error': {'code': code}})
+                        return
                     if request in state['requests']:
                         job = state['jobs'][state['requests'][request]]
                         job['status'] = 'queued'
@@ -252,14 +278,9 @@ def check(cli):
                 else:
                     raise AssertionError('Unexpected mutating request: ' + self.path)
 
-        server = ThreadingHTTPServer(('127.0.0.1', 0), Handler)
-        origin = f'http://127.0.0.1:{server.server_port}'
-        thread = threading.Thread(target=server.serve_forever, daemon=True)
-        thread.start()
-
         def call(args, expected=0, cwd=None, output='json'):
             result = subprocess.run([str(cli), '--output', output, '--no-input', *args], cwd=cwd or project,
-                                    env=env, stdin=subprocess.DEVNULL, capture_output=True, timeout=40)
+                                    env=env, stdin=subprocess.DEVNULL, capture_output=True, timeout=COMMAND_TIMEOUT)
             require(not state['failures'], '; '.join(state['failures']))
             require(all(secret.encode() not in result.stdout + result.stderr for secret in [ACCESS, REFRESH, DEVICE, SECRET]), 'Credential fixture leaked to output')
             if output == 'jsonl':
@@ -271,9 +292,8 @@ def check(cli):
             return value
 
         def git(*args):
-            result = subprocess.run(['git', '-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', '-c', 'commit.gpgsign=false', *args],
-                                    cwd=project, env=env, capture_output=True, check=True, timeout=30)
-            return result.stdout.decode().strip()
+            subprocess.run(['git', '-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', '-c', 'commit.gpgsign=false', *args],
+                           cwd=project, env=env, capture_output=True, check=True, timeout=30)
 
         def change_source(label):
             with (project / 'src/main.rs').open('a', encoding='utf-8', newline='\n') as file:
@@ -281,7 +301,7 @@ def check(cli):
             git('add', 'src/main.rs')
             git('commit', '--quiet', '-m', label)
 
-        try:
+        with output_contract.surface_servers(Handler, SimpleNamespace()) as (surfaces, origin):
             call(['context', 'add', 'fixture', '--url', origin], cwd=root)
             call(['--context', 'fixture', 'auth', 'login', '--account', 'developer'], cwd=root)
             call(['--context', 'fixture', 'app', 'init', str(project), '--id', APP, '--name', 'Remote build fixture'], cwd=root)
@@ -298,6 +318,11 @@ def check(cli):
             dirty.unlink()
             ok('dirty source is rejected before upload without local tool execution')
 
+            journal = config / 'build-journal'
+            mismatch = call(['--context', 'fixture', '--app', 'other-app', 'app', 'build', '--no-wait'], expected=6)
+            require(mismatch['error']['code'] == 'resume_target_mismatch' and not list(journal.glob('*.tar')),
+                    'An unpublished local archive survived a target error')
+
             result = call(['--context', 'fixture', 'app', 'build', '--no-wait'], expected=8)
             require(result['error']['code'] == 'build_submission_unknown', 'Lost acknowledgement lost recovery semantics')
             request = result['error']['details']['requestId']
@@ -306,6 +331,7 @@ def check(cli):
 
             resumed = call(['--context', 'fixture', 'job', 'resume', request, '--no-wait'])['data']
             build_id = resumed['id']
+            require(not (journal / (request + '.tar')).exists(), 'Queued source still occupies the client journal')
             call(['--context', 'fixture', 'job', 'get', build_id])
             call(['--context', 'fixture', 'app', 'build', '--no-wait'])
             require(len(state['uploads']) == 1, 'Resume/repeated build duplicated accepted source transfer')
@@ -317,6 +343,14 @@ def check(cli):
             job = state['jobs'][build_id]
             job.update(status='succeeded', imageId=IMAGE, step='completed')
             job['canonicalRequestId'] = str(uuid.uuid4())
+            receipt_file = project / 'dist/image.json'
+            receipt_file.parent.mkdir(exist_ok=True)
+            receipt_file.mkdir()
+            blocked = call(['--context', 'fixture', 'job', 'resume', request], expected=7)
+            require(blocked['error']['code'] == 'build_metadata_unavailable'
+                    and blocked['error']['recovery']['args'][-3:] == [request, '--environment', 'dev'],
+                    'Receipt write failure did not preserve its original recovery command')
+            receipt_file.rmdir()
             result = call(['--context', 'fixture', 'job', 'resume', build_id])['data']
             require(result['metadataWritten'] and json.loads((project / 'dist/image.json').read_text(encoding='utf-8'))['serverBuild']['jobId'] == build_id,
                     'Completed server build did not publish local deployment receipt')
@@ -356,6 +390,25 @@ def check(cli):
                     'Malformed receipt lost its typed error or submitted a runtime request')
             ok('malformed build receipt preserves typed validation error without deployment')
 
+            change_source('queue refusal fixture')
+            state['reject_once'] = 'build_queue_full'
+            count = len(state['uploads'])
+            build_args = ['--context', 'fixture', 'app', 'build', '--no-wait']
+            rejected = call(build_args, expected=6)['error']
+            rejected_id = rejected['details']['requestId']
+            require(rejected['code'] == 'build_queue_full' and rejected['recovery']['args'][-2:] == ['app', 'build']
+                    and rejected_id not in state['requests'] and not (journal / (rejected_id + '.tar')).exists(),
+                    'Confirmed pre-admission rejection lost its fresh-build guidance or retained the source')
+            prior = call(['--context', 'fixture', 'job', 'resume', rejected_id, '--no-wait'], expected=6)
+            require(prior['error']['code'] == 'build_submission_rejected' and len(state['uploads']) == count + 1,
+                    'Resuming an explicitly rejected build submitted another request')
+            with ThreadPoolExecutor(max_workers=2) as pool:
+                results = list(pool.map(call, [build_args, build_args]))
+            require(results[0]['data']['id'] == results[1]['data']['id'] and len(state['uploads']) == count + 2
+                    and state['uploads'][-1][0] != rejected_id and state['uploads'][-1][1] == state['uploads'][-2][1]
+                    and not list(journal.glob('*.tar')), 'Concurrent explicit retries did not share one fresh request')
+            ok('a full queue releases local source; same-commit concurrent builds submit one fresh request after rejection')
+
             change_source('timeout fixture')
             result = call(['--context', 'fixture', 'app', 'build', '--timeout', '1'], expected=8)
             request = result['error']['details']['requestId']
@@ -372,8 +425,15 @@ def check(cli):
             change_source('receiving fixture')
             state['next_status'] = 'receiving'
             received = call(['--context', 'fixture', 'app', 'build', '--no-wait'])['data']
+            receiving_source = journal / (received['requestId'] + '.tar')
+            require(receiving_source.is_file(), 'An unfinished receiver lost the required source')
+            state['reject_once'] = 'build_queue_full'
+            call(['--context', 'fixture', 'job', 'resume', received['requestId'], '--no-wait'], expected=6)
+            require(receiving_source.is_file() and state['uploads'][-1] == state['uploads'][-2],
+                    'A post-admission refusal discarded a receiving request')
             call(['--context', 'fixture', 'job', 'resume', received['requestId'], '--no-wait'])
-            require(state['uploads'][-1] == state['uploads'][-2], 'Receiving recovery changed the source or request identity')
+            require(state['uploads'][-1] == state['uploads'][-2] and not receiving_source.exists(),
+                    'Receiving recovery changed request identity or retained an acknowledged source transfer')
             ok('interrupted receiving state resumes the same whole source archive and request')
 
             change_source('network observation fixture')
@@ -390,16 +450,14 @@ def check(cli):
                 change_source('interrupt fixture')
                 state['next_status'] = 'queued'
                 count = len(state['uploads'])
+                build_observed.clear()
                 process = subprocess.Popen([str(cli), '--output', 'json', '--no-input', '--context', 'fixture', 'app', 'build'],
                                            cwd=project, env=env, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
                 try:
-                    deadline = time.monotonic() + 30
-                    while len(state['uploads']) == count and process.poll() is None and time.monotonic() < deadline:
-                        time.sleep(0.05)
-                    require(len(state['uploads']) == count + 1, 'Interrupt fixture never submitted build')
-                    time.sleep(0.3)
+                    require(build_observed.wait(timeout=COMMAND_TIMEOUT) and len(state['uploads']) == count + 1,
+                            'Interrupt fixture never observed the submitted build')
                     process.send_signal(signal.SIGINT)
-                    stdout, stderr = process.communicate(timeout=10)
+                    stdout, _ = process.communicate(timeout=10)
                     value = json.loads(stdout)
                     require(process.returncode == 130 and value['error']['details']['remoteWorkCancelled'] is False, 'Interrupt cancelled or lost accepted build')
                     call(['--context', 'fixture', 'job', 'resume', value['error']['details']['requestId'], '--no-wait'])
@@ -407,14 +465,12 @@ def check(cli):
                 finally:
                     if process.poll() is None:
                         process.kill()
-                        process.wait()
+                        process.communicate()
                 ok('Ctrl-C stops observation and resumes the accepted request without cancellation or duplication')
+            else:
+                not_run.append('Ctrl-C during observation requires a Windows console control event')
             require(not state['failures'] and not tool_log.exists(), 'Fixture failed or invoked a forbidden local build tool')
-        finally:
-            server.shutdown()
-            server.server_close()
-            thread.join(timeout=5)
-    return {'passed': len(passed), 'cases': passed, 'realWorkerBuild': False}
+    return {'passed': len(passed), 'cases': passed, 'notRun': not_run, 'realWorkerBuild': False}
 
 
 if __name__ == '__main__':

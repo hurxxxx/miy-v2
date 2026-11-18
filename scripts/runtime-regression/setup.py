@@ -43,7 +43,7 @@ class H(http.server.BaseHTTPRequestHandler):
    import sys
    for _ in range(1024): sys.stdout.write('OPERATIONS-FIXTURE-'+('x'*2030)+'\\n')
    sys.stdout.flush()
-  unhealthy=pathlib.Path('/tmp/unhealthy').exists()
+  unhealthy=pathlib.Path('/tmp/unhealthy').exists() or (os.environ.get('AUDIT_FAIL_PROD')=='1' and os.environ['DATABASE_URL'].endswith('=miy-app-audit-runtime-prod'))
   self.send_response(503 if unhealthy and self.path=='/health' else 200);self.send_header('Content-Type','application/json');self.end_headers();self.wfile.write(json.dumps({'releaseId':os.environ.get('MIY_RELEASE_ID'),'version':os.environ.get('AUDIT_VERSION'),'path':self.path}).encode())
  def log_message(self,*args): pass
 http.server.HTTPServer(('0.0.0.0',8080),H).serve_forever()
@@ -52,7 +52,7 @@ v1='CREATE TABLE app.records(id integer PRIMARY KEY, value text NOT NULL);\n'
 v2='ALTER TABLE app.records ADD COLUMN tag text;\n'
 bad='ALTER TABLE app.records ADD COLUMN failed_column text; SELECT audit_intentionally_missing_function();\n'
 fix='ALTER TABLE app.records ADD COLUMN recovered text;\n'
-variants=[('v1','1.0.0',[v1],app),('v1-conflict','1.0.0',[v1],app),('v2','1.1.0',[v1,v2],app),('bad','1.2.0',[v1,v2,bad],app),('recovery','1.2.1',[v1,v2,fix],app),('wrong-app','1.3.0',[v1], 'audit-other')]
+variants=[('v1','1.0.0',[v1],app),('v1-conflict','1.0.0',[v1],app),('health-same','1.0.1',[v1],app),('v2','1.1.0',[v1,v2],app),('bad','1.2.0',[v1,v2,bad],app),('recovery','1.2.1',[v1,v2,fix],app),('wrong-app','1.3.0',[v1], 'audit-other')]
 for label,version,sqls,manifest_app in variants:
     path=ROOT/'images'/label
     (path/'miy/ui').mkdir(parents=True);(path/'miy/migrations').mkdir()
@@ -63,7 +63,8 @@ for label,version,sqls,manifest_app in variants:
     (path/'miy/ui/entry.js').write_text('export default {};// '+label)
     for i,sql in enumerate(sqls,1): (path/'miy/migrations'/f'{i:04d}_audit.sql').write_text(sql)
     (path/'server.py').write_text(server)
-    (path/'Dockerfile').write_text(f'FROM python:3.14-slim\nLABEL org.miy.app.id="{manifest_app}" org.opencontainers.image.revision="{commit}" miy.audit="{PREFIX}"\nENV AUDIT_VERSION={version}\nCOPY miy /miy\nCOPY server.py /server.py\nCMD ["python","-B","/server.py"]\n')
+    fail_prod = int(label in ('health-same', 'v2'))
+    (path/'Dockerfile').write_text(f'FROM python:3.14-slim\nLABEL org.miy.app.id="{manifest_app}" org.opencontainers.image.revision="{commit}" miy.audit="{PREFIX}"\nENV AUDIT_VERSION={version} AUDIT_FAIL_PROD={fail_prod}\nCOPY miy /miy\nCOPY server.py /server.py\nCMD ["python","-B","/server.py"]\n')
     tag=PREFIX+':'+label
     with (EV/('build-'+label+'.log')).open('w') as log:
         subprocess.run(['docker','build','--pull=false','--network=none','-t',tag,str(path)],stdout=log,stderr=subprocess.STDOUT,check=True)

@@ -73,6 +73,8 @@ for attempt in {1..60}; do
   sleep 1
 done
 if [ "$ready" != true ];then echo 'Core or browser did not become ready; verify the configured origin and reverse proxy' >&2;exit 1;fi
+# Report catalog conflicts without holding back existing organization apps.
+bash scripts/run-service.sh catalog-sync --file "${MIY_OFFICIAL_APP_CATALOG:-registry/apps/catalog.json}"
 printf 'Platform ready: %s; private configuration: %s\n' "$origin" "$MIY_STATE_DIR"
 printf 'Trusted console and identity: %s\n' "$console_origin"
 printf 'Dev app portal: %s\n' "$dev_portal_origin"

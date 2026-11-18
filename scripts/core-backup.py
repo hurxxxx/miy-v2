@@ -6,8 +6,8 @@ create  Dump one database from the running PostgreSQL container without stopping
         the same moment. Output: <out>/<database>.dump and manifest.json (both 0600, dir 0700).
 verify  Restore the dump into a new disposable PostgreSQL container (tmpfs, unique label, no
         published port unless --migrate-with), compare migration version and every row count with
-        the manifest, optionally apply the given binary's core migrations to the restored copy as a
-        rehearsal, and always remove only the container it created.
+        the manifest and optionally rehearse the given binary's migrations and official catalog.
+        Always remove only the container it created.
 
 The source database is only read. Secrets are never printed; the dump file itself is private.
 This is the minimal change-scope protection of PLAN step 1, not the full backup product (core
@@ -29,6 +29,17 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 LABEL = "miy.core-backup-verify"
 IDENT = re.compile(r"^[a-z_][a-z0-9_]{0,62}$")
+CATALOG_TABLES = ("apps", "official_apps", "official_app_versions")
+CATALOG_FAILURES = ("catalog_app_id_conflict", "catalog_version_conflict", "official_catalog_import_failed",
+                    "official_catalog_records_changed")
+CATALOG_CONTENTS = (
+    "SELECT coalesce(jsonb_object_agg(o.app_id,jsonb_build_object('name',a.name,'defaultInstall',o.default_install,"
+    "'pins',coalesce((SELECT jsonb_object_agg(v.version,jsonb_build_array(v.source_commit,v.archive_sha256)) "
+    "FROM official_app_versions v WHERE v.app_id=o.app_id),'{}'::jsonb))),'{}'::jsonb) "
+    "FROM official_apps o JOIN apps a ON a.id=o.app_id")
+ORGANIZATION_APPS = (
+    "SELECT encode(sha256(convert_to(coalesce(jsonb_agg(to_jsonb(a) ORDER BY a.id)::text,'[]'),'UTF8')),'hex') "
+    "FROM apps a WHERE NOT EXISTS(SELECT 1 FROM official_apps o WHERE o.app_id=a.id)")
 COUNTS_SQL = (
     "SELECT json_build_object("
     "'migrationVersion', (SELECT max(version) FROM _sqlx_migrations),"
@@ -53,6 +64,46 @@ def sha256(path: Path) -> str:
         for block in iter(lambda: handle.read(1 << 20), b""):
             digest.update(block)
     return digest.hexdigest()
+
+
+def record_fingerprints(columns, query):
+    """Compare table contents across the live and restored databases without exporting rows."""
+    result = {}
+    for table, names in columns.items():
+        if not IDENT.fullmatch(table) or (names is not None and not all(IDENT.fullmatch(name) for name in names)):
+            raise ValueError("invalid_record_projection")
+        projection = "*" if names is None else ",".join('"' + name + '"' for name in names)
+        result[table] = json.loads(query(
+            "SELECT json_build_object('rows',count(*),'sha256',encode(sha256(convert_to("
+            "coalesce(string_agg(row_data::text,E'\\n' ORDER BY row_data::text COLLATE \"C\"),''),'UTF8')),'hex')) "
+            f'FROM (SELECT to_jsonb(record) row_data FROM (SELECT {projection} FROM "{table}") record) records'))
+    return result
+
+
+def rehearse_catalog(binary, path, env, read):
+    """Prove the exact product merge and preservation of organization apps on the restored copy."""
+    raw = path.read_bytes()
+    selected = json.loads(raw)["apps"]
+    old_organization = read(ORGANIZATION_APPS)
+    expected = json.loads(read(CATALOG_CONTENTS))
+    for product in selected:
+        current = expected.setdefault(product["appId"], {"name": product["name"].strip(), "pins": {}})
+        current["defaultInstall"] = product["defaultInstall"]
+        for release in product["releases"]:
+            pin = [release["sourceCommit"], release["archiveSha256"]]
+            if current["pins"].setdefault(release["version"], pin) != pin:
+                raise ValueError("catalog_version_conflict")
+    result = subprocess.run([str(Path(binary).resolve()), "catalog-sync", "--file", str(path)],
+                            env=env, capture_output=True, text=True)
+    if result.returncode:
+        for code in ("catalog_app_id_conflict", "catalog_version_conflict"):
+            if code in result.stderr:
+                raise ValueError(code)
+        raise ValueError("official_catalog_import_failed")
+    if read(ORGANIZATION_APPS) != old_organization or json.loads(read(CATALOG_CONTENTS)) != expected:
+        raise ValueError("official_catalog_records_changed")
+    return {"sha256": hashlib.sha256(raw).hexdigest(), "receipt": json.loads(result.stdout),
+            "records": record_fingerprints(dict.fromkeys(CATALOG_TABLES), read)}
 
 
 def run(args, **kwargs):
@@ -183,6 +234,9 @@ def free_port() -> int:
 
 
 def verify(args) -> int:
+    catalog = args.official_app_catalog
+    if catalog and not args.migrate_with:
+        raise SystemExit("--official-app-catalog requires --migrate-with")
     source = Path(args.backup).resolve()
     manifest = json.loads((source / "manifest.json").read_text())
     dump = source / manifest["dump"]["file"]
@@ -217,18 +271,30 @@ def verify(args) -> int:
                        "rows": sum(restored["tables"].values()), "mismatchedTables": mismatched})
         ok = not mismatched and restored["migrationVersion"] == manifest["migrationVersion"]
         if ok and args.migrate_with:
+            def read(query):
+                return run(["docker", "exec", container, "psql", "-X", "-q", "-At", "-U", "postgres",
+                            "-d", "verify", "-c", query], capture_output=True, text=True).stdout
+
+            if catalog:
+                existing_tables = {name: None for name in CATALOG_TABLES if name in restored["tables"]}
+                records_before = record_fingerprints(existing_tables, read)
             env = {"PATH": os.environ.get("PATH", ""),
                    "DATABASE_URL": f"postgres://postgres:{password}@127.0.0.1:{port}/verify"}
             migrate = subprocess.run([str(Path(args.migrate_with).resolve()), "migrate"], env=env,
                                      capture_output=True, text=True)
-            after = run(["docker", "exec", container, "psql", "-X", "-q", "-At", "-U", "postgres", "-d", "verify",
-                         "-c", "SELECT max(version) FROM _sqlx_migrations"], capture_output=True, text=True).stdout.strip()
+            after = read("SELECT max(version) FROM _sqlx_migrations").strip()
             result["rehearsal"] = {"exitCode": migrate.returncode, "migrationVersionAfter": int(after)}
             ok = migrate.returncode == 0
+            if ok and catalog:
+                if record_fingerprints(existing_tables, read) != records_before:
+                    raise ValueError("official_catalog_records_changed")
+                result["officialCatalog"] = rehearse_catalog(args.migrate_with, catalog, env, read)
+                result["officialCatalog"]["recordsBefore"] = records_before
         result["status"] = "PASS" if ok else "FAIL"
-    except (Exception, SystemExit):
+    except (Exception, SystemExit) as error:
         # Do not print database or migration stderr; it can contain private rows.
-        result["failureCategory"] = "verification_failed"
+        result["failureCategory"] = (str(error) if isinstance(error, ValueError) and str(error) in CATALOG_FAILURES
+                                     else "verification_failed")
     finally:
         result.update(cleanup_container(container, LABEL, token))
         if not result["containerRemoved"]:
@@ -248,6 +314,7 @@ def main() -> int:
     v.add_argument("backup")
     v.add_argument("--image", default=None)
     v.add_argument("--migrate-with", help="server binary whose core migrations are rehearsed on the restored copy")
+    v.add_argument("--official-app-catalog", type=Path, help="rehearse this catalog on the same restored database")
     args = parser.parse_args()
     if args.command == "create":
         return create(args)

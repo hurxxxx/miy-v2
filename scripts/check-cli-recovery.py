@@ -84,6 +84,7 @@ class Fixture:
         self.lifecycle_posts = 0
         self.lifecycle_preflights = 0
         self.promote_preflights = 0
+        self.deploy_installation = None
         self.lifecycle_jobs = []
         self.lifecycle_permission_restored = False
         self.lifecycle_generation = 1
@@ -240,7 +241,7 @@ def fixture_server(config):
                 self.send_json(200, {"status": "approved", "sessionId": state.session_id, "userId": "fixture-user", "accessToken": ACCESS, "refreshToken": REFRESH, "tokenType": "Bearer", "expiresIn": 900, "refreshExpiresAt": (datetime.now(timezone.utc) + timedelta(days=30)).isoformat()})
             elif self.path == f"/api/v1/apps/{APP}/runtime/preflight":
                 self.authenticated()
-                installation = None
+                installation = state.deploy_installation if body["action"] == "deploy" else None
                 if body["action"] == "promote":
                     # A release whose image an earlier CLI uploaded: accepted in dev, not built by the server.
                     state.promote_preflights += 1
@@ -336,8 +337,10 @@ def check(cli):
         env.pop("MIY_CONTEXT", None)
         install_fake_docker(root, env)
 
-        def run(args, cwd=root, expected=0, command=None):
-            result = subprocess.run([str(cli), "--output", "json", *args], cwd=cwd, env=env, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=30, check=False)
+        def run(args, cwd=root, expected=0, command=None, input_data=None):
+            result = subprocess.run([str(cli), "--output", "json", *args], cwd=cwd, env=env,
+                                    stdin=subprocess.DEVNULL if input_data is None else None, input=input_data,
+                                    stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=30, check=False)
             require(all(secret.encode() not in result.stdout + result.stderr for secret in [ACCESS, REFRESH, DEVICE]), "Private fixture credential appeared in output")
             return envelope(result, expected, command)
 
@@ -388,7 +391,22 @@ def check(cli):
             ok("unfinished, other-image and other-source builds are refused before preflight or submission")
 
             state.build_override = {}
-            result = run(deploy, cwd=project, expected=8, command="app deploy")
+            reviewed = run(deploy + ["--dry-run"], cwd=project, command="app deploy")["data"]
+            plan_file = root / "reviewed-deploy.json"
+            plan_file.write_text(json.dumps(reviewed), encoding="utf-8")
+            guarded = deploy + ["--if-current", f"@{plan_file}"]
+            # Someone installed and then stopped this app since the operator reviewed
+            # the initial-install plan. A fresh preflight alone would permit a restart.
+            state.deploy_installation = {"installationId": state.installation_id, "releaseId": state.release_id,
+                                         "generation": 1, "desiredState": "stopped", "runtimeStatus": "stopped",
+                                         "dbStatus": "ready", "imageId": IMAGE}
+            changed = run(deploy + ["--if-current", "-"], cwd=project, expected=6,
+                          command="app deploy", input_data=json.dumps(reviewed).encode())
+            require(changed["error"]["code"] == "state_changed" and state.runtime_posts == 0
+                    and not list((config / "journal").glob("*.json")), "A stale installation plan started work")
+            ok("reviewed initial-install plan cannot reactivate a concurrently stopped app")
+            state.deploy_installation = None
+            result = run(guarded, cwd=project, expected=8, command="app deploy")
             require(not state.failures, "Fixture contract checks failed: " + "; ".join(state.failures))
             require(result["error"]["code"] == "submission_result_unknown", "A lost submission was not recoverable")
             require(state.runtime_posts == 1 and state.job is None, "The lost submission was not sent exactly once")

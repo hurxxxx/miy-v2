@@ -44,6 +44,7 @@ script_checks() {
   python3 scripts/runtime-regression/test_cleanup.py
   python3 scripts/runtime-regression/test_ui_cleanup.py
   python3 scripts/test-online-cli-install.py
+  python3 scripts/test-official-apps.py
   python3 scripts/test-cli-release.py
   python3 scripts/test-cli-version.py
   python3 scripts/test-write-decisions.py

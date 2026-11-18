@@ -134,11 +134,13 @@ export function RuntimeControls({
   }
   if (app.runtimeStatus === "removed")
     return <p>앱 실행 환경이 제거됐습니다. DB는 보존됩니다. CLI에서 다시 배포할 수 있습니다.</p>;
+  const actions = app.runtimeStatus === "recovery_required" ? ["remove"]
+    : app.runtimeStatus === "running" ? ["stop", "restart", "remove"] : ["start", "remove"];
   return (
     <div className="runtime-controls">
       {app.imageId && <p className="runtime-image">{app.imageId.slice(0, 22)}…</p>}
       <div>
-        {(app.runtimeStatus === "running" ? ["stop", "restart", "remove"] : ["start", "remove"]).map((action) => (
+        {actions.map((action) => (
           <Button key={action} size="sm" disabled={!!busy} onClick={(event) => control(action, event.currentTarget)}>
             {labels[action]}
           </Button>

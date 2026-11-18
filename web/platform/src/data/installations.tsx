@@ -1,6 +1,12 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { request, type Installation } from "@miy/sdk";
+import { request, type AppDistribution, type Installation } from "@miy/sdk";
 import { useSurface } from "./session";
+
+export const distributionLabels = {
+  default_official: "기본 제공 앱",
+  optional_official: "공식 업무 앱",
+  organization: "조직 제작 앱",
+} satisfies Record<AppDistribution, string>;
 
 /**
  * Installations visible to the signed-in user, as decided by the server.

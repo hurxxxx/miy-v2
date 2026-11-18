@@ -11,6 +11,10 @@ export interface AcceptanceRecord {
 }
 
 export interface App {
+  /** The company's use switch applies even before the first installation. */
+  disabled: boolean;
+  /** Product catalog membership, including products without an installed release. */
+  distribution: AppDistribution;
   id: string;
   name: string;
 }
@@ -20,6 +24,8 @@ export interface AppDetail {
   app: App;
   installations: Installation[];
 }
+
+export type AppDistribution = "default_official" | "optional_official" | "organization";
 
 /**
  * A one-time launch of one installation's app frame (`POST /api/v1/app-frames`).
@@ -197,6 +203,8 @@ export interface Installation {
   canPromote: boolean;
   dbStatus: string;
   desiredState: string;
+  /** Distribution of this installed release. Official values require verified publisher source. */
+  distribution: AppDistribution;
   environment: Environment;
   /** Control generation of the current runtime container. */
   generation: number;
@@ -229,6 +237,8 @@ export interface LastOperation {
   action: string;
   errorCode: string | null;
   id: string;
+  /** Release selected by this job, which can differ from the installation's active release. */
+  releaseId: string | null;
   retryable: boolean;
   status: string;
   step: string;

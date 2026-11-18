@@ -140,7 +140,7 @@ v1 공식 앱 12종의 범위는 `miy:packages/contracts/app-contracts.json`의 
 | 공식 앱 ID | v2 처리 |
 | --- | --- |
 | `files` | F1·F2·F4로 적용. Storage API 다음에 구현 |
-| `pms`, `docs`, `planner`, `meeting`, `recording` | F6 적용 후보. 첫 앱과 이후 순서는 기능 의존성에 따라 결정 |
+| `pms`, `docs`, `planner`, `meeting`, `recording` | F6 적용 후보. v2 카탈로그에 플래너와 PMS 제품 ID를 예약했다. 실제 제품 릴리스는 별도 개발·게시한다. [공급 기준](PRD.md#업무-앱의-공급과-설치) |
 | `mail`, `community`, `whiteboard`, `video-chat` | 채택 여부 보류. 이번 재구현 완료 범위에 자동 포함하지 않음 |
 | `diagrams`, `bento` | 초기 적용 제외(§4). 필요해질 때 별도 실행 출처와 권한 계약 검토 |
 

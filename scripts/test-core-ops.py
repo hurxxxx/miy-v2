@@ -228,7 +228,8 @@ class BackupCleanupTests(OfflineTest):
             return subprocess.CompletedProcess(argv, rc, output, error)
 
         output = io.StringIO()
-        args = SimpleNamespace(backup=str(self.root), image='postgres:fixture', migrate_with=None)
+        args = SimpleNamespace(backup=str(self.root), image='postgres:fixture', migrate_with=None,
+                               official_app_catalog=None)
         with patch.object(subprocess, 'run', side_effect=run), \
              patch.object(backup.secrets, 'token_hex', side_effect=[TOKEN, 'private-fixture-password']), \
              contextlib.redirect_stdout(output):
@@ -284,6 +285,54 @@ class BackupCleanupTests(OfflineTest):
         self.no_process.side_effect = subprocess.CalledProcessError(1, args)
         with self.assertRaisesRegex(RuntimeError, '^command_failed$'):
             backup.run(args)
+
+
+class CatalogRehearsalTests(OfflineTest):
+    def setUp(self):
+        super().setUp()
+        self.file = self.root / 'catalog.json'
+        self.input = {'appId': 'planner', 'name': 'Planner', 'defaultInstall': False,
+                      'releases': [{'version': '2.0.0', 'sourceCommit': 'b' * 40, 'archiveSha256': 'c' * 64}]}
+        self.file.write_text(json.dumps({'schemaVersion': 1, 'apps': [self.input]}))
+        self.old = {'planner': {'name': 'Local name', 'defaultInstall': True, 'pins': {'1.0.0': ['c' * 40, 'd' * 64]}}}
+        self.after = json.loads(json.dumps(self.old))
+        self.after['planner']['defaultInstall'] = False
+        self.after['planner']['pins']['2.0.0'] = ['b' * 40, 'c' * 64]
+        self.organization_after = 'unchanged'
+
+    def rehearse(self):
+        receipt = {'apps': 1, 'releasePins': 1}
+        result = subprocess.CompletedProcess([], 0, json.dumps(receipt), '')
+        with patch.object(subprocess, 'run', return_value=result) as sync:
+            def read(query):
+                if query == backup.ORGANIZATION_APPS:
+                    return self.organization_after if sync.called else 'unchanged'
+                if query == backup.CATALOG_CONTENTS:
+                    return json.dumps(self.after if sync.called else self.old)
+                self.assertIn('string_agg', query)
+                return json.dumps({'rows': 1, 'sha256': 'a' * 64})
+
+            return backup.rehearse_catalog(self.root / 'server', self.file, {}, read)
+
+    def test_selected_merge_preserves_site_name_and_pins(self):
+        result = self.rehearse()
+        self.assertEqual(result['receipt'], {'apps': 1, 'releasePins': 1})
+        self.assertEqual(set(result['records']), set(backup.CATALOG_TABLES))
+        self.assertEqual(result['sha256'], backup.sha256(self.file))
+
+    def test_same_receipt_cannot_hide_organization_or_catalog_changes(self):
+        self.organization_after = 'changed'
+        with self.assertRaisesRegex(ValueError, '^official_catalog_records_changed$'):
+            self.rehearse()
+        self.organization_after = 'unchanged'
+        del self.after['planner']['pins']['1.0.0']
+        with self.assertRaisesRegex(ValueError, '^official_catalog_records_changed$'):
+            self.rehearse()
+
+    def test_conflicting_pin_is_detected_before_import(self):
+        self.old['planner']['pins']['2.0.0'] = ['b' * 40, 'e' * 64]
+        with self.assertRaisesRegex(ValueError, '^catalog_version_conflict$'):
+            self.rehearse()
 
 
 class ConnectionBudgetTests(OfflineTest):
@@ -390,6 +439,11 @@ class FakeHost:
         self.budget_before = True
         self.budget_with_candidate = True
         self.migrate_works = True
+        self.catalog_rows = {}
+        self.old_catalog_contract = None
+        self.new_catalog_contract = 1
+        self.catalog_ack_lost = False
+        self.catalog_conflict = False
         # The install guide offers only the CLI of the running server's version.
         self.server_versions = {OLD_SHA: '0.7.0', NEW_SHA: '0.7.0'}
         # Newest first, like the GitHub API. Each test may replace a run or its jobs.
@@ -408,7 +462,7 @@ class FakeHost:
         (directory / 'cgroup.events').write_text(f'populated {int(populated)}\nfrozen 0\n')
         return directory
 
-    def call(self, args):
+    def call(self, args, public_failures=()):
         args = [str(a) for a in args]
         self.test.rollout.REPORT['commands'].append({'command': args, 'exitCode': 0})
         if args[:2] == ['systemctl', 'show'] and args[2] == '--property=ActiveState':
@@ -468,9 +522,36 @@ class FakeHost:
             if self.migrate_works:
                 self.schema += 1
             return ''
+        if args[0] == 'env' and 'catalog-sync' in args:
+            self.test.assertIn('MIY_BINARY=' + str(self.test.installed), args)
+            self.test.assertIn('MIY_STATE_DIR=' + str(self.test.root / '.local'), args)
+            self.test.assertEqual(self.test.installed.read_bytes(), NEW)
+            self.test.assertEqual(set(self.states.values()), {'inactive'})
+            self.events.append('sync')
+            selected = json.loads(Path(args[-1]).read_text())
+            self.catalog_rows.update({app['appId']: app for app in selected['apps']})
+            if self.catalog_ack_lost:
+                raise RuntimeError('command_failed')
+            return json.dumps(self.verify['officialCatalog']['receipt'])
         if args[0] == 'python3' and args[2] == 'verify':
             self.events.append('verify')
-            self.test.assertEqual(args[-1], str(self.test.rollout.REL / 'rollback/miy-server.candidate'))
+            self.test.assertEqual(args[args.index('--migrate-with') + 1], str(self.test.rollout.REL / 'rollback/miy-server.candidate'))
+            if '--official-app-catalog' in args:
+                self.events.append('rehearse-catalog')
+                path = Path(args[args.index('--official-app-catalog') + 1])
+                self.test.assertEqual(path, self.test.rollout.REL / 'rollback/official-app-catalog.json')
+                if self.catalog_conflict:
+                    self.test.assertIn('catalog_app_id_conflict', public_failures)
+                    raise RuntimeError('catalog_app_id_conflict')
+                apps = json.loads(path.read_bytes())['apps']
+                pins = sum(len(app['releases']) for app in apps)
+                self.verify['officialCatalog'] = {
+                    'sha256': hashlib.sha256(path.read_bytes()).hexdigest(),
+                    'receipt': {'apps': len(apps), 'releasePins': pins},
+                    'records': {table: {'rows': 2, 'sha256': 'e' * 64} for table in backup.CATALOG_TABLES},
+                    'recordsBefore': {table: {'rows': 2, 'sha256': 'e' * 64} for table in backup.CATALOG_TABLES
+                                      if table == 'apps' or self.schema >= 25},
+                }
             if self.on_verify:
                 self.on_verify()
             return json.dumps(self.verify)
@@ -481,9 +562,14 @@ class FakeHost:
             return str(self.schema)
         if query == 'SHOW max_connections':
             return self.max_connections
+        if query == 'SELECT EXISTS(SELECT 1 FROM official_apps)':
+            self.test.assertGreaterEqual(self.schema, 25)
+            return 't' if self.catalog_rows else 'f'
         if 'runtime_jobs' in query:
             return json.dumps(self.work.pop(0) if len(self.work) > 1 else self.work[0])
         if 'information_schema.columns' in query:
+            if self.schema < 25 and "table_name='official_app" in query:
+                return '[]'
             return '["id","name"]'
         if 'string_agg' in query:
             changed = self.records_change_with_candidate and self.candidate_running()
@@ -501,6 +587,16 @@ class FakeHost:
             return json.dumps({'jobs': self.ci_jobs[int(args[3])]})
         if args[0] == 'git':
             return self.head if 'rev-parse' in args else self.dirty
+        if args[1:] == ['--output', 'json', 'describe', '--command', 'catalog-sync']:
+            if Path(args[0]) == self.test.candidate:
+                version = self.new_catalog_contract
+            else:
+                self.test.assertEqual(Path(args[0]), self.test.rollout.REL / 'rollback/miy-server')
+                version = self.old_catalog_contract
+            command = {'command': 'catalog-sync'}
+            if version is not None:
+                command['officialReleaseProtectionVersion'] = version
+            return json.dumps({'ok': True, 'data': {'command': command}})
         if args[:4] == ['docker', 'inspect', '-f', '{{json .NetworkSettings.Networks}}']:
             return json.dumps({'miy': {}, 'app-network': {}})
         if args[:4] == ['docker', 'inspect', '-f', '{{.Id}}']:
@@ -571,8 +667,10 @@ class CoreRolloutTests(OfflineTest):
         settings = self.root / '.local/server.json'
         settings.unlink(missing_ok=True)
         settings.write_text(json.dumps({'origin': 'https://portal.example.test', 'allowHttp': False}))
-        for name in ('core-rollout.py', 'package-cli-release.py', 'package-windows-installer.py', 'db_tunnel_package.py'):
+        for name in ('core-rollout.py', 'official-apps.py', 'package-cli-release.py', 'package-windows-installer.py', 'db_tunnel_package.py'):
             shutil.copyfile(ROOT / 'scripts' / name, self.source / 'scripts' / name)
+        (self.source / 'registry/apps').mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(ROOT / 'registry/apps/catalog.json', self.source / 'registry/apps/catalog.json')
         (self.source / 'migrations/core/0020_next.sql').unlink(missing_ok=True)
         self.host = FakeHost(self)
 
@@ -747,27 +845,141 @@ class CoreRolloutTests(OfflineTest):
         self.assertEqual((code, result['status']), (0, 'ROLLED_BACK'))
         self.assertEqual((self.installed.read_bytes(), self.host.schema), (OLD, 20))
 
-    def support_reports_fixture(self):
-        filename, expected = self.rollout.WIDEN_ONLY[24]
-        self.assertEqual(filename, '0024_support_reports.sql')
+    def pinned_migration_fixture(self, version):
+        filename, expected = self.rollout.WIDEN_ONLY[version]
         path = ROOT / 'migrations/core' / filename
         self.assertEqual(hashlib.sha256(path.read_bytes()).hexdigest(), expected)
         target = self.source / 'migrations/core' / filename
         shutil.copyfile(path, target)
-        self.host.schema = 23
-        self.host.verify['rehearsal'] = {'exitCode': 0, 'migrationVersionAfter': 24}
+        self.host.schema = version - 1
+        self.host.verify['rehearsal'] = {'exitCode': 0, 'migrationVersionAfter': version}
         return target
 
-    def test_support_reports_pinned_migration_and_old_binary_rollback_keep_schema_24(self):
-        self.support_reports_fixture()
+    def test_support_reports_schema_survives_old_binary_rollback(self):
+        self.pinned_migration_fixture(24)
         code, result, release = self.run_tool(widen_migration=24)
         self.assertEqual((code, result['status'], result['schema']), (0, 'PASS', 24))
         self.assertEqual(self.host.events, ['stop', 'backup', 'verify', 'migrate', 'start'])
         record = json.loads((release / 'deployment.json').read_text())
         self.assertEqual((record['liveSchema'], record['migratedSchema'], record['widenMigration']), (23, 24, 24))
         code, result, _ = self.run_tool('rollback', release=release)
+        self.assertEqual((code, result['status'], self.installed.read_bytes(), self.host.schema),
+                         (0, 'ROLLED_BACK', OLD, 24))
+
+    def test_first_catalog_is_rehearsed_imported_and_retained_on_incompatible_rollback(self):
+        self.pinned_migration_fixture(25)
+        code, result, release = self.run_tool(widen_migration=25)
+        self.assertEqual((code, result['status']), (0, 'PASS'))
+        self.assertEqual(self.host.events, ['stop', 'backup', 'verify', 'rehearse-catalog', 'migrate', 'sync', 'start'])
+        record = json.loads((release / 'deployment.json').read_text())
+        self.assertEqual(record['officialCatalog']['receipt'], {'apps': 4, 'releasePins': 0})
+        self.assertTrue(record['officialCatalogSynced'])
+        self.assertEqual(set(self.host.catalog_rows), {'planner', 'messenger', 'pms', 'plm'})
+        events = list(self.host.events)
+        code, result, _ = self.run_tool('rollback', release=release)
+        self.assertEqual((code, result['failure']), (1, 'official_catalog_requires_compatible_core'))
+        self.assertEqual(self.host.events, events)
+        self.assertEqual(self.installed.read_bytes(), NEW)
+
+    def test_lost_catalog_sync_ack_keeps_old_binary_from_starting(self):
+        self.pinned_migration_fixture(25)
+        self.host.catalog_ack_lost = True
+        code, result, release = self.run_tool(widen_migration=25)
+        self.assertEqual((code, result['failure']), (1, 'rollback_failed_manual_recovery_required'))
+        record = json.loads((release / 'deployment.json').read_text())
+        self.assertEqual(record['rollbackFailureCategory'], 'official_catalog_requires_compatible_core')
+        self.assertEqual((self.host.started, self.installed.read_bytes(), self.host.schema), ([], NEW, 25))
+        self.assertTrue(self.host.catalog_rows)
+
+    def test_catalog_records_must_match_the_restored_copy_before_any_start(self):
+        self.pinned_migration_fixture(25)
+        self.host.on_verify = lambda: self.host.verify['officialCatalog']['records']['apps'].update(sha256='a' * 64)
+        code, _, release = self.run_tool(widen_migration=25)
+        self.assertEqual(code, 1)
+        record = json.loads((release / 'deployment.json').read_text())
+        self.assertEqual(record['failureCategory'], 'official_catalog_records_changed')
+        self.assertEqual(record['rollbackFailureCategory'], 'official_catalog_requires_compatible_core')
+        self.assertEqual((self.host.started, self.installed.read_bytes()), ([], NEW))
+
+    def test_restored_database_must_match_original_app_snapshot_before_install(self):
+        self.pinned_migration_fixture(25)
+        self.host.on_verify = lambda: self.host.verify['officialCatalog']['recordsBefore']['apps'].update(rows=0)
+        code, result, _ = self.run_tool(widen_migration=25)
+        self.assertEqual((code, result['failure']), (1, 'official_catalog_rehearsal_mismatch'))
+        self.assertEqual((self.host.started, self.installed.read_bytes(), self.host.schema), ([OLD_SHA], OLD, 24))
+        self.assertNotIn('migrate', self.host.events)
+
+    def test_schema_25_candidate_requires_exact_official_release_contract_before_stop(self):
+        for version in (None, 0, True, '1', 2):
+            with self.subTest(version=version):
+                self.reset()
+                self.pinned_migration_fixture(25)
+                self.host.new_catalog_contract = version
+                code, result, _ = self.run_tool(widen_migration=25)
+                self.assertEqual((code, result['failure']), (1, 'official_catalog_requires_compatible_core'))
+                self.assert_untouched()
+
+    def test_catalog_conflict_in_restored_copy_keeps_previous_server_and_schema(self):
+        self.pinned_migration_fixture(25)
+        self.host.catalog_conflict = True
+        code, _, release = self.run_tool(widen_migration=25)
+        self.assertEqual(code, 1)
+        record = json.loads((release / 'deployment.json').read_text())
+        self.assertEqual((record['status'], record['failureCategory']), ('ROLLED_BACK', 'catalog_app_id_conflict'))
+        self.assertEqual((self.host.started, self.installed.read_bytes(), self.host.schema), ([OLD_SHA], OLD, 24))
+        self.assertNotIn('sync', self.host.events)
+
+    def test_site_catalog_is_fixed_before_rehearsal_and_a_compatible_rollback_is_allowed(self):
+        self.pinned_migration_fixture(25)
+        catalog = self.root / 'site-catalog.json'
+        selected = {'appId': 'site-planner', 'name': '일정', 'defaultInstall': True,
+                    'releases': [{'version': '1.0.0', 'sourceCommit': 'a' * 40, 'archiveSha256': 'b' * 64}]}
+        catalog.write_text(json.dumps({'schemaVersion': 1, 'apps': [selected]}))
+        self.host.on_verify = lambda: catalog.write_text('{}')
+        code, result, release = self.run_tool(widen_migration=25, official_app_catalog=catalog,
+                                              official_app_catalog_sha256=backup.sha256(catalog))
+        self.assertEqual((code, result['status']), (0, 'PASS'))
+        self.assertEqual(self.host.catalog_rows, {'site-planner': selected})
+        self.host.old_catalog_contract = 1
+        code, result, _ = self.run_tool('rollback', release=release)
         self.assertEqual((code, result['status']), (0, 'ROLLED_BACK'))
-        self.assertEqual((self.installed.read_bytes(), self.host.schema), (OLD, 24))
+
+    def test_intentionally_empty_site_is_preserved_on_same_schema_and_can_roll_back(self):
+        self.pinned_migration_fixture(25)
+        self.host.schema = 25
+        code, _, release = self.run_tool()
+        self.assertEqual((code, self.host.catalog_rows), (0, {}))
+        self.assertNotIn('sync', self.host.events)
+        code, result, _ = self.run_tool('rollback', release=release)
+        self.assertEqual((code, result['status'], self.installed.read_bytes()), (0, 'ROLLED_BACK', OLD))
+
+    def test_empty_catalog_gains_product_during_stop_and_incompatible_rollback_is_refused(self):
+        self.pinned_migration_fixture(25)
+        catalog = self.root / 'empty.json'
+        catalog.write_text('{"schemaVersion":1,"apps":[]}')
+        code, _, release = self.run_tool(widen_migration=25, official_app_catalog=catalog,
+                                         official_app_catalog_sha256=backup.sha256(catalog))
+        self.assertEqual(code, 0)
+        self.host.on_stop = lambda: self.host.catalog_rows.update({'new-product': {}})
+        code, _, _ = self.run_tool('rollback', release=release)
+        self.assertEqual(code, 1)
+        self.assertEqual(self.rollback_receipt(release)['failureCategory'], 'official_catalog_requires_compatible_core')
+        self.assertEqual((self.host.started, self.installed.read_bytes()), ([NEW_SHA], NEW))
+        self.assertEqual(set(self.host.states.values()), {'inactive'})
+
+    def test_site_catalog_apply_requires_the_inspected_bytes(self):
+        self.pinned_migration_fixture(25)
+        catalog = self.root / 'site.json'
+        catalog.write_text('{"schemaVersion":1,"apps":[]}')
+        args = {'widen_migration': 25, 'official_app_catalog': catalog}
+        code, result, _ = self.run_tool('inspect', **args)
+        self.assertEqual(code, 0)
+        inspected_hash = result['officialCatalog']['sha256']
+        self.assertEqual(self.run_tool(**args)[1]['failure'], 'official_catalog_digest_required')
+        catalog.write_text(catalog.read_text() + '\n')
+        code, result, _ = self.run_tool(**args, official_app_catalog_sha256=inspected_hash)
+        self.assertEqual((code, result['failure']), (1, 'official_catalog_changed'))
+        self.assert_untouched()
 
     def test_support_reports_migration_requires_exact_bytes_and_adjacent_schema(self):
         for change, expected in ((lambda path: path.write_text(path.read_text() + '-- changed\n'),
@@ -775,7 +987,7 @@ class CoreRolloutTests(OfflineTest):
                                  (lambda path: setattr(self.host, 'schema', 22), 'widen_migration_not_allowed')):
             with self.subTest(expected=expected):
                 self.reset()
-                change(self.support_reports_fixture())
+                change(self.pinned_migration_fixture(24))
                 code, result, _ = self.run_tool(widen_migration=24)
                 self.assertEqual((code, result['failure']), (1, expected))
                 self.assert_untouched()

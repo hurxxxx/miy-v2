@@ -133,6 +133,29 @@ pub async fn authorize(s: &State, p: &Principal, app: &str) -> ApiResult<()> {
     }
     Ok(())
 }
+
+/// Admission sees the claimed archive identity. The worker repeats the check with
+/// the manifest version after verifying the actual archive bytes.
+pub(crate) async fn catalog_allows_source(
+    pool: &PgPool,
+    app: &str,
+    commit: &str,
+    archive_hash: &str,
+    version: Option<&str>,
+) -> sqlx::Result<bool> {
+    sqlx::query_scalar(
+        "SELECT NOT EXISTS(SELECT 1 FROM official_apps WHERE app_id=$1)
+             OR EXISTS(SELECT 1 FROM official_app_versions
+                       WHERE app_id=$1 AND source_commit=$2 AND archive_sha256=$3
+                         AND ($4::text IS NULL OR version=$4))",
+    )
+    .bind(app)
+    .bind(commit)
+    .bind(archive_hash)
+    .bind(version)
+    .fetch_one(pool)
+    .await
+}
 async fn owned(s: &State, p: &Principal, id: Uuid) -> ApiResult<PgRow> {
     let row = sqlx::query("SELECT * FROM app_builds WHERE id=$1")
         .bind(id)
@@ -174,6 +197,17 @@ pub async fn upload(
 ) -> ApiResult<Json<Value>> {
     authorize(&s, &p, &app).await?;
     let input = UploadInput::parse(req.headers())?;
+    if !catalog_allows_source(
+        &s.pool,
+        &app,
+        &input.source_commit,
+        &input.archive_hash,
+        None,
+    )
+    .await?
+    {
+        return Err(ApiError::conflict("official_source_not_listed"));
+    }
     prepare_root().await?;
     let mut tx = policy::Write::begin(&s.pool).await?;
     // Short admission lock protects aliases, content deduplication and both caps.

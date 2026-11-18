@@ -744,7 +744,7 @@ async fn capabilities() -> Json<Value> {
         "runtimePlatform":crate::runtime_platform::server(),
         "userActivationSource":"core.users.enabled",
         "userActivationPropagation":"each authenticated request and queued operation; no Keycloak synchronization implied",
-        "features":["installation.permissions.v1","auth.delegations.v1","app.calls.v1","app.builds.v1","runtime.preflight.v2","development.sessions.v1","auth.sessions.v1","auth.device.v1","runtime.jobs.v1","runtime.events.v1","runtime.retry.v1","runtime.logs.v1","lists.pagination.v1"]}),
+        "features":["installation.permissions.v1","auth.delegations.v1","app.calls.v1","app.builds.v1","apps.distribution.v1","runtime.official-release.v1","runtime.preflight.v2","development.sessions.v1","auth.sessions.v1","auth.device.v1","runtime.jobs.v1","runtime.events.v1","runtime.retry.v1","runtime.logs.v1","lists.pagination.v1"]}),
     )
 }
 #[derive(serde::Deserialize)]

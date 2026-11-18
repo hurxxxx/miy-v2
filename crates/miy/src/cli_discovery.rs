@@ -162,7 +162,7 @@ fn detail(command: &Command, path: &[String]) -> Value {
         .collect();
     let mut help = command.clone().bin_name(format!("miy {name}"));
     let policy = policy(&name, command.get_subcommands().any(visible));
-    json!({
+    let mut detail = json!({
         "command":name,
         "description":description(command),
         "aliases":command.get_all_aliases().collect::<Vec<_>>(),
@@ -200,7 +200,12 @@ fn detail(command: &Command, path: &[String]) -> Value {
             "error":{"code":"invalid_arguments","message":"Invalid command arguments; inspect command help.","retryable":false,"details":{}},"meta":{}}}],
         "examples":examples(&name,path),
         "authenticationEffects":"Authenticated commands may renew the server session and update protected local credentials. These authentication effects are separate from app/runtime mutations.",
-    })
+    });
+    if name == "catalog-sync" {
+        // The rollout tool probes the actual server executable before switching it onto a populated catalog.
+        detail["officialReleaseProtectionVersion"] = json!(1);
+    }
+    detail
 }
 
 fn argument_detail(command: &Command, argument: &Arg) -> Value {
@@ -477,6 +482,12 @@ fn contracts(command: &str) -> Value {
 }
 
 fn data_schema(command: &str) -> Value {
+    if command == "app source-pin" {
+        return json!({"type":"object","required":["appId","version","sourceCommit","archiveSha256"],
+            "properties":{"appId":{"type":"string"},"version":{"type":"string"},
+            "sourceCommit":{"type":"string","pattern":"^[0-9a-f]{40}$"},
+            "archiveSha256":{"type":"string","pattern":"^[0-9a-f]{64}$"}},"additionalProperties":false});
+    }
     let collection = match command {
         "app list" => Some("apps"),
         "user list" => Some("users"),
@@ -624,7 +635,8 @@ fn behavior(command: &str) -> Value {
             "explicitTarget":"Prod operations and every app removal require --context, --app and --environment, including dry-run and retry.",
             "confirmation":"Dry-run skips confirmation. Execution requires interactive confirmation or --yes; permission checks remain mandatory.",
             "dryRun":"No runtime job; returns expected state, intended changes and worker checks that remain deferred.",
-            "serverBuild":"app deploy and app promote run only an image produced by this app's succeeded server build (app build); anything else fails with server_build_required.",
+            "conditionalSubmission":"app deploy and app promote accept --if-current @file or - containing the data object from a successful dry-run. The CLI compares the target, release or image, installation and database state before submission.",
+            "serverBuild":"Deploy the current project's succeeded server build, or use app deploy --release UUID to redeploy this app's registered official image to dev with current developer authority. Prod promotion requires dev acceptance.",
             "recovery":"Persisted request keys and payloads are recovered with job resume before creating another operation."}),
         "job resume" => {
             json!({"knownJob":"Observes an accepted runtime or build job. A completed build restores image metadata for its original project when its committed revision still matches.","unacknowledgedRequest":"Look up the original request before explicit resubmission with its original key and input. Build recovery uses the saved source archive and never local Docker; runtime prod/remove requires explicit context/app/environment and fresh confirmation."})
@@ -645,7 +657,7 @@ fn behavior(command: &str) -> Value {
             json!({"server":"Uploads a filtered, clean committed source snapshot and builds it on the selected server. The server runs the format check, tests, type check and SDK/component/migration integrity checks, and only its builds can be deployed.",
                 "requirements":"Named context, login, approved app develop permission, Git and app.builds.v1; never invokes local Docker, Rust or pnpm. For local testing use app dev.",
                 "platform":"The image is built for the selected server's runtime platform.",
-                "recovery":"Before upload, records actor/origin/context, source hash and original request ID. Use job resume ID after interruption; accepted work continues. Re-running app build after terminal failure starts a new attempt.",
+                "recovery":"Use job resume ID after a lost acknowledgement or interrupted upload. After confirmed admission rejection or a terminal build failure, run app build again for a new attempt. The same commit can be reused.",
                 "result":"A successful build writes server-bound dist/build.json and dist/image.json; app deploy verifies the receipt and uses the server image directly.",
                 "observation":"--no-wait returns the accepted build; --timeout defaults to 1800 seconds. job get/watch/resume and job logs accept build IDs."})
         }
@@ -889,6 +901,12 @@ fn policy(command: &str, group: bool) -> Policy {
         "app fmt" => {
             policy.local_effects = &["Formats and rewrites the project's Rust source files."]
         }
+        "app source-pin" => {
+            policy.source = "crates/miy/src/source_archive.rs";
+            policy.local_effects = &[
+                "Reads and validates the committed application in a temporary directory, then returns its catalog source identity.",
+            ];
+        }
         "app build" => {
             policy.source = "crates/miy/src/app_cli.rs; crates/miy/src/cli_build.rs; crates/miy/src/source_archive.rs";
             policy.permissions = "Named context, login and develop permission for an approved app.";
@@ -1040,10 +1058,10 @@ fn policy(command: &str, group: bool) -> Policy {
             policy.source = "crates/miy/src/cli_remote.rs; crates/miy/src/cli_build.rs";
             policy.permissions = "miy.dev scope plus administrator or develop permission for this app's dev environment.";
             policy.local_effects = &[
-                "Saves deployment recovery state. Requires the project's server build receipt; no Docker is used.",
+                "Saves deployment recovery state. With --release the server resolves the immutable official image; otherwise the CLI reads the project's server build receipt.",
             ];
             policy.remote_effects = &[
-                "Verifies the server build receipt, then submits a checked dev deployment of that server image. Dry-run submits no runtime work. The worker may migrate the app database and replace containers.",
+                "Checks the selected image against a successful server build for this app. A release ID must identify a registered official version. The worker may migrate the app database and replace containers after submission.",
             ];
         }
         "app promote" => {
@@ -1066,7 +1084,7 @@ fn policy(command: &str, group: bool) -> Policy {
             policy.source = "crates/miy/src/cli_remote.rs; crates/miy/src/cli_journal.rs; crates/miy/src/cli_build.rs";
             policy.permissions = "Saved requests require their original context and actor; known jobs require app/environment visibility. Resubmission rechecks management permission; prod/remove requires explicit target and confirmation.";
             policy.local_effects = &[
-                "Reads and updates recovery state. Build recovery reuses the saved committed source archive; deployment recovery verifies the saved server build receipt and uses no Docker.",
+                "Reads the saved request. Build recovery reuses the source archive when upload is pending. Deployment recovery uses the saved build receipt or official release selection.",
             ];
             policy.remote_effects = &[
                 "Observes an existing job, or looks up the saved runtime request and explicitly resubmits unacknowledged input with its original idempotency key and expected state.",
@@ -1147,6 +1165,16 @@ fn policy(command: &str, group: bool) -> Policy {
             ];
             policy.output = Output::ExternalProcess;
         }
+        "catalog-sync" => {
+            policy.source = "crates/miy/src/official_catalog.rs";
+            policy.output = Output::ServerProcess;
+            policy.permissions = "Server operator with configured database credentials.";
+            policy.local_effects =
+                &["Reads the trusted app catalog file selected by the operator."];
+            policy.remote_effects = &[
+                "Imports official product IDs, install defaults and immutable source pins into the configured platform database.",
+            ];
+        }
         "serve" | "worker" | "migrate" | "seed" => {
             policy.permissions =
                 "Server operator with configured database and service credentials.";
@@ -1180,6 +1208,20 @@ pub fn completion(shell: clap_complete::Shell) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(feature = "server")]
+    #[test]
+    fn catalog_command_identifies_the_server_release_protection_contract() {
+        let value = inspect(DescribeArgs {
+            command: Some("catalog-sync".into()),
+            ..Default::default()
+        })
+        .unwrap();
+        assert_eq!(
+            value["command"]["officialReleaseProtectionVersion"],
+            json!(1)
+        );
+    }
 
     #[test]
     fn local_list_pagination_declares_actual_shapes_and_limits() {

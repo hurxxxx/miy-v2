@@ -402,6 +402,17 @@ async fn execute(pool: &sqlx::PgPool, row: &PgRow, recovering: bool) -> Result<(
     .await
     .context("source_validation_failed")?
     .context("source_validation_failed")?;
+    ensure!(
+        server_build::catalog_allows_source(
+            pool,
+            &app,
+            row.get("source_commit"),
+            row.get("archive_hash"),
+            Some(&manifest.version),
+        )
+        .await?,
+        "official_source_not_listed"
+    );
     crate::worker::verify_build_components(pool, &context)
         .await
         .context("component_validation_failed")?;
@@ -584,6 +595,7 @@ fn failure_code(error: &anyhow::Error, recovering: bool) -> &'static str {
             "build_database_history_unavailable" => return "build_database_history_unavailable",
             "build_timeout" => return "build_timeout",
             "archive_hash_mismatch" => return "archive_hash_mismatch",
+            "official_source_not_listed" => return "official_source_not_listed",
             "unpublished_source_component" => return "unpublished_source_component",
             "build_platform_mismatch" => return "build_platform_mismatch",
             "build_docker_unavailable" => return "build_docker_unavailable",

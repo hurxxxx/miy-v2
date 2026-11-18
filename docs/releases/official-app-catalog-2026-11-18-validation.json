@@ -1,0 +1,118 @@
+{
+  "date": "2026-11-18",
+  "scope": "공식 앱 카탈로그와 설치 정책의 소스 후보 및 격리 검증",
+  "baseCommit": "fb2def8",
+  "source": "이 변경을 포함한 작업 트리",
+  "candidate": {
+    "coreAndCli": "0.13.0",
+    "sdkBundle": "0.11.0",
+    "coreSchema": 25,
+    "migration": "migrations/core/0025_official_apps.sql",
+    "migrationSha256": "4350089f077bea49f86a12377d197cabe651bc47dc2dd2adf0b441bf68f65b0d"
+  },
+  "catalog": {
+    "path": "registry/apps/catalog.json",
+    "defaultProducts": ["planner", "messenger"],
+    "optionalProducts": ["pms", "plm"],
+    "publishedProductVersions": 0
+  },
+  "checks": [
+    {
+      "command": "bash scripts/check-static.sh rust",
+      "result": "PASS",
+      "environment": "독립 Linux 네트워크 네임스페이스, loopback 사용, ip_nonlocal_bind=0",
+      "server": {"passed": 231, "ignored": 7},
+      "client": {"passed": 141}
+    },
+    {
+      "command": "bash scripts/check-static.sh web",
+      "result": "PASS",
+      "browserChecks": [29, 54, 15, 15, 1],
+      "coverage": "타입 검사·격리 빌드와 브라우저에서 기본 제공·공식 업무·조직 제작 앱의 사용자 홈 분류 확인"
+    },
+    {
+      "command": "python3 scripts/check-server-builds.py",
+      "result": "PASS",
+      "groups": 10,
+      "coverage": "일회용 PostgreSQL과 실제 HTTP. 제품 ID 예약과 충돌, 버전별 소스 검증, 인수 보고서가 없는 공식 승격 거부, prod 전담 배포자의 승인 버전 조회, 검토 후 중지된 앱의 작업 제출 거부"
+    },
+    {
+      "command": "python3 scripts/check-development-database.py",
+      "result": "PASS",
+      "coverage": "공유 dev DB에 같은 스키마로 업무 데이터를 기록. 공식 앱의 로컬 스키마가 달라지면 기존 컨테이너 중지와 DB 변경 전에 거절하고 기존 행 보존"
+    },
+    {
+      "command": "pnpm exec playwright test --config scripts/runtime-regression/server-ui.config.ts",
+      "result": "PASS",
+      "passed": 8,
+      "coverage": "격리 DB와 실제 Core를 연결한 브라우저 회귀"
+    },
+    {
+      "command": "bash scripts/check-static.sh scripts",
+      "result": "PASS",
+      "coverage": "공식 설치 도구 11개, 기동 스크립트 9개, 코어 배포 도구 95개 검사 포함. 현행 0.12.1 API 타입 33개와의 호환 및 API·SDK 타입 동기화 확인"
+    },
+    {
+      "commands": ["python3 scripts/official-apps.py plan", "python3 scripts/official-apps.py plan --app pms --app plm"],
+      "result": "PASS",
+      "coverage": "기본 선택은 플래너·메신저 두 제품. 명시한 PMS·PLM도 실제 제품 버전이 게시되기 전에는 unreleased"
+    },
+    {
+      "commands": ["bash scripts/runtime-regression/stack-ui.sh up", "node scripts/runtime-regression/check-official-apps.mjs", "bash scripts/runtime-regression/stack-ui.sh down"],
+      "result": "PASS",
+      "coverage": [
+        "별도 Git 저장소의 시험 플래너 두 버전에서 CLI로 소스 커밋·SHA-256을 계산하고 카탈로그에 등록했다.",
+        "버전마다 실제 Docker 서버 빌드, dev 배포, 구조화된 인수 보고서 제출, 동일 이미지·릴리스의 prod 승격을 확인했다.",
+        "dev 데이터는 prod로 복사되지 않았다. 두 번째 버전의 DB 마이그레이션 후 prod 설치 ID와 기존 일정 행이 유지됐다.",
+        "관리자에게 prod Use가 자동 부여되지 않았다. 일반 직원은 prod Use 부여 후 자기 설치만 열 수 있었고 회수 후 앱은 목록에서 사라졌다.",
+        "정상적으로 중지한 prod 앱에 install과 promote를 재실행한 뒤에도 정지 상태가 유지됐다."
+      ],
+      "cleanup": "새 격리 스택의 잔여 자원 0"
+    },
+    {
+      "command": "python3 scripts/runtime-regression/run.py",
+      "result": "PASS",
+      "observations": 131,
+      "suites": {"runtime": 47, "operations": 5, "cli": 6, "auth": 8, "permissions": 26, "delegation": 10, "boundary": 12, "migration": 3, "frames": 14},
+      "localEvidence": ".local/evidence/runtime-regression/miy-runtime-regression-ok7tsavu/evidence/runner-result.json",
+      "cleanupExitCode": 0
+    },
+    {
+      "commands": [
+        "cargo build --offline --locked --no-default-features -p miy",
+        "python3 scripts/check-cli-output.py --cli target/debug/miy",
+        "python3 scripts/check-cli-install.py --cli target/debug/miy",
+        "python3 scripts/check-cli-recovery.py --cli target/debug/miy"
+      ],
+      "result": "PASS",
+      "checks": {"output": 17, "install": 17, "recovery": 10}
+    }
+  ],
+  "earlierAttempts": [
+    {
+      "check": "최초 Rust 검사",
+      "result": "FAIL",
+      "followUp": "설치 응답의 필드 집합 기대값에 distribution을 추가했다. 호스트의 ip_nonlocal_bind=1에서도 기존 preview 포트 검사 하나가 실패해 호스트 설정을 유지하고 기본값인 독립 네임스페이스에서 전체 검사를 재실행했다."
+    },
+    {
+      "check": "최초 웹 검사",
+      "result": "FAIL",
+      "followUp": "실행 중 검사 스크립트가 바뀌어 셸이 마지막에 구문 오류를 보고했다. 스크립트 변경 후 처음부터 다시 실행했다."
+    },
+    {
+      "check": "CLI 상태 확인 입력 검사 초안",
+      "result": "FAIL",
+      "followUp": "fixture가 기록한 요청 파일까지 빈 디렉터리 검사에 포함했다. 실제 런타임 작업 요청을 구분해 --if-current 파일·표준입력과 불일치 시 중단을 확인했다."
+    },
+    {
+      "check": "동일 격리 스택에서 네 번째로 새 시험 앱 설치",
+      "result": "FAIL",
+      "followUp": "prod 작업이 creating_container에서 runtime_operation_failed로 끝났다. 다음 install이 실제 실패 작업·요청 ID를 보고하고 종료 코드 1을 반환하며 새 작업을 만들지 않았음을 확인했다. 해당 스택의 자원 전부를 정리한 뒤 새 스택으로 두 버전 시나리오를 다시 실행했다."
+    }
+  ],
+  "notRun": [
+    {"scope": "실제 플래너·메신저·PMS·PLM 업무 기능", "reason": "제품의 소스·최초 릴리스가 별도 개발 대상이다. 통합 검사는 시험용 앱을 사용했다."},
+    {"scope": "Windows 및 빈 서버 VM 설치 인수", "reason": "별도 환경 인수 범위다."},
+    {"scope": "CLI 게시, dwdcc.kr 서버 반영 및 운영 DB migration", "reason": "이번 요청은 소스 변경이다. 현행 서버의 배포 상태는 SERVER-OPERATIONS가 관리한다."}
+  ]
+}

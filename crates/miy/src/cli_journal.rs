@@ -290,10 +290,11 @@ pub fn validate(entry: &Entry, session: &Session) -> Result<()> {
             .into());
         }
     }
-    // A deployment names the server build that produced its image. A record without
-    // one was written by a CLI that uploaded a locally built image.
+    // Image-based deployments must carry their own server build receipt. The
+    // release UUID form is resolved by Core and never accepts a local image.
     let deployment = entry.intent.action == crate::runtime_contract::Operation::Deploy
-        && entry.retry_of.is_none();
+        && entry.retry_of.is_none()
+        && entry.intent.image_id.is_some();
     if entry.upload.is_some() || (deployment && entry.server_build.is_none()) {
         return Err(CliError::new(
             Category::Conflict,

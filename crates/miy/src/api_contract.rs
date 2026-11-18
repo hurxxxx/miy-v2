@@ -34,6 +34,9 @@ pub struct Installation {
     pub environment: Environment,
     pub release_id: Uuid,
     pub kind: InstallationKind,
+    /// Distribution of this installed release. Official values require verified publisher source.
+    #[serde(default)]
+    pub distribution: AppDistribution,
     pub image_id: Option<String>,
     pub source_commit: Option<String>,
     pub db_status: String,
@@ -66,6 +69,15 @@ pub struct Installation {
 pub enum InstallationKind {
     DockerApp,
     ValidationFixture,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum AppDistribution {
+    DefaultOfficial,
+    OptionalOfficial,
+    #[default]
+    Organization,
 }
 
 /// The latest service observation; process state stays in `runtimeStatus`.
@@ -105,6 +117,9 @@ pub struct UiModule {
 #[serde(rename_all = "camelCase")]
 pub struct LastOperation {
     pub id: Uuid,
+    /// Release selected by this job, which can differ from the installation's active release.
+    #[serde(default)]
+    pub release_id: Option<Uuid>,
     pub action: String,
     pub status: String,
     pub step: String,
@@ -144,6 +159,12 @@ pub struct InstallationPage {
 pub struct App {
     pub id: String,
     pub name: String,
+    /// Product catalog membership, including products without an installed release.
+    #[serde(default)]
+    pub distribution: AppDistribution,
+    /// The company's use switch applies even before the first installation.
+    #[serde(default)]
+    pub disabled: bool,
 }
 
 /// `GET /api/v1/apps/{app}`: the app and the installations this credential may use.
@@ -428,6 +449,7 @@ mod tests {
             "acceptance": {"recordedBy": "u", "note": "n", "checks": [], "checkedAt": "2026-11-03T00:00:00Z"},
         });
         let item: Installation = serde_json::from_value(row).unwrap();
+        assert_eq!(item.distribution, AppDistribution::Organization);
         assert!(!item.can_open && !item.app_disabled && item.ui.entry.is_empty());
         assert!(item.health.error_code.is_none());
     }

@@ -125,7 +125,7 @@ down() {
     images=$(sql "SELECT DISTINCT runtime_local_image FROM installations WHERE runtime_local_image IS NOT NULL")
     for id in $installations; do
       [[ $id =~ ^[0-9a-f]{32}$ ]] || continue
-      docker rm -f "miy-app-$id" >/dev/null 2>&1
+      docker rm -f "miy-app-$id" "miy-app-$id-previous" >/dev/null 2>&1
       docker network disconnect -f "miy-runtime-$id" "$DB" >/dev/null 2>&1
       docker network rm "miy-runtime-$id" >/dev/null 2>&1
     done

@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "apps": [
+    {"appId": "planner", "name": "플래너", "defaultInstall": true, "releases": []},
+    {"appId": "messenger", "name": "메신저", "defaultInstall": true, "releases": []},
+    {"appId": "pms", "name": "PMS", "defaultInstall": false, "releases": []},
+    {"appId": "plm", "name": "PLM", "defaultInstall": false, "releases": []}
+  ]
+}

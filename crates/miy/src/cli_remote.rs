@@ -34,14 +34,20 @@ pub enum RemoteAppCommand {
     Show,
     /// Show server deployment state for --app, or the current project app.
     Status,
-    /// Upload this project's immutable build and submit a checked dev deployment.
+    /// Deploy this project's server build or an existing official release to dev.
     Deploy {
+        /// Reuse the exact official release on this server, including after a change of developer.
+        #[arg(long)]
+        release: Option<Uuid>,
         #[arg(long,value_parser=["dev"])]
         environment: Option<String>,
         #[arg(long)]
         no_wait: bool,
         #[arg(long)]
         dry_run: bool,
+        /// Submit only if the target still matches the dry-run data read from @file or stdin (-).
+        #[arg(long, conflicts_with = "dry_run")]
+        if_current: Option<String>,
     },
     /// Promote the exact accepted release to the explicitly selected prod target.
     Promote {
@@ -53,6 +59,9 @@ pub enum RemoteAppCommand {
         no_wait: bool,
         #[arg(long)]
         dry_run: bool,
+        /// Submit only if the target still matches the dry-run data read from @file or stdin (-).
+        #[arg(long, conflicts_with = "dry_run")]
+        if_current: Option<String>,
     },
     Start(OperationArgs),
     Stop(OperationArgs),
@@ -401,21 +410,29 @@ pub async fn execute_app(command: RemoteAppCommand) -> Result<Outcome> {
             data(value)
         }
         RemoteAppCommand::Deploy {
+            release,
             environment,
             no_wait,
             dry_run,
+            if_current,
         } => {
-            let (app, receipt) = server_build()?;
+            let (app, receipt) = if release.is_some() {
+                (selected_app()?, None)
+            } else {
+                let (app, receipt) = server_build()?;
+                (app, Some(receipt))
+            };
             mutate(
                 Operation::Deploy,
                 environment,
-                Some(receipt.image_id.clone()),
-                None,
+                receipt.as_ref().map(|receipt| receipt.image_id.clone()),
+                release,
                 no_wait,
                 dry_run,
                 Some(app),
                 None,
-                Some(receipt),
+                receipt,
+                if_current,
             )
             .await
         }
@@ -424,6 +441,7 @@ pub async fn execute_app(command: RemoteAppCommand) -> Result<Outcome> {
             environment,
             no_wait,
             dry_run,
+            if_current,
         } => {
             mutate(
                 Operation::Promote,
@@ -435,6 +453,7 @@ pub async fn execute_app(command: RemoteAppCommand) -> Result<Outcome> {
                 None,
                 None,
                 None,
+                if_current,
             )
             .await
         }
@@ -460,6 +479,7 @@ async fn lifecycle(action: Operation, args: OperationArgs) -> Result<Outcome> {
         None,
         args.no_wait,
         args.dry_run,
+        None,
         None,
         None,
         None,
@@ -664,6 +684,7 @@ async fn mutate(
     app: Option<String>,
     retry: Option<Uuid>,
     server_build: Option<crate::cli_build::ServerBuildReceipt>,
+    if_current: Option<String>,
 ) -> Result<Outcome> {
     let app = app.map(Ok).unwrap_or_else(selected_app)?;
     let environment = environment(action, environment_flag.as_deref())?;
@@ -677,6 +698,20 @@ async fn mutate(
         image_id: image,
         release_id: release,
     };
+    let reviewed: Option<PreflightResult> = if_current
+        .as_deref()
+        .map(crate::cli_input::read)
+        .transpose()?;
+    if let Some(plan) = &reviewed
+        && (!plan.can_submit || plan.input != input || plan.expected_state.target != input.target)
+    {
+        return Err(CliError::new(
+            Category::Conflict,
+            "preflight_target_mismatch",
+            "Select the same target and release or image as the successful dry-run.",
+        )
+        .into());
+    }
     crate::runtime_contract::validate_input(&input).map_err(|_| {
         CliError::new(
             Category::Usage,
@@ -700,6 +735,9 @@ async fn mutate(
     }
     if server_build.is_some() {
         features.push("app.builds.v1");
+    }
+    if input.action == Operation::Deploy && input.release_id.is_some() {
+        features.push("runtime.official-release.v1");
     }
     if retry.is_some() {
         features.push("runtime.retry.v1");
@@ -737,6 +775,17 @@ async fn mutate(
         }
     }
     let plan = preflight(&session, &input).await?;
+    if reviewed.is_some_and(|reviewed| {
+        reviewed.expected_state != plan.expected_state
+            || reviewed.official_release != plan.official_release
+    }) {
+        return Err(CliError::new(
+            Category::Conflict,
+            "state_changed",
+            "The installation or database changed since the reviewed dry-run.",
+        )
+        .into());
+    }
     if dry_run {
         return data(serde_json::to_value(plan)?);
     }
@@ -1129,6 +1178,7 @@ pub async fn execute_job(command: JobCommand, mode: OutputMode) -> Result<Outcom
                 Some(app),
                 Some(id),
                 None,
+                None,
             )
             .await
         }
@@ -1212,6 +1262,9 @@ async fn resume(
         let mut features = vec!["runtime.preflight.v2"];
         if entry.server_build.is_some() {
             features.push("app.builds.v1");
+        }
+        if entry.intent.action == Operation::Deploy && entry.intent.release_id.is_some() {
+            features.push("runtime.official-release.v1");
         }
         if entry.retry_of.is_some() {
             features.push("runtime.retry.v1");

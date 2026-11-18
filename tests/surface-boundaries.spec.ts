@@ -18,6 +18,7 @@ const app = {
   environment: "prod",
   version: "9.8.7",
   kind: "docker_app",
+  distribution: "default_official",
   dbStatus: "ready",
   runtimeStatus: "running",
   desiredState: "running",
@@ -47,7 +48,7 @@ async function setup(page: Page, surface: "portal" | "console") {
     if (path === "/api/v1/apps")
       return route.fulfill({
         json: {
-          apps: [{ id: "new-app", name: "아직 설치하지 않은 담당 앱" }],
+          apps: [{ id: "new-app", name: "아직 설치하지 않은 담당 앱", distribution: "optional_official", disabled: false }],
           nextCursor: null,
         },
       });
@@ -59,6 +60,20 @@ async function setup(page: Page, surface: "portal" | "console") {
   return reads;
 }
 
+test("console distinguishes the last healthy release from a failed promotion requiring recovery", async ({ page }) => {
+  await setup(page, "console");
+  const attempted = "d1f1b488-1111-4111-8111-223344556677";
+  await page.route("**/api/v1/runtime/installations", (route) => route.fulfill({ json: [{
+    ...app, canOpen: false, desiredState: "stopped", runtimeStatus: "recovery_required",
+    lastOperation: { id: "job", action: "promote", status: "failed", releaseId: attempted },
+  }] }));
+  await page.goto("/environments/prod");
+  await expect(page.getByText("마지막 정상 v9.8.7")).toBeVisible();
+  await expect(page.getByText(attempted)).toBeVisible();
+  await expect(page.getByText("복구 필요", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "시작", exact: true })).toHaveCount(0);
+});
+
 test("portal shows business apps without management controls or operational metadata", async ({
   page,
 }) => {
@@ -68,6 +83,8 @@ test("portal shows business apps without management controls or operational meta
     page.getByRole("heading", { name: "운영 앱", exact: true }),
   ).toBeVisible();
   const appLink = page.getByRole("link", { name: "앱 열기 →", exact: true });
+  await expect(page.getByRole("region", { name: "기본 제공 앱" })).toContainText(app.name);
+  await expect(page.getByRole("heading", { name: "공식 업무 앱", exact: true })).toHaveCount(0);
   await expect(appLink).toBeVisible();
   // Same-origin app navigation stays in this tab; only other origins open a new tab.
   await expect(appLink).not.toHaveAttribute("target");
@@ -91,6 +108,25 @@ test("portal shows business apps without management controls or operational meta
   await (await openNewTab(page, page.getByRole("link", { name: "관리 콘솔", exact: true }))).close();
 });
 
+test("the portal groups visible releases by their catalog classification", async ({ page }) => {
+  await setup(page, "portal");
+  await page.route("**/api/v1/installations", (route) =>
+    route.fulfill({ json: [
+      { ...app, id: "planner", appId: "planner", name: "일정" },
+      { ...app, id: "plm", appId: "plm", name: "제품 설계", distribution: "optional_official" },
+      { ...app, id: "local", appId: "local", name: "현장 점검", distribution: "organization" },
+    ] }),
+  );
+  await page.goto("/environments/prod");
+  for (const [section, name] of [
+    ["기본 제공 앱", "일정"], ["공식 업무 앱", "제품 설계"], ["조직 제작 앱", "현장 점검"],
+  ]) {
+    const group = page.getByRole("region", { name: section });
+    await expect(group.getByRole("heading", { name, exact: true })).toBeVisible();
+    await expect(group.getByRole("link")).toHaveCount(1);
+  }
+});
+
 test("a non-admin console user sees manageable apps, including disabled and uninstalled apps", async ({
   page,
 }) => {
@@ -108,7 +144,7 @@ test("a non-admin console user sees manageable apps, including disabled and unin
   ).toBeVisible();
   await expect(
     page.getByText("아직 설치하지 않은 담당 앱", { exact: false }),
-  ).toBeVisible();
+  ).toContainText("공식 업무 앱");
   await expect(
     page.getByRole("link", { name: /포털에서 앱 열기/ }),
   ).toHaveCount(0);

@@ -49,11 +49,15 @@ async fn setup(pool: &PgPool, p: &Principal) {
 
 
 class WriteDecisionTests(unittest.TestCase):
-    def run_check(self, transactions, writers):
+    def run_check(self, transactions, writers, nested=False):
         module.TRANSACTIONS, module.WRITERS = transactions, writers
         with tempfile.TemporaryDirectory() as root:
             (pathlib.Path(root) / "handlers.rs").write_text(HANDLERS)
             (pathlib.Path(root) / "things_regression.rs").write_text(REGRESSION)
+            if nested:
+                child = pathlib.Path(root) / "nested" / "handlers.rs"
+                child.parent.mkdir()
+                child.write_text(REGRESSION)
             return module.check(root)
 
     def test_raw_transactions_and_principal_pool_writes_are_reported(self):
@@ -87,6 +91,16 @@ class WriteDecisionTests(unittest.TestCase):
         fresh = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(fresh)
         self.assertEqual(fresh.check(SCRIPT.parent.parent / "crates/miy/src"), [])
+
+    def test_nested_sources_have_their_own_reviewed_entry(self):
+        self.assertEqual(
+            self.run_check(
+                {("handlers.rs", "raw"): "own"},
+                {("handlers.rs", "raw"): "own", ("handlers.rs", "pool_write"): "own"},
+                nested=True,
+            ),
+            ["nested/handlers.rs: setup opens a transaction outside policy::Write"],
+        )
 
 
 if __name__ == "__main__":

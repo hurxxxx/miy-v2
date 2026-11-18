@@ -56,6 +56,8 @@ pub enum AppCommand {
     },
     /// Stop this project's owned development processes; preserve its database volume.
     DevStop,
+    /// Print this committed app's ID, version, source commit and server archive SHA-256 offline.
+    SourcePin,
     /// Build clean committed source on the selected server. The server runs the format
     /// check, tests and integrity checks; only its builds can be deployed. For local
     /// testing use `app dev`.
@@ -296,6 +298,16 @@ pub async fn execute(command: AppCommand) -> Result<Outcome> {
             runtime,
         } => crate::preview::run(port, no_open, database, runtime).await?,
         AppCommand::DevStop => crate::preview::stop().await?,
+        AppCommand::SourcePin => {
+            // The scratch directory contains the full proprietary app source.
+            let temp = tempfile::tempdir_in(crate::cli_config::ensure_root()?)?;
+            let source =
+                crate::cli_build::pack_source(Path::new("."), &temp.path().join("source.tar"))?;
+            return Ok(Outcome::Data(json!({
+                "appId": source.manifest.id, "version": source.manifest.version,
+                "sourceCommit": source.source_commit, "archiveSha256": source.archive_hash,
+            })));
+        }
         AppCommand::Upgrade => return Ok(Outcome::Data(crate::upgrade::run().await?)),
         AppCommand::Setup => return Ok(Outcome::Data(crate::agent_tools::setup(Path::new("."))?)),
         AppCommand::Rename { name } => {

@@ -62,6 +62,10 @@ jobs:
           docker pull python:3.14-slim
       - name: Run the isolated regression
         run: python3 scripts/runtime-regression/run.py
+      - name: Verify server builds, official release provenance and promotion
+        run: python3 scripts/check-server-builds.py
+      - name: Verify shared development DB and official schema ownership
+        run: python3 scripts/check-development-database.py
       - name: Verify application ACL with an owned PostgreSQL
         run: python3 scripts/test-sdk-acl.py
       - name: Verify the representative project and attachment app

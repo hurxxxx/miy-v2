@@ -7,6 +7,7 @@ export const UI_CONTRACT = "miy.ui/v1alpha1" as const;
 export type {
   AcceptanceRecord,
   App,
+  AppDistribution,
   AppFrameLaunch,
   AppFrameRenewal,
   AppFrameToken,

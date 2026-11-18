@@ -1,4 +1,5 @@
 //! Local single-host image store + persistent Docker deployment runner.
+mod activation;
 pub(crate) use crate::docker::{docker, healthy, inspect};
 use crate::policy::{self, AppAction};
 use crate::runtime_contract::{ExpectedState, FailureCode, RuntimeFailure};
@@ -10,6 +11,7 @@ use crate::{
     http::{ApiError, ApiResult},
     runtime_health::{self, Observation},
 };
+use activation::{activate, finish_failed_deployment};
 use anyhow::{Context, Result};
 use axum::{
     Extension,
@@ -117,24 +119,43 @@ pub async fn check_release(
         json!({"releaseId":v.release_id,"tested":true,"recordedBy":p.id,"checks":v.checks,"structured":!v.checks.is_empty(),"note":v.note.trim(),"meaning":"User-recorded test acceptance plus runtime health; not automatic business correctness verification"}),
     )
 }
-/// Only the output of this app's own succeeded server build runs on the server. That
-/// build accepted committed source and verified the SDK, components, tests and
-/// migration history; an image built anywhere else carries no such record.
+/// An official product additionally requires the publisher's independent source pin.
+/// A matching commit string alone identifies neither the source bytes nor their owner.
+async fn deployable_build(
+    pool: &sqlx::PgPool,
+    app: &str,
+    image: &str,
+) -> sqlx::Result<Option<sqlx::postgres::PgRow>> {
+    sqlx::query(
+        "SELECT b.source_commit,b.archive_hash,v.version AS official_version
+         FROM app_builds b LEFT JOIN official_apps o ON o.app_id=b.app_id
+         LEFT JOIN official_app_versions v ON v.app_id=b.app_id AND v.version=b.version
+               AND v.source_commit=b.source_commit AND v.archive_sha256=b.archive_hash
+         WHERE b.app_id=$1 AND b.image_id=$2 AND b.status='succeeded'
+               AND (o.app_id IS NULL OR v.version IS NOT NULL) ORDER BY b.id LIMIT 1",
+    )
+    .bind(app)
+    .bind(image)
+    .fetch_optional(pool)
+    .await
+}
 pub(crate) async fn server_built(
     pool: &sqlx::PgPool,
     app: &str,
     image: &str,
 ) -> sqlx::Result<bool> {
-    sqlx::query_scalar(
-        "SELECT EXISTS(SELECT 1 FROM app_builds WHERE app_id=$1 AND image_id=$2 AND status='succeeded')",
-    )
-    .bind(app)
-    .bind(image)
-    .fetch_one(pool)
-    .await
+    Ok(deployable_build(pool, app, image).await?.is_some())
 }
 pub(crate) async fn checked_image(pool: &sqlx::PgPool, app: &str, release: Uuid) -> Result<String> {
-    let image: Option<String> = sqlx::query_scalar("SELECT r.image_id FROM releases r JOIN release_checks c ON c.release_id=r.id JOIN db_resources d ON d.app_id=r.app_id AND d.environment='dev' WHERE r.id=$1 AND r.app_id=$2 AND d.status='ready' AND c.schema_fingerprint IS NOT NULL AND c.schema_fingerprint=d.schema_fingerprint AND NOT EXISTS(SELECT 1 FROM app_dev_sessions s WHERE s.app_id=r.app_id AND s.status IN ('queued','preparing','ready') AND s.expires_at>now()) AND EXISTS(SELECT 1 FROM runtime_jobs j WHERE j.release_id=r.id AND j.environment='dev' AND j.action='deploy' AND j.status='succeeded')")
+    let image: Option<String> = sqlx::query_scalar(
+        r#"SELECT r.image_id FROM releases r JOIN release_checks c ON c.release_id=r.id
+           JOIN db_resources d ON d.app_id=r.app_id AND d.environment='dev'
+           WHERE r.id=$1 AND r.app_id=$2 AND (
+               NOT EXISTS(SELECT 1 FROM official_apps WHERE app_id=r.app_id)
+               OR (r.official_version=r.version AND c.checks @> '[{"result":"passed"}]'::jsonb)
+           ) AND d.status='ready' AND c.schema_fingerprint IS NOT NULL AND c.schema_fingerprint=d.schema_fingerprint
+           AND NOT EXISTS(SELECT 1 FROM app_dev_sessions s WHERE s.app_id=r.app_id AND s.status IN ('queued','preparing','ready') AND s.expires_at>now())
+           AND EXISTS(SELECT 1 FROM runtime_jobs j WHERE j.release_id=r.id AND j.environment='dev' AND j.action='deploy' AND j.status='succeeded')"#)
         .bind(release).bind(app).fetch_optional(pool).await?.flatten();
     image.context("release_not_tested_in_dev")
 }
@@ -151,8 +172,11 @@ pub async fn request(
     {
         return Err(ApiError::bad("invalid_runtime_request"));
     }
-    if (v.action == "deploy" && !v.image_id.as_deref().is_some_and(image_id))
-        || (v.action != "deploy" && v.image_id.is_some())
+    let official_redeploy = v.action == "deploy" && v.release_id.is_some();
+    if v.image_id.is_some() && (v.action != "deploy" || official_redeploy)
+        || (v.action == "deploy"
+            && !official_redeploy
+            && !v.image_id.as_deref().is_some_and(image_id))
     {
         return Err(ApiError::bad("invalid_image_id"));
     }
@@ -173,7 +197,7 @@ pub async fn request(
 
     if (v.action == "deploy" && v.environment != "dev")
         || (v.action == "promote" && (v.environment != "prod" || v.release_id.is_none()))
-        || (v.action != "promote" && v.release_id.is_some())
+        || (v.action != "promote" && !official_redeploy && v.release_id.is_some())
     {
         return Err(ApiError::bad("use_checked_release_promotion_for_prod"));
     }
@@ -182,6 +206,12 @@ pub async fn request(
             checked_image(&state.pool, app, v.release_id.unwrap())
                 .await
                 .map_err(|_| ApiError::conflict("release_not_tested_in_dev"))?,
+        )
+    } else if let Some(release) = v.release_id {
+        Some(
+            crate::official_catalog::release_image(&state.pool, app, release)
+                .await?
+                .ok_or_else(|| ApiError::conflict("official_release_required"))?,
         )
     } else {
         v.image_id.clone()
@@ -267,6 +297,8 @@ pub async fn request(
         ];
         if v.action == "promote" {
             checks.push(PreflightCheck::passed(CheckName::ReleaseAcceptance));
+        } else if official_redeploy {
+            checks.push(PreflightCheck::passed(CheckName::OfficialRelease));
         }
         let plan = crate::runtime_contract::preflight(&input, &current, checks)
             .map_err(|_| ApiError::bad("invalid_runtime_request"))?;
@@ -274,9 +306,10 @@ pub async fn request(
             return Err(ApiError::conflict("preflight_failed"));
         }
     }
-    sqlx::query("INSERT INTO runtime_jobs(id,app_id,environment,actor,action,image_id,idempotency_key,input_hash,expected_state,request_data,retry_of,delegation_id) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) ON CONFLICT(actor,idempotency_key) DO NOTHING")
+    // A known candidate remains visible even if the worker stops before image preparation.
+    sqlx::query("INSERT INTO runtime_jobs(id,app_id,environment,actor,action,image_id,idempotency_key,input_hash,expected_state,request_data,retry_of,delegation_id,release_id) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) ON CONFLICT(actor,idempotency_key) DO NOTHING")
         .bind(Uuid::new_v4()).bind(app).bind(&v.environment).bind(&p.id).bind(&v.action).bind(&image).bind(&v.idempotency_key).bind(&input)
-        .bind(v.expected_state.as_ref().map(serde_json::to_value).transpose()?).bind(request_data).bind(v.retry_of).bind(p.delegation_id).execute(&mut *tx).await?;
+        .bind(v.expected_state.as_ref().map(serde_json::to_value).transpose()?).bind(request_data).bind(v.retry_of).bind(p.delegation_id).bind(v.release_id).execute(&mut *tx).await?;
     let row = sqlx::query("SELECT * FROM runtime_jobs WHERE actor=$1 AND idempotency_key=$2")
         .bind(&p.id)
         .bind(&v.idempotency_key)
@@ -369,8 +402,9 @@ async fn owned(name: &str, installation: Uuid) -> Result<Value> {
 // Inspect or daemon failures are never treated as "already removed". Use the immutable
 // container ID after ownership validation so a same-name replacement cannot be removed.
 async fn removable_container(name: &str, installation: Uuid) -> Result<Option<Value>> {
+    let active_name = format!("miy-app-{}", installation.simple());
     anyhow::ensure!(
-        name == format!("miy-app-{}", installation.simple()),
+        name == active_name || name == format!("{active_name}-previous"),
         "unexpected_container_name"
     );
     let filter = format!("name=^/{name}$");
@@ -397,6 +431,37 @@ async fn removable_container(name: &str, installation: Uuid) -> Result<Option<Va
         "container_lookup_mismatch"
     );
     Ok(Some(value))
+}
+
+async fn remove_owned_container(name: &str, installation: Uuid) -> Result<()> {
+    if let Some(meta) = removable_container(name, installation).await? {
+        let id = meta["Id"].as_str().context("missing_container_id")?;
+        docker(&["stop", "--time", "5", id]).await?;
+        docker(&["rm", id]).await?;
+    }
+    Ok(())
+}
+
+fn container_matches(meta: &Value, inst: &sqlx::postgres::PgRow) -> bool {
+    meta["Image"].as_str()
+        == inst
+            .get::<Option<&str>, _>("runtime_local_image")
+            .or_else(|| inst.get("runtime_image"))
+        && meta["Config"]["Labels"]["org.miy.release"]
+            == inst.get::<Uuid, _>("release_id").to_string()
+}
+
+async fn check_company_switch(pool: &sqlx::PgPool, app: &str, guard_enabled: bool) -> Result<()> {
+    if guard_enabled {
+        let disabled: bool = sqlx::query_scalar(
+            "SELECT EXISTS(SELECT 1 FROM app_controls WHERE app_id=$1 AND disabled)",
+        )
+        .bind(app)
+        .fetch_one(pool)
+        .await?;
+        anyhow::ensure!(!disabled, RuntimeFailure::new(FailureCode::StateChanged));
+    }
+    Ok(())
 }
 async fn step(pool: &sqlx::PgPool, id: Uuid, name: &str) -> Result<()> {
     sqlx::query("UPDATE runtime_jobs SET step=$2,updated_at=now() WHERE id=$1")
@@ -489,16 +554,37 @@ async fn execute(pool: &sqlx::PgPool, job: &sqlx::postgres::PgRow) -> Result<()>
     if env == "dev" && crate::development::active_for_app(pool, &app).await? {
         anyhow::bail!(RuntimeFailure::new(FailureCode::ActiveDevelopmentSession));
     }
+    let expected: Option<ExpectedState> = job
+        .get::<Option<Value>, _>("expected_state")
+        .map(serde_json::from_value)
+        .transpose()?;
+    let guard_enabled = matches!(action.as_str(), "deploy" | "promote")
+        && expected
+            .as_ref()
+            .and_then(|state| state.official_app_disabled)
+            == Some(false);
+    if let Err(error) = check_company_switch(pool, &app, guard_enabled).await {
+        // Recovery may happen after the candidate started but before activation.
+        // A job that never modified the installation has nothing to compensate.
+        if !crate::db_outcome::uncertain(&error)
+            && let Some(installation) = job.get::<Option<Uuid>, _>("installation_id")
+            && let Some(inst) = sqlx::query("SELECT * FROM installations WHERE id=$1 AND runtime_status IN ('deploying','starting')")
+                .bind(installation).fetch_optional(pool).await?
+            && finish_failed_deployment(pool, &inst, job.get("release_id"), expected.as_ref(), false).await.is_err()
+        {
+            tracing::warn!(event="deploy_compensation_incomplete",installation_id=%installation);
+        }
+        return Err(error);
+    }
     if job
         .get::<Option<chrono::DateTime<chrono::Utc>>, _>("expected_checked_at")
         .is_none()
-        && let Some(value) = job.get::<Option<Value>, _>("expected_state")
+        && let Some(expected) = &expected
     {
-        let expected: ExpectedState = serde_json::from_value(value)?;
         let current = crate::runtime_preflight::snapshot(pool, &app, &env)
             .await
             .map_err(|_| RuntimeFailure::new(FailureCode::StateChanged))?;
-        crate::runtime_contract::compare_expected(&expected, &current)
+        crate::runtime_contract::compare_expected(expected, &current)
             .map_err(|_| RuntimeFailure::new(FailureCode::StateChanged))?;
         sqlx::query("UPDATE runtime_jobs SET expected_checked_at=now() WHERE id=$1")
             .bind(id)
@@ -524,6 +610,11 @@ async fn execute(pool: &sqlx::PgPool, job: &sqlx::postgres::PgRow) -> Result<()>
             .fetch_one(pool)
             .await?;
         let installation: Uuid = inst.get("id");
+        if action != "remove" && inst.get::<&str, _>("runtime_status") == "recovery_required" {
+            anyhow::bail!(RuntimeFailure::new(
+                FailureCode::InstallationRecoveryRequired
+            ));
+        }
         sqlx::query("UPDATE runtime_jobs SET installation_id=$2,release_id=$3 WHERE id=$1")
             .bind(id)
             .bind(installation)
@@ -542,6 +633,7 @@ async fn execute(pool: &sqlx::PgPool, job: &sqlx::postgres::PgRow) -> Result<()>
                 docker(&["stop", "--time", "10", container]).await?;
                 docker(&["rm", container]).await?;
             }
+            remove_owned_container(&format!("{name}-previous"), installation).await?;
             sqlx::query(
                 "UPDATE installations SET runtime_status='removed',runtime_port=NULL WHERE id=$1",
             )
@@ -629,10 +721,9 @@ async fn execute(pool: &sqlx::PgPool, job: &sqlx::postgres::PgRow) -> Result<()>
     anyhow::ensure!(image_id(&image), "invalid_image");
     step(pool, id, "verifying_image").await?;
     // Admission checked this too; a job queued by an earlier server did not.
-    anyhow::ensure!(
-        server_built(pool, &app, &image).await?,
-        RuntimeFailure::new(FailureCode::ServerBuildRequired)
-    );
+    let receipt = deployable_build(pool, &app, &image)
+        .await?
+        .ok_or_else(|| RuntimeFailure::new(FailureCode::ServerBuildRequired))?;
     let meta = inspect(&image)
         .await
         .map_err(|_| RuntimeFailure::new(FailureCode::ImageUnavailable))?;
@@ -693,6 +784,17 @@ async fn execute(pool: &sqlx::PgPool, job: &sqlx::postgres::PgRow) -> Result<()>
             && build["version"] == manifest.version,
         RuntimeFailure::new(FailureCode::InvalidImageContract)
     );
+    let official_version: Option<&str> = receipt.get("official_version");
+    if let Some(version) = official_version {
+        let archive: &str = receipt.get("archive_hash");
+        anyhow::ensure!(
+            version == manifest.version
+                && receipt.get::<&str, _>("source_commit") == commit
+                && build["sourceArchiveHash"] == archive
+                && meta["Config"]["Labels"]["org.miy.source.archive-sha256"] == archive,
+            RuntimeFailure::new(FailureCode::InvalidImageContract)
+        );
+    }
     let dest = root.join(&hash);
     if dest.exists() {
         contract::verified_artifact(&root, &hash)?;
@@ -700,20 +802,26 @@ async fn execute(pool: &sqlx::PgPool, job: &sqlx::postgres::PgRow) -> Result<()>
     } else {
         std::fs::rename(&temporary, &dest)?;
     }
-    let existing = sqlx::query("SELECT id,image_id FROM releases WHERE app_id=$1 AND version=$2")
-        .bind(&app)
-        .bind(&manifest.version)
-        .fetch_optional(pool)
-        .await?;
+    let existing = sqlx::query(
+        "SELECT id,image_id,official_version FROM releases WHERE app_id=$1 AND version=$2",
+    )
+    .bind(&app)
+    .bind(&manifest.version)
+    .fetch_optional(pool)
+    .await?;
     let release = if let Some(row) = existing {
         anyhow::ensure!(
-            row.get::<Option<String>, _>("image_id").as_deref() == Some(&image),
+            row.get::<Option<&str>, _>("image_id") == Some(image.as_str())
+                && row.get::<Option<&str>, _>("official_version") == official_version,
             RuntimeFailure::new(FailureCode::ImmutableReleaseConflict)
         );
         row.get::<Uuid, _>("id")
     } else {
         let release = Uuid::new_v4();
-        sqlx::query("INSERT INTO releases(id,app_id,version,artifact_hash,manifest,image_id,source_commit) VALUES($1,$2,$3,$4,$5,$6,$7)").bind(release).bind(&app).bind(&manifest.version).bind(&hash).bind(serde_json::to_value(&manifest)?).bind(&image).bind(commit).execute(pool).await?;
+        sqlx::query("INSERT INTO releases(id,app_id,version,artifact_hash,manifest,image_id,source_commit,official_version) VALUES($1,$2,$3,$4,$5,$6,$7,$8)")
+            .bind(release).bind(&app).bind(&manifest.version).bind(&hash)
+            .bind(serde_json::to_value(&manifest)?).bind(&image).bind(commit).bind(official_version)
+            .execute(pool).await?;
         release
     };
     sqlx::query("INSERT INTO installations(id,app_id,environment,release_id) VALUES($1,$2,$3,$4) ON CONFLICT(app_id,environment) DO NOTHING").bind(Uuid::new_v4()).bind(&app).bind(&env).bind(release).execute(pool).await?;
@@ -750,11 +858,8 @@ async fn execute(pool: &sqlx::PgPool, job: &sqlx::postgres::PgRow) -> Result<()>
             .map_err(|_| RuntimeFailure::new(FailureCode::InvalidRequest))?,
     )
     .await?;
-    let result = deploy_installation(pool, id, installation, release, &image, &actor, &inst).await;
-    sqlx::query("SELECT pg_advisory_unlock(hashtextextended($1,0))")
-        .bind(installation.to_string())
-        .execute(&mut *lock)
-        .await?;
+    check_company_switch(pool, &app, guard_enabled).await?;
+    let result = deploy_installation(pool, job, &inst, release, &image, guard_enabled).await;
     if let Err(error) = &result {
         // An unproven database outcome must not stop a container that a committed row
         // may describe as running, nor the previous release before it was replaced
@@ -762,19 +867,17 @@ async fn execute(pool: &sqlx::PgPool, job: &sqlx::postgres::PgRow) -> Result<()>
         // reconciliation cannot turn this skipped compensation into a later stop.
         if crate::db_outcome::uncertain(error) {
             tracing::warn!(event = "deploy_compensation_skipped", installation_id = %installation);
-        } else {
-            let name = format!("miy-app-{}", installation.simple());
-            if owned(&name, installation).await.is_ok() {
-                let _ = docker(&["stop", "--time", "5", &name]).await;
-            }
-            sqlx::query(
-                "UPDATE installations SET runtime_status='failed',desired_state='stopped' WHERE id=$1",
-            )
-            .bind(installation)
-            .execute(pool)
-            .await?;
+        } else if finish_failed_deployment(pool, &inst, Some(release), expected.as_ref(), true)
+            .await
+            .is_err()
+        {
+            tracing::warn!(event="deploy_compensation_incomplete",installation_id=%installation);
         }
     }
+    sqlx::query("SELECT pg_advisory_unlock(hashtextextended($1,0))")
+        .bind(installation.to_string())
+        .execute(&mut *lock)
+        .await?;
     result
 }
 /// Preserve failures classified at their origin. Migration errors are terminal,
@@ -843,13 +946,16 @@ pub(crate) fn classify_database_prepare_failure(error: anyhow::Error) -> Runtime
 
 async fn deploy_installation(
     pool: &sqlx::PgPool,
-    job: Uuid,
-    installation: Uuid,
+    job_row: &sqlx::postgres::PgRow,
+    inst: &sqlx::postgres::PgRow,
     release: Uuid,
     image: &str,
-    actor: &str,
-    inst: &sqlx::postgres::PgRow,
+    guard_enabled: bool,
 ) -> Result<()> {
+    let job: Uuid = job_row.get("id");
+    let installation: Uuid = inst.get("id");
+    let actor: &str = job_row.get("actor");
+    let app: &str = inst.get("app_id");
     runtime_health::record(pool, installation, Observation::Inactive).await?;
     step(pool, job, "stopping_previous").await?;
     // Deployment is a replacement, not a request to stop the previous release.
@@ -862,11 +968,21 @@ async fn deploy_installation(
     #[cfg(test)]
     crate::runtime_regression::deployment_write_ack(job, "before_stop")?;
     let name = format!("miy-app-{}", installation.simple());
-    if inspect(&name).await.is_ok() {
-        owned(&name, installation).await?;
-        docker(&["stop", "--time", "10", &name]).await?;
-        docker(&["rm", &name]).await?;
+    let previous = format!("{name}-previous");
+    if let Some(meta) = removable_container(&name, installation).await? {
+        let id = meta["Id"].as_str().context("missing_container_id")?;
+        docker(&["stop", "--time", "10", id]).await?;
+        if inst.get::<Uuid, _>("release_id") != release && container_matches(&meta, inst) {
+            // The stopped, previously active container retains its exact image,
+            // environment and credentials for a schema-compatible recovery.
+            remove_owned_container(&previous, installation).await?;
+            docker(&["rename", id, &previous]).await?;
+        } else {
+            // A worker may be replaying an attempt that already staged its candidate.
+            docker(&["rm", id]).await?;
+        }
     }
+    check_company_switch(pool, app, guard_enabled).await?;
     step(pool, job, "preparing_database").await?;
     let db_job = Uuid::new_v4();
     sqlx::query("INSERT INTO jobs(id,installation_id,release_id,actor,idempotency_key,input_hash,status,delegation_id,delegation_action) VALUES($1,$2,$3,$4,$5,$6,'running',(SELECT delegation_id FROM runtime_jobs WHERE id=$7),(SELECT action FROM runtime_jobs WHERE id=$7))").bind(db_job).bind(installation).bind(release).bind(actor).bind(format!("runtime-{job}-{}",Uuid::new_v4())).bind(contract::hash(job.to_string())).bind(job).execute(pool).await?;
@@ -970,10 +1086,11 @@ async fn deploy_installation(
     created?;
     // A server-built image runs under its own ID. `runtime_local_image` differs only on
     // installations last deployed from an imported archive, before server-only builds.
-    sqlx::query("UPDATE installations SET runtime_container=$2,runtime_image=$3,runtime_secret=$4,runtime_local_image=$3,desired_state='running',runtime_status='starting' WHERE id=$1").bind(installation).bind(&name).bind(image).bind(auth::encrypt(&secret)?).execute(pool).await?;
+    sqlx::query("UPDATE installations SET runtime_container=$2,runtime_secret=$3,desired_state='running',runtime_status='starting' WHERE id=$1").bind(installation).bind(&name).bind(auth::encrypt(&secret)?).execute(pool).await?;
     #[cfg(test)]
     crate::runtime_regression::deployment_write_ack(job, "before_start")?;
     step(pool, job, "starting_container").await?;
+    check_company_switch(pool, app, guard_enabled).await?;
     docker(&["start", &name]).await?;
     let meta = owned(&name, installation).await?;
     anyhow::ensure!(
@@ -981,25 +1098,27 @@ async fn deploy_installation(
         RuntimeFailure::new(FailureCode::InvalidImageContract)
     );
     let port = published_port(&meta)?;
-    sqlx::query("UPDATE installations SET runtime_port=$2 WHERE id=$1")
-        .bind(installation)
-        .bind(port)
-        .execute(pool)
-        .await?;
     #[cfg(test)]
     crate::runtime_regression::deployment_write_ack(job, "after_start")?;
     step(pool, job, "health_check").await?;
-    if let Err(error) = healthy(port, release).await {
-        let _ = docker(&["stop", "--time", "5", &name]).await;
-        return Err(error);
-    }
-    sqlx::query(
-        "UPDATE installations SET runtime_status='running',desired_state='running' WHERE id=$1",
+    healthy(port, release)
+        .await
+        .map_err(|_| RuntimeFailure::new(FailureCode::AppHealthFailed))?;
+    activate(
+        pool,
+        installation,
+        release,
+        image,
+        image,
+        port,
+        guard_enabled,
     )
-    .bind(installation)
-    .execute(pool)
     .await?;
-    runtime_health::record(pool, installation, Observation::Healthy).await?;
+    if let Err(_error) = remove_owned_container(&previous, installation).await {
+        // The new active release is already committed; a later replacement or
+        // explicit remove can clean up an uncollected stopped predecessor.
+        tracing::warn!(event="previous_container_cleanup_failed",installation_id=%installation);
+    }
     Ok(())
 }
 async fn installation_network(installation: Uuid) -> Result<String> {
@@ -1063,26 +1182,48 @@ fn database_network_priority(metadata: &Value) -> Result<i64> {
 }
 /// Reconcile externally stopped/restarted containers. Database state is not fabricated.
 pub async fn reconcile(pool: &sqlx::PgPool) -> Result<()> {
-    let rows=sqlx::query("SELECT i.* FROM installations i WHERE runtime_container IS NOT NULL AND runtime_status NOT IN ('removed','failed') AND NOT EXISTS(SELECT 1 FROM runtime_jobs j WHERE j.app_id=i.app_id AND j.environment=i.environment AND j.status IN ('queued','running'))").fetch_all(pool).await?;
+    let rows=sqlx::query("SELECT i.* FROM installations i WHERE runtime_container IS NOT NULL AND runtime_status NOT IN ('removed','failed','recovery_required') AND NOT EXISTS(SELECT 1 FROM runtime_jobs j WHERE j.app_id=i.app_id AND j.environment=i.environment AND j.status IN ('queued','running'))").fetch_all(pool).await?;
     for row in rows {
         let id: Uuid = row.get("id");
         let name: String = row.get("runtime_container");
+        let interrupted = matches!(
+            row.get::<&str, _>("runtime_status"),
+            "deploying" | "starting"
+        ) && row.get::<Option<&str>, _>("runtime_image").is_some();
         match owned(&name, id).await {
+            Ok(meta) if interrupted && !container_matches(&meta, &row) => {
+                // The previous release remains recorded. A candidate whose activation
+                // wasn't acknowledged must never be routed as that previous release.
+                sqlx::query("UPDATE installations SET runtime_status='recovery_required',desired_state='stopped',runtime_port=NULL WHERE id=$1")
+                    .bind(id).execute(pool).await?;
+                runtime_health::record(pool, id, Observation::Inactive).await?;
+                docker(&[
+                    "stop",
+                    "--time",
+                    "5",
+                    meta["Id"].as_str().context("missing_container_id")?,
+                ])
+                .await?;
+            }
             Ok(meta) if meta["State"]["Running"] == true => {
-                let matching = meta["Image"].as_str()
-                    == row
-                        .get::<Option<String>, _>("runtime_local_image")
-                        .or_else(|| row.get("runtime_image"))
-                        .as_deref()
-                    && meta["Config"]["Labels"]["org.miy.release"]
-                        == row.get::<Uuid, _>("release_id").to_string();
-                if !matching || row.get::<String, _>("desired_state") != "running" {
+                if !container_matches(&meta, &row)
+                    || row.get::<String, _>("desired_state") != "running"
+                {
                     let _ = docker(&["stop", "--time", "5", &name]).await;
                     sqlx::query("UPDATE installations SET runtime_status='failed',desired_state='stopped' WHERE id=$1").bind(id).execute(pool).await?;
                     runtime_health::record(pool, id, Observation::Inactive).await?;
                 } else {
                     let port = published_port(&meta)?;
                     sqlx::query("UPDATE installations SET runtime_port=$2,runtime_status='running' WHERE id=$1").bind(id).bind(port).execute(pool).await?;
+                }
+            }
+            Err(_) if interrupted => {
+                // Docker may be temporarily unreachable. Keep the in-progress
+                // marker for a later inspection unless the exact name is absent.
+                if matches!(removable_container(&name, id).await, Ok(None)) {
+                    sqlx::query("UPDATE installations SET runtime_status='recovery_required',desired_state='stopped',runtime_port=NULL WHERE id=$1")
+                        .bind(id).execute(pool).await?;
+                    runtime_health::record(pool, id, Observation::Inactive).await?;
                 }
             }
             Ok(_) => {

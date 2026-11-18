@@ -93,6 +93,8 @@ mod job_api;
 #[cfg(feature = "server")]
 mod mcp;
 mod native_preview;
+#[cfg(feature = "server")]
+mod official_catalog;
 #[cfg(all(test, feature = "server"))]
 mod operations_regression;
 mod owned_process;
@@ -236,6 +238,13 @@ enum Command {
     Worker,
     #[cfg(feature = "server")]
     Migrate,
+    /// Import a trusted official app catalog into the configured Core database.
+    #[cfg(feature = "server")]
+    CatalogSync {
+        /// Catalog JSON from the platform publisher.
+        #[arg(long, value_name = "PATH")]
+        file: PathBuf,
+    },
     #[cfg(feature = "server")]
     Seed,
 }
@@ -426,6 +435,8 @@ async fn run_server(command: Command) -> Result<()> {
     // application_name separates core, app and identity connections in pg_stat_activity (V1-O2).
     let application = if matches!(command, Command::Migrate) {
         "miy-core-migrate"
+    } else if matches!(command, Command::CatalogSync { .. }) {
+        "miy-core-catalog-sync"
     } else if matches!(command, Command::Seed) {
         "miy-core-seed"
     } else if matches!(command, Command::Worker) {
@@ -443,6 +454,9 @@ async fn run_server(command: Command) -> Result<()> {
     if matches!(command, Command::Migrate) {
         sqlx::migrate!("../../migrations/core").run(&pool).await?;
         return Ok(());
+    }
+    if let Command::CatalogSync { file } = command {
+        return official_catalog::sync_file(&pool, &file).await;
     }
     if matches!(command, Command::Seed) {
         domain::seed(&pool).await?;
@@ -533,7 +547,7 @@ mod tests {
     #[test]
     fn server_commands_follow_build_feature() {
         let command = Args::command();
-        for name in ["serve", "worker", "migrate", "seed"] {
+        for name in ["serve", "worker", "migrate", "seed", "catalog-sync"] {
             assert_eq!(
                 command.find_subcommand(name).is_some(),
                 cfg!(feature = "server")

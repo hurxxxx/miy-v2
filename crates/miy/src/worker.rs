@@ -101,10 +101,21 @@ async fn build_loop(pool: &sqlx::PgPool) -> Result<()> {
     }
 }
 
-async fn control_loop(pool: &sqlx::PgPool) -> Result<()> {
+pub(crate) async fn recover_database_jobs(pool: &sqlx::PgPool) -> Result<()> {
+    // A deployment replays its own database preparation under the runtime lock.
+    // Its abandoned child must not migrate independently of a fresh runtime
+    // authorization/company-switch check when this worker restarts.
+    sqlx::query("UPDATE jobs SET status='failed',step='interrupted',error_code='runtime_job_recovered',updated_at=now() WHERE status IN ('running','queued') AND delegation_action IN ('deploy','promote')")
+        .execute(pool)
+        .await?;
     sqlx::query("UPDATE jobs SET status='queued',updated_at=now() WHERE status='running'")
         .execute(pool)
         .await?;
+    Ok(())
+}
+
+async fn control_loop(pool: &sqlx::PgPool) -> Result<()> {
+    recover_database_jobs(pool).await?;
     crate::runtime::recover(pool).await?;
     crate::development::recover(pool).await?;
     let mut last_reconcile = std::time::Instant::now();
@@ -130,7 +141,7 @@ async fn control_loop(pool: &sqlx::PgPool) -> Result<()> {
 /// Process the oldest queued standalone database job; `false` when none is queued.
 pub(crate) async fn database_tick(pool: &sqlx::PgPool) -> Result<bool> {
     let Some(row) =
-        sqlx::query("SELECT * FROM jobs WHERE status='queued' ORDER BY created_at,id LIMIT 1")
+        sqlx::query("SELECT * FROM jobs WHERE status='queued' AND delegation_action NOT IN ('deploy','promote') ORDER BY created_at,id LIMIT 1")
             .fetch_optional(pool)
             .await?
     else {
@@ -165,7 +176,6 @@ pub(crate) async fn database_tick(pool: &sqlx::PgPool) -> Result<bool> {
         .await?;
     let app: String = target.get("app_id");
     let env: String = target.get("environment");
-    // A deployment's own preparation row carries the deployment's action.
     let recheck = match row.get::<String, _>("delegation_action").parse() {
         Ok(action) => {
             crate::policy::recheck_queued(
@@ -184,6 +194,17 @@ pub(crate) async fn database_tick(pool: &sqlx::PgPool) -> Result<bool> {
     // database state; a failed preparation marks it failed.
     let outcome = match recheck {
         Err(failure) => Err((failure, false)),
+        Ok(())
+            if sqlx::query_scalar::<_, bool>(
+                "SELECT runtime_image IS NOT NULL FROM installations WHERE id=$1",
+            )
+            .bind(installation)
+            .fetch_one(pool)
+            .await? =>
+        {
+            // A first deployment can activate while an earlier fixture request waits.
+            Err((RuntimeFailure::new(FailureCode::StateChanged), false))
+        }
         Ok(()) => async {
             if env == "dev" && crate::development::active_for_app(pool, &app).await? {
                 anyhow::bail!(RuntimeFailure::new(FailureCode::ActiveDevelopmentSession));
@@ -315,9 +336,12 @@ pub(crate) async fn prepare(
         .execute(pool)
         .await?;
     prepare_resource(pool, &resource, &migrations, Some(job)).await?;
-    sqlx::query("UPDATE installations SET db_status='ready',release_id=$2 WHERE id=$1")
+    // Only a standalone fixture DB job activates its release here. A Docker
+    // deployment publishes its candidate after the container's health check.
+    sqlx::query("UPDATE installations i SET db_status='ready',release_id=CASE WHEN j.delegation_action='prepare_database' AND i.runtime_image IS NULL THEN $2 ELSE i.release_id END FROM jobs j WHERE i.id=$1 AND j.id=$3 AND j.installation_id=i.id")
         .bind(installation)
         .bind(release)
+        .bind(job)
         .execute(pool)
         .await?;
     tracing::info!(event="database_ready",job_id=%job,installation_id=%installation);

@@ -31,8 +31,16 @@ fn transition(previous_failures: i32, observation: &Observation<'_>) -> (&'stati
     }
 }
 pub async fn record(pool: &sqlx::PgPool, id: Uuid, observation: Observation<'_>) -> Result<()> {
+    record_and_commit(pool.begin().await?, id, observation).await
+}
+/// Commit a lifecycle change together with its observation and audit record.
+pub(crate) async fn record_and_commit(
+    tx: sqlx::Transaction<'_, sqlx::Postgres>,
+    id: Uuid,
+    observation: Observation<'_>,
+) -> Result<()> {
     ensure!(
-        persist(pool, id, None, observation).await?,
+        persist(tx, id, None, observation).await?,
         "missing_installation"
     );
     Ok(())
@@ -44,12 +52,11 @@ struct Snapshot {
     port: i32,
 }
 async fn persist(
-    pool: &sqlx::PgPool,
+    mut tx: sqlx::Transaction<'_, sqlx::Postgres>,
     id: Uuid,
     snapshot: Option<&Snapshot>,
     observation: Observation<'_>,
 ) -> Result<bool> {
-    let mut tx = pool.begin().await?;
     // Lifecycle records invalidate in-flight observations, including same-release
     // restarts. A pending control job also takes precedence over monitoring.
     let row = sqlx::query("SELECT i.health_status,i.health_failures FROM installations i WHERE i.id=$1 AND ($2::bigint IS NULL OR (i.health_generation=$2 AND i.release_id=$3 AND i.runtime_port=$4 AND i.runtime_status='running' AND i.desired_state='running' AND NOT EXISTS(SELECT 1 FROM runtime_jobs j WHERE j.app_id=i.app_id AND j.environment=i.environment AND j.status IN ('queued','running')))) FOR UPDATE OF i")
@@ -121,7 +128,13 @@ pub async fn scan(pool: &sqlx::PgPool, client: &reqwest::Client) -> Result<()> {
                 Ok(()) => Observation::Healthy,
                 Err(code) => Observation::Failed(code),
             };
-            persist(pool, snapshot.id, Some(&snapshot), observation).await
+            persist(
+                pool.begin().await?,
+                snapshot.id,
+                Some(&snapshot),
+                observation,
+            )
+            .await
         })
         .buffer_unordered(4);
     // One observation's failure must not cancel the other apps' checks.

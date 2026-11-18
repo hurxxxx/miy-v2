@@ -28,6 +28,7 @@ pub async fn request(s: &State, p: &Principal, v: domain::NewApp) -> ApiResult<V
         return Err(ApiError::bad("invalid_app"));
     }
     let mut tx = crate::policy::Write::begin(&s.pool).await?;
+    domain::reserve_organization_id(&mut tx, &v.id, true).await?;
     // The unique app ID serializes competing requests without giving the loser access.
     sqlx::query("INSERT INTO app_registrations(id,app_id,name,actor) VALUES($1,$2,$3,$4) ON CONFLICT(app_id) DO NOTHING").bind(Uuid::new_v4()).bind(&v.id).bind(&v.name).bind(&p.id).execute(&mut *tx).await?;
     let row = sqlx::query("SELECT * FROM app_registrations WHERE app_id=$1 FOR UPDATE")

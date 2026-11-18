@@ -26,6 +26,7 @@ REASONS = {
     "own": "reduces the caller's own credential or lease; the owner condition is in the statement",
     "snapshot": "read-only snapshot transaction",
     "worker": "worker bookkeeping without a request principal",
+    "host-catalog": "local catalog-sync command with operator database access and publisher catalog input",
     "write-type": "the policy::Write type itself",
 }
 
@@ -44,9 +45,13 @@ TRANSACTIONS = {
     ("delegations.rs", "revoke"): "own",
     ("development.rs", "close"): "own",
     ("job_api.rs", "events"): "snapshot",
+    ("official_catalog.rs", "sync"): "host-catalog",
     ("server_build.rs", "logs"): "snapshot",
     ("server_build.rs", "append_log"): "worker",
-    ("runtime_health.rs", "persist"): "worker",
+    ("runtime/activation.rs", "activate"): "worker",
+    ("runtime/activation.rs", "finish_failed_deployment"): "worker",
+    ("runtime_health.rs", "record"): "worker",
+    ("runtime_health.rs", "scan"): "worker",
     ("storage.rs", "sweep"): "worker",
     ("server_build_worker.rs", "tick"): "worker",
     ("worker.rs", "verify_development_migrations"): "worker",
@@ -90,21 +95,23 @@ def functions(path):
 
 def check(root):
     problems, used_transactions, used_writers = [], set(), set()
-    for path in sorted(pathlib.Path(root).glob("*.rs")):
+    root = pathlib.Path(root)
+    for path in sorted(root.rglob("*.rs")):
         if path.name.endswith("_regression.rs") or path.name == "integration.rs":
             continue
+        source = path.relative_to(root).as_posix()
         for name, signature, body in functions(path):
-            key = (path.name, name)
+            key = (source, name)
             if ".begin()" in body:
                 if key in TRANSACTIONS:
                     used_transactions.add(key)
                 else:
-                    problems.append(f"{path.name}: {name} opens a transaction outside policy::Write")
+                    problems.append(f"{source}: {name} opens a transaction outside policy::Write")
             if PRINCIPAL.search(signature) and WRITE.search(body) and "Write::begin" not in body:
                 if key in WRITERS:
                     used_writers.add(key)
                 else:
-                    problems.append(f"{path.name}: {name} writes for a principal outside policy::Write")
+                    problems.append(f"{source}: {name} writes for a principal outside policy::Write")
     for key in sorted(set(TRANSACTIONS) - used_transactions):
         problems.append(f"{key[0]}: {key[1]} is listed for a raw transaction it no longer opens")
     for key in sorted(set(WRITERS) - used_writers):

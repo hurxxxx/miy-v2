@@ -70,7 +70,9 @@ elif name == 'docker':
 elif name == 'cargo':
     assert args == ['build', '--locked']
 elif name == 'bash':
-    assert args in (['scripts/run-service.sh', 'migrate'], ['scripts/run-service.sh', 'seed'])
+    assert args in (['scripts/run-service.sh', 'migrate'], ['scripts/run-service.sh', 'seed'],
+                    ['scripts/run-service.sh', 'catalog-sync', '--file',
+                     os.environ.get('MIY_OFFICIAL_APP_CATALOG', 'registry/apps/catalog.json')])
 elif name == 'curl':
     assert args[-1].endswith(('/.well-known/openid-configuration', '/api/health'))
 else:
@@ -122,7 +124,16 @@ class UpStateDirectoryTests(unittest.TestCase):
             self.assertEqual(event['state'], str(expected), event)
         self.assertIn('Platform ready: https://portal.invalid', result.stdout)
         self.assertEqual([event['args'] for event in events if event['name'] == 'bash'],
-                         [['scripts/run-service.sh', 'migrate'], ['scripts/run-service.sh', 'seed']])
+                         [['scripts/run-service.sh', 'migrate'], ['scripts/run-service.sh', 'seed'],
+                          ['scripts/run-service.sh', 'catalog-sync', '--file',
+                           self.env.get('MIY_OFFICIAL_APP_CATALOG', 'registry/apps/catalog.json')]])
+        started = next(i for i, event in enumerate(events) if event['args'] == ['scripts/services.py', 'start'])
+        imported = next(i for i, event in enumerate(events) if 'catalog-sync' in event['args'])
+        self.assertLess(started, imported)
+
+    def test_operator_selected_catalog(self):
+        self.env['MIY_OFFICIAL_APP_CATALOG'] = str(self.root / 'verified product catalog.json')
+        self.run_setup([], 'env state', env_state='env state')
 
     def test_separate_relative_option(self):
         self.run_setup(['--state-dir', 'state with spaces'], 'state with spaces')

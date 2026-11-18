@@ -16,6 +16,10 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use sqlx::Row;
 
+const APP_SOURCE: &str =
+    "apps t LEFT JOIN official_apps o ON o.app_id=t.id LEFT JOIN app_controls c ON c.app_id=t.id";
+const APP_ROW: &str = "jsonb_build_object('id',t.id,'name',t.name,'disabled',COALESCE(c.disabled,false),'distribution',CASE o.default_install WHEN true THEN 'default_official' WHEN false THEN 'optional_official' ELSE 'organization' END)";
+
 #[derive(Default, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Page {
@@ -159,9 +163,9 @@ async fn page_for(
     }
     let (source, key, view, permission, app, env, request) = match kind {
         "apps" => (
-            "apps t",
+            APP_SOURCE,
             "t.id",
-            "jsonb_build_object('id',t.id,'name',t.name)",
+            APP_ROW,
             "t.id=ANY($8::text[])",
             "t.id",
             "NULL::text",
@@ -339,15 +343,14 @@ pub async fn app(
     {
         return Err(ApiError::not_found());
     }
-    let app = sqlx::query("SELECT id,name FROM apps WHERE id=$1")
-        .bind(&id)
-        .fetch_optional(&s.pool)
-        .await?
-        .map(|row| App {
-            id: row.get("id"),
-            name: row.get("name"),
-        })
-        .ok_or_else(ApiError::not_found)?;
+    let app = sqlx::query_scalar::<_, sqlx::types::Json<App>>(&format!(
+        "SELECT {APP_ROW} FROM {APP_SOURCE} WHERE t.id=$1"
+    ))
+    .bind(&id)
+    .fetch_optional(&s.pool)
+    .await?
+    .ok_or_else(ApiError::not_found)?
+    .0;
     // Published CLI app show/status uses this detail. Preserve its management
     // visibility without granting prod Use; each returned row carries canOpen.
     let installs = page_for(

@@ -9,7 +9,7 @@ A schema or settings rollout needs a reviewed extension with a real-dump rollbac
   inspect   (default) the read-only preflight of apply; prints public metadata only.
   apply     preflight -> stop core -> fresh dump, restored and migrate-checked in a disposable
             PostgreSQL -> install -> start -> verify. A failure before the candidate starts
-            reinstalls the previous binary and starts core again. A failure after it starts stops
+            restores a compatible previous binary. A failure after it starts stops
             core for assessment instead of overwriting writes it may have accepted.
   rollback  operator recovery after assessment: reinstall the previous binary kept by this
             release directory's apply, then start and verify core.
@@ -17,10 +17,11 @@ A schema or settings rollout needs a reviewed extension with a real-dump rollbac
 Every apply attempt needs a new --release-dir under .local; it keeps the 0700 recovery data and
 the 0600 deployment record. apply/rollback run only after an explicit production request.
 
---widen-migration N allows exactly one pinned, constraint-widening or additive migration (see WIDEN_ONLY): the
-backup is still restored and migrate-checked first, the candidate migrates the live database after
-core stops, and a later rollback reinstalls the previous binary on the widened schema, which that
-binary keeps using unchanged. No other migration, setting or identity change is ever applied.
+--widen-migration N allows one pinned migration (see WIDEN_ONLY) after a restore rehearsal.
+On first activating schema 25 the frozen source's registry/apps/catalog.json is also rehearsed
+and imported. --official-app-catalog FILE selects a site catalog, including on a later rollout.
+Inspect reports its SHA-256; pass the approved digest with --official-app-catalog-sha256 to apply.
+Recovery keeps the live database and verifies that the old core supports any registered products.
 
 --cli-downloads DIR --cli-installers DIR publish a CLI release with the candidate: the output of
 scripts/stage-cli-release.py and scripts/stage-windows-installer.py in private staging directories.
@@ -66,16 +67,17 @@ CGROUP_ROOT = pathlib.Path('/sys/fs/cgroup')
 PROCESS_PROPERTIES = ('Id', 'LoadState', 'ActiveState', 'Slice', 'ControlGroup', 'MainPID', 'ControlPID')
 # Old-column projections of these tables must survive the rollout unchanged.
 STABLE_TABLES = ['users', 'apps', 'app_registrations', 'grants', 'installations', 'releases', 'release_checks',
-                 'db_resources', 'groups', 'group_members', 'group_grants', 'app_admission', 'app_controls']
+                 'db_resources', 'groups', 'group_members', 'group_grants', 'app_admission', 'app_controls',
+                 'app_builds', 'official_apps', 'official_app_versions']
 REPOSITORY = 'hurxxxx/miy-v2'
-# Migrations an older binary keeps working with because they only widen constraints or add
-# tables it never reads (0022: app frame origins, sessions and codes; 0023: app file
-# reservations and their two indexes; 0024: support reports and their indexes):
+# Reviewed one-step migrations. Schema 25 has an additional rollback gate because
+# application workers as well as the database enforce the official release contract.
 # version -> (file, sha256 of its exact bytes).
 WIDEN_ONLY = {21: ('0021_dev_portal.sql', 'f2b2c022638d618bb337ca1ab53d6ea2f2e0cd7b2cce474ed8659c2f7060b82a'),
               22: ('0022_app_frames.sql', 'cfb73c37f2bb795345518cce8f813ce8d538b13876e819a376c2bbe007dc57a6'),
               23: ('0023_app_files.sql', '8985c40e0dacdd85df173f225a8d64a0f938efb9b6eddd145652d88c6f6980e2'),
-              24: ('0024_support_reports.sql', '9370f724435f0037e6ead5ab6c6257721d5e17101e4cd57aa9642ac7c45a894a')}
+              24: ('0024_support_reports.sql', '9370f724435f0037e6ead5ab6c6257721d5e17101e4cd57aa9642ac7c45a894a'),
+              25: ('0025_official_apps.sql', '4350089f077bea49f86a12377d197cabe651bc47dc2dd2adf0b441bf68f65b0d')}
 REQUIRED_CI = ('cli-foundation.yml', 'runtime-regression.yml', 'web.yml')
 HEX40 = re.compile(r'[0-9a-f]{40}')
 HEX64 = re.compile(r'[0-9a-f]{64}')
@@ -160,12 +162,18 @@ def rollout_lock(fresh):
         os.close(fd)
 
 
-def call(args):
+def call(args, public_failures=()):
     result = subprocess.run([str(a) for a in args], cwd=LIVE, capture_output=True, text=True)
     REPORT['commands'].append({'command': [str(a) for a in args], 'exitCode': result.returncode})
     save()
     # Keep command metadata only: output can contain private rows or settings.
-    require(result.returncode == 0, 'command_failed')
+    if result.returncode:
+        if public_failures:
+            with contextlib.suppress(ValueError, AttributeError):
+                code = json.loads(result.stdout).get('failureCategory')
+                if code in public_failures:
+                    raise RuntimeError(code)
+        raise RuntimeError('command_failed')
     return result.stdout.strip()
 
 
@@ -591,15 +599,58 @@ def stable_columns():
 
 
 def stable_records(columns):
-    # Row counts and one hash per table; no row values leave PostgreSQL.
-    result = {}
-    for table, names in columns.items():
-        projection = ','.join('"' + name + '"' for name in names)
-        result[table] = json.loads(sql(
-            "SELECT json_build_object('rows',count(*),'sha256',encode(sha256(convert_to("
-            "coalesce(string_agg(row_data::text,E'\\n' ORDER BY row_data::text),''),'UTF8')),'hex')) "
-            f'FROM (SELECT to_jsonb(record) row_data FROM (SELECT {projection} FROM "{table}") record) records'))
-    return result
+    return release_tool('core-backup.py').record_fingerprints(columns, sql)
+
+
+def catalog_in_use():
+    present = sql("SELECT EXISTS(SELECT 1 FROM official_apps)")
+    require(present in ('t', 'f'), 'official_catalog_state_unknown')
+    return present == 't'
+
+
+def selected_catalog(args, source, live_schema, target_schema):
+    selected = args.official_app_catalog
+    approved = args.official_app_catalog_sha256
+    require(approved is None or (selected is not None and HEX64.fullmatch(approved)), 'official_catalog_digest_invalid')
+    if target_schema < 25:
+        require(selected is None, 'official_catalog_requires_schema_25')
+        return None
+    if selected is None:
+        if live_schema >= 25:
+            return None
+        selected = source / 'registry/apps/catalog.json'
+    elif args.action == 'apply':
+        require(approved is not None, 'official_catalog_digest_required')
+    path = plain(selected)
+    require(path.is_file(), 'official_catalog_missing')
+    checksum = digest(path)
+    require(approved is None or checksum == approved, 'official_catalog_changed')
+    importer = release_tool('official-apps.py', source / 'scripts')
+    try:
+        products = importer.products(path)
+    except (ValueError, importer.Problem):
+        raise RuntimeError('official_catalog_invalid') from None
+    require(digest(path) == checksum, 'official_catalog_changed')
+    return {'path': str(path), 'sha256': checksum,
+            'receipt': {'apps': len(products), 'releasePins': sum(len(app['releases']) for app in products.values())}}
+
+
+def require_catalog_protection(binary):
+    # A binary that only imports product IDs may still lack build and release protection.
+    try:
+        discovery = json.loads(quiet([binary, '--output', 'json', 'describe', '--command', 'catalog-sync']))
+        command = discovery['data']['command']
+        version = command['officialReleaseProtectionVersion']
+        supported = (discovery['ok'] is True and command['command'] == 'catalog-sync'
+                     and type(version) is int and version == 1)
+    except (RuntimeError, ValueError, KeyError, TypeError, OSError):
+        supported = False
+    require(supported, 'official_catalog_requires_compatible_core')
+
+
+def require_rollback_compatible(binary, schema):
+    if schema >= 25 and catalog_in_use():
+        require_catalog_protection(binary)
 
 
 def app_containers(names=None):
@@ -692,6 +743,9 @@ def preflight(args, cli_candidate=None):
                 'widen_migration_not_allowed')
         migration = source / 'migrations/core' / pinned[0]
         require(migration.is_file() and digest(migration) == pinned[1], 'widen_migration_changed')
+    if facts['schema'] >= 25:
+        require_catalog_protection(plain(args.candidate))
+    facts['officialCatalog'] = selected_catalog(args, source, live_schema, facts['schema'])
     require(int(sql('SHOW max_connections', 'postgres')) == args.max_connections, 'database_settings_differ')
     require(container_setting(KEYCLOAK, 'KC_DB_POOL_MAX_SIZE') == str(args.identity_pool), 'identity_settings_differ')
     require(get_json(facts['origin'] + '/api/health') == {'status': 'ok'}, 'health_failed_before_rollout')
@@ -718,19 +772,22 @@ def public(facts):
     return {'version': facts['version'], 'schema': facts['schema'], 'origin': facts['origin'],
             'dependencyContainers': facts['dependencyContainers'], 'executables': facts['executables'],
             'cliGuide': facts['cliGuide'], 'expectedCliGuide': facts['expectedCliGuide'],
-            'connectionBudget': facts['connectionBudget'], 'idle': facts['idle'],
+            'connectionBudget': facts['connectionBudget'], 'idle': facts['idle'], 'officialCatalog': facts['officialCatalog'],
             'ci': facts['ci'], 'appContainers': len(facts['appContainers']),
             'runningAppContainers': sum(c['status'] == 'running' for c in containers),
             'databaseNetworks': len(facts['databaseNetworks'])}
 
 
-def restore_previous(schema):
+def restore_previous():
     """Before the candidate started: reinstall the verified previous binary and start core."""
     REPORT['rollbackUsed'] = True
     save()
     stop_core()
     previous = REPORT['previousSha256']
     require(digest(recovery() / 'miy-server') == previous, 'rollback_binary_changed')
+    schema = migrations()
+    require(schema in (REPORT['liveSchema'], REPORT['schema']), 'rollback_schema_unexpected')
+    require_rollback_compatible(recovery() / 'miy-server', schema)
     if digest(installed()) != previous:
         atomic_copy(recovery() / 'miy-server', installed())
     require(digest(installed()) == previous, 'rollback_install_mismatch')
@@ -753,6 +810,7 @@ def apply(args):
     save()
     source = plain(args.source)
     candidate = recovery() / 'miy-server.candidate'
+    catalog_file = recovery() / 'official-app-catalog.json'
     try:
         facts = preflight(args, recovery() / 'cli-candidate')
         schema, sha = facts['schema'], args.candidate_sha256
@@ -769,6 +827,10 @@ def apply(args):
                 'candidate_changed')
         shutil.copy2(installed(), recovery() / 'miy-server')
         require(digest(recovery() / 'miy-server') == args.installed_sha256, 'binary_backup_changed')
+        catalog = facts['officialCatalog']
+        if catalog:
+            atomic_copy(pathlib.Path(catalog['path']), catalog_file, expected=catalog['sha256'])
+            REPORT['officialCatalog'] = catalog
         REPORT['expectedCliGuide'] = facts['expectedCliGuide']
         if 'cliRelease' in facts:
             previous = {}
@@ -799,11 +861,27 @@ def apply(args):
         require(manifest['migrationVersion'] == facts['liveSchema'], 'backup_migration_version')
         REPORT['databaseBackup'] = {**manifest['dump'], 'migrationVersion': manifest['migrationVersion'],
                                     'tables': len(manifest['tables']), 'rows': sum(manifest['tables'].values())}
-        verification = json.loads(call(['python3', tool, 'verify', backup, '--migrate-with', candidate]))
+        verify = ['python3', tool, 'verify', backup, '--migrate-with', candidate]
+        if catalog:
+            require(digest(catalog_file) == catalog['sha256'], 'official_catalog_changed')
+            verify += ['--official-app-catalog', catalog_file]
+        verification = json.loads(call(verify, release_tool('core-backup.py').CATALOG_FAILURES))
         require(verification.get('status') == 'PASS' and verification.get('containerRemoved') is True
                 and verification.get('mismatchedTables') == []
                 and verification.get('rehearsal') == {'exitCode': 0, 'migrationVersionAfter': schema},
                 'backup_restore_not_verified')
+        expected = before.copy()
+        after_columns = columns.copy()
+        if catalog:
+            tables = release_tool('core-backup.py').CATALOG_TABLES
+            rehearsed = verification.get('officialCatalog', {})
+            require(rehearsed.get('sha256') == catalog['sha256'] and rehearsed.get('receipt') == catalog['receipt']
+                    and rehearsed.get('recordsBefore') == {table: before[table] for table in tables if table in before}
+                    and set(rehearsed.get('records', {})) == set(tables),
+                    'official_catalog_rehearsal_mismatch')
+            expected.update(rehearsed['records'])
+            after_columns.update(dict.fromkeys(rehearsed['records']))
+            REPORT['officialCatalogRehearsal'] = rehearsed
         REPORT['backupVerified'] = True
         save()
         require(container_id(DB) == facts['databaseContainer'] and networks() == facts['databaseNetworks'],
@@ -814,14 +892,23 @@ def apply(args):
         require(digest(installed()) == sha, 'installed_candidate_hash_mismatch')
         source_preflight(source, args.commit)
         if args.widen_migration is not None:
-            # The verified candidate applies only the pinned widening migration while
-            # core is stopped. The previous binary keeps working on the result.
-            call(['env', f'MIY_BINARY={installed()}', 'bash', LIVE / 'scripts/run-service.sh', 'migrate'])
+            # Migrate the stopped core using the same executable as the rehearsal and catalog import.
+            call(['env', f'MIY_BINARY={installed()}', f'MIY_STATE_DIR={LIVE / ".local"}',
+                  'bash', source / 'scripts/run-service.sh', 'migrate'])
             REPORT['migratedSchema'] = migrations()
             save()
             require(REPORT['migratedSchema'] == schema, 'widen_migration_not_applied')
         if 'cliRelease' in REPORT:
             publish_cli(REPORT['cliRelease'])
+        if catalog:
+            require(digest(catalog_file) == catalog['sha256'], 'official_catalog_changed')
+            require(digest(installed()) == sha, 'installed_candidate_hash_mismatch')
+            receipt = json.loads(call(['env', f'MIY_BINARY={installed()}', f'MIY_STATE_DIR={LIVE / ".local"}',
+                                       'bash', source / 'scripts/run-service.sh', 'catalog-sync', '--file', catalog_file]))
+            require(receipt == catalog['receipt'], 'official_catalog_sync_mismatch')
+            require(stable_records(after_columns) == expected, 'official_catalog_records_changed')
+            REPORT['officialCatalogSynced'] = True
+            save()
         # From here a failed check must not discard writes the new API may have accepted.
         started = True
         start_core()
@@ -829,8 +916,8 @@ def apply(args):
         require_core_state('active')
         REPORT['runningExecutables'] = executable_hashes(sha)
         require(migrations() == schema, 'schema_changed_after_start')
-        REPORT['stableRecordsAfter'] = stable_records(columns)
-        require(REPORT['stableRecordsAfter'] == before, 'post_start_stable_records_changed')
+        REPORT['stableRecordsAfter'] = stable_records(after_columns)
+        require(REPORT['stableRecordsAfter'] == expected, 'post_start_stable_records_changed')
         REPORT['appContainersAfter'] = app_containers(list(before_containers))
         require(REPORT['appContainersAfter'] == before_containers, 'runtime_containers_changed')
         REPORT['connectionBudgetAfter'] = connection_budget(source, 35)
@@ -849,7 +936,7 @@ def apply(args):
             save()
             raise RuntimeError('post_start_failed_manual_assessment_required') from None
         try:
-            restore_previous(REPORT.get('migratedSchema', facts['liveSchema']))
+            restore_previous()
         except (Exception, KeyboardInterrupt) as rollback_error:
             REPORT['status'] = 'ROLLBACK_FAILED'
             REPORT['rollbackFailureCategory'] = failure_code(rollback_error)
@@ -875,6 +962,7 @@ def rollback():
         require(digest(recovery() / 'miy-server') == previous, 'rollback_binary_changed')
         require(digest(installed()) in (candidate, previous), 'installed_binary_belongs_to_another_rollout')
         require(migrations() == schema, 'schema_changed_since_rollout')
+        require_rollback_compatible(recovery() / 'miy-server', schema)
         release = deployment.get('cliRelease') if deployment.get('cliIndexesReplaced') else None
         if release:
             for name, index in CLI_INDEXES.items():
@@ -895,6 +983,8 @@ def rollback():
         raise
     try:
         stop_core()
+        require(migrations() == schema, 'schema_changed_since_rollout')
+        require_rollback_compatible(recovery() / 'miy-server', schema)
         if check_idle:
             REPORT['idleAfterStop'] = idle()
         atomic_copy(recovery() / 'miy-server', installed())
@@ -931,6 +1021,9 @@ def main(argv=None):
     parser.add_argument('--max-connections', type=int, default=200, help='expected; never changed')
     parser.add_argument('--identity-pool', type=int, default=10, help='expected KC_DB_POOL_MAX_SIZE; never changed')
     parser.add_argument('--widen-migration', type=int, help='allow exactly this pinned constraint-widening migration')
+    parser.add_argument('--official-app-catalog', type=pathlib.Path,
+                        help='trusted catalog to rehearse and sync (initial schema 25 default: frozen source registry)')
+    parser.add_argument('--official-app-catalog-sha256', help='approved digest, required to apply an explicitly selected catalog')
     parser.add_argument('--cli-downloads', type=pathlib.Path, help='staged CLI release (stage-cli-release.py output)')
     parser.add_argument('--cli-installers', type=pathlib.Path, help='staged Windows installer (stage-windows-installer.py output)')
     args = parser.parse_args(argv)

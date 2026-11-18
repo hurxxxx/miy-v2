@@ -148,16 +148,17 @@ pub async fn retry(
     let original: Value = row
         .get::<Option<Value>, _>("request_data")
         .ok_or_else(|| ApiError::conflict("legacy_job_not_retryable"))?;
+    let release_id: Option<Uuid> = serde_json::from_value(original["releaseId"].clone())
+        .map_err(|_| ApiError::conflict("invalid_original_request"))?;
     let request = runtime::RuntimeRequest {
         action: action.clone(),
         environment: env,
-        image_id: if action == "deploy" {
+        image_id: if action == "deploy" && release_id.is_none() {
             row.get("image_id")
         } else {
             None
         },
-        release_id: serde_json::from_value(original["releaseId"].clone())
-            .map_err(|_| ApiError::conflict("invalid_original_request"))?,
+        release_id,
         idempotency_key: input.idempotency_key,
         expected_state: Some(input.expected_state),
         confirmed: input.confirmed,

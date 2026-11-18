@@ -56,6 +56,7 @@ string_enum!(RuntimeStatus {
     NotDeployed => "not_deployed", Deploying => "deploying", Starting => "starting",
     Running => "running", Stopping => "stopping", Stopped => "stopped",
     Removed => "removed", Failed => "failed", Unreachable => "unreachable",
+    RecoveryRequired => "recovery_required",
 });
 string_enum!(DbStatus {
     NotPrepared => "not_prepared", Provisioning => "provisioning",
@@ -79,6 +80,7 @@ string_enum!(FailureCode {
     MigrationFailed => "migration_failed",
     MigrationHistoryMismatch => "migration_history_mismatch",
     ImmutableReleaseConflict => "immutable_release_conflict",
+    OfficialReleaseRequired => "official_release_required",
     AppHealthFailed => "app_health_failed",
     RuntimeOperationFailed => "runtime_operation_failed",
     StateChanged => "state_changed",
@@ -88,6 +90,7 @@ string_enum!(FailureCode {
     ImagePlatformMismatch => "image_platform_mismatch",
     DatabaseUnavailable => "database_unavailable",
     DatabaseNotReady => "database_not_ready",
+    InstallationRecoveryRequired => "installation_recovery_required",
     DatabasePrepareFailed => "database_prepare_failed",
     ContainerOwnershipMismatch => "container_ownership_mismatch",
     ReleaseNotAccepted => "release_not_accepted",
@@ -207,9 +210,13 @@ pub struct ExpectedState {
     pub installation: Option<InstallationState>,
     /// Shared database identity and SQL history are independently revisioned.
     pub database: Option<DatabaseState>,
+    /// The company use switch may change while a catalog installation is being reviewed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub official_app_disabled: Option<bool>,
 }
 
 string_enum!(StateField {
+    OfficialAppDisabled => "officialAppDisabled",
     AppId => "appId", Environment => "environment", InstallationId => "installationId",
     ReleaseId => "releaseId", Generation => "generation", DesiredState => "desiredState",
     RuntimeStatus => "runtimeStatus", DbStatus => "dbStatus", ImageId => "imageId",
@@ -272,11 +279,11 @@ pub fn validate_input(input: &PreflightInput) -> Result<(), ContractError> {
             if input.target.environment != Environment::Dev {
                 return Err(ContractError::invalid("target.environment"));
             }
-            if !input.image_id.as_deref().is_some_and(valid_image_id) {
-                return Err(ContractError::invalid("imageId"));
-            }
-            if input.release_id.is_some() {
-                return Err(ContractError::invalid("releaseId"));
+            match (input.image_id.as_deref(), input.release_id) {
+                (Some(image), None) if valid_image_id(image) => {}
+                (None, Some(id)) if !id.is_nil() => {}
+                (_, Some(_)) => return Err(ContractError::invalid("releaseId")),
+                _ => return Err(ContractError::invalid("imageId")),
             }
         }
         Operation::Promote => {
@@ -346,6 +353,9 @@ pub fn compare_expected(
     }
     if expected.target.environment != current.target.environment {
         changed_fields.push(StateField::Environment);
+    }
+    if expected.official_app_disabled != current.official_app_disabled {
+        changed_fields.push(StateField::OfficialAppDisabled);
     }
     match (&expected.database, &current.database) {
         (None, None) => {}
@@ -421,7 +431,7 @@ string_enum!(CheckName {
     Input => "input", Target => "target", Authorization => "authorization",
     PendingOperation => "pendingOperation", CurrentState => "currentState",
     Database => "database", Image => "image", ImagePlatform => "imagePlatform",
-    ReleaseAcceptance => "releaseAcceptance", ContainerOwnership => "containerOwnership",
+    ReleaseAcceptance => "releaseAcceptance", OfficialRelease => "officialRelease", ContainerOwnership => "containerOwnership",
     MigrationCompatibility => "migrationCompatibility",
 });
 string_enum!(CheckStatus { Passed => "passed", Failed => "failed", NotChecked => "not_checked" });
@@ -483,6 +493,15 @@ string_enum!(PlannedChange {
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct OfficialPromotion {
+    pub version: String,
+    pub source_commit: String,
+    pub archive_sha256: String,
+    pub structured_acceptance: bool,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct PreflightResult {
     pub input: PreflightInput,
     pub expected_state: ExpectedState,
@@ -493,6 +512,10 @@ pub struct PreflightResult {
     pub desired_state: DesiredState,
     pub changes: Vec<PlannedChange>,
     pub checks: Vec<PreflightCheck>,
+    /// Publisher pin for this accepted prod promotion. The approver can verify
+    /// the release without access to the dev installation or its test notes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub official_release: Option<OfficialPromotion>,
 }
 
 /// Produce a plan without I/O or mutations. Caller-supplied checks are trusted
@@ -525,6 +548,13 @@ pub fn preflight(
     let control = !matches!(input.action, Operation::Deploy | Operation::Promote);
     let state_failure = match &current.installation {
         None if control => Some(FailureCode::TargetNotFound),
+        Some(state)
+            if state.runtime_status == RuntimeStatus::RecoveryRequired
+                && control
+                && input.action != Operation::Remove =>
+        {
+            Some(FailureCode::InstallationRecoveryRequired)
+        }
         Some(state)
             if matches!(
                 state.runtime_status,
@@ -624,6 +654,8 @@ pub fn preflight(
     ];
     if input.action == Operation::Promote {
         required.push(CheckName::ReleaseAcceptance);
+    } else if input.action == Operation::Deploy && input.release_id.is_some() {
+        required.push(CheckName::OfficialRelease);
     }
     let can_submit = !checks
         .iter()
@@ -654,6 +686,7 @@ pub fn preflight(
         Operation::Remove => vec![PlannedChange::StopRuntime, PlannedChange::RemoveRuntime],
     };
     Ok(PreflightResult {
+        official_release: None,
         input: input.clone(),
         expected_state: current.clone(),
         can_submit,
@@ -685,6 +718,7 @@ mod tests {
     fn current() -> ExpectedState {
         ExpectedState {
             target: target(Environment::Dev),
+            official_app_disabled: None,
             database: None,
             installation: Some(InstallationState {
                 installation_id: Uuid::from_u128(1),
@@ -743,6 +777,13 @@ mod tests {
         let mut deploy = input(Operation::Deploy, Environment::Dev);
         deploy.image_id = Some(format!("sha256:{}", "A".repeat(64)));
         assert!(validate_input(&deploy).is_err());
+        deploy.release_id = Some(Uuid::from_u128(42));
+        deploy.image_id = Some(image());
+        assert!(validate_input(&deploy).is_err());
+        deploy.image_id = None;
+        assert!(validate_input(&deploy).is_ok());
+        deploy.release_id = Some(Uuid::nil());
+        assert!(validate_input(&deploy).is_err());
         let mut control = input(Operation::Start, Environment::Dev);
         control.release_id = Some(Uuid::from_u128(9));
         assert!(validate_input(&control).is_err());
@@ -792,12 +833,23 @@ mod tests {
         }
         let absent = ExpectedState {
             target: expected.target.clone(),
+            official_app_disabled: None,
             installation: None,
             database: None,
         };
         assert!(compare_expected(&absent, &absent).is_ok());
         assert!(compare_expected(&absent, &expected).is_err());
         assert!(compare_expected(&expected, &absent).is_err());
+        let mut allowed = absent.clone();
+        allowed.official_app_disabled = Some(false);
+        let mut disabled = allowed.clone();
+        disabled.official_app_disabled = Some(true);
+        assert_eq!(
+            compare_expected(&allowed, &disabled)
+                .unwrap_err()
+                .changed_fields,
+            vec![StateField::OfficialAppDisabled]
+        );
     }
 
     #[test]
@@ -887,10 +939,36 @@ mod tests {
     }
 
     #[test]
+    fn recovery_required_allows_forward_deployment_or_removal() {
+        let mut snapshot = current();
+        snapshot.installation.as_mut().unwrap().runtime_status = RuntimeStatus::RecoveryRequired;
+        for (action, permitted) in [
+            (Operation::Start, false),
+            (Operation::Restart, false),
+            (Operation::Stop, false),
+            (Operation::Remove, true),
+            (Operation::Deploy, true),
+        ] {
+            let plan =
+                preflight(&input(action, Environment::Dev), &snapshot, authorized()).unwrap();
+            assert_eq!(plan.can_submit, permitted, "{action:?}");
+            if !permitted {
+                assert!(
+                    plan.checks
+                        .iter()
+                        .any(|check| check.name == CheckName::CurrentState
+                            && check.code == Some(FailureCode::InstallationRecoveryRequired))
+                );
+            }
+        }
+    }
+
+    #[test]
     fn control_requires_installation_and_ready_database_and_remove_preserves_database() {
         let snapshot = current();
         let absent = ExpectedState {
             target: snapshot.target.clone(),
+            official_app_disabled: None,
             installation: None,
             database: None,
         };

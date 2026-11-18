@@ -68,6 +68,23 @@ fn directory() -> Result<PathBuf> {
 fn archive_path(id: Uuid) -> Result<PathBuf> {
     Ok(directory()?.join(format!("{id}.tar")))
 }
+fn discard_archive(entry: &Entry) {
+    // Keep a confirmed remote result usable even if the OS temporarily keeps
+    // the file busy. A later observation of the same request retries cleanup.
+    let removed = archive_path(entry.request_id).and_then(|path| {
+        crate::platform::reject_reparse(&path)?;
+        match std::fs::remove_file(path) {
+            Err(error) if error.kind() != std::io::ErrorKind::NotFound => Err(error.into()),
+            _ => Ok(()),
+        }
+    });
+    if removed.is_err() {
+        eprintln!(
+            "warning: could not remove the local source archive for build request {}",
+            entry.request_id
+        );
+    }
+}
 fn record_path(id: Uuid) -> Result<PathBuf> {
     Ok(directory()?.join(format!("{id}.json")))
 }
@@ -198,6 +215,27 @@ fn recovery(entry: &Entry, category: Category, code: &str, message: &str) -> any
         .with_details(json!({"requestId":entry.request_id,"jobId":entry.job_id,"remoteWorkCancelled":false,"byteRangeResume":false}))
         .with_recovery("miy",&["--context",&entry.context,"--app",&entry.app_id,"job","resume",&entry.request_id.to_string(),"--environment","dev"]).into()
 }
+fn rejected(entry: &Entry, category: Category, code: &str, message: &str) -> anyhow::Error {
+    CliError::new(category, code, message)
+        .with_details(json!({"requestId":entry.request_id,"jobId":null}))
+        .with_recovery(
+            "miy",
+            &[
+                "--context",
+                &entry.context,
+                "--app",
+                &entry.app_id,
+                "app",
+                "build",
+            ],
+        )
+        .into()
+}
+fn confirmed_absence(entry: &Entry, lookup_error: &anyhow::Error) -> bool {
+    entry.submission_status == "rejected"
+        && entry.job_id.is_none()
+        && crate::cli_error::classify(lookup_error).category == Category::NotFound
+}
 fn job_id(job: &Value) -> Result<Uuid> {
     job["id"]
         .as_str()
@@ -292,7 +330,11 @@ fn bind(session: &Session, entry: &mut Entry, job: &Value, request_bound: bool) 
     validate_bound(session, entry, job, request_bound)?;
     entry.job_id = Some(job_id(job)?);
     entry.submission_status = "accepted".into();
-    save(entry)
+    save(entry)?;
+    if job["status"] != "receiving" {
+        discard_archive(entry);
+    }
+    Ok(())
 }
 async fn lookup(session: &Session, entry: &Entry) -> Result<Value> {
     let job = app_cli::api(
@@ -336,6 +378,7 @@ async fn send(session: &Session, entry: &mut Entry) -> Result<Value> {
             "The saved source archive no longer matches this build.",
         ));
     }
+    drop(file);
     let session = crate::cli_login::refreshed(session).await?;
     let request = crate::cli_client::client(session.ca_file.as_deref(), 300)?
         .post(format!(
@@ -376,10 +419,29 @@ async fn send(session: &Session, entry: &mut Entry) -> Result<Value> {
             let failure = crate::cli_error::classify(&error);
             if matches!(
                 failure.category,
-                Category::Usage | Category::Forbidden | Category::Conflict
+                Category::Usage
+                    | Category::Auth
+                    | Category::Forbidden
+                    | Category::NotFound
+                    | Category::Conflict
             ) {
                 entry.submission_status = "rejected".into();
                 save(entry)?;
+                // The receiver may return an HTTP error after reserving a job.
+                // Only a negative request lookup confirms a pre-admission rejection.
+                match lookup(&session, entry).await {
+                    Err(error) if confirmed_absence(entry, &error) => {
+                        discard_archive(entry);
+                        return Err(rejected(
+                            entry,
+                            failure.category,
+                            &failure.code,
+                            &failure.message,
+                        ));
+                    }
+                    Ok(job) => bind(&session, entry, &job, true)?,
+                    Err(_) => {}
+                }
             }
             Err(recovery(
                 entry,
@@ -501,6 +563,15 @@ pub async fn verify_receipt(session: &Session, receipt: &ServerBuildReceipt) -> 
     Ok(())
 }
 
+pub(crate) fn pack_source(root: &Path, archive: &Path) -> Result<crate::source_archive::Packed> {
+    crate::source_archive::pack(root, archive).map_err(|error| {
+        let code = error.to_string();
+        let category = if matches!(code.as_str(), "commit_source_before_building" | "source_changed_during_archive") { Category::Conflict } else { Category::Environment };
+        CliError::new(category, crate::cli_error::safe_code(&code).unwrap_or("invalid_build_source"),
+            "Prepare a clean committed application with intact SDK/components before packaging its source.").into()
+    })
+}
+
 pub async fn execute(no_wait: bool, timeout: u64) -> Result<Outcome> {
     let session = app_cli::session()?;
     let capabilities = crate::cli_remote::require_features(&session, &["app.builds.v1"]).await?;
@@ -517,12 +588,10 @@ pub async fn execute(no_wait: bool, timeout: u64) -> Result<Outcome> {
     let request_id = Uuid::new_v4();
     let archive = archive_path(request_id)?;
     let root = std::env::current_dir()?.canonicalize()?;
-    let packed = crate::source_archive::pack(&root, &archive).map_err(|error| {
-        let code = error.to_string();
-        let category = if matches!(code.as_str(), "commit_source_before_building" | "source_changed_during_archive") { Category::Conflict } else { Category::Environment };
-        CliError::new(category, crate::cli_error::safe_code(&code).unwrap_or("invalid_build_source"),
-            "Prepare a clean committed application with intact SDK/components before requesting a server build.")
-    })?;
+    let packed = pack_source(&root, &archive)?;
+    // Until the journal and its input index are durable, no request can use
+    // this new archive for recovery. Drop it on every early exit.
+    let mut archive = tempfile::TempPath::try_from_path(archive)?;
     if !packed.excluded.is_empty() {
         // The server builds only the application source set. Say which committed
         // files it will not see, so a build that needs one does not fail silently.
@@ -568,29 +637,32 @@ pub async fn execute(no_wait: bool, timeout: u64) -> Result<Outcome> {
     let lock = crate::cli_journal::operation_lock(&entry.input_hash).await?;
     let head = directory()?.join(format!("head-{}.json", entry.input_hash));
     if let Some(id) = reference(&head)? {
-        let previous = load(&session, id)?.ok_or_else(|| {
+        let mut previous = load(&session, id)?.ok_or_else(|| {
             CliError::new(
                 Category::Environment,
                 "build_journal_missing",
                 "The existing build recovery record is missing.",
             )
         })?;
-        let previous_failed = lookup(&session, &previous)
-            .await
-            .is_ok_and(|job| job["status"] == "failed");
-        if !previous_failed {
-            let _ = std::fs::remove_file(&archive);
+        let found = lookup(&session, &previous).await;
+        let new_attempt = match &found {
+            Ok(job) => job["status"] == "failed",
+            Err(error) => confirmed_absence(&previous, error),
+        };
+        if !new_attempt {
+            drop(archive);
+            let job = recover_job(&session, &mut previous, found, false).await?;
             drop(lock);
-            return recover(&session, previous, no_wait, timeout, false).await;
+            return build_outcome(&session, previous, job, no_wait, timeout).await;
         }
-        // Running the build command after an observed terminal failure is a
-        // new attempt. Resuming the old request never creates that attempt.
+        discard_archive(&previous);
     }
     save(&entry)?;
     crate::platform::write_private(
         &head,
         &serde_json::to_vec(&json!({"requestId":entry.request_id}))?,
     )?;
+    archive.disable_cleanup(true);
     let sent = send(&session, &mut entry).await;
     let job = match sent {
         Ok(job) => job,
@@ -602,15 +674,27 @@ pub async fn execute(no_wait: bool, timeout: u64) -> Result<Outcome> {
         Err(error) => return Err(error),
     };
     drop(lock);
+    build_outcome(&session, entry, job, no_wait, timeout).await
+}
+async fn build_outcome(
+    session: &Session,
+    entry: Entry,
+    job: Value,
+    no_wait: bool,
+    timeout: u64,
+) -> Result<Outcome> {
     if no_wait {
-        finish_or_pending(&session, Some(&entry), job)
+        finish_or_pending(session, Some(&entry), job)
     } else {
-        observe(&session, Some(entry), job, timeout, OutputMode::Json, None).await
+        observe(session, Some(entry), job, timeout, OutputMode::Json, None).await
     }
 }
 fn finish_or_pending(session: &Session, entry: Option<&Entry>, job: Value) -> Result<Outcome> {
     if let Some(entry) = entry {
         validate_bound(session, entry, &job, false)?;
+        if matches!(job["status"].as_str(), Some("succeeded" | "failed")) {
+            discard_archive(entry);
+        }
     } else {
         validate_job(session, &job, None)?;
     }
@@ -646,59 +730,44 @@ fn finish_or_pending(session: &Session, entry: Option<&Entry>, job: Value) -> Re
     };
     Ok(Outcome::Data(result))
 }
-async fn recover(
+async fn recover_job(
     session: &Session,
-    mut entry: Entry,
-    no_wait: bool,
-    timeout: u64,
+    entry: &mut Entry,
+    found: Result<Value>,
     resubmit: bool,
-) -> Result<Outcome> {
-    let lock = crate::cli_journal::operation_lock(&entry.input_hash).await?;
-    entry = load(session, entry.request_id)?.ok_or_else(|| {
-        CliError::new(
-            Category::Environment,
-            "build_journal_missing",
-            "The saved build record is missing.",
-        )
-    })?;
-    let found = lookup(session, &entry).await;
-    let job = match found {
+) -> Result<Value> {
+    match found {
         Ok(job) => {
-            bind(session, &mut entry, &job, true)?;
+            bind(session, entry, &job, true)?;
             if resubmit && job["status"] == "receiving" {
-                send(session, &mut entry).await?
+                send(session, entry).await
             } else {
-                job
+                Ok(job)
             }
+        }
+        Err(error) if confirmed_absence(entry, &error) => {
+            discard_archive(entry);
+            Err(rejected(
+                entry,
+                Category::Conflict,
+                "build_submission_rejected",
+                "The server rejected this request before accepting a build. Run app build for a new attempt.",
+            ))
         }
         Err(error)
             if crate::cli_error::classify(&error).category == Category::NotFound
-                && (resubmit || entry.submission_status == "prepared") =>
+                && entry.job_id.is_none()
+                && (entry.submission_status == "prepared"
+                    || (resubmit && entry.submission_status == "sending")) =>
         {
-            if entry.submission_status == "rejected" {
-                return Err(recovery(
-                    &entry,
-                    Category::Conflict,
-                    "build_submission_rejected",
-                    "The original request was rejected; inspect the failure before starting new work.",
-                ));
-            }
-            send(session, &mut entry).await?
+            send(session, entry).await
         }
-        Err(error) => {
-            return Err(recovery(
-                &entry,
-                crate::cli_error::classify(&error).category,
-                "build_lookup_unavailable",
-                "The original build result could not be discovered. Resume this saved request before submitting again.",
-            ));
-        }
-    };
-    drop(lock);
-    if no_wait {
-        finish_or_pending(session, Some(&entry), job)
-    } else {
-        observe(session, Some(entry), job, timeout, OutputMode::Json, None).await
+        Err(error) => Err(recovery(
+            entry,
+            crate::cli_error::classify(&error).category,
+            "build_lookup_unavailable",
+            "The original build result could not be discovered. Resume this saved request before submitting again.",
+        )),
     }
 }
 
@@ -738,7 +807,20 @@ pub async fn try_resume(
             .into());
         }
         crate::cli_remote::require_features(session, &["app.builds.v1"]).await?;
-        return recover(session, entry, no_wait, 1800, true).await.map(Some);
+        let lock = crate::cli_journal::operation_lock(&entry.input_hash).await?;
+        let mut entry = load(session, entry.request_id)?.ok_or_else(|| {
+            CliError::new(
+                Category::Environment,
+                "build_journal_missing",
+                "The saved build record is missing.",
+            )
+        })?;
+        let found = lookup(session, &entry).await;
+        let job = recover_job(session, &mut entry, found, true).await?;
+        drop(lock);
+        return build_outcome(session, entry, job, no_wait, 1800)
+            .await
+            .map(Some);
     }
     if let Some(job) = try_get(session, id).await? {
         if environment.is_some_and(|env| env != "dev") {

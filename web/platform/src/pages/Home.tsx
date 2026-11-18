@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 import { Link, useLocation } from "@tanstack/react-router";
 import type { Installation } from "@miy/sdk";
-import { installationsIn, useInstallationPolling, useInstallations } from "../data/installations";
+import { distributionLabels, installationsIn, useInstallationPolling, useInstallations } from "../data/installations";
 import { currentEnvironment, environmentPath, portalEnvironment } from "../lib/paths";
 import { useSurface } from "../data/session";
 import { LoadError, StaleNotice } from "../components/LoadState";
@@ -41,16 +41,20 @@ export function Home() {
               접근 권한이 필요하면 관리자에게 요청하세요.
             </EmptyState>
           ) : (
-            <div className="grid">
-              {apps.map((a) => (
-                <AppCard
-                  key={a.id}
-                  app={a}
-                  mark={marks.get(a.id) ?? "?"}
-                  environment={environment}
-                />
-              ))}
-            </div>
+            Object.entries(distributionLabels).map(([distribution, label]) => {
+              const group = apps.filter((app) => (app.distribution ?? "organization") === distribution);
+              if (!group.length) return null;
+              return (
+                <section key={distribution} aria-labelledby={`apps-${distribution}`}>
+                  <h2 className="page-section-title" id={`apps-${distribution}`}>{label}</h2>
+                  <div className="grid">
+                    {group.map((app) => (
+                      <AppCard key={app.id} app={app} mark={marks.get(app.id) ?? "?"} environment={environment} />
+                    ))}
+                  </div>
+                </section>
+              );
+            })
           )}
         </>
       )}

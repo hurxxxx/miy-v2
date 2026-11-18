@@ -6,6 +6,8 @@ CLI·Windows 설치기의 후보 빌드, 서버 다운로드 게시, 정식 GitH
 
 ## 온라인 설치 제공
 
+소스 후보는 **Core·CLI 0.13.0**, core schema 25다. CLI에 오프라인 `app source-pin`, 확인한 상태를 조건으로 한 배포·승격, 공식 릴리스 ID로 다른 담당자가 dev에 재배포하는 `app deploy --release`를 추가했다. 서버가 접수하지 않은 빌드는 같은 커밋으로 다시 요청할 수 있고, 응답만 유실된 요청은 기존 ID로 재개한다. SDK 번들은 0.11.0이다. 이 후보의 다운로드 게시와 실제 서버 반영은 대기 중이다. [공식 앱 공급 절차](RUNNING.md#공식-앱-공급과-설치)
+
 Core는 `MIY_CLI_RELEASE_DIR/release-index.json`을 검증하여 `/api/v1/cli/install.sh`와 `/api/v1/cli/install.ps1`을 제공한다. 각 응답은 한 번 읽은 후보의 immutable URL·아카이브/바이너리 SHA-256·버전과 설정된 `MIY_ORIGIN`을 포함한다. URL·해시는 실행 중 별도 mutable index에서 다시 읽지 않는다. 5개 CLI·2개 helper가 완성된 후보를 기존 `stage-cli-release.py`로 게시해야 하며, 미게시 상태나 실행 중인 Core와 index의 CLI 버전이 다르면 503으로 종료한다. 버전 변경은 모든 target을 먼저 준비한 뒤 Core·worker를 중지한 동안 catalog와 바이너리를 함께 교체한다. 복구할 때도 이전 Core·catalog를 함께 복원한다. 온라인 스크립트는 Core에 포함되므로 서버 바이너리 교체가 필요하다. 기존 게시 패키지는 다시 쓰지 않는다.
 
 설치 화면은 명령 한 줄을 우선 표시하고, 패키지·GUI 설치기 직접 다운로드는 접힌 추가 선택지로 제공한다. `scripts/install-cli-online.sh`·`.ps1`은 서버가 값을 넣는 템플릿이므로 저장소 원문을 직접 실행하지 않는다. 사용법과 사용자 PATH 정책은 [RUNNING](RUNNING.md#설치와-발견)에 있다.

@@ -46,7 +46,10 @@ impl Harness {
             .bearer_auth(&actor.token)
     }
     fn upload(&self, actor: &Actor, key: Uuid, payload: &[u8]) -> RequestBuilder {
-        self.request(actor, Method::POST, &format!("/api/v1/apps/{APP}/builds"))
+        self.upload_for(APP, actor, key, payload)
+    }
+    fn upload_for(&self, app: &str, actor: &Actor, key: Uuid, payload: &[u8]) -> RequestBuilder {
+        self.request(actor, Method::POST, &format!("/api/v1/apps/{app}/builds"))
             .header("content-length", payload.len())
             .header("x-miy-request-id", key.to_string())
             .header("x-miy-source-commit", "a".repeat(40))
@@ -181,6 +184,367 @@ async fn identities(h: &Harness, actor: &Actor) -> Result<()> {
     passed(
         "concurrent same-request dedup, content aliases, input conflicts and failed-request identity",
     );
+    Ok(())
+}
+
+async fn catalog_admission(h: &Harness, employee: &Actor) -> Result<()> {
+    const PRODUCT: &str = "catalog-build-api";
+    let pool = &h.state.pool;
+    let admin = h.actor("develop").await?;
+    sqlx::query("UPDATE users SET admin=true WHERE id=$1")
+        .bind(&admin.id)
+        .execute(pool)
+        .await?;
+    let reserved = json!({"id":"planner","name":"Calendar"});
+    for (actor, path) in [
+        (employee, "/api/v1/app-registrations"),
+        (&admin, "/api/v1/apps"),
+    ] {
+        error(
+            h.request(actor, Method::POST, path)
+                .json(&reserved)
+                .send()
+                .await?,
+            409,
+            "official_app_id_reserved",
+        )
+        .await?;
+    }
+
+    let payload = b"catalog publication fixture";
+    let commit = "a".repeat(40);
+    let archive = hash(payload);
+    let descriptor = json!({"schemaVersion":1,"apps":[{"appId":PRODUCT,"name":"Official app",
+        "defaultInstall":true,"releases":[{"version":"1.0.0","sourceCommit":commit,"archiveSha256":archive}]}]});
+    let catalog_file = tempfile::NamedTempFile::new()?;
+    std::fs::write(catalog_file.path(), serde_json::to_vec(&descriptor)?)?;
+    crate::official_catalog::sync_file(pool, catalog_file.path()).await?;
+    let detail = response(
+        h.request(&admin, Method::GET, &format!("/api/v1/apps/{PRODUCT}"))
+            .send()
+            .await?,
+        200,
+    )
+    .await?;
+    ensure!(
+        detail["app"]["distribution"] == "default_official" && detail["installations"] == json!([])
+    );
+    error(
+        h.request(employee, Method::GET, &format!("/api/v1/apps/{PRODUCT}"))
+            .send()
+            .await?,
+        404,
+        "not_found",
+    )
+    .await?;
+    error(
+        h.request(
+            &admin,
+            Method::POST,
+            &format!("/api/v1/apps/{PRODUCT}/releases"),
+        )
+        .json(&json!({"artifactHash":archive}))
+        .send()
+        .await?,
+        409,
+        "official_app_requires_server_build",
+    )
+    .await?;
+    error(
+        h.request(&admin, Method::POST, "/api/v1/installations")
+            .json(&json!({"appId":PRODUCT,"environment":"dev","releaseId":Uuid::new_v4()}))
+            .send()
+            .await?,
+        409,
+        "official_app_requires_server_build",
+    )
+    .await?;
+    for (actor, bytes, code, status) in [
+        (employee, payload.as_slice(), "forbidden", 403),
+        (
+            &admin,
+            b"unlisted".as_slice(),
+            "official_source_not_listed",
+            409,
+        ),
+    ] {
+        error(
+            h.upload_for(PRODUCT, actor, Uuid::new_v4(), bytes)
+                .body(bytes.to_vec())
+                .send()
+                .await?,
+            status,
+            code,
+        )
+        .await?;
+    }
+    let accepted = response(
+        h.upload_for(PRODUCT, &admin, Uuid::new_v4(), payload)
+            .body(payload.to_vec())
+            .send()
+            .await?,
+        200,
+    )
+    .await?;
+    ensure!(accepted["status"] == "queued");
+    ensure!(
+        !server_build::catalog_allows_source(pool, PRODUCT, &commit, &archive, Some("2.0.0"))
+            .await?
+    );
+    ensure!(
+        !server_build::catalog_allows_source(pool, PRODUCT, &"c".repeat(40), &archive, None)
+            .await?
+    );
+
+    // Server-side runtime eligibility has a stronger contract than upload admission:
+    // a receipt must have succeeded for this exact app, source hash, commit and version.
+    // No Docker build is run in this fixture.
+    let build = id(&accepted)?;
+    let image = format!("sha256:{}", hash("catalog image"));
+    sqlx::query("UPDATE app_builds SET image_id=$2,version='1.0.0' WHERE id=$1")
+        .bind(build)
+        .bind(&image)
+        .execute(pool)
+        .await?;
+    ensure!(!crate::runtime::server_built(pool, PRODUCT, &image).await?);
+    sqlx::query("UPDATE app_builds SET status='succeeded',version='2.0.0' WHERE id=$1")
+        .bind(build)
+        .execute(pool)
+        .await?;
+    ensure!(!crate::runtime::server_built(pool, PRODUCT, &image).await?);
+    sqlx::query("UPDATE app_builds SET version='1.0.0' WHERE id=$1")
+        .bind(build)
+        .execute(pool)
+        .await?;
+    ensure!(crate::runtime::server_built(pool, PRODUCT, &image).await?);
+    ensure!(!crate::runtime::server_built(pool, APP, &image).await?);
+    catalog_promotion(h, PRODUCT, &admin, employee, &image, &commit, &archive).await?;
+    catalog_registration_race(h, employee).await?;
+    passed("reserved IDs, explicit access, fixture restrictions and official build pins");
+    Ok(())
+}
+
+async fn catalog_promotion(
+    h: &Harness,
+    app: &str,
+    developer: &Actor,
+    deployer: &Actor,
+    image: &str,
+    commit: &str,
+    archive: &str,
+) -> Result<()> {
+    // Synthetic dev deployment and schema facts. The prod-only operator uses
+    // real HTTP preflight and admission, without dev read access or a Docker job.
+    let pool = &h.state.pool;
+    let release = Uuid::new_v4();
+    let installation = Uuid::new_v4();
+    sqlx::query("INSERT INTO releases(id,app_id,version,artifact_hash,manifest,image_id,source_commit,official_version)
+                 VALUES($1,$2,'1.0.0',$3,'{}',$4,$5,'1.0.0')")
+        .bind(release).bind(app).bind(archive).bind(image).bind(commit).execute(pool).await?;
+    sqlx::query(
+        "INSERT INTO installations(id,app_id,environment,release_id) VALUES($1,$2,'dev',$3)",
+    )
+    .bind(installation)
+    .bind(app)
+    .bind(release)
+    .execute(pool)
+    .await?;
+    sqlx::query("INSERT INTO db_resources(id,installation_id,app_id,environment,database_name,owner_role,
+                 migration_role,runtime_role,migration_secret,runtime_secret,schema_fingerprint)
+                 VALUES($1,$1,$2,'dev','catalog_test','catalog_owner','catalog_migrate','catalog_run','','',$3)")
+        .bind(installation).bind(app).bind(hash("fixture schema")).execute(pool).await?;
+    sqlx::query("INSERT INTO runtime_jobs(id,app_id,environment,actor,action,release_id,idempotency_key,input_hash,status)
+                 VALUES($1,$2,'dev',$3,'deploy',$4,'catalog-dev','fixture','succeeded')")
+        .bind(Uuid::new_v4()).bind(app).bind(&developer.id).bind(release).execute(pool).await?;
+    sqlx::query(
+        "INSERT INTO release_checks(release_id,installation_id,actor,note,schema_fingerprint)
+                 VALUES($1,$2,$3,'fixture acceptance',$4)",
+    )
+    .bind(release)
+    .bind(installation)
+    .bind(&developer.id)
+    .bind(hash("fixture schema"))
+    .execute(pool)
+    .await?;
+    sqlx::query(
+        "INSERT INTO grants(user_id,app_id,environment,permission) VALUES($1,$2,'prod','deploy')",
+    )
+    .bind(&deployer.id)
+    .bind(app)
+    .execute(pool)
+    .await?;
+    let detail = response(
+        h.request(deployer, Method::GET, &format!("/api/v1/apps/{app}"))
+            .send()
+            .await?,
+        200,
+    )
+    .await?;
+    ensure!(
+        detail["installations"] == json!([]),
+        "prod operator saw private dev installation"
+    );
+    let redeploy_plan = |actor: &Actor, release_id: Uuid| {
+        h.request(actor, Method::POST, &format!("/api/v1/apps/{app}/runtime/preflight"))
+            .json(&json!({"target":{"appId":app,"environment":"dev"},"action":"deploy","releaseId":release_id}))
+    };
+    ensure!(
+        redeploy_plan(deployer, release)
+            .send()
+            .await?
+            .status()
+            .as_u16()
+            == 403
+    );
+    let existing = response(redeploy_plan(developer, release).send().await?, 200).await?;
+    ensure!(existing["canSubmit"] == true && existing["input"]["releaseId"] == json!(release));
+    let missing = response(redeploy_plan(developer, Uuid::new_v4()).send().await?, 200).await?;
+    ensure!(
+        missing["canSubmit"] == false
+            && missing["checks"]
+                .as_array()
+                .context("missing checks")?
+                .iter()
+                .any(|check| check["code"] == "official_release_required")
+    );
+    let queued = response(
+        h.request(
+            developer,
+            Method::POST,
+            &format!("/api/v1/apps/{app}/runtime"),
+        )
+        .json(
+            &json!({"action":"deploy","environment":"dev","releaseId":release,
+                "idempotencyKey":"catalog-handoff","expectedState":existing["expectedState"]}),
+        )
+        .send()
+        .await?,
+        200,
+    )
+    .await?;
+    ensure!(queued["status"] == "queued" && queued["releaseId"] == json!(release));
+    let failed: Uuid = serde_json::from_value(queued["id"].clone())?;
+    sqlx::query("UPDATE runtime_jobs SET status='failed',error_code='docker_unavailable',retryable=true WHERE id=$1")
+        .bind(failed).execute(pool).await?;
+    let retry_plan = response(redeploy_plan(developer, release).send().await?, 200).await?;
+    let retried = response(
+        h.request(
+            developer,
+            Method::POST,
+            &format!("/api/v1/runtime/jobs/{failed}/retry"),
+        )
+        .json(
+            &json!({"appId":app,"environment":"dev","idempotencyKey":"catalog-handoff-retry",
+                "expectedState":retry_plan["expectedState"],"confirmed":false}),
+        )
+        .send()
+        .await?,
+        200,
+    )
+    .await?;
+    ensure!(
+        retried["retryOf"] == queued["id"]
+            && retried["releaseId"] == json!(release)
+            && retried["imageId"] == queued["imageId"]
+            && retried["id"] != queued["id"]
+    );
+    let target = json!({"appId":app,"environment":"prod"});
+    let preflight = || {
+        h.request(
+            deployer,
+            Method::POST,
+            &format!("/api/v1/apps/{app}/runtime/preflight"),
+        )
+        .json(&json!({"target":target,"action":"promote","releaseId":release}))
+    };
+    let promote = |state: &Value| {
+        h.request(
+            deployer,
+            Method::POST,
+            &format!("/api/v1/apps/{app}/runtime"),
+        )
+        .json(
+            &json!({"action":"promote","environment":"prod","releaseId":release,
+                         "idempotencyKey":"catalog-stale","confirmed":true,"expectedState":state}),
+        )
+    };
+    let first = response(preflight().send().await?, 200).await?;
+    ensure!(first["canSubmit"] == false && first["officialRelease"].is_null());
+    ensure!(
+        first["checks"]
+            .as_array()
+            .context("missing promotion checks")?
+            .iter()
+            .any(|check| check["code"] == "release_not_accepted")
+    );
+    error(
+        promote(&first["expectedState"]).send().await?,
+        409,
+        "release_not_tested_in_dev",
+    )
+    .await?;
+    let checks = json!([{"scope":"smoke","actor":"test","result":"passed","evidence":"fixture"}]);
+    sqlx::query("UPDATE release_checks SET checks=$2 WHERE release_id=$1")
+        .bind(release)
+        .bind(checks)
+        .execute(pool)
+        .await?;
+    let reviewed = response(preflight().send().await?, 200).await?;
+    ensure!(
+        reviewed["officialRelease"]
+            == json!({"version":"1.0.0","sourceCommit":commit,
+             "archiveSha256":archive,"structuredAcceptance":true})
+    );
+    ensure!(reviewed["expectedState"]["officialAppDisabled"] == false);
+    sqlx::query("INSERT INTO app_controls(app_id,disabled,changed_by) VALUES($1,true,$2)")
+        .bind(app)
+        .bind(&developer.id)
+        .execute(pool)
+        .await?;
+    let after = response(preflight().send().await?, 200).await?;
+    ensure!(after["expectedState"]["officialAppDisabled"] == true);
+    error(
+        promote(&reviewed["expectedState"]).send().await?,
+        409,
+        "state_changed",
+    )
+    .await?;
+    let submitted: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM runtime_jobs WHERE app_id=$1 AND environment='prod')",
+    )
+    .bind(app)
+    .fetch_one(pool)
+    .await?;
+    ensure!(!submitted);
+    Ok(())
+}
+
+async fn catalog_registration_race(h: &Harness, employee: &Actor) -> Result<()> {
+    let app = "contested-catalog-id";
+    let input = json!({"schemaVersion":1,"apps":[{"appId":app,"name":"Product","defaultInstall":false,"releases":[]}]});
+    let file = tempfile::NamedTempFile::new()?;
+    std::fs::write(file.path(), serde_json::to_vec(&input)?)?;
+    let request = h
+        .request(employee, Method::POST, "/api/v1/app-registrations")
+        .json(&json!({"id":app,"name":"Local application"}));
+    let (register, import) = tokio::join!(
+        request.send(),
+        crate::official_catalog::sync_file(&h.state.pool, file.path()),
+    );
+    if let Err(conflict) = import {
+        ensure!(conflict.to_string().starts_with("catalog_app_id_conflict"));
+        ensure!(response(register?, 200).await?["status"] == "pending");
+    } else {
+        error(register?, 409, "official_app_id_reserved").await?;
+    }
+    let (local, official): (bool, bool) = sqlx::query_as(
+        "SELECT EXISTS(SELECT 1 FROM app_registrations WHERE app_id=$1),
+                EXISTS(SELECT 1 FROM official_apps WHERE app_id=$1)",
+    )
+    .bind(app)
+    .fetch_one(&h.state.pool)
+    .await?;
+    ensure!(local != official, "one app ID must have exactly one owner");
     Ok(())
 }
 async fn interrupted(h: &Harness, actor: &Actor) -> Result<()> {
@@ -640,6 +1004,9 @@ async fn durable_server_build_api() -> Result<()> {
         .await?
         .run(&pool)
         .await?;
+    crate::official_catalog::regression(&pool)
+        .await
+        .context("catalog import and release constraints")?;
     let retained: String = sqlx::query_scalar("SELECT name FROM apps WHERE id='build-preserved'")
         .fetch_one(&pool)
         .await?;
@@ -718,7 +1085,10 @@ async fn durable_server_build_api() -> Result<()> {
         untouched == (0, 0),
         "build admission mutated runtime lifecycle state"
     );
-    let summary = json!({"passed":true,"suite":"server-build-api","storage":"owned disposable PostgreSQL","transport":"real loopback HTTP","groups":8,"dockerBuildExecuted":false,"runtimeJobsUnchanged":true});
+    catalog_admission(&h, &actor)
+        .await
+        .context("official app build admission")?;
+    let summary = json!({"passed":true,"suite":"server-build-api","storage":"owned disposable PostgreSQL","transport":"real loopback HTTP","groups":10,"dockerBuildExecuted":false,"runtimeJobsUnchanged":true});
     std::fs::write(
         root.join("summary.json"),
         serde_json::to_vec_pretty(&summary)?,

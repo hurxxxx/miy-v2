@@ -81,6 +81,9 @@ jobs:
       - name: Verify anonymous reports and private outbox recovery
         if: matrix.client
         run: python scripts/check-cli-reports.py --cli "${{ matrix.binary }}"
+      - name: Verify server build submissions and recovery on the native client
+        if: matrix.client
+        run: python scripts/check-cli-build.py --cli "${{ matrix.binary }}"
       - name: Verify lost acknowledgements and lifecycle recovery
         if: matrix.id == 'linux-client'
         run: |

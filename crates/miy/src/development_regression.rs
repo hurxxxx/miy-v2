@@ -24,14 +24,89 @@ fn request(key: &str, sqls: &[&str]) -> NewSession {
     NewSession{idempotency_key:key.into(),manifest:serde_json::from_value(json!({"contractVersion":"miy.app/v1alpha1","id":"shared-dev-test","name":"Shared DB test","version":"1.0.0","runtime":{"profile":"rust-web-v1"},"ui":{"delivery":"module","moduleEntry":"mf-manifest.json","moduleExport":"./AppRoot","contractVersion":"miy.ui/v1alpha1"},"resources":{"database":"postgresql"},"migrations":{"directory":"migrations"},"requestedPermissions":["database"]})).unwrap(),migrations:sqls.iter().enumerate().map(|(i,sql)|MigrationFile{name:format!("{:04}_fixture.sql",i+1),sql:(*sql).into()}).collect()}
 }
 async fn new(state: &State, parent: Uuid, key: &str, sqls: &[&str]) -> Result<Value> {
+    new_for(state, parent, "shared-dev-test", key, sqls).await
+}
+async fn new_for(
+    state: &State,
+    parent: Uuid,
+    app: &str,
+    key: &str,
+    sqls: &[&str],
+) -> Result<Value> {
+    let mut input = request(key, sqls);
+    input.manifest.id = app.into();
     Ok(api(create(
         S(state.clone()),
         Extension(principal(parent)),
-        axum::extract::Path("shared-dev-test".into()),
-        Json(request(key, sqls)),
+        axum::extract::Path(app.into()),
+        Json(input),
     )
     .await)?
     .0)
+}
+
+async fn official_schema(s: &State, parent: Uuid) -> Result<()> {
+    const APP: &str = "catalog-schema-test";
+    const FIRST: &str = "CREATE TABLE app.records(id integer PRIMARY KEY);";
+    const SECOND: &str = "CREATE TABLE app.additional(id integer PRIMARY KEY);";
+    let pool = &s.pool;
+    sqlx::raw_sql(
+        "INSERT INTO apps VALUES('catalog-schema-test','Schema app');
+         INSERT INTO official_apps VALUES('catalog-schema-test',true);
+         INSERT INTO official_app_versions VALUES('catalog-schema-test','1.0.0',repeat('a',40),repeat('b',64));
+         INSERT INTO grants VALUES('developer','catalog-schema-test','dev','develop');",
+    ).execute(pool).await?;
+    let session = new_for(s, parent, APP, "before-deploy", &[FIRST]).await?;
+    let id: Uuid = serde_json::from_value(session["id"].clone())?;
+    tick(pool).await?;
+    anyhow::ensure!(state(s, parent, id).await?["errorCode"] == OFFICIAL_SCHEMA_REQUIRES_RELEASE);
+    stop(s, parent, id).await?;
+
+    // Prepare the physical dev database with the same schema used by the
+    // fixture release. Docker builds/deployments are covered separately.
+    sqlx::raw_sql(
+        "INSERT INTO app_builds(id,app_id,actor,request_id,source_commit,archive_hash,size_bytes,platform,status,image_id,version)
+             VALUES(gen_random_uuid(),'catalog-schema-test','developer',gen_random_uuid(),repeat('a',40),repeat('b',64),1,'linux/amd64','succeeded','sha256:'||repeat('c',64),'1.0.0');
+         INSERT INTO releases(id,app_id,version,artifact_hash,manifest,image_id,source_commit,official_version)
+             VALUES(gen_random_uuid(),'catalog-schema-test','1.0.0','fixture','{}','sha256:'||repeat('c',64),repeat('a',40),'1.0.0');",
+    ).execute(pool).await?;
+    let install: Uuid = sqlx::query_scalar(
+        "INSERT INTO installations(id,app_id,environment,release_id,db_status,runtime_status,desired_state)
+         SELECT gen_random_uuid(),app_id,'dev',id,'ready','running','running' FROM releases WHERE app_id=$1 RETURNING id",
+    ).bind(APP).fetch_one(pool).await?;
+    let db = worker::ensure_resource(pool, APP, "dev", Some(install)).await?;
+    let dir = tempfile::tempdir()?;
+    std::fs::write(dir.path().join("0001_fixture.sql"), FIRST)?;
+    worker::prepare_resource(pool, &db, dir.path(), None).await?;
+    let before = api(crate::runtime_preflight::snapshot(pool, APP, "dev").await)?;
+    for (name, migrations, expected_status) in [
+        ("same", &[FIRST][..], "ready"),
+        ("different", &[FIRST, SECOND][..], "failed"),
+    ] {
+        let session = new_for(s, parent, APP, name, migrations).await?;
+        let session_id: Uuid = serde_json::from_value(session["id"].clone())?;
+        tick(pool).await?;
+        let result = state(s, parent, session_id).await?;
+        anyhow::ensure!(result["status"] == expected_status);
+        if expected_status == "ready" {
+            let mut conn = runtime_connection(&session["connection"]).await?;
+            conn.execute("INSERT INTO app.records VALUES(1)").await?;
+        } else {
+            anyhow::ensure!(result["errorCode"] == OFFICIAL_SCHEMA_REQUIRES_RELEASE);
+        }
+        stop(s, parent, session_id).await?;
+    }
+    let after = api(crate::runtime_preflight::snapshot(pool, APP, "dev").await)?;
+    let mut conn = app_admin(&db.database).await?;
+    let actual: (bool, i64) =
+        sqlx::query_as("SELECT to_regclass('app.additional') IS NULL, count(*) FROM app.records")
+            .fetch_one(&mut conn)
+            .await?;
+    anyhow::ensure!(before == after && actual == (true, 1));
+    passed(
+        "official dev schema accepts matching local development, rejects schema changes before stopping the installation or migrating",
+    );
+    Ok(())
 }
 async fn state(state: &State, parent: Uuid, id: Uuid) -> Result<Value> {
     Ok(api(get(
@@ -238,6 +313,7 @@ async fn shared_development_database() -> Result<()> {
     invalid.migrations[0].name = "../escape.sql".into();
     anyhow::ensure!(validate_request("shared-dev-test", &invalid).is_err());
     passed("development permission and migration paths are enforced");
+    official_schema(&s, parent).await?;
     let first = new(&s, parent, "initial", &[FIRST]).await?;
     let id = Uuid::parse_str(first["id"].as_str().unwrap())?;
     anyhow::ensure!(first["status"] == "queued" && first["connection"].is_object());

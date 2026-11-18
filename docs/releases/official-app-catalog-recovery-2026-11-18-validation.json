@@ -1,0 +1,32 @@
+{
+  "date": "2026-11-18",
+  "scope": "공식 앱 공급 후보에 대한 CLI·런타임·코어 배포 리뷰 보완",
+  "source": {"baseCommit": "fb2def8", "workingTree": true, "coreAndCli": "0.13.0", "sdkBundle": "0.11.0", "coreSchema": 25, "migrationSha256": "4350089f077bea49f86a12377d197cabe651bc47dc2dd2adf0b441bf68f65b0d"},
+  "implementation": [
+    "빌드 접수 거절과 응답 유실을 구분하고 확인된 소스 임시 파일을 정리한다. 설치 도구가 원래 CLI의 복구 명령·요청 ID와 UTF-8 출력을 전달한다.",
+    "후임 담당자가 자신의 dev 권한으로 서버에 등록된 같은 공식 릴리스와 이미지를 선택한다. 접수 시점부터 이미 알려진 대상 릴리스를 작업에 기록한다.",
+    "새 컨테이너의 건강 확인 후 활성 릴리스를 변경한다. 실패 시 DB 상태를 확인해 기존 컨테이너를 복원하거나 recovery_required로 표시한다. 재개한 자동 작업에도 회사 사용 중지를 적용한다.",
+    "선택한 카탈로그와 배포 실행 파일을 고정하고 백업 복원 사본으로 가져오기와 레코드 보존을 검사한다. 공식 제품이 등록된 DB에 대한 구 실행 파일 단독 복귀를 차단한다."
+  ],
+  "checks": [
+    {"command": "python3 scripts/runtime-regression/run.py", "result": "PASS", "observations": 136, "suites": {"runtime": 52, "operations": 5, "cli": 6, "auth": 8, "permissions": 26, "delegation": 10, "boundary": 12, "migration": 3, "frames": 14}, "testExitCode": 0, "cleanupExitCode": 0, "baselineContainersVerified": 27, "includes": "실제 HTTP 503 후 이전 컨테이너 복원, DB가 앞선 상태에서 recovery_required 중지와 전진 배포, 건강 상태 감사 기록 실패 시 활성 릴리스·이미지·포트의 원자적 보존, 중단된 worker의 회사 중지 재확인. 종료 시 시험 자원 정리 및 기존 컨테이너 ID·이미지·시작 시각·실행 상태 대조"},
+    {"command": "bash scripts/check-static.sh rust", "result": "PASS", "environment": "격리 네트워크 네임스페이스의 Linux loopback", "serverPassed": 233, "serverIgnored": 7, "clientPassed": 142, "includes": "서버·클라이언트 Clippy, 공식 릴리스 선택과 활성화 계약"},
+    {"command": "bash scripts/check-static.sh web", "result": "PASS", "browserSuites": [29,54,15,16,1], "includes": "관리 콘솔에서 마지막 정상 버전·실패한 시도 식별과 복구 필요 상태의 실행 제어"},
+    {"command": "pnpm exec playwright test --config scripts/runtime-regression/server-ui.config.ts", "result": "PASS", "passed": 8, "environment": "실제 Core와 일회용 DB를 연결한 브라우저"},
+    {"commands": ["python3 scripts/check-cli-build.py --cli <native-client>", "python3 scripts/check-cli-recovery.py --cli <native-client>", "python3 scripts/check-cli-output.py --cli <native-client>", "python3 scripts/check-cli-install.py --cli <native-client>"], "result": "PASS", "nativeLinuxGroups": {"build": 12, "lifecycle": 10, "output": 17, "installer": 17}, "includes": "대기열 거절 후 같은 커밋의 동시 재시도, 응답 유실·업로드 중단 후 원래 요청 재개, tar 정리와 영수증 재생성. 별도로 한글·공백 경로와 CP949 출력 환경에서 Linux CLI로 빌드 회귀 12개 통과"},
+    {"command": "python3 scripts/check-server-builds.py", "result": "PASS", "groups": 10, "includes": "실제 HTTP·PostgreSQL에서 dev 권한 확인, 등록된 공식 릴리스 재선택, 큐에 들어간 작업의 대상 릴리스 기록, 명시적 재시도 시 원래 릴리스와 이미지 유지, prod 전용 담당자와 미등록 릴리스의 dev 재배포 거부"},
+    {"command": "python3 scripts/check-development-database.py", "result": "PASS", "includes": "실제 격리 dev DB에서 앱의 권한과 공식 스키마 변경 제한"},
+    {"command": "python3 scripts/test-core-ops.py", "result": "PASS", "passed": 108, "includes": "카탈로그·실행 파일 고정, 복원본 불일치와 조직 앱 충돌 거부, 수동·자동 되돌리기의 보호 계약"},
+    {"check": "Native PostgreSQL 18 pg_dump/pg_restore와 후보 서버 catalog-sync", "result": "PASS", "environment": "전용 Unix 소켓 임시 클러스터", "includes": "schema 24의 조직 앱 두 개를 담은 DB와 별도 복원본을 각각 25로 전환하고 기본 공식 제품 네 개를 반영했다. 두 DB의 전후 행 수·내용 해시, 사이트별 이름 보존, 사용자 지정 pin, ID·버전 충돌 거부를 확인하고 임시 클러스터를 제거했다."},
+    {"commands": ["bash scripts/runtime-regression/stack-ui.sh up", "node scripts/runtime-regression/check-official-apps.mjs", "bash scripts/runtime-regression/stack-ui.sh down"], "result": "PASS", "leftoverResources": 0, "includes": "실제 Docker 시험 앱 두 버전. 원래 프로젝트와 영수증이 없는 후임 개발자 및 read/deploy를 위임받은 별도 CLI가 같은 공식 이미지를 dev에 재배포했다. 두 버전의 dev 인수·prod 승격, 설치 UUID·업무 행 보존, 직원 권한 부여·회수, 중지 유지까지 확인했다."},
+    {"commands": ["bash scripts/check-static.sh scripts", "python3 scripts/test-official-apps.py", "node scripts/api-types.mjs --check", "python3 scripts/check-api-compat.py"], "result": "PASS", "installerTests": 12, "compatibleBaselineTypes": 33, "includes": "UTF-8 출력·복구 명령·요청 ID 전달과 마지막 버전/시도 구분, schema와 SDK 타입 동기화, 전체 스크립트 정적 검사"}
+  ],
+  "intermediateFailures": [
+    {"result": "FAIL", "cause": "복구 함수를 나눠 작성하던 중 먼저 시작한 서버 컴파일에서 함수 이름을 찾지 못했다.", "repeat": "최종 서버·클라이언트 컴파일과 계약 검사 PASS"},
+    {"result": "FAIL", "cause": "Rust 정적 검사에서 worker 회사 상태 재확인 분기의 중첩 조건을 지적했다.", "repeat": "분기 정리 후 최종 Clippy 양쪽 빌드 PASS"},
+    {"result": "FAIL", "cause": "건강 상태와 활성화를 같은 트랜잭션으로 옮긴 직후 쓰기 결정 검사 목록이 이전 함수 위치를 가리켰다.", "repeat": "하위 모듈을 재귀 검사하고 명시 거래 목록을 갱신했다. 쓰기 결정 검사 및 자체 검사 4개 PASS"},
+    {"result": "FAIL", "cause": "첫 전체 Docker 회귀에서 동작 136개는 모두 통과했으나 한 관찰의 증거를 배열로 반환해 결과 집계가 실패했다. 자원 정리는 종료 코드 0이었다.", "correction": "해당 관찰이 이름 있는 jobs 필드를 반환하도록 하고 모든 관찰의 증거 형식을 기록 시점에 확인한다."},
+    {"result": "FAIL", "cause": "두 번째 전체 회귀는 136개 집계와 시험 자원 제거를 마쳤지만 같은 호스트에서 다른 GitLab CI 작업의 일회성 컨테이너 네 개가 종료되어 호스트 비교가 실패했다. 동작 검사 종료 코드는 0, 정리/호스트 비교는 1이었다.", "repeat": "외부 CI 컨테이너 종료 후 동일한 조건으로 전체 회귀를 다시 실행했다. 136개 관찰·기존 컨테이너 27개 비교·정리 모두 PASS"}
+  ],
+  "notRun": ["실제 dwdcc.kr 서비스·DB 반영, 게시, 되돌리기", "GitHub 호스팅 CI, 실제 Windows·macOS 및 빈 서버 VM", "플래너·메신저·PMS·PLM 실제 제품 출시"]
+}

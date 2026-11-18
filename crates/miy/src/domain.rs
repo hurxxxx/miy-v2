@@ -90,13 +90,55 @@ pub struct NewApp {
     pub id: String,
     pub name: String,
 }
+
+/// Serialize a new organization ID with host-managed catalog imports. Reservations
+/// in the shipped catalog also apply before the first catalog import. A pending
+/// organization registration from an older installation can still be retried.
+pub(crate) async fn reserve_organization_id(
+    tx: &mut sqlx::PgConnection,
+    app: &str,
+    registration_retry: bool,
+) -> ApiResult<()> {
+    crate::official_catalog::lock_app(tx, app).await?;
+    let reserved: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM official_apps WHERE app_id=$1)
+             OR ($2 AND NOT ($3 AND EXISTS(SELECT 1 FROM app_registrations WHERE app_id=$1)))",
+    )
+    .bind(app)
+    .bind(crate::official_catalog::bundled_id(app))
+    .bind(registration_retry)
+    .fetch_one(&mut *tx)
+    .await?;
+    if reserved {
+        return Err(ApiError::conflict("official_app_id_reserved"));
+    }
+    Ok(())
+}
+
+/// Fixture routes have no server build receipt and must not create a release,
+/// installation or database preparation job for an official product.
+async fn require_fixture_app(pool: &sqlx::PgPool, app: &str) -> ApiResult<()> {
+    let official: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM official_apps WHERE app_id=a.id) FROM apps a WHERE a.id=$1",
+    )
+    .bind(app)
+    .fetch_optional(pool)
+    .await?
+    .ok_or_else(ApiError::not_found)?;
+    if official {
+        return Err(ApiError::conflict("official_app_requires_server_build"));
+    }
+    Ok(())
+}
+
 pub async fn create_app(state: &State, p: &Principal, v: NewApp) -> ApiResult<Value> {
     admin(state, p).await?;
     if !contract::valid_id(&v.id) || v.name.trim().is_empty() || v.name.len() > 120 {
         return Err(ApiError::bad("invalid_app"));
     }
     let mut tx = crate::policy::Write::begin(&state.pool).await?;
-    sqlx::query("INSERT INTO apps VALUES($1,$2)")
+    reserve_organization_id(&mut tx, &v.id, false).await?;
+    sqlx::query("INSERT INTO apps(id,name) VALUES($1,$2)")
         .bind(&v.id)
         .bind(&v.name)
         .execute(&mut *tx)
@@ -120,6 +162,7 @@ pub async fn create_release(
     v: NewRelease,
 ) -> ApiResult<Value> {
     policy::require(state, p, app, "dev", AppAction::Develop).await?;
+    require_fixture_app(&state.pool, app).await?;
     let path = contract::verified_artifact(&state.artifacts, &v.artifact_hash)
         .map_err(|_| ApiError::bad("invalid_artifact"))?;
     let m: Manifest = serde_json::from_slice(&std::fs::read(path.join("manifest.json"))?)
@@ -168,6 +211,7 @@ pub async fn create_installation(
     if v.environment == "prod" {
         return Err(ApiError::bad("use_checked_release_promotion_for_prod"));
     }
+    require_fixture_app(&state.pool, &v.app_id).await?;
     let matches: bool =
         sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM releases WHERE id=$1 AND app_id=$2)")
             .bind(v.release_id)
@@ -225,7 +269,10 @@ async fn installation_list(state: &State, p: &Principal, managed: bool) -> ApiRe
 /// One installation for [`installation_view`]; every installation list selects it
 /// over `installations t JOIN releases r JOIN apps a`. The display values are set
 /// from the policy afterwards.
-pub(crate) const INSTALLATION_ROW: &str = "jsonb_build_object('id',t.id,'appId',t.app_id,'name',a.name,'manifestName',r.manifest->>'name','version',r.version,'environment',t.environment,'releaseId',t.release_id,'kind',CASE WHEN r.image_id IS NULL THEN 'validation_fixture' ELSE 'docker_app' END,'imageId',r.image_id,'sourceCommit',r.source_commit,'dbStatus',t.db_status,'runtimeStatus',t.runtime_status,'desiredState',t.desired_state,'generation',t.control_generation,'health',jsonb_build_object('status',t.health_status,'consecutiveFailures',t.health_failures,'checkedAt',t.health_checked_at,'errorCode',t.health_error),'ui',jsonb_build_object('entry','/artifacts/'||r.artifact_hash||'/ui/'||(r.manifest->'ui'->>'moduleEntry'),'export',r.manifest->'ui'->>'moduleExport','contractVersion',r.manifest->'ui'->>'contractVersion'),'lastOperation',(SELECT jsonb_build_object('id',j.id,'action',j.action,'status',j.status,'step',j.step,'errorCode',j.error_code,'retryable',j.retryable) FROM runtime_jobs j WHERE j.app_id=t.app_id AND j.environment=t.environment ORDER BY j.created_at DESC,j.id DESC LIMIT 1),'acceptance',(SELECT jsonb_build_object('recordedBy',c.actor,'note',c.note,'checks',c.checks,'structured',jsonb_array_length(c.checks)>0,'checkedAt',c.checked_at) FROM release_checks c WHERE c.release_id=r.id),'appDisabled',EXISTS(SELECT 1 FROM app_controls c WHERE c.app_id=t.app_id AND c.disabled),'canOpen',false,'canManage',false,'canPromote',false)";
+pub(crate) const INSTALLATION_ROW: &str = "jsonb_build_object('id',t.id,'appId',t.app_id,'name',a.name,'manifestName',r.manifest->>'name','version',r.version,'environment',t.environment,'releaseId',t.release_id,'distribution',
+    COALESCE((SELECT CASE WHEN o.default_install THEN 'default_official' ELSE 'optional_official' END
+                FROM official_apps o WHERE o.app_id=t.app_id AND o.app_id=r.app_id AND r.official_version=r.version), 'organization'),
+    'kind',CASE WHEN r.image_id IS NULL THEN 'validation_fixture' ELSE 'docker_app' END,'imageId',r.image_id,'sourceCommit',r.source_commit,'dbStatus',t.db_status,'runtimeStatus',t.runtime_status,'desiredState',t.desired_state,'generation',t.control_generation,'health',jsonb_build_object('status',t.health_status,'consecutiveFailures',t.health_failures,'checkedAt',t.health_checked_at,'errorCode',t.health_error),'ui',jsonb_build_object('entry','/artifacts/'||r.artifact_hash||'/ui/'||(r.manifest->'ui'->>'moduleEntry'),'export',r.manifest->'ui'->>'moduleExport','contractVersion',r.manifest->'ui'->>'contractVersion'),'lastOperation',(SELECT jsonb_build_object('id',j.id,'releaseId',j.release_id,'action',j.action,'status',j.status,'step',j.step,'errorCode',j.error_code,'retryable',j.retryable) FROM runtime_jobs j WHERE j.app_id=t.app_id AND j.environment=t.environment ORDER BY j.created_at DESC,j.id DESC LIMIT 1),'acceptance',(SELECT jsonb_build_object('recordedBy',c.actor,'note',c.note,'checks',c.checks,'structured',jsonb_array_length(c.checks)>0,'checkedAt',c.checked_at) FROM release_checks c WHERE c.release_id=r.id),'appDisabled',EXISTS(SELECT 1 FROM app_controls c WHERE c.app_id=t.app_id AND c.disabled),'canOpen',false,'canManage',false,'canPromote',false)";
 /// The installation in `row` ([`INSTALLATION_ROW`]) with the decisions `facts` give:
 /// the display values, and operational details only with management read. Preserve
 /// the published field names/types for the SDK and older CLI clients.
@@ -289,6 +336,7 @@ pub async fn prepare(state: &State, p: &Principal, v: Prepare) -> ApiResult<Valu
     if inst.get::<String, _>("environment") != "dev" {
         return Err(ApiError::forbidden());
     }
+    require_fixture_app(&state.pool, &app).await?;
     if inst.get::<Option<String>, _>("runtime_image").is_some() {
         return Err(ApiError::conflict("deploy_image_for_database_changes"));
     }
@@ -369,6 +417,9 @@ pub async fn grant(state: &State, p: &Principal, v: Grant) -> ApiResult<Value> {
         return Err(ApiError::bad("invalid_grant"));
     }
     let mut tx = crate::policy::Write::begin(&state.pool).await?;
+    // Preassigned grants can exist before the app. Serialize them with the
+    // catalog's first claim so an import never inherits an earlier grant.
+    crate::official_catalog::lock_app(&mut tx, &v.app_id).await?;
     let changed = if v.enabled {
         sqlx::query("INSERT INTO grants VALUES($1,$2,$3,$4) ON CONFLICT DO NOTHING")
             .bind(&v.user_id)
@@ -463,7 +514,7 @@ pub fn catalog() -> Value {
         {"id":"validate_manifest","method":"POST","path":"/api/v1/contracts/validate","permission":"authenticated","description":"Validate manifest against pinned contract","input":schemars::schema_for!(Manifest)},
         {"id":"prepare_database","method":"POST","path":"/api/v1/database/prepare","permission":"develop on installation","description":"Prepare one installation DB and apply a registered release's migrations","input":schemars::schema_for!(Prepare)},
         {"id":"get_job","method":"GET","path":"/api/v1/jobs/{id}","permission":"management read on installation","description":"Read persistent database job state; app use alone cannot read operating records"},
-        {"id":"runtime_request","method":"POST","path":"/api/v1/apps/{app}/runtime","permission":"dev/develop or prod/deploy; administrator implicit","description":"Deploy the image of this app's succeeded server build to dev; promote an accepted release of such an image unchanged to prod (otherwise 409 server_build_required); start/stop/restart/remove without restarting the platform. Remove preserves database.","input":schemars::schema_for!(crate::runtime::RuntimeRequest)},
+        {"id":"runtime_request","method":"POST","path":"/api/v1/apps/{app}/runtime","permission":"dev/develop or prod/deploy; administrator implicit","description":"Deploy this app's succeeded server build or reuse its registered official releaseId in dev. Promote a dev-accepted release unchanged to prod (otherwise 409 server_build_required); start/stop/restart/remove without restarting the platform. Remove preserves database.","input":schemars::schema_for!(crate::runtime::RuntimeRequest)},
         {"id":"runtime_job","method":"GET","path":"/api/v1/runtime/jobs/{id}","permission":"management read on app/environment","description":"Read deployment or lifecycle job state, including company-disabled apps; app use alone is insufficient"},
         {"id":"runtime_installations","method":"GET","path":"/api/v1/runtime/installations","permission":"per-app management read with miy.dev","description":"Installations this developer, deployer or administrator may manage, including company-disabled apps. canOpen is portal admission; console credentials cannot run app UI/API."},
         {"id":"app_api_get","method":"GET","path":"/api/v1/installations/{id}/api/{path}","permission":"use or develop on installation","description":"Forward app-relative API path with verified signed identity. App enforces record ownership."},
@@ -510,7 +561,7 @@ mod tests {
     fn portal_installations_preserve_the_sdk_shape_without_operating_details() {
         let row = json!({
             "id":Uuid::nil(),"appId":"app","name":"App","manifestName":"App","version":"1.0.0",
-            "environment":"dev","releaseId":Uuid::nil(),"kind":"docker_app",
+            "environment":"dev","releaseId":Uuid::nil(),"kind":"docker_app","distribution":"default_official",
             "imageId":"internal-image","sourceCommit":"internal-source",
             "dbStatus":"ready","runtimeStatus":"running","desiredState":"running","generation":3,
             "health":{"status":"degraded","checkedAt":null,"consecutiveFailures":1,"errorCode":"internal-error"},
@@ -535,6 +586,10 @@ mod tests {
         facts.browser_purpose = Some(BrowserPurpose::DevPortal);
         let portal = installation_view(row.clone(), &facts).unwrap();
         assert!(portal.can_open);
+        assert_eq!(
+            portal.distribution,
+            crate::api_contract::AppDistribution::DefaultOfficial
+        );
         assert!(!portal.can_manage && !portal.can_promote);
         assert_eq!(portal.ui.entry, "/artifacts/hash/ui/mf-manifest.json");
         assert_eq!(portal.runtime_status, "running");

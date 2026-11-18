@@ -30,10 +30,27 @@ pub async fn snapshot(
             "imageId":row.get::<Option<String>,_>("runtime_image")
         })
     });
-    let resource=sqlx::query("SELECT id,status,schema_generation,schema_fingerprint FROM db_resources WHERE app_id=$1 AND environment=$2").bind(app).bind(environment).fetch_optional(pool).await?;
-    let database=resource.map(|row|json!({"databaseId":row.get::<uuid::Uuid,_>("id"),"status":row.get::<String,_>("status"),"schemaGeneration":row.get::<i64,_>("schema_generation"),"schemaFingerprint":row.get::<Option<String>,_>("schema_fingerprint")}));
+    let resource = sqlx::query(
+        "SELECT d.id,d.status,d.schema_generation,d.schema_fingerprint,
+                CASE WHEN o.app_id IS NOT NULL THEN COALESCE(c.disabled,false) END AS official_app_disabled
+         FROM (SELECT $1::text AS id) a
+         LEFT JOIN db_resources d ON d.app_id=a.id AND d.environment=$2
+         LEFT JOIN official_apps o ON o.app_id=a.id LEFT JOIN app_controls c ON c.app_id=o.app_id",
+    )
+    .bind(app)
+    .bind(environment)
+    .fetch_one(pool)
+    .await?;
+    let database = resource.get::<Option<uuid::Uuid>, _>("id").map(|id| {
+        json!({
+            "databaseId": id, "status": resource.get::<String, _>("status"),
+            "schemaGeneration": resource.get::<i64, _>("schema_generation"),
+            "schemaFingerprint": resource.get::<Option<String>, _>("schema_fingerprint")
+        })
+    });
     serde_json::from_value(
-        json!({"target":{"appId":app,"environment":environment},"installation":installation,"database":database}),
+        json!({"target":{"appId":app,"environment":environment},"installation":installation,"database":database,
+               "officialAppDisabled":resource.get::<Option<bool>, _>("official_app_disabled")}),
     )
     .map_err(|_| ApiError::unavailable("unsupported_installation_state"))
 }
@@ -99,18 +116,47 @@ pub async fn inspect(
             )
         });
         accepted
+    } else if let Some(release) = input.release_id {
+        let published = crate::official_catalog::release_image(&state.pool, app, release).await?;
+        checks.push(if published.is_some() {
+            PreflightCheck::passed(CheckName::OfficialRelease)
+        } else {
+            PreflightCheck::failed(
+                CheckName::OfficialRelease,
+                runtime_contract::FailureCode::OfficialReleaseRequired,
+            )
+        });
+        published
     } else {
         input.image_id.clone()
     };
     // Submission refuses the same image; the worker still verifies the image itself.
-    if let Some(image) = image
-        && !crate::runtime::server_built(&state.pool, app, &image).await?
+    if let Some(image) = &image
+        && !crate::runtime::server_built(&state.pool, app, image).await?
     {
         checks.push(PreflightCheck::failed(
             CheckName::Image,
             runtime_contract::FailureCode::ServerBuildRequired,
         ));
     }
-    runtime_contract::preflight(&input, &current, checks)
-        .map_err(|_| ApiError::bad("invalid_runtime_request"))
+    let mut plan = runtime_contract::preflight(&input, &current, checks)
+        .map_err(|_| ApiError::bad("invalid_runtime_request"))?;
+    if input.action == runtime_contract::Operation::Promote && plan.can_submit {
+        let row = sqlx::query(
+            r#"SELECT v.version,v.source_commit,v.archive_sha256,c.checks @> '[{"result":"passed"}]'::jsonb AS structured
+             FROM releases r JOIN official_app_versions v ON (v.app_id,v.version)=(r.app_id,r.official_version)
+             JOIN release_checks c ON c.release_id=r.id WHERE r.id=$1 AND r.app_id=$2"#,
+        )
+        .bind(input.release_id)
+        .bind(app)
+        .fetch_optional(&state.pool)
+        .await?;
+        plan.official_release = row.map(|r| runtime_contract::OfficialPromotion {
+            version: r.get("version"),
+            source_commit: r.get("source_commit"),
+            archive_sha256: r.get("archive_sha256"),
+            structured_acceptance: r.get("structured"),
+        });
+    }
+    Ok(plan)
 }

@@ -28,6 +28,7 @@ use uuid::Uuid;
 pub const HEARTBEAT_SECONDS: u64 = 30;
 pub const LEASE_SECONDS: u64 = 120;
 pub const MAX_BODY: usize = 2 * 1024 * 1024;
+const OFFICIAL_SCHEMA_REQUIRES_RELEASE: &str = "official_schema_requires_release";
 
 #[derive(Deserialize, Serialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -366,15 +367,27 @@ async fn prepare(pool: &sqlx::PgPool, row: &sqlx::postgres::PgRow) -> Result<()>
     let migrator = sqlx::migrate::Migrator::new(directory.as_path()).await?;
     let wanted = worker::desired_fingerprint(&migrator)?;
     let resource = worker::resource_by_id(pool, row.get("database_id")).await?;
-    let previous: Option<String> =
-        sqlx::query_scalar("SELECT schema_fingerprint FROM db_resources WHERE id=$1")
-            .bind(resource.id)
-            .fetch_one(pool)
-            .await?;
-    if previous.as_deref() != Some(&wanted) {
-        crate::runtime::stop_for_development_schema(pool, &app).await?;
+    let (previous, official, published): (Option<String>, bool, bool) = sqlx::query_as(
+        "SELECT d.schema_fingerprint, EXISTS(SELECT 1 FROM official_apps WHERE app_id=d.app_id),
+                d.status='ready' AND EXISTS(SELECT 1 FROM installations i JOIN releases r ON r.id=i.release_id
+                    WHERE i.id=d.installation_id AND i.app_id=d.app_id AND r.app_id=i.app_id
+                      AND i.environment='dev' AND i.db_status='ready' AND r.official_version=r.version)
+         FROM db_resources d WHERE d.id=$1",
+    )
+    .bind(resource.id)
+    .fetch_one(pool)
+    .await?;
+    let same_schema = previous.as_deref() == Some(&wanted);
+    if official {
+        // Only a pinned deployment applies the product schema. A matching
+        // preview may use its existing DB, without ever executing local SQL.
+        anyhow::ensure!(published && same_schema, OFFICIAL_SCHEMA_REQUIRES_RELEASE);
+    } else {
+        if !same_schema {
+            crate::runtime::stop_for_development_schema(pool, &app).await?;
+        }
+        worker::prepare_resource(pool, &resource, &directory, None).await?;
     }
-    worker::prepare_resource(pool, &resource, &directory, None).await?;
     anyhow::ensure!(
         session_valid(pool, id).await?,
         "development_session_expired"
@@ -458,7 +471,9 @@ pub(crate) async fn tick(pool: &sqlx::PgPool) -> Result<bool> {
     }
     sqlx::query("UPDATE app_dev_sessions SET status='preparing',updated_at=now() WHERE id=$1 AND status='queued'").bind(id).execute(pool).await?;
     if let Err(error) = prepare(pool, &row).await {
-        let code = if matches!(
+        let code = if error.to_string() == OFFICIAL_SCHEMA_REQUIRES_RELEASE {
+            OFFICIAL_SCHEMA_REQUIRES_RELEASE
+        } else if matches!(
             error.downcast_ref::<sqlx::migrate::MigrateError>(),
             Some(
                 sqlx::migrate::MigrateError::VersionMissing(_)

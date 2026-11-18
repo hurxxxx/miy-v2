@@ -25,6 +25,10 @@ fn root() -> PathBuf {
     std::env::var("MIY_AUDIT_ROOT").unwrap().into()
 }
 fn report(name: &str, passed: bool, evidence: Value) {
+    assert!(
+        evidence.is_object(),
+        "regression evidence must be an object: {name}"
+    );
     let line = json!({"test":name,"status":if passed{"PASS"}else{"FAIL"},"evidence":evidence});
     println!("{line}");
     use std::io::Write;
@@ -272,81 +276,38 @@ async fn decided_write_holds_its_actor(s: &State) -> Result<(bool, Value)> {
     ))
 }
 
-/// A deployment prepares its database as a `jobs` row. A restart queues that row
-/// again, and the worker rechecks it like other queued work: the actor's management
-/// grant for the installation's environment, which is `deploy` in prod. A denied
-/// recheck fails the job without touching the installation.
-async fn requeued_database_job(s: &State) -> Result<(bool, Value)> {
+/// A deployment replays its database step under the parent's reviewed state and
+/// authority. Standalone fixture requests queued before an initial Docker
+/// activation must also leave the newly active runtime and its database alone.
+async fn recovered_database_jobs(s: &State) -> Result<(bool, Value)> {
     let pool = &s.pool;
-    let prod = inst(pool, "prod").await?;
-    let installation = uuid(&prod["id"]);
-    let release = uuid(&prod["releaseId"]);
-    let mut observed = serde_json::Map::new();
+    let mut observed = Vec::new();
     let mut passed = true;
-    for (user, permission, expected) in [
-        ("audit-deployer", "deploy", ("succeeded", None)),
-        (
-            "audit-prod-user",
-            "use",
-            ("failed", Some("permission_revoked")),
-        ),
+    for (action, status, env, expected_code) in [
+        ("promote", "running", "prod", "runtime_job_recovered"),
+        ("deploy", "queued", "dev", "runtime_job_recovered"),
+        ("prepare_database", "queued", "dev", "state_changed"),
     ] {
-        sqlx::query("INSERT INTO users(id,name,admin) VALUES($1,'Synthetic prod actor',false) ON CONFLICT (id) DO NOTHING")
-            .bind(user)
-            .execute(pool)
-            .await?;
-        sqlx::query(
-            "INSERT INTO grants VALUES($1,'audit-runtime','prod',$2) ON CONFLICT DO NOTHING",
-        )
-        .bind(user)
-        .bind(permission)
-        .execute(pool)
-        .await?;
-        let before: String = sqlx::query_scalar("SELECT db_status FROM installations WHERE id=$1")
-            .bind(installation)
-            .fetch_one(pool)
-            .await?;
-        let job = Uuid::new_v4();
-        // The deployment's own row as the worker leaves it after a restart.
-        sqlx::query("INSERT INTO jobs(id,installation_id,release_id,actor,idempotency_key,input_hash,status,delegation_action) VALUES($1,$2,$3,$4,$5,$6,'queued','deploy')")
-            .bind(job)
-            .bind(installation)
-            .bind(release)
-            .bind(user)
-            .bind(format!("runtime-requeued-{job}"))
-            .bind(crate::contract::hash(job.to_string()))
-            .execute(pool)
-            .await?;
-        for _ in 0..10 {
-            if !crate::worker::database_tick(pool).await? {
-                break;
-            }
+        let installation = inst(pool, env).await?;
+        let id = Uuid::new_v4();
+        sqlx::query("INSERT INTO jobs(id,installation_id,release_id,actor,idempotency_key,input_hash,status,delegation_action) VALUES($1,$2,$3,'audit-admin',$4,'fixture',$5,$6)")
+            .bind(id).bind(uuid(&installation["id"])).bind(uuid(&installation["releaseId"]))
+            .bind(format!("runtime-recovery-{id}")).bind(status).bind(action).execute(pool).await?;
+        if action != "prepare_database" {
+            ensure!(
+                !crate::worker::database_tick(pool).await?,
+                "standalone worker claimed a deployment child"
+            );
         }
-        let (status, code): (String, Option<String>) =
-            sqlx::query_as("SELECT status,error_code FROM jobs WHERE id=$1")
-                .bind(job)
-                .fetch_one(pool)
-                .await?;
-        let after: String = sqlx::query_scalar("SELECT db_status FROM installations WHERE id=$1")
-            .bind(installation)
-            .fetch_one(pool)
-            .await?;
-        // Keep later production checks independent of this probe.
-        sqlx::query("UPDATE installations SET db_status=$2 WHERE id=$1")
-            .bind(installation)
-            .bind(&before)
-            .execute(pool)
-            .await?;
-        passed &= status == expected.0
-            && code.as_deref() == expected.1
-            && after == "ready"
-            && before == "ready";
-        observed.insert(
-            user.into(),
-            json!({"grant":permission,"status":status,"errorCode":code,"dbStatusBefore":before,"dbStatusAfter":after}),
-        );
+        crate::worker::recover_database_jobs(pool).await?;
+        crate::worker::database_tick(pool).await?;
+        let result: Value = sqlx::query_scalar("SELECT jsonb_build_object('status',status,'errorCode',error_code) FROM jobs WHERE id=$1")
+            .bind(id).fetch_one(pool).await?;
+        let unchanged = inst(pool, env).await? == installation;
+        passed &= result["status"] == "failed" && result["errorCode"] == expected_code && unchanged;
+        observed.push(json!({"action":action,"job":result,"unchanged":unchanged}));
     }
-    Ok((passed, Value::Object(observed)))
+    Ok((passed, json!({"jobs": observed})))
 }
 // Real worker/control job with twelve slow HTTP services and isolated metadata.
 // These rows exercise observation scheduling, not image admission or OAuth.
@@ -772,6 +733,98 @@ async fn deployed(s: &State, p: &auth::Principal, image: &str, key: &str) -> Res
     let result = finish(&s.pool, id).await?;
     ensure!(result["status"] == "succeeded", "{key}: {result}");
     inst(&s.pool, "dev").await
+}
+
+async fn accept_and_promote(
+    s: &State,
+    dev: &auth::Principal,
+    admin: &auth::Principal,
+    candidate: &Value,
+    key: &str,
+) -> Result<Value> {
+    let release = uuid(&candidate["releaseId"]);
+    runtime::check_release(
+        s,
+        dev,
+        "audit-runtime",
+        runtime::ReleaseCheck {
+            release_id: release,
+            note: "Synthetic dev acceptance for the runtime activation regression".into(),
+            checks: vec![],
+        },
+    )
+    .await
+    .map_err(|e| anyhow::anyhow!(e.code))?;
+    let id = submit(s, admin, "promote", "prod", None, Some(release), key).await?;
+    finish(&s.pool, id).await
+}
+
+async fn official_switch_on_restart(s: &State, image: &str) -> Result<()> {
+    let app = "audit-official-switch";
+    let pool = &s.pool;
+    sqlx::query("INSERT INTO apps(id,name) VALUES($1,'Isolated company switch')")
+        .bind(app)
+        .execute(pool)
+        .await?;
+    sqlx::query("INSERT INTO official_apps(app_id,default_install) VALUES($1,true)")
+        .bind(app)
+        .execute(pool)
+        .await?;
+    let expected = crate::runtime_preflight::snapshot(pool, app, "dev")
+        .await
+        .map_err(|e| anyhow::anyhow!(e.code))?;
+    ensure!(expected.official_app_disabled == Some(false));
+    let queue = "INSERT INTO runtime_jobs(id,app_id,environment,actor,action,image_id,idempotency_key,input_hash,status,expected_state,expected_checked_at)
+                 VALUES($1,$2,'dev','audit-admin','deploy',$3,$1::text,'fixture','running',$4,now())";
+    let interrupted = Uuid::new_v4();
+    sqlx::query(queue)
+        .bind(interrupted)
+        .bind(app)
+        .bind(image)
+        .bind(serde_json::to_value(expected)?)
+        .execute(pool)
+        .await?;
+    sqlx::query("INSERT INTO app_controls(app_id,disabled) VALUES($1,true)")
+        .bind(app)
+        .execute(pool)
+        .await?;
+    runtime::recover(pool).await?;
+    let blocked = finish(pool, interrupted).await?;
+
+    // A developer who explicitly reviewed the *already disabled* application
+    // can still manage dev. This synthetic image has no official build receipt,
+    // so its job reaches the ordinary image gate without touching Docker.
+    let disabled = crate::runtime_preflight::snapshot(pool, app, "dev")
+        .await
+        .map_err(|e| anyhow::anyhow!(e.code))?;
+    ensure!(disabled.official_app_disabled == Some(true));
+    let manual = Uuid::new_v4();
+    sqlx::query(queue)
+        .bind(manual)
+        .bind(app)
+        .bind(image)
+        .bind(serde_json::to_value(disabled)?)
+        .execute(pool)
+        .await?;
+    runtime::recover(pool).await?;
+    let reviewed = finish(pool, manual).await?;
+    let count: i64 = sqlx::query_scalar("SELECT count(*) FROM installations WHERE app_id=$1")
+        .bind(app)
+        .fetch_one(pool)
+        .await?;
+    let passed = blocked["errorCode"] == "state_changed"
+        && reviewed["errorCode"] == "server_build_required"
+        && count == 0;
+    report(
+        "a recovered official deployment rechecks the company switch after its initial preflight",
+        passed,
+        json!({"changedAfterPreflight":blocked,"reviewedWhileDisabled":reviewed,"installations":count}),
+    );
+    ensure!(
+        passed,
+        "recovered official deployment failed to enforce reviewed company state"
+    );
+    Ok(())
 }
 
 async fn lost_deployment_acknowledgements(
@@ -1387,9 +1440,9 @@ async fn isolated_runtime_regression() -> Result<()> {
         json!({"dev":initial,"prod":prod,"containerImage":prod_container["Image"],"initialProdRows":prodcount}),
     );
     disabled_app_runtime_control(&s, &admin, &ordinary).await?;
-    let (requeued, evidence) = requeued_database_job(&s).await?;
+    let (requeued, evidence) = recovered_database_jobs(&s).await?;
     report(
-        "a production database job queued again after a restart keeps its deployer's authority",
+        "interrupted deployment children and superseded fixture jobs cannot independently change an active installation",
         requeued,
         evidence,
     );
@@ -1471,6 +1524,41 @@ async fn isolated_runtime_regression() -> Result<()> {
         j,
     );
     lost_deployment_acknowledgements(&s, &dev, &first).await?;
+    official_switch_on_restart(&s, &first).await?;
+    let same_schema = deployed(&s, &dev, &image("health-same"), "same-schema-candidate").await?;
+    let rejected =
+        accept_and_promote(&s, &dev, &admin, &same_schema, "prod-health-same-schema").await?;
+    let restored = inst(&pool, "prod").await?;
+    let name = prod["runtimeContainer"]
+        .as_str()
+        .context("missing prod container")?;
+    let restored_container = runtime::inspect(name).await?;
+    let still_healthy = runtime::healthy(
+        restored["runtimePort"]
+            .as_i64()
+            .context("missing restored port")? as i32,
+        release,
+    )
+    .await
+    .is_ok();
+    let value: String = sqlx::query_scalar("SELECT value FROM app.records WHERE id=1")
+        .fetch_one(&mut proddb)
+        .await?;
+    let passed = rejected["errorCode"] == "app_health_failed"
+        && rejected["releaseId"] == same_schema["releaseId"]
+        && restored["releaseId"] == prod["releaseId"]
+        && restored["runtimeImage"] == prod["runtimeImage"]
+        && restored["runtimeStatus"] == "running"
+        && restored["healthStatus"] == "healthy"
+        && restored_container["Id"] == prod_container["Id"]
+        && still_healthy
+        && value == "prod-retained";
+    report(
+        "failed candidate health restores the exact healthy production container when the schema is unchanged",
+        passed,
+        json!({"attempt":rejected,"active":restored,"sameContainer":restored_container["Id"]==prod_container["Id"],"healthy":still_healthy,"dataPreserved":value=="prod-retained"}),
+    );
+    ensure!(passed, "compatible production restore failed");
     let updated = deployed(&s, &dev, &image("v2"), "update-v2").await?;
     let devvalue: String = sqlx::query_scalar("SELECT value FROM app.records WHERE id=1")
         .fetch_one(&mut devdb)
@@ -1483,6 +1571,38 @@ async fn isolated_runtime_regression() -> Result<()> {
             && updated["id"] == initial["id"],
         json!({"dev":updated,"prod":prodafter,"devValue":devvalue}),
     );
+    let rejected =
+        accept_and_promote(&s, &dev, &admin, &updated, "prod-health-advanced-schema").await?;
+    runtime::reconcile(&pool).await?;
+    let halted = inst(&pool, "prod").await?;
+    let candidate = runtime::inspect(name).await?;
+    let advanced: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema='app' AND table_name='records' AND column_name='tag')").fetch_one(&mut proddb).await?;
+    let start = crate::runtime_preflight::inspect(
+        &s,
+        &admin,
+        "audit-runtime",
+        serde_json::from_value(json!({
+            "target":{"appId":"audit-runtime","environment":"prod"},"action":"start"
+        }))?,
+    )
+    .await
+    .map_err(|e| anyhow::anyhow!(e.code))?;
+    let passed = rejected["errorCode"] == "app_health_failed"
+        && rejected["releaseId"] == updated["releaseId"]
+        && halted["releaseId"] == prod["releaseId"]
+        && halted["runtimeImage"] == prod["runtimeImage"]
+        && halted["runtimeStatus"] == "recovery_required"
+        && halted["desiredState"] == "stopped"
+        && halted["runtimePort"].is_null()
+        && !start.can_submit
+        && candidate["State"]["Running"] == false
+        && advanced;
+    report(
+        "a rejected production activation preserves last-good identity and blocks restart on an advanced schema",
+        passed,
+        json!({"attempt":rejected,"installation":halted,"schemaAdvanced":advanced,"canStart":start.can_submit,"candidateRunning":candidate["State"]["Running"]}),
+    );
+    ensure!(passed, "advanced schema must require forward recovery");
     let id = submit(
         &s,
         &dev,
@@ -1515,6 +1635,49 @@ async fn isolated_runtime_regression() -> Result<()> {
         recovered["runtimeStatus"] == "running" && recovered["dbStatus"] == "ready",
         recovered.clone(),
     );
+    // Reject only this isolated installation's new healthy audit transition.
+    // Its candidate passes real HTTP health, but activation cannot commit.
+    let reject_health_audit = format!(
+        "ALTER TABLE audit ADD CONSTRAINT audit_fixture_reject_health CHECK (action <> 'runtime_health.healthy' OR target <> '{}') NOT VALID",
+        uuid(&prod["id"])
+    );
+    pool.execute(reject_health_audit.as_str()).await?;
+    let attempted =
+        accept_and_promote(&s, &dev, &admin, &recovered, "prod-reject-health-audit").await;
+    pool.execute("ALTER TABLE audit DROP CONSTRAINT audit_fixture_reject_health")
+        .await?;
+    let rejected = attempted?;
+    let held = inst(&pool, "prod").await?;
+    let passed = rejected["status"] == "failed"
+        && rejected["releaseId"] == recovered["releaseId"]
+        && held["releaseId"] == prod["releaseId"]
+        && held["runtimeImage"] == prod["runtimeImage"]
+        && held["runtimeStatus"] == "recovery_required"
+        && held["runtimePort"].is_null();
+    report(
+        "a failed healthy audit write rolls back the candidate release, image and routing port together",
+        passed,
+        json!({"attempt":rejected,"installation":held}),
+    );
+    ensure!(passed, "health persistence failure published a candidate");
+    let forward = accept_and_promote(&s, &dev, &admin, &recovered, "prod-forward-recovery").await?;
+    let running = inst(&pool, "prod").await?;
+    let value: String = sqlx::query_scalar("SELECT value FROM app.records WHERE id=1")
+        .fetch_one(&mut proddb)
+        .await?;
+    let passed = forward["status"] == "succeeded"
+        && running["id"] == prod["id"]
+        && running["releaseId"] == recovered["releaseId"]
+        && running["runtimeImage"] == recovered["runtimeImage"]
+        && running["runtimeStatus"] == "running"
+        && running["healthStatus"] == "healthy"
+        && value == "prod-retained";
+    report(
+        "a checked forward release reactivates the same production installation and preserves its data",
+        passed,
+        json!({"job":forward,"installation":running,"dataPreserved":value=="prod-retained"}),
+    );
+    ensure!(passed, "production forward recovery failed");
     let id = submit(
         &s,
         &dev,

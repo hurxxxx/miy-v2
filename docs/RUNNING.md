@@ -158,6 +158,41 @@ miy --app my-app grant set --user USER_ID --permission use --environment dev
 
 생성기는 SDK·지침·스킬과 프로젝트 Codex/Claude MCP 설정을 제공한다. 호환 CLI로 `app setup`을 실행하면 프로젝트 실행 파일·설정·CLI 지침을 함께 갱신한다. 일반 `codex` 또는 `claude`로 앱 폴더를 열고 각 클라이언트의 프로젝트 신뢰/MCP 승인을 정상적으로 진행한다. 전역 모델·권한 설정을 우회하지 않는다. 루트 `miy mcp` stdio 서버는 선택한 CLI context/session으로 계약과 허용된 API·컴포넌트 목록을 읽는다. API 사용 지침과 실제 배포 실행을 구분한다.
 
+## 공식 앱 공급과 설치
+
+이 절은 Core·CLI **0.13.0 소스 후보**, core schema 25부터 적용한다. 카탈로그에 등록한 제품과 실제 배포한 릴리스는 따로 확인한다. `miy app list`와 `app status`의 `app.distribution`은 제품 분류이고, 설치 행의 `distribution`은 서버가 검증한 해당 릴리스의 분류다. 값은 `default_official`(기본 제공), `optional_official`(공식 업무), `organization`(조직 제작)이다. `kind`는 실행 형식이다. 조회는 기존 사용자·환경 권한을 따른다.
+
+1. **공급자**는 독립 앱 Git 저장소에서 릴리스할 버전을 커밋한다. 해당 앱 폴더에서 `miy --output json app source-pin`을 실행하면 실제 서버 빌드와 같은 방식으로 계산한 `data.appId`, `version`, `sourceCommit`, `archiveSha256`을 얻는다. 같은 ID의 `releases`에 뒤의 세 필드를 추가해 검토한 카탈로그를 공급한다. 앱의 manifest나 빌드 요청자가 공식 지위를 부여할 수 없다.
+2. **서버 운영자**는 신뢰한 카탈로그를 선택해 설치 호스트의 `MIY_STATE_DIR`을 지정한 셸에서 `MIY_BINARY="$MIY_STATE_DIR/bin/miy-server" bash scripts/run-service.sh catalog-sync --file /path/to/catalog.json`을 실행한다. 서버 실행 파일의 설치 경로가 다르면 해당 절대 경로를 지정한다. `scripts/up.sh`는 서버를 시작한 뒤 `registry/apps/catalog.json`을 동기화하며, 운영자가 `MIY_OFFICIAL_APP_CATALOG`로 다른 파일을 지정할 수 있다. 동기화는 제품·버전을 누적 반영하고 같은 버전의 소스 변경이나 기존 조직 앱·등록·권한 충돌은 전체 거절한다. 직원 권한, 설치 데이터, 실행 상태와 현장에서 수정한 제품 이름은 보존한다.
+3. **설치 담당자**는 같은 카탈로그와 그 커밋으로 체크아웃한 소스를 준비한다. 아래는 저장소 루트에서 실행하는 예다. `--sources` 아래 폴더 이름은 앱 ID이고, 단일 앱은 `--app planner --source /path/to/worktree`도 사용할 수 있다. 모노레포의 서로 다른 커밋이 필요하면 앱별 Git worktree를 준비한다. 게시된 버전이 없는 제품은 `plan`에서 `unreleased`로 표시된다.
+
+```bash
+python3 scripts/official-apps.py plan --catalog /path/to/catalog.json
+python3 scripts/official-apps.py install --context work --catalog /path/to/catalog.json --sources /path/to/official-apps
+python3 scripts/official-apps.py install --context work --catalog /path/to/catalog.json --app pms --source /path/to/pms
+python3 scripts/official-apps.py update --context work --catalog /path/to/catalog.json --app planner --source /path/to/planner --version 1.1.0
+```
+
+`install`은 기본 제품 또는 `--app`으로 명시한 제품을 dev에 준비한다. 한 회사에서만 PMS를 기본 구성에 포함하려면 `--app planner --app messenger --app pms`처럼 원하는 목록을 지정한다. 기존 설치를 다시 시작하거나 갱신하지 않는다. `update`는 실제로 실행 중인 dev 설치를 명시적으로 갱신한다. 개발자는 허용된 계정으로 dev에서 동작과 데이터 보존을 시험하고, 해당 릴리스 UUID와 검사 결과가 든 [인수 보고서](#인수-기록-prod-승격과-수명주기)를 제출한다. 운영 배포 담당자는 검증한 동일 UUID를 선택한다.
+
+```bash
+miy --context work --app planner app accept --note '실제로 확인한 결과 요약' --report /path/to/acceptance.json
+python3 scripts/official-apps.py promote --context work --catalog /path/to/catalog.json --app planner --release RELEASE_UUID --confirm-prod
+```
+
+권한이 다른 개발·운영 담당자가 인수와 승격을 나눠 수행할 수 있다. 회사에서 중지한 앱과 정지·제거된 설치는 기본 설치·업데이트로 되살리지 않는다. 확인 중에 상태가 바뀌면 새 상태를 읽고 다시 판단한다. 공식 릴리스의 DB 변경은 검증된 dev 릴리스 배포로 적용한다. 같은 스키마의 공유 dev DB 개발, 또는 `miy app dev --runtime docker --database local`을 사용할 수 있다. 직원 입장과 연결 승인은 [코어 권한 계약](CORE-PERMISSIONS.md#확정-권한-행렬)을 따른다.
+
+첫 설치가 도중에 실패해 설치 행만 남았으면 `install` 재실행도 실패 상태를 보고한다. 작업 중이면 `inspect`에 표시된 `job watch`로 완료를 기다린다. 실패한 작업은 출력의 `inspect`로 원인을 확인하고, 재시도할 수 있으면 `reviewRetry`의 `--dry-run`으로 영향을 확인한다. 이 과정에서 도구가 배포나 재시작을 자동으로 요청하지 않는다.
+
+공식 dev 배포가 릴리스 등록 후 실패하면 후임 개발자도 해당 앱의 dev 배포 권한으로 같은 이미지를 다시 사용할 수 있다. 해당 앱·dev 환경에 `read`와 `deploy`를 위임받은 에이전트도 자신의 CLI context에서 같은 절차를 따른다. `job get`의 `releaseId` 또는 설치 도구의 `attemptedReleaseId`를 확인한다. 다음 두 명령은 앱 소스와 최초 담당자의 로컬 빌드 영수증 없이 실행할 수 있다.
+
+```bash
+miy --context work --app planner app deploy --environment dev --release RELEASE_UUID --dry-run
+miy --context work --app planner app deploy --environment dev --release RELEASE_UUID
+```
+
+설치 도구의 JSON은 UTF-8이다. CLI 빌드가 끝난 뒤 로컬 영수증 저장에 실패하면 오류의 `recoveryCommand`에 담긴 `job resume`으로 영수증을 복원한다. 자동화에서는 이 객체의 실행 파일과 인수 배열을 사용한다.
+
 ## 공용 컴포넌트 설치와 업데이트
 
 ```sh
@@ -215,6 +250,8 @@ Dry-run은 예상 상태·계획된 변경·worker에서 남은 검사를 반환
 
 현행 runtime 명령은 `runtime.preflight.v2`를 요구한다. 이 계약은 실행 앱 상태에 더해 독립적인 DB 식별자와 스키마 변경 이력을 비교한다. 이전 CLI나 서버 조합은 capability 오류로 업그레이드를 안내하며, 알 수 없는 상태를 무시하고 배포하지 않는다.
 
+빌드 큐가 가득 찬 경우처럼 서버가 접수를 거절했고 해당 요청에 서버 작업이 없다고 확인되면, 원인을 해결한 뒤 같은 커밋에서 `app build`를 다시 실행한다. 응답이 유실되거나 서버가 소스를 수신 중인 경우에는 `job resume`으로 원래 요청을 이어간다. CLI는 전송에 필요한 동안에만 소스 tar를 보관하고 서버의 수신 또는 확정 거절을 확인하면 이를 정리한다.
+
 ```sh
 miy job list --limit 20
 miy job resume REQUEST_OR_JOB_UUID
@@ -228,6 +265,8 @@ miy job retry FAILED_JOB_UUID
 상태의 release/image/version과 실제 배포 URL을 검사한다. 이전 릴리스가 실행 중이거나 job 접수만 성공한 상태를 새 배포 성공으로 보고하지 않는다. UI 변경 반영을 위해 플랫폼 코어를 재시작하거나 플랫폼 UI를 다시 빌드하지 않는다.
 
 ## 인수 기록, prod 승격과 수명주기
+
+기존 운영 설치는 새 버전의 상태 검사가 통과한 뒤 활성 릴리스를 변경한다. 실패하면 관리자가 `app status`의 설치 `releaseId`와 마지막 작업의 `lastOperation.releaseId`를 비교해 마지막 정상 버전과 배포 시도를 구분할 수 있다. DB가 이전 버전과 호환된다고 확인되면 기존 컨테이너를 복구한다. 확인할 수 없으면 `recovery_required`로 중지한다. 이때는 실패 작업과 DB 변경 상태를 점검한 뒤 호환되는 릴리스를 dev에서 검수해 prod로 승격한다.
 
 ```sh
 miy app accept --note '실제로 수행한 검사' --report acceptance.json

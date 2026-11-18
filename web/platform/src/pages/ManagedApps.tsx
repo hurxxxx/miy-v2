@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useLocation } from "@tanstack/react-router";
-import { request } from "@miy/sdk";
-import { useManagedInstallations } from "../data/installations";
+import { request, type App } from "@miy/sdk";
+import { distributionLabels, useManagedInstallations } from "../data/installations";
 import { useSurface, useUser } from "../data/session";
 import { currentEnvironment, environmentOrigin, environmentPath, surfaceUrl } from "../lib/paths";
 import { LoadError, StaleNotice } from "../components/LoadState";
@@ -19,7 +19,7 @@ import {
 } from "../ui";
 
 type AppPage = {
-  apps: { id: string; name: string }[];
+  apps: App[];
   nextCursor?: string | null;
 };
 
@@ -125,9 +125,10 @@ export function ManagedApps() {
                   }
                 >
                   <div className="app-card-meta">
-                    <Badge>{app.runtimeStatus}</Badge>
+                    <Badge>{distributionLabels[app.distribution ?? "organization"]}</Badge>
+                    <Badge>{app.runtimeStatus === "recovery_required" ? "복구 필요" : app.runtimeStatus}</Badge>
                     <Badge>DB {app.dbStatus}</Badge>
-                    <Badge>v{app.version || "—"}</Badge>
+                    <Badge>{app.runtimeStatus === "recovery_required" ? "마지막 정상 " : ""}v{app.version || "—"}</Badge>
                     <code>{app.appId}</code>
                   </div>
                   <RuntimeHealth app={app} />
@@ -178,7 +179,7 @@ export function ManagedApps() {
           <ul>
             {catalog.apps.map((app) => (
               <li key={app.id}>
-                {app.name} · <code>{app.id}</code>
+                {app.name} · <code>{app.id}</code> · {distributionLabels[app.distribution ?? "organization"]}
               </li>
             ))}
           </ul>
