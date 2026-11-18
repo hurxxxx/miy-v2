@@ -1,0 +1,314 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-11-18",
+  "status": "PASS",
+  "scope": "dwdcc.kr 사내 개발 서버의 Core·worker·포털 및 CLI·Windows 설치기 게시",
+  "startedAt": "2026-11-18T13:22:40Z",
+  "coreFinishedAt": "2026-11-18T13:22:55Z",
+  "connectionVerifiedAt": "2026-11-18T13:23:36.860Z",
+  "origins": {
+    "portal": "https://portal.dwdcc.kr",
+    "console": "https://console.dwdcc.kr",
+    "devPortal": "https://dev2.dwdcc.kr",
+    "appFrame": "https://app-{key}.dwdcc.kr"
+  },
+  "versions": {
+    "coreAndCli": "0.13.0",
+    "sdkBundle": "0.11.0",
+    "rustSdk": "0.4.0",
+    "sharedUi": "1.1.0",
+    "schemaBefore": 24,
+    "schemaAfter": 25
+  },
+  "source": {
+    "serverWebCliAndInstallerCommit": "f8228e1c583264fab22cc9847d47e614212a5751",
+    "previousCoreWebCommit": "09dca970cb8aee079445861b1de007aa1acbfec9",
+    "previousCliCommit": "fa0d48de28014397aca2b91f7c53529fa60cf42a",
+    "frameRuntimeCommit": "9133d700369c43b11abeee1738541e6abda5b4d6",
+    "frozenCheckout": ".local/release-0130-20261118-source"
+  },
+  "ci": {
+    "web.yml": {
+      "runId": 44309686717,
+      "attempt": 1,
+      "url": "https://github.com/hurxxxx/miy-v2/actions/runs/44309686717",
+      "headSha": "f8228e1c583264fab22cc9847d47e614212a5751",
+      "conclusion": "success",
+      "jobs": 1
+    },
+    "cli-foundation.yml": {
+      "runId": 44309686793,
+      "attempt": 1,
+      "url": "https://github.com/hurxxxx/miy-v2/actions/runs/44309686793",
+      "headSha": "f8228e1c583264fab22cc9847d47e614212a5751",
+      "conclusion": "success",
+      "jobs": 5
+    },
+    "runtime-regression.yml": {
+      "runId": 44309686808,
+      "attempt": 1,
+      "url": "https://github.com/hurxxxx/miy-v2/actions/runs/44309686808",
+      "headSha": "f8228e1c583264fab22cc9847d47e614212a5751",
+      "conclusion": "success",
+      "jobs": 1
+    },
+    "cli-release.yml": {
+      "runId": 44309765293,
+      "url": "https://github.com/hurxxxx/miy-v2/actions/runs/44309765293",
+      "conclusion": "success",
+      "publish": false
+    },
+    "windows-installer.yml": {
+      "runId": 44312595757,
+      "url": "https://github.com/hurxxxx/miy-v2/actions/runs/44312595757",
+      "conclusion": "success",
+      "nativeWindowsServer2022Cases": 24
+    }
+  },
+  "artifacts": {
+    "serverSha256": "6fa12bf58c9ee5907132761bf3631612a415e7f13ff407944a2b24a38d499ca5",
+    "previousServerSha256": "eb7ec98a1374cf51d106d8672226dab17f302076ddd2f224945a9e614e148f71",
+    "portalIndexSha256": "5effd5762ef01b3c953603c068e675c0fe512906a5e3217f36f852035caf163a",
+    "linuxCliSha256": "849fe9541f30519fbbb50f2b1ce25f598fcff733f14ca92d54d284878876d4e9",
+    "nativeCliTargets": [
+      "aarch64-apple-darwin",
+      "aarch64-unknown-linux-gnu",
+      "x86_64-apple-darwin",
+      "x86_64-pc-windows-msvc",
+      "x86_64-unknown-linux-gnu"
+    ],
+    "linuxHelperCount": 2,
+    "windows": {
+      "file": "MiySetup-0.13.0-windows-x64.exe",
+      "bytes": 6509056,
+      "sha256": "e14a5a926184dba5d4c2f47e52943ae770b0df0a05c364d2b523b4523cd30587",
+      "archiveSha256": "884e34ced100f863643ccd1bf4a067dc0106a7b351c4a40839fb4da5935cca17",
+      "cliBinarySha256": "e9c9db6e98dac8c5aae88e44f3ba55ae587689beb785face3303b78ab4390eea"
+    }
+  },
+  "preDeployment": {
+    "result": "PASS",
+    "tool": "core-rollout.py inspect --widen-migration 25",
+    "jobsBeforeStop": {
+      "runtime": 0,
+      "builds": 0,
+      "database": 0,
+      "development": 0,
+      "uploads": 0
+    },
+    "appDatabases": 8,
+    "separateRehearsal": {
+      "tool": "core-backup.py create / verify --migrate-with --official-app-catalog",
+      "tables": 45,
+      "schemaBefore": 24,
+      "schemaAfter": 25,
+      "mismatchedTables": 0,
+      "containerRemoved": true
+    },
+    "frameCandidate": {
+      "files": 17,
+      "matchingAssets": 16,
+      "indexSha256": "726e2a7b20108c4b0379e5ede475a36af6ac9f7fe2a87fc0e54e517efc4d309b",
+      "newAssets": 0
+    }
+  },
+  "deployment": {
+    "core": {
+      "result": "PASS",
+      "releaseDirectory": ".local/release-0130-20261118-core",
+      "servicesStoppedAt": [
+        "2026-11-18T13:22:46Z"
+      ],
+      "servicesStartedAt": [
+        "2026-11-18T13:22:52Z"
+      ],
+      "jobsAfterStop": {
+        "runtime": 0,
+        "builds": 0,
+        "database": 0,
+        "development": 0,
+        "uploads": 0
+      },
+      "stoppedDatabaseBackup": {
+        "bytes": 281368,
+        "sha256": "2e14d0b244e7b593fec75b03e3ae5e91b0091d8977173744e0ef9e689a3bbb38",
+        "tables": 45,
+        "rows": 1785,
+        "migrationVersion": 24
+      },
+      "restoredAndMigratedBeforeApplying": true,
+      "catalogSha256": "d5a3e94a41e3b7faf26ccc490d75581b66d263f320813705ab6615112930b4a3",
+      "catalogSynced": true,
+      "catalogReceipt": {
+        "apps": 4,
+        "releasePins": 0
+      },
+      "stableTablesPreserved": 13,
+      "appRowsBeforeAfter": [
+        6,
+        10
+      ],
+      "appContainersCompared": 8,
+      "runningAppContainers": 5,
+      "cliIndexesReplaced": true,
+      "connectionBudget": {
+        "status": "PASS",
+        "worstCase": 98,
+        "usableConnections": 197
+      }
+    },
+    "web": {
+      "result": "PASS",
+      "releaseDirectory": ".local/release-0130-20261118-ui",
+      "files": 97,
+      "newAssets": 2,
+      "previousIndexSha256": "68cd1483848455a81709d03b9fd394f0824b14a44ccc0de55fca699cf9a0c7eb",
+      "indexSha256": "5effd5762ef01b3c953603c068e675c0fe512906a5e3217f36f852035caf163a"
+    }
+  },
+  "postDeployment": [
+    {
+      "result": "PASS",
+      "check": "세 HTTPS 출처의 health, 서버 버전·공식 앱 기능, 제공 중인 웹 index 및 Core/worker 실행 파일 해시",
+      "surfaces": {
+        "portal": {
+          "health": "ok",
+          "version": "0.13.0",
+          "features": [
+            "apps.distribution.v1",
+            "runtime.official-release.v1"
+          ],
+          "indexSha256": "5effd5762ef01b3c953603c068e675c0fe512906a5e3217f36f852035caf163a"
+        },
+        "console": {
+          "health": "ok",
+          "version": "0.13.0",
+          "features": [
+            "apps.distribution.v1",
+            "runtime.official-release.v1"
+          ],
+          "indexSha256": "5effd5762ef01b3c953603c068e675c0fe512906a5e3217f36f852035caf163a"
+        },
+        "dev2": {
+          "health": "ok",
+          "version": "0.13.0",
+          "features": [
+            "apps.distribution.v1",
+            "runtime.official-release.v1"
+          ],
+          "indexSha256": "5effd5762ef01b3c953603c068e675c0fe512906a5e3217f36f852035caf163a"
+        }
+      },
+      "runningExecutableSha256": {
+        "miy-v2-serve": "6fa12bf58c9ee5907132761bf3631612a415e7f13ff407944a2b24a38d499ca5",
+        "miy-v2-worker": "6fa12bf58c9ee5907132761bf3631612a415e7f13ff407944a2b24a38d499ca5"
+      }
+    },
+    {
+      "result": "PASS",
+      "check": "실제 DB의 승인 카탈로그와 출시·설치 현황",
+      "catalog": {
+        "schema": 25,
+        "products": {
+          "planner": true,
+          "messenger": true,
+          "pms": false,
+          "plm": false
+        },
+        "approvedVersions": 0,
+        "productReleases": 0,
+        "productInstallations": 0
+      }
+    },
+    {
+      "result": "PASS",
+      "check": "공개 CLI·helper·설치기 및 EXE 내부 Windows ZIP 해시 대조",
+      "published": {
+        "nativeArchives": 5,
+        "linuxHelpers": 2,
+        "archiveAndHelperBytes": 253751766,
+        "windowsInstallerFile": "MiySetup-0.13.0-windows-x64.exe",
+        "windowsInstallerBytes": 6509056,
+        "windowsInstallerSha256": "e14a5a926184dba5d4c2f47e52943ae770b0df0a05c364d2b523b4523cd30587",
+        "windowsZipSha256": "884e34ced100f863643ccd1bf4a067dc0106a7b351c4a40839fb4da5935cca17",
+        "windowsCliSha256": "e9c9db6e98dac8c5aae88e44f3ba55ae587689beb785face3303b78ab4390eea"
+      },
+      "downloadedArchives": 7,
+      "previousPublishedFilesVerified": 26
+    },
+    {
+      "result": "PASS",
+      "check": "공개 Linux 설치 스크립트로 격리 경로에 설치·재설치하고 기존 설정과 셸 프로필 보존",
+      "checks": [
+        "public_script_installed_verified_binary_and_portal_context",
+        "repeat_install_preserves_cli_config_and_shell_profiles"
+      ],
+      "scriptSha256": "a222f55737a85f1802201a77f54bd4057aabcc017e557ce1885a1191920fa29e",
+      "publishedCliCommands": {
+        "officialDevReleaseSelection": true,
+        "targetComparison": true,
+        "sourcePin": true,
+        "lostAckRecovery": true
+      },
+      "cliVersion": "0.13.0",
+      "binarySha256": "849fe9541f30519fbbb50f2b1ce25f598fcff733f14ca92d54d284878876d4e9",
+      "verifiedAt": "2026-11-18T13:29:07Z"
+    },
+    {
+      "result": "PASS",
+      "check": "실제 게시 CLI, OIDC와 세션 목적 분리, 콘솔 device 승인 및 stdio MCP 연결",
+      "checks": 22,
+      "cleanupFailures": []
+    },
+    {
+      "result": "PASS",
+      "check": "브라우저에서 기존 조직 앱 표시, 미출시 제품의 표시 상태, 실행 중인 앱의 프레임 열기",
+      "observations": [
+        {
+          "environment": "prod",
+          "check": "organization_home_and_unreleased_product_visibility",
+          "count": 2
+        },
+        {
+          "environment": "prod",
+          "check": "live_frames_content_origin_and_portal_boundary",
+          "count": 2
+        },
+        {
+          "environment": "dev",
+          "check": "organization_home_and_unreleased_product_visibility",
+          "count": 5
+        },
+        {
+          "environment": "dev",
+          "check": "live_frames_content_origin_and_portal_boundary",
+          "count": 2
+        }
+      ],
+      "cleanupFailures": []
+    },
+    {
+      "result": "PASS",
+      "check": "8개 앱 DB의 테이블별 행 수·내용 해시 및 설치 UUID·릴리스·상태·이미지·컨테이너·포트와 설정 해시의 전후 비교",
+      "appDatabases": 8,
+      "installations": 8,
+      "preserved": {
+        "databases": true,
+        "installations": true,
+        "unchangedFiles": true
+      }
+    }
+  ],
+  "rollback": {
+    "status": "NOT_RUN",
+    "portalBackup": ".local/release-0130-20261118-ui/production-backup",
+    "coreBackup": ".local/release-0130-20261118-core/rollback",
+    "rule": "공식 제품이 등록된 schema 25에서 0.12.1 실행 파일 단독 복귀를 차단한다. 먼저 같은 정책을 지원하는 서버로 복구한다. DB 복원이 필요한 경우 백업 이후 변경분을 평가하고 같은 시점에 검증된 자료를 사용한다."
+  },
+  "notRun": [
+    "별도 miy.works 호스트 반영 및 정식 GitHub Release 게시",
+    "실제 사용자 Windows 11·macOS 데스크톱, 빈 서버 VM 또는 호스트 재부팅 인수",
+    "플래너·메신저·PMS·PLM 실제품 설치·승격. 예약 제품 4종에 게시된 버전이 없다."
+  ],
+  "evidenceDirectory": ".local/evidence/release-0130-20261118"
+}

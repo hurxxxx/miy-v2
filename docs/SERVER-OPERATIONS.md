@@ -75,7 +75,7 @@ CLI 업데이트 안내 후속으로 Core·worker·웹과 CLI 0.12.1을 같은 �
 
 이하의 주소·`.local`·서비스명·복구 절차는 `/projects/miy-v2`의 사내 호스트에 적용한다. 2026-11-17에 `v2` 계열에서 역할별 이름으로 옮겼으며 위 `miy.works` 서버와 별개다.
 
-- 정리일: 2026-11-17 · 서버/CLI 배포 근거: [0.12.1 반영 기록](releases/dwdcc-0.12.1-2026-11-17-deployment.json). 현행 주소·DNS·TLS·DB/IdP 전환은 [역할별 주소 반영](releases/dwdcc-role-addresses-2026-11-17-deployment.json)이며 서버 버전 갱신과 구분한다. 앞선 [주소 파일 도입](releases/dwdcc-subdomains-2026-11-17-deployment.json)은 기존 이름을 유지했던 중간 단계 기록이다.
+- 2026-11-18에 사내 서버·포털·CLI를 0.13.0으로 갱신했다. DNS·TLS·IdP는 2026-11-17의 역할별 주소 설정을 사용한다. [0.13.0 배포 기록](releases/dwdcc-0.13.0-2026-11-18-deployment.json) · [역할별 주소 반영](releases/dwdcc-role-addresses-2026-11-17-deployment.json) · [주소 파일 도입](releases/dwdcc-subdomains-2026-11-17-deployment.json)
 - 역할: 현재 서버·복구·반영 절차. 전체 완료/진행/잔여와 착수 순서는 [PLAN](PLAN.md), CLI 후보·게시는 [CLI-RELEASE](CLI-RELEASE.md)가 관리한다.
 
 이 프로젝트의 “운영” 주소는 아직 개발 서버다. 운영 반영은 이 서버의 변경분 배포를 뜻하며 제품 개발 완료나 정식 오픈 선언이 아니다. 이 checkout의 `.local`과 `web/platform/dist`는 실제 제공 상태이므로 검증 도구·빌드는 [AGENTS](../AGENTS.md)의 격리 경계를 지킨다.
@@ -180,29 +180,25 @@ Codex·Claude의 생성된 프로젝트 MCP는 프로젝트의 `.miy-tools/miy[.
 
 | 대상 | 현재 배포 소스·상태 | 근거 |
 | --- | --- | --- |
-| 서버·worker, 포털 UI | `09dca970cb8aee079445861b1de007aa1acbfec9`, Core 0.12.1 | [0.12.1 반영](releases/dwdcc-0.12.1-2026-11-17-deployment.json). 해당 commit의 필수 CI 3개 모두 성공 |
-| 게시 CLI·Windows 설치기 | `fa0d48de28014397aca2b91f7c53529fa60cf42a`, CLI 0.12.1 / SDK 번들 0.11.0 / Rust SDK 0.4.0 | 원본 CLI CI 43979915250의 5종·helper 2종, Windows 설치기 CI 44034693750. 서버 다운로드 게시이며 정식 GitHub Release는 아님 |
-| 프레임 런타임 | `9133d700369c43b11abeee1738541e6abda5b4d6` | 이후 빌드 입력이 같아 기존 바이트 보존. 0.12.1 서버·웹에서 기존 앱 프레임 재확인 |
+| 서버·worker, 포털 UI | Core 0.13.0, `f8228e1c583264fab22cc9847d47e614212a5751` | 같은 commit의 필수 CI 3개 통과 후 서버 실행 파일과 포털 entry를 반영했다. [배포 기록](releases/dwdcc-0.13.0-2026-11-18-deployment.json) |
+| 게시 CLI·Windows 설치기 | `f8228e1`, CLI 0.13.0 / SDK 번들 0.11.0 / Rust SDK 0.4.0 | CLI 5종과 DB helper 2종을 게시했다. Windows 설치기에는 같은 commit의 CLI가 들어 있다. [CLI 빌드](https://github.com/hurxxxx/miy-v2/actions/runs/44309765293) · [Windows 설치기 빌드](https://github.com/hurxxxx/miy-v2/actions/runs/44312595757) |
+| 프레임 런타임 | `9133d700369c43b11abeee1738541e6abda5b4d6`에서 배포한 파일 17개 | `f8228e1`로 빌드한 entry와 자산 16개가 서빙 중인 파일과 바이트 단위로 일치했다. |
 | 프록시·주소 | `portal`·`console`·`dev2`·`app-*`; 파일 전송 경로와 콘솔 차단 유지 | [주소 전환 기록](releases/dwdcc-role-addresses-2026-11-17-deployment.json). 버전 갱신에서 설정·IdP·Nginx 변경 없음 |
 | 공용 UI 컴포넌트 | `ui` 1.0.1, 1.1.0(새 프로젝트 기본) | 기존 게시 바이트 보존 |
-| core DB | schema 24 | `0024_support_reports.sql`로 신고 표·색인 추가. 최종 백업 44개 표·1,773행의 별도 복원과 23→24 리허설 후 적용 |
+| core DB·공식 앱 카탈로그 | schema 25, 기본 제품 `planner`·`messenger`, 선택 제품 `pms`·`plm` | 실제 백업의 별도 복원본에서 `0025_official_apps.sql`과 카탈로그 동기화를 검증한 뒤 적용했다. 등록한 공식 제품은 4개이며 게시 버전과 공식 앱 설치는 각각 0개다. |
 
-0.12.1은 서버 빌드 전용 앱 배포, 비로그인 CLI 고장 신고·관리자 처리, 온라인 설치와 CLI/MCP 업데이트 안내를 포함한다. 사용자는 [설치 화면](https://portal.dwdcc.kr/cli/install)에서 전역 CLI를 갱신한 뒤 각 프로젝트에서 새 전역 CLI의 `miy app setup`을 실행하고 에이전트를 다시 시작한다. 기존 0.10.0 프로젝트의 개발 안내는 `miy app upgrade`로 번들 0.11.0에 맞춘다. 기존 릴리스로 실행 중인 앱의 시작·중지·재시작은 유지되며, 이후 배포·prod 승격은 그 앱의 성공한 서버 빌드 산출물만 받는다.
+공식 앱 개발자는 검증된 릴리스 ID로 같은 이미지를 dev에 재배포할 수 있다. prod 승격이 실패하면 DB 상태를 기준으로 마지막 정상 버전을 복구하거나 관리 콘솔에 복구 필요 상태를 표시한다. 사용자는 포털에서 전역 CLI를 갱신한 뒤 각 프로젝트에서 `miy app setup`을 실행하고 에이전트를 다시 시작한다. [공식 앱 설치·갱신](RUNNING.md#공식-앱-공급과-설치) · [CLI 설치 화면](https://portal.dwdcc.kr/cli/install)
 
-기존 앱 8개의 DB·설치·릴리스와 5개 실행/3개 중지 상태를 보존했다. 검증용 신고 1건은 관리자 화면에서 해결 처리하고 시험 기록으로 남겼다. 실제 새 앱 생성·배포, Windows 11 사용자 인수, OS 재부팅과 실제 rollback은 이번 범위에서 NOT_RUN이다. 이전 파일럿 보완 코드도 새 서버에 포함하지만 프록시 복구·파일럿 검사 v2의 실제 실행을 완료한 것으로 해석하지 않는다.
+배포 전후 기존 앱 DB 8개와 설치 8개의 데이터를 대조했다. 컨테이너 8개 중 실행 5개·중지 3개의 상태가 같았고, 이전 게시 파일 26개의 바이트가 일치했다. 상세 해시와 대조 결과는 [0.13.0 반영 기록](releases/dwdcc-0.13.0-2026-11-18-deployment.json)에 있다.
 
-`main` 변경은 자동 배포되지 않는다. 같은 버전 문자열이어도 source commit·빌드 입력·SQL·게시물의 출처를 확인한다. CLI는 원래 게시된 `fa0d48d`의 바이트를 재사용했다. 이후 `09dca97`까지 Rust·CLI·웹 입력은 같고 문서·게시 메타데이터·배포 도구만 달라졌다. 서버 SHA-256은 `eb7ec98a1374cf51d106d8672226dab17f302076ddd2f224945a9e614e148f71`, 웹 index는 `68cd1483848455a81709d03b9fd394f0824b14a44ccc0de55fca699cf9a0c7eb`다.
-
-**이 버전의 복구:** 새 신고와 앱 데이터를 보존하면서 포털 entry → Core·worker·CLI/설치기 index 순서로 되돌린다. 아래 도구는 현행 `server.json`의 주소를 읽는다. 프레임·Nginx·IdP·주소와 재시작 정책은 이 반영에서 바꾸지 않았으므로 그대로 둔다.
+**0.13.0 복구**에 사용하는 소스는 `.local/release-0130-20261118-source`다. 포털 화면만 되돌릴 때는 다음 명령으로 `.local/release-0130-20261118-ui/production-backup`의 이전 entry를 복구한다.
 
 ```sh
-python3 .local/release-0121-20261117-source/scripts/ui-rollout.py rollback \
-  --release-dir .local/release-0121-20261117-ui
-python3 .local/release-0121-20261117-source/scripts/core-rollout.py rollback \
-  --release-dir .local/release-0121-20261117-core
+python3 .local/release-0130-20261118-source/scripts/ui-rollout.py rollback \
+  --release-dir .local/release-0130-20261118-ui
 ```
 
-이 명령은 직전 0.10.0 바이너리·게시 index·웹 entry를 복원하고 additive schema 24·신고 데이터·기존 앱 DB를 유지한다. 복구 자료는 각 release 디렉터리의 `production-backup/`·`rollback/`이다. **실제 rollback은 NOT_RUN**이며 모의 검사 PASS와 구분한다. 이전 DB dump로 덮어써 신규 신고를 잃거나, 옛 `v2` 주소 Nginx 백업을 버전 복구에 사용하지 않는다. 과거 0.10.0과 그 이전 복구 이력은 [당시 반영 기록](releases/pilot-0.10.0-2026-11-15-deployment.json)에 보존하며 주소 자체의 복구는 [주소 설정 정본](#dwdcckr-주소-설정-정본)을 따른다.
+코어는 이미 공식 제품 4개를 등록했으므로 0.12.1 실행 파일로의 단독 rollback을 `official_catalog_requires_compatible_core`로 거부한다. 장애 시 `.local/release-0130-20261118-core/deployment.json`과 `rollback/` 자료로 schema·카탈로그·CLI 게시 인덱스를 대조하고, 공식 릴리스 보호 기능을 지원하는 검증된 코어로 복구한다. 24→25 이전으로 데이터 복원이 필요하면 백업 이후 생성·변경된 데이터를 먼저 확인한다. 실제 사내 서버의 버전 rollback은 `NOT_RUN`이다. [코어 배포·복구 절차](#7-배포-도구)
 
 ## 4. 공유 개발 로그인과 운영 전환
 
@@ -223,7 +219,9 @@ python3 .local/release-0121-20261117-source/scripts/core-rollout.py rollback \
 
 ## 5. 실제 연결 확인
 
-2026-11-17 [0.12.1 반영 인수](releases/dwdcc-0.12.1-2026-11-17-deployment.json)에서 세 health·실행 파일·schema, CLI 5종/helper 2종/Windows EXE의 공개 해시, 격리 설치 경로의 실제 온라인 설치·재설치, OIDC/SSO·CLI·stdio MCP 22항목, 업데이트 화면/복사·신고 권한/처리·HTTP MCP 업데이트 안내 7항목과 기존 앱 4개의 프레임을 확인했다. 기존 앱 8개 DB의 전체 행 비교와 설치·설정·프레임 바이트 보존도 통과했다. 새 Windows EXE의 Windows Server CI 24항목은 Windows 11 사용자 실기와 구분한다. 새 앱 생성·배포는 이번에 실행하지 않았으며, 2026-11-15 파일럿의 당시 인수는 [0.10.0 기록](releases/pilot-0.10.0-2026-11-15-deployment.json)에 남긴다. 같은 Linux 호스트의 결과를 다른 PC·Windows·신규 AI 에이전트 세션 인수로 확대하지 않는다.
+2026-11-18 사내 서버에서 포털·dev 포털·콘솔의 health, 공개 CLI 5종·DB helper 2종·Windows 설치기 EXE의 해시, 격리 경로에서 온라인 설치와 재설치를 확인했다. 게시 CLI로 OIDC 로그인·CLI·stdio MCP 연결 검사 22개가 통과했고 정리 실패는 0건이었다. 기존 앱 프레임은 prod 2개·dev 2개가 열렸다. [0.13.0 반영 인수](releases/dwdcc-0.13.0-2026-11-18-deployment.json)
+
+Windows 설치기는 Windows Server CI에서 24개 검사를 통과했다. Windows 11 사용자 실기와 빈 서버 VM 인수는 사용자 검증 대기다. 신고 처리·HTTP MCP 업데이트 안내의 사내 인수는 0.12.1 기록에, 새 앱 생성·서버 빌드·dev 배포는 0.10.0 파일럿 기록에 있다. [Windows 인수 절차](WINDOWS-ACCEPTANCE.md) · [0.12.1 인수](releases/dwdcc-0.12.1-2026-11-17-deployment.json) · [0.10.0 파일럿](releases/pilot-0.10.0-2026-11-15-deployment.json)
 
 검증할 CLI의 공개 checksum/provenance와 [CLI 릴리스](CLI-RELEASE.md)의 게시 출처를 먼저 대조하고 절대 경로를 전달한다. `pnpm` 의존성과 Chrome이 필요하며 출력 디렉터리는 새 경로여야 한다.
 
@@ -301,10 +299,10 @@ python3 <checkout>/scripts/core-rollout.py rollback --release-dir <같은 경로
 
 **공식 앱 카탈로그를 사용하는 서버(schema 25)**
 
-1. 24→25 최초 배포의 `inspect`와 `apply`에 `--widen-migration 25`를 준다. 기본은 **대상 commit**의 `registry/apps/catalog.json`이다. 사이트가 승인한 별도 목록을 쓰려면 두 명령에 같은 `--official-app-catalog /절대/경로/catalog.json`도 준다. `inspect`의 `officialCatalog`에서 경로·SHA-256·제품 수·버전 수를 대조한 뒤 `apply`에 `--official-app-catalog-sha256 <승인한 SHA-256>`을 함께 준다. 파일 바이트가 달라지면 서비스 중지 전에 거부한다. 조직 앱만 두기로 한 사이트는 `{"schemaVersion":1,"apps":[]}`를 명시할 수 있다. 이후 이 호스트의 카탈로그 변경도 같은 schema의 `core-rollout.py apply`에 두 옵션을 다시 주어 배포 잠금 안에서 수행한다. 생략하면 비어 있는 목록을 포함해 기존 선택을 유지한다.
+1. 24→25 최초 배포의 `inspect`와 `apply`에 `--widen-migration 25`를 준다. 카탈로그 옵션을 생략하면 **대상 commit**의 `registry/apps/catalog.json`을 사용한다. 사이트가 별도 파일을 선택하면 두 명령에 같은 `--official-app-catalog /절대/경로/catalog.json`을 주고 `inspect`의 `officialCatalog`에서 경로·SHA-256·제품 수·버전 수를 대조한다. 이때 `apply`에는 `--official-app-catalog-sha256 <승인한 SHA-256>`도 필요하다. 파일 바이트가 달라지면 서비스 중지 전에 거부한다. 조직 앱만 두기로 한 사이트는 `{"schemaVersion":1,"apps":[]}`를 명시할 수 있다. 이후 이 호스트의 카탈로그 변경도 같은 schema의 `core-rollout.py apply`에 두 옵션을 다시 주어 배포 잠금 안에서 수행한다. 생략하면 비어 있는 목록을 포함해 기존 선택을 유지한다.
 2. 도구는 schema 25 이상 후보의 `describe --command catalog-sync`에서 `officialReleaseProtectionVersion` 정수 1을 확인한다. `apply`는 서비스 중지 전에 선택 파일을 `rollback/official-app-catalog.json`에 고정한다. 중지한 DB의 스냅샷과 별도 복원본의 초기 레코드가 일치해야 한다. 복원본에서 실제 후보로 migration·카탈로그 가져오기를 시험하고, 조직 앱·사이트가 정한 공식 앱 표시 이름·기존 버전 출처를 보존하면서 승인한 기본 설치 정책·버전만 추가·갱신되는지 확인한다. 조직 앱 ID 충돌이나 기존 버전의 commit·아카이브 충돌은 이 시점에 거부한다.
 3. 복원 검사를 통과한 뒤 도구가 정지된 서버에 해시를 확인한 후보를 설치하고, 같은 `.local/bin/miy-server`와 운영 상태 디렉터리로 migration과 `catalog-sync`를 실행한다. 서비스 시작 전후에 제품·버전·앱 레코드를 복원본의 기대 결과와 대조하고 기존 빌드·릴리스·권한 등 주요 업무 레코드와 앱 컨테이너도 확인한다. `deployment.json`의 `officialCatalogSynced`와 최종 `status: PASS`로 완료를 확인한다. 카탈로그에 제품을 등록하는 단계이며 실행 가능한 버전의 설치·승격은 [공식 앱 공급과 설치](RUNNING.md#공식-앱-공급과-설치)를 따른다.
-4. 공식 제품이 한 개라도 있으면(사용 중지한 제품 포함) 수동 rollback과 시작 전 자동 복구 모두 이전 실행 파일에서 같은 보호 버전을 요구한다. 수동 rollback은 서비스 중지 전에 검사하고 중지 직후 재검사한다. 구 바이너리가 보호를 모르면 `official_catalog_requires_compatible_core`로 거부한다. 동기화 응답을 잃었거나 중지 중 제품이 추가되어 자동 복구까지 거부되면 코어를 멈춘 채 후보·덤프·실제 DB·CLI 게시 이력을 남긴다. 운영자는 기록의 후보 SHA-256·실제 schema·카탈로그·게시 CLI를 복원본과 비교하고 검증한 호환 바이너리로 복구한다. 데이터 복원이 필요하면 백업 이후 변경분을 먼저 평가한다. 실제 운영의 24→25 반영과 되돌리기는 별도 실행 기록으로 남긴다.
+4. 공식 제품이 한 개라도 있으면(사용 중지한 제품 포함) 수동 rollback과 시작 전 자동 복구 모두 이전 실행 파일에서 같은 보호 버전을 요구한다. 수동 rollback은 서비스 중지 전에 검사하고 중지 직후 재검사한다. 구 바이너리가 보호를 모르면 `official_catalog_requires_compatible_core`로 거부한다. 동기화 응답을 잃었거나 중지 중 제품이 추가되어 자동 복구까지 거부되면 코어를 멈춘 채 후보·덤프·실제 DB·CLI 게시 이력을 남긴다. 운영자는 기록의 후보 SHA-256·실제 schema·카탈로그·게시 CLI를 복원본과 비교하고 검증한 호환 바이너리로 복구한다. 데이터 복원이 필요하면 백업 이후 변경분을 먼저 평가한다. 사내 호스트의 24→25 전환 결과와 복구 자료는 [0.13.0 배포 기록](releases/dwdcc-0.13.0-2026-11-18-deployment.json)에 있다.
 
 **웹 화면 `scripts/ui-rollout.py`**
 

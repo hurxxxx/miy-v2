@@ -42,7 +42,7 @@
 
 2026-11-14의 완료/잔여 통합·현재 상태 정정·운영 이력 분리는 [문서 통합 기록](releases/docs-consolidation-2026-11-14.json)에 있다. 업무 개발 지침·게시 컴포넌트·예제는 해당 버전의 계약으로 보존했다.
 
-2026-11-15의 [0.10.0 반영 기록](releases/pilot-0.10.0-2026-11-15-deployment.json)과 [리뷰 후속 보완](releases/pilot-review-fixes-2026-11-15-validation.json)은 별개다. 담당 문서의 남아 있던 ‘미게시 후보’ 표기를 실제 게시 범위로 정정하고, 당시 미배포였던 수정과 실제 환경 미인수를 PLAN에서 구분한다. 후속 서버 반영은 [0.12.1 기록](releases/dwdcc-0.12.1-2026-11-17-deployment.json)을 따르며 실제 복구·새 파일럿 인수는 별도로 남는다. 과거 후보 검사나 배포 결과의 PASS 범위를 새 소스에 소급하지 않는다.
+2026-11-15의 [0.10.0 반영](releases/pilot-0.10.0-2026-11-15-deployment.json) 이후 [파일럿 리뷰 보완](releases/pilot-review-fixes-2026-11-15-validation.json)을 구현했고, dwdcc.kr에는 [0.12.1로 배포](releases/dwdcc-0.12.1-2026-11-17-deployment.json)했다. 공식 앱 카탈로그와 schema 25의 적용 결과는 [0.13.0 배포 기록](releases/dwdcc-0.13.0-2026-11-18-deployment.json)에 있다. 실제 복구·새 파일럿 인수의 진행 상태는 PLAN에서 관리한다.
 
 ## 문서 작성 규칙
 

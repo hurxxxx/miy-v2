@@ -1,7 +1,7 @@
 {
   "publishedCli": {
-    "version": "0.12.1",
-    "sourceCommit": "fa0d48de28014397aca2b91f7c53529fa60cf42a"
+    "version": "0.13.0",
+    "sourceCommit": "f8228e1c583264fab22cc9847d47e614212a5751"
   },
   "removable": [],
   "$defs": {
@@ -40,6 +40,16 @@
     },
     "App": {
       "properties": {
+        "disabled": {
+          "default": false,
+          "description": "The company's use switch applies even before the first installation.",
+          "type": "boolean"
+        },
+        "distribution": {
+          "$ref": "#/$defs/AppDistribution",
+          "default": "organization",
+          "description": "Product catalog membership, including products without an installed release."
+        },
         "id": {
           "type": "string"
         },
@@ -49,7 +59,9 @@
       },
       "required": [
         "id",
-        "name"
+        "name",
+        "distribution",
+        "disabled"
       ],
       "type": "object"
     },
@@ -71,6 +83,14 @@
         "installations"
       ],
       "type": "object"
+    },
+    "AppDistribution": {
+      "enum": [
+        "default_official",
+        "optional_official",
+        "organization"
+      ],
+      "type": "string"
     },
     "AppFrameLaunch": {
       "description": "A one-time launch of one installation's app frame (`POST /api/v1/app-frames`).\nThe portal submits `code` in a form POST to `launchUrl` inside a new iframe.",
@@ -633,6 +653,11 @@
         "desiredState": {
           "type": "string"
         },
+        "distribution": {
+          "$ref": "#/$defs/AppDistribution",
+          "default": "organization",
+          "description": "Distribution of this installed release. Official values require verified publisher source."
+        },
         "environment": {
           "$ref": "#/$defs/Environment"
         },
@@ -711,6 +736,7 @@
         "environment",
         "releaseId",
         "kind",
+        "distribution",
         "imageId",
         "sourceCommit",
         "dbStatus",
@@ -771,6 +797,15 @@
           "format": "uuid",
           "type": "string"
         },
+        "releaseId": {
+          "default": null,
+          "description": "Release selected by this job, which can differ from the installation's active release.",
+          "format": "uuid",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "retryable": {
           "type": "boolean"
         },
@@ -783,6 +818,7 @@
       },
       "required": [
         "id",
+        "releaseId",
         "action",
         "status",
         "step",

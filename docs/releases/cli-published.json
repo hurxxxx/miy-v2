@@ -1,9 +1,9 @@
 {
   "schemaVersion": 1,
-  "origin": "https://portal.miy.works",
-  "version": "0.12.1",
+  "origin": "https://portal.dwdcc.kr",
+  "version": "0.13.0",
   "bundleVersion": "0.11.0",
-  "sourceCommit": "fa0d48de28014397aca2b91f7c53529fa60cf42a",
-  "cliReleaseRun": 43979915250,
-  "record": "cli-updates-2026-11-16-deployment.json"
+  "sourceCommit": "f8228e1c583264fab22cc9847d47e614212a5751",
+  "cliReleaseRun": 44309765293,
+  "record": "dwdcc-0.13.0-2026-11-18-deployment.json"
 }

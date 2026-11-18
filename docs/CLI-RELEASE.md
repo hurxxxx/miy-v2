@@ -6,11 +6,17 @@ CLI·Windows 설치기의 후보 빌드, 서버 다운로드 게시, 정식 GitH
 
 ## 온라인 설치 제공
 
-소스 후보는 **Core·CLI 0.13.0**, core schema 25다. CLI에 오프라인 `app source-pin`, 확인한 상태를 조건으로 한 배포·승격, 공식 릴리스 ID로 다른 담당자가 dev에 재배포하는 `app deploy --release`를 추가했다. 서버가 접수하지 않은 빌드는 같은 커밋으로 다시 요청할 수 있고, 응답만 유실된 요청은 기존 ID로 재개한다. SDK 번들은 0.11.0이다. 이 후보의 다운로드 게시와 실제 서버 반영은 대기 중이다. [공식 앱 공급 절차](RUNNING.md#공식-앱-공급과-설치)
+dwdcc.kr의 게시 버전은 **Core·CLI 0.13.0, SDK 번들 0.11.0, 코어 schema 25**다. CLI는 오프라인 `app source-pin`, 확인한 상태를 조건으로 한 배포·승격, 후임 담당자가 공식 릴리스 ID로 dev에 재배포하는 `app deploy --release`를 제공한다. 서버가 접수를 거절한 빌드는 같은 커밋으로 다시 요청할 수 있고, 응답만 유실된 요청은 기존 ID로 재개한다. [공식 앱 공급 절차](RUNNING.md#공식-앱-공급과-설치)
 
 Core는 `MIY_CLI_RELEASE_DIR/release-index.json`을 검증하여 `/api/v1/cli/install.sh`와 `/api/v1/cli/install.ps1`을 제공한다. 각 응답은 한 번 읽은 후보의 immutable URL·아카이브/바이너리 SHA-256·버전과 설정된 `MIY_ORIGIN`을 포함한다. URL·해시는 실행 중 별도 mutable index에서 다시 읽지 않는다. 5개 CLI·2개 helper가 완성된 후보를 기존 `stage-cli-release.py`로 게시해야 하며, 미게시 상태나 실행 중인 Core와 index의 CLI 버전이 다르면 503으로 종료한다. 버전 변경은 모든 target을 먼저 준비한 뒤 Core·worker를 중지한 동안 catalog와 바이너리를 함께 교체한다. 복구할 때도 이전 Core·catalog를 함께 복원한다. 온라인 스크립트는 Core에 포함되므로 서버 바이너리 교체가 필요하다. 기존 게시 패키지는 다시 쓰지 않는다.
 
 설치 화면은 명령 한 줄을 우선 표시하고, 패키지·GUI 설치기 직접 다운로드는 접힌 추가 선택지로 제공한다. `scripts/install-cli-online.sh`·`.ps1`은 서버가 값을 넣는 템플릿이므로 저장소 원문을 직접 실행하지 않는다. 사용법과 사용자 PATH 정책은 [RUNNING](RUNNING.md#설치와-발견)에 있다.
+
+## dwdcc.kr 0.13.0 게시
+
+2026-11-18에 `f8228e1c583264fab22cc9847d47e614212a5751`에서 빌드한 CLI 5종과 Linux DB 연결 helper 2종, 같은 Windows CLI를 내장한 GUI 설치기를 사내 포털에 게시했다. 공개 다운로드 파일의 해시를 CI 산출물과 대조하고 Linux에서 온라인 설치·재설치를 확인했다. [설치 안내](https://portal.dwdcc.kr/cli/install) · [CLI CI 44309765293](https://github.com/hurxxxx/miy-v2/actions/runs/44309765293) · [설치기 CI 44312595757](https://github.com/hurxxxx/miy-v2/actions/runs/44312595757) · [배포 기록](releases/dwdcc-0.13.0-2026-11-18-deployment.json)
+
+버전 검사기는 게시 CLI의 버전과 출처를 기준으로 다음 빌드를 검증한다. Windows Server 2022에서는 새 설치기의 설치·갱신·보존·제거·화면 검사 24개가 통과했다. Windows 11 사용자 인수와 정식 GitHub Release 공개는 대기 중이다. [게시 CLI 명세](releases/cli-published.json) · [Windows 후보 명세](releases/windows-candidate.json) · [Windows 인수 절차](WINDOWS-ACCEPTANCE.md)
 
 ## miy.works 0.12.1 게시
 
@@ -28,17 +34,15 @@ Core 빌드 입력은 `ec65ce5`이며 CLI 소스 `06f2fd7`은 Windows 검사기�
 
 2026-11-16에 `9897f6385ff1228c43fbc28a4f42b4d7a75f59a4`의 [CLI CI 43865661806](https://github.com/hurxxxx/miy-v2/actions/runs/43865661806)를 실행해 5개 target과 Linux helper 2개를 검증하고 `https://portal.miy.works`에 게시했다. `/cli/install`에서 curl/Bash 또는 PowerShell 한 줄로 설치한다. Core·설치 화면과 공개 HTTPS 설치 검증은 [반영 기록](releases/online-cli-2026-11-16-deployment.json)에 있다. 정식 GitHub Release와 0.11.0 GUI EXE는 게시하지 않았다.
 
-[게시 CLI 기록](releases/cli-published.json)은 같은 CLI 버전에 변경된 클라이언트 코드를 다시 게시하지 않도록 버전 검사기의 기준으로 사용한다. [Windows GUI 인수 후보](releases/windows-candidate.json)는 현재 dwdcc.kr의 0.12.1 EXE를 가리키며 과거 0.10.0 출처는 당시 반영 기록에 보존한다. Windows 네이티브 CI의 PowerShell 5.1/7 패키지 검사와 실제 사용자 Windows 11 인수는 별도다.
-
 ## dwdcc.kr 0.12.1 게시
 
 2026-11-17 [0.12.1 반영](releases/dwdcc-0.12.1-2026-11-17-deployment.json)으로 `https://portal.dwdcc.kr/cli/install`에 같은 `fa0d48d`의 CLI 5종·helper 2종과 새 Windows GUI 설치기를 게시했다. CLI 원본은 CI 43979915250이며 바이트를 다시 만들지 않았다. GUI 설치기는 [CI 44034693750](https://github.com/hurxxxx/miy-v2/actions/runs/44034693750)에서 같은 CLI를 내장해 검증했다. Core·worker·웹은 배포 도구 보완을 포함한 `09dca97`, 버전 0.12.1·SDK 번들 0.11.0·schema 24다.
 
-공개 패키지 7개와 EXE·체크섬을 CI 기대값과 대조하고 실제 Linux 온라인 설치·재설치, 일반 OIDC/CLI/stdio·HTTP MCP, 설치 화면의 업데이트·복사 안내를 확인했다. Windows Server 2022 CI 24항목은 PASS이며 Windows 11 사용자 인수는 NOT_RUN이다. 기존 0.10.0 게시 파일은 보존했다. 현행 Windows 후보는 [고정 명세](releases/windows-candidate.json)와 [인수 절차](WINDOWS-ACCEPTANCE.md)를 따른다. 정식 GitHub Release는 게시하지 않았다.
+공개 패키지 7개와 EXE·체크섬을 CI 기대값과 대조하고 실제 Linux 온라인 설치·재설치, 일반 OIDC/CLI/stdio·HTTP MCP, 설치 화면의 업데이트·복사 안내를 확인했다. 당시 Windows Server 2022 CI 24항목은 PASS이며 Windows 11 사용자 인수는 NOT_RUN이었다. 기존 0.10.0 게시 파일은 보존했다.
 
 ## 기존 v2.dwdcc.kr 0.10.0 게시
 
-아래는 과거 0.10.0 게시 이력이다. 2026-11-17에 주소 전환 후 별도 0.12.1 갱신을 수행했으며, 0.10.0 파일은 이전 commit 디렉터리에 보존한다. 현행 상태는 위 0.12.1 절과 [서버 운영 안내](SERVER-OPERATIONS.md)를 따른다.
+아래는 과거 0.10.0 게시 이력이다. 2026-11-17에 주소 전환 후 별도 0.12.1 갱신을 수행했으며, 0.10.0 파일은 이전 commit 디렉터리에 보존한다. [서버 운영 안내](SERVER-OPERATIONS.md)
 
 `9133d700369c43b11abeee1738541e6abda5b4d6`의 [CLI CI 43672504526](https://github.com/hurxxxx/miy-v2/actions/runs/43672504526)(5개 target과 Linux DB 연결 helper 2개, 공개 Release 없음)와 같은 CLI 출처·해시로 만든 [설치 파일 CI 43674150699](https://github.com/hurxxxx/miy-v2/actions/runs/43674150699)를 검증했다. 2026-11-15 서버 0.10.0·schema 23과 함께 [현재 설치 안내](https://portal.dwdcc.kr/cli/install)에 게시했다([0.10.0 반영 기록](releases/pilot-0.10.0-2026-11-15-deployment.json)). SDK 번들 0.10.0은 G4 디렉터리·공통 ACL·작은 첨부의 typed SDK(Rust SDK 0.4.0)를 포함하고, 새 프로젝트는 공용 UI 1.1.0을 기본으로 설치한다. 기존 0.9.0 앱은 `miy app upgrade`로 명시적으로 옮긴다. 0.9.0 CLI·번들·UI 1.0.1 바이트는 그대로 보존한다.
 
@@ -46,10 +50,10 @@ Core 빌드 입력은 `ec65ce5`이며 CLI 소스 `06f2fd7`은 Windows 검사기�
 
 ## 0.11.0 변경
 
-서버 배포를 서버 빌드 산출물로 한정하는 CLI/번들 0.11.0을 준비했다. 최초 소스·격리 검증은 [검증 기록](releases/server-build-only-2026-11-16-validation.json)에 있고, 현재 miy.works와 dwdcc.kr의 0.12.1 서버·CLI에 포함했다. 0.10.0 CLI·번들·UI 1.1.0 바이트는 그대로 보존한다.
+CLI/번들 0.11.0에서 서버가 빌드한 산출물만 배포하도록 바꿨다. 이후 miy.works와 dwdcc.kr에 각각 게시한 0.12.1에도 이 변경을 포함했다. [최초 소스·격리 검증](releases/server-build-only-2026-11-16-validation.json)
 
 - `miy app build`는 항상 선택한 서버에서 빌드한다. `--remote`·`--platform`과 로컬 배포용 Docker 빌드는 없다. 로컬 테스트는 `app dev`(기본 native, `--runtime docker`)다.
-- `miy app deploy`는 프로젝트의 서버 빌드 영수증을 요구한다. 없으면 서버에 요청하기 전에 `server_build_required`로 끝난다. 이미지 export·업로드는 없다.
+- 프로젝트 빌드를 배포하는 `miy app deploy`는 서버 빌드 영수증을 요구한다. 없으면 서버에 요청하기 전에 `server_build_required`로 끝난다. 0.13.0에서 추가한 `--release`는 서버에 등록된 공식 릴리스의 이미지를 선택한다.
 - 서버는 이미지 업로드 API를 제공하지 않고 capability `images.idempotency.v1`을 광고하지 않는다. 위임 action `upload`도 없다.
 - 번들 0.11.0은 0.10.0과 SDK·UI가 같고 보호 안내 문서(`AGENTS.md`, `CLAUDE.md`, `docs/CONTRACT.md`, `docs/CLI.md`, 앱 skill)만 다르다. 0.10.0 프로젝트는 `miy app upgrade`로 옮기고, 공용 UI 1.1.0(번들 0.10.0용 게시물)은 0.11.0에서도 호환으로 받는다.
 - 이전 CLI가 남긴 작업 기록(journal)은 읽는다. 로컬 이미지를 올리던 배포 기록의 `job resume`은 `local_image_deployment_removed`로 거부하고 `miy app build`를 안내한다.
