@@ -1,6 +1,6 @@
 # 문서 지도
 
-- 정리일: 2026-11-16
+- 정리일: 2026-11-20
 
 먼저 PLAN의 [완료 요약](PLAN.md#완료한-작업)·[일부 구현](PLAN.md#일부-구현된-작업)·[남은 구현 순서](PLAN.md#다음-우선-작업)·[검증과 반영 대기](PLAN.md#검증과-반영-대기)를 확인한다. 제품 범위가 필요하면 [PRD](PRD.md)를 읽는다. 작업에 해당하는 아래 담당 문서만 추가로 읽는다. 플랫폼 개발 규칙은 [AGENTS.md](../AGENTS.md)를 따른다.
 
@@ -43,7 +43,7 @@
 
 2026-11-14의 완료/잔여 통합·현재 상태 정정·운영 이력 분리는 [문서 통합 기록](releases/docs-consolidation-2026-11-14.json)에 있다. 업무 개발 지침·게시 컴포넌트·예제는 해당 버전의 계약으로 보존했다.
 
-2026-11-15의 [0.10.0 반영](releases/pilot-0.10.0-2026-11-15-deployment.json) 이후 [파일럿 리뷰 보완](releases/pilot-review-fixes-2026-11-15-validation.json)을 구현했고, dwdcc.kr에는 [0.12.1로 배포](releases/dwdcc-0.12.1-2026-11-17-deployment.json)했다. 공식 앱 카탈로그와 schema 25의 적용 결과는 [0.13.0 배포 기록](releases/dwdcc-0.13.0-2026-11-18-deployment.json)에 있다. 실제 복구·새 파일럿 인수의 진행 상태는 PLAN에서 관리한다.
+2026-11-15의 [0.10.0 반영](releases/pilot-0.10.0-2026-11-15-deployment.json) 이후 [파일럿 리뷰 보완](releases/pilot-review-fixes-2026-11-15-validation.json)을 구현했고, dwdcc.kr에는 [0.12.1로 배포](releases/dwdcc-0.12.1-2026-11-17-deployment.json)했다. 공식 앱 카탈로그와 schema 25의 적용 결과는 [0.13.0 배포 기록](releases/dwdcc-0.13.0-2026-11-18-deployment.json)에 있다. miy.works의 0.13.0 동기화와 계정 발급(schema 26) 반영은 [동기화 기록](releases/miy-works-0.13.0-2026-11-20-deployment.json)과 [계정 링크 반영 기록](releases/account-links-2026-11-20-deployment.json)에 있다. 실제 복구·새 파일럿 인수의 진행 상태는 PLAN에서 관리한다.
 
 ## 문서 작성 규칙
 

@@ -7,7 +7,7 @@
 | 항목 | 새 호스트 구성 |
 | --- | --- |
 | 서버 | `185.223.207.238`, Ubuntu 26.04.1 LTS, 3 vCPU, 약 12GiB RAM |
-| 소스 | `/projects/miy-v2/prod`, Core·웹·게시 CLI `fa0d48d`; Core/CLI 0.12.1, SDK 번들 0.11.0, schema 24 |
+| 소스 | `/projects/miy-v2/prod`, Core·웹 `86f8c53`, 게시 CLI `f8228e1`; Core/CLI 0.13.0, SDK 번들 0.11.0, schema 26 |
 | 업무 포털 | `https://portal.miy.works` |
 | 관리·CLI 승인·IdP | `https://console.miy.works` |
 | 내부 앱 개발 포털 | `https://dev.miy.works` |
@@ -15,7 +15,9 @@
 | 서비스·계정 | `miy-prod-serve`, `miy-prod-worker`, OS 사용자 `miy` |
 | 상태·바이너리 | `/srv/miy-prod`(0700), `/srv/miy-prod/bin/miy-server` |
 | CLI 설치 안내·HTTP MCP | `https://portal.miy.works/cli/install`, `https://portal.miy.works/mcp` |
-| 사용자 CLI | `/home/miy/.local/bin/miy`; `default` context → 업무 포털 |
+| 사용자 CLI | `/home/miy/.local/bin/miy` 0.13.0; `default` context → 업무 포털 |
+| 계정 발급 | 콘솔 **플랫폼 관리 → 사용자 초대**의 초대·재설정 링크. 로그인 서버 관리 호출은 loopback 18181, 서비스 클라이언트 `miy-accounts` |
+| 백업 | 매일 03:30 KST 무중단 `miy-prod-online-backup`(14일 보관), 변경 전 중지 백업 `miy-prod-backup` |
 | DB·Keycloak | `miy-prod-postgres-1`, `miy-prod-keycloak-1`; loopback 15432, 18181 |
 | Core 내부 포트 | 업무 18080, 콘솔 18081, 앱 개발 18082, 프레임 18083; 모두 loopback |
 | Compose | `miy-prod-compose` wrapper; 프로젝트 `miy-prod`, 볼륨 `miy-prod_pgdata`, 네트워크 `miy-prod-app-runtime` |
@@ -52,7 +54,11 @@ miy --context portal auth login
 
 첫 플랫폼 관리자는 `admin`이다. 초기 비밀번호는 비공개 `/srv/miy-prod/credentials.json`의 `admin` 항목, 내부 Keycloak 관리 비밀번호는 `identity_admin` 항목에만 보관한다. 값을 문서·대화·Git에 복사하지 않는다. 계정 관리 절차는 SETUP.md §8을 따르되 상태 경로와 내부 주소는 이 설치 값을 사용한다.
 
+**매일 무중단 백업.** systemd timer `miy-prod-online-backup.timer`가 매일 18:30 UTC(03:30 KST)에 root로 `/usr/local/sbin/miy-prod-online-backup`을 실행한다. 서비스를 멈추지 않고 Core DB(한 시점의 dump와 표별 행 수), 로그인 서버 DB, 모든 앱 DB, 역할, 비공개 상태(설정·키·서버 바이너리·프레임 런타임·저장된 앱 파일)를 `/srv/miy-backups/online/<UTC시각>`(root 전용)에 만들고, Core dump는 매번 일회용 PostgreSQL에 복원해 행 수를 대조한다. 복원 확인이 실패하면 unit이 실패 상태가 된다(`systemctl status miy-prod-online-backup`, `journalctl -u miy-prod-online-backup`). 14일이 지난 자기 디렉터리만 지운다(`MIY_BACKUP_KEEP_DAYS`). 컨테이너 이미지와 게시 CLI 패키지는 포함하지 않으며 아래 중지 백업이 담당한다. **같은 호스트의 사본이므로 디스크·서버 장애에는 대비하지 못한다.** 외부 보관은 대상과 암호화 방식을 정한 뒤 추가한다.
+
 `miy-prod-backup`의 복구 대기는 `server.json`의 현재 콘솔 주소를 읽는다. 백업은 앱을 CLI로 중지하고 개발 세션·작업·파일 업로드를 정리한 뒤 root에서 `miy-prod-backup`으로 만든다. 이 도구는 실행 중 앱/작업이 있으면 거부하고, Nginx·Core·worker·DB/IdP를 잠시 중지해 DB 볼륨·상태·정적 웹·이미지·소스·서비스 설정·TLS를 `/srv/miy-backups/prod-<UTC시각>`에 보관한 뒤 다시 기동한다. 다른 운영자와 사용자의 변경도 먼저 중지한다.
+
+중지 백업의 재개는 `--no-recreate`로 기존 DB 컨테이너를 그대로 다시 시작한다. DB 컨테이너가 재생성되면 설치별 네트워크(`miy-runtime-<설치 ID>`) 연결이 사라져 앱이 DB 이름을 찾지 못한다(2026-11-20 관찰). 재생성이 필요했던 경우 앱을 콘솔에서 시작·재시작하면 Core가 연결을 다시 만든다. 실행 중이던 앱은 재시작해야 한다.
 
 `miy-prod-verify-backup /srv/miy-backups/prod-<UTC시각>`은 해시를 확인하고 새 임시 볼륨·네트워크 없는 컨테이너에서 DB 사본을 열어 주요 개수를 비교한다. 성공 시 자신이 만든 임시 자원만 지우고, 실패 시 조사용으로 보존한다. 이 검사와 같은 호스트의 백업만으로 별도 호스트 전체 복원·장비 장애 대비를 완료했다고 보지 않는다. 백업에는 비밀이 포함되므로 외부 보관은 암호화해서 수행한다.
 
@@ -67,7 +73,13 @@ nginx -t && systemctl reload nginx
 
 2026-11-16 후속 반영으로 CLI 0.12.0의 5개 패키지·helper 2개와 Core/worker·관리 화면·schema 24를 게시했다([신고 기능 반영 기록](releases/support-reports-2026-11-16-deployment.json)). 당시 같은 설치 주소에서 0.12.0을 제공했다. 비로그인 신고는 DB에 저장되며 콘솔의 플랫폼 관리 → 고장 신고에서 관리한다. Core DB 백업의 44개 표·510개 행을 별도 PostgreSQL로 복원하고 23→24 migration을 확인했다. 이전 Core·웹·CLI index와 DB 백업은 `/srv/miy-prod/evidence/support-reports-20261116`에 있다. Core와 CLI catalog는 버전이 같아야 하므로 교체·복구 시 함께 반영한다. 이전 DB로 되돌려 신규 신고를 잃지 않도록 additive schema 24·신고 데이터는 보존한다. 계정·주소·기존 앱은 유지했고 공개 설치·신고 접수/처리·OIDC·CLI·MCP·기존 앱 프레임을 확인했다. 실제 Mac 자격증명 저장소 복구는 별도 확인이 남아 있다.
 
-CLI 업데이트 안내 후속으로 Core·worker·웹과 CLI 0.12.1을 같은 소스 `fa0d48d`로 반영했다([반영 기록](releases/cli-updates-2026-11-16-deployment.json)). 현재 한 줄 설치 명령은 0.12.1을 제공한다. `/cli/install`의 기존 CLI 업데이트 절, CLI `describe --topic updates`, stdio MCP `get_cli_help`의 `updates` 주제, 인증된 HTTP MCP `get_cli_update_guide`가 같은 절차를 안내한다. 이전 Core·웹·전역 CLI·catalog는 `/srv/miy-prod/evidence/cli-updates-20261116/before`에 보관했다. schema 24와 SDK 0.11.0을 유지하며 DB migration·주소·계정·앱 런타임 변경은 없다. 복구 시 이전 Core와 CLI catalog를 함께 교체하고 웹 `index.html`을 복원한다.
+CLI 업데이트 안내 후속으로 Core·worker·웹과 CLI 0.12.1을 같은 소스 `fa0d48d`로 반영했다([반영 기록](releases/cli-updates-2026-11-16-deployment.json)). 당시 한 줄 설치 명령은 0.12.1을 제공했다. `/cli/install`의 기존 CLI 업데이트 절, CLI `describe --topic updates`, stdio MCP `get_cli_help`의 `updates` 주제, 인증된 HTTP MCP `get_cli_update_guide`가 같은 절차를 안내한다. 이전 Core·웹·전역 CLI·catalog는 `/srv/miy-prod/evidence/cli-updates-20261116/before`에 보관했다. schema 24와 SDK 0.11.0을 유지하며 DB migration·주소·계정·앱 런타임 변경은 없다. 복구 시 이전 Core와 CLI catalog를 함께 교체하고 웹 `index.html`을 복원한다.
+
+**2026-11-20 동기화와 계정 발급.** 먼저 GitHub main과 같은 0.13.0으로 맞췄다([반영 기록](releases/miy-works-0.13.0-2026-11-20-deployment.json)). 중지 백업 `/srv/miy-backups/prod-20261120T071517Z`의 별도 복원과 Core DB의 24→25 및 공식 카탈로그 리허설 뒤 Core·worker·웹과 CI가 만든 CLI 0.13.0의 5개 패키지·helper 2개를 함께 반영하고 카탈로그의 네 제품을 등록했다. 한 줄 설치는 0.13.0을 제공한다. 이전 Core·웹·CLI index·전역 CLI는 `/srv/miy-prod/evidence/sync-0130-20261120/before`에 있다.
+
+이어 계정 링크와 로그인 보호를 서버 전용 변경 `86f8c53`로 반영했다([반영 기록](releases/account-links-2026-11-20-deployment.json), [사용 계약](ACCOUNTS.md)). 버전은 0.13.0을 유지하고 게시 CLI는 `f8228e1` 그대로다. schema 26(`account_links`)을 추가했고 `credentials.json`에 서비스 클라이언트 비밀 하나, `runtime.env`에 `MIY_IDENTITY_ADMIN_URL`·`MIY_ACCOUNTS_SECRET`을 더했다. `configure-identity.py`로 기존 realm에 서비스 클라이언트 `miy-accounts`와 `manage-users` 역할, 로그인 잠금·비밀번호 정책(10자 이상)·한국어 로그인 화면, 성·이름 필수 해제를 적용했다. 기존 realm·사용자·클라이언트 ID와 비밀은 그대로다. 이전 Core·웹과 세 설정 파일은 `/srv/miy-prod/evidence/account-links-20261120/before`에 있다. 되돌릴 때는 Core·웹·세 설정 파일을 함께 복원한다. additive schema 26과 로그인 서버의 추가 설정은 남겨도 이전 Core가 동작한다.
+
+계정 관리의 기본 경로는 이제 콘솔이다. SSH의 Keycloak 내부 절차(SETUP §8)와 `miy-admin-password`는 콘솔을 쓸 수 없을 때의 복구 수단이다. 메일 서버는 연결하지 않았으므로 초대·재설정 주소는 관리자가 직접 전달한다.
 
 ---
 

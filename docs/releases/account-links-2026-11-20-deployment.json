@@ -1,0 +1,166 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-11-20",
+  "status": "PASS",
+  "scope": "miy.works 호스트에 계정 링크(초대·비밀번호 재설정)·본인 비밀번호 변경·로그인 보호와 매일 무중단 백업을 반영. Core·worker·웹과 로그인 서버 설정, core schema 26",
+  "origins": {
+    "portal": "https://portal.miy.works",
+    "console": "https://console.miy.works",
+    "devPortal": "https://dev.miy.works"
+  },
+  "versions": {
+    "core": "0.13.0 (server-only change)",
+    "publishedCli": "0.13.0, unchanged",
+    "sdkBundle": "0.11.0",
+    "schemaBefore": 25,
+    "schemaAfter": 26
+  },
+  "source": {
+    "coreAndWebCommit": "86f8c53264714b483bb6bea9f9044018135f45b7",
+    "publishedCliCommit": "f8228e1c583264fab22cc9847d47e614212a5751",
+    "previousCoreWebCommit": "f8228e1c583264fab22cc9847d47e614212a5751",
+    "sourceValidation": "account-links-2026-11-20-validation.json"
+  },
+  "artifacts": {
+    "serverSha256": "192e715be1c16471cdcbe4df58982c6e6264ad50aafc7f5f10cbbb9e9024b534",
+    "previousServerSha256": "0dbf0ed218bdb6995ef5bd5d36b9be4db79097a3d96c639a05900f9697f2472a",
+    "portalIndexSha256": "35d3d8412eef4b5c8792a6f443c6b16c7f0708d29a35c585237340a67fd3fba6",
+    "previousPortalIndexSha256": "5effd5762ef01b3c953603c068e675c0fe512906a5e3217f36f852035caf163a",
+    "newWebAssets": 3,
+    "webRebuild": "a second build from the committed source was byte-identical to the candidate"
+  },
+  "preDeployment": {
+    "coreRehearsal": {
+      "tool": "core-backup.py create / verify --migrate-with",
+      "tables": 47,
+      "rows": 638,
+      "schemaBefore": 25,
+      "schemaAfter": 26,
+      "mismatchedTables": [],
+      "containerRemoved": true
+    },
+    "onlineBackup": {
+      "tool": "miy-prod-online-backup",
+      "directory": "/srv/miy-backups/online/20261120T081905Z",
+      "contents": "core (restore-checked), identity and app databases, roles, private state"
+    },
+    "fullBackupSameDay": "/srv/miy-backups/prod-20261120T071517Z (before the 0.13.0 synchronization)",
+    "settingsCandidate": {
+      "tool": "bootstrap.py --output-dir with the stored addresses",
+      "unchanged": [
+        "server.json",
+        "compose.env",
+        "init.sql"
+      ],
+      "credentialsAdded": [
+        "accounts_client"
+      ],
+      "runtimeAdded": [
+        "MIY_IDENTITY_ADMIN_URL",
+        "MIY_ACCOUNTS_SECRET"
+      ],
+      "realmFileAdded": "client miy-accounts and the managed sign-in protections; existing clients, users and values equal"
+    },
+    "activity": "no browser session, job, build or development session was active"
+  },
+  "deployment": {
+    "tool": "host-specific /root/miy-setup/apply-account-links.py",
+    "result": "PASS",
+    "checks": [
+      "candidate_settings_and_rehearsal_verified",
+      "settings_installed",
+      "identity_configured",
+      "schema_26_applied",
+      "core_worker_healthy_and_account_links_configured",
+      "new_web_published_atomically",
+      "users_and_installations_preserved"
+    ],
+    "servicesStoppedAt": "2026-11-20T08:19:18Z",
+    "servicesStartedAt": "2026-11-20T08:19:19Z",
+    "identity": "configure-identity.py against the running realm over loopback: service client miy-accounts with the manage-users role, lockout (10 failures, 60 s up to 15 min), password policy length(10) and notUsername, Korean and English sign-in pages, first and last name no longer required. Realm, user subjects, client IDs and secrets kept.",
+    "evidenceDirectory": "/srv/miy-prod/evidence/account-links-20261120",
+    "recoveryInputs": "before/ holds the previous server binary, web index, credentials.json, runtime.env and realm.json"
+  },
+  "postDeployment": [
+    {
+      "result": "PASS",
+      "check": "세 HTTPS 출처 health, serve·worker 실행 파일 해시, schema 26, /auth/options의 accountLinks·passwordUrl, capabilities의 accounts.links.v1, 설치 안내의 CLI 0.13.0·f8228e1 유지"
+    },
+    {
+      "result": "PASS",
+      "check": "실제 로그인 서버 DB의 잠금·비밀번호 정책·언어 설정과 서비스 클라이언트"
+    },
+    {
+      "result": "PASS",
+      "command": "node scripts/check-account-links.mjs --origin https://portal.miy.works --lockout true",
+      "evidence": "acceptance-result.json",
+      "passes": [
+        "server advertises configured account links",
+        "administrator signs in to the console with ordinary OIDC",
+        "console issues an invitation whose secret is shown once and never listed",
+        "invited person creates their own sign-in account and is registered without privileges",
+        "new person signs in to the portal directly and sees no app until one is granted",
+        "a used invitation is refused",
+        "an administrator's reset link sets a new password and ends earlier browser sessions",
+        "only the new password signs in and the reset link works once",
+        "a signed-in person changes their own password on the sign-in server's form",
+        "repeated wrong passwords temporarily lock the account",
+        "the acceptance account is disabled"
+      ],
+      "signInPageLanguage": "ko",
+      "scope": "실제 Keycloak과 Chrome: 관리자 OIDC, 콘솔 초대 발급, 새 사람의 계정 생성과 업무 포털 로그인, 재설정 링크, 본인 비밀번호 변경, 잠금. 점검 계정 한 명을 등록하고 Core와 로그인 서버 양쪽에서 중지"
+    },
+    {
+      "result": "PASS",
+      "command": "node check-frame-after.mjs (이전 반영의 검사를 이 증거 디렉터리로 옮김)",
+      "evidence": "frame-after-result.json",
+      "checks": [
+        "ordinary_console_login",
+        "portal_sso_and_boundary",
+        "dev_portal_sso_and_boundary",
+        "existing_app_renders_in_new_frame_origin"
+      ],
+      "scope": "관리자 OIDC와 세 출처의 용도, 기존 파일럿 앱의 설치별 프레임 표시"
+    },
+    {
+      "result": "PASS",
+      "check": "사용자·설치 기록 보존, 파일럿 앱 running/healthy 유지"
+    },
+    {
+      "result": "PASS",
+      "check": "매일 03:30 KST 무중단 백업 timer 활성화, 시험 실행 2회의 Core 복원 확인과 체크섬",
+      "detail": "miy-prod-online-backup.timer; /srv/miy-backups/online, 14일 보관"
+    }
+  ],
+  "hostChanges": [
+    "/usr/local/sbin/miy-prod-online-backup, miy-prod-online-backup.service/.timer 추가",
+    "/usr/local/sbin/miy-prod-backup의 재개를 --no-recreate로 변경(이전 사본 /root/miy-setup/miy-prod-backup.before-20261120)"
+  ],
+  "notRun": [
+    {
+      "status": "NOT_RUN",
+      "scope": "실제 직원의 가입과 그 사람의 앱 사용",
+      "reason": "점검 계정으로 흐름을 확인했다. 운영(prod)에 설치된 업무 앱이 없다"
+    },
+    {
+      "status": "NOT_RUN",
+      "scope": "DB 컨테이너 재생성 뒤 앱 start/restart의 자동 재연결을 이 호스트에서 재현",
+      "reason": "확인만을 위해 운영 DB 컨테이너를 재생성하지 않는다. 격리 회귀의 start/restart와 당일 수동 복구로 범위를 구분"
+    },
+    {
+      "status": "NOT_RUN",
+      "scope": "메일 발송, 공개 가입, 외부 보관 백업, 인증서 자동 갱신",
+      "reason": "메일 서버·보관 대상·DNS API 자격이 없다. 결정과 입력이 필요"
+    },
+    {
+      "status": "NOT_RUN",
+      "scope": "OS 재부팅, 외부 PC의 CLI 재인증",
+      "reason": "이번 반영의 범위 밖"
+    },
+    {
+      "status": "NOT_RUN",
+      "scope": "이 commit의 GitHub Actions",
+      "reason": "push 뒤 별도 확인"
+    }
+  ]
+}

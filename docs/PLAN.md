@@ -1,7 +1,7 @@
 # miy 추진 계획
 
-- 작성일: 2026-10-20 · 정리일: 2026-11-18
-- 기준: 소스 구현·격리 검증·게시·개발 서버 반영을 구분한다. 2026-11-18 dwdcc.kr의 0.13.0 반영까지 포함하며 호스트별 소스·버전·복구 경로는 SERVER-OPERATIONS가 관리한다.
+- 작성일: 2026-10-20 · 정리일: 2026-11-20
+- 기준: 소스 구현·격리 검증·게시·개발 서버 반영을 구분한다. 2026-11-18 dwdcc.kr의 0.13.0 반영과 2026-11-20 miy.works의 0.13.0 동기화·계정 발급 반영까지 포함하며 호스트별 소스·버전·복구 경로는 SERVER-OPERATIONS가 관리한다.
 
 이 문서가 **완료 요약·진행 상태·남은 작업·착수 순서의 정본**이다. 상세 설계와 인수 기준은 [문서 지도](README.md)의 담당 문서, 실제 배포 상태는 [서버 운영 안내](SERVER-OPERATIONS.md), CLI 후보·게시 상태는 [CLI 릴리스](CLI-RELEASE.md)가 관리한다.
 
@@ -23,6 +23,8 @@
 **후속 보완의 구현·격리 검증을 완료했다.** 앱 DB의 로그인·대상 DB 고정, 프록시 복구 재시도, 파일럿 실패 정리와 결과 식별자를 보완했다. 이 수정은 miy.works의 2026-11-16 초기 설치와 dwdcc.kr의 [2026-11-17 반영](releases/dwdcc-0.12.1-2026-11-17-deployment.json)에 포함했다. 새 복구 도구·파일럿 검사 v2의 실제 실행은 별도로 남는다. 원래 검증은 [후속 검증 기록](releases/pilot-review-fixes-2026-11-15-validation.json)에서 배포된 0.10.0과 구분한다.
 
 **서버 배포를 서버 빌드 산출물로 한정하는 변경의 구현·격리 검증을 완료했다(2026-11-16, CLI/번들 0.11.0 후보).** 로컬 배포용 빌드와 이미지 업로드를 제거해 `app build`는 항상 서버에서 검사·빌드하고, 서버는 그 앱의 성공한 서버 빌드가 만든 이미지만 dev에 배포하고 prod로 승격한다. 앱 컨테이너의 외부 통신은 플랫폼이 제한하지 않고 네트워크·호스트 방화벽이 담당하는 것으로 확정했다. miy.works에는 서버·worker와 CLI 0.11.0을 반영하고 한 줄 설치로 게시했다([반영 기록](releases/online-cli-2026-11-16-deployment.json)). 최초 격리 결과는 [검증 기록](releases/server-build-only-2026-11-16-validation.json)에 보존한다.
+
+**계정 발급과 로그인 보호를 구현해 miy.works에 반영했다(2026-11-20, 서버 전용 `86f8c53`, schema 26).** 관리자가 콘솔에서 1회용 초대 링크와 비밀번호 재설정 링크를 만들고, 받은 사람이 직접 계정을 만들거나 비밀번호를 정한다. 로그인한 사람은 화면에서 스스로 비밀번호를 바꾼다. 로그인 잠금·비밀번호 정책·한국어 로그인 화면을 기본 설정으로 넣었고, 실제 Keycloak과 브라우저로 새 사람의 가입→포털 로그인→재설정→본인 변경을 확인했다. 메일 서버·공개 가입은 범위 밖이다. [사용 계약](ACCOUNTS.md) · [검증 기록](releases/account-links-2026-11-20-validation.json) · [반영 기록](releases/account-links-2026-11-20-deployment.json). 같은 날 miy.works를 0.13.0으로 맞추고([기록](releases/miy-works-0.13.0-2026-11-20-deployment.json)) 매일 무중단 백업을 켰다.
 
 ## 완료한 작업
 
@@ -47,6 +49,7 @@
 | 파일럿 리뷰 후속 보완 | 쿼리 DSN의 앱 DB·로그인 덮어쓰기 차단, 최초 DB 준비 대상 고정, 중간 실패 후 재시도 가능한 프록시 복구, 배포 응답 유실 시 파일럿 정리와 고정 결과 이름. 소스·격리 검증 완료 | [후속 검증](releases/pilot-review-fixes-2026-11-15-validation.json). 두 호스트의 현행 소스에 포함. 실제 복구·파일럿 v2 인수는 아래 대기 표에서 추적 |
 | 서버 빌드 전용 배포 | 배포·승격 접수, 사전 점검, worker 실행에서 그 앱의 성공한 서버 빌드 산출물만 허용(`server_build_required`). 이미지 업로드 API·적재 worker·위임 action `upload`와 CLI의 로컬 배포용 빌드·이미지 전송 제거. CLI/번들 0.11.0 후보와 0.10.0에서의 `app upgrade` 경로. 소스·격리 검증 완료 | [검증 기록](releases/server-build-only-2026-11-16-validation.json). 이 기능 자체의 schema 변경은 없음. 두 호스트에 배포했고 호스트별 서버·CLI 버전과 schema는 운영 안내에서 관리한다. 새 실서버 앱 배포와 공통 기능 전체 경로 인수는 아래 대기 표에서 추적 |
 | 개발 PC 한 줄 CLI 설치 | curl/Bash·PowerShell 온라인 설치, OS/CPU 선택, 패키지·바이너리 해시 검증, 사용자 PATH·서버 등록과 기존 설정 보존 | 두 호스트에서 CLI 5종·helper 2종과 설치 화면 제공. [최초 반영](releases/online-cli-2026-11-16-deployment.json), [dwdcc.kr 0.13.0 갱신](releases/dwdcc-0.13.0-2026-11-18-deployment.json). 외부 Windows/macOS 실기는 별도 |
+| 계정 발급·비밀번호·로그인 보호 | 초대·재설정 링크(1회용, 해시 저장, 사용 시 발급자 권한 재확인), 본인 비밀번호 변경, Core의 loopback 로그인 서버 연동(전용 서비스 클라이언트), 잠금·비밀번호 정책·한국어 로그인 화면, 콘솔 발급 화면. 앱 시작 시 DB 네트워크 재연결. schema 26, 서버 전용 | [사용 계약](ACCOUNTS.md), [검증 기록](releases/account-links-2026-11-20-validation.json), [miy.works 반영](releases/account-links-2026-11-20-deployment.json). dwdcc.kr 반영, 메일 발송·공개 가입, CLI 발급 명령은 별도. 다음 CLI 후보는 공유 입력 변경으로 0.14.0 이상 |
 | 설치 주소 설정·이전 | 도메인/IP·포트 공통 JSON 입력·검증, 현재 설정을 보존한 후보 생성, Nginx/Keycloak 주소 갱신, 기존 프레임 예약·앱 데이터를 보존하는 SQL 계획 도구와 격리 검사 | [주소 안내](SERVER-ADDRESSES.md), [검증 기록](releases/server-addresses-2026-11-16-validation.json). miy.works는 역할별 도메인으로 실제 이전하고 OIDC·CLI·MCP·기존 dev 앱을 확인했다([전환 기록](releases/miy-works-address-move-2026-11-16.json)). dwdcc.kr은 [주소 파일 도입](releases/dwdcc-subdomains-2026-11-17-deployment.json)에 이어 `portal`·`console`·`dev2`·`app-*`로 실제 전환했다. 10개 DB의 별도 복원·프레임 이전 리허설 후 설정·IdP·기존 프레임 5개를 이전했고 주소 전환 당시 서버/CLI 0.10.0·schema 23은 유지했다([전환 기록](releases/dwdcc-role-addresses-2026-11-17-deployment.json)). 외부 PC 재인증은 별도 |
 
 ## 일부 구현된 작업
@@ -90,7 +93,7 @@
 | 대기 묶음 | 남은 확인 | 수행 시점·정본 |
 | --- | --- | --- |
 | 파일럿 리뷰 후속 | 서버 반영 완료. 남은 것은 새 프록시 복구 도구의 실제 복구와 새 파일럿 검사의 실서버 실행 | [후속 검증](releases/pilot-review-fixes-2026-11-15-validation.json). 기존 배포물과 .local의 당시 도구·백업을 보존하며, 확인만을 위해 운영 복구를 실행하지 않음 |
-| 공통 기능 전체 경로 | 실제 OIDC·native/Docker preview·배포 프레임에서 디렉터리 선택/공유/첨부를 함께 쓰는 연결. 새로 등록한 실제 사용자의 로그인 | 게시·서버 반영과 템플릿 새 앱의 생성→서버 빌드→dev 배포→프레임은 [2026-11-15 반영 기록](releases/pilot-0.10.0-2026-11-15-deployment.json)으로 완료. 모의 Core 대표 앱·Core 단독 회귀·모의 HTTP 브라우저의 PASS를 전체 연결 PASS로 바꾸지 않음 |
+| 공통 기능 전체 경로 | 실제 OIDC·native/Docker preview·배포 프레임에서 디렉터리 선택/공유/첨부를 함께 쓰는 연결. 새로 등록한 사용자의 로그인은 miy.works에서 계정 링크 인수로 확인했고([반영 기록](releases/account-links-2026-11-20-deployment.json)) 그 사용자의 앱 사용은 남아 있다 | 게시·서버 반영과 템플릿 새 앱의 생성→서버 빌드→dev 배포→프레임은 [2026-11-15 반영 기록](releases/pilot-0.10.0-2026-11-15-deployment.json)으로 완료. 모의 Core 대표 앱·Core 단독 회귀·모의 HTTP 브라우저의 PASS를 전체 연결 PASS로 바꾸지 않음 |
 | 빈 새 서버 설치 | [SETUP](SETUP.md)만 따라 별도 Ubuntu 서버의 DB/IdP·TLS·첫 로그인·첫 앱·재부팅과 재접속·계정/인증서 관리·백업/복원·갱신을 확인. 사설 CA의 앱 컨테이너/SDK 전달은 미구현이므로 공통 backend API 인수 전에 보완 | 이전 작업본의 문서 명령·격리 설정 검사는 [설치 안내 검증](releases/fresh-server-setup-2026-11-16-validation.json), 문서만 반영하는 범위와 인수 인계는 [후속 보완](releases/fresh-server-setup-2026-11-16-followup.json)에 기록. 사용자가 별도 VM 인수를 수행하며 전체 실행·사설 CA 앱 통신은 NOT_RUN. 공통 기능 즉시 사용은 공개 CA 배치 |
 | Windows·실제 사용자 환경 | 현재 후보의 Windows 11 PS5.1/7 설치·갱신·제거, 기존 context/프로젝트·인증 보존, 단일 IP/사설 CA HTTPS. macOS 실기·별도 서버도 미완료 범위를 유지 | Windows는 사용자 수행. [WINDOWS-ACCEPTANCE](WINDOWS-ACCEPTANCE.md). 이전 후보나 CI PASS를 실기 결과로 이월하지 않음 |
 | 정식 CLI 공개 | 동일 후보·실제 환경·도구/OS별 독립 새 세션 3회, Windows 11 실기 등 공개 게이트. 게시 CLI로 실서버 새 앱 생성/배포는 같은 Linux 호스트에서 확인(2026-11-15) | [CLI-RELEASE](CLI-RELEASE.md#공개-릴리스-게이트). 다운로드 서버 게시와 정식 GitHub Release를 구분(R13) |
@@ -123,6 +126,7 @@
 | 4. 선택 제품·업무 앱 | V1-R1~R5·A3, Mail/Community/Whiteboard/Video-chat 등 채택 범위. [V1 채택 판단](V1-ADOPTION.md#5-결정이-필요한-사항) |
 | 5. Hermes 통합 비용 | 채택은 확정. 어댑터·upstream 공백 처리 비용은 4-1 실험에서 평가 |
 | AI-DO 선택 후보 | S11 홈/공지·S13 개인 도킹 도구·C12 사용 통계의 플랫폼/앱 책임과 채택 범위. C12는 외부 수집 식별자·보존 기간·조회 권한까지 결정. [대상 목록](AI-DO-COMMON-MIGRATION.md) |
+| 베타 운영 | 메일 서버 연결(주소 확인·분실 메일)과 공개 가입 허용 여부, 백업의 외부 보관 대상·암호화, 베타 사용자가 쓸 첫 업무 앱(공식 제품에는 출시 버전이 없음). [계정 발급의 범위](ACCOUNTS.md#제공하지-않는-것) |
 | 운영·업무 정책 | 공개 접근 범위, 설치되지 않은 앱의 권한 부여 정책, 감사 보존 기간, 별도 인사 동기화/선택적 오프라인 제공 범위. 기능 설계·인수 전에 해당 정본에서 확정 |
 
 ## 미해결 호환성 관찰
