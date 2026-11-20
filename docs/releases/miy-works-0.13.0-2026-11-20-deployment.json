@@ -1,0 +1,153 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-11-20",
+  "status": "PASS",
+  "scope": "miy.works 호스트의 Core·worker·포털·게시 CLI를 GitHub main과 같은 0.13.0으로 갱신하고 작업본을 동기화",
+  "origins": {
+    "portal": "https://portal.miy.works",
+    "console": "https://console.miy.works",
+    "devPortal": "https://dev.miy.works",
+    "appFrame": "https://app-{key}.miy.works"
+  },
+  "versions": {
+    "coreAndCli": "0.13.0",
+    "sdkBundle": "0.11.0",
+    "schemaBefore": 24,
+    "schemaAfter": 25,
+    "previousCoreAndCli": "0.12.1"
+  },
+  "source": {
+    "serverWebAndCliCommit": "f8228e1c583264fab22cc9847d47e614212a5751",
+    "workingCopyHead": "52b6aa4bea33f3ddf6ee04a1b7d4bff19017ec46",
+    "workingCopyHeadBefore": "0c3fe873197f63d9f98580cb46cd211b09d5bcb5",
+    "previousCoreWebCliCommit": "fa0d48de28014397aca2b91f7c53529fa60cf42a",
+    "relationship": "52b6aa4 adds documentation and the published-client contract record to f8228e1; compiled Core and web inputs are equal.",
+    "candidateCheckout": "separate git worktree of f8228e1, built as the miy user"
+  },
+  "ci": {
+    "cli-release.yml": {
+      "runId": 44309765293,
+      "headSha": "f8228e1c583264fab22cc9847d47e614212a5751",
+      "conclusion": "success",
+      "url": "https://github.com/hurxxxx/miy-v2/actions/runs/44309765293"
+    }
+  },
+  "artifacts": {
+    "serverSha256": "0dbf0ed218bdb6995ef5bd5d36b9be4db79097a3d96c639a05900f9697f2472a",
+    "previousServerSha256": "1da04a3e5e360c91b4e4663cb3a4240a830efbc2cb74d435e1bf6ec789052a71",
+    "portalIndexSha256": "5effd5762ef01b3c953603c068e675c0fe512906a5e3217f36f852035caf163a",
+    "previousPortalIndexSha256": "68cd1483848455a81709d03b9fd394f0824b14a44ccc0de55fca699cf9a0c7eb",
+    "portalIndexMatchesOtherHost": true,
+    "frameRuntime": "candidate build identical to the installed files; not replaced",
+    "linuxCliSha256": "849fe9541f30519fbbb50f2b1ce25f598fcff733f14ca92d54d284878876d4e9",
+    "nativeCliTargets": 5,
+    "linuxHelpers": 2,
+    "publicDownloads": {
+      "verified": true,
+      "serverUrl": "https://portal.miy.works",
+      "commit": "f8228e1c583264fab22cc9847d47e614212a5751",
+      "version": "0.13.0",
+      "downloads": 7,
+      "bytes": 253751766
+    }
+  },
+  "preDeployment": {
+    "appStopped": "pilot-69697002 dev installation stopped through the console API before the stopped backup",
+    "fullBackup": {
+      "tool": "miy-prod-backup",
+      "directory": "/srv/miy-backups/prod-20261120T071517Z",
+      "size": "3.0G",
+      "downtimeSeconds": 28,
+      "isolatedRestore": "miy-prod-verify-backup PASS (core and identity counts match)"
+    },
+    "coreRehearsal": {
+      "tool": "core-backup.py create / verify --migrate-with --official-app-catalog",
+      "tables": 45,
+      "rows": 613,
+      "schemaBefore": 24,
+      "schemaAfter": 25,
+      "mismatchedTables": [],
+      "catalogSha256": "d5a3e94a41e3b7faf26ccc490d75581b66d263f320813705ab6615112930b4a3",
+      "catalogReceipt": {
+        "apps": 4,
+        "releasePins": 0
+      },
+      "containerRemoved": true
+    }
+  },
+  "deployment": {
+    "tool": "host-specific /root/miy-setup/apply-sync-0130.py (not scripts/core-rollout.py)",
+    "result": "PASS",
+    "checks": [
+      "candidate_backup_rehearsal_and_ci_verified",
+      "working_copy_fast_forwarded",
+      "complete_matching_cli_catalog_published",
+      "schema_25_applied",
+      "official_catalog_synced",
+      "core_worker_and_three_origins_healthy",
+      "new_web_published_atomically",
+      "users_and_installations_preserved"
+    ],
+    "servicesStoppedAt": "2026-11-20T07:17:54Z",
+    "servicesStartedAt": "2026-11-20T07:17:55Z",
+    "catalogReceipt": {
+      "apps": 4,
+      "releasePins": 0
+    },
+    "newWebAssets": 2,
+    "evidenceDirectory": "/srv/miy-prod/evidence/sync-0130-20261120",
+    "recoveryInputs": "before/ holds the previous server binary, web index, CLI release index and global CLI"
+  },
+  "postDeployment": [
+    {
+      "result": "PASS",
+      "check": "세 HTTPS 출처 health, 설치 안내의 CLI 0.13.0·f8228e1·5개 패키지, serve/worker 실행 파일 해시, schema 25"
+    },
+    {
+      "result": "PASS",
+      "check": "scripts/check-cli-downloads.py: 공개 주소의 5개 패키지·2개 helper 해시",
+      "bytes": 253751766
+    },
+    {
+      "result": "PASS",
+      "check": "공식 카탈로그 4개 제품 등록(플래너·메신저 기본, PMS·PLM 선택), 승인 버전 0"
+    },
+    {
+      "result": "PASS",
+      "check": "서버 사용자 miy의 전역 CLI를 검증된 x86_64 Linux 패키지의 0.13.0으로 교체"
+    },
+    {
+      "result": "PASS",
+      "check": "사용자·설치 기록 보존, 파일럿 앱 재시작 후 healthy"
+    }
+  ],
+  "failuresRetained": [
+    {
+      "status": "FAIL",
+      "evidence": "deploy-result.json의 첫 실행(덮어씀)·이 기록",
+      "reason": "반영 스크립트의 사전 검사가 빌드 commit과 작업본 대상 사이 변경을 docs/로만 허용해 contracts/api-v1.published.json에서 멈췄다. 서버 변경 전이며, 이 파일이 검사 스크립트만 읽는 게시 기록임을 확인하고 허용 목록에 추가해 다시 실행했다."
+    },
+    {
+      "status": "FAIL",
+      "evidence": "app-start-result.json",
+      "reason": "전체 백업의 재개가 compose 파일 변경을 감지해 DB 컨테이너를 재생성했고, 설치별 네트워크 연결이 사라져 파일럿 앱 시작이 DB 이름 해석 실패로 runtime_operation_failed가 됐다. Core가 쓰는 것과 같은 인자로 DB를 그 네트워크에 다시 연결한 뒤 시작에 성공했다(app-start-result-attempt2.json). 백업 도구는 --no-recreate로 고쳤고, start/restart가 연결을 다시 확인하는 Core 수정은 후속 반영에 포함한다."
+    }
+  ],
+  "notRun": [
+    {
+      "status": "NOT_RUN",
+      "scope": "OS 재부팅, 외부 Windows/macOS PC의 0.13.0 설치와 CLI 재인증",
+      "reason": "원격 세션이 이 호스트에서 실행 중이며 외부 클라이언트가 연결되지 않았다"
+    },
+    {
+      "status": "NOT_RUN",
+      "scope": "게시 CLI로 새 앱의 서버 빌드·dev 배포, 공식 앱 릴리스 설치",
+      "reason": "카탈로그의 제품에는 게시된 버전이 없고 이번 범위는 동기화다"
+    },
+    {
+      "status": "NOT_RUN",
+      "scope": "Windows GUI 설치기 게시",
+      "reason": "이 호스트에는 설치기를 게시하지 않는다"
+    }
+  ]
+}
