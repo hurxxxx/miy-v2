@@ -666,6 +666,10 @@ async fn execute(pool: &sqlx::PgPool, job: &sqlx::postgres::PgRow) -> Result<()>
                         == inst.get::<Uuid, _>("release_id").to_string(),
                     RuntimeFailure::new(FailureCode::ContainerOwnershipMismatch)
                 );
+                // A recreated database container is no longer attached to this
+                // installation's network; the app could not resolve it. Reattach
+                // before starting (a no-op while the attachment exists).
+                installation_network(installation).await?;
                 sqlx::query("UPDATE installations SET desired_state='running',runtime_status='starting' WHERE id=$1").bind(installation).execute(pool).await?;
                 let started = async {
                     docker(&[

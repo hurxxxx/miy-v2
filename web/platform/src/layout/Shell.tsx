@@ -3,12 +3,13 @@ import { Link, Outlet, useLocation } from "@tanstack/react-router";
 import { request } from "@miy/sdk";
 import { InstallationsProvider, installationsIn, useInstallations } from "../data/installations";
 import { useSession, useSurface, type LoginOptions, type User } from "../data/session";
-import { currentEnvironment, environmentOrigin, environmentPath, isCliApprovalPath, isConsolePath, isAppPath, pathEnvironment, portalEnvironment, surfaceUrl, type Environment } from "../lib/paths";
+import { currentEnvironment, environmentOrigin, environmentPath, isAccountLinkPath, isCliApprovalPath, isConsolePath, isAppPath, pathEnvironment, portalEnvironment, surfaceUrl, type Environment } from "../lib/paths";
 import { clearAllAppGuards, confirmLeaveAllApps } from "../lib/navigation-guards";
 import { LoadError } from "../components/LoadState";
 import { NewTabLink } from "../components/NewTabLink";
 import { Login } from "../pages/Login";
 import { CliInstall } from "../pages/CliInstall";
+import { Join } from "../pages/Join";
 import { AppMark, Badge, Button, Loading, Panel, monograms } from "../ui";
 import { CloseIcon, HomeIcon, MenuIcon, SettingsIcon, TerminalIcon } from "../ui/icons";
 
@@ -40,6 +41,10 @@ export function Shell() {
         </main>
       </div>
     );
+  // Invitation and password reset links need no session. They live on the console,
+  // next to the sign-in page; a portal sends these paths there like other console
+  // pages, without forwarding any input.
+  if (options?.surface === "console" && isAccountLinkPath(location.pathname)) return <Join />;
   const ownEnvironment = options ? portalEnvironment(options.surface, options.legacyPortal) : null;
   if (options && options.surface !== "console" && isConsolePath(location.pathname))
     return <SurfaceRedirect href={surfaceUrl(options.consoleOrigin, location.pathname)} label="관리 콘솔" />;
@@ -330,6 +335,19 @@ function SignedInLayout({ user, environment }: { user: User; environment: Enviro
             <span className="account-name" title={user.name}>
               {user.name}
             </span>
+            {options.passwordUrl && (
+              <a
+                className="account-password"
+                href={options.passwordUrl}
+                onClick={(event) => {
+                  // The sign-in server's form replaces this page; unsaved app work asks first.
+                  if (!confirmLeaveAllApps()) event.preventDefault();
+                  else clearAllAppGuards();
+                }}
+              >
+                비밀번호 변경
+              </a>
+            )}
             <Button size="sm" onClick={logout}>
               로그아웃
             </Button>

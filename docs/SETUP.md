@@ -368,7 +368,7 @@ docker compose --env-file "$MIY_STATE_DIR/compose.env" exec -T postgres \
   psql -U postgres -d postgres -c "SELECT datname FROM pg_database WHERE datname IN ('miy_core','miy_identity') ORDER BY datname;"
 ```
 
-출력에 `miy_core`·`miy_identity`가 있어야 한다. PostgreSQL 이미지는 첫 기동에 `init.sql`로 DB와 전용 역할을 만들고 Keycloak은 realm·사용자를 가져온다. 이 단계에서는 miy 테이블이 아직 없으며 다음 절에서 migration/seed를 한다. 서버에서는 Compose의 `proxy` 서비스(Caddy)를 시작하지 않는다. 외부 HTTPS는 Nginx가 담당한다.
+`configure-identity.py`는 계정 링크용 서비스 클라이언트의 역할, 로그인 잠금·비밀번호 정책·한국어 로그인 화면, 초대받은 사람의 첫 로그인을 막지 않는 profile 설정도 함께 맞춘다. 출력에 `miy_core`·`miy_identity`가 있어야 한다. PostgreSQL 이미지는 첫 기동에 `init.sql`로 DB와 전용 역할을 만들고 Keycloak은 realm·사용자를 가져온다. 이 단계에서는 miy 테이블이 아직 없으며 다음 절에서 migration/seed를 한다. 서버에서는 Compose의 `proxy` 서비스(Caddy)를 시작하지 않는다. 외부 HTTPS는 Nginx가 담당한다.
 
 위 `docker update`가 PostgreSQL·Keycloak에 `unless-stopped`를 적용해 호스트 재부팅 후 다시 시작하게 한다. Compose로 컨테이너를 재생성하면 이 정책을 다시 적용한다(해당 소스의 Compose가 같은 정책을 선언한 경우에는 중복 적용해도 된다). 수동 `docker stop`/`compose stop` 상태는 유지되므로 정상 사용 전 `up -d`로 다시 켠다. **`docker compose down -v`는 모든 DB를 삭제하므로 설치 문제 해결에 쓰지 않는다.**
 
@@ -460,15 +460,17 @@ docker compose --env-file "$MIY_STATE_DIR/compose.env" exec -T postgres \
   psql -U postgres -d miy_core -c 'SELECT version,success FROM _sqlx_migrations ORDER BY version;'
 ```
 
-세 HTTPS `/api/health`가 성공하고 migration의 `success`가 모두 참이어야 한다. 현재 후보는 schema 25이며 설치하는 checkout의 마지막 migration을 기준으로 확인한다. CLI 게시 전 `sourceCommit: null`, `downloads: 0`은 정상이다. CLI 게시물은 실행 중인 Core와 같은 버전을 사용한다.
+세 HTTPS `/api/health`가 성공하고 migration의 `success`가 모두 참이어야 한다. 현재 후보는 schema 26이며 설치하는 checkout의 마지막 migration을 기준으로 확인한다. CLI 게시 전 `sourceCommit: null`, `downloads: 0`은 정상이다. CLI 게시물은 실행 중인 Core와 같은 버전을 사용한다.
 
 브라우저에서 다음을 확인한다.
 
 1. **관리 콘솔**(§3의 `MIY_SETUP_CONSOLE`)에서 로그인하고 §5의 `admin`과 플랫폼 관리자 암호를 입력한다. 로그인 복귀 후 플랫폼 관리가 보여야 한다.
 2. **업무 포털**과 **dev 포털**을 각각 열어 로그인/복귀를 확인한다. 같은 Keycloak 인증을 사용하지만 세션은 영역별이다. 아직 앱이 없는 빈 목록은 정상이다. 비밀번호 없는 공유 개발 로그인 버튼이 없어야 한다.
-3. 아래 절차로 실제 직원을 추가한 뒤 그 계정으로도 로그인한다. 개발자는 miy 콘솔에서 `앱 개발 허용`을 켜고, 관리자 지정은 필요한 사람만 한다. 앱 사용 권한은 별도로 부여한다.
+3. 콘솔 **플랫폼 관리 → 사용자 초대**에서 초대 링크를 만들어 실제 직원에게 전달하고, 그 직원이 만든 계정으로도 로그인한다. 개발자는 초대할 때 `새 앱 등록 신청`을 허용하거나 나중에 `앱 개발 허용`을 켜고, 관리자 지정은 필요한 사람만 한다. 앱 사용 권한은 별도로 부여한다. 비밀번호를 잊은 직원에게는 같은 화면에서 재설정 링크를 만든다. 사용 계약은 [계정 발급](ACCOUNTS.md)에 있다.
 
-**직원 추가·암호 재설정·계정 중지:** 공개 프록시는 Keycloak 로그인 경로만 허용하며 master 관리 화면/API는 차단한다. 다음 블록은 새 서버의 대화형 SSH에서 내부 API를 사용한다. `create`는 새 직원, `find`는 정확한 로그인명으로 UUID 조회, `reset-password`는 임시 암호 재설정, `disable`/`enable`은 UUID로 로그인 계정 중지/재개다. 공개 프록시 제한을 풀 필요가 없다.
+`node scripts/check-account-links.mjs --origin "$MIY_SETUP_PORTAL" --credentials-file <admin 암호가 든 비공개 JSON> --output <새 파일>`은 이 흐름을 실제 브라우저로 한 번 수행한다. 점검용 사람 한 명을 등록하고 끝에 사용 중지한다.
+
+**SSH에서 하는 직원 추가·암호 재설정·계정 중지:** 계정 링크를 쓸 수 없을 때(§6의 `configure-identity.py`를 실행하지 않은 서버, 로그인 서버 관리 호출 장애)와 로그인 서버 계정 자체를 중지할 때만 쓴다. 공개 프록시는 Keycloak 로그인 경로만 허용하며 master 관리 화면/API는 차단한다. 다음 블록은 새 서버의 대화형 SSH에서 내부 API를 사용한다. `create`는 새 직원, `find`는 정확한 로그인명으로 UUID 조회, `reset-password`는 임시 암호 재설정, `disable`/`enable`은 UUID로 로그인 계정 중지/재개다. 공개 프록시 제한을 풀 필요가 없다.
 
 생성·재설정한 암호는 **첫 로그인 때 변경하도록** 지정한다. 입력값은 화면에 표시하지 않으며 직원에게 별도 안전한 방법으로 전달한다. **퇴사·계정 회수는 먼저 miy 콘솔에서 사용자를 중지**하고 이어서 `disable`을 실행한다. Keycloak만 중지하거나 암호만 재설정하는 것은 이미 발급된 miy CLI·플랫폼 자격증명의 회수를 대신하지 않는다. `enable`도 miy의 사용 중지를 자동 해제하지 않는다.
 

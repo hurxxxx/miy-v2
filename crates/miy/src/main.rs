@@ -4,6 +4,10 @@ compile_error!(
 );
 
 mod acceptance_contract;
+#[cfg(feature = "server")]
+mod accounts;
+#[cfg(all(test, feature = "server"))]
+mod accounts_regression;
 mod agent_tools;
 mod api_contract;
 mod api_error;

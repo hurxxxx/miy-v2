@@ -26,6 +26,10 @@ export type LoginOptions = {
   developmentOrigin: string;
   accounts: { account: string; label: string; description: string }[];
   oauthUrl: string;
+  /** This origin's start of the identity provider's own password change form. */
+  passwordUrl?: string;
+  /** An administrator can issue invitation and password reset links on this server. */
+  accountLinks?: boolean;
 };
 export type User = {
   id: string;
@@ -86,10 +90,14 @@ function validateOptions(received: LoginOptions): LoginOptions {
     window.location.origin !== surfaceOrigin(value, value.surface)
   )
     throw new Error("invalid_surface_origin");
-  return value.developmentLogin &&
-    value.developmentOrigin !== window.location.origin
-    ? { ...value, developmentLogin: false, accounts: [] }
-    : value;
+  // The password change starts on this origin and nowhere else.
+  const passwordUrl =
+    value.passwordUrl === `${window.location.origin}/auth/password` ? value.passwordUrl : undefined;
+  const checked = { ...value, passwordUrl, accountLinks: value.accountLinks === true };
+  return checked.developmentLogin &&
+    checked.developmentOrigin !== window.location.origin
+    ? { ...checked, developmentLogin: false, accounts: [] }
+    : checked;
 }
 
 async function readSession(

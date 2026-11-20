@@ -17,7 +17,7 @@ use sqlx::Row;
 use uuid::Uuid;
 
 /// Shared with user state changes: one account change is decided at a time.
-const ACCOUNT_LOCK: i64 = 73490130;
+pub(crate) const ACCOUNT_LOCK: i64 = 73490130;
 
 #[derive(Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -39,14 +39,14 @@ pub struct Update {
     pub can_develop: Option<bool>,
 }
 
-fn subject(id: &str) -> ApiResult<String> {
+pub(crate) fn subject(id: &str) -> ApiResult<String> {
     match Uuid::parse_str(id) {
         Ok(value) if value.hyphenated().to_string() == id => Ok(id.to_owned()),
         _ => Err(ApiError::bad("invalid_user_id")),
     }
 }
 
-fn display_name(name: &str) -> ApiResult<String> {
+pub(crate) fn display_name(name: &str) -> ApiResult<String> {
     let name = name.trim();
     if name.is_empty() || name.chars().count() > 120 || name.chars().any(char::is_control) {
         return Err(ApiError::bad("invalid_user_name"));

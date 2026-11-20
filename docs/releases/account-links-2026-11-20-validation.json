@@ -1,0 +1,115 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-11-20",
+  "status": "PASS",
+  "scope": "계정 링크(초대·비밀번호 재설정), 본인 비밀번호 변경, 로그인 서버 서비스 클라이언트와 로그인 보호 설정, 앱 시작 시 DB 네트워크 재연결의 소스 검증. 운영 반영은 별도 기록",
+  "source": {
+    "base": "52b6aa4bea33f3ddf6ee04a1b7d4bff19017ec46",
+    "workingTree": "uncommitted at the time of these runs; committed afterwards without further source changes",
+    "version": "0.13.0 (server-only change; published CLI f8228e1 unchanged)",
+    "schema": 26,
+    "host": "miy.works host, checks as OS user miy with an empty MIY_CONFIG_DIR"
+  },
+  "checks": [
+    {
+      "status": "PASS",
+      "command": "bash scripts/check-static.sh rust (format, write-decision check, Clippy for both builds)",
+      "scope": "cargo fmt --check, check-write-decisions (accounts.rs complete listed as an account-link exception), clippy -D warnings with and without the server feature"
+    },
+    {
+      "status": "PASS",
+      "command": "MIY_CONFIG_DIR=<empty> cargo test --workspace --locked; --no-default-features",
+      "scope": "236 server tests (7 ignored) including accounts input, link secret and loopback-address rules; 142 client tests"
+    },
+    {
+      "status": "PASS",
+      "command": "bash scripts/check-static.sh scripts",
+      "scope": "document links, script syntax, check-server-config (accounts service client, exactly one role, profile rule, protections filled in only where missing and operator values preserved), test-core-ops with migration 26 pinned"
+    },
+    {
+      "status": "PASS",
+      "command": "bash scripts/check-static.sh web",
+      "scope": "type check, isolated builds and 126 browser checks with mocked APIs: link page (6), admin issue/revoke/unavailable (2), header password change (1), portal-to-console redirects for /join and /reset-password"
+    },
+    {
+      "status": "PASS",
+      "command": "CARGO_PROFILE_DEV_DEBUG=0 python3 scripts/runtime-regression/run.py",
+      "scope": "isolated PostgreSQL and Docker",
+      "observations": 144,
+      "suites": {
+        "runtime": 52,
+        "operations": 5,
+        "cli": 6,
+        "auth": 8,
+        "accounts": 8,
+        "permissions": 26,
+        "delegation": 10,
+        "boundary": 12,
+        "migration": 3,
+        "frames": 14
+      },
+      "accounts": "issuer and caller rules, one use, taken name, revoked/expired/exhausted/former-administrator links, removal of an unregistered sign-in account, outage without changes, password reset, advertised capability. Identity administration is a recording stand-in"
+    },
+    {
+      "status": "PASS",
+      "command": "bash scripts/runtime-regression/stack-ui.sh up; node scripts/check-account-links.mjs --origin http://localhost:18300 --lockout true; stack-ui.sh down",
+      "scope": "disposable full stack with real Keycloak 26.8.1, PostgreSQL 18.3 and Chrome: server advertises configured account links; administrator signs in to the console with ordinary OIDC; console issues an invitation whose secret is shown once and never listed; invited person creates their own sign-in account and is registered without privileges; new person signs in to the portal directly and sees no app until one is granted; a used invitation is refused; an administrator's reset link sets a new password and ends earlier browser sessions; only the new password signs in and the reset link works once; a signed-in person changes their own password on the sign-in server's form; repeated wrong passwords temporarily lock the account; the acceptance account is disabled",
+      "signInPageLanguage": "ko",
+      "note": "Run before the final web edits (portal redirect without fragment, expiry text) and cargo fmt; the server logic did not change afterwards. The real-server acceptance repeats the flow on the deployed build."
+    },
+    {
+      "status": "PASS",
+      "command": "disposable Keycloak 26.8.1 probe on a loopback port (removed afterwards)",
+      "scope": "service-account token issued and accepted over loopback while the realm has a public frontendUrl; inline credentials enforce the password policy and leave no account on refusal; 409 on a taken name or address; 404 on an unknown account; the service account cannot change realm settings or the master realm; a missing required name stops the first sign-in on a profile form, and removing the requirement lets it through"
+    }
+  ],
+  "failuresRetained": [
+    {
+      "status": "FAIL",
+      "command": "python3 scripts/runtime-regression/run.py (first run)",
+      "reason": "137 observations: the other nine suites passed at their expected 136, and the accounts suite stopped at its fifth check. The test compared the user count with a baseline taken before an earlier check inserted its own administrator row. The baseline is now taken where it is used; no product change."
+    },
+    {
+      "status": "FAIL",
+      "command": "python3 scripts/runtime-regression/run.py (second run)",
+      "reason": "139 observations: accounts passed all 8, and the cli suite stopped at its first check, where two concurrent `auth status` processes refresh an expired access token; one received reauthentication_required. That suite runs before the accounts suite, uses no changed code and passed in the first and third runs with the same product source. It matches the intermittent CLI-suite failure of unconfirmed cause noted in support-reports-2026-11-16-deployment.json. Not investigated or changed here."
+    },
+    {
+      "status": "FAIL",
+      "command": "bash scripts/check-static.sh rust (first run, host CLI configuration visible)",
+      "reason": "cli_output::tests::json_success_is_one_utf8_envelope_with_empty_stderr read the miy user's real CLI context (default -> portal.miy.works) into meta. The test predates this change and is not hermetic; all tests pass with an empty MIY_CONFIG_DIR. The test itself was not changed."
+    },
+    {
+      "status": "FAIL",
+      "command": "node scripts/check-account-links.mjs on the disposable stack (three earlier runs)",
+      "reason": "The script required developmentLogin=false on a local profile; a button name matched two buttons; then the first design linked the header to Keycloak's account console, which stays on a spinner behind the proxy's anti-frame policy. The header now starts the identity provider's own password change action (/auth/password) and the acceptance exercises it."
+    },
+    {
+      "status": "FAIL",
+      "command": "pnpm exec playwright test account-links (first run)",
+      "reason": "Test locators used getByLabel('아이디'), which also matches the password hint inside the same label element; a neutral page fetched a GET the mock rejected. Tests now address inputs by form name. No product change."
+    }
+  ],
+  "notRun": [
+    {
+      "status": "NOT_RUN",
+      "scope": "GitHub Actions for this commit (Linux/macOS/Windows client builds, hosted runtime regression)",
+      "reason": "Recorded after the push; local Linux results are not CI results"
+    },
+    {
+      "status": "NOT_RUN",
+      "scope": "Mail-based verification or recovery, public self-registration, MFA",
+      "reason": "Outside the implemented scope (docs/ACCOUNTS.md)"
+    },
+    {
+      "status": "NOT_RUN",
+      "scope": "Recreated database container while apps keep running",
+      "reason": "start/restart now reattach the database; running apps still need a restart. Only the start path was exercised (runtime suite and the earlier host incident)"
+    },
+    {
+      "status": "NOT_RUN",
+      "scope": "dwdcc.kr deployment of schema 26",
+      "reason": "Not requested; core-rollout.py pins migration 26 for that host's tool"
+    }
+  ]
+}

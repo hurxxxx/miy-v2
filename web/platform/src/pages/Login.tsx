@@ -59,6 +59,9 @@ export function Login() {
         >
           {options?.developmentLogin ? "OAuth로 로그인" : "로그인"}
         </a>
+        <p className="login-help">
+          계정이 없거나 비밀번호를 잊었다면 관리자에게 초대 링크 또는 비밀번호 재설정 링크를 요청하세요.
+        </p>
         <div className="login-footer">
           <Link to={"/cli/install" as "/"} className="cli-install-link">
             CLI 설치 안내

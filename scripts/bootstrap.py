@@ -153,8 +153,13 @@ secret_file = LOCAL / 'credentials.json'
 if secret_file.exists():
     credential_text = secret_file.read_text()
     s = json.loads(credential_text)
+    # Installations from before account links have no service client secret.
+    # Add it once; every existing value is kept.
+    if 'accounts_client' not in s:
+        s['accounts_client'] = secrets.token_hex(24)
+        credential_text = json.dumps(s, indent=2)
 else:
-    s = {k: secrets.token_hex(24) for k in ['pg_admin', 'core', 'identity', 'identity_admin', 'web_client', 'resource_client', 'admin', 'developer', 'alice', 'bob']}
+    s = {k: secrets.token_hex(24) for k in ['pg_admin', 'core', 'identity', 'identity_admin', 'web_client', 'resource_client', 'accounts_client', 'admin', 'developer', 'alice', 'bob']}
     s['encryption_key'] = secrets.token_hex(32)
     credential_text = json.dumps(s, indent=2)
 private_write(OUTPUT / 'credentials.json', credential_text)
@@ -251,6 +256,9 @@ runtime = {**{key: value for key, value in existing_env('runtime.env').items()
     'MIY_DEV_LOGIN': 'shared' if shared_development_login else '1' if development_login else '0',
     'MIY_DEV_ORIGIN': development_origin,
     'MIY_WEB_SECRET': s['web_client'], 'MIY_RESOURCE_SECRET': s['resource_client'],
+    # Account links: Core creates sign-in accounts and sets passwords through the
+    # loopback identity address with a client limited to this realm's users.
+    'MIY_IDENTITY_ADMIN_URL': config['identityAdminUrl'], 'MIY_ACCOUNTS_SECRET': s['accounts_client'],
     'MIY_ENCRYPTION_KEY': s['encryption_key'], 'MIY_ARTIFACTS': LOCAL / 'artifacts',
     'MIY_CLI_RELEASE_DIR': config['cliReleaseDir'],
     'MIY_CLI_INSTALLER_DIR': config['cliInstallerDir'],
@@ -281,7 +289,20 @@ clients = [
 ]
 for c in clients:
     c.update({'enabled':True,'protocol':'openid-connect','fullScopeAllowed':False,'defaultClientScopes':['miy.read'],'optionalClientScopes':['miy.dev','offline_access']})
+# Service client for account links. It carries no miy.* scope, so its tokens are
+# not platform API credentials; configure-identity.py gives its service account
+# the realm's manage-users role (full scope: that role must reach the token).
+clients.append({'clientId':'miy-accounts','secret':s['accounts_client'],'enabled':True,'protocol':'openid-connect','publicClient':False,
+    'standardFlowEnabled':False,'implicitFlowEnabled':False,'directAccessGrantsEnabled':False,'serviceAccountsEnabled':True,
+    'fullScopeAllowed':True,'defaultClientScopes':[],'optionalClientScopes':[]})
+# Sign-in protections every new realm starts with. configure-identity.py fills in
+# the same values where an existing realm has none and keeps an operator's own.
+protections = {'bruteForceProtected':True,'permanentLockout':False,'failureFactor':10,'waitIncrementSeconds':60,
+    'maxFailureWaitSeconds':900,'maxDeltaTimeSeconds':43200,'quickLoginCheckMilliSeconds':1000,'minimumQuickLoginWaitSeconds':60,
+    'passwordPolicy':'length(10) and notUsername(undefined)',
+    'internationalizationEnabled':True,'supportedLocales':['ko','en'],'defaultLocale':'ko'}
 realm = {'realm':'miy','enabled':True,'attributes':{'frontendUrl':console_origin+'/identity'},'sslRequired':'none' if parsed.scheme == 'http' else 'external','registrationAllowed':False,'accessTokenLifespan':45,'ssoSessionIdleTimeout':1800,'revokeRefreshToken':True,'refreshTokenMaxReuse':0,
+ **protections,
  'clients':clients,'clientScopes':[{'name':n,'protocol':'openid-connect','attributes':{'include.in.token.scope':'true'},'protocolMappers':[subject]} for n in ['miy.read','miy.dev','offline_access']],
  'roles':{'realm':[{'name':'offline_access','description':'Allow explicit developer OAuth refresh grants'}]},
  'users':[{'id':f'00000000-0000-4000-8000-{i:012d}','username':n,'enabled':True,'emailVerified':True,'firstName':n,'lastName':'Validation','email':n+'@miy.invalid','realmRoles':['offline_access'] if n=='developer' else [],'credentials':[{'type':'password','value':s[n],'temporary':False}]} for i,n in enumerate(['admin','developer','alice','bob'],1)]}

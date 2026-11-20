@@ -40,5 +40,8 @@ export const router = createRouter({
     page("/cli/device/$id", CliDeviceApprove),
     page("/cli/sessions", CliSessions),
     page("/admin", Admin),
+    // Public account-link pages; the shell renders them before any session check.
+    page("/join", () => null),
+    page("/reset-password", () => null),
   ]),
 });

@@ -150,7 +150,7 @@ miy user list
 miy --app my-app grant set --user USER_ID --permission use --environment dev
 ```
 
-사람은 관리자가 Core에 등록한 뒤에만 로그인할 수 있다. 운영자가 [SETUP §8의 내부 Keycloak API 절차](SETUP.md#8-기동-확인과-첫-로그인)로 계정을 만들고, 관리자가 콘솔 **플랫폼 관리 → 사용자 계정**에서 그 계정의 UUID와 표시 이름을 등록한다. 공개 `/identity`는 로그인 경로만 허용하며 Keycloak master 관리 화면은 열지 않는다. 같은 miy 화면에서 관리자 지정, 앱 등록 신청 자격(`앱 개발 허용`), 사용 중지를 바꾼다. 등록만으로는 앱 권한이 생기지 않는다. API는 `POST /api/v1/users`, `PATCH /api/v1/users/{id}`이며 CLI 명령은 `user list`만 있다.
+사람은 Core에 등록된 뒤에만 로그인할 수 있다. 관리자가 콘솔 **플랫폼 관리 → 사용자 초대**에서 초대 링크를 만들어 전달하면 받은 사람이 직접 계정을 만들고 그 순간 등록된다. 비밀번호를 잊으면 같은 화면에서 재설정 링크를 만든다([계정 발급](ACCOUNTS.md)). 계정 링크가 설정되지 않은 서버에서는 운영자가 [SETUP §8의 내부 Keycloak API 절차](SETUP.md#8-기동-확인과-첫-로그인)로 계정을 만들고 관리자가 **로그인 서버 계정 직접 등록**에 그 UUID와 표시 이름을 입력한다. 공개 `/identity`는 로그인 경로만 허용하며 Keycloak master 관리 화면은 열지 않는다. 같은 miy 화면에서 관리자 지정, 앱 등록 신청 자격(`앱 개발 허용`), 사용 중지를 바꾼다. 등록만으로는 앱 권한이 생기지 않는다. API는 `POST /api/v1/users`, `PATCH /api/v1/users/{id}`, `GET·POST /api/v1/account-links`이며 CLI 명령은 `user list`만 있다.
 
 선택한 context가 있으면 init이 프로젝트에 그 연결 이름을 기록한다. context 없이 로컬 프로젝트를 생성할 수 있지만 원격 작업 전에는 context를 추가·선택하고 로그인해야 한다. 등록 요청만으로 권한이 생기지 않는다. 관리자의 승인은 요청자에게 dev/develop 권한만 부여하며 prod/deploy는 별도다.
 

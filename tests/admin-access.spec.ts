@@ -55,6 +55,11 @@ async function mock(page: Page) {
     { id: "alice", name: "앨리스", admin: false, canDevelop: false, enabled: true },
   ];
   const apps = [{ id: "ledger", name: "장부" }];
+  // Account links (GET/POST /api/v1/account-links); a test may turn the feature off.
+  const links = {
+    available: true,
+    items: [] as Record<string, unknown>[],
+  };
   const accessByApp: Record<string, typeof access> = { ledger: access };
   // Administrator runtime list (GET /api/v1/runtime/installations); empty unless a test fills it.
   const managed: Record<string, unknown>[] = [];
@@ -149,6 +154,42 @@ async function mock(page: Page) {
         groups.find((g) => g.id === member[1])!.members = list.length;
         return route.fulfill({ status: 200, json: { updated: true } });
       }
+      if (path === "/api/v1/account-links" && method === "POST") {
+        if (!links.available)
+          return route.fulfill({ status: 503, json: { error: { code: "account_links_unavailable" } } });
+        const id = `link-${links.items.length + 1}`;
+        const invitation = body.kind === "invitation";
+        const target = accounts.find((item) => item.id === body.userId);
+        links.items.unshift({
+          id,
+          kind: body.kind,
+          name: invitation ? body.name : target!.name,
+          canDevelop: invitation && body.canDevelop === true,
+          userId: invitation ? null : body.userId,
+          state: "pending",
+          createdByName: "관리자",
+          createdAt: "2026-11-20T01:00:00Z",
+          expiresAt: "2026-11-27T01:00:00Z",
+          completedAt: null,
+        });
+        return route.fulfill({
+          status: 201,
+          json: {
+            id,
+            kind: body.kind,
+            name: invitation ? body.name : null,
+            canDevelop: invitation && body.canDevelop === true,
+            userId: invitation ? null : body.userId,
+            expiresAt: "2026-11-27T01:00:00Z",
+            url: `${url.origin}/${invitation ? "join" : "reset-password"}#${"s".repeat(42)}${links.items.length}`,
+          },
+        });
+      }
+      const revoked = path.match(/^\/api\/v1\/account-links\/([^/]+)\/revoke$/);
+      if (revoked) {
+        links.items.find((item) => item.id === revoked[1])!.state = "revoked";
+        return route.fulfill({ status: 200, json: { id: revoked[1], state: "revoked" } });
+      }
       if (path === "/api/v1/users" && method === "POST") {
         if (accounts.some((account) => account.id === body.id))
           return route.fulfill({ status: 409, json: { error: { code: "user_exists" } } });
@@ -200,6 +241,8 @@ async function mock(page: Page) {
               ? { status: "succeeded", step: "completed" }
               : path === "/api/v1/app-registrations"
             ? []
+            : path === "/api/v1/account-links"
+              ? { available: links.available, links: links.items }
             : path === "/api/v1/users"
               ? accounts
               : path === "/api/v1/groups"
@@ -220,6 +263,7 @@ async function mock(page: Page) {
   });
   return {
     accounts,
+    links,
     sent,
     access,
     managed,
@@ -701,7 +745,7 @@ test("an administrator registers a person, sets roles and suspends the account",
   const { sent } = await mock(page);
   await page.goto("/admin");
   const subject = "3f0e2c5a-9d1b-4c7e-8a55-0123456789ab";
-  const form = page.locator(".ui-panel").filter({ has: page.getByRole("heading", { name: "사용자 등록", exact: true }) });
+  const form = page.locator(".ui-panel").filter({ has: page.getByRole("heading", { name: "로그인 서버 계정 직접 등록", exact: true }) });
   await form.getByLabel("로그인 계정 ID").fill(subject);
   await form.getByLabel("표시 이름").fill("새 직원");
   await form.getByLabel("새 앱 등록 신청").selectOption("true");
@@ -753,4 +797,83 @@ test("an administrator registers a person, sets roles and suspends the account",
   expect(sent.at(-1)).toMatchObject({ method: "POST", path: `/api/v1/users/${subject}/state`, body: { enabled: false } });
   await expect(row.getByText("사용 중지", { exact: true }).first()).toBeVisible();
   await expect(row.getByRole("button", { name: "사용 재개" })).toBeVisible();
+});
+
+test("an administrator issues an invitation and a reset link, sees each address once and revokes a link", async ({ page }) => {
+  const { sent, links } = await mock(page);
+  await page.goto("/admin");
+  const panel = page.locator(".ui-panel").filter({ has: page.getByRole("heading", { name: "사용자 초대", exact: true }) });
+  await expect(panel.getByText("사용 전 0건")).toBeVisible();
+  await panel.getByLabel("이름").fill("새 팀원");
+  await panel.getByLabel("새 앱 등록 신청").selectOption("true");
+  await panel.getByLabel("링크 유효 기간").selectOption("72");
+  await panel.getByRole("button", { name: "초대 링크 만들기" }).click();
+  await expect(page.getByRole("status").first()).toHaveText("초대 링크를 만들었습니다. 아래 주소를 초대할 사람에게 전달하세요.");
+  expect(sent.at(-1)).toMatchObject({
+    method: "POST",
+    path: "/api/v1/account-links",
+    body: { kind: "invitation", name: "새 팀원", canDevelop: true, expiresInHours: 72 },
+    csrf: "fixture-csrf",
+  });
+  // The address is shown once, in a focused group, with what its holder can do.
+  const issued = panel.getByRole("group", { name: "방금 만든 링크" });
+  await expect(issued).toBeFocused();
+  await expect(issued).toContainText("새 팀원에게 전달할 초대 링크");
+  await expect(issued.getByLabel("링크 주소")).toHaveText(new RegExp(`/join#s{42}1$`));
+  await expect(issued).toContainText("주소를 가진 사람이 계정을 만들 수 있으니");
+  await expect(panel.getByLabel("이름")).toHaveValue("");
+  const row = panel.getByRole("listitem").filter({ hasText: "새 팀원" });
+  await expect(row.getByText("사용 전", { exact: true })).toBeVisible();
+  await expect(row.getByText("앱 개발", { exact: true })).toBeVisible();
+  // The list never carries a link address.
+  await expect(row).not.toContainText("/join#");
+  await issued.getByRole("button", { name: "닫기" }).click();
+  await expect(panel.getByRole("group", { name: "방금 만든 링크" })).toHaveCount(0);
+
+  // A reset link is issued for one enabled account after a confirmation.
+  const list = page.locator(".ui-panel").filter({ has: page.getByRole("heading", { name: "사용자 계정", exact: true }) });
+  const account = list.getByRole("listitem").filter({ hasText: "앨리스" });
+  await account.getByRole("button", { name: "비밀번호 재설정 링크" }).click();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog).toContainText("이전에 만든 재설정 링크는 취소됩니다");
+  await dialog.getByRole("button", { name: "취소" }).click();
+  expect(sent.filter((item) => item.path === "/api/v1/account-links")).toHaveLength(1);
+  await account.getByRole("button", { name: "비밀번호 재설정 링크" }).click();
+  await dialog.getByRole("button", { name: "링크 만들기", exact: true }).click();
+  expect(sent.at(-1)).toMatchObject({
+    method: "POST",
+    path: "/api/v1/account-links",
+    body: { kind: "password_reset", userId: "alice" },
+  });
+  const reset = panel.getByRole("group", { name: "방금 만든 링크" });
+  await expect(reset).toContainText("앨리스 계정의 비밀번호 재설정 링크");
+  await expect(reset.getByLabel("링크 주소")).toHaveText(new RegExp(`/reset-password#s{42}2$`));
+  await expect(reset).toContainText("주소를 가진 사람이 비밀번호를 바꿀 수 있으니");
+
+  await row.getByRole("button", { name: "링크 취소" }).click();
+  await expect(page.getByRole("status").first()).toHaveText("링크를 취소했습니다.");
+  expect(sent.at(-1)).toMatchObject({ method: "POST", path: "/api/v1/account-links/link-1/revoke", csrf: "fixture-csrf" });
+  await expect(row.getByText("취소됨", { exact: true })).toBeVisible();
+  await expect(row.getByRole("button", { name: "링크 취소" })).toHaveCount(0);
+  expect(links.items.map((item) => item.state)).toEqual(["pending", "revoked"]);
+
+  // A suspended account is offered no reset link.
+  await account.getByRole("button", { name: "사용 중지" }).click();
+  await dialog.getByRole("button", { name: "사용 중지" }).click();
+  await expect(account.getByRole("button", { name: "사용 재개" })).toBeVisible();
+  await expect(account.getByRole("button", { name: "비밀번호 재설정 링크" })).toHaveCount(0);
+});
+
+test("a server without account links offers direct registration only", async ({ page }) => {
+  const { links, sent } = await mock(page);
+  links.available = false;
+  await page.goto("/admin");
+  const panel = page.locator(".ui-panel").filter({ has: page.getByRole("heading", { name: "사용자 초대", exact: true }) });
+  await expect(panel).toContainText("이 서버에는 계정 링크 발급이 설정되지 않았습니다");
+  await expect(panel.getByRole("button", { name: "초대 링크 만들기" })).toHaveCount(0);
+  const list = page.locator(".ui-panel").filter({ has: page.getByRole("heading", { name: "사용자 계정", exact: true }) });
+  await expect(list.getByRole("listitem").filter({ hasText: "앨리스" })).toBeVisible();
+  await expect(list.getByRole("button", { name: "비밀번호 재설정 링크" })).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "로그인 서버 계정 직접 등록", exact: true })).toBeVisible();
+  expect(sent.filter((item) => item.path === "/api/v1/account-links")).toEqual([]);
 });

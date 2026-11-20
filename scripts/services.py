@@ -24,7 +24,7 @@ for name in names:
   if running:print(name+' already running');continue
   with (local/(name+'.log')).open('a') as log:
    service_env=env.copy()
-   for key in (['PROVISION_DATABASE_URL'] if name=='serve' else ['MIY_WEB_SECRET','MIY_RESOURCE_SECRET']):service_env.pop(key,None)
+   for key in (['PROVISION_DATABASE_URL'] if name=='serve' else ['MIY_WEB_SECRET','MIY_RESOURCE_SECRET','MIY_IDENTITY_ADMIN_URL','MIY_ACCOUNTS_SECRET']):service_env.pop(key,None)
    child=subprocess.Popen([str(binary),name],cwd=root,env=service_env,stdout=log,stderr=log,start_new_session=True)
   pidfile.write_text(str(child.pid));print(name+' started')
  elif action=='stop':

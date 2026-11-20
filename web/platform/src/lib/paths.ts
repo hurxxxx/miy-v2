@@ -55,7 +55,14 @@ export function isCliApprovalPath(path: string | null | undefined) {
 export function isConsolePath(path: string) {
   const normalized = path.replace(/\/+$/, "");
   return normalized === "/admin" || normalized === "/cli/sessions" ||
+    isAccountLinkPath(normalized) ||
     /^\/cli\/(authorize|device)(?:\/|$)/.test(normalized);
+}
+
+/** Invitation and password reset pages: public, and served by the console only. */
+export function isAccountLinkPath(path: string) {
+  const normalized = path.replace(/\/+$/, "");
+  return normalized === "/join" || normalized === "/reset-password";
 }
 
 export function isAppPath(path: string) {

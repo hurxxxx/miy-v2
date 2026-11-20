@@ -116,9 +116,9 @@ try:
     observations = root / "evidence/results.jsonl"
     rows = [json.loads(line) for line in observations.read_text().splitlines()] if observations.exists() else []
     counts = {suite: sum(row.get("evidence", {}).get("suite", "runtime") == suite for row in rows)
-              for suite in ("runtime", "operations", "cli", "auth", "permissions", "delegation", "boundary", "migration", "frames")}
+              for suite in ("runtime", "operations", "cli", "auth", "accounts", "permissions", "delegation", "boundary", "migration", "frames")}
     print(json.dumps({"observations": len(rows), "suites": counts}))
-    if counts != {"runtime": 52, "operations": 5, "cli": 6, "auth": 8, "permissions": 26, "delegation": 10, "boundary": 12, "migration": 3, "frames": 14} or any(row["status"] != "PASS" for row in rows):
+    if counts != {"runtime": 52, "operations": 5, "cli": 6, "auth": 8, "accounts": 8, "permissions": 26, "delegation": 10, "boundary": 12, "migration": 3, "frames": 14} or any(row["status"] != "PASS" for row in rows):
         result_code = result_code or 1
 except KeyboardInterrupt:
     result_code = 130

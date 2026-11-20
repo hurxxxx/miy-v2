@@ -199,6 +199,14 @@ pub fn router_for(state: State, purpose: BrowserPurpose) -> Router {
         .route("/users", axum::routing::get(users).post(register_user))
         .route("/users/{id}", axum::routing::patch(update_user))
         .route("/users/{id}/state", axum::routing::post(set_user_state))
+        .route(
+            "/account-links",
+            axum::routing::get(crate::accounts::list).post(crate::accounts::create),
+        )
+        .route(
+            "/account-links/{id}/revoke",
+            axum::routing::post(crate::accounts::revoke),
+        )
         .route("/apps/{app}/releases", axum::routing::post(create_release))
         .route(
             "/installations",
@@ -296,6 +304,7 @@ pub fn router_for(state: State, purpose: BrowserPurpose) -> Router {
         .route("/api/v1/capabilities", axum::routing::get(capabilities))
         .merge(crate::cli_install::router(state.auth.origin.clone()))
         .merge(crate::support::public_router())
+        .merge(crate::accounts::public_router())
         .route(
             "/auth/cli/device",
             axum::routing::post(crate::auth_sessions::start),
@@ -317,6 +326,7 @@ pub fn router_for(state: State, purpose: BrowserPurpose) -> Router {
             axum::routing::post(crate::cli_auth::exchange),
         )
         .route("/auth/login", axum::routing::get(login))
+        .route("/auth/password", axum::routing::get(change_password))
         .route("/auth/options", axum::routing::get(login_options))
         .route("/auth/development", axum::routing::post(development_login))
         .route("/auth/callback", axum::routing::get(callback))
@@ -738,13 +748,34 @@ fn delegated_route(route: &str, method: &axum::http::Method) -> bool {
     }
 }
 type P = axum::Extension<Principal>;
-async fn capabilities() -> Json<Value> {
+async fn capabilities(S(s): S<State>) -> Json<Value> {
+    let mut features = vec![
+        "installation.permissions.v1",
+        "auth.delegations.v1",
+        "app.calls.v1",
+        "app.builds.v1",
+        "apps.distribution.v1",
+        "runtime.official-release.v1",
+        "runtime.preflight.v2",
+        "development.sessions.v1",
+        "auth.sessions.v1",
+        "auth.device.v1",
+        "runtime.jobs.v1",
+        "runtime.events.v1",
+        "runtime.retry.v1",
+        "runtime.logs.v1",
+        "lists.pagination.v1",
+    ];
+    // Offered only where this installation configured identity administration.
+    if s.auth.accounts.is_some() {
+        features.push("accounts.links.v1");
+    }
     Json(
         json!({"schemaVersion":1,"cliContractVersion":1,"serverVersion":env!("CARGO_PKG_VERSION"),
         "runtimePlatform":crate::runtime_platform::server(),
         "userActivationSource":"core.users.enabled",
         "userActivationPropagation":"each authenticated request and queued operation; no Keycloak synchronization implied",
-        "features":["installation.permissions.v1","auth.delegations.v1","app.calls.v1","app.builds.v1","apps.distribution.v1","runtime.official-release.v1","runtime.preflight.v2","development.sessions.v1","auth.sessions.v1","auth.device.v1","runtime.jobs.v1","runtime.events.v1","runtime.retry.v1","runtime.logs.v1","lists.pagination.v1"]}),
+        "features":features}),
     )
 }
 #[derive(serde::Deserialize)]
@@ -1087,10 +1118,28 @@ async fn login(
     axum::Extension(purpose): axum::Extension<BrowserPurpose>,
     headers: HeaderMap,
 ) -> ApiResult<Response> {
+    sign_in(s, purpose, headers, false).await
+}
+/// A person changes their own password on the identity provider's form, which
+/// asks them to sign in again first when the last sign-in is not recent. The
+/// platform never sees the password and issues a new session on return.
+async fn change_password(
+    S(s): S<State>,
+    axum::Extension(purpose): axum::Extension<BrowserPurpose>,
+    headers: HeaderMap,
+) -> ApiResult<Response> {
+    sign_in(s, purpose, headers, true).await
+}
+async fn sign_in(
+    s: State,
+    purpose: BrowserPurpose,
+    headers: HeaderMap,
+    change_password: bool,
+) -> ApiResult<Response> {
     if !login_navigation(&headers) {
         return Err(ApiError::forbidden());
     }
-    let (url, value) = s.auth.login(&s, purpose).await?;
+    let (url, value) = s.auth.login(&s, purpose, change_password).await?;
     let mut r = Redirect::to(&url).into_response();
     r.headers_mut().append(
         header::SET_COOKIE,
@@ -1129,6 +1178,10 @@ async fn login_options(
                 BrowserPurpose::Console => &s.auth.console_origin,
             },
             "accounts":accounts,"oauthUrl":format!("{}/auth/login",s.auth.browser_origin(purpose)),
+            // Where a signed-in person changes their own password, and whether an
+            // administrator can issue invitation and password reset links here.
+            "passwordUrl":format!("{}/auth/password",s.auth.browser_origin(purpose)),
+            "accountLinks":s.auth.accounts.is_some(),
             "surface":purpose,"portalOrigin":s.auth.origin,"consoleOrigin":s.auth.console_origin,
             "devPortalOrigin":s.auth.dev_portal_origin}))
 }

@@ -22,6 +22,7 @@ import sys
 
 REASONS = {
     "support-intake": "explicit anonymous report intake; bounded unverified data, no authenticated authority or identity",
+    "account-link": "completes an administrator's one-time link without a session; the transaction re-checks the link and that its issuer is still an enabled administrator",
     "identity": "signs a user in or issues a session; identity, not an app decision",
     "own": "reduces the caller's own credential or lease; the owner condition is in the statement",
     "snapshot": "read-only snapshot transaction",
@@ -33,6 +34,7 @@ REASONS = {
 # (module, function): reason key
 TRANSACTIONS = {
     ("support.rs", "submit"): "support-intake",
+    ("accounts.rs", "complete"): "account-link",
     ("auth.rs", "callback"): "identity",
     ("auth.rs", "development_session"): "identity",
     ("auth.rs", "session"): "identity",

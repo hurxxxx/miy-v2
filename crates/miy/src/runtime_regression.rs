@@ -986,11 +986,17 @@ async fn isolated_runtime_regression() -> Result<()> {
             "/jwks",
             axum::routing::get(|| async { axum::Json(json!({"keys":[]})) }),
         );
+    // The same loopback fixture records the identity administration requests of
+    // account links; it is a stand-in, not an identity provider.
+    let (accounts_fixture, accounts_identity) = crate::accounts_regression::fixture();
+    let app = app.merge(accounts_fixture);
     let oidc = tokio::spawn(async move { axum::serve(listener, app).await });
     unsafe {
         std::env::set_var("MIY_ISSUER", &origin);
         std::env::set_var("MIY_WEB_SECRET", "synthetic");
         std::env::set_var("MIY_RESOURCE_SECRET", "synthetic");
+        std::env::set_var("MIY_IDENTITY_ADMIN_URL", &origin);
+        std::env::set_var("MIY_ACCOUNTS_SECRET", crate::accounts_regression::SECRET);
     }
     let api_listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
     let api_origin = format!("http://{}", api_listener.local_addr()?);
@@ -1933,6 +1939,18 @@ async fn isolated_runtime_regression() -> Result<()> {
         "auth",
         crate::auth_sessions_regression::run(&s, &client, &console_origin).await,
         json!({"suite":"auth","transport":"HTTP","storage":"isolated PostgreSQL","identity":"synthetic development account"}),
+    );
+    suite(
+        "accounts",
+        crate::accounts_regression::run(
+            &s,
+            &client,
+            &console_origin,
+            &api_origin,
+            &accounts_identity,
+        )
+        .await,
+        json!({"suite":"accounts","transport":"HTTP","storage":"isolated PostgreSQL","identity":"synthetic development sessions and a recording identity administration stand-in"}),
     );
     suite(
         "permissions",

@@ -59,8 +59,18 @@ if previous_origin and previous_origin!=settings['origin']:
 # Imports do not update existing realms. Replace a stale frontendUrl too, while
 # retaining unrelated attributes and every realm/user/client subject.
 current_realm=call('')
+# Sign-in protections: fill in what an existing realm lacks and keep an
+# operator's own lockout numbers, password policy or languages.
+protections={}
+if not current_realm.get('bruteForceProtected'):
+ protections.update({key:realm[key] for key in ['bruteForceProtected','permanentLockout','failureFactor','waitIncrementSeconds',
+  'maxFailureWaitSeconds','maxDeltaTimeSeconds','quickLoginCheckMilliSeconds','minimumQuickLoginWaitSeconds'] if key in realm})
+if not current_realm.get('passwordPolicy') and realm.get('passwordPolicy'):
+ protections['passwordPolicy']=realm['passwordPolicy']
+if not current_realm.get('internationalizationEnabled'):
+ protections.update({key:realm[key] for key in ['internationalizationEnabled','supportedLocales','defaultLocale'] if key in realm})
 call('', 'PUT', {'sslRequired':realm['sslRequired'], 'attributes':{
- **current_realm.get('attributes',{}), 'frontendUrl':settings['consoleOrigin']+'/identity'}})
+ **current_realm.get('attributes',{}), 'frontendUrl':settings['consoleOrigin']+'/identity'}, **protections})
 existing={x['name']:x for x in call('/client-scopes')}
 for scope in realm['clientScopes']:
  old=existing.get(scope['name'])
@@ -90,4 +100,19 @@ for client in realm['clients']:
  mappers('/clients/'+existing[client['clientId']]['id'],client.get('protocolMappers',[]))
  for kind,key in [('default','defaultClientScopes'),('optional','optionalClientScopes')]:
   for name in client[key]:call(f"/clients/{existing[client['clientId']]['id']}/{kind}-client-scopes/{scopes[name]}",'PUT')
+# Account links: the service client may manage this realm's users and nothing
+# else (no realm settings, clients or other realms).
+accounts=existing.get('miy-accounts')
+if accounts:
+ service=call(f"/clients/{accounts['id']}/service-account-user")
+ management=next(client for client in call('/clients?clientId=realm-management') if client['clientId']=='realm-management')
+ role=call(f"/clients/{management['id']}/roles/manage-users")
+ call(f"/users/{service['id']}/role-mappings/clients/{management['id']}",'POST',[role])
+ # Core holds display names; an invited account carries only its sign-in name and
+ # e-mail. A required first or last name would stop that person's first sign-in
+ # on a profile form, so neither is required here.
+ profile=call('/users/profile')
+ required=[attribute for attribute in profile.get('attributes',[]) if attribute.get('name') in ('firstName','lastName') and 'required' in attribute]
+ for attribute in required:del attribute['required']
+ if required:call('/users/profile','PUT',profile)
 print('Identity clients and scopes synchronized; existing realm and user subjects were preserved.')

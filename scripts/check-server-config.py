@@ -405,9 +405,22 @@ def proxy_regression(state, kind, tls_material=None, hosts=False):
             thread.join()
 
 
-def identity_sync(state, previous_origin=None):
+PROTECTIONS = ['bruteForceProtected', 'permanentLockout', 'failureFactor', 'waitIncrementSeconds',
+               'maxFailureWaitSeconds', 'maxDeltaTimeSeconds', 'quickLoginCheckMilliSeconds',
+               'minimumQuickLoginWaitSeconds', 'passwordPolicy', 'internationalizationEnabled',
+               'supportedLocales', 'defaultLocale']
+
+
+def identity_sync(state, previous_origin=None, operator_policy=None):
+    """operator_policy: realm settings an operator already chose; they must survive."""
     realm = json.loads((state / 'realm.json').read_text())
     current_clients = [{**client, 'id': str(index)} for index, client in enumerate(realm['clients'])]
+    profile = {'attributes': [
+        {'name': 'username'},
+        {'name': 'email', 'required': {'roles': ['user']}},
+        {'name': 'firstName', 'required': {'roles': ['user']}, 'validations': {'length': {'max': 255}}},
+        {'name': 'lastName', 'required': {'roles': ['user']}},
+    ], 'groups': [{'name': 'user-metadata'}]}
     if previous_origin:
         current_clients[2] = {**current_clients[2], 'clientId': previous_origin + '/mcp',
                               'attributes': {'resource_url': previous_origin + '/mcp'}}
@@ -427,7 +440,16 @@ def identity_sync(state, previous_origin=None):
                 current_clients[2] = json.loads(body)
             elif method == 'GET':
                 if self.path == '/identity/admin/realms/miy':
-                    data = {'attributes': {'frontendUrl': 'https://old.example/identity', 'keep': 'present'}}
+                    data = {'attributes': {'frontendUrl': 'https://old.example/identity', 'keep': 'present'},
+                            **(operator_policy or {})}
+                elif self.path.endswith('/clients?clientId=realm-management'):
+                    data = [{'id': 'management', 'clientId': 'realm-management'}]
+                elif self.path.endswith('/clients/3/service-account-user'):
+                    data = {'id': 'accounts-service', 'username': 'service-account-miy-accounts'}
+                elif self.path.endswith('/clients/management/roles/manage-users'):
+                    data = {'id': 'manage-users-role', 'name': 'manage-users'}
+                elif self.path.endswith('/users/profile'):
+                    data = profile
                 elif self.path.endswith('/client-scopes'):
                     data = [{'id': name, 'name': name} for name in ['miy.read', 'miy.dev', 'offline_access']]
                 elif self.path.endswith('/roles'):
@@ -468,9 +490,17 @@ def identity_sync(state, previous_origin=None):
         thread.join()
     updates = [json.loads(body) for method, path, body in requests
                if method == 'PUT' and path == '/identity/admin/realms/miy']
+    # A realm without sign-in protections receives the managed ones; settings an
+    # operator already chose are not sent, so they stay as they are.
+    managed = {key: realm[key] for key in PROTECTIONS}
+    require(managed['bruteForceProtected'] is True and managed['defaultLocale'] == 'ko'
+            and managed['passwordPolicy'].startswith('length(10)'),
+            'New realms lack lockout, a password policy or the Korean sign-in page')
+    expected = {} if operator_policy else managed
     require(updates == [{'sslRequired': 'none', 'attributes': {
-        'frontendUrl': settings['consoleOrigin'] + '/identity', 'keep': 'present'}}],
-        'Existing realm HTTP policy/frontend URL was not updated or other attributes were lost')
+        'frontendUrl': settings['consoleOrigin'] + '/identity', 'keep': 'present'}, **expected}],
+        'Existing realm HTTP policy/frontend URL was not updated, attributes were lost '
+        'or sign-in protections were not filled in exactly where missing')
     require(not any('/admin/realms/master' in path for _, path, _ in requests),
             'Configuration changed the master realm')
     clients = [json.loads(body) for method, path, body in requests if method == 'PUT' and '/clients/' in path
@@ -481,8 +511,31 @@ def identity_sync(state, previous_origin=None):
             'Existing miy-web client lost an exact callback')
     require(web['webOrigins'] == [settings['origin'], settings['consoleOrigin']],
             'The dev portal gained identity provider CORS access')
-    require(not any(method in ['PUT', 'DELETE'] and '/users/' in path for method, path, _ in requests),
+    require(not any(method in ['PUT', 'DELETE'] and '/users/' in path and not path.endswith('/users/profile')
+                    for method, path, _ in requests),
             'Identity synchronization replaced existing user subjects')
+    # Account links: one realm role for the service account, and no profile field
+    # that would stop an invited person's first sign-in.
+    accounts = realm['clients'][3]
+    require(accounts['clientId'] == 'miy-accounts' and accounts['serviceAccountsEnabled'] is True
+            and accounts['standardFlowEnabled'] is False and accounts['directAccessGrantsEnabled'] is False
+            and accounts['publicClient'] is False and accounts['defaultClientScopes'] == []
+            and accounts['optionalClientScopes'] == [],
+            'The accounts service client can sign people in or carries platform scopes')
+    grants = [(path, json.loads(body)) for method, path, body in requests
+              if method == 'POST' and '/role-mappings/clients/' in path]
+    require(grants == [('/identity/admin/realms/miy/users/accounts-service/role-mappings/clients/management',
+                        [{'id': 'manage-users-role', 'name': 'manage-users'}])],
+            'The accounts service account did not receive exactly the manage-users role')
+    profiles = [json.loads(body) for method, path, body in requests
+                if method == 'PUT' and path.endswith('/users/profile')]
+    require(profiles == [{'attributes': [
+        {'name': 'username'},
+        {'name': 'email', 'required': {'roles': ['user']}},
+        {'name': 'firstName', 'validations': {'length': {'max': 255}}},
+        {'name': 'lastName'},
+    ], 'groups': [{'name': 'user-metadata'}]}],
+        'Profile names stayed required or other profile settings changed')
     resource = next(client for client in clients if client.get('clientId') == settings['origin'] + '/mcp')
     require(resource['id'] == '2' and resource['secret'] == realm['clients'][2]['secret'],
             'Moving the MCP resource changed the internal client ID or secret')
@@ -534,6 +587,10 @@ with tempfile.TemporaryDirectory(prefix='miy-server-config-') as temporary:
     require(compose['MIY_CADDY_CONFIG'].endswith('Caddyfile.http'), 'Wrong HTTP proxy configuration')
     require(compose['MIY_STATE_DIR'] == str(state), 'Space-containing state path was corrupted')
     require(runtime['MIY_CLI_INSTALLER_DIR'] == str(state / 'cli-installers'), 'Installer directory was not configured')
+    require(runtime['MIY_IDENTITY_ADMIN_URL'] == 'http://127.0.0.1:18189/identity'
+            and runtime['MIY_ACCOUNTS_SECRET'] == realm['clients'][3]['secret']
+            and realm['clients'][3]['clientId'] == 'miy-accounts',
+            'Account links are not configured with the loopback identity address and the service client secret')
     require(runtime['MIY_CONSOLE_ORIGIN'] == 'http://10.2.3.4:8081'
             and runtime['MIY_CONSOLE_BIND_ADDR'] == '127.0.0.1:18081'
             and runtime['MIY_ISSUER'] == runtime['MIY_CONSOLE_ORIGIN'] + '/identity/realms/miy',
@@ -625,7 +682,11 @@ with tempfile.TemporaryDirectory(prefix='miy-server-config-') as temporary:
     print('PASS HTTP Nginx and systemd rendering without live changes')
     identity_sync(state)
     identity_sync(state, 'http://old.example:8080')
-    print('PASS existing realm HTTP settings via internal administration only')
+    identity_sync(state, operator_policy={
+        'bruteForceProtected': True, 'failureFactor': 3, 'passwordPolicy': 'length(16)',
+        'internationalizationEnabled': True, 'supportedLocales': ['en'], 'defaultLocale': 'en'})
+    print('PASS existing realm HTTP settings, managed sign-in protections and the accounts service '
+          'role via internal administration only')
 
     secure = root / 'https'
     bootstrap(secure, '--profile', 'server', '--origin', 'https://PLATFORM.example:443/')

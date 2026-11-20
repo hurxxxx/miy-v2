@@ -178,6 +178,8 @@ flowchart LR
 | portal 세션 | 허용된 prod 앱 목록·개인 최소 정보·앱 실행/갱신 코드 발급 | dev 사용·관리·기록·CLI 승인과 기존 업무 데이터 경로의 쿠키 인증 거부 |
 | dev_portal 세션 | 허용된 dev 앱 목록·개인 최소 정보·앱 실행/갱신 코드 발급 | prod 사용·관리·기록·CLI 승인과 기존 업무 데이터 경로의 쿠키 인증 거부. dev 포털은 CLI/MCP bearer도 받지 않음 |
 | console 세션 | 자기 CLI 승인·허용된 앱 관리·플랫폼 관리 | 업무 UI/API 인증 거부. 콘솔 진입이 관리자 권한을 뜻하지 않음 |
+| 계정 링크(초대·재설정) | 세션 없이 콘솔 화면에서 계정 하나를 만들거나 그 비밀번호를 설정 | 1회용·만료·시도 제한. fragment로만 전달하고 해시만 저장. 사용할 때 발급 관리자의 현재 권한을 재확인. 포털·dev 포털·bearer·다른 Origin 거부([계정 발급](ACCOUNTS.md)) |
+| 계정 서비스 클라이언트 | Core serve가 loopback으로 이 realm의 로그인 계정 생성·비밀번호 설정 | `miy.*` 범위가 없어 플랫폼 API에 쓸 수 없음. realm 설정·클라이언트·다른 realm 변경 불가. worker·앱에는 전달하지 않음 |
 | 프레임 토큰 | 자기 설치의 앱 출처에서 업무 API·승인된 연결·디렉터리 | 부모 세션·설치·환경·릴리스와 현재 권한을 재검사. 포털·콘솔·CLI 경로 사용 거부 |
 | CLI bearer | 기존 사용자 scope·앱·환경·action | device 승인만 콘솔로. device 시작·poll/refresh·수명 유지. legacy 시작·승인·교환은 410 `cli_upgrade_required`, 발급된 legacy 토큰은 만료까지 유지 |
 | 사용자 위임 | 현재 권한과 지정 대상·action·기간의 교집합 | 기존 계약 유지, 확대·재위임 금지 |
@@ -190,7 +192,8 @@ flowchart LR
 - 세션·로그인 보조 쿠키는 목적별 이름과 Secure·HttpOnly·__Host-·Path=/·Domain 없음을 사용한다. 인증 쿠키 중복은 거부하고 다른 목적 쿠키로 fallback하지 않는다. IdP 쿠키는 실제 속성과 로그인 호환을 확인한다.
 - 기존 route 등록에 허용할 브라우저 용도를 선언하고 누락은 거부한다. API뿐 아니라 auth·MCP·artifact·download·preview·WebSocket도 확인한다. 기존 비브라우저 CLI·위임·app-call 판정을 재사용한다.
 - 브라우저 쓰기에는 목적별 정확한 Origin과 기존 서버 synchronizer CSRF를 적용한다. credentialed cross-origin CORS는 열지 않는다. 같은 호스트의 다른 포트는 쿠키를 공유하므로, 쿠키 인증 요청은 세션 조회 전에 `Sec-Fetch-Site`·Origin을 검사한다. `Sec-Fetch-Site`가 same-origin/none이 아니거나 Origin이 해당 출처와 다르면 GET·탐색도 거부한다(명시적 개발 로그인 프로필의 개발 서버 출처만 예외). Fetch Metadata가 없는 구형 브라우저가 Origin 없이 보내는 GET은 잔여 한계다. `/auth/login`은 탐색 요청만 받는다. 비브라우저 CLI device 시작·poll/refresh는 기존 credential 검사로 유지한다.
-- 콘솔/IdP 경로를 포털에서 proxy하지 않는다. 기존 승인 URL은 고정 콘솔로 flow ID만 보내는 redirect만 허용한다. 민감 정보·credential은 URL에 넣지 않는다.
+- 콘솔/IdP 경로를 포털에서 proxy하지 않는다. 기존 승인 URL은 고정 콘솔로 flow ID만 보내는 redirect만 허용한다. 민감 정보·credential은 URL에 넣지 않는다. 계정 링크의 비밀은 서버로 전송되지 않는 fragment에만 두고, 포털이 `/join`·`/reset-password`를 콘솔로 보낼 때도 fragment를 전달하지 않는다.
+- 본인 비밀번호 변경(`/auth/password`)은 일반 로그인과 같은 flow에 로그인 서버의 비밀번호 변경 동작만 요청한다. 비밀번호 입력은 로그인 서버 화면에서만 받고 새 세션은 같은 callback 검사를 거친다.
 - 브라우저 업무 WebSocket은 현재 미지원·기본 거부를 유지한다. CLI DB 터널은 기존 별도 자격증명으로 유지한다. 신규 업무 WebSocket은 해당 기능 때 Origin·만료·회수를 설계한다.
 
 ## 앱 실행 계약

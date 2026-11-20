@@ -206,6 +206,8 @@ for (const path of [
   "/cli/authorize/fixture-id",
   "/cli/device/fixture-id",
   "/cli/sessions",
+  "/join",
+  "/reset-password",
 ]) {
   test(`portal sends ${path} to the fixed console without forwarding redirect input`, async ({
     page,

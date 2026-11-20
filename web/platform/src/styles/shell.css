@@ -193,6 +193,11 @@
   gap: var(--shell-space-3);
   min-width: 0;
 }
+.account-password:not(:where(.miy-app-root, .miy-app-root *)) {
+  color: var(--shell-ink-subtle);
+  font-size: 13px;
+  white-space: nowrap;
+}
 .account-name:not(:where(.miy-app-root, .miy-app-root *)) {
   max-width: 200px;
   overflow: hidden;
@@ -357,7 +362,8 @@
   .header-title:not(:where(.miy-app-root, .miy-app-root *)) {
     font-size: 14px;
   }
-  .account-name:not(:where(.miy-app-root, .miy-app-root *)) {
+  .account-name:not(:where(.miy-app-root, .miy-app-root *)),
+  .account-password:not(:where(.miy-app-root, .miy-app-root *)) {
     display: none;
   }
   .workspace > main:not(:where(.miy-app-root, .miy-app-root *)) {

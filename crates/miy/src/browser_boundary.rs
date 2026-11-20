@@ -26,12 +26,19 @@ pub fn access(route: &str, method: &Method) -> Option<Access> {
     Some(match route {
         "/support/reports" if *method == Method::POST => Access::Public,
         "/support/reports" | "/support/reports/{id}" => Access::Console,
+        // The two anonymous account-link calls also require the console's own
+        // page as Origin in their handlers; the portals never serve them.
+        "/account-links"
+        | "/account-links/inspect"
+        | "/account-links/complete"
+        | "/account-links/{id}/revoke" => Access::Console,
         "/api/health"
         | "/capabilities"
         | "/cli/install"
         | "/cli/install.sh"
         | "/cli/install.ps1"
         | "/auth/login"
+        | "/auth/password"
         | "/auth/options"
         | "/auth/development"
         | "/auth/callback"

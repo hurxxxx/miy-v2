@@ -34,6 +34,8 @@ export function browserOptions(route: Route, surface?: Surface) {
     developmentOrigin: origin,
     accounts: [],
     oauthUrl: "/auth/login",
+    passwordUrl: `${origin}/auth/password`,
+    accountLinks: true,
   };
 }
 

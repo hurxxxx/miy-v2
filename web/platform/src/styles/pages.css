@@ -162,6 +162,37 @@
   color: var(--shell-danger-text);
 }
 
+.login-help:not(:where(.miy-app-root, .miy-app-root *)) {
+  margin: var(--shell-space-4) 0 0;
+  color: var(--shell-ink-subtle);
+  font-size: 13px;
+  text-align: center;
+}
+
+/* Invitation and password reset (public, console only) */
+.account-link-form:not(:where(.miy-app-root, .miy-app-root *)) {
+  display: grid;
+  gap: var(--shell-space-4);
+}
+.account-link-form h1:not(:where(.miy-app-root, .miy-app-root *)),
+.account-link-form .login-lead:not(:where(.miy-app-root, .miy-app-root *)) {
+  margin-bottom: 0;
+}
+.account-link-form input:not(:where(.miy-app-root, .miy-app-root *)) {
+  min-height: 42px;
+}
+.account-link-submit:not(:where(.miy-app-root, .miy-app-root *)) {
+  min-height: 44px;
+}
+.account-link-expiry:not(:where(.miy-app-root, .miy-app-root *)) {
+  margin: 0;
+  color: var(--shell-ink-subtle);
+  font-size: 12px;
+}
+.account-link-card .ui-button:not(:where(.miy-app-root, .miy-app-root *)) {
+  width: 100%;
+}
+
 /* Home launcher */
 .app-card .ui-panel-heading:not(:where(.miy-app-root, .miy-app-root *)) {
   justify-content: flex-start;
@@ -323,6 +354,53 @@
   display: flex;
   flex-wrap: wrap;
   gap: var(--shell-space-2);
+}
+/* Account links: the invitation panel spans both columns above the account list. */
+.admin-grid > .account-links:not(:where(.miy-app-root, .miy-app-root *)) {
+  grid-column: 1 / -1;
+}
+.account-link-issued:not(:where(.miy-app-root, .miy-app-root *)) {
+  margin-top: var(--shell-space-4);
+  padding: var(--shell-space-4);
+  border: 1px solid var(--shell-warning-border);
+  border-radius: var(--shell-radius-md);
+  background: var(--shell-warning-bg);
+}
+.account-link-issued:focus-visible:not(:where(.miy-app-root, .miy-app-root *)) {
+  outline: none;
+  box-shadow: var(--shell-focus-ring);
+}
+.account-link-issued p:not(:where(.miy-app-root, .miy-app-root *)) {
+  margin: 0;
+}
+.account-link-issued pre:not(:where(.miy-app-root, .miy-app-root *)) {
+  margin: var(--shell-space-3) 0;
+  padding: var(--shell-space-3);
+  border-radius: var(--shell-radius-md);
+  background: var(--shell-surface);
+  font-family: var(--shell-font-mono);
+  font-size: 13px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  user-select: all;
+}
+.account-link-warning:not(:where(.miy-app-root, .miy-app-root *)) {
+  color: var(--shell-warning-text);
+  font-size: 13px;
+}
+.account-link-issued-actions:not(:where(.miy-app-root, .miy-app-root *)) {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--shell-space-2);
+  margin-top: var(--shell-space-3);
+}
+.account-link-list:not(:where(.miy-app-root, .miy-app-root *)) {
+  margin-top: var(--shell-space-4);
+}
+.account-link-list .user-account-name span:not(:where(.miy-app-root, .miy-app-root *)) {
+  color: var(--shell-ink-subtle);
+  font-size: 13px;
 }
 .status-message:not(:where(.miy-app-root, .miy-app-root *)) {
   margin: var(--shell-space-4) 0;

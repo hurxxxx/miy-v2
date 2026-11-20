@@ -101,6 +101,8 @@ pub struct Auth {
     pub development_login: bool,
     /// Per-installation business app frame origins (`app_frames`).
     pub frames: crate::app_frames::Config,
+    /// Sign-in account administration for account links; absent unless configured.
+    pub accounts: Option<crate::accounts::IdentityAdmin>,
     client: reqwest::Client,
     discovery: Discovery,
     web_secret: String,
@@ -236,6 +238,7 @@ impl Auth {
             console_origin,
             dev_portal_origin,
             frames,
+            accounts: crate::accounts::IdentityAdmin::from_env()?,
             development_origin,
             development_login,
             issuer,
@@ -338,10 +341,14 @@ impl Auth {
             development: false,
         })
     }
+    /// `change_password` asks the identity provider to show its own password
+    /// form (after a fresh sign-in where it requires one) before it returns
+    /// through the ordinary callback.
     pub async fn login(
         &self,
         state: &State,
         purpose: BrowserPurpose,
+        change_password: bool,
     ) -> ApiResult<(String, String)> {
         let value = random();
         let verifier = random();
@@ -371,6 +378,10 @@ impl Auth {
             ("code_challenge", &challenge),
             ("code_challenge_method", "S256"),
         ]);
+        if change_password {
+            url.query_pairs_mut()
+                .append_pair("kc_action", "UPDATE_PASSWORD");
+        }
         Ok((url.into(), value))
     }
     pub async fn callback(

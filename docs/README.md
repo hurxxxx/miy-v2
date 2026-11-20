@@ -14,6 +14,7 @@
 | 포털·콘솔·로그인 경계 | [APP-BOUNDARIES](APP-BOUNDARIES.md) | 세 출처·세션·보안 범위·BV 인수 |
 | 업무 앱 화면과 브리지 | [APP-FRAMES](APP-FRAMES.md) | 설치별 출처·프레임 인증·브리지·배치·FV 인수 |
 | 앱 접근·위임·공통 업무 ACL | [CORE-PERMISSIONS](CORE-PERMISSIONS.md) | 권한 행렬·현재 집행·앱 소유 ACL과 작은 첨부 계약 |
+| 계정 발급·비밀번호 변경과 분실 | [ACCOUNTS](ACCOUNTS.md) | 초대·재설정 링크, 본인 비밀번호 변경, 로그인 서버 연동과 로그인 보호 |
 | 공용 UI·SDK를 앱에 연결하는 방법 | [UI provider 안내](../packages/ui/README.md), [SDK 계약](../templates/rust-react/docs/CONTRACT.md), [대표 앱](../examples/common-work/README.md) | 선택기·공유·파일 provider, 앱 소유 ACL과 새 migration 사용법 |
 | 앱·릴리스·데이터 개발 계약 | [DEVELOPMENT](DEVELOPMENT.md) | 앱 구현 계약과 명시적으로 구분한 장기 설계 |
 | AI-DO의 UX·공통 기능을 무엇부터 옮기나 | [AI-DO-COMMON-MIGRATION](AI-DO-COMMON-MIGRATION.md) | 최신 dev 소스별 대상·현재 v2 공백·보존할 UX·플랫폼/공용 UI/앱 책임·인수 기준 |
