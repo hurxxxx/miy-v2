@@ -93,11 +93,6 @@
   "notRun": [
     {
       "status": "NOT_RUN",
-      "scope": "GitHub Actions for this commit (Linux/macOS/Windows client builds, hosted runtime regression)",
-      "reason": "Recorded after the push; local Linux results are not CI results"
-    },
-    {
-      "status": "NOT_RUN",
       "scope": "Mail-based verification or recovery, public self-registration, MFA",
       "reason": "Outside the implemented scope (docs/ACCOUNTS.md)"
     },
@@ -111,5 +106,15 @@
       "scope": "dwdcc.kr deployment of schema 26",
       "reason": "Not requested; core-rollout.py pins migration 26 for that host's tool"
     }
-  ]
+  ],
+  "ci": {
+    "headSha": "a5a20c5",
+    "runs": {
+      "cli-foundation.yml": 44701879371,
+      "runtime-regression.yml": 44701879423,
+      "web.yml": 44701879181
+    },
+    "conclusion": "success",
+    "note": "Hosted runs after the push: Linux server, Linux/macOS/Windows clients, the isolated regression with the accounts suite, web and scripts."
+  }
 }

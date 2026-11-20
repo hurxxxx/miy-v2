@@ -156,11 +156,22 @@
       "status": "NOT_RUN",
       "scope": "OS 재부팅, 외부 PC의 CLI 재인증",
       "reason": "이번 반영의 범위 밖"
-    },
-    {
-      "status": "NOT_RUN",
-      "scope": "이 commit의 GitHub Actions",
-      "reason": "push 뒤 별도 확인"
     }
-  ]
+  ],
+  "ci": {
+    "headSha": "a5a20c56cd78",
+    "note": "push 뒤 확인. a5a20c5는 반영한 86f8c53에 문서만 더한 commit이다",
+    "cli-foundation.yml": {
+      "runId": 44701879371,
+      "conclusion": "success"
+    },
+    "runtime-regression.yml": {
+      "runId": 44701879423,
+      "conclusion": "success"
+    },
+    "web.yml": {
+      "runId": 44701879181,
+      "conclusion": "success"
+    }
+  }
 }
