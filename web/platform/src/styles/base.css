@@ -1,26 +1,19 @@
 /*
- * Remote apps share this document. Only the rules in this file are global:
- * they are the baseline existing apps already render with (box-sizing, body
- * font/background/color, link color, button font). These legacy rules and the
- * .miy-app-root baseline are deliberately preserved for existing apps.
- * Platform class names alone are not a scope: remote apps may use the same
- * names. Every platform selector therefore excludes .miy-app-root and its
- * descendants at the target element, including before pseudo-elements.
- * :where() keeps the exclusion at zero specificity so platform cascade order
- * is unchanged. Apps render inside .miy-app-root, which restores their font,
- * size and line height; platform error/loading UI belongs outside that root.
+ * Global baseline of the portal and console documents. Business apps run in
+ * their own frame documents (web/frame-runtime), so nothing here reaches them.
+ * Tokens come from @miy/tokens.
  */
 * {
   box-sizing: border-box;
 }
 body {
   margin: 0;
-  font-family: var(--miy-app-font);
-  background: var(--miy-background);
-  color: var(--miy-text);
+  font-family: var(--ui-font-sans);
+  background: var(--ui-color-bg);
+  color: var(--ui-color-ink);
 }
 a {
-  color: var(--miy-accent);
+  color: var(--ui-color-brand);
   text-decoration: none;
 }
 button {
@@ -28,29 +21,19 @@ button {
 }
 
 /* Shell typography scope. */
-.shell:not(:where(.miy-app-root, .miy-app-root *)),
-.boot:not(:where(.miy-app-root, .miy-app-root *)),
-.login-page:not(:where(.miy-app-root, .miy-app-root *)),
-.cli-install-public:not(:where(.miy-app-root, .miy-app-root *)),
-.shell-dialog:not(:where(.miy-app-root, .miy-app-root *)),
-.rail-tooltip:not(:where(.miy-app-root, .miy-app-root *)) {
-  font-family: var(--shell-font);
-  color: var(--shell-ink);
+.shell,
+.boot,
+.login-page,
+.cli-install-public,
+.shell-dialog,
+.rail-tooltip {
+  font-family: var(--ui-font-sans);
+  color: var(--ui-color-ink);
   font-size: 14px;
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
 }
-.miy-app-root {
-  min-width: 0;
-  font-family: var(--miy-app-font);
-  font-size: 16px;
-  font-weight: normal;
-  line-height: normal;
-  letter-spacing: normal;
-  color: var(--miy-text);
-  -webkit-font-smoothing: auto;
-}
-.visually-hidden:not(:where(.miy-app-root, .miy-app-root *)) {
+.visually-hidden {
   position: absolute;
   width: 1px;
   height: 1px;

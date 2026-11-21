@@ -209,8 +209,8 @@ miy가 직접 만드는 기본 제공·공식 앱도 조직 제작 앱과 **같�
 
 ### D0 디자인·설정 전달 기반
 
-1. **AI-DO의 토큰을 원본으로 삼는다.** `../ai-do/prod`의 `packages/ui/styles.css`(`--ui-*` 토큰, 라이트·다크)를 그대로 가져와 토큰 원본 하나로 둔다. 여기서 네 곳을 만든다: 프레임 런타임(`web/frame-runtime/src/frame.css`), 포털·dev 포털·콘솔, 로컬 미리보기 호스트(`templates/rust-react/sdk/preview`), 공용 UI.
-   - 이름 공간은 `--ui-*` 하나다. 포털의 `--shell-*`와 프레임 런타임의 기존 변수 5개(`--miy-background`·`--miy-text`·`--miy-accent`·`--miy-border`·`--miy-app-font`)는 없앤다.
+1. **AI-DO의 토큰을 원본으로 삼는다.** `../ai-do/prod`의 `packages/ui/styles.css`(`--ui-*` 토큰, 라이트·다크)를 그대로 가져와 토큰 원본 하나(`packages/tokens/tokens.css`)로 둔다. 여기서 네 곳을 만든다: 프레임 런타임(`web/frame-runtime/src/frame.css`), 포털·dev 포털·콘솔, 로컬 미리보기 호스트(`templates/rust-react/sdk/preview`), 공용 UI.
+   - 이름 공간은 `--ui-*` 하나다. 포털의 `--shell-*` 중복 토큰과 프레임 런타임의 기존 변수 5개(`--miy-background`·`--miy-text`·`--miy-accent`·`--miy-border`·`--miy-app-font`)는 없앤다.
    - AI-DO의 Tailwind 테마 매핑(`bg-app-*`·`text-app-*` 등)도 같은 이름으로 둔다. 옮겨 온 화면 코드를 고치지 않고 쓰기 위해서다.
    - 링크·선택·포커스의 브랜드 파랑(§5.2)만 AI-DO 토큰에 더한다.
 2. **Pretendard를 제공한다.** Pretendard Variable(OFL)을 한글 범위별로 나눈 woff2로 프레임 런타임 경로(`/_miy/runtime/`)와 미리보기 호스트에 넣는다. 포털·콘솔은 이미 같은 글꼴 패키지를 쓴다.
@@ -594,6 +594,10 @@ AI-DO 코드를 그대로 옮기기 위해 AI-DO와 같은 라이브러리를 �
 | 2026-11-22 | 다국어는 AI-DO와 같은 i18next 방식과 AI-DO의 문구를 쓴다 | 화면을 옮기면 문구 키도 함께 오기 때문이다 |
 | 2026-11-22 | 지원 브라우저는 Chrome·Edge·Firefox·Safari의 최근 두 주 버전이다 | 기존 프레임 검사가 Chromium·Firefox·WebKit을 대상으로 한다 |
 | 2026-11-22 | 포팅 원본은 `../ai-do/prod` main의 고정 커밋이다 | 운영에서 쓰이는 구현이 기준이어야 한다 |
+| 2026-11-22 | 토큰 원본은 새 워크스페이스 패키지 `packages/tokens`에 둔다 | `packages/ui/src`는 게시본 1.1.0과 바이트가 같아야 하므로(검사) 공용 UI 2.0.0을 만들기 전에는 고칠 수 없다 |
+| 2026-11-22 | 프레임 문서의 기본 글자 크기·줄 간격을 AI-DO와 같게 한다(14px, 1.45). 이전 값은 16px이었다 | 옮겨 온 화면이 원본과 같은 밀도로 보여야 한다 |
+| 2026-11-22 | 포털 CSS의 `.miy-app-root` 제외 선택자 246곳과 그 기준 규칙을 지웠다 | 앱이 포털 문서에 마운트되지 않아 어디에도 걸리지 않는 선택자였다. 기존 테스트도 그 요소가 없음을 확인한다 |
+| 2026-11-22 | 포털의 셸 배치 상수 4개(`--shell-rail-width`·`--shell-header-height`·`--shell-radius-xl`·`--shell-space-8`)는 남긴다 | 공유 토큰에 대응하는 값이 없는 포털 전용 배치 값이다 |
 
 **남은 결정**
 
