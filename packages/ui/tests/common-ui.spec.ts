@@ -160,7 +160,11 @@ test("changing focus or unmounting cancels the outstanding directory request", a
   ).toBe(true);
 });
 
-test("dialog confines focus in its document, Escape returns focus, prompt validates and resolves", async ({
+// The public useConfirm and usePrompt are AI-DO's since 2.0.0. They differ from
+// the 1.x hooks: the labels are required, the prompt has no label or validation
+// message (a blank value is simply not submitted), focus is not handed back to
+// the opener, and a request whose owner unmounts is not settled.
+test("confirm confines focus in its document, Escape cancels, prompt trims and resolves", async ({
   page,
 }) => {
   await page.goto("/");
@@ -172,28 +176,30 @@ test("dialog confines focus in its document, Escape returns focus, prompt valida
     .evaluate((element) => (element as HTMLElement).focus());
   expect(
     await page.evaluate(() =>
-      document.querySelector("dialog")!.contains(document.activeElement),
+      document
+        .querySelector('[role="dialog"]')!
+        .contains(document.activeElement),
     ),
   ).toBe(true);
   await page.keyboard.press("Escape");
   await expect(page.getByRole("dialog")).toHaveCount(0);
-  await expect(open).toBeFocused();
   await expect(page.getByTestId("feedback-result")).toHaveText("false");
   await page.getByRole("button", { name: "이름 입력 열기" }).click();
-  const name = page.getByRole("textbox", { name: "이름", exact: true });
+  const prompt = page.getByRole("dialog", { name: "이름 변경" });
+  const name = prompt.getByRole("textbox");
   await expect(name).toBeFocused();
+  await expect(name).toHaveValue("기존 이름");
   await name.fill(" ");
   await name.press("Enter");
-  await expect(page.getByRole("alert")).toHaveText("값을 입력해 주세요.");
+  await expect(prompt.getByRole("button", { name: "확인" })).toBeDisabled();
+  await expect(prompt).toBeVisible();
   await name.fill(" 새 이름 ");
   await name.press("Enter");
   await expect(page.getByTestId("feedback-result")).toHaveText("새 이름");
-  await expect(
-    page.getByRole("button", { name: "이름 입력 열기" }),
-  ).toBeFocused();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
 });
 
-test("superseded and unmounted confirmations settle without leaking pending promises", async ({
+test("a superseded confirmation resolves false and unmounting an open one leaves the page usable", async ({
   page,
 }) => {
   await page.goto("/");
@@ -204,11 +210,12 @@ test("superseded and unmounted confirmations settle without leaking pending prom
   );
   await page.keyboard.press("Escape");
   await page.getByRole("button", { name: "확인 대화상자 열기" }).click();
+  await expect(page.getByRole("dialog", { name: "변경 확인" })).toBeVisible();
   await page.evaluate(() => window.uiFixture.unmountFeedback?.());
-  await expect
-    .poll(() => page.evaluate(() => window.uiFixture.result))
-    .toBe("false");
   await expect(page.getByRole("dialog")).toHaveCount(0);
+  // The modal's page lock goes with it: the rest of the page takes input again.
+  await page.getByRole("button", { name: "선택기 숨기기" }).click();
+  await expect(page.getByRole("button", { name: "선택기 표시" })).toBeVisible();
 });
 
 test("untrusted labels remain text and light/dark mobile layouts fit the viewport", async ({
@@ -229,11 +236,13 @@ test("untrusted labels remain text and light/dark mobile layouts fit the viewpor
   await expect(page.locator("img")).toHaveCount(0);
   await page.screenshot({
     path: ".local/evidence/common-ui/light-mobile.png",
+    animations: "disabled",
     fullPage: true,
   });
   await page.getByRole("button", { name: "테마 전환" }).click();
   await page.getByRole("combobox").focus();
-  await expect(page.locator("main")).toHaveAttribute("data-miy-theme", "dark");
+  await expect(page.locator("html")).toHaveAttribute("data-miy-theme", "dark");
+  await expect(page.locator("html")).toHaveClass(/(^| )dark( |$)/);
   expect(
     await page.evaluate(
       () => document.documentElement.scrollWidth <= innerWidth,
@@ -241,6 +250,7 @@ test("untrusted labels remain text and light/dark mobile layouts fit the viewpor
   ).toBe(true);
   await page.screenshot({
     path: ".local/evidence/common-ui/dark-mobile.png",
+    animations: "disabled",
     fullPage: true,
   });
 });

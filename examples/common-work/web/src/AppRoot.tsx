@@ -10,18 +10,19 @@ import {
   Badge,
   Button,
   ContentState,
-  Field,
   FileTransferPanel,
-  Loading,
+  Input,
   Panel,
   ShareEditor,
   UiOperationError,
   formatByteSize,
   requestId,
+  type ButtonProps,
   type DirectoryProvider,
   type FileMetadata,
   type FileService,
   type FileTransferState,
+  type InputProps,
   type ShareProvider,
   type ShareSnapshot,
 } from "@miy/ui";
@@ -58,6 +59,34 @@ const actions = {
   flexWrap: "wrap",
   alignItems: "center",
 } as const;
+/** A labelled text input: the common UI has Input, the label is the app's. */
+function Field({ label, ...props }: InputProps & { label: string }) {
+  return (
+    <label style={{ display: "grid", gap: 6 }}>
+      <span style={{ fontWeight: 600, fontSize: "var(--ui-text-caption)" }}>
+        {label}
+      </span>
+      <Input {...props} />
+    </label>
+  );
+}
+/** While its request runs, an action is disabled and announced as busy. */
+function BusyButton({
+  busy,
+  disabled,
+  ...props
+}: ButtonProps & { busy: boolean }) {
+  return (
+    <Button
+      {...props}
+      disabled={disabled || busy}
+      aria-busy={busy || undefined}
+    />
+  );
+}
+const Loading = () => (
+  <ContentState kind="loading" size="compact" title="불러오는 중…" />
+);
 const isDenied = (error: unknown) =>
   error instanceof ApiError && (error.status === 401 || error.status === 403);
 const rejected = (error: unknown) =>
@@ -499,7 +528,7 @@ function Work({
     <>
       <Panel
         title="프로젝트와 업무"
-        actions={<Badge tone="info">공통 기능 예제</Badge>}
+        actions={<Badge tone="accent">공통 기능 예제</Badge>}
       >
         <p>프로젝트를 만들고 사용자·그룹과 업무 및 파일을 공유하세요.</p>
         <form
@@ -519,13 +548,13 @@ function Work({
           <div style={actions}>
             {pending && notCreated ? (
               <>
-                <Button
+                <BusyButton
                   variant="primary"
                   busy={busy}
                   onClick={() => void createProject(pending)}
                 >
                   같은 요청 다시 보내기
-                </Button>
+                </BusyButton>
                 <Button
                   disabled={busy}
                   onClick={() => {
@@ -537,18 +566,18 @@ function Work({
                 </Button>
               </>
             ) : pending ? (
-              <Button busy={busy} onClick={() => void lookupProject()}>
+              <BusyButton busy={busy} onClick={() => void lookupProject()}>
                 프로젝트 생성 결과 조회
-              </Button>
+              </BusyButton>
             ) : (
-              <Button
+              <BusyButton
                 type="submit"
                 variant="primary"
                 busy={busy}
                 disabled={!title.trim()}
               >
                 프로젝트 만들기
-              </Button>
+              </BusyButton>
             )}
           </div>
         </form>
@@ -953,14 +982,14 @@ function ProjectDetail({
           <div style={actions}>
             {pending && notCreated ? (
               <>
-                <Button
+                <BusyButton
                   variant="primary"
                   busy={busy}
                   disabled={loading}
                   onClick={() => void mutateTask(pending, true)}
                 >
                   같은 요청 다시 보내기
-                </Button>
+                </BusyButton>
                 <Button
                   disabled={busy}
                   onClick={() => {
@@ -972,22 +1001,22 @@ function ProjectDetail({
                 </Button>
               </>
             ) : pending ? (
-              <Button
+              <BusyButton
                 busy={busy}
                 disabled={loading}
                 onClick={() => void lookupTask()}
               >
                 업무 변경 결과 조회
-              </Button>
+              </BusyButton>
             ) : (
-              <Button
+              <BusyButton
                 type="submit"
                 variant="primary"
                 busy={busy}
                 disabled={loading || !taskTitle.trim()}
               >
                 업무 추가
-              </Button>
+              </BusyButton>
             )}
           </div>
         </form>

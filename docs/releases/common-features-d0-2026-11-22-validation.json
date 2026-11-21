@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "date": "2026-11-22",
   "status": "PASS",
-  "scope": "Common features plan D0 (source only): AI-DO design tokens as one source for the frame runtime and portal, Pretendard in app frames, display settings delivery (theme, language, time zone, date format) through the launch form, frame bootstrap, bridge message, frame runtime and SDK, SDK bundle 0.12.0 / CLI 0.17.0, portal and console dark colors. Not published, not deployed.",
+  "scope": "Common features plan D0 (source only): AI-DO design tokens as one source for the frame runtime and portal, Pretendard in app frames, display settings delivery (theme, language, time zone, date format) through the launch form, frame bootstrap, bridge message, frame runtime and SDK, SDK bundle 0.12.0 / CLI 0.17.0, portal and console dark colors. Not published, not deployed. Follow-up in the same series: component npm dependency declarations, common UI 2.0.0 ported from AI-DO's UI package, Tailwind CSS 4 in the app template.",
   "source": {
     "repository": "miy-v2",
     "baseCommit": "3f7f0fa",
@@ -49,6 +49,26 @@
       "status": "PASS",
       "command": "MIY_CONFIG_DIR=<empty> cargo test -p miy; cargo test -p miy --no-default-features (re-run after two follow-up changes)",
       "scope": "240 passed, 7 ignored (server build); 144 passed (client build). Follow-ups: component packages can declare npm dependencies and the CLI reports the ones an app's package.json lacks; the local preview now checks that the bridge gateway is an address of this host before binding it, which also makes the earlier failing test pass on this host (net.ipv4.ip_nonlocal_bind=1). fmt and clippy for both builds PASS."
+    },
+    {
+      "status": "PASS",
+      "command": "MIY_CONFIG_DIR=<empty> bash scripts/check-static.sh all (after common UI 2.0.0 and the template Tailwind setup)",
+      "scope": "scripts layer (build-ui-component --check for 2.0.0, 55 files; token copies; api types; doc links), rust layer (fmt, clippy both builds, cargo test 240 server and 144 client, including the seed test with the template default UI 2.0.0 and the bundle upgrade allow-list), web layer (typecheck; 181 browser checks: common UI 78 = existing 29 + AI-DO primitives 19 + ported model tests 30, portal suites 69, CLI experience 15, surface boundaries 18, HTTP IP 1)."
+    },
+    {
+      "status": "PASS",
+      "command": "miy app init (CLI 0.17.0, bundle 0.12.0) into a scratch directory; copy registry/components/ui/2.0.0 to platform-components/ui; pnpm install --frozen-lockfile; pnpm typecheck; pnpm build; pnpm build:preview",
+      "scope": "A new template project type-checks and builds with Tailwind CSS 4 and common UI 2.0.0. mf-manifest.json lists the generated CSS for ./AppRoot; the CSS contains the theme utilities (bg-ui-*), the reset and the UI primitive classes. Component files were copied by hand, not installed through miy component sync."
+    },
+    {
+      "status": "PASS",
+      "command": "MIY_CONFIG_DIR=<empty> python3 scripts/check-common-work.py",
+      "scope": "The representative project/task app migrated to the 2.0.0 API builds from the template and its handlers pass against a disposable PostgreSQL."
+    },
+    {
+      "status": "PASS",
+      "command": "Common UI gallery production build served with the frame CSP header (temporary script under .local/evidence/common-ui-2.0.0)",
+      "scope": "No CSP violation or console error with Tailwind output, Radix portals and the lazily loaded chart chunk. Light and dark, desktop and mobile screenshots reviewed."
     }
   ],
   "failuresRetained": [
@@ -61,6 +81,8 @@
     "Real app frames against a full stack: scripts/runtime-regression/stack-ui.sh with app-frames.config.ts, and server-ui.config.ts",
     "Bundle upgrade from a previous CLI: MIY_PREVIOUS_BUNDLE_CLI with node scripts/check-cli-guidance.mjs",
     "Firefox and WebKit, Windows and macOS clients",
-    "Publishing bundle 0.12.0 / CLI 0.17.0 and any server deployment"
+    "Publishing bundle 0.12.0 / CLI 0.17.0 and any server deployment",
+    "miy component sync / publish of UI 2.0.0 against a server (the registry candidate is in source only; seeding publishes it and freezes its bytes)",
+    "AI-DO React rendering specs (*.spec.tsx, 6 files) were not ported; the same components are covered in the browser by packages/ui/tests/primitives.spec.ts"
   ]
 }

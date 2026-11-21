@@ -7,6 +7,8 @@ export default defineConfig({
     "sharing.spec.ts",
     "files.spec.ts",
     "common-work.spec.ts",
+    "primitives.spec.ts",
+    "models/*.spec.ts",
   ],
   workers: 1,
   timeout: 30000,

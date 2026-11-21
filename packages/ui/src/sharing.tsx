@@ -5,8 +5,8 @@ import {
   type DirectoryOption,
   type DirectoryProvider,
 } from "./directory";
-import { useConfirm } from "./dialog";
-import { Badge, Button, ContentState, Loading } from "./primitives";
+import { useConfirm } from "./internal/dialog";
+import { Badge, Button, ContentState, Loading } from "./internal/primitives";
 import { requestId as newRequestId } from "./utilities";
 
 export interface ShareEntry {

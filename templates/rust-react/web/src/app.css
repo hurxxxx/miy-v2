@@ -1,0 +1,9 @@
+/*
+ * Tailwind entry of this app. The common UI registers its theme (the bg-ui-*,
+ * text-app-* color names and the dark variant) in theme.css; the color values
+ * are the --ui-* tokens the platform serves to every app frame.
+ */
+@import "tailwindcss";
+@import "../../platform-components/ui/theme.css";
+@source ".";
+@source "../../platform-components";

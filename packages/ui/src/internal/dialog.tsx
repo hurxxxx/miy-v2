@@ -1,3 +1,5 @@
+// The dialog of the miy composite components. Not exported from the package:
+// the public Dialog and useConfirm are the AI-DO ones in lib/.
 import {
   useCallback,
   useEffect,
@@ -5,9 +7,8 @@ import {
   useRef,
   useState,
   type ReactNode,
-  type RefObject,
 } from "react";
-import { Button, Field, classNames } from "./primitives";
+import { Button, classNames } from "./primitives";
 
 export interface DialogProps {
   open: boolean;
@@ -19,7 +20,6 @@ export interface DialogProps {
   closeLabel?: string;
   busy?: boolean;
   size?: "small" | "medium" | "large";
-  initialFocusRef?: RefObject<HTMLElement | null>;
   className?: string;
 }
 
@@ -34,7 +34,6 @@ export function Dialog({
   closeLabel = "닫기",
   busy = false,
   size = "medium",
-  initialFocusRef,
   className,
 }: DialogProps) {
   const ref = useRef<HTMLDialogElement>(null);
@@ -42,15 +41,27 @@ export function Dialog({
   const descriptionId = useId();
   const onChangeRef = useRef(onOpenChange);
   onChangeRef.current = onOpenChange;
-  const focusRef = useRef(initialFocusRef);
-  focusRef.current = initialFocusRef;
   useEffect(() => {
     const dialog = ref.current;
     if (!dialog || !open) return;
     const previous = dialog.ownerDocument.activeElement;
     dialog.showModal();
-    focusRef.current?.current?.focus();
+    // Escape closes this dialog only. An enclosing overlay that listens on the
+    // document during capture (a Radix dialog or drawer) leaves a prevented
+    // event alone, so prevent it before the document sees it; onKeyDown below
+    // then closes this dialog.
+    const view = dialog.ownerDocument.defaultView;
+    const escape = (event: KeyboardEvent) => {
+      if (
+        event.key === "Escape" &&
+        !event.isComposing &&
+        dialog.contains(event.target as Node | null)
+      )
+        event.preventDefault();
+    };
+    view?.addEventListener("keydown", escape, true);
     return () => {
+      view?.removeEventListener("keydown", escape, true);
       dialog.close();
       if (previous instanceof HTMLElement && previous.isConnected)
         previous.focus();
@@ -63,6 +74,12 @@ export function Dialog({
       aria-labelledby={titleId}
       aria-describedby={description ? descriptionId : undefined}
       aria-busy={busy || undefined}
+      onKeyDown={(event) => {
+        // A control inside that consumed Escape stopped the event before here.
+        if (event.key !== "Escape" || event.nativeEvent.isComposing) return;
+        event.stopPropagation();
+        if (!busy) onChangeRef.current(false);
+      }}
       onCancel={(event) => {
         event.preventDefault();
         if (!busy) onChangeRef.current(false);
@@ -155,105 +172,6 @@ export function useConfirm() {
           </>
         }
       />
-    ) : null,
-  };
-}
-
-export interface PromptOptions {
-  title: string;
-  label: string;
-  description?: string;
-  defaultValue?: string;
-  confirmLabel?: string;
-  cancelLabel?: string;
-  validate?: (value: string) => string | null;
-  maxLength?: number;
-}
-
-export function usePrompt() {
-  const [options, setOptions] = useState<PromptOptions | null>(null);
-  const [value, setValue] = useState("");
-  const [error, setError] = useState<string | null>(null);
-  const input = useRef<HTMLInputElement>(null);
-  const pending = useRef<((value: string | null) => void) | null>(null);
-  const mounted = useRef(true);
-  useEffect(() => {
-    mounted.current = true;
-    return () => {
-      mounted.current = false;
-      pending.current?.(null);
-      pending.current = null;
-    };
-  }, []);
-  const settle = useCallback((result: string | null) => {
-    const resolve = pending.current;
-    pending.current = null;
-    setOptions(null);
-    resolve?.(result);
-  }, []);
-  const prompt = useCallback((next: PromptOptions) => {
-    if (!mounted.current) return Promise.resolve(null);
-    pending.current?.(null);
-    setValue(next.defaultValue ?? "");
-    setError(null);
-    return new Promise<string | null>((resolve) => {
-      pending.current = resolve;
-      setOptions(next);
-    });
-  }, []);
-  const submit = () => {
-    const normalized = value.trim();
-    const issue = normalized
-      ? (options?.validate?.(normalized) ?? null)
-      : "값을 입력해 주세요.";
-    if (issue) {
-      setError(issue);
-      input.current?.focus();
-      return;
-    }
-    settle(normalized);
-  };
-  return {
-    prompt,
-    promptDialog: options ? (
-      <Dialog
-        open
-        title={options.title}
-        description={options.description}
-        initialFocusRef={input}
-        onOpenChange={(open) => {
-          if (!open) settle(null);
-        }}
-        actions={
-          <>
-            <Button onClick={() => settle(null)}>
-              {options.cancelLabel ?? "취소"}
-            </Button>
-            <Button variant="primary" onClick={submit}>
-              {options.confirmLabel ?? "확인"}
-            </Button>
-          </>
-        }
-      >
-        <form
-          onSubmit={(event) => {
-            event.preventDefault();
-            submit();
-          }}
-        >
-          <Field
-            ref={input}
-            label={options.label}
-            value={value}
-            maxLength={options.maxLength ?? 200}
-            error={error}
-            onChange={(event) => {
-              setValue(event.target.value);
-              setError(null);
-            }}
-          />
-        </form>
-      </Dialog>
     ) : null,
   };
 }

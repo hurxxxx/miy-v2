@@ -1,8 +1,8 @@
+// Building blocks of the miy composite components (directory, sharing, files).
+// Not exported from the package: the public primitives are the AI-DO ones in lib/.
 import {
-  useId,
   type ButtonHTMLAttributes,
   type HTMLAttributes,
-  type InputHTMLAttributes,
   type ReactNode,
   type Ref,
 } from "react";
@@ -48,97 +48,6 @@ export function Button({
       {busy ? <span className="miy-spinner" aria-hidden="true" /> : null}
       {children}
     </button>
-  );
-}
-
-export function IconButton({
-  label,
-  ...props
-}: Omit<ButtonProps, "size"> & { label: string }) {
-  return <Button {...props} size="icon" aria-label={label} />;
-}
-
-export interface PanelProps extends HTMLAttributes<HTMLElement> {
-  title?: string;
-  actions?: ReactNode;
-}
-
-export function Panel({
-  title,
-  actions,
-  children,
-  className,
-  ...props
-}: PanelProps) {
-  const titleId = useId();
-  return (
-    <section
-      {...props}
-      aria-labelledby={title ? titleId : props["aria-labelledby"]}
-      className={classNames("miy-panel", className)}
-    >
-      {title || actions ? (
-        <header className="miy-panel__header">
-          {title ? <h2 id={titleId}>{title}</h2> : null}
-          {actions}
-        </header>
-      ) : null}
-      {children}
-    </section>
-  );
-}
-
-export interface FieldProps extends InputHTMLAttributes<HTMLInputElement> {
-  label: ReactNode;
-  description?: ReactNode;
-  error?: ReactNode;
-  ref?: Ref<HTMLInputElement>;
-}
-
-export function Field({
-  label,
-  description,
-  error,
-  id,
-  className,
-  ref,
-  ...props
-}: FieldProps) {
-  const generatedId = useId();
-  const inputId = id ?? generatedId;
-  const describedBy =
-    [
-      props["aria-describedby"],
-      description ? `${inputId}-description` : null,
-      error ? `${inputId}-error` : null,
-    ]
-      .filter(Boolean)
-      .join(" ") || undefined;
-  return (
-    <div className={classNames("miy-field", className)}>
-      <label htmlFor={inputId}>
-        {label}
-        {props.required ? <span aria-hidden="true"> *</span> : null}
-      </label>
-      <input
-        {...props}
-        ref={ref}
-        id={inputId}
-        className="miy-input"
-        aria-describedby={describedBy}
-        aria-invalid={error ? true : props["aria-invalid"]}
-      />
-      {description ? (
-        <span id={`${inputId}-description`} className="miy-field__description">
-          {description}
-        </span>
-      ) : null}
-      {error ? (
-        <span id={`${inputId}-error`} role="alert" className="miy-field__error">
-          {error}
-        </span>
-      ) : null}
-    </div>
   );
 }
 

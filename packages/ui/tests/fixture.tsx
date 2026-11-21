@@ -1,10 +1,12 @@
-import { StrictMode, useMemo, useState } from "react";
+import { StrictMode, useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
+import "./app.css";
+import "../../tokens/tokens.css";
 import {
   Badge,
   Button,
   DirectoryPicker,
-  Field,
+  Input,
   Panel,
   useConfirm,
   usePrompt,
@@ -49,6 +51,8 @@ function Feedback() {
             await confirm({
               title: "변경 확인",
               description: "이 변경을 적용할까요?",
+              confirmLabel: "확인",
+              cancelLabel: "취소",
             }),
           )
         }
@@ -60,10 +64,10 @@ function Feedback() {
           record(
             await prompt({
               title: "이름 변경",
-              label: "이름",
+              placeholder: "이름",
               defaultValue: "기존 이름",
-              validate: (value) =>
-                value.length < 2 ? "두 글자 이상 입력해 주세요." : null,
+              submitLabel: "확인",
+              cancelLabel: "취소",
             }),
           )
         }
@@ -72,10 +76,13 @@ function Feedback() {
       </Button>
       <Button
         onClick={() => {
-          void confirm({ title: "이전 확인", description: "이전 요청" }).then(
-            (value) => record(`previous:${value}`),
-          );
-          void confirm({ title: "새 확인", description: "새 요청" });
+          const labels = { confirmLabel: "확인", cancelLabel: "취소" };
+          void confirm({
+            title: "이전 확인",
+            description: "이전 요청",
+            ...labels,
+          }).then((value) => record(`previous:${value}`));
+          void confirm({ title: "새 확인", description: "새 요청", ...labels });
         }}
       >
         동시 확인
@@ -93,6 +100,12 @@ function Fixture() {
   const [visible, setVisible] = useState(true);
   const [feedbackVisible, setFeedbackVisible] = useState(true);
   const [dark, setDark] = useState(false);
+  // The frame runtime sets both on the document root; so does this fixture.
+  useEffect(() => {
+    const root = document.documentElement;
+    root.classList.toggle("dark", dark);
+    root.dataset.miyTheme = dark ? "dark" : "light";
+  }, [dark]);
   window.uiFixture.unmountFeedback = () => setFeedbackVisible(false);
   const provider = useMemo<DirectoryProvider>(
     () => ({
@@ -116,7 +129,6 @@ function Fixture() {
   );
   return (
     <main
-      data-miy-theme={dark ? "dark" : "light"}
       style={{
         maxWidth: 680,
         margin: "32px auto",
@@ -126,10 +138,13 @@ function Fixture() {
     >
       <Panel
         title="사용자·그룹 및 기본 UI"
-        actions={<Badge tone="info">공통 컴포넌트</Badge>}
+        actions={<Badge tone="accent">공통 컴포넌트</Badge>}
       >
         <div style={{ display: "grid", gap: 16 }}>
-          <Field label="검증용 입력" id="outside" placeholder="문자 입력" />
+          <label style={{ display: "grid", gap: 6 }}>
+            검증용 입력
+            <Input id="outside" placeholder="문자 입력" />
+          </label>
           {visible ? (
             <DirectoryPicker
               label="공유 대상"

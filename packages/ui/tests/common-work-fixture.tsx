@@ -1,5 +1,7 @@
 import { StrictMode, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
+import "./app.css";
+import "../../tokens/tokens.css";
 import {
   directoryQuery,
   request,
@@ -50,6 +52,13 @@ function Fixture() {
         window.commonWork.states.push(state);
       },
       theme: "light",
+      settings: {
+        theme: "light",
+        themePreference: "light",
+        locale: "ko-KR",
+        timeZone: "Asia/Seoul",
+        dateFormat: "korean",
+      },
     }),
     [path],
   );

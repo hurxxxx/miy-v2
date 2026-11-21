@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Dialog } from "./dialog";
-import { Badge, Button, ContentState, Loading } from "./primitives";
+import { Dialog } from "./internal/dialog";
+import { Badge, Button, ContentState, Loading } from "./internal/primitives";
 import { uiFailureCode } from "./sharing";
 import { formatByteSize, requestId } from "./utilities";
 

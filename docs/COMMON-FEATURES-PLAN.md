@@ -604,6 +604,11 @@ AI-DO 코드를 그대로 옮기기 위해 AI-DO와 같은 라이브러리를 �
 | 2026-11-22 | 로컬 미리보기는 토큰과 기준 스타일만 같게 하고 Pretendard 파일은 넣지 않는다 | 템플릿은 텍스트 파일만 담을 수 있고, 글꼴 npm 패키지(약 98MB)를 모든 앱의 의존성으로 넣기에는 크다 |
 | 2026-11-22 | 컴포넌트 패키지의 `dependencies`(npm 이름 → 버전)는 선택 항목으로 추가하고, 앱의 `package.json`에 없으면 `miy component sync`와 `miy app check`가 `component_dependencies_missing`으로 알린다. 버전 범위는 비교하지 않고 있는지만 본다 | 정확한 버전은 lockfile과 빌드가 정한다. 선언이 없는 기존 패키지의 digest는 그대로다 |
 | 2026-11-22 | 로컬 미리보기가 브리지 게이트웨이에 바인드하기 전에 그 주소가 이 컴퓨터의 주소인지 확인하게 고쳤다 | `net.ipv4.ip_nonlocal_bind=1`인 호스트에서는 없는 주소에도 바인드가 성공해, 컨테이너가 닿을 수 없는 주소를 연결 가능으로 판정했다. 이 서버에서 관련 테스트도 실패하고 있었다 |
+| 2026-11-22 | 공용 UI 2.0.0은 AI-DO `packages/ui`의 `lib/`(편집기 제외 44개 파일)를 바이트 그대로 담고, 같은 이름의 Button·Badge·Panel·ContentState·Dialog·useConfirm·usePrompt는 AI-DO 구현이 공개 이름을 가진다. 1.1.0의 `Field`·`Loading`·`classNames`는 없앴다 | 옮겨 온 화면 코드가 AI-DO의 API를 그대로 쓴다. 대체는 `Input`+`FormMessage`, `ContentState kind="loading"`, `cn`이다 |
+| 2026-11-22 | miy 전용 조합 컴포넌트(DirectoryPicker·ShareEditor·FileTransferPanel·FileImagePreview)는 1.1.0의 옛 기본 요소를 내부(`internal/`)에서만 계속 쓴다 | AI-DO의 Button에는 진행 중·위험 표시가 없고 Dialog는 닫힌 뒤 포커스를 돌려주지 않아, 기존 검사가 확인하는 동작(포커스 복귀, 전송 중 잠금)을 유지할 수 없었다. AI-DO 기본 요소로 바꾸는 일은 후속 2.x에서 한다 |
+| 2026-11-22 | 앱의 Tailwind 진입 CSS(`web/src/app.css`)는 `tailwindcss`, 공용 UI의 `theme.css`, `@source`(앱 소스와 `platform-components`)를 불러온다. 색 이름 등록(`bg-ui-*`·`bg-app-*`)과 다크 변형은 `theme.css`에 둔다 | AI-DO의 `apps/web/src/index.css` 구성을 그대로 따르되, 컴포넌트가 요구하는 등록을 컴포넌트 패키지가 갖고 다니게 했다 |
+| 2026-11-22 | `react-is`는 AI-DO lockfile과 같은 18.3.1을 쓴다(React는 19.3.1) | 차트 라이브러리의 peer 의존성이며 AI-DO에서 동작이 확인된 조합이다. 선·막대·도넛 차트 렌더링을 확인했다 |
+| 2026-11-22 | AI-DO 원본의 알려진 한계는 고치지 않고 둔다: `SidebarNav`의 라이트 모드 글자색, `Select`의 접근성 이름 없음, 숫자 열 첫 정렬이 내림차순 | 그대로 포팅한다. 고칠 때는 AI-DO와 다른 점으로 기록하고 따로 한다 |
 | 2026-11-22 | 포커스 표시는 브랜드 파랑 70% 3px 링으로 한다 | 35%로는 라이트·다크 모두 주변과의 대비가 3:1에 못 미쳤다 |
 | 2026-11-22 | 입력란·패널 경계선 색은 AI-DO 토큰 값을 그대로 둔다(주변 대비 약 1.3:1) | AI-DO의 인상을 유지한다. 경계가 아니라 배경·글자·포커스로 구분되도록 하고, 3:1 경계가 필요한 요소가 나오면 그 요소만 강한 경계 토큰을 쓴다 |
 | 2026-11-22 | 포털의 셸 배치 상수 4개(`--shell-rail-width`·`--shell-header-height`·`--shell-radius-xl`·`--shell-space-8`)는 남긴다 | 공유 토큰에 대응하는 값이 없는 포털 전용 배치 값이다 |

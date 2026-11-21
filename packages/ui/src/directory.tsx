@@ -1,5 +1,10 @@
 import { useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
-import { Button, ContentState, Loading, classNames } from "./primitives";
+import {
+  Button,
+  ContentState,
+  Loading,
+  classNames,
+} from "./internal/primitives";
 
 export type DirectoryKind = "user" | "group";
 export interface DirectoryOption {
@@ -122,6 +127,8 @@ export function DirectoryPicker({
   const input = useRef<HTMLInputElement>(null);
   const container = useRef<HTMLDivElement>(null);
   const pointerActive = useRef(false);
+  const listOpen = useRef(false);
+  listOpen.current = expanded;
   const id = useId();
   const [search, setSearch] = useState("");
   const typed = query.trim();
@@ -158,7 +165,22 @@ export function DirectoryPicker({
     owner.addEventListener("pointerup", release, true);
     owner.addEventListener("pointercancel", release, true);
     owner.addEventListener("click", click);
+    // Escape only collapses an open list. An enclosing overlay that listens on
+    // the document during capture (a Radix dialog or drawer) leaves a prevented
+    // event alone, so prevent it before the document sees it.
+    const view = owner.defaultView;
+    const escape = (event: globalThis.KeyboardEvent) => {
+      if (
+        event.key === "Escape" &&
+        !event.isComposing &&
+        event.target === input.current &&
+        listOpen.current
+      )
+        event.preventDefault();
+    };
+    view?.addEventListener("keydown", escape, true);
     return () => {
+      view?.removeEventListener("keydown", escape, true);
       clearTimeout(releaseTimer);
       owner.removeEventListener("pointerdown", down, true);
       owner.removeEventListener("pointerup", release, true);

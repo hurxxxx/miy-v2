@@ -372,6 +372,7 @@ fn validate_guidance_change(path: &str, unchanged: bool) -> Result<()> {
                 | "sdk/preview/main.tsx"
                 | "sdk/preview/preview.css"
                 | "sdk/preview/tokens.css"
+                | "sdk/preview/vite.config.ts"
                 | "sdk/rust/src/lib.rs"
                 | "sdk/rust/src/directory.rs"
                 | "sdk/rust/src/storage.rs"

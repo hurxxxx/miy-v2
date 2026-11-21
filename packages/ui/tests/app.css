@@ -1,0 +1,10 @@
+/*
+ * Tailwind entry of the test fixtures, laid out like an app's entry CSS:
+ * Tailwind, then the common UI theme, then the sources to scan. The token
+ * values come from packages/tokens/tokens.css, which each fixture imports as
+ * its own stylesheet the way the frame runtime delivers it to an app frame.
+ */
+@import "tailwindcss";
+@import "../src/theme.css";
+@source ".";
+@source "../src";

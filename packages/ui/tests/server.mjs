@@ -1,4 +1,5 @@
 import { createServer } from "../../../web/platform/node_modules/vite/dist/node/index.js";
+import tailwindcss from "@tailwindcss/vite";
 import { fileURLToPath } from "node:url";
 
 const root = fileURLToPath(new URL("../../../", import.meta.url));
@@ -6,6 +7,8 @@ const server = await createServer({
   configFile: false,
   root: fileURLToPath(new URL("./", import.meta.url)),
   cacheDir: `${root}.local/evidence/common-ui/vite-cache`,
+  // The same Tailwind build step an app uses; app.css is the entry CSS.
+  plugins: [tailwindcss()],
   resolve: {
     alias: {
       react: `${root}web/platform/node_modules/react`,
