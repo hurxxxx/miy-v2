@@ -563,6 +563,20 @@ async fn ensure_network(project: &str) -> Result<()> {
     Ok(())
 }
 
+/// Whether `address` is assigned to this host. A successful bind cannot tell:
+/// with `net.ipv4.ip_nonlocal_bind=1` the kernel accepts any address, and the
+/// listener would then sit on an address no container can reach. Connecting a
+/// UDP socket sends nothing; the kernel only chooses the source address, and for
+/// one of its own addresses that source is the address itself.
+fn host_address(address: std::net::Ipv4Addr) -> bool {
+    std::net::UdpSocket::bind((std::net::Ipv4Addr::UNSPECIFIED, 0))
+        .and_then(|socket| {
+            socket.connect((address, 9))?;
+            socket.local_addr()
+        })
+        .is_ok_and(|local| local.ip() == address)
+}
+
 /// Bind the private backend listener. A native backend uses loopback. A
 /// container reaches the host through its bridge gateway, which is a host
 /// address only with a native Linux engine. Docker Desktop and rootless engines
@@ -572,7 +586,7 @@ async fn ensure_network(project: &str) -> Result<()> {
 async fn bind_backend(
     gateway: Option<std::net::Ipv4Addr>,
 ) -> Result<(tokio::net::TcpListener, bool)> {
-    if let Some(address) = gateway {
+    if let Some(address) = gateway.filter(|address| host_address(*address)) {
         match tokio::net::TcpListener::bind((address, 0)).await {
             Ok(listener) => return Ok((listener, true)),
             Err(error) if error.kind() == std::io::ErrorKind::AddrNotAvailable => {}
@@ -1286,6 +1300,7 @@ mod tests {
         let gateway = std::net::Ipv4Addr::new(192, 0, 2, 1);
         let (listener, reachable) = bind_backend(Some(gateway)).await.unwrap();
         assert!(!reachable && listener.local_addr().unwrap().ip().is_loopback());
+        assert!(host_address(std::net::Ipv4Addr::LOCALHOST) && !host_address(gateway));
     }
 
     #[tokio::test]
