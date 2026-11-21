@@ -1,0 +1,64 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-11-21",
+  "status": "PASS",
+  "scope": "miy.works에서 초대 링크로 만든 개발자 계정과 게시 CLI 0.13.0으로 베타 개발자 경로(로그인·CLI 승인·새 앱·등록 승인·서버 빌드·dev 배포·프레임)를 실서버 인수",
+  "origin": "https://portal.miy.works",
+  "versions": {
+    "core": "0.13.0",
+    "cli": "0.13.0",
+    "publishedCliCommit": "f8228e1c583264fab22cc9847d47e614212a5751",
+    "bundle": "0.11.0",
+    "coreWebCommit": "86f8c53264714b483bb6bea9f9044018135f45b7"
+  },
+  "developerAccount": {
+    "creation": "콘솔 API로 '새 앱 등록 신청' 허용 초대(1시간)를 발급하고, 초대 화면과 같은 공개 호출로 계정을 만들었다",
+    "registeredAs": "비관리자, canDevelop, 앱 권한 없음",
+    "afterwards": "Core와 로그인 서버 양쪽에서 사용 중지. 비밀번호를 담은 비공개 파일은 shred로 삭제. CLI 세션은 검사기가 logout"
+  },
+  "checks": [
+    {
+      "status": "PASS",
+      "command": "node scripts/check-pilot-flow.mjs --origin https://portal.miy.works --cli /home/miy/.local/bin/miy --developer-username <초대로 만든 아이디>",
+      "harness": "pilot-flow-v2",
+      "appId": "pilot-031ffc35",
+      "passes": [
+        "published_cli_matches_the_server_and_its_install_guide",
+        "administrator_and_developer_oidc_sign_in_and_console_device_approval",
+        "app_init_generated_sdk_mcp_configuration_and_synchronized_components",
+        "developer_registration_refused_to_self_approve_and_approved_by_administrator",
+        "server_build_from_committed_source",
+        "dev_deployment_running",
+        "generated_app_renders_in_its_own_frame_origin_on_the_dev_portal"
+      ],
+      "buildSeconds": 95,
+      "stopped": true,
+      "cleanupFailures": [],
+      "evidence": "/srv/miy-prod/evidence/developer-path-20261121/pilot/result.json"
+    }
+  ],
+  "observations": [
+    "이 서버에는 한글 글꼴이 없다(fc-list :lang=ko 0개). 시험용 브라우저의 스크린샷에서 앱 프레임 안 한글과 Keycloak 로그인 화면의 한글이 네모로 보인다. 플랫폼 화면은 Pretendard를 함께 싣고, 앱 프레임과 로그인 서버 화면은 사용자 시스템 글꼴을 쓴다. 텍스트 자체는 DOM에서 확인됐으며 한국어 Windows·macOS의 표시는 이 실행으로 확인하지 않았다."
+  ],
+  "serverChanges": [
+    "pilot-031ffc35 앱(등록·dev develop 권한·dev DB·릴리스·정지된 컨테이너)이 남는다",
+    "점검 사용자 한 명(사용 중지)과 완료된 초대 링크 한 건이 남는다"
+  ],
+  "notRun": [
+    {
+      "status": "NOT_RUN",
+      "scope": "기존 0.10.0 앱의 app upgrade",
+      "reason": "이 호스트에는 0.10.0으로 만든 앱이 없다"
+    },
+    {
+      "status": "NOT_RUN",
+      "scope": "외부 개발 PC(Windows·macOS)의 설치와 Codex/Claude Code 연결",
+      "reason": "외부 클라이언트가 연결되지 않았다"
+    },
+    {
+      "status": "NOT_RUN",
+      "scope": "prod 승격과 업무 사용자 입장",
+      "reason": "검사기의 범위가 dev 배포까지다"
+    }
+  ]
+}

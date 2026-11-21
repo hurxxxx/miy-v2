@@ -265,6 +265,8 @@ node scripts/check-pilot-flow.mjs --origin https://portal.dwdcc.kr \
   --output /projects/miy-v2/.local/evidence/new-pilot-flow-run
 ```
 
+예시 계정 `developer`를 쓰지 않는 서버는 콘솔의 초대 링크로 `새 앱 등록 신청`을 허용한 개발자를 만들고 `--developer-username <그 아이디>`를 지정한다. 자격증명 파일의 `developer` 키에는 그 계정의 비밀번호를 넣는다. 이 방식이 베타 개발자가 실제로 거치는 경로와 같다.
+
 `check-server-development-flow.mjs --run`은 앱 프레임 도입 전의 계약(포털 쿠키로 앱 업무 API 호출)으로 작성된 이전 전체 인수 도구이며 현행 서버에 맞게 갱신하지 않았다. Windows·macOS 사용자 PC, 직접 HTTP MCP 인증, 업무 앱 작성/승격·DB 보존은 해당 범위의 별도 인수로 기록한다.
 
 ## 6. 변경 전 최소 백업과 복원 확인

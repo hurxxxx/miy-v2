@@ -100,7 +100,7 @@
 | 경계·프레임 잔여 | 같은 등록 도메인 P2 쿠키 간섭(FV-06), 화면낭독 출력, 실제 CA/단말 인수, IdP 비활성화·소비한 OAuth callback 재사용·새 issuer 외부 HTTP MCP 인증 | [BV](APP-BOUNDARIES.md#경계-인수)·[FV](APP-FRAMES.md#6-실증-계획). 해당 환경/기능 변경 시 실행. P2 `*.localhost` 실증과 실제 등록 도메인의 쿠키 시험을 구분. P1은 활성화 전 인수 |
 | 자원·호환 | Windows 실제 TCP/RSS, 여러 앱·관리 API 복합 부하, 전체 자원 예약/회수·호스트 지원 규모 | 코어 3~5차와 해당 제한 변경 때 수행. [CAPACITY](CAPACITY.md). 현재 설정값·Linux 결과를 전체 성능 보장으로 확대하지 않음 |
 | 배포 도구 실제 실행 | dev 포털 설정 부분 실패 복원, 앱 프레임 설정 복구 보완의 실제 운영 apply/rollback, CLI 동시 게시의 rollback | CLI 후보 고정·게시 잠금을 포함한 `core-rollout.py apply`는 2026-11-15 반영에서 실제 수행. 나머지는 모의·격리 검증 범위로 보존하며 확인만을 위해 운영을 재전환하지 않음 |
-| 서버 빌드 전용 배포 후속 인수 | 현행 게시 CLI로 새 앱의 서버 빌드→dev 배포, 기존 0.10.0 앱의 `app upgrade` | 두 호스트의 서버·worker·게시 CLI 갱신과 온라인 설치·CLI/MCP 연결은 완료. dwdcc.kr 0.13.0에서 기존 앱 보존·프레임을 확인했다. 새 앱 배포와 구 앱 upgrade의 실서버 인수는 대기 |
+| 서버 빌드 전용 배포 후속 인수 | 기존 0.10.0 앱의 `app upgrade`, dwdcc.kr에서 현행 게시 CLI로 새 앱의 서버 빌드→dev 배포. miy.works는 초대로 만든 개발자와 게시 CLI 0.13.0으로 새 앱 생성→등록 승인→서버 빌드→dev 배포→프레임을 확인했다([인수 기록](releases/miy-works-developer-path-2026-11-21-validation.json)) | 두 호스트의 서버·worker·게시 CLI 갱신과 온라인 설치·CLI/MCP 연결은 완료. dwdcc.kr 0.13.0에서 기존 앱 보존·프레임을 확인했다. 새 앱 배포와 구 앱 upgrade의 실서버 인수는 대기 |
 | 공개 접근 위험 확인 | 공개 콘솔 외부 접근 범위, 전 사용자 credential·기존 기기 worker 점검, 공격 경로 실증 | 운영 책임자 확인/결정 대기. 재검토 기한 2026-11-13은 지났고 이번 정리로 연장하거나 위험 수용으로 처리하지 않음. [운영 위험 계약](APP-BOUNDARIES.md#전환-전-임시-운영) |
 
 ## 확정된 결정

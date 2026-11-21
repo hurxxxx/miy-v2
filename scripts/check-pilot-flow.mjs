@@ -15,6 +15,9 @@
 //   --credentials-file /abs/credentials.json --output NEW_DIRECTORY
 //   [--publish-component DIRECTORY] [--keep-running true]
 //   [--unpublished true]   isolated stacks only: the CLI is not in an install guide
+//   [--developer-username NAME]   sign in the developer with this name (default
+//   "developer"), for example an account created from an invitation link. The
+//   credentials file keeps its "developer" key for that account's password.
 import { spawn } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
 import { chmod, copyFile, lstat, mkdir, readFile, readdir, writeFile } from "node:fs/promises";
@@ -55,6 +58,7 @@ const result = { schemaVersion: 2, harness: "pilot-flow-v2", startedAt: new Date
 const passed = (name, details = {}) => { result.passes.push(pilotReceipt(name, details)); console.log("PASS " + name); };
 let stage = "arguments", output, browser, executable, appId, lifecycle;
 const sessions = {};
+const usernames = { admin: "admin", developer: "developer" };
 
 async function cli(account, args, { cwd, timeout, expectFailure } = {}) {
   const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith("MIY_")));
@@ -73,7 +77,7 @@ async function signIn(account, password, origins) {
   context.setDefaultTimeout(45000);
   const page = await context.newPage();
   await page.goto(origins.console + "/auth/login");
-  await page.locator("input[name=username]").fill(account);
+  await page.locator("input[name=username]").fill(usernames[account]);
   await page.locator("input[name=password]").fill(password);
   await page.locator("#kc-login").click();
   try { await page.waitForURL(url => url.origin === origins.console && url.pathname === "/"); }
@@ -109,13 +113,19 @@ try {
   const values = {};
   for (let i = 2; i < process.argv.length; i += 2) {
     const flag = process.argv[i], value = process.argv[i + 1];
-    requireThat(["--origin", "--cli", "--credentials-file", "--output", "--publish-component", "--keep-running", "--unpublished"].includes(flag)
+    requireThat(["--origin", "--cli", "--credentials-file", "--output", "--publish-component", "--keep-running", "--unpublished",
+      "--developer-username"].includes(flag)
       && value && !value.startsWith("--") && values[flag] === undefined, "invalid_arguments");
     values[flag] = value;
   }
   requireThat(["--origin", "--cli", "--credentials-file", "--output"].every(key => values[key]), "required_arguments_missing");
   requireThat(["--keep-running", "--unpublished"].every(key => values[key] === undefined || ["true", "false"].includes(values[key])), "invalid_boolean_argument");
   requireThat(isAbsolute(values["--cli"]) && isAbsolute(values["--credentials-file"]), "absolute_private_input_paths_required");
+  if (values["--developer-username"] !== undefined) {
+    requireThat(/^[a-z0-9][a-z0-9._-]{2,31}$/.test(values["--developer-username"]) && values["--developer-username"] !== "admin",
+      "invalid_developer_username");
+    usernames.developer = values["--developer-username"];
+  }
   const origin = new URL(values["--origin"]).origin;
   output = resolve(values["--output"]);
   let existing;
