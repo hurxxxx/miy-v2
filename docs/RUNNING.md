@@ -1,6 +1,6 @@
 # CLI와 독립 앱 개발·운영 실행 안내
 
-현행 CLI의 설치·인증·앱 개발·운영 사용법을 모은다. 설치된 실행 파일의 `miy --version`, `miy describe`와 서버 capability가 실제 사용 가능한 범위를 결정한다. miy.works와 dwdcc.kr(`https://portal.dwdcc.kr`)의 게시 CLI는 **0.12.1**, SDK 번들은 **0.11.0**이며 서버 빌드 전용 배포·한 줄 설치·비로그인 신고를 제공한다. 연결할 서버의 설치 안내에서 해당 게시물을 받는다. 게시 출처와 남은 조건은 [CLI-RELEASE](CLI-RELEASE.md), 실제 서버 상태는 [SERVER-OPERATIONS](SERVER-OPERATIONS.md)를 따른다.
+현행 CLI의 설치·인증·앱 개발·운영 사용법을 모은다. 설치된 실행 파일의 `miy --version`, `miy describe`와 서버 capability가 실제 사용 가능한 범위를 결정한다. 게시 CLI와 SDK 번들의 버전은 서버마다 다르며 [CLI-RELEASE](CLI-RELEASE.md)가 관리한다. 현행 게시물은 서버 빌드 전용 배포·한 줄 설치·비로그인 신고를 제공한다. 연결할 서버의 설치 안내에서 해당 게시물을 받는다. 게시 출처와 남은 조건은 [CLI-RELEASE](CLI-RELEASE.md), 실제 서버 상태는 [SERVER-OPERATIONS](SERVER-OPERATIONS.md)를 따른다.
 
 검사 선택은 [CHECKS](CHECKS.md), 사용자 Windows 설치·인수는 [WINDOWS-ACCEPTANCE](WINDOWS-ACCEPTANCE.md)에 모은다. 명령 구현·특정 환경 PASS·전체 V7 인수는 구분한다. 현재 [실행·인증 계약](APP-BOUNDARIES.md#확정-결정)은 prod 포털·dev 포털·관리/CLI 승인/Keycloak 콘솔 세 출처다. 원격 업무 앱은 설치별 출처 프레임에서 실행하며 단일 IP HTTPS도 지원한다. CLI의 대표 서버 주소는 prod 포털이고 브라우저 승인만 콘솔에서 처리한다.
 
@@ -160,7 +160,7 @@ miy --app my-app grant set --user USER_ID --permission use --environment dev
 
 ## 공식 앱 공급과 설치
 
-이 절은 Core·CLI **0.13.0 소스 후보**, core schema 25부터 적용한다. 카탈로그에 등록한 제품과 실제 배포한 릴리스는 따로 확인한다. `miy app list`와 `app status`의 `app.distribution`은 제품 분류이고, 설치 행의 `distribution`은 서버가 검증한 해당 릴리스의 분류다. 값은 `default_official`(기본 제공), `optional_official`(공식 업무), `organization`(조직 제작)이다. `kind`는 실행 형식이다. 조회는 기존 사용자·환경 권한을 따른다.
+이 절은 Core·CLI **0.13.0**, core schema 25부터 적용한다. 카탈로그에 등록한 제품과 실제 배포한 릴리스는 따로 확인한다. `miy app list`와 `app status`의 `app.distribution`은 제품 분류이고, 설치 행의 `distribution`은 서버가 검증한 해당 릴리스의 분류다. 값은 `default_official`(기본 제공), `optional_official`(공식 업무), `organization`(조직 제작)이다. `kind`는 실행 형식이다. 조회는 기존 사용자·환경 권한을 따른다.
 
 1. **공급자**는 독립 앱 Git 저장소에서 릴리스할 버전을 커밋한다. 해당 앱 폴더에서 `miy --output json app source-pin`을 실행하면 실제 서버 빌드와 같은 방식으로 계산한 `data.appId`, `version`, `sourceCommit`, `archiveSha256`을 얻는다. 같은 ID의 `releases`에 뒤의 세 필드를 추가해 검토한 카탈로그를 공급한다. 앱의 manifest나 빌드 요청자가 공식 지위를 부여할 수 없다.
 2. **서버 운영자**는 신뢰한 카탈로그를 선택해 설치 호스트의 `MIY_STATE_DIR`을 지정한 셸에서 `MIY_BINARY="$MIY_STATE_DIR/bin/miy-server" bash scripts/run-service.sh catalog-sync --file /path/to/catalog.json`을 실행한다. 서버 실행 파일의 설치 경로가 다르면 해당 절대 경로를 지정한다. `scripts/up.sh`는 서버를 시작한 뒤 `registry/apps/catalog.json`을 동기화하며, 운영자가 `MIY_OFFICIAL_APP_CATALOG`로 다른 파일을 지정할 수 있다. 동기화는 제품·버전을 누적 반영하고 같은 버전의 소스 변경이나 기존 조직 앱·등록·권한 충돌은 전체 거절한다. 직원 권한, 설치 데이터, 실행 상태와 현장에서 수정한 제품 이름은 보존한다.

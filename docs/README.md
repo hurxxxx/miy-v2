@@ -1,6 +1,6 @@
 # 문서 지도
 
-- 정리일: 2026-11-20
+- 정리일: 2026-11-22
 
 먼저 PLAN의 [완료 요약](PLAN.md#완료한-작업)·[일부 구현](PLAN.md#일부-구현된-작업)·[남은 구현 순서](PLAN.md#다음-우선-작업)·[검증과 반영 대기](PLAN.md#검증과-반영-대기)를 확인한다. 제품 범위가 필요하면 [PRD](PRD.md)를 읽는다. 작업에 해당하는 아래 담당 문서만 추가로 읽는다. 플랫폼 개발 규칙은 [AGENTS.md](../AGENTS.md)를 따른다.
 
@@ -17,7 +17,9 @@
 | 계정 발급·비밀번호 변경과 분실 | [ACCOUNTS](ACCOUNTS.md) | 초대·재설정 링크, 본인 비밀번호 변경, 로그인 서버 연동과 로그인 보호 |
 | 공용 UI·SDK를 앱에 연결하는 방법 | [UI provider 안내](../packages/ui/README.md), [SDK 계약](../templates/rust-react/docs/CONTRACT.md), [대표 앱](../examples/common-work/README.md) | 선택기·공유·파일 provider, 앱 소유 ACL과 새 migration 사용법 |
 | 앱·릴리스·데이터 개발 계약 | [DEVELOPMENT](DEVELOPMENT.md) | 앱 구현 계약과 명시적으로 구분한 장기 설계 |
-| AI-DO의 UX·공통 기능을 무엇부터 옮기나 | [AI-DO-COMMON-MIGRATION](AI-DO-COMMON-MIGRATION.md) | 최신 dev 소스별 대상·현재 v2 공백·보존할 UX·플랫폼/공용 UI/앱 책임·인수 기준 |
+| AI-DO의 어떤 UX·공통 기능이 이식 대상인가 | [AI-DO-COMMON-MIGRATION](AI-DO-COMMON-MIGRATION.md) | 최신 dev 소스별 대상·현재 v2 공백·보존할 UX·플랫폼/공용 UI/앱 책임·인수 기준 |
+| 범용 기능을 어떤 앱·단계로 만들고 디자인을 어떻게 통일하나 | [COMMON-FEATURES-PLAN](COMMON-FEATURES-PLAN.md) | 범용 기능의 소유자·단계(D0·P1·M1~M13)·기본/공식 앱 범위·지금 없는 기반·파일 저장 방식, 통일 디자인 기준, 확정 결정과 함께 고칠 정본 목록. 순서와 상태는 PLAN |
+| 사용자 검증에서 나온 공통 컴포넌트 후보 | [PLATFORM-COMPONENT-CANDIDATES](PLATFORM-COMPONENT-CANDIDATES.md) | 파일 전송 UI·파일 저장소·이름 기반 공유 대상 선택의 후보와 인수 기준. 착수 단계는 범용 기능 계획 M10 |
 | miy v1에서 참고할 계약과 기존 적용 ID | [V1-ADOPTION](V1-ADOPTION.md) | V1 ID·채택/제외·권한/운영 교훈·UI 책임·부분 구현. 현재 AI-DO 이식 대상과 과거 UI-1~5 이력을 구분 |
 | 자원·복구·새 서버의 완료 조건 | [CORE-HARDENING](CORE-HARDENING.md), [CAPACITY](CAPACITY.md) | 코어 안정화/종합 인수와 자원 예산·개별 제한 |
 | 내장 AI 설계 | [AI](AI.md) | 공통 연결·Hermes·사용자별 세션·도구 승인. 개발 에이전트 인수와 구분 |

@@ -203,6 +203,8 @@ Codex·Claude의 생성된 프로젝트 MCP는 프로젝트의 `.miy-tools/miy[.
 | 공용 UI 컴포넌트 | `ui` 1.0.1, 1.1.0(새 프로젝트 기본) | 기존 게시 바이트 보존 |
 | core DB·공식 앱 카탈로그 | schema 25, 기본 제품 `planner`·`messenger`, 선택 제품 `pms`·`plm` | 실제 백업의 별도 복원본에서 `0025_official_apps.sql`과 카탈로그 동기화를 검증한 뒤 적용했다. 등록한 공식 제품은 4개이며 게시 버전과 공식 앱 설치는 각각 0개다. |
 
+작업본과의 차이(미반영): 소스 카탈로그에 `docs`·`drive`·`whiteboard`·`board`가 추가됐다(2026-11-21). 이 서버 DB에는 동기화하지 않았고(NOT_RUN), 반영할 때 §7의 `--official-app-catalog`와 승인한 SHA-256을 준다. 이 서버의 core DB에는 네 ID와 겹치는 앱·등록 요청·권한이 없다(2026-11-21 읽기 전용 확인). [범용 기능 계획 §2.2](COMMON-FEATURES-PLAN.md#22-기본-제공-앱과-공식-업무-앱)
+
 공식 앱 개발자는 검증된 릴리스 ID로 같은 이미지를 dev에 재배포할 수 있다. prod 승격이 실패하면 DB 상태를 기준으로 마지막 정상 버전을 복구하거나 관리 콘솔에 복구 필요 상태를 표시한다. 사용자는 포털에서 전역 CLI를 갱신한 뒤 각 프로젝트에서 `miy app setup`을 실행하고 에이전트를 다시 시작한다. [공식 앱 설치·갱신](RUNNING.md#공식-앱-공급과-설치) · [CLI 설치 화면](https://portal.dwdcc.kr/cli/install)
 
 배포 전후 기존 앱 DB 8개와 설치 8개의 데이터를 대조했다. 컨테이너 8개 중 실행 5개·중지 3개의 상태가 같았고, 이전 게시 파일 26개의 바이트가 일치했다. 상세 해시와 대조 결과는 [0.13.0 반영 기록](releases/dwdcc-0.13.0-2026-11-18-deployment.json)에 있다.
@@ -289,7 +291,7 @@ python3 scripts/check-db-connections.py
 
 `check-db-connections.py`는 공유 PostgreSQL의 최악의 연결 수(코어 풀·병렬 관리 연결·Keycloak 풀·설치 역할 한도·활성 개발 세션)를 사용 가능 연결과 비교한다. 현재 계산은 관리 연결 4개를 포함하며 [연결 예산](CAPACITY.md#연결-예산-현재-구현-2026-11-04)을 따른다. 이전 연결 예산 FAIL과 이후 반영·재검증은 [보관 이력](archive/results/SERVER-OPERATIONS-2026-11-14.md)에 남긴다.
 
-새 코어는 앱 배포뿐 아니라 worker 시작 때도 기존 설치 역할 한도(runtime 6, migration 2)를 맞춘다. 코어가 생성하는 `miy_r_`·`miy_m_`와 32자리 소문자 16진수 ID 형식만 허용한다. 시작 시 적용이 실패하면 경고를 기록하고 다음 worker 시작 또는 해당 앱 배포 때 다시 적용한다. compose는 PostgreSQL `max_connections=200`, Keycloak `KC_DB_POOL_MAX_SIZE=10`을 설정한다. 소스 변경만으로 기존 운영 설정이나 역할 한도가 바뀌지 않으므로 운영 반영 후 예산을 다시 측정한다.
+새 코어는 앱 배포뿐 아니라 worker 시작 때도 기존 설치 역할 한도(runtime 6, migration 2)를 맞춘다. 코어가 생성하는 `miy_r_`·`miy_m_`와 32자리 소문자 16진수 ID 형식만 허용한다. 시작 시 적용이 실패하면 경고를 기록하고 다음 worker 시작 또는 해당 앱 배포 때 다시 적용한다. compose는 PostgreSQL `max_connections=200`, Keycloak `KC_DB_POOL_MAX_SIZE=10`을 설정한다. 소스 변경만으로 기존 운영 설정이나 역할 한도가 바뀌지 않으므로 운영 반영 후 예산을 다시 측정한다. 계획된 변경(미반영): `max_connections`를 올리기로 결정했다(제안값 400). `compose.yaml`, 배포 도구의 기대값, 이 서버에는 반영하지 않았다([범용 기능 계획 M2](COMMON-FEATURES-PLAN.md#m2-플랫폼앱-연결과-알림)).
 
 ## 7. 배포 도구
 

@@ -24,7 +24,7 @@ v1 근거는 `miy:<경로>`, ai-do 근거는 `ai-do:<경로>`로 적는다. 각�
    - 자동 전환을 하지 않는다.
    - 불확실한 커밋 결과를 근거로 보상 삭제를 하지 않는다.
    - AI 없이도 업무가 동작하게 한다.
-2. **v1이 폐기한 구조는 다시 들이지 않는다.** 플랫폼 전역 워크스페이스(ADR 0012로 폐기), 앱 간 공유 DB 외래키, 셸형 AI 터미널, 대리 로그인, 범용 검증 엔진, 무거운 hook·skill 체계가 그 대상이다.
+2. **v1이 폐기한 구조는 다시 들이지 않는다.** 플랫폼 전역 워크스페이스(ADR 0012로 폐기), 앱 간 공유 DB 외래키, 셸형 AI 터미널, 범용 검증 엔진, 무거운 hook·skill 체계가 그 대상이다. 대리 로그인은 예외다. v1의 폐기 이력을 확인한 뒤 2026-11-21 사용자 결정으로 플랫폼 관리자의 사용자 전환을 만든다(미구현, [범용 기능 계획 M6](COMMON-FEATURES-PLAN.md#m6-사용자-전환)). v1의 구현·컬럼은 옮기지 않고 Keycloak의 사용자 가장 기능을 쓴다.
 3. **최초 v1 조사에서 별도로 찾은 기술 공백은 세 가지다.** 감사 기록 조회·보존(V1-A1), 서비스 계정용 범위 제한 API 키(V1-A2), 앱이 플랫폼을 통해 LLM을 호출하는 등록 workload(V1-I7)다. 이후 PLM 연계 요구에서 찾은 공통 업무 ACL·API 전용 호출·업무 이벤트 공백은 §3.3의 추가 검토로 구분한다. 작업 순서는 [추진 계획](PLAN.md)이 관리한다.
 4. **공식 업무 앱은 "이전"이 아니라 "재구현 후 인수"다.**
    - v1 공식 앱 12종은 소유 이전과 대표 경로 검사까지 진행했다.
@@ -54,7 +54,7 @@ v1 근거는 `miy:<경로>`, ai-do 근거는 `ai-do:<경로>`로 적는다. 각�
 
 ## 3. 적용 항목
 
-각 항목은 **적용**(규칙을 그대로 가져옴) 또는 **변형 적용**(v2 모델에 맞게 재설계) 중 하나로 판정했다. 우선순위는 P1(해당 단계의 선행 조건), P2(같은 단계 안에서 함께 처리), P3(필요해질 때) 순이다. 배치는 해당 항목이 속한 코어 차수나 UI 후속 번호이며, 실제 순서는 [추진 계획](PLAN.md)의 작업표를 따른다.
+각 항목은 **적용**(규칙을 그대로 가져옴) 또는 **변형 적용**(v2 모델에 맞게 재설계) 중 하나로 판정했다. 우선순위는 P1(해당 단계의 선행 조건), P2(같은 단계 안에서 함께 처리), P3(필요해질 때) 순이다. 배치는 해당 항목이 속한 코어 차수나 UI 후속 번호이며, 실제 순서는 [추진 계획](PLAN.md)의 작업표를 따른다. 이 표의 P1~P3은 우선순위이며 [범용 기능 계획](COMMON-FEATURES-PLAN.md#3-단계별-구현-계획)의 단계 이름 P1과 다르다.
 
 ### 3.1 개발 절차·품질 검사
 
@@ -116,7 +116,7 @@ v1 근거는 `miy:<경로>`, ai-do 근거는 `ai-do:<경로>`로 적는다. 각�
 | V1-U1 | 업무 UI 원칙: 밀도 높은 화면, 평면 표, 한 줄 도구 모음, 모바일 전역 메뉴와 현재 앱 메뉴 분리. 템플릿 지침에도 넣는다 | `miy:docs/product/ui-design-principles.md` | 규칙 문서 없음 | 적용 | P1 |
 | V1-U2 | 다크/시스템 테마: SDK의 테마 상태·변경 알림, `--miy-*` 다크 토큰, 강조색 전경 누락 검사 | `miy:scripts/check-web-dark-mode-tokens.mjs`, `miy:packages/platform-web/src/theme/document-theme.ts` | `theme: "light"` 고정. 프레임의 `theme.changed` 메시지 계약은 있으나 테마 전환 제품 기능은 미구현 | 변형 적용: AppRuntime·프레임 런타임·브리지 v1을 함께 확장. 게시된 기존 SDK·UI 버전은 수정하지 않음 | P1 |
 | V1-U3 | 한국어/영어 메시지 목록, 런타임 `locale`, 하드코딩 문자열 검사 | `miy:scripts/check-web-i18n-messages.mjs`, `miy:packages/platform-web/src/i18n/resources.ts` | 한국어만 | 변형 적용 | P1 |
-| V1-U4 | 공용 primitive: dialog, confirm/prompt, data-table, 빈 상태·skeleton, 검색 필드, 필터 바, 탭, 상세 drawer, split pane. 새 불변 registry 버전(1.1.x)으로 게시하고 i18n 의존성은 넣지 않음 | `miy:packages/ui/src/lib/` | registry에는 `Panel`·`Button`만 있음 | 변형 적용 | P1 |
+| V1-U4 | 공용 primitive: dialog, confirm/prompt, data-table, 빈 상태·skeleton, 검색 필드, 필터 바, 탭, 상세 drawer, split pane. 새 불변 registry 버전으로 게시하고(dialog·confirm/prompt는 1.1.0, 나머지는 2.x: [범용 기능 계획 §5.5](COMMON-FEATURES-PLAN.md#55-공용-ui-구성과-추가-시점)) i18n 의존성은 넣지 않음 | `miy:packages/ui/src/lib/` | registry에는 `Panel`·`Button`만 있음 | 변형 적용 | P1 |
 | V1-U5 | 날짜·시간대 유틸과 한국 공휴일(정적 데이터, 지원 범위 밖이면 null) | `miy:packages/platform-web/src/time/korean-holidays.ts`, `miy:docs/product/korean-holidays.md` | 없음 | 적용 | P2 |
 | V1-U6 | SDK 확장: 테마·언어 변경 알림, 다른 앱으로 이동 제안(사용자 확인 필수, 자동 이동 없음), 저장 대기 신호 | `miy:platform-redesign/SDK_NAVIGATION.md`, `miy:apps/official-suite/README.md` | 앱 내부 `navigate`, `registerNavigationGuard` | 변형 적용 | P2 |
 
@@ -128,20 +128,22 @@ v1 근거는 `miy:<경로>`, ai-do 근거는 `ai-do:<경로>`로 적는다. 각�
 | --- | --- | --- | --- | --- | --- |
 | V1-F1 | Storage API를 먼저 만들고 그다음 파일 앱. 선택한 파일 읽기는 플랫폼 선택기, 짧은 읽기 권한, 10MiB 상한, `files:read-selected` 권한으로 제공 | `miy:platform-redesign/SDK_FILES.md`, `miy:packages/official-suite-web/src/files/` | PRD에 계획(MinIO 제외)만 있음 | 변형 적용: 공용 선택 UI와 선택 파일만의 제한 핸들. UI 표시를 권한 경계로 삼지 않고 서버가 사용 시 재검사. 10MiB는 v1 선택 파일 기준이며 PLM 대용량 CAD 지원을 뜻하지 않음 | P1(§7-3 첫 항목) |
 | V1-F2 | 콘텐츠 전달 증표: 15분 이내, fragment로 전달, `private, no-store`, 스트리밍 직전 재확인, 전용 서명 키 | `miy:docs/domains/content-access/README.md` | 없음 | 변형 적용 | P2 |
-| V1-F3 | 알림은 원본 앱 이벤트의 읽기 projection. 목록·건수·읽음 처리마다 원본 ACL을 다시 확인하고, 건수는 필터링한 뒤 계산 | `miy:docs/domains/notifications/README.md`, `miy:apps/web/src/components/layout/NotificationPanel.tsx` | 없음(UI-4에서 메뉴 제외) | 변형 적용: 앱이 발행하고 코어가 원본 앱에 재확인 | P2 |
+| V1-F3 | 알림은 원본 앱 이벤트의 읽기 projection. 목록·건수·읽음 처리마다 원본 ACL을 다시 확인하고, 건수는 필터링한 뒤 계산 | `miy:docs/domains/notifications/README.md`, `miy:apps/web/src/components/layout/NotificationPanel.tsx` | 없음(UI-4에서 메뉴 제외) | 변형 적용: 앱이 발행하고 코어가 원본 앱에 재확인. 계획(미구현, [M2](COMMON-FEATURES-PLAN.md#m2-플랫폼앱-연결과-알림)): 배지 건수는 코어가 아는 사실로 거르고 원본 재확인은 패널을 열거나 이동할 때 한다. 정본 개정 때 확정 | P2 |
 | V1-F4 | 업로드 관리자 UX: 오른쪽 아래 고정, 탭 단위, 재개·복원 없음 | V1-U1의 UI 원칙 | 없음 | 적용(F1과 함께) | P2 |
 | V1-F5 | BlockNote 편집기와 협업 codec. 스키마는 한 곳에서 정의하고 Rust 서버의 Yjs 처리 방식은 별도 결정 | `miy:packages/ui/src/lib/editor/`, `miy:scripts/blocknote-collab-codec.mjs` | 없음 | 변형 적용 | P3 |
 | V1-F6 | 공식 업무 앱(PMS·문서·플래너·회의·녹음)을 독립 앱으로 재구현. 캘린더는 v1 Planner의 UI 소유 범위이며 별도 공식 앱 ID가 아님. 교차 외래키 대신 API와 링크 사용. 녹음의 시도·버전 fencing 재사용 | `miy:packages/official-suite-web/src/*`, `miy:packages/contracts/app-contracts.json`, `miy:docs/apps/recording/README.md` | 없음 | 변형 적용: 아래 범위표에 따라 한 번에 하나씩 인수까지 | P3 |
-| V1-F7 | 실시간 연결: 권한 종료 코드(1008/4401/4403)를 받으면 화면을 가리고 신원 재조회, WS URL에 토큰 금지. DM은 별도 앱으로 | `miy:docs/domains/app-platform/README.md` §Revoked realtime sessions, `miy:apps/web/src/app-modules/dm` | 없음(폴링으로 회수 처리) | 변형 적용: WS를 도입할 때 | P3 |
+| V1-F7 | 실시간 연결: 권한 종료 코드(1008/4401/4403)를 받으면 화면을 가리고 신원 재조회, WS URL에 토큰 금지. DM은 별도 앱으로 | `miy:docs/domains/app-platform/README.md` §Revoked realtime sessions, `miy:apps/web/src/app-modules/dm` | 없음(폴링으로 회수 처리) | 변형 적용: WS를 도입할 때. 계획(미구현): [M4](COMMON-FEATURES-PLAN.md#m4-업무-실시간-전송)에서 도입 | P3 |
 | V1-F8 | 앱이 선언한 레코드 검색. 처음에는 앱마다 검색하고, 앱 간 projection은 원본 ACL 재확인을 갖춘 뒤 도입 | `miy:packages/app-sdk/README.md` | 없음 | 변형 적용 | P3 |
 
 v1 공식 앱 12종의 범위는 `miy:packages/contracts/app-contracts.json`의 `official_app_ids`를 기준으로 추적한다. 적용 후보는 이미 구현했다는 뜻이 아니며, 각 앱 착수 시 업무 범위와 인수 기준을 정한다.
 
 | 공식 앱 ID | v2 처리 |
 | --- | --- |
-| `files` | F1·F2·F4로 적용. Storage API 다음에 구현 |
-| `pms`, `docs`, `planner`, `meeting`, `recording` | F6 적용 후보. v2 카탈로그에 플래너와 PMS 제품 ID를 예약했다. 실제 제품 릴리스는 별도 개발·게시한다. [공급 기준](PRD.md#업무-앱의-공급과-설치) |
-| `mail`, `community`, `whiteboard`, `video-chat` | 채택 여부 보류. 이번 재구현 완료 범위에 자동 포함하지 않음 |
+| `files` | F1·F2·F4로 적용. v2 제품 ID는 `drive`(공식 업무 앱). 대용량 전송 뒤에 구현([범용 기능 계획 §2.3](COMMON-FEATURES-PLAN.md#23-파일-저장)) |
+| `pms`, `docs`, `planner` | F6 적용. 카탈로그 소스(`registry/apps/catalog.json`)에 `planner`(기본 제공)·`pms`·`docs`(공식 업무)가 있다. 출시 버전은 없고 `docs`의 서버 동기화는 미실행이다. [공급 기준](PRD.md#업무-앱의-공급과-설치), [단계](COMMON-FEATURES-PLAN.md#3-단계별-구현-계획) |
+| `community`, `whiteboard` | 채택(2026-11-21). v2 제품 ID는 `board`·`whiteboard`(공식 업무 앱, 출시 버전 없음). 화이트보드 공동편집은 후속 |
+| `meeting`, `recording`, `video-chat` | 후속. 이번 범위에서 빼고 나중에 착수(2026-11-21) |
+| `mail` | 채택 여부 보류. 이번 재구현 완료 범위에 자동 포함하지 않음 |
 | `diagrams`, `bento` | 초기 적용 제외(§4). 필요해질 때 별도 실행 출처와 권한 계약 검토 |
 
 ### 3.7 내부 AI·챗봇·RAG ([AI 계획](AI.md), PLAN 4-1·5단계)
@@ -191,7 +193,7 @@ v1은 회사 소개 자료 `MIY 소개 및 사례_20261002.pdf`를 v1 구현과 
 | 사용자별 범용 JSON 레코드 저장 | v2는 앱별 DB와 앱이 소유한 업무 스키마·ACL을 유지. V1-G7의 브라우저 계약 검토와 관계없이 범용 JSON 저장 구조를 도입하지 않음 |
 | Workbench(1인용 웹 Codex 콘솔, worktree·GitLab MR) | v2는 사용자 자신의 Codex/Claude Code와 CLI/MCP를 사용. 연동 규칙은 V1-I6만 가져옴. 현업용 웹 Studio 요구는 V1-R5에서 따로 결정 |
 | 셸형 AI 터미널(PTY) | v1이 폐기했지만 종료를 위한 broker·egress 정리 부담이 남았음 |
-| 대리 로그인, 임시 비밀번호·재설정 | 대리 로그인은 v1이 폐기했으나 컬럼·감사 코드가 남았음(`WORKSPACE_ACL_REVIEW.md` 197행). 나머지는 Keycloak이 담당 |
+| v1의 대리 로그인 구현, 임시 비밀번호·재설정 | v1은 대리 로그인을 폐기했으나 컬럼·감사 코드가 남았음(`WORKSPACE_ACL_REVIEW.md` 197행). 그 구현은 옮기지 않는다. 기능은 사용자 전환으로 새로 만든다(2026-11-21 결정, 미구현, [범용 기능 계획 M6](COMMON-FEATURES-PLAN.md#m6-사용자-전환)). 나머지는 Keycloak이 담당 |
 | LangGraph 기반 실행, Decisions API, 직접 completion 우회, 사용자별 모델 선택 | 현재 v2 범위 밖. 보고서 산출물을 추가할 때 산출물 불변 규칙만 재검토 |
 | OpenSearch·Qdrant 이중 검색 백엔드 | v2는 pgvector 단일 백엔드로 시작([STACK](STACK.md)) |
 | GitLab MR·runner 게이트, 자체 Codex 리뷰 CI, MR 증거 스크립트 | GitLab·자체 runner에 종속되고 비용이 큼. PR 템플릿의 "실행/미실행 검사·남은 위험"만 가져옴 |
@@ -204,7 +206,7 @@ v1의 실행 구현을 그대로 복사하지는 않는다. 업무 앱 iframe은
 
 ## 5. 결정이 필요한 사항
 
-아래 1~3은 이미 확정한 결정이며 다시 승인을 기다리는 항목이 아니다. 4는 제품 범위 결정 대기, 5는 채택한 Hermes의 통합 비용 검증이다. 전체 미결정 목록은 [PLAN](PLAN.md#결정이-필요한-사항)에서 함께 관리한다.
+아래 1~3은 이미 확정한 결정이며 다시 승인을 기다리는 항목이 아니다. 4는 보류 앱 일부를 2026-11-21에 결정했고 V1-R1~R5와 `mail`이 결정 대기, 5는 채택한 Hermes의 통합 비용 검증이다. 전체 미결정 목록은 [PLAN](PLAN.md#결정이-필요한-사항)에서 함께 관리한다.
 
 권한·운영의 v1 적용 교훈을 유지하고 앱 입장과 앱 내부 데이터 권한을 분리한다. 공통 기능·UX의 실제 이식 원본은 위 AI-DO 대상 목록을 함께 사용한다. 플랫폼 공통 워크스페이스 도입 여부를 다시 선택하는 표가 아니며, 아래에는 그 방향 안에서 남은 범위를 적는다.
 
@@ -213,7 +215,7 @@ v1의 실행 구현을 그대로 복사하지는 않는다. 업무 앱 iframe은
 | 1 | 작업 순서와 첫 업무 앱 | [PLAN 작업표](PLAN.md#다음-우선-작업)만 순서를 관리. [최소 경계](APP-BOUNDARIES.md#확정-결정) 필수 인수 후 G4·G5·G6과 기존 기능 개발, 권장 보안은 후속 | 최소 데이터 보호 구현분은 §7. 대표 프로젝트·업무 앱은 유지하며 전체 코어 4차·전체 PLM·별도 IdP·자동 CA를 선행 조건으로 두지 않음 |
 | 2 | 그룹 정본·동기화 | v1식 단일 그룹, 주 소속 정확 일치와 수동 사용자 배정. 하위 부서 자동 상속·중첩 그룹 제외 | **결정(2026-11-03):** 코어 DB가 정본, Keycloak은 인증만. 그룹으로 줄 수 있는 권한은 `use`·`develop`, `deploy`는 사람별. 외부 인사 연동은 출처·동기화·회수 계약을 먼저 정의. ai-do식 동적 조직 묶음은 자동 도입하지 않음 |
 | 3 | 앱 내부 공간의 상세 계약 | 공간이 필요한 앱만 자체 DB·API에서 데이터·멤버·역할을 관리. 플랫폼은 사용자·그룹 조회와 공용 UI/SDK를 제공 | **결정(2026-11-03):** 대표 앱은 v1 PMS 공간 모델을 줄인 프로젝트·업무 앱. 그 앱에서 생성·조회·공유·마지막 소유자 보호·권한 회수·데이터 보존을 정한다. 공용 선택 UI를 재사용해도 공간 소유권은 앱에 유지 |
-| 4 | 대외 자료 요구와 보류 앱 | V1-R1~R5 및 §3.6의 보류 앱은 채택 / 보류 / 범위 밖으로 구분 | R1(수명주기 기록)·R3(납품 패키지)은 기존 v2 방향과 맞아 채택을 권고. R2·R4·R5와 보류 앱은 제품 범위 결정이 필요. 특히 R5 웹 Studio는 별도 결정 |
+| 4 | 대외 자료 요구와 보류 앱 | V1-R1~R5 및 §3.6의 보류 앱은 채택 / 보류 / 범위 밖으로 구분 | R1(수명주기 기록)·R3(납품 패키지)은 기존 v2 방향과 맞아 채택을 권고. **결정(2026-11-21):** `community`(→`board`)·`whiteboard` 채택, `meeting`·`recording`·`video-chat` 후속([범용 기능 계획 §7](COMMON-FEATURES-PLAN.md#7-확정한-결정과-남은-결정)). R2·R4·R5와 `mail`은 제품 범위 결정이 필요. 특히 R5 웹 Studio는 별도 결정 |
 | 5 | Hermes 통합 비용 검증 | PRD 합의대로 채택 유지 | 4-1 실험에서 어댑터 비용(upstream 공백 9건, 버전마다 재검증)과 v2 Rust 코어의 구현 경계를 측정. 채택 자체를 새 미결정으로 처리하지 않음 |
 
 ## 6. 진행 방법
@@ -239,7 +241,7 @@ v1의 실행 구현을 그대로 복사하지는 않는다. 업무 앱 iframe은
 | V1-G3 | 구현분 운영 반영 | `effective_grants` 뷰를 매번 계산해 다음 요청과 대기 작업에 반영(캐시 무효화 불필요) | 멤버 해제 즉시 회수 관찰 |
 | V1-G4 | 구현분 게시·반영 | 안전한 사용자·그룹 DTO, 검색/페이지·현재 원사용자 멤버십, 브라우저/Rust SDK·앱 내부 선택기 | 관리 API를 앱에 노출하지 않음. [공통 기능 검증](releases/common-components-2026-11-14-validation.json)·[0.10.0 반영](releases/pilot-0.10.0-2026-11-15-deployment.json) 완료 범위와 실제 프레임/preview 전체 인수를 구분 |
 | V1-G5·G6 | 구현분 게시·반영 | 앱 DB resource/grant·앱 선언 역할·현재 멤버십, 공유 revision/requestId·회수·감사·결과 조회. 대표 프로젝트/업무 앱 | 공간 관리 UI·익명 링크·소유권 복구는 별도. 앱 Use를 공유로 자동 부여하지 않음 |
-| V1-F1·F2·F4 | 작은 첨부 구현·반영 | 10MiB Storage·별도 파일 gateway·명시 승인·앱 ACL, 순차 전송·취소·참조 연결/해제·복구·raster 미리보기 | 대형 CAD·재개 전송·외부 공유 핸들·전체 백업 제품은 미구현. 자동 고아 삭제는 incomplete에만 적용 |
+| V1-F1·F2·F4 | 작은 첨부 구현·반영 | 10MiB Storage·별도 파일 gateway·명시 승인·앱 ACL, 순차 전송·취소·참조 연결/해제·복구·raster 미리보기 | 대형 CAD·재개 전송·외부 공유 핸들·전체 백업 제품은 미구현. 자동 고아 삭제는 incomplete에만 적용. F2의 짧은 다운로드 증표는 미구현이며 [범용 기능 계획 §2.3](COMMON-FEATURES-PLAN.md#23-파일-저장)의 큰 파일 다운로드 계약에서 다룬다 |
 | V1-G7 | 구현·격리 검증·운영 반영 및 CLI 게시 완료, 잔여 인수 대기 | 설치별 출처 iframe, 일회용 실행/갱신 코드, 프레임 토큰·부모 세션·릴리스 결합, 연결 승인 재검사, 화면 브리지 | [리뷰 검증](releases/app-frames-review-fixes-2026-11-12-validation.json)·[배포 후 실제 앱 확인](releases/app-frames-review-fixes-2026-11-12-deployment.json). 프레임용 CLI·번들 0.9.0 게시 완료. P2 쿠키 간섭·화면낭독 확인, P1 활성화 전 인수와 Windows 실기·정식 GitHub Release는 별도 대기. 게시 상태는 [CLI 릴리스](CLI-RELEASE.md), 다음 작업은 PLAN을 따름 |
 | V1-A1 | 일부 구현·운영 반영 | `GET /api/v1/audit`(기간·행위자·동작 접두어, id cursor), 감사 화면, migration `0019_audit_query.sql`(인덱스). 개인·그룹 권한 변경은 같은 트랜잭션에 기록하고 주 소속 변경은 이전/새 그룹을 기록. 사용자 활성 상태 변경과 앱 등록 승인으로 생기는 develop 권한도 관리자 재확인 후 기록(2026-11-05 운영 반영) | 조회·권한·원자성·검색 실패 회귀. 별도 대상 종류·결과·요약 필드와 보존 정책은 남음. 보존 기간은 PRD 미결정 |
 | V1-Q4 | 일부 구현 | CLI 후보 workflow의 `scripts/check-cli-version.py`: 게시본(`releases/windows-candidate.json`) 이후 클라이언트 빌드 입력이 바뀌면 더 높은 버전을 요구. 응답 계약은 `scripts/check-api-compat.py`로 게시 CLI 기준 추가만 허용(2026-11-05 소스) | `scripts/test-cli-version.py`, `scripts/test-api-compat.py`. 번들·템플릿 버전과 릴리스 증거의 일치는 남음 |
@@ -272,7 +274,7 @@ v1의 실행 구현을 그대로 복사하지는 않는다. 업무 앱 iframe은
 
 ## 9. 플랫폼 화면과 UI 후속 계약
 
-기본 UI-1~5는 ai-do를 참고한 완료 이력이며, 기존 V1-U1~U6의 전체 적용은 미착수다. 기존 프레임·테마 메시지·기본 컴포넌트가 있다는 사실을 이 여섯 항목의 완료로 보지 않는다. 후속 구현은 [AI-DO 이식 대상](AI-DO-COMMON-MIGRATION.md)의 실제 UI·사용 흐름과 v1의 적용 교훈을 현재 v2 계약에 맞춘다. 아래는 대상 목록과 별개로 유지하는 화면 책임 계약이다.
+기본 UI-1~5는 ai-do를 참고한 완료 이력이며, 기존 V1-U1~U6의 전체 적용은 미착수다. 기존 프레임·테마 메시지·기본 컴포넌트가 있다는 사실을 이 여섯 항목의 완료로 보지 않는다. 후속 구현은 [AI-DO 이식 대상](AI-DO-COMMON-MIGRATION.md)의 실제 UI·사용 흐름과 v1의 적용 교훈을 현재 v2 계약에 맞춘다. 아래는 대상 목록과 별개로 유지하는 화면 책임 계약이다. 범용 기능의 구현 범위·단계와 통일 디자인은 [범용 기능 계획](COMMON-FEATURES-PLAN.md)을 따른다(미착수).
 
 ### 세 영역의 화면 책임
 
@@ -292,7 +294,7 @@ v1의 실행 구현을 그대로 복사하지는 않는다. 업무 앱 iframe은
 
 - **7-1 공용 UI:** U1·U4·U5의 독립 UI 자산은 병행할 수 있다. U2·U3·U6은 구현된 AppRuntime·프레임 런타임·브리지 v1에 맞춰 확장한다. 현재 라이트 테마와 테마 메시지를 다크/시스템 테마·다국어 완료로 해석하지 않는다. 언어 변경·앱 이동 제안 등 새 계약은 해당 기능에서 추가하고 게시 SDK·UI 자산은 새 불변 버전으로 확장한다. 모든 후속 보안 인수를 기다리는 것은 아니다.
 - **7-2 권한 기반:** 공통 디렉터리·현재 그룹 확인과 앱 소유 ACL의 공통 SDK·회수·감사 계약을 구현한다. 전역 워크스페이스를 만들지 않는다. PLM 등 독립 업무 앱도 이 기능을 사용하며 서비스 계정·API Invoke·업무 이벤트·대용량 파일은 PLAN의 후속 작업이다. 전체 PLM을 현재 보안 단계의 완료 조건으로 두지 않는다.
-- **7-3 공통 업무 기능:** Storage·파일·알림·편집기·선택 업무 앱. 경계 정리를 대규모 디자인 개편이나 v1 코드 복사의 근거로 삼지 않는다.
+- **7-3 공통 업무 기능:** Storage·파일·알림·편집기·선택 업무 앱. 경계 정리를 대규모 디자인 개편이나 v1 코드 복사의 근거로 삼지 않는다. 통일 디자인(D0)은 이와 별개로 [범용 기능 계획 §5](COMMON-FEATURES-PLAN.md#5-통일-디자인-기준)에서 정한 작업이다.
 
 ### UI 검증과 상태
 

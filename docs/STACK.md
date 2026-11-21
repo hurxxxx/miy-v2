@@ -20,7 +20,7 @@
 | DB 접근 | SQLx + 버전이 있는 SQL migration | 배포 상태 전이·작업 큐·권한 조회의 SQL과 트랜잭션을 명시적으로 관리 |
 | 관리 웹 | TypeScript strict + React + Vite + TanStack Router·Query | Rust API를 사용하는 SPA. 라우팅·서버 상태 관리와 타입을 일관되게 구성 |
 | 앱 UI 실행 | 설치별 출처 프레임의 MF·AppRoot + 브리지 v1 + 플랫폼 라우터 | 포털은 앱 프레임을 열고 경로·화면 상태를 동기화. 앱 추가에 플랫폼 재빌드를 요구하지 않음 |
-| 공통 UI | Tailwind CSS + shadcn/ui 기반 `@miy/ui` | 디자인 토큰·필수 연동 컴포넌트는 버전 패키지로 제공하고 업무별 화면은 확장 |
+| 공통 UI | 현재 `@miy/ui`는 일반 CSS와 React만 쓴다(React 외 런타임 의존성 없음). 공용 UI 2.x부터 AI-DO의 UI 패키지를 옮겨 Tailwind CSS 4·Radix UI를 쓴다(계획, 미구현) | 필수 연동 컴포넌트를 버전이 있는 컴포넌트 패키지로 제공하고 업무별 화면은 확장. 토큰·글꼴을 프레임 런타임이 제공하는 변경은 계획([범용 기능 계획 §5.4](COMMON-FEATURES-PLAN.md#54-적용-방식), 미구현) |
 | API 계약·SDK | OpenAPI + utoipa + openapi-typescript·openapi-fetch | Rust API 스키마에서 TypeScript 타입·클라이언트 연결. manifest·공개 기능은 버전이 있는 JSON Schema로 검증 |
 | MCP | 공식 Rust SDK `rmcp` + Streamable HTTP | 사내 개발 담당자의 CLI·개발 에이전트에 맥락과 도구 제공. HTTP API와 같은 권한 서비스를 호출 |
 | CLI | Rust + clap + reqwest | 독립 실행 파일로 배포하며 초기화·로그인·검사·미리보기·릴리스·로그 명령 제공 |
@@ -41,7 +41,7 @@
 
 Axum은 Tokio·Tower와 결합하는 HTTP 라이브러리이며 SQLx는 비동기 SQL과 정적 쿼리 검증을 제공한다. 이 구성을 miy의 코어에 적용하는 것은 명시적 상태·트랜잭션 관리와 공통 API 정책을 위한 설계 판단이다. [Axum](https://docs.rs/axum/latest/axum/), [SQLx](https://github.com/transact-rs/sqlx)
 
-React 공식 안내는 Vite, TanStack Router·Query를 SPA 구성 선택지로 소개한다. shadcn/ui의 편집 가능한 컴포넌트를 제품의 UI 계약에 맞게 관리하되, 공통 부분은 각 앱이 별도 복사·수정하기보다 `@miy/ui`로 제공하는 것을 추천한다. [React 구성 안내](https://react.dev/learn/build-a-react-app-from-scratch), [shadcn/ui](https://ui.shadcn.com/docs)
+React 공식 안내는 Vite, TanStack Router·Query를 SPA 구성 선택지로 소개한다. 공통 부분은 각 앱이 별도 복사·수정하기보다 `@miy/ui`로 제공한다. 현재 구현은 Tailwind·shadcn/ui 없이 일반 CSS를 쓰고, 공용 UI 2.x는 AI-DO의 UI 패키지(Tailwind CSS 4·Radix UI)를 옮긴다(계획). [React 구성 안내](https://react.dev/learn/build-a-react-app-from-scratch)
 
 utoipa는 Rust 기반 OpenAPI 생성을, openapi-typescript는 OpenAPI의 TypeScript 타입 생성을 지원한다. 생성 타입은 런타임 입력 검증을 대신하지 않으므로 서버와 앱의 계약 검사를 별도로 둔다. [utoipa](https://github.com/juhaku/utoipa), [openapi-typescript](https://openapi-ts.dev/introduction)
 

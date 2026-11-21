@@ -55,15 +55,15 @@ flowchart LR
 
 1. 포털 셸이 `POST /api/v1/app-frames`를 호출한다(포털 세션, CSRF, Origin). 서버는 해당 포털 환경의 Use와 실행 상태를 확인하고 앱 출처와 1회용 실행 코드를 돌려준다. 코드는 hash만 저장하며 60초 이하로 유효하다.
 2. 부모는 iframe을 만들고, 숨긴 form으로 실행 코드를 `POST <앱 출처>/_miy/launch`에 보낸다(target은 iframe). 코드는 URL·기록·Referer에 남지 않고, Origin 헤더로 발신 포털을 확인할 수 있다.
-3. 앱 프레임 listener가 다음을 확인한 뒤 코드를 원자적으로 한 번 소모한다: 코드가 유효하고, Host가 코드의 설치 출처이고, Origin이 발급한 포털 출처이고, 부모 포털 세션과 현재 Use·실행 상태·릴리스가 유효하다. 그다음 프레임 세션을 만들고 프레임 문서를 응답한다. 문서에는 부트스트랩 값(설치·앱·릴리스·basePath·location·부모 출처·짧은 프레임 토큰·자산 경로)을 넣고 `no-store`로 응답한다. 부트스트랩은 안전하게 이스케이프한 비실행 JSON으로 넣으며 inline script 실행을 요구하지 않는다. 코드가 없거나 이미 소모됐거나 검사에 실패하면 비밀 없는 **재실행 안내 문서**를 응답한다. 이 문서는 `/_miy/runtime`의 정적 스크립트로 해당 환경의 포털 출처에 `frame.relaunch`를 보내고, 부모는 미저장 입력 상태를 확인한 뒤 새 iframe으로 다시 실행한다. 프레임 안의 다시 불러오기(`location.reload()`)는 소모된 코드를 `Origin: null`로 다시 POST하므로(2026-11-10 Chromium 실측) 이 경로로 처리된다. 실행 GET도 같은 문서를 받는다.
-4. 플랫폼이 제공하는 **프레임 런타임**이 앱 산출물을 자산 경로에서 읽어 `AppRoot`를 마운트한다. 프레임 런타임은 버전 관리하며 앱 출처의 `/_miy/runtime/<버전>/`에서 제공한다. 실증에서는 MF 초기화·공유 React·기본 CSS·상대 청크 로딩을 이 런타임이 맡는다. props로 `AppRuntime`을 주입하는 형태는 재사용하되 미저장 입력 보호와 바이너리 응답은 새 SDK 계약으로 바꾼다(§3.4). 앱끼리의 문서 분리와 프레임 런타임·MF 사이의 React 버전 결합 제거는 구분한다.
+3. 앱 프레임 listener가 다음을 확인한 뒤 코드를 원자적으로 한 번 소모한다: 코드가 유효하고, Host가 코드의 설치 출처이고, Origin이 발급한 포털 출처이고, 부모 포털 세션과 현재 Use·실행 상태·릴리스가 유효하다. 그다음 프레임 세션을 만들고 프레임 문서를 응답한다. 문서에는 부트스트랩 값(설치·앱·릴리스·basePath·location·부모 출처·짧은 프레임 토큰·자산 경로)을 넣고 `no-store`로 응답한다. 부트스트랩은 안전하게 이스케이프한 비실행 JSON으로 넣으며 inline script 실행을 요구하지 않는다. 코드가 없거나 이미 소모됐거나 검사에 실패하면 비밀 없는 **재실행 안내 문서**를 응답한다. 이 문서는 `/_miy/relaunch.js`의 정적 스크립트로 해당 환경의 포털 출처에 `frame.relaunch`를 보내고, 부모는 미저장 입력 상태를 확인한 뒤 새 iframe으로 다시 실행한다. 프레임 안의 다시 불러오기(`location.reload()`)는 소모된 코드를 `Origin: null`로 다시 POST하므로(2026-11-10 Chromium 실측) 이 경로로 처리된다. 실행 GET도 같은 문서를 받는다.
+4. 플랫폼이 제공하는 **프레임 런타임**이 앱 산출물을 자산 경로에서 읽어 `AppRoot`를 마운트한다. 프레임 런타임은 앱 출처의 `/_miy/runtime/`에서 제공한다. 경로에 버전 구간은 없고, 반영 도구가 새 자산을 추가한 뒤 `index.html`을 교체한다. 실증에서는 MF 초기화·공유 React·기본 CSS·상대 청크 로딩을 이 런타임이 맡는다. props로 `AppRuntime`을 주입하는 형태는 재사용하되 미저장 입력 보호와 바이너리 응답은 새 SDK 계약으로 바꾼다(§3.4). 앱끼리의 문서 분리와 프레임 런타임·MF 사이의 React 버전 결합 제거는 구분한다.
 5. 앱의 `runtime.api`·`platformApi`·`appApi`는 브리지를 거치지 않는다. 자기 출처의 `/_miy/api/...`, `/_miy/platform/directory`, `/_miy/connections/{대상}/api/...`로 프레임 토큰을 붙인다. 프레임 SDK는 `credentials: "omit"`과 요청 단위 `referrerPolicy: "same-origin"`을 고정한다. 문서 기본 정책이 `no-referrer`면 Fetch 표준상 같은 출처 쓰기 요청의 Origin이 `null`이 될 수 있고, `mode: "cors"`는 같은 출처 요청의 tainting을 바꾸지 않으므로 요청 단위 정책으로 Origin을 보장한다. Referer는 프레임 문서 주소(`/_miy/launch`)뿐이라 능력값이 실리지 않는다. Chromium은 세 변형 모두 실제 Origin을 보냈으며(2026-11-10 실측) Firefox·WebKit은 FV-03에서 확인한다. 대상 URL은 자기 출처로 제한한다. Core는 토큰에서 Principal·출발 설치·원 프레임 세션 문맥을 만든다. 기존 proxy·연결 승인 정책을 재사용하면서 원 자격증명 재검사를 프레임 인증까지 확장한다(§3.2). 연결 호출의 호출자 `callers=[A]`는 서버가 검증한 출발 설치로 만든다.
 6. 토큰이 만료되기 전에 프레임이 브리지로 갱신을 요청한다. 부모는 자기 등록 정보의 프레임 세션을 대상으로 포털 세션·CSRF·Origin으로 갱신 코드를 받고, 등록된 앱 창·출처에만 전달한다. 앱 메시지의 설치 ID나 세션 ID로 갱신 대상을 고르지 않는다. 코드는 기존 프레임·부모 세션·사용자·설치·환경·릴리스에 묶고 hash만 저장하며 60초 이하, 원자적 1회 사용으로 한다. 프레임의 `POST /_miy/renew` 교환에도 현재 세션·Use·릴리스를 재검사한다. 동시 요청은 프레임당 하나로 합치며 실패 시 자동으로 다른 세션이나 릴리스에 재발급하지 않는다.
 7. 프레임 세션 만료는 생성 시 고정하며 부모 세션의 절대 만료를 넘지 않는다. 짧은 API 토큰 갱신으로 프레임 세션이나 자산 URL의 수명을 늘리지 않는다. 포털 로그아웃은 그 부모의 프레임 세션을 모두 회수한다. Use 회수·릴리스 변경은 다음 요청과 후속 backend 호출에서 거부한다. 릴리스 변경·세션 만료 때 부모가 다시 불러오기 또는 재로그인을 안내한다. 오류 안내만으로 기존 iframe과 미저장 입력을 제거하지 않으며, 사용자가 새 실행을 선택할 때 입력 보호를 적용한다. 갱신 거부도 부모에게 전달하고 일시적인 통신 실패는 세션 종료와 구분해 재시도한다.
 
 ### 3.2 Core 변경 범위
 
-- **앱 프레임 listener:** 브라우저 용도는 listener에 고정한다(기존 원칙). 허용 경로는 `/_miy/launch`, `/_miy/renew`, `/_miy/runtime/...`, `/_miy/a/<능력값>/...`, `/_miy/api/...`, `/_miy/files/...`, `/_miy/connections/{대상}/api/...`, `/_miy/platform/directory`뿐이다. 경로별 허용 메서드 외에는 거부하고 쿠키 인증을 하지 않는다. Host는 용도 선택에 쓰지 않는다. 신뢰한 proxy 설정의 scheme·Host·port로 설치 출처와 정확히 대조하며, 미등록 Host와 외부의 임의 forwarded 헤더는 거부한다.
+- **앱 프레임 listener:** 브라우저 용도는 listener에 고정한다(기존 원칙). 허용 경로는 `/_miy/launch`, `/_miy/renew`, `/_miy/relaunch.js`, `/_miy/runtime/...`, `/_miy/a/<능력값>/...`, `/_miy/api/...`, `/_miy/files/...`, `/_miy/connections/{대상}/api/...`, `/_miy/platform/directory`뿐이다. 경로별 허용 메서드 외에는 거부하고 쿠키 인증을 하지 않는다. Host는 용도 선택에 쓰지 않는다. 신뢰한 proxy 설정의 scheme·Host·port로 설치 출처와 정확히 대조하며, 미등록 Host와 외부의 임의 forwarded 헤더는 거부한다.
 - **포털:** 실행·갱신 API를 추가한다. 채택 후 포털의 `/artifacts/` 제공과 쿠키 세션의 업무 데이터 API 접근을 제거한다. CLI·위임·backend 연결이 쓰는 기존 Core 주소와 API 경로는 아래 표의 비브라우저 인증으로 유지한다. 앱 코드가 포털 출처에서 실행되지 않으므로 앱이 `/api/v1/me`의 CSRF 값을 읽는 경로도 사라진다.
 - **자격증명:** `0022_app_frames.sql`로 프레임 세션과 1회용 코드 저장소를 추가했고 현재 개발 서버에도 적용했다. 프레임 토큰은 CLI bearer와 다른 종류다. 기존 CLI bearer의 Origin 거부 규칙은 유지하고, 프레임 인증에만 아래 요청별 검사를 적용한다. 프레임 토큰을 포털·콘솔·CLI API에 제시하면 거부한다.
 - **호출 체인:** `app_calls::origin/current/identity`와 proxy의 브라우저 판정을 함께 확장한다. 서버가 만든 `frame` 원 자격증명 문맥에 프레임 세션과 부모 세션의 결합을 보존하고, 모든 `miy_call_` 후속 호출에서 두 세션·현재 사용자 권한·설치·환경·릴리스·연결 승인을 재확인한다. 프레임을 `legacy_cli`로 분류하거나 원 문맥을 생략하지 않는다. 원 프레임의 설치·환경·릴리스는 호출 체인의 출발점과 일치해야 한다. 요청 본문 수집 중 배포가 겹쳐도 이전 프레임을 새 릴리스 문맥으로 바꾸지 않는다. 브라우저에서 시작한 체인은 모든 hop에서 `admin=false`이며 backend 증표를 프레임에 전달하지 않는다.
@@ -79,7 +79,7 @@ flowchart LR
 | API·connections의 POST·PUT·PATCH·DELETE | 프레임 토큰 | 해당 앱 Origin 필수 |
 | API·files·connections·directory의 GET·HEAD(각 경로가 지원하는 메서드만) | 프레임 토큰 | `Sec-Fetch-Site: same-origin` 필수. Origin은 없어도 허용하며, 있으면 해당 앱 Origin과 일치해야 함 |
 | `/_miy/a/<능력값>/...`의 GET·HEAD | 프레임 세션별 자산 능력값 | 위 읽기 조건과 동일. 현재 세션·Use·릴리스 확인 후 응답 |
-| `/_miy/runtime/<버전>/...`의 GET·HEAD | 인증 불필요한 플랫폼 공용 정적 코드 | 등록된 앱 출처와 알려진 버전·경로만 허용. 사용자·앱 데이터나 자격증명은 포함하지 않음 |
+| `/_miy/runtime/...`의 GET·HEAD | 인증 불필요한 플랫폼 공용 정적 코드 | 등록된 앱 출처의 same-origin 요청과 런타임 디렉터리 안의 안전한 상대 경로만 허용(`index.html` 직접 요청은 제외). 사용자·앱 데이터나 자격증명은 포함하지 않음 |
 
 같은 출처 GET·HEAD에는 Origin이 없을 수 있다([Fetch 표준](https://fetch.spec.whatwg.org/#append-a-request-origin-header)). 프레임의 보호된 읽기에 필요한 Fetch Metadata가 없는 브라우저는 이번 실증의 지원 대상에서 제외하고 오류를 표시한다. 기존 포털·CLI의 호환 규칙을 이 조건으로 바꾸지 않는다.
 
@@ -93,6 +93,8 @@ flowchart LR
 | CLI·사용자 위임 bearer | 기존 Core 주소의 `/api/v1/installations/{id}/api/...`, `connections/...`, 소유 앱 `files/...`, `platform/directory`를 현재 scope·앱·환경·action·경로 제한의 교집합으로 허용. 프레임 경로와 backend 전용 Storage에는 사용할 수 없음 |
 | `miy_call_` | 기존 Core 주소에서 증표의 설치에 결합된 `connections/...`와 `platform/directory`, 소유 앱 backend 전용 `platform/files`만 허용. 모든 hop의 원 자격증명·연결 승인 재검사를 유지 |
 | 실행 코드·갱신 코드·자산 능력값 | 각각 위 요청 표의 한 용도만 허용. 일반 API 토큰으로 사용할 수 없음 |
+
+계획된 변경(미구현, [범용 기능 계획 §8](COMMON-FEATURES-PLAN.md#8-함께-고칠-정본-문서)): 프레임 listener에 실시간 연결 경로(M4)를, 이 표에 포털 사용자 요청에서 시작하는 플랫폼 → 앱 읽기 전용 호출(M2)을 추가한다.
 
 ### 3.3 자산 제공
 
@@ -112,7 +114,7 @@ flowchart LR
 | `location` | `route.changed {pathname, search, hash}`. 부모의 뒤로·앞으로 가기와 직접 링크 | 부모→프레임 |
 | `navigate(relative, {replace})` | `route.navigate`. 부모는 앱 basePath 아래의 상대 경로만 받는다. 절대 URL과 다른 앱·플랫폼 경로는 거부한다 | 프레임→부모 |
 | `registerNavigationGuard` → 신규 `setNavigationState({dirty, message?})` | 앱이 입력·저장·진행 중 작업의 합산 상태를 바꿀 때 `guard.state`를 보낸다. 콜백을 부모가 동기 실행하는 기존 계약은 새 SDK에서 교체 | 프레임→부모 |
-| `theme` | `theme.changed`. 언어는 U3 때 `locale.changed`를 추가한다 | 부모→프레임 |
+| `theme` | 현재 `light` 고정. `theme.changed`는 프로토콜에 형식만 있고 포털이 보내지 않으며 런타임도 적용하지 않는다. 테마·언어·시간대·날짜 형식·밀도의 초기값과 변경 이벤트, 명령 팔레트 단축키 알림은 계획([D0](COMMON-FEATURES-PLAN.md#d0-디자인설정-전달-기반)·[P1](COMMON-FEATURES-PLAN.md#p1-셸설정콘솔), 미구현) | 부모→프레임(예정) |
 | `api`·`platformApi`·`directory`·`appApi`·`apiBlob`·`fileApi` | 브리지 미사용. 앱 출처로 직접 요청. JSON과 바이너리 응답을 구분 | 없음 |
 | (신규) 실행 상태 | `frame.ready`, `frame.error`, `release.changed` | 프레임→부모 |
 | (신규) 토큰 갱신 | `token.renew` 요청 → `token.code` 응답(1회용, 앱 출처로만 전송) 또는 분류된 `token.failed` | 양방향 |
@@ -120,19 +122,19 @@ flowchart LR
 - **검증:** 부모는 `event.source === iframe.contentWindow`이고 `event.origin`이 그 설치의 출처일 때만 받는다. 프레임은 `window.parent`에서 온 메시지이고 출처가 부트스트랩의 부모 출처일 때만 받는다. 보낼 때는 항상 대상 출처를 지정하고 `"*"`를 쓰지 않는다. 형식 검증, 크기 상한(예: 16KiB), 알 수 없는 type은 무시하고 집계한다.
 - **위치:** 프레임 런타임은 부모가 보낸 메모리 location만 쓰고 `history.pushState`·`replaceState`·`back`을 호출하지 않는다. iframe의 history 항목은 부모와 같은 세션 기록에 쌓여 뒤로 가기를 꼬이게 하기 때문이다. 처음 빈 iframe에 form POST로 실행하면 항목이 늘지 않는다(2026-11-10 Chromium 실측). 앱 지침도 history API 직접 사용을 금지하고 `runtime.navigate`만 쓰게 한다.
 - **입력 보호:** 부모는 시작·재로딩 때 상태를 `unknown`으로 두고 현재 프레임의 첫 `guard.state`를 받은 뒤 `clean/dirty`로 바꾼다. `dirty` 또는 `unknown`이면 레일 이동·로그아웃·재실행 전에 확인한다. 탭 닫기는 브라우저의 beforeunload 제한에 따라 기본 경고를 요청하며 사용자 정의 문구나 모든 종료 상황의 경고를 보장하지 않는다. 오류 안내 중에도 기존 iframe을 유지하며 재실행은 사용자의 확인 후 새 iframe과 등록 정보로 만든다. `frame.relaunch`는 clean 상태에서만 자동 처리하고 dirty·unknown이면 명시적인 다시 열기를 기다린다. 옛 창의 지연 메시지와 갱신 응답은 무시한다. 구 콜백 API의 비교용 어댑터는 상태를 `unknown`으로 유지하며 새 입력 보호의 PASS로 인정하지 않는다.
-- **바이너리:** `apiBlob`은 JSON API와 같은 자기 설치·상대 경로·토큰 검사로 `Promise<Blob>`을 돌려준다. 작은 서버 파일을 인증된 fetch로 받은 뒤 앱 안에서 object URL과 다운로드 링크를 만들고 사용 후 해제한다. URL에 API 토큰을 넣거나 부모에게 다운로드를 대행시키지 않는다. 일반 새 탭 링크에 bearer를 붙일 수 있다고 가정하지 않는다. `fileApi`는 작은 첨부의 별도 10MiB 스트리밍 gateway이며 소유 앱의 ACL을 거친다. Core Storage 직접 접근이나 파일 공유 URL은 제공하지 않는다. 대용량/재개 전송은 후속이다([파일 계약](CORE-PERMISSIONS.md#디렉터리작은-첨부의-현행-계약)).
+- **바이너리:** `apiBlob`은 JSON API와 같은 자기 설치·상대 경로·토큰 검사로 `Promise<Blob>`을 돌려준다. 작은 서버 파일을 인증된 fetch로 받은 뒤 앱 안에서 object URL과 다운로드 링크를 만들고 사용 후 해제한다. URL에 API 토큰을 넣거나 부모에게 다운로드를 대행시키지 않는다. 일반 새 탭 링크에 bearer를 붙일 수 있다고 가정하지 않는다. `fileApi`는 작은 첨부의 별도 10MiB 스트리밍 gateway이며 소유 앱의 ACL을 거친다. Core Storage 직접 접근이나 파일 공유 URL은 제공하지 않는다. 대용량/재개 전송은 후속이다([파일 계약](CORE-PERMISSIONS.md#디렉터리작은-첨부의-현행-계약)). 계획(미구현): 분할·이어 올리기 업로드와 짧게 유효한 다운로드 수단을 [범용 기능 계획 §2.3](COMMON-FEATURES-PLAN.md#23-파일-저장)의 M10에서 만든다. `apiBlob`·`fileApi`의 메모리 Blob 방식은 작은 파일용으로 남는다.
 - **하지 않는 것:** HTTP 요청 대행, 다른 앱으로 메시지 중계, 부모 DOM·저장소 접근 제공, 쿠키·포털 CSRF 전달.
 - 프레임은 업무 영역 전체를 차지하는 고정 크기로 둔다. 높이 자동 조절 메시지는 두지 않으며, 앱 내부에서 스크롤한다. 모달·오버레이는 프레임 영역 안에 그려지며, 이것은 알려진 UX 변화다.
 
 ### 3.5 헤더와 iframe 속성
 
 - **포털:** `frame-src`에 해당 환경의 앱 출처 형식과 `blob:`만 허용한다(P2의 표현 한계는 §4). `blob:`은 앱 프레임이 `apiBlob`으로 만든 다운로드 링크 때문이다. Firefox는 iframe 안의 `<a download href=blob:>`에 부모 문서의 `frame-src`를 적용한다(2026-11-10 실증). 포털 자신의 `frame-ancestors 'none'`은 유지한다. 실행 form POST의 Origin은 포털 문서의 Referrer-Policy를 따르므로(포털이 `no-referrer`면 `Origin: null`, 2026-11-10 Chromium 실측) 포털·dev 포털은 `Referrer-Policy: strict-origin-when-cross-origin`을 명시하고 설정 검사가 확인한다. iframe의 `referrerpolicy` 속성은 form 제출의 Origin에 영향을 주지 않는다.
-- **프레임 문서:** `frame-ancestors <해당 환경 포털 출처>`, `default-src 'self'`, `script-src 'self'`, `style-src 'self' 'unsafe-inline'`, `img-src 'self' data: blob:`, `media-src 'self' blob:`, `connect-src 'self'`, `object-src 'none'`, `base-uri 'none'`, `form-action 'self'`, `worker-src 'none'`, `frame-src 'none'`, `Referrer-Policy: no-referrer`, `nosniff`. `X-Frame-Options`는 허용 출처를 표현할 수 없어 프레임 문서에서만 빼고 CSP로 대체한다. Nginx/Caddy가 기존 공통 `X-Frame-Options: DENY`나 `frame-ancestors 'none'`을 이 문서에 중복 추가하지 않게 한다. 스타일·이미지 허용은 CSS-in-JS·style 속성 문자열과 `apiBlob` 미리보기를 위한 것이며 콘솔 CSP와 같은 수준이다. 스크립트는 `'self'`만 허용한다. MF runtime-core 2.9.2는 `FEDERATION_ALLOW_NEW_FUNCTION`이 없으면 일반 `import()`로 진입점을 읽는다.
+- **프레임 문서:** `frame-ancestors <해당 환경 포털 출처>`, `default-src 'self'`, `script-src 'self'`, `style-src 'self' 'unsafe-inline'`, `img-src 'self' data: blob:`, `media-src 'self' blob:`, `font-src 'self'`, `connect-src 'self'`, `object-src 'none'`, `base-uri 'none'`, `form-action 'self'`, `worker-src 'none'`, `frame-src 'none'`, `Referrer-Policy: no-referrer`, `nosniff`. `X-Frame-Options`는 허용 출처를 표현할 수 없어 프레임 문서에서만 빼고 CSP로 대체한다. Nginx/Caddy가 기존 공통 `X-Frame-Options: DENY`나 `frame-ancestors 'none'`을 이 문서에 중복 추가하지 않게 한다. 스타일·이미지 허용은 CSS-in-JS·style 속성 문자열과 `apiBlob` 미리보기를 위한 것이며 콘솔 CSP와 같은 수준이다. 스크립트는 `'self'`만 허용한다. MF runtime-core 2.9.2는 `FEDERATION_ALLOW_NEW_FUNCTION`이 없으면 일반 `import()`로 진입점을 읽는다.
 - **API·자산:** API에는 기존 응답 헤더 허용 목록·CSP sandbox·nosniff를 유지한다. UI 자산에는 §3.3의 캐시·referrer 정책을 적용한다. 앱 gateway도 `Service-Worker: script` 요청을 거부한다. 실증에서 worker 허용을 위한 예외를 만들지 않는다.
 - **iframe 속성:** `sandbox="allow-scripts allow-same-origin allow-forms allow-downloads allow-modals allow-popups allow-popups-to-escape-sandbox"`, `referrerpolicy="no-referrer"`, `allow`는 기본으로 비운다.
   - `allow-scripts`와 `allow-same-origin`을 함께 주는 것은 **프레임이 부모와 다른 출처일 때만** 안전하다. 같은 출처라면 sandbox를 스스로 풀 수 있다. 서버 설정 검사가 앱 출처와 포털 출처가 다른지 확인한다.
   - 최상위 탐색 권한(`allow-top-navigation*`)은 주지 않는다.
-- **장치 권한:** 마이크·카메라 등은 앱 manifest에 선언하고 관리자가 승인한 경우에만 `allow`로 위임한다. 보안 컨텍스트(HTTPS)가 필요하며, HTTP 개발 프로필에서는 해당 기능만 동작하지 않는다.
+- **장치 권한(미구현):** 지금은 manifest 선언·승인·`allow` 위임 경로가 없어 마이크·카메라·전체화면·클립보드 쓰기를 프레임에 위임하지 않는다. 필요해지면 앱 manifest 선언과 관리자 승인으로만 `allow`로 위임한다. 보안 컨텍스트(HTTPS)가 필요하며, HTTP 개발 프로필에서는 해당 기능만 동작하지 않는다.
 
 ## 4. 배치 프로필과 격리 수준
 
@@ -166,7 +168,7 @@ flowchart LR
 
 아래는 채택에 사용한 실증 기준이며 후속 변경의 회귀 기준으로 유지한다. 최초 실증은 운영 서버를 바꾸지 않고 격리 스택의 P3(포트)와 P2 대응(시험용 호스트명·인증서)에서 Chromium·Firefox·WebKit으로 수행했다. 실제 업무 앱·차단 프로브 앱·후속 호출용 최소 C backend fixture를 사용하고, 기존 MF 산출물의 로딩/기본 API와 새 SDK의 입력 보호/바이너리를 구분해 검증했다. 코드는 `poc/app-frames`에서 만들어 채택(D1) 뒤 2026-11-11 main에 합쳤다.
 
-[1차 실증](releases/app-frames-poc-2026-11-10-validation.json)·[2차 실증](releases/app-frames-poc-2026-11-10-second-validation.json)·[채택 후속](releases/app-frames-adoption-2026-11-10-validation.json)은 각 소스와 환경의 기록이다. `*.localhost`의 P2 대응 결과를 실제 같은 등록 도메인의 쿠키 간섭 인수로 옮기지 않는다. FV-06의 실제 P2 쿠키 간섭, FV-07의 화면낭독 출력·테마 전달은 남아 있으며 테마 기능은 해당 공용 UI 작업과 연결한다. P4는 후속 비교이고 P1은 활성화 전 별도 인수를 수행한다.
+[1차 실증](releases/app-frames-poc-2026-11-10-validation.json)·[2차 실증](releases/app-frames-poc-2026-11-10-second-validation.json)·[채택 후속](releases/app-frames-adoption-2026-11-10-validation.json)은 각 소스와 환경의 기록이다. `*.localhost`의 P2 대응 결과를 실제 같은 등록 도메인의 쿠키 간섭 인수로 옮기지 않는다. FV-06의 실제 P2 쿠키 간섭, FV-07의 화면낭독 출력·테마 전달은 남아 있으며 테마 전달은 [범용 기능 계획 D0](COMMON-FEATURES-PLAN.md#d0-디자인설정-전달-기반)에서 구현·인수한다. P4는 후속 비교이고 P1은 활성화 전 별도 인수를 수행한다.
 
 | ID | 시험과 판정 기준 |
 | --- | --- |
@@ -194,6 +196,8 @@ flowchart LR
 | D3 | 자산 보호 방식 | 실증 기본 확정: 프레임 세션별 능력값·고정 접두사·매 요청 현재 권한 검사(§3.3). 실행 간 캐시 공유 최적화는 FV-05·08 측정 이후 후속 검토한다. 사용자·릴리스 공통 능력값은 부모 세션별 회수를 약화하므로 초기 범위에서 제외한다. 내용 해시만으로 공개하는 방식도 현행 Use 보호를 없애므로 제외한다 |
 | D4 | 앱 빌드 형태 | 실증은 기존 MF를 프레임 런타임이 읽는다. 구 산출물의 로딩 비교와 새 SDK를 적용한 앱의 입력 보호·바이너리 검증을 구분한다. 프레임워크 자유와 런타임의 React 버전 결합 제거는 앱이 자기 문서를 제공하는 장기안과 비교해 정한다 |
 | D5 | 프레임 유지 정책 | 현행 기본은 떠날 때 제거다. 실증 당시 한 프레임만 살아 있으면 앱을 옮길 때 약 15–25MiB·120–320ms이고, 프레임을 유지하면 탭 하나당 약 130–200MiB(Chromium·Firefox), 330–470MiB(WebKit)가 늘었다([2차 기록](releases/app-frames-poc-2026-11-10-second-validation.json)). 현재 소스 전체의 성능 보증으로 확대하지 않는다 |
+
+계획된 변경(미구현): 주 프레임 옆에 보조 프레임 하나를 패널로 띄우는 계약을 추가한다. 동시 프레임, 사용자당 프레임 세션 한도, 유지 정책, 메모리 재측정은 [범용 기능 계획 M5](COMMON-FEATURES-PLAN.md#m5-보조-프레임과-홈개인-위젯)에서 이 문서를 먼저 개정한다. AF-06(프레임 간 메시지 중계 없음)은 유지한다.
 
 ## 8. 현행 문서 개정
 

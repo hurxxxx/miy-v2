@@ -42,6 +42,8 @@ AB ID는 참조를 유지한다. 이전 iframe 설계나 보안 후보의 검사
 | AB-07 | 앱 데이터·게시 번들 바이트 보존. 개발 단계의 API/CLI 변경은 새 버전으로 끊을 수 있고 재로그인 허용 | 적용 SQL·게시물 보존, legacy 로그인 종료. 현재 schema·게시 출처는 운영 안내와 CLI 릴리스에서 관리 |
 | AB-08 | 현재 필수·후속 권장·잔여 한계·구현 사실·역사 증거 구분. 문서당 담당 주제 하나 | 문서 정리 범위 |
 
+계획된 변경(미구현): 사용자 전환(관리자가 콘솔에서 그 사용자로 로그인, 결과는 그 사용자의 일반 portal 세션)을 AB-05의 명시적 예외로 추가한다. 구현 전에 이 표·자격증명 표·경계 인수(BV-06)를 개정한다([범용 기능 계획 M6](COMMON-FEATURES-PLAN.md#m6-사용자-전환)).
+
 ## 변경 전과 현행 구현의 차이
 
 | 항목 | 변경 전 소스(22c219d)의 사실 | 현행 구현 범위 |
@@ -187,6 +189,8 @@ flowchart LR
 | 서비스 계정(V1-A2) | 후속 기능에서 정할 앱·환경·업무 action | 미구현·기본 거부. 사용자 권한 실패의 대체 수단 아님 |
 | AI 실행 | 소유 사용자 또는 구현된 서비스 주체의 제한 권한 | 기존 위임 재사용. 공급자 API 키를 업무 권한으로 취급하지 않음 |
 
+계획된 변경(미구현, [범용 기능 계획 §8](COMMON-FEATURES-PLAN.md#8-함께-고칠-정본-문서)): 포털 세션의 개인 설정·브라우저 세션 목록·알림함 API(P1·M2), 포털 사용자 요청으로 코어가 앱의 읽기 전용 엔드포인트를 부르는 플랫폼 → 앱 호출(M2), 프레임 토큰의 실시간 연결(M4), 계정 서비스 클라이언트의 사용자 가장 권한(M6)을 이 표에 추가한다. 구현 전까지 위 행이 현행이다.
+
 기존 Principal·sessions·login_flows는 브라우저 용도 `portal | dev_portal | console`을 구분한다. 로그인 flow의 용도·정확한 callback을 서버 설정에 결합한다. `miy-web` confidential client에는 세 출처의 정확한 callback/logout URI를 등록하고 서버에서 code를 교환한다. 현재 realm·사용자 sub·게시 CLI의 scope/토큰 수명은 유지했다.
 
 - 세션·로그인 보조 쿠키는 목적별 이름과 Secure·HttpOnly·__Host-·Path=/·Domain 없음을 사용한다. 인증 쿠키 중복은 거부하고 다른 목적 쿠키로 fallback하지 않는다. IdP 쿠키는 실제 속성과 로그인 호환을 확인한다.
@@ -194,17 +198,17 @@ flowchart LR
 - 브라우저 쓰기에는 목적별 정확한 Origin과 기존 서버 synchronizer CSRF를 적용한다. credentialed cross-origin CORS는 열지 않는다. 같은 호스트의 다른 포트는 쿠키를 공유하므로, 쿠키 인증 요청은 세션 조회 전에 `Sec-Fetch-Site`·Origin을 검사한다. `Sec-Fetch-Site`가 same-origin/none이 아니거나 Origin이 해당 출처와 다르면 GET·탐색도 거부한다(명시적 개발 로그인 프로필의 개발 서버 출처만 예외). Fetch Metadata가 없는 구형 브라우저가 Origin 없이 보내는 GET은 잔여 한계다. `/auth/login`은 탐색 요청만 받는다. 비브라우저 CLI device 시작·poll/refresh는 기존 credential 검사로 유지한다.
 - 콘솔/IdP 경로를 포털에서 proxy하지 않는다. 기존 승인 URL은 고정 콘솔로 flow ID만 보내는 redirect만 허용한다. 민감 정보·credential은 URL에 넣지 않는다. 계정 링크의 비밀은 서버로 전송되지 않는 fragment에만 두고, 포털이 `/join`·`/reset-password`를 콘솔로 보낼 때도 fragment를 전달하지 않는다.
 - 본인 비밀번호 변경(`/auth/password`)은 일반 로그인과 같은 flow에 로그인 서버의 비밀번호 변경 동작만 요청한다. 비밀번호 입력은 로그인 서버 화면에서만 받고 새 세션은 같은 callback 검사를 거친다.
-- 브라우저 업무 WebSocket은 현재 미지원·기본 거부를 유지한다. CLI DB 터널은 기존 별도 자격증명으로 유지한다. 신규 업무 WebSocket은 해당 기능 때 Origin·만료·회수를 설계한다.
+- 브라우저 업무 WebSocket은 현재 미지원·기본 거부를 유지한다. CLI DB 터널은 기존 별도 자격증명으로 유지한다. 신규 업무 WebSocket은 해당 기능 때 Origin·만료·회수를 설계한다. 계획된 변경(미구현): 프레임 listener에 실시간 연결을 새로 열고 포털 알림 채널을 만든다. 방식은 그 정본 개정에서 정한다([범용 기능 계획 M4](COMMON-FEATURES-PLAN.md#m4-업무-실시간-전송)).
 
 ## 앱 실행 계약
 
 업무 앱의 브라우저 실행 계약(실행 코드, 프레임 bearer, 브리지 v1, 능력값 자산, 프레임 listener)은 [앱 프레임 설계](APP-FRAMES.md) §3이 담당한다. AppRoot·독립 OCI 릴리스·분할 자산을 유지하고, 활성 digest·경로와 접근 허용은 서버가 결정한다. 직접 링크·reload·뒤로 가기·업데이트·preview가 정상 동작해야 한다. 포털 쿠키는 앱 업무 API·연결·디렉터리·UI 산출물에 쓰이지 않는다.
 
-게시 SDK·번들·migration은 불변이다. 이 경계 때문에 앱의 업무 코드·데이터 모델을 재개발하거나 정적 UI의 현행 Use 보호를 제거하지 않는다. 기존 SDK 계약을 우선 유지하고 실제 추가 기능에만 새 버전을 발행한다.
+게시 SDK·번들·migration은 불변이다. 이 경계 때문에 앱의 업무 코드·데이터 모델을 재개발하거나 정적 UI의 현행 Use 보호를 제거하지 않는다. 계약을 바꿀 때는 호환 계층 없이 새 불변 버전을 발행한다(루트 AGENTS의 개발 단계 원칙).
 
 ### 응답과 브라우저 실행 방어
 
-- app/preview API는 기본 헤더 미전달, 검증한 Content-Type만 허용한다. Set-Cookie·Clear-Site-Data·Location·Refresh·CSP·CORS·Service-Worker-Allowed는 upstream에서 그대로 넘기지 않는다. 파일 헤더는 해당 기능 때 별도 허용한다.
+- app/preview API는 기본 헤더 미전달, 검증한 Content-Type만 허용한다. Set-Cookie·Clear-Site-Data·Location·Refresh·CSP·CORS·Service-Worker-Allowed는 upstream에서 그대로 넘기지 않는다. 파일 응답은 별도 허용 목록(content·integrity 헤더와 attachment)과 sandbox·nosniff만 통과시킨다([파일 계약](CORE-PERMISSIONS.md#디렉터리작은-첨부의-현행-계약)).
 - app/preview **API**에 gateway의 CSP sandbox·nosniff를 적용한다. 정상 JSON fetch를 유지하고 HTML/SVG 직접 탐색 시 능동 실행을 제한한다. MF UI/JS·preview UI 전체에 sandbox를 걸지 않는다.
 - 포털·콘솔·IdP HTML에 HTTP 응답의 frame-ancestors none을 적용한다. Nginx 정적 응답도 포함하며 실제 로그인 호환을 확인한다.
 - 콘솔의 앱 이름·로그·오류·메모는 텍스트로 표시하고 raw HTML·inline SVG를 실행하지 않는다. 콘솔 CSP는 script-src self, object-src none, base-uri none과 inline/eval 제한을 기준으로 실제 빌드와 검증한다. 포털은 허용된 앱 출처를 frame-src로 제한하며 앱 MF는 프레임 안에서 읽는다. 프레임 문서·자산의 CSP와 sandbox는 [APP-FRAMES §3.5](APP-FRAMES.md#35-헤더와-iframe-속성)를 따른다.
@@ -216,11 +220,12 @@ flowchart LR
 
 | 기능 | 적용 방식 |
 | --- | --- |
-| 테마·언어·탐색 | 기존 AppRuntime·통합 라우터 유지. 관련 기능은 호환 검사를 거쳐 개발 |
-| 디렉터리(V1-G4) | 최소 보안 다음 기능. 사용자/그룹 선택과 서버의 현재 권한 검사를 구분 |
-| 파일(V1-F1) | 해당 기능에서 서버 ACL·파일 핸들을 구현. 최소 경계의 완료 조건으로 당기지 않음 |
+| 탐색 | 기존 AppRuntime·통합 라우터 유지 |
+| 테마·언어·시간대 | 현재 `light` 고정이고 언어·시간대 전달이 없다. 전달 경로는 계획([범용 기능 계획 D0](COMMON-FEATURES-PLAN.md#d0-디자인설정-전달-기반), 미구현) |
+| 디렉터리(V1-G4) | 구현. 프레임 안의 공용 UI 선택기와 서버의 현재 권한 검사를 구분([현행 계약](CORE-PERMISSIONS.md#디렉터리작은-첨부의-현행-계약)) |
+| 파일(V1-F1) | 작은 첨부(10MiB) 구현. 소유 앱의 ACL 판정을 거쳐 Storage를 사용 |
 | 인쇄·새 탭 | 기존 사용자 동작 유지. 외부 링크 검증·noopener/noreferrer |
-| 첨부·대형 CAD | 파일 기능에서 인증 다운로드·버전·회수를 구현. JSON 호출과 분리 |
+| 대용량 파일·대형 CAD | 미구현. 분할·이어 올리기와 큰 파일 다운로드 수단은 계획([범용 기능 계획 §2.3](COMMON-FEATURES-PLAN.md#23-파일-저장)). JSON 호출과 분리 |
 
 ## API와 자동화 계약
 
@@ -232,9 +237,9 @@ CLI context·공개 서버 발견·작업 추적·API 경로·응답 형태를 �
 
 ### PLM 등 독립 업무 앱과 공통 ACL
 
-PLM·PMS·PDM·MES·DAS는 각자 개발·배포한다. **현재 공통 신원·앱 입장·설치별 연결 승인은 있지만 재사용할 리소스 ACL 도구는 미완성**이다.
+PLM·PMS·PDM·MES·DAS는 각자 개발·배포한다. **공통 신원·앱 입장·설치별 연결 승인과 디렉터리·앱 소유 ACL SDK·작은 첨부는 구현했다.** 배포 프레임·preview의 전체 연결 인수는 남아 있다([현행 계약](CORE-PERMISSIONS.md#디렉터리작은-첨부의-현행-계약)).
 
-- 다음 기능 작업: 디렉터리·현재 그룹 확인 → 공통 ACL SDK/서버 검사·공유/회수. 앱 DB가 업무 데이터·선택적 공간·ACL 관계의 정본이다.
+- 구현한 것: 디렉터리·현재 그룹 확인, 공통 ACL SDK/서버 검사·공유/회수. 앱 DB가 업무 데이터·선택적 공간·ACL 관계의 정본이다.
 - 이후 해당 기능 작업: UI Use와 API Invoke 구분, 범위 있는 서비스 주체, 업무 이벤트/outbox·중복 방지, Storage API와 대형 파일. 현재 보안 완료를 위해 전부 구현하지 않는다.
 - BOM·ECO·설계 승인·생산 상태는 앱의 규칙이다. 플랫폼 admin은 앱 owner가 아니며 앱 간 DB·역할·공간 권한을 자동 공유하지 않는다.
 - 사용자 대행은 원래 사용자·설치 승인·대상 자원 권한을 유지한다. 사용자 권한 실패를 서비스 계정으로 자동 재시도하지 않는다.

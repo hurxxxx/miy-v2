@@ -60,7 +60,7 @@ CLI/번들 0.11.0에서 서버가 빌드한 산출물만 배포하도록 바꿨�
 - 번들 0.11.0은 0.10.0과 SDK·UI가 같고 보호 안내 문서(`AGENTS.md`, `CLAUDE.md`, `docs/CONTRACT.md`, `docs/CLI.md`, 앱 skill)만 다르다. 0.10.0 프로젝트는 `miy app upgrade`로 옮기고, 공용 UI 1.1.0(번들 0.10.0용 게시물)은 0.11.0에서도 호환으로 받는다.
 - 이전 CLI가 남긴 작업 기록(journal)은 읽는다. 로컬 이미지를 올리던 배포 기록의 `job resume`은 `local_image_deployment_removed`로 거부하고 `miy app build`를 안내한다.
 
-게시 순서는 종전과 같다: CI 후보 생성 → 서버·worker와 CLI·설치기를 한 기록으로 반영 → `cli-published.json`과 `contracts/api-v1.published.json` 갱신(GUI EXE도 게시할 때 `windows-candidate.json` 갱신). 다음 번들 버전을 준비할 때는 0.11.0 보호 파일 명세를 그 게시 소스의 바이트로 추가한다.
+게시 순서는 종전과 같다: CI 후보 생성 → 서버·worker와 CLI·설치기를 한 기록으로 반영 → `cli-published.json`과 `contracts/api-v1.published.json` 갱신(GUI EXE도 게시할 때 `windows-candidate.json` 갱신). 다음 번들 버전을 준비할 때는 0.11.0 보호 파일 명세를 그 게시 소스의 바이트로 추가한다. 다음 번들은 [범용 기능 계획 D0](COMMON-FEATURES-PLAN.md#d0-디자인설정-전달-기반)의 설정 전달 경로에서 예정돼 있고(미구현), 공용 UI 2.0.0은 그 번들에만 호환으로 게시한다.
 
 새 Windows GUI 설치기를 게시하면 [Windows 후보 파일](releases/windows-candidate.json)을 그 CI 해시로 갱신한다. Windows 인수 검사기는 이 파일을 기대값으로 쓴다.
 

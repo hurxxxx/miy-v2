@@ -368,7 +368,7 @@ docker compose --env-file "$MIY_STATE_DIR/compose.env" exec -T postgres \
   psql -U postgres -d postgres -c "SELECT datname FROM pg_database WHERE datname IN ('miy_core','miy_identity') ORDER BY datname;"
 ```
 
-`configure-identity.py`는 계정 링크용 서비스 클라이언트의 역할, 로그인 잠금·비밀번호 정책·한국어 로그인 화면, 초대받은 사람의 첫 로그인을 막지 않는 profile 설정도 함께 맞춘다. 출력에 `miy_core`·`miy_identity`가 있어야 한다. PostgreSQL 이미지는 첫 기동에 `init.sql`로 DB와 전용 역할을 만들고 Keycloak은 realm·사용자를 가져온다. 이 단계에서는 miy 테이블이 아직 없으며 다음 절에서 migration/seed를 한다. 서버에서는 Compose의 `proxy` 서비스(Caddy)를 시작하지 않는다. 외부 HTTPS는 Nginx가 담당한다.
+`configure-identity.py`는 계정 링크용 서비스 클라이언트의 역할, 로그인 잠금·비밀번호 정책·한국어 로그인 화면, 초대받은 사람의 첫 로그인을 막지 않는 profile 설정도 함께 맞춘다. 출력에 `miy_core`·`miy_identity`가 있어야 한다. PostgreSQL 이미지는 첫 기동에 `init.sql`로 DB와 전용 역할을 만들고 Keycloak은 realm·사용자를 가져온다. 이 단계에서는 miy 테이블이 아직 없으며 다음 절에서 migration/seed를 한다. 서버에서는 Compose의 `proxy` 서비스(Caddy)를 시작하지 않는다. 외부 HTTPS는 Nginx가 담당한다. 계획된 변경(미구현): 사용자 전환을 구현하면 이 스크립트가 서비스 계정에 사용자 가장 권한을 더한다([범용 기능 계획 M6](COMMON-FEATURES-PLAN.md#m6-사용자-전환)).
 
 위 `docker update`가 PostgreSQL·Keycloak에 `unless-stopped`를 적용해 호스트 재부팅 후 다시 시작하게 한다. Compose로 컨테이너를 재생성하면 이 정책을 다시 적용한다(해당 소스의 Compose가 같은 정책을 선언한 경우에는 중복 적용해도 된다). 수동 `docker stop`/`compose stop` 상태는 유지되므로 정상 사용 전 `up -d`로 다시 켠다. **`docker compose down -v`는 모든 DB를 삭제하므로 설치 문제 해결에 쓰지 않는다.**
 
@@ -460,7 +460,7 @@ docker compose --env-file "$MIY_STATE_DIR/compose.env" exec -T postgres \
   psql -U postgres -d miy_core -c 'SELECT version,success FROM _sqlx_migrations ORDER BY version;'
 ```
 
-세 HTTPS `/api/health`가 성공하고 migration의 `success`가 모두 참이어야 한다. 현재 후보는 schema 26이며 설치하는 checkout의 마지막 migration을 기준으로 확인한다. CLI 게시 전 `sourceCommit: null`, `downloads: 0`은 정상이다. CLI 게시물은 실행 중인 Core와 같은 버전을 사용한다.
+세 HTTPS `/api/health`가 성공하고 migration의 `success`가 모두 참이어야 한다. 현재 소스는 schema 27이며 설치하는 checkout의 마지막 migration을 기준으로 확인한다. CLI 게시 전 `sourceCommit: null`, `downloads: 0`은 정상이다. CLI 게시물은 실행 중인 Core와 같은 버전을 사용한다.
 
 브라우저에서 다음을 확인한다.
 
@@ -736,7 +736,7 @@ UNION ALL SELECT 'file', count(*) FROM app_files WHERE status IN ('pending','upl
 SQL
 ```
 
-위 SQL은 현 schema 23 기준이다. 다른 schema에서는 해당 버전의 작업·파일 테이블에 맞춘다. 파일 예약이 남아 있으면 취소나 만료 정리를 기다린다. `job list`만으로 서버 전체가 유휴라고 판단하지 않는다. 장시간 실행되는 앱 외부 연동·수동 DB 연결도 중지한다.
+위 SQL은 schema 23에서 작성했다. 다른 schema에서는 해당 버전의 작업·파일 테이블에 맞춘다. 파일 예약이 남아 있으면 취소나 만료 정리를 기다린다. `job list`만으로 서버 전체가 유휴라고 판단하지 않는다. 장시간 실행되는 앱 외부 연동·수동 DB 연결도 중지한다.
 
 ### 백업 만들기
 

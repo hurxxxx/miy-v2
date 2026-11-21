@@ -42,7 +42,7 @@ Rootless Docker의 자원 제한에는 cgroup v2·systemd와 필요한 controlle
 
 ## 앱 API 응답의 현재 메모리 보호
 
-코어의 업무 API·프레임 API·앱 간 연결과 로컬 preview는 공통 `app_response::read`로 응답 본문을 수집한다. 본문은 응답별 4MiB이며 Content-Length가 없거나 chunked여도 실제 바이트 수로 초과를 거부한다. 초과는 502 `app_response_too_large` / `preview_response_too_large`다. 별도 파일 스트리밍은 아직 미구현이며 이 한도만 올려 대용량 파일을 지원하지 않는다.
+코어의 업무 API·프레임 API·앱 간 연결과 로컬 preview는 공통 `app_response::read`로 응답 본문을 수집한다. 본문은 응답별 4MiB이며 Content-Length가 없거나 chunked여도 실제 바이트 수로 초과를 거부한다. 초과는 502 `app_response_too_large` / `preview_response_too_large`다. 작은 첨부는 이 수집 경로가 아니라 별도 10MiB 스트리밍 gateway(전송 단계별 4개 슬롯·20초)를 쓴다. 대용량 전송은 미구현이며 이 한도만 올려 지원하지 않는다.
 
 프로세스당 최대 64개 응답이 수집·보유 슬롯을 공유한다. 슬롯은 수집 함수 반환 때 해제하지 않고 실제 응답 바이트의 마지막 참조가 사라질 때 반환한다. 전송 대기 중인 응답과 복제·분할한 Bytes도 포함하고, 수집 실패·크기 초과·취소에서는 반환한다. 버퍼 예약 크기의 증가도 4MiB 안으로 제한한다. 슬롯을 10초 안에 얻지 못하면 503 `app_gateway_busy` / `preview_gateway_busy`다.
 
@@ -82,6 +82,8 @@ API 요청, 예약 작업, 빌드, 문서 처리와 Hermes 실행은 동시 실�
 ## 파일과 서버 디스크
 
 파일 업로드는 시작 시 공간을 예약하고 실제 기록 바이트를 확인한 뒤 사용량으로 확정한다. 병렬 업로드도 같은 예산에서 차감하며 실패·중단 시 예약과 불완전 파일을 정리한다. 파일 크기뿐 아니라 파일 수와 inode도 관리한다. S3 backend도 miy의 파일 API 계약과 사용량 검사를 거치게 한다.
+
+현재 Storage 한도(파일 10MiB, 설치 256MiB·1,000개, 코어 전체 1GiB·10,000개)는 [파일 계약](CORE-PERMISSIONS.md#디렉터리작은-첨부의-현행-계약)을 따른다. 계획된 변경(미구현): 드라이브용 한도 재설계([범용 기능 계획 §2.3](COMMON-FEATURES-PLAN.md#23-파일-저장)의 M10)와 실시간 연결 예산([M4](COMMON-FEATURES-PLAN.md#m4-업무-실시간-전송))을 이 문서에 추가한다.
 
 서버 디스크에는 다음 항목을 따로 표시한다.
 
@@ -143,7 +145,7 @@ API 요청, 예약 작업, 빌드, 문서 처리와 Hermes 실행은 동시 실�
 | 설치별 migration 역할 | 2 | migration은 연결 하나로 실행, 겹친 재시도 1 |
 | 개발 세션 역할 | 16 | 세션별 생성 시 지정 |
 
-설치 수를 N, 활성 개발 세션 수를 D라고 하면 보수적인 최악 수는 24 + 10 + 8N + 16D다. 관리 연결 4개는 control·build·개발 세션 정리가 동시에 실행되는 경우를 포함한다. PostgreSQL 기본 `max_connections=100`(사용 가능 97)은 이 예산에서 개발 세션이 없을 때 설치 7개까지 들어간다. compose의 `max_connections=200`(사용 가능 197)에서는 개발 세션이 없으면 설치 20개, 개발 세션 4개면 설치 12개까지 들어간다. 설정을 늘려도 실제 호스트의 메모리 여유는 별도로 확인해야 한다. 더 많은 연결이 필요하면 풀 축소나 PgBouncer를 검토한다.
+설치 수를 N, 활성 개발 세션 수를 D라고 하면 보수적인 최악 수는 24 + 10 + 8N + 16D다. 관리 연결 4개는 control·build·개발 세션 정리가 동시에 실행되는 경우를 포함한다. PostgreSQL 기본 `max_connections=100`(사용 가능 97)은 이 예산에서 개발 세션이 없을 때 설치 7개까지 들어간다. compose의 `max_connections=200`(사용 가능 197)에서는 개발 세션이 없으면 설치 20개, 개발 세션 4개면 설치 12개까지 들어간다. 설정을 늘려도 실제 호스트의 메모리 여유는 별도로 확인해야 한다. 더 많은 연결이 필요하면 먼저 `max_connections`를 올린다. 공식 앱 7개를 dev·prod에 설치하면 N=22, 최악 210으로 197을 넘으므로 2026-11-21에 상향을 결정했다(제안값 400, 사용 가능 397이면 개발 세션 2개와 설치 40개에 386). `compose.yaml`·배포 도구의 기대값과 서버에는 아직 반영하지 않았고, 반영에는 PostgreSQL 재시작이 필요하다([범용 기능 계획 M2](COMMON-FEATURES-PLAN.md#m2-플랫폼앱-연결과-알림)). 그 뒤에도 부족하면 풀 축소나 PgBouncer를 검토한다.
 
 연결마다 `application_name`을 붙여 `pg_stat_activity`에서 구분한다: `miy-core-serve`, `miy-core-worker`, `miy-core-migrate`, `miy-core-seed`, 앱은 `miy-app-<앱>-<환경>`(최대 63바이트). 풀 크기는 코드 상수이며 env로 덮어쓰지 않아, 오래된 env 값이 새 기본값을 덮는 문제가 없다. 새 설치를 막는 원자적 예약은 아직 없고 코어 3차 남은 범위로 둔다.
 

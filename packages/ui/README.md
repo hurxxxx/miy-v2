@@ -1,8 +1,8 @@
 # 공용 UI 유지관리 소스
 
-`src/`가 새 공용 UI 버전의 유지관리 원본이다. 게시된 `registry/components/ui/1.0.x`는 수정하지 않는다. 루트의 컴포넌트 생성 도구가 새 버전을 만들며, SDK/CLI 번들과의 조합은 루트 manifest에서 관리한다.
+`src/`가 새 공용 UI 버전의 유지관리 원본이다. 게시된 `registry/components/ui/`의 버전(1.0.0·1.0.1·1.1.0)은 수정하지 않는다. `scripts/build-ui-component.mjs`가 새 버전을 만들며, 호환 SDK 번들은 그 스크립트의 `version`·`bundleVersion`(생성되는 `component.json`의 `bundleVersions`)과 CLI의 `crates/miy/src/bundle.rs`에서 관리한다. 새 프로젝트의 기본 버전은 `templates/rust-react/miy.components.json`이다.
 
-AI-DO의 중립 색상·입력 밀도·선택 칩·본인 우선·잠긴 대상 표현을 옮겼다. React 이외의 런타임 의존성이나 외부 CDN은 없다. 글꼴은 원본과 같이 시스템에 설치된 Pretendard 계열 이름을 사용한다. `index.tsx`를 import하면 스타일이 로드되며, 스타일만 필요하면 `styles.css`를 import한다. 앱 document에 `.dark` 또는 `data-miy-theme="dark"`를 적용하면 어두운 색상 토큰으로 바뀐다.
+AI-DO의 중립 색상·입력 밀도·선택 칩·본인 우선·잠긴 대상 표현을 옮겼다. React 이외의 런타임 의존성이나 외부 CDN은 없다. 글꼴은 원본과 같이 시스템에 설치된 Pretendard 계열 이름을 사용한다. `index.tsx`를 import하면 스타일이 로드되며, 스타일만 필요하면 `styles.css`를 import한다. 앱 document에 `.dark` 또는 `data-miy-theme="dark"`를 적용하면 어두운 색상 토큰으로 바뀐다. 현재 포털·프레임 런타임은 `data-miy-theme`를 설정하지 않는다(SDK `theme: "light"` 고정). 계획된 변경(미구현): 토큰(`--ui-*`)·Pretendard·테마/언어는 프레임 런타임이 제공하고, 2.0.0은 AI-DO의 UI 패키지를 옮겨 Tailwind CSS 4·Radix UI를 쓴다([범용 기능 계획 §5.4](../../docs/COMMON-FEATURES-PLAN.md#54-적용-방식)).
 
 현재 제공 범위:
 
@@ -15,7 +15,7 @@ AI-DO의 중립 색상·입력 밀도·선택 칩·본인 우선·잠긴 대상 
 
 `requestId`는 `crypto.getRandomValues`로 UUID v4를 만든다. 사내 HTTP 주소의 앱 프레임은 보안 컨텍스트가 아니어서 `crypto.randomUUID`가 없으므로, 컴포넌트와 앱은 요청·클라이언트 ID에 이 함수를 쓴다.
 
-Drawer, SplitPane, 표/트리, 공용 토스트, rich editor 및 다른 AI-DO 공통 UI는 이 버전에 포함되지 않는다. 전체 마이그레이션 상태와 순서는 루트 `docs/PLAN.md`가 관리한다.
+Drawer, SplitPane, 표/트리, 공용 토스트, rich editor 및 다른 AI-DO 공통 UI는 이 버전에 포함되지 않는다. 추가 시점은 [범용 기능 계획 §5.5](../../docs/COMMON-FEATURES-PLAN.md#55-공용-ui-구성과-추가-시점)의 2.x 묶음을 따른다(미구현). 전체 마이그레이션 상태와 순서는 루트 `docs/PLAN.md`가 관리한다.
 
 ## 앱 어댑터 계약
 

@@ -8,7 +8,7 @@
 
 **AI-DO의 화면·상호작용과 재사용 가능한 코드를 가져오고, 인증·API·저장소 연결은 miy-v2 구조에 맞춘다.** 공통 기능은 코어 서버 기능만을 뜻하지 않는다. 로그인·앱 목록은 플랫폼이, 버튼·표·선택기는 공용 UI가, 앱 내부 공간·문서·업무 상태는 각 앱이 맡는다. PLM·PMS·PDM·MES 같은 업무 앱 전체를 코어에 넣지 않는다.
 
-이 문서에 이식 대상, 실제 소스, 현재 v2의 공백, 이식 경계와 인수 기준을 모았다. 제품·권한·실행 계약을 새로 대체하지 않으며 착수 순서는 [PLAN](PLAN.md#다음-우선-작업) 하나를 따른다. 기존 `V1-*` 번호는 작업 연결에 유지하되, **이번 공통 기능·UX의 직접 조사 원본은 사용자가 지정한 AI-DO**다. miy v1의 운영·권한 교훈과 AI-DO의 최신 화면을 같은 리비전으로 취급하지 않는다.
+이 문서에 이식 대상, 실제 소스, 현재 v2의 공백, 이식 경계와 인수 기준을 모았다. 제품·권한·실행 계약을 새로 대체하지 않으며 착수 순서는 [PLAN](PLAN.md#다음-우선-작업) 하나를 따른다. 범용 기능을 어느 플랫폼 기능·앱·단계로 만들지와 통일 디자인 기준은 [범용 기능 계획](COMMON-FEATURES-PLAN.md)이 정한다. 기존 `V1-*` 번호는 작업 연결에 유지하되, **이번 공통 기능·UX의 직접 조사 원본은 사용자가 지정한 AI-DO**다. miy v1의 운영·권한 교훈과 AI-DO의 최신 화면을 같은 리비전으로 취급하지 않는다.
 
 ## 1. 기준 소스와 조사 범위
 
@@ -40,14 +40,14 @@
 
 | 보존할 것 | 이식 기준 |
 | --- | --- |
-| 화면의 인상 | Pretendard 계열 글꼴, 평면 목록, 밀도·간격·타이포그래피·상태 색·아이콘 배치. AI-DO `ui:styles.css:1`과 `web:index.css:1`의 토큰 및 Tailwind 매핑을 함께 비교. 원본은 Pretendard 글꼴 파일을 포함하지 않고 이름만 지정한다(`ui:styles.css:3`). 사용자 PC에 설치된 경우에만 적용되므로, 같은 인상을 보장하려면 OFL 글꼴을 번들에 포함할지 정한다. 프레임은 자기 출처 글꼴만 쓴다(§5) |
+| 화면의 인상 | Pretendard 계열 글꼴, 평면 목록, 밀도·간격·타이포그래피·상태 색·아이콘 배치. AI-DO `ui:styles.css:1`과 `web:index.css:1`의 토큰 및 Tailwind 매핑을 함께 비교. 원본은 Pretendard 글꼴 파일을 포함하지 않고 이름만 지정한다(`ui:styles.css:3`). 사용자 PC에 설치된 경우에만 적용되므로, 같은 인상을 보장하기 위해 Pretendard(OFL)를 프레임 런타임과 포털에 포함해 제공하기로 했다([범용 기능 계획 D0](COMMON-FEATURES-PLAN.md#d0-디자인설정-전달-기반)). 프레임은 자기 출처 글꼴만 쓴다(§5) |
 | 탐색 위치와 동작 | 데스크톱 64px 앱 레일, 현재 앱 강조, 즐겨찾기 순서, 앱 내부 서브메뉴. 서브메뉴 기본 240px·180~480px 조절·고정/미리보기 패턴은 `core-web:sub-sidebar-frame.ts:3` 기준 |
 | 모바일 사용 흐름 | 전역 앱 선택과 현재 앱 메뉴를 구분한 드로어, 선택 뒤 닫힘, 검색·알림 접근, 포커스 복귀. 레일을 단순 축소한 화면으로 대체하지 않음 |
 | 작업의 연속성 | 직접 링크·뒤로/앞으로 가기, query/hash, 미저장 입력 보호, 저장·오류·재시도 상태, 업로드와 작업 진행 표시 |
 | 개인화 | 라이트/다크/시스템 테마, 한국어/영어, 시간대·날짜 형식, 앱 순서·즐겨찾기. 계정 설정과 앱별 공간 선호를 구분 |
 | 익숙한 공통 조작 | 확인·이름 입력·선택 칩·모달·상세 drawer·표의 키보드 동작·이미지 확대·파일명 다운로드 |
 
-새 디자인 시스템을 만드는 작업으로 확대하지 않는다. 다만 인증은 Keycloak/코어에 연결하고, 업무 앱 모달은 프레임 내부에서 열린다. 포털↔콘솔·prod↔dev 링크는 기존 v2 결정대로 새 탭, 포털 안 앱 이동은 같은 탭이다. 이 차이를 AI-DO의 같은 React 페이지 동작으로 되돌리지 않는다. 화면의 픽셀 단위 동등성은 아래 인수 과정에서 확인한다.
+AI-DO의 인상은 위 표대로 유지한다. 토큰 구조·다크 모드·상호작용 보강과 그 적용 방식은 [범용 기능 계획 §5](COMMON-FEATURES-PLAN.md#5-통일-디자인-기준)가 정한다. 다만 인증은 Keycloak/코어에 연결하고, 업무 앱 모달은 프레임 내부에서 열린다. 포털↔콘솔·prod↔dev 링크는 기존 v2 결정대로 새 탭, 포털 안 앱 이동은 같은 탭이다. 이 차이를 AI-DO의 같은 React 페이지 동작으로 되돌리지 않는다. 화면의 픽셀 단위 동등성은 아래 인수 과정에서 확인한다.
 
 ### 책임 배치
 
@@ -93,9 +93,9 @@
 | S08 테마 설정 | `web:platform/auth/AppearanceSettingsSection.tsx:17`, `web:app/shell/shell-ui-model.ts:13`. 시스템/라이트/다크·즉시 반영·저장 | **부분.** 라이트 토큰과 theme.changed 기반만 있음. 개인 선호·공용 다크 토큰·SDK 상태를 함께 확장. U2 |
 | S09 언어·시간대·날짜 형식 | `web:platform/i18n/locales.ts:10`, `web:platform/i18n/locale-session.ts:108`, `web:platform/time/date-format-preference-store.ts:7`. 한국어/영어·재로그인 후 유지·document lang·일관된 날짜 표시 | **없음(공통 설정).** 플랫폼 선호와 SDK 초기값/변경 이벤트, 공용 포맷 유틸로 이식. 앱 번역은 앱 소유. 브라우저 저장소를 프레임 간 공유하지 않음. U3·U5·U6 |
 | S10 모바일 전역/앱 메뉴 | `web:components/layout/AppBarMobileHeader.tsx:43`, `web:app/shell/MobileAppMenuDrawer.tsx:65`, `core-web:mobile-shell-menu.ts:35`. 메뉴 두 종류·경로 변경 후 닫힘·검색/알림 진입 | **부분.** v2 모바일 레일 메뉴를 유지하고 앱 메뉴는 앱 내부 공용 UI로 연결. 프레임 간 포커스·스크롤은 별도 인수. U1·U4 |
-| S11 홈·빠른 실행·도움말·새 소식 | `web:app-modules/home/views/WorkspaceHomeView/WorkspaceHomeView.tsx:187`, `web:platform/auth/ReleaseNotesSettingsSection.tsx:80`, `web:app/shell/HelpCenterPage.tsx:24`. 공지는 관리자가 작성해 홈 게시판에 표시한다(`api:domains/announcements/router.py:31`, `web:app-modules/home/views/WorkspaceHomeView/AnnouncementsBoard.tsx:313`). 익숙한 카드 배열·공지·나중에 보기·도움말 | **부분/후보.** 빠른 앱 진입은 포털, 내 업무·최근 문서 집계는 앱 provider 조합. PMS 전용 도움말 연결·대시보드 업무 SQL은 코어로 복사하지 않음. 공통 공지/도움말 상세 범위는 후속 UI에서 확정 |
+| S11 홈·빠른 실행·도움말·새 소식 | `web:app-modules/home/views/WorkspaceHomeView/WorkspaceHomeView.tsx:187`, `web:platform/auth/ReleaseNotesSettingsSection.tsx:80`, `web:app/shell/HelpCenterPage.tsx:24`. 공지는 관리자가 작성해 홈 게시판에 표시한다(`api:domains/announcements/router.py:31`, `web:app-modules/home/views/WorkspaceHomeView/AnnouncementsBoard.tsx:313`). 익숙한 카드 배열·공지·나중에 보기·도움말 | **부분/채택(PLAN 결정 10).** 빠른 앱 진입은 포털, 내 업무·최근 문서·공지는 각 앱이 제공하는 읽기 전용 요약으로 모은다([범용 기능 계획 M5](COMMON-FEATURES-PLAN.md#m5-보조-프레임과-홈개인-위젯)). PMS 전용 도움말 연결·대시보드 업무 SQL은 코어로 복사하지 않음. 도움말·새 소식의 상세 범위는 후속 |
 | S12 배포 후 오래된 화면 복구 | `web:platform/deployment/stale-asset-reload.ts:82`, `web:platform/deployment/client-build-guard.ts:103`, `web:platform/deployment/client-build-guard.ts:194`. 청크/빌드 불일치에 즉시 캐시 무효화 query를 붙여 새로고침하고 60초 안 중복만 억제. fetch·XHR·WS 종료 4409도 처리 | **부분.** v2는 이전 포털 자산 보존, 앱 릴리스 변경 안내(`v2:web/platform/src/app/AppView.tsx:150`)와 dirty/unknown 입력 보호가 이미 있다. 포털·프레임 런타임 build 변경 안내는 별도 후속. 원본의 즉시 새로고침을 복사하지 않고 미저장/미확인 입력을 먼저 보호 |
-| S13 개인 할 일·메모·도킹 도구 | `web:platform/personal-widgets/PersonalWidgetHost.tsx:484`, `web:platform/personal-widgets/PersonalWidgetHost.tsx:538`, `web:app/shell/personal-widget-registry.tsx:80`, `api:domains/personal_widgets/router.py:43`. 본인 todo/memo 저장, 메모 800ms 자동저장, 접힘/패널/전체화면, DM·오늘 일정·PMS 패널. 할 일→PMS 업무 생성 후 원본 삭제 확인 | **없음(후보).** 개인 도구 데이터의 소유자(플랫폼 개인 기능/별도 앱)를 정하고 단순 설정값·업무 집계와 구분. 도킹 상태·배지는 공통 후보, DM/일정/업무 콘텐츠·작업 전환은 앱 adapter. 부모에 React 패널·window event를 직접 이식하지 않고 프레임 수명·입력 보호에 맞춤. S11과 함께 범위 확정 |
+| S13 개인 할 일·메모·도킹 도구 | `web:platform/personal-widgets/PersonalWidgetHost.tsx:484`, `web:platform/personal-widgets/PersonalWidgetHost.tsx:538`, `web:app/shell/personal-widget-registry.tsx:80`, `api:domains/personal_widgets/router.py:43`. 본인 todo/memo 저장, 메모 800ms 자동저장, 접힘/패널/전체화면, DM·오늘 일정·PMS 패널. 할 일→PMS 업무 생성 후 원본 삭제 확인 | **없음(채택, PLAN 결정 10).** 할 일·메모는 플래너 앱이 소유한다. 패널은 포털이 주 프레임 옆에 띄우는 보조 프레임으로 제공하고 메신저 패널도 같은 방식이다([범용 기능 계획 M5](COMMON-FEATURES-PLAN.md#m5-보조-프레임과-홈개인-위젯)). 부모에 React 패널·window event를 직접 이식하지 않고 프레임 수명·입력 보호에 맞춤. 할 일→PMS 업무 전환은 PMS 출시 뒤 |
 
 ### 4.2 여러 앱이 공유할 UI와 표현 모델
 
@@ -134,7 +134,7 @@
 | C09 감사·활동 이력 | `api:domains/auth/access.py:1342`, `api:domains/admin/router.py:8970`. 주체·행동·대상·일자별 조회 | **부분.** 기존 관리 감사 재사용, 앱 업무 이력은 별도 권한. 공통 이벤트 형식·목록 UI 후보이며 업무 본문·비밀을 중앙 로그로 수집하지 않음. A1 후속 |
 | C10 즐겨찾기·최근 열람·보관/복구 | `api:domains/docs/router.py:2208`, `api:domains/docs/router.py:2339`, `api:domains/docs/router.py:1537`, `api:domains/auth/app_spaces_service.py:298` | **없음(공통 업무 패턴).** 공용 상태/메뉴·앱 adapter 후보. 앱 레일 즐겨찾기는 플랫폼 설정, 문서 즐겨찾기·휴지통·복원은 앱 소유. 전역 휴지통/파일 버전 서비스가 원본에 완성된 것으로 보지 않음 |
 | C11 외부 연결·서비스 키·앱 간 연계 | `api:domains/auth/platform_api_keys.py:32`, `api:domains/admin/api_keys_router.py:190`, `api:domains/groupware/sessions.py:118` | **부분.** v2 설치 승인·원래 사용자 보존 connections는 재사용. 서비스 주체·API Invoke는 후속 A2. 원본 키 scope는 HR/근태 중심이므로 범용 권한 모델로 복사하지 않음. 그룹웨어 비밀번호 hook·공유 쿠키 전달도 제외 |
-| C12 사용 통계·분석 | `web:platform/analytics/matomo.ts:5`·`:144`(`matomo.dwdcc.kr`에 사용자 ID·로그인 ID·이름·앱·경로를 사용자 정의 차원으로 전송), `api:domains/usage/router.py:47`(앱·이벤트·자원 제목·경로를 담은 사용 이벤트), `api:domains/usage/app_rollup.py:26`, `web:platform/admin/admin-usage-section.tsx:2038` | **없음, 채택 결정 필요.** 프레임 CSP(`script-src`·`connect-src 'self'`)로 앱 안에서는 외부 분석 스크립트를 실행할 수 없다. 포털 셸은 앱 열기·경로 단위만 기록할 수 있다. Core는 사용자·앱별 프레임 실행을 알지만 만료 1시간 뒤 정리하므로, 채택하면 별도 집계(일별 건수 등)가 필요하다. 로그인 ID·이름·자원 제목을 외부 분석 도구로 보내지 않는 것을 기본으로 하고 보존 기간·조회 권한(관리자)·거부를 함께 정한다. [PLAN의 결정 대기](PLAN.md#결정이-필요한-사항)로 추적 |
+| C12 사용 통계·분석 | `web:platform/analytics/matomo.ts:5`·`:144`(`matomo.dwdcc.kr`에 사용자 ID·로그인 ID·이름·앱·경로를 사용자 정의 차원으로 전송), `api:domains/usage/router.py:47`(앱·이벤트·자원 제목·경로를 담은 사용 이벤트), `api:domains/usage/app_rollup.py:26`, `web:platform/admin/admin-usage-section.tsx:2038` | **없음, 이번 범위 제외(PLAN 결정 10).** 프레임 CSP(`script-src`·`connect-src 'self'`)로 앱 안에서는 외부 분석 스크립트를 실행할 수 없다. 포털 셸은 앱 열기·경로 단위만 기록할 수 있다. Core는 사용자·앱별 프레임 실행을 알지만 만료 1시간 뒤 정리하므로, 채택하면 별도 집계(일별 건수 등)가 필요하다. 로그인 ID·이름·자원 제목을 외부 분석 도구로 보내지 않는 것을 기본으로 하고 보존 기간·조회 권한(관리자)·거부를 함께 정한다. 이 조건은 다시 채택할 때 결정한다 |
 | C13 통합 일정 | `api:domains/calendar/router.py:35`, `api:domains/calendar/source_catalog.py:32`, `api:domains/calendar/query_policy.py:14`, `web:platform/calendar/calendar-events-session.ts:40`. meeting·PMS·Planner·Google feed의 **본인 일정**을 합성. 타인 일정 공유는 없음, 종료 시각 제외·최대 366일 조회 | **없음.** 앱별 ACL 적용 일정 provider로 연결. Google은 OAuth가 아니라 사용자별 비밀 iCal URL의 암호화 저장·단방향 읽기(`api:domains/planner/google_calendar.py:264`). 개인 피드 연결은 C11, 서비스 주체 A2와 구분하며 OAuth는 신규 선택사항. U08은 화면만, PLAN 4 연계 |
 | C14 조직·인사 마스터와 부서 정책 | `web:platform/admin/admin-hr-master-section.tsx:635`, `web:platform/admin/admin-department-policy-section.tsx:58`, `web:platform/department-policy/work-org-approval-api.ts:56`, `api:domains/hr/department_policy_service.py:1`. 인사 마스터, 부서 기준, 업무 조직 승인 흐름 | **부분.** v2는 코어 DB가 그룹·주 소속·수동 멤버의 정본이며 상위 부서 자동 상속을 하지 않는다(PLAN 결정 2). 사용자·그룹 관리 화면 표현은 C01·§4.5로 옮기고, 인사 동기화는 출처·회수 계약을 정한 커넥터로 추가한다. 부서 계층 상속·업무 조직 승인은 인사 앱·커넥터 범위이며 코어 기본값으로 들이지 않는다. G4 |
 | C15 공통 요청·오류·취소·스트리밍 | `web:platform/api/client.ts:3`, `web:platform/api/client.ts:30`, `web:platform/api/sse-parser.ts:227`, `web:platform/workspaces/workspaces-api.ts:300`. 상태/payload를 보존한 오류, 204·FormData·언어 처리, UTF-8 분할 SSE·중단, 계정 변경 시 이전 응답 폐기 | **부분.** v2 API 타입/SDK 인증을 재사용하고 UI용 오류·수명 모델을 맞춤. 업무 401을 전체 로그아웃이나 쓰기 재전송으로 처리하지 않음. 현재 응답 버퍼링 경로는 SSE 전송 기능이 아니며 F7/AI 단계에서 별도 계약 필요. 캐시·진행 요청은 사용자·설치·환경·권한 수명에 결합. U3·U6·F7 |
@@ -152,11 +152,11 @@ AI-DO 관리 콘솔의 등록 ID(`web:platform/admin/admin-sections.ts:3`)를 v2
 | AI-DO 섹션 | v2 위치 | 비고 |
 | --- | --- | --- |
 | general | v2 관리 요약 | `web:platform/admin/admin-console.tsx:158`의 사용자·관리자·감사 요약은 기존 v2 지표로 구성할 후보. 전역 workspace 집계는 옮기지 않음 |
-| people | v2 콘솔 사용자 관리 | `web:platform/admin/admin-people-section.tsx:522`의 비밀번호 초기화는 IdP 책임, `web:platform/admin/admin-people-section.tsx:540`의 가장 로그인과 임시 비밀번호 토스트는 기본 이식 제외. 관리자에게 사용자 업무 세션을 부여하는 기능은 별도 중요 결정이다. 로그인 차단·필터 결과 CSV·검색 표는 기존 사용자 관리에 맞출 후보 |
+| people | v2 콘솔 사용자 관리 | `web:platform/admin/admin-people-section.tsx:522`의 비밀번호 초기화는 IdP 책임, `web:platform/admin/admin-people-section.tsx:540`의 임시 비밀번호 토스트는 이식 제외. 같은 위치의 가장 로그인은 [PLAN 결정 10](PLAN.md#확정된-결정)으로 채택했다. 관리자가 그 사용자로 로그인하는 기능이며 [범용 기능 계획 M6](COMMON-FEATURES-PLAN.md#m6-사용자-전환)을 따른다. 로그인 차단·필터 결과 CSV·검색 표는 기존 사용자 관리에 맞출 후보 |
 | groups·apps(앱 접근·표시 그룹) | v2 그룹·접근(`v2:web/platform/src/pages/AdminAccess.tsx:79`)·관리 앱 | **기반 있음.** 그룹·앱 목록/편집 표현을 재사용. everyone 기본값·조직 하위 자동 포함은 제외(C01) |
 | audit | v2 감사(`v2:web/platform/src/pages/AdminAudit.tsx`) | C09 |
 | api-keys | 후속 서비스 주체 | C11·A2. 원본 API 키 scope를 그대로 옮기지 않음 |
-| usage | 채택 결정 뒤 | C12 |
+| usage | 이번 범위 제외(PLAN 결정 10) | C12 |
 | hr·department-policies | 그룹 정본과 인사 커넥터 | C14 |
 | workspaces | 각 업무 앱의 공간 관리 | S07·C02. 콘솔의 전역 공간 관리로 옮기지 않음 |
 | batches·document-processing·community | 해당 업무 앱 | 콘솔 공통 기능이 아님 |
@@ -166,7 +166,7 @@ AI-DO 관리 콘솔의 등록 ID(`web:platform/admin/admin-sections.ts:3`)를 v2
 
 ### 코드 이동 방식
 
-1. **UI·순수 모델 추출:** `packages/ui`, 날짜/선택/피드백 모델과 관련 테스트를 우선 활용한다. 소스 alias만으로 연결된 `@ai-do/ui`를 독립 배포 패키지가 완성된 것으로 보지 않는다. React·Radix·Tailwind·BlockNote/Mantine·Recharts·Yjs 등 실제 의존성을 선언하고 경량 UI와 editor/calendar/AI 모듈을 선택 로딩하도록 나눈다.
+1. **UI·순수 모델 추출:** `packages/ui`, 날짜/선택/피드백 모델과 관련 테스트를 우선 활용한다. 소스 alias만으로 연결된 `@ai-do/ui`를 독립 배포 패키지가 완성된 것으로 보지 않는다. React·Radix·Tailwind·BlockNote/Mantine·Recharts·Yjs 등 실제 의존성을 선언하고 경량 UI와 editor/calendar/AI 모듈을 선택 로딩하도록 나눈다. 공용 UI에 어떤 의존성을 허용할지는 [범용 기능 계획 §5.4](COMMON-FEATURES-PLAN.md#54-적용-방식)의 의존성 정책을 따른다.
 2. **연결 교체:** 부모와 공유하는 React context·document.body·window event·localStorage, 전체 사용자 token, 직접 `/api/v1/workspaces/...` 호출은 해당 앱의 UI·SDK·API 연결로 교체한다. 앱 프레임 자신의 `document.body`에 모달을 렌더링하는 방식은 유지할 수 있다. 공용 코드를 함께 사용하는 것과 DOM·세션을 함께 사용하는 것은 다른 일이다.
 3. **서버 계약 재구현:** Python/SQLAlchemy·Celery·공유 DB에 결합된 ACL·알림·검색·작업은 Rust 코어와 앱 서버 adapter로 나눈다. 원본 API 이름을 유지하려고 호환 게이트웨이·전역 공간을 먼저 만들지 않는다.
 4. **게시 자산 분리:** 현재 SDK·UI·번들의 게시 바이트는 바꾸지 않는다. 구현할 때 새 버전을 추가하고 CLI 템플릿·앱 지침·프레임 런타임을 필요한 범위에서 함께 검증한다.
@@ -217,7 +217,9 @@ AI-DO Desktop과 inference gateway의 별도 저장소는 이번 공통 웹/API 
 | 4 / Storage·파일 | C03·C04·U10·U11, U15의 내보내기 파일 |
 | 4 / 업무 서비스·연결 | C05~10·C13·U12·U13, C15 SSE, U17 알림/활동. C14의 인사 동기화는 별도 커넥터 계약 |
 | 병행 4-1 / 5 AI | A01, AI에 필요한 U13 |
-| 결정 대기 | S11 홈/공지·S13 개인 도킹 도구·C12 사용 통계. 채택 범위와 수집/보존/조회 정책을 결정한 뒤 해당 묶음으로 이동 |
+| 결정 반영(2026-11-21) | S11 홈/공지·S13 개인 도킹 도구는 채택해 [범용 기능 계획](COMMON-FEATURES-PLAN.md)의 M5에 둔다. C12 사용 통계는 이번 범위에서 제외한다(PLAN 결정 10) |
+
+대상 ID가 범용 기능 계획의 어느 단계(D0·P1·M1~M13)에 들어가는지는 그 문서의 §2.1·§2.2·§5.5가 관리한다.
 
 첫 이식은 G4 사용자·그룹 선택기를 대표 앱에 연결해 공용 UI·프레임·현재 권한 판정을 함께 확인한다. 로그인 기반이나 앱 런처를 다시 만들지 않는다. 독립된 기본 폼·날짜·토큰 추출은 병행할 수 있으며, 각 기능의 완료 조건은 아래 인수 기준과 해당 담당 계약을 따른다.
 
