@@ -6,6 +6,7 @@
 
 - [문서 지도](docs/README.md): 주제별 담당 문서. 작업 순서는 [추진 계획](docs/PLAN.md)의 작업표 하나만 따른다.
 - [변경별 검사 지도](docs/CHECKS.md): 바꾼 영역에 맞는 최소 검사.
+- 후속 구현·검토 전에 [사용자 검증 보고서](docs/releases/user-test-20261121-131334/report.md)와 [공통 컴포넌트 후보](docs/PLATFORM-COMPONENT-CANDIDATES.md)를 확인한다. 작업이 끝나 더 이상 유지할 필요가 없는 문서는 링크와 함께 정리한다.
 - 제품 계약은 [PRD](docs/PRD.md), 권한 계약은 [코어 권한](docs/CORE-PERMISSIONS.md)이 기준이다. 구현된 동작은 코드와 테스트가 최종 기준이다.
 
 - 앱 출처·세션·실행 계약을 바꿀 때 [사내 최소 보안 설계](docs/APP-BOUNDARIES.md)를 먼저 읽는다. 업무 앱 UI는 설치별 출처 iframe에서 실행하고([앱 프레임 설계](docs/APP-FRAMES.md)), 플랫폼 화면·통합 라우팅·단일 IP HTTPS는 유지한다. 업무 포털(prod)·dev 포털(dev)·관리/CLI 승인/Keycloak 콘솔의 세 출처와 `portal | dev_portal | console` 세션 용도를 사용한다. 공유 개발 로그인은 꺼져 있고 다른 출처 쿠키 요청은 거부하며 legacy CLI 로그인은 종료했다.
