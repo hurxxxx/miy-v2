@@ -222,6 +222,26 @@ test("FV-01/05/08: a real app runs in its own frame origin with routing, reload 
   const frameOrigin = new URL(frame.url()).origin;
   expect(frameOrigin).not.toBe(devPortal);
   observations.todoFrameOrigin = frameOrigin;
+  // The platform serves the design tokens and the font to the frame from the
+  // frame's own origin (frame CSP: font-src 'self'); the app ships neither.
+  const baseline = await frame.evaluate(async () => {
+    await document.fonts.load('14px "Pretendard Variable"', "가나다 ABC");
+    const loaded = [...document.fonts].filter((face) => face.family.includes("Pretendard") && face.status === "loaded");
+    const fontFiles = performance
+      .getEntriesByType("resource")
+      .map((entry) => new URL(entry.name))
+      .filter((url) => url.pathname.endsWith(".woff2"));
+    return {
+      loaded: loaded.length,
+      ownOrigin: fontFiles.length > 0 && fontFiles.every((url) => url.origin === location.origin && url.pathname.startsWith("/_miy/runtime/")),
+      token: getComputedStyle(document.documentElement).getPropertyValue("--ui-color-bg").trim(),
+      font: getComputedStyle(document.body).fontFamily,
+    };
+  });
+  expect(baseline.loaded).toBeGreaterThan(0);
+  expect(baseline.ownOrigin).toBe(true);
+  expect(baseline.token).not.toBe("");
+  expect(baseline.font).toContain("Pretendard Variable");
   // Launch adds no history entry; the direct link reached the app location.
   expect(await page.evaluate(() => history.length)).toBe(historyBefore + 1);
   await expect(frame.getByRole("button", { name: /^할 일/ })).toHaveAttribute("aria-current", "page");

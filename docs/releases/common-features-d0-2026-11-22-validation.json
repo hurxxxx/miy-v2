@@ -69,6 +69,11 @@
       "status": "PASS",
       "command": "Common UI gallery production build served with the frame CSP header (temporary script under .local/evidence/common-ui-2.0.0)",
       "scope": "No CSP violation or console error with Tailwind output, Radix portals and the lazily loaded chart chunk. Light and dark, desktop and mobile screenshots reviewed."
+    },
+    {
+      "status": "PASS",
+      "command": "MIY_CONFIG_DIR=<empty> bash scripts/runtime-regression/stack-ui.sh up; pnpm exec playwright test -c scripts/runtime-regression/app-frames.config.ts; stack-ui.sh down",
+      "scope": "Real app frames on an isolated full stack, Chromium and Firefox: 12 passed (FV-01/02/04/05/06/07/08/09/10). FV-01 now also asserts that the frame loaded Pretendard from its own origin under /_miy/runtime/, that the --ui-* tokens are present and that the body uses the platform font. Console font-abort messages in the Firefox print test are for the portal's own font during navigation, as before this work."
     }
   ],
   "failuresRetained": [
@@ -78,7 +83,7 @@
   ],
   "notRun": [
     "bash scripts/check-static.sh rust as one command (its parts were run separately; the whole would stop at the environment failure above)",
-    "Real app frames against a full stack: scripts/runtime-regression/stack-ui.sh with app-frames.config.ts, and server-ui.config.ts",
+    "scripts/runtime-regression/server-ui.config.ts (portal shell against the real core), and dark mode or settings.changed against a real frame (covered with mocked frames only)",
     "Bundle upgrade from a previous CLI: MIY_PREVIOUS_BUNDLE_CLI with node scripts/check-cli-guidance.mjs",
     "Firefox and WebKit, Windows and macOS clients",
     "Publishing bundle 0.12.0 / CLI 0.17.0 and any server deployment",
