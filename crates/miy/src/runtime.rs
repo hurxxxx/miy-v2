@@ -1184,8 +1184,47 @@ fn database_network_priority(metadata: &Value) -> Result<i64> {
         .and_then(|priority| priority.checked_sub(1))
         .context("database_gateway_priority_unavailable")
 }
+/// A recreated database container (for example by `compose up` after a change to
+/// its configuration) loses its attachment to every installation network, and the
+/// apps there can no longer resolve `postgres`. Reattach it for installations that
+/// should be running, but only to networks that still exist: a missing network
+/// means the app container lost its own attachment too, which a restart repairs.
+/// Start and restart reattach before starting as well.
+async fn reattach_database(pool: &sqlx::PgPool) -> Result<()> {
+    let ids: Vec<Uuid> = sqlx::query_scalar(
+        "SELECT id FROM installations WHERE runtime_container IS NOT NULL AND desired_state='running'",
+    )
+    .fetch_all(pool)
+    .await?;
+    if ids.is_empty() {
+        return Ok(());
+    }
+    let database = std::env::var("MIY_DATABASE_CONTAINER")
+        .unwrap_or_else(|_| "miy-v2-validation-postgres-1".into());
+    let meta = inspect(&database).await?;
+    for id in ids {
+        let name = format!("miy-runtime-{}", id.simple());
+        if meta["NetworkSettings"]["Networks"].get(&name).is_some()
+            || docker(&["network", "inspect", &name]).await.is_err()
+        {
+            continue;
+        }
+        match installation_network(id).await {
+            Ok(_) => tracing::warn!(event = "database_network_reattached", installation_id = %id),
+            Err(_) => {
+                tracing::error!(event = "database_network_reattach_failed", installation_id = %id)
+            }
+        }
+    }
+    Ok(())
+}
+
 /// Reconcile externally stopped/restarted containers. Database state is not fabricated.
 pub async fn reconcile(pool: &sqlx::PgPool) -> Result<()> {
+    // Docker may be briefly unavailable; container reconciliation below reports that.
+    if reattach_database(pool).await.is_err() {
+        tracing::warn!(event = "database_network_check_unavailable");
+    }
     let rows=sqlx::query("SELECT i.* FROM installations i WHERE runtime_container IS NOT NULL AND runtime_status NOT IN ('removed','failed','recovery_required') AND NOT EXISTS(SELECT 1 FROM runtime_jobs j WHERE j.app_id=i.app_id AND j.environment=i.environment AND j.status IN ('queued','running'))").fetch_all(pool).await?;
     for row in rows {
         let id: Uuid = row.get("id");

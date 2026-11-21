@@ -94,6 +94,46 @@ fn expire_saved_access(root: &Path) -> Result<()> {
     }
     anyhow::bail!("Synthetic file credential was not found")
 }
+/// The file-backend record and decoded credential of the one saved session.
+fn saved_credential(root: &Path) -> Result<(PathBuf, Value, Value)> {
+    for entry in std::fs::read_dir(root.join("credentials"))? {
+        let path = entry?.path();
+        if path.extension().is_none_or(|ext| ext != "json") {
+            continue;
+        }
+        let record: Value = serde_json::from_slice(&std::fs::read(&path)?)?;
+        let Some(text) = record["value"].as_str() else {
+            continue;
+        };
+        let Ok(credential) = serde_json::from_str::<Value>(text) else {
+            continue;
+        };
+        if credential.get("accessToken").is_some() {
+            return Ok((path, record, credential));
+        }
+    }
+    anyhow::bail!("Synthetic file credential was not found")
+}
+fn save_credential(path: &Path, mut record: Value, credential: &Value) -> Result<()> {
+    record["value"] = json!(serde_json::to_string(credential)?);
+    std::fs::write(path, serde_json::to_vec(&record)?)?;
+    Ok(())
+}
+/// Hold every CLI authentication lock, as a process that is renewing does.
+fn hold_authentication_locks(root: &Path) -> Result<Vec<std::fs::File>> {
+    let mut held = vec![];
+    for entry in std::fs::read_dir(root.join("auth-locks"))? {
+        let file = std::fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open(entry?.path())?;
+        file.try_lock()
+            .map_err(|_| anyhow::anyhow!("an authentication lock is already held"))?;
+        held.push(file);
+    }
+    ensure!(!held.is_empty(), "no authentication lock file exists");
+    Ok(held)
+}
 pub async fn run(s: &State, base: &str) -> Result<Vec<String>> {
     ensure!(
         sqlx::query_scalar::<_, String>("SELECT current_database()")
@@ -156,6 +196,58 @@ pub async fn run(s: &State, base: &str) -> Result<Vec<String>> {
         "Concurrent CLI calls did not serialize refresh rotation"
     );
     passed.push("real CLI context login, private global credentials and two concurrent processes rotate once".into());
+
+    // Deterministic form of the same race: another process is renewing. It saved its
+    // in-flight mark and holds the lock; a concurrent command must wait for its
+    // result instead of asking for a new sign-in, and must not rotate again.
+    let (path, record, mut credential) = saved_credential(&cli.config)?;
+    let held = hold_authentication_locks(&cli.config)?;
+    credential["expiresAt"] = json!(chrono::Utc::now().timestamp() - 1);
+    credential["reauthRequired"] = json!(true);
+    save_credential(&path, record.clone(), &credential)?;
+    let before:i64=sqlx::query_scalar("SELECT count(*) FROM cli_refresh_tokens r JOIN cli_sessions s ON s.id=r.session_id WHERE s.user_id=$1 AND r.used_at IS NOT NULL").bind(&user).fetch_one(&s.pool).await?;
+    let renewing = async {
+        tokio::time::sleep(Duration::from_secs(1)).await;
+        let reply: Value = reqwest::Client::new()
+            .post(format!("{base}/auth/cli/token"))
+            .json(&json!({"grantType":"refresh_token","refreshToken":credential["refreshToken"]}))
+            .send()
+            .await?
+            .error_for_status()?
+            .json()
+            .await?;
+        ensure!(
+            reply["status"] == "approved",
+            "fixture refresh was not approved"
+        );
+        let refresh_expires = chrono::DateTime::parse_from_rfc3339(
+            reply["refreshExpiresAt"]
+                .as_str()
+                .context("refresh expiry")?,
+        )?
+        .timestamp();
+        let expires = (chrono::Utc::now().timestamp()
+            + reply["expiresIn"].as_i64().context("access lifetime")?)
+        .min(refresh_expires);
+        let mut renewed = credential.clone();
+        renewed["accessToken"] = reply["accessToken"].clone();
+        renewed["refreshToken"] = reply["refreshToken"].clone();
+        renewed["expiresAt"] = json!(expires);
+        renewed["refreshExpiresAt"] = json!(refresh_expires);
+        renewed["reauthRequired"] = json!(false);
+        save_credential(&path, record, &renewed)?;
+        drop(held);
+        Ok::<_, anyhow::Error>(())
+    };
+    let (waited, renewed) = tokio::join!(cli.call(&["auth", "status"], 0), renewing);
+    renewed?;
+    waited?;
+    let rotated:i64=sqlx::query_scalar("SELECT count(*) FROM cli_refresh_tokens r JOIN cli_sessions s ON s.id=r.session_id WHERE s.user_id=$1 AND r.used_at IS NOT NULL").bind(&user).fetch_one(&s.pool).await?;
+    ensure!(
+        rotated == before + 1,
+        "A command waiting for another process's refresh rotated again"
+    );
+    passed.push("a command waits for another process's refresh in flight and reuses its result instead of requiring a new sign-in".into());
 
     let users = cli
         .call(

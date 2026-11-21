@@ -1773,6 +1773,40 @@ async fn isolated_runtime_regression() -> Result<()> {
     ensure!(finish(&pool, a).await?["status"] == "succeeded");
     let live = inst(&pool, "dev").await?;
     let name = live["runtimeContainer"].as_str().unwrap();
+    // A recreated database container is no longer on the installation network of a
+    // running app. Reconciliation reattaches it without a restart, under the name
+    // `postgres` that the app resolves, and the app reaches its database again.
+    let database = std::env::var("MIY_DATABASE_CONTAINER")?;
+    let network = format!("miy-runtime-{}", uuid(&live["id"]).simple());
+    let attached = |meta: &Value| {
+        meta["NetworkSettings"]["Networks"][network.as_str()]["Aliases"]
+            .as_array()
+            .is_some_and(|aliases| aliases.iter().any(|alias| alias == "postgres"))
+    };
+    ensure!(
+        attached(&runtime::inspect(&database).await?),
+        "fixture database was not attached"
+    );
+    runtime::docker(&["network", "disconnect", &network, &database]).await?;
+    let detached = !attached(&runtime::inspect(&database).await?);
+    let container_before = runtime::inspect(name).await?["Id"].clone();
+    runtime::reconcile(&pool).await?;
+    let reattached = attached(&runtime::inspect(&database).await?);
+    let mut reachable = false;
+    for _ in 0..50 {
+        let answer = runtime::docker(&["exec", name, "getent", "hosts", "postgres"]).await;
+        if answer.is_ok_and(|hosts| !hosts.trim().is_empty()) {
+            reachable = true;
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(200)).await;
+    }
+    let same_container = runtime::inspect(name).await?["Id"] == container_before;
+    report(
+        "reconciliation reattaches a recreated database to a running app's network without restarting it",
+        detached && reattached && reachable && same_container,
+        json!({"detached":detached,"reattached":reattached,"postgresResolvable":reachable,"sameContainer":same_container}),
+    );
     runtime::docker(&["exec", name, "touch", "/tmp/unhealthy"]).await?;
     let response = reqwest::get(format!("http://127.0.0.1:{}/health", live["runtimePort"])).await?;
     runtime_health::scan(&pool, &runtime_health::client()?).await?;

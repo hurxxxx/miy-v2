@@ -281,14 +281,28 @@ fn validate_credential(credential: &Credential, origin: &str, user: &str) -> Res
 }
 
 fn usable(credential: &Credential) -> Result<()> {
-    if credential.reauth_required || credential.refresh_expires_at <= now() {
-        return Err(auth_error(
-            "reauthentication_required",
-            "The saved session cannot be safely renewed; sign in again.",
-        )
-        .into());
+    if credential.reauth_required {
+        return Err(reauthentication_required());
+    }
+    unexpired(credential)
+}
+
+/// Without the interprocess lock a set `reauth_required` mark is ambiguous: it is
+/// also what another process writes before sending its refresh. Only an expired
+/// refresh session is final here; `refreshed` decides the mark under the lock.
+fn unexpired(credential: &Credential) -> Result<()> {
+    if credential.refresh_expires_at <= now() {
+        return Err(reauthentication_required());
     }
     Ok(())
+}
+
+fn reauthentication_required() -> anyhow::Error {
+    auth_error(
+        "reauthentication_required",
+        "The saved session cannot be safely renewed; sign in again.",
+    )
+    .into()
 }
 
 fn as_session(name: &str, context: &cli_config::Context, credential: &Credential) -> Session {
@@ -312,13 +326,20 @@ pub fn session() -> Result<Session> {
         .as_deref()
         .ok_or_else(|| auth_error("login_required", "Sign in to the selected server context."))?;
     let credential = read_credential(&cli_config::root()?, &context, user)?;
-    usable(&credential)?;
+    // Every authenticated request passes through `refreshed`, which takes the lock,
+    // waits for a refresh another process is sending and then checks the mark.
+    unexpired(&credential)?;
     Ok(as_session(&name, &context, &credential))
 }
 
 async fn lock(root: &Path, key: &str) -> Result<std::fs::File> {
     lock_with_timeout(root, key, Duration::from_secs(5)).await
 }
+
+/// A refreshing process holds the credential lock for its token request and the
+/// identity check that follows, each bounded by `HTTP_SECONDS`. Waiting longer than
+/// that lets concurrent commands reuse its result instead of failing.
+const REFRESH_LOCK_WAIT: Duration = Duration::from_secs(2 * HTTP_SECONDS + 5);
 
 async fn lock_with_timeout(root: &Path, key: &str, timeout: Duration) -> Result<std::fs::File> {
     let directory = root.join("auth-locks");
@@ -378,7 +399,8 @@ pub async fn refreshed(saved: &Session) -> Result<Session> {
     }
     crate::cli_client::origin(&context.origin)?;
     let root = cli_config::root()?;
-    let _lock = lock(&root, &credential_key(&context, user)).await?;
+    let _lock =
+        lock_with_timeout(&root, &credential_key(&context, user), REFRESH_LOCK_WAIT).await?;
     // Reload after taking the interprocess lock: another process may already have rotated.
     let mut credential = read_credential(&root, &context, user)?;
     usable(&credential)?;
@@ -1073,7 +1095,9 @@ pub async fn execute(command: AuthCommand) -> Result<Value> {
                 &context,
                 session.user_id.as_deref().unwrap_or_default(),
             )?;
-            usable(&credential)?;
+            // `refreshed` above judged the mark under the lock; this second read is
+            // unlocked and may see another process's refresh in flight.
+            unexpired(&credential)?;
             verify_identity(&context, &credential).await?;
             Ok(
                 json!({"authenticated":true,"context":name,"userId":credential.user_id,"sessionId":credential.session_id,
@@ -1350,6 +1374,19 @@ mod tests {
                 .category,
             Category::Auth
         );
+        // Read without the lock, the mark may be another process's refresh in flight:
+        // only an expired refresh session is final before `refreshed` takes the lock.
+        assert!(unexpired(&credential).is_ok());
+        credential.refresh_expires_at = now() - 1;
+        assert_eq!(
+            unexpired(&credential)
+                .unwrap_err()
+                .downcast_ref::<CliError>()
+                .unwrap()
+                .code,
+            "reauthentication_required"
+        );
+        assert!(REFRESH_LOCK_WAIT > Duration::from_secs(2 * HTTP_SECONDS));
     }
 
     #[test]
