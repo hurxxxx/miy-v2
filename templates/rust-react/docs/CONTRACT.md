@@ -1,11 +1,11 @@
-# miy application bundle v0.11.0
+# miy application bundle v0.12.0
 
-This describes bundle 0.11.0 and Rust SDK 0.4.0 with typed directory reads, app-owned resource ACLs and bounded attachments. The default common UI is 1.1.0. Since 0.11.0 the server runs only images it built itself: `app build` builds on the server and there is no local release build or image upload. The UI runs in its own cross-origin frame (see "Frame execution"). Manifest and UI contract versions remain unchanged. Existing apps must follow their installed protected SDK and use an explicit bundle upgrade before adopting new SDK methods. The upgrade resolves the SDK's Rust dependency lock before committing any project changes; update the installed UI explicitly to use its new components. Project stdio MCP reports the installed bundle; the server HTTP contract describes the latest bundle.
+This describes bundle 0.12.0 and Rust SDK 0.4.0 with typed directory reads, app-owned resource ACLs and bounded attachments. 0.12.0 adds display settings (theme, language, time zone, date format) and platform-served design tokens; see "Display settings and tokens". The default common UI is 1.1.0. Since 0.11.0 the server runs only images it built itself: `app build` builds on the server and there is no local release build or image upload. The UI runs in its own cross-origin frame (see "Frame execution"). Manifest and UI contract versions remain unchanged. Existing apps must follow their installed protected SDK and use an explicit bundle upgrade before adopting new SDK methods. The upgrade resolves the SDK's Rust dependency lock before committing any project changes; update the installed UI explicitly to use its new components. Project stdio MCP reports the installed bundle; the server HTTP contract describes the latest bundle.
 
 Backend: Rust 1.99.1, Axum 0.8.9, SQLx 0.8.6. UI: React 19.3.1, Vite 8.3.5, Module Federation.
 Keep manifest.json `miy.app/v1alpha1`, runtime `rust-web-v1`, UI `miy.ui/v1alpha1`, export `./AppRoot`.
 Set ui.moduleEntry to `mf-manifest.json`. The Federation manifest carries the ESM entry type and CSS asset metadata; remoteEntry.js alone is not the host registration document.
-The host provides AppProps.runtime with installationId, appId, releaseId, basePath, location, api, apiBlob, fileApi, directory, platformApi, appApi, navigate, setNavigationState and theme.
+The host provides AppProps.runtime with installationId, appId, releaseId, basePath, location, api, apiBlob, fileApi, directory, platformApi, appApi, navigate, setNavigationState, theme and settings.
 API paths passed to runtime.api are app relative (for example `/leaves`); the gateway forwards `/api/leaves` to Rust.
 The Rust SDK wraps your router under `/api`, so route definitions use `/leaves`, not `/api/leaves`.
 The SDK requires a valid short-lived platform identity signed for the installation/release. Extract `Extension<Identity>` in handlers. The identity retains `user_id: String` and `admin: bool`; `context` contains the receiving installation/release, optional environment, ordered caller app/installation/release history, and effective permissions. The user remains the original authenticated user through every hop. An admin flag does not grant an application permission to bypass the core's token and installation approval checks. Legacy gateway tokens remain readable but cannot delegate without a core-issued proof.
@@ -59,6 +59,16 @@ The file gateway copies only approved content/integrity headers and adds sandbox
 The UI runs in its own cross-origin frame: one origin per installation, separate from the portal, the console and every other app. The platform frame runtime loads this release's `./AppRoot` and passes `runtime`; it shares only React and React DOM with the app. `runtime.api`, `apiBlob`, `platformApi` and `appApi` call this frame's own origin with a short in-memory credential; there are no cookies and no CSRF value. The frame cannot read portal pages, storage or another app, and another app's API is reachable only through `runtime.appApi` with an approved connection.
 
 Inside the frame: do not use `window.parent`, `window.top`, `history.pushState`/`replaceState`/`back` or `document.cookie` for credentials, and do not register service workers. Use `runtime.navigate` for app routes; plain links to app paths under `runtime.basePath` are routed by the portal, and external links open in a new tab. For downloads use `runtime.apiBlob(path)`, create an object URL and revoke it after use. The frame fills the portal work area at a fixed size; dialogs and overlays render inside it and the app scrolls internally. Keep local styles; the frame document has only a small baseline (font, background, link colors).
+
+## Display settings and tokens
+
+`runtime.settings` carries the display settings the person chose in the portal: `theme` (`light` or `dark`, already resolved), `themePreference` (`system`, `light` or `dark`), `locale` (`ko-KR` or `en-US`), `timeZone` (an IANA name) and `dateFormat` (`korean`, `iso`, `us`, `european` or `locale`). `runtime.theme` equals `settings.theme`. When a setting changes, AppRoot renders again with a new `runtime`; do not cache the old values. Settings change how things look and read. Never use them for an access decision.
+
+The platform sets the theme on the frame document before the app renders: the `dark` class and `data-miy-theme="dark"` on `<html>`, and `lang` to the locale. Do not set these yourself. Format dates and times with `settings.timeZone`, `settings.dateFormat` and `settings.locale`, not with the browser defaults.
+
+The platform frame runtime serves the design tokens and the Pretendard font to every app frame: CSS variables named `--ui-*` (for example `--ui-color-bg`, `--ui-color-surface`, `--ui-color-ink`, `--ui-color-border`, `--ui-color-accent`, `--ui-color-brand`, `--ui-radius-md`, `--ui-space-4`, `--ui-text-body`). Use these variables for colors, spacing, radii and type sizes so the app follows the light and dark themes; do not hard-code colors. The body baseline is 14px with a 1.45 line height. Local preview loads the same tokens from `sdk/preview/tokens.css`; it shows Pretendard only when the computer has the font installed.
+
+Apps built with a bundle before 0.12.0 keep the light theme and Korean document language whatever the person chose.
 
 ## Delivery
 

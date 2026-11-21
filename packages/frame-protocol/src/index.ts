@@ -1,7 +1,7 @@
 /**
  * The one definition of the portal ↔ app frame bridge (docs/APP-FRAMES.md §3.4).
- * The bridge carries screen state only: location, navigation, input state, theme,
- * run state and the one-time renew code. It never carries API requests, URLs to
+ * The bridge carries screen state only: location, navigation, input state, display
+ * settings, run state and the one-time renew code. It never carries API requests, URLs to
  * fetch, cookies or portal CSRF values.
  */
 export const PROTOCOL = "miy.frame/v1" as const;
@@ -30,10 +30,34 @@ export function renewalFailure(status: number, code?: unknown): RenewalFailure {
   return "token_renewal_unavailable";
 }
 
+/**
+ * Display settings a person chooses in the portal. Values and names follow
+ * AI-DO's personal settings: theme preference, language, time zone and date format.
+ */
+export const THEME_PREFERENCES = ["system", "light", "dark"] as const;
+export type ThemePreference = (typeof THEME_PREFERENCES)[number];
+export const LOCALES = ["ko-KR", "en-US"] as const;
+export type Locale = (typeof LOCALES)[number];
+export const DATE_FORMATS = ["korean", "iso", "us", "european", "locale"] as const;
+export type DateFormat = (typeof DATE_FORMATS)[number];
+export interface FrameSettings {
+  theme: ThemePreference;
+  locale: Locale;
+  /** IANA time zone name. */
+  timeZone: string;
+  dateFormat: DateFormat;
+}
+export const DEFAULT_SETTINGS: FrameSettings = {
+  theme: "system",
+  locale: "ko-KR",
+  timeZone: "Asia/Seoul",
+  dateFormat: "korean",
+};
+
 /** Messages the portal sends into a frame. */
 export type ParentMessage =
   | { type: "route.changed"; payload: FrameLocation }
-  | { type: "theme.changed"; payload: { theme: "light" | "dark" } }
+  | { type: "settings.changed"; payload: FrameSettings }
   | { type: "token.code"; payload: { code: string } }
   | { type: "token.failed"; payload: { reason: RenewalFailure } };
 
@@ -88,6 +112,23 @@ export function location(value: unknown): value is FrameLocation {
   );
 }
 
+const oneOf = <T extends string>(values: readonly T[], value: unknown): value is T =>
+  typeof value === "string" && (values as readonly string[]).includes(value);
+/** An IANA-shaped zone name. Whether the zone exists is the reader's concern. */
+export function timeZoneName(value: unknown): value is string {
+  return typeof value === "string" && /^[A-Za-z][A-Za-z0-9_+\-]*(\/[A-Za-z0-9_+\-]+)*$/.test(value) && value.length <= 64;
+}
+/** Complete, valid display settings, or null. */
+export function settings(value: unknown): FrameSettings | null {
+  return object(value) &&
+    oneOf(THEME_PREFERENCES, value.theme) &&
+    oneOf(LOCALES, value.locale) &&
+    timeZoneName(value.timeZone) &&
+    oneOf(DATE_FORMATS, value.dateFormat)
+    ? { theme: value.theme, locale: value.locale, timeZone: value.timeZone, dateFormat: value.dateFormat }
+    : null;
+}
+
 /** A validated message from the parent, or null (ignored and counted by callers). */
 export function readParentMessage(data: unknown): ParentMessage | null {
   const m = header(data);
@@ -96,8 +137,10 @@ export function readParentMessage(data: unknown): ParentMessage | null {
   switch (m.type) {
     case "route.changed":
       return location(p) ? { type: m.type, payload: { pathname: p.pathname, search: p.search, hash: p.hash } } : null;
-    case "theme.changed":
-      return object(p) && (p.theme === "light" || p.theme === "dark") ? { type: m.type, payload: { theme: p.theme } } : null;
+    case "settings.changed": {
+      const value = settings(p);
+      return value ? { type: m.type, payload: value } : null;
+    }
     case "token.code":
       return object(p) && text(p.code, 64) ? { type: m.type, payload: { code: p.code } } : null;
     case "token.failed":

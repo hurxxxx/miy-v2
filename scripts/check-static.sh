@@ -51,6 +51,7 @@ script_checks() {
   node scripts/api-types.mjs --check
   node scripts/build-ui-component.mjs --check
   node scripts/test-sdk-transport.mjs
+  node scripts/check-token-copies.mjs
   python3 scripts/check-api-compat.py
   python3 scripts/test-api-compat.py
   python3 scripts/test-cli-downloads.py

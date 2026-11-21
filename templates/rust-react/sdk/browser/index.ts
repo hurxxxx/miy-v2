@@ -19,6 +19,16 @@ export interface Installation {
   kind: "validation_fixture" | "docker_app";
   ui: { entry: string; export: "./AppRoot"; contractVersion: string };
 }
+/** Display settings the person chose in the portal. Presentation only: never an access input. */
+export interface AppSettings {
+  /** The theme in effect; a `system` preference is already resolved. */
+  theme: "light" | "dark";
+  themePreference: "system" | "light" | "dark";
+  locale: "ko-KR" | "en-US";
+  /** IANA time zone name this browser knows. */
+  timeZone: string;
+  dateFormat: "korean" | "iso" | "us" | "european" | "locale";
+}
 export interface AppRuntime {
   installationId: string;
   appId: string;
@@ -44,7 +54,13 @@ export interface AppRuntime {
    * before leaving the app, signing out or reloading while `dirty` is true.
    */
   setNavigationState: (state: NavigationState) => void;
-  theme: "light";
+  /** Same as `settings.theme`. */
+  theme: "light" | "dark";
+  /**
+   * Display settings. When the person changes one, AppRoot renders again with a
+   * new runtime; the platform has already set the theme and `lang` on this document.
+   */
+  settings: AppSettings;
 }
 export interface NavigationState {
   dirty: boolean;

@@ -1,6 +1,7 @@
 import { createBrowserHistory } from "@tanstack/history";
 import React, { useState, useEffect } from "react";
 import { createRoot } from "react-dom/client";
+import "./preview.css";
 import AppRoot from "../../web/src/AppRoot";
 import {
   appTarget,
@@ -11,8 +12,28 @@ import {
   directoryQuery,
   createNavigationGuards,
   type AppRuntime,
+  type AppSettings,
   type NavigationState,
 } from "../browser";
+// Preview has no portal settings: it follows this browser. A deployed app
+// receives the person's portal choice the same way, through runtime.settings.
+const DARK = window.matchMedia("(prefers-color-scheme: dark)");
+function browserSettings(): AppSettings {
+  const theme = DARK.matches ? "dark" : "light";
+  return {
+    theme,
+    themePreference: "system",
+    locale: "ko-KR",
+    timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone || "Asia/Seoul",
+    dateFormat: "korean",
+  };
+}
+function applyDocumentSettings(settings: AppSettings) {
+  const root = document.documentElement;
+  root.classList.toggle("dark", settings.theme === "dark");
+  root.dataset.miyTheme = settings.theme;
+  root.lang = settings.locale;
+}
 const history = createBrowserHistory();
 // The platform reads the app's reported input state; preview does the same.
 let navigationState: NavigationState = { dirty: false };
@@ -36,6 +57,13 @@ function Preview() {
   }>();
   const [error, setError] = useState("");
   const [location, setLocation] = useState(history.location.href);
+  const [settings, setSettings] = useState(browserSettings);
+  useEffect(() => {
+    const changed = () => setSettings(browserSettings());
+    DARK.addEventListener("change", changed);
+    return () => DARK.removeEventListener("change", changed);
+  }, []);
+  useEffect(() => applyDocumentSettings(settings), [settings]);
   useEffect(() => {
     void request<typeof context>("/__miy/context")
       .then(setContext)
@@ -83,15 +111,16 @@ function Preview() {
     setNavigationState: (state) => {
       navigationState = state;
     },
-    theme: "light",
+    theme: settings.theme,
+    settings,
   };
   return (
     <>
-      <header style={{ padding: 16, background: "#edf2f7" }}>
+      <header className="miy-preview-header">
         miy · LOCAL PREVIEW · {context.user.name} · development database /
         server DEV connections
       </header>
-      <main style={{ padding: 24 }}>
+      <main className="miy-preview-main">
         <AppRoot runtime={runtime} />
       </main>
     </>

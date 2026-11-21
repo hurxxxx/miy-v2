@@ -77,6 +77,8 @@ export interface AuditPage {
   nextCursor: number | null;
 }
 
+export type DateFormat = "korean" | "iso" | "us" | "european" | "locale";
+
 /**
  * Release an attached file. The app sends this only after the transaction that
  * removed its own reference has committed; Core then deletes the bytes.
@@ -150,6 +152,13 @@ export interface FrameBootstrap {
   /** Bridge protocol, `miy.frame/v1`. */
   protocol: string;
   releaseId: string;
+  /** Display settings at launch. Later changes arrive as `settings.changed`. */
+  settings: FrameSettings;
+  /**
+   * Whether this release was built with an SDK bundle that understands
+   * display settings. The runtime keeps older apps light and Korean.
+   */
+  settingsAware: boolean;
   token: string;
   tokenExpiresAt: string;
 }
@@ -159,6 +168,18 @@ export interface FrameLocation {
   hash: string;
   pathname: string;
   search: string;
+}
+
+/**
+ * Display settings passed from the portal to an app frame. They decide how
+ * things look and read; they are never an input to an access decision.
+ */
+export interface FrameSettings {
+  dateFormat: DateFormat;
+  locale: Locale;
+  theme: ThemePreference;
+  /** IANA time zone name. The reader falls back when it does not know the zone. */
+  timeZone: string;
 }
 
 export interface Group {
@@ -244,6 +265,9 @@ export interface LastOperation {
   step: string;
 }
 
+/** Display languages the platform offers. */
+export type Locale = "ko-KR" | "en-US";
+
 /** A stored acceptance check, as the test acceptance request recorded it. */
 export interface RecordedCheck {
   actor: string;
@@ -299,6 +323,9 @@ export interface StoredFile {
   status: FileStatus;
   version: number;
 }
+
+/** A person's theme choice. `System` follows the browser. */
+export type ThemePreference = "system" | "light" | "dark";
 
 /** Where the platform loads the app's UI module. */
 export interface UiModule {

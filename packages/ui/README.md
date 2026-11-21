@@ -2,7 +2,7 @@
 
 `src/`가 새 공용 UI 버전의 유지관리 원본이다. 게시된 `registry/components/ui/`의 버전(1.0.0·1.0.1·1.1.0)은 수정하지 않는다. `scripts/build-ui-component.mjs`가 새 버전을 만들며, 호환 SDK 번들은 그 스크립트의 `version`·`bundleVersion`(생성되는 `component.json`의 `bundleVersions`)과 CLI의 `crates/miy/src/bundle.rs`에서 관리한다. 새 프로젝트의 기본 버전은 `templates/rust-react/miy.components.json`이다.
 
-AI-DO의 중립 색상·입력 밀도·선택 칩·본인 우선·잠긴 대상 표현을 옮겼다. React 이외의 런타임 의존성이나 외부 CDN은 없다. 글꼴은 원본과 같이 시스템에 설치된 Pretendard 계열 이름을 사용한다. `index.tsx`를 import하면 스타일이 로드되며, 스타일만 필요하면 `styles.css`를 import한다. 앱 document에 `.dark` 또는 `data-miy-theme="dark"`를 적용하면 어두운 색상 토큰으로 바뀐다. 현재 포털·프레임 런타임은 `data-miy-theme`를 설정하지 않는다(SDK `theme: "light"` 고정). 계획된 변경(미구현): 토큰(`--ui-*`)·Pretendard·테마/언어는 프레임 런타임이 제공하고, 2.0.0은 AI-DO의 UI 패키지를 옮겨 Tailwind CSS 4·Radix UI를 쓴다([범용 기능 계획 §5.4](../../docs/COMMON-FEATURES-PLAN.md#54-적용-방식)).
+AI-DO의 중립 색상·입력 밀도·선택 칩·본인 우선·잠긴 대상 표현을 옮겼다. React 이외의 런타임 의존성이나 외부 CDN은 없다. 글꼴은 원본과 같이 시스템에 설치된 Pretendard 계열 이름을 사용한다. `index.tsx`를 import하면 스타일이 로드되며, 스타일만 필요하면 `styles.css`를 import한다. 앱 document에 `.dark` 또는 `data-miy-theme="dark"`를 적용하면 어두운 색상 토큰으로 바뀐다. 프레임 런타임은 SDK 번들 0.12.0 이상으로 빌드한 앱의 문서에 `dark` 클래스와 `data-miy-theme`를 설정하고, 토큰(`--ui-*`)과 Pretendard를 모든 앱 프레임에 제공한다(소스 구현, 미게시). 계획된 변경(미구현): 2.0.0은 AI-DO의 UI 패키지를 옮겨 Tailwind CSS 4·Radix UI를 쓴다([범용 기능 계획 §5.4](../../docs/COMMON-FEATURES-PLAN.md#54-적용-방식)).
 
 현재 제공 범위:
 

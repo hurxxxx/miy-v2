@@ -30,19 +30,23 @@ import {
   type AppFrameToken,
   type AppProps,
   type AppRuntime,
+  type AppSettings,
   type FrameBootstrap,
   type NavigationState,
   type DirectoryQuery,
   type DirectoryRequestOptions,
 } from "@miy/sdk";
 import {
+  DEFAULT_SETTINGS,
   PROTOCOL,
   envelope,
   readParentMessage,
   relativePath,
   renewalFailure,
+  settings as readSettings,
   type FrameLocation,
   type FrameMessage,
+  type FrameSettings,
   type RenewalFailure,
 } from "@miy/frame-protocol";
 
@@ -209,6 +213,40 @@ async function blob(path: string, init?: RequestInit): Promise<Blob> {
   return readBlob(await call(path, init), init);
 }
 
+// Display settings. An app built before settings existed is never switched:
+// its document stays light and Korean, as it was written.
+const DARK = window.matchMedia("(prefers-color-scheme: dark)");
+const settingsListeners = new Set<(settings: FrameSettings) => void>();
+let currentSettings: FrameSettings = boot.settingsAware
+  ? (readSettings(boot.settings) ?? DEFAULT_SETTINGS)
+  : { ...DEFAULT_SETTINGS, theme: "light" };
+function knownZone(zone: string): string {
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: zone });
+    return zone;
+  } catch {
+    return DEFAULT_SETTINGS.timeZone;
+  }
+}
+function appSettings(settings: FrameSettings, systemDark: boolean): AppSettings {
+  return {
+    theme: settings.theme === "system" ? (systemDark ? "dark" : "light") : settings.theme,
+    themePreference: settings.theme,
+    locale: settings.locale,
+    timeZone: knownZone(settings.timeZone),
+    dateFormat: settings.dateFormat,
+  };
+}
+/** `.dark` is what AI-DO styles key on; the attribute is what common UI 1.1.0 keys on. */
+function applyDocumentSettings(settings: AppSettings) {
+  if (!boot.settingsAware) return;
+  const root = document.documentElement;
+  root.classList.toggle("dark", settings.theme === "dark");
+  root.dataset.miyTheme = settings.theme;
+  root.lang = settings.locale;
+}
+applyDocumentSettings(appSettings(currentSettings, DARK.matches));
+
 // The bridge listener: only the parent window at the expected origin, only
 // validated messages. Route changes reach the app through a subscription.
 const routeListeners = new Set<(location: FrameLocation) => void>();
@@ -220,6 +258,10 @@ window.addEventListener("message", (event) => {
   if (message.type === "route.changed") {
     currentLocation = message.payload;
     for (const listener of routeListeners) listener(message.payload);
+  } else if (message.type === "settings.changed") {
+    if (!boot.settingsAware) return;
+    currentSettings = message.payload;
+    for (const listener of settingsListeners) listener(message.payload);
   } else if (message.type === "token.code") pending?.resolve(message.payload.code);
   else if (message.type === "token.failed") pending?.reject(new Error(message.payload.reason));
 });
@@ -298,6 +340,20 @@ function remote(): ComponentType<AppProps> {
 
 function FrameApp({ View }: { View: ComponentType<AppProps> }) {
   const [location, setLocation] = useState<FrameLocation>(currentLocation);
+  const [settings, setSettings] = useState<FrameSettings>(currentSettings);
+  const [systemDark, setSystemDark] = useState(DARK.matches);
+  useEffect(() => {
+    settingsListeners.add(setSettings);
+    setSettings(currentSettings);
+    const changed = () => setSystemDark(DARK.matches);
+    DARK.addEventListener("change", changed);
+    return () => {
+      settingsListeners.delete(setSettings);
+      DARK.removeEventListener("change", changed);
+    };
+  }, []);
+  const display = useMemo(() => appSettings(settings, systemDark), [settings, systemDark]);
+  useEffect(() => applyDocumentSettings(display), [display]);
   useEffect(() => {
     routeListeners.add(setLocation);
     setLocation(currentLocation);
@@ -338,9 +394,10 @@ function FrameApp({ View }: { View: ComponentType<AppProps> }) {
         setNavigationState,
         // Apps built with the 0.8 SDK still call this; see setNavigationState.
         registerNavigationGuard,
-        theme: "light",
+        theme: display.theme,
+        settings: display,
       }) satisfies AppRuntime & { registerNavigationGuard: typeof registerNavigationGuard },
-    [location],
+    [location, display],
   );
   return <View runtime={runtime} />;
 }

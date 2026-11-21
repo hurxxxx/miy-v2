@@ -114,7 +114,7 @@ flowchart LR
 | `location` | `route.changed {pathname, search, hash}`. 부모의 뒤로·앞으로 가기와 직접 링크 | 부모→프레임 |
 | `navigate(relative, {replace})` | `route.navigate`. 부모는 앱 basePath 아래의 상대 경로만 받는다. 절대 URL과 다른 앱·플랫폼 경로는 거부한다 | 프레임→부모 |
 | `registerNavigationGuard` → 신규 `setNavigationState({dirty, message?})` | 앱이 입력·저장·진행 중 작업의 합산 상태를 바꿀 때 `guard.state`를 보낸다. 콜백을 부모가 동기 실행하는 기존 계약은 새 SDK에서 교체 | 프레임→부모 |
-| `theme` | 현재 `light` 고정. `theme.changed`는 프로토콜에 형식만 있고 포털이 보내지 않으며 런타임도 적용하지 않는다. 테마·언어·시간대·날짜 형식·밀도의 초기값과 변경 이벤트, 명령 팔레트 단축키 알림은 계획([D0](COMMON-FEATURES-PLAN.md#d0-디자인설정-전달-기반)·[P1](COMMON-FEATURES-PLAN.md#p1-셸설정콘솔), 미구현) | 부모→프레임(예정) |
+| `settings` | `settings.changed`: 테마 선택(`system`·`light`·`dark`), 언어(`ko-KR`·`en-US`), 시간대, 날짜 형식. 초기값은 실행 form으로 받아 부트스트랩의 `settings`에 넣고, 이후 변경은 이 메시지로 보낸다. 표시용 값이며 권한 판정에 쓰지 않는다. 런타임은 부트스트랩의 `settingsAware`가 참인 앱(SDK 번들 0.12.0 이상으로 서버 빌드한 릴리스)에만 문서의 `dark` 클래스·`data-miy-theme`·`lang`을 적용하고, 그 이전 앱은 라이트·한국어로 둔다. 소스 구현(번들 0.12.0 미게시, 서버 미반영). 명령 팔레트 단축키 알림은 계획([P1](COMMON-FEATURES-PLAN.md#p1-셸설정콘솔), 미구현) | 부모→프레임 |
 | `api`·`platformApi`·`directory`·`appApi`·`apiBlob`·`fileApi` | 브리지 미사용. 앱 출처로 직접 요청. JSON과 바이너리 응답을 구분 | 없음 |
 | (신규) 실행 상태 | `frame.ready`, `frame.error`, `release.changed` | 프레임→부모 |
 | (신규) 토큰 갱신 | `token.renew` 요청 → `token.code` 응답(1회용, 앱 출처로만 전송) 또는 분류된 `token.failed` | 양방향 |
@@ -168,7 +168,7 @@ flowchart LR
 
 아래는 채택에 사용한 실증 기준이며 후속 변경의 회귀 기준으로 유지한다. 최초 실증은 운영 서버를 바꾸지 않고 격리 스택의 P3(포트)와 P2 대응(시험용 호스트명·인증서)에서 Chromium·Firefox·WebKit으로 수행했다. 실제 업무 앱·차단 프로브 앱·후속 호출용 최소 C backend fixture를 사용하고, 기존 MF 산출물의 로딩/기본 API와 새 SDK의 입력 보호/바이너리를 구분해 검증했다. 코드는 `poc/app-frames`에서 만들어 채택(D1) 뒤 2026-11-11 main에 합쳤다.
 
-[1차 실증](releases/app-frames-poc-2026-11-10-validation.json)·[2차 실증](releases/app-frames-poc-2026-11-10-second-validation.json)·[채택 후속](releases/app-frames-adoption-2026-11-10-validation.json)은 각 소스와 환경의 기록이다. `*.localhost`의 P2 대응 결과를 실제 같은 등록 도메인의 쿠키 간섭 인수로 옮기지 않는다. FV-06의 실제 P2 쿠키 간섭, FV-07의 화면낭독 출력·테마 전달은 남아 있으며 테마 전달은 [범용 기능 계획 D0](COMMON-FEATURES-PLAN.md#d0-디자인설정-전달-기반)에서 구현·인수한다. P4는 후속 비교이고 P1은 활성화 전 별도 인수를 수행한다.
+[1차 실증](releases/app-frames-poc-2026-11-10-validation.json)·[2차 실증](releases/app-frames-poc-2026-11-10-second-validation.json)·[채택 후속](releases/app-frames-adoption-2026-11-10-validation.json)은 각 소스와 환경의 기록이다. `*.localhost`의 P2 대응 결과를 실제 같은 등록 도메인의 쿠키 간섭 인수로 옮기지 않는다. FV-06의 실제 P2 쿠키 간섭, FV-07의 화면낭독 출력·테마 전달은 남아 있으며 표시 설정 전달은 [범용 기능 계획 D0](COMMON-FEATURES-PLAN.md#d0-디자인설정-전달-기반)에서 구현했고 모의 프레임 브라우저 검사로 확인한다. 실제 프레임 인수는 남아 있다. P4는 후속 비교이고 P1은 활성화 전 별도 인수를 수행한다.
 
 | ID | 시험과 판정 기준 |
 | --- | --- |

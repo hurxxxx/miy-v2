@@ -51,10 +51,11 @@
 .ui-button-danger {
   background: var(--ui-color-danger-text);
   border-color: var(--ui-color-danger-text);
-  color: #fff;
+  /* The danger pair inverted: its text colour fills the button in both themes. */
+  color: var(--ui-color-danger-bg);
 }
 .ui-button-danger:hover:not(:disabled) {
-  background: #991b1b;
+  background: color-mix(in srgb, var(--ui-color-danger-text) 84%, var(--ui-color-static-black));
 }
 .ui-button-ghost {
   border-color: transparent;
@@ -232,7 +233,8 @@
   align-items: center;
   justify-content: center;
   border-radius: 12px;
-  color: #fff;
+  /* App marks keep their own fill in both themes (MONOGRAM_COLORS). */
+  color: var(--ui-color-static-white);
   font-weight: 700;
   letter-spacing: -0.02em;
   line-height: 1;
@@ -264,7 +266,7 @@
   box-shadow: var(--ui-shadow-lg);
 }
 .shell-dialog::backdrop {
-  background: rgba(15, 23, 42, 0.45);
+  background: color-mix(in srgb, var(--ui-color-static-black) 41%, transparent);
 }
 .shell-dialog h2 {
   margin: 0 0 var(--ui-space-3);

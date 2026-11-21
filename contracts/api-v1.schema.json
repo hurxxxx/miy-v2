@@ -250,6 +250,16 @@
       ],
       "type": "object"
     },
+    "DateFormat": {
+      "enum": [
+        "korean",
+        "iso",
+        "us",
+        "european",
+        "locale"
+      ],
+      "type": "string"
+    },
     "DetachFile": {
       "additionalProperties": false,
       "description": "Release an attached file. The app sends this only after the transaction that\nremoved its own reference has committed; Core then deletes the bytes.",
@@ -462,6 +472,14 @@
           "format": "uuid",
           "type": "string"
         },
+        "settings": {
+          "$ref": "#/$defs/FrameSettings",
+          "description": "Display settings at launch. Later changes arrive as `settings.changed`."
+        },
+        "settingsAware": {
+          "description": "Whether this release was built with an SDK bundle that understands\ndisplay settings. The runtime keeps older apps light and Korean.",
+          "type": "boolean"
+        },
         "token": {
           "type": "string"
         },
@@ -486,7 +504,9 @@
         "assetBase",
         "moduleEntry",
         "moduleExport",
-        "contractVersion"
+        "contractVersion",
+        "settings",
+        "settingsAware"
       ],
       "type": "object"
     },
@@ -507,6 +527,31 @@
         "pathname",
         "search",
         "hash"
+      ],
+      "type": "object"
+    },
+    "FrameSettings": {
+      "description": "Display settings passed from the portal to an app frame. They decide how\nthings look and read; they are never an input to an access decision.",
+      "properties": {
+        "dateFormat": {
+          "$ref": "#/$defs/DateFormat"
+        },
+        "locale": {
+          "$ref": "#/$defs/Locale"
+        },
+        "theme": {
+          "$ref": "#/$defs/ThemePreference"
+        },
+        "timeZone": {
+          "description": "IANA time zone name. The reader falls back when it does not know the zone.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "theme",
+        "locale",
+        "timeZone",
+        "dateFormat"
       ],
       "type": "object"
     },
@@ -822,6 +867,14 @@
       ],
       "type": "object"
     },
+    "Locale": {
+      "description": "Display languages the platform offers.",
+      "enum": [
+        "ko-KR",
+        "en-US"
+      ],
+      "type": "string"
+    },
     "RecordedCheck": {
       "description": "A stored acceptance check, as the test acceptance request recorded it.",
       "properties": {
@@ -1055,6 +1108,15 @@
         "expiresAt"
       ],
       "type": "object"
+    },
+    "ThemePreference": {
+      "description": "A person's theme choice. `System` follows the browser.",
+      "enum": [
+        "system",
+        "light",
+        "dark"
+      ],
+      "type": "string"
     },
     "UiModule": {
       "description": "Where the platform loads the app's UI module.",

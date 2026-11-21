@@ -336,6 +336,60 @@ pub struct FrameLocation {
     pub hash: String,
 }
 
+/// A person's theme choice. `System` follows the browser.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum ThemePreference {
+    #[default]
+    System,
+    Light,
+    Dark,
+}
+
+/// Display languages the platform offers.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub enum Locale {
+    #[default]
+    #[serde(rename = "ko-KR")]
+    KoKr,
+    #[serde(rename = "en-US")]
+    EnUs,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum DateFormat {
+    #[default]
+    Korean,
+    Iso,
+    Us,
+    European,
+    Locale,
+}
+
+/// Display settings passed from the portal to an app frame. They decide how
+/// things look and read; they are never an input to an access decision.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct FrameSettings {
+    pub theme: ThemePreference,
+    pub locale: Locale,
+    /// IANA time zone name. The reader falls back when it does not know the zone.
+    pub time_zone: String,
+    pub date_format: DateFormat,
+}
+
+impl Default for FrameSettings {
+    fn default() -> Self {
+        Self {
+            theme: ThemePreference::default(),
+            locale: Locale::default(),
+            time_zone: "Asia/Seoul".into(),
+            date_format: DateFormat::default(),
+        }
+    }
+}
+
 /// What the frame document carries for the platform frame runtime
 /// (`<script id="miy-frame-bootstrap" type="application/json">`).
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -361,6 +415,11 @@ pub struct FrameBootstrap {
     pub module_entry: String,
     pub module_export: String,
     pub contract_version: String,
+    /// Display settings at launch. Later changes arrive as `settings.changed`.
+    pub settings: FrameSettings,
+    /// Whether this release was built with an SDK bundle that understands
+    /// display settings. The runtime keeps older apps light and Korean.
+    pub settings_aware: bool,
 }
 
 /// The response types this contract publishes, by schema name.

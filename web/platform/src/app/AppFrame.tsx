@@ -8,6 +8,7 @@ import {
   type InputState,
   type ParentMessage,
 } from "@miy/frame-protocol";
+import { useDisplaySettings } from "../data/settings";
 import { Button, Loading, Notice, Panel } from "../ui";
 
 /** The frame's last reported input state, read synchronously by leave checks. */
@@ -106,6 +107,15 @@ export function AppFrame({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [relative.pathname, relative.search, relative.hash, launch]);
 
+  // Display settings: the launch form carries the first value, later changes follow.
+  const { settings } = useDisplaySettings();
+  const latestSettings = useRef(settings);
+  latestSettings.current = settings;
+  useEffect(() => {
+    send({ type: "settings.changed", payload: settings });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [settings, launch]);
+
   useEffect(() => {
     if (!launch) return;
     let active = true;
@@ -123,6 +133,7 @@ export function AppFrame({
         case "frame.ready":
           ready.current = true;
           send({ type: "route.changed", payload: current.current });
+          send({ type: "settings.changed", payload: latestSettings.current });
           break;
         case "route.navigate": {
           let href: string;
@@ -220,6 +231,10 @@ export function AppFrame({
           <input type="hidden" name="search" value={current.current.search} />
           <input type="hidden" name="hash" value={current.current.hash} />
           <input type="hidden" name="basePath" value={basePath} />
+          <input type="hidden" name="theme" value={latestSettings.current.theme} />
+          <input type="hidden" name="locale" value={latestSettings.current.locale} />
+          <input type="hidden" name="timeZone" value={latestSettings.current.timeZone} />
+          <input type="hidden" name="dateFormat" value={latestSettings.current.dateFormat} />
         </form>
       )}
     </>

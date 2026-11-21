@@ -18,6 +18,11 @@
   top: var(--ui-space-3);
 }
 
+/*
+ * The rail keeps --ui-color-bg-strong in both themes, so what sits on it does not
+ * follow the theme's ink: text is static white softened with the subtle ink, and
+ * hover, current and divider fills are static white at a low share.
+ */
 .rail {
   position: sticky;
   top: 0;
@@ -31,7 +36,10 @@
   flex-shrink: 0;
   padding: var(--ui-space-3) 0;
   background: var(--ui-color-bg-strong);
-  color: #e5e7eb;
+  /* Hairline towards the workspace: lost in the light theme's dark rail, a border in
+     dark, where the rail and the header share one colour. */
+  box-shadow: inset -1px 0 0 color-mix(in srgb, var(--ui-color-ink) 14%, transparent);
+  color: color-mix(in srgb, var(--ui-color-static-white) 83%, var(--ui-color-ink-subtle));
 }
 .brand {
   color: var(--ui-color-ink);
@@ -45,7 +53,7 @@
   width: 44px;
   height: 44px;
   border-radius: 12px;
-  background: #fff;
+  background: var(--ui-color-static-white);
   color: var(--ui-color-bg-strong);
   font-size: 15px;
 }
@@ -65,7 +73,7 @@
 }
 .rail-platform {
   padding-top: var(--ui-space-2);
-  border-top: 1px solid rgba(255, 255, 255, 0.12);
+  border-top: 1px solid color-mix(in srgb, var(--ui-color-static-white) 12%, transparent);
 }
 .rail-item {
   position: relative;
@@ -76,12 +84,12 @@
   width: 56px;
   padding: 6px 0;
   border-radius: var(--ui-radius-lg);
-  color: #cbd5e1;
+  color: color-mix(in srgb, var(--ui-color-static-white) 70%, var(--ui-color-ink-subtle));
   transition: background var(--ui-motion-base), color var(--ui-motion-base);
 }
 .rail-item:hover {
-  background: rgba(255, 255, 255, 0.08);
-  color: #fff;
+  background: color-mix(in srgb, var(--ui-color-static-white) 8%, transparent);
+  color: var(--ui-color-static-white);
 }
 .rail-item > .new-tab-indicator {
   position: absolute;
@@ -92,11 +100,11 @@
 }
 .rail-item:focus-visible {
   outline: none;
-  box-shadow: 0 0 0 2px #93c5fd;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--ui-color-info) 44%, var(--ui-color-static-white));
 }
 .rail-item[aria-current="page"] {
-  background: rgba(255, 255, 255, 0.14);
-  color: #fff;
+  background: color-mix(in srgb, var(--ui-color-static-white) 14%, transparent);
+  color: var(--ui-color-static-white);
 }
 .rail-item[aria-current="page"]::before {
   content: "";
@@ -106,7 +114,7 @@
   bottom: 12px;
   width: 3px;
   border-radius: 0 3px 3px 0;
-  background: #fff;
+  background: var(--ui-color-static-white);
 }
 .rail-icon {
   display: flex;
@@ -128,7 +136,7 @@
 }
 .rail-note {
   margin: var(--ui-space-2) 4px;
-  color: #94a3b8;
+  color: color-mix(in srgb, var(--ui-color-static-white) 34%, var(--ui-color-ink-subtle));
   font-size: 11px;
   text-align: center;
 }
@@ -140,7 +148,7 @@
   padding: 6px 10px;
   border-radius: var(--ui-radius-md);
   background: var(--ui-color-accent);
-  color: #fff;
+  color: var(--ui-color-accent-fg);
   font-size: 13px;
   transform: translateY(-50%);
   pointer-events: none;
@@ -284,7 +292,7 @@
     height: auto;
     padding: var(--ui-space-4);
     overflow-y: auto;
-    box-shadow: var(--ui-shadow-lg);
+    box-shadow: var(--ui-shadow-lg), inset -1px 0 0 color-mix(in srgb, var(--ui-color-ink) 14%, transparent);
   }
   .rail.navigation-open {
     display: flex;
@@ -294,13 +302,13 @@
   }
   .env-switch.env-switch-drawer {
     display: flex;
-    background: rgba(255, 255, 255, 0.06);
-    border-color: rgba(255, 255, 255, 0.12);
+    background: color-mix(in srgb, var(--ui-color-static-white) 6%, transparent);
+    border-color: color-mix(in srgb, var(--ui-color-static-white) 12%, transparent);
   }
   .env-switch-drawer .env-option {
     flex: 1;
     text-align: center;
-    color: #cbd5e1;
+    color: color-mix(in srgb, var(--ui-color-static-white) 70%, var(--ui-color-ink-subtle));
   }
   .rail-section {
     align-items: stretch;
@@ -339,7 +347,7 @@
     inset: 56px 0 0 0;
     z-index: 40;
     display: block;
-    background: rgba(15, 23, 42, 0.45);
+    background: color-mix(in srgb, var(--ui-color-static-black) 41%, transparent);
   }
   .shell-header {
     gap: var(--ui-space-2);

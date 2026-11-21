@@ -7,7 +7,10 @@
 //! the request path or body.
 use crate::{
     State,
-    api_contract::{AppFrameLaunch, AppFrameRenewal, AppFrameToken, FrameBootstrap, FrameLocation},
+    api_contract::{
+        AppFrameLaunch, AppFrameRenewal, AppFrameToken, FrameBootstrap, FrameLocation,
+        FrameSettings,
+    },
     api_error::{ApiError, ApiResult},
     auth::{BrowserPurpose, Principal},
     contract::hash,
@@ -922,6 +925,30 @@ struct LaunchForm {
     code: Option<String>,
     location: FrameLocation,
     base_path: String,
+    settings: FrameSettings,
+}
+/// The first SDK bundle whose apps read display settings.
+const SETTINGS_BUNDLE: (u32, u32, u32) = (0, 12, 0);
+fn settings_aware(bundle: Option<&str>) -> bool {
+    let mut parts = bundle.unwrap_or_default().split('.').map(str::parse::<u32>);
+    match (parts.next(), parts.next(), parts.next(), parts.next()) {
+        (Some(Ok(major)), Some(Ok(minor)), Some(Ok(patch)), None) => {
+            (major, minor, patch) >= SETTINGS_BUNDLE
+        }
+        _ => false,
+    }
+}
+/// An IANA-shaped zone name; whether the zone exists is the reader's concern.
+fn time_zone_name(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= 64
+        && value.starts_with(|c: char| c.is_ascii_alphabetic())
+        && value.split('/').all(|part| {
+            !part.is_empty()
+                && part
+                    .chars()
+                    .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '+' | '-'))
+        })
 }
 fn launch_form(body: &[u8]) -> LaunchForm {
     let mut form = LaunchForm {
@@ -932,7 +959,12 @@ fn launch_form(body: &[u8]) -> LaunchForm {
             hash: String::new(),
         },
         base_path: "/".into(),
+        settings: FrameSettings::default(),
     };
+    // A display setting the portal sent; anything unknown keeps the default.
+    fn choice<T: serde::de::DeserializeOwned>(value: &str) -> Option<T> {
+        serde_json::from_value(serde_json::Value::String(value.to_owned())).ok()
+    }
     // Empty, or starting with `first`; bounded; no control characters.
     let clean = |v: &str, first: char, max: usize| {
         (v.len() <= max
@@ -953,6 +985,22 @@ fn launch_form(body: &[u8]) -> LaunchForm {
             "basePath" => {
                 if let Some(v) = clean(&value, '/', 512).filter(|v| !v.is_empty()) {
                     form.base_path = v;
+                }
+            }
+            "theme" => {
+                if let Some(v) = choice(&value) {
+                    form.settings.theme = v;
+                }
+            }
+            "locale" => {
+                if let Some(v) = choice(&value) {
+                    form.settings.locale = v;
+                }
+            }
+            "timeZone" if time_zone_name(&value) => form.settings.time_zone = value.into_owned(),
+            "dateFormat" => {
+                if let Some(v) = choice(&value) {
+                    form.settings.date_format = v;
                 }
             }
             _ => {}
@@ -1050,7 +1098,7 @@ async fn open_frame(
         .filter(|d| *d > Utc::now())
         .ok_or_else(ApiError::unauthorized)?;
     let inst = sqlx::query(
-        "SELECT i.app_id,i.environment,i.release_id,i.runtime_status,i.desired_state,r.image_id IS NULL AS fixture,r.manifest->'ui' AS ui FROM installations i JOIN releases r ON r.id=i.release_id WHERE i.id=$1 FOR SHARE OF i",
+        "SELECT i.app_id,i.environment,i.release_id,i.runtime_status,i.desired_state,r.image_id IS NULL AS fixture,r.manifest->'ui' AS ui,(SELECT b.bundle_version FROM app_builds b WHERE b.app_id=i.app_id AND b.image_id=r.image_id AND b.status='succeeded' ORDER BY b.finished_at DESC NULLS LAST LIMIT 1) AS bundle_version FROM installations i JOIN releases r ON r.id=i.release_id WHERE i.id=$1 FOR SHARE OF i",
     )
     .bind(site.installation_id)
     .fetch_one(&mut *tx)
@@ -1058,6 +1106,7 @@ async fn open_frame(
     if inst.get::<Uuid, _>("release_id") != release {
         return Err(ApiError::conflict("release_changed_reload_required"));
     }
+    let bundle: Option<String> = inst.get("bundle_version");
     if !running_or_fixture(&inst) {
         return Err(ApiError::unavailable("app_runtime_not_running"));
     }
@@ -1111,6 +1160,8 @@ async fn open_frame(
         module_entry: text("moduleEntry"),
         module_export: text("moduleExport"),
         contract_version: text("contractVersion"),
+        settings: form.settings.clone(),
+        settings_aware: settings_aware(bundle.as_deref()),
     };
     frame_document(s, origin, &bootstrap)
 }
@@ -1398,5 +1449,31 @@ mod tests {
             ("", "")
         );
         assert_eq!(bad.base_path, "/");
+    }
+
+    #[test]
+    fn launch_form_accepts_only_known_display_settings() {
+        use crate::api_contract::{DateFormat, Locale, ThemePreference};
+        let form =
+            launch_form(b"theme=dark&locale=en-US&timeZone=America%2FNew_York&dateFormat=iso");
+        assert_eq!(form.settings.theme, ThemePreference::Dark);
+        assert_eq!(form.settings.locale, Locale::EnUs);
+        assert_eq!(form.settings.time_zone, "America/New_York");
+        assert_eq!(form.settings.date_format, DateFormat::Iso);
+        let bad = launch_form(b"theme=neon&locale=fr-FR&timeZone=..%2Fetc&dateFormat=");
+        assert_eq!(bad.settings, FrameSettings::default());
+        assert!(time_zone_name("Etc/GMT+9") && time_zone_name("UTC"));
+        assert!(
+            !time_zone_name("/UTC")
+                && !time_zone_name("Asia//Seoul")
+                && !time_zone_name(&"a".repeat(65))
+        );
+    }
+
+    #[test]
+    fn only_new_bundles_are_settings_aware() {
+        assert!(settings_aware(Some("0.12.0")) && settings_aware(Some("1.0.0")));
+        assert!(!settings_aware(Some("0.11.0")) && !settings_aware(Some("0.12")));
+        assert!(!settings_aware(None) && !settings_aware(Some("latest")));
     }
 }

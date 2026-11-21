@@ -34,6 +34,8 @@ export interface FrameMockOptions {
   tokenLifetimeMs?: number;
   frameLifetimeMs?: number;
   renewal?: (stage: RenewalStage, attempt: number) => RenewalReply | Promise<RenewalReply>;
+  /** The server sets this for releases built with an SDK bundle that reads display settings. */
+  settingsAware?: boolean;
 }
 
 function file(root: string, relative: string) {
@@ -116,6 +118,14 @@ export async function mockFrames(page: Page, apps: () => Installation[], api: Fr
         moduleEntry: "mf-manifest.json",
         moduleExport: "./AppRoot",
         contractVersion: installation.ui.contractVersion,
+        // As the server does: the launch form carries the portal's display settings.
+        settings: {
+          theme: form.get("theme") ?? "system",
+          locale: form.get("locale") ?? "ko-KR",
+          timeZone: form.get("timeZone") ?? "Asia/Seoul",
+          dateFormat: form.get("dateFormat") ?? "korean",
+        },
+        settingsAware: options.settingsAware ?? true,
       };
       const html = readFileSync(resolve(runtimeDir, "index.html"), "utf8").replace(
         "</head>",

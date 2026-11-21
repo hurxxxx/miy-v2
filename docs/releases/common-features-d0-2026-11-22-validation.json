@@ -1,0 +1,61 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-11-22",
+  "status": "PASS_WITH_ENVIRONMENT_FAILURE",
+  "scope": "Common features plan D0 (source only): AI-DO design tokens as one source for the frame runtime and portal, Pretendard in app frames, display settings delivery (theme, language, time zone, date format) through the launch form, frame bootstrap, bridge message, frame runtime and SDK, SDK bundle 0.12.0 / CLI 0.17.0, portal and console dark colors. Not published, not deployed.",
+  "source": {
+    "repository": "miy-v2",
+    "baseCommit": "3f7f0fa",
+    "state": "working tree committed after these checks"
+  },
+  "checks": [
+    {
+      "status": "PASS",
+      "command": "MIY_CONFIG_DIR=<empty> bash scripts/check-static.sh web",
+      "scope": "pnpm typecheck; isolated builds under .local/evidence; 132 browser checks with mocked APIs: common UI 29, portal suites 69 (including 4 new display-settings checks: stored dark English choice reaches portal and frame, system theme is followed and changes live, a pre-0.12.0 app stays light and Korean, frame uses platform font and tokens), CLI experience 15, surface boundaries 18, HTTP IP 1. Chromium only."
+    },
+    {
+      "status": "PASS",
+      "command": "MIY_CONFIG_DIR=<empty> bash scripts/check-static.sh scripts",
+      "scope": "doc links, script syntax, api-types --check, build-ui-component --check (UI 1.1.0 bytes unchanged), test-sdk-transport, new check-token-copies, check-api-compat (FrameBootstrap gained settings and settingsAware; additions only), core-ops and proxy checks"
+    },
+    {
+      "status": "PASS",
+      "command": "cargo fmt --check; cargo clippy --locked -p miy --all-targets -- -D warnings; same with --no-default-features",
+      "scope": "format and lints for both builds"
+    },
+    {
+      "status": "FAIL",
+      "command": "MIY_CONFIG_DIR=<empty> cargo test -p miy; cargo test -p miy --no-default-features",
+      "scope": "238 passed, 1 failed, 7 ignored (server build); 142 passed, 1 failed (client build). The one failure in both is preview::tests::backend_listener_falls_back_when_the_gateway_is_not_a_host_address.",
+      "cause": "Host setting, not this change: net.ipv4.ip_nonlocal_bind=1 on this host lets a process bind 192.0.2.1, so the test's premise (binding an unassigned address fails) does not hold. crates/miy/src/preview.rs is not modified by this work."
+    },
+    {
+      "status": "PASS",
+      "command": "MIY_CONFIG_DIR=<empty> python3 scripts/runtime-regression/run.py",
+      "scope": "Isolated Docker PostgreSQL: 149 observations (runtime 53, operations 5, CLI 7, auth 8, accounts 11, permissions 26, delegation 10, boundary 12, migration 3, frames 14). Covers the frame launch query that now also reads the release's build bundle version."
+    },
+    {
+      "status": "PASS",
+      "command": "python3 scripts/check-bundle-portability.py source; python3 scripts/check-write-decisions.py; python3 scripts/check-cli-version.py",
+      "scope": "template LF policy with the two new preview files, listed write transactions, CLI version 0.17.0 above the published client"
+    },
+    {
+      "status": "PASS",
+      "command": "Playwright screenshots of existing portal suites in light and dark (temporary configs under .local/evidence/d0-dark)",
+      "scope": "38 light before/after pairs compared pixel by pixel; dark screens reviewed for login, home, shell around an app, mobile drawer, console app management, platform administration, CLI approval and install pages, invitation pages. Measured dark text contrast fixed for the danger button (1.45 to 11.2), rail tooltip (1.10 to 16.3) and development account hint (1.36 to 9.6)."
+    }
+  ],
+  "failuresRetained": [
+    "cargo test: preview::tests::backend_listener_falls_back_when_the_gateway_is_not_a_host_address fails on this host because of net.ipv4.ip_nonlocal_bind=1.",
+    "Input and panel borders keep AI-DO's token value (about 1.3:1 against the surface) by decision; see COMMON-FEATURES-PLAN section 7.",
+    "Mobile drawer: the current environment pill is hard to read in light mode (existing issue, unchanged)."
+  ],
+  "notRun": [
+    "bash scripts/check-static.sh rust as one command (its parts were run separately; the whole would stop at the environment failure above)",
+    "Real app frames against a full stack: scripts/runtime-regression/stack-ui.sh with app-frames.config.ts, and server-ui.config.ts",
+    "Bundle upgrade from a previous CLI: MIY_PREVIOUS_BUNDLE_CLI with node scripts/check-cli-guidance.mjs",
+    "Firefox and WebKit, Windows and macOS clients",
+    "Publishing bundle 0.12.0 / CLI 0.17.0 and any server deployment"
+  ]
+}

@@ -282,8 +282,9 @@
   --ui-color-brand: #244bff;
   --ui-color-brand-hover: #1a3ad6;
   --ui-color-brand-weak: #eef2ff;
+  /* 70% keeps the ring at 3:1 or more against light and dark surfaces. */
   --ui-shadow-focus-ring: 0 0 0 3px
-    color-mix(in srgb, var(--ui-color-brand) 35%, transparent);
+    color-mix(in srgb, var(--ui-color-brand) 70%, transparent);
 }
 
 .dark,

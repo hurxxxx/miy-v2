@@ -42,6 +42,7 @@ pub async fn run() -> Result<Value> {
         Some("0.8.0") => include_str!("../bundles/0.8.0.json"),
         Some("0.9.0") => include_str!("../bundles/0.9.0.json"),
         Some("0.10.0") => include_str!("../bundles/0.10.0.json"),
+        Some("0.11.0") => include_str!("../bundles/0.11.0.json"),
         _ => anyhow::bail!(CliError::new(
             Category::Environment,
             "unsupported_old_bundle",
@@ -86,9 +87,21 @@ pub async fn run() -> Result<Value> {
     // navigation guard with setNavigationState and adds apiBlob. App code that
     // used registerNavigationGuard must change; `app check` reports it.
     // 0.11.0 changes guidance only: builds run on the server and nothing is uploaded.
+    // 0.12.0 adds display settings to the browser runtime and gives local
+    // preview the platform tokens (sdk/preview/tokens.css, preview.css).
     if matches!(
         old["bundleVersion"].as_str(),
-        Some("0.6.0" | "0.6.1" | "0.6.2" | "0.7.0" | "0.7.1" | "0.8.0" | "0.9.0" | "0.10.0")
+        Some(
+            "0.6.0"
+                | "0.6.1"
+                | "0.6.2"
+                | "0.7.0"
+                | "0.7.1"
+                | "0.8.0"
+                | "0.9.0"
+                | "0.10.0"
+                | "0.11.0"
+        )
     ) {
         let mut changes = crate::agent_tools::setup_changes(&root)?;
         for (path, content) in crate::bundle::template() {
@@ -357,6 +370,8 @@ fn validate_guidance_change(path: &str, unchanged: bool) -> Result<()> {
                 | "sdk/browser/directory.ts"
                 | "sdk/browser/transport.ts"
                 | "sdk/preview/main.tsx"
+                | "sdk/preview/preview.css"
+                | "sdk/preview/tokens.css"
                 | "sdk/rust/src/lib.rs"
                 | "sdk/rust/src/directory.rs"
                 | "sdk/rust/src/storage.rs"
@@ -619,6 +634,7 @@ mod tests {
             include_str!("../bundles/0.8.0.json"),
             include_str!("../bundles/0.9.0.json"),
             include_str!("../bundles/0.10.0.json"),
+            include_str!("../bundles/0.11.0.json"),
         ] {
             let old: Value = serde_json::from_str(previous).unwrap();
             for (path, hash) in &current {

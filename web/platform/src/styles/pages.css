@@ -45,8 +45,8 @@
   justify-content: center;
   padding: var(--ui-space-6) var(--ui-space-4);
   background:
-    radial-gradient(circle at 15% 10%, rgba(37, 99, 235, 0.08), transparent 40%),
-    radial-gradient(circle at 85% 90%, rgba(124, 58, 237, 0.07), transparent 40%),
+    radial-gradient(circle at 15% 10%, color-mix(in srgb, var(--ui-color-info) 8%, transparent), transparent 40%),
+    radial-gradient(circle at 85% 90%, color-mix(in srgb, var(--ui-color-chart-3) 7%, transparent), transparent 40%),
     var(--ui-color-surface-subtle);
 }
 .login-card {
@@ -63,7 +63,7 @@
   padding: 6px 12px;
   border-radius: 10px;
   background: var(--ui-color-bg-strong);
-  color: #fff;
+  color: var(--ui-color-static-white);
   font-size: 18px;
   font-weight: 800;
   letter-spacing: -0.03em;
@@ -110,7 +110,7 @@
   color: var(--ui-color-accent-fg);
 }
 .account-button.primary span {
-  color: #cbd5e1;
+  color: color-mix(in srgb, var(--ui-color-accent-fg) 82%, var(--ui-color-accent));
 }
 .account-button:hover:not(:disabled) {
   border-color: var(--ui-color-border-strong);
@@ -502,7 +502,7 @@
   padding: var(--ui-space-4);
   border-radius: var(--ui-radius-md);
   background: var(--ui-color-bg-strong);
-  color: #e5e7eb;
+  color: color-mix(in srgb, var(--ui-color-static-white) 83%, var(--ui-color-ink-subtle));
   font-family: var(--ui-font-mono);
   font-size: 13px;
   line-height: 1.6;
@@ -527,6 +527,8 @@
   padding: 0 var(--ui-space-3);
   border: 1px solid var(--ui-color-border);
   border-radius: var(--ui-radius-md);
+  background: var(--ui-color-surface);
+  color: var(--ui-color-ink);
   font-family: var(--ui-font-mono);
   font-size: 16px;
   letter-spacing: 0.08em;
@@ -586,7 +588,7 @@
   font-weight: 600;
 }
 .access-table tr[aria-current="true"] td {
-  background: var(--ui-color-surface-subtle, rgba(0, 0, 0, 0.03));
+  background: var(--ui-color-surface-subtle);
 }
 .access-actions {
   display: flex;
