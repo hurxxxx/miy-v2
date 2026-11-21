@@ -307,7 +307,7 @@ impl Tools {
         )
     }
     #[tool(
-        description = "Discover CLI commands, inspect a typed command, or search. Use topic=updates for offline CLI update and project MCP restart instructions; no login is needed. The default is a short list; all requests the full reference.",
+        description = "Discover CLI commands, inspect a typed command, or search. Offline topics are updates for CLI updates and harness for component reuse, file recovery and app integration. The default is a short list; all requests the full reference.",
         annotations(read_only_hint = true)
     )]
     async fn get_cli_help(

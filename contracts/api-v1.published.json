@@ -1,7 +1,7 @@
 {
   "publishedCli": {
-    "version": "0.14.0",
-    "sourceCommit": "e5ee24fe6da7e44cf9a3d20232332d73ede9369a"
+    "version": "0.15.0",
+    "sourceCommit": "ab0ee2fe22dad7bb7129fdca0c29710d54b1498e"
   },
   "removable": [],
   "$defs": {

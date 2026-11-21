@@ -16,6 +16,8 @@ Register the app and obtain administrator approval before `app dev`. Its default
 
 Read [workflow.md](references/workflow.md) for the requested workflow; [commands.md](references/commands.md) is the generated complete reference. MCP `get_cli_help` provides the same scoped discovery. Do not load the complete manual for every task.
 
+For changes to app UI, sharing or files, read [harness.md](references/harness.md), `miy describe --topic harness`, or MCP `get_cli_help({"topic":"harness"})` before implementing. Choose components from the synced UI and run `miy app check --harness-only` before the full validation.
+
 For CLI updates, read [updating.md](references/updating.md), `miy describe --topic updates`, or MCP `get_cli_help({"topic":"updates"})`; these work before login. Re-run the selected portal's installer, use the newly installed global `miy app setup` in each compatible project, then restart Codex/Claude Code. An old project's CLI cannot update itself to a newer global executable. Updates preserve authentication; do not repeat browser approval for a credential-storage error. Inspect `auth status` and send a manual unauthenticated report when needed.
 
 Report actual checks, release/image IDs and unresolved failures. Acceptance records attest only tests actually performed; follow `docs/ACCEPTANCE.md`. Update compatible project tooling with the intended global `miy app setup`, or use explicit `app upgrade` for a different SDK bundle. Do not edit managed guidance, locks, protected SDK files or global agent settings; reopen the agent session after updates.

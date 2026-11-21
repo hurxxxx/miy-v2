@@ -311,11 +311,15 @@ def check(cli):
                 and updates["remoteEffects"] == [], "Update guidance must be offline and read-only")
         require("/api/v1/cli/install.sh" in updates["guide"] and "miy app setup" in updates["guide"]
                 and "Restart" in updates["guide"], "Update guidance must cover global, project and agent steps")
+        harness = run(["describe", "--topic", "harness"], command="describe")["data"]
+        require(harness["topic"] == "harness" and harness["authenticationRequired"] is False
+                and "app check --harness-only" in harness["guide"] and "FileTransferPanel" in harness["guide"],
+                "App harness guidance must be available offline and name the integration check")
         require(broken_config.read_text(encoding="utf-8") == "invalid configuration", "Discovery changed configuration")
         broken_config.unlink()
         config.rmdir()
         run(["describe", "--topic", "updates", "--all"], expected=2)
-        ok("update guidance remains available with broken configuration, without login or mutation")
+        ok("update and harness guidance remain available with broken configuration, without login or mutation")
 
         text_result = subprocess.run(
             [str(cli), "describe", "--output", "text"], cwd=root, env=env,

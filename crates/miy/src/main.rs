@@ -18,6 +18,7 @@ mod app_cli;
 mod app_frames;
 #[cfg(all(test, feature = "server"))]
 mod app_frames_regression;
+mod app_harness;
 mod app_health;
 mod app_response;
 #[cfg(feature = "server")]

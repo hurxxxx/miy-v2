@@ -38,8 +38,12 @@ pub enum AppCommand {
     Setup,
     /// Upgrade a supported SDK bundle while preserving business code and applied SQL.
     Upgrade,
-    /// Check manifest, managed files, components and both language toolchains.
-    Check,
+    /// Check app integration, managed files, components and both language toolchains.
+    Check {
+        /// Review app source integration offline without compiling or running the app.
+        #[arg(long)]
+        harness_only: bool,
+    },
     Fmt,
     /// Run local development against the server's development database.
     Dev {
@@ -505,10 +509,19 @@ pub async fn execute(command: AppCommand) -> Result<Outcome> {
             ));
         }
         AppCommand::Fmt => run("cargo", &["fmt", "--package", "miy-app"])?,
-        AppCommand::Check => {
-            let m = check()?;
+        AppCommand::Check { harness_only } => {
+            let m = if harness_only { manifest()? } else { check()? };
+            let findings = crate::cli_error::validation(
+                crate::app_harness::inspect(Path::new("."), &m),
+                "app_harness_unavailable",
+            )?;
+            if harness_only {
+                return Ok(Outcome::Data(
+                    json!({"appId":m.id,"mode":"harness-only","findings":findings}),
+                ));
+            }
             return Ok(Outcome::Data(
-                json!({"valid":true,"appId":m.id,"bundleVersion":bundle::VERSION,"checks":["manifest","bundle-integrity","cli-guidance-integrity","component-integrity","migration-contract","rust-format","rust-tests","frozen-dependencies","typescript","ui-build","federation-assets"],"browserIntegration":"requires platform acceptance test"}),
+                json!({"valid":true,"appId":m.id,"bundleVersion":bundle::VERSION,"checks":["manifest","bundle-integrity","cli-guidance-integrity","component-integrity","migration-contract","rust-format","rust-tests","frozen-dependencies","typescript","ui-build","federation-assets"],"harnessFindings":findings,"browserIntegration":"requires platform acceptance test"}),
             ));
         }
         AppCommand::Build { no_wait, timeout } => {

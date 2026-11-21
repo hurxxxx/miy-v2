@@ -11,6 +11,8 @@ use std::{any::TypeId, collections::BTreeSet, io::Write, path::PathBuf};
 pub enum HelpTopic {
     /// Update the global CLI, each project's executable and agent MCP sessions.
     Updates,
+    /// Review component reuse, file recovery and the app integration checks.
+    Harness,
 }
 
 #[derive(clap::Args, Debug, Default)]
@@ -47,8 +49,11 @@ fn inspect_tree(mut root: Command, args: DescribeArgs) -> Result<Value> {
         )
         .into());
     }
-    if let Some(HelpTopic::Updates) = args.topic {
-        return Ok(crate::cli_guidance::update_guide());
+    if let Some(topic) = args.topic {
+        return Ok(match topic {
+            HelpTopic::Updates => crate::cli_guidance::update_guide(),
+            HelpTopic::Harness => crate::cli_guidance::harness_guide(),
+        });
     }
     root.build();
     if let Some(query) = args.command {
@@ -895,7 +900,7 @@ fn policy(command: &str, group: bool) -> Policy {
         }
         "app check" => {
             policy.local_effects = &[
-                "Runs project Rust tests and frontend toolchains; installs dependencies and writes build artifacts. Project code executes with the current OS user's authority.",
+                "Use --harness-only to read app source and report integration findings offline. The full check runs project Rust tests and frontend toolchains, installs dependencies and writes build artifacts. Project code executes with the current OS user's authority.",
             ]
         }
         "app fmt" => {
