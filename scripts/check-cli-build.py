@@ -96,6 +96,9 @@ def check(cli):
         build_observed = threading.Event()
         login_id = str(uuid.uuid4())
         session_id = str(uuid.uuid4())
+        release_id = str(uuid.uuid4())
+        release_source = f'/api/v1/apps/{APP}/releases/{release_id}/source'
+        state.update(release_archive=None, released_bytes=None, corrupt_download=False)
 
         class Handler(BaseHTTPRequestHandler):
             def log_message(self, *_):
@@ -147,8 +150,19 @@ def check(cli):
                     self.authenticated()
                 if path == '/api/v1/capabilities':
                     self.reply(200, {'schemaVersion': 1, 'cliContractVersion': 1, 'runtimePlatform': 'linux/amd64',
-                                    'features': ['auth.device.v1', 'auth.sessions.v1', 'app.builds.v1',
+                                    'features': ['auth.device.v1', 'auth.sessions.v1', 'app.builds.v1', 'app.release-source.v1',
                                                  'runtime.preflight.v2', 'runtime.jobs.v1', 'runtime.events.v1']})
+                elif path == release_source:
+                    raw = state['released_bytes']
+                    if raw is None:
+                        self.reply(404, {'error': {'code': 'release_source_missing'}})
+                        return
+                    self.send_response(200)
+                    self.send_header('Content-Type', 'application/x-tar')
+                    self.send_header('Content-Length', str(len(raw)))
+                    self.send_header('X-Miy-Archive-Sha256', hashlib.sha256(raw).hexdigest())
+                    self.end_headers()
+                    self.wfile.write(b'!' + raw[1:] if state['corrupt_download'] else raw)
                 elif path == '/api/v1/me':
                     self.reply(200, {'id': USER, 'csrf': 'fixture-csrf'})
                 elif path.startswith(f'/api/v1/apps/{APP}/build-requests/'):
@@ -187,6 +201,21 @@ def check(cli):
                 else:
                     self.reply(404, {'error': {'code': 'not_found'}})
 
+            def do_PUT(self):
+                try:
+                    self.authenticated()
+                    require(self.path == release_source, 'Unexpected source restoration target')
+                    raw = self.rfile.read(int(self.headers['Content-Length']))
+                    if raw != state['release_archive']:
+                        self.reply(409, {'error': {'code': 'release_source_digest_mismatch'}})
+                        return
+                    state['released_bytes'] = raw
+                    self.reply(200, {'appId': APP, 'releaseId': release_id, 'sizeBytes': len(raw),
+                                     'archiveSha256': hashlib.sha256(raw).hexdigest()})
+                except Exception as error:
+                    state['failures'].append(str(error))
+                    self.reply(500, {'error': {'code': 'fixture_failed'}})
+
             def do_POST(self):
                 try:
                     self.post()
@@ -220,6 +249,8 @@ def check(cli):
                                 'Private/generated files entered source archive')
                         require(SECRET.encode() not in raw, 'Known credential fixture was uploaded')
                     state['uploads'].append((request, hashlib.sha256(raw).hexdigest()))
+                    if state['release_archive'] is None:
+                        state['release_archive'] = raw
                     if state['reject_once']:
                         code = state['reject_once']
                         state['reject_once'] = None
@@ -361,6 +392,25 @@ def check(cli):
             invalid_cursor = call(['--context', 'fixture', 'job', 'watch', build_id, '--after', 'invalid'], expected=2)
             require(invalid_cursor['error']['code'] == 'invalid_build_log_cursor', 'Invalid log cursor lost its typed usage error')
             ok('canonical build identity, completed receipts, bounded logs and JSONL observation')
+
+            source_args = ['--context', 'fixture', '--app', APP, 'app', 'source']
+            destination = root / '복구 소스.tar'
+            download = source_args + ['download', '--release', release_id, '--out', str(destination)]
+            absent = call(download, expected=5)
+            require(absent['error']['code'] == 'release_source_missing' and not destination.exists(),
+                    'Missing release source created local output or lost the recovery code')
+            restored = call(['--project', str(project)] + source_args + ['upload', '--release', release_id], cwd=root)['data']
+            require(restored['archiveSha256'] == job['archiveHash'], 'Project restore differed from original build bytes')
+            state['corrupt_download'] = True
+            call(download, expected=8)
+            require(not destination.exists(), 'Corrupt download published unverified bytes')
+            state['corrupt_download'] = False
+            downloaded = call(download)['data']
+            require(downloaded['archiveSha256'] == job['archiveHash'] and destination.read_bytes() == state['release_archive'],
+                    'Release download changed the original build bytes')
+            call(download, expected=6)
+            call(source_args + ['upload', '--release', release_id, '--archive', str(destination)])
+            ok('release source restores from project or tar and downloads atomically with digest and overwrite checks')
 
             call(['--context', 'fixture', 'app', 'deploy', '--dry-run'])
             require(not state['runtime_posts'], 'Dry-run submitted deployment')

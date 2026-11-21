@@ -53,6 +53,7 @@ mod cli_output;
 mod cli_permissions;
 #[cfg(all(test, feature = "server"))]
 mod cli_regression;
+mod cli_release_source;
 mod cli_remote;
 mod cli_report;
 mod component_cli;
@@ -114,6 +115,8 @@ mod preview;
 mod read_api;
 #[cfg(feature = "server")]
 mod registration;
+#[cfg(feature = "server")]
+mod release_source;
 #[cfg(feature = "server")]
 mod runtime;
 mod runtime_contract;

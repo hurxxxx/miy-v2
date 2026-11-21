@@ -58,6 +58,9 @@ pub enum AppCommand {
     DevStop,
     /// Print this committed app's ID, version, source commit and server archive SHA-256 offline.
     SourcePin,
+    /// Download or restore the exact source of an existing app release.
+    #[command(subcommand)]
+    Source(crate::cli_release_source::SourceCommand),
     /// Build clean committed source on the selected server. The server runs the format
     /// check, tests and integrity checks; only its builds can be deployed. For local
     /// testing use `app dev`.
@@ -308,6 +311,7 @@ pub async fn execute(command: AppCommand) -> Result<Outcome> {
                 "sourceCommit": source.source_commit, "archiveSha256": source.archive_hash,
             })));
         }
+        AppCommand::Source(command) => return crate::cli_release_source::execute(command).await,
         AppCommand::Upgrade => return Ok(Outcome::Data(crate::upgrade::run().await?)),
         AppCommand::Setup => return Ok(Outcome::Data(crate::agent_tools::setup(Path::new("."))?)),
         AppCommand::Rename { name } => {

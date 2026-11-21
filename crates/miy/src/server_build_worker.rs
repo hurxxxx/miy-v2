@@ -617,6 +617,7 @@ fn failure_code(error: &anyhow::Error, recovering: bool) -> &'static str {
             }
             "build_container_ownership_mismatch" => return "build_container_ownership_mismatch",
             "source_validation_failed" => return "source_validation_failed",
+            "release_source_storage_failed" => return "release_source_storage_failed",
             "component_validation_failed" => return "component_validation_failed",
             "migration_history_validation_failed" => return "migration_history_validation_failed",
             "build_compilation_failed" => return "build_compilation_failed",
@@ -634,7 +635,14 @@ fn failure_code(error: &anyhow::Error, recovering: bool) -> &'static str {
 
 async fn finish(pool: &sqlx::PgPool, row: &PgRow, recovering: bool) -> Result<()> {
     let id: Uuid = row.get("id");
-    let result = execute(pool, row, recovering).await;
+    let result = async {
+        let image = execute(pool, row, recovering).await?;
+        crate::release_source::retain_build(&server_build::archive_path(id)?, row)
+            .await
+            .context("release_source_storage_failed")?;
+        Ok(image)
+    }
+    .await;
     let succeeded = result.is_ok();
     match result {
         Ok((image, version)) => {

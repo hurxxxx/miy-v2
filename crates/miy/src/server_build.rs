@@ -5,7 +5,7 @@ use crate::{
     State,
     auth::Principal,
     http::{ApiError, ApiResult},
-    source_archive::{MAX_SOURCE_BYTES, valid_commit},
+    source_archive::{MAX_SOURCE_BYTES, valid_commit, valid_digest},
 };
 use anyhow::{Context, Result, ensure};
 use axum::{
@@ -57,12 +57,6 @@ struct UploadInput {
     size_bytes: i64,
     platform: String,
 }
-fn lower_hash(value: &str) -> bool {
-    value.len() == 64
-        && value
-            .bytes()
-            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
-}
 fn header<'a>(headers: &'a HeaderMap, name: &str) -> ApiResult<&'a str> {
     let mut values = headers.get_all(name).iter();
     let value = values
@@ -81,7 +75,7 @@ impl UploadInput {
             return Err(ApiError::bad("invalid_source_commit"));
         }
         let archive_hash = header(headers, "x-miy-archive-sha256")?;
-        if !lower_hash(archive_hash) {
+        if !valid_digest(archive_hash) {
             return Err(ApiError::bad("invalid_archive_hash"));
         }
         let platform = header(headers, "x-miy-platform")?;

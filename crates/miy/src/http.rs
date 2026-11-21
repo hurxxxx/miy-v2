@@ -171,6 +171,10 @@ pub fn router_for(state: State, purpose: BrowserPurpose) -> Router {
                 .layer(axum::extract::DefaultBodyLimit::disable()),
         )
         .route(
+            "/apps/{app}/releases/{release}/source",
+            axum::routing::get(crate::release_source::download).put(crate::release_source::upload),
+        )
+        .route(
             "/builds/{id}",
             axum::routing::get(crate::server_build::status),
         )
@@ -659,6 +663,7 @@ fn audited_read_route(route: &str) -> bool {
     matches!(
         route.strip_prefix("/api/v1").unwrap_or(route),
         "/installations/{id}/platform/directory"
+            | "/apps/{app}/releases/{release}/source"
             | "/preview/apps/{app}/platform/directory"
             | "/installations/{id}/platform/files/by-request/{request}"
             | "/installations/{id}/platform/files/{file}"
@@ -754,6 +759,7 @@ async fn capabilities(S(s): S<State>) -> Json<Value> {
         "auth.delegations.v1",
         "app.calls.v1",
         "app.builds.v1",
+        "app.release-source.v1",
         "apps.distribution.v1",
         "runtime.official-release.v1",
         "runtime.preflight.v2",

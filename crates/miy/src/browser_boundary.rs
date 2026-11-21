@@ -61,6 +61,7 @@ pub fn access(route: &str, method: &Method) -> Option<Access> {
         | "/preview/apps/{app}/connections/{target}/api/{*path}" => Access::Portal,
         // CLI, delegation and backend continuation bearers keep the published address.
         "/artifacts/{hash}/ui/{*path}"
+        | "/apps/{app}/releases/{release}/source"
         | "/installations/{id}/api/{*path}"
         | "/installations/{id}/platform/directory"
         | "/installations/{id}/files/{*path}"
@@ -260,6 +261,7 @@ mod tests {
     fn portal_sessions_launch_frames_but_never_reach_app_code_or_data() {
         for route in [
             "/artifacts/{hash}/ui/{*path}",
+            "/api/v1/apps/{app}/releases/{release}/source",
             "/api/v1/installations/{id}/api/{*path}",
             "/api/v1/installations/{id}/platform/directory",
             "/api/v1/installations/{id}/files/{*path}",

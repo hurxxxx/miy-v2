@@ -212,6 +212,13 @@ and deployment resume validate it and use that server image directly; without it
 `app deploy` fails with `server_build_required`. `job list` remains the
 lifecycle job list; save build/request IDs returned by the build.
 
+A server offering `app.release-source.v1` keeps the exact archive of successful
+builds. Use `app source download --release RELEASE_ID --out source.tar` to save a
+release's verified archive. Restore a historical release from its clean committed
+project with `--project PATH app source upload --release RELEASE_ID`, or provide
+the exact original tar with `--archive PATH` and a global `--app`. The original
+build receipt must match the uploaded bytes. Run `app build` for edited sources.
+
 ```sh
 miy app deploy --environment dev --dry-run
 miy app deploy --environment dev --no-wait

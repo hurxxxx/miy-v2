@@ -14,6 +14,13 @@ use std::{
 };
 
 pub const MAX_SOURCE_BYTES: u64 = 64 * 1024 * 1024;
+
+pub fn valid_digest(value: &str) -> bool {
+    value.len() == 64
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+}
 const MAX_FILE_BYTES: u64 = 16 * 1024 * 1024;
 const MAX_FILES: usize = 4096;
 

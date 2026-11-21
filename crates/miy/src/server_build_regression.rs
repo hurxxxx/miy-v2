@@ -955,6 +955,82 @@ async fn log_pages(h: &Harness, actor: &Actor) -> Result<()> {
     Ok(())
 }
 
+async fn release_sources(h: &Harness, actor: &Actor) -> Result<()> {
+    let pool = &h.state.pool;
+    let viewer = h.actor("use").await?;
+    let colleague = h.actor("develop").await?;
+    for (version, keep) in [("1.4.0", false), ("1.5.0", true)] {
+        let bytes = format!("immutable source for {version}").into_bytes();
+        let release = Uuid::new_v4();
+        let hash = hash(&bytes);
+        let image = format!("sha256:{hash}");
+        let build = id(&h.post(actor, Uuid::new_v4(), &bytes).await?)?;
+        let archive = server_build::archive_path(build)?;
+        let row = sqlx::query("UPDATE app_builds SET status='succeeded',finished_at=now(),version=$2,image_id=$3 WHERE id=$1 RETURNING *")
+            .bind(build).bind(version).bind(&image).fetch_one(pool).await?;
+        if keep {
+            crate::release_source::retain_build(&archive, &row).await?;
+        }
+        std::fs::remove_file(archive)?;
+        sqlx::query("INSERT INTO releases(id,app_id,version,artifact_hash,manifest,image_id,source_commit) VALUES($1,$2,$3,$4,'{}',$5,repeat('a',40))")
+            .bind(release).bind(APP).bind(version).bind(&hash).bind(image).execute(pool).await?;
+        let path = format!("/api/v1/apps/{APP}/releases/{release}/source");
+        let get = |actor| h.request(actor, Method::GET, &path);
+        let put = |actor, bytes: Vec<u8>| h.request(actor, Method::PUT, &path).body(bytes);
+        error(get(&viewer).send().await?, 403, "forbidden").await?;
+        error(put(&viewer, bytes.clone()).send().await?, 403, "forbidden").await?;
+        if !keep {
+            error(get(actor).send().await?, 404, "release_source_missing").await?;
+            error(
+                put(actor, vec![0; bytes.len()]).send().await?,
+                409,
+                "release_source_digest_mismatch",
+            )
+            .await?;
+            error(get(actor).send().await?, 404, "release_source_missing").await?;
+            let (first, replay) = tokio::join!(
+                put(actor, bytes.clone()).send(),
+                put(&colleague, bytes.clone()).send()
+            );
+            for restored in [first?, replay?] {
+                let restored = response(restored, 200).await?;
+                ensure!(
+                    restored["releaseId"] == release.to_string()
+                        && restored["archiveSha256"] == hash
+                );
+            }
+        }
+        error(
+            h.request(
+                actor,
+                Method::GET,
+                &format!("/api/v1/apps/{APP}/releases/{}/source", Uuid::new_v4()),
+            )
+            .send()
+            .await?,
+            404,
+            "release_source_receipt_unavailable",
+        )
+        .await?;
+        let download = get(&colleague).send().await?;
+        ensure!(download.status().is_success());
+        ensure!(download.headers()["x-miy-archive-sha256"] == hash);
+        ensure!(download.headers()["cache-control"] == "private, no-store");
+        ensure!(download.bytes().await?.as_ref() == bytes.as_slice());
+        error(
+            put(actor, vec![0; bytes.len()]).send().await?,
+            409,
+            "release_source_digest_mismatch",
+        )
+        .await?;
+        ensure!(get(actor).send().await?.bytes().await?.as_ref() == bytes.as_slice());
+    }
+    passed(
+        "immutable release source retention, authorized download and concurrent verified historical restore",
+    );
+    Ok(())
+}
+
 #[tokio::test]
 #[ignore = "disposable PostgreSQL only; run scripts/check-server-builds.py"]
 async fn durable_server_build_api() -> Result<()> {
@@ -1076,6 +1152,9 @@ async fn durable_server_build_api() -> Result<()> {
     log_pages(&h, &actor)
         .await
         .context("bounded log observations")?;
+    release_sources(&h, &actor)
+        .await
+        .context("release source archive")?;
     let untouched: (i64, i64) = sqlx::query_as(
         "SELECT (SELECT count(*) FROM runtime_jobs),(SELECT count(*) FROM installations)",
     )
@@ -1088,7 +1167,7 @@ async fn durable_server_build_api() -> Result<()> {
     catalog_admission(&h, &actor)
         .await
         .context("official app build admission")?;
-    let summary = json!({"passed":true,"suite":"server-build-api","storage":"owned disposable PostgreSQL","transport":"real loopback HTTP","groups":10,"dockerBuildExecuted":false,"runtimeJobsUnchanged":true});
+    let summary = json!({"passed":true,"suite":"server-build-api","storage":"owned disposable PostgreSQL","transport":"real loopback HTTP","groups":11,"dockerBuildExecuted":false,"runtimeJobsUnchanged":true});
     std::fs::write(
         root.join("summary.json"),
         serde_json::to_vec_pretty(&summary)?,

@@ -907,6 +907,22 @@ fn policy(command: &str, group: bool) -> Policy {
                 "Reads and validates the committed application in a temporary directory, then returns its catalog source identity.",
             ];
         }
+        "app source download" => {
+            policy.source = "crates/miy/src/cli_release_source.rs";
+            policy.permissions = "Login and undelegated develop permission for the app in dev.";
+            policy.local_effects =
+                &["Verifies and writes a release source tar to a new local file."];
+            policy.remote_effects = &["Reads the source attached to an existing release."];
+        }
+        "app source upload" => {
+            policy.source = "crates/miy/src/cli_release_source.rs";
+            policy.permissions = "Login and undelegated develop permission for the app in dev.";
+            policy.local_effects =
+                &["Reads an existing build tar or packs a clean committed project."];
+            policy.remote_effects = &[
+                "Restores the exact source bytes of an existing release after the server verifies the original build receipt.",
+            ];
+        }
         "app build" => {
             policy.source = "crates/miy/src/app_cli.rs; crates/miy/src/cli_build.rs; crates/miy/src/source_archive.rs";
             policy.permissions = "Named context, login and develop permission for an approved app.";

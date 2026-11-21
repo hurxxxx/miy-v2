@@ -252,6 +252,18 @@ Dry-run은 예상 상태·계획된 변경·worker에서 남은 검사를 반환
 
 빌드 큐가 가득 찬 경우처럼 서버가 접수를 거절했고 해당 요청에 서버 작업이 없다고 확인되면, 원인을 해결한 뒤 같은 커밋에서 `app build`를 다시 실행한다. 응답이 유실되거나 서버가 소스를 수신 중인 경우에는 `job resume`으로 원래 요청을 이어간다. CLI는 전송에 필요한 동안에만 소스 tar를 보관하고 서버의 수신 또는 확정 거절을 확인하면 이를 정리한다.
 
+### 릴리스 소스 다운로드와 복구
+
+`app.release-source.v1`을 제공하는 서버와 해당 명령이 있는 CLI를 사용한다. 서버는 성공한 빌드의 소스 tar를 앱·SHA-256별로 보관하며, 릴리스의 빌드 영수증으로 다운로드할 바이트를 찾는다. dev와 prod에서 같은 릴리스를 사용하는 경우 소스도 같다. 소스 접근은 해당 앱의 dev `develop` 권한과 위임되지 않은 로그인으로 제한된다.
+
+```sh
+miy --context CONTEXT --app APP --project /path/to/original/app app source upload --release RELEASE_ID
+miy --context CONTEXT --app APP app source upload --release RELEASE_ID --archive original-build.tar
+miy --context CONTEXT --app APP app source download --release RELEASE_ID --out release-source.tar
+```
+
+`--project`는 깨끗한 Git 작업본의 HEAD를 기존 빌드와 같은 방식으로 패키징한다. 생략하면 현재 앱 프로젝트를 사용한다. `--archive`에는 당시와 바이트가 같은 빌드 tar를 지정한다. 서버는 크기와 SHA-256이 영수증과 일치하는 복구만 받는다. 과거 릴리스가 `release_source_missing`이면 작업본이나 백업에서 복구하고, 당시 빌드 영수증까지 없으면 `release_source_receipt_unavailable`이다. 수정한 소스는 `app build`와 새 릴리스로 배포한다. 다운로드는 서버 해시를 확인한 뒤 새 파일을 쓰므로 기존 파일은 보존된다.
+
 ```sh
 miy job list --limit 20
 miy job resume REQUEST_OR_JOB_UUID
