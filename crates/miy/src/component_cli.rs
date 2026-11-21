@@ -52,6 +52,8 @@ struct Entry {
     description: String,
     ui_contract: String,
     bundle_versions: Vec<String>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    dependencies: BTreeMap<String, String>,
     files: BTreeMap<String, String>,
 }
 #[derive(Clone, Serialize, Deserialize)]
@@ -215,6 +217,7 @@ fn materialize(root: &Path, lock: &Lock) -> Result<BTreeMap<String, registry::Re
             description: entry.description.clone(),
             ui_contract: entry.ui_contract.clone(),
             bundle_versions: entry.bundle_versions.clone(),
+            dependencies: entry.dependencies.clone(),
             files,
         })?;
         ensure!(
@@ -242,9 +245,47 @@ fn verify_local(root: &Path) -> Result<Value> {
         );
     }
     materialize(root, &lock)?;
+    let missing = missing_dependencies(root, &lock)?;
+    ensure!(
+        missing.is_empty(),
+        "component_dependencies_missing: add to package.json and install: {}",
+        missing
+            .iter()
+            .map(|(_, name, requirement)| format!("{name}@{requirement}"))
+            .collect::<Vec<_>>()
+            .join(" ")
+    );
     Ok(
         json!({"valid":true,"registry":lock.registry,"components":lock.components.iter().map(|(name,e)|json!({"name":name,"version":e.version,"sha256":e.sha256})).collect::<Vec<_>>()}),
     )
+}
+/// npm packages an installed component needs that the app's package.json does
+/// not list. Presence is checked, not the range: the lockfile and the build
+/// decide the exact version.
+fn missing_dependencies(root: &Path, lock: &Lock) -> Result<Vec<(String, String, String)>> {
+    if lock.components.values().all(|e| e.dependencies.is_empty()) {
+        return Ok(Vec::new());
+    }
+    let manifest = root.join("package.json");
+    regular(&manifest)?;
+    let package: Value = serde_json::from_slice(&std::fs::read(manifest)?)?;
+    let listed = |name: &str| {
+        ["dependencies", "devDependencies"]
+            .iter()
+            .any(|section| package[section].get(name).is_some_and(Value::is_string))
+    };
+    Ok(lock
+        .components
+        .iter()
+        .flat_map(|(component, entry)| {
+            entry
+                .dependencies
+                .iter()
+                .filter(|(name, _)| !listed(name))
+                .map(|(name, requirement)| (component.clone(), name.clone(), requirement.clone()))
+                .collect::<Vec<_>>()
+        })
+        .collect())
 }
 struct OperationLock(std::fs::File);
 impl Drop for OperationLock {
@@ -319,6 +360,7 @@ fn commit(root: &Path, origin: &str, releases: BTreeMap<String, registry::Releas
                     description: p.description,
                     ui_contract: p.ui_contract,
                     bundle_versions: p.bundle_versions,
+                    dependencies: p.dependencies,
                     files: hashes,
                 },
             );
@@ -875,6 +917,51 @@ mod tests {
             ca_file: None,
         };
         (root, session, registry::release(package).unwrap())
+    }
+    #[test]
+    fn declared_npm_dependencies_must_be_listed_by_the_app() {
+        let (root, s, mut r) = fixture();
+        r.package
+            .dependencies
+            .insert("@radix-ui/react-dialog".into(), "^1.1.15".into());
+        r.package
+            .dependencies
+            .insert("clsx".into(), "^2.1.1".into());
+        let r = registry::release(r.package).unwrap();
+        std::fs::write(
+            root.path().join("package.json"),
+            r#"{"dependencies":{"clsx":"^2.1.1"},"devDependencies":{}}"#,
+        )
+        .unwrap();
+        // Installed, but the app does not provide one of the packages yet.
+        let error = initialize(root.path(), &s, r).unwrap_err().to_string();
+        let lock = load(root.path()).unwrap().unwrap();
+        assert_eq!(
+            missing_dependencies(root.path(), &lock).unwrap(),
+            vec![(
+                "ui".to_owned(),
+                "@radix-ui/react-dialog".to_owned(),
+                "^1.1.15".to_owned()
+            )]
+        );
+        assert!(!error.is_empty());
+        std::fs::write(
+            root.path().join("package.json"),
+            r#"{"dependencies":{"clsx":"^2.1.1"},"devDependencies":{"@radix-ui/react-dialog":"1.1.15"}}"#,
+        )
+        .unwrap();
+        assert_eq!(verify(root.path()).unwrap()["valid"], true);
+        // The digest covers the declaration: a release without it keeps its old digest.
+        let (_, _, plain) = fixture();
+        assert!(
+            !serde_json::to_string(&plain.package)
+                .unwrap()
+                .contains("dependencies")
+        );
+        assert!(registry::valid_dependency("lucide-react", "^0.546.0"));
+        assert!(!registry::valid_dependency("Lucide", "1.0.0"));
+        assert!(!registry::valid_dependency("@scope", "1.0.0"));
+        assert!(!registry::valid_dependency("left-pad", "file:../x"));
     }
     #[test]
     fn component_edits_extras_and_symlinks_cannot_be_silently_overwritten() {

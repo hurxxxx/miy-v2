@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "date": "2026-11-22",
-  "status": "PASS_WITH_ENVIRONMENT_FAILURE",
+  "status": "PASS",
   "scope": "Common features plan D0 (source only): AI-DO design tokens as one source for the frame runtime and portal, Pretendard in app frames, display settings delivery (theme, language, time zone, date format) through the launch form, frame bootstrap, bridge message, frame runtime and SDK, SDK bundle 0.12.0 / CLI 0.17.0, portal and console dark colors. Not published, not deployed.",
   "source": {
     "repository": "miy-v2",
@@ -44,10 +44,15 @@
       "status": "PASS",
       "command": "Playwright screenshots of existing portal suites in light and dark (temporary configs under .local/evidence/d0-dark)",
       "scope": "38 light before/after pairs compared pixel by pixel; dark screens reviewed for login, home, shell around an app, mobile drawer, console app management, platform administration, CLI approval and install pages, invitation pages. Measured dark text contrast fixed for the danger button (1.45 to 11.2), rail tooltip (1.10 to 16.3) and development account hint (1.36 to 9.6)."
+    },
+    {
+      "status": "PASS",
+      "command": "MIY_CONFIG_DIR=<empty> cargo test -p miy; cargo test -p miy --no-default-features (re-run after two follow-up changes)",
+      "scope": "240 passed, 7 ignored (server build); 144 passed (client build). Follow-ups: component packages can declare npm dependencies and the CLI reports the ones an app's package.json lacks; the local preview now checks that the bridge gateway is an address of this host before binding it, which also makes the earlier failing test pass on this host (net.ipv4.ip_nonlocal_bind=1). fmt and clippy for both builds PASS."
     }
   ],
   "failuresRetained": [
-    "cargo test: preview::tests::backend_listener_falls_back_when_the_gateway_is_not_a_host_address fails on this host because of net.ipv4.ip_nonlocal_bind=1.",
+    "cargo test (first run above): preview::tests::backend_listener_falls_back_when_the_gateway_is_not_a_host_address failed on this host because of net.ipv4.ip_nonlocal_bind=1. The preview gateway check was then fixed and the re-run passes; the first result is kept as recorded.",
     "Input and panel borders keep AI-DO's token value (about 1.3:1 against the surface) by decision; see COMMON-FEATURES-PLAN section 7.",
     "Mobile drawer: the current environment pill is hard to read in light mode (existing issue, unchanged)."
   ],

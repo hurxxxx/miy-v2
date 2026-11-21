@@ -17,6 +17,11 @@ pub struct Package {
     pub description: String,
     pub ui_contract: String,
     pub bundle_versions: Vec<String>,
+    /// npm packages the component's source imports, with the version the app
+    /// must provide. A component carries text only, so the app's own
+    /// package.json has to list them; the CLI reports the ones that are missing.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub dependencies: BTreeMap<String, String>,
     pub files: BTreeMap<String, String>,
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -34,6 +39,8 @@ struct Source {
     description: String,
     ui_contract: String,
     bundle_versions: Vec<String>,
+    #[serde(default)]
+    dependencies: BTreeMap<String, String>,
     files: Vec<String>,
 }
 pub fn version(v: &str) -> Result<[u32; 3]> {
@@ -53,6 +60,28 @@ pub fn version(v: &str) -> Result<[u32; 3]> {
     parts
         .try_into()
         .map_err(|_| anyhow::anyhow!("invalid_component_version"))
+}
+/// An npm package name (optionally scoped) and a plain version requirement.
+pub fn valid_dependency(name: &str, requirement: &str) -> bool {
+    let part = |p: &str| {
+        !p.is_empty()
+            && p.starts_with(|c: char| c.is_ascii_lowercase() || c.is_ascii_digit())
+            && p.bytes().all(|b| {
+                b.is_ascii_lowercase() || b.is_ascii_digit() || matches!(b, b'.' | b'_' | b'-')
+            })
+    };
+    let named = match name.strip_prefix('@').map(|scoped| scoped.split_once('/')) {
+        Some(Some((scope, package))) => part(scope) && part(package),
+        Some(None) => false,
+        None => part(name),
+    };
+    named
+        && name.len() <= 100
+        && !requirement.is_empty()
+        && requirement.len() <= 64
+        && requirement
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'^' | b'~' | b'-' | b'+'))
 }
 pub fn valid_file(path: &str) -> bool {
     path.len() <= 180
@@ -85,6 +114,16 @@ pub fn validate(p: &Package) -> Result<()> {
     );
     for v in &p.bundle_versions {
         version(v)?;
+    }
+    ensure!(
+        p.dependencies.len() <= 64,
+        "too_many_component_dependencies"
+    );
+    for (name, requirement) in &p.dependencies {
+        ensure!(
+            valid_dependency(name, requirement),
+            "invalid_component_dependency: {name}"
+        );
     }
     ensure!(
         p.files.len() <= 128
@@ -174,6 +213,7 @@ pub fn read_source(root: &FsPath) -> Result<Package> {
         description: source.description,
         ui_contract: source.ui_contract,
         bundle_versions: source.bundle_versions,
+        dependencies: source.dependencies,
         files,
     };
     validate(&p)?;
