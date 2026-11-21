@@ -584,7 +584,7 @@ impl Frame {
 /// Whether the frame's parent portal session is still signed in (logout and a
 /// disabled user delete it; frame rows cascade). Identity provider revocation is
 /// enforced when the portal renews the short frame token.
-pub const PARENT_LIVE: &str = "EXISTS(SELECT 1 FROM users u WHERE u.id=f.user_id AND u.enabled) AND (EXISTS(SELECT 1 FROM sessions s WHERE s.id_hash=f.parent_session_hash AND s.user_id=f.user_id AND s.browser_purpose=f.browser_purpose AND s.created_at>clock_timestamp()-interval '8 hours') OR ($1::boolean AND EXISTS(SELECT 1 FROM development_sessions d WHERE d.id_hash=f.parent_development_hash AND d.user_id=f.user_id AND d.browser_purpose=f.browser_purpose AND d.expires_at>clock_timestamp())))";
+pub const PARENT_LIVE: &str = "EXISTS(SELECT 1 FROM users u WHERE u.id=f.user_id AND u.enabled) AND (EXISTS(SELECT 1 FROM sessions s WHERE s.id_hash=f.parent_session_hash AND s.user_id=f.user_id AND s.browser_purpose=f.browser_purpose AND s.created_at>clock_timestamp()-interval '8 hours' AND NOT EXISTS(SELECT 1 FROM password_resets r WHERE r.user_id=s.user_id)) OR ($1::boolean AND EXISTS(SELECT 1 FROM development_sessions d WHERE d.id_hash=f.parent_development_hash AND d.user_id=f.user_id AND d.browser_purpose=f.browser_purpose AND d.expires_at>clock_timestamp())))";
 
 fn principal(user: String, purpose: &str, development: bool) -> ApiResult<Principal> {
     let browser_purpose = match purpose {
@@ -1033,7 +1033,10 @@ async fn open_frame(
     // The parent's absolute end bounds the frame: 8 hours after an OIDC session
     // was created, or a development session's own expiry.
     let deadline: Option<DateTime<Utc>> = sqlx::query_scalar(
-        "SELECT LEAST(clock_timestamp()+interval '8 hours', COALESCE((SELECT s.created_at+interval '8 hours' FROM sessions s WHERE s.id_hash=$2 AND s.user_id=$1 AND s.browser_purpose=$4), CASE WHEN $5 THEN (SELECT d.expires_at FROM development_sessions d WHERE d.id_hash=$3 AND d.user_id=$1 AND d.browser_purpose=$4) END)) FROM users u WHERE u.id=$1 AND u.enabled",
+        "SELECT COALESCE( \
+            (SELECT LEAST(clock_timestamp()+interval '8 hours', s.created_at+interval '8 hours') FROM sessions s WHERE s.id_hash=$2 AND s.user_id=$1 AND s.browser_purpose=$4 AND NOT EXISTS(SELECT 1 FROM password_resets r WHERE r.user_id=s.user_id)), \
+            CASE WHEN $5 THEN (SELECT LEAST(clock_timestamp()+interval '8 hours', d.expires_at) FROM development_sessions d WHERE d.id_hash=$3 AND d.user_id=$1 AND d.browser_purpose=$4) END \
+         ) FROM users u WHERE u.id=$1 AND u.enabled",
     )
     .bind(&user)
     .bind(&session)

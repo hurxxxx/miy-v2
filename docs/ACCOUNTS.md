@@ -20,13 +20,13 @@ Core 0.13.0 소스의 서버 전용 기능이며 core schema 26부터 적용한�
 
 초대로 생긴 계정에는 앱 권한이 없다. 같은 화면의 사용자·그룹 권한에서 따로 부여한다. 계정 사용 중지는 이전과 같으며 Core의 중지가 로그인·CLI·대기 작업을 모두 막는다.
 
-링크 상태는 `사용 전`, `사용함`, `취소됨`, `만료됨`, `사용 불가`다. `사용 불가`는 시도 횟수를 다 썼거나, 발급한 관리자가 더 이상 사용 중인 관리자가 아니거나, 재설정 대상 계정이 중지된 경우다.
+링크 목록에는 취소 가능한 링크와 처리 중인 재설정이 모두 표시된다. 종료된 링크는 최신 10개를 표시한다. `사용 불가`는 시도 횟수를 다 썼거나, 발급한 관리자가 더 이상 사용 중인 관리자가 아니거나, 재설정 대상 계정이 중지된 경우다. 유효 기간 안에는 이 상태의 링크도 취소할 수 있다.
 
 ## 사용자
 
 - **계정 만들기:** 받은 주소를 열어 아이디·이름·이메일·비밀번호를 입력한다. 끝나면 업무 포털에서 그 아이디로 로그인한다. 관리자가 권한을 부여하기 전에는 앱 목록이 비어 있다.
 - **비밀번호 변경:** 로그인한 화면 오른쪽 위 `비밀번호 변경`. 로그인 서버의 화면으로 이동하고, 마지막 로그인이 오래됐으면 다시 로그인한 뒤 새 비밀번호를 정한다. 플랫폼은 비밀번호를 보지 않는다.
-- **비밀번호 분실:** 관리자에게 재설정 링크를 요청한다. 새 비밀번호를 정하면 이전에 로그인한 브라우저는 로그아웃된다. CLI 연결은 별도 자격증명이라 유지되며, 콘솔의 `내 CLI 연결`에서 본인이 회수한다.
+- **비밀번호 분실** 시 관리자에게 재설정 링크를 요청한다. 비밀번호를 바꾼 뒤 기존 로그인을 종료하는 데 시간이 걸릴 수 있다. 처리 결과를 확인하지 못했다면 잠시 뒤 새 비밀번호로 로그인해 보고, 로그인할 수 없으면 관리자에게 새 링크를 요청한다. CLI 연결은 별도 자격증명이라 유지되며, 콘솔의 `내 CLI 연결`에서 본인이 회수한다.
 - 로그인 화면은 브라우저 언어에 따라 한국어 또는 영어로 표시된다.
 
 ## 서버 계약
@@ -60,7 +60,9 @@ Core 0.13.0 소스의 서버 전용 기능이며 core schema 26부터 적용한�
 | `invalid_username` · `invalid_email` · `invalid_user_name` · `password_policy` | 입력이 규칙에 맞지 않음 |
 | `account_exists` | 아이디나 이메일이 이미 있음. 링크는 계속 쓸 수 있다 |
 | `identity_account_missing` | 재설정 대상이 로그인 서버에 없음(직접 등록한 외부 계정) |
-| `identity_unavailable` | 로그인 서버 관리 호출 실패. 아무것도 바뀌지 않으며 링크는 유지된다 |
+| `identity_unavailable` | 로그인 서버 관리 호출을 수행할 수 없음 |
+| `password_reset_in_progress` | 해당 계정의 이전 재설정을 처리 중 |
+| `password_reset_unknown` | 비밀번호 변경 결과를 확인할 수 없어 링크를 소진하고 세션 종료를 계속 처리함 |
 | `account_links_unavailable` | 이 서버에 기능이 설정되지 않음 |
 | `user_disabled` · `account_link_limit` · `account_link_not_pending` | 발급·취소 거절 사유 |
 
@@ -69,9 +71,10 @@ Core 0.13.0 소스의 서버 전용 기능이며 core schema 26부터 적용한�
 - 계정 생성 요청에 비밀번호를 함께 보내므로 정책에 걸린 비밀번호는 계정을 남기지 않는다.
 - 로그인 계정을 만든 뒤 플랫폼 등록이 commit되지 않으면 만든 계정을 삭제한다. 삭제까지 실패하면 `unregistered_identity_account_left` 로그를 남긴다. 그 계정은 등록되지 않았으므로 로그인해도 접근할 수 없다.
 - 표시 이름은 Core만 보관한다. 로그인 서버에는 아이디·이메일·비밀번호만 보낸다. 그래서 realm 사용자 profile의 성·이름 필수 조건을 해제한다. 필수로 남으면 초대받은 사람의 첫 로그인이 profile 입력 화면에서 멈춘다.
-- 재설정이 끝나면 로그인 서버의 세션과 Core의 브라우저 세션을 끝낸다.
+- Core schema 27부터는 비밀번호를 보내기 전에 링크 소진과 세션 종료 작업을 함께 기록한다. 정책 위반처럼 로그인 서버의 명확한 거절을 확인하면 링크를 다시 사용할 수 있다. 응답 유실이나 DB 장애로 결과가 불확실하면 링크를 소진한 상태로 두고 비밀번호 호출을 반복하지 않는다.
+- 비밀번호 변경이 확인되면 Keycloak과 Core의 브라우저 세션을 종료한 뒤 `200 completed`를 반환한다. 세션 종료가 지연되면 `202 ending_sessions`로 응답하고 serve가 다시 시도한다. 처리 중인 계정의 브라우저 로그인과 기존 브라우저·앱 프레임 세션은 차단하며, 세션 종료 전에 시작한 로그인은 새로 시작해야 한다.
 
-**감사.** `account_link.created`·`account_link.revoked`(관리자), `user.registered`(초대를 수락한 사람, 대상에 초대 ID), `user.password_reset`(본인, 대상에 링크 ID)을 남긴다. 링크 값과 비밀번호는 로그·감사·오류에 넣지 않는다.
+**감사.** `account_link.created`·`account_link.revoked`(관리자), `user.registered`(초대를 수락한 사람, 대상에 초대 ID), `user.password_reset` 또는 `user.password_reset_uncertain`(본인, 대상에 링크 ID)을 남긴다. 링크 값과 비밀번호는 로그·감사·오류에 넣지 않는다.
 
 **로그인 보호.** 새 realm은 다음으로 시작한다. 기존 realm에는 `configure-identity.py`가 **없는 항목만** 채우고 운영자가 정한 값은 보존한다.
 
@@ -85,7 +88,7 @@ Core 0.13.0 소스의 서버 전용 기능이며 core schema 26부터 적용한�
 
 새 설치는 [SETUP](SETUP.md)의 `bootstrap.py`와 `configure-identity.py`가 서비스 클라이언트·역할·profile·보호 설정을 함께 만든다.
 
-기존 서버는 schema 26과 새 Core를 반영한 뒤 설정을 추가한다. `bootstrap.py`는 기존 자격증명을 모두 보존하고 서비스 클라이언트 비밀 하나만 더한다. 실제 호스트의 명령과 복구 경로는 [서버 운영 안내](SERVER-OPERATIONS.md)를 따른다.
+기존 서버는 계정 링크용 schema 26과 재설정 복구용 schema 27을 새 Core와 함께 적용한다. `bootstrap.py`는 기존 자격증명을 모두 보존하고 서비스 클라이언트 비밀 하나만 더한다. 실제 호스트의 명령과 복구 경로는 [서버 운영 안내](SERVER-OPERATIONS.md)를 따른다.
 
 1. `bootstrap.py`로 후보 설정을 만들어 `credentials.json`·`runtime.env`·`realm.json`의 차이가 서비스 클라이언트와 두 환경 값뿐인지 확인하고 반영한다.
 2. `MIY_STATE_DIR`을 지정해 `python3 scripts/configure-identity.py`를 실행한다. 기존 realm·사용자·클라이언트 ID와 비밀은 유지된다.
@@ -103,7 +106,7 @@ Core 0.13.0 소스의 서버 전용 기능이며 core schema 26부터 적용한�
 | 범위 | 명령 | 확인하는 것 |
 | --- | --- | --- |
 | 입력·주소 규칙 | `check-static.sh rust` | 아이디·이메일·비밀번호 경계, loopback 전용 관리 주소 |
-| Core 판정 | `python3 scripts/runtime-regression/run.py`의 accounts 8개 | 실제 PostgreSQL·HTTP. 발급 권한, 1회 사용, 취소·만료·시도 소진, 발급자 권한 재확인, 등록 실패 시 계정 삭제, 장애 시 무변경, 재설정. 로그인 서버 관리 호출은 기록용 대역이다 |
+| Core 판정 | `python3 scripts/runtime-regression/run.py`의 accounts 11개 | 실제 PostgreSQL·HTTP. 발급 권한과 1회 사용, 취소·만료·시도 소진, 발급자 권한 재확인, 등록 실패 복구, 재설정 응답·DB 장애와 세션 종료 재시도, 이력에 밀리지 않는 취소 가능 링크. 로그인 서버 관리 호출은 기록용 대역이다 |
 | 화면 | `check-static.sh web` | 링크 화면, 관리자 발급 패널, 포털의 콘솔 이동, 비밀번호 변경 링크 |
 | 설정 생성 | `python3 scripts/check-server-config.py` | 서비스 클라이언트·역할 하나, profile, 보호 설정의 보존 규칙 |
 | 실제 로그인 서버 | `node scripts/check-account-links.mjs --origin <업무 포털> --credentials-file <비공개> --output <새 파일>` | 실제 Keycloak과 브라우저로 초대→계정 생성→포털 로그인→재설정→본인 변경. 사람 한 명을 등록하고 끝에 중지한다. `--lockout true`는 잠금까지 확인한다 |

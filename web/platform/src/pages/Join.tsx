@@ -16,9 +16,10 @@ type AccountLink = {
 type Phase =
   | { status: "loading" }
   | { status: "invalid" }
+  | { status: "resetUnknown" }
   | { status: "error"; message: string }
   | { status: "ready"; link: AccountLink }
-  | { status: "done"; kind: LinkKind; loginUrl: string };
+  | { status: "done"; kind: LinkKind; loginUrl: string; endingSessions: boolean };
 
 const STORE = "miy.accountLink";
 const TOKEN = /^[A-Za-z0-9_-]{43}$/;
@@ -117,7 +118,7 @@ export function Join() {
     setBusy(true);
     setError("");
     try {
-      const result = await request<{ kind: LinkKind; loginUrl: string }>(
+      const result = await request<{ status: string; kind: LinkKind; loginUrl: string }>(
         "/api/v1/account-links/complete",
         undefined,
         {
@@ -134,9 +135,17 @@ export function Join() {
         },
       );
       forget();
-      setPhase({ status: "done", kind: result.kind, loginUrl: result.loginUrl });
+      setPhase({
+        status: "done",
+        kind: result.kind,
+        loginUrl: result.loginUrl,
+        endingSessions: result.status === "ending_sessions",
+      });
     } catch (failure) {
-      if (code(failure) === "account_link_invalid") {
+      if (code(failure) === "password_reset_unknown") {
+        forget();
+        setPhase({ status: "resetUnknown" });
+      } else if (code(failure) === "account_link_invalid") {
         forget();
         setPhase({ status: "invalid" });
       } else {
@@ -158,6 +167,14 @@ export function Join() {
             <p className="login-lead">
               링크가 만료됐거나 이미 사용됐습니다. 주소를 끝까지 복사했는지 확인하고, 계속 열리지 않으면
               관리자에게 새 링크를 요청해 주세요.
+            </p>
+          </>
+        )}
+        {phase.status === "resetUnknown" && (
+          <>
+            <h1>비밀번호 변경 결과를 확인하지 못했습니다</h1>
+            <p className="login-lead" role="status">
+              잠시 뒤 새 비밀번호로 로그인해 보세요. 로그인할 수 없으면 관리자에게 새 링크를 요청해 주세요.
             </p>
           </>
         )}
@@ -243,9 +260,11 @@ export function Join() {
         )}
         {phase.status === "done" && (
           <>
-            <h1>{phase.kind === "invitation" ? "계정을 만들었습니다" : "비밀번호를 변경했습니다"}</h1>
+            <h1>{phase.endingSessions ? "기존 로그인을 종료하고 있습니다" : phase.kind === "invitation" ? "계정을 만들었습니다" : "비밀번호를 변경했습니다"}</h1>
             <p className="login-lead" role="status">
-              {phase.kind === "invitation"
+              {phase.endingSessions
+                ? "비밀번호를 변경했습니다. 잠시 뒤 새 비밀번호로 로그인하세요."
+                : phase.kind === "invitation"
                 ? "방금 정한 아이디와 비밀번호로 로그인하세요. 사용할 앱은 관리자가 권한을 부여한 뒤 보입니다."
                 : "새 비밀번호로 다시 로그인하세요. 이전에 로그인한 브라우저는 로그아웃됩니다."}
             </p>

@@ -156,6 +156,34 @@ test("a reset link asks only for the new password", async ({ page }) => {
   await expect(page.getByRole("status")).toContainText("이전에 로그인한 브라우저는 로그아웃됩니다");
 });
 
+for (const scenario of [
+  {
+    title: "an accepted reset waits for old sessions to end",
+    response: {
+      status: 202,
+      json: { status: "ending_sessions", kind: "password_reset", loginUrl: "https://portal.example.test/" },
+    },
+    heading: "기존 로그인을 종료하고 있습니다",
+  },
+  {
+    title: "an uncertain password change clears the link and removes the form",
+    response: { status: 503, json: { error: { code: "password_reset_unknown" } } },
+    heading: "비밀번호 변경 결과를 확인하지 못했습니다",
+  },
+]) {
+  test(scenario.title, async ({ page }) => {
+    const sent = await mock(page, { kind: "password_reset", name: "앨리스" }, () => scenario.response);
+    await page.goto(`/reset-password#${token}`);
+    await field(page, "password").fill("a-brand-new-password");
+    await field(page, "confirm").fill("a-brand-new-password");
+    await page.getByRole("button", { name: "비밀번호 변경" }).click();
+    await expect(page.getByRole("heading", { name: scenario.heading })).toBeVisible();
+    await expect(field(page, "password")).toHaveCount(0);
+    expect(await page.evaluate(() => sessionStorage.getItem("miy.accountLink"))).toBeNull();
+    expect(sent.filter((item) => item.path.endsWith("/complete"))).toHaveLength(1);
+  });
+}
+
 test("a missing, malformed or refused link is explained without a form", async ({ page }) => {
   const sent = await mock(page, null);
   for (const address of ["/join", "/join#too-short", `/reset-password#${token}`]) {

@@ -22,7 +22,8 @@ use axum::{
 use chrono::{DateTime, Utc};
 use serde::Deserialize;
 use serde_json::{Value, json};
-use sqlx::Row;
+use sqlx::{PgPool, Row};
+use std::time::Duration;
 use url::Url;
 use uuid::Uuid;
 
@@ -36,6 +37,11 @@ const MAX_ATTEMPTS: i32 = 20;
 const MAX_PENDING: i64 = 500;
 const REALM: &str = "miy";
 const CLIENT_ID: &str = "miy-accounts";
+
+enum PasswordChangeError {
+    Refused(ApiError),
+    Uncertain,
+}
 
 /// Loopback administration of the identity provider's sign-in accounts with a
 /// service client limited to this realm's users.
@@ -162,8 +168,12 @@ impl IdentityAdmin {
         }
     }
 
-    async fn set_password(&self, subject: &str, password: &str) -> ApiResult<()> {
-        let token = self.token().await?;
+    async fn set_password(
+        &self,
+        token: &str,
+        subject: &str,
+        password: &str,
+    ) -> Result<(), PasswordChangeError> {
         let reply = self
             .client
             .put(self.users(&format!("/{subject}/reset-password")))
@@ -171,33 +181,31 @@ impl IdentityAdmin {
             .json(&json!({"type": "password", "value": password, "temporary": false}))
             .send()
             .await
-            .map_err(|_| unavailable())?;
+            .map_err(|_| PasswordChangeError::Uncertain)?;
         match reply.status().as_u16() {
             204 => Ok(()),
-            400 => Err(rejected(reply).await),
-            404 => Err(ApiError::conflict("identity_account_missing")),
+            400 => Err(PasswordChangeError::Refused(rejected(reply).await)),
+            401 | 403 => Err(PasswordChangeError::Refused(unavailable())),
+            404 => Err(PasswordChangeError::Refused(ApiError::conflict(
+                "identity_account_missing",
+            ))),
             status => {
                 tracing::error!(event = "identity_password_change_failed", status);
-                Err(unavailable())
+                Err(PasswordChangeError::Uncertain)
             }
         }
     }
 
-    /// Best effort: the new password already applies when this fails.
-    async fn end_sessions(&self, subject: &str) {
-        let ended = match self.token().await {
-            Ok(token) => self
-                .client
-                .post(self.users(&format!("/{subject}/logout")))
-                .bearer_auth(token)
-                .send()
-                .await
-                .is_ok_and(|reply| reply.status().is_success()),
-            Err(_) => false,
+    async fn end_sessions(&self, subject: &str) -> bool {
+        let Ok(token) = self.token().await else {
+            return false;
         };
-        if !ended {
-            tracing::warn!(event = "identity_sessions_not_ended");
-        }
+        self.client
+            .post(self.users(&format!("/{subject}/logout")))
+            .bearer_auth(token)
+            .send()
+            .await
+            .is_ok_and(|reply| reply.status().is_success())
     }
 
     /// Undo a sign-in account whose registration did not commit.
@@ -309,11 +317,11 @@ fn invalid() -> ApiError {
 
 /// A link works only while it is unused and unexpired, its issuer is still an
 /// enabled administrator and, for a reset, its account is still enabled.
-const USABLE: &str = "SELECT l.id,l.kind,l.name,l.can_develop,l.user_id,l.expires_at,u.name AS user_name \
+const USABLE: &str = "SELECT l.id,l.kind,l.name,l.can_develop,l.user_id,l.created_by,l.expires_at,u.name AS user_name \
     FROM account_links l \
     JOIN users c ON c.id=l.created_by AND c.admin AND c.enabled \
     LEFT JOIN users u ON u.id=l.user_id \
-    WHERE l.token_hash=$1 AND l.status='pending' AND l.expires_at>now() AND l.attempts<$2 \
+    WHERE l.token_hash=$1 AND l.status='pending' AND l.expires_at>clock_timestamp() AND l.attempts<$2 \
     AND (l.kind<>'password_reset' OR u.enabled)";
 
 /// Served only to the console's own page: no bearer or other site needs these paths.
@@ -389,20 +397,20 @@ async fn complete(
     Extension(purpose): Extension<BrowserPurpose>,
     headers: HeaderMap,
     Json(input): Json<Completion>,
-) -> ApiResult<Json<Value>> {
+) -> ApiResult<(StatusCode, Json<Value>)> {
     console_page(&s, purpose, &headers)?;
     let identity = configured(&s)?;
     if !valid_token(&input.token) {
         return Err(invalid());
     }
     let token = hash(&input.token);
-    let kind: String = sqlx::query(USABLE)
+    let link = sqlx::query(USABLE)
         .bind(&token)
         .bind(MAX_ATTEMPTS)
         .fetch_optional(&s.pool)
         .await?
-        .ok_or_else(invalid)?
-        .get("kind");
+        .ok_or_else(invalid)?;
+    let kind: &str = link.get("kind");
     // Input the form can check costs no attempt.
     let account = if kind == "invitation" {
         let username = input.username.as_deref().unwrap_or_default();
@@ -425,14 +433,36 @@ async fn complete(
         return Err(ApiError::bad("password_policy"));
     }
     // Counted outside the transaction below, so a failed attempt is not forgotten.
-    sqlx::query("UPDATE account_links SET attempts=attempts+1 WHERE token_hash=$1 AND status='pending' AND expires_at>now() AND attempts<$2 RETURNING id")
+    sqlx::query("UPDATE account_links SET attempts=attempts+1 WHERE token_hash=$1 AND status='pending' AND expires_at>clock_timestamp() AND attempts<$2 RETURNING id")
         .bind(&token)
         .bind(MAX_ATTEMPTS)
         .fetch_optional(&s.pool)
         .await?
         .ok_or_else(invalid)?;
-    // The row lock makes one link create at most one account: a concurrent use
-    // waits here and then finds the link completed.
+    let Some((username, email, name)) = account else {
+        let subject: &str = link.get("user_id");
+        let issuer: &str = link.get("created_by");
+        let access = identity.token().await?;
+        let id = claim_reset(&s.pool, &token, subject, issuer).await?;
+        change_password(&s.pool, identity, id, subject, &access, &input.password).await?;
+        let done = finish_reset(&s.pool, identity, id)
+            .await
+            .unwrap_or_else(|_| {
+                tracing::warn!(event = "password_reset_finalize_failed", link = %id);
+                false
+            });
+        let (status, result) = if done {
+            (StatusCode::OK, "completed")
+        } else {
+            (StatusCode::ACCEPTED, "ending_sessions")
+        };
+        return Ok((
+            status,
+            Json(json!({"status":result,"kind":kind,"loginUrl":format!("{}/", s.auth.origin)})),
+        ));
+    };
+
+    // The row lock makes one invitation create at most one account.
     let mut tx = s.pool.begin().await?;
     let row = sqlx::query(&format!("{USABLE} FOR UPDATE OF l FOR SHARE OF c"))
         .bind(&token)
@@ -441,53 +471,205 @@ async fn complete(
         .await?
         .ok_or_else(invalid)?;
     let id: Uuid = row.get("id");
-    if row.get::<String, _>("kind") != kind {
-        return Err(invalid());
-    }
-    match account {
-        Some((username, email, name)) => {
-            let can_develop: bool = row.get("can_develop");
-            let subject = identity.create(&username, &email, &input.password).await?;
-            if let Err(error) = register(tx, id, &subject, &name, can_develop).await {
-                // The sign-in account exists without a registration. Remove it so
-                // the login name is free and the link can be used again.
-                if !identity.remove(&subject).await {
-                    tracing::error!(event = "unregistered_identity_account_left", subject = %subject);
-                }
-                return Err(error);
-            }
-            tracing::info!(event = "invitation_completed", link = %id);
+    let can_develop: bool = row.get("can_develop");
+    let subject = identity.create(&username, &email, &input.password).await?;
+    if let Err(error) = register(tx, id, &subject, &name, can_develop).await {
+        // Free the login name if the platform registration failed.
+        if !identity.remove(&subject).await {
+            tracing::error!(event = "unregistered_identity_account_left", subject = %subject);
         }
-        None => {
-            let user: String = row.get("user_id");
-            identity.set_password(&user, &input.password).await?;
-            identity.end_sessions(&user).await;
-            // Browser sessions end with the old password; CLI sessions are separate
-            // credentials that the person or an administrator revokes.
-            sqlx::query("DELETE FROM sessions WHERE user_id=$1")
-                .bind(&user)
+        return Err(error);
+    }
+    tracing::info!(event = "invitation_completed", link = %id);
+    Ok((
+        StatusCode::OK,
+        Json(json!({
+            "status": "completed", "kind": kind,
+            "loginUrl": format!("{}/", s.auth.origin),
+        })),
+    ))
+}
+
+async fn claim_reset(pool: &PgPool, token: &str, user: &str, issuer: &str) -> ApiResult<Uuid> {
+    let mut tx = pool.begin().await?;
+    sqlx::query("SELECT pg_advisory_xact_lock($1)")
+        .bind(crate::user_admin::ACCOUNT_LOCK)
+        .execute(&mut *tx)
+        .await?;
+    // Order account locks as for state changes. The target lock also serializes
+    // the claim with creation of a browser session.
+    sqlx::query("SELECT id FROM users WHERE id=ANY($1) ORDER BY id FOR NO KEY UPDATE")
+        .bind(vec![user, issuer])
+        .execute(&mut *tx)
+        .await?;
+    let row = sqlx::query(&format!("{USABLE} FOR UPDATE OF l"))
+        .bind(token)
+        .bind(MAX_ATTEMPTS + 1)
+        .fetch_optional(&mut *tx)
+        .await?
+        .ok_or_else(invalid)?;
+    let id: Uuid = row.get("id");
+    if reset_pending(&mut tx, user).await? {
+        return Err(ApiError::conflict("password_reset_in_progress"));
+    }
+    sqlx::query("INSERT INTO password_resets(user_id,link_id) VALUES($1,$2)")
+        .bind(user)
+        .bind(id)
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query("UPDATE account_links SET status='revoked' WHERE id=$1")
+        .bind(id)
+        .execute(&mut *tx)
+        .await?;
+    tx.commit().await?;
+    Ok(id)
+}
+
+async fn change_password(
+    pool: &PgPool,
+    identity: &IdentityAdmin,
+    id: Uuid,
+    user: &str,
+    access: &str,
+    password: &str,
+) -> ApiResult<()> {
+    let unknown = || ApiError::unavailable("password_reset_unknown");
+    let mut tx = pool.begin().await.map_err(|_| unknown())?;
+    // Hold this row during the only password request. If the caller disappears
+    // before acquiring it, recovery can finish the reservation without a write.
+    let claimed: Option<Uuid> = sqlx::query_scalar(
+        "SELECT link_id FROM password_resets WHERE link_id=$1 AND retry_at>clock_timestamp() FOR UPDATE",
+    )
+    .bind(id)
+    .fetch_optional(&mut *tx)
+    .await
+    .map_err(|_| unknown())?;
+    if claimed.is_none() {
+        return Err(unknown());
+    }
+    match identity.set_password(access, user, password).await {
+        Ok(()) => {
+            sqlx::query("UPDATE password_resets SET password_changed=true,retry_at=clock_timestamp() WHERE link_id=$1")
+                .bind(id)
                 .execute(&mut *tx)
-                .await?;
-            sqlx::query(
-                "UPDATE account_links SET status='completed',completed_at=now() WHERE id=$1",
-            )
+                .await
+                .map_err(|_| unknown())?;
+            tx.commit().await.map_err(|_| unknown())?;
+            Ok(())
+        }
+        Err(PasswordChangeError::Uncertain) => {
+            tracing::warn!(event = "password_reset_outcome_unknown", link = %id);
+            Err(unknown())
+        }
+        Err(PasswordChangeError::Refused(error)) => {
+            // A definitive provider rejection is safe to retry with corrected input.
+            sqlx::query("UPDATE account_links SET status='pending' WHERE id=$1")
+                .bind(id)
+                .execute(&mut *tx)
+                .await
+                .map_err(|_| unknown())?;
+            sqlx::query("DELETE FROM password_resets WHERE link_id=$1")
+                .bind(id)
+                .execute(&mut *tx)
+                .await
+                .map_err(|_| unknown())?;
+            tx.commit().await.map_err(|_| unknown())?;
+            Err(error)
+        }
+    }
+}
+
+async fn finish_reset(pool: &PgPool, identity: &IdentityAdmin, id: Uuid) -> ApiResult<bool> {
+    let mut tx = pool.begin().await?;
+    let Some((user, changed)) = sqlx::query_as::<_, (String, bool)>(
+        "SELECT user_id,password_changed FROM password_resets WHERE link_id=$1 AND retry_at<=clock_timestamp() FOR UPDATE SKIP LOCKED",
+    )
+    .bind(id)
+    .fetch_optional(&mut *tx)
+    .await?
+    else {
+        return Ok(false);
+    };
+    if !identity.end_sessions(&user).await {
+        sqlx::query("UPDATE password_resets SET retry_at=clock_timestamp()+interval '15 seconds' WHERE link_id=$1")
             .bind(id)
             .execute(&mut *tx)
             .await?;
-            crate::audit::record(
-                &mut tx,
-                &user,
-                "user.password_reset",
-                &format!("user:{user}:link:{id}"),
-            )
+        tx.commit().await?;
+        tracing::warn!(event = "password_reset_waiting_for_logout", link = %id);
+        return Ok(false);
+    }
+    sqlx::query("UPDATE users SET browser_login_after=clock_timestamp() WHERE id=$1")
+        .bind(&user)
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query("DELETE FROM sessions WHERE user_id=$1")
+        .bind(&user)
+        .execute(&mut *tx)
+        .await?;
+    let action = if changed {
+        sqlx::query("UPDATE account_links SET status='completed',completed_at=now() WHERE id=$1")
+            .bind(id)
+            .execute(&mut *tx)
             .await?;
-            tx.commit().await?;
-            tracing::info!(event = "password_reset_completed", link = %id);
+        "user.password_reset"
+    } else {
+        "user.password_reset_uncertain"
+    };
+    crate::audit::record(&mut tx, &user, action, &format!("user:{user}:link:{id}")).await?;
+    sqlx::query("DELETE FROM password_resets WHERE link_id=$1")
+        .bind(id)
+        .execute(&mut *tx)
+        .await?;
+    tx.commit().await?;
+    Ok(true)
+}
+
+pub(crate) async fn reconcile_resets(state: &State) -> ApiResult<()> {
+    let Some(identity) = &state.auth.accounts else {
+        return Ok(());
+    };
+    let ids: Vec<Uuid> = sqlx::query_scalar(
+        "SELECT link_id FROM password_resets WHERE retry_at<=clock_timestamp() ORDER BY retry_at,link_id LIMIT 16",
+    )
+    .fetch_all(&state.pool)
+    .await?;
+    for id in ids {
+        if finish_reset(&state.pool, identity, id).await.is_err() {
+            tracing::warn!(event = "password_reset_finalize_failed", link = %id);
         }
     }
-    Ok(Json(json!({
-        "status": "completed", "kind": kind,
-        "loginUrl": format!("{}/", s.auth.origin),
+    Ok(())
+}
+
+pub(crate) async fn reset_pending(conn: &mut sqlx::PgConnection, user: &str) -> ApiResult<bool> {
+    Ok(
+        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM password_resets WHERE user_id=$1)")
+            .bind(user)
+            .fetch_one(conn)
+            .await?,
+    )
+}
+
+pub(crate) struct ResetMonitor(tokio::task::JoinHandle<()>);
+
+impl Drop for ResetMonitor {
+    fn drop(&mut self) {
+        self.0.abort();
+    }
+}
+
+pub(crate) fn start_reset_monitor(state: State) -> Option<ResetMonitor> {
+    state.auth.accounts.as_ref()?;
+    Some(ResetMonitor(tokio::spawn(async move {
+        let mut interval = tokio::time::interval(Duration::from_secs(5));
+        interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+        loop {
+            interval.tick().await;
+            if reconcile_resets(&state).await.is_err() {
+                tracing::warn!(event = "password_reset_reconcile_failed");
+            }
+        }
     })))
 }
 
@@ -587,6 +769,9 @@ pub async fn create(
             Some(false) => return Err(ApiError::conflict("user_disabled")),
             Some(true) => {}
         }
+        if reset_pending(&mut tx, user).await? {
+            return Err(ApiError::conflict("password_reset_in_progress"));
+        }
         // One working reset link per account: a new one replaces the previous.
         sqlx::query("UPDATE account_links SET status='revoked' WHERE user_id=$1 AND kind='password_reset' AND status='pending'")
             .bind(user)
@@ -594,7 +779,8 @@ pub async fn create(
             .await?;
     }
     let pending: i64 = sqlx::query_scalar(
-        "SELECT count(*) FROM account_links WHERE status='pending' AND expires_at>now()",
+        "SELECT (SELECT count(*) FROM account_links WHERE status='pending' AND expires_at>now()) + \
+                (SELECT count(*) FROM password_resets r JOIN account_links l ON l.id=r.link_id WHERE l.expires_at>now())",
     )
     .fetch_one(&mut *tx)
     .await?;
@@ -638,16 +824,26 @@ pub async fn create(
 pub async fn list(S(s): S<State>, Extension(p): Extension<Principal>) -> ApiResult<Json<Value>> {
     crate::domain::admin(&s, &p).await?;
     let rows = sqlx::query(
-        "SELECT l.id,l.kind,l.can_develop,l.user_id,l.created_by,l.created_at,l.expires_at,l.completed_at, \
+        "WITH actionable AS ( \
+           SELECT id FROM account_links WHERE status='pending' AND expires_at>now() \
+           UNION ALL SELECT link_id FROM password_resets \
+         ), recent AS ( \
+           SELECT l.id FROM account_links l WHERE NOT EXISTS (SELECT 1 FROM actionable a WHERE a.id=l.id) \
+           ORDER BY l.created_at DESC,l.id LIMIT 10 \
+         ) \
+         SELECT l.id,l.kind,l.can_develop,l.user_id,l.created_by,l.created_at,l.expires_at,l.completed_at, \
          CASE WHEN l.kind='invitation' AND l.user_id IS NULL THEN l.name ELSE u.name END AS name, \
          c.name AS created_by_name, \
-         CASE WHEN l.status<>'pending' THEN l.status \
+         CASE WHEN r.link_id IS NOT NULL THEN 'resetting' \
+              WHEN l.status<>'pending' THEN l.status \
               WHEN l.expires_at<=now() THEN 'expired' \
               WHEN l.attempts>=$1 OR NOT (c.admin AND c.enabled) \
                    OR (l.kind='password_reset' AND NOT u.enabled) THEN 'inactive' \
               ELSE 'pending' END AS state \
-         FROM account_links l JOIN users c ON c.id=l.created_by LEFT JOIN users u ON u.id=l.user_id \
-         ORDER BY l.created_at DESC,l.id LIMIT 200",
+         FROM (SELECT id FROM actionable UNION ALL SELECT id FROM recent) shown \
+         JOIN account_links l ON l.id=shown.id JOIN users c ON c.id=l.created_by \
+         LEFT JOIN users u ON u.id=l.user_id LEFT JOIN password_resets r ON r.link_id=l.id \
+         ORDER BY l.created_at DESC,l.id",
     )
     .bind(MAX_ATTEMPTS)
     .fetch_all(&s.pool)
@@ -682,6 +878,10 @@ pub async fn revoke(
 ) -> ApiResult<Json<Value>> {
     crate::domain::admin(&s, &p).await?;
     let mut tx = Write::begin(&s.pool).await?;
+    sqlx::query("SELECT pg_advisory_xact_lock($1)")
+        .bind(crate::user_admin::ACCOUNT_LOCK)
+        .execute(&mut *tx)
+        .await?;
     let kind: Option<String> = sqlx::query_scalar(
         "UPDATE account_links SET status='revoked' WHERE id=$1 AND status='pending' RETURNING kind",
     )

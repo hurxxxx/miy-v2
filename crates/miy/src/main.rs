@@ -503,6 +503,7 @@ async fn run_server(command: Command) -> Result<()> {
     let console_listener = tokio::net::TcpListener::bind(&console_bind).await?;
     let dev_portal_listener = tokio::net::TcpListener::bind(&dev_portal_bind).await?;
     let frame_listener = tokio::net::TcpListener::bind(&frame_bind).await?;
+    let _reset_monitor = accounts::start_reset_monitor(state.clone());
     tracing::info!(event = "core_listening", address = %bind, console_address = %console_bind, dev_portal_address = %dev_portal_bind, frame_address = %frame_bind);
     tokio::try_join!(
         async {

@@ -396,7 +396,7 @@ impl Auth {
             return Err(ApiError::unauthorized());
         }
         let callback = format!("{}/auth/callback", self.browser_origin(purpose));
-        let row=sqlx::query("DELETE FROM login_flows WHERE state_hash=$1 AND expires_at>now() AND browser_purpose=$2 AND callback_uri=$3 RETURNING verifier,nonce")
+        let row=sqlx::query("DELETE FROM login_flows WHERE state_hash=$1 AND expires_at>now() AND browser_purpose=$2 AND callback_uri=$3 RETURNING verifier,nonce,created_at")
             .bind(hash(value)).bind(purpose.as_str()).bind(&callback)
             .fetch_optional(&state.pool).await?.ok_or_else(ApiError::unauthorized)?;
         let verifier: String = row.get("verifier");
@@ -419,13 +419,19 @@ impl Auth {
             return Err(ApiError::unauthorized());
         }
         let mut tx = state.pool.begin().await?;
-        let enabled: Option<bool> =
-            sqlx::query_scalar("SELECT enabled FROM users WHERE id=$1 FOR SHARE")
-                .bind(&id.sub)
-                .fetch_optional(&mut *tx)
-                .await?;
-        if enabled != Some(true) {
+        let flow_created: chrono::DateTime<Utc> = row.get("created_at");
+        let eligible: Option<bool> = sqlx::query_scalar(
+            "SELECT enabled AND (browser_login_after IS NULL OR browser_login_after<=$2) FROM users WHERE id=$1 FOR SHARE",
+        )
+        .bind(&id.sub)
+        .bind(flow_created)
+        .fetch_optional(&mut *tx)
+        .await?;
+        if eligible != Some(true) {
             return Err(ApiError::forbidden());
+        }
+        if crate::accounts::reset_pending(&mut tx, &id.sub).await? {
+            return Err(ApiError::unavailable("password_reset_in_progress"));
         }
         let session = random();
         sqlx::query("INSERT INTO sessions(id_hash,user_id,access_token,refresh_token,csrf,expires_at,browser_purpose) VALUES($1,$2,$3,$4,$5,$6,$7)")
@@ -499,7 +505,7 @@ impl Auth {
                 .bind(&owner)
                 .fetch_optional(&mut *tx)
                 .await?;
-        if enabled != Some(true) {
+        if enabled != Some(true) || crate::accounts::reset_pending(&mut tx, &owner).await? {
             return Err(ApiError::unauthorized());
         }
         let row=sqlx::query("SELECT * FROM sessions WHERE id_hash=$1 AND browser_purpose=$2 AND created_at>now()-interval '8 hours' FOR UPDATE")

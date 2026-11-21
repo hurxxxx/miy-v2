@@ -33,7 +33,10 @@ pub async fn run(pool: sqlx::PgPool) -> Result<()> {
     // session lock drops every other lane before the ownership connection.
     // Build recovery can itself take minutes and must not delay control startup.
     supervise(
-        control_loop(&pool),
+        async {
+            tokio::try_join!(control_loop(&pool), crate::runtime::monitor_database(&pool))?;
+            Ok(())
+        },
         build_loop(&pool),
         watch_ownership(&mut guard),
         shutdown(),

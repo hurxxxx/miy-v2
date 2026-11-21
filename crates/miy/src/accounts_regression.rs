@@ -37,6 +37,7 @@ struct Recorded {
     accounts: HashMap<String, Account>,
     removed: Vec<String>,
     ended: Vec<String>,
+    logout_unavailable: bool,
     /// The next created account receives this subject instead of a new one.
     next_subject: Option<String>,
     unavailable: bool,
@@ -186,8 +187,13 @@ async fn end_sessions(
     if !authorized(&headers) {
         return StatusCode::FORBIDDEN;
     }
-    identity.read(|state| state.ended.push(id));
-    StatusCode::NO_CONTENT
+    identity.read(|state| {
+        if state.logout_unavailable {
+            return StatusCode::SERVICE_UNAVAILABLE;
+        }
+        state.ended.push(id);
+        StatusCode::NO_CONTENT
+    })
 }
 
 async fn remove(
@@ -866,5 +872,153 @@ pub async fn run(
         "the configured feature was not advertised"
     );
     passed.push("sign-in options and capabilities advertise configured account links".into());
+
+    let retry = h.issue(&admin, reset.clone()).await?;
+    let (status, value) = h
+        .complete(&retry, json!({"password": REFUSED_BY_PROVIDER}))
+        .await?;
+    ensure!(
+        status == 400
+            && value["error"]["code"] == "password_policy"
+            && h.inspect(&retry).await?.0 == 200,
+        "a definitive provider refusal consumed the link"
+    );
+    let cookie = auth::random();
+    sqlx::query("INSERT INTO sessions(id_hash,user_id,access_token,refresh_token,csrf,expires_at,browser_purpose) VALUES($1,$2,'synthetic','synthetic','synthetic',now()+interval '1 hour','portal')")
+        .bind(hash(&cookie)).bind(&subject).execute(&state.pool).await?;
+    identity.read(|record| record.logout_unavailable = true);
+    let (status, value) = h
+        .complete(&retry, json!({"password": "new-password-with-retry-7"}))
+        .await?;
+    ensure!(
+        status == 202
+            && value["status"] == "ending_sessions"
+            && h.refused(&retry).await?
+            && h.listed(&admin, &retry).await? == "resetting",
+        "a failed identity logout was reported as complete or left a reusable link"
+    );
+    let old_session = h
+        .client
+        .get(format!("{}/api/v1/me", h.portal))
+        .header(
+            "cookie",
+            format!(
+                "{}={cookie}",
+                state
+                    .auth
+                    .cookie_name(auth::BrowserPurpose::Portal, "session")
+            ),
+        )
+        .send()
+        .await?;
+    let reissue: Value = h
+        .signed(Method::POST, "/api/v1/account-links", &admin)
+        .json(&reset)
+        .send()
+        .await?
+        .json()
+        .await?;
+    ensure!(
+        old_session.status() == 401 && reissue["error"]["code"] == "password_reset_in_progress",
+        "an unconfirmed logout still allowed browser use or an overlapping reset"
+    );
+    identity.read(|record| record.logout_unavailable = false);
+    let previous_flow: chrono::DateTime<chrono::Utc> =
+        sqlx::query_scalar("SELECT clock_timestamp()")
+            .fetch_one(&state.pool)
+            .await?;
+    make_reset_due(state, retry.id).await?;
+    let monitor = crate::accounts::start_reset_monitor(state.clone());
+    tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        while h.status(&retry).await? != "completed" {
+            tokio::time::sleep(std::time::Duration::from_millis(25)).await;
+        }
+        Ok::<_, anyhow::Error>(())
+    })
+    .await
+    .context("the reset monitor did not retry the logout")??;
+    drop(monitor);
+    let old_exists: bool =
+        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM sessions WHERE id_hash=$1)")
+            .bind(hash(&cookie))
+            .fetch_one(&state.pool)
+            .await?;
+    let previous_flow_blocked: bool =
+        sqlx::query_scalar("SELECT browser_login_after>$2 FROM users WHERE id=$1")
+            .bind(&subject)
+            .bind(previous_flow)
+            .fetch_one(&state.pool)
+            .await?;
+    ensure!(
+        h.status(&retry).await? == "completed"
+            && !old_exists
+            && previous_flow_blocked
+            && identity.read(|record| record.ended.last() == Some(&subject)
+                && record.accounts[&subject].password == "new-password-with-retry-7"),
+        "the logout retry did not finish the existing reset"
+    );
+    passed.push("a failed identity logout blocks browser use, keeps the link consumed and recovers without changing the password again".into());
+
+    let lost = h.issue(&admin, reset.clone()).await?;
+    // Fail the local write that records the provider's successful password change.
+    sqlx::query("ALTER TABLE password_resets ADD CONSTRAINT fixture_refuse_confirmation CHECK (NOT password_changed)")
+        .execute(&state.pool).await?;
+    let attempt = h
+        .complete(&lost, json!({"password": "new-password-before-db-error-8"}))
+        .await;
+    sqlx::query("ALTER TABLE password_resets DROP CONSTRAINT fixture_refuse_confirmation")
+        .execute(&state.pool)
+        .await?;
+    let (status, value) = attempt?;
+    ensure!(
+        status == 503
+            && value["error"]["code"] == "password_reset_unknown"
+            && h.refused(&lost).await?,
+        "a local failure after the provider changed the password reopened the reset link"
+    );
+    make_reset_due(state, lost.id).await?;
+    crate::accounts::reconcile_resets(state)
+        .await
+        .map_err(|error| anyhow::anyhow!(error.code))?;
+    ensure!(
+        h.status(&lost).await? == "revoked"
+            && h.refused(&lost).await?
+            && identity.read(
+                |record| record.accounts[&subject].password == "new-password-before-db-error-8"
+            ),
+        "recovery replayed the password change or made its link reusable"
+    );
+    passed.push("a database error after a successful password change keeps the consumed link and recovers session revocation".into());
+
+    let older = h.issue(&admin, invitation.clone()).await?;
+    let inactive = h.issue(&admin, invitation).await?;
+    sqlx::query("UPDATE account_links SET attempts=20 WHERE id=$1")
+        .bind(inactive.id)
+        .execute(&state.pool)
+        .await?;
+    sqlx::query("INSERT INTO account_links(id,token_hash,kind,name,status,created_by,expires_at) SELECT gen_random_uuid(),lpad(to_hex(n),64,'0'),'invitation','Test history','revoked',$1,now() FROM generate_series(1,205) n")
+        .bind("audit-admin").execute(&state.pool).await?;
+    ensure!(
+        h.listed(&admin, &older).await? == "pending"
+            && h.listed(&admin, &inactive).await? == "inactive",
+        "newer history displaced a revocable link"
+    );
+    for link in [&older, &inactive] {
+        let path = format!("/api/v1/account-links/{}/revoke", link.id);
+        ensure!(
+            h.signed(Method::POST, &path, &admin).send().await?.status() == 200,
+            "a listed pending or inactive link could not be revoked"
+        );
+    }
+    passed
+        .push("newer history cannot hide older links that administrators can still revoke".into());
     Ok(passed)
+}
+
+async fn make_reset_due(state: &State, id: Uuid) -> Result<()> {
+    sqlx::query("UPDATE password_resets SET retry_at=clock_timestamp() WHERE link_id=$1")
+        .bind(id)
+        .execute(&state.pool)
+        .await?;
+    Ok(())
 }

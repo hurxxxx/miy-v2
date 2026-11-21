@@ -182,8 +182,15 @@ try {
   await recovery.page.getByRole("heading", { name: "비밀번호를 변경했습니다" }).waitFor();
   await recovery.context.close();
   requireThat((await me(guest.context, origins.portal)).status === 401, "earlier_browser_session_survived_the_reset");
+  // Keep the same browser's identity-provider cookies and start sign-in again.
+  // A logged-out Keycloak session must ask for credentials instead of silently
+  // creating a fresh portal session.
+  await guest.page.goto(origins.portal + "/auth/login");
+  await guest.page.locator("input[name=password]").waitFor();
+  requireThat(new URL(guest.page.url()).origin === origins.console
+    && (await me(guest.context, origins.portal)).status === 401, "earlier_identity_session_survived_the_reset");
   await guest.context.close();
-  passed("an administrator's reset link sets a new password and ends earlier browser sessions");
+  passed("an administrator's reset link sets a new password and ends earlier portal and Keycloak browser sessions");
 
   stage = "sign_in_after_reset";
   const stale = await browser.newContext({ locale: "ko-KR" });

@@ -1127,12 +1127,8 @@ async fn deploy_installation(
 }
 async fn installation_network(installation: Uuid) -> Result<String> {
     let name = format!("miy-runtime-{}", installation.simple());
-    if let Ok(raw) = docker(&["network", "inspect", &name]).await {
-        let metadata: Value = serde_json::from_str(&raw)?;
-        anyhow::ensure!(
-            metadata[0]["Labels"]["org.miy.installation"] == installation.to_string(),
-            "unmanaged_network"
-        );
+    let network = if let Ok(raw) = docker(&["network", "inspect", &name]).await {
+        owned_network_id(&raw, installation)?
     } else {
         docker(&[
             "network",
@@ -1141,30 +1137,60 @@ async fn installation_network(installation: Uuid) -> Result<String> {
             &format!("org.miy.installation={installation}"),
             &name,
         ])
-        .await?;
-    }
+        .await?
+    };
     let database = std::env::var("MIY_DATABASE_CONTAINER")
         .unwrap_or_else(|_| "miy-v2-validation-postgres-1".into());
     let meta = inspect(&database).await?;
-    if meta["NetworkSettings"]["Networks"].get(&name).is_none() {
+    connect_database(&name, &network, &meta).await?;
+    Ok(name)
+}
+
+fn owned_network_id(raw: &str, installation: Uuid) -> Result<String> {
+    let metadata: Value = serde_json::from_str(raw)?;
+    anyhow::ensure!(
+        metadata[0]["Labels"]["org.miy.installation"] == installation.to_string(),
+        "unmanaged_network"
+    );
+    Ok(metadata[0]["Id"]
+        .as_str()
+        .context("missing_network_id")?
+        .to_owned())
+}
+
+async fn connect_database(name: &str, network: &str, meta: &Value) -> Result<()> {
+    if meta["NetworkSettings"]["Networks"].get(name).is_none() {
         // Docker can change the default gateway (and the published-port target)
         // when a network is attached with the same priority as existing ones.
         // That closes held Core/advisory-lock connections mid-deployment. A new
         // app endpoint must rank below every currently selected gateway.
-        let priority = database_network_priority(&meta)?.to_string();
-        docker(&[
+        let priority = database_network_priority(meta)?.to_string();
+        let database = meta["Id"].as_str().context("missing_database_id")?;
+        let result = docker(&[
             "network",
             "connect",
             "--gw-priority",
             &priority,
             "--alias",
             "postgres",
-            &name,
-            &database,
+            network,
+            database,
         ])
-        .await?;
+        .await;
+        if let Err(error) = result {
+            // A start/restart and the monitor may connect the same endpoint.
+            // Check the exact database container before treating it as a failure.
+            let attached = inspect(database).await.is_ok_and(|current| {
+                current["NetworkSettings"]["Networks"][name]["Aliases"]
+                    .as_array()
+                    .is_some_and(|aliases| aliases.iter().any(|alias| alias == "postgres"))
+            });
+            if !attached {
+                return Err(error);
+            }
+        }
     }
-    Ok(name)
+    Ok(())
 }
 
 fn database_network_priority(metadata: &Value) -> Result<i64> {
@@ -1201,16 +1227,24 @@ async fn reattach_database(pool: &sqlx::PgPool) -> Result<()> {
     }
     let database = std::env::var("MIY_DATABASE_CONTAINER")
         .unwrap_or_else(|_| "miy-v2-validation-postgres-1".into());
-    let meta = inspect(&database).await?;
+    let mut meta = inspect(&database).await?;
     for id in ids {
         let name = format!("miy-runtime-{}", id.simple());
-        if meta["NetworkSettings"]["Networks"].get(&name).is_some()
-            || docker(&["network", "inspect", &name]).await.is_err()
-        {
+        if meta["NetworkSettings"]["Networks"].get(&name).is_some() {
             continue;
         }
-        match installation_network(id).await {
-            Ok(_) => tracing::warn!(event = "database_network_reattached", installation_id = %id),
+        let Ok(raw) = docker(&["network", "inspect", &name]).await else {
+            continue;
+        };
+        let result = async {
+            let network = owned_network_id(&raw, id)?;
+            // Re-read the endpoint addresses and priorities after other connects.
+            meta = inspect(&database).await?;
+            connect_database(&name, &network, &meta).await
+        }
+        .await;
+        match result {
+            Ok(()) => tracing::info!(event = "database_network_reattached", installation_id = %id),
             Err(_) => {
                 tracing::error!(event = "database_network_reattach_failed", installation_id = %id)
             }
@@ -1219,12 +1253,19 @@ async fn reattach_database(pool: &sqlx::PgPool) -> Result<()> {
     Ok(())
 }
 
+pub(crate) async fn monitor_database(pool: &sqlx::PgPool) -> Result<()> {
+    let mut interval = tokio::time::interval(Duration::from_secs(5));
+    interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+    loop {
+        interval.tick().await;
+        if reattach_database(pool).await.is_err() {
+            tracing::warn!(event = "database_network_check_unavailable");
+        }
+    }
+}
+
 /// Reconcile externally stopped/restarted containers. Database state is not fabricated.
 pub async fn reconcile(pool: &sqlx::PgPool) -> Result<()> {
-    // Docker may be briefly unavailable; container reconciliation below reports that.
-    if reattach_database(pool).await.is_err() {
-        tracing::warn!(event = "database_network_check_unavailable");
-    }
     let rows=sqlx::query("SELECT i.* FROM installations i WHERE runtime_container IS NOT NULL AND runtime_status NOT IN ('removed','failed','recovery_required') AND NOT EXISTS(SELECT 1 FROM runtime_jobs j WHERE j.app_id=i.app_id AND j.environment=i.environment AND j.status IN ('queued','running'))").fetch_all(pool).await?;
     for row in rows {
         let id: Uuid = row.get("id");

@@ -1774,8 +1774,39 @@ async fn isolated_runtime_regression() -> Result<()> {
     let live = inst(&pool, "dev").await?;
     let name = live["runtimeContainer"].as_str().unwrap();
     // A recreated database container is no longer on the installation network of a
-    // running app. Reconciliation reattaches it without a restart, under the name
-    // `postgres` that the app resolves, and the app reaches its database again.
+    // running app. The worker must reattach it while an unrelated operation
+    // holds up the control loop.
+    let mut blocker = pool.acquire().await?;
+    blocker.close_on_drop();
+    let blocker_pid: i32 = sqlx::query_scalar("SELECT pg_backend_pid()")
+        .fetch_one(&mut *blocker)
+        .await?;
+    let delayed = submit(
+        &s,
+        &admin,
+        "restart",
+        "prod",
+        None,
+        None,
+        "blocked-prod-restart",
+    )
+    .await?;
+    sqlx::query("SELECT pg_advisory_lock(hashtextextended('runtime:audit-runtime:prod',0))")
+        .execute(&mut *blocker)
+        .await?;
+    let mut runner = worker(None, None)?;
+    tokio::time::timeout(Duration::from_secs(10), async {
+        loop {
+            let waiting: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM pg_stat_activity WHERE wait_event_type='Lock' AND wait_event='advisory' AND $1=ANY(pg_blocking_pids(pid)))")
+                .bind(blocker_pid).fetch_one(&pool).await?;
+            if waiting {
+                return Ok::<_, anyhow::Error>(());
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+    })
+    .await
+    .context("worker did not reach the blocked production restart")??;
     let database = std::env::var("MIY_DATABASE_CONTAINER")?;
     let network = format!("miy-runtime-{}", uuid(&live["id"]).simple());
     let attached = |meta: &Value| {
@@ -1790,22 +1821,34 @@ async fn isolated_runtime_regression() -> Result<()> {
     runtime::docker(&["network", "disconnect", &network, &database]).await?;
     let detached = !attached(&runtime::inspect(&database).await?);
     let container_before = runtime::inspect(name).await?["Id"].clone();
-    runtime::reconcile(&pool).await?;
-    let reattached = attached(&runtime::inspect(&database).await?);
-    let mut reachable = false;
-    for _ in 0..50 {
-        let answer = runtime::docker(&["exec", name, "getent", "hosts", "postgres"]).await;
-        if answer.is_ok_and(|hosts| !hosts.trim().is_empty()) {
-            reachable = true;
-            break;
+    let reached_during_wait = tokio::time::timeout(Duration::from_secs(15), async {
+        loop {
+            if attached(&runtime::inspect(&database).await?)
+                && runtime::docker(&["exec", name, "python", "-c",
+                    "import socket; socket.create_connection(('postgres', 5432), timeout=1).close()"])
+                    .await.is_ok()
+            {
+                return Ok::<_, anyhow::Error>(());
+            }
+            tokio::time::sleep(Duration::from_millis(200)).await;
         }
-        tokio::time::sleep(Duration::from_millis(200)).await;
-    }
+    })
+    .await
+    .is_ok_and(|result| result.is_ok());
     let same_container = runtime::inspect(name).await?["Id"] == container_before;
+    let still_queued = job(&pool, delayed).await?["status"] == "queued";
+    blocker.close().await?;
+    let finished = terminal(&pool, delayed).await?;
+    runner.kill().await?;
+    let _ = runner.wait().await;
     report(
-        "reconciliation reattaches a recreated database to a running app's network without restarting it",
-        detached && reattached && reachable && same_container,
-        json!({"detached":detached,"reattached":reattached,"postgresResolvable":reachable,"sameContainer":same_container}),
+        "worker reconnects a running app to PostgreSQL while an unrelated runtime job is blocked",
+        detached
+            && reached_during_wait
+            && same_container
+            && still_queued
+            && finished["status"] == "succeeded",
+        json!({"detached":detached,"postgresReachableDuringWait":reached_during_wait,"sameContainer":same_container,"otherJobStillQueued":still_queued}),
     );
     runtime::docker(&["exec", name, "touch", "/tmp/unhealthy"]).await?;
     let response = reqwest::get(format!("http://127.0.0.1:{}/health", live["runtimePort"])).await?;

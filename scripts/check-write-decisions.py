@@ -35,6 +35,9 @@ REASONS = {
 TRANSACTIONS = {
     ("support.rs", "submit"): "support-intake",
     ("accounts.rs", "complete"): "account-link",
+    ("accounts.rs", "claim_reset"): "account-link",
+    ("accounts.rs", "change_password"): "account-link",
+    ("accounts.rs", "finish_reset"): "identity",
     ("auth.rs", "callback"): "identity",
     ("auth.rs", "development_session"): "identity",
     ("auth.rs", "session"): "identity",

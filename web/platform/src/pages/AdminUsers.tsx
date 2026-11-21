@@ -18,7 +18,7 @@ type Props = {
 };
 
 type LinkKind = "invitation" | "password_reset";
-type LinkState = "pending" | "completed" | "revoked" | "expired" | "inactive";
+type LinkState = "pending" | "completed" | "revoked" | "expired" | "inactive" | "resetting";
 type AccountLink = {
   id: string;
   kind: LinkKind;
@@ -40,7 +40,10 @@ const states: Record<LinkState, { label: string; tone: Tone }> = {
   revoked: { label: "취소됨", tone: "neutral" },
   expired: { label: "만료됨", tone: "neutral" },
   inactive: { label: "사용 불가", tone: "warning" },
+  resetting: { label: "재설정 처리 중", tone: "info" },
 };
+
+const revocable = (link: AccountLink) => link.state === "pending" || link.state === "inactive";
 
 function failure(error: unknown) {
   const text = String(error);
@@ -51,6 +54,7 @@ function failure(error: unknown) {
   if (text.includes("account_links_unavailable")) return "이 서버에는 계정 링크 발급이 설정되지 않았습니다.";
   if (text.includes("account_link_limit")) return "사용 전인 링크가 너무 많습니다. 쓰지 않는 링크를 취소한 뒤 다시 발급하세요.";
   if (text.includes("account_link_not_pending")) return "이미 사용됐거나 취소된 링크입니다.";
+  if (text.includes("password_reset_in_progress")) return "이 계정의 재설정이 진행 중입니다. 잠시 뒤 다시 시도하세요.";
   if (text.includes("user_disabled")) return "사용 중지된 계정에는 재설정 링크를 발급할 수 없습니다.";
   if (text.includes("invalid_account_link")) return "입력한 값을 확인해 주세요.";
   return text;
@@ -237,9 +241,8 @@ export function UserAdmin({ csrf, selfId, users, report, refresh }: Props) {
     await send(`/api/v1/users/${encodeURIComponent(user.id)}/state`, "POST", { enabled: next }, next ? "계정 사용을 다시 허용했습니다." : "계정 사용을 중지했습니다.");
   }
 
-  const recent = (links ?? []).filter((link) => link.state === "pending").concat(
-    (links ?? []).filter((link) => link.state !== "pending").slice(0, 10),
-  );
+  const active = (link: AccountLink) => revocable(link) || link.state === "resetting";
+  const recent = (links ?? []).filter(active).concat((links ?? []).filter((link) => !active(link)));
   return (
     <>
       <Panel
@@ -321,7 +324,7 @@ export function UserAdmin({ csrf, selfId, users, report, refresh }: Props) {
                   <Badge tone={states[link.state].tone}>{states[link.state].label}</Badge>
                   {link.kind === "invitation" && link.canDevelop && <Badge tone="neutral">앱 개발</Badge>}
                 </div>
-                {link.state === "pending" && (
+                {revocable(link) && (
                   <div className="user-account-actions">
                     <Button size="sm" disabled={busy} onClick={() => void revoke(link)}>
                       링크 취소
