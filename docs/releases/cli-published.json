@@ -1,9 +1,16 @@
 {
   "schemaVersion": 1,
-  "origin": "https://portal.dwdcc.kr",
-  "version": "0.13.0",
+  "origin": "https://portal.miy.works",
+  "version": "0.14.0",
   "bundleVersion": "0.11.0",
-  "sourceCommit": "f8228e1c583264fab22cc9847d47e614212a5751",
-  "cliReleaseRun": 44309765293,
-  "record": "dwdcc-0.13.0-2026-11-18-deployment.json"
+  "sourceCommit": "e5ee24fe6da7e44cf9a3d20232332d73ede9369a",
+  "cliReleaseRun": 44852588720,
+  "record": "miy-works-0.14.0-2026-11-21-deployment.json",
+  "otherHosts": {
+    "https://portal.dwdcc.kr": {
+      "version": "0.13.0",
+      "sourceCommit": "f8228e1c583264fab22cc9847d47e614212a5751",
+      "record": "dwdcc-0.13.0-2026-11-18-deployment.json"
+    }
+  }
 }

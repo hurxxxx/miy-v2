@@ -1,0 +1,183 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-11-21",
+  "status": "PASS",
+  "scope": "miy.works의 Core·worker와 게시 CLI를 0.14.0으로 갱신. CLI 동시 로그인 갱신 경합과 재생성된 DB 컨테이너의 실행 중 앱 재연결 수정을 반영. schema·웹 변경 없음",
+  "origin": "https://portal.miy.works",
+  "versions": {
+    "coreAndCli": "0.14.0",
+    "previous": "Core 0.13.0 (86f8c53), CLI 0.13.0 (f8228e1)",
+    "sdkBundle": "0.11.0",
+    "schema": 26
+  },
+  "source": {
+    "commit": "e5ee24fe6da7e44cf9a3d20232332d73ede9369a",
+    "web": "portal build of this commit is byte-identical to the served 86f8c53 build; not replaced"
+  },
+  "problems": [
+    {
+      "name": "concurrent CLI refresh",
+      "observed": "isolated regression on 2026-11-20 (second run) and support-reports-2026-11-16-deployment.json: `auth status` exit 3 reauthentication_required while another process renewed",
+      "cause": "A renewing process saves an in-flight mark before sending its refresh. Another command read the mark without the interprocess lock (cli_login::session) and stopped at once instead of waiting for the result.",
+      "fix": "The unlocked read rejects only an expired refresh session; the mark is judged under the lock in `refreshed`, whose wait (45 s) covers the token and identity requests. `auth status` uses the same rule for its second read.",
+      "reproduction": "New deterministic CLI regression observation: the test holds the authentication lock, saves the mark, starts `auth status`, renews after 1 s and releases. With the previous client it failed with reauthentication_required (139 observations, cli suite stopped); with the fix it passes without a second rotation (146 observations)."
+    },
+    {
+      "name": "database detached after container recreation",
+      "observed": "2026-11-20: the pilot app could not start (name resolution failure) after the stopped backup recreated the database container",
+      "fix": "miy-prod-backup resumes with --no-recreate (2026-11-20); start/restart reattach (86f8c53); reconciliation now reattaches every 5 s for installations that should run, to networks that still exist",
+      "reproduction": "New runtime regression observation: disconnect the database from a running app's network, reconcile, the same container resolves postgres again."
+    }
+  ],
+  "validation": [
+    {
+      "status": "PASS",
+      "command": "MIY_CONFIG_DIR=<empty> cargo clippy (both builds) and cargo test --workspace (both builds)",
+      "scope": "236 server and 142 client tests"
+    },
+    {
+      "status": "PASS",
+      "command": "python3 scripts/runtime-regression/run.py",
+      "observations": 146,
+      "suites": {
+        "runtime": 53,
+        "operations": 5,
+        "cli": 7,
+        "auth": 8,
+        "accounts": 8,
+        "permissions": 26,
+        "delegation": 10,
+        "boundary": 12,
+        "migration": 3,
+        "frames": 14
+      }
+    },
+    {
+      "status": "FAIL",
+      "command": "python3 scripts/runtime-regression/run.py with the previous cli_login.rs and the new test",
+      "reason": "Intentional: shows the new observation reproduces the reported failure (exit 3, reauthentication_required)."
+    },
+    {
+      "status": "PASS",
+      "command": "check-cli-version.py --candidate e5ee24f; check-api-compat.py",
+      "scope": "0.14.0 above published 0.13.0 with changed client inputs; API additive to 0.13.0"
+    },
+    {
+      "status": "PASS",
+      "ci": {
+        "cli-release.yml": {
+          "runId": 44852588720,
+          "conclusion": "success",
+          "jobs": {
+            "candidate": "success",
+            "x86_64-pc-windows-msvc": "success",
+            "x86_64-apple-darwin": "success",
+            "x86_64-unknown-linux-gnu": "success",
+            "aarch64-unknown-linux-gnu": "success",
+            "aarch64-apple-darwin": "success",
+            "aggregate": "success",
+            "publish": "skipped"
+          }
+        },
+        "push": {
+          "cli-foundation.yml": 44852580703,
+          "runtime-regression.yml": 44852580759,
+          "web.yml": 44852580849,
+          "conclusion": "success"
+        }
+      }
+    }
+  ],
+  "preDeployment": {
+    "onlineBackup": "/srv/miy-backups/online/20261121T020314Z (core restore verified)",
+    "activity": "no job, build or development session active"
+  },
+  "deployment": {
+    "tool": "host-specific /root/miy-setup/apply-release-0140.py",
+    "result": "PASS",
+    "checks": [
+      "candidate_ci_and_state_verified",
+      "complete_matching_cli_catalog_published",
+      "core_worker_healthy_and_install_guide_serves_0.14.0",
+      "users_installations_and_schema_preserved"
+    ],
+    "serverSha256": "7fb45c5a544a5b20e9b1a71a3b4ae612791d45021b8bcbfecf77e3376fea7123",
+    "previousServerSha256": "192e715be1c16471cdcbe4df58982c6e6264ad50aafc7f5f10cbbb9e9024b534",
+    "servicesStoppedAt": "2026-11-21T02:03:17Z",
+    "servicesStartedAt": "2026-11-21T02:03:18Z",
+    "evidenceDirectory": "/srv/miy-prod/evidence/release-0140-20261121",
+    "recoveryInputs": "before/ holds the previous server binary, CLI release index and global CLI; restore the binary and index together"
+  },
+  "postDeployment": [
+    {
+      "result": "PASS",
+      "check": "scripts/check-cli-downloads.py",
+      "detail": {
+        "verified": true,
+        "serverUrl": "https://portal.miy.works",
+        "commit": "e5ee24fe6da7e44cf9a3d20232332d73ede9369a",
+        "version": "0.14.0",
+        "downloads": 7,
+        "bytes": 253714545
+      }
+    },
+    {
+      "result": "PASS",
+      "check": "one-line install in an empty home and reinstall",
+      "checks": [
+        "public_https_one_line_install_in_empty_home",
+        "downloaded_binary_matches_published_candidate",
+        "server_context_created_without_login",
+        "reinstall_preserves_config_and_does_not_duplicate_path",
+        "new_shell_resolves_miy",
+        "both_online_endpoints_are_public_plaintext_and_not_cached"
+      ],
+      "binarySha256": "3194470777a73c57ad8b5f74378f5ca1e20ecba0c5e26528ea378aed6c7f854b"
+    },
+    {
+      "result": "PASS",
+      "check": "service account global CLI replaced with the verified x86_64 Linux binary (miy 0.14.0)"
+    },
+    {
+      "result": "PASS",
+      "check": "check-pilot-flow.mjs with an invited developer and the published 0.14.0 CLI",
+      "appId": "pilot-2aaaec94",
+      "passes": [
+        "published_cli_matches_the_server_and_its_install_guide",
+        "administrator_and_developer_oidc_sign_in_and_console_device_approval",
+        "app_init_generated_sdk_mcp_configuration_and_synchronized_components",
+        "developer_registration_refused_to_self_approve_and_approved_by_administrator",
+        "server_build_from_committed_source",
+        "dev_deployment_running",
+        "generated_app_renders_in_its_own_frame_origin_on_the_dev_portal"
+      ],
+      "buildSeconds": 99,
+      "stopped": true,
+      "developerAccount": "created from an invitation, disabled in Core and the identity provider afterwards"
+    },
+    {
+      "result": "PASS",
+      "check": "running binaries 0.14.0, schema 26, existing pilot app healthy, no worker error or reattachment log after the restart"
+    }
+  ],
+  "serverChanges": [
+    "pilot-2aaaec94 (stopped) and one disabled test developer remain"
+  ],
+  "notRun": [
+    {
+      "status": "NOT_RUN",
+      "scope": "dwdcc.kr update to 0.14.0",
+      "reason": "Not requested; that host keeps 0.13.0"
+    },
+    {
+      "status": "NOT_RUN",
+      "scope": "Windows GUI installer and external Windows/macOS clients",
+      "reason": "Not published on this host; no external client attached"
+    },
+    {
+      "status": "NOT_RUN",
+      "scope": "Recreating the live database container to observe reattachment",
+      "reason": "Not done only for verification; covered by the isolated regression"
+    }
+  ]
+}

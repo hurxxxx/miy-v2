@@ -7,7 +7,7 @@
 | 항목 | 새 호스트 구성 |
 | --- | --- |
 | 서버 | `185.223.207.238`, Ubuntu 26.04.1 LTS, 3 vCPU, 약 12GiB RAM |
-| 소스 | `/projects/miy-v2/prod`, Core·웹 `86f8c53`, 게시 CLI `f8228e1`; Core/CLI 0.13.0, SDK 번들 0.11.0, schema 26 |
+| 소스 | `/projects/miy-v2/prod`, Core·게시 CLI `e5ee24f`, 웹 `86f8c53`과 같은 빌드; Core/CLI 0.14.0, SDK 번들 0.11.0, schema 26 |
 | 업무 포털 | `https://portal.miy.works` |
 | 관리·CLI 승인·IdP | `https://console.miy.works` |
 | 내부 앱 개발 포털 | `https://dev.miy.works` |
@@ -15,7 +15,7 @@
 | 서비스·계정 | `miy-prod-serve`, `miy-prod-worker`, OS 사용자 `miy` |
 | 상태·바이너리 | `/srv/miy-prod`(0700), `/srv/miy-prod/bin/miy-server` |
 | CLI 설치 안내·HTTP MCP | `https://portal.miy.works/cli/install`, `https://portal.miy.works/mcp` |
-| 사용자 CLI | `/home/miy/.local/bin/miy` 0.13.0; `default` context → 업무 포털 |
+| 사용자 CLI | `/home/miy/.local/bin/miy` 0.14.0; `default` context → 업무 포털 |
 | 계정 발급 | 콘솔 **플랫폼 관리 → 사용자 초대**의 초대·재설정 링크. 로그인 서버 관리 호출은 loopback 18181, 서비스 클라이언트 `miy-accounts` |
 | 백업 | 매일 03:30 KST 무중단 `miy-prod-online-backup`(14일 보관), 변경 전 중지 백업 `miy-prod-backup` |
 | DB·Keycloak | `miy-prod-postgres-1`, `miy-prod-keycloak-1`; loopback 15432, 18181 |
@@ -78,6 +78,8 @@ CLI 업데이트 안내 후속으로 Core·worker·웹과 CLI 0.12.1을 같은 �
 **2026-11-20 동기화와 계정 발급.** 먼저 GitHub main과 같은 0.13.0으로 맞췄다([반영 기록](releases/miy-works-0.13.0-2026-11-20-deployment.json)). 중지 백업 `/srv/miy-backups/prod-20261120T071517Z`의 별도 복원과 Core DB의 24→25 및 공식 카탈로그 리허설 뒤 Core·worker·웹과 CI가 만든 CLI 0.13.0의 5개 패키지·helper 2개를 함께 반영하고 카탈로그의 네 제품을 등록했다. 한 줄 설치는 0.13.0을 제공한다. 이전 Core·웹·CLI index·전역 CLI는 `/srv/miy-prod/evidence/sync-0130-20261120/before`에 있다.
 
 이어 계정 링크와 로그인 보호를 서버 전용 변경 `86f8c53`로 반영했다([반영 기록](releases/account-links-2026-11-20-deployment.json), [사용 계약](ACCOUNTS.md)). 버전은 0.13.0을 유지하고 게시 CLI는 `f8228e1` 그대로다. schema 26(`account_links`)을 추가했고 `credentials.json`에 서비스 클라이언트 비밀 하나, `runtime.env`에 `MIY_IDENTITY_ADMIN_URL`·`MIY_ACCOUNTS_SECRET`을 더했다. `configure-identity.py`로 기존 realm에 서비스 클라이언트 `miy-accounts`와 `manage-users` 역할, 로그인 잠금·비밀번호 정책(10자 이상)·한국어 로그인 화면, 성·이름 필수 해제를 적용했다. 기존 realm·사용자·클라이언트 ID와 비밀은 그대로다. 이전 Core·웹과 세 설정 파일은 `/srv/miy-prod/evidence/account-links-20261120/before`에 있다. 되돌릴 때는 Core·웹·세 설정 파일을 함께 복원한다. additive schema 26과 로그인 서버의 추가 설정은 남겨도 이전 Core가 동작한다.
+
+**2026-11-21 0.14.0.** Core·worker와 CLI 5종·helper 2종을 `e5ee24f`로 함께 교체했다([반영 기록](releases/miy-works-0.14.0-2026-11-21-deployment.json)). CLI 동시 로그인 갱신 수정과 worker의 DB 네트워크 재연결이 들어 있고 schema·웹은 그대로다. 반영 전 무중단 백업은 `/srv/miy-backups/online/20261121T020314Z`, 이전 Core·CLI index·전역 CLI는 `/srv/miy-prod/evidence/release-0140-20261121/before`에 있다. 되돌릴 때는 Core 실행 파일과 CLI index를 함께 복원한다. 초대로 만든 개발자와 게시 CLI로 새 앱의 서버 빌드·dev 배포·프레임까지 다시 확인했다.
 
 계정 관리의 기본 경로는 이제 콘솔이다. SSH의 Keycloak 내부 절차(SETUP §8)와 `miy-admin-password`는 콘솔을 쓸 수 없을 때의 복구 수단이다. 메일 서버는 연결하지 않았으므로 초대·재설정 주소는 관리자가 직접 전달한다.
 
