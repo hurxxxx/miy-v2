@@ -340,3 +340,31 @@ test("the security settings start the password change on this origin only", asyn
   await expect(page.getByRole("heading", { name: "보안" })).toBeVisible();
   await expect(page.getByRole("button", { name: "비밀번호 변경" })).toHaveCount(0);
 });
+
+test("an app's own route change with unsaved input does not ask", async ({ page }) => {
+  await mock(page, { me: () => ({ status: 200, json: user }), installations: () => ({ status: 200, json: [app] }) });
+  const frames = await mockFrames(page, () => [app], () => ({ json: { title: "저장된 제목" } }));
+  const dialogs: string[] = [];
+  page.on("dialog", (dialog) => {
+    dialogs.push(dialog.message());
+    void dialog.dismiss();
+  });
+  await page.goto("/environments/dev/apps/shell-app");
+  const input = page.frameLocator("iframe.app-frame").getByLabel("문서 제목");
+  await expect(input).toHaveValue("저장된 제목");
+  await input.fill("미저장 제목");
+  // A move inside the same app keeps its frame: no question, no relaunch.
+  await page.evaluate(() => {
+    window.history.pushState(window.history.state, "", "/environments/dev/apps/shell-app/next");
+    window.dispatchEvent(new PopStateEvent("popstate", { state: window.history.state }));
+  });
+  await expect(page).toHaveURL(/\/environments\/dev\/apps\/shell-app\/next$/);
+  expect(dialogs).toEqual([]);
+  expect(frames.launches).toBe(1);
+  // Leaving the app still asks while the frame reports unsaved input.
+  await expect(input).toBeVisible();
+  await input.fill("미저장 제목");
+  await page.locator("#platform-navigation").getByRole("link", { name: "홈", exact: true }).click();
+  await expect.poll(() => dialogs.length).toBe(1);
+  await expect(page).toHaveURL(/\/environments\/dev\/apps\/shell-app\/next$/);
+});

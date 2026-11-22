@@ -47,14 +47,19 @@ function AppSession({ appId, environment, basePath }: { appId: string; environme
   useEffect(() => {
     activeGuards.add(guards);
     const unblock = router.history.block({
-      blockerFn: () => !guards.confirmNavigation(),
+      // Moving inside this app keeps its frame and the input in it, so only
+      // leaving the app asks (an app's own route change never prompts).
+      blockerFn: ({ nextLocation }: { nextLocation: { pathname: string } }) =>
+        nextLocation.pathname !== basePath &&
+        !nextLocation.pathname.startsWith(basePath + "/") &&
+        !guards.confirmNavigation(),
       enableBeforeUnload: () => !!guards.message(),
     });
     return () => {
       unblock();
       activeGuards.delete(guards);
     };
-  }, [guards, router]);
+  }, [guards, router, basePath]);
   useEffect(() => {
     setApp(undefined);
     setLoadFailed(false);
