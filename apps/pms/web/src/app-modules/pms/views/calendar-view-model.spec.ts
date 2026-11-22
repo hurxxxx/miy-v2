@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
-import type { PmsTask, PmsTaskListStatus } from '../api/pms-api';
+import type {
+  PmsMilestone,
+  PmsTask,
+  PmsTaskListStatus,
+} from '../api/pms-api';
 
 import {
   addCalendarMonths,
@@ -14,6 +18,7 @@ import {
   pmsCalendarRangeForView,
   resolvePmsCalendarRangeAnchor,
   startOfCalendarMonth,
+  buildPmsMilestoneCalendarEvents,
 } from './calendar-view-model';
 
 describe('calendar view model', () => {
@@ -204,6 +209,27 @@ describe('calendar view model', () => {
     expect(hasCalendarEventInPeriod(events, day(14))).toBe(true);
     expect(hasCalendarEventInPeriod(events, day(15))).toBe(false);
     expect(hasCalendarEventInPeriod(events, day(13))).toBe(false);
+  });
+});
+
+describe('milestone calendar events (miy reinforcement)', () => {
+  it('puts a milestone with a due date on that one day', () => {
+    const events = buildPmsMilestoneCalendarEvents(
+      [
+        { id: 'm-1', title: 'Beta', due_date: '2026-12-01', status: 'active', list_id: null } as PmsMilestone,
+        { id: 'm-2', title: 'Someday', due_date: null, status: 'planned', list_id: 'l' } as PmsMilestone,
+      ],
+      (milestone) => `◆ ${milestone.title}`,
+    );
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({
+      id: 'pms-milestone-m-1',
+      title: '◆ Beta',
+      start: '2026-12-01',
+      end: '2026-12-02',
+      allDay: true,
+      sourceId: 'm-1',
+    });
   });
 });
 

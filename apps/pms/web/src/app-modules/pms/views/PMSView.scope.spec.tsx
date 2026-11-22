@@ -182,9 +182,14 @@ describe('PMS list route task data scope', () => {
             '/lists/list-one/milestones',
             '/lists/list-one/labels',
             '/spaces/space-one/members',
+            // miy reinforcement: the list's custom fields.
+            '/lists/list-one/custom-fields',
           ].includes(route)
         )
           data = { items: [] };
+        // miy: saved filters of the list, kept on the server.
+        else if (route === '/saved-filters')
+          data = { items: [], default_filter_id: null };
         else throw new Error(`Unexpected test API path: ${url.pathname}`);
         return data;
       });

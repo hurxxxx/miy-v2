@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type {
+  PmsCustomField,
   PmsLabel,
   PmsMilestone,
   PmsTaskListMember,
@@ -11,18 +12,9 @@ import {
   buildTaskFilterPills,
   createClearedTaskFilterParams,
   createLoadedSavedTaskFilterParams,
-  createOpeningTaskFilterParams,
-  createSavedFilter,
   createSavedTaskFilterParams,
   isFilterActive,
-  loadSavedFilters,
-  paramsFromSavedFilter,
-  removeSavedFilterAt,
-  saveSavedFilters,
-  spaceTasksFilterScopeKey,
   taskExportFilterParams,
-  toggleDefaultSavedFilterAt,
-  type SavedFilter,
 } from './filter-bar-model';
 
 function t(key: string, options?: Record<string, unknown>): string {
@@ -30,17 +22,6 @@ function t(key: string, options?: Record<string, unknown>): string {
   return `${key}:${Object.entries(options)
     .map(([name, value]) => `${name}=${String(value)}`)
     .join(',')}`;
-}
-
-function storage(initial: Record<string, string> = {}) {
-  const values = { ...initial };
-  return {
-    getItem: (key: string) => values[key] ?? null,
-    setItem: (key: string, value: string) => {
-      values[key] = value;
-    },
-    values,
-  };
 }
 
 const members: PmsTaskListMember[] = [
@@ -140,88 +121,20 @@ describe('filter bar model', () => {
     });
   });
 
-  it('normalizes saved filters and removes filters by index', () => {
-    const saved = createSavedFilter('  Mine  ', {
-      q: 'hidden',
-      assignee_id: 'user-1',
-    });
-    expect(saved).toEqual({
-      name: 'Mine',
-      params: {
-        archived_state: 'active',
-        assignee_id: 'user-1',
-        q: undefined,
-      },
-    });
-    expect(createSavedFilter('   ', {})).toBeNull();
-
-    const filters: SavedFilter[] = [
-      saved as SavedFilter,
-      { name: 'Other', params: { priority: 'low' } },
-    ];
-    expect(removeSavedFilterAt(filters, 0)).toEqual([filters[1]]);
-    expect(paramsFromSavedFilter(filters[1], { q: 'search' })).toEqual({
+  // miy: saved filters live on the server (usePmsSavedFilters.spec.tsx);
+  // AI-DO's browser-storage cases (index removal, storage keys, the default
+  // star, invalid payloads, opening from storage) went with that storage.
+  it('counts custom field conditions as filters and saves them', () => {
+    const params: TaskFilterParams = {
       archived_state: 'active',
-      priority: 'low',
-      q: 'search',
+      custom_fields: { 'field-1': 'A' },
+    };
+    expect(isFilterActive(params)).toBe(true);
+    expect(isFilterActive({ custom_fields: { 'field-1': '  ' } })).toBe(false);
+    expect(createSavedTaskFilterParams({ ...params, q: 'x' })).toEqual({
+      ...params,
+      q: undefined,
     });
-  });
-
-  it('persists saved filters under the task list key', () => {
-    const fakeStorage = storage();
-    const filters: SavedFilter[] = [{ name: 'Mine', params: { status: ['todo'] } }];
-
-    saveSavedFilters('list-1', filters, fakeStorage);
-
-    expect(loadSavedFilters('list-1', fakeStorage)).toEqual(filters);
-    expect(loadSavedFilters('list-2', fakeStorage)).toEqual([]);
-  });
-
-  it('keeps at most one default saved filter and toggles it off again', () => {
-    const filters: SavedFilter[] = [
-      { name: 'Mine', params: { assignee_id: 'user-1' } },
-      { name: 'Todo', params: { status: ['todo'] }, isDefault: true },
-    ];
-
-    const mineDefault = toggleDefaultSavedFilterAt(filters, 0);
-    expect(mineDefault).toEqual([
-      { name: 'Mine', params: { assignee_id: 'user-1' }, isDefault: true },
-      { name: 'Todo', params: { status: ['todo'] } },
-    ]);
-    expect(toggleDefaultSavedFilterAt(mineDefault, 0)).toEqual([
-      { name: 'Mine', params: { assignee_id: 'user-1' } },
-      { name: 'Todo', params: { status: ['todo'] } },
-    ]);
-  });
-
-  it('opens a list with its default saved filter, never with saved search text', () => {
-    const fakeStorage = storage();
-    saveSavedFilters(
-      'list-1',
-      [
-        { name: 'Mine', params: { assignee_id: 'user-1' } },
-        {
-          name: 'Todo',
-          params: { q: 'stale search', status: ['todo'] },
-          isDefault: true,
-        },
-      ],
-      fakeStorage,
-    );
-
-    expect(createOpeningTaskFilterParams('list-1', fakeStorage)).toEqual(
-      createSavedTaskFilterParams({ status: ['todo'] }),
-    );
-    expect(createOpeningTaskFilterParams('list-2', fakeStorage)).toEqual(
-      createDefaultTaskFilterParams(),
-    );
-    expect(spaceTasksFilterScopeKey('space-1')).toBe('space-tasks:space-1');
-  });
-
-  it('returns no saved filters for invalid storage payloads', () => {
-    const fakeStorage = storage({ pms_saved_filters_list: '{' });
-
-    expect(loadSavedFilters('list', fakeStorage)).toEqual([]);
   });
 
   it('builds localized pills and clear params', () => {
@@ -264,5 +177,30 @@ describe('filter bar model', () => {
       archived_state: 'active',
       q: 'needle',
     });
+  });
+
+  it('names custom field pills by field and value and clears one at a time', () => {
+    const customFields = [
+      { id: 'owner', name: 'Owner', field_type: 'user', sort_order: 0 },
+      { id: 'tags', name: 'Tags', field_type: 'multi_select', options: ['UI'], sort_order: 1 },
+    ] as PmsCustomField[];
+    const pills = buildTaskFilterPills({
+      customFields,
+      labels,
+      members,
+      milestones,
+      params: {
+        archived_state: 'active',
+        custom_fields: { owner: 'user-1', tags: 'UI', gone: 'x' },
+      },
+      statusOptions: [],
+      translate: t,
+    });
+    expect(pills.map((pill) => pill.label)).toEqual([
+      'pms.customFields.pill:name=Owner,value=Ada Lovelace',
+      'pms.customFields.pill:name=Tags,value=UI',
+      'pms.customFields.pill:name=common:feedback.unknown,value=x',
+    ]);
+    expect(pills[0].clearParams.custom_fields).toEqual({ tags: 'UI', gone: 'x' });
   });
 });

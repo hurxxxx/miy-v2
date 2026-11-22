@@ -29,6 +29,7 @@ import {
 } from '@miy/ui';
 import { cn } from '../../../lib/utils';
 import type {
+  PmsMilestone,
   PmsTask,
   PmsTaskListMember,
   PmsTaskListStatus,
@@ -236,6 +237,7 @@ type GanttSliderRangeDragState = {
 };
 
 export const GanttView = ({
+  milestones = [],
   canEdit = false,
   canEditTask,
   completedItemsControlDisabled = false,
@@ -249,6 +251,8 @@ export const GanttView = ({
   taskListStatuses,
   taskSourceLabels,
 }: {
+  /** miy: milestones with a due date are marked on that day. */
+  milestones?: readonly PmsMilestone[];
   canEdit?: boolean;
   /** Narrows canEdit per task, e.g. when tasks from several lists share one chart. */
   canEditTask?: (task: PmsTask) => boolean;
@@ -350,6 +354,22 @@ export const GanttView = ({
     if (!today || today < visibleStart || today > visibleEnd) return null;
     return diffGanttDays(today, visibleStart);
   }, [todayDateOnly, visibleEnd, visibleStart]);
+  // miy reinforcement: a marker per milestone due inside the shown range.
+  const milestoneMarkers = useMemo(
+    () =>
+      milestones.flatMap((milestone) => {
+        const due = parseGanttDateOnly(milestone.due_date ?? '');
+        if (!due || due < visibleStart || due > visibleEnd) return [];
+        return [
+          {
+            id: milestone.id,
+            title: milestone.title,
+            dayOffset: diffGanttDays(due, visibleStart),
+          },
+        ];
+      }),
+    [milestones, visibleEnd, visibleStart],
+  );
   const todayOffset =
     todayDayOffset === null
       ? null
@@ -1230,6 +1250,23 @@ export const GanttView = ({
                   style={{ left: todayOffset }}
                 />
               ) : null}
+              {milestoneMarkers.map((marker) => (
+                <span
+                  key={marker.id}
+                  aria-label={t('pms.milestoneSettings.calendarTitle', {
+                    title: marker.title,
+                  })}
+                  className="absolute bottom-1 z-20 size-2.5 -translate-x-1/2 rotate-45 bg-violet-600"
+                  data-testid="pms-gantt-milestone"
+                  role="img"
+                  style={{
+                    left: `${marker.dayOffset * dayWidth + dayWidth / 2}px`,
+                  }}
+                  title={t('pms.milestoneSettings.calendarTitle', {
+                    title: marker.title,
+                  })}
+                />
+              ))}
             </div>
           </div>
 
@@ -1495,6 +1532,15 @@ export const GanttView = ({
                   style={{ left: todayOffset }}
                 />
               ) : null}
+              {milestoneMarkers.map((marker) => (
+                <div
+                  key={marker.id}
+                  className="absolute inset-y-0 z-10 border-l border-dashed border-violet-600/60"
+                  style={{
+                    left: `${marker.dayOffset * dayWidth + dayWidth / 2}px`,
+                  }}
+                />
+              ))}
             </div>
           </div>
         </div>

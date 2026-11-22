@@ -14,6 +14,9 @@ import {
   exportTaskListXlsx,
   getPmsTaskList,
   isFilteredTaskExport,
+  listSavedFilters,
+  listTaskListTasks,
+  setDefaultSavedFilter,
   listPersonalPmsAssignedTasks,
   listTaskListLabels,
   taskExportFilename,
@@ -359,5 +362,38 @@ describe('listPersonalPmsAssignedTasks (miy composition)', () => {
         '/v1/pms/tasks/assigned?page=1&page_size=50',
       ]),
     );
+  });
+});
+
+describe('reinforcement paths (miy)', () => {
+  it('sends custom field conditions and sorts as cf_ parameters', async () => {
+    const { api, mock } = apiFake(() => ({ items: [], total: 0, page: 1, page_size: 100 }));
+    await listTaskListTasks(
+      api,
+      'list-1',
+      { custom_fields: { 'f-1': 'A b', 'f-2': ' ' } },
+      null,
+      { sort: { field: 'cf_f-1', direction: 'desc' } },
+    );
+    const [path] = (mock.mock.calls as unknown as ApiCall[])[0];
+    const query = new URLSearchParams(path.split('?')[1]);
+    expect(query.get('cf_f-1')).toBe('A b');
+    expect(query.has('cf_f-2')).toBe(false);
+    expect(query.get('sort_by')).toBe('cf_f-1');
+  });
+
+  it('reads and sets saved filters per list or space view', async () => {
+    const { api, mock } = apiFake(() => ({ items: [], default_filter_id: null }));
+    await listSavedFilters(api, { listId: 'list 1' });
+    await listSavedFilters(api, { spaceId: 'space-1' });
+    await setDefaultSavedFilter(api, { spaceId: 'space-1' }, 'f-1');
+    const calls = mock.mock.calls as unknown as ApiCall[];
+    expect(calls[0][0]).toBe('/v1/pms/saved-filters?list_id=list+1');
+    expect(calls[1][0]).toBe('/v1/pms/saved-filters?space_id=space-1');
+    expect(calls[2][0]).toBe('/v1/pms/saved-filters/default');
+    expect(JSON.parse(String(calls[2][1]?.body))).toEqual({
+      space_id: 'space-1',
+      filter_id: 'f-1',
+    });
   });
 });

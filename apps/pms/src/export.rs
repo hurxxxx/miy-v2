@@ -194,9 +194,10 @@ pub async fn export_task_list(
     params: Params,
 ) -> ApiResult<Response> {
     let q = params.string("q", "");
-    let filters = TaskFilters::from_params(&params)?;
+    let mut filters = TaskFilters::from_params(&params)?;
     let mut conn = pool.acquire().await?;
     let (list, _) = ensure_list_member(&mut conn, &identity.user_id, &list_id).await?;
+    filters.resolve_custom(&mut conn, &list.id).await?;
     let mut query = QueryBuilder::<Postgres>::new(format!(
         "SELECT {} FROM pms_tasks t WHERE t.list_id = ",
         task_columns("t")

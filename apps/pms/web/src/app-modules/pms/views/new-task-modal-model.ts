@@ -22,6 +22,11 @@ export type NewTaskState = {
   submitting: boolean;
   templates: PmsTaskTemplate[];
   templateMenuOpen: boolean;
+  /** miy: the template the task is made from; its checklist, labels and
+   *  subtasks are added by the server when the task is created. */
+  appliedTemplate: PmsTaskTemplate | null;
+  /** Remounts the description editor when a template replaces its text. */
+  descriptionVersion: number;
   error: string | null;
 };
 
@@ -73,6 +78,9 @@ export type NewTaskAction =
       template: PmsTaskTemplate;
     }
   | {
+      type: 'clear-template';
+    }
+  | {
       type: 'submit';
     }
   | {
@@ -100,6 +108,8 @@ export function createInitialNewTaskState(
     submitting: false,
     templates: [],
     templateMenuOpen: false,
+    appliedTemplate: null,
+    descriptionVersion: 0,
     error: null,
   };
 }
@@ -144,12 +154,23 @@ export function applyNewTaskTemplate(
   template: PmsTaskTemplate,
   taskListStatuses?: PmsTaskListStatus[],
 ): NewTaskState {
+  // miy: the template's own task title when it has one (AI-DO used the
+  // template name), and its formatted description.
+  const blocks = template.description_blocks?.length
+    ? (template.description_blocks as unknown as BlockContent)
+    : undefined;
   return {
     ...state,
-    title: template.name,
+    title: template.title?.trim() || template.name,
     status: resolveNewTaskStatus(template.default_status, taskListStatuses),
     priority: template.default_priority,
-    showDescription: state.showDescription || Boolean(template.description),
+    showDescription:
+      state.showDescription || Boolean(template.description) || Boolean(blocks),
+    descriptionBlocks: blocks ?? state.descriptionBlocks,
+    descriptionVersion: blocks
+      ? state.descriptionVersion + 1
+      : state.descriptionVersion,
+    appliedTemplate: template,
     templateMenuOpen: false,
   };
 }
@@ -170,6 +191,7 @@ export function buildNewTaskCreatePayload(
     parent_id: state.parentId,
     start_date: state.startDate || null,
     due_date: state.dueDate || null,
+    template_id: state.appliedTemplate?.id ?? null,
   };
 }
 
@@ -239,6 +261,11 @@ export function newTaskReducer(
         action.template,
         action.taskListStatuses,
       );
+    case 'clear-template':
+      return {
+        ...state,
+        appliedTemplate: null,
+      };
     case 'submit':
       return {
         ...state,
@@ -276,6 +303,7 @@ export function isNewTaskDraftDirty(
     state.priority !== 'medium' ||
     state.startDate !== '' ||
     state.dueDate !== '' ||
-    state.assignToMe
+    state.assignToMe ||
+    state.appliedTemplate !== null
   );
 }

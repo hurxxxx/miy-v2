@@ -24,7 +24,9 @@ import {
   listTaskListLabels,
   listPmsUsers,
   listSpaceMembers,
+  type PmsCustomField,
   type PmsLabel,
+  type PmsMilestone,
   type PmsSpaceMember,
   type PmsStatusCategory,
   type PmsTaskListStatus,
@@ -44,6 +46,10 @@ import {
   canMutateTaskListSettingsMember,
   roleOptionsForTaskListSettings,
 } from './task-list-members-model';
+import { MilestoneSettingsSection } from './MilestoneSettingsSection';
+import { CustomFieldSettingsSection } from './CustomFieldSettingsSection';
+import { TemplateSettingsSection } from './TemplateSettingsSection';
+import { taskListRoleAllows } from '../api/pms-permissions';
 
 const CATEGORY_OPTIONS = [
   { value: 'not_started', labelKey: 'pms.settings.category.notStarted' },
@@ -52,7 +58,24 @@ const CATEGORY_OPTIONS = [
   { value: 'closed', labelKey: 'pms.settings.category.closed' },
 ] as const satisfies readonly { value: PmsStatusCategory; labelKey: string }[];
 
-const SETTINGS_TABS = ['members', 'labels', 'workflow'] as const;
+// miy: milestones, custom fields and templates are reinforcement tabs.
+const SETTINGS_TABS = [
+  'members',
+  'labels',
+  'workflow',
+  'milestones',
+  'fields',
+  'templates',
+] as const;
+
+const SETTINGS_TAB_LABEL_KEYS: Record<(typeof SETTINGS_TABS)[number], string> = {
+  members: 'pms.settings.tabs.members',
+  labels: 'pms.settings.tabs.labels',
+  workflow: 'pms.settings.tabs.workflow',
+  milestones: 'pms.milestoneSettings.tab',
+  fields: 'pms.customFields.tab',
+  templates: 'pms.templateSettings.tab',
+};
 
 type TaskListSettingsPanelProps = {
   taskListId: string;
@@ -64,6 +87,8 @@ type TaskListSettingsPanelProps = {
   onLabelsChanged?: (labels: PmsLabel[]) => void;
   onMembersChanged?: (members: PmsSpaceMember[]) => void;
   onStatusesChanged?: (statuses: PmsTaskListStatus[]) => void;
+  onMilestonesChanged?: (milestones: PmsMilestone[]) => void;
+  onCustomFieldsChanged?: (fields: PmsCustomField[]) => void;
 };
 
 export function TaskListSettingsPanel(props: TaskListSettingsPanelProps) {
@@ -80,6 +105,8 @@ function useTaskListSettingsModel({
   onLabelsChanged,
   onMembersChanged,
   onStatusesChanged,
+  onMilestonesChanged,
+  onCustomFieldsChanged,
 }: TaskListSettingsPanelProps) {
   const api = useAppApi();
   const user = usePmsCurrentUser();
@@ -319,6 +346,10 @@ function useTaskListSettingsModel({
     timeZone,
     user,
     workflowReadOnly: workflowStatuses.workflowReadOnly,
+    taskListId,
+    currentUserRole,
+    onMilestonesChanged,
+    onCustomFieldsChanged,
   };
 }
 
@@ -390,6 +421,10 @@ function renderTaskListSettingsPanel({
   timeZone,
   user,
   workflowReadOnly,
+  taskListId,
+  currentUserRole,
+  onMilestonesChanged,
+  onCustomFieldsChanged,
 }: ReturnType<typeof useTaskListSettingsModel>) {
   return (
     <Dialog
@@ -413,7 +448,7 @@ function renderTaskListSettingsPanel({
             }`}
             onClick={() => setActiveTab(tab)}
           >
-            {t(`pms.settings.tabs.${tab}`)}
+            {t(SETTINGS_TAB_LABEL_KEYS[tab])}
           </button>
         ))}
       </div>
@@ -560,6 +595,32 @@ function renderTaskListSettingsPanel({
                 </div>
               )}
             </section>
+          ) : null}
+
+          {activeTab === 'milestones' ? (
+            <MilestoneSettingsSection
+              canManage={taskListRoleAllows(currentUserRole, 'admin')}
+              onMilestonesChanged={onMilestonesChanged}
+              spaceId={teamId}
+              taskListId={taskListId}
+            />
+          ) : null}
+
+          {activeTab === 'fields' ? (
+            <CustomFieldSettingsSection
+              canManage={taskListRoleAllows(currentUserRole, 'admin')}
+              onFieldsChanged={onCustomFieldsChanged}
+              taskListId={taskListId}
+            />
+          ) : null}
+
+          {activeTab === 'templates' && teamId ? (
+            <TemplateSettingsSection
+              canEdit={taskListRoleAllows(currentUserRole, 'member')}
+              spaceId={teamId}
+              taskListId={taskListId}
+              taskListStatuses={statuses}
+            />
           ) : null}
 
           {/* Labels section */}

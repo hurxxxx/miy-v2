@@ -13,6 +13,10 @@
 //!   PMS_TEST_DATABASE_URL=postgres://USER:PASSWORD@127.0.0.1:PORT/postgres \
 //!     cargo test -- --include-ignored
 //! Each run creates a fresh database on that server and applies migrations/.
+//! The reinforcement (templates, custom fields, milestones, saved filters) is
+//! tested in api_tests/reinforcement.rs.
+mod reinforcement;
+
 use std::{
     collections::HashMap,
     sync::{Mutex, OnceLock},
@@ -1788,7 +1792,7 @@ async fn checklist_comments_templates_and_custom_fields() {
     .await;
     assert_eq!(comment["body"], "확인 부탁드립니다");
     assert_eq!(comment["author_name"], "홍길동");
-    let template = ok(&f.owner, Method::POST, &format!("/v1/pms/lists/{}/templates", f.list),
+    let template = ok(&f.owner, Method::POST, &format!("/v1/pms/spaces/{}/templates", f.space),
         Some(json!({"name": "Bug", "default_priority": "high", "checklist_items": [{"text": "Reproduce"}]}))).await;
     assert_eq!(template["default_priority"], "high");
     let updated = ok(

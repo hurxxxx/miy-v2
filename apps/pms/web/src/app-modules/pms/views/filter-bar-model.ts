@@ -1,4 +1,5 @@
 import type {
+  PmsCustomField,
   PmsLabel,
   PmsMilestone,
   PmsTaskListMember,
@@ -10,13 +11,11 @@ import {
   DEFAULT_ISSUE_ARCHIVED_STATE,
   withEffectiveTaskStatusFilter,
 } from '../api/pms-filters';
-
-export interface SavedFilter {
-  name: string;
-  params: TaskFilterParams;
-  /** Applied when the list opens. At most one saved filter per list has it. */
-  isDefault?: boolean;
-}
+import {
+  customFieldFilterCount,
+  formatCustomFieldValue,
+  withCustomFieldFilter,
+} from './custom-field-model';
 
 export type FilterBarStatusOption = {
   value: string;
@@ -32,36 +31,6 @@ type TranslateFilterLabel = (
   key: string,
   options?: Record<string, unknown>,
 ) => string;
-type SavedFilterStorage = Pick<Storage, 'getItem' | 'setItem'>;
-
-function savedFilterStorageKey(taskListId: string) {
-  return `pms_saved_filters_${taskListId}`;
-}
-
-/** Saved-filter scope of a space's combined task view (its own list of saved filters). */
-export function spaceTasksFilterScopeKey(spaceId: string): string {
-  return `space-tasks:${spaceId}`;
-}
-
-export function loadSavedFilters(
-  taskListId: string,
-  storage: SavedFilterStorage = localStorage,
-): SavedFilter[] {
-  try {
-    const raw = storage.getItem(savedFilterStorageKey(taskListId));
-    return raw ? JSON.parse(raw) : [];
-  } catch {
-    return [];
-  }
-}
-
-export function saveSavedFilters(
-  taskListId: string,
-  filters: SavedFilter[],
-  storage: SavedFilterStorage = localStorage,
-): void {
-  storage.setItem(savedFilterStorageKey(taskListId), JSON.stringify(filters));
-}
 
 export function isFilterActive(params: TaskFilterParams): boolean {
   return !!(
@@ -75,7 +44,8 @@ export function isFilterActive(params: TaskFilterParams): boolean {
     params.due_date_from ||
     params.due_date_to ||
     (params.archived_state &&
-      params.archived_state !== DEFAULT_ISSUE_ARCHIVED_STATE)
+      params.archived_state !== DEFAULT_ISSUE_ARCHIVED_STATE) ||
+    customFieldFilterCount(params) > 0
   );
 }
 
@@ -105,61 +75,8 @@ export function createSavedTaskFilterParams(
   });
 }
 
-export function createSavedFilter(
-  name: string,
-  params: TaskFilterParams,
-): SavedFilter | null {
-  const normalizedName = name.trim();
-  if (!normalizedName) return null;
-  return {
-    name: normalizedName,
-    params: createSavedTaskFilterParams(params),
-  };
-}
-
-export function removeSavedFilterAt(
-  filters: readonly SavedFilter[],
-  index: number,
-): SavedFilter[] {
-  return filters.filter((_, currentIndex) => currentIndex !== index);
-}
-
-/** Mark the filter at `index` as the default, or clear it when it already is. */
-export function toggleDefaultSavedFilterAt(
-  filters: readonly SavedFilter[],
-  index: number,
-): SavedFilter[] {
-  const makeDefault = !filters[index]?.isDefault;
-  return filters.map((filter, currentIndex) => {
-    const next: SavedFilter = { name: filter.name, params: filter.params };
-    if (makeDefault && currentIndex === index) next.isDefault = true;
-    return next;
-  });
-}
-
-/**
- * Filters a list opens with: its default saved filter, or no filter. The search text is never
- * restored. "Clear all" still goes back to no filter.
- */
-export function createOpeningTaskFilterParams(
-  scopeKey: string,
-  storage: SavedFilterStorage = localStorage,
-): TaskFilterParams {
-  const defaultFilter = loadSavedFilters(scopeKey, storage).find(
-    (filter) => filter.isDefault,
-  );
-  return defaultFilter
-    ? createSavedTaskFilterParams(defaultFilter.params)
-    : createDefaultTaskFilterParams();
-}
-
-export function paramsFromSavedFilter(
-  saved: SavedFilter,
-  currentParams: TaskFilterParams,
-): TaskFilterParams {
-  return createLoadedSavedTaskFilterParams(saved.params, currentParams);
-}
-
+/** miy: saved filters live on the server (`usePmsSavedFilters`); applying one
+ *  keeps the search text being typed. */
 export function createLoadedSavedTaskFilterParams(
   savedParams: TaskFilterParams,
   currentParams: TaskFilterParams,
@@ -171,6 +88,7 @@ export function createLoadedSavedTaskFilterParams(
 }
 
 export function buildTaskFilterPills({
+  customFields = [],
   labels,
   members,
   milestones,
@@ -178,6 +96,7 @@ export function buildTaskFilterPills({
   statusOptions,
   translate,
 }: {
+  customFields?: readonly PmsCustomField[];
   labels: readonly PmsLabel[];
   members: readonly PmsTaskListMember[];
   milestones: readonly PmsMilestone[];
@@ -268,6 +187,27 @@ export function buildTaskFilterPills({
         ...params,
         archived_state: DEFAULT_ISSUE_ARCHIVED_STATE,
       },
+    });
+  }
+  // miy: one pill per custom field condition (a field deleted since keeps a
+  // pill with its id until cleared, since the server ignores it).
+  for (const [fieldId, value] of Object.entries(params.custom_fields ?? {})) {
+    if (!value.trim()) continue;
+    const field = customFields.find((item) => item.id === fieldId);
+    pills.push({
+      label: translate('pms.customFields.pill', {
+        name: field?.name ?? translate('common:feedback.unknown'),
+        value: field
+          ? formatCustomFieldValue(
+              field.field_type === 'multi_select'
+                ? { field_type: 'select' }
+                : field,
+              value,
+              members,
+            )
+          : value,
+      }),
+      clearParams: withCustomFieldFilter(params, fieldId, ''),
     });
   }
   return pills;

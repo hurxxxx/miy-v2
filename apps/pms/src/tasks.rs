@@ -19,6 +19,7 @@ use crate::access::{
     self, ensure_list_editor, ensure_list_member, ensure_task_readable, task_for_editor,
 };
 use crate::attachments;
+use crate::custom_fields;
 use crate::error::{ApiError, ApiResult, check_choice, check_length, check_range};
 use crate::input::{Body, Params, check_list_length, check_opt_length};
 use crate::models::{
@@ -27,6 +28,7 @@ use crate::models::{
 };
 use crate::notify::{self, Outgoing};
 use crate::summary::{self, TaskContext, serialize_task, serialize_tasks};
+use crate::templates;
 use crate::users;
 use crate::workflow::{
     ListWorkflow, PRIORITIES, TASK_UPDATE_NULLABLE_FIELDS, TASK_UPDATE_SCALAR_FIELDS,
@@ -223,8 +225,10 @@ async fn validate_milestone(
     let Some(milestone_id) = milestone_id else {
         return Ok(());
     };
+    // The list's own milestones and the space-wide milestones of its space.
     let ok: bool = sqlx::query_scalar(
-        "SELECT EXISTS (SELECT 1 FROM pms_milestones WHERE id = $1 AND list_id = $2)",
+        "SELECT EXISTS (SELECT 1 FROM pms_milestones m WHERE m.id = $1 AND (m.list_id = $2 \
+         OR (m.list_id IS NULL AND m.team_id = (SELECT team_id FROM pms_task_lists WHERE id = $2))))",
     )
     .bind(milestone_id)
     .bind(list_id)
@@ -463,6 +467,10 @@ pub struct TaskFilters {
     pub due_date_to: Option<NaiveDate>,
     pub start_date_from: Option<NaiveDate>,
     pub start_date_to: Option<NaiveDate>,
+    /// miy: `cf_<field id>=value` as sent, then resolved against the list's
+    /// fields by [`TaskFilters::resolve_custom`].
+    pub custom_raw: Vec<(String, String)>,
+    pub custom: Vec<custom_fields::FieldFilter>,
 }
 
 impl TaskFilters {
@@ -478,7 +486,21 @@ impl TaskFilters {
             due_date_to: params.opt_date("due_date_to")?,
             start_date_from: params.opt_date("start_date_from")?,
             start_date_to: params.opt_date("start_date_to")?,
+            custom_raw: custom_fields::raw_filters(&params.0),
+            custom: Vec::new(),
         })
+    }
+
+    /// Resolve the custom-field conditions against the list's fields (the
+    /// fields are returned for a custom-field sort).
+    pub async fn resolve_custom(
+        &mut self,
+        conn: &mut PgConnection,
+        list_id: &str,
+    ) -> ApiResult<Vec<custom_fields::FieldRow>> {
+        let fields = custom_fields::list_fields(conn, list_id).await?;
+        self.custom = custom_fields::resolve_filters(&fields, &self.custom_raw)?;
+        Ok(fields)
     }
 
     pub fn is_empty(&self) -> bool {
@@ -529,6 +551,7 @@ impl TaskFilters {
         if let Some(date) = self.start_date_to {
             query.push(" AND t.start_date <= ").push_bind(date);
         }
+        custom_fields::push_filters(query, &self.custom);
     }
 }
 
@@ -666,17 +689,19 @@ pub async fn list_tasks(
     let sort_by = params.string("sort_by", "board_position");
     let sort_dir = params.choice("sort_dir", "asc", &["asc", "desc"])?;
     let q = params.string("q", "");
-    let filters = TaskFilters::from_params(&params)?;
+    let mut filters = TaskFilters::from_params(&params)?;
     let descending = sort_dir == "desc";
     let mut conn = pool.acquire().await?;
     let (list, _) = ensure_list_member(&mut conn, &identity.user_id, &list_id).await?;
+    let fields = filters.resolve_custom(&mut conn, &list.id).await?;
+    let field_sort = custom_fields::sort_field(&fields, &sort_by).cloned();
     let mut base = QueryBuilder::<Postgres>::new(format!(
         "SELECT {} FROM pms_tasks t WHERE t.list_id = ",
         task_columns("t")
     ));
     base.push_bind(list.id.clone());
     filters.push(&mut base);
-    if q.trim().is_empty() && sort_by != "title" {
+    if q.trim().is_empty() && sort_by != "title" && field_sort.is_none() {
         let mut count =
             QueryBuilder::<Postgres>::new("SELECT count(*) FROM pms_tasks t WHERE t.list_id = ");
         count.push_bind(list.id.clone());
@@ -696,7 +721,12 @@ pub async fn list_tasks(
         sort_by_title(&mut tasks, descending);
     }
     tasks.retain(|task| matches_task_query(task, &task_reference(&list.key, task.task_number), &q));
-    sort_searched(&mut tasks, &sort_by, descending);
+    match &field_sort {
+        Some(field) => {
+            custom_fields::sort_tasks(&mut conn, &identity, field, &mut tasks, descending).await?
+        }
+        None => sort_searched(&mut tasks, &sort_by, descending),
+    }
     let (page_tasks, total) = paginate(&tasks, page, page_size);
     let items = serialize_tasks(&mut conn, &identity, &page_tasks).await?;
     Ok(Json(json!({
@@ -993,9 +1023,12 @@ const CREATE_FIELDS: &[&str] = &[
     "completed_date",
     "recurrence_rule",
     "label_ids",
+    "template_id",
 ];
 
-/// `POST /v1/pms/lists/{list_id}/tasks`.
+/// `POST /v1/pms/lists/{list_id}/tasks`. miy: with `template_id` (a template
+/// of the list's space) the task also gets the template's checklist, labels and
+/// subtasks; the other fields come from the request as usual.
 pub async fn create_task(
     State(pool): State<PgPool>,
     Extension(identity): Extension<Identity>,
@@ -1023,12 +1056,24 @@ pub async fn create_task(
     let mut completed_date = body.opt_date("completed_date")?;
     let recurrence_rule = body.opt_str("recurrence_rule")?;
     check_opt_length("recurrence_rule", &recurrence_rule, 0, 120)?;
-    let label_ids = body.opt_str_list("label_ids")?.unwrap_or_default();
+    let mut label_ids = body.opt_str_list("label_ids")?.unwrap_or_default();
+    let template_id = body.opt_str("template_id")?;
     let name = actor_name(&identity).await;
 
     let mut tx = pool.begin().await?;
     lock_task_list_order(&mut tx, &list_id).await?;
     let (list, _) = ensure_list_editor(&mut tx, &identity.user_id, &list_id).await?;
+    let template = match &template_id {
+        Some(template_id) => Some(templates::template_for_list(&mut tx, template_id, &list).await?),
+        None => None,
+    };
+    if let Some(template) = &template {
+        for label_id in templates::label_ids_for(&mut tx, &list.id, &template.labels).await? {
+            if !label_ids.contains(&label_id) {
+                label_ids.push(label_id);
+            }
+        }
+    }
     let validated: Option<Vec<String>> = match &assignee_ids {
         Some(ids) => {
             let users = validate_member_users(
@@ -1121,6 +1166,9 @@ pub async fn create_task(
         None,
     )
     .await?;
+    if let Some(template) = &template {
+        templates::apply_template_extras(&mut tx, &identity, &name, &list, &task, template).await?;
+    }
     let item = serialize_one(&mut tx, &identity, &task.id).await?;
     tx.commit().await?;
     Ok((StatusCode::CREATED, Json(item)))

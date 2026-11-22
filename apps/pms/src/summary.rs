@@ -5,7 +5,7 @@ use std::collections::HashMap;
 
 use chrono::NaiveDate;
 use miy_app_sdk::Identity;
-use serde_json::{Value, json};
+use serde_json::{Map, Value, json};
 use sqlx::PgConnection;
 
 use crate::error::ApiResult;
@@ -132,6 +132,8 @@ pub struct TaskContext {
     pub subtasks: HashMap<String, i64>,
     pub checklist: HashMap<String, (i64, i64)>,
     pub names: HashMap<String, String>,
+    /// miy: custom field values by task, then field id.
+    pub custom_fields: HashMap<String, Map<String, Value>>,
 }
 
 impl TaskContext {
@@ -280,6 +282,7 @@ pub async fn load_context_without_names(
     .into_iter()
     .map(|(task_id, total, done)| (task_id, (total, done)))
     .collect();
+    context.custom_fields = crate::custom_fields::values_by_task(conn, &task_ids).await?;
     Ok(context)
 }
 
@@ -338,6 +341,7 @@ pub fn serialize_task(task: &TaskRow, context: &TaskContext) -> Value {
         "checklist_done": checklist_done,
         "recurrence_rule": task.recurrence_rule,
         "labels": context.labels.get(&task.id).cloned().unwrap_or_default(),
+        "custom_fields": context.custom_fields.get(&task.id).cloned().unwrap_or_default(),
         "updated_at": iso_datetime(&task.updated_at),
     })
 }

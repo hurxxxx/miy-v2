@@ -112,7 +112,10 @@ pub fn task_columns(alias: &str) -> String {
 #[allow(dead_code)]
 pub struct MilestoneRow {
     pub id: String,
-    pub list_id: String,
+    /// The space; every milestone has one (migration 0004).
+    pub team_id: String,
+    /// The list of a list milestone; `None` for a space-wide milestone.
+    pub list_id: Option<String>,
     pub title: String,
     pub description: String,
     pub status: String,

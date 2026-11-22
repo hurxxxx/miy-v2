@@ -37,6 +37,7 @@ import {
   type PmsTaskListStatus,
 } from '../api/pms-api';
 import {
+  createDefaultTaskFilterParams,
   filterDefaultVisibleTasks,
   hasSelectedCompletionStatus,
   mergeTaskListStatusesForFilter,
@@ -45,10 +46,8 @@ import {
 } from '../api/pms-filters';
 import { taskListRoleAllows } from '../api/pms-permissions';
 import { FilterBar } from './FilterBar';
-import {
-  createOpeningTaskFilterParams,
-  spaceTasksFilterScopeKey,
-} from './filter-bar-model';
+import { createLoadedSavedTaskFilterParams } from './filter-bar-model';
+import { usePmsSavedFilters } from './usePmsSavedFilters';
 import { getDefaultTaskStatus, getStatusSlugs } from './pms-constants';
 import { BoardView } from './BoardView';
 import { CalendarView } from './CalendarView';
@@ -219,9 +218,30 @@ function useSpaceTasksViewElement({
   const api = useAppApi();
   const user = usePmsCurrentUser();
   const [searchParams, setSearchParams] = useSearchParams();
-  const [filterParams, setFilterParams] = useState<TaskFilterParams>(() =>
-    createOpeningTaskFilterParams(spaceTasksFilterScopeKey(spaceId)),
+  const [filterParams, setFilterParamsState] = useState<TaskFilterParams>(() =>
+    createDefaultTaskFilterParams(),
   );
+  // miy: saved filters of the space's combined view live on the server. The
+  // "open with" filter applies only while the person has not changed this
+  // space's filters yet.
+  const filterTouchedRef = useRef<string | null>(null);
+  const setFilterParams = useCallback(
+    (next: TaskFilterParams | ((current: TaskFilterParams) => TaskFilterParams)) => {
+      filterTouchedRef.current = spaceId;
+      setFilterParamsState(next);
+    },
+    [spaceId],
+  );
+  const savedFilters = usePmsSavedFilters({
+    scope: { spaceId },
+    onOpeningDefault: (filter, scopeKey) => {
+      if (scopeKey !== `space:${spaceId}`) return;
+      if (filterTouchedRef.current === spaceId) return;
+      setFilterParamsState((current) =>
+        createLoadedSavedTaskFilterParams(filter.params, current),
+      );
+    },
+  });
   const [layout, setLayout] = useState<SpaceTasksLayout>(() =>
     loadSpaceTasksLayout(spaceId),
   );
@@ -631,7 +651,7 @@ function useSpaceTasksViewElement({
         ),
       }));
     },
-    [filterOptions.statuses],
+    [filterOptions.statuses, setFilterParams],
   );
 
   const layoutChoiceShown =
@@ -675,6 +695,7 @@ function useSpaceTasksViewElement({
     if (activeTab === 'calendar') {
       return (
         <CalendarView
+          milestones={filterOptions.milestones}
           tasks={combinedTasks.tasks}
           taskListStatuses={filterOptions.statuses}
           taskSourceLabels={combinedTasks.listNameByTaskId}
@@ -683,6 +704,7 @@ function useSpaceTasksViewElement({
     }
     return (
       <GanttView
+        milestones={filterOptions.milestones}
         canEdit={editableListIds.size > 0}
         canEditTask={canEditTask}
         completedItemsControlDisabled={filterOptions.statuses.length === 0}
@@ -736,12 +758,17 @@ function useSpaceTasksViewElement({
     }
     if (activeTab === 'calendar') {
       return (
-        <CalendarView tasks={visibleTasks} taskListStatuses={bundle.statuses} />
+        <CalendarView
+          milestones={bundle.milestones}
+          tasks={visibleTasks}
+          taskListStatuses={bundle.statuses}
+        />
       );
     }
     if (activeTab === 'gantt') {
       return (
         <GanttView
+          milestones={bundle.milestones}
           canEdit={canEdit}
           completedItemsControlDisabled={filterOptions.statuses.length === 0}
           members={bundle.members}
@@ -816,9 +843,11 @@ function useSpaceTasksViewElement({
 
       {taskLists.length > 0 ? (
         <FilterBar
-          taskListId={spaceTasksFilterScopeKey(spaceId)}
+          taskListId={spaceId}
           filterParams={filterParams}
           setFilterParams={setFilterParams}
+          savedFilters={savedFilters}
+          canShareSavedFilters={taskListRoleAllows(taskLists[0]?.role, 'admin')}
           members={filterOptions.members}
           currentUserId={user?.id}
           milestones={filterOptions.milestones}

@@ -153,4 +153,41 @@ describe('TableView', () => {
     fireEvent.click(header);
     expect(onSelectTasks).toHaveBeenLastCalledWith(['a', 'b'], false);
   });
+
+  it('shows custom field columns, sorts by them and edits a value (miy)', () => {
+    const onSortChange = vi.fn();
+    const onUpdateCustomField = vi.fn(async () => true);
+    render(
+      <TableView
+        canEdit
+        customFields={[
+          {
+            id: 'f-points',
+            list_id: 'list-1',
+            name: 'Points',
+            field_type: 'number',
+            options: null,
+            sort_order: 0,
+          },
+        ]}
+        onSelectIssue={vi.fn()}
+        onSortChange={onSortChange}
+        onUpdateCustomField={onUpdateCustomField}
+        sort={{ field: 'cf_f-points', direction: 'asc' }}
+        tasks={[task({ id: 'a', custom_fields: { 'f-points': '3' } })]}
+      />,
+    );
+    const header = screen.getByRole('columnheader', { name: /Points/ });
+    expect(header.getAttribute('aria-sort')).toBe('ascending');
+    fireEvent.click(within(header).getByRole('button'));
+    expect(onSortChange).toHaveBeenCalledWith({
+      field: 'cf_f-points',
+      direction: 'desc',
+    });
+    const cell = screen.getByRole('textbox', { name: 'Points' }) as HTMLInputElement;
+    expect(cell.value).toBe('3');
+    fireEvent.change(cell, { target: { value: '5' } });
+    fireEvent.blur(cell);
+    expect(onUpdateCustomField).toHaveBeenCalledWith('a', 'f-points', '5');
+  });
 });

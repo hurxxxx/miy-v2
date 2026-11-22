@@ -16,8 +16,9 @@ import {
   Paperclip,
   Download,
   FileIcon,
+  LayoutTemplate,
 } from 'lucide-react';
-import { Badge, Button } from '@miy/ui';
+import { Badge, Button, useFeedback, usePrompt } from '@miy/ui';
 import { BlockEditor, BlockViewer } from '../../../components/editor';
 import type { BlockContent } from '../../../components/editor';
 import { useTranslation } from 'react-i18next';
@@ -30,6 +31,8 @@ import { usePmsCurrentUser } from '../../../platform/auth/current-user';
 import { DateInput } from '../../../components/date/DateInput';
 import {
   downloadAttachment,
+  saveTaskAsTemplate,
+  type PmsCustomField,
   type PmsTask,
   type PmsTaskListMember,
   type PmsMilestone,
@@ -51,6 +54,9 @@ import { useTaskDetailComments } from './useTaskDetailComments';
 import { useTaskDetailIssueEditing } from './useTaskDetailIssueEditing';
 import { useTaskDetailResources } from './useTaskDetailResources';
 import { useTaskDetailSubtasks } from './useTaskDetailSubtasks';
+import { CustomFieldValueEditor } from './CustomFieldValueEditor';
+import { useTaskCustomFieldValues } from './useTaskCustomFieldValues';
+import { apiErrorMessage } from '../../../platform/api/api-error';
 
 const PRIORITIES = ['low', 'medium', 'high', 'critical'] as const;
 const PRIORITY_LABEL_KEYS: Record<string, string> = {
@@ -68,6 +74,7 @@ const RECURRENCE_OPTIONS = [
 const EMPTY_MEMBERS: PmsTaskListMember[] = [];
 const EMPTY_MILESTONES: PmsMilestone[] = [];
 const EMPTY_TASK_LIST_LABELS: PmsLabel[] = [];
+const EMPTY_CUSTOM_FIELDS: PmsCustomField[] = [];
 
 const selectClass = 'app-field-input min-w-0 cursor-pointer';
 const disabledFieldClass = `${selectClass} disabled:cursor-not-allowed disabled:opacity-60`;
@@ -79,6 +86,8 @@ type TaskDetailProps = {
   milestones?: PmsMilestone[];
   taskListLabels?: PmsLabel[];
   taskListStatuses?: PmsTaskListStatus[];
+  /** miy: the list's custom fields, shown and edited under the labels. */
+  customFields?: PmsCustomField[];
   spaceName?: string | null;
   /** AI-DO used it for linked docs (not ported); callers still pass it. */
   spaceId?: string | null;
@@ -99,6 +108,7 @@ function TaskDetailContent({
   milestones = EMPTY_MILESTONES,
   taskListLabels = EMPTY_TASK_LIST_LABELS,
   taskListStatuses,
+  customFields = EMPTY_CUSTOM_FIELDS,
   spaceName,
   workspaceSlug: workspaceSlugProp = null,
   canEdit = true,
@@ -112,6 +122,38 @@ function TaskDetailContent({
   const user = usePmsCurrentUser();
   const { t } = useTranslation('apps');
   const fileApi = useAppFileApi();
+  const feedback = useFeedback();
+  const { prompt, promptDialog } = usePrompt();
+  const customFieldValues = useTaskCustomFieldValues({
+    api,
+    taskId: task.id,
+    initialValues: task.custom_fields,
+    onSaved: onUpdate,
+    failedMessage: t('pms.customFields.errors.valueFailed'),
+  });
+  // miy: save this task (checklist, labels, direct subtasks) as a template of
+  // its space.
+  const handleSaveAsTemplate = async () => {
+    if (!api) return;
+    const name = await prompt({
+      title: t('pms.templateSettings.saveAsTemplate'),
+      description: t('pms.templateSettings.saveAsTemplateDescription'),
+      defaultValue: task.title,
+      placeholder: t('pms.templateSettings.name'),
+      submitLabel: t('common:actions.save'),
+      cancelLabel: t('common:actions.cancel'),
+    });
+    const trimmed = name?.trim() ?? '';
+    if (!trimmed) return;
+    try {
+      const template = await saveTaskAsTemplate(api, task.id, trimmed);
+      feedback.success(t('pms.templateSettings.saved', { name: template.name }));
+    } catch (caught) {
+      feedback.error(
+        apiErrorMessage(caught, t('pms.templateSettings.errors.saveFailed')),
+      );
+    }
+  };
   const {
     commitTitleChange,
     descriptionSavePending,
@@ -363,6 +405,17 @@ function TaskDetailContent({
               {t('pms.taskDetail.readOnly')}
             </span>
           ) : (
+            <>
+            <button
+              type="button"
+              onClick={() => void handleSaveAsTemplate()}
+              className="app-text-control-sm inline-flex items-center gap-1 rounded-md border border-app-border px-2.5 py-1 text-app-ink/60 transition-colors hover:border-app-ink/30 hover:text-app-ink"
+            >
+              <LayoutTemplate size={13} />
+              <span className="hidden sm:inline">
+                {t('pms.templateSettings.saveAsTemplate')}
+              </span>
+            </button>
             <button
               type="button"
               onClick={handleToggleIssueArchive}
@@ -372,6 +425,7 @@ function TaskDetailContent({
                 ? t('pms.bulk.restore')
                 : t('common:actions.archive')}
             </button>
+            </>
           )}
           <Button
             variant="ghost"
@@ -705,6 +759,37 @@ function TaskDetailContent({
                 )}
               </div>
             </div>
+
+            {customFields.length > 0 ? (
+              <section
+                aria-label={t('pms.customFields.heading')}
+                className="space-y-2"
+                data-testid="task-detail-custom-fields"
+              >
+                <h3 className="app-text-overline text-app-ink/50">
+                  {t('pms.customFields.heading')}
+                </h3>
+                <div className="grid grid-cols-[88px_minmax(0,1fr)] items-center gap-x-3 gap-y-3 lg:grid-cols-[auto_1fr_auto_1fr] lg:gap-x-6">
+                  {customFields.map((field) => (
+                    <div className="contents" key={field.id}>
+                      <MetaLabel>{field.name}</MetaLabel>
+                      <CustomFieldValueEditor
+                        disabled={!canEdit}
+                        field={field}
+                        members={members}
+                        onCommit={(value) =>
+                          customFieldValues.save(field.id, value)
+                        }
+                        value={customFieldValues.values[field.id]}
+                      />
+                    </div>
+                  ))}
+                </div>
+                {customFieldValues.error ? (
+                  <InlineSaveError message={customFieldValues.error} />
+                ) : null}
+              </section>
+            ) : null}
 
             <hr className="border-app-border" />
 
@@ -1200,6 +1285,7 @@ function TaskDetailContent({
           onMentionPick={handleMentionPick}
         />
       </div>
+      {promptDialog}
     </div>
   );
 }

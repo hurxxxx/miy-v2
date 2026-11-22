@@ -10,20 +10,24 @@ use sqlx::PgPool;
 mod access;
 mod attachments;
 mod copy;
+mod custom_fields;
 mod error;
 mod error_catalog;
 mod export;
 mod home_card;
 mod input;
 mod lists;
+mod milestones;
 mod models;
 mod notify;
+mod saved_filters;
 mod search;
 mod spaces;
 mod statuses;
 mod summary;
 mod task_items;
 mod tasks;
+mod templates;
 mod users;
 mod workflow;
 
@@ -118,11 +122,15 @@ pub fn router(pool: PgPool) -> Router {
         )
         .route(
             "/v1/pms/lists/{list_id}/milestones",
-            get(lists::list_milestones).post(lists::create_milestone),
+            get(milestones::list_milestones).post(milestones::create_milestone),
+        )
+        .route(
+            "/v1/pms/spaces/{space_id}/milestones",
+            get(milestones::list_space_milestones).post(milestones::create_space_milestone),
         )
         .route(
             "/v1/pms/milestones/{milestone_id}",
-            patch(lists::update_milestone),
+            patch(milestones::update_milestone).delete(milestones::delete_milestone),
         )
         .route(
             "/v1/pms/lists/{list_id}/labels",
@@ -135,19 +143,46 @@ pub fn router(pool: PgPool) -> Router {
         .route("/v1/pms/dashboard/summary", get(lists::dashboard_summary))
         .route(
             "/v1/pms/lists/{list_id}/templates",
-            get(task_items::list_templates).post(task_items::create_template),
+            get(templates::list_list_templates),
+        )
+        .route(
+            "/v1/pms/spaces/{space_id}/templates",
+            get(templates::list_space_templates).post(templates::create_template),
         )
         .route(
             "/v1/pms/templates/{template_id}",
-            patch(task_items::update_template).delete(task_items::delete_template),
+            get(templates::get_template)
+                .patch(templates::update_template)
+                .delete(templates::delete_template),
+        )
+        .route(
+            "/v1/pms/tasks/{task_id}/template",
+            post(templates::save_task_as_template),
         )
         .route(
             "/v1/pms/lists/{list_id}/custom-fields",
-            get(task_items::list_custom_fields).post(task_items::create_custom_field),
+            get(custom_fields::list_custom_fields).post(custom_fields::create_custom_field),
+        )
+        .route(
+            "/v1/pms/lists/{list_id}/custom-fields/reorder",
+            patch(custom_fields::reorder_custom_fields),
         )
         .route(
             "/v1/pms/custom-fields/{field_id}",
-            axum::routing::delete(task_items::delete_custom_field),
+            patch(custom_fields::update_custom_field).delete(custom_fields::delete_custom_field),
+        )
+        // Saved filters (miy: kept on the server, per person, shareable).
+        .route(
+            "/v1/pms/saved-filters",
+            get(saved_filters::list_saved_filters).post(saved_filters::create_saved_filter),
+        )
+        .route(
+            "/v1/pms/saved-filters/default",
+            put(saved_filters::set_default_saved_filter),
+        )
+        .route(
+            "/v1/pms/saved-filters/{filter_id}",
+            patch(saved_filters::update_saved_filter).delete(saved_filters::delete_saved_filter),
         )
         .route(
             "/v1/pms/lists/{list_id}/export",
@@ -216,7 +251,7 @@ pub fn router(pool: PgPool) -> Router {
         )
         .route(
             "/v1/pms/tasks/{task_id}/custom-field-values",
-            get(task_items::list_custom_field_values).put(task_items::set_custom_field_value),
+            get(custom_fields::list_custom_field_values).put(custom_fields::set_custom_field_value),
         )
         // Attachments (miy small attachments).
         .route(

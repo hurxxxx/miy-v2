@@ -10,6 +10,7 @@ import {
   reconcileNewTaskDueDate,
   reconcileNewTaskStartDate,
   resolveNewTaskStatus,
+  isNewTaskDraftDirty,
 } from './new-task-modal-model';
 
 function taskListStatus(
@@ -134,6 +135,26 @@ describe('new task modal model', () => {
     ).toBe('doing');
   });
 
+  it('uses a template title and blocks and sends its id (miy)', () => {
+    const state = createInitialNewTaskState(taskListStatuses);
+    const template = taskTemplate({
+      name: 'Release checklist',
+      title: 'Release v2',
+      description_blocks: descriptionBlocks as unknown as Record<string, unknown>[],
+    });
+    const applied = applyNewTaskTemplate(state, template, taskListStatuses);
+    expect(applied.title).toBe('Release v2');
+    expect(applied.descriptionBlocks).toEqual(descriptionBlocks);
+    expect(applied.descriptionVersion).toBe(state.descriptionVersion + 1);
+    expect(applied.appliedTemplate).toBe(template);
+    expect(isNewTaskDraftDirty({ ...state, appliedTemplate: template })).toBe(true);
+    expect(buildNewTaskCreatePayload(applied, taskListStatuses).template_id).toBe(
+      'template-1',
+    );
+    const cleared = newTaskReducer(applied, { type: 'clear-template' });
+    expect(buildNewTaskCreatePayload(cleared, taskListStatuses).template_id).toBeNull();
+  });
+
   it('builds create payloads with normalized title, dates, and status', () => {
     const state = {
       ...createInitialNewTaskState(taskListStatuses),
@@ -157,6 +178,7 @@ describe('new task modal model', () => {
       parent_id: 'parent-task-1',
       start_date: null,
       due_date: '2026-06-30',
+      template_id: null,
     });
     expect(
       buildNewTaskCreatePayload(

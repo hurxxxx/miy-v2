@@ -7,6 +7,10 @@ import {
   BookmarkCheck,
   Search,
   Star,
+  Pencil,
+  Users,
+  RefreshCw,
+  Check,
 } from 'lucide-react';
 import { DetailDrawer } from '@miy/ui';
 import { useTranslation } from 'react-i18next';
@@ -15,10 +19,13 @@ import { UserOptionRow } from '../../../platform/users/UserSearchMultiSelect';
 import { selectUserOptionsForPicker } from '../../../platform/users/user-option-picker-model';
 import type {
   TaskFilterParams,
+  PmsCustomField,
   PmsTaskListMember,
   PmsMilestone,
   PmsLabel,
   PmsTaskListStatus,
+  PmsSavedFilter,
+  PmsSavedFilterInput,
 } from '../api/pms-api';
 import {
   DEFAULT_ISSUE_ARCHIVED_STATE,
@@ -27,16 +34,13 @@ import {
 import {
   buildTaskFilterPills,
   createClearedTaskFilterParams,
-  createSavedFilter,
+  createLoadedSavedTaskFilterParams,
+  createSavedTaskFilterParams,
   isFilterActive,
-  loadSavedFilters,
-  paramsFromSavedFilter,
-  removeSavedFilterAt,
-  saveSavedFilters,
-  toggleDefaultSavedFilterAt,
   type FilterBarStatusOption,
-  type SavedFilter,
 } from './filter-bar-model';
+import { withCustomFieldFilter } from './custom-field-model';
+import type { PmsSavedFiltersController } from './usePmsSavedFilters';
 
 const DEFAULT_statusOptions = [
   {
@@ -148,6 +152,8 @@ function Dropdown({
 }
 
 type FilterBarProps = {
+  /** AI-DO keyed browser-stored saved filters by it; miy keeps them on the
+   *  server (`savedFilters`). */
   taskListId: string;
   filterParams: TaskFilterParams;
   setFilterParams: (params: TaskFilterParams) => void;
@@ -156,6 +162,18 @@ type FilterBarProps = {
   milestones: PmsMilestone[];
   labels: PmsLabel[];
   taskListStatuses?: PmsTaskListStatus[];
+  /** miy: the list's custom fields, offered as filter conditions. */
+  customFields?: PmsCustomField[];
+  /** miy: the view's saved filters on the server. */
+  savedFilters?: PmsSavedFiltersController;
+  /** What a new or replaced saved filter holds besides the filter bar (sort,
+   *  grouping); the filter bar without the search is always saved. */
+  captureSavedFilter?: () => Omit<PmsSavedFilterInput, 'name' | 'shared' | 'params'>;
+  /** Apply a saved filter (its sort and grouping too); without it only the
+   *  filter bar changes. */
+  onApplySavedFilter?: (filter: PmsSavedFilter) => void;
+  /** Space owners and admins can share a filter with the space. */
+  canShareSavedFilters?: boolean;
 };
 
 type MemberUserOption = PmsTaskListMember & { id: string };
@@ -178,6 +196,11 @@ function useFilterBarModel({
   milestones,
   labels,
   taskListStatuses,
+  customFields = [],
+  savedFilters: savedFilterController,
+  captureSavedFilter,
+  onApplySavedFilter,
+  canShareSavedFilters = false,
 }: FilterBarProps) {
   const { t } = useTranslation('apps');
   const configuredStatuses = taskListStatuses ?? [];
@@ -197,42 +220,87 @@ function useFilterBarModel({
   const selectedStatusSlugs =
     getEffectiveTaskStatusFilter(filterParams.status, statusDefinitions) ?? [];
   const selectedStatusSet = new Set(selectedStatusSlugs);
-  const [, refreshSavedFilters] = useState(0);
   const [saveDialogOpen, setSaveDialogOpen] = useState(false);
+  const [shareOnSave, setShareOnSave] = useState(false);
+  const [savingFilter, setSavingFilter] = useState(false);
+  const [renamingId, setRenamingId] = useState<string | null>(null);
+  const [renameDraft, setRenameDraft] = useState('');
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
   const [filterName, setFilterName] = useState('');
   const [assigneeQuery, setAssigneeQuery] = useState('');
 
   const active = isFilterActive(filterParams);
-  const savedFilters = loadSavedFilters(taskListId);
+  const savedFilters = savedFilterController?.items ?? [];
+  void taskListId;
 
   const clearAll = () => {
     setFilterParams(createClearedTaskFilterParams(filterParams));
   };
 
-  const handleSave = () => {
-    const saved = createSavedFilter(filterName, filterParams);
+  const captureCurrent = (): Omit<PmsSavedFilterInput, 'name' | 'shared'> => ({
+    ...captureSavedFilter?.(),
+    params: createSavedTaskFilterParams(filterParams),
+  });
+
+  // The name stays in the box until the server has the filter, so a failed
+  // or slow save keeps what was typed.
+  const handleSave = async () => {
+    const name = filterName.trim();
+    if (!name || !savedFilterController || savingFilter) return;
+    setSavingFilter(true);
+    const saved = await savedFilterController.create({
+      ...captureCurrent(),
+      name,
+      shared: canShareSavedFilters && shareOnSave,
+    });
+    setSavingFilter(false);
     if (!saved) return;
-    const next = [...savedFilters, saved];
-    saveSavedFilters(taskListId, next);
-    refreshSavedFilters((version) => version + 1);
     setFilterName('');
+    setShareOnSave(false);
     setSaveDialogOpen(false);
   };
 
-  const handleDeleteSaved = (idx: number) => {
-    const next = removeSavedFilterAt(savedFilters, idx);
-    saveSavedFilters(taskListId, next);
-    refreshSavedFilters((version) => version + 1);
+  const handleDeleteSaved = (filter: PmsSavedFilter) => {
+    void savedFilterController?.remove(filter);
   };
 
-  const handleToggleDefaultSaved = (idx: number) => {
-    saveSavedFilters(taskListId, toggleDefaultSavedFilterAt(savedFilters, idx));
-    refreshSavedFilters((version) => version + 1);
+  const handleToggleDefaultSaved = (filter: PmsSavedFilter) => {
+    void savedFilterController?.setDefault(filter.is_default ? null : filter);
   };
 
-  const handleLoadSaved = (saved: SavedFilter) => {
-    setFilterParams(paramsFromSavedFilter(saved, filterParams));
+  const handleToggleSharedSaved = (filter: PmsSavedFilter) => {
+    void savedFilterController?.update(filter, { shared: !filter.shared });
+  };
+
+  const handleReplaceSaved = (filter: PmsSavedFilter) => {
+    void savedFilterController?.update(filter, captureCurrent());
+  };
+
+  const startRenameSaved = (filter: PmsSavedFilter) => {
+    setRenamingId(filter.id);
+    setRenameDraft(filter.name);
+  };
+
+  const handleRenameSaved = async (filter: PmsSavedFilter) => {
+    const name = renameDraft.trim();
+    if (!name || name === filter.name) {
+      setRenamingId(null);
+      return;
+    }
+    const saved = await savedFilterController?.update(filter, { name });
+    if (saved) setRenamingId(null);
+  };
+
+  const handleLoadSaved = (saved: PmsSavedFilter) => {
+    if (onApplySavedFilter) {
+      onApplySavedFilter(saved);
+      return;
+    }
+    setFilterParams(createLoadedSavedTaskFilterParams(saved.params, filterParams));
+  };
+
+  const setCustomFieldFilter = (fieldId: string, value: string) => {
+    setFilterParams(withCustomFieldFilter(filterParams, fieldId, value));
   };
 
   const toggleStatus = (status: string) => {
@@ -243,6 +311,7 @@ function useFilterBarModel({
   };
 
   const pills = buildTaskFilterPills({
+    customFields,
     labels,
     members,
     milestones,
@@ -268,15 +337,31 @@ function useFilterBarModel({
     active,
     assigneeOptions,
     assigneeQuery,
+    canSaveFilters: Boolean(savedFilterController),
+    canShareSavedFilters,
     clearAll,
     currentUserId,
+    customFields,
     filterName,
     filterParams,
     handleDeleteSaved,
     handleLoadSaved,
+    handleRenameSaved,
+    handleReplaceSaved,
     handleSave,
     handleToggleDefaultSaved,
+    handleToggleSharedSaved,
     labels,
+    renameDraft,
+    renamingId,
+    savedFilterError: savedFilterController?.actionError ?? null,
+    savingFilter,
+    setCustomFieldFilter,
+    setRenameDraft,
+    setRenamingId,
+    setShareOnSave,
+    shareOnSave,
+    startRenameSaved,
     members,
     milestones,
     mobileFiltersOpen,
@@ -295,84 +380,200 @@ function useFilterBarModel({
   };
 }
 
-/** Saved filters in the '저장됨' menu: apply, make the list's default, or remove. */
+/** Saved filters in the '저장됨' menu: apply, open the view with it, and for
+ *  the filters the person manages rename, replace with the current conditions,
+ *  share with the space (owners and admins) or remove. miy keeps them on the
+ *  server; AI-DO kept them in browser storage. */
 function SavedFilterMenuItems({
+  canShare,
   close,
   onDelete,
   onLoad,
+  onRename,
+  onReplace,
   onToggleDefault,
+  onToggleShared,
+  renameDraft,
+  renamingId,
   savedFilters,
+  setRenameDraft,
+  setRenamingId,
+  startRename,
   t,
 }: {
+  canShare: boolean;
   close: () => void;
-  onDelete: (index: number) => void;
-  onLoad: (saved: SavedFilter) => void;
-  onToggleDefault: (index: number) => void;
-  savedFilters: SavedFilter[];
+  onDelete: (filter: PmsSavedFilter) => void;
+  onLoad: (filter: PmsSavedFilter) => void;
+  onRename: (filter: PmsSavedFilter) => void;
+  onReplace: (filter: PmsSavedFilter) => void;
+  onToggleDefault: (filter: PmsSavedFilter) => void;
+  onToggleShared: (filter: PmsSavedFilter) => void;
+  renameDraft: string;
+  renamingId: string | null;
+  savedFilters: PmsSavedFilter[];
+  setRenameDraft: (value: string) => void;
+  setRenamingId: (value: string | null) => void;
+  startRename: (filter: PmsSavedFilter) => void;
   t: ReturnType<typeof useFilterBarModel>['t'];
 }) {
+  const iconButton =
+    'p-0.5 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 text-app-ink/30';
   return (
     <>
-      {savedFilters.map((sf, idx) => (
-        <div
-          key={`${sf.name}:${JSON.stringify(sf.params)}`}
-          className="flex items-center justify-between gap-1 px-3 py-1.5 hover:bg-app-surface-hover group"
-        >
-          <button
-            type="button"
-            onClick={() => {
-              onLoad(sf);
-              close();
-            }}
-            className="app-text-control-sm flex min-w-0 flex-1 items-center gap-2 text-left text-app-ink"
-          >
-            <BookmarkCheck size={12} className="text-app-accent shrink-0" />
-            <span className="truncate">{sf.name}</span>
-            {sf.isDefault ? (
-              <span className="shrink-0 rounded bg-app-accent/10 px-1 app-text-caption text-app-accent">
-                {t('pms.filter.defaultSavedFilter')}
-              </span>
-            ) : null}
-          </button>
-          <button
-            type="button"
-            aria-pressed={Boolean(sf.isDefault)}
-            onClick={(e) => {
-              e.stopPropagation();
-              onToggleDefault(idx);
-            }}
-            className={`p-0.5 focus-visible:opacity-100 ${
-              sf.isDefault
-                ? 'text-app-accent'
-                : 'opacity-0 group-hover:opacity-100 text-app-ink/30 hover:text-app-accent'
-            }`}
-            aria-label={t(
-              sf.isDefault
-                ? 'pms.filter.unsetDefaultSavedFilter'
-                : 'pms.filter.setDefaultSavedFilter',
-              { label: sf.name },
-            )}
-          >
-            <Star
-              size={11}
-              className={sf.isDefault ? 'fill-current' : undefined}
+      {savedFilters.map((sf) =>
+        renamingId === sf.id ? (
+          <div key={sf.id} className="flex items-center gap-1 px-3 py-1.5">
+            <input
+              aria-label={t('pms.savedFilters.rename', { label: sf.name })}
+              autoFocus
+              className={`${FILTER_FIELD_CLASS} min-w-0 flex-1`}
+              maxLength={80}
+              onChange={(event) => setRenameDraft(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' && !event.nativeEvent.isComposing)
+                  onRename(sf);
+                if (event.key === 'Escape') setRenamingId(null);
+              }}
+              value={renameDraft}
             />
-          </button>
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              onDelete(idx);
-            }}
-            className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100 text-app-ink/30 hover:text-app-danger-text p-0.5"
-            aria-label={t('pms.filter.removeFilter', {
-              label: sf.name,
-            })}
+            <button
+              type="button"
+              aria-label={t('common:actions.save')}
+              className="p-0.5 text-app-accent"
+              onClick={() => onRename(sf)}
+            >
+              <Check size={12} />
+            </button>
+            <button
+              type="button"
+              aria-label={t('common:actions.cancel')}
+              className="p-0.5 text-app-ink/40 hover:text-app-ink"
+              onClick={() => setRenamingId(null)}
+            >
+              <X size={12} />
+            </button>
+          </div>
+        ) : (
+          <div
+            key={sf.id}
+            className="flex items-center justify-between gap-1 px-3 py-1.5 hover:bg-app-surface-hover group"
           >
-            <X size={11} />
-          </button>
-        </div>
-      ))}
+            <button
+              type="button"
+              onClick={() => {
+                onLoad(sf);
+                close();
+              }}
+              className="app-text-control-sm flex min-w-0 flex-1 items-center gap-2 text-left text-app-ink"
+              title={
+                sf.shared && !sf.is_mine
+                  ? t('pms.savedFilters.sharedBy', { name: sf.owner_name })
+                  : undefined
+              }
+            >
+              <BookmarkCheck size={12} className="text-app-accent shrink-0" />
+              <span className="truncate">{sf.name}</span>
+              {sf.is_default ? (
+                <span className="shrink-0 rounded bg-app-accent/10 px-1 app-text-caption text-app-accent">
+                  {t('pms.filter.defaultSavedFilter')}
+                </span>
+              ) : null}
+              {sf.shared ? (
+                <span className="shrink-0 rounded bg-app-surface-hover px-1 app-text-caption text-app-ink/60">
+                  {t('pms.savedFilters.shared')}
+                </span>
+              ) : null}
+            </button>
+            <button
+              type="button"
+              aria-pressed={sf.is_default}
+              onClick={(e) => {
+                e.stopPropagation();
+                onToggleDefault(sf);
+              }}
+              className={`p-0.5 focus-visible:opacity-100 ${
+                sf.is_default
+                  ? 'text-app-accent'
+                  : 'opacity-0 group-hover:opacity-100 text-app-ink/30 hover:text-app-accent'
+              }`}
+              aria-label={t(
+                sf.is_default
+                  ? 'pms.filter.unsetDefaultSavedFilter'
+                  : 'pms.filter.setDefaultSavedFilter',
+                { label: sf.name },
+              )}
+            >
+              <Star
+                size={11}
+                className={sf.is_default ? 'fill-current' : undefined}
+              />
+            </button>
+            {sf.can_manage ? (
+              <>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    startRename(sf);
+                  }}
+                  className={`${iconButton} hover:text-app-ink`}
+                  aria-label={t('pms.savedFilters.rename', { label: sf.name })}
+                >
+                  <Pencil size={11} />
+                </button>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onReplace(sf);
+                  }}
+                  className={`${iconButton} hover:text-app-ink`}
+                  aria-label={t('pms.savedFilters.update', { label: sf.name })}
+                >
+                  <RefreshCw size={11} />
+                </button>
+                {canShare ? (
+                  <button
+                    type="button"
+                    aria-pressed={sf.shared}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onToggleShared(sf);
+                    }}
+                    className={`p-0.5 focus-visible:opacity-100 ${
+                      sf.shared
+                        ? 'text-app-accent'
+                        : 'opacity-0 group-hover:opacity-100 text-app-ink/30 hover:text-app-accent'
+                    }`}
+                    aria-label={t(
+                      sf.shared
+                        ? 'pms.savedFilters.unshareAction'
+                        : 'pms.savedFilters.shareAction',
+                      { label: sf.name },
+                    )}
+                  >
+                    <Users size={11} />
+                  </button>
+                ) : null}
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onDelete(sf);
+                  }}
+                  className={`${iconButton} hover:text-app-danger-text`}
+                  aria-label={t('pms.filter.removeFilter', {
+                    label: sf.name,
+                  })}
+                >
+                  <X size={11} />
+                </button>
+              </>
+            ) : null}
+          </div>
+        ),
+      )}
       <p className="border-t border-app-border px-3 py-1.5 app-text-caption text-app-ink/50">
         {t('pms.filter.defaultSavedFilterHint')}
       </p>
@@ -380,19 +581,141 @@ function SavedFilterMenuItems({
   );
 }
 
+/** miy: one dropdown for the list's custom fields; each field takes one
+ *  condition (text contains, an option, a person, a number or a date). */
+function CustomFieldFilterMenu({
+  customFields,
+  filterParams,
+  members,
+  onChange,
+  t,
+}: {
+  customFields: PmsCustomField[];
+  filterParams: TaskFilterParams;
+  members: PmsTaskListMember[];
+  onChange: (fieldId: string, value: string) => void;
+  t: ReturnType<typeof useFilterBarModel>['t'];
+}) {
+  return (
+    <div className="grid gap-2 px-3 py-2">
+      {customFields.map((field) => {
+        const value = filterParams.custom_fields?.[field.id] ?? '';
+        const choices =
+          field.field_type === 'select' || field.field_type === 'multi_select'
+            ? (field.options ?? []).map((option) => ({ value: option, label: option }))
+            : field.field_type === 'user'
+              ? members.map((member) => ({
+                  value: member.user_id,
+                  label: member.full_name,
+                }))
+              : null;
+        return (
+          <label key={field.id} className="grid gap-1">
+            <span className={FILTER_META_LABEL_CLASS}>{field.name}</span>
+            {choices ? (
+              <select
+                className={FILTER_FIELD_CLASS}
+                onChange={(event) => onChange(field.id, event.target.value)}
+                value={value}
+              >
+                <option value="">{t('pms.filter.all')}</option>
+                {choices.map((choice) => (
+                  <option key={choice.value} value={choice.value}>
+                    {choice.label}
+                  </option>
+                ))}
+              </select>
+            ) : field.field_type === 'date' ? (
+              <DateInput
+                aria-label={field.name}
+                className={FILTER_FIELD_CLASS}
+                onValueChange={(next) => onChange(field.id, next)}
+                value={value}
+              />
+            ) : (
+              <CustomFieldTextFilter
+                fieldName={field.name}
+                numeric={field.field_type === 'number'}
+                onCommit={(next) => onChange(field.id, next)}
+                placeholder={t('pms.customFields.filterPlaceholder')}
+                value={value}
+              />
+            )}
+          </label>
+        );
+      })}
+    </div>
+  );
+}
+
+/** Applies on Enter or when leaving the box, not on every key. */
+function CustomFieldTextFilter({
+  fieldName,
+  numeric,
+  onCommit,
+  placeholder,
+  value,
+}: {
+  fieldName: string;
+  numeric: boolean;
+  onCommit: (value: string) => void;
+  placeholder: string;
+  value: string;
+}) {
+  const [draft, setDraft] = useState(value);
+  useEffect(() => {
+    setDraft(value);
+  }, [value]);
+  const commit = () => {
+    if (numeric && draft.trim() && !Number.isFinite(Number(draft.trim()))) return;
+    if (draft !== value) onCommit(draft);
+  };
+  return (
+    <input
+      aria-label={fieldName}
+      className={FILTER_FIELD_CLASS}
+      inputMode={numeric ? 'decimal' : undefined}
+      onBlur={commit}
+      onChange={(event) => setDraft(event.target.value)}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter' && !event.nativeEvent.isComposing) commit();
+      }}
+      placeholder={placeholder}
+      type="text"
+      value={draft}
+    />
+  );
+}
+
 function renderFilterBarContent({
   active,
   assigneeOptions,
   assigneeQuery,
+  canSaveFilters,
+  canShareSavedFilters,
   clearAll,
   currentUserId,
+  customFields,
   filterName,
   filterParams,
   handleDeleteSaved,
   handleLoadSaved,
+  handleRenameSaved,
+  handleReplaceSaved,
   handleSave,
   handleToggleDefaultSaved,
+  handleToggleSharedSaved,
   labels,
+  renameDraft,
+  renamingId,
+  savedFilterError,
+  savingFilter,
+  setCustomFieldFilter,
+  setRenameDraft,
+  setRenamingId,
+  setShareOnSave,
+  shareOnSave,
+  startRenameSaved,
   members,
   milestones,
   mobileFiltersOpen,
@@ -815,6 +1138,24 @@ function renderFilterBarContent({
           )}
         </Dropdown>
 
+        {/* miy: custom fields */}
+        {customFields.length > 0 && (
+          <Dropdown
+            label={t('pms.customFields.filterLabel')}
+            active={Object.keys(filterParams.custom_fields ?? {}).length > 0}
+          >
+            {() => (
+              <CustomFieldFilterMenu
+                customFields={customFields}
+                filterParams={filterParams}
+                members={members}
+                onChange={setCustomFieldFilter}
+                t={t}
+              />
+            )}
+          </Dropdown>
+        )}
+
         {/* Archived visibility */}
         <Dropdown
           label={t('pms.filter.archiveLabel')}
@@ -863,14 +1204,16 @@ function renderFilterBarContent({
             >
               {t('pms.filter.clearAll')}
             </button>
-            <button
-              type="button"
-              onClick={() => setSaveDialogOpen(true)}
-              className={`${FILTER_INLINE_ACTION_CLASS} flex items-center gap-1 hover:text-app-accent`}
-            >
-              <Save size={11} />
-              {t('common:actions.save')}
-            </button>
+            {canSaveFilters ? (
+              <button
+                type="button"
+                onClick={() => setSaveDialogOpen(true)}
+                className={`${FILTER_INLINE_ACTION_CLASS} flex items-center gap-1 hover:text-app-accent`}
+              >
+                <Save size={11} />
+                {t('common:actions.save')}
+              </button>
+            ) : null}
           </>
         )}
 
@@ -883,16 +1226,31 @@ function renderFilterBarContent({
           >
             {(close) => (
               <SavedFilterMenuItems
+                canShare={canShareSavedFilters}
                 close={close}
                 onDelete={handleDeleteSaved}
                 onLoad={handleLoadSaved}
+                onRename={(filter) => void handleRenameSaved(filter)}
+                onReplace={handleReplaceSaved}
                 onToggleDefault={handleToggleDefaultSaved}
+                onToggleShared={handleToggleSharedSaved}
+                renameDraft={renameDraft}
+                renamingId={renamingId}
                 savedFilters={savedFilters}
+                setRenameDraft={setRenameDraft}
+                setRenamingId={setRenamingId}
+                startRename={startRenameSaved}
                 t={t}
               />
             )}
           </Dropdown>
         )}
+
+        {savedFilterError ? (
+          <span className="app-text-caption ml-1 text-app-danger-text" role="alert">
+            {savedFilterError}
+          </span>
+        ) : null}
 
         {/* Save dialog */}
         {saveDialogOpen && (
@@ -903,16 +1261,29 @@ function renderFilterBarContent({
               value={filterName}
               onChange={(e) => setFilterName(e.target.value)}
               onKeyDown={(e) => {
-                if (e.key === 'Enter') handleSave();
+                if (e.key === 'Enter' && !e.nativeEvent.isComposing)
+                  void handleSave();
                 if (e.key === 'Escape') setSaveDialogOpen(false);
               }}
               placeholder={t('pms.filter.filterNamePlaceholder')}
               className={`${FILTER_FIELD_CLASS} w-32`}
             />
+            {canShareSavedFilters ? (
+              <label className="app-text-caption flex items-center gap-1 text-app-ink/60">
+                <input
+                  checked={shareOnSave}
+                  className="size-3.5 accent-app-accent"
+                  onChange={(e) => setShareOnSave(e.target.checked)}
+                  type="checkbox"
+                />
+                {t('pms.savedFilters.share')}
+              </label>
+            ) : null}
             <button
               type="button"
-              onClick={handleSave}
-              className="app-text-control-sm text-app-accent hover:text-app-accent/80"
+              disabled={savingFilter || !filterName.trim()}
+              onClick={() => void handleSave()}
+              className="app-text-control-sm text-app-accent hover:text-app-accent/80 disabled:opacity-40"
             >
               {t('common:actions.save')}
             </button>
@@ -1146,6 +1517,24 @@ function renderFilterBarContent({
             )}
           </Dropdown>
 
+          {customFields.length > 0 && (
+            <Dropdown
+              block
+              label={t('pms.customFields.filterLabel')}
+              active={Object.keys(filterParams.custom_fields ?? {}).length > 0}
+            >
+              {() => (
+                <CustomFieldFilterMenu
+                  customFields={customFields}
+                  filterParams={filterParams}
+                  members={members}
+                  onChange={setCustomFieldFilter}
+                  t={t}
+                />
+              )}
+            </Dropdown>
+          )}
+
           {milestones.length > 0 && (
             <Dropdown
               block
@@ -1301,7 +1690,7 @@ function renderFilterBarContent({
             )}
           </Dropdown>
 
-          {active ? (
+          {active && canSaveFilters ? (
             <button
               type="button"
               onClick={() => setSaveDialogOpen(true)}
@@ -1320,11 +1709,20 @@ function renderFilterBarContent({
             >
               {(close) => (
                 <SavedFilterMenuItems
+                  canShare={canShareSavedFilters}
                   close={close}
                   onDelete={handleDeleteSaved}
                   onLoad={handleLoadSaved}
+                  onRename={(filter) => void handleRenameSaved(filter)}
+                  onReplace={handleReplaceSaved}
                   onToggleDefault={handleToggleDefaultSaved}
+                  onToggleShared={handleToggleSharedSaved}
+                  renameDraft={renameDraft}
+                  renamingId={renamingId}
                   savedFilters={savedFilters}
+                  setRenameDraft={setRenameDraft}
+                  setRenamingId={setRenamingId}
+                  startRename={startRenameSaved}
                   t={t}
                 />
               )}
@@ -1339,16 +1737,29 @@ function renderFilterBarContent({
                 value={filterName}
                 onChange={(e) => setFilterName(e.target.value)}
                 onKeyDown={(e) => {
-                  if (e.key === 'Enter') handleSave();
+                  if (e.key === 'Enter' && !e.nativeEvent.isComposing)
+                    void handleSave();
                   if (e.key === 'Escape') setSaveDialogOpen(false);
                 }}
                 placeholder={t('pms.filter.filterNamePlaceholder')}
                 className={FILTER_FIELD_CLASS}
               />
+              {canShareSavedFilters ? (
+                <label className="app-text-caption mt-2 flex items-center gap-1.5 text-app-ink/60">
+                  <input
+                    checked={shareOnSave}
+                    className="size-3.5 accent-app-accent"
+                    onChange={(e) => setShareOnSave(e.target.checked)}
+                    type="checkbox"
+                  />
+                  {t('pms.savedFilters.share')}
+                </label>
+              ) : null}
               <div className="mt-2 flex gap-2">
                 <button
                   type="button"
-                  onClick={handleSave}
+                  disabled={savingFilter || !filterName.trim()}
+                  onClick={() => void handleSave()}
                   className="app-control-primary flex-1"
                 >
                   {t('common:actions.save')}

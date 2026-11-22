@@ -187,6 +187,49 @@ pub async fn ensure_list_editor(
     Ok((list, role))
 }
 
+/// Write guard for data a space owns (templates, space milestones, saved
+/// filters): share-lock the space row so a concurrent membership or space
+/// change (`FOR UPDATE` in spaces.rs) finishes first, then the caller's role
+/// is read as it is now. Answers not found for a missing or archived space.
+pub async fn lock_space_for_write(
+    conn: &mut PgConnection,
+    user_id: &str,
+    space_id: &str,
+) -> ApiResult<(SpaceRow, String)> {
+    let locked: Option<String> =
+        sqlx::query_scalar("SELECT id FROM pms_spaces WHERE id = $1 AND active FOR SHARE")
+            .bind(space_id)
+            .fetch_optional(&mut *conn)
+            .await?;
+    if locked.is_none() {
+        return Err(ApiError::not_found("pms.space_not_found"));
+    }
+    ensure_space_access(conn, user_id, space_id).await
+}
+
+/// Write guard for data a list owns (list milestones, custom fields and their
+/// order): share-lock the list's space against membership changes, lock the
+/// list row, then the caller checks the current role with `ensure_list_*`.
+/// The space is locked before the list, the order the membership writers use.
+pub async fn lock_list_for_write(conn: &mut PgConnection, list_id: &str) -> ApiResult<()> {
+    let team_id: Option<Option<String>> =
+        sqlx::query_scalar("SELECT team_id FROM pms_task_lists WHERE id = $1")
+            .bind(list_id)
+            .fetch_optional(&mut *conn)
+            .await?;
+    if let Some(Some(team_id)) = team_id {
+        sqlx::query("SELECT id FROM pms_spaces WHERE id = $1 FOR SHARE")
+            .bind(team_id)
+            .execute(&mut *conn)
+            .await?;
+    }
+    sqlx::query("SELECT id FROM pms_task_lists WHERE id = $1 FOR UPDATE")
+        .bind(list_id)
+        .execute(&mut *conn)
+        .await?;
+    Ok(())
+}
+
 pub async fn load_task(conn: &mut PgConnection, task_id: &str) -> ApiResult<TaskRow> {
     sqlx::query_as::<_, TaskRow>(&format!(
         "SELECT {TASK_COLUMNS} FROM pms_tasks WHERE id = $1"

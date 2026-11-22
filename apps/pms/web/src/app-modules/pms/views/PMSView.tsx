@@ -58,6 +58,8 @@ import {
   listTaskListMilestones,
   listTaskListLabels,
   listTaskListStatuses,
+  listCustomFields,
+  setTaskCustomFieldValue,
   getTaskDetail,
   createTaskListTask,
   deletePmsTaskList,
@@ -78,6 +80,8 @@ import {
   type PmsTaskListStatus,
   type PmsTaskSort,
   type PmsTaskSortDirection,
+  type PmsCustomField,
+  type PmsSavedFilter,
 } from '../api/pms-api';
 import {
   createDefaultTaskFilterParams,
@@ -104,7 +108,12 @@ import { CreateSpaceModal } from './CreateSpaceModal';
 import { FilterBar } from './FilterBar';
 import { BulkActionBar } from './BulkActionBar';
 import { setTasksSelected } from './bulk-action-bar-model';
-import { taskExportFilterParams } from './filter-bar-model';
+import {
+  createLoadedSavedTaskFilterParams,
+  taskExportFilterParams,
+} from './filter-bar-model';
+import { usePmsSavedFilters } from './usePmsSavedFilters';
+import { apiErrorMessage } from '../../../platform/api/api-error';
 import { SpaceOverviewView } from './SpaceOverviewView';
 import { PmsGlobalOverview } from './PmsGlobalOverview';
 import { ListContextMenu } from '../sidebar/ListContextMenu';
@@ -264,6 +273,8 @@ function usePMSViewElement(): ReactNode {
   const [members, setMembers] = useState<PmsTaskListMember[]>([]);
   const [milestones, setMilestones] = useState<PmsMilestone[]>([]);
   const [labels, setLabels] = useState<PmsLabel[]>([]);
+  // miy: the list's custom fields (table columns, task detail, filters).
+  const [customFields, setCustomFields] = useState<PmsCustomField[]>([]);
   const [taskListStatusState, setTaskListStatusState] = useState<{
     taskListId: string;
     items: PmsTaskListStatus[];
@@ -404,6 +415,48 @@ function usePMSViewElement(): ReactNode {
     },
     [defaultFilterParams, selectedTaskListId],
   );
+  // miy: saved filters on the server. The "open with" filter arrives after
+  // the list opens and applies only while the person has not changed this
+  // list's filters yet (a filter state scoped to another list means untouched).
+  const filterTouchedRef = useRef({ filterListId: '', selectedTaskListId: '' });
+  filterTouchedRef.current = {
+    filterListId: filterParamsState.taskListId,
+    selectedTaskListId,
+  };
+  const applySavedFilter = useCallback(
+    (filter: PmsSavedFilter) => {
+      setFilterParams((current) =>
+        createLoadedSavedTaskFilterParams(filter.params, current),
+      );
+      if (filter.sort) setTaskSort(filter.sort);
+      if (filter.group_by && filter.group_by !== taskListGroupBy) {
+        setTaskListGroupBy(filter.group_by);
+      }
+    },
+    [setFilterParams, setTaskListGroupBy, taskListGroupBy],
+  );
+  const applySavedFilterRef = useRef(applySavedFilter);
+  applySavedFilterRef.current = applySavedFilter;
+  const savedFilters = usePmsSavedFilters({
+    scope:
+      pmsRoute.kind === 'list' && selectedTaskListId
+        ? { listId: selectedTaskListId }
+        : null,
+    onOpeningDefault: (filter, scopeKey) => {
+      const current = filterTouchedRef.current;
+      if (scopeKey !== `list:${current.selectedTaskListId}`) return;
+      if (current.filterListId === current.selectedTaskListId) return;
+      applySavedFilterRef.current(filter);
+    },
+  });
+  const captureSavedFilter = useCallback(
+    () => ({
+      sort: taskSort,
+      group_by: activeTab === 'List' ? taskListGroupBy : null,
+    }),
+    [activeTab, taskListGroupBy, taskSort],
+  );
+
   const selectedTaskIds = selectScopedTaskSelectionIds(
     selectedTaskIdsState,
     selectedTaskListId,
@@ -1036,17 +1089,21 @@ function usePMSViewElement(): ReactNode {
       listTaskListMilestones(api, selectedTaskListId, currentWorkspaceSlug),
       listTaskListLabels(api, selectedTaskListId, currentWorkspaceSlug),
       statusRequest,
+      listCustomFields(api, selectedTaskListId, currentWorkspaceSlug),
     ])
-      .then(([issueRes, memberRes, milestoneRes, labelRes, statusRes]) => {
-        if (cancelled) return;
-        applyTaskListDataLoad({
-          issues: issueRes.items,
-          nextMembers: memberRes.items,
-          nextMilestones: milestoneRes.items,
-          nextLabels: labelRes.items,
-          nextStatuses: statusRes.items,
-        });
-      })
+      .then(
+        ([issueRes, memberRes, milestoneRes, labelRes, statusRes, fieldRes]) => {
+          if (cancelled) return;
+          applyTaskListDataLoad({
+            issues: issueRes.items,
+            nextMembers: memberRes.items,
+            nextMilestones: milestoneRes.items,
+            nextLabels: labelRes.items,
+            nextStatuses: statusRes.items,
+          });
+          setCustomFields(fieldRes.items);
+        },
+      )
       .catch((err) => {
         if (cancelled) return;
         failTaskListDataLoad(err);
@@ -1104,6 +1161,19 @@ function usePMSViewElement(): ReactNode {
   const handleMembersChanged = useCallback((updated: PmsTaskListMember[]) => {
     setMembers(updated);
   }, []);
+
+  const handleMilestonesChanged = useCallback((updated: PmsMilestone[]) => {
+    setMilestones(updated);
+  }, []);
+
+  const handleCustomFieldsChanged = useCallback(
+    (updated: PmsCustomField[]) => {
+      setCustomFields(updated);
+      // Renamed or removed options change stored values.
+      void reloadIssues();
+    },
+    [reloadIssues],
+  );
 
   const handleStatusesChanged = useCallback(
     (updated: PmsTaskListStatus[]) => {
@@ -1233,6 +1303,40 @@ function usePMSViewElement(): ReactNode {
       api,
       currentWorkspaceSlug,
     ],
+  );
+
+  // miy: a custom field value edited in the table. The row shows the stored
+  // form once the server answers; a failed save keeps the row as it was.
+  const handleUpdateCustomField = useCallback(
+    async (taskId: string, fieldId: string, value: string) => {
+      if (!api || !canEditTaskList) return false;
+      try {
+        const saved = await setTaskCustomFieldValue(api, taskId, {
+          field_id: fieldId,
+          value,
+        });
+        setIssues((current) =>
+          current.map((task) =>
+            task.id === taskId
+              ? {
+                  ...task,
+                  custom_fields: {
+                    ...(task.custom_fields ?? {}),
+                    [fieldId]: saved.value,
+                  },
+                }
+              : task,
+          ),
+        );
+        return true;
+      } catch (caught) {
+        feedback.error(
+          apiErrorMessage(caught, t('pms.customFields.errors.valueFailed')),
+        );
+        return false;
+      }
+    },
+    [api, canEditTaskList, feedback, t],
   );
 
   const handleCreateIssueInline = useCallback(
@@ -1771,6 +1875,11 @@ function usePMSViewElement(): ReactNode {
             milestones={milestones}
             labels={labels}
             taskListStatuses={taskListStatuses}
+            customFields={customFields}
+            savedFilters={savedFilters}
+            captureSavedFilter={captureSavedFilter}
+            onApplySavedFilter={applySavedFilter}
+            canShareSavedFilters={canManageTaskList}
           />
         )}
 
@@ -1853,6 +1962,7 @@ function usePMSViewElement(): ReactNode {
                   className="h-full"
                 >
                   <CalendarView
+                    milestones={milestones}
                     tasks={visibleTasks}
                     taskListStatuses={taskListStatuses}
                   />
@@ -1867,6 +1977,7 @@ function usePMSViewElement(): ReactNode {
                   className="h-full"
                 >
                   <GanttView
+                    milestones={milestones}
                     tasks={visibleTasks}
                     taskListStatuses={taskListStatuses}
                     members={members}
@@ -1894,6 +2005,10 @@ function usePMSViewElement(): ReactNode {
                 >
                   <TableView
                     canEdit={canEditTaskList}
+                    customFields={customFields}
+                    onSortChange={setTaskSort}
+                    onUpdateCustomField={handleUpdateCustomField}
+                    sort={taskSort}
                     tasks={visibleTasks}
                     onSelectIssue={handleSelectIssue}
                     onUpdateIssue={handleUpdateIssue}
@@ -1922,6 +2037,7 @@ function usePMSViewElement(): ReactNode {
                 milestones={milestones}
                 taskListLabels={labels}
                 taskListStatuses={taskListStatuses}
+                customFields={customFields}
                 spaceName={selectedTaskList?.team_name}
                 spaceId={selectedTaskList?.team_id ?? null}
                 workspaceSlug={currentWorkspaceSlug}
@@ -1962,6 +2078,8 @@ function usePMSViewElement(): ReactNode {
               onLabelsChanged={handleLabelsChanged}
               onMembersChanged={handleMembersChanged}
               onStatusesChanged={handleStatusesChanged}
+              onMilestonesChanged={handleMilestonesChanged}
+              onCustomFieldsChanged={handleCustomFieldsChanged}
             />
           )}
         </AnimatePresence>

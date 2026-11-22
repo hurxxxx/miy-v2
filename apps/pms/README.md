@@ -2,7 +2,8 @@
 
 프로젝트·업무 관리 miy 공식 업무 앱이다. AI-DO `0002af062`의 `pms` 도메인(서버)과 `app-modules/pms`(화면)를 옮겼다. 원본과의 차이, 뺀 기능과 결정은 [docs/PORTING.md](docs/PORTING.md)에 있다.
 
-- 범위: 스페이스 → 폴더 → 리스트 → 태스크 → 하위 태스크. 상태 흐름(스페이스 상속·리스트 자체 워크플로), 우선순위, 여러 담당자, 팔로워, 시작·마감·완료일, 라벨, 체크리스트, 첨부(파일당 10 MiB), 마일스톤·템플릿·사용자 정의 필드(AI-DO에 있던 만큼), 리스트·보드·캘린더·간트·표 보기, 내게 배정됨, 오늘 및 지연, 댓글·멘션, 변경 이력, 일괄 변경, 복사, 엑셀 내보내기, 보기 선호, 스페이스 고정·숨김.
+- 범위: 스페이스 → 폴더 → 리스트 → 태스크 → 하위 태스크. 상태 흐름(스페이스 상속·리스트 자체 워크플로), 우선순위, 여러 담당자, 팔로워, 시작·마감·완료일, 라벨, 체크리스트, 첨부(파일당 10 MiB), 리스트·보드·캘린더·간트·표 보기, 내게 배정됨, 오늘 및 지연, 댓글·멘션, 변경 이력, 일괄 변경, 복사, 엑셀 내보내기, 보기 선호, 스페이스 고정·숨김.
+- 보강(계획 §2.2, [PORTING §10](docs/PORTING.md#10-보강-템플릿사용자-정의-필드마일스톤저장-필터)): 리스트 또는 스페이스 전체 마일스톤(만들기·수정·삭제, 진행률, 캘린더·간트 표시), 리스트별 사용자 정의 필드(텍스트·숫자·날짜·단일 선택·다중 선택·사용자; 순서·선택지 편집, 태스크 상세·표 보기에서 값 편집, 필터·정렬), 스페이스 태스크 템플릿(직접 작성 또는 태스크를 하위 태스크·체크리스트·라벨째 저장, 템플릿으로 새 태스크), 서버에 보관하는 저장 필터(사람별, 스페이스 owner·admin은 스페이스에 공유, 필터·정렬·그룹, 열 때 적용할 기본 필터). 화면은 리스트 설정의 `마일스톤`·`필드`·`템플릿` 탭, 새 태스크 창의 템플릿 메뉴(`템플릿 관리`), 태스크 상세의 `템플릿으로 저장`·사용자 정의 필드, 표 보기의 필드 열, 필터 막대의 `필드`·`저장됨`이다.
 - 권한: AI-DO와 같다. 누구나 스페이스를 만들고 그 소유자가 된다. 다른 스페이스는 직접 멤버(viewer·member·admin·owner)여야 읽는다. 앱 관리자나 플랫폼 관리자 표시는 멤버십을 대신하지 않는다(`Identity::admin`을 읽지 않는다). 단일 태스크 명시 공유(`pms_task_user_access`)는 그 태스크 읽기만 준다. 모든 판정은 서버가 요청마다 다시 한다.
 - 요청 권한: `database`, `platform:directory:read`(이름·사용자 선택), `platform:files:read`·`platform:files:write`(첨부), `platform:notifications:write`(알림).
 - 알림: 배정(`assigned`), 상태 변경(`status`), 댓글(`comment`), 댓글 멘션(`mention`)을 플랫폼 알림함으로 보낸다. 묶음 키는 태스크마다 `task:<id>`, 목적지는 `/tasks/<id>`. 태스크 삭제·멤버 제외·스페이스 삭제 때 회수하고, 태스크를 열면 읽음 처리한다. 지금 그 태스크를 읽을 수 있는 사람에게만 보낸다.
@@ -68,10 +69,17 @@ UI는 `runtime.api('/v1/...')`로 부르고 게이트웨이가 `/api/v1/...`로 
 | `POST /v1/pms/lists` | 리스트 생성(스페이스 상태 상속, 기본 라벨 3개) |
 | `GET`·`PATCH`·`DELETE /v1/pms/lists/{id}` | 조회·수정(보관 포함)·삭제(보관된 리스트만) |
 | `PATCH /v1/pms/spaces/{id}/lists/reorder` | 폴더·순서 일괄 변경 |
-| `GET`·`POST /v1/pms/lists/{id}/milestones`, `PATCH /v1/pms/milestones/{id}` | 마일스톤 |
+| `GET /v1/pms/lists/{id}/milestones` | 리스트 마일스톤과 그 스페이스 전체 마일스톤(`scope` `list`·`space`, `progress` 0~1, `task_count`, `completed_task_count`) |
+| `POST /v1/pms/lists/{id}/milestones` | 리스트 마일스톤(owner·admin) `{title, description?, status?(planned·active·complete), start_date?, due_date?, sort_order?}` |
+| `GET`·`POST /v1/pms/spaces/{id}/milestones` | 스페이스의 모든 마일스톤 / 스페이스 전체 마일스톤 만들기(owner·admin) |
+| `PATCH`·`DELETE /v1/pms/milestones/{id}` | 수정(`null` 날짜는 지움)·삭제(태스크는 남고 마일스톤만 비움, 활동 기록) |
 | `GET`·`POST /v1/pms/lists/{id}/labels`, `PATCH`·`DELETE /v1/pms/labels/{id}` | 라벨 |
-| `GET`·`POST /v1/pms/lists/{id}/templates`, `PATCH`·`DELETE /v1/pms/templates/{id}` | 태스크 템플릿 |
-| `GET`·`POST /v1/pms/lists/{id}/custom-fields`, `DELETE /v1/pms/custom-fields/{id}` | 사용자 정의 필드 |
+| `GET /v1/pms/lists/{id}/templates` · `GET`·`POST /v1/pms/spaces/{id}/templates` | 리스트가 속한 스페이스의 템플릿(최근순) / 스페이스 템플릿 목록·직접 작성(member 이상) |
+| `GET`·`PATCH`·`DELETE /v1/pms/templates/{id}` | 템플릿 조회(스페이스 멤버)·수정·삭제(member 이상) |
+| `POST /v1/pms/tasks/{id}/template` | `{name}`: 태스크(설명·상태·우선순위·체크리스트·라벨·보관 안 된 직계 하위 태스크)를 그 스페이스 템플릿으로 저장(member 이상) |
+| `GET`·`POST /v1/pms/lists/{id}/custom-fields` | 사용자 정의 필드(`field_type` `text`·`number`·`date`·`select`·`multi_select`·`user`, 선택 필드는 `options` 필수, 리스트 안 이름 유일, 최대 50개. owner·admin) |
+| `PATCH /v1/pms/lists/{id}/custom-fields/reorder` | `{field_ids}` 순서 저장(owner·admin) |
+| `PATCH`·`DELETE /v1/pms/custom-fields/{id}` | `{name?, options?, option_renames?: [{from,to}]}`(형식은 못 바꿈, 빠진 선택지의 값은 지움)·삭제(값도 삭제) |
 | `GET /v1/pms/lists/{id}/export` | 엑셀(.xlsx). 리스트 태스크 질의와 같은 필터 |
 | `GET /v1/pms/dashboard/summary?list_id` | 요약 |
 
@@ -79,8 +87,8 @@ UI는 `runtime.api('/v1/...')`로 부르고 게이트웨이가 `/api/v1/...`로 
 
 | 메서드·경로 | 설명 |
 | --- | --- |
-| `GET /v1/pms/lists/{id}/tasks` | 목록(`page`, `page_size`, `sort_by`, `sort_dir`, `q`, `status`(여러 번), `assignee_id`, `priority`, `label_id`, `milestone_id`, `archived`, `due_date_from/to`, `start_date_from/to`) |
-| `POST /v1/pms/lists/{id}/tasks` | 생성(201) |
+| `GET /v1/pms/lists/{id}/tasks` | 목록(`page`, `page_size`, `sort_by`, `sort_dir`, `q`, `status`(여러 번), `assignee_id`, `priority`, `label_id`, `milestone_id`, `archived`, `due_date_from/to`, `start_date_from/to`, `cf_<필드 id>`: 텍스트는 포함, 다중 선택은 그 선택지 포함, 나머지는 같음). `sort_by=cf_<필드 id>`는 그 값 순(숫자·날짜·선택지 순서·사람 이름, 값 없는 태스크는 뒤). 항목의 `custom_fields`는 `{필드 id: 값}` |
+| `POST /v1/pms/lists/{id}/tasks` | 생성(201). `template_id`(리스트가 속한 스페이스의 템플릿)를 주면 그 체크리스트·라벨(같은 이름이 리스트에 있을 때)·하위 태스크를 같은 트랜잭션에서 더한다 |
 | `PATCH /v1/pms/lists/{id}/tasks/reorder` · `…/reorder-by-title` | 순서·상위 변경, 이름순을 사용자 순서로 저장 |
 | `PATCH /v1/pms/lists/{id}/tasks/bulk` | 일괄 변경·삭제(최대 200개) |
 | `POST /v1/pms/lists/{id}/tasks/copy` | 복사(최대 500개, 하위 포함) |
@@ -91,7 +99,16 @@ UI는 `runtime.api('/v1/...')`로 부르고 게이트웨이가 `/api/v1/...`로 
 | `GET /v1/pms/tasks/{id}/activity-logs` | 변경 이력 |
 | `POST /v1/pms/tasks/{id}/checklist`, `PATCH /v1/pms/tasks/{id}/checklist/reorder`, `PATCH`·`DELETE /v1/pms/checklist/{id}` | 체크리스트 |
 | `PUT /v1/pms/tasks/{id}/assignees` · `…/followers` | 담당자·팔로워(스페이스 멤버만) |
-| `GET`·`PUT /v1/pms/tasks/{id}/custom-field-values` | 사용자 정의 필드 값 |
+| `GET`·`PUT /v1/pms/tasks/{id}/custom-field-values` | 사용자 정의 필드 값 `{field_id, value}`. 형식 검사와 한 가지 표기(숫자 정규화, 날짜 `YYYY-MM-DD`, 다중 선택은 선택지 순서의 JSON 목록, 사용자는 지금 스페이스 멤버). 빈 값은 지움. 태스크 잠금 뒤 편집 권한 확인 |
+
+**저장 필터(miy 보강)**
+
+| 메서드·경로 | 설명 |
+| --- | --- |
+| `GET /v1/pms/saved-filters?list_id=` · `?space_id=` | 그 보기(리스트 또는 스페이스 통합 보기)의 내 필터와 공유 필터 `{items, default_filter_id}`(이름순). 항목은 `params`(검색어 제외 필터 막대), `sort`, `group_by`, `shared`, `owner_name`, `is_mine`, `is_default`, `can_manage` |
+| `POST /v1/pms/saved-filters` | `{list_id \| space_id, name, params, sort?, group_by?, shared?}`(201). 공유는 스페이스 owner·admin만. 보기마다 사람당 100개 |
+| `PATCH`·`DELETE /v1/pms/saved-filters/{id}` | 이름·내용 바꾸기, 공유·해제(owner·admin), 삭제. 만든 사람, 그리고 공유 필터는 owner·admin이 관리한다. 볼 수 없는 필터는 404 |
+| `PUT /v1/pms/saved-filters/default` | `{list_id \| space_id, filter_id \| null}`: 그 보기를 열 때 적용할 내 기본 필터. 볼 수 없게 된 기본 필터는 없는 것으로 본다 |
 
 **첨부(miy 파일 API)**
 
@@ -114,7 +131,7 @@ UI는 `runtime.api('/v1/...')`로 부르고 게이트웨이가 `/api/v1/...`로 
 
 ## 데이터
 
-`migrations/0002_pms.sql`: AI-DO PMS 표(`pms_*`)와 스페이스·멤버(`pms_spaces`, `pms_space_members`), 알림 전달 기록(`pms_notification_deliveries`), 첨부 해제 대기열(`pms_attachment_releases`). `0003_task_status_length.sql`은 업무 상태 열을 워크플로 상태 정의와 같은 40자로 넓힌다. `0001_initial.sql`은 번들이 고정한 초기 파일이라 그대로 둔다.
+`migrations/0002_pms.sql`: AI-DO PMS 표(`pms_*`)와 스페이스·멤버(`pms_spaces`, `pms_space_members`), 알림 전달 기록(`pms_notification_deliveries`), 첨부 해제 대기열(`pms_attachment_releases`). `0003_task_status_length.sql`은 업무 상태 열을 워크플로 상태 정의와 같은 40자로 넓힌다. `0004_pms_reinforcement.sql`(보강): 마일스톤에 `team_id`(리스트 마일스톤은 `list_id`도, 스페이스 전체는 `list_id` NULL), 템플릿을 스페이스 소속으로 바꾸고(`team_id`, `list_id` 삭제) `title`·`description_blocks`·`labels`·`subtasks`·`created_by_id`·`updated_at` 추가, 저장 필터(`pms_saved_filters`)와 사람별 기본 필터(`pms_saved_filter_defaults`). `0001_initial.sql`은 번들이 고정한 초기 파일이라 그대로 둔다.
 
 ## 검사
 

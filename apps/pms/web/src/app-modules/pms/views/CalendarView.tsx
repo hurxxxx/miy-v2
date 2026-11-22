@@ -14,10 +14,15 @@ import {
   type UnifiedCalendarHandle,
 } from '../../../components/calendar/UnifiedCalendar';
 import type { CalendarEvent } from '../../../platform/calendar/calendar-types';
-import type { PmsTask, PmsTaskListStatus } from '../api/pms-api';
+import type {
+  PmsMilestone,
+  PmsTask,
+  PmsTaskListStatus,
+} from '../api/pms-api';
 import {
   addCalendarMonths,
   buildPmsCalendarEvents,
+  buildPmsMilestoneCalendarEvents,
   formatPmsCalendarTitle,
   getPmsCalendarPeriod,
   hasCalendarEventInPeriod,
@@ -70,10 +75,13 @@ type HoveredCalendarTask = {
 };
 
 export const CalendarView = ({
+  milestones = [],
   tasks,
   taskListStatuses,
   taskSourceLabels,
 }: {
+  /** miy: milestones with a due date show on that day. */
+  milestones?: readonly PmsMilestone[];
   tasks: PmsTask[];
   taskListStatuses?: PmsTaskListStatus[];
   /** Small label after each task title, such as the list it comes from. */
@@ -93,8 +101,11 @@ export const CalendarView = ({
   );
 
   const events = useMemo(
-    () =>
-      buildPmsCalendarEvents(
+    () => [
+      ...buildPmsMilestoneCalendarEvents(milestones, (milestone) =>
+        t('pms.milestoneSettings.calendarTitle', { title: milestone.title }),
+      ),
+      ...buildPmsCalendarEvents(
         tasks,
         taskListStatuses,
         taskSourceLabels
@@ -106,7 +117,8 @@ export const CalendarView = ({
             }
           : undefined,
       ),
-    [t, taskListStatuses, taskSourceLabels, tasks],
+    ],
+    [milestones, t, taskListStatuses, taskSourceLabels, tasks],
   );
   const tasksById = useMemo(
     () => new Map(tasks.map((task) => [task.id, task])),

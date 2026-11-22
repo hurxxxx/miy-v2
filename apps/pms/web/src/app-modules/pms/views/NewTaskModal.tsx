@@ -30,6 +30,8 @@ import {
 } from './new-task-modal-model';
 import { useNavigationDirty } from '../../../platform/runtime/navigation-state';
 import { TaskPickerModal, type TaskPickerModalCopy } from './TaskPickerModal';
+import { templateExtras } from './template-settings-model';
+import { TemplateSettingsSection } from './TemplateSettingsSection';
 
 const PARENT_TASK_PICKER_COPY: TaskPickerModalCopy = {
   titleKey: 'pms.parentTaskPicker.title',
@@ -112,7 +114,10 @@ export const NewTaskModal = ({
     templateMenuOpen,
     templates,
     title,
+    appliedTemplate,
+    descriptionVersion,
   } = newTaskState;
+  const [manageTemplatesOpen, setManageTemplatesOpen] = useState(false);
   useNavigationDirty(
     isOpen && isNewTaskDraftDirty(newTaskState, initialTitle ?? ''),
   );
@@ -299,17 +304,35 @@ export const NewTaskModal = ({
                         {t('pms.noTemplates')}
                       </p>
                     ) : (
-                      templates.map((t) => (
+                      templates.map((template) => (
                         <button
-                          key={t.id}
+                          key={template.id}
                           type="button"
-                          onClick={() => applyTemplate(t)}
+                          onClick={() => applyTemplate(template)}
                           className="app-text-body w-full px-3 py-2 text-left text-app-ink transition-colors hover:bg-app-surface-hover"
                         >
-                          {t.name}
+                          <span className="block truncate">{template.name}</span>
+                          <span className="app-text-micro block truncate text-app-ink/45">
+                            {t('pms.templateSettings.summary', {
+                              subtasks: templateExtras(template).subtasks,
+                              checklist: templateExtras(template).checklist,
+                            })}
+                          </span>
                         </button>
                       ))
                     )}
+                    {taskListSpaceId ? (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          dispatch({ type: 'close-template-menu' });
+                          setManageTemplatesOpen(true);
+                        }}
+                        className="app-text-caption w-full border-t border-app-border px-3 py-2 text-left text-app-accent transition-colors hover:bg-app-surface-hover"
+                      >
+                        {t('pms.templateSettings.manage')}
+                      </button>
+                    ) : null}
                   </div>
                 </>
               )}
@@ -353,6 +376,32 @@ export const NewTaskModal = ({
             tone="error"
             variant="form"
           />
+
+          {appliedTemplate ? (
+            <div
+              className="flex items-start gap-2 rounded-lg border border-app-accent/30 bg-app-accent/5 px-3 py-2"
+              data-testid="new-task-applied-template"
+            >
+              <LayoutTemplate size={14} className="mt-0.5 shrink-0 text-app-accent" />
+              <div className="min-w-0 flex-1">
+                <p className="app-text-body-sm truncate font-medium text-app-ink">
+                  {t('pms.templateSettings.applied', { name: appliedTemplate.name })}
+                </p>
+                <p className="app-text-caption text-app-ink/55">
+                  {t('pms.templateSettings.appliedDetails', templateExtras(appliedTemplate))}
+                </p>
+              </div>
+              <button
+                type="button"
+                aria-label={t('pms.templateSettings.removeApplied')}
+                className="shrink-0 text-app-ink/40 hover:text-app-ink"
+                disabled={submitting}
+                onClick={() => dispatch({ type: 'clear-template' })}
+              >
+                <X size={14} />
+              </button>
+            </div>
+          ) : null}
 
           {workspaceOptions?.length ? (
             <label className="app-text-caption flex flex-col gap-1 text-app-ink/60">
@@ -478,6 +527,7 @@ export const NewTaskModal = ({
             {showDescription ? (
               <div className="rounded-lg border border-app-border bg-app-surface-sidebar overflow-hidden">
                 <BlockEditor
+                  key={descriptionVersion}
                   initialContent={descriptionBlocks}
                   onChange={(value) =>
                     dispatch({
@@ -582,6 +632,30 @@ export const NewTaskModal = ({
           overlayClassName={parentPickerOverlayClassName}
           workspaceSlug={workspaceSlug}
         />
+      ) : null}
+      {manageTemplatesOpen && taskListSpaceId ? (
+        <Dialog
+          closeLabel={closeLabel}
+          layer="elevated"
+          maxWidth="max-w-2xl"
+          onOpenChange={(open) => {
+            if (!open) {
+              setManageTemplatesOpen(false);
+              void openTemplateMenu();
+            }
+          }}
+          open
+          title={t('pms.templateSettings.heading')}
+        >
+          <div className="flex h-[min(64vh,36rem)] min-h-[20rem] flex-col">
+            <TemplateSettingsSection
+              canEdit={canCreate}
+              spaceId={taskListSpaceId}
+              taskListId={taskListId}
+              taskListStatuses={taskListStatuses}
+            />
+          </div>
+        </Dialog>
       ) : null}
     </>
   );

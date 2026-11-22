@@ -18,6 +18,7 @@ use serde_json::json;
 use sqlx::{PgConnection, PgPool};
 
 use crate::access::{self, ensure_list_member, ensure_task_list_active};
+use crate::custom_fields;
 use crate::error::{ApiError, ApiResult};
 use crate::input::{Body, check_list_length};
 use crate::models::{
@@ -85,7 +86,7 @@ pub fn copy_set(
     ordered
 }
 
-fn initial_status(definitions: &[StatusDef]) -> String {
+pub fn initial_status(definitions: &[StatusDef]) -> String {
     definitions
         .iter()
         .find(|definition| normalize_status_category(&definition.category) == "not_started")
@@ -203,67 +204,54 @@ pub async fn copy_tasks(
     {
         target_labels.entry(name_key(&label_name)).or_insert(id);
     }
+    // miy: the target's milestones include the space-wide ones of its space;
+    // list milestones are matched first, by title.
     let mut target_milestones: HashMap<String, String> = HashMap::new();
+    let mut target_milestone_ids: HashSet<String> = HashSet::new();
     for (id, title) in sqlx::query_as::<_, (String, String)>(
-        "SELECT id, title FROM pms_milestones WHERE list_id = $1 ORDER BY sort_order",
+        "SELECT id, title FROM pms_milestones WHERE list_id = $1 \
+         OR (list_id IS NULL AND team_id = $2) ORDER BY (list_id IS NULL), sort_order",
     )
     .bind(&target_list.id)
+    .bind(&target_list.team_id)
     .fetch_all(&mut *tx)
     .await?
     {
+        target_milestone_ids.insert(id.clone());
         target_milestones.entry(name_key(&title)).or_insert(id);
     }
     let milestone_titles: HashMap<String, String> = sqlx::query_as::<_, (String, String)>(
-        "SELECT id, title FROM pms_milestones WHERE list_id = $1",
+        "SELECT id, title FROM pms_milestones WHERE list_id = $1 \
+         OR (list_id IS NULL AND team_id = $2)",
     )
     .bind(&source_list.id)
+    .bind(&source_list.team_id)
     .fetch_all(&mut *tx)
     .await?
     .into_iter()
     .collect();
-    // Custom fields by (name, type).
-    let source_fields: Vec<(String, String, String)> =
-        sqlx::query_as("SELECT id, name, field_type FROM pms_custom_fields WHERE list_id = $1")
-            .bind(&source_list.id)
-            .fetch_all(&mut *tx)
-            .await?;
-    #[allow(clippy::type_complexity)]
-    let mut field_targets: HashMap<String, (String, String, Option<serde_json::Value>)> =
-        HashMap::new();
-    if same_list {
-        for (id, _, field_type) in &source_fields {
-            let options: Option<serde_json::Value> =
-                sqlx::query_scalar("SELECT options FROM pms_custom_fields WHERE id = $1")
-                    .bind(id)
-                    .fetch_one(&mut *tx)
-                    .await?;
-            field_targets.insert(id.clone(), (id.clone(), field_type.clone(), options));
-        }
+    // Custom fields by (name, type); within the list, the same field.
+    let source_fields = custom_fields::list_fields(&mut tx, &source_list.id).await?;
+    let target_fields = if same_list {
+        source_fields.clone()
     } else {
-        let mut by_key: HashMap<(String, String), (String, Option<serde_json::Value>)> =
-            HashMap::new();
-        for (id, field_name, field_type, options) in
-            sqlx::query_as::<_, (String, String, String, Option<serde_json::Value>)>(
-                "SELECT id, name, field_type, options FROM pms_custom_fields WHERE list_id = $1 \
-                 ORDER BY sort_order, created_at",
-            )
-            .bind(&target_list.id)
-            .fetch_all(&mut *tx)
-            .await?
-        {
-            by_key
-                .entry((name_key(&field_name), field_type))
-                .or_insert((id, options));
-        }
-        for (id, field_name, field_type) in &source_fields {
-            if let Some((target_id, options)) =
-                by_key.get(&(name_key(field_name), field_type.clone()))
-            {
-                field_targets.insert(
-                    id.clone(),
-                    (target_id.clone(), field_type.clone(), options.clone()),
-                );
-            }
+        custom_fields::list_fields(&mut tx, &target_list.id).await?
+    };
+    let mut field_targets: HashMap<String, custom_fields::FieldRow> = HashMap::new();
+    for source_field in &source_fields {
+        let target = if same_list {
+            Some(source_field.clone())
+        } else {
+            target_fields
+                .iter()
+                .find(|field| {
+                    name_key(&field.name) == name_key(&source_field.name)
+                        && field.field_type == source_field.field_type
+                })
+                .cloned()
+        };
+        if let Some(target) = target {
+            field_targets.insert(source_field.id.clone(), target);
         }
     }
     let mut unmatched_assignees = 0;
@@ -303,7 +291,7 @@ pub async fn copy_tasks(
         );
         let mut milestone_id = None;
         if let Some(source_milestone) = &source.milestone_id {
-            milestone_id = if same_list {
+            milestone_id = if same_list || target_milestone_ids.contains(source_milestone) {
                 Some(source_milestone.clone())
             } else {
                 milestone_titles
@@ -433,18 +421,11 @@ pub async fn copy_tasks(
         if value.is_empty() {
             continue;
         }
-        let fits = field_targets
-            .get(&field_id)
-            .filter(|(_, field_type, options)| {
-                field_type != "select"
-                    || options
-                        .as_ref()
-                        .and_then(|options| options.as_array())
-                        .is_some_and(|options| {
-                            options.iter().any(|option| option.as_str() == Some(&value))
-                        })
-            });
-        let Some((target_field, _, _)) = fits else {
+        let fits = field_targets.get(&field_id).and_then(|target| {
+            custom_fields::copied_value(target, &value, &member_ids)
+                .map(|value| (target.id.clone(), value))
+        });
+        let Some((target_field, value)) = fits else {
             unmatched_fields += 1;
             continue;
         };

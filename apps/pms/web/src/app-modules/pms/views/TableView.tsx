@@ -5,12 +5,22 @@ import {
   CheckSquare,
   CornerDownRight,
   GitBranch,
+  ArrowDown,
+  ArrowUp,
 } from 'lucide-react';
 import { Badge, Button } from '@miy/ui';
 import { useTranslation } from 'react-i18next';
 import { DateInput } from '../../../components/date/DateInput';
-import type { PmsTask, PmsTaskListStatus } from '../api/pms-api';
+import {
+  customFieldParam,
+  type PmsCustomField,
+  type PmsTask,
+  type PmsTaskListStatus,
+  type PmsTaskSort,
+} from '../api/pms-api';
 import type { PmsTaskListMember } from '../api/pms-api';
+import { CustomFieldValueEditor } from './CustomFieldValueEditor';
+import { formatCustomFieldValue } from './custom-field-model';
 import {
   getStatusTone,
   PRIORITY_COLOR,
@@ -32,6 +42,10 @@ export const TableView = ({
   taskListStatuses,
   canEdit = false,
   onUpdateIssue,
+  customFields = [],
+  onUpdateCustomField,
+  sort,
+  onSortChange,
 }: {
   tasks: PmsTask[];
   onSelectIssue: (task: PmsTask) => void;
@@ -46,6 +60,16 @@ export const TableView = ({
     taskId: string,
     payload: Record<string, unknown>,
   ) => Promise<void> | void;
+  /** miy: the list's custom fields as columns, edited in place. */
+  customFields?: readonly PmsCustomField[];
+  onUpdateCustomField?: (
+    taskId: string,
+    fieldId: string,
+    value: string,
+  ) => Promise<boolean> | void;
+  /** The list sort; a custom field header sorts by that field. */
+  sort?: PmsTaskSort;
+  onSortChange?: (sort: PmsTaskSort) => void;
 }) => {
   const { t } = useTranslation('apps');
   const completionDateEditable = canEdit && Boolean(onUpdateIssue);
@@ -117,6 +141,43 @@ export const TableView = ({
                 </th>
                 <th className="py-3 px-4">{t('pms.list.priority')}</th>
                 <th className="py-3 px-4">{t('pms.bulk.labelsLabel')}</th>
+                {customFields.map((field) => {
+                  const sortKey = customFieldParam(field.id);
+                  const sorted = sort?.field === sortKey ? sort.direction : null;
+                  return (
+                    <th
+                      key={field.id}
+                      aria-sort={
+                        sorted === 'asc'
+                          ? 'ascending'
+                          : sorted === 'desc'
+                            ? 'descending'
+                            : undefined
+                      }
+                      className="py-3 px-4 min-w-[9rem]"
+                    >
+                      {onSortChange ? (
+                        <button
+                          type="button"
+                          className="inline-flex items-center gap-1 uppercase hover:text-app-ink"
+                          title={t('pms.customFields.sortBy', { name: field.name })}
+                          onClick={() =>
+                            onSortChange({
+                              field: sortKey,
+                              direction: sorted === 'asc' ? 'desc' : 'asc',
+                            })
+                          }
+                        >
+                          {field.name}
+                          {sorted === 'asc' ? <ArrowUp size={11} /> : null}
+                          {sorted === 'desc' ? <ArrowDown size={11} /> : null}
+                        </button>
+                      ) : (
+                        field.name
+                      )}
+                    </th>
+                  );
+                })}
                 <th className="py-3 px-4 text-right">
                   {t('pms.table.actions')}
                 </th>
@@ -263,6 +324,31 @@ export const TableView = ({
                         ))}
                       </div>
                     </td>
+                    {customFields.map((field) => {
+                      const value = task.custom_fields?.[field.id];
+                      return (
+                        <td
+                          key={field.id}
+                          className="py-3 px-4 text-app-ink/70"
+                        >
+                          {canEdit && onUpdateCustomField ? (
+                            <div onClick={(event) => event.stopPropagation()}>
+                              <CustomFieldValueEditor
+                                compact
+                                field={field}
+                                members={members}
+                                onCommit={(next) =>
+                                  onUpdateCustomField(task.id, field.id, next)
+                                }
+                                value={value}
+                              />
+                            </div>
+                          ) : (
+                            formatCustomFieldValue(field, value, members) || '-'
+                          )}
+                        </td>
+                      );
+                    })}
                     <td className="py-3 px-4 text-right">
                       <Button
                         aria-label={t('pms.list.viewDetails', {

@@ -3,7 +3,7 @@ import type {
   PmsTaskListStatus,
   TaskFilterParams,
 } from '../api/pms-api';
-import { createOpeningTaskFilterParams } from './filter-bar-model';
+import { createDefaultTaskFilterParams } from '../api/pms-filters';
 import { getDefaultTaskStatus } from './pms-constants';
 
 export type ScopedTaskFilterState = {
@@ -22,10 +22,15 @@ export type InlineTaskCreatePayload = Parameters<typeof createTaskListTask>[2];
 
 export const EMPTY_SELECTED_TASK_IDS = new Set<string>();
 
+/**
+ * The filters a list opens with. miy: the person's "open with" saved filter
+ * comes from the server after the list opens (`usePmsSavedFilters`), so a list
+ * starts unfiltered; AI-DO read it synchronously from browser storage.
+ */
 export function createDefaultTaskFilterParamsForList(
-  taskListId: string,
+  _taskListId: string,
 ): TaskFilterParams {
-  return createOpeningTaskFilterParams(taskListId);
+  return createDefaultTaskFilterParams();
 }
 
 export function selectScopedTaskFilterParams(

@@ -18,18 +18,18 @@ use crate::access::{
     self, ensure_list_editor, ensure_list_manager, ensure_list_member, ensure_list_owner,
     ensure_space_access, ensure_space_editor, ensure_space_manager, ensure_task_list_active,
 };
-use crate::error::{ApiError, ApiResult, check_choice, check_length};
+use crate::error::{ApiError, ApiResult, check_length};
 use crate::input::{Body, Params, check_list_length, check_opt_length};
 use crate::models::{
-    MilestoneRow, TASK_LIST_COLUMNS, TaskListRow, iso_date, iso_datetime, new_id, paginate,
-    task_reference, today_utc, utcnow,
+    TASK_LIST_COLUMNS, TaskListRow, iso_date, iso_datetime, new_id, paginate, task_reference,
+    today_utc, utcnow,
 };
 use crate::statuses::{create_default_task_list_statuses, ensure_space_statuses};
 use crate::summary::{self, ListCounts};
 use crate::tasks;
 use crate::users;
 use crate::workflow::{
-    ListWorkflow, PRIORITY_LABELS, auto_key_from_name, calculate_progress, is_done_status,
+    ListWorkflow, PRIORITY_LABELS, auto_key_from_name, calculate_progress,
     is_overdue_exempt_status, priority_label, status_label,
 };
 
@@ -255,7 +255,7 @@ async fn list_task_lists_inner(
 }
 
 #[derive(PartialEq, PartialOrd)]
-enum SortKey {
+pub(crate) enum SortKey {
     Text(String),
     Float(f64),
     Time(chrono::NaiveDateTime),
@@ -264,7 +264,7 @@ enum SortKey {
 /// Python's `sort(key, reverse=True)` keeps equal keys in their original
 /// order. After an ascending stable sort, reverse each run of equal keys back
 /// and then the whole list.
-fn stable_reverse<T>(items: &mut [T], key: impl Fn(&T) -> SortKey) {
+pub(crate) fn stable_reverse<T>(items: &mut [T], key: impl Fn(&T) -> SortKey) {
     let mut start = 0;
     while start < items.len() {
         let mut end = start + 1;
@@ -574,229 +574,6 @@ pub async fn reorder_space_lists(
     }
     tx.commit().await?;
     Ok(StatusCode::NO_CONTENT)
-}
-
-// ── Milestones ─────────────────────────────────────────────────────────
-
-async fn serialize_milestones(
-    conn: &mut PgConnection,
-    milestones: &[MilestoneRow],
-) -> ApiResult<Vec<Value>> {
-    let ids: Vec<String> = milestones.iter().map(|m| m.id.clone()).collect();
-    let mut tasks_by_milestone: HashMap<String, Vec<(String, bool)>> = HashMap::new();
-    for (milestone_id, status, archived) in sqlx::query_as::<_, (String, String, bool)>(
-        "SELECT milestone_id, status, archived FROM pms_tasks WHERE milestone_id = ANY($1)",
-    )
-    .bind(&ids)
-    .fetch_all(conn)
-    .await?
-    {
-        tasks_by_milestone
-            .entry(milestone_id)
-            .or_default()
-            .push((status, archived));
-    }
-    Ok(milestones
-        .iter()
-        .map(|milestone| {
-            let tasks = tasks_by_milestone
-                .get(&milestone.id)
-                .cloned()
-                .unwrap_or_default();
-            // AI-DO judged milestone completion without the list's workflow.
-            let completed = tasks
-                .iter()
-                .filter(|(status, _)| is_done_status(status, None))
-                .count();
-            json!({
-                "id": milestone.id,
-                "list_id": milestone.list_id,
-                "title": milestone.title,
-                "description": milestone.description,
-                "status": milestone.status,
-                "start_date": milestone.start_date.as_ref().map(iso_date),
-                "due_date": milestone.due_date.as_ref().map(iso_date),
-                "sort_order": milestone.sort_order,
-                "progress": calculate_progress(
-                    tasks.iter().map(|(status, archived)| (status.as_str(), *archived)),
-                    None,
-                ),
-                "task_count": tasks.len(),
-                "completed_task_count": completed,
-                "updated_at": iso_datetime(&milestone.updated_at),
-            })
-        })
-        .collect())
-}
-
-const MILESTONE_COLUMNS: &str = "id, list_id, title, description, status, start_date, due_date, sort_order, created_at, updated_at";
-
-/// `GET /v1/pms/lists/{list_id}/milestones`.
-pub async fn list_milestones(
-    State(pool): State<PgPool>,
-    Extension(identity): Extension<Identity>,
-    Path(list_id): Path<String>,
-    params: Params,
-) -> ApiResult<Json<Value>> {
-    let page = params.int("page", 1, 1, None)?;
-    let page_size = params.int("page_size", 20, 1, Some(100))?;
-    let sort_by = params.string("sort_by", "sort_order");
-    let sort_dir = params.choice("sort_dir", "asc", &["asc", "desc"])?;
-    let mut conn = pool.acquire().await?;
-    let (list, _) = ensure_list_member(&mut conn, &identity.user_id, &list_id).await?;
-    let mut milestones: Vec<MilestoneRow> = sqlx::query_as::<_, MilestoneRow>(&format!(
-        "SELECT {MILESTONE_COLUMNS} FROM pms_milestones WHERE list_id = $1 ORDER BY created_at, id"
-    ))
-    .bind(&list.id)
-    .fetch_all(&mut *conn)
-    .await?;
-    match sort_by.as_str() {
-        "due_date" => milestones.sort_by_key(|m| m.due_date.unwrap_or(NaiveDate::MAX)),
-        "updated_at" => milestones.sort_by_key(|m| m.updated_at),
-        _ => milestones.sort_by_key(|m| m.sort_order),
-    }
-    if sort_dir == "desc" {
-        let key = |m: &MilestoneRow| match sort_by.as_str() {
-            "due_date" => SortKey::Text(iso_date(&m.due_date.unwrap_or(NaiveDate::MAX))),
-            "updated_at" => SortKey::Time(m.updated_at),
-            _ => SortKey::Float(m.sort_order as f64),
-        };
-        stable_reverse(&mut milestones, key);
-    }
-    let items = serialize_milestones(&mut conn, &milestones).await?;
-    let (page_items, total) = paginate(&items, page, page_size);
-    Ok(Json(json!({
-        "items": page_items, "total": total, "page": page, "page_size": page_size,
-    })))
-}
-
-const MILESTONE_STATUSES: &[&str] = &["planned", "active", "complete"];
-
-/// `POST /v1/pms/lists/{list_id}/milestones`.
-pub async fn create_milestone(
-    State(pool): State<PgPool>,
-    Extension(identity): Extension<Identity>,
-    Path(list_id): Path<String>,
-    body: Body,
-) -> ApiResult<impl IntoResponse> {
-    let title = body.req_str("title")?;
-    check_length("title", &title, 2, 140)?;
-    let description = body.str_or("description", "")?;
-    check_length("description", &description, 0, 4000)?;
-    let status = body.str_or("status", "planned")?;
-    check_choice("status", &status, MILESTONE_STATUSES)?;
-    let start_date = body.opt_date("start_date")?;
-    let due_date = body.opt_date("due_date")?;
-    let sort_order = body.opt_int("sort_order")?.unwrap_or(0);
-    let mut tx = pool.begin().await?;
-    let (list, _) = ensure_list_owner(&mut tx, &identity.user_id, &list_id).await?;
-    let now = utcnow();
-    let milestone = MilestoneRow {
-        id: new_id(),
-        list_id: list.id.clone(),
-        title: title.trim().to_string(),
-        description: description.trim().to_string(),
-        status,
-        start_date,
-        due_date,
-        sort_order: sort_order as i32,
-        created_at: now,
-        updated_at: now,
-    };
-    sqlx::query(&format!(
-        "INSERT INTO pms_milestones ({MILESTONE_COLUMNS}) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $9)"
-    ))
-    .bind(&milestone.id)
-    .bind(&milestone.list_id)
-    .bind(&milestone.title)
-    .bind(&milestone.description)
-    .bind(&milestone.status)
-    .bind(milestone.start_date)
-    .bind(milestone.due_date)
-    .bind(milestone.sort_order)
-    .bind(now)
-    .execute(&mut *tx)
-    .await?;
-    let item = serialize_milestones(&mut tx, std::slice::from_ref(&milestone)).await?;
-    tx.commit().await?;
-    Ok((
-        StatusCode::CREATED,
-        Json(item.into_iter().next().unwrap_or_default()),
-    ))
-}
-
-/// `PATCH /v1/pms/milestones/{milestone_id}`: AI-DO applies only the fields
-/// sent with a value (null leaves a field as it is).
-pub async fn update_milestone(
-    State(pool): State<PgPool>,
-    Extension(identity): Extension<Identity>,
-    Path(milestone_id): Path<String>,
-    body: Body,
-) -> ApiResult<Json<Value>> {
-    let title = body.opt_str("title")?;
-    check_opt_length("title", &title, 2, 140)?;
-    let description = body.opt_str("description")?;
-    check_opt_length("description", &description, 0, 4000)?;
-    let status = body.opt_choice("status", MILESTONE_STATUSES)?;
-    let start_date = body.opt_date("start_date")?;
-    let due_date = body.opt_date("due_date")?;
-    let sort_order = body.opt_int("sort_order")?;
-    let mut tx = pool.begin().await?;
-    let mut milestone = sqlx::query_as::<_, MilestoneRow>(&format!(
-        "SELECT {MILESTONE_COLUMNS} FROM pms_milestones WHERE id = $1 FOR UPDATE"
-    ))
-    .bind(&milestone_id)
-    .fetch_optional(&mut *tx)
-    .await?
-    .ok_or_else(|| ApiError::not_found("pms.milestone_not_found"))?;
-    ensure_list_owner(&mut tx, &identity.user_id, &milestone.list_id).await?;
-    let mut changed = false;
-    if let Some(title) = title {
-        let title = title.trim().to_string();
-        changed |= milestone.title != title;
-        milestone.title = title;
-    }
-    if let Some(description) = description {
-        let description = description.trim().to_string();
-        changed |= milestone.description != description;
-        milestone.description = description;
-    }
-    if let Some(status) = status {
-        changed |= milestone.status != status;
-        milestone.status = status;
-    }
-    if start_date.is_some() {
-        changed |= milestone.start_date != start_date;
-        milestone.start_date = start_date;
-    }
-    if due_date.is_some() {
-        changed |= milestone.due_date != due_date;
-        milestone.due_date = due_date;
-    }
-    if let Some(order) = sort_order {
-        changed |= milestone.sort_order != order as i32;
-        milestone.sort_order = order as i32;
-    }
-    if changed {
-        milestone.updated_at = utcnow();
-        sqlx::query(
-            "UPDATE pms_milestones SET title = $2, description = $3, status = $4, start_date = $5, \
-             due_date = $6, sort_order = $7, updated_at = $8 WHERE id = $1",
-        )
-        .bind(&milestone.id)
-        .bind(&milestone.title)
-        .bind(&milestone.description)
-        .bind(&milestone.status)
-        .bind(milestone.start_date)
-        .bind(milestone.due_date)
-        .bind(milestone.sort_order)
-        .bind(milestone.updated_at)
-        .execute(&mut *tx)
-        .await?;
-    }
-    let item = serialize_milestones(&mut tx, std::slice::from_ref(&milestone)).await?;
-    tx.commit().await?;
-    Ok(Json(item.into_iter().next().unwrap_or_default()))
 }
 
 // ── Labels ─────────────────────────────────────────────────────────────
@@ -1156,11 +933,13 @@ pub async fn dashboard_summary(
     .bind(&ids)
     .fetch_all(&mut *conn)
     .await?;
-    let milestone_dues: Vec<Option<NaiveDate>> =
-        sqlx::query_scalar("SELECT due_date FROM pms_milestones WHERE list_id = ANY($1)")
-            .bind(&ids)
-            .fetch_all(&mut *conn)
-            .await?;
+    let milestone_dues: Vec<Option<NaiveDate>> = sqlx::query_scalar(
+        "SELECT due_date FROM pms_milestones WHERE list_id = ANY($1) OR (list_id IS NULL \
+             AND team_id IN (SELECT team_id FROM pms_task_lists WHERE id = ANY($1)))",
+    )
+    .bind(&ids)
+    .fetch_all(&mut *conn)
+    .await?;
     let today = today_utc();
     let default_workflow = ListWorkflow::default();
     let workflow = |list_id: &str| {

@@ -59,7 +59,16 @@ export type PmsSpacePreference = ApiSchema<'SpacePreferenceItem'>;
 export type PmsSpacePreferenceChange =
   ApiSchema<'SpacePreferenceUpdateRequest'>;
 
-export type PmsMilestone = ApiSchema<'MilestoneItem'>;
+/** miy: a milestone belongs to a space; a list milestone also names its list
+ *  (`list_id`), a space-wide one has `list_id: null` and fits every list. */
+export type PmsMilestone = Omit<ApiSchema<'MilestoneItem'>, 'list_id'> & {
+  team_id: string;
+  list_id: string | null;
+  list_name?: string | null;
+  scope: 'list' | 'space';
+};
+
+export type PmsMilestoneStatus = 'planned' | 'active' | 'complete';
 
 export type PmsMilestonesResponse = Omit<
   ApiSchema<'MilestoneListResponse'>,
@@ -78,6 +87,8 @@ export type PmsTask = Omit<
   parent_id: string | null;
   recurrence_rule: string | null;
   labels: PmsLabel[];
+  /** miy: custom field values by field id (multi select: a JSON list). */
+  custom_fields?: Record<string, string>;
 };
 
 export type PmsTasksResponse = Omit<ApiSchema<'TaskItemsResponse'>, 'items'> & {
@@ -176,11 +187,45 @@ export type PmsFoldersResponse = Omit<
 
 // ── Task Templates ──────────────────────────────────────────────────
 
+export type PmsTemplateLabel = { name: string; color: string };
+
+export type PmsTemplateSubtask = {
+  title: string;
+  description: string;
+  description_blocks: Record<string, unknown>[] | null;
+  priority: string;
+  checklist_items: { text: string }[];
+  labels: PmsTemplateLabel[];
+};
+
+/** miy: a template belongs to a space (AI-DO: a list) and holds the whole
+ *  task: description, checklist, labels by name and direct subtasks. */
 export type PmsTaskTemplate = Omit<
   ApiSchema<'TaskTemplateItem'>,
-  'checklist_items'
+  'checklist_items' | 'list_id'
 > & {
+  team_id: string;
+  title: string;
+  description_blocks: Record<string, unknown>[] | null;
   checklist_items: { text: string }[] | null;
+  labels: PmsTemplateLabel[] | null;
+  subtasks: PmsTemplateSubtask[] | null;
+  subtask_count: number;
+  checklist_count: number;
+  created_by_id: string | null;
+  updated_at: string;
+};
+
+export type PmsTaskTemplateInput = {
+  name: string;
+  title?: string;
+  description?: string;
+  description_blocks?: Record<string, unknown>[] | null;
+  default_status?: string;
+  default_priority?: string;
+  checklist_items?: { text: string }[];
+  labels?: PmsTemplateLabel[];
+  subtasks?: PmsTemplateSubtask[];
 };
 
 export type PmsTaskTemplatesResponse = Omit<
@@ -192,11 +237,20 @@ export type PmsTaskTemplatesResponse = Omit<
 
 // ── Custom Fields ───────────────────────────────────────────────────
 
+/** AI-DO had text, number, date and select; miy adds multi select and user. */
+export type PmsCustomFieldType =
+  | 'text'
+  | 'number'
+  | 'date'
+  | 'select'
+  | 'multi_select'
+  | 'user';
+
 export type PmsCustomField = Omit<
   ApiSchema<'CustomFieldItem'>,
   'field_type'
 > & {
-  field_type: 'text' | 'number' | 'date' | 'select';
+  field_type: PmsCustomFieldType;
 };
 
 export type PmsCustomFieldsResponse = Omit<
@@ -239,7 +293,9 @@ export type PmsTaskSortField =
   | 'created_at'
   | 'due_date'
   | 'start_date'
-  | 'title';
+  | 'title'
+  /** miy: a custom field of the list (`cf_<field id>`). */
+  | `cf_${string}`;
 export type PmsTaskSortDirection = 'asc' | 'desc';
 export type PmsTaskSort = {
   field: PmsTaskSortField;
@@ -708,15 +764,18 @@ export function listTaskListMilestones(
   );
 }
 
+export type PmsMilestoneInput = {
+  title: string;
+  description?: string;
+  status?: PmsMilestoneStatus;
+  start_date?: string | null;
+  due_date?: string | null;
+};
+
 export function createTaskListMilestone(
   api: AppApi,
   taskListId: string,
-  payload: {
-    title: string;
-    description: string;
-    status: string;
-    due_date: string | null;
-  },
+  payload: PmsMilestoneInput,
   workspaceSlug?: string | null,
 ): Promise<PmsMilestone> {
   return request<PmsMilestone>(
@@ -727,6 +786,55 @@ export function createTaskListMilestone(
       body: JSON.stringify(payload),
     },
     workspaceSlug,
+  );
+}
+
+/** miy: every milestone of a space (space-wide and those of its lists). */
+export function listSpaceMilestones(
+  api: AppApi,
+  spaceId: string,
+): Promise<PmsMilestonesResponse> {
+  return listPagedResource<PmsMilestone>(
+    `/v1/pms/spaces/${encodeURIComponent(spaceId)}/milestones`,
+    api,
+  );
+}
+
+/** miy: a space-wide milestone (space owners and admins). */
+export function createSpaceMilestone(
+  api: AppApi,
+  spaceId: string,
+  payload: PmsMilestoneInput,
+): Promise<PmsMilestone> {
+  return request<PmsMilestone>(
+    `/v1/pms/spaces/${encodeURIComponent(spaceId)}/milestones`,
+    api,
+    { method: 'POST', body: JSON.stringify(payload) },
+  );
+}
+
+/** Fields sent change; a `null` date clears it (miy). */
+export function updateMilestone(
+  api: AppApi,
+  milestoneId: string,
+  payload: Partial<PmsMilestoneInput> & { sort_order?: number },
+): Promise<PmsMilestone> {
+  return request<PmsMilestone>(
+    `/v1/pms/milestones/${encodeURIComponent(milestoneId)}`,
+    api,
+    { method: 'PATCH', body: JSON.stringify(payload) },
+  );
+}
+
+/** miy: delete a milestone; its tasks keep everything else. */
+export function deleteMilestone(
+  api: AppApi,
+  milestoneId: string,
+): Promise<void> {
+  return request<void>(
+    `/v1/pms/milestones/${encodeURIComponent(milestoneId)}`,
+    api,
+    { method: 'DELETE' },
   );
 }
 
@@ -742,6 +850,13 @@ export interface TaskFilterParams {
   start_date_from?: string;
   start_date_to?: string;
   archived_state?: TaskArchivedState;
+  /** miy: custom field conditions by field id (`cf_<id>=value`). */
+  custom_fields?: Record<string, string>;
+}
+
+/** Query parameter of a custom field condition or sort. */
+export function customFieldParam(fieldId: string): `cf_${string}` {
+  return `cf_${fieldId}`;
 }
 
 /** The filter bar as query parameters. The task list and its Excel export share it. */
@@ -763,6 +878,9 @@ export function appendTaskFilterSearchParams(
   if (params.archived_state === 'active') search.set('archived', 'false');
   if (params.archived_state === 'archived') search.set('archived', 'true');
   params.status?.forEach((value) => search.append('status', value));
+  Object.entries(params.custom_fields ?? {}).forEach(([fieldId, value]) => {
+    if (value.trim()) search.set(customFieldParam(fieldId), value);
+  });
 }
 
 export function listTaskListTasks(
@@ -997,6 +1115,8 @@ export function createTaskListTask(
     start_date?: string | null;
     due_date: string | null;
     parent_id?: string | null;
+    /** miy: also add this template's checklist, labels and subtasks. */
+    template_id?: string | null;
   },
   workspaceSlug?: string | null,
 ): Promise<PmsTask> {
@@ -1692,26 +1812,50 @@ export function listTaskTemplates(
   );
 }
 
-export function createTaskTemplate(
+export function listSpaceTaskTemplates(
   api: AppApi,
-  taskListId: string,
-  payload: {
-    name: string;
-    description?: string;
-    default_status?: string;
-    default_priority?: string;
-    checklist_items?: { text: string }[];
-  },
-  workspaceSlug?: string | null,
+  spaceId: string,
+): Promise<PmsTaskTemplatesResponse> {
+  return request<PmsTaskTemplatesResponse>(
+    `/v1/pms/spaces/${encodeURIComponent(spaceId)}/templates`,
+    api,
+  );
+}
+
+export function createSpaceTaskTemplate(
+  api: AppApi,
+  spaceId: string,
+  payload: PmsTaskTemplateInput,
 ): Promise<PmsTaskTemplate> {
   return request<PmsTaskTemplate>(
-    `/v1/pms/lists/${encodeURIComponent(taskListId)}/templates`,
+    `/v1/pms/spaces/${encodeURIComponent(spaceId)}/templates`,
     api,
-    {
-      method: 'POST',
-      body: JSON.stringify(payload),
-    },
-    workspaceSlug,
+    { method: 'POST', body: JSON.stringify(payload) },
+  );
+}
+
+export function updateTaskTemplate(
+  api: AppApi,
+  templateId: string,
+  payload: Partial<PmsTaskTemplateInput>,
+): Promise<PmsTaskTemplate> {
+  return request<PmsTaskTemplate>(
+    `/v1/pms/templates/${encodeURIComponent(templateId)}`,
+    api,
+    { method: 'PATCH', body: JSON.stringify(payload) },
+  );
+}
+
+/** Save a task (checklist, labels, direct subtasks) as a template of its space. */
+export function saveTaskAsTemplate(
+  api: AppApi,
+  taskId: string,
+  name: string,
+): Promise<PmsTaskTemplate> {
+  return request<PmsTaskTemplate>(
+    `/v1/pms/tasks/${encodeURIComponent(taskId)}/template`,
+    api,
+    { method: 'POST', body: JSON.stringify({ name }) },
   );
 }
 
@@ -1764,6 +1908,34 @@ export function createCustomField(
       body: JSON.stringify(payload),
     },
     workspaceSlug,
+  );
+}
+
+export function updateCustomField(
+  api: AppApi,
+  fieldId: string,
+  payload: {
+    name?: string;
+    options?: string[];
+    option_renames?: { from: string; to: string }[];
+  },
+): Promise<PmsCustomField> {
+  return request<PmsCustomField>(
+    `/v1/pms/custom-fields/${encodeURIComponent(fieldId)}`,
+    api,
+    { method: 'PATCH', body: JSON.stringify(payload) },
+  );
+}
+
+export function reorderCustomFields(
+  api: AppApi,
+  taskListId: string,
+  fieldIds: string[],
+): Promise<PmsCustomFieldsResponse> {
+  return request<PmsCustomFieldsResponse>(
+    `/v1/pms/lists/${encodeURIComponent(taskListId)}/custom-fields/reorder`,
+    api,
+    { method: 'PATCH', body: JSON.stringify({ field_ids: fieldIds }) },
   );
 }
 
@@ -1913,5 +2085,113 @@ export function deleteFolder(
       method: 'DELETE',
     },
     workspaceSlug,
+  );
+}
+
+// ── Saved filters (miy: kept on the server) ────────────────────────────
+
+/** A saved view of a list or of a space's combined task view. */
+export type PmsSavedFilterScope =
+  | { listId: string; spaceId?: undefined }
+  | { spaceId: string; listId?: undefined };
+
+export type PmsSavedFilter = {
+  id: string;
+  name: string;
+  /** The filter bar without the search text. */
+  params: TaskFilterParams;
+  sort: PmsTaskSort | null;
+  group_by: PmsTaskListGroupBy | null;
+  shared: boolean;
+  space_id: string;
+  list_id: string | null;
+  owner_id: string;
+  owner_name: string;
+  is_mine: boolean;
+  is_default: boolean;
+  can_manage: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
+export type PmsSavedFiltersResponse = {
+  items: PmsSavedFilter[];
+  default_filter_id: string | null;
+};
+
+function savedFilterScopeBody(
+  scope: PmsSavedFilterScope,
+): { list_id: string } | { space_id: string } {
+  return scope.listId !== undefined
+    ? { list_id: scope.listId }
+    : { space_id: scope.spaceId };
+}
+
+export function listSavedFilters(
+  api: AppApi,
+  scope: PmsSavedFilterScope,
+): Promise<PmsSavedFiltersResponse> {
+  const search = new URLSearchParams(savedFilterScopeBody(scope));
+  return request<PmsSavedFiltersResponse>(
+    `/v1/pms/saved-filters?${search.toString()}`,
+    api,
+  );
+}
+
+export type PmsSavedFilterInput = {
+  name: string;
+  params: TaskFilterParams;
+  sort?: PmsTaskSort | null;
+  group_by?: PmsTaskListGroupBy | null;
+  shared?: boolean;
+};
+
+export function createSavedFilter(
+  api: AppApi,
+  scope: PmsSavedFilterScope,
+  payload: PmsSavedFilterInput,
+): Promise<PmsSavedFilter> {
+  return request<PmsSavedFilter>('/v1/pms/saved-filters', api, {
+    method: 'POST',
+    body: JSON.stringify({ ...savedFilterScopeBody(scope), ...payload }),
+  });
+}
+
+export function updateSavedFilter(
+  api: AppApi,
+  filterId: string,
+  payload: Partial<PmsSavedFilterInput>,
+): Promise<PmsSavedFilter> {
+  return request<PmsSavedFilter>(
+    `/v1/pms/saved-filters/${encodeURIComponent(filterId)}`,
+    api,
+    { method: 'PATCH', body: JSON.stringify(payload) },
+  );
+}
+
+export function deleteSavedFilter(
+  api: AppApi,
+  filterId: string,
+): Promise<void> {
+  return request<void>(
+    `/v1/pms/saved-filters/${encodeURIComponent(filterId)}`,
+    api,
+    { method: 'DELETE' },
+  );
+}
+
+/** The filter the caller opens this view with (`null` clears it). */
+export function setDefaultSavedFilter(
+  api: AppApi,
+  scope: PmsSavedFilterScope,
+  filterId: string | null,
+): Promise<PmsSavedFiltersResponse> {
+  return request<PmsSavedFiltersResponse>(
+    '/v1/pms/saved-filters/default',
+    api,
+    {
+      method: 'PUT',
+      body: JSON.stringify({ ...savedFilterScopeBody(scope), filter_id: filterId }),
+    },
   );
 }

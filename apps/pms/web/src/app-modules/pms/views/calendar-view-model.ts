@@ -9,7 +9,11 @@ import type {
   CalendarEvent,
   CalendarWorkspaceRef,
 } from '../../../platform/calendar/calendar-types';
-import type { PmsTask, PmsTaskListStatus } from '../api/pms-api';
+import type {
+  PmsMilestone,
+  PmsTask,
+  PmsTaskListStatus,
+} from '../api/pms-api';
 import {
   PMS_CALENDAR_FALLBACK_STATUS_COLOR,
   PMS_CALENDAR_STATUS_COLORS,
@@ -150,6 +154,35 @@ export function buildPmsCalendarEvents(
       if (endDiff !== 0) return endDiff;
       return left.title.localeCompare(right.title);
     });
+}
+
+/** miy reinforcement: a milestone with a due date as a one-day event on
+ *  that date (its start date is not drawn; tasks show their own span). */
+export const PMS_MILESTONE_CALENDAR_COLOR = '#7c3aed';
+
+export function buildPmsMilestoneCalendarEvents(
+  milestones: readonly PmsMilestone[],
+  titleFor: (milestone: PmsMilestone) => string = (milestone) => milestone.title,
+): CalendarEvent[] {
+  return milestones
+    .map((milestone): CalendarEvent | null => {
+      const due = normalizeDateOnly(milestone.due_date);
+      if (!due) return null;
+      return {
+        id: `pms-milestone-${milestone.id}`,
+        title: titleFor(milestone),
+        start: due,
+        end: addDateOnlyDays(due, 1),
+        allDay: true,
+        sourceType: 'pms_block',
+        sourceId: milestone.id,
+        color: PMS_MILESTONE_CALENDAR_COLOR,
+        workspace: null,
+        metadata: { taskListId: milestone.list_id, status: milestone.status },
+      };
+    })
+    .filter((event): event is CalendarEvent => event !== null)
+    .sort((left, right) => left.start.localeCompare(right.start));
 }
 
 function buildPmsCalendarEvent(

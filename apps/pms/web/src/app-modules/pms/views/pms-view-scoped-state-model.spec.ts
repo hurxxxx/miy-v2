@@ -94,19 +94,10 @@ describe('pms view scoped state model', () => {
     });
   });
 
-  it('starts a newly opened list from that list default filter', () => {
-    localStorage.setItem(
-      'pms_saved_filters_list-3',
-      JSON.stringify([
-        { name: 'Todo', params: { status: ['todo'] }, isDefault: true },
-      ]),
-    );
+  it('starts a newly opened list unfiltered (miy: its saved default arrives from the server)', () => {
     const listDefault = createDefaultTaskFilterParamsForList('list-3');
-    localStorage.removeItem('pms_saved_filters_list-3');
 
-    expect(listDefault).toEqual(
-      createDefaultTaskFilterParams({ status: ['todo'] }),
-    );
+    expect(listDefault).toEqual(createDefaultTaskFilterParams());
     expect(
       resolveScopedTaskFilterState(
         { taskListId: 'list-1', params: { archived_state: 'active' } },
