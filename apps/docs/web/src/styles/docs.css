@@ -1,0 +1,69 @@
+/*
+ * Docs styles AI-DO kept outside the docs module: the read-mode and laser
+ * tokens and the BlockNote typography of packages/ui/styles.css, and the
+ * print rule of apps/web/src/index.css. The common UI's styles.css leaves the
+ * editor rules out, so they live here.
+ */
+:root {
+  --ui-color-docs-read-bg: #0b0d12;
+  --ui-color-docs-read-chrome: #11141b;
+  --ui-color-docs-read-selected-fg: #0b0d12;
+  --ui-color-docs-laser: #ef4444;
+  --ui-filter-docs-laser: drop-shadow(0 0 8px rgba(239, 68, 68, 0.9));
+}
+
+:root.dark {
+  --ui-color-docs-read-bg: #0b0d12;
+  --ui-color-docs-read-chrome: #11141b;
+  --ui-color-docs-read-selected-fg: #0b0d12;
+  --ui-color-docs-laser: #f87171;
+  --ui-filter-docs-laser: drop-shadow(0 0 8px rgba(248, 113, 113, 0.9));
+}
+
+.ui-block-editor .bn-root {
+  --bn-font-family: var(--ui-font-sans);
+}
+
+.ui-block-editor .bn-default-styles {
+  font-family: var(--ui-font-sans);
+  font-size: var(--ui-text-body);
+  line-height: 1.55;
+}
+
+.ui-block-editor .bn-editor {
+  font-family: var(--ui-font-sans);
+  font-size: var(--ui-text-body);
+  line-height: 1.55;
+}
+
+.ui-block-editor .bn-default-styles p,
+.ui-block-editor .bn-default-styles h1,
+.ui-block-editor .bn-default-styles h2,
+.ui-block-editor .bn-default-styles h3,
+.ui-block-editor .bn-default-styles h4,
+.ui-block-editor .bn-default-styles h5,
+.ui-block-editor .bn-default-styles h6,
+.ui-block-editor .bn-default-styles li {
+  font-family: inherit;
+  font-size: inherit;
+  line-height: inherit;
+}
+
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  .docs-print-area,
+  .docs-print-area * {
+    visibility: visible;
+  }
+  .docs-print-area {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    overflow: visible !important;
+    background: white !important;
+    color: black !important;
+  }
+}

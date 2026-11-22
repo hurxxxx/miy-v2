@@ -1,0 +1,33 @@
+{
+  "contractVersion": "miy.app/v1alpha1",
+  "id": "docs",
+  "migrations": {
+    "directory": "migrations"
+  },
+  "name": "문서",
+  "platformEndpoints": {
+    "homeCard": "/v1/home-card",
+    "notificationCheck": "/platform/notification-check",
+    "search": "/v1/search"
+  },
+  "requestedPermissions": [
+    "database",
+    "platform:directory:read",
+    "platform:files:read",
+    "platform:files:write",
+    "platform:notifications:write"
+  ],
+  "resources": {
+    "database": "postgresql"
+  },
+  "runtime": {
+    "profile": "rust-web-v1"
+  },
+  "ui": {
+    "contractVersion": "miy.ui/v1alpha1",
+    "delivery": "module",
+    "moduleEntry": "mf-manifest.json",
+    "moduleExport": "./AppRoot"
+  },
+  "version": "0.1.0"
+}

@@ -1,0 +1,112 @@
+/*
+ * Tailwind CSS 4 theme of common UI 2.0.0: the color and font names that the
+ * components' utility classes (bg-ui-*, text-ui-*, border-ui-*, bg-app-*)
+ * resolve to, and the class based dark variant.
+ *
+ * Import it from the app's Tailwind entry CSS, after Tailwind itself, and let
+ * Tailwind scan the installed component sources:
+ *
+ *   @import "tailwindcss";
+ *   @import "../../platform-components/ui/theme.css";
+ *   @source "../../platform-components";
+ *
+ * The names only point at the --ui-* design tokens. The token values are
+ * supplied by the platform (the frame runtime delivers them to app frames),
+ * so this file declares none.
+ *
+ * Copied unchanged from AI-DO apps/web/src/index.css at 0002af062: the
+ * @custom-variant line and the @theme block.
+ */
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  --font-sans:
+    'Pretendard Variable', 'Pretendard', 'IBM Plex Sans KR', 'IBM Plex Sans',
+    sans-serif;
+
+  /* App-level color tokens — aliased to the canonical --ui-color-* design tokens
+     defined in packages/ui/styles.css. Single source of truth lives there. */
+  --color-app-bg: var(--ui-color-bg);
+  --color-app-bg-strong: var(--ui-color-bg-strong);
+  --color-app-static-white: var(--ui-color-static-white);
+  --color-app-static-black: var(--ui-color-static-black);
+  --color-app-surface: var(--ui-color-surface);
+  --color-app-surface-raised: var(--ui-color-surface-raised);
+  --color-app-surface-subtle: var(--ui-color-surface-subtle);
+  --color-app-surface-sidebar: var(--ui-color-surface-sidebar);
+  --color-app-surface-hover: var(--ui-color-surface-hover);
+  --color-app-border: var(--ui-color-border);
+  --color-app-border-strong: var(--ui-color-border-strong);
+  --color-app-ink: var(--ui-color-ink);
+  --color-app-ink-muted: var(--ui-color-ink-muted);
+  --color-app-ink-subtle: var(--ui-color-ink-subtle);
+  --color-app-accent: var(--ui-color-accent);
+  --color-app-accent-hover: var(--ui-color-accent-hover);
+  --color-app-accent-weak: var(--ui-color-accent-weak);
+  --color-app-accent-fg: var(--ui-color-accent-fg);
+  --color-app-info: var(--ui-color-info);
+  --color-app-info-bg: var(--ui-color-info-bg);
+  --color-app-info-border: var(--ui-color-info-border);
+  --color-app-info-text: var(--ui-color-info-text);
+  --color-app-success: var(--ui-color-success);
+  --color-app-success-bg: var(--ui-color-success-bg);
+  --color-app-success-border: var(--ui-color-success-border);
+  --color-app-success-text: var(--ui-color-success-text);
+  --color-app-warning: var(--ui-color-warning);
+  --color-app-warning-bg: var(--ui-color-warning-bg);
+  --color-app-warning-border: var(--ui-color-warning-border);
+  --color-app-warning-text: var(--ui-color-warning-text);
+  --color-app-danger: var(--ui-color-danger);
+  --color-app-danger-bg: var(--ui-color-danger-bg);
+  --color-app-danger-border: var(--ui-color-danger-border);
+  --color-app-danger-text: var(--ui-color-danger-text);
+  --color-app-chart-1: var(--ui-color-chart-1);
+  --color-app-chart-2: var(--ui-color-chart-2);
+  --color-app-chart-3: var(--ui-color-chart-3);
+  --color-app-chart-4: var(--ui-color-chart-4);
+  --color-app-chart-5: var(--ui-color-chart-5);
+  --color-app-chart-6: var(--ui-color-chart-6);
+  --color-app-chart-7: var(--ui-color-chart-7);
+  --color-app-chart-8: var(--ui-color-chart-8);
+
+  /* Register --ui-* tokens so Tailwind v4 resolves bg-[var(--ui-*)] as colors */
+  --color-ui-bg: var(--ui-color-bg);
+  --color-ui-static-white: var(--ui-color-static-white);
+  --color-ui-static-black: var(--ui-color-static-black);
+  --color-ui-surface: var(--ui-color-surface);
+  --color-ui-surface-raised: var(--ui-color-surface-raised);
+  --color-ui-surface-subtle: var(--ui-color-surface-subtle);
+  --color-ui-surface-sidebar: var(--ui-color-surface-sidebar);
+  --color-ui-border: var(--ui-color-border);
+  --color-ui-border-strong: var(--ui-color-border-strong);
+  --color-ui-ink: var(--ui-color-ink);
+  --color-ui-ink-muted: var(--ui-color-ink-muted);
+  --color-ui-ink-subtle: var(--ui-color-ink-subtle);
+  --color-ui-accent: var(--ui-color-accent);
+  --color-ui-accent-hover: var(--ui-color-accent-hover);
+  --color-ui-accent-weak: var(--ui-color-accent-weak);
+  --color-ui-info: var(--ui-color-info);
+  --color-ui-info-bg: var(--ui-color-info-bg);
+  --color-ui-info-border: var(--ui-color-info-border);
+  --color-ui-info-text: var(--ui-color-info-text);
+  --color-ui-success: var(--ui-color-success);
+  --color-ui-success-bg: var(--ui-color-success-bg);
+  --color-ui-success-border: var(--ui-color-success-border);
+  --color-ui-success-text: var(--ui-color-success-text);
+  --color-ui-warning: var(--ui-color-warning);
+  --color-ui-warning-bg: var(--ui-color-warning-bg);
+  --color-ui-warning-border: var(--ui-color-warning-border);
+  --color-ui-warning-text: var(--ui-color-warning-text);
+  --color-ui-danger: var(--ui-color-danger);
+  --color-ui-danger-bg: var(--ui-color-danger-bg);
+  --color-ui-danger-border: var(--ui-color-danger-border);
+  --color-ui-danger-text: var(--ui-color-danger-text);
+  --color-ui-chart-1: var(--ui-color-chart-1);
+  --color-ui-chart-2: var(--ui-color-chart-2);
+  --color-ui-chart-3: var(--ui-color-chart-3);
+  --color-ui-chart-4: var(--ui-color-chart-4);
+  --color-ui-chart-5: var(--ui-color-chart-5);
+  --color-ui-chart-6: var(--ui-color-chart-6);
+  --color-ui-chart-7: var(--ui-color-chart-7);
+  --color-ui-chart-8: var(--ui-color-chart-8);
+}
