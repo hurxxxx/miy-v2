@@ -42,12 +42,19 @@ select the newly installed global executable.
 miy app setup
 ```
 
-This copies that executable into `.miy-tools`, refreshes CLI manuals/skills and
-Codex/Claude MCP settings, and preserves authentication. It does not download a
-new CLI itself. Running an old project's `.miy-tools/miy app setup` copies the
+This copies that executable into `.miy-tools`, refreshes CLI manuals/skills,
+`docs/API.md` and Codex/Claude MCP settings, and preserves authentication.
+Running an old project's `.miy-tools/miy app setup` copies the
 old executable again. With the same SDK bundle, `app setup` is sufficient. If
 the installed SDK bundle differs, review and commit clean project source before
 an explicit `miy app upgrade`; do not rewrite protected files manually.
+
+Use `miy app check --harness-only --output json` to read the installed and
+available guidance versions. The lock `miy.cli.json` records `guidanceVersion`
+and, for projects created by an initializer that records it, `templateVersion`.
+The latter identifies the original scaffold by its SHA-256. Setup and bundle
+upgrades preserve this value. Earlier projects have an unknown scaffold
+revision and receive the current guidance on setup.
 
 4. **Restart the agent and verify the project executable.** A running stdio MCP
    process does not switch to the new executable or guidance automatically.

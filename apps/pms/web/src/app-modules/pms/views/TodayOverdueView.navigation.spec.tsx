@@ -50,6 +50,7 @@ const taskList = (id: string, workspaceKey: string | null): PmsTaskList => ({
 });
 
 const task = (listId: string, dueDate: string): PmsTask => ({
+  custom_fields: {},
   id: `task-${listId}`,
   list_id: listId,
   title: `Task ${listId}`,

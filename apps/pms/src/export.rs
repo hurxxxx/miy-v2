@@ -186,7 +186,38 @@ fn local(value: &NaiveDateTime) -> NaiveDateTime {
         .naive_local()
 }
 
+#[derive(utoipa::ToSchema)]
+#[schema(format = Binary)]
+struct XlsxWorkbook(#[allow(dead_code)] String);
+
 /// `GET /v1/pms/lists/{list_id}/export`.
+/// The same task filters as the list apply, including cf_<field ID> keys.
+#[utoipa::path(
+    get, path = "/v1/pms/lists/{list_id}/export", operation_id = "exportPmsTaskList", tag = "Task lists, folders and labels",
+    params(
+        ("list_id" = String, Path),
+        ("q" = Option<String>, Query, description = "Match task title, description or reference"),
+        ("status" = Option<Vec<String>>, Query, style = Form, explode, description = "Repeat status for multiple values"),
+        ("assignee_id" = Option<String>, Query),
+        ("priority" = Option<String>, Query),
+        ("label_id" = Option<String>, Query),
+        ("milestone_id" = Option<String>, Query),
+        ("archived" = Option<bool>, Query),
+        ("due_date_from" = Option<String>, Query, format = Date),
+        ("due_date_to" = Option<String>, Query, format = Date),
+        ("start_date_from" = Option<String>, Query, format = Date),
+        ("start_date_to" = Option<String>, Query, format = Date)
+    ),
+    responses(
+        (status = 200, description = "Excel workbook", body = XlsxWorkbook, content_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", headers(("Content-Disposition" = String, description = "Attachment filename, including UTF-8 filename*"), ("Cache-Control" = String, description = "private, no-store"), ("X-Content-Type-Options" = String, description = "nosniff"))),
+        (status = 401, description = "Valid platform identity required", body = crate::error::IdentityErrorResponse),
+        (status = 403, description = "Current permissions do not allow this operation", body = crate::error::ErrorResponse),
+        (status = 404, description = "Resource is unavailable or does not exist", body = crate::error::ErrorResponse),
+        (status = 409, description = "Current resource state conflicts with the request", body = crate::error::ErrorResponse),
+        (status = 422, description = "Request validation failed", body = crate::error::ErrorResponse),
+        (status = 500, description = "Could not complete the request", body = crate::error::ErrorResponse)
+    )
+)]
 pub async fn export_task_list(
     State(pool): State<PgPool>,
     Extension(identity): Extension<Identity>,

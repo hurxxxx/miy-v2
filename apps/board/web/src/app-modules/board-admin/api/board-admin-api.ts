@@ -1,3 +1,4 @@
+import type { components } from '../../../api.generated';
 import { apiFetchJson } from '../../../platform/api/client';
 import { emitCommunityChannelsChanged } from '../../../platform/community/community-channel-events';
 import type { AppApi } from '../../../platform/runtime/runtime-context';
@@ -8,25 +9,9 @@ import type { AppApi } from '../../../platform/runtime/runtime-context';
  * AI-DO reached them from the platform admin console; the board serves them
  * to board managers (`/v1/community/admin/...`).
  */
-export interface AdminCommunityChannelItem {
-  id: string;
-  key: string;
-  name: string;
-  description: string;
-  position: number;
-  active: boolean;
-  readOnly: boolean;
-  forceAnonymous: boolean;
-  adminOnlyContent: boolean;
-  templateTitle: string;
-  templateBody: string;
-}
-
-export type AdminCommunityChannelInput = Omit<AdminCommunityChannelItem, 'id'>;
-
-export interface AdminCommunityChannelsResponse {
-  channels: AdminCommunityChannelItem[];
-}
+export type AdminCommunityChannelItem = components['schemas']['ChannelOut'];
+export type AdminCommunityChannelInput = Required<components['schemas']['ChannelRequest']>;
+export type AdminCommunityChannelsResponse = components['schemas']['ChannelsResponse'];
 
 export function listCommunityAdminChannels(
   api: AppApi | null | undefined,
@@ -79,16 +64,8 @@ export function deleteCommunityAdminChannel(
   });
 }
 
-export interface FilterTerm {
-  id: string;
-  term: string;
-  created_at: string;
-}
-
-export interface FilterTermList {
-  items: FilterTerm[];
-  limit: number;
-}
+export type FilterTerm = components['schemas']['FilterTermItem'];
+export type FilterTermList = components['schemas']['FilterTermList'];
 
 const FILTER_TERMS = '/v1/community/admin/filter-terms';
 
@@ -102,7 +79,7 @@ export function addFilterTerm(
 ): Promise<FilterTerm> {
   return apiFetchJson<FilterTerm>(FILTER_TERMS, api, {
     method: 'POST',
-    body: JSON.stringify({ term }),
+    body: JSON.stringify({ term } satisfies components['schemas']['FilterTermCreateRequest']),
   });
 }
 

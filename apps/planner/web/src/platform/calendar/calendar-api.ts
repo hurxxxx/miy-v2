@@ -4,6 +4,7 @@
 // are other apps' data and are not aggregated in this release.
 //
 // The hook in use-calendar-events.ts can still fall back to the mock fixture.
+import type { paths } from '../../api.generated';
 import { apiFetchJsonWithMappedError } from '../api/client';
 import { i18n } from '../i18n';
 import type { AppApi } from '../runtime/runtime-context';
@@ -24,28 +25,27 @@ class CalendarApiError extends Error {
   }
 }
 
-export interface ListCalendarEventsOptions {
-  from: string; // ISO date (YYYY-MM-DD) or full ISO datetime
-  to: string; // exclusive
-  sources?: CalendarSourceFilter;
-}
+const calendarEventsPath = '/v1/calendar/events';
+type CalendarEvents = paths[typeof calendarEventsPath]['get'];
+type CalendarEventsQuery = CalendarEvents['parameters']['query'];
 
-export interface CalendarEventsResponse {
-  items: CalendarEvent[];
-}
+export type ListCalendarEventsOptions = Omit<CalendarEventsQuery, 'sources'> & {
+  sources?: CalendarSourceFilter;
+};
+
+export type CalendarEventsResponse = CalendarEvents['responses'][200]['content']['application/json'];
 
 export async function listCalendarEvents(
   api: AppApi,
   options: ListCalendarEventsOptions,
 ): Promise<CalendarEventsResponse> {
-  const params = new URLSearchParams();
-  params.set('from', options.from);
-  params.set('to', options.to);
+  const query = { from: options.from, to: options.to } satisfies CalendarEventsQuery;
+  const params = new URLSearchParams(query);
   const sources = options.sources ?? ALL_CALENDAR_SOURCES;
   if (sources.length > 0) {
     params.set('sources', sources.join(','));
   }
-  const path = `/v1/calendar/events?${params.toString()}`;
+  const path = `${calendarEventsPath}?${params.toString()}`;
   return apiFetchJsonWithMappedError<CalendarEventsResponse>(
     path,
     api,

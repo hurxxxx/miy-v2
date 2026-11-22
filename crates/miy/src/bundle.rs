@@ -22,6 +22,11 @@ include!(concat!(env!("OUT_DIR"), "/template.rs"));
 pub fn template() -> &'static [(&'static str, &'static str)] {
     TEMPLATE
 }
+/// The scaffold revision identifies the embedded files from which an app was created.
+pub fn template_version() -> String {
+    let content = serde_json::to_vec(TEMPLATE).expect("template entries are strings");
+    format!("sha256:{}", contract::hash(content))
+}
 fn protected(path: &str) -> bool {
     path.starts_with("sdk/")
         || path.starts_with(".agents/skills/")

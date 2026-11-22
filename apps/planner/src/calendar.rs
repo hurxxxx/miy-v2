@@ -16,7 +16,7 @@ use serde::Serialize;
 use sqlx::PgPool;
 use std::collections::HashMap;
 
-use crate::error::{ApiError, ApiResult};
+use crate::error::{ApiError, ApiErrorResponse, ApiResult, GatewayErrorResponse};
 use crate::event_time::{local_date_string, parse_iso_or_date, utc_iso};
 use crate::planner::{PlannerEvent, list_owner_events};
 
@@ -25,50 +25,75 @@ pub const DEFAULT_CALENDAR_SOURCES: &[&str] = &["planner_event"];
 /// source_projection.SOURCE_COLORS["planner_event"] (teal-500).
 pub const PLANNER_EVENT_COLOR: &str = "#14b8a6";
 
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct CalendarEventMetadata {
+    #[schema(required)]
     pub meeting_id: Option<String>,
+    #[schema(required)]
     pub attendee_count: Option<i64>,
+    #[schema(required)]
     pub task_list_id: Option<String>,
+    #[schema(required)]
     pub task_list_key: Option<String>,
+    #[schema(required)]
     pub task_number: Option<i64>,
+    #[schema(required)]
     pub status: Option<String>,
+    #[schema(required)]
     pub assignee_ids: Option<Vec<String>>,
+    #[schema(required)]
     pub planner_event_id: Option<String>,
+    #[schema(required)]
     pub owner_id: Option<String>,
+    #[schema(required)]
     pub owner_name: Option<String>,
+    #[schema(required)]
     pub location: Option<String>,
+    #[schema(required)]
     pub planner_all_day: Option<bool>,
+    #[schema(required)]
     pub planner_start_has_time: Option<bool>,
+    #[schema(required)]
     pub planner_end_has_time: Option<bool>,
+    #[schema(required)]
     pub planner_time_zone: Option<String>,
+    #[schema(required)]
     pub external_calendar_id: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, utoipa::ToSchema)]
 pub struct CalendarWorkspaceRef {
     pub id: String,
     pub slug: String,
     pub name: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, utoipa::ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum CalendarSource {
+    PlannerEvent,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct CalendarEventOut {
     pub id: String,
     pub title: String,
+    /// Calendar start, a date for untimed events or an ISO UTC datetime.
     pub start: String,
+    /// Calendar end, a date for untimed events or an ISO UTC datetime.
     pub end: String,
     pub all_day: bool,
-    pub source_type: String,
+    pub source_type: CalendarSource,
     pub source_id: String,
     pub color: String,
+    #[schema(required)]
     pub workspace: Option<CalendarWorkspaceRef>,
     pub metadata: CalendarEventMetadata,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
 pub struct CalendarEventsResponse {
     pub items: Vec<CalendarEventOut>,
 }
@@ -188,7 +213,7 @@ pub fn project_planner_calendar_event(event: &PlannerEvent) -> CalendarEventOut 
         start,
         end,
         all_day,
-        source_type: "planner_event".into(),
+        source_type: CalendarSource::PlannerEvent,
         source_id: event.id.clone(),
         color: PLANNER_EVENT_COLOR.into(),
         workspace: None,
@@ -228,20 +253,45 @@ fn required(params: &HashMap<String, String>, name: &str) -> ApiResult<String> {
         .ok_or_else(|| ApiError::validation(format!("{name}: Field required")))
 }
 
-/// GET /v1/calendar/events. The caller's own events only; there is no
-/// user/assignee parameter (AI-DO ENG-CRIT-1).
+#[derive(utoipa::IntoParams)]
+#[into_params(parameter_in = Query)]
+struct CalendarEventsParams {
+    /// Inclusive lower bound. ISO date or datetime, with or without offset.
+    from: String,
+    /// Exclusive upper bound, at most 366 days after from.
+    to: String,
+    /// Comma-separated sources. This app supports planner_event, the default.
+    /// An empty value selects no sources.
+    #[param(example = "planner_event")]
+    sources: Option<String>,
+}
+
+/// List the caller's own calendar events.
+#[utoipa::path(
+    get, path = "/v1/calendar/events", operation_id = "listCalendarEvents",
+    params(CalendarEventsParams),
+    responses(
+        (status = 200, description = "Calendar events owned by the current user", body = CalendarEventsResponse),
+        (status = 400, description = "Invalid date range or sources", body = ApiErrorResponse),
+        (status = 401, description = "Platform identity could not be verified", body = GatewayErrorResponse),
+        (status = 422, description = "Missing from or to", body = ApiErrorResponse),
+        (status = 500, description = "Could not read the calendar", body = ApiErrorResponse)
+    )
+)]
 pub async fn list_events(
     State(pool): State<PgPool>,
     Extension(identity): Extension<Identity>,
-    Query(params): Query<HashMap<String, String>>,
+    Query(mut params): Query<HashMap<String, String>>,
 ) -> ApiResult<Json<CalendarEventsResponse>> {
-    let from_param = required(&params, "from")?;
-    let to_param = required(&params, "to")?;
+    let params = CalendarEventsParams {
+        from: required(&params, "from")?,
+        to: required(&params, "to")?,
+        sources: params.remove("sources"),
+    };
     let sources = params
-        .get("sources")
-        .cloned()
+        .sources
         .unwrap_or_else(|| DEFAULT_CALENDAR_SOURCES.join(","));
-    let query = parse_calendar_events_query(&from_param, &to_param, &sources)?;
+    let query = parse_calendar_events_query(&params.from, &params.to, &sources)?;
     if query.sources.is_empty() {
         return Ok(Json(CalendarEventsResponse { items: vec![] }));
     }

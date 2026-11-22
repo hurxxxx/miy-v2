@@ -30,7 +30,7 @@ use axum::{
 };
 use futures_util::{SinkExt, StreamExt};
 use miy_app_sdk::Identity;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::json;
 use sqlx::PgPool;
 use std::{
@@ -152,7 +152,7 @@ async fn active_participants(pool: &PgPool, conversation_id: &str) -> Option<Vec
 }
 
 pub fn changed_hint(conversation_id: &str) -> String {
-    json!({"type": "conversation.changed", "conversationId": conversation_id}).to_string()
+    json!(ServerHint::ConversationChanged { conversation_id }).to_string()
 }
 
 /// After a committed write: hint the conversation's current active
@@ -174,9 +174,10 @@ pub fn user_changed(user: &str, conversation_id: &str) {
     hub().send_users(&[user.to_string()], &changed_hint(conversation_id));
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
+#[schema(as = MessengerLiveClientMessage)]
 #[serde(tag = "type")]
-enum ClientMessage {
+pub(crate) enum ClientMessage {
     #[serde(rename = "open")]
     Open {
         #[serde(rename = "conversationId", default)]
@@ -191,11 +192,62 @@ enum ClientMessage {
     },
 }
 
+#[derive(Serialize, utoipa::ToSchema)]
+#[schema(as = MessengerLiveServerHint)]
+#[serde(tag = "type")]
+pub(crate) enum ServerHint<'a> {
+    #[serde(rename = "conversation.changed")]
+    ConversationChanged {
+        #[serde(rename = "conversationId")]
+        conversation_id: &'a str,
+    },
+    #[serde(rename = "typing")]
+    Typing {
+        #[serde(rename = "conversationId")]
+        conversation_id: &'a str,
+        #[serde(rename = "userId")]
+        user_id: &'a str,
+        active: bool,
+    },
+    #[serde(rename = "heartbeat")]
+    Heartbeat,
+}
+
 fn default_active() -> bool {
     true
 }
 
 /// `GET /live`: the WebSocket the platform relays from `runtime.live`.
+#[utoipa::path(
+    get, path = "/live", operation_id = "live",
+    description = "HTTP WebSocket handshake for runtime.live. See the Messenger README live protocol for text messages.",
+    extensions(
+        ("x-miy-websocket" = json!({
+            "protocol": "websocket",
+            "frameContentType": "application/json",
+            "maxClientMessageBytes": MAX_CLIENT_MESSAGE,
+            "clientMessage": { "$ref": "#/components/schemas/MessengerLiveClientMessage" },
+            "serverMessage": { "$ref": "#/components/schemas/MessengerLiveServerHint" }
+        }))
+    ),
+    params(
+        ("Connection" = String, Header, description = "Includes Upgrade"),
+        ("Upgrade" = String, Header, description = "websocket"),
+        ("Sec-WebSocket-Key" = String, Header, description = "WebSocket client nonce"),
+        ("Sec-WebSocket-Version" = String, Header, description = "13"),
+    ),
+    responses(
+        (status = 101, description = "Switching Protocols", headers(
+            ("Connection" = String, description = "Upgrade"),
+            ("Upgrade" = String, description = "websocket"),
+            ("Sec-WebSocket-Accept" = String, description = "WebSocket handshake acceptance"),
+         )),
+        (status = 400, description = "Invalid WebSocket handshake", body = String, content_type = "text/plain"),
+        (status = 426, description = "Connection cannot be upgraded", body = String, content_type = "text/plain"),
+        (status = 401, description = "Valid gateway identity required", body = crate::error::GatewayIdentityError),
+        (status = 403, description = "Permission denied", body = crate::error::ErrorResponse),
+    )
+)]
 pub async fn live(
     State(pool): State<PgPool>,
     Extension(identity): Extension<Identity>,
@@ -236,7 +288,7 @@ async fn serve(socket: WebSocket, pool: PgPool, user: String) {
                 Some(Ok(_)) => {}
             },
             _ = heartbeat.tick() => {
-                if sink.send(Message::Text(r#"{"type":"heartbeat"}"#.into())).await.is_err() {
+                if sink.send(Message::Text(json!(ServerHint::Heartbeat).to_string().into())).await.is_err() {
                     break;
                 }
             }
@@ -289,11 +341,10 @@ async fn client_message(
                 return;
             }
             let others: Vec<String> = users.into_iter().filter(|u| u != user).collect();
-            let hint = json!({
-                "type": "typing",
-                "conversationId": conversation_id,
-                "userId": user,
-                "active": active,
+            let hint = json!(ServerHint::Typing {
+                conversation_id: &conversation_id,
+                user_id: user,
+                active,
             })
             .to_string();
             hub().send_open(&others, &conversation_id, &hint);

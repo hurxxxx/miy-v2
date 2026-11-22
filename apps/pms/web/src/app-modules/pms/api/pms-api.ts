@@ -1,4 +1,4 @@
-import { ApiError, checkedResponse } from '@miy/sdk';
+import { checkedResponse, isApiError } from '@miy/sdk';
 
 import { requestId } from '../../../../../platform-components/ui/utilities';
 
@@ -13,7 +13,7 @@ import type {
   AppApiBlob,
   AppFileApi,
 } from '../../../platform/runtime/runtime-context';
-import type { ApiSchema } from './pms-api-types';
+import type { ApiSchema, PmsInput, PmsResponse } from './pms-api-types';
 
 export type PmsTaskList = Omit<
   ApiSchema<'TaskListItem'>,
@@ -61,12 +61,7 @@ export type PmsSpacePreferenceChange =
 
 /** miy: a milestone belongs to a space; a list milestone also names its list
  *  (`list_id`), a space-wide one has `list_id: null` and fits every list. */
-export type PmsMilestone = Omit<ApiSchema<'MilestoneItem'>, 'list_id'> & {
-  team_id: string;
-  list_id: string | null;
-  list_name?: string | null;
-  scope: 'list' | 'space';
-};
+export type PmsMilestone = ApiSchema<'MilestoneItem'>;
 
 export type PmsMilestoneStatus = 'planned' | 'active' | 'complete';
 
@@ -87,8 +82,6 @@ export type PmsTask = Omit<
   parent_id: string | null;
   recurrence_rule: string | null;
   labels: PmsLabel[];
-  /** miy: custom field values by field id (multi select: a JSON list). */
-  custom_fields?: Record<string, string>;
 };
 
 export type PmsTasksResponse = Omit<ApiSchema<'TaskItemsResponse'>, 'items'> & {
@@ -189,11 +182,13 @@ export type PmsFoldersResponse = Omit<
 
 export type PmsTemplateLabel = { name: string; color: string };
 
+export type PmsTemplatePriority = ApiSchema<'TaskTemplateItem'>['default_priority'];
+
 export type PmsTemplateSubtask = {
   title: string;
   description: string;
   description_blocks: Record<string, unknown>[] | null;
-  priority: string;
+  priority: PmsTemplatePriority;
   checklist_items: { text: string }[];
   labels: PmsTemplateLabel[];
 };
@@ -216,17 +211,7 @@ export type PmsTaskTemplate = Omit<
   updated_at: string;
 };
 
-export type PmsTaskTemplateInput = {
-  name: string;
-  title?: string;
-  description?: string;
-  description_blocks?: Record<string, unknown>[] | null;
-  default_status?: string;
-  default_priority?: string;
-  checklist_items?: { text: string }[];
-  labels?: PmsTemplateLabel[];
-  subtasks?: PmsTemplateSubtask[];
-};
+export type PmsTaskTemplateInput = PmsInput<'/v1/pms/spaces/{space_id}/templates', 'post'>;
 
 export type PmsTaskTemplatesResponse = Omit<
   ApiSchema<'TaskTemplateListResponse'>,
@@ -273,15 +258,9 @@ export type PmsTaskListStatus = Omit<
   category: PmsStatusCategory;
 };
 
-export type PmsTaskListStatusesResponse = {
-  mode: 'inherit' | 'custom';
-  source: 'space' | 'list';
-  items: PmsTaskListStatus[];
-};
+export type PmsTaskListStatusesResponse = PmsResponse<'/v1/pms/lists/{list_id}/statuses', 'get'>;
 
-export type PmsSpaceStatusesResponse = {
-  items: PmsTaskListStatus[];
-};
+export type PmsSpaceStatusesResponse = PmsResponse<'/v1/pms/spaces/{space_id}/statuses', 'get'>;
 
 export type PmsViewPreferences = ApiSchema<'PmsViewPreferencesResponse'>;
 
@@ -515,7 +494,7 @@ export function updatePmsViewPreferences(
 
 export function createSpace(
   api: AppApi,
-  payload: { name: string; description?: string },
+  payload: PmsInput<'/v1/pms/spaces', 'post'>,
   workspaceSlug?: string | null,
 ): Promise<PmsSpace> {
   return request<PmsSpace>(
@@ -532,7 +511,7 @@ export function createSpace(
 export function updateSpace(
   api: AppApi,
   spaceId: string,
-  payload: { name?: string; description?: string },
+  payload: PmsInput<'/v1/pms/spaces/{space_id}', 'patch'>,
   workspaceSlug?: string | null,
 ): Promise<PmsSpace> {
   return request<PmsSpace>(
@@ -654,15 +633,16 @@ export function getPmsTaskList(
   );
 }
 
+type TaskListCreateRequest = PmsInput<'/v1/pms/lists', 'post'>;
+
+// Existing forms can submit an unselected space and display the server's 409.
+type TaskListCreateForm = Omit<TaskListCreateRequest, 'team_id'> & {
+  team_id?: TaskListCreateRequest['team_id'] | null;
+};
+
 export function createPmsTaskList(
   api: AppApi,
-  payload: {
-    key?: string;
-    name: string;
-    description?: string;
-    team_id?: string | null;
-    folder_id?: string | null;
-  },
+  payload: TaskListCreateForm,
   workspaceSlug?: string | null,
 ): Promise<PmsTaskList> {
   return request<PmsTaskList>(
@@ -679,14 +659,7 @@ export function createPmsTaskList(
 export function updatePmsTaskList(
   api: AppApi,
   taskListId: string,
-  payload: {
-    name?: string;
-    description?: string;
-    status?: string;
-    archived?: boolean;
-    folder_id?: string | null;
-    sort_order?: number;
-  },
+  payload: PmsInput<'/v1/pms/lists/{list_id}', 'patch'>,
   workspaceSlug?: string | null,
 ): Promise<PmsTaskList> {
   return request<PmsTaskList>(
@@ -764,13 +737,7 @@ export function listTaskListMilestones(
   );
 }
 
-export type PmsMilestoneInput = {
-  title: string;
-  description?: string;
-  status?: PmsMilestoneStatus;
-  start_date?: string | null;
-  due_date?: string | null;
-};
+export type PmsMilestoneInput = PmsInput<'/v1/pms/lists/{list_id}/milestones', 'post'>;
 
 export function createTaskListMilestone(
   api: AppApi,
@@ -1785,9 +1752,9 @@ export async function exportTaskListXlsx(
       ),
     ]);
   } catch (error) {
-    if (error instanceof ApiError && error.kind === 'abort') throw error;
+    if (isApiError(error) && error.kind === 'abort') throw error;
     const status =
-      error instanceof ApiError
+      isApiError(error)
         ? (error.status ?? 0)
         : error instanceof PmsApiError
           ? error.status
@@ -1917,12 +1884,12 @@ export function updateCustomField(
   payload: {
     name?: string;
     options?: string[];
+    expected_options?: string[];
     option_renames?: { from: string; to: string }[];
   },
 ): Promise<PmsCustomField> {
-  return request<PmsCustomField>(
+  return api<PmsCustomField>(
     `/v1/pms/custom-fields/${encodeURIComponent(fieldId)}`,
-    api,
     { method: 'PATCH', body: JSON.stringify(payload) },
   );
 }
@@ -2095,28 +2062,17 @@ export type PmsSavedFilterScope =
   | { listId: string; spaceId?: undefined }
   | { spaceId: string; listId?: undefined };
 
-export type PmsSavedFilter = {
-  id: string;
-  name: string;
+type SavedFiltersWire = PmsResponse<'/v1/pms/saved-filters', 'get'>;
+
+export type PmsSavedFilter = Omit<SavedFiltersWire['items'][number], 'params' | 'sort' | 'group_by'> & {
   /** The filter bar without the search text. */
   params: TaskFilterParams;
   sort: PmsTaskSort | null;
   group_by: PmsTaskListGroupBy | null;
-  shared: boolean;
-  space_id: string;
-  list_id: string | null;
-  owner_id: string;
-  owner_name: string;
-  is_mine: boolean;
-  is_default: boolean;
-  can_manage: boolean;
-  created_at: string;
-  updated_at: string;
 };
 
-export type PmsSavedFiltersResponse = {
+export type PmsSavedFiltersResponse = Omit<SavedFiltersWire, 'items'> & {
   items: PmsSavedFilter[];
-  default_filter_id: string | null;
 };
 
 function savedFilterScopeBody(

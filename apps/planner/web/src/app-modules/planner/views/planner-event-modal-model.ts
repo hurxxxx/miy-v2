@@ -375,12 +375,13 @@ export function buildPlannerEventUpdatePayload(
   for (const field of ['title', 'description', 'location'] as const) {
     if (state[field] !== baseline[field]) update[field] = payload[field];
   }
-  const timeChanged = (['allDay', 'startDateValue', 'startTimeValue', 'endDateValue', 'endTimeValue'] as const)
-    .some((field) => state[field] !== baseline[field]);
-  if (timeChanged) {
+  const modeChanged = state.allDay !== baseline.allDay;
+  if (modeChanged || state.startDateValue !== baseline.startDateValue || state.startTimeValue !== baseline.startTimeValue) {
     update.start = payload.start;
-    update.end = payload.end;
-    if (state.allDay !== baseline.allDay) update.allDay = payload.allDay;
   }
+  if (modeChanged || state.endDateValue !== baseline.endDateValue || state.endTimeValue !== baseline.endTimeValue) {
+    update.end = payload.end;
+  }
+  if (modeChanged) update.allDay = payload.allDay;
   return update;
 }

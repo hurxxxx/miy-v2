@@ -81,6 +81,8 @@ async fn main() -> anyhow::Result<()> {
 }
 `);
   const manifest = JSON.parse(readFileSync(join(appDir, "manifest.json"), "utf8"));
+  // This probe replaces the scaffold API with its own raw HTML and JSON routes.
+  delete manifest.apiContract;
   writeFileSync(join(appDir, "manifest.json"), JSON.stringify({ ...manifest, version }, null, 2) + "\n");
   run("git", ["add", "."], appDir);
   run("git", ["-c", "user.name=UI5 probe", "-c", "user.email=probe@localhost", "commit", "-qm", `UI5 probe ${version}`], appDir);

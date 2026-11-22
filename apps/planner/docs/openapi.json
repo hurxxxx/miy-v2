@@ -1,0 +1,1739 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "플래너 API",
+    "version": "0.1.0"
+  },
+  "paths": {
+    "/v1/calendar/events": {
+      "get": {
+        "summary": "List the caller's own calendar events.",
+        "operationId": "listCalendarEvents",
+        "parameters": [
+          {
+            "name": "from",
+            "in": "query",
+            "description": "Inclusive lower bound. ISO date or datetime, with or without offset.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "description": "Exclusive upper bound, at most 366 days after from.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "sources",
+            "in": "query",
+            "description": "Comma-separated sources. This app supports planner_event, the default.\nAn empty value selects no sources.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "example": "planner_event"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Calendar events owned by the current user",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CalendarEventsResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid date range or sources",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Platform identity could not be verified",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GatewayErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Missing from or to",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Could not read the calendar",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/home-card": {
+      "post": {
+        "summary": "Platform callback for the portal home card.",
+        "operationId": "getPlannerHomeCard",
+        "requestBody": {
+          "description": "Omit the body to use default display settings",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HomeCardRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Today's events for the signed-in user",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HomeCardResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Malformed JSON",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Platform identity could not be verified",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GatewayErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Platform calls only",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Request body too large",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Unsupported content type",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid home card request",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Could not read the events",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/personal-widgets/memo": {
+      "get": {
+        "operationId": "getPersonalMemo",
+        "responses": {
+          "200": {
+            "description": "The current user's memo",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PersonalMemoOut"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Platform identity could not be verified",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GatewayErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Could not read the memo",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "operationId": "savePersonalMemo",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PersonalMemoUpdateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Saved memo",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PersonalMemoOut"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Platform identity could not be verified",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GatewayErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The memo revision has changed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid memo request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Could not save the memo",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/personal-widgets/todos": {
+      "get": {
+        "operationId": "listPersonalTodos",
+        "parameters": [
+          {
+            "name": "include_completed",
+            "in": "query",
+            "description": "Defaults to true. Accepted values are true/false, 1/0, yes/no, on/off, t/f and y/n.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "example": "false"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The current user's to-dos",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PersonalTodoListResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Platform identity could not be verified",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GatewayErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid include_completed filter",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Could not read the to-dos",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "createPersonalTodo",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PersonalTodoCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Created to-do",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PersonalTodoItemOut"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Platform identity could not be verified",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GatewayErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid to-do request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Could not create the to-do",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/personal-widgets/todos/{todo_id}": {
+      "delete": {
+        "operationId": "deletePersonalTodo",
+        "parameters": [
+          {
+            "name": "todo_id",
+            "in": "path",
+            "description": "To-do ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "To-do deleted"
+          },
+          "401": {
+            "description": "Platform identity could not be verified",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GatewayErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "To-do unavailable to the current user",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Could not delete the to-do",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "operationId": "updatePersonalTodo",
+        "parameters": [
+          {
+            "name": "todo_id",
+            "in": "path",
+            "description": "To-do ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PersonalTodoUpdateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Updated to-do",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PersonalTodoItemOut"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Platform identity could not be verified",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GatewayErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "To-do unavailable to the current user",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid to-do request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Could not update the to-do",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/planner/events": {
+      "get": {
+        "operationId": "listPlannerEvents",
+        "parameters": [
+          {
+            "name": "from",
+            "in": "query",
+            "description": "Inclusive lower bound. ISO date or datetime, with or without offset.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "description": "Exclusive upper bound, at most 366 days after from. Supply both bounds or neither.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Events owned by the current user",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlannerEventsResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid date range",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Platform identity could not be verified",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GatewayErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Could not read the events",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "createPlannerEvent",
+        "parameters": [
+          {
+            "name": "timeZone",
+            "in": "query",
+            "description": "IANA time zone for the event. Missing or unknown values use Asia/Seoul.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "example": "Asia/Seoul"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PlannerEventCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Created event",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlannerEventOut"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid event dates or times",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Platform identity could not be verified",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GatewayErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid event request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Could not create the event",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/planner/events/{event_id}": {
+      "get": {
+        "operationId": "getPlannerEvent",
+        "parameters": [
+          {
+            "name": "event_id",
+            "in": "path",
+            "description": "Planner event ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Planner event",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlannerEventOut"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Platform identity could not be verified",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GatewayErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Event unavailable to the current user",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Could not read the event",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "deletePlannerEvent",
+        "parameters": [
+          {
+            "name": "event_id",
+            "in": "path",
+            "description": "Planner event ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Event deleted"
+          },
+          "401": {
+            "description": "Platform identity could not be verified",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GatewayErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Event unavailable to the current user",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Could not delete the event",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "operationId": "updatePlannerEvent",
+        "parameters": [
+          {
+            "name": "event_id",
+            "in": "path",
+            "description": "Planner event ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PlannerEventUpdateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Updated event",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlannerEventOut"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid event dates or times",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Platform identity could not be verified",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GatewayErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Event unavailable to the current user",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid event request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Could not update the event",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/search": {
+      "post": {
+        "summary": "Platform callback for integrated search.",
+        "operationId": "searchPlanner",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SearchRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Matching events and to-dos for the signed-in user",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SearchResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Malformed JSON",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Platform identity could not be verified",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GatewayErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Platform calls only",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Request body too large",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Unsupported or missing content type",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid search request",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Could not search the events and to-dos",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "ApiErrorDetails": {
+        "type": "object",
+        "required": [
+          "code",
+          "message"
+        ],
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          }
+        }
+      },
+      "ApiErrorResponse": {
+        "type": "object",
+        "required": [
+          "error"
+        ],
+        "properties": {
+          "error": {
+            "$ref": "#/components/schemas/ApiErrorDetails"
+          }
+        }
+      },
+      "CalendarEventMetadata": {
+        "type": "object",
+        "required": [
+          "meetingId",
+          "attendeeCount",
+          "taskListId",
+          "taskListKey",
+          "taskNumber",
+          "status",
+          "assigneeIds",
+          "plannerEventId",
+          "ownerId",
+          "ownerName",
+          "location",
+          "plannerAllDay",
+          "plannerStartHasTime",
+          "plannerEndHasTime",
+          "plannerTimeZone",
+          "externalCalendarId"
+        ],
+        "properties": {
+          "assigneeIds": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            }
+          },
+          "attendeeCount": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "externalCalendarId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "location": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "meetingId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "ownerId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "ownerName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "plannerAllDay": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "plannerEndHasTime": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "plannerEventId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "plannerStartHasTime": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "plannerTimeZone": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "taskListId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "taskListKey": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "taskNumber": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          }
+        }
+      },
+      "CalendarEventOut": {
+        "type": "object",
+        "required": [
+          "id",
+          "title",
+          "start",
+          "end",
+          "allDay",
+          "sourceType",
+          "sourceId",
+          "color",
+          "workspace",
+          "metadata"
+        ],
+        "properties": {
+          "allDay": {
+            "type": "boolean"
+          },
+          "color": {
+            "type": "string"
+          },
+          "end": {
+            "type": "string",
+            "description": "Calendar end, a date for untimed events or an ISO UTC datetime."
+          },
+          "id": {
+            "type": "string"
+          },
+          "metadata": {
+            "$ref": "#/components/schemas/CalendarEventMetadata"
+          },
+          "sourceId": {
+            "type": "string"
+          },
+          "sourceType": {
+            "$ref": "#/components/schemas/CalendarSource"
+          },
+          "start": {
+            "type": "string",
+            "description": "Calendar start, a date for untimed events or an ISO UTC datetime."
+          },
+          "title": {
+            "type": "string"
+          },
+          "workspace": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/CalendarWorkspaceRef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "CalendarEventsResponse": {
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CalendarEventOut"
+            }
+          }
+        }
+      },
+      "CalendarSource": {
+        "type": "string",
+        "enum": [
+          "planner_event"
+        ]
+      },
+      "CalendarWorkspaceRef": {
+        "type": "object",
+        "required": [
+          "id",
+          "slug",
+          "name"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "slug": {
+            "type": "string"
+          }
+        }
+      },
+      "EventSearchHit": {
+        "type": "object",
+        "required": [
+          "title",
+          "snippet",
+          "at",
+          "path",
+          "kind"
+        ],
+        "properties": {
+          "at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "snippet": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "title": {
+            "type": "string"
+          }
+        }
+      },
+      "GatewayErrorDetails": {
+        "type": "object",
+        "required": [
+          "code"
+        ],
+        "properties": {
+          "code": {
+            "type": "string"
+          }
+        }
+      },
+      "GatewayErrorResponse": {
+        "type": "object",
+        "description": "The SDK gateway returns an error code without a message for invalid identity.",
+        "required": [
+          "error"
+        ],
+        "properties": {
+          "error": {
+            "$ref": "#/components/schemas/GatewayErrorDetails"
+          }
+        }
+      },
+      "HomeCardItem": {
+        "type": "object",
+        "required": [
+          "title",
+          "subtitle",
+          "at",
+          "path"
+        ],
+        "properties": {
+          "at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "path": {
+            "type": "string"
+          },
+          "subtitle": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "title": {
+            "type": "string"
+          }
+        }
+      },
+      "HomeCardRequest": {
+        "type": "object",
+        "properties": {
+          "locale": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "en-US selects English display text. Other values use Korean."
+          },
+          "timeZone": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "IANA time zone for the viewer's local day."
+          }
+        }
+      },
+      "HomeCardResponse": {
+        "type": "object",
+        "required": [
+          "title",
+          "count",
+          "items"
+        ],
+        "properties": {
+          "count": {
+            "type": "integer",
+            "description": "Count before truncating the card to five items.",
+            "minimum": 0
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/HomeCardItem"
+            },
+            "maxItems": 5
+          },
+          "title": {
+            "type": "string"
+          }
+        }
+      },
+      "PersonalMemoOut": {
+        "type": "object",
+        "required": [
+          "id",
+          "body",
+          "createdAt",
+          "updatedAt"
+        ],
+        "properties": {
+          "body": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "updatedAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "PersonalMemoUpdateRequest": {
+        "type": "object",
+        "required": [
+          "body",
+          "expectedUpdatedAt"
+        ],
+        "properties": {
+          "body": {
+            "type": "string",
+            "maxLength": 20000
+          },
+          "expectedUpdatedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Pass updatedAt from the last GET unchanged. For a first save, pass null."
+          }
+        },
+        "additionalProperties": false
+      },
+      "PersonalTodoCreateRequest": {
+        "type": "object",
+        "required": [
+          "title"
+        ],
+        "properties": {
+          "title": {
+            "type": "string",
+            "description": "Leading and trailing whitespace is stripped. The result must not be blank.",
+            "maxLength": 240,
+            "minLength": 1
+          }
+        }
+      },
+      "PersonalTodoItemOut": {
+        "type": "object",
+        "required": [
+          "id",
+          "title",
+          "completed",
+          "sortOrder",
+          "completedAt",
+          "createdAt",
+          "updatedAt"
+        ],
+        "properties": {
+          "completed": {
+            "type": "boolean"
+          },
+          "completedAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "sortOrder": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "title": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "string"
+          }
+        }
+      },
+      "PersonalTodoListResponse": {
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PersonalTodoItemOut"
+            }
+          }
+        }
+      },
+      "PersonalTodoUpdateRequest": {
+        "type": "object",
+        "description": "Omitted or null fields leave the corresponding values unchanged.",
+        "properties": {
+          "completed": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 240,
+            "minLength": 1
+          }
+        }
+      },
+      "PlannerEventCreateRequest": {
+        "type": "object",
+        "description": "schemas.PlannerEventCreateRequest (camelCase, snake_case accepted).",
+        "required": [
+          "title",
+          "start",
+          "end"
+        ],
+        "properties": {
+          "allDay": {
+            "type": "boolean",
+            "description": "The legacy spelling `all_day` is also accepted.",
+            "default": false
+          },
+          "description": {
+            "type": "string",
+            "default": "",
+            "maxLength": 4000
+          },
+          "end": {
+            "type": "string",
+            "description": "End boundary, strictly after the start. An all-day end date is exclusive.",
+            "example": "2026-11-22T10:00:00+09:00"
+          },
+          "location": {
+            "type": "string",
+            "default": "",
+            "maxLength": 240
+          },
+          "start": {
+            "type": "string",
+            "description": "Date only, or an ISO datetime with a T separator for timed events.",
+            "example": "2026-11-22T09:00:00+09:00"
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 1
+          }
+        }
+      },
+      "PlannerEventOut": {
+        "type": "object",
+        "description": "schemas.PlannerEventOut.",
+        "required": [
+          "id",
+          "ownerId",
+          "ownerName",
+          "title",
+          "description",
+          "location",
+          "timeZone",
+          "allDay",
+          "startHasTime",
+          "endHasTime",
+          "start",
+          "end",
+          "createdAt",
+          "updatedAt"
+        ],
+        "properties": {
+          "allDay": {
+            "type": "boolean"
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "end": {
+            "type": "string",
+            "description": "Date-only value when the event has no explicit end time, otherwise an ISO datetime."
+          },
+          "endHasTime": {
+            "type": "boolean"
+          },
+          "id": {
+            "type": "string"
+          },
+          "location": {
+            "type": "string"
+          },
+          "ownerId": {
+            "type": "string"
+          },
+          "ownerName": {
+            "type": "string"
+          },
+          "start": {
+            "type": "string",
+            "description": "Date-only value when the event has no explicit start time, otherwise an ISO datetime."
+          },
+          "startHasTime": {
+            "type": "boolean"
+          },
+          "timeZone": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "string"
+          }
+        }
+      },
+      "PlannerEventUpdateRequest": {
+        "type": "object",
+        "description": "Omitted or null fields keep their current values. A single supplied time\nboundary uses the stored value for the other boundary. When also changing\nallDay, supply both boundaries together or omit both.",
+        "properties": {
+          "allDay": {
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "description": "The legacy spelling `all_day` is also accepted."
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 4000
+          },
+          "end": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "location": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 240
+          },
+          "start": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 200,
+            "minLength": 1
+          }
+        }
+      },
+      "PlannerEventsResponse": {
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PlannerEventOut"
+            }
+          }
+        }
+      },
+      "SearchHit": {
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/EventSearchHit"
+          },
+          {
+            "$ref": "#/components/schemas/TodoSearchHit"
+          }
+        ]
+      },
+      "SearchRequest": {
+        "type": "object",
+        "required": [
+          "query"
+        ],
+        "properties": {
+          "limit": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "Defaults to 5. Other values are clamped to the range 1 to 10."
+          },
+          "locale": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "query": {
+            "type": "string",
+            "description": "Leading and trailing whitespace is ignored. Blank queries or queries\nlonger than 200 characters return no items."
+          }
+        }
+      },
+      "SearchResponse": {
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SearchHit"
+            },
+            "maxItems": 10
+          }
+        }
+      },
+      "TodoSearchHit": {
+        "type": "object",
+        "required": [
+          "title",
+          "snippet",
+          "path",
+          "kind"
+        ],
+        "properties": {
+          "kind": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "snippet": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  }
+}

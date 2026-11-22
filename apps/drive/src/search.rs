@@ -30,15 +30,30 @@ use crate::{
 
 pub const MAX_RANKED_RESULTS: u32 = 100;
 
-#[derive(Deserialize)]
+#[allow(dead_code)]
+#[derive(utoipa::ToSchema)]
+#[schema(rename_all = "snake_case")]
+pub(crate) enum FileSearchStrategy {
+    Keyword,
+}
+
+#[derive(Deserialize, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct FileSearchRequest {
+    /// Search text containing at least one non-whitespace character.
+    #[schema(min_length = 1, max_length = 2000)]
     query: String,
+    /// Searches file names and metadata. Legacy requests that omit this field
+    /// default to `hybrid` and receive HTTP 422, as do explicit `semantic` and `hybrid` requests.
     #[serde(default = "default_strategy")]
+    #[schema(value_type = FileSearchStrategy, required = true)]
     strategy: String,
+    /// One-based page. The product of `page` and `page_size` must be at most 100.
     #[serde(default = "default_page")]
+    #[schema(minimum = 1, maximum = 100, default = 1)]
     page: u32,
     #[serde(default = "default_page_size")]
+    #[schema(minimum = 1, maximum = 50, default = 20)]
     page_size: u32,
     #[serde(default)]
     source_kind: Option<String>,
@@ -52,8 +67,10 @@ pub struct FileSearchRequest {
     document_type: Option<String>,
     /// Upload time range (AI-DO: the source authored time).
     #[serde(default)]
+    #[schema(value_type = Option<String>)]
     authored_from: Option<NaiveDateTime>,
     #[serde(default)]
+    #[schema(value_type = Option<String>)]
     authored_to: Option<NaiveDateTime>,
 }
 
@@ -67,24 +84,25 @@ fn default_page_size() -> u32 {
     20
 }
 
-#[derive(Serialize, Clone, Debug, PartialEq)]
+#[derive(Serialize, Clone, Debug, PartialEq, utoipa::ToSchema)]
 pub struct Highlight {
     pub start: usize,
     pub end: usize,
 }
 
-#[derive(Serialize, Clone)]
+#[derive(Serialize, Clone, utoipa::ToSchema)]
 pub struct Snippet {
     text: String,
     highlights: Vec<Highlight>,
 }
 
-#[derive(Serialize, Clone)]
+#[derive(Serialize, Clone, utoipa::ToSchema)]
 pub struct FileSearchHit {
     rank: u32,
     file_id: String,
     filename: String,
     title: String,
+    #[schema(required = true)]
     folder_id: Option<String>,
     content_type: String,
     size_bytes: i64,
@@ -93,16 +111,22 @@ pub struct FileSearchHit {
     snippet: Snippet,
     updated_at: String,
     source_kind: &'static str,
+    #[schema(required = true)]
     author: Option<String>,
+    #[schema(required = true)]
     authored_at: Option<String>,
+    #[schema(required = true)]
     department: Option<String>,
+    #[schema(required = true)]
     document_type: Option<String>,
+    #[schema(required = true)]
     source_updated_at: Option<String>,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, utoipa::ToSchema)]
 pub struct FileSearchResponse {
     query: String,
+    #[schema(value_type = FileSearchStrategy)]
     strategy: &'static str,
     page: u32,
     page_size: u32,
@@ -110,6 +134,7 @@ pub struct FileSearchResponse {
     has_more: bool,
     max_ranked_results: u32,
     latency_ms: u64,
+    #[schema(required = true)]
     trace_id: Option<String>,
 }
 
@@ -256,6 +281,20 @@ fn score<'a>(
 }
 
 /// `POST /v1/spaces/{space_id}/files/search` (AI-DO `search_files`).
+#[utoipa::path(
+    post, path = "/v1/spaces/{space_id}/files/search", operation_id = "searchDriveFiles", tag = "Search",
+    request_body = FileSearchRequest,
+    params(("space_id" = String, Path)),
+    responses(
+        (status = 200, description = "Ranked results containing only readable files", body = FileSearchResponse),
+        (status = 401, description = "Platform identity could not be verified", body = crate::error::IdentityErrorResponse),
+        (status = 403, description = "Current permissions do not allow this operation", body = crate::error::ErrorResponse),
+        (status = 404, description = "Resource was not found or is not visible", body = crate::error::ErrorResponse),
+        (status = 422, description = "Invalid input returns `validation_request_invalid`. Legacy requests that omit `strategy` or specify `semantic` or `hybrid` return `files_search_strategy_unsupported` when the other fields pass validation.", body = crate::error::ErrorResponse),
+        (status = 500, description = "Internal error", body = crate::error::ErrorResponse),
+        (status = 503, description = "A required platform service is unavailable", body = crate::error::ErrorResponse),
+    )
+)]
 pub async fn search_files(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
@@ -410,7 +449,7 @@ pub async fn search_files(
 
 // ------------------------------------------------- portal integrated search
 
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct PlatformSearchRequest {
     query: String,
@@ -419,7 +458,7 @@ pub struct PlatformSearchRequest {
     locale: Option<String>,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, utoipa::ToSchema)]
 pub struct PlatformSearchItem {
     title: String,
     snippet: String,
@@ -428,7 +467,7 @@ pub struct PlatformSearchItem {
     kind: &'static str,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, utoipa::ToSchema)]
 pub struct PlatformSearchResponse {
     items: Vec<PlatformSearchItem>,
 }
@@ -460,6 +499,20 @@ pub fn like_pattern(token: &str) -> String {
 /// `POST /v1/search` (platformEndpoints.search): file names the person may
 /// open now. The call cannot ask the directory; the person's current groups
 /// come signed with it (`identity.context.groups`).
+#[utoipa::path(
+    post, path = "/v1/search", operation_id = "searchDriveForPlatform", tag = "Platform callbacks",
+    request_body = PlatformSearchRequest,
+    responses(
+        (status = 200, description = "Readable links for platform search", body = PlatformSearchResponse),
+        (status = 401, description = "Platform identity could not be verified", body = crate::error::IdentityErrorResponse),
+        (status = 400, description = "Malformed request", body = String, content_type = "text/plain"),
+        (status = 403, description = "Only the platform may call this endpoint", body = crate::error::ErrorResponse),
+        (status = 415, description = "Unsupported content type", body = String, content_type = "text/plain"),
+        (status = 422, description = "Invalid or unsupported request", body = String, content_type = "text/plain"),
+        (status = 500, description = "Internal error", body = crate::error::ErrorResponse),
+        (status = 503, description = "A required platform service is unavailable", body = crate::error::ErrorResponse),
+    )
+)]
 pub async fn platform_search(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,

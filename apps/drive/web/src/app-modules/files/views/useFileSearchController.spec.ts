@@ -44,7 +44,7 @@ function createClient(): FileSearchControllerClient {
     search: vi
       .fn<FileSearchControllerClient['search']>()
       .mockImplementation((_token, _workspace, payload) =>
-        Promise.resolve(response(payload.page, payload.page === 1)),
+        Promise.resolve(response(payload.page ?? 1, (payload.page ?? 1) === 1)),
       ),
   };
 }
@@ -194,7 +194,7 @@ describe('useFileSearchController', () => {
     const client = createClient();
     vi.mocked(client.search).mockImplementation(
       (_token, workspaceSlug, payload) =>
-        Promise.resolve(response(payload.page, false, `${workspaceSlug}:result`)),
+        Promise.resolve(response(payload.page ?? 1, false, `${workspaceSlug}:result`)),
     );
     const setSearchParams = vi.fn<FileSearchParamsSetter>();
     const rendered = renderHook(

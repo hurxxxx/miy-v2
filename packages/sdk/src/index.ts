@@ -1,5 +1,5 @@
 export { createNavigationGuards, type NavigationGuard } from "./navigation";
-export { ApiError, checkedResponse, fetchResponse, readJson, readBlob, request, requestBlob, requestResponse, requestHeaders, withAbort,
+export { ApiError, isApiError, checkedResponse, fetchResponse, readJson, readBlob, request, requestBlob, requestResponse, requestHeaders, withAbort,
   type ApiErrorKind } from "./transport";
 export { completeDirectoryPage, directoryQuery, type DirectoryQuery, type DirectoryRequestOptions, type DirectoryReader } from "./directory";
 import type { DirectoryQuery, DirectoryReader, DirectoryRequestOptions } from "./directory";
@@ -98,6 +98,13 @@ export interface AppRuntime {
    * rechecks access for every request. Not available in local preview.
    */
   download?: (url: string) => void;
+  /**
+   * Start a native whole-file download and wait for Core's receipt.
+   * With `checkOnly`, resume checking the same link without starting a download.
+   * A confirmed failure rejects with `file_download_failed`; other errors leave
+   * the transfer unconfirmed. Aborting stops the wait.
+   */
+  downloadAndWait?: (url: string, signal?: AbortSignal, options?: { checkOnly?: boolean }) => Promise<void>;
   /**
    * Untyped directory read. Without a query it reads one page and rejects with
    * `directory_page_incomplete` when more entries exist; use `directory` to

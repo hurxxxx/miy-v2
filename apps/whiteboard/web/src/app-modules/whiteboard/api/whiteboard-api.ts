@@ -1,5 +1,7 @@
 import type { AppRuntime } from '@miy/sdk';
 
+import type { components } from '../../../api.generated';
+
 import { ApiRequestError, apiFetchJson } from '../../../platform/api/client';
 import type { AppApi } from '../../../platform/runtime/runtime-context';
 
@@ -54,82 +56,16 @@ async function request<T>(
   }
 }
 
-export interface WhiteboardPrimaryTarget {
-  app: string;
-  type: string;
-  id: string;
-  sort_order: number;
-}
+type Schemas = components['schemas'];
 
-export interface WhiteboardTargetItem extends WhiteboardPrimaryTarget {
-  is_primary: boolean;
-}
-
-export interface WhiteboardHubItem {
-  id: string;
-  workspace_id: string | null;
-  workspace_key: string | null;
-  source_app: string;
-  source_type: 'whiteboard';
-  source_id: string;
-  source_kind: string;
-  source_ref: string | null;
-  generation_kind: string;
-  location_label: string;
-  target_label: string;
-  primary_target: WhiteboardPrimaryTarget | null;
-  targets: WhiteboardTargetItem[];
-  source_badge: string;
-  source_deeplink: string | null;
-  title: string;
-  created_by_id: string;
-  created_by_name: string;
-  created_at: string;
-  updated_at: string;
-  trashed_at: string | null;
-  is_favorite: boolean;
-  is_private: boolean;
-  last_viewed_at: string | null;
-  can_view: boolean;
-  can_edit: boolean;
-  can_share: boolean;
-  can_manage: boolean;
-  /** miy: the stored scene's revision (single-editor saving). */
-  revision: number;
-}
-
-export type WhiteboardDetail = WhiteboardHubItem & {
-  scene: WhiteboardScene;
-};
-
-export interface WhiteboardHubResponse {
-  items: WhiteboardHubItem[];
-  total: number;
-  page: number;
-  page_size: number;
-}
-
-export interface ShareableUserItem {
-  id: string;
-  email: string;
-  full_name: string;
-  /** miy: the directory's group name (it exposes no e-mail). */
-  primary_group?: string | null;
-}
-
-export interface WhiteboardUserShareItem {
-  user_id: string;
-  email: string;
-  full_name: string;
-  access_level: 'read' | 'edit';
-}
-
-export interface WhiteboardSharingResponse {
-  whiteboard_id: string;
-  owner_id: string;
-  users: WhiteboardUserShareItem[];
-  link_share: null;
-}
+export type WhiteboardPrimaryTarget = Schemas['PrimaryTarget'];
+export type WhiteboardTargetItem = Schemas['TargetItem'];
+export type WhiteboardHubItem = Schemas['HubItem'];
+export type WhiteboardDetail = Schemas['Detail'];
+export type WhiteboardHubResponse = Schemas['HubResponse'];
+export type ShareableUserItem = Schemas['ShareableUser'];
+export type WhiteboardUserShareItem = Schemas['UserShareItem'];
+export type WhiteboardSharingResponse = Schemas['SharingResponse'];
 
 export function normalizeWhiteboardScene(value: unknown): WhiteboardScene {
   return normalizeWhiteboardSceneValue(value);
@@ -148,20 +84,7 @@ export function listWhiteboardHub(
 
 export function createWhiteboard(
   api: AppApi | null | undefined,
-  payload: {
-    title: string;
-    scene?: WhiteboardScene | null;
-    source_app?: string;
-    source_kind?: string;
-    source_ref?: string | null;
-    generation_kind?: string;
-    primary_target?: {
-      app: string;
-      type: string;
-      id: string;
-      sort_order?: number;
-    } | null;
-  },
+  payload: Schemas['CreateRequest'],
   spaceId?: string | null,
 ): Promise<WhiteboardDetail> {
   return request<WhiteboardDetail>(whiteboardApiRoutes.items(spaceId), api, {
@@ -189,11 +112,7 @@ export function getWhiteboard(
 export function updateWhiteboard(
   api: AppApi | null | undefined,
   itemId: string,
-  payload: {
-    title?: string;
-    scene?: WhiteboardScene | null;
-    base_revision?: number;
-  },
+  payload: Schemas['UpdateRequest'],
   spaceId?: string | null,
 ): Promise<WhiteboardDetail> {
   return request<WhiteboardDetail>(
@@ -231,12 +150,7 @@ export function restoreWhiteboard(
 export function updateWhiteboardTarget(
   api: AppApi | null | undefined,
   itemId: string,
-  payload: {
-    app: string;
-    type: string;
-    id: string;
-    sort_order?: number;
-  },
+  payload: Schemas['TargetPayload'],
   spaceId?: string | null,
 ): Promise<WhiteboardDetail> {
   return request<WhiteboardDetail>(
@@ -277,8 +191,8 @@ export function toggleWhiteboardFavorite(
   api: AppApi | null | undefined,
   itemId: string,
   spaceId?: string | null,
-): Promise<{ is_favorite: boolean }> {
-  return request<{ is_favorite: boolean }>(
+): Promise<Schemas['FavoriteResponse']> {
+  return request<Schemas['FavoriteResponse']>(
     whiteboardApiRoutes.itemFavorite(itemId, spaceId),
     api,
     { method: 'PATCH' },
@@ -321,15 +235,16 @@ export function upsertWhiteboardUserShare(
   api: AppApi | null | undefined,
   itemId: string,
   userId: string,
-  accessLevel: 'read' | 'edit',
+  accessLevel: Schemas['UserShareRequest']['access_level'],
   spaceId?: string | null,
 ): Promise<WhiteboardSharingResponse> {
+  const payload: Schemas['UserShareRequest'] = { access_level: accessLevel };
   return request<WhiteboardSharingResponse>(
     whiteboardApiRoutes.userShare(itemId, userId, spaceId),
     api,
     {
       method: 'PUT',
-      body: JSON.stringify({ access_level: accessLevel }),
+      body: JSON.stringify(payload),
     },
   );
 }
@@ -349,25 +264,13 @@ export function deleteWhiteboardUserShare(
 
 // ---------------------------------------------------------------- miy: stored images
 
-export interface WhiteboardStoredFile {
-  /** The storage row; the scene's file entry names it as `storage`. */
-  id: string;
-  /** Excalidraw's file ID. */
-  file_id: string;
-  status: 'pending' | 'ready' | 'attached';
-}
+export type WhiteboardStoredFile = Schemas['FileResponse'];
 
 /** Reserve (or, with the same request ID, look up) a stored image. */
 export function reserveWhiteboardFile(
   api: AppApi | null | undefined,
   itemId: string,
-  payload: {
-    request_id: string;
-    file_id: string;
-    name: string;
-    mime: string;
-    size: number;
-  },
+  payload: Schemas['ReserveRequest'],
   spaceId?: string | null,
 ): Promise<WhiteboardStoredFile> {
   return request<WhiteboardStoredFile>(

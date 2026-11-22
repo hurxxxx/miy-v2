@@ -227,6 +227,10 @@ pub(crate) fn save(path: &str, value: &Value) -> Result<()> {
 }
 pub(crate) fn check() -> Result<Manifest> {
     let m = manifest()?;
+    crate::cli_error::validation(
+        crate::app_harness::verify_api_files(Path::new("."), &m),
+        "app_api_contract_invalid",
+    )?;
     crate::cli_error::validation(bundle::verify(Path::new(".")), "bundle_invalid")?;
     crate::cli_error::validation(
         crate::cli_guidance::verify(Path::new(".")),
@@ -255,6 +259,20 @@ pub(crate) fn check() -> Result<Manifest> {
     run("cargo", &["fmt", "--all", "--check"])?;
     run("cargo", &["test", "--locked"])?;
     run("pnpm", &["install", "--frozen-lockfile"])?;
+    if m.api_contract.is_some() {
+        run(
+            "cargo",
+            &[
+                "run",
+                "--locked",
+                "--bin",
+                "miy-app",
+                "--",
+                "--check-openapi",
+            ],
+        )?;
+        run("node", &["web/api-tools/generate.mjs", "--check"])?;
+    }
     run("pnpm", &["typecheck"])?;
     run("pnpm", &["build"])?;
     crate::cli_error::validation(bundle::ui(Path::new("dist/ui")), "ui_invalid")?;
@@ -317,7 +335,12 @@ pub async fn execute(command: AppCommand) -> Result<Outcome> {
         }
         AppCommand::Source(command) => return crate::cli_release_source::execute(command).await,
         AppCommand::Upgrade => return Ok(Outcome::Data(crate::upgrade::run().await?)),
-        AppCommand::Setup => return Ok(Outcome::Data(crate::agent_tools::setup(Path::new("."))?)),
+        AppCommand::Setup => {
+            return Ok(Outcome::Data(crate::agent_tools::setup(
+                Path::new("."),
+                None,
+            )?));
+        }
         AppCommand::Rename { name } => {
             let app = selected_app()?;
             return Ok(Outcome::Data(
@@ -491,12 +514,14 @@ pub async fn execute(command: AppCommand) -> Result<Outcome> {
                 crate::cli_client::configure(&path, url, ca_file.as_deref())?;
             }
             crate::cli_config::bind_project(&path)?;
-            crate::agent_tools::setup(&path)?;
+            let template_version = bundle::template_version();
+            crate::agent_tools::setup(&path, Some(&template_version))?;
             let mut next = Vec::new();
             if selected.is_none() {
                 next.push("miy context init (enter the target server URL)");
             }
             next.extend([
+                "Read docs/API.md before implementing app API changes",
                 "miy auth login",
                 "miy component sync",
                 "miy doctor --for develop",
@@ -505,23 +530,52 @@ pub async fn execute(command: AppCommand) -> Result<Outcome> {
                 ".miy-tools/miy app check",
             ]);
             return Ok(Outcome::Data(
-                json!({"created":path.canonicalize()?,"cliVersion":crate::cli_guidance::VERSION,"cliSkill":".agents/skills/miy-cli/SKILL.md","cliManual":"docs/CLI-REFERENCE.md","appId":id,"bundleVersion":bundle::VERSION,"components":"Declared in miy.components.json; fetch after login","next":next}),
+                json!({"created":path.canonicalize()?,"cliVersion":crate::cli_guidance::VERSION,"guidanceVersion":crate::cli_guidance::GUIDANCE_VERSION,"templateVersion":template_version,"cliSkill":".agents/skills/miy-cli/SKILL.md","cliManual":"docs/CLI-REFERENCE.md","apiGuide":crate::cli_guidance::API_GUIDE_PATH,"appId":id,"bundleVersion":bundle::VERSION,"components":"Declared in miy.components.json; fetch after login","next":next}),
             ));
         }
         AppCommand::Fmt => run("cargo", &["fmt", "--package", "miy-app"])?,
         AppCommand::Check { harness_only } => {
-            let m = if harness_only { manifest()? } else { check()? };
+            let m = if harness_only {
+                let manifest = manifest()?;
+                crate::cli_error::validation(
+                    crate::app_harness::verify_api_files(Path::new("."), &manifest),
+                    "app_api_contract_invalid",
+                )?;
+                manifest
+            } else {
+                check()?
+            };
             let findings = crate::cli_error::validation(
                 crate::app_harness::inspect(Path::new("."), &m),
                 "app_harness_unavailable",
             )?;
+            let guidance = crate::cli_error::validation(
+                crate::cli_guidance::versions(Path::new(".")),
+                "cli_guidance_invalid",
+            )?;
             if harness_only {
                 return Ok(Outcome::Data(
-                    json!({"appId":m.id,"mode":"harness-only","findings":findings}),
+                    json!({"appId":m.id,"mode":"harness-only","guidance":guidance,"findings":findings}),
                 ));
             }
+            let mut checks = vec![
+                "manifest",
+                "bundle-integrity",
+                "cli-guidance-integrity",
+                "component-integrity",
+                "migration-contract",
+                "rust-format",
+                "rust-tests",
+                "frozen-dependencies",
+                "typescript",
+                "ui-build",
+                "federation-assets",
+            ];
+            if m.api_contract.is_some() {
+                checks.push("app-api-contract");
+            }
             return Ok(Outcome::Data(
-                json!({"valid":true,"appId":m.id,"bundleVersion":bundle::VERSION,"checks":["manifest","bundle-integrity","cli-guidance-integrity","component-integrity","migration-contract","rust-format","rust-tests","frozen-dependencies","typescript","ui-build","federation-assets"],"harnessFindings":findings,"browserIntegration":"requires platform acceptance test"}),
+                json!({"valid":true,"appId":m.id,"bundleVersion":bundle::VERSION,"checks":checks,"guidance":guidance,"harnessFindings":findings,"browserIntegration":"requires platform acceptance test"}),
             ));
         }
         AppCommand::Build { no_wait, timeout } => {

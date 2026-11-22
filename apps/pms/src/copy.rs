@@ -14,12 +14,12 @@ use axum::{
 };
 use chrono::NaiveDate;
 use miy_app_sdk::Identity;
-use serde_json::json;
+use serde::{Deserialize, Serialize};
 use sqlx::{PgConnection, PgPool};
 
 use crate::access::{self, ensure_list_member, ensure_task_list_active};
 use crate::custom_fields;
-use crate::error::{ApiError, ApiResult};
+use crate::error::{ApiError, ApiResult, ErrorResponse, IdentityErrorResponse};
 use crate::input::{Body, check_list_length};
 use crate::models::{
     TASK_COLUMNS, TaskListRow, TaskRow, new_id, task_reference, today_utc, utcnow,
@@ -34,6 +34,34 @@ use crate::workflow::{
 
 pub const MAX_TASK_COPY_SELECTION: usize = 500;
 const DEFAULT_INITIAL_STATUS: &str = "todo";
+
+#[allow(dead_code)]
+#[derive(Deserialize, utoipa::ToSchema)]
+#[serde(deny_unknown_fields)]
+struct CopyTasksRequest {
+    #[schema(min_items = 1, max_items = 500)]
+    task_ids: Vec<String>,
+    #[schema(min_length = 1)]
+    target_list_id: String,
+    /// Defaults to false. When true, copy without dates, assignees or checklist progress.
+    reset_progress: Option<bool>,
+}
+
+#[derive(Serialize, utoipa::ToSchema)]
+struct UnmatchedTaskCopyFields {
+    assignees: usize,
+    labels: usize,
+    milestones: usize,
+    custom_fields: usize,
+}
+
+#[derive(Serialize, utoipa::ToSchema)]
+struct CopyTasksResponse {
+    target_list_id: String,
+    copied_count: usize,
+    copied_task_ids: Vec<String>,
+    unmatched: UnmatchedTaskCopyFields,
+}
 
 fn name_key(value: &str) -> String {
     value.trim().to_lowercase()
@@ -139,6 +167,21 @@ async fn ensure_target_editor(
 }
 
 /// `POST /v1/pms/lists/{list_id}/tasks/copy`.
+#[utoipa::path(
+    post, path = "/v1/pms/lists/{list_id}/tasks/copy", operation_id = "copyPmsTasks", tag = "Tasks",
+    params(("list_id" = String, Path)),
+    request_body = CopyTasksRequest,
+    responses(
+        (status = 201, description = "Copied task IDs and counts of unmatched related records", body = CopyTasksResponse),
+        (status = 400, description = "The selection or related fields are invalid", body = ErrorResponse),
+        (status = 401, description = "Platform identity could not be verified", body = IdentityErrorResponse),
+        (status = 403, description = "The caller lacks access", body = ErrorResponse),
+        (status = 404, description = "The requested resource was not found", body = ErrorResponse),
+        (status = 409, description = "The current list or resource state conflicts with the request", body = ErrorResponse),
+        (status = 422, description = "Invalid request", body = ErrorResponse),
+        (status = 500, description = "Internal error", body = ErrorResponse),
+    )
+)]
 pub async fn copy_tasks(
     State(pool): State<PgPool>,
     Extension(identity): Extension<Identity>,
@@ -467,17 +510,17 @@ pub async fn copy_tasks(
         .collect();
     Ok((
         StatusCode::CREATED,
-        Json(json!({
-            "target_list_id": target_list.id,
-            "copied_count": copied.len(),
-            "copied_task_ids": copied,
-            "unmatched": {
-                "assignees": unmatched_assignees,
-                "labels": unmatched_labels,
-                "milestones": unmatched_milestones,
-                "custom_fields": unmatched_fields,
+        Json(CopyTasksResponse {
+            target_list_id: target_list.id,
+            copied_count: copied.len(),
+            copied_task_ids: copied,
+            unmatched: UnmatchedTaskCopyFields {
+                assignees: unmatched_assignees,
+                labels: unmatched_labels,
+                milestones: unmatched_milestones,
+                custom_fields: unmatched_fields,
             },
-        })),
+        }),
     ))
 }
 

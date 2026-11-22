@@ -15,7 +15,7 @@ use axum::{
 use chrono::NaiveDateTime;
 use miy_app_sdk::Identity;
 use serde::{Deserialize, Deserializer};
-use serde_json::{Value, json};
+use serde_json::json;
 use sqlx::{FromRow, PgPool, Postgres, Transaction};
 use std::collections::HashMap;
 
@@ -25,6 +25,7 @@ use crate::{
         self, DOC_COLUMNS, DocContext, DocTarget, NativeAccess, NativeDoc, PAGE_COLUMNS,
         SOURCE_NATIVE_DOC, TARGET_APP, TARGET_SIDEBAR, Viewer,
     },
+    api_contract::NullValue,
     comments,
     error::{ApiError, ApiJson, ApiResult, check_length},
     notify, people,
@@ -43,6 +44,53 @@ pub const DOC_TYPE_VALUES: [&str; 7] = [
     "guide",
     "memo",
 ];
+
+#[allow(dead_code)]
+#[derive(utoipa::ToSchema)]
+#[schema(rename_all = "snake_case")]
+enum DocType {
+    General,
+    MeetingNotes,
+    ProjectBrief,
+    Spec,
+    Policy,
+    Guide,
+    Memo,
+}
+
+#[allow(dead_code)]
+#[derive(utoipa::ToSchema)]
+#[schema(rename_all = "snake_case")]
+pub(crate) enum ContentFormat {
+    Block,
+}
+
+#[allow(dead_code)]
+#[derive(utoipa::ToSchema)]
+#[schema(rename_all = "snake_case")]
+enum DocAccessLevel {
+    Read,
+    Edit,
+}
+
+#[derive(serde::Serialize, utoipa::ToSchema)]
+#[serde(rename_all = "snake_case")]
+enum DocSource {
+    NativeDoc,
+}
+
+#[derive(serde::Serialize, utoipa::ToSchema)]
+#[serde(rename_all = "snake_case")]
+enum DocStructure {
+    PageTree,
+}
+
+#[derive(serde::Serialize, utoipa::ToSchema)]
+#[serde(rename_all = "snake_case")]
+enum ShareVisibility {
+    Private,
+    Shared,
+}
 
 /// `Option<Option<T>>` for fields whose presence matters (Pydantic
 /// `model_fields_set`): absent → `None`, `null` → `Some(None)`.
@@ -144,68 +192,135 @@ pub struct ItemExtras<'a> {
     pub owner_name: String,
 }
 
-/// AI-DO hub_projection.py `serialize_native_hub_item` (without RAG scope and
-/// collections, which are not ported; `collection` stays `null`).
-pub fn hub_item(doc: &NativeDoc, access: NativeAccess, extras: &ItemExtras<'_>) -> Value {
+#[derive(serde::Serialize, utoipa::ToSchema)]
+pub struct HubItem {
+    id: String,
+    space_id: String,
+    source_app: String,
+    source_type: DocSource,
+    source_id: String,
+    source_kind: String,
+    #[schema(required)]
+    source_ref: Option<String>,
+    generation_kind: String,
+    #[schema(value_type = DocType)]
+    doc_type: String,
+    #[schema(value_type = ContentFormat)]
+    content_format: &'static str,
+    structure_kind: DocStructure,
+    location_label: &'static str,
+    target_label: &'static str,
+    collection: NullValue,
+    #[schema(required)]
+    primary_target: Option<PrimaryTarget>,
+    source_badge: String,
+    source_deeplink: String,
+    title: String,
+    page_count: i64,
+    created_by_id: String,
+    created_by_name: String,
+    created_at: String,
+    updated_at: String,
+    #[schema(required)]
+    trashed_at: Option<String>,
+    is_favorite: bool,
+    is_private: bool,
+    #[schema(required)]
+    last_viewed_at: Option<String>,
+    can_view: bool,
+    can_edit: bool,
+    can_share: bool,
+    can_manage: bool,
+    sharing_summary: ShareSummary,
+}
+
+#[derive(serde::Serialize, utoipa::ToSchema)]
+struct ShareSummary {
+    visibility: ShareVisibility,
+    user_share_count: i64,
+    link_active: bool,
+    link_access_level: NullValue,
+}
+
+#[derive(serde::Serialize, utoipa::ToSchema)]
+struct PrimaryTarget {
+    app: String,
+    #[serde(rename = "type")]
+    kind: String,
+    id: String,
+    sort_order: i32,
+}
+
+#[derive(serde::Serialize, utoipa::ToSchema)]
+pub struct HubResponse {
+    items: Vec<HubItem>,
+    total: usize,
+    page: i64,
+    page_size: i64,
+}
+
+fn hub_item(doc: &NativeDoc, access: NativeAccess, extras: &ItemExtras<'_>) -> HubItem {
     let primary = access::primary_target(extras.targets);
     let is_meeting_note = doc.source_app == "meeting" && doc.source_kind == "meeting_notes";
-    let visibility = if extras.user_share_count > 0 || primary.is_some() || is_meeting_note {
-        "shared"
-    } else {
-        "private"
-    };
+    let is_private = extras.user_share_count == 0 && primary.is_none() && !is_meeting_note;
     let label = location_label(doc, extras.targets);
-    json!({
-        "id": doc.id,
-        // miy: the space that holds the doc (AI-DO knew it from the route).
-        "space_id": doc.workspace_id,
-        "source_app": doc.source_app,
-        "source_type": SOURCE_NATIVE_DOC,
-        "source_id": doc.id,
-        "source_kind": doc.source_kind,
-        "source_ref": doc.source_ref,
-        "generation_kind": doc.generation_kind,
-        "doc_type": doc.doc_type,
-        "content_format": "block",
-        "structure_kind": "page_tree",
-        "location_label": label,
-        "target_label": label,
-        "collection": Value::Null,
-        "primary_target": primary.map(|target| json!({
-            "app": target.target_app,
-            "type": target.target_type,
-            "id": target.target_id,
-            "sort_order": target.sort_order,
-        })),
-        "source_badge": source_badge(&doc.source_app),
-        "source_deeplink": doc_path(&doc.id),
-        "title": doc.title,
-        "page_count": extras.page_count,
-        "created_by_id": doc.owner_id,
-        "created_by_name": extras.owner_name,
-        "created_at": naive_iso(doc.created_at),
-        "updated_at": naive_iso(doc.updated_at),
-        "trashed_at": doc.trashed_at.map(naive_iso),
-        "is_favorite": extras.pref.is_some_and(|pref| pref.is_favorite),
-        "is_private": visibility == "private",
-        "last_viewed_at": extras.pref.and_then(|pref| pref.last_viewed_at).map(naive_iso),
-        "can_view": access.can_view,
-        "can_edit": access.can_edit,
-        "can_share": access.can_share,
-        "can_manage": access.can_manage,
-        "sharing_summary": {
-            "visibility": visibility,
-            "user_share_count": extras.user_share_count,
-            "link_active": false,
-            "link_access_level": Value::Null,
+    HubItem {
+        id: doc.id.clone(),
+        space_id: doc.workspace_id.clone(),
+        source_app: doc.source_app.clone(),
+        source_type: DocSource::NativeDoc,
+        source_id: doc.id.clone(),
+        source_kind: doc.source_kind.clone(),
+        source_ref: doc.source_ref.clone(),
+        generation_kind: doc.generation_kind.clone(),
+        doc_type: doc.doc_type.clone(),
+        content_format: "block",
+        structure_kind: DocStructure::PageTree,
+        location_label: label,
+        target_label: label,
+        collection: NullValue,
+        primary_target: primary.map(|target| PrimaryTarget {
+            app: target.target_app.clone(),
+            kind: target.target_type.clone(),
+            id: target.target_id.clone(),
+            sort_order: target.sort_order,
+        }),
+        source_badge: source_badge(&doc.source_app),
+        source_deeplink: doc_path(&doc.id),
+        title: doc.title.clone(),
+        page_count: extras.page_count,
+        created_by_id: doc.owner_id.clone(),
+        created_by_name: extras.owner_name.clone(),
+        created_at: naive_iso(doc.created_at),
+        updated_at: naive_iso(doc.updated_at),
+        trashed_at: doc.trashed_at.map(naive_iso),
+        is_favorite: extras.pref.is_some_and(|pref| pref.is_favorite),
+        is_private,
+        last_viewed_at: extras
+            .pref
+            .and_then(|pref| pref.last_viewed_at)
+            .map(naive_iso),
+        can_view: access.can_view,
+        can_edit: access.can_edit,
+        can_share: access.can_share,
+        can_manage: access.can_manage,
+        sharing_summary: ShareSummary {
+            visibility: if is_private {
+                ShareVisibility::Private
+            } else {
+                ShareVisibility::Shared
+            },
+            user_share_count: extras.user_share_count,
+            link_active: false,
+            link_access_level: NullValue,
         },
-    })
+    }
 }
 
 /// A doc with what the hub shows about it.
 pub struct Listed {
     pub doc: NativeDoc,
-    pub item: Value,
+    pub item: HubItem,
     pub pref: Option<Pref>,
 }
 
@@ -304,7 +419,7 @@ async fn load_prefs(
 }
 
 /// AI-DO `_lookup_item`: one doc the caller may see, serialized.
-pub async fn lookup_item(viewer: &mut Viewer<'_>, item_id: &str) -> ApiResult<Value> {
+pub async fn lookup_item(viewer: &mut Viewer<'_>, item_id: &str) -> ApiResult<HubItem> {
     let context = access::doc_or_404(viewer, item_id).await?;
     let mut listed = list_visible(viewer, vec![context.doc]).await?;
     listed
@@ -315,7 +430,8 @@ pub async fn lookup_item(viewer: &mut Viewer<'_>, item_id: &str) -> ApiResult<Va
 
 // ---------------------------------------------------------------- hub
 
-#[derive(Deserialize, Default)]
+#[derive(Deserialize, Default, utoipa::IntoParams)]
+#[into_params(parameter_in = Query)]
 pub struct HubQuery {
     #[serde(default)]
     view: Option<String>,
@@ -328,8 +444,10 @@ pub struct HubQuery {
     #[serde(default)]
     sort_dir: Option<String>,
     #[serde(default)]
+    #[param(minimum = 1, default = 1)]
     page: Option<i64>,
     #[serde(default)]
+    #[param(minimum = 1, maximum = 200, default = 50)]
     page_size: Option<i64>,
     #[serde(default)]
     source_app: Option<String>,
@@ -338,6 +456,7 @@ pub struct HubQuery {
     #[serde(default)]
     collection_id: Option<String>,
     #[serde(default)]
+    #[param(value_type = DocType)]
     doc_type: Option<String>,
     /// AI-DO's PMS space filter (docs linked to that PMS space's tasks). PMS
     /// links are not ported, so a value matches no doc.
@@ -362,7 +481,7 @@ const VIEWS: [&str; 7] = [
 fn matches_view(listed: &Listed, view: &str, user_id: &str) -> bool {
     let doc = &listed.doc;
     let live = doc.trashed_at.is_none();
-    let private = listed.item["is_private"].as_bool().unwrap_or(false);
+    let private = listed.item.is_private;
     match view {
         "mine" => live && doc.owner_id == user_id,
         "shared" => live && doc.owner_id != user_id,
@@ -400,9 +519,11 @@ pub fn sort_items(items: &mut [Listed], sort_by: &str, sort_dir: &str) {
             "target_sort_order" => (
                 String::new(),
                 NaiveDateTime::MIN,
-                listed.item["primary_target"]["sort_order"]
-                    .as_i64()
-                    .unwrap_or(0),
+                listed
+                    .item
+                    .primary_target
+                    .as_ref()
+                    .map_or(0, |target| i64::from(target.sort_order)),
             ),
             _ => (String::new(), doc.updated_at, 0),
         }
@@ -415,11 +536,25 @@ pub fn sort_items(items: &mut [Listed], sort_by: &str, sort_dir: &str) {
     }
 }
 
+#[utoipa::path(
+    get, path = "/v1/docs/hub", operation_id = "listDocsHub", tag = "Documents",
+    params(HubQuery),
+    responses(
+        (status = 200, description = "Success", body = HubResponse),
+        (status = 400, description = "Invalid request", body = String, content_type = "text/plain"),
+        (status = 401, description = "Valid platform identity required", body = crate::error::IdentityErrorResponse),
+        (status = 403, description = "Permission denied", body = crate::error::ErrorResponse),
+        (status = 404, description = "Resource is unavailable or does not exist", body = crate::error::ErrorResponse),
+        (status = 422, description = "Request validation failed", body = crate::error::ErrorResponse),
+        (status = 500, description = "Could not complete the request", body = crate::error::ErrorResponse),
+        (status = 503, description = "A required platform service is unavailable", body = crate::error::ErrorResponse)
+    )
+)]
 pub async fn list_hub(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
     Query(query): Query<HubQuery>,
-) -> ApiResult<Json<Value>> {
+) -> ApiResult<Json<HubResponse>> {
     let page = query.page.unwrap_or(1);
     let page_size = query.page_size.unwrap_or(50);
     if page < 1 {
@@ -496,42 +631,37 @@ pub async fn list_hub(
                 && query.space_id.as_deref().filter(|v| !v.is_empty()).is_none()
                 && (search.is_empty()
                     || listed.doc.title.to_lowercase().contains(&search)
-                    || listed.item["location_label"]
-                        .as_str()
-                        .unwrap_or("")
-                        .to_lowercase()
-                        .contains(&search)
-                    || listed.item["source_badge"]
-                        .as_str()
-                        .unwrap_or("")
-                        .to_lowercase()
-                        .contains(&search))
+                    || listed.item.location_label.to_lowercase().contains(&search)
+                    || listed.item.source_badge.to_lowercase().contains(&search))
         })
         .collect();
     sort_items(&mut items, sort_by, sort_dir);
     let total = items.len();
     let start = ((page - 1) * page_size) as usize;
-    let page_items: Vec<Value> = items
+    let page_items = items
         .into_iter()
         .skip(start)
         .take(page_size as usize)
         .map(|listed| listed.item)
         .collect();
-    Ok(Json(json!({
-        "items": page_items,
-        "total": total,
-        "page": page,
-        "page_size": page_size,
-    })))
+    Ok(Json(HubResponse {
+        items: page_items,
+        total,
+        page,
+        page_size,
+    }))
 }
 
 // ---------------------------------------------------------------- items
 
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema)]
 pub struct TargetPayload {
+    #[schema(min_length = 1, max_length = 64)]
     app: String,
     #[serde(rename = "type")]
+    #[schema(min_length = 1, max_length = 64)]
     kind: String,
+    #[schema(min_length = 1, max_length = 128)]
     id: String,
     #[serde(default)]
     sort_order: i32,
@@ -557,24 +687,34 @@ fn target_allowed(space_id: &str, payload: &TargetPayload) -> ApiResult<()> {
     }
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema)]
 pub struct CreateItemRequest {
+    #[schema(min_length = 1, max_length = 200)]
     title: String,
     #[serde(default)]
+    #[schema(min_length = 1, max_length = 200)]
     first_page_title: Option<String>,
     #[serde(default)]
+    #[schema(min_length = 1, max_length = 64)]
     source_app: Option<String>,
     #[serde(default)]
+    #[schema(min_length = 1, max_length = 64)]
     source_kind: Option<String>,
     #[serde(default)]
+    #[schema(max_length = 128)]
     source_ref: Option<String>,
     #[serde(default)]
+    #[schema(min_length = 1, max_length = 32)]
     generation_kind: Option<String>,
     #[serde(default)]
+    #[schema(value_type = Option<DocType>)]
     doc_type: Option<String>,
     #[serde(default)]
+    #[schema(value_type = Option<ContentFormat>)]
     content_format: Option<String>,
     #[serde(default)]
+    /// Only absent or null is supported for block documents.
+    #[schema(value_type = Option<NullValue>)]
     first_page_content_text: Option<String>,
     #[serde(default)]
     collection_id: Option<String>,
@@ -585,7 +725,8 @@ pub struct CreateItemRequest {
     template_id: Option<String>,
 }
 
-#[derive(Deserialize, Default)]
+#[derive(Deserialize, Default, utoipa::IntoParams)]
+#[into_params(parameter_in = Query)]
 pub struct SpaceQuery {
     #[serde(default)]
     space: Option<String>,
@@ -607,6 +748,21 @@ pub fn validate_content_format(value: Option<&str>) -> ApiResult<()> {
     }
 }
 
+#[utoipa::path(
+    post, path = "/v1/docs/items", operation_id = "createDocsItem", tag = "Documents",
+    params(SpaceQuery),
+    request_body = CreateItemRequest,
+    responses(
+        (status = 201, description = "Created", body = HubItem),
+        (status = 400, description = "Invalid request", content((crate::error::ErrorResponse = "application/json"), (String = "text/plain"))),
+        (status = 401, description = "Valid platform identity required", body = crate::error::IdentityErrorResponse),
+        (status = 403, description = "Permission denied", body = crate::error::ErrorResponse),
+        (status = 404, description = "Resource is unavailable or does not exist", body = crate::error::ErrorResponse),
+        (status = 422, description = "Request validation failed", body = crate::error::ErrorResponse),
+        (status = 500, description = "Could not complete the request", body = crate::error::ErrorResponse),
+        (status = 503, description = "A required platform service is unavailable", body = crate::error::ErrorResponse)
+    )
+)]
 pub async fn create_item(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
@@ -771,11 +927,22 @@ async fn insert_primary_target(
     Ok(())
 }
 
+#[utoipa::path(
+    get, path = "/v1/docs/items/{item_id}", operation_id = "getDocsItem", tag = "Documents",
+    params(("item_id" = String, Path)),
+    responses(
+        (status = 200, description = "Success", body = HubItem),
+        (status = 401, description = "Valid platform identity required", body = crate::error::IdentityErrorResponse),
+        (status = 404, description = "Resource is unavailable or does not exist", body = crate::error::ErrorResponse),
+        (status = 500, description = "Could not complete the request", body = crate::error::ErrorResponse),
+        (status = 503, description = "A required platform service is unavailable", body = crate::error::ErrorResponse)
+    )
+)]
 pub async fn get_item(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
     Path(item_id): Path<String>,
-) -> ApiResult<Json<Value>> {
+) -> ApiResult<Json<HubItem>> {
     let mut viewer = Viewer::new(&state, &identity);
     Ok(Json(lookup_item(&mut viewer, &item_id).await?))
 }
@@ -796,22 +963,39 @@ pub async fn lock_item(
     Ok(context)
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema)]
 pub struct UpdateItemRequest {
     #[serde(default)]
+    #[schema(min_length = 1, max_length = 200)]
     title: Option<String>,
     #[serde(default)]
+    #[schema(value_type = Option<DocType>)]
     doc_type: Option<String>,
     #[serde(default, deserialize_with = "present")]
+    #[schema(value_type = Option<String>)]
     collection_id: Option<Option<String>>,
 }
 
+#[utoipa::path(
+    patch, path = "/v1/docs/items/{item_id}", operation_id = "updateDocsItem", tag = "Documents",
+    params(("item_id" = String, Path)),
+    request_body = UpdateItemRequest,
+    responses(
+        (status = 200, description = "Success", body = HubItem),
+        (status = 401, description = "Valid platform identity required", body = crate::error::IdentityErrorResponse),
+        (status = 403, description = "Permission denied", body = crate::error::ErrorResponse),
+        (status = 404, description = "Resource is unavailable or does not exist", body = crate::error::ErrorResponse),
+        (status = 422, description = "Request validation failed", body = crate::error::ErrorResponse),
+        (status = 500, description = "Could not complete the request", body = crate::error::ErrorResponse),
+        (status = 503, description = "A required platform service is unavailable", body = crate::error::ErrorResponse)
+    )
+)]
 pub async fn update_item(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
     Path(item_id): Path<String>,
     ApiJson(payload): ApiJson<UpdateItemRequest>,
-) -> ApiResult<Json<Value>> {
+) -> ApiResult<Json<HubItem>> {
     if let Some(title) = &payload.title {
         check_length("title", title, 1, 200)?;
     }
@@ -865,6 +1049,18 @@ pub async fn update_item(
 /// and images until the trash is emptied (AI-DO released them at once; the
 /// trash restore needs them, docs/PORTING.md §8). Trashing a doc that is
 /// already in the trash changes nothing.
+#[utoipa::path(
+    delete, path = "/v1/docs/items/{item_id}", operation_id = "deleteDocsItem", tag = "Documents",
+    params(("item_id" = String, Path)),
+    responses(
+        (status = 204, description = "Completed with no response body"),
+        (status = 401, description = "Valid platform identity required", body = crate::error::IdentityErrorResponse),
+        (status = 403, description = "Permission denied", body = crate::error::ErrorResponse),
+        (status = 404, description = "Resource is unavailable or does not exist", body = crate::error::ErrorResponse),
+        (status = 500, description = "Could not complete the request", body = crate::error::ErrorResponse),
+        (status = 503, description = "A required platform service is unavailable", body = crate::error::ErrorResponse)
+    )
+)]
 pub async fn delete_item(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
@@ -906,6 +1102,18 @@ pub async fn delete_item(
 
 /// AI-DO `duplicate_doc_item` + `_clone_page_tree`: a copy owned by the
 /// caller in the same space, with the same targets and the live page tree.
+#[utoipa::path(
+    post, path = "/v1/docs/items/{item_id}/duplicate", operation_id = "duplicateDocsItem", tag = "Documents",
+    params(("item_id" = String, Path)),
+    responses(
+        (status = 201, description = "Created", body = HubItem),
+        (status = 401, description = "Valid platform identity required", body = crate::error::IdentityErrorResponse),
+        (status = 403, description = "Permission denied", body = crate::error::ErrorResponse),
+        (status = 404, description = "Resource is unavailable or does not exist", body = crate::error::ErrorResponse),
+        (status = 500, description = "Could not complete the request", body = crate::error::ErrorResponse),
+        (status = 503, description = "A required platform service is unavailable", body = crate::error::ErrorResponse)
+    )
+)]
 pub async fn duplicate_item(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
@@ -1007,12 +1215,26 @@ pub async fn duplicate_item(
     Ok((StatusCode::CREATED, Json(item)))
 }
 
+#[utoipa::path(
+    put, path = "/v1/docs/items/{item_id}/target", operation_id = "updateDocsTarget", tag = "Documents",
+    params(("item_id" = String, Path)),
+    request_body = TargetPayload,
+    responses(
+        (status = 200, description = "Success", body = HubItem),
+        (status = 401, description = "Valid platform identity required", body = crate::error::IdentityErrorResponse),
+        (status = 403, description = "Permission denied", body = crate::error::ErrorResponse),
+        (status = 404, description = "Resource is unavailable or does not exist", body = crate::error::ErrorResponse),
+        (status = 422, description = "Request validation failed", body = crate::error::ErrorResponse),
+        (status = 500, description = "Could not complete the request", body = crate::error::ErrorResponse),
+        (status = 503, description = "A required platform service is unavailable", body = crate::error::ErrorResponse)
+    )
+)]
 pub async fn update_target(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
     Path(item_id): Path<String>,
     ApiJson(payload): ApiJson<TargetPayload>,
-) -> ApiResult<Json<Value>> {
+) -> ApiResult<Json<HubItem>> {
     validate_target(&payload)?;
     let mut tx = state.pool.begin().await?;
     let context = lock_item(&mut tx, &state, &identity, &item_id).await?;
@@ -1026,11 +1248,23 @@ pub async fn update_target(
     Ok(Json(lookup_item(&mut viewer, &context.doc.id).await?))
 }
 
+#[utoipa::path(
+    delete, path = "/v1/docs/items/{item_id}/target", operation_id = "deleteDocsTarget", tag = "Documents",
+    params(("item_id" = String, Path)),
+    responses(
+        (status = 200, description = "Success", body = HubItem),
+        (status = 401, description = "Valid platform identity required", body = crate::error::IdentityErrorResponse),
+        (status = 403, description = "Permission denied", body = crate::error::ErrorResponse),
+        (status = 404, description = "Resource is unavailable or does not exist", body = crate::error::ErrorResponse),
+        (status = 500, description = "Could not complete the request", body = crate::error::ErrorResponse),
+        (status = 503, description = "A required platform service is unavailable", body = crate::error::ErrorResponse)
+    )
+)]
 pub async fn delete_target(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
     Path(item_id): Path<String>,
-) -> ApiResult<Json<Value>> {
+) -> ApiResult<Json<HubItem>> {
     let mut tx = state.pool.begin().await?;
     let context = lock_item(&mut tx, &state, &identity, &item_id).await?;
     if !context.access.can_edit {
@@ -1046,11 +1280,22 @@ pub async fn delete_target(
     Ok(Json(lookup_item(&mut viewer, &context.doc.id).await?))
 }
 
+#[utoipa::path(
+    patch, path = "/v1/docs/items/{item_id}/favorite", operation_id = "toggleDocsFavorite", tag = "Documents",
+    params(("item_id" = String, Path)),
+    responses(
+        (status = 200, description = "Success", body = FavoriteResponse),
+        (status = 401, description = "Valid platform identity required", body = crate::error::IdentityErrorResponse),
+        (status = 404, description = "Resource is unavailable or does not exist", body = crate::error::ErrorResponse),
+        (status = 500, description = "Could not complete the request", body = crate::error::ErrorResponse),
+        (status = 503, description = "A required platform service is unavailable", body = crate::error::ErrorResponse)
+    )
+)]
 pub async fn toggle_favorite(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
     Path(item_id): Path<String>,
-) -> ApiResult<Json<Value>> {
+) -> ApiResult<Json<FavoriteResponse>> {
     let mut viewer = Viewer::new(&state, &identity);
     let context = access::doc_or_404(&mut viewer, &item_id).await?;
     let is_favorite: bool = sqlx::query_scalar(
@@ -1064,21 +1309,34 @@ pub async fn toggle_favorite(
     .bind(&context.doc.id)
     .fetch_one(&state.pool)
     .await?;
-    Ok(Json(json!({ "is_favorite": is_favorite })))
+    Ok(Json(FavoriteResponse { is_favorite }))
 }
 
-#[derive(Deserialize, Default)]
+#[derive(Deserialize, Default, utoipa::ToSchema)]
 pub struct RecordViewRequest {
     #[serde(default)]
     page_id: Option<String>,
 }
 
+#[utoipa::path(
+    post, path = "/v1/docs/items/{item_id}/view", operation_id = "recordDocsView", tag = "Documents",
+    params(("item_id" = String, Path)),
+    request_body = RecordViewRequest,
+    responses(
+        (status = 200, description = "Success", body = RecordViewResponse),
+        (status = 401, description = "Valid platform identity required", body = crate::error::IdentityErrorResponse),
+        (status = 404, description = "Resource is unavailable or does not exist", body = crate::error::ErrorResponse),
+        (status = 422, description = "Request validation failed", body = crate::error::ErrorResponse),
+        (status = 500, description = "Could not complete the request", body = crate::error::ErrorResponse),
+        (status = 503, description = "A required platform service is unavailable", body = crate::error::ErrorResponse)
+    )
+)]
 pub async fn record_view(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
     Path(item_id): Path<String>,
     ApiJson(payload): ApiJson<RecordViewRequest>,
-) -> ApiResult<Json<Value>> {
+) -> ApiResult<Json<RecordViewResponse>> {
     let mut viewer = Viewer::new(&state, &identity);
     let context = access::doc_or_404(&mut viewer, &item_id).await?;
     let mut page_title = context.doc.title.clone();
@@ -1115,12 +1373,13 @@ pub async fn record_view(
     .await?;
     // miy: opening the doc reads its share notification.
     notify::mark_read(&identity, &notify::doc_group_key(&context.doc.id)).await;
-    Ok(Json(json!({ "ok": true })))
+    Ok(Json(RecordViewResponse { ok: true }))
 }
 
 // ---------------------------------------------------------------- favorites, recent
 
-#[derive(Deserialize, Default)]
+#[derive(Deserialize, Default, utoipa::IntoParams)]
+#[into_params(parameter_in = Query)]
 pub struct PrefQuery {
     #[serde(default)]
     scope: Option<String>,
@@ -1130,8 +1389,77 @@ pub struct PrefQuery {
     space: Option<String>,
 }
 
-fn space_location(space: &Space) -> Value {
-    json!({ "key": space.id, "name": space.name, "kind": space.kind })
+#[derive(serde::Serialize, utoipa::ToSchema)]
+pub struct FavoriteResponse {
+    is_favorite: bool,
+}
+
+#[derive(serde::Serialize, utoipa::ToSchema)]
+pub struct RecordViewResponse {
+    ok: bool,
+}
+
+#[derive(serde::Serialize, utoipa::ToSchema)]
+struct SpaceLocation {
+    key: String,
+    name: String,
+    #[schema(value_type = crate::spaces::SpaceKind)]
+    kind: String,
+}
+
+fn space_location(space: &Space) -> SpaceLocation {
+    SpaceLocation {
+        key: space.id.clone(),
+        name: space.name.clone(),
+        kind: space.kind.clone(),
+    }
+}
+
+#[derive(serde::Serialize, utoipa::ToSchema)]
+pub struct FavoriteDoc {
+    id: String,
+    title: String,
+    source_type: DocSource,
+    #[schema(required)]
+    space: Option<SpaceLocation>,
+}
+
+#[derive(serde::Serialize, utoipa::ToSchema)]
+pub struct RecentPage {
+    page_id: String,
+    page_title: String,
+    doc_id: String,
+    doc_title: String,
+    source_type: DocSource,
+    location_label: &'static str,
+    #[schema(required)]
+    last_viewed_at: Option<String>,
+    #[schema(required)]
+    space: Option<SpaceLocation>,
+}
+
+#[derive(serde::Serialize, utoipa::ToSchema)]
+pub struct ShareableUser {
+    id: String,
+    email: &'static str,
+    full_name: String,
+}
+
+#[derive(serde::Serialize, utoipa::ToSchema)]
+struct DocUserShare {
+    user_id: String,
+    email: &'static str,
+    full_name: String,
+    #[schema(value_type = DocAccessLevel)]
+    access_level: String,
+}
+
+#[derive(serde::Serialize, utoipa::ToSchema)]
+pub struct DocSharing {
+    doc_id: String,
+    owner_id: String,
+    users: Vec<DocUserShare>,
+    link_share: NullValue,
 }
 
 /// The spaces a pref listing reads from, with the caller's roles remembered.
@@ -1176,11 +1504,25 @@ async fn docs_in(pool: &PgPool, ids: &[String], space_ids: &[String]) -> ApiResu
         .await?)
 }
 
+#[utoipa::path(
+    get, path = "/v1/docs/favorites", operation_id = "listDocsFavorites", tag = "Documents",
+    params(PrefQuery),
+    responses(
+        (status = 200, description = "Success", body = [FavoriteDoc]),
+        (status = 400, description = "Invalid request", body = String, content_type = "text/plain"),
+        (status = 401, description = "Valid platform identity required", body = crate::error::IdentityErrorResponse),
+        (status = 403, description = "Permission denied", body = crate::error::ErrorResponse),
+        (status = 404, description = "Resource is unavailable or does not exist", body = crate::error::ErrorResponse),
+        (status = 422, description = "Request validation failed", body = crate::error::ErrorResponse),
+        (status = 500, description = "Could not complete the request", body = crate::error::ErrorResponse),
+        (status = 503, description = "A required platform service is unavailable", body = crate::error::ErrorResponse)
+    )
+)]
 pub async fn list_favorites(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
     Query(query): Query<PrefQuery>,
-) -> ApiResult<Json<Vec<Value>>> {
+) -> ApiResult<Json<Vec<FavoriteDoc>>> {
     let mut viewer = Viewer::new(&state, &identity);
     let (spaces, with_space) = pref_spaces(&state, &identity, &mut viewer, &query).await?;
     let ids: Vec<String> = sqlx::query_scalar(
@@ -1197,30 +1539,39 @@ pub async fn list_favorites(
     Ok(Json(
         listed
             .into_iter()
-            .map(|listed| {
-                let mut item = json!({
-                    "id": listed.doc.id,
-                    "title": listed.doc.title,
-                    "source_type": SOURCE_NATIVE_DOC,
-                    "space": Value::Null,
-                });
-                if with_space {
-                    item["space"] = spaces
-                        .get(&listed.doc.workspace_id)
-                        .map(space_location)
-                        .unwrap_or(Value::Null);
-                }
-                item
+            .map(|listed| FavoriteDoc {
+                id: listed.doc.id,
+                title: listed.doc.title,
+                source_type: DocSource::NativeDoc,
+                space: if with_space {
+                    spaces.get(&listed.doc.workspace_id).map(space_location)
+                } else {
+                    None
+                },
             })
             .collect(),
     ))
 }
 
+#[utoipa::path(
+    get, path = "/v1/docs/recent-pages", operation_id = "listDocsRecentPages", tag = "Documents",
+    params(PrefQuery),
+    responses(
+        (status = 200, description = "Success", body = [RecentPage]),
+        (status = 400, description = "Invalid request", body = String, content_type = "text/plain"),
+        (status = 401, description = "Valid platform identity required", body = crate::error::IdentityErrorResponse),
+        (status = 403, description = "Permission denied", body = crate::error::ErrorResponse),
+        (status = 404, description = "Resource is unavailable or does not exist", body = crate::error::ErrorResponse),
+        (status = 422, description = "Request validation failed", body = crate::error::ErrorResponse),
+        (status = 500, description = "Could not complete the request", body = crate::error::ErrorResponse),
+        (status = 503, description = "A required platform service is unavailable", body = crate::error::ErrorResponse)
+    )
+)]
 pub async fn list_recent_pages(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
     Query(query): Query<PrefQuery>,
-) -> ApiResult<Json<Vec<Value>>> {
+) -> ApiResult<Json<Vec<RecentPage>>> {
     let limit = query.limit.unwrap_or(10);
     if !(1..=20).contains(&limit) {
         return Err(ApiError::validation(
@@ -1242,7 +1593,7 @@ pub async fn recent_pages(
     spaces: &HashMap<String, Space>,
     with_space: bool,
     limit: usize,
-) -> ApiResult<Vec<Value>> {
+) -> ApiResult<Vec<RecentPage>> {
     let pool = viewer.state.pool.clone();
     let user_id = viewer.user_id().to_string();
     let space_ids: Vec<String> = spaces.keys().cloned().collect();
@@ -1299,23 +1650,20 @@ pub async fn recent_pages(
                 Some((id, _, title)) => (id.clone(), title.clone()),
                 None => (listed.doc.id.clone(), listed.doc.title.clone()),
             };
-            let mut item = json!({
-                "page_id": page_id,
-                "page_title": page_title,
-                "doc_id": listed.doc.id,
-                "doc_title": listed.doc.title,
-                "source_type": SOURCE_NATIVE_DOC,
-                "location_label": listed.item["location_label"],
-                "last_viewed_at": pref.last_viewed_at.map(naive_iso),
-                "space": Value::Null,
+            items.push(RecentPage {
+                page_id,
+                page_title,
+                doc_id: listed.doc.id.clone(),
+                doc_title: listed.doc.title.clone(),
+                source_type: DocSource::NativeDoc,
+                location_label: listed.item.location_label,
+                last_viewed_at: pref.last_viewed_at.map(naive_iso),
+                space: if with_space {
+                    spaces.get(&listed.doc.workspace_id).map(space_location)
+                } else {
+                    None
+                },
             });
-            if with_space {
-                item["space"] = spaces
-                    .get(&listed.doc.workspace_id)
-                    .map(space_location)
-                    .unwrap_or(Value::Null);
-            }
-            items.push(item);
             if items.len() >= limit {
                 return Ok(items);
             }
@@ -1325,7 +1673,8 @@ pub async fn recent_pages(
 
 // ---------------------------------------------------------------- sharing
 
-#[derive(Deserialize, Default)]
+#[derive(Deserialize, Default, utoipa::IntoParams)]
+#[into_params(parameter_in = Query)]
 pub struct ShareableQuery {
     #[serde(default)]
     q: Option<String>,
@@ -1335,24 +1684,41 @@ pub struct ShareableQuery {
 /// without the caller. miy reads them from the platform directory, which has
 /// no e-mail; `email` stays empty. AI-DO also kept only workspace members; the
 /// platform leaves out people who may not use the app when it delivers.
+#[utoipa::path(
+    get, path = "/v1/docs/shareable-users", operation_id = "listDocsShareableUsers", tag = "Documents",
+    params(ShareableQuery),
+    responses(
+        (status = 200, description = "Success", body = [ShareableUser]),
+        (status = 400, description = "Invalid request", body = String, content_type = "text/plain"),
+        (status = 401, description = "Valid platform identity required", body = crate::error::IdentityErrorResponse)
+    )
+)]
 pub async fn list_shareable_users(
     State(_state): State<AppState>,
     Extension(identity): Extension<Identity>,
     Query(query): Query<ShareableQuery>,
-) -> ApiResult<Json<Vec<Value>>> {
+) -> ApiResult<Json<Vec<ShareableUser>>> {
     let q = query.q.unwrap_or_default();
     let users = people::search_users(&identity, q.trim(), 30).await;
     Ok(Json(
         users
             .into_iter()
             .filter(|(id, _)| id != &identity.user_id)
-            .map(|(id, name)| json!({ "id": id, "email": "", "full_name": name }))
+            .map(|(id, full_name)| ShareableUser {
+                id,
+                email: "",
+                full_name,
+            })
             .collect(),
     ))
 }
 
 /// AI-DO `_serialize_sharing_response` (no link share: excluded feature).
-async fn sharing_response(pool: &PgPool, identity: &Identity, doc: &NativeDoc) -> ApiResult<Value> {
+async fn sharing_response(
+    pool: &PgPool,
+    identity: &Identity,
+    doc: &NativeDoc,
+) -> ApiResult<DocSharing> {
     let rows: Vec<(String, String)> = sqlx::query_as(
         "SELECT user_id, access_level FROM docs_native_doc_user_shares WHERE doc_id = $1",
     )
@@ -1375,17 +1741,20 @@ async fn sharing_response(pool: &PgPool, identity: &Identity, doc: &NativeDoc) -
             .cmp(&b.0.to_lowercase())
             .then(a.1.cmp(&b.1))
     });
-    Ok(json!({
-        "doc_id": doc.id,
-        "owner_id": doc.owner_id,
-        "users": users.into_iter().map(|(name, user_id, level)| json!({
-            "user_id": user_id,
-            "email": "",
-            "full_name": name,
-            "access_level": level,
-        })).collect::<Vec<_>>(),
-        "link_share": Value::Null,
-    }))
+    Ok(DocSharing {
+        doc_id: doc.id.clone(),
+        owner_id: doc.owner_id.clone(),
+        users: users
+            .into_iter()
+            .map(|(full_name, user_id, access_level)| DocUserShare {
+                user_id,
+                email: "",
+                full_name,
+                access_level,
+            })
+            .collect(),
+        link_share: NullValue,
+    })
 }
 
 fn share_required() -> ApiError {
@@ -1395,11 +1764,23 @@ fn share_required() -> ApiError {
     )
 }
 
+#[utoipa::path(
+    get, path = "/v1/docs/items/{item_id}/sharing", operation_id = "getDocsItemSharing", tag = "Documents",
+    params(("item_id" = String, Path)),
+    responses(
+        (status = 200, description = "Success", body = DocSharing),
+        (status = 401, description = "Valid platform identity required", body = crate::error::IdentityErrorResponse),
+        (status = 403, description = "Permission denied", body = crate::error::ErrorResponse),
+        (status = 404, description = "Resource is unavailable or does not exist", body = crate::error::ErrorResponse),
+        (status = 500, description = "Could not complete the request", body = crate::error::ErrorResponse),
+        (status = 503, description = "A required platform service is unavailable", body = crate::error::ErrorResponse)
+    )
+)]
 pub async fn get_sharing(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
     Path(item_id): Path<String>,
-) -> ApiResult<Json<Value>> {
+) -> ApiResult<Json<DocSharing>> {
     let mut viewer = Viewer::new(&state, &identity);
     let context = access::doc_or_404(&mut viewer, &item_id).await?;
     if !context.access.can_share {
@@ -1410,17 +1791,33 @@ pub async fn get_sharing(
     ))
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema)]
 pub struct UpsertShareRequest {
+    #[schema(value_type = DocAccessLevel)]
     access_level: String,
 }
 
+#[utoipa::path(
+    put, path = "/v1/docs/items/{item_id}/sharing/users/{user_id}", operation_id = "upsertDocsUserShare", tag = "Documents",
+    params(("item_id" = String, Path), ("user_id" = String, Path)),
+    request_body = UpsertShareRequest,
+    responses(
+        (status = 200, description = "Success", body = DocSharing),
+        (status = 401, description = "Valid platform identity required", body = crate::error::IdentityErrorResponse),
+        (status = 403, description = "Permission denied", body = crate::error::ErrorResponse),
+        (status = 404, description = "Resource is unavailable or does not exist", body = crate::error::ErrorResponse),
+        (status = 409, description = "Current resource state conflicts with the request", body = crate::error::ErrorResponse),
+        (status = 422, description = "Request validation failed", body = crate::error::ErrorResponse),
+        (status = 500, description = "Could not complete the request", body = crate::error::ErrorResponse),
+        (status = 503, description = "A required platform service is unavailable", body = crate::error::ErrorResponse)
+    )
+)]
 pub async fn upsert_user_share(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
     Path((item_id, user_id)): Path<(String, String)>,
     ApiJson(payload): ApiJson<UpsertShareRequest>,
-) -> ApiResult<Json<Value>> {
+) -> ApiResult<Json<DocSharing>> {
     let Some(level) = access::share_level(&payload.access_level) else {
         return Err(ApiError::validation(
             "access_level: Input should be 'read' or 'edit'",
@@ -1467,11 +1864,23 @@ pub async fn upsert_user_share(
     ))
 }
 
+#[utoipa::path(
+    delete, path = "/v1/docs/items/{item_id}/sharing/users/{user_id}", operation_id = "deleteDocsUserShare", tag = "Documents",
+    params(("item_id" = String, Path), ("user_id" = String, Path)),
+    responses(
+        (status = 200, description = "Success", body = DocSharing),
+        (status = 401, description = "Valid platform identity required", body = crate::error::IdentityErrorResponse),
+        (status = 403, description = "Permission denied", body = crate::error::ErrorResponse),
+        (status = 404, description = "Resource is unavailable or does not exist", body = crate::error::ErrorResponse),
+        (status = 500, description = "Could not complete the request", body = crate::error::ErrorResponse),
+        (status = 503, description = "A required platform service is unavailable", body = crate::error::ErrorResponse)
+    )
+)]
 pub async fn delete_user_share(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
     Path((item_id, user_id)): Path<(String, String)>,
-) -> ApiResult<Json<Value>> {
+) -> ApiResult<Json<DocSharing>> {
     let mut tx = state.pool.begin().await?;
     let context = lock_item(&mut tx, &state, &identity, &item_id).await?;
     if !context.access.can_share {

@@ -15,12 +15,13 @@ vi.mock('@excalidraw/excalidraw', () => ({
     JSON.stringify({ elements, appState, files }),
 }));
 
+const scene = { elements: [], appState: {}, files: {} };
 const board = {
   id: 'board-1',
   title: 'Board',
   can_edit: true,
   revision: 4,
-  scene: { elements: [], appState: {}, files: {} },
+  scene,
 } as unknown as WhiteboardDetail;
 
 function element(id: string, version: number) {
@@ -48,7 +49,7 @@ function setup(api: ReturnType<typeof vi.fn>) {
     });
     return { persistence, activeBoardIdRef, activeBoard };
   });
-  act(() => hook.result.current.persistence.resetLoadedScene(board.scene, 4));
+  act(() => hook.result.current.persistence.resetLoadedScene(scene, 4));
   return { hook, setError };
 }
 

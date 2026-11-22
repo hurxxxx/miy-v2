@@ -177,6 +177,7 @@ describe('SpaceMembersModal', () => {
       page_size: 100,
       items: [
         {
+          primary_org_unit_name: null,
           email: 'owner@example.test',
           is_admin: false,
           joined_at: '2026-01-01T00:00:00Z',
@@ -185,6 +186,7 @@ describe('SpaceMembersModal', () => {
           user_id: 'owner',
         },
         {
+          primary_org_unit_name: null,
           email: 'target@example.test',
           is_admin: false,
           joined_at: '2026-01-01T00:00:00Z',
@@ -308,6 +310,7 @@ describe('SpaceMembersModal', () => {
       page_size: 100,
       items: [
         {
+          primary_org_unit_name: null,
           email: 'boss@example.test',
           is_admin: false,
           joined_at: '2026-01-01T00:00:00Z',
@@ -316,6 +319,7 @@ describe('SpaceMembersModal', () => {
           user_id: 'boss',
         },
         {
+          primary_org_unit_name: null,
           email: 'me@example.test',
           is_admin: false,
           joined_at: '2026-01-01T00:00:00Z',

@@ -21,6 +21,8 @@
 
 UI는 `runtime.api('/v1/...')`, 파일 바이트는 `runtime.fileApi('/dm/...')`로 부른다. 게이트웨이가 각각 `/api/v1/...`, `/api/files/...`로 Rust 서버에 전달한다. 시각은 naive UTC 문자열이다. 오류는 `{"error":{"code","message"}}`이며 코드는 AI-DO 코드의 `.`을 `_`로 바꾼 것이다(예: `dm_thread_not_found`).
 
+[OpenAPI 계약](docs/openapi.json)은 앱 라우터와 같은 Rust 등록에서 생성한다. 기존 `/v1/dm/threads` 목록·생성·메시지·읽음 별칭은 호환을 위해 남겨 둔다. 새 호출에는 `/v1/dm/conversations`를 사용한다. API를 변경하면 `pnpm api:generate`로 명세와 웹 타입을 갱신한다.
+
 | 메서드·경로 | 설명 |
 | --- | --- |
 | `GET /v1/dm/me` | (miy) 호출자와 관리자 여부 |
@@ -61,6 +63,20 @@ UI는 `runtime.api('/v1/...')`, 파일 바이트는 `runtime.fileApi('/dm/...')`
 | `POST /platform/notification-check` | 플랫폼 → 앱 재확인(manifest `platformEndpoints.notificationCheck`, 읽기 전용). 그룹·원본 ID와 현재 접근을 함께 확인한다. |
 | `POST /platform/home-card` | 포털 홈 "안 읽은 대화" 카드(manifest `platformEndpoints.homeCard`, 읽기 전용) |
 | `POST /platform/search` | 포털 통합 검색(manifest `platformEndpoints.search`, 읽기 전용, 최대 `limit`(1~10)개, 메시지로 가는 경로) |
+
+### 실시간 프로토콜
+
+프레임의 `runtime.live` 요청을 게이트웨이가 `GET /api/live`로 중계한다. 서명된 앱 호출의 WebSocket 핸드셰이크는 `101 Switching Protocols`를 반환한다. 각 프레임은 JSON 텍스트다. OpenAPI `GET /live`의 `x-miy-websocket` 확장에 양방향 메시지 타입이 있다.
+
+| 방향 | 메시지 | 동작 |
+| --- | --- | --- |
+| 클라이언트 → 서버 | `{"type":"open","conversationId":"<ID>"}` | 그 대화의 현재 참여자라면 이 연결에 입력 중 신호를 구독한다. ID를 생략하거나 `null`로 보내면 구독을 비운다. |
+| 클라이언트 → 서버 | `{"type":"typing","conversationId":"<ID>","active":true}` | 입력 중 상태를 알린다. `active`의 기본값은 `true`다. 시작 신호는 연결·대화별 초당 1회로 제한되고 종료는 즉시 보낸다. |
+| 서버 → 클라이언트 | `{"type":"conversation.changed","conversationId":"<ID>"}` | 변경이 커밋된 대화를 다시 읽는다. 지금 참여 중인 사람과 방금 나간 사람에게 필요한 갱신 신호를 보낸다. |
+| 서버 → 클라이언트 | `{"type":"typing","conversationId":"<ID>","userId":"<ID>","active":true}` | 그 대화를 연 다른 현재 참여자에게 입력 중 상태를 전달한다. 서버가 보낼 때마다 참여를 확인한다. |
+| 서버 → 클라이언트 | `{"type":"heartbeat"}` | 120초마다 연결을 유지한다. |
+
+서버가 받는 메시지는 최대 4 KiB다. 이 연결은 갱신 신호를 보내고, 모든 내용 조회와 변경은 `runtime.api`를 사용한다. 연결이 복구되면 프레임이 현재 대화와 목록을 다시 읽는다.
 
 ## 데이터
 

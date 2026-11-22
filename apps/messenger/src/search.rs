@@ -20,7 +20,6 @@ use axum::{
 use chrono::NaiveDateTime;
 use miy_app_sdk::Identity;
 use serde::{Deserialize, Serialize};
-use serde_json::{Value, json};
 use sqlx::{PgConnection, PgPool};
 use std::collections::HashMap;
 
@@ -147,6 +146,30 @@ async fn conversation_names(
     Ok((conversations, names))
 }
 
+/// Names may require directory I/O. Filter the original matches again after
+/// that wait, including re-joins and edits made since the search snapshot.
+async fn current_hits(
+    pool: &PgPool,
+    user: &str,
+    hits: &[Hit],
+) -> ApiResult<std::collections::HashSet<String>> {
+    let ids: Vec<_> = hits.iter().map(|hit| hit.id.as_str()).collect();
+    let bodies: Vec<_> = hits.iter().map(|hit| hit.body.as_str()).collect();
+    let visible: Vec<String> = sqlx::query_scalar(
+        "SELECT m.id FROM unnest($2::text[], $3::text[]) AS hit(id, body) \
+         JOIN dm_messages m ON m.id=hit.id AND m.body=hit.body \
+         JOIN dm_conversation_participants p ON p.conversation_id=m.conversation_id AND p.user_id=$1 \
+         WHERE p.left_at IS NULL AND m.created_at>=p.joined_at \
+           AND m.deleted_at IS NULL AND m.moderation_hidden_at IS NULL",
+    )
+    .bind(user)
+    .bind(&ids)
+    .bind(&bodies)
+    .fetch_all(pool)
+    .await?;
+    Ok(visible.into_iter().collect())
+}
+
 #[derive(Debug, Deserialize)]
 pub struct SearchQuery {
     #[serde(default)]
@@ -159,17 +182,41 @@ pub struct SearchQuery {
     limit: Option<String>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, utoipa::ToSchema)]
 pub struct SearchItem {
     message_id: String,
     conversation_id: String,
     conversation_name: String,
+    #[schema(value_type = crate::schemas::ConversationType)]
     conversation_type: String,
     sequence: i32,
     sender_id: String,
     sender_name: String,
     snippet: String,
     created_at: String,
+}
+
+#[derive(Serialize, utoipa::ToSchema)]
+pub struct SearchResponse {
+    items: Vec<SearchItem>,
+    #[schema(required = true)]
+    next_cursor: Option<String>,
+}
+
+#[derive(Serialize, utoipa::ToSchema)]
+pub struct PlatformSearchResponse {
+    #[schema(max_items = 10)]
+    items: Vec<PlatformSearchItem>,
+}
+
+#[derive(Serialize, utoipa::ToSchema)]
+struct PlatformSearchItem {
+    title: String,
+    snippet: String,
+    path: String,
+    #[schema(format = DateTime)]
+    at: String,
+    kind: &'static str,
 }
 
 fn parse_cursor(value: &str) -> ApiResult<(NaiveDateTime, String)> {
@@ -182,11 +229,28 @@ fn parse_cursor(value: &str) -> ApiResult<(NaiveDateTime, String)> {
 }
 
 /// `GET /v1/dm/search?q&conversation_id&cursor&limit`.
+#[utoipa::path(
+    get, path = "/v1/dm/search", operation_id = "searchMessages",
+    params(
+        ("q" = String, Query, description = "Message text, 1 to 200 characters after trimming"),
+        ("conversation_id" = Option<String>, Query, description = "Filter to a conversation the caller participates in"),
+        ("cursor" = Option<String>, Query, description = "Opaque next_cursor from a previous page"),
+        ("limit" = Option<i64>, Query, minimum = 1, maximum = 100, description = "Requested page size (default 20, capped at 50)"),
+    ),
+    responses(
+        (status = 200, description = "Success", body = SearchResponse),
+        (status = 400, description = "Malformed query parameters", body = String, content_type = "text/plain"),
+        (status = 401, description = "Valid gateway identity required", body = crate::error::GatewayIdentityError),
+        (status = 404, description = "Requested resource was not found", body = crate::error::ErrorResponse),
+        (status = 422, description = "Request validation or domain policy rejected the operation", body = crate::error::ErrorResponse),
+        (status = 500, description = "Internal error", body = crate::error::ErrorResponse),
+    )
+)]
 pub async fn search_messages(
     State(pool): State<PgPool>,
     Extension(identity): Extension<Identity>,
     Query(query): Query<SearchQuery>,
-) -> ApiResult<Json<Value>> {
+) -> ApiResult<Json<SearchResponse>> {
     let text = normalize_query(query.q.as_deref().unwrap_or_default())?;
     let limit = i64::from(query_limit(query.limit.as_deref(), 20)?.min(50));
     let before = query.cursor.as_deref().map(parse_cursor).transpose()?;
@@ -212,8 +276,10 @@ pub async fn search_messages(
             .map(|hit| format!("{}|{}", iso(hit.created_at), hit.id))
     });
     let (conversations, names) = conversation_names(&pool, &identity, &hits).await?;
+    let visible = current_hits(&pool, me, &hits).await?;
     let items: Vec<SearchItem> = hits
         .iter()
+        .filter(|hit| visible.contains(&hit.id))
         .filter_map(|hit| {
             let conversation = conversations.get(&hit.conversation_id)?;
             Some(SearchItem {
@@ -229,12 +295,13 @@ pub async fn search_messages(
             })
         })
         .collect();
-    Ok(Json(
-        json!({"items": items, "next_cursor": next_cursor.flatten()}),
-    ))
+    Ok(Json(SearchResponse {
+        items,
+        next_cursor: next_cursor.flatten(),
+    }))
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub struct PlatformSearchRequest {
     query: String,
     #[serde(default)]
@@ -252,11 +319,23 @@ pub fn message_path(conversation_id: &str, message_id: &str) -> String {
 
 /// `POST /platform/search` (manifest `platformEndpoints.search`): the same
 /// rule as `GET /v1/dm/search`, at most `limit` (1-10) items, read-only.
+#[utoipa::path(
+    post, path = "/platform/search", operation_id = "platformSearch",
+    description = "Read-only platform callback. Searches visible messages of the verified caller.",
+    request_body = PlatformSearchRequest,
+    responses(
+        (status = 200, description = "Success", body = PlatformSearchResponse),
+        (status = 401, description = "Valid gateway identity required", body = crate::error::GatewayIdentityError),
+        (status = 403, description = "Permission denied", body = crate::error::ErrorResponse),
+        (status = 422, description = "Request validation or domain policy rejected the operation", body = crate::error::ErrorResponse),
+        (status = 500, description = "Internal error", body = crate::error::ErrorResponse),
+    )
+)]
 pub async fn platform_search(
     State(pool): State<PgPool>,
     Extension(identity): Extension<Identity>,
     crate::error::ApiJson(request): crate::error::ApiJson<PlatformSearchRequest>,
-) -> ApiResult<Json<Value>> {
+) -> ApiResult<Json<PlatformSearchResponse>> {
     if !identity.context.platform {
         return Err(ApiError::forbidden(
             "platform_call_required",
@@ -274,9 +353,11 @@ pub async fn platform_search(
     let hits = find(&mut tx, me, &text, None, None, limit).await?;
     tx.commit().await?;
     let (conversations, names) = conversation_names(&pool, &identity, &hits).await?;
+    let visible = current_hits(&pool, me, &hits).await?;
     let english = request.locale.as_deref() == Some("en-US");
-    let items: Vec<Value> = hits
+    let items: Vec<PlatformSearchItem> = hits
         .iter()
+        .filter(|hit| visible.contains(&hit.id))
         .filter_map(|hit| {
             let conversation = conversations.get(&hit.conversation_id)?;
             let snippet: String = format!(
@@ -287,19 +368,19 @@ pub async fn platform_search(
             .chars()
             .take(PLATFORM_SNIPPET_MAX)
             .collect();
-            Some(json!({
-                "title": views::conversation_display_name(conversation, me, &names)
+            Some(PlatformSearchItem {
+                title: views::conversation_display_name(conversation, me, &names)
                     .chars()
                     .take(120)
                     .collect::<String>(),
-                "snippet": snippet,
-                "path": message_path(&hit.conversation_id, &hit.id),
-                "at": format!("{}Z", iso(hit.created_at)),
-                "kind": if english { "Message" } else { "메시지" },
-            }))
+                snippet,
+                path: message_path(&hit.conversation_id, &hit.id),
+                at: format!("{}Z", iso(hit.created_at)),
+                kind: if english { "Message" } else { "메시지" },
+            })
         })
         .collect();
-    Ok(Json(json!({ "items": items })))
+    Ok(Json(PlatformSearchResponse { items }))
 }
 
 #[cfg(test)]

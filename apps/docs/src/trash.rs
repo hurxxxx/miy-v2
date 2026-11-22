@@ -21,7 +21,6 @@ use axum::{
 };
 use chrono::NaiveDateTime;
 use miy_app_sdk::Identity;
-use serde_json::{Value, json};
 use sqlx::{FromRow, Postgres, Transaction};
 use std::collections::{HashMap, HashSet};
 
@@ -59,12 +58,68 @@ struct TrashedPage {
     trashed_by_id: Option<String>,
 }
 
+#[derive(serde::Serialize, utoipa::ToSchema)]
+#[serde(rename_all = "snake_case")]
+enum TrashKind {
+    Doc,
+    Page,
+}
+
+#[derive(serde::Serialize, utoipa::ToSchema)]
+struct TrashEntry {
+    kind: TrashKind,
+    id: String,
+    doc_id: String,
+    title: String,
+    doc_title: String,
+    trashed_at: String,
+    #[schema(required)]
+    trashed_by_id: Option<String>,
+    #[schema(required)]
+    trashed_by_name: Option<String>,
+    can_restore: bool,
+    can_delete: bool,
+    /// Present for pages only.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[schema(value_type = i64)]
+    subpage_count: Option<i64>,
+    /// Present for pages only.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[schema(value_type = bool)]
+    parent_in_trash: Option<bool>,
+}
+
+#[derive(serde::Serialize, utoipa::ToSchema)]
+pub struct TrashList {
+    items: Vec<TrashEntry>,
+}
+
+#[derive(serde::Serialize, utoipa::ToSchema)]
+pub struct RestoredPage {
+    page: crate::pages::PageItem,
+    restored_count: usize,
+    moved_to_root: bool,
+}
+
 /// `GET /v1/docs/trash?space=`: newest first.
+#[utoipa::path(
+    get, path = "/v1/docs/trash", operation_id = "listDocsTrash", tag = "Trash",
+    params(SpaceQuery),
+    responses(
+        (status = 200, description = "Success", body = TrashList),
+        (status = 400, description = "Invalid request", body = String, content_type = "text/plain"),
+        (status = 401, description = "Valid platform identity required", body = crate::error::IdentityErrorResponse),
+        (status = 403, description = "Permission denied", body = crate::error::ErrorResponse),
+        (status = 404, description = "Resource is unavailable or does not exist", body = crate::error::ErrorResponse),
+        (status = 500, description = "Could not complete the request", body = crate::error::ErrorResponse),
+        (status = 503, description = "A required platform service is unavailable", body = crate::error::ErrorResponse)
+    )
+)]
 pub async fn list(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
     Query(query): Query<SpaceQuery>,
-) -> ApiResult<Json<Value>> {
+) -> ApiResult<Json<TrashList>> {
     let (space, role) = spaces::require_space(&state, &identity, query.space()).await?;
     let docs: Vec<TrashedDoc> = sqlx::query_as(
         "SELECT id, title, trashed_at, trashed_by_id FROM docs_native_docs \
@@ -122,7 +177,7 @@ pub async fn list(
     people_ids.extend(pages.iter().filter_map(|p| p.trashed_by_id.clone()));
     let names = people::display_names(&identity, people_ids).await;
     let name_of = |id: &Option<String>| id.as_ref().and_then(|id| names.get(id).cloned());
-    let mut entries: Vec<(NaiveDateTime, Value)> = Vec::new();
+    let mut entries: Vec<(NaiveDateTime, TrashEntry)> = Vec::new();
     for doc in &docs {
         let Some(access) = doc_access.get(&doc.id) else {
             continue;
@@ -132,18 +187,20 @@ pub async fn list(
         }
         entries.push((
             doc.trashed_at,
-            json!({
-                "kind": "doc",
-                "id": doc.id,
-                "doc_id": doc.id,
-                "title": doc.title,
-                "doc_title": doc.title,
-                "trashed_at": naive_iso(doc.trashed_at),
-                "trashed_by_id": doc.trashed_by_id,
-                "trashed_by_name": name_of(&doc.trashed_by_id),
-                "can_restore": true,
-                "can_delete": true,
-            }),
+            TrashEntry {
+                kind: TrashKind::Doc,
+                id: doc.id.clone(),
+                doc_id: doc.id.clone(),
+                title: doc.title.clone(),
+                doc_title: doc.title.clone(),
+                trashed_at: naive_iso(doc.trashed_at),
+                trashed_by_id: doc.trashed_by_id.clone(),
+                trashed_by_name: name_of(&doc.trashed_by_id),
+                can_restore: true,
+                can_delete: true,
+                subpage_count: None,
+                parent_in_trash: None,
+            },
         ));
     }
     for page in &pages {
@@ -155,26 +212,26 @@ pub async fn list(
         }
         entries.push((
             page.trashed_at,
-            json!({
-                "kind": "page",
-                "id": page.id,
-                "doc_id": page.doc_id,
-                "title": page.title,
-                "doc_title": page.doc_title,
-                "subpage_count": counts.get(&page.id).copied().unwrap_or(0),
-                "parent_in_trash": page.parent_id.is_some() && page.parent_trashed_at.is_some(),
-                "trashed_at": naive_iso(page.trashed_at),
-                "trashed_by_id": page.trashed_by_id,
-                "trashed_by_name": name_of(&page.trashed_by_id),
-                "can_restore": true,
-                "can_delete": access.can_manage,
-            }),
+            TrashEntry {
+                kind: TrashKind::Page,
+                id: page.id.clone(),
+                doc_id: page.doc_id.clone(),
+                title: page.title.clone(),
+                doc_title: page.doc_title.clone(),
+                subpage_count: Some(counts.get(&page.id).copied().unwrap_or(0)),
+                parent_in_trash: Some(page.parent_id.is_some() && page.parent_trashed_at.is_some()),
+                trashed_at: naive_iso(page.trashed_at),
+                trashed_by_id: page.trashed_by_id.clone(),
+                trashed_by_name: name_of(&page.trashed_by_id),
+                can_restore: true,
+                can_delete: access.can_manage,
+            },
         ));
     }
     entries.sort_by(|a, b| b.0.cmp(&a.0));
-    Ok(Json(json!({
-        "items": entries.into_iter().map(|(_, item)| item).collect::<Vec<_>>(),
-    })))
+    Ok(Json(TrashList {
+        items: entries.into_iter().map(|(_, item)| item).collect(),
+    }))
 }
 
 /// Pages trashed together with `root` (its subtree with the same moment).
@@ -224,11 +281,24 @@ async fn lock_trashed_doc(
 }
 
 /// `POST /v1/docs/trash/items/{id}/restore`.
+#[utoipa::path(
+    post, path = "/v1/docs/trash/items/{item_id}/restore", operation_id = "restoreDocsItem", tag = "Trash",
+    params(("item_id" = String, Path)),
+    responses(
+        (status = 200, description = "Success", body = items::HubItem),
+        (status = 401, description = "Valid platform identity required", body = crate::error::IdentityErrorResponse),
+        (status = 403, description = "Permission denied", body = crate::error::ErrorResponse),
+        (status = 404, description = "Resource is unavailable or does not exist", body = crate::error::ErrorResponse),
+        (status = 409, description = "Current resource state conflicts with the request", body = crate::error::ErrorResponse),
+        (status = 500, description = "Could not complete the request", body = crate::error::ErrorResponse),
+        (status = 503, description = "A required platform service is unavailable", body = crate::error::ErrorResponse)
+    )
+)]
 pub async fn restore_doc(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
     Path(item_id): Path<String>,
-) -> ApiResult<Json<Value>> {
+) -> ApiResult<Json<items::HubItem>> {
     let mut tx = state.pool.begin().await?;
     let context = lock_trashed_doc(&mut tx, &state, &identity, &item_id).await?;
     let now = now_utc();
@@ -256,6 +326,19 @@ pub async fn restore_doc(
 }
 
 /// `DELETE /v1/docs/trash/items/{id}`: remove the doc for good.
+#[utoipa::path(
+    delete, path = "/v1/docs/trash/items/{item_id}", operation_id = "purgeDocsItem", tag = "Trash",
+    params(("item_id" = String, Path)),
+    responses(
+        (status = 204, description = "Completed with no response body"),
+        (status = 401, description = "Valid platform identity required", body = crate::error::IdentityErrorResponse),
+        (status = 403, description = "Permission denied", body = crate::error::ErrorResponse),
+        (status = 404, description = "Resource is unavailable or does not exist", body = crate::error::ErrorResponse),
+        (status = 409, description = "Current resource state conflicts with the request", body = crate::error::ErrorResponse),
+        (status = 500, description = "Could not complete the request", body = crate::error::ErrorResponse),
+        (status = 503, description = "A required platform service is unavailable", body = crate::error::ErrorResponse)
+    )
+)]
 pub async fn purge_doc(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
@@ -311,11 +394,24 @@ async fn lock_trashed_page(
 
 /// `POST /v1/docs/trash/pages/{id}/restore`: the page and the subpages
 /// trashed with it; to the top of the tree when its parent is still trashed.
+#[utoipa::path(
+    post, path = "/v1/docs/trash/pages/{page_id}/restore", operation_id = "restoreDocsPage", tag = "Trash",
+    params(("page_id" = String, Path)),
+    responses(
+        (status = 200, description = "Success", body = RestoredPage),
+        (status = 401, description = "Valid platform identity required", body = crate::error::IdentityErrorResponse),
+        (status = 403, description = "Permission denied", body = crate::error::ErrorResponse),
+        (status = 404, description = "Resource is unavailable or does not exist", body = crate::error::ErrorResponse),
+        (status = 409, description = "Current resource state conflicts with the request", body = crate::error::ErrorResponse),
+        (status = 500, description = "Could not complete the request", body = crate::error::ErrorResponse),
+        (status = 503, description = "A required platform service is unavailable", body = crate::error::ErrorResponse)
+    )
+)]
 pub async fn restore_page(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
     Path(page_id): Path<String>,
-) -> ApiResult<Json<Value>> {
+) -> ApiResult<Json<RestoredPage>> {
     let mut tx = state.pool.begin().await?;
     let (context, page) = lock_trashed_page(&mut tx, &state, &identity, &page_id).await?;
     if !context.access.can_edit {
@@ -359,15 +455,28 @@ pub async fn restore_page(
     items::touch_doc(&mut tx, &context.doc).await?;
     let restored = access::load_page_in(&mut tx, &page.id).await?;
     tx.commit().await?;
-    Ok(Json(json!({
-        "page": crate::pages::page_json(&identity, &restored, context.access.can_edit).await,
-        "restored_count": batch.len(),
-        "moved_to_root": !parent_live,
-    })))
+    Ok(Json(RestoredPage {
+        page: crate::pages::page_json(&identity, &restored, context.access.can_edit).await,
+        restored_count: batch.len(),
+        moved_to_root: !parent_live,
+    }))
 }
 
 /// `DELETE /v1/docs/trash/pages/{id}`: remove the page and everything under
 /// it for good (who may manage the doc).
+#[utoipa::path(
+    delete, path = "/v1/docs/trash/pages/{page_id}", operation_id = "purgeDocsPage", tag = "Trash",
+    params(("page_id" = String, Path)),
+    responses(
+        (status = 204, description = "Completed with no response body"),
+        (status = 401, description = "Valid platform identity required", body = crate::error::IdentityErrorResponse),
+        (status = 403, description = "Permission denied", body = crate::error::ErrorResponse),
+        (status = 404, description = "Resource is unavailable or does not exist", body = crate::error::ErrorResponse),
+        (status = 409, description = "Current resource state conflicts with the request", body = crate::error::ErrorResponse),
+        (status = 500, description = "Could not complete the request", body = crate::error::ErrorResponse),
+        (status = 503, description = "A required platform service is unavailable", body = crate::error::ErrorResponse)
+    )
+)]
 pub async fn purge_page(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,

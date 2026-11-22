@@ -13,8 +13,32 @@ use axum::{
     http::{HeaderValue, StatusCode, header},
     response::{IntoResponse, Response},
 };
-use serde::de::DeserializeOwned;
-use serde_json::json;
+use serde::{Serialize, de::DeserializeOwned};
+
+#[derive(Serialize, utoipa::ToSchema)]
+pub struct ErrorResponse {
+    error: ErrorDetail,
+}
+
+#[derive(Serialize, utoipa::ToSchema)]
+struct ErrorDetail {
+    code: String,
+    message: String,
+}
+
+// The SDK rejects unsigned requests before reaching an application handler.
+#[allow(dead_code)]
+#[derive(utoipa::ToSchema)]
+pub struct GatewayIdentityError {
+    error: GatewayIdentityErrorDetail,
+}
+
+#[allow(dead_code)]
+#[derive(utoipa::ToSchema)]
+struct GatewayIdentityErrorDetail {
+    #[schema(example = "invalid_gateway_identity")]
+    code: String,
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ApiError {
@@ -98,7 +122,12 @@ impl IntoResponse for ApiError {
     fn into_response(self) -> Response {
         let mut response = (
             self.status,
-            Json(json!({"error": {"code": self.code, "message": self.message}})),
+            Json(ErrorResponse {
+                error: ErrorDetail {
+                    code: self.code,
+                    message: self.message,
+                },
+            }),
         )
             .into_response();
         if let Some(seconds) = self.retry_after

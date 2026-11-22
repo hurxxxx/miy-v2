@@ -262,7 +262,7 @@ miy --context CONTEXT --app APP app source upload --release RELEASE_ID --archive
 miy --context CONTEXT --app APP app source download --release RELEASE_ID --out release-source.tar
 ```
 
-`--project`는 깨끗한 Git 작업본의 HEAD를 기존 빌드와 같은 방식으로 패키징한다. 생략하면 현재 앱 프로젝트를 사용한다. `--archive`에는 당시와 바이트가 같은 빌드 tar를 지정한다. 서버는 크기와 SHA-256이 영수증과 일치하는 복구만 받는다. 과거 릴리스가 `release_source_missing`이면 작업본이나 백업에서 복구하고, 당시 빌드 영수증까지 없으면 `release_source_receipt_unavailable`이다. 수정한 소스는 `app build`와 새 릴리스로 배포한다. 다운로드는 서버 해시를 확인한 뒤 새 파일을 쓰므로 기존 파일은 보존된다.
+`--project`는 깨끗한 Git 작업본의 HEAD를 기존 빌드와 같은 방식으로 패키징한다. 생략하면 현재 앱 프로젝트를 사용한다. `--archive`에는 당시와 바이트가 같은 빌드 tar를 지정한다. 서버는 크기와 SHA-256이 영수증과 일치하는 복구만 받는다. `release_source_missing`이거나 저장된 tar의 크기 또는 해시가 달라 `release_source_bytes_invalid`가 발생하면 작업본이나 백업에서 원본을 올려 복구한다. 서버는 손상이 확인된 tar를 검증한 원본으로 원자 교체한다. 당시 빌드 영수증까지 없으면 `release_source_receipt_unavailable`이다. 수정한 소스는 `app build`와 새 릴리스로 배포한다. 다운로드는 서버 해시를 확인한 뒤 새 파일을 쓰므로 기존 파일은 보존된다.
 
 ```sh
 miy job list --limit 20

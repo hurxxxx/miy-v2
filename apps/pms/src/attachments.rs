@@ -29,11 +29,11 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use miy_app_sdk::{FileCreate, FileStatus, Identity};
-use serde_json::{Value, json};
+use serde::Serialize;
 use sqlx::{PgConnection, PgPool};
 
 use crate::access::{self, ensure_list_editor, ensure_task_readable};
-use crate::error::{ApiError, ApiResult, check_length};
+use crate::error::{ApiError, ApiResult, ErrorResponse, IdentityErrorResponse, check_length};
 use crate::input::Body;
 use crate::models::{ATTACHMENT_COLUMNS, AttachmentRow, iso_datetime, new_id, utcnow};
 use crate::tasks::{actor_name, log_activity};
@@ -50,19 +50,76 @@ pub fn content_path(attachment_id: &str) -> String {
     format!("/pms/attachments/{attachment_id}/content")
 }
 
-/// AI-DO `AttachmentItem`; `download_url` is the app-relative `fileApi` path.
-pub fn serialize(attachment: &AttachmentRow, names: &HashMap<String, String>) -> Value {
-    json!({
-        "id": attachment.id,
-        "task_id": attachment.task_id,
-        "filename": attachment.filename,
-        "content_type": attachment.content_type,
-        "size_bytes": attachment.size_bytes,
-        "download_url": content_path(&attachment.id),
-        "uploaded_by_id": attachment.uploaded_by_id,
-        "uploaded_by_name": names.get(&attachment.uploaded_by_id).cloned().unwrap_or_else(|| attachment.uploaded_by_id.clone()),
-        "created_at": iso_datetime(&attachment.created_at),
-    })
+#[allow(dead_code)]
+#[derive(utoipa::ToSchema)]
+struct CreateTaskAttachmentRequest {
+    #[schema(format = "uuid")]
+    request_id: String,
+    /// Trimmed filename, up to 255 characters. An empty or omitted value becomes `unnamed`.
+    #[schema(value_type = String, required = false)]
+    filename: Option<String>,
+    /// Defaults to `application/octet-stream` if null, blank or omitted.
+    #[schema(max_length = 120)]
+    content_type: Option<String>,
+    /// Exact number of bytes. The legacy API also accepts an integer string.
+    #[schema(minimum = 0, maximum = 10485760)]
+    size_bytes: i64,
+}
+
+#[allow(dead_code)]
+#[derive(utoipa::ToSchema)]
+#[schema(rename_all = "snake_case")]
+enum ReservationState {
+    Pending,
+}
+
+#[derive(Serialize, utoipa::ToSchema)]
+struct TaskAttachmentReservation {
+    id: String,
+    task_id: String,
+    filename: String,
+    content_type: String,
+    size_bytes: i32,
+    #[schema(value_type = ReservationState)]
+    status: &'static str,
+    /// App-relative path for `runtime.fileApi`.
+    upload_path: String,
+}
+
+#[derive(utoipa::ToSchema)]
+#[schema(format = Binary)]
+struct TaskAttachmentBytes(#[allow(dead_code)] String);
+
+/// AI-DO `AttachmentItem`.
+#[derive(Serialize, utoipa::ToSchema)]
+pub struct TaskAttachment {
+    id: String,
+    task_id: String,
+    filename: String,
+    content_type: String,
+    size_bytes: i32,
+    /// App-relative path for `runtime.fileApi`.
+    download_url: String,
+    uploaded_by_id: String,
+    uploaded_by_name: String,
+    created_at: String,
+}
+
+pub fn serialize(attachment: &AttachmentRow, names: &HashMap<String, String>) -> TaskAttachment {
+    TaskAttachment {
+        id: attachment.id.clone(),
+        task_id: attachment.task_id.clone(),
+        filename: attachment.filename.clone(),
+        content_type: attachment.content_type.clone(),
+        size_bytes: attachment.size_bytes,
+        download_url: content_path(&attachment.id),
+        uploaded_by_id: attachment.uploaded_by_id.clone(),
+        uploaded_by_name: names
+            .get(&attachment.uploaded_by_id)
+            .cloned()
+            .unwrap_or_else(|| attachment.uploaded_by_id.clone()),
+        created_at: iso_datetime(&attachment.created_at),
+    }
 }
 
 fn file_error(error: miy_app_sdk::CallError) -> ApiError {
@@ -107,6 +164,22 @@ fn parse_uuid(field: &str, value: &str) -> ApiResult<uuid::Uuid> {
 /// Step 1: `POST /v1/pms/tasks/{task_id}/attachments`. Repeating a request id
 /// returns the same pending attachment (a lost response is looked up, never
 /// reserved twice).
+#[utoipa::path(
+    post, path = "/v1/pms/tasks/{task_id}/attachments", operation_id = "createPmsTaskAttachment", tag = "Attachments",
+    params(("task_id" = String, Path)), request_body = CreateTaskAttachmentRequest,
+    responses(
+        (status = 200, description = "A completed attachment for this request ID", body = TaskAttachment),
+        (status = 201, description = "The attachment is reserved for upload", body = TaskAttachmentReservation),
+        (status = 401, description = "Platform identity could not be verified", body = IdentityErrorResponse),
+        (status = 403, description = "Task edit access is required", body = ErrorResponse),
+        (status = 404, description = "Task or list not found", body = ErrorResponse),
+        (status = 409, description = "The list is archived or has no space, the request ID is already in use, or the file is being uploaded", body = ErrorResponse),
+        (status = 413, description = "The attachment exceeds 10 MiB", body = ErrorResponse),
+        (status = 422, description = "Invalid attachment reservation", body = ErrorResponse),
+        (status = 500, description = "Internal error", body = ErrorResponse),
+        (status = 502, description = "The platform file could not be reserved", body = ErrorResponse),
+    )
+)]
 pub async fn create_attachment(
     State(pool): State<PgPool>,
     Extension(identity): Extension<Identity>,
@@ -222,28 +295,46 @@ pub async fn create_attachment(
             .execute(&pool)
             .await?;
     }
+    let upload_path = content_path(&attachment.id);
     Ok((
         StatusCode::CREATED,
-        Json(json!({
-            "id": attachment.id,
-            "task_id": attachment.task_id,
-            "filename": attachment.filename,
-            "content_type": attachment.content_type,
-            "size_bytes": attachment.size_bytes,
-            "status": "pending",
-            "upload_path": content_path(&attachment.id),
-        })),
+        Json(TaskAttachmentReservation {
+            id: attachment.id,
+            task_id: attachment.task_id,
+            filename: attachment.filename,
+            content_type: attachment.content_type,
+            size_bytes: attachment.size_bytes,
+            status: "pending",
+            upload_path,
+        }),
     )
         .into_response())
 }
 
 /// Step 2: `PUT /files/pms/attachments/{id}/content` (bytes via `fileApi`).
+#[utoipa::path(
+    put, path = "/files/pms/attachments/{attachment_id}/content", operation_id = "uploadPmsTaskAttachment", tag = "Attachments",
+    description = "Send the exact reserved file bytes, up to 10 MiB, using the authenticated frame file gateway. Only the uploader may do this while they can edit the task's list.",
+    params(("attachment_id" = String, Path)),
+    request_body(content = TaskAttachmentBytes, content_type = "application/octet-stream"),
+    responses(
+        (status = 200, description = "Completed attachment", body = TaskAttachment),
+        (status = 401, description = "Platform identity could not be verified", body = IdentityErrorResponse),
+        (status = 403, description = "The caller may not upload this attachment", body = ErrorResponse),
+        (status = 404, description = "Attachment, task, or list not found", body = ErrorResponse),
+        (status = 409, description = "The list is archived or has no space, the attachment is not pending, or the file is being uploaded", body = ErrorResponse),
+        (status = 410, description = "The file reservation expired", body = ErrorResponse),
+        (status = 413, description = "The attachment exceeds 10 MiB", body = ErrorResponse),
+        (status = 500, description = "Internal error", body = ErrorResponse),
+        (status = 502, description = "The platform file could not be uploaded or attached", body = ErrorResponse),
+    )
+)]
 pub async fn upload_content(
     State(pool): State<PgPool>,
     Extension(identity): Extension<Identity>,
     Path(attachment_id): Path<String>,
     request: Request,
-) -> ApiResult<Json<Value>> {
+) -> ApiResult<Json<TaskAttachment>> {
     let mut conn = pool.acquire().await?;
     let attachment = load_attachment(&mut conn, &attachment_id).await?;
     let task = access::load_task(&mut conn, &attachment.task_id).await?;
@@ -329,6 +420,31 @@ pub async fn upload_content(
 }
 
 /// Step 3: `GET /files/pms/attachments/{id}/content`.
+#[utoipa::path(
+    get, path = "/files/pms/attachments/{attachment_id}/content", operation_id = "downloadPmsTaskAttachment", tag = "Attachments",
+    description = "Rechecks task read access before streaming the stored attachment through the authenticated frame file gateway. The response uses the stored media type. Attachments are up to 10 MiB.",
+    params(("attachment_id" = String, Path)),
+    responses(
+        (status = 200, description = "Stored attachment bytes",
+            content((TaskAttachmentBytes = "*/*")),
+            headers(
+                ("Content-Length" = u64, description = "Size of the response in bytes"),
+                ("Content-Disposition" = String, description = "Stored filename and download disposition"),
+                ("ETag" = String, description = "Storage object entity tag"),
+                ("X-Miy-File-Id" = String, description = "Core storage file ID"),
+                ("X-Miy-File-Version" = String, description = "Core storage file version"),
+                ("X-Miy-File-Sha256" = String, description = "SHA-256 digest of the stored file"),
+                ("Content-Security-Policy" = String, description = "sandbox"),
+                ("X-Content-Type-Options" = String, description = "nosniff")
+            )
+        ),
+        (status = 401, description = "Platform identity could not be verified", body = IdentityErrorResponse),
+        (status = 403, description = "Task read access is required", body = ErrorResponse),
+        (status = 404, description = "Attachment, task, or list not found", body = ErrorResponse),
+        (status = 500, description = "Internal error", body = ErrorResponse),
+        (status = 502, description = "The platform file could not be downloaded", body = ErrorResponse),
+    )
+)]
 pub async fn download_content(
     State(pool): State<PgPool>,
     Extension(identity): Extension<Identity>,
@@ -358,6 +474,18 @@ pub async fn download_content(
 }
 
 /// `DELETE /v1/pms/attachments/{attachment_id}`: also cancels a pending upload.
+#[utoipa::path(
+    delete, path = "/v1/pms/attachments/{attachment_id}", operation_id = "deletePmsTaskAttachment", tag = "Attachments",
+    params(("attachment_id" = String, Path)),
+    responses(
+        (status = 204, description = "Attachment removed"),
+        (status = 401, description = "Platform identity could not be verified", body = IdentityErrorResponse),
+        (status = 403, description = "Task edit access is required", body = ErrorResponse),
+        (status = 404, description = "Attachment, task, or list not found", body = ErrorResponse),
+        (status = 409, description = "The list is archived or has no space", body = ErrorResponse),
+        (status = 500, description = "Internal error", body = ErrorResponse),
+    )
+)]
 pub async fn delete_attachment(
     State(pool): State<PgPool>,
     Extension(identity): Extension<Identity>,

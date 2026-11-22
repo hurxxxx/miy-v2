@@ -168,7 +168,7 @@ function markElementDeleted(
 
 /** A loaded board with the editor's images (data URLs) beside its scene. */
 interface LoadedBoard {
-  board: WhiteboardDetail;
+  board: WhiteboardDetail & { scene: WhiteboardScene };
   files: Record<string, unknown>;
   failedImages: number;
 }

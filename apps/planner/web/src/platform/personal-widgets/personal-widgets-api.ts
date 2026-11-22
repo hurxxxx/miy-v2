@@ -1,27 +1,23 @@
+import type { paths } from '../../api.generated';
 import { apiFetchJson } from '../api/client';
 import type { AppApi } from '../runtime/runtime-context';
 
-// AI-DO derived these from its generated OpenAPI types
-// (ApiSchema<'PersonalTodoItemOut'> ...); the same wire shapes, written out.
-export interface PersonalTodoItem {
-  id: string;
-  title: string;
-  completed: boolean;
-  sortOrder: number;
-  completedAt: string | null;
-  createdAt: string;
-  updatedAt: string;
-}
+const todosPath = '/v1/personal-widgets/todos';
+const todoPath = '/v1/personal-widgets/todos/{todo_id}';
+const memoPath = '/v1/personal-widgets/memo';
+type Todos = paths[typeof todosPath];
+type Todo = paths[typeof todoPath];
+type MemoOperations = paths[typeof memoPath];
+type TodosQuery = NonNullable<Todos['get']['parameters']['query']>;
+type CreateTodoInput = Todos['post']['requestBody']['content']['application/json'];
+type UpdateTodoInput = Todo['patch']['requestBody']['content']['application/json'];
+export type PersonalTodoItem = Todos['post']['responses'][201]['content']['application/json'];
+export type PersonalTodoListResponse = Todos['get']['responses'][200]['content']['application/json'];
+export type PersonalMemo = MemoOperations['get']['responses'][200]['content']['application/json'];
+type SaveMemoInput = MemoOperations['put']['requestBody']['content']['application/json'];
 
-export interface PersonalTodoListResponse {
-  items: PersonalTodoItem[];
-}
-
-export interface PersonalMemo {
-  id: string | null;
-  body: string;
-  createdAt: string | null;
-  updatedAt: string | null;
+function personalTodoPath({ todo_id }: Todo['patch']['parameters']['path']): string {
+  return todoPath.replace('{todo_id}', encodeURIComponent(todo_id));
 }
 
 // miy: `api` (runtime.api) replaces AI-DO's bearer token; paths are app
@@ -30,11 +26,12 @@ export function listPersonalTodos(
   api: AppApi,
   includeCompleted = true,
 ): Promise<PersonalTodoListResponse> {
-  const query = new URLSearchParams({
+  const options = {
     include_completed: includeCompleted ? 'true' : 'false',
-  });
+  } satisfies TodosQuery;
+  const query = new URLSearchParams(options);
   return apiFetchJson<PersonalTodoListResponse>(
-    `/v1/personal-widgets/todos?${query.toString()}`,
+    `${todosPath}?${query.toString()}`,
     api,
   );
 }
@@ -43,11 +40,12 @@ export function createPersonalTodo(
   api: AppApi,
   title: string,
 ): Promise<PersonalTodoItem> {
+  const input = { title } satisfies CreateTodoInput;
   return apiFetchJson<PersonalTodoItem>(
-    '/v1/personal-widgets/todos',
+    todosPath,
     api,
     {
-      body: JSON.stringify({ title }),
+      body: JSON.stringify(input),
       method: 'POST',
     },
   );
@@ -56,10 +54,10 @@ export function createPersonalTodo(
 export function updatePersonalTodo(
   api: AppApi,
   todoId: string,
-  payload: { completed?: boolean; title?: string },
+  payload: UpdateTodoInput,
 ): Promise<PersonalTodoItem> {
   return apiFetchJson<PersonalTodoItem>(
-    `/v1/personal-widgets/todos/${encodeURIComponent(todoId)}`,
+    personalTodoPath({ todo_id: todoId }),
     api,
     {
       body: JSON.stringify(payload),
@@ -70,14 +68,14 @@ export function updatePersonalTodo(
 
 export function deletePersonalTodo(api: AppApi, todoId: string): Promise<void> {
   return apiFetchJson<void>(
-    `/v1/personal-widgets/todos/${encodeURIComponent(todoId)}`,
+    personalTodoPath({ todo_id: todoId }),
     api,
     { method: 'DELETE' },
   );
 }
 
 export function getPersonalMemo(api: AppApi): Promise<PersonalMemo> {
-  return apiFetchJson<PersonalMemo>('/v1/personal-widgets/memo', api);
+  return apiFetchJson<PersonalMemo>(memoPath, api);
 }
 
 export function savePersonalMemo(
@@ -85,11 +83,12 @@ export function savePersonalMemo(
   body: string,
   expectedUpdatedAt: string | null,
 ): Promise<PersonalMemo> {
+  const input: SaveMemoInput = { body, expectedUpdatedAt };
   return apiFetchJson<PersonalMemo>(
-    '/v1/personal-widgets/memo',
+    memoPath,
     api,
     {
-      body: JSON.stringify({ body, expectedUpdatedAt }),
+      body: JSON.stringify(input),
       method: 'PUT',
     },
   );

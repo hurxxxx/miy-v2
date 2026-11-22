@@ -2,6 +2,7 @@ import type { PmsTask, PmsTaskListStatus } from './api/pms-api';
 
 export function pmsTaskFixture(overrides: Partial<PmsTask> = {}): PmsTask {
   return {
+    custom_fields: {},
     id: 'task-1',
     list_id: 'list-1',
     reference: 'PMS-1',

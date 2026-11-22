@@ -272,7 +272,7 @@ fn platform_only(identity: &Identity) -> ApiResult<()> {
     }
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct CheckItem {
     group_key: String,
@@ -280,13 +280,14 @@ pub struct CheckItem {
     resource_id: Option<String>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema)]
 pub struct CheckRequest {
+    /// At most the first 500 items are considered.
     #[serde(default)]
     items: Vec<CheckItem>,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, utoipa::ToSchema)]
 pub struct CheckResponse {
     allowed: Vec<String>,
 }
@@ -296,6 +297,18 @@ pub struct CheckResponse {
 /// the app DB: a platform call carries no token for directory calls, so space
 /// membership through a group uses the group IDs the Core signed into the
 /// call (`identity.context.groups`; none without directory approval).
+#[utoipa::path(
+    post, path = "/platform/notification-check", operation_id = "checkBoardNotifications",
+    request_body = CheckRequest,
+    responses(
+        (status = 200, description = "Success", body = CheckResponse),
+        (status = 401, description = "Valid gateway identity required", body = crate::error::GatewayIdentityError),
+        (status = 403, description = "Permission denied", body = crate::error::ErrorResponse),
+        (status = 422, description = "Request validation failed", body = crate::error::ErrorResponse),
+        (status = 503, description = "A required service is unavailable", body = crate::error::ErrorResponse),
+        (status = 500, description = "Internal error", body = crate::error::ErrorResponse)
+    )
+)]
 pub async fn notification_check(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
@@ -362,24 +375,36 @@ pub async fn notification_check(
     Ok(Json(CheckResponse { allowed }))
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, utoipa::ToSchema)]
 pub struct HomeCardItem {
     title: String,
     subtitle: String,
     path: String,
+    #[schema(format = DateTime)]
     at: String,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, utoipa::ToSchema)]
 pub struct HomeCard {
     title: String,
+    #[schema(max_items = 5)]
     items: Vec<HomeCardItem>,
 }
 
-#[derive(Deserialize, Default)]
+// The platform sends both settings. Board reads only the locale, preserving
+// the original fallback even when the ignored setting has an unexpected type.
+#[allow(dead_code)]
+#[derive(utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
-pub struct HomeCardRequest {
-    #[serde(default)]
+struct HomeCardRequest {
+    /// English labels for en-US and Korean labels otherwise.
+    locale: Option<String>,
+    /// Time zone preference supplied by the platform.
+    time_zone: Option<String>,
+}
+
+#[derive(Deserialize, Default)]
+struct HomeCardLocale {
     locale: Option<String>,
 }
 
@@ -389,13 +414,25 @@ pub struct HomeCardRequest {
 /// above). The body
 /// carries the person's display settings; only the language is used, for the
 /// card and company labels (Korean unless `en-US`).
+#[utoipa::path(
+    post, path = "/platform/home-card", operation_id = "getBoardHomeCard",
+    request_body = Option<HomeCardRequest>,
+    responses(
+        (status = 200, description = "Success", body = HomeCard),
+        (status = 401, description = "Valid gateway identity required", body = crate::error::GatewayIdentityError),
+        (status = 403, description = "Permission denied", body = crate::error::ErrorResponse),
+        (status = 413, description = "Request body exceeds the size limit", body = String, content_type = "text/plain"),
+        (status = 503, description = "A required service is unavailable", body = crate::error::ErrorResponse),
+        (status = 500, description = "Internal error", body = crate::error::ErrorResponse)
+    )
+)]
 pub async fn home_card(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
     body: axum::body::Bytes,
 ) -> ApiResult<Json<HomeCard>> {
     platform_only(&identity)?;
-    let request: HomeCardRequest = serde_json::from_slice(&body).unwrap_or_default();
+    let request: HomeCardLocale = serde_json::from_slice(&body).unwrap_or_default();
     let english = request.locale.as_deref() == Some("en-US");
     let rows = announcements::platform_notices(&state.pool, &identity, 5).await?;
     Ok(Json(HomeCard {

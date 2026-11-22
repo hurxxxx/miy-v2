@@ -148,6 +148,7 @@ import {
   liveHintConversationId,
   liveTypingHint,
   pruneDmTyping,
+  type DmLiveClientMessage,
 } from './dm-live-model';
 import {
   DM_THREAD_NAVIGATION_INITIAL_STATE,
@@ -505,7 +506,7 @@ function useDMViewElement({
   const [reactionPickerFor, setReactionPickerFor] = useState<string | null>(null);
   const [searchOpen, setSearchOpen] = useState(false);
   const pendingJumpRef = useRef<{ threadId: string; messageId: string } | null>(null);
-  const jumpingRef = useRef(false);
+  const jumpingRef = useRef<typeof pendingJumpRef.current>(null);
   const [jumpSeq, setJumpSeq] = useState(0);
   const editTarget = editing?.message ?? null;
   const [deleteTarget, setDeleteTarget] = useState<DmMessage | null>(null);
@@ -1218,7 +1219,7 @@ function useDMViewElement({
       const sent = typingSentRef.current;
       if (!sent || !targetThreadId || sent.threadId !== targetThreadId) return;
       typingSentRef.current = null;
-      sendLive?.({ type: 'typing', conversationId: targetThreadId, active: false });
+      sendLive?.({ type: 'typing', conversationId: targetThreadId, active: false } satisfies DmLiveClientMessage);
     },
     [sendLive],
   );
@@ -1235,7 +1236,7 @@ function useDMViewElement({
       if (sent && sent.threadId === activeThreadId && now - sent.at < DM_TYPING_SEND_MS) {
         return;
       }
-      if (sendLive?.({ type: 'typing', conversationId: activeThreadId, active: true })) {
+      if (sendLive?.({ type: 'typing', conversationId: activeThreadId, active: true } satisfies DmLiveClientMessage)) {
         typingSentRef.current = { threadId: activeThreadId, at: now };
       }
     },
@@ -1489,7 +1490,7 @@ function useDMViewElement({
   // (re)open.
   useEffect(() => {
     if (realtimeState !== 'live') return;
-    sendLive?.({ type: 'open', conversationId: threadId || null });
+    sendLive?.({ type: 'open', conversationId: threadId || null } satisfies DmLiveClientMessage);
   }, [realtimeState, reconnectSeq, sendLive, threadId]);
 
   useEffect(() => {
@@ -2321,8 +2322,8 @@ function useDMViewElement({
       return;
     }
     // Wait for the conversation's first page before paging back.
-    if (jumpingRef.current || !messagesRef.current.length) return;
-    jumpingRef.current = true;
+    if (jumpingRef.current === pending || !messagesRef.current.length) return;
+    jumpingRef.current = pending;
     void (async () => {
       try {
         for (let page = 0; page < DM_JUMP_MAX_PAGES; page += 1) {
@@ -2368,7 +2369,7 @@ function useDMViewElement({
           );
         }
       } finally {
-        jumpingRef.current = false;
+        if (jumpingRef.current === pending) jumpingRef.current = null;
       }
     })();
   }, [dmCacheKey, feedback, handleScrollToReplySource, jumpSeq, messages, messagesLoading, t, threadId, token]);

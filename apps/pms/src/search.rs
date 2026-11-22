@@ -5,23 +5,41 @@
 use axum::{Extension, Json, extract::State};
 use chrono::{TimeZone, Utc};
 use miy_app_sdk::Identity;
-use serde::Deserialize;
-use serde_json::{Value, json};
+use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 
 use crate::error::{ApiError, ApiResult};
 use crate::models::task_reference;
 use crate::notify::{platform_only, task_path};
 
-#[derive(Debug, Default, Deserialize)]
+#[derive(Debug, Default, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct SearchRequest {
+    /// Matches task titles and references. Use 1 to 200 characters after trimming.
     #[serde(default)]
+    #[schema(required)]
     query: String,
+    /// Defaults to 10. Values outside 1 through 10 are clamped.
     #[serde(default)]
     limit: Option<i64>,
     #[serde(default)]
     locale: Option<String>,
+}
+
+#[derive(Serialize, utoipa::ToSchema)]
+pub struct SearchResponse {
+    #[schema(max_items = 10)]
+    items: Vec<SearchItem>,
+}
+
+#[derive(Serialize, utoipa::ToSchema)]
+struct SearchItem {
+    title: String,
+    snippet: String,
+    path: String,
+    #[schema(format = DateTime)]
+    at: String,
+    kind: &'static str,
 }
 
 /// A `LIKE` pattern matching `text` anywhere, with `%`, `_` and `\` escaped.
@@ -38,11 +56,26 @@ pub fn like_pattern(text: &str) -> String {
 }
 
 /// `POST /v1/search`.
+#[utoipa::path(
+    post, path = "/v1/search", operation_id = "searchPmsPlatform", tag = "Platform callbacks",
+    description = "Platform-only, read-only search across tasks visible to the verified caller.",
+    request_body = SearchRequest,
+    responses(
+        (status = 200, description = "Success", body = SearchResponse),
+        (status = 401, description = "Platform identity could not be verified", body = crate::error::IdentityErrorResponse),
+        (status = 400, description = "Malformed JSON", body = String, content_type = "text/plain"),
+        (status = 403, description = "Current permissions do not allow the operation", body = crate::error::ErrorResponse),
+        (status = 413, description = "JSON body exceeds the extractor limit", body = String, content_type = "text/plain"),
+        (status = 415, description = "Expected application/json", body = String, content_type = "text/plain"),
+        (status = 422, description = "Invalid JSON payload or invalid query", content((crate::error::ErrorResponse = "application/json"), (String = "text/plain"))),
+        (status = 500, description = "Internal error", body = crate::error::ErrorResponse),
+    )
+)]
 pub async fn search(
     State(pool): State<PgPool>,
     Extension(identity): Extension<Identity>,
     body: Option<Json<SearchRequest>>,
-) -> ApiResult<Json<Value>> {
+) -> ApiResult<Json<SearchResponse>> {
     if !identity.context.platform {
         return Err(platform_only());
     }
@@ -71,19 +104,19 @@ pub async fn search(
     .bind(limit)
     .fetch_all(&pool)
     .await?;
-    let items: Vec<Value> = rows
+    let items = rows
         .into_iter()
-        .map(|(id, title, number, key, list_name, updated_at)| {
-            json!({
-                "title": title,
-                "snippet": format!("{} · {list_name}", task_reference(&key, number)),
-                "path": task_path(&id),
-                "at": Utc.from_utc_datetime(&updated_at).to_rfc3339(),
-                "kind": if english { "Task" } else { "업무" },
-            })
-        })
+        .map(
+            |(id, title, number, key, list_name, updated_at)| SearchItem {
+                title,
+                snippet: format!("{} · {list_name}", task_reference(&key, number)),
+                path: task_path(&id),
+                at: Utc.from_utc_datetime(&updated_at).to_rfc3339(),
+                kind: if english { "Task" } else { "업무" },
+            },
+        )
         .collect();
-    Ok(Json(json!({"items": items})))
+    Ok(Json(SearchResponse { items }))
 }
 
 #[cfg(test)]

@@ -12,10 +12,33 @@ use axum::{
     http::StatusCode,
     response::{IntoResponse, Response},
 };
-use serde::de::DeserializeOwned;
-use serde_json::json;
+use serde::{Serialize, de::DeserializeOwned};
 
 use crate::error_catalog;
+
+#[derive(Serialize, utoipa::ToSchema)]
+pub(crate) struct ErrorResponse {
+    error: ErrorDetails,
+}
+
+#[derive(Serialize, utoipa::ToSchema)]
+struct ErrorDetails {
+    code: String,
+    message: String,
+}
+
+/// Error produced by the SDK gateway's signed-identity check.
+#[derive(utoipa::ToSchema)]
+#[allow(dead_code)]
+pub(crate) struct IdentityErrorResponse {
+    error: IdentityErrorDetails,
+}
+
+#[derive(utoipa::ToSchema)]
+#[allow(dead_code)]
+struct IdentityErrorDetails {
+    code: String,
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ApiError {
@@ -103,7 +126,12 @@ impl IntoResponse for ApiError {
     fn into_response(self) -> Response {
         (
             self.status,
-            Json(json!({"error": {"code": self.code, "message": self.message}})),
+            Json(ErrorResponse {
+                error: ErrorDetails {
+                    code: self.code,
+                    message: self.message,
+                },
+            }),
         )
             .into_response()
     }

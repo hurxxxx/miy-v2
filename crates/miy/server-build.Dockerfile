@@ -5,23 +5,29 @@ RUN rustup component add rustfmt clippy --toolchain 1.99.1
 
 FROM rust-tools AS backend
 WORKDIR /build
+ARG MIY_CHECK_APP_API=0
 # The context has already passed the bounded source allowlist and bundle checks.
 # Preserve integration tests, build.rs and assets used by include_bytes!/builds.
 COPY . .
 RUN cargo fetch --locked
-RUN --network=none cargo fmt --all --check && cargo test --locked --offline && cargo build --release --locked --offline && cp target/release/miy-app /miy-app
+RUN --network=none cargo fmt --all --check && cargo test --locked --offline && cargo build --release --locked --offline \
+    && if [ "$MIY_CHECK_APP_API" = 1 ]; then target/release/miy-app --check-openapi; fi \
+    && cp target/release/miy-app /miy-app
 
 FROM mcr.microsoft.com/playwright:v1.64.1-noble@sha256:7852dc5a7d72f5fe458a597d690f6c42fbc8e9e26ddfa95f8e6ef552558d9bbf AS node-tools
 RUN npm install --global pnpm@10.34.5
 
 FROM node-tools AS frontend
 WORKDIR /build
+ARG MIY_CHECK_APP_API=0
 ENV npm_config_manage_package_manager_versions=false npm_config_ignore_pnpmfile=true
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 RUN pnpm fetch --frozen-lockfile --ignore-scripts --ignore-pnpmfile
 # Retain committed public/assets and other validated application build inputs.
 COPY . .
-RUN --network=none pnpm install --offline --frozen-lockfile && pnpm typecheck && pnpm build
+RUN --network=none pnpm install --offline --frozen-lockfile \
+    && if [ "$MIY_CHECK_APP_API" = 1 ]; then node web/api-tools/generate.mjs --check; fi \
+    && pnpm typecheck && pnpm build
 
 FROM debian:bookworm-slim@sha256:7ff6ba31527b9e336162fa061746c366c4b2032f4d2cff2078bea43f78efe3f8
 ARG MIY_APP_ID

@@ -41,6 +41,7 @@ describe('today overdue model', () => {
 
 function task(overrides: Partial<PmsTask> = {}): PmsTask {
   return {
+    custom_fields: {},
     archived: false,
     assignee_id: null,
     assignee_ids: [],

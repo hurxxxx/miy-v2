@@ -31,14 +31,32 @@ async function mcp(cwd){
  try{
   assert((await call('initialize',{protocolVersion:'2025-03-26',capabilities:{},clientInfo:{name:'guidance-regression',version:'1'}})).result);
   child.stdin.write(JSON.stringify({jsonrpc:'2.0',method:'notifications/initialized'})+'\n');
-  for(const [arguments_,args] of [[{},['describe']],[{command:'app deploy'},['describe','--command','app deploy']],[{search:'job'},['describe','--search','job']],[{topic:'updates'},['describe','--topic','updates']]]){
+  for(const [arguments_,args] of [[{},['describe']],[{command:'app deploy'},['describe','--command','app deploy']],[{search:'job'},['describe','--search','job']],[{topic:'updates'},['describe','--topic','updates']],[{topic:'harness'},['describe','--topic','harness']],[{topic:'api'},['describe','--topic','api']]]){
    const reply=await call('tools/call',{name:'get_cli_help',arguments:arguments_});assert(!reply.result.isError);assert.deepEqual(JSON.parse(reply.result.content[0].text),cli(args,cwd));
   }
  }finally{child.stdin.end();await new Promise(resolve=>child.on('exit',resolve));}
 }
-const fresh=join(out,'한글 app');app(['init',fresh,'--id','cli-guidance-probe','--name','CLI guidance probe']);
+const fresh=join(out,'한글 app');
+const initialized = app(['init', fresh, '--id', 'cli-guidance-probe', '--name', 'CLI guidance probe']);
 const summary=cli(['describe'],fresh),all=cli(['describe','--all'],fresh),lock=JSON.parse(readFileSync(join(fresh,'miy.cli.json'))),bundle=JSON.parse(readFileSync(join(fresh,'miy.bundle.json')));
 assert.equal(lock.cliVersion,summary.cliVersion);assert.equal(lock.bundleVersion,bundle.bundleVersion);
+const currentGuidance = app(['check', '--harness-only'], fresh).guidance;
+const apiGuide = cli(['describe', '--topic', 'harness'], fresh);
+const apiTopic = cli(['describe', '--topic', 'api'], fresh);
+assert(summary.topics.some(({topic}) => topic === 'api'));
+assert.equal(apiTopic.path, apiGuide.apiGuide);
+assert.equal(apiTopic.guide, apiGuide.apiGuidance);
+assert.equal(apiTopic.authenticationRequired, false);
+assert.match(initialized.templateVersion, /^sha256:[0-9a-f]{64}$/);
+assert.equal(initialized.templateVersion, lock.templateVersion);
+assert.equal(initialized.guidanceVersion, lock.guidanceVersion);
+assert.equal(currentGuidance.availableTemplateVersion, lock.templateVersion);
+assert.equal(currentGuidance.templateVersion, lock.templateVersion);
+assert.equal(currentGuidance.availableGuidanceVersion, lock.guidanceVersion);
+assert.equal(currentGuidance.guidanceVersion, lock.guidanceVersion);
+assert.equal(currentGuidance.setupRequired, false);
+assert.equal(apiGuide.apiGuidance, readFileSync(join(fresh, apiGuide.apiGuide), 'utf8'));
+assert.equal(apiGuide.guidanceVersion, lock.guidanceVersion);
 assert(!summary.commands.some(row=>row.command.includes(' ')),'default discovery must remain compact');
 for(const [path,expected]of Object.entries(lock.files))assert.equal(hash(join(fresh,path)),expected,path);
 assert.equal(readFileSync(join(fresh,'.agents/skills/miy-cli/SKILL.md'),'utf8'),readFileSync(join(fresh,'.claude/skills/miy-cli/SKILL.md'),'utf8'));
@@ -55,11 +73,54 @@ for(const client of ['.agents','.claude'])assert.equal(readFileSync(join(fresh,c
 mkdirSync(env.MIY_CONFIG_DIR,{recursive:true});const configPath=join(env.MIY_CONFIG_DIR,'config.json'),savedConfig=existsSync(configPath)?readFileSync(configPath):null;
 try{writeFileSync(configPath,'invalid configuration');await mcp(fresh);assert.equal(readFileSync(configPath,'utf8'),'invalid configuration');}
 finally{if(savedConfig)writeFileSync(configPath,savedConfig);else rmSync(configPath);}
-ok('MCP default, command, search and update guidance match CLI and generated manuals even with broken configuration');
+ok('MCP discovery, updates and API guidance match CLI and installed documents even with broken configuration');
 const manualPath=join(fresh,'docs/CLI-REFERENCE.md'),oldBinary=hash(join(fresh,'.miy-tools/miy'+suffix));
 writeFileSync(manualPath,'custom local notes');fails(['app','setup'],fresh,CLI_EXIT.environment,/cli_guidance_modified_or_conflict/);assert.equal(hash(join(fresh,'.miy-tools/miy'+suffix)),oldBinary);assert.equal(readFileSync(manualPath,'utf8'),'custom local notes');writeFileSync(manualPath,manual);
 rmSync(join(fresh,'.claude/skills/miy-cli/references/commands.md'));app(['setup'],fresh);assert(existsSync(join(fresh,'.claude/skills/miy-cli/references/commands.md')));
 const before=readFileSync(join(fresh,'miy.cli.json'));app(['setup'],fresh);assert.deepEqual(readFileSync(join(fresh,'miy.cli.json')),before);ok('setup rejects changed managed documents, restores missing guidance and is repeatable');
+
+const existing = join(out, 'existing app');
+app(['init', existing, '--id', 'existing-app', '--name', 'Existing app']);
+const existingLockPath = join(existing, 'miy.cli.json');
+const olderLock = JSON.parse(readFileSync(existingLockPath));
+delete olderLock.guidanceVersion;
+delete olderLock.templateVersion;
+delete olderLock.files[apiGuide.apiGuide];
+writeFileSync(existingLockPath, JSON.stringify(olderLock));
+const existingApiGuide = join(existing, apiGuide.apiGuide);
+rmSync(existingApiGuide);
+const existingManifestPath = join(existing, 'manifest.json');
+const existingManifest = JSON.parse(readFileSync(existingManifestPath));
+delete existingManifest.apiContract;
+writeFileSync(existingManifestPath, JSON.stringify(existingManifest));
+const appFiles = ['manifest.json', 'src/main.rs', 'web/src/AppRoot.tsx', 'sdk/browser/index.ts'];
+const appHashes = appFiles.map(path => hash(join(existing, path)));
+const beforeUpdate = app(['check', '--harness-only'], existing).guidance;
+assert.equal(beforeUpdate.setupRequired, true);
+assert.equal(beforeUpdate.guidanceVersion, null);
+assert.equal(beforeUpdate.templateVersion, null);
+writeFileSync(existingApiGuide, 'Existing custom API notes');
+fails(['app', 'setup'], existing, CLI_EXIT.environment, /cli_guidance_modified_or_conflict: docs\/API.md/);
+assert.equal(readFileSync(existingApiGuide, 'utf8'), 'Existing custom API notes');
+rmSync(existingApiGuide);
+const updated = app(['setup'], existing).cliGuidance;
+assert.equal(updated.guidanceVersion, initialized.guidanceVersion);
+assert.equal(updated.templateVersion, null);
+assert.equal(app(['check', '--harness-only'], existing).guidance.setupRequired, false);
+assert.equal(readFileSync(existingApiGuide, 'utf8'), apiGuide.apiGuidance);
+assert.deepEqual(appFiles.map(path => hash(join(existing, path))), appHashes);
+ok('existing guidance refresh installs the versioned API guide, preserves project files and rejects custom guide conflicts');
+
+const stampedLock = JSON.parse(readFileSync(existingLockPath));
+const originalTemplate = `sha256:${'a'.repeat(64)}`;
+stampedLock.templateVersion = originalTemplate;
+writeFileSync(existingLockPath, JSON.stringify(stampedLock));
+assert.equal(app(['setup'], existing).cliGuidance.templateVersion, originalTemplate);
+const afterRefresh = app(['check', '--harness-only'], existing).guidance;
+assert.equal(afterRefresh.templateVersion, originalTemplate);
+assert.equal(afterRefresh.availableTemplateVersion, initialized.templateVersion);
+assert.equal(afterRefresh.setupRequired, false);
+ok('refresh keeps original template provenance even when a different scaffold is available');
 const codex=join(fresh,'.codex/config.toml'),claude=join(fresh,'.mcp.json');
 const customCodex=readFileSync(codex,'utf8')+'\n# user-owned setting preserved\n';writeFileSync(codex,customCodex);
 const customClaude=JSON.parse(readFileSync(claude));customClaude.mcpServers.other={command:'other-mcp',env:{TOKEN:'synthetic-fixture-only'}};writeFileSync(claude,JSON.stringify(customClaude));

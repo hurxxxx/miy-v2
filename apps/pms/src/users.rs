@@ -14,7 +14,6 @@ use std::{
 use axum::{Extension, Json};
 use miy_app_sdk::{DirectoryKind, DirectoryQuery, Identity};
 use serde::Serialize;
-use serde_json::{Value, json};
 
 use crate::error::{ApiError, ApiResult};
 
@@ -176,38 +175,79 @@ pub async fn list_all(identity: &Identity) -> ApiResult<Vec<UserInfo>> {
 
 /// `GET /v1/pms/me` (miy addition): AI-DO's frontend read the signed-in user
 /// from its auth context; the frame gets no user from the platform.
-pub async fn me(Extension(identity): Extension<Identity>) -> ApiResult<Json<Value>> {
+#[utoipa::path(
+    get, path = "/v1/pms/me", operation_id = "getPmsMe",
+    responses(
+        (status = 200, description = "PMS profile of the current user", body = PmsMe),
+        (status = 401, description = "Platform identity could not be verified", body = crate::error::IdentityErrorResponse)
+    )
+)]
+pub async fn me(Extension(identity): Extension<Identity>) -> ApiResult<Json<PmsMe>> {
     let found = lookup(&identity, std::slice::from_ref(&identity.user_id))
         .await
         .unwrap_or_default();
     let user = found.get(&identity.user_id);
-    Ok(Json(json!({
-        "id": identity.user_id,
-        "name": user.map(|u| u.name.clone()).unwrap_or_else(|| identity.user_id.clone()),
-        "primary_org_unit_id": user.and_then(|u| u.primary_group_id.clone()),
-        "primary_org_unit_name": user.and_then(|u| u.primary_group_name.clone()),
-    })))
+    let name = user
+        .map(|u| u.name.clone())
+        .unwrap_or_else(|| identity.user_id.clone());
+    Ok(Json(PmsMe {
+        id: identity.user_id,
+        name,
+        primary_org_unit_id: user.and_then(|u| u.primary_group_id.clone()),
+        primary_org_unit_name: user.and_then(|u| u.primary_group_name.clone()),
+    }))
+}
+
+#[derive(Serialize, utoipa::ToSchema)]
+pub struct PmsMe {
+    id: String,
+    name: String,
+    #[schema(required)]
+    primary_org_unit_id: Option<String>,
+    #[schema(required)]
+    primary_org_unit_name: Option<String>,
+}
+
+#[derive(Serialize, utoipa::ToSchema)]
+pub struct SpaceUserItem {
+    id: String,
+    /// The platform directory does not provide an email address.
+    email: &'static str,
+    full_name: String,
+    #[schema(required)]
+    primary_org_unit_id: Option<String>,
+    #[schema(required)]
+    primary_org_unit_name: Option<String>,
 }
 
 /// `GET /v1/pms/users`: AI-DO listed active users with PMS access
 /// (`SpaceUserItem`). The directory lists active users of the platform; who
 /// may use this app is checked by the platform when they open it. The
 /// directory has no e-mail, so `email` is empty.
-pub async fn list_users(Extension(identity): Extension<Identity>) -> ApiResult<Json<Value>> {
+#[utoipa::path(
+    get, path = "/v1/pms/users", operation_id = "listPmsUsers", tag = "People",
+    description = "Active people in directory name order. The directory does not provide email addresses.",
+    responses(
+        (status = 200, description = "Success", body = Vec<SpaceUserItem>),
+        (status = 401, description = "Platform identity could not be verified", body = crate::error::IdentityErrorResponse),
+        (status = 503, description = "The platform directory is unavailable", body = crate::error::ErrorResponse),
+    )
+)]
+pub async fn list_users(
+    Extension(identity): Extension<Identity>,
+) -> ApiResult<Json<Vec<SpaceUserItem>>> {
     let mut users = list_all(&identity).await?;
     users.sort_by(|a, b| a.name.cmp(&b.name).then_with(|| a.id.cmp(&b.id)));
-    Ok(Json(Value::Array(
+    Ok(Json(
         users
             .into_iter()
-            .map(|user| {
-                json!({
-                    "id": user.id,
-                    "email": "",
-                    "full_name": user.name,
-                    "primary_org_unit_id": user.primary_group_id,
-                    "primary_org_unit_name": user.primary_group_name,
-                })
+            .map(|user| SpaceUserItem {
+                id: user.id,
+                email: "",
+                full_name: user.name,
+                primary_org_unit_id: user.primary_group_id,
+                primary_org_unit_name: user.primary_group_name,
             })
             .collect(),
-    )))
+    ))
 }

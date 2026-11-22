@@ -17,7 +17,7 @@ import {
   Trash2,
   X,
 } from 'lucide-react';
-import { ContentState, FormMessage, StatusSlot } from '@miy/ui';
+import { Button, ContentState, FormMessage, StatusSlot } from '@miy/ui';
 
 import { cn } from '../../../lib/utils';
 import {
@@ -72,6 +72,7 @@ function FileManagerViewContent({
     busyId,
     canIngest,
     currentFolder,
+    downloadBatch,
     draggingFiles,
     effectiveUploadVisibility,
     folderError,
@@ -110,6 +111,7 @@ function FileManagerViewContent({
     openMoveSelected,
     previewBusyId,
     renameTarget,
+    resumeDownloadBatch,
     savingFolder,
     selectedCount,
     selectedVisibleSize,
@@ -125,6 +127,7 @@ function FileManagerViewContent({
     setUploadVisibility,
     setVersionsTarget,
     spaceId,
+    stopDownloadBatch,
     timeZone,
     uploadNewVersion,
     uploadVisibility,
@@ -133,6 +136,7 @@ function FileManagerViewContent({
   } = controller;
   const visibleTitle = currentFolder?.name ?? t('files.title');
   const allFolders = browse?.all_folders ?? [];
+  const pendingDownload = downloadBatch?.remaining[0];
   const ingestBlockNotice = ingestBlockReason
     ? t(INGEST_BLOCK_NOTICE_KEYS[ingestBlockReason])
     : null;
@@ -300,6 +304,7 @@ function FileManagerViewContent({
               <BulkActionBar
                 allVisibleSelected={allVisibleSelected}
                 busyAction={bulkAction}
+                downloadPending={downloadBatch !== null}
                 onDelete={() => void handleBulkDelete()}
                 onDownload={() => void handleBulkDownload()}
                 onMove={openMoveSelected}
@@ -307,6 +312,32 @@ function FileManagerViewContent({
                 selectedCount={selectedCount}
                 selectedSize={selectedVisibleSize}
               />
+            ) : null}
+
+            {downloadBatch ? (
+              <div className="mb-3 flex flex-wrap items-center justify-between gap-3 rounded-md border border-app-border bg-app-surface px-3 py-2">
+                <div className="min-w-0">
+                  <p role="status">
+                    {t('drive.bulkDownload.progress', { sent: downloadBatch.sent, total: downloadBatch.total })}
+                  </p>
+                  {bulkAction === null && pendingDownload ? (
+                    <p className="break-all text-app-ink/70">
+                      {t('drive.bulkDownload.paused', { path: pendingDownload.path })}
+                    </p>
+                  ) : null}
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {bulkAction === null ? (
+                    <>
+                      <Button onClick={() => resumeDownloadBatch()}>
+                        {t(pendingDownload?.downloadUrl ? 'drive.bulkDownload.checkAgain' : 'drive.bulkDownload.retry')}
+                      </Button>
+                      <Button onClick={() => resumeDownloadBatch(true)}>{t('drive.bulkDownload.skip')}</Button>
+                    </>
+                  ) : null}
+                  <Button onClick={stopDownloadBatch}>{t('drive.bulkDownload.stop')}</Button>
+                </div>
+              </div>
             ) : null}
 
             {loadState === 'loading' && !browse ? (
@@ -439,6 +470,7 @@ function FolderOpenIcon() {
 function BulkActionBar({
   allVisibleSelected,
   busyAction,
+  downloadPending,
   onDelete,
   onDownload,
   onMove,
@@ -448,6 +480,7 @@ function BulkActionBar({
 }: {
   allVisibleSelected: boolean;
   busyAction: BulkAction;
+  downloadPending: boolean;
   onDelete: () => void;
   onDownload: () => void;
   onMove: () => void;
@@ -481,7 +514,7 @@ function BulkActionBar({
         <button
           type="button"
           onClick={onDownload}
-          disabled={busyAction !== null}
+          disabled={busyAction !== null || downloadPending}
           className="inline-flex h-8 items-center gap-2 rounded-md border border-app-border px-2.5 app-text-control-sm text-app-ink transition-colors hover:bg-app-surface-hover disabled:opacity-60"
         >
           {busyAction === 'download' ? (

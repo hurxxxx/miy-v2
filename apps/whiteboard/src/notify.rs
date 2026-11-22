@@ -19,7 +19,7 @@ use std::{collections::BTreeSet, time::Duration};
 
 use crate::{
     AppState,
-    error::{ApiError, ApiJson, ApiResult},
+    error::{ApiError, ApiJson, ApiResult, ErrorResponse, IdentityErrorResponse},
     people,
     spaces::{self, GLOBAL},
     whiteboard::{Board, TARGET_APP, TARGET_TYPE_WORKSPACE, board_path},
@@ -177,7 +177,7 @@ pub fn signed_groups(identity: &Identity) -> ApiResult<Vec<String>> {
     Ok(groups)
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct CheckItem {
     group_key: String,
@@ -185,13 +185,14 @@ pub struct CheckItem {
     resource_id: Option<String>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema)]
 pub struct CheckRequest {
+    /// The first 500 items are checked.
     #[serde(default)]
     items: Vec<CheckItem>,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, utoipa::ToSchema)]
 pub struct CheckResponse {
     allowed: Vec<String>,
 }
@@ -199,6 +200,18 @@ pub struct CheckResponse {
 /// `POST /platform/notification-check`: which of the person's notification
 /// groups still point at a board they may open now (also through a group's
 /// space membership). Read-only.
+#[utoipa::path(
+    post, path = "/platform/notification-check", operation_id = "checkWhiteboardNotifications", tag = "Platform callbacks",
+    request_body = CheckRequest,
+    responses(
+        (status = 200, description = "Notification group keys the caller may still open", body = CheckResponse),
+        (status = 401, description = "Platform identity could not be verified", body = IdentityErrorResponse),
+        (status = 403, description = "Only the platform may call this endpoint", body = ErrorResponse),
+        (status = 422, description = "Invalid notification check request", body = ErrorResponse),
+        (status = 500, description = "Internal error", body = ErrorResponse),
+        (status = 503, description = "Signed directory information is unavailable", body = ErrorResponse),
+    )
+)]
 pub async fn notification_check(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,

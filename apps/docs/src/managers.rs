@@ -70,7 +70,7 @@ async fn lock_manager_changes(tx: &mut sqlx::Transaction<'_, sqlx::Postgres>) ->
     Ok(())
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct DocsMe {
     user_id: String,
@@ -78,6 +78,14 @@ pub struct DocsMe {
     can_bootstrap: bool,
 }
 
+#[utoipa::path(
+    get, path = "/v1/docs/me", operation_id = "getDocsMe",
+    responses(
+        (status = 200, description = "Document access for the current user", body = DocsMe),
+        (status = 401, description = "Platform identity could not be verified", body = crate::error::IdentityErrorResponse),
+        (status = 500, description = "Could not read manager status", body = crate::error::ErrorResponse)
+    )
+)]
 pub async fn me(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
@@ -93,6 +101,15 @@ pub async fn me(
     }))
 }
 
+#[utoipa::path(
+    post, path = "/v1/docs/managers/bootstrap", operation_id = "bootstrapDocsManager", tag = "Managers",
+    responses(
+        (status = 201, description = "Created", body = DocsMe),
+        (status = 401, description = "Valid platform identity required", body = crate::error::IdentityErrorResponse),
+        (status = 409, description = "Current resource state conflicts with the request", body = crate::error::ErrorResponse),
+        (status = 500, description = "Could not complete the request", body = crate::error::ErrorResponse)
+    )
+)]
 pub async fn bootstrap(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
@@ -124,21 +141,32 @@ pub async fn bootstrap(
     ))
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ManagerOut {
     user_id: String,
+    #[schema(required)]
     name: Option<String>,
     granted_by: String,
     #[serde(serialize_with = "crate::time::serialize")]
+    #[schema(value_type = String, example = "2026-11-22T09:00:00")]
     created_at: NaiveDateTime,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, utoipa::ToSchema)]
 pub struct ManagersResponse {
     items: Vec<ManagerOut>,
 }
 
+#[utoipa::path(
+    get, path = "/v1/docs/managers", operation_id = "listDocsManagers", tag = "Managers",
+    responses(
+        (status = 200, description = "Success", body = ManagersResponse),
+        (status = 401, description = "Valid platform identity required", body = crate::error::IdentityErrorResponse),
+        (status = 403, description = "Permission denied", body = crate::error::ErrorResponse),
+        (status = 500, description = "Could not complete the request", body = crate::error::ErrorResponse)
+    )
+)]
 pub async fn list_managers(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
@@ -163,12 +191,24 @@ pub async fn list_managers(
     }))
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ManagerAddRequest {
     user_id: String,
 }
 
+#[utoipa::path(
+    post, path = "/v1/docs/managers", operation_id = "addDocsManager", tag = "Managers",
+    request_body = ManagerAddRequest,
+    responses(
+        (status = 201, description = "Created"),
+        (status = 400, description = "Invalid request", body = crate::error::ErrorResponse),
+        (status = 401, description = "Valid platform identity required", body = crate::error::IdentityErrorResponse),
+        (status = 403, description = "Permission denied", body = crate::error::ErrorResponse),
+        (status = 422, description = "Request validation failed", body = crate::error::ErrorResponse),
+        (status = 500, description = "Could not complete the request", body = crate::error::ErrorResponse)
+    )
+)]
 pub async fn add_manager(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
@@ -205,6 +245,18 @@ pub async fn add_manager(
     Ok(StatusCode::CREATED)
 }
 
+#[utoipa::path(
+    delete, path = "/v1/docs/managers/{user_id}", operation_id = "removeDocsManager", tag = "Managers",
+    params(("user_id" = String, Path)),
+    responses(
+        (status = 204, description = "Completed with no response body"),
+        (status = 401, description = "Valid platform identity required", body = crate::error::IdentityErrorResponse),
+        (status = 403, description = "Permission denied", body = crate::error::ErrorResponse),
+        (status = 404, description = "Resource is unavailable or does not exist", body = crate::error::ErrorResponse),
+        (status = 409, description = "Current resource state conflicts with the request", body = crate::error::ErrorResponse),
+        (status = 500, description = "Could not complete the request", body = crate::error::ErrorResponse)
+    )
+)]
 pub async fn remove_manager(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,

@@ -13,6 +13,8 @@ pub enum HelpTopic {
     Updates,
     /// Review component reuse, file recovery and the app integration checks.
     Harness,
+    /// Read the app OpenAPI rules and generation commands.
+    Api,
 }
 
 #[derive(clap::Args, Debug, Default)]
@@ -53,6 +55,7 @@ fn inspect_tree(mut root: Command, args: DescribeArgs) -> Result<Value> {
         return Ok(match topic {
             HelpTopic::Updates => crate::cli_guidance::update_guide(),
             HelpTopic::Harness => crate::cli_guidance::harness_guide(),
+            HelpTopic::Api => crate::cli_guidance::api_guide(),
         });
     }
     root.build();
@@ -114,8 +117,11 @@ fn inspect_tree(mut root: Command, args: DescribeArgs) -> Result<Value> {
         "cliVersion":env!("CARGO_PKG_VERSION"),
         "scope":if args.all { "all" } else if args.search.is_some() { "search" } else { "summary" },
         "commands":commands,
-        "topics":[{"topic":"updates","command":"miy describe --topic updates",
-            "description":"Update the global CLI, project tooling and agent MCP sessions without resetting authentication."}],
+        "topics":[
+            {"topic":"updates","command":"miy describe --topic updates","description":"Update the CLI and project tooling."},
+            {"topic":"harness","command":"miy describe --topic harness","description":"Review app integration checks."},
+            {"topic":"api","command":"miy describe --topic api","description":"Read app OpenAPI rules and generation commands."}
+        ],
     }))
 }
 

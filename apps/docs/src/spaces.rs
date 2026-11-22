@@ -75,7 +75,8 @@ pub fn space_key(space_id: &str) -> ResourceKey {
 }
 
 /// AI-DO `AppSpaceRole` without `owner` (the ACL's protected creator).
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, utoipa::ToSchema)]
+#[serde(rename_all = "snake_case")]
 pub enum SpaceRole {
     Viewer,
     Member,
@@ -83,14 +84,6 @@ pub enum SpaceRole {
 }
 
 impl SpaceRole {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Viewer => "viewer",
-            Self::Member => "member",
-            Self::Admin => "admin",
-        }
-    }
-
     fn from_grant(role: &str) -> Option<Self> {
         match role {
             "viewer" => Some(Self::Viewer),
@@ -120,20 +113,32 @@ impl Space {
 
 pub const SPACE_COLUMNS: &str = "id, kind, name, description, created_by, created_at, updated_at";
 
-#[derive(Serialize)]
+#[allow(dead_code)]
+#[derive(utoipa::ToSchema)]
+#[schema(rename_all = "snake_case")]
+pub(crate) enum SpaceKind {
+    AppGlobal,
+    AppSpace,
+}
+
+#[derive(Serialize, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct SpaceOut {
     id: String,
     key: String,
+    #[schema(value_type = SpaceKind)]
     kind: String,
     name: String,
     description: String,
+    #[schema(required)]
     created_by: Option<String>,
-    role: &'static str,
+    role: SpaceRole,
     can_manage: bool,
     #[serde(serialize_with = "crate::time::serialize")]
+    #[schema(value_type = String, example = "2026-11-22T09:00:00")]
     created_at: NaiveDateTime,
     #[serde(serialize_with = "crate::time::serialize")]
+    #[schema(value_type = String, example = "2026-11-22T09:00:00")]
     updated_at: NaiveDateTime,
 }
 
@@ -145,7 +150,7 @@ pub fn space_out(space: &Space, role: SpaceRole) -> SpaceOut {
         name: space.name.clone(),
         description: space.description.clone(),
         created_by: space.created_by.clone(),
-        role: role.as_str(),
+        role,
         // Members of the global space are managed by the platform (app Use);
         // its admins are the docs managers.
         can_manage: role == SpaceRole::Admin && !space.is_global(),
@@ -412,11 +417,21 @@ pub async fn require_space(
 
 // ---------------------------------------------------------------- routes
 
-#[derive(Serialize)]
+#[derive(Serialize, utoipa::ToSchema)]
 pub struct SpacesResponse {
     spaces: Vec<SpaceOut>,
 }
 
+#[utoipa::path(
+    get, path = "/v1/spaces", operation_id = "listDocsSpaces", tag = "Spaces",
+    responses(
+        (status = 200, description = "Success", body = SpacesResponse),
+        (status = 401, description = "Valid platform identity required", body = crate::error::IdentityErrorResponse),
+        (status = 403, description = "Permission denied", body = crate::error::ErrorResponse),
+        (status = 500, description = "Could not complete the request", body = crate::error::ErrorResponse),
+        (status = 503, description = "A required platform service is unavailable", body = crate::error::ErrorResponse)
+    )
+)]
 pub async fn list_spaces(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
@@ -430,11 +445,14 @@ pub async fn list_spaces(
     }))
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct SpaceRequest {
+    /// Must remain non-blank after trimming.
+    #[schema(min_length = 1, max_length = 120)]
     name: String,
     #[serde(default)]
+    #[schema(max_length = 5000)]
     description: String,
 }
 
@@ -448,6 +466,20 @@ fn validate_space(payload: &SpaceRequest) -> ApiResult<(String, String)> {
     Ok((name, payload.description.trim().to_string()))
 }
 
+#[utoipa::path(
+    post, path = "/v1/spaces", operation_id = "createDocsSpace", tag = "Spaces",
+    request_body = SpaceRequest,
+    responses(
+        (status = 201, description = "Created", body = SpaceOut),
+        (status = 400, description = "Invalid request", body = crate::error::ErrorResponse),
+        (status = 401, description = "Valid platform identity required", body = crate::error::IdentityErrorResponse),
+        (status = 403, description = "Permission denied", body = crate::error::ErrorResponse),
+        (status = 409, description = "Current resource state conflicts with the request", body = crate::error::ErrorResponse),
+        (status = 422, description = "Request validation failed", body = crate::error::ErrorResponse),
+        (status = 500, description = "Could not complete the request", body = crate::error::ErrorResponse),
+        (status = 503, description = "A required platform service is unavailable", body = crate::error::ErrorResponse)
+    )
+)]
 pub async fn create_space(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
@@ -497,6 +529,21 @@ async fn load_named_space(pool: &PgPool, space_id: &str) -> ApiResult<Space> {
     Ok(space)
 }
 
+#[utoipa::path(
+    patch, path = "/v1/spaces/{space_id}", operation_id = "updateDocsSpace", tag = "Spaces",
+    params(("space_id" = String, Path)),
+    request_body = SpaceRequest,
+    responses(
+        (status = 200, description = "Success", body = SpaceOut),
+        (status = 400, description = "The global Docs space is protected", body = crate::error::ErrorResponse),
+        (status = 401, description = "Valid platform identity required", body = crate::error::IdentityErrorResponse),
+        (status = 403, description = "Permission denied", body = crate::error::ErrorResponse),
+        (status = 404, description = "Resource is unavailable or does not exist", body = crate::error::ErrorResponse),
+        (status = 422, description = "Request validation failed", body = crate::error::ErrorResponse),
+        (status = 500, description = "Could not complete the request", body = crate::error::ErrorResponse),
+        (status = 503, description = "A required platform service is unavailable", body = crate::error::ErrorResponse)
+    )
+)]
 pub async fn update_space(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
@@ -529,6 +576,20 @@ pub async fn update_space(
 /// Delete a space. A space that still holds live docs is refused (409); the
 /// trashed docs left in it go with it, and their files are released in the
 /// core (AI-DO trashed a workspace instead; miy has no workspace trash).
+#[utoipa::path(
+    delete, path = "/v1/spaces/{space_id}", operation_id = "deleteDocsSpace", tag = "Spaces",
+    params(("space_id" = String, Path)),
+    responses(
+        (status = 204, description = "Completed with no response body"),
+        (status = 400, description = "The global Docs space is protected", body = crate::error::ErrorResponse),
+        (status = 401, description = "Valid platform identity required", body = crate::error::IdentityErrorResponse),
+        (status = 403, description = "Permission denied", body = crate::error::ErrorResponse),
+        (status = 404, description = "Resource is unavailable or does not exist", body = crate::error::ErrorResponse),
+        (status = 409, description = "Current resource state conflicts with the request", body = crate::error::ErrorResponse),
+        (status = 500, description = "Could not complete the request", body = crate::error::ErrorResponse),
+        (status = 503, description = "A required platform service is unavailable", body = crate::error::ErrorResponse)
+    )
+)]
 pub async fn delete_space(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
@@ -584,6 +645,79 @@ pub async fn delete_space(
     Ok(StatusCode::NO_CONTENT)
 }
 
+// The bundled ACL types are the wire types. These schemas mirror their serde fields.
+#[allow(dead_code)]
+#[derive(utoipa::ToSchema)]
+#[schema(rename_all = "snake_case")]
+enum SharingSubjectKind {
+    User,
+    Group,
+}
+
+#[allow(dead_code)]
+#[derive(utoipa::ToSchema)]
+#[serde(deny_unknown_fields)]
+struct SharingSubjectRef {
+    kind: SharingSubjectKind,
+    id: String,
+}
+
+#[allow(dead_code)]
+#[derive(utoipa::ToSchema)]
+#[serde(deny_unknown_fields)]
+struct SharingGrant {
+    subject: SharingSubjectRef,
+    role: String,
+}
+
+#[allow(dead_code)]
+#[derive(utoipa::ToSchema)]
+struct SharingSubject {
+    kind: SharingSubjectKind,
+    id: String,
+    name: String,
+}
+
+#[allow(dead_code)]
+#[derive(utoipa::ToSchema)]
+struct SharingEntry {
+    subject: SharingSubject,
+    role: String,
+    protected: bool,
+}
+
+#[allow(dead_code)]
+#[derive(utoipa::ToSchema)]
+struct SharingRole {
+    id: String,
+    label: String,
+}
+
+#[allow(dead_code)]
+#[derive(utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct SharingSnapshot {
+    revision: i64,
+    entries: Vec<SharingEntry>,
+    roles: Vec<SharingRole>,
+    #[schema(required)]
+    default_role: Option<String>,
+    can_manage: bool,
+}
+
+#[utoipa::path(
+    get, path = "/v1/spaces/{space_id}/sharing", operation_id = "getDocsSpaceSharing", tag = "Spaces",
+    params(("space_id" = String, Path)),
+    responses(
+        (status = 200, description = "Success", body = SharingSnapshot),
+        (status = 400, description = "The global Docs space is protected", body = crate::error::ErrorResponse),
+        (status = 401, description = "Valid platform identity required", body = crate::error::IdentityErrorResponse),
+        (status = 403, description = "Permission denied", body = crate::error::ErrorResponse),
+        (status = 404, description = "Resource is unavailable or does not exist", body = crate::error::ErrorResponse),
+        (status = 500, description = "Could not complete the request", body = crate::error::ErrorResponse),
+        (status = 503, description = "A required platform service is unavailable", body = crate::error::ErrorResponse)
+    )
+)]
 pub async fn get_sharing(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
@@ -595,14 +729,31 @@ pub async fn get_sharing(
     ))
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct SharingRequest {
     expected_revision: i64,
     request_id: String,
+    #[schema(value_type = Vec<SharingGrant>)]
     entries: Vec<Grant>,
 }
 
+#[utoipa::path(
+    put, path = "/v1/spaces/{space_id}/sharing", operation_id = "replaceDocsSpaceSharing", tag = "Spaces",
+    params(("space_id" = String, Path)),
+    request_body = SharingRequest,
+    responses(
+        (status = 200, description = "Success", body = SharingSnapshot),
+        (status = 400, description = "Invalid request", body = crate::error::ErrorResponse),
+        (status = 401, description = "Valid platform identity required", body = crate::error::IdentityErrorResponse),
+        (status = 403, description = "Permission denied", body = crate::error::ErrorResponse),
+        (status = 404, description = "Resource is unavailable or does not exist", body = crate::error::ErrorResponse),
+        (status = 409, description = "Current resource state conflicts with the request", body = crate::error::ErrorResponse),
+        (status = 422, description = "Request validation failed", body = crate::error::ErrorResponse),
+        (status = 500, description = "Could not complete the request", body = crate::error::ErrorResponse),
+        (status = 503, description = "A required platform service is unavailable", body = crate::error::ErrorResponse)
+    )
+)]
 pub async fn replace_sharing(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
@@ -628,6 +779,20 @@ pub async fn replace_sharing(
     Ok(Json(snapshot))
 }
 
+#[utoipa::path(
+    get, path = "/v1/spaces/{space_id}/sharing/requests/{request_id}", operation_id = "getDocsSpaceSharingResult", tag = "Spaces",
+    params(("space_id" = String, Path), ("request_id" = String, Path)),
+    responses(
+        (status = 200, description = "Success", body = Option<SharingSnapshot>),
+        (status = 400, description = "Invalid request", body = crate::error::ErrorResponse),
+        (status = 401, description = "Valid platform identity required", body = crate::error::IdentityErrorResponse),
+        (status = 403, description = "Permission denied", body = crate::error::ErrorResponse),
+        (status = 404, description = "Resource is unavailable or does not exist", body = crate::error::ErrorResponse),
+        (status = 409, description = "Current resource state conflicts with the request", body = crate::error::ErrorResponse),
+        (status = 500, description = "Could not complete the request", body = crate::error::ErrorResponse),
+        (status = 503, description = "A required platform service is unavailable", body = crate::error::ErrorResponse)
+    )
+)]
 pub async fn sharing_result(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,

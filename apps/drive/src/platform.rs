@@ -8,7 +8,7 @@ use std::collections::HashSet;
 
 use crate::{AppState, access, error::ApiResult, notify, search::platform_only, tree, versions};
 
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct FileAccessRequest {
     file_id: String,
@@ -16,7 +16,7 @@ pub struct FileAccessRequest {
     reference: Option<String>,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, utoipa::ToSchema)]
 pub struct FileAccessResponse {
     allowed: bool,
 }
@@ -27,6 +27,20 @@ pub struct FileAccessResponse {
 /// the person still holds a role in its space (directly or through the
 /// current groups the call carries), the file is visible to them and every
 /// folder above it is.
+#[utoipa::path(
+    post, path = "/v1/file-access", operation_id = "checkDriveDownloadAccess", tag = "Platform callbacks",
+    request_body = FileAccessRequest,
+    responses(
+        (status = 200, description = "Current permission to stream this Storage file", body = FileAccessResponse),
+        (status = 401, description = "Platform identity could not be verified", body = crate::error::IdentityErrorResponse),
+        (status = 400, description = "Malformed request", body = String, content_type = "text/plain"),
+        (status = 403, description = "Only the platform may call this endpoint", body = crate::error::ErrorResponse),
+        (status = 415, description = "Unsupported content type", body = String, content_type = "text/plain"),
+        (status = 422, description = "Invalid or unsupported request", body = String, content_type = "text/plain"),
+        (status = 500, description = "Internal error", body = crate::error::ErrorResponse),
+        (status = 503, description = "A required platform service is unavailable", body = crate::error::ErrorResponse),
+    )
+)]
 pub async fn file_access(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
@@ -69,7 +83,7 @@ async fn allowed(
         .is_ok())
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct CheckItem {
     group_key: String,
@@ -77,12 +91,12 @@ pub struct CheckItem {
     resource_id: Option<String>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema)]
 pub struct NotificationCheckRequest {
     items: Vec<CheckItem>,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, utoipa::ToSchema)]
 pub struct NotificationCheckResponse {
     allowed: Vec<String>,
 }
@@ -90,6 +104,20 @@ pub struct NotificationCheckResponse {
 /// `POST /platform/notification-check`: a `space:<id>` notification stays
 /// while the person may still open that space (a direct grant or one of the
 /// current groups the call carries). Read-only.
+#[utoipa::path(
+    post, path = "/platform/notification-check", operation_id = "checkDriveNotifications", tag = "Platform callbacks",
+    request_body = NotificationCheckRequest,
+    responses(
+        (status = 200, description = "Notification group keys still visible to the user", body = NotificationCheckResponse),
+        (status = 401, description = "Platform identity could not be verified", body = crate::error::IdentityErrorResponse),
+        (status = 400, description = "Malformed request", body = String, content_type = "text/plain"),
+        (status = 403, description = "Only the platform may call this endpoint", body = crate::error::ErrorResponse),
+        (status = 415, description = "Unsupported content type", body = String, content_type = "text/plain"),
+        (status = 422, description = "Invalid or unsupported request", body = String, content_type = "text/plain"),
+        (status = 500, description = "Internal error", body = crate::error::ErrorResponse),
+        (status = 503, description = "A required platform service is unavailable", body = crate::error::ErrorResponse),
+    )
+)]
 pub async fn notification_check(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,

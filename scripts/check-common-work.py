@@ -32,6 +32,8 @@ from urllib.parse import parse_qs, urlsplit
 import uuid
 
 ROOT = Path(__file__).resolve().parents[1]
+UI_VERSION = json.loads((ROOT / "templates/rust-react/miy.components.json").read_text())["defaults"]["ui"]
+UI_SOURCE = ROOT / "registry/components/ui" / UI_VERSION
 
 
 def uid() -> str:
@@ -214,14 +216,14 @@ def assemble(work: Path) -> Path:
             destination = app / path.relative_to(ROOT / "examples/common-work")
             destination.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(path, destination)
-    metadata = json.loads((ROOT / "registry/components/ui/2.0.0/component.json").read_text())
+    metadata = json.loads((UI_SOURCE / "component.json").read_text())
     target = app / "platform-components/ui"
     target.mkdir(parents=True)
     for relative in metadata["files"]:
         path = Path(relative)
         require(not path.is_absolute() and ".." not in path.parts, "invalid_candidate_component_path")
         (target / path).parent.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(ROOT / "registry/components/ui/2.0.0" / path, target / path)
+        shutil.copyfile(UI_SOURCE / path, target / path)
     # The product worker authenticates as the migration login, then switches to
     # the app's non-login owner before SQLx creates history and applies SQL.
     helper = app / "src/bin/common_work_migrate.rs"
@@ -300,7 +302,7 @@ def main() -> int:
                 cleanup_stack.callback(shutil.copytree, app, kept, ignore=shutil.ignore_patterns("target", "node_modules", "dist", ".miy"))
                 result["project"] = str(kept)
             result["sources"] = {str(path.relative_to(ROOT)): hashlib.sha256(path.read_bytes()).hexdigest()
-                for source in [ROOT / "templates/rust-react", ROOT / "examples/common-work", ROOT / "registry/components/ui/2.0.0"]
+                for source in [ROOT / "templates/rust-react", ROOT / "examples/common-work", UI_SOURCE]
                 for path in sorted(source.rglob("*")) if path.is_file() and "target" not in path.parts and "node_modules" not in path.parts}
             cargo = shutil.which("cargo") or str(Path.home() / ".cargo/bin/cargo")
             environment = os.environ.copy()

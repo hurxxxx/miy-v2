@@ -35,9 +35,73 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use sqlx::{PgConnection, PgPool};
 
+#[derive(Serialize, utoipa::ToSchema)]
+pub struct ManagersResponse {
+    items: Vec<ManagerItem>,
+}
+
+#[derive(Serialize, utoipa::ToSchema)]
+pub struct ReportsResponse {
+    items: Vec<ReportSummary>,
+    has_more: bool,
+}
+
+#[derive(Serialize, utoipa::ToSchema)]
+pub struct EvidenceResponse {
+    report_id: String,
+    #[schema(required = true)]
+    message: Option<EvidenceMessage>,
+}
+
+#[derive(Serialize, utoipa::ToSchema)]
+pub struct VisibilityResponse {
+    report_id: String,
+    // set_hidden only succeeds for a report that points to a message.
+    #[schema(required = true, value_type = String)]
+    message_id: Option<String>,
+    hidden: bool,
+    changed: bool,
+}
+
+#[derive(Serialize, utoipa::ToSchema)]
+pub struct FilterTermsResponse {
+    items: Vec<FilterTermItem>,
+    limit: i64,
+}
+
+#[derive(Serialize, utoipa::ToSchema)]
+pub struct FilterTermItem {
+    id: String,
+    term: String,
+    created_at: String,
+}
+
+impl From<ugc::FilterTerm> for FilterTermItem {
+    fn from(term: ugc::FilterTerm) -> Self {
+        Self {
+            id: term.id,
+            term: term.term,
+            created_at: iso(term.created_at),
+        }
+    }
+}
+
 // --- user side: reports, blocks, terms ------------------------------------------
 
 /// `POST /v1/dm/reports`.
+#[utoipa::path(
+    post, path = "/v1/dm/reports", operation_id = "reportDm",
+    request_body = DmReportRequest,
+    responses(
+        (status = 200, description = "Success", body = DmReportResult),
+        (status = 401, description = "Valid gateway identity required", body = crate::error::GatewayIdentityError),
+        (status = 404, description = "Requested resource was not found", body = crate::error::ErrorResponse),
+        (status = 409, description = "Current state conflicts with the request", body = crate::error::ErrorResponse),
+        (status = 422, description = "Request validation or domain policy rejected the operation", body = crate::error::ErrorResponse),
+        (status = 429, description = "Retry after the reporting quota resets", body = crate::error::ErrorResponse, headers(("Retry-After" = u64, description = "Seconds to wait"))),
+        (status = 500, description = "Internal error", body = crate::error::ErrorResponse),
+    )
+)]
 pub async fn report_dm(
     State(pool): State<PgPool>,
     Extension(identity): Extension<Identity>,
@@ -100,6 +164,14 @@ pub async fn report_dm(
 }
 
 /// `GET /v1/dm/blocks`.
+#[utoipa::path(
+    get, path = "/v1/dm/blocks", operation_id = "listDmBlocks",
+    responses(
+        (status = 200, description = "Success", body = DmBlockListResponse),
+        (status = 401, description = "Valid gateway identity required", body = crate::error::GatewayIdentityError),
+        (status = 500, description = "Internal error", body = crate::error::ErrorResponse),
+    )
+)]
 pub async fn list_dm_blocks(
     State(pool): State<PgPool>,
     Extension(identity): Extension<Identity>,
@@ -137,6 +209,20 @@ async fn set_dm_block(
 }
 
 /// `PUT /v1/dm/blocks/{user_id}`.
+#[utoipa::path(
+    put, path = "/v1/dm/blocks/{user_id}", operation_id = "blockDmUser",
+    params(
+        ("user_id" = String, Path),
+    ),
+    responses(
+        (status = 200, description = "Success", body = DmBlockResult),
+        (status = 401, description = "Valid gateway identity required", body = crate::error::GatewayIdentityError),
+        (status = 404, description = "Requested resource was not found", body = crate::error::ErrorResponse),
+        (status = 422, description = "Request validation or domain policy rejected the operation", body = crate::error::ErrorResponse),
+        (status = 502, description = "A required upstream service failed", body = crate::error::ErrorResponse),
+        (status = 500, description = "Internal error", body = crate::error::ErrorResponse),
+    )
+)]
 pub async fn block_dm_user(
     State(pool): State<PgPool>,
     Extension(identity): Extension<Identity>,
@@ -146,6 +232,18 @@ pub async fn block_dm_user(
 }
 
 /// `DELETE /v1/dm/blocks/{user_id}`.
+#[utoipa::path(
+    delete, path = "/v1/dm/blocks/{user_id}", operation_id = "unblockDmUser",
+    params(
+        ("user_id" = String, Path),
+    ),
+    responses(
+        (status = 200, description = "Success", body = DmBlockResult),
+        (status = 401, description = "Valid gateway identity required", body = crate::error::GatewayIdentityError),
+        (status = 422, description = "Request validation or domain policy rejected the operation", body = crate::error::ErrorResponse),
+        (status = 500, description = "Internal error", body = crate::error::ErrorResponse),
+    )
+)]
 pub async fn unblock_dm_user(
     State(pool): State<PgPool>,
     Extension(identity): Extension<Identity>,
@@ -155,6 +253,14 @@ pub async fn unblock_dm_user(
 }
 
 /// `GET /v1/dm/terms`.
+#[utoipa::path(
+    get, path = "/v1/dm/terms", operation_id = "getDmTerms",
+    responses(
+        (status = 200, description = "Success", body = UgcTermsStatus),
+        (status = 401, description = "Valid gateway identity required", body = crate::error::GatewayIdentityError),
+        (status = 500, description = "Internal error", body = crate::error::ErrorResponse),
+    )
+)]
 pub async fn get_dm_terms(
     State(pool): State<PgPool>,
     Extension(identity): Extension<Identity>,
@@ -164,6 +270,17 @@ pub async fn get_dm_terms(
 }
 
 /// `POST /v1/dm/terms/accept`.
+#[utoipa::path(
+    post, path = "/v1/dm/terms/accept", operation_id = "acceptDmTerms",
+    request_body = UgcTermsAcceptRequest,
+    responses(
+        (status = 200, description = "Success", body = UgcTermsAcceptResult),
+        (status = 401, description = "Valid gateway identity required", body = crate::error::GatewayIdentityError),
+        (status = 409, description = "Current state conflicts with the request", body = crate::error::ErrorResponse),
+        (status = 422, description = "Request validation or domain policy rejected the operation", body = crate::error::ErrorResponse),
+        (status = 500, description = "Internal error", body = crate::error::ErrorResponse),
+    )
+)]
 pub async fn accept_dm_terms(
     State(pool): State<PgPool>,
     Extension(identity): Extension<Identity>,
@@ -203,7 +320,7 @@ async fn require_manager(conn: &mut PgConnection, user_id: &str) -> ApiResult<()
     }
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, utoipa::ToSchema)]
 pub struct ManagerStatus {
     pub manager: bool,
     /// Nobody holds the role yet: the caller may claim it.
@@ -225,6 +342,14 @@ pub async fn load_manager_status(
 }
 
 /// miy: `GET /v1/dm-safety/me`.
+#[utoipa::path(
+    get, path = "/v1/dm-safety/me", operation_id = "managerStatus",
+    responses(
+        (status = 200, description = "Success", body = ManagerStatus),
+        (status = 401, description = "Valid gateway identity required", body = crate::error::GatewayIdentityError),
+        (status = 500, description = "Internal error", body = crate::error::ErrorResponse),
+    )
+)]
 pub async fn manager_status(
     State(pool): State<PgPool>,
     Extension(identity): Extension<Identity>,
@@ -235,9 +360,10 @@ pub async fn manager_status(
     ))
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, utoipa::ToSchema)]
 pub struct ManagerItem {
     user: DmUserItem,
+    #[schema(required = true)]
     granted_by_id: Option<String>,
     created_at: String,
 }
@@ -259,23 +385,41 @@ async fn manager_items(pool: &PgPool, identity: &Identity) -> ApiResult<Vec<Mana
 }
 
 /// miy: `GET /v1/dm-safety/managers`.
+#[utoipa::path(
+    get, path = "/v1/dm-safety/managers", operation_id = "listManagers",
+    responses(
+        (status = 200, description = "Success", body = ManagersResponse),
+        (status = 401, description = "Valid gateway identity required", body = crate::error::GatewayIdentityError),
+        (status = 403, description = "Permission denied", body = crate::error::ErrorResponse),
+        (status = 500, description = "Internal error", body = crate::error::ErrorResponse),
+    )
+)]
 pub async fn list_managers(
     State(pool): State<PgPool>,
     Extension(identity): Extension<Identity>,
-) -> ApiResult<Json<Value>> {
+) -> ApiResult<Json<ManagersResponse>> {
     let mut conn = pool.acquire().await?;
     require_manager(&mut conn, &identity.user_id).await?;
     drop(conn);
-    Ok(Json(
-        json!({"items": manager_items(&pool, &identity).await?}),
-    ))
+    Ok(Json(ManagersResponse {
+        items: manager_items(&pool, &identity).await?,
+    }))
 }
 
 /// miy: `POST /v1/dm-safety/managers/claim`: only while the role is empty.
+#[utoipa::path(
+    post, path = "/v1/dm-safety/managers/claim", operation_id = "claimManager",
+    responses(
+        (status = 200, description = "Success", body = ManagersResponse),
+        (status = 401, description = "Valid gateway identity required", body = crate::error::GatewayIdentityError),
+        (status = 409, description = "Current state conflicts with the request", body = crate::error::ErrorResponse),
+        (status = 500, description = "Internal error", body = crate::error::ErrorResponse),
+    )
+)]
 pub async fn claim_manager(
     State(pool): State<PgPool>,
     Extension(identity): Extension<Identity>,
-) -> ApiResult<Json<Value>> {
+) -> ApiResult<Json<ManagersResponse>> {
     let me = identity.user_id.as_str();
     let mut tx = pool.begin().await?;
     sqlx::query("LOCK TABLE dm_safety_managers IN EXCLUSIVE MODE")
@@ -308,23 +452,36 @@ pub async fn claim_manager(
     )
     .await?;
     tx.commit().await?;
-    Ok(Json(
-        json!({"items": manager_items(&pool, &identity).await?}),
-    ))
+    Ok(Json(ManagersResponse {
+        items: manager_items(&pool, &identity).await?,
+    }))
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct ManagerGrantRequest {
     user_id: String,
 }
 
 /// miy: `POST /v1/dm-safety/managers`.
+#[utoipa::path(
+    post, path = "/v1/dm-safety/managers", operation_id = "grantManager",
+    request_body = ManagerGrantRequest,
+    responses(
+        (status = 200, description = "Success", body = ManagersResponse),
+        (status = 401, description = "Valid gateway identity required", body = crate::error::GatewayIdentityError),
+        (status = 403, description = "Permission denied", body = crate::error::ErrorResponse),
+        (status = 404, description = "Requested resource was not found", body = crate::error::ErrorResponse),
+        (status = 422, description = "Request validation or domain policy rejected the operation", body = crate::error::ErrorResponse),
+        (status = 502, description = "A required upstream service failed", body = crate::error::ErrorResponse),
+        (status = 500, description = "Internal error", body = crate::error::ErrorResponse),
+    )
+)]
 pub async fn grant_manager(
     State(pool): State<PgPool>,
     Extension(identity): Extension<Identity>,
     ApiJson(request): ApiJson<ManagerGrantRequest>,
-) -> ApiResult<Json<Value>> {
+) -> ApiResult<Json<ManagersResponse>> {
     let target = request.user_id.trim().to_string();
     route_id(&target)?;
     let me = identity.user_id.as_str();
@@ -365,17 +522,31 @@ pub async fn grant_manager(
         .await?;
     }
     tx.commit().await?;
-    Ok(Json(
-        json!({"items": manager_items(&pool, &identity).await?}),
-    ))
+    Ok(Json(ManagersResponse {
+        items: manager_items(&pool, &identity).await?,
+    }))
 }
 
 /// miy: `DELETE /v1/dm-safety/managers/{user_id}`. The last manager stays.
+#[utoipa::path(
+    delete, path = "/v1/dm-safety/managers/{user_id}", operation_id = "revokeManager",
+    params(
+        ("user_id" = String, Path),
+    ),
+    responses(
+        (status = 200, description = "Success", body = ManagersResponse),
+        (status = 401, description = "Valid gateway identity required", body = crate::error::GatewayIdentityError),
+        (status = 403, description = "Permission denied", body = crate::error::ErrorResponse),
+        (status = 404, description = "Requested resource was not found", body = crate::error::ErrorResponse),
+        (status = 422, description = "Request validation or domain policy rejected the operation", body = crate::error::ErrorResponse),
+        (status = 500, description = "Internal error", body = crate::error::ErrorResponse),
+    )
+)]
 pub async fn revoke_manager(
     State(pool): State<PgPool>,
     Extension(identity): Extension<Identity>,
     Path(user_id): Path<String>,
-) -> ApiResult<Json<Value>> {
+) -> ApiResult<Json<ManagersResponse>> {
     route_id(&user_id)?;
     let me = identity.user_id.as_str();
     let mut tx = pool.begin().await?;
@@ -413,23 +584,26 @@ pub async fn revoke_manager(
     )
     .await?;
     tx.commit().await?;
-    Ok(Json(
-        json!({"items": manager_items(&pool, &identity).await?}),
-    ))
+    Ok(Json(ManagersResponse {
+        items: manager_items(&pool, &identity).await?,
+    }))
 }
 
 // --- terms settings (miy) -----------------------------------------------------------
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, utoipa::ToSchema)]
 pub struct TermsSettingsItem {
     version: String,
     required: bool,
+    #[schema(required = true)]
     document_url: Option<String>,
+    #[schema(required = true)]
     contact_email: Option<String>,
+    #[schema(required = true)]
     contact_url: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct TermsSettingsRequest {
     version: String,
@@ -453,6 +627,15 @@ fn settings_item(settings: ugc::TermsSettings) -> TermsSettingsItem {
 }
 
 /// miy: `GET /v1/dm-safety/terms-settings`.
+#[utoipa::path(
+    get, path = "/v1/dm-safety/terms-settings", operation_id = "getTermsSettings",
+    responses(
+        (status = 200, description = "Success", body = TermsSettingsItem),
+        (status = 401, description = "Valid gateway identity required", body = crate::error::GatewayIdentityError),
+        (status = 403, description = "Permission denied", body = crate::error::ErrorResponse),
+        (status = 500, description = "Internal error", body = crate::error::ErrorResponse),
+    )
+)]
 pub async fn get_terms_settings(
     State(pool): State<PgPool>,
     Extension(identity): Extension<Identity>,
@@ -478,6 +661,17 @@ fn optional_url(field: &str, value: Option<String>) -> ApiResult<Option<String>>
 }
 
 /// miy: `PUT /v1/dm-safety/terms-settings` (AI-DO `AI_DO_UGC_*` settings).
+#[utoipa::path(
+    put, path = "/v1/dm-safety/terms-settings", operation_id = "putTermsSettings",
+    request_body = TermsSettingsRequest,
+    responses(
+        (status = 200, description = "Success", body = TermsSettingsItem),
+        (status = 401, description = "Valid gateway identity required", body = crate::error::GatewayIdentityError),
+        (status = 403, description = "Permission denied", body = crate::error::ErrorResponse),
+        (status = 422, description = "Request validation or domain policy rejected the operation", body = crate::error::ErrorResponse),
+        (status = 500, description = "Internal error", body = crate::error::ErrorResponse),
+    )
+)]
 pub async fn put_terms_settings(
     State(pool): State<PgPool>,
     Extension(identity): Extension<Identity>,
@@ -548,32 +742,76 @@ struct ReportRow {
 const REPORT_COLUMNS: &str = "id, reporter_user_id, reported_user_id, conversation_id, message_id, category, note, \
      source, status, action, resolution_note, resolved_by_id, resolved_at, created_at";
 
-#[derive(Debug, Serialize)]
+#[allow(dead_code)]
+#[derive(utoipa::ToSchema)]
+#[serde(rename_all = "snake_case")]
+enum ReportStatus {
+    Open,
+    Actioned,
+    Dismissed,
+}
+
+#[allow(dead_code)]
+#[derive(utoipa::ToSchema)]
+#[serde(rename_all = "snake_case")]
+enum OpenReportStatus {
+    Open,
+}
+
+#[allow(dead_code)]
+#[derive(utoipa::ToSchema)]
+#[serde(rename_all = "snake_case")]
+enum ReportOutcome {
+    Actioned,
+    Dismissed,
+}
+
+#[allow(dead_code)]
+#[derive(utoipa::ToSchema)]
+#[serde(rename_all = "snake_case")]
+enum ReportAction {
+    None,
+    HideMessage,
+}
+
+#[derive(Debug, Serialize, utoipa::ToSchema)]
 pub struct ReportSummary {
     id: String,
+    #[schema(value_type = ReportStatus)]
     status: String,
+    #[schema(value_type = crate::schemas::ReportCategory)]
     category: String,
     source: String,
     has_message: bool,
     conversation_type: String,
+    #[schema(required = true, value_type = Option<ReportAction>)]
     action: Option<String>,
     created_at: String,
+    #[schema(required = true)]
     resolved_at: Option<String>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, utoipa::ToSchema)]
 pub struct ReportDetail {
     #[serde(flatten)]
     summary: ReportSummary,
+    #[schema(required = true)]
     note: Option<String>,
     conversation_id: String,
+    #[schema(required = true)]
     message_id: Option<String>,
+    #[schema(required = true)]
     reporter: Option<DmUserItem>,
+    #[schema(required = true)]
     reported_user: Option<DmUserItem>,
+    #[schema(required = true)]
     resolution_note: Option<String>,
+    #[schema(required = true)]
     resolved_by: Option<DmUserItem>,
+    #[schema(required = true)]
     message_hidden: Option<bool>,
     /// miy: the author deleted the reported message.
+    #[schema(required = true)]
     message_deleted: Option<bool>,
 }
 
@@ -657,11 +895,27 @@ pub struct ReportListQuery {
 }
 
 /// `GET /v1/dm-safety/reports`.
+#[utoipa::path(
+    get, path = "/v1/dm-safety/reports", operation_id = "listReports",
+    params(
+        ("status" = Option<ReportStatus>, Query, description = "Report status (default open)"),
+        ("before" = Option<String>, Query, description = "Reports strictly before this UTC timestamp"),
+        ("limit" = Option<i64>, Query, minimum = 1, maximum = 100, description = "Maximum report count (default 50)"),
+    ),
+    responses(
+        (status = 200, description = "Success", body = ReportsResponse),
+        (status = 400, description = "Malformed query parameters", body = String, content_type = "text/plain"),
+        (status = 401, description = "Valid gateway identity required", body = crate::error::GatewayIdentityError),
+        (status = 403, description = "Permission denied", body = crate::error::ErrorResponse),
+        (status = 422, description = "Request validation or domain policy rejected the operation", body = crate::error::ErrorResponse),
+        (status = 500, description = "Internal error", body = crate::error::ErrorResponse),
+    )
+)]
 pub async fn list_reports(
     State(pool): State<PgPool>,
     Extension(identity): Extension<Identity>,
     Query(query): Query<ReportListQuery>,
-) -> ApiResult<Json<Value>> {
+) -> ApiResult<Json<ReportsResponse>> {
     let me = identity.user_id.as_str();
     let status = query.status.unwrap_or_else(|| "open".to_string());
     if !matches!(status.as_str(), "open" | "actioned" | "dismissed") {
@@ -704,7 +958,7 @@ pub async fn list_reports(
     )
     .await?;
     tx.commit().await?;
-    Ok(Json(json!({"items": items, "has_more": has_more})))
+    Ok(Json(ReportsResponse { items, has_more }))
 }
 
 async fn detail(pool: &PgPool, identity: &Identity, report: &ReportRow) -> ApiResult<ReportDetail> {
@@ -743,6 +997,20 @@ async fn detail(pool: &PgPool, identity: &Identity, report: &ReportRow) -> ApiRe
 }
 
 /// `GET /v1/dm-safety/reports/{id}`.
+#[utoipa::path(
+    get, path = "/v1/dm-safety/reports/{report_id}", operation_id = "getReport",
+    params(
+        ("report_id" = String, Path),
+    ),
+    responses(
+        (status = 200, description = "Success", body = ReportDetail),
+        (status = 401, description = "Valid gateway identity required", body = crate::error::GatewayIdentityError),
+        (status = 403, description = "Permission denied", body = crate::error::ErrorResponse),
+        (status = 404, description = "Requested resource was not found", body = crate::error::ErrorResponse),
+        (status = 422, description = "Request validation or domain policy rejected the operation", body = crate::error::ErrorResponse),
+        (status = 500, description = "Internal error", body = crate::error::ErrorResponse),
+    )
+)]
 pub async fn get_report(
     State(pool): State<PgPool>,
     Extension(identity): Extension<Identity>,
@@ -767,7 +1035,7 @@ pub async fn get_report(
     Ok(Json(detail(&pool, &identity, &report).await?))
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, utoipa::ToSchema)]
 pub struct EvidenceAttachment {
     id: String,
     filename: String,
@@ -776,36 +1044,55 @@ pub struct EvidenceAttachment {
     is_image: bool,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, utoipa::ToSchema)]
 pub struct EvidenceRevision {
     action: String,
+    #[schema(required = true)]
     body_before: Option<String>,
     created_at: String,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, utoipa::ToSchema)]
 pub struct EvidenceMessage {
     id: String,
     conversation_id: String,
     sequence: i32,
+    #[schema(required = true)]
     sender: Option<DmUserItem>,
     body: String,
     created_at: String,
     hidden: bool,
+    #[schema(required = true)]
     hidden_at: Option<String>,
     attachments: Vec<EvidenceAttachment>,
     /// miy: edits and deletion (with the texts kept while a report is open).
+    #[schema(required = true)]
     edited_at: Option<String>,
+    #[schema(required = true)]
     deleted_at: Option<String>,
     revisions: Vec<EvidenceRevision>,
 }
 
 /// `GET /v1/dm-safety/reports/{id}/evidence`: the reported message only.
+#[utoipa::path(
+    get, path = "/v1/dm-safety/reports/{report_id}/evidence", operation_id = "getEvidence",
+    params(
+        ("report_id" = String, Path),
+    ),
+    responses(
+        (status = 200, description = "Success", body = EvidenceResponse),
+        (status = 401, description = "Valid gateway identity required", body = crate::error::GatewayIdentityError),
+        (status = 403, description = "Permission denied", body = crate::error::ErrorResponse),
+        (status = 404, description = "Requested resource was not found", body = crate::error::ErrorResponse),
+        (status = 422, description = "Request validation or domain policy rejected the operation", body = crate::error::ErrorResponse),
+        (status = 500, description = "Internal error", body = crate::error::ErrorResponse),
+    )
+)]
 pub async fn get_evidence(
     State(pool): State<PgPool>,
     Extension(identity): Extension<Identity>,
     Path(report_id): Path<String>,
-) -> ApiResult<Json<Value>> {
+) -> ApiResult<Json<EvidenceResponse>> {
     route_id(&report_id)?;
     let me = identity.user_id.as_str();
     let mut tx = pool.begin().await?;
@@ -880,10 +1167,42 @@ pub async fn get_evidence(
     )
     .await?;
     tx.commit().await?;
-    Ok(Json(json!({"report_id": report.id, "message": item})))
+    Ok(Json(EvidenceResponse {
+        report_id: report.id,
+        message: item,
+    }))
 }
 
 /// `GET /files/dm-safety/reports/{id}/evidence/attachments/{attachment_id}/content`.
+#[utoipa::path(
+    get, path = "/files/dm-safety/reports/{report_id}/evidence/attachments/{attachment_id}/content", operation_id = "evidenceAttachmentContent",
+    description = "Streams the attachment of a reported message for an authorized moderator.",
+    params(
+        ("report_id" = String, Path),
+        ("attachment_id" = String, Path),
+    ),
+    responses(
+        (status = 200, description = "Attachment bytes with the stored media type",
+         body = inline(crate::attachments::FileBytes), content_type = "*/*",
+         headers(
+            ("Content-Length" = u64, description = "Number of bytes"),
+            ("Content-Disposition" = String, description = "Attachment filename, with UTF-8 encoding"),
+            ("Cache-Control" = String, description = "private, no-store"),
+            ("ETag" = String, description = "Stored file entity tag"),
+            ("X-Miy-File-Id" = String, description = "Core file ID"),
+            ("X-Miy-File-Version" = String, description = "Core file version"),
+            ("X-Miy-File-Sha256" = String, description = "SHA-256 digest"),
+            ("Content-Security-Policy" = String, description = "Sandbox policy"),
+            ("X-Content-Type-Options" = String, description = "nosniff"),
+         )),
+        (status = 401, description = "Valid gateway identity required", body = crate::error::GatewayIdentityError),
+        (status = 403, description = "Permission denied", body = crate::error::ErrorResponse),
+        (status = 404, description = "Requested resource was not found", body = crate::error::ErrorResponse),
+        (status = 422, description = "Request validation or domain policy rejected the operation", body = crate::error::ErrorResponse),
+        (status = 502, description = "A required upstream service failed", body = crate::error::ErrorResponse),
+        (status = 500, description = "Internal error", body = crate::error::ErrorResponse),
+    )
+)]
 pub async fn evidence_attachment_content(
     State(pool): State<PgPool>,
     Extension(identity): Extension<Identity>,
@@ -918,11 +1237,15 @@ pub async fn evidence_attachment_content(
     attachments::stream_file(&identity, &attachment).await
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct ResolveRequest {
+    #[schema(value_type = OpenReportStatus)]
     expected_status: String,
+    #[schema(value_type = ReportOutcome)]
     outcome: String,
+    /// Dismissing a report requires `none`.
+    #[schema(value_type = ReportAction)]
     action: String,
     #[serde(default)]
     resolution_note: Option<String>,
@@ -1000,6 +1323,22 @@ async fn after_visibility_change(
 }
 
 /// `POST /v1/dm-safety/reports/{id}/resolve`.
+#[utoipa::path(
+    post, path = "/v1/dm-safety/reports/{report_id}/resolve", operation_id = "resolveReport",
+    params(
+        ("report_id" = String, Path),
+    ),
+    request_body = ResolveRequest,
+    responses(
+        (status = 200, description = "Success", body = ReportDetail),
+        (status = 401, description = "Valid gateway identity required", body = crate::error::GatewayIdentityError),
+        (status = 403, description = "Permission denied", body = crate::error::ErrorResponse),
+        (status = 404, description = "Requested resource was not found", body = crate::error::ErrorResponse),
+        (status = 409, description = "Current state conflicts with the request", body = crate::error::ErrorResponse),
+        (status = 422, description = "Request validation or domain policy rejected the operation", body = crate::error::ErrorResponse),
+        (status = 500, description = "Internal error", body = crate::error::ErrorResponse),
+    )
+)]
 pub async fn resolve_report(
     State(pool): State<PgPool>,
     Extension(identity): Extension<Identity>,
@@ -1082,19 +1421,34 @@ pub async fn resolve_report(
     Ok(Json(detail(&pool, &identity, &report).await?))
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct VisibilityRequest {
     hidden: bool,
 }
 
 /// `POST /v1/dm-safety/reports/{id}/message-visibility`.
+#[utoipa::path(
+    post, path = "/v1/dm-safety/reports/{report_id}/message-visibility", operation_id = "setMessageVisibility",
+    params(
+        ("report_id" = String, Path),
+    ),
+    request_body = VisibilityRequest,
+    responses(
+        (status = 200, description = "Success", body = VisibilityResponse),
+        (status = 401, description = "Valid gateway identity required", body = crate::error::GatewayIdentityError),
+        (status = 403, description = "Permission denied", body = crate::error::ErrorResponse),
+        (status = 404, description = "Requested resource was not found", body = crate::error::ErrorResponse),
+        (status = 422, description = "Request validation or domain policy rejected the operation", body = crate::error::ErrorResponse),
+        (status = 500, description = "Internal error", body = crate::error::ErrorResponse),
+    )
+)]
 pub async fn set_message_visibility(
     State(pool): State<PgPool>,
     Extension(identity): Extension<Identity>,
     Path(report_id): Path<String>,
     ApiJson(request): ApiJson<VisibilityRequest>,
-) -> ApiResult<Json<Value>> {
+) -> ApiResult<Json<VisibilityResponse>> {
     route_id(&report_id)?;
     let me = identity.user_id.as_str();
     let mut tx = pool.begin().await?;
@@ -1106,55 +1460,87 @@ pub async fn set_message_visibility(
     if let Some(message_id) = &changed {
         after_visibility_change(&pool, &identity, &report, message_id).await;
     }
-    Ok(Json(json!({
-        "report_id": report.id,
-        "message_id": report.message_id,
-        "hidden": request.hidden,
-        "changed": changed.is_some(),
-    })))
+    Ok(Json(VisibilityResponse {
+        report_id: report.id,
+        message_id: report.message_id,
+        hidden: request.hidden,
+        changed: changed.is_some(),
+    }))
 }
 
 // --- banned words -------------------------------------------------------------------
 
 /// `GET /v1/dm-safety/filter-terms`.
+#[utoipa::path(
+    get, path = "/v1/dm-safety/filter-terms", operation_id = "listFilterTerms",
+    responses(
+        (status = 200, description = "Success", body = FilterTermsResponse),
+        (status = 401, description = "Valid gateway identity required", body = crate::error::GatewayIdentityError),
+        (status = 403, description = "Permission denied", body = crate::error::ErrorResponse),
+        (status = 500, description = "Internal error", body = crate::error::ErrorResponse),
+    )
+)]
 pub async fn list_filter_terms(
     State(pool): State<PgPool>,
     Extension(identity): Extension<Identity>,
-) -> ApiResult<Json<Value>> {
+) -> ApiResult<Json<FilterTermsResponse>> {
     let mut conn = pool.acquire().await?;
     require_manager(&mut conn, &identity.user_id).await?;
     let terms = ugc::list_terms(&mut conn).await?;
-    Ok(Json(json!({
-        "items": terms.iter().map(|t| json!({"id": t.id, "term": t.term, "created_at": iso(t.created_at)})).collect::<Vec<_>>(),
-        "limit": ugc::FILTER_TERMS_MAX,
-    })))
+    Ok(Json(FilterTermsResponse {
+        items: terms.into_iter().map(FilterTermItem::from).collect(),
+        limit: ugc::FILTER_TERMS_MAX,
+    }))
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct FilterTermRequest {
     term: String,
 }
 
 /// `POST /v1/dm-safety/filter-terms`.
+#[utoipa::path(
+    post, path = "/v1/dm-safety/filter-terms", operation_id = "addFilterTerm",
+    request_body = FilterTermRequest,
+    responses(
+        (status = 201, description = "Created", body = FilterTermItem),
+        (status = 401, description = "Valid gateway identity required", body = crate::error::GatewayIdentityError),
+        (status = 403, description = "Permission denied", body = crate::error::ErrorResponse),
+        (status = 409, description = "Current state conflicts with the request", body = crate::error::ErrorResponse),
+        (status = 422, description = "Request validation or domain policy rejected the operation", body = crate::error::ErrorResponse),
+        (status = 500, description = "Internal error", body = crate::error::ErrorResponse),
+    )
+)]
 pub async fn add_filter_term(
     State(pool): State<PgPool>,
     Extension(identity): Extension<Identity>,
     ApiJson(request): ApiJson<FilterTermRequest>,
-) -> ApiResult<(StatusCode, Json<Value>)> {
+) -> ApiResult<(StatusCode, Json<FilterTermItem>)> {
     crate::error::check_length("term", &request.term, 1, ugc::FILTER_TERM_MAX_LENGTH)?;
     let me = identity.user_id.as_str();
     let mut tx = pool.begin().await?;
     require_manager(&mut tx, me).await?;
     let term = ugc::add_term(&mut tx, me, &request.term).await?;
     tx.commit().await?;
-    Ok((
-        StatusCode::CREATED,
-        Json(json!({"id": term.id, "term": term.term, "created_at": iso(term.created_at)})),
-    ))
+    Ok((StatusCode::CREATED, Json(FilterTermItem::from(term))))
 }
 
 /// `DELETE /v1/dm-safety/filter-terms/{id}`.
+#[utoipa::path(
+    delete, path = "/v1/dm-safety/filter-terms/{term_id}", operation_id = "removeFilterTerm",
+    params(
+        ("term_id" = String, Path),
+    ),
+    responses(
+        (status = 204, description = "No content"),
+        (status = 401, description = "Valid gateway identity required", body = crate::error::GatewayIdentityError),
+        (status = 403, description = "Permission denied", body = crate::error::ErrorResponse),
+        (status = 404, description = "Requested resource was not found", body = crate::error::ErrorResponse),
+        (status = 422, description = "Request validation or domain policy rejected the operation", body = crate::error::ErrorResponse),
+        (status = 500, description = "Internal error", body = crate::error::ErrorResponse),
+    )
+)]
 pub async fn remove_filter_term(
     State(pool): State<PgPool>,
     Extension(identity): Extension<Identity>,

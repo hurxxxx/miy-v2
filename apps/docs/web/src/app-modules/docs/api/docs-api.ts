@@ -1,3 +1,4 @@
+import type { components, paths } from '../../../api.generated';
 import { checkedResponse } from '@miy/sdk';
 import { requestId } from '@miy/ui';
 
@@ -58,6 +59,10 @@ function withSpace(path: string, spaceId?: string | null): string {
 }
 
 const segment = encodeURIComponent;
+const attachmentContentRoute = '/files/docs/attachments/{attachment_id}/content';
+type Models = components['schemas'];
+type AttachmentUpload = paths[typeof attachmentContentRoute]['put'];
+type HubQuery = NonNullable<paths['/v1/docs/hub']['get']['parameters']['query']>;
 
 export const DOCS_PAGE_REVISION_CONFLICT = 'docs_page_revision_conflict';
 
@@ -69,79 +74,28 @@ export function isDocsRevisionConflict(error: unknown): boolean {
   );
 }
 
-export type DocsDocType =
-  | 'general'
-  | 'meeting_notes'
-  | 'project_brief'
-  | 'spec'
-  | 'policy'
-  | 'guide'
-  | 'memo';
-export type DocsContentFormat = 'block' | 'html';
-export type DocsHubContentFormat = 'block' | 'html' | 'mixed';
+export type DocsDocType = Models['DocType'];
+export type DocsContentFormat = Models['ContentFormat'] | 'html';
+export type DocsHubContentFormat = DocsContentFormat | 'mixed';
 
-export interface DocsShareSummary {
-  visibility: 'private' | 'shared';
-  user_share_count: number;
-  link_active: boolean;
-  link_access_level?: 'read' | 'edit' | null;
-}
-
-export interface DocsPrimaryTarget {
-  app: string;
-  type: string;
-  id: string;
-  sort_order: number;
-}
-
+export type DocsShareSummary = Omit<Models['ShareSummary'], 'link_access_level'> & {
+  link_access_level?: Models['DocAccessLevel'] | null;
+};
+export type DocsPrimaryTarget = Models['PrimaryTarget'];
 export interface DocsCollectionSummary {
   id: string;
   name: string;
   scope: 'workspace' | 'private';
 }
 
-export interface DocsHubItem {
-  id: string;
-  /** miy: the docs space holding the doc. */
-  space_id: string;
-  source_app: string;
-  source_type: 'native_doc';
-  source_id: string;
-  source_kind: string;
-  source_ref: string | null;
-  generation_kind: string;
-  doc_type: DocsDocType;
+// The screen still understands legacy formats and projections in fixtures.
+export type DocsHubItem = Omit<Models['HubItem'], 'content_format' | 'collection' | 'source_deeplink' | 'sharing_summary'> & {
   content_format: DocsHubContentFormat;
-  structure_kind: 'page_tree';
-  location_label: string;
-  target_label: string;
   collection: DocsCollectionSummary | null;
-  primary_target: DocsPrimaryTarget | null;
-  source_badge: string;
   source_deeplink: string | null;
-  title: string;
-  page_count: number;
-  created_by_id: string;
-  created_by_name: string;
-  created_at: string;
-  updated_at: string;
-  trashed_at: string | null;
-  is_favorite: boolean;
-  is_private: boolean;
-  last_viewed_at: string | null;
-  can_view: boolean;
-  can_edit: boolean;
-  can_share: boolean;
-  can_manage: boolean;
   sharing_summary: DocsShareSummary | null;
-}
-
-export interface DocsHubResponse {
-  items: DocsHubItem[];
-  total: number;
-  page: number;
-  page_size: number;
-}
+};
+export type DocsHubResponse = Omit<Models['HubResponse'], 'items'> & { items: DocsHubItem[] };
 
 export function getDocsItemPrimaryTargetId(
   item: DocsHubItem,
@@ -181,97 +135,24 @@ export function withDocsItemPrimaryTargetSortOrder(
   };
 }
 
-export interface DocsPageItem {
-  id: string;
-  doc_id: string;
-  source_type: 'native_doc_page';
-  source_page_id: string;
-  parent_id: string | null;
-  title: string;
-  content_blocks: Record<string, unknown>[] | null;
-  content_text: string | null;
+export type DocsPageItem = Omit<Models['PageItem'], 'content_format'> & {
   content_format: DocsContentFormat;
-  sort_order: number;
-  created_by_id: string;
-  created_by_name: string;
-  created_at: string;
-  updated_at: string;
-  trashed_at: string | null;
-  can_edit: boolean;
-  realtime_collab: boolean;
-  /** miy: the content revision (single-editor saving). */
-  revision: number;
-}
-
-export interface DocsPageListResponse {
-  items: DocsPageItem[];
-}
-
-export interface DocsPageAttachment {
-  id: string;
-  page_id: string;
-  filename: string;
-  content_type: string;
-  size_bytes: number;
-  uploaded_by_id: string;
-  uploaded_by_name: string;
-  created_at: string;
-  /** miy: `pending` until the bytes are stored, then `attached`. */
-  status?: string;
-}
-
-export interface DocsPageAttachmentListResponse {
-  items: DocsPageAttachment[];
-}
+};
+export type DocsPageListResponse = Omit<Models['PageListResponse'], 'items'> & { items: DocsPageItem[] };
+export type DocsPageAttachment = Omit<Models['AttachmentItem'], 'status'> & { status?: Models['AttachmentItem']['status'] };
+export type DocsPageAttachmentListResponse = Omit<Models['AttachmentListResponse'], 'items'> & { items: DocsPageAttachment[] };
 
 export function mediaResourceTypeForDocsPage(): 'docs_native_page' {
   return 'docs_native_page';
 }
 
 /** The Docs-owned space holding a doc, for links into another space. */
-export interface DocsSpaceLocation {
-  key: string;
-  name: string;
-  kind: 'app_global' | 'app_space';
-}
-
-export interface FavoriteDocItem {
-  id: string;
-  title: string;
-  source_type: 'native_doc';
-  space?: DocsSpaceLocation | null;
-}
-
-export interface RecentPageItem {
-  page_id: string;
-  page_title: string;
-  doc_id: string;
-  doc_title: string;
-  source_type: 'native_doc';
-  location_label: string;
-  last_viewed_at: string;
-  space?: DocsSpaceLocation | null;
-}
-
-export interface ShareableUserItem {
-  id: string;
-  email: string;
-  full_name: string;
-}
-
-export interface NativeUserShareItem {
-  user_id: string;
-  email: string;
-  full_name: string;
-  access_level: 'read' | 'edit';
-}
-
-export interface NativeDocSharingResponse {
-  doc_id: string;
-  owner_id: string;
-  users: NativeUserShareItem[];
-  link_share: null;
-}
+export type DocsSpaceLocation = Models['SpaceLocation'];
+export type FavoriteDocItem = Omit<Models['FavoriteDoc'], 'space'> & { space?: DocsSpaceLocation | null };
+export type RecentPageItem = Omit<Models['RecentPage'], 'space'> & { space?: DocsSpaceLocation | null };
+export type ShareableUserItem = Models['ShareableUser'];
+export type NativeUserShareItem = Models['DocUserShare'];
+export type NativeDocSharingResponse = Models['DocSharing'];
 
 export const DOC_CONTENT_FORMAT_VALUES = ['block', 'html'] as const;
 export const DOC_HUB_CONTENT_FORMAT_VALUES = [
@@ -312,18 +193,7 @@ export function resolveDocsHubContentFormat(
 
 export function listDocsHub(
   api: AppApi | null | undefined,
-  params: {
-    view?: string;
-    q?: string;
-    sort_by?: string;
-    sort_dir?: string;
-    page?: number;
-    page_size?: number;
-    source_app?: string;
-    source_kind?: string;
-    doc_type?: DocsDocType;
-    space_id?: string;
-  } = {},
+  params: Omit<HubQuery, 'space'> = {},
   spaceId?: string | null,
   init: RequestInit = {},
 ): Promise<DocsHubResponse> {
@@ -338,7 +208,7 @@ export function listDocsHub(
   if (params.source_kind) qs.set('source_kind', params.source_kind);
   if (params.doc_type) qs.set('doc_type', params.doc_type);
   if (params.space_id) qs.set('space_id', params.space_id);
-  return request<DocsHubResponse>(
+  return request<Models['HubResponse']>(
     withSpace(`/v1/docs/hub?${qs}`, spaceId),
     api,
     init,
@@ -347,28 +217,10 @@ export function listDocsHub(
 
 export function createNativeDoc(
   api: AppApi | null | undefined,
-  payload: {
-    title: string;
-    first_page_title?: string;
-    source_app?: string;
-    source_kind?: string;
-    source_ref?: string | null;
-    generation_kind?: string;
-    doc_type?: DocsDocType;
-    content_format?: DocsContentFormat;
-    first_page_content_text?: string | null;
-    primary_target?: {
-      app: string;
-      type: string;
-      id: string;
-      sort_order?: number;
-    } | null;
-    /** miy (보강): start the first page from a template of the space. */
-    template_id?: string | null;
-  },
+  payload: Models['CreateItemRequest'],
   spaceId?: string | null,
 ): Promise<DocsHubItem> {
-  return request<DocsHubItem>(withSpace('/v1/docs/items', spaceId), api, {
+  return request<Models['HubItem']>(withSpace('/v1/docs/items', spaceId), api, {
     method: 'POST',
     body: JSON.stringify(payload),
   });
@@ -378,18 +230,15 @@ export function getDocsItem(
   api: AppApi | null | undefined,
   itemId: string,
 ): Promise<DocsHubItem> {
-  return request<DocsHubItem>(`/v1/docs/items/${segment(itemId)}`, api);
+  return request<Models['HubItem']>(`/v1/docs/items/${segment(itemId)}`, api);
 }
 
 export function updateDocsItem(
   api: AppApi | null | undefined,
   itemId: string,
-  payload: {
-    title?: string;
-    doc_type?: DocsDocType;
-  },
+  payload: Models['UpdateItemRequest'],
 ): Promise<DocsHubItem> {
-  return request<DocsHubItem>(`/v1/docs/items/${segment(itemId)}`, api, {
+  return request<Models['HubItem']>(`/v1/docs/items/${segment(itemId)}`, api, {
     method: 'PATCH',
     body: JSON.stringify(payload),
   });
@@ -408,7 +257,7 @@ export function duplicateDocsItem(
   api: AppApi | null | undefined,
   itemId: string,
 ): Promise<DocsHubItem> {
-  return request<DocsHubItem>(
+  return request<Models['HubItem']>(
     `/v1/docs/items/${segment(itemId)}/duplicate`,
     api,
     { method: 'POST' },
@@ -419,7 +268,7 @@ export function listDocPages(
   api: AppApi | null | undefined,
   itemId: string,
 ): Promise<DocsPageListResponse> {
-  return request<DocsPageListResponse>(
+  return request<Models['PageListResponse']>(
     `/v1/docs/items/${segment(itemId)}/pages`,
     api,
   );
@@ -429,23 +278,15 @@ export function getDocPage(
   api: AppApi | null | undefined,
   pageId: string,
 ): Promise<DocsPageItem> {
-  return request<DocsPageItem>(`/v1/docs/pages/${segment(pageId)}`, api);
+  return request<Models['PageItem']>(`/v1/docs/pages/${segment(pageId)}`, api);
 }
 
 export function createDocPage(
   api: AppApi | null | undefined,
   itemId: string,
-  payload: {
-    title: string;
-    parent_id?: string | null;
-    content_format?: DocsContentFormat;
-    content_blocks?: Record<string, unknown>[] | null;
-    sort_order?: number | null;
-    /** miy (보강): start the page from a template of the doc's space. */
-    template_id?: string | null;
-  },
+  payload: Models['CreatePageRequest'],
 ): Promise<DocsPageItem> {
-  return request<DocsPageItem>(
+  return request<Models['PageItem']>(
     `/v1/docs/items/${segment(itemId)}/pages`,
     api,
     {
@@ -458,15 +299,9 @@ export function createDocPage(
 export function updateDocPage(
   api: AppApi | null | undefined,
   pageId: string,
-  payload: {
-    title?: string;
-    parent_id?: string | null;
-    content_blocks?: Record<string, unknown>[] | null;
-    sort_order?: number | null;
-    expected_revision?: number;
-  },
+  payload: Models['UpdatePageRequest'],
 ): Promise<DocsPageItem> {
-  return request<DocsPageItem>(`/v1/docs/pages/${segment(pageId)}`, api, {
+  return request<Models['PageItem']>(`/v1/docs/pages/${segment(pageId)}`, api, {
     method: 'PATCH',
     body: JSON.stringify(payload),
   });
@@ -487,7 +322,7 @@ export function listDocPageAttachments(
   api: AppApi | null | undefined,
   pageId: string,
 ): Promise<DocsPageAttachmentListResponse> {
-  return request<DocsPageAttachmentListResponse>(
+  return request<Models['AttachmentListResponse']>(
     `/v1/docs/pages/${segment(pageId)}/attachments`,
     api,
   );
@@ -497,7 +332,7 @@ export function listDocPageAttachments(
 export const DOCS_ATTACHMENT_MAX_BYTES = 10 * 1024 * 1024;
 
 export function attachmentContentPath(attachmentId: string): string {
-  return `/docs/attachments/${segment(attachmentId)}/content`;
+  return attachmentContentRoute.replace('{attachment_id}', segment(attachmentId)).slice('/files'.length);
 }
 
 /** Network failures, 409 and 5xx may be repeated with the same request ID. */
@@ -532,18 +367,19 @@ export async function uploadDocPageAttachment(
   file: File,
   reservationId: string = requestId(),
 ): Promise<DocsPageAttachment> {
+  const input = {
+    request_id: reservationId,
+    filename: file.name,
+    content_type: file.type || 'application/octet-stream',
+    size_bytes: file.size,
+  } satisfies Models['ReserveRequest'];
   const reserved = await recoverAttachmentStep(() =>
-    request<DocsPageAttachment>(
+    request<Models['AttachmentItem']>(
       `/v1/docs/pages/${segment(pageId)}/attachments`,
       api,
       {
         method: 'POST',
-        body: JSON.stringify({
-          request_id: reservationId,
-          filename: file.name,
-          content_type: file.type || 'application/octet-stream',
-          size_bytes: file.size,
-        }),
+        body: JSON.stringify(input),
       },
     ),
   );
@@ -559,7 +395,7 @@ export async function uploadDocPageAttachment(
         await fileApi(attachmentContentPath(reserved.id), init),
         init,
       );
-      return (await response.json()) as DocsPageAttachment;
+      return (await response.json()) as AttachmentUpload['responses'][200]['content']['application/json'];
     } catch (error) {
       const mapped = toApiRequestError(error);
       if (mapped instanceof ApiRequestError) {
@@ -608,14 +444,9 @@ export async function fetchDocPageAttachmentBlob(
 export function updateDocTarget(
   api: AppApi | null | undefined,
   itemId: string,
-  payload: {
-    app: string;
-    type: string;
-    id: string;
-    sort_order?: number;
-  },
+  payload: Models['TargetPayload'],
 ): Promise<DocsHubItem> {
-  return request<DocsHubItem>(`/v1/docs/items/${segment(itemId)}/target`, api, {
+  return request<Models['HubItem']>(`/v1/docs/items/${segment(itemId)}/target`, api, {
     method: 'PUT',
     body: JSON.stringify(payload),
   });
@@ -625,7 +456,7 @@ export function deleteDocTarget(
   api: AppApi | null | undefined,
   itemId: string,
 ): Promise<DocsHubItem> {
-  return request<DocsHubItem>(`/v1/docs/items/${segment(itemId)}/target`, api, {
+  return request<Models['HubItem']>(`/v1/docs/items/${segment(itemId)}/target`, api, {
     method: 'DELETE',
   });
 }
@@ -642,8 +473,8 @@ export function deleteDocPage(
 export function toggleDocFavorite(
   api: AppApi | null | undefined,
   itemId: string,
-): Promise<{ is_favorite: boolean }> {
-  return request<{ is_favorite: boolean }>(
+): Promise<Models['FavoriteResponse']> {
+  return request<Models['FavoriteResponse']>(
     `/v1/docs/items/${segment(itemId)}/favorite`,
     api,
     { method: 'PATCH' },
@@ -657,7 +488,7 @@ export function recordDocView(
 ): Promise<void> {
   return request<void>(`/v1/docs/items/${segment(itemId)}/view`, api, {
     method: 'POST',
-    body: JSON.stringify({ page_id: pageId ?? null }),
+    body: JSON.stringify({ page_id: pageId ?? null } satisfies Models['RecordViewRequest']),
   });
 }
 
@@ -673,7 +504,7 @@ export function listFavoriteDocs(
   scope: DocsPrefScope = 'space',
 ): Promise<FavoriteDocItem[]> {
   const query = scope === 'space' ? '' : `?scope=${scope}`;
-  return request<FavoriteDocItem[]>(
+  return request<Models['FavoriteDoc'][]>(
     withSpace(`/v1/docs/favorites${query}`, scope === 'space' ? spaceId : null),
     api,
   );
@@ -686,7 +517,7 @@ export function listRecentPages(
   scope: DocsPrefScope = 'space',
 ): Promise<RecentPageItem[]> {
   const query = scope === 'space' ? '' : `&scope=${scope}`;
-  return request<RecentPageItem[]>(
+  return request<Models['RecentPage'][]>(
     withSpace(
       `/v1/docs/recent-pages?limit=${limit}${query}`,
       scope === 'space' ? spaceId : null,
@@ -729,7 +560,7 @@ export function upsertDocUserShare(
     api,
     {
       method: 'PUT',
-      body: JSON.stringify({ access_level: accessLevel }),
+      body: JSON.stringify({ access_level: accessLevel } satisfies Models['UpsertShareRequest']),
     },
   );
 }
@@ -748,25 +579,12 @@ export function deleteDocUserShare(
 
 // ── 보강: trash, version history, comments, templates (miy) ────────────
 
-export interface DocsTrashEntry {
-  kind: 'doc' | 'page';
-  id: string;
-  doc_id: string;
-  title: string;
-  doc_title: string;
-  subpage_count?: number;
-  parent_in_trash?: boolean;
-  trashed_at: string;
-  trashed_by_id: string | null;
-  trashed_by_name: string | null;
-  can_restore: boolean;
-  can_delete: boolean;
-}
+export type DocsTrashEntry = Models['TrashEntry'];
 
 export function listDocsTrash(
   api: AppApi | null | undefined,
   spaceId?: string | null,
-): Promise<{ items: DocsTrashEntry[] }> {
+): Promise<Models['TrashList']> {
   return request(withSpace('/v1/docs/trash', spaceId), api);
 }
 
@@ -777,7 +595,7 @@ function trashPath(entry: Pick<DocsTrashEntry, 'kind' | 'id'>): string {
 export function restoreDocsTrashEntry(
   api: AppApi | null | undefined,
   entry: Pick<DocsTrashEntry, 'kind' | 'id'>,
-): Promise<unknown> {
+): Promise<Models['HubItem'] | Models['RestoredPage']> {
   return request(`${trashPath(entry)}/restore`, api, { method: 'POST' });
 }
 
@@ -788,23 +606,12 @@ export function purgeDocsTrashEntry(
   return request<void>(trashPath(entry), api, { method: 'DELETE' });
 }
 
-export interface DocsPageVersion {
-  id: string;
-  page_id: string;
-  revision: number;
-  title: string;
-  created_by_id: string;
-  created_by_name: string;
-  created_at: string;
-  restored_from_revision: number | null;
-  is_current: boolean;
-  content_blocks?: Record<string, unknown>[];
-}
+export type DocsPageVersion = Models['PageVersion'] & Partial<Pick<Models['PageVersionDetail'], 'content_blocks'>>;
 
 export function listDocPageVersions(
   api: AppApi | null | undefined,
   pageId: string,
-): Promise<{ items: DocsPageVersion[]; current_revision: number; can_restore: boolean }> {
+): Promise<Models['PageVersionList']> {
   return request(`/v1/docs/pages/${segment(pageId)}/versions`, api);
 }
 
@@ -830,54 +637,28 @@ export function restoreDocPageVersion(
     api,
     {
       method: 'POST',
-      body: JSON.stringify({ expected_revision: expectedRevision }),
+      body: JSON.stringify({ expected_revision: expectedRevision } satisfies Models['RestoreRequest']),
     },
   );
 }
 
-export interface DocsCommentMention {
-  user_id: string;
-  name: string;
-}
+export type DocsCommentMention = Models['CommentMention'];
 
-export interface DocsComment {
-  id: string;
-  page_id: string;
-  parent_id: string | null;
-  author_id: string;
-  author_name: string;
-  body: string;
-  mentions: DocsCommentMention[];
-  is_deleted: boolean;
-  resolved_at: string | null;
-  resolved_by_id: string | null;
-  resolved_by_name: string | null;
-  created_at: string;
-  updated_at: string;
-  can_edit: boolean;
-  can_delete: boolean;
-  can_resolve: boolean;
-  replies?: DocsComment[];
-}
+export type DocsComment = Models['CommentItem'] & { replies?: DocsComment[] };
 
 export function listDocPageComments(
   api: AppApi | null | undefined,
   pageId: string,
   init: RequestInit = {},
 ): Promise<{ items: DocsComment[]; can_comment: boolean }> {
-  return request(`/v1/docs/pages/${segment(pageId)}/comments`, api, init);
+  return request<Models['CommentListResponse']>(`/v1/docs/pages/${segment(pageId)}/comments`, api, init);
 }
 
 export function createDocPageComment(
   api: AppApi | null | undefined,
   pageId: string,
-  payload: {
-    body: string;
-    parent_id?: string | null;
-    mention_ids?: string[];
-    request_id: string;
-  },
-): Promise<{ id: string; created_at: string }> {
+  payload: Models['CommentCreateRequest'],
+): Promise<Models['CommentCreated']> {
   return request(`/v1/docs/pages/${segment(pageId)}/comments`, api, {
     method: 'POST',
     body: JSON.stringify(payload),
@@ -887,7 +668,7 @@ export function createDocPageComment(
 export function updateDocPageComment(
   api: AppApi | null | undefined,
   commentId: string,
-  payload: { body: string; mention_ids?: string[] },
+  payload: Models['CommentUpdateRequest'],
 ): Promise<void> {
   return request<void>(`/v1/docs/comments/${segment(commentId)}`, api, {
     method: 'PATCH',
@@ -916,29 +697,18 @@ export function setDocPageCommentResolved(
   );
 }
 
-export interface DocsTemplate {
-  id: string;
-  space_id: string;
-  title: string;
-  description: string;
-  source_page_id: string | null;
-  created_by_id: string;
-  created_by_name: string;
-  created_at: string;
-  updated_at: string;
-  can_delete: boolean;
-}
+export type DocsTemplate = Models['TemplateItem'];
 
 export function listDocsTemplates(
   api: AppApi | null | undefined,
   spaceId?: string | null,
-): Promise<{ items: DocsTemplate[]; can_create: boolean }> {
+): Promise<Models['TemplateList']> {
   return request(withSpace('/v1/docs/templates', spaceId), api);
 }
 
 export function createDocsTemplate(
   api: AppApi | null | undefined,
-  payload: { page_id: string; title?: string; description?: string },
+  payload: Models['TemplateCreateRequest'],
 ): Promise<DocsTemplate> {
   return request('/v1/docs/templates', api, {
     method: 'POST',

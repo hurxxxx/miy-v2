@@ -235,6 +235,7 @@ describe('milestone calendar events (miy reinforcement)', () => {
 
 function task(overrides: Partial<PmsTask> = {}): PmsTask {
   return {
+    custom_fields: {},
     archived: false,
     assignee_id: null,
     assignee_ids: [],

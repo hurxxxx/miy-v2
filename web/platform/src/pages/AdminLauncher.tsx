@@ -87,6 +87,8 @@ export function LauncherCategoriesAdmin({ csrf }: { csrf: string }) {
   const feedback = useFeedback();
   const [catalog, setCatalog] = useState<CatalogApp[]>([]);
   const [draftCategories, setDraftCategories] = useState<AdminLauncherCategory[]>([]);
+  const [savedLayout, setSavedLayout] = useState("[]");
+  const layoutEdited = JSON.stringify(draftCategories) !== savedLayout;
   const [revision, setRevision] = useState("");
   const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(null);
   const [iconPickerTarget, setIconPickerTarget] = useState<string | null>(null);
@@ -107,8 +109,10 @@ export function LauncherCategoriesAdmin({ csrf }: { csrf: string }) {
   );
 
   const applyResponse = useCallback((next: LauncherCategoriesResponse) => {
+    const categories = next.categories.map(copyLauncherCategory);
     setRevision(next.revision);
-    setDraftCategories(next.categories.map(copyLauncherCategory));
+    setSavedLayout(JSON.stringify(categories));
+    setDraftCategories(categories);
     setSelectedCategoryId((current) =>
       current && next.categories.some((category) => category.id === current)
         ? current
@@ -349,7 +353,9 @@ export function LauncherCategoriesAdmin({ csrf }: { csrf: string }) {
                 aria-label={t("launcher:admin.refresh")}
                 className="inline-flex size-8 items-center justify-center rounded-md border border-app-border text-app-ink transition-colors hover:bg-app-surface-hover disabled:cursor-not-allowed disabled:opacity-50"
                 disabled={loading || saving}
-                onClick={() => void load()}
+                onClick={() => {
+                  if (!layoutEdited || window.confirm(t("launcher:admin.appBarDiscardLayout"))) void load();
+                }}
                 type="button"
               >
                 <RefreshCw size={14} />
@@ -372,6 +378,7 @@ export function LauncherCategoriesAdmin({ csrf }: { csrf: string }) {
                   <span className="app-text-caption text-app-ink/60">{t("launcher:admin.appBarNewCategoryTitle")}</span>
                   <input
                     className={fieldClassName}
+                    disabled={saving}
                     onChange={(event) => setNewCategoryTitle(event.currentTarget.value)}
                     placeholder={t("launcher:admin.appBarNewCategoryPlaceholder")}
                     value={newCategoryTitle}
@@ -383,11 +390,12 @@ export function LauncherCategoriesAdmin({ csrf }: { csrf: string }) {
                   label={t("launcher:admin.appBarCategoryIcon")}
                   onClick={() => setIconPickerTarget("new")}
                 />
-                <Button disabled={loading || saving} onClick={() => void createCategory()}>
+                <Button disabled={loading || saving || layoutEdited} onClick={() => void createCategory()}>
                   <Plus size={15} />
                   {t("launcher:admin.appBarAddCategory")}
                 </Button>
               </div>
+              {layoutEdited && <p className="app-text-caption mt-2 text-app-ink/60">{t("launcher:admin.appBarSaveBeforeCategoryChange")}</p>}
             </div>
 
             {loading && draftCategories.length === 0 ? (
@@ -486,6 +494,7 @@ export function LauncherCategoriesAdmin({ csrf }: { csrf: string }) {
                           <input
                             aria-label={t("launcher:admin.appBarCategoryTitle")}
                             className={fieldClassName}
+                            disabled={saving}
                             onChange={(event) =>
                               updateDraftCategory(selectedCategory.id, {
                                 title: event.currentTarget.value,
@@ -504,7 +513,7 @@ export function LauncherCategoriesAdmin({ csrf }: { csrf: string }) {
                           <button
                             aria-label={t("common:actions.delete")}
                             className="inline-flex size-9 items-center justify-center rounded-md border border-app-border bg-app-bg text-app-danger transition-colors hover:bg-app-danger/10 disabled:cursor-not-allowed disabled:opacity-40"
-                            disabled={saving}
+                            disabled={saving || layoutEdited}
                             onClick={() => void deleteCategory(selectedCategory)}
                             type="button"
                           >

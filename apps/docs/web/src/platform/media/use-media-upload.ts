@@ -1,3 +1,4 @@
+import type { paths } from '../../api.generated';
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { requestId } from '@miy/ui';
 
@@ -16,11 +17,11 @@ import { useRuntime } from '../runtime/runtime-context';
  * `createLinkedUploadFile` link step (`POST /v1/media/link`, resource
  * `docs_native_page`); the page save links the same images again.
  */
-export interface MediaUploadResponse {
-  id: string;
-  url: string;
-  status: string;
-}
+const reserveMediaPath = '/v1/media/upload';
+const linkMediaPath = '/v1/media/link';
+type ReserveMedia = paths[typeof reserveMediaPath]['post'];
+type LinkMedia = paths[typeof linkMediaPath]['post'];
+export type MediaUploadResponse = ReserveMedia['responses'][201]['content']['application/json'];
 
 export function useMediaUpload() {
   const runtime = useRuntime();
@@ -34,7 +35,7 @@ export function useMediaUpload() {
       let reserved: MediaUploadResponse | undefined;
       const upload = async () => {
         reserved ??= await apiFetchJson<MediaUploadResponse>(
-          '/v1/media/upload',
+          reserveMediaPath,
           api,
           {
             method: 'POST',
@@ -43,7 +44,7 @@ export function useMediaUpload() {
               name: file.name || 'image',
               mime: file.type,
               size: file.size,
-            }),
+            } satisfies ReserveMedia['requestBody']['content']['application/json']),
           },
         );
         if (reserved.status === 'ready' || reserved.status === 'attached') {
@@ -129,13 +130,13 @@ export function useMediaUpload() {
         .filter((url) => url.startsWith('media:'))
         .map((url) => url.slice('media:'.length));
       if (!mediaIds.length) return;
-      await apiFetchJson<void>('/v1/media/link', api, {
+      await apiFetchJson<void>(linkMediaPath, api, {
         method: 'POST',
         body: JSON.stringify({
           media_ids: mediaIds,
           resource_type: 'docs_native_page',
           resource_id: pageId,
-        }),
+        } satisfies LinkMedia['requestBody']['content']['application/json']),
       }).catch(() => undefined);
     },
     [api],

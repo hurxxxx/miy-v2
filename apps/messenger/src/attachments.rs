@@ -42,6 +42,11 @@ pub const DM_ATTACHMENT_SNIFF_BYTES: usize = 512;
 pub const DEFAULT_ATTACHMENT_CONTENT_TYPE: &str = "application/octet-stream";
 const PREVIEWABLE: [&str; 4] = ["image/gif", "image/jpeg", "image/png", "image/webp"];
 
+#[allow(dead_code)]
+#[derive(utoipa::ToSchema)]
+#[schema(value_type = String, format = Binary)]
+pub struct FileBytes(Vec<u8>);
+
 // --- attachment_policy ----------------------------------------------------------
 
 fn valid_token(part: &str) -> bool {
@@ -153,6 +158,25 @@ fn storage_failed(error: miy_app_sdk::CallError) -> ApiError {
 // --- reservation ------------------------------------------------------------------
 
 /// `POST /v1/dm/conversations/{id}/attachments` (miy: JSON reservation).
+#[utoipa::path(
+    post, path = "/v1/dm/conversations/{conversation_id}/attachments", operation_id = "reserveDmAttachment",
+    description = "Reserves one file up to 10 MiB. Use the same request_id when a reservation reply is lost.",
+    params(
+        ("conversation_id" = String, Path),
+    ),
+    request_body = DmAttachmentReserveRequest,
+    responses(
+        (status = 201, description = "Created", body = DmMessageAttachmentItem),
+        (status = 401, description = "Valid gateway identity required", body = crate::error::GatewayIdentityError),
+        (status = 403, description = "Permission denied", body = crate::error::ErrorResponse),
+        (status = 404, description = "Requested resource was not found", body = crate::error::ErrorResponse),
+        (status = 409, description = "Current state conflicts with the request", body = crate::error::ErrorResponse),
+        (status = 413, description = "Attachment exceeds the 10 MiB limit", body = crate::error::ErrorResponse),
+        (status = 422, description = "Request validation or domain policy rejected the operation", body = crate::error::ErrorResponse),
+        (status = 502, description = "A required upstream service failed", body = crate::error::ErrorResponse),
+        (status = 500, description = "Internal error", body = crate::error::ErrorResponse),
+    )
+)]
 pub async fn reserve_dm_attachment(
     State(pool): State<PgPool>,
     Extension(identity): Extension<Identity>,
@@ -248,6 +272,24 @@ pub async fn reserve_dm_attachment(
 }
 
 /// `PUT /files/dm/attachments/{id}/content`: the bytes of a reservation.
+#[utoipa::path(
+    put, path = "/files/dm/attachments/{attachment_id}/content", operation_id = "uploadDmAttachmentContent",
+    description = "Streams the reserved bytes for the uploader. Content-Length must match the reservation.",
+    params(
+        ("attachment_id" = String, Path),
+        ("Content-Length" = i64, Header, minimum = 1, maximum = 10485760, description = "Must equal the reserved size"),
+    ),
+    request_body(content = inline(FileBytes), content_type = "*/*"),
+    responses(
+        (status = 200, description = "Success", body = DmMessageAttachmentItem),
+        (status = 401, description = "Valid gateway identity required", body = crate::error::GatewayIdentityError),
+        (status = 403, description = "Permission denied", body = crate::error::ErrorResponse),
+        (status = 404, description = "Requested resource was not found", body = crate::error::ErrorResponse),
+        (status = 422, description = "Request validation or domain policy rejected the operation", body = crate::error::ErrorResponse),
+        (status = 502, description = "A required upstream service failed", body = crate::error::ErrorResponse),
+        (status = 500, description = "Internal error", body = crate::error::ErrorResponse),
+    )
+)]
 pub async fn upload_dm_attachment_content(
     State(pool): State<PgPool>,
     Extension(identity): Extension<Identity>,
@@ -351,6 +393,19 @@ pub async fn upload_dm_attachment_content(
 
 /// miy: `DELETE /v1/dm/attachments/{id}` cancels an unsent attachment the
 /// caller reserved (AI-DO left removed composer files unreferenced).
+#[utoipa::path(
+    delete, path = "/v1/dm/attachments/{attachment_id}", operation_id = "cancelDmAttachment",
+    params(
+        ("attachment_id" = String, Path),
+    ),
+    responses(
+        (status = 204, description = "No content"),
+        (status = 401, description = "Valid gateway identity required", body = crate::error::GatewayIdentityError),
+        (status = 404, description = "Requested resource was not found", body = crate::error::ErrorResponse),
+        (status = 422, description = "Request validation or domain policy rejected the operation", body = crate::error::ErrorResponse),
+        (status = 500, description = "Internal error", body = crate::error::ErrorResponse),
+    )
+)]
 pub async fn cancel_dm_attachment(
     State(pool): State<PgPool>,
     Extension(identity): Extension<Identity>,
@@ -599,6 +654,19 @@ async fn require_attachment_access(
 }
 
 /// `GET /v1/dm/attachments/{id}/download`.
+#[utoipa::path(
+    get, path = "/v1/dm/attachments/{attachment_id}/download", operation_id = "getDmAttachmentDownloadUrl",
+    params(
+        ("attachment_id" = String, Path),
+    ),
+    responses(
+        (status = 200, description = "Success", body = DmAttachmentUrlResponse),
+        (status = 401, description = "Valid gateway identity required", body = crate::error::GatewayIdentityError),
+        (status = 404, description = "Requested resource was not found", body = crate::error::ErrorResponse),
+        (status = 422, description = "Request validation or domain policy rejected the operation", body = crate::error::ErrorResponse),
+        (status = 500, description = "Internal error", body = crate::error::ErrorResponse),
+    )
+)]
 pub async fn get_dm_attachment_download_url(
     State(pool): State<PgPool>,
     Extension(identity): Extension<Identity>,
@@ -611,6 +679,20 @@ pub async fn get_dm_attachment_download_url(
 }
 
 /// `GET /v1/dm/attachments/{id}/preview`: images only (415 otherwise).
+#[utoipa::path(
+    get, path = "/v1/dm/attachments/{attachment_id}/preview", operation_id = "getDmAttachmentPreviewUrl",
+    params(
+        ("attachment_id" = String, Path),
+    ),
+    responses(
+        (status = 200, description = "Success", body = DmAttachmentUrlResponse),
+        (status = 401, description = "Valid gateway identity required", body = crate::error::GatewayIdentityError),
+        (status = 404, description = "Requested resource was not found", body = crate::error::ErrorResponse),
+        (status = 415, description = "Attachment type cannot be previewed", body = crate::error::ErrorResponse),
+        (status = 422, description = "Request validation or domain policy rejected the operation", body = crate::error::ErrorResponse),
+        (status = 500, description = "Internal error", body = crate::error::ErrorResponse),
+    )
+)]
 pub async fn get_dm_attachment_preview_url(
     State(pool): State<PgPool>,
     Extension(identity): Extension<Identity>,
@@ -676,6 +758,35 @@ pub async fn stream_file(identity: &Identity, row: &AttachmentRow) -> ApiResult<
 }
 
 /// `GET /files/dm/attachments/{id}/content` (AI-DO's signed `content` URL).
+#[utoipa::path(
+    get, path = "/files/dm/attachments/{attachment_id}/content", operation_id = "downloadDmAttachmentContent",
+    description = "Streams an authorized attachment with the stored media type.",
+    params(
+        ("attachment_id" = String, Path),
+        ("disposition" = Option<String>, Query, description = "Legacy hint. Response uses attachment disposition."),
+    ),
+    responses(
+        (status = 200, description = "Attachment bytes with the stored media type",
+         body = inline(crate::attachments::FileBytes), content_type = "*/*",
+         headers(
+            ("Content-Length" = u64, description = "Number of bytes"),
+            ("Content-Disposition" = String, description = "Attachment filename, with UTF-8 encoding"),
+            ("Cache-Control" = String, description = "private, no-store"),
+            ("ETag" = String, description = "Stored file entity tag"),
+            ("X-Miy-File-Id" = String, description = "Core file ID"),
+            ("X-Miy-File-Version" = String, description = "Core file version"),
+            ("X-Miy-File-Sha256" = String, description = "SHA-256 digest"),
+            ("Content-Security-Policy" = String, description = "Sandbox policy"),
+            ("X-Content-Type-Options" = String, description = "nosniff"),
+         )),
+        (status = 400, description = "Malformed query parameters", body = String, content_type = "text/plain"),
+        (status = 401, description = "Valid gateway identity required", body = crate::error::GatewayIdentityError),
+        (status = 404, description = "Requested resource was not found", body = crate::error::ErrorResponse),
+        (status = 422, description = "Request validation or domain policy rejected the operation", body = crate::error::ErrorResponse),
+        (status = 502, description = "A required upstream service failed", body = crate::error::ErrorResponse),
+        (status = 500, description = "Internal error", body = crate::error::ErrorResponse),
+    )
+)]
 pub async fn download_dm_attachment_content(
     State(pool): State<PgPool>,
     Extension(identity): Extension<Identity>,

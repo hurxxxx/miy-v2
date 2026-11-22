@@ -16,13 +16,13 @@ use axum::{
 };
 use miy_app_sdk::Identity;
 use serde::Deserialize;
-use serde_json::{Value, json};
+use serde_json::Value;
 use sqlx::{Postgres, Transaction};
 use std::collections::{HashMap, HashSet};
 
 use crate::{
     AppState,
-    access::{self, NativePage, PAGE_COLUMNS, PAGE_SOURCE_NATIVE_DOC, Require, Viewer},
+    access::{self, NativePage, PAGE_COLUMNS, Require, Viewer},
     comments,
     content_text::extract_blocks_text,
     error::{ApiError, ApiJson, ApiResult, check_length},
@@ -32,32 +32,69 @@ use crate::{
     versions,
 };
 
-/// AI-DO hub_projection.py `serialize_native_page` plus `revision` (miy).
-/// `realtime_collab` stays in the shape and is always false.
-pub fn page_item(page: &NativePage, can_edit: bool, creator_name: &str) -> Value {
-    json!({
-        "id": page.id,
-        "doc_id": page.doc_id,
-        "source_type": PAGE_SOURCE_NATIVE_DOC,
-        "source_page_id": page.id,
-        "parent_id": page.parent_id,
-        "title": page.title,
-        "content_blocks": page.content_blocks,
-        "content_text": page.content_text,
-        "content_format": page.content_format,
-        "sort_order": page.sort_order,
-        "created_by_id": page.created_by_id,
-        "created_by_name": creator_name,
-        "created_at": naive_iso(page.created_at),
-        "updated_at": naive_iso(page.updated_at),
-        "trashed_at": page.trashed_at.map(naive_iso),
-        "can_edit": can_edit,
-        "realtime_collab": false,
-        "revision": page.revision,
-    })
+#[derive(serde::Serialize, utoipa::ToSchema)]
+#[serde(rename_all = "snake_case")]
+enum PageSource {
+    NativeDocPage,
 }
 
-async fn page_items(identity: &Identity, pages: &[NativePage], can_edit: bool) -> Vec<Value> {
+#[derive(serde::Serialize, utoipa::ToSchema)]
+pub struct PageItem {
+    id: String,
+    doc_id: String,
+    source_type: PageSource,
+    source_page_id: String,
+    #[schema(required)]
+    parent_id: Option<String>,
+    title: String,
+    #[schema(required, value_type = Option<Vec<std::collections::BTreeMap<String, Value>>>)]
+    content_blocks: Option<Value>,
+    #[schema(required)]
+    content_text: Option<String>,
+    #[schema(value_type = items::ContentFormat)]
+    content_format: String,
+    sort_order: i32,
+    created_by_id: String,
+    created_by_name: String,
+    created_at: String,
+    updated_at: String,
+    #[schema(required)]
+    trashed_at: Option<String>,
+    can_edit: bool,
+    realtime_collab: bool,
+    revision: i64,
+}
+
+#[derive(serde::Serialize, utoipa::ToSchema)]
+pub struct PageListResponse {
+    items: Vec<PageItem>,
+}
+
+/// Includes the saved revision used by page updates and version restores.
+fn page_item(page: &NativePage, can_edit: bool, creator_name: &str) -> PageItem {
+    PageItem {
+        id: page.id.clone(),
+        doc_id: page.doc_id.clone(),
+        source_type: PageSource::NativeDocPage,
+        source_page_id: page.id.clone(),
+        parent_id: page.parent_id.clone(),
+        title: page.title.clone(),
+        content_blocks: page.content_blocks.clone(),
+        content_text: page.content_text.clone(),
+        content_format: page.content_format.clone(),
+        sort_order: page.sort_order,
+        created_by_id: page.created_by_id.clone(),
+        created_by_name: creator_name.to_owned(),
+        created_at: naive_iso(page.created_at),
+        updated_at: naive_iso(page.updated_at),
+        trashed_at: page.trashed_at.map(naive_iso),
+        can_edit,
+        realtime_collab: false,
+        revision: page.revision,
+    }
+}
+
+async fn page_items(identity: &Identity, pages: &[NativePage], can_edit: bool) -> Vec<PageItem> {
     let names = people::display_names(
         identity,
         pages.iter().map(|page| page.created_by_id.clone()),
@@ -78,11 +115,22 @@ async fn page_items(identity: &Identity, pages: &[NativePage], can_edit: bool) -
         .collect()
 }
 
+#[utoipa::path(
+    get, path = "/v1/docs/items/{item_id}/pages", operation_id = "listDocsPages", tag = "Pages",
+    params(("item_id" = String, Path)),
+    responses(
+        (status = 200, description = "Success", body = PageListResponse),
+        (status = 401, description = "Valid platform identity required", body = crate::error::IdentityErrorResponse),
+        (status = 404, description = "Resource is unavailable or does not exist", body = crate::error::ErrorResponse),
+        (status = 500, description = "Could not complete the request", body = crate::error::ErrorResponse),
+        (status = 503, description = "A required platform service is unavailable", body = crate::error::ErrorResponse)
+    )
+)]
 pub async fn list_pages(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
     Path(item_id): Path<String>,
-) -> ApiResult<Json<Value>> {
+) -> ApiResult<Json<PageListResponse>> {
     let mut viewer = Viewer::new(&state, &identity);
     let context = access::doc_or_404(&mut viewer, &item_id).await?;
     let sql = format!(
@@ -93,16 +141,28 @@ pub async fn list_pages(
         .bind(&context.doc.id)
         .fetch_all(&state.pool)
         .await?;
-    Ok(Json(json!({
-        "items": page_items(&identity, &pages, context.access.can_edit).await,
-    })))
+    Ok(Json(PageListResponse {
+        items: page_items(&identity, &pages, context.access.can_edit).await,
+    }))
 }
 
+#[utoipa::path(
+    get, path = "/v1/docs/pages/{page_id}", operation_id = "getDocsPage", tag = "Pages",
+    params(("page_id" = String, Path)),
+    responses(
+        (status = 200, description = "Success", body = PageItem),
+        (status = 401, description = "Valid platform identity required", body = crate::error::IdentityErrorResponse),
+        (status = 403, description = "Permission denied", body = crate::error::ErrorResponse),
+        (status = 404, description = "Resource is unavailable or does not exist", body = crate::error::ErrorResponse),
+        (status = 500, description = "Could not complete the request", body = crate::error::ErrorResponse),
+        (status = 503, description = "A required platform service is unavailable", body = crate::error::ErrorResponse)
+    )
+)]
 pub async fn get_page(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
     Path(page_id): Path<String>,
-) -> ApiResult<Json<Value>> {
+) -> ApiResult<Json<PageItem>> {
     let mut viewer = Viewer::new(&state, &identity);
     let context = access::page_or_403(&mut viewer, &page_id, Require::View).await?;
     let mut items = page_items(
@@ -188,16 +248,21 @@ fn format_mismatch() -> ApiError {
     )
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema)]
 pub struct CreatePageRequest {
+    #[schema(min_length = 1, max_length = 200)]
     title: String,
     #[serde(default)]
     parent_id: Option<String>,
     #[serde(default)]
+    #[schema(value_type = Option<items::ContentFormat>)]
     content_format: Option<String>,
     #[serde(default, deserialize_with = "present")]
+    #[schema(value_type = Option<Vec<std::collections::BTreeMap<String, Value>>>)]
     content_blocks: Option<Option<Value>>,
     #[serde(default, deserialize_with = "present")]
+    /// A block page rejects any request that includes this field.
+    #[schema(ignore)]
     content_text: Option<Option<String>>,
     #[serde(default)]
     sort_order: Option<i32>,
@@ -207,6 +272,21 @@ pub struct CreatePageRequest {
 }
 
 /// AI-DO `create_native_page`.
+#[utoipa::path(
+    post, path = "/v1/docs/items/{item_id}/pages", operation_id = "createDocsPage", tag = "Pages",
+    params(("item_id" = String, Path)),
+    request_body = CreatePageRequest,
+    responses(
+        (status = 201, description = "Created", body = PageItem),
+        (status = 400, description = "Invalid request", body = crate::error::ErrorResponse),
+        (status = 401, description = "Valid platform identity required", body = crate::error::IdentityErrorResponse),
+        (status = 403, description = "Permission denied", body = crate::error::ErrorResponse),
+        (status = 404, description = "Resource is unavailable or does not exist", body = crate::error::ErrorResponse),
+        (status = 422, description = "Request validation failed", body = crate::error::ErrorResponse),
+        (status = 500, description = "Could not complete the request", body = crate::error::ErrorResponse),
+        (status = 503, description = "A required platform service is unavailable", body = crate::error::ErrorResponse)
+    )
+)]
 pub async fn create_page(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
@@ -292,7 +372,7 @@ pub async fn create_page(
 }
 
 /// One page as the API answers it (with the creator's directory name).
-pub async fn page_json(identity: &Identity, page: &NativePage, can_edit: bool) -> Value {
+pub async fn page_json(identity: &Identity, page: &NativePage, can_edit: bool) -> PageItem {
     let mut items = page_items(identity, std::slice::from_ref(page), can_edit).await;
     items.remove(0)
 }
@@ -326,19 +406,27 @@ pub async fn write_content(
     Ok((updated, linked))
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema)]
 pub struct UpdatePageRequest {
     #[serde(default)]
+    #[schema(min_length = 1, max_length = 200)]
     title: Option<String>,
     #[serde(default, deserialize_with = "present")]
+    #[schema(value_type = Option<String>)]
+    /// Omit to keep the parent, or send null to move to the root.
     parent_id: Option<Option<String>>,
     #[serde(default, deserialize_with = "present")]
+    #[schema(value_type = Option<Vec<std::collections::BTreeMap<String, Value>>>)]
+    /// Omit to keep the body, or send null to clear it.
     content_blocks: Option<Option<Value>>,
     #[serde(default, deserialize_with = "present")]
+    /// A block page rejects any request that includes this field.
+    #[schema(ignore)]
     content_text: Option<Option<String>>,
     #[serde(default)]
     sort_order: Option<i32>,
-    /// miy: the revision the editor started from (content saves).
+    /// Use the last received revision when saving content to detect a conflicting edit.
+    /// Omission is accepted for legacy callers.
     #[serde(default)]
     expected_revision: Option<i64>,
 }
@@ -375,12 +463,28 @@ pub async fn lock_page_for_edit(
 }
 
 /// AI-DO `update_native_page` with the revision check for content saves.
+#[utoipa::path(
+    patch, path = "/v1/docs/pages/{page_id}", operation_id = "updateDocsPage", tag = "Pages",
+    params(("page_id" = String, Path)),
+    request_body = UpdatePageRequest,
+    responses(
+        (status = 200, description = "Success", body = PageItem),
+        (status = 400, description = "Invalid request", body = crate::error::ErrorResponse),
+        (status = 401, description = "Valid platform identity required", body = crate::error::IdentityErrorResponse),
+        (status = 403, description = "Permission denied", body = crate::error::ErrorResponse),
+        (status = 404, description = "Resource is unavailable or does not exist", body = crate::error::ErrorResponse),
+        (status = 409, description = "Current resource state conflicts with the request", body = crate::error::ErrorResponse),
+        (status = 422, description = "Request validation failed", body = crate::error::ErrorResponse),
+        (status = 500, description = "Could not complete the request", body = crate::error::ErrorResponse),
+        (status = 503, description = "A required platform service is unavailable", body = crate::error::ErrorResponse)
+    )
+)]
 pub async fn update_page(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
     Path(page_id): Path<String>,
     ApiJson(payload): ApiJson<UpdatePageRequest>,
-) -> ApiResult<Json<Value>> {
+) -> ApiResult<Json<PageItem>> {
     if let Some(title) = &payload.title {
         check_length("title", title, 1, 200)?;
     }
@@ -508,6 +612,18 @@ pub fn subtree(pages: &[NativePage], root: &str) -> Vec<String> {
 /// trash. miy keeps their attachments and images until the trash is emptied
 /// (AI-DO released them at once; the trash restore needs them, §8 of
 /// docs/PORTING.md). Comment notifications of those pages are retracted.
+#[utoipa::path(
+    delete, path = "/v1/docs/pages/{page_id}", operation_id = "deleteDocsPage", tag = "Pages",
+    params(("page_id" = String, Path)),
+    responses(
+        (status = 204, description = "Completed with no response body"),
+        (status = 401, description = "Valid platform identity required", body = crate::error::IdentityErrorResponse),
+        (status = 403, description = "Permission denied", body = crate::error::ErrorResponse),
+        (status = 404, description = "Resource is unavailable or does not exist", body = crate::error::ErrorResponse),
+        (status = 500, description = "Could not complete the request", body = crate::error::ErrorResponse),
+        (status = 503, description = "A required platform service is unavailable", body = crate::error::ErrorResponse)
+    )
+)]
 pub async fn delete_page(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
@@ -599,7 +715,7 @@ mod tests {
 
     #[test]
     fn page_items_keep_ai_do_shape_with_revision() {
-        let value = page_item(&page("p", None), true, "Kim");
+        let value = serde_json::to_value(page_item(&page("p", None), true, "Kim")).unwrap();
         assert_eq!(value["source_type"], "native_doc_page");
         assert_eq!(value["source_page_id"], "p");
         assert_eq!(value["realtime_collab"], false);

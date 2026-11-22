@@ -178,6 +178,7 @@ try {
         ),
       );
       const m = JSON.parse(readFileSync(join(app.path, "manifest.json")));
+      delete m.apiContract;
       m.requestedPermissions = [
         "database",
         "platform:directory:read",

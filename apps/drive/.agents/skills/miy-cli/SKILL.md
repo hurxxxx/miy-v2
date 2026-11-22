@@ -18,10 +18,12 @@ Read [workflow.md](references/workflow.md) for the requested workflow; [commands
 
 For changes to app UI, sharing or files, read [harness.md](references/harness.md), `miy describe --topic harness`, or MCP `get_cli_help({"topic":"harness"})` before implementing. Choose components from the synced UI and run `miy app check --harness-only` before the full validation.
 
+For API changes, read `docs/API.md`, `miy describe --topic api`, or MCP `get_cli_help` with `topic=api`. `miy app setup` refreshes the guide in existing apps.
+
 For CLI updates, read [updating.md](references/updating.md), `miy describe --topic updates`, or MCP `get_cli_help({"topic":"updates"})`; these work before login. Re-run the selected portal's installer, use the newly installed global `miy app setup` in each compatible project, then restart Codex/Claude Code. An old project's CLI cannot update itself to a newer global executable. Updates preserve authentication; do not repeat browser approval for a credential-storage error. Inspect `auth status` and send a manual unauthenticated report when needed.
 
 Report actual checks, release/image IDs and unresolved failures. Acceptance records attest only tests actually performed; follow `docs/ACCEPTANCE.md`. Update compatible project tooling with the intended global `miy app setup`, or use explicit `app upgrade` for a different SDK bundle. Do not edit managed guidance, locks, protected SDK files or global agent settings; reopen the agent session after updates.
 
 Local development defaults to native Rust plus the built React preview and an in-process tunnel to the server dev DB. Docker Desktop, WSL and local PostgreSQL are not needed for `app dev` or `doctor --for develop`. Explicit `--runtime docker` selects the container workflow for local testing only. `app build` always builds on the selected server's Linux Docker engine with the existing login; no client needs local Docker or SSH, and only a server build can be deployed. A local preview, native or Docker, is not a releasable image.
 
-Installed CLI: 0.17.0. SDK bundle: 0.12.0.
+Installed CLI: 0.17.0. SDK bundle: 0.12.0. Development guidance: 1.0.3.

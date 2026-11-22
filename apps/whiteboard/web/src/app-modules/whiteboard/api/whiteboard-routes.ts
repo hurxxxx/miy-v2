@@ -1,21 +1,13 @@
+import type { paths } from '../../../api.generated';
+
 type PathSegment = string | number;
 type QueryValue = string | number | boolean | null | undefined;
 type QueryEntry = readonly [string, QueryValue];
 
-export interface WhiteboardHubRouteParams {
-  view?: string;
-  q?: string;
-  sort_by?: string;
-  sort_dir?: string;
-  page?: number;
-  page_size?: number;
-  source_app?: string;
-  source_kind?: string;
-  space_id?: string;
-  target_app?: string;
-  target_type?: string;
-  target_id?: string;
-}
+export type WhiteboardHubRouteParams = Omit<
+  NonNullable<paths['/v1/whiteboard/hub']['get']['parameters']['query']>,
+  'category'
+>;
 
 /**
  * AI-DO called `/api/v1/whiteboard` and rewrote it to

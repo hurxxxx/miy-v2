@@ -1673,6 +1673,42 @@ async fn download_links(h: &mut Harness<'_>, suffix: &str) -> Result<()> {
             && content_range == "bytes 2-4/10",
         "the frame download did not stream the file whole and by range"
     );
+    let status_path = format!("{url}/status");
+    let current_status = || frame.request(Method::GET, &status_path).send();
+    status(
+        frame
+            .raw(Method::GET, &status_path)
+            .header("sec-fetch-site", "same-origin")
+            .send()
+            .await?,
+        401,
+    )
+    .await?;
+    let pending: Value = status(current_status().await?, 200).await?.json().await?;
+    ensure!(pending["status"] == "pending");
+    let tracked_path = format!("{url}?track=1");
+    let downloaded = status(
+        frame
+            .raw(Method::GET, &tracked_path)
+            .header("sec-fetch-site", "same-origin")
+            .send()
+            .await?,
+        200,
+    )
+    .await?
+    .bytes()
+    .await?;
+    let sent: Value = status(current_status().await?, 200).await?.json().await?;
+    ensure!(downloaded.as_ref() == bytes && sent["status"] == "sent");
+    let other_frame = h.open(&portal, &app).await?;
+    status(
+        other_frame
+            .request(Method::GET, &status_path)
+            .send()
+            .await?,
+        404,
+    )
+    .await?;
     // The app's own answer decides at send time; an ended frame ends the link.
     set_access("deny").await?;
     status(fetch(None, "same-origin").send().await?, 403).await?;

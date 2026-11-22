@@ -285,6 +285,7 @@ function getCalendarEventElement(title: string): HTMLElement {
 
 function task(overrides: Partial<PmsTask> = {}): PmsTask {
   return {
+    custom_fields: {},
     archived: false,
     assignee_id: null,
     assignee_ids: [],

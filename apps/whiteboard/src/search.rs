@@ -7,12 +7,11 @@
 use axum::{Extension, Json, extract::State};
 use chrono::NaiveDateTime;
 use miy_app_sdk::Identity;
-use serde::Deserialize;
-use serde_json::{Value, json};
+use serde::{Deserialize, Serialize};
 
 use crate::{
     AppState,
-    error::ApiResult,
+    error::{ApiResult, ErrorResponse, IdentityErrorResponse},
     notify::{self, platform_only},
     spaces::GLOBAL,
     time::utc_iso,
@@ -21,10 +20,12 @@ use crate::{
 
 const MAX_ITEMS: i64 = 10;
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct SearchRequest {
+    /// A trimmed query of 1 to 200 characters returns eligible matches.
     query: String,
+    /// Defaults to 5. Supplied values are clamped to the range 1 to 10.
     #[serde(default)]
     limit: Option<i64>,
     #[serde(default)]
@@ -45,8 +46,23 @@ pub fn like_pattern(query: &str) -> String {
 
 type Row = (String, String, String, NaiveDateTime, Option<String>, bool);
 
-fn hits(rows: Vec<Row>, english: bool) -> Value {
-    let items: Vec<Value> = rows
+#[derive(Serialize, utoipa::ToSchema)]
+struct SearchItem {
+    title: String,
+    snippet: String,
+    path: String,
+    #[schema(format = DateTime)]
+    at: String,
+    kind: &'static str,
+}
+
+#[derive(Default, Serialize, utoipa::ToSchema)]
+pub struct SearchResponse {
+    items: Vec<SearchItem>,
+}
+
+fn hits(rows: Vec<Row>, english: bool) -> SearchResponse {
+    let items = rows
         .into_iter()
         .map(
             |(id, title, workspace_id, updated_at, space_name, shared)| {
@@ -63,31 +79,48 @@ fn hits(rows: Vec<Row>, english: bool) -> Value {
                 } else {
                     space_name.unwrap_or_default()
                 };
-                json!({
-                    "title": notify::shorten(&title, 120),
-                    "snippet": snippet,
-                    "path": board_path(&id, &workspace_id),
-                    "at": utc_iso(updated_at),
-                    "kind": if english { "Whiteboard" } else { "화이트보드" },
-                })
+                SearchItem {
+                    title: notify::shorten(&title, 120),
+                    snippet,
+                    path: board_path(&id, &workspace_id),
+                    at: utc_iso(updated_at),
+                    kind: if english {
+                        "Whiteboard"
+                    } else {
+                        "화이트보드"
+                    },
+                }
             },
         )
         .collect();
-    json!({ "items": items })
+    SearchResponse { items }
 }
 
+#[utoipa::path(
+    post, path = "/v1/search", operation_id = "searchWhiteboardForPlatform", tag = "Platform callbacks",
+    description = "Search titles of boards the person can open. Invalid JSON, missing or invalid search fields, and blank or overly long queries return an empty result. The platform's timeZone field is ignored.",
+    request_body = SearchRequest,
+    responses(
+        (status = 200, description = "Currently readable search results", body = SearchResponse),
+        (status = 401, description = "Platform identity could not be verified", body = IdentityErrorResponse),
+        (status = 403, description = "Only the platform may call this endpoint", body = ErrorResponse),
+        (status = 413, description = "Request body exceeds the application limit", body = String, content_type = "text/plain"),
+        (status = 500, description = "Internal error", body = ErrorResponse),
+        (status = 503, description = "Signed directory information is unavailable", body = ErrorResponse),
+    )
+)]
 pub async fn search(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
     body: axum::body::Bytes,
-) -> ApiResult<Json<Value>> {
+) -> ApiResult<Json<SearchResponse>> {
     platform_only(&identity)?;
     let Ok(request) = serde_json::from_slice::<SearchRequest>(&body) else {
-        return Ok(Json(json!({ "items": [] })));
+        return Ok(Json(SearchResponse::default()));
     };
     let query = request.query.trim();
     if query.is_empty() || query.chars().count() > 200 {
-        return Ok(Json(json!({ "items": [] })));
+        return Ok(Json(SearchResponse::default()));
     }
     let limit = request.limit.unwrap_or(5).clamp(1, MAX_ITEMS);
     let english = request.locale.as_deref() == Some("en-US");

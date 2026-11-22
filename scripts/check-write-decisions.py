@@ -61,6 +61,7 @@ TRANSACTIONS = {
     ("runtime_health.rs", "record"): "worker",
     ("runtime_health.rs", "scan"): "worker",
     ("storage.rs", "sweep"): "worker",
+    ("storage.rs", "prepare_completion_digest"): "worker",
     ("storage.rs", "relocate"): "worker",
     ("storage.rs", "verify"): "worker",
     ("server_build_worker.rs", "tick"): "worker",

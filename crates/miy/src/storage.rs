@@ -19,7 +19,7 @@ use axum::{
     Extension, Json,
     body::{Body, Bytes},
     extract::{Path, Request, State as S},
-    http::{HeaderMap, Method, header},
+    http::{HeaderMap, Method, StatusCode, header},
     response::{IntoResponse, Response},
 };
 use chrono::{DateTime, Utc};
@@ -42,6 +42,7 @@ pub use crate::storage_contract::{MAX_FILE_BYTES, TRANSFER_SECONDS, allowed_rout
 const MIN_FREE_BYTES: u64 = 2 * 1024 * 1024 * 1024;
 const MIN_FREE_INODES: u64 = 1024;
 static TRANSFERS: Semaphore = Semaphore::const_new(4);
+static COMPLETION_HASHES: Semaphore = Semaphore::const_new(2);
 const SWEEP_SECONDS: u64 = 60;
 const SWEEP_BATCH: i64 = 100;
 /// Bytes one hourly integrity run reads.
@@ -123,7 +124,11 @@ fn file_row(row: &PgRow) -> ApiResult<StoredFile> {
         name: row.get("name"),
         mime: row.get("mime"),
         size,
-        sha256: row.get("sha256"),
+        sha256: if matches!(status, FileStatus::Ready | FileStatus::Attached) {
+            row.get("sha256")
+        } else {
+            None
+        },
         status,
         reference: row.get("reference"),
         transfer,
@@ -206,11 +211,20 @@ async fn remove(path: &FsPath) -> ApiResult<()> {
 }
 
 async fn remove_bytes(artifacts: &FsPath, installation: Uuid, file: Uuid) -> ApiResult<()> {
-    // Both layouts: a file the worker has not moved yet sits in the old place.
-    for directory in [
-        shard_dir(artifacts, installation, file).await?,
-        root(artifacts, installation).await?,
-    ] {
+    let base = artifacts.join(".files");
+    let legacy = base.join(installation.to_string());
+    let current = legacy.join(shard(file));
+    for directory in [artifacts, &base, &legacy, &current] {
+        match tokio::fs::symlink_metadata(directory).await {
+            Ok(meta) if meta.is_dir() && !meta.file_type().is_symlink() => {}
+            Ok(_) => return Err(ApiError::unavailable("file_storage_path_invalid")),
+            // The old layout can exist without a shard. Deletion must never
+            // require a new inode or free space.
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => break,
+            Err(_) => return Err(ApiError::unavailable("file_cleanup_failed")),
+        }
+    }
+    for directory in [&legacy, &current] {
         remove(&directory.join(format!("{file}.part"))).await?;
         remove(&directory.join(format!("{file}.blob"))).await?;
     }
@@ -1001,16 +1015,60 @@ async fn file_digest(path: &FsPath) -> ApiResult<String> {
     }
 }
 
-/// `POST platform/files/{id}/complete` (M10): after every range arrived, hash
-/// the whole file, recheck the caller's write access, publish the bytes and
-/// mark the file ready. Repeating it after success returns the ready file; an
-/// interruption after the rename verifies the published bytes again.
+/// Only one task hashes a fully received file, whose ranges can no longer
+/// change. A cancellation may unlink it while hashing. The conditional update
+/// discards the digest if the reservation ceased to be usable.
+async fn prepare_completion_digest(
+    pool: PgPool,
+    file: Uuid,
+    source: PathBuf,
+    size: u64,
+) -> ApiResult<()> {
+    let mut tx = pool.begin().await?;
+    let hashing: bool =
+        sqlx::query_scalar("SELECT pg_try_advisory_xact_lock(hashtextextended($1,0))")
+            .bind(format!("file-completion:{file}"))
+            .fetch_one(&mut *tx)
+            .await?;
+    if !hashing {
+        return Ok(());
+    }
+    let available: Option<Uuid> = sqlx::query_scalar(
+        "SELECT id FROM app_files WHERE id=$1 AND transfer='parts' AND received=size AND size=$2 \
+         AND status IN ('pending','uploading') AND sha256 IS NULL \
+         AND expires_at>clock_timestamp()",
+    )
+    .bind(file)
+    .bind(size as i64)
+    .fetch_optional(&mut *tx)
+    .await?;
+    if available.is_some() {
+        let digest = tokio::time::timeout(Duration::from_secs(120), file_digest(&source))
+            .await
+            .map_err(|_| ApiError::unavailable("file_digest_timeout"))??;
+        sqlx::query(
+            "UPDATE app_files SET sha256=$2 WHERE id=$1 AND transfer='parts' \
+                     AND received=size AND size=$3 AND status IN ('pending','uploading') \
+                     AND sha256 IS NULL AND expires_at>clock_timestamp()",
+        )
+        .bind(file)
+        .bind(digest)
+        .bind(size as i64)
+        .execute(&mut *tx)
+        .await?;
+    }
+    tx.commit().await?;
+    Ok(())
+}
+
+/// `POST platform/files/{id}/complete`: prepare the digest independently of
+/// the request, then publish on a repeat with a current write authorization.
 pub async fn complete(
     S(s): S<State>,
     Extension(p): Extension<Principal>,
     Path((id, file)): Path<(Uuid, Uuid)>,
     request: Request,
-) -> ApiResult<Json<StoredFile>> {
+) -> ApiResult<(StatusCode, Json<StoredFile>)> {
     let installation = access(&s, &p, id, request.extensions(), true).await?;
     let _slot = TRANSFERS
         .try_acquire()
@@ -1026,7 +1084,7 @@ pub async fn complete(
     if matches!(row.get::<&str, _>("status"), "ready" | "attached") {
         let result = file_row(&row)?;
         commit(tx, &p, &installation).await?;
-        return Ok(Json(result));
+        return Ok((StatusCode::OK, Json(result)));
     }
     if !matches!(row.get::<&str, _>("status"), "pending" | "uploading") {
         return Err(ApiError::conflict("file_upload_state_changed"));
@@ -1046,9 +1104,20 @@ pub async fn complete(
         (None, Some(len)) if len == size => (blob.clone(), true),
         _ => return Err(ApiError::unavailable("file_bytes_invalid")),
     };
-    let digest = tokio::time::timeout(Duration::from_secs(120), file_digest(&source))
-        .await
-        .map_err(|_| ApiError::unavailable("file_digest_timeout"))??;
+    let Some(digest) = row.get::<Option<String>, _>("sha256") else {
+        let pending = file_row(&row)?;
+        let slot = COMPLETION_HASHES
+            .try_acquire()
+            .map_err(|_| ApiError::unavailable("file_transfer_busy"))?;
+        commit(tx, &p, &installation).await?;
+        tokio::spawn(async move {
+            let _slot = slot;
+            if let Err(error) = prepare_completion_digest(s.pool, file, source, size).await {
+                tracing::warn!(file = %file, code = %error.code, "file completion digest failed");
+            }
+        });
+        return Ok((StatusCode::ACCEPTED, Json(pending)));
+    };
     // The caller must still be allowed to write when the file becomes usable.
     access(&s, &p, id, request.extensions(), true).await?;
     if !published {
@@ -1061,7 +1130,7 @@ pub async fn complete(
         .bind(file).bind(digest).fetch_one(&mut *tx).await?;
     audit(&mut tx, &p, "file.ready", file).await?;
     commit(tx, &p, &installation).await?;
-    Ok(Json(file_row(&row)?))
+    Ok((StatusCode::OK, Json(file_row(&row)?)))
 }
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
@@ -1219,7 +1288,7 @@ pub async fn download_link(
     }
     let mut tx = Write::begin(&s.pool).await?;
     let row = sqlx::query(
-        "SELECT status,reference FROM app_files WHERE installation_id=$1 AND id=$2 FOR SHARE",
+        "SELECT status,reference,corrupt_at FROM app_files WHERE installation_id=$1 AND id=$2 FOR SHARE",
     )
     .bind(id)
     .bind(file)
@@ -1232,6 +1301,9 @@ pub async fn download_link(
     }
     if row.get::<Option<String>, _>("reference") != input.reference {
         return Err(ApiError::conflict("file_reference_conflict"));
+    }
+    if row.get::<Option<DateTime<Utc>>, _>("corrupt_at").is_some() {
+        return Err(ApiError::conflict("file_corrupt"));
     }
     sqlx::query("DELETE FROM app_file_downloads WHERE expires_at<clock_timestamp()")
         .execute(&mut *tx)
@@ -1316,8 +1388,7 @@ pub(crate) async fn serve_download(
         .map_err(|_| ApiError::unavailable("file_download_busy"))?;
     let row = sqlx::query("SELECT * FROM app_files WHERE installation_id=$1 AND id=$2 AND status IN ('ready','attached')")
         .bind(installation).bind(file).fetch_optional(&s.pool).await?.ok_or_else(ApiError::not_found)?;
-    let metadata = file_row(&row)?;
-    if metadata.reference != reference {
+    if row.get::<Option<String>, _>("reference") != reference {
         return Err(ApiError::not_found());
     }
     let answer = crate::platform_calls::call(
@@ -1334,6 +1405,12 @@ pub(crate) async fn serve_download(
             return Err(ApiError::unavailable("file_access_unavailable"));
         }
         _ => return Err(ApiError::forbidden_code("file_access_denied")),
+    }
+    let row = sqlx::query("SELECT * FROM app_files WHERE installation_id=$1 AND id=$2 AND status IN ('ready','attached')")
+        .bind(installation).bind(file).fetch_optional(&s.pool).await?.ok_or_else(ApiError::not_found)?;
+    let metadata = file_row(&row)?;
+    if metadata.reference != reference {
+        return Err(ApiError::not_found());
     }
     if row.get::<Option<DateTime<Utc>>, _>("corrupt_at").is_some() {
         return Err(ApiError::conflict("file_corrupt"));

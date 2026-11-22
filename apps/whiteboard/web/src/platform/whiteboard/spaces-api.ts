@@ -1,3 +1,4 @@
+import type { components, paths } from '../../api.generated';
 /**
  * Spaces of the whiteboard app (AI-DO app spaces): list, create, delete and
  * the members editor's providers (SDK resource ACL). Same contract as the
@@ -14,20 +15,18 @@ import type { AppRuntime } from '@miy/sdk';
 import { apiFetchJson } from '../api/client';
 import type { AppApi } from '../runtime/runtime-context';
 
-export interface WhiteboardSpace {
-  id: string;
-  name: string;
-  description: string;
-  createdBy: string;
-  canManage: boolean;
-  createdAt: string;
-  updatedAt: string;
-}
+type SpaceOperations = paths['/v1/spaces'];
+type SpacesResponse = SpaceOperations['get']['responses'][200]['content']['application/json'];
+export type WhiteboardSpace = SpaceOperations['post']['responses'][201]['content']['application/json'];
+type CreateSpaceInput = SpaceOperations['post']['requestBody']['content']['application/json'];
+type ServerShareSnapshot = components['schemas']['SpaceShareSnapshot'];
+type ReplaceSpaceSharingInput = components['schemas']['SharingRequest'];
+type SharingResult = paths['/v1/spaces/{space_id}/sharing/requests/{request_id}']['get']['responses'][200]['content']['application/json'];
 
 export async function listSpaces(
   api: AppApi | null | undefined,
 ): Promise<WhiteboardSpace[]> {
-  const response = await apiFetchJson<{ spaces: WhiteboardSpace[] }>(
+  const response = await apiFetchJson<SpacesResponse>(
     '/v1/spaces',
     api,
   );
@@ -36,7 +35,7 @@ export async function listSpaces(
 
 export function createSpace(
   api: AppApi | null | undefined,
-  input: { name: string; description?: string },
+  input: CreateSpaceInput,
 ): Promise<WhiteboardSpace> {
   return apiFetchJson<WhiteboardSpace>('/v1/spaces', api, {
     method: 'POST',
@@ -51,19 +50,6 @@ export function deleteSpace(
   return apiFetchJson<void>(`/v1/spaces/${encodeURIComponent(spaceId)}`, api, {
     method: 'DELETE',
   });
-}
-
-/** The SDK ACL snapshot as the server sends it. */
-interface ServerShareSnapshot {
-  revision: number;
-  entries: Array<{
-    subject: { kind: 'user' | 'group'; id: string; name: string };
-    role: string;
-    protected: boolean;
-  }>;
-  roles: Array<{ id: string; label: string }>;
-  defaultRole?: string | null;
-  canManage: boolean;
 }
 
 function toUiSnapshot(snapshot: ServerShareSnapshot): UiShareSnapshot {
@@ -95,22 +81,23 @@ export function spaceShareProvider(
       return toUiSnapshot(await api<ServerShareSnapshot>(base, { signal }));
     },
     async replace({ requestId, expectedRevision, entries }, { signal }) {
+      const payload: ReplaceSpaceSharingInput = {
+        expectedRevision: Number(expectedRevision),
+        requestId,
+        entries: entries.map((entry) => ({
+          subject: { kind: entry.subject.kind, id: entry.subject.id },
+          role: entry.role,
+        })),
+      };
       const snapshot = await api<ServerShareSnapshot>(base, {
         method: 'PUT',
         signal,
-        body: JSON.stringify({
-          expectedRevision: Number(expectedRevision),
-          requestId,
-          entries: entries.map((entry) => ({
-            subject: { kind: entry.subject.kind, id: entry.subject.id },
-            role: entry.role,
-          })),
-        }),
+        body: JSON.stringify(payload),
       });
       return toUiSnapshot(snapshot);
     },
     async lookupResult(requestId, { signal }) {
-      const snapshot = await api<ServerShareSnapshot | null>(
+      const snapshot = await api<SharingResult>(
         `${base}/requests/${encodeURIComponent(requestId)}`,
         { signal },
       );

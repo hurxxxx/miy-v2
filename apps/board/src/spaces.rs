@@ -10,7 +10,6 @@ use axum::{
     Extension, Json,
     extract::{Path, State},
     http::StatusCode,
-    response::IntoResponse,
 };
 use chrono::NaiveDateTime;
 use miy_app_sdk::{
@@ -71,7 +70,7 @@ pub struct Space {
 
 const SPACE_COLUMNS: &str = "id, name, description, created_by, created_at, updated_at";
 
-#[derive(Serialize)]
+#[derive(Serialize, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct SpaceOut {
     id: String,
@@ -80,8 +79,10 @@ pub struct SpaceOut {
     created_by: String,
     can_manage: bool,
     #[serde(serialize_with = "crate::time::serialize")]
+    #[schema(value_type = String, example = "2026-05-04T01:02:03")]
     created_at: NaiveDateTime,
     #[serde(serialize_with = "crate::time::serialize")]
+    #[schema(value_type = String, example = "2026-05-04T01:02:03")]
     updated_at: NaiveDateTime,
 }
 
@@ -97,7 +98,7 @@ fn space_out(space: &Space, can_manage: bool) -> SpaceOut {
     }
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, utoipa::ToSchema)]
 pub struct SpacesResponse {
     spaces: Vec<SpaceOut>,
 }
@@ -233,6 +234,16 @@ pub async fn direct_user_members(
     .await?)
 }
 
+#[utoipa::path(
+    get, path = "/v1/spaces", operation_id = "listBoardSpaces",
+    responses(
+        (status = 200, description = "Success", body = SpacesResponse),
+        (status = 401, description = "Valid gateway identity required", body = crate::error::GatewayIdentityError),
+        (status = 503, description = "A required service is unavailable", body = crate::error::ErrorResponse),
+        (status = 403, description = "Permission denied", body = crate::error::ErrorResponse),
+        (status = 500, description = "Internal error", body = crate::error::ErrorResponse)
+    )
+)]
 pub async fn list_spaces(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
@@ -257,11 +268,13 @@ pub async fn list_spaces(
     }))
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct SpaceRequest {
+    #[schema(min_length = 1, max_length = 120)]
     name: String,
     #[serde(default)]
+    #[schema(max_length = 5000)]
     description: String,
 }
 
@@ -275,11 +288,25 @@ fn validate_space(payload: &SpaceRequest) -> ApiResult<(String, String)> {
     Ok((name, payload.description.trim().to_string()))
 }
 
+#[utoipa::path(
+    post, path = "/v1/spaces", operation_id = "createBoardSpace",
+    request_body = SpaceRequest,
+    responses(
+        (status = 201, description = "Created", body = SpaceOut),
+        (status = 401, description = "Valid gateway identity required", body = crate::error::GatewayIdentityError),
+        (status = 403, description = "Permission denied", body = crate::error::ErrorResponse),
+        (status = 422, description = "Request validation failed", body = crate::error::ErrorResponse),
+        (status = 400, description = "Invalid request for this resource", body = crate::error::ErrorResponse),
+        (status = 409, description = "Current state conflicts with the request", body = crate::error::ErrorResponse),
+        (status = 503, description = "A required service is unavailable", body = crate::error::ErrorResponse),
+        (status = 500, description = "Internal error", body = crate::error::ErrorResponse)
+    )
+)]
 pub async fn create_space(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
     ApiJson(payload): ApiJson<SpaceRequest>,
-) -> ApiResult<impl IntoResponse> {
+) -> ApiResult<(StatusCode, Json<SpaceOut>)> {
     require_manager(&state.pool, &identity).await?;
     let (name, description) = validate_space(&payload)?;
     let id = uuid::Uuid::new_v4().to_string();
@@ -305,6 +332,22 @@ pub async fn create_space(
     Ok((StatusCode::CREATED, Json(space_out(&space, true))))
 }
 
+#[utoipa::path(
+    patch, path = "/v1/spaces/{space_id}", operation_id = "updateBoardSpace",
+    params(
+        ("space_id" = String, Path),
+    ),
+    request_body = SpaceRequest,
+    responses(
+        (status = 200, description = "Success", body = SpaceOut),
+        (status = 401, description = "Valid gateway identity required", body = crate::error::GatewayIdentityError),
+        (status = 403, description = "Permission denied", body = crate::error::ErrorResponse),
+        (status = 404, description = "Requested resource was not found", body = crate::error::ErrorResponse),
+        (status = 422, description = "Request validation failed", body = crate::error::ErrorResponse),
+        (status = 503, description = "A required service is unavailable", body = crate::error::ErrorResponse),
+        (status = 500, description = "Internal error", body = crate::error::ErrorResponse)
+    )
+)]
 pub async fn update_space(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
@@ -336,6 +379,20 @@ pub async fn update_space(
     Ok(Json(space_out(&space, true)))
 }
 
+#[utoipa::path(
+    delete, path = "/v1/spaces/{space_id}", operation_id = "deleteBoardSpace",
+    params(
+        ("space_id" = String, Path),
+    ),
+    responses(
+        (status = 204, description = "No content"),
+        (status = 401, description = "Valid gateway identity required", body = crate::error::GatewayIdentityError),
+        (status = 403, description = "Permission denied", body = crate::error::ErrorResponse),
+        (status = 404, description = "Requested resource was not found", body = crate::error::ErrorResponse),
+        (status = 503, description = "A required service is unavailable", body = crate::error::ErrorResponse),
+        (status = 500, description = "Internal error", body = crate::error::ErrorResponse)
+    )
+)]
 pub async fn delete_space(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
@@ -382,6 +439,20 @@ pub async fn delete_space(
     Ok(StatusCode::NO_CONTENT)
 }
 
+#[utoipa::path(
+    get, path = "/v1/spaces/{space_id}/sharing", operation_id = "getBoardSpaceSharing",
+    params(
+        ("space_id" = String, Path),
+    ),
+    responses(
+        (status = 200, description = "Success", body = SharingSnapshot),
+        (status = 401, description = "Valid gateway identity required", body = crate::error::GatewayIdentityError),
+        (status = 403, description = "Permission denied", body = crate::error::ErrorResponse),
+        (status = 404, description = "Requested resource was not found", body = crate::error::ErrorResponse),
+        (status = 503, description = "A required service is unavailable", body = crate::error::ErrorResponse),
+        (status = 500, description = "Internal error", body = crate::error::ErrorResponse)
+    )
+)]
 pub async fn get_sharing(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
@@ -395,14 +466,96 @@ pub async fn get_sharing(
     ))
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct SharingRequest {
+    #[schema(minimum = 1)]
     expected_revision: i64,
+    #[schema(format = "uuid")]
     request_id: String,
+    #[schema(value_type = Vec<SharingGrant>, min_items = 1, max_items = 100)]
     entries: Vec<Grant>,
 }
 
+// The shared ACL SDK provides the wire DTOs. These schema definitions describe
+// the SDK's serialized types without changing its request-validation rules.
+#[allow(dead_code)]
+#[derive(utoipa::ToSchema)]
+#[serde(rename_all = "snake_case")]
+enum SharingSubjectKind {
+    User,
+    Group,
+}
+
+#[allow(dead_code)]
+#[derive(utoipa::ToSchema)]
+#[serde(deny_unknown_fields)]
+struct SharingSubjectRef {
+    kind: SharingSubjectKind,
+    id: String,
+}
+
+#[allow(dead_code)]
+#[derive(utoipa::ToSchema)]
+#[serde(deny_unknown_fields)]
+struct SharingGrant {
+    subject: SharingSubjectRef,
+    role: String,
+}
+
+#[allow(dead_code)]
+#[derive(utoipa::ToSchema)]
+struct SharingSubject {
+    kind: SharingSubjectKind,
+    id: String,
+    name: String,
+}
+
+#[allow(dead_code)]
+#[derive(utoipa::ToSchema)]
+struct SharingEntry {
+    subject: SharingSubject,
+    role: String,
+    protected: bool,
+}
+
+#[allow(dead_code)]
+#[derive(utoipa::ToSchema)]
+struct SharingRole {
+    id: String,
+    label: String,
+}
+
+#[allow(dead_code)]
+#[derive(utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+struct SharingSnapshot {
+    revision: i64,
+    entries: Vec<SharingEntry>,
+    roles: Vec<SharingRole>,
+    #[schema(required = true)]
+    default_role: Option<String>,
+    can_manage: bool,
+}
+
+#[utoipa::path(
+    put, path = "/v1/spaces/{space_id}/sharing", operation_id = "replaceBoardSpaceSharing",
+    params(
+        ("space_id" = String, Path),
+    ),
+    request_body = SharingRequest,
+    responses(
+        (status = 200, description = "Success", body = SharingSnapshot),
+        (status = 401, description = "Valid gateway identity required", body = crate::error::GatewayIdentityError),
+        (status = 403, description = "Permission denied", body = crate::error::ErrorResponse),
+        (status = 404, description = "Requested resource was not found", body = crate::error::ErrorResponse),
+        (status = 409, description = "Current state conflicts with the request", body = crate::error::ErrorResponse),
+        (status = 422, description = "Request validation failed", body = crate::error::ErrorResponse),
+        (status = 503, description = "A required service is unavailable", body = crate::error::ErrorResponse),
+        (status = 400, description = "Invalid request for this resource", body = crate::error::ErrorResponse),
+        (status = 500, description = "Internal error", body = crate::error::ErrorResponse)
+    )
+)]
 pub async fn replace_sharing(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
@@ -452,6 +605,22 @@ pub async fn replace_sharing(
     Ok(Json(snapshot))
 }
 
+#[utoipa::path(
+    get, path = "/v1/spaces/{space_id}/sharing/requests/{request_id}", operation_id = "getBoardSpaceSharingResult",
+    params(
+        ("space_id" = String, Path),
+        ("request_id" = String, Path),
+    ),
+    responses(
+        (status = 200, description = "Success", body = Option<SharingSnapshot>),
+        (status = 401, description = "Valid gateway identity required", body = crate::error::GatewayIdentityError),
+        (status = 403, description = "Permission denied", body = crate::error::ErrorResponse),
+        (status = 404, description = "Requested resource was not found", body = crate::error::ErrorResponse),
+        (status = 503, description = "A required service is unavailable", body = crate::error::ErrorResponse),
+        (status = 400, description = "Invalid request for this resource", body = crate::error::ErrorResponse),
+        (status = 500, description = "Internal error", body = crate::error::ErrorResponse)
+    )
+)]
 pub async fn sharing_result(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,

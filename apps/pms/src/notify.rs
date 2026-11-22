@@ -24,8 +24,7 @@ use std::collections::HashSet;
 
 use axum::{Extension, Json, extract::State, http::StatusCode};
 use miy_app_sdk::{Identity, Notification};
-use serde::Deserialize;
-use serde_json::{Value, json};
+use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 
 use crate::access;
@@ -324,7 +323,7 @@ pub async fn mark_read(pool: &PgPool, identity: &Identity, task_id: &str) {
     }
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct CheckItem {
     group_key: String,
@@ -333,21 +332,42 @@ pub struct CheckItem {
     resource_id: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub struct CheckRequest {
+    /// Only the first 1000 entries are considered.
     #[serde(default)]
     items: Vec<CheckItem>,
+}
+
+#[derive(Serialize, utoipa::ToSchema)]
+pub struct CheckResponse {
+    allowed: Vec<String>,
 }
 
 const CHECK_LIMIT: usize = 1000;
 
 /// `platformEndpoints.notificationCheck`: which group keys still point at a
 /// task this person may read. Read only; platform calls only.
+#[utoipa::path(
+    post, path = "/platform/notification-check", operation_id = "checkPmsNotifications", tag = "Platform callbacks",
+    description = "Platform-only, read-only callback. Returns notification groups for tasks the verified caller can still read.",
+    request_body = ref("#/components/schemas/CheckRequest"),
+    responses(
+        (status = 200, description = "Success", body = CheckResponse),
+        (status = 401, description = "Platform identity could not be verified", body = crate::error::IdentityErrorResponse),
+        (status = 400, description = "Malformed JSON", body = String, content_type = "text/plain"),
+        (status = 403, description = "Current permissions do not allow the operation", body = crate::error::ErrorResponse),
+        (status = 413, description = "JSON body exceeds the extractor limit", body = String, content_type = "text/plain"),
+        (status = 415, description = "Expected application/json", body = String, content_type = "text/plain"),
+        (status = 422, description = "JSON fields could not be decoded", body = String, content_type = "text/plain"),
+        (status = 500, description = "Internal error", body = crate::error::ErrorResponse),
+    )
+)]
 pub async fn notification_check(
     State(pool): State<PgPool>,
     Extension(identity): Extension<Identity>,
     body: Option<Json<CheckRequest>>,
-) -> ApiResult<Json<Value>> {
+) -> ApiResult<Json<CheckResponse>> {
     if !identity.context.platform {
         return Err(platform_only());
     }
@@ -358,7 +378,9 @@ pub async fn notification_check(
         .filter_map(|item| item.group_key.strip_prefix("task:").map(str::to_string))
         .collect();
     if task_ids.is_empty() {
-        return Ok(Json(json!({"allowed": []})));
+        return Ok(Json(CheckResponse {
+            allowed: Vec::new(),
+        }));
     }
     let readable: Vec<String> = sqlx::query_scalar(
         "SELECT t.id FROM pms_tasks t JOIN pms_task_lists l ON l.id = t.list_id \
@@ -373,17 +395,17 @@ pub async fn notification_check(
     .fetch_all(&pool)
     .await?;
     let readable: HashSet<String> = readable.into_iter().collect();
-    let allowed: Vec<&str> = items
-        .iter()
+    let allowed = items
+        .into_iter()
         .take(CHECK_LIMIT)
         .filter(|item| {
             item.group_key
                 .strip_prefix("task:")
                 .is_some_and(|id| readable.contains(id))
         })
-        .map(|item| item.group_key.as_str())
+        .map(|item| item.group_key)
         .collect();
-    Ok(Json(json!({"allowed": allowed})))
+    Ok(Json(CheckResponse { allowed }))
 }
 
 pub fn platform_only() -> ApiError {

@@ -55,6 +55,8 @@
     "appBarNoSelectedApps": "아직 포함된 앱이 없습니다.",
     "appBarRemoveApp": "카테고리에서 제거",
     "appBarSaveLayout": "구성 저장",
+    "appBarDiscardLayout": "저장하지 않은 변경을 버리고 구성을 다시 불러올까요?",
+    "appBarSaveBeforeCategoryChange": "카테고리를 추가하거나 삭제하려면 편집한 구성을 먼저 저장하세요.",
     "appBarSearchApps": "앱 검색",
     "appBarSearchAppsPlaceholder": "앱 이름 또는 ID 검색",
     "appBarSearchIcons": "아이콘 검색",

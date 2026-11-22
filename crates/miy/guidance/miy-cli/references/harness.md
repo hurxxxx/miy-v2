@@ -13,6 +13,12 @@ Use the platform-supplied `Identity` in the server and `runtime.api`,
 `runtime.setNavigationState`. Use the UI `requestId()` utility for browser-generated
 IDs. It works in internal IP-based HTTP frames as well as HTTPS.
 
+## App APIs
+
+Read `docs/API.md`, `miy describe --topic api`, or MCP `get_cli_help`
+with `topic=api` before changing an API. Existing apps can enable
+`apiContract: "openapi-v1"` once generation and checks are wired.
+
 ## File integration
 
 - Use the owning app's file route with `runtime.fileApi('/records/42/content')`.
@@ -38,6 +44,8 @@ Run `miy app check --harness-only` for a quick offline source review. The full
 `miy app check` includes the same findings alongside build and integrity results.
 Findings are advisory source patterns and review prompts. Inspect the reported
 locations and use the relevant acceptance tests to establish behavior.
+The output also shows the guidance version installed in this project and the
+version available from the current executable.
 
 - For browser UI changes, record which shared components are used and test the
   supported HTTP and HTTPS modes relevant to the change.

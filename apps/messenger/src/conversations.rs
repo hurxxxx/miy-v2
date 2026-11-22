@@ -75,6 +75,22 @@ pub fn query_limit(value: Option<&str>, default: u32) -> ApiResult<u32> {
 }
 
 /// `GET /v1/dm/users`.
+#[utoipa::path(
+    get, path = "/v1/dm/users", operation_id = "searchDmUsers",
+    params(
+        ("q" = Option<String>, Query, description = "Directory name search"),
+        ("limit" = Option<i64>, Query, minimum = 1, maximum = 100, description = "Maximum user count (default 30)"),
+        ("include_current" = Option<bool>, Query, description = "Include the signed caller (default false)"),
+    ),
+    responses(
+        (status = 200, description = "Directory matches", body = Vec<DmUserItem>),
+        (status = 400, description = "Malformed query parameters", body = String, content_type = "text/plain"),
+        (status = 401, description = "Valid gateway identity required", body = crate::error::GatewayIdentityError),
+        (status = 422, description = "Invalid search parameters", body = crate::error::ErrorResponse),
+        (status = 502, description = "Directory request failed", body = crate::error::ErrorResponse),
+        (status = 500, description = "Internal error", body = crate::error::ErrorResponse),
+    )
+)]
 pub async fn search_dm_users(
     State(pool): State<PgPool>,
     Extension(identity): Extension<Identity>,
@@ -94,22 +110,44 @@ pub async fn search_dm_users(
     ))
 }
 
-/// miy: `GET /v1/dm/me`. The frame has no session profile (AI-DO `useAuth`);
-/// the verified caller and the manager flag come from here (display only).
+/// Messenger profile of the verified caller and their app manager status.
+#[utoipa::path(
+    get, path = "/v1/dm/me", operation_id = "getMessengerMe",
+    responses(
+        (status = 200, description = "Success", body = DmMe),
+        (status = 401, description = "Valid gateway identity required", body = crate::error::GatewayIdentityError),
+        (status = 500, description = "Internal error", body = crate::error::ErrorResponse),
+    )
+)]
 pub async fn get_dm_me(
     State(pool): State<PgPool>,
     Extension(identity): Extension<Identity>,
-) -> ApiResult<Json<serde_json::Value>> {
+) -> ApiResult<Json<DmMe>> {
     let me = identity.user_id.clone();
     let names = users::names(&pool, &identity, [me.clone()]).await;
     let mut conn = pool.acquire().await?;
     let manager = safety_admin::is_manager(&mut conn, &me).await?;
-    Ok(Json(
-        serde_json::json!({"user": names.item(&me), "manager": manager}),
-    ))
+    Ok(Json(DmMe {
+        user: names.item(&me),
+        manager,
+    }))
+}
+
+#[derive(serde::Serialize, utoipa::ToSchema)]
+pub struct DmMe {
+    user: DmUserItem,
+    manager: bool,
 }
 
 /// `GET /v1/dm/conversations`.
+#[utoipa::path(
+    get, path = "/v1/dm/conversations", operation_id = "listDmConversations",
+    responses(
+        (status = 200, description = "Success", body = DmConversationListResponse),
+        (status = 401, description = "Valid gateway identity required", body = crate::error::GatewayIdentityError),
+        (status = 500, description = "Internal error", body = crate::error::ErrorResponse),
+    )
+)]
 pub async fn list_dm_conversations(
     State(pool): State<PgPool>,
     Extension(identity): Extension<Identity>,
@@ -328,6 +366,19 @@ async fn render_for_me(
 }
 
 /// `POST /v1/dm/conversations`.
+#[utoipa::path(
+    post, path = "/v1/dm/conversations", operation_id = "createDmConversation",
+    request_body = DmCreateConversationRequest,
+    responses(
+        (status = 201, description = "Created", body = DmConversationItem),
+        (status = 401, description = "Valid gateway identity required", body = crate::error::GatewayIdentityError),
+        (status = 403, description = "Permission denied", body = crate::error::ErrorResponse),
+        (status = 404, description = "Requested resource was not found", body = crate::error::ErrorResponse),
+        (status = 422, description = "Request validation or domain policy rejected the operation", body = crate::error::ErrorResponse),
+        (status = 502, description = "A required upstream service failed", body = crate::error::ErrorResponse),
+        (status = 500, description = "Internal error", body = crate::error::ErrorResponse),
+    )
+)]
 pub async fn create_dm_conversation(
     State(pool): State<PgPool>,
     Extension(identity): Extension<Identity>,
@@ -349,6 +400,21 @@ pub async fn create_dm_conversation(
 }
 
 /// `PATCH /v1/dm/conversations/{id}`: `conversation_settings.update_conversation`.
+#[utoipa::path(
+    patch, path = "/v1/dm/conversations/{conversation_id}", operation_id = "updateDmConversation",
+    params(
+        ("conversation_id" = String, Path),
+    ),
+    request_body = DmUpdateConversationRequest,
+    responses(
+        (status = 200, description = "Success", body = DmConversationItem),
+        (status = 401, description = "Valid gateway identity required", body = crate::error::GatewayIdentityError),
+        (status = 403, description = "Permission denied", body = crate::error::ErrorResponse),
+        (status = 404, description = "Requested resource was not found", body = crate::error::ErrorResponse),
+        (status = 422, description = "Request validation or domain policy rejected the operation", body = crate::error::ErrorResponse),
+        (status = 500, description = "Internal error", body = crate::error::ErrorResponse),
+    )
+)]
 pub async fn update_dm_conversation(
     State(pool): State<PgPool>,
     Extension(identity): Extension<Identity>,
@@ -384,6 +450,22 @@ pub async fn update_dm_conversation(
 
 /// `POST /v1/dm/conversations/{id}/participants`: any participant of a group
 /// may invite (AI-DO `add_participants`).
+#[utoipa::path(
+    post, path = "/v1/dm/conversations/{conversation_id}/participants", operation_id = "addDmConversationParticipants",
+    params(
+        ("conversation_id" = String, Path),
+    ),
+    request_body = DmAddParticipantsRequest,
+    responses(
+        (status = 200, description = "Success", body = DmConversationItem),
+        (status = 401, description = "Valid gateway identity required", body = crate::error::GatewayIdentityError),
+        (status = 403, description = "Permission denied", body = crate::error::ErrorResponse),
+        (status = 404, description = "Requested resource was not found", body = crate::error::ErrorResponse),
+        (status = 422, description = "Request validation or domain policy rejected the operation", body = crate::error::ErrorResponse),
+        (status = 502, description = "A required upstream service failed", body = crate::error::ErrorResponse),
+        (status = 500, description = "Internal error", body = crate::error::ErrorResponse),
+    )
+)]
 pub async fn add_dm_conversation_participants(
     State(pool): State<PgPool>,
     Extension(identity): Extension<Identity>,
@@ -504,6 +586,19 @@ async fn leave(pool: &PgPool, identity: &Identity, conversation_id: &str) -> Api
 }
 
 /// `DELETE /v1/dm/conversations/{id}/participants/me`.
+#[utoipa::path(
+    delete, path = "/v1/dm/conversations/{conversation_id}/participants/me", operation_id = "leaveDmConversation",
+    params(
+        ("conversation_id" = String, Path),
+    ),
+    responses(
+        (status = 204, description = "No content"),
+        (status = 401, description = "Valid gateway identity required", body = crate::error::GatewayIdentityError),
+        (status = 404, description = "Requested resource was not found", body = crate::error::ErrorResponse),
+        (status = 422, description = "Request validation or domain policy rejected the operation", body = crate::error::ErrorResponse),
+        (status = 500, description = "Internal error", body = crate::error::ErrorResponse),
+    )
+)]
 pub async fn leave_dm_conversation(
     State(pool): State<PgPool>,
     Extension(identity): Extension<Identity>,
@@ -515,6 +610,21 @@ pub async fn leave_dm_conversation(
 }
 
 /// `DELETE /v1/dm/conversations/{id}/participants/{user_id}`.
+#[utoipa::path(
+    delete, path = "/v1/dm/conversations/{conversation_id}/participants/{user_id}", operation_id = "removeDmConversationParticipant",
+    params(
+        ("conversation_id" = String, Path),
+        ("user_id" = String, Path),
+    ),
+    responses(
+        (status = 200, description = "Success", body = DmConversationItem),
+        (status = 401, description = "Valid gateway identity required", body = crate::error::GatewayIdentityError),
+        (status = 403, description = "Permission denied", body = crate::error::ErrorResponse),
+        (status = 404, description = "Requested resource was not found", body = crate::error::ErrorResponse),
+        (status = 422, description = "Request validation or domain policy rejected the operation", body = crate::error::ErrorResponse),
+        (status = 500, description = "Internal error", body = crate::error::ErrorResponse),
+    )
+)]
 pub async fn remove_dm_conversation_participant(
     State(pool): State<PgPool>,
     Extension(identity): Extension<Identity>,
@@ -557,6 +667,19 @@ pub async fn remove_dm_conversation_participant(
 
 /// `PATCH /v1/dm/conversations/{id}/read`: read up to the latest visible
 /// message, then mark this conversation's platform notification read.
+#[utoipa::path(
+    patch, path = "/v1/dm/conversations/{conversation_id}/read", operation_id = "markDmConversationRead",
+    params(
+        ("conversation_id" = String, Path),
+    ),
+    responses(
+        (status = 200, description = "Success", body = DmConversationItem),
+        (status = 401, description = "Valid gateway identity required", body = crate::error::GatewayIdentityError),
+        (status = 404, description = "Requested resource was not found", body = crate::error::ErrorResponse),
+        (status = 422, description = "Request validation or domain policy rejected the operation", body = crate::error::ErrorResponse),
+        (status = 500, description = "Internal error", body = crate::error::ErrorResponse),
+    )
+)]
 pub async fn mark_dm_conversation_read(
     State(pool): State<PgPool>,
     Extension(identity): Extension<Identity>,
@@ -600,6 +723,20 @@ pub async fn mark_dm_conversation_read(
 /// miy: `PUT /v1/dm/conversations/{id}/mute` sets the caller's `muted_at`
 /// (AI-DO kept the column for its commute-app relay). Muted conversations
 /// publish no platform notifications to that person.
+#[utoipa::path(
+    put, path = "/v1/dm/conversations/{conversation_id}/mute", operation_id = "muteDmConversation",
+    params(
+        ("conversation_id" = String, Path),
+    ),
+    request_body = DmMuteRequest,
+    responses(
+        (status = 200, description = "Success", body = DmConversationItem),
+        (status = 401, description = "Valid gateway identity required", body = crate::error::GatewayIdentityError),
+        (status = 404, description = "Requested resource was not found", body = crate::error::ErrorResponse),
+        (status = 422, description = "Request validation or domain policy rejected the operation", body = crate::error::ErrorResponse),
+        (status = 500, description = "Internal error", body = crate::error::ErrorResponse),
+    )
+)]
 pub async fn mute_dm_conversation(
     State(pool): State<PgPool>,
     Extension(identity): Extension<Identity>,
@@ -630,6 +767,69 @@ pub async fn mute_dm_conversation(
     Ok(Json(
         render_for_me(&pool, &identity, &conversation_id).await?,
     ))
+}
+
+#[utoipa::path(
+    get, path = "/v1/dm/threads", operation_id = "legacyListDmThreads",
+    description = "Deprecated alias for GET /v1/dm/conversations.",
+    responses(
+        (status = 200, description = "Success", body = DmConversationListResponse),
+        (status = 401, description = "Valid gateway identity required", body = crate::error::GatewayIdentityError),
+        (status = 500, description = "Internal error", body = crate::error::ErrorResponse),
+    )
+)]
+#[deprecated(note = "Use the /v1/dm/conversations operation")]
+pub async fn legacy_list_dm_threads(
+    State(pool): State<PgPool>,
+    Extension(identity): Extension<Identity>,
+) -> ApiResult<Json<DmConversationListResponse>> {
+    list_dm_conversations(State(pool), Extension(identity)).await
+}
+
+#[utoipa::path(
+    post, path = "/v1/dm/threads", operation_id = "legacyCreateDmThread",
+    description = "Deprecated alias for POST /v1/dm/conversations.",
+    request_body = DmCreateConversationRequest,
+    responses(
+        (status = 201, description = "Created", body = DmConversationItem),
+        (status = 401, description = "Valid gateway identity required", body = crate::error::GatewayIdentityError),
+        (status = 403, description = "Permission denied", body = crate::error::ErrorResponse),
+        (status = 404, description = "Requested resource was not found", body = crate::error::ErrorResponse),
+        (status = 422, description = "Request validation or domain policy rejected the operation", body = crate::error::ErrorResponse),
+        (status = 502, description = "A required upstream service failed", body = crate::error::ErrorResponse),
+        (status = 500, description = "Internal error", body = crate::error::ErrorResponse),
+    )
+)]
+#[deprecated(note = "Use the /v1/dm/conversations operation")]
+pub async fn legacy_create_dm_thread(
+    State(pool): State<PgPool>,
+    Extension(identity): Extension<Identity>,
+    ApiJson(request): ApiJson<DmCreateConversationRequest>,
+) -> ApiResult<(StatusCode, Json<DmConversationItem>)> {
+    create_dm_conversation(State(pool), Extension(identity), ApiJson(request)).await
+}
+
+#[utoipa::path(
+    patch, path = "/v1/dm/threads/{conversation_id}/read", operation_id = "legacyMarkDmThreadRead",
+    description = "Deprecated alias for PATCH /v1/dm/conversations/{conversation_id}/read.",
+    params(
+        ("conversation_id" = String, Path),
+    ),
+    responses(
+        (status = 200, description = "Success", body = DmConversationItem),
+        (status = 401, description = "Valid gateway identity required", body = crate::error::GatewayIdentityError),
+        (status = 404, description = "Requested resource was not found", body = crate::error::ErrorResponse),
+        (status = 422, description = "Request validation or domain policy rejected the operation", body = crate::error::ErrorResponse),
+        (status = 500, description = "Internal error", body = crate::error::ErrorResponse),
+    )
+)]
+#[deprecated(note = "Use the /v1/dm/conversations operation")]
+pub async fn legacy_mark_dm_thread_read(
+    State(pool): State<PgPool>,
+    Extension(identity): Extension<Identity>,
+    Path(conversation_id): Path<String>,
+) -> ApiResult<Json<DmConversationItem>> {
+    mark_dm_conversation_read(State(pool), Extension(identity), Path(conversation_id)).await
 }
 
 #[cfg(test)]

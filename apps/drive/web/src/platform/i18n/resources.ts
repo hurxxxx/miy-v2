@@ -467,8 +467,14 @@ export const resources = {
           cancelled: '업로드를 취소했습니다. 이미 올린 파일은 남아 있습니다.',
         },
         bulkDownload: {
-          started_one: '{{count}}개 파일 다운로드를 시작합니다.',
-          started_other: '{{count}}개 파일을 하나씩 내려받습니다.',
+          progress: '서버 전송 {{sent}}/{{total}}개 확인',
+          finished: '파일 {{total}}개 중 {{sent}}개의 서버 전송을 확인했습니다.',
+          paused: '{{path}}의 서버 전송을 확인하지 못했습니다.',
+          checkAgain: '전송 다시 확인',
+          retry: '다시 다운로드',
+          skip: '이 파일 건너뛰기',
+          stop: '대기열 중지',
+          empty: '선택한 폴더에 내려받을 파일이 없습니다.',
         },
         download: {
           unavailable: '이 화면에서는 다운로드를 시작할 수 없습니다. 드라이브 앱에서 다시 시도해 주세요.',
@@ -982,8 +988,14 @@ export const resources = {
           cancelled: 'Upload cancelled. Files already uploaded stay.',
         },
         bulkDownload: {
-          started_one: 'Starting the download of {{count}} file.',
-          started_other: 'Downloading {{count}} files one by one.',
+          progress: 'Server transfer confirmed for {{sent}} of {{total}} files',
+          finished: 'The server sent {{sent}} of {{total}} files.',
+          paused: 'Could not confirm the server transfer of {{path}}.',
+          checkAgain: 'Check transfer again',
+          retry: 'Download again',
+          skip: 'Skip this file',
+          stop: 'Stop download queue',
+          empty: 'The selected folders have no files to download.',
         },
         download: {
           unavailable: 'Downloads cannot start from this screen. Try again in the Drive app.',

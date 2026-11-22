@@ -175,7 +175,7 @@ def server(public, trusted=False, dev_portal=False):
     location ~ ^/cli/(authorize|device)(/|$) {{ return 404; }}
 '''
     file_routes = '' if trusted else f'''    # Backend storage and app file transfers keep request bodies streaming.
-    location ~ ^/api/v1/(installations/[^/]+|preview/apps/[^/]+)/(platform/files/[^/]+/content$|files/) {{
+    location ~ ^/api/v1/(installations/[^/]+|preview/apps/[^/]+)/(platform/files/[^/]+/(content|parts)$|files/) {{
         client_max_body_size 12m;
         client_body_timeout 60s;
         proxy_pass {upstream};
@@ -261,6 +261,19 @@ def frame_server():
         proxy_http_version 1.1;
         proxy_read_timeout 120s;
         proxy_send_timeout 120s;
+        proxy_buffering off;
+        proxy_set_header Host $http_host;
+        proxy_set_header X-Forwarded-Proto {frame_scheme};
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header X-Forwarded-Host "";
+        proxy_set_header Forwarded "";
+    }}
+    location = /_miy/live {{
+        proxy_pass {frame_core};
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection {upgrade_variable};
+        proxy_read_timeout 120s;
         proxy_buffering off;
         proxy_set_header Host $http_host;
         proxy_set_header X-Forwarded-Proto {frame_scheme};

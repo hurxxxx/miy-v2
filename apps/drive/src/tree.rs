@@ -283,28 +283,50 @@ pub fn breadcrumbs(folders: &[Folder], current: Option<&str>) -> Vec<Folder> {
 
 // ------------------------------------------------------------ serialization
 
-#[derive(Serialize, Clone, Debug)]
+#[allow(dead_code)]
+#[derive(utoipa::ToSchema)]
+#[schema(rename_all = "snake_case")]
+pub(crate) enum FileVisibility {
+    Private,
+    Workspace,
+}
+
+#[allow(dead_code)]
+#[derive(utoipa::ToSchema)]
+#[schema(rename_all = "snake_case")]
+pub(crate) enum IngestBlockReason {
+    WorkspaceAccessRequired,
+    ParentManageRequired,
+}
+
+#[derive(Serialize, Clone, Debug, utoipa::ToSchema)]
 pub struct FileFolderItem {
     pub id: String,
+    #[schema(required = true)]
     pub parent_id: Option<String>,
     pub name: String,
+    #[schema(value_type = FileVisibility)]
     pub visibility: String,
     pub owner_id: String,
     pub owner_name: String,
     pub can_manage: bool,
     #[serde(serialize_with = "crate::time::serialize")]
+    #[schema(value_type = String)]
     pub created_at: NaiveDateTime,
     #[serde(serialize_with = "crate::time::serialize")]
+    #[schema(value_type = String)]
     pub updated_at: NaiveDateTime,
 }
 
-#[derive(Serialize, Clone, Debug)]
+#[derive(Serialize, Clone, Debug, utoipa::ToSchema)]
 pub struct FileItem {
     pub id: String,
+    #[schema(required = true)]
     pub folder_id: Option<String>,
     pub filename: String,
     pub content_type: String,
     pub size_bytes: i64,
+    #[schema(value_type = FileVisibility)]
     pub visibility: String,
     pub owner_id: String,
     pub owner_name: String,
@@ -312,8 +334,10 @@ pub struct FileItem {
     pub version_number: i32,
     pub version_count: i64,
     #[serde(serialize_with = "crate::time::serialize")]
+    #[schema(value_type = String)]
     pub created_at: NaiveDateTime,
     #[serde(serialize_with = "crate::time::serialize")]
+    #[schema(value_type = String)]
     pub updated_at: NaiveDateTime,
 }
 

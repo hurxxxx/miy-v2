@@ -102,7 +102,7 @@ vi.mock('./SpaceOrderEditorModal', () => ({
   SpaceOrderEditorModal: () => null,
 }));
 
-function space(name: string, role = 'owner'): PmsSpace {
+function space(name: string, role: PmsSpace['current_user_role'] = 'owner'): PmsSpace {
   return {
     id: `id-${name}`,
     key: `pms-${name}`,
@@ -117,7 +117,7 @@ function space(name: string, role = 'owner'): PmsSpace {
   };
 }
 
-function list(name: string, role = 'admin'): PmsTaskList {
+function list(name: string, role: PmsTaskList['role'] = 'admin'): PmsTaskList {
   return {
     id: `list-${name}`,
     key: name,

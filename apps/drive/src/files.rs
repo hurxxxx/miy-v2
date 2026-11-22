@@ -49,10 +49,11 @@ async fn owner_names(identity: &Identity, owners: Vec<String>) -> HashMap<String
 
 // ------------------------------------------------------------------ browse
 
-#[derive(Serialize)]
+#[derive(Serialize, utoipa::ToSchema)]
 pub struct SpaceSummary {
     pub id: String,
     pub name: String,
+    #[schema(value_type = crate::access::Role)]
     pub role: &'static str,
     pub can_manage: bool,
 }
@@ -66,15 +67,17 @@ pub fn space_summary(access: &SpaceAccess) -> SpaceSummary {
     }
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, utoipa::ToSchema)]
 pub struct FileBrowseResponse {
     space: SpaceSummary,
+    #[schema(required = true)]
     current_folder: Option<FileFolderItem>,
     breadcrumbs: Vec<FileFolderItem>,
     folders: Vec<FileFolderItem>,
     files: Vec<FileItem>,
     all_folders: Vec<FileFolderItem>,
     can_ingest: bool,
+    #[schema(value_type = Option<crate::tree::IngestBlockReason>, required = true)]
     ingest_block_reason: Option<&'static str>,
 }
 
@@ -84,6 +87,18 @@ pub struct BrowseQuery {
 }
 
 /// `GET /v1/spaces/{space_id}/files?folder_id=` (AI-DO `GET /files`).
+#[utoipa::path(
+    get, path = "/v1/spaces/{space_id}/files", operation_id = "browseDriveFiles", tag = "Files and folders",
+    params(("space_id" = String, Path), ("folder_id" = Option<String>, Query, description = "Omit for the space root")),
+    responses(
+        (status = 200, description = "Visible files, folders and current ingest policy", body = FileBrowseResponse),
+        (status = 401, description = "Platform identity could not be verified", body = crate::error::IdentityErrorResponse),
+        (status = 403, description = "Current permissions do not allow this operation", body = crate::error::ErrorResponse),
+        (status = 404, description = "Resource was not found or is not visible", body = crate::error::ErrorResponse),
+        (status = 500, description = "Internal error", body = crate::error::ErrorResponse),
+        (status = 503, description = "A required platform service is unavailable", body = crate::error::ErrorResponse),
+    )
+)]
 pub async fn browse(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
@@ -147,12 +162,13 @@ pub async fn browse(
 
 // ----------------------------------------------------------------- folders
 
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema)]
 pub struct FolderCreateRequest {
     name: String,
     #[serde(default)]
     parent_id: Option<String>,
     #[serde(default = "default_visibility")]
+    #[schema(value_type = crate::tree::FileVisibility)]
     visibility: String,
 }
 
@@ -161,6 +177,20 @@ pub fn default_visibility() -> String {
 }
 
 /// `POST /v1/spaces/{space_id}/files/folders` (AI-DO `create_folder`).
+#[utoipa::path(
+    post, path = "/v1/spaces/{space_id}/files/folders", operation_id = "createDriveFolder", tag = "Files and folders",
+    request_body = FolderCreateRequest,
+    params(("space_id" = String, Path)),
+    responses(
+        (status = 201, description = "Created folder", body = FileFolderItem),
+        (status = 401, description = "Platform identity could not be verified", body = crate::error::IdentityErrorResponse),
+        (status = 403, description = "Current permissions do not allow this operation", body = crate::error::ErrorResponse),
+        (status = 404, description = "Resource was not found or is not visible", body = crate::error::ErrorResponse),
+        (status = 422, description = "Invalid or unsupported request", body = crate::error::ErrorResponse),
+        (status = 500, description = "Internal error", body = crate::error::ErrorResponse),
+        (status = 503, description = "A required platform service is unavailable", body = crate::error::ErrorResponse),
+    )
+)]
 pub async fn create_folder(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
@@ -216,19 +246,36 @@ pub async fn create_folder(
     ))
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema)]
 pub struct FolderUpdateRequest {
     #[serde(default)]
     name: Option<String>,
     #[serde(default)]
+    #[schema(value_type = Option<crate::tree::FileVisibility>)]
     visibility: Option<String>,
     /// miy (보강): move under another folder (`null` = the space root).
     #[serde(default, deserialize_with = "double_option")]
+    #[schema(value_type = Option<String>)]
     parent_id: Option<Option<String>>,
 }
 
 /// `PATCH /v1/spaces/{space_id}/files/folders/{folder_id}` (AI-DO
 /// `update_folder`: rename; visibility is fixed; miy adds a move).
+#[utoipa::path(
+    patch, path = "/v1/spaces/{space_id}/files/folders/{folder_id}", operation_id = "updateDriveFolder", tag = "Files and folders",
+    request_body = FolderUpdateRequest,
+    params(("space_id" = String, Path), ("folder_id" = String, Path)),
+    responses(
+        (status = 200, description = "Updated folder", body = FileFolderItem),
+        (status = 401, description = "Platform identity could not be verified", body = crate::error::IdentityErrorResponse),
+        (status = 403, description = "Current permissions do not allow this operation", body = crate::error::ErrorResponse),
+        (status = 404, description = "Resource was not found or is not visible", body = crate::error::ErrorResponse),
+        (status = 409, description = "Resource state changed or conflicts with this request", body = crate::error::ErrorResponse),
+        (status = 422, description = "Invalid or unsupported request", body = crate::error::ErrorResponse),
+        (status = 500, description = "Internal error", body = crate::error::ErrorResponse),
+        (status = 503, description = "A required platform service is unavailable", body = crate::error::ErrorResponse),
+    )
+)]
 pub async fn update_folder(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
@@ -297,6 +344,19 @@ pub async fn update_folder(
 }
 
 /// `DELETE /v1/spaces/{space_id}/files/folders/{folder_id}`: to the trash.
+#[utoipa::path(
+    delete, path = "/v1/spaces/{space_id}/files/folders/{folder_id}", operation_id = "trashDriveFolder", tag = "Files and folders",
+    params(("space_id" = String, Path), ("folder_id" = String, Path)),
+    responses(
+        (status = 204, description = "Folder and its contents moved to the trash"),
+        (status = 401, description = "Platform identity could not be verified", body = crate::error::IdentityErrorResponse),
+        (status = 403, description = "Current permissions do not allow this operation", body = crate::error::ErrorResponse),
+        (status = 404, description = "Resource was not found or is not visible", body = crate::error::ErrorResponse),
+        (status = 409, description = "Resource state changed or conflicts with this request", body = crate::error::ErrorResponse),
+        (status = 500, description = "Internal error", body = crate::error::ErrorResponse),
+        (status = 503, description = "A required platform service is unavailable", body = crate::error::ErrorResponse),
+    )
+)]
 pub async fn delete_folder(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
@@ -308,11 +368,13 @@ pub async fn delete_folder(
 
 // ------------------------------------------------------------------- trash
 
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema)]
 pub struct FileBulkRequest {
     #[serde(default)]
+    #[schema(max_items = 500)]
     pub file_ids: Vec<String>,
     #[serde(default)]
+    #[schema(max_items = 500)]
     pub folder_ids: Vec<String>,
 }
 
@@ -442,6 +504,21 @@ pub async fn trash_items(
 }
 
 /// `POST /v1/spaces/{space_id}/files/bulk-delete` (AI-DO `bulk_delete`).
+#[utoipa::path(
+    post, path = "/v1/spaces/{space_id}/files/bulk-delete", operation_id = "trashDriveSelection", tag = "Files and folders",
+    request_body = FileBulkRequest,
+    params(("space_id" = String, Path)),
+    responses(
+        (status = 204, description = "Selection moved to the trash"),
+        (status = 401, description = "Platform identity could not be verified", body = crate::error::IdentityErrorResponse),
+        (status = 403, description = "Current permissions do not allow this operation", body = crate::error::ErrorResponse),
+        (status = 404, description = "Resource was not found or is not visible", body = crate::error::ErrorResponse),
+        (status = 409, description = "Resource state changed or conflicts with this request", body = crate::error::ErrorResponse),
+        (status = 422, description = "Invalid or unsupported request", body = crate::error::ErrorResponse),
+        (status = 500, description = "Internal error", body = crate::error::ErrorResponse),
+        (status = 503, description = "A required platform service is unavailable", body = crate::error::ErrorResponse),
+    )
+)]
 pub async fn bulk_delete(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
@@ -454,6 +531,19 @@ pub async fn bulk_delete(
 }
 
 /// `DELETE /v1/spaces/{space_id}/files/{file_id}` (AI-DO `delete_file`).
+#[utoipa::path(
+    delete, path = "/v1/spaces/{space_id}/files/{file_id}", operation_id = "trashDriveFile", tag = "Files and folders",
+    params(("space_id" = String, Path), ("file_id" = String, Path)),
+    responses(
+        (status = 204, description = "File moved to the trash"),
+        (status = 401, description = "Platform identity could not be verified", body = crate::error::IdentityErrorResponse),
+        (status = 403, description = "Current permissions do not allow this operation", body = crate::error::ErrorResponse),
+        (status = 404, description = "Resource was not found or is not visible", body = crate::error::ErrorResponse),
+        (status = 409, description = "Resource state changed or conflicts with this request", body = crate::error::ErrorResponse),
+        (status = 500, description = "Internal error", body = crate::error::ErrorResponse),
+        (status = 503, description = "A required platform service is unavailable", body = crate::error::ErrorResponse),
+    )
+)]
 pub async fn delete_file(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
@@ -465,15 +555,31 @@ pub async fn delete_file(
 
 // ------------------------------------------------------- rename and move
 
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema)]
 pub struct FileUpdateRequest {
     #[serde(default)]
     filename: Option<String>,
     #[serde(default, deserialize_with = "double_option")]
+    #[schema(value_type = Option<String>)]
     folder_id: Option<Option<String>>,
 }
 
 /// `PATCH /v1/spaces/{space_id}/files/{file_id}` (보강): rename or move.
+#[utoipa::path(
+    patch, path = "/v1/spaces/{space_id}/files/{file_id}", operation_id = "updateDriveFile", tag = "Files and folders",
+    request_body = FileUpdateRequest,
+    params(("space_id" = String, Path), ("file_id" = String, Path)),
+    responses(
+        (status = 200, description = "Updated file", body = FileItem),
+        (status = 401, description = "Platform identity could not be verified", body = crate::error::IdentityErrorResponse),
+        (status = 403, description = "Current permissions do not allow this operation", body = crate::error::ErrorResponse),
+        (status = 404, description = "Resource was not found or is not visible", body = crate::error::ErrorResponse),
+        (status = 409, description = "Resource state changed or conflicts with this request", body = crate::error::ErrorResponse),
+        (status = 422, description = "Invalid or unsupported request", body = crate::error::ErrorResponse),
+        (status = 500, description = "Internal error", body = crate::error::ErrorResponse),
+        (status = 503, description = "A required platform service is unavailable", body = crate::error::ErrorResponse),
+    )
+)]
 pub async fn update_file(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
@@ -534,17 +640,34 @@ pub async fn update_file(
     Ok(Json(tree::file_item(&updated, &access, &names)))
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema)]
 pub struct MoveRequest {
     #[serde(default)]
+    #[schema(max_items = 500)]
     file_ids: Vec<String>,
     #[serde(default)]
+    #[schema(max_items = 500)]
     folder_ids: Vec<String>,
     #[serde(default)]
     target_folder_id: Option<String>,
 }
 
 /// `POST /v1/spaces/{space_id}/files/move` (보강): move a selection.
+#[utoipa::path(
+    post, path = "/v1/spaces/{space_id}/files/move", operation_id = "moveDriveSelection", tag = "Files and folders",
+    request_body = MoveRequest,
+    params(("space_id" = String, Path)),
+    responses(
+        (status = 204, description = "Selection moved"),
+        (status = 401, description = "Platform identity could not be verified", body = crate::error::IdentityErrorResponse),
+        (status = 403, description = "Current permissions do not allow this operation", body = crate::error::ErrorResponse),
+        (status = 404, description = "Resource was not found or is not visible", body = crate::error::ErrorResponse),
+        (status = 409, description = "Resource state changed or conflicts with this request", body = crate::error::ErrorResponse),
+        (status = 422, description = "Invalid or unsupported request", body = crate::error::ErrorResponse),
+        (status = 500, description = "Internal error", body = crate::error::ErrorResponse),
+        (status = 503, description = "A required platform service is unavailable", body = crate::error::ErrorResponse),
+    )
+)]
 pub async fn move_items(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
@@ -637,14 +760,15 @@ async fn move_in_tx(
 
 // ------------------------------------------------------- bundle download
 
-#[derive(Serialize)]
+#[derive(Serialize, utoipa::ToSchema)]
 pub struct ArchiveEntryOut {
     path: String,
+    #[schema(required = true)]
     file_id: Option<String>,
     size_bytes: i64,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, utoipa::ToSchema)]
 pub struct ArchivePlanResponse {
     entries: Vec<ArchiveEntryOut>,
     file_count: usize,
@@ -654,6 +778,21 @@ pub struct ArchivePlanResponse {
 /// `POST /v1/spaces/{space_id}/files/archive`: AI-DO `list_archive_entries`
 /// and its limits. AI-DO streamed a ZIP; miy answers the planned entries and
 /// the screen downloads each file with its own link (docs/PORTING.md §3.5).
+#[utoipa::path(
+    post, path = "/v1/spaces/{space_id}/files/archive", operation_id = "planDriveDownloads", tag = "Files and folders",
+    request_body = FileBulkRequest,
+    params(("space_id" = String, Path)),
+    responses(
+        (status = 200, description = "Plan of accessible files for separate downloads", body = ArchivePlanResponse),
+        (status = 401, description = "Platform identity could not be verified", body = crate::error::IdentityErrorResponse),
+        (status = 403, description = "Current permissions do not allow this operation", body = crate::error::ErrorResponse),
+        (status = 404, description = "Resource was not found or is not visible", body = crate::error::ErrorResponse),
+        (status = 413, description = "File or selection exceeds the supported limit", body = crate::error::ErrorResponse),
+        (status = 422, description = "Invalid or unsupported request", body = crate::error::ErrorResponse),
+        (status = 500, description = "Internal error", body = crate::error::ErrorResponse),
+        (status = 503, description = "A required platform service is unavailable", body = crate::error::ErrorResponse),
+    )
+)]
 pub async fn archive(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
@@ -753,7 +892,7 @@ pub async fn archive(
 
 // ---------------------------------------------------------- download link
 
-#[derive(Serialize)]
+#[derive(Serialize, utoipa::ToSchema)]
 pub struct FileDownloadResponse {
     url: String,
     expires_at: String,
@@ -796,6 +935,19 @@ async fn download_link(
 
 /// `GET /v1/spaces/{space_id}/files/{file_id}/download` (AI-DO
 /// `get_file_download`): a five-minute link for `runtime.download`.
+#[utoipa::path(
+    get, path = "/v1/spaces/{space_id}/files/{file_id}/download", operation_id = "getDriveDownloadLink", tag = "File transfer",
+    params(("space_id" = String, Path), ("file_id" = String, Path)),
+    responses(
+        (status = 200, description = "Short-lived link bound to the current app frame", body = FileDownloadResponse),
+        (status = 401, description = "Platform identity could not be verified", body = crate::error::IdentityErrorResponse),
+        (status = 403, description = "Current file access and an app frame are required", body = crate::error::ErrorResponse),
+        (status = 404, description = "Resource was not found or is not visible", body = crate::error::ErrorResponse),
+        (status = 500, description = "Internal error", body = crate::error::ErrorResponse),
+        (status = 502, description = "Storage rejected the operation", body = crate::error::ErrorResponse),
+        (status = 503, description = "A required platform service is unavailable", body = crate::error::ErrorResponse),
+    )
+)]
 pub async fn download(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
@@ -814,6 +966,19 @@ pub async fn download(
 }
 
 /// `GET /v1/spaces/{space_id}/files/{file_id}/versions/{version_id}/download`.
+#[utoipa::path(
+    get, path = "/v1/spaces/{space_id}/files/{file_id}/versions/{version_id}/download", operation_id = "getDriveVersionDownloadLink", tag = "File transfer",
+    params(("space_id" = String, Path), ("file_id" = String, Path), ("version_id" = String, Path)),
+    responses(
+        (status = 200, description = "Short-lived version link bound to the current app frame", body = FileDownloadResponse),
+        (status = 401, description = "Platform identity could not be verified", body = crate::error::IdentityErrorResponse),
+        (status = 403, description = "Current file access and an app frame are required", body = crate::error::ErrorResponse),
+        (status = 404, description = "Resource was not found or is not visible", body = crate::error::ErrorResponse),
+        (status = 500, description = "Internal error", body = crate::error::ErrorResponse),
+        (status = 502, description = "Storage rejected the operation", body = crate::error::ErrorResponse),
+        (status = 503, description = "A required platform service is unavailable", body = crate::error::ErrorResponse),
+    )
+)]
 pub async fn download_version(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
@@ -856,6 +1021,33 @@ fn preview_unsupported() -> ApiError {
 /// `GET /files/items/{file_id}/preview` (fileApi; AI-DO `get_file_preview`
 /// returned an inline URL): the image bytes for a frame Blob URL. Raster
 /// types only, signature checked, up to 10 MiB.
+#[utoipa::path(
+    get, path = "/files/items/{file_id}/preview", operation_id = "previewDriveImage", tag = "File transfer",
+    params(("file_id" = String, Path)),
+    responses(
+        (status = 200, description = "Verified raster image up to 10 MiB",
+            content(
+                (super::api_contract::BinaryBody = "image/gif"),
+                (super::api_contract::BinaryBody = "image/jpeg"),
+                (super::api_contract::BinaryBody = "image/png"),
+                (super::api_contract::BinaryBody = "image/webp")
+            ),
+            headers(
+                ("Cache-Control" = String, description = "private, no-store"),
+                ("Content-Disposition" = String, description = "inline"),
+                ("X-Content-Type-Options" = String, description = "nosniff")
+            )
+        ),
+        (status = 401, description = "Platform identity could not be verified", body = crate::error::IdentityErrorResponse),
+        (status = 403, description = "Current permissions do not allow this operation", body = crate::error::ErrorResponse),
+        (status = 404, description = "Resource was not found or is not visible", body = crate::error::ErrorResponse),
+        (status = 413, description = "File or selection exceeds the supported limit", body = crate::error::ErrorResponse),
+        (status = 415, description = "Unsupported content type", body = crate::error::ErrorResponse),
+        (status = 500, description = "Internal error", body = crate::error::ErrorResponse),
+        (status = 502, description = "Storage rejected the operation", body = crate::error::ErrorResponse),
+        (status = 503, description = "A required platform service is unavailable", body = crate::error::ErrorResponse),
+    )
+)]
 pub async fn preview(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
@@ -911,7 +1103,7 @@ pub async fn preview(
 
 // ---------------------------------------------------------------- versions
 
-#[derive(Serialize)]
+#[derive(Serialize, utoipa::ToSchema)]
 pub struct VersionOut {
     id: String,
     version_number: i32,
@@ -920,19 +1112,33 @@ pub struct VersionOut {
     size_bytes: i64,
     uploaded_by: String,
     uploader_name: String,
+    #[schema(required = true)]
     sha256: Option<String>,
     is_current: bool,
     #[serde(serialize_with = "crate::time::serialize")]
+    #[schema(value_type = String)]
     created_at: NaiveDateTime,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, utoipa::ToSchema)]
 pub struct VersionsResponse {
     file: FileItem,
     versions: Vec<VersionOut>,
 }
 
 /// `GET /v1/spaces/{space_id}/files/{file_id}/versions`.
+#[utoipa::path(
+    get, path = "/v1/spaces/{space_id}/files/{file_id}/versions", operation_id = "listDriveFileVersions", tag = "Files and folders",
+    params(("space_id" = String, Path), ("file_id" = String, Path)),
+    responses(
+        (status = 200, description = "File and version list", body = VersionsResponse),
+        (status = 401, description = "Platform identity could not be verified", body = crate::error::IdentityErrorResponse),
+        (status = 403, description = "Current permissions do not allow this operation", body = crate::error::ErrorResponse),
+        (status = 404, description = "Resource was not found or is not visible", body = crate::error::ErrorResponse),
+        (status = 500, description = "Internal error", body = crate::error::ErrorResponse),
+        (status = 503, description = "A required platform service is unavailable", body = crate::error::ErrorResponse),
+    )
+)]
 pub async fn list_versions(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,

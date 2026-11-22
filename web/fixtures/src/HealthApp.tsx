@@ -7,6 +7,7 @@ export default function HealthApp({ runtime }: AppProps) {
   const [saved, setSaved] = useState("");
   const [error, setError] = useState("");
   const [progress, setProgress] = useState("");
+  const [download, setDownload] = useState("");
   useEffect(() => {
     let active = true;
     runtime
@@ -31,6 +32,12 @@ export default function HealthApp({ runtime }: AppProps) {
       }),
     [runtime.setNavigationState, title, saved],
   );
+  function checkDownload(checkOnly: boolean) {
+    setDownload("전송 확인 중");
+    void runtime.downloadAndWait?.(`/_miy/downloads/${"d".repeat(43)}`, undefined, { checkOnly })
+      .then(() => setDownload("전송 확인됨"))
+      .catch(() => setDownload("전송 확인 실패"));
+  }
   return (
     <section>
       <output data-testid="installation">{runtime.installationId}</output>
@@ -73,6 +80,13 @@ export default function HealthApp({ runtime }: AppProps) {
         업로드
       </button>
       <output data-testid="upload-progress">{progress}</output>
+      <button onClick={() => checkDownload(false)}>
+        다운로드 확인
+      </button>
+      <button onClick={() => checkDownload(true)}>
+        다운로드 상태 다시 확인
+      </button>
+      <output data-testid="download-progress">{download}</output>
       <output data-testid="portal-url">{runtime.portalUrl?.("/shared?x=1")}</output>
       {/* The app's own route change (runtime.navigate) inside itself. */}
       <button onClick={() => runtime.navigate("/next")}>다음 화면</button>

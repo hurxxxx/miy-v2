@@ -13,7 +13,6 @@ use axum::{
     Extension, Json,
     extract::{Path, Query, State},
     http::StatusCode,
-    response::IntoResponse,
 };
 use chrono::NaiveDateTime;
 use miy_app_sdk::Identity;
@@ -49,25 +48,44 @@ pub struct Announcement {
 pub const ANNOUNCEMENT_COLUMNS: &str =
     "id, workspace_id, author_id, scope, title, body, is_pinned, created_at, updated_at";
 
-#[derive(Serialize)]
+#[allow(dead_code)]
+#[derive(utoipa::ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum AnnouncementScope {
+    Company,
+    Workspace,
+}
+
+#[allow(dead_code)]
+#[derive(utoipa::ToSchema)]
+#[serde(rename_all = "snake_case")]
+enum CompanyAnnouncementScope {
+    Company,
+}
+
+#[derive(Serialize, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct AnnouncementOut {
     id: String,
+    #[schema(required = true)]
     workspace_id: Option<String>,
     author_id: String,
     author_name: String,
+    #[schema(value_type = AnnouncementScope)]
     scope: String,
     title: String,
     body: String,
     is_pinned: bool,
     can_manage: bool,
     #[serde(serialize_with = "crate::time::serialize")]
+    #[schema(value_type = String, example = "2026-05-04T01:02:03")]
     created_at: NaiveDateTime,
     #[serde(serialize_with = "crate::time::serialize")]
+    #[schema(value_type = String, example = "2026-05-04T01:02:03")]
     updated_at: NaiveDateTime,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct AnnouncementsResponse {
     items: Vec<AnnouncementOut>,
@@ -315,6 +333,21 @@ async fn list(
     }))
 }
 
+#[utoipa::path(
+    get, path = "/v1/announcements", operation_id = "listCompanyAnnouncements",
+    params(
+        ("scope" = CompanyAnnouncementScope, Query, description = "Supply company for the company-wide route"),
+        ("limit" = Option<i64>, Query, minimum = 1, maximum = 100, description = "Page size (default 20)"),
+        ("offset" = Option<i64>, Query, minimum = 0, description = "Results to skip (default 0)"),
+    ),
+    responses(
+        (status = 200, description = "Success", body = AnnouncementsResponse),
+        (status = 401, description = "Valid gateway identity required", body = crate::error::GatewayIdentityError),
+        (status = 400, description = "Invalid request for this resource", body = crate::error::ErrorResponse),
+        (status = 422, description = "Request validation failed", body = crate::error::ErrorResponse),
+        (status = 500, description = "Internal error", body = crate::error::ErrorResponse)
+    )
+)]
 pub async fn list_company(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
@@ -323,6 +356,25 @@ pub async fn list_company(
     list(state, identity, None, query).await
 }
 
+#[utoipa::path(
+    get, path = "/v1/spaces/{space_id}/announcements", operation_id = "listSpaceAnnouncements",
+    params(
+        ("space_id" = String, Path),
+        ("scope" = Option<AnnouncementScope>, Query, description = "Select workspace (default) or company notices in this space context"),
+        ("limit" = Option<i64>, Query, minimum = 1, maximum = 100, description = "Page size (default 20)"),
+        ("offset" = Option<i64>, Query, minimum = 0, description = "Results to skip (default 0)"),
+    ),
+    responses(
+        (status = 200, description = "Success", body = AnnouncementsResponse),
+        (status = 401, description = "Valid gateway identity required", body = crate::error::GatewayIdentityError),
+        (status = 400, description = "Invalid request for this resource", body = crate::error::ErrorResponse),
+        (status = 403, description = "Permission denied", body = crate::error::ErrorResponse),
+        (status = 404, description = "Requested resource was not found", body = crate::error::ErrorResponse),
+        (status = 422, description = "Request validation failed", body = crate::error::ErrorResponse),
+        (status = 503, description = "A required service is unavailable", body = crate::error::ErrorResponse),
+        (status = 500, description = "Internal error", body = crate::error::ErrorResponse)
+    )
+)]
 pub async fn list_in_space(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
@@ -332,15 +384,35 @@ pub async fn list_in_space(
     list(state, identity, Some(space_id), query).await
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateRequest {
+    #[schema(min_length = 1, max_length = 200)]
     title: String,
     #[serde(default)]
+    #[schema(max_length = 20000)]
     body: String,
+    /// Omit or send null to select workspace notices.
     #[serde(default)]
+    #[schema(value_type = Option<AnnouncementScope>)]
     scope: Option<String>,
     #[serde(default, alias = "is_pinned")]
+    is_pinned: bool,
+}
+
+// The server parses both routes with CreateRequest so invalid company scopes
+// keep the existing errors. A successful company request requires "company".
+#[allow(dead_code)]
+#[derive(utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+struct CreateCompanyAnnouncementRequest {
+    #[schema(min_length = 1, max_length = 200)]
+    title: String,
+    #[serde(default)]
+    #[schema(max_length = 20000)]
+    body: String,
+    scope: CompanyAnnouncementScope,
+    #[serde(default)]
     is_pinned: bool,
 }
 
@@ -385,20 +457,49 @@ async fn create(
     Ok((StatusCode::CREATED, Json(project(&row, &names, true))))
 }
 
+#[utoipa::path(
+    post, path = "/v1/announcements", operation_id = "createCompanyAnnouncement",
+    request_body = CreateCompanyAnnouncementRequest,
+    responses(
+        (status = 201, description = "Created", body = AnnouncementOut),
+        (status = 401, description = "Valid gateway identity required", body = crate::error::GatewayIdentityError),
+        (status = 400, description = "Invalid request for this resource", body = crate::error::ErrorResponse),
+        (status = 403, description = "Permission denied", body = crate::error::ErrorResponse),
+        (status = 422, description = "Request validation failed", body = crate::error::ErrorResponse),
+        (status = 500, description = "Internal error", body = crate::error::ErrorResponse)
+    )
+)]
 pub async fn create_company(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
     ApiJson(payload): ApiJson<CreateRequest>,
-) -> ApiResult<impl IntoResponse> {
+) -> ApiResult<(StatusCode, Json<AnnouncementOut>)> {
     create(state, identity, None, payload).await
 }
 
+#[utoipa::path(
+    post, path = "/v1/spaces/{space_id}/announcements", operation_id = "createSpaceAnnouncement",
+    params(
+        ("space_id" = String, Path),
+    ),
+    request_body = CreateRequest,
+    responses(
+        (status = 201, description = "Created", body = AnnouncementOut),
+        (status = 401, description = "Valid gateway identity required", body = crate::error::GatewayIdentityError),
+        (status = 400, description = "Invalid request for this resource", body = crate::error::ErrorResponse),
+        (status = 403, description = "Permission denied", body = crate::error::ErrorResponse),
+        (status = 404, description = "Requested resource was not found", body = crate::error::ErrorResponse),
+        (status = 422, description = "Request validation failed", body = crate::error::ErrorResponse),
+        (status = 503, description = "A required service is unavailable", body = crate::error::ErrorResponse),
+        (status = 500, description = "Internal error", body = crate::error::ErrorResponse)
+    )
+)]
 pub async fn create_in_space(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
     Path(space_id): Path<String>,
     ApiJson(payload): ApiJson<CreateRequest>,
-) -> ApiResult<impl IntoResponse> {
+) -> ApiResult<(StatusCode, Json<AnnouncementOut>)> {
     create(state, identity, Some(space_id), payload).await
 }
 
@@ -432,6 +533,18 @@ async fn get(
     Ok(Json(project(&row, &names, can_manage)))
 }
 
+#[utoipa::path(
+    get, path = "/v1/announcements/{announcement_id}", operation_id = "getCompanyAnnouncement",
+    params(
+        ("announcement_id" = String, Path),
+    ),
+    responses(
+        (status = 200, description = "Success", body = AnnouncementOut),
+        (status = 401, description = "Valid gateway identity required", body = crate::error::GatewayIdentityError),
+        (status = 404, description = "Requested resource was not found", body = crate::error::ErrorResponse),
+        (status = 500, description = "Internal error", body = crate::error::ErrorResponse)
+    )
+)]
 pub async fn get_company(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
@@ -440,6 +553,21 @@ pub async fn get_company(
     get(state, identity, None, id).await
 }
 
+#[utoipa::path(
+    get, path = "/v1/spaces/{space_id}/announcements/{announcement_id}", operation_id = "getSpaceAnnouncement",
+    params(
+        ("space_id" = String, Path),
+        ("announcement_id" = String, Path),
+    ),
+    responses(
+        (status = 200, description = "Success", body = AnnouncementOut),
+        (status = 401, description = "Valid gateway identity required", body = crate::error::GatewayIdentityError),
+        (status = 403, description = "Permission denied", body = crate::error::ErrorResponse),
+        (status = 404, description = "Requested resource was not found", body = crate::error::ErrorResponse),
+        (status = 503, description = "A required service is unavailable", body = crate::error::ErrorResponse),
+        (status = 500, description = "Internal error", body = crate::error::ErrorResponse)
+    )
+)]
 pub async fn get_in_space(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
@@ -448,12 +576,14 @@ pub async fn get_in_space(
     get(state, identity, Some(space_id), id).await
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct UpdateRequest {
     #[serde(default)]
+    #[schema(min_length = 1, max_length = 200)]
     title: Option<String>,
     #[serde(default)]
+    #[schema(max_length = 20000)]
     body: Option<String>,
     #[serde(default, alias = "is_pinned")]
     is_pinned: Option<bool>,
@@ -498,6 +628,21 @@ async fn update(
     Ok(Json(project(&updated, &names, true)))
 }
 
+#[utoipa::path(
+    patch, path = "/v1/announcements/{announcement_id}", operation_id = "updateCompanyAnnouncement",
+    params(
+        ("announcement_id" = String, Path),
+    ),
+    request_body = UpdateRequest,
+    responses(
+        (status = 200, description = "Success", body = AnnouncementOut),
+        (status = 401, description = "Valid gateway identity required", body = crate::error::GatewayIdentityError),
+        (status = 403, description = "Permission denied", body = crate::error::ErrorResponse),
+        (status = 404, description = "Requested resource was not found", body = crate::error::ErrorResponse),
+        (status = 422, description = "Request validation failed", body = crate::error::ErrorResponse),
+        (status = 500, description = "Internal error", body = crate::error::ErrorResponse)
+    )
+)]
 pub async fn update_company(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
@@ -507,6 +652,23 @@ pub async fn update_company(
     update(state, identity, None, id, payload).await
 }
 
+#[utoipa::path(
+    patch, path = "/v1/spaces/{space_id}/announcements/{announcement_id}", operation_id = "updateSpaceAnnouncement",
+    params(
+        ("space_id" = String, Path),
+        ("announcement_id" = String, Path),
+    ),
+    request_body = UpdateRequest,
+    responses(
+        (status = 200, description = "Success", body = AnnouncementOut),
+        (status = 401, description = "Valid gateway identity required", body = crate::error::GatewayIdentityError),
+        (status = 403, description = "Permission denied", body = crate::error::ErrorResponse),
+        (status = 404, description = "Requested resource was not found", body = crate::error::ErrorResponse),
+        (status = 422, description = "Request validation failed", body = crate::error::ErrorResponse),
+        (status = 503, description = "A required service is unavailable", body = crate::error::ErrorResponse),
+        (status = 500, description = "Internal error", body = crate::error::ErrorResponse)
+    )
+)]
 pub async fn update_in_space(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
@@ -540,6 +702,19 @@ async fn delete(
     Ok(StatusCode::NO_CONTENT)
 }
 
+#[utoipa::path(
+    delete, path = "/v1/announcements/{announcement_id}", operation_id = "deleteCompanyAnnouncement",
+    params(
+        ("announcement_id" = String, Path),
+    ),
+    responses(
+        (status = 204, description = "No content"),
+        (status = 401, description = "Valid gateway identity required", body = crate::error::GatewayIdentityError),
+        (status = 403, description = "Permission denied", body = crate::error::ErrorResponse),
+        (status = 404, description = "Requested resource was not found", body = crate::error::ErrorResponse),
+        (status = 500, description = "Internal error", body = crate::error::ErrorResponse)
+    )
+)]
 pub async fn delete_company(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
@@ -548,6 +723,21 @@ pub async fn delete_company(
     delete(state, identity, None, id).await
 }
 
+#[utoipa::path(
+    delete, path = "/v1/spaces/{space_id}/announcements/{announcement_id}", operation_id = "deleteSpaceAnnouncement",
+    params(
+        ("space_id" = String, Path),
+        ("announcement_id" = String, Path),
+    ),
+    responses(
+        (status = 204, description = "No content"),
+        (status = 401, description = "Valid gateway identity required", body = crate::error::GatewayIdentityError),
+        (status = 403, description = "Permission denied", body = crate::error::ErrorResponse),
+        (status = 404, description = "Requested resource was not found", body = crate::error::ErrorResponse),
+        (status = 503, description = "A required service is unavailable", body = crate::error::ErrorResponse),
+        (status = 500, description = "Internal error", body = crate::error::ErrorResponse)
+    )
+)]
 pub async fn delete_in_space(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
@@ -558,22 +748,26 @@ pub async fn delete_in_space(
 
 // ---------------------------------------------------------------- recent notices (M5)
 
-#[derive(Serialize)]
+#[derive(Serialize, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct RecentNotice {
     id: String,
+    #[schema(value_type = AnnouncementScope)]
     scope: String,
+    #[schema(required = true)]
     space_id: Option<String>,
+    #[schema(required = true)]
     space_name: Option<String>,
     title: String,
     is_pinned: bool,
     author_name: String,
     path: String,
     #[serde(serialize_with = "crate::time::serialize")]
+    #[schema(value_type = String, example = "2026-05-04T01:02:03")]
     created_at: NaiveDateTime,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, utoipa::ToSchema)]
 pub struct RecentNoticesResponse {
     items: Vec<RecentNotice>,
 }
@@ -632,6 +826,20 @@ pub struct RecentQuery {
 /// `GET /v1/board/notices/recent?limit=`: the newest notices the caller may
 /// read (company notices and notices of spaces they belong to), for the
 /// portal home notice card (M5). Read-only.
+#[utoipa::path(
+    get, path = "/v1/board/notices/recent", operation_id = "listRecentBoardNotices",
+    params(
+        ("limit" = Option<i64>, Query, minimum = 1, maximum = 20, description = "Number of notices to return (default 5)"),
+    ),
+    responses(
+        (status = 200, description = "Success", body = RecentNoticesResponse),
+        (status = 401, description = "Valid gateway identity required", body = crate::error::GatewayIdentityError),
+        (status = 422, description = "Request validation failed", body = crate::error::ErrorResponse),
+        (status = 503, description = "A required service is unavailable", body = crate::error::ErrorResponse),
+        (status = 403, description = "Permission denied", body = crate::error::ErrorResponse),
+        (status = 500, description = "Internal error", body = crate::error::ErrorResponse)
+    )
+)]
 pub async fn recent(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,

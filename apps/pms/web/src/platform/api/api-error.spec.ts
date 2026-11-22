@@ -52,6 +52,26 @@ describe('API error messages (miy: translated from the error code)', () => {
     const abort = new ApiError('abort', 'request_aborted');
     expect(toApiRequestError(abort)).toBe(abort);
   });
+
+  it('maps a transport error from another bundle through its shared fields', () => {
+    syncLocale('en-US');
+    const error = Object.assign(new Error('pms_task_not_found'), {
+      name: 'ApiError',
+      kind: 'http',
+      code: 'pms_task_not_found',
+      status: 404,
+      requestId: 'request-1',
+      retryable: false,
+    });
+
+    expect(error).not.toBeInstanceOf(ApiError);
+    expect(apiErrorMessage(error, 'fallback')).toBe('Task not found.');
+    expect(toApiRequestError(error)).toMatchObject({
+      status: 404,
+      message: 'Task not found.',
+      payload: { code: 'pms_task_not_found', requestId: 'request-1' },
+    });
+  });
 });
 
 describe('display language (miy: runtime.settings.locale)', () => {

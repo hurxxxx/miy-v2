@@ -472,6 +472,11 @@ async fn execute(pool: &sqlx::PgPool, row: &PgRow, recovering: bool) -> Result<(
             format!("MIY_SOURCE_HASH={}", row.get::<String, _>("archive_hash")),
             "--build-arg".into(),
             format!("MIY_BUILD_ID={id}"),
+            "--build-arg".into(),
+            format!(
+                "MIY_CHECK_APP_API={}",
+                u8::from(manifest.api_contract.is_some())
+            ),
             context.to_string_lossy().into_owned(),
         ];
         docker(pool, id, &control, &command, BUILD_SECONDS, Output::Log)

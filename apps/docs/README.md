@@ -27,6 +27,8 @@ AI-DO 경로 기준(`/docs`, `/docs/<docId>`)도 같은 화면을 연다. 그 �
 
 UI는 `runtime.api('/v1/...')`로 부르고 게이트웨이가 `/api/v1/...`로 전달한다(AI-DO와 같은 경로·요청·응답 형태, snake_case). 시각은 naive UTC다. 오류는 `{"error":{"code","message"}}`이며 코드는 AI-DO 코드의 `.`을 `_`로 바꾼 것이다(예: `docs_doc_not_found`).
 
+요청 형식과 상태 코드는 Rust 라우터에서 생성하는 [OpenAPI 명세](docs/openapi.json)에 있다. 생성 및 검사는 [API 가이드](docs/API.md)를 따른다.
+
 | 메서드·경로 | 설명 |
 | --- | --- |
 | `GET /v1/docs/hub?space&view&q&sort_by&sort_dir&page&page_size` | 공간의 문서 중 볼 수 있는 것(AI-DO `DocsHubResponse`). 공간 역할이 없으면 403 `docs_requests_workspace_context_required` |

@@ -113,7 +113,7 @@ export function SidePanel({
           navigate: (path) => {
             const next = locationOf(path);
             if (next.pathname === location.pathname && next.search === location.search && next.hash === location.hash) return;
-            if (guards.confirmNavigation()) setLocation(next);
+            setLocation(next);
           },
           title,
         }}

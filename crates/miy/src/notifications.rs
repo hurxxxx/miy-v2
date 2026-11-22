@@ -10,6 +10,7 @@ use crate::{
         NotificationItem, NotificationMute, NotificationPage, NotificationPublished,
         NotificationSettings,
     },
+    app_calls::Context,
     auth::{BrowserPurpose, Principal},
     http::{ApiError, ApiResult},
     policy::{self, AppAction, Write},
@@ -179,17 +180,60 @@ async fn body<T: serde::de::DeserializeOwned>(request: Request) -> ApiResult<T> 
     Ok(serde_json::from_slice(&bytes)?)
 }
 
-/// The decision for the acting person, inside the transaction after its writes.
-async fn commit(tx: Write, p: &Principal, installation: &PgRow) -> ApiResult<()> {
-    tx.decide(
-        p,
-        installation.get("app_id"),
-        installation.get("environment"),
-        AppAction::Use,
-    )
-    .await?
-    .commit()
-    .await
+/// Serialize the final decision with release activation and permission changes.
+async fn commit(
+    tx: Write,
+    s: &State,
+    p: &Principal,
+    installation: &PgRow,
+    context: &Context,
+    groups: bool,
+) -> ApiResult<()> {
+    let mut tx = tx
+        .decide(
+            p,
+            installation.get("app_id"),
+            &context.environment,
+            AppAction::Use,
+        )
+        .await?;
+    let mut chain: Vec<_> = context
+        .callers
+        .iter()
+        .zip(&context.permissions_used)
+        .map(|(caller, used)| {
+            (
+                caller.installation_id,
+                caller.release_id,
+                Some(used.as_str()),
+            )
+        })
+        .collect();
+    chain.push((context.installation_id, context.release_id, None));
+    chain.sort_unstable_by_key(|(id, _, _)| *id);
+    for (id, release, used) in chain {
+        let approved: Option<serde_json::Value> = sqlx::query_scalar(
+            "SELECT a.permissions FROM installations i JOIN installation_permissions a \
+             ON a.installation_id=i.id AND a.release_id=i.release_id \
+             WHERE i.id=$1 AND i.release_id=$2 AND i.environment=$3 FOR SHARE OF i,a",
+        )
+        .bind(id)
+        .bind(release)
+        .bind(&context.environment)
+        .fetch_optional(&mut *tx)
+        .await?;
+        let current: Vec<String> =
+            serde_json::from_value(approved.ok_or_else(ApiError::forbidden)?)?;
+        let allows = |permission| current.iter().any(|item| item == permission);
+        if !allows(PERMISSION)
+            || (groups && !allows("platform:directory:read"))
+            || used.is_some_and(|permission| !allows(permission))
+        {
+            return Err(ApiError::forbidden());
+        }
+    }
+    crate::app_calls::current_origin(&mut tx, s.auth.development_login, p, context).await?;
+    tx.commit().await
 }
 
 pub async fn publish(
@@ -199,6 +243,11 @@ pub async fn publish(
     request: Request,
 ) -> ApiResult<Json<NotificationPublished>> {
     let installation = app_access(&s, &p, id, request.extensions()).await?;
+    let context = request
+        .extensions()
+        .get::<Context>()
+        .cloned()
+        .ok_or_else(ApiError::forbidden)?;
     let mut input: Publish = body(request).await?;
     input.validate()?;
     // Without groups the request hash stays what it always was.
@@ -224,14 +273,9 @@ pub async fn publish(
             &input.resource_id,
         ))?)
     };
-    if !input.recipient_groups.is_empty() {
-        crate::permissions::require(
-            &s.pool,
-            id,
-            installation.get("release_id"),
-            "platform:directory:read",
-        )
-        .await?;
+    let groups = !input.recipient_groups.is_empty();
+    if groups {
+        crate::app_calls::require(&s, &p, &context, id, "platform:directory:read").await?;
     }
     let (app, env): (String, String) =
         (installation.get("app_id"), installation.get("environment"));
@@ -252,7 +296,7 @@ pub async fn publish(
             return Err(ApiError::conflict("notification_request_conflict"));
         }
         let accepted = row.get::<i32, _>("accepted");
-        commit(tx, &p, &installation).await?;
+        commit(tx, &s, &p, &installation, &context, groups).await?;
         return Ok(Json(NotificationPublished {
             request_id: input.request_id,
             accepted: accepted as u32,
@@ -298,7 +342,7 @@ pub async fn publish(
     .execute(&mut *tx)
     .await?;
     changed(&mut tx, &accepted, &env).await?;
-    commit(tx, &p, &installation).await?;
+    commit(tx, &s, &p, &installation, &context, groups).await?;
     Ok(Json(NotificationPublished {
         request_id: input.request_id,
         accepted: accepted.len() as u32,
@@ -334,6 +378,11 @@ pub async fn retract(
     request: Request,
 ) -> ApiResult<Json<serde_json::Value>> {
     let installation = app_access(&s, &p, id, request.extensions()).await?;
+    let context = request
+        .extensions()
+        .get::<Context>()
+        .cloned()
+        .ok_or_else(ApiError::forbidden)?;
     let input: Retract = body(request).await?;
     if !text(&input.group_key, 200)
         || input
@@ -358,7 +407,7 @@ pub async fn retract(
         installation.get::<&str, _>("environment"),
     )
     .await?;
-    commit(tx, &p, &installation).await?;
+    commit(tx, &s, &p, &installation, &context, false).await?;
     Ok(Json(serde_json::json!({"retracted": removed.len()})))
 }
 
@@ -369,6 +418,11 @@ pub async fn mark_group_read(
     request: Request,
 ) -> ApiResult<StatusCode> {
     let installation = app_access(&s, &p, id, request.extensions()).await?;
+    let context = request
+        .extensions()
+        .get::<Context>()
+        .cloned()
+        .ok_or_else(ApiError::forbidden)?;
     let input: MarkGroupRead = body(request).await?;
     if !text(&input.group_key, 200) {
         return Err(ApiError::bad("invalid_notification"));
@@ -388,7 +442,7 @@ pub async fn mark_group_read(
         installation.get::<&str, _>("environment"),
     )
     .await?;
-    commit(tx, &p, &installation).await?;
+    commit(tx, &s, &p, &installation, &context, false).await?;
     Ok(StatusCode::NO_CONTENT)
 }
 

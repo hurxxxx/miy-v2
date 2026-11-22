@@ -1,7 +1,7 @@
 # AI-DO 파일(드라이브) 포팅 기록
 
 - 원본: `/projects/ai-do/prod` main `0002af062f3147198ee6e6ffef9b30b069122f45` (읽기 전용으로 참조, 수정하지 않음)
-- 대상: miy 공식 앱 `drive`(이름 `드라이브`), 번들 0.12.0(2026-11-22 개정 SDK: 대용량 전송·다운로드 링크, 플랫폼 호출의 `identity.context.groups`, `notify_with_groups`), Rust SDK 0.4.0, 공용 UI 2.0.0
+- 대상: miy 공식 앱 `drive`(이름 `드라이브`), 번들 0.12.0(2026-11-22 개정 SDK: 대용량 전송·다운로드 링크, 플랫폼 호출의 `identity.context.groups`, `notify_with_groups`), Rust SDK 0.4.0, 공용 UI 2.0.1
 - 절차: [COMMON-FEATURES-PLAN](../../../docs/COMMON-FEATURES-PLAN.md) "앱 포팅 절차", "M7~M11 공식 업무 앱"(M10), §2.2 드라이브 행, §2.3 파일 저장, "M2", "M12"
 - 플랫폼 계약: [CORE-PERMISSIONS 대용량 전송(M10)](../../../docs/CORE-PERMISSIONS.md#대용량-전송m10), [docs/CONTRACT.md](CONTRACT.md) "Small attachments"(큰 파일 문단 포함), "Resource ACL and sharing", "Platform notifications", "Side panels, home cards and search"
 - 원칙: AI-DO 구현을 그대로 옮기고, miy의 경계(바이트는 플랫폼 Storage, 신원·디렉터리, 앱 프레임, 앱별 DB) 때문에 그대로 둘 수 없는 곳만 바꾼다. 바꾼 곳은 아래에 모두 적었다. 계획의 보강(이동·이름 변경, 휴지통, 대용량 전송)과 §2.3의 버전도 이번에 넣었고 따로 표시했다.
@@ -110,7 +110,7 @@ AI-DO는 `POST /files/upload` 한 번에 multipart로 250MB까지 받아 MinIO�
 
 1. **예약** `POST /v1/spaces/{id}/files/uploads`: 화면이 만든 요청 ID(`requestId()`)로 파일·버전 행을 먼저 커밋하고(`reserving`) 코어를 예약한다. 10MiB까지는 `files_create`(`single`), 그보다 크면 `files_create_parts`(`parts`, 2GiB까지). 응답을 잃으면 같은 요청 ID로 다시 보내 같은 업로드를 받는다(서버는 `files_by_request`로 코어 결과를 찾는다). 코어가 거절하면(한도 409 → `files_storage_quota_exceeded`, 저장 공간 부족 503 → `files_storage_unavailable`) 버전을 취소하고 거절을 알린다.
 2. **바이트**(`runtime.fileApi`): `single`은 `PUT /files/uploads/{id}/content` 한 번(SDK `files_upload` 스트림). `parts`는 `PUT /files/uploads/{id}/parts?offset=N`에 8MiB 이하 조각 하나씩. 서버가 코어의 `received`와 `offset`을 비교해 다르면 409 `files_part_offset`, 같으면 `files_upload_part`로 쓰고 새 `received`를 돌려준다. 실패하면 화면이 `GET .../uploads/{id}`로 커밋된 위치를 읽고 거기서 이어 보낸다(진전 없이 5번 실패하면 중단). 파일 게이트웨이는 `Content-Type`·`Content-Length`와 쿼리만 전달하므로 위치는 쿼리로 보낸다. 바이트는 올린 사람만 보낼 수 있다.
-3. **확정** `POST .../uploads/{id}/complete`: `parts`는 `files_complete`(코어가 SHA-256 계산, 되풀이 안전), `single`은 상태 확인. 파일·버전 행과 상위 폴더를 잠그고 권한을 다시 확인한 뒤 버전을 현재 버전으로 커밋하고, **그 다음에** `files_attach(코어 파일, "drive:version:<id>", 연결 요청 ID)`를 부른다. 연결 응답이 불확실하면 다음 다운로드 링크 요청이 같은 연결 요청 ID로 마저 연결한다.
+3. **확정** `POST .../uploads/{id}/complete`: `parts`는 `files_complete`로 Core에 SHA-256 준비를 요청한다. 준비 중에는 `files_upload_finalizing`을 반환하고 화면이 같은 업로드로 확정을 다시 요청한다. `single`은 상태를 확인한다. 파일·버전 행과 상위 폴더를 잠그고 권한을 다시 확인한 뒤 버전을 현재 버전으로 커밋하고, **그 다음에** `files_attach(코어 파일, "drive:version:<id>", 연결 요청 ID)`를 부른다. 연결 응답이 불확실하면 다음 다운로드 링크 요청이 같은 연결 요청 ID로 마저 연결한다.
 4. **취소** `DELETE .../uploads/{id}`: 앱 참조가 없으므로 버전을 취소로 커밋한 뒤 `files_cancel`. 완료된 업로드는 409(파일은 삭제로). 끝나지 않은 예약은 코어에서 24시간 뒤 만료된다.
 
 - 화면(업로드 패널)은 배치를 한 번에 하나 돌리고(AI-DO와 같음), **취소**하면 진행 중 파일의 예약을 해제하고 이미 올린 파일은 남긴다. **다시 시도**하면 실패한 파일부터 같은 요청 ID로 이어 간다(리뷰 지적 "같은 요청 ID로 복구, 삭제하지 않음"). 실패한 배치를 닫으면 그 파일의 끝나지 않은 예약을 해제한다. 진행 중 업로드는 미저장 작업으로 보고한다.
@@ -130,7 +130,7 @@ AI-DO는 서명된 프록시 URL(`/files/content/{id}?expires&signature`)을 주
 AI-DO는 선택(파일·폴더 하위)을 서버에서 ZIP으로 묶어(최대 500개·512MB) 한 번에 내려보냈다. 플랫폼 파일 게이트웨이는 응답 10MiB·20초 한도이고 앱이 쓸 수 있는 스트리밍 묶음 경로가 없어, **파일을 하나씩 내려받는다**(지시: "한도 안에서 스트리밍할 수 없으면 하나씩").
 
 - `POST .../files/archive`가 AI-DO `list_archive_entries`·`plan_archive_entries` 그대로 항목(경로·파일 ID·크기)을 계산한다. 접근 확인·폴더 펼치기·중복 제거·경로 정리·충돌 번호가 원본과 같다.
-- 화면이 파일 항목마다 새 다운로드 링크를 받아 0.4초 간격으로 `runtime.download`를 부른다. 폴더 구조는 브라우저 다운로드에 남지 않는다(파일 이름만). 브라우저가 "여러 파일 다운로드 허용"을 물을 수 있다.
+- 화면은 파일마다 링크를 받아 `runtime.downloadAndWait`로 Core의 서버 전송을 확인한 뒤 다음 파일을 시작한다. 상태 확인이 끊기면 같은 링크에서 서버 전송 결과만 다시 확인한다. Core가 실패를 확인하면 새 링크로 다운로드를 다시 시작할 수 있다. 확인할 수 없는 파일은 건너뛰거나 대기열을 중지할 수 있다. 브라우저에서 진행 중인 다운로드는 브라우저에서 관리한다. 브라우저가 여러 파일의 자동 다운로드를 차단하거나 로컬 저장에 실패할 수 있다. 폴더 구조는 브라우저 다운로드에 남지 않는다.
 - 한도는 파일 500개만 남겼다(`files_archive_limit_exceeded`, 413). 512MB 총량은 서버 압축 때문이었으므로 없앴다.
 
 ### 3.6 휴지통과 Storage 해제 (보강)
@@ -200,7 +200,7 @@ AI-DO는 선택(파일·폴더 하위)을 서버에서 ZIP으로 묶어(최대 5
 | `@pierre/trees` 대신 AI-DO의 행 목록 | §3.10 |
 | 홈 카드 없음 | AI-DO 파일 모듈에 없다 |
 | 의존성은 AI-DO·템플릿 버전 | i18next 26.0.8, react-i18next 17.0.6, lucide-react 0.546.0, 시험용 vitest 4.1.2·jsdom 22.1.0·Testing Library 10.4.0/16.3.0. React·Vite·Tailwind·Radix는 템플릿·공용 UI 버전. Rust는 템플릿 구성에 `chrono`·`uuid`(시험에 `sha2`·`hex`·`jsonwebtoken`·`reqwest`) |
-| 공용 UI 설치는 플래너·게시판과 같은 오프라인 복사 | `registry/components/ui/2.0.0`과 같은 파일(`component.json` 제외)과 같은 잠금 파일. 실제 서버에서 `miy component sync`로 digest를 확인해야 한다 |
+| 공용 UI 설치는 플래너·게시판과 같은 후보 소스 동기화 | `registry/components/ui/2.0.1`의 바이트와 SHA-256을 고정한다. 게시 후 실제 서버에서 `miy component sync`로 digest를 확인한다 |
 | 보호 파일은 새 `app init` 결과로 맞춤 | 작업 중 저장소 번들 0.12.0의 CONTRACT·SDK가 개정되어(d7fbdfe) 새 init의 보호 파일과 `miy.bundle.json`을 그대로 복사했다 |
 | DB 시험은 `#[ignore]` + `DRIVE_TEST_DATABASE_URL`, 가짜 코어 | 서버 빌드의 `cargo test`에는 DB가 없다. 디렉터리·알림·Storage(`single`·`parts`·확정·연결·해제·다운로드 링크)는 시험 안의 가짜 코어가 SDK의 실제 HTTP 경로로 받는다 |
 

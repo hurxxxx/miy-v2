@@ -364,7 +364,10 @@ function TemplateEditor({
           </span>
           <select
             className="app-field-input-sm"
-            onChange={(event) => set({ defaultPriority: event.target.value })}
+            onChange={(event) => {
+              const priority = PRIORITIES.find((option) => option === event.target.value);
+              if (priority) set({ defaultPriority: priority });
+            }}
             value={draft.defaultPriority}
           >
             {PRIORITIES.map((priority) => (
@@ -585,7 +588,10 @@ function SubtaskRow({
       <select
         aria-label={t('pms.templateSettings.priority')}
         className="app-field-input-sm max-w-28"
-        onChange={(event) => onChange({ ...subtask, priority: event.target.value })}
+        onChange={(event) => {
+          const priority = PRIORITIES.find((option) => option === event.target.value);
+          if (priority) onChange({ ...subtask, priority });
+        }}
         value={subtask.priority}
       >
         {PRIORITIES.map((priority) => (

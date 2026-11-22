@@ -8,7 +8,9 @@ CLI·Windows 설치기의 후보 빌드, 서버 다운로드 게시, 정식 GitH
 
 dwdcc.kr의 게시 버전은 **Core·CLI 0.13.0, SDK 번들 0.11.0, 코어 schema 25**다. CLI는 오프라인 `app source-pin`, 확인한 상태를 조건으로 한 배포·승격, 후임 담당자가 공식 릴리스 ID로 dev에 재배포하는 `app deploy --release`를 제공한다. 서버가 접수를 거절한 빌드는 같은 커밋으로 다시 요청할 수 있고, 응답만 유실된 요청은 기존 ID로 재개한다. [공식 앱 공급 절차](RUNNING.md#공식-앱-공급과-설치)
 
-miy.works는 2026-11-21에 **Core·CLI 0.14.0**(`e5ee24f`)을 게시했다([반영 기록](releases/miy-works-0.14.0-2026-11-21-deployment.json)). 여러 CLI·MCP 호출이 동시에 실행될 때 한 프로세스의 로그인 갱신 중 다른 명령이 `reauthentication_required`로 끝나던 문제를 고친 버전이다. 앞서 2026-11-20에 같은 호스트에 `f8228e1`의 0.13.0을 게시했다([기록](releases/miy-works-0.13.0-2026-11-20-deployment.json)). dwdcc.kr은 0.13.0을 유지한다. 버전 검사의 기준(`releases/cli-published.json`)과 `contracts/api-v1.published.json`은 0.14.0이며, 다음 CLI 후보는 클라이언트 입력이 바뀌면 0.15.0 이상이어야 한다.
+miy.works의 게시 버전은 **Core·CLI 0.16.0, SDK 번들 0.11.0, 코어 schema 27**이다. 0.15.0은 릴리스 소스 복구를 추가했고 0.16.0은 오프라인 앱 하네스 안내와 검사를 추가했다. 0.16.0의 `a00f6cc`를 게시 CLI 버전 검사와 API 호환성 검사의 기준으로 사용한다. [0.15.0 반영 기록](releases/miy-works-0.15.0-2026-11-21-deployment.json) · [0.16.0 반영 기록](releases/miy-works-0.16.0-2026-11-21-deployment.json)
+
+앞서 0.14.0의 `e5ee24f`는 여러 CLI·MCP 호출에서 동시에 로그인 갱신할 때 다른 명령이 `reauthentication_required`로 끝나는 문제를 고쳤다. 0.13.0의 `f8228e1`은 2026-11-20에 게시했다. [0.14.0 반영 기록](releases/miy-works-0.14.0-2026-11-21-deployment.json) · [0.13.0 반영 기록](releases/miy-works-0.13.0-2026-11-20-deployment.json)
 
 Core는 `MIY_CLI_RELEASE_DIR/release-index.json`을 검증하여 `/api/v1/cli/install.sh`와 `/api/v1/cli/install.ps1`을 제공한다. 각 응답은 한 번 읽은 후보의 immutable URL·아카이브/바이너리 SHA-256·버전과 설정된 `MIY_ORIGIN`을 포함한다. URL·해시는 실행 중 별도 mutable index에서 다시 읽지 않는다. 5개 CLI·2개 helper가 완성된 후보를 기존 `stage-cli-release.py`로 게시해야 하며, 미게시 상태나 실행 중인 Core와 index의 CLI 버전이 다르면 503으로 종료한다. 버전 변경은 모든 target을 먼저 준비한 뒤 Core·worker를 중지한 동안 catalog와 바이너리를 함께 교체한다. 복구할 때도 이전 Core·catalog를 함께 복원한다. 온라인 스크립트는 Core에 포함되므로 서버 바이너리 교체가 필요하다. 기존 게시 패키지는 다시 쓰지 않는다.
 
@@ -63,6 +65,10 @@ CLI/번들 0.11.0에서 서버가 빌드한 산출물만 배포하도록 바꿨�
 게시 순서는 종전과 같다: CI 후보 생성 → 서버·worker와 CLI·설치기를 한 기록으로 반영 → `cli-published.json`과 `contracts/api-v1.published.json` 갱신(GUI EXE도 게시할 때 `windows-candidate.json` 갱신). 다음 번들 버전을 준비할 때는 0.11.0 보호 파일 명세를 그 게시 소스의 바이트로 추가한다. 다음 번들 0.12.0(CLI 0.17.0)은 [범용 기능 계획 D0](COMMON-FEATURES-PLAN.md#d0-디자인설정-전달-기반)의 표시 설정 전달과 미리보기 토큰을 담아 소스에 준비돼 있다(미게시). `crates/miy/bundles/0.11.0.json`을 0.11.0 게시 소스의 바이트로 추가했다. 공용 UI 2.0.0은 이 번들에만 호환으로 게시한다.
 
 새 Windows GUI 설치기를 게시하면 [Windows 후보 파일](releases/windows-candidate.json)을 그 CI 해시로 갱신한다. Windows 인수 검사기는 이 파일을 기대값으로 쓴다.
+
+번들 0.12.0 후보의 새 프로젝트와 공식 앱 7개는 공용 UI 2.0.1을 고정한다. 후보 원본과 공식 앱의 잠금 해시를 일치시킨 상태다.
+
+앱 개발 규칙을 개정할 때는 `crates/miy/src/cli_guidance.rs`의 `GUIDANCE_VERSION`을 올린다. 앱 생성 시점의 `templateVersion`은 내장 템플릿 전체에서 계산한 SHA-256이다. 두 값은 `miy.cli.json`에 기록하며 `miy app setup`은 호환 프로젝트의 지침과 `docs/API.md`를 갱신하고 최초 템플릿 값은 보존한다. `miy app check --harness-only`는 작업본과 현재 CLI의 버전을 비교해 표시한다.
 
 같은 커밋에서 `python3 scripts/check-api-compat.py --refresh 버전 소스커밋`으로 [게시 CLI 응답 계약](../contracts/api-v1.published.json)도 그 소스의 스키마로 갱신한다. 이후 서버 응답은 이 파일보다 필드를 추가만 할 수 있다(`check-static.sh scripts`). 이전 서버가 보내지 않는 필드는 CLI가 기본값으로 읽는다([계약 타입](../crates/miy/src/api_contract.rs)).
 

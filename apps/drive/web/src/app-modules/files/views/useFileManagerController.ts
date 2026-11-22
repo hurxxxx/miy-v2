@@ -50,7 +50,7 @@ import {
   toggleFileSelection,
   toggleFolderSelection,
 } from './FileManagerWorkflow';
-import { startDownloads } from './file-downloads';
+import { sendDownloadBatch, startDownload, type DownloadBatch } from './file-downloads';
 
 export type LoadState = 'idle' | 'loading' | 'ready' | 'error';
 export type BulkAction = 'delete' | 'download' | 'move' | null;
@@ -104,6 +104,8 @@ export function useFileManagerController(spaceId: string) {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [previewBusyId, setPreviewBusyId] = useState<string | null>(null);
   const [bulkAction, setBulkAction] = useState<BulkAction>(null);
+  const [downloadBatch, setDownloadBatch] = useState<DownloadBatch | null>(null);
+  const downloadAbort = useRef<AbortController | null>(null);
   const [selection, setSelection] = useState(createEmptyFileManagerSelection);
   const [imagePreview, setImagePreviewState] =
     useState<ImagePreviewState | null>(null);
@@ -117,6 +119,15 @@ export function useFileManagerController(spaceId: string) {
   const [renameTarget, setRenameTarget] = useState<FileItem | null>(null);
   const [moveDialog, setMoveDialog] = useState<MoveDialogState | null>(null);
   const [versionsTarget, setVersionsTarget] = useState<FileItem | null>(null);
+
+  useEffect(() => {
+    setDownloadBatch(null);
+    setBulkAction((current) => current === 'download' ? null : current);
+    return () => {
+      downloadAbort.current?.abort();
+      downloadAbort.current = null;
+    };
+  }, [spaceId]);
 
   const browse =
     browseSnapshot?.folderId === folderId && browseSnapshot.spaceId === spaceId
@@ -132,7 +143,9 @@ export function useFileManagerController(spaceId: string) {
 
   // An open folder dialog with input is unsaved work (miy contract).
   useNavigationDirty(
-    savingFolder ||
+    bulkAction === 'download' ||
+      downloadBatch !== null ||
+      savingFolder ||
       (folderDialog !== null &&
         (folderDialog.mode === 'create'
           ? folderName.trim() !== ''
@@ -473,7 +486,7 @@ export function useFileManagerController(spaceId: string) {
   async function handleDownload(file: FileItem) {
     setBusyId(file.id);
     try {
-      await startDownloads(runtime, [file.id], (fileId) =>
+      await startDownload(runtime, file.id, (fileId) =>
         getFileDownloadUrl(runtime, spaceId, fileId),
       );
     } catch (caughtError) {
@@ -588,10 +601,57 @@ export function useFileManagerController(spaceId: string) {
     }
   }
 
-  async function handleBulkDownload() {
-    if (selectedCount === 0) {
+  async function runDownloadBatch(plan: () => Promise<DownloadBatch>) {
+    const download = runtime.downloadAndWait;
+    if (!download) {
+      feedback.error(t('drive.download.unavailable'));
       return;
     }
+    if (downloadAbort.current) return;
+    const controller = new AbortController();
+    const { signal } = controller;
+    downloadAbort.current = controller;
+    setBulkAction('download');
+    let current: DownloadBatch | null = null;
+    try {
+      current = await plan();
+      if (signal.aborted) return;
+      if (current.total === 0) {
+        feedback.error(t('drive.bulkDownload.empty'));
+        return;
+      }
+      setDownloadBatch(current);
+      await sendDownloadBatch(
+        download, current, (id) => getFileDownloadUrl(runtime, spaceId, id), signal,
+        (next) => {
+          current = next;
+          setDownloadBatch(next);
+        },
+      );
+      setDownloadBatch(null);
+      const result = t('drive.bulkDownload.finished', { sent: current.sent, total: current.total });
+      if (current.sent === current.total) {
+        feedback.success(result);
+      } else {
+        feedback.info(result);
+      }
+    } catch (error) {
+      if (signal.aborted) return;
+      if (current) {
+        feedback.error(t('drive.bulkDownload.paused', { path: current.remaining[0]?.path }));
+      } else {
+        feedback.error(error instanceof Error ? error.message : t('files.errors.downloadFailed'));
+      }
+    } finally {
+      if (downloadAbort.current === controller) {
+        downloadAbort.current = null;
+        setBulkAction(null);
+      }
+    }
+  }
+
+  async function handleBulkDownload() {
+    if (selectedCount === 0 || downloadBatch || downloadAbort.current) return;
     const plan = planFileManagerBulkDownload(filteredSelection, files);
     if (plan.kind === 'none') {
       return;
@@ -601,29 +661,26 @@ export function useFileManagerController(spaceId: string) {
       return;
     }
 
-    setBulkAction('download');
-    try {
-      // AI-DO streamed one ZIP; the platform has no streaming archive within
-      // its limits, so each planned file gets its own download link.
+    await runDownloadBatch(async () => {
       const archive = await planFileArchive(runtime, spaceId, plan.payload);
-      const fileIds = archive.entries
-        .map((entry) => entry.file_id)
-        .filter((id): id is string => id !== null);
-      feedback.success(
-        t('drive.bulkDownload.started', { count: fileIds.length }),
+      const remaining = archive.entries.flatMap(({ file_id, path }) =>
+        file_id === null ? [] : [{ id: file_id, path }],
       );
-      await startDownloads(runtime, fileIds, (fileId) =>
-        getFileDownloadUrl(runtime, spaceId, fileId),
-      );
-    } catch (caughtError) {
-      feedback.error(
-        caughtError instanceof Error
-          ? caughtError.message
-          : t('files.errors.downloadFailed'),
-      );
-    } finally {
-      setBulkAction(null);
-    }
+      return { remaining, total: remaining.length, sent: 0 };
+    });
+  }
+
+  function resumeDownloadBatch(skip = false) {
+    if (!downloadBatch) return;
+    const batch = downloadBatch;
+    void runDownloadBatch(async () =>
+      skip ? { ...batch, remaining: batch.remaining.slice(1) } : batch,
+    );
+  }
+
+  function stopDownloadBatch() {
+    downloadAbort.current?.abort();
+    setDownloadBatch(null);
   }
 
   async function handleRename(file: FileItem, filename: string) {
@@ -678,6 +735,7 @@ export function useFileManagerController(spaceId: string) {
     canIngest,
     currentFolder,
     draggingFiles,
+    downloadBatch,
     effectiveUploadVisibility,
     folderError,
     fileInputRef,
@@ -716,6 +774,7 @@ export function useFileManagerController(spaceId: string) {
     openMoveSelected,
     previewBusyId,
     renameTarget,
+    resumeDownloadBatch,
     savingFolder,
     selectedCount,
     selectedVisibleSize,
@@ -731,6 +790,7 @@ export function useFileManagerController(spaceId: string) {
     setUploadVisibility,
     setVersionsTarget,
     spaceId,
+    stopDownloadBatch,
     timeZone,
     uploadNewVersion,
     uploadVisibility,

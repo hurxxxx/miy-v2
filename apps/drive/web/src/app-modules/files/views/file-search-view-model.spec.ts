@@ -50,11 +50,18 @@ describe('file search view model', () => {
     const common = {
       content_type: 'text/plain',
       filename: 'file.txt',
+      title: 'file.txt',
       folder_id: null,
       methods: ['bm25'],
       size_bytes: 10,
       snippet: { text: '', highlights: [] },
       updated_at: '2026-07-23T00:00:00Z',
+      source_kind: 'files',
+      author: null,
+      authored_at: null,
+      department: null,
+      document_type: null,
+      source_updated_at: null,
     };
     expect(
       orderFileSearchHits([

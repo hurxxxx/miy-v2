@@ -1,4 +1,4 @@
-import { ApiError } from '@miy/sdk';
+import { isApiError } from '@miy/sdk';
 
 import { i18n } from '../i18n';
 
@@ -16,7 +16,7 @@ const ERROR_PARAMS: Record<string, Record<string, unknown>> = {
 };
 
 export function apiErrorMessage(error: unknown, fallback: string): string {
-  if (error instanceof ApiError && error.kind === 'http') {
+  if (isApiError(error) && error.kind === 'http') {
     const key = `errors:${error.code}`;
     if (i18n.exists(key)) {
       return i18n.t(key, ERROR_PARAMS[error.code]);

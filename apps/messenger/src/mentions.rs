@@ -17,7 +17,8 @@ use std::collections::HashSet;
 pub const MAX_MENTIONS: usize = 50;
 const MAX_MENTION_LENGTH: usize = 300;
 
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize, sqlx::FromRow)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize, sqlx::FromRow, utoipa::ToSchema)]
+#[schema(as = DmMentionItem)]
 pub struct Mention {
     pub user_id: String,
     #[sqlx(rename = "start_index")]

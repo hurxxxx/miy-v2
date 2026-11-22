@@ -1024,9 +1024,36 @@ async fn release_sources(h: &Harness, actor: &Actor) -> Result<()> {
         )
         .await?;
         ensure!(get(actor).send().await?.bytes().await?.as_ref() == bytes.as_slice());
+        if keep {
+            let retained = h
+                .state
+                .artifacts
+                .join(".builds/sources")
+                .join(APP)
+                .join(format!("{hash}.tar"));
+            let corrupt = vec![0; bytes.len()];
+            std::fs::write(&retained, &corrupt)?;
+            error(
+                get(actor).send().await?,
+                503,
+                "release_source_bytes_invalid",
+            )
+            .await?;
+            error(put(&viewer, bytes.clone()).send().await?, 403, "forbidden").await?;
+            error(
+                put(actor, corrupt.clone()).send().await?,
+                409,
+                "release_source_digest_mismatch",
+            )
+            .await?;
+            ensure!(std::fs::read(&retained)? == corrupt);
+            let restored = response(put(&colleague, bytes.clone()).send().await?, 200).await?;
+            ensure!(restored["archiveSha256"] == hash);
+            ensure!(get(actor).send().await?.bytes().await?.as_ref() == bytes);
+        }
     }
     passed(
-        "immutable release source retention, authorized download and concurrent verified historical restore",
+        "immutable release source retention, authorized download, concurrent verified historical restore and repair of corrupted bytes",
     );
     Ok(())
 }

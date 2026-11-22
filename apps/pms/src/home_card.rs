@@ -5,8 +5,7 @@
 use axum::{Extension, Json, extract::State};
 use chrono::{NaiveDate, Utc};
 use miy_app_sdk::Identity;
-use serde::Deserialize;
-use serde_json::{Value, json};
+use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 
 use crate::error::ApiResult;
@@ -15,13 +14,29 @@ use crate::tasks::assigned_open_tasks;
 
 const MAX_ITEMS: usize = 5;
 
-#[derive(Debug, Default, Deserialize)]
+#[derive(Debug, Default, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct HomeCardRequest {
+    /// IANA time zone. Missing and unknown values use Asia/Seoul.
     #[serde(default)]
     time_zone: Option<String>,
     #[serde(default)]
     locale: Option<String>,
+}
+
+#[derive(Serialize, utoipa::ToSchema)]
+pub struct HomeCardResponse {
+    title: String,
+    count: usize,
+    #[schema(max_items = 5)]
+    items: Vec<HomeCardItem>,
+}
+
+#[derive(Serialize, utoipa::ToSchema)]
+struct HomeCardItem {
+    title: String,
+    subtitle: String,
+    path: String,
 }
 
 /// Today in the person's zone (`Asia/Seoul` for a missing or unknown name).
@@ -40,7 +55,7 @@ pub struct CardTask {
     pub due: NaiveDate,
 }
 
-pub fn card(tasks: &[CardTask], today: NaiveDate, english: bool) -> Value {
+pub fn card(tasks: &[CardTask], today: NaiveDate, english: bool) -> HomeCardResponse {
     let due_today = tasks.iter().filter(|task| task.due == today).count();
     let overdue = tasks.len() - due_today;
     let title = if english {
@@ -48,7 +63,7 @@ pub fn card(tasks: &[CardTask], today: NaiveDate, english: bool) -> Value {
     } else {
         format!("내 업무 · 오늘 {due_today} · 지연 {overdue}")
     };
-    let items: Vec<Value> = tasks
+    let items = tasks
         .iter()
         .take(MAX_ITEMS)
         .map(|task| {
@@ -60,22 +75,41 @@ pub fn card(tasks: &[CardTask], today: NaiveDate, english: bool) -> Value {
                 (1, true) => "1 day overdue".to_string(),
                 (n, true) => format!("{n} days overdue"),
             };
-            json!({
-                "title": task.title,
-                "subtitle": format!("{} · {when}", task.reference),
-                "path": task_path(&task.id),
-            })
+            HomeCardItem {
+                title: task.title.clone(),
+                subtitle: format!("{} · {when}", task.reference),
+                path: task_path(&task.id),
+            }
         })
         .collect();
-    json!({"title": title, "count": tasks.len(), "items": items})
+    HomeCardResponse {
+        title,
+        count: tasks.len(),
+        items,
+    }
 }
 
 /// `POST /v1/home-card`.
+#[utoipa::path(
+    post, path = "/v1/home-card", operation_id = "getPmsHomeCard", tag = "Platform callbacks",
+    description = "Platform-only, read-only home card for open tasks due today or overdue in the caller’s time zone.",
+    request_body = ref("#/components/schemas/HomeCardRequest"),
+    responses(
+        (status = 200, description = "Success", body = HomeCardResponse),
+        (status = 401, description = "Platform identity could not be verified", body = crate::error::IdentityErrorResponse),
+        (status = 400, description = "Malformed JSON", body = String, content_type = "text/plain"),
+        (status = 403, description = "Current permissions do not allow the operation", body = crate::error::ErrorResponse),
+        (status = 413, description = "JSON body exceeds the extractor limit", body = String, content_type = "text/plain"),
+        (status = 415, description = "Expected application/json", body = String, content_type = "text/plain"),
+        (status = 422, description = "JSON fields could not be decoded", body = String, content_type = "text/plain"),
+        (status = 500, description = "Internal error", body = crate::error::ErrorResponse),
+    )
+)]
 pub async fn home_card(
     State(pool): State<PgPool>,
     Extension(identity): Extension<Identity>,
     body: Option<Json<HomeCardRequest>>,
-) -> ApiResult<Json<Value>> {
+) -> ApiResult<Json<HomeCardResponse>> {
     if !identity.context.platform {
         return Err(platform_only());
     }
@@ -111,7 +145,7 @@ mod tests {
                 due: today - chrono::Duration::days(if i < 2 { 0 } else { i }),
             })
             .collect();
-        let value = card(&tasks, today, false);
+        let value = serde_json::to_value(card(&tasks, today, false)).unwrap();
         assert_eq!(value["title"], "내 업무 · 오늘 2 · 지연 5");
         assert_eq!(value["count"], 7);
         assert_eq!(value["items"].as_array().unwrap().len(), MAX_ITEMS);
@@ -119,7 +153,7 @@ mod tests {
         assert_eq!(value["items"][2]["subtitle"], "WEB-2 · 2일 지연");
         assert_eq!(value["items"][2]["path"], "/tasks/t2");
         assert_eq!(
-            card(&tasks, today, true)["items"][2]["subtitle"],
+            serde_json::to_value(card(&tasks, today, true)).unwrap()["items"][2]["subtitle"],
             "WEB-2 · 2 days overdue"
         );
     }

@@ -1,0 +1,59 @@
+name: Official apps
+
+on:
+  push:
+    branches: [main]
+    paths: ["apps/**", ".github/workflows/official-apps.yml"]
+  pull_request:
+    branches: [main]
+    paths: ["apps/**", ".github/workflows/official-apps.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  app:
+    name: Verify ${{ matrix.app }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        app: [board, docs, drive, messenger, planner, pms, whiteboard]
+    defaults:
+      run:
+        working-directory: apps/${{ matrix.app }}
+    services:
+      postgres:
+        image: postgres:18.3
+        env:
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports:
+          - "127.0.0.1::5432"
+        options: --health-cmd "pg_isready -U postgres" --health-interval 2s --health-timeout 5s --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: pnpm
+          cache-dependency-path: apps/${{ matrix.app }}/pnpm-lock.yaml
+      - name: Check formatting and test against PostgreSQL
+        env:
+          APP: ${{ matrix.app }}
+          POSTGRES_PORT: ${{ job.services.postgres.ports[5432] }}
+        run: |
+          rustup toolchain install 1.99.1 --profile minimal --component rustfmt
+          export "${APP^^}_TEST_DATABASE_URL=postgresql://postgres@127.0.0.1:${POSTGRES_PORT}/postgres"
+          cargo fmt --all -- --check
+          cargo test --locked -- --include-ignored --test-threads=1
+          cargo run --locked --bin miy-app -- --check-openapi
+      - name: Check types, test and build
+        run: |
+          pnpm install --frozen-lockfile
+          node web/api-tools/generate.mjs --check
+          pnpm typecheck
+          pnpm test --maxWorkers=1
+          pnpm build

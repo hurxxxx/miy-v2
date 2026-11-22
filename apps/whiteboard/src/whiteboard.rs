@@ -18,7 +18,7 @@
 //!   lock (the space's ACL share lock too) before changing anything.
 use axum::{
     Extension, Json,
-    extract::{Path, Query, State},
+    extract::{FromRequest, Path, Query, Request, State},
     http::StatusCode,
     response::IntoResponse,
 };
@@ -31,7 +31,8 @@ use std::collections::{HashMap, HashSet};
 
 use crate::{
     AppState,
-    error::{ApiError, ApiJson, ApiResult, check_length},
+    api_contract::SCENE_BODY_LIMIT,
+    error::{ApiError, ApiJson, ApiResult, ErrorResponse, IdentityErrorResponse, check_length},
     files, notify, people, scene,
     spaces::{self, GLOBAL, SpaceRole},
     time::now_utc,
@@ -353,7 +354,7 @@ fn target_write_allowed(
 
 // ---------------------------------------------------------------- output
 
-#[derive(Serialize, Clone)]
+#[derive(Serialize, Clone, utoipa::ToSchema)]
 pub struct PrimaryTarget {
     app: String,
     #[serde(rename = "type")]
@@ -362,7 +363,7 @@ pub struct PrimaryTarget {
     sort_order: i32,
 }
 
-#[derive(Serialize, Clone)]
+#[derive(Serialize, Clone, utoipa::ToSchema)]
 pub struct TargetItem {
     app: String,
     #[serde(rename = "type")]
@@ -373,47 +374,67 @@ pub struct TargetItem {
 }
 
 /// AI-DO `WhiteboardHubItem` plus `revision` (miy).
-#[derive(Serialize, Clone)]
+#[derive(Serialize, Clone, utoipa::ToSchema)]
 pub struct HubItem {
     pub id: String,
+    #[schema(required = true)]
     workspace_id: Option<String>,
+    #[schema(required = true)]
     workspace_key: Option<String>,
     source_app: String,
+    #[schema(value_type = WhiteboardSourceType)]
     source_type: &'static str,
     source_id: String,
     source_kind: String,
+    #[schema(required = true)]
     source_ref: Option<String>,
     generation_kind: String,
     pub location_label: String,
     target_label: String,
+    #[schema(required = true)]
     primary_target: Option<PrimaryTarget>,
     targets: Vec<TargetItem>,
     pub source_badge: String,
+    #[schema(required = true)]
     source_deeplink: Option<String>,
     pub title: String,
     pub created_by_id: String,
     created_by_name: String,
     #[serde(serialize_with = "crate::time::serialize")]
+    #[schema(value_type = String)]
     pub created_at: NaiveDateTime,
     #[serde(serialize_with = "crate::time::serialize")]
+    #[schema(value_type = String)]
     pub updated_at: NaiveDateTime,
     #[serde(serialize_with = "crate::time::serialize_opt")]
+    #[schema(value_type = Option<String>, required = true)]
     pub trashed_at: Option<NaiveDateTime>,
     pub is_favorite: bool,
     is_private: bool,
     #[serde(serialize_with = "crate::time::serialize_opt")]
+    #[schema(value_type = Option<String>, required = true)]
     pub last_viewed_at: Option<NaiveDateTime>,
     can_view: bool,
     can_edit: bool,
     can_share: bool,
     can_manage: bool,
+    /// Stored scene revision used for concurrent saves.
     revision: i64,
 }
 
-#[derive(Serialize)]
+#[allow(dead_code)]
+#[derive(utoipa::ToSchema)]
+#[schema(rename_all = "snake_case")]
+enum WhiteboardSourceType {
+    Whiteboard,
+}
+
+#[derive(Serialize, utoipa::ToSchema)]
 pub struct Detail {
     #[serde(flatten)]
     item: HubItem,
+    /// Excalidraw scene object. `files` references stored images by row ID.
+    #[schema(value_type = HashMap<String, Value>)]
     scene: Value,
 }
 
@@ -661,7 +682,7 @@ fn resolve_view(view: Option<&str>, category: Option<&str>) -> ApiResult<&'stati
     })
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, utoipa::ToSchema)]
 pub struct HubResponse {
     items: Vec<HubItem>,
     total: usize,
@@ -703,6 +724,33 @@ fn non_empty(query: &HashMap<String, String>, name: &str) -> Option<String> {
 
 /// `GET …/hub`: AI-DO `build_whiteboard_hub_response`. Boards of the current
 /// space the caller may see, filtered and sorted like AI-DO.
+#[utoipa::path(
+    get, path = "/hub", operation_id = "listWhiteboardHub", tag = "Whiteboards",
+    params(
+        ("view" = Option<String>, Query, description = "all, mine, recent, favorites, or archived. Takes precedence over category."),
+        ("category" = Option<String>, Query, description = "Legacy filter: my, mine, recent, favorite, favorites, archived, or all."),
+        ("page" = Option<i64>, Query, minimum = 1, maximum = 9007199254740991i64, description = "One-based page. Defaults to 1."),
+        ("page_size" = Option<i64>, Query, minimum = 1, maximum = 200, description = "Defaults to 50."),
+        ("sort_by" = Option<String>, Query, description = "title, created_at, last_viewed_at, or target_sort_order. Defaults to updated_at for omitted or unrecognized values."),
+        ("sort_dir" = Option<String>, Query, description = "asc or desc. Defaults to desc."),
+        ("q" = Option<String>, Query),
+        ("source_app" = Option<String>, Query),
+        ("source_kind" = Option<String>, Query),
+        ("space_id" = Option<String>, Query, description = "Filter by workspace ID."),
+        ("target_app" = Option<String>, Query),
+        ("target_type" = Option<String>, Query),
+        ("target_id" = Option<String>, Query),
+    ),
+    responses(
+        (status = 200, description = "Page of visible boards", body = HubResponse),
+        (status = 401, description = "Platform identity could not be verified", body = IdentityErrorResponse),
+        (status = 403, description = "Current permissions do not allow this operation", body = ErrorResponse),
+        (status = 404, description = "The workspace or board is missing or is not visible", body = ErrorResponse),
+        (status = 422, description = "Invalid request", body = ErrorResponse),
+        (status = 500, description = "Internal error", body = ErrorResponse),
+        (status = 503, description = "A required platform service is unavailable", body = ErrorResponse),
+    )
+)]
 pub async fn hub(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
@@ -898,12 +946,19 @@ fn compare_items(a: &HubItem, b: &HubItem, sort_by: &str) -> std::cmp::Ordering 
 
 // ---------------------------------------------------------------- items
 
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema)]
 pub struct TargetPayload {
+    /// Use `whiteboard` for a board shared in its own workspace.
+    #[schema(min_length = 1, max_length = 64)]
     app: String,
+    /// Use `workspace_sidebar` for a board shared in its own workspace.
     #[serde(rename = "type")]
+    #[schema(min_length = 1, max_length = 64)]
     target_type: String,
+    /// The board's space ID, or `global` for the app-wide space.
+    #[schema(min_length = 1, max_length = 128)]
     id: String,
+    /// Defaults to 0.
     #[serde(default)]
     sort_order: i32,
 }
@@ -927,18 +982,28 @@ fn default_generation_kind() -> String {
 }
 
 /// AI-DO `CreateWhiteboardRequest`.
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema)]
 pub struct CreateRequest {
+    #[schema(min_length = 1, max_length = 200)]
     title: String,
+    /// Excalidraw scene object. Omit or send null to start with an empty scene.
     #[serde(default)]
+    #[schema(value_type = Option<HashMap<String, Value>>)]
     scene: Option<Value>,
+    /// Defaults to `whiteboard`.
     #[serde(default = "default_source_app")]
+    #[schema(min_length = 1, max_length = 64)]
     source_app: String,
+    /// Defaults to `manual`.
     #[serde(default = "default_source_kind")]
+    #[schema(min_length = 1, max_length = 64)]
     source_kind: String,
     #[serde(default)]
+    #[schema(max_length = 128)]
     source_ref: Option<String>,
+    /// Defaults to `human`.
     #[serde(default = "default_generation_kind")]
+    #[schema(min_length = 1, max_length = 32)]
     generation_kind: String,
     #[serde(default)]
     primary_target: Option<TargetPayload>,
@@ -957,6 +1022,15 @@ async fn check_scene_files<'e>(
     board_id: Option<&str>,
     value: &Value,
 ) -> ApiResult<Vec<String>> {
+    // Leave space for the board detail and its sharing data in the response.
+    const MAX_SCENE_BYTES: usize = SCENE_BODY_LIMIT - 64 * 1024;
+    if value.to_string().len() > MAX_SCENE_BYTES {
+        return Err(ApiError::new(
+            StatusCode::PAYLOAD_TOO_LARGE,
+            "whiteboard.scene_too_large",
+            "This board is too large to save. Move some elements to another board.",
+        ));
+    }
     let ids = scene::storage_ids(value).map_err(|_| scene_file_invalid())?;
     if ids.is_empty() {
         return Ok(Vec::new());
@@ -980,6 +1054,21 @@ async fn check_scene_files<'e>(
 }
 
 /// `POST …/items`: AI-DO `create_whiteboard_item` / `create_whiteboard_for_user`.
+#[utoipa::path(
+    post, path = "/items", operation_id = "createWhiteboardItem", tag = "Whiteboards",
+    description = "The JSON request is limited to 4 MiB. Images can be reserved after the board is created.",
+    request_body = CreateRequest,
+    responses(
+        (status = 201, description = "Created board", body = Detail),
+        (status = 401, description = "Platform identity could not be verified", body = IdentityErrorResponse),
+        (status = 403, description = "Current permissions do not allow this operation", body = ErrorResponse),
+        (status = 404, description = "The workspace or board is missing or is not visible", body = ErrorResponse),
+        (status = 413, description = "The Excalidraw scene exceeds the supported size", body = ErrorResponse),
+        (status = 422, description = "Invalid request", body = ErrorResponse),
+        (status = 500, description = "Internal error", body = ErrorResponse),
+        (status = 503, description = "A required platform service is unavailable", body = ErrorResponse),
+    )
+)]
 pub async fn create_item(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
@@ -1074,6 +1163,17 @@ pub async fn create_item(
 }
 
 /// `GET …/items/{item_id}`.
+#[utoipa::path(
+    get, path = "/items/{item_id}", operation_id = "getWhiteboardItem", tag = "Whiteboards",
+    params(("item_id" = String, Path)),
+    responses(
+        (status = 200, description = "Board detail and Excalidraw scene", body = Detail),
+        (status = 401, description = "Platform identity could not be verified", body = IdentityErrorResponse),
+        (status = 404, description = "The workspace or board is missing or is not visible", body = ErrorResponse),
+        (status = 500, description = "Internal error", body = ErrorResponse),
+        (status = 503, description = "A required platform service is unavailable", body = ErrorResponse),
+    )
+)]
 pub async fn get_item(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
@@ -1093,52 +1193,98 @@ fn revision_conflict() -> ApiError {
     )
 }
 
+#[derive(utoipa::ToSchema)]
+pub struct UpdateRequest {
+    /// Omit or send null to leave the title unchanged.
+    #[schema(min_length = 1, max_length = 200)]
+    title: Option<String>,
+    /// Omit to leave the scene unchanged. An explicit null clears it.
+    #[schema(value_type = Option<HashMap<String, Value>>)]
+    scene: Option<Value>,
+    /// Integer scene revision. Required when `scene` is present, including null.
+    base_revision: Option<i64>,
+}
+
+impl FromRequest<AppState> for UpdateRequest {
+    type Rejection = ApiError;
+
+    async fn from_request(request: Request, state: &AppState) -> ApiResult<Self> {
+        let ApiJson(body) = ApiJson::<Value>::from_request(request, state).await?;
+        let Some(fields) = body.as_object() else {
+            return Err(ApiError::validation("Input should be a valid dictionary"));
+        };
+        let title = match fields.get("title") {
+            None | Some(Value::Null) => None,
+            Some(Value::String(title)) => {
+                check_length("title", title, 1, 200)?;
+                Some(title.trim().to_string())
+            }
+            Some(_) => {
+                return Err(ApiError::validation(
+                    "title: Input should be a valid string",
+                ));
+            }
+        };
+        let scene = match fields.get("scene") {
+            None => None,
+            Some(Value::Null) => Some(scene::empty_scene()),
+            Some(value @ Value::Object(_)) => Some(value.clone()),
+            Some(_) => {
+                return Err(ApiError::validation(
+                    "scene: Input should be a valid dictionary",
+                ));
+            }
+        };
+        let base_revision = match (&scene, fields.get("base_revision")) {
+            (None, _) => None,
+            (Some(_), Some(value)) => Some(value.as_i64().ok_or_else(|| {
+                ApiError::validation("base_revision: Input should be a valid integer")
+            })?),
+            (Some(_), None) => return Err(ApiError::validation("base_revision: Field required")),
+        };
+        Ok(Self {
+            title,
+            scene,
+            base_revision,
+        })
+    }
+}
+
 /// `PATCH …/items/{item_id}`: AI-DO `update_whiteboard_item`
 /// (item_mutations.py). A scene save carries `base_revision`, the revision
 /// the editor loaded or last saved. A changed scene from an older revision is
 /// refused with 409 instead of overwriting (AI-DO merged concurrent editors
 /// with Yjs). A scene equal to the stored one (ignoring per-viewer editor
 /// state) changes nothing, whatever its revision.
+#[utoipa::path(
+    patch, path = "/items/{item_id}", operation_id = "updateWhiteboardItem", tag = "Whiteboards",
+    description = "The JSON request is limited to 4 MiB. Scene saves require base_revision and use 409 for conflicting newer changes.",
+    request_body = UpdateRequest,
+    params(("item_id" = String, Path)),
+    responses(
+        (status = 200, description = "Board detail after saving", body = Detail),
+        (status = 401, description = "Platform identity could not be verified", body = IdentityErrorResponse),
+        (status = 403, description = "Current permissions do not allow this operation", body = ErrorResponse),
+        (status = 404, description = "The workspace or board is missing or is not visible", body = ErrorResponse),
+        (status = 409, description = "A different scene was saved since base_revision (whiteboard_revision_conflict)", body = ErrorResponse),
+        (status = 413, description = "The Excalidraw scene exceeds the supported size", body = ErrorResponse),
+        (status = 422, description = "Invalid request", body = ErrorResponse),
+        (status = 500, description = "Internal error", body = ErrorResponse),
+        (status = 503, description = "A required platform service is unavailable", body = ErrorResponse),
+    )
+)]
 pub async fn update_item(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
     Path(params): Path<HashMap<String, String>>,
-    ApiJson(body): ApiJson<Value>,
+    UpdateRequest {
+        title,
+        scene: new_scene,
+        base_revision,
+    }: UpdateRequest,
 ) -> ApiResult<Json<Detail>> {
     let space_id = space_param(&params);
     let item_id = item_param(&params)?;
-    let Some(fields) = body.as_object() else {
-        return Err(ApiError::validation("Input should be a valid dictionary"));
-    };
-    let title = match fields.get("title") {
-        None | Some(Value::Null) => None,
-        Some(Value::String(title)) => {
-            check_length("title", title, 1, 200)?;
-            Some(title.trim().to_string())
-        }
-        Some(_) => {
-            return Err(ApiError::validation(
-                "title: Input should be a valid string",
-            ));
-        }
-    };
-    let new_scene = match fields.get("scene") {
-        None => None,
-        Some(Value::Null) => Some(scene::empty_scene()),
-        Some(value @ Value::Object(_)) => Some(value.clone()),
-        Some(_) => {
-            return Err(ApiError::validation(
-                "scene: Input should be a valid dictionary",
-            ));
-        }
-    };
-    let base_revision = match (&new_scene, fields.get("base_revision")) {
-        (None, _) => None,
-        (Some(_), Some(value)) => Some(value.as_i64().ok_or_else(|| {
-            ApiError::validation("base_revision: Input should be a valid integer")
-        })?),
-        (Some(_), None) => return Err(ApiError::validation("base_revision: Field required")),
-    };
     spaces::ensure_exists(&state.pool, &space_id).await?;
 
     let mut tx = state.pool.begin().await?;
@@ -1202,6 +1348,18 @@ pub async fn update_item(
 
 /// `DELETE …/items/{item_id}`: move to the trash (AI-DO sets `trashed_at`).
 /// The people it was shared with lose its notification.
+#[utoipa::path(
+    delete, path = "/items/{item_id}", operation_id = "trashWhiteboardItem", tag = "Whiteboards",
+    params(("item_id" = String, Path)),
+    responses(
+        (status = 204, description = "Board moved to the trash"),
+        (status = 401, description = "Platform identity could not be verified", body = IdentityErrorResponse),
+        (status = 403, description = "Current permissions do not allow this operation", body = ErrorResponse),
+        (status = 404, description = "The workspace or board is missing or is not visible", body = ErrorResponse),
+        (status = 500, description = "Internal error", body = ErrorResponse),
+        (status = 503, description = "A required platform service is unavailable", body = ErrorResponse),
+    )
+)]
 pub async fn trash_item(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
@@ -1226,6 +1384,18 @@ pub async fn trash_item(
 }
 
 /// `POST …/items/{item_id}/restore`.
+#[utoipa::path(
+    post, path = "/items/{item_id}/restore", operation_id = "restoreWhiteboardItem", tag = "Whiteboards",
+    params(("item_id" = String, Path)),
+    responses(
+        (status = 200, description = "Restored board detail", body = Detail),
+        (status = 401, description = "Platform identity could not be verified", body = IdentityErrorResponse),
+        (status = 403, description = "Current permissions do not allow this operation", body = ErrorResponse),
+        (status = 404, description = "The workspace or board is missing or is not visible", body = ErrorResponse),
+        (status = 500, description = "Internal error", body = ErrorResponse),
+        (status = 503, description = "A required platform service is unavailable", body = ErrorResponse),
+    )
+)]
 pub async fn restore_item(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
@@ -1254,6 +1424,19 @@ pub async fn restore_item(
 
 /// `DELETE …/items/{item_id}/permanent`: only from the trash. Its stored
 /// images are released after the commit (files.rs).
+#[utoipa::path(
+    delete, path = "/items/{item_id}/permanent", operation_id = "deleteWhiteboardItemPermanently", tag = "Whiteboards",
+    params(("item_id" = String, Path)),
+    responses(
+        (status = 204, description = "Board permanently deleted"),
+        (status = 401, description = "Platform identity could not be verified", body = IdentityErrorResponse),
+        (status = 403, description = "Current permissions do not allow this operation", body = ErrorResponse),
+        (status = 404, description = "The workspace or board is missing or is not visible", body = ErrorResponse),
+        (status = 409, description = "Move the board to the trash before permanently deleting it", body = ErrorResponse),
+        (status = 500, description = "Internal error", body = ErrorResponse),
+        (status = 503, description = "A required platform service is unavailable", body = ErrorResponse),
+    )
+)]
 pub async fn delete_item_permanently(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
@@ -1287,6 +1470,20 @@ pub async fn delete_item_permanently(
 
 /// `PUT …/items/{item_id}/target`: AI-DO `_upsert_primary_target`. The only
 /// target miy knows is the board's space ("워크스페이스 공개").
+#[utoipa::path(
+    put, path = "/items/{item_id}/target", operation_id = "updateWhiteboardTarget", tag = "Whiteboards",
+    request_body = TargetPayload,
+    params(("item_id" = String, Path)),
+    responses(
+        (status = 200, description = "Board detail after sharing with its workspace", body = Detail),
+        (status = 401, description = "Platform identity could not be verified", body = IdentityErrorResponse),
+        (status = 403, description = "Current permissions do not allow this operation", body = ErrorResponse),
+        (status = 404, description = "The workspace or board is missing or is not visible", body = ErrorResponse),
+        (status = 422, description = "Invalid request", body = ErrorResponse),
+        (status = 500, description = "Internal error", body = ErrorResponse),
+        (status = 503, description = "A required platform service is unavailable", body = ErrorResponse),
+    )
+)]
 pub async fn update_target(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
@@ -1349,6 +1546,18 @@ pub async fn update_target(
 
 /// `DELETE …/items/{item_id}/target`: AI-DO `_delete_primary_target` (back to
 /// "비공개").
+#[utoipa::path(
+    delete, path = "/items/{item_id}/target", operation_id = "deleteWhiteboardTarget", tag = "Whiteboards",
+    params(("item_id" = String, Path)),
+    responses(
+        (status = 200, description = "Board detail after removing the workspace target", body = Detail),
+        (status = 401, description = "Platform identity could not be verified", body = IdentityErrorResponse),
+        (status = 403, description = "Current permissions do not allow this operation", body = ErrorResponse),
+        (status = 404, description = "The workspace or board is missing or is not visible", body = ErrorResponse),
+        (status = 500, description = "Internal error", body = ErrorResponse),
+        (status = 503, description = "A required platform service is unavailable", body = ErrorResponse),
+    )
+)]
 pub async fn delete_target(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
@@ -1412,12 +1621,23 @@ async fn access_in(
     ))
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, utoipa::ToSchema)]
 pub struct FavoriteResponse {
     is_favorite: bool,
 }
 
 /// `PATCH …/items/{item_id}/favorite`.
+#[utoipa::path(
+    patch, path = "/items/{item_id}/favorite", operation_id = "toggleWhiteboardFavorite", tag = "Whiteboards",
+    params(("item_id" = String, Path)),
+    responses(
+        (status = 200, description = "Current favorite state", body = FavoriteResponse),
+        (status = 401, description = "Platform identity could not be verified", body = IdentityErrorResponse),
+        (status = 404, description = "The workspace or board is missing or is not visible", body = ErrorResponse),
+        (status = 500, description = "Internal error", body = ErrorResponse),
+        (status = 503, description = "A required platform service is unavailable", body = ErrorResponse),
+    )
+)]
 pub async fn toggle_favorite(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
@@ -1444,6 +1664,17 @@ pub async fn toggle_favorite(
 
 /// `POST …/items/{item_id}/view`: last viewed (AI-DO), and the board's share
 /// notification for the caller is read (miy).
+#[utoipa::path(
+    post, path = "/items/{item_id}/view", operation_id = "recordWhiteboardView", tag = "Whiteboards",
+    params(("item_id" = String, Path)),
+    responses(
+        (status = 204, description = "View recorded"),
+        (status = 401, description = "Platform identity could not be verified", body = IdentityErrorResponse),
+        (status = 404, description = "The workspace or board is missing or is not visible", body = ErrorResponse),
+        (status = 500, description = "Internal error", body = ErrorResponse),
+        (status = 503, description = "A required platform service is unavailable", body = ErrorResponse),
+    )
+)]
 pub async fn record_view(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
@@ -1474,11 +1705,12 @@ pub async fn record_view(
 
 /// AI-DO `ShareableUserItem`; `email` is empty (the directory has none) and
 /// `primary_group` names the person's group.
-#[derive(Serialize)]
+#[derive(Serialize, utoipa::ToSchema)]
 pub struct ShareableUser {
     id: String,
     email: String,
     full_name: String,
+    #[schema(required = true)]
     primary_group: Option<String>,
 }
 
@@ -1492,6 +1724,19 @@ fn directory_unavailable() -> ApiError {
 /// `GET …/shareable-users?q=`: AI-DO `list_whiteboard_shareable_users`.
 /// People of the current space (an app space: its direct members), not the
 /// caller, at most 30.
+#[utoipa::path(
+    get, path = "/shareable-users", operation_id = "listWhiteboardShareableUsers", tag = "Whiteboards",
+    params(("q" = Option<String>, Query, description = "Filter workspace members by name. The trimmed query may contain up to 200 characters.")),
+    responses(
+        (status = 200, description = "Up to 30 eligible people", body = [ShareableUser]),
+        (status = 401, description = "Platform identity could not be verified", body = IdentityErrorResponse),
+        (status = 403, description = "Current permissions do not allow this operation", body = ErrorResponse),
+        (status = 404, description = "Space not found", body = ErrorResponse),
+        (status = 422, description = "The query exceeds 200 characters after trimming", body = ErrorResponse),
+        (status = 500, description = "Internal error", body = ErrorResponse),
+        (status = 503, description = "A required platform service is unavailable", body = ErrorResponse),
+    )
+)]
 pub async fn shareable_users(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
@@ -1526,22 +1771,28 @@ pub async fn shareable_users(
     Ok(Json(users))
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, utoipa::ToSchema)]
 pub struct UserShareItem {
     user_id: String,
     email: String,
     full_name: String,
+    #[schema(value_type = UserShareAccess)]
     access_level: String,
 }
 
 /// AI-DO `WhiteboardSharingResponse`. Link shares are not offered in miy, so
 /// `link_share` is always null.
-#[derive(Serialize)]
+#[derive(Serialize, utoipa::ToSchema)]
 pub struct SharingResponse {
     whiteboard_id: String,
     owner_id: String,
     users: Vec<UserShareItem>,
-    link_share: Option<Value>,
+    #[schema(schema_with = null_link_share)]
+    link_share: (),
+}
+
+fn null_link_share() -> utoipa::openapi::schema::Object {
+    utoipa::openapi::schema::Object::with_type(utoipa::openapi::schema::Type::Null)
 }
 
 async fn sharing_response(
@@ -1581,11 +1832,23 @@ async fn sharing_response(
         whiteboard_id: board.id.clone(),
         owner_id: board.owner_id.clone(),
         users,
-        link_share: None,
+        link_share: (),
     })
 }
 
 /// `GET …/items/{item_id}/sharing`: AI-DO `load_whiteboard_for_share_or_403`.
+#[utoipa::path(
+    get, path = "/items/{item_id}/sharing", operation_id = "getWhiteboardSharing", tag = "Whiteboards",
+    params(("item_id" = String, Path)),
+    responses(
+        (status = 200, description = "Current board shares", body = SharingResponse),
+        (status = 401, description = "Platform identity could not be verified", body = IdentityErrorResponse),
+        (status = 403, description = "Current permissions do not allow this operation", body = ErrorResponse),
+        (status = 404, description = "The workspace or board is missing or is not visible", body = ErrorResponse),
+        (status = 500, description = "Internal error", body = ErrorResponse),
+        (status = 503, description = "A required platform service is unavailable", body = ErrorResponse),
+    )
+)]
 pub async fn get_sharing(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
@@ -1603,14 +1866,38 @@ pub async fn get_sharing(
     ))
 }
 
-#[derive(Deserialize)]
+#[allow(dead_code)]
+#[derive(utoipa::ToSchema)]
+#[schema(rename_all = "snake_case")]
+enum UserShareAccess {
+    Read,
+    Edit,
+}
+
+#[derive(Deserialize, utoipa::ToSchema)]
 pub struct UserShareRequest {
+    #[schema(value_type = UserShareAccess)]
     access_level: String,
 }
 
 /// `PUT …/items/{item_id}/sharing/users/{user_id}`: AI-DO
 /// `upsert_whiteboard_user_share`, plus a `share` notification to a person
 /// newly given the board (miy).
+#[utoipa::path(
+    put, path = "/items/{item_id}/sharing/users/{user_id}", operation_id = "upsertWhiteboardUserShare", tag = "Whiteboards",
+    request_body = UserShareRequest,
+    params(("item_id" = String, Path), ("user_id" = String, Path)),
+    responses(
+        (status = 200, description = "Current board shares", body = SharingResponse),
+        (status = 401, description = "Platform identity could not be verified", body = IdentityErrorResponse),
+        (status = 403, description = "Current permissions do not allow this operation", body = ErrorResponse),
+        (status = 404, description = "The workspace or board is missing or is not visible", body = ErrorResponse),
+        (status = 409, description = "The user already owns the board or is not a member of its workspace", body = ErrorResponse),
+        (status = 422, description = "Invalid request", body = ErrorResponse),
+        (status = 500, description = "Internal error", body = ErrorResponse),
+        (status = 503, description = "A required platform service is unavailable", body = ErrorResponse),
+    )
+)]
 pub async fn upsert_user_share(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
@@ -1698,6 +1985,18 @@ pub async fn upsert_user_share(
 
 /// `DELETE …/items/{item_id}/sharing/users/{user_id}`: the person also loses
 /// the board's notification (miy).
+#[utoipa::path(
+    delete, path = "/items/{item_id}/sharing/users/{user_id}", operation_id = "deleteWhiteboardUserShare", tag = "Whiteboards",
+    params(("item_id" = String, Path), ("user_id" = String, Path)),
+    responses(
+        (status = 200, description = "Current board shares after removal", body = SharingResponse),
+        (status = 401, description = "Platform identity could not be verified", body = IdentityErrorResponse),
+        (status = 403, description = "Current permissions do not allow this operation", body = ErrorResponse),
+        (status = 404, description = "The workspace or board is missing or is not visible", body = ErrorResponse),
+        (status = 500, description = "Internal error", body = ErrorResponse),
+        (status = 503, description = "A required platform service is unavailable", body = ErrorResponse),
+    )
+)]
 pub async fn delete_user_share(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,

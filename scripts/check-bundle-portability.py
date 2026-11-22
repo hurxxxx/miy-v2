@@ -120,6 +120,7 @@ def git_checkout_round_trip(project, destination, protected, guidance):
             raise RuntimeError(f"git_portability_check_failed: {detail}") from error
 
     git("init", "--quiet")
+    git("check-ignore", "--quiet", "web/api-tools/node_modules/test-package/index.js")
     git("add", "--all")
     git(
         "-c", "user.name=MIY portability check",
@@ -146,8 +147,8 @@ def check_cli(cli, destination):
     cli = cli.resolve(strict=True)
     with tempfile.TemporaryDirectory(prefix="miy-portability-") as temporary:
         project = Path(temporary) / "한글 경로" / "app with spaces"
-        subprocess.run(
-            [str(cli), "app", "init", str(project), "--id", APP_ID, "--name", APP_NAME],
+        generated = subprocess.run(
+            [str(cli), "--output", "json", "app", "init", str(project), "--id", APP_ID, "--name", APP_NAME],
             cwd=ROOT,
             check=True,
             stdout=subprocess.PIPE,
@@ -178,6 +179,29 @@ def check_cli(cli, destination):
             if sha256((project / relative).read_bytes()) != expected:
                 raise ValueError(f"protected_scaffold_hash_mismatch: {relative}")
         guidance = managed_guidance(project)
+        guidance_lock = json.loads((project / "miy.cli.json").read_bytes())
+        init_result = json.loads(generated.stdout)["data"]
+        if any(guidance_lock[key] != init_result[key] for key in ("templateVersion", "guidanceVersion")):
+            raise ValueError("scaffold_guidance_version_mismatch")
+        def check_api_contract():
+            completed = subprocess.run(
+                [str(cli), "--output", "json", "app", "check", "--harness-only"],
+                cwd=project, stdout=subprocess.PIPE, check=False,
+            )
+            return completed.returncode, json.loads(completed.stdout)
+
+        code, outcome = check_api_contract()
+        if code or not outcome["ok"]:
+            raise ValueError("generated_api_contract_check_failed")
+        spec = project / "docs/openapi.json"
+        saved = spec.read_bytes()
+        spec.unlink()
+        try:
+            code, outcome = check_api_contract()
+            if not code or outcome["error"]["code"] != "app_api_contract_invalid":
+                raise ValueError("missing_generated_api_contract_accepted")
+        finally:
+            spec.write_bytes(saved)
         git_checkout_round_trip(
             project,
             Path(temporary) / "다른 경로" / "autocrlf checkout",
@@ -186,6 +210,8 @@ def check_cli(cli, destination):
         )
         result = {
             "bundleVersion": lock["bundleVersion"],
+            "templateVersion": guidance_lock["templateVersion"],
+            "guidanceVersion": guidance_lock["guidanceVersion"],
             "protectedFiles": lock["protectedFiles"],
             "embeddedScaffoldFiles": scaffold,
             "gitAttributes": guidance[".gitattributes"],

@@ -57,6 +57,7 @@ describe('CustomFieldValueEditor (miy reinforcement)', () => {
         field={field({ name: 'Owner', field_type: 'user' })}
         members={[
           {
+            primary_org_unit_name: null,
             user_id: 'u-1',
             full_name: 'Ada',
             email: '',

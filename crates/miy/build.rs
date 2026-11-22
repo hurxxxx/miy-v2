@@ -85,6 +85,7 @@ fn main() {
         "guidance/miy-cli/SKILL.md",
         "guidance/miy-cli/references/workflow.md",
         "guidance/miy-cli/references/updating.md",
+        "guidance/miy-cli/references/harness.md",
     ] {
         let path = Path::new(&manifest_dir).join(relative);
         verify_text(&path);

@@ -137,6 +137,7 @@ flowchart LR
   - 최상위 탐색 권한(`allow-top-navigation*`)은 주지 않는다.
 - **장치 권한(2026-11-22 소스 반영):** 앱이 manifest `requestedPermissions`에 `frame:clipboard-write`·`frame:fullscreen`을 요청하고 관리자가 다른 플랫폼 권한과 같은 승인 화면에서 승인하면, 프레임 실행 응답(`POST /api/v1/app-frames`)의 `allow`에 `clipboard-write`·`fullscreen`이 들어가고 포털이 실행 form 제출 전에 iframe `allow`로 위임한다. 포털도 이 두 값만 받는다. 마이크·카메라는 아직 위임하지 않는다. 보안 컨텍스트(HTTPS)가 필요하며, HTTP 개발 프로필에서는 해당 기능만 동작하지 않는다.
 - **포털 주소:** 프레임은 포털 주소를 읽을 수 없으므로 `runtime.portalUrl(path)`가 부트스트랩의 부모 출처와 basePath로 앱 경로의 전체 포털 주소를 만든다(공유용 링크).
+- **프록시:** 앱 프레임의 `/_miy/live`는 WebSocket 업그레이드 헤더를 Core에 전달한다. POST로 진입하는 iframe의 장치 권한에는 실행 응답에서 받은 프레임 출처를 명시한다.
 
 ## 4. 배치 프로필과 격리 수준
 

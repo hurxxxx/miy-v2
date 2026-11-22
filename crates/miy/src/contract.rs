@@ -16,6 +16,8 @@ pub struct Manifest {
     pub ui: Ui,
     pub resources: Resources,
     pub migrations: Migrations,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub api_contract: Option<ApiContract>,
     #[serde(default)]
     pub requested_permissions: Vec<String>,
     /// Read-only endpoints the platform calls for the signed-in person
@@ -27,6 +29,11 @@ pub struct Manifest {
     /// (docs/APP-FRAMES.md "보조 프레임"). At most four.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub panels: Vec<Panel>,
+}
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, schemars::JsonSchema)]
+pub enum ApiContract {
+    #[serde(rename = "openapi-v1")]
+    OpenApiV1,
 }
 #[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -326,7 +333,7 @@ pub fn verified_artifact(root: &Path, id: &str) -> anyhow::Result<std::path::Pat
 }
 
 pub fn get_contract() -> Value {
-    json!({"version":VERSION,"bundleVersion":crate::bundle::VERSION,"uiVersion":"miy.ui/v1alpha1","manifestSchema":schemars::schema_for!(Manifest),"guidance":crate::bundle::GUIDANCE,"agentGuidance":crate::bundle::AGENT_GUIDANCE,"cliVersion":crate::cli_guidance::VERSION,"cliGuidance":crate::cli_guidance::manual(),"protectedFiles":crate::bundle::protected_hashes(),"sdkExample":"export default function AppRoot({runtime}) { return <button onClick={() => runtime.navigate('/detail/1')}>Open</button>; }"})
+    json!({"version":VERSION,"bundleVersion":crate::bundle::VERSION,"templateVersion":crate::bundle::template_version(),"guidanceVersion":crate::cli_guidance::GUIDANCE_VERSION,"uiVersion":"miy.ui/v1alpha1","manifestSchema":schemars::schema_for!(Manifest),"guidance":crate::bundle::GUIDANCE,"agentGuidance":crate::bundle::AGENT_GUIDANCE,"cliVersion":crate::cli_guidance::VERSION,"cliGuidance":crate::cli_guidance::manual(),"protectedFiles":crate::bundle::protected_hashes(),"sdkExample":"export default function AppRoot({runtime}) { return <button onClick={() => runtime.navigate('/detail/1')}>Open</button>; }"})
 }
 
 #[cfg(test)]
