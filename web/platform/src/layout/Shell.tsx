@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode, type SyntheticEvent } from "react";
-import { Link, Outlet, useLocation } from "@tanstack/react-router";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode, type SyntheticEvent } from "react";
+import { Link, Outlet, useLocation, useNavigate } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
 import { InstallationsProvider, installationsIn, useInstallations } from "../data/installations";
@@ -8,11 +8,17 @@ import { currentEnvironment, environmentOrigin, environmentPath, isAccountLinkPa
 import { signOut } from "../lib/sign-out";
 import { LoadError } from "../components/LoadState";
 import { NewTabLink } from "../components/NewTabLink";
+import { CommandPalette, useCommandPaletteShortcut, type Command } from "../components/CommandPalette";
+import { NotificationBell } from "../components/notifications/NotificationBell";
 import { Login } from "../pages/Login";
 import { CliInstall } from "../pages/CliInstall";
 import { Join } from "../pages/Join";
 import { AppMark, Badge, Button, Loading, Panel, monograms } from "../ui";
 import { CloseIcon, HomeIcon, MenuIcon, SettingsIcon, TerminalIcon } from "../ui/icons";
+import { AppBarEditor } from "./AppBarEditor";
+import { AppBarLauncherMenu, AppLauncherButton } from "./AppBarLauncherMenus";
+import type { AppBarAppItem } from "./app-bar-model";
+import { useAppBarController } from "./useAppBarController";
 
 export function Shell() {
   const { t } = useTranslation("portal");
@@ -213,20 +219,52 @@ function SignedInLayout({ user, environment }: { user: User; environment: Enviro
   useEffect(() => {
     void refresh();
   }, [refresh, pathname]);
+  const apps = useMemo(() => installationsIn(installations.items, environment), [installations.items, environment]);
+  const marks = useMemo(() => monograms(apps.map((a) => ({ key: a.id, name: a.name }))), [apps]);
+  // The launcher (ported from AI-DO's app bar): the rail lists the pinned apps,
+  // or every app while nothing is pinned; the menu lists every app by category.
+  const appItems = useMemo<AppBarAppItem[]>(
+    () => (isConsole ? [] : apps.map((a) => ({ id: a.appId, title: a.name, mark: marks.get(a.id) ?? "?" }))),
+    [apps, isConsole, marks],
+  );
+  const launcher = useAppBarController({ currentPathname: pathname, user, visibleItems: appItems });
+  // Ctrl/⌘+K: go to an app or a platform page (frames forward the keys).
+  const navigate = useNavigate();
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  const openPalette = useCallback(() => setPaletteOpen(true), []);
+  useCommandPaletteShortcut(openPalette);
+  const commands = useMemo<Command[]>(() => {
+    const go = (to: string) => () => void navigate({ to: to as "/" });
+    return [
+      { id: "home", label: t("commandPalette.home"), run: go(environmentPath(environment)) },
+      ...appItems.map((item) => ({
+        id: `app-${item.id}`,
+        label: item.title,
+        hint: t("commandPalette.appHint"),
+        run: go(environmentPath(environment, item.id)),
+      })),
+      { id: "settings", label: t("commandPalette.settings"), run: go("/settings") },
+      ...(isConsole && user.admin ? [{ id: "admin", label: t("commandPalette.admin"), run: go("/admin") }] : []),
+      ...(isConsole ? [{ id: "cli-sessions", label: t("commandPalette.cliSessions"), run: go("/cli/sessions") }] : []),
+    ];
+  }, [appItems, environment, isConsole, navigate, t, user.admin]);
+  const launcherOpen = launcher.state.launcherOpen || launcher.state.appBarEditorOpen;
+  const launcherOpenRef = useRef(launcherOpen);
+  useEffect(() => {
+    launcherOpenRef.current = launcherOpen;
+  }, [launcherOpen]);
   useEffect(() => {
     if (!menuOpen) return;
     navigation.current?.querySelector<HTMLElement>("a, button")?.focus();
     const onKey = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") return;
+      // Escape closes the launcher first; the drawer stays open behind it.
+      if (event.key !== "Escape" || launcherOpenRef.current) return;
       setMenuOpen(false);
       toggle.current?.focus();
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
   }, [menuOpen]);
-
-  const apps = installationsIn(installations.items, environment);
-  const marks = useMemo(() => monograms(apps.map((a) => ({ key: a.id, name: a.name }))), [apps]);
   const parts = pathname.split("/");
   const activeAppId = parts[1] === "environments" ? parts[4] : parts[1] === "apps" ? parts[2] : undefined;
   const activeApp = activeAppId ? apps.find((a) => a.appId === activeAppId) : undefined;
@@ -266,13 +304,21 @@ function SignedInLayout({ user, environment }: { user: User; environment: Enviro
             icon={<HomeIcon />}
             active={homeActive}
           />
-          {!isConsole && apps.map((a) => (
+          {!isConsole && (
+            <AppLauncherButton
+              buttonRef={launcher.launcherButtonRef}
+              onToggle={launcher.onToggleLauncher}
+              open={launcher.state.launcherOpen}
+              t={launcher.t}
+            />
+          )}
+          {launcher.pinnedItems.map((item) => (
             <RailLink
-              key={a.id}
-              to={environmentPath(environment, a.appId)}
-              label={a.name}
-              icon={<AppMark mark={marks.get(a.id) ?? "?"} colorKey={a.appId} />}
-              active={a.appId === activeAppId}
+              key={item.id}
+              to={environmentPath(environment, item.id)}
+              label={item.title}
+              icon={<AppMark mark={item.mark} colorKey={item.id} />}
+              active={item.id === activeAppId}
             />
           ))}
           {installations.items === null && (
@@ -303,10 +349,41 @@ function SignedInLayout({ user, environment }: { user: User; environment: Enviro
         </nav>
       </aside>
       {menuOpen && <div className="drawer-backdrop" aria-hidden="true" onClick={() => setMenuOpen(false)} />}
-      {tooltip && (
+      {tooltip && !launcherOpen && (
         <div className="rail-tooltip" aria-hidden="true" style={{ top: tooltip.top }}>
           {tooltip.text}
         </div>
+      )}
+      {launcher.state.launcherOpen && (
+        <AppBarLauncherMenu
+          appsStatus={installations.items !== null ? "ready" : installations.status === "error" ? "error" : "loading"}
+          categories={launcher.categories}
+          contextLabel={t(`shell.environments.${environment}`)}
+          currentPathname={pathname}
+          items={appItems}
+          linkFor={(appId) => environmentPath(environment, appId)}
+          menuRef={launcher.menuRef}
+          onClose={launcher.onCloseLauncherMenus}
+          onOpenEditor={launcher.onOpenEditor}
+          t={launcher.t}
+        />
+      )}
+      {launcher.state.appBarEditorOpen && (
+        <AppBarEditor
+          appBarLayoutError={launcher.state.appBarLayoutError}
+          appBarLayoutSaving={launcher.state.appBarLayoutSaving}
+          dialogRef={launcher.editorRef}
+          draftItems={launcher.draftItems}
+          draftPinnedAppIds={launcher.state.draftPinnedAppIds}
+          launcherCategories={launcher.categories.categories ?? []}
+          onClose={launcher.onCloseEditor}
+          onMovePinnedApp={launcher.onMovePinnedApp}
+          onReset={launcher.onResetDraft}
+          onSave={launcher.onSaveLayout}
+          onTogglePinnedApp={launcher.onTogglePinnedApp}
+          pinnedEligibleAppIds={launcher.pinnedEligibleAppIds}
+          t={launcher.t}
+        />
       )}
       <div className="workspace">
         <header className="shell-header">
@@ -329,6 +406,11 @@ function SignedInLayout({ user, environment }: { user: User; environment: Enviro
             <p className="header-title">{pageTitle(t, pathname, environment, activeApp?.name, isConsole)}</p>
           </div>
           <div className="header-account">
+            <NotificationBell
+              csrf={user.csrf}
+              enabled={!isConsole}
+              environmentPath={(appId) => environmentPath(environment, appId)}
+            />
             <Link
               to="/settings"
               className="account-name"
@@ -345,6 +427,7 @@ function SignedInLayout({ user, environment }: { user: User; environment: Enviro
         <main id="platform-main" tabIndex={-1}>
           <Outlet />
         </main>
+        <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} commands={commands} />
       </div>
     </div>
   );

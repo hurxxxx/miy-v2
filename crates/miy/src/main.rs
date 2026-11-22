@@ -100,9 +100,12 @@ mod integration;
 mod job_api;
 #[cfg(feature = "server")]
 mod launcher;
+mod live;
 #[cfg(feature = "server")]
 mod mcp;
 mod native_preview;
+#[cfg(feature = "server")]
+mod notifications;
 #[cfg(feature = "server")]
 mod official_catalog;
 #[cfg(all(test, feature = "server"))]
@@ -113,6 +116,8 @@ mod permissions;
 #[cfg(all(test, feature = "server"))]
 mod permissions_regression;
 mod platform;
+#[cfg(feature = "server")]
+mod platform_calls;
 #[cfg(feature = "server")]
 mod policy;
 #[cfg(feature = "server")]

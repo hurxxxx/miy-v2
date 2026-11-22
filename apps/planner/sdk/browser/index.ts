@@ -29,6 +29,24 @@ export interface AppSettings {
   timeZone: string;
   dateFormat: "korean" | "iso" | "us" | "european" | "locale";
 }
+/** Handlers of a live connection (`runtime.live`). */
+export interface LiveHandlers {
+  /** The app accepted the connection (also after each reconnection). */
+  onOpen?: () => void;
+  /** A text message from the app's `/api/live`. */
+  onMessage: (data: string) => void;
+  /**
+   * The connection closed. `retrying` is true when the runtime reconnects by
+   * itself; false when the frame session ended, access was revoked, the release
+   * changed or `close()` was called.
+   */
+  onClose?: (event: { code: number; retrying: boolean }) => void;
+}
+export interface LiveConnection {
+  /** Send a text message (up to 64 KiB) while open. */
+  send: (data: string) => void;
+  close: () => void;
+}
 export interface AppRuntime {
   installationId: string;
   appId: string;
@@ -54,6 +72,12 @@ export interface AppRuntime {
    * before leaving the app, signing out or reloading while `dirty` is true.
    */
   setNavigationState: (state: NavigationState) => void;
+  /**
+   * A live connection to this app's `/api/live` (a WebSocket relayed by the
+   * platform with the person's verified identity). Use it for updates that
+   * should arrive at once; keep reads and writes on `api`.
+   */
+  live: (handlers: LiveHandlers) => LiveConnection;
   /** Same as `settings.theme`. */
   theme: "light" | "dark";
   /**

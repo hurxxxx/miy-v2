@@ -447,6 +447,21 @@ impl Facts {
     }
 }
 
+/// SQL condition that `user` may Use `app` in `env` now: [`Facts::decide`] with
+/// [`AppAction::Use`] for an undelegated credential, over many people at once
+/// (notification recipients and inbox filtering). The arguments are SQL
+/// expressions (columns or `$n` parameters); keep this and `decide` in step.
+pub fn may_use_sql(user: &str, app: &str, env: &str) -> String {
+    format!(
+        "EXISTS(SELECT 1 FROM users pu WHERE pu.id={user} AND pu.enabled AND ( \
+         (NOT EXISTS(SELECT 1 FROM app_controls pc WHERE pc.app_id={app} AND pc.disabled) \
+          AND EXISTS(SELECT 1 FROM effective_grants pg WHERE pg.user_id={user} AND pg.app_id={app} \
+                     AND pg.environment={env} AND pg.permission='use')) \
+         OR ({env}='dev' AND (pu.admin OR EXISTS(SELECT 1 FROM effective_grants pg WHERE pg.user_id={user} \
+             AND pg.app_id={app} AND pg.environment='dev' AND pg.permission='develop')))))"
+    )
+}
+
 /// A write transaction that commits only after a decision made inside it.
 ///
 /// Make the writes first, so they take their locks and wait for whatever they wait

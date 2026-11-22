@@ -376,6 +376,7 @@ fn validate_guidance_change(path: &str, unchanged: bool) -> Result<()> {
                 | "sdk/rust/src/lib.rs"
                 | "sdk/rust/src/directory.rs"
                 | "sdk/rust/src/storage.rs"
+                | "sdk/rust/src/notifications.rs"
                 | "sdk/rust/src/acl.rs"
                 | "sdk/rust/src/acl_postgres_tests.rs"
                 | "sdk/rust/src/acl.sql"

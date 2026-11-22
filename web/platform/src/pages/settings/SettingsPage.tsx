@@ -10,6 +10,9 @@ import { surfaceUrl } from '../../lib/paths';
 import { AppearanceSettingsSection } from './AppearanceSettingsSection';
 import { ProfileSettingsSection } from './ProfileSettingsSection';
 import { SecuritySettingsSection } from './SecuritySettingsSection';
+import { NotificationsSettingsSection } from './NotificationsSettingsSection';
+import { installationsIn, useInstallations } from '../../data/installations';
+import { portalEnvironment } from '../../lib/paths';
 import { SettingsNavigation } from './SettingsNavigation';
 import {
   SETTINGS_SECTIONS,
@@ -35,6 +38,14 @@ function SettingsPageContent({
 }) {
   const options = useSurface();
   const navigate = useNavigate();
+  const installations = useInstallations();
+  const ownEnvironment = portalEnvironment(options.surface, options.legacyPortal);
+  const apps = ownEnvironment
+    ? installationsIn(installations.items, ownEnvironment).map((app) => ({
+        appId: app.appId,
+        name: app.name,
+      }))
+    : [];
   const {
     dispatch,
     handleProfileSubmit,
@@ -110,6 +121,14 @@ function SettingsPageContent({
                   void saveTimeZonePreference(value);
                 }}
                 state={state}
+                t={t}
+              />
+            ) : null}
+            {state.activeSection === 'notifications' ? (
+              <NotificationsSettingsSection
+                apps={apps}
+                csrf={user.csrf}
+                hasInbox={ownEnvironment !== null}
                 t={t}
               />
             ) : null}

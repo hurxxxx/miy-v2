@@ -14,7 +14,9 @@ use sqlx::{PgPool, postgres::PgPoolOptions};
 use std::time::Duration;
 
 pub mod acl;
+pub mod notifications;
 pub mod storage;
+pub use notifications::{Notification, Published};
 pub use storage::{FileCreate, FileMetadata, FileStatus};
 mod directory;
 pub use directory::{
@@ -41,6 +43,10 @@ pub struct InvocationContext {
     pub environment: Option<String>,
     pub callers: Vec<Caller>,
     pub effective_permissions: Vec<String>,
+    /// The platform is calling one of this app's declared `platformEndpoints`
+    /// for the signed-in person (for example to recheck notifications). Such a
+    /// call is read-only and carries no token for further platform calls.
+    pub platform: bool,
 }
 
 #[derive(Clone)]
@@ -77,6 +83,8 @@ struct Claims {
     effective_permissions: Vec<String>,
     #[serde(default)]
     delegation_token: Option<String>,
+    #[serde(default)]
+    platform: bool,
 }
 fn verify_identity(
     token: &str,
@@ -116,6 +124,7 @@ fn verify_identity(
             environment: claims.environment,
             callers: claims.callers,
             effective_permissions: claims.effective_permissions,
+            platform: claims.platform,
         },
         delegation_token: claims.delegation_token,
     })
@@ -241,7 +250,9 @@ fn preview_url(origin: &str, suffix: &str) -> Result<reqwest::Url, CallError> {
     let path = suffix.split('?').next().unwrap_or_default();
     if !(path == "platform/directory"
         || path == "platform/files"
-        || path.starts_with("platform/files/"))
+        || path.starts_with("platform/files/")
+        || path == "platform/notifications"
+        || path.starts_with("platform/notifications/"))
         || suffix.contains(['\\', '#'])
         || suffix.bytes().any(|c| c.is_ascii_control())
         || path.split('/').any(|part| matches!(part, "." | ".."))

@@ -114,7 +114,8 @@ flowchart LR
 | `location` | `route.changed {pathname, search, hash}`. 부모의 뒤로·앞으로 가기와 직접 링크 | 부모→프레임 |
 | `navigate(relative, {replace})` | `route.navigate`. 부모는 앱 basePath 아래의 상대 경로만 받는다. 절대 URL과 다른 앱·플랫폼 경로는 거부한다 | 프레임→부모 |
 | `registerNavigationGuard` → 신규 `setNavigationState({dirty, message?})` | 앱이 입력·저장·진행 중 작업의 합산 상태를 바꿀 때 `guard.state`를 보낸다. 콜백을 부모가 동기 실행하는 기존 계약은 새 SDK에서 교체 | 프레임→부모 |
-| `settings` | `settings.changed`: 테마 선택(`system`·`light`·`dark`), 언어(`ko-KR`·`en-US`), 시간대, 날짜 형식. 초기값은 실행 form으로 받아 부트스트랩의 `settings`에 넣고, 이후 변경은 이 메시지로 보낸다. 표시용 값이며 권한 판정에 쓰지 않는다. 런타임은 부트스트랩의 `settingsAware`가 참인 앱(SDK 번들 0.12.0 이상으로 서버 빌드한 릴리스)에만 문서의 `dark` 클래스·`data-miy-theme`·`lang`을 적용하고, 그 이전 앱은 라이트·한국어로 둔다. 소스 구현(번들 0.12.0 미게시, 서버 미반영). 명령 팔레트 단축키 알림은 계획([P1](COMMON-FEATURES-PLAN.md#p1-셸설정콘솔), 미구현) | 부모→프레임 |
+| `settings` | `settings.changed`: 테마 선택(`system`·`light`·`dark`), 언어(`ko-KR`·`en-US`), 시간대, 날짜 형식. 초기값은 실행 form으로 받아 부트스트랩의 `settings`에 넣고, 이후 변경은 이 메시지로 보낸다. 표시용 값이며 권한 판정에 쓰지 않는다. 런타임은 부트스트랩의 `settingsAware`가 참인 앱(SDK 번들 0.12.0 이상으로 서버 빌드한 릴리스)에만 문서의 `dark` 클래스·`data-miy-theme`·`lang`을 적용하고, 그 이전 앱은 라이트·한국어로 둔다. 소스 구현(번들 0.12.0 미게시, 서버 미반영) | 부모→프레임 |
+| (신규) 플랫폼 단축키 | `shortcut {name: "commandPalette"}`. 프레임에 포커스가 있을 때 Ctrl/⌘+K를 프레임 런타임이 먼저 잡아(capture) 앱 처리 전에 부모에 알린다. 다른 키는 전달하지 않는다. 소스 구현([P1](COMMON-FEATURES-PLAN.md#p1-셸설정콘솔)) | 프레임→부모 |
 | `api`·`platformApi`·`directory`·`appApi`·`apiBlob`·`fileApi` | 브리지 미사용. 앱 출처로 직접 요청. JSON과 바이너리 응답을 구분 | 없음 |
 | (신규) 실행 상태 | `frame.ready`, `frame.error`, `release.changed` | 프레임→부모 |
 | (신규) 토큰 갱신 | `token.renew` 요청 → `token.code` 응답(1회용, 앱 출처로만 전송) 또는 분류된 `token.failed` | 양방향 |
@@ -201,7 +202,7 @@ flowchart LR
 
 ## 8. 현행 문서 개정
 
-2026-11-22 범용 기능 M2로 포털의 알림 패널과 플랫폼 → 앱 호출을 [코어 권한](CORE-PERMISSIONS.md#플랫폼-알림과-플랫폼--앱-호출)에 정했다. 프레임은 알림을 발행하지 않는다(발행은 앱 서버의 `miy_call_` 문맥). 포털은 알림과 플랫폼 → 앱 호출 응답을 텍스트로만 그리고, 앱의 React 코드는 계속 그 앱의 프레임 안에서만 실행한다.
+2026-11-22 범용 기능 M2로 포털의 알림 패널과 플랫폼 → 앱 호출을 [코어 권한](CORE-PERMISSIONS.md#플랫폼-알림과-플랫폼--앱-호출)에 정했다. 프레임은 알림을 발행하지 않는다(발행은 앱 서버의 `miy_call_` 문맥). 포털은 알림과 플랫폼 → 앱 호출 응답을 텍스트로만 그리고, 앱의 React 코드는 계속 그 앱의 프레임 안에서만 실행한다. 같은 날 M4로 프레임 listener에 실시간 연결(`/_miy/live`, WebSocket)을 더했다. 앱은 `runtime.live({onMessage, onOpen, onClose})`로 열고, 프레임 런타임이 토큰을 첫 메시지로 보내며 끊기면 다시 연결한다(4401·4403·4409·4400에서는 멈추고 해당 프레임 오류를 부모에 알린다). 계약과 한도는 [사내 최소 보안 설계](APP-BOUNDARIES.md#출처와-자격증명)의 WebSocket 항목을 따른다.
 
 채택에 따라 APP-BOUNDARIES·PRD·CORE-PERMISSIONS의 실행/권한 설명, 프론트엔드·UI 이식 안내, 루트 AGENTS·README와 템플릿 번들(0.9.0)·CHECKS를 이 설계로 개정했다. 2026-11-11 main 병합부터 개정해 2026-11-13 현행 서술과 도식을 동기화했다. 같은 페이지 MF 기록은 전환 전 이력으로 보존하며 현재 기능의 순서·상태는 PLAN에서만 관리한다.
 

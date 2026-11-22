@@ -122,6 +122,44 @@ pub fn router_for(state: State, purpose: BrowserPurpose) -> Router {
         .route("/me", axum::routing::get(me))
         .route("/me/preferences", axum::routing::patch(update_preferences))
         .route("/me/sessions", axum::routing::get(browser_sessions))
+        .route("/live", axum::routing::get(crate::notifications::live))
+        .route(
+            "/notifications",
+            axum::routing::get(crate::notifications::list),
+        )
+        .route(
+            "/notifications/unread-count",
+            axum::routing::get(crate::notifications::unread),
+        )
+        .route(
+            "/notifications/read-all",
+            axum::routing::post(crate::notifications::mark_all_read),
+        )
+        .route(
+            "/notifications/settings",
+            axum::routing::get(crate::notifications::settings)
+                .put(crate::notifications::set_settings),
+        )
+        .route(
+            "/notifications/{id}/read",
+            axum::routing::post(crate::notifications::mark_read),
+        )
+        .route(
+            "/installations/{id}/platform/notifications",
+            axum::routing::post(crate::notifications::publish),
+        )
+        .route(
+            "/installations/{id}/platform/notifications/retract",
+            axum::routing::post(crate::notifications::retract),
+        )
+        .route(
+            "/installations/{id}/platform/notifications/read",
+            axum::routing::post(crate::notifications::mark_group_read),
+        )
+        .route(
+            "/installations/{id}/platform/notifications/by-request/{request}",
+            axum::routing::get(crate::notifications::by_request),
+        )
         .route(
             "/launcher/categories",
             axum::routing::get(launcher_categories).post(create_launcher_category),
@@ -754,6 +792,10 @@ fn delegated_route(route: &str, method: &axum::http::Method) -> bool {
             | "/installations/{id}/platform/files/{file}/content"
             | "/installations/{id}/platform/files/{file}/attach"
             | "/installations/{id}/platform/files/{file}/detach"
+            | "/installations/{id}/platform/notifications"
+            | "/installations/{id}/platform/notifications/retract"
+            | "/installations/{id}/platform/notifications/read"
+            | "/installations/{id}/platform/notifications/by-request/{request}"
             | "/preview/apps/{app}/platform/files"
             | "/preview/apps/{app}/platform/files/{*path}"
             | "/installations/{id}/connections/{target}/api/{*path}"

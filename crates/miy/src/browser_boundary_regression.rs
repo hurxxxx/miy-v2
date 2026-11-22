@@ -707,6 +707,429 @@ pub async fn run(
     );
     passed.push("launcher categories: every surface reads the arrangement, only a console administrator changes it, unknown or repeated apps and empty titles are refused, the layout persists in order and each change is audited".into());
 
+    // Notification inbox: each portal reads its own environment's notifications
+    // of apps the person may use now; the console has no inbox.
+    let notify_app = format!("boundary-notify-{}", Uuid::new_v4().simple());
+    sqlx::query("INSERT INTO apps(id,name) VALUES($1,'Boundary notify')")
+        .bind(&notify_app)
+        .execute(&state.pool)
+        .await?;
+    let notify_release = Uuid::new_v4();
+    // A complete manifest: later suites list every installation of this database.
+    let notify_manifest = json!({
+        "contractVersion":"miy.app/v1alpha1","id":notify_app,"name":"Boundary notify","version":"1.0.0",
+        "runtime":{"profile":"rust-web-v1"},
+        "ui":{"delivery":"module","moduleEntry":"mf-manifest.json","moduleExport":"./AppRoot","contractVersion":"miy.ui/v1alpha1"},
+        "resources":{"database":"postgresql"},"migrations":{"directory":"migrations"},
+        "requestedPermissions":[],
+    });
+    sqlx::query("INSERT INTO releases(id,app_id,version,artifact_hash,manifest) VALUES($1,$2,'1.0.0',$3,$4)")
+        .bind(notify_release)
+        .bind(&notify_app)
+        .bind(hash(format!("boundary-notify:{notify_release}")))
+        .bind(&notify_manifest)
+        .execute(&state.pool)
+        .await?;
+    let mut notify_installations = std::collections::HashMap::new();
+    for environment in ["dev", "prod"] {
+        let installation = Uuid::new_v4();
+        sqlx::query(
+            "INSERT INTO installations(id,app_id,environment,release_id) VALUES($1,$2,$3,$4)",
+        )
+        .bind(installation)
+        .bind(&notify_app)
+        .bind(environment)
+        .bind(notify_release)
+        .execute(&state.pool)
+        .await?;
+        sqlx::query(
+            "INSERT INTO grants(user_id,app_id,environment,permission) VALUES($1,$2,$3,'use')",
+        )
+        .bind(&user_id)
+        .bind(&notify_app)
+        .bind(environment)
+        .execute(&state.pool)
+        .await?;
+        for (group, title) in [("a", "첫 알림"), ("b", "둘째 알림")] {
+            sqlx::query("INSERT INTO notifications(id,installation_id,app_id,environment,user_id,kind,group_key,title,path,actor) VALUES($1,$2,$3,$4,$5,'message',$6,$7,'/inbox',$5)")
+                .bind(Uuid::new_v4())
+                .bind(installation)
+                .bind(&notify_app)
+                .bind(environment)
+                .bind(&user_id)
+                .bind(format!("{environment}-{group}"))
+                .bind(format!("{environment} {title}"))
+                .execute(&state.pool)
+                .await?;
+        }
+        notify_installations.insert(environment, installation);
+    }
+    let dev_user = h.browser(&user_id, BrowserPurpose::DevPortal).await?;
+    let prod_inbox = json_response(
+        h.cookie_request(&portal_user, Method::GET, "/api/v1/notifications")
+            .send()
+            .await?,
+        200,
+    )
+    .await?;
+    let dev_inbox = json_response(
+        h.cookie_request(&dev_user, Method::GET, "/api/v1/notifications")
+            .send()
+            .await?,
+        200,
+    )
+    .await?;
+    let titles = |inbox: &Value| -> Vec<String> {
+        inbox["items"]
+            .as_array()
+            .map(|items| {
+                items
+                    .iter()
+                    .filter(|item| item["appId"] == notify_app.as_str())
+                    .filter_map(|item| item["title"].as_str().map(str::to_owned))
+                    .collect()
+            })
+            .unwrap_or_default()
+    };
+    ensure!(
+        titles(&prod_inbox)
+            .iter()
+            .all(|title| title.starts_with("prod "))
+            && titles(&prod_inbox).len() == 2
+            && titles(&dev_inbox)
+                .iter()
+                .all(|title| title.starts_with("dev "))
+            && titles(&dev_inbox).len() == 2
+            && prod_inbox["unread"].as_u64() >= Some(2),
+        "a portal saw another environment's notifications"
+    );
+    denied(
+        h.cookie_request(&console_user, Method::GET, "/api/v1/notifications")
+            .send()
+            .await?,
+        403,
+    )
+    .await?;
+    let first = prod_inbox["items"]
+        .as_array()
+        .and_then(|items| {
+            items
+                .iter()
+                .find(|item| item["appId"] == notify_app.as_str())
+        })
+        .and_then(|item| item["id"].as_str())
+        .context("prod notification")?
+        .to_owned();
+    denied(
+        h.cookie_request(
+            &portal_user,
+            Method::POST,
+            &format!("/api/v1/notifications/{first}/read"),
+        )
+        .send()
+        .await?,
+        403,
+    )
+    .await?;
+    status(
+        h.browser_request(
+            &portal_user,
+            Method::POST,
+            &format!("/api/v1/notifications/{first}/read"),
+        )
+        .send()
+        .await?,
+        204,
+    )
+    .await?;
+    // The dev portal cannot mark a prod notification.
+    let dev_first = dev_inbox["items"]
+        .as_array()
+        .and_then(|items| {
+            items
+                .iter()
+                .find(|item| item["appId"] == notify_app.as_str())
+        })
+        .and_then(|item| item["id"].as_str())
+        .context("dev notification")?
+        .to_owned();
+    denied(
+        h.browser_request(
+            &dev_user,
+            Method::POST,
+            &format!("/api/v1/notifications/{first}/read"),
+        )
+        .send()
+        .await?,
+        404,
+    )
+    .await?;
+    status(
+        h.browser_request(&dev_user, Method::POST, "/api/v1/notifications/read-all")
+            .send()
+            .await?,
+        204,
+    )
+    .await?;
+    let unread_dev: i64 = sqlx::query_scalar("SELECT count(*) FROM notifications WHERE user_id=$1 AND app_id=$2 AND environment='dev' AND read_at IS NULL")
+        .bind(&user_id)
+        .bind(&notify_app)
+        .fetch_one(&state.pool)
+        .await?;
+    let unread_prod: i64 = sqlx::query_scalar("SELECT count(*) FROM notifications WHERE user_id=$1 AND app_id=$2 AND environment='prod' AND read_at IS NULL")
+        .bind(&user_id)
+        .bind(&notify_app)
+        .fetch_one(&state.pool)
+        .await?;
+    ensure!(
+        unread_dev == 0 && unread_prod == 1 && !dev_first.is_empty(),
+        "reading notifications crossed environments"
+    );
+    // Opening the panel rechecks with the app's declared endpoint: the app sees
+    // the person as a platform call (no admin, no call token) and a definite
+    // denial removes that notification; an app without an answer only hides.
+    let check_secret = auth::random();
+    let seen_claims = std::sync::Arc::new(std::sync::Mutex::new(Vec::<Value>::new()));
+    let check_listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
+    let check_port = i32::from(check_listener.local_addr()?.port());
+    let check_router = {
+        let secret = check_secret.clone();
+        let seen = seen_claims.clone();
+        Router::new().route(
+            "/api/notification-check",
+            axum::routing::post(
+                move |headers: axum::http::HeaderMap, Json(body): Json<Value>| {
+                    let secret = secret.clone();
+                    let seen = seen.clone();
+                    async move {
+                        let mut validation =
+                            jsonwebtoken::Validation::new(jsonwebtoken::Algorithm::HS256);
+                        validation.set_audience(&["miy-app"]);
+                        validation.set_issuer(&["miy"]);
+                        let claims = headers
+                            .get("x-miy-identity")
+                            .and_then(|value| value.to_str().ok())
+                            .and_then(|token| {
+                                jsonwebtoken::decode::<Value>(
+                                    token,
+                                    &jsonwebtoken::DecodingKey::from_secret(secret.as_bytes()),
+                                    &validation,
+                                )
+                                .ok()
+                            })
+                            .map(|decoded| decoded.claims);
+                        let Some(claims) = claims else {
+                            return Json(json!({"allowed": []}));
+                        };
+                        seen.lock()
+                            .unwrap()
+                            .push(json!({"claims": claims, "body": body}));
+                        Json(json!({"allowed": ["prod-a"]}))
+                    }
+                },
+            ),
+        )
+    };
+    let check_server = tokio::spawn(async move {
+        let _ = axum::serve(check_listener, check_router).await;
+    });
+    sqlx::query("UPDATE releases SET manifest=manifest||$2 WHERE id=$1")
+        .bind(notify_release)
+        .bind(json!({"platformEndpoints": {"notificationCheck": "/notification-check"}}))
+        .execute(&state.pool)
+        .await?;
+    sqlx::query("UPDATE installations SET runtime_status='running',desired_state='running',runtime_port=$2,runtime_secret=$3 WHERE id=$1")
+        .bind(notify_installations["prod"])
+        .bind(check_port)
+        .bind(auth::encrypt(&check_secret)?)
+        .execute(&state.pool)
+        .await?;
+    let checked = json_response(
+        h.cookie_request(
+            &portal_user,
+            Method::GET,
+            "/api/v1/notifications?check=true",
+        )
+        .send()
+        .await?,
+        200,
+    )
+    .await?;
+    let remaining: Vec<String> = sqlx::query_scalar(
+        "SELECT group_key FROM notifications WHERE user_id=$1 AND app_id=$2 AND environment='prod' ORDER BY group_key",
+    )
+    .bind(&user_id)
+    .bind(&notify_app)
+    .fetch_all(&state.pool)
+    .await?;
+    let claims = seen_claims
+        .lock()
+        .unwrap()
+        .first()
+        .cloned()
+        .unwrap_or(Value::Null);
+    ensure!(
+        titles(&checked) == vec!["prod 첫 알림".to_owned()]
+            && remaining == vec!["prod-a".to_owned()]
+            && claims["claims"]["platform"] == true
+            && claims["claims"]["admin"] == false
+            && claims["claims"]["sub"] == user_id.as_str()
+            && claims["claims"].get("delegation_token").is_none()
+            && claims["body"]["items"].as_array().map(Vec::len) == Some(2),
+        "the panel recheck did not ask the app as the person or did not apply its answer"
+    );
+    // The dev installation is not running: its notifications are hidden, kept.
+    let dev_checked = json_response(
+        h.cookie_request(&dev_user, Method::GET, "/api/v1/notifications?check=true")
+            .send()
+            .await?,
+        200,
+    )
+    .await?;
+    let dev_rows: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM notifications WHERE user_id=$1 AND app_id=$2 AND environment='dev'",
+    )
+    .bind(&user_id)
+    .bind(&notify_app)
+    .fetch_one(&state.pool)
+    .await?;
+    ensure!(
+        titles(&dev_checked).is_empty() && dev_rows == 2,
+        "an app without an answer lost or showed its notifications"
+    );
+    check_server.abort();
+    // Losing use hides the app's notifications at once; the rows stay for a restore.
+    sqlx::query("DELETE FROM grants WHERE user_id=$1 AND app_id=$2 AND environment='prod'")
+        .bind(&user_id)
+        .bind(&notify_app)
+        .execute(&state.pool)
+        .await?;
+    let hidden = json_response(
+        h.cookie_request(&portal_user, Method::GET, "/api/v1/notifications")
+            .send()
+            .await?,
+        200,
+    )
+    .await?;
+    let count = json_response(
+        h.cookie_request(
+            &portal_user,
+            Method::GET,
+            "/api/v1/notifications/unread-count",
+        )
+        .send()
+        .await?,
+        200,
+    )
+    .await?;
+    ensure!(
+        titles(&hidden).is_empty() && count["unread"].as_u64() == hidden["unread"].as_u64(),
+        "notifications of an app the person lost stayed visible or counted"
+    );
+    let settings =
+        json!({"mutes":[{"appId":notify_app,"kind":"message"},{"appId":notify_app,"kind":"*"}]});
+    let saved = json_response(
+        h.browser_request(&dev_user, Method::PUT, "/api/v1/notifications/settings")
+            .json(&settings)
+            .send()
+            .await?,
+        200,
+    )
+    .await?;
+    denied(
+        h.browser_request(&dev_user, Method::PUT, "/api/v1/notifications/settings")
+            .json(&json!({"mutes":[{"appId":"Bad","kind":"message"}]}))
+            .send()
+            .await?,
+        400,
+    )
+    .await?;
+    ensure!(saved == settings, "notification settings were not saved");
+    // The portal's live channel pushes the unread count on every inbox change
+    // and closes when the browser session ends; the console has none.
+    {
+        use futures_util::StreamExt;
+        use tokio_tungstenite::tungstenite::{Message, client::IntoClientRequest};
+        let channel = |browser: &Browser| -> Result<_> {
+            let origin = h.origin(browser.purpose).to_owned();
+            let mut request = format!("{}/api/v1/live", origin.replacen("http", "ws", 1))
+                .into_client_request()?;
+            request
+                .headers_mut()
+                .insert("cookie", h.cookie(browser).parse()?);
+            request.headers_mut().insert("origin", origin.parse()?);
+            request
+                .headers_mut()
+                .insert("sec-fetch-site", "same-origin".parse()?);
+            Ok(request)
+        };
+        ensure!(
+            tokio_tungstenite::connect_async(channel(&console_user)?)
+                .await
+                .is_err(),
+            "the console opened a notification channel"
+        );
+        let (mut socket, _) = tokio_tungstenite::connect_async(channel(&dev_user)?).await?;
+        let mut next_count = async || -> Result<Value> {
+            loop {
+                match tokio::time::timeout(std::time::Duration::from_secs(15), socket.next())
+                    .await?
+                {
+                    Some(Ok(Message::Text(text))) => {
+                        return Ok(serde_json::from_str(text.as_str())?);
+                    }
+                    Some(Ok(Message::Ping(_) | Message::Pong(_))) => continue,
+                    other => anyhow::bail!(
+                        "notification channel ended: {:?}",
+                        other.map(|m| m.map(|m| m.is_close()))
+                    ),
+                }
+            }
+        };
+        let first = next_count().await?;
+        ensure!(
+            first == json!({"type":"notifications.unread","unread":0}),
+            "the channel did not start with the current count"
+        );
+        sqlx::query("UPDATE notifications SET read_at=NULL WHERE user_id=$1 AND app_id=$2 AND environment='dev' AND group_key='dev-a'")
+            .bind(&user_id)
+            .bind(&notify_app)
+            .execute(&state.pool)
+            .await?;
+        sqlx::query("SELECT pg_notify('miy_notifications', $1 || ' dev')")
+            .bind(&user_id)
+            .execute(&state.pool)
+            .await?;
+        let pushed = next_count().await?;
+        drop(next_count);
+        ensure!(
+            pushed["unread"].as_i64().is_some_and(|count| count >= 1),
+            "an inbox change did not reach the live channel"
+        );
+        sqlx::query("DELETE FROM development_sessions WHERE id_hash=$1")
+            .bind(hash(&dev_user.cookie))
+            .execute(&state.pool)
+            .await?;
+        let code = loop {
+            match tokio::time::timeout(
+                crate::live::RECHECK + std::time::Duration::from_secs(15),
+                socket.next(),
+            )
+            .await?
+            {
+                Some(Ok(Message::Close(frame))) => break frame.map(|f| u16::from(f.code)),
+                Some(Ok(_)) => continue,
+                _ => break None,
+            }
+        };
+        ensure!(
+            code == Some(crate::live::close::SESSION_ENDED),
+            "the notification channel outlived its browser session"
+        );
+    }
+    let _ = notify_installations;
+    passed.push("notification inbox: each portal reads and marks only its environment's notifications, the console has none, CSRF is required, losing use hides them from the list and the count, mute settings are validated and saved, and the live channel pushes the count and closes with the session".into());
+
     // Same-host ports share cookies; code on one origin must not use the other's
     // cookies even for reads. Reject before any session lookup.
     for browser in [&portal_admin, &dev_admin, &console_admin] {
@@ -1401,6 +1824,6 @@ pub async fn run(
     )
     .await?;
     passed.push("expired or disabled browser sessions require new authentication; restoring an account does not revive old portal/console cookies and a fresh purpose-bound session works".into());
-    ensure!(passed.len() == 15, "boundary observation count changed");
+    ensure!(passed.len() == 16, "boundary observation count changed");
     Ok(passed)
 }

@@ -359,5 +359,19 @@
     "admin": "Platform administration",
     "cliSessions": "My CLI connections",
     "appHint": "App"
+  },
+  "notifications": {
+    "bell": "Notifications",
+    "bellUnread_one": "Notifications, {{count}} unread",
+    "bellUnread_other": "Notifications, {{count}} unread",
+    "closePanel": "Close notifications",
+    "loadFailed": "Could not load notifications.",
+    "settingsLoadFailed": "Could not load notification settings.",
+    "consoleHasNoInbox": "The admin console has no inbox. Settings changed here apply to notifications in the work and test portals.",
+    "noApps": "No apps can send you notifications.",
+    "appDescription": "Notifications this app sends",
+    "receive": "Receive",
+    "receiveFrom": "Receive notifications from {{app}}",
+    "receiveKind": "Receive {{kind}} notifications from {{app}}"
   }
 }

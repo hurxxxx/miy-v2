@@ -21,6 +21,9 @@ function matches(command: Command, query: string) {
   return !needle || `${command.label} ${command.hint ?? ""}`.toLowerCase().includes(needle);
 }
 
+/** Raised when an app frame forwards the shortcut (app/AppFrame.tsx). */
+export const COMMAND_PALETTE_EVENT = "miy:command-palette";
+
 /** Opens on Ctrl/⌘+K in the portal document; frames forward the same keys. */
 export function useCommandPaletteShortcut(open: () => void) {
   useEffect(() => {
@@ -30,7 +33,11 @@ export function useCommandPaletteShortcut(open: () => void) {
       open();
     };
     document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
+    window.addEventListener(COMMAND_PALETTE_EVENT, open);
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      window.removeEventListener(COMMAND_PALETTE_EVENT, open);
+    };
   }, [open]);
 }
 

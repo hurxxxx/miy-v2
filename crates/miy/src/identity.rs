@@ -108,6 +108,10 @@ pub struct IdentityContext {
     pub effective_permissions: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub delegation_token: Option<String>,
+    /// The platform calls the app for the signed-in person (a read-only
+    /// platform endpoint), not the person's own browser or another app.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub platform: bool,
 }
 
 impl std::fmt::Debug for IdentityContext {
@@ -154,6 +158,7 @@ pub(crate) fn sign_identity(
             callers: vec![],
             effective_permissions: vec![],
             delegation_token: None,
+            platform: false,
         },
     )
 }
@@ -239,6 +244,7 @@ mod tests {
             }],
             effective_permissions: vec!["app:next-app:read".into()],
             delegation_token: Some("private-core-proof".into()),
+            platform: false,
         };
         let secret = "test-installation-gateway-secret-at-least-32-characters";
         let token = sign_identity_context(

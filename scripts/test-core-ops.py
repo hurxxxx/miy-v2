@@ -410,7 +410,7 @@ class FakeHost:
         self.head = COMMIT
         self.dirty = ''
         self.version = 'miy 0.7.0'
-        self.max_connections = '200'
+        self.max_connections = '400'
         self.pool = '10'
         self.dependencies = {name: {'running': True, 'status': 'running', 'restartPolicy': 'unless-stopped'}
                              for name in (test.rollout.DB, test.rollout.KEYCLOAK)}

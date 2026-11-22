@@ -10,6 +10,7 @@ import {
   type ParentMessage,
 } from "@miy/frame-protocol";
 import { useDisplaySettings } from "../data/settings";
+import { COMMAND_PALETTE_EVENT } from "../components/CommandPalette";
 import { i18n } from "../platform/i18n";
 import { Button, Loading, Notice, Panel } from "../ui";
 
@@ -180,6 +181,10 @@ export function AppFrame({
         case "frame.error":
           if (message.payload.code === "frame_session_ended" || message.payload.code === "frame_access_denied")
             setFailure(message.payload.code);
+          break;
+        case "shortcut":
+          // Keys typed in the frame never reach this document; the shell listens.
+          window.dispatchEvent(new CustomEvent(COMMAND_PALETTE_EVENT));
           break;
       }
     };

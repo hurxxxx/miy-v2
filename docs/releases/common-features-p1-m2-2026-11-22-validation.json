@@ -1,0 +1,89 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-11-22",
+  "status": "IN_PROGRESS",
+  "scope": "Common features plan P1 (personal settings, browser sessions, AI-DO settings screen, Korean/English portal and console, AI-DO launcher with admin categories, release permission approval, user search/filter/CSV, command palette), M1 planner app port (apps/planner), M2 platform notifications (core migration 30, app publishing through the Rust SDK, portal inbox, badge, settings, platform-to-app recheck) max_connections 400 in source, and M4 live connections (frame /_miy/live relay, runtime.live, portal notification channel). Source only: nothing published, nothing deployed, no server database changed.",
+  "source": {
+    "repository": "miy-v2",
+    "baseCommit": "f1e1e96",
+    "state": "commits 568d840..; this record lists the checks run on the way"
+  },
+  "checks": [
+    {
+      "status": "FAIL",
+      "command": "MIY_CONFIG_DIR=<empty> python3 scripts/runtime-regression/run.py",
+      "scope": "After migration 28 and the personal settings/browser session routes: 138 observations, boundary suite stopped.",
+      "cause": "The boundary suite asserts a fixed observation count (12); the two new checks made it 14. Expected counts updated in crates/miy/src/browser_boundary_regression.rs and scripts/runtime-regression/run.py."
+    },
+    {
+      "status": "PASS",
+      "command": "MIY_CONFIG_DIR=<empty> python3 scripts/runtime-regression/run.py",
+      "scope": "151 observations PASS including personal settings (defaults, CSRF, merges across surfaces, invalid values, other people unaffected, rename audited) and browser sessions (own sessions, current first, CSRF, refuse current and foreign, end chosen). Runner exit 1 only from cleanup: a baseline container present at start (a throwaway PostgreSQL started and removed by the planner port) disappeared during the run; nothing owned by the run was left and no baseline resource was removed by it."
+    },
+    {
+      "status": "PASS",
+      "command": "MIY_CONFIG_DIR=<empty> python3 scripts/runtime-regression/run.py",
+      "scope": "With launcher categories (migration 29): 152 observations PASS, runner and cleanup exit 0."
+    },
+    {
+      "status": "FAIL",
+      "command": "MIY_CONFIG_DIR=<empty> python3 scripts/runtime-regression/run.py",
+      "scope": "With notifications (migration 30): permissions suite stopped (app identity missing opaque delegation proof).",
+      "cause": "Test order: no app call token exists until some platform permission is approved; the new notification check fetched a token before any approval. The test now approves the directory permission first."
+    },
+    {
+      "status": "FAIL",
+      "command": "MIY_CONFIG_DIR=<empty> python3 scripts/runtime-regression/run.py",
+      "scope": "Boundary suite 16/16 PASS (notification inbox per environment, console refusal, CSRF, read marks, hiding after losing use, mute settings validation, panel recheck through a fixture app: platform=true, admin=false, no call token, denied group removed, unanswered app hidden but kept). Permissions suite stopped with an HTTP 400 where 200 was expected; steps of the notification check are now labelled to locate it."
+    },
+    {
+      "status": "PASS",
+      "command": "pnpm typecheck; node scripts/check-i18n.mjs; node scripts/check-hardcoded-colors.mjs; node scripts/check-token-contrast.mjs",
+      "scope": "Types; Korean/English key parity, used keys and no Korean literals in screen code (0 screens left to translate); no color literals in miy-authored styles; 42 light and dark token pairs meet WCAG AA."
+    },
+    {
+      "status": "PASS",
+      "command": "timeout 900 pnpm exec playwright test -c scripts/runtime-regression/ui.config.ts (portal and console, mocked API, Chromium)",
+      "scope": "Latest full run 90 passed / 3 failed, then the 3 fixed and re-run: platform-shell, notifications and launcher specs 26 passed. The 3 failures: two shell tests with strict mocks did not expect the new unread-count poll (fixtures updated), one new console test matched the settings navigation instead of the bell (selector fixed)."
+    },
+    {
+      "status": "PASS",
+      "command": "timeout 600 pnpm exec playwright test -c tests/cli-experience.config.ts",
+      "scope": "15 passed after the portal translations."
+    },
+    {
+      "status": "PASS",
+      "command": "cd apps/planner && MIY_CONFIG_DIR=<scratch> ../../target/debug/miy app check",
+      "scope": "Offline app check of the planner after re-syncing its bundle 0.12.0 SDK files: manifest, bundle integrity, CLI guidance, components, migration contract, Rust format and tests, frozen dependencies, TypeScript, UI build, Federation assets."
+    },
+    {
+      "status": "PASS",
+      "command": "cargo test -p miy (server) and cargo clippy -p miy --all-targets -- -D warnings; cargo test -p miy-app-sdk (template)",
+      "scope": "Unit tests and lints after each core change; SDK unit tests 14 passed."
+    },
+    {
+      "status": "FAIL",
+      "command": "MIY_CONFIG_DIR=<empty> python3 scripts/runtime-regression/run.py",
+      "scope": "Permissions suite stopped again: HTTP 400 invalid_json from GET /api/v1/installations (found after the response helper started printing path and error code).",
+      "cause": "Test data, not product: the boundary suite's new notification fixture inserted a release with manifest '{}' into the shared regression database; the permissions suite lists every installation and the list cannot describe that release. The fixture now uses a complete manifest."
+    },
+    {
+      "status": "PASS",
+      "command": "MIY_CONFIG_DIR=<empty> python3 scripts/runtime-regression/run.py",
+      "scope": "154 observations PASS, runner and cleanup exit 0: permissions 27 (notification publishing: backend call context and approval required, recipients filtered to active permitted unmuted people, idempotent request IDs, group replace/retract/read inside its installation) and boundary 16 (inbox per environment, recheck through a fixture app). Built from the tree before the M4 live connection code was added."
+    },
+    {
+      "status": "PASS",
+      "command": "cargo fmt --check; cargo clippy --workspace --all-targets --locked -- -D warnings (server and --no-default-features); cargo test --workspace --locked; check-write-decisions; check-api-compat; check-i18n; check-hardcoded-colors; test-core-ops",
+      "scope": "On the tree including M4: 249 server unit tests, lints for both builds, write decisions, API compatibility with 0.15.0, translations, color tokens, rollout tool tests (max_connections 400)."
+    }
+  ],
+  "notRun": [
+    "Runtime regression with the M4 checks (frames suite live relay, boundary suite portal channel): next run",
+    "check-static.sh all after the last changes (to be run before the final commit of this series)",
+    "Real platform frame for the planner (needs registration, server build and installation)",
+    "server-ui.config.ts against a real Core build; stack-ui real frames for the new shell",
+    "WebKit, Windows and macOS clients",
+    "Any server deployment, migration 28-30 on a server database, PostgreSQL max_connections change on the server"
+  ]
+}

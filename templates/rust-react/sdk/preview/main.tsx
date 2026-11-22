@@ -13,11 +13,65 @@ import {
   createNavigationGuards,
   type AppRuntime,
   type AppSettings,
+  type LiveConnection,
+  type LiveHandlers,
   type NavigationState,
 } from "../browser";
 // Preview has no portal settings: it follows this browser. A deployed app
 // receives the person's portal choice the same way, through runtime.settings.
 const DARK = window.matchMedia("(prefers-color-scheme: dark)");
+
+/**
+ * The preview counterpart of the frame runtime's live connection: the local
+ * preview server relays `/__miy/live` to this backend's `/api/live` with the
+ * developer's identity and sends the same `{"type":"miy.ready"}` first.
+ */
+function previewLive(handlers: LiveHandlers): LiveConnection {
+  let socket: WebSocket | null = null;
+  let closed = false;
+  let attempt = 0;
+  let retry: ReturnType<typeof setTimeout> | undefined;
+  const open = () => {
+    if (closed) return;
+    const url = new URL("/__miy/live", window.location.href);
+    url.protocol = "ws:";
+    const current = new WebSocket(url.href);
+    socket = current;
+    let ready = false;
+    current.onmessage = (event) => {
+      if (typeof event.data !== "string") return;
+      if (!ready) {
+        ready = event.data === '{"type":"miy.ready"}';
+        if (ready) {
+          attempt = 0;
+          handlers.onOpen?.();
+        }
+        return;
+      }
+      handlers.onMessage(event.data);
+    };
+    current.onclose = (event) => {
+      if (socket === current) socket = null;
+      handlers.onClose?.({ code: event.code, retrying: !closed });
+      if (closed) return;
+      attempt += 1;
+      retry = setTimeout(open, Math.min(30_000, 1_000 * 2 ** Math.min(attempt, 5)));
+    };
+  };
+  open();
+  return {
+    send(data) {
+      if (!socket || socket.readyState !== WebSocket.OPEN) throw new Error("live_not_open");
+      socket.send(data);
+    },
+    close() {
+      closed = true;
+      clearTimeout(retry);
+      socket?.close(1000);
+    },
+  };
+}
+
 function browserSettings(): AppSettings {
   const theme = DARK.matches ? "dark" : "light";
   return {
@@ -108,6 +162,7 @@ function Preview() {
         context.csrf,
         init,
       ),
+    live: previewLive,
     setNavigationState: (state) => {
       navigationState = state;
     },

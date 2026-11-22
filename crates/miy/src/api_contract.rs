@@ -422,6 +422,58 @@ pub struct LauncherCategoryPage {
     pub categories: Vec<LauncherCategory>,
 }
 
+/// The answer of a notification publish (and of its request ID lookup).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct NotificationPublished {
+    pub request_id: Uuid,
+    /// How many recipients received it; who was left out is not disclosed.
+    pub accepted: u32,
+}
+
+/// One notification in the signed-in person's inbox of this environment.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct NotificationItem {
+    pub id: Uuid,
+    pub installation_id: Uuid,
+    pub app_id: String,
+    pub app_name: String,
+    pub kind: String,
+    pub group_key: String,
+    /// Display text only; render as text.
+    pub title: String,
+    /// App-relative destination, opened in the app's frame.
+    pub path: String,
+    pub resource_id: Option<String>,
+    pub created_at: DateTime<Utc>,
+    pub read_at: Option<DateTime<Utc>>,
+}
+
+/// `GET /api/v1/notifications`: newest first, with the unread count.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct NotificationPage {
+    pub items: Vec<NotificationItem>,
+    pub unread: u64,
+    pub next_cursor: Option<String>,
+}
+
+/// One kind of an app the person turned off; `*` is every kind of that app.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct NotificationMute {
+    pub app_id: String,
+    pub kind: String,
+}
+
+/// `GET`/`PUT /api/v1/notifications/settings`; a PUT replaces the whole list.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct NotificationSettings {
+    pub mutes: Vec<NotificationMute>,
+}
+
 /// Display settings passed from the portal to an app frame. They decide how
 /// things look and read; they are never an input to an access decision.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -501,6 +553,9 @@ pub fn schema() -> serde_json::Value {
     generator.subschema_for::<Preferences>();
     generator.subschema_for::<BrowserSessionPage>();
     generator.subschema_for::<LauncherCategoryPage>();
+    generator.subschema_for::<NotificationPublished>();
+    generator.subschema_for::<NotificationPage>();
+    generator.subschema_for::<NotificationSettings>();
     serde_json::json!({
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "title": "miy API v1 responses",

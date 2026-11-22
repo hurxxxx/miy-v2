@@ -11,11 +11,12 @@ import {
 } from '../../platform/time/time-utils';
 import type { User } from '../../data/session';
 
-export type SettingsSection = 'profile' | 'appearance' | 'security';
+export type SettingsSection = 'profile' | 'appearance' | 'security' | 'notifications';
 export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
   'profile',
   'appearance',
   'security',
+  'notifications',
 ];
 
 export type SettingsTranslator = (

@@ -1,0 +1,37 @@
+/* Header bell of the business portals (components/notifications). */
+.notification-bell {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border: 1px solid transparent;
+  border-radius: var(--ui-radius-md);
+  background: transparent;
+  color: var(--ui-color-ink-muted);
+  cursor: pointer;
+}
+.notification-bell:hover {
+  background: var(--ui-color-surface-hover);
+  color: var(--ui-color-ink);
+}
+.notification-bell:focus-visible {
+  outline: none;
+  box-shadow: var(--ui-shadow-focus-ring);
+}
+.notification-badge {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: var(--ui-color-danger);
+  color: var(--ui-color-static-white);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 16px;
+  text-align: center;
+}

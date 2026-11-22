@@ -476,6 +476,7 @@ async fn serve_preview(
             .route("/__miy/api/{*path}", axum::routing::any(backend))
             .route("/__miy/files/{*path}", axum::routing::any(files))
             .route("/__miy/platform/directory", axum::routing::get(directory))
+            .route("/__miy/live", axum::routing::get(preview_live))
             .route(
                 "/__miy/connections/{target}/api/{*path}",
                 axum::routing::any(connection),
@@ -491,6 +492,22 @@ async fn serve_preview(
             .route(
                 "/platform/files/{*path}",
                 axum::routing::any(platform_files),
+            )
+            .route(
+                "/platform/notifications",
+                axum::routing::post(preview_notify),
+            )
+            .route(
+                "/platform/notifications/retract",
+                axum::routing::post(preview_retract),
+            )
+            .route(
+                "/platform/notifications/read",
+                axum::routing::post(preview_mark_read),
+            )
+            .route(
+                "/platform/notifications/by-request/{request}",
+                axum::routing::get(preview_notification_by_request),
             )
             .layer(middleware::from_fn_with_state(state.clone(), backend_guard))
             .with_state(state);
@@ -958,6 +975,78 @@ async fn backend(
     )
     .await
 }
+/// Live connection of the preview (crate::live): the guard already checked the
+/// preview cookie and host; the page's Origin must be this preview. Relayed to
+/// the local backend's `/api/live` with the developer's identity, rechecking
+/// the CLI user like every other preview request.
+async fn preview_live(
+    State(s): State<Arc<Preview>>,
+    headers: axum::http::HeaderMap,
+    upgrade: axum::extract::ws::WebSocketUpgrade,
+) -> Response {
+    if headers.get(header::ORIGIN).and_then(|v| v.to_str().ok()) != Some(s.origin.as_str()) {
+        return ApiError::forbidden().into_response();
+    }
+    upgrade
+        .max_message_size(crate::live::MAX_MESSAGE_BYTES)
+        .max_frame_size(crate::live::MAX_MESSAGE_BYTES)
+        .on_upgrade(move |mut socket| async move {
+            use crate::live::{close, close_with};
+            let identity = match current_user(&s).await.and_then(|user| {
+                auth::sign_identity(
+                    user["id"].as_str().ok_or_else(ApiError::unauthorized)?,
+                    user["admin"] == true,
+                    s.installation,
+                    s.release,
+                    &s.secret,
+                )
+            }) {
+                Ok(token) => token,
+                Err(_) => {
+                    close_with(&mut socket, close::SESSION_ENDED, "session_ended").await;
+                    return;
+                }
+            };
+            let upstream = async {
+                use tokio_tungstenite::tungstenite::client::IntoClientRequest;
+                let mut request = format!("ws://127.0.0.1:{}/api/live", s.port)
+                    .into_client_request()
+                    .ok()?;
+                request
+                    .headers_mut()
+                    .insert("x-miy-identity", identity.parse().ok()?);
+                tokio_tungstenite::connect_async(request)
+                    .await
+                    .ok()
+                    .map(|(stream, _)| stream)
+            };
+            let Some(upstream) = upstream.await else {
+                close_with(&mut socket, close::APP_UNAVAILABLE, "app_unavailable").await;
+                return;
+            };
+            if socket
+                .send(axum::extract::ws::Message::Text(
+                    r#"{"type":"miy.ready"}"#.into(),
+                ))
+                .await
+                .is_err()
+            {
+                return;
+            }
+            let state = s.clone();
+            crate::live::relay(socket, upstream, move || {
+                let state = state.clone();
+                async move {
+                    current_user(&state)
+                        .await
+                        .map(|_| ())
+                        .map_err(|_| crate::live::Ended::Session)
+                }
+            })
+            .await;
+        })
+}
+
 /// Browser file bytes go only to the owning app; that backend checks the
 /// current resource/file ACL before using the process-only Storage capability.
 async fn files(
@@ -1011,6 +1100,61 @@ fn file_url(
     }
     url.set_query(query);
     Ok(url)
+}
+
+/// Local preview has no inbox: notification calls are checked like the
+/// platform checks them and answered as delivered to nobody, with a notice on
+/// stderr, so the app's own code path still runs.
+fn preview_notifications_allowed(s: &Preview) -> ApiResult<()> {
+    if s.manifest
+        .requested_permissions
+        .iter()
+        .any(|permission| permission == "platform:notifications:write")
+    {
+        Ok(())
+    } else {
+        Err(ApiError::forbidden())
+    }
+}
+async fn preview_notify(
+    State(s): State<Arc<Preview>>,
+    Json(body): Json<Value>,
+) -> ApiResult<Json<Value>> {
+    preview_notifications_allowed(&s)?;
+    let request = body["requestId"]
+        .as_str()
+        .and_then(|value| uuid::Uuid::parse_str(value).ok())
+        .ok_or_else(|| ApiError::bad("invalid_notification"))?;
+    let recipients = body["recipients"].as_array().map_or(0, Vec::len);
+    if recipients == 0 || recipients > 500 {
+        return Err(ApiError::bad("invalid_notification"));
+    }
+    eprintln!(
+        "{}",
+        json!({"preview":"notification_not_delivered","requestId":request,"kind":body["kind"],"groupKey":body["groupKey"],"recipients":recipients})
+    );
+    Ok(Json(json!({"requestId":request,"accepted":0})))
+}
+async fn preview_retract(
+    State(s): State<Arc<Preview>>,
+    Json(_): Json<Value>,
+) -> ApiResult<Json<Value>> {
+    preview_notifications_allowed(&s)?;
+    Ok(Json(json!({"retracted":0})))
+}
+async fn preview_mark_read(
+    State(s): State<Arc<Preview>>,
+    Json(_): Json<Value>,
+) -> ApiResult<axum::http::StatusCode> {
+    preview_notifications_allowed(&s)?;
+    Ok(axum::http::StatusCode::NO_CONTENT)
+}
+async fn preview_notification_by_request(
+    State(s): State<Arc<Preview>>,
+    Path(request): Path<uuid::Uuid>,
+) -> ApiResult<Json<Value>> {
+    preview_notifications_allowed(&s)?;
+    Ok(Json(json!({"requestId":request,"accepted":0})))
 }
 
 async fn platform_files_root(

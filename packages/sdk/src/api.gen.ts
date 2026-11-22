@@ -302,6 +302,48 @@ export interface LauncherCategoryPage {
 /** Display languages the platform offers. */
 export type Locale = "ko-KR" | "en-US";
 
+/** One notification in the signed-in person's inbox of this environment. */
+export interface NotificationItem {
+  appId: string;
+  appName: string;
+  createdAt: string;
+  groupKey: string;
+  id: string;
+  installationId: string;
+  kind: string;
+  /** App-relative destination, opened in the app's frame. */
+  path: string;
+  readAt: string | null;
+  resourceId: string | null;
+  /** Display text only; render as text. */
+  title: string;
+}
+
+/** One kind of an app the person turned off; `*` is every kind of that app. */
+export interface NotificationMute {
+  appId: string;
+  kind: string;
+}
+
+/** `GET /api/v1/notifications`: newest first, with the unread count. */
+export interface NotificationPage {
+  items: NotificationItem[];
+  nextCursor: string | null;
+  unread: number;
+}
+
+/** The answer of a notification publish (and of its request ID lookup). */
+export interface NotificationPublished {
+  /** How many recipients received it; who was left out is not disclosed. */
+  accepted: number;
+  requestId: string;
+}
+
+/** `GET`/`PUT /api/v1/notifications/settings`; a PUT replaces the whole list. */
+export interface NotificationSettings {
+  mutes: NotificationMute[];
+}
+
 /**
  * A person's own settings: `preferences` of `GET /api/v1/me` and the answer of
  * `PATCH /api/v1/me/preferences`. Presentation only, never an access input.

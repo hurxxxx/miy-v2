@@ -104,6 +104,18 @@ pub fn allowed_route(context: &Context, path: &str, method: &Method) -> bool {
     if suffix == "platform/directory" {
         return *method == Method::GET;
     }
+    if matches!(
+        suffix,
+        "platform/notifications" | "platform/notifications/retract" | "platform/notifications/read"
+    ) {
+        return *method == Method::POST;
+    }
+    if suffix
+        .strip_prefix("platform/notifications/by-request/")
+        .is_some_and(|request| Uuid::parse_str(request).is_ok())
+    {
+        return *method == Method::GET;
+    }
     if crate::storage::allowed_route(suffix, method) {
         return true;
     }
@@ -404,6 +416,7 @@ pub async fn identity(
         callers: context.callers,
         effective_permissions: effective,
         delegation_token: token,
+        platform: false,
     })
 }
 

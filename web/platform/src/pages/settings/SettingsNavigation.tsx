@@ -1,7 +1,6 @@
 // Ported from AI-DO apps/web/src/platform/auth/SettingsNavigation.tsx
-// (0002af062). Notifications join with the notification work (M2); release
-// notes and the desktop app are AI-DO products.
-import { Palette, Shield, User } from 'lucide-react';
+// (0002af062). Release notes and the desktop app are AI-DO products.
+import { Bell, Palette, Shield, User } from 'lucide-react';
 import { cn } from '@miy/ui';
 
 import type {
@@ -29,6 +28,11 @@ export function SettingsNavigation({
       id: 'security' as const,
       label: t('auth:settings.security'),
       icon: Shield,
+    },
+    {
+      id: 'notifications' as const,
+      label: t('auth:settings.notifications'),
+      icon: Bell,
     },
   ];
 

@@ -291,7 +291,7 @@ python3 scripts/check-db-connections.py
 
 `check-db-connections.py`는 공유 PostgreSQL의 최악의 연결 수(코어 풀·병렬 관리 연결·Keycloak 풀·설치 역할 한도·활성 개발 세션)를 사용 가능 연결과 비교한다. 현재 계산은 관리 연결 4개를 포함하며 [연결 예산](CAPACITY.md#연결-예산-현재-구현-2026-11-04)을 따른다. 이전 연결 예산 FAIL과 이후 반영·재검증은 [보관 이력](archive/results/SERVER-OPERATIONS-2026-11-14.md)에 남긴다.
 
-새 코어는 앱 배포뿐 아니라 worker 시작 때도 기존 설치 역할 한도(runtime 6, migration 2)를 맞춘다. 코어가 생성하는 `miy_r_`·`miy_m_`와 32자리 소문자 16진수 ID 형식만 허용한다. 시작 시 적용이 실패하면 경고를 기록하고 다음 worker 시작 또는 해당 앱 배포 때 다시 적용한다. compose는 PostgreSQL `max_connections=200`, Keycloak `KC_DB_POOL_MAX_SIZE=10`을 설정한다. 소스 변경만으로 기존 운영 설정이나 역할 한도가 바뀌지 않으므로 운영 반영 후 예산을 다시 측정한다. 계획된 변경(미반영): `max_connections`를 올리기로 결정했다(제안값 400). `compose.yaml`, 배포 도구의 기대값, 이 서버에는 반영하지 않았다([범용 기능 계획 M2](COMMON-FEATURES-PLAN.md#m2-플랫폼앱-연결과-알림)).
+새 코어는 앱 배포뿐 아니라 worker 시작 때도 기존 설치 역할 한도(runtime 6, migration 2)를 맞춘다. 코어가 생성하는 `miy_r_`·`miy_m_`와 32자리 소문자 16진수 ID 형식만 허용한다. 시작 시 적용이 실패하면 경고를 기록하고 다음 worker 시작 또는 해당 앱 배포 때 다시 적용한다. compose는 PostgreSQL `max_connections=400`, Keycloak `KC_DB_POOL_MAX_SIZE=10`을 설정한다(2026-11-22 소스 변경, 이전 200). 소스 변경만으로 기존 운영 설정이나 역할 한도가 바뀌지 않으므로 운영 반영 후 예산을 다시 측정한다. 이 서버의 PostgreSQL은 아직 200이다. 배포 도구(`core-rollout.py`)의 기대값 기본도 400이 되었으므로, 다음 코어 반영 때는 PostgreSQL 설정 변경과 재시작을 먼저 하거나 `--max-connections 200`을 명시한다([범용 기능 계획 M2](COMMON-FEATURES-PLAN.md#m2-플랫폼앱-연결과-알림)).
 
 ## 7. 배포 도구
 

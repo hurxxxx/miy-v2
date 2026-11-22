@@ -32,6 +32,8 @@ import {
   type AppRuntime,
   type AppSettings,
   type FrameBootstrap,
+  type LiveConnection,
+  type LiveHandlers,
   type NavigationState,
   type DirectoryQuery,
   type DirectoryRequestOptions,
@@ -150,6 +152,80 @@ function scheduledRenewal() {
 // Absolute expiry also applies while renewal is pending or waiting to retry.
 expiryTimer = setTimeout(() => renewalError("frame_session_ended"), Math.max(0, frameExpiresAt - Date.now()));
 schedule();
+
+/** Close codes of the Core's live relay (crates/miy/src/live.rs). */
+const LIVE_SESSION_ENDED = 4401;
+const LIVE_ACCESS_REVOKED = 4403;
+const LIVE_RELEASE_CHANGED = 4409;
+const LIVE_BAD_AUTH = 4400;
+const LIVE_RETRY_MAX = 30_000;
+
+/**
+ * A live connection to the app's `/api/live`, relayed by the platform. The
+ * frame token goes in the first message, never in the address. The runtime
+ * reconnects with backoff after drops and stops for good when the frame
+ * session ends, access is revoked or the release changes.
+ */
+function live(handlers: LiveHandlers): LiveConnection {
+  let socket: WebSocket | null = null;
+  let closed = false;
+  let attempt = 0;
+  let retry: ReturnType<typeof setTimeout> | undefined;
+  const open = async () => {
+    if (closed || stopped) return;
+    try {
+      if (Date.now() > tokenExpiresAt - 5_000) await renew();
+    } catch {
+      /* the socket reports the failure */
+    }
+    if (closed || stopped) return;
+    const url = new URL("/_miy/live", window.location.href);
+    url.protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+    const current = new WebSocket(url.href);
+    socket = current;
+    let ready = false;
+    current.onopen = () => current.send(JSON.stringify({ type: "auth", token }));
+    current.onmessage = (event) => {
+      if (typeof event.data !== "string") return;
+      if (!ready) {
+        // The Core's first message says the app accepted the connection.
+        ready = event.data === '{"type":"miy.ready"}';
+        if (ready) {
+          attempt = 0;
+          handlers.onOpen?.();
+        }
+        return;
+      }
+      handlers.onMessage(event.data);
+    };
+    current.onclose = (event) => {
+      if (socket === current) socket = null;
+      if (event.code === LIVE_SESSION_ENDED) renewalError("frame_session_ended");
+      else if (event.code === LIVE_ACCESS_REVOKED) renewalError("frame_access_denied");
+      else if (event.code === LIVE_RELEASE_CHANGED) renewalError("release_changed_reload_required");
+      const final =
+        closed || !!stopped || event.code === LIVE_BAD_AUTH || event.code === LIVE_SESSION_ENDED ||
+        event.code === LIVE_ACCESS_REVOKED || event.code === LIVE_RELEASE_CHANGED;
+      handlers.onClose?.({ code: event.code, retrying: !final });
+      if (final) return;
+      attempt += 1;
+      retry = setTimeout(() => void open(), Math.min(LIVE_RETRY_MAX, 1_000 * 2 ** Math.min(attempt, 5)));
+    };
+  };
+  void open();
+  return {
+    send(data: string) {
+      if (!socket || socket.readyState !== WebSocket.OPEN) throw new Error("live_not_open");
+      if (new Blob([data]).size > 64 * 1024) throw new Error("live_message_too_large");
+      socket.send(data);
+    },
+    close() {
+      closed = true;
+      clearTimeout(retry);
+      socket?.close(1000);
+    },
+  };
+}
 
 function apiPath(path: string) {
   if (!relativePath(path) || path.split("/").some((part) => part === ".." || part === "."))
@@ -425,6 +501,7 @@ function FrameApp({ View }: { View: ComponentType<AppProps> }) {
           if (!/^[a-z][a-z0-9-]{0,47}$/.test(target)) throw new Error("invalid_api_path");
           return json<T>(`/_miy/connections/${target}/api${apiPath(path)}`, init);
         },
+        live,
         setNavigationState,
         // Apps built with the 0.8 SDK still call this; see setNavigationState.
         registerNavigationGuard,

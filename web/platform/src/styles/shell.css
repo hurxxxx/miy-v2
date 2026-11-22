@@ -116,6 +116,24 @@
   border-radius: 0 3px 3px 0;
   background: var(--ui-color-static-white);
 }
+/* The app launcher entry is a button dressed as a rail item; open, it reads as current. */
+button.rail-item {
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+.rail-item[aria-expanded="true"] {
+  background: color-mix(in srgb, var(--ui-color-static-white) 14%, transparent);
+  color: var(--ui-color-static-white);
+}
+/*
+ * The launcher menu and pin editor use AI-DO's Tailwind classes. The portal's
+ * unlayered link colour (base.css) would beat their text utilities, so links
+ * there take the colour from the layers again.
+ */
+.app-launcher a {
+  color: revert-layer;
+}
 .rail-icon {
   display: flex;
   align-items: center;

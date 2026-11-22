@@ -107,6 +107,7 @@ fn identity(user: &str, environment: &str, installation: &str, admin: bool) -> I
             environment: Some(environment.into()),
             callers: vec![],
             effective_permissions: vec!["platform:directory:read".into()],
+            platform: false,
         },
         delegation_token: Some(format!("proof:{user}:{environment}")),
     }

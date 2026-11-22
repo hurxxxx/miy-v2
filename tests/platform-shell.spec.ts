@@ -84,6 +84,8 @@ test("installation polling settles when every response is slower than the pollin
   await page.route("**/api/**", async (route) => {
     const path = new URL(route.request().url()).pathname;
     if (path === "/api/v1/me") return route.fulfill({ json: browserUser(route, user) });
+    // The header bell polls the unread count on business portals.
+    if (path === "/api/v1/notifications/unread-count") return route.fulfill({ json: { unread: 0 } });
     expect(path).toBe("/api/v1/installations");
     // A healthy but slow API must not leave the screen loading forever because
     // each three-second poll supersedes the previous request before it finishes.
@@ -123,6 +125,7 @@ test("an older installation response cannot restore an app after a newer permiss
     if (path === "/api/v1/me") return route.fulfill({ json: browserUser(route, user) });
     // The CLI guide page is only a same-origin navigation target here.
     if (path === "/api/v1/cli/install") return route.fulfill({ status: 503, json: { error: { code: "fixture" } } });
+    if (path === "/api/v1/notifications/unread-count") return route.fulfill({ json: { unread: 0 } });
     expect(path).toBe("/api/v1/installations");
     const id = ++reads;
     if (id === 2) {

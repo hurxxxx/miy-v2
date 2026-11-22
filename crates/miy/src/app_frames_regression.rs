@@ -233,6 +233,45 @@ async fn probe(
     }
 }
 
+/// The fixture app's `/api/live`: answers each text message with the verified
+/// caller, so the relay's identity and both directions are observable.
+async fn live_echo(
+    S(backend): S<Backend>,
+    headers: HeaderMap,
+    upgrade: axum::extract::ws::WebSocketUpgrade,
+) -> axum::response::Response {
+    use axum::response::IntoResponse;
+    let claims = headers
+        .get("x-miy-identity")
+        .and_then(|value| value.to_str().ok())
+        .and_then(|token| {
+            let mut validation = jsonwebtoken::Validation::new(jsonwebtoken::Algorithm::HS256);
+            validation.set_audience(&["miy-app"]);
+            validation.set_issuer(&["miy"]);
+            jsonwebtoken::decode::<Value>(
+                token,
+                &jsonwebtoken::DecodingKey::from_secret(backend.secret.as_bytes()),
+                &validation,
+            )
+            .ok()
+            .map(|decoded| decoded.claims)
+        });
+    let Some(claims) = claims else {
+        return axum::http::StatusCode::UNAUTHORIZED.into_response();
+    };
+    upgrade.on_upgrade(move |mut socket| async move {
+        use axum::extract::ws::Message;
+        while let Some(Ok(message)) = socket.recv().await {
+            if let Message::Text(text) = message {
+                let reply = json!({"echo": text.as_str(), "sub": claims["sub"]}).to_string();
+                if socket.send(Message::Text(reply.into())).await.is_err() {
+                    return;
+                }
+            }
+        }
+    })
+}
+
 struct App {
     app: String,
     installation: Uuid,
@@ -363,6 +402,7 @@ impl Harness<'_> {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
         let port = i32::from(listener.local_addr()?.port());
         let router = Router::new()
+            .route("/api/live", axum::routing::get(live_echo))
             .route("/api/{*path}", any(probe))
             .with_state(Backend {
                 secret: secret.clone(),
@@ -1502,5 +1542,96 @@ pub async fn run(
     )
     .await?;
     passed.push("the worker prunes expired frame sessions and codes, keeps live frames, and a pruned frame's token is refused".into());
+
+    live_connections(&mut h, &suffix).await?;
+    passed.push("live connections: only the frame's own Origin upgrades, the frame token arrives in the first message, the app receives the person's signed identity and both directions relay, a bad first message closes with 4400 and losing use closes with 4403".into());
     Ok(passed)
+}
+
+async fn live_connections(h: &mut Harness<'_>, suffix: &str) -> Result<()> {
+    use futures_util::{SinkExt, StreamExt};
+    use tokio_tungstenite::tungstenite::{Message, client::IntoClientRequest};
+    let app = h.app(&format!("frame-live-{suffix}"), &[]).await?;
+    let user = h.user().await?;
+    h.grant(&user, &app).await?;
+    let portal = h.session(&user, auth::BrowserPurpose::DevPortal).await?;
+    let frame = h.open(&portal, &app).await?;
+    let connect = |origin: &str| -> Result<_> {
+        let mut request = format!("{}/_miy/live", frame.address.replacen("http", "ws", 1))
+            .into_client_request()?;
+        request.headers_mut().insert("host", frame.host.parse()?);
+        request.headers_mut().insert("origin", origin.parse()?);
+        Ok(request)
+    };
+    // Another origin never upgrades.
+    let refused = tokio_tungstenite::connect_async(connect("https://elsewhere.example")?).await;
+    ensure!(
+        refused.is_err(),
+        "a live connection upgraded for another origin"
+    );
+    // A first message that is not the frame token closes the connection.
+    let (mut socket, _) = tokio_tungstenite::connect_async(connect(&frame.origin)?).await?;
+    socket
+        .send(Message::Text(
+            r#"{"type":"auth","token":"miy_frame_not-a-token"}"#.into(),
+        ))
+        .await?;
+    let code = loop {
+        match tokio::time::timeout(std::time::Duration::from_secs(10), socket.next()).await? {
+            Some(Ok(Message::Close(frame))) => break frame.map(|f| u16::from(f.code)),
+            Some(Ok(_)) => continue,
+            _ => break None,
+        }
+    };
+    ensure!(
+        code == Some(crate::live::close::BAD_AUTH),
+        "a bad first message did not close with 4400"
+    );
+    // The real token: ready, then the app answers as the person.
+    let (mut socket, _) = tokio_tungstenite::connect_async(connect(&frame.origin)?).await?;
+    socket
+        .send(Message::Text(
+            json!({"type":"auth","token":frame.token})
+                .to_string()
+                .into(),
+        ))
+        .await?;
+    let first = tokio::time::timeout(std::time::Duration::from_secs(10), socket.next()).await?;
+    ensure!(
+        matches!(&first, Some(Ok(Message::Text(text))) if text.as_str() == r#"{"type":"miy.ready"}"#),
+        "the live connection did not report ready"
+    );
+    socket.send(Message::Text("hello".into())).await?;
+    let echo = tokio::time::timeout(std::time::Duration::from_secs(10), socket.next()).await?;
+    let echo: Value = match echo {
+        Some(Ok(Message::Text(text))) => serde_json::from_str(text.as_str())?,
+        _ => anyhow::bail!("the app's answer did not come back"),
+    };
+    ensure!(
+        echo == json!({"echo":"hello","sub":user}),
+        "the relay changed the message or the identity"
+    );
+    // Losing use closes the connection at the next recheck.
+    sqlx::query("DELETE FROM grants WHERE user_id=$1 AND app_id=$2")
+        .bind(&user)
+        .bind(&app.app)
+        .execute(&h.state.pool)
+        .await?;
+    let code = loop {
+        match tokio::time::timeout(
+            crate::live::RECHECK + std::time::Duration::from_secs(15),
+            socket.next(),
+        )
+        .await?
+        {
+            Some(Ok(Message::Close(frame))) => break frame.map(|f| u16::from(f.code)),
+            Some(Ok(_)) => continue,
+            _ => break None,
+        }
+    };
+    ensure!(
+        code == Some(crate::live::close::ACCESS_REVOKED),
+        "losing use did not close the live connection with 4403"
+    );
+    Ok(())
 }

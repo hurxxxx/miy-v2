@@ -18,6 +18,35 @@ pub struct Manifest {
     pub migrations: Migrations,
     #[serde(default)]
     pub requested_permissions: Vec<String>,
+    /// Read-only endpoints the platform calls for the signed-in person
+    /// (docs/CORE-PERMISSIONS.md "플랫폼 → 앱 호출"). Paths are under the app's
+    /// API, like the UI's `runtime.api` paths.
+    #[serde(default, skip_serializing_if = "PlatformEndpoints::is_empty")]
+    pub platform_endpoints: PlatformEndpoints,
+}
+#[derive(Debug, Clone, Default, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PlatformEndpoints {
+    /// POST `{ "items": [{ "groupKey", "resourceId" }] }` answering
+    /// `{ "allowed": ["groupKey", ...] }`: which of the person's notifications
+    /// still point at something they may open.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub notification_check: Option<String>,
+}
+impl PlatformEndpoints {
+    pub fn is_empty(&self) -> bool {
+        self.notification_check.is_none()
+    }
+}
+/// An app API path for a platform endpoint: absolute, no query, no dot segments.
+pub fn valid_endpoint_path(path: &str) -> bool {
+    path.starts_with('/')
+        && !path.starts_with("//")
+        && path.len() <= 200
+        && path
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b"/-_".contains(&b))
+        && !path.split('/').any(|part| part == "." || part == "..")
 }
 #[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -86,12 +115,23 @@ pub fn validate(m: &Manifest) -> Result<(), String> {
     if m.requested_permissions.iter().any(|p| !valid_permission(p)) {
         return Err("unsupported_permission".into());
     }
+    if m.platform_endpoints
+        .notification_check
+        .as_deref()
+        .is_some_and(|path| !valid_endpoint_path(path))
+    {
+        return Err("invalid_platform_endpoint".into());
+    }
     Ok(())
 }
 pub fn valid_permission(p: &str) -> bool {
     if matches!(
         p,
-        "database" | "platform:directory:read" | "platform:files:read" | "platform:files:write"
+        "database"
+            | "platform:directory:read"
+            | "platform:files:read"
+            | "platform:files:write"
+            | "platform:notifications:write"
     ) {
         return true;
     }

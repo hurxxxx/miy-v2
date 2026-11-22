@@ -104,11 +104,21 @@ impl Drop for Harness<'_> {
     }
 }
 async fn response(value: Response, expected: u16) -> Result<Value> {
-    ensure!(
-        value.status().as_u16() == expected,
-        "permission fixture expected HTTP {expected}, received HTTP {}",
-        value.status().as_u16()
-    );
+    let status = value.status().as_u16();
+    if status != expected {
+        // The path and the stable error code locate a failure; bodies of
+        // successful calls may carry credentials and are never printed.
+        let path = value.url().path().to_owned();
+        let code = value
+            .json::<Value>()
+            .await
+            .ok()
+            .and_then(|body| body["error"]["code"].as_str().map(str::to_owned))
+            .unwrap_or_default();
+        anyhow::bail!(
+            "permission fixture expected HTTP {expected}, received HTTP {status} from {path} ({code})"
+        );
+    }
     Ok(value.json().await?)
 }
 async fn denied(value: Response) -> Result<()> {
@@ -526,6 +536,10 @@ pub async fn run(
     passed.push("app directory pages expose only bounded active user/group DTOs; literal search, scoped cursors, original-user membership and immediate group/account revocation are enforced".into());
     storage_contract(&mut h, &admin, &user).await?;
     passed.push("file storage enforces backend-only current approvals, original user authority, bounded immutable uploads that can be sent again after a failure, idempotent request lookup, attachment retention, explicit cancellation, reference-checked detach, reservation quotas and housekeeping without a user actor".into());
+    notification_contract(&mut h, &admin, &user)
+        .await
+        .context("notification contract")?;
+    passed.push("notifications: only the app backend's call context with the approved permission publishes; recipients are filtered to active users who may use the app in that environment and who did not mute the kind; request IDs are idempotent; a group replaces, retracts and marks read only within its installation".into());
 
     for invalid in [
         vec!["database".into()],
@@ -4102,5 +4116,252 @@ async fn primary_group_lock_order(h: &Harness<'_>) -> Result<()> {
     .await??;
     response(a, 200).await?;
     response(b, 200).await?;
+    Ok(())
+}
+
+async fn notification_contract(h: &mut Harness<'_>, admin: &Actor, user: &Actor) -> Result<()> {
+    async fn fresh_proof(h: &Harness<'_>, user: &Actor, app: &App) -> Result<String> {
+        let gateway = format!("/api/v1/installations/{}/api/probe", app.installation);
+        response(
+            h.request(&user.token, Method::GET, &gateway).send().await?,
+            200,
+        )
+        .await
+        .context("notification step 1")?;
+        app.proof()
+    }
+    async fn inbox(h: &Harness<'_>, user: &str, app: &App) -> Result<Vec<(String, String, bool)>> {
+        Ok(sqlx::query_as::<_, (String, String, bool)>(
+            "SELECT group_key,title,read_at IS NOT NULL FROM notifications WHERE user_id=$1 AND installation_id=$2 ORDER BY group_key",
+        )
+        .bind(user)
+        .bind(app.installation)
+        .fetch_all(&h.state.pool)
+        .await?)
+    }
+    let permission = vec![crate::notifications::PERMISSION.to_string()];
+    // A call token exists once any platform permission is approved; approve the
+    // directory first so the unapproved notification permission is what refuses.
+    let both = vec![
+        crate::notifications::PERMISSION.to_string(),
+        "platform:directory:read".to_string(),
+    ];
+    let app = h
+        .app(
+            format!("notify-{}", &Uuid::new_v4().simple().to_string()[..12]),
+            "dev",
+            &both,
+        )
+        .await
+        .context("notification step 2")?;
+    let other = h
+        .app(
+            format!("notify-other-{}", &Uuid::new_v4().simple().to_string()[..8]),
+            "dev",
+            &permission,
+        )
+        .await
+        .context("notification step 3")?;
+    let recipient = h.actor(false).await.context("notification step 4")?;
+    let outsider = h.actor(false).await.context("notification step 5")?;
+    let disabled = h.actor(false).await.context("notification step 6")?;
+    let muted = h.actor(false).await.context("notification step 7")?;
+    for actor in [user, &recipient, &disabled, &muted] {
+        h.grant(actor, &app, "dev")
+            .await
+            .context("notification step 8")?;
+    }
+    sqlx::query("UPDATE users SET enabled=false WHERE id=$1")
+        .bind(&disabled.id)
+        .execute(&h.state.pool)
+        .await
+        .context("notification step 9")?;
+    sqlx::query("INSERT INTO notification_mutes(user_id,app_id,kind) VALUES($1,$2,'message')")
+        .bind(&muted.id)
+        .bind(&app.app)
+        .execute(&h.state.pool)
+        .await
+        .context("notification step 10")?;
+    let base = format!(
+        "/api/v1/installations/{}/platform/notifications",
+        app.installation
+    );
+    let request = Uuid::new_v4();
+    let body = json!({"requestId":request,
+        "recipients":[recipient.id, outsider.id, disabled.id, muted.id, "no-such-user"],
+        "kind":"message","groupKey":"conversation:1","title":"앨리스 · 새 메시지 2개",
+        "path":"/conversations/1","resourceId":"1"});
+    // Not approved yet, and never from a credential that is not an app call.
+    h.replace(admin, &app, app.release, &both[1..])
+        .await
+        .context("notification step 11")?;
+    let proof = fresh_proof(h, user, &app)
+        .await
+        .context("notification step 12")?;
+    denied(
+        h.request(&proof, Method::POST, &base)
+            .json(&body)
+            .send()
+            .await?,
+    )
+    .await
+    .context("notification step 13")?;
+    h.replace(admin, &app, app.release, &both)
+        .await
+        .context("notification step 14")?;
+    h.replace(admin, &other, other.release, &permission)
+        .await
+        .context("notification step 15")?;
+    for token in [&user.token, &admin.token] {
+        denied(
+            h.request(token, Method::POST, &base)
+                .json(&body)
+                .send()
+                .await?,
+        )
+        .await
+        .context("notification step 16")?;
+    }
+    let proof = fresh_proof(h, user, &app)
+        .await
+        .context("notification step 17")?;
+    let published = h
+        .json(&proof, Method::POST, &base, body.clone(), 200)
+        .await
+        .context("notification step 18")?;
+    ensure!(
+        published == json!({"requestId":request,"accepted":1}),
+        "notification recipients were not filtered to permitted, active, unmuted people"
+    );
+    ensure!(
+        inbox(h, &recipient.id, &app).await?
+            == vec![(
+                "conversation:1".into(),
+                "앨리스 · 새 메시지 2개".into(),
+                false
+            )]
+            && inbox(h, &outsider.id, &app).await?.is_empty()
+            && inbox(h, &disabled.id, &app).await?.is_empty()
+            && inbox(h, &muted.id, &app).await?.is_empty(),
+        "a notification reached someone outside the app's users"
+    );
+    // The same request ID answers the first result; a different body is a conflict.
+    let again = h
+        .json(&proof, Method::POST, &base, body.clone(), 200)
+        .await
+        .context("notification step 19")?;
+    ensure!(again == published, "a repeated request ID published twice");
+    let mut changed = body.clone();
+    changed["title"] = json!("다른 내용");
+    response(
+        h.request(&proof, Method::POST, &base)
+            .json(&changed)
+            .send()
+            .await?,
+        409,
+    )
+    .await
+    .context("notification step 20")?;
+    let looked_up = response(
+        h.request(&proof, Method::GET, &format!("{base}/by-request/{request}"))
+            .send()
+            .await?,
+        200,
+    )
+    .await
+    .context("notification step 21")?;
+    ensure!(
+        looked_up == published,
+        "the request lookup lost the first result"
+    );
+    // A newer notification of the same group replaces the line; invalid input is refused.
+    let replace = json!({"requestId":Uuid::new_v4(),"recipients":[recipient.id],"kind":"message",
+        "groupKey":"conversation:1","title":"앨리스 · 새 메시지 3개","path":"/conversations/1"});
+    h.json(&proof, Method::POST, &base, replace, 200)
+        .await
+        .context("notification step 22")?;
+    ensure!(
+        inbox(h, &recipient.id, &app).await?
+            == vec![(
+                "conversation:1".into(),
+                "앨리스 · 새 메시지 3개".into(),
+                false
+            )],
+        "a newer notification did not replace its group"
+    );
+    for invalid in [
+        json!({"requestId":Uuid::new_v4(),"recipients":[],"kind":"message","groupKey":"g","title":"t","path":"/"}),
+        json!({"requestId":Uuid::new_v4(),"recipients":[recipient.id],"kind":"Message","groupKey":"g","title":"t","path":"/"}),
+        json!({"requestId":Uuid::new_v4(),"recipients":[recipient.id],"kind":"message","groupKey":"g","title":"t","path":"https://x"}),
+    ] {
+        response(
+            h.request(&proof, Method::POST, &base)
+                .json(&invalid)
+                .send()
+                .await?,
+            400,
+        )
+        .await
+        .context("notification step 23")?;
+    }
+    // Another installation's call context cannot touch this installation's groups.
+    h.grant(user, &other, "dev")
+        .await
+        .context("notification step 24")?;
+    let other_proof = fresh_proof(h, user, &other)
+        .await
+        .context("notification step 25")?;
+    denied(
+        h.request(&other_proof, Method::POST, &format!("{base}/retract"))
+            .json(&json!({"groupKey":"conversation:1"}))
+            .send()
+            .await?,
+    )
+    .await
+    .context("notification step 26")?;
+    // The recipient reads the conversation in the app: their own line turns read.
+    let recipient_proof = fresh_proof(h, &recipient, &app)
+        .await
+        .context("notification step 27")?;
+    status_of(
+        h.request(&recipient_proof, Method::POST, &format!("{base}/read"))
+            .json(&json!({"groupKey":"conversation:1"}))
+            .send()
+            .await?,
+        204,
+    )?;
+    ensure!(
+        inbox(h, &recipient.id, &app)
+            .await?
+            .first()
+            .is_some_and(|row| row.2),
+        "reading in the app did not mark the notification read"
+    );
+    let proof = fresh_proof(h, user, &app)
+        .await
+        .context("notification step 28")?;
+    let retracted = h
+        .json(
+            &proof,
+            Method::POST,
+            &format!("{base}/retract"),
+            json!({"groupKey":"conversation:1"}),
+            200,
+        )
+        .await
+        .context("notification step 29")?;
+    ensure!(
+        retracted == json!({"retracted":1}) && inbox(h, &recipient.id, &app).await?.is_empty(),
+        "retracting a group left notifications behind"
+    );
+    Ok(())
+}
+
+fn status_of(value: Response, expected: u16) -> Result<()> {
+    ensure!(
+        value.status().as_u16() == expected,
+        "expected HTTP {expected}, received HTTP {}",
+        value.status().as_u16()
+    );
     Ok(())
 }

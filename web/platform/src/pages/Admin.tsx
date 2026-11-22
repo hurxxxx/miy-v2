@@ -12,6 +12,7 @@ import { PermissionApproval } from "../components/PermissionApproval";
 import { Badge, Button, EmptyState, Field, Loading, Panel } from "../ui";
 import { AppAccessAdmin, GroupAdmin, useGroups } from "./AdminAccess";
 import { AuditLog } from "./AdminAudit";
+import { LauncherCategoriesAdmin } from "./AdminLauncher";
 import { SupportReports } from "./AdminReports";
 import { UserAdmin, type Account } from "./AdminUsers";
 
@@ -194,6 +195,7 @@ function AdminConsole({ csrf, selfId }: { csrf: string; selfId: string }) {
         <GroupAdmin csrf={csrf} users={users} report={setMessage} directory={groups} />
         <AppAccessAdmin csrf={csrf} users={users} report={setMessage} directory={groups} />
       </div>
+      <LauncherCategoriesAdmin csrf={csrf} />
       <SupportReports csrf={csrf} />
       <AuditLog users={users} report={setMessage} />
       <h2 className="page-section-title">{t("admin.runtime")}</h2>

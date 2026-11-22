@@ -993,6 +993,151 @@
       ],
       "type": "string"
     },
+    "NotificationItem": {
+      "description": "One notification in the signed-in person's inbox of this environment.",
+      "properties": {
+        "appId": {
+          "type": "string"
+        },
+        "appName": {
+          "type": "string"
+        },
+        "createdAt": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "groupKey": {
+          "type": "string"
+        },
+        "id": {
+          "format": "uuid",
+          "type": "string"
+        },
+        "installationId": {
+          "format": "uuid",
+          "type": "string"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "path": {
+          "description": "App-relative destination, opened in the app's frame.",
+          "type": "string"
+        },
+        "readAt": {
+          "format": "date-time",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "resourceId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "title": {
+          "description": "Display text only; render as text.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "installationId",
+        "appId",
+        "appName",
+        "kind",
+        "groupKey",
+        "title",
+        "path",
+        "resourceId",
+        "createdAt",
+        "readAt"
+      ],
+      "type": "object"
+    },
+    "NotificationMute": {
+      "additionalProperties": false,
+      "description": "One kind of an app the person turned off; `*` is every kind of that app.",
+      "properties": {
+        "appId": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "appId",
+        "kind"
+      ],
+      "type": "object"
+    },
+    "NotificationPage": {
+      "description": "`GET /api/v1/notifications`: newest first, with the unread count.",
+      "properties": {
+        "items": {
+          "items": {
+            "$ref": "#/$defs/NotificationItem"
+          },
+          "type": "array"
+        },
+        "nextCursor": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "unread": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "items",
+        "unread",
+        "nextCursor"
+      ],
+      "type": "object"
+    },
+    "NotificationPublished": {
+      "description": "The answer of a notification publish (and of its request ID lookup).",
+      "properties": {
+        "accepted": {
+          "description": "How many recipients received it; who was left out is not disclosed.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "requestId": {
+          "format": "uuid",
+          "type": "string"
+        }
+      },
+      "required": [
+        "requestId",
+        "accepted"
+      ],
+      "type": "object"
+    },
+    "NotificationSettings": {
+      "additionalProperties": false,
+      "description": "`GET`/`PUT /api/v1/notifications/settings`; a PUT replaces the whole list.",
+      "properties": {
+        "mutes": {
+          "items": {
+            "$ref": "#/$defs/NotificationMute"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "mutes"
+      ],
+      "type": "object"
+    },
     "Preferences": {
       "description": "A person's own settings: `preferences` of `GET /api/v1/me` and the answer of\n`PATCH /api/v1/me/preferences`. Presentation only, never an access input.",
       "properties": {

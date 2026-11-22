@@ -54,6 +54,13 @@ pub fn access(route: &str, method: &Method) -> Option<Access> {
         | "/cli/device/{id}" => Access::Public,
         // Each surface reads and changes only the signed-in person's own record.
         "/me" | "/me/preferences" | "/me/sessions" | "/me/sessions/{id}" => Access::Shared,
+        // A portal's own inbox; the environment follows the session's purpose.
+        "/live"
+        | "/notifications"
+        | "/notifications/unread-count"
+        | "/notifications/read-all"
+        | "/notifications/{id}/read" => Access::Portal,
+        "/notifications/settings" => Access::Shared,
         // The portals read the arrangement; only the console changes it.
         "/launcher/categories" if read => Access::Shared,
         "/launcher/categories" | "/launcher/categories/layout" | "/launcher/categories/{id}" => {
@@ -77,6 +84,10 @@ pub fn access(route: &str, method: &Method) -> Option<Access> {
         | "/installations/{id}/platform/files/{file}/content"
         | "/installations/{id}/platform/files/{file}/attach"
         | "/installations/{id}/platform/files/{file}/detach"
+        | "/installations/{id}/platform/notifications"
+        | "/installations/{id}/platform/notifications/retract"
+        | "/installations/{id}/platform/notifications/read"
+        | "/installations/{id}/platform/notifications/by-request/{request}"
         | "/preview/apps/{app}/platform/files"
         | "/preview/apps/{app}/platform/files/{*path}"
         | "/installations/{id}/connections/{target}/api/{*path}" => Access::PortalBearer,

@@ -29,6 +29,7 @@ pub async fn run(pool: sqlx::PgPool) -> Result<()> {
     let _health_monitor = crate::runtime_health::start(pool.clone())?;
     let _development_monitor = crate::development::start(pool.clone());
     let _file_sweeper = crate::storage::start(pool.clone())?;
+    let _notification_sweeper = crate::notifications::start(pool.clone());
     // Direct futures share ownership of this scope: a failed lane or lost
     // session lock drops every other lane before the ownership connection.
     // Build recovery can itself take minutes and must not delay control startup.

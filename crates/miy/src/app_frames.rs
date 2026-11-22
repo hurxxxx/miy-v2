@@ -456,6 +456,7 @@ pub fn router(state: State) -> Router {
             axum::routing::any(connection),
         )
         .route("/_miy/platform/directory", axum::routing::get(directory))
+        .route("/_miy/live", axum::routing::get(live))
         .fallback(|| async { ApiError::not_found() })
         .layer(middleware::from_fn(frame_headers))
         .with_state(state)
@@ -544,6 +545,176 @@ pub fn browser_request_allowed(method: &Method, headers: &HeaderMap, own: &str) 
     } else {
         origin == Some(own)
     }
+}
+
+fn frame_token_shape(value: &str) -> bool {
+    value.strip_prefix(TOKEN_PREFIX).is_some_and(|secret| {
+        secret.len() == 43
+            && secret
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_'))
+    })
+}
+
+/// A frame's live connection (crate::live): a WebSocket on the frame's own
+/// origin. The frame token comes in the first message, never in the address.
+async fn live(
+    S(s): S<State>,
+    headers: HeaderMap,
+    upgrade: axum::extract::ws::WebSocketUpgrade,
+) -> Response {
+    let site = match site(&s, &headers).await {
+        Ok(site) => site,
+        Err(error) => return error.into_response(),
+    };
+    let mut origins = headers.get_all(header::ORIGIN).iter();
+    let origin = origins.next().and_then(|value| value.to_str().ok());
+    if origin != Some(site.origin.as_str()) || origins.next().is_some() {
+        return ApiError::forbidden().into_response();
+    }
+    upgrade
+        .max_message_size(crate::live::MAX_MESSAGE_BYTES)
+        .max_frame_size(crate::live::MAX_MESSAGE_BYTES)
+        .on_upgrade(move |socket| live_session(s, site, socket))
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct LiveAuth {
+    r#type: String,
+    token: String,
+}
+
+async fn live_session(s: State, site: Site, mut socket: axum::extract::ws::WebSocket) {
+    use crate::live::{close, close_with};
+    use axum::extract::ws::Message;
+    let token = match tokio::time::timeout(crate::live::AUTH_TIMEOUT, socket.recv()).await {
+        Ok(Some(Ok(Message::Text(text)))) => serde_json::from_str::<LiveAuth>(text.as_str())
+            .ok()
+            .filter(|auth| auth.r#type == "auth" && frame_token_shape(&auth.token))
+            .map(|auth| auth.token),
+        _ => None,
+    };
+    let Some(token) = token else {
+        close_with(&mut socket, close::BAD_AUTH, "auth_required").await;
+        return;
+    };
+    let (frame, p) = match load_frame(&s, &site, "token_hash", &token, true).await {
+        Ok(found) => found,
+        Err(error) if error.status == StatusCode::CONFLICT => {
+            close_with(&mut socket, close::RELEASE_CHANGED, "release_changed").await;
+            return;
+        }
+        Err(_) => {
+            close_with(&mut socket, close::SESSION_ENDED, "session_ended").await;
+            return;
+        }
+    };
+    if policy::require(&s, &p, &frame.app_id, &frame.environment, AppAction::Use)
+        .await
+        .is_err()
+    {
+        close_with(&mut socket, close::ACCESS_REVOKED, "access_revoked").await;
+        return;
+    }
+    let Some(_slot) = crate::live::acquire(&p.id, frame.installation_id) else {
+        close_with(&mut socket, close::BUDGET, "too_many_connections").await;
+        return;
+    };
+    // The same signed identity a frame API request gets, for the app's /api/live.
+    let target = async {
+        let context = frame.context(&s).await?;
+        let (mut parts, ()) = axum::http::Request::builder()
+            .method(Method::GET)
+            .uri("/_miy/live")
+            .body(())
+            .map_err(|_| ApiError::unavailable("live_request_failed"))?
+            .into_parts();
+        parts
+            .extensions
+            .insert(crate::app_calls::ForwardContext(context));
+        crate::runtime::app_target(
+            &s,
+            &p,
+            frame.installation_id,
+            &parts,
+            "live",
+            "invalid_api_path",
+        )
+        .await
+    };
+    let (port, identity) = match target.await {
+        Ok(found) => found,
+        Err(error) if error.status == StatusCode::FORBIDDEN => {
+            close_with(&mut socket, close::ACCESS_REVOKED, "access_revoked").await;
+            return;
+        }
+        Err(_) => {
+            close_with(&mut socket, close::APP_UNAVAILABLE, "app_unavailable").await;
+            return;
+        }
+    };
+    let upstream = async {
+        use tokio_tungstenite::tungstenite::client::IntoClientRequest;
+        let mut request = format!("ws://127.0.0.1:{port}/api/live")
+            .into_client_request()
+            .ok()?;
+        request
+            .headers_mut()
+            .insert("x-miy-identity", HeaderValue::from_str(&identity).ok()?);
+        let config = tokio_tungstenite::tungstenite::protocol::WebSocketConfig::default()
+            .max_message_size(Some(crate::live::MAX_MESSAGE_BYTES))
+            .max_frame_size(Some(crate::live::MAX_MESSAGE_BYTES));
+        tokio::time::timeout(
+            crate::live::AUTH_TIMEOUT,
+            tokio_tungstenite::connect_async_with_config(request, Some(config), false),
+        )
+        .await
+        .ok()?
+        .ok()
+        .map(|(stream, _)| stream)
+    };
+    let Some(upstream) = upstream.await else {
+        close_with(&mut socket, close::APP_UNAVAILABLE, "app_unavailable").await;
+        return;
+    };
+    // The frame runtime treats this first message as "open"; every later
+    // message comes from the app.
+    if socket
+        .send(Message::Text(r#"{"type":"miy.ready"}"#.into()))
+        .await
+        .is_err()
+    {
+        return;
+    }
+    let (frame_id, release) = (frame.id, frame.release_id);
+    let recheck = || {
+        let (s, p, frame_app, frame_env) = (
+            s.clone(),
+            p.clone(),
+            frame.app_id.clone(),
+            frame.environment.clone(),
+        );
+        async move {
+            let row = sqlx::query(&format!(
+                "SELECT i.release_id FROM app_frame_sessions f JOIN installations i ON i.id=f.installation_id \
+                 WHERE f.id=$2 AND f.revoked_at IS NULL AND f.expires_at>clock_timestamp() AND {PARENT_LIVE}"
+            ))
+            .bind(s.auth.development_login)
+            .bind(frame_id)
+            .fetch_optional(&s.pool)
+            .await
+            .map_err(|_| crate::live::Ended::Session)?
+            .ok_or(crate::live::Ended::Session)?;
+            if row.get::<Uuid, _>("release_id") != release {
+                return Err(crate::live::Ended::Release);
+            }
+            policy::require(&s, &p, &frame_app, &frame_env, AppAction::Use)
+                .await
+                .map_err(|_| crate::live::Ended::Access)
+        }
+    };
+    crate::live::relay(socket, upstream, recheck).await;
 }
 
 /// A live frame session and the principal it acts as.
