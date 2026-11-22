@@ -6,7 +6,7 @@ import { Button, Loading, Notice, Panel } from "../ui";
 import { useUser } from "../data/session";
 import { currentEnvironment, environmentPath } from "../lib/paths";
 import { activeGuards } from "../lib/navigation-guards";
-import { AppFrame, leaveMessage, type FrameInput } from "./AppFrame";
+import { AppFrame, appNavigation, leaveMessage, type FrameInput } from "./AppFrame";
 
 function AppAvailability({ health }: { health: Installation["health"] }) {
   const { t } = useTranslation("portal");
@@ -47,12 +47,13 @@ function AppSession({ appId, environment, basePath }: { appId: string; environme
   useEffect(() => {
     activeGuards.add(guards);
     const unblock = router.history.block({
-      // Moving inside this app keeps its frame and the input in it, so only
-      // leaving the app asks (an app's own route change never prompts).
+      // The app's own move inside itself does not ask: it knows its input
+      // state and its frame stays. Browser history and portal links ask.
       blockerFn: ({ nextLocation }: { nextLocation: { pathname: string } }) =>
-        nextLocation.pathname !== basePath &&
-        !nextLocation.pathname.startsWith(basePath + "/") &&
-        !guards.confirmNavigation(),
+        !(
+          appNavigation.active &&
+          (nextLocation.pathname === basePath || nextLocation.pathname.startsWith(basePath + "/"))
+        ) && !guards.confirmNavigation(),
       enableBeforeUnload: () => !!guards.message(),
     });
     return () => {

@@ -350,21 +350,22 @@ test("an app's own route change with unsaved input does not ask", async ({ page 
     void dialog.dismiss();
   });
   await page.goto("/environments/dev/apps/shell-app");
-  const input = page.frameLocator("iframe.app-frame").getByLabel("문서 제목");
+  const frame = page.frameLocator("iframe.app-frame");
+  const input = frame.getByLabel("문서 제목");
   await expect(input).toHaveValue("저장된 제목");
   await input.fill("미저장 제목");
-  // A move inside the same app keeps its frame: no question, no relaunch.
-  await page.evaluate(() => {
-    window.history.pushState(window.history.state, "", "/environments/dev/apps/shell-app/next");
-    window.dispatchEvent(new PopStateEvent("popstate", { state: window.history.state }));
-  });
+  // The app's own runtime.navigate: no question, the frame stays.
+  await frame.getByRole("button", { name: "다음 화면" }).click();
   await expect(page).toHaveURL(/\/environments\/dev\/apps\/shell-app\/next$/);
   expect(dialogs).toEqual([]);
   expect(frames.launches).toBe(1);
-  // Leaving the app still asks while the frame reports unsaved input.
-  await expect(input).toBeVisible();
+  // Browser history and portal links still ask while input is unsaved (this
+  // fixture reloads its document after a route change, so edit again).
+  await expect(input).toHaveValue("저장된 제목");
   await input.fill("미저장 제목");
-  await page.locator("#platform-navigation").getByRole("link", { name: "홈", exact: true }).click();
+  await page.goBack();
   await expect.poll(() => dialogs.length).toBe(1);
-  await expect(page).toHaveURL(/\/environments\/dev\/apps\/shell-app\/next$/);
+  await page.locator("#platform-navigation").getByRole("link", { name: "홈", exact: true }).click();
+  await expect.poll(() => dialogs.length).toBe(2);
+  await expect(page).toHaveURL(/\/shell-app\/next$/);
 });

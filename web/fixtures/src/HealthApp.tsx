@@ -56,6 +56,8 @@ export default function HealthApp({ runtime }: AppProps) {
       >
         저장
       </button>
+      {/* The app's own route change (runtime.navigate) inside itself. */}
+      <button onClick={() => runtime.navigate("/next")}>다음 화면</button>
       <output data-testid="api-error">{error}</output>
     </section>
   );

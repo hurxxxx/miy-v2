@@ -26,6 +26,13 @@ export interface PanelRouting {
   title: string;
 }
 
+/**
+ * Set while the portal follows an app's own `runtime.navigate`: the app chose
+ * that move knowing its input state, and its frame stays, so the portal's leave
+ * check does not ask (browser history and portal links still ask).
+ */
+export const appNavigation = { active: false };
+
 /** The frame's last reported input state, read synchronously by leave checks. */
 export interface FrameInput {
   state: InputState;
@@ -196,7 +203,12 @@ export function AppFrame({
             panelRouting.current.navigate(message.payload.path, message.payload.replace);
             break;
           }
-          void router.navigate({ to: href as "/", replace: message.payload.replace });
+          appNavigation.active = true;
+          void router
+            .navigate({ to: href as "/", replace: message.payload.replace })
+            .finally(() => {
+              appNavigation.active = false;
+            });
           break;
         }
         case "guard.state":
