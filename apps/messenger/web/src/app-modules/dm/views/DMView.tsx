@@ -131,6 +131,12 @@ import {
 } from './dm-conversation-runtime-model';
 import { DmAttachmentImage } from './DmAttachmentImage';
 import {
+  applyDmTypingHint,
+  liveHintConversationId,
+  liveTypingHint,
+  pruneDmTyping,
+} from './dm-live-model';
+import {
   DM_THREAD_NAVIGATION_INITIAL_STATE,
   dmThreadBottomScrollSnapshot,
   dmThreadScrollSnapshot,
@@ -399,6 +405,11 @@ export function DMEmbeddedView({
   );
 }
 
+/** miy (M4): live hint handling. */
+const DM_HINT_COALESCE_MS = 120;
+const DM_TYPING_SEND_MS = 3000;
+const DM_TYPING_TTL_MS = 6000;
+
 /** miy: page size of the message list (AI-DO DEFAULT_DM_MESSAGE_LIMIT). */
 const DM_MESSAGE_PAGE = 50;
 
@@ -418,7 +429,7 @@ function useDMViewElement({
   threadId: string;
 }): ReactNode {
   const { token, user } = useAuth();
-  const { reconnectSeq, status: realtimeState } = useRealtime();
+  const { reconnectSeq, status: realtimeState, send: sendLive } = useRealtime();
   const { i18n, t } = useTranslation('apps');
   const timeZone = user?.time_zone;
   const dmCacheKey = useMemo(() => dmCacheScopeKey(user?.id), [user?.id]);
@@ -1148,6 +1159,39 @@ function useDMViewElement({
     );
   }, []);
 
+  // miy (M4): tell the other participants that this person is typing. At
+  // most one hint per DM_TYPING_SEND_MS; an emptied draft or a send ends it.
+  const typingSentRef = useRef<{ threadId: string; at: number } | null>(null);
+  const stopTyping = useCallback(
+    (targetThreadId: string | null | undefined) => {
+      const sent = typingSentRef.current;
+      if (!sent || !targetThreadId || sent.threadId !== targetThreadId) return;
+      typingSentRef.current = null;
+      sendLive?.({ type: 'typing', conversationId: targetThreadId, active: false });
+    },
+    [sendLive],
+  );
+  const notifyTyping = useCallback(
+    (nextDraft: string) => {
+      const activeThreadId = selectedThreadIdRef.current;
+      if (!activeThreadId) return;
+      if (!nextDraft.trim()) {
+        stopTyping(activeThreadId);
+        return;
+      }
+      const now = Date.now();
+      const sent = typingSentRef.current;
+      if (sent && sent.threadId === activeThreadId && now - sent.at < DM_TYPING_SEND_MS) {
+        return;
+      }
+      if (sendLive?.({ type: 'typing', conversationId: activeThreadId, active: true })) {
+        typingSentRef.current = { threadId: activeThreadId, at: now };
+      }
+    },
+    [sendLive, stopTyping],
+  );
+  useEffect(() => () => stopTyping(threadId), [stopTyping, threadId]);
+
   useEffect(() => {
     resetThreadComposer();
   }, [resetThreadComposer, threadId]);
@@ -1321,6 +1365,81 @@ function useDMViewElement({
     DM_REALTIME_EVENT_TYPES.conversationRemoved,
     handleDmRealtimeEvent,
   );
+
+  // miy (M4): the live connection carries hints only. A changed conversation
+  // refetches the list and, when it is the one shown, its messages through
+  // runtime.api (the late-answer checks of those loaders still apply).
+  const hintTimersRef = useRef(new Map<string, number>());
+  useEffect(() => {
+    const timers = hintTimersRef.current;
+    return () => {
+      timers.forEach((timer) => window.clearTimeout(timer));
+      timers.clear();
+    };
+  }, []);
+  const handleConversationChangedHint = useCallback(
+    (event: RealtimeEvent) => {
+      const conversationId = liveHintConversationId(event);
+      if (!token || !conversationId) return;
+      const timers = hintTimersRef.current;
+      if (timers.has(conversationId)) return;
+      // One refetch per burst (send, read, attach arrive together).
+      timers.set(
+        conversationId,
+        window.setTimeout(() => {
+          timers.delete(conversationId);
+          void loadThreads({ force: true });
+          if (selectedThreadIdRef.current !== conversationId) return;
+          void refreshSelectedThreadMessages(conversationId)
+            .then(() =>
+              markVisibleDmThreadReadAndApply({
+                markThreadRead: markDmThreadRead,
+                onThreadRead: applyReadThread,
+                presence: currentDmReadPresenceFromBrowser(document),
+                selectedThreadId: selectedThreadIdRef.current,
+                token,
+              }),
+            )
+            .catch(() => undefined);
+        }, DM_HINT_COALESCE_MS),
+      );
+    },
+    [applyReadThread, loadThreads, refreshSelectedThreadMessages, token],
+  );
+  useRealtimeEvent('conversation.changed', handleConversationChangedHint);
+
+  // miy (M4): who is typing in which conversation, until the hint expires.
+  const [typingByThreadId, setTypingByThreadId] = useState<
+    Record<string, Record<string, number>>
+  >({});
+  const handleTypingHint = useCallback(
+    (event: RealtimeEvent) => {
+      const hint = liveTypingHint(event);
+      if (!hint || hint.userId === user?.id) return;
+      setTypingByThreadId((current) =>
+        applyDmTypingHint(current, hint, Date.now() + DM_TYPING_TTL_MS),
+      );
+    },
+    [user?.id],
+  );
+  useRealtimeEvent('typing', handleTypingHint);
+  const typingActive = Object.keys(typingByThreadId).length > 0;
+  useEffect(() => {
+    if (!typingActive) return undefined;
+    const timer = window.setInterval(
+      () => setTypingByThreadId((current) => pruneDmTyping(current, Date.now())),
+      1000,
+    );
+    return () => window.clearInterval(timer);
+  }, [typingActive]);
+
+  // miy (M4): the server sends typing hints only to frames that show the
+  // conversation (rechecking participation); report the shown one after every
+  // (re)open.
+  useEffect(() => {
+    if (realtimeState !== 'live') return;
+    sendLive?.({ type: 'open', conversationId: threadId || null });
+  }, [realtimeState, reconnectSeq, sendLive, threadId]);
 
   useEffect(() => {
     if (!token || !threadId) return undefined;
@@ -1897,6 +2016,7 @@ function useDMViewElement({
     });
     if (!token || !command) return;
     const submittedDraft = draft;
+    stopTyping(command.threadId);
     setSending(true);
     draftByThreadIdRef.current = setDmThreadRecordValue(
       draftByThreadIdRef.current,
@@ -2052,6 +2172,23 @@ function useDMViewElement({
   const olderState = threadId ? olderByThreadId[threadId] : undefined;
   const canLoadOlder =
     messages.length >= DM_MESSAGE_PAGE && !olderState?.exhausted;
+  const typingLabel = useMemo(() => {
+    const typing = threadId ? typingByThreadId[threadId] : undefined;
+    if (!typing || !selectedThread) return null;
+    const names = Object.keys(typing).map((userId) => {
+      const participant = selectedThread.participants.find(
+        (item) => item.user.id === userId,
+      );
+      return participant ? displayDmUserName(participant.user) : null;
+    });
+    const shown = names.filter((name): name is string => Boolean(name));
+    if (!shown.length) return null;
+    if (shown.length === 1) return t('dm.typingOne', { name: shown[0] });
+    if (shown.length === 2) {
+      return t('dm.typingTwo', { first: shown[0], second: shown[1] });
+    }
+    return t('dm.typingMany', { count: shown.length });
+  }, [selectedThread, t, threadId, typingByThreadId]);
   const currentUserLabel = t('pms.taskDetail.me');
   const selectedThreadListClass =
     threadId && !unresolvedRouteThread
@@ -3094,6 +3231,19 @@ function useDMViewElement({
               )}
             </div>
             <footer className="shrink-0 border-t border-app-border p-4">
+              {typingLabel ? (
+                <div
+                  aria-live="polite"
+                  className="app-text-caption -mt-1 mb-2 flex items-center gap-1.5 text-app-ink/55"
+                >
+                  <span aria-hidden="true" className="inline-flex gap-0.5">
+                    <span className="size-1 animate-pulse rounded-full bg-app-ink/45" />
+                    <span className="size-1 animate-pulse rounded-full bg-app-ink/45 [animation-delay:150ms]" />
+                    <span className="size-1 animate-pulse rounded-full bg-app-ink/45 [animation-delay:300ms]" />
+                  </span>
+                  {typingLabel}
+                </div>
+              ) : null}
               {termsPending && safety?.terms ? (
                 <DmTermsNotice
                   accepting={acceptingTerms}
@@ -3254,6 +3404,7 @@ function useDMViewElement({
                       setEditing({ ...editing, body });
                     } else {
                       setSelectedThreadDraft(body);
+                      notifyTyping(body);
                     }
                   }}
                   onKeyDown={(event) => {

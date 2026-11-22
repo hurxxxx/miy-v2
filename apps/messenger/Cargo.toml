@@ -6,7 +6,7 @@ rust-version = "1.99"
 
 [dependencies]
 anyhow = "1"
-axum = { version = "=0.8.9", features = ["macros"] }
+axum = { version = "=0.8.9", features = ["macros", "ws"] }
 chrono = { version = "0.4", features = ["serde"] }
 futures-util = "0.3"
 miy-app-sdk = { path = "sdk/rust" }
@@ -20,6 +20,7 @@ unicode-normalization = "0.1"
 uuid = { version = "1", features = ["v4", "serde"] }
 
 [dev-dependencies]
+tokio-tungstenite = "=0.29.0"
 jsonwebtoken = "9"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 

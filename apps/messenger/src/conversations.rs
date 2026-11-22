@@ -4,7 +4,7 @@
 //! `/dm/users` search (user_directory.py).
 use crate::{
     error::{ApiError, ApiJson, ApiResult, check_length, is_unique_violation},
-    notify,
+    live, notify,
     request::{
         DM_CONVERSATION_TITLE_MAX_LENGTH, DM_PARTICIPANT_IDS_MAX_LENGTH,
         normalize_optional_route_id, normalize_optional_title, normalize_route_id_list, route_id,
@@ -341,6 +341,7 @@ pub async fn create_dm_conversation(
     } else {
         return Err(recipient_not_found());
     };
+    live::conversation_changed(&pool, &id, &[]).await;
     Ok((
         StatusCode::CREATED,
         Json(render_for_me(&pool, &identity, &id).await?),
@@ -375,6 +376,7 @@ pub async fn update_dm_conversation(
         .execute(&mut *tx)
         .await?;
     tx.commit().await?;
+    live::conversation_changed(&pool, &conversation_id, &[]).await;
     Ok(Json(
         render_for_me(&pool, &identity, &conversation_id).await?,
     ))
@@ -447,6 +449,7 @@ pub async fn add_dm_conversation_participants(
         .execute(&mut *tx)
         .await?;
     tx.commit().await?;
+    live::conversation_changed(&pool, &conversation_id, &[]).await;
     Ok(Json(
         render_for_me(&pool, &identity, &conversation_id).await?,
     ))
@@ -494,6 +497,7 @@ async fn leave(pool: &PgPool, identity: &Identity, conversation_id: &str) -> Api
     conversation.ensure_group()?;
     depart(&mut tx, &conversation, me).await?;
     tx.commit().await?;
+    live::conversation_changed(pool, conversation_id, &[me.to_string()]).await;
     notify::retract(identity, conversation_id, Some(&[me.to_string()])).await;
     Ok(())
 }
@@ -542,6 +546,7 @@ pub async fn remove_dm_conversation_participant(
     }
     depart(&mut tx, &conversation, &user_id).await?;
     tx.commit().await?;
+    live::conversation_changed(&pool, &conversation_id, std::slice::from_ref(&user_id)).await;
     notify::retract(&identity, &conversation_id, Some(&[user_id.clone()])).await;
     Ok(Json(
         render_for_me(&pool, &identity, &conversation_id).await?,
@@ -581,6 +586,8 @@ pub async fn mark_dm_conversation_read(
     }
     tx.commit().await?;
     if moved {
+        // Senders' read markers change too.
+        live::conversation_changed(&pool, &conversation_id, &[]).await;
         notify::mark_read(&identity, &conversation_id).await;
     }
     Ok(Json(
@@ -612,6 +619,9 @@ pub async fn mute_dm_conversation(
             .await?;
     }
     tx.commit().await?;
+    if changed {
+        live::user_changed(me, &conversation_id);
+    }
     if changed && request.muted {
         notify::retract(&identity, &conversation_id, Some(&[me.to_string()])).await;
     }

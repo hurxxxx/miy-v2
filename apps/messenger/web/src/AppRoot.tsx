@@ -10,7 +10,7 @@ import type { DmThreadScrollSnapshots } from './app-modules/dm/views/dm-conversa
 import { bindApiRuntime } from './platform/api/client';
 import { AuthProvider, RUNTIME_TOKEN, type AuthUser } from './platform/auth/auth-provider';
 import { syncLocale } from './platform/i18n';
-import { PollingProvider } from './platform/realtime/realtime-provider';
+import { LiveProvider } from './platform/realtime/realtime-provider';
 import { conversationPath, resolveAppRoute } from './platform/runtime/app-location';
 import { NavigationStateProvider } from './platform/runtime/navigation-state';
 import { RuntimeProvider } from './platform/runtime/runtime-context';
@@ -47,9 +47,9 @@ export default function AppRoot({ runtime }: AppProps) {
   return (
     <RuntimeProvider runtime={runtime}>
       <Feedback>
-        <PollingProvider>
+        <LiveProvider live={runtime.live}>
           <Session runtime={runtime} />
-        </PollingProvider>
+        </LiveProvider>
       </Feedback>
     </RuntimeProvider>
   );

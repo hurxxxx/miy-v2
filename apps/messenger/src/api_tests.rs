@@ -2143,3 +2143,177 @@ async fn notification_check_mute_search_and_older_messages() {
     .await;
     assert_eq!(page["items"][2]["id"], older[2]["id"]);
 }
+
+// --- M4 live hints ------------------------------------------------------------------
+
+type Live =
+    tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
+
+async fn live_socket(
+    user: &str,
+    platform_call: bool,
+) -> Result<Live, tokio_tungstenite::tungstenite::Error> {
+    use tokio_tungstenite::tungstenite::client::IntoClientRequest;
+    let url = server().replace("http://", "ws://");
+    let mut request = format!("{url}/api/live").into_client_request().unwrap();
+    request.headers_mut().insert(
+        "x-miy-identity",
+        identity_token(user, platform_call).parse().unwrap(),
+    );
+    tokio_tungstenite::connect_async(request)
+        .await
+        .map(|(socket, _)| socket)
+}
+
+/// The next hint within `ms`, skipping heartbeats.
+async fn next_hint(socket: &mut Live, ms: u64) -> Option<Value> {
+    use futures_util::StreamExt;
+    let deadline = tokio::time::Instant::now() + std::time::Duration::from_millis(ms);
+    loop {
+        let message = tokio::time::timeout_at(deadline, socket.next())
+            .await
+            .ok()??
+            .ok()?;
+        if let tokio_tungstenite::tungstenite::Message::Text(text) = message {
+            let value: Value = serde_json::from_str(text.as_str()).unwrap();
+            if value["type"] != "heartbeat" {
+                return Some(value);
+            }
+        }
+    }
+}
+
+async fn drain(socket: &mut Live) {
+    while next_hint(socket, 150).await.is_some() {}
+}
+
+async fn live_send(socket: &mut Live, value: Value) {
+    use futures_util::SinkExt;
+    socket
+        .send(tokio_tungstenite::tungstenite::Message::Text(
+            value.to_string().into(),
+        ))
+        .await
+        .unwrap();
+}
+
+// miy M4: committed writes hint current participants; typing goes to other
+// participants that show the conversation; participation is rechecked.
+#[tokio::test]
+#[ignore]
+async fn live_hints_follow_current_participation() {
+    let _settings = SETTINGS.read().await;
+    let a = person("실시간가");
+    let b = person("실시간나");
+    let c = person("실시간다");
+    let outsider = person("실시간밖");
+    let mut live_a = live_socket(&a, false).await.unwrap();
+    let mut live_b = live_socket(&b, false).await.unwrap();
+    let mut live_c = live_socket(&c, false).await.unwrap();
+    let mut live_out = live_socket(&outsider, false).await.unwrap();
+
+    let id = direct(&a, &b).await;
+    for socket in [&mut live_a, &mut live_b] {
+        assert_eq!(
+            next_hint(socket, 2000).await,
+            Some(json!({"type": "conversation.changed", "conversationId": id}))
+        );
+    }
+    ok(send(&a, &id, "실시간 안녕").await).await;
+    assert_eq!(
+        next_hint(&mut live_b, 2000).await,
+        Some(json!({"type": "conversation.changed", "conversationId": id}))
+    );
+    drain(&mut live_a).await;
+    assert_eq!(next_hint(&mut live_out, 300).await, None);
+
+    // Typing reaches a only once a shows the conversation.
+    live_send(&mut live_b, json!({"type": "typing", "conversationId": id})).await;
+    assert_eq!(next_hint(&mut live_a, 300).await, None);
+    live_send(&mut live_a, json!({"type": "open", "conversationId": id})).await;
+    tokio::time::sleep(std::time::Duration::from_millis(1100)).await;
+    live_send(&mut live_b, json!({"type": "typing", "conversationId": id})).await;
+    assert_eq!(
+        next_hint(&mut live_a, 2000).await,
+        Some(json!({"type": "typing", "conversationId": id, "userId": b, "active": true}))
+    );
+    live_send(
+        &mut live_b,
+        json!({"type": "typing", "conversationId": id, "active": false}),
+    )
+    .await;
+    assert_eq!(next_hint(&mut live_a, 2000).await.unwrap()["active"], false);
+    // An outsider can neither subscribe nor type into it.
+    live_send(&mut live_out, json!({"type": "open", "conversationId": id})).await;
+    live_send(
+        &mut live_out,
+        json!({"type": "typing", "conversationId": id}),
+    )
+    .await;
+    assert_eq!(next_hint(&mut live_a, 300).await, None);
+    tokio::time::sleep(std::time::Duration::from_millis(1100)).await;
+    live_send(&mut live_b, json!({"type": "typing", "conversationId": id})).await;
+    assert!(next_hint(&mut live_a, 2000).await.is_some());
+    assert_eq!(next_hint(&mut live_out, 300).await, None);
+
+    // Membership: the removed person gets the hint of their removal, then nothing.
+    let group = ok(call(
+        &a,
+        Method::POST,
+        "/v1/dm/conversations",
+        Some(json!({"participant_user_ids": [b, c]})),
+    )
+    .await)
+    .await;
+    let group_id = group["id"].as_str().unwrap().to_string();
+    for socket in [&mut live_a, &mut live_b, &mut live_c] {
+        drain(socket).await;
+    }
+    ok(call(
+        &a,
+        Method::DELETE,
+        &format!("/v1/dm/conversations/{group_id}/participants/{c}"),
+        None,
+    )
+    .await)
+    .await;
+    assert_eq!(
+        next_hint(&mut live_c, 2000).await,
+        Some(json!({"type": "conversation.changed", "conversationId": group_id}))
+    );
+    drain(&mut live_b).await;
+    ok(send(&a, &group_id, "남은 사람만").await).await;
+    assert_eq!(
+        next_hint(&mut live_b, 2000).await.unwrap()["conversationId"],
+        group_id
+    );
+    assert_eq!(next_hint(&mut live_c, 300).await, None);
+
+    // Reading moves senders' markers: a sees b's read; a second read is silent.
+    drain(&mut live_a).await;
+    ok(call(
+        &b,
+        Method::PATCH,
+        &format!("/v1/dm/conversations/{id}/read"),
+        None,
+    )
+    .await)
+    .await;
+    assert_eq!(
+        next_hint(&mut live_a, 2000).await.unwrap()["conversationId"],
+        id
+    );
+    drain(&mut live_a).await;
+    ok(call(
+        &b,
+        Method::PATCH,
+        &format!("/v1/dm/conversations/{id}/read"),
+        None,
+    )
+    .await)
+    .await;
+    assert_eq!(next_hint(&mut live_a, 300).await, None);
+
+    // The platform's recheck identity cannot open a live connection.
+    assert!(live_socket(&a, true).await.is_err());
+}

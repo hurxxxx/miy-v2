@@ -16,7 +16,7 @@
 | AI-DO 기능 | 원본 위치 | 이유 |
 | --- | --- | --- |
 | 근태 앱 DM 중계 | `domains/commute/dm_relay_service.py`, `DmMessageClientKey`(`dm_message_client_keys`), `source='commute_app'` 경로 | 계획에서 제외. 테이블의 `source` 제약은 원본 그대로 두었지만 값은 `web`만 쓴다 |
-| 실시간 이벤트·웹소켓 | `realtime_events.py`, `realtime_payloads.py`, `realtime_event_types.py`, 화면의 `useRealtimeEvent` | M4 범위. 주기 조회로 바꿨다(§3.5) |
+| 실시간 이벤트(대화 스냅숏을 실은 웹소켓) | `realtime_events.py`, `realtime_payloads.py`, `realtime_event_types.py`, 화면의 `useRealtimeEvent` 처리기 | 옮기지 않음. M4에서 플랫폼 실시간 연결의 짧은 신호와 API 재조회로 바꿨다(§3.5). 원본 처리기 코드는 남아 있지만 그 이벤트는 오지 않는다 |
 | 모바일 푸시, 봇 알림 DM, 업무 승인 DM | `notifications/mobile_push_*`, `notifications.dm_delivery`, `legacy_issues` | 계획에서 제외. 메시지 알림은 플랫폼 알림함으로(§3.4) |
 | AI 기능, 데스크톱 앱 연동 | — | 계획에서 제외 |
 | 떠 있는 DM 패널·셸 배지 | `FloatingDmWidget.tsx`(+spec), `useFloatingDmUnreadCount`, `personal-widget-registry` | 포털 전역 위젯은 M5. 대신 manifest `panels`의 좁은 화면(§3.7)과 홈 카드 |
@@ -32,7 +32,7 @@
 
 | AI-DO | miy | 상태 |
 | --- | --- | --- |
-| `app-modules/dm/views/DMView.tsx` | 같은 경로 | 수정: 주기 조회 페이지 병합, 첨부 객체 URL, 수정·삭제·이전 메시지·알림 끄기, 관리자 화면 링크, 이동 확인 보고, 오류 코드 `_` |
+| `app-modules/dm/views/DMView.tsx` | 같은 경로 | 수정: 실시간 신호 재조회·입력 중 표시(M4), 주기 조회 페이지 병합, 첨부 객체 URL, 수정·삭제·이전 메시지·알림 끄기, 관리자 화면 링크, 이동 확인 보고, 오류 코드 `_` |
 | `…/views/DmSafetyDialogs.tsx`, `dm-composer-attachments.ts`, `dm-composer-attachment-upload.ts`, `dm-conversation-session-model.ts`, `dm-group-thread-model.ts`, `dm-message-content.ts`, `dm-read-receipts.ts`, `dm-time.ts`, `useDmUserSearch.ts` | 같은 경로 | 그대로 |
 | `…/views/dm-conversation-runtime-model.ts` | 같은 경로 | 원본 + `mergeDmMessagePages`·`prependOlderDmMessages` |
 | `…/views/dm-thread-list-model.ts` | 같은 경로 | 원본 + 삭제된 메시지 미리보기 문구 |
@@ -47,7 +47,8 @@
 | `platform/time/*`, `platform/i18n/{i18n,index,locales}.ts`, `platform/runtime/*`, `platform/api/api-error.ts` | 같은 경로 | 플래너 포팅본 재사용(저장 실패 시 메모리 보관, `runtime.settings.locale`, 이동 확인) |
 | `platform/api/client.ts` | 같은 경로 | 재작성: `token`은 표시용 표지이고 요청은 묶인 `runtime.api`/`fileApi`로(§3.6) |
 | `platform/auth/auth-provider` | 같은 경로 | 재작성: `GET /v1/dm/me`의 호출자 + `runtime.settings` |
-| `platform/realtime/realtime-provider` | 같은 경로 | 재작성: 주기 조회(§3.5) |
+| `platform/realtime/realtime-provider` | 같은 경로 | 재작성: 플랫폼 실시간 연결 + 끊긴 동안 주기 조회(§3.5) |
+| (없음) | `app-modules/dm/views/dm-live-model.ts` | 실시간 신호 해석, 입력 중 상태 |
 | `platform/i18n/resources.ts` | 같은 경로 | 생성: `common`·`apps.dm`·`apps.admin.console.dmSafety`·`apps.pms.taskDetail.me` 한/영 원문 + miy 키 + `errors`([scripts/gen-i18n-resources.py](../scripts/gen-i18n-resources.py)) |
 | (없음) | `AppRoot.tsx`, `platform/runtime/app-location.ts` | miy 연결(경로·공급자) |
 
@@ -57,6 +58,7 @@
 | --- | --- |
 | `dm/router.py`, `conversation_application.py`, `conversation_membership.py`, `conversation_lifecycle.py`, `conversation_settings.py`, `conversation_read_receipts.py`, `participants.py`, `user_directory.py` | `conversations.rs` |
 | `dm/message_application.py`, `message_flow.py`, `message_delivery.py`, `message_history.py` | `messages.rs`(+ 수정·삭제) |
+| `dm/realtime_events.py`(발행 시점만) | `live.rs`(M4 신호 허브와 `GET /live`) |
 | `dm/attachment_*.py` | `attachments.rs` |
 | `dm/serialization.py`, `thread_projection.py`, `conversation_display.py`, `read_state.py`(투영) | `views.rs` |
 | `dm/conversation_queries.py`, `models.py` | `store.rs`, `migrations/0002_messenger.sql` |
@@ -129,9 +131,18 @@ AI-DO 웹 DM은 알림 행을 만들지 않았고(실시간 이벤트와 모바�
 - **재확인**(manifest `platformEndpoints.notificationCheck` = `/platform/notification-check`): 플랫폼 호출만 받는 읽기 전용 경로다. 항목 500개까지, 그룹과 원본 ID가 일치하고 현재 접근 가능한 대화나 신고를 돌려준다. 보낸 사람 차단, 대화 알림 끄기, 메시지 삭제·가림도 적용한다.
 - **홈 카드**(`platformEndpoints.homeCard` = `/platform/home-card`): 플랫폼 호출만, 읽기 전용. `{"title":"안 읽은 대화","count":안 읽은 대화 수,"items":[최대 5개, 최근 순 {title: 대화 이름, subtitle: "<보낸 사람> · 새 메시지 N개", path, at: 마지막 안 읽은 메시지 시각(RFC 3339 UTC)}]}`. 본문은 넣지 않는다.
 
-### 3.5 화면 갱신: 주기 조회
+### 3.5 화면 갱신: 즉시 갱신(M4)과 주기 조회
 
-AI-DO의 `useRealtime`/`useRealtimeEvent`를 같은 이름의 주기 조회 공급자로 바꿨다. `reconnectSeq`가 보이는 동안 5초마다, 다시 보일 때 즉시 올라가고 대화 목록과 열린 대화를 다시 받는다. 최신 페이지와 이미 불러온 이전 메시지 최대 50개를 조회마다 갱신한다. 이전 메시지가 많으면 다음 묶음으로 순환한다. 즉시 갱신·입력 중 표시는 M4에서 `runtime.live`로 연결할 예정이다.
+AI-DO는 자체 웹소켓으로 대화 스냅숏을 실은 이벤트(`dm.message.created` 등)를 보냈다. 메신저는 M4에서 플랫폼 실시간 연결(템플릿 CONTRACT "Live connections")로 **신호만** 보내고, 읽기·쓰기는 모두 `runtime.api`에 둔다.
+
+- **서버(`src/live.rs`):** `GET /live`(SDK가 `/api` 아래에 둠, axum `ws`)가 `Extension<Identity>`로 연결을 받는다. 플랫폼 재확인 신원(`context.platform`)은 403. 사용자 ID별 프로세스 안 허브에 연결을 등록하고, 연결당 대기 64개를 넘는 신호는 버린다(클라이언트가 다시 받는다). 플랫폼이 5분 동안 조용한 연결을 닫으므로 120초마다 `heartbeat`를 보낸다.
+- **신호를 보내는 때:** 커밋된 쓰기 뒤 — 보내기, 수정, 삭제, 읽음(읽음 위치가 움직였을 때만), 대화 만들기·되살리기, 그룹 이름, 초대, 내보내기, 나가기, 관리자 가림·되돌림 — 에 `{"type":"conversation.changed","conversationId"}`를 그 대화의 **현재 활성 참여자**에게 보낸다. 참여자는 커밋 뒤 DB에서 다시 읽는다(전달 시점 확인). 예외로 이번 쓰기로 참여가 끝난 사람(내보내진 사람, 나간 사람)에게도 그 신호 하나를 보낸다. 대화 ID만 담고 있어 이미 아는 것 외에 알려 주는 것이 없고, 보내지 않으면 그 사람의 목록에 열 수 없는 대화가 다음 안전 갱신까지 남는다. 알림 끄기는 본인의 다른 화면에만 보낸다.
+- **입력 중 표시:** 클라이언트가 `{"type":"open","conversationId"}`로 보고 있는 대화를 알리면 서버가 그때 참여 여부를 DB로 확인하고(구독 시점 확인), 참여자가 아니면 무시한다. `{"type":"typing","conversationId","active"}`는 보낼 때마다 보낸 사람과 받는 사람이 현재 활성 참여자인지 다시 확인하고, 그 대화를 열어 둔 다른 참여자에게만 `{"type":"typing","conversationId","userId","active"}`로 전달한다. 시작 신호는 대화·연결당 1초에 한 번, 끝 신호(`active:false`)는 항상 통과한다. 화면은 입력할 때 3초에 한 번 보내고, 초안을 비우거나 보내거나 다른 대화로 옮기면 끝 신호를 보낸다. 받은 쪽은 6초 동안 신호가 없으면 지운다. 문구는 `apps:dm.typingOne/Two/Many`. **AI-DO `0002af062`에는 DM 입력 중 표시가 없었다**(화면·서버·문구 모두 없음, 저장소 기록 검색). 그래서 원본을 옮긴 것이 아니라 계획 M4("입력 중 표시를 넣는다")에 따라 새로 만들었고, 원본 디자인 요소(작성창 위 보조 문구, `app-text-caption`, `text-app-ink/55`)를 따랐다.
+- **화면(`platform/realtime/realtime-provider.tsx`):** 프레임마다 연결 하나(`runtime.live`, `AppRoot`가 처음 받은 것을 씀). 열려 있는 동안 신호를 `useRealtimeEvent` 구독자에게 나눠 주고, (재)연결될 때마다 `reconnectSeq`를 올려 놓친 변경을 다시 받는다. 큐가 넘쳐 버려진 신호나 앱 재시작에 대비해 연결 중에도 60초마다 안전 갱신한다. 런타임이 `retrying: true`로 끊김을 알리면 M3의 주기 조회(보이는 동안 5초, 다시 보일 때 즉시)로 돌아가고, `retrying: false`(세션 끝, 권한 회수, 릴리스 변경, 인증 거부)면 조회도 멈춘다(플랫폼이 프레임을 다시 띄우거나 막는다). `runtime.live`가 없는 호스트에서는 주기 조회만 한다.
+- **신호 처리(`DMView`):** `conversation.changed`는 대화별로 120ms 안에 온 것을 하나로 묶어 목록을 다시 받고, 그 대화가 열려 있으면 메시지를 다시 받은 뒤 보이는 상태면 읽음 처리한다. 다시 받는 함수는 사용자 수정의 늦은 응답 확인(다른 대화로 옮겼으면 버림)과 초안 보존을 그대로 쓴다. 최신 페이지 밖의 이미 불러온 이전 메시지는 신호로 다시 받지 않고, (재)연결·안전 갱신·주기 조회 때 묶음으로 갱신한다(아래 문단).
+- **한 프로세스 전제:** 허브는 앱 프로세스 안에만 있다. 여러 프로세스를 띄우지 않는다고 가정한다. 프로세스가 다시 시작되면 그 사이 신호는 사라지지만, 연결이 끊겨 플랫폼이 `4502`로 닫고 런타임이 다시 연결하면서 `reconnectSeq`가 올라 다시 받는다. 그 전까지는 주기 조회가 이어 준다.
+
+주기 조회(연결이 없을 때)와 (재)연결·안전 갱신 때는 `reconnectSeq`가 올라 대화 목록과 열린 대화를 다시 받는다. 최신 페이지와 이미 불러온 이전 메시지 최대 50개를 그때마다 갱신한다. 이전 메시지가 많으면 다음 묶음으로 순환한다.
 
 ### 3.6 API 호출과 오류
 
@@ -193,7 +204,9 @@ AI-DO의 `AI_DO_UGC_TERMS_VERSION`·`_REQUIRED`·`_DOCUMENT_URL`·`AI_DO_UGC_CON
 | 알림 N은 받는 사람별 앱 안 읽은 수, 같은 값끼리 묶어 호출 | "새 메시지 N개" 정확성과 호출 수 |
 | 수정은 교체, 삭제·가림은 교체 또는 회수 | 계획 M2 6단계(원본 수정·삭제 시 회수·교체) |
 | 읽음 알림은 읽음 위치가 움직일 때만 | 주기 조회가 매번 읽음을 보내므로 |
-| 주기 조회 5초, 보일 때만 | 계획 M3. 실시간은 M4 |
+| 즉시 갱신은 신호 + API 재조회, 끊기면 주기 조회 5초, 연결 중 안전 갱신 60초 | 계획 M4. 권한 판단과 내용은 API에 두고, 신호를 잃어도 결과가 맞게 |
+| 신호 허브는 프로세스 안, 사용자별 | 앱 프로세스는 하나. 재시작으로 잃은 신호는 재연결 재조회와 주기 조회가 채움 |
+| 참여가 끝난 사람에게도 그 변경 신호 하나 | 목록에서 열 수 없는 대화를 바로 지우기 위해(대화 ID 외 정보 없음) |
 | 첫 관리자는 빈 역할을 맡는 방식 | 플랫폼 관리자 표시를 쓰지 않는 가장 단순한 시작. 운영 담당자가 설치 직후 맡는다 |
 | 이용규칙 설정은 앱 DB 한 행 | 앱에 서버 설정이 없음 |
 | 디렉터리 이름 캐시 5분 | 매 조회마다 디렉터리를 부르지 않기 위해. 쓰기의 활성 확인은 캐시를 쓰지 않음 |
@@ -216,17 +229,20 @@ AI-DO의 `AI_DO_UGC_TERMS_VERSION`·`_REQUIRED`·`_DOCUMENT_URL`·`AI_DO_UGC_CON
 | `test_dm_safety_db.py`: 신고+차단 멱등·양방향 1:1 차단, 잘못된 대상, 관리자 검토·가림, 당사자 검토 불가, 시간당 10건, 감사 페이로드에 본문·메모 없음 | `report_with_block_and_one_to_one_blocks`, `invalid_report_targets`, `report_rate_limit`, `manager_reviews_and_hides_the_reported_message` | 통과. 근태 앱 폴링 재전송 테스트 8개는 중계와 함께 제외 |
 | `test_dm_safety.py`(금칙어·이용규칙·재시도 시간·해시) | `ugc.rs`·`safety.rs` 단위 + `terms_and_banned_words_guard_user_content` | 통과 |
 | `test_dm_attachment_policy.py`, `test_dm_attachment_upload.py`, `test_dm_attachment_records.py` | `attachments.rs` 단위 3개 + HTTP | 통과. 서명·저장소 테스트(`attachment_links/content/storage/persistence`, `test_dm_settings.py`)는 서명 URL·자체 저장소와 함께 해당 없음 |
-| `test_dm_realtime_*.py` | — | 실시간 제외 |
+| `test_dm_realtime_*.py` | — | 스냅숏 이벤트는 옮기지 않음 |
+| (miy M4) | `live.rs` 단위 5개(허브 전달·열린 대화 거르기·큐 넘침·클라이언트 메시지·입력 중 제한), `api_tests.rs` `live_hints_follow_current_participation`(실제 웹소켓: 커밋 뒤 신호, 외부인 미수신, 열기 전 입력 중 미전달, 외부인 구독·입력 거부, 내보낸 사람은 그 신호 하나 뒤 미수신, 두 번째 읽음은 조용, 플랫폼 신원 403) | 통과 |
 | (miy 추가) | 수정·삭제·이력·신고 중 삭제 사본, 알림 발행·교체·회수·읽음, 알림 끄기, 재확인·홈 카드, 관리자 맡기·마지막 관리자, `/me`, 이전 페이지 | 통과 |
 | 화면 `*.spec` 27개 파일(DM 모델·화면·API 14, 계약 2, 사용자 검색 2, 바이트·내려받기·날짜 표시 3, 시간 5(플래너 포팅본), 관리자 신고 화면 1) | 같은 경로 | 통과. 경로 접두·첨부 주소·10 MiB·오류 코드 `_` 기대값만 바꿈. `DMView.spec`은 첨부 객체 URL을 흉내 냄 |
 | (miy 추가) | `app-location.spec.ts`, `api-error.spec.ts`, 페이지 병합, miy API(첨부 예약·전송, 수정·삭제·끄기·취소) | 통과 |
+| (miy M4) | `realtime-provider.spec.tsx`(연결 하나, 신호 전달, 재연결 재조회, 끊김 시 조회, 최종 종료 시 멈춤, 연결 없는 호스트), `dm-live-model.spec.ts`, `DMView.spec.tsx` 2개(신호로 목록·열린 대화 재조회, 입력 중 표시) | 통과 |
 
 옮기지 않은 화면 테스트: `FloatingDmWidget.spec.tsx`(기능 제외).
 
 ## 6. 남은 일
 
 - **보강 중 미구현(후속):** 멘션(작성창 자동완성 + `mention` 알림 종류), 반응(원본의 빈 리액션 단추는 그대로 둠), 메시지 검색. 계획 §2.2 "보강" 항목이다.
-- **실시간(M4):** `runtime.live`로 즉시 갱신·입력 중 표시. 주기 조회 공급자를 바꾸면 화면 코드는 원본 이벤트 처리를 그대로 쓴다.
+- **실시간(M4) 실제 플랫폼 확인:** 미리보기 빌드에서 `/__miy/live`를 백엔드 `/api/live`로 서명 신원과 함께 잇고(플랫폼 중계와 같은 `miy.ready` 포함) 두 사용자로 확인했다(새 대화 즉시 표시, 입력 중 표시, 보낸 메시지 약 0.2초, 수정 반영). 실제 코어 중계(`/_miy/live`, 30초 재확인, 종료 코드)와는 확인하지 않았다.
+- **대화 만들기 중 이동 확인(해결):** 사용자 수정(cdf1f1e)으로 `creatingGroup`이 이동 확인 상태에 들어가, 새 대화를 만들고 그 대화로 이동할 때 "보내지 않은 내용…" 확인 창이 떴다(미리보기에서 재현). 2026-11-22 포털이 같은 앱 안의 이동에는 묻지 않도록 바꿨다(앱 프레임과 입력이 그대로 남는다). 앱을 떠날 때만 묻는다. SDK 미리보기는 자체 라우터라 이 동작과 다를 수 있다.
 - **첫 관리자 맡기 창(남은 결정):** 지금은 역할이 빌 때 처음 연 사람이 맡는다. 플랫폼이 "앱 역할 지정"이나 설치자 신원을 앱에 줄 수 있으면 그것으로 바꾼다.
 - **첨부 해제 재시도:** 서비스 주체가 생기면 남은 해제(삭제된 메시지의 첨부)를 주기 작업으로 정리한다. 지금은 다음 삭제·신고 처리 때 10건씩 재시도한다.
 - **실제 플랫폼 확인(계획 절차 9):** SDK 미리보기 빌드를 로컬 게이트웨이·플랫폼 대역과 실제 Rust 서버·일회용 DB로 띄워 Chromium에서 확인했다(1:1 시작, 보내기, 이미지 첨부, 수정, 삭제, 다른 사용자 읽기·답장·알림 끄기·신고, 관리자 맡기·검토, 380px 패널). 실제 프레임 CSP, 실제 코어 Storage·알림함·재확인·홈 카드, 포털 패널 열기, 영어 화면은 확인하지 않았다.

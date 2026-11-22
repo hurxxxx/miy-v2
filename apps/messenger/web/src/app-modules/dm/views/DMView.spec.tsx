@@ -223,6 +223,48 @@ describe('DMEmbeddedView composer', () => {
     expect(composer().value).toBe('첫 메시지');
   });
 
+  // miy (M4): live hints only trigger refetches through the API.
+  it('refetches the list and the shown conversation on a live hint', async () => {
+    render(view('c1'));
+    await screen.findByText(own().body);
+    const messageCalls = () =>
+      vi.mocked(listDmMessages).mock.calls.filter(([, id]) => id === 'c1').length;
+    const listCalls = () => vi.mocked(listDmThreads).mock.calls.length;
+    const beforeMessages = messageCalls();
+    const beforeList = listCalls();
+    emit('conversation.changed', { type: 'conversation.changed', conversationId: 'c1' });
+    emit('conversation.changed', { type: 'conversation.changed', conversationId: 'c1' });
+    await waitFor(() => expect(messageCalls()).toBe(beforeMessages + 1));
+    expect(listCalls()).toBe(beforeList + 1);
+    emit('conversation.changed', { type: 'conversation.changed', conversationId: 'c2' });
+    await waitFor(() => expect(listCalls()).toBe(beforeList + 2));
+    expect(vi.mocked(listDmMessages).mock.calls.some(([, id]) => id === 'c2')).toBe(false);
+  });
+
+  it('shows who is typing in the shown conversation until it ends', async () => {
+    vi.mocked(listDmThreads).mockResolvedValue({
+      items: [
+        thread('c1', {
+          participants: [
+            { user: peer, role: 'member', joined_at: '2026-11-18T00:00:00Z' },
+          ],
+        }),
+      ],
+      safety: SAFETY,
+    });
+    render(view('c1'));
+    await screen.findByText(own().body);
+    const label = i18n.t('apps:dm.typingOne', { name: peer.full_name });
+    emit('typing', { type: 'typing', conversationId: 'c2', userId: peer.id, active: true });
+    expect(screen.queryByText(label)).toBeNull();
+    emit('typing', { type: 'typing', conversationId: 'c1', userId: peer.id, active: true });
+    expect(await screen.findByText(label)).toBeTruthy();
+    emit('typing', { type: 'typing', conversationId: 'c1', userId: peer.id, active: false });
+    await waitFor(() => expect(screen.queryByText(label)).toBeNull());
+    emit('typing', { type: 'typing', conversationId: 'c1', userId: auth.user.id, active: true });
+    expect(screen.queryByText(/입력 중/)).toBeNull();
+  });
+
   it('keeps an ordinary draft when the user opens and leaves an edit', async () => {
     const { rerender } = render(view('c1'));
     await screen.findByText(own().body);

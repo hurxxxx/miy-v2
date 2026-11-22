@@ -102,6 +102,9 @@ export const resources = {
         muted: '이 대화의 알림을 껐습니다.',
         unmuted: '이 대화의 알림을 켰습니다.',
         safetyReview: '신고 검토',
+        typingOne: '{{name}} 님이 입력 중…',
+        typingTwo: '{{first}} 님과 {{second}} 님이 입력 중…',
+        typingMany: '{{count}}명이 입력 중…',
         actionErrors: {
           editFailed: '메시지를 수정하지 못했습니다.',
           deleteFailed: '메시지를 삭제하지 못했습니다.',
@@ -444,6 +447,9 @@ export const resources = {
         muted: 'Notifications for this conversation are off.',
         unmuted: 'Notifications for this conversation are on.',
         safetyReview: 'Report review',
+        typingOne: '{{name}} is typing…',
+        typingTwo: '{{first}} and {{second}} are typing…',
+        typingMany: '{{count}} people are typing…',
         actionErrors: {
           editFailed: 'Could not edit the message.',
           deleteFailed: 'Could not delete the message.',

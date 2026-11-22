@@ -5,7 +5,7 @@ use crate::{
     attachments, audit,
     conversations::query_limit,
     error::{ApiError, ApiJson, ApiResult},
-    notify,
+    live, notify,
     request::{
         DM_MESSAGE_ATTACHMENT_IDS_MAX_LENGTH, DM_MESSAGE_BODY_MAX_LENGTH, normalize_message_body,
         normalize_optional_route_id, normalize_route_id_list, route_id, unique_ids,
@@ -251,6 +251,7 @@ pub async fn send_dm_message(
         .ok_or_else(ApiError::message_not_found)?;
     tx.commit().await?;
 
+    live::conversation_changed(&pool, &conversation_id, &[]).await;
     attachments::attach_linked(&pool, &identity, &linked_ids).await;
     notify::message_created(&pool, &identity, &conversation, &message).await;
     Ok(Json(
@@ -364,6 +365,7 @@ pub async fn edit_dm_message(
         message.body = body;
         message.edited_at = Some(now);
         tx.commit().await?;
+        live::conversation_changed(&pool, &conversation_id, &[]).await;
         notify::message_changed(&pool, &identity, &conversation, &message).await;
     } else {
         tx.commit().await?;
@@ -432,6 +434,7 @@ pub async fn delete_dm_message(
     message.body.clear();
     message.deleted_at = Some(now);
     tx.commit().await?;
+    live::conversation_changed(&pool, &conversation_id, &[]).await;
     if !reported {
         attachments::release_deleted_message_files(&pool, &identity, &message_id).await;
     }

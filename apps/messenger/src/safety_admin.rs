@@ -12,7 +12,7 @@ use crate::{
     attachments, audit,
     conversations::query_limit,
     error::{ApiError, ApiJson, ApiResult},
-    messages, notify,
+    live, messages, notify,
     request::{is_uuid, normalize_optional_route_id, route_id},
     safety::{self, RESOLUTION_NOTE_MAX_LENGTH},
     schemas::{
@@ -989,6 +989,7 @@ async fn after_visibility_change(
         Ok::<_, ApiError>((conversation, message))
     }
     .await;
+    live::conversation_changed(pool, &report.conversation_id, &[]).await;
     if let Ok((Some(conversation), Some(message))) = loaded {
         notify::message_changed(pool, identity, &conversation, &message).await;
     }

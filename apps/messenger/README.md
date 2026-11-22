@@ -5,7 +5,7 @@
 - 범위: 1:1·그룹 대화, 첨부(파일당 10 MiB, 플랫폼 Storage), 인용 답장, 읽음 표시, 사용자 검색(플랫폼 디렉터리), 신고·1:1 차단·금칙어·이용규칙 동의, 신고 검토 화면(앱 관리 역할).
 - 보강(AI-DO에 없던 것): 작성자 메시지 수정("수정됨")·삭제("삭제된 메시지"), 이전 메시지 이어 불러오기, 대화별 알림 끄기.
 - 알림: 새 메시지를 플랫폼 알림함에 발행한다(본문 없이 "보낸 사람 · 새 메시지 N개"). 읽으면 읽음 처리, 수정·삭제·가림 때 교체·회수, 나가기·내보내기·알림 끄기 때 회수한다.
-- 화면 갱신은 주기 조회(보이는 동안 5초)다. 즉시 갱신·입력 중 표시는 M4 뒤.
+- 즉시 갱신(M4): 플랫폼 실시간 연결(`runtime.live` → `GET /api/live`)로 "대화가 바뀜"·"입력 중" 신호만 받고, 내용은 `runtime.api`로 다시 받는다. 연결이 끊긴 동안(`retrying`)은 주기 조회(보이는 동안 5초)로 돌아가고, 연결 중에는 60초마다 안전 갱신한다. 대화 창 아래에 "○○ 님이 입력 중…"을 보인다.
 - 참여자만 읽고 쓴다. 나중에 들어온 사람은 들어온 뒤의 메시지만 본다. 호출자는 게이트웨이가 서명한 신원(`Identity::user_id`)이며 요청 본문의 사용자 값은 신원으로 쓰지 않는다.
 - 요청 권한: `database`, `platform:directory:read`, `platform:files:read`, `platform:files:write`, `platform:notifications:write`.
 
@@ -24,6 +24,7 @@ UI는 `runtime.api('/v1/...')`, 파일 바이트는 `runtime.fileApi('/dm/...')`
 | 메서드·경로 | 설명 |
 | --- | --- |
 | `GET /v1/dm/me` | (miy) 호출자와 관리자 여부 |
+| `GET /live` (WebSocket) | (miy, M4) 플랫폼이 `runtime.live`를 중계하는 실시간 연결. 서버 → `{"type":"conversation.changed","conversationId"}`, `{"type":"typing","conversationId","userId","active"}`, `{"type":"heartbeat"}`. 클라이언트 → `{"type":"open","conversationId"}`(보고 있는 대화), `{"type":"typing","conversationId","active"}`. 신호만 오가고 대화 내용은 없다 |
 | `GET /v1/dm/users?q&limit&include_current` | 사용자 검색(플랫폼 디렉터리, 기본 30, 최대 100) |
 | `GET /v1/dm/conversations` | 내 대화 목록 + `safety`(신고·차단, 이용규칙, `manager`, `manager_claimable`) |
 | `POST /v1/dm/conversations` | `recipient_user_id`(1:1, 있으면 그 대화) 또는 `participant_user_ids`(그룹, 본인 외 2명 이상)+`title`. 201 |

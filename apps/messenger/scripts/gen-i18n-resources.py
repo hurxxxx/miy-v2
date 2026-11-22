@@ -47,6 +47,7 @@ assert ko_me == "me: '나',", ko_me
 assert en_me == "me: 'ME',", en_me
 
 # miy keys, inserted right after `dm: {` so the AI-DO keys stay verbatim.
+# typing*: the M4 typing indicator (AI-DO 0002af062 had none).
 DM_ADDITIONS = {
     'ko': """        unsavedChanges: '보내지 않은 내용이나 진행 중인 작업이 있습니다. 이동하시겠습니까?',
         edit: '수정',
@@ -59,11 +60,15 @@ DM_ADDITIONS = {
         deleteScope: '대화에는 "삭제된 메시지"만 남고 첨부파일도 함께 지워집니다. 되돌릴 수 없습니다.',
         deletedMessage: '삭제된 메시지',
         loadOlder: '이전 메시지 더 보기',
+        restoreFailedDraft: '전송 실패한 초안 불러오기',
         mute: '이 대화 알림 끄기',
         unmute: '이 대화 알림 켜기',
         muted: '이 대화의 알림을 껐습니다.',
         unmuted: '이 대화의 알림을 켰습니다.',
         safetyReview: '신고 검토',
+        typingOne: '{{name}} 님이 입력 중…',
+        typingTwo: '{{first}} 님과 {{second}} 님이 입력 중…',
+        typingMany: '{{count}}명이 입력 중…',
         actionErrors: {
           editFailed: '메시지를 수정하지 못했습니다.',
           deleteFailed: '메시지를 삭제하지 못했습니다.',
@@ -110,11 +115,15 @@ DM_ADDITIONS = {
         deleteScope: 'Only "Deleted message" stays in the conversation and its attachments are removed. This cannot be undone.',
         deletedMessage: 'Deleted message',
         loadOlder: 'Load older messages',
+        restoreFailedDraft: 'Restore unsent draft',
         mute: 'Mute this conversation',
         unmute: 'Unmute this conversation',
         muted: 'Notifications for this conversation are off.',
         unmuted: 'Notifications for this conversation are on.',
         safetyReview: 'Report review',
+        typingOne: '{{name}} is typing…',
+        typingTwo: '{{first}} and {{second}} are typing…',
+        typingMany: '{{count}} people are typing…',
         actionErrors: {
           editFailed: 'Could not edit the message.',
           deleteFailed: 'Could not delete the message.',

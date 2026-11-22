@@ -13,6 +13,7 @@ mod attachments;
 mod audit;
 mod conversations;
 mod error;
+mod live;
 mod messages;
 mod notify;
 mod request;
@@ -36,6 +37,8 @@ pub fn router(pool: PgPool) -> Router {
     Router::new()
         .route("/v1/dm/users", get(c::search_dm_users))
         .route("/v1/dm/me", get(c::get_dm_me))
+        // Live hints relayed from `runtime.live` (M4).
+        .route("/live", get(live::live))
         .route(
             "/v1/dm/conversations",
             get(c::list_dm_conversations).post(c::create_dm_conversation),
