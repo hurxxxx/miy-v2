@@ -45,7 +45,7 @@ function file(root: string, relative: string) {
 }
 
 export async function mockFrames(page: Page, apps: () => Installation[], api: FrameApi, options: FrameMockOptions = {}) {
-  const requests = { launches: 0, closes: 0, portal: 0, exchange: 0 };
+  const requests = { launches: 0, portal: 0, exchange: 0 };
   const origins = new Map<string, Installation>();
   const frameExpiries = new Map<string, number>();
   const tokenLifetimeMs = options.tokenLifetimeMs ?? 600_000;
@@ -94,7 +94,6 @@ export async function mockFrames(page: Page, apps: () => Installation[], api: Fr
   });
   await page.route(/\/api\/v1\/app-frames\/[a-f0-9-]{36}$/, async (route) => {
     if (route.request().method() !== "DELETE") return route.fallback();
-    requests.closes++;
     await route.fulfill({ status: 204 });
   });
   await page.route(/^http:\/\/127\.0\.0\.1:1819\d\//, async (route) => {
