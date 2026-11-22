@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "date": "2026-11-22",
   "status": "IN_PROGRESS",
-  "scope": "Common features plan P1 (personal settings, browser sessions, AI-DO settings screen, Korean/English portal and console, AI-DO launcher with admin categories, release permission approval, user search/filter/CSV, command palette), M1 planner app port (apps/planner), M2 platform notifications (core migration 30, app publishing through the Rust SDK, portal inbox, badge, settings, platform-to-app recheck) max_connections 400 in source, M4 live connections (frame /_miy/live relay, runtime.live, portal notification channel), and M5 side panels (manifest panels, header panel menu and pins, core migration 31, 16 live frame sessions per person) with home summary cards (platformEndpoints.homeCard, planner today card). Source only: nothing published, nothing deployed, no server database changed.",
+  "scope": "Common features plan P1 (personal settings, browser sessions, AI-DO settings screen, Korean/English portal and console, AI-DO launcher with admin categories, release permission approval, user search/filter/CSV, command palette), M1 planner app port (apps/planner), M2 platform notifications (core migration 30, app publishing through the Rust SDK, portal inbox, badge, settings, platform-to-app recheck) max_connections 400 in source, M4 live connections (frame /_miy/live relay, runtime.live, portal notification channel), and M5 side panels (manifest panels, header panel menu and pins, core migration 31, 16 live frame sessions per person) with home summary cards (platformEndpoints.homeCard, planner today card). Also the M3 messenger (apps/messenger) and M8 board (apps/board) ports. Source only: nothing published, nothing deployed, no server database changed.",
   "source": {
     "repository": "miy-v2",
     "baseCommit": "f1e1e96",
@@ -178,6 +178,21 @@
       "status": "PASS",
       "command": "cd apps/planner && MIY_CONFIG_DIR=<scratch> ../../target/debug/miy app check",
       "scope": "valid with manifest panels and platformEndpoints.homeCard, after re-syncing docs/CONTRACT.md and miy.bundle.json from a fresh 0.12.0 init."
+    },
+    {
+      "status": "PASS",
+      "command": "apps/messenger (porting agent): cargo build; cargo test; cargo test -- --include-ignored (throwaway postgres:18.3 container and a stand-in platform, removed); cargo fmt --check; pnpm install --frozen-lockfile; pnpm exec tsc --noEmit; vitest run; vite build; browser run against the preview build with a real backend",
+      "scope": "Reported by the porting agent: 29 unit, 40 with database, 187 vitest tests, browser 8 of 8 steps. Its first app check failed with bundle_lock_modified (the 0.12.0 template changed during the port) and passed after re-syncing the bundle files."
+    },
+    {
+      "status": "PASS",
+      "command": "apps/board (porting agent): cargo build; cargo test; cargo test -- --include-ignored (throwaway postgres:18.3 container, removed; 3 consecutive runs); cargo fmt --check; pnpm install --frozen-lockfile; pnpm exec tsc --noEmit; vitest run; vite build",
+      "scope": "Reported by the porting agent: 20 unit, 59 with database, 66 vitest tests. Browser and real-frame checks (including the Milkdown editor under the frame CSP) were not run."
+    },
+    {
+      "status": "PASS",
+      "command": "cd apps/messenger && MIY_CONFIG_DIR=<scratch> ../../target/debug/miy app check; cd apps/board && (same)",
+      "scope": "Both valid after replacing miy.bundle.json with the byte-identical file of a fresh 0.12.0 init (protected files already matched). Advisory storage_recovery_review only."
     }
   ],
   "notRun": [
@@ -187,6 +202,7 @@
     "WebKit, Windows and macOS clients",
     "Memory re-measurement with a second (panel) frame (M5): needs real frames on an isolated stack",
     "Real platform frames for planner panels and the home card call against a running planner",
-    "Any server deployment, migration 28-31 on a server database, PostgreSQL max_connections change on the server"
+    "Any server deployment, migration 28-31 on a server database, PostgreSQL max_connections change on the server",
+    "Messenger and board in real platform frames (CSP, Storage, inbox, recheck, home cards, panels) and in English in a browser"
   ]
 }
