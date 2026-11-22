@@ -1800,6 +1800,83 @@ pub async fn run(
     );
     passed.push("user switch: only a console administrator with CSRF starts it (not for themself), the start is audited, the one-time code works once, unexpired, on its own portal from that portal's origin, the result is the person's own session replacing the browser's previous one, it signs out without the identity provider, and issuer demotion ends the session and frames and invalidates pending codes even after re-promotion".into());
 
+    // File storage limits (M10): only a console administrator reads or sets an
+    // installation's limits; each change is audited.
+    let quota_admin = h.user(true).await?;
+    let quota_console = h.browser(&quota_admin, BrowserPurpose::Console).await?;
+    let quota_path = format!("/api/v1/installations/{}/file-quota", home_apps[0].1);
+    let defaults = json_response(
+        h.cookie_request(&quota_console, Method::GET, &quota_path)
+            .send()
+            .await?,
+        200,
+    )
+    .await?;
+    let set = json_response(
+        h.browser_request(&quota_console, Method::PUT, &quota_path)
+            .json(&json!({"maxBytes": 1048576, "maxFiles": 10}))
+            .send()
+            .await?,
+        200,
+    )
+    .await?;
+    denied(
+        h.browser_request(&quota_console, Method::PUT, &quota_path)
+            .json(&json!({"maxBytes": 2_000_000_000_000u64, "maxFiles": 10}))
+            .send()
+            .await?,
+        400,
+    )
+    .await?;
+    denied(
+        h.cookie_request(&quota_console, Method::PUT, &quota_path)
+            .json(&json!({"maxBytes": 1, "maxFiles": 1}))
+            .send()
+            .await?,
+        403,
+    )
+    .await?;
+    denied(
+        h.cookie_request(&portal_admin, Method::GET, &quota_path)
+            .send()
+            .await?,
+        403,
+    )
+    .await?;
+    denied(
+        h.browser_request(&console_user, Method::PUT, &quota_path)
+            .json(&json!({"maxBytes": 1, "maxFiles": 1}))
+            .send()
+            .await?,
+        403,
+    )
+    .await?;
+    let reset = json_response(
+        h.browser_request(&quota_console, Method::DELETE, &quota_path)
+            .send()
+            .await?,
+        200,
+    )
+    .await?;
+    let quota_audits: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM audit WHERE actor=$1 AND action='file.quota_set' AND target LIKE $2",
+    )
+    .bind(&quota_admin)
+    .bind(format!("installation:{}:%", home_apps[0].1))
+    .fetch_one(&state.pool)
+    .await?;
+    ensure!(
+        defaults["custom"] == false
+            && defaults["maxBytes"] == 21474836480u64
+            && set["custom"] == true
+            && set["maxBytes"] == 1048576
+            && set["maxFiles"] == 10
+            && reset["custom"] == false
+            && quota_audits == 2,
+        "file storage limits were not set, reset and audited by the console administrator only"
+    );
+    passed.push("file storage limits: only a console administrator with CSRF reads, sets and resets an installation's limits, out-of-range values are refused, portals and ordinary users are refused, and every change is audited".into());
+
     // Same-host ports share cookies; code on one origin must not use the other's
     // cookies even for reads. Reject before any session lookup.
     for browser in [&portal_admin, &dev_admin, &console_admin] {
@@ -2494,6 +2571,6 @@ pub async fn run(
     )
     .await?;
     passed.push("expired or disabled browser sessions require new authentication; restoring an account does not revive old portal/console cookies and a fresh purpose-bound session works".into());
-    ensure!(passed.len() == 18, "boundary observation count changed");
+    ensure!(passed.len() == 19, "boundary observation count changed");
     Ok(passed)
 }

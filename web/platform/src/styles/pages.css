@@ -703,3 +703,31 @@
   margin-bottom: var(--ui-space-2);
   font-weight: 600;
 }
+
+/* Installation file storage limits on the console runtime card. */
+.file-quota {
+  margin-top: var(--ui-space-3);
+  padding-top: var(--ui-space-3);
+  border-top: 1px solid var(--ui-color-border);
+}
+.file-quota summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+.file-quota-form {
+  display: grid;
+  gap: var(--ui-space-2);
+  margin-top: var(--ui-space-2);
+}
+.file-quota-form label {
+  display: grid;
+  gap: var(--ui-space-1);
+  font-size: 13px;
+}
+.file-quota-actions {
+  display: flex;
+  gap: var(--ui-space-2);
+}
+.file-quota-error {
+  color: var(--ui-color-danger-text);
+}

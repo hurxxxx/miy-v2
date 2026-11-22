@@ -321,5 +321,17 @@
     "note": "조사·해결 메모",
     "save": "처리 저장",
     "more": "이전 신고 더 보기"
+  },
+  "fileQuota": {
+    "title": "파일 저장소 한도",
+    "loadFailed": "한도를 불러오지 못했습니다.",
+    "saveFailed": "한도를 저장하지 못했습니다.",
+    "invalid": "0 이상의 숫자를 입력하세요(파일 수는 정수).",
+    "usage": "사용 {{used}}GiB / {{max}}GiB, 파일 {{usedFiles}} / {{maxFiles}}개",
+    "default": "(기본값)",
+    "maxBytes": "최대 용량(GiB)",
+    "maxFiles": "최대 파일 수",
+    "save": "한도 저장",
+    "reset": "기본값으로"
   }
 }

@@ -147,6 +147,9 @@ function Preview() {
     api: (path, init) => request("/__miy/api" + safe(path), context.csrf, init),
     apiBlob: (path, init) => requestBlob("/__miy/api" + safe(path), context.csrf, init),
     fileApi: (path, init) => requestResponse("/__miy/files" + safe(path), context.csrf, init),
+    download: () => {
+      throw new Error("download_links_unavailable_in_preview");
+    },
     platformApi: async (resource, query, options) => {
       if (resource !== "directory") throw new Error("unknown_platform_resource");
       return completeDirectoryPage(

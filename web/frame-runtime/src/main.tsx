@@ -496,6 +496,18 @@ function FrameApp({ View }: { View: ComponentType<AppProps> }) {
         apiBlob: (path: string, init?: RequestInit) => blob("/_miy/api" + apiPath(path), init),
         fileApi: async (path: string, init?: RequestInit) =>
           checkedResponse(await call("/_miy/files" + apiPath(path), init), init),
+        download: (url: string) => {
+          // Only a link Core issued for this frame's origin; no other target.
+          if (!/^\/_miy\/downloads\/[A-Za-z0-9_-]{43}$/.test(url)) throw new Error("invalid_download_link");
+          const anchor = document.createElement("a");
+          anchor.href = url;
+          anchor.download = "";
+          anchor.rel = "noopener";
+          anchor.hidden = true;
+          document.body.appendChild(anchor);
+          anchor.click();
+          anchor.remove();
+        },
         platformApi: async <T,>(resource: "directory", query?: DirectoryQuery, options?: DirectoryRequestOptions) => {
           if (resource !== "directory") throw new Error("unknown_platform_resource");
           return completeDirectoryPage(await json<T>("/_miy/platform/directory" + directoryQuery(query), options), query);

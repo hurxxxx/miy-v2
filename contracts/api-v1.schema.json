@@ -482,6 +482,21 @@
       ],
       "type": "string"
     },
+    "FileTransfer": {
+      "description": "How a reservation's bytes arrive.",
+      "oneOf": [
+        {
+          "const": "single",
+          "description": "One `PUT content` request, up to 10 MiB.",
+          "type": "string"
+        },
+        {
+          "const": "parts",
+          "description": "Contiguous `PUT parts` ranges of up to 8 MiB, then `POST complete`; up to 2 GiB.",
+          "type": "string"
+        }
+      ]
+    },
     "FrameBootstrap": {
       "description": "What the frame document carries for the platform frame runtime\n(`<script id=\"miy-frame-bootstrap\" type=\"application/json\">`).",
       "properties": {
@@ -1360,13 +1375,18 @@
           "format": "uint64",
           "minimum": 0,
           "type": "integer"
+        },
+        "transfer": {
+          "$ref": "#/$defs/FileTransfer",
+          "default": "single"
         }
       },
       "required": [
         "requestId",
         "name",
         "mime",
-        "size"
+        "size",
+        "transfer"
       ],
       "type": "object"
     },
@@ -1602,6 +1622,12 @@
         "name": {
           "type": "string"
         },
+        "received": {
+          "description": "Bytes committed so far: a `parts` upload resumes from here.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
         "reference": {
           "type": [
             "string",
@@ -1626,6 +1652,9 @@
         "status": {
           "$ref": "#/$defs/FileStatus"
         },
+        "transfer": {
+          "$ref": "#/$defs/FileTransfer"
+        },
         "version": {
           "format": "uint32",
           "minimum": 0,
@@ -1643,6 +1672,8 @@
         "sha256",
         "status",
         "reference",
+        "transfer",
+        "received",
         "expiresAt"
       ],
       "type": "object"

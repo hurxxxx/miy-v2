@@ -81,6 +81,13 @@ export interface AppRuntime {
   /** App-owned file routes with the platform's separate bounded binary gateway. */
   fileApi: (path: string, init?: RequestInit) => Promise<Response>;
   /**
+   * Start a browser download from a link the app's backend got with
+   * `Identity::files_download_link` (`/_miy/downloads/...`). The bytes stream
+   * to the browser's downloads without passing through memory; the platform
+   * rechecks access for every request. Not available in local preview.
+   */
+  download?: (url: string) => void;
+  /**
    * Untyped directory read. Without a query it reads one page and rejects with
    * `directory_page_incomplete` when more entries exist; use `directory` to
    * search and follow `nextCursor`.

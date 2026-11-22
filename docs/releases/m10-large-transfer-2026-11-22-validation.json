@@ -1,0 +1,55 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-11-22",
+  "status": "SOURCE_CHECKED",
+  "scope": "M10 large transfer, source only: parts reservations (2 GiB, 8 MiB ranges from the committed offset, interrupted tails truncated, complete hashes and publishes), installation file quotas set by console administrators (API and console control) with a disk-based core limit, download links bound to the starting frame (Range, app fileAccess recheck at send time), Rust and browser SDK calls, core schema 33. Not deployed; no server database changed.",
+  "checks": [
+    {
+      "status": "PASS",
+      "command": "cargo test -p miy --bin miy storage::; cargo clippy -p miy --all-targets -- -D warnings (server and --no-default-features)",
+      "scope": "Range parsing for parts and downloads, reservation limits per transfer, disk floor of max(2 GiB, 5%)."
+    },
+    {
+      "status": "PASS",
+      "command": "MIY_CONFIG_DIR=<empty> python3 scripts/runtime-regression/run.py (stage A tree)",
+      "scope": "158 observations PASS, exit 0: the permissions suite's file storage check now covers administrator-set quotas and resumable parts (committed offset, refused repeat and wrong total, early complete refused, interrupted tail truncated, hashed and repeatable completion, gap refused with 503, cancellation removes the part)."
+    },
+    {
+      "status": "PASS",
+      "command": "pnpm exec playwright test -c scripts/runtime-regression/ui.config.ts tests/console-features.spec.ts",
+      "scope": "7 passed including the console file storage limits control (PUT and DELETE with CSRF)."
+    },
+    {
+      "status": "PASS",
+      "command": "templates/rust-react/sdk/rust: cargo test --offline",
+      "scope": "14 passed: parts metadata validation (received never above size, large sizes only for parts)."
+    },
+    {
+      "status": "PASS",
+      "command": "apps/{planner,messenger,board,pms}: MIY_CONFIG_DIR=<scratch> ../../target/debug/miy app check",
+      "scope": "All four valid after re-syncing their 0.12.0 bundle files (CONTRACT.md, Rust storage SDK, browser index/api types, preview) from a fresh init."
+    },
+    {
+      "status": "PASS",
+      "command": "MIY_CONFIG_DIR=<empty> bash scripts/check-static.sh scripts; check-static.sh rust; check-static.sh web",
+      "scope": "All PASS: server configs including the unbuffered /_miy/downloads/ Nginx location; web = portal 117, common UI, CLI web 15, surface boundaries 18, HTTP IPv4 1."
+    },
+    {
+      "status": "FAIL",
+      "command": "MIY_CONFIG_DIR=<empty> python3 scripts/runtime-regression/run.py (stage A+B tree)",
+      "scope": "Frames suite stopped: expected 409 for a link without a fileAccess endpoint, received 500 database_error.",
+      "cause": "The declared check compared jsonb_typeof(NULL) and decoded NULL as bool when a release has no platformEndpoints. Wrapped in COALESCE(..., false)."
+    },
+    {
+      "status": "PASS",
+      "command": "MIY_CONFIG_DIR=<empty> python3 scripts/runtime-regression/run.py (stage A+B tree)",
+      "scope": "160 observations PASS, exit 0: boundary 19 (file storage limits: console administrator with CSRF only, out-of-range refused, portals and ordinary users refused, audited) and frames 17 (download links: issued only inside a request its own frame started and only with a fileAccess endpoint; the frame origin streams whole or one range, refuses another site and unsatisfiable ranges, asks the app at send time and stops when the frame ends)."
+    }
+  ],
+  "notRun": [
+    "Sharded file directories with migration of existing blobs, periodic SHA-256 verification (next M10 step)",
+    "Drive app and a browser download through a real platform frame (Chromium/Firefox download handling, resume)",
+    "Uploads of real multi-GiB files and disk-low behaviour on a nearly full volume",
+    "Any server deployment, migration 33 on a server database, proxy configuration change on the server"
+  ]
+}

@@ -9,6 +9,20 @@ use serde::{Deserialize, Serialize};
 use std::{io, time::Duration};
 
 pub const MAX_FILE_BYTES: u64 = 10 * 1024 * 1024;
+/// Largest `parts` reservation (large transfer).
+pub const MAX_LARGE_FILE_BYTES: u64 = 2 * 1024 * 1024 * 1024;
+/// Largest range of one `files_upload_part` call.
+pub const MAX_PART_BYTES: u64 = 8 * 1024 * 1024;
+
+/// How a reservation's bytes arrive: one `files_upload` request (up to 10 MiB)
+/// or `files_upload_part` ranges followed by `files_complete` (up to 2 GiB).
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum FileTransfer {
+    #[default]
+    Single,
+    Parts,
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -31,6 +45,20 @@ pub struct FileMetadata {
     pub sha256: Option<String>,
     pub status: FileStatus,
     pub reference: Option<String>,
+    #[serde(default)]
+    pub transfer: FileTransfer,
+    /// Bytes Core has committed: the next `files_upload_part` starts here.
+    #[serde(default)]
+    pub received: u64,
+}
+
+/// A download link for one frame (`files_download_link`).
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DownloadLink {
+    /// Frame-relative path to hand to `runtime.download`.
+    pub url: String,
+    pub expires_at: String,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -65,7 +93,12 @@ fn metadata(
         // Core answers in lowercase; a caller may hold the same ID in uppercase.
         || expected_id.is_some_and(|id| !id.eq_ignore_ascii_case(&file.id))
         || file.version != 1
-        || file.size > MAX_FILE_BYTES
+        || file.size
+            > match file.transfer {
+                FileTransfer::Single => MAX_FILE_BYTES,
+                FileTransfer::Parts => MAX_LARGE_FILE_BYTES,
+            }
+        || file.received > file.size
         || file.name.is_empty()
         || file
             .sha256
@@ -183,6 +216,84 @@ impl Identity {
         )
     }
 
+    /// Reserve a large file sent in ranges (`files_upload_part`, then
+    /// `files_complete`), after the app has authorized creating it.
+    pub async fn files_create_parts(&self, input: &FileCreate) -> Result<FileMetadata, CallError> {
+        if !valid_uuid(&input.request_id) || input.size == 0 || input.size > MAX_LARGE_FILE_BYTES {
+            return Err(call_error("invalid_file_request"));
+        }
+        let mut body =
+            serde_json::to_value(input).map_err(|_| call_error("invalid_file_request"))?;
+        body["transfer"] = "parts".into();
+        metadata(
+            response_json(
+                self.backend_request("platform/files", Method::POST, Duration::from_secs(10))?
+                    .json(&body)
+                    .send()
+                    .await
+                    .map_err(|_| call_error("file_result_unknown"))?,
+            )
+            .await?,
+            None,
+        )
+    }
+
+    /// Send the next range of a `parts` file: `bytes` (1 B to 8 MiB) go at
+    /// `file.received`. After an uncertain result call `files_get` and continue
+    /// from its `received`; Core refuses a range at any other offset.
+    pub async fn files_upload_part(
+        &self,
+        file: &FileMetadata,
+        bytes: axum::body::Bytes,
+    ) -> Result<FileMetadata, CallError> {
+        let length = bytes.len() as u64;
+        if file.transfer != FileTransfer::Parts || file.status != FileStatus::Pending {
+            return Err(call_error("file_not_pending"));
+        }
+        if length == 0 || length > MAX_PART_BYTES || file.received + length > file.size {
+            return Err(call_error("invalid_file_part"));
+        }
+        let range = format!(
+            "bytes {}-{}/{}",
+            file.received,
+            file.received + length - 1,
+            file.size
+        );
+        let response = self
+            .backend_request(
+                &file_path(&file.id, "/parts")?,
+                Method::PUT,
+                Duration::from_secs(20),
+            )?
+            .header(header::CONTENT_TYPE, "application/octet-stream")
+            .header(header::CONTENT_LENGTH, length)
+            .header(header::CONTENT_RANGE, range)
+            .body(bytes)
+            .send()
+            .await
+            .map_err(|_| call_error("file_result_unknown"))?;
+        metadata(response_json(response).await?, Some(&file.id))
+    }
+
+    /// Publish a `parts` file after its last range: Core hashes the bytes and
+    /// marks it ready. Safe to repeat after an uncertain result.
+    pub async fn files_complete(&self, id: &str) -> Result<FileMetadata, CallError> {
+        metadata(
+            response_json(
+                self.backend_request(
+                    &file_path(id, "/complete")?,
+                    Method::POST,
+                    Duration::from_secs(150),
+                )?
+                .send()
+                .await
+                .map_err(|_| call_error("file_result_unknown"))?,
+            )
+            .await?,
+            Some(id),
+        )
+    }
+
     /// Stream one reserved file. The app must use the metadata returned by Core
     /// and recheck its current upload/resource ACL before handing over the body.
     pub async fn files_upload(
@@ -213,6 +324,45 @@ impl Identity {
             .await
             .map_err(|_| call_error("file_result_unknown"))?;
         metadata(response_json(response).await?, Some(&file.id))
+    }
+
+    /// A short-lived link for the frame that sent the current request to
+    /// download a file (any size) straight to the browser, after the app has
+    /// authorized reading it. Give `reference` for an attached file (the value
+    /// given at attach). The frame starts it with `runtime.download(url)`; the
+    /// platform asks the app's `platformEndpoints.fileAccess` again before
+    /// sending bytes. Only for requests that came from this app's own frame.
+    pub async fn files_download_link(
+        &self,
+        id: &str,
+        reference: Option<&str>,
+    ) -> Result<DownloadLink, CallError> {
+        if reference.is_some_and(|value| !valid_reference(value)) {
+            return Err(call_error("invalid_file_reference"));
+        }
+        let value = response_json(
+            self.backend_request(
+                &file_path(id, "/download")?,
+                Method::POST,
+                Duration::from_secs(10),
+            )?
+            .json(&serde_json::json!({ "reference": reference }))
+            .send()
+            .await
+            .map_err(|_| call_error("file_result_unknown"))?,
+        )
+        .await?;
+        let link: DownloadLink =
+            serde_json::from_value(value).map_err(|_| call_error("invalid_file_response"))?;
+        let token = link.url.strip_prefix("/_miy/downloads/").unwrap_or("");
+        if token.len() != 43
+            || !token
+                .bytes()
+                .all(|c| c.is_ascii_alphanumeric() || c == b'-' || c == b'_')
+        {
+            return Err(call_error("invalid_file_response"));
+        }
+        Ok(link)
     }
 
     /// Stream an immutable object through the owning app's authenticated file
@@ -286,7 +436,17 @@ mod tests {
         value["sha256"] = serde_json::Value::Null;
         assert!(metadata(value.clone(), Some(id)).is_err());
         value["status"] = "pending".into();
-        assert!(metadata(value, Some(id)).is_ok());
+        assert!(metadata(value.clone(), Some(id)).is_ok());
+        // A parts file may be large; received never exceeds its size.
+        value["transfer"] = "parts".into();
+        value["size"] = (MAX_FILE_BYTES * 3).into();
+        value["received"] = MAX_PART_BYTES.into();
+        assert!(metadata(value.clone(), Some(id)).is_ok());
+        value["received"] = (MAX_FILE_BYTES * 3 + 1).into();
+        assert!(metadata(value.clone(), Some(id)).is_err());
+        value["transfer"] = "single".into();
+        value["received"] = 0.into();
+        assert!(metadata(value, Some(id)).is_err());
         assert!(file_path("../another-installation", "/content").is_err());
         assert!(valid_reference("document:1"));
         for reference in ["", " ", "line\nbreak", &"x".repeat(513)] {

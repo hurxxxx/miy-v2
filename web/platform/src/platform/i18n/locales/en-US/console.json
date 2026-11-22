@@ -327,5 +327,17 @@
     "note": "Investigation and resolution note",
     "save": "Save",
     "more": "Load older reports"
+  },
+  "fileQuota": {
+    "title": "File storage limits",
+    "loadFailed": "Could not load the limits.",
+    "saveFailed": "Could not save the limits.",
+    "invalid": "Enter numbers of 0 or more (whole files).",
+    "usage": "Using {{used}} GiB of {{max}} GiB, {{usedFiles}} of {{maxFiles}} files",
+    "default": "(default)",
+    "maxBytes": "Maximum size (GiB)",
+    "maxFiles": "Maximum files",
+    "save": "Save limits",
+    "reset": "Use defaults"
   }
 }

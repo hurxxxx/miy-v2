@@ -535,7 +535,7 @@ pub async fn run(
     directory_contract(&h, &user, &a).await?;
     passed.push("app directory pages expose only bounded active user/group DTOs; literal search, scoped cursors, original-user membership and immediate group/account revocation are enforced".into());
     storage_contract(&mut h, &admin, &user).await?;
-    passed.push("file storage enforces backend-only current approvals, original user authority, bounded immutable uploads that can be sent again after a failure, idempotent request lookup, attachment retention, explicit cancellation, reference-checked detach, reservation quotas and housekeeping without a user actor".into());
+    passed.push("file storage enforces backend-only current approvals, original user authority, bounded immutable uploads that can be sent again after a failure, idempotent request lookup, attachment retention, explicit cancellation, reference-checked detach, administrator-set reservation quotas, resumable parts uploads (committed offset, interrupted tails truncated, gaps refused, hashed on completion, repeatable completion, cancellation) and housekeeping without a user actor".into());
     notification_contract(&mut h, &admin, &user)
         .await
         .context("notification contract")?;
@@ -1913,7 +1913,13 @@ async fn storage_contract(h: &mut Harness<'_>, admin: &Actor, user: &Actor) -> R
     );
     let proof = fresh_proof(h, user, &app).await?;
     // Fixed-size reservations count before bytes arrive, so parallel upload starts
-    // cannot exceed the installation quota. Fixture rows never create disk bytes.
+    // cannot exceed the installation quota (here an administrator-set 256 MiB).
+    // Fixture rows never create disk bytes.
+    sqlx::query("INSERT INTO app_file_quotas(installation_id,max_bytes,max_files,updated_by) VALUES($1,268435456,1000,$2)")
+        .bind(app.installation)
+        .bind(&admin.id)
+        .execute(&h.state.pool)
+        .await?;
     for _ in 0..25 {
         sqlx::query("INSERT INTO app_files(id,installation_id,request_id,created_by,input_hash,name,mime,size,status,expires_at) VALUES($1,$2,$3,$4,'quota-fixture','quota.bin','application/octet-stream',10485760,'pending',clock_timestamp()+interval '1 day')")
             .bind(Uuid::new_v4()).bind(app.installation).bind(Uuid::new_v4()).bind(&user.id).execute(&h.state.pool).await?;
@@ -1928,9 +1934,178 @@ async fn storage_contract(h: &mut Harness<'_>, admin: &Actor, user: &Actor) -> R
         .bind(app.installation)
         .execute(&h.state.pool)
         .await?;
-    // 1,020 MiB of elapsed reservations in five abandoned installations would
-    // leave no room for another 8 MiB under the global quota. They stop counting
-    // when they elapse, before any housekeeping removes them.
+    // Large transfer (M10): a `parts` reservation takes contiguous ranges from
+    // its committed offset, truncates an interrupted tail, refuses gaps, and
+    // publishes the bytes only on `complete`, after hashing them.
+    let proof = fresh_proof(h, user, &app).await?;
+    let parts = |id: Uuid, name: &str, size: usize| json!({"requestId":id,"name":name,"mime":"application/octet-stream","size":size,"transfer":"parts"});
+    let put_part = |proof: &str, path: &str, range: &str, body: &'static [u8]| {
+        h.request(proof, Method::PUT, &format!("{path}/parts"))
+            .header("content-range", range)
+            .body(body)
+    };
+    let large = h
+        .json(
+            &proof,
+            Method::POST,
+            &base,
+            parts(Uuid::new_v4(), "large.bin", 10),
+            200,
+        )
+        .await?;
+    ensure!(
+        large["transfer"] == "parts" && large["received"] == 0 && large["status"] == "pending",
+        "a parts reservation did not record its transfer and offset"
+    );
+    let large_path = format!("{base}/{}", large["id"].as_str().context("large file id")?);
+    let mismatch = response(
+        h.request(&proof, Method::PUT, &format!("{large_path}/content"))
+            .body("0123456789")
+            .send()
+            .await?,
+        409,
+    )
+    .await?;
+    let first_part = response(
+        put_part(&proof, &large_path, "bytes 0-3/10", b"0123")
+            .send()
+            .await?,
+        200,
+    )
+    .await?;
+    let stale = response(
+        put_part(&proof, &large_path, "bytes 0-3/10", b"0123")
+            .send()
+            .await?,
+        409,
+    )
+    .await?;
+    response(
+        put_part(&proof, &large_path, "bytes 4-7/11", b"4567")
+            .send()
+            .await?,
+        400,
+    )
+    .await?;
+    let early = response(
+        h.request(&proof, Method::POST, &format!("{large_path}/complete"))
+            .send()
+            .await?,
+        409,
+    )
+    .await?;
+    ensure!(
+        mismatch["error"]["code"] == "file_transfer_mismatch"
+            && first_part["received"] == 4
+            && stale["error"]["code"] == "file_part_offset"
+            && early["error"]["code"] == "file_parts_incomplete",
+        "parts did not keep their offset, refuse a repeat or wait for every range"
+    );
+    // An interrupted attempt left bytes past the committed offset.
+    let large_part = h
+        .state
+        .artifacts
+        .join(".files")
+        .join(app.installation.to_string())
+        .join(format!(
+            "{}.part",
+            large["id"].as_str().context("large file id")?
+        ));
+    {
+        use tokio::io::AsyncWriteExt;
+        let mut tail = tokio::fs::OpenOptions::new()
+            .append(true)
+            .open(&large_part)
+            .await?;
+        tail.write_all(b"garbage").await?;
+    }
+    response(
+        put_part(&proof, &large_path, "bytes 4-7/10", b"4567")
+            .send()
+            .await?,
+        200,
+    )
+    .await?;
+    let last = response(
+        put_part(&proof, &large_path, "bytes 8-9/10", b"89")
+            .send()
+            .await?,
+        200,
+    )
+    .await?;
+    let proof = fresh_proof(h, user, &app).await?;
+    let done = response(
+        h.request(&proof, Method::POST, &format!("{large_path}/complete"))
+            .send()
+            .await?,
+        200,
+    )
+    .await?;
+    let again = response(
+        h.request(&proof, Method::POST, &format!("{large_path}/complete"))
+            .send()
+            .await?,
+        200,
+    )
+    .await?;
+    let expected = hash(b"0123456789");
+    let body = h
+        .request(&proof, Method::GET, &format!("{large_path}/content"))
+        .send()
+        .await?
+        .bytes()
+        .await?;
+    ensure!(
+        last["received"] == 10
+            && done["status"] == "ready"
+            && done["sha256"] == expected.as_str()
+            && again["sha256"] == done["sha256"]
+            && body.as_ref() == b"0123456789"
+            && !tokio::fs::try_exists(&large_part).await?,
+        "completed parts were not the uploaded bytes or completion was not repeatable"
+    );
+    // Missing committed bytes stop the upload; cancellation removes the part.
+    let gap = h
+        .json(
+            &proof,
+            Method::POST,
+            &base,
+            parts(Uuid::new_v4(), "gap.bin", 8),
+            200,
+        )
+        .await?;
+    let gap_id = gap["id"].as_str().context("gap file id")?.to_owned();
+    let gap_path = format!("{base}/{gap_id}");
+    response(
+        put_part(&proof, &gap_path, "bytes 0-3/8", b"abcd")
+            .send()
+            .await?,
+        200,
+    )
+    .await?;
+    let gap_part = large_part.with_file_name(format!("{gap_id}.part"));
+    tokio::fs::remove_file(&gap_part).await?;
+    let missing = response(
+        put_part(&proof, &gap_path, "bytes 4-7/8", b"efgh")
+            .send()
+            .await?,
+        503,
+    )
+    .await?;
+    tokio::fs::write(&gap_part, b"abcd").await?;
+    let cancelled_parts = response(
+        h.request(&proof, Method::DELETE, &gap_path).send().await?,
+        200,
+    )
+    .await?;
+    ensure!(
+        missing["error"]["code"] == "file_part_bytes_missing"
+            && cancelled_parts["status"] == "cancelled"
+            && !tokio::fs::try_exists(&gap_part).await?,
+        "a gap in committed bytes was not refused or a cancelled part kept its bytes"
+    );
+    // Elapsed reservations in five abandoned installations stop counting as
+    // promised bytes when they elapse, before any housekeeping removes them.
     let mut abandoned = Vec::new();
     let mut abandoned_part = None;
     let mut stuck = None;

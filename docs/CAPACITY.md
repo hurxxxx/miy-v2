@@ -42,7 +42,7 @@ Rootless Docker의 자원 제한에는 cgroup v2·systemd와 필요한 controlle
 
 ## 앱 API 응답의 현재 메모리 보호
 
-코어의 업무 API·프레임 API·앱 간 연결과 로컬 preview는 공통 `app_response::read`로 응답 본문을 수집한다. 본문은 응답별 4MiB이며 Content-Length가 없거나 chunked여도 실제 바이트 수로 초과를 거부한다. 초과는 502 `app_response_too_large` / `preview_response_too_large`다. 작은 첨부는 이 수집 경로가 아니라 별도 10MiB 스트리밍 gateway(전송 단계별 4개 슬롯·20초)를 쓴다. 대용량 전송은 미구현이며 이 한도만 올려 지원하지 않는다.
+코어의 업무 API·프레임 API·앱 간 연결과 로컬 preview는 공통 `app_response::read`로 응답 본문을 수집한다. 본문은 응답별 4MiB이며 Content-Length가 없거나 chunked여도 실제 바이트 수로 초과를 거부한다. 초과는 502 `app_response_too_large` / `preview_response_too_large`다. 작은 첨부는 이 수집 경로가 아니라 별도 10MiB 스트리밍 gateway(전송 단계별 4개 슬롯·20초)를 쓴다. 대용량 업로드는 이 한도를 올리지 않고 8MiB 조각의 분할 전송으로 한다([대용량 전송](CORE-PERMISSIONS.md#대용량-전송m10)).
 
 프로세스당 최대 64개 응답이 수집·보유 슬롯을 공유한다. 슬롯은 수집 함수 반환 때 해제하지 않고 실제 응답 바이트의 마지막 참조가 사라질 때 반환한다. 전송 대기 중인 응답과 복제·분할한 Bytes도 포함하고, 수집 실패·크기 초과·취소에서는 반환한다. 버퍼 예약 크기의 증가도 4MiB 안으로 제한한다. 슬롯을 10초 안에 얻지 못하면 503 `app_gateway_busy` / `preview_gateway_busy`다.
 
@@ -83,7 +83,7 @@ API 요청, 예약 작업, 빌드, 문서 처리와 Hermes 실행은 동시 실�
 
 파일 업로드는 시작 시 공간을 예약하고 실제 기록 바이트를 확인한 뒤 사용량으로 확정한다. 병렬 업로드도 같은 예산에서 차감하며 실패·중단 시 예약과 불완전 파일을 정리한다. 파일 크기뿐 아니라 파일 수와 inode도 관리한다. S3 backend도 miy의 파일 API 계약과 사용량 검사를 거치게 한다.
 
-현재 Storage 한도(파일 10MiB, 설치 256MiB·1,000개, 코어 전체 1GiB·10,000개)는 [파일 계약](CORE-PERMISSIONS.md#디렉터리작은-첨부의-현행-계약)을 따른다. 계획된 변경(미구현): 드라이브용 한도 재설계([범용 기능 계획 §2.3](COMMON-FEATURES-PLAN.md#23-파일-저장)의 M10)와 실시간 연결 예산([M4](COMMON-FEATURES-PLAN.md#m4-업무-실시간-전송))을 이 문서에 추가한다.
+Storage 한도(M10, schema 33, 소스 반영·미배포): 한 요청 업로드 10MiB, 분할 업로드 2GiB(조각 8MiB). 설치별 기본 20GiB·100,000개이며 콘솔 관리자가 설치마다 바꾼다(0~1TiB, 0~10,000,000개). 코어 전체에는 고정 총량을 두지 않고, 아직 쓰지 않은 예약량을 더해도 파일 볼륨에 max(2GiB, 전체의 5%)와 inode 1,024개가 남을 때만 새 예약을 받는다. 계약은 [대용량 전송](CORE-PERMISSIONS.md#대용량-전송m10)을 따른다. 실시간 연결 예산은 [M4](COMMON-FEATURES-PLAN.md#m4-업무-실시간-전송)를 따른다.
 
 서버 디스크에는 다음 항목을 따로 표시한다.
 

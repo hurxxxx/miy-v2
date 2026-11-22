@@ -56,10 +56,18 @@ pub struct PlatformEndpoints {
     /// may open that matches, for the portal's integrated search.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub search: Option<String>,
+    /// POST `{ "fileId", "reference" }` answering `{ "allowed": bool }`: right
+    /// before a download link sends bytes, whether this person may still read
+    /// that file through the app's own ACL. Required for download links.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub file_access: Option<String>,
 }
 impl PlatformEndpoints {
     pub fn is_empty(&self) -> bool {
-        self.notification_check.is_none() && self.home_card.is_none() && self.search.is_none()
+        self.notification_check.is_none()
+            && self.home_card.is_none()
+            && self.search.is_none()
+            && self.file_access.is_none()
     }
 }
 /// An app API path for a platform endpoint: absolute, no query, no dot segments.
@@ -143,6 +151,7 @@ pub fn validate(m: &Manifest) -> Result<(), String> {
         &m.platform_endpoints.notification_check,
         &m.platform_endpoints.home_card,
         &m.platform_endpoints.search,
+        &m.platform_endpoints.file_access,
     ]
     .into_iter()
     .flatten()

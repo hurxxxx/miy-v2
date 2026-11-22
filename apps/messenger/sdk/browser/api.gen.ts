@@ -48,6 +48,9 @@ export type Environment = "dev" | "prod";
 
 export type FileStatus = "pending" | "ready" | "attached" | "cancelled" | "expired";
 
+/** How a reservation's bytes arrive. */
+export type FileTransfer = "single" | "parts";
+
 export type GroupSource = "hr" | "local";
 
 export interface ReserveFile {
@@ -55,6 +58,7 @@ export interface ReserveFile {
   name: string;
   requestId: string;
   size: number;
+  transfer: FileTransfer;
 }
 
 export interface StoredFile {
@@ -64,10 +68,13 @@ export interface StoredFile {
   installationId: string;
   mime: string;
   name: string;
+  /** Bytes committed so far: a `parts` upload resumes from here. */
+  received: number;
   reference: string | null;
   requestId: string;
   sha256: string | null;
   size: number;
   status: FileStatus;
+  transfer: FileTransfer;
   version: number;
 }

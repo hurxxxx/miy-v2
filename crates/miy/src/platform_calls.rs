@@ -36,6 +36,7 @@ pub enum Endpoint {
     NotificationCheck,
     HomeCard,
     Search,
+    FileAccess,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -95,6 +96,7 @@ pub async fn call(
         Endpoint::NotificationCheck => manifest["platformEndpoints"]["notificationCheck"].as_str(),
         Endpoint::HomeCard => manifest["platformEndpoints"]["homeCard"].as_str(),
         Endpoint::Search => manifest["platformEndpoints"]["search"].as_str(),
+        Endpoint::FileAccess => manifest["platformEndpoints"]["fileAccess"].as_str(),
     }
     .filter(|path| crate::contract::valid_endpoint_path(path))
     .ok_or(Failure::NotDeclared)?

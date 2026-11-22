@@ -561,6 +561,7 @@ pub fn router(state: State) -> Router {
         )
         .route("/_miy/platform/directory", axum::routing::get(directory))
         .route("/_miy/live", axum::routing::get(live))
+        .route("/_miy/downloads/{token}", axum::routing::get(download))
         .fallback(|| async { ApiError::not_found() })
         .layer(middleware::from_fn(frame_headers))
         .with_state(state)
@@ -703,7 +704,8 @@ async fn live_session(s: State, site: Site, mut socket: axum::extract::ws::WebSo
         close_with(&mut socket, close::BAD_AUTH, "auth_required").await;
         return;
     };
-    let (frame, p) = match load_frame(&s, &site, "token_hash", &token, true).await {
+    let (frame, p) = match load_frame(&s, &site, FrameKey::Secret("token_hash", &token), true).await
+    {
         Ok(found) => found,
         Err(error) if error.status == StatusCode::CONFLICT => {
             close_with(&mut socket, close::RELEASE_CHANGED, "release_changed").await;
@@ -890,11 +892,17 @@ fn principal(user: String, purpose: &str, development: bool) -> ApiResult<Princi
     })
 }
 
+/// How a request names its frame session: by one of its hashed secrets, or
+/// (for a download link that Core issued and stored) by its id.
+enum FrameKey<'a> {
+    Secret(&'static str, &'a str),
+    Id(Uuid),
+}
+
 async fn load_frame(
     s: &State,
     site: &Site,
-    column: &str,
-    secret: &str,
+    key: FrameKey<'_>,
     token: bool,
 ) -> ApiResult<(Frame, Principal)> {
     let expiry = if token {
@@ -902,11 +910,15 @@ async fn load_frame(
     } else {
         ""
     };
+    let (column, value) = match key {
+        FrameKey::Secret(column, secret) => (column, hash(secret)),
+        FrameKey::Id(id) => ("id::text", id.to_string()),
+    };
     let row = sqlx::query(&format!(
         "SELECT f.id,f.user_id,f.browser_purpose,f.installation_id,f.release_id,f.environment,f.origin,f.parent_development_hash IS NOT NULL AS development,i.app_id,i.release_id AS current_release FROM app_frame_sessions f JOIN installations i ON i.id=f.installation_id WHERE f.{column}=$2 AND f.revoked_at IS NULL AND f.expires_at>clock_timestamp() {expiry} AND {PARENT_LIVE}"
     ))
     .bind(s.auth.development_login)
-    .bind(hash(secret))
+    .bind(value)
     .fetch_optional(&s.pool)
     .await?
     .ok_or_else(ApiError::unauthorized)?;
@@ -964,7 +976,7 @@ async fn authenticate(
     if tokens.next().is_some() {
         return Err(ApiError::unauthorized());
     }
-    let (frame, p) = load_frame(s, &site, "token_hash", token, true).await?;
+    let (frame, p) = load_frame(s, &site, FrameKey::Secret("token_hash", token), true).await?;
     let context = frame.context(s).await?;
     Ok((frame, p, context))
 }
@@ -1087,6 +1099,65 @@ async fn directory(S(s): S<State>, mut request: Request) -> Response {
     response
 }
 
+/// `/_miy/downloads/{token}` (M10): a download link the owning app's backend
+/// obtained for this frame. Each GET or Range rechecks the origin, the frame
+/// and its parent session, the release, the person's use; storage then checks
+/// the approval, the file and the app's own answer before any byte.
+async fn download(
+    S(s): S<State>,
+    Path(token): Path<String>,
+    headers: HeaderMap,
+) -> ApiResult<Response> {
+    let site = site(&s, &headers).await?;
+    if !browser_request_allowed(&Method::GET, &headers, &site.origin) || token.len() != 43 {
+        return Err(ApiError::not_found());
+    }
+    let link = sqlx::query(
+        "SELECT frame_id,file_id,release_id,user_id,reference FROM app_file_downloads \
+         WHERE token_hash=$1 AND installation_id=$2 AND expires_at>clock_timestamp()",
+    )
+    .bind(hash(&token))
+    .bind(site.installation_id)
+    .fetch_optional(&s.pool)
+    .await?
+    .ok_or_else(ApiError::not_found)?;
+    let (frame, p) = load_frame(&s, &site, FrameKey::Id(link.get("frame_id")), false)
+        .await
+        .map_err(|_| ApiError::not_found())?;
+    if frame.release_id != link.get::<Uuid, _>("release_id")
+        || p.id != link.get::<String, _>("user_id")
+    {
+        return Err(ApiError::not_found());
+    }
+    policy::require(&s, &p, &frame.app_id, &frame.environment, AppAction::Use).await?;
+    let file: Uuid = link.get("file_id");
+    let response = crate::storage::serve_download(
+        &s,
+        &p,
+        frame.installation_id,
+        frame.release_id,
+        file,
+        link.get("reference"),
+        &headers,
+    )
+    .await;
+    let status = response
+        .as_ref()
+        .map_or_else(|error| error.status, |response| response.status());
+    audit(
+        &s,
+        &p.id,
+        &Method::GET,
+        status,
+        format!(
+            "frame:/installations/{}/files/{file}/download",
+            frame.installation_id
+        ),
+    )
+    .await;
+    response
+}
+
 /// `/_miy/a/{capability}/ui/{path}`: the frame's release artifact. The capability
 /// is the frame's fixed asset value; current use and release are checked on every
 /// request, including conditional ones.
@@ -1099,9 +1170,14 @@ async fn asset(
     if !browser_request_allowed(&Method::GET, &headers, &site.origin) || capability.len() != 43 {
         return Err(ApiError::not_found());
     }
-    let (frame, p) = load_frame(&s, &site, "asset_hash", &capability, false)
-        .await
-        .map_err(|_| ApiError::not_found())?;
+    let (frame, p) = load_frame(
+        &s,
+        &site,
+        FrameKey::Secret("asset_hash", &capability),
+        false,
+    )
+    .await
+    .map_err(|_| ApiError::not_found())?;
     policy::require(&s, &p, &frame.app_id, &frame.environment, AppAction::Use).await?;
     let artifact: String = sqlx::query_scalar("SELECT artifact_hash FROM releases WHERE id=$1")
         .bind(frame.release_id)

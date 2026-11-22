@@ -224,6 +224,14 @@ async fn probe(
             .ok()
             .map(|decoded| decoded.claims)
         });
+    // The platform's file-access question (M10 download links): answered for a
+    // platform call only, and not captured (it carries no continuation proof).
+    if let Some(answer) = path.strip_prefix("file-access-") {
+        let platform = claims
+            .as_ref()
+            .is_some_and(|claims| claims["platform"] == true);
+        return Json(json!({"allowed": answer == "allow" && platform})).into_response();
+    }
     match claims {
         Some(claims) => {
             backend.capture.lock().unwrap().push(claims);
@@ -1543,12 +1551,136 @@ pub async fn run(
     .await?;
     passed.push("the worker prunes expired frame sessions and codes, keeps live frames, and a pruned frame's token is refused".into());
 
+    download_links(&mut h, &suffix).await?;
+    passed.push("download links: only a request its own frame started gets one, and only for an app that answers file access; the frame origin streams the file whole or by one range, refuses another site and unsatisfiable ranges, asks the app before sending and stops when the frame ends".into());
+
     frame_limit(&mut h, &suffix).await?;
     passed.push("a person keeps at most 16 live frame sessions: openings retire the oldest even when concurrent; only the issuing portal can return a slot or cancel its pending launch".into());
 
     live_connections(&mut h, &suffix).await?;
     passed.push("live connections: only the frame's own Origin upgrades, the frame token arrives in the first message, the app receives the person's signed identity and both directions relay, a bad first message closes with 4400 and losing use closes with 4403".into());
     Ok(passed)
+}
+
+/// Download links (M10): the owning app's backend, inside a request that its
+/// frame started, gets a short-lived link; the frame origin serves the bytes
+/// (one range at most) after rechecking the frame, use, approval, the file and
+/// the app's own answer. Another origin, a denial or an ended frame refuse.
+async fn download_links(h: &mut Harness<'_>, suffix: &str) -> Result<()> {
+    let read = vec!["platform:files:read".to_owned()];
+    let app = h.app(&format!("frame-files-{suffix}"), &read).await?;
+    h.approve(&app, &read).await?;
+    let set_access = |answer: &'static str| {
+        let (pool, release) = (h.state.pool.clone(), app.release);
+        async move {
+            sqlx::query("UPDATE releases SET manifest=manifest||$2 WHERE id=$1")
+                .bind(release)
+                .bind(
+                    json!({"platformEndpoints": {"fileAccess": format!("/file-access-{answer}")}}),
+                )
+                .execute(&pool)
+                .await
+        }
+    };
+    let user = h.user().await?;
+    h.grant(&user, &app).await?;
+    let portal = h.session(&user, auth::BrowserPurpose::DevPortal).await?;
+    let bytes: &[u8] = b"0123456789";
+    let file = Uuid::new_v4();
+    sqlx::query("INSERT INTO app_files(id,installation_id,request_id,created_by,input_hash,name,mime,size,sha256,status,received) VALUES($1,$2,$3,$4,'download-fixture','보고서.bin','application/octet-stream',10,$5,'ready',10)")
+        .bind(file).bind(app.installation).bind(Uuid::new_v4()).bind(&user).bind(hash(bytes))
+        .execute(&h.state.pool).await?;
+    let directory = h
+        .state
+        .artifacts
+        .join(".files")
+        .join(app.installation.to_string());
+    tokio::fs::create_dir_all(&directory).await?;
+    tokio::fs::write(directory.join(format!("{file}.blob")), bytes).await?;
+    let frame = h.open(&portal, &app).await?;
+    status(
+        frame.request(Method::GET, "/_miy/api/probe").send().await?,
+        200,
+    )
+    .await?;
+    let proof = app.proof()?;
+    let issue = |body: Value| {
+        h.client
+            .post(format!(
+                "{}/api/v1/installations/{}/platform/files/{file}/download",
+                h.portal, app.installation
+            ))
+            .bearer_auth(&proof)
+            .header("x-miy-release", app.release.to_string())
+            .json(&body)
+    };
+    // Without the app's file-access endpoint no link is issued.
+    status(issue(json!({})).send().await?, 409).await?;
+    set_access("allow").await?;
+    status(issue(json!({"reference": "doc:1"})).send().await?, 409).await?;
+    let link: Value = status(issue(json!({})).send().await?, 200)
+        .await?
+        .json()
+        .await?;
+    let url = link["url"].as_str().context("download url")?.to_owned();
+    ensure!(
+        url.starts_with("/_miy/downloads/") && url.len() == "/_miy/downloads/".len() + 43,
+        "the download link is not a frame-relative token path"
+    );
+    let fetch = |range: Option<&str>, site: &str| {
+        let mut request = frame.raw(Method::GET, &url).header("sec-fetch-site", site);
+        if let Some(range) = range {
+            request = request.header("range", range);
+        }
+        request
+    };
+    let whole = status(fetch(None, "same-origin").send().await?, 200).await?;
+    let disposition = whole
+        .headers()
+        .get("content-disposition")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or_default()
+        .to_owned();
+    let ranges = whole
+        .headers()
+        .get("accept-ranges")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or_default()
+        .to_owned();
+    let body = whole.bytes().await?;
+    let part = status(fetch(Some("bytes=2-4"), "same-origin").send().await?, 206).await?;
+    let content_range = part
+        .headers()
+        .get("content-range")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or_default()
+        .to_owned();
+    let part_body = part.bytes().await?;
+    status(
+        fetch(Some("bytes=100-200"), "same-origin").send().await?,
+        416,
+    )
+    .await?;
+    status(fetch(None, "cross-site").send().await?, 404).await?;
+    ensure!(
+        body.as_ref() == bytes
+            && disposition.starts_with("attachment")
+            && ranges == "bytes"
+            && part_body.as_ref() == b"234"
+            && content_range == "bytes 2-4/10",
+        "the frame download did not stream the file whole and by range"
+    );
+    // The app's own answer decides at send time; an ended frame ends the link.
+    set_access("deny").await?;
+    status(fetch(None, "same-origin").send().await?, 403).await?;
+    set_access("allow").await?;
+    status(fetch(None, "same-origin").send().await?, 200).await?;
+    sqlx::query("UPDATE app_frame_sessions SET revoked_at=clock_timestamp() WHERE id=$1")
+        .bind(frame.id)
+        .execute(&h.state.pool)
+        .await?;
+    status(fetch(None, "same-origin").send().await?, 404).await?;
+    Ok(())
 }
 
 /// Main frames, side panels and other tabs share one per-person limit; the

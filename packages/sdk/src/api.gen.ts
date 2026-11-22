@@ -147,6 +147,9 @@ export type Environment = "dev" | "prod";
 
 export type FileStatus = "pending" | "ready" | "attached" | "cancelled" | "expired";
 
+/** How a reservation's bytes arrive. */
+export type FileTransfer = "single" | "parts";
+
 /**
  * What the frame document carries for the platform frame runtime
  * (`<script id="miy-frame-bootstrap" type="application/json">`).
@@ -414,6 +417,7 @@ export interface ReserveFile {
   name: string;
   requestId: string;
   size: number;
+  transfer: FileTransfer;
 }
 
 /** A runtime job: the receipt of a runtime request and every job read. */
@@ -478,11 +482,14 @@ export interface StoredFile {
   installationId: string;
   mime: string;
   name: string;
+  /** Bytes committed so far: a `parts` upload resumes from here. */
+  received: number;
   reference: string | null;
   requestId: string;
   sha256: string | null;
   size: number;
   status: FileStatus;
+  transfer: FileTransfer;
   version: number;
 }
 

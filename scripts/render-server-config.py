@@ -254,6 +254,20 @@ def frame_server():
         proxy_set_header X-Forwarded-Host "";
         proxy_set_header Forwarded "";
     }}
+    # Download links (M10) stream files of any size: no buffering to proxy
+    # temp files; each read may wait while the core streams the next range.
+    location /_miy/downloads/ {{
+        proxy_pass {frame_core};
+        proxy_http_version 1.1;
+        proxy_read_timeout 120s;
+        proxy_send_timeout 120s;
+        proxy_buffering off;
+        proxy_set_header Host $http_host;
+        proxy_set_header X-Forwarded-Proto {frame_scheme};
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header X-Forwarded-Host "";
+        proxy_set_header Forwarded "";
+    }}
     location / {{
         proxy_pass {frame_core};
         proxy_http_version 1.1;

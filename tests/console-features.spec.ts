@@ -30,6 +30,8 @@ async function open(page: Page, options: { locale?: string; conflict?: boolean }
   await mockSurface(page, "console");
   const puts: unknown[] = [];
   const switches: { user: string; body: unknown; csrf: string | null }[] = [];
+  const quotas: { method: string; body: unknown; csrf: string | null }[] = [];
+  let quota = { installationId: installation.id, custom: false, maxBytes: 21474836480, maxFiles: 100000, usedBytes: 1073741824, usedFiles: 12 };
   let approval = {
     installationId: installation.id,
     releaseId: installation.releaseId,
@@ -69,6 +71,17 @@ async function open(page: Page, options: { locale?: string; conflict?: boolean }
       "/api/v1/audit": { entries: [], nextCursor: null },
       "/api/v1/support/reports": { entries: [], nextCursor: null },
     };
+    if (path === `/api/v1/installations/${installation.id}/file-quota`) {
+      if (request.method() === "PUT") {
+        const body = request.postDataJSON() as { maxBytes: number; maxFiles: number };
+        quotas.push({ method: "PUT", body, csrf: request.headers()["x-miy-csrf"] ?? null });
+        quota = { ...quota, custom: true, ...body };
+      } else if (request.method() === "DELETE") {
+        quotas.push({ method: "DELETE", body: null, csrf: request.headers()["x-miy-csrf"] ?? null });
+        quota = { ...quota, custom: false, maxBytes: 21474836480, maxFiles: 100000 };
+      }
+      return route.fulfill({ json: quota });
+    }
     const switchStart = path.match(/^\/api\/v1\/users\/([^/]+)\/sign-in-as$/);
     if (switchStart && request.method() === "POST") {
       switches.push({ user: decodeURIComponent(switchStart[1]!), body: request.postDataJSON(), csrf: request.headers()["x-miy-csrf"] ?? null });
@@ -79,7 +92,7 @@ async function open(page: Page, options: { locale?: string; conflict?: boolean }
     await route.fulfill({ status: 404, json: { error: { code: "not_found" } } });
   });
   await page.goto("/admin");
-  return { puts, switches };
+  return { puts, switches, quotas };
 }
 const usersPanel = (page: Page) =>
   page.locator(".ui-panel").filter({ has: page.getByRole("heading", { name: "사용자 계정", exact: true }) });
@@ -162,4 +175,21 @@ test("sign in as a user opens the chosen portal in a new tab with a one-time lin
   expect(switches).toEqual([{ user: "alice", body: { environment: "dev" }, csrf: "console-csrf" }]);
   expect(await tab.evaluate(() => window.opener)).toBeNull();
   await expect(page.getByText("새 탭에서 앨리스(으)로 로그인합니다.")).toBeVisible();
+});
+
+test("an administrator sets and resets an installation's file storage limits", async ({ page }) => {
+  const { quotas } = await open(page);
+  const card = page.locator(".ui-panel").filter({ has: page.getByRole("heading", { name: "장부 · dev" }) });
+  await card.getByText("파일 저장소 한도").click();
+  await expect(card.getByText("사용 1GiB / 20GiB, 파일 12 / 100000개")).toBeVisible();
+  await card.getByLabel("최대 용량(GiB)").fill("5");
+  await card.getByLabel("최대 파일 수").fill("500");
+  await card.getByRole("button", { name: "한도 저장" }).click();
+  await expect(card.getByText("사용 1GiB / 5GiB, 파일 12 / 500개")).toBeVisible();
+  await card.getByRole("button", { name: "기본값으로" }).click();
+  await expect(card.getByText("(기본값)")).toBeVisible();
+  expect(quotas).toEqual([
+    { method: "PUT", body: { maxBytes: 5 * 1024 * 1024 * 1024, maxFiles: 500 }, csrf: "console-csrf" },
+    { method: "DELETE", body: null, csrf: "console-csrf" },
+  ]);
 });

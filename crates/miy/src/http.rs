@@ -86,6 +86,25 @@ pub fn router_for(state: State, purpose: BrowserPurpose) -> Router {
                 .layer(axum::extract::DefaultBodyLimit::disable()),
         )
         .route(
+            "/installations/{id}/platform/files/{file}/parts",
+            axum::routing::put(crate::storage::upload_part)
+                .layer(axum::extract::DefaultBodyLimit::disable()),
+        )
+        .route(
+            "/installations/{id}/platform/files/{file}/complete",
+            axum::routing::post(crate::storage::complete),
+        )
+        .route(
+            "/installations/{id}/platform/files/{file}/download",
+            axum::routing::post(crate::storage::download_link),
+        )
+        .route(
+            "/installations/{id}/file-quota",
+            axum::routing::get(crate::storage::quota)
+                .put(crate::storage::set_quota)
+                .delete(crate::storage::set_quota),
+        )
+        .route(
             "/installations/{id}/platform/files/{file}/attach",
             axum::routing::post(crate::storage::attach),
         )

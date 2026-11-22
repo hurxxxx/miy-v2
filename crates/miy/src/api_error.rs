@@ -39,6 +39,14 @@ impl ApiError {
             code: "forbidden".into(),
         }
     }
+    /// A refusal the caller can act on (it names why).
+    #[cfg(feature = "server")]
+    pub fn forbidden_code(code: &str) -> Self {
+        Self {
+            status: StatusCode::FORBIDDEN,
+            code: code.into(),
+        }
+    }
     #[cfg(feature = "server")]
     pub fn not_found() -> Self {
         Self {

@@ -10,7 +10,10 @@ use crate::{
     api_error::{ApiError, ApiResult},
     auth::Principal,
     policy::{AppAction, Write},
-    storage_contract::{AttachFile, DetachFile, FileStatus, ReserveFile, StoredFile},
+    storage_contract::{
+        AttachFile, DEFAULT_INSTALLATION_BYTES, DEFAULT_INSTALLATION_FILES, DetachFile, FileStatus,
+        FileTransfer, MAX_LARGE_FILE_BYTES, MAX_PART_BYTES, ReserveFile, StoredFile,
+    },
 };
 use axum::{
     Extension, Json,
@@ -28,13 +31,15 @@ use std::{
     time::Duration,
 };
 use tokio::{
-    io::{AsyncReadExt, AsyncWriteExt},
+    io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt},
     sync::{Semaphore, SemaphorePermit},
 };
 use uuid::Uuid;
 
 pub use crate::storage_contract::{MAX_FILE_BYTES, TRANSFER_SECONDS, allowed_route};
-const MIN_FREE_BYTES: u64 = 512 * 1024 * 1024;
+/// Free space that stays after every promised byte: the larger of this and 5%
+/// of the file system (the store has no fixed total, docs/CAPACITY.md).
+const MIN_FREE_BYTES: u64 = 2 * 1024 * 1024 * 1024;
 const MIN_FREE_INODES: u64 = 1024;
 static TRANSFERS: Semaphore = Semaphore::const_new(4);
 const SWEEP_SECONDS: u64 = 60;
@@ -99,6 +104,15 @@ fn file_row(row: &PgRow) -> ApiResult<StoredFile> {
         "expired" => FileStatus::Expired,
         _ => return Err(ApiError::unavailable("file_metadata_invalid")),
     };
+    let size = row.get::<i64, _>("size") as u64;
+    let transfer = match row.get::<&str, _>("transfer") {
+        "parts" => FileTransfer::Parts,
+        _ => FileTransfer::Single,
+    };
+    let received = match status {
+        FileStatus::Ready | FileStatus::Attached => size,
+        _ => row.get::<i64, _>("received") as u64,
+    };
     Ok(StoredFile {
         id: row.get("id"),
         version: 1,
@@ -106,18 +120,25 @@ fn file_row(row: &PgRow) -> ApiResult<StoredFile> {
         request_id: row.get("request_id"),
         name: row.get("name"),
         mime: row.get("mime"),
-        size: row.get::<i64, _>("size") as u64,
+        size,
         sha256: row.get("sha256"),
         status,
         reference: row.get("reference"),
+        transfer,
+        received,
         expires_at,
     })
 }
 
 fn validate_reservation(value: &mut ReserveFile) -> ApiResult<()> {
     value.mime.make_ascii_lowercase();
+    let limit = match value.transfer {
+        FileTransfer::Single => MAX_FILE_BYTES,
+        FileTransfer::Parts => MAX_LARGE_FILE_BYTES,
+    };
     if value.request_id.is_nil()
-        || value.size > MAX_FILE_BYTES
+        || value.size > limit
+        || (value.transfer == FileTransfer::Parts && value.size == 0)
         || value.name.trim().is_empty()
         || value.name.chars().count() > 255
         || value
@@ -220,6 +241,7 @@ async fn df(path: &FsPath, args: &[&str]) -> ApiResult<u64> {
 /// read just before the lock is as current as one read under it.
 struct DiskSpace {
     bytes: u64,
+    total: u64,
     inodes: u64,
 }
 
@@ -227,13 +249,15 @@ impl DiskSpace {
     async fn measure(path: &FsPath) -> ApiResult<Self> {
         Ok(Self {
             bytes: df(path, &["--output=avail", "-B1"]).await?,
+            total: df(path, &["--output=size", "-B1"]).await?,
             inodes: df(path, &["--output=iavail"]).await?,
         })
     }
 
     /// The floor must remain after `bytes` in `files` promised files arrive.
     fn require(&self, bytes: u64, files: u64) -> ApiResult<()> {
-        if self.bytes < MIN_FREE_BYTES.saturating_add(bytes)
+        let floor = MIN_FREE_BYTES.max(self.total / 20);
+        if self.bytes < floor.saturating_add(bytes)
             || self.inodes < MIN_FREE_INODES.saturating_add(files)
         {
             return Err(ApiError::unavailable("file_storage_low"));
@@ -387,12 +411,17 @@ pub async fn reserve(
     let directory = root(&s.artifacts, id).await?;
     // Checked only for a new reservation; a repeated request never needs it.
     let space = DiskSpace::measure(&directory).await;
-    let input_hash = crate::contract::hash(&serde_json::to_vec(&(
-        &p.id,
-        &value.name,
-        &value.mime,
-        value.size,
-    ))?);
+    // A single-request reservation keeps the hash it always had.
+    let input_hash = crate::contract::hash(&match value.transfer {
+        FileTransfer::Single => serde_json::to_vec(&(&p.id, &value.name, &value.mime, value.size))?,
+        FileTransfer::Parts => serde_json::to_vec(&(
+            &p.id,
+            &value.name,
+            &value.mime,
+            value.size,
+            value.transfer.as_str(),
+        ))?,
+    });
     // Recheck after the body read and the measurement. The transaction below
     // only runs short statements on its own connection.
     access(&s, &p, id, request.extensions(), true).await?;
@@ -416,13 +445,19 @@ pub async fn reserve(
     }
     // Elapsed reservations no longer count, whether or not the sweeper has
     // removed them yet: quota never depends on housekeeping timing.
-    let quota = sqlx::query("SELECT COALESCE(sum(size),0)::bigint AS total, COALESCE(sum(size) FILTER(WHERE installation_id=$1),0)::bigint AS owned, COALESCE(sum(size) FILTER(WHERE status IN ('pending','uploading')),0)::bigint AS pending, count(*) AS files, count(*) FILTER(WHERE installation_id=$1) AS owned_files, count(*) FILTER(WHERE status IN ('pending','uploading')) AS pending_files FROM app_files WHERE status IN ('ready','attached','cancelling') OR (status IN ('pending','uploading') AND expires_at>clock_timestamp())")
+    // The installation's limit (administrator-set or default) bounds what it
+    // owns; free disk space, not a fixed total, bounds the whole store.
+    // Promised bytes are what reservations have not written yet.
+    let quota = sqlx::query("SELECT COALESCE(sum(size) FILTER(WHERE installation_id=$1),0)::bigint AS owned, COALESCE(sum(size-received) FILTER(WHERE status IN ('pending','uploading')),0)::bigint AS pending, count(*) FILTER(WHERE installation_id=$1) AS owned_files, count(*) FILTER(WHERE status IN ('pending','uploading')) AS pending_files, (SELECT max_bytes FROM app_file_quotas WHERE installation_id=$1) AS max_bytes, (SELECT max_files FROM app_file_quotas WHERE installation_id=$1) AS max_files FROM app_files WHERE status IN ('ready','attached','cancelling') OR (status IN ('pending','uploading') AND expires_at>clock_timestamp())")
         .bind(id).fetch_one(&mut *tx).await?;
-    if quota.get::<i64, _>("total") as u64 + value.size > crate::storage_contract::TOTAL_BYTES
-        || quota.get::<i64, _>("owned") as u64 + value.size
-            > crate::storage_contract::INSTALLATION_BYTES
-        || quota.get::<i64, _>("files") >= 10_000
-        || quota.get::<i64, _>("owned_files") >= 1_000
+    let max_bytes = quota
+        .get::<Option<i64>, _>("max_bytes")
+        .map_or(DEFAULT_INSTALLATION_BYTES, |v| v as u64);
+    let max_files = quota
+        .get::<Option<i32>, _>("max_files")
+        .map_or(DEFAULT_INSTALLATION_FILES, |v| v as u64);
+    if quota.get::<i64, _>("owned") as u64 + value.size > max_bytes
+        || quota.get::<i64, _>("owned_files") as u64 >= max_files
     {
         return Err(ApiError::conflict("file_quota_exceeded"));
     }
@@ -431,8 +466,8 @@ pub async fn reserve(
         quota.get::<i64, _>("pending_files") as u64 + 1,
     )?;
     let file = Uuid::new_v4();
-    let row = sqlx::query("INSERT INTO app_files(id,installation_id,request_id,created_by,input_hash,name,mime,size,status,expires_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,'pending',clock_timestamp()+interval '24 hours') RETURNING *")
-        .bind(file).bind(id).bind(value.request_id).bind(&p.id).bind(input_hash).bind(value.name).bind(value.mime).bind(value.size as i64).fetch_one(&mut *tx).await?;
+    let row = sqlx::query("INSERT INTO app_files(id,installation_id,request_id,created_by,input_hash,name,mime,size,status,expires_at,transfer) VALUES($1,$2,$3,$4,$5,$6,$7,$8,'pending',clock_timestamp()+interval '24 hours',$9) RETURNING *")
+        .bind(file).bind(id).bind(value.request_id).bind(&p.id).bind(input_hash).bind(value.name).bind(value.mime).bind(value.size as i64).bind(value.transfer.as_str()).fetch_one(&mut *tx).await?;
     audit(&mut tx, &p, "file.reserved", file).await?;
     commit(tx, &p, &installation).await?;
     Ok(Json(file_row(&row)?))
@@ -644,6 +679,9 @@ pub async fn upload(
     if !matches!(row.get::<&str, _>("status"), "pending" | "uploading") {
         return Err(ApiError::conflict("file_upload_state_changed"));
     }
+    if row.get::<&str, _>("transfer") != "single" {
+        return Err(ApiError::conflict("file_transfer_mismatch"));
+    }
     if claimed != row.get::<i64, _>("size") as u64 || claimed > MAX_FILE_BYTES {
         return Err(ApiError::bad("file_size_mismatch"));
     }
@@ -723,7 +761,7 @@ pub async fn upload(
             .await
             .map_err(|_| ApiError::unavailable("file_storage_write_failed"))?;
         tokio::fs::File::open(&directory).await?.sync_all().await?;
-        let row = sqlx::query("UPDATE app_files SET status='ready',sha256=$2,expires_at=NULL,updated_at=clock_timestamp() WHERE id=$1 RETURNING *")
+        let row = sqlx::query("UPDATE app_files SET status='ready',sha256=$2,received=size,expires_at=NULL,updated_at=clock_timestamp() WHERE id=$1 RETURNING *")
             .bind(file).bind(digest).fetch_one(&mut *tx).await?;
         audit(&mut tx, &p, "file.ready", file).await?;
         commit(tx, &p, &installation).await?;
@@ -736,6 +774,629 @@ pub async fn upload(
         let _ = remove(&part).await;
     }
     stored.map(Json)
+}
+
+/// `Content-Range: bytes START-END/TOTAL` of one `parts` request.
+fn content_range(headers: &HeaderMap) -> ApiResult<(u64, u64, u64)> {
+    let invalid = || ApiError::bad("file_part_range_invalid");
+    let mut values = headers.get_all(header::CONTENT_RANGE).iter();
+    let (Some(value), None) = (values.next(), values.next()) else {
+        return Err(invalid());
+    };
+    let text = value.to_str().map_err(|_| invalid())?;
+    let (range, total) = text
+        .strip_prefix("bytes ")
+        .and_then(|rest| rest.split_once('/'))
+        .ok_or_else(invalid)?;
+    let (start, end) = range.split_once('-').ok_or_else(invalid)?;
+    let number = |value: &str| -> ApiResult<u64> {
+        if value.is_empty() || !value.bytes().all(|b| b.is_ascii_digit()) || value.len() > 19 {
+            return Err(invalid());
+        }
+        value.parse().map_err(|_| invalid())
+    };
+    let (start, end, total) = (number(start)?, number(end)?, number(total)?);
+    if end < start || end >= total || end - start + 1 > MAX_PART_BYTES {
+        return Err(invalid());
+    }
+    Ok((start, end, total))
+}
+
+/// A `parts` row may take the range `start..=end` of `total` bytes now.
+fn check_part(row: &PgRow, start: u64, total: u64) -> ApiResult<()> {
+    if row.get::<&str, _>("transfer") != "parts" {
+        return Err(ApiError::conflict("file_transfer_mismatch"));
+    }
+    if !matches!(row.get::<&str, _>("status"), "pending" | "uploading") {
+        return Err(ApiError::conflict("file_upload_state_changed"));
+    }
+    if row
+        .get::<Option<DateTime<Utc>>, _>("expires_at")
+        .is_none_or(|at| at <= Utc::now())
+    {
+        return Err(ApiError::conflict("file_upload_expired"));
+    }
+    if total != row.get::<i64, _>("size") as u64 {
+        return Err(ApiError::bad("file_size_mismatch"));
+    }
+    if start != row.get::<i64, _>("received") as u64 {
+        // The caller resumes from `received` in the file metadata.
+        return Err(ApiError::conflict("file_part_offset"));
+    }
+    Ok(())
+}
+
+/// A regular file at `path` (not a link), or none.
+async fn regular_file(path: &FsPath) -> ApiResult<Option<u64>> {
+    match tokio::fs::symlink_metadata(path).await {
+        Ok(meta) if meta.is_file() && !meta.file_type().is_symlink() => Ok(Some(meta.len())),
+        Ok(_) => Err(ApiError::unavailable("file_storage_path_invalid")),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(_) => Err(ApiError::unavailable("file_storage_unavailable")),
+    }
+}
+
+/// `PUT platform/files/{id}/parts` (M10): one contiguous range of a `parts`
+/// reservation, starting exactly at the committed offset. The bytes are
+/// synced before the new offset commits, so a lost answer resumes from the
+/// metadata's `received` and never from guessed bytes.
+pub async fn upload_part(
+    S(s): S<State>,
+    Extension(p): Extension<Principal>,
+    Path((id, file)): Path<(Uuid, Uuid)>,
+    request: Request,
+) -> ApiResult<Json<StoredFile>> {
+    let installation = access(&s, &p, id, request.extensions(), true).await?;
+    let _slot = TRANSFERS
+        .try_acquire()
+        .map_err(|_| ApiError::unavailable("file_transfer_busy"))?;
+    let (start, end, total) = content_range(request.headers())?;
+    let length = end - start + 1;
+    let claimed = request
+        .headers()
+        .get(header::CONTENT_LENGTH)
+        .and_then(|h| h.to_str().ok())
+        .and_then(|v| v.parse::<u64>().ok())
+        .ok_or_else(|| ApiError::bad("file_content_length_required"))?;
+    if claimed != length {
+        return Err(ApiError::bad("file_size_mismatch"));
+    }
+    let directory = root(&s.artifacts, id).await?;
+    let part = directory.join(format!("{file}.part"));
+    let space = DiskSpace::measure(&directory).await;
+    let mut initial = Write::begin(&s.pool).await?;
+    let row = lock_file(&mut initial, id, file).await?;
+    check_part(&row, start, total)?;
+    space?.require(length, 1)?;
+    sqlx::query("UPDATE app_files SET status='uploading',updated_at=clock_timestamp() WHERE id=$1")
+        .bind(file)
+        .execute(&mut *initial)
+        .await?;
+    commit(initial, &p, &installation).await?;
+
+    // As for a single upload, the row lock is held through the bounded transfer.
+    let mut tx = Write::begin(&s.pool).await?;
+    let row = lock_file(&mut tx, id, file).await?;
+    check_part(&row, start, total)?;
+    let existing = regular_file(&part).await?;
+    match existing {
+        // The database records more than the disk holds: stop, never invent bytes.
+        Some(len) if len < start => return Err(ApiError::unavailable("file_part_bytes_missing")),
+        None if start > 0 => return Err(ApiError::unavailable("file_part_bytes_missing")),
+        _ => {}
+    }
+    let mut options = tokio::fs::OpenOptions::new();
+    options.write(true).create(existing.is_none());
+    #[cfg(unix)]
+    options.mode(0o600);
+    let mut output = options
+        .open(&part)
+        .await
+        .map_err(|_| ApiError::unavailable("file_storage_unavailable"))?;
+    let (parts, body) = request.into_parts();
+    let written = tokio::time::timeout(Duration::from_secs(TRANSFER_SECONDS), async {
+        // A tail longer than the committed offset is an interrupted attempt.
+        output
+            .set_len(start)
+            .await
+            .map_err(|_| ApiError::unavailable("file_storage_write_failed"))?;
+        output
+            .seek(std::io::SeekFrom::Start(start))
+            .await
+            .map_err(|_| ApiError::unavailable("file_storage_write_failed"))?;
+        let mut stream = body.into_data_stream();
+        let mut count = 0u64;
+        while let Some(chunk) = stream.next().await {
+            let chunk = chunk.map_err(|_| ApiError::bad("file_transfer_failed"))?;
+            count = count
+                .checked_add(chunk.len() as u64)
+                .filter(|count| *count <= length)
+                .ok_or_else(|| ApiError::bad("file_size_mismatch"))?;
+            output
+                .write_all(&chunk)
+                .await
+                .map_err(|_| ApiError::unavailable("file_storage_write_failed"))?;
+        }
+        if count != length {
+            return Err(ApiError::bad("file_size_mismatch"));
+        }
+        output
+            .sync_all()
+            .await
+            .map_err(|_| ApiError::unavailable("file_storage_write_failed"))?;
+        if existing.is_none() {
+            tokio::fs::File::open(&directory)
+                .await?
+                .sync_all()
+                .await
+                .map_err(|_| ApiError::unavailable("file_storage_write_failed"))?;
+        }
+        Ok::<(), ApiError>(())
+    })
+    .await
+    .map_err(|_| ApiError::bad("file_transfer_timeout"))
+    .and_then(|v| v);
+    drop(output);
+    written?;
+    access(&s, &p, id, &parts.extensions, true).await?;
+    let row = sqlx::query(
+        "UPDATE app_files SET received=$2,updated_at=clock_timestamp() WHERE id=$1 RETURNING *",
+    )
+    .bind(file)
+    .bind((end + 1) as i64)
+    .fetch_one(&mut *tx)
+    .await?;
+    commit(tx, &p, &installation).await?;
+    Ok(Json(file_row(&row)?))
+}
+
+/// SHA-256 of a whole file, read in bounded chunks.
+async fn file_digest(path: &FsPath) -> ApiResult<String> {
+    let mut input = tokio::fs::File::open(path)
+        .await
+        .map_err(|_| ApiError::unavailable("file_bytes_unavailable"))?;
+    let mut hash = Sha256::new();
+    let mut buffer = vec![0u8; 1024 * 1024];
+    loop {
+        let read = input
+            .read(&mut buffer)
+            .await
+            .map_err(|_| ApiError::unavailable("file_bytes_unavailable"))?;
+        if read == 0 {
+            return Ok(hex::encode(hash.finalize()));
+        }
+        hash.update(&buffer[..read]);
+    }
+}
+
+/// `POST platform/files/{id}/complete` (M10): after every range arrived, hash
+/// the whole file, recheck the caller's write access, publish the bytes and
+/// mark the file ready. Repeating it after success returns the ready file; an
+/// interruption after the rename verifies the published bytes again.
+pub async fn complete(
+    S(s): S<State>,
+    Extension(p): Extension<Principal>,
+    Path((id, file)): Path<(Uuid, Uuid)>,
+    request: Request,
+) -> ApiResult<Json<StoredFile>> {
+    let installation = access(&s, &p, id, request.extensions(), true).await?;
+    let _slot = TRANSFERS
+        .try_acquire()
+        .map_err(|_| ApiError::unavailable("file_transfer_busy"))?;
+    let directory = root(&s.artifacts, id).await?;
+    let part = directory.join(format!("{file}.part"));
+    let blob = directory.join(format!("{file}.blob"));
+    let mut tx = Write::begin(&s.pool).await?;
+    let row = lock_file(&mut tx, id, file).await?;
+    if row.get::<&str, _>("transfer") != "parts" {
+        return Err(ApiError::conflict("file_transfer_mismatch"));
+    }
+    if matches!(row.get::<&str, _>("status"), "ready" | "attached") {
+        let result = file_row(&row)?;
+        commit(tx, &p, &installation).await?;
+        return Ok(Json(result));
+    }
+    if !matches!(row.get::<&str, _>("status"), "pending" | "uploading") {
+        return Err(ApiError::conflict("file_upload_state_changed"));
+    }
+    if row
+        .get::<Option<DateTime<Utc>>, _>("expires_at")
+        .is_none_or(|at| at <= Utc::now())
+    {
+        return Err(ApiError::conflict("file_upload_expired"));
+    }
+    let size = row.get::<i64, _>("size") as u64;
+    if row.get::<i64, _>("received") as u64 != size {
+        return Err(ApiError::conflict("file_parts_incomplete"));
+    }
+    let (source, published) = match (regular_file(&part).await?, regular_file(&blob).await?) {
+        (Some(len), None) if len == size => (part.clone(), false),
+        (None, Some(len)) if len == size => (blob.clone(), true),
+        _ => return Err(ApiError::unavailable("file_bytes_invalid")),
+    };
+    let digest = tokio::time::timeout(Duration::from_secs(120), file_digest(&source))
+        .await
+        .map_err(|_| ApiError::unavailable("file_digest_timeout"))??;
+    // The caller must still be allowed to write when the file becomes usable.
+    access(&s, &p, id, request.extensions(), true).await?;
+    if !published {
+        tokio::fs::rename(&part, &blob)
+            .await
+            .map_err(|_| ApiError::unavailable("file_storage_write_failed"))?;
+        tokio::fs::File::open(&directory).await?.sync_all().await?;
+    }
+    let row = sqlx::query("UPDATE app_files SET status='ready',sha256=$2,received=size,expires_at=NULL,updated_at=clock_timestamp() WHERE id=$1 RETURNING *")
+        .bind(file).bind(digest).fetch_one(&mut *tx).await?;
+    audit(&mut tx, &p, "file.ready", file).await?;
+    commit(tx, &p, &installation).await?;
+    Ok(Json(file_row(&row)?))
+}
+
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct QuotaInput {
+    /// Bytes this installation may keep (0 to 1 TiB).
+    pub max_bytes: u64,
+    /// Files this installation may keep (0 to 10,000,000).
+    pub max_files: u64,
+}
+
+async fn quota_view(pool: &PgPool, id: Uuid) -> ApiResult<serde_json::Value> {
+    let row = sqlx::query("SELECT (SELECT max_bytes FROM app_file_quotas WHERE installation_id=$1) AS max_bytes, (SELECT max_files FROM app_file_quotas WHERE installation_id=$1) AS max_files, COALESCE((SELECT sum(size) FROM app_files WHERE installation_id=$1 AND (status IN ('ready','attached','cancelling') OR (status IN ('pending','uploading') AND expires_at>clock_timestamp()))),0)::bigint AS used_bytes, (SELECT count(*) FROM app_files WHERE installation_id=$1 AND (status IN ('ready','attached','cancelling') OR (status IN ('pending','uploading') AND expires_at>clock_timestamp()))) AS used_files")
+        .bind(id).fetch_one(pool).await?;
+    let max_bytes: Option<i64> = row.get("max_bytes");
+    Ok(serde_json::json!({
+        "installationId": id,
+        "custom": max_bytes.is_some(),
+        "maxBytes": max_bytes.map_or(DEFAULT_INSTALLATION_BYTES, |v| v as u64),
+        "maxFiles": row.get::<Option<i32>, _>("max_files").map_or(DEFAULT_INSTALLATION_FILES, |v| v as u64),
+        "usedBytes": row.get::<i64, _>("used_bytes"),
+        "usedFiles": row.get::<i64, _>("used_files"),
+    }))
+}
+
+/// `GET /api/v1/installations/{id}/file-quota` (console administrator).
+pub async fn quota(
+    S(s): S<State>,
+    Extension(p): Extension<Principal>,
+    Path(id): Path<Uuid>,
+) -> ApiResult<Json<serde_json::Value>> {
+    crate::domain::admin(&s, &p).await?;
+    sqlx::query_scalar::<_, Uuid>("SELECT id FROM installations WHERE id=$1")
+        .bind(id)
+        .fetch_optional(&s.pool)
+        .await?
+        .ok_or_else(ApiError::not_found)?;
+    Ok(Json(quota_view(&s.pool, id).await?))
+}
+
+/// `PUT /api/v1/installations/{id}/file-quota` sets the installation's limits;
+/// `DELETE` returns it to the defaults. Existing files stay; only new
+/// reservations are refused above the limit. Audited.
+pub async fn set_quota(
+    S(s): S<State>,
+    Extension(p): Extension<Principal>,
+    Path(id): Path<Uuid>,
+    method: Method,
+    body: Option<Json<QuotaInput>>,
+) -> ApiResult<Json<serde_json::Value>> {
+    crate::domain::admin(&s, &p).await?;
+    let input = match (&method, body) {
+        (&Method::PUT, Some(Json(input))) => Some(input),
+        (&Method::DELETE, _) => None,
+        _ => return Err(ApiError::bad("invalid_file_quota")),
+    };
+    if input
+        .as_ref()
+        .is_some_and(|q| q.max_bytes > 1024 * 1024 * 1024 * 1024 || q.max_files > 10_000_000)
+    {
+        return Err(ApiError::bad("invalid_file_quota"));
+    }
+    let mut tx = Write::begin(&s.pool).await?;
+    sqlx::query_scalar::<_, Uuid>("SELECT id FROM installations WHERE id=$1 FOR SHARE")
+        .bind(id)
+        .fetch_optional(&mut *tx)
+        .await?
+        .ok_or_else(ApiError::not_found)?;
+    let mut tx = tx
+        .decide_platform(&p, crate::policy::PlatformAction::Administer)
+        .await?;
+    let target = match &input {
+        Some(q) => {
+            sqlx::query("INSERT INTO app_file_quotas(installation_id,max_bytes,max_files,updated_by) VALUES($1,$2,$3,$4) ON CONFLICT(installation_id) DO UPDATE SET max_bytes=$2,max_files=$3,updated_by=$4,updated_at=clock_timestamp()")
+                .bind(id).bind(q.max_bytes as i64).bind(q.max_files as i32).bind(&p.id).execute(&mut *tx).await?;
+            format!(
+                "installation:{id}:bytes:{}:files:{}",
+                q.max_bytes, q.max_files
+            )
+        }
+        None => {
+            sqlx::query("DELETE FROM app_file_quotas WHERE installation_id=$1")
+                .bind(id)
+                .execute(&mut *tx)
+                .await?;
+            format!("installation:{id}:default")
+        }
+    };
+    crate::audit::record(&mut tx, &p.id, "file.quota_set", &target).await?;
+    tx.commit().await?;
+    Ok(Json(quota_view(&s.pool, id).await?))
+}
+
+/// Download links live this long (each GET and Range is rechecked anyway).
+const DOWNLOAD_LINK_SECONDS: f64 = 300.0;
+/// Large downloads have their own budget, apart from upload/backend transfers.
+static DOWNLOADS: Semaphore = Semaphore::const_new(8);
+/// A stalled reader is cut; a slow but steady download is not.
+const DOWNLOAD_IDLE: Duration = Duration::from_secs(60);
+
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct LinkInput {
+    #[serde(default)]
+    reference: Option<String>,
+}
+
+/// `POST platform/files/{id}/download` (M10): after its own ACL check, the
+/// owning app's backend gets a short-lived link for the frame that started
+/// the request. The link names the file and, for an attached file, the app
+/// reference it was authorized for.
+pub async fn download_link(
+    S(s): S<State>,
+    Extension(p): Extension<Principal>,
+    Path((id, file)): Path<(Uuid, Uuid)>,
+    request: Request,
+) -> ApiResult<Json<serde_json::Value>> {
+    let installation = access(&s, &p, id, request.extensions(), false).await?;
+    // Only a chain that a frame of this very installation started: the link is
+    // served on that frame's origin and bound to that frame session.
+    let frame = request
+        .extensions()
+        .get::<crate::app_calls::Context>()
+        .filter(|context| context.installation_id == id && context.callers.is_empty())
+        .and_then(|context| context.origin.as_ref())
+        .filter(|origin| origin.kind == "frame")
+        .and_then(|origin| Uuid::parse_str(&origin.digest).ok())
+        .ok_or_else(|| ApiError::forbidden_code("file_download_frame_required"))?;
+    let (parts, body) = request.into_parts();
+    let bytes = tokio::time::timeout(Duration::from_secs(5), axum::body::to_bytes(body, 4096))
+        .await
+        .map_err(|_| ApiError::bad("file_metadata_timeout"))?
+        .map_err(|_| ApiError::bad("file_metadata_too_large"))?;
+    let input: LinkInput = if bytes.is_empty() {
+        LinkInput { reference: None }
+    } else {
+        serde_json::from_slice(&bytes)?
+    };
+    if input
+        .reference
+        .as_deref()
+        .is_some_and(|r| !valid_reference(r))
+    {
+        return Err(ApiError::bad("invalid_file_reference"));
+    }
+    let installation_now = access(&s, &p, id, &parts.extensions, false).await?;
+    let declared: bool = sqlx::query_scalar(
+        "SELECT COALESCE(jsonb_typeof(r.manifest->'platformEndpoints'->'fileAccess')='string',false) FROM releases r WHERE r.id=$1",
+    )
+    .bind(installation_now.get::<Uuid, _>("release_id"))
+    .fetch_one(&s.pool)
+    .await?;
+    if !declared {
+        return Err(ApiError::conflict("file_access_endpoint_missing"));
+    }
+    let mut tx = Write::begin(&s.pool).await?;
+    let row = sqlx::query(
+        "SELECT status,reference FROM app_files WHERE installation_id=$1 AND id=$2 FOR SHARE",
+    )
+    .bind(id)
+    .bind(file)
+    .fetch_optional(&mut *tx)
+    .await?
+    .ok_or_else(ApiError::not_found)?;
+    match row.get::<&str, _>("status") {
+        "ready" | "attached" => {}
+        _ => return Err(ApiError::conflict("file_not_ready")),
+    }
+    if row.get::<Option<String>, _>("reference") != input.reference {
+        return Err(ApiError::conflict("file_reference_conflict"));
+    }
+    sqlx::query("DELETE FROM app_file_downloads WHERE expires_at<clock_timestamp()")
+        .execute(&mut *tx)
+        .await?;
+    let token = crate::auth::random();
+    let expires_at: DateTime<Utc> = sqlx::query_scalar(
+        "INSERT INTO app_file_downloads(token_hash,installation_id,release_id,file_id,frame_id,user_id,reference,expires_at) \
+         SELECT $1,$2,$3,$4,f.id,$6,$7,clock_timestamp()+make_interval(secs=>$8) FROM app_frame_sessions f \
+         WHERE f.id=$5 AND f.user_id=$6 AND f.installation_id=$2 AND f.revoked_at IS NULL AND f.expires_at>clock_timestamp() \
+         RETURNING expires_at",
+    )
+    .bind(crate::contract::hash(&token))
+    .bind(id)
+    .bind(installation_now.get::<Uuid, _>("release_id"))
+    .bind(file)
+    .bind(frame)
+    .bind(&p.id)
+    .bind(&input.reference)
+    .bind(DOWNLOAD_LINK_SECONDS)
+    .fetch_optional(&mut *tx)
+    .await?
+    .ok_or_else(ApiError::unauthorized)?;
+    commit(tx, &p, &installation).await?;
+    Ok(Json(serde_json::json!({
+        "url": format!("/_miy/downloads/{token}"),
+        "expiresAt": expires_at,
+    })))
+}
+
+/// One `Range: bytes=...` request against `size`, if it asks for one range.
+/// `Ok(None)` serves the whole file; `Err` is 416.
+fn requested_range(headers: &HeaderMap, size: u64, etag: &str) -> Result<Option<(u64, u64)>, ()> {
+    let mut values = headers.get_all(header::RANGE).iter();
+    let (Some(value), None) = (values.next(), values.next()) else {
+        return Ok(None);
+    };
+    // A changed file answers whole, as HTTP says for a failed If-Range.
+    if let Some(condition) = headers.get(header::IF_RANGE)
+        && condition.to_str().ok() != Some(etag)
+    {
+        return Ok(None);
+    }
+    let Some(spec) = value.to_str().ok().and_then(|v| v.strip_prefix("bytes=")) else {
+        return Ok(None);
+    };
+    if spec.contains(',') {
+        return Ok(None);
+    }
+    let (start, end) = spec.split_once('-').ok_or(())?;
+    let number = |v: &str| v.trim().parse::<u64>().map_err(|_| ());
+    let (start, end) = match (start.trim().is_empty(), end.trim().is_empty()) {
+        (false, true) => (number(start)?, size.saturating_sub(1)),
+        (false, false) => (number(start)?, number(end)?.min(size.saturating_sub(1))),
+        (true, false) => {
+            let suffix = number(end)?.min(size);
+            (size - suffix, size.saturating_sub(1))
+        }
+        (true, true) => return Err(()),
+    };
+    if size == 0 || start > end || start >= size {
+        return Err(());
+    }
+    Ok(Some((start, end)))
+}
+
+/// Serve a download link for the frame listener (app_frames.rs has checked the
+/// origin, the frame session, the person's use and the release). Here: the
+/// release's read approval, the file and its reference, and the owning app's
+/// own answer for this file, then the bytes (one range at most).
+pub(crate) async fn serve_download(
+    s: &State,
+    p: &Principal,
+    installation: Uuid,
+    release: Uuid,
+    file: Uuid,
+    reference: Option<String>,
+    headers: &HeaderMap,
+) -> ApiResult<Response> {
+    crate::permissions::require(&s.pool, installation, release, "platform:files:read").await?;
+    let slot = DOWNLOADS
+        .try_acquire()
+        .map_err(|_| ApiError::unavailable("file_download_busy"))?;
+    let row = sqlx::query("SELECT * FROM app_files WHERE installation_id=$1 AND id=$2 AND status IN ('ready','attached')")
+        .bind(installation).bind(file).fetch_optional(&s.pool).await?.ok_or_else(ApiError::not_found)?;
+    let metadata = file_row(&row)?;
+    if metadata.reference != reference {
+        return Err(ApiError::not_found());
+    }
+    let answer = crate::platform_calls::call(
+        s,
+        p,
+        installation,
+        crate::platform_calls::Endpoint::FileAccess,
+        &serde_json::json!({"fileId": file, "reference": reference}),
+    )
+    .await;
+    match answer {
+        Ok(value) if value["allowed"] == true => {}
+        Err(crate::platform_calls::Failure::Unavailable) => {
+            return Err(ApiError::unavailable("file_access_unavailable"));
+        }
+        _ => return Err(ApiError::forbidden_code("file_access_denied")),
+    }
+    let path = root(&s.artifacts, installation)
+        .await?
+        .join(format!("{file}.blob"));
+    let info = tokio::fs::symlink_metadata(&path)
+        .await
+        .map_err(|_| ApiError::unavailable("file_bytes_unavailable"))?;
+    if !info.is_file() || info.file_type().is_symlink() || info.len() != metadata.size {
+        return Err(ApiError::unavailable("file_bytes_invalid"));
+    }
+    let etag = format!("\"{}\"", metadata.sha256.as_deref().unwrap_or_default());
+    let range = match requested_range(headers, metadata.size, &etag) {
+        Ok(range) => range,
+        Err(()) => {
+            let mut response = axum::http::StatusCode::RANGE_NOT_SATISFIABLE.into_response();
+            response.headers_mut().insert(
+                header::CONTENT_RANGE,
+                format!("bytes */{}", metadata.size).parse().unwrap(),
+            );
+            return Ok(response);
+        }
+    };
+    let (start, length) = match range {
+        Some((start, end)) => (start, end - start + 1),
+        None => (0, metadata.size),
+    };
+    let mut handle = tokio::fs::File::open(&path)
+        .await
+        .map_err(|_| ApiError::unavailable("file_bytes_unavailable"))?;
+    handle
+        .seek(std::io::SeekFrom::Start(start))
+        .await
+        .map_err(|_| ApiError::unavailable("file_bytes_unavailable"))?;
+    struct Stream {
+        file: tokio::fs::File,
+        remaining: u64,
+        _slot: SemaphorePermit<'static>,
+    }
+    let stream = futures_util::stream::try_unfold(
+        Stream {
+            file: handle,
+            remaining: length,
+            _slot: slot,
+        },
+        |mut state| async move {
+            if state.remaining == 0 {
+                return Ok::<_, std::io::Error>(None);
+            }
+            let mut bytes = vec![0u8; state.remaining.min(256 * 1024) as usize];
+            let n = tokio::time::timeout(DOWNLOAD_IDLE, state.file.read(&mut bytes))
+                .await
+                .map_err(|_| {
+                    std::io::Error::new(std::io::ErrorKind::TimedOut, "file_download_idle")
+                })??;
+            if n == 0 {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::UnexpectedEof,
+                    "file_bytes_invalid",
+                ));
+            }
+            state.remaining -= n as u64;
+            bytes.truncate(n);
+            Ok(Some((Bytes::from(bytes), state)))
+        },
+    );
+    let mut response = Response::new(Body::from_stream(stream));
+    if let Some((start, end)) = range {
+        *response.status_mut() = axum::http::StatusCode::PARTIAL_CONTENT;
+        response.headers_mut().insert(
+            header::CONTENT_RANGE,
+            format!("bytes {start}-{end}/{}", metadata.size)
+                .parse()
+                .unwrap(),
+        );
+    }
+    let out = response.headers_mut();
+    secure_headers(out);
+    out.insert(
+        header::CONTENT_TYPE,
+        metadata
+            .mime
+            .parse()
+            .map_err(|_| ApiError::unavailable("file_metadata_invalid"))?,
+    );
+    out.insert(header::CONTENT_LENGTH, length.to_string().parse().unwrap());
+    out.insert(
+        header::CONTENT_DISPOSITION,
+        attachment(&metadata.name)
+            .parse()
+            .map_err(|_| ApiError::unavailable("file_metadata_invalid"))?,
+    );
+    out.insert(header::ETAG, etag.parse().unwrap());
+    out.insert(header::ACCEPT_RANGES, "bytes".parse().unwrap());
+    out.insert(header::CACHE_CONTROL, "no-store".parse().unwrap());
+    Ok(response)
 }
 
 pub fn attachment(name: &str) -> String {
@@ -834,6 +1495,17 @@ pub async fn preview_file(
         (Method::POST, "detach") => Ok(detach(S(s), Extension(p), Path((id, file)), request)
             .await?
             .into_response()),
+        (Method::PUT, "parts") => Ok(upload_part(S(s), Extension(p), Path((id, file)), request)
+            .await?
+            .into_response()),
+        (Method::POST, "complete") => Ok(complete(S(s), Extension(p), Path((id, file)), request)
+            .await?
+            .into_response()),
+        (Method::POST, "download") => {
+            Ok(download_link(S(s), Extension(p), Path((id, file)), request)
+                .await?
+                .into_response())
+        }
         (Method::PUT, "content") => Ok(upload(S(s), Extension(p), Path((id, file)), request)
             .await?
             .into_response()),
@@ -972,6 +1644,7 @@ mod tests {
             name: "설계 검토.txt".into(),
             mime: "Text/Plain".into(),
             size: MAX_FILE_BYTES,
+            transfer: FileTransfer::Single,
         };
         let mut candidate = valid.clone();
         validate_reservation(&mut candidate).unwrap();
@@ -1000,10 +1673,26 @@ mod tests {
         assert!(
             validate_reservation(&mut ReserveFile {
                 size: MAX_FILE_BYTES + 1,
-                ..valid
+                ..valid.clone()
             })
             .is_err()
         );
+        // A parts reservation goes up to 2 GiB, never empty.
+        let large = ReserveFile {
+            size: MAX_LARGE_FILE_BYTES,
+            transfer: FileTransfer::Parts,
+            ..valid.clone()
+        };
+        assert!(validate_reservation(&mut large.clone()).is_ok());
+        for size in [0, MAX_LARGE_FILE_BYTES + 1] {
+            assert!(
+                validate_reservation(&mut ReserveFile {
+                    size,
+                    ..large.clone()
+                })
+                .is_err()
+            );
+        }
         assert!(attachment("한글\".txt").contains("%22"));
         assert!(!attachment("한글\".txt").contains('한'));
     }
@@ -1015,12 +1704,82 @@ mod tests {
         assert_eq!(df_available(b"Avail\n 1 2\n"), None);
         let space = DiskSpace {
             bytes: MIN_FREE_BYTES + 10,
+            total: MIN_FREE_BYTES * 4,
             inodes: MIN_FREE_INODES + 1,
         };
         assert!(space.require(10, 1).is_ok());
         assert!(space.require(11, 1).is_err());
         assert!(space.require(10, 2).is_err());
         assert!(space.require(u64::MAX, 1).is_err());
+        // On a large file system the floor is 5% of it.
+        let large = DiskSpace {
+            bytes: 100 * MIN_FREE_BYTES,
+            total: 1000 * MIN_FREE_BYTES,
+            inodes: MIN_FREE_INODES + 1,
+        };
+        assert!(large.require(50 * MIN_FREE_BYTES, 1).is_ok());
+        assert!(large.require(51 * MIN_FREE_BYTES, 1).is_err());
+    }
+
+    #[test]
+    fn download_ranges_are_one_satisfiable_range_or_the_whole_file() {
+        let range = |value: Option<&str>, condition: Option<&str>| {
+            let mut headers = HeaderMap::new();
+            if let Some(value) = value {
+                headers.insert(header::RANGE, value.parse().unwrap());
+            }
+            if let Some(condition) = condition {
+                headers.insert(header::IF_RANGE, condition.parse().unwrap());
+            }
+            requested_range(&headers, 10, "\"etag\"")
+        };
+        assert_eq!(range(None, None), Ok(None));
+        assert_eq!(range(Some("bytes=2-4"), None), Ok(Some((2, 4))));
+        assert_eq!(range(Some("bytes=7-"), None), Ok(Some((7, 9))));
+        assert_eq!(range(Some("bytes=-3"), None), Ok(Some((7, 9))));
+        assert_eq!(range(Some("bytes=5-100"), None), Ok(Some((5, 9))));
+        assert_eq!(range(Some("bytes=0-1,4-5"), None), Ok(None));
+        assert_eq!(range(Some("items=0-1"), None), Ok(None));
+        assert_eq!(range(Some("bytes=2-4"), Some("\"other\"")), Ok(None));
+        assert_eq!(range(Some("bytes=2-4"), Some("\"etag\"")), Ok(Some((2, 4))));
+        for bad in ["bytes=10-12", "bytes=4-2", "bytes=-", "bytes=a-b"] {
+            assert_eq!(range(Some(bad), None), Err(()), "{bad}");
+        }
+    }
+
+    #[test]
+    fn part_ranges_are_single_contiguous_and_bounded() {
+        let range = |value: &str| {
+            let mut headers = HeaderMap::new();
+            headers.insert(header::CONTENT_RANGE, value.parse().unwrap());
+            content_range(&headers)
+        };
+        assert_eq!(range("bytes 0-99/1000").unwrap(), (0, 99, 1000));
+        assert_eq!(
+            range(&format!(
+                "bytes 0-{}/{}",
+                MAX_PART_BYTES - 1,
+                MAX_PART_BYTES * 2
+            ))
+            .unwrap(),
+            (0, MAX_PART_BYTES - 1, MAX_PART_BYTES * 2)
+        );
+        for bad in [
+            "bytes 0-99/99",
+            "bytes 10-5/100",
+            "bytes */100",
+            "bytes 0-99",
+            "items 0-99/100",
+            "bytes -1-5/100",
+            "bytes +1-5/100",
+            &format!("bytes 0-{}/{}", MAX_PART_BYTES, MAX_PART_BYTES * 2),
+        ] {
+            assert!(range(bad).is_err(), "{bad}");
+        }
+        let mut repeated = HeaderMap::new();
+        repeated.append(header::CONTENT_RANGE, "bytes 0-1/10".parse().unwrap());
+        repeated.append(header::CONTENT_RANGE, "bytes 0-1/10".parse().unwrap());
+        assert!(content_range(&repeated).is_err());
     }
 
     #[test]

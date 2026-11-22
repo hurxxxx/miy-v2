@@ -9,6 +9,7 @@ import { LoadError, StaleNotice } from "../components/LoadState";
 import { RuntimeHealth } from "../components/RuntimeHealth";
 import { RuntimeControls } from "../components/RuntimeControls";
 import { PermissionApproval } from "../components/PermissionApproval";
+import { FileQuota } from "../components/FileQuota";
 import { Badge, Button, EmptyState, Field, Loading, Panel } from "../ui";
 import { AppAccessAdmin, GroupAdmin, useGroups } from "./AdminAccess";
 import { AuditLog } from "./AdminAudit";
@@ -233,6 +234,7 @@ function AdminConsole({ csrf, selfId }: { csrf: string; selfId: string }) {
                     <RuntimeHealth app={a} />
                     {a.canManage && <RuntimeControls app={a} csrf={csrf} refresh={refresh} />}
                     <PermissionApproval installationId={a.id} releaseId={a.releaseId} csrf={csrf} onChange={(count) => pendingApproval(a.id, count)} />
+                    <FileQuota installationId={a.id} csrf={csrf} />
                   </Panel>
                 ))}
             </div>
