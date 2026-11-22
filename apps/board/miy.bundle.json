@@ -8,7 +8,7 @@
     "Dockerfile": "d1b6720e0a5decb6f1455870bc107af9a29235acc68a8b96e10b7727d80bb6ac",
     "docs/ACCEPTANCE.md": "80e9f4f4de36179a337f21d8fd7ccc4231e585d7503bf4dfba63d7180ff6f6da",
     "docs/CLI.md": "1f342f83048b0aa37494b5f5ff41250687f73fd6eac209deb19d1474f14dd824",
-    "docs/CONTRACT.md": "c6fca2fc59a7a65fba48c9046d9c44346d9fd6080c67969299bd27ed0451b553",
+    "docs/CONTRACT.md": "73e06819d3b1af0fb7854d9318ee84572c5e3c31df7828b239df5b77cab2f519",
     "migrations/0001_initial.sql": "24948591b41e10398ad4f1a8338bc605e209fffa90bc9dbc283f80083fbca8f3",
     "miy.components.json": "528381be700fbaf393b2ed0541629c817ee50a8cf807ff6f6ec8b776f6f4688a",
     "rust-toolchain.toml": "d13306be0ecda81ce779baa290ffb417380d525928477f16200884b5169cca33",
@@ -27,9 +27,9 @@
     "sdk/rust/src/acl.sql": "603b59ac977d8b54623c3cbba445197d03db5c6629ab23138cca456b331277a8",
     "sdk/rust/src/acl_postgres_tests.rs": "225682fa4038e4e31425c0aad9068f733cd70d59d666882cbfaa76704bfdb856",
     "sdk/rust/src/directory.rs": "9593577353b84f8a551ca3a031c20b5d67362ec325a24b4c8d687bb54604d5ff",
-    "sdk/rust/src/lib.rs": "dd1ba8ef17c8c2c7dba5831e310fc6f0d42b9f9f93b29f1baf4f087c40465400",
+    "sdk/rust/src/lib.rs": "8fe1fe048ba718e620a7cb5480f5fd88f88b505947a9be19cba6caa712956b1d",
     "sdk/rust/src/notifications.rs": "fbf7057cd66410c53e3e6a71111c4559712c8ecb7e4a25427338bd91800068c1",
-    "sdk/rust/src/storage.rs": "83c86ac6fb5e3ccbb583ee984e66a3fda4654b5b4009943731ad14c7e8baccb7",
+    "sdk/rust/src/storage.rs": "880bafced7dc6a129391547da6654787e7ce8497d139d43e7ad3125fc5c9eeb7",
     "sdk/ui/index.tsx": "0f2c18cbd9f1391864e6acf098ad401ea6e1a850f943068812a78250ac16c41f"
   }
 }

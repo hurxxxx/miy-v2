@@ -166,6 +166,56 @@ pub struct CallError {
     pub code: &'static str,
     pub status: Option<u16>,
 }
+/// Core error codes the SDK passes on, so an app can tell a full quota from
+/// a stale upload offset. Any other refusal stays `core_call_rejected`.
+const CORE_CODES: &[&str] = &[
+    "file_quota_exceeded",
+    "file_storage_low",
+    "file_transfer_busy",
+    "file_download_busy",
+    "file_transfer_mismatch",
+    "file_part_offset",
+    "file_part_range_invalid",
+    "file_part_bytes_missing",
+    "file_parts_incomplete",
+    "file_upload_expired",
+    "file_upload_in_progress",
+    "file_upload_state_changed",
+    "file_size_mismatch",
+    "file_not_ready",
+    "file_reference_conflict",
+    "file_request_conflict",
+    "file_attached",
+    "file_not_attached",
+    "file_corrupt",
+    "file_access_endpoint_missing",
+    "file_download_frame_required",
+    "invalid_file_reservation",
+    "invalid_file_reference",
+    "invalid_notification",
+    "notification_request_conflict",
+    "installation_permission_denied",
+];
+
+/// The refusal of a non-success Core answer: its status, and its code when
+/// it is one the SDK passes on. Reads at most 4 KiB of the body.
+pub(crate) async fn rejected(mut response: reqwest::Response) -> CallError {
+    let status = Some(response.status().as_u16());
+    let mut bytes = Vec::new();
+    while let Ok(Some(chunk)) = response.chunk().await {
+        if bytes.len() + chunk.len() > 4096 {
+            break;
+        }
+        bytes.extend_from_slice(&chunk);
+    }
+    let code = serde_json::from_slice::<serde_json::Value>(&bytes)
+        .ok()
+        .and_then(|value| value["error"]["code"].as_str().map(str::to_owned))
+        .and_then(|code| CORE_CODES.iter().find(|known| **known == code).copied())
+        .unwrap_or("core_call_rejected");
+    CallError { code, status }
+}
+
 impl std::fmt::Display for CallError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.code)
@@ -452,10 +502,7 @@ impl Identity {
             .await
             .map_err(|_| call_error("core_unreachable"))?;
         if !response.status().is_success() {
-            return Err(CallError {
-                code: "core_call_rejected",
-                status: Some(response.status().as_u16()),
-            });
+            return Err(rejected(response).await);
         }
         let mut bytes = Vec::new();
         while let Some(chunk) = response
@@ -650,6 +697,53 @@ mod tests {
         );
         assert!(core_url("http://127.0.0.1:1", INSTALLATION, &suffix, false).is_err());
         assert!(core_url("http://127.0.0.1:1", INSTALLATION, &suffix, true).is_ok());
+    }
+
+    #[tokio::test]
+    async fn known_core_refusal_codes_pass_through_and_others_stay_generic() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let mut contextual = claims();
+        contextual["environment"] = json!("dev");
+        contextual["delegation_token"] = json!("proof");
+        let identity =
+            verify_identity(&signed(&contextual), SECRET, INSTALLATION, RELEASE).unwrap();
+        for (body, expected) in [
+            (
+                "{\"error\":{\"code\":\"file_quota_exceeded\"}}",
+                "file_quota_exceeded",
+            ),
+            (
+                "{\"error\":{\"code\":\"some_internal_detail\"}}",
+                "core_call_rejected",
+            ),
+            ("not json", "core_call_rejected"),
+        ] {
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let origin = format!("http://{}", listener.local_addr().unwrap());
+            let server = tokio::spawn(async move {
+                let (mut stream, _) = listener.accept().await.unwrap();
+                let mut request = Vec::new();
+                loop {
+                    let mut buffer = [0; 1024];
+                    let n = stream.read(&mut buffer).await.unwrap();
+                    request.extend_from_slice(&buffer[..n]);
+                    if n == 0 || request.windows(4).any(|part| part == b"\r\n\r\n") {
+                        break;
+                    }
+                }
+                let response = format!(
+                    "HTTP/1.1 409 Conflict\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                    body.len()
+                );
+                stream.write_all(response.as_bytes()).await.unwrap();
+            });
+            let error = identity
+                .call_at(&origin, true, "platform/directory", Method::GET, None)
+                .await
+                .unwrap_err();
+            server.await.unwrap();
+            assert_eq!((error.code, error.status), (expected, Some(409)));
+        }
     }
 
     #[tokio::test]

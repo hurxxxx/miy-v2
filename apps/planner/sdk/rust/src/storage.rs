@@ -114,10 +114,7 @@ fn metadata(
 
 async fn response_json(mut response: reqwest::Response) -> Result<serde_json::Value, CallError> {
     if !response.status().is_success() {
-        return Err(CallError {
-            code: "core_call_rejected",
-            status: Some(response.status().as_u16()),
-        });
+        return Err(crate::rejected(response).await);
     }
     let mut bytes = Vec::new();
     while let Some(chunk) = response
@@ -378,10 +375,7 @@ impl Identity {
             .await
             .map_err(|_| call_error("file_download_failed"))?;
         if !response.status().is_success() {
-            return Err(CallError {
-                code: "core_call_rejected",
-                status: Some(response.status().as_u16()),
-            });
+            return Err(crate::rejected(response).await);
         }
         let size = response
             .content_length()
