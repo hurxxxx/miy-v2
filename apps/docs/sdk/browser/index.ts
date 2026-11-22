@@ -56,6 +56,11 @@ export interface AppRuntime {
   basePath: string;
   location: { pathname: string; search: string; hash: string };
   navigate: (relative: string, options?: { replace?: boolean }) => void;
+  /**
+   * The full portal address of an app-relative path (for links people copy
+   * or share). The frame cannot read the portal address itself.
+   */
+  portalUrl?: (relative: string) => string;
   api: <T>(path: string, init?: RequestInit) => Promise<T>;
   /** A binary response of this app's own API (downloads, previews). */
   apiBlob: (path: string, init?: RequestInit) => Promise<Blob>;

@@ -161,6 +161,7 @@ function Preview() {
     download: () => {
       throw new Error("download_links_unavailable_in_preview");
     },
+    portalUrl: (path) => new URL(appTarget(basePath, path), window.location.origin).href,
     platformApi: async (resource, query, options) => {
       if (resource !== "directory") throw new Error("unknown_platform_resource");
       return completeDirectoryPage(
