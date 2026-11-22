@@ -1,0 +1,33 @@
+{
+  "contractVersion": "miy.app/v1alpha1",
+  "id": "drive",
+  "migrations": {
+    "directory": "migrations"
+  },
+  "name": "드라이브",
+  "platformEndpoints": {
+    "fileAccess": "/v1/file-access",
+    "notificationCheck": "/platform/notification-check",
+    "search": "/v1/search"
+  },
+  "requestedPermissions": [
+    "database",
+    "platform:directory:read",
+    "platform:files:read",
+    "platform:files:write",
+    "platform:notifications:write"
+  ],
+  "resources": {
+    "database": "postgresql"
+  },
+  "runtime": {
+    "profile": "rust-web-v1"
+  },
+  "ui": {
+    "contractVersion": "miy.ui/v1alpha1",
+    "delivery": "module",
+    "moduleEntry": "mf-manifest.json",
+    "moduleExport": "./AppRoot"
+  },
+  "version": "0.1.0"
+}
