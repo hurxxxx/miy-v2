@@ -3,7 +3,7 @@
 //! FV-04 server side, FV-05 server side and FV-10). Browser accounts are synthetic
 //! development sessions and the frame origin is a port-pool name sent as Host; this
 //! is not a real browser, TLS or DNS test. Credentials stay in memory.
-use crate::{State, auth, contract::hash};
+use crate::{State, api_contract::AppFrameLaunch, auth, contract::hash};
 use anyhow::{Context, Result, ensure};
 use axum::{
     Json, Router,
@@ -1544,7 +1544,7 @@ pub async fn run(
     passed.push("the worker prunes expired frame sessions and codes, keeps live frames, and a pruned frame's token is refused".into());
 
     frame_limit(&mut h, &suffix).await?;
-    passed.push("a person keeps at most 16 live frame sessions: opening one more retires the oldest, whose token is then refused, while the others keep working".into());
+    passed.push("a person keeps at most 16 live frame sessions: openings retire the oldest even when concurrent; only the issuing portal can return a slot or cancel its pending launch".into());
 
     live_connections(&mut h, &suffix).await?;
     passed.push("live connections: only the frame's own Origin upgrades, the frame token arrives in the first message, the app receives the person's signed identity and both directions relay, a bad first message closes with 4400 and losing use closes with 4403".into());
@@ -1588,6 +1588,74 @@ async fn frame_limit(h: &mut Harness<'_>, suffix: &str) -> Result<()> {
     ensure!(
         oldest == 401 && kept != 401,
         "the retired frame kept working ({oldest}) or a kept frame was refused ({kept})"
+    );
+    let other = h.session(&user, auth::BrowserPurpose::DevPortal).await?;
+    let close = |session: &PortalSession, id: Uuid| {
+        h.client
+            .delete(format!("{}/api/v1/app-frames/{id}", session.origin))
+            .header(
+                "cookie",
+                format!(
+                    "{}={}",
+                    h.state
+                        .auth
+                        .cookie_name(auth::BrowserPurpose::DevPortal, "development"),
+                    session.cookie
+                ),
+            )
+            .header("origin", &session.origin)
+            .header("x-miy-csrf", &session.csrf)
+    };
+    status(close(&other, frames[16].id).send().await?, 204).await?;
+    let revoked = |id| {
+        sqlx::query_scalar::<_, bool>(
+            "SELECT revoked_at IS NOT NULL FROM app_frame_sessions WHERE id=$1",
+        )
+        .bind(id)
+        .fetch_one(&h.state.pool)
+    };
+    ensure!(
+        !revoked(frames[16].id).await?,
+        "another portal closed a frame it did not own"
+    );
+    status(close(&portal, frames[16].id).send().await?, 204).await?;
+    status(close(&portal, frames[16].id).send().await?, 204).await?;
+    ensure!(
+        revoked(frames[16].id).await?,
+        "closing the frame did not release its slot"
+    );
+    let (first, second) = tokio::try_join!(h.open(&portal, &app), h.open(&portal, &app))?;
+    let count: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM app_frame_sessions WHERE user_id=$1 AND revoked_at IS NULL",
+    )
+    .bind(&user)
+    .fetch_one(&h.state.pool)
+    .await?;
+    ensure!(
+        count == 16 && !revoked(first.id).await? && !revoked(second.id).await?,
+        "concurrent launches did not respect the user's frame limit"
+    );
+    let pending = launch_code(
+        h.client,
+        h.state,
+        &portal,
+        auth::BrowserPurpose::DevPortal,
+        app.installation,
+    )
+    .await?;
+    let pending: AppFrameLaunch = pending.error_for_status()?.json().await?;
+    status(close(&portal, pending.frame_id).send().await?, 204).await?;
+    let canceled = submit_launch(
+        h.client,
+        h.address,
+        &pending.frame_origin,
+        Some(&portal.origin),
+        &pending.code,
+    )
+    .await?;
+    ensure!(
+        !canceled.text().await?.contains("miy-frame-bootstrap"),
+        "a canceled launch still opened a frame"
     );
     Ok(())
 }

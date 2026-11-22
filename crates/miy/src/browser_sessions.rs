@@ -14,11 +14,14 @@ use uuid::Uuid;
 
 /// Live sessions only; real sessions last eight hours from sign-in, matching
 /// the check every request makes.
-const LIVE: &str = "SELECT id,browser_purpose,created_at,created_at+interval '8 hours' AS expires_at,\
-     last_seen_at,user_agent,id_hash FROM sessions \
-     WHERE user_id=$1 AND created_at>now()-interval '8 hours' \
-     UNION ALL SELECT id,browser_purpose,created_at,expires_at,last_seen_at,user_agent,id_hash \
-     FROM development_sessions WHERE user_id=$1 AND expires_at>now()";
+const LIVE: &str = concat!(
+    "SELECT id,browser_purpose,created_at,created_at+interval '8 hours' AS expires_at,\
+     last_seen_at,user_agent,id_hash FROM sessions s \
+     WHERE user_id=$1 AND created_at>now()-interval '8 hours' AND ",
+    crate::user_switch::issuer_current_sql!(),
+    " UNION ALL SELECT id,browser_purpose,created_at,expires_at,last_seen_at,user_agent,id_hash \
+     FROM development_sessions WHERE user_id=$1 AND expires_at>now()"
+);
 
 fn current(state: &State, p: &Principal, headers: &HeaderMap) -> Option<String> {
     p.browser_purpose

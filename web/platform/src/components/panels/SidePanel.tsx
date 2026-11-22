@@ -1,11 +1,11 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { useNavigate } from "@tanstack/react-router";
+import { useLocation, useNavigate } from "@tanstack/react-router";
 import { ExternalLink, X } from "lucide-react";
 import { createNavigationGuards, type Installation, type InstallationPanel } from "@miy/sdk";
 import { AppFrame, leaveMessage, type FrameInput } from "../../app/AppFrame";
 import { activeGuards } from "../../lib/navigation-guards";
-import { environmentPath } from "../../lib/paths";
+import { environmentPath, requestId } from "../../lib/paths";
 
 export type OpenPanel = { app: Installation; panel: InstallationPanel };
 
@@ -40,16 +40,23 @@ export function SidePanel({
 }) {
   const { t } = useTranslation("portal");
   const navigate = useNavigate();
-  const [run, setRun] = useState(0);
   const [location, setLocation] = useState(() => locationOf(open.panel.path));
+  const pendingPromotion = useRef<string>(undefined);
+  const completedPromotion = useLocation({
+    select: ({ state }) => (state as { sidePanelPromotion?: string }).sidePanelPromotion,
+  });
   const basePath = environmentPath(environment, open.app.appId);
   const guards = useMemo(() => {
     const created = createNavigationGuards();
     created.register(() => leaveMessage(input.current));
     return created;
-    // A new frame run is a new guard: the old one's state no longer applies.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open.app.id, open.panel.id, run, input]);
+  }, [input]);
+  useEffect(() => {
+    if (pendingPromotion.current && completedPromotion === pendingPromotion.current) {
+      pendingPromotion.current = undefined;
+      onClose(true);
+    }
+  }, [completedPromotion, onClose]);
   useEffect(() => {
     activeGuards.add(guards);
     const beforeUnload = (event: BeforeUnloadEvent) => {
@@ -75,10 +82,13 @@ export function SidePanel({
           aria-label={t("panels.openInApp")}
           title={t("panels.openInApp")}
           onClick={() => {
-            const message = leaveMessage(input.current);
-            if (message && !window.confirm(message)) return;
-            void navigate({ to: `${basePath}${location.pathname}${location.search}${location.hash}` as "/" });
-            onClose(true);
+            if (!guards.confirmNavigation()) return;
+            const id = requestId();
+            pendingPromotion.current = id;
+            void navigate({
+              href: `${basePath}${location.pathname}${location.search}${location.hash}`,
+              state: (state) => ({ ...state, sidePanelPromotion: id }),
+            });
           }}
         >
           <ExternalLink size={15} aria-hidden="true" />
@@ -94,13 +104,19 @@ export function SidePanel({
         </button>
       </header>
       <AppFrame
-        key={`${open.app.id}:${open.panel.id}:${run}`}
         app={open.app}
         basePath={basePath}
         csrf={csrf}
         input={input}
-        onReleaseChanged={() => setRun((value) => value + 1)}
-        panel={{ location, navigate: (path) => setLocation(locationOf(path)), title }}
+        panel={{
+          location,
+          navigate: (path) => {
+            const next = locationOf(path);
+            if (next.pathname === location.pathname && next.search === location.search && next.hash === location.hash) return;
+            if (guards.confirmNavigation()) setLocation(next);
+          },
+          title,
+        }}
       />
     </aside>
   );

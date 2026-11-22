@@ -380,7 +380,9 @@
     "openInApp": "앱에서 열기",
     "close": "패널 닫기",
     "pin": "{{title}} 고정",
-    "unpin": "{{title}} 고정 해제"
+    "unpin": "{{title}} 고정 해제",
+    "unavailable": "이 포털에서 열 수 없음",
+    "pinFailed": "고정 변경을 저장하지 못했습니다."
   },
   "homeCards": {
     "title": "요약",

@@ -168,7 +168,7 @@
     "resetLink": "Password reset link",
     "signInAs": "Sign in as this user",
     "signInAsTitle": "Sign in as {{name}}",
-    "signInAsBody": "A new tab signs in as this user. In that tab you open, read and change apps with this user's permissions, and what you do is recorded as this user's activity. Starting the sign-in is recorded in the management audit.",
+    "signInAsBody": "A new tab opens and replaces the current session for the selected portal in this browser. App access and activity are recorded as this user. Starting the sign-in is recorded in the management audit.",
     "signInAsWhere": "Portal to sign in to",
     "signInAsPortal": "Business portal",
     "signInAsDevPortal": "Dev portal",

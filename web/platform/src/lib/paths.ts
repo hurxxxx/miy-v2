@@ -1,9 +1,19 @@
+import { appTarget } from "@miy/sdk";
 import type { BrowserSurface, LoginOptions } from "../data/session";
 
 export type Environment = "dev" | "prod";
 
 export function environmentPath(environment: string, app?: string) {
   return `/environments/${environment}` + (app ? `/apps/${app}` : "");
+}
+
+export function appLink(base: string, relative: string | null | undefined) {
+  if (!relative) return undefined;
+  try {
+    return appTarget(base, relative);
+  } catch {
+    return undefined;
+  }
 }
 
 /**

@@ -357,6 +357,10 @@ pub fn router_for(state: State, purpose: BrowserPurpose) -> Router {
             "/app-frames/{id}/renew",
             axum::routing::post(crate::app_frames::renew_code),
         )
+        .route(
+            "/app-frames/{id}",
+            axum::routing::delete(crate::app_frames::close),
+        )
         .route_layer(middleware::from_fn_with_state(state.clone(), session_guard));
     let artifacts = Router::new()
         .route("/artifacts/{hash}/ui/{*path}", axum::routing::get(ui_asset))
@@ -903,6 +907,9 @@ async fn set_user_state(
         .bind(input.enabled)
         .execute(&mut *tx)
         .await?;
+    if !input.enabled {
+        crate::user_switch::revoke_for_user(&mut tx, &id, true).await?;
+    }
     let action = if input.enabled {
         "user.enabled"
     } else {

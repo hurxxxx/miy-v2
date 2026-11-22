@@ -1,5 +1,5 @@
 import { lazy, Suspense, type ReactNode } from "react";
-import { createRootRoute, createRoute, createRouter } from "@tanstack/react-router";
+import { createRootRoute, createRoute, createRouter, defaultParseSearch, defaultStringifySearch } from "@tanstack/react-router";
 import { Shell } from "./layout/Shell";
 import { Home } from "./pages/Home";
 import { Admin } from "./pages/Admin";
@@ -34,6 +34,19 @@ const page = (path: string, component: () => ReactNode) =>
 
 // Paths are a compatibility contract: environment URLs, legacy /apps, CLI approval and admin.
 export const router = createRouter({
+  // q is literal search text, including values that happen to be valid JSON.
+  parseSearch: (search) => {
+    const params = defaultParseSearch(search);
+    const q = new URLSearchParams(search).get("q");
+    return q === null ? params : { ...params, q };
+  },
+  stringifySearch: (search) => {
+    const encoded = defaultStringifySearch(search);
+    if (typeof search.q !== "string") return encoded;
+    const params = new URLSearchParams(encoded);
+    params.set("q", search.q);
+    return `?${params}`;
+  },
   routeTree: root.addChildren([
     page("/", HomeRoute),
     page("/apps/$appId/$", AppRoute),

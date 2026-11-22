@@ -10,7 +10,7 @@ use crate::{
         NotificationItem, NotificationMute, NotificationPage, NotificationPublished,
         NotificationSettings,
     },
-    auth::Principal,
+    auth::{BrowserPurpose, Principal},
     http::{ApiError, ApiResult},
     policy::{self, AppAction, Write},
 };
@@ -720,6 +720,30 @@ fn hub(pool: &PgPool) -> tokio::sync::broadcast::Sender<Change> {
     .clone()
 }
 
+async fn live_browser_session(
+    pool: &PgPool,
+    session: &str,
+    p: &Principal,
+    purpose: BrowserPurpose,
+) -> bool {
+    sqlx::query_scalar(concat!(
+        "SELECT EXISTS(SELECT 1 FROM users WHERE id=$2 AND enabled) AND CASE WHEN $4 THEN ",
+        "EXISTS(SELECT 1 FROM development_sessions WHERE id_hash=$1 AND user_id=$2 ",
+        "AND browser_purpose=$3 AND expires_at>now()) ELSE ",
+        "EXISTS(SELECT 1 FROM sessions s WHERE id_hash=$1 AND user_id=$2 ",
+        "AND browser_purpose=$3 AND created_at>now()-interval '8 hours' AND ",
+        crate::user_switch::issuer_current_sql!(),
+        ") END"
+    ))
+    .bind(session)
+    .bind(&p.id)
+    .bind(purpose.as_str())
+    .bind(p.development)
+    .fetch_one(pool)
+    .await
+    .unwrap_or(false)
+}
+
 /// The portal's live channel (`GET /api/v1/live`, WebSocket): the unread count
 /// at once and again whenever this person's inbox in this environment changes.
 /// Closed when the browser session ends or the account is disabled.
@@ -740,6 +764,7 @@ pub async fn live(
         .max_message_size(4 * 1024)
         .on_upgrade(move |mut socket| async move {
             use axum::extract::ws::Message;
+            let current = || live_browser_session(&s.pool, &session, &p, purpose);
             let count_message = |count: i64| {
                 Message::Text(
                     serde_json::json!({"type":"notifications.unread","unread":count})
@@ -747,6 +772,10 @@ pub async fn live(
                         .into(),
                 )
             };
+            if !current().await {
+                crate::live::close_with(&mut socket, crate::live::close::SESSION_ENDED, "session_ended").await;
+                return;
+            }
             let Ok(count) = unread_count(&s.pool, &p.id, &env).await else {
                 return;
             };
@@ -764,6 +793,10 @@ pub async fn live(
                             Err(tokio::sync::broadcast::error::RecvError::Closed) => return,
                         };
                         if relevant {
+                            if !current().await {
+                                crate::live::close_with(&mut socket, crate::live::close::SESSION_ENDED, "session_ended").await;
+                                return;
+                            }
                             let Ok(count) = unread_count(&s.pool, &p.id, &env).await else { continue };
                             if socket.send(count_message(count)).await.is_err() {
                                 return;
@@ -775,16 +808,7 @@ pub async fn live(
                         _ => {}
                     },
                     _ = recheck.tick() => {
-                        let live: bool = sqlx::query_scalar(
-                            "SELECT EXISTS(SELECT 1 FROM sessions WHERE id_hash=$1 AND user_id=$2 AND created_at>now()-interval '8 hours') \
-                             OR EXISTS(SELECT 1 FROM development_sessions WHERE id_hash=$1 AND user_id=$2 AND expires_at>now())",
-                        )
-                        .bind(&session)
-                        .bind(&p.id)
-                        .fetch_one(&s.pool)
-                        .await
-                        .unwrap_or(false);
-                        if !live || crate::auth_sessions::ensure_active(&s.pool, &p.id).await.is_err() {
+                        if !current().await {
                             crate::live::close_with(&mut socket, crate::live::close::SESSION_ENDED, "session_ended").await;
                             return;
                         }

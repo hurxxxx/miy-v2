@@ -1,8 +1,9 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Link } from "@tanstack/react-router";
-import type { HomeCard } from "@miy/sdk";
+import type { HomeCard, Installation } from "@miy/sdk";
 import { useHomeCards } from "../../data/home";
+import { appLink, environmentPath } from "../../lib/paths";
 import { formatDateTime } from "../../platform/time/time-utils";
 import { Badge, Button, Panel } from "../../ui";
 
@@ -11,11 +12,16 @@ import { Badge, Button, Panel } from "../../ui";
  * the apps return to the platform call, shown as text. Each line opens its app
  * at the app-relative path. Nothing shows when no app declares a card.
  */
-export function HomeCards({ environmentPath }: { environmentPath: (appId: string) => string }) {
+export function HomeCards({ apps }: { apps: Installation[] }) {
   const { t, i18n } = useTranslation("portal");
   const [attempt, setAttempt] = useState(0);
   const state = useHomeCards(true, attempt);
-  if (state.status !== "error" && state.cards.length === 0) return null;
+  const installations = new Map(apps.map((app) => [app.id, app]));
+  const cards = state.cards.flatMap((card) => {
+    const app = installations.get(card.installationId);
+    return app ? [{ card, base: environmentPath(app.environment, app.appId) }] : [];
+  });
+  if (state.status !== "error" && cards.length === 0) return null;
   return (
     <section aria-labelledby="home-cards" className="home-cards">
       <div className="home-cards-header">
@@ -26,10 +32,10 @@ export function HomeCards({ environmentPath }: { environmentPath: (appId: string
           {t("homeCards.refresh")}
         </Button>
       </div>
-      {state.status === "error" && state.cards.length === 0 && <p className="home-card-note">{t("homeCards.loadFailed")}</p>}
+      {state.status === "error" && <p role="status" className="home-card-note">{t("homeCards.loadFailed")}</p>}
       <div className="card-grid">
-        {state.cards.map((card) => (
-          <SummaryCard key={card.installationId} card={card} base={environmentPath(card.appId)} locale={i18n.language} />
+        {cards.map(({ card, base }) => (
+          <SummaryCard key={card.installationId} card={card} base={base} locale={i18n.language} />
         ))}
       </div>
     </section>
@@ -57,6 +63,7 @@ function SummaryCard({ card, base, locale }: { card: HomeCard; base: string; loc
       ) : (
         <ul className="home-card-items">
           {card.items.map((item, index) => {
+            const destination = appLink(base, item.path);
             const body = (
               <>
                 <span className="home-card-item-title">{item.title}</span>
@@ -69,8 +76,8 @@ function SummaryCard({ card, base, locale }: { card: HomeCard; base: string; loc
             );
             return (
               <li key={index}>
-                {item.path ? (
-                  <Link to={`${base}${item.path}` as "/"} className="home-card-item">
+                {destination ? (
+                  <Link to={destination as "/"} className="home-card-item">
                     {body}
                   </Link>
                 ) : (

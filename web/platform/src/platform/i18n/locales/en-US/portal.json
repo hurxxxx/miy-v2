@@ -381,7 +381,9 @@
     "openInApp": "Open in app",
     "close": "Close panel",
     "pin": "Pin {{title}}",
-    "unpin": "Unpin {{title}}"
+    "unpin": "Unpin {{title}}",
+    "unavailable": "Unavailable in this portal",
+    "pinFailed": "Could not save the pin change."
   },
   "homeCards": {
     "title": "Summary",

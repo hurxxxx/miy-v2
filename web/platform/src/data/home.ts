@@ -18,7 +18,10 @@ export function useHomeCards(enabled: boolean, attempt: number): HomeCardsState 
     const controller = new AbortController();
     setState((current) => ({ status: "loading", cards: current.cards }));
     request<HomeCardPage>("/api/v1/home/cards", undefined, { signal: controller.signal })
-      .then((page) => setState({ status: "ready", cards: Array.isArray(page.cards) ? page.cards : [] }))
+      .then((page) => {
+        if (!controller.signal.aborted)
+          setState({ status: "ready", cards: Array.isArray(page.cards) ? page.cards : [] });
+      })
       .catch(() => {
         if (!controller.signal.aborted) setState((current) => ({ status: "error", cards: current.cards }));
       });

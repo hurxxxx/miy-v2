@@ -1454,6 +1454,20 @@ pub async fn run(
         403,
     )
     .await?;
+    let switch_bearer = h.legacy_retired(&switch_admin).await?;
+    denied(
+        h.request(
+            BrowserPurpose::Portal,
+            Method::POST,
+            &format!("/api/v1/users/{switch_target}/sign-in-as"),
+        )
+        .bearer_auth(switch_bearer)
+        .json(&json!({"environment":"prod"}))
+        .send()
+        .await?,
+        403,
+    )
+    .await?;
     denied(
         start(&switch_console, &switch_admin, "prod").send().await?,
         400,
@@ -1677,6 +1691,55 @@ pub async fn run(
         200,
     )
     .await?;
+    let switched_app = h.app("dev").await?;
+    sqlx::query("INSERT INTO grants(user_id,app_id,environment,permission) SELECT $1,app_id,'dev','use' FROM installations WHERE id=$2")
+        .bind(&switch_target)
+        .bind(switched_app.installation)
+        .execute(&state.pool)
+        .await?;
+    let launch = json_response(
+        h.request(
+            BrowserPurpose::DevPortal,
+            Method::POST,
+            "/api/v1/app-frames",
+        )
+        .header("cookie", &dev_cookie)
+        .header("origin", dev_portal)
+        .header("x-miy-csrf", field(&dev_me, "csrf")?)
+        .json(&json!({"installationId":switched_app.installation}))
+        .send()
+        .await?,
+        200,
+    )
+    .await?;
+    let frame_origin = field(&launch, "frameOrigin")?;
+    let frame = status(
+        crate::app_frames_regression::submit_launch(
+            h.client,
+            frames,
+            &frame_origin,
+            Some(dev_portal),
+            &field(&launch, "code")?,
+        )
+        .await?,
+        200,
+    )
+    .await?;
+    let frame = crate::app_frames_regression::bootstrap(&frame.text().await?)?;
+    let frame_host = crate::app_frames_regression::host_of(&frame_origin)?;
+    let frame_token = field(&frame, "token")?;
+    let frame_release = field(&frame, "releaseId")?;
+    let frame_probe = || {
+        h.client
+            .get(format!("{frames}/_miy/api/probe"))
+            .header("host", &frame_host)
+            .header("sec-fetch-site", "same-origin")
+            .header("x-miy-release", &frame_release)
+            .bearer_auth(&frame_token)
+    };
+    json_response(frame_probe().send().await?, 200).await?;
+    // A direct account-state change leaves the parent row in place, so the
+    // derived frame must fail its own issuer check even without a cascade.
     sqlx::query("UPDATE users SET admin=false WHERE id=$1")
         .bind(&switch_admin)
         .execute(&state.pool)
@@ -1689,12 +1752,41 @@ pub async fn run(
         401,
     )
     .await?;
+    denied(frame_probe().send().await?, 401).await?;
+    let set_admin = |admin: bool| {
+        h.browser_request(
+            &console_admin,
+            Method::PATCH,
+            &format!("/api/v1/users/{switch_admin}"),
+        )
+        .json(&json!({"admin":admin}))
+    };
+    json_response(set_admin(true).send().await?, 200).await?;
+    let (_, unexchanged) = issue("dev").await?;
+    json_response(set_admin(false).send().await?, 200).await?;
+    json_response(set_admin(true).send().await?, 200).await?;
+    denied(
+        h.request(BrowserPurpose::DevPortal, Method::GET, "/api/v1/me")
+            .header("cookie", &dev_cookie)
+            .send()
+            .await?,
+        401,
+    )
+    .await?;
+    denied(frame_probe().send().await?, 401).await?;
+    denied(
+        exchange(BrowserPurpose::DevPortal, dev_portal, &unexchanged)
+            .send()
+            .await?,
+        401,
+    )
+    .await?;
     ensure!(
         dev_url == format!("{}/switch-user", h.origin(BrowserPurpose::DevPortal))
             && dev_me["id"] == switch_target.as_str(),
         "the dev portal switch did not sign in as the person"
     );
-    passed.push("user switch: only a console administrator with CSRF starts it (not for themself), the start is audited, the one-time code works once, unexpired, on its own portal from that portal's origin, the result is the person's own session replacing the browser's previous one, it signs out without the identity provider and ends when the administrator loses administration".into());
+    passed.push("user switch: only a console administrator with CSRF starts it (not for themself), the start is audited, the one-time code works once, unexpired, on its own portal from that portal's origin, the result is the person's own session replacing the browser's previous one, it signs out without the identity provider, and issuer demotion ends the session and frames and invalidates pending codes even after re-promotion".into());
 
     // Same-host ports share cookies; code on one origin must not use the other's
     // cookies even for reads. Reject before any session lookup.

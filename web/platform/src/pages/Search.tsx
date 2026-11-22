@@ -2,8 +2,9 @@ import { useEffect, useState, type FormEvent } from "react";
 import { useTranslation } from "react-i18next";
 import { Link, useLocation, useNavigate } from "@tanstack/react-router";
 import { request, type SearchPage } from "@miy/sdk";
+import { useInstallationPolling, useInstallations } from "../data/installations";
 import { useSurface } from "../data/session";
-import { environmentPath, portalEnvironment } from "../lib/paths";
+import { appLink, environmentPath, portalEnvironment } from "../lib/paths";
 import { formatDateTime } from "../platform/time/time-utils";
 import { Badge, Button, EmptyState, Loading, Notice, Panel } from "../ui";
 
@@ -24,7 +25,10 @@ export function Search() {
   const navigate = useNavigate();
   const location = useLocation();
   const environment = portalEnvironment(surface.surface, surface.legacyPortal) ?? "dev";
-  const query = new URLSearchParams(location.searchStr).get("q")?.trim() ?? "";
+  const { items: installations } = useInstallations();
+  useInstallationPolling();
+  const { q } = location.search;
+  const query = typeof q === "string" ? q.trim() : "";
   const [draft, setDraft] = useState(query);
   const [state, setState] = useState<State>({ status: "idle" });
   const [attempt, setAttempt] = useState(0);
@@ -37,7 +41,9 @@ export function Search() {
     const controller = new AbortController();
     setState({ status: "loading" });
     request<SearchPage>(`/api/v1/search?q=${encodeURIComponent(query)}&limit=10`, undefined, { signal: controller.signal })
-      .then((page) => setState({ status: "ready", page }))
+      .then((page) => {
+        if (!controller.signal.aborted) setState({ status: "ready", page });
+      })
       .catch(() => {
         if (!controller.signal.aborted) setState({ status: "error" });
       });
@@ -50,8 +56,11 @@ export function Search() {
     if (next) void navigate({ to: "/search", search: { q: next } as never });
   }
 
-  const groups = state.status === "ready" ? state.page.groups : [];
-  const found = groups.filter((group) => group.status !== "ok" || group.items.length > 0);
+  const page = state.status === "ready" && state.page.query === query ? state.page : null;
+  const visible = installations && new Set(installations.map((installation) => installation.id));
+  const found = (page?.groups ?? []).filter((group) =>
+    (!visible || visible.has(group.installationId)) && (group.status !== "ok" || group.items.length > 0),
+  );
   return (
     <>
       <div className="page-header">
@@ -88,8 +97,8 @@ export function Search() {
           <p>{t("search.failed")}</p>
         </Notice>
       )}
-      {state.status === "ready" && found.length === 0 && (
-        <EmptyState title={t("search.emptyTitle", { query: state.page.query })}>{t("search.emptyHint")}</EmptyState>
+      {page && found.length === 0 && (
+        <EmptyState title={t("search.emptyTitle", { query: page.query })}>{t("search.emptyHint")}</EmptyState>
       )}
       {found.map((group) => {
         const base = environmentPath(environment, group.appId);
@@ -100,6 +109,7 @@ export function Search() {
             ) : (
               <ul className="search-results">
                 {group.items.map((item, index) => {
+                  const destination = appLink(base, item.path);
                   const body = (
                     <>
                       <span className="search-result-title">
@@ -117,8 +127,8 @@ export function Search() {
                   );
                   return (
                     <li key={index}>
-                      {item.path ? (
-                        <Link to={`${base}${item.path}` as "/"} className="search-result">
+                      {destination ? (
+                        <Link to={destination as "/"} className="search-result">
                           {body}
                         </Link>
                       ) : (

@@ -13,12 +13,19 @@ use crate::{
 };
 use serde_json::Value;
 use sqlx::Row;
-use std::time::Duration;
+use std::{
+    collections::HashMap,
+    sync::{Arc, LazyLock, Mutex, Weak},
+    time::Duration,
+};
 use tokio::sync::Semaphore;
 use uuid::Uuid;
 
 /// Shared by every platform call of this process, apart from app API slots.
 static BUDGET: Semaphore = Semaphore::const_new(16);
+const PER_USER_LIMIT: usize = 4;
+static USER_BUDGETS: LazyLock<Mutex<HashMap<String, Weak<Semaphore>>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
 const TIMEOUT: Duration = Duration::from_secs(3);
 const WAIT_FOR_SLOT: Duration = Duration::from_secs(1);
 const MAX_RESPONSE: usize = 64 * 1024;
@@ -41,6 +48,18 @@ pub enum Failure {
     Unavailable,
 }
 
+fn user_budget(user_id: &str) -> Result<Arc<Semaphore>, Failure> {
+    let mut budgets = USER_BUDGETS.lock().map_err(|_| Failure::Unavailable)?;
+    budgets.retain(|_, budget| budget.strong_count() != 0);
+    let budget = budgets.entry(user_id.to_owned()).or_default();
+    if let Some(active) = budget.upgrade() {
+        return Ok(active);
+    }
+    let active = Arc::new(Semaphore::new(PER_USER_LIMIT));
+    *budget = Arc::downgrade(&active);
+    Ok(active)
+}
+
 /// Call `endpoint` of installation `id` for `p` with a JSON body.
 pub async fn call(
     state: &State,
@@ -49,6 +68,15 @@ pub async fn call(
     endpoint: Endpoint,
     body: &Value,
 ) -> Result<Value, Failure> {
+    let budget = user_budget(&p.id)?;
+    // A queue wait may outlast a grant or release. Read the current
+    // installation and check Use after admission, even if admission timed out.
+    let slots = tokio::time::timeout(WAIT_FOR_SLOT, async {
+        let user = budget.acquire().await.ok()?;
+        let process = BUDGET.acquire().await.ok()?;
+        Some((user, process))
+    })
+    .await;
     let row = sqlx::query(
         "SELECT i.app_id,i.environment,i.release_id,i.runtime_status,i.desired_state,i.runtime_port,\
          i.runtime_secret,r.manifest FROM installations i JOIN releases r ON r.id=i.release_id WHERE i.id=$1",
@@ -71,6 +99,7 @@ pub async fn call(
     .filter(|path| crate::contract::valid_endpoint_path(path))
     .ok_or(Failure::NotDeclared)?
     .to_owned();
+    let _slots = slots.ok().flatten().ok_or(Failure::Unavailable)?;
     if row.get::<String, _>("runtime_status") != "running"
         || row.get::<String, _>("desired_state") != "running"
     {
@@ -84,14 +113,15 @@ pub async fn call(
             .ok_or(Failure::Unavailable)?,
     )
     .map_err(|_| Failure::Unavailable)?;
+    let release_id: Uuid = row.get("release_id");
     let token = crate::identity::sign_identity_context(
         &p.id,
         false,
         id,
-        row.get("release_id"),
+        release_id,
         &secret,
         &IdentityContext {
-            environment: env,
+            environment: env.clone(),
             callers: vec![],
             effective_permissions: vec![],
             delegation_token: None,
@@ -99,10 +129,6 @@ pub async fn call(
         },
     )
     .map_err(|_| Failure::Unavailable)?;
-    let _slot = tokio::time::timeout(WAIT_FOR_SLOT, BUDGET.acquire())
-        .await
-        .map_err(|_| Failure::Unavailable)?
-        .map_err(|_| Failure::Unavailable)?;
     let client = reqwest::Client::builder()
         .timeout(TIMEOUT)
         .redirect(reqwest::redirect::Policy::none())
@@ -124,6 +150,21 @@ pub async fn call(
             return Err(Failure::Unavailable);
         }
         bytes.extend_from_slice(&chunk);
+    }
+    // Work performed under an old installation or grant cannot be displayed.
+    policy::require(state, p, &app, &env, AppAction::Use)
+        .await
+        .map_err(|_| Failure::Denied)?;
+    let same_release: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM installations WHERE id=$1 AND release_id=$2)",
+    )
+    .bind(id)
+    .bind(release_id)
+    .fetch_one(&state.pool)
+    .await
+    .map_err(|_| Failure::Unavailable)?;
+    if !same_release {
+        return Err(Failure::Unavailable);
     }
     serde_json::from_slice(&bytes).map_err(|_| Failure::Unavailable)
 }

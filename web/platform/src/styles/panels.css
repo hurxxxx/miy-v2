@@ -122,6 +122,8 @@
   z-index: 40;
   display: grid;
   min-width: 260px;
+  max-height: calc(100dvh - var(--shell-header-height) - var(--ui-space-4));
+  overflow-y: auto;
   margin: 0;
   padding: var(--ui-space-1);
   border: 1px solid var(--ui-color-border);

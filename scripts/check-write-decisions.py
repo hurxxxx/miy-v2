@@ -51,6 +51,7 @@ TRANSACTIONS = {
     ("cli_auth.rs", "revoke_legacy"): "own",
     ("delegations.rs", "revoke"): "own",
     ("development.rs", "close"): "own",
+    ("app_frames.rs", "close"): "own",
     ("job_api.rs", "events"): "snapshot",
     ("official_catalog.rs", "sync"): "host-catalog",
     ("server_build.rs", "logs"): "snapshot",
@@ -71,6 +72,7 @@ WRITERS = {
     ("cli_auth.rs", "revoke_legacy"): "own",
     ("delegations.rs", "revoke"): "own",
     ("development.rs", "close"): "own",
+    ("app_frames.rs", "close"): "own",
 }
 
 FUNCTION = re.compile(r"^\s*(?:pub(?:\([a-z]+\))?\s+)?(?:async\s+)?fn\s+([a-z_0-9]+)")

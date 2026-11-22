@@ -72,7 +72,7 @@ pub fn access(route: &str, method: &Method) -> Option<Access> {
         "/installations" if read => Access::Portal,
         // Business app UIs run in their own frame origins (app_frames). A portal
         // session only launches and renews frames; it never reaches app code or data.
-        "/app-frames" | "/app-frames/{id}/renew" => Access::Portal,
+        "/app-frames" | "/app-frames/{id}/renew" | "/app-frames/{id}" => Access::Portal,
         "/preview/apps/{app}/platform/directory"
         | "/preview/apps/{app}/connections/{target}/api/{*path}" => Access::Portal,
         // CLI, delegation and backend continuation bearers keep the published address.

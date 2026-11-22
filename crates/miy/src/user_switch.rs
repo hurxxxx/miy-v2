@@ -24,11 +24,65 @@ use axum::{
 use chrono::{DateTime, Utc};
 use serde::Deserialize;
 use serde_json::{Value, json};
-use sqlx::Row;
 
 const CODE_SECONDS: f64 = 60.0;
 /// Same as an ordinary browser session (`sessions.created_at` + 8 hours).
 const SESSION_SECONDS: u32 = 28_800;
+
+// Session subqueries use the alias `s`. An existing parent session alone is
+// insufficient when an app frame, continuation or live channel rechecks it.
+macro_rules! issuer_current_sql {
+    () => {
+        "(s.impersonator_user_id IS NULL OR EXISTS(SELECT 1 FROM users issuer \
+          WHERE issuer.id=s.impersonator_user_id AND issuer.enabled AND issuer.admin))"
+    };
+}
+pub(crate) use issuer_current_sql;
+
+/// Use the same user-row lock order as the account state and role writers.
+pub(crate) async fn lock_users(
+    conn: &mut sqlx::PgConnection,
+    target: &str,
+    issuer: &str,
+) -> ApiResult<(Option<bool>, bool)> {
+    let users: Vec<(String, bool, bool)> =
+        sqlx::query_as("SELECT id,enabled,admin FROM users WHERE id=ANY($1) ORDER BY id FOR SHARE")
+            .bind([target, issuer].as_slice())
+            .fetch_all(conn)
+            .await?;
+    let target_enabled = users
+        .iter()
+        .find(|(id, _, _)| id == target)
+        .map(|(_, enabled, _)| *enabled);
+    let issuer_allowed = users
+        .iter()
+        .any(|(id, enabled, admin)| id == issuer && *enabled && *admin);
+    Ok((target_enabled, issuer_allowed))
+}
+
+/// An account state or role writer already holds the user's row lock.
+pub(crate) async fn revoke_for_user(
+    tx: &mut policy::Decided,
+    user: &str,
+    disabled: bool,
+) -> ApiResult<()> {
+    sqlx::query(
+        "DELETE FROM user_switch_codes WHERE impersonator_user_id=$1 OR ($2 AND target_user_id=$1)",
+    )
+    .bind(user)
+    .bind(disabled)
+    .execute(&mut **tx)
+    .await?;
+    sqlx::query(
+        "DELETE FROM sessions WHERE impersonator_user_id=$1 \
+         OR ($2 AND user_id=$1 AND impersonator_user_id IS NOT NULL)",
+    )
+    .bind(user)
+    .bind(disabled)
+    .execute(&mut **tx)
+    .await?;
+    Ok(())
+}
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -50,23 +104,22 @@ pub async fn start(
     Path(id): Path<String>,
     Json(input): Json<Start>,
 ) -> ApiResult<Json<Value>> {
+    if p.browser_purpose != Some(BrowserPurpose::Console) {
+        return Err(ApiError::forbidden());
+    }
     crate::domain::admin(&s, &p).await?;
     let purpose = match input.environment.as_str() {
         "prod" => BrowserPurpose::Portal,
         "dev" => BrowserPurpose::DevPortal,
         _ => return Err(ApiError::bad("invalid_environment")),
     };
-    let mut tx = policy::Write::begin(&s.pool).await?;
-    let enabled: Option<bool> =
-        sqlx::query_scalar("SELECT enabled FROM users WHERE id=$1 FOR SHARE")
-            .bind(&id)
-            .fetch_optional(&mut *tx)
-            .await?;
-    let mut tx = tx.decide_platform(&p, PlatformAction::Administer).await?;
-    let enabled = enabled.ok_or_else(ApiError::not_found)?;
     if id == p.id {
         return Err(ApiError::bad("cannot_switch_to_self"));
     }
+    let mut tx = policy::Write::begin(&s.pool).await?;
+    let (enabled, _) = lock_users(&mut tx, &id, &p.id).await?;
+    let mut tx = tx.decide_platform(&p, PlatformAction::Administer).await?;
+    let enabled = enabled.ok_or_else(ApiError::not_found)?;
     if !enabled {
         return Err(ApiError::conflict("user_disabled"));
     }
@@ -116,7 +169,7 @@ pub async fn exchange(
     let single = |name: &str| {
         let mut values = headers.get_all(name).iter();
         match (values.next(), values.next()) {
-            (Some(value), None) => Some(value.to_str().ok()),
+            (Some(value), None) => value.to_str().ok().map(Some),
             (None, None) => Some(None),
             _ => None,
         }
@@ -131,31 +184,36 @@ pub async fn exchange(
     if input.code.is_empty() || input.code.len() > 128 {
         return Err(ApiError::unauthorized());
     }
+    let code_hash = hash(&input.code);
     let mut tx = s.pool.begin().await?;
-    let row = sqlx::query(
-        "DELETE FROM user_switch_codes WHERE code_hash=$1 AND browser_purpose=$2 \
-         RETURNING target_user_id,impersonator_user_id,expires_at>clock_timestamp() AS live",
+    let users: Option<(String, String)> = sqlx::query_as(
+        "SELECT target_user_id,impersonator_user_id FROM user_switch_codes \
+         WHERE code_hash=$1 AND browser_purpose=$2",
     )
-    .bind(hash(&input.code))
+    .bind(&code_hash)
     .bind(purpose.as_str())
     .fetch_optional(&mut *tx)
     .await?;
-    let Some(row) = row.filter(|row| row.get::<bool, _>("live")) else {
-        // A used, expired or foreign code is gone either way.
+    let (target, issuer) = users.ok_or_else(ApiError::unauthorized)?;
+    // Lock the users before touching their code or sessions. The account
+    // writers revoke switched credentials in exactly this order.
+    let (target_enabled, issuer_allowed) = lock_users(&mut tx, &target, &issuer).await?;
+    let live: Option<bool> = sqlx::query_scalar(
+        "DELETE FROM user_switch_codes WHERE code_hash=$1 AND browser_purpose=$2 \
+         RETURNING expires_at>clock_timestamp()",
+    )
+    .bind(&code_hash)
+    .bind(purpose.as_str())
+    .fetch_optional(&mut *tx)
+    .await?;
+    if live != Some(true) {
         tx.commit().await?;
         return Err(ApiError::unauthorized());
-    };
-    let (target, admin): (String, String) =
-        (row.get("target_user_id"), row.get("impersonator_user_id"));
-    let eligible: bool = sqlx::query_scalar(
-        "SELECT COALESCE((SELECT enabled FROM users WHERE id=$1 FOR SHARE),false) \
-         AND COALESCE((SELECT enabled AND admin FROM users WHERE id=$2 FOR SHARE),false)",
-    )
-    .bind(&target)
-    .bind(&admin)
-    .fetch_one(&mut *tx)
-    .await?;
-    if !eligible || crate::accounts::reset_pending(&mut tx, &target).await? {
+    }
+    if target_enabled != Some(true)
+        || !issuer_allowed
+        || crate::accounts::reset_pending(&mut tx, &target).await?
+    {
         tx.commit().await?;
         return Err(ApiError::forbidden());
     }
@@ -191,7 +249,7 @@ pub async fn exchange(
     .bind(random())
     .bind(purpose.as_str())
     .bind(crate::auth::user_agent(&headers))
-    .bind(&admin)
+    .bind(&issuer)
     .execute(&mut *tx)
     .await?;
     tx.commit().await?;

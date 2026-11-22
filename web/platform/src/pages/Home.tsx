@@ -39,7 +39,7 @@ export function Home() {
       ) : (
         <>
           {installations.status === "error" && <StaleNotice updatedAt={installations.updatedAt} onRetry={refresh} />}
-          {apps.length > 0 && <HomeCards environmentPath={(appId) => environmentPath(environment, appId)} />}
+          {apps.length > 0 && <HomeCards key={environment} apps={apps} />}
           {apps.length === 0 ? (
             <EmptyState title={t("home.emptyTitle")}>
               {t("home.emptyHint")}

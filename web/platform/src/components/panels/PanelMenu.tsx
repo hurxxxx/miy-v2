@@ -14,19 +14,22 @@ export function PanelMenu({
   current,
   saving,
   onOpen,
-  onTogglePin,
+  failed,
+  onSetPin,
 }: {
   panels: OpenPanel[];
   pinned: string[];
   current: string | null;
   saving: boolean;
   onOpen: (open: OpenPanel) => void;
-  onTogglePin: (open: OpenPanel) => void;
+  failed: boolean;
+  onSetPin: (id: string, pinned: boolean) => void;
 }) {
   const { t } = useTranslation("portal");
   const [expanded, setExpanded] = useState(false);
   const root = useRef<HTMLDivElement>(null);
   const pinnedPanels = pinned.flatMap((id) => panels.filter((open) => panelKey(open) === id));
+  const hiddenPins = pinned.filter((id) => !pinnedPanels.some((open) => panelKey(open) === id));
   const ordered = [...pinnedPanels, ...panels.filter((open) => !pinned.includes(panelKey(open)))];
   useEffect(() => {
     if (!expanded) return;
@@ -43,7 +46,7 @@ export function PanelMenu({
       document.removeEventListener("keydown", escape);
     };
   }, [expanded]);
-  if (panels.length === 0) return null;
+  if (panels.length === 0 && hiddenPins.length === 0) return null;
   return (
     <div className="panel-menu" ref={root}>
       {pinnedPanels.map((open) => (
@@ -90,13 +93,31 @@ export function PanelMenu({
                   aria-pressed={isPinned}
                   aria-label={t(isPinned ? "panels.unpin" : "panels.pin", { title: open.panel.title })}
                   disabled={saving}
-                  onClick={() => onTogglePin(open)}
+                  onClick={() => onSetPin(panelKey(open), !isPinned)}
                 >
                   <Star size={14} aria-hidden="true" fill={isPinned ? "currentColor" : "none"} />
                 </button>
               </li>
             );
           })}
+          {hiddenPins.map((id) => (
+            <li key={id}>
+              <span className="panel-menu-open">
+                <strong>{id}</strong>
+                <span>{t("panels.unavailable")}</span>
+              </span>
+              <button
+                type="button"
+                className="panel-menu-pin"
+                aria-label={t("panels.unpin", { title: id })}
+                disabled={saving}
+                onClick={() => onSetPin(id, false)}
+              >
+                <Star size={14} aria-hidden="true" fill="currentColor" />
+              </button>
+            </li>
+          ))}
+          {failed && <li className="panel-menu-open" role="status">{t("panels.pinFailed")}</li>}
         </ul>
       )}
     </div>

@@ -77,6 +77,7 @@ export function CommandPalette({
     command.run();
   }
   function onKeyDown(event: ReactKeyboardEvent<HTMLInputElement>) {
+    if (event.nativeEvent.isComposing) return;
     if (event.key === "ArrowDown" || event.key === "ArrowUp") {
       event.preventDefault();
       if (shown.length === 0) return;

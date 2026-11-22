@@ -37,6 +37,15 @@ pub struct Update {
     pub pinned_apps: Option<Vec<String>>,
     /// Side panels pinned to the header as `appId/panelId`, in order. At most 16.
     pub pinned_panels: Option<Vec<String>>,
+    /// Set one pin against the current list without overwriting other tabs.
+    pub panel_pin: Option<PanelPin>,
+}
+
+#[derive(Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct PanelPin {
+    id: String,
+    pinned: bool,
 }
 
 /// One of the closed enums as its JSON text, the form the table stores.
@@ -100,11 +109,15 @@ fn job_title(value: Option<&str>) -> ApiResult<Option<Option<String>>> {
 fn pinned_panels(value: &[String]) -> bool {
     let mut seen = HashSet::new();
     value.len() <= 16
-        && value.iter().all(|entry| {
-            entry.split_once('/').is_some_and(|(app, panel)| {
-                crate::contract::valid_id(app) && crate::contract::valid_id(panel)
-            }) && seen.insert(entry)
-        })
+        && value
+            .iter()
+            .all(|entry| panel_key(entry) && seen.insert(entry))
+}
+
+fn panel_key(entry: &str) -> bool {
+    entry.split_once('/').is_some_and(|(app, panel)| {
+        crate::contract::valid_id(app) && crate::contract::valid_id(panel)
+    })
 }
 
 fn pinned_apps(value: &[String]) -> bool {
@@ -140,6 +153,10 @@ pub async fn update(s: &State, p: &Principal, input: Update) -> ApiResult<Value>
         .pinned_panels
         .as_deref()
         .is_some_and(|panels| !pinned_panels(panels))
+        || input
+            .panel_pin
+            .as_ref()
+            .is_some_and(|pin| !panel_key(&pin.id) || input.pinned_panels.is_some())
     {
         return Err(ApiError::bad("invalid_pinned_panels"));
     }
@@ -156,6 +173,25 @@ pub async fn update(s: &State, p: &Principal, input: Update) -> ApiResult<Value>
         .bind(&p.id)
         .execute(&mut *tx)
         .await?;
+    let mut panels = input.pinned_panels;
+    if let Some(pin) = input.panel_pin {
+        let mut current: Vec<String> =
+            sqlx::query_scalar("SELECT pinned_panels FROM user_preferences WHERE user_id=$1")
+                .bind(&p.id)
+                .fetch_one(&mut *tx)
+                .await?;
+        if pin.pinned {
+            if !current.contains(&pin.id) {
+                current.push(pin.id);
+            }
+        } else {
+            current.retain(|id| id != &pin.id);
+        }
+        if !pinned_panels(&current) {
+            return Err(ApiError::bad("invalid_pinned_panels"));
+        }
+        panels = Some(current);
+    }
     sqlx::query(
         "UPDATE user_preferences SET theme=COALESCE($2,theme),locale=COALESCE($3,locale),\
          time_zone=COALESCE($4,time_zone),date_format=COALESCE($5,date_format),\
@@ -171,7 +207,7 @@ pub async fn update(s: &State, p: &Principal, input: Update) -> ApiResult<Value>
     .bind(title.is_some())
     .bind(title.flatten())
     .bind(&input.pinned_apps)
-    .bind(&input.pinned_panels)
+    .bind(&panels)
     .execute(&mut *tx)
     .await?;
     let renamed = name.as_ref().is_some_and(|name| *name != old_name);

@@ -495,8 +495,8 @@ impl Auth {
         }
         let session = cookie(headers, &self.cookie_name(purpose, "session"))
             .ok_or_else(ApiError::unauthorized)?;
-        let owner: String = sqlx::query_scalar(
-            "SELECT user_id FROM sessions WHERE id_hash=$1 AND browser_purpose=$2",
+        let (owner, issuer): (String, Option<String>) = sqlx::query_as(
+            "SELECT user_id,impersonator_user_id FROM sessions WHERE id_hash=$1 AND browser_purpose=$2",
         )
         .bind(hash(&session))
         .bind(purpose.as_str())
@@ -504,30 +504,28 @@ impl Auth {
         .await?
         .ok_or_else(ApiError::unauthorized)?;
         let mut tx = state.pool.begin().await?;
-        let enabled: Option<bool> =
-            sqlx::query_scalar("SELECT enabled FROM users WHERE id=$1 FOR SHARE")
-                .bind(&owner)
-                .fetch_optional(&mut *tx)
-                .await?;
-        if enabled != Some(true) || crate::accounts::reset_pending(&mut tx, &owner).await? {
+        let (enabled, issuer_allowed) = if let Some(issuer) = &issuer {
+            crate::user_switch::lock_users(&mut tx, &owner, issuer).await?
+        } else {
+            let enabled: Option<bool> =
+                sqlx::query_scalar("SELECT enabled FROM users WHERE id=$1 FOR SHARE")
+                    .bind(&owner)
+                    .fetch_optional(&mut *tx)
+                    .await?;
+            (enabled, true)
+        };
+        if enabled != Some(true)
+            || !issuer_allowed
+            || crate::accounts::reset_pending(&mut tx, &owner).await?
+        {
             return Err(ApiError::unauthorized());
         }
         let row=sqlx::query("SELECT * FROM sessions WHERE id_hash=$1 AND browser_purpose=$2 AND created_at>now()-interval '8 hours' FOR UPDATE")
             .bind(hash(&session)).bind(purpose.as_str()).fetch_optional(&mut *tx).await?.ok_or_else(ApiError::unauthorized)?;
         let id: String = row.get("user_id");
-        if let Some(admin) = row.get::<Option<String>, _>("impersonator_user_id") {
-            // A switched session (user_switch) holds no identity provider
-            // tokens; it lives while the administrator who started it is an
-            // enabled administrator.
-            let allowed: Option<bool> =
-                sqlx::query_scalar("SELECT enabled AND admin FROM users WHERE id=$1 FOR SHARE")
-                    .bind(&admin)
-                    .fetch_optional(&mut *tx)
-                    .await?;
-            if allowed != Some(true) {
-                return Err(ApiError::unauthorized());
-            }
-        } else {
+        // A switched session holds no identity provider tokens. Both users
+        // were checked and locked before the session row above.
+        if issuer.is_none() {
             let mut access = decrypt(row.get("access_token"))?;
             if row.get::<chrono::DateTime<Utc>, _>("expires_at") < Utc::now() + Duration::seconds(5)
             {

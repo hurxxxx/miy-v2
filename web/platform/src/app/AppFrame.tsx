@@ -59,7 +59,7 @@ export function AppFrame({
   basePath: string;
   csrf: string;
   input: React.MutableRefObject<FrameInput>;
-  onReleaseChanged: () => void;
+  onReleaseChanged?: () => void;
   /** Present for a side panel: its own location instead of the portal router's. */
   panel?: PanelRouting;
 }) {
@@ -89,6 +89,13 @@ export function AppFrame({
   // A new launch for each run: new frame, new code, state unknown until reported.
   useEffect(() => {
     let active = true;
+    let frameId: string | undefined;
+    const close = (id: string) => {
+      void request<void>(`/api/v1/app-frames/${id}`, csrf, {
+        method: "DELETE",
+        keepalive: true,
+      }).catch(() => undefined);
+    };
     ready.current = false;
     input.current = { state: "unknown" };
     setLaunch(undefined);
@@ -98,7 +105,10 @@ export function AppFrame({
       body: JSON.stringify({ installationId: app.id }),
     })
       .then((value) => {
-        if (active) setLaunch(value);
+        if (active) {
+          frameId = value.frameId;
+          setLaunch(value);
+        } else close(value.frameId);
       })
       .catch((error: Error) => {
         if (!active) return;
@@ -108,6 +118,7 @@ export function AppFrame({
       });
     return () => {
       active = false;
+      if (frameId) close(frameId);
     };
   }, [app.id, csrf, run, input]);
 
@@ -195,7 +206,8 @@ export function AppFrame({
             .catch(() => reply({ type: "token.failed", payload: { reason: "token_renewal_unavailable" } }));
           break;
         case "release.changed":
-          onReleaseChanged();
+          if (onReleaseChanged) onReleaseChanged();
+          else setFailure("release_changed_reload_required");
           break;
         case "frame.relaunch":
           // A bridge message is not consent to discard dirty or unknown input.
@@ -240,7 +252,7 @@ export function AppFrame({
                   ? "appFrame.sessionEnded"
                   : failure === "frame_access_denied"
                     ? "appFrame.accessDenied"
-                    : failure === "frame_reload_required"
+                    : failure === "frame_reload_required" || failure === "release_changed_reload_required"
                       ? "appFrame.reloadRequired"
                       : "appFrame.failed",
               )}

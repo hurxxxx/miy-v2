@@ -46,28 +46,26 @@ fn query(value: Option<&str>) -> ApiResult<String> {
 }
 
 /// Keep only what the search contract allows; the portal renders text only.
-fn items(value: &Value, limit: usize) -> Vec<SearchItem> {
-    value["items"]
-        .as_array()
-        .map(|items| {
-            items
-                .iter()
-                .filter_map(|item| {
-                    Some(SearchItem {
-                        title: text(&item["title"], 120)?,
-                        snippet: text(&item["snippet"], 240),
-                        path: app_path(&item["path"]),
-                        at: item["at"]
-                            .as_str()
-                            .and_then(|at| DateTime::parse_from_rfc3339(at).ok())
-                            .map(|at| at.with_timezone(&Utc)),
-                        kind: text(&item["kind"], 40),
-                    })
+fn items(value: &Value, limit: usize) -> Option<Vec<SearchItem>> {
+    let items = value.get("items")?.as_array()?;
+    Some(
+        items
+            .iter()
+            .filter_map(|item| {
+                Some(SearchItem {
+                    title: text(&item["title"], 120)?,
+                    snippet: text(&item["snippet"], 240),
+                    path: app_path(&item["path"]),
+                    at: item["at"]
+                        .as_str()
+                        .and_then(|at| DateTime::parse_from_rfc3339(at).ok())
+                        .map(|at| at.with_timezone(&Utc)),
+                    kind: text(&item["kind"], 40),
                 })
-                .take(limit)
-                .collect()
-        })
-        .unwrap_or_default()
+            })
+            .take(limit)
+            .collect(),
+    )
 }
 
 pub async fn search(
@@ -122,7 +120,10 @@ pub async fn search(
                 items,
             };
             match answer {
-                Ok(value) => Some(group("ok", items(&value, limit))),
+                Ok(value) => Some(match items(&value, limit) {
+                    Some(items) => group("ok", items),
+                    None => group("unavailable", Vec::new()),
+                }),
                 // Lost access between the list and the call: nothing at all.
                 Err(Failure::Denied | Failure::NotDeclared) => None,
                 Err(Failure::Unavailable) => Some(group("unavailable", Vec::new())),
@@ -156,7 +157,8 @@ mod tests {
                 {"title": "c"}, {"title": "d"}
             ]}),
             3,
-        );
+        )
+        .unwrap();
         assert_eq!(items.len(), 3);
         assert_eq!(items[0].kind.as_deref(), Some("일정"));
         assert_eq!(
@@ -165,5 +167,12 @@ mod tests {
         );
         assert_eq!(items[1].title, "외부");
         assert_eq!(items[1].path, None);
+    }
+
+    #[test]
+    fn malformed_answers_are_distinct_from_no_matches() {
+        assert!(super::items(&json!({}), 5).is_none());
+        assert!(super::items(&json!({ "items": null }), 5).is_none());
+        assert!(super::items(&json!({ "items": [] }), 5).unwrap().is_empty());
     }
 }

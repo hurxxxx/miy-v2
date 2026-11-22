@@ -32,7 +32,9 @@ pub(crate) fn app_path(value: &Value) -> Option<String> {
         && !path.starts_with("//")
         && path.len() <= 1024
         && !path.contains('\\')
-        && !path.chars().any(char::is_control))
+        && !path.chars().any(char::is_control)
+        && url::Url::parse(&format!("https://miy.invalid/app{path}"))
+            .is_ok_and(|url| url.path().starts_with("/app/")))
     .then(|| path.to_owned())
 }
 
@@ -114,13 +116,15 @@ pub async fn cards(
                 items,
             };
             match answer {
-                Ok(value) => {
+                Ok(value) if value["items"].is_array() => {
                     let (title, count, items) = card(&value);
                     Some(base("ok", title, count, items))
                 }
                 // Lost access between the list and the call: no card at all.
                 Err(Failure::Denied | Failure::NotDeclared) => None,
-                Err(Failure::Unavailable) => Some(base("unavailable", None, None, Vec::new())),
+                Ok(_) | Err(Failure::Unavailable) => {
+                    Some(base("unavailable", None, None, Vec::new()))
+                }
             }
         })
         .collect();

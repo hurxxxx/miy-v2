@@ -1,7 +1,7 @@
 import { browserUser, defaultPreferences, mockSurface } from "./browser-surface";
 import { test, expect, type Page, type Route } from "@playwright/test";
 import type { Installation } from "../packages/sdk/src/index";
-import { mockFrames } from "./frame-mock";
+import { mockFrames, type FrameApi } from "./frame-mock";
 
 // M5 in the portal: side panels (a secondary app frame with its own location)
 // and the home's summary cards. Mocked API and frames: presentation only. The
@@ -33,9 +33,14 @@ const ledger: Installation = {
   panels: [],
 } as Installation;
 
-async function open(page: Page, options: { cards?: unknown } = {}) {
+async function open(page: Page, options: {
+  cards?: unknown;
+  frameApi?: FrameApi;
+  installations?: () => Installation[];
+  pins?: string[];
+} = {}) {
   await mockSurface(page, "portal");
-  let preferences = { ...defaultPreferences };
+  let preferences = { ...defaultPreferences, pinnedPanels: options.pins ?? [] };
   const patches: unknown[] = [];
   const launches: URLSearchParams[] = [];
   page.on("request", (request) => {
@@ -47,18 +52,20 @@ async function open(page: Page, options: { cards?: unknown } = {}) {
     if (path === "/api/v1/me")
       return route.fulfill({ json: browserUser(route, { id: "u", name: "패널 사용자", admin: false, csrf: "p-csrf", preferences }) });
     if (path === "/api/v1/me/preferences" && request.method() === "PATCH") {
-      const body = request.postDataJSON() as { pinnedPanels: string[] };
+      const body = request.postDataJSON() as { panelPin: { id: string; pinned: boolean } };
       patches.push({ body, csrf: request.headers()["x-miy-csrf"] ?? null });
-      preferences = { ...preferences, pinnedPanels: body.pinnedPanels };
+      const pins = preferences.pinnedPanels.filter((id) => id !== body.panelPin.id);
+      if (body.panelPin.pinned) pins.push(body.panelPin.id);
+      preferences = { ...preferences, pinnedPanels: pins };
       return route.fulfill({ json: { name: "패널 사용자", preferences } });
     }
-    if (path === "/api/v1/installations") return route.fulfill({ json: [planner, ledger] });
+    if (path === "/api/v1/installations") return route.fulfill({ json: options.installations?.() ?? [planner, ledger] });
     if (path === "/api/v1/home/cards") return route.fulfill({ json: options.cards ?? { cards: [] } });
     if (path === "/api/v1/notifications/unread-count") return route.fulfill({ json: { unread: 0 } });
     if (path === "/api/v1/launcher/categories") return route.fulfill({ json: { categories: [] } });
     await route.fulfill({ status: 404, json: { error: { code: "not_found" } } });
   });
-  await mockFrames(page, () => [planner, ledger], () => ({ json: { title: "저장된 제목" } }));
+  await mockFrames(page, () => [planner, ledger], options.frameApi ?? (() => ({ json: { title: "저장된 제목" } })));
   return { patches, launches };
 }
 
@@ -99,7 +106,7 @@ test("pinning a panel saves the preference and shows it in the header", async ({
   await page.goto("/environments/prod");
   await page.getByRole("button", { name: "보조 패널" }).click();
   await page.getByRole("button", { name: "메모 고정", exact: true }).click();
-  await expect.poll(() => patches).toEqual([{ body: { pinnedPanels: ["planner/memos"] }, csrf: "p-csrf" }]);
+  await expect.poll(() => patches).toEqual([{ body: { panelPin: { id: "planner/memos", pinned: true } }, csrf: "p-csrf" }]);
   const chip = page.locator(".panel-chip", { hasText: "메모" });
   await expect(chip).toBeVisible();
   await expect(page.getByRole("button", { name: "메모 고정 해제" })).toHaveAttribute("aria-pressed", "true");
@@ -107,6 +114,17 @@ test("pinning a panel saves the preference and shows it in the header", async ({
   await chip.click();
   await expect(page.getByRole("complementary", { name: "메모 패널" })).toBeVisible();
   await expect(chip).toHaveAttribute("aria-pressed", "true");
+});
+
+test("a pin for a panel outside this portal can be removed", async ({ page }) => {
+  const { patches } = await open(page, { pins: ["other/panel"] });
+  await page.goto("/environments/prod");
+  await page.getByRole("button", { name: "보조 패널" }).click();
+  const unpin = page.getByRole("button", { name: "other/panel 고정 해제" });
+  await expect(unpin).toBeVisible();
+  await unpin.click();
+  await expect.poll(() => patches).toEqual([{ body: { panelPin: { id: "other/panel", pinned: false } }, csrf: "p-csrf" }]);
+  await expect(unpin).toHaveCount(0);
 });
 
 test("unsaved input in a panel is confirmed before it closes", async ({ page }) => {
@@ -126,6 +144,63 @@ test("unsaved input in a panel is confirmed before it closes", async ({ page }) 
   await expect(input).toHaveValue("미저장 제목");
   page.once("dialog", (dialog) => dialog.accept());
   await page.getByRole("button", { name: "패널 닫기" }).click();
+  await expect(page.locator("iframe.app-frame-panel")).toHaveCount(0);
+});
+
+test("a release change preserves the panel draft until an explicit reopen", async ({ page }) => {
+  await page.setViewportSize({ width: 1400, height: 900 });
+  const { launches } = await open(page, {
+    frameApi: (_app, _path, method) => method === "GET"
+      ? { json: { title: "저장된 제목" } }
+      : { status: 409, json: { error: { code: "release_changed_reload_required" } } },
+  });
+  await page.goto("/environments/prod");
+  await page.getByRole("button", { name: "보조 패널" }).click();
+  await page.getByRole("button", { name: "할 일 플래너", exact: true }).click();
+  const frame = page.frameLocator("iframe.app-frame-panel");
+  const input = frame.getByLabel("문서 제목");
+  await expect(input).toHaveValue("저장된 제목");
+  await input.fill("미저장 패널 제목");
+  await frame.getByRole("button", { name: "저장", exact: true }).click();
+  const reopen = page.getByRole("button", { name: "다시 열기", exact: true });
+  await expect(reopen).toBeVisible();
+  await expect(input).toHaveValue("미저장 패널 제목");
+  expect(launches).toHaveLength(1);
+  page.once("dialog", (dialog) => dialog.dismiss());
+  await reopen.click();
+  await expect(input).toHaveValue("미저장 패널 제목");
+  page.once("dialog", (dialog) => dialog.accept());
+  await reopen.click();
+  await expect(input).toHaveValue("저장된 제목");
+  expect(launches).toHaveLength(2);
+});
+
+test("promoting a panel closes it only when the main frame accepts navigation", async ({ page }) => {
+  await page.setViewportSize({ width: 1400, height: 900 });
+  await open(page);
+  await page.goto("/environments/prod/apps/ledger/reports");
+  const main = page.frameLocator("iframe.app-frame:not(.app-frame-panel)").getByLabel("문서 제목");
+  await expect(main).toHaveValue("저장된 제목");
+  await page.getByRole("button", { name: "보조 패널" }).click();
+  await page.getByRole("button", { name: "할 일 플래너", exact: true }).click();
+  const panel = page.frameLocator("iframe.app-frame-panel").getByLabel("문서 제목");
+  await expect(panel).toHaveValue("저장된 제목");
+  await main.fill("미저장 주 화면 제목");
+  await panel.fill("미저장 패널 제목");
+  let confirmations = 0;
+  const declineMain = async (dialog: import("@playwright/test").Dialog) => {
+    if (++confirmations === 1) await dialog.accept();
+    else await dialog.dismiss();
+  };
+  page.on("dialog", declineMain);
+  await page.getByRole("button", { name: "앱에서 열기", exact: true }).click();
+  await expect.poll(() => confirmations).toBe(2);
+  page.off("dialog", declineMain);
+  await expect(page).toHaveURL(/\/apps\/ledger\/reports$/);
+  await expect(panel).toHaveValue("미저장 패널 제목");
+  page.on("dialog", (dialog) => dialog.accept());
+  await page.getByRole("button", { name: "앱에서 열기", exact: true }).click();
+  await expect(page).toHaveURL(/\/apps\/planner\/widgets\/todos$/);
   await expect(page.locator("iframe.app-frame-panel")).toHaveCount(0);
 });
 
@@ -170,4 +245,25 @@ test("the home shows summary cards as text and marks an app that did not answer"
   await expect(cards.getByText("가져오지 못함")).toBeVisible();
   await cards.getByRole("link", { name: /주간 회의/ }).click();
   await expect(page).toHaveURL(/\/environments\/prod\/apps\/planner\/calendar\?date=2026-11-22$/);
+});
+
+test("an installation removed from the portal no longer displays its cached home card", async ({ page }) => {
+  let apps = [planner, ledger];
+  await open(page, {
+    installations: () => apps,
+    cards: { cards: [{
+      installationId: planner.id,
+      appId: planner.appId,
+      appName: planner.name,
+      status: "ok",
+      title: "오늘 일정",
+      count: 1,
+      items: [{ title: "주간 회의" }],
+    }] },
+  });
+  await page.goto("/environments/prod");
+  await expect(page.getByText("주간 회의")).toBeVisible();
+  apps = [ledger];
+  await expect(page.getByText("주간 회의")).toHaveCount(0);
+  await expect(page.getByRole("main").getByText("장부", { exact: true })).toBeVisible();
 });

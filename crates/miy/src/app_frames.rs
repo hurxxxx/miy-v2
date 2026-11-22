@@ -286,6 +286,44 @@ fn parent(origin: Option<&crate::app_calls::Origin>) -> ApiResult<Parent> {
     }
 }
 
+/// Lock the user and live parent before touching rows that cascade from the parent.
+async fn lock_parent(
+    tx: &mut sqlx::PgConnection,
+    user: &str,
+    purpose: &str,
+    parent: &Parent,
+    allow_development: bool,
+) -> ApiResult<DateTime<Utc>> {
+    let enabled: Option<bool> =
+        sqlx::query_scalar("SELECT enabled FROM users WHERE id=$1 FOR SHARE")
+            .bind(user)
+            .fetch_optional(&mut *tx)
+            .await?;
+    if enabled != Some(true) {
+        return Err(ApiError::unauthorized());
+    }
+    let deadline: Option<DateTime<Utc>> = sqlx::query_scalar(concat!(
+        "SELECT COALESCE(\
+            (SELECT s.created_at+interval '8 hours' FROM sessions s \
+             WHERE s.id_hash=$2 AND s.user_id=$1 AND s.browser_purpose=$4 \
+             AND NOT EXISTS(SELECT 1 FROM password_resets r WHERE r.user_id=s.user_id) AND ",
+        crate::user_switch::issuer_current_sql!(),
+        " FOR KEY SHARE OF s), \
+            CASE WHEN $5 THEN (SELECT d.expires_at FROM development_sessions d \
+             WHERE d.id_hash=$3 AND d.user_id=$1 AND d.browser_purpose=$4 FOR KEY SHARE OF d) END)",
+    ))
+    .bind(user)
+    .bind(&parent.session)
+    .bind(&parent.development)
+    .bind(purpose)
+    .bind(allow_development)
+    .fetch_one(&mut *tx)
+    .await?;
+    deadline
+        .filter(|deadline| *deadline > Utc::now())
+        .ok_or_else(ApiError::unauthorized)
+}
+
 /// A portal session (not a bearer) of the portal for the installation's environment.
 fn portal_purpose(p: &Principal) -> ApiResult<BrowserPurpose> {
     match p.browser_purpose {
@@ -331,6 +369,14 @@ pub async fn launch_code(
         .ok_or_else(ApiError::forbidden)?
         .to_owned();
     let mut tx = policy::Write::begin(&s.pool).await?;
+    lock_parent(
+        &mut tx,
+        &p.id,
+        purpose.as_str(),
+        &parent,
+        s.auth.development_login,
+    )
+    .await?;
     let inst = sqlx::query(
         "SELECT i.app_id,i.environment,i.release_id,i.runtime_status,i.desired_state,r.image_id IS NULL AS fixture FROM installations i JOIN releases r ON r.id=i.release_id WHERE i.id=$1 FOR SHARE OF i",
     )
@@ -399,6 +445,14 @@ pub async fn renew_code(
         .ok_or_else(ApiError::forbidden)?
         .to_owned();
     let mut tx = policy::Write::begin(&s.pool).await?;
+    lock_parent(
+        &mut tx,
+        &p.id,
+        purpose.as_str(),
+        &parent,
+        s.auth.development_login,
+    )
+    .await?;
     let frame = sqlx::query(
         "SELECT f.installation_id,f.release_id,f.environment,i.app_id,i.release_id AS current_release FROM app_frame_sessions f JOIN installations i ON i.id=f.installation_id WHERE f.id=$1 AND f.user_id=$2 AND f.browser_purpose=$3 AND f.parent_session_hash IS NOT DISTINCT FROM $4 AND f.parent_development_hash IS NOT DISTINCT FROM $5 AND f.revoked_at IS NULL AND f.expires_at>clock_timestamp() FOR SHARE OF f",
     )
@@ -437,6 +491,54 @@ pub async fn renew_code(
         .commit()
         .await?;
     Ok(Json(AppFrameRenewal { code, expires_at }))
+}
+
+async fn lock_frame_slots(tx: &mut sqlx::PgConnection, user_id: &str) -> Result<(), sqlx::Error> {
+    sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended('app-frame-slots:' || $1,0))")
+        .bind(user_id)
+        .execute(tx)
+        .await?;
+    Ok(())
+}
+
+/// Release a frame slot and cancel a pending launch owned by this portal session.
+pub async fn close(
+    S(s): S<State>,
+    axum::Extension(p): axum::Extension<Principal>,
+    origin: Option<axum::Extension<crate::app_calls::Origin>>,
+    Path(id): Path<Uuid>,
+) -> ApiResult<StatusCode> {
+    let purpose = portal_purpose(&p)?;
+    let parent = parent(origin.as_ref().map(|o| &o.0))?;
+    let mut tx = s.pool.begin().await?;
+    lock_frame_slots(&mut tx, &p.id).await?;
+    sqlx::query(
+        "DELETE FROM app_frame_codes WHERE frame_id=$1 AND user_id=$2 AND browser_purpose=$3 \
+         AND purpose='launch' AND parent_session_hash IS NOT DISTINCT FROM $4 \
+         AND parent_development_hash IS NOT DISTINCT FROM $5",
+    )
+    .bind(id)
+    .bind(&p.id)
+    .bind(purpose.as_str())
+    .bind(&parent.session)
+    .bind(&parent.development)
+    .execute(&mut *tx)
+    .await?;
+    sqlx::query(
+        "UPDATE app_frame_sessions SET revoked_at=clock_timestamp() \
+         WHERE id=$1 AND user_id=$2 AND browser_purpose=$3 AND revoked_at IS NULL \
+         AND parent_session_hash IS NOT DISTINCT FROM $4 \
+         AND parent_development_hash IS NOT DISTINCT FROM $5",
+    )
+    .bind(id)
+    .bind(&p.id)
+    .bind(purpose.as_str())
+    .bind(&parent.session)
+    .bind(&parent.development)
+    .execute(&mut *tx)
+    .await?;
+    tx.commit().await?;
+    Ok(StatusCode::NO_CONTENT)
 }
 
 /// The frame listener. No cookies, no shared browser routes, no anti-frame
@@ -760,7 +862,15 @@ impl Frame {
 /// Whether the frame's parent portal session is still signed in (logout and a
 /// disabled user delete it; frame rows cascade). Identity provider revocation is
 /// enforced when the portal renews the short frame token.
-pub const PARENT_LIVE: &str = "EXISTS(SELECT 1 FROM users u WHERE u.id=f.user_id AND u.enabled) AND (EXISTS(SELECT 1 FROM sessions s WHERE s.id_hash=f.parent_session_hash AND s.user_id=f.user_id AND s.browser_purpose=f.browser_purpose AND s.created_at>clock_timestamp()-interval '8 hours' AND NOT EXISTS(SELECT 1 FROM password_resets r WHERE r.user_id=s.user_id)) OR ($1::boolean AND EXISTS(SELECT 1 FROM development_sessions d WHERE d.id_hash=f.parent_development_hash AND d.user_id=f.user_id AND d.browser_purpose=f.browser_purpose AND d.expires_at>clock_timestamp())))";
+pub const PARENT_LIVE: &str = concat!(
+    "EXISTS(SELECT 1 FROM users u WHERE u.id=f.user_id AND u.enabled) ",
+    "AND (EXISTS(SELECT 1 FROM sessions s WHERE s.id_hash=f.parent_session_hash AND s.user_id=f.user_id ",
+    "AND s.browser_purpose=f.browser_purpose AND s.created_at>clock_timestamp()-interval '8 hours' ",
+    "AND NOT EXISTS(SELECT 1 FROM password_resets r WHERE r.user_id=s.user_id) AND ",
+    crate::user_switch::issuer_current_sql!(),
+    ") OR ($1::boolean AND EXISTS(SELECT 1 FROM development_sessions d WHERE d.id_hash=f.parent_development_hash ",
+    "AND d.user_id=f.user_id AND d.browser_purpose=f.browser_purpose AND d.expires_at>clock_timestamp())))"
+);
 
 fn principal(user: String, purpose: &str, development: bool) -> ApiResult<Principal> {
     let browser_purpose = match purpose {
@@ -1246,30 +1356,28 @@ async fn open_frame(
     }
     let user: String = row.get("user_id");
     let purpose: String = row.get("browser_purpose");
-    let session: Option<String> = row.get("parent_session_hash");
-    let development: Option<String> = row.get("parent_development_hash");
+    let parent = Parent {
+        session: row.get("parent_session_hash"),
+        development: row.get("parent_development_hash"),
+    };
     let release: Uuid = row.get("release_id");
-    let p = principal(user.clone(), &purpose, development.is_some())?;
+    let p = principal(user.clone(), &purpose, parent.development.is_some())?;
     let mut tx = policy::Write::begin(&s.pool).await?;
-    // The parent's absolute end bounds the frame: 8 hours after an OIDC session
-    // was created, or a development session's own expiry.
-    let deadline: Option<DateTime<Utc>> = sqlx::query_scalar(
-        "SELECT COALESCE( \
-            (SELECT LEAST(clock_timestamp()+interval '8 hours', s.created_at+interval '8 hours') FROM sessions s WHERE s.id_hash=$2 AND s.user_id=$1 AND s.browser_purpose=$4 AND NOT EXISTS(SELECT 1 FROM password_resets r WHERE r.user_id=s.user_id)), \
-            CASE WHEN $5 THEN (SELECT LEAST(clock_timestamp()+interval '8 hours', d.expires_at) FROM development_sessions d WHERE d.id_hash=$3 AND d.user_id=$1 AND d.browser_purpose=$4) END \
-         ) FROM users u WHERE u.id=$1 AND u.enabled",
+    lock_frame_slots(&mut tx, &user).await?;
+    let still_opening: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM app_frame_codes WHERE code_hash=$1 AND expires_at>clock_timestamp())",
     )
-    .bind(&user)
-    .bind(&session)
-    .bind(&development)
-    .bind(&purpose)
-    .bind(s.auth.development_login)
-    .fetch_optional(&mut *tx)
-    .await?
-    .flatten();
-    let deadline = deadline
-        .filter(|d| *d > Utc::now())
-        .ok_or_else(ApiError::unauthorized)?;
+    .bind(hash(code))
+    .fetch_one(&mut *tx)
+    .await?;
+    if !still_opening {
+        return Err(ApiError::unauthorized());
+    }
+    // The parent's absolute end bounds the frame; a frame is never extended
+    // past its own maximum lifetime even if the parent expiry is further out.
+    let deadline = lock_parent(&mut tx, &user, &purpose, &parent, s.auth.development_login)
+        .await?
+        .min(Utc::now() + Duration::hours(8));
     let inst = sqlx::query(
         "SELECT i.app_id,i.environment,i.release_id,i.runtime_status,i.desired_state,r.image_id IS NULL AS fixture,r.manifest->'ui' AS ui,(SELECT b.bundle_version FROM app_builds b WHERE b.app_id=i.app_id AND b.image_id=r.image_id AND b.status='succeeded' ORDER BY b.finished_at DESC NULLS LAST LIMIT 1) AS bundle_version FROM installations i JOIN releases r ON r.id=i.release_id WHERE i.id=$1 FOR SHARE OF i",
     )
@@ -1292,7 +1400,7 @@ async fn open_frame(
     sqlx::query(
         "UPDATE app_frame_sessions SET revoked_at=clock_timestamp() WHERE id IN (\
          SELECT id FROM app_frame_sessions WHERE user_id=$1 AND revoked_at IS NULL \
-         AND expires_at>clock_timestamp() ORDER BY created_at DESC OFFSET $2)",
+         AND expires_at>clock_timestamp() ORDER BY created_at DESC,id DESC OFFSET $2)",
     )
     .bind(&user)
     .bind(MAX_LIVE_FRAMES - 1)
@@ -1305,8 +1413,8 @@ async fn open_frame(
     )
     .bind(id)
     .bind(&user)
-    .bind(&session)
-    .bind(&development)
+    .bind(&parent.session)
+    .bind(&parent.development)
     .bind(&purpose)
     .bind(site.installation_id)
     .bind(release)

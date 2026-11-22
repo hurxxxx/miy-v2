@@ -265,6 +265,7 @@ function SignedInLayout({ user, environment }: { user: User; environment: Enviro
   );
   const [openPanel, setOpenPanel] = useState<OpenPanel | null>(null);
   const [panelSaving, setPanelSaving] = useState(false);
+  const [panelPinFailed, setPanelPinFailed] = useState(false);
   const panelInput = useRef<FrameInput>({ state: "unknown" });
   const mayLeavePanel = () => {
     const message = openPanel ? leaveMessage(panelInput.current) : undefined;
@@ -282,26 +283,25 @@ function SignedInLayout({ user, environment }: { user: User; environment: Enviro
   const closePanel = (force?: boolean) => {
     if (force || mayLeavePanel()) setOpenPanel(null);
   };
-  // A panel whose app or panel is no longer listed closes (removed, or use lost).
+  // Unavailable installations cannot stay open. A new release removing the
+  // panel declaration must leave an already opened document and its draft intact.
   useEffect(() => {
-    if (openPanel && installations.items !== null && !panels.some((open) => open.app.id === openPanel.app.id && open.panel.id === openPanel.panel.id))
+    if (openPanel && installations.items !== null && !apps.some((app) => app.id === openPanel.app.id))
       setOpenPanel(null);
-  }, [installations.items, openPanel, panels]);
-  const togglePanelPin = async (open: OpenPanel) => {
-    const id = panelKey(open);
-    const pinned = user.preferences?.pinnedPanels ?? [];
-    const next = pinned.includes(id) ? pinned.filter((value) => value !== id) : [...pinned, id];
+  }, [installations.items, openPanel, apps]);
+  const setPanelPin = async (id: string, pinned: boolean) => {
     setPanelSaving(true);
+    setPanelPinFailed(false);
     try {
       updateUser(
         await request<{ name: string; preferences: Preferences }>("/api/v1/me/preferences", user.csrf, {
           method: "PATCH",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ pinnedPanels: next }),
+          body: JSON.stringify({ panelPin: { id, pinned } }),
         }),
       );
     } catch {
-      /* the pin stays as it was */
+      setPanelPinFailed(true);
     } finally {
       setPanelSaving(false);
     }
@@ -470,8 +470,9 @@ function SignedInLayout({ user, environment }: { user: User; environment: Enviro
                 pinned={user.preferences?.pinnedPanels ?? []}
                 current={openPanel ? panelKey(openPanel) : null}
                 saving={panelSaving}
+                failed={panelPinFailed}
                 onOpen={showPanel}
-                onTogglePin={(open) => void togglePanelPin(open)}
+                onSetPin={(id, pinned) => void setPanelPin(id, pinned)}
               />
             )}
             <NotificationBell

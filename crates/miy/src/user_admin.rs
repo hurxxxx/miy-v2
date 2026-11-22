@@ -138,6 +138,9 @@ pub async fn update(s: &State, p: &Principal, id: &str, input: Update) -> ApiRes
     .bind(input.can_develop)
     .fetch_one(&mut *tx)
     .await?;
+    if input.admin == Some(false) && was_admin {
+        crate::user_switch::revoke_for_user(&mut tx, id, false).await?;
+    }
     for (role, before, after) in [
         ("admin", was_admin, input.admin),
         ("developer", was_developer, input.can_develop),
