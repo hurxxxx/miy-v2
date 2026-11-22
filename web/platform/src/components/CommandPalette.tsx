@@ -45,16 +45,25 @@ export function CommandPalette({
   open,
   onOpenChange,
   commands,
+  onSearch,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   commands: Command[];
+  /** Business portals: the typed text can also go to the integrated search (M12). */
+  onSearch?: (query: string) => void;
 }) {
   const { t } = useTranslation("portal");
   const [query, setQuery] = useState("");
   const [active, setActive] = useState(0);
   const input = useRef<HTMLInputElement>(null);
-  const shown = useMemo(() => commands.filter((command) => matches(command, query)), [commands, query]);
+  const shown = useMemo(() => {
+    const found = commands.filter((command) => matches(command, query));
+    const text = query.trim();
+    return onSearch && text
+      ? [...found, { id: "search-apps", label: t("commandPalette.searchApps", { query: text }), run: () => onSearch(text) }]
+      : found;
+  }, [commands, query, onSearch, t]);
   useEffect(() => {
     if (!open) return;
     setQuery("");

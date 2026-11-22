@@ -23,6 +23,7 @@ import sys
 REASONS = {
     "support-intake": "explicit anonymous report intake; bounded unverified data, no authenticated authority or identity",
     "account-link": "completes an administrator's one-time link without a session; the transaction re-checks the link and that its issuer is still an enabled administrator",
+    "user-switch": "exchanges an administrator's one-time switch code without a session; the transaction consumes the code and re-checks that the target is enabled and its issuer is still an enabled administrator (the issue itself is a decided policy::Write)",
     "identity": "signs a user in or issues a session; identity, not an app decision",
     "own": "reduces the caller's own credential or lease; the owner condition is in the statement",
     "snapshot": "read-only snapshot transaction",
@@ -39,6 +40,7 @@ TRANSACTIONS = {
     ("accounts.rs", "change_password"): "account-link",
     ("accounts.rs", "finish_reset"): "identity",
     ("auth.rs", "callback"): "identity",
+    ("user_switch.rs", "exchange"): "user-switch",
     ("auth.rs", "development_session"): "identity",
     ("auth.rs", "session"): "identity",
     ("auth_sessions.rs", "approve"): "identity",

@@ -42,7 +42,7 @@ AB ID는 참조를 유지한다. 이전 iframe 설계나 보안 후보의 검사
 | AB-07 | 앱 데이터·게시 번들 바이트 보존. 개발 단계의 API/CLI 변경은 새 버전으로 끊을 수 있고 재로그인 허용 | 적용 SQL·게시물 보존, legacy 로그인 종료. 현재 schema·게시 출처는 운영 안내와 CLI 릴리스에서 관리 |
 | AB-08 | 현재 필수·후속 권장·잔여 한계·구현 사실·역사 증거 구분. 문서당 담당 주제 하나 | 문서 정리 범위 |
 
-계획된 변경(미구현): 사용자 전환(관리자가 콘솔에서 그 사용자로 로그인, 결과는 그 사용자의 일반 portal 세션)을 AB-05의 명시적 예외로 추가한다. 구현 전에 이 표·자격증명 표·경계 인수(BV-06)를 개정한다([범용 기능 계획 M6](COMMON-FEATURES-PLAN.md#m6-사용자-전환)).
+AB-05의 명시적 예외: 사용자 전환(M6, 소스 반영·미배포). 콘솔 관리자가 그 사용자로 로그인하면 결과는 그 사용자의 일반 portal 또는 dev_portal 세션이다. 콘솔이 발급한 1회용 코드를 대상 포털의 `POST /auth/switch`가 정확한 콘솔 Origin의 문서 이동에서만 받는다. 관리 감사에 시작 기록을 남기고 세션은 시작한 관리자와 함께 끝난다(자격증명 표, BV-06, [코어 권한의 사용자 전환](CORE-PERMISSIONS.md#확정-권한-행렬)).
 
 ## 변경 전과 현행 구현의 차이
 
@@ -186,11 +186,12 @@ flowchart LR
 | CLI bearer | 기존 사용자 scope·앱·환경·action | device 승인만 콘솔로. device 시작·poll/refresh·수명 유지. legacy 시작·승인·교환은 410 `cli_upgrade_required`, 발급된 legacy 토큰은 만료까지 유지 |
 | 사용자 위임 | 현재 권한과 지정 대상·action·기간의 교집합 | 기존 계약 유지, 확대·재위임 금지 |
 | miy_call_ | 원래 사용자·설치 승인 체인을 보존한 backend 호출. 승인된 `platform:notifications:write`로 그 요청 안의 알림 발행·회수·본인 읽음 처리 | 기존 계약 유지, 브라우저 앱 신원 증명에 사용하지 않음. 알림 수신자는 코어가 같은 환경의 use 판정으로 거른다([코어 권한](CORE-PERMISSIONS.md#플랫폼-알림과-플랫폼--앱-호출)) |
+| 사용자 전환 코드 | 콘솔 관리자가 발급한 60초 1회용 코드. 대상 포털의 `POST /auth/switch`에서 그 사용자의 portal/dev_portal 세션 하나로 교환 | 정확한 콘솔 Origin·문서 이동만, 발급한 용도의 포털에서만. 교환 때 대상 활성·관리자 활성·관리 권한을 다시 확인. 만든 세션은 시작한 관리자를 기록하고 그 관리자가 중지·강등되면 끝남 |
 | 플랫폼 → 앱 호출 | 포털 사용자 요청에서 코어가 앱의 manifest 선언 경로(`platformEndpoints`)를 읽기 전용으로 호출 | 그 사용자의 포털 환경 use 판정 뒤에만. 서명 신원은 `admin=false`·`platform=true`. 응답은 텍스트로만 표시하고 크기·시간·동시 호출 한도를 둔다 |
 | 서비스 계정(V1-A2) | 후속 기능에서 정할 앱·환경·업무 action | 미구현·기본 거부. 사용자 권한 실패의 대체 수단 아님 |
 | AI 실행 | 소유 사용자 또는 구현된 서비스 주체의 제한 권한 | 기존 위임 재사용. 공급자 API 키를 업무 권한으로 취급하지 않음 |
 
-개인 설정·브라우저 세션 목록(P1)과 알림·플랫폼 → 앱 호출(M2)은 2026-11-22 이 표에 반영했다(소스 단계, 미배포). 프레임 토큰의 실시간 연결과 포털 알림 채널(M4)도 2026-11-22 반영했다(소스 단계). 계획된 변경(미구현, [범용 기능 계획 §8](COMMON-FEATURES-PLAN.md#8-함께-고칠-정본-문서)): 계정 서비스 클라이언트의 사용자 가장 권한(M6)을 이 표에 추가한다. 구현 전까지 위 행이 현행이다.
+개인 설정·브라우저 세션 목록(P1)과 알림·플랫폼 → 앱 호출(M2)은 2026-11-22 이 표에 반영했다(소스 단계, 미배포). 프레임 토큰의 실시간 연결과 포털 알림 채널(M4)도 2026-11-22 반영했다(소스 단계). 사용자 전환 코드(M6)도 2026-11-22 반영했다(소스 단계). 로그인 서버의 사용자 가장 기능은 쓰지 않으므로 계정 서비스 클라이언트의 권한은 그대로다.
 
 기존 Principal·sessions·login_flows는 브라우저 용도 `portal | dev_portal | console`을 구분한다. 로그인 flow의 용도·정확한 callback을 서버 설정에 결합한다. `miy-web` confidential client에는 세 출처의 정확한 callback/logout URI를 등록하고 서버에서 code를 교환한다. 현재 realm·사용자 sub·게시 CLI의 scope/토큰 수명은 유지했다.
 
@@ -286,7 +287,7 @@ PLM·PMS·PDM·MES·DAS는 각자 개발·배포한다. **공통 신원·앱 입
 | BV-03 | 필수 AB-03·04 | 실제 MF 앱에서 콘솔 변경·device 승인·IdP DOM 접근 거부, legacy 시작·승인·교환 410. 텍스트/XSS·anti-frame·API sandbox와 정상 UI/JSON | 초기 격리 PASS: 배포 MF 코드의 관리·콘솔 요청 거부, IdP frame/DOM 차단·API HTML 실행 차단. legacy 410·다른 출처 쿠키 거부는 [후속 검증](releases/boundary-followup-2026-11-09-validation.json). 운영 공격 재현 아님 |
 | BV-04 | 필수 AB-03·04 | 기존 backend 승인 체인·현재 사용자/대상 권한·회수, Cookie/Authorization 미전달·헤더 allowlist. 같은 페이지 A→B 사용자 권한 호출은 격리 PASS로 표시 금지 | PASS: 실제 Core/DB와 서명 backend fixture의 체인·회수·응답 헤더. 이 backend 시험만으로 브라우저 발신 앱 격리를 판정하지 않음. 앱 프레임의 해당 검사는 APP-FRAMES FV-04에서 별도로 기록 |
 | BV-05 | 필수 AB-03 | portal/dev_portal/console 목적·callback·쿠키 혼용 거부, 만료·회수. legacy/device 회수와 logout 차이 확인 | 세 출처 격리 및 배포 후 OIDC PASS: 별도 세션·callback, 같은 사용자 신원·SSO, dev 관리 거부. 만료·회수·logout 분리는 초기 검사 범위. callback 공격 전체 조합 NOT_RUN |
-| BV-06 | 필수 AB-05 | prod 관리자/deploy 자동 Use 제거·명시적 use/all·앱 ACL 독립, dev 개발 미리보기 정상·회사 중지 정책 유지 | PASS: 권한 행렬·실제 DB 회수·prod 명시 use·dev 미리보기. 업무 리소스 ACL은 후속 |
+| BV-06 | 필수 AB-05 | prod 관리자/deploy 자동 Use 제거·명시적 use/all·앱 ACL 독립, dev 개발 미리보기 정상·회사 중지 정책 유지. 예외인 사용자 전환은 콘솔 관리자·CSRF·정확한 Origin·1회용 코드·감사·관리자와 함께 끝남 | PASS: 권한 행렬·실제 DB 회수·prod 명시 use·dev 미리보기. 업무 리소스 ACL은 후속. 사용자 전환은 격리 회귀만(소스 단계) |
 | BV-07 | 필수 AB-05 | Use만으로 운영 기록 거부, 관리 action·목록·상세·접수·worker 현재 권한 일치 | PASS: Use-only 기록 거부와 관리 목록/상세·worker·회수·CLI status 호환 |
 | BV-08 | 필수 AB-03·07 | 콘솔 /identity 실제 로그인/logout·realm/sub·miy-web 보존, 세 출처 callback·MCP metadata·재인증·구 flow/worker 정리. MFA 의무화는 후속 | 새 콘솔 issuer의 배포 후 OIDC 세 출처 SSO·별도 세션·로그아웃, CLI·stdio MCP 연결 22개 PASS. 직접 외부 OAuth MCP issuer 재인증·구 worker 정리 NOT_RUN |
 | BV-09 | 필수 AB-04·07 | 업무 앱 로딩·라우팅(2026-11-10부터 앱 프레임 기준, 결과는 APP-FRAMES FV-01·09 기록이며 BV로 옮기지 않음)·직접 링크·reload·preview·업데이트, 포털 내부 같은 탭·다른 출처 링크 새 탭. 새 테마·선택기·파일 기능은 각 작업 때 | 세 출처 격리 MF·입력 보호 PASS. 같은 탭 복귀는 [후속 검증](releases/boundary-followup-2026-11-09-validation.json). 초기 운영 dev 앱 2개 검사는 이전 두 출처 범위. 11-09 배포 당시 실제 dev/prod 앱 열기는 NOT_RUN이었고 11-12 앱 프레임 배포의 앱 4개 읽기 전용 열기는 별도 기록. 운영 native UI 전체·인쇄 인수는 NOT_RUN |

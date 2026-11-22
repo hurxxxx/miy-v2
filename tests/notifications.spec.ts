@@ -128,6 +128,9 @@ test("Ctrl+K opens the command palette and goes to an app", async ({ page }) => 
   await search.fill("장부");
   await page.keyboard.press("Enter");
   await expect(page).toHaveURL(/\/environments\/prod\/apps\/ledger$/);
+  // While the frame is still opening its input state is unknown and leaving asks
+  // first; this suite has no frame, so wait until the launch has failed.
+  await expect(page.getByText("앱을 열 수 없습니다")).toBeVisible();
   await page.keyboard.press("Control+k");
   await page.getByRole("combobox", { name: "명령 검색" }).fill("설정");
   await page.keyboard.press("Enter");

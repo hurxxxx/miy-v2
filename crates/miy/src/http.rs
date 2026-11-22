@@ -124,6 +124,7 @@ pub fn router_for(state: State, purpose: BrowserPurpose) -> Router {
         .route("/me/sessions", axum::routing::get(browser_sessions))
         .route("/live", axum::routing::get(crate::notifications::live))
         .route("/home/cards", axum::routing::get(crate::home::cards))
+        .route("/search", axum::routing::get(crate::search::search))
         .route(
             "/notifications",
             axum::routing::get(crate::notifications::list),
@@ -261,6 +262,10 @@ pub fn router_for(state: State, purpose: BrowserPurpose) -> Router {
         .route("/users/{id}", axum::routing::patch(update_user))
         .route("/users/{id}/state", axum::routing::post(set_user_state))
         .route(
+            "/users/{id}/sign-in-as",
+            axum::routing::post(crate::user_switch::start),
+        )
+        .route(
             "/account-links",
             axum::routing::get(crate::accounts::list).post(crate::accounts::create),
         )
@@ -392,6 +397,10 @@ pub fn router_for(state: State, purpose: BrowserPurpose) -> Router {
         .route("/auth/development", axum::routing::post(development_login))
         .route("/auth/callback", axum::routing::get(callback))
         .route("/auth/logout", axum::routing::post(logout))
+        .route(
+            "/auth/switch",
+            axum::routing::post(crate::user_switch::exchange),
+        )
         .route("/cli/authorize/{id}", axum::routing::get(approval_redirect))
         .route("/cli/device/{id}", axum::routing::get(approval_redirect))
         .route(

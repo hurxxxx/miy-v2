@@ -440,6 +440,35 @@ export interface RuntimeJobPage {
   nextCursor: string | null;
 }
 
+/**
+ * One app's part of an integrated search. `status` is `ok`, or `unavailable`
+ * when the app did not answer in time (shown as "가져오지 못함").
+ */
+export interface SearchGroup {
+  appId: string;
+  appName: string;
+  installationId: string;
+  items: SearchItem[];
+  status: string;
+}
+
+/** One integrated search hit from an app (display text only). */
+export interface SearchItem {
+  at: string | null;
+  /** The app's own label for the kind of thing (for example "일정"). */
+  kind: string | null;
+  /** App-relative destination opened in the app's frame. */
+  path: string | null;
+  snippet: string | null;
+  title: string;
+}
+
+/** `GET /api/v1/search?q=`. */
+export interface SearchPage {
+  groups: SearchGroup[];
+  query: string;
+}
+
 export interface StoredFile {
   /** Only incomplete uploads expire. Ready and attached bytes are retained. */
   expiresAt: string | null;

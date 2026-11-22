@@ -70,7 +70,8 @@
       "account_link_not_pending": "이미 사용됐거나 취소된 링크입니다.",
       "password_reset_in_progress": "이 계정의 재설정이 진행 중입니다. 잠시 뒤 다시 시도하세요.",
       "user_disabled": "사용 중지된 계정에는 재설정 링크를 발급할 수 없습니다.",
-      "invalid_account_link": "입력한 값을 확인해 주세요."
+      "invalid_account_link": "입력한 값을 확인해 주세요.",
+      "cannot_switch_to_self": "본인 계정으로는 전환할 수 없습니다."
     },
     "linkStates": {
       "pending": "사용 전",
@@ -159,7 +160,16 @@
     "developerGranted": "앱 개발 신청 자격을 부여했습니다.",
     "removeDeveloper": "앱 개발 해제",
     "allowDeveloper": "앱 개발 허용",
-    "resetLink": "비밀번호 재설정 링크"
+    "resetLink": "비밀번호 재설정 링크",
+    "signInAs": "이 사용자로 로그인",
+    "signInAsTitle": "{{name}}(으)로 로그인",
+    "signInAsBody": "새 탭에서 이 사용자로 로그인합니다. 그 탭에서는 이 사용자의 권한으로 앱을 열고 읽고 쓸 수 있으며, 하는 일은 이 사용자의 활동으로 기록됩니다. 로그인을 시작한 기록은 관리 감사에 남습니다.",
+    "signInAsWhere": "로그인할 포털",
+    "signInAsPortal": "업무 포털",
+    "signInAsDevPortal": "dev 포털",
+    "signInAsConfirm": "로그인",
+    "signInAsStarted": "새 탭에서 {{name}}(으)로 로그인합니다.",
+    "popupBlocked": "브라우저가 새 탭을 막았습니다. 이 사이트의 팝업을 허용한 뒤 다시 시도하세요."
   },
   "access": {
     "groupsLoadFailed": "그룹 목록을 불러오지 못했습니다",

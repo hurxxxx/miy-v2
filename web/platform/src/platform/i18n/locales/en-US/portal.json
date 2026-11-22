@@ -358,7 +358,8 @@
     "home": "Home",
     "admin": "Platform administration",
     "cliSessions": "My CLI connections",
-    "appHint": "App"
+    "appHint": "App",
+    "searchApps": "Search apps: {{query}}"
   },
   "notifications": {
     "bell": "Notifications",
@@ -388,5 +389,24 @@
     "loadFailed": "Could not load the summary.",
     "unavailable": "Could not fetch",
     "empty": "Nothing to show."
+  },
+  "switchUser": {
+    "working": "Switching user…",
+    "expired": "The switch link expired or was already used. Start again from the console.",
+    "forbidden": "You cannot switch to this user. The account or your administrator role changed.",
+    "failed": "Could not reach the server.",
+    "home": "Go to the portal"
+  },
+  "search": {
+    "title": "Search",
+    "lead": "Find what you can see in the apps you use.",
+    "field": "Search terms",
+    "placeholder": "Type what to find",
+    "submit": "Search",
+    "loading": "Searching…",
+    "failed": "Could not search. Check the connection.",
+    "emptyTitle": "No results for '{{query}}'.",
+    "emptyHint": "Try other terms or look in the app itself.",
+    "unavailable": "Could not fetch"
   }
 }

@@ -20,13 +20,13 @@ use uuid::Uuid;
 const MAX_CARDS: usize = 12;
 const MAX_ITEMS: usize = 5;
 
-fn text(value: &Value, max: usize) -> Option<String> {
+pub(crate) fn text(value: &Value, max: usize) -> Option<String> {
     let value = value.as_str()?.trim();
     (!value.is_empty() && !value.chars().any(char::is_control))
         .then(|| value.chars().take(max).collect())
 }
 
-fn app_path(value: &Value) -> Option<String> {
+pub(crate) fn app_path(value: &Value) -> Option<String> {
     let path = value.as_str()?;
     (path.starts_with('/')
         && !path.starts_with("//")

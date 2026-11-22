@@ -1189,6 +1189,23 @@ pub async fn run(
             ),
         )
     };
+    let home_router = home_router.route(
+        "/api/search",
+        axum::routing::post({
+            let seen = home_seen.clone();
+            move |Json(body): Json<Value>| {
+                let seen = seen.clone();
+                async move {
+                    seen.lock().unwrap().push(json!({"search": body}));
+                    Json(json!({"items": [
+                        {"title": "<i>검색 결과</i>", "snippet": "가".repeat(300), "path": "/found/1", "kind": "일정", "secret": "dropped"},
+                        {"title": "둘째", "path": "https://untrusted.invalid/"},
+                        {"title": "셋째"}
+                    ]}))
+                }
+            }
+        }),
+    );
     let home_server = tokio::spawn(async move {
         let _ = axum::serve(home_listener, home_router).await;
     });
@@ -1216,7 +1233,7 @@ pub async fn run(
             "ui":{"delivery":"module","moduleEntry":"mf-manifest.json","moduleExport":"./AppRoot","contractVersion":"miy.ui/v1alpha1"},
             "resources":{"database":"postgresql"},"migrations":{"directory":"migrations"},
             "requestedPermissions":[],"panels":panels,
-            "platformEndpoints":{"homeCard":"/home-card"},
+            "platformEndpoints":{"homeCard":"/home-card","search":"/search"},
         });
         sqlx::query("INSERT INTO releases(id,app_id,version,artifact_hash,manifest) VALUES($1,$2,'1.0.0',$3,$4)")
             .bind(release)
@@ -1289,6 +1306,70 @@ pub async fn run(
             && home_claims[0]["body"] == json!({"timeZone":"Europe/Berlin","locale":"en-US"}),
         "the home card call did not carry the person's platform identity and display settings"
     );
+    // Integrated search asks the same apps the same way, with the query.
+    let found = json_response(
+        h.cookie_request(
+            &portal_user,
+            Method::GET,
+            "/api/v1/search?q=%20%ED%9A%8C%EC%9D%98%20&limit=2",
+        )
+        .send()
+        .await?,
+        200,
+    )
+    .await?;
+    let group_of = |app: &str| -> Value {
+        found["groups"]
+            .as_array()
+            .and_then(|groups| groups.iter().find(|group| group["appId"] == app))
+            .cloned()
+            .unwrap_or(Value::Null)
+    };
+    let (hits, slow, unseen) = (
+        group_of(&home_apps[0].0),
+        group_of(&home_apps[1].0),
+        group_of(&home_apps[2].0),
+    );
+    let search_body = home_seen
+        .lock()
+        .unwrap()
+        .iter()
+        .find_map(|seen| seen.get("search").cloned())
+        .unwrap_or(Value::Null);
+    ensure!(
+        found["query"] == "회의"
+            && hits["status"] == "ok"
+            && hits["items"]
+                == json!([
+                    {"title":"<i>검색 결과</i>","snippet":"가".repeat(240),"path":"/found/1","at":null,"kind":"일정"},
+                    {"title":"둘째","snippet":null,"path":null,"at":null,"kind":null}
+                ])
+            && slow["status"] == "unavailable"
+            && unseen.is_null()
+            && search_body
+                == json!({"query":"회의","limit":2,"timeZone":"Europe/Berlin","locale":"en-US"}),
+        "integrated search did not ask usable apps as the person or did not cut answers to the contract: {found}"
+    );
+    for bad in ["", "%20%20", "a%00b"] {
+        denied(
+            h.cookie_request(
+                &portal_user,
+                Method::GET,
+                &format!("/api/v1/search?q={bad}"),
+            )
+            .send()
+            .await?,
+            400,
+        )
+        .await?;
+    }
+    denied(
+        h.cookie_request(&console_user, Method::GET, "/api/v1/search?q=x")
+            .send()
+            .await?,
+        403,
+    )
+    .await?;
     denied(
         h.cookie_request(&console_user, Method::GET, "/api/v1/home/cards")
             .send()
@@ -1333,7 +1414,287 @@ pub async fn run(
         "installations did not list their release's panels"
     );
     home_server.abort();
-    passed.push("home cards: the prod portal asks only apps the person may use that declare a card, as a platform call with the person's display settings; answers are cut to the card contract, an app that cannot answer is marked unavailable, the console is refused, the dev portal sees no prod cards, and installations list their release's panels".into());
+    passed.push("home cards and integrated search: the prod portal asks only apps the person may use that declare a card or search, as a platform call with the person's display settings (and the trimmed query and limit); answers are cut to the contract, an app that cannot answer is marked unavailable, invalid queries and the console are refused, the dev portal sees no prod cards, and installations list their release's panels".into());
+
+    // User switch (M6): a console administrator gets a one-time code for one
+    // portal; that portal exchanges it, same-origin only, for the person's
+    // ordinary session, ending the browser's previous session there. The
+    // session ends with the administrator and signs out without the identity
+    // provider.
+    let switch_admin = h.user(true).await?;
+    let switch_console = h.browser(&switch_admin, BrowserPurpose::Console).await?;
+    let switch_target = h.user(false).await?;
+    let start = |browser: &Browser, target: &str, environment: &str| {
+        h.browser_request(
+            browser,
+            Method::POST,
+            &format!("/api/v1/users/{target}/sign-in-as"),
+        )
+        .json(&json!({ "environment": environment }))
+    };
+    denied(
+        h.cookie_request(
+            &switch_console,
+            Method::POST,
+            &format!("/api/v1/users/{switch_target}/sign-in-as"),
+        )
+        .json(&json!({"environment":"prod"}))
+        .send()
+        .await?,
+        403,
+    )
+    .await?;
+    denied(
+        start(&console_user, &switch_target, "prod").send().await?,
+        403,
+    )
+    .await?;
+    denied(
+        start(&portal_admin, &switch_target, "prod").send().await?,
+        403,
+    )
+    .await?;
+    denied(
+        start(&switch_console, &switch_admin, "prod").send().await?,
+        400,
+    )
+    .await?;
+    denied(
+        start(&switch_console, &switch_target, "staging")
+            .send()
+            .await?,
+        400,
+    )
+    .await?;
+    let issue = |environment: &'static str| {
+        let request = start(&switch_console, &switch_target, environment);
+        async move {
+            let value = json_response(request.send().await?, 200).await?;
+            let url = value["url"].as_str().unwrap_or_default().to_owned();
+            let (base, code) = url
+                .split_once('#')
+                .ok_or_else(|| anyhow::anyhow!("switch URL without a code"))?;
+            Ok::<_, anyhow::Error>((base.to_owned(), code.to_owned()))
+        }
+    };
+    let (switch_url, code) = issue("prod").await?;
+    ensure!(
+        switch_url == format!("{}/switch-user", h.origin(BrowserPurpose::Portal)),
+        "the switch link does not open the prod portal"
+    );
+    let exchange_from = |purpose: BrowserPurpose, origin: &str, site: &str, code: &str| {
+        h.request(purpose, Method::POST, "/auth/switch")
+            .header("origin", origin)
+            .header("sec-fetch-site", site)
+            .json(&json!({ "code": code }))
+    };
+    let exchange = |purpose: BrowserPurpose, origin: &str, code: &str| {
+        exchange_from(purpose, origin, "same-origin", code)
+    };
+    // Another origin, or the dev portal for a prod code, leaves the code unused.
+    denied(
+        exchange(
+            BrowserPurpose::Portal,
+            h.origin(BrowserPurpose::Console),
+            &code,
+        )
+        .send()
+        .await?,
+        403,
+    )
+    .await?;
+    denied(
+        exchange_from(
+            BrowserPurpose::Portal,
+            h.origin(BrowserPurpose::Portal),
+            "same-site",
+            &code,
+        )
+        .send()
+        .await?,
+        403,
+    )
+    .await?;
+    // Repeated Fetch Metadata or Origin is refused, not read by its first value.
+    denied(
+        exchange(
+            BrowserPurpose::Portal,
+            h.origin(BrowserPurpose::Portal),
+            &code,
+        )
+        .header("sec-fetch-site", "same-site")
+        .send()
+        .await?,
+        403,
+    )
+    .await?;
+    denied(
+        exchange(
+            BrowserPurpose::Portal,
+            h.origin(BrowserPurpose::Portal),
+            &code,
+        )
+        .header("origin", h.origin(BrowserPurpose::Console))
+        .send()
+        .await?,
+        403,
+    )
+    .await?;
+    denied(
+        exchange(
+            BrowserPurpose::DevPortal,
+            h.origin(BrowserPurpose::DevPortal),
+            &code,
+        )
+        .send()
+        .await?,
+        401,
+    )
+    .await?;
+    let previous = h.browser(&switch_admin, BrowserPurpose::Portal).await?;
+    let switched = status(
+        exchange(
+            BrowserPurpose::Portal,
+            h.origin(BrowserPurpose::Portal),
+            &code,
+        )
+        .header("cookie", h.cookie(&previous))
+        .send()
+        .await?,
+        204,
+    )
+    .await?;
+    let session_cookie = |response: &Response| -> Option<String> {
+        let name = state.auth.cookie_name(BrowserPurpose::Portal, "session");
+        response
+            .headers()
+            .get_all("set-cookie")
+            .iter()
+            .filter_map(|value| value.to_str().ok())
+            .filter_map(|value| value.split(';').next())
+            .find(|pair| pair.starts_with(&format!("{name}=")) && pair.len() > name.len() + 1)
+            .map(str::to_owned)
+    };
+    let cookie = session_cookie(&switched)
+        .ok_or_else(|| anyhow::anyhow!("the switch did not set a portal session"))?;
+    let me = json_response(
+        h.request(BrowserPurpose::Portal, Method::GET, "/api/v1/me")
+            .header("cookie", &cookie)
+            .send()
+            .await?,
+        200,
+    )
+    .await?;
+    denied(
+        h.cookie_request(&previous, Method::GET, "/api/v1/me")
+            .send()
+            .await?,
+        401,
+    )
+    .await?;
+    denied(
+        exchange(
+            BrowserPurpose::Portal,
+            h.origin(BrowserPurpose::Portal),
+            &code,
+        )
+        .send()
+        .await?,
+        401,
+    )
+    .await?;
+    let audited: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM audit WHERE actor=$1 AND action='user.sign_in_as' AND target=$2",
+    )
+    .bind(&switch_admin)
+    .bind(format!("user:{switch_target}:environment:prod"))
+    .fetch_one(&state.pool)
+    .await?;
+    ensure!(
+        me["id"] == switch_target.as_str() && me["admin"] == false && audited == 1,
+        "the switched session is not the person's own or the start was not audited"
+    );
+    let logout = json_response(
+        h.request(BrowserPurpose::Portal, Method::POST, "/auth/logout")
+            .header("cookie", &cookie)
+            .header("origin", h.origin(BrowserPurpose::Portal))
+            .header("x-miy-csrf", me["csrf"].as_str().unwrap_or_default())
+            .send()
+            .await?,
+        200,
+    )
+    .await?;
+    ensure!(
+        logout["redirect"] == format!("{}/", h.origin(BrowserPurpose::Portal)),
+        "a switched session signed out through the identity provider"
+    );
+    // An expired code is refused; a live session ends with its administrator.
+    let (_, stale) = issue("prod").await?;
+    sqlx::query(
+        "UPDATE user_switch_codes SET expires_at=now()-interval '1 second' WHERE code_hash=$1",
+    )
+    .bind(hash(&stale))
+    .execute(&state.pool)
+    .await?;
+    denied(
+        exchange(
+            BrowserPurpose::Portal,
+            h.origin(BrowserPurpose::Portal),
+            &stale,
+        )
+        .send()
+        .await?,
+        401,
+    )
+    .await?;
+    let (dev_url, dev_code) = issue("dev").await?;
+    let dev_switched = status(
+        exchange(
+            BrowserPurpose::DevPortal,
+            h.origin(BrowserPurpose::DevPortal),
+            &dev_code,
+        )
+        .send()
+        .await?,
+        204,
+    )
+    .await?;
+    let dev_name = state.auth.cookie_name(BrowserPurpose::DevPortal, "session");
+    let dev_cookie = dev_switched
+        .headers()
+        .get_all("set-cookie")
+        .iter()
+        .filter_map(|value| value.to_str().ok())
+        .filter_map(|value| value.split(';').next())
+        .find(|pair| pair.starts_with(&format!("{dev_name}=")) && pair.len() > dev_name.len() + 1)
+        .map(str::to_owned)
+        .ok_or_else(|| anyhow::anyhow!("the dev switch did not set a session"))?;
+    let dev_me = json_response(
+        h.request(BrowserPurpose::DevPortal, Method::GET, "/api/v1/me")
+            .header("cookie", &dev_cookie)
+            .send()
+            .await?,
+        200,
+    )
+    .await?;
+    sqlx::query("UPDATE users SET admin=false WHERE id=$1")
+        .bind(&switch_admin)
+        .execute(&state.pool)
+        .await?;
+    denied(
+        h.request(BrowserPurpose::DevPortal, Method::GET, "/api/v1/me")
+            .header("cookie", &dev_cookie)
+            .send()
+            .await?,
+        401,
+    )
+    .await?;
+    ensure!(
+        dev_url == format!("{}/switch-user", h.origin(BrowserPurpose::DevPortal))
+            && dev_me["id"] == switch_target.as_str(),
+        "the dev portal switch did not sign in as the person"
+    );
+    passed.push("user switch: only a console administrator with CSRF starts it (not for themself), the start is audited, the one-time code works once, unexpired, on its own portal from that portal's origin, the result is the person's own session replacing the browser's previous one, it signs out without the identity provider and ends when the administrator loses administration".into());
 
     // Same-host ports share cookies; code on one origin must not use the other's
     // cookies even for reads. Reject before any session lookup.
@@ -2029,6 +2390,6 @@ pub async fn run(
     )
     .await?;
     passed.push("expired or disabled browser sessions require new authentication; restoring an account does not revive old portal/console cookies and a fresh purpose-bound session works".into());
-    ensure!(passed.len() == 17, "boundary observation count changed");
+    ensure!(passed.len() == 18, "boundary observation count changed");
     Ok(passed)
 }

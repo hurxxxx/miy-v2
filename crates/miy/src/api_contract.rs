@@ -520,6 +520,38 @@ pub struct HomeCardPage {
     pub cards: Vec<HomeCard>,
 }
 
+/// One integrated search hit from an app (display text only).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct SearchItem {
+    pub title: String,
+    pub snippet: Option<String>,
+    /// App-relative destination opened in the app's frame.
+    pub path: Option<String>,
+    pub at: Option<DateTime<Utc>>,
+    /// The app's own label for the kind of thing (for example "일정").
+    pub kind: Option<String>,
+}
+
+/// One app's part of an integrated search. `status` is `ok`, or `unavailable`
+/// when the app did not answer in time (shown as "가져오지 못함").
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct SearchGroup {
+    pub installation_id: Uuid,
+    pub app_id: String,
+    pub app_name: String,
+    pub status: String,
+    pub items: Vec<SearchItem>,
+}
+
+/// `GET /api/v1/search?q=`.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct SearchPage {
+    pub query: String,
+    pub groups: Vec<SearchGroup>,
+}
+
 /// Display settings passed from the portal to an app frame. They decide how
 /// things look and read; they are never an input to an access decision.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -603,6 +635,7 @@ pub fn schema() -> serde_json::Value {
     generator.subschema_for::<NotificationPage>();
     generator.subschema_for::<NotificationSettings>();
     generator.subschema_for::<HomeCardPage>();
+    generator.subschema_for::<SearchPage>();
     serde_json::json!({
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "title": "miy API v1 responses",

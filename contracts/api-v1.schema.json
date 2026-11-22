@@ -1480,6 +1480,100 @@
       ],
       "type": "object"
     },
+    "SearchGroup": {
+      "description": "One app's part of an integrated search. `status` is `ok`, or `unavailable`\nwhen the app did not answer in time (shown as \"가져오지 못함\").",
+      "properties": {
+        "appId": {
+          "type": "string"
+        },
+        "appName": {
+          "type": "string"
+        },
+        "installationId": {
+          "format": "uuid",
+          "type": "string"
+        },
+        "items": {
+          "items": {
+            "$ref": "#/$defs/SearchItem"
+          },
+          "type": "array"
+        },
+        "status": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "installationId",
+        "appId",
+        "appName",
+        "status",
+        "items"
+      ],
+      "type": "object"
+    },
+    "SearchItem": {
+      "description": "One integrated search hit from an app (display text only).",
+      "properties": {
+        "at": {
+          "format": "date-time",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "kind": {
+          "description": "The app's own label for the kind of thing (for example \"일정\").",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "path": {
+          "description": "App-relative destination opened in the app's frame.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "snippet": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "title": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "title",
+        "snippet",
+        "path",
+        "at",
+        "kind"
+      ],
+      "type": "object"
+    },
+    "SearchPage": {
+      "description": "`GET /api/v1/search?q=`.",
+      "properties": {
+        "groups": {
+          "items": {
+            "$ref": "#/$defs/SearchGroup"
+          },
+          "type": "array"
+        },
+        "query": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "query",
+        "groups"
+      ],
+      "type": "object"
+    },
     "StoredFile": {
       "properties": {
         "expiresAt": {

@@ -18,7 +18,8 @@
     }
   ],
   "platformEndpoints": {
-    "homeCard": "/v1/home-card"
+    "homeCard": "/v1/home-card",
+    "search": "/v1/search"
   },
   "requestedPermissions": [
     "database"

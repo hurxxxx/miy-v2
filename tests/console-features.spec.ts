@@ -29,6 +29,7 @@ const installation = {
 async function open(page: Page, options: { locale?: string; conflict?: boolean } = {}) {
   await mockSurface(page, "console");
   const puts: unknown[] = [];
+  const switches: { user: string; body: unknown; csrf: string | null }[] = [];
   let approval = {
     installationId: installation.id,
     releaseId: installation.releaseId,
@@ -68,11 +69,17 @@ async function open(page: Page, options: { locale?: string; conflict?: boolean }
       "/api/v1/audit": { entries: [], nextCursor: null },
       "/api/v1/support/reports": { entries: [], nextCursor: null },
     };
+    const switchStart = path.match(/^\/api\/v1\/users\/([^/]+)\/sign-in-as$/);
+    if (switchStart && request.method() === "POST") {
+      switches.push({ user: decodeURIComponent(switchStart[1]!), body: request.postDataJSON(), csrf: request.headers()["x-miy-csrf"] ?? null });
+      const portal = (request.postDataJSON() as { environment: string }).environment === "dev" ? "https://dev.example.test" : "https://portal.example.test";
+      return route.fulfill({ json: { url: `${portal}/switch-user#one-time-code`, expiresAt: new Date(Date.now() + 60000).toISOString() } });
+    }
     if (path in reply) return route.fulfill({ json: reply[path] });
     await route.fulfill({ status: 404, json: { error: { code: "not_found" } } });
   });
   await page.goto("/admin");
-  return { puts };
+  return { puts, switches };
 }
 const usersPanel = (page: Page) =>
   page.locator(".ui-panel").filter({ has: page.getByRole("heading", { name: "사용자 계정", exact: true }) });
@@ -136,4 +143,23 @@ test("the console speaks English when the saved language is English", async ({ p
   await expect(page.getByRole("heading", { name: "User accounts", exact: true }).first()).toBeVisible();
   await expect(page.getByText("2 awaiting approval")).toBeVisible();
   await expect(page.getByRole("button", { name: "Export CSV" })).toBeVisible();
+});
+
+test("sign in as a user opens the chosen portal in a new tab with a one-time link", async ({ page, context }) => {
+  const { switches } = await open(page);
+  const panel = usersPanel(page);
+  const rows = panel.locator(".user-account");
+  // Not for yourself, not for a disabled account.
+  await expect(rows.filter({ hasText: "관리자" }).getByRole("button", { name: "이 사용자로 로그인" })).toHaveCount(0);
+  await expect(rows.filter({ hasText: "=SUM(1)" }).getByRole("button", { name: "이 사용자로 로그인" })).toHaveCount(0);
+  await context.route("https://dev.example.test/**", (route) => route.fulfill({ contentType: "text/html", body: "<p>dev portal</p>" }));
+  await rows.filter({ hasText: "앨리스" }).getByRole("button", { name: "이 사용자로 로그인" }).click();
+  const dialog = page.getByRole("dialog", { name: "앨리스(으)로 로그인" });
+  await expect(dialog).toBeVisible();
+  await dialog.getByLabel("dev 포털").check();
+  const [tab] = await Promise.all([context.waitForEvent("page"), dialog.getByRole("button", { name: "로그인", exact: true }).click()]);
+  await tab.waitForURL("https://dev.example.test/switch-user#one-time-code");
+  expect(switches).toEqual([{ user: "alice", body: { environment: "dev" }, csrf: "console-csrf" }]);
+  expect(await tab.evaluate(() => window.opener)).toBeNull();
+  await expect(page.getByText("새 탭에서 앨리스(으)로 로그인합니다.")).toBeVisible();
 });

@@ -144,6 +144,8 @@ mod runtime_preflight;
 #[cfg(all(test, feature = "server"))]
 mod runtime_regression;
 #[cfg(feature = "server")]
+mod search;
+#[cfg(feature = "server")]
 mod server_build;
 #[cfg(all(test, feature = "server"))]
 mod server_build_regression;
@@ -161,6 +163,8 @@ mod support_contract;
 mod upgrade;
 #[cfg(feature = "server")]
 mod user_admin;
+#[cfg(feature = "server")]
+mod user_switch;
 #[cfg(feature = "server")]
 mod worker;
 

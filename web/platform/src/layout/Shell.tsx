@@ -17,6 +17,7 @@ import { request } from "@miy/sdk";
 import { Login } from "../pages/Login";
 import { CliInstall } from "../pages/CliInstall";
 import { Join } from "../pages/Join";
+import { SwitchUser } from "../pages/SwitchUser";
 import { AppMark, Badge, Button, Loading, Panel, monograms } from "../ui";
 import { CloseIcon, HomeIcon, MenuIcon, SettingsIcon, TerminalIcon } from "../ui/icons";
 import { AppBarEditor } from "./AppBarEditor";
@@ -37,6 +38,8 @@ export function Shell() {
       }
     }
   }, [state.status, options?.surface, location.pathname]);
+  // The end of a user switch runs before any session: it replaces it.
+  if (location.pathname === "/switch-user" && options?.surface !== "console") return <SwitchUser />;
   // The installation guide is public; it needs no session. Render it directly:
   // during navigation the router outlet may already hold the next page.
   if (location.pathname === "/cli/install" && state.status !== "ready")
@@ -202,6 +205,7 @@ function pageTitle(t: TFunction<"portal">, pathname: string, environment: Enviro
   if (isCliApprovalPath(pathname)) return t("shell.titles.cliApproval");
   if (pathname === "/cli/sessions") return t("shell.titles.cliSessions");
   if (pathname === "/settings" || pathname.startsWith("/settings/")) return t("shell.titles.settings");
+  if (pathname === "/search" && !console) return t("search.title");
   if (appName) return appName;
   if (console) return t("shell.titles.managedApps");
   return t(environment === "prod" ? "shell.titles.prodApps" : "shell.titles.devApps");
@@ -491,7 +495,12 @@ function SignedInLayout({ user, environment }: { user: User; environment: Enviro
         <main id="platform-main" tabIndex={-1}>
           <Outlet />
         </main>
-        <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} commands={commands} />
+        <CommandPalette
+          open={paletteOpen}
+          onOpenChange={setPaletteOpen}
+          commands={commands}
+          onSearch={isConsole ? undefined : (query) => void navigate({ to: "/search", search: { q: query } as never })}
+        />
       </div>
       {openPanel && (
         <SidePanel

@@ -9,6 +9,7 @@ import { useSurface } from "./data/session";
 import { ManagedApps } from "./pages/ManagedApps";
 import { CliSessions } from "./pages/CliSessions";
 import { SettingsPage } from "./pages/settings/SettingsPage";
+import { Search } from "./pages/Search";
 import { Loading } from "./ui";
 
 // The console never imports the remote runtime module, including through a direct
@@ -18,6 +19,10 @@ function AppRoute() {
   const { surface } = useSurface();
   if (surface === "console") return null;
   return <Suspense fallback={<Loading />}><AppView /></Suspense>;
+}
+function SearchRoute() {
+  // The console has no business apps to search.
+  return useSurface().surface === "console" ? <ManagedApps /> : <Search />;
 }
 function HomeRoute() {
   return useSurface().surface === "console" ? <ManagedApps /> : <Home />;
@@ -43,6 +48,9 @@ export const router = createRouter({
     page("/admin", Admin),
     page("/settings", SettingsPage),
     page("/settings/$section", SettingsPage),
+    page("/search", SearchRoute),
+    // The end of a user switch; the shell renders it before any session check.
+    page("/switch-user", () => null),
     // Public account-link pages; the shell renders them before any session check.
     page("/join", () => null),
     page("/reset-password", () => null),

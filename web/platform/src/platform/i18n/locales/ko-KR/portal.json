@@ -358,7 +358,8 @@
     "home": "홈",
     "admin": "플랫폼 관리",
     "cliSessions": "내 CLI 연결",
-    "appHint": "앱"
+    "appHint": "앱",
+    "searchApps": "통합 검색: {{query}}"
   },
   "notifications": {
     "bell": "알림",
@@ -387,5 +388,24 @@
     "loadFailed": "요약을 불러오지 못했습니다.",
     "unavailable": "가져오지 못함",
     "empty": "표시할 항목이 없습니다."
+  },
+  "switchUser": {
+    "working": "사용자 전환 중…",
+    "expired": "전환 링크가 만료됐거나 이미 사용됐습니다. 콘솔에서 다시 시작하세요.",
+    "forbidden": "이 사용자로 전환할 수 없습니다. 계정 상태나 관리자 권한이 바뀌었습니다.",
+    "failed": "서버에 연결하지 못했습니다.",
+    "home": "포털로 가기"
+  },
+  "search": {
+    "title": "통합 검색",
+    "lead": "쓸 수 있는 앱에서 내가 볼 수 있는 항목을 찾습니다.",
+    "field": "검색어",
+    "placeholder": "검색어를 입력하세요",
+    "submit": "검색",
+    "loading": "검색하는 중…",
+    "failed": "검색하지 못했습니다. 연결 상태를 확인해 주세요.",
+    "emptyTitle": "'{{query}}'에 대한 결과가 없습니다.",
+    "emptyHint": "다른 검색어를 쓰거나 앱에서 직접 찾아보세요.",
+    "unavailable": "가져오지 못함"
   }
 }

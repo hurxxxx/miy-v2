@@ -14,6 +14,7 @@ mod event_time;
 mod home_card;
 mod personal_widgets;
 mod planner;
+mod search;
 mod time;
 
 #[cfg(test)]
@@ -48,6 +49,9 @@ pub fn router(pool: PgPool) -> Router {
         // The portal home's summary card: platform calls only (manifest
         // `platformEndpoints.homeCard`).
         .route("/v1/home-card", post(home_card::home_card))
+        // The portal's integrated search: platform calls only (manifest
+        // `platformEndpoints.search`).
+        .route("/v1/search", post(search::search))
         .with_state(pool)
 }
 

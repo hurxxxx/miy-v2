@@ -225,3 +225,44 @@ a.home-card-item:hover .home-card-item-title {
 .home-card-open {
   font-size: 13px;
 }
+
+/* Integrated search (pages/Search). */
+.search-form {
+  display: flex;
+  gap: var(--ui-space-2);
+  max-width: 640px;
+  margin-bottom: var(--ui-space-6);
+}
+.search-form input {
+  flex: 1;
+}
+.search-group {
+  margin-bottom: var(--ui-space-4);
+}
+.search-results {
+  display: grid;
+  gap: var(--ui-space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.search-result {
+  display: grid;
+  gap: 2px;
+  padding: var(--ui-space-2) 0;
+  color: var(--ui-color-ink);
+  text-decoration: none;
+}
+a.search-result:hover .search-result-title span:last-child {
+  text-decoration: underline;
+}
+.search-result-title {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--ui-space-2);
+  min-width: 0;
+}
+.search-result-meta {
+  color: var(--ui-color-ink-subtle);
+  font-size: 12px;
+}

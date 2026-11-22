@@ -72,7 +72,8 @@
       "account_link_not_pending": "This link has already been used or revoked.",
       "password_reset_in_progress": "A reset for this account is in progress. Try again shortly.",
       "user_disabled": "A reset link cannot be issued for a disabled account.",
-      "invalid_account_link": "Check the values you entered."
+      "invalid_account_link": "Check the values you entered.",
+      "cannot_switch_to_self": "You cannot switch to your own account."
     },
     "linkStates": {
       "pending": "Unused",
@@ -164,7 +165,16 @@
     "developerGranted": "Granted the right to request apps.",
     "removeDeveloper": "Remove app development",
     "allowDeveloper": "Allow app development",
-    "resetLink": "Password reset link"
+    "resetLink": "Password reset link",
+    "signInAs": "Sign in as this user",
+    "signInAsTitle": "Sign in as {{name}}",
+    "signInAsBody": "A new tab signs in as this user. In that tab you open, read and change apps with this user's permissions, and what you do is recorded as this user's activity. Starting the sign-in is recorded in the management audit.",
+    "signInAsWhere": "Portal to sign in to",
+    "signInAsPortal": "Business portal",
+    "signInAsDevPortal": "Dev portal",
+    "signInAsConfirm": "Sign in",
+    "signInAsStarted": "Signing in as {{name}} in a new tab.",
+    "popupBlocked": "The browser blocked the new tab. Allow pop-ups for this site and try again."
   },
   "access": {
     "groupsLoadFailed": "Could not load the groups",

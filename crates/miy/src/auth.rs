@@ -514,21 +514,36 @@ impl Auth {
         }
         let row=sqlx::query("SELECT * FROM sessions WHERE id_hash=$1 AND browser_purpose=$2 AND created_at>now()-interval '8 hours' FOR UPDATE")
             .bind(hash(&session)).bind(purpose.as_str()).fetch_optional(&mut *tx).await?.ok_or_else(ApiError::unauthorized)?;
-        let mut access = decrypt(row.get("access_token"))?;
-        if row.get::<chrono::DateTime<Utc>, _>("expires_at") < Utc::now() + Duration::seconds(5) {
-            let refresh = decrypt(row.get("refresh_token"))?;
-            let t = self
-                .exchange(&[("grant_type", "refresh_token"), ("refresh_token", &refresh)])
-                .await?;
-            sqlx::query("UPDATE sessions SET access_token=$2,refresh_token=$3,expires_at=$4 WHERE id_hash=$1")
-                .bind(hash(&session)).bind(encrypt(&t.access_token)?).bind(encrypt(t.refresh_token.as_deref().unwrap_or(&refresh))?)
-                .bind(Utc::now()+Duration::seconds(t.expires_in)).execute(&mut *tx).await?;
-            access = t.access_token;
-        }
         let id: String = row.get("user_id");
-        if self.active(&access, true).await? != id {
-            tracing::warn!(event = "session_subject_mismatch");
-            return Err(ApiError::unauthorized());
+        if let Some(admin) = row.get::<Option<String>, _>("impersonator_user_id") {
+            // A switched session (user_switch) holds no identity provider
+            // tokens; it lives while the administrator who started it is an
+            // enabled administrator.
+            let allowed: Option<bool> =
+                sqlx::query_scalar("SELECT enabled AND admin FROM users WHERE id=$1 FOR SHARE")
+                    .bind(&admin)
+                    .fetch_optional(&mut *tx)
+                    .await?;
+            if allowed != Some(true) {
+                return Err(ApiError::unauthorized());
+            }
+        } else {
+            let mut access = decrypt(row.get("access_token"))?;
+            if row.get::<chrono::DateTime<Utc>, _>("expires_at") < Utc::now() + Duration::seconds(5)
+            {
+                let refresh = decrypt(row.get("refresh_token"))?;
+                let t = self
+                    .exchange(&[("grant_type", "refresh_token"), ("refresh_token", &refresh)])
+                    .await?;
+                sqlx::query("UPDATE sessions SET access_token=$2,refresh_token=$3,expires_at=$4 WHERE id_hash=$1")
+                    .bind(hash(&session)).bind(encrypt(&t.access_token)?).bind(encrypt(t.refresh_token.as_deref().unwrap_or(&refresh))?)
+                    .bind(Utc::now()+Duration::seconds(t.expires_in)).execute(&mut *tx).await?;
+                access = t.access_token;
+            }
+            if self.active(&access, true).await? != id {
+                tracing::warn!(event = "session_subject_mismatch");
+                return Err(ApiError::unauthorized());
+            }
         }
         sqlx::query(&format!(
             "UPDATE sessions SET last_seen_at=now() WHERE id_hash=$1 AND {SEEN_STALE}"
@@ -562,14 +577,20 @@ impl Auth {
                 .execute(&state.pool)
                 .await?;
         }
+        let mut switched = false;
         if let Some(session) = cookie(headers, &self.cookie_name(purpose, "session")) {
-            sqlx::query("DELETE FROM sessions WHERE id_hash=$1 AND browser_purpose=$2")
-                .bind(hash(session))
-                .bind(purpose.as_str())
-                .execute(&state.pool)
-                .await?;
+            switched = sqlx::query_scalar::<_, bool>(
+                "DELETE FROM sessions WHERE id_hash=$1 AND browser_purpose=$2 RETURNING impersonator_user_id IS NOT NULL",
+            )
+            .bind(hash(session))
+            .bind(purpose.as_str())
+            .fetch_optional(&state.pool)
+            .await?
+            .unwrap_or(false);
         }
-        if development {
+        // A switched session never signed in at the identity provider; its
+        // end-session page would end the administrator's own sign-in there.
+        if development || switched {
             return Ok(format!("{}/", self.browser_origin(purpose)));
         }
         let mut url = Url::parse(&self.discovery.end_session_endpoint)?;

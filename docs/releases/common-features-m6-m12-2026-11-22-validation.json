@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-11-22",
+  "status": "SOURCE_CHECKED",
+  "scope": "M6 user switch (AI-DO style: console one-time code, portal /switch-user page, /auth/switch exchange, switched session records the starting administrator, core migration 32) and M12 integrated search (manifest platformEndpoints.search, GET /api/v1/search, portal /search page and palette entry, planner search endpoint). Source only: nothing published, nothing deployed, no server database changed.",
+  "checks": [
+    {"status": "FAIL", "command": "MIY_CONFIG_DIR=<empty> python3 scripts/runtime-regression/run.py", "scope": "With M6: 141 observations, boundary suite stopped (expected 403, received 204).", "cause": "The test sent two Sec-Fetch-Site values; the exchange read only the first and consumed the code. The exchange now refuses repeated Origin or Sec-Fetch-Site headers, and the test covers both."},
+    {"status": "PASS", "command": "MIY_CONFIG_DIR=<empty> python3 scripts/runtime-regression/run.py", "scope": "158 observations PASS, exit 0: boundary 18 incl. user switch (console admin with CSRF only, not self, audited, one-time unexpired code on its own portal from that origin only, repeated headers refused, previous session replaced, sign-out without the identity provider, session ends when the administrator loses administration) and home cards with integrated search (usable apps only, query and limit forwarded, answers cut to the contract, unavailable app marked, invalid queries and the console refused)."},
+    {"status": "FAIL", "command": "timeout 1500 pnpm exec playwright test -c scripts/runtime-regression/ui.config.ts", "scope": "103 passed / 1 failed: Ctrl+K palette test.", "cause": "Test race: while the frame launch is pending its input state is unknown and leaving asks (by design). The test now waits for the launch outcome."},
+    {"status": "PASS", "command": "pnpm exec playwright test -c scripts/runtime-regression/ui.config.ts tests/notifications.spec.ts --repeat-each 3", "scope": "21 passed."},
+    {"status": "PASS", "command": "MIY_CONFIG_DIR=<empty> bash scripts/check-static.sh rust; check-static.sh scripts; check-static.sh web", "scope": "All PASS: web = portal 104, common UI, CLI experience 15, surface boundaries 18, HTTP IPv4 1."},
+    {"status": "PASS", "command": "cd apps/planner && cargo test --offline; MIY_CONFIG_DIR=<scratch> ../../target/debug/miy app check", "scope": "30 unit tests incl. search; app check valid after re-syncing docs/CONTRACT.md and miy.bundle.json (also re-synced for messenger and board)."}
+  ],
+  "notRun": [
+    "server-ui.config.ts against a real Core build for the user switch and search",
+    "Real platform frames and a running planner answering search",
+    "messenger and board app check after the CONTRACT.md re-sync (protected files copied from a fresh init only)",
+    "Any server deployment or migration 32 on a server database"
+  ]
+}

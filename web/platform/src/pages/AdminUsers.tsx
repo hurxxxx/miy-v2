@@ -59,6 +59,7 @@ const FAILURES = [
   "password_reset_in_progress",
   "user_disabled",
   "invalid_account_link",
+  "cannot_switch_to_self",
 ] as const;
 
 function failure(t: TFunction<"console">, error: unknown) {
@@ -284,6 +285,63 @@ export function UserAdmin({ csrf, selfId, users, report, refresh }: Props) {
     await send(`/api/v1/users/${encodeURIComponent(user.id)}/state`, "POST", { enabled: next }, t(next ? "users.enabled" : "users.disabled"));
   }
 
+  // User switch (docs/CORE-PERMISSIONS.md "사용자 전환"): a new tab signs in
+  // to the chosen portal as this person with a one-time link.
+  async function signInAs(user: Account) {
+    const choice = { environment: "prod" as "prod" | "dev" };
+    const ok = await confirm({
+      title: t("users.signInAsTitle", { name: user.name }),
+      body: (
+        <>
+          <p>{t("users.signInAsBody")}</p>
+          <fieldset className="switch-environment">
+            <legend>{t("users.signInAsWhere")}</legend>
+            {(["prod", "dev"] as const).map((environment) => (
+              <label key={environment}>
+                <input
+                  type="radio"
+                  name="switch-environment"
+                  value={environment}
+                  defaultChecked={environment === "prod"}
+                  onChange={() => {
+                    choice.environment = environment;
+                  }}
+                />{" "}
+                {t(environment === "prod" ? "users.signInAsPortal" : "users.signInAsDevPortal")}
+              </label>
+            ))}
+          </fieldset>
+        </>
+      ),
+      confirmLabel: t("users.signInAsConfirm"),
+      tone: "danger",
+    });
+    if (!ok) return;
+    // Open the tab while the click still counts as the person's action; a
+    // window opened after the request would be blocked as a popup.
+    const tab = window.open("", "_blank");
+    if (tab) tab.opener = null;
+    setBusy(true);
+    try {
+      const started = await request<{ url: string }>(
+        `/api/v1/users/${encodeURIComponent(user.id)}/sign-in-as`,
+        csrf,
+        { method: "POST", body: JSON.stringify(choice) },
+      );
+      if (tab) tab.location.replace(started.url);
+      else if (!window.open(started.url, "_blank", "noopener")) {
+        report(t("users.popupBlocked"));
+        return;
+      }
+      report(t("users.signInAsStarted", { name: user.name }));
+    } catch (error) {
+      tab?.close();
+      report(failure(t, error));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   const active = (link: AccountLink) => revocable(link) || link.state === "resetting";
   const recent = (links ?? []).filter(active).concat((links ?? []).filter((link) => !active(link)));
   return (
@@ -463,6 +521,11 @@ export function UserAdmin({ csrf, selfId, users, report, refresh }: Props) {
                   {available && user.enabled && (
                     <Button size="sm" disabled={busy} onClick={() => void resetPassword(user)}>
                       {t("users.resetLink")}
+                    </Button>
+                  )}
+                  {user.enabled && user.id !== selfId && (
+                    <Button size="sm" disabled={busy} onClick={() => void signInAs(user)}>
+                      {t("users.signInAs")}
                     </Button>
                   )}
                   <Button size="sm" disabled={busy} onClick={() => void setEnabled(user)}>

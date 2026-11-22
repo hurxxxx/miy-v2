@@ -28,6 +28,7 @@ const MAX_RESPONSE: usize = 64 * 1024;
 pub enum Endpoint {
     NotificationCheck,
     HomeCard,
+    Search,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -65,6 +66,7 @@ pub async fn call(
     let path = match endpoint {
         Endpoint::NotificationCheck => manifest["platformEndpoints"]["notificationCheck"].as_str(),
         Endpoint::HomeCard => manifest["platformEndpoints"]["homeCard"].as_str(),
+        Endpoint::Search => manifest["platformEndpoints"]["search"].as_str(),
     }
     .filter(|path| crate::contract::valid_endpoint_path(path))
     .ok_or(Failure::NotDeclared)?

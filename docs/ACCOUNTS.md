@@ -68,7 +68,7 @@ Core 0.13.0 소스의 서버 전용 기능이며 core schema 26부터 적용한�
 
 **로그인 서버와의 관계.** Keycloak은 계속 인증만 담당한다. Core는 전용 서비스 클라이언트 `miy-accounts`로 이 realm의 사용자만 만들고 비밀번호를 설정한다(`manage-users`). realm 설정·클라이언트·다른 realm은 바꿀 수 없고, 이 클라이언트의 토큰에는 `miy.*` 범위가 없어 플랫폼 API 자격증명으로 쓸 수 없다. 관리 호출은 loopback 주소(`MIY_IDENTITY_ADMIN_URL`)로만 나가며 비밀(`MIY_ACCOUNTS_SECRET`)은 serve 프로세스에만 전달한다. 두 값이 없으면 기능이 꺼지고 기존 직접 등록만 남는다.
 
-계획된 변경(미구현): 플랫폼 관리자가 콘솔에서 특정 사용자로 로그인하는 사용자 전환을 추가한다. Keycloak의 사용자 가장 기능을 Core가 관리 API로 호출하므로 이 서비스 클라이언트에 가장 권한을 더해야 하고, `configure-identity.py` 변경과 운영 반영이 따른다([범용 기능 계획 M6](COMMON-FEATURES-PLAN.md#m6-사용자-전환)).
+사용자 전환([범용 기능 계획 M6](COMMON-FEATURES-PLAN.md#m6-사용자-전환), 소스 반영·미배포)은 로그인 서버를 쓰지 않는다. Core가 그 사용자의 포털 세션을 직접 만들고 시작한 관리자를 세션에 기록한다(AI-DO와 같은 방식). 그래서 이 서비스 클라이언트에 가장 권한을 더하지 않으며 `configure-identity.py`도 바꾸지 않는다. 계약은 [코어 권한](CORE-PERMISSIONS.md)의 사용자 전환 항목을 따른다.
 
 - 계정 생성 요청에 비밀번호를 함께 보내므로 정책에 걸린 비밀번호는 계정을 남기지 않는다.
 - 로그인 계정을 만든 뒤 플랫폼 등록이 commit되지 않으면 만든 계정을 삭제한다. 삭제까지 실패하면 `unregistered_identity_account_left` 로그를 남긴다. 그 계정은 등록되지 않았으므로 로그인해도 접근할 수 없다.

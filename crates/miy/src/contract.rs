@@ -46,15 +46,20 @@ pub struct PlatformEndpoints {
     /// still point at something they may open.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub notification_check: Option<String>,
-    /// POST `{}` answering `{ "title", "count"?, "items": [{ "title",
+    /// POST `{ "timeZone", "locale" }` answering `{ "title", "count"?, "items": [{ "title",
     /// "subtitle"?, "path"?, "at"? }] }` (at most five items): the person's
     /// summary card on the portal home.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub home_card: Option<String>,
+    /// POST `{ "query", "limit", "timeZone", "locale" }` answering `{ "items":
+    /// [{ "title", "snippet"?, "path"?, "at"?, "kind"? }] }`: what this person
+    /// may open that matches, for the portal's integrated search.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub search: Option<String>,
 }
 impl PlatformEndpoints {
     pub fn is_empty(&self) -> bool {
-        self.notification_check.is_none() && self.home_card.is_none()
+        self.notification_check.is_none() && self.home_card.is_none() && self.search.is_none()
     }
 }
 /// An app API path for a platform endpoint: absolute, no query, no dot segments.
@@ -137,6 +142,7 @@ pub fn validate(m: &Manifest) -> Result<(), String> {
     if [
         &m.platform_endpoints.notification_check,
         &m.platform_endpoints.home_card,
+        &m.platform_endpoints.search,
     ]
     .into_iter()
     .flatten()

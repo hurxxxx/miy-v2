@@ -689,3 +689,17 @@
   color: var(--ui-color-ink-muted);
   font-size: 13px;
 }
+
+/* User switch: the portal choice in the confirmation dialog. */
+.switch-environment {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ui-space-4);
+  margin: var(--ui-space-3) 0 0;
+  padding: 0;
+  border: 0;
+}
+.switch-environment legend {
+  margin-bottom: var(--ui-space-2);
+  font-weight: 600;
+}

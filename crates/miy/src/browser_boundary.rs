@@ -43,6 +43,7 @@ pub fn access(route: &str, method: &Method) -> Option<Access> {
         | "/auth/development"
         | "/auth/callback"
         | "/auth/logout"
+        | "/auth/switch"
         | "/auth/cli/device"
         | "/auth/cli/token"
         | "/auth/cli/revoke"
@@ -57,6 +58,7 @@ pub fn access(route: &str, method: &Method) -> Option<Access> {
         // A portal's own inbox; the environment follows the session's purpose.
         "/live"
         | "/home/cards"
+        | "/search"
         | "/notifications"
         | "/notifications/unread-count"
         | "/notifications/read-all"
@@ -123,6 +125,7 @@ pub fn access(route: &str, method: &Method) -> Option<Access> {
         | "/users"
         | "/users/{id}"
         | "/users/{id}/state"
+        | "/users/{id}/sign-in-as"
         | "/apps/{app}/releases"
         | "/installations"
         | "/grants"
