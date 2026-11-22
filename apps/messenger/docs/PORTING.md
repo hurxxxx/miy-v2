@@ -20,7 +20,7 @@
 | 모바일 푸시, 봇 알림 DM, 업무 승인 DM | `notifications/mobile_push_*`, `notifications.dm_delivery`, `legacy_issues` | 계획에서 제외. 메시지 알림은 플랫폼 알림함으로(§3.4) |
 | AI 기능, 데스크톱 앱 연동 | — | 계획에서 제외 |
 | 떠 있는 DM 패널·셸 배지 | `FloatingDmWidget.tsx`(+spec), `useFloatingDmUnreadCount`, `personal-widget-registry` | 포털 전역 위젯은 M5. 대신 manifest `panels`의 좁은 화면(§3.7)과 홈 카드 |
-| 사용자 전환 세션 차단 | `session_guard.py`(`dm.impersonation_not_allowed`) | miy에는 사용자 전환이 아직 없다(M6). 게이트웨이 신원은 항상 본인이다 |
+| 사용자 전환 세션 차단 | `session_guard.py`(`dm.impersonation_not_allowed`) | M6 전환 세션은 플랫폼이 발급·회수한다. 메신저는 게이트웨이가 확인한 대상 사용자의 현재 앱 참여 권한을 적용한다. [코어 권한 계약](../../../docs/CORE-PERMISSIONS.md) |
 | 워크스페이스 범위 사용자 검색 | `GET /dm/users?workspace_key` | 메신저는 환경 전체 범위다(워크스페이스 없음). 매개변수는 무시한다 |
 | 서명 첨부 주소 | `attachment_links.py`, `attachment_content.py`, `GET /dm/attachments/{id}/content?expires&signature` | 프레임은 쿠키·서명 URL 없이 `runtime.fileApi`로 읽는다(§3.3) |
 | 50 MB 첨부 | `DM_MAX_ATTACHMENT_SIZE` | 플랫폼 Storage 한도 10 MiB. 큰 첨부는 M10 뒤 |
@@ -117,7 +117,7 @@ AI-DO 웹 DM은 알림 행을 만들지 않았고(실시간 이벤트와 모바�
 
 | 시점 | 호출 |
 | --- | --- |
-| 보내기 | `Identity::notify(Notification { request_id: 새 UUID, recipients, kind: "message", group_key: 대화 ID, title: "<보낸 사람> · 새 메시지 N개", path: "/conversations/{id}", resource_id: 가장 최근 안 읽은 메시지 ID })`. 수신자는 보낸 사람을 뺀 활성 참여자 중 알림을 끄지 않았고 보낸 사람을 차단하지 않은 사람(AI-DO 모바일 푸시와 같은 규칙). 가린 메시지는 보내지 않는다. N은 받는 사람마다 앱의 안 읽은 수(삭제된 메시지 제외)라서 같은 (N, 보낸 사람)끼리 묶어 한 번씩 호출한다 |
+| 보내기 | `Identity::notify(Notification { request_id: 새 UUID, recipients, kind: "message", group_key: 대화 ID, title: "<보낸 사람> · 새 메시지 N개", path: "/conversations/{id}", resource_id: 가장 최근 안 읽은 메시지 ID })`. 활성 참여자별 알림 설정과 차단을 확인한다. N은 삭제·가림·보낸 사람 차단을 적용한 뒤 알림에 포함할 미확인 메시지 수다. 같은 원본과 건수의 수신자를 묶어 호출한다 |
 | 수정 | 그 메시지를 아직 안 읽은 사람에게 같은 방식으로 다시 발행(교체) |
 | 삭제, 관리자 가림·되돌림 | 아직 안 읽은 사람에게 남은 안 읽은 수로 다시 발행, 남은 것이 없으면 `retract_notifications(대화, Some(&[그 사람]))` |
 | 읽음(`PATCH …/read`) | 읽음 위치가 실제로 움직였을 때만 `mark_notifications_read(대화)`(화면은 보이는 동안 매 조회마다 읽음을 보낸다) |
@@ -126,12 +126,12 @@ AI-DO 웹 DM은 알림 행을 만들지 않았고(실시간 이벤트와 모바�
 | 신고 접수 | 신고 당사자를 뺀 메신저 관리자에게 `kind: "report"`, `group_key: "report:{id}"`, 제목 "<분류> 신고가 접수됐습니다."(AI-DO 관리자 알림 문구, 본문·메모·이름 없음), `path: "/safety/reports/{id}"`. 처리하면 그 줄을 모두 회수 |
 
 - **제목 언어:** 플랫폼은 제목을 하나만 저장하므로 AI-DO 기본 언어인 한국어로 만든다(영어 화면 사용자도 한국어 제목). 보낸 사람 이름은 200자에 맞춰 줄인다.
-- **재확인**(manifest `platformEndpoints.notificationCheck` = `/platform/notification-check`): `identity.context.platform == true`만 받고(아니면 403 `platform_call_required`), 항목 500개까지, 호출자가 아직 활성 참여자인 대화 ID와 아직 관리자이고 당사자가 아닌 신고 키를 돌려준다. 읽기 전용이다.
+- **재확인**(manifest `platformEndpoints.notificationCheck` = `/platform/notification-check`): 플랫폼 호출만 받는 읽기 전용 경로다. 항목 500개까지, 그룹과 원본 ID가 일치하고 현재 접근 가능한 대화나 신고를 돌려준다. 보낸 사람 차단, 대화 알림 끄기, 메시지 삭제·가림도 적용한다.
 - **홈 카드**(`platformEndpoints.homeCard` = `/platform/home-card`): 플랫폼 호출만, 읽기 전용. `{"title":"안 읽은 대화","count":안 읽은 대화 수,"items":[최대 5개, 최근 순 {title: 대화 이름, subtitle: "<보낸 사람> · 새 메시지 N개", path, at: 마지막 안 읽은 메시지 시각(RFC 3339 UTC)}]}`. 본문은 넣지 않는다.
 
 ### 3.5 화면 갱신: 주기 조회
 
-AI-DO의 `useRealtime`/`useRealtimeEvent`를 같은 이름의 주기 조회 공급자로 바꿨다. `reconnectSeq`가 보이는 동안 5초마다, 다시 보일 때 즉시 올라가고, 원본 화면은 AI-DO의 재연결 때처럼 대화 목록과 열린 대화를 다시 받는다. 이벤트는 오지 않으므로 이벤트 처리 코드는 원본 그대로 두되 불리지 않는다. 다시 받은 최신 페이지는 이미 불러 둔 이전 페이지 뒤에 합친다. 즉시 갱신·입력 중 표시는 M4에서 `runtime.live`(템플릿에 추가됨)로 바꾼다. 이번 릴리스는 주기 조회만 쓴다.
+AI-DO의 `useRealtime`/`useRealtimeEvent`를 같은 이름의 주기 조회 공급자로 바꿨다. `reconnectSeq`가 보이는 동안 5초마다, 다시 보일 때 즉시 올라가고 대화 목록과 열린 대화를 다시 받는다. 최신 페이지와 이미 불러온 이전 메시지 최대 50개를 조회마다 갱신한다. 이전 메시지가 많으면 다음 묶음으로 순환한다. 즉시 갱신·입력 중 표시는 M4에서 `runtime.live`로 연결할 예정이다.
 
 ### 3.6 API 호출과 오류
 
@@ -146,12 +146,12 @@ AI-DO의 `useRealtime`/`useRealtimeEvent`를 같은 이름의 주기 조회 공�
 - AI-DO DM은 셸의 떠 있는 패널(`FloatingDmWidget` → `DMEmbeddedView embeddedPersistentList`)로만 열렸다. miy 앱은 프레임 전체를 쓰므로 같은 `DMEmbeddedView`를 `/`·`/conversations/{id}`에 넣고(넓으면 목록+대화), 대화 선택은 `runtime.navigate`로 경로를 바꾼다. 알림은 `/conversations/{id}`로 연다.
 - manifest `panels: [{id: "conversations", title: "메신저", path: "/widgets/conversations"}]`: 같은 화면의 좁은 폭(목록 ↔ 대화, `embeddedPersistentList=false`). 패널 안 이동은 `/widgets/conversations/{id}`.
 - 언어·시간대·날짜 형식은 `runtime.settings`(AI-DO는 사용자 프로필). 프레임 테마는 플랫폼이 붙인 `.dark`를 AI-DO `app-*` 토큰이 따른다.
-- 이동 확인(miy 계약): 쓰는 중인 본문, 첨부, 보내는 중, 수정 중이면 `runtime.setNavigationState({dirty})`를 보고한다(문구 `apps:dm.unsavedChanges`). AI-DO에는 없었다.
+- 이동 확인(miy 계약): 대화별 새 메시지·전송 실패 초안과 별도의 수정 입력, 첨부·전송 진행 및 신고·관리 화면 입력을 `runtime.setNavigationState({dirty})`에 반영한다(문구 `apps:dm.unsavedChanges`). 전송 실패 응답은 새 초안을 보존하며, 앞 문구는 작성창이 비면 불러올 수 있다. 이전·다음 대화 이력은 포털이 새 경로를 돌려줄 때 반영한다.
 
 ### 3.8 신고 검토와 관리 역할
 
 - AI-DO는 플랫폼 관리자(`platform_admin`)가 관리 콘솔에서 검토했다. 계획(§2.2)대로 검토 화면은 앱 안(`/safety`)에 두고 앱이 선언한 관리 역할(`dm_safety_managers`)을 가진 사람만 쓴다. 플랫폼 관리자 표시(`Identity::admin`)는 쓰지 않는다.
-- **첫 관리자:** 역할이 비어 있을 때만 `POST /v1/dm-safety/managers/claim`으로 첫 사람이 맡는다(표 잠금, 감사 행 `dm_safety.manager_claimed`). 이후에는 관리자만 관리자를 지정·해제하고 마지막 한 명은 해제할 수 없다. 화면은 `/safety`를 직접 열었을 때 "관리자 맡기"를 보인다(목록의 "신고 검토" 링크는 관리자에게만 보임). 설치한 운영 담당자가 dev·prod 설치 직후 각각 맡아야 한다(인수 항목). 기본 거부 원칙에서 이 첫 맡기 창은 열린 상태이므로 남은 결정으로 적었다(§6).
+- **첫 관리자:** 역할이 비어 있을 때만 `POST /v1/dm-safety/managers/claim`으로 첫 사람이 맡는다(표 잠금, 감사 행 `dm_safety.manager_claimed`). 이후에는 관리자만 관리자를 지정·해제하고 마지막 한 명은 해제할 수 없다. 첫 관리자 지정이 가능하거나 현재 관리자이면 메신저의 "신고 검토" 링크에서 `/safety`를 연다. 설치한 운영 담당자가 dev·prod 설치 직후 각각 맡는 절차와 초기 지정 정책은 인수·결정 항목이다(§6).
 - 규칙은 원본 그대로: 목록은 분류·상태만, 상세에 메모·신원, 증거는 신고한 메시지와 그 첨부뿐, 당사자는 검토 불가(403 `dm_safety_review_conflict`), 처리는 `expected_status: open`일 때만(409), 열람·처리·가림은 매번 감사 행(앱 DB).
 - 증거에는 miy 수정·삭제 이력(`revisions`, `edited_at`, `deleted_at`)을 더했다. 신고가 열린 동안 삭제된 메시지는 보존한 본문 사본을 보인다.
 
@@ -172,12 +172,12 @@ AI-DO의 `AI_DO_UGC_TERMS_VERSION`·`_REQUIRED`·`_DOCUMENT_URL`·`AI_DO_UGC_CON
 
 ### 3.11 이전 메시지·알림 끄기(보강)
 
-- 이전 메시지: AI-DO API의 `before`(그 시각 이전, 최근 50개)를 화면에서 쓴다. 50개가 차면 맨 위에 "이전 메시지 더 보기", 받은 뒤 읽던 위치를 유지한다. 주기 조회는 최신 페이지만 다시 받고 이전 페이지를 지키지 않는 일이 없게 합친다.
+- 이전 메시지: 화면은 대화 내 순번 커서 `before_sequence`로 50개씩 조회하므로 시각이 같은 메시지도 이어서 받는다. "이전 메시지 더 보기" 뒤에는 읽던 위치를 유지한다. 주기 조회는 위 §3.5의 방식으로 이미 열린 이전 메시지도 갱신한다.
 - 알림 끄기: AI-DO 참여 행의 `muted_at`(근태 앱 중계가 쓰던 값)을 `PUT /v1/dm/conversations/{id}/mute`로 바꾼다. 끈 대화는 플랫폼 알림을 받지 않는다. 대화 머리글의 종 단추.
 
 ### 3.12 그 밖의 서버 세부
 
-- 순번은 AI-DO와 같이 한 `UPDATE … RETURNING`으로 대화 행을 잠그며 받고, 1:1 차단은 그 잠금 뒤에 본다. 참여자 변경은 대화 행을 `FOR UPDATE`로 잠근다.
+- 참여자 변경과 메시지 보내기·수정·삭제, 읽음 위치 변경은 대화 행을 같은 순서로 잠근 뒤 현재 참여 권한을 확인한다. 보내기 순번은 `UPDATE … RETURNING`으로 받고, 읽음 위치는 앞으로만 움직인다. 새 신고와 삭제는 같은 메시지 잠금 뒤 상태를 확인한다.
 - 1:1 동시 생성은 고유 키 위반 시 먼저 만든 대화를 돌려준다.
 - 신고 요청 해시는 Python `json.dumps(sort_keys, ensure_ascii=False, separators)`와 같은 바이트(serde_json 정렬 맵)로 만든다. 같은 사람의 신고·차단은 advisory lock으로 한 줄로 세운다.
 - 신고와 함께 하는 차단이 대상 때문에 실패(404·422, miy: 디렉터리 실패 502)하면 savepoint만 되돌리고 신고는 남긴다.

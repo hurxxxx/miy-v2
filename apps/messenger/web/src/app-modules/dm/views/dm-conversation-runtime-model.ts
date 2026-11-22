@@ -159,6 +159,7 @@ export function isDmSendActionDisabled(input: {
 export function shouldSubmitDmComposerKey(input: {
   key: string;
   shiftKey: boolean;
+  isComposing?: boolean;
 }): boolean {
   return shouldSubmitContractDmComposerKey(input);
 }

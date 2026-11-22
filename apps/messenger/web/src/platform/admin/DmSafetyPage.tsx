@@ -7,6 +7,7 @@ import { useFeedback } from '@miy/components/ui/lib/feedback/feedback-provider';
 import { searchDmUsers } from '../../app-modules/dm/api/dm-api';
 import { useDmUserSearch } from '../../app-modules/dm/views/useDmUserSearch';
 import { useAuth } from '../auth/auth-provider';
+import { useNavigationDirty } from '../runtime/navigation-state';
 import { UserOptionRow } from '../users/UserSearchMultiSelect';
 
 import { AdminDmSafetySection } from './admin-dm-safety-section';
@@ -225,21 +226,41 @@ function TermsSettingsSection({ token }: { token: string }) {
   const { t } = useTranslation('apps');
   const feedback = useFeedback();
   const [settings, setSettings] = useState<DmSafetyTermsSettings | null>(null);
+  const [savedSettings, setSavedSettings] = useState<DmSafetyTermsSettings | null>(null);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
+    let current = true;
     getDmSafetyTermsSettings(token)
-      .then(setSettings)
-      .catch((caught: unknown) => feedback.error(errorText(caught, t('dm.manager.termsFailed'))));
+      .then((loaded) => {
+        if (!current) return;
+        setSettings(loaded);
+        setSavedSettings(loaded);
+      })
+      .catch((caught: unknown) => {
+        if (current) feedback.error(errorText(caught, t('dm.manager.termsFailed')));
+      });
+    return () => {
+      current = false;
+    };
   }, [feedback, t, token]);
+
+  const dirty = settings && savedSettings &&
+    (Object.keys(savedSettings) as (keyof DmSafetyTermsSettings)[]).some(
+      (field) => settings[field] !== savedSettings[field],
+    );
+  useNavigationDirty(saving || Boolean(dirty));
 
   if (!settings) return null;
   const update = (patch: Partial<DmSafetyTermsSettings>) =>
     setSettings((current) => (current ? { ...current, ...patch } : current));
   const save = async () => {
+    if (saving) return;
     setSaving(true);
     try {
-      setSettings(await saveDmSafetyTermsSettings(token, settings));
+      const saved = await saveDmSafetyTermsSettings(token, settings);
+      setSavedSettings(saved);
+      setSettings((current) => (current === settings ? saved : current));
       feedback.success(t('dm.manager.termsSaved'));
     } catch (caught) {
       feedback.error(errorText(caught, t('dm.manager.termsFailed')));

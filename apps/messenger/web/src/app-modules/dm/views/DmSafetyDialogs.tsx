@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 
 import { Dialog } from '@miy/components/ui/lib/primitives/dialog';
 
+import { useNavigationDirty } from '../../../platform/runtime/navigation-state';
 import type {
   DmBlockItem,
   DmMessage,
@@ -39,6 +40,9 @@ export function DmReportDialog({
   const [note, setNote] = useState('');
   const [block, setBlock] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  useNavigationDirty(Boolean(message && (
+    submitting || note.trim() || category !== 'harassment' || block
+  )));
 
   useEffect(() => {
     if (message) {
@@ -67,7 +71,7 @@ export function DmReportDialog({
       closeLabel={t('dm.safety.cancel')}
       maxWidth="max-w-md"
       onOpenChange={(open) => {
-        if (!open) onClose();
+        if (!open && !submitting) onClose();
       }}
       open={Boolean(message)}
       title={t('dm.safety.reportTitle')}
@@ -87,6 +91,7 @@ export function DmReportDialog({
             >
               <input
                 checked={category === item}
+                disabled={submitting}
                 name="dm-report-category"
                 onChange={() => setCategory(item)}
                 type="radio"
@@ -106,6 +111,7 @@ export function DmReportDialog({
           <textarea
             className="app-text-body-sm min-h-20 rounded-md border border-app-border bg-app-bg px-3 py-2 text-app-ink"
             id={noteId}
+            disabled={submitting}
             maxLength={noteMax}
             onChange={(event) => setNote(event.target.value)}
             value={note}
@@ -118,6 +124,7 @@ export function DmReportDialog({
           <label className="app-text-body-sm flex items-start gap-2 text-app-ink">
             <input
               checked={block}
+              disabled={submitting}
               className="mt-1"
               onChange={(event) => setBlock(event.target.checked)}
               type="checkbox"
@@ -133,6 +140,7 @@ export function DmReportDialog({
         <div className="flex justify-end gap-2">
           <button
             className="app-text-body-sm rounded-md border border-app-border px-3 py-2 text-app-ink"
+            disabled={submitting}
             onClick={onClose}
             type="button"
           >

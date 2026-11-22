@@ -130,6 +130,8 @@ pub struct DmSafetyCapability {
     /// miy: the caller holds the messenger manager role (shows the report
     /// review screen link). Display only; the server rechecks every call.
     pub manager: bool,
+    /// Nobody holds the role yet. The claim endpoint still checks atomically.
+    pub manager_claimable: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]

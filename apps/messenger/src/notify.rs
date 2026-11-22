@@ -101,7 +101,7 @@ async fn publish(identity: &Identity, notification: Notification) {
 }
 
 /// Unread state per participant: (count, newest unread message ID and sender).
-/// Counts like the conversation list (`views::unread_counts`).
+/// Only messages eligible to appear in the platform inbox.
 async fn unread_state(
     pool: &PgPool,
     conversation_id: &str,
@@ -116,8 +116,12 @@ async fn unread_state(
          FROM dm_conversation_participants p \
          LEFT JOIN dm_messages lr ON lr.id = p.last_read_message_id \
          LEFT JOIN dm_messages m ON m.conversation_id = p.conversation_id AND m.created_at >= p.joined_at \
-           AND m.sender_id <> p.user_id AND m.sequence > coalesce(lr.sequence, 0) AND m.deleted_at IS NULL \
-         WHERE p.conversation_id = $1 AND p.left_at IS NULL AND p.user_id = ANY($2) \
+           AND m.sender_id <> p.user_id AND m.sequence > coalesce(lr.sequence, 0) \
+           AND m.deleted_at IS NULL AND m.moderation_hidden_at IS NULL \
+           AND NOT EXISTS (SELECT 1 FROM dm_user_blocks b WHERE b.blocker_user_id = p.user_id \
+                           AND b.blocked_user_id = m.sender_id) \
+         WHERE p.conversation_id = $1 AND p.left_at IS NULL AND p.muted_at IS NULL \
+           AND p.user_id = ANY($2) \
          GROUP BY p.user_id",
     )
     .bind(conversation_id)
@@ -297,7 +301,6 @@ pub struct CheckItem {
     #[serde(rename = "groupKey")]
     pub group_key: String,
     #[serde(rename = "resourceId", default)]
-    #[allow(dead_code)]
     pub resource_id: Option<String>,
 }
 
@@ -323,23 +326,27 @@ pub async fn notification_check(
         return Err(ApiError::validation("items: at most 500"));
     }
     let me = identity.user_id.as_str();
-    let (reports, conversations): (Vec<&CheckItem>, Vec<&CheckItem>) = request
+    let (reports, messages): (Vec<(&str, &str)>, Vec<(&str, &str)>) = request
         .items
         .iter()
-        .partition(|item| item.group_key.starts_with("report:"));
-    let conversation_ids: Vec<String> = conversations
-        .iter()
-        .map(|item| item.group_key.clone())
-        .collect();
+        .filter_map(|item| Some((item.group_key.as_str(), item.resource_id.as_deref()?)))
+        .partition(|(group_key, _)| group_key.starts_with("report:"));
+    let (conversation_ids, message_ids): (Vec<_>, Vec<_>) = messages.into_iter().unzip();
     let mut allowed: Vec<String> = if conversation_ids.is_empty() {
         Vec::new()
     } else {
         sqlx::query_scalar(
-            "SELECT DISTINCT conversation_id FROM dm_conversation_participants \
-             WHERE user_id = $1 AND left_at IS NULL AND conversation_id = ANY($2)",
+            "SELECT DISTINCT p.conversation_id FROM unnest($2::text[], $3::text[]) requested(conversation_id, message_id) \
+             JOIN dm_messages m ON m.id = requested.message_id AND m.conversation_id = requested.conversation_id \
+             JOIN dm_conversation_participants p ON p.conversation_id = m.conversation_id \
+             WHERE p.user_id = $1 AND p.left_at IS NULL AND p.muted_at IS NULL AND m.created_at >= p.joined_at \
+               AND m.deleted_at IS NULL AND m.moderation_hidden_at IS NULL \
+               AND NOT EXISTS (SELECT 1 FROM dm_user_blocks b WHERE b.blocker_user_id = p.user_id \
+                               AND b.blocked_user_id = m.sender_id)",
         )
         .bind(me)
         .bind(&conversation_ids)
+        .bind(&message_ids)
         .fetch_all(&pool)
         .await?
     };
@@ -350,9 +357,11 @@ pub async fn notification_check(
                 .fetch_optional(&pool)
                 .await?;
         if manager.is_some() {
-            let ids: Vec<String> = reports
+            let ids: Vec<&str> = reports
                 .iter()
-                .map(|item| item.group_key.trim_start_matches("report:").to_string())
+                .filter_map(|(group, resource)| {
+                    (group.strip_prefix("report:") == Some(*resource)).then_some(*resource)
+                })
                 .collect();
             let open: Vec<String> = sqlx::query_scalar(
                 "SELECT id FROM dm_abuse_reports WHERE id = ANY($1) AND reporter_user_id <> $2 \

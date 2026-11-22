@@ -205,9 +205,23 @@ async fn require_manager(conn: &mut PgConnection, user_id: &str) -> ApiResult<()
 
 #[derive(Debug, Serialize)]
 pub struct ManagerStatus {
-    manager: bool,
+    pub manager: bool,
     /// Nobody holds the role yet: the caller may claim it.
-    claimable: bool,
+    pub claimable: bool,
+}
+
+pub async fn load_manager_status(
+    conn: &mut PgConnection,
+    user_id: &str,
+) -> ApiResult<ManagerStatus> {
+    let (manager, claimable) = sqlx::query_as(
+        "SELECT EXISTS(SELECT 1 FROM dm_safety_managers WHERE user_id = $1), \
+                NOT EXISTS(SELECT 1 FROM dm_safety_managers)",
+    )
+    .bind(user_id)
+    .fetch_one(conn)
+    .await?;
+    Ok(ManagerStatus { manager, claimable })
 }
 
 /// miy: `GET /v1/dm-safety/me`.
@@ -216,14 +230,9 @@ pub async fn manager_status(
     Extension(identity): Extension<Identity>,
 ) -> ApiResult<Json<ManagerStatus>> {
     let mut conn = pool.acquire().await?;
-    let manager = is_manager(&mut conn, &identity.user_id).await?;
-    let count: i64 = sqlx::query_scalar("SELECT count(*) FROM dm_safety_managers")
-        .fetch_one(&mut *conn)
-        .await?;
-    Ok(Json(ManagerStatus {
-        manager,
-        claimable: count == 0,
-    }))
+    Ok(Json(
+        load_manager_status(&mut conn, &identity.user_id).await?,
+    ))
 }
 
 #[derive(Debug, Serialize)]
@@ -330,6 +339,9 @@ pub async fn grant_manager(
         ));
     }
     let mut tx = pool.begin().await?;
+    sqlx::query("LOCK TABLE dm_safety_managers IN EXCLUSIVE MODE")
+        .execute(&mut *tx)
+        .await?;
     require_manager(&mut tx, me).await?;
     let inserted = sqlx::query(
         "INSERT INTO dm_safety_managers (user_id, granted_by_id, created_at) VALUES ($1, $2, $3) \

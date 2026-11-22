@@ -19,7 +19,6 @@ import {
   Search,
   Send,
   ShieldAlert,
-  SmilePlus,
   Trash2,
   Users,
   Wifi,
@@ -379,7 +378,7 @@ export function DMEmbeddedView({
   threadId,
 }: {
   embeddedPersistentList?: boolean;
-  /** miy: open the report review screen (shown to messenger managers). */
+  /** miy: open safety management for current or first-time managers. */
   onOpenSafety?: () => void;
   onThreadIdChange: (threadId: string) => void;
   reloadSeq?: number;
@@ -442,16 +441,18 @@ function useDMViewElement({
     useState<DmThreadTextDraftOverride | null>(null);
   const [memberActionId, setMemberActionId] = useState<string | null>(null);
   const [draft, setDraft] = useState('');
+  const [failedDraftsByThread, setFailedDraftsByThread] = useState<Record<string, string[]>>({});
   const [replyTarget, setReplyTarget] = useState<DmMessage | null>(null);
   // miy: author edit/delete, older pages and mute.
-  const [editTarget, setEditTarget] = useState<DmMessage | null>(null);
-  const draftBeforeEditRef = useRef('');
+  const [editing, setEditing] = useState<{ message: DmMessage; body: string } | null>(null);
+  const editTarget = editing?.message ?? null;
   const [deleteTarget, setDeleteTarget] = useState<DmMessage | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [olderByThreadId, setOlderByThreadId] = useState<
     Record<string, { loading: boolean; exhausted: boolean }>
   >({});
   const olderAnchorRef = useRef<{ scrollHeight: number; scrollTop: number } | null>(null);
+  const olderRefreshOffset = useRef(0);
   const [muting, setMuting] = useState(false);
   const [readMarkerByThreadId, setReadMarkerByThreadId] = useState<
     Record<string, string | null>
@@ -494,6 +495,11 @@ function useDMViewElement({
   >(new Set());
   const feedback = useFeedback();
   const selectedThreadIdRef = useRef(threadId);
+  const pendingThreadNavigation = useRef<{
+    from: string | null;
+    to: string;
+    update: (history: DmThreadNavigationHistory) => DmThreadNavigationHistory;
+  } | null>(null);
   const threadsRef = useRef<DmThread[]>([]);
   const messagesRef = useRef<DmMessage[]>([]);
   const draftByThreadIdRef = useRef<Record<string, string>>({});
@@ -726,14 +732,14 @@ function useDMViewElement({
     ) => {
       const currentThreadId = selectedThreadIdRef.current || null;
       captureThreadScroll(currentThreadId);
-      if (nextThreadId && options.recordHistory !== false) {
-        setThreadNavigationHistory((history) =>
-          selectDmThreadWithHistory(history, {
-            currentThreadId,
-            nextThreadId,
-          }),
-        );
-      }
+      pendingThreadNavigation.current =
+        nextThreadId && nextThreadId !== currentThreadId && options.recordHistory !== false
+          ? {
+              from: currentThreadId,
+              to: nextThreadId,
+              update: (history) => selectDmThreadWithHistory(history, { currentThreadId, nextThreadId }),
+            }
+          : null;
       onThreadIdChange?.(nextThreadId ?? '');
     },
     [captureThreadScroll, onThreadIdChange],
@@ -749,7 +755,11 @@ function useDMViewElement({
     if (!result.threadId) {
       return;
     }
-    setThreadNavigationHistory(result.history);
+    pendingThreadNavigation.current = {
+      from: currentThreadId,
+      to: result.threadId,
+      update: (history) => navigateDmThreadHistoryBack(history, currentThreadId).history,
+    };
     onThreadIdChange?.(result.threadId);
   }, [captureThreadScroll, onThreadIdChange, threadNavigationHistory]);
 
@@ -763,7 +773,11 @@ function useDMViewElement({
     if (!result.threadId) {
       return;
     }
-    setThreadNavigationHistory(result.history);
+    pendingThreadNavigation.current = {
+      from: currentThreadId,
+      to: result.threadId,
+      update: (history) => navigateDmThreadHistoryForward(history, currentThreadId).history,
+    };
     onThreadIdChange?.(result.threadId);
   }, [captureThreadScroll, onThreadIdChange, threadNavigationHistory]);
 
@@ -861,10 +875,17 @@ function useDMViewElement({
   }, [loadThreads, reconnectSeq, reloadSeq]);
 
   useEffect(() => {
+    // Only a route reported back by the host confirms navigation past its guard.
+    const pending = pendingThreadNavigation.current;
+    if (pending && threadId !== pending.from) {
+      pendingThreadNavigation.current = null;
+      if (threadId === pending.to) setThreadNavigationHistory(pending.update);
+    }
     setDraft(threadId ? (draftByThreadIdRef.current[threadId] ?? '') : '');
     setReplyTarget(null);
-    setEditTarget(null);
+    setEditing(null);
     setHighlightedMessageId(null);
+    olderRefreshOffset.current = 0;
   }, [threadId]);
 
   useEffect(() => {
@@ -876,6 +897,7 @@ function useDMViewElement({
       draftByThreadIdRef.current,
       validThreadIds,
     );
+    setFailedDraftsByThread((current) => pruneDmThreadRecordValues(current, validThreadIds));
     messageCacheByThreadIdRef.current = pruneDmThreadRecordValues(
       messageCacheByThreadIdRef.current,
       validThreadIds,
@@ -984,8 +1006,7 @@ function useDMViewElement({
     listDmMessages(token, threadId)
       .then((response) => {
         if (cancelled) return;
-        // miy: a poll refreshes the newest page; loaded older pages stay.
-        const items = mergeDmMessagePages(cachedMessages ?? [], response.items);
+        const items = mergeDmMessagePages(messagesRef.current, response.items);
         if (response.items.length < DM_MESSAGE_PAGE) {
           setOlderByThreadId((current) => ({
             ...current,
@@ -1003,6 +1024,34 @@ function useDMViewElement({
           dispatchMessages({ type: 'replace', items });
         } else {
           dispatchMessages({ type: 'loaded', items });
+        }
+        const olderCount = items.length - response.items.length;
+        if (olderCount > 0) {
+          // Refresh one batch of already loaded older messages each poll.
+          const offset = olderRefreshOffset.current % olderCount;
+          const batch = items.slice(offset, Math.min(offset + DM_MESSAGE_PAGE, olderCount));
+          const requested = new Map(batch.map((message) => [message.id, message]));
+          olderRefreshOffset.current = offset + batch.length >= olderCount ? 0 : offset + batch.length;
+          void listDmMessages(token, threadId, DM_MESSAGE_PAGE, null, [...requested.keys()])
+            .then(({ items: updated }) => {
+              if (cancelled || selectedThreadIdRef.current !== threadId) return;
+              const refreshed = new Map(updated.map((message) => [message.id, message]));
+              const next = messagesRef.current.flatMap((message) => {
+                // Keep local edits or newly refreshed rows that arrived during this request.
+                if (requested.get(message.id) !== message) return [message];
+                const updatedMessage = refreshed.get(message.id);
+                return updatedMessage ? [updatedMessage] : [];
+              });
+              messagesRef.current = next;
+              messageCacheByThreadIdRef.current = setDmThreadRecordValue(
+                messageCacheByThreadIdRef.current,
+                threadId,
+                next,
+              );
+              writeCachedDmMessages(dmCacheKey, threadId, next);
+              dispatchMessages({ type: 'replace', items: next });
+            })
+            .catch(() => undefined);
         }
         return markVisibleThreadRead();
       })
@@ -1487,7 +1536,7 @@ function useDMViewElement({
 
   const uploadSelectedFiles = useCallback(
     (selectedFiles: File[]) => {
-      if (!selectedFiles.length) return;
+      if (!selectedFiles.length || sending || editTarget) return;
       void uploadDmComposerAttachments({
         files: selectedFiles,
         token,
@@ -1499,7 +1548,7 @@ function useDMViewElement({
         fallbackErrorMessage: t('dm.errors.attachmentUploadFailed'),
       });
     },
-    [feedback, t, threadId, token],
+    [editTarget, feedback, sending, t, threadId, token],
   );
 
   const handleFileInputChange = (event: ChangeEvent<HTMLInputElement>) => {
@@ -1684,19 +1733,18 @@ function useDMViewElement({
   };
 
   const handleSaveEdit = async () => {
-    const target = editTarget;
-    if (!token || !target || sending) return;
+    if (!token || !editing || sending) return;
+    const target = editing.message;
     setSending(true);
     try {
       const updated = await editDmMessage(
         token,
         target.conversation_id,
         target.id,
-        draft.trim(),
+        editing.body.trim(),
       );
       applyChangedMessage(updated);
-      setEditTarget(null);
-      setSelectedThreadDraft(draftBeforeEditRef.current);
+      setEditing((current) => (current === editing ? null : current));
     } catch (caughtError) {
       if (dmErrorCode(caughtError) === 'ugc_terms_acceptance_required') {
         void refreshTerms();
@@ -1731,17 +1779,13 @@ function useDMViewElement({
   };
 
   const startEdit = (message: DmMessage) => {
-    if (!editTarget) {
-      draftBeforeEditRef.current = draft;
-    }
+    if (sending) return;
     setReplyTarget(null);
-    setEditTarget(message);
-    setSelectedThreadDraft(message.body);
+    setEditing({ message, body: message.body });
   };
 
   const cancelEdit = () => {
-    setEditTarget(null);
-    setSelectedThreadDraft(draftBeforeEditRef.current);
+    setEditing(null);
   };
 
   const handleConfirmDelete = async () => {
@@ -1751,9 +1795,7 @@ function useDMViewElement({
     try {
       const updated = await deleteDmMessage(token, target.conversation_id, target.id);
       applyChangedMessage(updated);
-      if (editTarget?.id === target.id) {
-        cancelEdit();
-      }
+      setEditing((current) => (current?.message.id === target.id ? null : current));
       setReplyTarget((current) => (current?.id === target.id ? null : current));
       setDeleteTarget(null);
     } catch (caughtError) {
@@ -1780,7 +1822,7 @@ function useDMViewElement({
         token,
         targetThreadId,
         DM_MESSAGE_PAGE,
-        oldest.created_at,
+        oldest.sequence,
       );
       if (selectedThreadIdRef.current !== targetThreadId) return;
       const element = messagesScrollRef.current;
@@ -1854,6 +1896,7 @@ function useDMViewElement({
       uploadingAttachmentCount,
     });
     if (!token || !command) return;
+    const submittedDraft = draft;
     setSending(true);
     draftByThreadIdRef.current = setDmThreadRecordValue(
       draftByThreadIdRef.current,
@@ -1887,9 +1930,9 @@ function useDMViewElement({
         scrollThreadToBottom(command.threadId);
         messagesRef.current = nextMessages;
         dispatchMessages({ type: 'replace', items: nextMessages });
+        dispatchComposerAttachments({ type: 'clearPending' });
+        setReplyTarget((current) => (current?.id === command.replyToMessageId ? null : current));
       }
-      dispatchComposerAttachments({ type: 'clearPending' });
-      setReplyTarget(null);
       requestAnimationFrame(() => {
         if (selectedThreadIdRef.current === command.threadId) {
           scrollThreadToBottom(command.threadId);
@@ -1898,13 +1941,20 @@ function useDMViewElement({
       });
       void loadThreads({ force: true });
     } catch (caughtError) {
-      draftByThreadIdRef.current = setDmThreadRecordValue(
-        draftByThreadIdRef.current,
-        command.threadId,
-        command.body,
-      );
-      if (selectedThreadIdRef.current === command.threadId) {
-        setDraft(command.body);
+      if (!draftByThreadIdRef.current[command.threadId]) {
+        draftByThreadIdRef.current = setDmThreadRecordValue(
+          draftByThreadIdRef.current,
+          command.threadId,
+          submittedDraft,
+        );
+        if (selectedThreadIdRef.current === command.threadId) {
+          setDraft(submittedDraft);
+        }
+      } else if (submittedDraft.trim()) {
+        setFailedDraftsByThread((current) => ({
+          ...current,
+          [command.threadId]: [...(current[command.threadId] ?? []), submittedDraft],
+        }));
       }
       if (dmErrorCode(caughtError) === 'ugc_terms_acceptance_required') {
         // 이용규칙이 바뀌었거나 아직 동의하지 않았다 — 최신 상태를 받아 동의 안내를 보인다.
@@ -1986,9 +2036,11 @@ function useDMViewElement({
       : null;
 
   // Closing the frame drops the drafts cached for every conversation.
+  const failedDrafts = failedDraftsByThread[threadId] ?? [];
   useNavigationDirty(
     Boolean(draft.trim()) ||
       Object.values(draftByThreadIdRef.current).some((body) => Boolean(body.trim())) ||
+      Object.values(failedDraftsByThread).some((drafts) => drafts.length > 0) ||
       pendingAttachments.length > 0 ||
       sending ||
       creatingGroup ||
@@ -2069,7 +2121,7 @@ function useDMViewElement({
               {t('dm.safety.blockedUsers')}
             </button>
           ) : null}
-          {safety?.manager && onOpenSafety ? (
+          {(safety?.manager || safety?.manager_claimable) && onOpenSafety ? (
             <button
               className="app-text-caption mt-2 ml-3 inline-flex items-center gap-1 text-app-ink/55 hover:text-app-ink"
               onClick={onOpenSafety}
@@ -2700,15 +2752,6 @@ function useDMViewElement({
                           >
                             <Reply size={13} />
                           </button>
-                          <button
-                            aria-label={t('dm.reaction')}
-                            className="inline-flex size-7 items-center justify-center rounded-md border border-app-border bg-app-bg text-app-ink/55 shadow-sm hover:bg-app-surface-hover hover:text-app-ink"
-                            onClick={(event) => event.preventDefault()}
-                            title={t('dm.reaction')}
-                            type="button"
-                          >
-                            <SmilePlus size={13} />
-                          </button>
                           {own && !message.hidden && !message.deleted ? (
                             <>
                               <button
@@ -3082,6 +3125,22 @@ function useDMViewElement({
                   </button>
                 </div>
               ) : null}
+              {failedDrafts.length > 0 ? (
+                <button
+                  className="app-text-body-sm mb-3 rounded-md border border-app-border px-3 py-1.5 text-app-ink disabled:opacity-50"
+                  disabled={Boolean(draft || editTarget) || sending}
+                  onClick={() => {
+                    setSelectedThreadDraft(failedDrafts[0]);
+                    setFailedDraftsByThread((current) => ({
+                      ...current,
+                      [threadId]: failedDrafts.slice(1),
+                    }));
+                  }}
+                  type="button"
+                >
+                  {t('dm.restoreFailedDraft')}
+                </button>
+              ) : null}
               {replyTarget ? (
                 <div className="mb-3 flex items-start gap-2 rounded-md border border-app-border bg-app-surface px-3 py-2">
                   <Reply
@@ -3155,6 +3214,7 @@ function useDMViewElement({
                         <button
                           aria-label={t('dm.removeAttachment')}
                           className="flex size-7 shrink-0 items-center justify-center rounded-md text-app-ink/45 hover:bg-app-bg hover:text-app-ink"
+                          disabled={sending}
                           onClick={() =>
                             handleRemovePendingAttachment(item.localId)
                           }
@@ -3188,14 +3248,20 @@ function useDMViewElement({
                 <textarea
                   aria-label={t('dm.messagePlaceholder')}
                   className={`${inputClassName} min-h-11 resize-none`}
-                  onChange={(event) =>
-                    setSelectedThreadDraft(event.target.value)
-                  }
+                  onChange={(event) => {
+                    const body = event.currentTarget.value;
+                    if (editing) {
+                      setEditing({ ...editing, body });
+                    } else {
+                      setSelectedThreadDraft(body);
+                    }
+                  }}
                   onKeyDown={(event) => {
                     if (
                       shouldSubmitDmComposerKey({
                         key: event.key,
                         shiftKey: event.shiftKey,
+                        isComposing: event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229,
                       })
                     ) {
                       event.preventDefault();
@@ -3205,7 +3271,8 @@ function useDMViewElement({
                   onPaste={handleComposerPaste}
                   placeholder={t('dm.messagePlaceholder')}
                   rows={1}
-                  value={draft}
+                  readOnly={Boolean(editing) && sending}
+                  value={editing?.body ?? draft}
                 />
                 <button
                   aria-label={editTarget ? t('dm.saveEdit') : t('dm.send')}
@@ -3218,7 +3285,7 @@ function useDMViewElement({
                     ) ||
                     (editTarget
                       ? sending ||
-                        (!draft.trim() && !(editTarget.attachments ?? []).length)
+                        (!editing?.body.trim() && !(editTarget.attachments ?? []).length)
                       : isDmSendActionDisabled({
                           draft,
                           readyAttachmentIds,

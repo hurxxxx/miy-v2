@@ -41,12 +41,14 @@ export const dmRoutes = {
     `${DM_API_PREFIX}/conversations/${encodeSegment(conversationId)}/messages`,
   listMessages: (
     conversationId: string,
-    input: { limit?: number; before?: string | Date | null } = {},
+    input: { limit?: number; before?: string | Date | number | null; ids?: readonly string[] } = {},
   ) => {
     const params = new URLSearchParams({
       limit: String(normalizeDmLimit(input.limit ?? DEFAULT_DM_MESSAGE_LIMIT)),
     });
-    if (input.before) {
+    if (typeof input.before === 'number') {
+      params.set('before_sequence', String(input.before));
+    } else if (input.before) {
       params.set(
         'before',
         typeof input.before === 'string'
@@ -54,6 +56,7 @@ export const dmRoutes = {
           : input.before.toISOString(),
       );
     }
+    if (input.ids?.length) params.set('ids', input.ids.join(','));
     return `${dmRoutes.messages(conversationId)}?${params.toString()}`;
   },
   messageAttachments: (conversationId: string) =>

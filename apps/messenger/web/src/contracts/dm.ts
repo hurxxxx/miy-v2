@@ -506,6 +506,8 @@ export function normalizeDmSafetyCapability(
     report_categories: [...value.report_categories] as string[],
     report_note_max_length: value.report_note_max_length,
     terms: normalizeDmTermsStatus(value.terms),
+    ...(value.manager === true ? { manager: true } : {}),
+    ...(value.manager_claimable === true ? { manager_claimable: true } : {}),
   };
 }
 
@@ -892,8 +894,9 @@ export function isDmComposerSendDisabled(input: {
 export function shouldSubmitDmComposerKey(input: {
   key: string;
   shiftKey: boolean;
+  isComposing?: boolean;
 }): boolean {
-  return input.key === 'Enter' && !input.shiftKey;
+  return input.key === 'Enter' && !input.shiftKey && !input.isComposing;
 }
 
 export function readyDmPendingAttachmentIds<T extends { id: string }>(

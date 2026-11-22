@@ -17,6 +17,7 @@ import { i18n } from '../../../platform/i18n';
 import {
   acceptDmTerms,
   createGroupDmThread,
+  editDmMessage,
   getDmAttachmentPreviewUrl,
   getDmTerms,
   listDmBlocks,
@@ -24,6 +25,7 @@ import {
   listDmThreads,
   markDmThreadRead,
   searchDmUsers,
+  sendDmMessage,
   setDmBlock,
   type DmMessage,
   type DmSafetyCapability,
@@ -82,6 +84,7 @@ vi.mock('../api/dm-api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../api/dm-api')>()),
   acceptDmTerms: vi.fn(),
   createGroupDmThread: vi.fn(),
+  editDmMessage: vi.fn(),
   getDmAttachmentPreviewUrl: vi.fn(),
   // miy: images are read through runtime.fileApi into object URLs.
   loadDmAttachmentObjectUrl: vi.fn(async (_token: string, path: string) => `blob:${path}`),
@@ -91,6 +94,7 @@ vi.mock('../api/dm-api', async (importOriginal) => ({
   listDmThreads: vi.fn(),
   markDmThreadRead: vi.fn(),
   searchDmUsers: vi.fn(async () => []),
+  sendDmMessage: vi.fn(),
   setDmBlock: vi.fn(),
 }));
 
@@ -170,6 +174,138 @@ function emit(type: string, data: Record<string, unknown>) {
 function view(threadId: string) {
   return <DMEmbeddedView onThreadIdChange={vi.fn()} threadId={threadId} />;
 }
+
+describe('DMEmbeddedView composer', () => {
+  const own = () => message('original', 'c1', { sender_id: auth.user.id, body: '기존 메시지' });
+  const composer = () =>
+    screen.getByRole('textbox', { name: i18n.t('apps:dm.messagePlaceholder') }) as HTMLTextAreaElement;
+
+  beforeEach(async () => {
+    await i18n.changeLanguage('ko-KR');
+    userSeq += 1;
+    auth.user = { id: `me-${userSeq}`, time_zone: 'Asia/Seoul' };
+    vi.mocked(listDmThreads).mockResolvedValue({
+      items: [thread('c1'), thread('c2')],
+      safety: SAFETY,
+    });
+    vi.mocked(listDmMessages).mockImplementation(async (_token, id) => ({
+      items: id === 'c1' ? [own()] : [],
+    }));
+    vi.mocked(listDmBlocks).mockResolvedValue({ items: [] });
+    vi.mocked(markDmThreadRead).mockImplementation(async (_token, id) => thread(id));
+  });
+
+  afterEach(() => {
+    cleanup();
+    vi.clearAllMocks();
+    realtime.listeners.clear();
+  });
+
+  it('preserves the next draft when a send fails and ignores Enter during IME composition', async () => {
+    let rejectSend!: (error: Error) => void;
+    vi.mocked(sendDmMessage).mockImplementation(
+      () => new Promise((_resolve, reject) => { rejectSend = reject; }),
+    );
+    render(view('c1'));
+    await screen.findByText(own().body);
+    fireEvent.change(composer(), { target: { value: '첫 메시지' } });
+    fireEvent.keyDown(composer(), { key: 'Enter', isComposing: true });
+    expect(sendDmMessage).not.toHaveBeenCalled();
+    fireEvent.keyDown(composer(), { key: 'Enter' });
+    expect(sendDmMessage).toHaveBeenCalledTimes(1);
+    fireEvent.change(composer(), { target: { value: '다음 초안' } });
+    await act(async () => rejectSend(new Error('temporarily unavailable')));
+    expect(composer().value).toBe('다음 초안');
+    const restore = screen.getByRole('button', { name: i18n.t('apps:dm.restoreFailedDraft') });
+    expect((restore as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.change(composer(), { target: { value: '' } });
+    fireEvent.click(restore);
+    expect(composer().value).toBe('첫 메시지');
+  });
+
+  it('keeps an ordinary draft when the user opens and leaves an edit', async () => {
+    const { rerender } = render(view('c1'));
+    await screen.findByText(own().body);
+    fireEvent.change(composer(), { target: { value: '보낼 초안' } });
+    fireEvent.click(screen.getByRole('button', { name: i18n.t('apps:dm.edit') }));
+    expect(composer().value).toBe(own().body);
+    fireEvent.change(composer(), { target: { value: '수정 중' } });
+    rerender(view('c2'));
+    await waitFor(() => expect(composer().value).toBe(''));
+    rerender(view('c1'));
+    await waitFor(() => expect(composer().value).toBe('보낼 초안'));
+  });
+
+  it('does not overwrite the current composer when an edit in another thread succeeds', async () => {
+    let finishEdit!: (value: DmMessage) => void;
+    vi.mocked(editDmMessage).mockImplementation(
+      () => new Promise((resolve) => { finishEdit = resolve; }),
+    );
+    const { rerender } = render(view('c1'));
+    await screen.findByText(own().body);
+    fireEvent.change(composer(), { target: { value: '첫 대화 초안' } });
+    fireEvent.click(screen.getByRole('button', { name: i18n.t('apps:dm.edit') }));
+    fireEvent.change(composer(), { target: { value: '고친 메시지' } });
+    fireEvent.keyDown(composer(), { key: 'Enter' });
+    expect(editDmMessage).toHaveBeenCalledWith('token', 'c1', 'original', '고친 메시지');
+    rerender(view('c2'));
+    await waitFor(() => expect(composer().value).toBe(''));
+    fireEvent.change(composer(), { target: { value: '다른 대화 초안' } });
+    await act(async () => finishEdit({ ...own(), body: '고친 메시지' }));
+    expect(composer().value).toBe('다른 대화 초안');
+    rerender(view('c1'));
+    await waitFor(() => expect(composer().value).toBe('첫 대화 초안'));
+  });
+
+  it('preserves back history until the host accepts the requested navigation', async () => {
+    vi.mocked(listDmThreads).mockResolvedValue({
+      items: [
+        thread('c1', { other_user: { ...peer, id: 'one', full_name: '첫 사람' } }),
+        thread('c2', { other_user: { ...peer, id: 'two', full_name: '둘째 사람' } }),
+      ],
+      safety: SAFETY,
+    });
+    const requestNavigation = vi.fn();
+    const at = (threadId: string) => (
+      <DMEmbeddedView embeddedPersistentList onThreadIdChange={requestNavigation} threadId={threadId} />
+    );
+    const { rerender } = render(at('c1'));
+    const nextThread = await screen.findByText('둘째 사람');
+    fireEvent.click(nextThread);
+    expect(requestNavigation).toHaveBeenLastCalledWith('c2');
+    rerender(at('c2'));
+    const back = await screen.findByRole('button', { name: i18n.t('apps:dm.previousThread') });
+    fireEvent.click(back);
+    expect(requestNavigation).toHaveBeenLastCalledWith('c1');
+    expect((back as HTMLButtonElement).disabled).toBe(false);
+    fireEvent.click(back);
+    expect(requestNavigation).toHaveBeenCalledTimes(3);
+    rerender(at('c1'));
+    await waitFor(() => expect((screen.getByRole('button', {
+      name: i18n.t('apps:dm.nextThread'),
+    }) as HTMLButtonElement).disabled).toBe(false));
+  });
+
+  it('refreshes already loaded messages after they leave the newest page', async () => {
+    const older = message('oldest', 'c1', { sequence: 1, body: '이전 메시지 본문' });
+    const newest = Array.from({ length: 50 }, (_, index) =>
+      message(`newest-${index}`, 'c1', { sequence: index + 2 }),
+    );
+    vi.mocked(listDmMessages).mockImplementation(async (_token, _id, _limit, before, ids) => ({
+      items: ids ? [{ ...older, hidden: true, body: '관리자가 가린 메시지입니다.' }]
+        : before ? [older] : newest,
+    }));
+    const at = (reloadSeq: number) => (
+      <DMEmbeddedView onThreadIdChange={vi.fn()} reloadSeq={reloadSeq} threadId="c1" />
+    );
+    const { rerender } = render(at(0));
+    fireEvent.click(await screen.findByRole('button', { name: i18n.t('apps:dm.loadOlder') }));
+    await screen.findByText(older.body);
+    rerender(at(1));
+    await waitFor(() => expect(screen.queryByText(older.body)).toBeNull());
+    expect(listDmMessages).toHaveBeenCalledWith('token', 'c1', 50, null, ['oldest']);
+  });
+});
 
 describe('DMEmbeddedView safety', () => {
   beforeEach(async () => {

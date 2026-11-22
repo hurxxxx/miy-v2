@@ -167,14 +167,6 @@ pub async fn reserve_dm_attachment(
         .map_err(|_| ApiError::validation("request_id"))?;
     let me = identity.user_id.as_str();
     let mut conn = pool.acquire().await?;
-    let existing: Option<AttachmentRow> = sqlx::query_as(&format!(
-        "SELECT {} FROM dm_message_attachments WHERE uploader_id = $1 AND storage_request_id = $2",
-        store::ATTACHMENT_COLUMNS
-    ))
-    .bind(me)
-    .bind(request_id)
-    .fetch_optional(&mut *conn)
-    .await?;
     let conversation =
         store::require_user_conversation(&mut conn, me, &conversation_id, false).await?;
     safety::ensure_direct_conversation_open(&mut conn, &conversation, me).await?;
@@ -190,40 +182,39 @@ pub async fn reserve_dm_attachment(
     }
     let filename = safe_filename(Some(&request.filename));
     let content_type = decide_content_type(request.content_type.as_deref(), None);
-    let row = match existing {
-        Some(row) => {
-            if row.conversation_id != conversation_id
-                || i64::from(row.size_bytes) != request.size_bytes
-            {
-                return Err(ApiError::conflict(
-                    "dm.attachment_request_conflict",
-                    "This request ID was used for another attachment.",
-                ));
-            }
-            row
-        }
-        None => {
-            let id = new_id();
-            sqlx::query(
-                "INSERT INTO dm_message_attachments (id, conversation_id, message_id, uploader_id, filename, \
-                   content_type, size_bytes, created_at, storage_request_id, storage_status) \
-                 VALUES ($1, $2, NULL, $3, $4, $5, $6, $7, $8, 'reserved')",
-            )
-            .bind(&id)
-            .bind(&conversation_id)
-            .bind(me)
-            .bind(&filename)
-            .bind(&content_type)
-            .bind(request.size_bytes as i32)
-            .bind(now_utc())
-            .bind(request_id)
-            .execute(&mut *conn)
-            .await?;
-            store::attachment_by_id(&mut conn, &id, false)
-                .await?
-                .ok_or_else(ApiError::internal)?
-        }
-    };
+    sqlx::query(
+        "INSERT INTO dm_message_attachments (id, conversation_id, message_id, uploader_id, filename, \
+           content_type, size_bytes, created_at, storage_request_id, storage_status) \
+         VALUES ($1, $2, NULL, $3, $4, $5, $6, $7, $8, 'reserved') \
+         ON CONFLICT (uploader_id, storage_request_id) DO NOTHING",
+    )
+    .bind(new_id())
+    .bind(&conversation_id)
+    .bind(me)
+    .bind(&filename)
+    .bind(&content_type)
+    .bind(request.size_bytes as i32)
+    .bind(now_utc())
+    .bind(request_id)
+    .execute(&mut *conn)
+    .await?;
+    let row: AttachmentRow = sqlx::query_as(&format!(
+        "SELECT {} FROM dm_message_attachments WHERE uploader_id = $1 AND storage_request_id = $2",
+        store::ATTACHMENT_COLUMNS
+    ))
+    .bind(me)
+    .bind(request_id)
+    .fetch_one(&mut *conn)
+    .await?;
+    if row.conversation_id != conversation_id
+        || row.filename != filename
+        || i64::from(row.size_bytes) != request.size_bytes
+    {
+        return Err(ApiError::conflict(
+            "dm.attachment_request_conflict",
+            "This request ID was used for another attachment.",
+        ));
+    }
     let row = if row.storage_file_id.is_none() {
         let reserved = match identity
             .files_create(&FileCreate {
@@ -276,12 +267,6 @@ pub async fn upload_dm_attachment_content(
         store::require_user_conversation(&mut conn, me, &row.conversation_id, false).await?;
     safety::ensure_direct_conversation_open(&mut conn, &conversation, me).await?;
     drop(conn);
-    if row.storage_status != "reserved" {
-        return Err(ApiError::conflict(
-            "dm.attachment_already_uploaded",
-            "This attachment was already uploaded.",
-        ));
-    }
     let length = headers
         .get(header::CONTENT_LENGTH)
         .and_then(|value| value.to_str().ok())
@@ -292,6 +277,12 @@ pub async fn upload_dm_attachment_content(
             "The file size does not match the reservation.",
         ));
     }
+    if row.storage_status == "uploaded" {
+        return Ok(Json(views::attachment_item(&row)));
+    }
+    if row.storage_status != "reserved" {
+        return Err(ApiError::attachment_not_found());
+    }
     let file_id = row
         .storage_file_id
         .ok_or_else(ApiError::attachment_not_found)?;
@@ -299,7 +290,7 @@ pub async fn upload_dm_attachment_content(
         .files_get(&file_id.to_string())
         .await
         .map_err(storage_failed)?;
-    let file = if file.status == FileStatus::Pending {
+    let (file, content_type) = if file.status == FileStatus::Pending {
         let prefix = Arc::new(Mutex::new(Vec::with_capacity(DM_ATTACHMENT_SNIFF_BYTES)));
         let seen = prefix.clone();
         let stream = body.into_data_stream().map(move |chunk| {
@@ -312,36 +303,48 @@ pub async fn upload_dm_attachment_content(
             }
             chunk
         });
-        let uploaded = identity
+        let uploaded = match identity
             .files_upload(&file, Body::from_stream(stream))
             .await
-            .map_err(storage_failed)?;
+        {
+            Ok(file) => file,
+            Err(error) => identity
+                .files_get(&file.id)
+                .await
+                .ok()
+                .filter(|file| file.status == FileStatus::Ready)
+                .ok_or_else(|| storage_failed(error))?,
+        };
         let sniffed = prefix
             .lock()
             .ok()
             .and_then(|prefix| sniff_content_type(&prefix));
-        let content_type = decide_content_type(Some(&row.content_type), sniffed);
-        sqlx::query(
-            "UPDATE dm_message_attachments SET storage_status = 'uploaded', content_type = $2 \
-             WHERE id = $1 AND storage_status = 'reserved'",
+        (
+            uploaded,
+            decide_content_type(Some(&row.content_type), sniffed),
         )
-        .bind(&row.id)
-        .bind(&content_type)
-        .execute(&pool)
-        .await?;
-        uploaded
     } else {
-        file
+        // An earlier request committed these bytes without recording its sniffed type.
+        (file, row.content_type.clone())
     };
-    if !matches!(file.status, FileStatus::Ready | FileStatus::Attached) {
+    if file.status != FileStatus::Ready {
         return Err(ApiError::unavailable(
             "dm.attachment_upload_failed",
             "The attachment could not be uploaded.",
         ));
     }
+    sqlx::query(
+        "UPDATE dm_message_attachments SET storage_status = 'uploaded', content_type = $2 \
+         WHERE id = $1 AND storage_status = 'reserved'",
+    )
+    .bind(&row.id)
+    .bind(&content_type)
+    .execute(&pool)
+    .await?;
     let mut conn = pool.acquire().await?;
     let row = store::attachment_by_id(&mut conn, &attachment_id, false)
         .await?
+        .filter(|row| row.storage_status == "uploaded" && row.message_id.is_none())
         .ok_or_else(ApiError::attachment_not_found)?;
     Ok(Json(views::attachment_item(&row)))
 }
@@ -463,23 +466,40 @@ async fn release_where(pool: &PgPool, identity: &Identity, message_id: Option<&s
         let Some(file_id) = row.storage_file_id else {
             continue;
         };
-        let (result, status) = if row.storage_status == "attached" {
+        let file_id = file_id.to_string();
+        let storage = if row.storage_status == "attached" {
+            FileStatus::Attached
+        } else {
+            match identity.files_get(&file_id).await {
+                Ok(file)
+                    if file.status == FileStatus::Attached
+                        && file.reference.as_deref() != Some(&row.reference()) =>
+                {
+                    continue;
+                }
+                Ok(file) => file.status,
+                Err(error) => {
+                    eprintln!(
+                        "storage_release_lookup_failed: {} {:?}",
+                        error.code, error.status
+                    );
+                    continue;
+                }
+            }
+        };
+        let (result, status) = if storage == FileStatus::Attached {
             (
-                identity
-                    .files_detach(&file_id.to_string(), &row.reference())
-                    .await,
+                identity.files_detach(&file_id, &row.reference()).await,
                 "released",
             )
         } else {
-            (
-                identity.files_cancel(&file_id.to_string()).await,
-                "cancelled",
-            )
+            (identity.files_cancel(&file_id).await, "cancelled")
         };
         match result {
             Ok(_) => {
                 let _ = sqlx::query(
-                    "UPDATE dm_message_attachments SET storage_status = $2, released_at = $3 WHERE id = $1",
+                    "UPDATE dm_message_attachments SET storage_status = $2, released_at = $3 \
+                     WHERE id = $1 AND storage_status IN ('uploaded', 'attached')",
                 )
                 .bind(&row.id)
                 .bind(status)

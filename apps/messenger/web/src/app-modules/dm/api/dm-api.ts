@@ -244,12 +244,13 @@ export function listDmMessages(
   token: string,
   conversationId: string,
   limit = 50,
-  // miy: older pages (the API took `before` already; AI-DO's screen did not).
-  before: string | null = null,
+  // Older pages prefer the sequence cursor, which breaks timestamp ties.
+  before: number | string | null = null,
+  ids?: readonly string[],
 ): Promise<DmMessageListResponse> {
   return fetchDmResponse(
     'dm:messages',
-    dmRoutes.listMessages(conversationId, { limit, before }),
+    dmRoutes.listMessages(conversationId, { limit, before, ids }),
     token,
     {},
     normalizeDmMessageListResponse,
@@ -269,23 +270,24 @@ export function uploadDmAttachment(
 ): Promise<DmMessageAttachment> {
   const path = dmRoutes.messageAttachments(conversationId);
   assertDmAttachmentUploadFile(file);
+  const body = JSON.stringify({
+    request_id: requestId(),
+    filename: file.name || 'clipboard-file',
+    content_type: file.type || null,
+    size_bytes: file.size,
+  });
   return limitUploads(async () => {
-    const reserved = await fetchDmResponse(
+    const reserved = await retryUncertainUpload(() => fetchDmResponse(
       'dm:upload-attachment',
       path,
       token,
       {
         method: 'POST',
-        body: JSON.stringify({
-          request_id: requestId(),
-          filename: file.name || 'clipboard-file',
-          content_type: file.type || null,
-          size_bytes: file.size,
-        }),
+        body,
       },
       normalizeDmMessageAttachment,
-    );
-    const response = await apiFetchFile(
+    ));
+    const response = await retryUncertainUpload(() => apiFetchFile(
       dmRoutes.attachmentContent(reserved.id),
       token,
       {
@@ -293,7 +295,7 @@ export function uploadDmAttachment(
         headers: { 'Content-Type': 'application/octet-stream' },
         body: file,
       },
-    );
+    ));
     let value: unknown;
     try {
       value = await readJson<unknown>(response);
@@ -310,6 +312,17 @@ export function uploadDmAttachment(
     }
     return uploaded;
   });
+}
+
+async function retryUncertainUpload<T>(attempt: () => Promise<T>): Promise<T> {
+  try {
+    return await attempt();
+  } catch (error) {
+    if (error instanceof ApiRequestError && (error.status === 0 || error.status >= 500)) {
+      return attempt();
+    }
+    throw error;
+  }
 }
 
 // The file gateway admits a few transfers at a time; queue the rest.

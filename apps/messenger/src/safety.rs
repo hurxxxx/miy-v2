@@ -4,7 +4,7 @@
 use crate::{
     audit,
     error::{ApiError, ApiResult},
-    store::{Conversation, new_id},
+    store::{self, Conversation, new_id},
     time::now_utc,
     users,
 };
@@ -442,41 +442,24 @@ async fn resolve_target(
     reporter: &str,
     request: &ReportRequest,
 ) -> ApiResult<ReportTarget> {
-    let joined_at: Option<NaiveDateTime> = sqlx::query_scalar(
-        "SELECT joined_at FROM dm_conversation_participants WHERE conversation_id = $1 AND user_id = $2 \
-         AND left_at IS NULL",
-    )
-    .bind(&request.conversation_id)
-    .bind(reporter)
-    .fetch_optional(&mut *conn)
-    .await?;
-    let Some(joined_at) = joined_at else {
-        return Err(ApiError::thread_not_found());
-    };
+    let conversation =
+        store::require_user_conversation(conn, reporter, &request.conversation_id, true).await?;
+    let joined_at = conversation.require_participant(reporter)?.joined_at;
     let reported_user_id = if let Some(message_id) = request.message_id.as_deref() {
-        let message: Option<(String, NaiveDateTime, Option<NaiveDateTime>)> = sqlx::query_as(
-            "SELECT sender_id, created_at, deleted_at FROM dm_messages WHERE id = $1 AND conversation_id = $2",
-        )
-        .bind(message_id)
-        .bind(&request.conversation_id)
-        .fetch_optional(&mut *conn)
-        .await?;
-        // miy: a message its author deleted is gone for new reports.
-        let Some((sender_id, created_at, None)) = message else {
-            return Err(ApiError::message_not_found());
-        };
-        if created_at < joined_at {
-            return Err(ApiError::message_not_found());
-        }
+        // Share the delete lock so an accepted report keeps its evidence.
+        let message = store::message_by_id(conn, &request.conversation_id, message_id, true)
+            .await?
+            .filter(|message| !message.deleted() && message.created_at >= joined_at)
+            .ok_or_else(ApiError::message_not_found)?;
         if request
             .reported_user_id
             .as_deref()
-            .is_some_and(|id| id != sender_id)
-            || sender_id == reporter
+            .is_some_and(|id| id != message.sender_id)
+            || message.sender_id == reporter
         {
             return Err(invalid_target());
         }
-        sender_id
+        message.sender_id
     } else {
         let reported = request.reported_user_id.clone().unwrap_or_default();
         if reported.is_empty() || reported == reporter {
@@ -484,14 +467,11 @@ async fn resolve_target(
         }
         // AI-DO first checked that the user row exists; a past or present
         // participant always existed there.
-        let member: Option<String> = sqlx::query_scalar(
-            "SELECT id FROM dm_conversation_participants WHERE conversation_id = $1 AND user_id = $2 LIMIT 1",
-        )
-        .bind(&request.conversation_id)
-        .bind(&reported)
-        .fetch_optional(&mut *conn)
-        .await?;
-        if member.is_none() {
+        if !conversation
+            .participants
+            .iter()
+            .any(|participant| participant.user_id == reported)
+        {
             return Err(invalid_target());
         }
         reported

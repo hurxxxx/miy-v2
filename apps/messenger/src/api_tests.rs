@@ -184,9 +184,14 @@ async fn files_put(Path(id): Path<String>, body: Bytes) -> impl IntoResponse {
     if body.len() as u64 != file.size {
         return AxStatus::UNPROCESSABLE_ENTITY.into_response();
     }
+    let lose_response = file.name == "lost-upload-and-attach.bin" && file.status == "pending";
     file.bytes = Some(body.to_vec());
     file.status = "ready";
-    Json(file_json(&id, file)).into_response()
+    if lose_response {
+        AxStatus::BAD_GATEWAY.into_response()
+    } else {
+        Json(file_json(&id, file)).into_response()
+    }
 }
 
 async fn files_content(Path(id): Path<String>) -> impl IntoResponse {
@@ -207,7 +212,7 @@ async fn files_attach(
     headers: HeaderMap,
     Path(id): Path<String>,
     Json(body): Json<Value>,
-) -> Json<Value> {
+) -> impl IntoResponse {
     record(
         "attach",
         &headers,
@@ -215,9 +220,14 @@ async fn files_attach(
     );
     let mut state = platform().lock().unwrap();
     let file = state.files.get_mut(&id).unwrap();
+    let lose_response = file.name == "lost-upload-and-attach.bin" && file.status == "ready";
     file.status = "attached";
     file.reference = body["reference"].as_str().map(str::to_string);
-    Json(file_json(&id, file))
+    if lose_response {
+        AxStatus::BAD_GATEWAY.into_response()
+    } else {
+        Json(file_json(&id, file)).into_response()
+    }
 }
 
 async fn files_detach(
@@ -834,6 +844,10 @@ async fn group_membership_lifecycle() {
     assert_eq!(removed["participant_count"], 4);
     let (_, gone) = listed(&removable, &id).await;
     assert_eq!(gone, Value::Null);
+    assert_eq!(
+        send(&removable, &id, "메시지 작성").await.status(),
+        StatusCode::NOT_FOUND
+    );
     let retracted = events("retract", &id);
     assert!(
         retracted
@@ -1514,6 +1528,10 @@ async fn upload(user: &str, conversation: &str, name: &str, declared: &str, byte
     .await;
     assert_eq!(reserved["is_image"], false);
     let id = reserved["id"].as_str().unwrap();
+    put_attachment(user, id, bytes).await
+}
+
+async fn put_attachment(user: &str, id: &str, bytes: &[u8]) -> Value {
     let response = Client::new()
         .put(format!(
             "{}/api/files/dm/attachments/{id}/content",
@@ -1526,6 +1544,58 @@ async fn upload(user: &str, conversation: &str, name: &str, declared: &str, byte
         .await
         .unwrap();
     ok(response).await
+}
+
+#[tokio::test]
+#[ignore]
+async fn attachment_recovers_ready_upload_and_releases_its_confirmed_core_reference() {
+    let _settings = SETTINGS.read().await;
+    let sender = person("보냄");
+    let recipient = person("받음");
+    let conversation = direct(&sender, &recipient).await;
+    let bytes = b"the bytes were saved";
+    let uploaded = upload(
+        &sender,
+        &conversation,
+        "lost-upload-and-attach.bin",
+        "application/octet-stream",
+        bytes,
+    )
+    .await;
+    let attachment = uploaded["id"].as_str().unwrap();
+    assert_eq!(put_attachment(&sender, attachment, bytes).await, uploaded);
+    let message = ok(call(
+        &sender,
+        Method::POST,
+        &format!("/v1/dm/conversations/{conversation}/messages"),
+        Some(json!({"body": "", "attachment_ids": [attachment]})),
+    )
+    .await)
+    .await;
+    let message_id = message["id"].as_str().unwrap();
+    let mut conn = db().await;
+    let (file_id, status): (uuid::Uuid, String) = sqlx::query_as(
+        "SELECT storage_file_id, storage_status FROM dm_message_attachments WHERE id = $1",
+    )
+    .bind(attachment)
+    .fetch_one(&mut conn)
+    .await
+    .unwrap();
+    assert_eq!(
+        status, "uploaded",
+        "Core attached the file but the reply was lost"
+    );
+    drop(conn);
+    ok(call(
+        &sender,
+        Method::DELETE,
+        &format!("/v1/dm/conversations/{conversation}/messages/{message_id}"),
+        None,
+    )
+    .await)
+    .await;
+    assert_eq!(file_events("detach", &file_id.to_string()), 1);
+    assert_eq!(file_events("cancel", &file_id.to_string()), 0);
 }
 
 const PNG: &[u8] = b"\x89PNG\r\n\x1a\n\0\0\0\rIHDR";
@@ -1858,29 +1928,39 @@ async fn notification_check_mute_search_and_older_messages() {
     let b = person("검색대상");
     let outsider = person("남");
     let id = direct(&a, &b).await;
-    let check = |user: &str, platform_call: bool| {
+    let check = |user: &str, resource_id: &str, platform_call: bool| {
         let user = user.to_string();
+        let resource_id = resource_id.to_string();
         let id = id.clone();
         async move {
             request(Some(&user), Method::POST, "/platform/notification-check",
-                Some(json!({"items": [{"groupKey": id, "resourceId": "m"}, {"groupKey": "unknown", "resourceId": null}]})),
+                Some(json!({"items": [{"groupKey": id, "resourceId": resource_id}, {"groupKey": "unknown", "resourceId": null}]})),
                 platform_call)
             .await
         }
     };
-    assert_eq!(ok(check(&a, true).await).await, json!({"allowed": [id]}));
     assert_eq!(
-        ok(check(&outsider, true).await).await,
+        ok(check(&a, "unknown", true).await).await,
         json!({"allowed": []})
     );
-    let (status, error) = code(check(&a, false).await).await;
+
+    // Home card: unread conversations for the platform, no message body.
+    let earlier = ok(send(&b, &id, "비밀 본문").await).await;
+    let earlier_id = earlier["id"].as_str().unwrap();
+    assert_eq!(
+        ok(check(&a, earlier_id, true).await).await,
+        json!({"allowed": [id]})
+    );
+    assert_eq!(
+        ok(check(&outsider, earlier_id, true).await).await,
+        json!({"allowed": []})
+    );
+    let (status, error) = code(check(&a, earlier_id, false).await).await;
     assert_eq!(
         (status, error.as_str()),
         (StatusCode::FORBIDDEN, "platform_call_required")
     );
 
-    // Home card: unread conversations for the platform, no message body.
-    let earlier = ok(send(&b, &id, "비밀 본문").await).await;
     let card = ok(request(
         Some(&a),
         Method::POST,
@@ -1902,7 +1982,6 @@ async fn notification_check_mute_search_and_older_messages() {
     assert!(!card.to_string().contains("비밀 본문"));
 
     let latest = ok(send(&b, &id, "다음 메시지").await).await;
-    let earlier_id = earlier["id"].as_str().unwrap();
     let mut conn = db().await;
     sqlx::query("UPDATE dm_messages SET created_at = created_at + INTERVAL '1 hour' WHERE id = $1")
         .bind(earlier_id)
@@ -2041,4 +2120,26 @@ async fn notification_check_mute_search_and_older_messages() {
     let older = older["items"].as_array().unwrap();
     assert_eq!(older.len(), 3);
     assert_eq!(older[2]["body"], "page 1");
+
+    // With the same timestamp on both sides of the cursor the older message is still returned.
+    let before_sequence = items[0]["sequence"].as_i64().unwrap() as i32;
+    let mut conn = db().await;
+    sqlx::query(
+        "UPDATE dm_messages SET created_at = (SELECT created_at FROM dm_messages WHERE id = $1) WHERE id = $2",
+    )
+    .bind(items[0]["id"].as_str().unwrap())
+    .bind(older[2]["id"].as_str().unwrap())
+    .execute(&mut conn)
+    .await
+    .unwrap();
+    drop(conn);
+    let page = ok(call(
+        &a,
+        Method::GET,
+        &format!("/v1/dm/conversations/{id}/messages?limit=3&before_sequence={before_sequence}"),
+        None,
+    )
+    .await)
+    .await;
+    assert_eq!(page["items"][2]["id"], older[2]["id"]);
 }

@@ -119,7 +119,7 @@ pub async fn list_dm_conversations(
     let conversations = store::list_user_conversations(&mut conn, me).await?;
     let blocked = safety::blocked_user_ids(&mut conn, me).await?;
     let terms = ugc::terms_status(&mut conn, me).await?;
-    let manager = safety_admin::is_manager(&mut conn, me).await?;
+    let manager_status = safety_admin::load_manager_status(&mut conn, me).await?;
     drop(conn);
     let items =
         views::render_conversations(&pool, &identity, &conversations, Some(&blocked)).await?;
@@ -132,7 +132,8 @@ pub async fn list_dm_conversations(
             report_categories: safety::REPORT_CATEGORIES.to_vec(),
             report_note_max_length: safety::REPORT_NOTE_MAX_LENGTH,
             terms: Some(terms),
-            manager,
+            manager: manager_status.manager,
+            manager_claimable: manager_status.claimable,
         }),
     }))
 }
@@ -471,12 +472,7 @@ async fn depart(
         .bind(now)
         .execute(&mut *conn)
         .await?;
-    let departing_owner = conversation
-        .participants
-        .iter()
-        .find(|p| p.user_id == user_id)
-        .is_some_and(|p| p.role == "owner");
-    if departing_owner {
+    if participant.role == "owner" {
         let next_owner = conversation
             .active()
             .filter(|p| p.user_id != user_id)
@@ -563,13 +559,17 @@ pub async fn mark_dm_conversation_read(
     let me = identity.user_id.as_str();
     let mut tx = pool.begin().await?;
     let conversation =
-        store::require_user_conversation(&mut tx, me, &conversation_id, false).await?;
+        store::require_user_conversation(&mut tx, me, &conversation_id, true).await?;
     let participant = conversation.require_participant(me)?.clone();
     let latest = store::latest_visible_message(&mut tx, &conversation_id, &participant).await?;
     let latest_id = latest.as_ref().map(|m| m.id.clone());
     // miy: the screen marks read on every poll while visible; only a moved
     // read position is written and passed on to the platform inbox.
-    let moved = latest_id != participant.last_read_message_id;
+    let moved = latest.is_some_and(|message| {
+        participant
+            .last_read_sequence
+            .is_none_or(|last_read| message.sequence > last_read)
+    });
     if moved {
         sqlx::query(
             "UPDATE dm_conversation_participants SET last_read_message_id = $2 WHERE id = $1",
@@ -601,7 +601,7 @@ pub async fn mute_dm_conversation(
     let me = identity.user_id.as_str();
     let mut tx = pool.begin().await?;
     let conversation =
-        store::require_user_conversation(&mut tx, me, &conversation_id, false).await?;
+        store::require_user_conversation(&mut tx, me, &conversation_id, true).await?;
     let participant = conversation.require_participant(me)?;
     let changed = participant.muted_at.is_some() != request.muted;
     if changed {

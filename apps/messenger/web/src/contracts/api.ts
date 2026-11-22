@@ -95,6 +95,7 @@ type DmSafetyCapability = {
   terms?: UgcTermsStatus | null;
   /** miy: the caller holds the messenger manager role (display only). */
   manager?: boolean;
+  manager_claimable?: boolean;
 };
 
 type DmConversationItem = {

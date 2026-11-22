@@ -25,20 +25,20 @@ UI는 `runtime.api('/v1/...')`, 파일 바이트는 `runtime.fileApi('/dm/...')`
 | --- | --- |
 | `GET /v1/dm/me` | (miy) 호출자와 관리자 여부 |
 | `GET /v1/dm/users?q&limit&include_current` | 사용자 검색(플랫폼 디렉터리, 기본 30, 최대 100) |
-| `GET /v1/dm/conversations` | 내 대화 목록 + `safety`(신고·차단 지원, 이용규칙 상태, `manager`) |
+| `GET /v1/dm/conversations` | 내 대화 목록 + `safety`(신고·차단, 이용규칙, `manager`, `manager_claimable`) |
 | `POST /v1/dm/conversations` | `recipient_user_id`(1:1, 있으면 그 대화) 또는 `participant_user_ids`(그룹, 본인 외 2명 이상)+`title`. 201 |
 | `PATCH /v1/dm/conversations/{id}` | 그룹 이름(소유자·관리자) |
 | `POST /v1/dm/conversations/{id}/participants` | 그룹 초대(참여자 누구나) |
 | `DELETE /v1/dm/conversations/{id}/participants/me` | 그룹 나가기(204) |
 | `DELETE /v1/dm/conversations/{id}/participants/{user_id}` | 내보내기(소유자·관리자) |
-| `GET /v1/dm/conversations/{id}/messages?limit&before` | 최근 메시지(기본 50), `before`보다 이전 |
+| `GET /v1/dm/conversations/{id}/messages` | 최근 메시지(기본 50). `before_sequence`로 이전 페이지, `ids`로 쉼표로 나눈 기존 ID 최대 50개를 다시 읽는다. 날짜 커서 `before`도 지원한다. |
 | `POST /v1/dm/conversations/{id}/messages` | 보내기 `{body, attachment_ids, reply_to_message_id}` |
 | `PATCH /v1/dm/conversations/{id}/messages/{mid}` | (miy) 작성자 수정 `{body}` |
 | `DELETE /v1/dm/conversations/{id}/messages/{mid}` | (miy) 작성자 삭제 |
 | `PATCH /v1/dm/conversations/{id}/read` | 읽음 |
 | `PUT /v1/dm/conversations/{id}/mute` | (miy) 알림 끄기 `{muted}` |
 | `POST /v1/dm/conversations/{id}/attachments` | 첨부 예약 `{request_id, filename, content_type, size_bytes}`(201) |
-| `PUT /files/dm/attachments/{id}/content` | 첨부 바이트(파일 게이트웨이, 예약한 사람만) |
+| `PUT /files/dm/attachments/{id}/content` | 첨부 바이트(파일 게이트웨이, 예약한 사람만). 응답 유실 시 같은 예약의 완료 상태를 복구한다. |
 | `GET /files/dm/attachments/{id}/content` | 첨부 내려받기(참여자, 들어온 뒤의 메시지, 가림·삭제 아님) |
 | `GET /v1/dm/attachments/{id}/download`, `/preview` | 파일 경로 `{url}`(미리보기는 이미지만, 아니면 415) |
 | `DELETE /v1/dm/attachments/{id}` | (miy) 보내지 않은 첨부 취소 |
@@ -55,7 +55,7 @@ UI는 `runtime.api('/v1/...')`, 파일 바이트는 `runtime.fileApi('/dm/...')`
 | `POST /v1/dm-safety/reports/{id}/resolve` | 처리(`expected_status: open`) |
 | `POST /v1/dm-safety/reports/{id}/message-visibility` | 가림·되돌림 |
 | `GET/POST /v1/dm-safety/filter-terms`, `DELETE .../{id}` | 금칙어 |
-| `POST /platform/notification-check` | 플랫폼 → 앱 재확인(manifest `platformEndpoints.notificationCheck`, 읽기 전용) |
+| `POST /platform/notification-check` | 플랫폼 → 앱 재확인(manifest `platformEndpoints.notificationCheck`, 읽기 전용). 그룹·원본 ID와 현재 접근을 함께 확인한다. |
 | `POST /platform/home-card` | 포털 홈 "안 읽은 대화" 카드(manifest `platformEndpoints.homeCard`, 읽기 전용) |
 
 ## 데이터

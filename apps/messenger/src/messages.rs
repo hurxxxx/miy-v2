@@ -31,6 +31,10 @@ pub struct MessageListQuery {
     limit: Option<String>,
     #[serde(default)]
     before: Option<String>,
+    #[serde(default)]
+    before_sequence: Option<i32>,
+    #[serde(default)]
+    ids: Option<String>,
 }
 
 /// `GET /v1/dm/conversations/{id}/messages`: the newest `limit` messages the
@@ -43,6 +47,23 @@ pub async fn list_dm_messages(
 ) -> ApiResult<Json<DmMessageListResponse>> {
     route_id(&conversation_id)?;
     let limit = query_limit(query.limit.as_deref(), 50)?;
+    let ids = if let Some(ids) = query.ids.as_deref() {
+        let ids: Vec<&str> = ids.split(',').collect();
+        if ids.len() > 50 || query.before.is_some() || query.before_sequence.is_some() {
+            return Err(ApiError::validation("Invalid message refresh list"));
+        }
+        for id in &ids {
+            route_id(id)?;
+        }
+        Some(ids)
+    } else {
+        None
+    };
+    if query.before_sequence.is_some_and(|sequence| sequence < 1)
+        || (query.before_sequence.is_some() && query.before.is_some())
+    {
+        return Err(ApiError::validation("Invalid message cursor"));
+    }
     let before = match query.before.as_deref() {
         None => None,
         Some(value) => Some(
@@ -57,12 +78,16 @@ pub async fn list_dm_messages(
     let participant = conversation.require_participant(me)?.clone();
     let mut rows: Vec<MessageRow> = sqlx::query_as(&format!(
         "SELECT {} FROM dm_messages WHERE conversation_id = $1 AND created_at >= $2 \
-           AND ($3::timestamp IS NULL OR created_at < $3) ORDER BY sequence DESC LIMIT $4",
+           AND ($3::timestamp IS NULL OR created_at < $3) \
+           AND ($4::integer IS NULL OR sequence < $4) \
+           AND ($5::text[] IS NULL OR id = ANY($5)) ORDER BY sequence DESC LIMIT $6",
         store::MESSAGE_COLUMNS
     ))
     .bind(&conversation_id)
     .bind(participant.joined_at)
     .bind(before)
+    .bind(query.before_sequence)
+    .bind(ids)
     .bind(i64::from(limit))
     .fetch_all(&mut *conn)
     .await?;
@@ -160,7 +185,7 @@ pub async fn send_dm_message(
     let me = identity.user_id.as_str();
     let mut tx = pool.begin().await?;
     let conversation =
-        store::require_user_conversation(&mut tx, me, &conversation_id, false).await?;
+        store::require_user_conversation(&mut tx, me, &conversation_id, true).await?;
     // `_DmMessageComposePlanner.plan`.
     ugc::ensure_user_content_allowed(&mut tx, me, &[body.as_str()]).await?;
     let sender_participant = conversation.require_participant(me)?.clone();
@@ -181,7 +206,7 @@ pub async fn send_dm_message(
     if conversation.active().all(|p| p.user_id == me) {
         return Err(ApiError::thread_not_found());
     }
-    // `allocate_message_sequence`: one UPDATE takes the conversation row lock.
+    // The conversation lock keeps membership, message order and the read marker current.
     let now = now_utc();
     let sequence: Option<i32> = sqlx::query_scalar(
         "UPDATE dm_conversations SET message_seq = message_seq + 1, updated_at = $2 WHERE id = $1 \
@@ -192,8 +217,6 @@ pub async fn send_dm_message(
     .fetch_optional(&mut *tx)
     .await?;
     let sequence = sequence.ok_or_else(ApiError::thread_not_found)?;
-    // Blocks are checked after the lock: a concurrent block is either before
-    // this send (refused) or after it.
     safety::ensure_direct_conversation_open(&mut tx, &conversation, me).await?;
     let message_id = new_id();
     sqlx::query(
@@ -223,29 +246,16 @@ pub async fn send_dm_message(
             .execute(&mut *tx)
             .await?;
     }
+    let message = store::message_by_id(&mut tx, &conversation_id, &message_id, false)
+        .await?
+        .ok_or_else(ApiError::message_not_found)?;
     tx.commit().await?;
 
     attachments::attach_linked(&pool, &identity, &linked_ids).await;
-    let mut conn = pool.acquire().await?;
-    let conversation =
-        store::require_user_conversation(&mut conn, me, &conversation_id, false).await?;
-    let message = store::message_by_id(&mut conn, &conversation_id, &message_id, false)
-        .await?
-        .ok_or_else(ApiError::message_not_found)?;
-    drop(conn);
     notify::message_created(&pool, &identity, &conversation, &message).await;
-    let viewer = conversation.active_participant(me);
-    let item = views::render_messages(
-        &pool,
-        &identity,
-        &conversation,
-        viewer,
-        std::slice::from_ref(&message),
-    )
-    .await?
-    .pop()
-    .ok_or_else(ApiError::internal)?;
-    Ok(Json(item))
+    Ok(Json(
+        render_one(&pool, &identity, &conversation, &message).await?,
+    ))
 }
 
 /// The author's own message in a conversation they are still in, locked.
@@ -255,7 +265,7 @@ async fn own_message(
     conversation_id: &str,
     message_id: &str,
 ) -> ApiResult<(Conversation, MessageRow)> {
-    let conversation = store::require_user_conversation(conn, me, conversation_id, false).await?;
+    let conversation = store::require_user_conversation(conn, me, conversation_id, true).await?;
     let participant = conversation.require_participant(me)?;
     let message = store::message_by_id(conn, conversation_id, message_id, true)
         .await?
@@ -273,23 +283,16 @@ async fn own_message(
 async fn render_one(
     pool: &PgPool,
     identity: &Identity,
-    conversation_id: &str,
-    message_id: &str,
+    conversation: &Conversation,
+    message: &MessageRow,
 ) -> ApiResult<DmMessageItem> {
-    let me = identity.user_id.as_str();
-    let mut conn = pool.acquire().await?;
-    let conversation =
-        store::require_user_conversation(&mut conn, me, conversation_id, false).await?;
-    let message = store::message_by_id(&mut conn, conversation_id, message_id, false)
-        .await?
-        .ok_or_else(ApiError::message_not_found)?;
-    drop(conn);
+    // Render the authorized write's outcome even if membership changes after commit.
     views::render_messages(
         pool,
         identity,
-        &conversation,
-        conversation.active_participant(me),
-        &[message],
+        conversation,
+        conversation.active_participant(&identity.user_id),
+        std::slice::from_ref(message),
     )
     .await?
     .pop()
@@ -311,7 +314,8 @@ pub async fn edit_dm_message(
     check_body_length(&body)?;
     let me = identity.user_id.as_str();
     let mut tx = pool.begin().await?;
-    let (conversation, message) = own_message(&mut tx, me, &conversation_id, &message_id).await?;
+    let (conversation, mut message) =
+        own_message(&mut tx, me, &conversation_id, &message_id).await?;
     if message.hidden() || message.deleted() {
         return Err(ApiError::unprocessable(
             "dm.message_not_editable",
@@ -357,13 +361,15 @@ pub async fn edit_dm_message(
             json!({"conversation_id": conversation_id}),
         )
         .await?;
+        message.body = body;
+        message.edited_at = Some(now);
         tx.commit().await?;
         notify::message_changed(&pool, &identity, &conversation, &message).await;
     } else {
         tx.commit().await?;
     }
     Ok(Json(
-        render_one(&pool, &identity, &conversation_id, &message_id).await?,
+        render_one(&pool, &identity, &conversation, &message).await?,
     ))
 }
 
@@ -381,11 +387,12 @@ pub async fn delete_dm_message(
     route_id(&message_id)?;
     let me = identity.user_id.as_str();
     let mut tx = pool.begin().await?;
-    let (conversation, message) = own_message(&mut tx, me, &conversation_id, &message_id).await?;
+    let (conversation, mut message) =
+        own_message(&mut tx, me, &conversation_id, &message_id).await?;
     if message.deleted() {
         tx.commit().await?;
         return Ok(Json(
-            render_one(&pool, &identity, &conversation_id, &message_id).await?,
+            render_one(&pool, &identity, &conversation, &message).await?,
         ));
     }
     let reported = safety::message_has_open_report(&mut tx, &message_id).await?;
@@ -422,6 +429,8 @@ pub async fn delete_dm_message(
         json!({"conversation_id": conversation_id, "report_open": reported}),
     )
     .await?;
+    message.body.clear();
+    message.deleted_at = Some(now);
     tx.commit().await?;
     if !reported {
         attachments::release_deleted_message_files(&pool, &identity, &message_id).await;
@@ -429,7 +438,7 @@ pub async fn delete_dm_message(
     attachments::release_pending_files(&pool, &identity).await;
     notify::message_changed(&pool, &identity, &conversation, &message).await;
     Ok(Json(
-        render_one(&pool, &identity, &conversation_id, &message_id).await?,
+        render_one(&pool, &identity, &conversation, &message).await?,
     ))
 }
 

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useNavigationDirty } from '../runtime/navigation-state';
 import { useTranslation } from 'react-i18next';
 
 import { useFeedback } from '@miy/components/ui/lib/feedback/feedback-provider';
@@ -61,6 +62,7 @@ export function AdminDmSafetySection({
   const [evidence, setEvidence] = useState<DmSafetyEvidence | null>(null);
   const [resolutionNote, setResolutionNote] = useState('');
   const [busy, setBusy] = useState(false);
+  useNavigationDirty(busy || (detail?.status === 'open' && Boolean(resolutionNote.trim())));
   // 마지막으로 연 신고 — 늦게 온 응답(상세·증거·처리 결과)이 다른 신고 화면에 붙지 않게 한다.
   const activeReportIdRef = useRef<string | null>(null);
   // 목록 요청 세대 — 상태 탭을 바꾸거나 새로고침하면 앞선 요청(더 보기 포함)의 응답은 버린다.
@@ -352,6 +354,7 @@ export function AdminDmSafetySection({
                 <textarea
                   aria-label={t('admin.console.dmSafety.resolutionNote')}
                   className="app-text-body-sm min-h-16 rounded-md border border-app-border bg-app-bg px-3 py-2"
+                  disabled={busy}
                   maxLength={1000}
                   onChange={(event) => setResolutionNote(event.target.value)}
                   placeholder={t('admin.console.dmSafety.resolutionNote')}
@@ -402,6 +405,7 @@ function DmSafetyFilterTerms({ token }: { token: string }) {
   const [limit, setLimit] = useState(0);
   const [term, setTerm] = useState('');
   const [busy, setBusy] = useState(false);
+  useNavigationDirty(busy || Boolean(term.trim()));
 
   const load = useCallback(async () => {
     try {
@@ -451,6 +455,7 @@ function DmSafetyFilterTerms({ token }: { token: string }) {
         <input
           aria-label={t('admin.console.dmSafety.filterInput')}
           className="app-text-body-sm min-w-48 flex-1 rounded-md border border-app-border bg-app-bg px-3 py-1.5"
+          disabled={busy}
           maxLength={50}
           onChange={(event) => setTerm(event.target.value)}
           placeholder={t('admin.console.dmSafety.filterInput')}
