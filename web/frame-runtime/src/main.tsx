@@ -241,7 +241,54 @@ function apiPath(path: string) {
 const CREDENTIAL_REFUSED = "x-miy-frame-credential";
 
 /** A request to this frame origin only: no cookies, the frame token, its release. */
-async function call(path: string, init: RequestInit = {}): Promise<Response> {
+/** `fileApi` options: an upload may report its progress (sent bytes of total). */
+type FileInit = RequestInit & { onUploadProgress?: (sent: number, total: number) => void };
+
+/**
+ * The same request through XMLHttpRequest, only to report upload progress
+ * (fetch cannot). Headers, method, body, abort and the answer are the same.
+ */
+function progressResponse(path: string, init: FileInit, headers: Headers): Promise<Response> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open(init.method ?? "GET", path);
+    headers.forEach((value, name) => xhr.setRequestHeader(name, value));
+    xhr.responseType = "blob";
+    const body = init.body ?? null;
+    const size =
+      body instanceof Blob ? body.size
+      : body instanceof ArrayBuffer ? body.byteLength
+      : ArrayBuffer.isView(body) ? body.byteLength
+      : typeof body === "string" ? new Blob([body]).size
+      : 0;
+    let reported = -1;
+    const report = (sent: number) => {
+      if (sent <= reported) return;
+      reported = sent;
+      init.onUploadProgress?.(sent, size);
+    };
+    xhr.upload.onprogress = (event) => {
+      if (event.lengthComputable) report(Math.min(event.loaded, size));
+    };
+    xhr.onload = () => {
+      // Every completed upload ends at 100%, whatever events the browser gave.
+      report(size);
+      const answer = new Headers();
+      for (const line of xhr.getAllResponseHeaders().trim().split(/\r?\n/)) {
+        const at = line.indexOf(":");
+        if (at > 0) answer.append(line.slice(0, at).trim(), line.slice(at + 1).trim());
+      }
+      const empty = [101, 204, 205, 304].includes(xhr.status);
+      resolve(new Response(empty ? null : (xhr.response as Blob), { status: xhr.status, statusText: xhr.statusText, headers: answer }));
+    };
+    xhr.onerror = () => reject(new ApiError("network", "network_unavailable"));
+    xhr.onabort = () => reject(new ApiError("abort", "request_aborted"));
+    init.signal?.addEventListener("abort", () => xhr.abort(), { once: true });
+    xhr.send(body as XMLHttpRequestBodyInit | null);
+  });
+}
+
+async function call(path: string, init: FileInit = {}): Promise<Response> {
   if (init.signal?.aborted) throw new ApiError("abort", "request_aborted");
   if (stopped) throw new Error(stopped);
   if (Date.now() >= frameExpiresAt) throw renewalError("frame_session_ended");
@@ -253,8 +300,11 @@ async function call(path: string, init: RequestInit = {}): Promise<Response> {
     const headers = requestHeaders(init);
     headers.set("Authorization", `Bearer ${token}`);
     headers.set("x-miy-release", boot.releaseId);
+    const { onUploadProgress, ...request } = init;
+    const streamed = typeof ReadableStream !== "undefined" && request.body instanceof ReadableStream;
+    if (onUploadProgress && request.body && !streamed) return progressResponse(path, init, headers);
     return fetchResponse(path, {
-      ...init,
+      ...request,
       headers,
       mode: "same-origin",
       credentials: "omit",
@@ -494,7 +544,7 @@ function FrameApp({ View }: { View: ComponentType<AppProps> }) {
         },
         api: <T,>(path: string, init?: RequestInit) => json<T>("/_miy/api" + apiPath(path), init),
         apiBlob: (path: string, init?: RequestInit) => blob("/_miy/api" + apiPath(path), init),
-        fileApi: async (path: string, init?: RequestInit) =>
+        fileApi: async (path: string, init?: FileInit) =>
           checkedResponse(await call("/_miy/files" + apiPath(path), init), init),
         download: (url: string) => {
           // Only a link Core issued for this frame's origin; no other target.

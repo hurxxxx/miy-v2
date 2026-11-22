@@ -40,6 +40,8 @@ export type {
   RuntimeJobPage,
   UiModule,
 } from "./api.gen";
+/** `fileApi` request options: an upload may report its progress. */
+export type FileRequestInit = RequestInit & { onUploadProgress?: (sent: number, total: number) => void };
 /** Display settings the person chose in the portal. Presentation only: never an access input. */
 export interface AppSettings {
   /** The theme in effect; a `system` preference is already resolved. */
@@ -78,8 +80,12 @@ export interface AppRuntime {
   api: <T>(path: string, init?: RequestInit) => Promise<T>;
   /** A binary response of this app's own API (downloads, previews). */
   apiBlob: (path: string, init?: RequestInit) => Promise<Blob>;
-  /** App-owned file routes with the platform's separate bounded binary gateway. */
-  fileApi: (path: string, init?: RequestInit) => Promise<Response>;
+  /**
+   * App-owned file routes with the platform's separate bounded binary gateway.
+   * `onUploadProgress(sent, total)` reports an upload's progress (a Blob,
+   * ArrayBuffer or string body; not a stream).
+   */
+  fileApi: (path: string, init?: FileRequestInit) => Promise<Response>;
   /**
    * Start a browser download from a link the app's backend got with
    * `Identity::files_download_link` (`/_miy/downloads/...`). The bytes stream

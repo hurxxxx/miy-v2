@@ -149,6 +149,10 @@ export async function mockFrames(page: Page, apps: () => Installation[], api: Fr
       return route.fulfill(file(runtimeDir, url.pathname.slice("/_miy/runtime/".length)));
     if (url.pathname.startsWith("/_miy/a/capability/ui/"))
       return route.fulfill(file(remoteDir, url.pathname.slice("/_miy/a/capability/ui/".length)));
+    if (url.pathname.startsWith("/_miy/files/")) {
+      const reply = await api(installation, "/files" + url.pathname.slice("/_miy/files".length), route.request().method(), route.request().headers()["x-miy-release"]);
+      return route.fulfill({ status: reply.status ?? 200, json: reply.json, headers: reply.headers });
+    }
     if (url.pathname.startsWith("/_miy/api/") || url.pathname === "/_miy/platform/directory") {
       const reply = await api(
         installation,

@@ -557,3 +557,40 @@ test("production controls confirm the exact target and preserve the inspected ex
   expect(mutations[0]).toMatchObject({action:"stop",environment:"prod",expectedState,confirmed:true});
   await expect(page.getByRole("button",{name:"중지",exact:true})).toBeEnabled();
 });
+
+const uploadApp = {
+  id: "40000000-0000-4000-8000-000000000091",
+  appId: "upload-app",
+  name: "업로드 앱",
+  releaseId: "50000000-0000-4000-8000-000000000091",
+  environment: "dev",
+  version: "1.0.0",
+  dbStatus: "ready",
+  runtimeStatus: "running",
+  desiredState: "running",
+  kind: "docker_app",
+  canManage: false,
+  panels: [],
+  ui: { entry: "/artifacts/health-fixture/mf-manifest.json", export: "./AppRoot", contractVersion: "miy.ui/v1alpha1" },
+} as unknown as Installation;
+
+test("fileApi uploads report their progress through the frame runtime", async ({ page }) => {
+  await mockSurface(page);
+  await page.route("**/api/**", async (route) => {
+    const path = new URL(route.request().url()).pathname;
+    if (path === "/api/v1/me") return route.fulfill({ json: browserUser(route, { id: "u", name: "업로드 사용자", admin: false, csrf: "u-csrf" }) });
+    if (path === "/api/v1/installations") return route.fulfill({ json: [uploadApp] });
+    return route.fulfill({ json: { title: "저장된 제목" } });
+  });
+  const uploads: string[] = [];
+  await mockFrames(page, () => [uploadApp], (_installation, path, method) => {
+    if (path === "/files/upload") uploads.push(method);
+    return { json: { title: "저장된 제목" } };
+  });
+  await page.goto("/environments/dev/apps/upload-app");
+  const frame = page.frameLocator("iframe.app-frame");
+  await expect(frame.getByLabel("문서 제목")).toHaveValue("저장된 제목");
+  await frame.getByRole("button", { name: "업로드" }).click();
+  await expect(frame.getByTestId("upload-progress")).toHaveText(/^262144\/262144 완료 200$/);
+  expect(uploads).toEqual(["PUT"]);
+});

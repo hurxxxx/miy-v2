@@ -6,6 +6,7 @@ export default function HealthApp({ runtime }: AppProps) {
   const [title, setTitle] = useState("");
   const [saved, setSaved] = useState("");
   const [error, setError] = useState("");
+  const [progress, setProgress] = useState("");
   useEffect(() => {
     let active = true;
     runtime
@@ -56,6 +57,22 @@ export default function HealthApp({ runtime }: AppProps) {
       >
         저장
       </button>
+      {/* An upload that reports its progress through fileApi. */}
+      <button
+        onClick={() => {
+          void runtime
+            .fileApi("/upload", {
+              method: "PUT",
+              body: new Blob([new Uint8Array(256 * 1024)]),
+              onUploadProgress: (sent, total) => setProgress(`${sent}/${total}`),
+            })
+            .then((response) => setProgress((value) => `${value} 완료 ${response.status}`))
+            .catch((error) => setError(String(error)));
+        }}
+      >
+        업로드
+      </button>
+      <output data-testid="upload-progress">{progress}</output>
       {/* The app's own route change (runtime.navigate) inside itself. */}
       <button onClick={() => runtime.navigate("/next")}>다음 화면</button>
       <output data-testid="api-error">{error}</output>
