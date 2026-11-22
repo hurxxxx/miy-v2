@@ -58,7 +58,10 @@
     "labels": {
       "directoryRead": "Read the user and group directory",
       "filesRead": "Read platform files",
-      "filesWrite": "Upload platform files"
+      "filesWrite": "Upload platform files",
+      "notificationsWrite": "Send platform notifications",
+      "clipboardWrite": "Write to the clipboard from the app screen",
+      "fullscreen": "Full screen for the app screen"
     }
   },
   "users": {

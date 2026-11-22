@@ -132,10 +132,11 @@ flowchart LR
 - **포털:** `frame-src`에 해당 환경의 앱 출처 형식과 `blob:`만 허용한다(P2의 표현 한계는 §4). `blob:`은 앱 프레임이 `apiBlob`으로 만든 다운로드 링크 때문이다. Firefox는 iframe 안의 `<a download href=blob:>`에 부모 문서의 `frame-src`를 적용한다(2026-11-10 실증). 포털 자신의 `frame-ancestors 'none'`은 유지한다. 실행 form POST의 Origin은 포털 문서의 Referrer-Policy를 따르므로(포털이 `no-referrer`면 `Origin: null`, 2026-11-10 Chromium 실측) 포털·dev 포털은 `Referrer-Policy: strict-origin-when-cross-origin`을 명시하고 설정 검사가 확인한다. iframe의 `referrerpolicy` 속성은 form 제출의 Origin에 영향을 주지 않는다.
 - **프레임 문서:** `frame-ancestors <해당 환경 포털 출처>`, `default-src 'self'`, `script-src 'self'`, `style-src 'self' 'unsafe-inline'`, `img-src 'self' data: blob:`, `media-src 'self' blob:`, `font-src 'self'`, `connect-src 'self'`, `object-src 'none'`, `base-uri 'none'`, `form-action 'self'`, `worker-src 'none'`, `frame-src 'none'`, `Referrer-Policy: no-referrer`, `nosniff`. `X-Frame-Options`는 허용 출처를 표현할 수 없어 프레임 문서에서만 빼고 CSP로 대체한다. Nginx/Caddy가 기존 공통 `X-Frame-Options: DENY`나 `frame-ancestors 'none'`을 이 문서에 중복 추가하지 않게 한다. 스타일·이미지 허용은 CSS-in-JS·style 속성 문자열과 `apiBlob` 미리보기를 위한 것이며 콘솔 CSP와 같은 수준이다. 스크립트는 `'self'`만 허용한다. MF runtime-core 2.9.2는 `FEDERATION_ALLOW_NEW_FUNCTION`이 없으면 일반 `import()`로 진입점을 읽는다.
 - **API·자산:** API에는 기존 응답 헤더 허용 목록·CSP sandbox·nosniff를 유지한다. UI 자산에는 §3.3의 캐시·referrer 정책을 적용한다. 앱 gateway도 `Service-Worker: script` 요청을 거부한다. 실증에서 worker 허용을 위한 예외를 만들지 않는다.
-- **iframe 속성:** `sandbox="allow-scripts allow-same-origin allow-forms allow-downloads allow-modals allow-popups allow-popups-to-escape-sandbox"`, `referrerpolicy="no-referrer"`, `allow`는 기본으로 비운다.
+- **iframe 속성:** `sandbox="allow-scripts allow-same-origin allow-forms allow-downloads allow-modals allow-popups allow-popups-to-escape-sandbox"`, `referrerpolicy="no-referrer"`, `allow`는 기본으로 비운다. 아래 장치 권한이 승인된 릴리스만 실행 응답의 `allow` 목록으로 채운다.
   - `allow-scripts`와 `allow-same-origin`을 함께 주는 것은 **프레임이 부모와 다른 출처일 때만** 안전하다. 같은 출처라면 sandbox를 스스로 풀 수 있다. 서버 설정 검사가 앱 출처와 포털 출처가 다른지 확인한다.
   - 최상위 탐색 권한(`allow-top-navigation*`)은 주지 않는다.
-- **장치 권한(미구현):** 지금은 manifest 선언·승인·`allow` 위임 경로가 없어 마이크·카메라·전체화면·클립보드 쓰기를 프레임에 위임하지 않는다. 필요해지면 앱 manifest 선언과 관리자 승인으로만 `allow`로 위임한다. 보안 컨텍스트(HTTPS)가 필요하며, HTTP 개발 프로필에서는 해당 기능만 동작하지 않는다.
+- **장치 권한(2026-11-22 소스 반영):** 앱이 manifest `requestedPermissions`에 `frame:clipboard-write`·`frame:fullscreen`을 요청하고 관리자가 다른 플랫폼 권한과 같은 승인 화면에서 승인하면, 프레임 실행 응답(`POST /api/v1/app-frames`)의 `allow`에 `clipboard-write`·`fullscreen`이 들어가고 포털이 실행 form 제출 전에 iframe `allow`로 위임한다. 포털도 이 두 값만 받는다. 마이크·카메라는 아직 위임하지 않는다. 보안 컨텍스트(HTTPS)가 필요하며, HTTP 개발 프로필에서는 해당 기능만 동작하지 않는다.
+- **포털 주소:** 프레임은 포털 주소를 읽을 수 없으므로 `runtime.portalUrl(path)`가 부트스트랩의 부모 출처와 basePath로 앱 경로의 전체 포털 주소를 만든다(공유용 링크).
 
 ## 4. 배치 프로필과 격리 수준
 

@@ -322,6 +322,11 @@ pub struct AppFrameLaunch {
     pub launch_url: String,
     pub code: String,
     pub expires_at: DateTime<Utc>,
+    /// Browser features the portal delegates to this frame (iframe `allow`):
+    /// `clipboard-write`, `fullscreen`, from the release's approved `frame:*`
+    /// permissions (docs/APP-FRAMES.md 3.5).
+    #[serde(default)]
+    pub allow: Vec<String>,
 }
 
 /// A one-time renew code for an open frame (`POST /api/v1/app-frames/{id}/renew`).

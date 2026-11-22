@@ -21,6 +21,9 @@ const LABELS: Record<string, string> = {
   "platform:directory:read": "directoryRead",
   "platform:files:read": "filesRead",
   "platform:files:write": "filesWrite",
+  "platform:notifications:write": "notificationsWrite",
+  "frame:clipboard-write": "clipboardWrite",
+  "frame:fullscreen": "fullscreen",
 };
 
 const strings = (value: unknown): value is string[] =>

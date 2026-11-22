@@ -36,6 +36,8 @@ export interface FrameMockOptions {
   renewal?: (stage: RenewalStage, attempt: number) => RenewalReply | Promise<RenewalReply>;
   /** The server sets this for releases built with an SDK bundle that reads display settings. */
   settingsAware?: boolean;
+  /** Delegated browser features the launch lists (approved `frame:*` permissions). */
+  allow?: string[];
 }
 
 function file(root: string, relative: string) {
@@ -85,6 +87,7 @@ export async function mockFrames(page: Page, apps: () => Installation[], api: Fr
         launchUrl: frameOrigin + "/_miy/launch",
         code: "c".repeat(43),
         expiresAt: new Date(Date.now() + 60_000).toISOString(),
+        allow: options.allow ?? [],
       },
     });
   });

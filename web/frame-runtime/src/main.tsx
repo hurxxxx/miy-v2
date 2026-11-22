@@ -542,6 +542,11 @@ function FrameApp({ View }: { View: ComponentType<AppProps> }) {
           if (!relativePath(path)) throw new Error("Use an app-relative path");
           post({ type: "route.navigate", payload: { path, replace: !!options?.replace } });
         },
+        // The full portal address of an app path, for links people share.
+        portalUrl: (path: string) => {
+          if (!relativePath(path)) throw new Error("Use an app-relative path");
+          return new URL(boot.basePath.replace(/\/$/, "") + path, boot.parentOrigin).href;
+        },
         api: <T,>(path: string, init?: RequestInit) => json<T>("/_miy/api" + apiPath(path), init),
         apiBlob: (path: string, init?: RequestInit) => blob("/_miy/api" + apiPath(path), init),
         fileApi: async (path: string, init?: FileInit) =>

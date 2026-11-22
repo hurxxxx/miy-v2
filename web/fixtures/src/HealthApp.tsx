@@ -73,6 +73,7 @@ export default function HealthApp({ runtime }: AppProps) {
         업로드
       </button>
       <output data-testid="upload-progress">{progress}</output>
+      <output data-testid="portal-url">{runtime.portalUrl?.("/shared?x=1")}</output>
       {/* The app's own route change (runtime.navigate) inside itself. */}
       <button onClick={() => runtime.navigate("/next")}>다음 화면</button>
       <output data-testid="api-error">{error}</output>

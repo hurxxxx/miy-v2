@@ -1554,6 +1554,9 @@ pub async fn run(
     download_links(&mut h, &suffix).await?;
     passed.push("download links: only a request its own frame started gets one, and only for an app that answers file access; the frame origin streams the file whole or by one range, refuses another site and unsatisfiable ranges, asks the app before sending and stops when the frame ends".into());
 
+    frame_permissions(&mut h, &suffix).await?;
+    passed.push("frame launches list as delegated browser features only the release's requested frame permissions an administrator approved".into());
+
     frame_limit(&mut h, &suffix).await?;
     passed.push("a person keeps at most 16 live frame sessions: openings retire the oldest even when concurrent; only the issuing portal can return a slot or cancel its pending launch".into());
 
@@ -1680,6 +1683,53 @@ async fn download_links(h: &mut Harness<'_>, suffix: &str) -> Result<()> {
         .execute(&h.state.pool)
         .await?;
     status(fetch(None, "same-origin").send().await?, 404).await?;
+    Ok(())
+}
+
+/// Device features (M-follow-up, docs/APP-FRAMES.md 3.5): the launch lists
+/// only the release's requested and approved `frame:*` permissions.
+async fn frame_permissions(h: &mut Harness<'_>, suffix: &str) -> Result<()> {
+    let requested = vec![
+        "frame:clipboard-write".to_owned(),
+        "frame:fullscreen".to_owned(),
+    ];
+    let app = h.app(&format!("frame-allow-{suffix}"), &requested).await?;
+    let user = h.user().await?;
+    h.grant(&user, &app).await?;
+    let portal = h.session(&user, auth::BrowserPurpose::DevPortal).await?;
+    let before: Value = status(
+        launch_code(
+            h.client,
+            h.state,
+            &portal,
+            auth::BrowserPurpose::DevPortal,
+            app.installation,
+        )
+        .await?,
+        200,
+    )
+    .await?
+    .json()
+    .await?;
+    h.approve(&app, &requested[..1]).await?;
+    let after: Value = status(
+        launch_code(
+            h.client,
+            h.state,
+            &portal,
+            auth::BrowserPurpose::DevPortal,
+            app.installation,
+        )
+        .await?,
+        200,
+    )
+    .await?
+    .json()
+    .await?;
+    ensure!(
+        before["allow"] == json!([]) && after["allow"] == json!(["clipboard-write"]),
+        "the frame launch delegated features that were not approved: {before} / {after}"
+    );
     Ok(())
 }
 

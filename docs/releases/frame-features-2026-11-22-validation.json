@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-11-22",
+  "status": "SOURCE_CHECKED",
+  "scope": "Frame device permissions frame:clipboard-write and frame:fullscreen (requested by the release, approved by an administrator, listed in the frame launch as iframe allow features) and runtime.portalUrl(path). Also upload progress for runtime.fileApi (84265b2) and the SDK preview leave check (03fe146). Source only; nothing published or deployed.",
+  "checks": [
+    {"status": "PASS", "command": "pnpm exec playwright test -c scripts/runtime-regression/ui.config.ts tests/runtime-health.spec.ts tests/platform-shell.spec.ts", "scope": "40 passed incl. upload progress (final size/size report), iframe allow keeps only platform-listed features (clipboard-write passes, camera dropped), portalUrl returns the full portal address."},
+    {"status": "PASS", "command": "MIY_CONFIG_DIR=<empty> python3 scripts/runtime-regression/run.py", "scope": "161 observations PASS, exit 0: frames 18 incl. the launch lists no features before approval and only clipboard-write after approving it (fullscreen requested but not approved)."},
+    {"status": "PASS", "command": "MIY_CONFIG_DIR=<empty> bash scripts/check-static.sh rust; scripts; web", "scope": "All PASS; web = portal 120, CLI web 15, surface boundaries 18, HTTP IPv4 1, common UI."}
+  ],
+  "notRun": [
+    "Clipboard and fullscreen behaviour inside a real installed frame in Chromium, Firefox and WebKit (needs HTTPS and a real launch)",
+    "Intermediate upload progress events without request interception"
+  ]
+}

@@ -594,3 +594,21 @@ test("fileApi uploads report their progress through the frame runtime", async ({
   await expect(frame.getByTestId("upload-progress")).toHaveText(/^262144\/262144 완료 200$/);
   expect(uploads).toEqual(["PUT"]);
 });
+
+test("approved frame features reach the iframe allow list and portalUrl names the portal address", async ({ page }) => {
+  await mockSurface(page);
+  await page.route("**/api/**", async (route) => {
+    const path = new URL(route.request().url()).pathname;
+    if (path === "/api/v1/me") return route.fulfill({ json: browserUser(route, { id: "u", name: "기능 사용자", admin: false, csrf: "u-csrf" }) });
+    if (path === "/api/v1/installations") return route.fulfill({ json: [uploadApp] });
+    return route.fulfill({ json: { title: "저장된 제목" } });
+  });
+  // A feature outside the platform's list never reaches the attribute.
+  await mockFrames(page, () => [uploadApp], () => ({ json: { title: "저장된 제목" } }), { allow: ["clipboard-write", "camera"] });
+  await page.goto("/environments/dev/apps/upload-app");
+  const frame = page.frameLocator("iframe.app-frame");
+  await expect(frame.getByLabel("문서 제목")).toHaveValue("저장된 제목");
+  await expect(page.locator("iframe.app-frame")).toHaveAttribute("allow", "clipboard-write");
+  const origin = new URL(page.url()).origin;
+  await expect(frame.getByTestId("portal-url")).toHaveText(`${origin}/environments/dev/apps/upload-app/shared?x=1`);
+});

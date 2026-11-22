@@ -56,7 +56,10 @@
     "labels": {
       "directoryRead": "사용자·그룹 디렉터리 읽기",
       "filesRead": "플랫폼 파일 읽기",
-      "filesWrite": "플랫폼 파일 올리기"
+      "filesWrite": "플랫폼 파일 올리기",
+      "notificationsWrite": "플랫폼 알림 보내기",
+      "clipboardWrite": "앱 화면에서 클립보드에 쓰기",
+      "fullscreen": "앱 화면 전체 화면"
     }
   },
   "users": {

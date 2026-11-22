@@ -80,6 +80,8 @@ For updates that should arrive at once (new messages, presence), call `runtime.l
 
 The UI runs in its own cross-origin frame: one origin per installation, separate from the portal, the console and every other app. The platform frame runtime loads this release's `./AppRoot` and passes `runtime`; it shares only React and React DOM with the app. `runtime.api`, `apiBlob`, `platformApi` and `appApi` call this frame's own origin with a short in-memory credential; there are no cookies and no CSRF value. The frame cannot read portal pages, storage or another app, and another app's API is reachable only through `runtime.appApi` with an approved connection.
 
+To copy or share a link to a screen, use `runtime.portalUrl('/path')`: it returns the full portal address of an app-relative path (the frame cannot read the portal's address). Clipboard writing and full screen are not available in the frame unless the release requests `frame:clipboard-write` or `frame:fullscreen` in `requestedPermissions` and an administrator approves it; keep a fallback for when they are not.
+
 Inside the frame: do not use `window.parent`, `window.top`, `history.pushState`/`replaceState`/`back` or `document.cookie` for credentials, and do not register service workers. Use `runtime.navigate` for app routes; plain links to app paths under `runtime.basePath` are routed by the portal, and external links open in a new tab. For downloads use `runtime.apiBlob(path)`, create an object URL and revoke it after use. The frame fills the portal work area at a fixed size; dialogs and overlays render inside it and the app scrolls internally. Keep local styles; the frame document has only a small baseline (font, background, link colors).
 
 ## Display settings and tokens

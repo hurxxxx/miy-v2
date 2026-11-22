@@ -90,6 +90,14 @@
     "AppFrameLaunch": {
       "description": "A one-time launch of one installation's app frame (`POST /api/v1/app-frames`).\nThe portal submits `code` in a form POST to `launchUrl` inside a new iframe.",
       "properties": {
+        "allow": {
+          "default": [],
+          "description": "Browser features the portal delegates to this frame (iframe `allow`):\n`clipboard-write`, `fullscreen`, from the release's approved `frame:*`\npermissions (docs/APP-FRAMES.md 3.5).",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
         "code": {
           "type": "string"
         },
@@ -125,7 +133,8 @@
         "frameOrigin",
         "launchUrl",
         "code",
-        "expiresAt"
+        "expiresAt",
+        "allow"
       ],
       "type": "object"
     },

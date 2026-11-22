@@ -42,6 +42,17 @@ export interface FrameInput {
 const SANDBOX =
   "allow-scripts allow-same-origin allow-forms allow-downloads allow-modals allow-popups allow-popups-to-escape-sandbox";
 
+/**
+ * Browser features delegated to the frame (iframe `allow`): only those the
+ * release requested and an administrator approved, as Core lists them in the
+ * launch (docs/APP-FRAMES.md 3.5). Set before the launch form navigates.
+ */
+const DELEGABLE = new Set(["clipboard-write", "fullscreen"]);
+function frameAllow(features: string[] | undefined): string | undefined {
+  const allowed = (features ?? []).filter((feature) => DELEGABLE.has(feature));
+  return allowed.length ? allowed.join("; ") : undefined;
+}
+
 /** The leave-check message for a frame's state, in the current language; undefined when it may close. */
 export function leaveMessage(input: FrameInput): string | undefined {
   if (input.state === "clean") return undefined;
@@ -295,6 +306,7 @@ export function AppFrame({
         className={panel ? "app-frame app-frame-panel" : "app-frame"}
         sandbox={SANDBOX}
         referrerPolicy="no-referrer"
+        allow={frameAllow(launch?.allow)}
         hidden={!launch}
       />
       {launch && (

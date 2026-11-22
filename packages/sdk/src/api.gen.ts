@@ -32,6 +32,12 @@ export type AppDistribution = "default_official" | "optional_official" | "organi
  * The portal submits `code` in a form POST to `launchUrl` inside a new iframe.
  */
 export interface AppFrameLaunch {
+  /**
+   * Browser features the portal delegates to this frame (iframe `allow`):
+   * `clipboard-write`, `fullscreen`, from the release's approved `frame:*`
+   * permissions (docs/APP-FRAMES.md 3.5).
+   */
+  allow: string[];
   code: string;
   expiresAt: string;
   /** The frame this code opens; the portal renews it by this id. */

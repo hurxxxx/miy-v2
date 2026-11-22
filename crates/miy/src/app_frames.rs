@@ -417,6 +417,17 @@ pub async fn launch_code(
         .await?
         .commit()
         .await?;
+    // Device features only as the release requested and an administrator
+    // approved them (docs/APP-FRAMES.md 3.5); nothing by default.
+    let allow = crate::permissions::effective(&s.pool, input.installation_id, release)
+        .await?
+        .iter()
+        .filter_map(|permission| match permission.as_str() {
+            "frame:clipboard-write" => Some("clipboard-write".to_owned()),
+            "frame:fullscreen" => Some("fullscreen".to_owned()),
+            _ => None,
+        })
+        .collect();
     Ok(Json(AppFrameLaunch {
         frame_id,
         installation_id: input.installation_id,
@@ -425,6 +436,7 @@ pub async fn launch_code(
         frame_origin,
         code,
         expires_at,
+        allow,
     }))
 }
 

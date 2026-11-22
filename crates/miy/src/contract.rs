@@ -182,6 +182,8 @@ pub fn valid_permission(p: &str) -> bool {
             | "platform:files:read"
             | "platform:files:write"
             | "platform:notifications:write"
+            | "frame:clipboard-write"
+            | "frame:fullscreen"
     ) {
         return true;
     }
