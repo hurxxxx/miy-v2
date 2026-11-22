@@ -46,7 +46,9 @@ pub struct Publish {
     #[serde(default)]
     pub recipients: Vec<String>,
     /// Platform group IDs (up to 50) whose current members also receive it,
-    /// with the same filters. Needs the approved `platform:directory:read`.
+    /// with the same filters. The calling person is never added this way (an
+    /// author does not hear of their own act). Needs the approved
+    /// `platform:directory:read`.
     #[serde(default)]
     pub recipient_groups: Vec<Uuid>,
     /// For example `message` or `mention`: lowercase, digits, `_.-`, up to 40.
@@ -262,8 +264,8 @@ pub async fn publish(
          SELECT gen_random_uuid(),$1,$2,$3,r.id,$4,$5,$6,$7,$8,$9 FROM ( \
              SELECT DISTINCT x.id FROM (SELECT unnest($10::text[]) AS id UNION \
              SELECT u.id FROM users u JOIN groups g ON g.id=ANY($11::uuid[]) AND g.active \
-             WHERE (g.source='hr' AND u.primary_group_id=g.id) \
-                OR (g.source='local' AND EXISTS(SELECT 1 FROM group_members m WHERE m.group_id=g.id AND m.user_id=u.id))) x \
+             WHERE u.id<>$9 AND ((g.source='hr' AND u.primary_group_id=g.id) \
+                OR (g.source='local' AND EXISTS(SELECT 1 FROM group_members m WHERE m.group_id=g.id AND m.user_id=u.id)))) x \
              ORDER BY x.id LIMIT $12) AS r(id) \
          WHERE {eligible} AND NOT EXISTS(SELECT 1 FROM notification_mutes m \
              WHERE m.user_id=r.id AND m.app_id=$2 AND (m.kind=$4 OR m.kind='*')) \

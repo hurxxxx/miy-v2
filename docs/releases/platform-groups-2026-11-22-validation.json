@@ -2,12 +2,38 @@
   "schemaVersion": 1,
   "date": "2026-11-22",
   "status": "SOURCE_CHECKED",
-  "scope": "Platform-call identities carry the person's current group IDs for apps approved to read the directory, and the SDK ACL uses them on platform calls; notifications accept platform group recipients expanded to current members with the usual filters (SDK notify_with_groups). Source only; nothing published or deployed.",
+  "scope": "Platform-call identities carry the person's current group IDs for apps approved to read the directory, and the SDK ACL uses them on platform calls; notifications accept platform group recipients expanded to current members with the usual filters (SDK notify_with_groups). Source only; nothing published or deployed. Follow-up: group expansion never adds the calling person; the Rust SDK passes known Core refusal codes through CallError.code.",
   "checks": [
-    {"status": "PASS", "command": "templates/rust-react/sdk/rust: cargo test --offline", "scope": "15 passed incl. platform_calls_use_the_signed_groups_without_the_directory (signed groups used, narrowed to candidates, none without approval, invalid IDs refused)."},
-    {"status": "NOT_RUN", "command": "MIY_CONFIG_DIR=<empty> python3 scripts/runtime-regression/run.py (first start)", "scope": "Stopped on purpose with SIGTERM after the notification change so one run covers both; its cleanup removed 13 own resources with no errors."},
-    {"status": "PASS", "command": "MIY_CONFIG_DIR=<empty> python3 scripts/runtime-regression/run.py", "scope": "160 observations PASS, exit 0: boundary home cards check (no groups without directory approval; the person's group in the signed identity after approval) and permissions notification contract (group recipients reach only the permitted, unmuted members; an app without directory approval is refused)."},
-    {"status": "PASS", "command": "MIY_CONFIG_DIR=<empty> bash scripts/check-static.sh rust; check-static.sh scripts", "scope": "Both PASS."}
+    {
+      "status": "PASS",
+      "command": "templates/rust-react/sdk/rust: cargo test --offline",
+      "scope": "15 passed incl. platform_calls_use_the_signed_groups_without_the_directory (signed groups used, narrowed to candidates, none without approval, invalid IDs refused)."
+    },
+    {
+      "status": "NOT_RUN",
+      "command": "MIY_CONFIG_DIR=<empty> python3 scripts/runtime-regression/run.py (first start)",
+      "scope": "Stopped on purpose with SIGTERM after the notification change so one run covers both; its cleanup removed 13 own resources with no errors."
+    },
+    {
+      "status": "PASS",
+      "command": "MIY_CONFIG_DIR=<empty> python3 scripts/runtime-regression/run.py",
+      "scope": "160 observations PASS, exit 0: boundary home cards check (no groups without directory approval; the person's group in the signed identity after approval) and permissions notification contract (group recipients reach only the permitted, unmuted members; an app without directory approval is refused)."
+    },
+    {
+      "status": "PASS",
+      "command": "MIY_CONFIG_DIR=<empty> bash scripts/check-static.sh rust; check-static.sh scripts",
+      "scope": "Both PASS."
+    },
+    {
+      "status": "PASS",
+      "command": "MIY_CONFIG_DIR=<empty> python3 scripts/runtime-regression/run.py (caller exclusion)",
+      "scope": "160 observations PASS, test exit 0: group recipients exclude the calling person who is also a member. Runner exit 1 only from cleanup: one baseline container present at start (a throwaway PostgreSQL of an app agent on this host) disappeared during the run; the run removed its own 13 resources and no baseline resource."
+    },
+    {
+      "status": "PASS",
+      "command": "templates/rust-react/sdk/rust: cargo test --offline",
+      "scope": "16 passed incl. known_core_refusal_codes_pass_through_and_others_stay_generic."
+    }
   ],
   "notRun": [
     "Apps adopting notify_with_groups and the signed groups (board space notices, docs and whiteboard shares) after their bundle re-sync",

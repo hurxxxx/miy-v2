@@ -4653,7 +4653,9 @@ async fn notification_contract(h: &mut Harness<'_>, admin: &Actor, user: &Actor)
     .bind(group)
     .execute(&h.state.pool)
     .await?;
-    for person in [&member.id, &outsider.id, &muted.id] {
+    // The caller is a member too: group expansion never adds them.
+    h.grant(user, &app, "dev").await.ok();
+    for person in [&member.id, &outsider.id, &muted.id, &user.id] {
         sqlx::query("INSERT INTO group_members(group_id,user_id) VALUES($1,$2)")
             .bind(group)
             .bind(person)
@@ -4689,6 +4691,10 @@ async fn notification_contract(h: &mut Harness<'_>, admin: &Actor, user: &Actor)
     .context("notification step 35")?;
     ensure!(
         reached["accepted"] == 1
+            && !inbox(h, &user.id, &app)
+                .await?
+                .iter()
+                .any(|row| row.0 == "conversation:2")
             && inbox(h, &member.id, &app)
                 .await?
                 .iter()
