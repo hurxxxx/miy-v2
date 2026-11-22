@@ -2,6 +2,7 @@ import type { DatesSetArg, EventInput } from '@fullcalendar/core';
 
 import { getKoreanHolidayNames } from '../../lib/korean-holidays';
 import type { CalendarEvent } from '../../platform/calendar/calendar-types';
+import { getZonedDateParts } from '../../platform/time/zoned-date-formatter';
 
 export interface CalendarDateSelectPayload {
   allDay: boolean;
@@ -139,15 +140,16 @@ export function buildEventResizePayload(
   };
 }
 
-export function getKoreanHolidayDayClass(date: Date): string[] {
-  return getKoreanHolidayLabel(date) ? ['fc-korean-holiday'] : [];
+export function getKoreanHolidayDayClass(date: Date, timeZone?: string): string[] {
+  return getKoreanHolidayLabel(date, timeZone) ? ['fc-korean-holiday'] : [];
 }
 
-export function getKoreanHolidayLabel(date: Date): string | null {
+export function getKoreanHolidayLabel(date: Date, timeZone?: string): string | null {
+  const parts = timeZone ? getZonedDateParts(date, timeZone) : null;
   const names = getKoreanHolidayNames(
-    date.getFullYear(),
-    date.getMonth(),
-    date.getDate(),
+    parts?.year ?? date.getFullYear(),
+    parts ? parts.month - 1 : date.getMonth(),
+    parts?.day ?? date.getDate(),
   );
   return names?.join(', ') ?? null;
 }

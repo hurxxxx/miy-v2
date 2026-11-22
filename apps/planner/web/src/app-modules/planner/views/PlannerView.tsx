@@ -41,7 +41,8 @@ import {
 } from '../../../platform/calendar/calendar-types';
 import { useAppSearchParams } from '../../../platform/runtime/app-location';
 import { useRuntime } from '../../../platform/runtime/runtime-context';
-import { normalizeTimeZone } from '../../../platform/time/time-utils';
+import { normalizeTimeZone, zonedDateKey } from '../../../platform/time/time-utils';
+import { resolveZonedWallTime } from '../../../platform/time/zoned-wall-time';
 import { updatePlannerEvent } from '../api/planner-api';
 import {
   UnifiedCalendar,
@@ -78,6 +79,7 @@ import {
 } from './planner-calendar-controller';
 import {
   formatPlannerHeading,
+  formatLocalYmd,
   readTimelineRangeDays,
   type PlannerSurfaceMode,
   type PlannerViewMode,
@@ -265,10 +267,11 @@ export const PlannerView = () => <>{usePlannerViewElement()}</>;
 
 function usePlannerViewElement(): ReactNode {
   const { t, i18n } = useTranslation('apps');
-  const today = new Date();
+  const now = new Date();
   // miy: the API client and display settings come from the frame runtime.
   const { api: token, settings } = useRuntime();
   const timeZone = normalizeTimeZone(settings.timeZone);
+  const today = parsePlannerDate(zonedDateKey(now, timeZone));
   const [searchParams, setSearchParams] = useAppSearchParams();
   const surfaceMode = SURFACE_MODE;
   const [timelineRangeDays] = useState<TimelineRangeDays>(() =>
@@ -295,8 +298,8 @@ function usePlannerViewElement(): ReactNode {
   const calendarRef = useRef<UnifiedCalendarHandle | null>(null);
 
   const { events, loading, error, refresh } = useCalendarEvents({
-    from: calendarState.rangeStart,
-    to: calendarState.rangeEnd,
+    from: resolveZonedWallTime(`${calendarState.rangeStart}T00:00`, timeZone).toISOString(),
+    to: resolveZonedWallTime(`${calendarState.rangeEnd}T00:00`, timeZone).toISOString(),
     sources: PLANNER_SOURCES,
     useMockData: false,
   });
@@ -356,8 +359,9 @@ function usePlannerViewElement(): ReactNode {
         events,
         new Date(browsedYear, browsedMonth, 1),
         new Date(browsedYear, browsedMonth + 1, 1),
+        timeZone,
       ),
-    [browsedMonth, browsedYear, events],
+    [browsedMonth, browsedYear, events, timeZone],
   );
   const sidebarSources = useMemo<PlannerSidebarSource[]>(
     () =>
@@ -511,9 +515,9 @@ function usePlannerViewElement(): ReactNode {
   };
   const openPlannerEventCreate = useCallback(
     (range?: PlannerEventDraftRange) => {
-      setSession((current) => openPlannerEventCreateSession(current, range));
+      setSession((current) => openPlannerEventCreateSession(current, range, new Date(), timeZone));
     },
-    [],
+    [timeZone],
   );
   const openPlannerEventEdit = useCallback((eventId: string) => {
     setSession((current) => openPlannerEventEditSession(current, eventId));
@@ -547,13 +551,13 @@ function usePlannerViewElement(): ReactNode {
       rangeStart: Date;
       rangeEnd: Date;
     }) => {
-      const result = applyCalendarDatesSet(session, nextState);
+      const result = applyCalendarDatesSet(session, nextState, timeZone);
       setViewMode((currentMode) =>
         currentMode === result.viewMode ? currentMode : result.viewMode,
       );
       setSession(result.session);
     },
-    [session],
+    [session, timeZone],
   );
 
   const handleEventClick = (event: CalendarEvent) => {
@@ -661,15 +665,17 @@ function usePlannerViewElement(): ReactNode {
     visibleEvents.map(withWorkspacePrefix),
     insightWeek.start,
     insightWeek.end,
+    timeZone,
   );
   const busyDays = rankPlannerBusyDays(
     visibleEvents,
     new Date(viewYear, viewMonth, 1),
     new Date(viewYear, viewMonth + 1, 1),
     3,
+    timeZone,
   );
   // Insights follow the sidebar filter and search like the calendar does.
-  const upcomingEvents = listPlannerUpcomingEvents(visibleEvents, today, 4).map(
+  const upcomingEvents = listPlannerUpcomingEvents(visibleEvents, now, 4, timeZone).map(
     withWorkspacePrefix,
   );
   const showDate = (date: Date, mode: PlannerViewMode) => {
@@ -1009,7 +1015,7 @@ function usePlannerViewElement(): ReactNode {
                     ref={calendarRef}
                     events={calendarEvents}
                     initialView={VIEW_MODE_TO_FC[viewMode]}
-                    initialDate={calendarState.currentDate}
+                    initialDate={formatLocalYmd(calendarState.currentDate)}
                     onDatesSet={handleDatesSet}
                     onDateSelect={handleDateSelect}
                     onEventClick={handleCalendarEventClick}
@@ -1061,6 +1067,7 @@ function usePlannerViewElement(): ReactNode {
           onClose={closePlannerEventModal}
           eventId={plannerEventId}
           initialRange={plannerEventRange}
+          timeZone={timeZone}
           onSaved={handlePlannerEventSaved}
           onDeleted={handlePlannerEventDeleted}
         />

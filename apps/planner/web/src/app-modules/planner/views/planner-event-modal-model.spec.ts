@@ -6,8 +6,10 @@ import type { PlannerEvent } from '../api/planner-api';
 import {
   buildDraftFromRange,
   buildPlannerEventSavePayload,
+  buildPlannerEventUpdatePayload,
   canSave,
   initialPlannerEventModalState,
+  plannerEventModalEditableFields,
   plannerEventModalReducer,
   plannerEventModalSessionKey,
   plannerEventToDraft,
@@ -34,6 +36,29 @@ function event(overrides: Partial<PlannerEvent> = {}): PlannerEvent {
 }
 
 describe('planner event modal model', () => {
+  it('displays and saves instants in the chosen portal time zone', () => {
+    const range = { start: new Date('2026-11-22T00:00Z'), end: new Date('2026-11-22T01:00Z'), allDay: false };
+    const state = {
+      ...initialPlannerEventModalState(range, undefined, 'Asia/Seoul'),
+      title: 'Morning',
+    };
+    expect(state.startTimeValue).toBe('09:00');
+    expect(buildPlannerEventSavePayload(state)).toMatchObject({
+      start: '2026-11-22T00:00:00.000Z', end: '2026-11-22T01:00:00.000Z',
+    });
+    expect(plannerEventToDraft(event({ start: '2026-11-22T00:00Z' }), 'America/New_York')).toMatchObject({
+      startDateValue: '2026-11-21', startTimeValue: '19:00',
+    });
+  });
+
+  it('does not resend the original dates or other fields during a title edit', () => {
+    const loaded = plannerEventModalReducer(initialPlannerEventModalState(null), {
+      type: 'loadSuccess', event: event({ start: '2026-03-10T00:00:30.000Z' }),
+    });
+    const baseline = plannerEventModalEditableFields(loaded);
+    expect(buildPlannerEventUpdatePayload({ ...loaded, title: 'Changed' }, baseline)).toEqual({ title: 'Changed' });
+  });
+
   it('builds create drafts from initial ranges', () => {
     expect(
       buildDraftFromRange({

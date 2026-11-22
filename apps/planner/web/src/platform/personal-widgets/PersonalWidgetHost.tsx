@@ -62,7 +62,8 @@ import {
   type PersonalWidgetMode,
   type PersonalWidgetPreferences,
 } from './personal-widget-state';
-type TodoMutation = 'create' | 'delete' | 'toggle';
+type TodoMutation = 'create' | 'delete' | 'edit' | 'toggle';
+type TodoMutations = ReadonlyMap<string | null, TodoMutation>;
 type MemoEditor = {
   saved: PersonalMemo | null;
   body: string;
@@ -113,6 +114,7 @@ export function usePersonalWidgets() {
   const hasMemoApi = api != null;
   const { t } = useTranslation('shell');
   const [todos, setTodos] = useState<PersonalTodoItem[]>([]);
+  const todoRead = useRef(0);
   const [{ saved: memo, body: memoBody, conflict: memoConflict }, setMemoEditor] =
     useState<MemoEditor>({ saved: null, body: '', conflict: null });
   const memoRead = useRef(0);
@@ -130,9 +132,9 @@ export function usePersonalWidgets() {
     null,
   );
   const [error, setError] = useState<string | null>(null);
-  const [mutating, setMutating] = useState<TodoMutation | null>(null);
-  const [mutatingTodoIds, setMutatingTodoIds] = useState<Set<string>>(
-    () => new Set(),
+  const todoWrites = useRef(new Map<string | null, TodoMutation>());
+  const [todoMutations, setTodoMutations] = useState<TodoMutations>(
+    () => new Map(),
   );
   const openTodoCount = useMemo(() => countOpenTodos(todos), [todos]);
   const memoDirty = memoBody !== (memo?.body ?? '');
@@ -146,8 +148,7 @@ export function usePersonalWidgets() {
   useNavigationDirty(
     memoDirty ||
       memoSaving ||
-      mutating !== null ||
-      mutatingTodoIds.size > 0 ||
+      todoMutations.size > 0 ||
       draftTitle.trim().length > 0 ||
       (editingTodo !== undefined &&
         editingTodoTitle.trim() !== editingTodo.title),
@@ -167,6 +168,7 @@ export function usePersonalWidgets() {
   }, [api]);
 
   const reloadTodos = useCallback(async () => {
+    const read = ++todoRead.current;
     if (!api) {
       setTodos([]);
       setError(null);
@@ -178,13 +180,37 @@ export function usePersonalWidgets() {
     setError(null);
     try {
       const response = await listPersonalTodos(api);
-      setTodos(sortPersonalTodos(response.items));
+      if (read === todoRead.current) setTodos(sortPersonalTodos(response.items));
     } catch {
-      setError(t('personalWidgets.errors.loadFailed'));
+      if (read === todoRead.current) setError(t('personalWidgets.errors.loadFailed'));
     } finally {
-      setLoading(false);
+      if (read === todoRead.current) setLoading(false);
     }
   }, [t, api]);
+
+  const beginTodoWrite = useCallback((id: string | null, action: TodoMutation) => {
+    const pending = todoWrites.current;
+    if (pending.has(id)) return false;
+    pending.set(id, action);
+    setTodoMutations(new Map(pending));
+    setError(null);
+    return true;
+  }, []);
+
+  const finishTodoWrite = useCallback((id: string | null) => {
+    todoWrites.current.delete(id);
+    setTodoMutations(new Map(todoWrites.current));
+  }, []);
+
+  const applyTodoWrite = useCallback((id: string, todo?: PersonalTodoItem) => {
+    // A list request started before this write completed may describe the old state.
+    ++todoRead.current;
+    setLoading(false);
+    setTodos((current) => {
+      const remaining = current.filter((item) => item.id !== id);
+      return todo ? sortPersonalTodos([...remaining, todo]) : remaining;
+    });
+  }, []);
 
   const reloadMemo = useCallback(async () => {
     const api = memoApi.current;
@@ -223,51 +249,37 @@ export function usePersonalWidgets() {
 
   const addTodo = useCallback(async () => {
     const title = draftTitle.trim();
-    if (!api || !title) {
+    if (!api || !title || !beginTodoWrite(null, 'create')) {
       return;
     }
-    setMutating('create');
-    setError(null);
     try {
       const created = await createPersonalTodo(api, title);
-      setTodos((current) => sortPersonalTodos([...current, created]));
-      setDraftTitle('');
+      applyTodoWrite(created.id, created);
+      setDraftTitle((current) => current === draftTitle ? '' : current);
     } catch {
       setError(t('personalWidgets.errors.createFailed'));
     } finally {
-      setMutating(null);
+      finishTodoWrite(null);
     }
-  }, [draftTitle, t, api]);
+  }, [api, applyTodoWrite, beginTodoWrite, draftTitle, finishTodoWrite, t]);
 
   const toggleTodo = useCallback(
     async (todo: PersonalTodoItem) => {
-      if (!api) {
+      if (!api || !beginTodoWrite(todo.id, 'toggle')) {
         return;
       }
-      setMutating('toggle');
-      setMutatingTodoIds((current) => new Set(current).add(todo.id));
-      setError(null);
       try {
         const updated = await updatePersonalTodo(api, todo.id, {
           completed: !todo.completed,
         });
-        setTodos((current) =>
-          sortPersonalTodos(
-            current.map((item) => (item.id === updated.id ? updated : item)),
-          ),
-        );
+        applyTodoWrite(updated.id, updated);
       } catch {
         setError(t('personalWidgets.errors.updateFailed'));
       } finally {
-        setMutating(null);
-        setMutatingTodoIds((current) => {
-          const next = new Set(current);
-          next.delete(todo.id);
-          return next;
-        });
+        finishTodoWrite(todo.id);
       }
     },
-    [t, api],
+    [api, applyTodoWrite, beginTodoWrite, finishTodoWrite, t],
   );
 
   const startEditingTodo = useCallback((todo: PersonalTodoItem) => {
@@ -295,52 +307,35 @@ export function usePersonalWidgets() {
         return;
       }
 
-      setMutatingTodoIds((current) => new Set(current).add(todo.id));
-      setError(null);
+      if (!beginTodoWrite(todo.id, 'edit')) return;
       try {
         const updated = await updatePersonalTodo(api, todo.id, { title });
-        setTodos((current) =>
-          sortPersonalTodos(
-            current.map((item) => (item.id === updated.id ? updated : item)),
-          ),
-        );
+        applyTodoWrite(updated.id, updated);
         cancelEditingTodo();
       } catch {
         setError(t('personalWidgets.errors.updateFailed'));
       } finally {
-        setMutatingTodoIds((current) => {
-          const next = new Set(current);
-          next.delete(todo.id);
-          return next;
-        });
+        finishTodoWrite(todo.id);
       }
     },
-    [cancelEditingTodo, editingTodoTitle, t, api],
+    [api, applyTodoWrite, beginTodoWrite, cancelEditingTodo, editingTodoTitle, finishTodoWrite, t],
   );
 
   const removeTodo = useCallback(
     async (todo: PersonalTodoItem) => {
-      if (!api) {
+      if (!api || !beginTodoWrite(todo.id, 'delete')) {
         return;
       }
-      setMutating('delete');
-      setMutatingTodoIds((current) => new Set(current).add(todo.id));
-      setError(null);
       try {
         await deletePersonalTodo(api, todo.id);
-        setTodos((current) => current.filter((item) => item.id !== todo.id));
+        applyTodoWrite(todo.id);
       } catch {
         setError(t('personalWidgets.errors.deleteFailed'));
       } finally {
-        setMutating(null);
-        setMutatingTodoIds((current) => {
-          const next = new Set(current);
-          next.delete(todo.id);
-          return next;
-        });
+        finishTodoWrite(todo.id);
       }
     },
-    [t, api],
+    [api, applyTodoWrite, beginTodoWrite, finishTodoWrite, t],
   );
 
   const saveMemo = useCallback(
@@ -436,8 +431,6 @@ export function usePersonalWidgets() {
     memoError: memoError ? t(`personalWidgets.errors.${memoError}`) : null,
     memoLoading,
     memoSaving,
-    mutating,
-    mutatingTodoIds,
     openTodoCount,
     reloadMemo,
     reloadTodos,
@@ -451,6 +444,7 @@ export function usePersonalWidgets() {
     setEditingTodoTitle,
     startEditingTodo,
     todoEditButtonRefs,
+    todoMutations,
     todos,
     toggleTodo,
     updateMemoBody,
@@ -485,8 +479,6 @@ export function PersonalWidgetSection({
     memoLoading,
     memoReady,
     memoSaving,
-    mutating,
-    mutatingTodoIds,
     openTodoCount,
     removeTodo,
     replaceMemo,
@@ -496,12 +488,14 @@ export function PersonalWidgetSection({
     setEditingTodoTitle,
     startEditingTodo,
     todoEditButtonRefs,
+    todoMutations,
     todos,
     toggleTodo,
     updateMemoBody,
   } = state;
   const widgetError = activeWidget === 'memo' ? memoError : error;
   const latestMemo = memoConflict?.latest;
+  const creatingTodo = todoMutations.has(null);
   return (
     <section className="flex min-h-0 min-w-0 w-full flex-1 flex-col overflow-hidden">
       <div className="grid shrink-0 gap-3 border-b border-app-border px-4 py-3">
@@ -538,7 +532,7 @@ export function PersonalWidgetSection({
         >
           <Input
             aria-label={t('personalWidgets.todo.inputLabel')}
-            disabled={mutating === 'create'}
+            disabled={creatingTodo}
             maxLength={240}
             placeholder={t('personalWidgets.todo.inputPlaceholder')}
             value={draftTitle}
@@ -546,12 +540,12 @@ export function PersonalWidgetSection({
           />
           <Button
             aria-label={t('personalWidgets.todo.add')}
-            disabled={mutating === 'create' || draftTitle.trim().length === 0}
+            disabled={creatingTodo || draftTitle.trim().length === 0}
             size="icon"
             type="submit"
             variant="primary"
           >
-            {mutating === 'create' ? (
+            {creatingTodo ? (
               <Loader2 aria-hidden="true" className="animate-spin" size={15} />
             ) : (
               <Plus aria-hidden="true" size={16} />
@@ -670,7 +664,8 @@ export function PersonalWidgetSection({
         ) : (
           <ul className="divide-y divide-app-border">
             {todos.map((todo) => {
-              const busy = mutatingTodoIds.has(todo.id);
+              const mutation = todoMutations.get(todo.id);
+              const busy = mutation !== undefined;
               const editing = editingTodoId === todo.id;
               return (
                 <li key={todo.id} className="flex items-start gap-2 px-4 py-3">
@@ -683,7 +678,7 @@ export function PersonalWidgetSection({
                     disabled={busy || editing}
                     onClick={() => void toggleTodo(todo)}
                   >
-                    {busy && mutating === 'toggle' ? (
+                    {mutation === 'toggle' ? (
                       <Loader2
                         aria-hidden="true"
                         className="animate-spin"
@@ -805,7 +800,7 @@ export function PersonalWidgetSection({
                         title: todo.title,
                       })}
                     >
-                      {busy && mutating === 'delete' ? (
+                      {mutation === 'delete' ? (
                         <Loader2
                           aria-hidden="true"
                           className="animate-spin"

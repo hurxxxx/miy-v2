@@ -99,8 +99,9 @@ export function getPlannerEvent(
 export function createPlannerEvent(
   api: AppApi,
   payload: PlannerEventCreateInput,
+  timeZone = readStoredTimeZonePreference(),
 ): Promise<PlannerEvent> {
-  const zone = new URLSearchParams({ timeZone: readStoredTimeZonePreference() });
+  const zone = new URLSearchParams({ timeZone });
   return request<PlannerEvent>(`/v1/planner/events?${zone.toString()}`, api, {
     method: 'POST',
     body: JSON.stringify(payload),

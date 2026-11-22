@@ -1,8 +1,9 @@
 import type { UnifiedCalendarView } from '../../../components/calendar/UnifiedCalendar';
+import { addNativeDateInputDays, parseNativeDateInputValue } from '../../../platform/time/native-date-input';
+import { zonedDateKey } from '../../../platform/time/zoned-date-formatter';
 import {
   buildInitialPlannerRange,
   formatLocalYmd,
-  startOfLocalDay,
   type PlannerSurfaceMode,
   type PlannerViewMode,
   type TimelineRangeDays,
@@ -70,17 +71,24 @@ const FC_VIEW_TO_MODE: Record<UnifiedCalendarView, PlannerViewMode> = {
 function buildDefaultPlannerEventRange(
   currentDate: Date,
   now = new Date(),
+  timeZone?: string,
 ): PlannerEventDraftRange {
-  const { start, end } = defaultTimedRangeForDate(currentDate, now);
+  const { start, end } = defaultTimedRangeForDate(currentDate, now, timeZone);
   return { start, end, allDay: false };
 }
 
 function buildPlannerEventRangeFromSelection(
   range: PlannerEventDraftRange,
   now = new Date(),
+  timeZone?: string,
 ): PlannerEventDraftRange {
   if (!range.allDay) {
     return range;
+  }
+  if (timeZone) {
+    const first = zonedDateKey(range.start, timeZone);
+    if (zonedDateKey(range.end, timeZone) > addNativeDateInputDays(first, 1)) return range;
+    return buildDefaultPlannerEventRange(parseNativeDateInputValue(first), now, timeZone);
   }
   const defaultRange = defaultTimedRange(now);
   const selectedEndDate = new Date(
@@ -235,11 +243,13 @@ export function applyCalendarDatesSet(
     rangeStart: Date;
     rangeEnd: Date;
   },
+  timeZone?: string,
 ): { session: PlannerCalendarSession; viewMode: PlannerViewMode } {
   const nextMode = FC_VIEW_TO_MODE[nextState.view];
-  const nextCurrentDate = startOfLocalDay(nextState.currentDate);
-  const nextRangeStart = formatLocalYmd(nextState.rangeStart);
-  const nextRangeEnd = formatLocalYmd(nextState.rangeEnd);
+  const dateKey = (date: Date) => timeZone ? zonedDateKey(date, timeZone) : formatLocalYmd(date);
+  const nextCurrentDate = parseNativeDateInputValue(dateKey(nextState.currentDate));
+  const nextRangeStart = dateKey(nextState.rangeStart);
+  const nextRangeEnd = dateKey(nextState.rangeEnd);
 
   if (
     session.calendarState.currentDate.getTime() === nextCurrentDate.getTime() &&
@@ -266,14 +276,15 @@ export function openPlannerEventCreate(
   session: PlannerCalendarSession,
   range?: PlannerEventDraftRange,
   now = new Date(),
+  timeZone?: string,
 ): PlannerCalendarSession {
   return {
     ...session,
     plannerEventId: null,
     plannerEventRange:
       range
-        ? buildPlannerEventRangeFromSelection(range, now)
-        : buildDefaultPlannerEventRange(session.calendarState.currentDate, now),
+        ? buildPlannerEventRangeFromSelection(range, now, timeZone)
+        : buildDefaultPlannerEventRange(session.calendarState.currentDate, now, timeZone),
     plannerEventModalOpen: true,
     createMenuOpen: false,
   };

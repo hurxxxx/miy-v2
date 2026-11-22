@@ -15,6 +15,7 @@ import {
 } from '../api/planner-api';
 import {
   buildPlannerEventSavePayload,
+  buildPlannerEventUpdatePayload,
   canSave as canSavePlannerEventModal,
   initialPlannerEventModalState,
   isPlannerEventModalEdited,
@@ -33,6 +34,7 @@ interface PlannerEventModalProps {
   onSaved?: (event: PlannerEvent) => void;
   onDeleted?: (eventId: string) => void;
   overlayClassName?: string;
+  timeZone: string;
 }
 
 export function PlannerEventModal({
@@ -68,14 +70,16 @@ function usePlannerEventModalElement({
   onSaved,
   onDeleted,
   overlayClassName,
+  timeZone: initialTimeZone,
 }: PlannerEventModalContentProps) {
   const { t } = useTranslation(['apps', 'common']);
+  const [timeZone] = useState(initialTimeZone);
   // miy: the app's own API client replaces AI-DO's auth token.
   const token = useAppApi();
   const [state, dispatch] = useReducer(
     plannerEventModalReducer,
     initialRange,
-    initialPlannerEventModalState,
+    (range) => initialPlannerEventModalState(range, undefined, timeZone),
   );
   // miy: unsaved edits and in-flight saves are reported to the portal
   // (runtime.setNavigationState). The baseline is the form as opened, or as
@@ -115,7 +119,7 @@ function usePlannerEventModalElement({
         dispatch({ type: 'loadSuccess', event });
         setBaseline(
           plannerEventModalEditableFields(
-            plannerEventModalReducer(initialPlannerEventModalState(null), {
+            plannerEventModalReducer(initialPlannerEventModalState(null, undefined, timeZone), {
               type: 'loadSuccess',
               event,
             }),
@@ -132,7 +136,7 @@ function usePlannerEventModalElement({
     return () => {
       cancelled = true;
     };
-  }, [eventId, t, token]);
+  }, [eventId, timeZone, token, t]);
 
   const canSave = useMemo(() => {
     return canSavePlannerEventModal(state);
@@ -143,13 +147,12 @@ function usePlannerEventModalElement({
   }
 
   async function handleSave() {
-    if (!token || !canSave) return;
+    if (!token || !canSave || saving || deleting) return;
     dispatch({ type: 'saveStart' });
-    const payload = buildPlannerEventSavePayload(state);
     try {
       const event = eventId
-        ? await updatePlannerEvent(token, eventId, payload)
-        : await createPlannerEvent(token, payload);
+        ? await updatePlannerEvent(token, eventId, buildPlannerEventUpdatePayload(state, baseline))
+        : await createPlannerEvent(token, buildPlannerEventSavePayload(state), timeZone);
       setBaseline(plannerEventModalEditableFields(state));
       onSaved?.(event);
     } catch (err) {
@@ -164,7 +167,7 @@ function usePlannerEventModalElement({
   }
 
   async function handleDelete() {
-    if (!token || !eventId) return;
+    if (!token || !eventId || saving || deleting) return;
     dispatch({ type: 'deleteStart' });
     try {
       await deletePlannerEvent(token, eventId);
@@ -186,7 +189,7 @@ function usePlannerEventModalElement({
       closeLabel={t('common:actions.close')}
       open
       onOpenChange={(open) => {
-        if (!open) onClose();
+        if (!open && !saving && !deleting) onClose();
       }}
       title={
         isEditMode ? t('apps:planner.editEvent') : t('apps:planner.newEvent')
@@ -248,7 +251,7 @@ function usePlannerEventModalElement({
             {t('apps:planner.eventLoading')}
           </div>
         ) : (
-          <>
+          <fieldset disabled={saving || deleting} className="min-w-0 space-y-5">
             <div className="space-y-1">
               <label className="app-text-control-sm text-app-ink/70">
                 {t('apps:planner.title')}{' '}
@@ -424,7 +427,7 @@ function usePlannerEventModalElement({
                 className="app-text-body w-full resize-none rounded-md border border-app-border bg-app-surface-sidebar px-3 py-2 text-app-ink placeholder:text-app-ink/30 focus:border-app-accent focus:outline-none"
               />
             </div>
-          </>
+          </fieldset>
         )}
       </div>
     </Dialog>

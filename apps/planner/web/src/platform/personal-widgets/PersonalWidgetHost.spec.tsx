@@ -1,4 +1,5 @@
 import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -14,6 +15,8 @@ import {
   PersonalWidgetPanelRoute,
 } from './PersonalWidgetHost';
 import {
+  createPersonalTodo,
+  deletePersonalTodo,
   getPersonalMemo,
   listPersonalTodos,
   savePersonalMemo,
@@ -50,20 +53,28 @@ vi.mock('./personal-widgets-api', () => ({
 }));
 
 const listPersonalTodosMock = vi.mocked(listPersonalTodos);
+const createPersonalTodoMock = vi.mocked(createPersonalTodo);
+const deletePersonalTodoMock = vi.mocked(deletePersonalTodo);
 const getPersonalMemoMock = vi.mocked(getPersonalMemo);
 const savePersonalMemoMock = vi.mocked(savePersonalMemo);
 const updatePersonalTodoMock = vi.mocked(updatePersonalTodo);
 
-function todo(title: string): PersonalTodoItem {
+function todo(title: string, id = 'todo-1'): PersonalTodoItem {
   return {
     completed: false,
     completedAt: null,
     createdAt: '2026-07-19T00:00:00Z',
-    id: 'todo-1',
+    id,
     sortOrder: 1000,
     title,
     updatedAt: '2026-07-19T00:00:00Z',
   };
+}
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((fulfill) => { resolve = fulfill; });
+  return { promise, resolve };
 }
 
 function memo(body: string, updatedAt = '2026-07-19T00:00:00'): PersonalMemo {
@@ -232,6 +243,55 @@ describe('PersonalWidgetHost todo editing', () => {
       }),
     );
     expect(await screen.findByText('Retry title')).toBeTruthy();
+  });
+
+  it('keeps the create input locked until its own response arrives', async () => {
+    const created = deferred<PersonalTodoItem>();
+    createPersonalTodoMock.mockReturnValueOnce(created.promise);
+    updatePersonalTodoMock.mockResolvedValueOnce({ ...todo('Original todo'), completed: true });
+    renderTodoWidget();
+
+    const toggle = await screen.findByRole('button', {
+      name: 'personalWidgets.todo.toggle:Original todo',
+    });
+    const input = screen.getByRole<HTMLInputElement>('textbox', {
+      name: 'personalWidgets.todo.inputLabel',
+    });
+    fireEvent.change(input, { target: { value: 'New todo' } });
+    fireEvent.click(screen.getByRole('button', { name: 'personalWidgets.todo.add' }));
+    expect(input.disabled).toBe(true);
+
+    await act(async () => fireEvent.click(toggle));
+    expect(updatePersonalTodoMock).toHaveBeenCalledExactlyOnceWith(api.current, 'todo-1', {
+      completed: true,
+    });
+    expect(input.disabled).toBe(true);
+    expect(input.value).toBe('New todo');
+
+    await act(async () => created.resolve(todo('New todo', 'todo-2')));
+    expect(input.disabled).toBe(false);
+    expect(input.value).toBe('');
+    expect(screen.getByText('New todo')).toBeTruthy();
+  });
+
+  it('ignores a stale reload that finishes after a successful delete', async () => {
+    const stale = deferred<{ items: PersonalTodoItem[] }>();
+    listPersonalTodosMock.mockResolvedValueOnce({ items: [todo('Original todo')] })
+      .mockReturnValueOnce(stale.promise);
+    deletePersonalTodoMock.mockResolvedValueOnce(undefined);
+    renderTodoWidget();
+
+    const remove = await screen.findByRole('button', {
+      name: 'personalWidgets.todo.delete:Original todo',
+    });
+    const reload = screen.getByRole('button', { name: 'personalWidgets.reload' });
+    fireEvent.click(reload);
+    expect(listPersonalTodosMock).toHaveBeenCalledTimes(2);
+
+    await act(async () => fireEvent.click(remove));
+    expect(screen.queryByText('Original todo')).toBeNull();
+    await act(async () => stale.resolve({ items: [todo('Original todo')] }));
+    expect(screen.queryByText('Original todo')).toBeNull();
   });
 });
 

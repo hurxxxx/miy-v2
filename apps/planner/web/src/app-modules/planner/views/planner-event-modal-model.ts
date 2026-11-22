@@ -1,12 +1,12 @@
-import type { PlannerEvent, PlannerEventCreateInput } from '../api/planner-api';
+import type { PlannerEvent, PlannerEventCreateInput, PlannerEventUpdateInput } from '../api/planner-api';
 import {
   addLocalCalendarDays,
   addNativeDateInputDays,
   formatNativeDateInputValue,
   formatNativeDateTimeInputValue,
-  nativeDateTimeInputValueToIso,
   parseNativeDateInputValue,
 } from '../../../platform/time/native-date-input';
+import { formatZonedWallTime, resolveZonedWallTime } from '../../../platform/time/zoned-wall-time';
 import { defaultTimedRange } from './planner-event-default-time';
 
 export interface PlannerEventModalRange {
@@ -24,6 +24,7 @@ export interface PlannerEventModalDraft {
 }
 
 export interface PlannerEventModalState {
+  timeZone?: string;
   loading: boolean;
   saving: boolean;
   deleting: boolean;
@@ -69,82 +70,73 @@ export function decrementYmd(value: string): string {
   return addNativeDateInputDays(value, -1);
 }
 
-function timeInputValueFromDate(value: Date): string {
-  return formatDateTimeInputValue(value).slice(11, 16);
+function wallTime(value: Date, timeZone?: string): string {
+  return timeZone ? formatZonedWallTime(value, timeZone) : formatDateTimeInputValue(value);
 }
 
-function dateInputValueFromApiValue(value: string): string {
-  return value.includes('T')
-    ? formatDateInputValue(new Date(value))
-    : value.slice(0, 10);
+function dateInputValueFromApiValue(value: string, timeZone?: string): string {
+  return value.includes('T') ? wallTime(new Date(value), timeZone).slice(0, 10) : value.slice(0, 10);
 }
 
-function timeInputValueFromApiValue(value: string, hasTime: boolean): string {
-  return hasTime ? timeInputValueFromDate(new Date(value)) : '';
+function timeInputValueFromApiValue(value: string, hasTime: boolean, timeZone?: string): string {
+  return hasTime ? wallTime(new Date(value), timeZone).slice(11) : '';
 }
 
-function combineDateAndOptionalTime(
-  dateValue: string,
-  timeValue: string,
-): string {
+function instant(date: string, time: string, timeZone?: string): Date {
+  const value = `${date}T${time}`;
+  return timeZone ? resolveZonedWallTime(value, timeZone) : new Date(value);
+}
+
+function combineDateAndOptionalTime(dateValue: string, timeValue: string, timeZone?: string): string {
   const normalizedTime = timeValue.trim();
-  return normalizedTime
-    ? nativeDateTimeInputValueToIso(`${dateValue}T${normalizedTime}`)
-    : dateValue;
+  return normalizedTime ? instant(dateValue, normalizedTime, timeZone).toISOString() : dateValue;
 }
 
 function effectiveStartDateTime(state: PlannerEventModalState): Date | null {
   if (!state.startDateValue) return null;
   if (state.startTimeValue.trim()) {
-    return new Date(`${state.startDateValue}T${state.startTimeValue.trim()}`);
+    return instant(state.startDateValue, state.startTimeValue.trim(), state.timeZone);
   }
-  return parseLocalDate(state.startDateValue);
+  return instant(state.startDateValue, '00:00', state.timeZone);
 }
 
 function effectiveEndDateTime(state: PlannerEventModalState): Date | null {
   if (!state.endDateValue) return null;
   if (state.endTimeValue.trim()) {
-    return new Date(`${state.endDateValue}T${state.endTimeValue.trim()}`);
+    return instant(state.endDateValue, state.endTimeValue.trim(), state.timeZone);
   }
-  const endDate = parseLocalDate(state.endDateValue);
-  endDate.setHours(23, 59, 59, 999);
-  return endDate;
+  return new Date(instant(incrementYmd(state.endDateValue), '00:00', state.timeZone).getTime() - 1);
 }
 
 export function buildDraftFromRange(
   range?: PlannerEventModalRange | null,
   now?: Date,
+  timeZone?: string,
 ): PlannerEventModalDraft {
   if (range?.allDay) {
     return {
       allDay: true,
-      startDateValue: formatDateInputValue(range.start),
+      startDateValue: wallTime(range.start, timeZone).slice(0, 10),
       startTimeValue: '',
-      endDateValue: decrementYmd(formatDateInputValue(range.end)),
+      endDateValue: decrementYmd(wallTime(range.end, timeZone).slice(0, 10)),
       endTimeValue: '',
     };
   }
-  if (range) {
-    return {
-      allDay: false,
-      startDateValue: formatDateInputValue(range.start),
-      startTimeValue: timeInputValueFromDate(range.start),
-      endDateValue: formatDateInputValue(range.end),
-      endTimeValue: timeInputValueFromDate(range.end),
-    };
-  }
-  const fallback = defaultTimedRange(now);
+  const { start, end } = range ?? defaultTimedRange(now, timeZone);
+  const startValue = wallTime(start, timeZone);
+  const endValue = wallTime(end, timeZone);
   return {
     allDay: false,
-    startDateValue: formatDateInputValue(fallback.start),
-    startTimeValue: timeInputValueFromDate(fallback.start),
-    endDateValue: formatDateInputValue(fallback.end),
-    endTimeValue: timeInputValueFromDate(fallback.end),
+    startDateValue: startValue.slice(0, 10),
+    startTimeValue: startValue.slice(11),
+    endDateValue: endValue.slice(0, 10),
+    endTimeValue: endValue.slice(11),
   };
 }
 
 export function plannerEventToDraft(
   event: PlannerEvent,
+  timeZone?: string,
 ): PlannerEventModalDraft {
   if (event.allDay) {
     return {
@@ -159,10 +151,10 @@ export function plannerEventToDraft(
   const endHasTime = event.endHasTime ?? event.end.includes('T');
   return {
     allDay: false,
-    startDateValue: dateInputValueFromApiValue(event.start),
-    startTimeValue: timeInputValueFromApiValue(event.start, startHasTime),
-    endDateValue: dateInputValueFromApiValue(event.end),
-    endTimeValue: timeInputValueFromApiValue(event.end, endHasTime),
+    startDateValue: dateInputValueFromApiValue(event.start, timeZone),
+    startTimeValue: timeInputValueFromApiValue(event.start, startHasTime, timeZone),
+    endDateValue: dateInputValueFromApiValue(event.end, timeZone),
+    endTimeValue: timeInputValueFromApiValue(event.end, endHasTime, timeZone),
   };
 }
 
@@ -187,9 +179,11 @@ export function plannerEventModalSessionKey(
 export function initialPlannerEventModalState(
   initialRange: PlannerEventModalRange | null | undefined,
   now?: Date,
+  timeZone?: string,
 ): PlannerEventModalState {
-  const draft = buildDraftFromRange(initialRange, now);
+  const draft = buildDraftFromRange(initialRange, now, timeZone);
   return {
+    timeZone,
     loading: false,
     saving: false,
     deleting: false,
@@ -228,18 +222,18 @@ function buildAllDayToggleDraft(
     };
   }
 
-  const defaultRange = defaultTimedRange();
+  const defaultRange = defaultTimedRange(undefined, state.timeZone);
   const startDate =
-    state.startDateValue || formatDateInputValue(defaultRange.start);
+    state.startDateValue || wallTime(defaultRange.start, state.timeZone).slice(0, 10);
   const endDate = state.endDateValue || startDate;
   return {
     allDay: false,
     startDateValue: startDate,
     startTimeValue:
-      state.startTimeValue || timeInputValueFromDate(defaultRange.start),
+      state.startTimeValue || wallTime(defaultRange.start, state.timeZone).slice(11),
     endDateValue: endDate,
     endTimeValue:
-      state.endTimeValue || timeInputValueFromDate(defaultRange.end),
+      state.endTimeValue || wallTime(defaultRange.end, state.timeZone).slice(11),
   };
 }
 
@@ -251,7 +245,7 @@ export function plannerEventModalReducer(
     case 'loadStart':
       return { ...state, loading: true, error: null };
     case 'loadSuccess': {
-      const eventDraft = plannerEventToDraft(action.event);
+      const eventDraft = plannerEventToDraft(action.event, state.timeZone);
       return {
         ...state,
         loading: false,
@@ -310,7 +304,11 @@ export function canSave(state: PlannerEventModalState): boolean {
   if (state.allDay) return true;
   const start = effectiveStartDateTime(state);
   const end = effectiveEndDateTime(state);
-  return Boolean(start && end && end > start);
+  if (!start || !end || !(end > start)) return false;
+  return (
+    (!state.startTimeValue || wallTime(start, state.timeZone) === `${state.startDateValue}T${state.startTimeValue}`) &&
+    (!state.endTimeValue || wallTime(end, state.timeZone) === `${state.endDateValue}T${state.endTimeValue}`)
+  );
 }
 
 export function buildPlannerEventSavePayload(
@@ -323,10 +321,10 @@ export function buildPlannerEventSavePayload(
     allDay: state.allDay,
     start: state.allDay
       ? state.startDateValue
-      : combineDateAndOptionalTime(state.startDateValue, state.startTimeValue),
+      : combineDateAndOptionalTime(state.startDateValue, state.startTimeValue, state.timeZone),
     end: state.allDay
       ? incrementYmd(state.endDateValue)
-      : combineDateAndOptionalTime(state.endDateValue, state.endTimeValue),
+      : combineDateAndOptionalTime(state.endDateValue, state.endTimeValue, state.timeZone),
   };
 }
 
@@ -366,4 +364,23 @@ export function isPlannerEventModalEdited(
   const current = plannerEventModalEditableFields(state);
   return (Object.keys(baseline) as Array<keyof PlannerEventModalEditableFields>)
     .some((key) => baseline[key] !== current[key]);
+}
+
+export function buildPlannerEventUpdatePayload(
+  state: PlannerEventModalState,
+  baseline: PlannerEventModalEditableFields,
+): PlannerEventUpdateInput {
+  const payload = buildPlannerEventSavePayload(state);
+  const update: PlannerEventUpdateInput = {};
+  for (const field of ['title', 'description', 'location'] as const) {
+    if (state[field] !== baseline[field]) update[field] = payload[field];
+  }
+  const timeChanged = (['allDay', 'startDateValue', 'startTimeValue', 'endDateValue', 'endTimeValue'] as const)
+    .some((field) => state[field] !== baseline[field]);
+  if (timeChanged) {
+    update.start = payload.start;
+    update.end = payload.end;
+    if (state.allDay !== baseline.allDay) update.allDay = payload.allDay;
+  }
+  return update;
 }

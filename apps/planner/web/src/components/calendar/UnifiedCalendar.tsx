@@ -41,6 +41,7 @@ import type {
   EventDropArg,
 } from '@fullcalendar/core';
 import type { EventResizeDoneArg } from '@fullcalendar/interaction';
+import { formatNativeDateInputValue } from '../../platform/time/native-date-input';
 
 import {
   DEFAULT_TIME_ZONE,
@@ -223,7 +224,8 @@ export function UnifiedCalendar({
       today: () => calendarRef.current?.getApi().today(),
       prev: () => calendarRef.current?.getApi().prev(),
       next: () => calendarRef.current?.getApi().next(),
-      gotoDate: (date) => calendarRef.current?.getApi().gotoDate(date),
+      gotoDate: (date) =>
+        calendarRef.current?.getApi().gotoDate(date instanceof Date ? formatNativeDateInputValue(date) : date),
       getCurrentView: () => calendarRef.current?.getApi().view.type,
     }),
     [],
@@ -320,13 +322,13 @@ export function UnifiedCalendar({
         }
         dayCellClassNames={
           showKoreanHolidays
-            ? (arg) => getKoreanHolidayDayClass(arg.date)
+            ? (arg) => getKoreanHolidayDayClass(arg.date, resolvedTimeZone)
             : undefined
         }
         dayCellDidMount={
           showKoreanHolidays
             ? (arg) => {
-                const labelText = getKoreanHolidayLabel(arg.date);
+                const labelText = getKoreanHolidayLabel(arg.date, resolvedTimeZone);
                 if (!labelText) return;
                 // Inject the holiday label as a sibling of the day-top area
                 // (inside the day frame) so it flows as its own block line

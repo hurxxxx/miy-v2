@@ -2,6 +2,7 @@ import type {
   CalendarEvent,
   CalendarSourceType,
 } from '../../../platform/calendar/calendar-types';
+import { zonedDateKey } from '../../../platform/time/zoned-date-formatter';
 import {
   addDays,
   formatLocalYmd,
@@ -43,14 +44,19 @@ function parseEventDate(value: string): Date {
   return new Date(value);
 }
 
-/** Local calendar days covered by the event (end is exclusive). */
-export function getPlannerEventDaySpan(event: CalendarEvent): {
+function calendarDay(value: Date, timeZone?: string): Date {
+  return timeZone ? parseEventDate(zonedDateKey(value, timeZone)) : startOfLocalDay(value);
+}
+
+/** Calendar days covered by the event (end is exclusive). */
+export function getPlannerEventDaySpan(event: CalendarEvent, timeZone?: string): {
   first: Date;
   last: Date;
 } {
-  const first = startOfLocalDay(parseEventDate(event.start));
-  const end = parseEventDate(event.end || event.start);
-  const last = startOfLocalDay(new Date(end.getTime() - 1));
+  const first = calendarDay(parseEventDate(event.start), DATE_ONLY_PATTERN.test(event.start) ? undefined : timeZone);
+  const endValue = event.end || event.start;
+  const end = parseEventDate(endValue);
+  const last = calendarDay(new Date(end.getTime() - 1), DATE_ONLY_PATTERN.test(endValue) ? undefined : timeZone);
   return { first, last: last < first ? first : last };
 }
 
@@ -59,8 +65,9 @@ function forEachDayInRange(
   rangeStart: Date,
   rangeEnd: Date,
   visit: (day: Date) => void,
+  timeZone?: string,
 ) {
-  const { first, last } = getPlannerEventDaySpan(event);
+  const { first, last } = getPlannerEventDaySpan(event, timeZone);
   const from = first < rangeStart ? startOfLocalDay(rangeStart) : first;
   for (let day = from; day <= last && day < rangeEnd; day = addDays(day, 1)) {
     visit(day);
@@ -122,6 +129,7 @@ export function groupPlannerEventsBySource(
   events: readonly CalendarEvent[],
   rangeStart: Date,
   rangeEnd: Date,
+  timeZone?: string,
 ): Record<CalendarSourceType, CalendarEvent[]> {
   const groups: Record<CalendarSourceType, CalendarEvent[]> = {
     meeting: [],
@@ -131,7 +139,7 @@ export function groupPlannerEventsBySource(
     google_calendar: [],
   };
   for (const event of events) {
-    const { first, last } = getPlannerEventDaySpan(event);
+    const { first, last } = getPlannerEventDaySpan(event, timeZone);
     if (first < rangeEnd && last >= startOfLocalDay(rangeStart)) {
       groups[event.sourceType].push(event);
     }
@@ -143,8 +151,9 @@ export function countPlannerEventsBySource(
   events: readonly CalendarEvent[],
   rangeStart: Date,
   rangeEnd: Date,
+  timeZone?: string,
 ): Record<CalendarSourceType, number> {
-  const groups = groupPlannerEventsBySource(events, rangeStart, rangeEnd);
+  const groups = groupPlannerEventsBySource(events, rangeStart, rangeEnd, timeZone);
   return {
     meeting: groups.meeting.length,
     pms_due: groups.pms_due.length,
@@ -178,6 +187,7 @@ export function rankPlannerBusyDays(
   rangeStart: Date,
   rangeEnd: Date,
   limit: number,
+  timeZone?: string,
 ): PlannerBusyDay[] {
   const days = new Map<string, PlannerBusyDay>();
   for (const event of events) {
@@ -189,7 +199,7 @@ export function rankPlannerBusyDays(
         entry.sources.push(event.sourceType);
       }
       days.set(key, entry);
-    });
+    }, timeZone);
   }
   return [...days.values()]
     .sort(
@@ -204,13 +214,14 @@ export function listPlannerUpcomingEvents(
   events: readonly CalendarEvent[],
   now: Date,
   limit: number,
+  timeZone?: string,
 ): CalendarEvent[] {
-  const today = startOfLocalDay(now);
+  const today = calendarDay(now, timeZone);
   return events
     .filter((event) => event.sourceType !== 'pms_block')
     .filter((event) =>
       event.allDay || DATE_ONLY_PATTERN.test(event.start)
-        ? getPlannerEventDaySpan(event).last >= today
+        ? getPlannerEventDaySpan(event, timeZone).last >= today
         : parseEventDate(event.end || event.start) > now,
     )
     .sort(
