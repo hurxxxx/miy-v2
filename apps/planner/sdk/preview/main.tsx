@@ -97,8 +97,11 @@ guards.register(() =>
     ? navigationState.message || "저장하지 않은 내용이 있습니다. 이동하시겠습니까?"
     : undefined,
 );
+// As in the portal: the app's own runtime.navigate does not ask (it knows its
+// input state); browser history still asks.
+let appNavigation = false;
 history.block({
-  blockerFn: () => !guards.confirmNavigation(),
+  blockerFn: () => !appNavigation && !guards.confirmNavigation(),
   enableBeforeUnload: () => !!guards.message(),
 });
 function Preview() {
@@ -141,8 +144,16 @@ function Preview() {
     },
     navigate: (path, options) => {
       const to = appTarget(basePath, path);
-      if (options?.replace) history.replace(to);
-      else history.push(to);
+      appNavigation = true;
+      try {
+        if (options?.replace) history.replace(to);
+        else history.push(to);
+      } finally {
+        // Blockers run while the history call is in progress.
+        setTimeout(() => {
+          appNavigation = false;
+        }, 0);
+      }
     },
     api: (path, init) => request("/__miy/api" + safe(path), context.csrf, init),
     apiBlob: (path, init) => requestBlob("/__miy/api" + safe(path), context.csrf, init),

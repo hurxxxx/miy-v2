@@ -18,7 +18,7 @@
     "sdk/browser/navigation.ts": "e72ac3126884a34b4d97382ef47329d14c344de8231c6948f032ff20b0672287",
     "sdk/browser/transport.ts": "704dc334c3d3b14f3d422d79d9dc947b7d56ddea402d17d0db06a3abfafea35e",
     "sdk/preview/index.html": "e67ab4d00b4b9635cfe4336cd8fcc7730965fb00fbe0c00e60d4ae06369ba36e",
-    "sdk/preview/main.tsx": "94bff622b7c8a7c3c3858e8f4465799cf873cade91da538ce82b1cc160bfb6a6",
+    "sdk/preview/main.tsx": "39facbef6a5d1f6b142b647d774fc552327057f11363949c0b5d1961386b9cf8",
     "sdk/preview/preview.css": "90922298455b3fe1747cc08cfcbb68c204f9a3c5fadb3ebcf99a51700d2d8f9e",
     "sdk/preview/tokens.css": "cc631b595009a9b472aabe9a1525cd0bdbff7a2b6381b5a4cb163f5a018feeca",
     "sdk/preview/vite.config.ts": "aeacf2023e1fa3bf9f375464ace9624fb31c06238c35ec9d94f103801b666321",
