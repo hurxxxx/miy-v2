@@ -1375,6 +1375,52 @@ pub async fn run(
         )
         .await?;
     }
+    // Without directory approval the platform call carries no groups; with it,
+    // the person's current groups, so the app's ACL can see group grants.
+    ensure!(
+        home_claims[0]["claims"].get("groups").is_none(),
+        "a platform call carried groups without directory approval"
+    );
+    let home_group = Uuid::new_v4();
+    sqlx::query("INSERT INTO groups(id,name,source) VALUES($1,'Home fixture group','local')")
+        .bind(home_group)
+        .execute(&state.pool)
+        .await?;
+    sqlx::query("INSERT INTO group_members(group_id,user_id) VALUES($1,$2)")
+        .bind(home_group)
+        .bind(&user_id)
+        .execute(&state.pool)
+        .await?;
+    let card_release: Uuid = sqlx::query_scalar("SELECT release_id FROM installations WHERE id=$1")
+        .bind(home_apps[0].1)
+        .fetch_one(&state.pool)
+        .await?;
+    sqlx::query("UPDATE releases SET manifest=jsonb_set(manifest,'{requestedPermissions}','[\"platform:directory:read\"]') WHERE id=$1")
+        .bind(card_release)
+        .execute(&state.pool)
+        .await?;
+    sqlx::query("INSERT INTO installation_permissions(installation_id,release_id,revision,permissions,approved_by) VALUES($1,$2,1,$3,$4)")
+        .bind(home_apps[0].1)
+        .bind(card_release)
+        .bind(json!(["platform:directory:read"]))
+        .bind(&admin_id)
+        .execute(&state.pool)
+        .await?;
+    home_seen.lock().unwrap().clear();
+    json_response(
+        h.cookie_request(&portal_user, Method::GET, "/api/v1/home/cards")
+            .send()
+            .await?,
+        200,
+    )
+    .await?;
+    let with_groups = home_seen.lock().unwrap().clone();
+    ensure!(
+        with_groups.iter().any(|seen| seen["claims"]["groups"]
+            .as_array()
+            .is_some_and(|groups| groups.iter().any(|g| g == &json!(home_group.to_string())))),
+        "a platform call to a directory-approved app did not carry the person's groups"
+    );
     denied(
         h.cookie_request(&console_user, Method::GET, "/api/v1/search?q=x")
             .send()
@@ -1426,7 +1472,7 @@ pub async fn run(
         "installations did not list their release's panels"
     );
     home_server.abort();
-    passed.push("home cards and integrated search: the prod portal asks only apps the person may use that declare a card or search, as a platform call with the person's display settings (and the trimmed query and limit); answers are cut to the contract, an app that cannot answer is marked unavailable, invalid queries and the console are refused, the dev portal sees no prod cards, and installations list their release's panels".into());
+    passed.push("home cards and integrated search: the prod portal asks only apps the person may use that declare a card or search, as a platform call with the person's display settings (and the trimmed query and limit); answers are cut to the contract, the person's current groups go only to a directory-approved app, an app that cannot answer is marked unavailable, invalid queries and the console are refused, the dev portal sees no prod cards, and installations list their release's panels".into());
 
     // User switch (M6): a console administrator gets a one-time code for one
     // portal; that portal exchanges it, same-origin only, for the person's

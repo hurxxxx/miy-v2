@@ -425,6 +425,7 @@ pub async fn identity(
         effective_permissions: effective,
         delegation_token: token,
         platform: false,
+        groups: None,
     })
 }
 

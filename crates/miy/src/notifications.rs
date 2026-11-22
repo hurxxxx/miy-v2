@@ -29,6 +29,9 @@ pub const PERMISSION: &str = "platform:notifications:write";
 /// Notifications older than this are deleted by the worker.
 pub const RETENTION_DAYS: i32 = 90;
 const MAX_RECIPIENTS: usize = 500;
+const MAX_RECIPIENT_GROUPS: usize = 50;
+/// People one notification reaches after group members are added.
+const MAX_EXPANDED: i64 = 5000;
 const MAX_MUTES: usize = 200;
 const SWEEP_SECONDS: u64 = 3600;
 
@@ -37,9 +40,15 @@ const SWEEP_SECONDS: u64 = 3600;
 pub struct Publish {
     /// Accepted once per installation; the same ID returns the first result.
     pub request_id: Uuid,
-    /// miy user IDs, 1-500. People who may not use the app in this environment,
-    /// disabled accounts and people who turned this kind off are left out.
+    /// miy user IDs, up to 500. People who may not use the app in this
+    /// environment, disabled accounts and people who turned this kind off are
+    /// left out.
+    #[serde(default)]
     pub recipients: Vec<String>,
+    /// Platform group IDs (up to 50) whose current members also receive it,
+    /// with the same filters. Needs the approved `platform:directory:read`.
+    #[serde(default)]
+    pub recipient_groups: Vec<Uuid>,
     /// For example `message` or `mention`: lowercase, digits, `_.-`, up to 40.
     pub kind: String,
     /// One line per recipient and key: a newer notification replaces the older.
@@ -114,7 +123,11 @@ fn users(value: &[String]) -> bool {
 impl Publish {
     fn validate(&mut self) -> ApiResult<()> {
         self.title = self.title.trim().to_owned();
-        let valid = users(&self.recipients)
+        let mut groups = HashSet::new();
+        let valid = (self.recipients.is_empty() || users(&self.recipients))
+            && (!self.recipients.is_empty() || !self.recipient_groups.is_empty())
+            && self.recipient_groups.len() <= MAX_RECIPIENT_GROUPS
+            && self.recipient_groups.iter().all(|g| groups.insert(*g))
             && kind(&self.kind)
             && text(&self.group_key, 200)
             && text(&self.title, 200)
@@ -186,15 +199,38 @@ pub async fn publish(
     let installation = app_access(&s, &p, id, request.extensions()).await?;
     let mut input: Publish = body(request).await?;
     input.validate()?;
-    let input_hash = crate::contract::hash(&serde_json::to_vec(&(
-        &p.id,
-        &input.recipients,
-        &input.kind,
-        &input.group_key,
-        &input.title,
-        &input.path,
-        &input.resource_id,
-    ))?);
+    // Without groups the request hash stays what it always was.
+    let input_hash = if input.recipient_groups.is_empty() {
+        crate::contract::hash(&serde_json::to_vec(&(
+            &p.id,
+            &input.recipients,
+            &input.kind,
+            &input.group_key,
+            &input.title,
+            &input.path,
+            &input.resource_id,
+        ))?)
+    } else {
+        crate::contract::hash(&serde_json::to_vec(&(
+            &p.id,
+            &input.recipients,
+            &input.recipient_groups,
+            &input.kind,
+            &input.group_key,
+            &input.title,
+            &input.path,
+            &input.resource_id,
+        ))?)
+    };
+    if !input.recipient_groups.is_empty() {
+        crate::permissions::require(
+            &s.pool,
+            id,
+            installation.get("release_id"),
+            "platform:directory:read",
+        )
+        .await?;
+    }
     let (app, env): (String, String) =
         (installation.get("app_id"), installation.get("environment"));
     let mut tx = Write::begin(&s.pool).await?;
@@ -223,7 +259,12 @@ pub async fn publish(
     let eligible = policy::may_use_sql("r.id", "$2", "$3");
     let accepted: Vec<String> = sqlx::query_scalar(&format!(
         "INSERT INTO notifications(id,installation_id,app_id,environment,user_id,kind,group_key,title,path,resource_id,actor) \
-         SELECT gen_random_uuid(),$1,$2,$3,r.id,$4,$5,$6,$7,$8,$9 FROM unnest($10::text[]) AS r(id) \
+         SELECT gen_random_uuid(),$1,$2,$3,r.id,$4,$5,$6,$7,$8,$9 FROM ( \
+             SELECT DISTINCT x.id FROM (SELECT unnest($10::text[]) AS id UNION \
+             SELECT u.id FROM users u JOIN groups g ON g.id=ANY($11::uuid[]) AND g.active \
+             WHERE (g.source='hr' AND u.primary_group_id=g.id) \
+                OR (g.source='local' AND EXISTS(SELECT 1 FROM group_members m WHERE m.group_id=g.id AND m.user_id=u.id))) x \
+             ORDER BY x.id LIMIT $12) AS r(id) \
          WHERE {eligible} AND NOT EXISTS(SELECT 1 FROM notification_mutes m \
              WHERE m.user_id=r.id AND m.app_id=$2 AND (m.kind=$4 OR m.kind='*')) \
          ON CONFLICT(installation_id,user_id,group_key) DO UPDATE SET id=excluded.id,kind=excluded.kind,title=excluded.title,\
@@ -240,6 +281,8 @@ pub async fn publish(
     .bind(&input.resource_id)
     .bind(&p.id)
     .bind(&input.recipients)
+    .bind(&input.recipient_groups)
+    .bind(MAX_EXPANDED)
     .fetch_all(&mut *tx)
     .await?;
     sqlx::query(

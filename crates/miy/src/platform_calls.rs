@@ -29,6 +29,8 @@ static USER_BUDGETS: LazyLock<Mutex<HashMap<String, Weak<Semaphore>>>> =
 const TIMEOUT: Duration = Duration::from_secs(3);
 const WAIT_FOR_SLOT: Duration = Duration::from_secs(1);
 const MAX_RESPONSE: usize = 64 * 1024;
+/// Groups one signed identity carries (the SDK ACL's membership limit).
+const MAX_GROUPS: i64 = 4096;
 
 /// Which declared endpoint to call.
 #[derive(Clone, Copy, Debug)]
@@ -116,6 +118,35 @@ pub async fn call(
     )
     .map_err(|_| Failure::Unavailable)?;
     let release_id: Uuid = row.get("release_id");
+    // The person's current groups for an app approved to read the directory:
+    // its ACL needs them and a platform call has no token to ask.
+    let groups = if crate::permissions::require(
+        &state.pool,
+        id,
+        release_id,
+        "platform:directory:read",
+    )
+    .await
+    .is_ok()
+    {
+        let groups: Vec<String> = sqlx::query_scalar(
+            "SELECT g.id::text FROM groups g WHERE g.active AND EXISTS(SELECT 1 FROM users u WHERE u.id=$1 AND u.enabled AND ( \
+             (g.source='hr' AND u.primary_group_id=g.id) OR \
+             (g.source='local' AND EXISTS(SELECT 1 FROM group_members m WHERE m.group_id=g.id AND m.user_id=u.id)))) \
+             ORDER BY g.id LIMIT $2",
+        )
+        .bind(&p.id)
+        .bind(MAX_GROUPS + 1)
+        .fetch_all(&state.pool)
+        .await
+        .map_err(|_| Failure::Unavailable)?;
+        if groups.len() as i64 > MAX_GROUPS {
+            return Err(Failure::Unavailable);
+        }
+        Some(groups)
+    } else {
+        None
+    };
     let token = crate::identity::sign_identity_context(
         &p.id,
         false,
@@ -128,6 +159,7 @@ pub async fn call(
             effective_permissions: vec![],
             delegation_token: None,
             platform: true,
+            groups,
         },
     )
     .map_err(|_| Failure::Unavailable)?;

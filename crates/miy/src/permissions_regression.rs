@@ -4640,6 +4640,61 @@ async fn notification_contract(h: &mut Harness<'_>, admin: &Actor, user: &Actor)
         retracted == json!({"retracted":1}) && inbox(h, &recipient.id, &app).await?.is_empty(),
         "retracting a group left notifications behind"
     );
+    // Group recipients: current members of a platform group, with the same
+    // filters, only for an app approved to read the directory.
+    let member = h.actor(false).await.context("notification step 30")?;
+    h.grant(&member, &app, "dev")
+        .await
+        .context("notification step 31")?;
+    let group = Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO groups(id,name,source) VALUES($1,'Notification fixture group','local')",
+    )
+    .bind(group)
+    .execute(&h.state.pool)
+    .await?;
+    for person in [&member.id, &outsider.id, &muted.id] {
+        sqlx::query("INSERT INTO group_members(group_id,user_id) VALUES($1,$2)")
+            .bind(group)
+            .bind(person)
+            .execute(&h.state.pool)
+            .await?;
+    }
+    let grouped = json!({"requestId":Uuid::new_v4(),"recipients":[],"recipientGroups":[group],
+        "kind":"message","groupKey":"conversation:2","title":"그룹 알림","path":"/conversations/2"});
+    let proof = fresh_proof(h, user, &app)
+        .await
+        .context("notification step 32")?;
+    let reached = h
+        .json(&proof, Method::POST, &base, grouped.clone(), 200)
+        .await
+        .context("notification step 33")?;
+    let other_base = format!(
+        "/api/v1/installations/{}/platform/notifications",
+        other.installation
+    );
+    let other_proof = fresh_proof(h, user, &other)
+        .await
+        .context("notification step 34")?;
+    denied(
+        h.request(&other_proof, Method::POST, &other_base)
+            .json(
+                &json!({"requestId":Uuid::new_v4(),"recipients":[],"recipientGroups":[group],
+                "kind":"message","groupKey":"g","title":"그룹","path":"/g"}),
+            )
+            .send()
+            .await?,
+    )
+    .await
+    .context("notification step 35")?;
+    ensure!(
+        reached["accepted"] == 1
+            && inbox(h, &member.id, &app)
+                .await?
+                .iter()
+                .any(|row| row.0 == "conversation:2"),
+        "group recipients did not reach exactly the permitted, unmuted members"
+    );
     Ok(())
 }
 
