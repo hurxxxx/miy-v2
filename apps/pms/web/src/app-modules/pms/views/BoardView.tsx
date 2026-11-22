@@ -7,8 +7,6 @@ import {
   Eye,
   Flag,
   GitBranch,
-  MoreHorizontal,
-  Plus,
 } from 'lucide-react';
 import type {
   PmsTask,
@@ -81,18 +79,6 @@ export const BoardView = ({
                     {column.taskCount}
                   </span>
                 </div>
-                {onUpdateIssue ? (
-                  <div className="flex items-center gap-1 text-app-ink/70">
-                    <Plus
-                      size={14}
-                      className="cursor-pointer hover:text-white"
-                    />
-                    <MoreHorizontal
-                      size={14}
-                      className="cursor-pointer hover:text-white"
-                    />
-                  </div>
-                ) : null}
               </div>
 
               <div className="flex-1 space-y-3">

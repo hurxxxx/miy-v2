@@ -40,6 +40,7 @@ import {
 import { Button } from '@miy/ui';
 import { useTranslation } from 'react-i18next';
 import { DateInput } from '../../../components/date/DateInput';
+import { useNavigationDirty } from '../../../platform/runtime/navigation-state';
 import { UserOptionAvatar } from '../../../platform/users/UserSearchMultiSelect';
 import {
   userOptionDisplayName,
@@ -397,6 +398,9 @@ function useListViewContent({
   const [placingMove, setPlacingMove] = useState(false);
   const placingMoveRef = useRef(false);
   const [creating, setCreating] = useState(false);
+  useNavigationDirty(
+    creating || Boolean(addTarget && draftTitle.trim()) || titleEditTaskId !== null,
+  );
   const [applyingTitleOrder, setApplyingTitleOrder] = useState(false);
   // A single click on the title opens the task; a double click renames it.
   // The first click of a double click also fires `click`, so opening is

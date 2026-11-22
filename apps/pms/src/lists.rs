@@ -427,6 +427,7 @@ pub async fn update_task_list(
             .iter()
             .all(|field| matches!(*field, "folder_id" | "sort_order"));
     let mut tx = pool.begin().await?;
+    tasks::lock_task_list_order(&mut tx, &list_id).await?;
     let (mut list, role) = if reorder_only {
         ensure_list_editor(&mut tx, &identity.user_id, &list_id).await?
     } else {
@@ -493,6 +494,7 @@ pub async fn delete_task_list(
     Path(list_id): Path<String>,
 ) -> ApiResult<StatusCode> {
     let mut tx = pool.begin().await?;
+    tasks::lock_task_list_order(&mut tx, &list_id).await?;
     let (list, _) = ensure_list_manager(&mut tx, &identity.user_id, &list_id).await?;
     if !list.archived {
         return Err(ApiError::conflict("pms.task_list_archive_before_delete"));
@@ -501,7 +503,9 @@ pub async fn delete_task_list(
         .bind(&list.id)
         .fetch_all(&mut *tx)
         .await?;
-    let deleted = tasks::delete_task_rows(&mut tx, &task_ids).await?;
+    let deleted = tasks::lock_task_tree(&mut tx, &task_ids).await?;
+    ensure_list_manager(&mut tx, &identity.user_id, &list_id).await?;
+    tasks::delete_task_rows(&mut tx, &deleted).await?;
     sqlx::query("DELETE FROM pms_task_lists WHERE id = $1")
         .bind(&list.id)
         .execute(&mut *tx)

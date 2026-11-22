@@ -1,9 +1,8 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import {
   X,
   Maximize2,
   Minimize2,
-  Share2,
   MoreHorizontal,
   Send,
   Loader2,
@@ -86,14 +85,15 @@ type TaskDetailProps = {
   workspaceSlug?: string | null;
   canEdit?: boolean;
   onClose: () => void;
+  onDirtyChange?: (dirty: boolean) => void;
   onUpdate?: () => void | Promise<void>;
 };
 
 export function TaskDetail(props: TaskDetailProps) {
-  return useTaskDetailContent(props);
+  return <TaskDetailContent key={props.task.id} {...props} />;
 }
 
-function useTaskDetailContent({
+function TaskDetailContent({
   task,
   members = EMPTY_MEMBERS,
   milestones = EMPTY_MILESTONES,
@@ -103,6 +103,7 @@ function useTaskDetailContent({
   workspaceSlug: workspaceSlugProp = null,
   canEdit = true,
   onClose,
+  onDirtyChange,
   onUpdate,
 }: TaskDetailProps) {
   const { workspaceSlug: routeWorkspaceSlug } = useParams();
@@ -155,6 +156,8 @@ function useTaskDetailContent({
       loading,
       subtasks,
     },
+    loadFailed,
+    retryLoad,
     setAttachments,
     setChecklistItems,
     setComments,
@@ -215,6 +218,8 @@ function useTaskDetailContent({
     formatAttachmentSize,
     handleDeleteAttachment,
     handleFileUpload,
+    retryableUploads,
+    retryUploads,
     setDragOver,
     uploading,
   } = useTaskDetailAttachments({
@@ -230,6 +235,7 @@ function useTaskDetailContent({
   const {
     closeMention,
     commentDraft,
+    commentSubmitting,
     handleCommentDraftChange,
     handleCommentSubmit,
     handleMentionPick,
@@ -248,16 +254,19 @@ function useTaskDetailContent({
   });
   // miy: report unsaved input and saves in flight (runtime.setNavigationState),
   // so the portal asks before leaving the app. AI-DO had no leave guard.
-  useNavigationDirty(
+  const dirty =
     canEdit &&
       (titleDraft.trim() !== issueState.title.trim() ||
         descriptionSavePending ||
         commentDraft.trim() !== '' ||
+        commentSubmitting ||
         newChecklistText.trim() !== '' ||
         editingChecklistId !== null ||
         newSubtaskTitle.trim() !== '' ||
-        uploading),
-  );
+        uploading);
+  useNavigationDirty(dirty);
+  useEffect(() => onDirtyChange?.(dirty), [dirty, onDirtyChange]);
+  useEffect(() => () => onDirtyChange?.(false), [onDirtyChange]);
 
   const handleToggleIssueArchive = useCallback(() => {
     if (!canEdit) return;
@@ -367,20 +376,6 @@ function useTaskDetailContent({
           <Button
             variant="ghost"
             size="icon"
-            aria-label={t('pms.taskDetail.share')}
-          >
-            <Share2 size={16} />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            aria-label={t('pms.taskDetail.moreOptions')}
-          >
-            <MoreHorizontal size={16} />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon"
             onClick={onClose}
             aria-label={t('common:actions.close')}
           >
@@ -477,6 +472,14 @@ function useTaskDetailContent({
             </div>
 
             {saveError ? <InlineSaveError message={saveError} /> : null}
+            {loadFailed ? (
+              <div className="flex flex-wrap items-center gap-2">
+                <p role="alert">{t('common:feedback.requestFailedRetry')}</p>
+                <Button type="button" variant="secondary" onClick={retryLoad}>
+                  {t('common:actions.retry')}
+                </Button>
+              </div>
+            ) : null}
 
             {/* Meta fields */}
             <div
@@ -1162,7 +1165,7 @@ function useTaskDetailContent({
                   type="file"
                   multiple
                   className="hidden"
-                  disabled={!canEdit}
+                  disabled={!canEdit || uploading}
                   onChange={(e) => {
                     if (e.target.files?.length) {
                       void handleFileUpload(e.target.files);
@@ -1171,6 +1174,11 @@ function useTaskDetailContent({
                   }}
                 />
               </label>
+              {canEdit && retryableUploads.length > 0 ? (
+                <Button variant="secondary" disabled={uploading} onClick={retryUploads}>
+                  {t('pms.taskDetail.retryAttachments', { count: retryableUploads.length })}
+                </Button>
+              ) : null}
             </div>
           </div>
         </div>
@@ -1179,6 +1187,7 @@ function useTaskDetailContent({
           activityLogs={activityLogs}
           canEdit={canEdit}
           commentDraft={commentDraft}
+          commentSubmitting={commentSubmitting}
           comments={comments}
           isVisible={mobilePanel === 'activity'}
           loading={loading}

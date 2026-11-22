@@ -88,6 +88,7 @@ pub async fn list_workflow(conn: &mut PgConnection, list_id: &str) -> ApiResult<
         .unwrap_or_default())
 }
 
+/// Acquire before task rows when a write can change a list's hierarchy or order.
 pub async fn lock_task_list_order(conn: &mut PgConnection, list_id: &str) -> ApiResult<()> {
     sqlx::query("SELECT id FROM pms_task_lists WHERE id = $1 FOR UPDATE")
         .bind(list_id)
@@ -1026,6 +1027,7 @@ pub async fn create_task(
     let name = actor_name(&identity).await;
 
     let mut tx = pool.begin().await?;
+    lock_task_list_order(&mut tx, &list_id).await?;
     let (list, _) = ensure_list_editor(&mut tx, &identity.user_id, &list_id).await?;
     let validated: Option<Vec<String>> = match &assignee_ids {
         Some(ids) => {
@@ -1047,8 +1049,8 @@ pub async fn create_task(
     validate_milestone(&mut tx, &list.id, milestone_id.as_deref()).await?;
     validate_parent_task(&mut tx, &list.id, parent_id.as_deref(), None).await?;
     validate_date_range(start_date, due_date)?;
-    lock_task_list_order(&mut tx, &list.id).await?;
     let status = normalize_task_status(&status);
+    check_length("status", &status, 0, 40)?;
     let workflow = list_workflow(&mut tx, &list.id).await?;
     if completed_date.is_none() && is_completion_status(&status, Some(&workflow)) {
         completed_date = Some(crate::models::today_utc());
@@ -1364,13 +1366,15 @@ pub async fn apply_task_update(
     }
     let name = actor_name(identity).await;
     let mut tx = pool.begin().await?;
-    if effective.contains("board_position") || effective.contains("parent_id") {
+    if effective.contains("board_position")
+        || effective.contains("parent_id")
+        || effective.contains("status")
+    {
         let list_id: String = sqlx::query_scalar("SELECT list_id FROM pms_tasks WHERE id = $1")
             .bind(task_id)
             .fetch_optional(&mut *tx)
             .await?
             .ok_or_else(|| ApiError::not_found("pms.task_not_found"))?;
-        ensure_list_editor(&mut tx, &identity.user_id, &list_id).await?;
         lock_task_list_order(&mut tx, &list_id).await?;
     }
     let (mut task, list) = task_for_editor(&mut tx, &identity.user_id, task_id).await?;
@@ -1414,6 +1418,7 @@ pub async fn apply_task_update(
     } else {
         None
     };
+    check_opt_length("status", &status, 0, 40)?;
     validate_date_range(
         if effective.contains("start_date") {
             update.start_date
@@ -1651,8 +1656,8 @@ pub async fn reorder_tasks(
     }
     let name = actor_name(&identity).await;
     let mut tx = pool.begin().await?;
+    lock_task_list_order(&mut tx, &list_id).await?;
     let (list, _) = ensure_list_editor(&mut tx, &identity.user_id, &list_id).await?;
-    lock_task_list_order(&mut tx, &list.id).await?;
     let ids: Vec<String> = moves.iter().map(|m| m.task_id.clone()).collect();
     let unique: HashSet<&String> = ids.iter().collect();
     if unique.len() != ids.len() {
@@ -1668,6 +1673,7 @@ pub async fn reorder_tasks(
     .into_iter()
     .map(|task| (task.id.clone(), task))
     .collect();
+    ensure_list_editor(&mut tx, &identity.user_id, &list_id).await?;
     if tasks.len() != ids.len() {
         return Err(ApiError::not_found("pms.no_matching_tasks"));
     }
@@ -1773,15 +1779,16 @@ pub async fn reorder_tasks_by_title(
     let sort_dir = body.str_or("sort_dir", "asc")?;
     check_choice("sort_dir", &sort_dir, &["asc", "desc"])?;
     let mut tx = pool.begin().await?;
+    lock_task_list_order(&mut tx, &list_id).await?;
     let (list, _) = ensure_list_editor(&mut tx, &identity.user_id, &list_id).await?;
     if list.team_id.is_none() {
         return Err(ApiError::conflict("pms.task_list_space_missing"));
     }
-    lock_task_list_order(&mut tx, &list.id).await?;
     sqlx::query("SELECT id FROM pms_tasks WHERE list_id = $1 ORDER BY id FOR UPDATE")
         .bind(&list.id)
         .execute(&mut *tx)
         .await?;
+    ensure_list_editor(&mut tx, &identity.user_id, &list_id).await?;
     let mut rows: Vec<TaskRow> = sqlx::query_as::<_, TaskRow>(&format!(
         "SELECT {TASK_COLUMNS} FROM pms_tasks WHERE list_id = $1"
     ))
@@ -1869,10 +1876,8 @@ pub async fn bulk_update_tasks(
     let name = actor_name(&identity).await;
 
     let mut tx = pool.begin().await?;
+    lock_task_list_order(&mut tx, &list_id).await?;
     let (list, _) = ensure_list_editor(&mut tx, &identity.user_id, &list_id).await?;
-    if status.is_some() {
-        lock_task_list_order(&mut tx, &list.id).await?;
-    }
     let loaded: HashMap<String, TaskRow> = sqlx::query_as::<_, TaskRow>(&format!(
         "SELECT {TASK_COLUMNS} FROM pms_tasks WHERE id = ANY($1) AND list_id = $2 ORDER BY id FOR UPDATE"
     ))
@@ -1883,6 +1888,7 @@ pub async fn bulk_update_tasks(
     .into_iter()
     .map(|task| (task.id.clone(), task))
     .collect();
+    ensure_list_editor(&mut tx, &identity.user_id, &list_id).await?;
     let mut seen = HashSet::new();
     let mut tasks: Vec<TaskRow> = task_ids
         .iter()
@@ -1894,7 +1900,9 @@ pub async fn bulk_update_tasks(
     }
     if delete {
         let ids: Vec<String> = tasks.iter().map(|task| task.id.clone()).collect();
-        let deleted = delete_task_rows(&mut tx, &ids).await?;
+        let deleted = lock_task_tree(&mut tx, &ids).await?;
+        ensure_list_editor(&mut tx, &identity.user_id, &list_id).await?;
+        delete_task_rows(&mut tx, &deleted).await?;
         tx.commit().await?;
         after_tasks_deleted(&pool, &identity, &deleted).await;
         return Ok(Json(
@@ -1910,6 +1918,7 @@ pub async fn bulk_update_tasks(
             .into_iter()
             .collect();
     let target_status = status.as_deref().map(normalize_task_status);
+    check_opt_length("status", &target_status, 0, 40)?;
     let mut date_updates: Vec<(&str, Option<NaiveDate>, &str)> = Vec::new();
     if start_present {
         date_updates.push(("start_date", start_date, "updated start date"));
@@ -2133,38 +2142,37 @@ pub async fn bulk_update_tasks(
     Ok(Json(json!({"updated_count": updated, "deleted_count": 0})))
 }
 
-/// Delete tasks and every task under them in the open transaction. Platform
-/// files of their attachments are queued for release. Returns every id.
-pub async fn delete_task_rows(
+/// Find and lock the current descendants while the caller holds the list lock.
+pub async fn lock_task_tree(
     conn: &mut PgConnection,
     task_ids: &[String],
 ) -> ApiResult<Vec<String>> {
     if task_ids.is_empty() {
         return Ok(Vec::new());
     }
-    let all: Vec<String> = sqlx::query_scalar(
+    let ids: Vec<String> = sqlx::query_scalar(
         "WITH RECURSIVE tree(id) AS (SELECT id FROM pms_tasks WHERE id = ANY($1) \
-         UNION SELECT t.id FROM pms_tasks t JOIN tree ON t.parent_id = tree.id) SELECT id FROM tree",
+         UNION SELECT t.id FROM pms_tasks t JOIN tree ON t.parent_id = tree.id) \
+         SELECT t.id FROM pms_tasks t JOIN tree ON tree.id = t.id ORDER BY t.id FOR UPDATE OF t",
     )
     .bind(task_ids)
-    .fetch_all(&mut *conn)
+    .fetch_all(conn)
     .await?;
-    let mut sorted = all.clone();
-    sorted.sort();
-    sqlx::query("SELECT id FROM pms_tasks WHERE id = ANY($1) ORDER BY id FOR UPDATE")
-        .bind(&sorted)
-        .execute(&mut *conn)
-        .await?;
-    attachments::queue_release_for_tasks(conn, &all).await?;
+    Ok(ids)
+}
+
+/// Delete the locked tasks and queue their platform attachments for release.
+pub async fn delete_task_rows(conn: &mut PgConnection, ids: &[String]) -> ApiResult<()> {
+    attachments::queue_release_for_tasks(conn, ids).await?;
     sqlx::query("DELETE FROM pms_custom_field_values WHERE task_id = ANY($1)")
-        .bind(&all)
+        .bind(ids)
         .execute(&mut *conn)
         .await?;
     sqlx::query("DELETE FROM pms_tasks WHERE id = ANY($1)")
-        .bind(&all)
+        .bind(ids)
         .execute(&mut *conn)
         .await?;
-    Ok(all)
+    Ok(())
 }
 
 /// After a delete committed: retract the tasks' notifications and release
@@ -2181,8 +2189,12 @@ pub async fn delete_task(
     Path(task_id): Path<String>,
 ) -> ApiResult<StatusCode> {
     let mut tx = pool.begin().await?;
+    let list_id = access::load_task(&mut tx, &task_id).await?.list_id;
+    lock_task_list_order(&mut tx, &list_id).await?;
     let (task, _) = task_for_editor(&mut tx, &identity.user_id, &task_id).await?;
-    let deleted = delete_task_rows(&mut tx, std::slice::from_ref(&task.id)).await?;
+    let deleted = lock_task_tree(&mut tx, std::slice::from_ref(&task.id)).await?;
+    ensure_list_editor(&mut tx, &identity.user_id, &list_id).await?;
+    delete_task_rows(&mut tx, &deleted).await?;
     tx.commit().await?;
     after_tasks_deleted(&pool, &identity, &deleted).await;
     Ok(StatusCode::NO_CONTENT)

@@ -158,9 +158,9 @@ pub async fn copy_tasks(
     }
     let name = actor_name(&identity).await;
     let mut tx = pool.begin().await?;
+    lock_task_list_order(&mut tx, &target_list_id).await?;
     let (source_list, _) = ensure_list_member(&mut tx, &identity.user_id, &source_list_id).await?;
     let target_list = ensure_target_editor(&mut tx, &identity.user_id, &target_list_id).await?;
-    lock_task_list_order(&mut tx, &target_list.id).await?;
     let rows: Vec<(String, Option<String>, i32, i32, bool)> = sqlx::query_as(
         "SELECT id, parent_id, board_position, task_number, archived FROM pms_tasks WHERE list_id = $1",
     )

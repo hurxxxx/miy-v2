@@ -1,5 +1,7 @@
 import type { ReactNode } from 'react';
 import { Loader2 } from 'lucide-react';
+import { Button } from '@miy/ui';
+import { useTranslation } from 'react-i18next';
 
 import { cn } from '../../../lib/utils';
 
@@ -43,6 +45,20 @@ export function PmsCenteredLoadingState({
   return (
     <PmsCenteredStateBlock minHeightClassName={minHeightClassName}>
       <Loader2 size={24} className="animate-spin text-app-accent" />
+    </PmsCenteredStateBlock>
+  );
+}
+
+export function PmsCenteredErrorState({ onRetry }: { onRetry: () => void }) {
+  const { t } = useTranslation('common');
+  return (
+    <PmsCenteredStateBlock tone="danger">
+      <div className="flex flex-col items-center gap-3">
+        <p role="alert">{t('feedback.requestFailedRetry')}</p>
+        <Button type="button" variant="secondary" onClick={onRetry}>
+          {t('actions.retry')}
+        </Button>
+      </div>
     </PmsCenteredStateBlock>
   );
 }

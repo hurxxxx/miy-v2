@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState, type SetStateAction } from 'react';
+import { useCallback, useMemo, useRef, useState, type SetStateAction } from 'react';
 import type { TFunction } from 'i18next';
 
 import {
@@ -127,6 +127,9 @@ export function useTaskDetailComments({
   t: TFunction;
 }) {
   const [commentDraft, setCommentDraft] = useState('');
+  const [commentSubmitting, setCommentSubmitting] = useState(false);
+  const commentInFlight = useRef(false);
+  const draftRevision = useRef(0);
   const [mentionOpen, setMentionOpen] = useState(false);
   const [mentionQuery, setMentionQuery] = useState('');
   const [mentionTokens, setMentionTokens] = useState<TaskCommentMentionToken[]>(
@@ -140,6 +143,7 @@ export function useTaskDetailComments({
   const handleCommentDraftChange = useCallback(
     (value: string) => {
       if (!canEdit) return;
+      draftRevision.current += 1;
       setCommentDraft(value);
       const nextMentionState = getTaskDetailMentionState(value);
       setMentionOpen(nextMentionState.mentionOpen);
@@ -153,6 +157,7 @@ export function useTaskDetailComments({
   }, []);
 
   const handleMentionPick = useCallback((member: PmsTaskListMember) => {
+    draftRevision.current += 1;
     const displayName = userOptionNameWithDepartment({
       id: member.user_id,
       email: member.email,
@@ -169,28 +174,32 @@ export function useTaskDetailComments({
     setMentionOpen(false);
   }, []);
 
-  const handleCommentSubmit = useCallback(() => {
-    if (!api || !canEdit || !commentDraft.trim()) return;
+  const handleCommentSubmit = useCallback(async () => {
+    if (!api || !canEdit || !commentDraft.trim() || commentInFlight.current) return;
+    commentInFlight.current = true;
+    setCommentSubmitting(true);
     setSaveError(null);
+    const submittedRevision = draftRevision.current;
     const body = commentDraft.trim();
     const bodyBlocks = buildTaskCommentBodyBlocks(body, mentionTokens);
-    createTaskComment(api, taskId, body, bodyBlocks, workspaceSlug)
-      .then(async (newComment) => {
-        setComments((prev) => [...prev, newComment]);
+    try {
+      const newComment = await createTaskComment(api, taskId, body, bodyBlocks, workspaceSlug);
+      setComments((prev) => [...prev, newComment]);
+      if (draftRevision.current === submittedRevision) {
         setCommentDraft('');
         setMentionTokens([]);
         setMentionOpen(false);
         setMentionQuery('');
-        await notifyTaskDetailUpdated(onUpdate);
-      })
-      .catch((error) => {
-        setSaveError(
-          getTaskDetailMutationErrorMessage(
-            error,
-            t('pms.taskDetail.errors.createCommentFailed'),
-          ),
-        );
-      });
+      }
+      await notifyTaskDetailUpdated(onUpdate);
+    } catch (error) {
+      setSaveError(
+        getTaskDetailMutationErrorMessage(error, t('pms.taskDetail.errors.createCommentFailed')),
+      );
+    } finally {
+      commentInFlight.current = false;
+      setCommentSubmitting(false);
+    }
   }, [
     canEdit,
     commentDraft,
@@ -207,6 +216,7 @@ export function useTaskDetailComments({
   return {
     closeMention,
     commentDraft,
+    commentSubmitting,
     handleCommentDraftChange,
     handleCommentSubmit,
     handleMentionPick,

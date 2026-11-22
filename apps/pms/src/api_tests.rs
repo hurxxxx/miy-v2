@@ -886,6 +886,14 @@ async fn task_lists_inherit_the_space_workflow_and_get_default_labels() {
     )
     .await;
     assert_eq!(task["status_label"], "QA Check");
+    let repeated = ok(
+        &f.owner,
+        Method::PATCH,
+        &format!("/v1/pms/lists/{}/status-mode", f.list),
+        Some(json!({"mode": "custom"})),
+    )
+    .await;
+    assert_eq!(repeated, statuses);
     let id = created["id"].as_str().unwrap();
     let response = call(
         &f.owner,
@@ -906,6 +914,124 @@ async fn task_lists_inherit_the_space_workflow_and_get_default_labels() {
     )
     .await;
     assert_eq!(error_code(response).await.1, "pms_status_mode_incompatible");
+}
+
+#[tokio::test]
+#[ignore = "needs PMS_TEST_DATABASE_URL"]
+async fn tasks_accept_full_length_workflow_statuses() {
+    let f = fixture().await;
+    let created = ok(
+        &f.owner,
+        Method::POST,
+        &format!("/v1/pms/lists/{}/statuses", f.list),
+        Some(json!({"name": "Awaiting Compliance Review", "category": "active"})),
+    )
+    .await;
+    assert_eq!(created["slug"], "awaiting_compliance_review");
+    let task = create_task(
+        &f.owner,
+        &f.list,
+        json!({"title": "Compliance task", "status": created["slug"]}),
+    )
+    .await;
+    assert_eq!(task["status"], created["slug"]);
+}
+
+#[tokio::test]
+#[ignore = "needs PMS_TEST_DATABASE_URL"]
+async fn concurrent_list_edits_preserve_unrelated_fields() {
+    let f = fixture().await;
+    let path = format!("/v1/pms/lists/{}", f.list);
+    let mut blocker = server().1.begin().await.unwrap();
+    let blocker_pid: i32 = sqlx::query_scalar("SELECT pg_backend_pid()")
+        .fetch_one(&mut *blocker)
+        .await
+        .unwrap();
+    sqlx::query("SELECT id FROM pms_task_lists WHERE id = $1 FOR UPDATE")
+        .bind(&f.list)
+        .execute(&mut *blocker)
+        .await
+        .unwrap();
+    let rename_owner = f.owner.clone();
+    let rename_path = path.clone();
+    let renamed = tokio::spawn(async move {
+        ok(
+            &rename_owner,
+            Method::PATCH,
+            &rename_path,
+            Some(json!({"name": "Renamed list"})),
+        )
+        .await
+    });
+    wait_for_query_blocked_by(blocker_pid, "%pms_task_lists WHERE id = $1 FOR UPDATE").await;
+    let update_owner = f.owner.clone();
+    let update_path = path.clone();
+    let updated = tokio::spawn(async move {
+        ok(
+            &update_owner,
+            Method::PATCH,
+            &update_path,
+            Some(json!({"description": "Updated description"})),
+        )
+        .await
+    });
+    blocker.commit().await.unwrap();
+    renamed.await.unwrap();
+    updated.await.unwrap();
+    let final_list = ok(&f.owner, Method::GET, &path, None).await;
+    assert_eq!(final_list["name"], "Renamed list");
+    assert_eq!(final_list["description"], "Updated description");
+}
+
+#[tokio::test]
+#[ignore = "needs PMS_TEST_DATABASE_URL"]
+async fn deleting_former_parent_preserves_concurrently_moved_child() {
+    let f = fixture().await;
+    let former = create_task(&f.owner, &f.list, json!({"title": "Former parent"})).await;
+    let destination = create_task(&f.owner, &f.list, json!({"title": "New parent"})).await;
+    let child = create_task(
+        &f.owner,
+        &f.list,
+        json!({"title": "Moving child", "parent_id": former["id"]}),
+    )
+    .await;
+    let child_id = child["id"].as_str().unwrap();
+    let child_path = format!("/v1/pms/tasks/{child_id}");
+    let mut blocker = server().1.begin().await.unwrap();
+    let blocker_pid: i32 = sqlx::query_scalar("SELECT pg_backend_pid()")
+        .fetch_one(&mut *blocker)
+        .await
+        .unwrap();
+    sqlx::query("SELECT id FROM pms_tasks WHERE id = $1 FOR UPDATE")
+        .bind(child_id)
+        .execute(&mut *blocker)
+        .await
+        .unwrap();
+    let move_owner = f.owner.clone();
+    let move_path = child_path.clone();
+    let destination_id = destination["id"].clone();
+    let moved = tokio::spawn(async move {
+        ok(
+            &move_owner,
+            Method::PATCH,
+            &move_path,
+            Some(json!({"parent_id": destination_id})),
+        )
+        .await
+    });
+    wait_for_query_blocked_by(blocker_pid, "%pms_tasks WHERE id = $1 FOR UPDATE").await;
+    let delete_owner = f.owner.clone();
+    let delete_path = format!("/v1/pms/tasks/{}", former["id"].as_str().unwrap());
+    let deleted = tokio::spawn(async move {
+        call(&delete_owner, Method::DELETE, &delete_path, None)
+            .await
+            .status()
+    });
+    blocker.commit().await.unwrap();
+    assert_eq!(moved.await.unwrap()["parent_id"], destination["id"]);
+    assert_eq!(deleted.await.unwrap(), StatusCode::NO_CONTENT);
+    let child = ok(&f.owner, Method::GET, &child_path, None).await;
+    assert_eq!(child["task"]["parent_id"], destination["id"]);
 }
 
 #[tokio::test]

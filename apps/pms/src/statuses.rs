@@ -16,6 +16,7 @@ use crate::access::{
 use crate::error::{ApiError, ApiResult, check_choice};
 use crate::input::{Body, check_opt_length};
 use crate::models::{TaskListRow, new_id, utcnow};
+use crate::tasks::lock_task_list_order;
 use crate::workflow::{
     DEFAULT_TASK_LIST_STATUSES, STATUS_CATEGORIES, StatusDef, incompatible_statuses_for_inherit,
     normalize_status_category, status_slug, violates_single_closed_status_rule,
@@ -210,12 +211,17 @@ pub async fn update_task_list_status_mode(
     let mode = body.req_str("mode")?;
     check_choice("mode", &mode, &["inherit", "custom"])?;
     let mut tx = pool.begin().await?;
+    lock_task_list_order(&mut tx, &list_id).await?;
     let (list, _) = ensure_list_owner(&mut tx, &identity.user_id, &list_id).await?;
     if mode == "inherit" {
         let Some(team_id) = &list.team_id else {
             return Err(ApiError::conflict("pms.status_inherit_requires_space"));
         };
         let statuses = ensure_space_statuses(&mut tx, team_id).await?;
+        if list.status_mode == mode {
+            tx.commit().await?;
+            return Ok(Json(statuses_response("inherit", &statuses)));
+        }
         let used: Vec<String> =
             sqlx::query_scalar("SELECT DISTINCT status FROM pms_tasks WHERE list_id = $1")
                 .bind(&list.id)
@@ -237,11 +243,16 @@ pub async fn update_task_list_status_mode(
         tx.commit().await?;
         return Ok(Json(statuses_response("inherit", &statuses)));
     }
-    let statuses = copy_space_statuses_to_task_list(&mut tx, &list).await?;
-    sqlx::query("UPDATE pms_task_lists SET status_mode = 'custom' WHERE id = $1")
-        .bind(&list.id)
-        .execute(&mut *tx)
-        .await?;
+    let statuses = if list.status_mode == mode {
+        ensure_task_list_custom_statuses(&mut tx, &list.id).await?
+    } else {
+        let statuses = copy_space_statuses_to_task_list(&mut tx, &list).await?;
+        sqlx::query("UPDATE pms_task_lists SET status_mode = 'custom' WHERE id = $1")
+            .bind(&list.id)
+            .execute(&mut *tx)
+            .await?;
+        statuses
+    };
     tx.commit().await?;
     Ok(Json(statuses_response("custom", &statuses)))
 }
@@ -519,6 +530,7 @@ pub async fn create_task_list_status(
     let input = status_input(&body, true)?;
     let name = input.name.unwrap_or_default();
     let mut tx = pool.begin().await?;
+    lock_task_list_order(&mut tx, &list_id).await?;
     let (list, _) = ensure_list_owner(&mut tx, &identity.user_id, &list_id).await?;
     if list.status_mode != "custom" {
         copy_space_statuses_to_task_list(&mut tx, &list).await?;
@@ -576,7 +588,9 @@ pub async fn update_task_list_status(
 ) -> ApiResult<Json<Value>> {
     let input = status_input(&body, false)?;
     let mut tx = pool.begin().await?;
-    let (current, list_id) = load_list_status(&mut tx, &status_id).await?;
+    let (_, list_id) = load_list_status(&mut tx, &status_id).await?;
+    lock_task_list_order(&mut tx, &list_id).await?;
+    let (current, _) = load_list_status(&mut tx, &status_id).await?;
     let (list, _) = ensure_list_owner(&mut tx, &identity.user_id, &list_id).await?;
     let statuses = ensure_task_list_custom_statuses(&mut tx, &list.id).await?;
     let next = update_status_row(
@@ -600,7 +614,9 @@ pub async fn delete_task_list_status(
     Path(status_id): Path<String>,
 ) -> ApiResult<StatusCode> {
     let mut tx = pool.begin().await?;
-    let (status, list_id) = load_list_status(&mut tx, &status_id).await?;
+    let (_, list_id) = load_list_status(&mut tx, &status_id).await?;
+    lock_task_list_order(&mut tx, &list_id).await?;
+    let (status, _) = load_list_status(&mut tx, &status_id).await?;
     ensure_list_owner(&mut tx, &identity.user_id, &list_id).await?;
     if normalize_status_category(&status.category) == "closed" {
         return Err(ApiError::conflict("pms.closed_status_required"));

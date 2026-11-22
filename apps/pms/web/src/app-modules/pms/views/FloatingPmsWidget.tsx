@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import {
   CalendarDays,
@@ -7,10 +6,11 @@ import {
   ClipboardList,
   Plus,
 } from 'lucide-react';
-import { Button, ContentState, StatusSlot } from '@miy/ui';
+import { Button, ContentState, StatusSlot, useConfirm } from '@miy/ui';
 
 import { cn } from '../../../lib/utils';
-import { useAppApi } from '../../../platform/runtime/runtime-context';
+import { useRuntime } from '../../../platform/runtime/runtime-context';
+import { normalizeTimeZone, zonedDateKey } from '../../../platform/time/time-utils';
 import { runRequestsWithConcurrency } from '../../../platform/network/request-concurrency';
 
 import {
@@ -56,11 +56,10 @@ function statusToneClass(
   }
 }
 
-function dueDateToneClass(dueDate: string | null | undefined): string {
+function dueDateToneClass(dueDate: string | null | undefined, today: string): string {
   if (!dueDate) {
     return 'text-app-ink/45';
   }
-  const today = new Date().toISOString().slice(0, 10);
   if (dueDate < today) {
     return 'text-[var(--ui-color-danger)]';
   }
@@ -91,7 +90,10 @@ export function FloatingPmsWidget({
   workspaceSlug?: string | null;
 }) {
   const { t } = useTranslation('apps');
-  const api = useAppApi();
+  const { api, settings } = useRuntime();
+  const today = zonedDateKey(new Date(), normalizeTimeZone(settings.timeZone));
+  const { confirm, confirmDialog } = useConfirm();
+  const [detailDirty, setDetailDirty] = useState(false);
   const [tasks, setTasks] = useState<PersonalPmsTask[]>([]);
   const [workspaces, setWorkspaces] = useState<PmsWorkspaceRef[]>([]);
   const [taskLists, setTaskLists] = useState<PmsTaskList[]>([]);
@@ -348,11 +350,20 @@ export function FloatingPmsWidget({
     onChanged?.();
   }, [onChanged, reload]);
 
-  const closeSelectedTask = useCallback(() => {
+  const closeSelectedTask = useCallback(async () => {
+    if (detailDirty) {
+      const confirmed = await confirm({
+        title: t('common:actions.close'),
+        description: t('pms.unsavedChanges'),
+        confirmLabel: t('common:actions.close'),
+        cancelLabel: t('common:actions.cancel'),
+      });
+      if (!confirmed) return;
+    }
     setSelectedTaskId(null);
     setSelectedExternalTask(null);
     setLoadingTaskDetailId(null);
-  }, []);
+  }, [confirm, detailDirty, t]);
 
   const closeNewTaskModal = useCallback(() => {
     setNewTaskOpen(false);
@@ -364,28 +375,21 @@ export function FloatingPmsWidget({
     onChanged?.();
   }, [onChanged, reload]);
 
-  const detailModal =
-    selectedTask && typeof document !== 'undefined'
-      ? createPortal(
-          <TaskDetailModal
-            className="z-[120]"
-            closeLabel={t('common:actions.close')}
-            onClose={closeSelectedTask}
-          >
-            <TaskDetail
-              canEdit={taskListRoleAllows(selectedTaskList?.role, 'member')}
-              onClose={closeSelectedTask}
-              onUpdate={handleTaskUpdated}
-              spaceId={selectedTaskList?.team_id ?? null}
-              spaceName={selectedTaskList?.team_name}
-              task={selectedTask}
-              taskListStatuses={selectedTaskStatuses}
-              workspaceSlug={selectedTaskWorkspaceSlug}
-            />
-          </TaskDetailModal>,
-          document.body,
-        )
-      : null;
+  const detailModal = selectedTask ? (
+    <TaskDetailModal title={selectedTask.title} onClose={closeSelectedTask}>
+      <TaskDetail
+        canEdit={taskListRoleAllows(selectedTaskList?.role, 'member')}
+        onClose={closeSelectedTask}
+        onDirtyChange={setDetailDirty}
+        onUpdate={handleTaskUpdated}
+        spaceId={selectedTaskList?.team_id ?? null}
+        spaceName={selectedTaskList?.team_name}
+        task={selectedTask}
+        taskListStatuses={selectedTaskStatuses}
+        workspaceSlug={selectedTaskWorkspaceSlug}
+      />
+    </TaskDetailModal>
+  ) : null;
 
   return (
     <div className="flex h-full min-w-0 flex-col bg-app-bg text-app-ink">
@@ -491,7 +495,7 @@ export function FloatingPmsWidget({
                             <span
                               className={cn(
                                 'app-text-micro inline-flex items-center gap-1',
-                                dueDateToneClass(task.due_date),
+                                dueDateToneClass(task.due_date, today),
                               )}
                             >
                               <CalendarDays aria-hidden="true" size={12} />
@@ -546,6 +550,7 @@ export function FloatingPmsWidget({
       ) : null}
 
       {detailModal}
+      {confirmDialog}
     </div>
   );
 }

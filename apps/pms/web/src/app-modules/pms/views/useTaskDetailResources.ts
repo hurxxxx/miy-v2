@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useReducer, type SetStateAction } from 'react';
+import { useCallback, useEffect, useReducer, useState, type SetStateAction } from 'react';
 
 import {
   getTaskDetail,
@@ -36,20 +36,40 @@ export function useTaskDetailResources({
     taskDetailResourcesReducer,
     INITIAL_TASK_DETAIL_RESOURCES_STATE,
   );
+  const [loadFailed, setLoadFailed] = useState(false);
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
     if (!api) return;
+    let cancelled = false;
     dispatch({ type: 'loading', value: true });
-    Promise.all([
+    setLoadFailed(false);
+    void Promise.allSettled([
       getTaskDetail(api, taskId, workspaceSlug),
       listTaskActivityLogs(api, taskId, workspaceSlug),
-    ])
-      .then(([detail, logs]) => dispatch({ type: 'loaded', detail, logs }))
-      .finally(() => dispatch({ type: 'loading', value: false }));
-  }, [api, taskId, workspaceSlug]);
+    ]).then(([detail, logs]) => {
+      if (cancelled) return;
+      if (detail.status === 'fulfilled') {
+        dispatch({
+          type: 'loaded',
+          detail: detail.value,
+          logs: logs.status === 'fulfilled' ? logs.value : undefined,
+        });
+      } else if (logs.status === 'fulfilled') {
+        dispatch({ type: 'activityLogs', value: logs.value.items });
+      }
+      setLoadFailed(detail.status === 'rejected' || logs.status === 'rejected');
+      dispatch({ type: 'loading', value: false });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [api, attempt, taskId, workspaceSlug]);
 
   return {
     state,
+    loadFailed,
+    retryLoad: () => setAttempt((current) => current + 1),
     setAttachments: useCallback(
       (value: SetStateAction<PmsAttachment[]>) =>
         dispatch({ type: 'attachments', value }),

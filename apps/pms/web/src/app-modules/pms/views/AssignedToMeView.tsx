@@ -281,7 +281,7 @@ export const AssignedToMeView = ({
         <AnimatePresence>
           {state.selectedTask && (
             <TaskDetailModal
-              closeLabel={t('common:actions.close')}
+              title={state.selectedTask.title}
               onClose={handleClose}
             >
               <TaskDetail

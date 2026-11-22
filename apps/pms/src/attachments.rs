@@ -147,7 +147,15 @@ pub async fn create_attachment(
     .fetch_optional(&mut *tx)
     .await?;
     let attachment = match existing {
-        Some(row) if row.task_id == task.id && row.uploaded_by_id == identity.user_id => row,
+        Some(row)
+            if row.task_id == task.id
+                && row.uploaded_by_id == identity.user_id
+                && row.filename == filename
+                && row.content_type == content_type
+                && i64::from(row.size_bytes) == size =>
+        {
+            row
+        }
         Some(_) => {
             return Err(ApiError::new(
                 StatusCode::CONFLICT,

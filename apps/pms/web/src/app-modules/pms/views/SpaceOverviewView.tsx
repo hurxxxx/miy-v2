@@ -64,7 +64,7 @@ import {
 import { buildPmsTaskListToolPath } from './pms-view-route';
 import { PmsSpaceToolTabs } from './PmsSpaceToolTabs';
 import { usePmsSpacePreferences } from './usePmsSpacePreferences';
-import { PmsCenteredLoadingState } from './PmsCenteredStateBlock';
+import { PmsCenteredErrorState, PmsCenteredLoadingState } from './PmsCenteredStateBlock';
 import {
   PMS_SPACE_CHANGED_EVENT,
   PMS_SPACE_ORDER_CHANGED_EVENT,
@@ -197,22 +197,19 @@ function useSpaceOverviewViewElement({
     collapsedFolderIds,
     refreshSeq,
   } = state;
+  const [loadFailed, setLoadFailed] = useState(false);
 
   useEffect(() => {
     if (!api) return;
     let cancelled = false;
     dispatch({ type: 'loadStart' });
+    setLoadFailed(false);
 
     Promise.all([
       listAllPmsTaskLists(api, spaceId, workspaceSlug),
       listFolders(api, spaceId, workspaceSlug),
-      listSpaceMembers(api, spaceId, workspaceSlug).catch(() => ({
-        items: [] as PmsSpaceMember[],
-        total: 0,
-        page: 1,
-        page_size: 50,
-      })),
-      listSpaces(api, workspaceSlug).catch(() => [] as PmsSpace[]),
+      listSpaceMembers(api, spaceId, workspaceSlug),
+      listSpaces(api, workspaceSlug),
     ])
       .then(([listRes, folderRes, memberRes, spaces]) => {
         if (cancelled) return;
@@ -226,6 +223,9 @@ function useSpaceOverviewViewElement({
             locale,
           }),
         );
+      })
+      .catch(() => {
+        if (!cancelled) setLoadFailed(true);
       })
       .finally(() => {
         if (!cancelled) dispatch({ type: 'loadDone' });
@@ -428,6 +428,9 @@ function useSpaceOverviewViewElement({
 
   if (loading) {
     return <PmsCenteredLoadingState />;
+  }
+  if (loadFailed) {
+    return <PmsCenteredErrorState onRetry={() => dispatch({ type: 'membersChanged' })} />;
   }
 
   return (

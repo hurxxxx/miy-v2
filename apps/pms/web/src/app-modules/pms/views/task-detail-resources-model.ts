@@ -28,8 +28,9 @@ export type TaskDetailResourcesAction =
   | {
       type: 'loaded';
       detail: TaskDetail;
-      logs: TaskActivityLogs;
+      logs?: TaskActivityLogs;
     }
+  | { type: 'activityLogs'; value: PmsActivityLog[] }
   | { type: 'loading'; value: boolean }
   | { type: 'comments'; value: TaskDetailResourceUpdate<PmsComment[]> }
   | { type: 'subtasks'; value: TaskDetailResourceUpdate<PmsTask[]> }
@@ -62,10 +63,10 @@ export function taskDetailResourcesFromLoaded({
   logs,
 }: {
   detail: TaskDetail;
-  logs: TaskActivityLogs;
+  logs?: TaskActivityLogs;
 }): TaskDetailLoadedResources {
   return {
-    activityLogs: logs.items,
+    activityLogs: logs?.items ?? [],
     attachments: detail.attachments ?? [],
     checklistItems: detail.checklist_items ?? [],
     comments: detail.comments,
@@ -88,6 +89,8 @@ export function taskDetailResourcesReducer(
       };
     case 'loading':
       return { ...state, loading: action.value };
+    case 'activityLogs':
+      return { ...state, activityLogs: action.value };
     case 'comments':
       return {
         ...state,

@@ -15,6 +15,7 @@ import {
   getPmsTaskList,
   isFilteredTaskExport,
   listPersonalPmsAssignedTasks,
+  listTaskListLabels,
   taskExportFilename,
   updateSpaceMemberRole,
   uploadAttachment,
@@ -68,6 +69,23 @@ describe('PMS API paths (miy)', () => {
       method: 'PATCH',
       body: JSON.stringify({ task_ids: ['task-a'], archived: true }),
     });
+  });
+
+  it('loads labels from all server pages', async () => {
+    const { api, mock } = apiFake((path) => {
+      const page = Number(new URL(path, 'http://app.invalid').searchParams.get('page'));
+      return {
+        items: [{ id: `label-${page}`, name: `Label ${page}`, color: '#ffffff' }],
+        total: 2,
+        page,
+        page_size: 100,
+      };
+    });
+
+    const result = await listTaskListLabels(api, 'list-1');
+
+    expect(result.items.map(({ id }) => id)).toEqual(['label-1', 'label-2']);
+    expect(mock).toHaveBeenCalledTimes(2);
   });
 });
 
@@ -127,7 +145,7 @@ describe('uploadAttachment (miy file gateway)', () => {
     );
   });
 
-  it('deletes the pending record when the upload fails', async () => {
+  it('keeps the attachment record when the upload fails', async () => {
     const { api, mock } = apiFake((path) =>
       path.endsWith('/attachments')
         ? { id: 'att-9', status: 'pending' }
@@ -155,9 +173,33 @@ describe('uploadAttachment (miy file gateway)', () => {
     expect(mock.mock.calls.map(([path, init]) => [path, init?.method])).toEqual(
       [
         ['/v1/pms/tasks/task-1/attachments', 'POST'],
-        ['/v1/pms/attachments/att-9', 'DELETE'],
       ],
     );
+  });
+
+  it('recovers lost reservation and upload replies using the same IDs', async () => {
+    let reserved = false;
+    const { api, mock } = apiFake(() => {
+      if (!reserved) {
+        reserved = true;
+        throw new TypeError('lost reservation reply');
+      }
+      return { id: 'att-1' };
+    });
+    const fileApi = vi
+      .fn()
+      .mockRejectedValueOnce(new TypeError('lost reply after attaching'))
+      .mockResolvedValueOnce(Response.json(ATTACHMENT));
+
+    const file = new File(['data'], 'spec.pdf', { type: 'application/pdf' });
+    await expect(
+      uploadAttachment(api, fileApi, 'task/1', file),
+    ).resolves.toEqual(ATTACHMENT);
+
+    expect(mock).toHaveBeenCalledTimes(2);
+    expect(mock.mock.calls[0]).toEqual(mock.mock.calls[1]);
+    expect(fileApi).toHaveBeenCalledTimes(2);
+    expect(fileApi.mock.calls[0]).toEqual(fileApi.mock.calls[1]);
   });
 
   it('refuses files over 10 MiB before any request', async () => {

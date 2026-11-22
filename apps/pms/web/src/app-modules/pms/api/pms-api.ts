@@ -308,6 +308,29 @@ async function request<T>(
   );
 }
 
+type ResourcePage<T> = { items: T[]; total: number; page: number; page_size: number };
+
+async function listPagedResource<T>(
+  path: string,
+  api: AppApi,
+  workspaceSlug?: string | null,
+): Promise<ResourcePage<T>> {
+  const items: T[] = [];
+  let page = 1;
+  let response: ResourcePage<T>;
+  do {
+    response = await request<ResourcePage<T>>(
+      `${path}?page=${page}&page_size=${PMS_MAX_PAGE_SIZE}`,
+      api,
+      {},
+      workspaceSlug,
+    );
+    items.push(...response.items);
+    page += 1;
+  } while (response.items.length > 0 && items.length < response.total);
+  return { ...response, items, page: 1 };
+}
+
 export function listPmsTaskLists(
   api: AppApi,
   teamId?: string,
@@ -488,20 +511,11 @@ export async function listSpaceMembers(
   spaceId: string,
   workspaceSlug?: string | null,
 ): Promise<PmsSpaceMembersResponse> {
-  const items: PmsSpaceMember[] = [];
-  let page = 1;
-  let response: PmsSpaceMembersResponse;
-  do {
-    response = await request<PmsSpaceMembersResponse>(
-      `/v1/pms/spaces/${encodeURIComponent(spaceId)}/members?page=${page}&page_size=${PMS_MAX_PAGE_SIZE}`,
-      api,
-      {},
-      workspaceSlug,
-    );
-    items.push(...response.items);
-    page += 1;
-  } while (response.items.length > 0 && items.length < response.total);
-  return { ...response, items, page: 1, page_size: PMS_MAX_PAGE_SIZE };
+  return listPagedResource<PmsSpaceMember>(
+    `/v1/pms/spaces/${encodeURIComponent(spaceId)}/members`,
+    api,
+    workspaceSlug,
+  );
 }
 
 export function addSpaceMember(
@@ -687,10 +701,9 @@ export function listTaskListMilestones(
   taskListId: string,
   workspaceSlug?: string | null,
 ): Promise<PmsMilestonesResponse> {
-  return request<PmsMilestonesResponse>(
-    `/v1/pms/lists/${encodeURIComponent(taskListId)}/milestones?page=1&page_size=20`,
+  return listPagedResource<PmsMilestone>(
+    `/v1/pms/lists/${encodeURIComponent(taskListId)}/milestones`,
     api,
-    {},
     workspaceSlug,
   );
 }
@@ -1051,10 +1064,9 @@ export function listTaskListLabels(
   taskListId: string,
   workspaceSlug?: string | null,
 ): Promise<PmsLabelsResponse> {
-  return request<PmsLabelsResponse>(
-    `/v1/pms/lists/${encodeURIComponent(taskListId)}/labels?page=1&page_size=100`,
+  return listPagedResource<PmsLabel>(
+    `/v1/pms/lists/${encodeURIComponent(taskListId)}/labels`,
     api,
-    {},
     workspaceSlug,
   );
 }
@@ -1128,10 +1140,9 @@ export function listTaskActivityLogs(
   taskId: string,
   workspaceSlug?: string | null,
 ): Promise<PmsActivityLogsResponse> {
-  return request<PmsActivityLogsResponse>(
-    `/v1/pms/tasks/${encodeURIComponent(taskId)}/activity-logs?page=1&page_size=50`,
+  return listPagedResource<PmsActivityLog>(
+    `/v1/pms/tasks/${encodeURIComponent(taskId)}/activity-logs`,
     api,
-    {},
     workspaceSlug,
   );
 }
@@ -1139,18 +1150,30 @@ export function listTaskActivityLogs(
 /** miy limit for one attachment (platform small files, 10 MiB). */
 export const PMS_ATTACHMENT_MAX_BYTES = 10 * 1024 * 1024;
 
-type PmsPendingAttachment = {
-  id: string;
-  task_id: string;
-  filename: string;
-  content_type: string;
-  size_bytes: number;
-  status: 'pending';
-};
-
 /** The attachment's bytes on the platform file gateway (`runtime.fileApi`). */
 export function attachmentContentPath(attachmentId: string): string {
   return `/pms/attachments/${encodeURIComponent(attachmentId)}/content`;
+}
+
+async function recoverAttachmentStep<T>(
+  run: () => Promise<T>,
+  signal?: AbortSignal,
+): Promise<T> {
+  signal?.throwIfAborted();
+  try {
+    return await run();
+  } catch (error) {
+    signal?.throwIfAborted();
+    if (!canRetryAttachmentUpload(error)) throw error;
+    return run();
+  }
+}
+
+export function canRetryAttachmentUpload(error: unknown): boolean {
+  if (error instanceof PmsApiError) {
+    return error.status === 0 || error.status === 409 || error.status >= 500;
+  }
+  return error instanceof TypeError || error instanceof SyntaxError;
 }
 
 /**
@@ -1158,8 +1181,8 @@ export function attachmentContentPath(attachmentId: string): string {
  * records the attachment (`POST .../attachments` with name, type and size),
  * then the bytes go through the platform's bounded file gateway
  * (`runtime.fileApi`, `PUT /pms/attachments/<id>/content`), which answers the
- * finished `AttachmentItem`. A failed or cancelled upload deletes the pending
- * record. Files over 10 MiB are refused before any request.
+ * finished `AttachmentItem`. An uncertain response is retried with the same
+ * reservation and attachment id. Only an explicit deletion removes the file.
  */
 export async function uploadAttachment(
   api: AppApi,
@@ -1167,7 +1190,10 @@ export async function uploadAttachment(
   taskId: string,
   file: File,
   workspaceSlug?: string | null,
-  signal?: AbortSignal,
+  { signal, reservationId = requestId() }: {
+    signal?: AbortSignal;
+    reservationId?: string;
+  } = {},
 ): Promise<PmsAttachment> {
   if (file.size > PMS_ATTACHMENT_MAX_BYTES) {
     throw new PmsApiError(
@@ -1177,39 +1203,43 @@ export async function uploadAttachment(
       }),
     );
   }
-  const pending = await request<PmsPendingAttachment>(
-    `/v1/pms/tasks/${encodeURIComponent(taskId)}/attachments`,
-    api,
-    {
-      method: 'POST',
-      body: JSON.stringify({
-        // miy: crypto.randomUUID() needs a secure context; the common UI helper does not.
-        request_id: requestId(),
-        filename: file.name,
-        content_type: file.type || 'application/octet-stream',
-        size_bytes: file.size,
-      }),
-    },
-    workspaceSlug,
+  const reservation = {
+    method: 'POST',
+    body: JSON.stringify({
+      request_id: reservationId,
+      filename: file.name,
+      content_type: file.type || 'application/octet-stream',
+      size_bytes: file.size,
+    }),
+    signal,
+  };
+  const attachment = await recoverAttachmentStep(
+    () =>
+      request<{ id: string }>(
+        `/v1/pms/tasks/${encodeURIComponent(taskId)}/attachments`,
+        api,
+        reservation,
+        workspaceSlug,
+      ),
+    signal,
   );
-  try {
-    const init: RequestInit = {
-      method: 'PUT',
-      body: file,
-      headers: { 'Content-Type': 'application/octet-stream' },
-      signal,
-    };
-    const response = await checkedResponse(
-      await fileApi(attachmentContentPath(pending.id), init),
-      init,
-    );
-    return (await response.json()) as PmsAttachment;
-  } catch (error) {
-    await deleteAttachment(api, pending.id, workspaceSlug).catch(
-      () => undefined,
-    );
-    throw mapPmsTransportError(error);
-  }
+  const init: RequestInit = {
+    method: 'PUT',
+    body: file,
+    headers: { 'Content-Type': 'application/octet-stream' },
+    signal,
+  };
+  return recoverAttachmentStep(async () => {
+    try {
+      const response = await checkedResponse(
+        await fileApi(attachmentContentPath(attachment.id), init),
+        init,
+      );
+      return (await response.json()) as PmsAttachment;
+    } catch (error) {
+      throw mapPmsTransportError(error);
+    }
+  }, signal);
 }
 
 /** Reads an attachment's bytes through the file gateway (download, preview). */

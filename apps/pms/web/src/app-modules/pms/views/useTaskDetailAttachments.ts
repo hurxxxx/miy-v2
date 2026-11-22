@@ -1,9 +1,11 @@
-import { useCallback, useState, type SetStateAction } from 'react';
+import { useCallback, useRef, useState, type SetStateAction } from 'react';
 import type { TFunction } from 'i18next';
+import { requestId } from '../../../../../platform-components/ui/utilities';
 
 import { formatByteSize } from '../../../platform/format/byte-size';
 
 import {
+  canRetryAttachmentUpload,
   deleteAttachment,
   uploadAttachment,
   type PmsAttachment,
@@ -16,6 +18,8 @@ import {
   type AppApi,
   useAppFileApi,
 } from '../../../platform/runtime/runtime-context';
+
+type UploadAttempt = { file: File; reservationId: string };
 
 export function formatTaskDetailAttachmentSize(sizeBytes: number): string {
   return formatByteSize(sizeBytes);
@@ -42,29 +46,55 @@ export function useTaskDetailAttachments({
 }) {
   const fileApi = useAppFileApi();
   const [uploading, setUploading] = useState(false);
+  const uploadInFlight = useRef(false);
+  const [retryableUploads, setRetryableUploads] = useState<UploadAttempt[]>([]);
   const [dragOver, setDragOver] = useState(false);
 
-  const handleFileUpload = useCallback(
-    async (files: FileList | File[]) => {
-      if (!api || !canEdit) return;
+  const uploadFiles = useCallback(
+    async (attempts: UploadAttempt[]) => {
+      if (!api || !canEdit || !attempts.length || uploadInFlight.current) return;
+      uploadInFlight.current = true;
       setUploading(true);
       setSaveError(null);
+      const retriedIds = new Set(attempts.map(({ reservationId }) => reservationId));
+      const uploaded: PmsAttachment[] = [];
+      const retry: UploadAttempt[] = [];
+      let firstError: unknown;
       try {
-        const uploadedAttachments = await Promise.all(
-          Array.from(files).map((file) =>
-            uploadAttachment(api, fileApi, taskId, file, workspaceSlug),
-          ),
-        );
-        setAttachments((prev) => [...prev, ...uploadedAttachments]);
-        await notifyTaskDetailUpdated(onUpdate);
+        for (const attempt of attempts) {
+          try {
+            uploaded.push(
+              await uploadAttachment(api, fileApi, taskId, attempt.file, workspaceSlug, {
+                reservationId: attempt.reservationId,
+              }),
+            );
+          } catch (error) {
+            firstError ??= error;
+            if (canRetryAttachmentUpload(error)) retry.push(attempt);
+          }
+        }
+        setRetryableUploads((previous) => [
+          ...previous.filter(({ reservationId }) => !retriedIds.has(reservationId)),
+          ...retry,
+        ]);
+        if (uploaded.length) {
+          setAttachments((previous) => [
+            ...previous,
+            ...uploaded.filter(({ id }) => !previous.some((item) => item.id === id)),
+          ]);
+          await notifyTaskDetailUpdated(onUpdate);
+        }
+        if (firstError) {
+          setSaveError(
+            getTaskDetailMutationErrorMessage(firstError, t('pms.taskDetail.errors.uploadFileFailed')),
+          );
+        }
       } catch (error) {
         setSaveError(
-          getTaskDetailMutationErrorMessage(
-            error,
-            t('pms.taskDetail.errors.uploadFileFailed'),
-          ),
+          getTaskDetailMutationErrorMessage(error, t('pms.taskDetail.errors.uploadFileFailed')),
         );
       } finally {
+        uploadInFlight.current = false;
         setUploading(false);
         setDragOver(false);
       }
@@ -80,6 +110,12 @@ export function useTaskDetailAttachments({
       api,
       workspaceSlug,
     ],
+  );
+  const handleFileUpload = useCallback(
+    (files: FileList | File[]) => uploadFiles(
+      Array.from(files, (file) => ({ file, reservationId: requestId() })),
+    ),
+    [uploadFiles],
   );
 
   const handleDeleteAttachment = useCallback(
@@ -109,6 +145,8 @@ export function useTaskDetailAttachments({
     formatAttachmentSize: formatTaskDetailAttachmentSize,
     handleDeleteAttachment,
     handleFileUpload,
+    retryableUploads,
+    retryUploads: () => uploadFiles(retryableUploads),
     setDragOver,
     uploading,
   };

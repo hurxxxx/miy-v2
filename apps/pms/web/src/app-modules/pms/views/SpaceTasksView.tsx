@@ -946,7 +946,7 @@ function useSpaceTasksViewElement({
         <AnimatePresence>
           {selectedIssue ? (
             <TaskDetailModal
-              closeLabel={t('common:actions.close')}
+              title={selectedIssue.title}
               onClose={handleClose}
             >
               <TaskDetail

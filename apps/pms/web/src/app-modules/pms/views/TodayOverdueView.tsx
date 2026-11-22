@@ -24,7 +24,7 @@ import {
   type PmsTaskList,
 } from '../api/pms-api';
 import { formatDate } from './pms-constants';
-import { PmsCenteredLoadingState } from './PmsCenteredStateBlock';
+import { PmsCenteredErrorState, PmsCenteredLoadingState } from './PmsCenteredStateBlock';
 import { TaskAssigneeStack } from './TaskAssigneeStack';
 import { buildPmsTaskContextLabel } from './pms-task-context';
 import { buildPmsTaskListToolPath } from './pms-view-route';
@@ -69,6 +69,7 @@ export const TodayOverdueView = ({
     tasks: [],
   });
   const [loading, setLoading] = useState(true);
+  const [loadFailed, setLoadFailed] = useState(false);
   const loadGenerationRef = useRef(0);
   const today = zonedDateKey(new Date(), normalizeTimeZone(timeZoneSetting));
 
@@ -77,9 +78,12 @@ export const TodayOverdueView = ({
     const loadGeneration = loadGenerationRef.current + 1;
     loadGenerationRef.current = loadGeneration;
     setLoading(true);
+    setLoadFailed(false);
     try {
       const nextData = await loadTodayOverdueTasks(api, today, workspaceSlug);
       if (loadGeneration === loadGenerationRef.current) setData(nextData);
+    } catch {
+      if (loadGeneration === loadGenerationRef.current) setLoadFailed(true);
     } finally {
       if (loadGeneration === loadGenerationRef.current) setLoading(false);
     }
@@ -138,6 +142,8 @@ export const TodayOverdueView = ({
       <main className="flex-1 overflow-y-auto p-8 custom-scrollbar">
         {loading ? (
           <PmsCenteredLoadingState minHeightClassName="py-16" />
+        ) : loadFailed ? (
+          <PmsCenteredErrorState onRetry={() => { void reloadTodayOverdueTasks(); }} />
         ) : (
           <div className="max-w-4xl mx-auto space-y-8">
             {/* Overdue */}

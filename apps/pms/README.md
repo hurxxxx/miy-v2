@@ -102,6 +102,8 @@ UI는 `runtime.api('/v1/...')`로 부르고 게이트웨이가 `/api/v1/...`로 
 | `GET /files/pms/attachments/{id}/content` | 내려받기(`runtime.fileApi`, 매번 읽기 권한 확인) |
 | `DELETE /v1/pms/attachments/{id}` | 삭제(대기 중이면 예약 취소). 플랫폼 파일은 연결 해제 |
 
+예약이나 업로드 응답을 확인하지 못하면 같은 요청 ID와 첨부 ID로 한 번 복구를 시도한다. 오류가 계속되면 태스크 상세에서 같은 파일과 요청 ID로 다시 시도할 수 있다. 앱 서버는 이미 Storage에 들어간 바이트를 다시 올리는 대신 연결 결과를 확인한다. 첨부 삭제는 사용자가 명시적으로 요청할 때 처리한다.
+
 **플랫폼 호출(manifest `platformEndpoints`, 읽기 전용, 플랫폼 호출이 아니면 403 `pms_platform_only`)**
 
 | 메서드·경로 | 설명 |
@@ -112,7 +114,7 @@ UI는 `runtime.api('/v1/...')`로 부르고 게이트웨이가 `/api/v1/...`로 
 
 ## 데이터
 
-`migrations/0002_pms.sql`: AI-DO PMS 표(`pms_*`)와 스페이스·멤버(`pms_spaces`, `pms_space_members`), 알림 전달 기록(`pms_notification_deliveries`), 첨부 해제 대기열(`pms_attachment_releases`). `0001_initial.sql`은 번들이 고정한 초기 파일이라 그대로 둔다.
+`migrations/0002_pms.sql`: AI-DO PMS 표(`pms_*`)와 스페이스·멤버(`pms_spaces`, `pms_space_members`), 알림 전달 기록(`pms_notification_deliveries`), 첨부 해제 대기열(`pms_attachment_releases`). `0003_task_status_length.sql`은 업무 상태 열을 워크플로 상태 정의와 같은 40자로 넓힌다. `0001_initial.sql`은 번들이 고정한 초기 파일이라 그대로 둔다.
 
 ## 검사
 

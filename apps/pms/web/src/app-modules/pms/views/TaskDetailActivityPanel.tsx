@@ -15,6 +15,7 @@ type TaskDetailActivityPanelProps = {
   activityLogs: PmsActivityLog[];
   canEdit: boolean;
   commentDraft: string;
+  commentSubmitting: boolean;
   comments: PmsComment[];
   isVisible: boolean;
   loading: boolean;
@@ -179,6 +180,7 @@ export function TaskDetailActivityPanel({
   activityLogs,
   canEdit,
   commentDraft,
+  commentSubmitting,
   comments,
   isVisible,
   loading,
@@ -330,6 +332,8 @@ export function TaskDetailActivityPanel({
             variant="ghost"
             size="icon"
             className="shrink-0"
+            aria-label={t('pms.taskDetail.sendComment')}
+            disabled={commentSubmitting || !commentDraft.trim()}
             onClick={onCommentSubmit}
           >
             <Send size={14} />

@@ -1913,7 +1913,7 @@ function usePMSViewElement(): ReactNode {
         <AnimatePresence>
           {selectedIssue && (
             <TaskDetailModal
-              closeLabel={t('common:actions.close')}
+              title={selectedIssue.title}
               onClose={clearSelectedIssue}
             >
               <TaskDetail
