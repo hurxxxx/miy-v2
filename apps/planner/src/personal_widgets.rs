@@ -80,9 +80,12 @@ pub struct PersonalTodoUpdateRequest {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct PersonalMemoUpdateRequest {
-    #[serde(default)]
     pub body: String,
+    // Required even for a first save, where the GET response has null.
+    #[serde(deserialize_with = "Option::deserialize")]
+    pub expected_updated_at: Option<NaiveDateTime>,
 }
 
 /// schemas.normalize_title: the length constraint applies to the raw value,
@@ -253,24 +256,49 @@ pub async fn get_memo(pool: &PgPool, user_id: &str) -> ApiResult<PersonalMemoOut
     })
 }
 
-pub async fn save_memo(pool: &PgPool, user_id: &str, body: &str) -> ApiResult<PersonalMemoOut> {
+pub async fn save_memo(
+    pool: &PgPool,
+    user_id: &str,
+    body: &str,
+    expected_updated_at: Option<NaiveDateTime>,
+) -> ApiResult<PersonalMemoOut> {
     let now = now_utc();
-    // One memo per user (uq_personal_memos_user); a concurrent first save
-    // updates the row the other request created.
-    let row = sqlx::query_as::<_, PersonalMemo>(
-        "INSERT INTO personal_memos (id, user_id, body, created_at, updated_at) \
-         VALUES ($1, $2, $3, $4, $4) \
-         ON CONFLICT (user_id) DO UPDATE SET body = EXCLUDED.body, \
-           updated_at = CASE WHEN personal_memos.body = EXCLUDED.body \
-             THEN personal_memos.updated_at ELSE EXCLUDED.updated_at END \
-         RETURNING id, body, created_at, updated_at",
-    )
-    .bind(uuid::Uuid::new_v4().to_string())
-    .bind(user_id)
-    .bind(body)
-    .bind(now)
-    .fetch_one(pool)
-    .await?;
+    // Compare in the write itself so two editors with the same saved revision
+    // cannot both change it. A new revision always advances at DB precision.
+    let row = if let Some(expected) = expected_updated_at {
+        sqlx::query_as::<_, PersonalMemo>(
+            "UPDATE personal_memos SET body = $2, updated_at = CASE \
+             WHEN body = $2 THEN updated_at \
+             ELSE GREATEST($3, updated_at + interval '1 microsecond') END \
+             WHERE user_id = $1 AND updated_at = $4 \
+             RETURNING id, body, created_at, updated_at",
+        )
+        .bind(user_id)
+        .bind(body)
+        .bind(now)
+        .bind(expected)
+        .fetch_optional(pool)
+        .await?
+    } else {
+        sqlx::query_as::<_, PersonalMemo>(
+            "INSERT INTO personal_memos (id, user_id, body, created_at, updated_at) \
+             VALUES ($1, $2, $3, $4, $4) ON CONFLICT (user_id) DO NOTHING \
+             RETURNING id, body, created_at, updated_at",
+        )
+        .bind(uuid::Uuid::new_v4().to_string())
+        .bind(user_id)
+        .bind(body)
+        .bind(now)
+        .fetch_optional(pool)
+        .await?
+    };
+    let row = row.ok_or_else(|| {
+        ApiError::new(
+            StatusCode::CONFLICT,
+            "personal_widgets.memo_conflict",
+            "The saved memo has changed.",
+        )
+    })?;
     Ok(project_memo(&row))
 }
 
@@ -346,13 +374,36 @@ pub async fn save_personal_memo(
 ) -> ApiResult<Json<PersonalMemoOut>> {
     check_length("body", &payload.body, 0, 20000)?;
     Ok(Json(
-        save_memo(&pool, &identity.user_id, &payload.body).await?,
+        save_memo(
+            &pool,
+            &identity.user_id,
+            &payload.body,
+            payload.expected_updated_at,
+        )
+        .await?,
     ))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn memo_save_requires_an_explicit_revision() {
+        use serde_json::{from_value, json};
+
+        assert!(from_value::<PersonalMemoUpdateRequest>(json!({"body":"memo"})).is_err());
+        assert!(
+            from_value::<PersonalMemoUpdateRequest>(json!({"expectedUpdatedAt":null})).is_err()
+        );
+        let first: PersonalMemoUpdateRequest =
+            from_value(json!({"body":"memo", "expectedUpdatedAt":null})).unwrap();
+        assert!(first.expected_updated_at.is_none());
+        let now = now_utc();
+        let update: PersonalMemoUpdateRequest =
+            from_value(json!({"body":"memo", "expectedUpdatedAt":serialize_naive(now)})).unwrap();
+        assert_eq!(update.expected_updated_at, Some(now));
+    }
 
     #[test]
     fn title_is_checked_before_and_after_strip() {

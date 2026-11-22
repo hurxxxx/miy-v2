@@ -43,7 +43,8 @@ pub fn hits(events: &[PlannerEvent], todos: &[(String, String, bool)], english: 
             json!({
                 "title": event.title,
                 "snippet": (!event.location.trim().is_empty()).then(|| event.location.trim().to_owned()),
-                "at": (!event.all_day).then(|| Utc.from_utc_datetime(&event.start_at).to_rfc3339()),
+                "at": (!event.all_day && event.start_has_time)
+                    .then(|| Utc.from_utc_datetime(&event.start_at).to_rfc3339()),
                 "path": format!("/?event={}", event.id),
                 "kind": if english { "Event" } else { "일정" },
             })

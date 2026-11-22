@@ -868,7 +868,7 @@ async fn personal_memo_get_and_save() {
         Some(&user),
         Method::PUT,
         "/v1/personal-widgets/memo",
-        Some(json!({"body": "Line one\nLine two"})),
+        Some(json!({"body": "Line one\nLine two", "expectedUpdatedAt": null})),
     )
     .await;
     assert_eq!(saved.status(), StatusCode::OK);
@@ -883,7 +883,7 @@ async fn personal_memo_get_and_save() {
             Some(&user),
             Method::PUT,
             "/v1/personal-widgets/memo",
-            Some(json!({"body": "Updated memo"})),
+            Some(json!({"body": "Updated memo", "expectedUpdatedAt": saved["updatedAt"]})),
         )
         .await,
     )
@@ -899,7 +899,7 @@ async fn personal_memo_get_and_save() {
         Some(&user),
         Method::PUT,
         "/v1/personal-widgets/memo",
-        Some(json!({"body": "x".repeat(20001)})),
+        Some(json!({"body": "x".repeat(20001), "expectedUpdatedAt": fetched["updatedAt"]})),
     )
     .await;
     assert_eq!(too_long.status(), StatusCode::UNPROCESSABLE_ENTITY);
@@ -914,7 +914,7 @@ async fn personal_memo_is_isolated_by_user() {
         Some(&owner),
         Method::PUT,
         "/v1/personal-widgets/memo",
-        Some(json!({"body": "Owner private memo"})),
+        Some(json!({"body": "Owner private memo", "expectedUpdatedAt": null})),
     )
     .await;
     assert_eq!(owner_save.status(), StatusCode::OK);
@@ -925,13 +925,74 @@ async fn personal_memo_is_isolated_by_user() {
         Some(&other),
         Method::PUT,
         "/v1/personal-widgets/memo",
-        Some(json!({"body": "Other private memo"})),
+        Some(json!({"body": "Other private memo", "expectedUpdatedAt": null})),
     )
     .await;
     assert_eq!(other_save.status(), StatusCode::OK);
     let owner_get =
         json_of(call(Some(&owner), Method::GET, "/v1/personal-widgets/memo", None).await).await;
     assert_eq!(owner_get["body"], "Owner private memo");
+}
+
+#[tokio::test]
+#[ignore = "needs PLANNER_TEST_DATABASE_URL"]
+async fn competing_memo_saves_use_the_same_revision_once() {
+    let user = new_user();
+    let path = "/v1/personal-widgets/memo";
+    let (first, second) = tokio::join!(
+        call(
+            Some(&user),
+            Method::PUT,
+            path,
+            Some(json!({"body": "First", "expectedUpdatedAt": null}))
+        ),
+        call(
+            Some(&user),
+            Method::PUT,
+            path,
+            Some(json!({"body": "Second", "expectedUpdatedAt": null}))
+        ),
+    );
+    let (saved, conflict) = if first.status() == StatusCode::OK {
+        (first, second)
+    } else {
+        (second, first)
+    };
+    assert_eq!(saved.status(), StatusCode::OK);
+    assert_eq!(conflict.status(), StatusCode::CONFLICT);
+    assert_eq!(
+        json_of(conflict).await["error"]["code"],
+        "personal_widgets_memo_conflict"
+    );
+    let saved = json_of(saved).await;
+
+    let (first, second) = tokio::join!(
+        call(
+            Some(&user),
+            Method::PUT,
+            path,
+            Some(json!({"body": "Edit A", "expectedUpdatedAt": saved["updatedAt"]}))
+        ),
+        call(
+            Some(&user),
+            Method::PUT,
+            path,
+            Some(json!({"body": "Edit B", "expectedUpdatedAt": saved["updatedAt"]}))
+        ),
+    );
+    let (updated, conflict) = if first.status() == StatusCode::OK {
+        (first, second)
+    } else {
+        (second, first)
+    };
+    assert_eq!(updated.status(), StatusCode::OK);
+    assert_eq!(conflict.status(), StatusCode::CONFLICT);
+    let updated = json_of(updated).await;
+    assert_ne!(saved["updatedAt"], updated["updatedAt"]);
+    assert_eq!(
+        json_of(call(Some(&user), Method::GET, path, None).await).await,
+        updated
+    );
 }
 
 #[tokio::test]

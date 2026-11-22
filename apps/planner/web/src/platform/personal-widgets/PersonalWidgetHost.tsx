@@ -37,6 +37,7 @@ import {
 import { Button, Input } from '@miy/ui';
 
 import { cn } from '../../lib/utils';
+import { ApiRequestError } from '../api/client';
 import { useAppApi } from '../runtime/runtime-context';
 import { useNavigationDirty } from '../runtime/navigation-state';
 
@@ -62,6 +63,11 @@ import {
   type PersonalWidgetPreferences,
 } from './personal-widget-state';
 type TodoMutation = 'create' | 'delete' | 'toggle';
+type MemoEditor = {
+  saved: PersonalMemo | null;
+  body: string;
+  conflict: { latest: PersonalMemo | null } | null;
+};
 type PersonalWidgetDockItem = {
   ariaLabel: string;
   badgeClassName?: string;
@@ -103,11 +109,14 @@ function writeStoredPreferences(preferences: PersonalWidgetPreferences): void {
 /** To-do list and memo state shared by the dock panel and the panel routes. */
 export function usePersonalWidgets() {
   const api = useAppApi();
+  const memoApi = useRef(api);
+  const hasMemoApi = api != null;
   const { t } = useTranslation('shell');
   const [todos, setTodos] = useState<PersonalTodoItem[]>([]);
-  const [memo, setMemo] = useState<PersonalMemo | null>(null);
-  const [memoBody, setMemoBody] = useState('');
-  const latestMemoBodyRef = useRef('');
+  const [{ saved: memo, body: memoBody, conflict: memoConflict }, setMemoEditor] =
+    useState<MemoEditor>({ saved: null, body: '', conflict: null });
+  const memoRead = useRef(0);
+  const memoWrite = useRef(false);
   const [draftTitle, setDraftTitle] = useState('');
   const [editingTodoId, setEditingTodoId] = useState<string | null>(null);
   const [editingTodoTitle, setEditingTodoTitle] = useState('');
@@ -116,6 +125,7 @@ export function usePersonalWidgets() {
   const [loading, setLoading] = useState(false);
   const [memoLoading, setMemoLoading] = useState(false);
   const [memoSaving, setMemoSaving] = useState(false);
+  const [memoError, setMemoError] = useState<'memoLoadFailed' | 'memoSaveFailed' | null>(null);
   const [lastFailedMemoBody, setLastFailedMemoBody] = useState<string | null>(
     null,
   );
@@ -153,8 +163,8 @@ export function usePersonalWidgets() {
   }, [editingTodoId]);
 
   useEffect(() => {
-    latestMemoBodyRef.current = memoBody;
-  }, [memoBody]);
+    memoApi.current = api;
+  }, [api]);
 
   const reloadTodos = useCallback(async () => {
     if (!api) {
@@ -177,33 +187,39 @@ export function usePersonalWidgets() {
   }, [t, api]);
 
   const reloadMemo = useCallback(async () => {
-    if (!api) {
-      setMemo(null);
-      setMemoBody('');
-      setLastFailedMemoBody(null);
-      setError(null);
-      setMemoLoading(false);
-      return;
-    }
-
+    const api = memoApi.current;
+    if (!api) return;
+    const read = ++memoRead.current;
     setMemoLoading(true);
-    setError(null);
+    setMemoError(null);
     try {
-      const response = await getPersonalMemo(api);
-      setMemo(response);
-      setMemoBody(response.body);
-      setLastFailedMemoBody(null);
+      const latest = await getPersonalMemo(api);
+      if (read !== memoRead.current) return;
+      setMemoEditor((current) => {
+        const clean = current.body === (current.saved?.body ?? '');
+        if (clean || current.body === latest.body) {
+          return { saved: latest, body: latest.body, conflict: null };
+        }
+        // Refresh can discover a newer revision, but only an explicit choice
+        // may replace a dirty draft or apply it over that revision.
+        if (current.conflict || current.saved?.updatedAt !== latest.updatedAt) {
+          return { ...current, conflict: { latest } };
+        }
+        return current;
+      });
     } catch {
-      setError(t('personalWidgets.errors.memoLoadFailed'));
+      if (read === memoRead.current) setMemoError('memoLoadFailed');
     } finally {
-      setMemoLoading(false);
+      if (read === memoRead.current) setMemoLoading(false);
     }
-  }, [t, api]);
+  }, []);
 
   useEffect(() => {
     void reloadTodos();
-    void reloadMemo();
-  }, [reloadMemo, reloadTodos]);
+  }, [reloadTodos]);
+  useEffect(() => {
+    if (hasMemoApi) void reloadMemo();
+  }, [hasMemoApi, reloadMemo]);
 
   const addTodo = useCallback(async () => {
     const title = draftTitle.trim();
@@ -328,32 +344,45 @@ export function usePersonalWidgets() {
   );
 
   const saveMemo = useCallback(
-    async (body: string) => {
-      if (!api) {
-        return;
-      }
+    async (body: string, revision: string | null) => {
+      const api = memoApi.current;
+      if (!api || memoWrite.current) return;
+      memoWrite.current = true;
       setMemoSaving(true);
-      setError(null);
+      setMemoError(null);
       try {
-        const saved = await savePersonalMemo(api, body);
-        setMemo(saved);
+        const saved = await savePersonalMemo(api, body, revision);
+        setMemoEditor((current) => ({
+          saved,
+          body: current.body === body ? saved.body : current.body,
+          conflict: null,
+        }));
         setLastFailedMemoBody(null);
-        if (latestMemoBodyRef.current === body) {
-          setMemoBody(saved.body);
-        }
-      } catch {
+      } catch (error) {
         setLastFailedMemoBody(body);
-        setError(t('personalWidgets.errors.memoSaveFailed'));
+        if (
+          error instanceof ApiRequestError && error.status === 409 &&
+          typeof error.payload === 'object' && error.payload !== null &&
+          'code' in error.payload && error.payload.code === 'personal_widgets_memo_conflict'
+        ) {
+          setMemoEditor((current) => ({ ...current, conflict: { latest: null } }));
+          await reloadMemo();
+        } else {
+          setMemoError('memoSaveFailed');
+        }
       } finally {
+        memoWrite.current = false;
         setMemoSaving(false);
       }
     },
-    [t, api],
+    [reloadMemo],
   );
 
   useEffect(() => {
     if (
-      !api ||
+      !hasMemoApi ||
+      !memo ||
+      memoConflict ||
       memoLoading ||
       memoSaving ||
       !memoDirty ||
@@ -363,25 +392,35 @@ export function usePersonalWidgets() {
     }
 
     const timeoutId = window.setTimeout(() => {
-      void saveMemo(memoBody);
+      void saveMemo(memoBody, memo.updatedAt);
     }, 800);
     return () => window.clearTimeout(timeoutId);
   }, [
     lastFailedMemoBody,
+    memo,
     memoBody,
+    memoConflict,
     memoDirty,
     memoLoading,
     memoSaving,
     saveMemo,
-    api,
+    hasMemoApi,
   ]);
 
   const updateMemoBody = useCallback((body: string) => {
-    setMemoBody(body);
+    setMemoEditor((current) => ({ ...current, body }));
     setLastFailedMemoBody(null);
+    setMemoError(null);
   }, []);
 
+  const acceptSavedMemo = (latest: PersonalMemo) => {
+    setMemoEditor({ saved: latest, body: latest.body, conflict: null });
+    setLastFailedMemoBody(null);
+    setMemoError(null);
+  };
+
   return {
+    acceptSavedMemo,
     addTodo,
     cancelEditingTodo,
     draftTitle,
@@ -390,8 +429,11 @@ export function usePersonalWidgets() {
     error,
     loading,
     memoAutoSaveStatus,
+    memoReady: memo !== null,
     memoBody,
+    memoConflict,
     memoDirty,
+    memoError: memoError ? t(`personalWidgets.errors.${memoError}`) : null,
     memoLoading,
     memoSaving,
     mutating,
@@ -400,6 +442,10 @@ export function usePersonalWidgets() {
     reloadMemo,
     reloadTodos,
     removeTodo,
+    replaceMemo: (latest: PersonalMemo) => saveMemo(memoBody, latest.updatedAt),
+    retryMemo: memo && memoDirty && !memoConflict && lastFailedMemoBody === memoBody
+      ? () => saveMemo(memoBody, memo.updatedAt)
+      : null,
     saveTodoTitle,
     setDraftTitle,
     setEditingTodoTitle,
@@ -423,6 +469,7 @@ export function PersonalWidgetSection({
 }) {
   const { t } = useTranslation('shell');
   const {
+    acceptSavedMemo,
     addTodo,
     cancelEditingTodo,
     draftTitle,
@@ -432,13 +479,18 @@ export function PersonalWidgetSection({
     loading,
     memoAutoSaveStatus,
     memoBody,
+    memoConflict,
     memoDirty,
+    memoError,
     memoLoading,
+    memoReady,
     memoSaving,
     mutating,
     mutatingTodoIds,
     openTodoCount,
     removeTodo,
+    replaceMemo,
+    retryMemo,
     saveTodoTitle,
     setDraftTitle,
     setEditingTodoTitle,
@@ -448,6 +500,8 @@ export function PersonalWidgetSection({
     toggleTodo,
     updateMemoBody,
   } = state;
+  const widgetError = activeWidget === 'memo' ? memoError : error;
+  const latestMemo = memoConflict?.latest;
   return (
     <section className="flex min-h-0 min-w-0 w-full flex-1 flex-col overflow-hidden">
       <div className="grid shrink-0 gap-3 border-b border-app-border px-4 py-3">
@@ -506,13 +560,13 @@ export function PersonalWidgetSection({
         </form>
       ) : null}
 
-      {error ? (
+      {widgetError ? (
         <div
           className="mx-4 mt-3 rounded-md border border-[var(--ui-color-danger)]/35 bg-[var(--ui-color-danger)]/8 px-3 py-2"
           role="alert"
         >
           <p className="app-text-caption text-[var(--ui-color-danger)]">
-            {error}
+            {widgetError}
           </p>
         </div>
       ) : null}
@@ -520,7 +574,7 @@ export function PersonalWidgetSection({
       <div className="custom-scrollbar min-h-0 flex-1 overflow-y-auto">
         {activeWidget === 'memo' ? (
           <div className="flex h-full flex-col gap-3 p-4">
-            {memoLoading ? (
+            {memoLoading && !memoReady ? (
               <div className="flex h-full items-center justify-center text-app-ink/40">
                 <Loader2
                   aria-hidden="true"
@@ -535,9 +589,42 @@ export function PersonalWidgetSection({
                   className="custom-scrollbar min-h-[260px] flex-1 resize-none rounded-md border border-app-border bg-app-surface px-3 py-2 text-[0.86rem] leading-6 text-app-ink outline-none transition-colors placeholder:text-app-ink/35 focus:border-app-accent focus:ring-2 focus:ring-app-accent/20"
                   maxLength={20000}
                   placeholder={t('personalWidgets.memo.inputPlaceholder')}
+                  readOnly={!memoReady}
                   value={memoBody}
                   onChange={(event) => updateMemoBody(event.target.value)}
                 />
+                {memoConflict ? (
+                  <div className="grid shrink-0 gap-2 rounded-md border border-app-border p-3">
+                    <p role="alert" className="app-text-caption">
+                      {t('personalWidgets.memo.conflict')}
+                    </p>
+                    {latestMemo ? (
+                      <>
+                        <p className="app-text-caption">
+                          {t('personalWidgets.memo.savedCopy')}
+                        </p>
+                        <pre className="max-h-32 overflow-y-auto whitespace-pre-wrap break-words rounded-md bg-app-surface px-2 py-1">
+                          {latestMemo.body || t('common:empty.none')}
+                        </pre>
+                        <div className="flex flex-wrap gap-2">
+                          <Button size="dense" variant="secondary" disabled={memoLoading || memoSaving}
+                            onClick={() => acceptSavedMemo(latestMemo)}>
+                            {t('personalWidgets.memo.useSavedCopy')}
+                          </Button>
+                          <Button size="dense" disabled={memoLoading || memoSaving}
+                            onClick={() => void replaceMemo(latestMemo)}>
+                            {t('personalWidgets.memo.replaceSavedCopy')}
+                          </Button>
+                        </div>
+                      </>
+                    ) : null}
+                  </div>
+                ) : retryMemo ? (
+                  <Button size="dense" variant="secondary" className="self-start"
+                    disabled={memoLoading || memoSaving} onClick={() => void retryMemo()}>
+                    {t('personalWidgets.memo.retrySave')}
+                  </Button>
+                ) : null}
                 <div className="flex shrink-0 items-center justify-between gap-3">
                   <span className="app-text-caption text-app-ink/45">
                     {t('personalWidgets.memo.characterCount', {
@@ -748,7 +835,9 @@ export function PersonalWidgetReloadButton({
   state: PersonalWidgetsState;
 }) {
   const { t } = useTranslation('shell');
-  const reloadBusy = activeWidget === 'memo' ? state.memoLoading : state.loading;
+  const reloadBusy = activeWidget === 'memo'
+    ? state.memoLoading || state.memoSaving
+    : state.loading;
   return (
     <Button
       aria-label={t('personalWidgets.reload')}

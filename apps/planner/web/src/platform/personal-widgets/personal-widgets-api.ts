@@ -83,12 +83,13 @@ export function getPersonalMemo(api: AppApi): Promise<PersonalMemo> {
 export function savePersonalMemo(
   api: AppApi,
   body: string,
+  expectedUpdatedAt: string | null,
 ): Promise<PersonalMemo> {
   return apiFetchJson<PersonalMemo>(
     '/v1/personal-widgets/memo',
     api,
     {
-      body: JSON.stringify({ body }),
+      body: JSON.stringify({ body, expectedUpdatedAt }),
       method: 'PUT',
     },
   );

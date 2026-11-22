@@ -8,6 +8,7 @@ import {
 import type { ComponentProps } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { ApiRequestError } from '../api/client';
 import {
   PersonalWidgetHost,
   PersonalWidgetPanelRoute,
@@ -15,7 +16,9 @@ import {
 import {
   getPersonalMemo,
   listPersonalTodos,
+  savePersonalMemo,
   updatePersonalTodo,
+  type PersonalMemo,
   type PersonalTodoItem,
 } from './personal-widgets-api';
 import { PERSONAL_WIDGET_STORAGE_KEY } from './personal-widget-state';
@@ -24,16 +27,17 @@ function translate(key: string, values?: { title?: string }) {
   return values?.title ? `${key}:${values.title}` : key;
 }
 
-vi.mock('react-i18next', () => ({
+vi.mock('react-i18next', async (original) => ({
+  ...await original<typeof import('react-i18next')>(),
   useTranslation: () => ({
     t: translate,
   }),
 }));
 
 // miy: the app's API client (runtime.api) replaces AI-DO's auth token.
-const api = vi.hoisted(() => async () => undefined);
+const api = vi.hoisted(() => ({ current: async () => undefined }));
 vi.mock('../runtime/runtime-context', () => ({
-  useAppApi: () => api,
+  useAppApi: () => api.current,
 }));
 
 vi.mock('./personal-widgets-api', () => ({
@@ -47,6 +51,7 @@ vi.mock('./personal-widgets-api', () => ({
 
 const listPersonalTodosMock = vi.mocked(listPersonalTodos);
 const getPersonalMemoMock = vi.mocked(getPersonalMemo);
+const savePersonalMemoMock = vi.mocked(savePersonalMemo);
 const updatePersonalTodoMock = vi.mocked(updatePersonalTodo);
 
 function todo(title: string): PersonalTodoItem {
@@ -59,6 +64,10 @@ function todo(title: string): PersonalTodoItem {
     title,
     updatedAt: '2026-07-19T00:00:00Z',
   };
+}
+
+function memo(body: string, updatedAt = '2026-07-19T00:00:00'): PersonalMemo {
+  return { body, id: 'memo-1', createdAt: '2026-07-19T00:00:00', updatedAt };
 }
 
 function renderTodoWidget(
@@ -135,7 +144,7 @@ describe('PersonalWidgetHost todo editing', () => {
     );
 
     await waitFor(() =>
-      expect(updatePersonalTodoMock).toHaveBeenCalledWith(api, 'todo-1', {
+      expect(updatePersonalTodoMock).toHaveBeenCalledWith(api.current, 'todo-1', {
         title: 'Updated todo',
       }),
     );
@@ -228,12 +237,7 @@ describe('PersonalWidgetHost todo editing', () => {
 
 describe('PersonalWidgetPanelRoute (miy panel routes)', () => {
   it('renders the memo panel on its own without the dock', async () => {
-    getPersonalMemoMock.mockResolvedValue({
-      body: 'Saved memo',
-      createdAt: '2026-07-19T00:00:00',
-      id: 'memo-1',
-      updatedAt: '2026-07-19T00:00:00',
-    });
+    getPersonalMemoMock.mockResolvedValue(memo('Saved memo'));
     render(<PersonalWidgetPanelRoute widget="memo" />);
 
     expect(await screen.findByDisplayValue('Saved memo')).toBeTruthy();
@@ -244,6 +248,44 @@ describe('PersonalWidgetPanelRoute (miy panel routes)', () => {
     expect(
       screen.queryByRole('button', { name: 'personalWidgets.close' }),
     ).toBeNull();
+  });
+
+  it('preserves a draft when refreshed or when display changes replace the runtime API', async () => {
+    const saved = memo('Saved memo');
+    getPersonalMemoMock.mockResolvedValue(saved);
+    savePersonalMemoMock.mockResolvedValue(memo('Draft memo', '2026-07-19T00:00:01'));
+    const view = render(<PersonalWidgetPanelRoute widget="memo" />);
+    const input = await screen.findByDisplayValue(saved.body);
+    fireEvent.change(input, { target: { value: 'Draft memo' } });
+
+    api.current = vi.fn(async () => undefined);
+    view.rerender(<PersonalWidgetPanelRoute widget="memo" />);
+    expect(getPersonalMemoMock).toHaveBeenCalledTimes(1);
+    const reload = screen.getByRole('button', { name: 'personalWidgets.reload' });
+    fireEvent.click(reload);
+    await waitFor(() => expect((reload as HTMLButtonElement).disabled).toBe(false));
+    expect(getPersonalMemoMock).toHaveBeenCalledTimes(2);
+    expect(screen.getByDisplayValue('Draft memo')).toBe(input);
+    await waitFor(() => expect(savePersonalMemoMock).toHaveBeenCalledWith(api.current, 'Draft memo', saved.updatedAt), { timeout: 2500 });
+  });
+
+  it('keeps a conflicting draft and only replaces the saved copy on an explicit retry', async () => {
+    const saved = memo('Original memo');
+    const latest = memo('Saved in another view', '2026-07-19T00:00:01');
+    getPersonalMemoMock.mockResolvedValueOnce(saved).mockResolvedValue(latest);
+    savePersonalMemoMock
+      .mockRejectedValueOnce(new ApiRequestError(409, 'Conflict', { code: 'personal_widgets_memo_conflict' }))
+      .mockResolvedValue(memo('Draft memo', '2026-07-19T00:00:02'));
+    render(<PersonalWidgetPanelRoute widget="memo" />);
+    fireEvent.change(await screen.findByDisplayValue(saved.body), { target: { value: 'Draft memo' } });
+
+    await screen.findByText(latest.body, {}, { timeout: 2500 });
+    expect(screen.getByDisplayValue('Draft memo')).toBeTruthy();
+    expect(screen.getByRole('alert').textContent).toBe('personalWidgets.memo.conflict');
+    expect(savePersonalMemoMock).toHaveBeenCalledExactlyOnceWith(api.current, 'Draft memo', saved.updatedAt);
+    fireEvent.click(screen.getByRole('button', { name: 'personalWidgets.memo.replaceSavedCopy' }));
+    await waitFor(() => expect(screen.queryByRole('alert')).toBeNull());
+    expect(savePersonalMemoMock).toHaveBeenLastCalledWith(api.current, 'Draft memo', latest.updatedAt);
   });
 
   it('renders the to-do panel and adds a to-do', async () => {

@@ -11,7 +11,7 @@ use serde_json::{Value, json};
 use sqlx::PgPool;
 
 use crate::error::{ApiError, ApiResult};
-use crate::event_time::event_time_zone;
+use crate::event_time::{event_time_zone, local_day_start};
 use crate::planner::{PlannerEvent, list_owner_events};
 
 const MAX_ITEMS: usize = 5;
@@ -27,25 +27,24 @@ pub struct HomeCardRequest {
 
 /// The UTC instants of the local day `date` in `zone` (stored instants are naive UTC).
 fn day_bounds(date: NaiveDate, zone: chrono_tz::Tz) -> (NaiveDateTime, NaiveDateTime) {
-    let start = |day: NaiveDate| {
-        zone.from_local_datetime(&day.and_hms_opt(0, 0, 0).expect("midnight"))
-            .earliest()
-            .map(|at| at.with_timezone(&Utc).naive_utc())
-            .unwrap_or_else(|| day.and_hms_opt(0, 0, 0).expect("midnight"))
-    };
+    let start = |day| local_day_start(day, Some(zone.name()));
     (start(date), start(date + Duration::days(1)))
 }
 
-/// Whether `event` takes place on `date`. All-day events keep their dates as
-/// naive midnights; timed events overlap the local day's instants.
+/// All-day events keep their dates in the event's zone. Timed events overlap
+/// the viewer's local day.
 fn on_day(event: &PlannerEvent, date: NaiveDate, bounds: (NaiveDateTime, NaiveDateTime)) -> bool {
     if event.all_day {
-        event.start_at.date() <= date
-            && date
-                < event
-                    .end_at
-                    .date()
-                    .max(event.start_at.date() + Duration::days(1))
+        let zone = event_time_zone(Some(&event.time_zone));
+        let start = Utc
+            .from_utc_datetime(&event.start_at)
+            .with_timezone(&zone)
+            .date_naive();
+        let end = Utc
+            .from_utc_datetime(&event.end_at)
+            .with_timezone(&zone)
+            .date_naive();
+        start <= date && date < end.max(start + Duration::days(1))
     } else {
         event.end_at > bounds.0 && event.start_at < bounds.1
     }
@@ -67,7 +66,8 @@ pub fn card(today: &[PlannerEvent], english: bool) -> Value {
             json!({
                 "title": event.title,
                 "subtitle": subtitle,
-                "at": (!event.all_day).then(|| Utc.from_utc_datetime(&event.start_at).to_rfc3339()),
+                "at": (!event.all_day && event.start_has_time)
+                    .then(|| Utc.from_utc_datetime(&event.start_at).to_rfc3339()),
                 "path": format!("/?event={}", event.id),
             })
         })
@@ -95,7 +95,7 @@ pub async fn home_card(
     let zone = event_time_zone(request.time_zone.as_deref());
     let date = Utc::now().with_timezone(&zone).date_naive();
     let local = day_bounds(date, zone);
-    // Widen by a day on both sides so all-day events (naive dates) are found too.
+    // Widen for all-day events stored in a time zone different from the viewer's.
     let events = list_owner_events(
         &pool,
         &identity.user_id,
@@ -155,16 +155,18 @@ mod tests {
             bounds
         ));
         // All-day events by their dates only: the 22nd yes, the 21st no.
-        assert!(on_day(
-            &event("c", true, "2026-11-22 00:00", "2026-11-23 00:00"),
-            date,
-            bounds
-        ));
-        assert!(!on_day(
-            &event("d", true, "2026-11-21 00:00", "2026-11-22 00:00"),
-            date,
-            bounds
-        ));
+        let all_day = |start, end| {
+            let bounds =
+                crate::event_time::parse_event_bounds(true, start, end, Some("Asia/Seoul"))
+                    .unwrap();
+            PlannerEvent {
+                start_at: bounds.start_at,
+                end_at: bounds.end_at,
+                ..event("c", true, "2026-11-22 00:00", "2026-11-23 00:00")
+            }
+        };
+        assert!(on_day(&all_day("2026-11-22", "2026-11-23"), date, bounds));
+        assert!(!on_day(&all_day("2026-11-21", "2026-11-22"), date, bounds));
     }
 
     #[test]

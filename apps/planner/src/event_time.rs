@@ -225,7 +225,7 @@ fn local_date(value: NaiveDateTime, time_zone: Option<&str>) -> NaiveDate {
     utc.with_timezone(&event_time_zone(time_zone)).date_naive()
 }
 
-fn local_day_start(value: NaiveDate, time_zone: Option<&str>) -> NaiveDateTime {
+pub fn local_day_start(value: NaiveDate, time_zone: Option<&str>) -> NaiveDateTime {
     local_to_utc(event_time_zone(time_zone), value.and_time(NaiveTime::MIN))
 }
 

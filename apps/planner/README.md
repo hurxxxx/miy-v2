@@ -33,7 +33,7 @@ UI는 `runtime.api('/v1/...')`로 부르고, 게이트웨이가 `/api/v1/...`로
 | `PATCH /v1/personal-widgets/todos/{id}` | 제목·완료 변경 |
 | `DELETE /v1/personal-widgets/todos/{id}` | 삭제(204) |
 | `GET /v1/personal-widgets/memo` | 본인 메모(없으면 빈 메모) |
-| `PUT /v1/personal-widgets/memo` | 메모 저장. 본문 최대 20,000자 |
+| `PUT /v1/personal-widgets/memo` | 메모 저장. `{body, expectedUpdatedAt}`에서 `body`는 최대 20,000자, `expectedUpdatedAt`은 마지막 조회에서 받은 `updatedAt`(첫 저장은 `null`). 이후 다른 화면에서 변경한 경우 409 `personal_widgets_memo_conflict` |
 | `POST /v1/home-card` | 포털 홈 요약 카드(manifest `platformEndpoints.homeCard`). 플랫폼 호출(`Identity.context.platform`)만 받고 그 밖은 403 `planner_platform_only`. 본문 `{timeZone, locale}`의 시간대로 오늘 일정을 고른다. 응답 `{title:"오늘 일정", count, items[≤5]: {title, subtitle(장소·종일), at(시각 일정의 시작), path:"/?event=<id>"}}` |
 | `POST /v1/search` | 포털 통합 검색(manifest `platformEndpoints.search`). 플랫폼 호출만 받는다. 본문 `{query, limit, locale}`. 제목·장소·설명이 맞는 본인 일정(최근 시작 순)과 제목이 맞는 본인 할 일을 합쳐 최대 `limit`개(최대 10). 항목 `{title, snippet, at, path, kind}`(일정은 `/?event=<id>`, 할 일은 `/widgets/todos`) |
 
