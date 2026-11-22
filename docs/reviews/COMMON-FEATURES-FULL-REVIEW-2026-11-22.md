@@ -94,8 +94,8 @@
 | PMS에서 `pnpm exec tsc --noEmit`와 `pnpm test`, 임시 `--outDir` 출력 Vite 빌드, 현재 저장소 CLI의 `miy app check`, 일회용 PostgreSQL 18에서 `cargo test --locked --offline -- --include-ignored --test-threads=1` | `PASS`. 웹 523건, 앱 검사 11개, Rust/HTTP 52건. jsdom 탐색 경고와 번들 크기 경고가 있었다. 앱 검사에는 첨부 장애 복구 인수가 별도로 남는다. |
 | 게시판·메신저·플래너에서 현재 저장소 CLI로 `miy app check`, 게시판·메신저에서 임시 `--outDir`로 `pnpm exec vite build` | `PASS`. 앱마다 11개 검사. 메신저 앱 로컬 `.miy-tools/miy app check`는 `invalid_manifest`로 `FAIL`했다. 저장소 CLI로 재실행해 통과했다. 두 파일은 같은 0.17.0 버전을 표시했다. |
 | 작업 복사본에서 메신저 지연 응답·IME·이력·안전 관리, 게시판 지연 응답 Vitest | 메신저 9개 문제 상황과 게시판 1개 문제 상황을 재현했다. 게시판은 사용자 기대를 단언한 검사 1건이 `FAIL`했다. 처음 사용한 게시판 검색 폼은 로딩 중 화면에서 내려가 재현 경로를 게시글 이동으로 바꿨다. 메신저 탐색 검사는 대상 대화 구분을 수정한 뒤 재현했다. |
-| 임시 `node --input-type=module`의 Playwright 진단 | Chromium에서 통합 검색 재시도·설정 응답 순서·알림 목록 갱신, 임시 Vite에서 공용 프롬프트·확인·닫기 이름 문제를 관찰했다. 알림 진단은 첫 버튼 선택자가 넓어 시간 초과로 `FAIL)한 뒤 단일 항목으로 좁혀 재현했다. 브라우저 3종에서 미리보기 스타일과 프레임 스타일이 달랐다. 모두 격리 화면 및 모의 HTTP 검사다. |
-| `TZ=UTC node --input-type=module`에서 Vite `transformWithOxc`로 플래너 날짜 함수 호출 | 포털·브라우저 시간대가 다른 경우 시각이 변하는 동작을 관찰했다. 조회의 UTC 시작 경계를 별도로 계산했다. 첫 설정의 Node TypeScript 직접 실행과 이전 TypeScript 변환 API 호출은 `FAIL)했고 설치된 Vite 컴파일러로 재실행했다. |
+| 임시 `node --input-type=module`의 Playwright 진단 | Chromium에서 통합 검색 재시도·설정 응답 순서·알림 목록 갱신, 임시 Vite에서 공용 프롬프트·확인·닫기 이름 문제를 관찰했다. 알림 진단은 첫 버튼 선택자가 넓어 시간 초과로 `FAIL`한 뒤 단일 항목으로 좁혀 재현했다. 브라우저 3종에서 미리보기 스타일과 프레임 스타일이 달랐다. 모두 격리 화면 및 모의 HTTP 검사다. |
+| `TZ=UTC node --input-type=module`에서 Vite `transformWithOxc`로 플래너 날짜 함수 호출 | 포털·브라우저 시간대가 다른 경우 시각이 변하는 동작을 관찰했다. 조회의 UTC 시작 경계를 별도로 계산했다. 첫 설정의 Node TypeScript 직접 실행과 이전 TypeScript 변환 API 호출은 `FAIL`했고 설치된 Vite 컴파일러로 재실행했다. |
 | 임시 Node 스크립트의 Playwright `window.open` 검사 | 첫 실행 `FAIL` (`playwright` 직접 import 경로). 저장소의 `@playwright/test`로 다시 실행해 세 브라우저에서 새 탭 열림과 `null` 반환을 함께 관찰했다. |
 | `git diff --check c842615..f43a232`, `git diff --check a00f6cc..f43a232` | 두 번 모두 `FAIL`. 생성 CLI 안내는 첫 구간에서 9개·7,749곳, 전체 구간에서 플래너까지 12개·10,332곳에 정렬용 끝 공백이 있다. 이 생성 경로를 제외한 두 구간의 재검사는 `PASS`이며, 생성 파일은 원본 해시와 일치했다. |
 
