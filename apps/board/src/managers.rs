@@ -26,12 +26,12 @@ use crate::{
     time::now_utc,
 };
 
-pub async fn is_manager(pool: &PgPool, user_id: &str) -> ApiResult<bool> {
+pub async fn is_manager<'e>(executor: impl sqlx::PgExecutor<'e>, user_id: &str) -> ApiResult<bool> {
     Ok(sqlx::query_scalar::<_, bool>(
         "SELECT EXISTS(SELECT 1 FROM board_managers WHERE user_id = $1)",
     )
     .bind(user_id)
-    .fetch_one(pool)
+    .fetch_one(executor)
     .await?)
 }
 
@@ -45,6 +45,13 @@ pub async fn require_manager(pool: &PgPool, identity: &Identity) -> ApiResult<()
     } else {
         Err(manager_required())
     }
+}
+
+async fn lock_manager_changes(tx: &mut sqlx::Transaction<'_, sqlx::Postgres>) -> ApiResult<()> {
+    sqlx::query("LOCK TABLE board_managers IN SHARE ROW EXCLUSIVE MODE")
+        .execute(&mut **tx)
+        .await?;
+    Ok(())
 }
 
 #[derive(Serialize)]
@@ -75,9 +82,7 @@ pub async fn bootstrap(
     Extension(identity): Extension<Identity>,
 ) -> ApiResult<impl IntoResponse> {
     let mut tx = state.pool.begin().await?;
-    sqlx::query("LOCK TABLE board_managers IN SHARE ROW EXCLUSIVE MODE")
-        .execute(&mut *tx)
-        .await?;
+    lock_manager_changes(&mut tx).await?;
     let any: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM board_managers)")
         .fetch_one(&mut *tx)
         .await?;
@@ -166,6 +171,11 @@ pub async fn add_manager(
             "The person was not found in the directory.",
         ));
     }
+    let mut tx = state.pool.begin().await?;
+    lock_manager_changes(&mut tx).await?;
+    if !is_manager(&mut *tx, &identity.user_id).await? {
+        return Err(manager_required());
+    }
     sqlx::query(
         "INSERT INTO board_managers (user_id, granted_by, created_at) VALUES ($1, $2, $3) \
          ON CONFLICT (user_id) DO NOTHING",
@@ -173,8 +183,9 @@ pub async fn add_manager(
     .bind(&user_id)
     .bind(&identity.user_id)
     .bind(now_utc())
-    .execute(&state.pool)
+    .execute(&mut *tx)
     .await?;
+    tx.commit().await?;
     Ok(StatusCode::CREATED)
 }
 
@@ -184,26 +195,14 @@ pub async fn remove_manager(
     Path(user_id): Path<String>,
 ) -> ApiResult<StatusCode> {
     let mut tx = state.pool.begin().await?;
-    sqlx::query("LOCK TABLE board_managers IN SHARE ROW EXCLUSIVE MODE")
-        .execute(&mut *tx)
-        .await?;
-    let caller: bool =
-        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM board_managers WHERE user_id = $1)")
-            .bind(&identity.user_id)
-            .fetch_one(&mut *tx)
-            .await?;
-    if !caller {
+    lock_manager_changes(&mut tx).await?;
+    if !is_manager(&mut *tx, &identity.user_id).await? {
         return Err(manager_required());
     }
     let count: i64 = sqlx::query_scalar("SELECT count(*) FROM board_managers")
         .fetch_one(&mut *tx)
         .await?;
-    let exists: bool =
-        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM board_managers WHERE user_id = $1)")
-            .bind(&user_id)
-            .fetch_one(&mut *tx)
-            .await?;
-    if !exists {
+    if !is_manager(&mut *tx, &user_id).await? {
         return Err(ApiError::not_found(
             "board.manager_not_found",
             "The board manager was not found.",

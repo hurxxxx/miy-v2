@@ -244,7 +244,6 @@ fn platform_only(identity: &Identity) -> ApiResult<()> {
 pub struct CheckItem {
     group_key: String,
     #[serde(default)]
-    #[allow(dead_code)]
     resource_id: Option<String>,
 }
 
@@ -271,31 +270,49 @@ pub async fn notification_check(
 ) -> ApiResult<Json<CheckResponse>> {
     platform_only(&identity)?;
     let viewer = community::viewer(&state.pool, &identity).await?;
-    let direct_spaces: BTreeSet<String> = spaces::direct_spaces_of(&state.pool, &identity)
+    let notice_ids: Vec<&str> = payload
+        .items
+        .iter()
+        .take(500)
+        .filter_map(|item| item.group_key.strip_prefix("notice:"))
+        .collect();
+    let allowed_notices: BTreeSet<String> = if notice_ids.is_empty() {
+        BTreeSet::new()
+    } else {
+        sqlx::query_scalar(
+            "SELECT a.id FROM announcements a WHERE a.id = ANY($1) AND (a.scope = 'company' \
+               OR (a.scope = 'workspace' AND EXISTS (SELECT 1 FROM app.miy_acl_grants g \
+                 WHERE g.installation_id = $2::uuid AND g.environment = $3 AND g.kind = $4 \
+                   AND g.resource_id = a.workspace_id AND g.subject_kind = 'user' AND g.subject_id = $5)))",
+        )
+        .bind(&notice_ids)
+        .bind(&identity.context.installation_id)
+        .bind(identity.context.environment.as_deref())
+        .bind(spaces::SPACE_KIND)
+        .bind(&identity.user_id)
+        .fetch_all(&state.pool)
         .await?
         .into_iter()
-        .collect();
+        .collect()
+    };
     let mut allowed = Vec::new();
     for item in payload.items.iter().take(500) {
-        let ok = if let Some(post_id) = item.group_key.strip_prefix("post:") {
-            match community::load_post(&state.pool, post_id).await? {
+        let Some((kind, id)) = item.group_key.split_once(':') else {
+            continue;
+        };
+        if item.resource_id.as_deref() != Some(id) {
+            continue;
+        }
+        let ok = if kind == "post" {
+            match community::load_post(&state.pool, id).await? {
                 Some(loaded) => {
                     loaded.channel.active
                         && community::post_read_locked_reason(&loaded, &viewer).is_none()
                 }
                 None => false,
             }
-        } else if let Some(notice_id) = item.group_key.strip_prefix("notice:") {
-            let row: Option<(String, Option<String>)> =
-                sqlx::query_as("SELECT scope, workspace_id FROM announcements WHERE id = $1")
-                    .bind(notice_id)
-                    .fetch_optional(&state.pool)
-                    .await?;
-            match row {
-                Some((scope, _)) if scope == "company" => true,
-                Some((_, Some(space))) => direct_spaces.contains(&space),
-                _ => false,
-            }
+        } else if kind == "notice" {
+            allowed_notices.contains(id)
         } else {
             false
         };

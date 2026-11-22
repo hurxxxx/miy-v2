@@ -75,6 +75,23 @@ describe('community API channel cache', () => {
     expect(afterEvent.channels[0].key).toBe('qna');
   });
 
+  it('does not cache an older channel request after invalidation', async () => {
+    const release = { current: () => {} };
+    api.mockImplementationOnce(() => new Promise((resolve) => {
+      release.current = () => resolve({ channels: [channel({ key: 'old' })] });
+    }));
+    const old = listCommunityChannels(runtimeApi());
+    window.dispatchEvent(new Event(COMMUNITY_CHANNELS_CHANGED_EVENT));
+    api.mockResolvedValueOnce({ channels: [channel({ key: 'current' })] });
+    await listCommunityChannels(runtimeApi());
+    release.current();
+    await old;
+
+    const cached = await listCommunityChannels(runtimeApi());
+    expect(cached.channels[0].key).toBe('current');
+    expect(api).toHaveBeenCalledTimes(2);
+  });
+
   it('resolves community post media with the post password context', async () => {
     vi.stubGlobal('URL', Object.assign(URL, { createObjectURL: vi.fn(() => 'blob:local-1') }));
     const fileApi = vi.fn().mockResolvedValue(

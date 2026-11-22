@@ -31,7 +31,7 @@ UI는 `runtime.api('/v1/...')`로 부르고 게이트웨이가 `/api/v1/...`로 
 | `GET /v1/community/channels` | 활성 채널(순서 → 이름) |
 | `GET·POST /v1/community/admin/channels` | 전체 채널, 채널 추가(201). 게시판 관리자 |
 | `PATCH·DELETE /v1/community/admin/channels/{key}` | 채널 수정, 삭제(204; 기본 채널·글 있는 채널은 409) |
-| `GET /v1/community/channels/{key}/posts?page&page_size&q` | 글 목록(최신순, 기본 10개·최대 100). `q`는 제목·작성자·번호(`37`, `#37`) |
+| `GET /v1/community/channels/{key}/posts?page&page_size&q` | 글 목록(최신순, 기본 10개·최대 100). `q`는 볼 수 있는 제목·작성자·번호(`37`, `#37`)에만 적용한다. 완전 비공개·완전 익명 채널의 검색은 게시판 관리자만 쓸 수 있다 |
 | `POST /v1/community/channels/{key}/posts` | 글 작성(201). 다른 글이 번호를 잡고 있으면 즉시 409 `community_post_number_busy` |
 | `GET·PATCH·DELETE /v1/community/posts/{id}` | 글(댓글 포함), 수정, 삭제(204) |
 | `POST /v1/community/posts/{id}/read` | 읽음 표시(204) |
@@ -39,12 +39,12 @@ UI는 `runtime.api('/v1/...')`로 부르고 게이트웨이가 `/api/v1/...`로 
 | `POST /v1/community/posts/{id}/comments` | 댓글·답글 작성(201) `{body, isAnonymous, parentCommentId?, password?}` |
 | `PATCH·DELETE /v1/community/posts/{id}/comments/{commentId}` | 댓글 수정, 삭제(본문을 비우는 삭제, 204) |
 | `GET·POST /v1/community/admin/filter-terms`, `DELETE …/{id}` | 금칙어 목록·추가·삭제. 게시판 관리자 |
-| `POST /v1/media/upload` | 이미지 예약 `{requestId, name, mime, size}` → `{id, url:"media:<id>"}`(PNG·JPEG·GIF·WebP, 10MiB) |
+| `POST /v1/media/upload` | 이미지 예약 `{requestId, name, mime, size}` → `{id, url:"media:<id>", status}`(PNG·JPEG·GIF·WebP, 10MiB). 응답이 불확실하면 같은 요청 ID를 사용한다 |
 | `PUT·GET /files/media/{id}/content` | `runtime.fileApi`: 이미지 올리기(올린 사람), 내려받기 |
 | `POST /files/community/posts/{postId}/media/{id}` | `runtime.fileApi`: 글·댓글 이미지 내려받기 `{password?}` |
-| `GET·POST /v1/announcements?scope=company&limit` | 전사 공지 목록·작성 |
+| `GET·POST /v1/announcements?scope=company&limit&offset` | 전사 공지 목록·작성. 목록 응답의 `hasMore`로 다음 페이지를 판단한다 |
 | `GET·PATCH·DELETE /v1/announcements/{id}` | 전사 공지 |
-| `GET·POST /v1/spaces/{spaceId}/announcements?scope&limit` | 공간 공지(`scope=workspace`, 기본) 또는 전사 공지 목록·작성 |
+| `GET·POST /v1/spaces/{spaceId}/announcements?scope&limit&offset` | 공간 공지(`scope=workspace`, 기본) 또는 전사 공지 목록·작성 |
 | `GET·PATCH·DELETE /v1/spaces/{spaceId}/announcements/{id}` | 공간 문맥의 공지 |
 | `GET /v1/board/notices/recent?limit` | 읽을 수 있는 최근 공지(기본 5·최대 20). 홈 공지 카드(M5)용 읽기 전용 |
 | `GET·POST /v1/spaces`, `PATCH·DELETE /v1/spaces/{id}` | 내 공간 목록, 공간 만들기(게시판 관리자), 수정·삭제(공간 관리자) |

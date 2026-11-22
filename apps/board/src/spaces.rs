@@ -170,23 +170,6 @@ pub async fn direct_user_members(
     .await?)
 }
 
-/// Spaces in which the caller holds a direct user grant (platform calls).
-pub async fn direct_spaces_of(pool: &PgPool, identity: &Identity) -> ApiResult<Vec<String>> {
-    let Some(environment) = identity.context.environment.as_deref() else {
-        return Ok(Vec::new());
-    };
-    Ok(sqlx::query_scalar(
-        "SELECT resource_id FROM app.miy_acl_grants WHERE installation_id = $1::uuid AND environment = $2 \
-         AND kind = $3 AND subject_kind = 'user' AND subject_id = $4",
-    )
-    .bind(&identity.context.installation_id)
-    .bind(environment)
-    .bind(SPACE_KIND)
-    .bind(&identity.user_id)
-    .fetch_all(pool)
-    .await?)
-}
-
 pub async fn list_spaces(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,

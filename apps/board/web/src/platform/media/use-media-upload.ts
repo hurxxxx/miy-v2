@@ -1,7 +1,7 @@
-import { useCallback, useMemo } from 'react';
+import { useCallback, useMemo, useRef } from 'react';
 import { requestId } from '@miy/ui';
 
-import { apiFetchJson } from '../api/client';
+import { ApiRequestError, apiFetchJson } from '../api/client';
 import { i18n } from '../i18n';
 import { useRuntime } from '../runtime/runtime-context';
 
@@ -17,39 +17,64 @@ import { useRuntime } from '../runtime/runtime-context';
 export interface MediaUploadResponse {
   id: string;
   url: string;
+  status: string;
 }
 
 export function useMediaUpload() {
   const runtime = useRuntime();
   const { api, fileApi } = runtime;
+  const requestIds = useRef(new WeakMap<File, string>());
 
   const uploadFile = useCallback(
     async (file: File): Promise<string> => {
-      const reserved = await apiFetchJson<MediaUploadResponse>(
-        '/v1/media/upload',
-        api,
-        {
-          method: 'POST',
-          body: JSON.stringify({
-            requestId: requestId(),
-            name: file.name || 'image',
-            mime: file.type,
-            size: file.size,
-          }),
-        },
-      );
-      const response = await fileApi(
-        `/media/${encodeURIComponent(reserved.id)}/content`,
-        {
-          method: 'PUT',
-          body: file,
-          headers: { 'Content-Type': 'application/octet-stream' },
-        },
-      );
-      if (!response.ok) {
-        throw new Error(i18n.t('apps:community.editor.imageUploadFailed'));
+      const id = requestIds.current.get(file) ?? requestId();
+      requestIds.current.set(file, id);
+      let reserved: MediaUploadResponse | undefined;
+      const upload = async () => {
+        reserved ??= await apiFetchJson<MediaUploadResponse>(
+          '/v1/media/upload',
+          api,
+          {
+            method: 'POST',
+            body: JSON.stringify({
+              requestId: id,
+              name: file.name || 'image',
+              mime: file.type,
+              size: file.size,
+            }),
+          },
+        );
+        if (reserved.status === 'ready' || reserved.status === 'attached') {
+          return reserved.url;
+        }
+        const response = await fileApi(
+          `/media/${encodeURIComponent(reserved.id)}/content`,
+          {
+            method: 'PUT',
+            body: file,
+            headers: { 'Content-Type': 'application/octet-stream' },
+          },
+        );
+        if (!response.ok) {
+          throw new ApiRequestError(
+            response.status,
+            i18n.t('apps:community.editor.imageUploadFailed'),
+          );
+        }
+        return reserved.url;
+      };
+
+      try {
+        return await upload();
+      } catch (error) {
+        if ((error instanceof Error && error.name === 'AbortError') ||
+            (error instanceof ApiRequestError && error.status > 0 && error.status < 500)) {
+          throw error;
+        }
+        // Replay an uncertain reservation or transfer against the original
+        // request. The server returns the state even after storing the bytes.
+        return upload();
       }
-      return reserved.url; // "media:{id}"
     },
     [api, fileApi],
   );

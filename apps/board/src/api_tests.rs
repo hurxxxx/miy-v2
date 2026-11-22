@@ -1172,8 +1172,12 @@ async fn list_posts_search_does_not_match_hidden_admin_only_content() {
     assert_eq!(list(&reader, &channel, "").await["total"], 1);
     assert_eq!(list(&reader, &channel, "?q=needle").await["total"], 0);
     let by_author = list(&reader, &channel, &format!("?q={author_name}")).await;
-    assert_eq!(by_author["total"], 1);
-    assert_eq!(by_author["posts"][0]["authorName"], Value::Null);
+    assert_eq!(by_author["total"], 0);
+    assert_eq!(by_author["posts"], json!([]));
+    let by_number = list(&reader, &channel, "?q=%231").await;
+    assert_eq!(by_number["total"], 1);
+    assert_eq!(by_number["posts"][0]["authorName"], Value::Null);
+    assert_eq!(by_number["posts"][0]["title"], "");
     let admin_search = list(&admin, &channel, "?q=needle").await;
     assert_eq!(admin_search["total"], 1);
     assert_eq!(admin_search["posts"][0]["title"], "Needle private title");
@@ -1621,6 +1625,15 @@ async fn secret_post_is_masked_until_author_admin_or_password_unlock() {
     assert_eq!(masked["locked"], true);
     assert_eq!(masked["title"], "");
     assert_eq!(masked["body"], "");
+    let term = "?q=%EB%B9%84%EB%B0%80";
+    let reader_search = list(&other, &channel, term).await;
+    assert_eq!(reader_search["total"], 0);
+    assert_eq!(reader_search["posts"], json!([]));
+    for visible_to in [&author, &admin] {
+        let visible_search = list(visible_to, &channel, term).await;
+        assert_eq!(visible_search["total"], 1);
+        assert_eq!(visible_search["posts"][0]["title"], "비밀 제안");
+    }
     let locked = expect(
         get(&other, &format!("/v1/community/posts/{id}")).await,
         StatusCode::OK,
@@ -2472,7 +2485,7 @@ async fn company_announcements_are_visible_everywhere_and_need_a_board_manager()
         post(
             &manager,
             &format!("/v1/spaces/{space_a}/announcements"),
-            json!({"title": "팀 공지"}),
+            json!({"title": "팀 공지", "isPinned": true}),
         )
         .await,
         StatusCode::CREATED,
@@ -2495,6 +2508,27 @@ async fn company_announcements_are_visible_everywhere_and_need_a_board_manager()
         .collect();
     assert!(ids.contains(&company_id));
     assert!(!ids.contains(&workspace_only["id"].as_str().unwrap()));
+    let newer = expect(
+        post(
+            &manager,
+            &format!("/v1/spaces/{space_a}/announcements"),
+            json!({"title": "두 번째 팀 공지"}),
+        )
+        .await,
+        StatusCode::CREATED,
+    )
+    .await;
+    let space_notices = format!("/v1/spaces/{space_a}/announcements?scope=workspace&limit=1");
+    let first = expect(get(&manager, &space_notices).await, StatusCode::OK).await;
+    assert_eq!(first["items"][0]["id"], workspace_only["id"]);
+    assert_eq!(first["hasMore"], true);
+    let second = expect(
+        get(&manager, &format!("{space_notices}&offset=1")).await,
+        StatusCode::OK,
+    )
+    .await;
+    assert_eq!(second["items"][0]["id"], newer["id"]);
+    assert_eq!(second["hasMore"], false);
     let workspace_list = expect(
         get(
             &manager,
@@ -2711,7 +2745,7 @@ async fn notices_notify_their_readers_and_platform_rechecks_follow_access() {
     let items = json!({"items": [
         {"groupKey": key, "resourceId": notice_id},
         {"groupKey": company_key, "resourceId": company_id},
-        {"groupKey": post_key, "resourceId": "p"},
+        {"groupKey": post_key, "resourceId": created["id"]},
         {"groupKey": "notice:missing", "resourceId": "m"},
         {"groupKey": "other:thing", "resourceId": "o"},
     ]});

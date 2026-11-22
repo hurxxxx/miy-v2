@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useId, useMemo, useState } from 'react';
+import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   ArrowLeft,
@@ -157,7 +157,8 @@ export function CommunityView({ postId: routePostId }: { postId?: string | null 
   const [postsError, setPostsError] = useState<string | null>(null);
   const [postSearch, setPostSearch] = useState('');
   const [appliedPostSearch, setAppliedPostSearch] = useState('');
-  const [detail, setDetail] = useState<CommunityPostDetail | null>(null);
+  const [loadedDetail, setDetail] = useState<CommunityPostDetail | null>(null);
+  const detail = loadedDetail?.id === selectedPostId ? loadedDetail : null;
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState<string | null>(null);
   const [composerOpen, setComposerOpen] = useState(false);
@@ -169,6 +170,7 @@ export function CommunityView({ postId: routePostId }: { postId?: string | null 
   const [unlockedPasswords, setUnlockedPasswords] = useState<
     Record<string, string>
   >({});
+  const unlockedPassword = selectedPostId ? unlockedPasswords[selectedPostId] : undefined;
   const [commentBody, setCommentBody] = useState('');
   const [commentAnonymous, setCommentAnonymous] = useState(false);
   const [replyParentId, setReplyParentId] = useState<string | null>(null);
@@ -197,6 +199,8 @@ export function CommunityView({ postId: routePostId }: { postId?: string | null 
       submittingPost ||
       commentBody.trim() !== '' ||
       submittingComment ||
+      unlockPassword.trim() !== '' ||
+      unlocking ||
       editingPost ||
       editingCommentId !== null,
   );
@@ -208,14 +212,12 @@ export function CommunityView({ postId: routePostId }: { postId?: string | null 
     ? t('community.readOnlyAdminNotice')
     : t('community.readOnlyNotice');
   const searchDisabled = Boolean(
-    activeChannel?.adminOnlyContent &&
-      activeChannel.forceAnonymous &&
-      !canSearchHiddenCommunityFields,
+    activeChannel?.adminOnlyContent && activeChannel.forceAnonymous && !isBoardManager,
   );
   const searchPlaceholderKey = searchDisabled
     ? 'community.searchDisabledPlaceholder'
     : activeChannel?.adminOnlyContent && !canSearchHiddenCommunityFields
-      ? 'community.searchAuthorPlaceholder'
+      ? 'community.searchNumberPlaceholder'
       : activeChannel?.forceAnonymous && !canSearchHiddenCommunityFields
         ? 'community.searchTitlePlaceholder'
         : 'community.searchPlaceholder';
@@ -228,8 +230,8 @@ export function CommunityView({ postId: routePostId }: { postId?: string | null 
   const activeChannelDescription =
     activeChannel?.description || t('community.channelFallback');
   const hasPostSearch =
-    !searchDisabled &&
-    (postSearch.trim().length > 0 || appliedPostSearch.length > 0);
+    !searchDisabled && (postSearch.trim().length > 0 || appliedPostSearch.length > 0);
+  const search = searchDisabled ? '' : appliedPostSearch;
   const pageSizeSelectOptions = useMemo(
     () =>
       PAGE_SIZE_OPTIONS.map((size) => ({
@@ -238,6 +240,20 @@ export function CommunityView({ postId: routePostId }: { postId?: string | null 
       })),
     [t],
   );
+
+  const view = useMemo(
+    () => ({ activeChannelKey, search, selectedPostId, pageSize }),
+    [activeChannelKey, search, selectedPostId, pageSize],
+  );
+  const activeView = useRef<typeof view | null>(view);
+  useLayoutEffect(() => {
+    activeView.current = view;
+    return () => {
+      activeView.current = null;
+    };
+  }, [view]);
+  const listRequest = useRef(0);
+  const detailRequest = useRef(0);
 
   const openPost = useCallback(
     (
@@ -281,48 +297,66 @@ export function CommunityView({ postId: routePostId }: { postId?: string | null 
 
   const loadPosts = useCallback(
     async (targetPage: number) => {
+      if (activeView.current !== view) return;
+      const request = ++listRequest.current;
+      const isCurrent = () => activeView.current === view && listRequest.current === request;
       setPostsLoading(true);
       setPostsError(null);
       try {
-        const response = await listCommunityPosts(api, activeChannelKey, {
-          page: targetPage,
-          pageSize,
-          search: searchDisabled ? '' : appliedPostSearch,
-        });
+        const fetchPage = (page: number) =>
+          listCommunityPosts(api, view.activeChannelKey, {
+            page,
+            pageSize: view.pageSize,
+            search: view.search,
+          });
+        let response = await fetchPage(targetPage);
+        if (!isCurrent()) return;
         if (response.posts.length === 0 && targetPage > 1) {
-          await loadPosts(targetPage - 1);
-          return;
+          const lastPage = Math.max(1, Math.ceil(response.total / view.pageSize));
+          response = await fetchPage(Math.min(targetPage - 1, lastPage));
+          if (!isCurrent()) return;
         }
         setPosts(response.posts);
         setTotal(response.total);
         setPage(response.page);
       } catch {
+        if (!isCurrent()) return;
         setPostsError(t('community.errors.postsFailed'));
         setPosts([]);
         setTotal(0);
       } finally {
-        setPostsLoading(false);
+        if (isCurrent()) setPostsLoading(false);
       }
     },
-    [activeChannelKey, appliedPostSearch, pageSize, searchDisabled, t, api],
+    [api, t, view],
   );
 
   const applyPostSearch = useCallback(() => {
     if (searchDisabled) return;
-    setAppliedPostSearch(postSearch.trim());
+    const search = postSearch.trim();
+    if (search === appliedPostSearch) void loadPosts(1);
+    else setAppliedPostSearch(search);
     setPage(1);
-  }, [postSearch, searchDisabled]);
+  }, [appliedPostSearch, loadPosts, postSearch, searchDisabled]);
 
   const reloadDetail = useCallback(
     async (postId: string) => {
-      const password = unlockedPasswords[postId];
-      const nextDetail = password
-        ? await unlockCommunityPost(api, postId, password)
-        : await getCommunityPost(api, postId);
-      setDetail(nextDetail);
-      return nextDetail;
+      if (activeView.current !== view || postId !== view.selectedPostId) return null;
+      const request = ++detailRequest.current;
+      const isCurrent = () => activeView.current === view && detailRequest.current === request;
+      try {
+        const nextDetail = unlockedPassword
+          ? await unlockCommunityPost(api, postId, unlockedPassword)
+          : await getCommunityPost(api, postId);
+        if (!isCurrent()) return null;
+        setDetail(nextDetail);
+        return nextDetail;
+      } catch (error) {
+        if (!isCurrent()) return null;
+        throw error;
+      }
     },
-    [api, unlockedPasswords],
+    [api, unlockedPassword, view],
   );
 
   const resolveDetailFileUrl = useCallback(
@@ -368,8 +402,10 @@ export function CommunityView({ postId: routePostId }: { postId?: string | null 
   useEffect(() => {
     if (!selectedPostId) {
       setDetail(null);
+      setDetailLoading(false);
       return;
     }
+    let cancelled = false;
     setDetailLoading(true);
     setDetailError(null);
     setEditingPost(false);
@@ -377,15 +413,17 @@ export function CommunityView({ postId: routePostId }: { postId?: string | null 
     setReplyParentId(null);
     setCommentBody('');
     setUnlockPassword('');
-    const loadedWithPassword = Boolean(unlockedPasswords[selectedPostId]);
+    setUnlocking(false);
     reloadDetail(selectedPostId)
       .then((nextDetail) => {
+        if (cancelled || !nextDetail) return;
         if (nextDetail.channelKey !== activeChannelKey) {
           openPost(nextDetail.id, nextDetail.channelKey, { replace: true });
         }
-        if (!loadedWithPassword && !nextDetail.locked && !nextDetail.isRead) {
+        if (!unlockedPassword && !nextDetail.locked && !nextDetail.isRead) {
           void markCommunityPostRead(api, nextDetail.id)
             .then(() => {
+              if (cancelled) return;
               setDetail((current) =>
                 current?.id === nextDetail.id
                   ? { ...current, isRead: true }
@@ -401,10 +439,16 @@ export function CommunityView({ postId: routePostId }: { postId?: string | null 
         }
       })
       .catch(() => {
+        if (cancelled) return;
         setDetail(null);
         setDetailError(t('community.errors.detailFailed'));
       })
-      .finally(() => setDetailLoading(false));
+      .finally(() => {
+        if (!cancelled) setDetailLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [
     activeChannelKey,
     openPost,
@@ -412,7 +456,7 @@ export function CommunityView({ postId: routePostId }: { postId?: string | null 
     selectedPostId,
     t,
     api,
-    unlockedPasswords,
+    unlockedPassword,
   ]);
 
   useEffect(() => {
@@ -500,11 +544,14 @@ export function CommunityView({ postId: routePostId }: { postId?: string | null 
             ? postDraft.password
             : null,
       });
+      if (activeView.current !== view) return;
       resetComposer();
       await loadPosts(1);
-      openPost(created.id, created.channelKey);
+      if (activeView.current === view) openPost(created.id, created.channelKey);
     } catch (error) {
-      setFormError(contentErrorMessage(error, t('community.errors.createFailed')));
+      if (activeView.current === view) {
+        setFormError(contentErrorMessage(error, t('community.errors.createFailed')));
+      }
     } finally {
       setSubmittingPost(false);
     }
@@ -520,6 +567,7 @@ export function CommunityView({ postId: routePostId }: { postId?: string | null 
     submittingPost,
     t,
     api,
+    view,
   ]);
 
   const handleUnlock = useCallback(async () => {
@@ -536,6 +584,8 @@ export function CommunityView({ postId: routePostId }: { postId?: string | null 
         ...current,
         [detail.id]: unlockPassword,
       }));
+      if (activeView.current !== view) return;
+      ++detailRequest.current;
       setDetail(unlocked);
       setPosts((current) =>
         current.map((post) =>
@@ -543,11 +593,11 @@ export function CommunityView({ postId: routePostId }: { postId?: string | null 
         ),
       );
     } catch {
-      feedback.error(t('community.errors.unlockFailed'));
+      if (activeView.current === view) feedback.error(t('community.errors.unlockFailed'));
     } finally {
-      setUnlocking(false);
+      if (activeView.current === view) setUnlocking(false);
     }
-  }, [detail, feedback, t, api, unlocking, unlockPassword]);
+  }, [detail, feedback, t, api, unlocking, unlockPassword, view]);
 
   const handleCreateComment = useCallback(async () => {
     if (!detail || submittingComment) return;
@@ -568,14 +618,15 @@ export function CommunityView({ postId: routePostId }: { postId?: string | null 
         parentCommentId: replyParentId,
         password: detail.isSecret ? unlockedPasswords[detail.id] : null,
       });
+      if (activeView.current !== view) return;
       setCommentBody('');
       setReplyParentId(null);
       await reloadDetail(detail.id);
       await loadPosts(page);
     } catch (error) {
-      setCommentError(
-        contentErrorMessage(error, t('community.errors.commentFailed')),
-      );
+      if (activeView.current === view) {
+        setCommentError(contentErrorMessage(error, t('community.errors.commentFailed')));
+      }
     } finally {
       setSubmittingComment(false);
     }
@@ -593,6 +644,7 @@ export function CommunityView({ postId: routePostId }: { postId?: string | null 
     t,
     api,
     unlockedPasswords,
+    view,
   ]);
 
   const startEditPost = useCallback(() => {
@@ -609,11 +661,14 @@ export function CommunityView({ postId: routePostId }: { postId?: string | null 
         title: editPostTitle.trim(),
         body: editPostBody.trim(),
       });
+      if (activeView.current !== view) return;
       setEditingPost(false);
       await reloadDetail(detail.id);
       await loadPosts(page);
     } catch (error) {
-      feedback.error(contentErrorMessage(error, t('community.errors.updateFailed')));
+      if (activeView.current === view) {
+        feedback.error(contentErrorMessage(error, t('community.errors.updateFailed')));
+      }
     }
   }, [
     detail,
@@ -625,6 +680,7 @@ export function CommunityView({ postId: routePostId }: { postId?: string | null 
     reloadDetail,
     t,
     api,
+    view,
   ]);
 
   const deletePost = useCallback(async () => {
@@ -636,16 +692,17 @@ export function CommunityView({ postId: routePostId }: { postId?: string | null 
       title: t('community.delete'),
       variant: 'danger',
     });
-    if (!confirmed) return;
+    if (!confirmed || activeView.current !== view) return;
     try {
       await deleteCommunityPost(api, detail.id);
+      if (activeView.current !== view) return;
       setDetail(null);
       openPostList(detail.channelKey);
       await loadPosts(page);
     } catch {
-      feedback.error(t('community.errors.deleteFailed'));
+      if (activeView.current === view) feedback.error(t('community.errors.deleteFailed'));
     }
-  }, [confirm, detail, feedback, loadPosts, openPostList, page, t, api]);
+  }, [confirm, detail, feedback, loadPosts, openPostList, page, t, api, view]);
 
   const startEditComment = useCallback((comment: CommunityComment) => {
     setEditingCommentId(comment.id);
@@ -658,14 +715,15 @@ export function CommunityView({ postId: routePostId }: { postId?: string | null 
       await updateCommunityComment(api, detail.id, editingCommentId, {
         body: editCommentBody.trim(),
       });
+      if (activeView.current !== view) return;
       setEditingCommentId(null);
       await reloadDetail(detail.id);
     } catch (error) {
-      setCommentError(
-        contentErrorMessage(error, t('community.errors.updateFailed')),
-      );
+      if (activeView.current === view) {
+        setCommentError(contentErrorMessage(error, t('community.errors.updateFailed')));
+      }
     }
-  }, [detail, editCommentBody, editingCommentId, reloadDetail, t, api]);
+  }, [detail, editCommentBody, editingCommentId, reloadDetail, t, api, view]);
 
   const deleteComment = useCallback(
     async (commentId: string) => {
@@ -677,16 +735,16 @@ export function CommunityView({ postId: routePostId }: { postId?: string | null 
         title: t('community.delete'),
         variant: 'danger',
       });
-      if (!confirmed) return;
+      if (!confirmed || activeView.current !== view) return;
       try {
         await deleteCommunityComment(api, detail.id, commentId);
         await reloadDetail(detail.id);
         await loadPosts(page);
       } catch {
-        setCommentError(t('community.errors.deleteFailed'));
+        if (activeView.current === view) setCommentError(t('community.errors.deleteFailed'));
       }
     },
-    [confirm, detail, loadPosts, page, reloadDetail, t, api],
+    [confirm, detail, loadPosts, page, reloadDetail, t, api, view],
   );
 
   return (

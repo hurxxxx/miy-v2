@@ -47,6 +47,7 @@ function toAnnouncement(value: AnnouncementOut): Announcement {
 
 export interface AnnouncementsResponse {
   items: Announcement[];
+  hasMore: boolean;
 }
 
 export interface AnnouncementCreateInput {
@@ -98,17 +99,18 @@ async function request<T>(
 export async function listAnnouncements(
   api: AppApi | null | undefined,
   spaceId: string | null | undefined,
-  options: { scope?: AnnouncementScope; limit?: number } = {},
+  options: { scope?: AnnouncementScope; limit?: number; offset?: number } = {},
 ): Promise<AnnouncementsResponse> {
   const params = new URLSearchParams();
   if (options.scope) params.set('scope', options.scope);
   if (options.limit) params.set('limit', String(options.limit));
+  if (options.offset) params.set('offset', String(options.offset));
   const query = params.toString();
-  const response = await request<{ items: AnnouncementOut[] }>(
+  const response = await request<{ items: AnnouncementOut[]; hasMore: boolean }>(
     `${announcementsPath(spaceId)}${query ? `?${query}` : ''}`,
     api,
   );
-  return { items: response.items.map(toAnnouncement) };
+  return { items: response.items.map(toAnnouncement), hasMore: response.hasMore === true };
 }
 
 /** miy: one notice, for a notification link (`/notices/<id>`). */

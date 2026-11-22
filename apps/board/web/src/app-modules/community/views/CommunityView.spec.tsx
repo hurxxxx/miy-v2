@@ -1,4 +1,5 @@
 import {
+  act,
   fireEvent,
   render,
   screen,
@@ -23,6 +24,7 @@ import {
   listCommunityChannels,
   listCommunityPosts,
   markCommunityPostRead,
+  type CommunityPostDetail,
 } from '../api/community-api';
 import { CommunityView } from './CommunityView';
 
@@ -87,8 +89,12 @@ function locationOf(path: string) {
   return { pathname: url.pathname, search: url.search, hash: url.hash };
 }
 
-function Harness({ initialPath }: { initialPath: string }) {
-  const [location, setLocation] = useState(() => locationOf(initialPath));
+function Harness({ initialPath, externalPath }: { initialPath: string; externalPath?: string }) {
+  const [internalLocation, setLocation] = useState(() => locationOf(initialPath));
+  const location = useMemo(
+    () => externalPath ? locationOf(externalPath) : internalLocation,
+    [externalPath, internalLocation],
+  );
   const runtime = useMemo(
     () =>
       ({
@@ -174,6 +180,30 @@ describe('CommunityView', () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
+  });
+
+  it('keeps the selected post when an earlier detail request resolves later', async () => {
+    const template = await getCommunityPost(api, 'post-1');
+    let resolveOldDetail!: (detail: CommunityPostDetail) => void;
+    const oldDetail = new Promise<CommunityPostDetail>((resolve) => {
+      resolveOldDetail = resolve;
+    });
+    vi.mocked(getCommunityPost).mockImplementation((_api, id) =>
+      id === 'post-1'
+        ? oldDetail
+        : Promise.resolve({ ...template, id, title: 'Current post' }),
+    );
+
+    const initialPath = '/community/posts/post-1?channel=general';
+    const { rerender } = render(<Harness initialPath={initialPath} />);
+    await waitFor(() => expect(getCommunityPost).toHaveBeenCalledWith(api, 'post-1'));
+    rerender(<Harness initialPath={initialPath} externalPath="/community/posts/post-2?channel=general" />);
+    await screen.findByRole('heading', { name: 'Current post' });
+
+    await act(async () => resolveOldDetail({ ...template, title: 'Previous post' }));
+    expect(screen.getByRole('heading', { name: 'Current post' })).toBeDefined();
+    expect(screen.queryByRole('heading', { name: 'Previous post' })).toBeNull();
+    expect(markCommunityPostRead).not.toHaveBeenCalledWith(api, 'post-1');
   });
 
   it('marks an opened post as read without blocking the detail on failure', async () => {

@@ -116,7 +116,7 @@ AI-DO 규칙을 바꾸지 않았다. `post_locked_reason`·`post_out`·`comment_
 ### 3.4 이름과 검색
 
 - AI-DO는 `users` 표를 조인해 표시 이름(`display_name`, 없으면 `full_name`)을 얻고 작성자 검색을 `ILIKE`로 했다. miy는 플랫폼 디렉터리(`platform:directory:read`)로 바꿨다. 이름은 ID로 최대 100명씩 읽고, 디렉터리를 읽지 못하면 이름만 비운다(AI-DO의 이름 없음 표시 "알 수 없음"). 요청은 실패시키지 않는다.
-- 작성자 검색은 디렉터리 이름 검색(`q`, 최대 5쪽 500명)으로 ID를 얻어 `author_id = ANY(...)`로 거른다. 디렉터리 검색 규칙(부분 일치 여부 등)은 코어를 따른다. 공개 범위 조건(완전 익명 채널은 작성자 검색 없음, 일반 사용자는 익명 글 제외, 완전 비공개+완전 익명은 검색 불가)은 원본 그대로다.
+- 작성자 검색은 디렉터리 이름 검색(`q`, 최대 5쪽 500명)으로 ID를 얻어 `author_id = ANY(...)`로 거른다. 디렉터리 검색 규칙(부분 일치 여부 등)은 코어를 따른다. 목록의 제목·작성자 표시 권한을 검색과 건수에도 적용한다. 일반 사용자는 완전 비공개 채널에서 번호만 검색하며, 완전 익명도 적용된 채널에서는 검색이 닫힌다.
 - 제목 검색 패턴은 원본처럼 `%`·`_`를 이스케이프하지 않는다.
 - 공지 작성자 이름(`authorName`)은 AI-DO처럼 이름이 없으면 작성자 ID다.
 
@@ -124,9 +124,9 @@ AI-DO 규칙을 바꾸지 않았다. `post_locked_reason`·`post_out`·`comment_
 
 AI-DO는 이미지를 자체 저장소에 올리고 `media:<id>`를 본문에 넣은 뒤, 볼 때 `POST /community/posts/{id}/media/resolve`로 서명된 프록시 URL을 받았다. miy에는 공개 파일 URL이 없다.
 
-1. `POST /v1/media/upload`가 요청 ID를 먼저 앱 DB에 적고(계약: 예약 의도를 먼저 저장) 코어 파일을 예약한다. 응답이 불확실하면 같은 요청 ID로 조회한다. 응답은 AI-DO와 같은 `{id, url: "media:<id>"}`다.
-2. 화면이 `runtime.fileApi('/media/<id>/content', {method:'PUT'})`로 바이트를 보낸다. 올린 사람만 보낼 수 있다.
-3. 글·댓글을 저장할 때 본문의 `media:<id>` 중 올린 사람이 같은 연결 안 된 이미지를 그 글·댓글에 연결한다(AI-DO `sync_embedded_media`). 처음 연결될 때 코어에 한 번 붙인다(`board_media:<id>`). 본문에서 빠진 이미지는 연결만 끊는다(원본과 같음, 바이트는 남는다).
+1. `POST /v1/media/upload`가 요청 ID를 먼저 앱 DB에 적고 코어 파일을 예약한다. 응답이 불확실하면 같은 요청 ID로 조회한다. 응답의 `id`, `url`(`media:<id>`), `status`는 같은 예약을 가리킨다.
+2. 화면이 `runtime.fileApi('/media/<id>/content', {method:'PUT'})`로 바이트를 보낸다. 올린 사람만 보낼 수 있다. 응답을 받지 못하면 화면은 기존 예약 ID와 파일 경로를 다시 사용한다.
+3. 글·댓글을 저장할 때 본문의 `media:<id>` 중 올린 사람이 같은 연결 안 된 이미지를 그 글·댓글에 연결한다(AI-DO `sync_embedded_media`). 코어 연결을 확인하지 못하면 다음 저장에서 같은 요청 ID로 완료한다. 본문에서 빠진 이미지는 연결만 끊는다(원본과 같음, 바이트는 남는다).
 4. 보기: 글·댓글 이미지는 `POST /files/community/posts/{postId}/media/{id}`(비밀글은 본문에 비밀번호)로, 편집 중인 내 이미지나 비밀번호 없이 읽을 수 있는 글의 이미지는 `GET /files/media/{id}/content`로 프레임 안에서 내려받아 Blob URL로 보인다. 검사는 AI-DO resolve와 같다(완전 비공개 → 관리자, 비밀글 → 글쓴이·관리자·비밀번호, 삭제된 댓글의 이미지 제외). Blob URL은 이미지가 사라질 때 해제한다. 해석되지 않은 `media:` 주소는 그리지 않는다.
 5. 글·댓글을 지우면 연결된 이미지를 같은 트랜잭션에서 `detaching`으로 적고, 커밋 뒤 코어에서 떼어 낸다(붙어 있으면 detach, 아니면 cancel). 확인되지 않은 작업은 다음 삭제 요청이 이어서 끝낸다(`app check` 하네스 지적 반영). AI-DO는 글을 지워도 파일을 지우지 않았다. miy는 앱 쿼터(설치당 256MiB)를 돌려받기 위해 지운다.
 - 형식은 PNG·JPEG·GIF·WebP, 파일당 10MiB(AI-DO와 같은 크기 제한, SVG 제외).
@@ -149,7 +149,7 @@ AI-DO는 이미지를 자체 저장소에 올리고 `media:<id>`를 본문에 �
 
 ### 3.7 플랫폼 → 앱 엔드포인트와 최근 공지
 
-- `notificationCheck` → `POST /platform/notification-check`: `post:<id>`는 글이 있고 채널이 활성이며 그 사람이 비밀번호 없이 열 수 있을 때, `notice:<id>`는 전사 공지이거나 그 사람이 공간에 직접 들어 있을 때 허용한다. 플랫폼 호출에는 다른 플랫폼 호출용 토큰이 없어 앱 DB만으로 판단한다. 플랫폼 호출(`identity.context.platform`)이 아니면 403이다. 데이터를 바꾸지 않는다(읽음 표시도 하지 않는다).
+- `notificationCheck` → `POST /platform/notification-check`: 묶음 키와 `resourceId`가 같은 항목을 가리켜야 한다. `post:<id>`는 글과 활성 채널을 그 사람이 비밀번호 없이 열 수 있을 때, `notice:<id>`는 전사 공지이거나 그 사람이 공간에 직접 들어 있을 때 허용한다. 공지와 공간 권한을 한 SQL 문에서 읽는다. 플랫폼 호출에는 다른 플랫폼 호출용 토큰이 없어 앱 DB만으로 판단한다. 플랫폼 호출(`identity.context.platform`)이 아니면 403이다. 응답은 읽기 전용이다.
 - `homeCard` → `POST /platform/home-card`: 읽을 수 있는 공지 최대 5개(고정 → 최신), `{"title":"공지","items":[{"title","subtitle":"<공간 이름>|전사","path","at"(RFC 3339 UTC)}]}`. `count`는 읽음을 기록하지 않아 뺐다. 본문의 `locale`이 `en-US`이면 `Announcements`·`Company`로 답한다. 플랫폼 호출이 아니면 403.
 - `GET /v1/board/notices/recent?limit=`(기본 5, 최대 20): 프레임·앱 호출용 읽기 전용 목록(최신순, 공간 이름·경로 포함). M5 홈 공지 카드가 앱 호출로 쓸 수 있게 남겼다. 이 경로는 ACL로 공간을 고르므로 그룹 멤버도 포함한다.
 

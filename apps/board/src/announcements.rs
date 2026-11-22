@@ -18,7 +18,7 @@ use axum::{
 use chrono::NaiveDateTime;
 use miy_app_sdk::Identity;
 use serde::{Deserialize, Serialize};
-use sqlx::{FromRow, PgPool};
+use sqlx::{FromRow, PgPool, Postgres, Transaction};
 use std::collections::HashMap;
 
 use crate::{
@@ -68,8 +68,10 @@ pub struct AnnouncementOut {
 }
 
 #[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct AnnouncementsResponse {
     items: Vec<AnnouncementOut>,
+    has_more: bool,
 }
 
 fn project(
@@ -159,20 +161,36 @@ async fn can_write(
     }
 }
 
-async fn ensure_can_write(
+async fn ensure_can_write_in(
     state: &AppState,
+    tx: &mut Transaction<'_, Postgres>,
     identity: &Identity,
     scope: &str,
     space: Option<&Space>,
 ) -> ApiResult<()> {
-    if can_write(state, identity, scope, space).await? {
-        return Ok(());
+    if scope == "company" {
+        let manager: Option<String> =
+            sqlx::query_scalar("SELECT user_id FROM board_managers WHERE user_id = $1 FOR SHARE")
+                .bind(&identity.user_id)
+                .fetch_optional(&mut **tx)
+                .await?;
+        return manager.map(|_| ()).ok_or_else(company_admin_required);
     }
-    Err(if scope == "company" {
-        company_admin_required()
-    } else {
-        admin_required()
-    })
+    let space = space.ok_or_else(admin_required)?;
+    match state
+        .acl
+        .require_in(
+            tx,
+            identity,
+            &spaces::space_key(&space.id),
+            ACTION_NOTICE_MANAGE,
+        )
+        .await
+    {
+        Ok(()) => Ok(()),
+        Err(error) if error.status == 403 => Err(admin_required()),
+        Err(error) => Err(error.into()),
+    }
 }
 
 async fn load(
@@ -227,6 +245,7 @@ async fn route_space(
 pub struct ListQuery {
     scope: Option<String>,
     limit: Option<String>,
+    offset: Option<String>,
 }
 
 async fn list(
@@ -249,29 +268,42 @@ async fn list(
             value
         }
     };
+    let offset = query
+        .offset
+        .as_deref()
+        .map(|raw| raw.trim().parse::<i64>())
+        .transpose()
+        .map_err(|_| ApiError::validation("offset: Input should be a valid integer"))?
+        .unwrap_or_default();
+    if offset < 0 {
+        return Err(ApiError::validation("offset: out of range"));
+    }
     let space = route_space(&state, &identity, space_id.as_deref()).await?;
-    let bounded = limit.clamp(1, MAX_LIST_LIMIT);
-    let rows = if scope == "workspace" {
+    let mut rows = if scope == "workspace" {
         let space = space.as_ref().ok_or_else(space_required)?;
         let sql = format!(
             "SELECT {ANNOUNCEMENT_COLUMNS} FROM announcements WHERE scope = 'workspace' AND workspace_id = $1 \
-             ORDER BY is_pinned DESC, created_at DESC LIMIT $2"
+             ORDER BY is_pinned DESC, created_at DESC, id DESC LIMIT $2 OFFSET $3"
         );
         sqlx::query_as::<_, Announcement>(&sql)
             .bind(&space.id)
-            .bind(bounded)
+            .bind(limit + 1)
+            .bind(offset)
             .fetch_all(&state.pool)
             .await?
     } else {
         let sql = format!(
             "SELECT {ANNOUNCEMENT_COLUMNS} FROM announcements WHERE scope = 'company' \
-             ORDER BY is_pinned DESC, created_at DESC LIMIT $1"
+             ORDER BY is_pinned DESC, created_at DESC, id DESC LIMIT $1 OFFSET $2"
         );
         sqlx::query_as::<_, Announcement>(&sql)
-            .bind(bounded)
+            .bind(limit + 1)
+            .bind(offset)
             .fetch_all(&state.pool)
             .await?
     };
+    let has_more = rows.len() > limit as usize;
+    rows.truncate(limit as usize);
     let can_manage = can_write(&state, &identity, scope, space.as_ref()).await?;
     let names = names_for(&identity, &rows).await;
     Ok(Json(AnnouncementsResponse {
@@ -279,6 +311,7 @@ async fn list(
             .iter()
             .map(|row| project(row, &names, can_manage))
             .collect(),
+        has_more,
     }))
 }
 
@@ -324,7 +357,8 @@ async fn create(
     if scope == "workspace" && space.is_none() {
         return Err(space_required());
     }
-    ensure_can_write(&state, &identity, scope, space.as_ref()).await?;
+    let mut tx = state.pool.begin().await?;
+    ensure_can_write_in(&state, &mut tx, &identity, scope, space.as_ref()).await?;
     let now = now_utc();
     let sql = format!(
         "INSERT INTO announcements (id, workspace_id, author_id, scope, title, body, is_pinned, created_at, updated_at) \
@@ -343,8 +377,9 @@ async fn create(
         .bind(&payload.body)
         .bind(payload.is_pinned)
         .bind(now)
-        .fetch_one(&state.pool)
+        .fetch_one(&mut *tx)
         .await?;
+    tx.commit().await?;
     notify::notice_published(&state.pool, &identity, &row, space.as_ref()).await;
     let names = names_for(&identity, std::slice::from_ref(&row)).await;
     Ok((StatusCode::CREATED, Json(project(&row, &names, true))))
@@ -440,27 +475,25 @@ async fn update(
     let space = route_space(&state, &identity, space_id.as_deref()).await?;
     let row = load(&state.pool, space.as_ref(), &id).await?;
     let own_space = notice_space(&state, &row, space).await?;
-    ensure_can_write(&state, &identity, &row.scope, own_space.as_ref()).await?;
-    let title = payload
-        .title
-        .as_deref()
-        .map(|title| title.trim().to_string())
-        .unwrap_or_else(|| row.title.clone());
-    let body = payload.body.clone().unwrap_or_else(|| row.body.clone());
-    let is_pinned = payload.is_pinned.unwrap_or(row.is_pinned);
+    let mut tx = state.pool.begin().await?;
+    ensure_can_write_in(&state, &mut tx, &identity, &row.scope, own_space.as_ref()).await?;
     let sql = format!(
-        "UPDATE announcements SET title = $2, body = $3, is_pinned = $4, \
-         updated_at = CASE WHEN (title, body, is_pinned) IS DISTINCT FROM ($2, $3, $4) THEN $5 ELSE updated_at END \
+        "UPDATE announcements SET title = COALESCE($2, title), body = COALESCE($3, body), \
+         is_pinned = COALESCE($4, is_pinned), \
+         updated_at = CASE WHEN (title, body, is_pinned) IS DISTINCT FROM \
+            (COALESCE($2, title), COALESCE($3, body), COALESCE($4, is_pinned)) THEN $5 ELSE updated_at END \
          WHERE id = $1 RETURNING {ANNOUNCEMENT_COLUMNS}"
     );
     let updated = sqlx::query_as::<_, Announcement>(&sql)
         .bind(&row.id)
-        .bind(&title)
-        .bind(&body)
-        .bind(is_pinned)
+        .bind(payload.title.as_deref().map(str::trim))
+        .bind(&payload.body)
+        .bind(payload.is_pinned)
         .bind(now_utc())
-        .fetch_one(&state.pool)
-        .await?;
+        .fetch_optional(&mut *tx)
+        .await?
+        .ok_or_else(not_found)?;
+    tx.commit().await?;
     let names = names_for(&identity, std::slice::from_ref(&updated)).await;
     Ok(Json(project(&updated, &names, true)))
 }
@@ -492,11 +525,17 @@ async fn delete(
     let space = route_space(&state, &identity, space_id.as_deref()).await?;
     let row = load(&state.pool, space.as_ref(), &id).await?;
     let own_space = notice_space(&state, &row, space).await?;
-    ensure_can_write(&state, &identity, &row.scope, own_space.as_ref()).await?;
-    sqlx::query("DELETE FROM announcements WHERE id = $1")
+    let mut tx = state.pool.begin().await?;
+    ensure_can_write_in(&state, &mut tx, &identity, &row.scope, own_space.as_ref()).await?;
+    let deleted = sqlx::query("DELETE FROM announcements WHERE id = $1")
         .bind(&row.id)
-        .execute(&state.pool)
-        .await?;
+        .execute(&mut *tx)
+        .await?
+        .rows_affected();
+    if deleted == 0 {
+        return Err(not_found());
+    }
+    tx.commit().await?;
     notify::retract(&identity, &notify::notice_group_key(&row.id)).await;
     Ok(StatusCode::NO_CONTENT)
 }
@@ -613,13 +652,50 @@ pub async fn recent(
     .bind(limit)
     .fetch_all(&state.pool)
     .await?;
+    let mut visible = Vec::with_capacity(rows.len());
+    let mut readable_spaces = HashMap::<String, bool>::new();
+    let mut tx = state.pool.begin().await?;
+    for row in rows {
+        if row.notice.scope == "company" {
+            visible.push(row);
+            continue;
+        }
+        let Some(space_id) = &row.notice.workspace_id else {
+            continue;
+        };
+        let allowed = if let Some(&allowed) = readable_spaces.get(space_id) {
+            allowed
+        } else {
+            // Refuse grants removed after the initial candidate lookup.
+            let allowed = match state
+                .acl
+                .require_in(
+                    &mut tx,
+                    &identity,
+                    &spaces::space_key(space_id),
+                    ACTION_READ,
+                )
+                .await
+            {
+                Ok(()) => true,
+                Err(error) if error.status == 403 => false,
+                Err(error) => return Err(error.into()),
+            };
+            readable_spaces.insert(space_id.clone(), allowed);
+            allowed
+        };
+        if allowed {
+            visible.push(row);
+        }
+    }
+    tx.commit().await?;
     let names = people::display_names(
         &identity,
-        rows.iter().map(|row| row.notice.author_id.clone()),
+        visible.iter().map(|row| row.notice.author_id.clone()),
     )
     .await;
     Ok(Json(RecentNoticesResponse {
-        items: rows
+        items: visible
             .into_iter()
             .map(
                 |NoticeWithSpace {

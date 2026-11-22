@@ -105,10 +105,13 @@ pub struct Viewer {
     pub is_admin: bool,
 }
 
-pub async fn viewer(pool: &PgPool, identity: &Identity) -> ApiResult<Viewer> {
+pub async fn viewer<'e>(
+    executor: impl sqlx::PgExecutor<'e>,
+    identity: &Identity,
+) -> ApiResult<Viewer> {
     Ok(Viewer {
         id: identity.user_id.clone(),
-        is_admin: is_manager(pool, &identity.user_id).await?,
+        is_admin: is_manager(executor, &identity.user_id).await?,
     })
 }
 
@@ -621,13 +624,21 @@ pub async fn get_channel_by_key(
     active_only: bool,
 ) -> ApiResult<Option<Channel>> {
     ensure_default_channels(pool).await?;
+    load_channel_by_key(pool, channel_key, active_only).await
+}
+
+async fn load_channel_by_key<'e>(
+    executor: impl sqlx::PgExecutor<'e>,
+    channel_key: &str,
+    active_only: bool,
+) -> ApiResult<Option<Channel>> {
     let sql = format!(
         "SELECT {CHANNEL_COLUMNS} FROM community_channels WHERE key = $1{}",
         if active_only { " AND active" } else { "" }
     );
     Ok(sqlx::query_as::<_, Channel>(&sql)
         .bind(channel_key)
-        .fetch_optional(pool)
+        .fetch_optional(executor)
         .await?)
 }
 
@@ -1011,102 +1022,95 @@ pub async fn list_posts(
     if let Some(q) = &query.q {
         check_length("q", q, 0, 120)?;
     }
-    let channel = get_channel_or_404(&state.pool, &channel_key).await?;
-    let viewer = viewer(&state.pool, &identity).await?;
     let bounded_page = page.max(1);
     let bounded_page_size = page_size.clamp(1, MAX_PAGE_SIZE);
     let search = query.q.as_deref().unwrap_or_default().trim().to_string();
 
-    // AI-DO _post_search_filter. Author names come from the directory.
-    let mut title_pattern: Option<String> = None;
-    let mut number: Option<i32> = None;
-    let mut author_filter: Option<(Vec<String>, bool)> = None;
-    let mut no_match = false;
+    ensure_default_channels(&state.pool).await?;
+    let mut author_ids = Vec::new();
     if !search.is_empty() {
-        let pattern = format!("%{search}%");
-        if viewer.is_admin || !channel.admin_only_content {
-            title_pattern = Some(pattern);
-        }
-        number = post_number_query(&search);
-        if viewer.is_admin || !channel.force_anonymous {
-            let ids = people::search_user_ids(&identity, &search).await;
-            author_filter = Some((ids, !viewer.is_admin));
-        }
-        if title_pattern.is_none() && number.is_none() && author_filter.is_none() {
-            no_match = true;
+        let channel = load_channel_by_key(&state.pool, &channel_key, true)
+            .await?
+            .ok_or_else(channel_not_found)?;
+        if (!channel.admin_only_content && !channel.force_anonymous)
+            || is_manager(&state.pool, &identity.user_id).await?
+        {
+            author_ids = people::search_user_ids(&identity, &search).await;
         }
     }
+
+    // Read channel rules, the current manager role, and the count and rows
+    // from one snapshot after the directory request.
+    let mut tx = state.pool.begin().await?;
+    sqlx::query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
+        .execute(&mut *tx)
+        .await?;
+    let channel = load_channel_by_key(&mut *tx, &channel_key, true)
+        .await?
+        .ok_or_else(channel_not_found)?;
+    let viewer = viewer(&mut *tx, &identity).await?;
+
     fn push_filters(
         builder: &mut QueryBuilder<'_, Postgres>,
-        channel_id: &str,
-        search: bool,
-        no_match: bool,
-        title_pattern: &Option<String>,
-        number: Option<i32>,
-        author_filter: &Option<(Vec<String>, bool)>,
+        channel: &Channel,
+        viewer: &Viewer,
+        search: &str,
+        author_ids: &[String],
     ) {
         builder
             .push(" WHERE channel_id = ")
-            .push_bind(channel_id.to_string());
-        if !search {
+            .push_bind(channel.id.clone());
+        if search.is_empty() {
             return;
         }
-        if no_match {
+        if channel.admin_only_content && channel.force_anonymous && !viewer.is_admin {
             builder.push(" AND false");
             return;
         }
         builder.push(" AND (false");
-        if let Some(pattern) = title_pattern {
-            builder.push(" OR title ILIKE ").push_bind(pattern.clone());
+        if viewer.is_admin || !channel.admin_only_content {
+            builder
+                .push(" OR (title ILIKE ")
+                .push_bind(format!("%{search}%"));
+            if !viewer.is_admin {
+                builder
+                    .push(" AND (NOT is_secret OR author_id = ")
+                    .push_bind(viewer.id.clone())
+                    .push(")");
+            }
+            builder.push(")");
         }
-        if let Some(number) = number {
+        if let Some(number) = post_number_query(search) {
             builder.push(" OR number = ").push_bind(number);
         }
-        if let Some((ids, hide_anonymous)) = author_filter {
+        if !author_ids.is_empty()
+            && (viewer.is_admin || (!channel.admin_only_content && !channel.force_anonymous))
+        {
             builder
                 .push(" OR (author_id = ANY(")
-                .push_bind(ids.clone())
+                .push_bind(author_ids.to_vec())
                 .push(")");
-            if *hide_anonymous {
+            if !viewer.is_admin {
                 builder.push(" AND NOT is_anonymous");
             }
             builder.push(")");
         }
         builder.push(")");
     }
-    let searching = !search.is_empty();
     let mut count_query = QueryBuilder::<Postgres>::new("SELECT count(*) FROM community_posts");
-    push_filters(
-        &mut count_query,
-        &channel.id,
-        searching,
-        no_match,
-        &title_pattern,
-        number,
-        &author_filter,
-    );
-    let total: i64 = count_query
-        .build_query_scalar()
-        .fetch_one(&state.pool)
-        .await?;
+    push_filters(&mut count_query, &channel, &viewer, &search, &author_ids);
+    let total: i64 = count_query.build_query_scalar().fetch_one(&mut *tx).await?;
     let mut post_query =
         QueryBuilder::<Postgres>::new(format!("SELECT {POST_COLUMNS} FROM community_posts"));
-    push_filters(
-        &mut post_query,
-        &channel.id,
-        searching,
-        no_match,
-        &title_pattern,
-        number,
-        &author_filter,
-    );
+    push_filters(&mut post_query, &channel, &viewer, &search, &author_ids);
     post_query
         .push(" ORDER BY created_at DESC LIMIT ")
         .push_bind(bounded_page_size)
         .push(" OFFSET ")
-        .push_bind((bounded_page - 1) * bounded_page_size);
-    let posts: Vec<Post> = post_query.build_query_as().fetch_all(&state.pool).await?;
+        .push_bind((bounded_page - 1).saturating_mul(bounded_page_size));
+    let posts: Vec<Post> = post_query.build_query_as().fetch_all(&mut *tx).await?;
     if posts.is_empty() {
+        tx.commit().await?;
         return Ok(Json(PostListResponse {
             posts: Vec::new(),
             total,
@@ -1120,7 +1124,7 @@ pub async fn list_posts(
     )
     .bind(&viewer.id)
     .bind(&post_ids)
-    .fetch_all(&state.pool)
+    .fetch_all(&mut *tx)
     .await?
     .into_iter()
     .collect();
@@ -1129,27 +1133,23 @@ pub async fn list_posts(
          WHERE post_id = ANY($1) AND NOT is_deleted GROUP BY post_id",
     )
     .bind(&post_ids)
-    .fetch_all(&state.pool)
+    .fetch_all(&mut *tx)
     .await?
     .into_iter()
     .collect();
-    let author_ids: HashSet<String> = if viewer.is_admin {
-        posts.iter().map(|post| post.author_id.clone()).collect()
-    } else if channel.force_anonymous || channel.admin_only_content {
-        HashSet::new()
-    } else {
-        posts
-            .iter()
-            .filter(|post| !post.is_anonymous)
-            .map(|post| post.author_id.clone())
-            .collect()
-    };
+    tx.commit().await?;
+    let author_ids: HashSet<String> = posts
+        .iter()
+        .filter(|post| post_author_name_visible(post, &channel, viewer.is_admin))
+        .map(|post| post.author_id.clone())
+        .collect();
     let names = people::display_names(&identity, author_ids).await;
     let posts = posts
         .into_iter()
         .map(|post| {
             let comment_count = counts.get(&post.id).copied().unwrap_or(0);
             let read_at = reads.get(&post.id).copied();
+            let unlocked = viewer.is_admin || post.author_id == viewer.id;
             post_out(
                 &LoadedPost {
                     post,
@@ -1157,7 +1157,7 @@ pub async fn list_posts(
                 },
                 comment_count,
                 &names,
-                false,
+                unlocked,
                 Some(&viewer.id),
                 viewer.is_admin,
                 read_at,
@@ -1358,6 +1358,11 @@ pub async fn delete_post(
     require_author_or_admin(&loaded.post.author_id, &viewer)?;
     require_channel_writable(&loaded.channel, &viewer)?;
     let mut tx = state.pool.begin().await?;
+    sqlx::query_scalar::<_, String>("SELECT id FROM community_posts WHERE id = $1 FOR UPDATE")
+        .bind(&loaded.post.id)
+        .fetch_optional(&mut *tx)
+        .await?
+        .ok_or_else(post_not_found)?;
     let released = media::release_for_post(&mut tx, &loaded.post.id).await?;
     sqlx::query("DELETE FROM community_posts WHERE id = $1")
         .bind(&loaded.post.id)
@@ -1501,6 +1506,16 @@ pub async fn create_comment(
     Ok((StatusCode::CREATED, Json(out)))
 }
 
+async fn lock_comment_post(tx: &mut Transaction<'_, Postgres>, post_id: &str) -> ApiResult<()> {
+    // Post deletion must wait before releasing comment media.
+    sqlx::query_scalar::<_, String>("SELECT id FROM community_posts WHERE id = $1 FOR KEY SHARE")
+        .bind(post_id)
+        .fetch_optional(&mut **tx)
+        .await?
+        .ok_or_else(post_not_found)?;
+    Ok(())
+}
+
 pub async fn update_comment(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
@@ -1515,15 +1530,20 @@ pub async fn update_comment(
     require_channel_writable(&loaded.channel, &viewer)?;
     ugc::ensure_content_allowed(&state.pool, &[&body]).await?;
     let mut tx = state.pool.begin().await?;
-    sqlx::query(
-        "UPDATE community_comments SET body = $2, \
-         updated_at = CASE WHEN body IS DISTINCT FROM $2 THEN $3 ELSE updated_at END WHERE id = $1",
-    )
-    .bind(&comment.id)
-    .bind(&body)
-    .bind(now_utc())
-    .execute(&mut *tx)
-    .await?;
+    lock_comment_post(&mut tx, &post_id).await?;
+    let update = format!(
+        "UPDATE community_comments SET body = $3, \
+         updated_at = CASE WHEN body IS DISTINCT FROM $3 THEN $4 ELSE updated_at END \
+         WHERE id = $1 AND post_id = $2 AND NOT is_deleted RETURNING {COMMENT_COLUMNS}",
+    );
+    let updated = sqlx::query_as::<_, Comment>(&update)
+        .bind(&comment.id)
+        .bind(&comment.post_id)
+        .bind(&body)
+        .bind(now_utc())
+        .fetch_optional(&mut *tx)
+        .await?
+        .ok_or_else(comment_not_found)?;
     let linked = media::sync_embedded_media(
         &mut tx,
         &body,
@@ -1535,11 +1555,6 @@ pub async fn update_comment(
     tx.commit().await?;
     media::attach_linked(&state.pool, &identity, &linked).await;
     let comments = post_comments(&state.pool, &comment.post_id).await?;
-    let updated = comments
-        .iter()
-        .find(|row| row.id == comment.id)
-        .cloned()
-        .ok_or_else(comment_not_found)?;
     let force_anonymous = loaded.channel.force_anonymous;
     let names = if viewer.is_admin || !comment_is_anonymous(&updated, force_anonymous) {
         people::display_names(&identity, [updated.author_id.clone()]).await
@@ -1570,16 +1585,22 @@ pub async fn delete_comment(
     require_author_or_admin(&comment.author_id, &viewer)?;
     require_channel_writable(&loaded.channel, &viewer)?;
     let mut tx = state.pool.begin().await?;
-    let released = media::release_for_comment(&mut tx, &comment.id).await?;
-    sqlx::query(
+    lock_comment_post(&mut tx, &post_id).await?;
+    // Match the update path's lock order: comment first, then its media.
+    let deleted = sqlx::query(
         "UPDATE community_comments SET is_deleted = true, body = '', \
          updated_at = CASE WHEN (is_deleted, body) IS DISTINCT FROM (true, '') THEN $2 ELSE updated_at END \
-         WHERE id = $1",
+         WHERE id = $1 AND NOT is_deleted",
     )
     .bind(&comment.id)
     .bind(now_utc())
     .execute(&mut *tx)
-    .await?;
+    .await?
+    .rows_affected();
+    if deleted == 0 {
+        return Err(comment_not_found());
+    }
+    let released = media::release_for_comment(&mut tx, &comment.id).await?;
     tx.commit().await?;
     media::detach_released(&state.pool, &identity, &released).await;
     Ok(StatusCode::NO_CONTENT)

@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 
 import { cn } from '../../lib/utils';
 import { useIsBoardManager } from '../../platform/board/board-context';
+import { COMMUNITY_CHANNELS_CHANGED_EVENT } from '../../platform/community/community-channel-events';
 import {
   ADMIN_PATH,
   NOTICES_PATH,
@@ -36,10 +37,17 @@ export function BoardSidebar({ route }: { route: AppRoute }) {
   const [channels, setChannels] = useState<CommunityChannel[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [channelRevision, setChannelRevision] = useState(0);
   const activeChannelKey =
     route.kind === 'community'
       ? searchParams.get('channel') || DEFAULT_COMMUNITY_CHANNEL_KEY
       : null;
+
+  useEffect(() => {
+    const refresh = () => setChannelRevision((revision) => revision + 1);
+    window.addEventListener(COMMUNITY_CHANNELS_CHANGED_EVENT, refresh);
+    return () => window.removeEventListener(COMMUNITY_CHANNELS_CHANGED_EVENT, refresh);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -62,7 +70,7 @@ export function BoardSidebar({ route }: { route: AppRoute }) {
     return () => {
       cancelled = true;
     };
-  }, [t, api]);
+  }, [t, api, channelRevision]);
 
   const channelHrefByKey = useMemo(() => {
     const hrefByKey = new Map<string, string>();

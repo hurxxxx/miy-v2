@@ -108,8 +108,9 @@ pub async fn sync_embedded_media(
     if !current.is_empty() {
         let rows: Vec<(String, String, String)> = sqlx::query_as(
             "UPDATE media_files SET resource_type = $1, resource_id = $2 \
-             WHERE id = ANY($3) AND resource_type IS NULL AND uploaded_by_id = $4 \
-               AND status IN ('ready', 'attached') AND file_id IS NOT NULL \
+             WHERE id = ANY($3) AND status IN ('ready', 'attached') AND file_id IS NOT NULL \
+               AND ((resource_type IS NULL AND uploaded_by_id = $4) \
+                 OR (resource_type = $1 AND resource_id = $2 AND status = 'ready')) \
              RETURNING id, file_id, status",
         )
         .bind(resource_type)
@@ -137,20 +138,27 @@ pub async fn sync_embedded_media(
 }
 
 /// Attach newly linked files in the core after the app commit. A failure
-/// leaves the row `ready`; the next save or view retries.
+/// leaves the row `ready`; the next save retries with the same request ID.
 pub async fn attach_linked(pool: &PgPool, identity: &Identity, linked: &[Linked]) {
     for item in linked {
-        let request_id = uuid::Uuid::new_v4().to_string();
-        if let Ok(file) = identity
-            .files_attach(&item.file_id, &reference(&item.id), &request_id)
+        let reference = reference(&item.id);
+        let attachment = match identity
+            .files_attach(&item.file_id, &reference, &item.id)
             .await
         {
-            if file.status == FileStatus::Attached {
-                let _ = sqlx::query("UPDATE media_files SET status = 'attached' WHERE id = $1")
-                    .bind(&item.id)
-                    .execute(pool)
-                    .await;
-            }
+            Ok(file) => Ok(file),
+            Err(_) => identity.files_get(&item.file_id).await,
+        };
+        if attachment.is_ok_and(|file| {
+            file.status == FileStatus::Attached
+                && file.reference.as_deref() == Some(reference.as_str())
+        }) {
+            let _ = sqlx::query(
+                "UPDATE media_files SET status = 'attached' WHERE id = $1 AND status = 'ready'",
+            )
+            .bind(&item.id)
+            .execute(pool)
+            .await;
         }
     }
 }
@@ -321,11 +329,11 @@ pub async fn create_upload(
         ));
     }
     // Persist the reservation intent before reserving (CONTRACT "Small attachments").
-    let row: (String, String, Option<String>, String) = sqlx::query_as(
+    let row: (String, String, Option<String>, String, String, String, i32) = sqlx::query_as(
         "INSERT INTO media_files (id, request_id, filename, content_type, size_bytes, uploaded_by_id, status, created_at) \
          VALUES ($1, $2, $3, $4, $5, $6, 'pending', $7) \
          ON CONFLICT (request_id) DO UPDATE SET request_id = EXCLUDED.request_id \
-         RETURNING id, uploaded_by_id, file_id, status",
+         RETURNING id, uploaded_by_id, file_id, status, filename, content_type, size_bytes",
     )
     .bind(uuid::Uuid::new_v4().to_string())
     .bind(request_id)
@@ -336,8 +344,12 @@ pub async fn create_upload(
     .bind(now_utc())
     .fetch_one(&state.pool)
     .await?;
-    let (media_id, owner, file_id, status) = row;
-    if owner != identity.user_id {
+    let (media_id, owner, file_id, status, original_name, original_mime, original_size) = row;
+    if owner != identity.user_id
+        || original_name != name
+        || original_mime != mime
+        || original_size != payload.size as i32
+    {
         return Err(ApiError::conflict(
             "media.request_conflict",
             "The request ID is already in use.",
@@ -398,16 +410,22 @@ pub async fn upload_content(
         return Err(media_not_found());
     }
     let file_id = media.file_id.clone().ok_or_else(media_not_found)?;
+    if !matches!(media.status.as_str(), "pending" | "ready" | "attached") {
+        return Err(media_not_found());
+    }
     if media.status == "pending" {
         let file = identity
             .files_get(&file_id)
             .await
             .map_err(|_| upload_failed())?;
         let stored = match file.status {
-            FileStatus::Pending => identity
-                .files_upload(&file, body)
-                .await
-                .map_err(|_| upload_failed())?,
+            FileStatus::Pending => match identity.files_upload(&file, body).await {
+                Ok(stored) => stored,
+                Err(_) => identity
+                    .files_get(&file_id)
+                    .await
+                    .map_err(|_| upload_failed())?,
+            },
             _ => file,
         };
         if !matches!(stored.status, FileStatus::Ready | FileStatus::Attached) {

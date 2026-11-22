@@ -177,8 +177,10 @@ export function listCommunityChannels(
     api,
   )
     .then((response) => {
-      cachedCommunityChannels = cloneCommunityChannelsResponse(response);
-      return cloneCommunityChannelsResponse(cachedCommunityChannels);
+      if (communityChannelsRequest === nextRequest) {
+        cachedCommunityChannels = cloneCommunityChannelsResponse(response);
+      }
+      return cloneCommunityChannelsResponse(response);
     })
     .finally(() => {
       if (communityChannelsRequest === nextRequest) {

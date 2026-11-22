@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Loader2, Megaphone, Pencil, Pin, Plus, Trash2, X } from 'lucide-react';
+import { Button } from '@miy/ui';
 
 import { useIsBoardManager } from '../../../platform/board/board-context';
 import { useNavigationDirty } from '../../../platform/runtime/navigation-state';
@@ -30,6 +31,8 @@ import {
  * platform admin) and a space notice by a space admin (AI-DO: workspace
  * admin/owner). A notification link opens one notice (`openNoticeId`).
  */
+
+const NOTICE_PAGE_SIZE = 8;
 
 function AnnouncementRow({
   announcement,
@@ -349,8 +352,12 @@ export function AnnouncementsBoard({
   const canCreate = scope === 'company' ? isBoardManager : spaceCanManage;
 
   const [items, setItems] = useState<Announcement[]>([]);
+  const [page, setPage] = useState(0);
+  const [hasMore, setHasMore] = useState(false);
   const [loading, setLoading] = useState(true);
   const [reloadKey, setReloadKey] = useState(0);
+  const [listFailed, setListFailed] = useState(false);
+  const [detailFailed, setDetailFailed] = useState(false);
   const [creating, setCreating] = useState(false);
   const [selected, setSelected] = useState<Announcement | null>(null);
   const [editing, setEditing] = useState<Announcement | null>(null);
@@ -359,12 +366,22 @@ export function AnnouncementsBoard({
     if (!api || (scope === 'workspace' && !spaceId)) return undefined;
     let cancelled = false;
     setLoading(true);
-    listAnnouncements(api, spaceId, { scope, limit: 8 })
+    setListFailed(false);
+    listAnnouncements(api, spaceId, {
+      scope,
+      limit: NOTICE_PAGE_SIZE,
+      offset: page * NOTICE_PAGE_SIZE,
+    })
       .then((response) => {
-        if (!cancelled) setItems(response.items);
+        if (cancelled) return;
+        setItems(response.items);
+        setHasMore(response.hasMore);
       })
       .catch(() => {
-        if (!cancelled) setItems([]);
+        if (cancelled) return;
+        setItems([]);
+        setHasMore(false);
+        setListFailed(true);
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -372,21 +389,26 @@ export function AnnouncementsBoard({
     return () => {
       cancelled = true;
     };
-  }, [api, spaceId, scope, reloadKey]);
+  }, [api, spaceId, scope, page, reloadKey]);
 
-  // miy: a notification link opens its notice (the list holds only 8).
+  // A notification link can open a notice on any page.
   useEffect(() => {
+    setDetailFailed(false);
+    setSelected((current) => current?.id === openNoticeId ? current : null);
     if (!api || !openNoticeId) return undefined;
     let cancelled = false;
     getAnnouncement(api, spaceId, openNoticeId)
       .then((notice) => {
         if (!cancelled && notice.scope === scope) setSelected(notice);
       })
-      .catch(() => undefined);
+      .catch(() => {
+        // Both notice boards receive the route. Show a single error.
+        if (!cancelled && scope === 'company') setDetailFailed(true);
+      });
     return () => {
       cancelled = true;
     };
-  }, [api, openNoticeId, scope, spaceId]);
+  }, [api, openNoticeId, scope, spaceId, reloadKey]);
 
   const reload = () => setReloadKey((key) => key + 1);
   const select = (notice: Announcement | null) => {
@@ -412,10 +434,21 @@ export function AnnouncementsBoard({
           </button>
         ) : null}
       </div>
+      {detailFailed ? (
+        <div className="flex items-center justify-between gap-2 py-2" role="alert">
+          <span>{t('home.announcementDetailError')}</span>
+          <Button size="dense" variant="secondary" onClick={reload}>{t('home.announcementRetry')}</Button>
+        </div>
+      ) : null}
       <div className="min-h-0 flex-1 overflow-y-auto">
         {loading ? (
           <div className="flex justify-center py-6">
             <Loader2 size={16} className="animate-spin text-app-ink/45" />
+          </div>
+        ) : listFailed ? (
+          <div className="flex items-center justify-between gap-2 py-2" role="alert">
+            <span>{t('home.announcementsLoadError')}</span>
+            <Button size="dense" variant="secondary" onClick={reload}>{t('home.announcementRetry')}</Button>
           </div>
         ) : items.length === 0 ? (
           <p className="app-text-body py-6 text-center text-app-ink/55">
@@ -433,6 +466,26 @@ export function AnnouncementsBoard({
           ))
         )}
       </div>
+      {page > 0 || hasMore ? (
+        <div className="mt-2 flex justify-end gap-2">
+          <Button
+            disabled={loading || page === 0}
+            onClick={() => setPage((current) => current - 1)}
+            size="dense"
+            variant="secondary"
+          >
+            {t('community.previousPage')}
+          </Button>
+          <Button
+            disabled={loading || !hasMore}
+            onClick={() => setPage((current) => current + 1)}
+            size="dense"
+            variant="secondary"
+          >
+            {t('community.nextPage')}
+          </Button>
+        </div>
+      ) : null}
       {creating ? (
         <AnnouncementEditorModal
           scope={scope}
@@ -442,6 +495,7 @@ export function AnnouncementsBoard({
           onClose={() => setCreating(false)}
           onSaved={() => {
             setCreating(false);
+            setPage(0);
             reload();
           }}
         />
