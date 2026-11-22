@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "date": "2026-11-22",
   "status": "SOURCE_CHECKED",
-  "scope": "M10 large transfer, source only: parts reservations (2 GiB, 8 MiB ranges from the committed offset, interrupted tails truncated, complete hashes and publishes), installation file quotas set by console administrators (API and console control) with a disk-based core limit, download links bound to the starting frame (Range, app fileAccess recheck at send time), Rust and browser SDK calls, core schema 33. Not deployed; no server database changed.",
+  "scope": "M10 large transfer, source only: parts reservations (2 GiB, 8 MiB ranges from the committed offset, interrupted tails truncated, complete hashes and publishes), installation file quotas set by console administrators (API and console control) with a disk-based core limit, download links bound to the starting frame (Range, app fileAccess recheck at send time), Rust and browser SDK calls, core schema 33; then sharded file directories with worker relocation of the old layout and periodic SHA-256 checks (core schema 34). Not deployed; no server database changed.",
   "checks": [
     {
       "status": "PASS",
@@ -44,12 +44,28 @@
       "status": "PASS",
       "command": "MIY_CONFIG_DIR=<empty> python3 scripts/runtime-regression/run.py (stage A+B tree)",
       "scope": "160 observations PASS, exit 0: boundary 19 (file storage limits: console administrator with CSRF only, out-of-range refused, portals and ordinary users refused, audited) and frames 17 (download links: issued only inside a request its own frame started and only with a fileAccess endpoint; the frame origin streams whole or one range, refuses another site and unsatisfiable ranges, asks the app at send time and stops when the frame ends)."
+    },
+    {
+      "status": "FAIL",
+      "command": "MIY_CONFIG_DIR=<empty> python3 scripts/runtime-regression/run.py (stage C tree)",
+      "scope": "134 observations; permissions suite stopped with 'No such file or directory'. Cleanup also reported two baseline containers that disappeared during the run (throwaway PostgreSQL containers of the app porting agents on this host), not resources of this run.",
+      "cause": "The stage A test still opened .part files in the old unsharded place. Test paths now use the file's shard."
+    },
+    {
+      "status": "PASS",
+      "command": "MIY_CONFIG_DIR=<empty> python3 scripts/runtime-regression/run.py (stage C tree)",
+      "scope": "160 observations PASS, exit 0: the file storage check now also covers new files written into their shard, files of the old layout readable before and after the worker moves them, a verified sum recorded, and a file whose bytes changed marked corrupt, audited without an actor and refused with 409 file_corrupt."
+    },
+    {
+      "status": "PASS",
+      "command": "python3 scripts/check-write-decisions.py; cargo clippy -p miy --all-targets -- -D warnings (server and --no-default-features)",
+      "scope": "relocate and verify listed as worker bookkeeping."
     }
   ],
   "notRun": [
-    "Sharded file directories with migration of existing blobs, periodic SHA-256 verification (next M10 step)",
     "Drive app and a browser download through a real platform frame (Chromium/Firefox download handling, resume)",
     "Uploads of real multi-GiB files and disk-low behaviour on a nearly full volume",
-    "Any server deployment, migration 33 on a server database, proxy configuration change on the server"
+    "Any server deployment, migration 33 on a server database, proxy configuration change on the server",
+    "Relocation verified on a restored backup copy of a server file volume (recorded design asks for it before a server migration)"
   ]
 }

@@ -44,6 +44,8 @@ const MIN_FREE_INODES: u64 = 1024;
 static TRANSFERS: Semaphore = Semaphore::const_new(4);
 const SWEEP_SECONDS: u64 = 60;
 const SWEEP_BATCH: i64 = 100;
+/// Bytes one hourly integrity run reads.
+const VERIFY_BUDGET: u64 = 4 * 1024 * 1024 * 1024;
 
 async fn access(
     s: &State,
@@ -204,9 +206,15 @@ async fn remove(path: &FsPath) -> ApiResult<()> {
 }
 
 async fn remove_bytes(artifacts: &FsPath, installation: Uuid, file: Uuid) -> ApiResult<()> {
-    let directory = root(artifacts, installation).await?;
-    remove(&directory.join(format!("{file}.part"))).await?;
-    remove(&directory.join(format!("{file}.blob"))).await
+    // Both layouts: a file the worker has not moved yet sits in the old place.
+    for directory in [
+        shard_dir(artifacts, installation, file).await?,
+        root(artifacts, installation).await?,
+    ] {
+        remove(&directory.join(format!("{file}.part"))).await?;
+        remove(&directory.join(format!("{file}.blob"))).await?;
+    }
+    Ok(())
 }
 
 fn df_available(output: &[u8]) -> Option<u64> {
@@ -377,8 +385,29 @@ pub(crate) fn start(pool: PgPool) -> anyhow::Result<Sweeper> {
     Ok(Sweeper(tokio::spawn(async move {
         let mut interval = tokio::time::interval(Duration::from_secs(SWEEP_SECONDS));
         interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+        let mut ticks = 0u64;
         loop {
             interval.tick().await;
+            ticks += 1;
+            // Bytes of the layout before shards move until none are left.
+            if let Err(error) = relocate(&pool, &artifacts).await {
+                tracing::warn!(event = "file_relocation_failed", code = %error.code);
+            }
+            // About once an hour, a bounded share of the stored sums.
+            if ticks % 60 == 1 {
+                match verify(&pool, &artifacts, VERIFY_BUDGET).await {
+                    Ok(report) if report.corrupt > 0 => {
+                        tracing::error!(
+                            event = "file_verification_found_corrupt",
+                            corrupt = report.corrupt
+                        );
+                    }
+                    Ok(_) => {}
+                    Err(error) => {
+                        tracing::warn!(event = "file_verification_failed", code = %error.code)
+                    }
+                }
+            }
             match sweep(&pool, &artifacts).await {
                 Ok(report) if report.failed > 0 => {
                     tracing::warn!(event = "file_sweep_incomplete", failed = report.failed);
@@ -543,7 +572,10 @@ pub async fn attach(
     if !matches!(current.status, FileStatus::Ready | FileStatus::Attached) {
         return Err(ApiError::conflict("file_not_ready"));
     }
-    let bytes = root(&s.artifacts, id).await?.join(format!("{file}.blob"));
+    if row.get::<Option<DateTime<Utc>>, _>("corrupt_at").is_some() {
+        return Err(ApiError::conflict("file_corrupt"));
+    }
+    let bytes = blob_path(&s.artifacts, id, file).await?;
     let info = tokio::fs::symlink_metadata(&bytes)
         .await
         .map_err(|_| ApiError::unavailable("file_bytes_unavailable"))?;
@@ -667,7 +699,7 @@ pub async fn upload(
         .and_then(|h| h.to_str().ok())
         .and_then(|v| v.parse::<u64>().ok())
         .ok_or_else(|| ApiError::bad("file_content_length_required"))?;
-    let directory = root(&s.artifacts, id).await?;
+    let directory = shard_dir(&s.artifacts, id, file).await?;
     let part = directory.join(format!("{file}.part"));
     let blob = directory.join(format!("{file}.blob"));
     let space = DiskSpace::measure(&directory).await;
@@ -861,7 +893,7 @@ pub async fn upload_part(
     if claimed != length {
         return Err(ApiError::bad("file_size_mismatch"));
     }
-    let directory = root(&s.artifacts, id).await?;
+    let directory = shard_dir(&s.artifacts, id, file).await?;
     let part = directory.join(format!("{file}.part"));
     let space = DiskSpace::measure(&directory).await;
     let mut initial = Write::begin(&s.pool).await?;
@@ -983,7 +1015,7 @@ pub async fn complete(
     let _slot = TRANSFERS
         .try_acquire()
         .map_err(|_| ApiError::unavailable("file_transfer_busy"))?;
-    let directory = root(&s.artifacts, id).await?;
+    let directory = shard_dir(&s.artifacts, id, file).await?;
     let part = directory.join(format!("{file}.part"));
     let blob = directory.join(format!("{file}.blob"));
     let mut tx = Write::begin(&s.pool).await?;
@@ -1303,9 +1335,10 @@ pub(crate) async fn serve_download(
         }
         _ => return Err(ApiError::forbidden_code("file_access_denied")),
     }
-    let path = root(&s.artifacts, installation)
-        .await?
-        .join(format!("{file}.blob"));
+    if row.get::<Option<DateTime<Utc>>, _>("corrupt_at").is_some() {
+        return Err(ApiError::conflict("file_corrupt"));
+    }
+    let path = blob_path(&s.artifacts, installation, file).await?;
     let info = tokio::fs::symlink_metadata(&path)
         .await
         .map_err(|_| ApiError::unavailable("file_bytes_unavailable"))?;
@@ -1397,6 +1430,181 @@ pub(crate) async fn serve_download(
     out.insert(header::ACCEPT_RANGES, "bytes".parse().unwrap());
     out.insert(header::CACHE_CONTROL, "no-store".parse().unwrap());
     Ok(response)
+}
+
+/// Bytes of one installation sit in shards named by the first two hex digits
+/// of the file ID, so no directory grows past a few thousand entries.
+fn shard(file: Uuid) -> String {
+    file.simple().to_string()[..2].to_owned()
+}
+
+/// The shard directory of `file` (created, never a link).
+async fn shard_dir(artifacts: &FsPath, installation: Uuid, file: Uuid) -> ApiResult<PathBuf> {
+    let directory = root(artifacts, installation).await?.join(shard(file));
+    match tokio::fs::symlink_metadata(&directory).await {
+        Ok(meta) if meta.is_dir() && !meta.file_type().is_symlink() => Ok(directory),
+        Ok(_) => Err(ApiError::unavailable("file_storage_path_invalid")),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            match tokio::fs::create_dir(&directory).await {
+                Ok(()) => {
+                    // The new entry must survive a crash before bytes go in it.
+                    tokio::fs::File::open(root(artifacts, installation).await?)
+                        .await?
+                        .sync_all()
+                        .await
+                        .map_err(|_| ApiError::unavailable("file_storage_unavailable"))?;
+                    Ok(directory)
+                }
+                Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => Ok(directory),
+                Err(_) => Err(ApiError::unavailable("file_storage_unavailable")),
+            }
+        }
+        Err(_) => Err(ApiError::unavailable("file_storage_unavailable")),
+    }
+}
+
+/// Where a file's published bytes are: its shard, or (until the worker moves
+/// it) the installation directory of the layout before shards. A file that
+/// disappears from the old place mid-move is read again from the shard.
+async fn blob_path(artifacts: &FsPath, installation: Uuid, file: Uuid) -> ApiResult<PathBuf> {
+    let current = shard_dir(artifacts, installation, file)
+        .await?
+        .join(format!("{file}.blob"));
+    if regular_file(&current).await?.is_some() {
+        return Ok(current);
+    }
+    let legacy = root(artifacts, installation)
+        .await?
+        .join(format!("{file}.blob"));
+    if regular_file(&legacy).await?.is_some() {
+        return Ok(legacy);
+    }
+    Ok(current)
+}
+
+/// Move bytes of the layout before shards into their shard, one file at a
+/// time under that file's row lock (the lock writes and removals take).
+/// Locked rows are left for the next pass; entries without a row stay put.
+pub(crate) async fn relocate(pool: &PgPool, artifacts: &FsPath) -> ApiResult<u64> {
+    let base = artifacts.join(".files");
+    let mut moved = 0;
+    let Ok(mut installations) = tokio::fs::read_dir(&base).await else {
+        return Ok(0);
+    };
+    while let Some(entry) = installations.next_entry().await? {
+        let Ok(installation) = Uuid::parse_str(&entry.file_name().to_string_lossy()) else {
+            continue;
+        };
+        if !entry.file_type().await?.is_dir() {
+            continue;
+        }
+        let mut files = tokio::fs::read_dir(entry.path()).await?;
+        while let Some(item) = files.next_entry().await? {
+            let name = item.file_name().to_string_lossy().into_owned();
+            let Some((stem, kind)) = name.rsplit_once('.') else {
+                continue;
+            };
+            let (Ok(file), true) = (Uuid::parse_str(stem), matches!(kind, "blob" | "part")) else {
+                continue;
+            };
+            if !item.file_type().await?.is_file() {
+                continue;
+            }
+            let mut tx = pool.begin().await?;
+            let locked: Option<Uuid> = sqlx::query_scalar(
+                "SELECT id FROM app_files WHERE id=$1 AND installation_id=$2 FOR UPDATE SKIP LOCKED",
+            )
+            .bind(file)
+            .bind(installation)
+            .fetch_optional(&mut *tx)
+            .await?;
+            if locked.is_none() {
+                continue;
+            }
+            let target = shard_dir(artifacts, installation, file).await?.join(&name);
+            if regular_file(&target).await?.is_some() {
+                tracing::warn!(event = "file_relocation_conflict", file = %file);
+                continue;
+            }
+            tokio::fs::rename(item.path(), &target)
+                .await
+                .map_err(|_| ApiError::unavailable("file_storage_write_failed"))?;
+            for directory in [target.parent().map(FsPath::to_path_buf), Some(entry.path())]
+                .into_iter()
+                .flatten()
+            {
+                tokio::fs::File::open(&directory).await?.sync_all().await?;
+            }
+            tx.commit().await?;
+            moved += 1;
+        }
+    }
+    Ok(moved)
+}
+
+#[derive(Debug, Default, PartialEq, Eq)]
+pub(crate) struct Verification {
+    pub verified: u64,
+    pub corrupt: u64,
+}
+
+/// Recompute stored SHA-256 sums, oldest check first, within `budget` bytes per
+/// run. A mismatch or missing bytes marks the file corrupt (downloads stop) and
+/// is audited as the platform's act. Rows that changed meanwhile are skipped.
+pub(crate) async fn verify(
+    pool: &PgPool,
+    artifacts: &FsPath,
+    budget: u64,
+) -> ApiResult<Verification> {
+    let mut report = Verification::default();
+    let rows = sqlx::query("SELECT id,installation_id,size,sha256 FROM app_files WHERE status IN ('ready','attached') AND corrupt_at IS NULL ORDER BY verified_at NULLS FIRST,id LIMIT 200")
+        .fetch_all(pool).await?;
+    let mut spent = 0u64;
+    for row in rows {
+        let size = row.get::<i64, _>("size") as u64;
+        if spent > 0 && spent + size > budget {
+            break;
+        }
+        spent += size;
+        let (file, installation): (Uuid, Uuid) = (row.get("id"), row.get("installation_id"));
+        let path = blob_path(artifacts, installation, file).await?;
+        let actual = match regular_file(&path).await? {
+            Some(len) if len == size => file_digest(&path).await.ok(),
+            _ => None,
+        };
+        let good = actual.as_deref() == row.get::<Option<&str>, _>("sha256");
+        let mut tx = pool.begin().await?;
+        let still: Option<bool> = sqlx::query_scalar(
+            "SELECT status IN ('ready','attached') FROM app_files WHERE id=$1 FOR UPDATE SKIP LOCKED",
+        )
+        .bind(file)
+        .fetch_optional(&mut *tx)
+        .await?;
+        if still != Some(true) {
+            continue;
+        }
+        if good {
+            sqlx::query("UPDATE app_files SET verified_at=clock_timestamp() WHERE id=$1")
+                .bind(file)
+                .execute(&mut *tx)
+                .await?;
+            report.verified += 1;
+        } else {
+            sqlx::query("UPDATE app_files SET corrupt_at=clock_timestamp(),verified_at=clock_timestamp() WHERE id=$1")
+                .bind(file)
+                .execute(&mut *tx)
+                .await?;
+            sqlx::query("INSERT INTO audit(action,target,request_id) VALUES('file.corrupt',$1,$2)")
+                .bind(format!("file:{file}"))
+                .bind(Uuid::new_v4().to_string())
+                .execute(&mut *tx)
+                .await?;
+            tracing::error!(event = "file_corrupt", file = %file);
+            report.corrupt += 1;
+        }
+        tx.commit().await?;
+    }
+    Ok(report)
 }
 
 pub fn attachment(name: &str) -> String {
@@ -1534,7 +1742,10 @@ pub async fn download(
     let row = sqlx::query("SELECT * FROM app_files WHERE installation_id=$1 AND id=$2 AND status IN ('ready','attached')")
         .bind(id).bind(file).fetch_optional(&s.pool).await?.ok_or_else(ApiError::not_found)?;
     let metadata = file_row(&row)?;
-    let path = root(&s.artifacts, id).await?.join(format!("{file}.blob"));
+    if row.get::<Option<DateTime<Utc>>, _>("corrupt_at").is_some() {
+        return Err(ApiError::conflict("file_corrupt"));
+    }
+    let path = blob_path(&s.artifacts, id, file).await?;
     let info = tokio::fs::symlink_metadata(&path)
         .await
         .map_err(|_| ApiError::unavailable("file_bytes_unavailable"))?;

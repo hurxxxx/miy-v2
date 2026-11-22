@@ -535,7 +535,7 @@ pub async fn run(
     directory_contract(&h, &user, &a).await?;
     passed.push("app directory pages expose only bounded active user/group DTOs; literal search, scoped cursors, original-user membership and immediate group/account revocation are enforced".into());
     storage_contract(&mut h, &admin, &user).await?;
-    passed.push("file storage enforces backend-only current approvals, original user authority, bounded immutable uploads that can be sent again after a failure, idempotent request lookup, attachment retention, explicit cancellation, reference-checked detach, administrator-set reservation quotas, resumable parts uploads (committed offset, interrupted tails truncated, gaps refused, hashed on completion, repeatable completion, cancellation) and housekeeping without a user actor".into());
+    passed.push("file storage enforces backend-only current approvals, original user authority, bounded immutable uploads that can be sent again after a failure, idempotent request lookup, attachment retention, explicit cancellation, reference-checked detach, administrator-set reservation quotas, resumable parts uploads (committed offset, interrupted tails truncated, gaps refused, hashed on completion, repeatable completion, cancellation), sharded storage with files of the old layout readable and moved by the worker, integrity checks that stop downloads of changed bytes, and housekeeping without a user actor".into());
     notification_contract(&mut h, &admin, &user)
         .await
         .context("notification contract")?;
@@ -1638,11 +1638,13 @@ async fn storage_contract(h: &mut Harness<'_>, admin: &Actor, user: &Actor) -> R
     )
     .await?;
     let cancel_id = Uuid::parse_str(next["id"].as_str().context("cancel file id")?)?;
+    // The file's shard: the first two hex digits of its ID.
     let store = h
         .state
         .artifacts
         .join(".files")
-        .join(app.installation.to_string());
+        .join(app.installation.to_string())
+        .join(&cancel_id.simple().to_string()[..2]);
     let blob = store.join(format!("{cancel_id}.blob"));
     let saved = store.join(format!("{cancel_id}.saved"));
     tokio::fs::rename(&blob, &saved).await?;
@@ -1832,6 +1834,7 @@ async fn storage_contract(h: &mut Harness<'_>, admin: &Actor, user: &Actor) -> R
                     .artifacts
                     .join(".files")
                     .join(app.installation.to_string())
+                    .join(&file[..2])
                     .join(format!("{file}.blob"))
             )
             .await?,
@@ -2002,15 +2005,16 @@ async fn storage_contract(h: &mut Harness<'_>, admin: &Actor, user: &Actor) -> R
         "parts did not keep their offset, refuse a repeat or wait for every range"
     );
     // An interrupted attempt left bytes past the committed offset.
-    let large_part = h
-        .state
-        .artifacts
-        .join(".files")
-        .join(app.installation.to_string())
-        .join(format!(
-            "{}.part",
-            large["id"].as_str().context("large file id")?
-        ));
+    let large_id = large["id"].as_str().context("large file id")?.to_owned();
+    // Bytes sit in the shard named by the file ID's first two hex digits.
+    let shard_of = |id: &str| {
+        h.state
+            .artifacts
+            .join(".files")
+            .join(app.installation.to_string())
+            .join(&id[..2])
+    };
+    let large_part = shard_of(&large_id).join(format!("{large_id}.part"));
     {
         use tokio::io::AsyncWriteExt;
         let mut tail = tokio::fs::OpenOptions::new()
@@ -2083,7 +2087,7 @@ async fn storage_contract(h: &mut Harness<'_>, admin: &Actor, user: &Actor) -> R
         200,
     )
     .await?;
-    let gap_part = large_part.with_file_name(format!("{gap_id}.part"));
+    let gap_part = shard_of(&gap_id).join(format!("{gap_id}.part"));
     tokio::fs::remove_file(&gap_part).await?;
     let missing = response(
         put_part(&proof, &gap_path, "bytes 4-7/8", b"efgh")
@@ -2103,6 +2107,113 @@ async fn storage_contract(h: &mut Harness<'_>, admin: &Actor, user: &Actor) -> R
             && cancelled_parts["status"] == "cancelled"
             && !tokio::fs::try_exists(&gap_part).await?,
         "a gap in committed bytes was not refused or a cancelled part kept its bytes"
+    );
+    // Layout and integrity (M10): bytes of the layout before shards stay
+    // readable and the worker moves them into their shard; the periodic check
+    // records verified files and stops downloads of a file whose bytes changed.
+    let proof = fresh_proof(h, user, &app).await?;
+    let legacy = h
+        .json(
+            &proof,
+            Method::POST,
+            &base,
+            reservation(Uuid::new_v4(), "legacy.txt", 6),
+            200,
+        )
+        .await?;
+    let legacy_id = legacy["id"].as_str().context("legacy file id")?.to_owned();
+    let legacy_path = format!("{base}/{legacy_id}");
+    response(
+        h.request(&proof, Method::PUT, &format!("{legacy_path}/content"))
+            .body("legacy")
+            .send()
+            .await?,
+        200,
+    )
+    .await?;
+    let installation_dir = h
+        .state
+        .artifacts
+        .join(".files")
+        .join(app.installation.to_string());
+    let sharded = installation_dir
+        .join(&legacy_id[..2])
+        .join(format!("{legacy_id}.blob"));
+    let old_place = installation_dir.join(format!("{legacy_id}.blob"));
+    ensure!(
+        tokio::fs::try_exists(&sharded).await?,
+        "a new file was not written into its shard"
+    );
+    // Put it back where the layout before shards kept it.
+    tokio::fs::rename(&sharded, &old_place).await?;
+    let read_old = h
+        .request(&proof, Method::GET, &format!("{legacy_path}/content"))
+        .send()
+        .await?
+        .bytes()
+        .await?;
+    let moved = crate::storage::relocate(&h.state.pool, &h.state.artifacts)
+        .await
+        .map_err(|error| anyhow::anyhow!("relocation failed: {}", error.code))?;
+    let read_new = h
+        .request(&proof, Method::GET, &format!("{legacy_path}/content"))
+        .send()
+        .await?
+        .bytes()
+        .await?;
+    ensure!(
+        read_old.as_ref() == b"legacy"
+            && moved >= 1
+            && tokio::fs::try_exists(&sharded).await?
+            && !tokio::fs::try_exists(&old_place).await?
+            && read_new.as_ref() == b"legacy",
+        "a file of the old layout was not readable or not moved into its shard"
+    );
+    // Only this file is due (others in the shared database count as checked),
+    // and the byte budget covers exactly it.
+    sqlx::query("UPDATE app_files SET verified_at=CASE WHEN id=$1 THEN NULL ELSE COALESCE(verified_at,clock_timestamp()) END")
+        .bind(Uuid::parse_str(&legacy_id)?)
+        .execute(&h.state.pool)
+        .await?;
+    let first = crate::storage::verify(&h.state.pool, &h.state.artifacts, 6)
+        .await
+        .map_err(|error| anyhow::anyhow!("verification failed: {}", error.code))?;
+    let verified_at: Option<chrono::DateTime<chrono::Utc>> =
+        sqlx::query_scalar("SELECT verified_at FROM app_files WHERE id=$1")
+            .bind(Uuid::parse_str(&legacy_id)?)
+            .fetch_one(&h.state.pool)
+            .await?;
+    // Same length, other bytes: only the sum can tell.
+    tokio::fs::write(&sharded, b"LEGACY").await?;
+    // Only this file is due (others in the shared database count as checked),
+    // and the byte budget covers exactly it.
+    sqlx::query("UPDATE app_files SET verified_at=CASE WHEN id=$1 THEN NULL ELSE COALESCE(verified_at,clock_timestamp()) END")
+        .bind(Uuid::parse_str(&legacy_id)?)
+        .execute(&h.state.pool)
+        .await?;
+    let second = crate::storage::verify(&h.state.pool, &h.state.artifacts, 6)
+        .await
+        .map_err(|error| anyhow::anyhow!("verification failed: {}", error.code))?;
+    let refused = response(
+        h.request(&proof, Method::GET, &format!("{legacy_path}/content"))
+            .send()
+            .await?,
+        409,
+    )
+    .await?;
+    let corrupt_audits: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM audit WHERE action='file.corrupt' AND target=$1 AND actor IS NULL",
+    )
+    .bind(format!("file:{legacy_id}"))
+    .fetch_one(&h.state.pool)
+    .await?;
+    ensure!(
+        first.verified >= 1
+            && verified_at.is_some()
+            && second.corrupt >= 1
+            && refused["error"]["code"] == "file_corrupt"
+            && corrupt_audits == 1,
+        "the integrity check did not verify sums or did not stop a changed file"
     );
     // Elapsed reservations in five abandoned installations stop counting as
     // promised bytes when they elapse, before any housekeeping removes them.
