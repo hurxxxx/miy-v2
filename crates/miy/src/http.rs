@@ -1453,6 +1453,16 @@ async fn openapi(
         let method = item["method"].as_str().unwrap().to_lowercase();
         let path = item["path"].as_str().unwrap();
         let mut operation = json!({"operationId":item["id"],"summary":item["description"],"security":[{"session":[]},{"bearer":[]}],"responses":{"200":{"description":"Success","content":{"application/json":{"schema":{}}}},"400":{"description":"Invalid contract/input"},"401":{"description":"Authentication required"},"403":{"description":"Permission denied"},"409":{"description":"Conflict"}}});
+        if item["cookieOnly"] == true {
+            operation["security"] = json!([{"session":[]}]);
+        }
+        if let Some(status) = item["successStatus"].as_str() {
+            operation["responses"]
+                .as_object_mut()
+                .unwrap()
+                .remove("200");
+            operation["responses"][status] = json!({"description":"Success"});
+        }
         if !item["input"].is_null() {
             operation["requestBody"] =
                 json!({"required":true,"content":{"application/json":{"schema":item["input"]}}});
@@ -1460,7 +1470,10 @@ async fn openapi(
         if item["binary"] == true {
             operation["requestBody"] = json!({"required":true,"content":{"application/x-tar":{"schema":{"type":"string","format":"binary"}}}});
         }
-        let parameters=path.split('/').filter(|p|p.starts_with('{')).map(|p|json!({"name":p.trim_matches(&['{','}'][..]),"in":"path","required":true,"schema":{"type":"string"}})).collect::<Vec<_>>();
+        let mut parameters=path.split('/').filter(|p|p.starts_with('{')).map(|p|json!({"name":p.trim_matches(&['{','}'][..]),"in":"path","required":true,"schema":{"type":"string"}})).collect::<Vec<_>>();
+        if let Some(query) = item["parameters"].as_array() {
+            parameters.extend(query.iter().cloned());
+        }
         if !parameters.is_empty() {
             operation["parameters"] = json!(parameters);
         }

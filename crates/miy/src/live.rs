@@ -31,6 +31,7 @@ pub const MAX_MESSAGE_BYTES: usize = 64 * 1024;
 pub const RECHECK: Duration = Duration::from_secs(30);
 pub const PING: Duration = Duration::from_secs(30);
 pub const IDLE_LIMIT: Duration = Duration::from_secs(300);
+const SEND_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// Connection budgets and the first-message deadline: the Core's frame listener only.
 #[cfg(feature = "server")]
@@ -107,13 +108,25 @@ mod budget {
 #[cfg(feature = "server")]
 pub use budget::{AUTH_TIMEOUT, acquire};
 
+pub(crate) async fn send_with_deadline<S, Item>(socket: &mut S, message: Item) -> bool
+where
+    S: futures_util::Sink<Item> + Unpin,
+{
+    matches!(
+        tokio::time::timeout(SEND_TIMEOUT, socket.send(message)).await,
+        Ok(Ok(()))
+    )
+}
+
 pub async fn close_with(socket: &mut WebSocket, code: u16, reason: &'static str) {
-    let _ = socket
-        .send(Message::Close(Some(CloseFrame {
+    send_with_deadline(
+        socket,
+        Message::Close(Some(CloseFrame {
             code,
             reason: reason.into(),
-        })))
-        .await;
+        })),
+    )
+    .await;
 }
 
 /// Why a recheck ended the connection.
@@ -146,20 +159,20 @@ pub async fn relay<F, Fut>(
         tokio::select! {
             message = client.recv() => {
                 let Some(Ok(message)) = message else {
-                    let _ = app_tx.send(tungstenite::Message::Close(None)).await;
+                    send_with_deadline(&mut app_tx, tungstenite::Message::Close(None)).await;
                     return;
                 };
                 let forwarded = match message {
                     Message::Text(text) => tungstenite::Message::Text(text.as_str().into()),
                     Message::Binary(bytes) => tungstenite::Message::Binary(bytes),
                     Message::Close(_) => {
-                        let _ = app_tx.send(tungstenite::Message::Close(None)).await;
+                        send_with_deadline(&mut app_tx, tungstenite::Message::Close(None)).await;
                         return;
                     }
                     Message::Ping(_) | Message::Pong(_) => continue,
                 };
                 last = Instant::now();
-                if app_tx.send(forwarded).await.is_err() {
+                if !send_with_deadline(&mut app_tx, forwarded).await {
                     close_with(&mut client, close::APP_UNAVAILABLE, "app_unavailable").await;
                     return;
                 }
@@ -179,8 +192,8 @@ pub async fn relay<F, Fut>(
                     }
                 };
                 last = Instant::now();
-                if client.send(forwarded).await.is_err() {
-                    let _ = app_tx.send(tungstenite::Message::Close(None)).await;
+                if !send_with_deadline(&mut client, forwarded).await {
+                    send_with_deadline(&mut app_tx, tungstenite::Message::Close(None)).await;
                     return;
                 }
             }
@@ -192,18 +205,18 @@ pub async fn relay<F, Fut>(
                         Ended::Release => (close::RELEASE_CHANGED, "release_changed"),
                     };
                     close_with(&mut client, code, reason).await;
-                    let _ = app_tx.send(tungstenite::Message::Close(None)).await;
+                    send_with_deadline(&mut app_tx, tungstenite::Message::Close(None)).await;
                     return;
                 }
                 if last.elapsed() >= IDLE_LIMIT {
                     close_with(&mut client, close::IDLE, "idle").await;
-                    let _ = app_tx.send(tungstenite::Message::Close(None)).await;
+                    send_with_deadline(&mut app_tx, tungstenite::Message::Close(None)).await;
                     return;
                 }
             }
             _ = ping_tick.tick() => {
-                if client.send(Message::Ping(Vec::new().into())).await.is_err() {
-                    let _ = app_tx.send(tungstenite::Message::Close(None)).await;
+                if !send_with_deadline(&mut client, Message::Ping(Vec::new().into())).await {
+                    send_with_deadline(&mut app_tx, tungstenite::Message::Close(None)).await;
                     return;
                 }
             }

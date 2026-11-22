@@ -527,7 +527,26 @@ pub fn catalog() -> Value {
     // Personal settings and sessions (kept out of the literal above, which is at
     // the json! macro recursion limit).
     let personal = [
-        json!({"id":"integrated_search","method":"GET","path":"/api/v1/search?q=&limit=","permission":"portal user (own apps in this environment)","description":"Integrated search: each usable app that declares a search endpoint answers for this person; an app that does not answer is marked unavailable"}),
+        json!({
+            "id":"integrated_search","method":"GET","path":"/api/v1/search",
+            "permission":"portal user (own apps in this environment)","cookieOnly":true,
+            "description":"Integrated search: each usable app that declares a search endpoint answers for this person; an app that does not answer is marked unavailable",
+            "parameters":[
+                {"name":"q","in":"query","required":true,"schema":{"type":"string","minLength":1,"maxLength":200}},
+                {"name":"limit","in":"query","required":false,"schema":{"type":"integer","minimum":1,"maximum":10,"default":5}}
+            ]
+        }),
+        json!({
+            "id":"list_notifications","method":"GET","path":"/api/v1/notifications",
+            "permission":"portal session (own notifications in this environment)","cookieOnly":true,
+            "description":"List notifications, optionally checking source access with the app. Send id and check=true before opening an entry.",
+            "parameters":[
+                {"name":"limit","in":"query","schema":{"type":"integer","minimum":1,"maximum":100,"default":30}},
+                {"name":"cursor","in":"query","schema":{"type":"string"}},
+                {"name":"check","in":"query","schema":{"type":"boolean"}},
+                {"name":"id","in":"query","schema":{"type":"string","format":"uuid"}}
+            ]
+        }),
         json!({"id":"home_cards","method":"GET","path":"/api/v1/home/cards","permission":"portal user (own apps in this environment)","description":"Summary cards from the apps' declared homeCard endpoints; an app that does not answer is marked unavailable"}),
         json!({"id":"launcher_categories","method":"GET","path":"/api/v1/launcher/categories","permission":"undelegated user","description":"Launcher categories in display order with their app IDs; grouping only, never access"}),
         json!({"id":"create_launcher_category","method":"POST","path":"/api/v1/launcher/categories","permission":"admin","description":"Add a launcher category","input":schemars::schema_for!(crate::launcher::NewCategory)}),
@@ -544,10 +563,11 @@ pub fn catalog() -> Value {
         .extend(personal);
     catalog.as_array_mut().unwrap().extend([
         json!({"id":"register_user","method":"POST","path":"/api/v1/users","permission":"admin","description":"Register a person by the identity provider's subject ID so they can sign in. Grants no app permission; 409 user_exists when already registered","input":schemars::schema_for!(crate::user_admin::Registration)}),
-        json!({"id":"sign_in_as_user","method":"POST","path":"/api/v1/users/{id}/sign-in-as","permission":"admin (console)","description":"Start a user switch: a 60-second one-time link that signs this browser in to the prod or dev portal as that person. Audited as user.sign_in_as; the session ends when the starting administrator is disabled or loses administration","input":schemars::schema_for!(crate::user_switch::Start)}),
+        json!({"id":"sign_in_as_user","method":"POST","path":"/api/v1/users/{id}/sign-in-as","permission":"console administrator browser session","cookieOnly":true,"description":"Start a user switch: a 60-second one-time link that signs this browser in to the prod or dev portal as that person. Audited as user.sign_in_as; the session ends when the starting administrator is disabled or loses administration","input":schemars::schema_for!(crate::user_switch::Start)}),
         json!({"id":"update_user","method":"PATCH","path":"/api/v1/users/{id}","permission":"admin","description":"Change a registered person's display name, administrator role or app-registration eligibility. The last enabled administrator keeps the role","input":schemars::schema_for!(crate::user_admin::Update)}),
         json!({"id":"app_frame_launch","method":"POST","path":"/api/v1/app-frames","permission":"portal session; use on the installation in this portal's environment","description":"One-time code (60 s) that opens one cross-origin frame of a running installation. The portal posts it as a form to launchUrl inside a new iframe; the frame origin belongs to that installation only.","input":schemars::schema_for!(crate::app_frames::LaunchRequest)}),
         json!({"id":"app_frame_renew","method":"POST","path":"/api/v1/app-frames/{id}/renew","permission":"the portal session that opened the frame; current use","description":"One-time code that renews this frame's short API token on its own origin (POST /_miy/renew). Installation, environment, release and frame end never change."}),
+        json!({"id":"app_frame_close","method":"DELETE","path":"/api/v1/app-frames/{id}","permission":"the portal session that opened the frame","cookieOnly":true,"description":"Close a frame and release its slot. The same session may repeat the request.","successStatus":"204"}),
         json!({"id":"get_installation_permissions","method":"GET","path":"/api/v1/installations/{id}/permissions","permission":"management read on installation and token read scope; app use is insufficient","description":"Read requested and approved external permissions, revision and last 100 history entries; optional releaseId query."}),
         json!({"id":"set_installation_permissions","method":"PUT","path":"/api/v1/installations/{id}/permissions","permission":"non-delegated admin with miy.dev","description":"Replace explicit external approvals for exactly this installation/release; compare expectedRevision. Empty permissions revokes all. No automatic carryover to new releases or prod.","input":schemars::schema_for!(crate::permissions::PermissionUpdate)}),
         json!({"id":"create_delegation","method":"POST","path":"/api/v1/delegations","permission":"non-delegated user; current user grants intersect all requested actions","description":"Issue an app/environment/action-scoped user credential with fixed expiry and revocation. Credential returned once; use auth delegations create --credential-file.","input":schemars::schema_for!(crate::delegations::Create)}),

@@ -53,7 +53,9 @@ export function Search() {
   function submit(event: FormEvent) {
     event.preventDefault();
     const next = draft.trim();
-    if (next) void navigate({ to: "/search", search: { q: next } as never });
+    if (!next) return;
+    if (next === query) setAttempt((value) => value + 1);
+    else void navigate({ to: "/search", search: { q: next } as never });
   }
 
   const page = state.status === "ready" && state.page.query === query ? state.page : null;

@@ -19,7 +19,7 @@ export function NotificationBell({
 }) {
   const { t } = useTranslation("portal");
   const [open, setOpen] = useState(false);
-  const { unread, setUnread, refresh } = useUnreadNotifications(enabled);
+  const { unread, setUnread, refresh, revision } = useUnreadNotifications(enabled);
   const close = useCallback(() => {
     setOpen(false);
     void refresh();
@@ -37,7 +37,7 @@ export function NotificationBell({
         <Bell size={18} aria-hidden="true" />
         {unread > 0 && <span className="notification-badge">{unread > 99 ? "99+" : unread}</span>}
       </button>
-      {open && <NotificationPanel csrf={csrf} environmentPath={environmentPath} onClose={close} onCountChange={setUnread} />}
+      {open && <NotificationPanel csrf={csrf} environmentPath={environmentPath} onClose={close} onCountChange={setUnread} onRefreshUnread={refresh} refreshKey={revision} />}
     </>
   );
 }

@@ -87,6 +87,7 @@ export function LauncherCategoriesAdmin({ csrf }: { csrf: string }) {
   const feedback = useFeedback();
   const [catalog, setCatalog] = useState<CatalogApp[]>([]);
   const [draftCategories, setDraftCategories] = useState<AdminLauncherCategory[]>([]);
+  const [revision, setRevision] = useState("");
   const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(null);
   const [iconPickerTarget, setIconPickerTarget] = useState<string | null>(null);
   const [appSearchQuery, setAppSearchQuery] = useState("");
@@ -106,6 +107,7 @@ export function LauncherCategoriesAdmin({ csrf }: { csrf: string }) {
   );
 
   const applyResponse = useCallback((next: LauncherCategoriesResponse) => {
+    setRevision(next.revision);
     setDraftCategories(next.categories.map(copyLauncherCategory));
     setSelectedCategoryId((current) =>
       current && next.categories.some((category) => category.id === current)
@@ -310,9 +312,11 @@ export function LauncherCategoriesAdmin({ csrf }: { csrf: string }) {
   );
 
   const saveLayout = useCallback(async () => {
+    if (!revision) return;
     setSaving(true);
     try {
       const next = await updateLauncherCategoryLayout(csrf, {
+        expectedRevision: revision,
         categories: draftCategories.map((category) => ({
           appIds: category.appIds,
           iconKey: category.iconKey,
@@ -327,7 +331,7 @@ export function LauncherCategoriesAdmin({ csrf }: { csrf: string }) {
     } finally {
       setSaving(false);
     }
-  }, [applyResponse, csrf, draftCategories, errorText, feedback, t]);
+  }, [applyResponse, csrf, draftCategories, errorText, feedback, revision, t]);
 
   return (
     <>
@@ -351,7 +355,7 @@ export function LauncherCategoriesAdmin({ csrf }: { csrf: string }) {
                 <RefreshCw size={14} />
               </button>
             </Tooltip>
-            <Button disabled={loading || saving || loadError !== null} onClick={() => void saveLayout()}>
+            <Button disabled={loading || saving || loadError !== null || !revision} onClick={() => void saveLayout()}>
               <Save size={15} />
               {t("launcher:admin.appBarSaveLayout")}
             </Button>

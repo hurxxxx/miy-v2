@@ -294,11 +294,13 @@ function SignedInLayout({ user, environment }: { user: User; environment: Enviro
     setPanelPinFailed(false);
     try {
       updateUser(
+        user.csrf,
         await request<{ name: string; preferences: Preferences }>("/api/v1/me/preferences", user.csrf, {
           method: "PATCH",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({ panelPin: { id, pinned } }),
         }),
+        ["pinnedPanels"],
       );
     } catch {
       setPanelPinFailed(true);

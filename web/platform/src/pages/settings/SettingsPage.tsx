@@ -56,6 +56,7 @@ function SettingsPageContent({
     saveLocalePreference,
     saveThemePreference,
     saveTimeZonePreference,
+    savingPreferences,
     security,
     state,
     t,
@@ -120,6 +121,7 @@ function SettingsPageContent({
                 onTimeZoneChange={(value) => {
                   void saveTimeZonePreference(value);
                 }}
+                saving={savingPreferences}
                 state={state}
                 t={t}
               />

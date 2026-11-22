@@ -199,8 +199,10 @@ pub async fn exchange(
     // writers revoke switched credentials in exactly this order.
     let (target_enabled, issuer_allowed) = lock_users(&mut tx, &target, &issuer).await?;
     let live: Option<bool> = sqlx::query_scalar(
-        "DELETE FROM user_switch_codes WHERE code_hash=$1 AND browser_purpose=$2 \
-         RETURNING expires_at>clock_timestamp()",
+        "DELETE FROM user_switch_codes c USING users target \
+         WHERE c.code_hash=$1 AND c.browser_purpose=$2 AND target.id=c.target_user_id \
+         RETURNING c.expires_at>clock_timestamp() \
+         AND (target.browser_login_after IS NULL OR c.created_at>=target.browser_login_after)",
     )
     .bind(&code_hash)
     .bind(purpose.as_str())

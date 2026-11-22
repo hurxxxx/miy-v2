@@ -435,6 +435,8 @@ pub struct LauncherCategory {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct LauncherCategoryPage {
     pub categories: Vec<LauncherCategory>,
+    /// Compare before replacing the whole arrangement.
+    pub revision: String,
 }
 
 /// The answer of a notification publish (and of its request ID lookup).

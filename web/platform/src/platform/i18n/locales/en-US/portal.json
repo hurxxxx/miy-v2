@@ -367,6 +367,8 @@
     "bellUnread_other": "Notifications, {{count}} unread",
     "closePanel": "Close notifications",
     "loadFailed": "Could not load notifications.",
+    "loadMore": "Load more notifications",
+    "openFailed": "This notification could not be opened.",
     "settingsLoadFailed": "Could not load notification settings.",
     "consoleHasNoInbox": "The admin console has no inbox. Settings changed here apply to notifications in the work and test portals.",
     "noApps": "No apps can send you notifications.",

@@ -7,19 +7,22 @@ export type NotificationPanelState = {
   loading: boolean;
   failed: boolean;
   notifications: PortalNotification[];
+  nextCursor: string | null;
 };
 
 export type NotificationPanelAction =
   | { type: 'loading' }
-  | { type: 'loaded'; notifications: PortalNotification[] }
+  | { type: 'loaded'; notifications: PortalNotification[]; nextCursor: string | null; append?: boolean }
   | { type: 'failed' }
   | { type: 'mark-read'; notificationId: string }
-  | { type: 'mark-all-read' };
+  | { type: 'mark-all-read' }
+  | { type: 'remove'; notificationId: string };
 
 export const INITIAL_NOTIFICATION_PANEL_STATE: NotificationPanelState = {
   loading: true,
   failed: false,
   notifications: [],
+  nextCursor: null,
 };
 
 export function notificationPanelReducer(
@@ -31,7 +34,16 @@ export function notificationPanelReducer(
     case 'loading':
       return { ...state, loading: true, failed: false };
     case 'loaded':
-      return { loading: false, failed: false, notifications: action.notifications };
+      return {
+        loading: false,
+        failed: false,
+        nextCursor: action.nextCursor,
+        notifications: action.append
+          ? [...state.notifications, ...action.notifications.filter(
+              (notification) => !state.notifications.some((item) => item.id === notification.id),
+            )]
+          : action.notifications,
+      };
     case 'failed':
       return { ...state, loading: false, failed: true };
     case 'mark-read':
@@ -46,11 +58,9 @@ export function notificationPanelReducer(
         ...state,
         notifications: state.notifications.map((item) => ({ ...item, readAt: item.readAt ?? now })),
       };
+    case 'remove':
+      return { ...state, notifications: state.notifications.filter((item) => item.id !== action.notificationId) };
   }
-}
-
-export function countUnreadNotifications(notifications: readonly PortalNotification[]): number {
-  return notifications.filter((notification) => !notification.readAt).length;
 }
 
 /** The portal route that opens the notification's app frame at its path. */

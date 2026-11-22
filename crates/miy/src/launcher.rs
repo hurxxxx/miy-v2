@@ -53,6 +53,7 @@ pub struct LayoutCategory {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Layout {
     pub categories: Vec<LayoutCategory>,
+    pub expected_revision: String,
 }
 
 fn title(value: &str) -> ApiResult<String> {
@@ -77,7 +78,7 @@ fn icon_key(value: &str) -> ApiResult<String> {
     Ok(value.to_owned())
 }
 
-async fn read(connection: &mut PgConnection) -> sqlx::Result<LauncherCategoryPage> {
+async fn read(connection: &mut PgConnection) -> ApiResult<LauncherCategoryPage> {
     let rows = sqlx::query(
         "SELECT c.id,c.title,c.icon_key,c.position,c.updated_at,\
          COALESCE(array_agg(a.app_id ORDER BY a.position,a.app_id) FILTER (WHERE a.app_id IS NOT NULL),'{}') AS app_ids \
@@ -86,18 +87,21 @@ async fn read(connection: &mut PgConnection) -> sqlx::Result<LauncherCategoryPag
     )
     .fetch_all(&mut *connection)
     .await?;
+    let categories: Vec<_> = rows
+        .iter()
+        .map(|row| LauncherCategory {
+            id: row.get("id"),
+            title: row.get("title"),
+            icon_key: row.get("icon_key"),
+            position: row.get::<i32, _>("position").max(0) as u32,
+            app_ids: row.get("app_ids"),
+            updated_at: row.get("updated_at"),
+        })
+        .collect();
+    let revision = crate::contract::hash(serde_json::to_vec(&categories)?);
     Ok(LauncherCategoryPage {
-        categories: rows
-            .iter()
-            .map(|row| LauncherCategory {
-                id: row.get("id"),
-                title: row.get("title"),
-                icon_key: row.get("icon_key"),
-                position: row.get::<i32, _>("position").max(0) as u32,
-                app_ids: row.get("app_ids"),
-                updated_at: row.get("updated_at"),
-            })
-            .collect(),
+        categories,
+        revision,
     })
 }
 
@@ -106,7 +110,7 @@ async fn read(connection: &mut PgConnection) -> sqlx::Result<LauncherCategoryPag
 pub async fn list(state: &State, p: &Principal) -> ApiResult<LauncherCategoryPage> {
     crate::delegations::unrestricted(p)?;
     let mut connection = state.pool.acquire().await?;
-    Ok(read(&mut connection).await?)
+    read(&mut connection).await
 }
 
 /// Category changes are serialized so positions and app assignments stay whole.
@@ -286,6 +290,9 @@ pub async fn layout(
     // Decided before any read that could tell a non-administrator which apps
     // or categories exist; the lock is already held.
     let mut tx = tx.decide_platform(p, PlatformAction::Administer).await?;
+    if read(&mut tx).await?.revision != input.expected_revision {
+        return Err(ApiError::conflict("launcher_layout_changed"));
+    }
     let app_list: Vec<&str> = apps.iter().copied().collect();
     let known: i64 = sqlx::query_scalar("SELECT count(*) FROM apps WHERE id=ANY($1)")
         .bind(&app_list)

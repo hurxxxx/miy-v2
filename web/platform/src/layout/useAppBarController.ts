@@ -163,7 +163,8 @@ export function useAppBarController({
       patch: { appBarLayoutError: null, appBarLayoutSaving: true },
     });
     try {
-      updateUser(await savePinnedApps(user.csrf, nextPinnedAppIds));
+      const saved = await savePinnedApps(user.csrf, nextPinnedAppIds);
+      updateUser(user.csrf, saved, ["pinnedApps"]);
       dispatch({
         type: "patch",
         patch: { appBarEditorOpen: false },

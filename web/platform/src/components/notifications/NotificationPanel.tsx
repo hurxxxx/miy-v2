@@ -2,7 +2,7 @@
 // (0002af062): the same panel, list and actions. Differences: a notification
 // shows its app's name where AI-DO showed a body line (miy notifications carry
 // no message body), and opening one goes to its app's frame at the app's path.
-import { useCallback, useEffect, useReducer } from 'react';
+import { useCallback, useEffect, useReducer, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from '@tanstack/react-router';
 import { LazyMotion, domAnimation, m } from 'motion/react';
@@ -18,7 +18,6 @@ import {
 } from '../../data/notifications';
 import {
   INITIAL_NOTIFICATION_PANEL_STATE,
-  countUnreadNotifications,
   notificationPanelReducer,
   notificationTarget,
 } from './notification-panel-model';
@@ -28,6 +27,7 @@ export function NotificationPanel({
   environmentPath,
   onClose,
   onCountChange,
+  onRefreshUnread,
   refreshKey = 0,
 }: {
   csrf: string;
@@ -35,29 +35,69 @@ export function NotificationPanel({
   environmentPath: (appId: string) => string;
   onClose: () => void;
   onCountChange?: (unread: number) => void;
+  onRefreshUnread: () => Promise<void>;
   refreshKey?: number;
 }) {
   const { t, i18n } = useTranslation(['shell', 'portal']);
   const navigate = useNavigate();
-  const [{ loading, failed, notifications }, dispatch] = useReducer(
+  const [{ loading, failed, notifications, nextCursor }, dispatch] = useReducer(
     notificationPanelReducer,
     INITIAL_NOTIFICATION_PANEL_STATE,
   );
+  const listRequest = useRef<AbortController>(undefined);
+  const openingRequest = useRef<AbortController>(undefined);
+  const pageDepth = useRef(1);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [moreFailed, setMoreFailed] = useState(false);
+  const [openFailed, setOpenFailed] = useState(false);
 
   useEffect(() => {
     const controller = new AbortController();
+    listRequest.current = controller;
+    setLoadingMore(false);
+    setMoreFailed(false);
     dispatch({ type: 'loading' });
-    listNotifications(controller.signal, true)
-      .then((page) => {
-        dispatch({ type: 'loaded', notifications: page.items });
-        onCountChange?.(page.unread);
-      })
-      .catch(() => {
-        if (!controller.signal.aborted) dispatch({ type: 'failed' });
-      });
+    const refresh = async () => {
+      const signal = controller.signal;
+      try {
+        const first = await listNotifications({ signal, check: true });
+        const items = new Map(first.items.map((item) => [item.id, item]));
+        let nextCursor = first.nextCursor;
+        for (let index = 1; nextCursor && index < pageDepth.current; index++) {
+          const page = await listNotifications({ signal, check: true, cursor: nextCursor });
+          for (const item of page.items) items.set(item.id, item);
+          nextCursor = page.nextCursor;
+        }
+        if (signal.aborted) return;
+        dispatch({ type: 'loaded', notifications: [...items.values()], nextCursor });
+        onCountChange?.(first.unread);
+      } catch {
+        if (!signal.aborted) dispatch({ type: 'failed' });
+      }
+    };
+    void refresh();
     return () => controller.abort();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [refreshKey]);
+  }, [refreshKey, onCountChange]);
+
+  useEffect(() => () => openingRequest.current?.abort(), []);
+
+  const loadMore = async () => {
+    const signal = listRequest.current?.signal;
+    if (!signal || !nextCursor || loadingMore || loading) return;
+    setLoadingMore(true);
+    setMoreFailed(false);
+    try {
+      const page = await listNotifications({ signal, check: true, cursor: nextCursor });
+      if (!signal.aborted) {
+        pageDepth.current += 1;
+        dispatch({ type: 'loaded', notifications: page.items, nextCursor: page.nextCursor, append: true });
+      }
+    } catch {
+      if (!signal.aborted) setMoreFailed(true);
+    } finally {
+      if (!signal.aborted) setLoadingMore(false);
+    }
+  };
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -73,37 +113,50 @@ export function NotificationPanel({
       try {
         await markNotificationRead(csrf, n.id);
         dispatch({ type: 'mark-read', notificationId: n.id });
-        onCountChange?.(
-          countUnreadNotifications(notifications.filter((item) => item.id !== n.id)),
-        );
+        void onRefreshUnread();
       } catch {
-        /* the list still shows it unread */
+        /* Keep the item unread when the update fails. */
       }
     },
-    [csrf, notifications, onCountChange],
+    [csrf, onRefreshUnread],
   );
 
   const handleClick = useCallback(
-    (n: PortalNotification) => {
-      void handleRead(n);
-      const target = notificationTarget(n, environmentPath(n.appId));
-      if (target) {
+    async (n: PortalNotification) => {
+      openingRequest.current?.abort();
+      const controller = new AbortController();
+      openingRequest.current = controller;
+      setOpenFailed(false);
+      try {
+        const { items } = await listNotifications({ signal: controller.signal, check: true, id: n.id });
+        if (controller.signal.aborted) return;
+        const current = items.find((item) => item.id === n.id);
+        const target = current && notificationTarget(current, environmentPath(current.appId));
+        if (!current || !target) {
+          if (!current) dispatch({ type: 'remove', notificationId: n.id });
+          setOpenFailed(true);
+          void onRefreshUnread();
+          return;
+        }
+        void handleRead(current);
         void navigate({ to: target as '/' });
         onClose();
+      } catch {
+        if (!controller.signal.aborted) setOpenFailed(true);
       }
     },
-    [environmentPath, handleRead, navigate, onClose],
+    [environmentPath, handleRead, navigate, onClose, onRefreshUnread],
   );
 
   const handleReadAll = useCallback(async () => {
     try {
       await markAllNotificationsRead(csrf);
       dispatch({ type: 'mark-all-read' });
-      onCountChange?.(0);
+      await onRefreshUnread();
     } catch {
       /* unchanged */
     }
-  }, [csrf, onCountChange]);
+  }, [csrf, onRefreshUnread]);
 
   return (
     <LazyMotion features={domAnimation}>
@@ -148,7 +201,8 @@ export function NotificationPanel({
         </div>
 
         <div className="flex-1 overflow-y-auto custom-scrollbar">
-          {loading ? (
+          {openFailed && <p role="status" className="app-text-caption px-4 py-2">{t('portal:notifications.openFailed')}</p>}
+          {loading && notifications.length === 0 ? (
             <div className="flex justify-center py-8">
               <Loader2 size={18} className="animate-spin text-app-ink/40" />
             </div>
@@ -156,7 +210,7 @@ export function NotificationPanel({
             <p role="alert" className="app-text-body text-center text-app-ink/55 py-8">
               {t('portal:notifications.loadFailed')}
             </p>
-          ) : notifications.length === 0 ? (
+          ) : notifications.length === 0 && !nextCursor ? (
             <p className="app-text-body text-center text-app-ink/30 py-8">
               {t('shell:notifications.empty')}
             </p>
@@ -168,7 +222,7 @@ export function NotificationPanel({
               >
                 <div className="flex items-start gap-2">
                   <button
-                    onClick={() => handleClick(n)}
+                    onClick={() => void handleClick(n)}
                     className="flex min-w-0 flex-1 items-start gap-2 text-left"
                     type="button"
                   >
@@ -205,6 +259,14 @@ export function NotificationPanel({
                 </div>
               </div>
             ))
+          )}
+          {nextCursor && !failed && (
+            <div className="flex flex-col items-center gap-2 py-3">
+              {moreFailed && <p role="status" className="app-text-caption">{t('portal:notifications.loadFailed')}</p>}
+              <Button size="dense" variant="ghost" disabled={loadingMore || loading} onClick={() => void loadMore()}>
+                {t('portal:notifications.loadMore')}
+              </Button>
+            </div>
           )}
         </div>
       </m.div>

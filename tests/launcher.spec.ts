@@ -223,7 +223,10 @@ async function openConsole(page: Page, options: { locale?: string } = {}) {
     { id: "c-work", title: "업무", iconKey: "briefcase", position: 0, appIds: ["ledger"], updatedAt },
   ];
   let created = 0;
-  const page_ = () => ({ categories: state.map((category, position) => ({ ...category, position })) });
+  const page_ = () => ({
+    revision: `layout-${created}`,
+    categories: state.map((category, position) => ({ ...category, position })),
+  });
   await page.route("**/api/**", async (route) => {
     const request = route.request();
     const url = new URL(request.url());
@@ -344,6 +347,7 @@ test("the console category editor creates, renames, assigns, saves and deletes w
       method: "PUT",
       path: "/api/v1/launcher/categories/layout",
       body: {
+        expectedRevision: "layout-1",
         categories: [
           { appIds: ["wiki", "ledger"], iconKey: "rocket", id: "c-new-1", title: "현장 지원" },
           { appIds: [], iconKey: "briefcase", id: "c-work", title: "업무" },

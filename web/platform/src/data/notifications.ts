@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { request } from "@miy/sdk";
 
 /** One entry of GET /api/v1/notifications (this portal's environment only). */
@@ -21,8 +21,17 @@ export type NotificationPage = { items: PortalNotification[]; unread: number; ne
 export type NotificationMute = { appId: string; kind: string };
 
 /** With `check`, the Core first asks the apps whether each item may still be opened. */
-export function listNotifications(signal?: AbortSignal, check = false) {
-  return request<NotificationPage>(`/api/v1/notifications?limit=50${check ? "&check=true" : ""}`, undefined, { signal });
+export function listNotifications({
+  signal,
+  check = false,
+  cursor,
+  id,
+}: { signal?: AbortSignal; check?: boolean; cursor?: string; id?: string } = {}) {
+  const query = new URLSearchParams({ limit: "50" });
+  if (check) query.set("check", "true");
+  if (cursor) query.set("cursor", cursor);
+  if (id) query.set("id", id);
+  return request<NotificationPage>(`/api/v1/notifications?${query}`, undefined, { signal });
 }
 export function markNotificationRead(csrf: string, id: string) {
   return request<void>(`/api/v1/notifications/${encodeURIComponent(id)}/read`, csrf, { method: "POST" });
@@ -52,11 +61,14 @@ const SESSION_ENDED = 4401;
  */
 export function useUnreadNotifications(enabled: boolean) {
   const [unread, setUnread] = useState(0);
+  const [revision, setRevision] = useState(0);
+  const latest = useRef(0);
   const refresh = useCallback(async () => {
     if (!enabled) return;
+    const sequence = ++latest.current;
     try {
       const value = await request<{ unread: number }>("/api/v1/notifications/unread-count");
-      if (typeof value.unread === "number") setUnread(value.unread);
+      if (sequence === latest.current && typeof value.unread === "number") setUnread(value.unread);
     } catch {
       /* keep the last count */
     }
@@ -81,7 +93,9 @@ export function useUnreadNotifications(enabled: boolean) {
           if (value.type === "notifications.unread" && typeof value.unread === "number") {
             live = true;
             attempt = 0;
+            latest.current += 1;
             setUnread(value.unread);
+            setRevision((value) => value + 1);
           }
         } catch {
           /* not a channel message */
@@ -105,11 +119,12 @@ export function useUnreadNotifications(enabled: boolean) {
     document.addEventListener("visibilitychange", visible);
     return () => {
       stopped = true;
+      latest.current += 1;
       clearTimeout(retry);
       clearInterval(timer);
       socket?.close(1000);
       document.removeEventListener("visibilitychange", visible);
     };
   }, [enabled, refresh]);
-  return { unread, setUnread, refresh };
+  return { unread, setUnread, refresh, revision };
 }

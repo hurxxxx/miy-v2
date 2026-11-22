@@ -335,6 +335,8 @@ export interface LauncherCategory {
 /** `GET /api/v1/launcher/categories` and the answer of every category change. */
 export interface LauncherCategoryPage {
   categories: LauncherCategory[];
+  /** Compare before replacing the whole arrangement. */
+  revision: string;
 }
 
 /** Display languages the platform offers. */

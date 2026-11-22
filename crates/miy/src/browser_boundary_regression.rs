@@ -650,9 +650,9 @@ pub async fn run(
         .context("created category")?
         .to_owned();
     for layout in [
-        json!({"categories":[{"id":id,"title":"업무 지원","iconKey":"layout-grid","appIds":["boundary-ledger","boundary-ledger"]}]}),
-        json!({"categories":[{"id":id,"title":"업무 지원","iconKey":"layout-grid","appIds":["no-such-app"]}]}),
-        json!({"categories":[{"id":id,"title":"","iconKey":"layout-grid","appIds":[]}]}),
+        json!({"expectedRevision":created["revision"],"categories":[{"id":id,"title":"업무 지원","iconKey":"layout-grid","appIds":["boundary-ledger","boundary-ledger"]}]}),
+        json!({"expectedRevision":created["revision"],"categories":[{"id":id,"title":"업무 지원","iconKey":"layout-grid","appIds":["no-such-app"]}]}),
+        json!({"expectedRevision":created["revision"],"categories":[{"id":id,"title":"","iconKey":"layout-grid","appIds":[]}]}),
     ] {
         denied(
             h.browser_request(
@@ -669,10 +669,22 @@ pub async fn run(
     }
     let arranged = json_response(
         h.browser_request(&console_admin, Method::PUT, "/api/v1/launcher/categories/layout")
-            .json(&json!({"categories":[{"id":id,"title":"업무 지원","iconKey":"briefcase","appIds":["boundary-notes","boundary-ledger"]}]}))
+            .json(&json!({"expectedRevision":created["revision"],"categories":[{"id":id,"title":"업무 지원","iconKey":"briefcase","appIds":["boundary-notes","boundary-ledger"]}]}))
             .send()
             .await?,
         200,
+    )
+    .await?;
+    denied(
+        h.browser_request(
+            &console_admin,
+            Method::PUT,
+            "/api/v1/launcher/categories/layout",
+        )
+        .json(&json!({"expectedRevision":created["revision"],"categories":[]}))
+        .send()
+        .await?,
+        409,
     )
     .await?;
     let seen = json_response(

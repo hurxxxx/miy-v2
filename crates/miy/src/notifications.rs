@@ -71,6 +71,8 @@ pub struct MarkGroupRead {
 pub struct ListQuery {
     pub limit: Option<i64>,
     pub cursor: Option<String>,
+    /// Select the specific notification version displayed by the portal.
+    pub id: Option<Uuid>,
     /// Ask the apps (their declared `notificationCheck`) whether each listed
     /// notification still points at something the person may open. The portal
     /// sets it when the panel opens.
@@ -224,7 +226,7 @@ pub async fn publish(
          SELECT gen_random_uuid(),$1,$2,$3,r.id,$4,$5,$6,$7,$8,$9 FROM unnest($10::text[]) AS r(id) \
          WHERE {eligible} AND NOT EXISTS(SELECT 1 FROM notification_mutes m \
              WHERE m.user_id=r.id AND m.app_id=$2 AND (m.kind=$4 OR m.kind='*')) \
-         ON CONFLICT(installation_id,user_id,group_key) DO UPDATE SET kind=excluded.kind,title=excluded.title,\
+         ON CONFLICT(installation_id,user_id,group_key) DO UPDATE SET id=excluded.id,kind=excluded.kind,title=excluded.title,\
          path=excluded.path,resource_id=excluded.resource_id,actor=excluded.actor,\
          created_at=clock_timestamp(),read_at=NULL RETURNING user_id"
     ))
@@ -402,6 +404,7 @@ pub async fn list(
         "SELECT n.id,n.installation_id,n.app_id,a.name AS app_name,n.kind,n.group_key,n.title,n.path,\
          n.resource_id,n.created_at,n.read_at FROM notifications n JOIN apps a ON a.id=n.app_id \
          WHERE {} AND ($3::timestamptz IS NULL OR (n.created_at,n.id)<($3,$4)) \
+         AND ($6::uuid IS NULL OR n.id=$6) \
          ORDER BY n.created_at DESC,n.id DESC LIMIT $5",
         visible()
     ))
@@ -410,10 +413,11 @@ pub async fn list(
     .bind(after.map(|(at, _)| at))
     .bind(after.map(|(_, id)| id))
     .bind(limit + 1)
+    .bind(query.id)
     .fetch_all(&s.pool)
     .await?;
-    let more = rows.len() as i64 > limit;
-    let items: Vec<NotificationItem> = rows
+    let mut more = rows.len() as i64 > limit;
+    let mut items: Vec<NotificationItem> = rows
         .iter()
         .take(limit as usize)
         .map(|row| NotificationItem {
@@ -430,6 +434,16 @@ pub async fn list(
             read_at: row.get("read_at"),
         })
         .collect();
+    if query.check == Some(true) {
+        let mut installations = HashSet::new();
+        if let Some(end) = items.iter().position(|item| {
+            installations.insert(item.installation_id)
+                && installations.len() > MAX_RECHECKED_INSTALLATIONS
+        }) {
+            items.truncate(end);
+            more = true;
+        }
+    }
     let next_cursor = more
         .then(|| items.last().map(|item| cursor(item.created_at, item.id)))
         .flatten();
@@ -468,7 +482,6 @@ async fn recheck(
     let checked = futures_util::future::join_all(
         installations
             .iter()
-            .take(MAX_RECHECKED_INSTALLATIONS)
             .map(|installation| {
                 let body = serde_json::json!({
                     "items": items
@@ -491,23 +504,21 @@ async fn recheck(
             }),
     )
     .await;
-    let mut removed: Vec<(Uuid, String)> = Vec::new();
+    let mut removed = Vec::new();
     let mut unanswered: HashSet<Uuid> = HashSet::new();
     let mut allowed: std::collections::HashMap<Uuid, HashSet<String>> =
         std::collections::HashMap::new();
     for (installation, answer) in checked {
         match answer {
             Ok(value) => {
-                let groups: HashSet<String> = value["allowed"]
-                    .as_array()
-                    .map(|values| {
-                        values
-                            .iter()
-                            .filter_map(|v| v.as_str().map(str::to_owned))
-                            .collect()
-                    })
-                    .unwrap_or_default();
-                allowed.insert(installation, groups);
+                match serde_json::from_value::<HashSet<String>>(value["allowed"].clone()) {
+                    Ok(groups) => {
+                        allowed.insert(installation, groups);
+                    }
+                    Err(_) => {
+                        unanswered.insert(installation);
+                    }
+                }
             }
             Err(crate::platform_calls::Failure::NotDeclared) => {}
             Err(_) => {
@@ -515,7 +526,6 @@ async fn recheck(
             }
         }
     }
-    // Beyond the per-opening limit nothing was asked: keep those as they are.
     let mut kept = Vec::with_capacity(items.len());
     let mut hidden_unread = 0;
     for item in items {
@@ -523,7 +533,7 @@ async fn recheck(
             .get(&item.installation_id)
             .is_some_and(|groups| !groups.contains(&item.group_key));
         if denied {
-            removed.push((item.installation_id, item.group_key.clone()));
+            removed.push(item.id);
         }
         if denied || unanswered.contains(&item.installation_id) {
             if item.read_at.is_none() && !denied {
@@ -534,17 +544,16 @@ async fn recheck(
         kept.push(item);
     }
     if !removed.is_empty() {
-        let (ids, groups): (Vec<Uuid>, Vec<String>) = removed.into_iter().unzip();
         let mut tx = Write::begin(&s.pool).await?;
-        sqlx::query(
-            "DELETE FROM notifications n USING unnest($2::uuid[],$3::text[]) AS r(installation_id,group_key) \
-             WHERE n.user_id=$1 AND n.installation_id=r.installation_id AND n.group_key=r.group_key",
-        )
-        .bind(&p.id)
-        .bind(&ids)
-        .bind(&groups)
-        .execute(&mut *tx)
-        .await?;
+        let deleted =
+            sqlx::query("DELETE FROM notifications WHERE user_id=$1 AND id=ANY($2::uuid[])")
+                .bind(&p.id)
+                .bind(&removed)
+                .execute(&mut *tx)
+                .await?;
+        if deleted.rows_affected() > 0 {
+            changed(&mut tx, std::slice::from_ref(&p.id), environment(p)?).await?;
+        }
         tx.decide_platform(p, policy::PlatformAction::Personal)
             .await?
             .commit()
@@ -731,7 +740,8 @@ async fn live_browser_session(
         "EXISTS(SELECT 1 FROM development_sessions WHERE id_hash=$1 AND user_id=$2 ",
         "AND browser_purpose=$3 AND expires_at>now()) ELSE ",
         "EXISTS(SELECT 1 FROM sessions s WHERE id_hash=$1 AND user_id=$2 ",
-        "AND browser_purpose=$3 AND created_at>now()-interval '8 hours' AND ",
+        "AND browser_purpose=$3 AND created_at>now()-interval '8 hours' ",
+        "AND NOT EXISTS(SELECT 1 FROM password_resets r WHERE r.user_id=s.user_id) AND ",
         crate::user_switch::issuer_current_sql!(),
         ") END"
     ))
@@ -779,7 +789,7 @@ pub async fn live(
             let Ok(count) = unread_count(&s.pool, &p.id, &env).await else {
                 return;
             };
-            if socket.send(count_message(count)).await.is_err() {
+            if !crate::live::send_with_deadline(&mut socket, count_message(count)).await {
                 return;
             }
             let mut recheck = tokio::time::interval(crate::live::RECHECK);
@@ -798,7 +808,7 @@ pub async fn live(
                                 return;
                             }
                             let Ok(count) = unread_count(&s.pool, &p.id, &env).await else { continue };
-                            if socket.send(count_message(count)).await.is_err() {
+                            if !crate::live::send_with_deadline(&mut socket, count_message(count)).await {
                                 return;
                             }
                         }
@@ -812,7 +822,7 @@ pub async fn live(
                             crate::live::close_with(&mut socket, crate::live::close::SESSION_ENDED, "session_ended").await;
                             return;
                         }
-                        if socket.send(Message::Ping(Vec::new().into())).await.is_err() {
+                        if !crate::live::send_with_deadline(&mut socket, Message::Ping(Vec::new().into())).await {
                             return;
                         }
                     }

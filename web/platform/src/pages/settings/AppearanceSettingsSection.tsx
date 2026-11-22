@@ -32,6 +32,7 @@ export function AppearanceSettingsSection({
   onLocaleChange,
   onThemeChange,
   onTimeZoneChange,
+  saving,
   state,
   t,
 }: {
@@ -39,6 +40,7 @@ export function AppearanceSettingsSection({
   onLocaleChange: (value: string) => void;
   onThemeChange: (value: ThemePreference) => void;
   onTimeZoneChange: (value: string) => void;
+  saving: ReadonlySet<'theme' | 'locale' | 'timeZone' | 'dateFormat'>;
   state: ProfilePageState;
   t: SettingsTranslator;
 }) {
@@ -65,6 +67,7 @@ export function AppearanceSettingsSection({
               <button
                 key={option.value}
                 type="button"
+                disabled={saving.has('theme')}
                 aria-pressed={state.themePreference === option.value}
                 onClick={() => onThemeChange(option.value)}
                 className={cn(
@@ -85,6 +88,7 @@ export function AppearanceSettingsSection({
           description={t('auth:settings.languageDescription')}
         >
           <select
+            disabled={saving.has('locale')}
             aria-label={t('auth:settings.language')}
             className="app-field-input"
             onChange={(event) => onLocaleChange(event.target.value)}
@@ -102,6 +106,7 @@ export function AppearanceSettingsSection({
           description={t('auth:settings.timeZoneDescription')}
         >
           <select
+            disabled={saving.has('timeZone')}
             aria-label={t('auth:settings.timeZone')}
             className="app-field-input"
             onChange={(event) => onTimeZoneChange(event.target.value)}
@@ -119,6 +124,7 @@ export function AppearanceSettingsSection({
           description={t('auth:settings.dateFormatDescription')}
         >
           <select
+            disabled={saving.has('dateFormat')}
             aria-label={t('auth:settings.dateFormat')}
             className="app-field-input"
             onChange={(event) => onDateFormatChange(event.target.value)}

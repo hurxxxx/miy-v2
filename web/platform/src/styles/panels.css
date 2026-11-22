@@ -87,7 +87,16 @@
   align-items: center;
   gap: var(--ui-space-1);
 }
+.panel-shortcuts {
+  display: flex;
+  gap: var(--ui-space-1);
+  max-width: min(20vw, 256px);
+  overflow-x: auto;
+  scrollbar-width: none;
+  padding: 2px;
+}
 .panel-chip {
+  flex: none;
   max-width: 128px;
   height: 30px;
   padding: 0 var(--ui-space-3);
@@ -111,7 +120,7 @@
   box-shadow: var(--ui-shadow-focus-ring);
 }
 @media (max-width: 1023px) {
-  .panel-chip {
+  .panel-shortcuts {
     display: none;
   }
 }

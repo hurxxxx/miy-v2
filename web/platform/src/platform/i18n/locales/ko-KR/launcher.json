@@ -66,6 +66,7 @@
     "refresh": "새로고침"
   },
   "errors": {
+    "launcher_layout_changed": "다른 관리자가 구성을 바꿨습니다. 최신 구성을 불러온 뒤 다시 편집해 주세요.",
     "invalid_category_title": "카테고리 이름은 1~120자로 입력해 주세요.",
     "invalid_category_icon": "사용할 수 없는 아이콘입니다.",
     "category_limit": "카테고리는 100개까지 만들 수 있습니다.",

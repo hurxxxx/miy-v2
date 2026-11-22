@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { announceBrowserSessionChange } from "../data/session";
 import { Button, Notice } from "../ui";
 
 type Phase = "working" | "expired" | "forbidden" | "failed";
@@ -31,6 +32,7 @@ export function SwitchUser() {
       .then((response) => {
         if (response.status === 204) {
           code.current = null;
+          announceBrowserSessionChange();
           window.location.replace("/");
           return;
         }

@@ -366,6 +366,8 @@
     "bellUnread": "알림, 읽지 않음 {{count}}개",
     "closePanel": "알림 닫기",
     "loadFailed": "알림을 불러오지 못했습니다.",
+    "loadMore": "알림 더 보기",
+    "openFailed": "이 알림을 열 수 없습니다.",
     "settingsLoadFailed": "알림 설정을 불러오지 못했습니다.",
     "consoleHasNoInbox": "관리 콘솔에는 알림함이 없습니다. 여기서 바꾼 설정은 업무 포털과 테스트 포털의 알림에 적용됩니다.",
     "noApps": "알림을 보낼 수 있는 앱이 없습니다.",

@@ -28,6 +28,7 @@ export function PanelMenu({
   const { t } = useTranslation("portal");
   const [expanded, setExpanded] = useState(false);
   const root = useRef<HTMLDivElement>(null);
+  const trigger = useRef<HTMLButtonElement>(null);
   const pinnedPanels = pinned.flatMap((id) => panels.filter((open) => panelKey(open) === id));
   const hiddenPins = pinned.filter((id) => !pinnedPanels.some((open) => panelKey(open) === id));
   const ordered = [...pinnedPanels, ...panels.filter((open) => !pinned.includes(panelKey(open)))];
@@ -37,7 +38,10 @@ export function PanelMenu({
       if (!root.current?.contains(event.target as Node)) setExpanded(false);
     };
     const escape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setExpanded(false);
+      if (event.key === "Escape") {
+        setExpanded(false);
+        trigger.current?.focus();
+      }
     };
     document.addEventListener("mousedown", outside);
     document.addEventListener("keydown", escape);
@@ -49,19 +53,24 @@ export function PanelMenu({
   if (panels.length === 0 && hiddenPins.length === 0) return null;
   return (
     <div className="panel-menu" ref={root}>
-      {pinnedPanels.map((open) => (
-        <button
-          key={panelKey(open)}
-          type="button"
-          className="panel-chip"
-          aria-pressed={current === panelKey(open)}
-          title={`${open.panel.title} · ${open.app.name}`}
-          onClick={() => onOpen(open)}
-        >
-          {open.panel.title}
-        </button>
-      ))}
+      {pinnedPanels.length > 0 && (
+        <div className="panel-shortcuts">
+          {pinnedPanels.map((open) => (
+            <button
+              key={panelKey(open)}
+              type="button"
+              className="panel-chip"
+              aria-pressed={current === panelKey(open)}
+              title={`${open.panel.title} · ${open.app.name}`}
+              onClick={() => onOpen(open)}
+            >
+              {open.panel.title}
+            </button>
+          ))}
+        </div>
+      )}
       <button
+        ref={trigger}
         type="button"
         className="notification-bell"
         aria-label={t("panels.menu")}

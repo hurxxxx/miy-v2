@@ -19,10 +19,10 @@ const ledger = {
   ui: { entry: "/artifacts/health-fixture/mf-manifest.json", export: "./AppRoot", contractVersion: "miy.ui/v1alpha1" },
 };
 
-async function open(page: Page, surface: "portal" | "console" = "portal") {
+async function open(page: Page, surface: "portal" | "console" = "portal", pageSize = 50) {
   await mockSurface(page, surface);
   const sent: { method: string; path: string; body: unknown; csrf: string | null }[] = [];
-  let items = [
+  let items: import("../web/platform/src/data/notifications").PortalNotification[] = [
     { id: "n1", installationId: ledger.id, appId: "ledger", appName: "장부", kind: "message", groupKey: "c-1", title: "앨리스 · 새 메시지 2개", path: "/conversations/1", resourceId: "1", createdAt: minutes(3), readAt: null },
     { id: "n2", installationId: ledger.id, appId: "ledger", appName: "장부", kind: "mention", groupKey: "c-2", title: "밥이 회원님을 언급했습니다", path: "/conversations/2", resourceId: "2", createdAt: minutes(90), readAt: minutes(30) },
   ];
@@ -39,7 +39,13 @@ async function open(page: Page, surface: "portal" | "console" = "portal") {
     if (path === "/api/v1/notifications/unread-count") return route.fulfill({ json: { unread: items.filter((i) => !i.readAt).length } });
     if (path === "/api/v1/notifications") {
       sent.push({ method: "GET", path: path + url.search, body: null, csrf: null });
-      return route.fulfill({ json: { items, unread: items.filter((i) => !i.readAt).length, nextCursor: null } });
+      const id = url.searchParams.get("id");
+      const offset = url.searchParams.has("cursor") ? pageSize : 0;
+      return route.fulfill({ json: {
+        items: id ? items.filter((item) => item.id === id) : items.slice(offset, offset + pageSize),
+        unread: items.filter((i) => !i.readAt).length,
+        nextCursor: !id && items.length > offset + pageSize ? "more" : null,
+      } });
     }
     if (path === "/api/v1/notifications/read-all") {
       items = items.map((i) => ({ ...i, readAt: i.readAt ?? minutes(0) }));
@@ -57,7 +63,11 @@ async function open(page: Page, surface: "portal" | "console" = "portal") {
     if (path === "/api/v1/launcher/categories") return route.fulfill({ json: { categories: [] } });
     await route.fulfill({ status: 404, json: { error: { code: "not_found" } } });
   });
-  return { sent };
+  return {
+    sent,
+    removeFirst: () => { items = items.slice(1); },
+    unreadSecond: () => { items = items.map((item) => ({ ...item, readAt: null })); },
+  };
 }
 
 test("the bell shows the unread count and the panel lists notifications as text", async ({ page }) => {
@@ -94,6 +104,43 @@ test("mark all as read clears the badge", async ({ page }) => {
   expect(sent.some((s) => s.path === "/api/v1/notifications/read-all" && s.csrf === "n-csrf")).toBe(true);
   await page.keyboard.press("Escape");
   await expect(page.getByRole("dialog", { name: "알림" })).toHaveCount(0);
+});
+
+test("reading on the first page keeps the server total and older entries can be loaded", async ({ page }) => {
+  const { unreadSecond, sent } = await open(page, "portal", 1);
+  unreadSecond();
+  await page.goto("/");
+  await page.getByRole("button", { name: "알림, 읽지 않음 2개" }).click();
+  const panel = page.getByRole("dialog", { name: "알림" });
+  await panel.getByRole("button", { name: "읽음으로 표시", exact: true }).click();
+  await expect(page.getByRole("button", { name: "알림, 읽지 않음 1개" })).toBeVisible();
+  await panel.getByRole("button", { name: "알림 더 보기" }).click();
+  await expect(panel.getByText("밥이 회원님을 언급했습니다")).toBeVisible();
+  expect(sent.some((entry) => entry.path.includes("cursor=more"))).toBe(true);
+});
+
+test("an open inbox updates with live events and checks access again before navigation", async ({ page }) => {
+  let channel: import("@playwright/test").WebSocketRoute | undefined;
+  await page.routeWebSocket("**/api/v1/live", (socket) => { channel = socket; });
+  const { removeFirst, sent } = await open(page);
+  await page.goto("/");
+  await page.getByRole("button", { name: "알림, 읽지 않음 1개" }).click();
+  const panel = page.getByRole("dialog", { name: "알림" });
+  const first = panel.getByText("앨리스 · 새 메시지 2개");
+  await expect(first).toBeVisible();
+
+  await expect.poll(() => !!channel).toBe(true);
+  const lists = () => sent.filter((entry) => entry.path.includes("check=true"));
+  const before = lists().length;
+  channel!.send(JSON.stringify({ type: "notifications.unread", unread: 1 }));
+  await expect.poll(() => lists().length).toBeGreaterThan(before);
+
+  removeFirst();
+  await first.click();
+  await expect(panel.getByText("이 알림을 열 수 없습니다.")).toBeVisible();
+  await expect(page).toHaveURL(/\/$/);
+  expect(lists().some((entry) => entry.path.includes("id=n1"))).toBe(true);
+  expect(sent.some((entry) => entry.path === "/api/v1/notifications/n1/read")).toBe(false);
 });
 
 test("the console has no bell", async ({ page }) => {

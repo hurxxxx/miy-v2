@@ -171,12 +171,18 @@ function live(handlers: LiveHandlers): LiveConnection {
   let closed = false;
   let attempt = 0;
   let retry: ReturnType<typeof setTimeout> | undefined;
+  const retryOpen = () => {
+    if (closed || stopped) return;
+    attempt += 1;
+    retry = setTimeout(() => void open(), Math.min(LIVE_RETRY_MAX, 1_000 * 2 ** Math.min(attempt, 5)));
+  };
   const open = async () => {
     if (closed || stopped) return;
     try {
       if (Date.now() > tokenExpiresAt - 5_000) await renew();
     } catch {
-      /* the socket reports the failure */
+      retryOpen();
+      return;
     }
     if (closed || stopped) return;
     const url = new URL("/_miy/live", window.location.href);
@@ -207,9 +213,7 @@ function live(handlers: LiveHandlers): LiveConnection {
         closed || !!stopped || event.code === LIVE_BAD_AUTH || event.code === LIVE_SESSION_ENDED ||
         event.code === LIVE_ACCESS_REVOKED || event.code === LIVE_RELEASE_CHANGED;
       handlers.onClose?.({ code: event.code, retrying: !final });
-      if (final) return;
-      attempt += 1;
-      retry = setTimeout(() => void open(), Math.min(LIVE_RETRY_MAX, 1_000 * 2 ** Math.min(attempt, 5)));
+      if (!final) retryOpen();
     };
   };
   void open();

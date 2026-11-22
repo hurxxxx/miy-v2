@@ -186,7 +186,9 @@ const FRAME_ORIGIN: &str = concat!(
     "AND f.installation_id=$4 AND f.release_id=$5 AND f.environment=$6 ",
     "AND EXISTS(SELECT 1 FROM users u WHERE u.id=f.user_id AND u.enabled) ",
     "AND (EXISTS(SELECT 1 FROM sessions s WHERE s.id_hash=f.parent_session_hash AND s.user_id=f.user_id ",
-    "AND s.browser_purpose=f.browser_purpose AND s.created_at>clock_timestamp()-interval '8 hours' AND ",
+    "AND s.browser_purpose=f.browser_purpose ",
+    "AND s.created_at>clock_timestamp()-interval '8 hours' ",
+    "AND NOT EXISTS(SELECT 1 FROM password_resets r WHERE r.user_id=s.user_id) AND ",
     crate::user_switch::issuer_current_sql!(),
     ") ",
     "OR ($3::boolean AND EXISTS(SELECT 1 FROM development_sessions d WHERE d.id_hash=f.parent_development_hash ",
@@ -213,7 +215,8 @@ async fn current(s: &State, p: &Principal, c: &Context) -> ApiResult<Vec<String>
         let sql = match origin.kind.as_str() {
             "browser" => concat!(
                 "SELECT EXISTS(SELECT 1 FROM sessions s WHERE s.id_hash=$1 AND s.user_id=$2 ",
-                "AND s.expires_at>clock_timestamp() AND s.created_at>clock_timestamp()-interval '8 hours' AND ",
+                "AND s.expires_at>clock_timestamp() AND s.created_at>clock_timestamp()-interval '8 hours' ",
+                "AND NOT EXISTS(SELECT 1 FROM password_resets r WHERE r.user_id=s.user_id) AND ",
                 crate::user_switch::issuer_current_sql!(),
                 ")"
             ),

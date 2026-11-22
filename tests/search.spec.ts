@@ -118,3 +118,11 @@ test("an app removed from the visible installation list leaves the open search r
   const boardGroup = page.locator(".search-group").filter({ has: page.getByRole("heading", { name: "게시판" }) });
   await expect(boardGroup.getByText("가져오지 못함")).toBeVisible();
 });
+
+test("submitting the current query retries an unavailable provider", async ({ page }) => {
+  const { queries } = await open(page);
+  await page.goto("/search?q=회의");
+  await expect(page.getByText("가져오지 못함")).toBeVisible();
+  await page.getByRole("button", { name: "검색", exact: true }).click();
+  await expect.poll(() => queries).toEqual(["회의", "회의"]);
+});

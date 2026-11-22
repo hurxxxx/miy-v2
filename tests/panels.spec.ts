@@ -114,6 +114,7 @@ test("pinning a panel saves the preference and shows it in the header", async ({
   await chip.click();
   await expect(page.getByRole("complementary", { name: "메모 패널" })).toBeVisible();
   await expect(chip).toHaveAttribute("aria-pressed", "true");
+  await expect(page.frameLocator("iframe.app-frame-panel").getByLabel("문서 제목")).toHaveValue("저장된 제목");
 });
 
 test("a pin for a panel outside this portal can be removed", async ({ page }) => {
@@ -125,6 +126,42 @@ test("a pin for a panel outside this portal can be removed", async ({ page }) =>
   await unpin.click();
   await expect.poll(() => patches).toEqual([{ body: { panelPin: { id: "other/panel", pinned: false } }, csrf: "p-csrf" }]);
   await expect(unpin).toHaveCount(0);
+});
+
+test("the full pin allowance keeps the panels menu and account actions inside the header", async ({ page }) => {
+  const panels = Array.from({ length: 16 }, (_, index) => ({
+    id: `panel-${index}`, title: `고정한 보조 패널 번호 ${index}`, path: "/widgets/todos",
+  }));
+  await open(page, {
+    pins: panels.map(({ id }) => `planner/${id}`),
+    installations: () => [{ ...planner, panels }, ledger],
+  });
+  await page.goto("/environments/prod");
+  const toggle = page.getByRole("button", { name: "보조 패널", exact: true });
+  const signOut = page.locator(".header-account").getByRole("button").last();
+  await expect(toggle).toBeVisible();
+  for (const width of [1024, 1400, 1920]) {
+    await page.setViewportSize({ width, height: 850 });
+    for (const element of [toggle, signOut]) {
+      const bounds = await element.boundingBox();
+      expect(bounds).toBeTruthy();
+      expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(width);
+    }
+  }
+  await toggle.click();
+  await expect(page.getByRole("list", { name: "보조 패널" }).locator("li")).toHaveCount(16);
+});
+
+test("a full reload releases the previous document's frame slot", async ({ page }) => {
+  await open(page);
+  await page.goto("/environments/prod/apps/ledger");
+  await expect(page.frameLocator("iframe.app-frame").getByLabel("문서 제목")).toHaveValue("저장된 제목");
+  const deletion = page.waitForRequest((request) =>
+    request.method() === "DELETE" && new URL(request.url()).pathname.startsWith("/api/v1/app-frames/"),
+  );
+  await page.reload();
+  await deletion;
+  await expect(page.frameLocator("iframe.app-frame").getByLabel("문서 제목")).toHaveValue("저장된 제목");
 });
 
 test("unsaved input in a panel is confirmed before it closes", async ({ page }) => {

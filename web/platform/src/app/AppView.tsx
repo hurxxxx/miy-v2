@@ -38,7 +38,7 @@ function AppSession({ appId, environment, basePath }: { appId: string; environme
   const [health, setHealth] = useState<Installation["health"]>();
   const [updated, setUpdated] = useState(false);
   // The app reports its input state from its frame; leave checks read the last one.
-  const input = useRef<FrameInput>({ state: "unknown" });
+  const input = useRef<FrameInput>({ state: "clean" });
   const guards = useMemo(() => {
     const created = createNavigationGuards();
     created.register(() => leaveMessage(input.current));

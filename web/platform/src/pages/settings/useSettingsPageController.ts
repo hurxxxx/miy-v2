@@ -2,7 +2,7 @@
 // (0002af062). Saving goes to PATCH /api/v1/me/preferences; display changes
 // apply at once through the portal's display settings and roll back when the
 // save fails, as AI-DO does with its locale.
-import { useEffect, useReducer, useState } from 'react';
+import { useEffect, useReducer, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useFeedback } from '@miy/ui';
@@ -37,7 +37,7 @@ export function useSettingsPageController({
 }) {
   const { t, i18n } = useTranslation(['auth', 'common', 'portal']);
   const feedback = useFeedback();
-  const { updateUser } = useSession();
+  const { isCurrentSession, updateUser } = useSession();
   const display = useDisplaySettings();
   const [state, dispatch] = useReducer(
     profilePageReducer,
@@ -49,6 +49,10 @@ export function useSettingsPageController({
     loadingSessions: false,
     sessionLoadError: null,
   });
+  const pendingPreferences = useRef(new Set<ProfilePreferenceChange['type']>());
+  const [savingPreferences, setSavingPreferences] = useState<ReadonlySet<ProfilePreferenceChange['type']>>(
+    pendingPreferences.current,
+  );
 
   /** Server errors arrive as codes; known ones have a translation. */
   const errorText = (error: unknown, fallback: string) =>
@@ -66,7 +70,7 @@ export function useSettingsPageController({
         body: JSON.stringify(payload),
       },
     );
-    updateUser(saved);
+    updateUser(user.csrf, saved, Object.keys(payload) as (keyof UpdatePreferencesPayload)[]);
   };
 
   const loadSessions = async (signal?: AbortSignal) => {
@@ -149,17 +153,25 @@ export function useSettingsPageController({
   };
 
   const saveProfilePreference = async (change: ProfilePreferenceChange) => {
+    if (pendingPreferences.current.has(change.type)) return;
     const plan = prepareProfilePreferenceSave(state, change);
     if (!plan) return;
+    pendingPreferences.current.add(change.type);
+    setSavingPreferences(new Set(pendingPreferences.current));
     const previous = displayOf(user.preferences);
     dispatch({ type: 'patch', patch: plan.optimisticPatch });
     display.update(plan.payload);
     try {
       await save(plan.payload);
     } catch (caughtError) {
-      display.update(previous);
-      dispatch({ type: 'patch', patch: plan.rollbackPatch });
-      feedback.error(errorText(caughtError, t('auth:settings.saveFailed')));
+      if (isCurrentSession(user.csrf)) {
+        display.update({ [change.type]: previous[change.type] });
+        dispatch({ type: 'patch', patch: plan.rollbackPatch });
+        feedback.error(errorText(caughtError, t('auth:settings.saveFailed')));
+      }
+    } finally {
+      pendingPreferences.current.delete(change.type);
+      setSavingPreferences(new Set(pendingPreferences.current));
     }
   };
 
@@ -177,6 +189,7 @@ export function useSettingsPageController({
       saveProfilePreference({ type: 'theme', value }),
     saveTimeZonePreference: (value: string) =>
       saveProfilePreference({ type: 'timeZone', value }),
+    savingPreferences,
     security,
     state,
     t,

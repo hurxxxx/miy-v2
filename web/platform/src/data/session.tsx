@@ -79,11 +79,20 @@ type SessionContextValue = {
   state: SessionState;
   options?: LoginOptions;
   retry: () => void;
-  /** Replace fields the server returned after a change of one's own record. */
-  updateUser: (change: Pick<User, "name" | "preferences">) => void;
+  isCurrentSession: (csrf: string) => boolean;
+  /** Merge only the fields written by this request, for the session that sent it. */
+  updateUser: (csrf: string, saved: Pick<User, "name" | "preferences">, fields: (keyof Preferences | "name")[]) => void;
 };
 
 const SessionContext = createContext<SessionContextValue | null>(null);
+const SESSION_CHANNEL = "miy:browser-session";
+
+export function announceBrowserSessionChange() {
+  if (typeof BroadcastChannel === "undefined") return;
+  const channel = new BroadcastChannel(SESSION_CHANNEL);
+  channel.postMessage("changed");
+  channel.close();
+}
 
 function validateOptions(received: LoginOptions): LoginOptions {
   if (!["portal", "dev_portal", "console"].includes(received.surface))
@@ -144,6 +153,39 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const [options, setOptions] = useState<LoginOptions>();
   const [attempt, setAttempt] = useState(0);
   const controller = useRef<AbortController>(undefined);
+  const currentOptions = useRef<LoginOptions>(undefined);
+  const sessionCsrf = useRef<string>(undefined);
+  const isCurrentSession = useCallback((csrf: string) => csrf === sessionCsrf.current, []);
+  const retry = useCallback(() => {
+    controller.current?.abort();
+    sessionCsrf.current = undefined;
+    setState({ status: "loading" });
+    setAttempt((value) => value + 1);
+  }, []);
+  useEffect(() => {
+    const channel = typeof BroadcastChannel === "undefined" ? undefined : new BroadcastChannel(SESSION_CHANNEL);
+    channel?.addEventListener("message", (event) => {
+      if (event.data === "changed") retry();
+    });
+    let restoreCheck: AbortController | undefined;
+    const restore = (event: PageTransitionEvent) => {
+      const options = currentOptions.current;
+      const csrf = sessionCsrf.current;
+      if (!event.persisted || !options) return;
+      restoreCheck?.abort();
+      const check = new AbortController();
+      restoreCheck = check;
+      void readSession(options, check.signal).then((user) => {
+        if (!check.signal.aborted && sessionCsrf.current === csrf && user?.csrf !== csrf) retry();
+      }).catch(() => undefined);
+    };
+    window.addEventListener("pageshow", restore);
+    return () => {
+      channel?.close();
+      restoreCheck?.abort();
+      window.removeEventListener("pageshow", restore);
+    };
+  }, [retry]);
   useEffect(() => {
     controller.current?.abort();
     const current = new AbortController();
@@ -157,13 +199,17 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       .then(async (response) => {
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         const next = validateOptions((await response.json()) as LoginOptions);
-        if (!current.signal.aborted) setOptions(next);
+        if (!current.signal.aborted) {
+          currentOptions.current = next;
+          setOptions(next);
+        }
         return readSession(next, current.signal);
       })
       .then((user) => {
         if (current.signal.aborted) return;
         // The saved choice wins over this browser's copy from now on (a server
         // without saved preferences leaves this browser's copy in effect).
+        sessionCsrf.current = user?.csrf;
         if (user?.preferences) adopt(displayOf(user.preferences));
         setState(user ? { status: "ready", user } : { status: "anonymous" });
       })
@@ -176,18 +222,30 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       });
     return () => current.abort();
   }, [attempt, adopt]);
-  const retry = useCallback(() => setAttempt((value) => value + 1), []);
   const updateUser = useCallback(
-    (change: Pick<User, "name" | "preferences">) => {
-      adopt(displayOf(change.preferences));
-      setState((current) =>
-        current.status === "ready" ? { status: "ready", user: { ...current.user, ...change } } : current,
-      );
+    (csrf: string, saved: Pick<User, "name" | "preferences">, fields: (keyof Preferences | "name")[]) => {
+      if (csrf !== sessionCsrf.current) return;
+      const preferences = Object.fromEntries(
+        fields.filter((field) => field !== "name").map((field) => [field, saved.preferences[field]]),
+      ) as Partial<Preferences>;
+      adopt(preferences);
+      setState((current) => {
+        if (current.status !== "ready" || current.user.csrf !== csrf) return current;
+        const user = current.user;
+        return {
+          status: "ready",
+          user: {
+            ...user,
+            name: fields.includes("name") ? saved.name : user.name,
+            preferences: { ...user.preferences, ...preferences },
+          },
+        };
+      });
     },
     [adopt],
   );
   return (
-    <SessionContext.Provider value={{ state, options, retry, updateUser }}>
+    <SessionContext.Provider value={{ state, options, retry, isCurrentSession, updateUser }}>
       {children}
     </SessionContext.Provider>
   );

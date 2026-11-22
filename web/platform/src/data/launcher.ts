@@ -18,7 +18,7 @@ export type LauncherCategory = {
 };
 
 /** `GET /api/v1/launcher/categories` and the answer of every category change. */
-export type LauncherCategoriesResponse = { categories: LauncherCategory[] };
+export type LauncherCategoriesResponse = { categories: LauncherCategory[]; revision: string };
 
 /** One category of `PUT /api/v1/launcher/categories/layout`, in display order. */
 export type LauncherLayoutCategory = {
@@ -39,9 +39,11 @@ function text(value: unknown) {
 
 // A malformed answer is a failed read, never an empty arrangement.
 function checkedCategories(value: unknown): LauncherCategoriesResponse {
-  const categories = (value as { categories?: unknown } | null)?.categories;
+  const response = value as { categories?: unknown; revision?: unknown } | null;
+  const categories = response?.categories;
   if (!Array.isArray(categories)) throw new ApiError("parse", "invalid_launcher_categories");
   return {
+    revision: text(response?.revision),
     categories: categories.flatMap((item) => {
       const category = item as Partial<LauncherCategory> | null;
       if (!category || typeof category.id !== "string") return [];
@@ -87,7 +89,7 @@ export async function deleteLauncherCategory(csrf: string, categoryId: string): 
 
 export async function updateLauncherCategoryLayout(
   csrf: string,
-  payload: { categories: LauncherLayoutCategory[] },
+  payload: { categories: LauncherLayoutCategory[]; expectedRevision: string },
 ): Promise<LauncherCategoriesResponse> {
   return checkedCategories(
     await request<unknown>(`${CATEGORIES_PATH}/layout`, csrf, {

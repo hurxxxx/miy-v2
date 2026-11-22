@@ -784,10 +784,11 @@ async fn live_session(s: State, site: Site, mut socket: axum::extract::ws::WebSo
     };
     // The frame runtime treats this first message as "open"; every later
     // message comes from the app.
-    if socket
-        .send(Message::Text(r#"{"type":"miy.ready"}"#.into()))
-        .await
-        .is_err()
+    if !crate::live::send_with_deadline(
+        &mut socket,
+        Message::Text(r#"{"type":"miy.ready"}"#.into()),
+    )
+    .await
     {
         return;
     }
@@ -1558,13 +1559,21 @@ async fn renew(
     )?;
     let (app, env): (String, String) = (frame.get("app_id"), frame.get("environment"));
     let token = format!("{TOKEN_PREFIX}{}", crate::auth::random());
+    // Account writers lock the user before deleting a browser session and its
+    // frames. Take that lock first and still decide current use before commit.
     let mut tx = policy::Write::begin(&s.pool).await?;
-    let token_expires_at: DateTime<Utc> = sqlx::query_scalar(
-        "UPDATE app_frame_sessions SET token_hash=$2,token_expires_at=LEAST(clock_timestamp()+make_interval(mins=>$3),expires_at) WHERE id=$1 AND revoked_at IS NULL AND expires_at>clock_timestamp() RETURNING token_expires_at",
-    )
-    .bind(id)
+    sqlx::query("SELECT id FROM users WHERE id=$1 FOR SHARE")
+        .bind(&p.id)
+        .execute(&mut *tx)
+        .await?;
+    let token_expires_at: DateTime<Utc> = sqlx::query_scalar(&format!(
+        "UPDATE app_frame_sessions f SET token_hash=$2,token_expires_at=LEAST(clock_timestamp()+make_interval(mins=>$3),expires_at) \
+         WHERE f.id=$4 AND f.revoked_at IS NULL AND f.expires_at>clock_timestamp() AND {PARENT_LIVE} RETURNING token_expires_at"
+    ))
+    .bind(s.auth.development_login)
     .bind(hash(&token))
     .bind(TOKEN_MINUTES)
+    .bind(id)
     .fetch_optional(&mut *tx)
     .await?
     .ok_or_else(ApiError::unauthorized)?;

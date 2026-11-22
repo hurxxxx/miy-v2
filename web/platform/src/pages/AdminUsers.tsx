@@ -320,7 +320,11 @@ export function UserAdmin({ csrf, selfId, users, report, refresh }: Props) {
     // Open the tab while the click still counts as the person's action; a
     // window opened after the request would be blocked as a popup.
     const tab = window.open("", "_blank");
-    if (tab) tab.opener = null;
+    if (!tab) {
+      report(t("users.popupBlocked"));
+      return;
+    }
+    tab.opener = null;
     setBusy(true);
     try {
       const started = await request<{ url: string }>(
@@ -328,14 +332,10 @@ export function UserAdmin({ csrf, selfId, users, report, refresh }: Props) {
         csrf,
         { method: "POST", body: JSON.stringify(choice) },
       );
-      if (tab) tab.location.replace(started.url);
-      else if (!window.open(started.url, "_blank", "noopener")) {
-        report(t("users.popupBlocked"));
-        return;
-      }
+      tab.location.replace(started.url);
       report(t("users.signInAsStarted", { name: user.name }));
     } catch (error) {
-      tab?.close();
+      tab.close();
       report(failure(t, error));
     } finally {
       setBusy(false);

@@ -575,10 +575,10 @@ impl Auth {
                 .execute(&state.pool)
                 .await?;
         }
-        let mut switched = false;
+        let mut signed_in_at_provider = false;
         if let Some(session) = cookie(headers, &self.cookie_name(purpose, "session")) {
-            switched = sqlx::query_scalar::<_, bool>(
-                "DELETE FROM sessions WHERE id_hash=$1 AND browser_purpose=$2 RETURNING impersonator_user_id IS NOT NULL",
+            signed_in_at_provider = sqlx::query_scalar::<_, bool>(
+                "DELETE FROM sessions WHERE id_hash=$1 AND browser_purpose=$2 RETURNING impersonator_user_id IS NULL",
             )
             .bind(hash(session))
             .bind(purpose.as_str())
@@ -586,9 +586,9 @@ impl Auth {
             .await?
             .unwrap_or(false);
         }
-        // A switched session never signed in at the identity provider; its
-        // end-session page would end the administrator's own sign-in there.
-        if development || switched {
+        // Only end a provider login when this request actually ended a session
+        // that signed in there. A switched session has no provider login.
+        if development || !signed_in_at_provider {
             return Ok(format!("{}/", self.browser_origin(purpose)));
         }
         let mut url = Url::parse(&self.discovery.end_session_endpoint)?;

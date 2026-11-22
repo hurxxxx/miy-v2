@@ -13,6 +13,7 @@ import { useDisplaySettings } from "../data/settings";
 import { COMMAND_PALETTE_EVENT } from "../components/CommandPalette";
 import { i18n } from "../platform/i18n";
 import { Button, Loading, Notice, Panel } from "../ui";
+import { closeFrame, releaseClosedDocumentFrames, rememberClosedDocumentFrame } from "./frame-slots";
 
 /**
  * A side-panel frame keeps its own location (docs/APP-FRAMES.md "보조 프레임"):
@@ -91,20 +92,32 @@ export function AppFrame({
     let active = true;
     let frameId: string | undefined;
     const close = (id: string) => {
-      void request<void>(`/api/v1/app-frames/${id}`, csrf, {
-        method: "DELETE",
-        keepalive: true,
-      }).catch(() => undefined);
+      void closeFrame(id, csrf).catch(() => undefined);
     };
+    const release = () => {
+      if (!frameId) return;
+      close(frameId);
+      frameId = undefined;
+    };
+    const pageHidden = (event: PageTransitionEvent) => {
+      if (!event.persisted) {
+        active = false;
+        if (frameId) rememberClosedDocumentFrame(frameId);
+        release();
+      }
+    };
+    window.addEventListener("pagehide", pageHidden);
     ready.current = false;
     input.current = { state: "unknown" };
     setLaunch(undefined);
     setFailure(undefined);
-    request<AppFrameLaunch>("/api/v1/app-frames", csrf, {
-      method: "POST",
-      body: JSON.stringify({ installationId: app.id }),
-    })
+    releaseClosedDocumentFrames(csrf)
+      .then(() => active ? request<AppFrameLaunch>("/api/v1/app-frames", csrf, {
+        method: "POST",
+        body: JSON.stringify({ installationId: app.id }),
+      }) : undefined)
       .then((value) => {
+        if (!value) return;
         if (active) {
           frameId = value.frameId;
           setLaunch(value);
@@ -118,7 +131,8 @@ export function AppFrame({
       });
     return () => {
       active = false;
-      if (frameId) close(frameId);
+      window.removeEventListener("pagehide", pageHidden);
+      release();
     };
   }, [app.id, csrf, run, input]);
 

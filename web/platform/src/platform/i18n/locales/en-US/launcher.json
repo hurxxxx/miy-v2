@@ -66,6 +66,7 @@
     "refresh": "Refresh"
   },
   "errors": {
+    "launcher_layout_changed": "Another administrator changed the layout. Reload it, then apply your changes again.",
     "invalid_category_title": "Enter a category name of 1 to 120 characters.",
     "invalid_category_icon": "This icon cannot be used.",
     "category_limit": "You can create up to 100 categories.",

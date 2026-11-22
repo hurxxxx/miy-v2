@@ -1106,10 +1106,15 @@
             "$ref": "#/$defs/LauncherCategory"
           },
           "type": "array"
+        },
+        "revision": {
+          "description": "Compare before replacing the whole arrangement.",
+          "type": "string"
         }
       },
       "required": [
-        "categories"
+        "categories",
+        "revision"
       ],
       "type": "object"
     },
