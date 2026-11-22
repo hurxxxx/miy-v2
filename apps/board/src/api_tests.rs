@@ -2903,6 +2903,42 @@ async fn home_card_and_recent_notices_list_what_the_caller_may_read() {
         StatusCode::UNPROCESSABLE_ENTITY,
     )
     .await;
+
+    share(&manager, &space, json!([grant("user", &manager, "admin")])).await;
+    let after_revocation = expect(
+        post(
+            &manager,
+            &format!("/v1/spaces/{space}/announcements"),
+            json!({"title": "권한 회수 뒤 공지", "isPinned": true}),
+        )
+        .await,
+        StatusCode::CREATED,
+    )
+    .await;
+    let card = expect(
+        send(
+            base(),
+            Some(platform_identity(&member)),
+            Method::POST,
+            "/platform/home-card",
+            Some(json!({})),
+        )
+        .await,
+        StatusCode::OK,
+    )
+    .await;
+    let items = card["items"].as_array().unwrap();
+    assert!(
+        items
+            .iter()
+            .any(|item| item["path"] == format!("/notices/{}", latest["id"].as_str().unwrap()))
+    );
+    assert!(
+        items
+            .iter()
+            .all(|item| item["title"] != pinned["title"]
+                && item["title"] != after_revocation["title"])
+    );
 }
 
 // ---------------------------------------------------------------- managers and identity

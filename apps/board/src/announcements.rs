@@ -546,74 +546,36 @@ pub fn notice_path(row: &Announcement) -> String {
     }
 }
 
-/// Company notices and notices of the given spaces, newest first or pinned
-/// first, with their space names.
-pub async fn readable_notices(
+#[derive(FromRow)]
+pub(crate) struct NoticeWithSpace {
+    #[sqlx(flatten)]
+    pub notice: Announcement,
+    pub space_name: Option<String>,
+}
+
+const NOTICES_WITH_SPACES: &str = "SELECT a.id, a.workspace_id, a.author_id, a.scope, a.title, a.body, \
+    a.is_pinned, a.created_at, a.updated_at, s.name AS space_name \
+    FROM announcements a LEFT JOIN board_spaces s ON s.id = a.workspace_id";
+
+/// Read direct grants and their announcements in the same statement snapshot.
+pub(crate) async fn direct_notices(
     pool: &PgPool,
-    space_ids: &[String],
+    identity: &Identity,
     limit: i64,
-    pinned_first: bool,
-) -> ApiResult<Vec<(Announcement, Option<String>)>> {
-    let order = if pinned_first {
-        "a.is_pinned DESC, a.created_at DESC"
-    } else {
-        "a.created_at DESC"
-    };
-    let sql = format!(
-        "SELECT a.id, a.workspace_id, a.author_id, a.scope, a.title, a.body, a.is_pinned, a.created_at, \
-           a.updated_at, s.name AS space_name \
-         FROM announcements a LEFT JOIN board_spaces s ON s.id = a.workspace_id \
-         WHERE a.scope = 'company' OR (a.scope = 'workspace' AND a.workspace_id = ANY($1)) \
-         ORDER BY {order} LIMIT $2"
-    );
-    let rows: Vec<(
-        String,
-        Option<String>,
-        String,
-        String,
-        String,
-        String,
-        bool,
-        NaiveDateTime,
-        NaiveDateTime,
-        Option<String>,
-    )> = sqlx::query_as(&sql)
-        .bind(space_ids)
-        .bind(limit)
-        .fetch_all(pool)
-        .await?;
-    Ok(rows
-        .into_iter()
-        .map(
-            |(
-                id,
-                workspace_id,
-                author_id,
-                scope,
-                title,
-                body,
-                is_pinned,
-                created_at,
-                updated_at,
-                space_name,
-            )| {
-                (
-                    Announcement {
-                        id,
-                        workspace_id,
-                        author_id,
-                        scope,
-                        title,
-                        body,
-                        is_pinned,
-                        created_at,
-                        updated_at,
-                    },
-                    space_name,
-                )
-            },
-        )
-        .collect())
+) -> ApiResult<Vec<NoticeWithSpace>> {
+    Ok(sqlx::query_as(&format!(
+        "{NOTICES_WITH_SPACES} WHERE a.scope = 'company' OR (a.scope = 'workspace' AND EXISTS (\
+            SELECT 1 FROM app.miy_acl_grants g WHERE g.installation_id = $1::uuid AND g.environment = $2 \
+              AND g.kind = $3 AND g.resource_id = a.workspace_id AND g.subject_kind = 'user' AND g.subject_id = $4\
+         )) ORDER BY a.is_pinned DESC, a.created_at DESC LIMIT $5"
+    ))
+    .bind(&identity.context.installation_id)
+    .bind(identity.context.environment.as_deref())
+    .bind(spaces::SPACE_KIND)
+    .bind(&identity.user_id)
+    .bind(limit)
+    .fetch_all(pool)
+    .await?)
 }
 
 #[derive(Deserialize)]
@@ -643,26 +605,41 @@ pub async fn recent(
         }
     };
     let space_ids = spaces::resource_ids(&state.acl, &identity, ACTION_READ).await?;
-    let rows = readable_notices(&state.pool, &space_ids, limit, false).await?;
-    let names =
-        people::display_names(&identity, rows.iter().map(|(row, _)| row.author_id.clone())).await;
+    let rows: Vec<NoticeWithSpace> = sqlx::query_as(&format!(
+        "{NOTICES_WITH_SPACES} WHERE a.scope = 'company' OR (a.scope = 'workspace' AND a.workspace_id = ANY($1)) \
+         ORDER BY a.created_at DESC LIMIT $2"
+    ))
+    .bind(&space_ids)
+    .bind(limit)
+    .fetch_all(&state.pool)
+    .await?;
+    let names = people::display_names(
+        &identity,
+        rows.iter().map(|row| row.notice.author_id.clone()),
+    )
+    .await;
     Ok(Json(RecentNoticesResponse {
         items: rows
             .into_iter()
-            .map(|(row, space_name)| RecentNotice {
-                path: notice_path(&row),
-                author_name: names
-                    .get(&row.author_id)
-                    .cloned()
-                    .unwrap_or_else(|| row.author_id.clone()),
-                id: row.id,
-                scope: row.scope,
-                space_id: row.workspace_id,
-                space_name,
-                title: row.title,
-                is_pinned: row.is_pinned,
-                created_at: row.created_at,
-            })
+            .map(
+                |NoticeWithSpace {
+                     notice: row,
+                     space_name,
+                 }| RecentNotice {
+                    path: notice_path(&row),
+                    author_name: names
+                        .get(&row.author_id)
+                        .cloned()
+                        .unwrap_or_else(|| row.author_id.clone()),
+                    id: row.id,
+                    scope: row.scope,
+                    space_id: row.workspace_id,
+                    space_name,
+                    title: row.title,
+                    is_pinned: row.is_pinned,
+                    created_at: row.created_at,
+                },
+            )
             .collect(),
     }))
 }

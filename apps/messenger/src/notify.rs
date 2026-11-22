@@ -22,7 +22,8 @@ use crate::{
     store::{Conversation, MessageRow},
     users,
 };
-use axum::{Extension, Json, extract::State};
+use axum::{Extension, Json, body::Bytes, extract::State};
+use chrono::NaiveDateTime;
 use miy_app_sdk::{Identity, Notification};
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -34,7 +35,7 @@ pub const KIND_REPORT: &str = "report";
 const TITLE_MAX: usize = 200;
 const CALL_TIMEOUT: Duration = Duration::from_secs(5);
 const CHECK_ITEMS_MAX: usize = 500;
-const HOME_ITEMS: usize = 5;
+const HOME_ITEMS: i64 = 5;
 
 pub fn conversation_path(conversation_id: &str) -> String {
     format!("/conversations/{conversation_id}")
@@ -47,8 +48,11 @@ pub fn report_group_key(report_id: &str) -> String {
 /// "보낸 사람 · 새 메시지 N개", at most 200 characters (the sender name is
 /// shortened). Korean, AI-DO's default language: the platform keeps one title.
 pub fn message_title(sender: &str, count: i64) -> String {
-    let suffix = format!(" · 새 메시지 {count}개");
-    let room = TITLE_MAX.saturating_sub(suffix.chars().count());
+    bounded_message_title(sender, &format!(" · 새 메시지 {count}개"), TITLE_MAX)
+}
+
+fn bounded_message_title(sender: &str, suffix: &str, limit: usize) -> String {
+    let room = limit.saturating_sub(suffix.chars().count());
     let sender: String = if sender.chars().count() > room {
         let mut short: String = sender.chars().take(room.saturating_sub(1)).collect();
         short.push('…');
@@ -57,6 +61,16 @@ pub fn message_title(sender: &str, count: i64) -> String {
         sender.to_string()
     };
     format!("{sender}{suffix}")
+}
+
+fn home_subtitle(sender: &str, count: i64, english: bool) -> String {
+    let suffix = if english {
+        let noun = if count == 1 { "message" } else { "messages" };
+        format!(" · {count} new {noun}")
+    } else {
+        format!(" · 새 메시지 {count}개")
+    };
+    bounded_message_title(sender, &suffix, 160)
 }
 
 async fn bounded<T>(
@@ -354,6 +368,20 @@ pub async fn notification_check(
     Ok(Json(json!({ "allowed": allowed })))
 }
 
+#[derive(Default, Deserialize)]
+struct HomeCardRequest {
+    locale: Option<String>,
+}
+
+#[derive(sqlx::FromRow)]
+struct HomeUnread {
+    conversation_id: String,
+    unread: i64,
+    created_at: NaiveDateTime,
+    sender_id: String,
+    total: i64,
+}
+
 /// `POST /platform/home-card` (manifest `platformEndpoints.homeCard`): the
 /// person's unread conversations for the portal home, newest first, at most
 /// five, without message bodies. Read-only; names come from the app's cache
@@ -361,6 +389,7 @@ pub async fn notification_check(
 pub async fn home_card(
     State(pool): State<PgPool>,
     Extension(identity): Extension<Identity>,
+    body: Bytes,
 ) -> ApiResult<Json<Value>> {
     if !identity.context.platform {
         return Err(ApiError::forbidden(
@@ -368,56 +397,66 @@ pub async fn home_card(
             "Only the platform calls this endpoint.",
         ));
     }
+    let request: HomeCardRequest = serde_json::from_slice(&body).unwrap_or_default();
+    let english = request.locale.as_deref() == Some("en-US");
     let me = identity.user_id.as_str();
-    let rows: Vec<(String, i64, chrono::NaiveDateTime, String)> = sqlx::query_as(
-        "SELECT p.conversation_id, count(m.id), max(m.created_at), \
-           (array_agg(m.sender_id ORDER BY m.sequence DESC))[1] \
-         FROM dm_conversation_participants p \
-         LEFT JOIN dm_messages lr ON lr.id = p.last_read_message_id \
-         JOIN dm_messages m ON m.conversation_id = p.conversation_id AND m.created_at >= p.joined_at \
-           AND m.sender_id <> p.user_id AND m.sequence > coalesce(lr.sequence, 0) AND m.deleted_at IS NULL \
-         WHERE p.user_id = $1 AND p.left_at IS NULL \
-         GROUP BY p.conversation_id ORDER BY max(m.created_at) DESC, p.conversation_id",
+    // Conversation metadata and membership must agree with the unread check.
+    let mut tx = pool.begin().await?;
+    sqlx::query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY")
+        .execute(&mut *tx)
+        .await?;
+    let rows: Vec<HomeUnread> = sqlx::query_as(
+        "SELECT conversation_id, unread, created_at, sender_id, count(*) OVER () AS total FROM (\
+            SELECT DISTINCT ON (p.conversation_id) p.conversation_id, \
+                count(*) OVER (PARTITION BY p.conversation_id) AS unread, m.created_at, m.sender_id \
+            FROM dm_conversation_participants p \
+            LEFT JOIN dm_messages lr ON lr.id = p.last_read_message_id \
+            JOIN dm_messages m ON m.conversation_id = p.conversation_id AND m.created_at >= p.joined_at \
+                AND m.sender_id <> p.user_id AND m.sequence > coalesce(lr.sequence, 0) AND m.deleted_at IS NULL \
+            WHERE p.user_id = $1 AND p.left_at IS NULL \
+            ORDER BY p.conversation_id, m.sequence DESC\
+         ) latest ORDER BY created_at DESC, conversation_id LIMIT $2",
     )
     .bind(me)
-    .fetch_all(&pool)
+    .bind(HOME_ITEMS)
+    .fetch_all(&mut *tx)
     .await?;
-    let count = rows.len();
-    let top: Vec<_> = rows.into_iter().take(HOME_ITEMS).collect();
-    let mut conn = pool.acquire().await?;
-    let mut conversations = Vec::with_capacity(top.len());
-    for (id, ..) in &top {
-        conversations.push(crate::store::load_conversation(&mut conn, id, false).await?);
+    let count = rows.first().map_or(0, |row| row.total);
+    let mut conversations = Vec::with_capacity(rows.len());
+    for row in &rows {
+        conversations
+            .push(crate::store::load_conversation(&mut tx, &row.conversation_id, false).await?);
     }
-    drop(conn);
-    let mut ids: Vec<String> = top.iter().map(|row| row.3.clone()).collect();
+    tx.commit().await?;
+    let mut ids: Vec<String> = rows.iter().map(|row| row.sender_id.clone()).collect();
     for conversation in conversations.iter().flatten() {
         ids.extend(conversation.active().map(|p| p.user_id.clone()));
     }
     let names = users::names(&pool, &identity, ids).await;
-    let items: Vec<Value> = top
+    let items: Vec<Value> = rows
         .iter()
         .zip(conversations.iter())
-        .filter_map(|((id, unread, at, sender), conversation)| {
+        .filter_map(|(row, conversation)| {
             let conversation = conversation.as_ref()?;
             let title: String = crate::views::conversation_display_name(conversation, me, &names)
                 .chars()
                 .take(120)
                 .collect();
-            let subtitle: String = message_title(&names.name(sender), *unread)
-                .chars()
-                .take(160)
-                .collect();
             Some(json!({
                 "title": title,
-                "subtitle": subtitle,
-                "path": conversation_path(id),
-                "at": format!("{}Z", crate::time::iso(*at)),
+                "subtitle": home_subtitle(&names.name(&row.sender_id), row.unread, english),
+                "path": conversation_path(&row.conversation_id),
+                "at": format!("{}Z", crate::time::iso(row.created_at)),
             }))
         })
         .collect();
+    let title = if english {
+        "Unread conversations"
+    } else {
+        "안 읽은 대화"
+    };
     Ok(Json(
-        json!({"title": "안 읽은 대화", "count": count, "items": items}),
+        json!({"title": title, "count": count, "items": items}),
     ))
 }
 
@@ -431,6 +470,15 @@ mod tests {
         let long = message_title(&"가".repeat(300), 12);
         assert_eq!(long.chars().count(), 200);
         assert!(long.ends_with("… · 새 메시지 12개"));
+    }
+
+    #[test]
+    fn home_subtitles_are_localized_and_keep_the_unread_count() {
+        assert_eq!(home_subtitle("김하나", 3, false), "김하나 · 새 메시지 3개");
+        assert_eq!(home_subtitle("Alice", 1, true), "Alice · 1 new message");
+        let long = home_subtitle(&"가".repeat(300), 12, true);
+        assert_eq!(long.chars().count(), 160);
+        assert!(long.ends_with("… · 12 new messages"));
     }
 
     #[test]

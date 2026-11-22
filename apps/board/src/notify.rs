@@ -22,7 +22,7 @@ use std::{collections::BTreeSet, time::Duration};
 
 use crate::{
     AppState,
-    announcements::{self, Announcement},
+    announcements::{self, Announcement, NoticeWithSpace},
     community::{self, LoadedPost},
     error::{ApiError, ApiJson, ApiResult},
     managers::is_manager,
@@ -340,22 +340,26 @@ pub async fn home_card(
     platform_only(&identity)?;
     let request: HomeCardRequest = serde_json::from_slice(&body).unwrap_or_default();
     let english = request.locale.as_deref() == Some("en-US");
-    let space_ids = spaces::direct_spaces_of(&state.pool, &identity).await?;
-    let rows = announcements::readable_notices(&state.pool, &space_ids, 5, true).await?;
+    let rows = announcements::direct_notices(&state.pool, &identity, 5).await?;
     Ok(Json(HomeCard {
         title: if english { "Announcements" } else { "공지" }.into(),
         items: rows
             .into_iter()
-            .map(|(row, space_name)| HomeCardItem {
-                title: shorten(&row.title, 200),
-                subtitle: if row.scope == "company" {
-                    if english { "Company" } else { "전사" }.into()
-                } else {
-                    space_name.unwrap_or_default()
+            .map(
+                |NoticeWithSpace {
+                     notice: row,
+                     space_name,
+                 }| HomeCardItem {
+                    title: shorten(&row.title, 200),
+                    subtitle: if row.scope == "company" {
+                        if english { "Company" } else { "전사" }.into()
+                    } else {
+                        space_name.unwrap_or_default()
+                    },
+                    path: announcements::notice_path(&row),
+                    at: utc_iso(row.created_at),
                 },
-                path: announcements::notice_path(&row),
-                at: utc_iso(row.created_at),
-            })
+            )
             .collect(),
     }))
 }

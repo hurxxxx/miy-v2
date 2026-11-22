@@ -1880,7 +1880,7 @@ async fn notification_check_mute_search_and_older_messages() {
     );
 
     // Home card: unread conversations for the platform, no message body.
-    ok(send(&b, &id, "비밀 본문").await).await;
+    let earlier = ok(send(&b, &id, "비밀 본문").await).await;
     let card = ok(request(
         Some(&a),
         Method::POST,
@@ -1900,6 +1900,40 @@ async fn notification_check_mute_search_and_older_messages() {
     assert_eq!(card["items"][0]["path"], format!("/conversations/{id}"));
     assert!(card["items"][0]["at"].as_str().unwrap().ends_with('Z'));
     assert!(!card.to_string().contains("비밀 본문"));
+
+    let latest = ok(send(&b, &id, "다음 메시지").await).await;
+    let earlier_id = earlier["id"].as_str().unwrap();
+    let mut conn = db().await;
+    sqlx::query("UPDATE dm_messages SET created_at = created_at + INTERVAL '1 hour' WHERE id = $1")
+        .bind(earlier_id)
+        .execute(&mut conn)
+        .await
+        .unwrap();
+    let english = ok(request(
+        Some(&a),
+        Method::POST,
+        "/platform/home-card",
+        Some(json!({"locale": "en-US"})),
+        true,
+    )
+    .await)
+    .await;
+    assert_eq!(english["title"], "Unread conversations");
+    assert_eq!(english["count"], 1);
+    assert_eq!(
+        english["items"][0]["subtitle"],
+        format!("{} · 2 new messages", name_of(&b))
+    );
+    assert_eq!(
+        english["items"][0]["at"],
+        format!("{}Z", latest["created_at"].as_str().unwrap())
+    );
+    sqlx::query("UPDATE dm_messages SET created_at = created_at - INTERVAL '1 hour' WHERE id = $1")
+        .bind(earlier_id)
+        .execute(&mut conn)
+        .await
+        .unwrap();
+    drop(conn);
     let (status, _) = code(
         request(
             Some(&a),

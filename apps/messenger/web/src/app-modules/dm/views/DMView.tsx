@@ -1985,11 +1985,16 @@ function useDMViewElement({
       ? imageViewer
       : null;
 
-  // miy: report unsent text, uploads and in-flight sends to the portal.
+  // Closing the frame drops the drafts cached for every conversation.
   useNavigationDirty(
     Boolean(draft.trim()) ||
+      Object.values(draftByThreadIdRef.current).some((body) => Boolean(body.trim())) ||
       pendingAttachments.length > 0 ||
       sending ||
+      creatingGroup ||
+      savingTitle ||
+      Boolean(groupTitle.trim()) ||
+      Boolean(selectedThread && titleDraft !== (selectedThread.title ?? '')) ||
       Boolean(editTarget),
   );
   const olderState = threadId ? olderByThreadId[threadId] : undefined;
