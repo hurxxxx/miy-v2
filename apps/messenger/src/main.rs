@@ -14,12 +14,15 @@ mod audit;
 mod conversations;
 mod error;
 mod live;
+mod mentions;
 mod messages;
 mod notify;
+mod reactions;
 mod request;
 mod safety;
 mod safety_admin;
 mod schemas;
+mod search;
 mod store;
 mod time;
 mod ugc;
@@ -76,6 +79,11 @@ pub fn router(pool: PgPool) -> Router {
             "/v1/dm/conversations/{conversation_id}/messages/{message_id}",
             patch(m::edit_dm_message).delete(m::delete_dm_message),
         )
+        .route(
+            "/v1/dm/conversations/{conversation_id}/messages/{message_id}/reactions/{reaction}",
+            put(reactions::add_reaction).delete(reactions::remove_reaction),
+        )
+        .route("/v1/dm/search", get(search::search_messages))
         .route(
             "/v1/dm/conversations/{conversation_id}/attachments",
             post(a::reserve_dm_attachment),
@@ -163,6 +171,7 @@ pub fn router(pool: PgPool) -> Router {
             post(notify::notification_check),
         )
         .route("/platform/home-card", post(notify::home_card))
+        .route("/platform/search", post(search::platform_search))
         .with_state(pool)
 }
 

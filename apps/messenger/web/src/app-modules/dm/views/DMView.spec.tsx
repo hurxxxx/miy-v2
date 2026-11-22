@@ -27,6 +27,7 @@ import {
   searchDmUsers,
   sendDmMessage,
   setDmBlock,
+  setDmReaction,
   type DmMessage,
   type DmSafetyCapability,
   type DmTermsStatus,
@@ -96,6 +97,7 @@ vi.mock('../api/dm-api', async (importOriginal) => ({
   searchDmUsers: vi.fn(async () => []),
   sendDmMessage: vi.fn(),
   setDmBlock: vi.fn(),
+  setDmReaction: vi.fn(),
 }));
 
 const SAFETY: DmSafetyCapability = {
@@ -223,6 +225,75 @@ describe('DMEmbeddedView composer', () => {
     expect(composer().value).toBe('첫 메시지');
   });
 
+  // miy (§2.2 보강): "@" picker, mention drafts and reactions.
+  it('picks a participant with "@" and sends the mention with the body', async () => {
+    vi.mocked(listDmThreads).mockResolvedValue({
+      items: [
+        thread('c1', {
+          participants: [{ user: peer, role: 'member', joined_at: '2026-11-18T00:00:00Z' }],
+        }),
+      ],
+      safety: SAFETY,
+    });
+    vi.mocked(sendDmMessage).mockImplementation(async (_t, id, body) =>
+      message('sent', id, { sender_id: auth.user.id, body }),
+    );
+    render(view('c1'));
+    await screen.findByText(own().body);
+    fireEvent.change(composer(), { target: { value: '안녕 @상', selectionStart: 5 } });
+    const option = await screen.findByRole('option', { name: '@상대' });
+    expect(option).toBeTruthy();
+    fireEvent.keyDown(composer(), { key: 'Enter' });
+    expect(composer().value).toBe('안녕 @상대 ');
+    expect(sendDmMessage).not.toHaveBeenCalled();
+    fireEvent.change(composer(), { target: { value: '안녕 @상대 확인해 주세요' } });
+    fireEvent.keyDown(composer(), { key: 'Enter' });
+    await waitFor(() => expect(sendDmMessage).toHaveBeenCalledTimes(1));
+    expect(vi.mocked(sendDmMessage).mock.calls[0][5]).toEqual([
+      { userId: 'peer', label: '@상대' },
+    ]);
+  });
+
+  it('shows reactions and toggles them through the API', async () => {
+    const liked = message('m-like', 'c1', {
+      reactions: [{ reaction: 'heart', count: 1, reacted: false, users: [peer] }],
+    });
+    vi.mocked(listDmMessages).mockImplementation(async (_token, id) => ({
+      items: id === 'c1' ? [liked] : [],
+    }));
+    vi.mocked(setDmReaction).mockImplementation(async () => ({
+      ...liked,
+      reactions: [{ reaction: 'heart', count: 2, reacted: true, users: [peer, peer] }],
+    }));
+    render(view('c1'));
+    const chip = await screen.findByRole('button', { name: `${i18n.t('apps:dm.reactions.heart')} 1` });
+    expect(chip.getAttribute('title')).toBe(peer.full_name);
+    fireEvent.click(chip);
+    await waitFor(() =>
+      expect(setDmReaction).toHaveBeenCalledWith('token', 'c1', 'm-like', 'heart', true),
+    );
+    expect(
+      await screen.findByRole('button', { name: `${i18n.t('apps:dm.reactions.heart')} 2` }),
+    ).toBeTruthy();
+  });
+
+  it('loads older pages until a focused message is there', async () => {
+    const newest = message('m-new', 'c1', { sequence: 200, body: '최근 메시지' });
+    const target = message('m-old', 'c1', { sequence: 3, body: '찾던 메시지' });
+    vi.mocked(listDmMessages).mockImplementation(async (_token, id, _limit, before) => ({
+      items: id !== 'c1' ? [] : before ? [target] : [newest],
+    }));
+    render(
+      <DMEmbeddedView focusMessageId="m-old" onThreadIdChange={vi.fn()} threadId="c1" />,
+    );
+    expect(await screen.findByText('찾던 메시지')).toBeTruthy();
+    expect(
+      vi.mocked(listDmMessages).mock.calls.some(
+        ([, id, limit, before]) => id === 'c1' && limit === 100 && before === 200,
+      ),
+    ).toBe(true);
+  });
+
   // miy (M4): live hints only trigger refetches through the API.
   it('refetches the list and the shown conversation on a live hint', async () => {
     render(view('c1'));
@@ -289,7 +360,7 @@ describe('DMEmbeddedView composer', () => {
     fireEvent.click(screen.getByRole('button', { name: i18n.t('apps:dm.edit') }));
     fireEvent.change(composer(), { target: { value: '고친 메시지' } });
     fireEvent.keyDown(composer(), { key: 'Enter' });
-    expect(editDmMessage).toHaveBeenCalledWith('token', 'c1', 'original', '고친 메시지');
+    expect(editDmMessage).toHaveBeenCalledWith('token', 'c1', 'original', '고친 메시지', []);
     rerender(view('c2'));
     await waitFor(() => expect(composer().value).toBe(''));
     fireEvent.change(composer(), { target: { value: '다른 대화 초안' } });

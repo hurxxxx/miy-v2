@@ -32,6 +32,7 @@ use std::{collections::BTreeMap, future::Future, time::Duration};
 
 pub const KIND_MESSAGE: &str = "message";
 pub const KIND_REPORT: &str = "report";
+pub const KIND_MENTION: &str = "mention";
 const TITLE_MAX: usize = 200;
 const CALL_TIMEOUT: Duration = Duration::from_secs(5);
 const CHECK_ITEMS_MAX: usize = 500;
@@ -246,6 +247,118 @@ pub async fn message_changed(
     }
 }
 
+/// One mention line per conversation and message.
+pub fn mention_group_key(conversation_id: &str, message_id: &str) -> String {
+    format!("mention:{conversation_id}:{message_id}")
+}
+
+/// "보낸 사람 · 회원님을 언급했습니다" (no body), at most 200 characters.
+pub fn mention_title(sender: &str) -> String {
+    bounded_message_title(sender, " · 회원님을 언급했습니다", TITLE_MAX)
+}
+
+/// People newly mentioned in `message`: a `mention` line each, for those who
+/// are current active participants other than the sender, did not mute the
+/// conversation and did not block the sender.
+pub async fn mentions_added(
+    pool: &PgPool,
+    identity: &Identity,
+    conversation: &Conversation,
+    message: &MessageRow,
+    mentioned: &[String],
+) {
+    if message.hidden() || message.deleted() || mentioned.is_empty() {
+        return;
+    }
+    let candidates: Vec<String> = conversation
+        .active()
+        .filter(|p| {
+            p.user_id != message.sender_id
+                && p.muted_at.is_none()
+                && p.joined_at <= message.created_at
+                && mentioned.contains(&p.user_id)
+        })
+        .map(|p| p.user_id.clone())
+        .collect();
+    if candidates.is_empty() {
+        return;
+    }
+    let result = async {
+        let mut conn = pool.acquire().await?;
+        let blocking =
+            safety::recipients_blocking(&mut conn, &candidates, &message.sender_id).await?;
+        drop(conn);
+        let recipients: Vec<String> = candidates
+            .into_iter()
+            .filter(|id| !blocking.contains(id))
+            .collect();
+        if recipients.is_empty() {
+            return Ok::<(), ApiError>(());
+        }
+        let names = users::names(pool, identity, [message.sender_id.clone()]).await;
+        publish(
+            identity,
+            Notification {
+                request_id: uuid::Uuid::new_v4().to_string(),
+                recipients,
+                kind: KIND_MENTION.to_string(),
+                group_key: mention_group_key(conversation.id(), &message.id),
+                title: mention_title(&names.name(&message.sender_id)),
+                path: crate::search::message_path(conversation.id(), &message.id),
+                resource_id: Some(message.id.clone()),
+            },
+        )
+        .await;
+        Ok(())
+    }
+    .await;
+    if let Err(error) = result {
+        eprintln!("notification_prepare_failed: {}", error.code);
+    }
+}
+
+/// Retract the mention lines of `message_id` (for `recipients`, or everyone).
+pub async fn mentions_removed(
+    identity: &Identity,
+    conversation_id: &str,
+    message_id: &str,
+    recipients: Option<&[String]>,
+) {
+    if recipients.is_some_and(<[String]>::is_empty) {
+        return;
+    }
+    retract(
+        identity,
+        &mention_group_key(conversation_id, message_id),
+        recipients,
+    )
+    .await;
+}
+
+/// A person left or was removed: retract their mention lines of the
+/// conversation (newest 200 mentioning messages).
+pub async fn mentions_of_departed(
+    pool: &PgPool,
+    identity: &Identity,
+    conversation_id: &str,
+    user_id: &str,
+) {
+    let messages = async {
+        let mut conn = pool.acquire().await?;
+        crate::mentions::messages_mentioning(&mut conn, conversation_id, user_id).await
+    }
+    .await;
+    match messages {
+        Ok(messages) => {
+            let user = [user_id.to_string()];
+            for message_id in messages {
+                mentions_removed(identity, conversation_id, &message_id, Some(&user)).await;
+            }
+        }
+        Err(error) => eprintln!("notification_prepare_failed: {}", error.code),
+    }
+}
+
 pub async fn retract(identity: &Identity, group_key: &str, recipients: Option<&[String]>) {
     bounded(
         "retract",
@@ -326,11 +439,14 @@ pub async fn notification_check(
         return Err(ApiError::validation("items: at most 500"));
     }
     let me = identity.user_id.as_str();
-    let (reports, messages): (Vec<(&str, &str)>, Vec<(&str, &str)>) = request
+    let (reports, rest): (Vec<(&str, &str)>, Vec<(&str, &str)>) = request
         .items
         .iter()
         .filter_map(|item| Some((item.group_key.as_str(), item.resource_id.as_deref()?)))
         .partition(|(group_key, _)| group_key.starts_with("report:"));
+    let (mentions, messages): (Vec<(&str, &str)>, Vec<(&str, &str)>) = rest
+        .into_iter()
+        .partition(|(group_key, _)| group_key.starts_with("mention:"));
     let (conversation_ids, message_ids): (Vec<_>, Vec<_>) = messages.into_iter().unzip();
     let mut allowed: Vec<String> = if conversation_ids.is_empty() {
         Vec::new()
@@ -350,6 +466,38 @@ pub async fn notification_check(
         .fetch_all(&pool)
         .await?
     };
+    // A mention line stays while the person is still in the conversation, sees
+    // the message (not deleted or hidden) and is still mentioned in it.
+    let mention_messages: Vec<(&str, &str, &str)> = mentions
+        .iter()
+        .filter_map(|(group, resource)| {
+            let (conversation, message) = group.strip_prefix("mention:")?.split_once(':')?;
+            (message == *resource).then_some((*group, conversation, message))
+        })
+        .collect();
+    if !mention_messages.is_empty() {
+        let conversation_ids: Vec<&str> = mention_messages.iter().map(|m| m.1).collect();
+        let message_ids: Vec<&str> = mention_messages.iter().map(|m| m.2).collect();
+        let open: Vec<String> = sqlx::query_scalar(
+            "SELECT m.id FROM unnest($2::text[], $3::text[]) requested(conversation_id, message_id) \
+             JOIN dm_messages m ON m.id = requested.message_id AND m.conversation_id = requested.conversation_id \
+             JOIN dm_conversation_participants p ON p.conversation_id = m.conversation_id \
+             WHERE p.user_id = $1 AND p.left_at IS NULL AND m.created_at >= p.joined_at \
+               AND m.deleted_at IS NULL AND m.moderation_hidden_at IS NULL \
+               AND EXISTS (SELECT 1 FROM dm_message_mentions x WHERE x.message_id = m.id AND x.user_id = $1)",
+        )
+        .bind(me)
+        .bind(&conversation_ids)
+        .bind(&message_ids)
+        .fetch_all(&pool)
+        .await?;
+        allowed.extend(
+            mention_messages
+                .iter()
+                .filter(|(_, _, message)| open.iter().any(|id| id == message))
+                .map(|(group, _, _)| group.to_string()),
+        );
+    }
     if !reports.is_empty() {
         let manager: Option<String> =
             sqlx::query_scalar("SELECT user_id FROM dm_safety_managers WHERE user_id = $1")

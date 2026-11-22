@@ -2317,3 +2317,422 @@ async fn live_hints_follow_current_participation() {
     // The platform's recheck identity cannot open a live connection.
     assert!(live_socket(&a, true).await.is_err());
 }
+
+// --- 보강: mentions, reactions, search ------------------------------------------------
+
+/// UTF-16 range of `needle` in `body` (first occurrence), as the browser counts.
+fn utf16_range(body: &str, needle: &str) -> (usize, usize) {
+    let byte = body.find(needle).unwrap();
+    (
+        body[..byte].encode_utf16().count(),
+        needle.encode_utf16().count(),
+    )
+}
+
+async fn send_with_mentions(
+    user: &str,
+    conversation: &str,
+    body: &str,
+    mentions: Value,
+) -> Response {
+    call(
+        user,
+        Method::POST,
+        &format!("/v1/dm/conversations/{conversation}/messages"),
+        Some(json!({"body": body, "mentions": mentions})),
+    )
+    .await
+}
+
+#[tokio::test]
+#[ignore]
+async fn mentions_are_validated_notified_and_retracted() {
+    let _settings = SETTINGS.read().await;
+    let a = person("언급가");
+    let b = person("언급나");
+    let c = person("언급다");
+    let outsider = person("언급밖");
+    let group = ok(call(
+        &a,
+        Method::POST,
+        "/v1/dm/conversations",
+        Some(json!({"participant_user_ids": [b, c]})),
+    )
+    .await)
+    .await;
+    let id = group["id"].as_str().unwrap().to_string();
+    let body = format!("😀 @{} 확인 부탁", name_of(&b));
+    let (start, length) = utf16_range(&body, &format!("@{}", name_of(&b)));
+    let message = ok(send_with_mentions(
+        &a,
+        &id,
+        &body,
+        json!([{"user_id": b, "start": start, "length": length}]),
+    )
+    .await)
+    .await;
+    let message_id = message["id"].as_str().unwrap().to_string();
+    assert_eq!(
+        message["mentions"],
+        json!([{"user_id": b, "start": start, "length": length}])
+    );
+    let key = format!("mention:{id}:{message_id}");
+    let lines = events("notify", &key);
+    assert_eq!(lines.len(), 1);
+    assert_eq!(lines[0].1["kind"], "mention");
+    assert_eq!(lines[0].1["recipients"], json!([b]));
+    assert_eq!(
+        lines[0].1["title"],
+        format!("{} · 회원님을 언급했습니다", name_of(&a))
+    );
+    assert_eq!(
+        lines[0].1["path"],
+        format!("/conversations/{id}?message={message_id}")
+    );
+    assert!(!lines[0].1.to_string().contains("확인 부탁"));
+
+    // Ranges must match the body and name current participants.
+    for bad in [
+        json!([{"user_id": outsider, "start": start, "length": length}]),
+        json!([{"user_id": b, "start": start + 1, "length": length}]),
+        json!([{"user_id": b, "start": 0, "length": 999}]),
+    ] {
+        let (status, error) = code(send_with_mentions(&a, &id, &body, bad).await).await;
+        assert_eq!(
+            (status, error.as_str()),
+            (StatusCode::UNPROCESSABLE_ENTITY, "dm_mention_invalid")
+        );
+    }
+
+    // The platform keeps the line while b is still mentioned and in the conversation.
+    let check = |user: String| {
+        let key = key.clone();
+        let message_id = message_id.clone();
+        async move {
+            ok(request(
+                Some(&user),
+                Method::POST,
+                "/platform/notification-check",
+                Some(json!({"items": [{"groupKey": key, "resourceId": message_id}]})),
+                true,
+            )
+            .await)
+            .await
+        }
+    };
+    assert_eq!(check(b.clone()).await["allowed"], json!([key]));
+    assert_eq!(check(c.clone()).await["allowed"], json!([]));
+
+    // Edit: b is no longer mentioned, c is.
+    let edited_body = format!("@{} 대신 봐 주세요", name_of(&c));
+    let (start_c, length_c) = utf16_range(&edited_body, &format!("@{}", name_of(&c)));
+    let edited = ok(call(
+        &a,
+        Method::PATCH,
+        &format!("/v1/dm/conversations/{id}/messages/{message_id}"),
+        Some(json!({"body": edited_body, "mentions": [{"user_id": c, "start": start_c, "length": length_c}]})),
+    )
+    .await)
+    .await;
+    assert_eq!(edited["mentions"][0]["user_id"], c);
+    assert!(
+        events("retract", &key)
+            .iter()
+            .any(|(_, body)| body["recipients"] == json!([b]))
+    );
+    assert_eq!(
+        events("notify", &key).last().unwrap().1["recipients"],
+        json!([c])
+    );
+    assert_eq!(check(b.clone()).await["allowed"], json!([]));
+    assert_eq!(check(c.clone()).await["allowed"], json!([key]));
+
+    // Leaving retracts the person's mention lines; deleting retracts all.
+    let call_c = call(
+        &c,
+        Method::DELETE,
+        &format!("/v1/dm/conversations/{id}/participants/me"),
+        None,
+    )
+    .await;
+    assert_eq!(call_c.status(), StatusCode::NO_CONTENT);
+    assert!(
+        events("retract", &key)
+            .iter()
+            .any(|(_, body)| body["recipients"] == json!([c]))
+    );
+    ok(call(
+        &a,
+        Method::DELETE,
+        &format!("/v1/dm/conversations/{id}/messages/{message_id}"),
+        None,
+    )
+    .await)
+    .await;
+    assert!(
+        events("retract", &key)
+            .iter()
+            .any(|(_, body)| body.get("recipients").is_none())
+    );
+
+    // A muted participant gets no mention line.
+    ok(call(
+        &b,
+        Method::PUT,
+        &format!("/v1/dm/conversations/{id}/mute"),
+        Some(json!({"muted": true})),
+    )
+    .await)
+    .await;
+    let quiet_body = format!("@{} 조용히", name_of(&b));
+    let (qs, ql) = utf16_range(&quiet_body, &format!("@{}", name_of(&b)));
+    let quiet = ok(send_with_mentions(
+        &a,
+        &id,
+        &quiet_body,
+        json!([{"user_id": b, "start": qs, "length": ql}]),
+    )
+    .await)
+    .await;
+    assert!(
+        events(
+            "notify",
+            &format!("mention:{id}:{}", quiet["id"].as_str().unwrap())
+        )
+        .is_empty()
+    );
+}
+
+#[tokio::test]
+#[ignore]
+async fn reactions_toggle_for_current_participants() {
+    let _settings = SETTINGS.read().await;
+    let a = person("반응가");
+    let b = person("반응나");
+    let outsider = person("반응밖");
+    let id = direct(&a, &b).await;
+    let message = ok(send(&a, &id, "좋아요 눌러 주세요").await).await;
+    let message_id = message["id"].as_str().unwrap().to_string();
+    assert_eq!(message["reactions"], json!([]));
+    let path = |reaction: &str| {
+        format!("/v1/dm/conversations/{id}/messages/{message_id}/reactions/{reaction}")
+    };
+    let mut live_a = live_socket(&a, false).await.unwrap();
+    let liked = ok(call(&b, Method::PUT, &path("heart"), None).await).await;
+    assert_eq!(liked["reactions"][0]["reaction"], "heart");
+    assert_eq!(liked["reactions"][0]["count"], 1);
+    assert_eq!(liked["reactions"][0]["reacted"], true);
+    assert_eq!(liked["reactions"][0]["users"][0]["id"], b);
+    assert_eq!(
+        next_hint(&mut live_a, 2000).await.unwrap()["conversationId"],
+        id
+    );
+    // Idempotent; others see it with reacted false.
+    let again = ok(call(&b, Method::PUT, &path("heart"), None).await).await;
+    assert_eq!(again["reactions"][0]["count"], 1);
+    assert_eq!(next_hint(&mut live_a, 300).await, None);
+    ok(call(&a, Method::PUT, &path("thumbs_up"), None).await).await;
+    let seen = messages(&a, &id).await;
+    let reactions = &seen[0]["reactions"];
+    assert_eq!(reactions[0]["reaction"], "thumbs_up");
+    assert_eq!(reactions[1]["reaction"], "heart");
+    assert_eq!(reactions[1]["reacted"], false);
+    let removed = ok(call(&b, Method::DELETE, &path("heart"), None).await).await;
+    assert_eq!(removed["reactions"].as_array().unwrap().len(), 1);
+
+    let (status, _) = code(call(&outsider, Method::PUT, &path("heart"), None).await).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    let (status, error) = code(call(&b, Method::PUT, &path("party"), None).await).await;
+    assert_eq!(
+        (status, error.as_str()),
+        (
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "validation_request_invalid"
+        )
+    );
+    ok(call(
+        &a,
+        Method::DELETE,
+        &format!("/v1/dm/conversations/{id}/messages/{message_id}"),
+        None,
+    )
+    .await)
+    .await;
+    let (status, error) = code(call(&b, Method::PUT, &path("heart"), None).await).await;
+    assert_eq!(
+        (status, error.as_str()),
+        (StatusCode::UNPROCESSABLE_ENTITY, "dm_reaction_unavailable")
+    );
+    assert_eq!(messages(&b, &id).await[0]["reactions"], json!([]));
+}
+
+#[tokio::test]
+#[ignore]
+async fn search_finds_only_what_the_caller_can_open() {
+    let _settings = SETTINGS.read().await;
+    let a = person("검색가");
+    let b = person("검색나");
+    let c = person("검색다");
+    let late = person("검색늦");
+    let token = format!("탐색{}", &uuid::Uuid::new_v4().simple().to_string()[..8]);
+    let ab = direct(&a, &b).await;
+    let bc = direct(&b, &c).await;
+    let group = ok(call(
+        &a,
+        Method::POST,
+        "/v1/dm/conversations",
+        Some(json!({"participant_user_ids": [b, c]})),
+    )
+    .await)
+    .await;
+    let group_id = group["id"].as_str().unwrap().to_string();
+    let first = ok(send(&a, &ab, &format!("{token} 회의 자료 100%_완료")).await).await;
+    ok(send(&b, &bc, &format!("{token} 다른 대화")).await).await;
+    let early = ok(send(&a, &group_id, &format!("{token} 들어오기 전")).await).await;
+    ok(call(
+        &a,
+        Method::POST,
+        &format!("/v1/dm/conversations/{group_id}/participants"),
+        Some(json!({"user_ids": [late]})),
+    )
+    .await)
+    .await;
+    let hidden_later = ok(send(&b, &group_id, &format!("{token} 지울 것")).await).await;
+    ok(call(
+        &b,
+        Method::DELETE,
+        &format!(
+            "/v1/dm/conversations/{group_id}/messages/{}",
+            hidden_later["id"].as_str().unwrap()
+        ),
+        None,
+    )
+    .await)
+    .await;
+    for index in 0..3 {
+        ok(send(&a, &group_id, &format!("{token} 페이지 {index}")).await).await;
+    }
+
+    let search = |user: &str, query: &str| {
+        let user = user.to_string();
+        let query = query.to_string();
+        async move { ok(call(&user, Method::GET, &format!("/v1/dm/search?{query}"), None).await).await }
+    };
+    let all = search(&a, &format!("q={token}&limit=50")).await;
+    let ids: Vec<&str> = all["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|i| i["message_id"].as_str().unwrap())
+        .collect();
+    assert_eq!(
+        ids.len(),
+        5,
+        "a: own 1:1, early and three pages; never b-c or deleted"
+    );
+    assert!(ids.contains(&first["id"].as_str().unwrap()));
+    let hit = all["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|i| i["message_id"] == first["id"])
+        .unwrap();
+    assert_eq!(hit["conversation_name"], name_of(&b));
+    assert_eq!(hit["sender_name"], name_of(&a));
+    assert!(hit["snippet"].as_str().unwrap().contains("회의 자료"));
+    // The late joiner sees only messages after joining.
+    let late_items = search(&late, &format!("q={token}")).await;
+    assert_eq!(late_items["items"].as_array().unwrap().len(), 3);
+    assert!(
+        !late_items
+            .to_string()
+            .contains(early["id"].as_str().unwrap())
+    );
+    // Within one conversation, paged.
+    let page = search(&a, &format!("q={token}&conversation_id={group_id}&limit=2")).await;
+    assert_eq!(page["items"].as_array().unwrap().len(), 2);
+    let cursor = page["next_cursor"].as_str().unwrap().to_string();
+    let rest = search(
+        &a,
+        &format!(
+            "q={token}&conversation_id={group_id}&limit=2&cursor={}",
+            urlencode(&cursor)
+        ),
+    )
+    .await;
+    assert_eq!(rest["items"].as_array().unwrap().len(), 2);
+    assert_eq!(rest["next_cursor"], Value::Null);
+    // Wildcards are literal.
+    let literal = search(&a, &format!("q={}", urlencode("100%_완료"))).await;
+    assert_eq!(literal["items"].as_array().unwrap().len(), 1);
+    assert_eq!(
+        search(&a, &format!("q={}", urlencode("%_"))).await["items"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+    // A conversation the caller is not in.
+    let (status, _) = code(
+        call(
+            &a,
+            Method::GET,
+            &format!("/v1/dm/search?q={token}&conversation_id={bc}"),
+            None,
+        )
+        .await,
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    let (status, _) = code(call(&a, Method::GET, "/v1/dm/search?q=%20", None).await).await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+
+    // The portal's integrated search: same rule, at most `limit`, platform calls only.
+    let found = ok(request(
+        Some(&a),
+        Method::POST,
+        "/platform/search",
+        Some(json!({"query": token, "limit": 3, "timeZone": "Asia/Seoul", "locale": "ko-KR"})),
+        true,
+    )
+    .await)
+    .await;
+    let items = found["items"].as_array().unwrap();
+    assert_eq!(items.len(), 3);
+    assert!(
+        items
+            .iter()
+            .all(|i| i["path"].as_str().unwrap().contains("?message="))
+    );
+    assert!(
+        items
+            .iter()
+            .all(|i| i["kind"] == "메시지" && i["at"].as_str().unwrap().ends_with('Z'))
+    );
+    assert!(!found.to_string().contains("다른 대화") && !found.to_string().contains("지울 것"));
+    let (status, _) = code(
+        request(
+            Some(&a),
+            Method::POST,
+            "/platform/search",
+            Some(json!({"query": token, "limit": 3})),
+            false,
+        )
+        .await,
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+}
+
+fn urlencode(value: &str) -> String {
+    value
+        .bytes()
+        .map(|b| {
+            if b.is_ascii_alphanumeric() || b"-_.~".contains(&b) {
+                (b as char).to_string()
+            } else {
+                format!("%{b:02X}")
+            }
+        })
+        .collect()
+}

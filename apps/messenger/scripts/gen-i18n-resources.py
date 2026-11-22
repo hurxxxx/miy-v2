@@ -47,7 +47,8 @@ assert ko_me == "me: '나',", ko_me
 assert en_me == "me: 'ME',", en_me
 
 # miy keys, inserted right after `dm: {` so the AI-DO keys stay verbatim.
-# typing*: the M4 typing indicator (AI-DO 0002af062 had none).
+# typing*: the M4 typing indicator; mentionPicker, reactions, search: the
+# §2.2 보강 (AI-DO 0002af062 had none of them).
 DM_ADDITIONS = {
     'ko': """        unsavedChanges: '보내지 않은 내용이나 진행 중인 작업이 있습니다. 이동하시겠습니까?',
         edit: '수정',
@@ -69,6 +70,29 @@ DM_ADDITIONS = {
         typingOne: '{{name}} 님이 입력 중…',
         typingTwo: '{{first}} 님과 {{second}} 님이 입력 중…',
         typingMany: '{{count}}명이 입력 중…',
+        mentionPicker: '언급할 사람',
+        reactions: {
+          add: '반응 추가',
+          thumbs_up: '좋아요',
+          heart: '하트',
+          laugh: '웃음',
+          surprised: '놀람',
+          sad: '슬픔',
+          pray: '고마워요',
+          check: '확인',
+          failed: '반응을 바꾸지 못했습니다.',
+        },
+        search: {
+          open: '메시지 검색',
+          title: '메시지 검색',
+          placeholder: '메시지 내용 검색',
+          scopeConversation: '{{name}}에서',
+          scopeAll: '모든 대화',
+          empty: '검색 결과가 없습니다.',
+          loadMore: '더 보기',
+          failed: '검색하지 못했습니다.',
+          jumpFailed: '메시지로 이동하지 못했습니다. 너무 오래됐거나 볼 수 없는 메시지입니다.',
+        },
         actionErrors: {
           editFailed: '메시지를 수정하지 못했습니다.',
           deleteFailed: '메시지를 삭제하지 못했습니다.',
@@ -124,6 +148,29 @@ DM_ADDITIONS = {
         typingOne: '{{name}} is typing…',
         typingTwo: '{{first}} and {{second}} are typing…',
         typingMany: '{{count}} people are typing…',
+        mentionPicker: 'People to mention',
+        reactions: {
+          add: 'Add reaction',
+          thumbs_up: 'Like',
+          heart: 'Love',
+          laugh: 'Laugh',
+          surprised: 'Surprised',
+          sad: 'Sad',
+          pray: 'Thanks',
+          check: 'Done',
+          failed: 'Could not change the reaction.',
+        },
+        search: {
+          open: 'Search messages',
+          title: 'Search messages',
+          placeholder: 'Search message text',
+          scopeConversation: 'In {{name}}',
+          scopeAll: 'All conversations',
+          empty: 'No results.',
+          loadMore: 'Load more',
+          failed: 'Could not search.',
+          jumpFailed: 'Could not go to the message. It is too old or no longer visible.',
+        },
         actionErrors: {
           editFailed: 'Could not edit the message.',
           deleteFailed: 'Could not delete the message.',
@@ -209,6 +256,8 @@ ERRORS = {
     'dm_safety_manager_already_assigned': ('이미 메신저 관리자가 있습니다.', 'Messenger managers are already assigned.'),
     'dm_safety_manager_not_found': ('관리자를 찾을 수 없습니다.', 'Manager not found.'),
     'dm_safety_last_manager': ('메신저 관리자는 한 명 이상 있어야 합니다.', 'At least one messenger manager must remain.'),
+    'dm_mention_invalid': ('언급이 메시지와 맞지 않습니다. 대화 참여자를 다시 언급해 주세요.', 'The mentions do not match the message. Mention the participants again.'),
+    'dm_reaction_unavailable': ('이 메시지에는 반응을 남길 수 없습니다.', 'This message cannot take reactions.'),
 }
 
 

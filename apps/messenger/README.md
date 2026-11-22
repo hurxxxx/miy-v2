@@ -3,7 +3,7 @@
 1:1·그룹 대화를 다루는 miy 기본 제공 앱이다. AI-DO `0002af062`의 `dm` 도메인(서버)과 DM 화면(`app-modules/dm`), 관리자 DM 신고 검토 화면을 옮겼다. 원본과의 차이와 결정은 [docs/PORTING.md](docs/PORTING.md)에 있다.
 
 - 범위: 1:1·그룹 대화, 첨부(파일당 10 MiB, 플랫폼 Storage), 인용 답장, 읽음 표시, 사용자 검색(플랫폼 디렉터리), 신고·1:1 차단·금칙어·이용규칙 동의, 신고 검토 화면(앱 관리 역할).
-- 보강(AI-DO에 없던 것): 작성자 메시지 수정("수정됨")·삭제("삭제된 메시지"), 이전 메시지 이어 불러오기, 대화별 알림 끄기.
+- 보강(AI-DO에 없던 것): 작성자 메시지 수정("수정됨")·삭제("삭제된 메시지"), 이전 메시지 이어 불러오기, 대화별 알림 끄기, 멘션(`@` 선택, `mention` 알림), 반응(정해진 7가지), 메시지 검색(대화 안·내 모든 대화, 메시지로 이동)과 포털 통합 검색.
 - 알림: 새 메시지를 플랫폼 알림함에 발행한다(본문 없이 "보낸 사람 · 새 메시지 N개"). 읽으면 읽음 처리, 수정·삭제·가림 때 교체·회수, 나가기·내보내기·알림 끄기 때 회수한다.
 - 즉시 갱신(M4): 플랫폼 실시간 연결(`runtime.live` → `GET /api/live`)로 "대화가 바뀜"·"입력 중" 신호만 받고, 내용은 `runtime.api`로 다시 받는다. 연결이 끊긴 동안(`retrying`)은 주기 조회(보이는 동안 5초)로 돌아가고, 연결 중에는 60초마다 안전 갱신한다. 대화 창 아래에 "○○ 님이 입력 중…"을 보인다.
 - 참여자만 읽고 쓴다. 나중에 들어온 사람은 들어온 뒤의 메시지만 본다. 호출자는 게이트웨이가 서명한 신원(`Identity::user_id`)이며 요청 본문의 사용자 값은 신원으로 쓰지 않는다.
@@ -36,6 +36,8 @@ UI는 `runtime.api('/v1/...')`, 파일 바이트는 `runtime.fileApi('/dm/...')`
 | `POST /v1/dm/conversations/{id}/messages` | 보내기 `{body, attachment_ids, reply_to_message_id}` |
 | `PATCH /v1/dm/conversations/{id}/messages/{mid}` | (miy) 작성자 수정 `{body}` |
 | `DELETE /v1/dm/conversations/{id}/messages/{mid}` | (miy) 작성자 삭제 |
+| `PUT/DELETE /v1/dm/conversations/{id}/messages/{mid}/reactions/{reaction}` | (miy) 내 반응 켜기·끄기(`thumbs_up`, `heart`, `laugh`, `surprised`, `sad`, `pray`, `check`). 답은 메시지 |
+| `GET /v1/dm/search?q&conversation_id&cursor&limit` | (miy) 메시지 본문 검색(1~200자, 기본 20·최대 50, `next_cursor`). 지금 참여 중인 대화의 볼 수 있는 메시지만, 지운·가린 메시지 제외 |
 | `PATCH /v1/dm/conversations/{id}/read` | 읽음 |
 | `PUT /v1/dm/conversations/{id}/mute` | (miy) 알림 끄기 `{muted}` |
 | `POST /v1/dm/conversations/{id}/attachments` | 첨부 예약 `{request_id, filename, content_type, size_bytes}`(201) |
@@ -58,10 +60,11 @@ UI는 `runtime.api('/v1/...')`, 파일 바이트는 `runtime.fileApi('/dm/...')`
 | `GET/POST /v1/dm-safety/filter-terms`, `DELETE .../{id}` | 금칙어 |
 | `POST /platform/notification-check` | 플랫폼 → 앱 재확인(manifest `platformEndpoints.notificationCheck`, 읽기 전용). 그룹·원본 ID와 현재 접근을 함께 확인한다. |
 | `POST /platform/home-card` | 포털 홈 "안 읽은 대화" 카드(manifest `platformEndpoints.homeCard`, 읽기 전용) |
+| `POST /platform/search` | 포털 통합 검색(manifest `platformEndpoints.search`, 읽기 전용, 최대 `limit`(1~10)개, 메시지로 가는 경로) |
 
 ## 데이터
 
-`migrations/0002_messenger.sql`: AI-DO의 `dm_*`, `ugc_terms_acceptances`, `ugc_filter_terms` 테이블과 miy 추가 테이블(`dm_terms_settings`, `dm_safety_managers`, `dm_audit_logs`, `dm_message_revisions`, `dm_user_directory_cache`). 사용자 참조는 miy 사용자 ID(`text`, FK 없음)다.
+`migrations/0002_messenger.sql`: AI-DO의 `dm_*`, `ugc_terms_acceptances`, `ugc_filter_terms` 테이블과 miy 추가 테이블(`dm_terms_settings`, `dm_safety_managers`, `dm_audit_logs`, `dm_message_revisions`, `dm_user_directory_cache`). `migrations/0003_messenger_mentions_reactions.sql`: `dm_message_mentions`, `dm_message_reactions`. 사용자 참조는 miy 사용자 ID(`text`, FK 없음)다.
 
 ## 검사
 

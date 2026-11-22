@@ -27,7 +27,8 @@
   "version": "0.1.0",
   "platformEndpoints": {
     "notificationCheck": "/platform/notification-check",
-    "homeCard": "/platform/home-card"
+    "homeCard": "/platform/home-card",
+    "search": "/platform/search"
   },
   "panels": [
     {

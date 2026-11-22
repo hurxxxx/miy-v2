@@ -445,17 +445,26 @@ pub async fn release_pending_files(pool: &PgPool, identity: &Identity) {
     release_where(pool, identity, None, 10).await;
 }
 
+/// While a release is running, `released_at` of a row still `uploaded` or
+/// `attached` holds the claim time, so concurrent passes (a request's own
+/// release and another request's sweep) never call Storage twice for one
+/// file. A claim older than RELEASE_CLAIM_SECONDS is taken over.
+const RELEASE_CLAIM_SECONDS: i64 = 60;
+
 async fn release_where(pool: &PgPool, identity: &Identity, message_id: Option<&str>, limit: i64) {
+    let stale = now_utc() - chrono::Duration::seconds(RELEASE_CLAIM_SECONDS);
     let rows: Result<Vec<AttachmentRow>, sqlx::Error> = sqlx::query_as(&format!(
         "SELECT a.{} FROM dm_message_attachments a JOIN dm_messages m ON m.id = a.message_id \
          WHERE ($1::text IS NULL OR a.message_id = $1) AND m.deleted_at IS NOT NULL \
          AND a.storage_status IN ('uploaded', 'attached') \
+         AND (a.released_at IS NULL OR a.released_at < $3) \
          AND NOT EXISTS (SELECT 1 FROM dm_abuse_reports r WHERE r.message_id = m.id AND r.status = 'open') \
          ORDER BY m.deleted_at LIMIT $2",
         store::ATTACHMENT_COLUMNS.replace(", ", ", a.")
     ))
     .bind(message_id)
     .bind(limit)
+    .bind(stale)
     .fetch_all(pool)
     .await;
     let Ok(rows) = rows else {
@@ -466,6 +475,20 @@ async fn release_where(pool: &PgPool, identity: &Identity, message_id: Option<&s
         let Some(file_id) = row.storage_file_id else {
             continue;
         };
+        let claimed = sqlx::query(
+            "UPDATE dm_message_attachments SET released_at = $2 WHERE id = $1 \
+             AND storage_status IN ('uploaded', 'attached') AND (released_at IS NULL OR released_at < $3)",
+        )
+        .bind(&row.id)
+        .bind(now_utc())
+        .bind(stale)
+        .execute(pool)
+        .await
+        .map(|result| result.rows_affected() == 1)
+        .unwrap_or(false);
+        if !claimed {
+            continue;
+        }
         let file_id = file_id.to_string();
         let storage = if row.storage_status == "attached" {
             FileStatus::Attached
@@ -475,6 +498,7 @@ async fn release_where(pool: &PgPool, identity: &Identity, message_id: Option<&s
                     if file.status == FileStatus::Attached
                         && file.reference.as_deref() != Some(&row.reference()) =>
                 {
+                    unclaim(pool, &row.id).await;
                     continue;
                 }
                 Ok(file) => file.status,
@@ -483,17 +507,26 @@ async fn release_where(pool: &PgPool, identity: &Identity, message_id: Option<&s
                         "storage_release_lookup_failed: {} {:?}",
                         error.code, error.status
                     );
+                    unclaim(pool, &row.id).await;
                     continue;
                 }
             }
         };
-        let (result, status) = if storage == FileStatus::Attached {
-            (
-                identity.files_detach(&file_id, &row.reference()).await,
+        let (result, status) = match storage {
+            FileStatus::Attached => (
+                identity
+                    .files_detach(&file_id, &row.reference())
+                    .await
+                    .map(|_| ()),
                 "released",
-            )
-        } else {
-            (identity.files_cancel(&file_id).await, "cancelled")
+            ),
+            // Already gone: a concurrent release (this request's own pass and a
+            // sweep of another request) finished first. Record it, call nothing.
+            FileStatus::Cancelled | FileStatus::Expired => (Ok(()), "cancelled"),
+            FileStatus::Pending | FileStatus::Ready => (
+                identity.files_cancel(&file_id).await.map(|_| ()),
+                "cancelled",
+            ),
         };
         match result {
             Ok(_) => {
@@ -507,9 +540,23 @@ async fn release_where(pool: &PgPool, identity: &Identity, message_id: Option<&s
                 .execute(pool)
                 .await;
             }
-            Err(error) => eprintln!("storage_release_failed: {} {:?}", error.code, error.status),
+            Err(error) => {
+                eprintln!("storage_release_failed: {} {:?}", error.code, error.status);
+                unclaim(pool, &row.id).await;
+            }
         }
     }
+}
+
+/// Give a claimed release back for a later retry.
+async fn unclaim(pool: &PgPool, id: &str) {
+    let _ = sqlx::query(
+        "UPDATE dm_message_attachments SET released_at = NULL WHERE id = $1 \
+         AND storage_status IN ('uploaded', 'attached')",
+    )
+    .bind(id)
+    .execute(pool)
+    .await;
 }
 
 // --- downloads --------------------------------------------------------------------

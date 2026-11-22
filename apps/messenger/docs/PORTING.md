@@ -9,7 +9,7 @@
 
 **옮긴 것:** 1:1 대화(있으면 그 대화, 빠진 참여자 되살리기), 그룹 대화(이름, 초대, 내보내기, 나가기, 소유자 승계, 1:1에서 새 그룹 만들기), 메시지(본문 120,000자, 첨부 10개, 인용 답장, 링크 미리보기, 날짜 구분선, 안 읽은 사람 수, "여기까지 읽음"), 읽음, 사용자 검색, 첨부(이미지 미리보기·확대·내려받기, 붙여넣기·끌어놓기), 대화 이동 기록(이전/다음 대화), 대화별 초안·스크롤 위치, 신고(분류·메모·차단 함께, 멱등, 시간당 10·하루 30, 중복 신고), 1:1 차단(목록·해제, 그룹에서 차단한 사람 메시지 접기), 관리자 가림, 금칙어, 이용규칙 동의, 관리자 신고 검토 화면(목록·상세·증거·처리·가림/되돌림·금칙어).
 
-**보강(AI-DO에 없던 것, §2.2):** 작성자 메시지 수정·삭제(§3.10), 이전 메시지 이어 불러오기(§3.11), 대화별 알림 끄기(§3.11). 멘션·반응·메시지 검색은 하지 않았다(§6).
+**보강(AI-DO에 없던 것, §2.2):** 작성자 메시지 수정·삭제(§3.10), 이전 메시지 이어 불러오기(§3.11), 대화별 알림 끄기(§3.11), 멘션·반응·메시지 검색과 포털 통합 검색(§3.13). 보강에는 원본이 없으므로 원본 화면의 자리·클래스를 따르고 문구는 새로 만들었다.
 
 **뺀 것:**
 
@@ -49,6 +49,7 @@
 | `platform/auth/auth-provider` | 같은 경로 | 재작성: `GET /v1/dm/me`의 호출자 + `runtime.settings` |
 | `platform/realtime/realtime-provider` | 같은 경로 | 재작성: 플랫폼 실시간 연결 + 끊긴 동안 주기 조회(§3.5) |
 | (없음) | `app-modules/dm/views/dm-live-model.ts` | 실시간 신호 해석, 입력 중 상태 |
+| (없음) | `app-modules/dm/views/dm-mention-model.ts`, `DmMessageSearch.tsx` | 멘션 선택·범위, 메시지 검색 창(§3.13) |
 | `platform/i18n/resources.ts` | 같은 경로 | 생성: `common`·`apps.dm`·`apps.admin.console.dmSafety`·`apps.pms.taskDetail.me` 한/영 원문 + miy 키 + `errors`([scripts/gen-i18n-resources.py](../scripts/gen-i18n-resources.py)) |
 | (없음) | `AppRoot.tsx`, `platform/runtime/app-location.ts` | miy 연결(경로·공급자) |
 
@@ -59,6 +60,7 @@
 | `dm/router.py`, `conversation_application.py`, `conversation_membership.py`, `conversation_lifecycle.py`, `conversation_settings.py`, `conversation_read_receipts.py`, `participants.py`, `user_directory.py` | `conversations.rs` |
 | `dm/message_application.py`, `message_flow.py`, `message_delivery.py`, `message_history.py` | `messages.rs`(+ 수정·삭제) |
 | `dm/realtime_events.py`(발행 시점만) | `live.rs`(M4 신호 허브와 `GET /live`) |
+| (없음) | `mentions.rs`, `reactions.rs`, `search.rs`(보강, §3.13) |
 | `dm/attachment_*.py` | `attachments.rs` |
 | `dm/serialization.py`, `thread_projection.py`, `conversation_display.py`, `read_state.py`(투영) | `views.rs` |
 | `dm/conversation_queries.py`, `models.py` | `store.rs`, `migrations/0002_messenger.sql` |
@@ -194,6 +196,20 @@ AI-DO의 `AI_DO_UGC_TERMS_VERSION`·`_REQUIRED`·`_DOCUMENT_URL`·`AI_DO_UGC_CON
 - 신고와 함께 하는 차단이 대상 때문에 실패(404·422, miy: 디렉터리 실패 502)하면 savepoint만 되돌리고 신고는 남긴다.
 - 금칙어 정규화의 Python `casefold`는 유니코드 소문자 + `ß→ss`로 근사했다. `\s`에는 `\x1c-\x1f`도 포함했다.
 - 사람만 신고한 경우 AI-DO는 대상 사용자 행의 존재를 먼저 봤다. miy는 그 대화의 (과거) 참여자인지로 확인한다(참여자는 반드시 존재했던 사람).
+- 첨부 해제는 행마다 `released_at`을 잡음 표시로 먼저 써서(60초 지나면 넘겨받음) 한 요청의 해제와 다른 요청의 재시도 훑기가 같은 파일에 Storage를 두 번 부르지 않는다. 이미 지워진(`cancelled`·`expired`) 파일은 호출 없이 기록만 맞춘다. 실패하면 잡음을 풀어 다음에 다시 시도한다.
+
+### 3.13 멘션·반응·메시지 검색(보강)
+
+AI-DO `0002af062`에는 셋 다 없었다(DM 화면에는 동작하지 않는 리액션 단추만 있었다). 새 테이블은 `migrations/0003_messenger_mentions_reactions.sql`이다.
+
+- **멘션 저장:** `dm_message_mentions(message_id, user_id, start_index, length)`. 범위는 저장된(앞뒤 공백을 지운) 본문의 UTF-16 코드 단위로 센다(브라우저 문자열 위치 그대로). 서버는 보내기·수정 때 대화 행을 잠근 뒤 범위가 본문 안에 있고 겹치지 않으며 `@`로 시작하고 줄바꿈이 없는지, 지정한 사람이 **현재 활성 참여자**인지 확인한다(아니면 422 `dm_mention_invalid`, 최대 50개). 본문이 바뀌는 수정은 새 범위로 통째로 바꾼다. 본문이 사람이 읽는 원본이고 범위는 표시만 한다.
+- **멘션 화면:** 작성창에서 `@`를 치면 대화의 현재 참여자(본인 제외, 디렉터리 이름) 중 맞는 사람을 최대 8명 보인다. 위·아래·Enter·Tab·Esc로 고르고, 고르면 `@이름 `을 넣고 그 사람을 대화별 초안 목록에 둔다. 보낼 때 본문에 남아 있는 `@이름`만 범위가 되므로 글자를 지우면 멘션도 빠진다(IME 조합 중 키는 건드리지 않는다). 수정할 때는 기존 범위를 이름표로 읽어 이어 쓴다. 본문에서 멘션은 강조하고, 나를 부른 멘션은 진하게 보인다.
+- **멘션 알림:** 새로 언급된 사람 중 보낸 사람이 아니고, 현재 활성 참여자이고, 대화 알림을 끄지 않았고, 보낸 사람을 차단하지 않은 사람에게 `kind: "mention"`, `group_key: "mention:{대화 ID}:{메시지 ID}"`, 제목 "<보낸 사람> · 회원님을 언급했습니다"(본문 없음), `path: "/conversations/{id}?message={메시지 ID}"`. 일반 "새 메시지" 줄은 따로 그대로 간다. 회수: 수정으로 빠진 사람, 메시지 삭제·관리자 가림(모두), 나가기·내보내기(그 사람의 그 대화 멘션 줄, 최근 200개). 재확인(`notificationCheck`)은 그 사람이 아직 참여 중이고 메시지가 보이며(지움·가림 아님) 여전히 언급돼 있을 때만 남긴다. 가림을 되돌려도 다시 보내지 않는다.
+- **반응:** `dm_message_reactions(message_id, user_id, reaction)`이 기본 키다. 정해진 7가지(`thumbs_up` 👍, `heart` ❤️, `laugh` 😂, `surprised` 😮, `sad` 😢, `pray` 🙏, `check` ✅) 외에는 422. `PUT/DELETE …/reactions/{reaction}`는 대화 행을 잠근 뒤 현재 참여자이고 메시지가 보이는지(들어온 뒤, 지움·가림이면 422 `dm_reaction_unavailable`) 확인하며, 바뀌었을 때만 실시간 신호를 보낸다. 메시지 응답의 `reactions`는 정해진 순서로 개수·내가 눌렀는지·누른 사람을 싣는다. 화면은 원본의 리액션 단추 자리(답장 단추 옆, 같은 클래스)에서 고르는 창을 열고, 말풍선 아래 칩에 마우스를 올리면 누른 사람 이름이 보인다. 칩을 누르면 켜고 끈다.
+- **메시지 검색:** `GET /v1/dm/search`는 본문의 대소문자 무시 부분 일치(`ILIKE`, `%`·`_`·`\` 이스케이프)다. 지금 활성 참여 중인 대화에서, 들어온 뒤의 메시지만, 지운·가린 메시지는 빼고, 최신순으로 커서(`시각|ID`) 페이지를 준다. `conversation_id`를 주면 그 대화만(참여자가 아니면 404). 결과는 대화 이름·보낸 사람·일치 부분 앞뒤 40자 발췌다. 화면은 대화 목록 머리(모든 대화)와 대화 머리(이 대화/모든 대화)의 검색 창이며, 가장 마지막 요청의 답만 보인다.
+- **메시지로 이동:** 결과를 고르거나 `?message=`(멘션 알림·통합 검색 경로)로 열면 그 대화를 보이고, 첫 페이지를 받은 뒤 그 메시지가 나올 때까지 이전 메시지를 100개씩 최대 20쪽(2,000개) 더 받아 그 메시지로 스크롤하고 잠시 강조한다. 중간에 메시지가 없는 페이지 구간이 생기지 않게 "주위만" 따로 받지 않았다. 더 오래된 메시지면 "이동하지 못했습니다"를 보인다. 다른 대화로 옮기거나 새 이동을 시작하면 앞선 이동의 늦은 답은 버린다.
+- **포털 통합 검색:** manifest `platformEndpoints.search` = `/platform/search`. 플랫폼 호출만(아니면 403), 읽기 전용, 같은 규칙으로 최대 `limit`(1~10)개, 2.5초 문장 제한. 항목은 `{title: 대화 이름, snippet: "보낸 사람: 발췌"(240자), path: "/conversations/{id}?message={mid}", at, kind: "메시지"/"Message"}`이며 가린 내용은 넣지 않는다. 이름은 앱의 디렉터리 캐시만 쓴다(플랫폼 호출에는 추가 호출 토큰이 없다).
+- **성능:** 검색은 대화·참여 조건 위의 `ILIKE` 전체 비교다. 확장(`pg_trgm`)은 마이그레이션 역할로 만들 수 없어 쓰지 않았다. 메시지가 많아지면 전문 검색 색인이 필요하다(§6).
 
 ## 4. 결정한 것
 
@@ -230,17 +246,20 @@ AI-DO의 `AI_DO_UGC_TERMS_VERSION`·`_REQUIRED`·`_DOCUMENT_URL`·`AI_DO_UGC_CON
 | `test_dm_safety.py`(금칙어·이용규칙·재시도 시간·해시) | `ugc.rs`·`safety.rs` 단위 + `terms_and_banned_words_guard_user_content` | 통과 |
 | `test_dm_attachment_policy.py`, `test_dm_attachment_upload.py`, `test_dm_attachment_records.py` | `attachments.rs` 단위 3개 + HTTP | 통과. 서명·저장소 테스트(`attachment_links/content/storage/persistence`, `test_dm_settings.py`)는 서명 URL·자체 저장소와 함께 해당 없음 |
 | `test_dm_realtime_*.py` | — | 스냅숏 이벤트는 옮기지 않음 |
+| (miy 보강) | `mentions.rs`·`reactions.rs`·`search.rs` 단위(UTF-16 범위·참여자·겹침, 반응 묶음, `LIKE` 이스케이프·발췌·커서), `api_tests.rs` `mentions_are_validated_notified_and_retracted`, `reactions_toggle_for_current_participants`, `search_finds_only_what_the_caller_can_open`(통합 검색 포함) | 통과 |
 | (miy M4) | `live.rs` 단위 5개(허브 전달·열린 대화 거르기·큐 넘침·클라이언트 메시지·입력 중 제한), `api_tests.rs` `live_hints_follow_current_participation`(실제 웹소켓: 커밋 뒤 신호, 외부인 미수신, 열기 전 입력 중 미전달, 외부인 구독·입력 거부, 내보낸 사람은 그 신호 하나 뒤 미수신, 두 번째 읽음은 조용, 플랫폼 신원 403) | 통과 |
 | (miy 추가) | 수정·삭제·이력·신고 중 삭제 사본, 알림 발행·교체·회수·읽음, 알림 끄기, 재확인·홈 카드, 관리자 맡기·마지막 관리자, `/me`, 이전 페이지 | 통과 |
 | 화면 `*.spec` 27개 파일(DM 모델·화면·API 14, 계약 2, 사용자 검색 2, 바이트·내려받기·날짜 표시 3, 시간 5(플래너 포팅본), 관리자 신고 화면 1) | 같은 경로 | 통과. 경로 접두·첨부 주소·10 MiB·오류 코드 `_` 기대값만 바꿈. `DMView.spec`은 첨부 객체 URL을 흉내 냄 |
 | (miy 추가) | `app-location.spec.ts`, `api-error.spec.ts`, 페이지 병합, miy API(첨부 예약·전송, 수정·삭제·끄기·취소) | 통과 |
+| (miy 보강) | `dm-mention-model.spec.ts`, `DMView.spec.tsx` 3개(`@` 선택 뒤 멘션과 함께 보내기, 반응 칩·켜기, 포커스 메시지까지 이전 페이지 받기) | 통과 |
 | (miy M4) | `realtime-provider.spec.tsx`(연결 하나, 신호 전달, 재연결 재조회, 끊김 시 조회, 최종 종료 시 멈춤, 연결 없는 호스트), `dm-live-model.spec.ts`, `DMView.spec.tsx` 2개(신호로 목록·열린 대화 재조회, 입력 중 표시) | 통과 |
 
 옮기지 않은 화면 테스트: `FloatingDmWidget.spec.tsx`(기능 제외).
 
 ## 6. 남은 일
 
-- **보강 중 미구현(후속):** 멘션(작성창 자동완성 + `mention` 알림 종류), 반응(원본의 빈 리액션 단추는 그대로 둠), 메시지 검색. 계획 §2.2 "보강" 항목이다.
+- **검색 색인:** 메시지가 많아지면 `ILIKE` 전체 비교 대신 전문 검색 색인(플랫폼이 허용하는 확장 또는 별도 색인)이 필요하다.
+- **아주 오래된 메시지로 이동:** 지금은 최근 2,000개 안에서만 이동한다. "주위만 불러오기"와 빈 구간 표시는 후속이다.
 - **실시간(M4) 실제 플랫폼 확인:** 미리보기 빌드에서 `/__miy/live`를 백엔드 `/api/live`로 서명 신원과 함께 잇고(플랫폼 중계와 같은 `miy.ready` 포함) 두 사용자로 확인했다(새 대화 즉시 표시, 입력 중 표시, 보낸 메시지 약 0.2초, 수정 반영). 실제 코어 중계(`/_miy/live`, 30초 재확인, 종료 코드)와는 확인하지 않았다.
 - **대화 만들기 중 이동 확인(해결):** 사용자 수정(cdf1f1e)으로 `creatingGroup`이 이동 확인 상태에 들어가, 새 대화를 만들고 그 대화로 이동할 때 "보내지 않은 내용…" 확인 창이 떴다(미리보기에서 재현). 2026-11-22 포털이 같은 앱 안의 이동에는 묻지 않도록 바꿨다(앱 프레임과 입력이 그대로 남는다). 앱을 떠날 때만 묻는다. SDK 미리보기는 자체 라우터라 이 동작과 다를 수 있다.
 - **첫 관리자 맡기 창(남은 결정):** 지금은 역할이 빌 때 처음 연 사람이 맡는다. 플랫폼이 "앱 역할 지정"이나 설치자 신원을 앱에 줄 수 있으면 그것으로 바꾼다.

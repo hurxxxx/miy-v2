@@ -5,7 +5,7 @@ use crate::{
     attachments, audit,
     conversations::query_limit,
     error::{ApiError, ApiJson, ApiResult},
-    live, notify,
+    live, mentions, notify,
     request::{
         DM_MESSAGE_ATTACHMENT_IDS_MAX_LENGTH, DM_MESSAGE_BODY_MAX_LENGTH, normalize_message_body,
         normalize_optional_route_id, normalize_route_id_list, route_id, unique_ids,
@@ -186,6 +186,9 @@ pub async fn send_dm_message(
     let mut tx = pool.begin().await?;
     let conversation =
         store::require_user_conversation(&mut tx, me, &conversation_id, true).await?;
+    // miy: mention ranges name current participants (checked under the lock).
+    let mention_list =
+        mentions::validate(&body, request.mentions.unwrap_or_default(), &conversation)?;
     // `_DmMessageComposePlanner.plan`.
     ugc::ensure_user_content_allowed(&mut tx, me, &[body.as_str()]).await?;
     let sender_participant = conversation.require_participant(me)?.clone();
@@ -246,6 +249,7 @@ pub async fn send_dm_message(
             .execute(&mut *tx)
             .await?;
     }
+    mentions::replace(&mut tx, &message_id, &mention_list).await?;
     let message = store::message_by_id(&mut tx, &conversation_id, &message_id, false)
         .await?
         .ok_or_else(ApiError::message_not_found)?;
@@ -254,6 +258,14 @@ pub async fn send_dm_message(
     live::conversation_changed(&pool, &conversation_id, &[]).await;
     attachments::attach_linked(&pool, &identity, &linked_ids).await;
     notify::message_created(&pool, &identity, &conversation, &message).await;
+    notify::mentions_added(
+        &pool,
+        &identity,
+        &conversation,
+        &message,
+        &mentions::users(&mention_list),
+    )
+    .await;
     Ok(Json(
         render_one(&pool, &identity, &conversation, &message).await?,
     ))
@@ -281,7 +293,7 @@ async fn own_message(
     Ok((conversation, message))
 }
 
-async fn render_one(
+pub(crate) async fn render_one(
     pool: &PgPool,
     identity: &Identity,
     conversation: &Conversation,
@@ -335,6 +347,22 @@ pub async fn edit_dm_message(
     }
     safety::ensure_direct_conversation_open(&mut tx, &conversation, me).await?;
     if body != message.body {
+        // miy: the new body's mentions replace the old ones.
+        let mention_list =
+            mentions::validate(&body, request.mentions.unwrap_or_default(), &conversation)?;
+        let before = mentions::users(&mentions::of_message(&mut tx, &message_id).await?);
+        let after = mentions::users(&mention_list);
+        mentions::replace(&mut tx, &message_id, &mention_list).await?;
+        let added: Vec<String> = after
+            .iter()
+            .filter(|u| !before.contains(u))
+            .cloned()
+            .collect();
+        let removed: Vec<String> = before
+            .iter()
+            .filter(|u| !after.contains(u))
+            .cloned()
+            .collect();
         let now = now_utc();
         sqlx::query(
             "INSERT INTO dm_message_revisions (message_id, action, body_before, actor_user_id, created_at) \
@@ -367,6 +395,8 @@ pub async fn edit_dm_message(
         tx.commit().await?;
         live::conversation_changed(&pool, &conversation_id, &[]).await;
         notify::message_changed(&pool, &identity, &conversation, &message).await;
+        notify::mentions_removed(&identity, &conversation_id, &message_id, Some(&removed)).await;
+        notify::mentions_added(&pool, &identity, &conversation, &message, &added).await;
     } else {
         tx.commit().await?;
     }
@@ -440,6 +470,7 @@ pub async fn delete_dm_message(
     }
     attachments::release_pending_files(&pool, &identity).await;
     notify::message_changed(&pool, &identity, &conversation, &message).await;
+    notify::mentions_removed(&identity, &conversation_id, &message_id, None).await;
     Ok(Json(
         render_one(&pool, &identity, &conversation, &message).await?,
     ))

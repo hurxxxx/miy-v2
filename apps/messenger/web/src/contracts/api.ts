@@ -70,6 +70,25 @@ type DmMessageItem = {
   edited_at?: string | null;
   /** miy: deleted by the author (placeholder, no body or attachments). */
   deleted?: boolean;
+  /** miy: mention ranges (UTF-16 code units of `body`). */
+  mentions?: DmMentionItem[];
+  /** miy: reactions in the fixed order. */
+  reactions?: DmReactionItem[];
+};
+
+/** miy: one mention range. */
+type DmMentionItem = {
+  user_id: string;
+  start: number;
+  length: number;
+};
+
+/** miy: one reaction of a message with who reacted. */
+type DmReactionItem = {
+  reaction: string;
+  count: number;
+  reacted: boolean;
+  users: DmUserItem[];
 };
 
 type UgcContact = {
@@ -133,6 +152,8 @@ type Schemas = {
   DmMessageReadStateItem: DmMessageReadStateItem;
   DmMessageReplyToItem: DmMessageReplyToItem;
   DmMessageItem: DmMessageItem;
+  DmMentionItem: DmMentionItem;
+  DmReactionItem: DmReactionItem;
   DmConversationItem: DmConversationItem;
   DmConversationListResponse: {
     items: DmConversationItem[];

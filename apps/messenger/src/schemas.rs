@@ -81,6 +81,20 @@ pub struct DmMessageItem {
     pub edited_at: Option<String>,
     /// miy: deleted by the author; body "" and no attachments.
     pub deleted: bool,
+    /// miy: mention ranges (UTF-16 code units of `body`).
+    pub mentions: Vec<crate::mentions::Mention>,
+    /// miy: reactions in the fixed order, with who reacted.
+    pub reactions: Vec<DmReactionItem>,
+}
+
+/// miy: one reaction of a message.
+#[derive(Debug, Clone, Serialize)]
+pub struct DmReactionItem {
+    pub reaction: String,
+    pub count: i64,
+    /// The caller is among the people who reacted.
+    pub reacted: bool,
+    pub users: Vec<DmUserItem>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -210,6 +224,9 @@ pub struct DmSendMessageRequest {
     pub attachment_ids: Option<Vec<String>>,
     #[serde(default)]
     pub reply_to_message_id: Option<String>,
+    /// miy: mention ranges of the trimmed body.
+    #[serde(default)]
+    pub mentions: Option<Vec<crate::mentions::Mention>>,
 }
 
 /// miy: author edit (`PATCH .../messages/{id}`).
@@ -218,6 +235,9 @@ pub struct DmSendMessageRequest {
 pub struct DmEditMessageRequest {
     #[serde(default)]
     pub body: Option<String>,
+    /// Mention ranges of the new trimmed body (replace the old ones).
+    #[serde(default)]
+    pub mentions: Option<Vec<crate::mentions::Mention>>,
 }
 
 /// miy: mute switch (`PUT .../mute`).

@@ -25,6 +25,8 @@ export type DmMessageAttachment = ApiSchema<'DmMessageAttachmentItem'>;
 export type DmMessageReadState = ApiSchema<'DmMessageReadStateItem'>;
 export type DmMessageReplyTo = ApiSchema<'DmMessageReplyToItem'>;
 export type DmMessage = ApiSchema<'DmMessageItem'>;
+export type DmMention = ApiSchema<'DmMentionItem'>;
+export type DmReaction = ApiSchema<'DmReactionItem'>;
 export type DmConversation = ApiSchema<'DmConversationItem'>;
 export type DmConversationListResponse =
   ApiSchema<'DmConversationListResponse'>;
@@ -399,11 +401,15 @@ export function normalizeDmMessage(value: unknown): DmMessage | null {
   const replyTo =
     value.reply_to == null ? null : normalizeDmMessageReplyTo(value.reply_to);
   const editedAt = optionalNullableDateTimeString(value.edited_at);
+  const mentions = normalizeDmMentions(value.mentions);
+  const reactions = normalizeDmReactions(value.reactions);
   if (
     !attachments ||
     !readState ||
     (value.reply_to != null && !replyTo) ||
-    editedAt === undefined
+    editedAt === undefined ||
+    !mentions ||
+    !reactions
   ) {
     return null;
   }
@@ -423,7 +429,42 @@ export function normalizeDmMessage(value: unknown): DmMessage | null {
     // miy: author edit ("수정됨") and delete.
     ...(editedAt ? { edited_at: editedAt } : {}),
     ...(value.deleted === true ? { deleted: true } : {}),
+    // miy: mentions and reactions (kept only when the server sent them).
+    ...(mentions?.length ? { mentions } : {}),
+    ...(reactions?.length ? { reactions } : {}),
   };
+}
+
+/** miy: mention ranges; malformed entries make the message invalid. */
+function normalizeDmMentions(value: unknown): DmMention[] | null {
+  if (value === undefined) return [];
+  return normalizeArray(value, (item) =>
+    isRecord(item) &&
+    isDmResponseId(item.user_id) &&
+    isNonNegativeInteger(item.start) &&
+    isNonNegativeInteger(item.length)
+      ? { user_id: item.user_id, start: item.start, length: item.length }
+      : null,
+  );
+}
+
+/** miy: reactions with the people who reacted. */
+function normalizeDmReactions(value: unknown): DmReaction[] | null {
+  if (value === undefined) return [];
+  return normalizeArray(value, (item) => {
+    if (
+      !isRecord(item) ||
+      typeof item.reaction !== 'string' ||
+      !isNonNegativeInteger(item.count) ||
+      typeof item.reacted !== 'boolean'
+    ) {
+      return null;
+    }
+    const users = normalizeArray(item.users ?? [], normalizeDmUser);
+    return users
+      ? { reaction: item.reaction, count: item.count, reacted: item.reacted, users }
+      : null;
+  });
 }
 
 export function normalizeDmConversation(value: unknown): DmConversation | null {

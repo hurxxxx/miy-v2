@@ -68,6 +68,21 @@ export const dmRoutes = {
   // miy: author edit/delete, mute and unsent attachment cancel.
   message: (conversationId: string, messageId: string) =>
     `${DM_API_PREFIX}/conversations/${encodeSegment(conversationId)}/messages/${encodeSegment(messageId)}`,
+  // miy: reactions and message search.
+  reaction: (conversationId: string, messageId: string, reaction: string) =>
+    `${DM_API_PREFIX}/conversations/${encodeSegment(conversationId)}/messages/${encodeSegment(messageId)}/reactions/${encodeSegment(reaction)}`,
+  search: (input: {
+    q: string;
+    conversationId?: string | null;
+    cursor?: string | null;
+    limit?: number;
+  }) => {
+    const params = new URLSearchParams({ q: input.q });
+    if (input.conversationId) params.set('conversation_id', input.conversationId);
+    if (input.cursor) params.set('cursor', input.cursor);
+    params.set('limit', String(normalizeDmLimit(input.limit ?? 20)));
+    return `${DM_API_PREFIX}/search?${params.toString()}`;
+  },
   mute: (conversationId: string) =>
     `${DM_API_PREFIX}/conversations/${encodeSegment(conversationId)}/mute`,
   attachment: (attachmentId: string) =>

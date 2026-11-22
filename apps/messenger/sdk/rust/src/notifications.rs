@@ -54,6 +54,30 @@ impl Identity {
         serde_json::from_value(value).map_err(|_| call_error("notification_result_unknown"))
     }
 
+    /// [`Identity::notify`] that also reaches the current members of platform
+    /// groups (up to 50 group IDs), with the same filters. `recipients` may then
+    /// be empty. Needs the approved `platform:directory:read` as well.
+    pub async fn notify_with_groups(
+        &self,
+        notification: &Notification,
+        groups: &[String],
+    ) -> Result<Published, CallError> {
+        if !valid_uuid(&notification.request_id)
+            || groups.len() > 50
+            || groups.iter().any(|group| !valid_uuid(group))
+            || (notification.recipients.is_empty() && groups.is_empty())
+        {
+            return Err(call_error("invalid_notification"));
+        }
+        let mut body =
+            serde_json::to_value(notification).map_err(|_| call_error("invalid_notification"))?;
+        body["recipientGroups"] = serde_json::json!(groups);
+        let value = self
+            .call("platform/notifications", Method::POST, Some(&body))
+            .await?;
+        serde_json::from_value(value).map_err(|_| call_error("notification_result_unknown"))
+    }
+
     /// The result of an earlier [`Identity::notify`] by its request ID.
     pub async fn notification_by_request(&self, request_id: &str) -> Result<Published, CallError> {
         if !valid_uuid(request_id) {

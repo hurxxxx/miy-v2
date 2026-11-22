@@ -499,6 +499,7 @@ async fn leave(pool: &PgPool, identity: &Identity, conversation_id: &str) -> Api
     tx.commit().await?;
     live::conversation_changed(pool, conversation_id, &[me.to_string()]).await;
     notify::retract(identity, conversation_id, Some(&[me.to_string()])).await;
+    notify::mentions_of_departed(pool, identity, conversation_id, me).await;
     Ok(())
 }
 
@@ -548,6 +549,7 @@ pub async fn remove_dm_conversation_participant(
     tx.commit().await?;
     live::conversation_changed(&pool, &conversation_id, std::slice::from_ref(&user_id)).await;
     notify::retract(&identity, &conversation_id, Some(&[user_id.clone()])).await;
+    notify::mentions_of_departed(&pool, &identity, &conversation_id, &user_id).await;
     Ok(Json(
         render_for_me(&pool, &identity, &conversation_id).await?,
     ))

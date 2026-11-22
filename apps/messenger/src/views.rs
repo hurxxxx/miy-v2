@@ -106,6 +106,8 @@ pub fn conversation_display_name(conversation: &Conversation, me: &str, names: &
 pub struct MessageExtras {
     attachments: HashMap<String, Vec<AttachmentRow>>,
     replies: HashMap<String, MessageRow>,
+    mentions: HashMap<String, Vec<crate::mentions::Mention>>,
+    reactions: HashMap<String, Vec<crate::reactions::ReactionRow>>,
 }
 
 impl MessageExtras {
@@ -125,8 +127,29 @@ impl MessageExtras {
                 attachments.entry(message_id).or_default().push(attachment);
             }
         }
+        let own_ids: Vec<String> = rows.iter().map(|row| row.id.clone()).collect();
+        let mut mentions: HashMap<String, Vec<crate::mentions::Mention>> = HashMap::new();
+        for row in crate::mentions::of_messages(conn, &own_ids).await? {
+            mentions
+                .entry(row.message_id)
+                .or_default()
+                .push(crate::mentions::Mention {
+                    user_id: row.user_id,
+                    start: row.start_index,
+                    length: row.length,
+                });
+        }
+        let mut reactions: HashMap<String, Vec<crate::reactions::ReactionRow>> = HashMap::new();
+        for row in crate::reactions::of_messages(conn, &own_ids).await? {
+            reactions
+                .entry(row.message_id.clone())
+                .or_default()
+                .push(row);
+        }
         Ok(Self {
             attachments,
+            mentions,
+            reactions,
             replies: replies
                 .into_iter()
                 .map(|row| (row.id.clone(), row))
@@ -138,6 +161,12 @@ impl MessageExtras {
         rows.iter()
             .map(|row| row.sender_id.clone())
             .chain(self.replies.values().map(|row| row.sender_id.clone()))
+            .chain(
+                self.reactions
+                    .values()
+                    .flatten()
+                    .map(|row| row.user_id.clone()),
+            )
             .collect()
     }
 
@@ -188,6 +217,21 @@ impl MessageExtras {
             hidden: message.hidden(),
             edited_at: iso_opt(message.edited_at),
             deleted: message.deleted(),
+            mentions: if attachments_visible(message) {
+                self.mentions.get(&message.id).cloned().unwrap_or_default()
+            } else {
+                Vec::new()
+            },
+            reactions: if attachments_visible(message) {
+                let rows: Vec<&crate::reactions::ReactionRow> = self
+                    .reactions
+                    .get(&message.id)
+                    .map(|rows| rows.iter().collect())
+                    .unwrap_or_default();
+                crate::reactions::items(&rows, viewer.map_or("", |v| v.user_id.as_str()), names)
+            } else {
+                Vec::new()
+            },
         }
     }
 

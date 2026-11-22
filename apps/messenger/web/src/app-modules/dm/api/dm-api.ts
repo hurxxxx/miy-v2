@@ -45,6 +45,11 @@ import { readJson } from '@miy/sdk';
 import { requestId } from '@miy/components/ui/utilities';
 
 import {
+  resolveDmMentionRanges,
+  type DmMentionDraft,
+} from '../views/dm-mention-model';
+
+import {
   ApiRequestError,
   apiFetchFile,
   apiFetchJson,
@@ -397,6 +402,8 @@ export function sendDmMessage(
   body: string,
   attachmentIds: string[] = [],
   replyToMessageId: string | null = null,
+  // miy: people picked with "@"; ranges are resolved on the normalized body.
+  mentionDrafts: readonly DmMentionDraft[] = [],
 ): Promise<DmMessage> {
   const payload = requireDmRequest(
     'dm:send-message',
@@ -407,13 +414,14 @@ export function sendDmMessage(
     },
     normalizeDmSendMessageRequest,
   );
+  const mentions = resolveDmMentionRanges(payload.body, mentionDrafts);
   return fetchDmResponse(
     'dm:send-message',
     dmRoutes.messages(conversationId),
     token,
     {
       method: 'POST',
-      body: JSON.stringify(payload),
+      body: JSON.stringify(mentions.length ? { ...payload, mentions } : payload),
     },
     normalizeDmMessage,
   );
@@ -497,13 +505,97 @@ export function editDmMessage(
   conversationId: string,
   messageId: string,
   body: string,
+  // miy: the edited body's mentions replace the old ones.
+  mentionDrafts: readonly DmMentionDraft[] = [],
 ): Promise<DmMessage> {
+  const trimmed = body.trim();
+  const mentions = resolveDmMentionRanges(trimmed, mentionDrafts);
   return fetchDmResponse(
     'dm:edit-message',
     dmRoutes.message(conversationId, messageId),
     token,
-    { method: 'PATCH', body: JSON.stringify({ body }) },
+    {
+      method: 'PATCH',
+      body: JSON.stringify(mentions.length ? { body: trimmed, mentions } : { body: trimmed }),
+    },
     normalizeDmMessage,
+  );
+}
+
+/** miy: add or remove the caller's reaction; the answer is the message. */
+export function setDmReaction(
+  token: string,
+  conversationId: string,
+  messageId: string,
+  reaction: string,
+  on: boolean,
+): Promise<DmMessage> {
+  return fetchDmResponse(
+    'dm:reaction',
+    dmRoutes.reaction(conversationId, messageId, reaction),
+    token,
+    { method: on ? 'PUT' : 'DELETE' },
+    normalizeDmMessage,
+  );
+}
+
+/** miy: one message search hit (text only, conversations the caller is in). */
+export interface DmSearchHit {
+  message_id: string;
+  conversation_id: string;
+  conversation_name: string;
+  conversation_type: 'direct' | 'group';
+  sequence: number;
+  sender_id: string;
+  sender_name: string;
+  snippet: string;
+  created_at: string;
+}
+
+export interface DmSearchPage {
+  items: DmSearchHit[];
+  next_cursor: string | null;
+}
+
+function normalizeDmSearchPage(value: unknown): DmSearchPage | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const record = value as { items?: unknown; next_cursor?: unknown };
+  if (!Array.isArray(record.items)) return null;
+  const items: DmSearchHit[] = [];
+  for (const item of record.items) {
+    if (!item || typeof item !== 'object') return null;
+    const hit = item as Record<string, unknown>;
+    if (
+      typeof hit.message_id !== 'string' ||
+      typeof hit.conversation_id !== 'string' ||
+      typeof hit.conversation_name !== 'string' ||
+      (hit.conversation_type !== 'direct' && hit.conversation_type !== 'group') ||
+      typeof hit.sequence !== 'number' ||
+      typeof hit.sender_id !== 'string' ||
+      typeof hit.sender_name !== 'string' ||
+      typeof hit.snippet !== 'string' ||
+      typeof hit.created_at !== 'string'
+    ) {
+      return null;
+    }
+    items.push(hit as unknown as DmSearchHit);
+  }
+  const cursor = record.next_cursor;
+  if (cursor !== null && cursor !== undefined && typeof cursor !== 'string') return null;
+  return { items, next_cursor: typeof cursor === 'string' ? cursor : null };
+}
+
+/** miy: search message text in one conversation or in all of the caller's. */
+export function searchDmMessages(
+  token: string,
+  input: { q: string; conversationId?: string | null; cursor?: string | null; limit?: number },
+): Promise<DmSearchPage> {
+  return fetchDmResponse(
+    'dm:search',
+    dmRoutes.search(input),
+    token,
+    {},
+    normalizeDmSearchPage,
   );
 }
 

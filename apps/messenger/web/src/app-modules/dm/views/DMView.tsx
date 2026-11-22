@@ -19,6 +19,7 @@ import {
   Search,
   Send,
   ShieldAlert,
+  SmilePlus,
   Trash2,
   Users,
   Wifi,
@@ -66,6 +67,8 @@ import {
   editDmMessage,
   loadDmAttachmentObjectUrl,
   setDmConversationMuted,
+  setDmReaction,
+  type DmSearchHit,
   createDmThread,
   getDmAttachmentDownloadUrl,
   getDmAttachmentPreviewUrl,
@@ -130,6 +133,16 @@ import {
   prependOlderDmMessages,
 } from './dm-conversation-runtime-model';
 import { DmAttachmentImage } from './DmAttachmentImage';
+import { DmMessageSearchDialog } from './DmMessageSearch';
+import {
+  activeDmMentionQuery,
+  dmMentionCandidates,
+  dmMentionDraftsFromMessage,
+  dmMentionParts,
+  insertDmMention,
+  type DmActiveMentionQuery,
+  type DmMentionDraft,
+} from './dm-mention-model';
 import {
   applyDmTypingHint,
   liveHintConversationId,
@@ -377,6 +390,7 @@ function dmRealtimeEventConversationId(event: RealtimeEvent): string | null {
 
 export function DMEmbeddedView({
   embeddedPersistentList = false,
+  focusMessageId = null,
   onOpenSafety,
   onThreadIdChange,
   reloadSeq = 0,
@@ -384,6 +398,8 @@ export function DMEmbeddedView({
   threadId,
 }: {
   embeddedPersistentList?: boolean;
+  /** miy: a message to bring into view (`?message=` of a notification or search). */
+  focusMessageId?: string | null;
   /** miy: open safety management for current or first-time managers. */
   onOpenSafety?: () => void;
   onThreadIdChange: (threadId: string) => void;
@@ -395,6 +411,7 @@ export function DMEmbeddedView({
     <>
       {useDMViewElement({
         embeddedPersistentList,
+        focusMessageId,
         onOpenSafety,
         onThreadIdChange,
         reloadSeq,
@@ -404,6 +421,20 @@ export function DMEmbeddedView({
     </>
   );
 }
+
+/** miy: reactions (fixed set, display order) and message search jumps. */
+const DM_REACTIONS: ReadonlyArray<readonly [string, string]> = [
+  ['thumbs_up', '👍'],
+  ['heart', '❤️'],
+  ['laugh', '😂'],
+  ['surprised', '😮'],
+  ['sad', '😢'],
+  ['pray', '🙏'],
+  ['check', '✅'],
+];
+const DM_REACTION_EMOJI = new Map(DM_REACTIONS);
+const DM_JUMP_PAGE = 100;
+const DM_JUMP_MAX_PAGES = 20;
 
 /** miy (M4): live hint handling. */
 const DM_HINT_COALESCE_MS = 120;
@@ -415,6 +446,7 @@ const DM_MESSAGE_PAGE = 50;
 
 function useDMViewElement({
   embeddedPersistentList = false,
+  focusMessageId = null,
   onOpenSafety,
   onThreadIdChange,
   reloadSeq = 0,
@@ -422,6 +454,7 @@ function useDMViewElement({
   threadId,
 }: {
   embeddedPersistentList?: boolean;
+  focusMessageId?: string | null;
   onOpenSafety?: () => void;
   onThreadIdChange?: (threadId: string) => void;
   reloadSeq?: number;
@@ -455,7 +488,25 @@ function useDMViewElement({
   const [failedDraftsByThread, setFailedDraftsByThread] = useState<Record<string, string[]>>({});
   const [replyTarget, setReplyTarget] = useState<DmMessage | null>(null);
   // miy: author edit/delete, older pages and mute.
-  const [editing, setEditing] = useState<{ message: DmMessage; body: string } | null>(null);
+  const [editing, setEditing] = useState<{
+    message: DmMessage;
+    body: string;
+    // miy: people mentioned in the edited text.
+    mentions?: DmMentionDraft[];
+  } | null>(null);
+  // miy: "@" picker, mention drafts per conversation, reactions, search, jumps.
+  const composerRef = useRef<HTMLTextAreaElement>(null);
+  const [mentionPicker, setMentionPicker] = useState<{
+    active: DmActiveMentionQuery;
+    caret: number;
+    index: number;
+  } | null>(null);
+  const mentionDraftsByThreadRef = useRef<Record<string, DmMentionDraft[]>>({});
+  const [reactionPickerFor, setReactionPickerFor] = useState<string | null>(null);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const pendingJumpRef = useRef<{ threadId: string; messageId: string } | null>(null);
+  const jumpingRef = useRef(false);
+  const [jumpSeq, setJumpSeq] = useState(0);
   const editTarget = editing?.message ?? null;
   const [deleteTarget, setDeleteTarget] = useState<DmMessage | null>(null);
   const [deleting, setDeleting] = useState(false);
@@ -1861,6 +1912,7 @@ function useDMViewElement({
         target.conversation_id,
         target.id,
         editing.body.trim(),
+        editing.mentions ?? [],
       );
       applyChangedMessage(updated);
       setEditing((current) => (current === editing ? null : current));
@@ -1900,7 +1952,11 @@ function useDMViewElement({
   const startEdit = (message: DmMessage) => {
     if (sending) return;
     setReplyTarget(null);
-    setEditing({ message, body: message.body });
+    setEditing({
+      message,
+      body: message.body,
+      mentions: dmMentionDraftsFromMessage(message.body, message.mentions),
+    });
   };
 
   const cancelEdit = () => {
@@ -2033,7 +2089,12 @@ function useDMViewElement({
         command.body,
         command.attachmentIds,
         command.replyToMessageId,
+        mentionDraftsByThreadRef.current[command.threadId] ?? [],
       );
+      // The mentions went with the body; a later draft starts without them.
+      if (!draftByThreadIdRef.current[command.threadId]) {
+        delete mentionDraftsByThreadRef.current[command.threadId];
+      }
       const activeThreadMatches =
         selectedThreadIdRef.current === command.threadId;
       const currentMessages = activeThreadMatches
@@ -2172,6 +2233,146 @@ function useDMViewElement({
   const olderState = threadId ? olderByThreadId[threadId] : undefined;
   const canLoadOlder =
     messages.length >= DM_MESSAGE_PAGE && !olderState?.exhausted;
+  // miy: "@" picker over the conversation's current participants.
+  const mentionCandidates = useMemo(() => {
+    if (!mentionPicker || !selectedThread) return [];
+    return dmMentionCandidates(
+      selectedThread.participants.map((participant) => ({
+        id: participant.user.id,
+        name: displayDmUserName(participant.user),
+      })),
+      user?.id,
+      mentionPicker.active.query,
+    );
+  }, [mentionPicker, selectedThread, user?.id]);
+  const pickMention = (candidate: { id: string; name: string } | undefined) => {
+    const picker = mentionPicker;
+    if (!candidate || !picker) return;
+    const text = editing?.body ?? draft;
+    const inserted = insertDmMention(text, picker.active, picker.caret, candidate.name);
+    const mention = { userId: candidate.id, label: inserted.label };
+    if (editing) {
+      setEditing({
+        ...editing,
+        body: inserted.text,
+        mentions: [...(editing.mentions ?? []), mention],
+      });
+    } else if (threadId) {
+      setSelectedThreadDraft(inserted.text);
+      mentionDraftsByThreadRef.current = {
+        ...mentionDraftsByThreadRef.current,
+        [threadId]: [...(mentionDraftsByThreadRef.current[threadId] ?? []), mention],
+      };
+    }
+    setMentionPicker(null);
+    window.requestAnimationFrame(() => {
+      const element = composerRef.current;
+      if (!element) return;
+      element.focus();
+      element.setSelectionRange(inserted.caret, inserted.caret);
+    });
+  };
+
+  // miy: reactions toggle through the API; the answer replaces the message.
+  const handleToggleReaction = async (message: DmMessage, reaction: string, on: boolean) => {
+    setReactionPickerFor(null);
+    if (!token) return;
+    try {
+      applyChangedMessage(
+        await setDmReaction(token, message.conversation_id, message.id, reaction, on),
+      );
+    } catch (caughtError) {
+      feedback.error(
+        caughtError instanceof Error ? caughtError.message : t('dm.reactions.failed'),
+      );
+    }
+  };
+
+  // miy: open a search hit or a `?message=` focus: show the conversation, then
+  // load older pages (bounded) until the message is there and bring it into
+  // view. A later selection or another conversation cancels the earlier one.
+  const requestJump = useCallback(
+    (conversationId: string, messageId: string) => {
+      pendingJumpRef.current = { threadId: conversationId, messageId };
+      if (selectedThreadIdRef.current !== conversationId) {
+        selectThreadId(conversationId);
+      }
+      setJumpSeq((value) => value + 1);
+    },
+    [selectThreadId],
+  );
+  const handleSelectSearchHit = (hit: DmSearchHit) => {
+    setSearchOpen(false);
+    requestJump(hit.conversation_id, hit.message_id);
+  };
+  const lastFocusRef = useRef<string | null>(null);
+  useEffect(() => {
+    const key = focusMessageId && threadId ? `${threadId}:${focusMessageId}` : null;
+    if (!key || key === lastFocusRef.current || !focusMessageId) return;
+    lastFocusRef.current = key;
+    requestJump(threadId, focusMessageId);
+  }, [focusMessageId, requestJump, threadId]);
+  useEffect(() => {
+    const pending = pendingJumpRef.current;
+    if (!pending || !token || pending.threadId !== threadId || messagesLoading) return;
+    if (messagesRef.current.some((message) => message.id === pending.messageId)) {
+      pendingJumpRef.current = null;
+      window.requestAnimationFrame(() => handleScrollToReplySource(pending.messageId));
+      return;
+    }
+    // Wait for the conversation's first page before paging back.
+    if (jumpingRef.current || !messagesRef.current.length) return;
+    jumpingRef.current = true;
+    void (async () => {
+      try {
+        for (let page = 0; page < DM_JUMP_MAX_PAGES; page += 1) {
+          const current = pendingJumpRef.current;
+          if (current !== pending || selectedThreadIdRef.current !== pending.threadId) return;
+          const oldest = messagesRef.current[0];
+          if (!oldest) break;
+          const response = await listDmMessages(
+            token,
+            pending.threadId,
+            DM_JUMP_PAGE,
+            oldest.sequence,
+          );
+          // A late answer for another conversation or jump is dropped.
+          if (pendingJumpRef.current !== pending || selectedThreadIdRef.current !== pending.threadId) {
+            return;
+          }
+          const items = prependOlderDmMessages(messagesRef.current, response.items);
+          messagesRef.current = items;
+          messageCacheByThreadIdRef.current = setDmThreadRecordValue(
+            messageCacheByThreadIdRef.current,
+            pending.threadId,
+            items,
+          );
+          writeCachedDmMessages(dmCacheKey, pending.threadId, items);
+          dispatchMessages({ type: 'replace', items });
+          if (items.some((message) => message.id === pending.messageId)) {
+            pendingJumpRef.current = null;
+            window.requestAnimationFrame(() => handleScrollToReplySource(pending.messageId));
+            return;
+          }
+          if (response.items.length < DM_JUMP_PAGE) break;
+        }
+        if (pendingJumpRef.current === pending) {
+          pendingJumpRef.current = null;
+          feedback.error(t('dm.search.jumpFailed'));
+        }
+      } catch (caughtError) {
+        if (pendingJumpRef.current === pending) {
+          pendingJumpRef.current = null;
+          feedback.error(
+            caughtError instanceof Error ? caughtError.message : t('dm.search.jumpFailed'),
+          );
+        }
+      } finally {
+        jumpingRef.current = false;
+      }
+    })();
+  }, [dmCacheKey, feedback, handleScrollToReplySource, jumpSeq, messages, messagesLoading, t, threadId, token]);
+
   const typingLabel = useMemo(() => {
     const typing = threadId ? typingByThreadId[threadId] : undefined;
     if (!typing || !selectedThread) return null;
@@ -2248,6 +2449,14 @@ function useDMViewElement({
               <Loader2 size={14} className="animate-spin text-app-ink/45" />
             ) : null}
           </div>
+          <button
+            className="app-text-caption mt-2 mr-3 inline-flex items-center gap-1 text-app-ink/55 hover:text-app-ink"
+            onClick={() => setSearchOpen(true)}
+            type="button"
+          >
+            <Search aria-hidden="true" size={12} />
+            {t('dm.search.open')}
+          </button>
           {safety?.block && blockedUserIds.size > 0 ? (
             <button
               className="app-text-caption mt-2 inline-flex items-center gap-1 text-app-ink/55 hover:text-app-ink"
@@ -2472,6 +2681,15 @@ function useDMViewElement({
                       selectedThread.other_user?.primary_org_unit_name}
                 </div>
               </div>
+              <button
+                aria-label={t('dm.search.open')}
+                className="flex size-9 shrink-0 items-center justify-center rounded-md border border-app-border bg-app-surface text-app-ink"
+                onClick={() => setSearchOpen(true)}
+                title={t('dm.search.open')}
+                type="button"
+              >
+                <Search size={16} />
+              </button>
               <button
                 aria-label={selectedThread.muted_at ? t('dm.unmute') : t('dm.mute')}
                 aria-pressed={Boolean(selectedThread.muted_at)}
@@ -2889,6 +3107,54 @@ function useDMViewElement({
                           >
                             <Reply size={13} />
                           </button>
+                          {!message.hidden && !message.deleted ? (
+                            <span className="relative">
+                              <button
+                                aria-expanded={reactionPickerFor === message.id}
+                                aria-label={t('dm.reactions.add')}
+                                className="inline-flex size-7 items-center justify-center rounded-md border border-app-border bg-app-bg text-app-ink/55 shadow-sm hover:bg-app-surface-hover hover:text-app-ink"
+                                onClick={() =>
+                                  setReactionPickerFor((current) =>
+                                    current === message.id ? null : message.id,
+                                  )
+                                }
+                                title={t('dm.reaction')}
+                                type="button"
+                              >
+                                <SmilePlus size={13} />
+                              </button>
+                              {reactionPickerFor === message.id ? (
+                                <span
+                                  className={`absolute bottom-8 z-20 flex gap-0.5 rounded-md border border-app-border bg-app-surface p-1 shadow-lg ${
+                                    own ? 'right-0' : 'left-0'
+                                  }`}
+                                  role="menu"
+                                >
+                                  {DM_REACTIONS.map(([key, emoji]) => {
+                                    const reacted = Boolean(
+                                      message.reactions?.find((item) => item.reaction === key)?.reacted,
+                                    );
+                                    return (
+                                      <button
+                                        aria-label={t(`dm.reactions.${key}`)}
+                                        aria-pressed={reacted}
+                                        className={`flex size-7 items-center justify-center rounded text-base hover:bg-app-surface-hover ${
+                                          reacted ? 'bg-app-accent/15' : ''
+                                        }`}
+                                        key={key}
+                                        onClick={() => void handleToggleReaction(message, key, !reacted)}
+                                        role="menuitem"
+                                        title={t(`dm.reactions.${key}`)}
+                                        type="button"
+                                      >
+                                        {emoji}
+                                      </button>
+                                    );
+                                  })}
+                                </span>
+                              ) : null}
+                            </span>
+                          ) : null}
                           {own && !message.hidden && !message.deleted ? (
                             <>
                               <button
@@ -3035,7 +3301,33 @@ function useDMViewElement({
                               </div>
                             ) : message.body ? (
                               <div className="app-text-body whitespace-pre-wrap break-words">
-                                {messageBodyContent(content.segments, own)}
+                                {message.mentions?.length
+                                  ? dmMentionParts(message.body, message.mentions).map(
+                                      (part, index) =>
+                                        part.kind === 'mention' ? (
+                                          <span
+                                            className={`rounded px-0.5 font-semibold ${
+                                              part.userId === user?.id
+                                                ? 'bg-app-accent text-app-accent-fg'
+                                                : own
+                                                  ? 'bg-app-bg/20'
+                                                  : 'bg-app-accent/10 text-app-accent'
+                                            }`}
+                                            data-mention={part.userId}
+                                            key={`mention-${index}`}
+                                          >
+                                            {part.text}
+                                          </span>
+                                        ) : (
+                                          <Fragment key={`part-${index}`}>
+                                            {messageBodyContent(
+                                              buildDmMessageContent(part.text).segments,
+                                              own,
+                                            )}
+                                          </Fragment>
+                                        ),
+                                    )
+                                  : messageBodyContent(content.segments, own)}
                               </div>
                             ) : null}
                             {attachments.length ? (
@@ -3198,6 +3490,32 @@ function useDMViewElement({
                                       </span>
                                     </span>
                                   </a>
+                                ))}
+                              </div>
+                            ) : null}
+                            {message.reactions?.length && !message.hidden && !message.deleted ? (
+                              <div className="mt-1.5 flex flex-wrap gap-1">
+                                {message.reactions.map((reaction) => (
+                                  <button
+                                    aria-label={`${t(`dm.reactions.${reaction.reaction}`, { defaultValue: reaction.reaction })} ${reaction.count}`}
+                                    aria-pressed={reaction.reacted}
+                                    className={`app-text-caption inline-flex items-center gap-1 rounded-full border px-1.5 py-0.5 ${
+                                      reaction.reacted
+                                        ? 'border-app-accent bg-app-accent/15 text-app-ink'
+                                        : 'border-app-border bg-app-bg text-app-ink/70'
+                                    } hover:bg-app-surface-hover`}
+                                    key={reaction.reaction}
+                                    onClick={() =>
+                                      void handleToggleReaction(message, reaction.reaction, !reaction.reacted)
+                                    }
+                                    title={reaction.users.map((person) => displayDmUserName(person)).join(', ')}
+                                    type="button"
+                                  >
+                                    <span aria-hidden="true">
+                                      {DM_REACTION_EMOJI.get(reaction.reaction) ?? reaction.reaction}
+                                    </span>
+                                    {reaction.count}
+                                  </button>
                                 ))}
                               </div>
                             ) : null}
@@ -3377,6 +3695,33 @@ function useDMViewElement({
                   })}
                 </div>
               ) : null}
+              {mentionPicker && mentionCandidates.length ? (
+                <div
+                  aria-label={t('dm.mentionPicker')}
+                  className="mb-2 max-h-48 overflow-y-auto rounded-md border border-app-border bg-app-surface py-1 shadow-sm"
+                  role="listbox"
+                >
+                  {mentionCandidates.map((candidate, index) => (
+                    <button
+                      aria-selected={index === mentionPicker.index}
+                      className={`app-text-body-sm block w-full px-3 py-1.5 text-left ${
+                        index === mentionPicker.index
+                          ? 'bg-app-accent/10 text-app-ink'
+                          : 'text-app-ink/80 hover:bg-app-surface-hover'
+                      }`}
+                      key={candidate.id}
+                      onMouseDown={(event) => {
+                        event.preventDefault();
+                        pickMention(candidate);
+                      }}
+                      role="option"
+                      type="button"
+                    >
+                      @{candidate.name}
+                    </button>
+                  ))}
+                </div>
+              ) : null}
               <div className="flex items-end gap-2">
                 <input
                   aria-label={t('dm.attachFile')}
@@ -3406,8 +3751,37 @@ function useDMViewElement({
                       setSelectedThreadDraft(body);
                       notifyTyping(body);
                     }
+                    const caret = event.currentTarget.selectionStart ?? body.length;
+                    const active = activeDmMentionQuery(body, caret);
+                    setMentionPicker(active ? { active, caret, index: 0 } : null);
                   }}
+                  onBlur={() => window.setTimeout(() => setMentionPicker(null), 150)}
                   onKeyDown={(event) => {
+                    const composing =
+                      event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229;
+                    if (mentionPicker && mentionCandidates.length && !composing) {
+                      if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+                        event.preventDefault();
+                        const step = event.key === 'ArrowDown' ? 1 : -1;
+                        setMentionPicker({
+                          ...mentionPicker,
+                          index:
+                            (mentionPicker.index + step + mentionCandidates.length) %
+                            mentionCandidates.length,
+                        });
+                        return;
+                      }
+                      if (event.key === 'Enter' || event.key === 'Tab') {
+                        event.preventDefault();
+                        pickMention(mentionCandidates[mentionPicker.index] ?? mentionCandidates[0]);
+                        return;
+                      }
+                      if (event.key === 'Escape') {
+                        event.preventDefault();
+                        setMentionPicker(null);
+                        return;
+                      }
+                    }
                     if (
                       shouldSubmitDmComposerKey({
                         key: event.key,
@@ -3423,6 +3797,7 @@ function useDMViewElement({
                   placeholder={t('dm.messagePlaceholder')}
                   rows={1}
                   readOnly={Boolean(editing) && sending}
+                  ref={composerRef}
                   value={editing?.body ?? draft}
                 />
                 <button
@@ -3465,6 +3840,16 @@ function useDMViewElement({
           </div>
         )}
       </section>
+      <DmMessageSearchDialog
+        conversation={
+          selectedThread ? { id: selectedThread.id, name: selectedThreadName } : null
+        }
+        onClose={() => setSearchOpen(false)}
+        onSelect={handleSelectSearchHit}
+        open={searchOpen}
+        timeZone={timeZone}
+        token={token}
+      />
       <DmReportDialog
         message={reportTarget}
         onClose={() => setReportTarget(null)}

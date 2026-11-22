@@ -992,6 +992,10 @@ async fn after_visibility_change(
     live::conversation_changed(pool, &report.conversation_id, &[]).await;
     if let Ok((Some(conversation), Some(message))) = loaded {
         notify::message_changed(pool, identity, &conversation, &message).await;
+        // A hidden message keeps no mention lines (they are not published again).
+        if message.hidden() {
+            notify::mentions_removed(identity, &report.conversation_id, message_id, None).await;
+        }
     }
 }
 

@@ -153,6 +153,7 @@ function Screens({ runtime }: AppProps) {
           ) : (
             <DMEmbeddedView
               embeddedPersistentList={route.kind === 'messenger'}
+              focusMessageId={new URLSearchParams(runtime.location.search).get('message')}
               onOpenSafety={route.kind === 'messenger' ? () => navigate('/safety') : undefined}
               onThreadIdChange={onThreadIdChange}
               threadScrollSnapshotsRef={scrollSnapshots}
