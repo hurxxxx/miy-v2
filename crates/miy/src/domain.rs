@@ -527,6 +527,11 @@ pub fn catalog() -> Value {
     // Personal settings and sessions (kept out of the literal above, which is at
     // the json! macro recursion limit).
     let personal = [
+        json!({"id":"launcher_categories","method":"GET","path":"/api/v1/launcher/categories","permission":"undelegated user","description":"Launcher categories in display order with their app IDs; grouping only, never access"}),
+        json!({"id":"create_launcher_category","method":"POST","path":"/api/v1/launcher/categories","permission":"admin","description":"Add a launcher category","input":schemars::schema_for!(crate::launcher::NewCategory)}),
+        json!({"id":"update_launcher_category","method":"PATCH","path":"/api/v1/launcher/categories/{id}","permission":"admin","description":"Rename, re-icon or move a launcher category","input":schemars::schema_for!(crate::launcher::CategoryUpdate)}),
+        json!({"id":"delete_launcher_category","method":"DELETE","path":"/api/v1/launcher/categories/{id}","permission":"admin","description":"Delete a launcher category; its apps stay in the launcher uncategorized"}),
+        json!({"id":"set_launcher_layout","method":"PUT","path":"/api/v1/launcher/categories/layout","permission":"admin","description":"Replace the whole arrangement: categories in order and each app in at most one","input":schemars::schema_for!(crate::launcher::Layout)}),
         json!({"id":"browser_sessions","method":"GET","path":"/api/v1/me/sessions","permission":"undelegated user (own sessions only)","description":"Live browser sessions of the signed-in person on the portals and console; current marks this request's session"}),
         json!({"id":"revoke_browser_session","method":"DELETE","path":"/api/v1/me/sessions/{id}","permission":"undelegated user (own sessions only)","description":"End one of one's own browser sessions and the app frames launched from it; the current session ends by signing out"}),
         json!({"id":"update_preferences","method":"PATCH","path":"/api/v1/me/preferences","permission":"undelegated, enabled user (own record only)","description":"Change one's own display name, job title, display settings and launcher pins; omitted fields stay","input":schemars::schema_for!(crate::preferences::Update)}),

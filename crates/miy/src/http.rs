@@ -123,6 +123,18 @@ pub fn router_for(state: State, purpose: BrowserPurpose) -> Router {
         .route("/me/preferences", axum::routing::patch(update_preferences))
         .route("/me/sessions", axum::routing::get(browser_sessions))
         .route(
+            "/launcher/categories",
+            axum::routing::get(launcher_categories).post(create_launcher_category),
+        )
+        .route(
+            "/launcher/categories/layout",
+            axum::routing::put(set_launcher_layout),
+        )
+        .route(
+            "/launcher/categories/{id}",
+            axum::routing::patch(update_launcher_category).delete(delete_launcher_category),
+        )
+        .route(
             "/me/sessions/{id}",
             axum::routing::delete(revoke_browser_session),
         )
@@ -950,6 +962,41 @@ async fn runtime_job(
 }
 async fn me(S(s): S<State>, axum::Extension(p): P) -> ApiResult<Json<Value>> {
     Ok(Json(domain::me(&s, &p).await?))
+}
+async fn launcher_categories(
+    S(s): S<State>,
+    axum::Extension(p): P,
+) -> ApiResult<Json<crate::api_contract::LauncherCategoryPage>> {
+    Ok(Json(crate::launcher::list(&s, &p).await?))
+}
+async fn create_launcher_category(
+    S(s): S<State>,
+    axum::Extension(p): P,
+    Json(input): Json<crate::launcher::NewCategory>,
+) -> ApiResult<Json<crate::api_contract::LauncherCategoryPage>> {
+    Ok(Json(crate::launcher::create(&s, &p, input).await?))
+}
+async fn update_launcher_category(
+    S(s): S<State>,
+    axum::Extension(p): P,
+    Path(id): Path<Uuid>,
+    Json(input): Json<crate::launcher::CategoryUpdate>,
+) -> ApiResult<Json<crate::api_contract::LauncherCategoryPage>> {
+    Ok(Json(crate::launcher::update(&s, &p, id, input).await?))
+}
+async fn delete_launcher_category(
+    S(s): S<State>,
+    axum::Extension(p): P,
+    Path(id): Path<Uuid>,
+) -> ApiResult<Json<crate::api_contract::LauncherCategoryPage>> {
+    Ok(Json(crate::launcher::delete(&s, &p, id).await?))
+}
+async fn set_launcher_layout(
+    S(s): S<State>,
+    axum::Extension(p): P,
+    Json(input): Json<crate::launcher::Layout>,
+) -> ApiResult<Json<crate::api_contract::LauncherCategoryPage>> {
+    Ok(Json(crate::launcher::layout(&s, &p, input).await?))
 }
 async fn browser_sessions(
     S(s): S<State>,

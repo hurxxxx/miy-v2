@@ -283,6 +283,22 @@ export interface LastOperation {
   step: string;
 }
 
+/** One launcher category with its apps in display order. */
+export interface LauncherCategory {
+  appIds: string[];
+  /** Launcher icon name chosen by the administrator. */
+  iconKey: string;
+  id: string;
+  position: number;
+  title: string;
+  updatedAt: string;
+}
+
+/** `GET /api/v1/launcher/categories` and the answer of every category change. */
+export interface LauncherCategoryPage {
+  categories: LauncherCategory[];
+}
+
 /** Display languages the platform offers. */
 export type Locale = "ko-KR" | "en-US";
 

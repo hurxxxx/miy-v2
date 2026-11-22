@@ -403,6 +403,25 @@ pub struct BrowserSessionPage {
     pub items: Vec<BrowserSession>,
 }
 
+/// One launcher category with its apps in display order.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct LauncherCategory {
+    pub id: Uuid,
+    pub title: String,
+    /// Launcher icon name chosen by the administrator.
+    pub icon_key: String,
+    pub position: u32,
+    pub app_ids: Vec<String>,
+    pub updated_at: DateTime<Utc>,
+}
+
+/// `GET /api/v1/launcher/categories` and the answer of every category change.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct LauncherCategoryPage {
+    pub categories: Vec<LauncherCategory>,
+}
+
 /// Display settings passed from the portal to an app frame. They decide how
 /// things look and read; they are never an input to an access decision.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -481,6 +500,7 @@ pub fn schema() -> serde_json::Value {
     generator.subschema_for::<FrameBootstrap>();
     generator.subschema_for::<Preferences>();
     generator.subschema_for::<BrowserSessionPage>();
+    generator.subschema_for::<LauncherCategoryPage>();
     serde_json::json!({
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "title": "miy API v1 responses",

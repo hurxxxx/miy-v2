@@ -930,6 +930,61 @@
       ],
       "type": "object"
     },
+    "LauncherCategory": {
+      "description": "One launcher category with its apps in display order.",
+      "properties": {
+        "appIds": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "iconKey": {
+          "description": "Launcher icon name chosen by the administrator.",
+          "type": "string"
+        },
+        "id": {
+          "format": "uuid",
+          "type": "string"
+        },
+        "position": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "title": {
+          "type": "string"
+        },
+        "updatedAt": {
+          "format": "date-time",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "title",
+        "iconKey",
+        "position",
+        "appIds",
+        "updatedAt"
+      ],
+      "type": "object"
+    },
+    "LauncherCategoryPage": {
+      "description": "`GET /api/v1/launcher/categories` and the answer of every category change.",
+      "properties": {
+        "categories": {
+          "items": {
+            "$ref": "#/$defs/LauncherCategory"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "categories"
+      ],
+      "type": "object"
+    },
     "Locale": {
       "description": "Display languages the platform offers.",
       "enum": [

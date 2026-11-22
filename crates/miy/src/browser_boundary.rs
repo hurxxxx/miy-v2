@@ -54,6 +54,11 @@ pub fn access(route: &str, method: &Method) -> Option<Access> {
         | "/cli/device/{id}" => Access::Public,
         // Each surface reads and changes only the signed-in person's own record.
         "/me" | "/me/preferences" | "/me/sessions" | "/me/sessions/{id}" => Access::Shared,
+        // The portals read the arrangement; only the console changes it.
+        "/launcher/categories" if read => Access::Shared,
+        "/launcher/categories" | "/launcher/categories/layout" | "/launcher/categories/{id}" => {
+            Access::Console
+        }
         "/installations" if read => Access::Portal,
         // Business app UIs run in their own frame origins (app_frames). A portal
         // session only launches and renews frames; it never reaches app code or data.

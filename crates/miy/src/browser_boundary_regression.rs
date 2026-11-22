@@ -594,6 +594,119 @@ pub async fn run(
     .await?;
     passed.push("browser sessions: own sessions across surfaces with the current one first, another person's hidden, revocation needs CSRF, refuses the current and foreign sessions, and ends the chosen one".into());
 
+    // Launcher categories: portals read, only a console administrator arranges,
+    // with known apps in at most one category; every change is audited.
+    for app in ["boundary-ledger", "boundary-notes"] {
+        sqlx::query("INSERT INTO apps(id,name) VALUES($1,$1) ON CONFLICT DO NOTHING")
+            .bind(app)
+            .execute(&state.pool)
+            .await?;
+    }
+    let before = json_response(
+        h.cookie_request(&portal_user, Method::GET, "/api/v1/launcher/categories")
+            .send()
+            .await?,
+        200,
+    )
+    .await?;
+    ensure!(
+        before["categories"].is_array(),
+        "the launcher arrangement was not readable"
+    );
+    let category = json!({"title":"업무 지원","iconKey":"layout-grid"});
+    denied(
+        h.browser_request(&portal_admin, Method::POST, "/api/v1/launcher/categories")
+            .json(&category)
+            .send()
+            .await?,
+        403,
+    )
+    .await?;
+    denied(
+        h.browser_request(&console_user, Method::POST, "/api/v1/launcher/categories")
+            .json(&category)
+            .send()
+            .await?,
+        403,
+    )
+    .await?;
+    let created = json_response(
+        h.browser_request(&console_admin, Method::POST, "/api/v1/launcher/categories")
+            .json(&category)
+            .send()
+            .await?,
+        200,
+    )
+    .await?;
+    let id = created["categories"]
+        .as_array()
+        .and_then(|items| items.iter().find(|item| item["title"] == "업무 지원"))
+        .and_then(|item| item["id"].as_str())
+        .context("created category")?
+        .to_owned();
+    for layout in [
+        json!({"categories":[{"id":id,"title":"업무 지원","iconKey":"layout-grid","appIds":["boundary-ledger","boundary-ledger"]}]}),
+        json!({"categories":[{"id":id,"title":"업무 지원","iconKey":"layout-grid","appIds":["no-such-app"]}]}),
+        json!({"categories":[{"id":id,"title":"","iconKey":"layout-grid","appIds":[]}]}),
+    ] {
+        denied(
+            h.browser_request(
+                &console_admin,
+                Method::PUT,
+                "/api/v1/launcher/categories/layout",
+            )
+            .json(&layout)
+            .send()
+            .await?,
+            400,
+        )
+        .await?;
+    }
+    let arranged = json_response(
+        h.browser_request(&console_admin, Method::PUT, "/api/v1/launcher/categories/layout")
+            .json(&json!({"categories":[{"id":id,"title":"업무 지원","iconKey":"briefcase","appIds":["boundary-notes","boundary-ledger"]}]}))
+            .send()
+            .await?,
+        200,
+    )
+    .await?;
+    let seen = json_response(
+        h.cookie_request(&portal_user, Method::GET, "/api/v1/launcher/categories")
+            .send()
+            .await?,
+        200,
+    )
+    .await?;
+    ensure!(
+        arranged == seen
+            && seen["categories"].as_array().map(Vec::len) == Some(1)
+            && seen["categories"][0]["appIds"] == json!(["boundary-notes", "boundary-ledger"])
+            && seen["categories"][0]["iconKey"] == "briefcase",
+        "the launcher arrangement did not persist as laid out"
+    );
+    let removed = json_response(
+        h.browser_request(
+            &console_admin,
+            Method::DELETE,
+            &format!("/api/v1/launcher/categories/{id}"),
+        )
+        .send()
+        .await?,
+        200,
+    )
+    .await?;
+    let audited: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM audit WHERE actor=$1 AND action LIKE 'launcher.%'",
+    )
+    .bind(&admin_id)
+    .fetch_one(&state.pool)
+    .await?;
+    ensure!(
+        removed["categories"].as_array().map(Vec::len) == Some(0) && audited == 3,
+        "a launcher change was not applied or not audited"
+    );
+    passed.push("launcher categories: every surface reads the arrangement, only a console administrator changes it, unknown or repeated apps and empty titles are refused, the layout persists in order and each change is audited".into());
+
     // Same-host ports share cookies; code on one origin must not use the other's
     // cookies even for reads. Reject before any session lookup.
     for browser in [&portal_admin, &dev_admin, &console_admin] {
@@ -1288,6 +1401,6 @@ pub async fn run(
     )
     .await?;
     passed.push("expired or disabled browser sessions require new authentication; restoring an account does not revive old portal/console cookies and a fresh purpose-bound session works".into());
-    ensure!(passed.len() == 14, "boundary observation count changed");
+    ensure!(passed.len() == 15, "boundary observation count changed");
     Ok(passed)
 }

@@ -99,6 +99,8 @@ mod integration;
 #[cfg(feature = "server")]
 mod job_api;
 #[cfg(feature = "server")]
+mod launcher;
+#[cfg(feature = "server")]
 mod mcp;
 mod native_preview;
 #[cfg(feature = "server")]
