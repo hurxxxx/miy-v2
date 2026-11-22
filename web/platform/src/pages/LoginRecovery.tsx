@@ -1,18 +1,17 @@
 import { useEffect, useState } from "react";
+import { Trans, useTranslation } from "react-i18next";
 import { useLocation } from "@tanstack/react-router";
 import { request } from "@miy/sdk";
 import { Button, Panel } from "../ui";
 import { useSurface } from "../data/session";
 
 export function LoginRecovery() {
+  const { t } = useTranslation("portal");
   const reason = new URLSearchParams(window.location.search).get("login");
   const messages: Record<string, string> = {
-    expired:
-      "로그인 요청이 만료됐거나 이미 처리됐습니다. 아래 로그인 버튼으로 새 로그인을 시작해 주세요.",
-    forbidden:
-      "이 계정은 플랫폼에 접근할 수 없습니다. 관리자에게 계정 상태와 권한을 확인해 주세요.",
-    unavailable:
-      "로그인 서버에 연결하지 못했습니다. 잠시 후 아래 로그인 버튼으로 다시 시도해 주세요.",
+    expired: t("loginRecovery.expired"),
+    forbidden: t("loginRecovery.forbidden"),
+    unavailable: t("loginRecovery.unavailable"),
   };
   return reason && messages[reason] ? (
     <p role="alert">{messages[reason]}</p>
@@ -25,7 +24,14 @@ type DeviceRequest = {
   expiresIn: number;
 };
 
+// A name inside a translated sentence. Trans replaces a component's children, so
+// the name is a prop: it stays plain text and is never parsed as markup.
+function Name({ value }: { value?: string }) {
+  return <strong>{value}</strong>;
+}
+
 export function CliDeviceApproval({ user }: { user: User | null | undefined }) {
+  const { t } = useTranslation("portal");
   const { portalOrigin, consoleOrigin } = useSurface();
   const location = useLocation();
   const id = location.pathname.split("/").at(-1);
@@ -70,9 +76,7 @@ export function CliDeviceApproval({ user }: { user: User | null | undefined }) {
         if (failure.message === "not_found")
           updateMetadata({ status: "expired", expiresIn: 0 });
         else
-          setError(
-            "요청 정보를 불러오지 못했습니다. 연결 상태를 확인하고 다시 확인해 주세요.",
-          );
+          setError(t("cliDeviceApproval.loadFailed"));
       });
     return () => controller.abort();
   }, [user?.csrf, id, reload]);
@@ -97,9 +101,7 @@ export function CliDeviceApproval({ user }: { user: User | null | undefined }) {
         body: JSON.stringify({ userCode: code, decision }),
       });
       setResult(
-        decision === "approve"
-          ? "CLI 연결을 승인했습니다. 터미널로 돌아가세요."
-          : "CLI 연결을 거절했습니다.",
+        t(decision === "approve" ? "cliDeviceApproval.approved" : "cliDeviceApproval.denied"),
       );
     } catch (failure) {
       if (
@@ -117,19 +119,13 @@ export function CliDeviceApproval({ user }: { user: User | null | undefined }) {
           ) {
             updateMetadata({ status: "expired", expiresIn: 0 });
           } else {
-            setError(
-              "요청 상태를 다시 확인하지 못했습니다. 연결을 확인한 뒤 다시 시도해 주세요.",
-            );
+            setError(t("cliDeviceApproval.recheckFailed"));
             return;
           }
         }
-        setError(
-          "요청이 이미 처리됐거나 코드가 일치하지 않습니다. 터미널에 표시된 최신 코드를 확인해 주세요.",
-        );
+        setError(t("cliDeviceApproval.alreadyDecided"));
       } else {
-        setError(
-          "승인하지 못했습니다. 로그인 상태와 연결을 확인하고 다시 시도해 주세요.",
-        );
+        setError(t("cliDeviceApproval.approveFailed"));
       }
     } finally {
       setBusy(false);
@@ -137,40 +133,39 @@ export function CliDeviceApproval({ user }: { user: User | null | undefined }) {
   }
 
   return (
-    <Panel title="CLI 로그인 승인">
+    <Panel title={t("cliDeviceApproval.title")}>
       <div className="cli-approval">
         <p>
-          플랫폼 서버: <strong>{portalOrigin}</strong>
+          {t("cliDeviceApproval.server")} <strong>{portalOrigin}</strong>
         </p>
-        <p>승인 주소: <strong>{consoleOrigin}</strong></p>
+        <p>{t("cliDeviceApproval.approvalOrigin")} <strong>{consoleOrigin}</strong></p>
         <p>
-          <strong>{user?.name}</strong> 계정의 권한으로 CLI를 연결합니다.
+          <Trans t={t} i18nKey="cliDeviceApproval.connectAs" components={{ name: <Name value={user?.name} /> }} />
         </p>
-        <p>직접 시작한 요청인지 확인하고 터미널에 표시된 코드를 입력하세요.</p>
+        <p>{t("cliDeviceApproval.verify")}</p>
         <p>
-          요청 ID: <code>{id}</code>
+          {t("cliDeviceApproval.requestId")} <code>{id}</code>
         </p>
         {result ? (
           <p role="status">{result}</p>
         ) : ended ? (
           <div role="status">
             <p>
-              {metadata?.status === "approved" ||
-              metadata?.status === "consumed"
-                ? "이미 승인한 요청입니다. 터미널에서 결과를 확인하세요."
-                : metadata?.status === "denied"
-                  ? "거절한 요청입니다."
-                  : "로그인 요청이 만료됐거나 더 이상 사용할 수 없습니다."}
+              {t(
+                metadata?.status === "approved" ||
+                  metadata?.status === "consumed"
+                  ? "cliDeviceApproval.alreadyApproved"
+                  : metadata?.status === "denied"
+                    ? "cliDeviceApproval.deniedRequest"
+                    : "cliDeviceApproval.expired",
+              )}
             </p>
             <p>
-              새 요청이 필요하면 터미널에서 아래 명령을 실행하고, 새로 표시된
-              승인 주소와 코드를 사용하세요.
+              {t("cliDeviceApproval.newRequest")}
             </p>
             <pre>miy auth login</pre>
             <p>
-              여러 서버를 사용하는 경우{" "}
-              <code>miy --context 연결이름 auth login</code>으로 해당 서버를
-              선택하세요.
+              <Trans t={t} i18nKey="cliDeviceApproval.multipleServers" components={{ code: <code /> }} />
             </p>
           </div>
         ) : metadata ? (
@@ -181,13 +176,13 @@ export function CliDeviceApproval({ user }: { user: User | null | undefined }) {
             }}
           >
             <p>
-              남은 승인 시간:{" "}
+              {t("cliDeviceApproval.remaining")}{" "}
               <strong role="timer">
-                {Math.floor(seconds / 60)}분 {seconds % 60}초
+                {t("cliDeviceApproval.timer", { minutes: Math.floor(seconds / 60), seconds: seconds % 60 })}
               </strong>
             </p>
             <label>
-              인증 코드{" "}
+              {t("cliDeviceApproval.code")}{" "}
               <input
                 name="userCode"
                 value={code}
@@ -200,27 +195,27 @@ export function CliDeviceApproval({ user }: { user: User | null | undefined }) {
             </label>
             <div className="cli-approval-actions">
               <Button type="submit" disabled={busy || !code.trim()}>
-                이 계정으로 CLI 연결 승인
+                {t("cliDeviceApproval.approve")}
               </Button>
               <Button
                 type="button"
                 disabled={busy || !code.trim()}
                 onClick={() => void decide("deny")}
               >
-                거절
+                {t("cliDeviceApproval.deny")}
               </Button>
             </div>
-            <p>연결 후에는 CLI의 로그인 세션 관리에서 철회할 수 있습니다.</p>
+            <p>{t("cliDeviceApproval.revokeLater")}</p>
           </form>
         ) : (
-          !error && <p role="status">요청 정보를 불러오는 중…</p>
+          !error && <p role="status">{t("cliDeviceApproval.loading")}</p>
         )}
         {error && !ended && !result && (
           <div role="alert">
             <p>{error}</p>
             {!metadata && (
               <Button onClick={() => setReload(reload + 1)}>
-                요청 다시 확인
+                {t("cliDeviceApproval.recheck")}
               </Button>
             )}
           </div>

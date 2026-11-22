@@ -1,14 +1,8 @@
 import { useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { request, type Installation } from "@miy/sdk";
 import { Button, useConfirm } from "../ui";
 import { requestId } from "../lib/paths";
-
-const labels: Record<string, string> = {
-  start: "시작",
-  stop: "중지",
-  restart: "재시작",
-  remove: "앱 제거(DB 보존)",
-};
 
 export function RuntimeControls({
   app,
@@ -19,6 +13,8 @@ export function RuntimeControls({
   csrf: string;
   refresh: () => void;
 }) {
+  const { t } = useTranslation("portal");
+  const label = (action: string) => t(`runtimeControls.actions.${action}`);
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
   const { confirm, dialog, cancel } = useConfirm();
@@ -75,24 +71,24 @@ export function RuntimeControls({
         },
       );
       if (!targetIsCurrent()) return;
-      if (!plan.canSubmit) throw new Error("현재 상태에서 실행할 수 없습니다. 새로고침 후 확인하세요.");
+      if (!plan.canSubmit) throw new Error(t("runtimeControls.cannotRun"));
       const needsConfirmation = app.environment === "prod" || action === "remove";
       if (needsConfirmation) returnFocus.current = trigger;
       // The dialog names the exact target the preflight inspected.
       if (
         needsConfirmation &&
         !(await confirm({
-          title: `${labels[action]} 실행 확인`,
+          title: t("runtimeControls.confirmTitle", { action: label(action) }),
           body: (
             <>
               <p>
-                대상: <strong>{app.name}</strong> (<code>{app.appId}</code>) · 환경: <strong>{app.environment}</strong>
+                {t("runtimeControls.target")} <strong>{app.name}</strong> (<code>{app.appId}</code>) · {t("runtimeControls.environment")} <strong>{app.environment}</strong>
               </p>
-              <p>작업: {action}</p>
-              <p>실행 중인 앱에 영향을 줍니다. 데이터베이스와 업무 데이터는 보존됩니다.</p>
+              <p>{t("runtimeControls.action", { action })}</p>
+              <p>{t("runtimeControls.impact")}</p>
             </>
           ),
-          confirmLabel: labels[action]!,
+          confirmLabel: label(action),
           returnFocus: trigger,
           tone: action === "remove" || action === "stop" ? "danger" : "primary",
         }))
@@ -115,16 +111,16 @@ export function RuntimeControls({
           `/api/v1/runtime/jobs/${job.id}`,
         );
         if (!mounted.current) return;
-        if (state.status === "failed") throw new Error(state.errorCode || "작업 실패");
+        if (state.status === "failed") throw new Error(state.errorCode || t("runtimeControls.jobFailed"));
         if (state.status === "succeeded") {
           refresh();
           return;
         }
         await new Promise((resolve) => setTimeout(resolve, 500));
       }
-      throw new Error("작업이 지연되고 있습니다. 새로고침해 상태를 확인하세요.");
+      throw new Error(t("runtimeControls.delayed"));
     } catch (error) {
-      if (mounted.current) setError(error instanceof Error ? error.message : "작업을 완료하지 못했습니다.");
+      if (mounted.current) setError(error instanceof Error ? error.message : t("runtimeControls.failed"));
     } finally {
       if (mounted.current) {
         setBusy("");
@@ -133,7 +129,7 @@ export function RuntimeControls({
     }
   }
   if (app.runtimeStatus === "removed")
-    return <p>앱 실행 환경이 제거됐습니다. DB는 보존됩니다. CLI에서 다시 배포할 수 있습니다.</p>;
+    return <p>{t("runtimeControls.removed")}</p>;
   const actions = app.runtimeStatus === "recovery_required" ? ["remove"]
     : app.runtimeStatus === "running" ? ["stop", "restart", "remove"] : ["start", "remove"];
   return (
@@ -142,12 +138,12 @@ export function RuntimeControls({
       <div>
         {actions.map((action) => (
           <Button key={action} size="sm" disabled={!!busy} onClick={(event) => control(action, event.currentTarget)}>
-            {labels[action]}
+            {label(action)}
           </Button>
         ))}
       </div>
-      {busy && <p role="status">Docker 작업을 처리하고 있습니다…</p>}
-      {error && <p role="alert">작업을 완료하지 못했습니다: {error}</p>}
+      {busy && <p role="status">{t("runtimeControls.busy")}</p>}
+      {error && <p role="alert">{t("runtimeControls.error", { error })}</p>}
       {dialog}
     </div>
   );

@@ -40,6 +40,7 @@ import {
   DEFAULT_SETTINGS,
   PROTOCOL,
   envelope,
+  platformShortcut,
   readParentMessage,
   relativePath,
   renewalFailure,
@@ -284,6 +285,21 @@ function registerNavigationGuard() {
   post({ type: "guard.state", payload: { state: "unknown" } });
   return () => undefined;
 }
+
+// Platform shortcuts (Ctrl/⌘+K) typed in the frame: keys never reach the portal
+// document, so forward them. Captured first, so an app cannot keep the platform
+// shortcut for itself; nothing else is forwarded.
+document.addEventListener(
+  "keydown",
+  (event) => {
+    const name = platformShortcut(event);
+    if (!name || event.repeat) return;
+    event.preventDefault();
+    event.stopPropagation();
+    post({ type: "shortcut", payload: { name } });
+  },
+  { capture: true },
+);
 
 // Links: app paths go through the portal router, other links open outside the frame.
 document.addEventListener("click", (event) => {

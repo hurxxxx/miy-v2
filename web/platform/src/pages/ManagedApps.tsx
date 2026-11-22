@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { useLocation } from "@tanstack/react-router";
 import { request, type App } from "@miy/sdk";
-import { distributionLabels, useManagedInstallations } from "../data/installations";
+import { distributionLabelKeys, useManagedInstallations } from "../data/installations";
 import { useSurface, useUser } from "../data/session";
 import { currentEnvironment, environmentOrigin, environmentPath, surfaceUrl } from "../lib/paths";
 import { LoadError, StaleNotice } from "../components/LoadState";
@@ -30,6 +31,7 @@ async function readApps(path: string) {
 }
 
 export function ManagedApps() {
+  const { t } = useTranslation("portal");
   const user = useUser();
   const surface = useSurface();
   const managed = useManagedInstallations();
@@ -78,21 +80,20 @@ export function ManagedApps() {
     <>
       <div className="page-header">
         <div>
-          <h1>내가 관리하는 앱</h1>
+          <h1>{t("managedApps.title")}</h1>
           <p>
-            {environment === "prod" ? "운영" : "테스트"} 환경의 실행 상태를
-            확인하고 허용된 작업을 수행합니다.
+            {t(environment === "prod" ? "managedApps.descriptionProd" : "managedApps.descriptionDev")}
           </p>
         </div>
       </div>
       {managed.items === null ? (
         managed.status === "error" ? (
           <LoadError
-            message="관리할 앱 목록을 불러오지 못했습니다."
+            message={t("managedApps.loadFailed")}
             onRetry={refresh}
           />
         ) : (
-          <Loading>앱 목록을 불러오는 중…</Loading>
+          <Loading>{t("managedApps.loading")}</Loading>
         )
       ) : (
         <>
@@ -100,8 +101,8 @@ export function ManagedApps() {
             <StaleNotice updatedAt={managed.updatedAt} onRetry={refresh} />
           )}
           {apps.length === 0 ? (
-            <EmptyState title="이 환경에서 관리할 설치가 없습니다.">
-              앱·환경 권한이 필요하면 관리자에게 요청하세요.
+            <EmptyState title={t("managedApps.emptyTitle")}>
+              {t("managedApps.emptyHint")}
             </EmptyState>
           ) : (
             <div className="card-grid">
@@ -120,15 +121,15 @@ export function ManagedApps() {
                   }
                   actions={
                     app.appDisabled && (
-                      <Badge tone="warning">회사 사용 중지</Badge>
+                      <Badge tone="warning">{t("managedApps.disabled")}</Badge>
                     )
                   }
                 >
                   <div className="app-card-meta">
-                    <Badge>{distributionLabels[app.distribution ?? "organization"]}</Badge>
-                    <Badge>{app.runtimeStatus === "recovery_required" ? "복구 필요" : app.runtimeStatus}</Badge>
+                    <Badge>{t(distributionLabelKeys[app.distribution ?? "organization"])}</Badge>
+                    <Badge>{app.runtimeStatus === "recovery_required" ? t("managedApps.recoveryRequired") : app.runtimeStatus}</Badge>
                     <Badge>DB {app.dbStatus}</Badge>
-                    <Badge>{app.runtimeStatus === "recovery_required" ? "마지막 정상 " : ""}v{app.version || "—"}</Badge>
+                    <Badge>{app.runtimeStatus === "recovery_required" ? `${t("managedApps.lastGood")} ` : ""}v{app.version || "—"}</Badge>
                     <code>{app.appId}</code>
                   </div>
                   <RuntimeHealth app={app} />
@@ -140,13 +141,11 @@ export function ManagedApps() {
                         environmentPath(environment, app.appId),
                       )}
                     >
-                      포털에서 앱 열기
+                      {t("managedApps.openInPortal")}
                     </NewTabLink>
                   ) : (
                     <p className="ui-empty-inline">
-                      {app.appDisabled
-                        ? "회사 사용 중지 중입니다. 허용된 관리 작업은 계속할 수 있습니다."
-                        : "이 앱의 사용 권한이 없거나 현재 열 수 없습니다."}
+                      {t(app.appDisabled ? "managedApps.disabledNotice" : "managedApps.cannotOpen")}
                     </p>
                   )}
                   {app.kind === "docker_app" && app.canManage && (
@@ -162,14 +161,13 @@ export function ManagedApps() {
           )}
         </>
       )}
-      <h2 className="page-section-title">등록된 담당 앱</h2>
+      <h2 className="page-section-title">{t("managedApps.catalogTitle")}</h2>
       <p>
-        설치 전 앱을 포함한 담당 앱 목록입니다. 설치와 배포는 기존 CLI 흐름을
-        사용하세요.
+        {t("managedApps.catalogLead")}
       </p>
       {catalogError && (
         <LoadError
-          message="등록된 담당 앱을 불러오지 못했습니다."
+          message={t("managedApps.catalogLoadFailed")}
           onRetry={() => void loadCatalog()}
         />
       )}
@@ -179,16 +177,16 @@ export function ManagedApps() {
           <ul>
             {catalog.apps.map((app) => (
               <li key={app.id}>
-                {app.name} · <code>{app.id}</code> · {distributionLabels[app.distribution ?? "organization"]}
+                {app.name} · <code>{app.id}</code> · {t(distributionLabelKeys[app.distribution ?? "organization"])}
               </li>
             ))}
           </ul>
         ) : (
-          <p className="ui-empty-inline">등록된 담당 앱이 없습니다.</p>
+          <p className="ui-empty-inline">{t("managedApps.catalogEmpty")}</p>
         ))}
       {catalog?.nextCursor && (
         <Button disabled={loadingMore} onClick={() => void moreApps()}>
-          담당 앱 더 보기
+          {t("managedApps.catalogMore")}
         </Button>
       )}
     </>

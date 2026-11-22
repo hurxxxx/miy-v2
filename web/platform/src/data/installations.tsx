@@ -2,10 +2,11 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { request, type AppDistribution, type Installation } from "@miy/sdk";
 import { useSurface } from "./session";
 
-export const distributionLabels = {
-  default_official: "기본 제공 앱",
-  optional_official: "공식 업무 앱",
-  organization: "조직 제작 앱",
+/** Portal translation keys of the distribution labels, in display order. */
+export const distributionLabelKeys = {
+  default_official: "installations.distributions.default_official",
+  optional_official: "installations.distributions.optional_official",
+  organization: "installations.distributions.organization",
 } satisfies Record<AppDistribution, string>;
 
 /**

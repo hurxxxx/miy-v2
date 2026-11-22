@@ -12,6 +12,7 @@ import {
   type HTMLAttributes,
   type ReactNode,
 } from "react";
+import { useTranslation } from "react-i18next";
 
 type ButtonVariant = "primary" | "secondary" | "danger" | "ghost";
 
@@ -67,11 +68,12 @@ export function Notice({
   );
 }
 
-export function Loading({ children = "불러오는 중…" }: { children?: ReactNode }) {
+export function Loading({ children }: { children?: ReactNode }) {
+  const { t } = useTranslation("portal");
   return (
     <p className="ui-loading">
       <span className="ui-spinner" aria-hidden="true" />
-      {children}
+      {children ?? t("ui.loading")}
     </p>
   );
 }
@@ -186,6 +188,7 @@ export function useConfirm() {
 }
 
 function ConfirmDialog({ title, body, confirmLabel, tone = "primary", returnFocus, onClose }: ConfirmOptions & { onClose: (ok: boolean) => void }) {
+  const { t } = useTranslation("portal");
   const ref = useRef<HTMLDialogElement>(null);
   const titleId = useId();
   const bodyId = useId();
@@ -217,7 +220,7 @@ function ConfirmDialog({ title, body, confirmLabel, tone = "primary", returnFocu
       </div>
       <div className="shell-dialog-actions">
         <Button data-autofocus onClick={() => onClose(false)}>
-          취소
+          {t("common:actions.cancel")}
         </Button>
         <Button variant={tone === "danger" ? "danger" : "primary"} onClick={() => onClose(true)}>
           {confirmLabel}

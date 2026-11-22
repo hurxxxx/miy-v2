@@ -69,7 +69,8 @@ test("appearance changes apply at once, are saved, and switch the portal to Engl
 test("a failed save rolls the display change back", async ({ page }) => {
   const { patches } = await open(page, "/settings/appearance", { fail: (body) => (body.theme ? 500 : undefined) });
   await page.getByRole("button", { name: "다크" }).click();
-  await expect(page.getByText("저장하지 못했습니다.")).toBeVisible();
+  // Toasts are announced through a second, visually hidden copy.
+  await expect(page.getByText("저장하지 못했습니다.").first()).toBeVisible();
   await expect.poll(() => dark(page)).toBe(false);
   await expect(page.getByRole("button", { name: "시스템" })).toHaveAttribute("aria-pressed", "true");
   expect(patches).toEqual([{ theme: "dark" }]);
@@ -80,7 +81,7 @@ test("profile saves the display name and job title, and shows a server error cod
   await page.getByLabel("표시 이름").fill("새 이름");
   await page.getByLabel("직무").fill("책임");
   await page.getByRole("button", { name: "변경사항 저장" }).click();
-  await expect(page.getByText("변경사항을 저장했습니다.")).toBeVisible();
+  await expect(page.getByText("변경사항을 저장했습니다.").first()).toBeVisible();
   await expect(page.locator(".account-name")).toHaveText("새 이름");
   await page.getByLabel("표시 이름").fill("xxx");
   await page.getByRole("button", { name: "변경사항 저장" }).click();
@@ -96,7 +97,7 @@ test("security lists own sessions with this one first and ends another with the 
   // Only the other session offers an end button.
   await expect(page.getByRole("button", { name: "종료" })).toHaveCount(1);
   await page.getByRole("button", { name: "종료" }).click();
-  await expect(page.getByText("세션을 종료했습니다.")).toBeVisible();
+  await expect(page.getByText("세션을 종료했습니다.").first()).toBeVisible();
   await expect(page.getByText("Chrome on Windows")).toHaveCount(0);
   expect(deletes).toEqual([{ path: "/api/v1/me/sessions/s-console", csrf: "settings-csrf" }]);
   await expect(page.getByRole("button", { name: "비밀번호 변경" })).toBeVisible();

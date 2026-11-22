@@ -23,6 +23,22 @@ const LABELS: Record<string, string> = {
   "platform:files:write": "filesWrite",
 };
 
+const strings = (value: unknown): value is string[] =>
+  Array.isArray(value) && value.every((item) => typeof item === "string");
+
+/** An answer of another shape (an older server, a proxy page) is a load failure, never a crash. */
+function checked(value: unknown): Approval {
+  const approval = value as Partial<Approval> | null;
+  if (
+    !approval ||
+    !strings(approval.requestedPermissions) ||
+    !strings(approval.approvedPermissions) ||
+    typeof approval.revision !== "number"
+  )
+    throw new Error("invalid_permission_approval");
+  return approval as Approval;
+}
+
 /** Requested platform permissions not yet approved for the installation's release. */
 export function pendingPermissions(approval: Approval) {
   return approval.requestedPermissions.filter(
@@ -63,8 +79,10 @@ export function PermissionApproval({
   const load = useCallback(async (keepError = false) => {
     try {
       adopt(
-        await request<Approval>(
-          `/api/v1/installations/${installationId}/permissions?releaseId=${encodeURIComponent(releaseId)}`,
+        checked(
+          await request<unknown>(
+            `/api/v1/installations/${installationId}/permissions?releaseId=${encodeURIComponent(releaseId)}`,
+          ),
         ),
       );
       if (!keepError) setError(null);
@@ -90,11 +108,13 @@ export function PermissionApproval({
     setSaving(true);
     try {
       adopt(
-        await request<Approval>(`/api/v1/installations/${installationId}/permissions`, csrf, {
-          method: "PUT",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ releaseId, expectedRevision: approval.revision, permissions }),
-        }),
+        checked(
+          await request<unknown>(`/api/v1/installations/${installationId}/permissions`, csrf, {
+            method: "PUT",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ releaseId, expectedRevision: approval.revision, permissions }),
+          }),
+        ),
       );
       setError(null);
     } catch (caught) {

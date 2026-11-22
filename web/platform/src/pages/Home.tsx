@@ -1,13 +1,15 @@
 import { useMemo } from "react";
+import { useTranslation } from "react-i18next";
 import { Link, useLocation } from "@tanstack/react-router";
 import type { Installation } from "@miy/sdk";
-import { distributionLabels, installationsIn, useInstallationPolling, useInstallations } from "../data/installations";
+import { distributionLabelKeys, installationsIn, useInstallationPolling, useInstallations } from "../data/installations";
 import { currentEnvironment, environmentPath, portalEnvironment } from "../lib/paths";
 import { useSurface } from "../data/session";
 import { LoadError, StaleNotice } from "../components/LoadState";
 import { AppMark, EmptyState, Loading, Panel, monograms } from "../ui";
 
 export function Home() {
+  const { t } = useTranslation("portal");
   const installations = useInstallations();
   useInstallationPolling();
   const location = useLocation();
@@ -23,30 +25,30 @@ export function Home() {
     <>
       <div className="page-header">
         <div>
-          <h1>{environment === "prod" ? "운영 앱" : "테스트 앱"}</h1>
-          <p>접근할 수 있는 업무 앱을 선택하세요.</p>
+          <h1>{t(environment === "prod" ? "home.prodApps" : "home.devApps")}</h1>
+          <p>{t("home.lead")}</p>
         </div>
       </div>
       {installations.items === null ? (
         installations.status === "error" ? (
-          <LoadError message="앱 목록을 불러오지 못했습니다. 연결 상태를 확인해 주세요." onRetry={refresh} />
+          <LoadError message={t("home.loadFailed")} onRetry={refresh} />
         ) : (
-          <Loading>앱 목록을 불러오는 중…</Loading>
+          <Loading>{t("home.loading")}</Loading>
         )
       ) : (
         <>
           {installations.status === "error" && <StaleNotice updatedAt={installations.updatedAt} onRetry={refresh} />}
           {apps.length === 0 ? (
-            <EmptyState title="이 실행 환경에서 사용할 수 있는 앱이 없습니다.">
-              접근 권한이 필요하면 관리자에게 요청하세요.
+            <EmptyState title={t("home.emptyTitle")}>
+              {t("home.emptyHint")}
             </EmptyState>
           ) : (
-            Object.entries(distributionLabels).map(([distribution, label]) => {
+            Object.entries(distributionLabelKeys).map(([distribution, labelKey]) => {
               const group = apps.filter((app) => (app.distribution ?? "organization") === distribution);
               if (!group.length) return null;
               return (
                 <section key={distribution} aria-labelledby={`apps-${distribution}`}>
-                  <h2 className="page-section-title" id={`apps-${distribution}`}>{label}</h2>
+                  <h2 className="page-section-title" id={`apps-${distribution}`}>{t(labelKey)}</h2>
                   <div className="card-grid">
                     {group.map((app) => (
                       <AppCard key={app.id} app={app} mark={marks.get(app.id) ?? "?"} environment={environment} />
@@ -71,6 +73,7 @@ function AppCard({
   mark: string;
   environment: string;
 }) {
+  const { t } = useTranslation("portal");
   const openable = a.kind !== "docker_app" || a.runtimeStatus === "running";
   return (
     <Panel
@@ -84,10 +87,10 @@ function AppCard({
     >
       {openable && (
         <Link className="app-card-open" to={environmentPath(environment, a.appId) as "/"}>
-          앱 열기 →
+          {t("home.open")}
         </Link>
       )}
-      {!openable && <p>지금은 앱을 사용할 수 없습니다. 담당자에게 문의하세요.</p>}
+      {!openable && <p>{t("home.unavailable")}</p>}
     </Panel>
   );
 }

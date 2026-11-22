@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Link } from "@tanstack/react-router";
 import { request } from "@miy/sdk";
 import { isCliApprovalPath } from "../lib/paths";
@@ -6,6 +7,7 @@ import { LoginRecovery } from "./LoginRecovery";
 import { useSurface } from "../data/session";
 
 export function Login() {
+  const { t } = useTranslation("portal");
   const options = useSurface();
   const [busy, setBusy] = useState<string>();
   const [error, setError] = useState("");
@@ -19,7 +21,7 @@ export function Login() {
       });
       window.location.assign(isCliApprovalPath(window.location.pathname) ? window.location.href : result.redirect);
     } catch {
-      setError("로그인하지 못했습니다. 다시 시도해 주세요.");
+      setError(t("login.failed"));
       setBusy(undefined);
     }
   }
@@ -27,9 +29,9 @@ export function Login() {
     <main className="login-page">
       <div className="login-card">
         <p className="login-brand">miy</p>
-        <h1>로그인</h1>
+        <h1>{t("login.title")}</h1>
         <p className="login-lead">
-          {options?.developmentLogin ? "개발 계정을 선택하면 바로 시작합니다." : "업무 앱과 데이터를 한곳에서"}
+          {t(options?.developmentLogin ? "login.devLead" : "login.lead")}
         </p>
         <LoginRecovery />
         {options?.developmentLogin && (
@@ -42,7 +44,7 @@ export function Login() {
                 disabled={!!busy}
                 onClick={() => enter(account.account)}
               >
-                <strong>{busy === account.account ? "접속 중…" : account.label}</strong>
+                <strong>{busy === account.account ? t("login.connecting") : account.label}</strong>
                 <span>{account.description}</span>
               </button>
             ))}
@@ -57,14 +59,14 @@ export function Login() {
           }}
           href={options?.oauthUrl || "/auth/login"}
         >
-          {options?.developmentLogin ? "OAuth로 로그인" : "로그인"}
+          {t(options?.developmentLogin ? "login.oauth" : "login.signIn")}
         </a>
         <p className="login-help">
-          계정이 없거나 비밀번호를 잊었다면 관리자에게 초대 링크 또는 비밀번호 재설정 링크를 요청하세요.
+          {t("login.help")}
         </p>
         <div className="login-footer">
           <Link to={"/cli/install" as "/"} className="cli-install-link">
-            CLI 설치 안내
+            {t("login.cliInstall")}
           </Link>
         </div>
       </div>

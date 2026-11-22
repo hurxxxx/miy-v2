@@ -1,4 +1,6 @@
 import { useEffect, useState, type FormEvent } from "react";
+import { Trans, useTranslation } from "react-i18next";
+import type { TFunction } from "i18next";
 import { request } from "@miy/sdk";
 import { Button, Field, Loading } from "../ui";
 
@@ -54,23 +56,36 @@ function forget() {
   }
 }
 
-const failures: Record<string, string> = {
-  invalid_username: "아이디는 영문 소문자·숫자로 시작하고, 영문 소문자·숫자·마침표·밑줄·하이픈으로 3~32자여야 합니다.",
-  invalid_email: "이메일 주소를 확인해 주세요.",
-  invalid_user_name: "이름은 1~120자로 입력해 주세요.",
-  password_policy: "비밀번호가 조건에 맞지 않습니다. 길이를 늘리고 아이디와 다르게 정해 주세요.",
-  account_exists: "이미 사용 중인 아이디 또는 이메일입니다. 다른 값을 입력해 주세요.",
-  account_rejected: "입력한 값을 로그인 서버가 받지 않았습니다. 아이디와 이메일을 확인해 주세요.",
-  identity_unavailable: "로그인 서버에 연결하지 못했습니다. 잠시 후 다시 시도해 주세요.",
-  account_links_unavailable: "이 서버에서는 링크로 계정을 만들 수 없습니다. 관리자에게 문의해 주세요.",
-  network_unavailable: "서버에 연결하지 못했습니다. 연결 상태를 확인하고 다시 시도해 주세요.",
-};
+// Server error codes with their own message (portal join.errors.*).
+const FAILURES = new Set([
+  "invalid_username",
+  "invalid_email",
+  "invalid_user_name",
+  "password_policy",
+  "account_exists",
+  "account_rejected",
+  "identity_unavailable",
+  "account_links_unavailable",
+  "network_unavailable",
+]);
+
+// A name inside a translated sentence. Trans replaces a component's children, so
+// the name is a prop: it stays plain text and is never parsed as markup.
+function Name({ value }: { value: string }) {
+  return <strong>{value}</strong>;
+}
 
 function code(error: unknown) {
   return error instanceof Error ? error.message : "";
 }
 
+/** The message for a failed request: the code's own message, or `fallback`. */
+function failureMessage(t: TFunction<"portal">, error: unknown, fallback: string) {
+  return FAILURES.has(code(error)) ? t(`join.errors.${code(error)}`) : fallback;
+}
+
 export function Join() {
+  const { t, i18n } = useTranslation("portal");
   const [token] = useState(takeToken);
   const [phase, setPhase] = useState<Phase>({ status: "loading" });
   const [attempt, setAttempt] = useState(0);
@@ -98,7 +113,7 @@ export function Join() {
         } else {
           setPhase({
             status: "error",
-            message: failures[code(failure)] ?? "링크를 확인하지 못했습니다. 잠시 후 다시 시도해 주세요.",
+            message: failureMessage(t, failure, t("join.linkCheckFailed")),
           });
         }
       });
@@ -111,7 +126,7 @@ export function Join() {
     const data = new FormData(event.currentTarget);
     const password = String(data.get("password"));
     if (password !== String(data.get("confirm"))) {
-      setError("비밀번호와 비밀번호 확인이 서로 다릅니다.");
+      setError(t("join.passwordMismatch"));
       return;
     }
     const invitation = phase.link.kind === "invitation";
@@ -149,7 +164,7 @@ export function Join() {
         forget();
         setPhase({ status: "invalid" });
       } else {
-        setError(failures[code(failure)] ?? "처리하지 못했습니다. 잠시 후 다시 시도해 주세요.");
+        setError(failureMessage(t, failure, t("join.submitFailed")));
       }
     } finally {
       setBusy(false);
@@ -160,30 +175,29 @@ export function Join() {
     <main className="login-page">
       <div className="login-card account-link-card">
         <p className="login-brand">miy</p>
-        {phase.status === "loading" && <Loading>링크를 확인하는 중…</Loading>}
+        {phase.status === "loading" && <Loading>{t("join.checking")}</Loading>}
         {phase.status === "invalid" && (
           <>
-            <h1>사용할 수 없는 링크입니다</h1>
+            <h1>{t("join.invalidTitle")}</h1>
             <p className="login-lead">
-              링크가 만료됐거나 이미 사용됐습니다. 주소를 끝까지 복사했는지 확인하고, 계속 열리지 않으면
-              관리자에게 새 링크를 요청해 주세요.
+              {t("join.invalidLead")}
             </p>
           </>
         )}
         {phase.status === "resetUnknown" && (
           <>
-            <h1>비밀번호 변경 결과를 확인하지 못했습니다</h1>
+            <h1>{t("join.resetUnknownTitle")}</h1>
             <p className="login-lead" role="status">
-              잠시 뒤 새 비밀번호로 로그인해 보세요. 로그인할 수 없으면 관리자에게 새 링크를 요청해 주세요.
+              {t("join.resetUnknownLead")}
             </p>
           </>
         )}
         {phase.status === "error" && (
           <>
-            <h1>링크를 확인하지 못했습니다</h1>
+            <h1>{t("join.errorTitle")}</h1>
             <p role="alert">{phase.message}</p>
             <Button variant="primary" onClick={() => setAttempt(attempt + 1)}>
-              다시 확인
+              {t("join.retry")}
             </Button>
           </>
         )}
@@ -191,9 +205,9 @@ export function Join() {
           <form className="account-link-form" onSubmit={submit}>
             {phase.link.kind === "invitation" ? (
               <>
-                <h1>계정 만들기</h1>
-                <p className="login-lead">초대받은 계정의 아이디와 비밀번호를 직접 정합니다.</p>
-                <Field label="아이디" hint="로그인에 쓰는 이름. 영문 소문자·숫자·마침표·밑줄·하이픈 3~32자">
+                <h1>{t("join.createTitle")}</h1>
+                <p className="login-lead">{t("join.createLead")}</p>
+                <Field label={t("join.username")} hint={t("join.usernameHint")}>
                   <input
                     name="username"
                     required
@@ -204,30 +218,28 @@ export function Join() {
                     spellCheck={false}
                   />
                 </Field>
-                <Field label="이름" hint="플랫폼 화면에 표시됩니다.">
+                <Field label={t("join.name")} hint={t("join.nameHint")}>
                   <input name="name" required maxLength={120} defaultValue={phase.link.name ?? ""} autoComplete="name" />
                 </Field>
-                <Field label="이메일">
+                <Field label={t("join.email")}>
                   <input name="email" type="email" required maxLength={254} autoComplete="email" />
                 </Field>
               </>
             ) : (
               <>
-                <h1>비밀번호 재설정</h1>
+                <h1>{t("join.resetTitle")}</h1>
                 <p className="login-lead">
                   {phase.link.name ? (
-                    <>
-                      <strong>{phase.link.name}</strong> 계정의 새 비밀번호를 정합니다.
-                    </>
+                    <Trans t={t} i18nKey="join.resetFor" components={{ name: <Name value={phase.link.name} /> }} />
                   ) : (
-                    "계정의 새 비밀번호를 정합니다."
+                    t("join.resetLead")
                   )}
                 </p>
               </>
             )}
             <Field
-              label={phase.link.kind === "invitation" ? "비밀번호" : "새 비밀번호"}
-              hint={`${phase.link.passwordMinLength}자 이상. 아이디와 같을 수 없습니다.`}
+              label={t(phase.link.kind === "invitation" ? "join.password" : "join.newPassword")}
+              hint={t("join.passwordHint", { min: phase.link.passwordMinLength })}
             >
               <input
                 name="password"
@@ -238,7 +250,7 @@ export function Join() {
                 autoComplete="new-password"
               />
             </Field>
-            <Field label="비밀번호 확인">
+            <Field label={t("join.confirmPassword")}>
               <input
                 name="confirm"
                 type="password"
@@ -250,26 +262,29 @@ export function Join() {
             </Field>
             {error && <p role="alert">{error}</p>}
             <Button type="submit" variant="primary" disabled={busy} className="account-link-submit">
-              {busy ? "처리 중…" : phase.link.kind === "invitation" ? "계정 만들기" : "비밀번호 변경"}
+              {t(busy ? "join.busy" : phase.link.kind === "invitation" ? "join.createSubmit" : "join.changePassword")}
             </Button>
             <p className="account-link-expiry">
-              이 링크는 {new Date(phase.link.expiresAt).toLocaleString("ko-KR", { dateStyle: "medium", timeStyle: "short" })}까지 한
-              번만 쓸 수 있습니다.
+              {t("join.expiry", {
+                date: new Date(phase.link.expiresAt).toLocaleString(i18n.language, { dateStyle: "medium", timeStyle: "short" }),
+              })}
             </p>
           </form>
         )}
         {phase.status === "done" && (
           <>
-            <h1>{phase.endingSessions ? "기존 로그인을 종료하고 있습니다" : phase.kind === "invitation" ? "계정을 만들었습니다" : "비밀번호를 변경했습니다"}</h1>
+            <h1>{t(phase.endingSessions ? "join.doneEnding" : phase.kind === "invitation" ? "join.doneCreated" : "join.doneReset")}</h1>
             <p className="login-lead" role="status">
-              {phase.endingSessions
-                ? "비밀번호를 변경했습니다. 잠시 뒤 새 비밀번호로 로그인하세요."
-                : phase.kind === "invitation"
-                ? "방금 정한 아이디와 비밀번호로 로그인하세요. 사용할 앱은 관리자가 권한을 부여한 뒤 보입니다."
-                : "새 비밀번호로 다시 로그인하세요. 이전에 로그인한 브라우저는 로그아웃됩니다."}
+              {t(
+                phase.endingSessions
+                  ? "join.doneEndingLead"
+                  : phase.kind === "invitation"
+                    ? "join.doneCreatedLead"
+                    : "join.doneResetLead",
+              )}
             </p>
             <a className="login-primary" href={phase.loginUrl}>
-              로그인하러 가기
+              {t("join.goToLogin")}
             </a>
           </>
         )}

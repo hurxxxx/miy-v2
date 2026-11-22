@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { request } from "@miy/sdk";
 import { useUser } from "../data/session";
 import { LoadError } from "../components/LoadState";
@@ -21,20 +22,20 @@ async function readSessions(path: string) {
 }
 
 export function CliSessions() {
+  const { t } = useTranslation("portal");
   return (
     <>
       <div className="page-header">
         <div>
-          <h1>내 CLI 연결</h1>
+          <h1>{t("cliSessions.title")}</h1>
           <p>
-            직접 승인한 연결인지 확인하세요. 브라우저 로그아웃은 CLI 연결을
-            철회하지 않습니다.
+            {t("cliSessions.lead")}
           </p>
         </div>
       </div>
-      <SessionsList title="CLI 로그인 세션" path="/api/v1/cli/sessions" />
+      <SessionsList title={t("cliSessions.loginSessions")} path="/api/v1/cli/sessions" />
       <SessionsList
-        title="기존 방식 CLI 연결"
+        title={t("cliSessions.legacySessions")}
         path="/api/v1/cli/legacy-sessions"
       />
     </>
@@ -42,6 +43,7 @@ export function CliSessions() {
 }
 
 function SessionsList({ title, path }: { title: string; path: string }) {
+  const { t } = useTranslation("portal");
   const user = useUser();
   const [data, setData] = useState<SessionPage>();
   const [error, setError] = useState(false);
@@ -80,10 +82,10 @@ function SessionsList({ title, path }: { title: string; path: string }) {
       await request(`${path}/${encodeURIComponent(id)}`, user.csrf, {
         method: "DELETE",
       });
-      setMessage("CLI 연결을 철회했습니다.");
+      setMessage(t("cliSessions.revoked"));
       await load();
     } catch {
-      setMessage("연결을 철회하지 못했습니다. 다시 시도해 주세요.");
+      setMessage(t("cliSessions.revokeFailed"));
     } finally {
       setBusy(undefined);
     }
@@ -92,39 +94,39 @@ function SessionsList({ title, path }: { title: string; path: string }) {
     <Panel title={title}>
       {error && (
         <LoadError
-          message="CLI 연결 목록을 불러오지 못했습니다."
+          message={t("cliSessions.loadFailed")}
           onRetry={() => void load()}
         />
       )}
       {!data && !error && <Loading />}
       {message && <p role="status">{message}</p>}
-      {data?.sessions.length === 0 && <p>표시할 연결이 없습니다.</p>}
+      {data?.sessions.length === 0 && <p>{t("cliSessions.empty")}</p>}
       {data?.sessions.map((session) => (
         <div className="registration-row" key={session.id}>
           <div>
-            <strong>{session.clientName || "기존 CLI"}</strong>
+            <strong>{session.clientName || t("cliSessions.legacyClient")}</strong>
             <p>
-              연결 ID: <code>{session.id}</code>
+              {t("cliSessions.connectionId")} <code>{session.id}</code>
             </p>
             <p>
-              승인: {session.createdAt} · 만료: {session.expiresAt}
+              {t("cliSessions.approvedExpires", { createdAt: session.createdAt, expiresAt: session.expiresAt })}
             </p>
-            {session.lastUsedAt && <p>마지막 사용: {session.lastUsedAt}</p>}
+            {session.lastUsedAt && <p>{t("cliSessions.lastUsed", { lastUsedAt: session.lastUsedAt })}</p>}
           </div>
           {session.revokedAt ? (
-            <p>철회됨</p>
+            <p>{t("cliSessions.revokedState")}</p>
           ) : new Date(session.expiresAt).getTime() <= Date.now() ? (
-            <p>만료됨</p>
+            <p>{t("cliSessions.expired")}</p>
           ) : (
             <Button disabled={!!busy} onClick={() => void revoke(session.id)}>
-              연결 철회
+              {t("cliSessions.revoke")}
             </Button>
           )}
         </div>
       ))}
       {data?.nextCursor && (
         <Button disabled={!!busy} onClick={() => void more()}>
-          연결 더 보기
+          {t("cliSessions.more")}
         </Button>
       )}
     </Panel>

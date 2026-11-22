@@ -17,22 +17,6 @@ const LANGUAGES = ["ko-KR", "en-US"];
 // Screens that still carry Korean literals. Remove a file from this list when
 // it is translated; the check fails if a listed file has none left.
 const UNTRANSLATED = new Set([
-  "app/AppFrame.tsx",
-  "app/AppView.tsx",
-  "components/LoadState.tsx",
-  "components/NewTabLink.tsx",
-  "components/RuntimeControls.tsx",
-  "components/RuntimeHealth.tsx",
-  "data/installations.tsx",
-  "pages/CliAuthorize.tsx",
-  "pages/CliInstall.tsx",
-  "pages/CliSessions.tsx",
-  "pages/Home.tsx",
-  "pages/Join.tsx",
-  "pages/Login.tsx",
-  "pages/LoginRecovery.tsx",
-  "pages/ManagedApps.tsx",
-  "ui/index.tsx",
 ]);
 
 const failures = [];

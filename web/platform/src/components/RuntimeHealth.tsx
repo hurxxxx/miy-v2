@@ -1,7 +1,9 @@
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import type { Installation } from "@miy/sdk";
 
 export function RuntimeHealth({ app }: { app: Installation }) {
+  const { t, i18n } = useTranslation("portal");
   const [now, setNow] = useState(Date.now);
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), 5000);
@@ -14,28 +16,31 @@ export function RuntimeHealth({ app }: { app: Installation }) {
   const last = app.canManage ? app.lastOperation : undefined;
   const stale = app.runtimeStatus === "running" && !!health?.checkedAt && now - Date.parse(health.checkedAt) > 30000;
   const labels: Record<string, string> = {
-    healthy: "정상",
-    degraded: `응답 확인 중 (${health?.consecutiveFailures || 0}/3회 실패)`,
-    unhealthy: "응답 비정상",
-    unknown: "확인 전 또는 확인 불가",
-    not_applicable: "검사 대상 아님",
+    healthy: t("runtimeHealth.statuses.healthy"),
+    degraded: t("runtimeHealth.statuses.degraded", { failures: health?.consecutiveFailures || 0 }),
+    unhealthy: t("runtimeHealth.statuses.unhealthy"),
+    unknown: t("runtimeHealth.statuses.unknown"),
+    not_applicable: t("runtimeHealth.statuses.not_applicable"),
   };
   return (
     <div
       role="status"
-      aria-label="앱 실행 및 서비스 상태"
+      aria-label={t("runtimeHealth.label")}
       className={`runtime-health ${status === "unhealthy" ? "is-unhealthy" : ""}`.trim()}
     >
       <p>
-        컨테이너: {recoveryRequired ? "복구 필요" : app.runtimeStatus} · 서비스: {stale ? "확인 지연" : labels[status]}
+        {t("runtimeHealth.summary", {
+          container: recoveryRequired ? t("runtimeHealth.recoveryRequired") : app.runtimeStatus,
+          service: stale ? t("runtimeHealth.delayed") : labels[status],
+        })}
       </p>
-      {recoveryRequired && <p>앱이 중지됐습니다. 관리자가 DB 상태를 확인하고 호환되는 버전을 배포해야 합니다.</p>}
+      {recoveryRequired && <p>{t("runtimeHealth.stopped")}</p>}
       {last?.status === "failed" && last.releaseId && ["deploy", "promote"].includes(last.action) && (
-        <p>배포 실패 · 시도한 릴리스 <code>{last.releaseId}</code></p>
+        <p>{t("runtimeHealth.deployFailed")} <code>{last.releaseId}</code></p>
       )}
-      {status === "unhealthy" && <p>앱 응답이 정상적이지 않습니다. 관리자가 로그와 상태를 확인해야 합니다.</p>}
-      {health?.checkedAt && <p>마지막 서비스 검사: {new Date(health.checkedAt).toLocaleString()}</p>}
-      {app.canManage && health?.errorCode && <p>검사 결과: {health.errorCode}</p>}
+      {status === "unhealthy" && <p>{t("runtimeHealth.unhealthyNotice")}</p>}
+      {health?.checkedAt && <p>{t("runtimeHealth.lastCheck", { time: new Date(health.checkedAt).toLocaleString(i18n.language) })}</p>}
+      {app.canManage && health?.errorCode && <p>{t("runtimeHealth.result", { code: health.errorCode })}</p>}
     </div>
   );
 }

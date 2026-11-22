@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Link, useLocation, useRouter } from "@tanstack/react-router";
 import { UI_CONTRACT, createNavigationGuards, request, type Installation } from "@miy/sdk";
 import { Button, Loading, Notice, Panel } from "../ui";
@@ -8,11 +9,10 @@ import { activeGuards } from "../lib/navigation-guards";
 import { AppFrame, leaveMessage, type FrameInput } from "./AppFrame";
 
 function AppAvailability({ health }: { health: Installation["health"] }) {
+  const { t } = useTranslation("portal");
   if (health?.status !== "degraded" && health?.status !== "unhealthy") return null;
-  return <Notice role="status" aria-label="앱 이용 안내" tone="warning">
-    <p>{health.status === "unhealthy"
-      ? "앱 응답이 원활하지 않습니다. 문제가 계속되면 앱 담당자에게 문의하세요."
-      : "앱의 응답을 확인하고 있습니다. 잠시 후 다시 시도해 주세요."}</p>
+  return <Notice role="status" aria-label={t("appView.availabilityLabel")} tone="warning">
+    <p>{t(health.status === "unhealthy" ? "appView.unhealthy" : "appView.degraded")}</p>
   </Notice>;
 }
 
@@ -29,6 +29,7 @@ export function AppView() {
 
 // A route change creates a new session; observations never replace its pinned release.
 function AppSession({ appId, environment, basePath }: { appId: string; environment: string; basePath: string }) {
+  const { t } = useTranslation("portal");
   const user = useUser();
   const router = useRouter();
   const [app, setApp] = useState<Installation | null>();
@@ -111,38 +112,38 @@ function AppSession({ appId, environment, basePath }: { appId: string; environme
   }, [app]);
   if (loadFailed)
     return (
-      <Panel title="앱 정보를 불러오지 못했습니다">
+      <Panel title={t("appView.loadFailedTitle")}>
         <Notice
           role="alert"
           tone="danger"
           actions={
             <Button size="sm" onClick={() => setAttempt((value) => value + 1)}>
-              다시 시도
+              {t("common:actions.retry")}
             </Button>
           }
         >
-          <p>연결 상태를 확인한 뒤 다시 시도하세요. 앱 접근 권한은 바뀌지 않았습니다.</p>
+          <p>{t("appView.loadFailed")}</p>
         </Notice>
       </Panel>
     );
-  if (app === undefined) return <Loading>앱을 불러오는 중…</Loading>;
+  if (app === undefined) return <Loading>{t("appView.loading")}</Loading>;
   if (!app)
     return (
-      <Panel title="앱에 접근할 수 없습니다">
-        <p>앱이 없거나 접근 권한이 없습니다.</p>
+      <Panel title={t("appView.noAccessTitle")}>
+        <p>{t("appView.noAccess")}</p>
       </Panel>
     );
   if (app.kind === "docker_app" && app.runtimeStatus !== "running")
     return (
-      <Panel title="앱이 실행 중이 아닙니다">
-        <p>지금은 앱을 사용할 수 없습니다. 앱 담당자에게 문의하세요.</p>
-        <Link to={environmentPath(environment) as "/"}>홈으로</Link>
+      <Panel title={t("appView.notRunningTitle")}>
+        <p>{t("appView.notRunning")}</p>
+        <Link to={environmentPath(environment) as "/"}>{t("appView.home")}</Link>
       </Panel>
     );
   if (app.ui.contractVersion !== UI_CONTRACT)
     return (
-      <Panel title="지원하지 않는 앱 화면">
-        <p>앱 계약을 확인하세요.</p>
+      <Panel title={t("appView.unsupportedTitle")}>
+        <p>{t("appView.unsupported")}</p>
       </Panel>
     );
   return (
@@ -153,14 +154,14 @@ function AppSession({ appId, environment, basePath }: { appId: string; environme
             tone="warning"
             actions={
               <Button size="sm" variant="primary" onClick={() => window.location.reload()}>
-                새로고침
+                {t("appView.reload")}
               </Button>
             }
           >
             <p>
-              <strong>앱 상태가 변경되었습니다</strong>
+              <strong>{t("appView.changedTitle")}</strong>
             </p>
-            <p>작성 중인 내용을 확인한 뒤 최신 상태로 다시 열어주세요. 현재 화면의 API 호출은 중지됩니다.</p>
+            <p>{t("appView.changed")}</p>
           </Notice>
         )}
         <AppAvailability health={health ?? app.health} />

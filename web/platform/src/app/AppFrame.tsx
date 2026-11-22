@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { useLocation, useRouter } from "@tanstack/react-router";
 import { appTarget, request, type AppFrameLaunch, type Installation } from "@miy/sdk";
 import {
@@ -9,6 +10,7 @@ import {
   type ParentMessage,
 } from "@miy/frame-protocol";
 import { useDisplaySettings } from "../data/settings";
+import { i18n } from "../platform/i18n";
 import { Button, Loading, Notice, Panel } from "../ui";
 
 /** The frame's last reported input state, read synchronously by leave checks. */
@@ -19,13 +21,13 @@ export interface FrameInput {
 
 const SANDBOX =
   "allow-scripts allow-same-origin allow-forms allow-downloads allow-modals allow-popups allow-popups-to-escape-sandbox";
-const UNKNOWN = "앱의 저장 상태를 확인할 수 없습니다. 이동하시겠습니까?";
-const DIRTY = "저장하지 않은 내용이 있습니다. 이동하시겠습니까?";
 
-/** The leave-check message for a frame's state; undefined when it may close. */
+/** The leave-check message for a frame's state, in the current language; undefined when it may close. */
 export function leaveMessage(input: FrameInput): string | undefined {
   if (input.state === "clean") return undefined;
-  return input.state === "dirty" ? input.message || DIRTY : UNKNOWN;
+  return input.state === "dirty"
+    ? input.message || i18n.t("portal:appFrame.leaveDirty")
+    : i18n.t("portal:appFrame.leaveUnknown");
 }
 
 /**
@@ -46,6 +48,7 @@ export function AppFrame({
   input: React.MutableRefObject<FrameInput>;
   onReleaseChanged: () => void;
 }) {
+  const { t } = useTranslation("portal");
   const router = useRouter();
   const location = useLocation();
   const frame = useRef<HTMLIFrameElement>(null);
@@ -191,29 +194,31 @@ export function AppFrame({
   return (
     <>
       {failure && (
-        <Panel title={launch ? "앱 연결을 확인하세요" : "앱을 열 수 없습니다"}>
+        <Panel title={t(launch ? "appFrame.checkConnectionTitle" : "appFrame.cannotOpenTitle")}>
           <Notice
             role="alert"
             tone="danger"
             actions={
               <Button size="sm" onClick={restart}>
-                다시 열기
+                {t("appFrame.reopen")}
               </Button>
             }
           >
             <p>
-              {failure === "frame_session_ended"
-                ? "앱 세션이 끝났습니다. 다시 열거나 다시 로그인하세요."
-                : failure === "frame_access_denied"
-                  ? "앱 사용 권한을 확인할 수 없습니다. 작성 중인 내용을 확인한 뒤 다시 열어주세요."
-                  : failure === "frame_reload_required"
-                    ? "앱을 다시 열어야 합니다. 작성 중인 내용을 확인한 뒤 다시 열어주세요."
-                    : "앱을 다시 열거나 관리자에게 문의하세요."}
+              {t(
+                failure === "frame_session_ended"
+                  ? "appFrame.sessionEnded"
+                  : failure === "frame_access_denied"
+                    ? "appFrame.accessDenied"
+                    : failure === "frame_reload_required"
+                      ? "appFrame.reloadRequired"
+                      : "appFrame.failed",
+              )}
             </p>
           </Notice>
         </Panel>
       )}
-      {!launch && !failure && <Loading>앱을 여는 중…</Loading>}
+      {!launch && !failure && <Loading>{t("appFrame.opening")}</Loading>}
       <iframe
         key={name}
         ref={frame}

@@ -69,7 +69,23 @@ export type FrameMessage =
   | { type: "release.changed"; payload: Record<string, never> }
   | { type: "route.navigate"; payload: { path: string; replace: boolean } }
   | { type: "guard.state"; payload: { state: InputState; message?: string } }
-  | { type: "token.renew"; payload: Record<string, never> };
+  | { type: "token.renew"; payload: Record<string, never> }
+  /**
+   * A platform keyboard shortcut pressed while the frame has focus. Keys typed in
+   * a frame never reach the portal document, so the runtime forwards only these.
+   */
+  | { type: "shortcut"; payload: { name: PlatformShortcut } };
+
+/** Platform shortcuts a frame forwards: Ctrl/⌘+K opens the command palette. */
+export const PLATFORM_SHORTCUTS = ["commandPalette"] as const;
+export type PlatformShortcut = (typeof PLATFORM_SHORTCUTS)[number];
+
+/** Whether a key event is a platform shortcut, and which. */
+export function platformShortcut(event: Pick<KeyboardEvent, "key" | "ctrlKey" | "metaKey" | "altKey" | "shiftKey">): PlatformShortcut | null {
+  return (event.ctrlKey || event.metaKey) && !event.altKey && !event.shiftKey && event.key.toLowerCase() === "k"
+    ? "commandPalette"
+    : null;
+}
 
 export type Envelope<M> = M & { protocol: typeof PROTOCOL; id: string };
 
@@ -174,6 +190,10 @@ export function readFrameMessage(data: unknown): FrameMessage | null {
         (p.state === "clean" || p.state === "dirty" || p.state === "unknown") &&
         (p.message === undefined || text(p.message, 512))
         ? { type: m.type, payload: { state: p.state, ...(p.message ? { message: p.message } : {}) } }
+        : null;
+    case "shortcut":
+      return object(p) && (PLATFORM_SHORTCUTS as readonly unknown[]).includes(p.name)
+        ? { type: m.type, payload: { name: p.name as PlatformShortcut } }
         : null;
   }
   return null;
