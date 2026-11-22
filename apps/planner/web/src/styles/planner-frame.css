@@ -1,0 +1,12 @@
+/*
+ * miy-only overrides for the ported planner styles.
+ *
+ * The app frame's baseline colours every link (`a { color: var(--ui-color-brand) }`)
+ * outside Tailwind's layers, so it beats preflight's `color: inherit` that AI-DO
+ * relied on. FullCalendar renders day numbers, column headers and list titles as
+ * links; give them back the inherited colour. The Sunday/Saturday/holiday rules in
+ * fullcalendar-theme.css are more specific and still apply.
+ */
+[data-unified-calendar] .fc a {
+  color: inherit;
+}

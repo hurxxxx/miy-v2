@@ -1,0 +1,16 @@
+/*
+ * Tailwind entry of this app. The common UI registers its theme (the bg-ui-*,
+ * text-app-* color names and the dark variant) in theme.css and AI-DO's
+ * app-level classes (app-text-*, app-control*, app-field-input*, card) in
+ * app.css; the color values are the --ui-* tokens the platform serves to
+ * every app frame.
+ */
+@import "tailwindcss";
+@import "../../platform-components/ui/theme.css";
+@import "../../platform-components/ui/app.css";
+/* AI-DO apps/web/src/styles/fullcalendar-theme.css (planner-specific), then
+   the miy frame adjustments. */
+@import "./styles/fullcalendar-theme.css";
+@import "./styles/planner-frame.css";
+@source ".";
+@source "../../platform-components";
