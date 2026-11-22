@@ -472,6 +472,17 @@ fn platform_identity(user: &str) -> String {
     )
 }
 
+/// A platform call into an app approved to read the directory: the core
+/// signs the person's current groups into it.
+fn platform_identity_with_groups(user: &str) -> String {
+    let groups = core().memberships.get(user).cloned().unwrap_or_default();
+    token(
+        json!({"sub": user, "admin": false, "installation_id": INSTALLATION,
+        "release_id": RELEASE, "iss": "miy", "aud": "miy-app", "exp": exp(),
+        "environment": "dev", "platform": true, "groups": groups}),
+    )
+}
+
 async fn send(
     url: &str,
     header: Option<String>,
@@ -1068,7 +1079,8 @@ async fn deleting_a_space_needs_it_empty_and_reclaims_its_attachments() {
     )
     .await;
     assert_eq!(busy["error"]["code"], "docs_space_not_empty");
-    // Trashing the doc already releases its attachment; the space then goes.
+    // Trashing keeps the attachment (the trash can restore it); deleting the
+    // space empties its trash and releases the file.
     expect(
         delete(&manager, &format!("/v1/docs/items/{doc_id}")).await,
         StatusCode::NO_CONTENT,
@@ -1080,12 +1092,20 @@ async fn deleting_a_space_needs_it_empty_and_reclaims_its_attachments() {
             .fetch_one(&db().await)
             .await
             .unwrap();
-    assert_eq!(file_status(&file_id), "cancelled");
+    assert_eq!(file_status(&file_id), "attached");
     expect(
         delete(&manager, &format!("/v1/spaces/{space}")).await,
         StatusCode::NO_CONTENT,
     )
     .await;
+    assert_eq!(file_status(&file_id), "cancelled");
+    let status: String =
+        sqlx::query_scalar("SELECT status FROM docs_page_attachments WHERE id = $1")
+            .bind(attachment["id"].as_str().unwrap())
+            .fetch_one(&db().await)
+            .await
+            .unwrap();
+    assert_eq!(status, "detached", "the release record outlives the page");
     let left: i64 =
         sqlx::query_scalar("SELECT count(*) FROM docs_native_docs WHERE workspace_id = $1")
             .bind(&space)
@@ -1678,7 +1698,7 @@ async fn attachments_round_trip_with_page_access() {
     )
     .await;
     assert_eq!(file_status(&attachment_file(&second).await), "cancelled");
-    // Trashing the page takes the remaining attachment with it.
+    // Trashing the page keeps the attachment; emptying it from the trash releases it.
     let extra = expect(
         post(
             &owner,
@@ -1700,10 +1720,29 @@ async fn attachments_round_trip_with_page_access() {
         StatusCode::NO_CONTENT,
     )
     .await;
-    assert_eq!(
-        file_status(&attachment_file(&extra_file).await),
-        "cancelled"
-    );
+    let extra_file_id = attachment_file(&extra_file).await;
+    assert_eq!(file_status(&extra_file_id), "attached");
+    let trashed_download = file_call(
+        &reader,
+        Method::GET,
+        &format!(
+            "/files/docs/attachments/{}/content",
+            extra_file["id"].as_str().unwrap()
+        ),
+        None,
+    )
+    .await;
+    assert_eq!(trashed_download.status(), StatusCode::FORBIDDEN);
+    expect(
+        delete(
+            &owner,
+            &format!("/v1/docs/trash/pages/{}", extra["id"].as_str().unwrap()),
+        )
+        .await,
+        StatusCode::NO_CONTENT,
+    )
+    .await;
+    assert_eq!(file_status(&extra_file_id), "cancelled");
     assert_eq!(file_status(&attachment_file(&first).await), "attached");
 }
 
@@ -1869,7 +1908,29 @@ async fn body_images_follow_page_access_and_are_released_with_the_page() {
     // SVG is refused.
     let svg = post(&owner, "/v1/media/upload", json!({"requestId": uuid::Uuid::new_v4().to_string(), "name": "x.svg", "mime": "image/svg+xml", "size": 4})).await;
     assert_eq!(svg.status(), StatusCode::BAD_REQUEST);
-    // Trashing the doc releases the image.
+    // Removing the image from the body keeps it linked (older versions show it).
+    expect(
+        patch(
+            &owner,
+            &format!("/v1/docs/pages/{page_id}"),
+            json!({"content_blocks": [], "expected_revision": 2}),
+        )
+        .await,
+        StatusCode::OK,
+    )
+    .await;
+    assert_eq!(
+        file_call(
+            &reader,
+            Method::GET,
+            &format!("/files/media/{media_id}/content"),
+            None
+        )
+        .await
+        .status(),
+        StatusCode::OK
+    );
+    // Trashing keeps the image; emptying the trash releases it.
     expect(
         delete(&owner, &format!("/v1/docs/items/{doc_id}")).await,
         StatusCode::NO_CONTENT,
@@ -1880,6 +1941,23 @@ async fn body_images_follow_page_access_and_are_released_with_the_page() {
         .fetch_one(&db().await)
         .await
         .unwrap();
+    assert_eq!(file_status(&file_id), "attached");
+    assert_eq!(
+        file_call(
+            &reader,
+            Method::GET,
+            &format!("/files/media/{media_id}/content"),
+            None
+        )
+        .await
+        .status(),
+        StatusCode::NOT_FOUND
+    );
+    expect(
+        delete(&owner, &format!("/v1/docs/trash/items/{doc_id}")).await,
+        StatusCode::NO_CONTENT,
+    )
+    .await;
     assert_eq!(file_status(&file_id), "cancelled");
 }
 
@@ -2045,7 +2123,7 @@ async fn platform_calls_only_answer_what_the_person_may_read_now() {
 
 #[tokio::test]
 #[ignore = "needs DOCS_TEST_DATABASE_URL"]
-async fn platform_calls_count_direct_space_members_only() {
+async fn platform_calls_count_group_members_through_signed_groups() {
     let manager = make_manager("Platform space admin").await;
     let space = create_space(&manager, "Platform space").await;
     let direct = user("Direct member");
@@ -2058,25 +2136,47 @@ async fn platform_calls_count_direct_space_members_only() {
     )
     .await;
     let token = uuid::Uuid::new_v4().simple().to_string();
-    create_doc(&manager, &format!("Space doc {token}"), Some(&space), true).await;
+    let doc = create_doc(&manager, &format!("Space doc {token}"), Some(&space), true).await;
+    let doc_id = doc["id"].as_str().unwrap().to_string();
+    let search = json!({"query": token, "limit": 5});
     let direct_found = expect(
-        platform(&direct, "/v1/search", json!({"query": token, "limit": 5})).await,
+        platform(&direct, "/v1/search", search.clone()).await,
         StatusCode::OK,
     )
     .await;
     assert_eq!(direct_found["items"].as_array().unwrap().len(), 1);
-    // Fail closed: a group member reads the doc in the app but not through platform calls.
+    // The core signed the group member's current groups into the call.
+    let with_groups = |path: &'static str, body: Value| {
+        let header = platform_identity_with_groups(&via_group);
+        async move { send(base(), Some(header), Method::POST, path, Some(body)).await }
+    };
     let group_found = expect(
-        platform(
-            &via_group,
-            "/v1/search",
-            json!({"query": token, "limit": 5}),
+        with_groups("/v1/search", search.clone()).await,
+        StatusCode::OK,
+    )
+    .await;
+    assert_eq!(group_found["items"].as_array().unwrap().len(), 1);
+    let check = expect(
+        with_groups(
+            "/platform/notification-check",
+            json!({"items": [{"groupKey": format!("doc:{doc_id}"), "resourceId": doc_id}]}),
         )
         .await,
         StatusCode::OK,
     )
     .await;
-    assert_eq!(group_found["items"].as_array().unwrap().len(), 0);
+    assert_eq!(check["allowed"], json!([format!("doc:{doc_id}")]));
+    // Not approved to read the directory: no signed groups, user grants only.
+    let unsigned = expect(
+        platform(&via_group, "/v1/search", search.clone()).await,
+        StatusCode::OK,
+    )
+    .await;
+    assert_eq!(unsigned["items"].as_array().unwrap().len(), 0);
+    // Leaving the group: the next call carries the current groups only.
+    core().memberships.remove(&via_group);
+    let left = expect(with_groups("/v1/search", search).await, StatusCode::OK).await;
+    assert_eq!(left["items"].as_array().unwrap().len(), 0);
 }
 
 #[tokio::test]
@@ -2114,5 +2214,794 @@ async fn managers_bootstrap_once_and_keep_one() {
             .unwrap()
             .iter()
             .any(|m| m["userId"] == manager)
+    );
+}
+
+// ---------------------------------------------------------------- 보강: trash
+
+#[tokio::test]
+#[ignore = "needs DOCS_TEST_DATABASE_URL"]
+async fn trash_lists_restores_and_purges_docs_and_pages() {
+    let owner = user("Trash owner");
+    let doc = create_doc(&owner, "Trash doc", None, true).await;
+    let doc_id = doc["id"].as_str().unwrap().to_string();
+    let root = first_page(&owner, &doc_id).await;
+    let parent = expect(
+        post(
+            &owner,
+            &format!("/v1/docs/items/{doc_id}/pages"),
+            json!({"title": "Parent"}),
+        )
+        .await,
+        StatusCode::CREATED,
+    )
+    .await;
+    let child = expect(
+        post(
+            &owner,
+            &format!("/v1/docs/items/{doc_id}/pages"),
+            json!({"title": "Child", "parent_id": parent["id"]}),
+        )
+        .await,
+        StatusCode::CREATED,
+    )
+    .await;
+    let grandchild = expect(
+        post(
+            &owner,
+            &format!("/v1/docs/items/{doc_id}/pages"),
+            json!({"title": "Grandchild", "parent_id": child["id"]}),
+        )
+        .await,
+        StatusCode::CREATED,
+    )
+    .await;
+    let id = |v: &Value| v["id"].as_str().unwrap().to_string();
+    // Trash the child (with its grandchild), then the parent separately.
+    expect(
+        delete(&owner, &format!("/v1/docs/pages/{}", id(&child))).await,
+        StatusCode::NO_CONTENT,
+    )
+    .await;
+    expect(
+        delete(&owner, &format!("/v1/docs/pages/{}", id(&parent))).await,
+        StatusCode::NO_CONTENT,
+    )
+    .await;
+    let trash = expect(get(&owner, "/v1/docs/trash").await, StatusCode::OK).await;
+    let mine: Vec<&Value> = trash["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|e| e["doc_id"] == doc_id)
+        .collect();
+    assert_eq!(mine.len(), 2, "one entry per deletion: {mine:?}");
+    let child_entry = mine.iter().find(|e| e["id"] == id(&child)).unwrap();
+    assert_eq!(child_entry["kind"], "page");
+    assert_eq!(child_entry["subpage_count"], 1);
+    assert_eq!(child_entry["parent_in_trash"], true);
+    assert_eq!(child_entry["trashed_by_name"], "Trash owner");
+    // A space member (edit) sees page entries but may not purge them.
+    let member = user("Trash member");
+    let as_member = expect(get(&member, "/v1/docs/trash").await, StatusCode::OK).await;
+    let member_entry = as_member["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|e| e["id"] == id(&child))
+        .unwrap()
+        .clone();
+    assert_eq!(member_entry["can_delete"], false);
+    assert_eq!(
+        delete(&member, &format!("/v1/docs/trash/pages/{}", id(&child)))
+            .await
+            .status(),
+        StatusCode::FORBIDDEN
+    );
+    // Restoring the child while its parent is trashed puts it at the top of the tree.
+    let restored = expect(
+        post(
+            &member,
+            &format!("/v1/docs/trash/pages/{}/restore", id(&child)),
+            json!({}),
+        )
+        .await,
+        StatusCode::OK,
+    )
+    .await;
+    assert_eq!(restored["moved_to_root"], true);
+    assert_eq!(restored["restored_count"], 2);
+    assert_eq!(restored["page"]["parent_id"], Value::Null);
+    let pages = expect(
+        get(&owner, &format!("/v1/docs/items/{doc_id}/pages")).await,
+        StatusCode::OK,
+    )
+    .await;
+    let live: Vec<String> = pages["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|p| p["id"].as_str().unwrap().to_string())
+        .collect();
+    assert!(
+        live.contains(&id(&child)) && live.contains(&id(&grandchild)) && live.contains(&id(&root))
+    );
+    assert!(!live.contains(&id(&parent)));
+    // Not in the trash any more.
+    let again = expect(
+        post(
+            &owner,
+            &format!("/v1/docs/trash/pages/{}/restore", id(&child)),
+            json!({}),
+        )
+        .await,
+        StatusCode::CONFLICT,
+    )
+    .await;
+    assert_eq!(again["error"]["code"], "docs_not_in_trash");
+    // Purge the parent for good.
+    expect(
+        delete(&owner, &format!("/v1/docs/trash/pages/{}", id(&parent))).await,
+        StatusCode::NO_CONTENT,
+    )
+    .await;
+    assert_eq!(
+        get(&owner, &format!("/v1/docs/pages/{}", id(&parent)))
+            .await
+            .status(),
+        StatusCode::NOT_FOUND
+    );
+    // Trash the doc: its pages go with it and come back with it; a page
+    // trashed before stays in the trash.
+    let extra = expect(
+        post(
+            &owner,
+            &format!("/v1/docs/items/{doc_id}/pages"),
+            json!({"title": "Earlier"}),
+        )
+        .await,
+        StatusCode::CREATED,
+    )
+    .await;
+    expect(
+        delete(&owner, &format!("/v1/docs/pages/{}", id(&extra))).await,
+        StatusCode::NO_CONTENT,
+    )
+    .await;
+    expect(
+        delete(&owner, &format!("/v1/docs/items/{doc_id}")).await,
+        StatusCode::NO_CONTENT,
+    )
+    .await;
+    let trash = expect(get(&owner, "/v1/docs/trash").await, StatusCode::OK).await;
+    let entries: Vec<&Value> = trash["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|e| e["doc_id"] == doc_id)
+        .collect();
+    assert_eq!(
+        entries.len(),
+        1,
+        "page entries of a trashed doc are inside the doc entry"
+    );
+    assert_eq!(entries[0]["kind"], "doc");
+    // A member cannot see or restore a doc they cannot manage.
+    let as_member = expect(get(&member, "/v1/docs/trash").await, StatusCode::OK).await;
+    assert!(
+        !as_member["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|e| e["doc_id"] == doc_id)
+    );
+    assert_eq!(
+        post(
+            &member,
+            &format!("/v1/docs/trash/items/{doc_id}/restore"),
+            json!({})
+        )
+        .await
+        .status(),
+        StatusCode::NOT_FOUND
+    );
+    let back = expect(
+        post(
+            &owner,
+            &format!("/v1/docs/trash/items/{doc_id}/restore"),
+            json!({}),
+        )
+        .await,
+        StatusCode::OK,
+    )
+    .await;
+    assert_eq!(back["trashed_at"], Value::Null);
+    let pages = expect(
+        get(&owner, &format!("/v1/docs/items/{doc_id}/pages")).await,
+        StatusCode::OK,
+    )
+    .await;
+    let live: Vec<String> = pages["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|p| p["id"].as_str().unwrap().to_string())
+        .collect();
+    assert!(live.contains(&id(&child)) && live.contains(&id(&root)));
+    assert!(!live.contains(&id(&extra)));
+    let trash = expect(get(&owner, "/v1/docs/trash").await, StatusCode::OK).await;
+    assert!(
+        trash["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|e| e["id"] == id(&extra))
+    );
+    // Purge needs the doc in the trash; then it is gone.
+    assert_eq!(
+        delete(&owner, &format!("/v1/docs/trash/items/{doc_id}"))
+            .await
+            .status(),
+        StatusCode::CONFLICT
+    );
+    expect(
+        delete(&owner, &format!("/v1/docs/items/{doc_id}")).await,
+        StatusCode::NO_CONTENT,
+    )
+    .await;
+    expect(
+        delete(&owner, &format!("/v1/docs/trash/items/{doc_id}")).await,
+        StatusCode::NO_CONTENT,
+    )
+    .await;
+    assert_eq!(
+        get(&owner, &format!("/v1/docs/items/{doc_id}"))
+            .await
+            .status(),
+        StatusCode::NOT_FOUND
+    );
+}
+
+// ---------------------------------------------------------------- 보강: versions
+
+#[tokio::test]
+#[ignore = "needs DOCS_TEST_DATABASE_URL"]
+async fn versions_record_each_saved_revision_and_restore_as_new_ones() {
+    let owner = user("Versioner");
+    let doc = create_doc(&owner, "History", None, false).await;
+    let page = first_page(&owner, doc["id"].as_str().unwrap()).await;
+    let page_id = page["id"].as_str().unwrap().to_string();
+    let blocks = |text: &str| json!([{"type": "paragraph", "content": [{"type": "text", "text": text, "styles": {}}]}]);
+    for (revision, text) in [(1, "one"), (2, "two"), (3, "three")] {
+        expect(
+            patch(
+                &owner,
+                &format!("/v1/docs/pages/{page_id}"),
+                json!({"content_blocks": blocks(text), "expected_revision": revision}),
+            )
+            .await,
+            StatusCode::OK,
+        )
+        .await;
+    }
+    let versions = expect(
+        get(&owner, &format!("/v1/docs/pages/{page_id}/versions")).await,
+        StatusCode::OK,
+    )
+    .await;
+    let revisions: Vec<i64> = versions["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|v| v["revision"].as_i64().unwrap())
+        .collect();
+    assert_eq!(revisions, vec![4, 3, 2, 1]);
+    assert_eq!(versions["items"][0]["is_current"], true);
+    assert_eq!(versions["items"][0]["created_by_name"], "Versioner");
+    assert!(versions["items"][0].get("content_blocks").is_none());
+    let two_id = versions["items"][2]["id"].as_str().unwrap().to_string();
+    let preview = expect(
+        get(
+            &owner,
+            &format!("/v1/docs/pages/{page_id}/versions/{two_id}"),
+        )
+        .await,
+        StatusCode::OK,
+    )
+    .await;
+    assert_eq!(preview["content_blocks"], blocks("one"));
+    // A reader previews but cannot restore.
+    let reader = user("Version reader");
+    expect(
+        put(
+            &owner,
+            &format!(
+                "/v1/docs/items/{}/sharing/users/{reader}",
+                doc["id"].as_str().unwrap()
+            ),
+            json!({"access_level": "read"}),
+        )
+        .await,
+        StatusCode::OK,
+    )
+    .await;
+    let as_reader = expect(
+        get(&reader, &format!("/v1/docs/pages/{page_id}/versions")).await,
+        StatusCode::OK,
+    )
+    .await;
+    assert_eq!(as_reader["can_restore"], false);
+    assert_eq!(
+        post(
+            &reader,
+            &format!("/v1/docs/pages/{page_id}/versions/{two_id}/restore"),
+            json!({"expected_revision": 4})
+        )
+        .await
+        .status(),
+        StatusCode::FORBIDDEN
+    );
+    // Restoring against an old revision conflicts.
+    let stale = expect(
+        post(
+            &owner,
+            &format!("/v1/docs/pages/{page_id}/versions/{two_id}/restore"),
+            json!({"expected_revision": 3}),
+        )
+        .await,
+        StatusCode::CONFLICT,
+    )
+    .await;
+    assert_eq!(stale["error"]["code"], "docs_page_revision_conflict");
+    let restored = expect(
+        post(
+            &owner,
+            &format!("/v1/docs/pages/{page_id}/versions/{two_id}/restore"),
+            json!({"expected_revision": 4}),
+        )
+        .await,
+        StatusCode::OK,
+    )
+    .await;
+    assert_eq!(restored["revision"], 5);
+    assert_eq!(restored["content_blocks"], blocks("one"));
+    let versions = expect(
+        get(&owner, &format!("/v1/docs/pages/{page_id}/versions")).await,
+        StatusCode::OK,
+    )
+    .await;
+    assert_eq!(
+        versions["items"].as_array().unwrap().len(),
+        5,
+        "history is never rewritten"
+    );
+    assert_eq!(versions["items"][0]["restored_from_revision"], 2);
+    // Pruning keeps the last 50 and one per older day.
+    let pool = db().await;
+    for revision in 6..=60 {
+        sqlx::query(
+            "INSERT INTO docs_page_versions (id, page_id, revision, title, content_blocks, created_by_id, created_at) \
+             VALUES ($1, $2, $3, 'x', '[]', 'u', now() - make_interval(days => $4))",
+        )
+        .bind(uuid::Uuid::new_v4().to_string())
+        .bind(&page_id)
+        .bind(revision as i64)
+        .bind(match revision {
+            6..=8 => 5,
+            9..=11 => 4,
+            _ => 0,
+        })
+        .execute(&pool)
+        .await
+        .unwrap();
+    }
+    sqlx::query("UPDATE docs_native_doc_pages SET revision = 60 WHERE id = $1")
+        .bind(&page_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    expect(
+        patch(
+            &owner,
+            &format!("/v1/docs/pages/{page_id}"),
+            json!({"content_blocks": blocks("latest"), "expected_revision": 60}),
+        )
+        .await,
+        StatusCode::OK,
+    )
+    .await;
+    let kept: Vec<i64> = sqlx::query_scalar(
+        "SELECT revision FROM docs_page_versions WHERE page_id = $1 ORDER BY revision DESC",
+    )
+    .bind(&page_id)
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    assert_eq!(kept.len(), 52, "{kept:?}");
+    assert_eq!(kept[0], 61);
+    assert_eq!(kept[49], 12);
+    // Older than the latest 50 (revisions 1..=11): 1..=5 share today with
+    // revision 61, so today is already kept; 6..=8 and 9..=11 keep their last.
+    assert!(kept.contains(&11) && kept.contains(&8));
+    assert!(!kept.contains(&10) && !kept.contains(&7) && !kept.contains(&5));
+}
+
+// ---------------------------------------------------------------- 보강: comments
+
+#[tokio::test]
+#[ignore = "needs DOCS_TEST_DATABASE_URL"]
+async fn comments_threads_mentions_and_notifications() {
+    let owner = user("Comment owner");
+    let doc = create_doc(&owner, "Discussed", None, false).await;
+    let doc_id = doc["id"].as_str().unwrap().to_string();
+    let page = first_page(&owner, &doc_id).await;
+    let page_id = page["id"].as_str().unwrap().to_string();
+    let reader = user("Comment reader");
+    let outsider = user("Outsider");
+    expect(
+        put(
+            &owner,
+            &format!("/v1/docs/items/{doc_id}/sharing/users/{reader}"),
+            json!({"access_level": "read"}),
+        )
+        .await,
+        StatusCode::OK,
+    )
+    .await;
+    // Readers comment; strangers cannot.
+    let request_id = uuid::Uuid::new_v4().to_string();
+    let body = json!({"body": "  Looks good @Comment owner  ", "mention_ids": [owner, outsider], "request_id": request_id});
+    let created = expect(
+        post(
+            &reader,
+            &format!("/v1/docs/pages/{page_id}/comments"),
+            body.clone(),
+        )
+        .await,
+        StatusCode::CREATED,
+    )
+    .await;
+    let comment_id = created["id"].as_str().unwrap().to_string();
+    // Same request ID: the same comment, no second notification.
+    let repeated = expect(
+        post(&reader, &format!("/v1/docs/pages/{page_id}/comments"), body).await,
+        StatusCode::OK,
+    )
+    .await;
+    assert_eq!(repeated["id"], comment_id);
+    assert_eq!(
+        post(
+            &outsider,
+            &format!("/v1/docs/pages/{page_id}/comments"),
+            json!({"body": "x", "request_id": uuid::Uuid::new_v4().to_string()})
+        )
+        .await
+        .status(),
+        StatusCode::FORBIDDEN
+    );
+    // The owner is mentioned (mention, not comment); the outsider cannot read the page and gets nothing.
+    let mention_events = events_for(&format!("mention:{comment_id}"));
+    assert_eq!(mention_events.len(), 1);
+    assert_eq!(mention_events[0]["body"]["kind"], "mention");
+    assert_eq!(mention_events[0]["body"]["recipients"], json!([owner]));
+    assert_eq!(
+        mention_events[0]["body"]["path"],
+        format!("/{doc_id}?page={page_id}&comment={comment_id}")
+    );
+    assert_eq!(
+        mention_events[0]["body"]["title"],
+        "Comment reader님이 \"Discussed\"에서 회원님을 언급했습니다"
+    );
+    assert!(events_for(&format!("comment:{comment_id}")).is_empty());
+    // A reply notifies the thread author and the owner (comment kind).
+    let reply = expect(post(&owner, &format!("/v1/docs/pages/{page_id}/comments"),
+        json!({"body": "Thanks", "parent_id": comment_id, "request_id": uuid::Uuid::new_v4().to_string()})).await, StatusCode::CREATED).await;
+    let reply_id = reply["id"].as_str().unwrap().to_string();
+    let reply_events = events_for(&format!("comment:{reply_id}"));
+    assert_eq!(reply_events.len(), 1);
+    assert_eq!(reply_events[0]["body"]["recipients"], json!([reader]));
+    // Replies are one level deep.
+    assert_eq!(post(&owner, &format!("/v1/docs/pages/{page_id}/comments"),
+        json!({"body": "deeper", "parent_id": reply_id, "request_id": uuid::Uuid::new_v4().to_string()})).await.status(), StatusCode::NOT_FOUND);
+    // Listing shows the thread, names and flags, and reads the notifications.
+    let listed = expect(
+        get(&owner, &format!("/v1/docs/pages/{page_id}/comments")).await,
+        StatusCode::OK,
+    )
+    .await;
+    let thread = &listed["items"][0];
+    assert_eq!(thread["body"], "Looks good @Comment owner");
+    assert_eq!(thread["author_name"], "Comment reader");
+    assert_eq!(thread["mentions"].as_array().unwrap().len(), 2);
+    assert_eq!(thread["replies"][0]["id"], reply_id);
+    assert_eq!(thread["can_edit"], false);
+    assert_eq!(thread["can_delete"], true, "the owner manages the doc");
+    assert_eq!(thread["can_resolve"], true);
+    assert!(
+        events_for(&format!("mention:{comment_id}"))
+            .iter()
+            .any(|e| e["op"] == "read" && e["by"] == owner)
+    );
+    // Resolve and reopen (root only).
+    expect(
+        post(
+            &reader,
+            &format!("/v1/docs/comments/{comment_id}/resolve"),
+            json!({}),
+        )
+        .await,
+        StatusCode::NO_CONTENT,
+    )
+    .await;
+    let listed = expect(
+        get(&reader, &format!("/v1/docs/pages/{page_id}/comments")).await,
+        StatusCode::OK,
+    )
+    .await;
+    assert_eq!(listed["items"][0]["resolved_by_name"], "Comment reader");
+    assert_eq!(
+        post(
+            &owner,
+            &format!("/v1/docs/comments/{reply_id}/resolve"),
+            json!({})
+        )
+        .await
+        .status(),
+        StatusCode::BAD_REQUEST
+    );
+    expect(
+        post(
+            &owner,
+            &format!("/v1/docs/comments/{comment_id}/reopen"),
+            json!({}),
+        )
+        .await,
+        StatusCode::NO_CONTENT,
+    )
+    .await;
+    // Editing: only the author; removing a mention retracts it for that person.
+    assert_eq!(
+        patch(
+            &owner,
+            &format!("/v1/docs/comments/{comment_id}"),
+            json!({"body": "x"})
+        )
+        .await
+        .status(),
+        StatusCode::FORBIDDEN
+    );
+    expect(
+        patch(
+            &reader,
+            &format!("/v1/docs/comments/{comment_id}"),
+            json!({"body": "Edited", "mention_ids": []}),
+        )
+        .await,
+        StatusCode::NO_CONTENT,
+    )
+    .await;
+    assert!(
+        events_for(&format!("mention:{comment_id}"))
+            .iter()
+            .any(|e| e["op"] == "retract" && e["body"]["recipients"] == json!([owner]))
+    );
+    // Losing access retracts: removing the reader's share retracts their reply notification.
+    expect(
+        delete(
+            &owner,
+            &format!("/v1/docs/items/{doc_id}/sharing/users/{reader}"),
+        )
+        .await,
+        StatusCode::OK,
+    )
+    .await;
+    assert!(
+        events_for(&format!("comment:{reply_id}"))
+            .iter()
+            .any(|e| e["op"] == "retract" && e["body"]["recipients"] == json!([reader]))
+    );
+    // Deleting a comment retracts its groups and leaves a placeholder for a thread with replies.
+    expect(
+        put(
+            &owner,
+            &format!("/v1/docs/items/{doc_id}/sharing/users/{reader}"),
+            json!({"access_level": "read"}),
+        )
+        .await,
+        StatusCode::OK,
+    )
+    .await;
+    expect(
+        delete(&reader, &format!("/v1/docs/comments/{comment_id}")).await,
+        StatusCode::NO_CONTENT,
+    )
+    .await;
+    assert!(
+        events_for(&format!("comment:{comment_id}"))
+            .iter()
+            .any(|e| e["op"] == "retract")
+    );
+    let listed = expect(
+        get(&owner, &format!("/v1/docs/pages/{page_id}/comments")).await,
+        StatusCode::OK,
+    )
+    .await;
+    assert_eq!(listed["items"][0]["is_deleted"], true);
+    assert_eq!(listed["items"][0]["body"], "");
+    assert_eq!(listed["items"][0]["replies"].as_array().unwrap().len(), 1);
+    // Platform recheck: live comments on readable pages only.
+    let check = expect(
+        platform(
+            &reader,
+            "/platform/notification-check",
+            json!({"items": [
+                {"groupKey": format!("comment:{reply_id}"), "resourceId": reply_id},
+                {"groupKey": format!("mention:{comment_id}"), "resourceId": comment_id}
+            ]}),
+        )
+        .await,
+        StatusCode::OK,
+    )
+    .await;
+    assert_eq!(check["allowed"], json!([format!("comment:{reply_id}")]));
+    // Trashing the page retracts the remaining comment notifications.
+    let second = expect(post(&owner, &format!("/v1/docs/pages/{page_id}/comments"),
+        json!({"body": "ping", "mention_ids": [reader], "request_id": uuid::Uuid::new_v4().to_string()})).await, StatusCode::CREATED).await;
+    let second_id = second["id"].as_str().unwrap().to_string();
+    assert_eq!(events_for(&format!("mention:{second_id}")).len(), 1);
+    let extra = expect(
+        post(
+            &owner,
+            &format!("/v1/docs/items/{doc_id}/pages"),
+            json!({"title": "Keep"}),
+        )
+        .await,
+        StatusCode::CREATED,
+    )
+    .await;
+    assert!(extra["id"].is_string());
+    expect(
+        delete(&owner, &format!("/v1/docs/pages/{page_id}")).await,
+        StatusCode::NO_CONTENT,
+    )
+    .await;
+    assert!(
+        events_for(&format!("mention:{second_id}"))
+            .iter()
+            .any(|e| e["op"] == "retract" && e["body"]["recipients"] == json!([reader]))
+    );
+    let check = expect(
+        platform(
+            &reader,
+            "/platform/notification-check",
+            json!({"items": [
+        {"groupKey": format!("comment:{reply_id}"), "resourceId": reply_id}]}),
+        )
+        .await,
+        StatusCode::OK,
+    )
+    .await;
+    assert_eq!(check["allowed"], json!([]));
+    // Unknown mentions are refused.
+    let unknown = expect(post(&owner, &format!("/v1/docs/pages/{}/comments", extra["id"].as_str().unwrap()),
+        json!({"body": "x", "mention_ids": ["u-nobody"], "request_id": uuid::Uuid::new_v4().to_string()})).await, StatusCode::BAD_REQUEST).await;
+    assert_eq!(unknown["error"]["code"], "docs_mention_unknown_user");
+}
+
+// ---------------------------------------------------------------- 보강: templates
+
+#[tokio::test]
+#[ignore = "needs DOCS_TEST_DATABASE_URL"]
+async fn templates_are_saved_from_pages_and_start_new_pages_and_docs() {
+    let manager = make_manager("Template admin").await;
+    let space = create_space(&manager, "Templates space").await;
+    let member = user("Template member");
+    let viewer = user("Template viewer");
+    let outsider = user("Template outsider");
+    set_space_members(
+        &manager,
+        &space,
+        &[("user", &member, "member"), ("user", &viewer, "viewer")],
+    )
+    .await;
+    let doc = create_doc(&member, "Source", Some(&space), true).await;
+    let doc_id = doc["id"].as_str().unwrap().to_string();
+    let page = first_page(&member, &doc_id).await;
+    let page_id = page["id"].as_str().unwrap().to_string();
+    let blocks = json!([{"type": "heading", "props": {"level": 2}, "content": [{"type": "text", "text": "Agenda", "styles": {}}]}]);
+    expect(
+        patch(
+            &member,
+            &format!("/v1/docs/pages/{page_id}"),
+            json!({"content_blocks": blocks, "expected_revision": 1}),
+        )
+        .await,
+        StatusCode::OK,
+    )
+    .await;
+    // Viewers may not save templates; members may.
+    assert_eq!(
+        post(&viewer, "/v1/docs/templates", json!({"page_id": page_id}))
+            .await
+            .status(),
+        StatusCode::FORBIDDEN
+    );
+    let template = expect(
+        post(
+            &member,
+            "/v1/docs/templates",
+            json!({"page_id": page_id, "title": "Meeting", "description": "Weekly"}),
+        )
+        .await,
+        StatusCode::CREATED,
+    )
+    .await;
+    let template_id = template["id"].as_str().unwrap().to_string();
+    assert_eq!(template["space_id"], space);
+    let listed = expect(
+        get(&viewer, &format!("/v1/docs/templates?space={space}")).await,
+        StatusCode::OK,
+    )
+    .await;
+    assert_eq!(listed["items"][0]["title"], "Meeting");
+    assert_eq!(listed["items"][0]["can_delete"], false);
+    assert_eq!(listed["can_create"], false);
+    assert_eq!(
+        get(&outsider, &format!("/v1/docs/templates?space={space}"))
+            .await
+            .status(),
+        StatusCode::FORBIDDEN
+    );
+    // New page from the template.
+    let from_template = expect(
+        post(
+            &member,
+            &format!("/v1/docs/items/{doc_id}/pages"),
+            json!({"title": "This week", "template_id": template_id}),
+        )
+        .await,
+        StatusCode::CREATED,
+    )
+    .await;
+    assert_eq!(from_template["content_blocks"], blocks);
+    // New doc from the template in the same space.
+    let new_doc = expect(
+        post(
+            &member,
+            &format!("/v1/docs/items?space={space}"),
+            json!({"title": "From template", "template_id": template_id,
+        "primary_target": {"app": "docs", "type": "workspace_sidebar", "id": space}}),
+        )
+        .await,
+        StatusCode::CREATED,
+    )
+    .await;
+    let new_page = first_page(&member, new_doc["id"].as_str().unwrap()).await;
+    assert_eq!(new_page["content_blocks"], blocks);
+    // A template of another space cannot be used here.
+    let elsewhere = post(
+        &member,
+        "/v1/docs/items",
+        json!({"title": "x", "template_id": template_id}),
+    )
+    .await;
+    assert_eq!(elsewhere.status(), StatusCode::NOT_FOUND);
+    // The creator or a space admin deletes it.
+    assert_eq!(
+        delete(&viewer, &format!("/v1/docs/templates/{template_id}"))
+            .await
+            .status(),
+        StatusCode::FORBIDDEN
+    );
+    expect(
+        delete(&manager, &format!("/v1/docs/templates/{template_id}")).await,
+        StatusCode::NO_CONTENT,
+    )
+    .await;
+    assert_eq!(
+        get(&member, &format!("/v1/docs/templates/{template_id}"))
+            .await
+            .status(),
+        StatusCode::NOT_FOUND
     );
 }

@@ -180,6 +180,18 @@ export function useDocsPageContentSaveController({
     [],
   );
 
+  /** The revision the editor of `pageId` is based on now. */
+  const baseRevision = useCallback(
+    (pageId: string) => revisionsRef.current.get(pageId),
+    [],
+  );
+
+  /** No draft of `pageId` waits and no save runs (safe to replace the page). */
+  const isSettled = useCallback(
+    (pageId: string) => !draftsRef.current.has(pageId) && !inFlightRef.current,
+    [],
+  );
+
   const retry = useCallback(() => flush(), [flush]);
 
   // Leaving the editor sends the last draft right away (AI-DO flushed text
@@ -193,9 +205,11 @@ export function useDocsPageContentSaveController({
   );
 
   return {
+    baseRevision,
     cancelQueuedSave,
     flush,
     hasDraft,
+    isSettled,
     queueBlockSave,
     resolveConflictKeepMine,
     resolveConflictReload,

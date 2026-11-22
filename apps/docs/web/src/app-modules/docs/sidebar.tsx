@@ -10,6 +10,7 @@ import {
   Plus,
   Settings,
   Share2,
+  Trash2,
   User,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
@@ -31,6 +32,7 @@ import {
 } from './api/docs-api';
 import {
   docsSidebarRowSpaceLabel,
+  docsTrashPath,
   getInitialDocsSidebarExpandedSections,
   isDocsSidebarSectionExpanded,
   resolveDocsSidebarRowPath,
@@ -267,14 +269,17 @@ export function DocsSidebarExtras({
   );
 }
 
-/** AI-DO docs manifest navItems (the docs-notes item needs meetings: left out). */
+/**
+ * AI-DO docs manifest navItems (the docs-notes item needs meetings: left
+ * out). AI-DO's "보관됨" view listed trashed docs without a way back; miy
+ * replaces it with the space's trash (`/trash`, restore and delete for good).
+ */
 const NAV_ITEMS = [
   { view: 'all', labelKey: 'docs.category.all', icon: Files },
   { view: 'mine', labelKey: 'docs.category.mine', icon: User },
   { view: 'shared', labelKey: 'docs.category.shared', icon: Share2 },
   { view: 'private', labelKey: 'docs.category.private', icon: Lock },
   { view: 'recent', labelKey: 'docs.category.recent', icon: History },
-  { view: 'archived', labelKey: 'docs.category.archived', icon: History },
 ] as const;
 
 export function docsListPath(spaceId: string | null, view?: string | null): string {
@@ -377,6 +382,17 @@ export function DocsSidebar({
             </button>
           );
         })}
+        <button
+          type="button"
+          onClick={() => navigate(docsTrashPath(spaceId))}
+          className={cn(
+            'sidebar-submenu-item ml-1 w-[calc(100%-0.25rem)] text-left',
+            route.kind === 'trash' && 'sidebar-submenu-item-active',
+          )}
+        >
+          <Trash2 size={16} className="text-app-ink/55 dark:text-app-ink/65" />
+          <span className="sidebar-submenu-label">{t('docsApp.trash.title')}</span>
+        </button>
       </section>
 
       <DocsSidebarExtras

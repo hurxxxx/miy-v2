@@ -15,7 +15,7 @@
 //!    images to the page and attaches them in the core once;
 //! 4. viewers fetch `GET /files/media/<id>/content` after the page's view check
 //!    (AI-DO `can_resolve_media` / `can_access_docs_native_page`);
-//! 5. trashing the page releases them (files.rs).
+//! 5. permanently deleting the page releases them (files.rs, trash.rs).
 use axum::{
     Extension, Json,
     body::Body,
@@ -84,10 +84,12 @@ pub fn media_ids_in(text: &str) -> Vec<String> {
     ids
 }
 
-/// Full re-scan of a page body: link the uploader's new media, unlink media
-/// that left the body (AI-DO `sync_embedded_media`). Linked rows still
-/// `ready` are returned for attaching after the commit (a failed attach is
-/// retried on the next save).
+/// Scan a page body and link the uploader's new media to the page (AI-DO
+/// `sync_embedded_media`). AI-DO also unlinked media that left the body; miy
+/// keeps them linked while the page exists because older versions (version
+/// history, 보강) still show them. They are released when the page is
+/// permanently deleted. Linked rows still `ready` are returned for attaching
+/// after the commit (a failed attach is retried on the next save).
 pub async fn sync_embedded_media(
     tx: &mut Transaction<'_, Postgres>,
     body: &str,
@@ -116,15 +118,6 @@ pub async fn sync_embedded_media(
             .map(|(id, file_id, _)| Linked { id, file_id })
             .collect();
     }
-    sqlx::query(
-        "UPDATE media_files SET resource_type = NULL, resource_id = NULL \
-         WHERE resource_type = $1 AND resource_id = $2 AND NOT (id = ANY($3))",
-    )
-    .bind(RESOURCE_DOCS_NATIVE_PAGE)
-    .bind(page_id)
-    .bind(&current)
-    .execute(&mut **tx)
-    .await?;
     Ok(linked)
 }
 

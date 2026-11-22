@@ -76,10 +76,10 @@ pub async fn search(
          FROM docs_native_docs d \
          LEFT JOIN LATERAL (SELECT pg.id AS page_id, pg.title AS page_title, pg.search_text \
              FROM docs_native_doc_pages pg WHERE pg.doc_id = d.id AND pg.trashed_at IS NULL \
-               AND (pg.title ILIKE $4 OR pg.search_text ILIKE $4) \
+               AND (pg.title ILIKE $5 OR pg.search_text ILIKE $5) \
              ORDER BY pg.updated_at DESC LIMIT 1) m ON true \
-         WHERE {READABLE_BY_CALLER} AND (d.title ILIKE $4 OR m.page_id IS NOT NULL) \
-         ORDER BY d.updated_at DESC LIMIT $5"
+         WHERE {READABLE_BY_CALLER} AND (d.title ILIKE $5 OR m.page_id IS NOT NULL) \
+         ORDER BY d.updated_at DESC LIMIT $6"
     );
     let rows: Vec<(
         String,
@@ -92,6 +92,7 @@ pub async fn search(
         .bind(&identity.user_id)
         .bind(&identity.context.installation_id)
         .bind(identity.context.environment.as_deref())
+        .bind(notify::signed_groups(&identity))
         .bind(like_pattern(query))
         .bind(limit)
         .fetch_all(&state.pool)

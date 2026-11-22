@@ -259,10 +259,9 @@ pub async fn space_role_in(
     Ok(None)
 }
 
-/// A platform call carries no token for directory calls, so the ACL (which
-/// always rechecks the caller with the directory) cannot run. Only direct
-/// user grants count; members through a group are left out (fail closed,
-/// docs/PORTING.md §3.2).
+/// A platform call carries no token for directory calls; the caller's role
+/// comes from their user grants and the grants of the groups the core signed
+/// into the call (docs/PORTING.md §3.2), read straight from the ACL tables.
 pub async fn platform_space_role(
     pool: &PgPool,
     identity: &Identity,
@@ -281,7 +280,9 @@ pub async fn platform_space_role(
         .copied())
 }
 
-/// The caller's direct user grants by space ID (platform calls).
+/// The caller's space roles by space ID on a platform call: their user
+/// grants and the grants of the groups the core signed into the call
+/// (`notify::signed_groups`), the highest role per space.
 pub async fn direct_roles_of(
     pool: &PgPool,
     identity: &Identity,
@@ -291,18 +292,27 @@ pub async fn direct_roles_of(
     };
     let rows: Vec<(String, String)> = sqlx::query_as(
         "SELECT resource_id, role FROM app.miy_acl_grants WHERE installation_id = $1::uuid \
-         AND environment = $2 AND kind = $3 AND subject_kind = 'user' AND subject_id = $4",
+         AND environment = $2 AND kind = $3 \
+         AND ((subject_kind = 'user' AND subject_id = $4) \
+           OR (subject_kind = 'group' AND subject_id = ANY($5::text[])))",
     )
     .bind(&identity.context.installation_id)
     .bind(environment)
     .bind(SPACE_KIND)
     .bind(&identity.user_id)
+    .bind(crate::notify::signed_groups(identity))
     .fetch_all(pool)
     .await?;
-    Ok(rows
-        .into_iter()
-        .filter_map(|(id, role)| SpaceRole::from_grant(&role).map(|role| (id, role)))
-        .collect())
+    let mut roles: HashMap<String, SpaceRole> = HashMap::new();
+    for (id, role) in rows {
+        if let Some(role) = SpaceRole::from_grant(&role) {
+            let entry = roles.entry(id).or_insert(role);
+            if role > *entry {
+                *entry = role;
+            }
+        }
+    }
+    Ok(roles)
 }
 
 /// Every space ID the caller can act on, in the ACL's own SQL filter.
@@ -613,6 +623,8 @@ pub async fn replace_sharing(
         )
         .await?;
     tx.commit().await?;
+    // People removed from the space lose its comment notifications.
+    crate::comments::retract_lost_access_in_space(&state.pool, &identity, &space_id).await;
     Ok(Json(snapshot))
 }
 

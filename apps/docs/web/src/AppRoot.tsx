@@ -5,10 +5,14 @@ import { FeedbackProvider } from '@miy/ui';
 import './app.css';
 
 import { DocsSidebar } from './app-modules/docs/sidebar';
+import { useHasCommentDrafts } from './app-modules/docs/views/docs-comment-drafts';
 import { syncLocale } from './platform/i18n';
 import { DocsAppProvider } from './platform/docs/docs-context';
 import { resolveAppRoute } from './platform/runtime/app-location';
-import { NavigationStateProvider } from './platform/runtime/navigation-state';
+import {
+  NavigationStateProvider,
+  useNavigationDirty,
+} from './platform/runtime/navigation-state';
 import { RuntimeProvider } from './platform/runtime/runtime-context';
 import {
   syncDateFormatPreference,
@@ -22,6 +26,11 @@ const DocsView = lazy(() =>
     default: module.DocsView,
   })),
 );
+const DocsTrashView = lazy(() =>
+  import('./app-modules/docs-trash/DocsTrashView').then((module) => ({
+    default: module.DocsTrashView,
+  })),
+);
 const DocsSettingsView = lazy(() =>
   import('./app-modules/docs-settings/DocsSettingsView').then((module) => ({
     default: module.DocsSettingsView,
@@ -32,6 +41,7 @@ const DocsSettingsView = lazy(() =>
  * Docs (문서). Routes inside the app frame (platform/runtime/app-location.ts):
  * - `/?space=&view=` — the docs of a space (AI-DO docs hub);
  * - `/<docId>?space=&page=` — one doc with its page tree and editor;
+ * - `/trash?space=` — the space's trash: restore or delete for good (miy);
  * - `/settings` — docs managers and spaces (miy).
  */
 export default function AppRoot({ runtime }: AppProps) {
@@ -66,6 +76,12 @@ function Feedback({ children }: { children: React.ReactNode }) {
   );
 }
 
+/** Unsent comments of any page count as unsaved work (miy 보강). */
+function CommentDraftsGuard() {
+  useNavigationDirty(useHasCommentDrafts());
+  return null;
+}
+
 function AppScreens({ runtime }: AppProps) {
   const { t } = useTranslation('apps');
   const { pathname, search } = runtime.location;
@@ -80,6 +96,7 @@ function AppScreens({ runtime }: AppProps) {
   );
   return (
     <NavigationStateProvider report={report} message={t('docsApp.unsavedChanges')}>
+      <CommentDraftsGuard />
       <div className="flex h-screen min-h-0 bg-app-bg text-app-ink">
         <DocsSidebar
           route={route}
@@ -97,6 +114,8 @@ function AppScreens({ runtime }: AppProps) {
           >
             {route.kind === 'settings' ? (
               <DocsSettingsView />
+            ) : route.kind === 'trash' ? (
+              <DocsTrashView />
             ) : (
               <DocsView docId={route.kind === 'doc' ? route.docId : null} />
             )}

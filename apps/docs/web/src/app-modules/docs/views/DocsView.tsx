@@ -6,6 +6,8 @@ import {
   FileText,
   Filter,
   Globe,
+  History,
+  LayoutTemplate,
   Link2,
   Loader2,
   Lock,
@@ -56,6 +58,7 @@ import { useNavigationDirty } from '../../../platform/runtime/navigation-state';
 import { useRuntime } from '../../../platform/runtime/runtime-context';
 import {
   createDocPage,
+  createDocsTemplate,
   createNativeDoc,
   deleteDocPage,
   deleteDocTarget,
@@ -70,6 +73,7 @@ import {
   listShareableUsers,
   recordDocView,
   resolveDocsContentFormat,
+  restoreDocPageVersion,
   resolveDocsHubContentFormat,
   toggleDocFavorite,
   updateDocPage,
@@ -78,6 +82,7 @@ import {
   upsertDocUserShare,
   type DocsHubItem,
   type DocsPageItem,
+  type DocsPageVersion,
   type NativeDocSharingResponse,
   type ShareableUserItem,
 } from '../api/docs-api';
@@ -105,6 +110,10 @@ import { DocsFullscreenReadModal } from './DocsFullscreenReadModal';
 import { copyText, portalUrlFor } from './docs-link';
 import { downloadMarkdownFile } from './docs-markdown-file';
 import { DocsPageAttachments } from './DocsPageAttachments';
+import { DocsPageComments } from './DocsPageComments';
+import { clearCommentDrafts } from './docs-comment-drafts';
+import { DocsPageVersionsModal } from './DocsPageVersionsModal';
+import { DocsTemplatePicker } from './DocsTemplatePicker';
 import {
   CATEGORY_LABEL_KEYS,
   DocsContentFormatBadge,
@@ -213,12 +222,15 @@ const renderDocsEditor = (props: any) => {
     handleEditorChange,
     handleKeepMine,
     handleOpenInNewTab,
+    handleOpenVersions,
     handlePageTitleSave,
     handlePrintDoc,
     handleReloadConflict,
     handleRenameDoc,
     handleRetrySave,
+    handleSaveAsTemplate,
     handleToggleFavorite,
+    highlightCommentId,
     loadError,
     locale,
     openShareModal,
@@ -362,6 +374,33 @@ const renderDocsEditor = (props: any) => {
                   <Printer size={14} />
                   <span>{t('apps:docs.print')}</span>
                 </button>
+                {activePage ? (
+                  <>
+                    <div className="my-1 h-px bg-app-border" />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setDocMenuOpen(false);
+                        handleOpenVersions(activePage);
+                      }}
+                      className="app-text-control-sm flex w-full items-center gap-2 px-3 py-2 text-left text-app-ink hover:bg-app-surface-hover"
+                    >
+                      <History size={14} />
+                      <span>{t('apps:docsApp.versions.open')}</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setDocMenuOpen(false);
+                        void handleSaveAsTemplate(activePage);
+                      }}
+                      className="app-text-control-sm flex w-full items-center gap-2 px-3 py-2 text-left text-app-ink hover:bg-app-surface-hover"
+                    >
+                      <LayoutTemplate size={14} />
+                      <span>{t('apps:docsApp.templates.saveAsTemplate')}</span>
+                    </button>
+                  </>
+                ) : null}
                 {selectedDoc.can_manage ? (
                   <>
                     <div className="my-1 h-px bg-app-border" />
@@ -610,6 +649,12 @@ const renderDocsEditor = (props: any) => {
                   canEdit={selectedDoc.can_edit && activePage.can_edit}
                   pageId={activePage.source_page_id}
                 />
+                <DocsPageComments
+                  key={`comments:${activePage.source_page_id}`}
+                  docId={selectedDoc.id}
+                  pageId={activePage.source_page_id}
+                  highlightCommentId={highlightCommentId}
+                />
               </div>
             ) : (
               <div className="text-center py-20">
@@ -652,8 +697,10 @@ const renderDocsShell = (props: any) => {
     editorView,
     handleChangeLocation,
     handleChangeUserAccess,
+    handleCloseVersions,
     handleCreateDoc,
     handleCreatePage,
+    handleRestoreVersion,
     handleDeleteDoc,
     handleInviteUser,
     handleRemoveUserShare,
@@ -671,7 +718,9 @@ const renderDocsShell = (props: any) => {
     locationOptions,
     menuOpenId,
     newDocLocation,
+    newDocTemplateId,
     newDocTitle,
+    newPageTemplateId,
     newPageTitle,
     openCreateModal,
     openDoc,
@@ -690,7 +739,9 @@ const renderDocsShell = (props: any) => {
     setInviteQuery,
     setMenuOpenId,
     setNewDocLocation,
+    setNewDocTemplateId,
     setNewDocTitle,
+    setNewPageTemplateId,
     setNewPageTitle,
     setReadModeOpen,
     setSearchOpen,
@@ -709,8 +760,11 @@ const renderDocsShell = (props: any) => {
     sortBy,
     sortDir,
     t,
+    templateSpaceId,
+    docTemplateSpaceId,
     timeZone,
     total,
+    versionsPage,
   } = props;
   return (
     <div className="h-full w-full flex flex-col min-w-0 bg-app-bg overflow-hidden relative">
@@ -724,6 +778,19 @@ const renderDocsShell = (props: any) => {
           onSelectPage={selectDocPage}
           onClose={() => setReadModeOpen(false)}
           resolveFileUrl={resolveFileUrl}
+        />
+      ) : null}
+
+      {versionsPage && selectedDoc ? (
+        <DocsPageVersionsModal
+          key={versionsPage.id}
+          page={versionsPage}
+          canRestore={Boolean(selectedDoc.can_edit && versionsPage.can_edit)}
+          resolveFileUrl={resolveFileUrl}
+          onRestore={(version: DocsPageVersion) =>
+            handleRestoreVersion(versionsPage, version)
+          }
+          onClose={handleCloseVersions}
         />
       ) : null}
 
@@ -768,6 +835,11 @@ const renderDocsShell = (props: any) => {
                 options={locationOptions}
               />
             </div>
+            <DocsTemplatePicker
+              spaceId={templateSpaceId}
+              value={newDocTemplateId}
+              onChange={setNewDocTemplateId}
+            />
             <div className="flex justify-end gap-2 pt-2">
               <button
                 type="button"
@@ -820,6 +892,11 @@ const renderDocsShell = (props: any) => {
                 }}
               />
             </div>
+            <DocsTemplatePicker
+              spaceId={docTemplateSpaceId}
+              value={newPageTemplateId}
+              onChange={setNewPageTemplateId}
+            />
             <div className="flex justify-end gap-2 pt-2">
               <button
                 type="button"
@@ -1376,6 +1453,12 @@ export const DocsView = ({ docId }: { docId: string | null }) => {
   const { confirm, confirmDialog } = useConfirm();
   const { prompt, promptDialog } = usePrompt();
   const [loadError, setLoadError] = useState<string | null>(null);
+  // miy 보강: version history, templates for new docs and pages, and the
+  // comment a notification points at (`?comment=`).
+  const [versionsPageId, setVersionsPageId] = useState<string | null>(null);
+  const [newDocTemplateId, setNewDocTemplateId] = useState<string | null>(null);
+  const [newPageTemplateId, setNewPageTemplateId] = useState<string | null>(null);
+  const highlightCommentId = searchParams.get('comment');
 
   const docsViewState = useDocsViewState();
   const {
@@ -1542,19 +1625,24 @@ export const DocsView = ({ docId }: { docId: string | null }) => {
 
   const selectDocPage = useCallback(
     (pageId: string | null) => {
-      setSearchParams(withDocPageSearchParam(searchParams, pageId), {
+      const next = withDocPageSearchParam(searchParams, pageId);
+      // The comment a notification pointed at belongs to the page left.
+      if (pageId !== requestedPageId) next.delete('comment');
+      setSearchParams(next, {
         replace: true,
       });
     },
-    [searchParams, setSearchParams],
+    [requestedPageId, searchParams, setSearchParams],
   );
 
   // ── page content saving (miy: single editor, revisions) ─────────────
   const {
+    baseRevision: contentBaseRevision,
     cancelQueuedSave,
     dirty: contentDirty,
     flush: flushContentSave,
     hasDraft,
+    isSettled: isContentSettled,
     queueBlockSave,
     resolveConflictKeepMine,
     resolveConflictReload,
@@ -1693,6 +1781,7 @@ export const DocsView = ({ docId }: { docId: string | null }) => {
     (templateTitle?: string) => {
       const defaultLocation = resolveDefaultDocsCreateLocation(activeCategory);
       setNewDocTitle(templateTitle ?? '');
+      setNewDocTemplateId(null);
       setNewDocLocation(defaultLocation);
       setNewDocContentFormat('block');
       setShowCreateModal(true);
@@ -1782,6 +1871,7 @@ export const DocsView = ({ docId }: { docId: string | null }) => {
           title: newDocTitle.trim(),
           content_format: 'block',
           primary_target: resolveTargetFromLocationValue(newDocLocation),
+          template_id: newDocTemplateId,
         },
         spaceId,
       );
@@ -1866,6 +1956,7 @@ export const DocsView = ({ docId }: { docId: string | null }) => {
     if (!ok) return;
     try {
       await deleteDocsItem(api, item.id);
+      clearCommentDrafts(item.id);
       refreshDocsSidebar();
       if (activeDocRef.current === item.id) {
         cancelQueuedSave();
@@ -1935,6 +2026,7 @@ export const DocsView = ({ docId }: { docId: string | null }) => {
   const handleAddPage = (parentId?: string | null) => {
     if (!selectedDoc || !selectedDoc.can_edit) return;
     setNewPageTitle(t('apps:docs.untitled'));
+    setNewPageTemplateId(null);
     newPageParentIdRef.current = parentId ?? null;
     setNewPageContentFormat('block');
     setShowCreatePageModal(true);
@@ -1947,12 +2039,23 @@ export const DocsView = ({ docId }: { docId: string | null }) => {
     setCreatingPage(true);
     try {
       const parentId = newPageParentIdRef.current;
-      const page = await createDocPage(api, docIdAtStart, {
-        title: newPageTitle.trim(),
-        parent_id: parentId,
-        content_format: 'block',
-        content_blocks: [],
-      });
+      const page = await createDocPage(
+        api,
+        docIdAtStart,
+        newPageTemplateId
+          ? {
+              title: newPageTitle.trim(),
+              parent_id: parentId,
+              content_format: 'block',
+              template_id: newPageTemplateId,
+            }
+          : {
+              title: newPageTitle.trim(),
+              parent_id: parentId,
+              content_format: 'block',
+              content_blocks: [],
+            },
+      );
       setShowCreatePageModal(false);
       setNewPageTitle('');
       if (activeDocRef.current !== docIdAtStart) return;
@@ -1996,6 +2099,9 @@ export const DocsView = ({ docId }: { docId: string | null }) => {
     if (!ok) return;
     try {
       await deleteDocPage(api, page.id);
+      for (const id of removeDocsPageSubtree(pages, page.id).removedIds) {
+        clearCommentDrafts(`${page.doc_id}:${id}`);
+      }
       if (activeDocRef.current !== page.doc_id) return;
       let removed = new Set<string>();
       setPages((current) => {
@@ -2105,6 +2211,94 @@ export const DocsView = ({ docId }: { docId: string | null }) => {
         isDocsRevisionConflict(error)
           ? t('apps:docsApp.conflict.message')
           : t('apps:docs.blockMarkdown.importFailed'),
+      );
+    }
+  };
+
+  // ── version history (miy 보강) ────────────────────────────────────────
+  const versionsPage = versionsPageId
+    ? (pages.find((page) => page.id === versionsPageId) ?? null)
+    : null;
+
+  const handleOpenVersions = (page: DocsPageItem) => {
+    // Show the history with the latest saved revision in it.
+    void flushContentSave();
+    setVersionsPageId(page.id);
+  };
+
+  const handleCloseVersions = () => setVersionsPageId(null);
+
+  /**
+   * Restore a version as a new revision. The page's draft is saved first;
+   * while it cannot be (a failed save or an open conflict) nothing is
+   * restored, so the draft is never lost.
+   */
+  const handleRestoreVersion = async (
+    page: DocsPageItem,
+    version: DocsPageVersion,
+  ): Promise<boolean> => {
+    const docIdAtStart = activeDocRef.current;
+    await flushContentSave();
+    if (!isContentSettled(page.id)) {
+      feedback.error(t('apps:docsApp.versions.saveFirst'));
+      return false;
+    }
+    try {
+      const updated = await restoreDocPageVersion(
+        api,
+        page.id,
+        version.id,
+        contentBaseRevision(page.id) ?? page.revision,
+      );
+      setBaseRevision(updated.id, updated.revision);
+      if (activeDocRef.current === docIdAtStart) {
+        setPages((current) => applyUpdatedDocsPage(current, updated));
+        bumpContentEditorVersion(updated.id);
+      }
+      feedback.success(
+        t('apps:docsApp.versions.restored', { revision: version.revision }),
+      );
+      return true;
+    } catch (error) {
+      feedback.error(
+        isDocsRevisionConflict(error)
+          ? t('apps:docsApp.versions.conflict')
+          : error instanceof Error && error.message
+            ? error.message
+            : t('docsApp.actionFailed'),
+      );
+      return false;
+    }
+  };
+
+  // ── templates (miy 보강) ──────────────────────────────────────────────
+  const handleSaveAsTemplate = async (page: DocsPageItem) => {
+    await flushContentSave();
+    const title = await prompt({
+      title: t('apps:docsApp.templates.saveTitle'),
+      description: t('apps:docsApp.templates.saveDescription'),
+      defaultValue: page.title,
+      submitLabel: t('common:actions.save'),
+      cancelLabel: t('common:actions.cancel'),
+    });
+    if (!title?.trim()) return;
+    if (!isContentSettled(page.id)) {
+      feedback.error(t('apps:docsApp.versions.saveFirst'));
+      return;
+    }
+    try {
+      const template = await createDocsTemplate(api, {
+        page_id: page.id,
+        title: title.trim(),
+      });
+      feedback.success(
+        t('apps:docsApp.templates.saved', { title: template.title }),
+      );
+    } catch (error) {
+      feedback.error(
+        error instanceof Error && error.message
+          ? error.message
+          : t('docsApp.actionFailed'),
       );
     }
   };
@@ -2464,12 +2658,15 @@ export const DocsView = ({ docId }: { docId: string | null }) => {
     handleEditorChange,
     handleKeepMine,
     handleOpenInNewTab,
+    handleOpenVersions,
     handlePageTitleSave,
     handlePrintDoc,
     handleReloadConflict,
     handleRenameDoc,
     handleRetrySave: () => void retryContentSave(),
+    handleSaveAsTemplate,
     handleToggleFavorite,
+    highlightCommentId,
     loadError,
     locale,
     openShareModal,
@@ -2501,8 +2698,10 @@ export const DocsView = ({ docId }: { docId: string | null }) => {
     editorView,
     handleChangeLocation,
     handleChangeUserAccess,
+    handleCloseVersions,
     handleCreateDoc,
     handleCreatePage,
+    handleRestoreVersion,
     handleDeleteDoc,
     handleInviteUser,
     handleRemoveUserShare,
@@ -2520,7 +2719,9 @@ export const DocsView = ({ docId }: { docId: string | null }) => {
     locationOptions,
     menuOpenId,
     newDocLocation,
+    newDocTemplateId,
     newDocTitle,
+    newPageTemplateId,
     newPageTitle,
     openCreateModal,
     openDoc,
@@ -2539,7 +2740,9 @@ export const DocsView = ({ docId }: { docId: string | null }) => {
     setInviteQuery,
     setMenuOpenId,
     setNewDocLocation,
+    setNewDocTemplateId,
     setNewDocTitle,
+    setNewPageTemplateId,
     setNewPageTitle,
     setReadModeOpen,
     setSearchOpen,
@@ -2558,8 +2761,11 @@ export const DocsView = ({ docId }: { docId: string | null }) => {
     sortBy,
     sortDir,
     t,
+    templateSpaceId: spaceId,
+    docTemplateSpaceId: docSpaceId,
     timeZone,
     total,
+    versionsPage,
   });
 };
 

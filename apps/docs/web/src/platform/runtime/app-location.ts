@@ -43,7 +43,8 @@ export function useAppNavigate(): (
 export type AppRoute =
   | { kind: 'list' }
   | { kind: 'doc'; docId: string }
-  | { kind: 'settings' };
+  | { kind: 'settings' }
+  | { kind: 'trash' };
 
 function decodeSegment(value: string): string | null {
   try {
@@ -55,13 +56,15 @@ function decodeSegment(value: string): string | null {
 }
 
 export const SETTINGS_PATH = '/settings';
+export const TRASH_PATH = '/trash';
 
 /**
  * The app's screens. AI-DO's docs routes were `/w/:slug/docs` (the list) and
  * `/w/:slug/docs/:docId` (a doc, `?page=` selects the page); here they are
  * `/` and `/:docId` under the app base path, with the space in `?space=`.
  * `/docs` and `/docs/:docId` (AI-DO's route base) open the same screens.
- * `/settings` holds docs managers and spaces (miy). HTML pages
+ * `/settings` holds docs managers and spaces and `/trash` the space's trash
+ * (miy, 보강). HTML pages
  * (`/:docId/html/:pageId`) and share links (`/docs/shared/:token`) are not
  * ported. Unknown paths show the list.
  */
@@ -69,6 +72,7 @@ export function resolveAppRoute(pathname: string): AppRoute {
   const path = (pathname.replace(/\/+$/, '') || '/').replace(/^\/docs(?=\/|$)/, '') || '/';
   if (path === '/') return { kind: 'list' };
   if (path === SETTINGS_PATH) return { kind: 'settings' };
+  if (path === TRASH_PATH) return { kind: 'trash' };
   const doc = /^\/([^/]+)$/.exec(path);
   if (doc) {
     const docId = decodeSegment(doc[1]);

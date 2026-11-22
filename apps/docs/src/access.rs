@@ -353,6 +353,18 @@ pub async fn load_targets_for(
     Ok(map)
 }
 
+pub async fn load_page_in(
+    tx: &mut Transaction<'_, Postgres>,
+    page_id: &str,
+) -> ApiResult<NativePage> {
+    let sql = format!("SELECT {PAGE_COLUMNS} FROM docs_native_doc_pages WHERE id = $1");
+    sqlx::query_as::<_, NativePage>(&sql)
+        .bind(page_id)
+        .fetch_optional(&mut **tx)
+        .await?
+        .ok_or_else(page_not_found)
+}
+
 pub async fn load_page(pool: &PgPool, page_id: &str) -> ApiResult<Option<NativePage>> {
     let sql = format!("SELECT {PAGE_COLUMNS} FROM docs_native_doc_pages WHERE id = $1");
     Ok(sqlx::query_as::<_, NativePage>(&sql)

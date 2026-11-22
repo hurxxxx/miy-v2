@@ -363,6 +363,8 @@ export function createNativeDoc(
       id: string;
       sort_order?: number;
     } | null;
+    /** miy (보강): start the first page from a template of the space. */
+    template_id?: string | null;
   },
   spaceId?: string | null,
 ): Promise<DocsHubItem> {
@@ -439,6 +441,8 @@ export function createDocPage(
     content_format?: DocsContentFormat;
     content_blocks?: Record<string, unknown>[] | null;
     sort_order?: number | null;
+    /** miy (보강): start the page from a template of the doc's space. */
+    template_id?: string | null;
   },
 ): Promise<DocsPageItem> {
   return request<DocsPageItem>(
@@ -740,4 +744,213 @@ export function deleteDocUserShare(
     api,
     { method: 'DELETE' },
   );
+}
+
+// ── 보강: trash, version history, comments, templates (miy) ────────────
+
+export interface DocsTrashEntry {
+  kind: 'doc' | 'page';
+  id: string;
+  doc_id: string;
+  title: string;
+  doc_title: string;
+  subpage_count?: number;
+  parent_in_trash?: boolean;
+  trashed_at: string;
+  trashed_by_id: string | null;
+  trashed_by_name: string | null;
+  can_restore: boolean;
+  can_delete: boolean;
+}
+
+export function listDocsTrash(
+  api: AppApi | null | undefined,
+  spaceId?: string | null,
+): Promise<{ items: DocsTrashEntry[] }> {
+  return request(withSpace('/v1/docs/trash', spaceId), api);
+}
+
+function trashPath(entry: Pick<DocsTrashEntry, 'kind' | 'id'>): string {
+  return `/v1/docs/trash/${entry.kind === 'doc' ? 'items' : 'pages'}/${segment(entry.id)}`;
+}
+
+export function restoreDocsTrashEntry(
+  api: AppApi | null | undefined,
+  entry: Pick<DocsTrashEntry, 'kind' | 'id'>,
+): Promise<unknown> {
+  return request(`${trashPath(entry)}/restore`, api, { method: 'POST' });
+}
+
+export function purgeDocsTrashEntry(
+  api: AppApi | null | undefined,
+  entry: Pick<DocsTrashEntry, 'kind' | 'id'>,
+): Promise<void> {
+  return request<void>(trashPath(entry), api, { method: 'DELETE' });
+}
+
+export interface DocsPageVersion {
+  id: string;
+  page_id: string;
+  revision: number;
+  title: string;
+  created_by_id: string;
+  created_by_name: string;
+  created_at: string;
+  restored_from_revision: number | null;
+  is_current: boolean;
+  content_blocks?: Record<string, unknown>[];
+}
+
+export function listDocPageVersions(
+  api: AppApi | null | undefined,
+  pageId: string,
+): Promise<{ items: DocsPageVersion[]; current_revision: number; can_restore: boolean }> {
+  return request(`/v1/docs/pages/${segment(pageId)}/versions`, api);
+}
+
+export function getDocPageVersion(
+  api: AppApi | null | undefined,
+  pageId: string,
+  versionId: string,
+): Promise<DocsPageVersion> {
+  return request(
+    `/v1/docs/pages/${segment(pageId)}/versions/${segment(versionId)}`,
+    api,
+  );
+}
+
+export function restoreDocPageVersion(
+  api: AppApi | null | undefined,
+  pageId: string,
+  versionId: string,
+  expectedRevision: number,
+): Promise<DocsPageItem> {
+  return request(
+    `/v1/docs/pages/${segment(pageId)}/versions/${segment(versionId)}/restore`,
+    api,
+    {
+      method: 'POST',
+      body: JSON.stringify({ expected_revision: expectedRevision }),
+    },
+  );
+}
+
+export interface DocsCommentMention {
+  user_id: string;
+  name: string;
+}
+
+export interface DocsComment {
+  id: string;
+  page_id: string;
+  parent_id: string | null;
+  author_id: string;
+  author_name: string;
+  body: string;
+  mentions: DocsCommentMention[];
+  is_deleted: boolean;
+  resolved_at: string | null;
+  resolved_by_id: string | null;
+  resolved_by_name: string | null;
+  created_at: string;
+  updated_at: string;
+  can_edit: boolean;
+  can_delete: boolean;
+  can_resolve: boolean;
+  replies?: DocsComment[];
+}
+
+export function listDocPageComments(
+  api: AppApi | null | undefined,
+  pageId: string,
+  init: RequestInit = {},
+): Promise<{ items: DocsComment[]; can_comment: boolean }> {
+  return request(`/v1/docs/pages/${segment(pageId)}/comments`, api, init);
+}
+
+export function createDocPageComment(
+  api: AppApi | null | undefined,
+  pageId: string,
+  payload: {
+    body: string;
+    parent_id?: string | null;
+    mention_ids?: string[];
+    request_id: string;
+  },
+): Promise<{ id: string; created_at: string }> {
+  return request(`/v1/docs/pages/${segment(pageId)}/comments`, api, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export function updateDocPageComment(
+  api: AppApi | null | undefined,
+  commentId: string,
+  payload: { body: string; mention_ids?: string[] },
+): Promise<void> {
+  return request<void>(`/v1/docs/comments/${segment(commentId)}`, api, {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+  });
+}
+
+export function deleteDocPageComment(
+  api: AppApi | null | undefined,
+  commentId: string,
+): Promise<void> {
+  return request<void>(`/v1/docs/comments/${segment(commentId)}`, api, {
+    method: 'DELETE',
+  });
+}
+
+export function setDocPageCommentResolved(
+  api: AppApi | null | undefined,
+  commentId: string,
+  resolved: boolean,
+): Promise<void> {
+  return request<void>(
+    `/v1/docs/comments/${segment(commentId)}/${resolved ? 'resolve' : 'reopen'}`,
+    api,
+    { method: 'POST' },
+  );
+}
+
+export interface DocsTemplate {
+  id: string;
+  space_id: string;
+  title: string;
+  description: string;
+  source_page_id: string | null;
+  created_by_id: string;
+  created_by_name: string;
+  created_at: string;
+  updated_at: string;
+  can_delete: boolean;
+}
+
+export function listDocsTemplates(
+  api: AppApi | null | undefined,
+  spaceId?: string | null,
+): Promise<{ items: DocsTemplate[]; can_create: boolean }> {
+  return request(withSpace('/v1/docs/templates', spaceId), api);
+}
+
+export function createDocsTemplate(
+  api: AppApi | null | undefined,
+  payload: { page_id: string; title?: string; description?: string },
+): Promise<DocsTemplate> {
+  return request('/v1/docs/templates', api, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export function deleteDocsTemplate(
+  api: AppApi | null | undefined,
+  templateId: string,
+): Promise<void> {
+  return request<void>(`/v1/docs/templates/${segment(templateId)}`, api, {
+    method: 'DELETE',
+  });
 }

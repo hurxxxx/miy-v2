@@ -13,6 +13,7 @@ use sqlx::PgPool;
 
 mod access;
 mod attachments;
+mod comments;
 mod content_text;
 mod error;
 mod files;
@@ -24,7 +25,10 @@ mod pages;
 mod people;
 mod search;
 mod spaces;
+mod templates;
 mod time;
+mod trash;
+mod versions;
 
 #[cfg(test)]
 mod api_tests;
@@ -91,6 +95,51 @@ pub fn router(pool: PgPool) -> Router {
             put(attachments::upload_content)
                 .get(attachments::download)
                 .layer(DefaultBodyLimit::max(FILE_BODY_LIMIT)),
+        )
+        // 보강: version history, comments, trash, templates
+        .route("/v1/docs/pages/{page_id}/versions", get(versions::list))
+        .route(
+            "/v1/docs/pages/{page_id}/versions/{version_id}",
+            get(versions::get),
+        )
+        .route(
+            "/v1/docs/pages/{page_id}/versions/{version_id}/restore",
+            post(versions::restore),
+        )
+        .route(
+            "/v1/docs/pages/{page_id}/comments",
+            get(comments::list).post(comments::create),
+        )
+        .route(
+            "/v1/docs/comments/{comment_id}",
+            patch(comments::update).delete(comments::delete),
+        )
+        .route(
+            "/v1/docs/comments/{comment_id}/resolve",
+            post(comments::resolve),
+        )
+        .route(
+            "/v1/docs/comments/{comment_id}/reopen",
+            post(comments::reopen),
+        )
+        .route("/v1/docs/trash", get(trash::list))
+        .route("/v1/docs/trash/items/{item_id}", delete(trash::purge_doc))
+        .route(
+            "/v1/docs/trash/items/{item_id}/restore",
+            post(trash::restore_doc),
+        )
+        .route("/v1/docs/trash/pages/{page_id}", delete(trash::purge_page))
+        .route(
+            "/v1/docs/trash/pages/{page_id}/restore",
+            post(trash::restore_page),
+        )
+        .route(
+            "/v1/docs/templates",
+            get(templates::list).post(templates::create),
+        )
+        .route(
+            "/v1/docs/templates/{template_id}",
+            get(templates::get).delete(templates::delete),
         )
         .route("/v1/docs/favorites", get(items::list_favorites))
         .route("/v1/docs/recent-pages", get(items::list_recent_pages))

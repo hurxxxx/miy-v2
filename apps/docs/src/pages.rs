@@ -23,12 +23,13 @@ use std::collections::{HashMap, HashSet};
 use crate::{
     AppState,
     access::{self, NativePage, PAGE_COLUMNS, PAGE_SOURCE_NATIVE_DOC, Require, Viewer},
+    comments,
     content_text::extract_blocks_text,
     error::{ApiError, ApiJson, ApiResult, check_length},
-    files,
     items::{self, doc_edit_required, present, touch_doc},
-    media, people,
+    media, people, templates,
     time::{naive_iso, now_utc},
+    versions,
 };
 
 /// AI-DO hub_projection.py `serialize_native_page` plus `revision` (miy).
@@ -200,6 +201,9 @@ pub struct CreatePageRequest {
     content_text: Option<Option<String>>,
     #[serde(default)]
     sort_order: Option<i32>,
+    /// miy (보강): start the page from a template of the doc's space.
+    #[serde(default)]
+    template_id: Option<String>,
 }
 
 /// AI-DO `create_native_page`.
@@ -234,7 +238,22 @@ pub async fn create_page(
         .iter()
         .filter(|page| page.parent_id == parent_id)
         .count() as i32;
-    let blocks: Option<Value> = payload.content_blocks.clone().flatten();
+    let mut blocks: Option<Value> = payload.content_blocks.clone().flatten();
+    if let Some(template_id) = payload.template_id.as_deref().filter(|id| !id.is_empty()) {
+        if payload.content_blocks.is_some() {
+            return Err(format_mismatch());
+        }
+        blocks = Some(
+            templates::content_for(
+                &mut tx,
+                &state,
+                &identity,
+                template_id,
+                &context.doc.workspace_id,
+            )
+            .await?,
+        );
+    }
     let search_text = extract_blocks_text(blocks.as_ref());
     let page_id = uuid::Uuid::new_v4().to_string();
     let now = now_utc();
@@ -262,16 +281,49 @@ pub async fn create_page(
         }
         None => Vec::new(),
     };
+    versions::record(&mut tx, &page, &identity.user_id, None).await?;
     touch_doc(&mut tx, &context.doc).await?;
     tx.commit().await?;
     media::attach_linked(&state.pool, &identity, &linked).await;
-    let mut items = page_items(
-        &identity,
-        std::slice::from_ref(&page),
-        context.access.can_edit,
-    )
-    .await;
-    Ok((StatusCode::CREATED, Json(items.remove(0))))
+    Ok((
+        StatusCode::CREATED,
+        Json(page_json(&identity, &page, context.access.can_edit).await),
+    ))
+}
+
+/// One page as the API answers it (with the creator's directory name).
+pub async fn page_json(identity: &Identity, page: &NativePage, can_edit: bool) -> Value {
+    let mut items = page_items(identity, std::slice::from_ref(page), can_edit).await;
+    items.remove(0)
+}
+
+/// Write new body content as the next revision: search text, embedded media,
+/// a version row and the doc's `updated_at`. The caller holds the doc and
+/// page locks and has checked the revision.
+pub async fn write_content(
+    tx: &mut Transaction<'_, Postgres>,
+    doc: &access::NativeDoc,
+    page: &NativePage,
+    blocks: &Option<Value>,
+    user_id: &str,
+    restored_from: Option<i64>,
+) -> ApiResult<(NativePage, Vec<media::Linked>)> {
+    let sql = format!(
+        "UPDATE docs_native_doc_pages SET updated_at = $2, content_blocks = $3, content_text = NULL, \
+         search_text = $4, revision = revision + 1 WHERE id = $1 RETURNING {PAGE_COLUMNS}"
+    );
+    let updated = sqlx::query_as::<_, NativePage>(&sql)
+        .bind(&page.id)
+        .bind(now_utc().max(page.updated_at))
+        .bind(blocks)
+        .bind(extract_blocks_text(blocks.as_ref()))
+        .fetch_one(&mut **tx)
+        .await?;
+    let body = blocks.as_ref().map(Value::to_string).unwrap_or_default();
+    let linked = media::sync_embedded_media(tx, &body, &updated.id, user_id).await?;
+    versions::record(tx, &updated, user_id, restored_from).await?;
+    touch_doc(tx, doc).await?;
+    Ok((updated, linked))
 }
 
 #[derive(Deserialize)]
@@ -299,7 +351,7 @@ pub fn revision_conflict() -> ApiError {
 }
 
 /// Lock the page's doc, then the page, and decide edit access again.
-async fn lock_page_for_edit(
+pub async fn lock_page_for_edit(
     tx: &mut Transaction<'_, Postgres>,
     state: &AppState,
     identity: &Identity,
@@ -388,50 +440,42 @@ pub async fn update_page(
         }
     }
     let mut linked = Vec::new();
-    let page = if changed {
-        let now = now_utc();
-        let sql = match &content {
-            Some(_) => format!(
-                "UPDATE docs_native_doc_pages SET parent_id = $2, title = $3, sort_order = $4, updated_at = $5, \
-                 content_blocks = $6, content_text = NULL, search_text = $7, revision = revision + 1 \
-                 WHERE id = $1 RETURNING {PAGE_COLUMNS}"
-            ),
-            None => format!(
+    let mut page = page;
+    if changed {
+        if parent_id != page.parent_id || title != page.title || sort_order != page.sort_order {
+            let sql = format!(
                 "UPDATE docs_native_doc_pages SET parent_id = $2, title = $3, sort_order = $4, updated_at = $5 \
                  WHERE id = $1 RETURNING {PAGE_COLUMNS}"
-            ),
-        };
-        let mut query = sqlx::query_as::<_, NativePage>(&sql)
-            .bind(&page.id)
-            .bind(&parent_id)
-            .bind(&title)
-            .bind(sort_order)
-            .bind(now);
-        if let Some(blocks) = &content {
-            query = query
-                .bind(blocks.clone())
-                .bind(extract_blocks_text(blocks.as_ref()));
+            );
+            page = sqlx::query_as::<_, NativePage>(&sql)
+                .bind(&page.id)
+                .bind(&parent_id)
+                .bind(&title)
+                .bind(sort_order)
+                .bind(now_utc())
+                .fetch_one(&mut *tx)
+                .await?;
+            touch_doc(&mut tx, &context.doc).await?;
         }
-        let updated = query.fetch_one(&mut *tx).await?;
         if let Some(blocks) = &content {
-            let body = blocks.as_ref().map(Value::to_string).unwrap_or_default();
-            linked =
-                media::sync_embedded_media(&mut tx, &body, &updated.id, &identity.user_id).await?;
+            let (updated, newly_linked) = write_content(
+                &mut tx,
+                &context.doc,
+                &page,
+                blocks,
+                &identity.user_id,
+                None,
+            )
+            .await?;
+            page = updated;
+            linked = newly_linked;
         }
-        touch_doc(&mut tx, &context.doc).await?;
-        updated
-    } else {
-        page
-    };
+    }
     tx.commit().await?;
     media::attach_linked(&state.pool, &identity, &linked).await;
-    let mut items = page_items(
-        &identity,
-        std::slice::from_ref(&page),
-        context.access.can_edit,
-    )
-    .await;
-    Ok(Json(items.remove(0)))
+    Ok(Json(
+        page_json(&identity, &page, context.access.can_edit).await,
+    ))
 }
 
 /// AI-DO `_collect_native_page_subtree`.
@@ -460,8 +504,10 @@ pub fn subtree(pages: &[NativePage], root: &str) -> Vec<String> {
     result
 }
 
-/// AI-DO `delete_native_page`: trash the page and its live subtree, release
-/// their body images and attachments.
+/// AI-DO `delete_native_page`: move the page and its live subtree to the
+/// trash. miy keeps their attachments and images until the trash is emptied
+/// (AI-DO released them at once; the trash restore needs them, §8 of
+/// docs/PORTING.md). Comment notifications of those pages are retracted.
 pub async fn delete_page(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
@@ -473,16 +519,18 @@ pub async fn delete_page(
     let ids = subtree(&pages, &page.id);
     let now = now_utc();
     sqlx::query(
-        "UPDATE docs_native_doc_pages SET trashed_at = $2, updated_at = $2 WHERE id = ANY($1)",
+        "UPDATE docs_native_doc_pages SET trashed_at = $2, trashed_by_id = $3, updated_at = $2 \
+         WHERE id = ANY($1)",
     )
     .bind(&ids)
     .bind(now)
+    .bind(&identity.user_id)
     .execute(&mut *tx)
     .await?;
-    let released = files::release_for_pages(&mut tx, &ids).await?;
+    let retract = comments::take_notifications_for_pages(&mut tx, &ids).await?;
     touch_doc(&mut tx, &context.doc).await?;
     tx.commit().await?;
-    files::detach_released(&state.pool, &identity, &released).await;
+    comments::retract_taken(&identity, &retract).await;
     Ok(StatusCode::NO_CONTENT)
 }
 

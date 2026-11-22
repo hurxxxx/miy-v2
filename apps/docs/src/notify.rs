@@ -142,9 +142,11 @@ pub fn platform_only(identity: &Identity) -> ApiResult<()> {
 /// The readability rule of `access::resolve_access` for a platform call, in
 /// one SQL predicate over `d` (a live doc): the owner, a direct user share,
 /// or the doc's own space sidebar target with a space role. The global space
-/// admits everyone; other spaces count only direct user grants, because a
-/// platform call carries no token for the directory (group members are left
-/// out: fail closed). `$1` user, `$2` installation, `$3` environment.
+/// admits everyone; other spaces count the person's user grants and the
+/// grants of the groups in `$4`. A platform call carries no token for the
+/// directory; the core signs the person's current groups into it instead
+/// (`signed_groups`). `$1` user, `$2` installation, `$3` environment, `$4`
+/// group IDs (text[]; empty when unknown, which counts user grants only).
 pub const READABLE_BY_CALLER: &str = "d.trashed_at IS NULL AND (\
     d.owner_id = $1 \
     OR EXISTS (SELECT 1 FROM docs_native_doc_user_shares s WHERE s.doc_id = d.id AND s.user_id = $1) \
@@ -153,8 +155,26 @@ pub const READABLE_BY_CALLER: &str = "d.trashed_at IS NULL AND (\
         AND (EXISTS (SELECT 1 FROM docs_spaces sp WHERE sp.id = d.workspace_id AND sp.kind = 'app_global') \
           OR EXISTS (SELECT 1 FROM app.miy_acl_grants g WHERE g.installation_id = $2::uuid \
             AND g.environment = $3 AND g.kind = 'space' AND g.resource_id = d.workspace_id \
-            AND g.subject_kind = 'user' AND g.subject_id = $1 \
+            AND ((g.subject_kind = 'user' AND g.subject_id = $1) \
+              OR (g.subject_kind = 'group' AND g.subject_id = ANY($4::text[]))) \
             AND g.role IN ('viewer', 'member', 'admin')))))";
+
+/// The caller's current group IDs signed into a platform call (the app is
+/// approved for `platform:directory:read`); empty otherwise, so only user
+/// grants count. Frame requests ask the directory through the SDK ACL.
+pub fn signed_groups(identity: &Identity) -> Vec<String> {
+    if !identity.context.platform {
+        return Vec::new();
+    }
+    identity
+        .context
+        .groups
+        .clone()
+        .unwrap_or_default()
+        .into_iter()
+        .map(|group| group.to_ascii_lowercase())
+        .collect()
+}
 
 /// Docs among `ids` the caller may read now, decided in one statement.
 pub async fn readable_docs(
@@ -166,12 +186,13 @@ pub async fn readable_docs(
         return Ok(Vec::new());
     }
     let sql = format!(
-        "SELECT {DOC_COLUMNS} FROM docs_native_docs d WHERE d.id = ANY($4) AND {READABLE_BY_CALLER}"
+        "SELECT {DOC_COLUMNS} FROM docs_native_docs d WHERE d.id = ANY($5) AND {READABLE_BY_CALLER}"
     );
     Ok(sqlx::query_as::<_, NativeDoc>(&sql)
         .bind(&identity.user_id)
         .bind(&identity.context.installation_id)
         .bind(identity.context.environment.as_deref())
+        .bind(signed_groups(identity))
         .bind(ids)
         .fetch_all(pool)
         .await?)
@@ -196,33 +217,101 @@ pub struct CheckResponse {
     allowed: Vec<String>,
 }
 
-/// `POST /platform/notification-check`: which `doc:<id>` groups still point
-/// at a doc the person may read now. Read-only, app DB only.
+/// Can `user_id` read the live page `page_id` of doc `doc_id` now (the
+/// platform-call rule, decided in one statement)? Used for comment
+/// notification recipients and their retraction. Another person's groups are
+/// not known to the app (the directory answers only the caller's own), so
+/// only their user grants count here: someone who reads the page only through
+/// a group is left out of comment notifications (fail closed).
+pub async fn user_can_read_page(
+    pool: &PgPool,
+    identity: &Identity,
+    user_id: &str,
+    doc_id: &str,
+    page_id: &str,
+) -> ApiResult<bool> {
+    let sql = format!(
+        "SELECT EXISTS(SELECT 1 FROM docs_native_docs d JOIN docs_native_doc_pages pg ON pg.doc_id = d.id \
+         WHERE d.id = $5 AND pg.id = $6 AND pg.trashed_at IS NULL AND {READABLE_BY_CALLER})"
+    );
+    let groups = if user_id == identity.user_id {
+        signed_groups(identity)
+    } else {
+        Vec::new()
+    };
+    Ok(sqlx::query_scalar(&sql)
+        .bind(user_id)
+        .bind(&identity.context.installation_id)
+        .bind(identity.context.environment.as_deref())
+        .bind(groups)
+        .bind(doc_id)
+        .bind(page_id)
+        .fetch_one(pool)
+        .await?)
+}
+
+/// `POST /platform/notification-check`: which groups still point at
+/// something the person may read now. `doc:<id>` (share) needs the doc;
+/// `comment:<id>` and `mention:<id>` need the comment (not deleted) on a live
+/// page of a doc the person may read. The resource ID must match the key.
+/// Read-only, app DB only.
 pub async fn notification_check(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
     ApiJson(payload): ApiJson<CheckRequest>,
 ) -> ApiResult<Json<CheckResponse>> {
     platform_only(&identity)?;
-    let wanted: Vec<(String, String)> = payload
-        .items
-        .iter()
-        .take(500)
-        .filter_map(|item| {
-            let id = item.group_key.strip_prefix("doc:")?;
-            (item.resource_id.as_deref() == Some(id))
-                .then(|| (item.group_key.clone(), id.to_string()))
-        })
-        .collect();
-    let ids: Vec<String> = wanted.iter().map(|(_, id)| id.clone()).collect();
-    let readable: BTreeSet<String> = readable_docs(&state.pool, &identity, &ids)
+    let mut docs: Vec<(String, String)> = Vec::new();
+    let mut comments: Vec<(String, String)> = Vec::new();
+    for item in payload.items.iter().take(500) {
+        let Some((kind, id)) = item.group_key.split_once(':') else {
+            continue;
+        };
+        if item.resource_id.as_deref() != Some(id) {
+            continue;
+        }
+        match kind {
+            "doc" => docs.push((item.group_key.clone(), id.to_string())),
+            "comment" | "mention" => comments.push((item.group_key.clone(), id.to_string())),
+            _ => {}
+        }
+    }
+    let doc_ids: Vec<String> = docs.iter().map(|(_, id)| id.clone()).collect();
+    let readable: BTreeSet<String> = readable_docs(&state.pool, &identity, &doc_ids)
         .await?
         .into_iter()
         .map(|doc| doc.id)
         .collect();
+    let comment_ids: Vec<String> = comments.iter().map(|(_, id)| id.clone()).collect();
+    let readable_comments: BTreeSet<String> = if comment_ids.is_empty() {
+        BTreeSet::new()
+    } else {
+        let sql = format!(
+            "SELECT c.id FROM docs_page_comments c \
+             JOIN docs_native_doc_pages pg ON pg.id = c.page_id \
+             JOIN docs_native_docs d ON d.id = pg.doc_id \
+             WHERE c.id = ANY($5) AND c.deleted_at IS NULL AND pg.trashed_at IS NULL \
+               AND {READABLE_BY_CALLER}"
+        );
+        sqlx::query_scalar(&sql)
+            .bind(&identity.user_id)
+            .bind(&identity.context.installation_id)
+            .bind(identity.context.environment.as_deref())
+            .bind(signed_groups(&identity))
+            .bind(&comment_ids)
+            .fetch_all(&state.pool)
+            .await?
+            .into_iter()
+            .collect()
+    };
     let mut allowed: Vec<String> = Vec::new();
-    for (group_key, id) in wanted {
+    for (group_key, id) in docs {
         if readable.contains(&id) && !allowed.contains(&group_key) {
+            allowed.push(group_key);
+        }
+    }
+    for (group_key, id) in comments {
+        if readable_comments.contains(&id) && !allowed.contains(&group_key) {
             allowed.push(group_key);
         }
     }
@@ -265,6 +354,7 @@ pub async fn home_card(
         .bind(&identity.user_id)
         .bind(&identity.context.installation_id)
         .bind(identity.context.environment.as_deref())
+        .bind(signed_groups(&identity))
         .fetch_all(&state.pool)
         .await?;
     Ok(Json(json!({

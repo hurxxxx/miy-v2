@@ -1,5 +1,6 @@
 import type { DocsSpaceLocation } from './api/docs-api';
 import { appendDocPageQuery } from './api/docs-url-state';
+import { TRASH_PATH } from '../../platform/runtime/app-location';
 
 export const DOCS_SIDEBAR_SECTION_IDS = ['favorites', 'recentPages'] as const;
 
@@ -75,4 +76,11 @@ export function docsSidebarRowSpaceLabel(
   currentSpaceKey: string | null | undefined,
 ): string | null {
   return space && space.key !== currentSpaceKey ? space.name : null;
+}
+
+/** The space's trash (miy 보강); the global space needs no parameter. */
+export function docsTrashPath(spaceId: string | null): string {
+  return spaceId && spaceId !== 'global'
+    ? `${TRASH_PATH}?space=${encodeURIComponent(spaceId)}`
+    : TRASH_PATH;
 }

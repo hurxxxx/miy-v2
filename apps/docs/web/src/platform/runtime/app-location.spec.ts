@@ -10,6 +10,7 @@ describe('docs routes', () => {
     expect(resolveAppRoute('/docs/doc-1/')).toEqual({ kind: 'doc', docId: 'doc-1' });
     expect(resolveAppRoute('/a%20b')).toEqual({ kind: 'doc', docId: 'a b' });
     expect(resolveAppRoute('/settings')).toEqual({ kind: 'settings' });
+    expect(resolveAppRoute('/trash')).toEqual({ kind: 'trash' });
   });
 
   it('shows the list for unknown or malformed paths', () => {

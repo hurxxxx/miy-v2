@@ -3,12 +3,19 @@ import { describe, expect, it } from 'vitest';
 import {
   buildDocsDocPath,
   docsSidebarRowSpaceLabel,
+  docsTrashPath,
   getInitialDocsSidebarExpandedSections,
   resolveDocsSidebarRowPath,
   toggleDocsSidebarSection,
 } from './docs-sidebar-model';
 
 describe('docs sidebar model', () => {
+  it('links the trash of the current space', () => {
+    expect(docsTrashPath('global')).toBe('/trash');
+    expect(docsTrashPath(null)).toBe('/trash');
+    expect(docsTrashPath('space 1')).toBe('/trash?space=space%201');
+  });
+
   it('creates and toggles section expansion state', () => {
     const initial = getInitialDocsSidebarExpandedSections();
 

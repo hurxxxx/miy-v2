@@ -25,10 +25,13 @@ use crate::{
         self, DOC_COLUMNS, DocContext, DocTarget, NativeAccess, NativeDoc, PAGE_COLUMNS,
         SOURCE_NATIVE_DOC, TARGET_APP, TARGET_SIDEBAR, Viewer,
     },
+    comments,
     error::{ApiError, ApiJson, ApiResult, check_length},
-    files, notify, people,
+    notify, people,
     spaces::{self, Space, SpaceRole},
+    templates,
     time::{naive_iso, now_utc},
+    versions,
 };
 
 pub const DOC_TYPE_VALUES: [&str; 7] = [
@@ -577,12 +580,21 @@ pub struct CreateItemRequest {
     collection_id: Option<String>,
     #[serde(default)]
     primary_target: Option<TargetPayload>,
+    /// miy (보강): start the first page from a template of the space.
+    #[serde(default)]
+    template_id: Option<String>,
 }
 
 #[derive(Deserialize, Default)]
 pub struct SpaceQuery {
     #[serde(default)]
     space: Option<String>,
+}
+
+impl SpaceQuery {
+    pub fn space(&self) -> Option<&str> {
+        self.space.as_deref()
+    }
 }
 
 pub fn validate_content_format(value: Option<&str>) -> ApiResult<()> {
@@ -697,17 +709,28 @@ pub async fn create_item(
     .bind(now)
     .execute(&mut *tx)
     .await?;
-    sqlx::query(
+    let blocks = match payload.template_id.as_deref().filter(|id| !id.is_empty()) {
+        Some(template_id) => {
+            templates::content_for(&mut tx, &state, &identity, template_id, &space.id).await?
+        }
+        None => json!([]),
+    };
+    let sql = format!(
         "INSERT INTO docs_native_doc_pages (id, doc_id, parent_id, title, content_format, content_blocks, \
-         sort_order, created_by_id, created_at, updated_at) VALUES ($1,$2,NULL,$3,'block','[]'::json,0,$4,$5,$5)",
-    )
-    .bind(uuid::Uuid::new_v4().to_string())
-    .bind(&doc_id)
-    .bind(&first_title)
-    .bind(&identity.user_id)
-    .bind(now)
-    .execute(&mut *tx)
-    .await?;
+         sort_order, created_by_id, created_at, updated_at, search_text) \
+         VALUES ($1,$2,NULL,$3,'block',$4,0,$5,$6,$6,$7) RETURNING {PAGE_COLUMNS}"
+    );
+    let first_page = sqlx::query_as::<_, access::NativePage>(&sql)
+        .bind(uuid::Uuid::new_v4().to_string())
+        .bind(&doc_id)
+        .bind(&first_title)
+        .bind(&blocks)
+        .bind(&identity.user_id)
+        .bind(now)
+        .bind(crate::content_text::extract_blocks_text(Some(&blocks)))
+        .fetch_one(&mut *tx)
+        .await?;
+    versions::record(&mut tx, &first_page, &identity.user_id, None).await?;
     if let Some(target) = &payload.primary_target {
         insert_primary_target(&mut tx, &doc_id, target).await?;
     }
@@ -837,8 +860,11 @@ pub async fn update_item(
     Ok(Json(lookup_item(&mut viewer, &context.doc.id).await?))
 }
 
-/// AI-DO `_trash_doc_item`: trash the doc and its live pages, release their
-/// body images and attachments, and retract its share notifications.
+/// AI-DO `_trash_doc_item`: move the doc and its live pages to the trash and
+/// retract its share and comment notifications. miy keeps the attachments
+/// and images until the trash is emptied (AI-DO released them at once; the
+/// trash restore needs them, docs/PORTING.md §8). Trashing a doc that is
+/// already in the trash changes nothing.
 pub async fn delete_item(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
@@ -849,24 +875,31 @@ pub async fn delete_item(
     if !context.access.can_manage {
         return Err(doc_manage_required());
     }
+    if context.doc.trashed_at.is_some() {
+        return Ok(StatusCode::NO_CONTENT);
+    }
     let now = now_utc();
-    sqlx::query("UPDATE docs_native_docs SET trashed_at = $2, updated_at = $3 WHERE id = $1")
-        .bind(&context.doc.id)
-        .bind(now)
-        .bind(now.max(context.doc.updated_at + chrono::Duration::microseconds(1)))
-        .execute(&mut *tx)
-        .await?;
-    let trashed: Vec<String> = sqlx::query_scalar(
-        "UPDATE docs_native_doc_pages SET trashed_at = $2, updated_at = $2 WHERE doc_id = $1 AND trashed_at IS NULL \
-         RETURNING id",
+    sqlx::query(
+        "UPDATE docs_native_docs SET trashed_at = $2, trashed_by_id = $4, updated_at = $3 WHERE id = $1",
     )
     .bind(&context.doc.id)
     .bind(now)
+    .bind(now.max(context.doc.updated_at + chrono::Duration::microseconds(1)))
+    .bind(&identity.user_id)
+    .execute(&mut *tx)
+    .await?;
+    let trashed: Vec<String> = sqlx::query_scalar(
+        "UPDATE docs_native_doc_pages SET trashed_at = $2, trashed_by_id = $3, updated_at = $2 \
+         WHERE doc_id = $1 AND trashed_at IS NULL RETURNING id",
+    )
+    .bind(&context.doc.id)
+    .bind(now)
+    .bind(&identity.user_id)
     .fetch_all(&mut *tx)
     .await?;
-    let released = files::release_for_pages(&mut tx, &trashed).await?;
+    let retract = comments::take_notifications_for_pages(&mut tx, &trashed).await?;
     tx.commit().await?;
-    files::detach_released(&state.pool, &identity, &released).await;
+    comments::retract_taken(&identity, &retract).await;
     notify::retract(&identity, &notify::doc_group_key(&context.doc.id)).await;
     Ok(StatusCode::NO_CONTENT)
 }
@@ -945,24 +978,26 @@ pub async fn duplicate_item(
                     .bind(&page.id)
                     .fetch_one(&mut *tx)
                     .await?;
-            sqlx::query(
+            let insert = format!(
                 "INSERT INTO docs_native_doc_pages (id, doc_id, parent_id, title, content_format, content_blocks, \
                  content_text, sort_order, created_by_id, created_at, updated_at, search_text) \
-                 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$10,$11)",
-            )
-            .bind(&cloned_id)
-            .bind(&duplicate_id)
-            .bind(&destination_parent)
-            .bind(&page.title)
-            .bind(&page.content_format)
-            .bind(&page.content_blocks)
-            .bind(&page.content_text)
-            .bind(page.sort_order)
-            .bind(&identity.user_id)
-            .bind(now)
-            .bind(&search_text)
-            .execute(&mut *tx)
-            .await?;
+                 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$10,$11) RETURNING {PAGE_COLUMNS}"
+            );
+            let cloned = sqlx::query_as::<_, access::NativePage>(&insert)
+                .bind(&cloned_id)
+                .bind(&duplicate_id)
+                .bind(&destination_parent)
+                .bind(&page.title)
+                .bind(&page.content_format)
+                .bind(&page.content_blocks)
+                .bind(&page.content_text)
+                .bind(page.sort_order)
+                .bind(&identity.user_id)
+                .bind(now)
+                .bind(&search_text)
+                .fetch_one(&mut *tx)
+                .await?;
+            versions::record(&mut tx, &cloned, &identity.user_id, None).await?;
             stack.push((Some(page.id.clone()), Some(cloned_id)));
         }
     }
@@ -1006,6 +1041,7 @@ pub async fn delete_target(
         .execute(&mut *tx)
         .await?;
     tx.commit().await?;
+    comments::retract_lost_access(&state.pool, &identity, &context.doc.id).await;
     let mut viewer = Viewer::new(&state, &identity);
     Ok(Json(lookup_item(&mut viewer, &context.doc.id).await?))
 }
@@ -1456,6 +1492,7 @@ pub async fn delete_user_share(
             std::slice::from_ref(&user_id),
         )
         .await;
+        comments::retract_lost_access(&state.pool, &identity, &context.doc.id).await;
     }
     Ok(Json(
         sharing_response(&state.pool, &identity, &context.doc).await?,

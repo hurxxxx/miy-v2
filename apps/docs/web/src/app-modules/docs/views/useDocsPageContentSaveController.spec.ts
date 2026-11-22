@@ -60,6 +60,24 @@ describe('useDocsPageContentSaveController (miy single-editor saving)', () => {
     vi.restoreAllMocks();
   });
 
+  it('reports when a page is settled and its base revision (version restore)', async () => {
+    const { result } = renderController({ debounceMs: 0 });
+    act(() => {
+      result.current.setBaseRevision('page-1', 2);
+    });
+    expect(result.current.isSettled('page-1')).toBe(true);
+    expect(result.current.baseRevision('page-1')).toBe(2);
+    act(() => {
+      result.current.queueBlockSave('page-1', blocks('draft'));
+    });
+    expect(result.current.isSettled('page-1')).toBe(false);
+    await act(async () => {
+      await result.current.flush();
+    });
+    expect(result.current.isSettled('page-1')).toBe(true);
+    expect(result.current.baseRevision('page-1')).toBe(3);
+  });
+
   it('debounces block saves and sends the latest blocks with the base revision', async () => {
     vi.useFakeTimers();
     const { result, savePage, onSavedPage } = renderController();
