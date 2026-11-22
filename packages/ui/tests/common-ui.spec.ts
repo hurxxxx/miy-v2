@@ -163,7 +163,7 @@ test("changing focus or unmounting cancels the outstanding directory request", a
 // The public useConfirm and usePrompt are AI-DO's since 2.0.0. They differ from
 // the 1.x hooks: the labels are required, the prompt has no label or validation
 // message (a blank value is simply not submitted), focus is not handed back to
-// the opener, and a request whose owner unmounts is not settled.
+// the opener.
 test("confirm confines focus in its document, Escape cancels, prompt trims and resolves", async ({
   page,
 }) => {
@@ -194,6 +194,8 @@ test("confirm confines focus in its document, Escape cancels, prompt trims and r
   await expect(prompt.getByRole("button", { name: "확인" })).toBeDisabled();
   await expect(prompt).toBeVisible();
   await name.fill(" 새 이름 ");
+  await name.dispatchEvent("keydown", { key: "Enter", isComposing: true });
+  await expect(prompt).toBeVisible();
   await name.press("Enter");
   await expect(page.getByTestId("feedback-result")).toHaveText("새 이름");
   await expect(page.getByRole("dialog")).toHaveCount(0);
@@ -213,6 +215,7 @@ test("a superseded confirmation resolves false and unmounting an open one leaves
   await expect(page.getByRole("dialog", { name: "변경 확인" })).toBeVisible();
   await page.evaluate(() => window.uiFixture.unmountFeedback?.());
   await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect.poll(() => page.evaluate(() => window.uiFixture.result)).toBe("false");
   // The modal's page lock goes with it: the rest of the page takes input again.
   await page.getByRole("button", { name: "선택기 숨기기" }).click();
   await expect(page.getByRole("button", { name: "선택기 표시" })).toBeVisible();

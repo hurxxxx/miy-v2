@@ -2,7 +2,7 @@
 
 `src/`가 새 공용 UI 버전의 유지관리 원본이다. 게시된 `registry/components/ui/`의 버전(1.0.0·1.0.1·1.1.0)은 수정하지 않는다. `scripts/build-ui-component.mjs`가 새 버전을 만들며, 호환 SDK 번들은 그 스크립트의 `version`·`bundleVersion`(생성되는 `component.json`의 `bundleVersions`)과 CLI의 `crates/miy/src/bundle.rs`에서 관리한다. 새 프로젝트의 기본 버전은 `templates/rust-react/miy.components.json`이다.
 
-현재 소스는 2.0.0이다(소스 구현, `registry/components/ui/2.0.0` 후보 생성, 미게시). AI-DO의 UI 패키지(`packages/ui`, main `0002af062`)를 새로 설계하지 않고 그대로 옮겼고, miy 조합 컴포넌트를 함께 낸다. 전체 마이그레이션 상태와 순서는 루트 `docs/PLAN.md`가 관리한다.
+현재 소스는 2.0.1이다. `registry/components/ui/2.0.1`은 입력 조합과 대화상자 정리를 보완한 미게시 후보다. AI-DO의 UI 패키지(`packages/ui`, main `0002af062`)와 miy 조합 컴포넌트를 함께 제공한다. 전체 마이그레이션 상태와 순서는 루트 `docs/PLAN.md`가 관리한다.
 
 ## 구성
 

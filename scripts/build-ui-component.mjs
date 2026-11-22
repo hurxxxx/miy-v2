@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 import { execFileSync } from "node:child_process";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const version = "2.0.0";
+const version = "2.0.1";
 const bundleVersion = "0.12.0";
 const source = join(root, "packages/ui/src");
 const destination = join(root, "registry/components/ui", version);
