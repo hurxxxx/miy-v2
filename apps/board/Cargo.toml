@@ -1,0 +1,38 @@
+[package]
+name = "miy-app"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.99"
+
+[dependencies]
+anyhow = "1"
+axum = { version = "=0.8.9", features = ["macros"] }
+caseless = "0.2"
+chrono = { version = "0.4", features = ["serde"] }
+hex = "0.4"
+miy-app-sdk = { path = "sdk/rust" }
+pbkdf2 = { version = "0.12", default-features = false, features = ["hmac"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+sqlx = { version = "=0.8.6", features = ["runtime-tokio-rustls", "postgres", "uuid", "chrono", "macros"] }
+tokio = { version = "1", features = ["full"] }
+unicode-normalization = "0.1"
+uuid = { version = "1", features = ["v4", "serde"] }
+
+[dev-dependencies]
+jsonwebtoken = "9"
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+
+# AI-DO hashes secret-post passwords with PBKDF2-SHA256 at 600,000 rounds.
+# Unoptimized SHA-256 makes that take seconds in debug test builds.
+[profile.dev.package.sha2]
+opt-level = 3
+
+[profile.dev.package.pbkdf2]
+opt-level = 3
+
+[profile.dev.package.hmac]
+opt-level = 3
+
+[workspace]

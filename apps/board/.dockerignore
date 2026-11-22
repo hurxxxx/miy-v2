@@ -1,0 +1,13 @@
+.git
+.miy
+.miy-tools
+target
+node_modules
+dist/image.json
+*.log
+.pnpm-store
+
+.codex
+.claude
+.agents
+.mcp.json
