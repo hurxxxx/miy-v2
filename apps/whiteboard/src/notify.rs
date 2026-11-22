@@ -133,10 +133,11 @@ pub fn platform_only(identity: &Identity) -> ApiResult<()> {
 }
 
 /// The SQL condition "the caller may open board `w` now", answerable from the
-/// app DB alone. A platform call carries no token for further platform calls,
-/// so group membership of a space cannot be looked up: a space-visible board
-/// counts for the space's direct members only (fail closed). Binds: `$2`
-/// caller, `$3` installation, `$4` environment.
+/// app DB alone (a platform call carries no token for further platform calls).
+/// A space-visible board counts for the space's members: a direct user grant,
+/// or a group grant for one of the person's current groups that the platform
+/// signed into the call (`identity.context.groups`, see [`signed_groups`]).
+/// Binds: `$2` caller, `$3` installation, `$4` environment, `$5` groups.
 pub fn readable_board_condition() -> String {
     format!(
         "w.trashed_at IS NULL AND (w.owner_id = $2 \
@@ -146,9 +147,34 @@ pub fn readable_board_condition() -> String {
                  AND t.target_id = w.workspace_id) \
                AND (w.workspace_id = '{GLOBAL}' OR EXISTS (SELECT 1 FROM app.miy_acl_grants g \
                  WHERE g.installation_id = $3::uuid AND g.environment = $4 AND g.kind = '{kind}' \
-                   AND g.resource_id = w.workspace_id AND g.subject_kind = 'user' AND g.subject_id = $2))))",
+                   AND g.resource_id = w.workspace_id AND ((g.subject_kind = 'user' AND g.subject_id = $2) \
+                     OR (g.subject_kind = 'group' AND g.subject_id = ANY($5::text[])))))))",
         kind = spaces::SPACE_KIND,
     )
+}
+
+/// The person's current group IDs signed into a platform call. The platform
+/// adds them for an app approved to read the directory; without them only
+/// direct grants count. A malformed list is refused like the SDK ACL does.
+pub fn signed_groups(identity: &Identity) -> ApiResult<Vec<String>> {
+    let groups = identity.context.groups.clone().unwrap_or_default();
+    if groups.len() > 1000
+        || groups
+            .iter()
+            .any(|group| uuid::Uuid::parse_str(group).is_err())
+    {
+        return Err(ApiError::unavailable(
+            "acl_directory_unavailable",
+            "acl_directory_unavailable",
+        ));
+    }
+    let mut groups: Vec<String> = groups
+        .into_iter()
+        .map(|group| group.to_ascii_lowercase())
+        .collect();
+    groups.sort();
+    groups.dedup();
+    Ok(groups)
 }
 
 #[derive(Deserialize)]
@@ -171,7 +197,8 @@ pub struct CheckResponse {
 }
 
 /// `POST /platform/notification-check`: which of the person's notification
-/// groups still point at a board they may open now. Read-only.
+/// groups still point at a board they may open now (also through a group's
+/// space membership). Read-only.
 pub async fn notification_check(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
@@ -202,6 +229,7 @@ pub async fn notification_check(
         .bind(&identity.user_id)
         .bind(&identity.context.installation_id)
         .bind(identity.context.environment.as_deref())
+        .bind(signed_groups(&identity)?)
         .fetch_all(&state.pool)
         .await?
         .into_iter()

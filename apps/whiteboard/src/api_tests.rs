@@ -479,6 +479,16 @@ fn platform_identity(user: &str) -> String {
     )
 }
 
+/// A platform call with the person's current groups signed in (Core does this
+/// for an app approved to read the directory).
+fn platform_identity_with_groups(user: &str, groups: Value) -> String {
+    token(
+        json!({"sub": user, "admin": false, "installation_id": INSTALLATION,
+        "release_id": RELEASE, "iss": "miy", "aud": "miy-app", "exp": exp(),
+        "environment": "dev", "platform": true, "groups": groups}),
+    )
+}
+
 async fn send(
     url: &str,
     header: Option<String>,
@@ -1700,9 +1710,92 @@ async fn platform_check_and_search_follow_current_access() {
     )
     .await;
     assert_eq!(mismatched["allowed"], json!([]));
-    // Group-only members are hidden (no directory token on platform calls).
+    // A member through a group counts with the groups the platform signed in;
+    // without them (directory not approved) only direct grants count.
     let grouped_allowed = check(&grouped, &[&in_space]).await;
     assert_eq!(grouped_allowed["allowed"], json!([]));
+    let check_as = |header: String, board: &Value| {
+        let items = json!({"items": [{"groupKey": format!("whiteboard:{}", id_of(board)), "resourceId": id_of(board)}]});
+        async move {
+            send(
+                base(),
+                Some(header),
+                Method::POST,
+                "/platform/notification-check",
+                Some(items),
+            )
+            .await
+        }
+    };
+    let signed = expect(
+        check_as(
+            platform_identity_with_groups(&grouped, json!([team.to_uppercase()])),
+            &in_space,
+        )
+        .await,
+        StatusCode::OK,
+    )
+    .await;
+    assert_eq!(
+        signed["allowed"],
+        json!([format!("whiteboard:{}", id_of(&in_space))])
+    );
+    let other_group = uuid::Uuid::new_v4().to_string();
+    let unrelated = expect(
+        check_as(
+            platform_identity_with_groups(&grouped, json!([other_group])),
+            &in_space,
+        )
+        .await,
+        StatusCode::OK,
+    )
+    .await;
+    assert_eq!(unrelated["allowed"], json!([]));
+    // Private boards stay private to group members.
+    let private_for_group = expect(
+        check_as(
+            platform_identity_with_groups(&grouped, json!([team])),
+            &private,
+        )
+        .await,
+        StatusCode::OK,
+    )
+    .await;
+    assert_eq!(private_for_group["allowed"], json!([]));
+    expect(
+        check_as(
+            platform_identity_with_groups(&grouped, json!(["../not-a-group"])),
+            &in_space,
+        )
+        .await,
+        StatusCode::SERVICE_UNAVAILABLE,
+    )
+    .await;
+    // The SDK ACL reads the same signed groups on a platform call's board read.
+    let board_read = send(
+        base(),
+        Some(platform_identity_with_groups(&grouped, json!([team]))),
+        Method::GET,
+        &format!(
+            "/v1/workspaces/{space}/whiteboard/items/{}",
+            id_of(&in_space)
+        ),
+        None,
+    )
+    .await;
+    assert_eq!(board_read.status(), StatusCode::OK);
+    let board_hidden = send(
+        base(),
+        Some(platform_identity(&grouped)),
+        Method::GET,
+        &format!(
+            "/v1/workspaces/{space}/whiteboard/items/{}",
+            id_of(&in_space)
+        ),
+        None,
+    )
+    .await;
+    assert_eq!(board_hidden.status(), StatusCode::NOT_FOUND);
     // Not a platform call.
     expect(
         call(
@@ -1754,6 +1847,47 @@ async fn platform_check_and_search_follow_current_access() {
     let percent = search(&viewer, &format!("{token} 100%")).await;
     assert_eq!(percent["items"].as_array().unwrap().len(), 1);
     assert_eq!(percent["items"][0]["path"], format!("/{}", id_of(&pct)));
+    // Search finds a group member's space board only with the signed groups.
+    let grouped_search = |header: String, query: String| async move {
+        expect(
+            send(
+                base(),
+                Some(header),
+                Method::POST,
+                "/v1/search",
+                Some(json!({"query": query, "limit": 10, "timeZone": "Asia/Seoul", "locale": "ko-KR"})),
+            )
+            .await,
+            StatusCode::OK,
+        )
+        .await
+    };
+    let with_groups = grouped_search(
+        platform_identity_with_groups(&grouped, json!([team])),
+        token.clone(),
+    )
+    .await;
+    let group_titles: Vec<&str> = with_groups["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|i| i["title"].as_str().unwrap())
+        .collect();
+    assert!(group_titles.contains(&format!("{token} space").as_str()));
+    assert!(group_titles.contains(&format!("{token} everyone").as_str()));
+    assert!(
+        !group_titles
+            .iter()
+            .any(|t| t.contains("private") || t.contains("shared"))
+    );
+    let without_groups = grouped_search(platform_identity(&grouped), token.clone()).await;
+    assert!(
+        !without_groups["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|i| i["title"] == format!("{token} space"))
+    );
     let wildcard = search(&viewer, "%").await;
     assert!(
         wildcard["items"]

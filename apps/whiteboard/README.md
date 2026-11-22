@@ -41,8 +41,8 @@ UI는 `runtime.api('/v1/...')`로 부르고 게이트웨이가 `/api/v1/...`로 
 | `PUT·GET /files/whiteboard/items/{id}/files/{fileId}` | `runtime.fileApi`: 이미지 올리기(올린 사람, 편집 권한)·내려받기(볼 권한) |
 | `GET·POST /v1/spaces`, `PATCH·DELETE /v1/spaces/{id}` | 내 공간 목록, 공간 만들기(앱 사용자 누구나), 수정·삭제(공간 관리자, 보드가 남아 있으면 409) |
 | `GET·PUT /v1/spaces/{id}/sharing`, `GET …/sharing/requests/{requestId}` | 공간 멤버(SDK ACL 공유 계약, 역할 `member`·`admin`) |
-| `POST /platform/notification-check` | 플랫폼 호출 전용(읽기 전용) |
-| `POST /v1/search` | 플랫폼 호출 전용(읽기 전용): 지금 열 수 있는 보드 중 제목이 맞는 것 |
+| `POST /platform/notification-check` | 플랫폼 호출 전용(읽기 전용): 지금 열 수 있는 보드의 묶음만. 공간 멤버는 직접 부여와 플랫폼이 서명한 현재 그룹으로 판정 |
+| `POST /v1/search` | 플랫폼 호출 전용(읽기 전용): 지금 열 수 있는 보드(그룹 멤버 포함, 같은 판정) 중 제목이 맞는 것 |
 
 ## 알림
 
@@ -50,7 +50,7 @@ UI는 `runtime.api('/v1/...')`로 부르고 게이트웨이가 `/api/v1/...`로 
 | --- | --- | --- | --- |
 | `share` | 보드를 새로 공유함 | 공유받은 사람 | `whiteboard:<id>` |
 
-공유 해제는 그 사람에게서, 휴지통 이동·영구 삭제는 모두에게서 회수한다. 보드를 열면(`…/view`) 읽음 처리한다.
+공유 해제는 그 사람에게서, 휴지통 이동·영구 삭제는 모두에게서 회수한다. 보드를 열면(`…/view`) 읽음 처리한다. 공유 대상은 항상 사용자라 그룹 수신자(`notify_with_groups`)는 쓰지 않는다.
 
 ## 데이터
 

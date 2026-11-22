@@ -116,7 +116,7 @@
 
 - AI-DO 사용자 공유를 그대로 옮겼다: `PUT/DELETE …/sharing/users/{userId}`, 검사 순서(볼 권한 404 → 공유 권한 403 → 본인 409 → 사용자 없음 404 → 워크스페이스 멤버 아님 409). SDK ACL로 바꾸지 않은 이유는 §4.
 - 사용자 확인·이름·검색은 플랫폼 디렉터리다. 디렉터리에는 이메일이 없어 `email`은 빈 문자열이고, 화면은 그 자리에 `primary_group`(소속)을 보인다. 디렉터리 조회는 보드 잠금 전에 하고 결과는 접근 검사 뒤에 쓴다(잠금을 잡은 채 외부 호출을 기다리지 않음).
-- 앱 공간 보드의 공유 대상은 그 공간의 **직접** 멤버여야 한다. 디렉터리는 다른 사람의 그룹 소속을 알려 주지 않아 그룹으로만 들어온 사람은 확인할 수 없다(닫는 쪽). 전사 공간은 디렉터리의 모든 사람(앱 사용 권한은 플랫폼이 거른다).
+- 앱 공간 보드의 공유 대상은 그 공간의 **직접** 멤버여야 한다. 공유 대상은 요청한 사람이 아닌 다른 사람이고, 디렉터리는 다른 사람의 그룹 소속을 알려 주지 않아 그룹으로만 들어온 사람은 확인할 수 없다(닫는 쪽). 그 사람은 공유 없이도 공간 공개 보드를 그룹 멤버로서 이미 열 수 있다. 전사 공간은 디렉터리의 모든 사람(앱 사용 권한은 플랫폼이 거른다).
 
 ### 3.4 공동편집 대신 단독 저장(리비전)
 
@@ -149,10 +149,11 @@ AI-DO는 Excalidraw의 `files`(이미지 data URL)를 장면 JSON에 그대로 �
 
 - 경로는 `/<id>`(앱 공간이면 `?space=<id>`). 수준 변경은 다시 알리지 않는다. 공유 해제 → 그 사람에게서 회수, 휴지통 이동·영구 삭제 → 묶음 전체 회수, 보드 열기(`…/view`) → 읽음.
 - 발행은 커밋 뒤 같은 요청 안에서 하고, 실패해도 업무를 되돌리지 않는다. 결과가 불확실하면 같은 요청 ID로 조회만 한다. 받는 사람의 언어를 앱이 모르므로 한국어로 보낸다.
+- 그룹 수신자(`Identity::notify_with_groups`)는 쓰지 않는다. 알림을 보내는 곳은 사용자 공유뿐이고 공유 대상은 항상 사용자다(AI-DO 공유에 그룹이 없음). 공간 멤버 변경과 워크스페이스 공개 전환은 AI-DO처럼 알리지 않는다.
 
 ### 3.7 플랫폼 → 앱 엔드포인트
 
-- `notificationCheck` → `POST /platform/notification-check`: `whiteboard:<id>`이고 `resourceId`가 같은 ID인 항목만 본다. 보드가 휴지통에 없고, 소유자·직접 공유·(공간 공개이면서 전사 공간이거나 공간의 직접 멤버)일 때 허용한다. 플랫폼 호출에는 디렉터리 토큰이 없어 앱 DB만으로 판정하며 그룹 멤버는 숨긴다(닫는 쪽). 데이터를 바꾸지 않는다. 플랫폼 호출이 아니면 403.
+- `notificationCheck` → `POST /platform/notification-check`: `whiteboard:<id>`이고 `resourceId`가 같은 ID인 항목만 본다. 보드가 휴지통에 없고, 소유자·직접 공유·(공간 공개이면서 전사 공간이거나 그 공간의 멤버)일 때 허용한다. 플랫폼 호출에는 디렉터리 토큰이 없어 앱 DB로 판정하고, 공간 멤버는 직접 사용자 부여와, 플랫폼이 서명해 넣은 그 사람의 현재 그룹(`identity.context.groups`, 디렉터리 읽기 승인이 있을 때)에 대한 그룹 부여로 확인한다. 서명된 그룹이 없으면 직접 부여만 센다. 형식이 잘못된 그룹 목록은 503(SDK ACL과 같음). 데이터를 바꾸지 않는다. 플랫폼 호출이 아니면 403. 같은 플랫폼 호출로 보드·파일을 읽을 때는 SDK ACL이 서명된 그룹을 스스로 쓴다.
 - `search` → `POST /v1/search`: 같은 판정으로 지금 열 수 있는 보드 중 제목이 맞는 것(`%`·`_`·`\` 이스케이프), 최근 수정순 최대 `limit`(1~10). 항목은 `{title, snippet(공간 이름|워크스페이스 화이트보드|비공개), path, at, kind: "화이트보드"}`. 숨긴 보드는 이름도 건수도 내지 않는다.
 
 ### 3.8 오류 응답과 문구
@@ -185,7 +186,7 @@ AI-DO는 Excalidraw의 `files`(이미지 data URL)를 장면 JSON에 그대로 �
 | 공유 알림 제목은 한국어 | 받는 사람 언어를 모른다(게시판과 같음) |
 | 의존성은 AI-DO 고정 버전 | `@excalidraw/excalidraw` 0.18.1, i18next 26.0.8, react-i18next 17.0.6, 시험용 vitest 4.1.2·jsdom 22.1.0·Testing Library. React·Vite·Tailwind·Radix 등은 템플릿·공용 UI 버전. Yjs는 넣지 않음 |
 | 공용 UI 설치는 플래너와 같은 오프라인 복사 | `registry/components/ui/2.0.0`과 같은 파일(`component.json` 제외)과 플래너의 잠금 파일. 실제 서버에서 `miy component sync`로 digest를 확인해야 한다 |
-| 번들 보호 파일 재동기화 | 작업 중 0.12.0 템플릿(Storage 대용량 전송 추가, CONTRACT·api.gen.ts·preview)이 바뀌어 새 `app init`의 보호 파일 5개와 `miy.bundle.json`을 복사했다. 앱 코드는 바꾸지 않았다 |
+| 번들 보호 파일 재동기화 | 0.12.0 템플릿이 바뀔 때마다 새 `app init`의 바뀐 보호 파일과 `miy.bundle.json`을 복사했다. 첫 번째(Storage 대용량 전송: CONTRACT·api.gen.ts·index.ts·preview·storage.rs)는 앱 코드를 바꾸지 않았고, 두 번째(플랫폼 호출의 서명된 그룹과 `notify_with_groups`: CONTRACT·acl.rs·acl_postgres_tests.rs·lib.rs·notifications.rs)에 맞춰 알림 재확인·검색이 서명된 그룹을 쓰게 했다 |
 | DB 시험은 `#[ignore]` + `WHITEBOARD_TEST_DATABASE_URL`, 가짜 코어 | 서버 빌드의 `cargo test`에는 DB가 없다 |
 
 ## 5. 테스트 대응
@@ -200,7 +201,7 @@ AI-DO는 Excalidraw의 `files`(이미지 data URL)를 장면 JSON에 그대로 �
 | `test_whiteboard_item_mutations.py` 2개 | `scene.rs` 단위 시험 + 위 HTTP 시험 | 변화 없는 장면, 비공개 보드 수정. 링크 부분 제외 |
 | `test_whiteboard_target.py::…filters_and_sort_order` | `target_filters_sort_order_and_unlink` | 공간 대상으로. PMS 대상은 403 확인 |
 | `test_whiteboard_target.py` 단일 슬롯, `test_whiteboard_context_owner.py` | 없음 | PMS·회의 연결 제외 |
-| (miy 추가) | `older_revision_conflicts_and_keep_resends_on_the_current_one`, `images_are_stored_attached_read_and_released`, `failed_attach_is_recovered_by_the_next_save`, `unconfirmed_detach_is_finished_later`, `platform_check_and_search_follow_current_access`, `hub_views_are_per_person`, 단위 시험(접근 판정, 라벨, 대상 판정, ACL 역할, LIKE 이스케이프) | |
+| (miy 추가) | `older_revision_conflicts_and_keep_resends_on_the_current_one`, `images_are_stored_attached_read_and_released`, `failed_attach_is_recovered_by_the_next_save`, `unconfirmed_detach_is_finished_later`, `platform_check_and_search_follow_current_access`(서명된 그룹 포함·없음·다른 그룹·형식 오류), `hub_views_are_per_person`, 단위 시험(접근 판정, 라벨, 대상 판정, ACL 역할, LIKE 이스케이프) | |
 | 화면 `whiteboard-api.spec.ts`, `whiteboard-hub-model.spec.ts`, `whiteboard-share-model.spec.ts`, `whiteboard-editor-session.spec.ts`, `whiteboard-preview-loader.spec.ts`, `whiteboard-collab-scene.spec.ts`(장면 부분) | 같은 경로(장면은 `whiteboard-scene.spec.ts`) | `runtime.api` 모의, 프레임 경로, 링크 제거 |
 | `whiteboard-collab-runtime*.spec.ts`, `WhiteboardPickerModal.spec.tsx`, `WhiteboardContextSlotPanel.spec.tsx`, `whiteboard-picker-model.spec.ts`, `whiteboard-context-slot-panel-model.spec.ts`, `WhiteboardEditorSurface.scope.spec.tsx`(컨텍스트 범위) | 없음 | 기능 제외 |
 | (miy 추가) | `useWhiteboardScenePersistence.spec.tsx`(리비전·충돌·실패 유지·늦은 응답), `whiteboard-files.spec.ts`(저장·같은 요청 재개·누락 이미지 보존·크기), `self-hosted-assets.spec.ts`, `app-location.spec.ts` | |
@@ -213,7 +214,7 @@ AI-DO는 Excalidraw의 `files`(이미지 data URL)를 장면 JSON에 그대로 �
 - AI-DO 기준 화면(가상 계정·가상 데이터)과의 나란한 비교, 카탈로그 공식 릴리스·dev 설치·권한 인수(특히 공유 회수), prod 승격.
 - 공간 이름 바꾸기는 API(`PATCH /v1/spaces/{id}`)만 있고 화면이 없다. 공간 멤버 편집기는 현재 사용자를 "본인"으로 표시하지 않는다(앱에 `/me`가 없음).
 - **플랫폼 변경 필요(이 앱에서 하지 않음):**
-  1. 그룹 멤버 판정: 디렉터리에 그룹 구성원 조회를 더하거나, 플랫폼 호출의 서명된 신원에 현재 그룹 소속을 넣기. 지금은 그룹으로만 공간에 든 사람이 공유 대상이 될 수 없고, 알림 재확인·통합 검색에서 공간 공개 보드가 숨는다.
+  1. 다른 사람의 그룹 소속 확인(디렉터리의 그룹 구성원 조회 등): 지금은 그룹으로만 앱 공간에 든 사람을 사용자 공유 대상으로 고를 수 없다. 플랫폼 호출의 그룹 판정(알림 재확인·통합 검색)은 플랫폼의 서명된 그룹으로 해결되었다(`d7fbdfe`).
   2. SVG 글꼴 부분 집합 추출을 원하면 프레임 CSP에 `'wasm-unsafe-eval'`(주 스레드 경로, embind의 `new Function`은 여전히 `'unsafe-eval'` 필요) 또는 `worker-src 'self'`가 필요하다. 지금은 글꼴 조각 전체가 SVG에 들어간다.
   3. 받는 사람 언어별 알림 제목(또는 플랫폼이 번역하는 키+인자 형식).
   4. 서버 빌드가 새 npm 패키지(`@excalidraw/excalidraw` 0.18.1과 그 의존성)를 받을 수 있어야 한다(`pnpm-lock.yaml`에 고정). UI 산출물이 글꼴 때문에 약 23MB(426개 파일)로 이미지 한도(64MiB/파일, 256MiB·10,000개) 안이다.

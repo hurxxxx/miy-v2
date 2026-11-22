@@ -1,8 +1,9 @@
 //! The portal's integrated search (miy platform → app call, manifest
 //! `platformEndpoints.search`): boards the person may open now whose title
 //! matches. Read only; platform calls only. Access is the same app-DB rule as
-//! the notification recheck (notify.rs `readable_board_condition`); boards
-//! the person cannot open are never counted or named.
+//! the notification recheck (notify.rs `readable_board_condition`, with the
+//! person's signed groups); boards the person cannot open are never counted
+//! or named.
 use axum::{Extension, Json, extract::State};
 use chrono::NaiveDateTime;
 use miy_app_sdk::Identity;
@@ -95,7 +96,7 @@ pub async fn search(
            EXISTS (SELECT 1 FROM whiteboard_targets t WHERE t.whiteboard_id = w.id AND t.target_app = 'whiteboard' \
              AND t.target_type = 'workspace_sidebar' AND t.target_id = w.workspace_id) \
          FROM whiteboards w LEFT JOIN whiteboard_spaces sp ON sp.id = w.workspace_id \
-         WHERE w.title ILIKE $1 ESCAPE '\\' AND {} ORDER BY w.updated_at DESC, w.id LIMIT $5",
+         WHERE w.title ILIKE $1 ESCAPE '\\' AND {} ORDER BY w.updated_at DESC, w.id LIMIT $6",
         notify::readable_board_condition()
     );
     let rows: Vec<Row> = sqlx::query_as(&sql)
@@ -103,6 +104,7 @@ pub async fn search(
         .bind(&identity.user_id)
         .bind(&identity.context.installation_id)
         .bind(identity.context.environment.as_deref())
+        .bind(notify::signed_groups(&identity)?)
         .bind(limit)
         .fetch_all(&state.pool)
         .await?;
