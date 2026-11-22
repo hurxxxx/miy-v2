@@ -367,6 +367,42 @@ pub enum DateFormat {
     Locale,
 }
 
+/// A person's own settings: `preferences` of `GET /api/v1/me` and the answer of
+/// `PATCH /api/v1/me/preferences`. Presentation only, never an access input.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct Preferences {
+    pub theme: ThemePreference,
+    pub locale: Locale,
+    /// IANA time zone name.
+    pub time_zone: String,
+    pub date_format: DateFormat,
+    pub job_title: Option<String>,
+    /// App IDs pinned to the launcher, in display order.
+    pub pinned_apps: Vec<String>,
+}
+
+/// One of the signed-in person's live browser sessions (`GET /api/v1/me/sessions`).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct BrowserSession {
+    pub id: Uuid,
+    /// `portal`, `dev_portal` or `console`.
+    pub surface: String,
+    pub created_at: DateTime<Utc>,
+    pub expires_at: DateTime<Utc>,
+    /// Updated at most once a minute.
+    pub last_seen_at: Option<DateTime<Utc>>,
+    pub user_agent: Option<String>,
+    /// The session this request was made with.
+    pub current: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct BrowserSessionPage {
+    pub items: Vec<BrowserSession>,
+}
+
 /// Display settings passed from the portal to an app frame. They decide how
 /// things look and read; they are never an input to an access decision.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -443,6 +479,8 @@ pub fn schema() -> serde_json::Value {
     generator.subschema_for::<AppFrameRenewal>();
     generator.subschema_for::<AppFrameToken>();
     generator.subschema_for::<FrameBootstrap>();
+    generator.subschema_for::<Preferences>();
+    generator.subschema_for::<BrowserSessionPage>();
     serde_json::json!({
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "title": "miy API v1 responses",

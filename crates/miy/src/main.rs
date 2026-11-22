@@ -35,6 +35,8 @@ mod browser_boundary;
 mod browser_boundary_migration_regression;
 #[cfg(all(test, feature = "server"))]
 mod browser_boundary_regression;
+#[cfg(feature = "server")]
+mod browser_sessions;
 mod bundle;
 #[cfg(feature = "server")]
 mod cli_auth;
@@ -111,6 +113,8 @@ mod permissions_regression;
 mod platform;
 #[cfg(feature = "server")]
 mod policy;
+#[cfg(feature = "server")]
+mod preferences;
 mod preview;
 #[cfg(feature = "server")]
 mod read_api;

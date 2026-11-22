@@ -28,12 +28,13 @@
   font-size: 16px;
   font-weight: 700;
 }
-.grid {
+/* Not .grid: that is a Tailwind utility the screens ported from AI-DO use. */
+.card-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(min(300px, 100%), 1fr));
   gap: var(--ui-space-4);
 }
-.grid > .ui-panel + .ui-panel {
+.card-grid > .ui-panel + .ui-panel {
   margin-top: 0;
 }
 

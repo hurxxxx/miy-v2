@@ -1,3 +1,13 @@
+/*
+ * Tailwind CSS 4 with the common UI theme and AI-DO's app classes, as in AI-DO's
+ * apps/web/src/index.css, followed by the portal's own stylesheets. Those are
+ * unlayered, so they keep precedence over Tailwind's base layer.
+ */
+@import "tailwindcss";
+@import "@miy/ui/theme.css";
+@import "@miy/ui/app.css";
+@source "..";
+@source "../../../../packages/ui/src";
 @import "pretendard/dist/web/variable/pretendardvariable-dynamic-subset.css";
 @import "./tokens.css";
 @import "./base.css";

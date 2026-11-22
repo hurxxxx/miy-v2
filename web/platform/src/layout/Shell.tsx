@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode, type SyntheticEvent } from "react";
 import { Link, Outlet, useLocation } from "@tanstack/react-router";
-import { request } from "@miy/sdk";
+import { useTranslation } from "react-i18next";
+import type { TFunction } from "i18next";
 import { InstallationsProvider, installationsIn, useInstallations } from "../data/installations";
 import { useSession, useSurface, type LoginOptions, type User } from "../data/session";
 import { currentEnvironment, environmentOrigin, environmentPath, isAccountLinkPath, isCliApprovalPath, isConsolePath, isAppPath, pathEnvironment, portalEnvironment, surfaceUrl, type Environment } from "../lib/paths";
-import { clearAllAppGuards, confirmLeaveAllApps } from "../lib/navigation-guards";
+import { signOut } from "../lib/sign-out";
 import { LoadError } from "../components/LoadState";
 import { NewTabLink } from "../components/NewTabLink";
 import { Login } from "../pages/Login";
@@ -14,6 +15,7 @@ import { AppMark, Badge, Button, Loading, Panel, monograms } from "../ui";
 import { CloseIcon, HomeIcon, MenuIcon, SettingsIcon, TerminalIcon } from "../ui/icons";
 
 export function Shell() {
+  const { t } = useTranslation("portal");
   const { state, options, retry } = useSession();
   const location = useLocation();
   useEffect(() => {
@@ -34,7 +36,7 @@ export function Shell() {
           <Link to="/" className="brand">
             miy
           </Link>
-          <Link to="/">플랫폼으로 돌아가기</Link>
+          <Link to="/">{t("shell.backToPlatform")}</Link>
         </div>
         <main>
           <CliInstall />
@@ -47,7 +49,7 @@ export function Shell() {
   if (options?.surface === "console" && isAccountLinkPath(location.pathname)) return <Join />;
   const ownEnvironment = options ? portalEnvironment(options.surface, options.legacyPortal) : null;
   if (options && options.surface !== "console" && isConsolePath(location.pathname))
-    return <SurfaceRedirect href={surfaceUrl(options.consoleOrigin, location.pathname)} label="관리 콘솔" />;
+    return <SurfaceRedirect href={surfaceUrl(options.consoleOrigin, location.pathname)} label={t("shell.console")} />;
   // Each portal runs one environment. Published CLI links and bookmarks name the
   // other environment's paths on this origin: move them before sign-in or any app
   // import, in the same tab.
@@ -56,13 +58,13 @@ export function Shell() {
     return (
       <SurfaceRedirect
         href={surfaceUrl(environmentOrigin(options, requested), location.pathname)}
-        label={requested === "dev" ? "테스트 포털" : "업무 포털"}
+        label={t(requested === "dev" ? "surfaces.dev_portal" : "surfaces.portal")}
       />
     );
   if (options?.surface === "console" && isAppPath(location.pathname))
-    return <main className="boot"><Panel title="업무 앱은 포털에서 열어 주세요">
-      <p>관리 콘솔에서는 업무 앱을 실행하지 않습니다.</p>
-      <NewTabLink href={surfaceUrl(environmentOrigin(options, requested ?? "dev"), location.pathname)}>업무 포털에서 열기</NewTabLink>
+    return <main className="boot"><Panel title={t("shell.openAppsInPortal")}>
+      <p>{t("shell.consoleRunsNoApps")}</p>
+      <NewTabLink href={surfaceUrl(environmentOrigin(options, requested ?? "dev"), location.pathname)}>{t("shell.openInPortal")}</NewTabLink>
     </Panel></main>;
   if (state.status === "loading")
     return (
@@ -75,7 +77,7 @@ export function Shell() {
       <main className="login-page">
         <div className="login-card">
           <p className="login-brand">miy</p>
-          <LoadError message="서버에 연결하지 못했습니다. 로그인 상태는 바뀌지 않았습니다." onRetry={retry} />
+          <LoadError message={t("shell.serverUnreachable")} onRetry={retry} />
         </div>
       </main>
     );
@@ -84,10 +86,10 @@ export function Shell() {
   if (environment === "invalid")
     return (
       <main className="boot">
-        <Panel title="존재하지 않는 실행 환경입니다">
-          <p>테스트 또는 운영 영역의 주소를 사용하세요.</p>
+        <Panel title={t("shell.unknownEnvironment")}>
+          <p>{t("shell.useEnvironmentAddress")}</p>
           <Link to={environmentPath(ownEnvironment ?? "dev") as "/"}>
-            {ownEnvironment === "prod" ? "운영 영역으로" : "테스트 영역으로"}
+            {t(ownEnvironment === "prod" ? "shell.toProd" : "shell.toDev")}
           </Link>
         </Panel>
       </main>
@@ -100,15 +102,13 @@ export function Shell() {
 }
 
 function SurfaceRedirect({ href, label }: { href: string; label: string }) {
+  const { t } = useTranslation("portal");
   useEffect(() => { window.location.replace(href); }, [href]);
   // This page replaces itself; the fallback must not open a second tab.
-  return <main className="boot"><p>{label}(으)로 이동합니다. <a href={href}>계속</a></p></main>;
+  return <main className="boot"><p>{t("shell.redirecting", { label })} <a href={href}>{t("shell.continue")}</a></p></main>;
 }
 
-const ENVIRONMENTS: { id: Environment; label: string; badge: string }[] = [
-  { id: "dev", label: "테스트 영역", badge: "테스트 · DEV" },
-  { id: "prod", label: "운영 영역", badge: "운영 · PROD" },
-];
+const ENVIRONMENTS: Environment[] = ["dev", "prod"];
 
 function EnvironmentSwitch({
   environment,
@@ -119,10 +119,11 @@ function EnvironmentSwitch({
   className: string;
   options: LoginOptions;
 }) {
+  const { t } = useTranslation("portal");
   const own = portalEnvironment(options.surface, options.legacyPortal);
   return (
-    <nav aria-label="실행 환경" className={`env-switch ${className}`}>
-      {ENVIRONMENTS.map((item) =>
+    <nav aria-label={t("shell.environment")} className={`env-switch ${className}`}>
+      {ENVIRONMENTS.map((id) => ({ id, label: t(`shell.environments.${id}`) })).map((item) =>
         // On a portal the other environment is another origin (a new tab); the
         // console manages both environments in place.
         own && item.id !== own ? (
@@ -185,17 +186,19 @@ function RailLink({
   );
 }
 
-function pageTitle(pathname: string, environment: Environment, appName?: string, console = false) {
-  if (pathname === "/admin") return "플랫폼 관리";
-  if (pathname === "/cli/install") return "CLI 설치";
-  if (isCliApprovalPath(pathname)) return "CLI 로그인 승인";
-  if (pathname === "/cli/sessions") return "내 CLI 연결";
+function pageTitle(t: TFunction<"portal">, pathname: string, environment: Environment, appName?: string, console = false) {
+  if (pathname === "/admin") return t("shell.titles.admin");
+  if (pathname === "/cli/install") return t("shell.titles.cliInstall");
+  if (isCliApprovalPath(pathname)) return t("shell.titles.cliApproval");
+  if (pathname === "/cli/sessions") return t("shell.titles.cliSessions");
+  if (pathname === "/settings" || pathname.startsWith("/settings/")) return t("shell.titles.settings");
   if (appName) return appName;
-  if (console) return "내가 관리하는 앱";
-  return environment === "prod" ? "운영 앱" : "테스트 앱";
+  if (console) return t("shell.titles.managedApps");
+  return t(environment === "prod" ? "shell.titles.prodApps" : "shell.titles.devApps");
 }
 
 function SignedInLayout({ user, environment }: { user: User; environment: Environment }) {
+  const { t } = useTranslation("portal");
   const options = useSurface();
   const isConsole = options.surface === "console";
   const [menuOpen, setMenuOpen] = useState(false);
@@ -236,36 +239,30 @@ function SignedInLayout({ user, environment }: { user: User; environment: Enviro
     const text = [item.getAttribute("aria-label"), item.getAttribute("aria-description")].filter(Boolean).join(" · ");
     setTooltip({ text, top: rect.top + rect.height / 2 });
   }
-  async function logout() {
-    if (!confirmLeaveAllApps()) return;
-    const data = await request<{ redirect: string }>("/auth/logout", user.csrf, { method: "POST" });
-    clearAllAppGuards();
-    window.location.assign(data.redirect);
-  }
-  const current = ENVIRONMENTS.find((item) => item.id === environment)!;
+  const settingsActive = pathname === "/settings" || pathname.startsWith("/settings/");
   return (
     <div className={`shell env-is-${environment}`}>
       <a className="skip-link" href="#platform-main">
-        본문으로 건너뛰기
+        {t("shell.skipToContent")}
       </a>
       <aside
         id="platform-navigation"
         ref={navigation}
         className={`rail ${menuOpen ? "navigation-open" : ""}`}
-        aria-label="플랫폼 탐색"
+        aria-label={t("shell.platformNavigation")}
         onMouseOver={showTooltip}
         onFocus={showTooltip}
         onMouseLeave={() => setTooltip(null)}
         onBlur={() => setTooltip(null)}
       >
-        <Link to="/" activeOptions={{ exact: true }} className="brand rail-brand" aria-label="miy 홈">
+        <Link to="/" activeOptions={{ exact: true }} className="brand rail-brand" aria-label={t("shell.homeLabel")}>
           miy
         </Link>
         <EnvironmentSwitch environment={environment} className="env-switch-drawer" options={options} />
-        <nav aria-label="앱" className="rail-section rail-apps">
+        <nav aria-label={t("shell.apps")} className="rail-section rail-apps">
           <RailLink
             to={environmentPath(environment)}
-            label="홈"
+            label={t("shell.home")}
             icon={<HomeIcon />}
             active={homeActive}
           />
@@ -280,26 +277,26 @@ function SignedInLayout({ user, environment }: { user: User; environment: Enviro
           ))}
           {installations.items === null && (
             <p className="rail-note">
-              {installations.status === "error" ? "앱 목록을 불러오지 못했습니다." : "앱 목록을 불러오는 중…"}
+              {t(installations.status === "error" ? "shell.appsLoadFailed" : "shell.appsLoading")}
             </p>
           )}
         </nav>
-        <nav aria-label="플랫폼" className="rail-section rail-platform">
+        <nav aria-label={t("shell.platform")} className="rail-section rail-platform">
           {isConsole && user.admin && (
-            <RailLink to="/admin" label="플랫폼 관리" short="관리" icon={<SettingsIcon />} active={pathname === "/admin"} />
+            <RailLink to="/admin" label={t("shell.administration")} short={t("shell.administrationShort")} icon={<SettingsIcon />} active={pathname === "/admin"} />
           )}
-          {isConsole && <RailLink to="/cli/sessions" label="내 CLI 연결" icon={<TerminalIcon />} active={pathname === "/cli/sessions"} />}
-          {!isConsole && <NewTabLink className="rail-item" aria-label={user.canManageConsole ? "관리 콘솔" : "내 CLI 연결"}
+          {isConsole && <RailLink to="/cli/sessions" label={t("shell.myCliSessions")} icon={<TerminalIcon />} active={pathname === "/cli/sessions"} />}
+          {!isConsole && <NewTabLink className="rail-item" aria-label={t(user.canManageConsole ? "shell.console" : "shell.myCliSessions")}
             href={surfaceUrl(options.consoleOrigin, user.canManageConsole ? environmentPath(environment) : "/cli/sessions")}>
-            <span className="rail-icon"><SettingsIcon /></span><span className="rail-label">{user.canManageConsole ? "관리 콘솔" : "내 CLI 연결"}</span>
+            <span className="rail-icon"><SettingsIcon /></span><span className="rail-label">{t(user.canManageConsole ? "shell.console" : "shell.myCliSessions")}</span>
           </NewTabLink>}
-          {isConsole && <NewTabLink className="rail-item" aria-label="업무 포털" href={surfaceUrl(environmentOrigin(options, environment), environmentPath(environment))}>
-            <span className="rail-icon"><HomeIcon /></span><span className="rail-label">업무 포털</span>
+          {isConsole && <NewTabLink className="rail-item" aria-label={t("shell.portal")} href={surfaceUrl(environmentOrigin(options, environment), environmentPath(environment))}>
+            <span className="rail-icon"><HomeIcon /></span><span className="rail-label">{t("shell.portal")}</span>
           </NewTabLink>}
           <RailLink
             to="/cli/install"
-            label="CLI 설치"
-            short="CLI"
+            label={t("shell.cliInstall")}
+            short={t("shell.cliInstallShort")}
             icon={<TerminalIcon />}
             active={pathname === "/cli/install"}
           />
@@ -322,34 +319,26 @@ function SignedInLayout({ user, environment }: { user: User; environment: Enviro
             onClick={() => setMenuOpen(!menuOpen)}
           >
             {menuOpen ? <CloseIcon /> : <MenuIcon />}
-            <span className="visually-hidden">{menuOpen ? "메뉴 닫기" : "메뉴 열기"}</span>
+            <span className="visually-hidden">{t(menuOpen ? "shell.closeMenu" : "shell.openMenu")}</span>
           </button>
           <div className="header-context">
             <EnvironmentSwitch environment={environment} className="env-switch-header" options={options} />
             <span className="env-badge-mobile">
-              <Badge tone={environment === "prod" ? "warning" : "info"}>{current.badge}</Badge>
+              <Badge tone={environment === "prod" ? "warning" : "info"}>{t(`shell.environmentBadges.${environment}`)}</Badge>
             </span>
-            <p className="header-title">{pageTitle(pathname, environment, activeApp?.name, isConsole)}</p>
+            <p className="header-title">{pageTitle(t, pathname, environment, activeApp?.name, isConsole)}</p>
           </div>
           <div className="header-account">
-            <span className="account-name" title={user.name}>
+            <Link
+              to="/settings"
+              className="account-name"
+              title={t("shell.mySettings")}
+              aria-current={settingsActive ? "page" : undefined}
+            >
               {user.name}
-            </span>
-            {options.passwordUrl && (
-              <a
-                className="account-password"
-                href={options.passwordUrl}
-                onClick={(event) => {
-                  // The sign-in server's form replaces this page; unsaved app work asks first.
-                  if (!confirmLeaveAllApps()) event.preventDefault();
-                  else clearAllAppGuards();
-                }}
-              >
-                비밀번호 변경
-              </a>
-            )}
-            <Button size="sm" onClick={logout}>
-              로그아웃
+            </Link>
+            <Button size="sm" onClick={() => void signOut(user.csrf)}>
+              {t("shell.signOut")}
             </Button>
           </div>
         </header>

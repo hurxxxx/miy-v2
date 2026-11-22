@@ -194,7 +194,7 @@ function AdminConsole({ csrf, selfId }: { csrf: string; selfId: string }) {
           {managed.items.filter((a) => a.kind === "docker_app").length === 0 ? (
             <EmptyState title="배포된 앱이 없습니다." />
           ) : (
-            <div className="grid">
+            <div className="card-grid">
               {managed.items
                 .filter((a) => a.kind === "docker_app")
                 .map((a) => (

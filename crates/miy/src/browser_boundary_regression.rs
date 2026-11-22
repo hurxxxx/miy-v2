@@ -380,6 +380,220 @@ pub async fn run(
     }
     passed.push("separate HTTP listeners bind browser credentials to stored purpose, reject copied/renamed and duplicate cookies, and accept both legitimate same-host cookie names without authority mixing".into());
 
+    // Personal settings: each surface changes only its own person's record, with
+    // the CSRF header; omitted fields stay and the defaults read before any row.
+    let fresh = json_response(
+        h.cookie_request(&console_other, Method::GET, "/api/v1/me")
+            .send()
+            .await?,
+        200,
+    )
+    .await?;
+    ensure!(
+        fresh["preferences"]
+            == json!({"theme":"system","locale":"ko-KR","timeZone":"Asia/Seoul",
+                "dateFormat":"korean","jobTitle":null,"pinnedApps":[]}),
+        "personal settings lost their defaults"
+    );
+    denied(
+        h.cookie_request(&portal_user, Method::PATCH, "/api/v1/me/preferences")
+            .json(&json!({"theme":"dark"}))
+            .send()
+            .await?,
+        403,
+    )
+    .await?;
+    for (browser, body) in [
+        (
+            &portal_user,
+            json!({"theme":"dark","pinnedApps":["planner"]}),
+        ),
+        (
+            &console_user,
+            json!({"locale":"en-US","timeZone":"Europe/Berlin"}),
+        ),
+        (&dev_admin, json!({"dateFormat":"iso","jobTitle":"책임"})),
+    ] {
+        json_response(
+            h.browser_request(browser, Method::PATCH, "/api/v1/me/preferences")
+                .json(&body)
+                .send()
+                .await?,
+            200,
+        )
+        .await?;
+    }
+    for body in [
+        json!({"theme":"sepia"}),
+        json!({"timeZone":"../etc"}),
+        json!({"pinnedApps":["planner","planner"]}),
+        json!({"name":""}),
+        json!({"userId":"someone-else"}),
+    ] {
+        let response = h
+            .browser_request(&portal_user, Method::PATCH, "/api/v1/me/preferences")
+            .json(&body)
+            .send()
+            .await?;
+        ensure!(
+            matches!(response.status().as_u16(), 400 | 422),
+            "invalid personal settings were accepted"
+        );
+    }
+    let user_me = json_response(
+        h.cookie_request(&portal_user, Method::GET, "/api/v1/me")
+            .send()
+            .await?,
+        200,
+    )
+    .await?;
+    ensure!(
+        user_me["preferences"]
+            == json!({"theme":"dark","locale":"en-US","timeZone":"Europe/Berlin",
+                "dateFormat":"korean","jobTitle":null,"pinnedApps":["planner"]}),
+        "personal settings did not merge across surfaces"
+    );
+    let admin_me = json_response(
+        h.cookie_request(&console_admin, Method::GET, "/api/v1/me")
+            .send()
+            .await?,
+        200,
+    )
+    .await?;
+    let other_me = json_response(
+        h.cookie_request(&console_other, Method::GET, "/api/v1/me")
+            .send()
+            .await?,
+        200,
+    )
+    .await?;
+    ensure!(
+        admin_me["preferences"]["jobTitle"] == "책임"
+            && admin_me["preferences"]["theme"] == "system"
+            && other_me["preferences"] == fresh["preferences"],
+        "personal settings leaked to another person"
+    );
+    let renamed = json_response(
+        h.browser_request(&portal_user, Method::PATCH, "/api/v1/me/preferences")
+            .json(&json!({"name":"  새 이름  "}))
+            .send()
+            .await?,
+        200,
+    )
+    .await?;
+    let audited: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM audit WHERE actor=$1 AND action='user.profile.rename' AND target=$1",
+    )
+    .bind(&user_id)
+    .fetch_one(&state.pool)
+    .await?;
+    ensure!(
+        renamed["name"] == "새 이름" && audited == 1,
+        "a display name change was not applied or not audited"
+    );
+    passed.push("personal settings: defaults before any row, CSRF required, partial updates merge across portal, dev portal and console, invalid values and foreign fields rejected, other people unaffected, renames audited".into());
+
+    // Own browser sessions: listed across surfaces with this one marked and
+    // first; another of one's sessions ends (with CSRF), the current one and
+    // other people's do not.
+    let spare = h.browser(&user_id, BrowserPurpose::DevPortal).await?;
+    let sessions = json_response(
+        h.cookie_request(&portal_user, Method::GET, "/api/v1/me/sessions")
+            .send()
+            .await?,
+        200,
+    )
+    .await?;
+    let items = sessions["items"].as_array().context("session list")?;
+    ensure!(
+        items.len() >= 3
+            && items[0]["current"] == true
+            && items[0]["surface"] == "portal"
+            && items.iter().filter(|item| item["current"] == true).count() == 1,
+        "the session list lost the current session or other surfaces"
+    );
+    let id_of = |surface: &str, current: bool| {
+        items
+            .iter()
+            .find(|item| item["surface"] == surface && item["current"] == current)
+            .and_then(|item| item["id"].as_str())
+            .map(str::to_owned)
+    };
+    let own = id_of("portal", true).context("current session id")?;
+    let other_list = json_response(
+        h.cookie_request(&console_other, Method::GET, "/api/v1/me/sessions")
+            .send()
+            .await?,
+        200,
+    )
+    .await?;
+    let foreign = other_list["items"][0]["id"]
+        .as_str()
+        .context("other person's session")?
+        .to_owned();
+    ensure!(
+        !items.iter().any(|item| item["id"] == foreign.as_str()),
+        "another person's session was listed"
+    );
+    denied(
+        h.cookie_request(
+            &portal_user,
+            Method::DELETE,
+            &format!(
+                "/api/v1/me/sessions/{}",
+                id_of("dev_portal", false).context("spare session")?
+            ),
+        )
+        .send()
+        .await?,
+        403,
+    )
+    .await?;
+    for (id, expected) in [(&own, 409), (&foreign, 404)] {
+        denied(
+            h.browser_request(
+                &portal_user,
+                Method::DELETE,
+                &format!("/api/v1/me/sessions/{id}"),
+            )
+            .send()
+            .await?,
+            expected,
+        )
+        .await?;
+    }
+    let spare_id =
+        sqlx::query_scalar::<_, Uuid>("SELECT id FROM development_sessions WHERE id_hash=$1")
+            .bind(hash(&spare.cookie))
+            .fetch_one(&state.pool)
+            .await?;
+    status(
+        h.browser_request(
+            &portal_user,
+            Method::DELETE,
+            &format!("/api/v1/me/sessions/{spare_id}"),
+        )
+        .send()
+        .await?,
+        204,
+    )
+    .await?;
+    denied(
+        h.cookie_request(&spare, Method::GET, "/api/v1/me")
+            .send()
+            .await?,
+        401,
+    )
+    .await?;
+    status(
+        h.cookie_request(&console_other, Method::GET, "/api/v1/me")
+            .send()
+            .await?,
+        200,
+    )
+    .await?;
+    passed.push("browser sessions: own sessions across surfaces with the current one first, another person's hidden, revocation needs CSRF, refuses the current and foreign sessions, and ends the chosen one".into());
+
     // Same-host ports share cookies; code on one origin must not use the other's
     // cookies even for reads. Reject before any session lookup.
     for browser in [&portal_admin, &dev_admin, &console_admin] {

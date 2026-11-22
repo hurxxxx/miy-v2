@@ -120,6 +120,12 @@ pub fn router_for(state: State, purpose: BrowserPurpose) -> Router {
             axum::routing::any(crate::connections::preview_connect),
         )
         .route("/me", axum::routing::get(me))
+        .route("/me/preferences", axum::routing::patch(update_preferences))
+        .route("/me/sessions", axum::routing::get(browser_sessions))
+        .route(
+            "/me/sessions/{id}",
+            axum::routing::delete(revoke_browser_session),
+        )
         .route(
             "/delegations",
             axum::routing::get(crate::delegations::list).post(crate::delegations::create),
@@ -945,6 +951,29 @@ async fn runtime_job(
 async fn me(S(s): S<State>, axum::Extension(p): P) -> ApiResult<Json<Value>> {
     Ok(Json(domain::me(&s, &p).await?))
 }
+async fn browser_sessions(
+    S(s): S<State>,
+    axum::Extension(p): P,
+    headers: HeaderMap,
+) -> ApiResult<Json<crate::api_contract::BrowserSessionPage>> {
+    Ok(Json(crate::browser_sessions::list(&s, &p, &headers).await?))
+}
+async fn revoke_browser_session(
+    S(s): S<State>,
+    axum::Extension(p): P,
+    headers: HeaderMap,
+    Path(id): Path<Uuid>,
+) -> ApiResult<axum::http::StatusCode> {
+    crate::browser_sessions::revoke(&s, &p, &headers, id).await?;
+    Ok(axum::http::StatusCode::NO_CONTENT)
+}
+async fn update_preferences(
+    S(s): S<State>,
+    axum::Extension(p): P,
+    Json(input): Json<crate::preferences::Update>,
+) -> ApiResult<Json<Value>> {
+    Ok(Json(crate::preferences::update(&s, &p, input).await?))
+}
 async fn create_app(
     S(s): S<State>,
     axum::Extension(p): P,
@@ -1208,7 +1237,10 @@ async fn development_login(
     if !s.auth.allowed_origin(&headers, true, purpose) {
         return Err(ApiError::forbidden());
     }
-    let session = s.auth.development_session(&s, &v.account, purpose).await?;
+    let session = s
+        .auth
+        .development_session(&s, &v.account, purpose, &headers)
+        .await?;
     let mut response = Json(json!({"redirect":"/"})).into_response();
     response
         .headers_mut()

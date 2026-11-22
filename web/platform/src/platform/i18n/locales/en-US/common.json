@@ -1,0 +1,73 @@
+{
+  "actions": {
+    "add": "Add",
+    "archive": "Archive",
+    "cancel": "Cancel",
+    "close": "Close",
+    "confirm": "Confirm",
+    "create": "Create",
+    "delete": "Delete",
+    "deletePermanently": "Delete permanently",
+    "done": "Done",
+    "edit": "Edit",
+    "open": "Open",
+    "reload": "Reload",
+    "retry": "Retry",
+    "remove": "Remove",
+    "previous": "Previous",
+    "next": "Next",
+    "rename": "Rename",
+    "reset": "Reset",
+    "save": "Save",
+    "saveChanges": "Save Changes",
+    "saving": "Saving...",
+    "search": "Search",
+    "share": "Share",
+    "signOut": "Sign Out",
+    "update": "Update"
+  },
+  "empty": {
+    "none": "None",
+    "noResults": "No results found."
+  },
+  "resourceLocation": {
+    "workspaceDocs": "Workspace docs",
+    "workspaceWhiteboards": "Workspace whiteboards",
+    "unfiled": "No location"
+  },
+  "date": {
+    "chooseDate": "Choose a date",
+    "chooseDateTime": "Choose a date and time",
+    "dateTimePlaceholder": "YYYY. M. D. HH:mm",
+    "hour": "Hour",
+    "minute": "Minute",
+    "month": "Month",
+    "nextHour": "Next hour",
+    "nextMinute": "Next minute",
+    "nextMonth": "Next month",
+    "placeholder": "YYYY. M. D.",
+    "previousHour": "Previous hour",
+    "previousMinute": "Previous minute",
+    "previousMonth": "Previous month",
+    "year": "Year"
+  },
+  "feedback": {
+    "itemLabel": "Feedback",
+    "loading": "Loading...",
+    "regionLabel": "Feedback ({hotkey})",
+    "requestFailed": "Request failed. ({{status}})",
+    "requestFailedRetry": "Could not process the request. Try again later.",
+    "routeLoadFailed": "The app screen could not be loaded. Reload to try again.",
+    "missingRootElement": "Missing root element.",
+    "unknown": "Unknown"
+  },
+  "labels": {
+    "apps": "Apps",
+    "workspace": "Workspace",
+    "workspaces": "Workspaces"
+  },
+  "accessNotice": {
+    "blockedAction": "You cannot {{action}} because you do not have access to {{workspace}}.",
+    "requestHelp": "Ask an admin for {{workspace}} access, or ask a meeting organizer or attendee with access."
+  }
+}

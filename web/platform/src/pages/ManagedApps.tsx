@@ -104,7 +104,7 @@ export function ManagedApps() {
               앱·환경 권한이 필요하면 관리자에게 요청하세요.
             </EmptyState>
           ) : (
-            <div className="grid">
+            <div className="card-grid">
               {apps.map((app) => (
                 <Panel
                   key={app.id}

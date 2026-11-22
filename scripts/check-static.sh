@@ -52,6 +52,9 @@ script_checks() {
   node scripts/build-ui-component.mjs --check
   node scripts/test-sdk-transport.mjs
   node scripts/check-token-copies.mjs
+  node scripts/check-i18n.mjs
+  node scripts/check-token-contrast.mjs
+  node scripts/check-hardcoded-colors.mjs
   python3 scripts/check-api-compat.py
   python3 scripts/test-api-compat.py
   python3 scripts/test-cli-downloads.py

@@ -39,9 +39,20 @@ export function browserOptions(route: Route, surface?: Surface) {
   };
 }
 
+/** The defaults GET /api/v1/me returns before a person saves any preference. */
+export const defaultPreferences = {
+  theme: "system",
+  locale: "ko-KR",
+  timeZone: "Asia/Seoul",
+  dateFormat: "korean",
+  jobTitle: null,
+  pinnedApps: [],
+};
+
 export function browserUser(route: Route, user: object) {
   const options = browserOptions(route);
   return {
+    preferences: defaultPreferences,
     ...user,
     browserPurpose: options.surface,
     portalOrigin: options.portalOrigin,

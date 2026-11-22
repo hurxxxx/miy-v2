@@ -47,7 +47,7 @@ export function Home() {
               return (
                 <section key={distribution} aria-labelledby={`apps-${distribution}`}>
                   <h2 className="page-section-title" id={`apps-${distribution}`}>{label}</h2>
-                  <div className="grid">
+                  <div className="card-grid">
                     {group.map((app) => (
                       <AppCard key={app.id} app={app} mark={marks.get(app.id) ?? "?"} environment={environment} />
                     ))}

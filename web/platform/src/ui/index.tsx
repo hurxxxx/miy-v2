@@ -117,7 +117,8 @@ export function monograms(names: { key: string; name: string }[]) {
   return result;
 }
 
-const MONOGRAM_COLORS = ["#2563eb", "#0f766e", "#7c3aed", "#d97706", "#dc2626", "#475569", "#0891b2", "#be185d"];
+// App marks keep one fixed hue per app in both themes, with white letters.
+const MONOGRAM_COLORS = ["#2563eb", "#0f766e", "#7c3aed", "#d97706", "#dc2626", "#475569", "#0891b2", "#be185d"]; // color-allow: fixed app hues
 export function monogramColor(key: string) {
   let hash = 0x811c9dc5; // FNV-1a spreads short app IDs across the palette
   for (const c of key) hash = Math.imul(hash ^ c.charCodeAt(0), 0x01000193) >>> 0;

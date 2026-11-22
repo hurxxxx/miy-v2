@@ -86,18 +86,22 @@ ${Object.entries(sortedDependencies).map(([name, requirement]) => `- ${name} ${r
 
 The components are styled with Tailwind utility classes, so the app builds
 them. Add the @tailwindcss/vite plugin to the Vite config and give the app one
-Tailwind entry CSS that imports this component's theme.css after Tailwind and
-scans the installed component sources:
+Tailwind entry CSS that imports this component's theme.css and app.css after
+Tailwind and scans the installed component sources:
 
     @import "tailwindcss";
     @import "../../platform-components/ui/theme.css";
+    @import "../../platform-components/ui/app.css";
     @source ".";
     @source "../../platform-components";
 
 The paths are for an entry CSS in web/src. Without the @source line Tailwind
 does not see the component classes and the components render unstyled.
 theme.css registers the color and font names the classes use (bg-ui-*,
-text-ui-*, border-ui-*, bg-app-*) and the class based dark variant.
+text-ui-*, border-ui-*, bg-app-*) and the class based dark variant. app.css
+adds AI-DO's app-level classes (app-text-*, app-control*, app-field-input*,
+app-menu-*, card, sidebar-*), its base rules and the light-mode legibility
+floor, so screens ported from AI-DO keep their look.
 
 Import components from the installed index. It loads styles.css, so the app
 does not import that file. The workspace equivalent is @miy/ui.

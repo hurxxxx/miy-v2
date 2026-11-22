@@ -302,13 +302,14 @@ test("unsaved app input guards app switching and logout through the shell", asyn
   await expect(page).toHaveURL(/\/environments\/dev$/);
 });
 
-test("the header starts the password change on this origin only", async ({ page }) => {
+test("the security settings start the password change on this origin only", async ({ page }) => {
   await mock(page, { me: () => ({ status: 200, json: user }), installations: () => ({ status: 200, json: [] }) });
-  await page.goto("/");
-  const link = page.getByRole("link", { name: "비밀번호 변경" });
-  await expect(link).toHaveAttribute("href", `${new URL(page.url()).origin}/auth/password`);
+  await page.route("**/api/v1/me/sessions", (route) => route.fulfill({ json: { items: [] } }));
+  await page.goto("/settings/security");
+  const origin = new URL(page.url()).origin;
   // It replaces this page like sign-out does; it is not a new tab.
-  await expect(link).not.toHaveAttribute("target", "_blank");
+  await page.getByRole("button", { name: "비밀번호 변경" }).click();
+  await expect(page).toHaveURL(`${origin}/auth/password`);
 
   // An address on another origin is never offered.
   await page.unroute("**/auth/options");
@@ -328,7 +329,7 @@ test("the header starts the password change on this origin only", async ({ page 
       },
     });
   });
-  await page.goto("/environments/prod");
-  await expect(page.getByRole("button", { name: "로그아웃" })).toBeVisible();
-  await expect(page.getByRole("link", { name: "비밀번호 변경" })).toHaveCount(0);
+  await page.goto("/settings/security");
+  await expect(page.getByRole("heading", { name: "보안" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "비밀번호 변경" })).toHaveCount(0);
 });

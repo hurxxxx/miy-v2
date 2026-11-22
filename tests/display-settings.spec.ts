@@ -1,4 +1,4 @@
-import { browserUser, mockSurface } from "./browser-surface";
+import { browserUser, defaultPreferences, mockSurface } from "./browser-surface";
 import { test, expect, type Page } from "@playwright/test";
 import type { Installation } from "../packages/sdk/src/index";
 import { mockFrames, type FrameMockOptions } from "./frame-mock";
@@ -23,15 +23,16 @@ const app: Installation = {
   ui: { entry: "/artifacts/health-fixture/mf-manifest.json", export: "./AppRoot", contractVersion: "miy.ui/v1alpha1" },
 };
 
-async function open(page: Page, stored: object | undefined, options: FrameMockOptions = {}) {
+// The signed-in person's saved preferences replace this browser's copy.
+async function open(page: Page, saved: object | undefined, options: FrameMockOptions = {}) {
   await page.route("**/api/**", async (route) => {
     const path = new URL(route.request().url()).pathname;
-    if (path === "/api/v1/me") return route.fulfill({ json: browserUser(route, user) });
+    if (path === "/api/v1/me")
+      return route.fulfill({ json: browserUser(route, { ...user, preferences: { ...defaultPreferences, ...saved } }) });
     if (path === "/api/v1/installations") return route.fulfill({ json: [app] });
     await route.fulfill({ json: { title: "저장된 제목" } });
   });
   await mockFrames(page, () => [app], () => ({ json: { title: "저장된 제목" } }), options);
-  if (stored) await page.addInitScript((value) => window.localStorage.setItem("miy:display-settings", JSON.stringify(value)), stored);
   await page.goto("/environments/dev/apps/settings-app");
   await expect(page.frameLocator("iframe.app-frame").getByLabel("문서 제목")).toHaveValue("저장된 제목");
   return page.frames().find((value) => value.url().endsWith("/_miy/launch"))!;
@@ -42,7 +43,7 @@ const marks = () => ({
   lang: document.documentElement.lang,
 });
 
-test("a stored dark English choice reaches the portal document and the app frame", async ({ page }) => {
+test("a saved dark English choice reaches the portal document and the app frame", async ({ page }) => {
   const frame = await open(page, { theme: "dark", locale: "en-US", timeZone: "America/New_York", dateFormat: "iso" });
   expect(await page.evaluate(marks)).toEqual({ dark: true, theme: "dark", lang: "en-US" });
   await expect.poll(() => frame.evaluate(marks)).toEqual({ dark: true, theme: "dark", lang: "en-US" });
@@ -51,7 +52,7 @@ test("a stored dark English choice reaches the portal document and the app frame
   expect(background).toBe("rgb(30, 31, 33)");
 });
 
-test("without a stored choice the portal and the frame follow the browser theme", async ({ page }) => {
+test("with the default system theme the portal and the frame follow the browser theme", async ({ page }) => {
   await page.emulateMedia({ colorScheme: "dark" });
   const frame = await open(page, undefined);
   expect(await page.evaluate(marks)).toEqual({ dark: true, theme: "dark", lang: "ko-KR" });

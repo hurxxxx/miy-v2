@@ -304,6 +304,24 @@ document.addEventListener("click", (event) => {
   if (url.protocol === "https:" || url.protocol === "http:") window.open(url.href, "_blank", "noopener,noreferrer");
 });
 
+// The runtime's own status lines are platform text: they follow the person's
+// language even for apps built before display settings.
+const MESSAGES = {
+  "ko-KR": {
+    renderFailed: "앱 화면을 표시할 수 없습니다. 앱을 다시 열거나 관리자에게 문의하세요.",
+    loading: "앱 화면을 불러오는 중…",
+    unsupported: "지원하지 않는 앱 화면입니다.",
+  },
+  "en-US": {
+    renderFailed: "The app screen cannot be shown. Open the app again or contact an administrator.",
+    loading: "Loading the app screen…",
+    unsupported: "This app screen is not supported.",
+  },
+} as const;
+function message(key: keyof (typeof MESSAGES)["ko-KR"]): string {
+  return (MESSAGES[boot.settings?.locale] ?? MESSAGES["ko-KR"])[key];
+}
+
 class Boundary extends Component<{ children: ReactNode }, { error: boolean }> {
   state = { error: false };
   static getDerivedStateFromError() {
@@ -315,7 +333,7 @@ class Boundary extends Component<{ children: ReactNode }, { error: boolean }> {
   render() {
     return this.state.error ? (
       <p className="miy-frame-status" role="alert">
-        앱 화면을 표시할 수 없습니다. 앱을 다시 열거나 관리자에게 문의하세요.
+        {message("renderFailed")}
       </p>
     ) : (
       this.props.children
@@ -407,7 +425,7 @@ try {
   const View = remote();
   root.render(
     <Boundary>
-      <Suspense fallback={<p className="miy-frame-status">앱 화면을 불러오는 중…</p>}>
+      <Suspense fallback={<p className="miy-frame-status">{message("loading")}</p>}>
         <FrameApp View={View} />
       </Suspense>
     </Boundary>,
@@ -416,7 +434,7 @@ try {
   post({ type: "frame.error", payload: { code: error instanceof Error ? error.message.slice(0, 64) : "frame_failed" } });
   root.render(
     <p className="miy-frame-status" role="alert">
-      지원하지 않는 앱 화면입니다.
+      {message("unsupported")}
     </p>,
   );
 }

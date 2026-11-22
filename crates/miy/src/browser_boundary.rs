@@ -52,7 +52,8 @@ pub fn access(route: &str, method: &Method) -> Option<Access> {
         | "/.well-known/oauth-protected-resource/mcp"
         | "/cli/authorize/{id}"
         | "/cli/device/{id}" => Access::Public,
-        "/me" => Access::Shared,
+        // Each surface reads and changes only the signed-in person's own record.
+        "/me" | "/me/preferences" | "/me/sessions" | "/me/sessions/{id}" => Access::Shared,
         "/installations" if read => Access::Portal,
         // Business app UIs run in their own frame origins (app_frames). A portal
         // session only launches and renews frames; it never reaches app code or data.

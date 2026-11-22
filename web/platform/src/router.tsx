@@ -8,6 +8,7 @@ import { CliAuthorize, CliDeviceApprove } from "./pages/CliAuthorize";
 import { useSurface } from "./data/session";
 import { ManagedApps } from "./pages/ManagedApps";
 import { CliSessions } from "./pages/CliSessions";
+import { SettingsPage } from "./pages/settings/SettingsPage";
 import { Loading } from "./ui";
 
 // The console never imports the remote runtime module, including through a direct
@@ -40,6 +41,8 @@ export const router = createRouter({
     page("/cli/device/$id", CliDeviceApprove),
     page("/cli/sessions", CliSessions),
     page("/admin", Admin),
+    page("/settings", SettingsPage),
+    page("/settings/$section", SettingsPage),
     // Public account-link pages; the shell renders them before any session check.
     page("/join", () => null),
     page("/reset-password", () => null),

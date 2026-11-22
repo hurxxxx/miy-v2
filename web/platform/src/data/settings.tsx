@@ -1,52 +1,18 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
-import {
-  DATE_FORMATS,
-  DEFAULT_SETTINGS,
-  LOCALES,
-  THEME_PREFERENCES,
-  timeZoneName,
-  type FrameSettings,
-} from "@miy/frame-protocol";
+import type { FrameSettings } from "@miy/frame-protocol";
+import { syncLocale } from "../platform/i18n";
+import { normalizeSettings, readStoredSettings, setCurrentSettings, writeStoredSettings } from "./display-settings-store";
+
+export { currentSettings, readStoredSettings } from "./display-settings-store";
 
 /**
- * Display settings of this browser: theme, language, time zone and date format,
- * modelled as in AI-DO. They are applied to the portal document and passed to
- * app frames. Saved per-person preferences arrive with the personal settings
- * work; until then the values live in this origin's local storage.
+ * Display settings applied to the portal document and passed to app frames.
+ * `update` changes what this page shows; saving a person's choice is the
+ * settings page's job (PATCH /api/v1/me/preferences), and the saved values
+ * arrive here again after sign-in (data/session.tsx).
  */
-const KEY = "miy:display-settings";
 const DARK = "(prefers-color-scheme: dark)";
 
-function pick<T extends string>(values: readonly T[], value: unknown, fallback: T): T {
-  return typeof value === "string" && (values as readonly string[]).includes(value) ? (value as T) : fallback;
-}
-function zone(value: unknown): string {
-  for (const candidate of [value, Intl.DateTimeFormat().resolvedOptions().timeZone]) {
-    if (!timeZoneName(candidate)) continue;
-    try {
-      new Intl.DateTimeFormat("en-US", { timeZone: candidate });
-      return candidate;
-    } catch {
-      /* not a zone this browser knows */
-    }
-  }
-  return DEFAULT_SETTINGS.timeZone;
-}
-export function readStoredSettings(): FrameSettings {
-  let stored: Record<string, unknown> = {};
-  try {
-    const parsed: unknown = JSON.parse(window.localStorage.getItem(KEY) ?? "{}");
-    if (typeof parsed === "object" && parsed !== null) stored = parsed as Record<string, unknown>;
-  } catch {
-    /* unreadable storage: fall back to defaults */
-  }
-  return {
-    theme: pick(THEME_PREFERENCES, stored.theme, DEFAULT_SETTINGS.theme),
-    locale: pick(LOCALES, stored.locale, DEFAULT_SETTINGS.locale),
-    timeZone: zone(stored.timeZone),
-    dateFormat: pick(DATE_FORMATS, stored.dateFormat, DEFAULT_SETTINGS.dateFormat),
-  };
-}
 export function resolveTheme(theme: FrameSettings["theme"], systemDark: boolean): "light" | "dark" {
   return theme === "system" ? (systemDark ? "dark" : "light") : theme;
 }
@@ -75,15 +41,22 @@ export function DisplaySettingsProvider({ children }: { children: ReactNode }) {
     query.addEventListener("change", changed);
     return () => query.removeEventListener("change", changed);
   }, []);
-  useEffect(() => applyDocumentSettings(settings, systemDark), [settings, systemDark]);
+  useEffect(() => {
+    setCurrentSettings(settings);
+    syncLocale(settings.locale);
+    applyDocumentSettings(settings, systemDark);
+  }, [settings, systemDark]);
   const update = useCallback((change: Partial<FrameSettings>) => {
     setSettings((current) => {
-      const next = { ...current, ...change };
-      try {
-        window.localStorage.setItem(KEY, JSON.stringify(next));
-      } catch {
-        /* the choice still applies to this page */
-      }
+      const next = normalizeSettings({ ...current, ...change });
+      if (
+        next.theme === current.theme &&
+        next.locale === current.locale &&
+        next.timeZone === current.timeZone &&
+        next.dateFormat === current.dateFormat
+      )
+        return current;
+      writeStoredSettings(next);
       return next;
     });
   }, []);

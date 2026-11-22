@@ -434,9 +434,9 @@ impl Auth {
             return Err(ApiError::unavailable("password_reset_in_progress"));
         }
         let session = random();
-        sqlx::query("INSERT INTO sessions(id_hash,user_id,access_token,refresh_token,csrf,expires_at,browser_purpose) VALUES($1,$2,$3,$4,$5,$6,$7)")
+        sqlx::query("INSERT INTO sessions(id_hash,user_id,access_token,refresh_token,csrf,expires_at,browser_purpose,user_agent,last_seen_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,now())")
             .bind(hash(&session)).bind(id.sub).bind(encrypt(&tokens.access_token)?).bind(encrypt(tokens.refresh_token.as_deref().unwrap_or(""))?)
-            .bind(random()).bind(Utc::now()+Duration::seconds(tokens.expires_in)).bind(purpose.as_str())
+            .bind(random()).bind(Utc::now()+Duration::seconds(tokens.expires_in)).bind(purpose.as_str()).bind(user_agent(headers))
             .execute(&mut *tx).await?;
         tx.commit().await?;
         Ok(session)
@@ -478,7 +478,11 @@ impl Auth {
             && let Some(session) = cookie(headers, &self.cookie_name(purpose, "development"))
         {
             let row = sqlx::query("SELECT user_id,csrf FROM development_sessions WHERE id_hash=$1 AND expires_at>now() AND browser_purpose=$2")
-                .bind(hash(session)).bind(purpose.as_str()).fetch_optional(&state.pool).await?.ok_or_else(ApiError::unauthorized)?;
+                .bind(hash(&session)).bind(purpose.as_str()).fetch_optional(&state.pool).await?.ok_or_else(ApiError::unauthorized)?;
+            sqlx::query(&format!("UPDATE development_sessions SET last_seen_at=now() WHERE id_hash=$1 AND {SEEN_STALE}"))
+                .bind(hash(&session))
+                .execute(&state.pool)
+                .await?;
             return Ok(Principal {
                 browser_purpose: Some(purpose),
                 cli_session_id: None,
@@ -526,6 +530,12 @@ impl Auth {
             tracing::warn!(event = "session_subject_mismatch");
             return Err(ApiError::unauthorized());
         }
+        sqlx::query(&format!(
+            "UPDATE sessions SET last_seen_at=now() WHERE id_hash=$1 AND {SEEN_STALE}"
+        ))
+        .bind(hash(&session))
+        .execute(&mut *tx)
+        .await?;
         tx.commit().await?;
         Ok(Principal {
             browser_purpose: Some(purpose),
@@ -572,6 +582,17 @@ impl Auth {
         ]);
         Ok(url.into())
     }
+    /// The stored hash of the browser session this request carries, if any. It
+    /// marks "this session" in the person's session list.
+    pub fn session_hash(&self, headers: &HeaderMap, purpose: BrowserPurpose) -> Option<String> {
+        let development = self
+            .development_login
+            .then(|| cookie(headers, &self.cookie_name(purpose, "development")))
+            .flatten();
+        development
+            .or_else(|| cookie(headers, &self.cookie_name(purpose, "session")))
+            .map(|session| hash(&session))
+    }
     pub fn allowed_origin(
         &self,
         headers: &HeaderMap,
@@ -590,6 +611,7 @@ impl Auth {
         state: &State,
         account: &str,
         purpose: BrowserPurpose,
+        headers: &HeaderMap,
     ) -> ApiResult<String> {
         if !self.development_login {
             return Err(ApiError::not_found());
@@ -608,12 +630,13 @@ impl Auth {
                 .await?
                 .ok_or_else(ApiError::unauthorized)?;
         let session = random();
-        sqlx::query("INSERT INTO development_sessions(id_hash,user_id,csrf,expires_at,browser_purpose) VALUES($1,$2,$3,$4,$5)")
+        sqlx::query("INSERT INTO development_sessions(id_hash,user_id,csrf,expires_at,browser_purpose,user_agent,last_seen_at) VALUES($1,$2,$3,$4,$5,$6,now())")
             .bind(hash(&session))
             .bind(&id)
             .bind(random())
             .bind(Utc::now() + Duration::hours(8))
             .bind(purpose.as_str())
+            .bind(user_agent(headers))
             .execute(&mut *tx)
             .await?;
         tx.commit().await?;
@@ -622,3 +645,38 @@ impl Auth {
     }
 }
 use sha2::Digest;
+
+/// Last use is a hint for the person's session list, so it is written at most
+/// once a minute per session instead of on every request.
+const SEEN_STALE: &str = "(last_seen_at IS NULL OR last_seen_at<now()-interval '1 minute')";
+
+/// The browser line shown in the person's session list: the User-Agent header,
+/// without control characters and bounded like the column.
+pub(crate) fn user_agent(headers: &HeaderMap) -> Option<String> {
+    let value = headers.get(axum::http::header::USER_AGENT)?.to_str().ok()?;
+    let value: String = value
+        .chars()
+        .filter(|c| !c.is_control())
+        .take(512)
+        .collect();
+    let value = value.trim();
+    (!value.is_empty()).then(|| value.to_owned())
+}
+
+#[cfg(test)]
+mod user_agent_tests {
+    #[test]
+    fn user_agent_is_bounded_and_printable() {
+        let mut headers = axum::http::HeaderMap::new();
+        assert_eq!(super::user_agent(&headers), None);
+        headers.insert("user-agent", "  ".parse().unwrap());
+        assert_eq!(super::user_agent(&headers), None);
+        headers.insert("user-agent", "Mozilla/5.0 (X11)\tFirefox".parse().unwrap());
+        assert_eq!(
+            super::user_agent(&headers).as_deref(),
+            Some("Mozilla/5.0 (X11)Firefox")
+        );
+        headers.insert("user-agent", "a".repeat(600).parse().unwrap());
+        assert_eq!(super::user_agent(&headers).map(|v| v.len()), Some(512));
+    }
+}

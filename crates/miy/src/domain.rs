@@ -76,8 +76,10 @@ pub async fn me(state: &State, p: &Principal) -> ApiResult<Value> {
         .into_iter()
         .filter(|grant| !portal || grant["permission"] == "use")
         .collect();
+    let preferences = crate::preferences::read(&state.pool, &p.id).await?;
     Ok(json!({
         "id":p.id,"name":row.get::<String,_>("name"),"admin":administrator && !portal,
+        "preferences":preferences,
         "grants":grants,"csrf":p.csrf,"development":p.development,"delegation":delegation,
         "browserPurpose":p.browser_purpose.map(|purpose| purpose.as_str()),
         "portalOrigin":state.auth.origin,"consoleOrigin":state.auth.console_origin,"devPortalOrigin":state.auth.dev_portal_origin,
@@ -509,7 +511,7 @@ pub fn catalog() -> Value {
         {"id":"get_contract","method":"GET","path":"/api/v1/contracts","permission":"authenticated","description":"App/UI contract and standalone JSON Schema"},
         {"id":"catalog","method":"GET","path":"/api/v1/catalog","permission":"authenticated","description":"All implemented public V0-V1 JSON APIs"},
         {"id":"openapi","method":"GET","path":"/api/v1/openapi.json","permission":"authenticated","description":"OpenAPI specification for the implemented V0-V1 API scope"},
-        {"id":"me","method":"GET","path":"/api/v1/me","permission":"authenticated","description":"Current user and effective app/environment grants"},
+        {"id":"me","method":"GET","path":"/api/v1/me","permission":"authenticated","description":"Current user, personal preferences and effective app/environment grants"},
         {"id":"installations","method":"GET","path":"/api/v1/installations","permission":"use or develop","description":"Visible app installations and runtime UI metadata"},
         {"id":"validate_manifest","method":"POST","path":"/api/v1/contracts/validate","permission":"authenticated","description":"Validate manifest against pinned contract","input":schemars::schema_for!(Manifest)},
         {"id":"prepare_database","method":"POST","path":"/api/v1/database/prepare","permission":"develop on installation","description":"Prepare one installation DB and apply a registered release's migrations","input":schemars::schema_for!(Prepare)},
@@ -522,6 +524,17 @@ pub fn catalog() -> Value {
         {"id":"app_api_patch","method":"PATCH","path":"/api/v1/installations/{id}/api/{path}","permission":"use or develop on installation","description":"Forward app record update with CSRF and current release"},
         {"id":"app_api_delete","method":"DELETE","path":"/api/v1/installations/{id}/api/{path}","permission":"use or develop on installation","description":"Forward app record deletion with CSRF and current release"}
     ]);
+    // Personal settings and sessions (kept out of the literal above, which is at
+    // the json! macro recursion limit).
+    let personal = [
+        json!({"id":"browser_sessions","method":"GET","path":"/api/v1/me/sessions","permission":"undelegated user (own sessions only)","description":"Live browser sessions of the signed-in person on the portals and console; current marks this request's session"}),
+        json!({"id":"revoke_browser_session","method":"DELETE","path":"/api/v1/me/sessions/{id}","permission":"undelegated user (own sessions only)","description":"End one of one's own browser sessions and the app frames launched from it; the current session ends by signing out"}),
+        json!({"id":"update_preferences","method":"PATCH","path":"/api/v1/me/preferences","permission":"undelegated, enabled user (own record only)","description":"Change one's own display name, job title, display settings and launcher pins; omitted fields stay","input":schemars::schema_for!(crate::preferences::Update)}),
+    ];
+    catalog
+        .as_array_mut()
+        .expect("catalog array")
+        .extend(personal);
     catalog.as_array_mut().unwrap().extend([
         json!({"id":"register_user","method":"POST","path":"/api/v1/users","permission":"admin","description":"Register a person by the identity provider's subject ID so they can sign in. Grants no app permission; 409 user_exists when already registered","input":schemars::schema_for!(crate::user_admin::Registration)}),
         json!({"id":"update_user","method":"PATCH","path":"/api/v1/users/{id}","permission":"admin","description":"Change a registered person's display name, administrator role or app-registration eligibility. The last enabled administrator keeps the role","input":schemars::schema_for!(crate::user_admin::Update)}),

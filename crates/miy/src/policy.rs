@@ -58,6 +58,9 @@ pub enum PlatformAction {
     /// Ask for a new app: an undelegated, enabled administrator or developer
     /// (`can_develop`) with `miy.dev`.
     RequestApp,
+    /// Change one's own personal settings: an undelegated, enabled user, on any
+    /// browser surface including the business portals.
+    Personal,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -495,7 +498,9 @@ impl Write {
         p: &Principal,
         action: PlatformAction,
     ) -> ApiResult<Decided> {
-        if p.browser_purpose.is_some_and(BrowserPurpose::portal) {
+        if action != PlatformAction::Personal
+            && p.browser_purpose.is_some_and(BrowserPurpose::portal)
+        {
             return Err(ApiError::forbidden());
         }
         delegations::unrestricted(p)?;
@@ -511,6 +516,7 @@ impl Write {
                         (row.get::<bool, _>("admin") || row.get::<bool, _>("can_develop"))
                             && p.scopes.iter().any(|scope| scope == "miy.dev")
                     }
+                    PlatformAction::Personal => true,
                 }
         });
         if allowed {

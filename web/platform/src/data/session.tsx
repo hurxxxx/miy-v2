@@ -7,6 +7,8 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import type { DateFormat, Locale, ThemePreference } from "@miy/frame-protocol";
+import { useDisplaySettings } from "./settings";
 
 // Two business-app portals (prod and dev) and the management console are three
 // origins. Dev app code never shares a JavaScript origin with prod apps.
@@ -31,9 +33,20 @@ export type LoginOptions = {
   /** An administrator can issue invitation and password reset links on this server. */
   accountLinks?: boolean;
 };
+/** A person's own settings (GET /api/v1/me `preferences`). Presentation only. */
+export type Preferences = {
+  theme: ThemePreference;
+  locale: Locale;
+  timeZone: string;
+  dateFormat: DateFormat;
+  jobTitle: string | null;
+  /** App IDs pinned to the launcher, in display order. */
+  pinnedApps: string[];
+};
 export type User = {
   id: string;
   name: string;
+  preferences: Preferences;
   admin: boolean;
   csrf: string;
   browserPurpose: BrowserSurface | null;
@@ -65,6 +78,8 @@ type SessionContextValue = {
   state: SessionState;
   options?: LoginOptions;
   retry: () => void;
+  /** Replace fields the server returned after a change of one's own record. */
+  updateUser: (change: Pick<User, "name" | "preferences">) => void;
 };
 
 const SessionContext = createContext<SessionContextValue | null>(null);
@@ -123,6 +138,8 @@ async function readSession(
 
 export function SessionProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<SessionState>({ status: "loading" });
+  const display = useDisplaySettings();
+  const adopt = display.update;
   const [options, setOptions] = useState<LoginOptions>();
   const [attempt, setAttempt] = useState(0);
   const controller = useRef<AbortController>(undefined);
@@ -143,8 +160,10 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         return readSession(next, current.signal);
       })
       .then((user) => {
-        if (!current.signal.aborted)
-          setState(user ? { status: "ready", user } : { status: "anonymous" });
+        if (current.signal.aborted) return;
+        // The saved choice wins over this browser's copy from now on.
+        if (user) adopt(displayOf(user.preferences));
+        setState(user ? { status: "ready", user } : { status: "anonymous" });
       })
       .catch((error: unknown) => {
         if (!current.signal.aborted)
@@ -154,13 +173,31 @@ export function SessionProvider({ children }: { children: ReactNode }) {
           });
       });
     return () => current.abort();
-  }, [attempt]);
+  }, [attempt, adopt]);
   const retry = useCallback(() => setAttempt((value) => value + 1), []);
+  const updateUser = useCallback(
+    (change: Pick<User, "name" | "preferences">) => {
+      adopt(displayOf(change.preferences));
+      setState((current) =>
+        current.status === "ready" ? { status: "ready", user: { ...current.user, ...change } } : current,
+      );
+    },
+    [adopt],
+  );
   return (
-    <SessionContext.Provider value={{ state, options, retry }}>
+    <SessionContext.Provider value={{ state, options, retry, updateUser }}>
       {children}
     </SessionContext.Provider>
   );
+}
+
+export function displayOf(preferences: Preferences) {
+  return {
+    theme: preferences.theme,
+    locale: preferences.locale,
+    timeZone: preferences.timeZone,
+    dateFormat: preferences.dateFormat,
+  };
 }
 
 export function useSession() {

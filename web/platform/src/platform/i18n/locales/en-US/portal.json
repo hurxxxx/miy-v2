@@ -1,0 +1,79 @@
+{
+  "surfaces": {
+    "portal": "Work portal",
+    "dev_portal": "Test portal",
+    "console": "Admin console"
+  },
+  "roles": {
+    "admin": "Platform administrator",
+    "appManager": "App management",
+    "member": "Member"
+  },
+  "settings": {
+    "passwordOnIdentityProvider": "Opens the sign-in server's password change page.",
+    "cliSessions": "CLI connections",
+    "cliSessionsDescription": "Review and disconnect the CLIs and agents signed in with this account in the admin console.",
+    "openCliSessions": "Manage CLI connections"
+  },
+  "errors": {
+    "invalid_user_name": "Enter a name of 1 to 120 characters.",
+    "invalid_job_title": "Enter a job title of up to 120 characters.",
+    "invalid_time_zone": "This time zone is not supported.",
+    "invalid_pinned_apps": "The list of pinned apps is not valid.",
+    "use_sign_out_for_current_session": "Sign out to end the session you are using now.",
+    "not_found": "It has already ended or cannot be found.",
+    "forbidden": "You do not have permission to do this.",
+    "unauthorized": "Your sign-in has expired. Please sign in again."
+  },
+  "shell": {
+    "backToPlatform": "Back to the platform",
+    "skipToContent": "Skip to content",
+    "platformNavigation": "Platform navigation",
+    "homeLabel": "miy home",
+    "apps": "Apps",
+    "platform": "Platform",
+    "home": "Home",
+    "appsLoadFailed": "Could not load the app list.",
+    "appsLoading": "Loading apps…",
+    "administration": "Platform administration",
+    "administrationShort": "Admin",
+    "myCliSessions": "My CLI connections",
+    "console": "Admin console",
+    "portal": "Work portal",
+    "cliInstall": "Install the CLI",
+    "cliInstallShort": "CLI",
+    "openMenu": "Open menu",
+    "closeMenu": "Close menu",
+    "mySettings": "My settings",
+    "signOut": "Sign out",
+    "environment": "Environment",
+    "environments": {
+      "dev": "Test",
+      "prod": "Production"
+    },
+    "environmentBadges": {
+      "dev": "Test · DEV",
+      "prod": "Production · PROD"
+    },
+    "redirecting": "Moving to {{label}}.",
+    "continue": "Continue",
+    "openAppsInPortal": "Open business apps in the portal",
+    "consoleRunsNoApps": "The admin console does not run business apps.",
+    "openInPortal": "Open in the work portal",
+    "serverUnreachable": "Could not reach the server. Your sign-in has not changed.",
+    "unknownEnvironment": "This environment does not exist",
+    "useEnvironmentAddress": "Use the address of the test or production environment.",
+    "toProd": "Go to production",
+    "toDev": "Go to test",
+    "titles": {
+      "admin": "Platform administration",
+      "cliInstall": "Install the CLI",
+      "cliApproval": "Approve CLI sign-in",
+      "cliSessions": "My CLI connections",
+      "settings": "My settings",
+      "managedApps": "Apps I manage",
+      "prodApps": "Production apps",
+      "devApps": "Test apps"
+    }
+  }
+}

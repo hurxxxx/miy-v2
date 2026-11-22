@@ -77,6 +77,24 @@ export interface AuditPage {
   nextCursor: number | null;
 }
 
+/** One of the signed-in person's live browser sessions (`GET /api/v1/me/sessions`). */
+export interface BrowserSession {
+  createdAt: string;
+  /** The session this request was made with. */
+  current: boolean;
+  expiresAt: string;
+  id: string;
+  /** Updated at most once a minute. */
+  lastSeenAt: string | null;
+  /** `portal`, `dev_portal` or `console`. */
+  surface: string;
+  userAgent: string | null;
+}
+
+export interface BrowserSessionPage {
+  items: BrowserSession[];
+}
+
 export type DateFormat = "korean" | "iso" | "us" | "european" | "locale";
 
 /**
@@ -267,6 +285,21 @@ export interface LastOperation {
 
 /** Display languages the platform offers. */
 export type Locale = "ko-KR" | "en-US";
+
+/**
+ * A person's own settings: `preferences` of `GET /api/v1/me` and the answer of
+ * `PATCH /api/v1/me/preferences`. Presentation only, never an access input.
+ */
+export interface Preferences {
+  dateFormat: DateFormat;
+  jobTitle: string | null;
+  locale: Locale;
+  /** App IDs pinned to the launcher, in display order. */
+  pinnedApps: string[];
+  theme: ThemePreference;
+  /** IANA time zone name. */
+  timeZone: string;
+}
 
 /** A stored acceptance check, as the test acceptance request recorded it. */
 export interface RecordedCheck {

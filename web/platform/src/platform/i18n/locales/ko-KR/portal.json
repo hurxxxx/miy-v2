@@ -1,0 +1,79 @@
+{
+  "surfaces": {
+    "portal": "업무 포털",
+    "dev_portal": "테스트 포털",
+    "console": "관리 콘솔"
+  },
+  "roles": {
+    "admin": "플랫폼 관리자",
+    "appManager": "앱 관리",
+    "member": "구성원"
+  },
+  "settings": {
+    "passwordOnIdentityProvider": "로그인 서버의 비밀번호 변경 화면으로 이동합니다.",
+    "cliSessions": "CLI 연결",
+    "cliSessionsDescription": "이 계정으로 로그인한 CLI와 에이전트 연결을 관리 콘솔에서 확인하고 끊습니다.",
+    "openCliSessions": "CLI 연결 관리"
+  },
+  "errors": {
+    "invalid_user_name": "이름은 1~120자로 입력해 주세요.",
+    "invalid_job_title": "직무는 120자 이내로 입력해 주세요.",
+    "invalid_time_zone": "지원하지 않는 시간대입니다.",
+    "invalid_pinned_apps": "고정할 앱 목록이 올바르지 않습니다.",
+    "use_sign_out_for_current_session": "지금 사용 중인 세션은 로그아웃으로 종료하세요.",
+    "not_found": "이미 종료되었거나 찾을 수 없습니다.",
+    "forbidden": "이 작업을 할 권한이 없습니다.",
+    "unauthorized": "로그인이 만료되었습니다. 다시 로그인해 주세요."
+  },
+  "shell": {
+    "backToPlatform": "플랫폼으로 돌아가기",
+    "skipToContent": "본문으로 건너뛰기",
+    "platformNavigation": "플랫폼 탐색",
+    "homeLabel": "miy 홈",
+    "apps": "앱",
+    "platform": "플랫폼",
+    "home": "홈",
+    "appsLoadFailed": "앱 목록을 불러오지 못했습니다.",
+    "appsLoading": "앱 목록을 불러오는 중…",
+    "administration": "플랫폼 관리",
+    "administrationShort": "관리",
+    "myCliSessions": "내 CLI 연결",
+    "console": "관리 콘솔",
+    "portal": "업무 포털",
+    "cliInstall": "CLI 설치",
+    "cliInstallShort": "CLI",
+    "openMenu": "메뉴 열기",
+    "closeMenu": "메뉴 닫기",
+    "mySettings": "내 설정",
+    "signOut": "로그아웃",
+    "environment": "실행 환경",
+    "environments": {
+      "dev": "테스트 영역",
+      "prod": "운영 영역"
+    },
+    "environmentBadges": {
+      "dev": "테스트 · DEV",
+      "prod": "운영 · PROD"
+    },
+    "redirecting": "{{label}}(으)로 이동합니다.",
+    "continue": "계속",
+    "openAppsInPortal": "업무 앱은 포털에서 열어 주세요",
+    "consoleRunsNoApps": "관리 콘솔에서는 업무 앱을 실행하지 않습니다.",
+    "openInPortal": "업무 포털에서 열기",
+    "serverUnreachable": "서버에 연결하지 못했습니다. 로그인 상태는 바뀌지 않았습니다.",
+    "unknownEnvironment": "존재하지 않는 실행 환경입니다",
+    "useEnvironmentAddress": "테스트 또는 운영 영역의 주소를 사용하세요.",
+    "toProd": "운영 영역으로",
+    "toDev": "테스트 영역으로",
+    "titles": {
+      "admin": "플랫폼 관리",
+      "cliInstall": "CLI 설치",
+      "cliApproval": "CLI 로그인 승인",
+      "cliSessions": "내 CLI 연결",
+      "settings": "내 설정",
+      "managedApps": "내가 관리하는 앱",
+      "prodApps": "운영 앱",
+      "devApps": "테스트 앱"
+    }
+  }
+}

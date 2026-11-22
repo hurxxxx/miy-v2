@@ -939,7 +939,7 @@ fn settings_aware(bundle: Option<&str>) -> bool {
     }
 }
 /// An IANA-shaped zone name; whether the zone exists is the reader's concern.
-fn time_zone_name(value: &str) -> bool {
+pub(crate) fn time_zone_name(value: &str) -> bool {
     !value.is_empty()
         && value.len() <= 64
         && value.starts_with(|c: char| c.is_ascii_alphabetic())

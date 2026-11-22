@@ -250,6 +250,69 @@
       ],
       "type": "object"
     },
+    "BrowserSession": {
+      "description": "One of the signed-in person's live browser sessions (`GET /api/v1/me/sessions`).",
+      "properties": {
+        "createdAt": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "current": {
+          "description": "The session this request was made with.",
+          "type": "boolean"
+        },
+        "expiresAt": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "id": {
+          "format": "uuid",
+          "type": "string"
+        },
+        "lastSeenAt": {
+          "description": "Updated at most once a minute.",
+          "format": "date-time",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "surface": {
+          "description": "`portal`, `dev_portal` or `console`.",
+          "type": "string"
+        },
+        "userAgent": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "surface",
+        "createdAt",
+        "expiresAt",
+        "lastSeenAt",
+        "userAgent",
+        "current"
+      ],
+      "type": "object"
+    },
+    "BrowserSessionPage": {
+      "properties": {
+        "items": {
+          "items": {
+            "$ref": "#/$defs/BrowserSession"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "items"
+      ],
+      "type": "object"
+    },
     "DateFormat": {
       "enum": [
         "korean",
@@ -874,6 +937,46 @@
         "en-US"
       ],
       "type": "string"
+    },
+    "Preferences": {
+      "description": "A person's own settings: `preferences` of `GET /api/v1/me` and the answer of\n`PATCH /api/v1/me/preferences`. Presentation only, never an access input.",
+      "properties": {
+        "dateFormat": {
+          "$ref": "#/$defs/DateFormat"
+        },
+        "jobTitle": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "locale": {
+          "$ref": "#/$defs/Locale"
+        },
+        "pinnedApps": {
+          "description": "App IDs pinned to the launcher, in display order.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "theme": {
+          "$ref": "#/$defs/ThemePreference"
+        },
+        "timeZone": {
+          "description": "IANA time zone name.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "theme",
+        "locale",
+        "timeZone",
+        "dateFormat",
+        "jobTitle",
+        "pinnedApps"
+      ],
+      "type": "object"
     },
     "RecordedCheck": {
       "description": "A stored acceptance check, as the test acceptance request recorded it.",
