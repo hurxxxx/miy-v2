@@ -163,7 +163,25 @@ async fn fake_core(request: Request) -> AxumResponse {
             )
         }
         ("POST", ["platform", "notifications"]) => {
-            let accepted = body_json["recipients"].as_array().map_or(0, Vec::len);
+            // `recipientGroups` (notify_with_groups) reach the groups' current members.
+            let mut people: std::collections::BTreeSet<String> = body_json["recipients"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(|id| id.as_str().map(str::to_string))
+                .collect();
+            for group in body_json["recipientGroups"]
+                .as_array()
+                .into_iter()
+                .flatten()
+            {
+                for (member, groups) in &core.memberships {
+                    if groups.iter().any(|g| Some(g.as_str()) == group.as_str()) {
+                        people.insert(member.clone());
+                    }
+                }
+            }
+            let accepted = people.len();
             core.events
                 .push(json!({"op": "notify", "by": user, "body": body_json.clone()}));
             json_response(
@@ -464,11 +482,19 @@ fn identity(user: &str) -> String {
 }
 
 fn platform_identity(user: &str) -> String {
-    token(
-        json!({"sub": user, "admin": false, "installation_id": INSTALLATION,
+    platform_identity_with_groups(user, None)
+}
+
+/// A platform call as the Core signs it; `groups` is the person's current
+/// group IDs (present when the app is approved for platform:directory:read).
+fn platform_identity_with_groups(user: &str, groups: Option<&[&str]>) -> String {
+    let mut claims = json!({"sub": user, "admin": false, "installation_id": INSTALLATION,
         "release_id": RELEASE, "iss": "miy", "aud": "miy-app", "exp": exp(),
-        "environment": "dev", "platform": true}),
-    )
+        "environment": "dev", "platform": true});
+    if let Some(groups) = groups {
+        claims["groups"] = json!(groups);
+    }
+    token(claims)
 }
 
 async fn send(
@@ -2704,6 +2730,11 @@ async fn notices_notify_their_readers_and_platform_rechecks_follow_access() {
         json!([member]),
         "direct members except the author"
     );
+    assert_eq!(
+        sent["body"]["recipientGroups"],
+        json!([team]),
+        "group subjects reach their current members"
+    );
     assert_eq!(sent["body"]["title"], "[마케팅 공지] 주간 회의 안내");
     assert_eq!(
         sent["body"]["path"],
@@ -2749,13 +2780,12 @@ async fn notices_notify_their_readers_and_platform_rechecks_follow_access() {
         {"groupKey": "notice:missing", "resourceId": "m"},
         {"groupKey": "other:thing", "resourceId": "o"},
     ]});
-    let allowed = |who: &str| {
-        let who = who.to_string();
+    let allowed_as = |identity: String| {
         let items = items.clone();
         async move {
             let response = send(
                 base(),
-                Some(platform_identity(&who)),
+                Some(identity),
                 Method::POST,
                 "/platform/notification-check",
                 Some(items),
@@ -2764,18 +2794,29 @@ async fn notices_notify_their_readers_and_platform_rechecks_follow_access() {
             expect(response, StatusCode::OK).await["allowed"].clone()
         }
     };
+    let allowed = |who: &str| allowed_as(platform_identity(who));
     assert_eq!(allowed(&member).await, json!([key, company_key, post_key]));
     assert_eq!(allowed(&outsider).await, json!([company_key, post_key]));
     assert_eq!(
+        allowed_as(platform_identity_with_groups(&grouped, Some(&[&team]))).await,
+        json!([key, company_key, post_key]),
+        "a member through a group counts with the signed groups"
+    );
+    assert_eq!(
         allowed(&grouped).await,
         json!([company_key, post_key]),
-        "group-only members fail closed"
+        "without signed groups (no directory approval) only user grants count"
     );
     let not_platform = post(&member, "/platform/notification-check", items.clone()).await;
     assert_eq!(not_platform.status(), StatusCode::FORBIDDEN);
 
-    // Removing a member retracts the space's notices for them.
+    // Removing a member retracts the space's notices for them; a removed
+    // group no longer counts on the recheck.
     share(&manager, &space, json!([grant("user", &manager, "admin")])).await;
+    assert_eq!(
+        allowed_as(platform_identity_with_groups(&grouped, Some(&[&team]))).await,
+        json!([company_key, post_key])
+    );
     assert!(events().iter().any(|e| e["op"] == "retract"
         && e["body"]["groupKey"] == key
         && e["body"]["recipients"] == json!([member])));
@@ -3195,4 +3236,133 @@ async fn unconfirmed_detach_work_is_kept_and_finished_by_a_later_request() {
     .await;
     assert_eq!(media_link(&media_id).await.2, "detached");
     assert_eq!(file_status(&file_id), "cancelled");
+}
+
+#[tokio::test]
+#[ignore = "needs BOARD_TEST_DATABASE_URL"]
+async fn space_members_through_a_group_get_notices_home_cards_and_rechecks() {
+    let manager = make_manager("manager").await;
+    let grouped = user("grouped-reader");
+    let other = user("other-team-reader");
+    let team = group("readers", &[&grouped, &manager]);
+    let other_team = group("others", &[&other]);
+    let space_name = format!(
+        "그룹공간-{}",
+        &uuid::Uuid::new_v4().simple().to_string()[..6]
+    );
+    let space = create_space(&manager, &space_name).await;
+    share(
+        &manager,
+        &space,
+        json!([
+            grant("user", &manager, "admin"),
+            grant("group", &team, "member")
+        ]),
+    )
+    .await;
+    let notice = expect(
+        post(
+            &manager,
+            &format!("/v1/spaces/{space}/announcements"),
+            json!({"title": "그룹 공지", "isPinned": true}),
+        )
+        .await,
+        StatusCode::CREATED,
+    )
+    .await;
+    let notice_id = notice["id"].as_str().unwrap().to_string();
+    let key = format!("notice:{notice_id}");
+    let sent: Vec<Value> = events()
+        .into_iter()
+        .filter(|e| e["op"] == "notify" && e["body"]["groupKey"] == key)
+        .collect();
+    assert_eq!(sent.len(), 1, "one call carries the people and the groups");
+    assert_eq!(
+        sent[0]["body"]["recipients"],
+        json!([]),
+        "no direct member but the author"
+    );
+    assert_eq!(sent[0]["body"]["recipientGroups"], json!([team]));
+    assert_eq!(sent[0]["body"]["kind"], "notice");
+
+    let card_for = |identity: String| async move {
+        let card = expect(
+            send(
+                base(),
+                Some(identity),
+                Method::POST,
+                "/platform/home-card",
+                Some(json!({})),
+            )
+            .await,
+            StatusCode::OK,
+        )
+        .await;
+        card["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|item| item["title"] == "그룹 공지")
+    };
+    let check_for = |identity: String| {
+        let items = json!({"items": [{"groupKey": key, "resourceId": notice_id}]});
+        async move {
+            expect(
+                send(
+                    base(),
+                    Some(identity),
+                    Method::POST,
+                    "/platform/notification-check",
+                    Some(items),
+                )
+                .await,
+                StatusCode::OK,
+            )
+            .await["allowed"]
+                .clone()
+        }
+    };
+    let upper = team.to_ascii_uppercase();
+    assert!(card_for(platform_identity_with_groups(&grouped, Some(&[&team]))).await);
+    assert!(
+        card_for(platform_identity_with_groups(&grouped, Some(&[&upper]))).await,
+        "IDs compare in lowercase"
+    );
+    assert!(!card_for(platform_identity_with_groups(&other, Some(&[&other_team]))).await);
+    assert!(
+        !card_for(platform_identity(&grouped)).await,
+        "no signed groups: user grants only"
+    );
+    assert_eq!(
+        check_for(platform_identity_with_groups(&grouped, Some(&[&team]))).await,
+        json!([key])
+    );
+    assert_eq!(
+        check_for(platform_identity_with_groups(&grouped, Some(&[]))).await,
+        json!([])
+    );
+    assert_eq!(
+        check_for(platform_identity_with_groups(&other, Some(&[&other_team]))).await,
+        json!([])
+    );
+    let malformed = send(
+        base(),
+        Some(platform_identity_with_groups(
+            &grouped,
+            Some(&["../not-a-group"]),
+        )),
+        Method::POST,
+        "/platform/home-card",
+        Some(json!({})),
+    )
+    .await;
+    assert_eq!(malformed.status(), StatusCode::SERVICE_UNAVAILABLE);
+
+    // The group leaves the space: the signed groups no longer reach it.
+    share(&manager, &space, json!([grant("user", &manager, "admin")])).await;
+    assert!(!card_for(platform_identity_with_groups(&grouped, Some(&[&team]))).await);
+    assert_eq!(
+        check_for(platform_identity_with_groups(&grouped, Some(&[&team]))).await,
+        json!([])
+    );
 }

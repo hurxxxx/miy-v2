@@ -1,7 +1,7 @@
 # AI-DO 게시판 포팅 기록
 
 - 원본: `/projects/ai-do/prod` main `0002af062f3147198ee6e6ffef9b30b069122f45` (읽기 전용으로 참조, 수정하지 않음)
-- 대상: miy 공식 앱 `board`(이름 `게시판`), 번들 0.12.0(2026-11-22 개정 CONTRACT, 플래너와 같은 잠금), Rust SDK 0.4.0, 공용 UI 2.0.0
+- 대상: miy 공식 앱 `board`(이름 `게시판`), 번들 0.12.0(2026-11-22 개정 CONTRACT·SDK: 플랫폼 호출의 서명된 그룹과 `notify_with_groups`, 플래너와 같은 잠금), Rust SDK 0.4.0, 공용 UI 2.0.0
 - 절차: [COMMON-FEATURES-PLAN](../../../docs/COMMON-FEATURES-PLAN.md) "앱 포팅 절차", "M7~M11 공식 업무 앱", "M2 플랫폼–앱 연결과 알림", §2.2 게시판 행
 - 원칙: AI-DO 구현을 그대로 옮기고, miy의 경계(인증·저장·앱 프레임·앱별 DB·디렉터리) 때문에 그대로 둘 수 없는 곳만 바꾼다. 바꾼 곳은 아래에 모두 적었다. 보강(공지·댓글 알림, 금칙어)은 계획상 포팅 인수 뒤 항목이지만 계약이 이미 있어 이번에 함께 넣었고, 따로 표시했다.
 
@@ -137,20 +137,19 @@ AI-DO는 이미지를 자체 저장소에 올리고 `media:<id>`를 본문에 �
 | 종류 | 언제 | 받는 사람 | 묶음 키 | 제목 |
 | --- | --- | --- | --- | --- |
 | `comment` | 댓글·답글 작성 | 글쓴이. 본인 댓글이면 없음. 완전 비공개 채널이면 글쓴이가 게시판 관리자일 때만(AI-DO `create_comment_notification` 규칙) | `post:<id>` | `<이름>님이 "<글 제목>"에 댓글을 남겼습니다` / 익명이면 `익명 사용자가 …` |
-| `notice` | 공지 등록 | 전사: 디렉터리의 모든 사람(최대 100쪽, 1만 명), 공간: 공간에 **직접** 추가된 사람. 작성자 제외 | `notice:<id>` | `[전사 공지] <제목>` / `[<공간> 공지] <제목>` |
+| `notice` | 공지 등록 | 전사: 디렉터리의 모든 사람(최대 100쪽, 1만 명), 공간: 공간에 직접 추가된 사람(작성자 제외)과 공간 ACL의 그룹(코어가 보낼 때의 구성원으로 펼침) | `notice:<id>` | `[전사 공지] <제목>` / `[<공간> 공지] <제목>` |
 
 - 경로는 앱 기준이다: 댓글은 AI-DO `_community_post_url`과 같은 `/community/posts/<id>[?channel=<key>]`, 공지는 `/notices/<id>[?space=<id>]`.
 - 제목에 댓글 본문을 넣지 않는다(계약). AI-DO 문구의 앞부분을 쓰고 미리보기는 뺐다. 받는 사람의 언어를 앱이 모르므로 한국어로 보낸다(AI-DO는 받는 사람 언어별로 골랐다).
-- 발행은 업무 커밋 뒤 같은 요청 안에서 하고, 실패해도 업무를 되돌리지 않는다. 결과가 불확실하면 같은 요청 ID로 조회만 한다. 500명씩 나눠 보낸다.
-- 회수: 글 삭제 → `post:<id>`, 공지 삭제 → `notice:<id>`, 공간 삭제 → 그 공간 공지 전부, 공간에서 빠진 사람 → 그 공간 공지(최근 200개)를 그 사람에게서.
+- 발행은 업무 커밋 뒤 같은 요청 안에서 하고, 실패해도 업무를 되돌리지 않는다. 결과가 불확실하면 같은 요청 ID로 조회만 한다. 한 번에 500명과 그룹 50개씩 보낸다. 그룹이 있으면 `Identity::notify_with_groups`를 쓰고, 코어가 그 그룹의 현재 구성원에게 평소의 걸러 내기(앱 사용 권한·계정·수신 설정)를 적용해 보낸다. 그룹 구성원에는 작성자가 들어 있을 수 있다(코어 펼침에서 사람을 뺄 방법이 없다).
+- 회수: 글 삭제 → `post:<id>`, 공지 삭제 → `notice:<id>`, 공간 삭제 → 그 공간 공지 전부, 공간에서 빠진 사람 → 그 공간 공지(최근 200개)를 그 사람에게서. 회수는 사람 ID로만 할 수 있어, 공간에서 빠진 그룹의 구성원 알림은 남고 알림 패널을 열 때 재확인(§3.7)이 지운다.
 - 읽음: 글쓴이가 글을 열면 `post:<id>`, 누가 공지를 열면(`GET …/announcements/{id}`) `notice:<id>`.
 - 공지를 고쳐도 다시 알리지 않는다(알림 줄의 제목은 등록 때 것이다). 원본에 공지 알림이 없어 기준이 없으므로, 수정마다 모두에게 다시 안읽음을 만들지 않는 쪽을 골랐다.
-- **한계:** 디렉터리는 다른 사람의 그룹 소속을 알려 주지 않는다(`memberships`는 본인만). 그래서 그룹으로만 공간에 들어간 사람에게는 공간 공지 알림을 보내지 못하고, 플랫폼 재확인·홈 카드도 그 사람의 공간 공지를 보이지 않는다(안전한 쪽으로 닫음). 앱 안에서는 그룹 멤버도 공지를 읽고 쓴다(요청마다 ACL을 확인). §6의 플랫폼 변경이 필요하다.
 
 ### 3.7 플랫폼 → 앱 엔드포인트와 최근 공지
 
-- `notificationCheck` → `POST /platform/notification-check`: 묶음 키와 `resourceId`가 같은 항목을 가리켜야 한다. `post:<id>`는 글과 활성 채널을 그 사람이 비밀번호 없이 열 수 있을 때, `notice:<id>`는 전사 공지이거나 그 사람이 공간에 직접 들어 있을 때 허용한다. 공지와 공간 권한을 한 SQL 문에서 읽는다. 플랫폼 호출에는 다른 플랫폼 호출용 토큰이 없어 앱 DB만으로 판단한다. 플랫폼 호출(`identity.context.platform`)이 아니면 403이다. 응답은 읽기 전용이다.
-- `homeCard` → `POST /platform/home-card`: 읽을 수 있는 공지 최대 5개(고정 → 최신), `{"title":"공지","items":[{"title","subtitle":"<공간 이름>|전사","path","at"(RFC 3339 UTC)}]}`. `count`는 읽음을 기록하지 않아 뺐다. 본문의 `locale`이 `en-US`이면 `Announcements`·`Company`로 답한다. 플랫폼 호출이 아니면 403.
+- `notificationCheck` → `POST /platform/notification-check`: 묶음 키와 `resourceId`가 같은 항목을 가리켜야 한다. `post:<id>`는 글과 활성 채널을 그 사람이 비밀번호 없이 열 수 있을 때, `notice:<id>`는 전사 공지이거나 그 사람이 공간을 읽을 수 있을 때(사용자 부여, 또는 코어가 호출에 서명해 넣은 그 사람의 현재 그룹 `identity.context.groups` 중 하나에 대한 그룹 부여) 허용한다. 공지와 공간 권한을 한 SQL 문에서 읽는다(SDK ACL과 같은 판단: 읽기 역할, 그룹 ID 소문자 비교, 형식이 틀린 그룹이 오면 503). 플랫폼 호출에는 다른 호출용 토큰이 없어 디렉터리를 부르지 않는다. 앱이 `platform:directory:read` 승인을 받지 못했으면 서명된 그룹이 없어 사용자 부여만 센다. 플랫폼 호출(`identity.context.platform`)이 아니면 403이다. 응답은 읽기 전용이다.
+- `homeCard` → `POST /platform/home-card`: 읽을 수 있는 공지 최대 5개(고정 → 최신, 공간 판단은 위와 같이 사용자 부여와 서명된 그룹), `{"title":"공지","items":[{"title","subtitle":"<공간 이름>|전사","path","at"(RFC 3339 UTC)}]}`. `count`는 읽음을 기록하지 않아 뺐다. 본문의 `locale`이 `en-US`이면 `Announcements`·`Company`로 답한다. 플랫폼 호출이 아니면 403.
 - `GET /v1/board/notices/recent?limit=`(기본 5, 최대 20): 프레임·앱 호출용 읽기 전용 목록(최신순, 공간 이름·경로 포함). M5 홈 공지 카드가 앱 호출로 쓸 수 있게 남겼다. 이 경로는 ACL로 공간을 고르므로 그룹 멤버도 포함한다.
 
 ### 3.8 금칙어 (보강)
@@ -193,13 +192,13 @@ AI-DO는 이미지를 자체 저장소에 올리고 `media:<id>`를 본문에 �
 | 게시판 관리자 표 + 한 번만 가능한 부트스트랩 | 플랫폼 관리자 표시를 쓰지 않는 가장 단순한 시작 방법 |
 | 공간 역할은 `member`·`admin` 둘 | AI-DO 공지 권한이 "멤버 읽기, admin·owner 쓰기"뿐이다. `member`가 SDK 기본 역할이 된다 |
 | 비밀글 비밀번호 열기 유지 | "AI-DO 규칙 그대로" 조건 |
-| 알림 수신자는 직접 멤버, 재확인은 DB만 | 디렉터리가 다른 사람의 그룹 소속을 주지 않고, 플랫폼 호출에는 디렉터리 토큰이 없다. 열어 두는 쪽보다 닫는 쪽을 골랐다 |
+| 공간 공지 알림은 직접 멤버 + 그룹(`notify_with_groups`), 플랫폼 호출은 서명된 그룹으로 DB에서 판단 | 코어가 그룹을 보낼 때 펼치고(d7fbdfe), 플랫폼 호출에 그 사람의 현재 그룹을 서명해 넣는다. 공지와 권한을 한 SQL 문(한 스냅숏)에서 읽는 기존 구조를 유지하려고 SDK ACL 대신 같은 규칙을 SQL로 적용했다 |
 | 전사 공지 알림은 디렉터리 전체에 | 플랫폼이 앱 사용 권한 없는 사람을 걸러 준다(계약) |
 | 공지 수정은 다시 알리지 않음 | §3.6 |
 | 이미지 바이트는 글·댓글 삭제 때 지움 | 앱 쿼터 회수. 연결만 끊긴 이미지는 원본처럼 남긴다 |
 | 의존성은 AI-DO 고정 버전 | `@milkdown/crepe`·`@milkdown/kit` 7.21.2, `react-markdown` 10.1.0, `rehype-highlight` 7.0.2, `remark-gfm` 4.0.1, `@tailwindcss/typography` 0.5.19, i18next 26.0.8, react-i18next 17.0.6, 시험용 vitest 4.1.2·jsdom 22.1.0·Testing Library. React·Vite·Tailwind·Radix 등은 템플릿·공용 UI 버전. Rust는 플래너 구성에 `pbkdf2`·`sha2`·`hex`·`unicode-normalization`·`caseless`를 더함 |
 | 공용 UI 설치는 플래너와 같은 오프라인 복사 | `registry/components/ui/2.0.0`과 같은 파일(`component.json` 제외)과 플래너의 잠금 파일. 실제 서버에서 `miy component sync`로 digest를 확인해야 한다 |
-| `docs/CONTRACT.md`와 `miy.bundle.json`의 그 해시 | 작업 중 저장소의 번들 0.12.0 CONTRACT가 개정되어(사이드 패널·홈 카드) 플래너와 같이 새 문서와 해시로 맞췄다. 그 밖의 보호 파일은 init 그대로다 |
+| 번들 0.12.0 보호 파일 다시 맞춤 | 저장소의 번들 0.12.0이 같은 버전 안에서 개정되어(사이드 패널·홈 카드·검색, 서명된 그룹·`notify_with_groups`) 새 `miy app init` 결과와 다른 보호 파일(`docs/CONTRACT.md`, `sdk/rust/src/{acl,acl_postgres_tests,lib,notifications}.rs`)과 `miy.bundle.json`을 복사했다. 플래너(df13c76)와 같은 절차다 |
 | DB 시험은 `#[ignore]` + `BOARD_TEST_DATABASE_URL`, 가짜 코어 | 서버 빌드의 `cargo test`에는 DB가 없다. 디렉터리·알림·파일 호출은 시험 안의 가짜 코어가 SDK의 실제 HTTP 경로로 받는다 |
 | 프런트 시험은 플래너와 같은 설정(jsdom, `TZ=Asia/Seoul`) | |
 
@@ -213,7 +212,7 @@ AI-DO는 이미지를 자체 저장소에 올리고 `media:<id>`를 본문에 �
 | `tests/test_announcements.py`(5) | `api_tests.rs` 3개 | 공간 경로로. 이관 공지 시험(`test_announcement_migration_access.py`)은 기능과 함께 제외 |
 | `tests/test_ugc_policy.py`의 금칙어 3개 | `ugc.rs` 단위 4개 | 이용규칙 시험은 제외 |
 | `tests/test_ugc_policy_db.py`의 금칙어 시험 | `banned_words_reject_posts_and_comments_without_naming_the_term` | 게시판 적용 범위로 |
-| (miy 추가) | 이미지 업로드·연결·보기·삭제·검증, 미확인 detach 재시도, 공지 알림·회수·읽음, 플랫폼 재확인·홈 카드·최근 공지, 공간 권한(그룹 포함), 게시판 관리자 부트스트랩, 신원 없음·위조·플랫폼 관리자 표시 무시, 검증 규칙, 비밀번호 해시 형식(RFC 7914 벡터) | |
+| (miy 추가) | 이미지 업로드·연결·보기·삭제·검증, 미확인 detach 재시도, 공지 알림·회수·읽음, 플랫폼 재확인·홈 카드·최근 공지, 그룹을 통한 공간 멤버(그룹 알림 `recipientGroups`, 서명된 그룹으로 재확인·홈 카드, 그룹 제거 뒤 거부, 승인 없음·형식 오류), 공간 권한(그룹 포함), 게시판 관리자 부트스트랩, 신원 없음·위조·플랫폼 관리자 표시 무시, 검증 규칙, 비밀번호 해시 형식(RFC 7914 벡터) | |
 | 화면 `community-url.spec.ts`, `community-channel-form-model.spec.ts` | 같은 경로, 그대로 | |
 | `community-api.spec.ts`(5) | 같은 경로 5개 + 1개 | `fetch` 대신 `runtime.api`·`fileApi` 모의 |
 | `CommunityView.spec.tsx`(9) | 같은 경로 9개 + 2개(미저장 보고, 금칙어 문구) | 라우터 대신 프레임 런타임 모의 |
@@ -229,9 +228,8 @@ AI-DO는 이미지를 자체 저장소에 올리고 `media:<id>`를 본문에 �
 - AI-DO 기준 화면(가상 계정·가상 데이터)과의 나란한 비교, 카탈로그 공식 릴리스·dev 설치·권한 인수·prod 승격.
 - 공간 이름 바꾸기는 API(`PATCH /v1/spaces/{id}`)만 있고 화면이 없다.
 - **플랫폼 변경 필요(이 앱에서 하지 않음):**
-  1. 그룹 멤버 알림: 디렉터리에 그룹 구성원 조회를 더하거나(권한 필요), 알림 수신자로 그룹 ID를 받게 하기. 지금은 공간에 그룹으로 들어간 사람이 공간 공지 알림을 받지 못한다.
-  2. 플랫폼 호출의 그룹 확인: `notificationCheck`·`homeCard` 호출의 서명된 신원에 그 사람의 현재 그룹 소속을 넣거나 디렉터리 소속 조회용 범위 제한 토큰을 주기. 지금은 그룹 멤버의 공간 공지가 알림 패널·홈 카드에서 숨는다.
-  3. 받는 사람 언어별 알림 제목(또는 플랫폼이 번역하는 키+인자 형식). 지금은 한국어로만 보낸다.
-  4. 금칙어 공용 목록이 필요하면 플랫폼 기능으로(지금은 앱마다 따로).
-  5. 서버 빌드가 새 Rust crate(`pbkdf2`, `sha2`, `hex`, `unicode-normalization`, `caseless`)와 npm 패키지(Milkdown 등)를 받을 수 있어야 한다(`Cargo.lock`·`pnpm-lock.yaml`에 고정).
-  6. 카탈로그(`registry/apps/catalog.json`)의 `board` 항목에 릴리스를 기록하는 일(소스 고정 뒤).
+  1. 받는 사람 언어별 알림 제목(또는 플랫폼이 번역하는 키+인자 형식). 지금은 한국어로만 보낸다.
+  2. 금칙어 공용 목록이 필요하면 플랫폼 기능으로(지금은 앱마다 따로).
+  3. 서버 빌드가 새 Rust crate(`pbkdf2`, `sha2`, `hex`, `unicode-normalization`, `caseless`)와 npm 패키지(Milkdown 등)를 받을 수 있어야 한다(`Cargo.lock`·`pnpm-lock.yaml`에 고정).
+  4. 카탈로그(`registry/apps/catalog.json`)의 `board` 항목에 릴리스를 기록하는 일(소스 고정 뒤).
+- 그룹 알림의 회수: 플랫폼 회수는 사람 ID만 받으므로, 공간에서 그룹을 빼도 그 구성원의 알림 줄은 알림 패널 재확인 때 지워진다(즉시 회수가 필요하면 플랫폼에 그룹 단위 회수가 있어야 한다).

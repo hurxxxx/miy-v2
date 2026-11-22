@@ -147,9 +147,72 @@ pub async fn resource_ids(acl: &Acl, identity: &Identity, action: &str) -> ApiRe
     Ok(ids)
 }
 
-/// Direct user grants of a space (any role). Used where no directory call is
-/// possible or wanted: notification recipients and platform rechecks.
-/// Members through a group are not expanded (docs/PORTING.md §3.6).
+/// Roles of the space ACL whose actions include `action` (both roles read).
+pub fn roles_with(action: &str) -> Vec<String> {
+    acl_roles()
+        .into_iter()
+        .filter(|role| role.actions.iter().any(|a| a == action))
+        .map(|role| role.id)
+        .collect()
+}
+
+/// The person's current group IDs that the Core signed into a platform call
+/// (`identity.context.groups`, present when the app is approved for
+/// `platform:directory:read`). A platform call cannot ask the directory, so
+/// code that reads the ACL tables itself uses these, as the SDK ACL does.
+/// Empty for other calls and without the approval: user grants only.
+pub fn signed_groups(identity: &Identity) -> ApiResult<Vec<String>> {
+    if !identity.context.platform {
+        return Ok(Vec::new());
+    }
+    let groups = identity.context.groups.clone().unwrap_or_default();
+    // The SDK ACL refuses the same malformed or oversized values.
+    if groups.len() > 4096 || groups.iter().any(|g| uuid::Uuid::parse_str(g).is_err()) {
+        return Err(ApiError::unavailable(
+            "acl_directory_unavailable",
+            "acl_directory_unavailable",
+        ));
+    }
+    let mut groups: Vec<String> = groups.iter().map(|g| g.to_ascii_lowercase()).collect();
+    groups.sort();
+    groups.dedup();
+    Ok(groups)
+}
+
+/// SQL condition: grant row `g` lets the person read the space. Binds: `$u`
+/// the user ID, `$g` the signed group IDs (text[]), `$r` the reading roles.
+pub fn grant_reads_sql(user: &str, groups: &str, roles: &str) -> String {
+    format!(
+        "g.role = ANY({roles}) AND ((g.subject_kind = 'user' AND g.subject_id = {user}) \
+         OR (g.subject_kind = 'group' AND g.subject_id = ANY({groups})))"
+    )
+}
+
+/// Group subjects of a space's ACL (any role), for notifications sent to
+/// their current members (`Identity::notify_with_groups`).
+pub async fn group_members(
+    pool: &PgPool,
+    identity: &Identity,
+    space_id: &str,
+) -> ApiResult<Vec<String>> {
+    let Some(environment) = identity.context.environment.as_deref() else {
+        return Ok(Vec::new());
+    };
+    Ok(sqlx::query_scalar(
+        "SELECT subject_id FROM app.miy_acl_grants WHERE installation_id = $1::uuid AND environment = $2 \
+         AND kind = $3 AND resource_id = $4 AND subject_kind = 'group' ORDER BY subject_id",
+    )
+    .bind(&identity.context.installation_id)
+    .bind(environment)
+    .bind(SPACE_KIND)
+    .bind(space_id)
+    .fetch_all(pool)
+    .await?)
+}
+
+/// Direct user grants of a space (any role): notification recipients and the
+/// people whose notices are retracted when they leave the space. Group
+/// subjects are reached through `group_members`.
 pub async fn direct_user_members(
     pool: &PgPool,
     identity: &Identity,
@@ -408,6 +471,12 @@ pub async fn sharing_result(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn both_roles_read_and_only_admin_manages_notices() {
+        assert_eq!(roles_with(ACTION_READ), vec!["member", "admin"]);
+        assert_eq!(roles_with(ACTION_NOTICE_MANAGE), vec!["admin"]);
+    }
 
     #[tokio::test]
     async fn roles_build_an_acl_with_member_as_the_default_role() {

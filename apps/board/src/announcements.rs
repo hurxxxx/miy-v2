@@ -596,23 +596,30 @@ const NOTICES_WITH_SPACES: &str = "SELECT a.id, a.workspace_id, a.author_id, a.s
     a.is_pinned, a.created_at, a.updated_at, s.name AS space_name \
     FROM announcements a LEFT JOIN board_spaces s ON s.id = a.workspace_id";
 
-/// Read direct grants and their announcements in the same statement snapshot.
-pub(crate) async fn direct_notices(
+/// Notices a platform call may show: company notices and notices of spaces
+/// the person reads through a user grant or through one of the group IDs the
+/// Core signed into the call. Grants and announcements are read in the same
+/// statement snapshot.
+pub(crate) async fn platform_notices(
     pool: &PgPool,
     identity: &Identity,
     limit: i64,
 ) -> ApiResult<Vec<NoticeWithSpace>> {
+    let groups = spaces::signed_groups(identity)?;
     Ok(sqlx::query_as(&format!(
         "{NOTICES_WITH_SPACES} WHERE a.scope = 'company' OR (a.scope = 'workspace' AND EXISTS (\
             SELECT 1 FROM app.miy_acl_grants g WHERE g.installation_id = $1::uuid AND g.environment = $2 \
-              AND g.kind = $3 AND g.resource_id = a.workspace_id AND g.subject_kind = 'user' AND g.subject_id = $4\
-         )) ORDER BY a.is_pinned DESC, a.created_at DESC LIMIT $5"
+              AND g.kind = $3 AND g.resource_id = a.workspace_id AND {}\
+         )) ORDER BY a.is_pinned DESC, a.created_at DESC LIMIT $5",
+        spaces::grant_reads_sql("$4", "$6", "$7")
     ))
     .bind(&identity.context.installation_id)
     .bind(identity.context.environment.as_deref())
     .bind(spaces::SPACE_KIND)
     .bind(&identity.user_id)
     .bind(limit)
+    .bind(&groups)
+    .bind(spaces::roles_with(ACTION_READ))
     .fetch_all(pool)
     .await?)
 }

@@ -7,7 +7,7 @@
 //! | kind | when | recipients | group key |
 //! | --- | --- | --- | --- |
 //! | `comment` | someone comments on a post | the post author (not self; for an admin-only channel only a board manager) | `post:<id>` |
-//! | `notice` | a notice is published | company: every directory user; space: the space's direct user members (not the author) | `notice:<id>` |
+//! | `notice` | a notice is published | company: every directory user; space: the space's direct user members (not the author) and the current members of its group subjects | `notice:<id>` |
 //!
 //! Deleting the post or notice retracts its group; removing someone from a
 //! space retracts that space's notices for them; reading the post (author) or
@@ -33,6 +33,8 @@ use crate::{
 
 const CALL_TIMEOUT: Duration = Duration::from_secs(5);
 const MAX_RECIPIENTS_PER_CALL: usize = 500;
+/// Groups per `notify_with_groups` call (SDK and Core limit).
+const MAX_GROUPS_PER_CALL: usize = 50;
 /// Directory pages read for a company-wide notice (100 people per page).
 const COMPANY_DIRECTORY_PAGES: usize = 100;
 const TITLE_MAX: usize = 200;
@@ -56,11 +58,15 @@ fn shorten(text: &str, max: usize) -> String {
     cut
 }
 
-/// Publish to `recipients` in batches. Best effort: failures are not retried
+/// Publish to `recipients` and to the current members of `groups` in
+/// batches (500 people and 50 groups per call; groups go through
+/// `Identity::notify_with_groups`). Best effort: failures are not retried
 /// with a new request and never reach the caller.
+#[allow(clippy::too_many_arguments)]
 async fn publish(
     identity: &Identity,
     recipients: Vec<String>,
+    groups: Vec<String>,
     kind: &str,
     group_key: &str,
     title: &str,
@@ -76,17 +82,36 @@ async fn publish(
         .collect::<BTreeSet<_>>()
         .into_iter()
         .collect();
-    for chunk in recipients.chunks(MAX_RECIPIENTS_PER_CALL) {
+    let groups: Vec<String> = groups
+        .into_iter()
+        .map(|id| id.to_ascii_lowercase())
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect();
+    let user_chunks: Vec<&[String]> = recipients.chunks(MAX_RECIPIENTS_PER_CALL).collect();
+    let group_chunks: Vec<&[String]> = groups.chunks(MAX_GROUPS_PER_CALL).collect();
+    for index in 0..user_chunks.len().max(group_chunks.len()) {
+        let people = user_chunks.get(index).copied().unwrap_or_default();
+        let teams = group_chunks.get(index).copied().unwrap_or_default();
         let notification = Notification {
             request_id: uuid::Uuid::new_v4().to_string(),
-            recipients: chunk.to_vec(),
+            recipients: people.to_vec(),
             kind: kind.to_string(),
             group_key: group_key.to_string(),
             title: shorten(title, TITLE_MAX),
             path: path.to_string(),
             resource_id: Some(resource_id.to_string()),
         };
-        match tokio::time::timeout(CALL_TIMEOUT, identity.notify(&notification)).await {
+        let sent = if teams.is_empty() {
+            tokio::time::timeout(CALL_TIMEOUT, identity.notify(&notification)).await
+        } else {
+            tokio::time::timeout(
+                CALL_TIMEOUT,
+                identity.notify_with_groups(&notification, teams),
+            )
+            .await
+        };
+        match sent {
             Ok(Ok(_)) => {}
             Ok(Err(error)) if error.status.is_some() => {
                 eprintln!("notification_rejected: {}", error.code);
@@ -177,6 +202,7 @@ pub async fn comment_created(
     publish(
         identity,
         vec![recipient],
+        Vec::new(),
         "comment",
         &post_group_key(&loaded.post.id),
         &title,
@@ -192,15 +218,21 @@ pub async fn notice_published(
     notice: &Announcement,
     space: Option<&Space>,
 ) {
-    let (recipients, label) = if notice.scope == "company" {
+    let (recipients, groups, label) = if notice.scope == "company" {
         (
             people::all_user_ids(identity, COMPANY_DIRECTORY_PAGES).await,
+            Vec::new(),
             "전사 공지".to_string(),
         )
     } else {
         let Some(space) = space else { return };
         (
             spaces::direct_user_members(pool, identity, &space.id)
+                .await
+                .unwrap_or_default(),
+            // Group subjects of the space ACL: the platform sends to their
+            // current members with the usual filters.
+            spaces::group_members(pool, identity, &space.id)
                 .await
                 .unwrap_or_default(),
             format!("{} 공지", shorten(&space.name, 60)),
@@ -210,13 +242,14 @@ pub async fn notice_published(
         .into_iter()
         .filter(|id| id != &identity.user_id)
         .collect();
-    if recipients.is_empty() {
+    if recipients.is_empty() && groups.is_empty() {
         return;
     }
     let title = format!("[{label}] {}", notice.title);
     publish(
         identity,
         recipients,
+        groups,
         "notice",
         &notice_group_key(&notice.id),
         &title,
@@ -260,9 +293,9 @@ pub struct CheckResponse {
 
 /// `POST /platform/notification-check`: which of the person's notification
 /// groups still point at something they may open. Read-only and answered from
-/// the app DB alone (a platform call carries no token for directory calls), so
-/// a space notice counts only for direct members; group-only members are
-/// hidden (fail closed).
+/// the app DB: a platform call carries no token for directory calls, so space
+/// membership through a group uses the group IDs the Core signed into the
+/// call (`identity.context.groups`; none without directory approval).
 pub async fn notification_check(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
@@ -279,17 +312,23 @@ pub async fn notification_check(
     let allowed_notices: BTreeSet<String> = if notice_ids.is_empty() {
         BTreeSet::new()
     } else {
-        sqlx::query_scalar(
+        // Space notices count for user grants and for the group IDs the Core
+        // signed into this platform call.
+        let groups = spaces::signed_groups(&identity)?;
+        sqlx::query_scalar(&format!(
             "SELECT a.id FROM announcements a WHERE a.id = ANY($1) AND (a.scope = 'company' \
                OR (a.scope = 'workspace' AND EXISTS (SELECT 1 FROM app.miy_acl_grants g \
                  WHERE g.installation_id = $2::uuid AND g.environment = $3 AND g.kind = $4 \
-                   AND g.resource_id = a.workspace_id AND g.subject_kind = 'user' AND g.subject_id = $5)))",
-        )
+                   AND g.resource_id = a.workspace_id AND {})))",
+            spaces::grant_reads_sql("$5", "$6", "$7")
+        ))
         .bind(&notice_ids)
         .bind(&identity.context.installation_id)
         .bind(identity.context.environment.as_deref())
         .bind(spaces::SPACE_KIND)
         .bind(&identity.user_id)
+        .bind(&groups)
+        .bind(spaces::roles_with(spaces::ACTION_READ))
         .fetch_all(&state.pool)
         .await?
         .into_iter()
@@ -346,7 +385,8 @@ pub struct HomeCardRequest {
 
 /// `POST /platform/home-card`: the person's notice card on the portal home.
 /// At most five notices they may read, pinned first then newest. Read-only,
-/// app DB only (space notices of direct memberships, as above). The body
+/// app DB only (space membership through user grants or signed groups, as
+/// above). The body
 /// carries the person's display settings; only the language is used, for the
 /// card and company labels (Korean unless `en-US`).
 pub async fn home_card(
@@ -357,7 +397,7 @@ pub async fn home_card(
     platform_only(&identity)?;
     let request: HomeCardRequest = serde_json::from_slice(&body).unwrap_or_default();
     let english = request.locale.as_deref() == Some("en-US");
-    let rows = announcements::direct_notices(&state.pool, &identity, 5).await?;
+    let rows = announcements::platform_notices(&state.pool, &identity, 5).await?;
     Ok(Json(HomeCard {
         title: if english { "Announcements" } else { "공지" }.into(),
         items: rows

@@ -614,6 +614,26 @@ fn group_ids(grants: &[Grant]) -> Vec<String> {
 
 async fn actor(identity: &Identity, candidates: Option<&[String]>) -> Result<Actor> {
     scope(identity)?;
+    // A platform call (search, home card, notification check) cannot ask the
+    // directory; Core signed the person's current groups into it instead
+    // (only for an app approved to read the directory; none means none).
+    if identity.context.platform {
+        let signed = identity.context.groups.clone().unwrap_or_default();
+        if signed.len() > MAX_MEMBERSHIPS || signed.iter().any(|g| !crate::valid_uuid(g)) {
+            return Err(error("acl_directory_unavailable", 503));
+        }
+        let groups = match candidates {
+            Some(ids) => signed.into_iter().filter(|g| ids.contains(g)).collect(),
+            None => signed,
+        };
+        let mut groups: Vec<String> = groups;
+        groups.sort();
+        groups.dedup();
+        return Ok(Actor {
+            user: identity.user_id.clone(),
+            groups,
+        });
+    }
     tokio::time::timeout(Duration::from_secs(15), async {
         if candidates.is_some_and(|v| v.len() > MAX_ENTRIES) {
             return Err(error("acl_membership_limit", 503));
@@ -800,6 +820,44 @@ async fn change(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn platform_calls_use_the_signed_groups_without_the_directory() {
+        let group = "00000000-0000-4000-8000-000000000001";
+        let other = "00000000-0000-4000-8000-000000000002";
+        let identity = |platform: bool, groups: Option<Vec<String>>| Identity {
+            user_id: "alice".into(),
+            admin: false,
+            context: crate::InvocationContext {
+                installation_id: "00000000-0000-4000-8000-0000000000aa".into(),
+                release_id: "00000000-0000-4000-8000-0000000000bb".into(),
+                environment: Some("prod".into()),
+                callers: vec![],
+                effective_permissions: vec![],
+                platform,
+                groups,
+            },
+            delegation_token: None,
+        };
+        let signed = Some(vec![group.to_owned(), other.to_owned()]);
+        let all = actor(&identity(true, signed.clone()), None).await.unwrap();
+        assert_eq!(all.groups, vec![group.to_owned(), other.to_owned()]);
+        let narrowed = actor(&identity(true, signed), Some(&[group.to_owned()]))
+            .await
+            .unwrap();
+        assert_eq!(narrowed.groups, vec![group.to_owned()]);
+        // Not approved to read the directory: no groups, user grants only.
+        assert!(
+            actor(&identity(true, None), None)
+                .await
+                .unwrap()
+                .groups
+                .is_empty()
+        );
+        let bad = Some(vec!["../x".to_owned()]);
+        assert!(actor(&identity(true, bad), None).await.is_err());
+    }
+
     fn acl() -> Acl {
         Acl::new(
             sqlx::postgres::PgPoolOptions::new()
