@@ -1,0 +1,19 @@
+{
+  "protocol": "miy.cli-guidance/v1",
+  "cliVersion": "0.17.0",
+  "bundleVersion": "0.12.0",
+  "files": {
+    ".agents/skills/miy-cli/SKILL.md": "1836203f10ccddd1b8c06f4efeea86f01a3a2482d48a9c31910c2593f8ddc941",
+    ".agents/skills/miy-cli/references/commands.md": "3fba91c27dedfe171f4bc21151df04bc44ae2883d8f48ab61406a9dbc54b6143",
+    ".agents/skills/miy-cli/references/harness.md": "24744cd3fd3caa1acbd71c8da25419fa71c3711dcf1394d2ce70bb45821fb4be",
+    ".agents/skills/miy-cli/references/updating.md": "4b275f6b9fb0bbc09b74071f2971811f446e25512bdbf24550f86f19bd7b7836",
+    ".agents/skills/miy-cli/references/workflow.md": "61fa488b11e5d913f369e8ad9fbb46815285057ab5a11a86f07a6c9a2bba52d4",
+    ".claude/skills/miy-cli/SKILL.md": "1836203f10ccddd1b8c06f4efeea86f01a3a2482d48a9c31910c2593f8ddc941",
+    ".claude/skills/miy-cli/references/commands.md": "3fba91c27dedfe171f4bc21151df04bc44ae2883d8f48ab61406a9dbc54b6143",
+    ".claude/skills/miy-cli/references/harness.md": "24744cd3fd3caa1acbd71c8da25419fa71c3711dcf1394d2ce70bb45821fb4be",
+    ".claude/skills/miy-cli/references/updating.md": "4b275f6b9fb0bbc09b74071f2971811f446e25512bdbf24550f86f19bd7b7836",
+    ".claude/skills/miy-cli/references/workflow.md": "61fa488b11e5d913f369e8ad9fbb46815285057ab5a11a86f07a6c9a2bba52d4",
+    ".gitattributes": "a4ec629ff34709abe48d20a7fbdcf10fa2828a003b980a31c2da84c9606d0858",
+    "docs/CLI-REFERENCE.md": "aa3866515359b67a3656fd5480993720abbc54a572ee043f49832c6359477ab9"
+  }
+}
