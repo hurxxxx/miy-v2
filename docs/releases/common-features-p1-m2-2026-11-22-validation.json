@@ -76,10 +76,30 @@
       "status": "PASS",
       "command": "cargo fmt --check; cargo clippy --workspace --all-targets --locked -- -D warnings (server and --no-default-features); cargo test --workspace --locked; check-write-decisions; check-api-compat; check-i18n; check-hardcoded-colors; test-core-ops",
       "scope": "On the tree including M4: 249 server unit tests, lints for both builds, write decisions, API compatibility with 0.15.0, translations, color tokens, rollout tool tests (max_connections 400)."
+    },
+    {
+      "status": "PASS",
+      "command": "MIY_CONFIG_DIR=<empty> python3 scripts/runtime-regression/run.py (commit 8d7d304)",
+      "scope": "155 observations PASS, runner and cleanup exit 0, now including M4: frames suite live relay (only the frame's own Origin upgrades, frame token in the first message, the app receives the person's signed identity, both directions relay, a bad first message closes with 4400, losing use closes with 4403 at the next recheck) and the boundary suite portal channel (initial count, push on inbox change through pg_notify, console refused, closes with 4401 when the browser session ends)."
+    },
+    {
+      "status": "FAIL",
+      "command": "MIY_CONFIG_DIR=<empty> bash scripts/check-static.sh web",
+      "scope": "Portal suites 93 passed, common UI 78 passed; CLI experience 14 passed / 1 failed: 'a failed metadata read can be retried' timed out waiting for the retry button while the runtime regression and two app builds were running on the same host.",
+      "cause": "Timing under load; the same test passed 3 of 3 times when re-run alone (next check)."
+    },
+    {
+      "status": "PASS",
+      "command": "timeout 600 pnpm exec playwright test -c tests/cli-experience.config.ts --repeat-each 3 -g 'failed metadata read'",
+      "scope": "3 passed."
+    },
+    {
+      "status": "PASS",
+      "command": "MIY_CONFIG_DIR=<empty> bash scripts/check-static.sh scripts",
+      "scope": "Doc links, script syntax, cleanup tests, official apps, CLI release/version, write decisions, api-types --check, UI 2.0.0 registry --check, SDK transport, token copies, i18n, token contrast, hardcoded colors, API compatibility, CLI downloads, Windows installer package, proxy checks."
     }
   ],
   "notRun": [
-    "Runtime regression with the M4 checks (frames suite live relay, boundary suite portal channel): next run",
     "check-static.sh all after the last changes (to be run before the final commit of this series)",
     "Real platform frame for the planner (needs registration, server build and installation)",
     "server-ui.config.ts against a real Core build; stack-ui real frames for the new shell",
