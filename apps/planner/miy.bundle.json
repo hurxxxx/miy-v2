@@ -8,7 +8,7 @@
     "Dockerfile": "d1b6720e0a5decb6f1455870bc107af9a29235acc68a8b96e10b7727d80bb6ac",
     "docs/ACCEPTANCE.md": "80e9f4f4de36179a337f21d8fd7ccc4231e585d7503bf4dfba63d7180ff6f6da",
     "docs/CLI.md": "1f342f83048b0aa37494b5f5ff41250687f73fd6eac209deb19d1474f14dd824",
-    "docs/CONTRACT.md": "42f1814ec387c69cd302b7c320ea433d6699fa51cae491e68704e3c313e8feb5",
+    "docs/CONTRACT.md": "39c59d3a6827550ca9e4daff417e89981cdf508bf2c46e3a0cc2717ce407be78",
     "migrations/0001_initial.sql": "24948591b41e10398ad4f1a8338bc605e209fffa90bc9dbc283f80083fbca8f3",
     "miy.components.json": "528381be700fbaf393b2ed0541629c817ee50a8cf807ff6f6ec8b776f6f4688a",
     "rust-toolchain.toml": "d13306be0ecda81ce779baa290ffb417380d525928477f16200884b5169cca33",

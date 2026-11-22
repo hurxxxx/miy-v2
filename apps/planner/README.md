@@ -13,8 +13,8 @@
 | 경로 | 화면 |
 | --- | --- |
 | `/` (그 밖의 경로 포함) | 플래너. 오른쪽 끝에 할 일·메모 도크가 있다. `?event=<id>`로 일정 편집 창을 바로 연다. |
-| `/widgets/todos` | 할 일 패널만(좁은 폭). 보조 프레임(M5)에서 쓸 화면이다. |
-| `/widgets/memos` | 메모 패널만(좁은 폭). |
+| `/widgets/todos` | 할 일 패널만(좁은 폭). manifest `panels`의 `todos`로 포털 보조 패널에 뜬다. |
+| `/widgets/memos` | 메모 패널만(좁은 폭). manifest `panels`의 `memos`. |
 
 ## API
 
@@ -34,6 +34,7 @@ UI는 `runtime.api('/v1/...')`로 부르고, 게이트웨이가 `/api/v1/...`로
 | `DELETE /v1/personal-widgets/todos/{id}` | 삭제(204) |
 | `GET /v1/personal-widgets/memo` | 본인 메모(없으면 빈 메모) |
 | `PUT /v1/personal-widgets/memo` | 메모 저장. 본문 최대 20,000자 |
+| `POST /v1/home-card` | 포털 홈 요약 카드(manifest `platformEndpoints.homeCard`). 플랫폼 호출(`Identity.context.platform`)만 받고 그 밖은 403 `planner_platform_only`. 본문 `{timeZone, locale}`의 시간대로 오늘 일정을 고른다. 응답 `{title:"오늘 일정", count, items[≤5]: {title, subtitle(장소·종일), at(시각 일정의 시작), path:"/?event=<id>"}}` |
 
 ## 데이터
 

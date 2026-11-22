@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "date": "2026-11-22",
   "status": "IN_PROGRESS",
-  "scope": "Common features plan P1 (personal settings, browser sessions, AI-DO settings screen, Korean/English portal and console, AI-DO launcher with admin categories, release permission approval, user search/filter/CSV, command palette), M1 planner app port (apps/planner), M2 platform notifications (core migration 30, app publishing through the Rust SDK, portal inbox, badge, settings, platform-to-app recheck) max_connections 400 in source, and M4 live connections (frame /_miy/live relay, runtime.live, portal notification channel). Source only: nothing published, nothing deployed, no server database changed.",
+  "scope": "Common features plan P1 (personal settings, browser sessions, AI-DO settings screen, Korean/English portal and console, AI-DO launcher with admin categories, release permission approval, user search/filter/CSV, command palette), M1 planner app port (apps/planner), M2 platform notifications (core migration 30, app publishing through the Rust SDK, portal inbox, badge, settings, platform-to-app recheck) max_connections 400 in source, M4 live connections (frame /_miy/live relay, runtime.live, portal notification channel), and M5 side panels (manifest panels, header panel menu and pins, core migration 31, 16 live frame sessions per person) with home summary cards (platformEndpoints.homeCard, planner today card). Source only: nothing published, nothing deployed, no server database changed.",
   "source": {
     "repository": "miy-v2",
     "baseCommit": "f1e1e96",
@@ -97,6 +97,87 @@
       "status": "PASS",
       "command": "MIY_CONFIG_DIR=<empty> bash scripts/check-static.sh scripts",
       "scope": "Doc links, script syntax, cleanup tests, official apps, CLI release/version, write decisions, api-types --check, UI 2.0.0 registry --check, SDK transport, token copies, i18n, token contrast, hardcoded colors, API compatibility, CLI downloads, Windows installer package, proxy checks."
+    },
+    {
+      "status": "FAIL",
+      "command": "timeout 900 pnpm exec playwright test -c scripts/runtime-regression/ui.config.ts tests/panels.spec.ts",
+      "scope": "New M5 portal spec, first run: 2 passed / 3 failed.",
+      "cause": "Test selectors: the panel menu's open button and pin button both matched /할 일/. Exact accessible names fixed it."
+    },
+    {
+      "status": "FAIL",
+      "command": "timeout 900 pnpm exec playwright test -c scripts/runtime-regression/ui.config.ts tests/panels.spec.ts",
+      "scope": "4 passed / 1 failed: closing the second panel right after opening it kept the panel.",
+      "cause": "Product behaviour as designed: until the panel frame reports its input state, closing asks first (as for the main frame) and Playwright dismissed the dialog. The test now waits for the panel screen before closing."
+    },
+    {
+      "status": "PASS",
+      "command": "timeout 900 pnpm exec playwright test -c scripts/runtime-regression/ui.config.ts tests/panels.spec.ts",
+      "scope": "5 passed: a side panel opens beside the main frame with its own location (launch names the panel path, address keeps the main frame, survives main navigation, one panel at a time), pinning saves pinnedPanels with CSRF and shows a header button, unsaved panel input is confirmed before closing, narrow screens open the app at the panel path, home summary cards render app text as text and mark an unavailable app."
+    },
+    {
+      "status": "FAIL",
+      "command": "timeout 1500 pnpm exec playwright test -c scripts/runtime-regression/ui.config.ts",
+      "scope": "Full portal suite: 96 passed / 2 failed (platform-shell installation polling and stale-response tests).",
+      "cause": "Their strict mocks did not expect the home's new GET /api/v1/home/cards; fixtures now answer it."
+    },
+    {
+      "status": "PASS",
+      "command": "timeout 900 pnpm exec playwright test -c scripts/runtime-regression/ui.config.ts tests/platform-shell.spec.ts",
+      "scope": "12 passed after the fixture change."
+    },
+    {
+      "status": "PASS",
+      "command": "pnpm typecheck; node scripts/check-i18n.mjs; node scripts/check-hardcoded-colors.mjs",
+      "scope": "With the M5 portal code: types, ko-KR/en-US key parity, no color literals."
+    },
+    {
+      "status": "PASS",
+      "command": "cd apps/planner && cargo test --offline",
+      "scope": "28 passed including the home card (today in the person's zone, all-day events by date, bounded items with app paths)."
+    },
+    {
+      "status": "PASS",
+      "command": "MIY_CONFIG_DIR=<empty> python3 scripts/runtime-regression/run.py",
+      "scope": "157 observations PASS, runner and cleanup exit 0, with M5: boundary 17 (personal settings now validate pinned panels; home cards: only usable apps that declare a card are asked, as a platform call carrying the person's time zone and locale, answers cut to the card contract, a stopped app marked unavailable, an app without use has no card, console refused, the dev portal sees no prod cards, installations list their release's panels) and frames 16 (a person keeps at most 16 live frame sessions; one more retires the oldest, whose token is refused, the others keep working). Afterwards only a unit-test fixture changed (next checks)."
+    },
+    {
+      "status": "PASS",
+      "command": "MIY_CONFIG_DIR=<empty> bash scripts/check-static.sh scripts",
+      "scope": "With M5 docs and scripts."
+    },
+    {
+      "status": "FAIL",
+      "command": "MIY_CONFIG_DIR=<empty> bash scripts/check-static.sh rust",
+      "scope": "249 passed / 1 failed: domain::tests::portal_installations_preserve_the_sdk_shape_without_operating_details.",
+      "cause": "The test lists every installation field; the new panels field was missing from its fixture. Fixture updated (test only)."
+    },
+    {
+      "status": "PASS",
+      "command": "MIY_CONFIG_DIR=<empty> bash scripts/check-static.sh rust",
+      "scope": "After the fixture change."
+    },
+    {
+      "status": "FAIL",
+      "command": "MIY_CONFIG_DIR=<empty> bash scripts/check-static.sh web",
+      "scope": "Portal suite 97 passed / 1 failed: 'Ctrl+K opens the command palette and goes to an app' (later stages not reached).",
+      "cause": "Product logic found by the test: when the frame launch request itself failed, leaving still asked 'cannot confirm the save state' although no app ran; the test passed only when it outran that state. A failed launch now counts as nothing to lose (decision in the plan §7) and a new test covers it."
+    },
+    {
+      "status": "FAIL",
+      "command": "MIY_CONFIG_DIR=<empty> bash scripts/check-static.sh web",
+      "scope": "Portal 99 passed, common UI 78, CLI experience 15, surface boundaries 17 passed / 1 failed ('a server from before the dev portal split keeps both environments on its portal').",
+      "cause": "That fixture's /me has no preferences: since P1 the session loader threw on it and showed 'server unreachable', and the new header code read pinnedPanels without a guard. Both tolerate a missing preferences object now."
+    },
+    {
+      "status": "PASS",
+      "command": "pnpm exec playwright test --config tests/surface-boundaries.config.ts; pnpm exec playwright test --config scripts/runtime-regression/http-ui.config.ts; ui.config.ts notifications, platform-shell and panels specs",
+      "scope": "18 passed; 1 passed; 24 passed. Root pnpm typecheck exit 0."
+    },
+    {
+      "status": "PASS",
+      "command": "cd apps/planner && MIY_CONFIG_DIR=<scratch> ../../target/debug/miy app check",
+      "scope": "valid with manifest panels and platformEndpoints.homeCard, after re-syncing docs/CONTRACT.md and miy.bundle.json from a fresh 0.12.0 init."
     }
   ],
   "notRun": [
@@ -104,6 +185,8 @@
     "Real platform frame for the planner (needs registration, server build and installation)",
     "server-ui.config.ts against a real Core build; stack-ui real frames for the new shell",
     "WebKit, Windows and macOS clients",
-    "Any server deployment, migration 28-30 on a server database, PostgreSQL max_connections change on the server"
+    "Memory re-measurement with a second (panel) frame (M5): needs real frames on an isolated stack",
+    "Real platform frames for planner panels and the home card call against a running planner",
+    "Any server deployment, migration 28-31 on a server database, PostgreSQL max_connections change on the server"
   ]
 }

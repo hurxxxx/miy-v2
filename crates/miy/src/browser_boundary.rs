@@ -56,6 +56,7 @@ pub fn access(route: &str, method: &Method) -> Option<Access> {
         "/me" | "/me/preferences" | "/me/sessions" | "/me/sessions/{id}" => Access::Shared,
         // A portal's own inbox; the environment follows the session's purpose.
         "/live"
+        | "/home/cards"
         | "/notifications"
         | "/notifications/unread-count"
         | "/notifications/read-all"

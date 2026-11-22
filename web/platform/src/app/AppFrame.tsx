@@ -14,6 +14,17 @@ import { COMMAND_PALETTE_EVENT } from "../components/CommandPalette";
 import { i18n } from "../platform/i18n";
 import { Button, Loading, Notice, Panel } from "../ui";
 
+/**
+ * A side-panel frame keeps its own location (docs/APP-FRAMES.md "보조 프레임"):
+ * the portal address follows the main frame only.
+ */
+export interface PanelRouting {
+  location: { pathname: string; search: string; hash: string };
+  navigate: (path: string, replace: boolean) => void;
+  /** The frame's accessible name, told apart from the main frame of the same app. */
+  title: string;
+}
+
 /** The frame's last reported input state, read synchronously by leave checks. */
 export interface FrameInput {
   state: InputState;
@@ -42,12 +53,15 @@ export function AppFrame({
   csrf,
   input,
   onReleaseChanged,
+  panel,
 }: {
   app: Installation;
   basePath: string;
   csrf: string;
   input: React.MutableRefObject<FrameInput>;
   onReleaseChanged: () => void;
+  /** Present for a side panel: its own location instead of the portal router's. */
+  panel?: PanelRouting;
 }) {
   const { t } = useTranslation("portal");
   const router = useRouter();
@@ -57,12 +71,16 @@ export function AppFrame({
   const [run, setRun] = useState(0);
   const [launch, setLaunch] = useState<AppFrameLaunch>();
   const [failure, setFailure] = useState<string>();
-  const name = `miy-app-${app.id}-${run}`;
-  const relative = {
-    pathname: location.pathname.slice(basePath.length) || "/",
-    search: location.searchStr,
-    hash: location.hash ? `#${location.hash}` : "",
-  };
+  const name = `miy-app-${app.id}-${run}${panel ? "-panel" : ""}`;
+  const relative = panel
+    ? panel.location
+    : {
+        pathname: location.pathname.slice(basePath.length) || "/",
+        search: location.searchStr,
+        hash: location.hash ? `#${location.hash}` : "",
+      };
+  const panelRouting = useRef(panel);
+  panelRouting.current = panel;
   const current = useRef(relative);
   current.current = relative;
   // Messages go only to a frame that announced itself (not its initial about:blank).
@@ -83,7 +101,10 @@ export function AppFrame({
         if (active) setLaunch(value);
       })
       .catch((error: Error) => {
-        if (active) setFailure(error.message);
+        if (!active) return;
+        // No frame ran, so there is no input to lose: leaving needs no question.
+        input.current = { state: "clean" };
+        setFailure(error.message);
       });
     return () => {
       active = false;
@@ -145,6 +166,10 @@ export function AppFrame({
             href = appTarget(basePath, message.payload.path);
           } catch {
             return;
+          }
+          if (panelRouting.current) {
+            panelRouting.current.navigate(message.payload.path, message.payload.replace);
+            break;
           }
           void router.navigate({ to: href as "/", replace: message.payload.replace });
           break;
@@ -228,8 +253,8 @@ export function AppFrame({
         key={name}
         ref={frame}
         name={name}
-        title={app.name}
-        className="app-frame"
+        title={panel?.title ?? app.name}
+        className={panel ? "app-frame app-frame-panel" : "app-frame"}
         sandbox={SANDBOX}
         referrerPolicy="no-referrer"
         hidden={!launch}

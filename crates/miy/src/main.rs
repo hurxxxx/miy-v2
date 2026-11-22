@@ -92,6 +92,8 @@ mod file_transfer;
 mod groups;
 mod helper_image;
 #[cfg(feature = "server")]
+mod home;
+#[cfg(feature = "server")]
 mod http;
 mod identity;
 #[cfg(all(test, feature = "server"))]

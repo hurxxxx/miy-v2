@@ -224,6 +224,34 @@ export interface Health {
 export type HealthStatus = "healthy" | "degraded" | "unhealthy" | "not_applicable" | "unknown";
 
 /**
+ * An app's summary card on the portal home. `status` is `ok`, or
+ * `unavailable` when the app did not answer in time (shown as "가져오지 못함").
+ */
+export interface HomeCard {
+  appId: string;
+  appName: string;
+  count: number | null;
+  installationId: string;
+  items: HomeCardItem[];
+  status: string;
+  title: string | null;
+}
+
+/** One line of a home summary card (display text only). */
+export interface HomeCardItem {
+  at: string | null;
+  /** App-relative destination opened in the app's frame. */
+  path: string | null;
+  subtitle: string | null;
+  title: string;
+}
+
+/** `GET /api/v1/home/cards`. */
+export interface HomeCardPage {
+  cards: HomeCard[];
+}
+
+/**
  * An installation as the installation lists, the runtime management list and the app
  * detail return it. `canOpen`, `canManage` and `canPromote` are the decisions this
  * credential would get.
@@ -257,6 +285,8 @@ export interface Installation {
   manifestName: string;
   /** The platform display name. */
   name: string;
+  /** Side-panel screens the release declares (`panels` in its manifest). */
+  panels: InstallationPanel[];
   releaseId: string;
   runtimeStatus: string;
   sourceCommit: string | null;
@@ -270,6 +300,14 @@ export type InstallationKind = "docker_app" | "validation_fixture";
 export interface InstallationPage {
   installations: Installation[];
   nextCursor: string | null;
+}
+
+/** A side-panel screen of an installation's release. */
+export interface InstallationPanel {
+  id: string;
+  /** App-relative path of the panel screen. */
+  path: string;
+  title: string;
 }
 
 export interface LastOperation {
@@ -354,6 +392,8 @@ export interface Preferences {
   locale: Locale;
   /** App IDs pinned to the launcher, in display order. */
   pinnedApps: string[];
+  /** Side panels pinned to the header as `appId/panelId`, in display order. */
+  pinnedPanels: string[];
   theme: ThemePreference;
   /** IANA time zone name. */
   timeZone: string;

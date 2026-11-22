@@ -4,13 +4,14 @@
 //! the same path AI-DO used.
 use axum::{
     Router,
-    routing::{get, patch},
+    routing::{get, patch, post},
 };
 use sqlx::PgPool;
 
 mod calendar;
 mod error;
 mod event_time;
+mod home_card;
 mod personal_widgets;
 mod planner;
 mod time;
@@ -44,6 +45,9 @@ pub fn router(pool: PgPool) -> Router {
             "/v1/personal-widgets/memo",
             get(personal_widgets::get_personal_memo).put(personal_widgets::save_personal_memo),
         )
+        // The portal home's summary card: platform calls only (manifest
+        // `platformEndpoints.homeCard`).
+        .route("/v1/home-card", post(home_card::home_card))
         .with_state(pool)
 }
 

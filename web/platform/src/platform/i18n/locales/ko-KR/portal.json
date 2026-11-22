@@ -372,5 +372,20 @@
     "receive": "받기",
     "receiveFrom": "{{app}} 알림 받기",
     "receiveKind": "{{app}}의 {{kind}} 알림 받기"
+  },
+  "panels": {
+    "menu": "보조 패널",
+    "label": "{{title}} 패널",
+    "openInApp": "앱에서 열기",
+    "close": "패널 닫기",
+    "pin": "{{title}} 고정",
+    "unpin": "{{title}} 고정 해제"
+  },
+  "homeCards": {
+    "title": "요약",
+    "refresh": "새로 고침",
+    "loadFailed": "요약을 불러오지 못했습니다.",
+    "unavailable": "가져오지 못함",
+    "empty": "표시할 항목이 없습니다."
   }
 }

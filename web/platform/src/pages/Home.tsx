@@ -6,6 +6,7 @@ import { distributionLabelKeys, installationsIn, useInstallationPolling, useInst
 import { currentEnvironment, environmentPath, portalEnvironment } from "../lib/paths";
 import { useSurface } from "../data/session";
 import { LoadError, StaleNotice } from "../components/LoadState";
+import { HomeCards } from "../components/home/HomeCards";
 import { AppMark, EmptyState, Loading, Panel, monograms } from "../ui";
 
 export function Home() {
@@ -38,6 +39,7 @@ export function Home() {
       ) : (
         <>
           {installations.status === "error" && <StaleNotice updatedAt={installations.updatedAt} onRetry={refresh} />}
+          {apps.length > 0 && <HomeCards environmentPath={(appId) => environmentPath(environment, appId)} />}
           {apps.length === 0 ? (
             <EmptyState title={t("home.emptyTitle")}>
               {t("home.emptyHint")}

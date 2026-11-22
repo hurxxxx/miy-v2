@@ -133,3 +133,18 @@ test("Ctrl+K opens the command palette and goes to an app", async ({ page }) => 
   await page.keyboard.press("Enter");
   await expect(page).toHaveURL(/\/settings$/);
 });
+
+test("leaving an app whose frame could not open asks nothing", async ({ page }) => {
+  await open(page);
+  const dialogs: string[] = [];
+  page.on("dialog", (dialog) => {
+    dialogs.push(dialog.message());
+    void dialog.dismiss();
+  });
+  await page.goto("/environments/prod/apps/ledger");
+  // The launch request fails in this suite (no frame mock): nothing ran.
+  await expect(page.getByText("앱을 열 수 없습니다")).toBeVisible();
+  await page.locator("#platform-navigation").getByRole("link", { name: "홈", exact: true }).click();
+  await expect(page).toHaveURL(/\/environments\/prod$/);
+  expect(dialogs).toEqual([]);
+});

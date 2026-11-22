@@ -1543,9 +1543,53 @@ pub async fn run(
     .await?;
     passed.push("the worker prunes expired frame sessions and codes, keeps live frames, and a pruned frame's token is refused".into());
 
+    frame_limit(&mut h, &suffix).await?;
+    passed.push("a person keeps at most 16 live frame sessions: opening one more retires the oldest, whose token is then refused, while the others keep working".into());
+
     live_connections(&mut h, &suffix).await?;
     passed.push("live connections: only the frame's own Origin upgrades, the frame token arrives in the first message, the app receives the person's signed identity and both directions relay, a bad first message closes with 4400 and losing use closes with 4403".into());
     Ok(passed)
+}
+
+/// Main frames, side panels and other tabs share one per-person limit; the
+/// oldest live frame session gives way to a new one.
+async fn frame_limit(h: &mut Harness<'_>, suffix: &str) -> Result<()> {
+    let app = h.app(&format!("frame-limit-{suffix}"), &[]).await?;
+    let user = h.user().await?;
+    h.grant(&user, &app).await?;
+    let portal = h.session(&user, auth::BrowserPurpose::DevPortal).await?;
+    let mut frames = Vec::new();
+    for _ in 0..17 {
+        frames.push(h.open(&portal, &app).await?);
+    }
+    let live: Vec<Uuid> = sqlx::query_scalar(
+        "SELECT id FROM app_frame_sessions WHERE user_id=$1 AND revoked_at IS NULL ORDER BY created_at",
+    )
+    .bind(&user)
+    .fetch_all(&h.state.pool)
+    .await?;
+    let expected: Vec<Uuid> = frames[1..].iter().map(|frame| frame.id).collect();
+    ensure!(
+        live == expected,
+        "the frame limit did not retire exactly the oldest frame"
+    );
+    let oldest = frames[0]
+        .request(Method::GET, "/_miy/platform/directory")
+        .send()
+        .await?
+        .status()
+        .as_u16();
+    let kept = frames[1]
+        .request(Method::GET, "/_miy/platform/directory")
+        .send()
+        .await?
+        .status()
+        .as_u16();
+    ensure!(
+        oldest == 401 && kept != 401,
+        "the retired frame kept working ({oldest}) or a kept frame was refused ({kept})"
+    );
+    Ok(())
 }
 
 async fn live_connections(h: &mut Harness<'_>, suffix: &str) -> Result<()> {

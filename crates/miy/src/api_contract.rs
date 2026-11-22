@@ -62,6 +62,19 @@ pub struct Installation {
     pub can_manage: bool,
     /// A promotion request on the app's prod environment would be admitted.
     pub can_promote: bool,
+    /// Side-panel screens the release declares (`panels` in its manifest).
+    #[serde(default)]
+    pub panels: Vec<InstallationPanel>,
+}
+
+/// A side-panel screen of an installation's release.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct InstallationPanel {
+    pub id: String,
+    pub title: String,
+    /// App-relative path of the panel screen.
+    pub path: String,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -380,6 +393,8 @@ pub struct Preferences {
     pub job_title: Option<String>,
     /// App IDs pinned to the launcher, in display order.
     pub pinned_apps: Vec<String>,
+    /// Side panels pinned to the header as `appId/panelId`, in display order.
+    pub pinned_panels: Vec<String>,
 }
 
 /// One of the signed-in person's live browser sessions (`GET /api/v1/me/sessions`).
@@ -474,6 +489,37 @@ pub struct NotificationSettings {
     pub mutes: Vec<NotificationMute>,
 }
 
+/// One line of a home summary card (display text only).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct HomeCardItem {
+    pub title: String,
+    pub subtitle: Option<String>,
+    /// App-relative destination opened in the app's frame.
+    pub path: Option<String>,
+    pub at: Option<DateTime<Utc>>,
+}
+
+/// An app's summary card on the portal home. `status` is `ok`, or
+/// `unavailable` when the app did not answer in time (shown as "가져오지 못함").
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct HomeCard {
+    pub installation_id: Uuid,
+    pub app_id: String,
+    pub app_name: String,
+    pub status: String,
+    pub title: Option<String>,
+    pub count: Option<u32>,
+    pub items: Vec<HomeCardItem>,
+}
+
+/// `GET /api/v1/home/cards`.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct HomeCardPage {
+    pub cards: Vec<HomeCard>,
+}
+
 /// Display settings passed from the portal to an app frame. They decide how
 /// things look and read; they are never an input to an access decision.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -556,6 +602,7 @@ pub fn schema() -> serde_json::Value {
     generator.subschema_for::<NotificationPublished>();
     generator.subschema_for::<NotificationPage>();
     generator.subschema_for::<NotificationSettings>();
+    generator.subschema_for::<HomeCardPage>();
     serde_json::json!({
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "title": "miy API v1 responses",

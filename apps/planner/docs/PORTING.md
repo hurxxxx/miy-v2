@@ -17,7 +17,7 @@
 | 통합 캘린더(회의·PMS 일정) | `domains/calendar`의 Meeting·PMS 소스, `MeetingPreviewModal`, `MeetingCreateModal`, `PlannerEventChoicePopover`(+model), PMS 태스크 열기(`dispatchFloatingPmsOpen`) | 다른 앱 데이터. 앱 간 연결은 후속 |
 | Google 캘린더 구독 | `google_calendar*.py`, `PlannerGoogleCalendarSync.tsx`, `/planner/google-calendar*` API, `planner_external_*` 테이블 | 계획 §2.2에서 제외 |
 | AI 도구·승인 미리보기·RAG·검색 연동 | `tools.py`, `approval_preview.py`, `rag_sync.py`, `source_access.py`, `*_for_ai` 서비스, `retrieval_partition_id` | AI 기능(M13) 범위 |
-| 포털 전역 위젯 | `FloatingTodayPlannerWidget`(+model), 도크의 DM·PMS·Today Planner 패널, 할 일의 "PMS로 전환", `floating-panel-events.ts` | 포털 전역 이벤트는 이번 단계 아님. 오늘 일정은 M5 홈 요약 카드 후보 |
+| 포털 전역 위젯 | `FloatingTodayPlannerWidget`(+model), 도크의 DM·PMS·Today Planner 패널, 할 일의 "PMS로 전환", `floating-panel-events.ts` | 포털 전역 이벤트는 옮기지 않음. 오늘 일정은 M5 홈 요약 카드(`/v1/home-card`)로 제공 |
 | 개인 위젯의 PMS 배정 업무 | `GET /personal-widgets/pms/tasks/assigned` | PMS 앱 데이터 |
 | AI-DO 셸 연동 | `planner/index.ts`, `manifest.ts`, `routes.ts`, `sidebar.ts`(+spec), `public-api.ts` | miy는 manifest·포털이 담당 |
 | 쓰이지 않던 코드 | `SchedulePopover.tsx`, `schedule-popover-model.ts`(+spec) | AI-DO에서도 어디서도 import하지 않음 |
@@ -175,4 +175,6 @@ AI-DO와 같은 `@hyunbinseo/holidays-kr@5.2027.0`을 앱 번들에 포함한다
 - 실제 플랫폼 프레임에서의 확인(계획 절차 9): 이 포팅은 SDK 미리보기 빌드를 로컬 게이트웨이 대역과 실제 Rust 서버·일회용 DB로 띄워 브라우저(Chromium)에서 확인했다. 실제 프레임 CSP, 프레임 런타임의 CSS 로드(빌드가 동기 CSS 두 개를 manifest에 적는다), 포털 이동 확인은 확인하지 않았다. 미리보기는 언어가 ko-KR로 고정이라 영어 화면은 jsdom 테스트로만 확인했다.
 - AI-DO 기준 화면(가상 계정·가상 데이터)과의 나란한 비교.
 - 카탈로그 공식 릴리스·dev 설치·인수·prod 승격(`miy app source-pin` 이후 절차).
-- 앱 간 연결 이후: 통합 캘린더(회의·PMS), 할 일 → PMS 전환, 오늘 일정 홈 카드(M5), 보조 프레임에 패널 경로 연결(M5).
+- 앱 간 연결 이후: 통합 캘린더(회의·PMS), 할 일 → PMS 전환.
+
+**M5에서 더한 것(2026-11-22).** manifest `panels`에 `todos`(`/widgets/todos`)·`memos`(`/widgets/memos`)를 선언해 포털 보조 패널에 뜨게 했다. AI-DO `FloatingTodayPlannerWidget`이 보이던 오늘 일정은 홈 요약 카드(`platformEndpoints.homeCard` → `POST /api/v1/home-card`)로 옮겼다. 사람의 시간대는 코어가 본문 `timeZone`으로 보낸다. 실제 프레임·코어 호출로는 확인하지 않았다(단위 테스트만).

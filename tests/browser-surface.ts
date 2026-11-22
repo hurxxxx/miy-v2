@@ -47,6 +47,7 @@ export const defaultPreferences = {
   dateFormat: "korean",
   jobTitle: null,
   pinnedApps: [],
+  pinnedPanels: [],
 };
 
 export function browserUser(route: Route, user: object) {

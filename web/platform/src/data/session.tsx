@@ -42,6 +42,7 @@ export type Preferences = {
   jobTitle: string | null;
   /** App IDs pinned to the launcher, in display order. */
   pinnedApps: string[];
+  pinnedPanels: string[];
 };
 export type User = {
   id: string;
@@ -161,8 +162,9 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       })
       .then((user) => {
         if (current.signal.aborted) return;
-        // The saved choice wins over this browser's copy from now on.
-        if (user) adopt(displayOf(user.preferences));
+        // The saved choice wins over this browser's copy from now on (a server
+        // without saved preferences leaves this browser's copy in effect).
+        if (user?.preferences) adopt(displayOf(user.preferences));
         setState(user ? { status: "ready", user } : { status: "anonymous" });
       })
       .catch((error: unknown) => {

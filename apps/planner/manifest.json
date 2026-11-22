@@ -5,6 +5,21 @@
     "directory": "migrations"
   },
   "name": "플래너",
+  "panels": [
+    {
+      "id": "todos",
+      "path": "/widgets/todos",
+      "title": "할 일"
+    },
+    {
+      "id": "memos",
+      "path": "/widgets/memos",
+      "title": "메모"
+    }
+  ],
+  "platformEndpoints": {
+    "homeCard": "/v1/home-card"
+  },
   "requestedPermissions": [
     "database"
   ],

@@ -392,7 +392,7 @@ pub async fn run(
     ensure!(
         fresh["preferences"]
             == json!({"theme":"system","locale":"ko-KR","timeZone":"Asia/Seoul",
-                "dateFormat":"korean","jobTitle":null,"pinnedApps":[]}),
+                "dateFormat":"korean","jobTitle":null,"pinnedApps":[],"pinnedPanels":[]}),
         "personal settings lost their defaults"
     );
     denied(
@@ -406,7 +406,7 @@ pub async fn run(
     for (browser, body) in [
         (
             &portal_user,
-            json!({"theme":"dark","pinnedApps":["planner"]}),
+            json!({"theme":"dark","pinnedApps":["planner"],"pinnedPanels":["planner/todos"]}),
         ),
         (
             &console_user,
@@ -427,6 +427,10 @@ pub async fn run(
         json!({"theme":"sepia"}),
         json!({"timeZone":"../etc"}),
         json!({"pinnedApps":["planner","planner"]}),
+        json!({"pinnedPanels":["planner"]}),
+        json!({"pinnedPanels":["planner/Todos"]}),
+        json!({"pinnedPanels":["planner/todos","planner/todos"]}),
+        json!({"pinnedPanels":(0..17).map(|i| format!("app{i}/panel")).collect::<Vec<_>>()}),
         json!({"name":""}),
         json!({"userId":"someone-else"}),
     ] {
@@ -450,7 +454,8 @@ pub async fn run(
     ensure!(
         user_me["preferences"]
             == json!({"theme":"dark","locale":"en-US","timeZone":"Europe/Berlin",
-                "dateFormat":"korean","jobTitle":null,"pinnedApps":["planner"]}),
+                "dateFormat":"korean","jobTitle":null,"pinnedApps":["planner"],
+                "pinnedPanels":["planner/todos"]}),
         "personal settings did not merge across surfaces"
     );
     let admin_me = json_response(
@@ -491,7 +496,7 @@ pub async fn run(
         renamed["name"] == "새 이름" && audited == 1,
         "a display name change was not applied or not audited"
     );
-    passed.push("personal settings: defaults before any row, CSRF required, partial updates merge across portal, dev portal and console, invalid values and foreign fields rejected, other people unaffected, renames audited".into());
+    passed.push("personal settings: defaults before any row, CSRF required, partial updates merge across portal, dev portal and console, invalid values (including malformed, repeated or too many pinned panels) and foreign fields rejected, other people unaffected, renames audited".into());
 
     // Own browser sessions: listed across surfaces with this one marked and
     // first; another of one's sessions ends (with CSRF), the current one and
@@ -1129,6 +1134,206 @@ pub async fn run(
     }
     let _ = notify_installations;
     passed.push("notification inbox: each portal reads and marks only its environment's notifications, the console has none, CSRF is required, losing use hides them from the list and the count, mute settings are validated and saved, and the live channel pushes the count and closes with the session".into());
+
+    // Home summary cards and side panels (M5): the prod portal asks each app the
+    // person may use that declares a card, as a platform call; the answer is
+    // cut to the card contract, an app that cannot answer is marked
+    // unavailable, and an app without use has no card. Installations list the
+    // panels their release declares.
+    let home_secret = auth::random();
+    let home_seen = std::sync::Arc::new(std::sync::Mutex::new(Vec::<Value>::new()));
+    let home_listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
+    let home_port = i32::from(home_listener.local_addr()?.port());
+    let home_router = {
+        let secret = home_secret.clone();
+        let seen = home_seen.clone();
+        Router::new().route(
+            "/api/home-card",
+            axum::routing::post(
+                move |headers: axum::http::HeaderMap, Json(body): Json<Value>| {
+                    let secret = secret.clone();
+                    let seen = seen.clone();
+                    async move {
+                        let mut validation =
+                            jsonwebtoken::Validation::new(jsonwebtoken::Algorithm::HS256);
+                        validation.set_audience(&["miy-app"]);
+                        validation.set_issuer(&["miy"]);
+                        let claims = headers
+                            .get("x-miy-identity")
+                            .and_then(|value| value.to_str().ok())
+                            .and_then(|token| {
+                                jsonwebtoken::decode::<Value>(
+                                    token,
+                                    &jsonwebtoken::DecodingKey::from_secret(secret.as_bytes()),
+                                    &validation,
+                                )
+                                .ok()
+                            })
+                            .map(|decoded| decoded.claims)
+                            .unwrap_or(Value::Null);
+                        seen.lock()
+                            .unwrap()
+                            .push(json!({"claims": claims, "body": body}));
+                        Json(json!({
+                            "title": "가".repeat(100),
+                            "count": 2,
+                            "extra": "dropped",
+                            "items": [
+                                {"title": "<b>주간 회의</b>", "subtitle": "회의실 A", "at": "2026-11-22T10:00:00+09:00", "path": "/?event=1", "html": "<i>x</i>"},
+                                {"title": "외부 링크", "path": "https://untrusted.invalid/"},
+                                {"title": ""}
+                            ]
+                        }))
+                    }
+                },
+            ),
+        )
+    };
+    let home_server = tokio::spawn(async move {
+        let _ = axum::serve(home_listener, home_router).await;
+    });
+    let mut home_apps = Vec::new();
+    for (label, running, granted, panels) in [
+        (
+            "card",
+            true,
+            true,
+            json!([{"id":"todos","title":"할 일","path":"/widgets/todos"}]),
+        ),
+        ("down", false, true, json!([])),
+        ("hidden", true, false, json!([])),
+    ] {
+        let app = format!("boundary-home-{label}-{}", Uuid::new_v4().simple());
+        sqlx::query("INSERT INTO apps(id,name) VALUES($1,$2)")
+            .bind(&app)
+            .bind(format!("Home {label}"))
+            .execute(&state.pool)
+            .await?;
+        let release = Uuid::new_v4();
+        let manifest = json!({
+            "contractVersion":"miy.app/v1alpha1","id":app,"name":"Home fixture","version":"1.0.0",
+            "runtime":{"profile":"rust-web-v1"},
+            "ui":{"delivery":"module","moduleEntry":"mf-manifest.json","moduleExport":"./AppRoot","contractVersion":"miy.ui/v1alpha1"},
+            "resources":{"database":"postgresql"},"migrations":{"directory":"migrations"},
+            "requestedPermissions":[],"panels":panels,
+            "platformEndpoints":{"homeCard":"/home-card"},
+        });
+        sqlx::query("INSERT INTO releases(id,app_id,version,artifact_hash,manifest) VALUES($1,$2,'1.0.0',$3,$4)")
+            .bind(release)
+            .bind(&app)
+            .bind(hash(format!("boundary-home:{release}")))
+            .bind(&manifest)
+            .execute(&state.pool)
+            .await?;
+        let installation = Uuid::new_v4();
+        sqlx::query("INSERT INTO installations(id,app_id,environment,release_id,db_status,runtime_status,desired_state,runtime_port,runtime_secret) VALUES($1,$2,'prod',$3,'ready',$4,$4,$5,$6)")
+            .bind(installation)
+            .bind(&app)
+            .bind(release)
+            .bind(if running { "running" } else { "stopped" })
+            .bind(home_port)
+            .bind(auth::encrypt(&home_secret)?)
+            .execute(&state.pool)
+            .await?;
+        if granted {
+            sqlx::query("INSERT INTO grants(user_id,app_id,environment,permission) VALUES($1,$2,'prod','use')")
+                .bind(&user_id)
+                .bind(&app)
+                .execute(&state.pool)
+                .await?;
+        }
+        home_apps.push((app, installation));
+    }
+    let home = json_response(
+        h.cookie_request(&portal_user, Method::GET, "/api/v1/home/cards")
+            .send()
+            .await?,
+        200,
+    )
+    .await?;
+    let card_of = |app: &str| -> Value {
+        home["cards"]
+            .as_array()
+            .and_then(|cards| cards.iter().find(|card| card["appId"] == app))
+            .cloned()
+            .unwrap_or(Value::Null)
+    };
+    let (card, down, hidden) = (
+        card_of(&home_apps[0].0),
+        card_of(&home_apps[1].0),
+        card_of(&home_apps[2].0),
+    );
+    let home_claims = home_seen.lock().unwrap().clone();
+    ensure!(
+        card["status"] == "ok"
+            && card["title"].as_str().map(|t| t.chars().count()) == Some(80)
+            && card["count"] == 2
+            && card["items"]
+                == json!([
+                    {"title":"<b>주간 회의</b>","subtitle":"회의실 A","path":"/?event=1","at":"2026-11-22T01:00:00Z"},
+                    {"title":"외부 링크","subtitle":null,"path":null,"at":null}
+                ])
+            && card.get("extra").is_none(),
+        "the home card was not cut to the card contract: {card}"
+    );
+    ensure!(
+        down["status"] == "unavailable" && down["items"] == json!([]) && hidden.is_null(),
+        "an app that cannot answer was not marked, or an app without use had a card"
+    );
+    ensure!(
+        home_claims.len() == 1
+            && home_claims[0]["claims"]["platform"] == true
+            && home_claims[0]["claims"]["admin"] == false
+            && home_claims[0]["claims"]["sub"] == user_id.as_str()
+            && home_claims[0]["claims"].get("delegation_token").is_none()
+            && home_claims[0]["body"] == json!({"timeZone":"Europe/Berlin","locale":"en-US"}),
+        "the home card call did not carry the person's platform identity and display settings"
+    );
+    denied(
+        h.cookie_request(&console_user, Method::GET, "/api/v1/home/cards")
+            .send()
+            .await?,
+        403,
+    )
+    .await?;
+    let dev_home_user = h.browser(&user_id, BrowserPurpose::DevPortal).await?;
+    let dev_home = json_response(
+        h.cookie_request(&dev_home_user, Method::GET, "/api/v1/home/cards")
+            .send()
+            .await?,
+        200,
+    )
+    .await?;
+    ensure!(
+        !dev_home["cards"]
+            .as_array()
+            .is_some_and(|cards| cards.iter().any(|card| home_apps
+                .iter()
+                .any(|(app, _)| card["appId"] == app.as_str()))),
+        "the dev portal showed prod home cards"
+    );
+    let listed = json_response(
+        h.cookie_request(&portal_user, Method::GET, "/api/v1/installations")
+            .send()
+            .await?,
+        200,
+    )
+    .await?;
+    let panels_of = |id: Uuid| -> Value {
+        listed
+            .as_array()
+            .and_then(|items| items.iter().find(|item| item["id"] == id.to_string()))
+            .map(|item| item["panels"].clone())
+            .unwrap_or(Value::Null)
+    };
+    ensure!(
+        panels_of(home_apps[0].1)
+            == json!([{"id":"todos","title":"할 일","path":"/widgets/todos"}])
+            && panels_of(home_apps[1].1) == json!([]),
+        "installations did not list their release's panels"
+    );
+    home_server.abort();
+    passed.push("home cards: the prod portal asks only apps the person may use that declare a card, as a platform call with the person's display settings; answers are cut to the card contract, an app that cannot answer is marked unavailable, the console is refused, the dev portal sees no prod cards, and installations list their release's panels".into());
 
     // Same-host ports share cookies; code on one origin must not use the other's
     // cookies even for reads. Reject before any session lookup.
@@ -1824,6 +2029,6 @@ pub async fn run(
     )
     .await?;
     passed.push("expired or disabled browser sessions require new authentication; restoring an account does not revive old portal/console cookies and a fresh purpose-bound session works".into());
-    ensure!(passed.len() == 16, "boundary observation count changed");
+    ensure!(passed.len() == 17, "boundary observation count changed");
     Ok(passed)
 }

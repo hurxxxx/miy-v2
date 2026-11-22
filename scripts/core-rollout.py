@@ -82,7 +82,8 @@ WIDEN_ONLY = {21: ('0021_dev_portal.sql', 'f2b2c022638d618bb337ca1ab53d6ea2f2e0c
               27: ('0027_password_reset_recovery.sql', '2885d8c72446236f56730623c4d17525abf6c617e4e340cb30c8797bb6e349e4'),
               28: ('0028_personal_settings.sql', '122abca6f6c7de745d4fa9dc7badc9eaa5701b3d7370ab92bd8a334cdf0718b8'),
               29: ('0029_launcher_categories.sql', 'f2ddb592fc295d9baf3e2b6a0279497f78d48a8fd8317ea792c4c199b1f5d8cc'),
-              30: ('0030_notifications.sql', '0db2c9b494486e4930df6aa729b912b36b9fbd11c936c89af4a3ee5f324be697')}
+              30: ('0030_notifications.sql', '0db2c9b494486e4930df6aa729b912b36b9fbd11c936c89af4a3ee5f324be697'),
+              31: ('0031_pinned_panels.sql', '9ffda418905fc3866f2686969c7925b6536c1f45151e300d4e0908ae7a80a38d')}
 REQUIRED_CI = ('cli-foundation.yml', 'runtime-regression.yml', 'web.yml')
 HEX40 = re.compile(r'[0-9a-f]{40}')
 HEX64 = re.compile(r'[0-9a-f]{64}')

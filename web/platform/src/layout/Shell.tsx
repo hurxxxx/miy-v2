@@ -3,13 +3,17 @@ import { Link, Outlet, useLocation, useNavigate } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
 import { InstallationsProvider, installationsIn, useInstallations } from "../data/installations";
-import { useSession, useSurface, type LoginOptions, type User } from "../data/session";
+import { useSession, useSurface, type LoginOptions, type Preferences, type User } from "../data/session";
 import { currentEnvironment, environmentOrigin, environmentPath, isAccountLinkPath, isCliApprovalPath, isConsolePath, isAppPath, pathEnvironment, portalEnvironment, surfaceUrl, type Environment } from "../lib/paths";
 import { signOut } from "../lib/sign-out";
 import { LoadError } from "../components/LoadState";
 import { NewTabLink } from "../components/NewTabLink";
 import { CommandPalette, useCommandPaletteShortcut, type Command } from "../components/CommandPalette";
 import { NotificationBell } from "../components/notifications/NotificationBell";
+import { PanelMenu } from "../components/panels/PanelMenu";
+import { PANEL_MEDIA, SidePanel, panelKey, type OpenPanel } from "../components/panels/SidePanel";
+import { leaveMessage, type FrameInput } from "../app/AppFrame";
+import { request } from "@miy/sdk";
 import { Login } from "../pages/Login";
 import { CliInstall } from "../pages/CliInstall";
 import { Join } from "../pages/Join";
@@ -248,6 +252,56 @@ function SignedInLayout({ user, environment }: { user: User; environment: Enviro
       ...(isConsole ? [{ id: "cli-sessions", label: t("commandPalette.cliSessions"), run: go("/cli/sessions") }] : []),
     ];
   }, [appItems, environment, isConsole, navigate, t, user.admin]);
+  // Side panels (M5): one secondary frame beside the main one; the address
+  // follows the main frame only. Narrow screens open the app instead.
+  const { updateUser } = useSession();
+  const panels = useMemo<OpenPanel[]>(
+    () => (isConsole ? [] : apps.flatMap((app) => (app.panels ?? []).map((panel) => ({ app, panel })))),
+    [apps, isConsole],
+  );
+  const [openPanel, setOpenPanel] = useState<OpenPanel | null>(null);
+  const [panelSaving, setPanelSaving] = useState(false);
+  const panelInput = useRef<FrameInput>({ state: "unknown" });
+  const mayLeavePanel = () => {
+    const message = openPanel ? leaveMessage(panelInput.current) : undefined;
+    return !message || window.confirm(message);
+  };
+  const showPanel = (open: OpenPanel) => {
+    if (!window.matchMedia(PANEL_MEDIA).matches) {
+      void navigate({ to: `${environmentPath(environment, open.app.appId)}${open.panel.path}` as "/" });
+      return;
+    }
+    const same = openPanel && panelKey(openPanel) === panelKey(open);
+    if (!mayLeavePanel()) return;
+    setOpenPanel(same ? null : open);
+  };
+  const closePanel = (force?: boolean) => {
+    if (force || mayLeavePanel()) setOpenPanel(null);
+  };
+  // A panel whose app or panel is no longer listed closes (removed, or use lost).
+  useEffect(() => {
+    if (openPanel && installations.items !== null && !panels.some((open) => open.app.id === openPanel.app.id && open.panel.id === openPanel.panel.id))
+      setOpenPanel(null);
+  }, [installations.items, openPanel, panels]);
+  const togglePanelPin = async (open: OpenPanel) => {
+    const id = panelKey(open);
+    const pinned = user.preferences?.pinnedPanels ?? [];
+    const next = pinned.includes(id) ? pinned.filter((value) => value !== id) : [...pinned, id];
+    setPanelSaving(true);
+    try {
+      updateUser(
+        await request<{ name: string; preferences: Preferences }>("/api/v1/me/preferences", user.csrf, {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ pinnedPanels: next }),
+        }),
+      );
+    } catch {
+      /* the pin stays as it was */
+    } finally {
+      setPanelSaving(false);
+    }
+  };
   const launcherOpen = launcher.state.launcherOpen || launcher.state.appBarEditorOpen;
   const launcherOpenRef = useRef(launcherOpen);
   useEffect(() => {
@@ -279,7 +333,7 @@ function SignedInLayout({ user, environment }: { user: User; environment: Enviro
   }
   const settingsActive = pathname === "/settings" || pathname.startsWith("/settings/");
   return (
-    <div className={`shell env-is-${environment}`}>
+    <div className={`shell env-is-${environment}${openPanel ? " has-side-panel" : ""}`}>
       <a className="skip-link" href="#platform-main">
         {t("shell.skipToContent")}
       </a>
@@ -406,6 +460,16 @@ function SignedInLayout({ user, environment }: { user: User; environment: Enviro
             <p className="header-title">{pageTitle(t, pathname, environment, activeApp?.name, isConsole)}</p>
           </div>
           <div className="header-account">
+            {!isConsole && (
+              <PanelMenu
+                panels={panels}
+                pinned={user.preferences?.pinnedPanels ?? []}
+                current={openPanel ? panelKey(openPanel) : null}
+                saving={panelSaving}
+                onOpen={showPanel}
+                onTogglePin={(open) => void togglePanelPin(open)}
+              />
+            )}
             <NotificationBell
               csrf={user.csrf}
               enabled={!isConsole}
@@ -429,6 +493,16 @@ function SignedInLayout({ user, environment }: { user: User; environment: Enviro
         </main>
         <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} commands={commands} />
       </div>
+      {openPanel && (
+        <SidePanel
+          key={panelKey(openPanel)}
+          open={openPanel}
+          environment={environment}
+          csrf={user.csrf}
+          input={panelInput}
+          onClose={closePanel}
+        />
+      )}
     </div>
   );
 }

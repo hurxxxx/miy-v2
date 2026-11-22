@@ -123,6 +123,7 @@ pub fn router_for(state: State, purpose: BrowserPurpose) -> Router {
         .route("/me/preferences", axum::routing::patch(update_preferences))
         .route("/me/sessions", axum::routing::get(browser_sessions))
         .route("/live", axum::routing::get(crate::notifications::live))
+        .route("/home/cards", axum::routing::get(crate::home::cards))
         .route(
             "/notifications",
             axum::routing::get(crate::notifications::list),

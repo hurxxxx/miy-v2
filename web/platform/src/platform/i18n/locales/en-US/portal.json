@@ -373,5 +373,20 @@
     "receive": "Receive",
     "receiveFrom": "Receive notifications from {{app}}",
     "receiveKind": "Receive {{kind}} notifications from {{app}}"
+  },
+  "panels": {
+    "menu": "Side panels",
+    "label": "{{title}} panel",
+    "openInApp": "Open in app",
+    "close": "Close panel",
+    "pin": "Pin {{title}}",
+    "unpin": "Unpin {{title}}"
+  },
+  "homeCards": {
+    "title": "Summary",
+    "refresh": "Refresh",
+    "loadFailed": "Could not load the summary.",
+    "unavailable": "Could not fetch",
+    "empty": "Nothing to show."
   }
 }

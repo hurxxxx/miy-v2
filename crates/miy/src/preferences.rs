@@ -35,6 +35,8 @@ pub struct Update {
     pub date_format: Option<DateFormat>,
     /// App IDs pinned to the launcher, in display order. At most 64, no repeats.
     pub pinned_apps: Option<Vec<String>>,
+    /// Side panels pinned to the header as `appId/panelId`, in order. At most 16.
+    pub pinned_panels: Option<Vec<String>>,
 }
 
 /// One of the closed enums as its JSON text, the form the table stores.
@@ -60,12 +62,13 @@ fn defaults() -> Preferences {
         date_format: frame.date_format,
         job_title: None,
         pinned_apps: Vec::new(),
+        pinned_panels: Vec::new(),
     }
 }
 
 pub(crate) async fn read(pool: &PgPool, user: &str) -> sqlx::Result<Preferences> {
     let row = sqlx::query(
-        "SELECT theme,locale,time_zone,date_format,job_title,pinned_apps \
+        "SELECT theme,locale,time_zone,date_format,job_title,pinned_apps,pinned_panels \
          FROM user_preferences WHERE user_id=$1",
     )
     .bind(user)
@@ -78,6 +81,7 @@ pub(crate) async fn read(pool: &PgPool, user: &str) -> sqlx::Result<Preferences>
         date_format: parse(row.get("date_format")),
         job_title: row.get("job_title"),
         pinned_apps: row.get("pinned_apps"),
+        pinned_panels: row.get("pinned_panels"),
     }))
 }
 
@@ -91,6 +95,16 @@ fn job_title(value: Option<&str>) -> ApiResult<Option<Option<String>>> {
         }
         Some(_) => Err(ApiError::bad("invalid_job_title")),
     }
+}
+
+fn pinned_panels(value: &[String]) -> bool {
+    let mut seen = HashSet::new();
+    value.len() <= 16
+        && value.iter().all(|entry| {
+            entry.split_once('/').is_some_and(|(app, panel)| {
+                crate::contract::valid_id(app) && crate::contract::valid_id(panel)
+            }) && seen.insert(entry)
+        })
 }
 
 fn pinned_apps(value: &[String]) -> bool {
@@ -122,6 +136,13 @@ pub async fn update(s: &State, p: &Principal, input: Update) -> ApiResult<Value>
     {
         return Err(ApiError::bad("invalid_pinned_apps"));
     }
+    if input
+        .pinned_panels
+        .as_deref()
+        .is_some_and(|panels| !pinned_panels(panels))
+    {
+        return Err(ApiError::bad("invalid_pinned_panels"));
+    }
     let mut tx = Write::begin(&s.pool).await?;
     let old_name: Option<String> =
         sqlx::query_scalar("SELECT name FROM users WHERE id=$1 FOR NO KEY UPDATE")
@@ -139,6 +160,7 @@ pub async fn update(s: &State, p: &Principal, input: Update) -> ApiResult<Value>
         "UPDATE user_preferences SET theme=COALESCE($2,theme),locale=COALESCE($3,locale),\
          time_zone=COALESCE($4,time_zone),date_format=COALESCE($5,date_format),\
          job_title=CASE WHEN $6 THEN $7 ELSE job_title END,pinned_apps=COALESCE($8,pinned_apps),\
+         pinned_panels=COALESCE($9,pinned_panels),\
          updated_at=clock_timestamp() WHERE user_id=$1",
     )
     .bind(&p.id)
@@ -149,6 +171,7 @@ pub async fn update(s: &State, p: &Principal, input: Update) -> ApiResult<Value>
     .bind(title.is_some())
     .bind(title.flatten())
     .bind(&input.pinned_apps)
+    .bind(&input.pinned_panels)
     .execute(&mut *tx)
     .await?;
     let renamed = name.as_ref().is_some_and(|name| *name != old_name);

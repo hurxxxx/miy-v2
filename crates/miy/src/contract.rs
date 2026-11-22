@@ -23,6 +23,20 @@ pub struct Manifest {
     /// API, like the UI's `runtime.api` paths.
     #[serde(default, skip_serializing_if = "PlatformEndpoints::is_empty")]
     pub platform_endpoints: PlatformEndpoints,
+    /// Narrow screens the portal can open in a side panel next to another app
+    /// (docs/APP-FRAMES.md "보조 프레임"). At most four.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub panels: Vec<Panel>,
+}
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct Panel {
+    /// Lowercase slug, unique in the manifest.
+    pub id: String,
+    /// Shown on the panel's header and in the panel menu, 1-40 characters.
+    pub title: String,
+    /// App-relative path of the panel screen (no query).
+    pub path: String,
 }
 #[derive(Debug, Clone, Default, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -32,10 +46,15 @@ pub struct PlatformEndpoints {
     /// still point at something they may open.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub notification_check: Option<String>,
+    /// POST `{}` answering `{ "title", "count"?, "items": [{ "title",
+    /// "subtitle"?, "path"?, "at"? }] }` (at most five items): the person's
+    /// summary card on the portal home.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub home_card: Option<String>,
 }
 impl PlatformEndpoints {
     pub fn is_empty(&self) -> bool {
-        self.notification_check.is_none()
+        self.notification_check.is_none() && self.home_card.is_none()
     }
 }
 /// An app API path for a platform endpoint: absolute, no query, no dot segments.
@@ -115,12 +134,28 @@ pub fn validate(m: &Manifest) -> Result<(), String> {
     if m.requested_permissions.iter().any(|p| !valid_permission(p)) {
         return Err("unsupported_permission".into());
     }
-    if m.platform_endpoints
-        .notification_check
-        .as_deref()
-        .is_some_and(|path| !valid_endpoint_path(path))
+    if [
+        &m.platform_endpoints.notification_check,
+        &m.platform_endpoints.home_card,
+    ]
+    .into_iter()
+    .flatten()
+    .any(|path| !valid_endpoint_path(path))
     {
         return Err("invalid_platform_endpoint".into());
+    }
+    let mut panel_ids = std::collections::HashSet::new();
+    if m.panels.len() > 4
+        || !m.panels.iter().all(|panel| {
+            valid_id(&panel.id)
+                && panel_ids.insert(panel.id.as_str())
+                && !panel.title.trim().is_empty()
+                && panel.title.chars().count() <= 40
+                && !panel.title.chars().any(char::is_control)
+                && valid_endpoint_path(&panel.path)
+        })
+    {
+        return Err("invalid_panel".into());
     }
     Ok(())
 }

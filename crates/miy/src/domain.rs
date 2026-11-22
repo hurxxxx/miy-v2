@@ -274,7 +274,7 @@ async fn installation_list(state: &State, p: &Principal, managed: bool) -> ApiRe
 pub(crate) const INSTALLATION_ROW: &str = "jsonb_build_object('id',t.id,'appId',t.app_id,'name',a.name,'manifestName',r.manifest->>'name','version',r.version,'environment',t.environment,'releaseId',t.release_id,'distribution',
     COALESCE((SELECT CASE WHEN o.default_install THEN 'default_official' ELSE 'optional_official' END
                 FROM official_apps o WHERE o.app_id=t.app_id AND o.app_id=r.app_id AND r.official_version=r.version), 'organization'),
-    'kind',CASE WHEN r.image_id IS NULL THEN 'validation_fixture' ELSE 'docker_app' END,'imageId',r.image_id,'sourceCommit',r.source_commit,'dbStatus',t.db_status,'runtimeStatus',t.runtime_status,'desiredState',t.desired_state,'generation',t.control_generation,'health',jsonb_build_object('status',t.health_status,'consecutiveFailures',t.health_failures,'checkedAt',t.health_checked_at,'errorCode',t.health_error),'ui',jsonb_build_object('entry','/artifacts/'||r.artifact_hash||'/ui/'||(r.manifest->'ui'->>'moduleEntry'),'export',r.manifest->'ui'->>'moduleExport','contractVersion',r.manifest->'ui'->>'contractVersion'),'lastOperation',(SELECT jsonb_build_object('id',j.id,'releaseId',j.release_id,'action',j.action,'status',j.status,'step',j.step,'errorCode',j.error_code,'retryable',j.retryable) FROM runtime_jobs j WHERE j.app_id=t.app_id AND j.environment=t.environment ORDER BY j.created_at DESC,j.id DESC LIMIT 1),'acceptance',(SELECT jsonb_build_object('recordedBy',c.actor,'note',c.note,'checks',c.checks,'structured',jsonb_array_length(c.checks)>0,'checkedAt',c.checked_at) FROM release_checks c WHERE c.release_id=r.id),'appDisabled',EXISTS(SELECT 1 FROM app_controls c WHERE c.app_id=t.app_id AND c.disabled),'canOpen',false,'canManage',false,'canPromote',false)";
+    'kind',CASE WHEN r.image_id IS NULL THEN 'validation_fixture' ELSE 'docker_app' END,'imageId',r.image_id,'sourceCommit',r.source_commit,'dbStatus',t.db_status,'runtimeStatus',t.runtime_status,'desiredState',t.desired_state,'generation',t.control_generation,'health',jsonb_build_object('status',t.health_status,'consecutiveFailures',t.health_failures,'checkedAt',t.health_checked_at,'errorCode',t.health_error),'ui',jsonb_build_object('entry','/artifacts/'||r.artifact_hash||'/ui/'||(r.manifest->'ui'->>'moduleEntry'),'export',r.manifest->'ui'->>'moduleExport','contractVersion',r.manifest->'ui'->>'contractVersion'),'lastOperation',(SELECT jsonb_build_object('id',j.id,'releaseId',j.release_id,'action',j.action,'status',j.status,'step',j.step,'errorCode',j.error_code,'retryable',j.retryable) FROM runtime_jobs j WHERE j.app_id=t.app_id AND j.environment=t.environment ORDER BY j.created_at DESC,j.id DESC LIMIT 1),'acceptance',(SELECT jsonb_build_object('recordedBy',c.actor,'note',c.note,'checks',c.checks,'structured',jsonb_array_length(c.checks)>0,'checkedAt',c.checked_at) FROM release_checks c WHERE c.release_id=r.id),'appDisabled',EXISTS(SELECT 1 FROM app_controls c WHERE c.app_id=t.app_id AND c.disabled),'canOpen',false,'canManage',false,'canPromote',false,'panels',CASE WHEN jsonb_typeof(r.manifest->'panels')='array' THEN r.manifest->'panels' ELSE '[]'::jsonb END)";
 /// The installation in `row` ([`INSTALLATION_ROW`]) with the decisions `facts` give:
 /// the display values, and operational details only with management read. Preserve
 /// the published field names/types for the SDK and older CLI clients.
@@ -527,6 +527,7 @@ pub fn catalog() -> Value {
     // Personal settings and sessions (kept out of the literal above, which is at
     // the json! macro recursion limit).
     let personal = [
+        json!({"id":"home_cards","method":"GET","path":"/api/v1/home/cards","permission":"portal user (own apps in this environment)","description":"Summary cards from the apps' declared homeCard endpoints; an app that does not answer is marked unavailable"}),
         json!({"id":"launcher_categories","method":"GET","path":"/api/v1/launcher/categories","permission":"undelegated user","description":"Launcher categories in display order with their app IDs; grouping only, never access"}),
         json!({"id":"create_launcher_category","method":"POST","path":"/api/v1/launcher/categories","permission":"admin","description":"Add a launcher category","input":schemars::schema_for!(crate::launcher::NewCategory)}),
         json!({"id":"update_launcher_category","method":"PATCH","path":"/api/v1/launcher/categories/{id}","permission":"admin","description":"Rename, re-icon or move a launcher category","input":schemars::schema_for!(crate::launcher::CategoryUpdate)}),
@@ -589,6 +590,7 @@ mod tests {
             "lastOperation":{"id":Uuid::nil(),"action":"deploy","status":"succeeded","step":"completed","errorCode":null,"retryable":false},
             "acceptance":{"recordedBy":"operator","note":"internal-note","checks":[],"structured":false,"checkedAt":"2026-11-03T00:00:00Z"},
             "appDisabled":false,"canOpen":false,"canManage":false,"canPromote":false,
+            "panels":[{"id":"todos","title":"할 일","path":"/widgets/todos"}],
         });
         let mut facts = policy::Facts {
             user: Some(policy::User {
@@ -616,6 +618,7 @@ mod tests {
         assert!(portal.image_id.is_none() && portal.source_commit.is_none());
         assert!(portal.last_operation.is_none() && portal.acceptance.is_none());
         assert!(portal.health.error_code.is_none());
+        assert_eq!(portal.panels.len(), 1);
         let serialized = serde_json::to_value(&portal).unwrap();
         assert_eq!(
             serialized.as_object().unwrap().keys().collect::<Vec<_>>(),

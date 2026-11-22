@@ -715,6 +715,104 @@
         }
       ]
     },
+    "HomeCard": {
+      "description": "An app's summary card on the portal home. `status` is `ok`, or\n`unavailable` when the app did not answer in time (shown as \"가져오지 못함\").",
+      "properties": {
+        "appId": {
+          "type": "string"
+        },
+        "appName": {
+          "type": "string"
+        },
+        "count": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "installationId": {
+          "format": "uuid",
+          "type": "string"
+        },
+        "items": {
+          "items": {
+            "$ref": "#/$defs/HomeCardItem"
+          },
+          "type": "array"
+        },
+        "status": {
+          "type": "string"
+        },
+        "title": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "installationId",
+        "appId",
+        "appName",
+        "status",
+        "title",
+        "count",
+        "items"
+      ],
+      "type": "object"
+    },
+    "HomeCardItem": {
+      "description": "One line of a home summary card (display text only).",
+      "properties": {
+        "at": {
+          "format": "date-time",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "path": {
+          "description": "App-relative destination opened in the app's frame.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "subtitle": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "title": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "title",
+        "subtitle",
+        "path",
+        "at"
+      ],
+      "type": "object"
+    },
+    "HomeCardPage": {
+      "description": "`GET /api/v1/home/cards`.",
+      "properties": {
+        "cards": {
+          "items": {
+            "$ref": "#/$defs/HomeCard"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "cards"
+      ],
+      "type": "object"
+    },
     "Installation": {
       "description": "An installation as the installation lists, the runtime management list and the app\ndetail return it. `canOpen`, `canManage` and `canPromote` are the decisions this\ncredential would get.",
       "properties": {
@@ -804,6 +902,14 @@
           "description": "The platform display name.",
           "type": "string"
         },
+        "panels": {
+          "default": [],
+          "description": "Side-panel screens the release declares (`panels` in its manifest).",
+          "items": {
+            "$ref": "#/$defs/InstallationPanel"
+          },
+          "type": "array"
+        },
         "releaseId": {
           "format": "uuid",
           "type": "string"
@@ -853,7 +959,8 @@
         "appDisabled",
         "canOpen",
         "canManage",
-        "canPromote"
+        "canPromote",
+        "panels"
       ],
       "type": "object"
     },
@@ -882,6 +989,27 @@
       "required": [
         "installations",
         "nextCursor"
+      ],
+      "type": "object"
+    },
+    "InstallationPanel": {
+      "description": "A side-panel screen of an installation's release.",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "path": {
+          "description": "App-relative path of the panel screen.",
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "title",
+        "path"
       ],
       "type": "object"
     },
@@ -1160,6 +1288,13 @@
           },
           "type": "array"
         },
+        "pinnedPanels": {
+          "description": "Side panels pinned to the header as `appId/panelId`, in display order.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
         "theme": {
           "$ref": "#/$defs/ThemePreference"
         },
@@ -1174,7 +1309,8 @@
         "timeZone",
         "dateFormat",
         "jobTitle",
-        "pinnedApps"
+        "pinnedApps",
+        "pinnedPanels"
       ],
       "type": "object"
     },

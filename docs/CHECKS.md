@@ -80,7 +80,7 @@ CLI 0.5 계획·과거 검증표의 실행 이력은 [보관 결과](archive/res
 
 | spec | 설정 | 서버 |
 | --- | --- | --- |
-| `runtime-health`, `platform-shell`, `runtime-confirmation` | `scripts/runtime-regression/ui.config.ts` | 격리 빌드 preview + 모의 API·모의 앱 프레임(`tests/frame-mock.ts`) |
+| `runtime-health`, `platform-shell`, `runtime-confirmation`, 개인 설정·콘솔 기능·알림·런처·보조 패널과 홈 카드(`panels`) | `scripts/runtime-regression/ui.config.ts` | 격리 빌드 preview + 모의 API·모의 앱 프레임(`tests/frame-mock.ts`) |
 | `cli-experience`, `cli-install` | `tests/cli-experience.config.ts` | Vite dev 서버 + 모의 API |
 | `surface-boundaries` | `tests/surface-boundaries.config.ts` | 세 목적의 UI·환경별 이동 계약과 콘솔의 MF 미적재를 검사하는 모의 서버 |
 | `http-ip` | `scripts/runtime-regression/http-ui.config.ts` | 비 loopback IPv4의 격리 preview |
