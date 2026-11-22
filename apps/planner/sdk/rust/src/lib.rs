@@ -47,6 +47,10 @@ pub struct InvocationContext {
     /// for the signed-in person (for example to recheck notifications). Such a
     /// call is read-only and carries no token for further platform calls.
     pub platform: bool,
+    /// On such a platform call, when the app is approved to read the
+    /// directory: the person's current group IDs (lowercase). The SDK ACL
+    /// uses them because the call cannot ask the directory. None otherwise.
+    pub groups: Option<Vec<String>>,
 }
 
 #[derive(Clone)]
@@ -85,6 +89,8 @@ struct Claims {
     delegation_token: Option<String>,
     #[serde(default)]
     platform: bool,
+    #[serde(default)]
+    groups: Option<Vec<String>>,
 }
 fn verify_identity(
     token: &str,
@@ -125,6 +131,7 @@ fn verify_identity(
             callers: claims.callers,
             effective_permissions: claims.effective_permissions,
             platform: claims.platform,
+            groups: claims.groups,
         },
         delegation_token: claims.delegation_token,
     })
