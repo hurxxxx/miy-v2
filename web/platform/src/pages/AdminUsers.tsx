@@ -1,5 +1,8 @@
-import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { useTranslation } from "react-i18next";
+import type { TFunction } from "i18next";
 import { request } from "@miy/sdk";
+import { formatDateTime } from "../platform/time/time-utils";
 import { Badge, Button, Field, Loading, Notice, Panel, useConfirm, type Tone } from "../ui";
 import type { DirectoryUser } from "./AdminAccess";
 
@@ -34,38 +37,79 @@ type AccountLink = {
 type Issued = { kind: LinkKind; name: string | null; url: string; expiresAt: string };
 
 const SUBJECT = "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}";
-const states: Record<LinkState, { label: string; tone: Tone }> = {
-  pending: { label: "사용 전", tone: "info" },
-  completed: { label: "사용함", tone: "success" },
-  revoked: { label: "취소됨", tone: "neutral" },
-  expired: { label: "만료됨", tone: "neutral" },
-  inactive: { label: "사용 불가", tone: "warning" },
-  resetting: { label: "재설정 처리 중", tone: "info" },
+const states: Record<LinkState, Tone> = {
+  pending: "info",
+  completed: "success",
+  revoked: "neutral",
+  expired: "neutral",
+  inactive: "warning",
+  resetting: "info",
 };
 
 const revocable = (link: AccountLink) => link.state === "pending" || link.state === "inactive";
 
-function failure(error: unknown) {
+const FAILURES = [
+  "user_exists",
+  "invalid_user_id",
+  "invalid_user_name",
+  "last_enabled_administrator",
+  "account_links_unavailable",
+  "account_link_limit",
+  "account_link_not_pending",
+  "password_reset_in_progress",
+  "user_disabled",
+  "invalid_account_link",
+] as const;
+
+function failure(t: TFunction<"console">, error: unknown) {
   const text = String(error);
-  if (text.includes("user_exists")) return "이미 등록된 로그인 계정 ID입니다.";
-  if (text.includes("invalid_user_id")) return "로그인 계정 ID는 소문자 UUID 형식이어야 합니다.";
-  if (text.includes("invalid_user_name")) return "표시 이름은 1~120자로 입력하세요.";
-  if (text.includes("last_enabled_administrator")) return "사용 중인 마지막 관리자는 해제하거나 중지할 수 없습니다.";
-  if (text.includes("account_links_unavailable")) return "이 서버에는 계정 링크 발급이 설정되지 않았습니다.";
-  if (text.includes("account_link_limit")) return "사용 전인 링크가 너무 많습니다. 쓰지 않는 링크를 취소한 뒤 다시 발급하세요.";
-  if (text.includes("account_link_not_pending")) return "이미 사용됐거나 취소된 링크입니다.";
-  if (text.includes("password_reset_in_progress")) return "이 계정의 재설정이 진행 중입니다. 잠시 뒤 다시 시도하세요.";
-  if (text.includes("user_disabled")) return "사용 중지된 계정에는 재설정 링크를 발급할 수 없습니다.";
-  if (text.includes("invalid_account_link")) return "입력한 값을 확인해 주세요.";
-  return text;
+  const code = FAILURES.find((value) => text.includes(value));
+  return code ? t(`users.failures.${code}`) : text;
 }
 
 function when(value: string) {
-  return new Date(value).toLocaleString("ko-KR", { dateStyle: "short", timeStyle: "short" });
+  return formatDateTime(value, { dateStyle: "short", timeStyle: "short" });
+}
+
+type UserFilter = "all" | "admin" | "developer" | "disabled";
+
+/** A spreadsheet-safe CSV cell: quoted, and never read as a formula. */
+function cell(value: string) {
+  const text = /^[=+\-@\t\r]/.test(value) ? `'${value}` : value;
+  return `"${text.replaceAll('"', '""')}"`;
+}
+
+function downloadCsv(t: TFunction<"console">, users: Account[]) {
+  const header = ["id", "name", "admin", "canDevelop", "enabled"].map(cell).join(",");
+  const rows = users.map((user) =>
+    [user.id, user.name, String(user.admin), String(user.canDevelop), String(user.enabled)].map(cell).join(","),
+  );
+  // The byte order mark lets spreadsheet programs read Korean names as UTF-8.
+  const blob = new Blob(["\ufeff" + [header, ...rows].join("\r\n") + "\r\n"], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = t("users.csvFileName");
+  link.click();
+  URL.revokeObjectURL(url);
 }
 
 export function UserAdmin({ csrf, selfId, users, report, refresh }: Props) {
+  const { t } = useTranslation("console");
   const { confirm, dialog } = useConfirm();
+  const [query, setQuery] = useState("");
+  const [filter, setFilter] = useState<UserFilter>("all");
+  const shown = useMemo(() => {
+    const needle = query.trim().toLowerCase();
+    return (users ?? []).filter(
+      (user) =>
+        (!needle || user.name.toLowerCase().includes(needle) || user.id.includes(needle)) &&
+        (filter === "all" ||
+          (filter === "admin" && user.admin) ||
+          (filter === "developer" && user.canDevelop) ||
+          (filter === "disabled" && !user.enabled)),
+    );
+  }, [users, query, filter]);
   const [busy, setBusy] = useState(false);
   const [links, setLinks] = useState<AccountLink[] | null>(null);
   const [available, setAvailable] = useState<boolean | null>(null);
@@ -101,7 +145,7 @@ export function UserAdmin({ csrf, selfId, users, report, refresh }: Props) {
       refresh();
       return true;
     } catch (error) {
-      report(failure(error));
+      report(failure(t, error));
       return false;
     } finally {
       setBusy(false);
@@ -118,7 +162,7 @@ export function UserAdmin({ csrf, selfId, users, report, refresh }: Props) {
       void loadLinks();
       return true;
     } catch (error) {
-      report(failure(error));
+      report(failure(t, error));
       return false;
     } finally {
       setBusy(false);
@@ -137,28 +181,27 @@ export function UserAdmin({ csrf, selfId, users, report, refresh }: Props) {
         expiresInHours: Number(data.get("expiresInHours")),
       },
       null,
-      "초대 링크를 만들었습니다. 아래 주소를 초대할 사람에게 전달하세요.",
+      t("users.invitationIssued"),
     );
     if (ok) form.reset();
   }
 
   async function resetPassword(user: Account) {
     const ok = await confirm({
-      title: "비밀번호 재설정 링크를 만들까요?",
+      title: t("users.resetConfirmTitle"),
       body: (
         <p>
-          <strong>{user.name}</strong> 계정의 새 비밀번호를 정할 수 있는 24시간짜리 링크를 만듭니다. 이전에 만든 재설정
-          링크는 취소됩니다. 링크를 가진 사람이 비밀번호를 바꿀 수 있으므로 본인에게만 전달하세요.
+          <strong>{user.name}</strong> {t("users.resetConfirmBody")}
         </p>
       ),
-      confirmLabel: "링크 만들기",
+      confirmLabel: t("users.createLink"),
       tone: "primary",
     });
     if (!ok) return;
     await issue(
       { kind: "password_reset", userId: user.id },
       user.name,
-      "비밀번호 재설정 링크를 만들었습니다. 아래 주소를 본인에게 전달하세요.",
+      t("users.resetIssued"),
     );
   }
 
@@ -166,9 +209,9 @@ export function UserAdmin({ csrf, selfId, users, report, refresh }: Props) {
     setBusy(true);
     try {
       await request(`/api/v1/account-links/${encodeURIComponent(link.id)}/revoke`, csrf, { method: "POST" });
-      report("링크를 취소했습니다.");
+      report(t("users.linkRevoked"));
     } catch (error) {
-      report(failure(error));
+      report(failure(t, error));
     } finally {
       setBusy(false);
       void loadLinks();
@@ -179,9 +222,9 @@ export function UserAdmin({ csrf, selfId, users, report, refresh }: Props) {
     if (!issued) return;
     try {
       await navigator.clipboard.writeText(issued.url);
-      setCopied("복사했습니다.");
+      setCopied(t("users.copied"));
     } catch {
-      setCopied("주소를 선택해 직접 복사해 주세요.");
+      setCopied(t("users.copyManually"));
     }
   }
 
@@ -197,7 +240,7 @@ export function UserAdmin({ csrf, selfId, users, report, refresh }: Props) {
         name: String(data.get("name")).trim(),
         canDevelop: data.get("canDevelop") === "true",
       },
-      "사용자를 등록했습니다. 앱 권한은 아래에서 따로 부여하세요.",
+      t("users.registered"),
     );
     if (ok) form.reset();
   }
@@ -205,40 +248,40 @@ export function UserAdmin({ csrf, selfId, users, report, refresh }: Props) {
   async function setAdmin(user: Account) {
     const next = !user.admin;
     const ok = await confirm({
-      title: next ? "관리자로 지정할까요?" : "관리자 지정을 해제할까요?",
+      title: t(next ? "users.makeAdminTitle" : "users.removeAdminTitle"),
       body: next ? (
         <p>
-          <strong>{user.name}</strong> 계정이 사용자·그룹·권한·앱 등록 승인과 모든 앱의 배포·제어를 할 수 있게 됩니다.
+          <strong>{user.name}</strong> {t("users.makeAdminBody")}
         </p>
       ) : (
         <p>
-          <strong>{user.name}</strong> 계정이 플랫폼 관리 기능을 더 이상 사용할 수 없습니다.
-          {user.id === selfId && " 지금 로그인한 본인 계정입니다."}
+          <strong>{user.name}</strong> {t("users.removeAdminBody")}
+          {user.id === selfId && ` ${t("users.thisIsYou")}`}
         </p>
       ),
-      confirmLabel: next ? "관리자 지정" : "지정 해제",
+      confirmLabel: t(next ? "users.makeAdmin" : "users.removeAdminConfirm"),
       tone: next ? "primary" : "danger",
     });
     if (!ok) return;
-    await send(`/api/v1/users/${encodeURIComponent(user.id)}`, "PATCH", { admin: next }, next ? "관리자로 지정했습니다." : "관리자 지정을 해제했습니다.");
+    await send(`/api/v1/users/${encodeURIComponent(user.id)}`, "PATCH", { admin: next }, t(next ? "users.madeAdmin" : "users.removedAdmin"));
   }
 
   async function setEnabled(user: Account) {
     const next = !user.enabled;
     if (!next) {
       const ok = await confirm({
-        title: "이 계정의 사용을 중지할까요?",
+        title: t("users.disableTitle"),
         body: (
           <p>
-            <strong>{user.name}</strong> 계정의 로그인·CLI·진행 중인 작업이 모두 차단됩니다. 권한 설정은 지우지 않습니다.
+            <strong>{user.name}</strong> {t("users.disableBody")}
           </p>
         ),
-        confirmLabel: "사용 중지",
+        confirmLabel: t("users.disable"),
         tone: "danger",
       });
       if (!ok) return;
     }
-    await send(`/api/v1/users/${encodeURIComponent(user.id)}/state`, "POST", { enabled: next }, next ? "계정 사용을 다시 허용했습니다." : "계정 사용을 중지했습니다.");
+    await send(`/api/v1/users/${encodeURIComponent(user.id)}/state`, "POST", { enabled: next }, t(next ? "users.enabled" : "users.disabled"));
   }
 
   const active = (link: AccountLink) => revocable(link) || link.state === "resetting";
@@ -246,88 +289,85 @@ export function UserAdmin({ csrf, selfId, users, report, refresh }: Props) {
   return (
     <>
       <Panel
-        title="사용자 초대"
+        title={t("users.invite")}
         className="account-links"
-        actions={links && <Badge tone="neutral">사용 전 {links.filter((link) => link.state === "pending").length}건</Badge>}
+        actions={links && <Badge tone="neutral">{t("users.unusedLinks", { count: links.filter((link) => link.state === "pending").length })}</Badge>}
       >
         {available === null ? (
           <Loading />
         ) : available ? (
           <form className="grant-form user-form" onSubmit={invite}>
-            <Field label="이름" hint="초대받은 사람이 계정을 만들 때 고칠 수 있습니다.">
+            <Field label={t("users.name")} hint={t("users.nameHint")}>
               <input name="name" required maxLength={120} autoComplete="off" />
             </Field>
-            <Field label="새 앱 등록 신청">
+            <Field label={t("users.appRequests")}>
               <select name="canDevelop" defaultValue="false">
-                <option value="false">허용 안 함</option>
-                <option value="true">허용</option>
+                <option value="false">{t("users.notAllowed")}</option>
+                <option value="true">{t("users.allowed")}</option>
               </select>
             </Field>
-            <Field label="링크 유효 기간">
+            <Field label={t("users.linkLifetime")}>
               <select name="expiresInHours" defaultValue="168">
-                <option value="24">1일</option>
-                <option value="72">3일</option>
-                <option value="168">7일</option>
-                <option value="720">30일</option>
+                <option value="24">{t("users.days", { count: 1 })}</option>
+                <option value="72">{t("users.days", { count: 3 })}</option>
+                <option value="168">{t("users.days", { count: 7 })}</option>
+                <option value="720">{t("users.days", { count: 30 })}</option>
               </select>
             </Field>
             <div className="grant-form-actions">
               <Button type="submit" variant="primary" disabled={busy}>
-                초대 링크 만들기
+                {t("users.createInvitation")}
               </Button>
             </div>
           </form>
         ) : (
-          <Notice tone="warning">
-            이 서버에는 계정 링크 발급이 설정되지 않았습니다. 로그인 서버에서 계정을 만든 뒤 아래 “로그인 서버 계정 직접
-            등록”을 사용하세요.
-          </Notice>
+          <Notice tone="warning">{t("users.linksUnavailable")}</Notice>
         )}
         {issued && (
-          <div className="account-link-issued" role="group" aria-label="방금 만든 링크" tabIndex={-1} ref={issuedBox}>
+          <div className="account-link-issued" role="group" aria-label={t("users.issuedLink")} tabIndex={-1} ref={issuedBox}>
             <p>
-              <strong>{issued.name ?? "이 사용자"}</strong>
-              {issued.kind === "invitation" ? "에게 전달할 초대 링크" : " 계정의 비밀번호 재설정 링크"} ·{" "}
-              {when(issued.expiresAt)}까지
+              {t(issued.kind === "invitation" ? "users.issuedInvitation" : "users.issuedReset", {
+                name: issued.name ?? t("users.thisUser"),
+                until: when(issued.expiresAt),
+              })}
             </p>
-            <pre aria-label="링크 주소">
+            <pre aria-label={t("users.linkAddress")}>
               <code>{issued.url}</code>
             </pre>
             <p className="account-link-warning">
-              이 주소는 지금만 표시되며 한 번만 쓸 수 있습니다. 주소를 가진 사람이
-              {issued.kind === "invitation" ? " 계정을 만들 수 있으니" : " 비밀번호를 바꿀 수 있으니"} 본인에게만
-              전달하세요.
+              {t(issued.kind === "invitation" ? "users.invitationWarning" : "users.resetWarning")}
             </p>
             <div className="account-link-issued-actions">
               <Button variant="primary" onClick={copy}>
-                주소 복사
+                {t("users.copyAddress")}
               </Button>
-              <Button onClick={() => setIssued(null)}>닫기</Button>
+              <Button onClick={() => setIssued(null)}>{t("users.close")}</Button>
               {copied && <span role="status">{copied}</span>}
             </div>
           </div>
         )}
         {recent.length > 0 && (
-          <ul className="user-accounts account-link-list" aria-label="발급한 링크">
+          <ul className="user-accounts account-link-list" aria-label={t("users.issuedLinks")}>
             {recent.map((link) => (
               <li key={link.id} className="user-account">
                 <div className="user-account-name">
-                  <strong>{link.name ?? "이름 없음"}</strong>
+                  <strong>{link.name ?? t("users.noName")}</strong>
                   <span>
-                    {link.kind === "invitation" ? "초대" : "비밀번호 재설정"} · {link.createdByName} 발급 ·{" "}
+                    {t(link.kind === "invitation" ? "users.kindInvitation" : "users.kindReset")} ·{" "}
+                    {t("users.issuedBy", { name: link.createdByName })} ·{" "}
                     {link.state === "completed" && link.completedAt
-                      ? `${when(link.completedAt)} 사용`
-                      : `${when(link.expiresAt)} 만료`}
+                      ? t("users.usedAt", { when: when(link.completedAt) })
+                      : t("users.expiresAt", { when: when(link.expiresAt) })}
                   </span>
                 </div>
                 <div className="user-account-badges">
-                  <Badge tone={states[link.state].tone}>{states[link.state].label}</Badge>
-                  {link.kind === "invitation" && link.canDevelop && <Badge tone="neutral">앱 개발</Badge>}
+                  <Badge tone={states[link.state]}>{t(`users.linkStates.${link.state}`)}</Badge>
+                  {link.kind === "invitation" && link.canDevelop && <Badge tone="neutral">{t("users.developer")}</Badge>}
                 </div>
                 {revocable(link) && (
                   <div className="user-account-actions">
                     <Button size="sm" disabled={busy} onClick={() => void revoke(link)}>
-                      링크 취소
+                      {t("users.revokeLink")}
                     </Button>
                   </div>
                 )}
@@ -336,46 +376,75 @@ export function UserAdmin({ csrf, selfId, users, report, refresh }: Props) {
           </ul>
         )}
       </Panel>
-      <Panel title="로그인 서버 계정 직접 등록">
+      <Panel title={t("users.directRegistration")}>
         <form className="grant-form user-form" onSubmit={register}>
-          <Field label="로그인 계정 ID" hint="로그인 서버(Keycloak)에 이미 있는 계정의 ID. 새 사용자는 위 초대 링크를 쓰세요.">
+          <Field label={t("users.loginId")} hint={t("users.loginIdHint")}>
             <input name="id" required pattern={SUBJECT} autoComplete="off" spellCheck={false} placeholder="00000000-0000-0000-0000-000000000000" />
           </Field>
-          <Field label="표시 이름">
+          <Field label={t("users.displayName")}>
             <input name="name" required maxLength={120} autoComplete="off" />
           </Field>
-          <Field label="새 앱 등록 신청">
+          <Field label={t("users.appRequests")}>
             <select name="canDevelop" defaultValue="false">
-              <option value="false">허용 안 함</option>
-              <option value="true">허용</option>
+              <option value="false">{t("users.notAllowed")}</option>
+              <option value="true">{t("users.allowed")}</option>
             </select>
           </Field>
           <div className="grant-form-actions">
             <Button type="submit" variant="primary" disabled={busy}>
-              사용자 등록
+              {t("users.register")}
             </Button>
           </div>
         </form>
       </Panel>
-      <Panel title="사용자 계정" actions={users && <Badge tone="neutral">{users.length}명</Badge>}>
+      <Panel
+        title={t("users.accounts")}
+        actions={
+          users && (
+            <>
+              <Badge tone="neutral">{t("users.people", { count: users.length })}</Badge>
+              <Button size="sm" onClick={() => downloadCsv(t, shown)} disabled={shown.length === 0}>
+                {t("users.exportCsv")}
+              </Button>
+            </>
+          )
+        }
+      >
         {users === null ? (
           <Loading />
         ) : (
+          <>
+          <div className="user-filters" role="search">
+            <input
+              type="search"
+              aria-label={t("users.search")}
+              placeholder={t("users.searchPlaceholder")}
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+            />
+            <select aria-label={t("users.filter")} value={filter} onChange={(event) => setFilter(event.target.value as UserFilter)}>
+              <option value="all">{t("users.filters.all")}</option>
+              <option value="admin">{t("users.filters.admin")}</option>
+              <option value="developer">{t("users.filters.developer")}</option>
+              <option value="disabled">{t("users.filters.disabled")}</option>
+            </select>
+            {shown.length !== users.length && <span role="status">{t("users.shown", { count: shown.length })}</span>}
+          </div>
           <ul className="user-accounts">
-            {users.map((user) => (
+            {shown.map((user) => (
               <li key={user.id} className="user-account">
                 <div className="user-account-name">
                   <strong>{user.name}</strong>
                   <code>{user.id}</code>
                 </div>
                 <div className="user-account-badges">
-                  {user.admin && <Badge tone="info">관리자</Badge>}
-                  {user.canDevelop && <Badge tone="neutral">앱 개발</Badge>}
-                  {!user.enabled && <Badge tone="danger">사용 중지</Badge>}
+                  {user.admin && <Badge tone="info">{t("users.admin")}</Badge>}
+                  {user.canDevelop && <Badge tone="neutral">{t("users.developer")}</Badge>}
+                  {!user.enabled && <Badge tone="danger">{t("users.disabledBadge")}</Badge>}
                 </div>
                 <div className="user-account-actions">
                   <Button size="sm" disabled={busy} onClick={() => void setAdmin(user)}>
-                    {user.admin ? "관리자 해제" : "관리자 지정"}
+                    {t(user.admin ? "users.removeAdmin" : "users.makeAdmin")}
                   </Button>
                   <Button
                     size="sm"
@@ -385,24 +454,25 @@ export function UserAdmin({ csrf, selfId, users, report, refresh }: Props) {
                         `/api/v1/users/${encodeURIComponent(user.id)}`,
                         "PATCH",
                         { canDevelop: !user.canDevelop },
-                        user.canDevelop ? "앱 개발 신청 자격을 해제했습니다." : "앱 개발 신청 자격을 부여했습니다.",
+                        t(user.canDevelop ? "users.developerRemoved" : "users.developerGranted"),
                       )
                     }
                   >
-                    {user.canDevelop ? "앱 개발 해제" : "앱 개발 허용"}
+                    {t(user.canDevelop ? "users.removeDeveloper" : "users.allowDeveloper")}
                   </Button>
                   {available && user.enabled && (
                     <Button size="sm" disabled={busy} onClick={() => void resetPassword(user)}>
-                      비밀번호 재설정 링크
+                      {t("users.resetLink")}
                     </Button>
                   )}
                   <Button size="sm" disabled={busy} onClick={() => void setEnabled(user)}>
-                    {user.enabled ? "사용 중지" : "사용 재개"}
+                    {t(user.enabled ? "users.disable" : "users.enable")}
                   </Button>
                 </div>
               </li>
             ))}
           </ul>
+          </>
         )}
       </Panel>
       {dialog}

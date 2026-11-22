@@ -628,3 +628,64 @@
   border-radius: var(--ui-radius-md, 8px);
   background: transparent;
 }
+
+/* Release permission approval on the admin page's runtime cards. */
+.permission-approval {
+  margin: var(--ui-space-3) 0 0;
+  padding: var(--ui-space-3) 0 0;
+  border: 0;
+  border-top: 1px solid var(--ui-color-border);
+  display: grid;
+  gap: var(--ui-space-2);
+}
+.permission-approval legend {
+  float: left;
+  width: 100%;
+  margin-bottom: var(--ui-space-2);
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: var(--ui-space-2);
+}
+.permission-approval-row {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--ui-space-2);
+}
+.permission-approval-row span {
+  display: grid;
+}
+.permission-approval-row code {
+  color: var(--ui-color-ink-subtle);
+  font-size: 12px;
+}
+.permission-approval-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ui-space-2);
+}
+
+/* User search and filter above the account list. */
+.user-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--ui-space-2);
+  margin-bottom: var(--ui-space-3);
+}
+.user-filters input,
+.user-filters select {
+  min-height: 36px;
+  padding: 0 var(--ui-space-3);
+  border: 1px solid var(--ui-color-border);
+  border-radius: var(--ui-radius-md);
+  background: var(--ui-color-bg);
+  color: var(--ui-color-ink);
+}
+.user-filters input {
+  flex: 1 1 220px;
+}
+.user-filters [role="status"] {
+  color: var(--ui-color-ink-muted);
+  font-size: 13px;
+}

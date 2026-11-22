@@ -1288,6 +1288,6 @@ pub async fn run(
     )
     .await?;
     passed.push("expired or disabled browser sessions require new authentication; restoring an account does not revive old portal/console cookies and a fresh purpose-bound session works".into());
-    ensure!(passed.len() == 12, "boundary observation count changed");
+    ensure!(passed.len() == 14, "boundary observation count changed");
     Ok(passed)
 }

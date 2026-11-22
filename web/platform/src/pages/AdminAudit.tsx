@@ -1,4 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
+import { useTranslation } from "react-i18next";
+import type { TFunction } from "i18next";
+import { formatDateTime } from "../platform/time/time-utils";
 import { request, type AuditEntry as Entry, type AuditPage as Page } from "@miy/sdk";
 import { Button, Field, Loading, Panel } from "../ui";
 import type { DirectoryUser } from "./AdminAccess";
@@ -6,41 +9,44 @@ import type { DirectoryUser } from "./AdminAccess";
 type Filter = { actor: string; action: string; from: string; to: string };
 
 const actionKinds = [
-  { value: "", label: "전체" },
-  { value: "group", label: "그룹·그룹 권한" },
-  { value: "grant.", label: "사용자 권한" },
-  { value: "user.", label: "사용자 계정·주 소속" },
-  { value: "app.", label: "앱 입장·사용 중지" },
+  { value: "", label: "all" },
+  { value: "group", label: "group" },
+  { value: "grant.", label: "grant" },
+  { value: "user.", label: "user" },
+  { value: "app.", label: "app" },
 ];
-const actionLabel: Record<string, string> = {
-  "group.created": "그룹 만듦",
-  "group.renamed": "그룹 이름 변경",
-  "group.deactivated": "그룹 비활성화",
-  "group.activated": "그룹 다시 사용",
-  "group.parent_set": "상위 조직 변경",
-  "group.member_added": "구성원 추가",
-  "group.member_removed": "구성원 제외",
-  "user.primary_group_set": "주 소속 지정",
-  "user.disabled": "사용자 비활성화",
-  "user.enabled": "사용자 다시 사용",
-  "user.registered": "사용자 등록",
-  "user.renamed": "사용자 이름 변경",
-  "user.admin.enabled": "관리자 지정",
-  "user.admin.disabled": "관리자 해제",
-  "user.developer.enabled": "앱 개발 허용",
-  "user.developer.disabled": "앱 개발 해제",
-  "group_grant.enabled": "그룹 권한 부여",
-  "group_grant.disabled": "그룹 권한 회수",
-  "grant.enabled": "사용자 권한 부여",
-  "grant.disabled": "사용자 권한 회수",
-  "app.admission_set": "입장 대상 변경",
-  "app.disabled": "앱 사용 중지",
-  "app.enabled": "앱 사용 재개",
-};
+// Action IDs as translation keys: the dots of an ID become underscores.
+const KNOWN_ACTIONS = new Set([
+  "group.created",
+  "group.renamed",
+  "group.deactivated",
+  "group.activated",
+  "group.parent_set",
+  "group.member_added",
+  "group.member_removed",
+  "user.primary_group_set",
+  "user.disabled",
+  "user.enabled",
+  "user.registered",
+  "user.renamed",
+  "user.admin.enabled",
+  "user.admin.disabled",
+  "user.developer.enabled",
+  "user.developer.disabled",
+  "group_grant.enabled",
+  "group_grant.disabled",
+  "grant.enabled",
+  "grant.disabled",
+  "app.admission_set",
+  "app.disabled",
+  "app.enabled",
+  "user.profile.rename",
+]);
 
-function describe(action: string) {
+function describe(t: TFunction<"console">, action: string) {
   const request = action.match(/^([A-Z]+):(\d{3})$/);
-  return request ? `요청 ${request[1]} · ${request[2]}` : (actionLabel[action] ?? action);
+  if (request) return t("audit.request", { method: request[1], status: request[2] });
+  return KNOWN_ACTIONS.has(action) ? t(`audit.actions.${action.replaceAll(".", "_")}`) : action;
 }
 
 function query(filter: Filter, cursor: number | null) {
@@ -59,6 +65,7 @@ function query(filter: Filter, cursor: number | null) {
 }
 
 export function AuditLog({ users, report }: { users: DirectoryUser[] | null; report: (message: string) => void }) {
+  const { t } = useTranslation("console");
   const [result, setResult] = useState<(Page & { filter: Filter }) | null>(null);
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState(false);
@@ -80,12 +87,12 @@ export function AuditLog({ users, report }: { users: DirectoryUser[] | null; rep
       } catch (error) {
         if (requestId !== sequence.current) return;
         setFailed(true);
-        report(`감사 기록을 불러오지 못했습니다: ${String(error)}`);
+        report(t("audit.loadFailedWith", { error: String(error) }));
       } finally {
         if (requestId === sequence.current) setBusy(false);
       }
     },
-    [report],
+    [report, t],
   );
   useEffect(() => {
     void load({ actor: "", action: "", from: "", to: "" }, null);
@@ -106,11 +113,11 @@ export function AuditLog({ users, report }: { users: DirectoryUser[] | null; rep
   }
   const entries = result?.entries ?? null;
   return (
-    <Panel title="감사 기록">
-      <form className="access-toolbar" onSubmit={apply} aria-label="감사 기록 조건">
-        <Field label="행위자">
+    <Panel title={t("audit.title")}>
+      <form className="access-toolbar" onSubmit={apply} aria-label={t("audit.conditions")}>
+        <Field label={t("audit.actor")}>
           <select name="actor" defaultValue="">
-            <option value="">전체</option>
+            <option value="">{t("audit.kinds.all")}</option>
             {(users ?? []).map((u) => (
               <option key={u.id} value={u.id}>
                 {u.name}
@@ -118,50 +125,50 @@ export function AuditLog({ users, report }: { users: DirectoryUser[] | null; rep
             ))}
           </select>
         </Field>
-        <Field label="동작">
+        <Field label={t("audit.action")}>
           <select name="action" defaultValue="">
             {actionKinds.map((k) => (
               <option key={k.value} value={k.value}>
-                {k.label}
+                {t(`audit.kinds.${k.label}`)}
               </option>
             ))}
           </select>
         </Field>
-        <Field label="시작일">
+        <Field label={t("audit.from")}>
           <input type="date" name="from" />
         </Field>
-        <Field label="종료일">
+        <Field label={t("audit.to")}>
           <input type="date" name="to" />
         </Field>
         <Button type="submit" variant="primary" disabled={busy}>
-          조회
+          {t("audit.search")}
         </Button>
       </form>
       {entries === null ? (
         failed ? (
-          <p className="ui-empty-inline">감사 기록을 불러오지 못했습니다. 조건을 확인한 뒤 다시 조회하세요.</p>
+          <p className="ui-empty-inline">{t("audit.loadFailed")}</p>
         ) : (
           <Loading />
         )
       ) : entries.length === 0 ? (
-        <p className="ui-empty-inline">조건에 맞는 기록이 없습니다.</p>
+        <p className="ui-empty-inline">{t("audit.empty")}</p>
       ) : (
-        <div className="access-table-scroll" role="region" aria-label="감사 기록 목록" tabIndex={0}>
+        <div className="access-table-scroll" role="region" aria-label={t("audit.list")} tabIndex={0}>
           <table className="access-table">
             <thead>
               <tr>
-                <th scope="col">시각</th>
-                <th scope="col">행위자</th>
-                <th scope="col">동작</th>
-                <th scope="col">대상</th>
+                <th scope="col">{t("audit.at")}</th>
+                <th scope="col">{t("audit.actor")}</th>
+                <th scope="col">{t("audit.action")}</th>
+                <th scope="col">{t("audit.target")}</th>
               </tr>
             </thead>
             <tbody>
               {entries.map((e) => (
                 <tr key={e.id}>
-                  <td>{new Date(e.at).toLocaleString("ko-KR")}</td>
-                  <td>{e.actorName ?? e.actor ?? "시스템"}</td>
-                  <td>{describe(e.action)}</td>
+                  <td>{formatDateTime(e.at, { dateStyle: "medium", timeStyle: "medium" })}</td>
+                  <td>{e.actorName ?? e.actor ?? t("audit.system")}</td>
+                  <td>{describe(t, e.action)}</td>
                   <td>
                     <code>{e.target ?? "—"}</code>
                   </td>
@@ -174,7 +181,7 @@ export function AuditLog({ users, report }: { users: DirectoryUser[] | null; rep
       {result && result.nextCursor !== null && (
         <div className="grant-form-actions">
           <Button onClick={() => void load(result.filter, result.nextCursor)} disabled={busy}>
-            더 보기
+            {t("audit.more")}
           </Button>
         </div>
       )}

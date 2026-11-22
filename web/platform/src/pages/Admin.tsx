@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { useTranslation } from "react-i18next";
 import { request } from "@miy/sdk";
 import { useInstallations, useManagedInstallations } from "../data/installations";
 import { useUser, useSurface } from "../data/session";
@@ -7,6 +8,7 @@ import { NewTabLink } from "../components/NewTabLink";
 import { LoadError, StaleNotice } from "../components/LoadState";
 import { RuntimeHealth } from "../components/RuntimeHealth";
 import { RuntimeControls } from "../components/RuntimeControls";
+import { PermissionApproval } from "../components/PermissionApproval";
 import { Badge, Button, EmptyState, Field, Loading, Panel } from "../ui";
 import { AppAccessAdmin, GroupAdmin, useGroups } from "./AdminAccess";
 import { AuditLog } from "./AdminAudit";
@@ -16,18 +18,26 @@ import { UserAdmin, type Account } from "./AdminUsers";
 type Registration = { id: string; appId: string; name: string; status: string; requester: string };
 
 export function Admin() {
+  const { t } = useTranslation("console");
   const user = useUser();
   if (!user.admin)
     return (
-      <Panel title="관리자 권한이 필요합니다">
-        <p>관리자로 로그인하세요.</p>
+      <Panel title={t("admin.adminRequired")}>
+        <p>{t("admin.signInAsAdmin")}</p>
       </Panel>
     );
   return <AdminConsole csrf={user.csrf} selfId={user.id} />;
 }
 
 function AdminConsole({ csrf, selfId }: { csrf: string; selfId: string }) {
+  const { t } = useTranslation("console");
   const surface = useSurface();
+  // Installations whose release asks for platform permissions not yet approved.
+  const [pendingApprovals, setPendingApprovals] = useState<Record<string, number>>({});
+  const pendingApproval = useCallback(
+    (id: string, count: number) => setPendingApprovals((current) => (current[id] === count ? current : { ...current, [id]: count })),
+    [],
+  );
   // The runtime panel uses the management list; the shared list feeds the rail.
   const installations = useInstallations();
   const managed = useManagedInstallations();
@@ -65,7 +75,7 @@ function AdminConsole({ csrf, selfId }: { csrf: string; selfId: string }) {
         method: "POST",
         body: JSON.stringify({ approve }),
       });
-      setMessage(approve ? "앱 등록을 승인했습니다." : "등록을 거절했습니다.");
+      setMessage(t(approve ? "admin.registrationApproved" : "admin.registrationRejected"));
       refresh();
     } catch (e) {
       setMessage(String(e));
@@ -85,7 +95,7 @@ function AdminConsole({ csrf, selfId }: { csrf: string; selfId: string }) {
           enabled: form.get("enabled") === "true",
         }),
       });
-      setMessage("권한을 변경했습니다.");
+      setMessage(t("admin.grantChanged"));
     } catch (e) {
       setMessage(String(e));
     }
@@ -95,22 +105,27 @@ function AdminConsole({ csrf, selfId }: { csrf: string; selfId: string }) {
     <>
       <div className="page-header">
         <div>
-          <h1>플랫폼 관리</h1>
-          <p>앱 등록 신청, 사용자 계정, 사용자·그룹의 앱 권한과 회사 사용 상태, 실행 중인 앱을 관리합니다.</p>
+          <h1>{t("admin.title")}</h1>
+          <p>{t("admin.description")}</p>
         </div>
       </div>
-      {loadError && <LoadError message="앱 등록 신청 또는 사용자 목록을 불러오지 못했습니다." onRetry={refresh} />}
+      {loadError && <LoadError message={t("admin.directoryLoadFailed")} onRetry={refresh} />}
+      {Object.values(pendingApprovals).some((count) => count > 0) && (
+        <p role="status" className="status-message">
+          {t("admin.approvalsWaiting", { count: Object.values(pendingApprovals).filter((count) => count > 0).length })}
+        </p>
+      )}
       {message && (
         <p role="status" className="status-message">
           {message}
         </p>
       )}
       <div className="admin-grid">
-        <Panel title="앱 등록 신청" actions={requests && <Badge tone={pending.length ? "info" : "neutral"}>{pending.length}건</Badge>}>
+        <Panel title={t("admin.registrations")} actions={requests && <Badge tone={pending.length ? "info" : "neutral"}>{t("admin.count", { count: pending.length })}</Badge>}>
           {requests === null ? (
             !loadError && <Loading />
           ) : pending.length === 0 ? (
-            <p className="ui-empty-inline">대기 중인 신청이 없습니다.</p>
+            <p className="ui-empty-inline">{t("admin.noPendingRegistrations")}</p>
           ) : (
             pending.map((r) => (
               <div key={r.id} className="registration-row">
@@ -119,19 +134,19 @@ function AdminConsole({ csrf, selfId }: { csrf: string; selfId: string }) {
                 </p>
                 <div className="registration-actions">
                   <Button size="sm" variant="primary" onClick={() => decide(r.id, true)}>
-                    승인
+                    {t("admin.approve")}
                   </Button>
                   <Button size="sm" onClick={() => decide(r.id, false)}>
-                    거절
+                    {t("admin.reject")}
                   </Button>
                 </div>
               </div>
             ))
           )}
         </Panel>
-        <Panel title="앱·환경 권한">
+        <Panel title={t("admin.grants")}>
           <form className="grant-form" onSubmit={grant}>
-            <Field label="사용자">
+            <Field label={t("admin.user")}>
               <select name="user" disabled={users === null}>
                 {(users ?? []).map((u) => (
                   <option key={u.id} value={u.id}>
@@ -140,59 +155,59 @@ function AdminConsole({ csrf, selfId }: { csrf: string; selfId: string }) {
                 ))}
               </select>
             </Field>
-            <Field label="앱 ID">
+            <Field label={t("admin.appId")}>
               <input name="app" required pattern="[a-z][a-z0-9-]*" autoComplete="off" />
             </Field>
-            <Field label="환경">
+            <Field label={t("admin.environment")}>
               <select name="environment">
-                <option value="dev">테스트</option>
-                <option value="prod">운영</option>
+                <option value="dev">{t("environments.dev")}</option>
+                <option value="prod">{t("environments.prod")}</option>
               </select>
             </Field>
-            <Field label="권한">
+            <Field label={t("admin.permission")}>
               <select name="permission">
-                <option value="use">사용</option>
-                <option value="develop">개발 (운영 배포 불가)</option>
-                <option value="deploy">배포 (운영 승인·제어)</option>
+                <option value="use">{t("admin.permissions.use")}</option>
+                <option value="develop">{t("admin.permissions.develop")}</option>
+                <option value="deploy">{t("admin.permissions.deploy")}</option>
               </select>
             </Field>
-            <Field label="부여 또는 회수">
+            <Field label={t("admin.grantOrRevoke")}>
               <select name="enabled">
-                <option value="true">부여</option>
-                <option value="false">회수</option>
+                <option value="true">{t("admin.grant")}</option>
+                <option value="false">{t("admin.revoke")}</option>
               </select>
             </Field>
             <div className="grant-form-actions">
               <Button type="submit" variant="primary" disabled={users === null}>
-                권한 적용
+                {t("admin.applyGrant")}
               </Button>
             </div>
           </form>
         </Panel>
       </div>
-      <h2 className="page-section-title">사용자 계정</h2>
+      <h2 className="page-section-title">{t("admin.accounts")}</h2>
       <div className="admin-grid">
         <UserAdmin csrf={csrf} selfId={selfId} users={users} report={setMessage} refresh={refresh} />
       </div>
-      <h2 className="page-section-title">사용자·그룹 권한</h2>
+      <h2 className="page-section-title">{t("admin.access")}</h2>
       <div className="admin-grid">
         <GroupAdmin csrf={csrf} users={users} report={setMessage} directory={groups} />
         <AppAccessAdmin csrf={csrf} users={users} report={setMessage} directory={groups} />
       </div>
       <SupportReports csrf={csrf} />
       <AuditLog users={users} report={setMessage} />
-      <h2 className="page-section-title">앱 실행 상태</h2>
+      <h2 className="page-section-title">{t("admin.runtime")}</h2>
       {managed.items === null ? (
         managed.status === "error" ? (
-          <LoadError message="앱 목록을 불러오지 못했습니다." onRetry={refresh} />
+          <LoadError message={t("admin.appsLoadFailed")} onRetry={refresh} />
         ) : (
-          <Loading>앱 목록을 불러오는 중…</Loading>
+          <Loading>{t("admin.appsLoading")}</Loading>
         )
       ) : (
         <>
           {managed.status === "error" && <StaleNotice updatedAt={managed.updatedAt} onRetry={refresh} />}
           {managed.items.filter((a) => a.kind === "docker_app").length === 0 ? (
-            <EmptyState title="배포된 앱이 없습니다." />
+            <EmptyState title={t("admin.noDeployedApps")} />
           ) : (
             <div className="card-grid">
               {managed.items
@@ -201,22 +216,21 @@ function AdminConsole({ csrf, selfId }: { csrf: string; selfId: string }) {
                   <Panel
                     key={a.id}
                     title={`${a.name} · ${a.environment}`}
-                    actions={a.appDisabled && <Badge tone="warning">회사 사용 중지</Badge>}
+                    actions={a.appDisabled && <Badge tone="warning">{t("admin.companyDisabled")}</Badge>}
                   >
                     <p>
                       {a.version} · DB {a.dbStatus}
                     </p>
                     {a.canOpen ? (
-                      <NewTabLink href={surfaceUrl(a.environment === "prod" ? surface.portalOrigin : surface.devPortalOrigin, environmentPath(a.environment, a.appId))}>포털에서 앱 열기</NewTabLink>
+                      <NewTabLink href={surfaceUrl(a.environment === "prod" ? surface.portalOrigin : surface.devPortalOrigin, environmentPath(a.environment, a.appId))}>{t("admin.openInPortal")}</NewTabLink>
                     ) : (
                       <p className="ui-empty-inline">
-                        {a.appDisabled
-                          ? "회사 사용 중지 중이라 열 수 없습니다. 시작·중지·배포는 계속할 수 있습니다."
-                          : "지금은 이 앱을 열 수 없습니다."}
+                        {t(a.appDisabled ? "admin.disabledCannotOpen" : "admin.cannotOpen")}
                       </p>
                     )}
                     <RuntimeHealth app={a} />
                     {a.canManage && <RuntimeControls app={a} csrf={csrf} refresh={refresh} />}
+                    <PermissionApproval installationId={a.id} releaseId={a.releaseId} csrf={csrf} onChange={(count) => pendingApproval(a.id, count)} />
                   </Panel>
                 ))}
             </div>
