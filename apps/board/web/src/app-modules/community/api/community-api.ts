@@ -1,3 +1,4 @@
+import type { components } from '../../../api.generated';
 import { apiFetchJsonWithMappedError } from '../../../platform/api/client';
 import { COMMUNITY_CHANNELS_CHANGED_EVENT } from '../../../platform/community/community-channel-events';
 import type { AppApi } from '../../../platform/runtime/runtime-context';
@@ -8,94 +9,19 @@ import type { AppApi } from '../../../platform/runtime/runtime-context';
 // path. Images of a post come through the file gateway (`runtime.fileApi`).
 export type FileApi = (path: string, init?: RequestInit) => Promise<Response>;
 
-export interface CommunityChannel {
-  id: string;
-  key: string;
-  name: string;
-  description: string;
-  position: number;
-  active: boolean;
-  readOnly: boolean;
-  forceAnonymous: boolean;
-  adminOnlyContent: boolean;
-  templateTitle: string;
-  templateBody: string;
-}
-
-export interface CommunityChannelsResponse {
-  channels: CommunityChannel[];
-}
-
-export interface CommunityPost {
-  id: string;
-  /** Fixed per channel in creation order; shown before the title. */
-  number: number;
-  channelKey: string;
-  title: string;
-  body: string;
-  isAnonymous: boolean;
-  isSecret: boolean;
-  locked: boolean;
-  lockedReason: 'password' | 'admin_only' | null;
-  isMine: boolean;
-  isRead: boolean;
-  canModify: boolean;
-  authorName: string | null;
-  commentCount: number;
-  createdAt: string;
-  updatedAt: string;
-}
-
-export interface CommunityComment {
-  id: string;
-  body: string;
-  isAnonymous: boolean;
-  isDeleted: boolean;
-  parentCommentId: string | null;
-  authorName: string | null;
-  anonSeq: number | null;
-  canModify: boolean;
-  createdAt: string;
-  updatedAt: string;
-}
-
-export interface CommunityPostDetail extends CommunityPost {
-  comments: CommunityComment[];
-}
+export type CommunityChannel = components['schemas']['ChannelOut'];
+export type CommunityChannelsResponse = components['schemas']['ChannelsResponse'];
+export type CommunityPost = components['schemas']['PostOut'];
+export type CommunityComment = components['schemas']['CommentOut'];
+export type CommunityPostDetail = components['schemas']['PostDetail'];
+export type CommunityPostListResponse = components['schemas']['PostListResponse'];
+export type CommunityPostCreateInput = components['schemas']['PostCreateRequest'];
+export type CommunityPostUpdateInput = components['schemas']['PostUpdateRequest'];
+export type CommunityCommentCreateInput = components['schemas']['CommentCreateRequest'];
+export type CommunityCommentUpdateInput = components['schemas']['CommentUpdateRequest'];
 
 export interface CommunityMediaResolveResponse {
   resolved: Record<string, string>;
-}
-
-export interface CommunityPostListResponse {
-  posts: CommunityPost[];
-  total: number;
-  page: number;
-  pageSize: number;
-}
-
-export interface CommunityPostCreateInput {
-  title: string;
-  body: string;
-  isAnonymous: boolean;
-  isSecret: boolean;
-  password?: string | null;
-}
-
-export interface CommunityPostUpdateInput {
-  title: string;
-  body: string;
-}
-
-export interface CommunityCommentCreateInput {
-  body: string;
-  isAnonymous: boolean;
-  password?: string | null;
-  parentCommentId?: string | null;
-}
-
-export interface CommunityCommentUpdateInput {
-  body: string;
 }
 
 export class CommunityApiError extends Error {
@@ -253,7 +179,7 @@ export function unlockCommunityPost(
     api,
     {
       method: 'POST',
-      body: JSON.stringify({ password }),
+      body: JSON.stringify({ password } satisfies components['schemas']['UnlockRequest']),
     },
   );
 }
@@ -279,7 +205,9 @@ export async function resolveCommunityPostMediaUrls(
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ password: password || null }),
+        body: JSON.stringify({
+          password: password || null,
+        } satisfies components['schemas']['PostMediaRequest']),
       },
     );
     if (!response.ok) {

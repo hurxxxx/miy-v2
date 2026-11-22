@@ -5,6 +5,7 @@ use std::collections::HashMap;
 
 use chrono::NaiveDate;
 use miy_app_sdk::Identity;
+use serde::Serialize;
 use serde_json::{Map, Value, json};
 use sqlx::PgConnection;
 
@@ -286,14 +287,68 @@ pub async fn load_context_without_names(
     Ok(context)
 }
 
-fn date_value(value: &Option<NaiveDate>) -> Value {
-    value
-        .as_ref()
-        .map_or(Value::Null, |date| json!(iso_date(date)))
+#[allow(dead_code)]
+#[derive(utoipa::ToSchema)]
+struct TaskLabel {
+    id: String,
+    name: String,
+    color: String,
+}
+
+#[derive(Serialize, utoipa::ToSchema)]
+pub struct TaskSummary {
+    id: String,
+    list_id: String,
+    reference: String,
+    title: String,
+    description: String,
+    #[schema(value_type = Option<Vec<HashMap<String, Value>>>, required = true)]
+    description_blocks: Option<Value>,
+    #[schema(required = true)]
+    parent_id: Option<String>,
+    subtask_count: i64,
+    status: String,
+    status_label: String,
+    priority: String,
+    priority_label: String,
+    #[schema(required = true)]
+    assignee_id: Option<String>,
+    #[schema(required = true)]
+    assignee_name: Option<String>,
+    pub(crate) assignee_ids: Vec<String>,
+    pub(crate) assignee_names: Vec<String>,
+    follower_ids: Vec<String>,
+    follower_names: Vec<String>,
+    reporter_id: String,
+    reporter_name: String,
+    #[schema(required = true)]
+    milestone_id: Option<String>,
+    #[schema(required = true)]
+    milestone_title: Option<String>,
+    #[schema(format = Date, required = true)]
+    start_date: Option<String>,
+    #[schema(format = Date, required = true)]
+    due_date: Option<String>,
+    #[schema(format = Date, required = true)]
+    completed_date: Option<String>,
+    board_position: i32,
+    archived: bool,
+    #[schema(required = true)]
+    progress: Option<f64>,
+    comments_count: i64,
+    checklist_total: i64,
+    checklist_done: i64,
+    #[schema(required = true)]
+    recurrence_rule: Option<String>,
+    #[schema(value_type = Vec<TaskLabel>)]
+    labels: Vec<Value>,
+    #[schema(value_type = HashMap<String, String>)]
+    custom_fields: Map<String, Value>,
+    updated_at: String,
 }
 
 /// AI-DO `serialize_task_summary` (`TaskItem`).
-pub fn serialize_task(task: &TaskRow, context: &TaskContext) -> Value {
+pub fn serialize_task(task: &TaskRow, context: &TaskContext) -> TaskSummary {
     let workflow = context.workflow(&task.list_id);
     let assignee_ids = context.assignee_ids(task);
     let linked: Vec<String> = context.assignees.get(&task.id).cloned().unwrap_or_default();
@@ -307,43 +362,51 @@ pub fn serialize_task(task: &TaskRow, context: &TaskContext) -> Value {
     let follower_names: Vec<String> = follower_ids.iter().map(|id| context.name(id)).collect();
     let (checklist_total, checklist_done) =
         context.checklist.get(&task.id).copied().unwrap_or((0, 0));
-    json!({
-        "id": task.id,
-        "list_id": task.list_id,
-        "reference": context.reference(task),
-        "title": task.title,
-        "description": task.description,
-        "description_blocks": task.description_blocks,
-        "parent_id": task.parent_id,
-        "subtask_count": context.subtasks.get(&task.id).copied().unwrap_or(0),
-        "status": task.status,
-        "status_label": status_label(&task.status, workflow),
-        "priority": task.priority,
-        "priority_label": priority_label(&task.priority),
-        "assignee_id": task.assignee_id,
-        "assignee_name": task.assignee_id.as_ref().map(|id| context.name(id)),
-        "assignee_ids": assignee_ids,
-        "assignee_names": assignee_names,
-        "follower_ids": follower_ids,
-        "follower_names": follower_names,
-        "reporter_id": task.reporter_id,
-        "reporter_name": context.name(&task.reporter_id),
-        "milestone_id": task.milestone_id,
-        "milestone_title": task.milestone_id.as_ref().and_then(|id| context.milestones.get(id)),
-        "start_date": date_value(&task.start_date),
-        "due_date": date_value(&task.due_date),
-        "completed_date": date_value(&task.completed_date),
-        "board_position": task.board_position,
-        "archived": task.archived,
-        "progress": task_progress(&task.status, workflow),
-        "comments_count": context.comments.get(&task.id).copied().unwrap_or(0),
-        "checklist_total": checklist_total,
-        "checklist_done": checklist_done,
-        "recurrence_rule": task.recurrence_rule,
-        "labels": context.labels.get(&task.id).cloned().unwrap_or_default(),
-        "custom_fields": context.custom_fields.get(&task.id).cloned().unwrap_or_default(),
-        "updated_at": iso_datetime(&task.updated_at),
-    })
+    TaskSummary {
+        id: task.id.clone(),
+        list_id: task.list_id.clone(),
+        reference: context.reference(task),
+        title: task.title.clone(),
+        description: task.description.clone(),
+        description_blocks: task.description_blocks.clone(),
+        parent_id: task.parent_id.clone(),
+        subtask_count: context.subtasks.get(&task.id).copied().unwrap_or(0),
+        status: task.status.clone(),
+        status_label: status_label(&task.status, workflow),
+        priority: task.priority.clone(),
+        priority_label: priority_label(&task.priority),
+        assignee_id: task.assignee_id.clone(),
+        assignee_name: task.assignee_id.as_ref().map(|id| context.name(id)),
+        assignee_ids,
+        assignee_names,
+        follower_ids,
+        follower_names,
+        reporter_id: task.reporter_id.clone(),
+        reporter_name: context.name(&task.reporter_id),
+        milestone_id: task.milestone_id.clone(),
+        milestone_title: task
+            .milestone_id
+            .as_ref()
+            .and_then(|id| context.milestones.get(id))
+            .cloned(),
+        start_date: task.start_date.as_ref().map(iso_date),
+        due_date: task.due_date.as_ref().map(iso_date),
+        completed_date: task.completed_date.as_ref().map(iso_date),
+        board_position: task.board_position,
+        archived: task.archived,
+        progress: task_progress(&task.status, workflow),
+        comments_count: context.comments.get(&task.id).copied().unwrap_or(0),
+        checklist_total,
+        checklist_done,
+        recurrence_rule: task.recurrence_rule.clone(),
+        labels: context.labels.get(&task.id).cloned().unwrap_or_default(),
+        custom_fields: context
+            .custom_fields
+            .get(&task.id)
+            .cloned()
+            .unwrap_or_default(),
+        updated_at: iso_datetime(&task.updated_at),
+    }
 }
 
 /// Serialize tasks in order with one batch of related reads.
@@ -351,7 +414,7 @@ pub async fn serialize_tasks(
     conn: &mut PgConnection,
     identity: &Identity,
     tasks: &[TaskRow],
-) -> ApiResult<Vec<Value>> {
+) -> ApiResult<Vec<TaskSummary>> {
     let context = load_context(conn, identity, tasks).await?;
     Ok(tasks
         .iter()
@@ -400,6 +463,71 @@ pub async fn load_list_counts(
     Ok(counts)
 }
 
+#[allow(dead_code)]
+#[derive(utoipa::ToSchema)]
+#[schema(rename_all = "snake_case")]
+pub(crate) enum TaskListState {
+    Planned,
+    Active,
+    OnHold,
+    Done,
+}
+
+#[allow(dead_code)]
+#[derive(utoipa::ToSchema)]
+#[schema(rename_all = "snake_case")]
+enum TaskListWorkflowMode {
+    Inherit,
+    Custom,
+}
+
+#[allow(dead_code)]
+#[derive(utoipa::ToSchema)]
+#[schema(rename_all = "snake_case")]
+enum TaskListRole {
+    Viewer,
+    Member,
+    Admin,
+    Owner,
+}
+
+#[derive(Clone, serde::Serialize, utoipa::ToSchema)]
+pub struct TaskListItem {
+    id: String,
+    key: String,
+    name: String,
+    description: String,
+    #[schema(value_type = TaskListState)]
+    status: String,
+    #[schema(value_type = TaskListWorkflowMode)]
+    status_mode: String,
+    archived: bool,
+    #[schema(required)]
+    team_id: Option<String>,
+    #[schema(required)]
+    team_name: Option<String>,
+    #[schema(required)]
+    workspace_id: Option<String>,
+    #[schema(required)]
+    workspace_key: Option<String>,
+    #[schema(required)]
+    folder_id: Option<String>,
+    #[schema(required)]
+    folder_name: Option<String>,
+    sort_order: i32,
+    #[schema(value_type = TaskListRole)]
+    role: String,
+    progress: f64,
+    member_count: i64,
+    milestone_count: i64,
+    task_count: usize,
+    active_task_count: usize,
+    open_task_count: usize,
+    overdue_task_count: usize,
+    created_at: String,
+    updated_at: String,
+}
+
 /// AI-DO `_serialize_task_list` (`TaskListItem`).
 #[allow(clippy::too_many_arguments)]
 pub fn serialize_task_list(
@@ -411,7 +539,7 @@ pub fn serialize_task_list(
     member_count: i64,
     workflow: &ListWorkflow,
     counts: &ListCounts,
-) -> Value {
+) -> TaskListItem {
     let today = today_utc();
     let open: Vec<&(String, bool, Option<NaiveDate>)> = counts
         .tasks
@@ -429,35 +557,38 @@ pub fn serialize_task_list(
         .iter()
         .filter(|(_, archived, _)| !archived)
         .count();
-    json!({
-        "id": list.id,
-        "key": list.key,
-        "name": list.name,
-        "description": list.description,
-        "status": list.status,
-        "status_mode": list.status_mode,
-        "archived": list.archived,
-        "team_id": list.team_id,
-        "team_name": team_name,
-        "workspace_id": list.team_id,
-        "workspace_key": space_key,
-        "folder_id": list.folder_id,
-        "folder_name": if list.folder_id.is_some() { folder_name } else { None },
-        "sort_order": list.sort_order,
-        "role": role,
-        "progress": calculate_progress(
-            counts.tasks.iter().map(|(status, archived, _)| (status.as_str(), *archived)),
+    TaskListItem {
+        id: list.id.clone(),
+        key: list.key.clone(),
+        name: list.name.clone(),
+        description: list.description.clone(),
+        status: list.status.clone(),
+        status_mode: list.status_mode.clone(),
+        archived: list.archived,
+        team_id: list.team_id.clone(),
+        team_name: team_name.map(str::to_owned),
+        workspace_id: list.team_id.clone(),
+        workspace_key: space_key.map(str::to_owned),
+        folder_id: list.folder_id.clone(),
+        folder_name: list.folder_id.as_ref().and(folder_name).map(str::to_owned),
+        sort_order: list.sort_order,
+        role: role.to_owned(),
+        progress: calculate_progress(
+            counts
+                .tasks
+                .iter()
+                .map(|(status, archived, _)| (status.as_str(), *archived)),
             Some(workflow),
         ),
-        "member_count": member_count,
-        "milestone_count": counts.milestone_count,
-        "task_count": counts.tasks.len(),
-        "active_task_count": active,
-        "open_task_count": open.len(),
-        "overdue_task_count": overdue,
-        "created_at": iso_datetime(&list.created_at),
-        "updated_at": iso_datetime(&list.updated_at),
-    })
+        member_count,
+        milestone_count: counts.milestone_count,
+        task_count: counts.tasks.len(),
+        active_task_count: active,
+        open_task_count: open.len(),
+        overdue_task_count: overdue,
+        created_at: iso_datetime(&list.created_at),
+        updated_at: iso_datetime(&list.updated_at),
+    }
 }
 
 /// One list in the `TaskListItem` shape, loading what it needs.
@@ -465,7 +596,7 @@ pub async fn task_list_item(
     conn: &mut PgConnection,
     list: &TaskListRow,
     role: &str,
-) -> ApiResult<Value> {
+) -> ApiResult<TaskListItem> {
     let ids = vec![list.id.clone()];
     let lists = load_lists(conn, &ids).await?;
     let counts = load_list_counts(conn, &ids).await?;

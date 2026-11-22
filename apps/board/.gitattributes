@@ -9,6 +9,7 @@
 /docs/CLI.md text eol=lf
 /docs/ACCEPTANCE.md text eol=lf
 /docs/CLI-REFERENCE.md text eol=lf
+/docs/API.md text eol=lf
 /.agents/skills/** text eol=lf
 /.claude/skills/** text eol=lf
 /platform-components/** -text

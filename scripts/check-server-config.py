@@ -637,10 +637,16 @@ with tempfile.TemporaryDirectory(prefix='miy-server-config-') as temporary:
     require('listen 8080;' in proxy and 'ssl_certificate' not in proxy and 'Strict-Transport-Security' not in proxy,
             'HTTP render accidentally enabled TLS')
     require('cli/(downloads|installers)' in proxy and 'proxy_set_header Upgrade' in proxy, 'Download, installer or WebSocket route missing')
-    require('platform/files/[^/]+/content$|files/' in proxy
-            and 'proxy_request_buffering off;' in proxy,
-            'Core storage byte routes must stream through the proxy')
     blocks = proxy.split('\nserver {')
+    storage_location = ('location ~ ^/api/v1/(installations/[^/]+|preview/apps/[^/]+)'
+                        '/(platform/files/[^/]+/(content|parts)$|files/) {')
+    for port in [8080, 8082]:
+        portal_blocks = [block for block in blocks if f'listen {port};' in block]
+        require(len(portal_blocks) == 1, 'Nginx has no single portal block')
+        _, matched, tail = portal_blocks[0].partition(storage_location)
+        route = tail.split('\n    }', 1)[0]
+        require(matched and 'proxy_request_buffering off;' in route and 'proxy_buffering off;' in route,
+                'Core storage byte routes must stream through the proxy')
     frame_blocks = [block for block in blocks if 'proxy_pass http://127.0.0.1:18083;' in block]
     require(len(frame_blocks) == 1, 'Nginx has no single app frame block')
     frame_block = frame_blocks[0]

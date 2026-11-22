@@ -14,7 +14,7 @@ import {
   type FileVersionItem,
 } from '../api/files-api';
 import { buildFolderTree, type FolderNode } from '../folder-tree-model';
-import { startDownloads } from './file-downloads';
+import { startDownload } from './file-downloads';
 import { formatFileSize, formatFileUpdatedAt } from './file-manager-view-model';
 import type { MoveDialogState } from './useFileManagerController';
 
@@ -307,7 +307,7 @@ export function FileVersionsDialog({
   const download = async (version: FileVersionItem) => {
     setBusyId(version.id);
     try {
-      await startDownloads(runtime, [version.id], (versionId) =>
+      await startDownload(runtime, version.id, (versionId) =>
         getFileVersionDownloadUrl(runtime, spaceId, file.id, versionId),
       );
     } catch (caught) {

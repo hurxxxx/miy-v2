@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import * as DialogPrimitive from '@radix-ui/react-dialog';
 
 import { Button } from '../primitives/button';
@@ -107,6 +107,10 @@ export function useConfirm() {
   const [state, setState] = useState<ConfirmDialogState>(null);
   const stateRef = useRef(state);
   stateRef.current = state;
+  useEffect(() => () => {
+    stateRef.current?.resolve(false);
+    stateRef.current = null;
+  }, []);
 
   const applyTransition = useCallback((transition: ConfirmDialogTransition) => {
     stateRef.current = transition.state;

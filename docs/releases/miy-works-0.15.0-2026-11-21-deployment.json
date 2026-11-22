@@ -1,0 +1,119 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-11-21",
+  "deploymentVerifiedAt": "2026-11-21T10:23:17+00:00",
+  "status": "PASS",
+  "origin": "https://portal.miy.works",
+  "scope": "miy.works Core, worker and hosted CLI with release source retention, upload and download.",
+  "versions": {
+    "coreAndCli": "0.15.0",
+    "sdkBundle": "0.11.0",
+    "schema": 27,
+    "previousCoreAndCli": "0.14.0"
+  },
+  "source": {
+    "coreAndCliCommit": "ab0ee2fe22dad7bb7129fdca0c29710d54b1498e",
+    "webCommit": "99f91c1",
+    "ciBranch": "deploy/miy-works-release-source-0150",
+    "ciRunId": 44892674538,
+    "ciRunUrl": "https://github.com/hurxxxx/miy-v2/actions/runs/44892674538"
+  },
+  "validation": [
+    {
+      "status": "PASS",
+      "check": "Candidate Rust static checks",
+      "unitTests": 378
+    },
+    {
+      "status": "PASS",
+      "check": "Candidate isolated Docker runtime and cleanup",
+      "observations": 149
+    },
+    {
+      "status": "PASS",
+      "check": "Disposable PostgreSQL and real HTTP build/source API",
+      "groups": 11
+    },
+    {
+      "status": "PASS",
+      "check": "Published Linux binary CLI build/source fixture",
+      "groups": 13
+    },
+    {
+      "status": "PASS",
+      "check": "Native CLI matrix and aggregate",
+      "jobs": {
+        "candidate": "success",
+        "x86_64-apple-darwin": "success",
+        "aarch64-unknown-linux-gnu": "success",
+        "x86_64-pc-windows-msvc": "success",
+        "x86_64-unknown-linux-gnu": "success",
+        "aarch64-apple-darwin": "success",
+        "aggregate": "success",
+        "publish": "skipped"
+      }
+    },
+    {
+      "status": "PASS",
+      "check": "Production HTTPS package verification and isolated online Linux install",
+      "publicArtifacts": 7,
+      "previousFilesVerified": 115
+    },
+    {
+      "status": "PASS",
+      "check": "Production OIDC device login and release source recovery boundaries",
+      "detail": {
+        "status": "PASS",
+        "verified": [
+          {
+            "app": "user-test-codex-20261121",
+            "version": "0.1.0",
+            "sourceStatus": "release_source_missing"
+          },
+          {
+            "app": "user-test-claude-20261121",
+            "version": "0.2.0",
+            "sourceStatus": "release_source_missing"
+          },
+          {
+            "app": "user-test-claude-20261121",
+            "version": "0.2.1",
+            "sourceStatus": "release_source_missing"
+          }
+        ],
+        "invalidArchive": "release_source_size_mismatch",
+        "testSessionRevoked": true
+      }
+    },
+    {
+      "status": "PASS",
+      "check": "Production app health after rollout",
+      "healthyTestInstallations": 4
+    },
+    {
+      "status": "NOT_RUN",
+      "check": "Restore real historical source archives in production",
+      "reason": "The original app worktrees or exact archives have yet to be provided."
+    }
+  ],
+  "recovery": {
+    "verifiedDatabaseBackup": "/srv/miy-backups/online/20261121T100049Z",
+    "previousCoreCliAndIndex": "/srv/miy-prod/evidence/release-source-0150/before"
+  },
+  "deployment": {
+    "status": "PASS",
+    "version": "0.15.0",
+    "sourceCommit": "ab0ee2fe22dad7bb7129fdca0c29710d54b1498e",
+    "ciRunId": "44892674538",
+    "checks": [
+      "core_db_backup_restored_and_idle",
+      "five_immutable_cli_archives_and_two_helpers_published",
+      "three_surfaces_healthy",
+      "source_api_present_and_denies_anonymous",
+      "existing_installations_schema_and_web_preserved"
+    ],
+    "serverSha256": "00bd3a755517292d8e59b6d3941ab7283fbafd707d406788ab218d66f41acac4",
+    "previousServerSha256": "9177b9df79b73a50a1e2f92fc9cc5af2b0c11987d2ce08e8af33583b176dc64d",
+    "webSha256": "e2d4c6981b27a297144ea5dad636293b3f515126287213e45ef56a8014a80639"
+  }
+}

@@ -1,4 +1,4 @@
-import { ApiError } from '@miy/sdk';
+import { isApiError } from '@miy/sdk';
 
 import { i18n } from '../i18n';
 
@@ -23,7 +23,7 @@ export function apiErrorMessage(error: unknown, fallback: string): string {
 
 /** The server's error code of a failed request, when it gave one. */
 export function apiErrorCode(error: unknown): string | null {
-  if (error instanceof ApiError && error.kind === 'http') {
+  if (isApiError(error) && error.kind === 'http') {
     return error.code ?? null;
   }
   if (error && typeof error === 'object' && 'payload' in error) {
@@ -38,7 +38,7 @@ export function apiErrorCode(error: unknown): string | null {
 
 /** The HTTP status of a failed request (0 for network failures). */
 export function apiErrorStatus(error: unknown): number {
-  if (error instanceof ApiError) return error.status ?? 0;
+  if (isApiError(error)) return error.status ?? 0;
   if (error && typeof error === 'object' && 'status' in error) {
     const status = (error as { status: unknown }).status;
     return typeof status === 'number' ? status : 0;

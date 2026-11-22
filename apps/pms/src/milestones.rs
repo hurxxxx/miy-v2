@@ -16,7 +16,6 @@ use axum::{
 };
 use chrono::NaiveDate;
 use miy_app_sdk::Identity;
-use serde_json::{Value, json};
 use sqlx::{PgConnection, PgPool};
 
 use crate::access::{
@@ -34,13 +33,96 @@ pub const MILESTONE_COLUMNS: &str = "id, team_id, list_id, title, description, s
      due_date, sort_order, created_at, updated_at";
 const MILESTONE_STATUSES: &[&str] = &["planned", "active", "complete"];
 
+#[allow(dead_code)]
+#[derive(utoipa::ToSchema)]
+#[schema(rename_all = "snake_case")]
+enum MilestoneStatus {
+    Planned,
+    Active,
+    Complete,
+}
+
+#[derive(Clone, serde::Serialize, utoipa::ToSchema)]
+#[serde(rename_all = "snake_case")]
+enum MilestoneScope {
+    List,
+    Space,
+}
+
+#[derive(Clone, serde::Serialize, utoipa::ToSchema)]
+pub struct MilestoneItem {
+    id: String,
+    team_id: String,
+    #[schema(required)]
+    list_id: Option<String>,
+    #[schema(required)]
+    list_name: Option<String>,
+    scope: MilestoneScope,
+    title: String,
+    description: String,
+    #[schema(value_type = MilestoneStatus)]
+    status: String,
+    #[schema(required, format = Date)]
+    start_date: Option<String>,
+    #[schema(required, format = Date)]
+    due_date: Option<String>,
+    sort_order: i32,
+    progress: f64,
+    task_count: usize,
+    completed_task_count: usize,
+    updated_at: String,
+}
+
+#[derive(serde::Serialize, utoipa::ToSchema)]
+pub struct MilestonePage {
+    items: Vec<MilestoneItem>,
+    total: usize,
+    page: i64,
+    page_size: i64,
+}
+
+#[allow(dead_code)]
+#[derive(utoipa::ToSchema)]
+struct MilestoneCreateRequest {
+    #[schema(min_length = 2, max_length = 140)]
+    title: String,
+    #[schema(required = false, value_type = String, max_length = 4000)]
+    description: Option<String>,
+    #[schema(required = false, value_type = MilestoneStatus)]
+    status: Option<MilestoneStatus>,
+    #[schema(format = Date)]
+    start_date: Option<String>,
+    /// Must be on or after start_date when both are present.
+    #[schema(format = Date)]
+    due_date: Option<String>,
+    /// Omit or send null to append after the current last milestone.
+    sort_order: Option<crate::lists::IntegerInput>,
+}
+
+#[allow(dead_code)]
+#[derive(utoipa::ToSchema)]
+struct MilestoneUpdateRequest {
+    #[schema(min_length = 2, max_length = 140)]
+    title: Option<String>,
+    #[schema(max_length = 4000)]
+    description: Option<String>,
+    status: Option<MilestoneStatus>,
+    /// Omit to keep this date; null clears it.
+    #[schema(format = Date)]
+    start_date: Option<String>,
+    /// Omit to keep this date; null clears it.
+    #[schema(format = Date)]
+    due_date: Option<String>,
+    sort_order: Option<crate::lists::IntegerInput>,
+}
+
 /// `_serialize_milestone`: progress over the tasks that carry the milestone
 /// (any list of the space for a space-wide one). `list_name` is filled for list
 /// milestones when the caller asks for a whole space.
 async fn serialize_milestones(
     conn: &mut PgConnection,
     milestones: &[MilestoneRow],
-) -> ApiResult<Vec<Value>> {
+) -> ApiResult<Vec<MilestoneItem>> {
     let ids: Vec<String> = milestones.iter().map(|m| m.id.clone()).collect();
     let mut tasks_by_milestone: HashMap<String, Vec<(String, bool)>> = HashMap::new();
     for (milestone_id, status, archived) in sqlx::query_as::<_, (String, String, bool)>(
@@ -79,26 +161,36 @@ async fn serialize_milestones(
                 .iter()
                 .filter(|(status, _)| is_done_status(status, None))
                 .count();
-            json!({
-                "id": milestone.id,
-                "team_id": milestone.team_id,
-                "list_id": milestone.list_id,
-                "list_name": milestone.list_id.as_ref().and_then(|id| list_names.get(id)),
-                "scope": if milestone.list_id.is_some() { "list" } else { "space" },
-                "title": milestone.title,
-                "description": milestone.description,
-                "status": milestone.status,
-                "start_date": milestone.start_date.as_ref().map(iso_date),
-                "due_date": milestone.due_date.as_ref().map(iso_date),
-                "sort_order": milestone.sort_order,
-                "progress": calculate_progress(
-                    tasks.iter().map(|(status, archived)| (status.as_str(), *archived)),
+            MilestoneItem {
+                id: milestone.id.clone(),
+                team_id: milestone.team_id.clone(),
+                list_id: milestone.list_id.clone(),
+                list_name: milestone
+                    .list_id
+                    .as_ref()
+                    .and_then(|id| list_names.get(id))
+                    .cloned(),
+                scope: if milestone.list_id.is_some() {
+                    MilestoneScope::List
+                } else {
+                    MilestoneScope::Space
+                },
+                title: milestone.title.clone(),
+                description: milestone.description.clone(),
+                status: milestone.status.clone(),
+                start_date: milestone.start_date.as_ref().map(iso_date),
+                due_date: milestone.due_date.as_ref().map(iso_date),
+                sort_order: milestone.sort_order,
+                progress: calculate_progress(
+                    tasks
+                        .iter()
+                        .map(|(status, archived)| (status.as_str(), *archived)),
                     None,
                 ),
-                "task_count": tasks.len(),
-                "completed_task_count": completed,
-                "updated_at": iso_datetime(&milestone.updated_at),
-            })
+                task_count: tasks.len(),
+                completed_task_count: completed,
+                updated_at: iso_datetime(&milestone.updated_at),
+            }
         })
         .collect())
 }
@@ -108,7 +200,7 @@ async fn milestone_page(
     conn: &mut PgConnection,
     params: &Params,
     mut milestones: Vec<MilestoneRow>,
-) -> ApiResult<Value> {
+) -> ApiResult<MilestonePage> {
     let page = params.int("page", 1, 1, None)?;
     let page_size = params.int("page_size", 20, 1, Some(100))?;
     let sort_by = params.string("sort_by", "sort_order");
@@ -128,19 +220,41 @@ async fn milestone_page(
     }
     let items = serialize_milestones(conn, &milestones).await?;
     let (page_items, total) = paginate(&items, page, page_size);
-    Ok(json!({
-        "items": page_items, "total": total, "page": page, "page_size": page_size,
-    }))
+    Ok(MilestonePage {
+        items: page_items,
+        total,
+        page,
+        page_size,
+    })
 }
 
 /// `GET /v1/pms/lists/{list_id}/milestones`: the list's milestones and the
 /// space-wide milestones of its space (a task of the list may carry either).
+#[utoipa::path(
+    get, path = "/v1/pms/lists/{list_id}/milestones", operation_id = "listPmsListMilestones", tag = "Milestones",
+    params(
+        ("list_id" = String, Path),
+        ("page" = Option<i64>, Query, minimum = 1, description = "Defaults to 1"),
+        ("page_size" = Option<i64>, Query, minimum = 1, maximum = 100, description = "Defaults to 20"),
+        ("sort_by" = Option<String>, Query, description = "sort_order, due_date or updated_at; omitted uses sort_order"),
+        ("sort_dir" = Option<String>, Query, description = "asc or desc; omitted uses asc")
+    ),
+    responses(
+        (status = 200, description = "Success", body = MilestonePage),
+        (status = 401, description = "Valid platform identity required", body = crate::error::IdentityErrorResponse),
+        (status = 403, description = "Current permissions do not allow this operation", body = crate::error::ErrorResponse),
+        (status = 404, description = "Resource is unavailable or does not exist", body = crate::error::ErrorResponse),
+        (status = 409, description = "Current resource state conflicts with the request", body = crate::error::ErrorResponse),
+        (status = 422, description = "Request validation failed", body = crate::error::ErrorResponse),
+        (status = 500, description = "Could not complete the request", body = crate::error::ErrorResponse)
+    )
+)]
 pub async fn list_milestones(
     State(pool): State<PgPool>,
     Extension(identity): Extension<Identity>,
     Path(list_id): Path<String>,
     params: Params,
-) -> ApiResult<Json<Value>> {
+) -> ApiResult<Json<MilestonePage>> {
     let mut conn = pool.acquire().await?;
     let (list, _) = ensure_list_member(&mut conn, &identity.user_id, &list_id).await?;
     let milestones: Vec<MilestoneRow> = sqlx::query_as::<_, MilestoneRow>(&format!(
@@ -156,12 +270,30 @@ pub async fn list_milestones(
 
 /// `GET /v1/pms/spaces/{space_id}/milestones` (miy): every milestone of the
 /// space, space-wide ones and those of its lists.
+#[utoipa::path(
+    get, path = "/v1/pms/spaces/{space_id}/milestones", operation_id = "listPmsSpaceMilestones", tag = "Milestones",
+    params(
+        ("space_id" = String, Path),
+        ("page" = Option<i64>, Query, minimum = 1, description = "Defaults to 1"),
+        ("page_size" = Option<i64>, Query, minimum = 1, maximum = 100, description = "Defaults to 20"),
+        ("sort_by" = Option<String>, Query, description = "sort_order, due_date or updated_at; omitted uses sort_order"),
+        ("sort_dir" = Option<String>, Query, description = "asc or desc; omitted uses asc")
+    ),
+    responses(
+        (status = 200, description = "Success", body = MilestonePage),
+        (status = 401, description = "Valid platform identity required", body = crate::error::IdentityErrorResponse),
+        (status = 403, description = "Current permissions do not allow this operation", body = crate::error::ErrorResponse),
+        (status = 404, description = "Resource is unavailable or does not exist", body = crate::error::ErrorResponse),
+        (status = 422, description = "Request validation failed", body = crate::error::ErrorResponse),
+        (status = 500, description = "Could not complete the request", body = crate::error::ErrorResponse)
+    )
+)]
 pub async fn list_space_milestones(
     State(pool): State<PgPool>,
     Extension(identity): Extension<Identity>,
     Path(space_id): Path<String>,
     params: Params,
-) -> ApiResult<Json<Value>> {
+) -> ApiResult<Json<MilestonePage>> {
     let mut conn = pool.acquire().await?;
     let (space, _) = ensure_space_access(&mut conn, &identity.user_id, &space_id).await?;
     let milestones: Vec<MilestoneRow> = sqlx::query_as::<_, MilestoneRow>(&format!(
@@ -271,6 +403,22 @@ async fn insert_milestone(
 }
 
 /// `POST /v1/pms/lists/{list_id}/milestones`: a list milestone.
+#[utoipa::path(
+    post, path = "/v1/pms/lists/{list_id}/milestones", operation_id = "createPmsListMilestone", tag = "Milestones",
+    params(
+        ("list_id" = String, Path)
+    ),
+    request_body = MilestoneCreateRequest,
+    responses(
+        (status = 201, description = "Created", body = MilestoneItem),
+        (status = 401, description = "Valid platform identity required", body = crate::error::IdentityErrorResponse),
+        (status = 403, description = "Current permissions do not allow this operation", body = crate::error::ErrorResponse),
+        (status = 404, description = "Resource is unavailable or does not exist", body = crate::error::ErrorResponse),
+        (status = 409, description = "Current resource state conflicts with the request", body = crate::error::ErrorResponse),
+        (status = 422, description = "Request validation failed", body = crate::error::ErrorResponse),
+        (status = 500, description = "Could not complete the request", body = crate::error::ErrorResponse)
+    )
+)]
 pub async fn create_milestone(
     State(pool): State<PgPool>,
     Extension(identity): Extension<Identity>,
@@ -286,12 +434,11 @@ pub async fn create_milestone(
         .clone()
         .ok_or_else(|| ApiError::conflict("pms.task_list_space_missing"))?;
     let milestone = insert_milestone(&mut tx, &team_id, Some(&list.id), input).await?;
-    let item = serialize_milestones(&mut tx, std::slice::from_ref(&milestone)).await?;
+    let item = serialize_milestones(&mut tx, std::slice::from_ref(&milestone))
+        .await?
+        .remove(0);
     tx.commit().await?;
-    Ok((
-        StatusCode::CREATED,
-        Json(item.into_iter().next().unwrap_or_default()),
-    ))
+    Ok((StatusCode::CREATED, Json(item)))
 }
 
 fn require_manager(role: &str) -> ApiResult<()> {
@@ -303,6 +450,21 @@ fn require_manager(role: &str) -> ApiResult<()> {
 }
 
 /// `POST /v1/pms/spaces/{space_id}/milestones` (miy): a space-wide milestone.
+#[utoipa::path(
+    post, path = "/v1/pms/spaces/{space_id}/milestones", operation_id = "createPmsSpaceMilestone", tag = "Milestones",
+    params(
+        ("space_id" = String, Path)
+    ),
+    request_body = MilestoneCreateRequest,
+    responses(
+        (status = 201, description = "Created", body = MilestoneItem),
+        (status = 401, description = "Valid platform identity required", body = crate::error::IdentityErrorResponse),
+        (status = 403, description = "Current permissions do not allow this operation", body = crate::error::ErrorResponse),
+        (status = 404, description = "Resource is unavailable or does not exist", body = crate::error::ErrorResponse),
+        (status = 422, description = "Request validation failed", body = crate::error::ErrorResponse),
+        (status = 500, description = "Could not complete the request", body = crate::error::ErrorResponse)
+    )
+)]
 pub async fn create_space_milestone(
     State(pool): State<PgPool>,
     Extension(identity): Extension<Identity>,
@@ -314,12 +476,11 @@ pub async fn create_space_milestone(
     let (space, role) = lock_space_for_write(&mut tx, &identity.user_id, &space_id).await?;
     require_manager(&role)?;
     let milestone = insert_milestone(&mut tx, &space.id, None, input).await?;
-    let item = serialize_milestones(&mut tx, std::slice::from_ref(&milestone)).await?;
+    let item = serialize_milestones(&mut tx, std::slice::from_ref(&milestone))
+        .await?
+        .remove(0);
     tx.commit().await?;
-    Ok((
-        StatusCode::CREATED,
-        Json(item.into_iter().next().unwrap_or_default()),
-    ))
+    Ok((StatusCode::CREATED, Json(item)))
 }
 
 /// Lock the milestone's parents (space, then list), check the caller manages
@@ -363,12 +524,28 @@ async fn milestone_for_manager(
 /// sent with a value (null leaves title, description, status and order as they
 /// are). miy: an explicit `null` start or due date clears it, so a date set by
 /// mistake can be removed from the screen.
+#[utoipa::path(
+    patch, path = "/v1/pms/milestones/{milestone_id}", operation_id = "updatePmsMilestone", tag = "Milestones",
+    params(
+        ("milestone_id" = String, Path)
+    ),
+    request_body = MilestoneUpdateRequest,
+    responses(
+        (status = 200, description = "Success", body = MilestoneItem),
+        (status = 401, description = "Valid platform identity required", body = crate::error::IdentityErrorResponse),
+        (status = 403, description = "Current permissions do not allow this operation", body = crate::error::ErrorResponse),
+        (status = 404, description = "Resource is unavailable or does not exist", body = crate::error::ErrorResponse),
+        (status = 409, description = "Current resource state conflicts with the request", body = crate::error::ErrorResponse),
+        (status = 422, description = "Request validation failed", body = crate::error::ErrorResponse),
+        (status = 500, description = "Could not complete the request", body = crate::error::ErrorResponse)
+    )
+)]
 pub async fn update_milestone(
     State(pool): State<PgPool>,
     Extension(identity): Extension<Identity>,
     Path(milestone_id): Path<String>,
     body: Body,
-) -> ApiResult<Json<Value>> {
+) -> ApiResult<Json<MilestoneItem>> {
     let title = body.opt_str("title")?;
     check_opt_length("title", &title, 2, 140)?;
     let description = body.opt_str("description")?;
@@ -424,9 +601,11 @@ pub async fn update_milestone(
         .execute(&mut *tx)
         .await?;
     }
-    let item = serialize_milestones(&mut tx, std::slice::from_ref(&milestone)).await?;
+    let item = serialize_milestones(&mut tx, std::slice::from_ref(&milestone))
+        .await?
+        .remove(0);
     tx.commit().await?;
-    Ok(Json(item.into_iter().next().unwrap_or_default()))
+    Ok(Json(item))
 }
 
 /// `DELETE /v1/pms/milestones/{milestone_id}` (miy; AI-DO had no delete). Its
@@ -434,6 +613,20 @@ pub async fn update_milestone(
 /// to NULL); each gets an activity entry. The task rows are locked first, in
 /// id order, so a task write waiting on its row cannot deadlock with the
 /// cascade.
+#[utoipa::path(
+    delete, path = "/v1/pms/milestones/{milestone_id}", operation_id = "deletePmsMilestone", tag = "Milestones",
+    params(
+        ("milestone_id" = String, Path)
+    ),
+    responses(
+        (status = 204, description = "Completed with no response body"),
+        (status = 401, description = "Valid platform identity required", body = crate::error::IdentityErrorResponse),
+        (status = 403, description = "Current permissions do not allow this operation", body = crate::error::ErrorResponse),
+        (status = 404, description = "Resource is unavailable or does not exist", body = crate::error::ErrorResponse),
+        (status = 409, description = "Current resource state conflicts with the request", body = crate::error::ErrorResponse),
+        (status = 500, description = "Could not complete the request", body = crate::error::ErrorResponse)
+    )
+)]
 pub async fn delete_milestone(
     State(pool): State<PgPool>,
     Extension(identity): Extension<Identity>,

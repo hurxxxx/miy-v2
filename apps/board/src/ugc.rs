@@ -10,7 +10,6 @@ use axum::{
     Extension, Json,
     extract::{Path, State},
     http::StatusCode,
-    response::IntoResponse,
 };
 use miy_app_sdk::Identity;
 use serde::{Deserialize, Serialize};
@@ -89,26 +88,37 @@ pub fn content_rejected() -> ApiError {
     )
 }
 
-#[derive(Serialize, sqlx::FromRow)]
+#[derive(Serialize, sqlx::FromRow, utoipa::ToSchema)]
 pub struct FilterTermItem {
     id: String,
     term: String,
     #[serde(serialize_with = "crate::time::serialize")]
+    #[schema(value_type = String, example = "2026-05-04T01:02:03")]
     created_at: chrono::NaiveDateTime,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, utoipa::ToSchema)]
 pub struct FilterTermList {
     items: Vec<FilterTermItem>,
     limit: i64,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct FilterTermCreateRequest {
+    #[schema(min_length = 1, max_length = 50)]
     term: String,
 }
 
+#[utoipa::path(
+    get, path = "/v1/community/admin/filter-terms", operation_id = "listCommunityFilterTerms",
+    responses(
+        (status = 200, description = "Success", body = FilterTermList),
+        (status = 401, description = "Valid gateway identity required", body = crate::error::GatewayIdentityError),
+        (status = 403, description = "Permission denied", body = crate::error::ErrorResponse),
+        (status = 500, description = "Internal error", body = crate::error::ErrorResponse)
+    )
+)]
 pub async fn list_filter_terms(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
@@ -125,11 +135,23 @@ pub async fn list_filter_terms(
     }))
 }
 
+#[utoipa::path(
+    post, path = "/v1/community/admin/filter-terms", operation_id = "createCommunityFilterTerm",
+    request_body = FilterTermCreateRequest,
+    responses(
+        (status = 201, description = "Created", body = FilterTermItem),
+        (status = 401, description = "Valid gateway identity required", body = crate::error::GatewayIdentityError),
+        (status = 403, description = "Permission denied", body = crate::error::ErrorResponse),
+        (status = 409, description = "Current state conflicts with the request", body = crate::error::ErrorResponse),
+        (status = 422, description = "Request validation failed", body = crate::error::ErrorResponse),
+        (status = 500, description = "Internal error", body = crate::error::ErrorResponse)
+    )
+)]
 pub async fn add_filter_term(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
     ApiJson(payload): ApiJson<FilterTermCreateRequest>,
-) -> ApiResult<impl IntoResponse> {
+) -> ApiResult<(StatusCode, Json<FilterTermItem>)> {
     require_manager(&state.pool, &identity).await?;
     check_length("term", &payload.term, 1, FILTER_TERM_MAX_LENGTH)?;
     let cleaned = payload.term.trim().to_string();
@@ -184,6 +206,19 @@ pub async fn add_filter_term(
     Ok((StatusCode::CREATED, Json(item)))
 }
 
+#[utoipa::path(
+    delete, path = "/v1/community/admin/filter-terms/{term_id}", operation_id = "deleteCommunityFilterTerm",
+    params(
+        ("term_id" = String, Path),
+    ),
+    responses(
+        (status = 204, description = "No content"),
+        (status = 401, description = "Valid gateway identity required", body = crate::error::GatewayIdentityError),
+        (status = 403, description = "Permission denied", body = crate::error::ErrorResponse),
+        (status = 404, description = "Requested resource was not found", body = crate::error::ErrorResponse),
+        (status = 500, description = "Internal error", body = crate::error::ErrorResponse)
+    )
+)]
 pub async fn remove_filter_term(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,

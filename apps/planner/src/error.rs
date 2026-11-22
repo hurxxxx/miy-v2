@@ -13,8 +13,31 @@ use axum::{
     http::StatusCode,
     response::{IntoResponse, Response},
 };
-use serde::de::DeserializeOwned;
-use serde_json::json;
+use serde::{Serialize, de::DeserializeOwned};
+
+#[derive(Serialize, utoipa::ToSchema)]
+pub struct ApiErrorResponse {
+    error: ApiErrorDetails,
+}
+
+#[derive(Serialize, utoipa::ToSchema)]
+struct ApiErrorDetails {
+    code: String,
+    message: String,
+}
+
+/// The SDK gateway returns an error code without a message for invalid identity.
+#[derive(utoipa::ToSchema)]
+pub struct GatewayErrorResponse {
+    #[allow(dead_code)]
+    error: GatewayErrorDetails,
+}
+
+#[derive(utoipa::ToSchema)]
+struct GatewayErrorDetails {
+    #[allow(dead_code)]
+    code: String,
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ApiError {
@@ -69,7 +92,12 @@ impl IntoResponse for ApiError {
     fn into_response(self) -> Response {
         (
             self.status,
-            Json(json!({"error": {"code": self.code, "message": self.message}})),
+            Json(ApiErrorResponse {
+                error: ApiErrorDetails {
+                    code: self.code,
+                    message: self.message,
+                },
+            }),
         )
             .into_response()
     }

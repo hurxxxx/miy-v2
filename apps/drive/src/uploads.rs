@@ -37,7 +37,26 @@ use crate::{
     versions::{self, Version},
 };
 
-#[derive(Serialize)]
+#[allow(dead_code)]
+#[derive(utoipa::ToSchema)]
+#[schema(rename_all = "snake_case")]
+pub(crate) enum UploadTransfer {
+    Single,
+    Parts,
+}
+
+#[allow(dead_code)]
+#[derive(utoipa::ToSchema)]
+#[schema(rename_all = "snake_case")]
+pub(crate) enum UploadStatus {
+    Reserving,
+    Uploading,
+    Ready,
+    Completed,
+    Cancelled,
+}
+
+#[derive(Serialize, utoipa::ToSchema)]
 pub struct UploadOut {
     id: String,
     file_id: String,
@@ -45,9 +64,11 @@ pub struct UploadOut {
     filename: String,
     content_type: String,
     size_bytes: i64,
+    #[schema(value_type = UploadTransfer)]
     transfer: String,
     /// `reserving`, `uploading`, `ready` (all bytes stored), `completed`
     /// (the file shows this version) or `cancelled`.
+    #[schema(value_type = UploadStatus)]
     status: String,
     received: u64,
     part_size: u64,
@@ -155,7 +176,7 @@ async fn current_state(
     })
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema)]
 pub struct UploadRequest {
     request_id: String,
     filename: String,
@@ -165,6 +186,7 @@ pub struct UploadRequest {
     #[serde(default)]
     folder_id: Option<String>,
     #[serde(default = "crate::files::default_visibility")]
+    #[schema(value_type = crate::tree::FileVisibility)]
     visibility: String,
     /// miy (versions): upload a new version of this file.
     #[serde(default)]
@@ -246,6 +268,24 @@ async fn abandon_new_file(state: &AppState, version: &Version) -> ApiResult<()> 
 }
 
 /// `POST /v1/spaces/{space_id}/files/uploads`.
+#[utoipa::path(
+    post, path = "/v1/spaces/{space_id}/files/uploads", operation_id = "reserveDriveUpload", tag = "File transfer",
+    request_body = UploadRequest,
+    params(("space_id" = String, Path)),
+    responses(
+        (status = 201, description = "New reservation", body = UploadOut),
+        (status = 200, description = "Same reservation recovered by request ID", body = UploadOut),
+        (status = 401, description = "Platform identity could not be verified", body = crate::error::IdentityErrorResponse),
+        (status = 403, description = "Current permissions do not allow this operation", body = crate::error::ErrorResponse),
+        (status = 404, description = "Resource was not found or is not visible", body = crate::error::ErrorResponse),
+        (status = 409, description = "Request ID conflict or Storage quota exceeded", body = crate::error::ErrorResponse),
+        (status = 413, description = "File or selection exceeds the supported limit", body = crate::error::ErrorResponse),
+        (status = 422, description = "Invalid or unsupported request", body = crate::error::ErrorResponse),
+        (status = 500, description = "Internal error", body = crate::error::ErrorResponse),
+        (status = 502, description = "Storage rejected the operation", body = crate::error::ErrorResponse),
+        (status = 503, description = "A required platform service is unavailable", body = crate::error::ErrorResponse),
+    )
+)]
 pub async fn create_upload(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
@@ -383,6 +423,18 @@ pub async fn create_upload(
 
 /// `GET /v1/spaces/{space_id}/files/uploads/{upload_id}`: the committed
 /// offset to resume from.
+#[utoipa::path(
+    get, path = "/v1/spaces/{space_id}/files/uploads/{upload_id}", operation_id = "getDriveUpload", tag = "File transfer",
+    params(("space_id" = String, Path), ("upload_id" = String, Path)),
+    responses(
+        (status = 200, description = "Upload and its committed byte offset", body = UploadOut),
+        (status = 401, description = "Platform identity could not be verified", body = crate::error::IdentityErrorResponse),
+        (status = 403, description = "Current permissions do not allow this operation", body = crate::error::ErrorResponse),
+        (status = 404, description = "Resource was not found or is not visible", body = crate::error::ErrorResponse),
+        (status = 500, description = "Internal error", body = crate::error::ErrorResponse),
+        (status = 503, description = "A required platform service is unavailable", body = crate::error::ErrorResponse),
+    )
+)]
 pub async fn get_upload(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
@@ -423,6 +475,22 @@ async fn sendable(
 }
 
 /// `PUT /files/uploads/{upload_id}/content` (fileApi): a single upload.
+#[utoipa::path(
+    put, path = "/files/uploads/{upload_id}/content", operation_id = "putDriveUploadContent", tag = "File transfer",
+    request_body(content = super::api_contract::BinaryBody, content_type = "application/octet-stream"),
+    params(("upload_id" = String, Path)),
+    responses(
+        (status = 200, description = "Committed upload state after sending at most 10 MiB", body = UploadOut),
+        (status = 401, description = "Platform identity could not be verified", body = crate::error::IdentityErrorResponse),
+        (status = 403, description = "Current permissions do not allow this operation", body = crate::error::ErrorResponse),
+        (status = 404, description = "Resource was not found or is not visible", body = crate::error::ErrorResponse),
+        (status = 409, description = "Resource state changed or conflicts with this request", body = crate::error::ErrorResponse),
+        (status = 413, description = "File or selection exceeds the supported limit", body = crate::error::ErrorResponse),
+        (status = 500, description = "Internal error", body = crate::error::ErrorResponse),
+        (status = 502, description = "Storage rejected the operation", body = crate::error::ErrorResponse),
+        (status = 503, description = "A required platform service is unavailable", body = crate::error::ErrorResponse),
+    )
+)]
 pub async fn upload_content(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
@@ -461,6 +529,23 @@ pub struct PartQuery {
 /// `PUT /files/uploads/{upload_id}/parts?offset=N` (fileApi): one range of a
 /// large upload, at the committed offset. The answer carries the new
 /// `received`; after a failure it carries the offset to resume from.
+#[utoipa::path(
+    put, path = "/files/uploads/{upload_id}/parts", operation_id = "putDriveUploadPart", tag = "File transfer",
+    request_body(content = super::api_contract::BinaryBody, content_type = "application/octet-stream"),
+    params(("upload_id" = String, Path), ("offset" = u64, Query, description = "Committed byte offset at which the part starts")),
+    responses(
+        (status = 200, description = "Upload state after sending a part of at most 8 MiB, including the committed next offset", body = UploadOut),
+        (status = 400, description = "Missing or invalid offset query parameter", body = String, content_type = "text/plain"),
+        (status = 401, description = "Platform identity could not be verified", body = crate::error::IdentityErrorResponse),
+        (status = 403, description = "Current permissions do not allow this operation", body = crate::error::ErrorResponse),
+        (status = 404, description = "Resource was not found or is not visible", body = crate::error::ErrorResponse),
+        (status = 409, description = "Offset does not match the committed position, or upload state changed", body = crate::error::ErrorResponse),
+        (status = 413, description = "Part exceeds 8 MiB", body = crate::error::ErrorResponse),
+        (status = 422, description = "Part is empty or would extend beyond the reserved file size", body = crate::error::ErrorResponse),
+        (status = 500, description = "Internal error", body = crate::error::ErrorResponse),
+        (status = 503, description = "A required platform service is unavailable", body = crate::error::ErrorResponse),
+    )
+)]
 pub async fn upload_part(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
@@ -495,6 +580,19 @@ pub async fn upload_part(
 }
 
 /// `POST /v1/spaces/{space_id}/files/uploads/{upload_id}/complete`.
+#[utoipa::path(
+    post, path = "/v1/spaces/{space_id}/files/uploads/{upload_id}/complete", operation_id = "completeDriveUpload", tag = "File transfer",
+    params(("space_id" = String, Path), ("upload_id" = String, Path)),
+    responses(
+        (status = 200, description = "Published file after successful completion", body = FileItem),
+        (status = 401, description = "Platform identity could not be verified", body = crate::error::IdentityErrorResponse),
+        (status = 403, description = "Current permissions do not allow this operation", body = crate::error::ErrorResponse),
+        (status = 404, description = "Resource was not found or is not visible", body = crate::error::ErrorResponse),
+        (status = 409, description = "Upload cancelled, incomplete or still finalizing. Retry finalizing with the same upload ID", body = crate::error::ErrorResponse),
+        (status = 500, description = "Internal error", body = crate::error::ErrorResponse),
+        (status = 503, description = "A required platform service is unavailable", body = crate::error::ErrorResponse),
+    )
+)]
 pub async fn complete_upload(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
@@ -516,6 +614,12 @@ pub async fn complete_upload(
         let file = if version.transfer == "parts" {
             match identity.files_complete(&storage).await {
                 Ok(file) => file,
+                Err(error) if matches!(error.status, Some(401 | 403)) => {
+                    return Err(ApiError::forbidden(
+                        "files.storage_access_required",
+                        "Storage write access is required to complete the upload.",
+                    ));
+                }
                 Err(_) => identity
                     .files_get(&storage)
                     .await
@@ -528,6 +632,12 @@ pub async fn complete_upload(
                 .map_err(|_| result_unknown())?
         };
         if !matches!(file.status, FileStatus::Ready | FileStatus::Attached) {
+            if file.status == FileStatus::Pending && file.received == file.size {
+                return Err(ApiError::conflict(
+                    "files.upload_finalizing",
+                    "Storage is verifying the uploaded bytes. Retry completion with the same upload.",
+                ));
+            }
             return Err(ApiError::conflict(
                 "files.upload_incomplete",
                 "Not all bytes have arrived yet.",
@@ -624,6 +734,19 @@ async fn finish(
 
 /// `DELETE /v1/spaces/{space_id}/files/uploads/{upload_id}`: cancel an
 /// upload that has not completed. A completed upload is a file: delete it.
+#[utoipa::path(
+    delete, path = "/v1/spaces/{space_id}/files/uploads/{upload_id}", operation_id = "cancelDriveUpload", tag = "File transfer",
+    params(("space_id" = String, Path), ("upload_id" = String, Path)),
+    responses(
+        (status = 204, description = "Unfinished upload cancelled"),
+        (status = 401, description = "Platform identity could not be verified", body = crate::error::IdentityErrorResponse),
+        (status = 403, description = "Current permissions do not allow this operation", body = crate::error::ErrorResponse),
+        (status = 404, description = "Resource was not found or is not visible", body = crate::error::ErrorResponse),
+        (status = 409, description = "Resource state changed or conflicts with this request", body = crate::error::ErrorResponse),
+        (status = 500, description = "Internal error", body = crate::error::ErrorResponse),
+        (status = 503, description = "A required platform service is unavailable", body = crate::error::ErrorResponse),
+    )
+)]
 pub async fn cancel_upload(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,

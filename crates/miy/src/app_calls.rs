@@ -195,9 +195,12 @@ const FRAME_ORIGIN: &str = concat!(
     "AND d.user_id=f.user_id AND d.browser_purpose=f.browser_purpose AND d.expires_at>clock_timestamp()))))"
 );
 
-/// Revalidate all installations, releases and grants at each continuation. A
-/// revoked permission cannot return through an already issued child capability.
-async fn current(s: &State, p: &Principal, c: &Context) -> ApiResult<Vec<String>> {
+pub(crate) async fn current_origin(
+    conn: &mut sqlx::PgConnection,
+    development_login: bool,
+    p: &Principal,
+    c: &Context,
+) -> ApiResult<()> {
     if c.callers.len() > MAX_HOPS
         || c.callers.len() != c.permissions_used.len()
         || c.expires_at <= Utc::now()
@@ -206,7 +209,7 @@ async fn current(s: &State, p: &Principal, c: &Context) -> ApiResult<Vec<String>
     }
     if let Some(session) = p.cli_session_id {
         let valid:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM cli_sessions WHERE id=$1 AND user_id=$2 AND revoked_at IS NULL AND expires_at>clock_timestamp())")
-            .bind(session).bind(&p.id).fetch_one(&s.pool).await?;
+            .bind(session).bind(&p.id).fetch_one(&mut *conn).await?;
         if !valid {
             return Err(ApiError::unauthorized());
         }
@@ -241,14 +244,24 @@ async fn current(s: &State, p: &Principal, c: &Context) -> ApiResult<Vec<String>
                 .map(|caller| (caller.installation_id, caller.release_id))
                 .unwrap_or((c.installation_id, c.release_id));
             query = query
-                .bind(s.auth.development_login)
+                .bind(development_login)
                 .bind(installation)
                 .bind(release)
                 .bind(&c.environment);
         }
-        if !query.fetch_one(&s.pool).await? {
+        if !query.fetch_one(&mut *conn).await? {
             return Err(ApiError::unauthorized());
         }
+    }
+    Ok(())
+}
+
+/// Revalidate all installations, releases and grants at each continuation. A
+/// revoked permission cannot return through an already issued child capability.
+async fn current(s: &State, p: &Principal, c: &Context) -> ApiResult<Vec<String>> {
+    {
+        let mut conn = s.pool.acquire().await?;
+        current_origin(&mut conn, s.auth.development_login, p, c).await?;
     }
     for (caller, permission) in c.callers.iter().zip(&c.permissions_used) {
         permissions::require(

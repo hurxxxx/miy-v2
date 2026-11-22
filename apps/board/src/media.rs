@@ -19,7 +19,7 @@ use axum::{
     body::Body,
     extract::{Path, State},
     http::StatusCode,
-    response::{IntoResponse, Response},
+    response::Response,
 };
 use miy_app_sdk::{FileCreate, FileStatus, Identity, storage::MAX_FILE_BYTES};
 use serde::{Deserialize, Serialize};
@@ -275,22 +275,44 @@ async fn retry_pending(pool: &PgPool, identity: &Identity, skip: &[Released]) {
 
 // ---------------------------------------------------------------- routes
 
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct UploadRequest {
+    #[schema(format = "uuid")]
     request_id: String,
+    #[schema(min_length = 1, max_length = 255)]
     name: String,
+    /// JPEG, PNG, GIF or WebP.
     mime: String,
+    #[schema(minimum = 0, maximum = 10485760)]
     size: u64,
 }
 
-#[derive(Serialize)]
+#[allow(dead_code)]
+#[derive(utoipa::ToSchema)]
+#[serde(rename_all = "snake_case")]
+enum BoardMediaStatus {
+    Pending,
+    Ready,
+    Attached,
+    Detaching,
+    Detached,
+}
+
+#[derive(Serialize, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct UploadResponse {
     id: String,
+    /// A media reference of the form `media:<id>`.
     url: String,
+    #[schema(value_type = BoardMediaStatus)]
     status: String,
 }
+
+#[allow(dead_code)]
+#[derive(utoipa::ToSchema)]
+#[schema(value_type = String, format = Binary)]
+struct ImageBytes(Vec<u8>);
 
 fn media_not_found() -> ApiError {
     ApiError::not_found("media.not_found", "Media file not found.")
@@ -300,11 +322,25 @@ fn upload_failed() -> ApiError {
     ApiError::unavailable("media.upload_failed", "The file could not be stored.")
 }
 
+#[utoipa::path(
+    post, path = "/v1/media/upload", operation_id = "reserveBoardMedia",
+    request_body = UploadRequest,
+    responses(
+        (status = 201, description = "Created", body = UploadResponse),
+        (status = 401, description = "Valid gateway identity required", body = crate::error::GatewayIdentityError),
+        (status = 400, description = "Invalid request for this resource", body = crate::error::ErrorResponse),
+        (status = 409, description = "Current state conflicts with the request", body = crate::error::ErrorResponse),
+        (status = 413, description = "Image exceeds 10 MiB", body = crate::error::ErrorResponse),
+        (status = 422, description = "Request validation failed", body = crate::error::ErrorResponse),
+        (status = 503, description = "A required service is unavailable", body = crate::error::ErrorResponse),
+        (status = 500, description = "Internal error", body = crate::error::ErrorResponse)
+    )
+)]
 pub async fn create_upload(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
     ApiJson(payload): ApiJson<UploadRequest>,
-) -> ApiResult<impl IntoResponse> {
+) -> ApiResult<(StatusCode, Json<UploadResponse>)> {
     let request_id = uuid::Uuid::parse_str(&payload.request_id)
         .map_err(|_| ApiError::validation("requestId: Input should be a valid UUID"))?;
     let name = payload.name.trim().to_string();
@@ -399,6 +435,21 @@ async fn load_media(pool: &PgPool, media_id: &str) -> ApiResult<MediaFile> {
 }
 
 /// `PUT /files/media/{id}/content`: the uploader streams the reserved bytes.
+#[utoipa::path(
+    put, path = "/files/media/{media_id}/content", operation_id = "uploadBoardMedia",
+    params(
+        ("media_id" = String, Path),
+    ),
+    request_body(content = inline(ImageBytes), content_type = "application/octet-stream"),
+    description = "Streams the raw bytes of a reserved image through the app file gateway. The reservation and stored image are limited to 10 MiB.",
+    responses(
+        (status = 200, description = "Image stored; status is ready", body = UploadResponse),
+        (status = 401, description = "Valid gateway identity required", body = crate::error::GatewayIdentityError),
+        (status = 404, description = "Requested resource was not found", body = crate::error::ErrorResponse),
+        (status = 503, description = "A required service is unavailable", body = crate::error::ErrorResponse),
+        (status = 500, description = "Internal error", body = crate::error::ErrorResponse)
+    )
+)]
 pub async fn upload_content(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
@@ -475,6 +526,35 @@ async fn comment_post(pool: &PgPool, comment_id: &str) -> ApiResult<Option<Strin
 
 /// `GET /files/media/{id}/content`: the uploader's own image (editor preview)
 /// or an image of a post or comment the caller can read without a password.
+#[utoipa::path(
+    get, path = "/files/media/{media_id}/content", operation_id = "getBoardMedia",
+    params(
+        ("media_id" = String, Path),
+    ),
+    responses(
+        (status = 200, description = "Image bytes",
+         content(
+            (inline(ImageBytes) = "image/png"),
+            (inline(ImageBytes) = "image/jpeg"),
+            (inline(ImageBytes) = "image/gif"),
+            (inline(ImageBytes) = "image/webp")
+         ),
+         headers(
+            ("Content-Length" = u64, description = "Number of image bytes"),
+            ("Content-Disposition" = String, description = "Attachment filename"),
+            ("ETag" = String, description = "Stored file entity tag"),
+            ("X-Miy-File-Id" = String, description = "Core file ID"),
+            ("X-Miy-File-Version" = String, description = "Core file version"),
+            ("X-Miy-File-Sha256" = String, description = "SHA-256 digest"),
+            ("Content-Security-Policy" = String, description = "Sandbox policy"),
+            ("X-Content-Type-Options" = String, description = "nosniff")
+         )),
+        (status = 401, description = "Valid gateway identity required", body = crate::error::GatewayIdentityError),
+        (status = 404, description = "Requested resource was not found", body = crate::error::ErrorResponse),
+        (status = 503, description = "A required service is unavailable", body = crate::error::ErrorResponse),
+        (status = 500, description = "Internal error", body = crate::error::ErrorResponse)
+    )
+)]
 pub async fn download(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
@@ -500,16 +580,51 @@ pub async fn download(
     stream(&identity, &media).await
 }
 
-#[derive(Deserialize, Default)]
+#[derive(Deserialize, Default, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct PostMediaRequest {
     #[serde(default)]
+    #[schema(max_length = 200)]
     password: Option<String>,
 }
 
 /// `POST /files/community/posts/{post_id}/media/{id}`: AI-DO's
 /// `resolve_post_media_urls` for one image, answering the bytes. A secret
 /// post accepts its password here.
+#[utoipa::path(
+    post, path = "/files/community/posts/{post_id}/media/{media_id}", operation_id = "getCommunityPostMedia",
+    params(
+        ("post_id" = String, Path),
+        ("media_id" = String, Path),
+    ),
+    request_body = ref("#/components/schemas/PostMediaRequest"),
+    responses(
+        (status = 200, description = "Image bytes",
+         content(
+            (inline(ImageBytes) = "image/png"),
+            (inline(ImageBytes) = "image/jpeg"),
+            (inline(ImageBytes) = "image/gif"),
+            (inline(ImageBytes) = "image/webp")
+         ),
+         headers(
+            ("Content-Length" = u64, description = "Number of image bytes"),
+            ("Content-Disposition" = String, description = "Attachment filename"),
+            ("ETag" = String, description = "Stored file entity tag"),
+            ("X-Miy-File-Id" = String, description = "Core file ID"),
+            ("X-Miy-File-Version" = String, description = "Core file version"),
+            ("X-Miy-File-Sha256" = String, description = "SHA-256 digest"),
+            ("Content-Security-Policy" = String, description = "Sandbox policy"),
+            ("X-Content-Type-Options" = String, description = "nosniff")
+         )),
+        (status = 401, description = "Valid gateway identity required", body = crate::error::GatewayIdentityError),
+        (status = 403, description = "Permission denied", body = crate::error::ErrorResponse),
+        (status = 404, description = "Requested resource was not found", body = crate::error::ErrorResponse),
+        (status = 413, description = "Request body exceeds the size limit", body = String, content_type = "text/plain"),
+        (status = 422, description = "Request validation failed", body = crate::error::ErrorResponse),
+        (status = 503, description = "A required service is unavailable", body = crate::error::ErrorResponse),
+        (status = 500, description = "Internal error", body = crate::error::ErrorResponse)
+    )
+)]
 pub async fn download_post_media(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,

@@ -59,6 +59,17 @@ describe('planner event modal model', () => {
     expect(buildPlannerEventUpdatePayload({ ...loaded, title: 'Changed' }, baseline)).toEqual({ title: 'Changed' });
   });
 
+  it('sends only the edited boundary while the event stays timed', () => {
+    const loaded = plannerEventModalReducer(initialPlannerEventModalState(null, undefined, 'Asia/Seoul'), {
+      type: 'loadSuccess', event: event(),
+    });
+    const baseline = plannerEventModalEditableFields(loaded);
+    expect(buildPlannerEventUpdatePayload({ ...loaded, startTimeValue: '08:30' }, baseline))
+      .toEqual({ start: '2026-03-09T23:30:00.000Z' });
+    expect(buildPlannerEventUpdatePayload({ ...loaded, endTimeValue: '11:00' }, baseline))
+      .toEqual({ end: '2026-03-10T02:00:00.000Z' });
+  });
+
   it('builds create drafts from initial ranges', () => {
     expect(
       buildDraftFromRange({

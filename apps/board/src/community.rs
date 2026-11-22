@@ -12,7 +12,6 @@ use axum::{
     Extension, Json,
     extract::{Path, Query, State},
     http::StatusCode,
-    response::IntoResponse,
 };
 use chrono::NaiveDateTime;
 use miy_app_sdk::Identity;
@@ -117,7 +116,7 @@ pub async fn viewer<'e>(
 
 // ---------------------------------------------------------------- schemas
 
-#[derive(Serialize)]
+#[derive(Serialize, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ChannelOut {
     id: String,
@@ -151,7 +150,7 @@ impl From<&Channel> for ChannelOut {
     }
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, utoipa::ToSchema)]
 pub struct ChannelsResponse {
     channels: Vec<ChannelOut>,
 }
@@ -160,7 +159,7 @@ fn default_true() -> bool {
     true
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ChannelRequest {
     key: String,
@@ -249,24 +248,37 @@ impl ChannelRequest {
     }
 }
 
-#[derive(Serialize, Clone)]
+#[allow(dead_code)]
+#[derive(utoipa::ToSchema)]
+#[serde(rename_all = "snake_case")]
+enum LockedReason {
+    Password,
+    AdminOnly,
+}
+
+#[derive(Serialize, Clone, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct CommentOut {
     id: String,
     body: String,
     is_anonymous: bool,
     is_deleted: bool,
+    #[schema(required = true)]
     parent_comment_id: Option<String>,
+    #[schema(required = true)]
     author_name: Option<String>,
+    #[schema(required = true)]
     anon_seq: Option<i64>,
     can_modify: bool,
     #[serde(serialize_with = "crate::time::serialize")]
+    #[schema(value_type = String, example = "2026-05-04T01:02:03")]
     created_at: NaiveDateTime,
     #[serde(serialize_with = "crate::time::serialize")]
+    #[schema(value_type = String, example = "2026-05-04T01:02:03")]
     updated_at: NaiveDateTime,
 }
 
-#[derive(Serialize, Clone)]
+#[derive(Serialize, Clone, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct PostOut {
     id: String,
@@ -277,19 +289,23 @@ pub struct PostOut {
     is_anonymous: bool,
     is_secret: bool,
     locked: bool,
+    #[schema(required = true, value_type = Option<LockedReason>)]
     locked_reason: Option<&'static str>,
     is_read: bool,
     is_mine: bool,
     can_modify: bool,
+    #[schema(required = true)]
     author_name: Option<String>,
     comment_count: i64,
     #[serde(serialize_with = "crate::time::serialize")]
+    #[schema(value_type = String, example = "2026-05-04T01:02:03")]
     created_at: NaiveDateTime,
     #[serde(serialize_with = "crate::time::serialize")]
+    #[schema(value_type = String, example = "2026-05-04T01:02:03")]
     updated_at: NaiveDateTime,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct PostDetail {
     #[serde(flatten)]
@@ -297,7 +313,7 @@ pub struct PostDetail {
     comments: Vec<CommentOut>,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct PostListResponse {
     posts: Vec<PostOut>,
@@ -306,7 +322,7 @@ pub struct PostListResponse {
     page_size: i64,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct PostCreateRequest {
     title: String,
@@ -319,20 +335,20 @@ pub struct PostCreateRequest {
     password: Option<String>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct PostUpdateRequest {
     title: String,
     body: String,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct UnlockRequest {
     password: String,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct CommentCreateRequest {
     body: String,
@@ -344,7 +360,7 @@ pub struct CommentCreateRequest {
     parent_comment_id: Option<String>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct CommentUpdateRequest {
     body: String,
@@ -819,6 +835,14 @@ pub async fn get_post_detail(
 
 // ---------------------------------------------------------------- channel routes
 
+#[utoipa::path(
+    get, path = "/v1/community/channels", operation_id = "listCommunityChannels",
+    responses(
+        (status = 200, description = "Success", body = ChannelsResponse),
+        (status = 401, description = "Valid gateway identity required", body = crate::error::GatewayIdentityError),
+        (status = 500, description = "Internal error", body = crate::error::ErrorResponse)
+    )
+)]
 pub async fn list_channels(State(state): State<AppState>) -> ApiResult<Json<ChannelsResponse>> {
     list_channels_response(&state.pool, false).await.map(Json)
 }
@@ -842,6 +866,15 @@ async fn list_channels_response(
     })
 }
 
+#[utoipa::path(
+    get, path = "/v1/community/admin/channels", operation_id = "listAdminCommunityChannels",
+    responses(
+        (status = 200, description = "Success", body = ChannelsResponse),
+        (status = 401, description = "Valid gateway identity required", body = crate::error::GatewayIdentityError),
+        (status = 403, description = "Permission denied", body = crate::error::ErrorResponse),
+        (status = 500, description = "Internal error", body = crate::error::ErrorResponse)
+    )
+)]
 pub async fn list_admin_channels(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
@@ -850,11 +883,23 @@ pub async fn list_admin_channels(
     list_channels_response(&state.pool, true).await.map(Json)
 }
 
+#[utoipa::path(
+    post, path = "/v1/community/admin/channels", operation_id = "createCommunityChannel",
+    request_body = ChannelRequest,
+    responses(
+        (status = 201, description = "Created", body = ChannelOut),
+        (status = 401, description = "Valid gateway identity required", body = crate::error::GatewayIdentityError),
+        (status = 403, description = "Permission denied", body = crate::error::ErrorResponse),
+        (status = 409, description = "Current state conflicts with the request", body = crate::error::ErrorResponse),
+        (status = 422, description = "Request validation failed", body = crate::error::ErrorResponse),
+        (status = 500, description = "Internal error", body = crate::error::ErrorResponse)
+    )
+)]
 pub async fn create_channel(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
     ApiJson(payload): ApiJson<ChannelRequest>,
-) -> ApiResult<impl IntoResponse> {
+) -> ApiResult<(StatusCode, Json<ChannelOut>)> {
     require_manager(&state.pool, &identity).await?;
     let input = payload.validate()?;
     ensure_default_channels(&state.pool).await?;
@@ -884,6 +929,22 @@ pub async fn create_channel(
     Ok((StatusCode::CREATED, Json(ChannelOut::from(&channel))))
 }
 
+#[utoipa::path(
+    patch, path = "/v1/community/admin/channels/{channel_key}", operation_id = "updateCommunityChannel",
+    params(
+        ("channel_key" = String, Path),
+    ),
+    request_body = ChannelRequest,
+    responses(
+        (status = 200, description = "Success", body = ChannelOut),
+        (status = 401, description = "Valid gateway identity required", body = crate::error::GatewayIdentityError),
+        (status = 403, description = "Permission denied", body = crate::error::ErrorResponse),
+        (status = 404, description = "Requested resource was not found", body = crate::error::ErrorResponse),
+        (status = 409, description = "Current state conflicts with the request", body = crate::error::ErrorResponse),
+        (status = 422, description = "Request validation failed", body = crate::error::ErrorResponse),
+        (status = 500, description = "Internal error", body = crate::error::ErrorResponse)
+    )
+)]
 pub async fn update_channel(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
@@ -934,6 +995,20 @@ pub async fn update_channel(
     Ok(Json(ChannelOut::from(&updated)))
 }
 
+#[utoipa::path(
+    delete, path = "/v1/community/admin/channels/{channel_key}", operation_id = "deleteCommunityChannel",
+    params(
+        ("channel_key" = String, Path),
+    ),
+    responses(
+        (status = 204, description = "No content"),
+        (status = 401, description = "Valid gateway identity required", body = crate::error::GatewayIdentityError),
+        (status = 403, description = "Permission denied", body = crate::error::ErrorResponse),
+        (status = 404, description = "Requested resource was not found", body = crate::error::ErrorResponse),
+        (status = 409, description = "Current state conflicts with the request", body = crate::error::ErrorResponse),
+        (status = 500, description = "Internal error", body = crate::error::ErrorResponse)
+    )
+)]
 pub async fn delete_channel(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
@@ -1005,6 +1080,22 @@ fn post_number_query(query: &str) -> Option<i32> {
     digits.parse().ok()
 }
 
+#[utoipa::path(
+    get, path = "/v1/community/channels/{channel_key}/posts", operation_id = "listCommunityPosts",
+    params(
+        ("channel_key" = String, Path),
+        ("page" = Option<i64>, Query, minimum = 1, description = "Page number (default 1)"),
+        ("page_size" = Option<i64>, Query, minimum = 1, maximum = 100, description = "Page size (default 10)"),
+        ("q" = Option<String>, Query, max_length = 120, description = "Post title, author, or number"),
+    ),
+    responses(
+        (status = 200, description = "Success", body = PostListResponse),
+        (status = 401, description = "Valid gateway identity required", body = crate::error::GatewayIdentityError),
+        (status = 404, description = "Requested resource was not found", body = crate::error::ErrorResponse),
+        (status = 422, description = "Request validation failed", body = crate::error::ErrorResponse),
+        (status = 500, description = "Internal error", body = crate::error::ErrorResponse)
+    )
+)]
 pub async fn list_posts(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
@@ -1202,12 +1293,29 @@ async fn next_post_number(tx: &mut Transaction<'_, Postgres>, channel_id: &str) 
     .await?)
 }
 
+#[utoipa::path(
+    post, path = "/v1/community/channels/{channel_key}/posts", operation_id = "createCommunityPost",
+    params(
+        ("channel_key" = String, Path),
+    ),
+    request_body = PostCreateRequest,
+    responses(
+        (status = 201, description = "Created", body = PostOut),
+        (status = 401, description = "Valid gateway identity required", body = crate::error::GatewayIdentityError),
+        (status = 400, description = "Invalid request for this resource", body = crate::error::ErrorResponse),
+        (status = 403, description = "Permission denied", body = crate::error::ErrorResponse),
+        (status = 404, description = "Requested resource was not found", body = crate::error::ErrorResponse),
+        (status = 409, description = "Current state conflicts with the request", body = crate::error::ErrorResponse),
+        (status = 422, description = "Request validation failed", body = crate::error::ErrorResponse),
+        (status = 500, description = "Internal error", body = crate::error::ErrorResponse)
+    )
+)]
 pub async fn create_post(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
     Path(channel_key): Path<String>,
     ApiJson(payload): ApiJson<PostCreateRequest>,
-) -> ApiResult<impl IntoResponse> {
+) -> ApiResult<(StatusCode, Json<PostOut>)> {
     let (title, body) = validate_title_body(&payload.title, &payload.body)?;
     validate_password(&payload.password)?;
     let channel = get_channel_or_404(&state.pool, &channel_key).await?;
@@ -1275,6 +1383,18 @@ pub async fn create_post(
     Ok((StatusCode::CREATED, Json(detail.post)))
 }
 
+#[utoipa::path(
+    get, path = "/v1/community/posts/{post_id}", operation_id = "getCommunityPost",
+    params(
+        ("post_id" = String, Path),
+    ),
+    responses(
+        (status = 200, description = "Success", body = PostDetail),
+        (status = 401, description = "Valid gateway identity required", body = crate::error::GatewayIdentityError),
+        (status = 404, description = "Requested resource was not found", body = crate::error::ErrorResponse),
+        (status = 500, description = "Internal error", body = crate::error::ErrorResponse)
+    )
+)]
 pub async fn get_post(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
@@ -1300,6 +1420,30 @@ pub async fn get_post(
     Ok(Json(detail))
 }
 
+async fn lock_post(tx: &mut sqlx::Transaction<'_, sqlx::Postgres>, post_id: &str) -> ApiResult<()> {
+    sqlx::query_scalar::<_, String>("SELECT id FROM community_posts WHERE id = $1 FOR UPDATE")
+        .bind(post_id)
+        .fetch_optional(&mut **tx)
+        .await?
+        .ok_or_else(post_not_found)?;
+    Ok(())
+}
+
+#[utoipa::path(
+    patch, path = "/v1/community/posts/{post_id}", operation_id = "updateCommunityPost",
+    params(
+        ("post_id" = String, Path),
+    ),
+    request_body = PostUpdateRequest,
+    responses(
+        (status = 200, description = "Success", body = PostOut),
+        (status = 401, description = "Valid gateway identity required", body = crate::error::GatewayIdentityError),
+        (status = 403, description = "Permission denied", body = crate::error::ErrorResponse),
+        (status = 404, description = "Requested resource was not found", body = crate::error::ErrorResponse),
+        (status = 422, description = "Request validation failed", body = crate::error::ErrorResponse),
+        (status = 500, description = "Internal error", body = crate::error::ErrorResponse)
+    )
+)]
 pub async fn update_post(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
@@ -1313,6 +1457,7 @@ pub async fn update_post(
     require_channel_writable(&loaded.channel, &viewer)?;
     ugc::ensure_content_allowed(&state.pool, &[&title, &body]).await?;
     let mut tx = state.pool.begin().await?;
+    lock_post(&mut tx, &loaded.post.id).await?;
     let linked = media::sync_embedded_media(
         &mut tx,
         &body,
@@ -1348,6 +1493,19 @@ pub async fn update_post(
     Ok(Json(detail.post))
 }
 
+#[utoipa::path(
+    delete, path = "/v1/community/posts/{post_id}", operation_id = "deleteCommunityPost",
+    params(
+        ("post_id" = String, Path),
+    ),
+    responses(
+        (status = 204, description = "No content"),
+        (status = 401, description = "Valid gateway identity required", body = crate::error::GatewayIdentityError),
+        (status = 403, description = "Permission denied", body = crate::error::ErrorResponse),
+        (status = 404, description = "Requested resource was not found", body = crate::error::ErrorResponse),
+        (status = 500, description = "Internal error", body = crate::error::ErrorResponse)
+    )
+)]
 pub async fn delete_post(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
@@ -1358,11 +1516,7 @@ pub async fn delete_post(
     require_author_or_admin(&loaded.post.author_id, &viewer)?;
     require_channel_writable(&loaded.channel, &viewer)?;
     let mut tx = state.pool.begin().await?;
-    sqlx::query_scalar::<_, String>("SELECT id FROM community_posts WHERE id = $1 FOR UPDATE")
-        .bind(&loaded.post.id)
-        .fetch_optional(&mut *tx)
-        .await?
-        .ok_or_else(post_not_found)?;
+    lock_post(&mut tx, &loaded.post.id).await?;
     let released = media::release_for_post(&mut tx, &loaded.post.id).await?;
     sqlx::query("DELETE FROM community_posts WHERE id = $1")
         .bind(&loaded.post.id)
@@ -1374,6 +1528,19 @@ pub async fn delete_post(
     Ok(StatusCode::NO_CONTENT)
 }
 
+#[utoipa::path(
+    post, path = "/v1/community/posts/{post_id}/read", operation_id = "markCommunityPostRead",
+    params(
+        ("post_id" = String, Path),
+    ),
+    responses(
+        (status = 204, description = "No content"),
+        (status = 401, description = "Valid gateway identity required", body = crate::error::GatewayIdentityError),
+        (status = 403, description = "Permission denied", body = crate::error::ErrorResponse),
+        (status = 404, description = "Requested resource was not found", body = crate::error::ErrorResponse),
+        (status = 500, description = "Internal error", body = crate::error::ErrorResponse)
+    )
+)]
 pub async fn mark_read(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
@@ -1390,6 +1557,21 @@ pub async fn mark_read(
     Ok(StatusCode::NO_CONTENT)
 }
 
+#[utoipa::path(
+    post, path = "/v1/community/posts/{post_id}/unlock", operation_id = "unlockCommunityPost",
+    params(
+        ("post_id" = String, Path),
+    ),
+    request_body = UnlockRequest,
+    responses(
+        (status = 200, description = "Success", body = PostDetail),
+        (status = 401, description = "Valid gateway identity required", body = crate::error::GatewayIdentityError),
+        (status = 403, description = "Permission denied", body = crate::error::ErrorResponse),
+        (status = 404, description = "Requested resource was not found", body = crate::error::ErrorResponse),
+        (status = 422, description = "Request validation failed", body = crate::error::ErrorResponse),
+        (status = 500, description = "Internal error", body = crate::error::ErrorResponse)
+    )
+)]
 pub async fn unlock_post(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
@@ -1421,12 +1603,27 @@ pub async fn unlock_post(
 
 // ---------------------------------------------------------------- comment routes
 
+#[utoipa::path(
+    post, path = "/v1/community/posts/{post_id}/comments", operation_id = "createCommunityComment",
+    params(
+        ("post_id" = String, Path),
+    ),
+    request_body = CommentCreateRequest,
+    responses(
+        (status = 201, description = "Created", body = CommentOut),
+        (status = 401, description = "Valid gateway identity required", body = crate::error::GatewayIdentityError),
+        (status = 403, description = "Permission denied", body = crate::error::ErrorResponse),
+        (status = 404, description = "Requested resource was not found", body = crate::error::ErrorResponse),
+        (status = 422, description = "Request validation failed", body = crate::error::ErrorResponse),
+        (status = 500, description = "Internal error", body = crate::error::ErrorResponse)
+    )
+)]
 pub async fn create_comment(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
     Path(post_id): Path<String>,
     ApiJson(payload): ApiJson<CommentCreateRequest>,
-) -> ApiResult<impl IntoResponse> {
+) -> ApiResult<(StatusCode, Json<CommentOut>)> {
     let body = validate_comment_body(&payload.body)?;
     validate_password(&payload.password)?;
     let loaded = get_post_or_404(&state.pool, &post_id).await?;
@@ -1516,6 +1713,22 @@ async fn lock_comment_post(tx: &mut Transaction<'_, Postgres>, post_id: &str) ->
     Ok(())
 }
 
+#[utoipa::path(
+    patch, path = "/v1/community/posts/{post_id}/comments/{comment_id}", operation_id = "updateCommunityComment",
+    params(
+        ("post_id" = String, Path),
+        ("comment_id" = String, Path),
+    ),
+    request_body = CommentUpdateRequest,
+    responses(
+        (status = 200, description = "Success", body = CommentOut),
+        (status = 401, description = "Valid gateway identity required", body = crate::error::GatewayIdentityError),
+        (status = 403, description = "Permission denied", body = crate::error::ErrorResponse),
+        (status = 404, description = "Requested resource was not found", body = crate::error::ErrorResponse),
+        (status = 422, description = "Request validation failed", body = crate::error::ErrorResponse),
+        (status = 500, description = "Internal error", body = crate::error::ErrorResponse)
+    )
+)]
 pub async fn update_comment(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
@@ -1574,6 +1787,20 @@ pub async fn update_comment(
     )))
 }
 
+#[utoipa::path(
+    delete, path = "/v1/community/posts/{post_id}/comments/{comment_id}", operation_id = "deleteCommunityComment",
+    params(
+        ("post_id" = String, Path),
+        ("comment_id" = String, Path),
+    ),
+    responses(
+        (status = 204, description = "No content"),
+        (status = 401, description = "Valid gateway identity required", body = crate::error::GatewayIdentityError),
+        (status = 403, description = "Permission denied", body = crate::error::ErrorResponse),
+        (status = 404, description = "Requested resource was not found", body = crate::error::ErrorResponse),
+        (status = 500, description = "Internal error", body = crate::error::ErrorResponse)
+    )
+)]
 pub async fn delete_comment(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,

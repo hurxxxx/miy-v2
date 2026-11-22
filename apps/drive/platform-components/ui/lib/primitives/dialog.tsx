@@ -64,7 +64,7 @@ export function Dialog({
   description,
   children,
   actions,
-  closeLabel,
+  closeLabel = 'Close',
   contentClassName,
   maxWidth = 'max-w-lg',
   fullSize = false,

@@ -31,7 +31,7 @@ use std::collections::HashSet;
 
 use crate::{
     AppState,
-    error::{ApiError, ApiJson, ApiResult, check_length},
+    error::{ApiError, ApiJson, ApiResult, ErrorResponse, IdentityErrorResponse, check_length},
     time::now_utc,
 };
 
@@ -88,7 +88,7 @@ pub struct Space {
 
 const SPACE_COLUMNS: &str = "id, name, description, created_by, created_at, updated_at";
 
-#[derive(Serialize)]
+#[derive(Serialize, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct SpaceOut {
     id: String,
@@ -97,8 +97,10 @@ pub struct SpaceOut {
     created_by: String,
     can_manage: bool,
     #[serde(serialize_with = "crate::time::serialize")]
+    #[schema(value_type = String)]
     created_at: NaiveDateTime,
     #[serde(serialize_with = "crate::time::serialize")]
+    #[schema(value_type = String)]
     updated_at: NaiveDateTime,
 }
 
@@ -114,7 +116,7 @@ fn space_out(space: &Space, can_manage: bool) -> SpaceOut {
     }
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, utoipa::ToSchema)]
 pub struct SpacesResponse {
     spaces: Vec<SpaceOut>,
 }
@@ -241,6 +243,16 @@ pub async fn is_direct_member<'e>(
     .await?)
 }
 
+#[utoipa::path(
+    get, path = "/v1/spaces", operation_id = "listWhiteboardSpaces", tag = "Spaces",
+    responses(
+        (status = 200, description = "Spaces visible to the current user", body = SpacesResponse),
+        (status = 401, description = "Platform identity could not be verified", body = IdentityErrorResponse),
+        (status = 403, description = "Current permissions do not allow space membership lookup", body = ErrorResponse),
+        (status = 500, description = "Internal error", body = ErrorResponse),
+        (status = 503, description = "A required platform service is unavailable", body = ErrorResponse),
+    )
+)]
 pub async fn list_spaces(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
@@ -265,11 +277,14 @@ pub async fn list_spaces(
     }))
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct SpaceRequest {
+    /// The space name must contain a non-whitespace character.
+    #[schema(min_length = 1, max_length = 120)]
     name: String,
     #[serde(default)]
+    #[schema(max_length = 5000)]
     description: String,
 }
 
@@ -283,6 +298,19 @@ fn validate_space(payload: &SpaceRequest) -> ApiResult<(String, String)> {
     Ok((name, payload.description.trim().to_string()))
 }
 
+#[utoipa::path(
+    post, path = "/v1/spaces", operation_id = "createWhiteboardSpace", tag = "Spaces", request_body = SpaceRequest,
+    responses(
+        (status = 201, description = "Created space", body = SpaceOut),
+        (status = 400, description = "The creator could not be added as an ACL subject", body = ErrorResponse),
+        (status = 401, description = "Platform identity could not be verified", body = IdentityErrorResponse),
+        (status = 403, description = "Current permissions do not allow this operation", body = ErrorResponse),
+        (status = 409, description = "An ACL resource already exists for the new ID", body = ErrorResponse),
+        (status = 422, description = "Invalid space request", body = ErrorResponse),
+        (status = 500, description = "Internal error", body = ErrorResponse),
+        (status = 503, description = "A required platform service is unavailable", body = ErrorResponse),
+    )
+)]
 pub async fn create_space(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
@@ -312,6 +340,20 @@ pub async fn create_space(
     Ok((StatusCode::CREATED, Json(space_out(&space, true))))
 }
 
+#[utoipa::path(
+    patch, path = "/v1/spaces/{space_id}", operation_id = "updateWhiteboardSpace", tag = "Spaces",
+    params(("space_id" = String, Path)),
+    request_body = SpaceRequest,
+    responses(
+        (status = 200, description = "Updated space", body = SpaceOut),
+        (status = 401, description = "Platform identity could not be verified", body = IdentityErrorResponse),
+        (status = 403, description = "The caller cannot manage this space", body = ErrorResponse),
+        (status = 404, description = "Space not found", body = ErrorResponse),
+        (status = 422, description = "Invalid space request", body = ErrorResponse),
+        (status = 500, description = "Internal error", body = ErrorResponse),
+        (status = 503, description = "A required platform service is unavailable", body = ErrorResponse),
+    )
+)]
 pub async fn update_space(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
@@ -346,6 +388,19 @@ pub async fn update_space(
 /// A space that still holds boards (trashed ones too) is not deleted: its
 /// boards' images and shares would have to go with it. Empty the space first
 /// (docs/PORTING.md §4).
+#[utoipa::path(
+    delete, path = "/v1/spaces/{space_id}", operation_id = "deleteWhiteboardSpace", tag = "Spaces",
+    params(("space_id" = String, Path)),
+    responses(
+        (status = 204, description = "Empty space deleted"),
+        (status = 401, description = "Platform identity could not be verified", body = IdentityErrorResponse),
+        (status = 403, description = "The caller cannot manage this space", body = ErrorResponse),
+        (status = 404, description = "Space not found", body = ErrorResponse),
+        (status = 409, description = "The space still contains boards", body = ErrorResponse),
+        (status = 500, description = "Internal error", body = ErrorResponse),
+        (status = 503, description = "A required platform service is unavailable", body = ErrorResponse),
+    )
+)]
 pub async fn delete_space(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
@@ -395,6 +450,18 @@ pub async fn delete_space(
     Ok(StatusCode::NO_CONTENT)
 }
 
+#[utoipa::path(
+    get, path = "/v1/spaces/{space_id}/sharing", operation_id = "getWhiteboardSpaceSharing", tag = "Spaces",
+    params(("space_id" = String, Path)),
+    responses(
+        (status = 200, description = "Current space ACL and its revision", body = SpaceShareSnapshot),
+        (status = 401, description = "Platform identity could not be verified", body = IdentityErrorResponse),
+        (status = 403, description = "The caller cannot manage this space", body = ErrorResponse),
+        (status = 404, description = "Space not found", body = ErrorResponse),
+        (status = 500, description = "Internal error", body = ErrorResponse),
+        (status = 503, description = "A required platform service is unavailable", body = ErrorResponse),
+    )
+)]
 pub async fn get_sharing(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
@@ -408,14 +475,94 @@ pub async fn get_sharing(
     ))
 }
 
-#[derive(Deserialize)]
+// The SDK owns Grant and ShareSnapshot serialization. These schemas describe
+// that wire format without changing how the SDK accepts or returns ACL data.
+#[allow(dead_code)]
+#[derive(Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "lowercase")]
+enum SpaceSubjectKind {
+    User,
+    Group,
+}
+
+#[allow(dead_code)]
+#[derive(Deserialize, utoipa::ToSchema)]
+#[serde(deny_unknown_fields)]
+struct SpaceSubjectRef {
+    kind: SpaceSubjectKind,
+    id: String,
+}
+
+#[allow(dead_code)]
+#[derive(Deserialize, utoipa::ToSchema)]
+#[serde(deny_unknown_fields)]
+struct SpaceGrant {
+    subject: SpaceSubjectRef,
+    role: String,
+}
+
+#[allow(dead_code)]
+#[derive(utoipa::ToSchema)]
+struct SpaceShareSubject {
+    kind: SpaceSubjectKind,
+    id: String,
+    name: String,
+}
+
+#[allow(dead_code)]
+#[derive(utoipa::ToSchema)]
+struct SpaceShareEntry {
+    subject: SpaceShareSubject,
+    role: String,
+    protected: bool,
+}
+
+#[allow(dead_code)]
+#[derive(utoipa::ToSchema)]
+struct SpaceShareRole {
+    id: String,
+    label: String,
+}
+
+#[allow(dead_code)]
+#[derive(utoipa::ToSchema)]
+#[schema(rename_all = "camelCase")]
+struct SpaceShareSnapshot {
+    revision: i64,
+    entries: Vec<SpaceShareEntry>,
+    roles: Vec<SpaceShareRole>,
+    #[schema(required = true)]
+    default_role: Option<String>,
+    can_manage: bool,
+}
+
+#[derive(Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct SharingRequest {
+    #[schema(minimum = 1)]
     expected_revision: i64,
+    #[schema(format = "uuid")]
     request_id: String,
+    #[schema(value_type = Vec<SpaceGrant>)]
     entries: Vec<Grant>,
 }
 
+#[utoipa::path(
+    put, path = "/v1/spaces/{space_id}/sharing", operation_id = "replaceWhiteboardSpaceSharing", tag = "Spaces",
+    params(("space_id" = String, Path)),
+    request_body = SharingRequest,
+    responses(
+        (status = 200, description = "Current space ACL and its revision", body = SpaceShareSnapshot),
+        (status = 400, description = "Invalid ACL request, role or subject", body = ErrorResponse),
+        (status = 401, description = "Platform identity could not be verified", body = IdentityErrorResponse),
+        (status = 403, description = "The caller cannot manage this space", body = ErrorResponse),
+        (status = 404, description = "Space not found", body = ErrorResponse),
+        (status = 409, description = "Request or revision conflict, protected owner, or last manager", body = ErrorResponse),
+        (status = 422, description = "Invalid JSON request", body = ErrorResponse),
+        (status = 500, description = "Internal error", body = ErrorResponse),
+        (status = 503, description = "A required platform service is unavailable", body = ErrorResponse),
+    )
+)]
 pub async fn replace_sharing(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
@@ -441,6 +588,19 @@ pub async fn replace_sharing(
     Ok(Json(snapshot))
 }
 
+#[utoipa::path(
+    get, path = "/v1/spaces/{space_id}/sharing/requests/{request_id}", operation_id = "getWhiteboardSpaceSharingResult", tag = "Spaces",
+    params(("space_id" = String, Path), ("request_id" = String, Path, format = "uuid")),
+    responses(
+        (status = 200, description = "Recorded ACL replacement result, or null if it has not been recorded", body = Option<SpaceShareSnapshot>),
+        (status = 400, description = "Invalid ACL request ID", body = ErrorResponse),
+        (status = 401, description = "Platform identity could not be verified", body = IdentityErrorResponse),
+        (status = 403, description = "The caller cannot manage this space", body = ErrorResponse),
+        (status = 404, description = "Space not found", body = ErrorResponse),
+        (status = 500, description = "Internal error", body = ErrorResponse),
+        (status = 503, description = "A required platform service is unavailable", body = ErrorResponse),
+    )
+)]
 pub async fn sharing_result(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,

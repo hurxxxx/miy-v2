@@ -1,3 +1,4 @@
+import type { components } from '../../api.generated';
 import { useCallback, useMemo, useRef } from 'react';
 import { requestId } from '@miy/ui';
 
@@ -14,11 +15,7 @@ import { useRuntime } from '../runtime/runtime-context';
  * image by downloading it in the frame into a local Blob URL. The returned
  * value is AI-DO's `media:<id>` reference.
  */
-export interface MediaUploadResponse {
-  id: string;
-  url: string;
-  status: string;
-}
+export type MediaUploadResponse = components['schemas']['UploadResponse'];
 
 export function useMediaUpload() {
   const runtime = useRuntime();
@@ -41,7 +38,7 @@ export function useMediaUpload() {
               name: file.name || 'image',
               mime: file.type,
               size: file.size,
-            }),
+            } satisfies components['schemas']['UploadRequest']),
           },
         );
         if (reserved.status === 'ready' || reserved.status === 'attached') {

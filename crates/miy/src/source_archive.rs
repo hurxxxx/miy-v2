@@ -349,6 +349,7 @@ pub fn validate(root: &Path, app: &str) -> Result<Manifest> {
     let m: Manifest = serde_json::from_slice(&std::fs::read(root.join("manifest.json"))?)?;
     contract::validate(&m).map_err(anyhow::Error::msg)?;
     ensure!(m.id == app, "source_app_mismatch");
+    crate::app_harness::verify_api_files(root, &m)?;
     bundle::verify(root)?;
     let mut actual = BTreeSet::new();
     inventory(root, "sdk", &mut actual)?;

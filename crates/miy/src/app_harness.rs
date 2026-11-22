@@ -1,7 +1,89 @@
 //! Local advisory checks for common SDK and UI integration mistakes.
-use anyhow::Result;
+use anyhow::{Context, Result, ensure};
 use serde::Serialize;
-use std::{fs, path::Path};
+use serde_json::Value;
+use std::{collections::BTreeSet, fs, path::Path};
+
+const OPENAPI: &str = "docs/openapi.json";
+const GENERATED_TYPES: &str = "web/src/api.generated.ts";
+const GENERATE: &str = "Run pnpm api:generate.";
+
+pub(crate) fn verify_api_files(root: &Path, manifest: &crate::contract::Manifest) -> Result<()> {
+    if manifest.api_contract.is_none() {
+        return Ok(());
+    }
+    for file in [
+        OPENAPI,
+        GENERATED_TYPES,
+        "web/api-tools/package.json",
+        "web/api-tools/generate.mjs",
+    ] {
+        crate::cli_guidance::safe_target(root, file)?;
+        ensure!(root.join(file).is_file(), "Missing {file}. {GENERATE}");
+    }
+    let spec: Value = serde_json::from_slice(&fs::read(root.join(OPENAPI))?)
+        .with_context(|| format!("Invalid JSON in {OPENAPI}. {GENERATE}"))?;
+    ensure!(
+        spec["openapi"]
+            .as_str()
+            .is_some_and(|version| version.starts_with("3.1.")),
+        "{OPENAPI} must use OpenAPI 3.1. {GENERATE}"
+    );
+    ensure!(
+        local_references(&spec),
+        "{OPENAPI} must use in-document references."
+    );
+    let paths = spec["paths"]
+        .as_object()
+        .with_context(|| format!("{OPENAPI} must define paths. {GENERATE}"))?;
+    let mut operations = BTreeSet::new();
+    for (path, item) in paths {
+        ensure!(
+            path.starts_with('/') && !path.starts_with("//"),
+            "Invalid path in {OPENAPI}: {path}"
+        );
+        let item = item
+            .as_object()
+            .with_context(|| format!("Invalid path item in {OPENAPI}: {path}"))?;
+        for (method, operation) in item {
+            if !matches!(
+                method.as_str(),
+                "get" | "put" | "post" | "delete" | "options" | "head" | "patch" | "trace"
+            ) {
+                continue;
+            }
+            let id = operation["operationId"]
+                .as_str()
+                .filter(|id| !id.trim().is_empty())
+                .with_context(|| format!("Missing operationId in {OPENAPI}: {method} {path}."))?;
+            ensure!(
+                operations.insert(id),
+                "Duplicate operationId in {OPENAPI}: {id}."
+            );
+        }
+    }
+    ensure!(
+        !operations.is_empty(),
+        "{OPENAPI} must declare at least one operation."
+    );
+    Ok(())
+}
+
+fn local_references(value: &Value) -> bool {
+    match value {
+        Value::Object(fields) => fields.iter().all(|(key, value)| {
+            if key == "$ref" {
+                value
+                    .as_str()
+                    .is_some_and(|target| target.starts_with("#/"))
+            } else {
+                local_references(value)
+            }
+        }),
+        Value::Array(items) => items.iter().all(local_references),
+        _ => true,
+    }
+}
 
 #[derive(Serialize)]
 pub(crate) struct Finding {
@@ -177,6 +259,57 @@ pub(crate) fn inspect(root: &Path, manifest: &crate::contract::Manifest) -> Resu
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn declared_api_contract_requires_local_openapi_and_unique_operations() {
+        let root = tempfile::tempdir().unwrap();
+        let mut manifest: crate::contract::Manifest = serde_json::from_str(
+            crate::bundle::template()
+                .iter()
+                .find(|(path, _)| *path == "manifest.json")
+                .unwrap()
+                .1,
+        )
+        .unwrap();
+        assert!(verify_api_files(root.path(), &manifest).is_err());
+        for path in [
+            OPENAPI,
+            GENERATED_TYPES,
+            "web/api-tools/package.json",
+            "web/api-tools/generate.mjs",
+        ] {
+            let path = root.path().join(path);
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            fs::write(&path, "").unwrap();
+        }
+        let spec = root.path().join(OPENAPI);
+        fs::write(
+            &spec,
+            r##"{"openapi":"3.1.0","paths":{"/example":{"get":{"operationId":"readExample"}}}}"##,
+        )
+        .unwrap();
+        assert!(verify_api_files(root.path(), &manifest).is_ok());
+        fs::write(&spec, r##"{"openapi":"3.1.0","paths":{"/example":{"get":{"operationId":"same"},"post":{"operationId":"same"}}}}"##).unwrap();
+        assert!(
+            verify_api_files(root.path(), &manifest)
+                .unwrap_err()
+                .to_string()
+                .contains("Duplicate operationId")
+        );
+        fs::write(
+            &spec,
+            r##"{"openapi":"3.1.0","paths":{"/example":{"$ref":"outside.json"}}}"##,
+        )
+        .unwrap();
+        assert!(
+            verify_api_files(root.path(), &manifest)
+                .unwrap_err()
+                .to_string()
+                .contains("in-document references")
+        );
+        manifest.api_contract = None;
+        assert!(verify_api_files(root.path(), &manifest).is_ok());
+    }
 
     #[test]
     fn advises_on_direct_browser_calls_and_prefixed_paths_without_scanning_comments() {

@@ -25,14 +25,25 @@ use crate::{
     tree::{self, FileRow, Folder},
 };
 
-#[derive(Serialize)]
+#[allow(dead_code)]
+#[derive(utoipa::ToSchema)]
+#[schema(rename_all = "snake_case")]
+pub(crate) enum TrashKind {
+    File,
+    Folder,
+}
+
+#[derive(Serialize, utoipa::ToSchema)]
 pub struct TrashItem {
+    #[schema(value_type = TrashKind)]
     kind: &'static str,
     id: String,
     name: String,
+    #[schema(required = true)]
     content_type: Option<String>,
     size_bytes: i64,
     file_count: i64,
+    #[schema(value_type = crate::tree::FileVisibility)]
     visibility: String,
     owner_id: String,
     owner_name: String,
@@ -41,10 +52,11 @@ pub struct TrashItem {
     /// The folder path the item was in (`""` for the space root).
     original_path: String,
     #[serde(serialize_with = "crate::time::serialize")]
+    #[schema(value_type = String)]
     deleted_at: NaiveDateTime,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, utoipa::ToSchema)]
 pub struct TrashResponse {
     space: crate::files::SpaceSummary,
     items: Vec<TrashItem>,
@@ -67,6 +79,18 @@ fn folder_path(folders: &HashMap<String, Folder>, start: Option<&str>) -> String
 
 /// `GET /v1/spaces/{space_id}/trash`: the trashed items the caller may
 /// restore or delete (their own; everything for a space admin).
+#[utoipa::path(
+    get, path = "/v1/spaces/{space_id}/trash", operation_id = "listDriveTrash", tag = "Trash",
+    params(("space_id" = String, Path)),
+    responses(
+        (status = 200, description = "Trash entries the caller may manage", body = TrashResponse),
+        (status = 401, description = "Platform identity could not be verified", body = crate::error::IdentityErrorResponse),
+        (status = 403, description = "Current permissions do not allow this operation", body = crate::error::ErrorResponse),
+        (status = 404, description = "Resource was not found or is not visible", body = crate::error::ErrorResponse),
+        (status = 500, description = "Internal error", body = crate::error::ErrorResponse),
+        (status = 503, description = "A required platform service is unavailable", body = crate::error::ErrorResponse),
+    )
+)]
 pub async fn list(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
@@ -253,6 +277,21 @@ fn ensure_can_handle(access: &SpaceAccess, batches: &Batches) -> ApiResult<()> {
 
 /// `POST /v1/spaces/{space_id}/trash/restore`: back where they were, or to
 /// the space root when that folder is gone or still in the trash.
+#[utoipa::path(
+    post, path = "/v1/spaces/{space_id}/trash/restore", operation_id = "restoreDriveTrash", tag = "Trash",
+    request_body = FileBulkRequest,
+    params(("space_id" = String, Path)),
+    responses(
+        (status = 204, description = "Trash selection restored"),
+        (status = 401, description = "Platform identity could not be verified", body = crate::error::IdentityErrorResponse),
+        (status = 403, description = "Current permissions do not allow this operation", body = crate::error::ErrorResponse),
+        (status = 404, description = "Resource was not found or is not visible", body = crate::error::ErrorResponse),
+        (status = 409, description = "Resource state changed or conflicts with this request", body = crate::error::ErrorResponse),
+        (status = 422, description = "Invalid or unsupported request", body = crate::error::ErrorResponse),
+        (status = 500, description = "Internal error", body = crate::error::ErrorResponse),
+        (status = 503, description = "A required platform service is unavailable", body = crate::error::ErrorResponse),
+    )
+)]
 pub async fn restore(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
@@ -348,6 +387,21 @@ async fn purge_batches(
 }
 
 /// `POST /v1/spaces/{space_id}/trash/delete`: delete permanently.
+#[utoipa::path(
+    post, path = "/v1/spaces/{space_id}/trash/delete", operation_id = "purgeDriveTrash", tag = "Trash",
+    request_body = FileBulkRequest,
+    params(("space_id" = String, Path)),
+    responses(
+        (status = 204, description = "Trash selection permanently deleted"),
+        (status = 401, description = "Platform identity could not be verified", body = crate::error::IdentityErrorResponse),
+        (status = 403, description = "Current permissions do not allow this operation", body = crate::error::ErrorResponse),
+        (status = 404, description = "Resource was not found or is not visible", body = crate::error::ErrorResponse),
+        (status = 409, description = "Resource state changed or conflicts with this request", body = crate::error::ErrorResponse),
+        (status = 422, description = "Invalid or unsupported request", body = crate::error::ErrorResponse),
+        (status = 500, description = "Internal error", body = crate::error::ErrorResponse),
+        (status = 503, description = "A required platform service is unavailable", body = crate::error::ErrorResponse),
+    )
+)]
 pub async fn delete_forever(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
@@ -369,6 +423,19 @@ pub async fn delete_forever(
 
 /// `POST /v1/spaces/{space_id}/trash/empty`: permanently delete every trashed
 /// item the caller may delete.
+#[utoipa::path(
+    post, path = "/v1/spaces/{space_id}/trash/empty", operation_id = "emptyDriveTrash", tag = "Trash",
+    params(("space_id" = String, Path)),
+    responses(
+        (status = 204, description = "Accessible trash emptied"),
+        (status = 401, description = "Platform identity could not be verified", body = crate::error::IdentityErrorResponse),
+        (status = 403, description = "Current permissions do not allow this operation", body = crate::error::ErrorResponse),
+        (status = 404, description = "Resource was not found or is not visible", body = crate::error::ErrorResponse),
+        (status = 409, description = "Resource state changed or conflicts with this request", body = crate::error::ErrorResponse),
+        (status = 500, description = "Internal error", body = crate::error::ErrorResponse),
+        (status = 503, description = "A required platform service is unavailable", body = crate::error::ErrorResponse),
+    )
+)]
 pub async fn empty(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,

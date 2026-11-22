@@ -1,3 +1,4 @@
+import type { components } from '../../api.generated';
 import { apiFetchFile, apiFetchJson } from '../api/client';
 
 /**
@@ -7,86 +8,32 @@ import { apiFetchFile, apiFetchJson } from '../api/client';
  */
 const BASE = '/v1/dm-safety/reports';
 
-export type DmSafetyReportStatus = 'open' | 'actioned' | 'dismissed';
+type WireSchema = components['schemas'];
 
-export interface DmSafetyPerson {
-  id: string;
-  email: string;
-  full_name: string;
-  display_name?: string | null;
-  primary_org_unit_name?: string | null;
-}
+export type DmSafetyReportStatus = WireSchema['ReportStatus'];
+export type DmSafetyPerson = Pick<WireSchema['DmUserItem'], 'id' | 'email' | 'full_name'> &
+  Partial<Pick<WireSchema['DmUserItem'], 'display_name' | 'primary_org_unit_name'>>;
+export type DmSafetyReportSummary = WireSchema['ReportSummary'];
+export type DmSafetyReportList = WireSchema['ReportsResponse'];
 
-export interface DmSafetyReportSummary {
-  id: string;
-  status: DmSafetyReportStatus;
-  category: string;
-  source: string;
-  has_message: boolean;
-  conversation_type: string;
-  action: string | null;
-  created_at: string;
-  resolved_at: string | null;
-}
+export type DmSafetyReportDetail = Omit<WireSchema['ReportDetail'],
+  'reporter' | 'reported_user' | 'resolved_by' | 'message_deleted'> & {
+    reporter: DmSafetyPerson | null;
+    reported_user: DmSafetyPerson | null;
+    resolved_by: DmSafetyPerson | null;
+    message_deleted?: WireSchema['ReportDetail']['message_deleted'];
+  };
 
-export interface DmSafetyReportList {
-  items: DmSafetyReportSummary[];
-  has_more: boolean;
-}
-
-export interface DmSafetyReportDetail extends DmSafetyReportSummary {
-  note: string | null;
-  conversation_id: string;
-  message_id: string | null;
-  reporter: DmSafetyPerson | null;
-  reported_user: DmSafetyPerson | null;
-  resolution_note: string | null;
-  resolved_by: DmSafetyPerson | null;
-  message_hidden: boolean | null;
-  /** miy: the author deleted the reported message. */
-  message_deleted?: boolean | null;
-}
-
-export interface DmSafetyEvidenceAttachment {
-  id: string;
-  filename: string;
-  content_type: string;
-  size_bytes: number;
-  is_image: boolean;
-}
-
-export interface DmSafetyEvidence {
-  report_id: string;
-  message: {
-    id: string;
-    conversation_id: string;
-    sequence: number;
+export type DmSafetyEvidenceAttachment = WireSchema['EvidenceAttachment'];
+type EvidenceMessage = Omit<WireSchema['EvidenceMessage'],
+  'sender' | 'edited_at' | 'deleted_at' | 'revisions'> & {
     sender: DmSafetyPerson | null;
-    body: string;
-    created_at: string;
-    hidden: boolean;
-    hidden_at: string | null;
-    attachments: DmSafetyEvidenceAttachment[];
-    /** miy: author edits and deletion; texts are kept only while a report is open. */
-    edited_at?: string | null;
-    deleted_at?: string | null;
-    revisions?: { action: 'edit' | 'delete'; body_before: string | null; created_at: string }[];
-  } | null;
-}
-
-export interface DmSafetyResolveRequest {
-  expected_status: 'open';
-  outcome: 'actioned' | 'dismissed';
-  action: 'none' | 'hide_message';
-  resolution_note?: string | null;
-}
-
-export interface DmSafetyVisibilityResult {
-  report_id: string;
-  message_id: string;
-  hidden: boolean;
-  changed: boolean;
-}
+  } & Partial<Pick<WireSchema['EvidenceMessage'], 'edited_at' | 'deleted_at' | 'revisions'>>;
+export type DmSafetyEvidence = Omit<WireSchema['EvidenceResponse'], 'message'> & {
+  message: EvidenceMessage | null;
+};
+export type DmSafetyResolveRequest = WireSchema['ResolveRequest'];
+export type DmSafetyVisibilityResult = WireSchema['VisibilityResponse'];
 
 function reportPath(reportId: string, suffix = ''): string {
   return `${BASE}/${encodeURIComponent(reportId)}${suffix}`;
@@ -131,20 +78,12 @@ export function setDmSafetyMessageVisibility(
   return apiFetchJson<DmSafetyVisibilityResult>(
     reportPath(reportId, '/message-visibility'),
     token,
-    { method: 'POST', body: JSON.stringify({ hidden }) },
+    { method: 'POST', body: JSON.stringify({ hidden } satisfies WireSchema['VisibilityRequest']) },
   );
 }
 
-export interface DmSafetyFilterTerm {
-  id: string;
-  term: string;
-  created_at: string;
-}
-
-export interface DmSafetyFilterTermList {
-  items: DmSafetyFilterTerm[];
-  limit: number;
-}
+export type DmSafetyFilterTerm = WireSchema['FilterTermItem'];
+export type DmSafetyFilterTermList = WireSchema['FilterTermsResponse'];
 
 const FILTER_TERMS = '/v1/dm-safety/filter-terms';
 
@@ -156,7 +95,7 @@ export function listDmSafetyFilterTerms(token: string): Promise<DmSafetyFilterTe
 export function addDmSafetyFilterTerm(token: string, term: string): Promise<DmSafetyFilterTerm> {
   return apiFetchJson<DmSafetyFilterTerm>(FILTER_TERMS, token, {
     method: 'POST',
-    body: JSON.stringify({ term }),
+    body: JSON.stringify({ term } satisfies WireSchema['FilterTermRequest']),
   });
 }
 
@@ -195,24 +134,10 @@ export async function downloadDmSafetyEvidenceAttachment(
 
 // --- miy: the messenger manager role and content rule settings ----------------
 
-export interface DmSafetyManagerStatus {
-  manager: boolean;
-  claimable: boolean;
-}
-
-export interface DmSafetyManager {
-  user: DmSafetyPerson;
-  granted_by_id: string | null;
-  created_at: string;
-}
-
-export interface DmSafetyTermsSettings {
-  version: string;
-  required: boolean;
-  document_url: string | null;
-  contact_email: string | null;
-  contact_url: string | null;
-}
+export type DmSafetyManagerStatus = WireSchema['ManagerStatus'];
+export type DmSafetyManager = Omit<WireSchema['ManagerItem'], 'user'> & { user: DmSafetyPerson };
+export type DmSafetyTermsSettings = WireSchema['TermsSettingsItem'];
+type DmSafetyManagers = Omit<WireSchema['ManagersResponse'], 'items'> & { items: DmSafetyManager[] };
 
 const SAFETY = '/v1/dm-safety';
 
@@ -220,28 +145,28 @@ export function getDmSafetyManagerStatus(token: string): Promise<DmSafetyManager
   return apiFetchJson<DmSafetyManagerStatus>(`${SAFETY}/me`, token);
 }
 
-export function claimDmSafetyManager(token: string): Promise<{ items: DmSafetyManager[] }> {
+export function claimDmSafetyManager(token: string): Promise<DmSafetyManagers> {
   return apiFetchJson(`${SAFETY}/managers/claim`, token, { method: 'POST' });
 }
 
-export function listDmSafetyManagers(token: string): Promise<{ items: DmSafetyManager[] }> {
+export function listDmSafetyManagers(token: string): Promise<DmSafetyManagers> {
   return apiFetchJson(`${SAFETY}/managers`, token);
 }
 
 export function grantDmSafetyManager(
   token: string,
   userId: string,
-): Promise<{ items: DmSafetyManager[] }> {
+): Promise<DmSafetyManagers> {
   return apiFetchJson(`${SAFETY}/managers`, token, {
     method: 'POST',
-    body: JSON.stringify({ user_id: userId }),
+    body: JSON.stringify({ user_id: userId } satisfies WireSchema['ManagerGrantRequest']),
   });
 }
 
 export function revokeDmSafetyManager(
   token: string,
   userId: string,
-): Promise<{ items: DmSafetyManager[] }> {
+): Promise<DmSafetyManagers> {
   return apiFetchJson(`${SAFETY}/managers/${encodeURIComponent(userId)}`, token, {
     method: 'DELETE',
   });
@@ -257,6 +182,6 @@ export function saveDmSafetyTermsSettings(
 ): Promise<DmSafetyTermsSettings> {
   return apiFetchJson(`${SAFETY}/terms-settings`, token, {
     method: 'PUT',
-    body: JSON.stringify(settings),
+    body: JSON.stringify(settings satisfies WireSchema['TermsSettingsRequest']),
   });
 }

@@ -20,6 +20,8 @@
 
 UI는 `runtime.api('/v1/...')`로 부르고, 게이트웨이가 `/api/v1/...`로 Rust 서버에 전달한다(AI-DO와 같은 경로). 날짜·시각은 AI-DO와 같이 naive UTC로 저장한다. 오류는 `{"error":{"code","message"}}`이며 코드는 AI-DO 코드의 `.`을 `_`로 바꾼 것이다(예: `planner_event_not_found`).
 
+전체 요청·응답 계약은 Rust 라우터에서 생성한 [OpenAPI 명세](docs/openapi.json)에 있다. 생성과 검사 절차는 [API 가이드](docs/API.md)를 따른다.
+
 캘린더 조회 범위와 일정 창의 시각은 포털 시간대를 따른다. 수정 창은 변경한 필드만 보내고, 일정 시각을 바꿀 때는 시작·종료를 함께 보낸다. 할 일 추가·수정 중 시작한 이전 조회는 저장한 항목이나 새 초안을 덮어쓰지 않는다.
 
 | 메서드·경로 | 설명 |
@@ -27,7 +29,7 @@ UI는 `runtime.api('/v1/...')`로 부르고, 게이트웨이가 `/api/v1/...`로
 | `GET /v1/planner/events?from&to` | 본인 일정. `from`·`to`는 함께 주거나 둘 다 생략. 범위 최대 366일 |
 | `POST /v1/planner/events?timeZone=IANA` | 일정 생성(201). 본문 `{title, description?, location?, allDay?, start, end}`. `timeZone`은 일정에 저장되는 시간대(포털 표시 설정, 없거나 모르는 값이면 `Asia/Seoul`) |
 | `GET /v1/planner/events/{id}` | 일정 하나. 남의 일정은 404 |
-| `PATCH /v1/planner/events/{id}` | 일부 수정. `start`·`end`는 함께 |
+| `PATCH /v1/planner/events/{id}` | 일부 수정. `start`나 `end` 중 하나만 보내면 나머지는 기존 값을 사용한다. 종일 여부도 바꾸는 경우 두 경계 값을 함께 보내거나 둘 다 생략한다. |
 | `DELETE /v1/planner/events/{id}` | 삭제(204) |
 | `GET /v1/calendar/events?from&to&sources` | 캘린더 표시용 투영. 소스는 `planner_event`만 있다 |
 | `GET /v1/personal-widgets/todos?include_completed` | 할 일 목록(미완료 → 정렬 순서 → 최근 생성 순) |

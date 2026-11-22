@@ -1,3 +1,4 @@
+import type { components, paths } from '../../api.generated';
 import type {
   DirectoryOption,
   DirectoryProvider,
@@ -10,32 +11,11 @@ import { apiFetchJson } from '../api/client';
 import type { AppApi } from '../runtime/runtime-context';
 
 /** Docs manager state (`GET /v1/docs/me`). */
-export interface DocsMe {
-  userId: string;
-  isManager: boolean;
-  canBootstrap: boolean;
-}
+export type DocsMe = paths['/v1/docs/me']['get']['responses'][200]['content']['application/json'];
 
-export interface DocsManager {
-  userId: string;
-  name: string | null;
-  grantedBy: string;
-  createdAt: string;
-}
-
-/** A docs space (spaces.rs); `role` is the caller's role there. */
-export interface DocsSpace {
-  id: string;
-  key: string;
-  kind: 'app_global' | 'app_space';
-  role: 'viewer' | 'member' | 'admin';
-  name: string;
-  description: string;
-  createdBy: string | null;
-  canManage: boolean;
-  createdAt: string;
-  updatedAt: string;
-}
+type Models = components['schemas'];
+export type DocsManager = Models['ManagerOut'];
+export type DocsSpace = Models['SpaceOut'];
 
 export function getDocsMe(api: AppApi | null | undefined): Promise<DocsMe> {
   return apiFetchJson<DocsMe>('/v1/docs/me', api);
@@ -52,7 +32,7 @@ export function bootstrapDocsManager(
 export async function listDocsManagers(
   api: AppApi | null | undefined,
 ): Promise<DocsManager[]> {
-  const response = await apiFetchJson<{ items: DocsManager[] }>(
+  const response = await apiFetchJson<Models['ManagersResponse']>(
     '/v1/docs/managers',
     api,
   );
@@ -65,7 +45,7 @@ export function addDocsManager(
 ): Promise<void> {
   return apiFetchJson<void>('/v1/docs/managers', api, {
     method: 'POST',
-    body: JSON.stringify({ userId }),
+    body: JSON.stringify({ userId } satisfies Models['ManagerAddRequest']),
   });
 }
 
@@ -83,7 +63,7 @@ export function removeDocsManager(
 export async function listSpaces(
   api: AppApi | null | undefined,
 ): Promise<DocsSpace[]> {
-  const response = await apiFetchJson<{ spaces: DocsSpace[] }>(
+  const response = await apiFetchJson<Models['SpacesResponse']>(
     '/v1/spaces',
     api,
   );
@@ -92,7 +72,7 @@ export async function listSpaces(
 
 export function createSpace(
   api: AppApi | null | undefined,
-  input: { name: string; description?: string },
+  input: Models['SpaceRequest'],
 ): Promise<DocsSpace> {
   return apiFetchJson<DocsSpace>('/v1/spaces', api, {
     method: 'POST',
@@ -103,7 +83,7 @@ export function createSpace(
 export function updateSpace(
   api: AppApi | null | undefined,
   spaceId: string,
-  input: { name: string; description?: string },
+  input: Models['SpaceRequest'],
 ): Promise<DocsSpace> {
   return apiFetchJson<DocsSpace>(`/v1/spaces/${encodeURIComponent(spaceId)}`, api, {
     method: 'PATCH',
@@ -121,17 +101,7 @@ export function deleteSpace(
 }
 
 /** The SDK ACL snapshot as the server sends it. */
-interface ServerShareSnapshot {
-  revision: number;
-  entries: Array<{
-    subject: { kind: 'user' | 'group'; id: string; name: string };
-    role: string;
-    protected: boolean;
-  }>;
-  roles: Array<{ id: string; label: string }>;
-  defaultRole?: string | null;
-  canManage: boolean;
-}
+type ServerShareSnapshot = Models['SharingSnapshot'];
 
 function toUiSnapshot(snapshot: ServerShareSnapshot): UiShareSnapshot {
   return {
@@ -172,7 +142,7 @@ export function spaceShareProvider(
             subject: { kind: entry.subject.kind, id: entry.subject.id },
             role: entry.role,
           })),
-        }),
+        } satisfies Models['SharingRequest']),
       });
       return toUiSnapshot(snapshot);
     },

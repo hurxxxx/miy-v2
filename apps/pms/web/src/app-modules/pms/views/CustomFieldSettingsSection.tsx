@@ -154,6 +154,8 @@ export function CustomFieldSettingsSection({
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState('');
   const [editOptions, setEditOptions] = useState<CustomFieldOptionDraft[]>([]);
+  const [originalName, setOriginalName] = useState("");
+  const [originalOptions, setOriginalOptions] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const loadRef = useRef(0);
   const onChangedRef = useRef(onFieldsChanged);
@@ -223,6 +225,8 @@ export function CustomFieldSettingsSection({
   const startEdit = (field: PmsCustomField) => {
     setEditingId(field.id);
     setEditName(field.name);
+    setOriginalName(field.name);
+    setOriginalOptions(field.options ?? []);
     setEditOptions(
       (field.options ?? []).map((option) => ({ original: option, name: option })),
     );
@@ -234,11 +238,15 @@ export function CustomFieldSettingsSection({
     if (!name) return;
     const withOptions = customFieldHasOptions(field.field_type);
     const change = buildOptionChange(editOptions);
+    const optionsChanged = withOptions &&
+      (change.renames.length > 0 ||
+        change.options.length !== originalOptions.length ||
+        change.options.some((option, i) => option !== originalOptions[i]));
     if (withOptions && change.options.length === 0) {
       feedback.error(t('pms.customFields.optionsRequired'));
       return;
     }
-    if (withOptions && removedOptions(field.options ?? [], editOptions).length > 0) {
+    if (optionsChanged && removedOptions(originalOptions, editOptions).length > 0) {
       const confirmed = await confirm({
         title: t('pms.customFields.optionsRemovedTitle'),
         description: t('pms.customFields.optionsRemovedConfirm'),
@@ -251,9 +259,9 @@ export function CustomFieldSettingsSection({
     setBusy(true);
     try {
       await updateCustomField(api, field.id, {
-        name,
-        ...(withOptions
-          ? { options: change.options, option_renames: change.renames }
+        ...(name !== originalName ? { name } : {}),
+        ...(optionsChanged
+          ? { options: change.options, expected_options: originalOptions, option_renames: change.renames }
           : {}),
       });
       setEditingId(null);

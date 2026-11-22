@@ -26,6 +26,8 @@
 
 UI는 `runtime.api('/v1/...')`로 부르고 게이트웨이가 `/api/v1/...`로 전달한다(AI-DO와 같은 경로). 시각은 naive UTC다. 오류는 `{"error":{"code","message"}}`이며 코드는 AI-DO 코드의 `.`을 `_`로 바꾼 것이다(예: `community_post_not_found`). 요청 본문 키는 camelCase와 snake_case를 모두 받는다(AI-DO `populate_by_name`).
 
+[OpenAPI 계약](docs/openapi.json)은 실제 앱 라우터와 같은 Rust 등록에서 생성한다. 경로는 앱 기준이며 파일의 바이너리 전송과 플랫폼 전용 콜백도 포함한다. 각 호출은 게이트웨이 신원과 해당 기능의 권한 검사를 거친다. API를 변경하면 `pnpm api:generate`로 명세와 웹 타입을 갱신한다.
+
 | 메서드·경로 | 설명 |
 | --- | --- |
 | `GET /v1/community/channels` | 활성 채널(순서 → 이름) |

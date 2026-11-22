@@ -37,7 +37,7 @@ const space = {
   name: 'Project',
   description: '',
   member_count: 1,
-  current_user_role: 'owner',
+  current_user_role: 'owner' as const,
   created_at: '',
   updated_at: '',
 };
@@ -46,7 +46,10 @@ beforeEach(() => {
   vi.resetAllMocks();
   vi.mocked(createSpace).mockResolvedValue(space);
   vi.mocked(listPmsUsers).mockResolvedValue([
-    { id: 'member', full_name: 'Project Member', email: 'member@example.com' },
+    {
+      id: 'member', full_name: 'Project Member', email: 'member@example.com',
+      primary_org_unit_id: null, primary_org_unit_name: null,
+    },
   ]);
 });
 

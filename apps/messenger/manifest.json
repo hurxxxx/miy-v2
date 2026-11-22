@@ -36,5 +36,6 @@
       "title": "메신저",
       "path": "/widgets/conversations"
     }
-  ]
+  ],
+  "apiContract": "openapi-v1"
 }

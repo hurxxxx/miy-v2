@@ -1,4 +1,5 @@
-import { ApiError, type AppRuntime } from '@miy/sdk';
+import type { components, paths } from '../../../api.generated';
+import { isApiError, type AppRuntime } from '@miy/sdk';
 import type {
   DirectoryOption,
   DirectoryProvider,
@@ -22,108 +23,33 @@ import {
  */
 export type DriveClient = Pick<AppRuntime, 'api' | 'fileApi'>;
 
-export type FileVisibility = 'private' | 'workspace';
-export type FileIngressBlockReason =
-  | 'workspace_access_required'
-  | 'parent_manage_required';
-export type SpaceRole = 'viewer' | 'member' | 'admin';
+type Schemas = components['schemas'];
 
-export interface FileFolderItem {
-  id: string;
-  parent_id: string | null;
-  name: string;
-  visibility: FileVisibility;
-  owner_id: string;
-  owner_name: string;
-  can_manage: boolean;
-  created_at: string;
-  updated_at: string;
-}
+export type FileVisibility = Schemas['FileVisibility'];
+export type FileIngressBlockReason = Schemas['IngestBlockReason'];
+export type SpaceRole = Schemas['Role'];
+export type FileFolderItem = Schemas['FileFolderItem'];
+export type FileItem = Schemas['FileItem'];
+export type FileSpaceSummary = Schemas['SpaceSummary'];
+export type FileBrowseResponse = Schemas['FileBrowseResponse'];
+export type FileDownloadResponse = Schemas['FileDownloadResponse'];
+export type FileSearchStrategy = Schemas['FileSearchStrategy'];
+export type FileSearchHighlight = Schemas['Highlight'];
+export type FileSearchSnippet = Schemas['Snippet'];
+export type FileSearchHit = Schemas['FileSearchHit'];
+export type FileSearchPayload = Schemas['FileSearchRequest'];
+export type FileSearchResponse = Schemas['FileSearchResponse'];
+export type FileArchiveEntry = Schemas['ArchiveEntryOut'];
+export type FileArchivePlan = Schemas['ArchivePlanResponse'];
+export type FileVersionItem = Schemas['VersionOut'];
+export type FileVersionsResponse = Schemas['VersionsResponse'];
+export type TrashItem = Schemas['TrashItem'];
+export type TrashResponse = Schemas['TrashResponse'];
 
-export interface FileItem {
-  id: string;
-  folder_id: string | null;
-  filename: string;
-  content_type: string;
-  size_bytes: number;
-  visibility: FileVisibility;
-  owner_id: string;
-  owner_name: string;
-  can_delete: boolean;
-  /** miy: the current version and how many there are. */
-  version_number: number;
-  version_count: number;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface FileSpaceSummary {
-  id: string;
-  name: string;
-  role: SpaceRole;
-  can_manage: boolean;
-}
-
-export interface FileBrowseResponse {
-  space: FileSpaceSummary;
-  current_folder: FileFolderItem | null;
-  breadcrumbs: FileFolderItem[];
-  folders: FileFolderItem[];
-  files: FileItem[];
-  all_folders: FileFolderItem[];
-  can_ingest: boolean;
-  ingest_block_reason: FileIngressBlockReason | null;
-}
-
-export interface FileDownloadResponse {
-  url: string;
-  expires_at?: string;
-}
-
-export type FileSearchStrategy = 'keyword' | 'semantic' | 'hybrid';
-
-export interface FileSearchHighlight {
-  start: number;
-  end: number;
-}
-
-export interface FileSearchSnippet {
-  text: string;
-  highlights: FileSearchHighlight[];
-}
-
-export interface FileSearchHit {
-  rank: number;
-  file_id: string;
-  filename: string;
-  folder_id: string | null;
-  content_type: string;
-  size_bytes: number;
-  score: number;
-  methods: string[];
-  snippet: FileSearchSnippet;
-  updated_at: string;
-  author?: string | null;
-}
-
-export interface FileSearchPayload {
-  query: string;
-  strategy: FileSearchStrategy;
-  page: number;
-  page_size: number;
-}
-
-export interface FileSearchResponse {
-  query: string;
-  strategy: FileSearchStrategy;
-  page: number;
-  page_size: number;
-  hits: FileSearchHit[];
-  has_more: boolean;
-  max_ranked_results: number;
-  latency_ms: number;
-  trace_id: string | null;
-}
+type SpaceOperations = paths['/v1/spaces'];
+export type DriveSpacesResponse = SpaceOperations['get']['responses'][200]['content']['application/json'];
+export type DriveSpace = SpaceOperations['post']['responses'][201]['content']['application/json'];
+type CreateSpaceInput = SpaceOperations['post']['requestBody']['content']['application/json'];
 
 export interface FileUploadProgress {
   loaded: number;
@@ -134,74 +60,6 @@ export interface FileUploadProgress {
 export interface FileBulkPayload {
   fileIds: string[];
   folderIds: string[];
-}
-
-/** miy: AI-DO zipped a selection; drive plans it and downloads each file. */
-export interface FileArchiveEntry {
-  path: string;
-  file_id: string | null;
-  size_bytes: number;
-}
-
-export interface FileArchivePlan {
-  entries: FileArchiveEntry[];
-  file_count: number;
-  total_size: number;
-}
-
-export interface FileVersionItem {
-  id: string;
-  version_number: number;
-  filename: string;
-  content_type: string;
-  size_bytes: number;
-  uploaded_by: string;
-  uploader_name: string;
-  sha256: string | null;
-  is_current: boolean;
-  created_at: string;
-}
-
-export interface FileVersionsResponse {
-  file: FileItem;
-  versions: FileVersionItem[];
-}
-
-export interface DriveSpace {
-  id: string;
-  name: string;
-  role: SpaceRole;
-  can_manage: boolean;
-  can_upload: boolean;
-  created_by: string;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface DriveSpacesResponse {
-  user_id: string;
-  spaces: DriveSpace[];
-}
-
-export interface TrashItem {
-  kind: 'file' | 'folder';
-  id: string;
-  name: string;
-  content_type: string | null;
-  size_bytes: number;
-  file_count: number;
-  visibility: FileVisibility;
-  owner_id: string;
-  owner_name: string;
-  trashed_by: string;
-  trashed_by_name: string;
-  original_path: string;
-  deleted_at: string;
-}
-
-export interface TrashResponse {
-  space: FileSpaceSummary;
-  items: TrashItem[];
 }
 
 export class FilesApiError extends Error {
@@ -241,7 +99,7 @@ function spacePath(spaceId: string, tail = ''): string {
   return `/v1/spaces/${encodeURIComponent(spaceId)}${tail}`;
 }
 
-function toBulkRequest(payload: FileBulkPayload) {
+function toBulkRequest(payload: FileBulkPayload): Schemas['FileBulkRequest'] {
   return {
     file_ids: payload.fileIds,
     folder_ids: payload.folderIds,
@@ -286,11 +144,7 @@ export function searchFiles(
 export function createFileFolder(
   client: DriveClient,
   spaceId: string,
-  payload: {
-    name: string;
-    parent_id?: string | null;
-    visibility: FileVisibility;
-  },
+  payload: Schemas['FolderCreateRequest'],
 ): Promise<FileFolderItem> {
   return request<FileFolderItem>(client, spacePath(spaceId, '/files/folders'), {
     method: 'POST',
@@ -302,11 +156,7 @@ export function updateFileFolder(
   client: DriveClient,
   spaceId: string,
   folderId: string,
-  payload: {
-    name?: string;
-    visibility?: FileVisibility;
-    parent_id?: string | null;
-  },
+  payload: Schemas['FolderUpdateRequest'],
 ): Promise<FileFolderItem> {
   return request<FileFolderItem>(
     client,
@@ -419,7 +269,7 @@ export function updateDriveFile(
   client: DriveClient,
   spaceId: string,
   fileId: string,
-  payload: { filename?: string; folder_id?: string | null },
+  payload: Schemas['FileUpdateRequest'],
 ): Promise<FileItem> {
   return request<FileItem>(
     client,
@@ -434,12 +284,13 @@ export function moveFileItems(
   spaceId: string,
   payload: FileBulkPayload & { targetFolderId: string | null },
 ): Promise<void> {
+  const input: Schemas['MoveRequest'] = {
+    ...toBulkRequest(payload),
+    target_folder_id: payload.targetFolderId,
+  };
   return request<void>(client, spacePath(spaceId, '/files/move'), {
     method: 'POST',
-    body: JSON.stringify({
-      ...toBulkRequest(payload),
-      target_folder_id: payload.targetFolderId,
-    }),
+    body: JSON.stringify(input),
   });
 }
 
@@ -471,9 +322,10 @@ export function createSpace(
   client: DriveClient,
   name: string,
 ): Promise<DriveSpace> {
+  const input: CreateSpaceInput = { name };
   return request<DriveSpace>(client, '/v1/spaces', {
     method: 'POST',
-    body: JSON.stringify({ name }),
+    body: JSON.stringify(input),
   });
 }
 
@@ -484,7 +336,7 @@ export function renameSpace(
 ): Promise<DriveSpace> {
   return request<DriveSpace>(client, spacePath(spaceId), {
     method: 'PATCH',
-    body: JSON.stringify({ name }),
+    body: JSON.stringify({ name } satisfies Schemas['SpaceRequest']),
   });
 }
 
@@ -496,17 +348,7 @@ export function deleteSpace(
 }
 
 /** The SDK ACL snapshot as the server sends it. */
-interface ServerShareSnapshot {
-  revision: number;
-  entries: Array<{
-    subject: { kind: 'user' | 'group'; id: string; name: string };
-    role: string;
-    protected: boolean;
-  }>;
-  roles: Array<{ id: string; label: string }>;
-  defaultRole?: string | null;
-  canManage: boolean;
-}
+type ServerShareSnapshot = Schemas['SharingSnapshot'];
 
 function toUiSnapshot(snapshot: ServerShareSnapshot): UiShareSnapshot {
   return {
@@ -547,7 +389,7 @@ export function spaceShareProvider(
             subject: { kind: entry.subject.kind, id: entry.subject.id },
             role: entry.role,
           })),
-        }),
+        } satisfies Schemas['SharingRequest']),
       });
       return toUiSnapshot(snapshot);
     },
@@ -644,7 +486,7 @@ export function mapTransportError(error: unknown): unknown {
 
 export function isAbortError(error: unknown): boolean {
   return (
-    (error instanceof ApiError && error.kind === 'abort') ||
+    (isApiError(error) && error.kind === 'abort') ||
     (error instanceof DOMException && error.name === 'AbortError')
   );
 }

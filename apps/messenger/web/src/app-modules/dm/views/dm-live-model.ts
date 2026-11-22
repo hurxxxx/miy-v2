@@ -1,3 +1,4 @@
+import type { components } from '../../../api.generated';
 import type { RealtimeEvent } from '../../../platform/realtime/realtime-provider';
 import { isDmRouteId } from '../../../contracts/dm';
 
@@ -7,11 +8,10 @@ import { isDmRouteId } from '../../../contracts/dm';
  * and `{"type":"typing","conversationId","userId","active"}` while someone
  * types; neither carries conversation content.
  */
-export interface DmTypingHint {
-  conversationId: string;
-  userId: string;
-  active: boolean;
-}
+export type DmLiveClientMessage = components['schemas']['MessengerLiveClientMessage'];
+export type DmTypingHint = Omit<Extract<
+  components['schemas']['MessengerLiveServerHint'], { type: 'typing' }
+>, 'type'>;
 
 /** Typing people per conversation: user ID → expiry time (ms). */
 export type DmTypingState = Record<string, Record<string, number>>;

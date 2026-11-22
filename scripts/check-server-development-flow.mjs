@@ -512,6 +512,10 @@ async function run(settings, credentials) {
     const initialized = await cli("developer", ["app", "init", app, "--id", state.appId, "--name", "Core flow " + state.appId], { project: false, cwd: root });
     requireThat(initialized.appId === state.appId, "scaffold_target_mismatch");
     state.bundleVersion = initialized.bundleVersion;
+    const manifestPath = join(app, "manifest.json");
+    const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
+    delete manifest.apiContract;
+    writeFileSync(manifestPath, JSON.stringify(manifest, null, 2) + "\n");
     writeFileSync(join(app, "src/main.rs"), backend);
     writeFileSync(join(app, "web/src/AppRoot.tsx"), frontend);
     const registration = await cli("developer", ["app", "register"]);

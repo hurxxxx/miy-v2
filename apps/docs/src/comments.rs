@@ -96,11 +96,72 @@ fn comment_not_found() -> ApiError {
 
 // ---------------------------------------------------------------- list
 
+#[derive(serde::Serialize, utoipa::ToSchema)]
+struct CommentMention {
+    user_id: String,
+    name: String,
+}
+
+#[derive(serde::Serialize, utoipa::ToSchema)]
+struct CommentItem {
+    id: String,
+    page_id: String,
+    #[schema(required)]
+    parent_id: Option<String>,
+    author_id: String,
+    author_name: String,
+    body: String,
+    mentions: Vec<CommentMention>,
+    is_deleted: bool,
+    #[schema(required)]
+    resolved_at: Option<String>,
+    #[schema(required)]
+    resolved_by_id: Option<String>,
+    #[schema(required)]
+    resolved_by_name: Option<String>,
+    created_at: String,
+    updated_at: String,
+    can_edit: bool,
+    can_delete: bool,
+    can_resolve: bool,
+}
+
+#[derive(serde::Serialize, utoipa::ToSchema)]
+struct CommentThread {
+    #[serde(flatten)]
+    item: CommentItem,
+    replies: Vec<CommentItem>,
+}
+
+#[derive(serde::Serialize, utoipa::ToSchema)]
+pub struct CommentListResponse {
+    items: Vec<CommentThread>,
+    can_comment: bool,
+}
+
+#[derive(serde::Serialize, utoipa::ToSchema)]
+pub struct CommentCreated {
+    id: String,
+    created_at: String,
+}
+
+#[utoipa::path(
+    get, path = "/v1/docs/pages/{page_id}/comments", operation_id = "listDocsPageComments", tag = "Comments",
+    params(("page_id" = String, Path)),
+    responses(
+        (status = 200, description = "Success", body = CommentListResponse),
+        (status = 401, description = "Valid platform identity required", body = crate::error::IdentityErrorResponse),
+        (status = 403, description = "Permission denied", body = crate::error::ErrorResponse),
+        (status = 404, description = "Resource is unavailable or does not exist", body = crate::error::ErrorResponse),
+        (status = 500, description = "Could not complete the request", body = crate::error::ErrorResponse),
+        (status = 503, description = "A required platform service is unavailable", body = crate::error::ErrorResponse)
+    )
+)]
 pub async fn list(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
     Path(page_id): Path<String>,
-) -> ApiResult<Json<Value>> {
+) -> ApiResult<Json<CommentListResponse>> {
     let mut viewer = Viewer::new(&state, &identity);
     let context = access::page_or_403(&mut viewer, &page_id, Require::View).await?;
     let sql = format!(
@@ -131,33 +192,46 @@ pub async fn list(
             .or_default()
             .push(row);
     }
-    let serialize = |row: &Comment, root: Option<&Comment>| -> Value {
+    let serialize = |row: &Comment, root: Option<&Comment>| -> CommentItem {
         let deleted = row.deleted_at.is_some();
         let thread_author = root.map_or(&row.author_id, |root| &root.author_id);
-        json!({
-            "id": row.id,
-            "page_id": row.page_id,
-            "parent_id": row.parent_id,
-            "author_id": row.author_id,
-            "author_name": names.get(&row.author_id).cloned().unwrap_or_default(),
-            "body": if deleted { String::new() } else { row.body.clone() },
-            "mentions": if deleted { vec![] } else {
-                mentions_of(row).into_iter().map(|id| json!({
-                    "user_id": id,
-                    "name": names.get(&id).cloned().unwrap_or_else(|| id.clone()),
-                })).collect::<Vec<_>>()
+        CommentItem {
+            id: row.id.clone(),
+            page_id: row.page_id.clone(),
+            parent_id: row.parent_id.clone(),
+            author_id: row.author_id.clone(),
+            author_name: names.get(&row.author_id).cloned().unwrap_or_default(),
+            body: if deleted {
+                String::new()
+            } else {
+                row.body.clone()
             },
-            "is_deleted": deleted,
-            "resolved_at": row.resolved_at.map(naive_iso),
-            "resolved_by_id": row.resolved_by_id,
-            "resolved_by_name": row.resolved_by_id.as_ref().and_then(|id| names.get(id).cloned()),
-            "created_at": naive_iso(row.created_at),
-            "updated_at": naive_iso(row.updated_at),
-            "can_edit": !deleted && row.author_id == identity.user_id,
-            "can_delete": !deleted && (row.author_id == identity.user_id || access.can_manage),
-            "can_resolve": root.is_none() && !deleted
+            mentions: if deleted {
+                vec![]
+            } else {
+                mentions_of(row)
+                    .into_iter()
+                    .map(|id| CommentMention {
+                        name: names.get(&id).cloned().unwrap_or_else(|| id.clone()),
+                        user_id: id,
+                    })
+                    .collect()
+            },
+            is_deleted: deleted,
+            resolved_at: row.resolved_at.map(naive_iso),
+            resolved_by_id: row.resolved_by_id.clone(),
+            resolved_by_name: row
+                .resolved_by_id
+                .as_ref()
+                .and_then(|id| names.get(id).cloned()),
+            created_at: naive_iso(row.created_at),
+            updated_at: naive_iso(row.updated_at),
+            can_edit: !deleted && row.author_id == identity.user_id,
+            can_delete: !deleted && (row.author_id == identity.user_id || access.can_manage),
+            can_resolve: root.is_none()
+                && !deleted
                 && (access.can_edit || *thread_author == identity.user_id),
-        })
+        }
     };
     let mut threads = Vec::new();
     for root in rows.iter().filter(|row| row.parent_id.is_none()) {
@@ -169,15 +243,14 @@ pub async fn list(
         if root.deleted_at.is_some() && live_replies == 0 {
             continue;
         }
-        let mut item = serialize(root, None);
-        item["replies"] = Value::Array(
-            thread_replies
+        threads.push(CommentThread {
+            item: serialize(root, None),
+            replies: thread_replies
                 .into_iter()
                 .filter(|reply| reply.deleted_at.is_none())
                 .map(|reply| serialize(reply, Some(root)))
                 .collect(),
-        );
-        threads.push(item);
+        });
     }
     // Opening the page's comments reads their notifications (the newest
     // twenty; older lines were replaced or read long ago).
@@ -193,10 +266,10 @@ pub async fn list(
     for (kind, comment_id) in notified {
         notify::mark_read(&identity, &format!("{kind}:{comment_id}")).await;
     }
-    Ok(Json(json!({
-        "items": threads,
-        "can_comment": true,
-    })))
+    Ok(Json(CommentListResponse {
+        items: threads,
+        can_comment: true,
+    }))
 }
 
 // ---------------------------------------------------------------- writes
@@ -265,21 +338,40 @@ async fn validate_mentions(identity: &Identity, ids: &[String]) -> ApiResult<Vec
     Ok(unique)
 }
 
-#[derive(Deserialize)]
-pub struct CreateRequest {
+#[derive(Deserialize, utoipa::ToSchema)]
+pub struct CommentCreateRequest {
+    #[schema(min_length = 1, max_length = 10000)]
     body: String,
     #[serde(default)]
     parent_id: Option<String>,
     #[serde(default)]
+    /// Up to 20 distinct people. Duplicate IDs are ignored.
     mention_ids: Vec<String>,
     request_id: String,
 }
 
+#[utoipa::path(
+    post, path = "/v1/docs/pages/{page_id}/comments", operation_id = "createDocsComment", tag = "Comments",
+    params(("page_id" = String, Path)),
+    request_body = CommentCreateRequest,
+    responses(
+        (status = 200, description = "Existing comment for this request ID", body = CommentCreated),
+        (status = 201, description = "Comment created", body = CommentCreated),
+        (status = 400, description = "A mentioned person was not found", body = crate::error::ErrorResponse),
+        (status = 401, description = "Valid platform identity required", body = crate::error::IdentityErrorResponse),
+        (status = 403, description = "Permission denied", body = crate::error::ErrorResponse),
+        (status = 404, description = "Resource is unavailable or does not exist", body = crate::error::ErrorResponse),
+        (status = 409, description = "Current resource state conflicts with the request", body = crate::error::ErrorResponse),
+        (status = 422, description = "Request validation failed", body = crate::error::ErrorResponse),
+        (status = 500, description = "Could not complete the request", body = crate::error::ErrorResponse),
+        (status = 503, description = "A required platform service is unavailable", body = crate::error::ErrorResponse)
+    )
+)]
 pub async fn create(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
     Path(page_id): Path<String>,
-    ApiJson(payload): ApiJson<CreateRequest>,
+    ApiJson(payload): ApiJson<CommentCreateRequest>,
 ) -> ApiResult<impl IntoResponse> {
     let request_id = uuid::Uuid::parse_str(&payload.request_id)
         .map_err(|_| ApiError::validation("request_id: Input should be a valid UUID"))?;
@@ -350,7 +442,10 @@ pub async fn create(
         } else {
             StatusCode::CREATED
         },
-        Json(json!({ "id": comment.id, "created_at": naive_iso(comment.created_at) })),
+        Json(CommentCreated {
+            id: comment.id,
+            created_at: naive_iso(comment.created_at),
+        }),
     ))
 }
 
@@ -377,18 +472,35 @@ async fn load_comment_for_write(
     Ok((context, page, comment))
 }
 
-#[derive(Deserialize)]
-pub struct UpdateRequest {
+#[derive(Deserialize, utoipa::ToSchema)]
+pub struct CommentUpdateRequest {
+    #[schema(min_length = 1, max_length = 10000)]
     body: String,
     #[serde(default)]
+    /// Up to 20 distinct people. Duplicate IDs are ignored.
     mention_ids: Vec<String>,
 }
 
+#[utoipa::path(
+    patch, path = "/v1/docs/comments/{comment_id}", operation_id = "updateDocsComment", tag = "Comments",
+    params(("comment_id" = String, Path)),
+    request_body = CommentUpdateRequest,
+    responses(
+        (status = 204, description = "Completed with no response body"),
+        (status = 400, description = "A mentioned person was not found", body = crate::error::ErrorResponse),
+        (status = 401, description = "Valid platform identity required", body = crate::error::IdentityErrorResponse),
+        (status = 403, description = "Permission denied", body = crate::error::ErrorResponse),
+        (status = 404, description = "Resource is unavailable or does not exist", body = crate::error::ErrorResponse),
+        (status = 422, description = "Request validation failed", body = crate::error::ErrorResponse),
+        (status = 500, description = "Could not complete the request", body = crate::error::ErrorResponse),
+        (status = 503, description = "A required platform service is unavailable", body = crate::error::ErrorResponse)
+    )
+)]
 pub async fn update(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
     Path(comment_id): Path<String>,
-    ApiJson(payload): ApiJson<UpdateRequest>,
+    ApiJson(payload): ApiJson<CommentUpdateRequest>,
 ) -> ApiResult<StatusCode> {
     let body = validate_body(&payload.body)?;
     let mentions = validate_mentions(&identity, &payload.mention_ids).await?;
@@ -450,6 +562,18 @@ pub async fn update(
     Ok(StatusCode::NO_CONTENT)
 }
 
+#[utoipa::path(
+    delete, path = "/v1/docs/comments/{comment_id}", operation_id = "deleteDocsComment", tag = "Comments",
+    params(("comment_id" = String, Path)),
+    responses(
+        (status = 204, description = "Completed with no response body"),
+        (status = 401, description = "Valid platform identity required", body = crate::error::IdentityErrorResponse),
+        (status = 403, description = "Permission denied", body = crate::error::ErrorResponse),
+        (status = 404, description = "Resource is unavailable or does not exist", body = crate::error::ErrorResponse),
+        (status = 500, description = "Could not complete the request", body = crate::error::ErrorResponse),
+        (status = 503, description = "A required platform service is unavailable", body = crate::error::ErrorResponse)
+    )
+)]
 pub async fn delete(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
@@ -526,6 +650,19 @@ async fn set_resolved(
     Ok(StatusCode::NO_CONTENT)
 }
 
+#[utoipa::path(
+    post, path = "/v1/docs/comments/{comment_id}/resolve", operation_id = "resolveDocsComment", tag = "Comments",
+    params(("comment_id" = String, Path)),
+    responses(
+        (status = 204, description = "Completed with no response body"),
+        (status = 400, description = "Only the first comment in a thread can be resolved", body = crate::error::ErrorResponse),
+        (status = 401, description = "Valid platform identity required", body = crate::error::IdentityErrorResponse),
+        (status = 403, description = "Permission denied", body = crate::error::ErrorResponse),
+        (status = 404, description = "Resource is unavailable or does not exist", body = crate::error::ErrorResponse),
+        (status = 500, description = "Could not complete the request", body = crate::error::ErrorResponse),
+        (status = 503, description = "A required platform service is unavailable", body = crate::error::ErrorResponse)
+    )
+)]
 pub async fn resolve(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
@@ -534,6 +671,19 @@ pub async fn resolve(
     set_resolved(&state, &identity, &comment_id, true).await
 }
 
+#[utoipa::path(
+    post, path = "/v1/docs/comments/{comment_id}/reopen", operation_id = "reopenDocsComment", tag = "Comments",
+    params(("comment_id" = String, Path)),
+    responses(
+        (status = 204, description = "Completed with no response body"),
+        (status = 400, description = "Only the first comment in a thread can be reopened", body = crate::error::ErrorResponse),
+        (status = 401, description = "Valid platform identity required", body = crate::error::IdentityErrorResponse),
+        (status = 403, description = "Permission denied", body = crate::error::ErrorResponse),
+        (status = 404, description = "Resource is unavailable or does not exist", body = crate::error::ErrorResponse),
+        (status = 500, description = "Could not complete the request", body = crate::error::ErrorResponse),
+        (status = 503, description = "A required platform service is unavailable", body = crate::error::ErrorResponse)
+    )
+)]
 pub async fn reopen(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,

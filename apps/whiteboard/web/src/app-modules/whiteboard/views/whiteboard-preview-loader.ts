@@ -3,8 +3,8 @@ import {
   getWhiteboard,
   normalizeWhiteboardScene,
   type FileApi,
+  type WhiteboardDetail,
   type WhiteboardHubItem,
-  type WhiteboardScene,
 } from '../api/whiteboard-api';
 import { hydrateSceneFiles } from '../api/whiteboard-files';
 import { WHITEBOARD_PREVIEW_BACKGROUND_COLOR } from './whiteboard-colors';
@@ -48,7 +48,7 @@ export interface WhiteboardPreviewLoader {
 export interface CreateWhiteboardPreviewLoaderOptions {
   fetchWhiteboard: typeof getWhiteboard;
   renderScenePreview: (
-    scene: WhiteboardScene,
+    scene: WhiteboardDetail['scene'],
     context: { fileApi: FileApi; boardId: string },
   ) => Promise<string | null>;
   cacheKey?: (item: Pick<WhiteboardHubItem, 'id' | 'updated_at'>) => string;
@@ -110,7 +110,7 @@ function isDeletedElement(element: unknown): boolean {
 }
 
 export async function renderWhiteboardScenePreview(
-  scene: WhiteboardScene,
+  scene: WhiteboardDetail['scene'],
   context?: { fileApi: FileApi; boardId: string },
 ): Promise<string | null> {
   const normalized = normalizeWhiteboardScene(scene);

@@ -30,7 +30,6 @@ use axum::{
 use chrono::NaiveDateTime;
 use miy_app_sdk::{FileCreate, FileStatus, Identity, storage::MAX_FILE_BYTES};
 use serde::Deserialize;
-use serde_json::{Value, json};
 use sqlx::{FromRow, PgPool};
 
 use crate::{
@@ -94,18 +93,36 @@ pub fn normalize_filename(filename: Option<&str>) -> String {
     normalized.chars().take(MAX_FILENAME_CHARS).collect()
 }
 
-fn item(attachment: &Attachment, uploaded_by_name: &str) -> Value {
-    json!({
-        "id": attachment.id,
-        "page_id": attachment.page_id,
-        "filename": attachment.filename,
-        "content_type": attachment.content_type,
-        "size_bytes": attachment.size_bytes,
-        "uploaded_by_id": attachment.uploaded_by_id,
-        "uploaded_by_name": uploaded_by_name,
-        "created_at": naive_iso(attachment.created_at),
-        "status": attachment.status,
-    })
+#[derive(serde::Serialize, utoipa::ToSchema)]
+pub struct AttachmentItem {
+    id: String,
+    page_id: String,
+    filename: String,
+    content_type: String,
+    size_bytes: i64,
+    uploaded_by_id: String,
+    uploaded_by_name: String,
+    created_at: String,
+    status: String,
+}
+
+#[derive(serde::Serialize, utoipa::ToSchema)]
+pub struct AttachmentListResponse {
+    items: Vec<AttachmentItem>,
+}
+
+fn item(attachment: &Attachment, uploaded_by_name: &str) -> AttachmentItem {
+    AttachmentItem {
+        id: attachment.id.clone(),
+        page_id: attachment.page_id.clone(),
+        filename: attachment.filename.clone(),
+        content_type: attachment.content_type.clone(),
+        size_bytes: i64::from(attachment.size_bytes),
+        uploaded_by_id: attachment.uploaded_by_id.clone(),
+        uploaded_by_name: uploaded_by_name.to_owned(),
+        created_at: naive_iso(attachment.created_at),
+        status: attachment.status.clone(),
+    }
 }
 
 fn attachment_not_found() -> ApiError {
@@ -126,11 +143,23 @@ async fn load(pool: &PgPool, attachment_id: &str) -> ApiResult<Attachment> {
 }
 
 /// AI-DO `list_page_attachments`: oldest first, readers may list.
+#[utoipa::path(
+    get, path = "/v1/docs/pages/{page_id}/attachments", operation_id = "listDocsPageAttachments", tag = "Attachments",
+    params(("page_id" = String, Path)),
+    responses(
+        (status = 200, description = "Success", body = AttachmentListResponse),
+        (status = 401, description = "Valid platform identity required", body = crate::error::IdentityErrorResponse),
+        (status = 403, description = "Permission denied", body = crate::error::ErrorResponse),
+        (status = 404, description = "Resource is unavailable or does not exist", body = crate::error::ErrorResponse),
+        (status = 500, description = "Could not complete the request", body = crate::error::ErrorResponse),
+        (status = 503, description = "A required platform service is unavailable", body = crate::error::ErrorResponse)
+    )
+)]
 pub async fn list(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
     Path(page_id): Path<String>,
-) -> ApiResult<Json<Value>> {
+) -> ApiResult<Json<AttachmentListResponse>> {
     let mut viewer = Viewer::new(&state, &identity);
     let context = access::page_or_403(&mut viewer, &page_id, Require::View).await?;
     let sql = format!(
@@ -143,23 +172,51 @@ pub async fn list(
         .await?;
     let names =
         people::display_names(&identity, rows.iter().map(|row| row.uploaded_by_id.clone())).await;
-    Ok(Json(json!({
-        "items": rows.iter().map(|row| item(row, names.get(&row.uploaded_by_id).map(String::as_str).unwrap_or(""))).collect::<Vec<_>>(),
-    })))
+    Ok(Json(AttachmentListResponse {
+        items: rows
+            .iter()
+            .map(|row| {
+                item(
+                    row,
+                    names
+                        .get(&row.uploaded_by_id)
+                        .map(String::as_str)
+                        .unwrap_or(""),
+                )
+            })
+            .collect(),
+    }))
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema)]
 pub struct ReserveRequest {
     request_id: String,
     #[serde(default)]
     filename: Option<String>,
     #[serde(default)]
     content_type: Option<String>,
+    #[schema(minimum = 0, maximum = 10485760)]
     size_bytes: i64,
 }
 
 /// Step 1: record and reserve (AI-DO `upload_page_attachment` up to the
 /// object write). Editing the page is required.
+#[utoipa::path(
+    post, path = "/v1/docs/pages/{page_id}/attachments", operation_id = "reserveDocsPageAttachment", tag = "Attachments",
+    params(("page_id" = String, Path)),
+    request_body = ReserveRequest,
+    responses(
+        (status = 201, description = "Created", body = AttachmentItem),
+        (status = 401, description = "Valid platform identity required", body = crate::error::IdentityErrorResponse),
+        (status = 403, description = "Permission denied", body = crate::error::ErrorResponse),
+        (status = 404, description = "Resource is unavailable or does not exist", body = crate::error::ErrorResponse),
+        (status = 409, description = "Current resource state conflicts with the request", body = crate::error::ErrorResponse),
+        (status = 413, description = "Request exceeds the size limit", body = crate::error::ErrorResponse),
+        (status = 422, description = "Request validation failed", body = crate::error::ErrorResponse),
+        (status = 500, description = "Could not complete the request", body = crate::error::ErrorResponse),
+        (status = 503, description = "A required platform service is unavailable", body = crate::error::ErrorResponse)
+    )
+)]
 pub async fn reserve(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
@@ -310,12 +367,25 @@ async fn attach(
 
 /// Step 2: `PUT /files/docs/attachments/{id}/content` by the uploader, who
 /// must still be able to edit the page.
+#[utoipa::path(
+    put, path = "/files/docs/attachments/{attachment_id}/content", operation_id = "uploadDocsPageAttachment", tag = "Attachments",
+    params(("attachment_id" = String, Path)),
+    request_body(content = crate::api_contract::BinaryBody, content_type = "application/octet-stream", description = "Raw file bytes, at most 10 MiB"),
+    responses(
+        (status = 200, description = "Success", body = AttachmentItem),
+        (status = 401, description = "Valid platform identity required", body = crate::error::IdentityErrorResponse),
+        (status = 403, description = "Permission denied", body = crate::error::ErrorResponse),
+        (status = 404, description = "Resource is unavailable or does not exist", body = crate::error::ErrorResponse),
+        (status = 500, description = "Could not complete the request", body = crate::error::ErrorResponse),
+        (status = 503, description = "A required platform service is unavailable", body = crate::error::ErrorResponse)
+    )
+)]
 pub async fn upload_content(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
     Path(attachment_id): Path<String>,
     body: Body,
-) -> ApiResult<Json<Value>> {
+) -> ApiResult<Json<AttachmentItem>> {
     let attachment = load(&state.pool, &attachment_id).await?;
     if attachment.uploaded_by_id != identity.user_id
         || !matches!(attachment.status.as_str(), "pending" | "ready" | "attached")
@@ -368,6 +438,19 @@ pub async fn upload_content(
 }
 
 /// AI-DO `open_page_attachment_content`: always a download of an opaque type.
+#[utoipa::path(
+    get, path = "/files/docs/attachments/{attachment_id}/content", operation_id = "downloadDocsPageAttachment", tag = "Attachments",
+    params(("attachment_id" = String, Path)),
+    responses(
+        (status = 200, description = "Opaque attachment bytes", body = crate::api_contract::BinaryBody, content_type = "application/octet-stream", headers(("Content-Disposition" = String), ("Content-Length" = u64), ("X-Content-Type-Options" = String))),
+        (status = 401, description = "Valid platform identity required", body = crate::error::IdentityErrorResponse),
+        (status = 403, description = "Permission denied", body = crate::error::ErrorResponse),
+        (status = 404, description = "Resource is unavailable or does not exist", body = crate::error::ErrorResponse),
+        (status = 500, description = "Could not complete the request", body = crate::error::ErrorResponse),
+        (status = 502, description = "Storage did not return the file", body = crate::error::ErrorResponse),
+        (status = 503, description = "A required platform service is unavailable", body = crate::error::ErrorResponse)
+    )
+)]
 pub async fn download(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
@@ -400,6 +483,18 @@ pub async fn download(
 }
 
 /// AI-DO `delete_page_attachment`: editing the page is required.
+#[utoipa::path(
+    delete, path = "/v1/docs/attachments/{attachment_id}", operation_id = "deleteDocsPageAttachment", tag = "Attachments",
+    params(("attachment_id" = String, Path)),
+    responses(
+        (status = 204, description = "Completed with no response body"),
+        (status = 401, description = "Valid platform identity required", body = crate::error::IdentityErrorResponse),
+        (status = 403, description = "Permission denied", body = crate::error::ErrorResponse),
+        (status = 404, description = "Resource is unavailable or does not exist", body = crate::error::ErrorResponse),
+        (status = 500, description = "Could not complete the request", body = crate::error::ErrorResponse),
+        (status = 503, description = "A required platform service is unavailable", body = crate::error::ErrorResponse)
+    )
+)]
 pub async fn delete(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,

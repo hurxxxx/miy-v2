@@ -534,8 +534,14 @@ pub async fn run(
 
     directory_contract(&h, &user, &a).await?;
     passed.push("app directory pages expose only bounded active user/group DTOs; literal search, scoped cursors, original-user membership and immediate group/account revocation are enforced".into());
-    storage_contract(&mut h, &admin, &user).await?;
-    passed.push("file storage enforces backend-only current approvals, original user authority, bounded immutable uploads that can be sent again after a failure, idempotent request lookup, attachment retention, explicit cancellation, reference-checked detach, administrator-set reservation quotas, resumable parts uploads (committed offset, interrupted tails truncated, gaps refused, hashed on completion, repeatable completion, cancellation), sharded storage with files of the old layout readable and moved by the worker, integrity checks that stop downloads of changed bytes, and housekeeping without a user actor".into());
+    let full_size_transfer = std::env::var("MIY_RUNTIME_MAX_FILE").is_ok_and(|value| value == "1");
+    storage_contract(&mut h, &admin, &user, full_size_transfer).await?;
+    let storage_observation = "file storage enforces backend-only current approvals, original user authority, bounded immutable uploads that can be sent again after a failure, idempotent request lookup, attachment retention, explicit cancellation, reference-checked detach, administrator-set reservation quotas, resumable parts uploads (committed offset, interrupted tails truncated, gaps refused, hashed on completion, repeatable completion, cancellation), sharded storage with files of the old layout readable and moved by the worker, integrity checks that stop downloads of changed bytes, and housekeeping without a user actor";
+    passed.push(if full_size_transfer {
+        format!("{storage_observation}; a 2 GiB upload sent all 256 8 MiB ranges, matched the expected SHA-256, and was deleted")
+    } else {
+        storage_observation.into()
+    });
     notification_contract(&mut h, &admin, &user)
         .await
         .context("notification contract")?;
@@ -1316,7 +1322,12 @@ pub async fn run(
     Ok(passed)
 }
 
-async fn storage_contract(h: &mut Harness<'_>, admin: &Actor, user: &Actor) -> Result<()> {
+async fn storage_contract(
+    h: &mut Harness<'_>,
+    admin: &Actor,
+    user: &Actor,
+    full_size_transfer: bool,
+) -> Result<()> {
     async fn fresh_proof(h: &Harness<'_>, user: &Actor, app: &App) -> Result<String> {
         let gateway = format!("/api/v1/installations/{}/files/probe", app.installation);
         response(
@@ -1326,6 +1337,80 @@ async fn storage_contract(h: &mut Harness<'_>, admin: &Actor, user: &Actor) -> R
         .await?;
         app.proof()
     }
+
+    async fn upload_maximum_file(
+        h: &Harness<'_>,
+        user: &Actor,
+        app: &App,
+        base: &str,
+    ) -> Result<()> {
+        const PART_SIZE: usize = 8 * 1024 * 1024;
+        const FILE_SIZE: usize = 2 * 1024 * 1024 * 1024;
+        // SHA-256 of 2 GiB of byte 0xa5, computed independently of Core.
+        const EXPECTED_HASH: &str =
+            "c5f2d2b3f3972213c61d8756a63742fa61e3685b9c8b459430b571365c12d94b";
+        let mut proof = fresh_proof(h, user, app).await?;
+        let reservation = h.json(
+            &proof, Method::POST, base,
+            json!({"requestId":Uuid::new_v4(),"name":"max-size.bin","mime":"application/octet-stream","size":FILE_SIZE,"transfer":"parts"}),
+            200,
+        ).await?;
+        let path = format!(
+            "{base}/{}",
+            reservation["id"].as_str().context("full-size file id")?
+        );
+        let part = axum::body::Bytes::from(vec![0xa5; PART_SIZE]);
+        for (index, start) in (0..FILE_SIZE).step_by(PART_SIZE).enumerate() {
+            if index != 0 && index.is_multiple_of(8) {
+                proof = fresh_proof(h, user, app).await?;
+            }
+            let end = start + PART_SIZE - 1;
+            let result = response(
+                h.request(&proof, Method::PUT, &format!("{path}/parts"))
+                    .header("content-range", format!("bytes {start}-{end}/{FILE_SIZE}"))
+                    .body(part.clone())
+                    .send()
+                    .await?,
+                200,
+            )
+            .await
+            .with_context(|| format!("full-size file part {}", index + 1))?;
+            ensure!(
+                result["received"] == end + 1,
+                "full-size transfer committed the wrong offset"
+            );
+        }
+        let ready = tokio::time::timeout(Duration::from_secs(135), async {
+            loop {
+                let proof = fresh_proof(h, user, app).await?;
+                let reply = h
+                    .request(&proof, Method::POST, &format!("{path}/complete"))
+                    .send()
+                    .await?;
+                if reply.status().as_u16() != 202 {
+                    break response(reply, 200).await;
+                }
+                tokio::time::sleep(Duration::from_secs(1)).await;
+            }
+        })
+        .await
+        .context("full-size file was not hashed before the deadline")??;
+        ensure!(
+            ready["status"] == "ready"
+                && ready["size"] == FILE_SIZE
+                && ready["sha256"] == EXPECTED_HASH,
+            "full-size file did not complete with the expected hash"
+        );
+        let proof = fresh_proof(h, user, app).await?;
+        let cancelled =
+            response(h.request(&proof, Method::DELETE, &path).send().await?, 200).await?;
+        ensure!(
+            cancelled["status"] == "cancelled",
+            "full-size file was not cleaned up"
+        );
+        Ok(())
+    }
+
     let permissions = vec!["platform:files:read".into(), "platform:files:write".into()];
     let app = h
         .app(
@@ -1914,6 +1999,11 @@ async fn storage_contract(h: &mut Harness<'_>, admin: &Actor, user: &Actor) -> R
         cancelled["status"] == "cancelled",
         "5 MiB temporary file was not cancelled before quota tests"
     );
+    if full_size_transfer {
+        upload_maximum_file(h, user, &app, &base)
+            .await
+            .context("2 GiB storage acceptance")?;
+    }
     let proof = fresh_proof(h, user, &app).await?;
     // Fixed-size reservations count before bytes arrive, so parallel upload starts
     // cannot exceed the installation quota (here an administrator-set 256 MiB).
@@ -2038,13 +2128,27 @@ async fn storage_contract(h: &mut Harness<'_>, admin: &Actor, user: &Actor) -> R
     )
     .await?;
     let proof = fresh_proof(h, user, &app).await?;
-    let done = response(
+    let pending = response(
         h.request(&proof, Method::POST, &format!("{large_path}/complete"))
             .send()
             .await?,
-        200,
+        202,
     )
     .await?;
+    ensure!(pending["status"] == "pending" && pending["sha256"].is_null());
+    let done = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        loop {
+            let reply = h
+                .request(&proof, Method::POST, &format!("{large_path}/complete"))
+                .send()
+                .await?;
+            if reply.status().as_u16() != 202 {
+                return response(reply, 200).await;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(25)).await;
+        }
+    })
+    .await??;
     let again = response(
         h.request(&proof, Method::POST, &format!("{large_path}/complete"))
             .send()

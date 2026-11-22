@@ -68,7 +68,7 @@ export function PromptDialogContent({
             placeholder={placeholder}
             onChange={(e) => setValue(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === 'Enter') handleSubmit();
+              if (e.key === 'Enter' && !e.nativeEvent.isComposing && e.keyCode !== 229) handleSubmit();
             }}
           />
         </div>

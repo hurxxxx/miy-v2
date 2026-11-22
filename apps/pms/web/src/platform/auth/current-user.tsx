@@ -1,3 +1,4 @@
+import type { paths } from '../../api.generated';
 import {
   createContext,
   useContext,
@@ -20,12 +21,7 @@ import { useRuntime } from '../runtime/runtime-context';
  * PMS admin bypass never existed for space membership, so there is no
  * `system_roles` here.
  */
-export type PmsCurrentUser = {
-  id: string;
-  name: string;
-  primary_org_unit_id: string | null;
-  primary_org_unit_name: string | null;
-};
+export type PmsCurrentUser = paths['/v1/pms/me']['get']['responses'][200]['content']['application/json'];
 
 type CurrentUserState =
   | { status: 'loading' }

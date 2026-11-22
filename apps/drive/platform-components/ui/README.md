@@ -1,7 +1,7 @@
-# miy common UI 2.0.0
+# miy common UI 2.0.1
 
 Generated from the maintained packages/ui source. Use SDK bundle 0.12.0.
-Install through miy component add ui --version 2.0.0; do not edit the
+Install through miy component add ui --version 2.0.1; do not edit the
 installed component or use platform administrator APIs as a data provider.
 
 This version is the AI-DO UI package, moved as it is: lib/ holds AI-DO's

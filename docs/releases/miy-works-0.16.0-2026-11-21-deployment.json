@@ -1,0 +1,100 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-11-21",
+  "deploymentVerifiedAt": "2026-11-21T12:53:37+00:00",
+  "status": "PASS",
+  "origin": "https://portal.miy.works",
+  "scope": "miy.works Core, worker and hosted CLI with the offline application harness and generated agent guidance.",
+  "versions": {
+    "coreAndCli": "0.16.0",
+    "previousCoreAndCli": "0.15.0",
+    "sdkBundle": "0.11.0",
+    "schema": 27
+  },
+  "source": {
+    "coreAndCliCommit": "a00f6cce68d67e2b15aff261881057fd0ce0827b",
+    "webCommit": "99f91c1",
+    "ciBranch": "deploy/miy-works-app-harness-0160",
+    "ciRunId": 44905097888,
+    "ciRunUrl": "https://github.com/hurxxxx/miy-v2/actions/runs/44905097888"
+  },
+  "validation": [
+    {
+      "status": "PASS",
+      "check": "Candidate Rust static checks",
+      "unitTests": 380
+    },
+    {
+      "status": "PASS",
+      "check": "Candidate isolated Docker runtime and cleanup",
+      "observations": 149
+    },
+    {
+      "status": "PASS",
+      "check": "Native CLI matrix and aggregate",
+      "jobs": {
+        "candidate": "success",
+        "x86_64-unknown-linux-gnu": "success",
+        "aarch64-apple-darwin": "success",
+        "aarch64-unknown-linux-gnu": "success",
+        "x86_64-pc-windows-msvc": "success",
+        "x86_64-apple-darwin": "success",
+        "aggregate": "success",
+        "publish": "skipped"
+      }
+    },
+    {
+      "status": "PASS",
+      "check": "Published binary CLI contract, offline MCP, both restored project trees and compatible project setup",
+      "cliContractGroups": 17
+    },
+    {
+      "status": "PASS",
+      "check": "Production HTTPS packages and clean Linux install of the app harness",
+      "publicArtifacts": 7,
+      "smoke": {
+        "status": "PASS",
+        "version": "0.16.0",
+        "offlineGuide": true,
+        "sourcesChecked": {
+          "notes": [
+            "browser_uuid_secure_context",
+            "synced_ui_reuse_review"
+          ],
+          "files": [
+            "browser_uuid_secure_context",
+            "storage_recovery_review",
+            "synced_ui_reuse_review"
+          ]
+        }
+      }
+    },
+    {
+      "status": "PASS",
+      "check": "Production test app health and byte preservation",
+      "healthyTestInstallations": 4,
+      "previousCliFiles": 138,
+      "releaseSourceArchives": 2
+    }
+  ],
+  "recovery": {
+    "verifiedDatabaseBackup": "/srv/miy-backups/online/20261121T124009Z",
+    "previousCoreCliAndIndex": "/srv/miy-prod/evidence/app-harness-0160/before"
+  },
+  "deployment": {
+    "status": "PASS",
+    "version": "0.16.0",
+    "sourceCommit": "a00f6cce68d67e2b15aff261881057fd0ce0827b",
+    "ciRunId": "44905097888",
+    "checks": [
+      "core_db_backup_restored_and_idle",
+      "five_immutable_cli_archives_and_two_helpers_published",
+      "three_surfaces_healthy",
+      "source_api_present_and_denies_anonymous",
+      "existing_installations_schema_and_web_preserved"
+    ],
+    "serverSha256": "55ad0d6567ef268e2f36408247625c593cfb342dfc5a80eadc6a4d97a70d53d4",
+    "previousServerSha256": "00bd3a755517292d8e59b6d3941ab7283fbafd707d406788ab218d66f41acac4",
+    "webSha256": "e2d4c6981b27a297144ea5dad636293b3f515126287213e45ef56a8014a80639"
+  }
+}

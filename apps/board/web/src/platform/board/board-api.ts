@@ -1,3 +1,4 @@
+import type { components, paths } from '../../api.generated';
 import type {
   DirectoryOption,
   DirectoryProvider,
@@ -10,28 +11,10 @@ import { apiFetchJson } from '../api/client';
 import type { AppApi } from '../runtime/runtime-context';
 
 /** Board manager state (`GET /v1/board/me`). */
-export interface BoardMe {
-  userId: string;
-  isManager: boolean;
-  canBootstrap: boolean;
-}
+export type BoardMe = paths['/v1/board/me']['get']['responses'][200]['content']['application/json'];
 
-export interface BoardManager {
-  userId: string;
-  name: string | null;
-  grantedBy: string;
-  createdAt: string;
-}
-
-export interface BoardSpace {
-  id: string;
-  name: string;
-  description: string;
-  createdBy: string;
-  canManage: boolean;
-  createdAt: string;
-  updatedAt: string;
-}
+export type BoardManager = components['schemas']['ManagerOut'];
+export type BoardSpace = components['schemas']['SpaceOut'];
 
 export function getBoardMe(api: AppApi | null | undefined): Promise<BoardMe> {
   return apiFetchJson<BoardMe>('/v1/board/me', api);
@@ -48,7 +31,7 @@ export function bootstrapBoardManager(
 export async function listBoardManagers(
   api: AppApi | null | undefined,
 ): Promise<BoardManager[]> {
-  const response = await apiFetchJson<{ items: BoardManager[] }>(
+  const response = await apiFetchJson<components['schemas']['ManagersResponse']>(
     '/v1/board/managers',
     api,
   );
@@ -61,7 +44,7 @@ export function addBoardManager(
 ): Promise<void> {
   return apiFetchJson<void>('/v1/board/managers', api, {
     method: 'POST',
-    body: JSON.stringify({ userId }),
+    body: JSON.stringify({ userId } satisfies components['schemas']['ManagerAddRequest']),
   });
 }
 
@@ -79,7 +62,7 @@ export function removeBoardManager(
 export async function listSpaces(
   api: AppApi | null | undefined,
 ): Promise<BoardSpace[]> {
-  const response = await apiFetchJson<{ spaces: BoardSpace[] }>(
+  const response = await apiFetchJson<components['schemas']['SpacesResponse']>(
     '/v1/spaces',
     api,
   );
@@ -88,7 +71,7 @@ export async function listSpaces(
 
 export function createSpace(
   api: AppApi | null | undefined,
-  input: { name: string; description?: string },
+  input: components['schemas']['SpaceRequest'],
 ): Promise<BoardSpace> {
   return apiFetchJson<BoardSpace>('/v1/spaces', api, {
     method: 'POST',
@@ -106,17 +89,7 @@ export function deleteSpace(
 }
 
 /** The SDK ACL snapshot as the server sends it. */
-interface ServerShareSnapshot {
-  revision: number;
-  entries: Array<{
-    subject: { kind: 'user' | 'group'; id: string; name: string };
-    role: string;
-    protected: boolean;
-  }>;
-  roles: Array<{ id: string; label: string }>;
-  defaultRole?: string | null;
-  canManage: boolean;
-}
+type ServerShareSnapshot = components['schemas']['SharingSnapshot'];
 
 function toUiSnapshot(snapshot: ServerShareSnapshot): UiShareSnapshot {
   return {
@@ -157,7 +130,7 @@ export function spaceShareProvider(
             subject: { kind: entry.subject.kind, id: entry.subject.id },
             role: entry.role,
           })),
-        }),
+        } satisfies components['schemas']['SharingRequest']),
       });
       return toUiSnapshot(snapshot);
     },

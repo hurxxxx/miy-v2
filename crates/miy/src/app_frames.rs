@@ -19,7 +19,7 @@ use crate::{
 use axum::{
     Json, Router,
     body::to_bytes,
-    extract::{Path, Request, State as S},
+    extract::{Path, Query, Request, State as S},
     http::{HeaderMap, HeaderValue, Method, StatusCode, header},
     middleware::{self, Next},
     response::{IntoResponse, Response},
@@ -574,6 +574,10 @@ pub fn router(state: State) -> Router {
         .route("/_miy/platform/directory", axum::routing::get(directory))
         .route("/_miy/live", axum::routing::get(live))
         .route("/_miy/downloads/{token}", axum::routing::get(download))
+        .route(
+            "/_miy/downloads/{token}/status",
+            axum::routing::get(download_status),
+        )
         .fallback(|| async { ApiError::not_found() })
         .layer(middleware::from_fn(frame_headers))
         .with_state(state)
@@ -1111,6 +1115,54 @@ async fn directory(S(s): S<State>, mut request: Request) -> Response {
     response
 }
 
+#[derive(Deserialize)]
+struct DownloadOptions {
+    track: Option<u8>,
+}
+
+async fn download_status(
+    S(s): S<State>,
+    Path(token): Path<String>,
+    headers: HeaderMap,
+) -> ApiResult<Response> {
+    use crate::download_tracking::{Status, status};
+
+    if token.len() != 43 {
+        return Err(ApiError::not_found());
+    }
+    let (frame, p, _) = authenticate(&s, &Method::GET, &headers).await?;
+    policy::require(&s, &p, &frame.app_id, &frame.environment, AppAction::Use).await?;
+    crate::permissions::require(
+        &s.pool,
+        frame.installation_id,
+        frame.release_id,
+        "platform:files:read",
+    )
+    .await?;
+    let key = hash(&token);
+    let phase = if let Some(phase) = status(&key, frame.id) {
+        phase
+    } else {
+        let pending: bool = sqlx::query_scalar(
+            "SELECT EXISTS(SELECT 1 FROM app_file_downloads WHERE token_hash=$1 AND frame_id=$2 \
+             AND expires_at>clock_timestamp())",
+        )
+        .bind(key)
+        .bind(frame.id)
+        .fetch_one(&s.pool)
+        .await?;
+        if !pending {
+            return Err(ApiError::not_found());
+        }
+        Status::Pending
+    };
+    let mut response = Json(serde_json::json!({"status": phase})).into_response();
+    response
+        .headers_mut()
+        .insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
+    Ok(response)
+}
+
 /// `/_miy/downloads/{token}` (M10): a download link the owning app's backend
 /// obtained for this frame. Each GET or Range rechecks the origin, the frame
 /// and its parent session, the release, the person's use; storage then checks
@@ -1118,17 +1170,20 @@ async fn directory(S(s): S<State>, mut request: Request) -> Response {
 async fn download(
     S(s): S<State>,
     Path(token): Path<String>,
+    Query(options): Query<DownloadOptions>,
+    method: Method,
     headers: HeaderMap,
 ) -> ApiResult<Response> {
     let site = site(&s, &headers).await?;
     if !browser_request_allowed(&Method::GET, &headers, &site.origin) || token.len() != 43 {
         return Err(ApiError::not_found());
     }
+    let key = hash(&token);
     let link = sqlx::query(
         "SELECT frame_id,file_id,release_id,user_id,reference FROM app_file_downloads \
          WHERE token_hash=$1 AND installation_id=$2 AND expires_at>clock_timestamp()",
     )
-    .bind(hash(&token))
+    .bind(&key)
     .bind(site.installation_id)
     .fetch_optional(&s.pool)
     .await?
@@ -1141,17 +1196,47 @@ async fn download(
     {
         return Err(ApiError::not_found());
     }
+    let transfer = if options.track == Some(1) && method == Method::GET {
+        Some(crate::download_tracking::Transfer::start(key, frame.id)?)
+    } else {
+        None
+    };
     policy::require(&s, &p, &frame.app_id, &frame.environment, AppAction::Use).await?;
     let file: Uuid = link.get("file_id");
-    let response = crate::storage::serve_download(
-        &s,
-        &p,
-        frame.installation_id,
-        frame.release_id,
-        file,
-        link.get("reference"),
-        &headers,
-    )
+    let response: ApiResult<Response> = async {
+        let response = crate::storage::serve_download(
+            &s,
+            &p,
+            frame.installation_id,
+            frame.release_id,
+            file,
+            link.get("reference"),
+            &headers,
+        )
+        .await?;
+        let (frame_now, principal_now) = load_frame(&s, &site, FrameKey::Id(frame.id), false)
+            .await
+            .map_err(|_| ApiError::not_found())?;
+        if frame_now.release_id != frame.release_id || principal_now.id != p.id {
+            return Err(ApiError::not_found());
+        }
+        policy::require(
+            &s,
+            &principal_now,
+            &frame_now.app_id,
+            &frame_now.environment,
+            AppAction::Use,
+        )
+        .await?;
+        crate::permissions::require(
+            &s.pool,
+            frame_now.installation_id,
+            frame_now.release_id,
+            "platform:files:read",
+        )
+        .await?;
+        Ok(response)
+    }
     .await;
     let status = response
         .as_ref()
@@ -1167,7 +1252,10 @@ async fn download(
         ),
     )
     .await;
-    response
+    match (response, transfer) {
+        (Ok(response), Some(transfer)) if response.status().is_success() => transfer.wrap(response),
+        (response, _) => response,
+    }
 }
 
 /// `/_miy/a/{capability}/ui/{path}`: the frame's release artifact. The capability

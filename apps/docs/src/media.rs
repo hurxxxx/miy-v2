@@ -152,16 +152,17 @@ pub async fn attach_linked(pool: &PgPool, identity: &Identity, linked: &[Linked]
 
 // ---------------------------------------------------------------- routes
 
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct UploadRequest {
     request_id: String,
     name: String,
     mime: String,
+    #[schema(maximum = 10485760)]
     size: u64,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct UploadResponse {
     id: String,
@@ -177,6 +178,20 @@ fn upload_failed() -> ApiError {
     ApiError::unavailable("media.upload_failed", "The file could not be stored.")
 }
 
+#[utoipa::path(
+    post, path = "/v1/media/upload", operation_id = "reserveDocsMedia", tag = "Embedded media",
+    request_body = UploadRequest,
+    responses(
+        (status = 201, description = "Created", body = UploadResponse),
+        (status = 400, description = "Invalid request", body = crate::error::ErrorResponse),
+        (status = 401, description = "Valid platform identity required", body = crate::error::IdentityErrorResponse),
+        (status = 409, description = "Current resource state conflicts with the request", body = crate::error::ErrorResponse),
+        (status = 413, description = "Request exceeds the size limit", body = crate::error::ErrorResponse),
+        (status = 422, description = "Request validation failed", body = crate::error::ErrorResponse),
+        (status = 500, description = "Could not complete the request", body = crate::error::ErrorResponse),
+        (status = 503, description = "A required platform service is unavailable", body = crate::error::ErrorResponse)
+    )
+)]
 pub async fn create_upload(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
@@ -277,6 +292,18 @@ async fn load_media(pool: &PgPool, media_id: &str) -> ApiResult<MediaFile> {
 
 /// `PUT /files/media/{id}/content`: the uploader streams the reserved bytes.
 /// Repeating it after a lost answer reports the stored state.
+#[utoipa::path(
+    put, path = "/files/media/{media_id}/content", operation_id = "uploadDocsMedia", tag = "Embedded media",
+    params(("media_id" = String, Path)),
+    request_body(content = crate::api_contract::BinaryBody, content_type = "application/octet-stream", description = "Raw file bytes, at most 10 MiB"),
+    responses(
+        (status = 200, description = "Success", body = UploadResponse),
+        (status = 401, description = "Valid platform identity required", body = crate::error::IdentityErrorResponse),
+        (status = 404, description = "Resource is unavailable or does not exist", body = crate::error::ErrorResponse),
+        (status = 500, description = "Could not complete the request", body = crate::error::ErrorResponse),
+        (status = 503, description = "A required platform service is unavailable", body = crate::error::ErrorResponse)
+    )
+)]
 pub async fn upload_content(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
@@ -324,6 +351,18 @@ pub async fn upload_content(
 /// `GET /files/media/{id}/content`: the uploader's own unlinked image (editor
 /// preview) or an image of a page the caller may read (AI-DO
 /// `can_resolve_media` for `docs_native_page`).
+#[utoipa::path(
+    get, path = "/files/media/{media_id}/content", operation_id = "downloadDocsMedia", tag = "Embedded media",
+    params(("media_id" = String, Path)),
+    responses(
+        (status = 200, description = "Stored image", content((crate::api_contract::BinaryBody = "image/jpeg"), (crate::api_contract::BinaryBody = "image/png"), (crate::api_contract::BinaryBody = "image/gif"), (crate::api_contract::BinaryBody = "image/webp")), headers(("Content-Disposition" = String), ("Content-Length" = u64), ("X-Content-Type-Options" = String))),
+        (status = 401, description = "Valid platform identity required", body = crate::error::IdentityErrorResponse),
+        (status = 403, description = "Permission denied", body = crate::error::ErrorResponse),
+        (status = 404, description = "Resource is unavailable or does not exist", body = crate::error::ErrorResponse),
+        (status = 500, description = "Could not complete the request", body = crate::error::ErrorResponse),
+        (status = 503, description = "A required platform service is unavailable", body = crate::error::ErrorResponse)
+    )
+)]
 pub async fn download(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
@@ -349,7 +388,7 @@ pub async fn download(
     })
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema)]
 pub struct LinkRequest {
     #[serde(default)]
     media_ids: Vec<String>,
@@ -359,6 +398,20 @@ pub struct LinkRequest {
 
 /// `POST /v1/media/link` (AI-DO media/router.py `link_media`): link the
 /// caller's unlinked uploads to a page they may edit.
+#[utoipa::path(
+    post, path = "/v1/media/link", operation_id = "linkDocsMedia", tag = "Embedded media",
+    request_body = LinkRequest,
+    responses(
+        (status = 204, description = "Completed with no response body"),
+        (status = 400, description = "Invalid request", body = crate::error::ErrorResponse),
+        (status = 401, description = "Valid platform identity required", body = crate::error::IdentityErrorResponse),
+        (status = 403, description = "Permission denied", body = crate::error::ErrorResponse),
+        (status = 404, description = "Resource is unavailable or does not exist", body = crate::error::ErrorResponse),
+        (status = 422, description = "Request validation failed", body = crate::error::ErrorResponse),
+        (status = 500, description = "Could not complete the request", body = crate::error::ErrorResponse),
+        (status = 503, description = "A required platform service is unavailable", body = crate::error::ErrorResponse)
+    )
+)]
 pub async fn link_media(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,

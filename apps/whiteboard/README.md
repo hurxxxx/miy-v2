@@ -20,7 +20,9 @@ Excalidraw 보드를 만들고 함께 보는 miy 공식 업무 앱이다. AI-DO 
 
 ## API
 
-UI는 `runtime.api('/v1/...')`로 부르고 게이트웨이가 `/api/v1/...`로 전달한다. 화이트보드 경로는 AI-DO처럼 두 곳에 있다: `/v1/whiteboard/...`(전사 공간)와 `/v1/workspaces/{spaceId}/whiteboard/...`(앱 공간). 항목 경로는 그 공간의 보드에만 답한다. 요청·응답은 AI-DO처럼 snake_case이고 시각은 naive UTC다. 오류는 `{"error":{"code","message"}}`이며 코드는 AI-DO 코드의 `.`을 `_`로 바꾼 것이다(예: `whiteboard_not_found`).
+앱 디렉터리에서 `pnpm api:generate`를 실행하면 라우터에서 HTTP 명세와 Web 타입을 갱신한다. [OpenAPI 명세](docs/openapi.json) · [Web 타입](web/src/api.generated.ts)
+
+UI는 `runtime.api('/v1/...')`로 부르고 게이트웨이가 `/api/v1/...`로 전달한다. 전사 공간은 `/v1/whiteboard/...`, 앱 공간은 `/v1/workspaces/{space_id}/whiteboard/...`를 사용한다. 항목 경로는 그 공간의 보드에만 답한다. 보드 생성·수정의 JSON 본문 한도는 4MiB다. 보드 요청·응답은 snake_case이고 시각은 naive UTC다. 오류는 `{"error":{"code","message"}}`이며 코드는 AI-DO 코드의 `.`을 `_`로 바꾼다. 예를 들어 `whiteboard_not_found`를 반환한다.
 
 | 메서드·경로(`…` = 화이트보드 경로) | 설명 |
 | --- | --- |

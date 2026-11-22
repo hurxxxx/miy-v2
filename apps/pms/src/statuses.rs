@@ -4,10 +4,9 @@ use axum::{
     Extension, Json,
     extract::{Path, State},
     http::StatusCode,
-    response::IntoResponse,
 };
 use miy_app_sdk::Identity;
-use serde_json::{Value, json};
+use serde::Serialize;
 use sqlx::{PgConnection, PgPool};
 
 use crate::access::{
@@ -24,15 +23,101 @@ use crate::workflow::{
 
 const STATUS_COLUMNS: &str = "id, slug, name, color, category, sort_order";
 
-pub fn serialize_status(status: &StatusDef) -> Value {
-    json!({
-        "id": status.id,
-        "slug": status.slug,
-        "name": status.name,
-        "color": status.color,
-        "category": normalize_status_category(&status.category),
-        "sort_order": status.sort_order,
-    })
+#[allow(dead_code)]
+#[derive(utoipa::ToSchema)]
+#[serde(rename_all = "snake_case")]
+enum WorkflowStatusCategory {
+    NotStarted,
+    Active,
+    Done,
+    Closed,
+}
+
+#[derive(Serialize, utoipa::ToSchema)]
+pub struct TaskListStatusItem {
+    id: String,
+    slug: String,
+    name: String,
+    color: String,
+    #[schema(value_type = WorkflowStatusCategory)]
+    category: String,
+    sort_order: i32,
+}
+
+#[derive(Serialize, utoipa::ToSchema)]
+pub struct SpaceStatusesResponse {
+    items: Vec<TaskListStatusItem>,
+}
+
+#[derive(Serialize, utoipa::ToSchema)]
+#[serde(rename_all = "snake_case")]
+enum TaskListStatusMode {
+    Inherit,
+    Custom,
+}
+
+#[derive(Serialize, utoipa::ToSchema)]
+#[serde(rename_all = "snake_case")]
+enum TaskListStatusSource {
+    Space,
+    List,
+}
+
+#[derive(Serialize, utoipa::ToSchema)]
+pub struct TaskListStatusesResponse {
+    mode: TaskListStatusMode,
+    source: TaskListStatusSource,
+    items: Vec<TaskListStatusItem>,
+}
+
+// The shared Body parser validates requests, including legacy numeric strings.
+#[allow(dead_code)]
+#[derive(utoipa::ToSchema)]
+#[serde(untagged)]
+enum StatusSortOrder {
+    Integer(i64),
+    NumericString(String),
+}
+
+#[allow(dead_code)]
+#[derive(utoipa::ToSchema)]
+struct StatusModeRequest {
+    mode: TaskListStatusMode,
+}
+
+#[allow(dead_code)]
+#[derive(utoipa::ToSchema)]
+struct CreateWorkflowStatusRequest {
+    #[schema(min_length = 1, max_length = 60)]
+    name: String,
+    #[serde(default)]
+    #[schema(max_length = 24)]
+    color: String,
+    #[serde(default)]
+    category: WorkflowStatusCategory,
+    sort_order: Option<StatusSortOrder>,
+}
+
+#[allow(dead_code)]
+#[derive(utoipa::ToSchema)]
+struct UpdateWorkflowStatusRequest {
+    #[schema(min_length = 1, max_length = 60)]
+    name: Option<String>,
+    #[schema(max_length = 24)]
+    color: Option<String>,
+    category: Option<WorkflowStatusCategory>,
+    sort_order: Option<StatusSortOrder>,
+}
+
+fn serialize_status(status: &StatusDef) -> TaskListStatusItem {
+    TaskListStatusItem {
+        id: status.id.clone(),
+        slug: status.slug.clone(),
+        name: status.name.clone(),
+        color: status.color.clone(),
+        category: normalize_status_category(&status.category),
+        sort_order: status.sort_order,
+    }
 }
 
 /// `create_default_space_statuses` (idempotent: on conflict do nothing).
@@ -172,28 +257,47 @@ fn ensure_closed_status_rule(
     Ok(())
 }
 
-fn statuses_response(mode: &str, statuses: &[StatusDef]) -> Value {
-    json!({
-        "mode": mode,
-        "source": if mode == "inherit" { "space" } else { "list" },
-        "items": statuses.iter().map(serialize_status).collect::<Vec<_>>(),
-    })
+fn statuses_response(mode: TaskListStatusMode, statuses: &[StatusDef]) -> TaskListStatusesResponse {
+    let source = match mode {
+        TaskListStatusMode::Inherit => TaskListStatusSource::Space,
+        TaskListStatusMode::Custom => TaskListStatusSource::List,
+    };
+    TaskListStatusesResponse {
+        mode,
+        source,
+        items: statuses.iter().map(serialize_status).collect(),
+    }
 }
 
 /// `GET /v1/pms/lists/{list_id}/statuses`.
+#[utoipa::path(
+    get, path = "/v1/pms/lists/{list_id}/statuses", operation_id = "listPmsTaskListStatuses", tag = "Workflow",
+    params(
+        ("list_id" = String, Path),
+    ),
+    responses(
+        (status = 200, description = "Success", body = TaskListStatusesResponse),
+        (status = 401, description = "Platform identity could not be verified", body = crate::error::IdentityErrorResponse),
+        (status = 403, description = "Current permissions do not allow the operation", body = crate::error::ErrorResponse),
+        (status = 404, description = "The space, task list, status, or user was not found", body = crate::error::ErrorResponse),
+        (status = 409, description = "Current resource state conflicts with the request", body = crate::error::ErrorResponse),
+        (status = 500, description = "Internal error", body = crate::error::ErrorResponse),
+    )
+)]
 pub async fn list_task_list_statuses(
     State(pool): State<PgPool>,
     Extension(identity): Extension<Identity>,
     Path(list_id): Path<String>,
-) -> ApiResult<Json<Value>> {
+) -> ApiResult<Json<TaskListStatusesResponse>> {
     let mut tx = pool.begin().await?;
     let (list, _) = ensure_list_member(&mut tx, &identity.user_id, &list_id).await?;
     let response = match (&list.status_mode[..], &list.team_id) {
-        ("inherit", Some(team_id)) => {
-            statuses_response("inherit", &ensure_space_statuses(&mut tx, team_id).await?)
-        }
+        ("inherit", Some(team_id)) => statuses_response(
+            TaskListStatusMode::Inherit,
+            &ensure_space_statuses(&mut tx, team_id).await?,
+        ),
         _ => statuses_response(
-            "custom",
+            TaskListStatusMode::Custom,
             &ensure_task_list_custom_statuses(&mut tx, &list.id).await?,
         ),
     };
@@ -202,12 +306,29 @@ pub async fn list_task_list_statuses(
 }
 
 /// `PATCH /v1/pms/lists/{list_id}/status-mode`.
+#[utoipa::path(
+    patch, path = "/v1/pms/lists/{list_id}/status-mode", operation_id = "updatePmsTaskListStatusMode", tag = "Workflow",
+    description = "Switches between the space workflow and a custom list workflow. Inheritance requires every in-use status to exist in the space workflow.",
+    params(
+        ("list_id" = String, Path),
+    ),
+    request_body = StatusModeRequest,
+    responses(
+        (status = 200, description = "Success", body = TaskListStatusesResponse),
+        (status = 401, description = "Platform identity could not be verified", body = crate::error::IdentityErrorResponse),
+        (status = 403, description = "Current permissions do not allow the operation", body = crate::error::ErrorResponse),
+        (status = 404, description = "The space, task list, status, or user was not found", body = crate::error::ErrorResponse),
+        (status = 409, description = "Current resource state conflicts with the request", body = crate::error::ErrorResponse),
+        (status = 422, description = "Malformed input or invalid field value", body = crate::error::ErrorResponse),
+        (status = 500, description = "Internal error", body = crate::error::ErrorResponse),
+    )
+)]
 pub async fn update_task_list_status_mode(
     State(pool): State<PgPool>,
     Extension(identity): Extension<Identity>,
     Path(list_id): Path<String>,
     body: Body,
-) -> ApiResult<Json<Value>> {
+) -> ApiResult<Json<TaskListStatusesResponse>> {
     let mode = body.req_str("mode")?;
     check_choice("mode", &mode, &["inherit", "custom"])?;
     let mut tx = pool.begin().await?;
@@ -220,7 +341,10 @@ pub async fn update_task_list_status_mode(
         let statuses = ensure_space_statuses(&mut tx, team_id).await?;
         if list.status_mode == mode {
             tx.commit().await?;
-            return Ok(Json(statuses_response("inherit", &statuses)));
+            return Ok(Json(statuses_response(
+                TaskListStatusMode::Inherit,
+                &statuses,
+            )));
         }
         let used: Vec<String> =
             sqlx::query_scalar("SELECT DISTINCT status FROM pms_tasks WHERE list_id = $1")
@@ -241,7 +365,10 @@ pub async fn update_task_list_status_mode(
             .execute(&mut *tx)
             .await?;
         tx.commit().await?;
-        return Ok(Json(statuses_response("inherit", &statuses)));
+        return Ok(Json(statuses_response(
+            TaskListStatusMode::Inherit,
+            &statuses,
+        )));
     }
     let statuses = if list.status_mode == mode {
         ensure_task_list_custom_statuses(&mut tx, &list.id).await?
@@ -254,22 +381,38 @@ pub async fn update_task_list_status_mode(
         statuses
     };
     tx.commit().await?;
-    Ok(Json(statuses_response("custom", &statuses)))
+    Ok(Json(statuses_response(
+        TaskListStatusMode::Custom,
+        &statuses,
+    )))
 }
 
 /// `GET /v1/pms/spaces/{space_id}/statuses`.
+#[utoipa::path(
+    get, path = "/v1/pms/spaces/{space_id}/statuses", operation_id = "listPmsSpaceStatuses", tag = "Workflow",
+    params(
+        ("space_id" = String, Path),
+    ),
+    responses(
+        (status = 200, description = "Success", body = SpaceStatusesResponse),
+        (status = 401, description = "Platform identity could not be verified", body = crate::error::IdentityErrorResponse),
+        (status = 403, description = "Current permissions do not allow the operation", body = crate::error::ErrorResponse),
+        (status = 404, description = "The space, task list, status, or user was not found", body = crate::error::ErrorResponse),
+        (status = 500, description = "Internal error", body = crate::error::ErrorResponse),
+    )
+)]
 pub async fn list_space_statuses(
     State(pool): State<PgPool>,
     Extension(identity): Extension<Identity>,
     Path(space_id): Path<String>,
-) -> ApiResult<Json<Value>> {
+) -> ApiResult<Json<SpaceStatusesResponse>> {
     let mut tx = pool.begin().await?;
     ensure_space_access(&mut tx, &identity.user_id, &space_id).await?;
     let statuses = ensure_space_statuses(&mut tx, &space_id).await?;
     tx.commit().await?;
-    Ok(Json(
-        json!({"items": statuses.iter().map(serialize_status).collect::<Vec<_>>()}),
-    ))
+    Ok(Json(SpaceStatusesResponse {
+        items: statuses.iter().map(serialize_status).collect(),
+    }))
 }
 
 struct StatusInput {
@@ -314,12 +457,28 @@ fn status_input(body: &Body, create: bool) -> ApiResult<StatusInput> {
 }
 
 /// `POST /v1/pms/spaces/{space_id}/statuses`.
+#[utoipa::path(
+    post, path = "/v1/pms/spaces/{space_id}/statuses", operation_id = "createPmsSpaceStatus", tag = "Workflow",
+    params(
+        ("space_id" = String, Path),
+    ),
+    request_body = CreateWorkflowStatusRequest,
+    responses(
+        (status = 201, description = "Created", body = TaskListStatusItem),
+        (status = 401, description = "Platform identity could not be verified", body = crate::error::IdentityErrorResponse),
+        (status = 403, description = "Current permissions do not allow the operation", body = crate::error::ErrorResponse),
+        (status = 404, description = "The space, task list, status, or user was not found", body = crate::error::ErrorResponse),
+        (status = 409, description = "Current resource state conflicts with the request", body = crate::error::ErrorResponse),
+        (status = 422, description = "Malformed input or invalid field value", body = crate::error::ErrorResponse),
+        (status = 500, description = "Internal error", body = crate::error::ErrorResponse),
+    )
+)]
 pub async fn create_space_status(
     State(pool): State<PgPool>,
     Extension(identity): Extension<Identity>,
     Path(space_id): Path<String>,
     body: Body,
-) -> ApiResult<impl IntoResponse> {
+) -> ApiResult<(StatusCode, Json<TaskListStatusItem>)> {
     let input = status_input(&body, true)?;
     let name = input.name.unwrap_or_default();
     let mut tx = pool.begin().await?;
@@ -459,12 +618,28 @@ async fn load_list_status(
 }
 
 /// `PATCH /v1/pms/space-statuses/{status_id}`.
+#[utoipa::path(
+    patch, path = "/v1/pms/space-statuses/{status_id}", operation_id = "updatePmsSpaceStatus", tag = "Workflow",
+    params(
+        ("status_id" = String, Path),
+    ),
+    request_body = UpdateWorkflowStatusRequest,
+    responses(
+        (status = 200, description = "Success", body = TaskListStatusItem),
+        (status = 401, description = "Platform identity could not be verified", body = crate::error::IdentityErrorResponse),
+        (status = 403, description = "Current permissions do not allow the operation", body = crate::error::ErrorResponse),
+        (status = 404, description = "The space, task list, status, or user was not found", body = crate::error::ErrorResponse),
+        (status = 409, description = "Current resource state conflicts with the request", body = crate::error::ErrorResponse),
+        (status = 422, description = "Malformed input or invalid field value", body = crate::error::ErrorResponse),
+        (status = 500, description = "Internal error", body = crate::error::ErrorResponse),
+    )
+)]
 pub async fn update_space_status(
     State(pool): State<PgPool>,
     Extension(identity): Extension<Identity>,
     Path(status_id): Path<String>,
     body: Body,
-) -> ApiResult<Json<Value>> {
+) -> ApiResult<Json<TaskListStatusItem>> {
     let input = status_input(&body, false)?;
     let mut tx = pool.begin().await?;
     let (current, team_id) = load_space_status(&mut tx, &status_id).await?;
@@ -485,6 +660,20 @@ pub async fn update_space_status(
 }
 
 /// `DELETE /v1/pms/space-statuses/{status_id}`.
+#[utoipa::path(
+    delete, path = "/v1/pms/space-statuses/{status_id}", operation_id = "deletePmsSpaceStatus", tag = "Workflow",
+    params(
+        ("status_id" = String, Path),
+    ),
+    responses(
+        (status = 204, description = "Completed with no response body"),
+        (status = 401, description = "Platform identity could not be verified", body = crate::error::IdentityErrorResponse),
+        (status = 403, description = "Current permissions do not allow the operation", body = crate::error::ErrorResponse),
+        (status = 404, description = "The space, task list, status, or user was not found", body = crate::error::ErrorResponse),
+        (status = 409, description = "Current resource state conflicts with the request", body = crate::error::ErrorResponse),
+        (status = 500, description = "Internal error", body = crate::error::ErrorResponse),
+    )
+)]
 pub async fn delete_space_status(
     State(pool): State<PgPool>,
     Extension(identity): Extension<Identity>,
@@ -521,12 +710,29 @@ pub async fn delete_space_status(
 
 /// `POST /v1/pms/lists/{list_id}/statuses`: switches an inheriting list to
 /// its own copy of the space workflow first.
+#[utoipa::path(
+    post, path = "/v1/pms/lists/{list_id}/statuses", operation_id = "createPmsTaskListStatus", tag = "Workflow",
+    description = "Copies the current space workflow first when the list inherits it.",
+    params(
+        ("list_id" = String, Path),
+    ),
+    request_body = CreateWorkflowStatusRequest,
+    responses(
+        (status = 201, description = "Created", body = TaskListStatusItem),
+        (status = 401, description = "Platform identity could not be verified", body = crate::error::IdentityErrorResponse),
+        (status = 403, description = "Current permissions do not allow the operation", body = crate::error::ErrorResponse),
+        (status = 404, description = "The space, task list, status, or user was not found", body = crate::error::ErrorResponse),
+        (status = 409, description = "Current resource state conflicts with the request", body = crate::error::ErrorResponse),
+        (status = 422, description = "Malformed input or invalid field value", body = crate::error::ErrorResponse),
+        (status = 500, description = "Internal error", body = crate::error::ErrorResponse),
+    )
+)]
 pub async fn create_task_list_status(
     State(pool): State<PgPool>,
     Extension(identity): Extension<Identity>,
     Path(list_id): Path<String>,
     body: Body,
-) -> ApiResult<impl IntoResponse> {
+) -> ApiResult<(StatusCode, Json<TaskListStatusItem>)> {
     let input = status_input(&body, true)?;
     let name = input.name.unwrap_or_default();
     let mut tx = pool.begin().await?;
@@ -580,12 +786,28 @@ pub async fn create_task_list_status(
 }
 
 /// `PATCH /v1/pms/task-list-statuses/{status_id}`.
+#[utoipa::path(
+    patch, path = "/v1/pms/task-list-statuses/{status_id}", operation_id = "updatePmsTaskListStatus", tag = "Workflow",
+    params(
+        ("status_id" = String, Path),
+    ),
+    request_body = UpdateWorkflowStatusRequest,
+    responses(
+        (status = 200, description = "Success", body = TaskListStatusItem),
+        (status = 401, description = "Platform identity could not be verified", body = crate::error::IdentityErrorResponse),
+        (status = 403, description = "Current permissions do not allow the operation", body = crate::error::ErrorResponse),
+        (status = 404, description = "The space, task list, status, or user was not found", body = crate::error::ErrorResponse),
+        (status = 409, description = "Current resource state conflicts with the request", body = crate::error::ErrorResponse),
+        (status = 422, description = "Malformed input or invalid field value", body = crate::error::ErrorResponse),
+        (status = 500, description = "Internal error", body = crate::error::ErrorResponse),
+    )
+)]
 pub async fn update_task_list_status(
     State(pool): State<PgPool>,
     Extension(identity): Extension<Identity>,
     Path(status_id): Path<String>,
     body: Body,
-) -> ApiResult<Json<Value>> {
+) -> ApiResult<Json<TaskListStatusItem>> {
     let input = status_input(&body, false)?;
     let mut tx = pool.begin().await?;
     let (_, list_id) = load_list_status(&mut tx, &status_id).await?;
@@ -608,6 +830,20 @@ pub async fn update_task_list_status(
 }
 
 /// `DELETE /v1/pms/task-list-statuses/{status_id}`.
+#[utoipa::path(
+    delete, path = "/v1/pms/task-list-statuses/{status_id}", operation_id = "deletePmsTaskListStatus", tag = "Workflow",
+    params(
+        ("status_id" = String, Path),
+    ),
+    responses(
+        (status = 204, description = "Completed with no response body"),
+        (status = 401, description = "Platform identity could not be verified", body = crate::error::IdentityErrorResponse),
+        (status = 403, description = "Current permissions do not allow the operation", body = crate::error::ErrorResponse),
+        (status = 404, description = "The space, task list, status, or user was not found", body = crate::error::ErrorResponse),
+        (status = 409, description = "Current resource state conflicts with the request", body = crate::error::ErrorResponse),
+        (status = 500, description = "Internal error", body = crate::error::ErrorResponse),
+    )
+)]
 pub async fn delete_task_list_status(
     State(pool): State<PgPool>,
     Extension(identity): Extension<Identity>,

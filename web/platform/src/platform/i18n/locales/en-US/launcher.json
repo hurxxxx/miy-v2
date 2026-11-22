@@ -55,6 +55,8 @@
     "appBarNoSelectedApps": "No apps assigned yet.",
     "appBarRemoveApp": "Remove from category",
     "appBarSaveLayout": "Save layout",
+    "appBarDiscardLayout": "Discard unsaved changes and reload the layout?",
+    "appBarSaveBeforeCategoryChange": "Save the layout before adding or deleting categories.",
     "appBarSearchApps": "Search apps",
     "appBarSearchAppsPlaceholder": "Search by app name or ID",
     "appBarSearchIcons": "Search icons",

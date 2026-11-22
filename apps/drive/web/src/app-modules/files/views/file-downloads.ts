@@ -1,37 +1,62 @@
-import type { AppRuntime } from '@miy/sdk';
+import { isApiError, type AppRuntime } from '@miy/sdk';
 
 import { i18n } from '../../../platform/i18n';
 import { FilesApiError, type FileDownloadResponse } from '../api/files-api';
 
-/** Pause between downloads so browsers keep them as separate files. */
-export const DOWNLOAD_SPACING_MS = 400;
-
-/**
- * AI-DO opened a signed URL (`openDownloadUrl`) or saved a ZIP Blob. In the
- * frame a download is a five-minute platform link the backend issues after
- * its ACL check, started with `runtime.download(url)`: the browser streams
- * the bytes, nothing is held in memory and the platform asks the app again
- * before sending them. Each file gets a fresh link just before it starts.
- */
-export async function startDownloads(
+export async function startDownload(
   runtime: Pick<AppRuntime, 'download'>,
-  fileIds: readonly string[],
+  fileId: string,
   getLink: (fileId: string) => Promise<FileDownloadResponse>,
-  wait: (ms: number) => Promise<void> = (ms) =>
-    new Promise((resolve) => setTimeout(resolve, ms)),
-): Promise<number> {
+): Promise<void> {
   const download = runtime.download;
   if (!download) {
     throw new FilesApiError(0, i18n.t('apps:drive.download.unavailable'));
   }
-  let started = 0;
-  for (const [index, fileId] of fileIds.entries()) {
-    if (index > 0) {
-      await wait(DOWNLOAD_SPACING_MS);
+  const link = await getLink(fileId);
+  download(link.url);
+}
+
+export type DownloadEntry = { id: string; path: string; downloadUrl?: string };
+export type DownloadBatch = { remaining: DownloadEntry[]; sent: number; total: number };
+
+/** Save confirmed progress so callers can resume at the first unfinished file. */
+export async function sendDownloadBatch(
+  download: NonNullable<AppRuntime['downloadAndWait']>,
+  batch: DownloadBatch,
+  getLink: (fileId: string) => Promise<FileDownloadResponse>,
+  signal: AbortSignal,
+  saveProgress: (batch: DownloadBatch) => void,
+): Promise<void> {
+  let current = batch;
+  for (const entry of batch.remaining) {
+    signal.throwIfAborted();
+    const checkOnly = entry.downloadUrl !== undefined;
+    let url = entry.downloadUrl;
+    if (url === undefined) {
+      const link = await getLink(entry.id);
+      signal.throwIfAborted();
+      url = link.url;
+      current = {
+        ...current,
+        remaining: [{ ...entry, downloadUrl: url }, ...current.remaining.slice(1)],
+      };
+      saveProgress(current);
     }
-    const link = await getLink(fileId);
-    download(link.url);
-    started += 1;
+    try {
+      await download(url, signal, { checkOnly });
+    } catch (error) {
+      signal.throwIfAborted();
+      if (isApiError(error) && error.code === 'file_download_failed') {
+        current = {
+          ...current,
+          remaining: [{ id: entry.id, path: entry.path }, ...current.remaining.slice(1)],
+        };
+        saveProgress(current);
+      }
+      throw error;
+    }
+    signal.throwIfAborted();
+    current = { ...current, remaining: current.remaining.slice(1), sent: current.sent + 1 };
+    saveProgress(current);
   }
-  return started;
 }

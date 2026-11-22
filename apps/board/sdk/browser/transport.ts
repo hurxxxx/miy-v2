@@ -15,6 +15,18 @@ export class ApiError extends Error {
   }
 }
 
+/** Frame hosts and federated apps can load distinct copies of the SDK. */
+export function isApiError(error: unknown): error is ApiError {
+  if (!(error instanceof Error) || error.name !== "ApiError") return false;
+  const candidate = error as Partial<ApiError>;
+  return (candidate.kind === "http" || candidate.kind === "network"
+      || candidate.kind === "parse" || candidate.kind === "abort")
+    && typeof candidate.code === "string"
+    && (candidate.status === null || typeof candidate.status === "number")
+    && (candidate.requestId === null || typeof candidate.requestId === "string")
+    && typeof candidate.retryable === "boolean";
+}
+
 const isRead = (method?: string) => /^(GET|HEAD)$/i.test(method || "GET");
 const safeCode = (value: unknown): value is string =>
   typeof value === "string" && /^[a-z][a-z0-9_]{0,127}$/.test(value);
@@ -30,7 +42,7 @@ export function requestHeaders(init: RequestInit = {}): Headers {
 }
 
 function transferError(error: unknown, init: RequestInit = {}): ApiError {
-  if (error instanceof ApiError) return error;
+  if (isApiError(error)) return error;
   if (init.signal?.aborted || (error instanceof Error && error.name === "AbortError"))
     return new ApiError("abort", "request_aborted");
   return new ApiError("network", "network_unavailable", null, null, isRead(init.method));

@@ -8,14 +8,14 @@ import { pathToFileURL } from 'node:url';
 const frameRequire = createRequire(new URL('../web/frame-runtime/package.json', import.meta.url));
 const { transformWithOxc } = await import(pathToFileURL(frameRequire.resolve('vite')).href);
 
-async function sourceModule(name) {
+async function sourceModule(name, instance = '') {
   const source = readFileSync(new URL(`../packages/sdk/src/${name}.ts`, import.meta.url), 'utf8');
   const { code: javascript } = await transformWithOxc(source, `${name}.ts`);
-  return import(`data:text/javascript;base64,${Buffer.from(javascript).toString('base64')}`);
+  return import(`data:text/javascript;base64,${Buffer.from(javascript).toString('base64')}#${instance}`);
 }
 const transport = await sourceModule('transport');
 const { completeDirectoryPage, directoryQuery } = await sourceModule('directory');
-const { ApiError, request, requestBlob, readJson, readBlob, withAbort } = transport;
+const { ApiError, isApiError, request, requestBlob, readJson, readBlob, withAbort } = transport;
 const originalFetch = globalThis.fetch;
 const passed = [];
 async function check(name, run) {
@@ -30,6 +30,16 @@ const matches = (kind, code, status = null) => (error) => {
   assert(!JSON.stringify(error).includes('PRIVATE-BODY'));
   return true;
 };
+
+await check('a federated app recognizes the frame SDK error without sharing its constructor', async () => {
+  const frameTransport = await sourceModule('transport', 'frame');
+  const frameError = new frameTransport.ApiError('http', 'file_download_failed', 409, 'request-1');
+  assert.equal(frameError instanceof ApiError, false);
+  assert(isApiError(frameError));
+  assert.equal(isApiError(Object.assign(new Error(), { name: 'ApiError' })), false);
+  globalThis.fetch = async () => { throw frameError; };
+  await assert.rejects(request('/resource'), (error) => error === frameError);
+});
 
 await check('JSON/Headers handling preserves caller headers and host CSRF', async () => {
   let sent;

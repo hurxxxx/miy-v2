@@ -33,10 +33,10 @@ pub fn cli_help() -> Value {
     walk(c, "miy", &mut rows);
     json!({"cliVersion":crate::cli_guidance::VERSION,"bundleVersion":crate::bundle::VERSION,"workflow":crate::cli_guidance::WORKFLOW,"commands":rows})
 }
-pub fn setup(root: &Path) -> Result<Value> {
-    crate::cli_error::validation(setup_local(root), "setup_failed")
+pub fn setup(root: &Path, initialized_with: Option<&str>) -> Result<Value> {
+    crate::cli_error::validation(setup_local(root, initialized_with), "setup_failed")
 }
-fn setup_local(root: &Path) -> Result<Value> {
+fn setup_local(root: &Path, initialized_with: Option<&str>) -> Result<Value> {
     let root = root.canonicalize()?;
     let transaction = crate::file_transaction::begin(&root)?;
     ensure!(
@@ -44,13 +44,16 @@ fn setup_local(root: &Path) -> Result<Value> {
         "run_inside_an_app_directory"
     );
     crate::bundle::verify(&root)?;
-    let receipt = transaction.commit(setup_changes(&root)?)?;
+    let receipt = transaction.commit(setup_changes(&root, initialized_with)?)?;
     let mut result = setup_result(&root)?;
     result["transaction"] = serde_json::to_value(receipt)?;
     Ok(result)
 }
 
-pub(crate) fn setup_changes(root: &Path) -> Result<Vec<crate::file_transaction::Change>> {
+pub(crate) fn setup_changes(
+    root: &Path,
+    initialized_with: Option<&str>,
+) -> Result<Vec<crate::file_transaction::Change>> {
     use crate::file_transaction::Change;
     let root = root.canonicalize()?;
     let binary = crate::platform::project_cli(&root);
@@ -107,7 +110,7 @@ pub(crate) fn setup_changes(root: &Path) -> Result<Vec<crate::file_transaction::
         "miy_app".into(),
         json!({"type":"stdio","command":binary,"args":["mcp"],"env":{"MIY_APP_DIRECTORY":root}}),
     );
-    let mut changes: Vec<_> = crate::cli_guidance::planned_files(&root)?
+    let mut changes: Vec<_> = crate::cli_guidance::planned_files(&root, initialized_with)?
         .into_iter()
         .map(|(path, bytes)| Change::new(path, bytes))
         .collect();
@@ -307,7 +310,7 @@ impl Tools {
         )
     }
     #[tool(
-        description = "Discover CLI commands, inspect a typed command, or search. Offline topics are updates for CLI updates and harness for component reuse, file recovery and app integration. The default is a short list; all requests the full reference.",
+        description = "Discover CLI commands or read an offline guide. Use topic=api for app OpenAPI, topic=harness for app integration, or topic=updates for CLI updates.",
         annotations(read_only_hint = true)
     )]
     async fn get_cli_help(
@@ -349,7 +352,7 @@ impl Tools {
         )
     }
     #[tool(
-        description = "Get an API's input schema, permissions and route by operation ID.",
+        description = "Get a platform API's input schema, permissions and route by operation ID.",
         annotations(read_only_hint = true)
     )]
     async fn get_api(&self, Parameters(v): Parameters<ApiId>) -> Result<CallToolResult, McpError> {
@@ -390,7 +393,7 @@ impl ServerHandler for Tools {
     fn get_info(&self) -> ServerConfig {
         let mut c = ServerConfig::default();
         c.capabilities = ServerCapabilities::builder().enable_tools().build();
-        c.with_instructions("Read get_contract and get_cli_help before development. For CLI updates call get_cli_help with topic=updates; it works without login. Update the global CLI from the selected portal's installer, run the new global miy app setup in each compatible project, then restart Codex/Claude Code. Updating does not require repeating browser approval. Use the project miy-cli skill and docs/CLI-REFERENCE.md for the installed executable. Never read credential files or modify the protected SDK bundle. This MCP only supplies guidance; it does not deploy applications.")
+        c.with_instructions("Read get_contract for SDK rules. Use get_cli_help with topic=api for app contracts or topic=updates for CLI updates. Both topics work without login. After a global CLI update, run miy app setup in compatible projects and restart the coding agent. Keep credentials and protected SDK files private and intact. This MCP provides guidance and cannot deploy apps.")
     }
 }
 pub async fn serve() -> Result<()> {

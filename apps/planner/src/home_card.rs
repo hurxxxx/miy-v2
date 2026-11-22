@@ -6,23 +6,43 @@
 use axum::{Extension, Json, extract::State};
 use chrono::{Duration, NaiveDate, NaiveDateTime, TimeZone, Utc};
 use miy_app_sdk::Identity;
-use serde::Deserialize;
-use serde_json::{Value, json};
+use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 
-use crate::error::{ApiError, ApiResult};
+use crate::error::{ApiError, ApiErrorResponse, ApiResult, GatewayErrorResponse};
 use crate::event_time::{event_time_zone, local_day_start};
 use crate::planner::{PlannerEvent, list_owner_events};
 
 const MAX_ITEMS: usize = 5;
 
-#[derive(Debug, Default, Deserialize)]
+#[derive(Debug, Default, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct HomeCardRequest {
+    /// IANA time zone for the viewer's local day.
     #[serde(default)]
     time_zone: Option<String>,
+    /// en-US selects English display text. Other values use Korean.
     #[serde(default)]
     locale: Option<String>,
+}
+
+#[derive(Serialize, utoipa::ToSchema)]
+pub struct HomeCardResponse {
+    title: &'static str,
+    /// Count before truncating the card to five items.
+    count: usize,
+    #[schema(max_items = 5)]
+    items: Vec<HomeCardItem>,
+}
+
+#[derive(Serialize, utoipa::ToSchema)]
+struct HomeCardItem {
+    title: String,
+    #[schema(required)]
+    subtitle: Option<String>,
+    #[schema(required, format = DateTime)]
+    at: Option<String>,
+    path: String,
 }
 
 /// The UTC instants of the local day `date` in `zone` (stored instants are naive UTC).
@@ -51,9 +71,9 @@ fn on_day(event: &PlannerEvent, date: NaiveDate, bounds: (NaiveDateTime, NaiveDa
 }
 
 /// The card for today's events (already chosen by [`on_day`]).
-pub fn card(today: &[PlannerEvent], english: bool) -> Value {
+fn card(today: &[PlannerEvent], english: bool) -> HomeCardResponse {
     let all_day = if english { "All day" } else { "종일" };
-    let items: Vec<Value> = today
+    let items = today
         .iter()
         .take(MAX_ITEMS)
         .map(|event| {
@@ -63,27 +83,46 @@ pub fn card(today: &[PlannerEvent], english: bool) -> Value {
                 (false, "") => None,
                 (false, place) => Some(place.to_owned()),
             };
-            json!({
-                "title": event.title,
-                "subtitle": subtitle,
-                "at": (!event.all_day && event.start_has_time)
+            HomeCardItem {
+                title: event.title.clone(),
+                subtitle,
+                at: (!event.all_day && event.start_has_time)
                     .then(|| Utc.from_utc_datetime(&event.start_at).to_rfc3339()),
-                "path": format!("/?event={}", event.id),
-            })
+                path: format!("/?event={}", event.id),
+            }
         })
         .collect();
-    json!({
-        "title": if english { "Today" } else { "오늘 일정" },
-        "count": today.len(),
-        "items": items,
-    })
+    HomeCardResponse {
+        title: if english { "Today" } else { "오늘 일정" },
+        count: today.len(),
+        items,
+    }
 }
 
+/// Platform callback for the portal home card.
+#[utoipa::path(
+    post, path = "/v1/home-card", operation_id = "getPlannerHomeCard",
+    request_body(
+        content = ref("#/components/schemas/HomeCardRequest"),
+        content_type = "application/json",
+        description = "Omit the body to use default display settings"
+    ),
+    responses(
+        (status = 200, description = "Today's events for the signed-in user", body = HomeCardResponse),
+        (status = 400, description = "Malformed JSON", body = String, content_type = "text/plain"),
+        (status = 401, description = "Platform identity could not be verified", body = GatewayErrorResponse),
+        (status = 403, description = "Platform calls only", body = ApiErrorResponse),
+        (status = 413, description = "Request body too large", body = String, content_type = "text/plain"),
+        (status = 415, description = "Unsupported content type", body = String, content_type = "text/plain"),
+        (status = 422, description = "Invalid home card request", body = String, content_type = "text/plain"),
+        (status = 500, description = "Could not read the events", body = ApiErrorResponse)
+    )
+)]
 pub async fn home_card(
     State(pool): State<PgPool>,
     Extension(identity): Extension<Identity>,
     body: Option<Json<HomeCardRequest>>,
-) -> ApiResult<Json<Value>> {
+) -> ApiResult<Json<HomeCardResponse>> {
     if !identity.context.platform {
         return Err(ApiError::new(
             axum::http::StatusCode::FORBIDDEN,
@@ -114,6 +153,7 @@ pub async fn home_card(
 mod tests {
     use super::*;
     use chrono::NaiveDate;
+    use serde_json::Value;
 
     fn event(id: &str, all_day: bool, start: &str, end: &str) -> PlannerEvent {
         let at = |value: &str| NaiveDateTime::parse_from_str(value, "%Y-%m-%d %H:%M").unwrap();
@@ -181,7 +221,7 @@ mod tests {
                 )
             })
             .collect();
-        let value = card(&events, false);
+        let value = serde_json::to_value(card(&events, false)).unwrap();
         assert_eq!(value["title"], "오늘 일정");
         assert_eq!(value["count"], 7);
         assert_eq!(value["items"].as_array().unwrap().len(), MAX_ITEMS);
@@ -189,6 +229,6 @@ mod tests {
         assert_eq!(value["items"][0]["at"], Value::Null);
         assert_eq!(value["items"][1]["path"], "/?event=1");
         assert_eq!(value["items"][1]["subtitle"], "회의실 A");
-        assert_eq!(card(&events, true)["title"], "Today");
+        assert_eq!(card(&events, true).title, "Today");
     }
 }

@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import * as DialogPrimitive from '@radix-ui/react-dialog';
 
 import { PromptDialogContent } from './prompt-dialog-content';
@@ -84,6 +84,10 @@ export function usePrompt() {
   const [state, setState] = useState<PromptDialogState>(null);
   const stateRef = useRef(state);
   stateRef.current = state;
+  useEffect(() => () => {
+    stateRef.current?.resolve(null);
+    stateRef.current = null;
+  }, []);
 
   const prompt = useCallback((options: PromptOptions) => {
     return new Promise<string | null>((resolve) => {

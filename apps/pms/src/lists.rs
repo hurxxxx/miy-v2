@@ -11,7 +11,7 @@ use axum::{
 };
 use chrono::{Duration, NaiveDate};
 use miy_app_sdk::Identity;
-use serde_json::{Value, json};
+use serde_json::Value;
 use sqlx::{PgConnection, PgPool};
 
 use crate::access::{
@@ -25,7 +25,7 @@ use crate::models::{
     today_utc, utcnow,
 };
 use crate::statuses::{create_default_task_list_statuses, ensure_space_statuses};
-use crate::summary::{self, ListCounts};
+use crate::summary::{self, ListCounts, TaskListItem};
 use crate::tasks;
 use crate::users;
 use crate::workflow::{
@@ -96,13 +96,205 @@ pub async fn validate_folder_membership(
     }
 }
 
+#[derive(serde::Serialize, utoipa::ToSchema)]
+pub struct TaskListPage {
+    items: Vec<TaskListItem>,
+    total: usize,
+    page: i64,
+    page_size: i64,
+}
+
+#[derive(serde::Serialize, utoipa::ToSchema)]
+pub struct FolderItem {
+    id: String,
+    #[schema(required)]
+    team_id: Option<String>,
+    name: String,
+    sort_order: i32,
+    list_count: i64,
+}
+
+#[derive(serde::Serialize, utoipa::ToSchema)]
+pub struct FoldersResponse {
+    items: Vec<FolderItem>,
+}
+
+#[derive(Clone, serde::Serialize, utoipa::ToSchema)]
+pub struct LabelItem {
+    id: String,
+    name: String,
+    color: String,
+}
+
+#[derive(serde::Serialize, utoipa::ToSchema)]
+pub struct LabelsResponse {
+    items: Vec<LabelItem>,
+    total: usize,
+    page: i64,
+    page_size: i64,
+}
+
+#[derive(serde::Serialize, utoipa::ToSchema)]
+pub struct DashboardSummary {
+    list_count: usize,
+    active_task_count: usize,
+    overdue_task_count: usize,
+    my_task_count: usize,
+    milestone_due_soon_count: usize,
+    status_counts: Vec<DashboardStatusCount>,
+    priority_counts: Vec<DashboardPriorityCount>,
+    lists: Vec<DashboardTaskList>,
+    recent_activity: Vec<DashboardActivity>,
+}
+
+#[derive(serde::Serialize, utoipa::ToSchema)]
+pub struct DashboardStatusCount {
+    status: String,
+    label: String,
+    count: usize,
+}
+
+#[derive(serde::Serialize, utoipa::ToSchema)]
+pub struct DashboardPriorityCount {
+    priority: String,
+    label: String,
+    count: usize,
+}
+
+#[derive(serde::Serialize, utoipa::ToSchema)]
+pub struct DashboardTaskList {
+    list_id: String,
+    key: String,
+    name: String,
+    progress: f64,
+    open_task_count: usize,
+    overdue_task_count: usize,
+    #[schema(required, format = Date)]
+    next_due_date: Option<String>,
+}
+
+#[derive(serde::Serialize, utoipa::ToSchema)]
+pub struct DashboardActivity {
+    id: String,
+    task_id: String,
+    task_reference: String,
+    message: String,
+    #[schema(required)]
+    actor_name: Option<String>,
+    created_at: String,
+}
+
+// The Body extractor preserves legacy coercion and field presence. These DTOs
+// describe its accepted JSON in the OpenAPI contract.
+#[allow(dead_code)]
+#[derive(utoipa::ToSchema)]
+#[serde(untagged)]
+pub(crate) enum IntegerInput {
+    Integer(i64),
+    /// A decimal integer string. Leading and trailing whitespace is ignored.
+    Text(String),
+}
+
+#[allow(dead_code)]
+#[derive(utoipa::ToSchema)]
+#[serde(untagged)]
+pub(crate) enum BooleanInput {
+    Boolean(bool),
+    /// Legacy boolean spellings such as 1/0, yes/no, on/off, t/f and y/n.
+    Text(String),
+    ZeroOrOne(BooleanNumber),
+}
+
+#[derive(utoipa::ToSchema)]
+#[schema(minimum = 0, maximum = 1)]
+pub(crate) struct BooleanNumber(#[allow(dead_code)] u8);
+
+#[allow(dead_code)]
+#[derive(utoipa::ToSchema)]
+struct TaskListCreateRequest {
+    #[schema(min_length = 2, max_length = 140)]
+    name: String,
+    /// Omit to generate a key from the name.
+    #[schema(min_length = 2, max_length = 24, pattern = "^[A-Za-z0-9_-]+$")]
+    key: Option<String>,
+    #[schema(required = false, value_type = String, max_length = 4000)]
+    description: Option<String>,
+    team_id: String,
+    folder_id: Option<String>,
+}
+
+#[allow(dead_code)]
+#[derive(utoipa::ToSchema)]
+struct TaskListUpdateRequest {
+    #[schema(min_length = 2, max_length = 140)]
+    name: Option<String>,
+    #[schema(max_length = 4000)]
+    description: Option<String>,
+    status: Option<summary::TaskListState>,
+    archived: Option<BooleanInput>,
+    /// Omit to keep the folder, or send null to move to the space root.
+    folder_id: Option<String>,
+    sort_order: Option<IntegerInput>,
+}
+
+#[allow(dead_code)]
+#[derive(utoipa::ToSchema)]
+struct TaskListReorderItem {
+    id: String,
+    folder_id: Option<String>,
+    /// Non-negative order. Omission or null uses zero.
+    sort_order: Option<IntegerInput>,
+}
+
+#[allow(dead_code)]
+#[derive(utoipa::ToSchema)]
+struct TaskListReorderRequest {
+    #[schema(min_items = 1, max_items = 200)]
+    items: Vec<TaskListReorderItem>,
+}
+
+#[allow(dead_code)]
+#[derive(utoipa::ToSchema)]
+struct FolderCreateRequest {
+    #[schema(min_length = 1, max_length = 140)]
+    name: String,
+    team_id: String,
+    sort_order: Option<IntegerInput>,
+}
+
+#[allow(dead_code)]
+#[derive(utoipa::ToSchema)]
+struct FolderUpdateRequest {
+    #[schema(min_length = 1, max_length = 140)]
+    name: Option<String>,
+    sort_order: Option<IntegerInput>,
+}
+
+#[allow(dead_code)]
+#[derive(utoipa::ToSchema)]
+struct LabelCreateRequest {
+    #[schema(min_length = 1, max_length = 48)]
+    name: String,
+    #[schema(required = false, value_type = String, max_length = 24)]
+    color: Option<String>,
+}
+
+#[allow(dead_code)]
+#[derive(utoipa::ToSchema)]
+struct LabelUpdateRequest {
+    #[schema(min_length = 1, max_length = 48)]
+    name: Option<String>,
+    #[schema(max_length = 24)]
+    color: Option<String>,
+}
+
 /// `GET /v1/pms/lists` and `GET /v1/pms/spaces/{space_id}/lists`.
 async fn list_task_lists_inner(
     pool: &PgPool,
     identity: &Identity,
     params: &Params,
     team_id: Option<String>,
-) -> ApiResult<Json<Value>> {
+) -> ApiResult<Json<TaskListPage>> {
     let page = params.int("page", 1, 1, None)?;
     let page_size = params.int("page_size", 20, 1, Some(100))?;
     let sort_by = params.string("sort_by", "updated_at");
@@ -220,7 +412,7 @@ async fn list_task_lists_inner(
     .into_iter()
     .collect();
     let default_workflow = ListWorkflow::default();
-    let items: Vec<Value> = lists
+    let items: Vec<TaskListItem> = lists
         .iter()
         .map(|list| {
             let team = list.team_id.as_ref().and_then(|id| teams.get(id));
@@ -249,9 +441,12 @@ async fn list_task_lists_inner(
         })
         .collect();
     let (page_items, total) = paginate(&items, page, page_size);
-    Ok(Json(json!({
-        "items": page_items, "total": total, "page": page, "page_size": page_size,
-    })))
+    Ok(Json(TaskListPage {
+        items: page_items,
+        total,
+        page,
+        page_size,
+    }))
 }
 
 #[derive(PartialEq, PartialOrd)]
@@ -277,25 +472,79 @@ pub(crate) fn stable_reverse<T>(items: &mut [T], key: impl Fn(&T) -> SortKey) {
     items.reverse();
 }
 
+#[utoipa::path(
+    get, path = "/v1/pms/lists", operation_id = "listPmsTaskLists", tag = "Task lists, folders and labels",
+    params(
+        ("page" = Option<i64>, Query, minimum = 1, description = "Defaults to 1"),
+        ("page_size" = Option<i64>, Query, minimum = 1, maximum = 100, description = "Defaults to 20"),
+        ("sort_by" = Option<String>, Query, description = "name, key, progress, sort_order or updated_at; omitted uses updated_at"),
+        ("sort_dir" = Option<String>, Query, description = "asc or desc; omitted uses desc"),
+        ("q" = Option<String>, Query),
+        ("archived" = Option<bool>, Query, description = "Omit for both archived and active lists"),
+        ("team_id" = Option<String>, Query, description = "Omit to read all accessible spaces")
+    ),
+    responses(
+        (status = 200, description = "Success", body = TaskListPage),
+        (status = 401, description = "Valid platform identity required", body = crate::error::IdentityErrorResponse),
+        (status = 403, description = "Current permissions do not allow this operation", body = crate::error::ErrorResponse),
+        (status = 404, description = "Resource is unavailable or does not exist", body = crate::error::ErrorResponse),
+        (status = 422, description = "Request validation failed", body = crate::error::ErrorResponse),
+        (status = 500, description = "Could not complete the request", body = crate::error::ErrorResponse)
+    )
+)]
 pub async fn list_task_lists(
     State(pool): State<PgPool>,
     Extension(identity): Extension<Identity>,
     params: Params,
-) -> ApiResult<Json<Value>> {
+) -> ApiResult<Json<TaskListPage>> {
     let team_id = params.opt_string("team_id");
     list_task_lists_inner(&pool, &identity, &params, team_id).await
 }
 
+#[utoipa::path(
+    get, path = "/v1/pms/spaces/{space_id}/lists", operation_id = "listPmsSpaceLists", tag = "Task lists, folders and labels",
+    params(
+        ("space_id" = String, Path),
+        ("page" = Option<i64>, Query, minimum = 1, description = "Defaults to 1"),
+        ("page_size" = Option<i64>, Query, minimum = 1, maximum = 100, description = "Defaults to 20"),
+        ("sort_by" = Option<String>, Query, description = "name, key, progress, sort_order or updated_at; omitted uses updated_at"),
+        ("sort_dir" = Option<String>, Query, description = "asc or desc; omitted uses desc"),
+        ("q" = Option<String>, Query),
+        ("archived" = Option<bool>, Query, description = "Omit for both archived and active lists")
+    ),
+    responses(
+        (status = 200, description = "Success", body = TaskListPage),
+        (status = 401, description = "Valid platform identity required", body = crate::error::IdentityErrorResponse),
+        (status = 403, description = "Current permissions do not allow this operation", body = crate::error::ErrorResponse),
+        (status = 404, description = "Resource is unavailable or does not exist", body = crate::error::ErrorResponse),
+        (status = 422, description = "Request validation failed", body = crate::error::ErrorResponse),
+        (status = 500, description = "Could not complete the request", body = crate::error::ErrorResponse)
+    )
+)]
 pub async fn list_space_lists(
     State(pool): State<PgPool>,
     Extension(identity): Extension<Identity>,
     Path(space_id): Path<String>,
     params: Params,
-) -> ApiResult<Json<Value>> {
+) -> ApiResult<Json<TaskListPage>> {
     list_task_lists_inner(&pool, &identity, &params, Some(space_id)).await
 }
 
 /// `POST /v1/pms/lists`: a new list inherits its space's workflow.
+#[utoipa::path(
+    post, path = "/v1/pms/lists", operation_id = "createPmsTaskList", tag = "Task lists, folders and labels",
+    request_body = TaskListCreateRequest,
+    responses(
+        (status = 201, description = "Created", body = TaskListItem),
+        (status = 400, description = "The folder must belong to the task list’s space", body = crate::error::ErrorResponse),
+        (status = 401, description = "Valid platform identity required", body = crate::error::IdentityErrorResponse),
+        (status = 403, description = "Current permissions do not allow this operation", body = crate::error::ErrorResponse),
+        (status = 404, description = "Resource is unavailable or does not exist", body = crate::error::ErrorResponse),
+        (status = 409, description = "Current resource state conflicts with the request", body = crate::error::ErrorResponse),
+        (status = 422, description = "Request validation failed", body = crate::error::ErrorResponse),
+        (status = 500, description = "Could not complete the request", body = crate::error::ErrorResponse)
+    )
+)]
 pub async fn create_task_list(
     State(pool): State<PgPool>,
     Extension(identity): Extension<Identity>,
@@ -380,11 +629,25 @@ pub async fn create_task_list(
 }
 
 /// `GET /v1/pms/lists/{list_id}`.
+#[utoipa::path(
+    get, path = "/v1/pms/lists/{list_id}", operation_id = "getPmsTaskList", tag = "Task lists, folders and labels",
+    params(
+        ("list_id" = String, Path)
+    ),
+    responses(
+        (status = 200, description = "Success", body = TaskListItem),
+        (status = 401, description = "Valid platform identity required", body = crate::error::IdentityErrorResponse),
+        (status = 403, description = "Current permissions do not allow this operation", body = crate::error::ErrorResponse),
+        (status = 404, description = "Resource is unavailable or does not exist", body = crate::error::ErrorResponse),
+        (status = 409, description = "Current resource state conflicts with the request", body = crate::error::ErrorResponse),
+        (status = 500, description = "Could not complete the request", body = crate::error::ErrorResponse)
+    )
+)]
 pub async fn get_task_list(
     State(pool): State<PgPool>,
     Extension(identity): Extension<Identity>,
     Path(list_id): Path<String>,
-) -> ApiResult<Json<Value>> {
+) -> ApiResult<Json<TaskListItem>> {
     let mut conn = pool.acquire().await?;
     let (list, role) = ensure_list_member(&mut conn, &identity.user_id, &list_id).await?;
     Ok(Json(
@@ -395,12 +658,29 @@ pub async fn get_task_list(
 /// `PATCH /v1/pms/lists/{list_id}`: folder/sort order alone is an editor's
 /// reorder; anything else needs an owner or admin, and an archived list only
 /// accepts (un)archiving.
+#[utoipa::path(
+    patch, path = "/v1/pms/lists/{list_id}", operation_id = "updatePmsTaskList", tag = "Task lists, folders and labels",
+    params(
+        ("list_id" = String, Path)
+    ),
+    request_body = TaskListUpdateRequest,
+    responses(
+        (status = 200, description = "Success", body = TaskListItem),
+        (status = 400, description = "The folder must belong to the task list’s space", body = crate::error::ErrorResponse),
+        (status = 401, description = "Valid platform identity required", body = crate::error::IdentityErrorResponse),
+        (status = 403, description = "Current permissions do not allow this operation", body = crate::error::ErrorResponse),
+        (status = 404, description = "Resource is unavailable or does not exist", body = crate::error::ErrorResponse),
+        (status = 409, description = "Current resource state conflicts with the request", body = crate::error::ErrorResponse),
+        (status = 422, description = "Request validation failed", body = crate::error::ErrorResponse),
+        (status = 500, description = "Could not complete the request", body = crate::error::ErrorResponse)
+    )
+)]
 pub async fn update_task_list(
     State(pool): State<PgPool>,
     Extension(identity): Extension<Identity>,
     Path(list_id): Path<String>,
     body: Body,
-) -> ApiResult<Json<Value>> {
+) -> ApiResult<Json<TaskListItem>> {
     let known = [
         "name",
         "description",
@@ -488,6 +768,20 @@ pub async fn update_task_list(
 }
 
 /// `DELETE /v1/pms/lists/{list_id}`: only an archived list, with its tasks.
+#[utoipa::path(
+    delete, path = "/v1/pms/lists/{list_id}", operation_id = "deletePmsTaskList", tag = "Task lists, folders and labels",
+    params(
+        ("list_id" = String, Path)
+    ),
+    responses(
+        (status = 204, description = "Completed with no response body"),
+        (status = 401, description = "Valid platform identity required", body = crate::error::IdentityErrorResponse),
+        (status = 403, description = "Current permissions do not allow this operation", body = crate::error::ErrorResponse),
+        (status = 404, description = "Resource is unavailable or does not exist", body = crate::error::ErrorResponse),
+        (status = 409, description = "Current resource state conflicts with the request", body = crate::error::ErrorResponse),
+        (status = 500, description = "Could not complete the request", body = crate::error::ErrorResponse)
+    )
+)]
 pub async fn delete_task_list(
     State(pool): State<PgPool>,
     Extension(identity): Extension<Identity>,
@@ -516,6 +810,23 @@ pub async fn delete_task_list(
 }
 
 /// `PATCH /v1/pms/spaces/{space_id}/lists/reorder`.
+#[utoipa::path(
+    patch, path = "/v1/pms/spaces/{space_id}/lists/reorder", operation_id = "reorderPmsSpaceLists", tag = "Task lists, folders and labels",
+    params(
+        ("space_id" = String, Path)
+    ),
+    request_body = TaskListReorderRequest,
+    responses(
+        (status = 204, description = "Completed with no response body"),
+        (status = 400, description = "The request conflicts with the route constraints", body = crate::error::ErrorResponse),
+        (status = 401, description = "Valid platform identity required", body = crate::error::IdentityErrorResponse),
+        (status = 403, description = "Current permissions do not allow this operation", body = crate::error::ErrorResponse),
+        (status = 404, description = "Resource is unavailable or does not exist", body = crate::error::ErrorResponse),
+        (status = 409, description = "Current resource state conflicts with the request", body = crate::error::ErrorResponse),
+        (status = 422, description = "Request validation failed", body = crate::error::ErrorResponse),
+        (status = 500, description = "Could not complete the request", body = crate::error::ErrorResponse)
+    )
+)]
 pub async fn reorder_space_lists(
     State(pool): State<PgPool>,
     Extension(identity): Extension<Identity>,
@@ -579,12 +890,29 @@ pub async fn reorder_space_lists(
 // ── Labels ─────────────────────────────────────────────────────────────
 
 /// `GET /v1/pms/lists/{list_id}/labels`.
+#[utoipa::path(
+    get, path = "/v1/pms/lists/{list_id}/labels", operation_id = "listPmsLabels", tag = "Task lists, folders and labels",
+    params(
+        ("list_id" = String, Path),
+        ("page" = Option<i64>, Query, minimum = 1, description = "Defaults to 1"),
+        ("page_size" = Option<i64>, Query, minimum = 1, maximum = 200, description = "Defaults to 100")
+    ),
+    responses(
+        (status = 200, description = "Success", body = LabelsResponse),
+        (status = 401, description = "Valid platform identity required", body = crate::error::IdentityErrorResponse),
+        (status = 403, description = "Current permissions do not allow this operation", body = crate::error::ErrorResponse),
+        (status = 404, description = "Resource is unavailable or does not exist", body = crate::error::ErrorResponse),
+        (status = 409, description = "Current resource state conflicts with the request", body = crate::error::ErrorResponse),
+        (status = 422, description = "Request validation failed", body = crate::error::ErrorResponse),
+        (status = 500, description = "Could not complete the request", body = crate::error::ErrorResponse)
+    )
+)]
 pub async fn list_labels(
     State(pool): State<PgPool>,
     Extension(identity): Extension<Identity>,
     Path(list_id): Path<String>,
     params: Params,
-) -> ApiResult<Json<Value>> {
+) -> ApiResult<Json<LabelsResponse>> {
     let page = params.int("page", 1, 1, None)?;
     let page_size = params.int("page_size", 100, 1, Some(200))?;
     let mut conn = pool.acquire().await?;
@@ -594,14 +922,17 @@ pub async fn list_labels(
             .bind(&list_id)
             .fetch_all(&mut *conn)
             .await?;
-    let items: Vec<Value> = labels
+    let items: Vec<LabelItem> = labels
         .into_iter()
-        .map(|(id, name, color)| json!({"id": id, "name": name, "color": color}))
+        .map(|(id, name, color)| LabelItem { id, name, color })
         .collect();
     let (page_items, total) = paginate(&items, page, page_size);
-    Ok(Json(json!({
-        "items": page_items, "total": total, "page": page, "page_size": page_size,
-    })))
+    Ok(Json(LabelsResponse {
+        items: page_items,
+        total,
+        page,
+        page_size,
+    }))
 }
 
 async fn label_name_taken(
@@ -622,6 +953,22 @@ async fn label_name_taken(
 }
 
 /// `POST /v1/pms/lists/{list_id}/labels`.
+#[utoipa::path(
+    post, path = "/v1/pms/lists/{list_id}/labels", operation_id = "createPmsLabel", tag = "Task lists, folders and labels",
+    params(
+        ("list_id" = String, Path)
+    ),
+    request_body = LabelCreateRequest,
+    responses(
+        (status = 201, description = "Created", body = LabelItem),
+        (status = 401, description = "Valid platform identity required", body = crate::error::IdentityErrorResponse),
+        (status = 403, description = "Current permissions do not allow this operation", body = crate::error::ErrorResponse),
+        (status = 404, description = "Resource is unavailable or does not exist", body = crate::error::ErrorResponse),
+        (status = 409, description = "Current resource state conflicts with the request", body = crate::error::ErrorResponse),
+        (status = 422, description = "Request validation failed", body = crate::error::ErrorResponse),
+        (status = 500, description = "Could not complete the request", body = crate::error::ErrorResponse)
+    )
+)]
 pub async fn create_label(
     State(pool): State<PgPool>,
     Extension(identity): Extension<Identity>,
@@ -650,19 +997,32 @@ pub async fn create_label(
     .execute(&mut *tx)
     .await?;
     tx.commit().await?;
-    Ok((
-        StatusCode::CREATED,
-        Json(json!({"id": id, "name": name, "color": color})),
-    ))
+    Ok((StatusCode::CREATED, Json(LabelItem { id, name, color })))
 }
 
 /// `PATCH /v1/pms/labels/{label_id}`.
+#[utoipa::path(
+    patch, path = "/v1/pms/labels/{label_id}", operation_id = "updatePmsLabel", tag = "Task lists, folders and labels",
+    params(
+        ("label_id" = String, Path)
+    ),
+    request_body = LabelUpdateRequest,
+    responses(
+        (status = 200, description = "Success", body = LabelItem),
+        (status = 401, description = "Valid platform identity required", body = crate::error::IdentityErrorResponse),
+        (status = 403, description = "Current permissions do not allow this operation", body = crate::error::ErrorResponse),
+        (status = 404, description = "Resource is unavailable or does not exist", body = crate::error::ErrorResponse),
+        (status = 409, description = "Current resource state conflicts with the request", body = crate::error::ErrorResponse),
+        (status = 422, description = "Request validation failed", body = crate::error::ErrorResponse),
+        (status = 500, description = "Could not complete the request", body = crate::error::ErrorResponse)
+    )
+)]
 pub async fn update_label(
     State(pool): State<PgPool>,
     Extension(identity): Extension<Identity>,
     Path(label_id): Path<String>,
     body: Body,
-) -> ApiResult<Json<Value>> {
+) -> ApiResult<Json<LabelItem>> {
     let name = body.opt_str("name")?;
     check_opt_length("name", &name, 1, 48)?;
     let color = body.opt_str("color")?;
@@ -692,12 +1052,28 @@ pub async fn update_label(
         .execute(&mut *tx)
         .await?;
     tx.commit().await?;
-    Ok(Json(
-        json!({"id": label_id, "name": current_name, "color": current_color}),
-    ))
+    Ok(Json(LabelItem {
+        id: label_id,
+        name: current_name,
+        color: current_color,
+    }))
 }
 
 /// `DELETE /v1/pms/labels/{label_id}`.
+#[utoipa::path(
+    delete, path = "/v1/pms/labels/{label_id}", operation_id = "deletePmsLabel", tag = "Task lists, folders and labels",
+    params(
+        ("label_id" = String, Path)
+    ),
+    responses(
+        (status = 204, description = "Completed with no response body"),
+        (status = 401, description = "Valid platform identity required", body = crate::error::IdentityErrorResponse),
+        (status = 403, description = "Current permissions do not allow this operation", body = crate::error::ErrorResponse),
+        (status = 404, description = "Resource is unavailable or does not exist", body = crate::error::ErrorResponse),
+        (status = 409, description = "Current resource state conflicts with the request", body = crate::error::ErrorResponse),
+        (status = 500, description = "Could not complete the request", body = crate::error::ErrorResponse)
+    )
+)]
 pub async fn delete_label(
     State(pool): State<PgPool>,
     Extension(identity): Extension<Identity>,
@@ -726,16 +1102,35 @@ fn folder_item(
     name: &str,
     sort_order: i32,
     count: i64,
-) -> Value {
-    json!({"id": id, "team_id": team_id, "name": name, "sort_order": sort_order, "list_count": count})
+) -> FolderItem {
+    FolderItem {
+        id: id.to_owned(),
+        team_id: team_id.clone(),
+        name: name.to_owned(),
+        sort_order,
+        list_count: count,
+    }
 }
 
 /// `GET /v1/pms/folders`.
+#[utoipa::path(
+    get, path = "/v1/pms/folders", operation_id = "listPmsFolders", tag = "Task lists, folders and labels",
+    params(
+        ("team_id" = Option<String>, Query, description = "Omit to read all accessible spaces")
+    ),
+    responses(
+        (status = 200, description = "Success", body = FoldersResponse),
+        (status = 401, description = "Valid platform identity required", body = crate::error::IdentityErrorResponse),
+        (status = 403, description = "Current permissions do not allow this operation", body = crate::error::ErrorResponse),
+        (status = 404, description = "Resource is unavailable or does not exist", body = crate::error::ErrorResponse),
+        (status = 500, description = "Could not complete the request", body = crate::error::ErrorResponse)
+    )
+)]
 pub async fn list_folders(
     State(pool): State<PgPool>,
     Extension(identity): Extension<Identity>,
     params: Params,
-) -> ApiResult<Json<Value>> {
+) -> ApiResult<Json<FoldersResponse>> {
     let team_id = params.opt_string("team_id").filter(|id| !id.is_empty());
     let mut conn = pool.acquire().await?;
     let team_ids = match &team_id {
@@ -753,12 +1148,28 @@ pub async fn list_folders(
     .bind(&team_ids)
     .fetch_all(&mut *conn)
     .await?;
-    Ok(Json(json!({
-        "items": rows.iter().map(|(id, team, name, order, count)| folder_item(id, team, name, *order, *count)).collect::<Vec<_>>(),
-    })))
+    Ok(Json(FoldersResponse {
+        items: rows
+            .iter()
+            .map(|(id, team, name, order, count)| folder_item(id, team, name, *order, *count))
+            .collect(),
+    }))
 }
 
 /// `POST /v1/pms/folders`: also creates a default list "List" in the folder.
+#[utoipa::path(
+    post, path = "/v1/pms/folders", operation_id = "createPmsFolder", tag = "Task lists, folders and labels",
+    request_body = FolderCreateRequest,
+    responses(
+        (status = 201, description = "Created", body = FolderItem),
+        (status = 401, description = "Valid platform identity required", body = crate::error::IdentityErrorResponse),
+        (status = 403, description = "Current permissions do not allow this operation", body = crate::error::ErrorResponse),
+        (status = 404, description = "Resource is unavailable or does not exist", body = crate::error::ErrorResponse),
+        (status = 409, description = "Current resource state conflicts with the request", body = crate::error::ErrorResponse),
+        (status = 422, description = "Request validation failed", body = crate::error::ErrorResponse),
+        (status = 500, description = "Could not complete the request", body = crate::error::ErrorResponse)
+    )
+)]
 pub async fn create_folder(
     State(pool): State<PgPool>,
     Extension(identity): Extension<Identity>,
@@ -817,12 +1228,28 @@ pub async fn create_folder(
 }
 
 /// `PATCH /v1/pms/folders/{folder_id}`.
+#[utoipa::path(
+    patch, path = "/v1/pms/folders/{folder_id}", operation_id = "updatePmsFolder", tag = "Task lists, folders and labels",
+    params(
+        ("folder_id" = String, Path)
+    ),
+    request_body = FolderUpdateRequest,
+    responses(
+        (status = 200, description = "Success", body = FolderItem),
+        (status = 401, description = "Valid platform identity required", body = crate::error::IdentityErrorResponse),
+        (status = 403, description = "Current permissions do not allow this operation", body = crate::error::ErrorResponse),
+        (status = 404, description = "Resource is unavailable or does not exist", body = crate::error::ErrorResponse),
+        (status = 409, description = "Current resource state conflicts with the request", body = crate::error::ErrorResponse),
+        (status = 422, description = "Request validation failed", body = crate::error::ErrorResponse),
+        (status = 500, description = "Could not complete the request", body = crate::error::ErrorResponse)
+    )
+)]
 pub async fn update_folder(
     State(pool): State<PgPool>,
     Extension(identity): Extension<Identity>,
     Path(folder_id): Path<String>,
     body: Body,
-) -> ApiResult<Json<Value>> {
+) -> ApiResult<Json<FolderItem>> {
     let name = body.opt_str("name")?;
     check_opt_length("name", &name, 1, 140)?;
     let sort_order = body.opt_int("sort_order")?;
@@ -866,6 +1293,20 @@ pub async fn update_folder(
 }
 
 /// `DELETE /v1/pms/folders/{folder_id}`: its lists stay, outside any folder.
+#[utoipa::path(
+    delete, path = "/v1/pms/folders/{folder_id}", operation_id = "deletePmsFolder", tag = "Task lists, folders and labels",
+    params(
+        ("folder_id" = String, Path)
+    ),
+    responses(
+        (status = 204, description = "Completed with no response body"),
+        (status = 401, description = "Valid platform identity required", body = crate::error::IdentityErrorResponse),
+        (status = 403, description = "Current permissions do not allow this operation", body = crate::error::ErrorResponse),
+        (status = 404, description = "Resource is unavailable or does not exist", body = crate::error::ErrorResponse),
+        (status = 409, description = "Current resource state conflicts with the request", body = crate::error::ErrorResponse),
+        (status = 500, description = "Could not complete the request", body = crate::error::ErrorResponse)
+    )
+)]
 pub async fn delete_folder(
     State(pool): State<PgPool>,
     Extension(identity): Extension<Identity>,
@@ -907,11 +1348,22 @@ pub async fn delete_folder(
 
 /// `GET /v1/pms/dashboard/summary`: AI-DO dashboard_summary.py over the
 /// caller's active (unarchived) lists.
+#[utoipa::path(
+    get, path = "/v1/pms/dashboard/summary", operation_id = "getPmsDashboardSummary", tag = "Task lists, folders and labels",
+    params(
+        ("list_id" = Option<String>, Query, description = "Limit the dashboard to this task list")
+    ),
+    responses(
+        (status = 200, description = "Success", body = DashboardSummary),
+        (status = 401, description = "Valid platform identity required", body = crate::error::IdentityErrorResponse),
+        (status = 500, description = "Could not complete the request", body = crate::error::ErrorResponse)
+    )
+)]
 pub async fn dashboard_summary(
     State(pool): State<PgPool>,
     Extension(identity): Extension<Identity>,
     params: Params,
-) -> ApiResult<Json<Value>> {
+) -> ApiResult<Json<DashboardSummary>> {
     let list_filter = params.opt_string("list_id").filter(|id| !id.is_empty());
     let mut conn = pool.acquire().await?;
     let space_ids = access::accessible_space_ids(&mut conn, &identity.user_id).await?;
@@ -982,27 +1434,23 @@ pub async fn dashboard_summary(
             status_label(status, Some(workflow(list_id))),
         );
     }
-    let status_counts: Vec<Value> = status_labels
+    let status_counts: Vec<DashboardStatusCount> = status_labels
         .iter()
-        .map(|(status, label)| {
-            json!({
-                "status": status,
-                "label": label,
-                "count": unarchived.iter().filter(|task| &task.1 == status).count(),
-            })
+        .map(|(status, label)| DashboardStatusCount {
+            status: status.clone(),
+            label: label.clone(),
+            count: unarchived.iter().filter(|task| &task.1 == status).count(),
         })
         .collect();
-    let priority_counts: Vec<Value> = PRIORITY_LABELS
+    let priority_counts: Vec<DashboardPriorityCount> = PRIORITY_LABELS
         .iter()
-        .map(|(priority, _)| {
-            json!({
-                "priority": priority,
-                "label": priority_label(priority),
-                "count": unarchived.iter().filter(|task| task.2 == *priority).count(),
-            })
+        .map(|(priority, _)| DashboardPriorityCount {
+            priority: (*priority).to_owned(),
+            label: priority_label(priority),
+            count: unarchived.iter().filter(|task| task.2 == *priority).count(),
         })
         .collect();
-    let list_items: Vec<Value> = lists
+    let list_items: Vec<DashboardTaskList> = lists
         .iter()
         .map(|list| {
             let flow = workflow(&list.id);
@@ -1013,15 +1461,21 @@ pub async fn dashboard_summary(
                 .collect();
             let mut dues: Vec<NaiveDate> = open.iter().filter_map(|task| task.4).collect();
             dues.sort();
-            json!({
-                "list_id": list.id,
-                "key": list.key,
-                "name": list.name,
-                "progress": calculate_progress(scope.iter().map(|task| (task.1.as_str(), task.3)), Some(flow)),
-                "open_task_count": open.len(),
-                "overdue_task_count": open.iter().filter(|task| task.4.is_some_and(|due| due < today)).count(),
-                "next_due_date": dues.first().map(iso_date),
-            })
+            DashboardTaskList {
+                list_id: list.id.clone(),
+                key: list.key.clone(),
+                name: list.name.clone(),
+                progress: calculate_progress(
+                    scope.iter().map(|task| (task.1.as_str(), task.3)),
+                    Some(flow),
+                ),
+                open_task_count: open.len(),
+                overdue_task_count: open
+                    .iter()
+                    .filter(|task| task.4.is_some_and(|due| due < today))
+                    .count(),
+                next_due_date: dues.first().map(iso_date),
+            }
         })
         .collect();
     #[allow(clippy::type_complexity)]
@@ -1037,30 +1491,32 @@ pub async fn dashboard_summary(
     drop(conn);
     let actor_ids: Vec<String> = logs.iter().filter_map(|log| log.3.clone()).collect();
     let names = users::names(&identity, &actor_ids).await;
-    let recent: Vec<Value> = logs
+    let recent: Vec<DashboardActivity> = logs
         .iter()
-        .map(|(id, task_id, message, actor_id, created_at, key, number)| {
-            json!({
-                "id": id,
-                "task_id": task_id,
-                "task_reference": task_reference(key, *number),
-                "message": message,
-                "actor_name": actor_id.as_ref().map(|actor| names.get(actor).cloned().unwrap_or_else(|| actor.clone())),
-                "created_at": iso_datetime(created_at),
-            })
-        })
+        .map(
+            |(id, task_id, message, actor_id, created_at, key, number)| DashboardActivity {
+                id: id.clone(),
+                task_id: task_id.clone(),
+                task_reference: task_reference(key, *number),
+                message: message.clone(),
+                actor_name: actor_id
+                    .as_ref()
+                    .map(|actor| names.get(actor).cloned().unwrap_or_else(|| actor.clone())),
+                created_at: iso_datetime(created_at),
+            },
+        )
         .collect();
-    Ok(Json(json!({
-        "list_count": lists.len(),
-        "active_task_count": active.len(),
-        "overdue_task_count": overdue,
-        "my_task_count": my,
-        "milestone_due_soon_count": milestone_due_soon,
-        "status_counts": status_counts,
-        "priority_counts": priority_counts,
-        "lists": list_items,
-        "recent_activity": recent,
-    })))
+    Ok(Json(DashboardSummary {
+        list_count: lists.len(),
+        active_task_count: active.len(),
+        overdue_task_count: overdue,
+        my_task_count: my,
+        milestone_due_soon_count: milestone_due_soon,
+        status_counts: status_counts,
+        priority_counts: priority_counts,
+        lists: list_items,
+        recent_activity: recent,
+    }))
 }
 
 #[cfg(test)]

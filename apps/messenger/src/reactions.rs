@@ -30,6 +30,19 @@ pub const REACTIONS: [&str; 7] = [
     "check",
 ];
 
+#[allow(dead_code)]
+#[derive(utoipa::ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum ReactionKind {
+    ThumbsUp,
+    Heart,
+    Laugh,
+    Surprised,
+    Sad,
+    Pray,
+    Check,
+}
+
 #[derive(Debug, Clone, sqlx::FromRow)]
 pub struct ReactionRow {
     pub message_id: String,
@@ -132,6 +145,21 @@ async fn change(
 }
 
 /// `PUT /v1/dm/conversations/{id}/messages/{message_id}/reactions/{reaction}`.
+#[utoipa::path(
+    put, path = "/v1/dm/conversations/{conversation_id}/messages/{message_id}/reactions/{reaction}", operation_id = "addReaction",
+    params(
+        ("conversation_id" = String, Path),
+        ("message_id" = String, Path),
+        ("reaction" = ReactionKind, Path),
+    ),
+    responses(
+        (status = 200, description = "Success", body = DmMessageItem),
+        (status = 401, description = "Valid gateway identity required", body = crate::error::GatewayIdentityError),
+        (status = 404, description = "Requested resource was not found", body = crate::error::ErrorResponse),
+        (status = 422, description = "Request validation or domain policy rejected the operation", body = crate::error::ErrorResponse),
+        (status = 500, description = "Internal error", body = crate::error::ErrorResponse),
+    )
+)]
 pub async fn add_reaction(
     State(pool): State<PgPool>,
     Extension(identity): Extension<Identity>,
@@ -151,6 +179,21 @@ pub async fn add_reaction(
 }
 
 /// `DELETE /v1/dm/conversations/{id}/messages/{message_id}/reactions/{reaction}`.
+#[utoipa::path(
+    delete, path = "/v1/dm/conversations/{conversation_id}/messages/{message_id}/reactions/{reaction}", operation_id = "removeReaction",
+    params(
+        ("conversation_id" = String, Path),
+        ("message_id" = String, Path),
+        ("reaction" = ReactionKind, Path),
+    ),
+    responses(
+        (status = 200, description = "Success", body = DmMessageItem),
+        (status = 401, description = "Valid gateway identity required", body = crate::error::GatewayIdentityError),
+        (status = 404, description = "Requested resource was not found", body = crate::error::ErrorResponse),
+        (status = 422, description = "Request validation or domain policy rejected the operation", body = crate::error::ErrorResponse),
+        (status = 500, description = "Internal error", body = crate::error::ErrorResponse),
+    )
+)]
 pub async fn remove_reaction(
     State(pool): State<PgPool>,
     Extension(identity): Extension<Identity>,

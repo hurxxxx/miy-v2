@@ -1,8 +1,8 @@
-import { ApiError, readJson } from '@miy/sdk';
+import type { components } from '../../../api.generated';
+import { ApiError, isApiError, readJson } from '@miy/sdk';
 import { requestId as newRequestId } from '@miy/ui';
 
 import {
-  isAbortError,
   mapTransportError,
   type DriveClient,
   type FileItem,
@@ -32,19 +32,9 @@ export const MAX_UPLOAD_BYTES = 2 * 1024 * 1024 * 1024;
 export const PART_BYTES = 8 * 1024 * 1024;
 /** Consecutive failures without progress before a transfer gives up. */
 const MAX_STALLED_ATTEMPTS = 5;
+const COMPLETION_ATTEMPTS = 90;
 
-export interface UploadState {
-  id: string;
-  file_id: string;
-  request_id: string;
-  filename: string;
-  content_type: string;
-  size_bytes: number;
-  transfer: 'single' | 'parts';
-  status: 'reserving' | 'uploading' | 'ready' | 'completed' | 'cancelled';
-  received: number;
-  part_size: number;
-}
+export type UploadState = components['schemas']['UploadOut'];
 
 /** What a resumed or cancelled transfer needs (serializable, no File). */
 export interface UploadHandle {
@@ -82,20 +72,16 @@ const RETRY_CODES = new Set([
 ]);
 
 export function retriable(error: unknown): boolean {
-  if (isAbortError(error)) return false;
-  if (error instanceof ApiError) {
-    if (error.kind === 'network') return true;
-    if (error.kind === 'http') {
-      const status = error.status ?? 0;
-      return (
-        RETRY_CODES.has(error.code) ||
-        (status >= 500 && status !== 501) ||
-        status === 408 ||
-        status === 429
-      );
-    }
-  }
-  return false;
+  if (!isApiError(error)) return false;
+  if (error.kind === 'network') return true;
+  if (error.kind !== 'http') return false;
+  const status = error.status ?? 0;
+  return (
+    RETRY_CODES.has(error.code) ||
+    (status >= 500 && status !== 501) ||
+    status === 408 ||
+    status === 429
+  );
 }
 
 function throwIfAborted(signal?: AbortSignal) {
@@ -148,6 +134,33 @@ export function cancelUpload(
   return client.api<void>(spaceUploads(spaceId, `/${encodeURIComponent(uploadId)}`), {
     method: 'DELETE',
   });
+}
+
+async function completeTransfer(
+  client: DriveClient,
+  path: string,
+  options: TransferOptions,
+): Promise<FileItem> {
+  const sleep = options.sleep ?? defaultSleep;
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      return await repeatable(
+        () => client.api<FileItem>(path, { method: 'POST', signal: options.signal }),
+        options,
+      );
+    } catch (error) {
+      if (
+        !isApiError(error) ||
+        error.kind !== 'http' ||
+        error.status !== 409 ||
+        error.code !== 'files_upload_finalizing' ||
+        attempt >= COMPLETION_ATTEMPTS
+      ) {
+        throw error;
+      }
+      await sleep(2000);
+    }
+  }
 }
 
 async function sendSingle(
@@ -261,7 +274,7 @@ export async function transferFile(
             folder_id: options.folderId,
             visibility: options.visibility,
             file_id: options.fileId ?? null,
-          }),
+          } satisfies components['schemas']['UploadRequest']),
         }),
       options,
     );
@@ -285,12 +298,9 @@ export async function transferFile(
     if (upload.status === 'cancelled') {
       throw new ApiError('http', 'files_upload_cancelled', 409);
     }
-    const item = await repeatable(
-      () =>
-        client.api<FileItem>(
-          spaceUploads(spaceId, `/${encodeURIComponent(upload.id)}/complete`),
-          { method: 'POST', signal: options.signal },
-        ),
+    const item = await completeTransfer(
+      client,
+      spaceUploads(spaceId, `/${encodeURIComponent(upload.id)}/complete`),
       options,
     );
     options.onProgress?.({ loaded: file.size, total: file.size, percent: 100 });

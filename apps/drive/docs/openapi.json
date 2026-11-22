@@ -1,0 +1,4799 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "드라이브 API",
+    "version": "0.1.0"
+  },
+  "paths": {
+    "/files/items/{file_id}/preview": {
+      "get": {
+        "tags": [
+          "File transfer"
+        ],
+        "summary": "`GET /files/items/{file_id}/preview` (fileApi; AI-DO `get_file_preview`\nreturned an inline URL): the image bytes for a frame Blob URL. Raster\ntypes only, signature checked, up to 10 MiB.",
+        "operationId": "previewDriveImage",
+        "parameters": [
+          {
+            "name": "file_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Verified raster image up to 10 MiB",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "private, no-store"
+              },
+              "Content-Disposition": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "inline"
+              },
+              "X-Content-Type-Options": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "nosniff"
+              }
+            },
+            "content": {
+              "image/gif": {
+                "schema": {
+                  "$ref": "#/components/schemas/BinaryBody"
+                }
+              },
+              "image/jpeg": {
+                "schema": {
+                  "$ref": "#/components/schemas/BinaryBody"
+                }
+              },
+              "image/png": {
+                "schema": {
+                  "$ref": "#/components/schemas/BinaryBody"
+                }
+              },
+              "image/webp": {
+                "schema": {
+                  "$ref": "#/components/schemas/BinaryBody"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Platform identity could not be verified",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdentityErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Current permissions do not allow this operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource was not found or is not visible",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "File or selection exceeds the supported limit",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Unsupported content type",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Storage rejected the operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A required platform service is unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/files/uploads/{upload_id}/content": {
+      "put": {
+        "tags": [
+          "File transfer"
+        ],
+        "summary": "`PUT /files/uploads/{upload_id}/content` (fileApi): a single upload.",
+        "operationId": "putDriveUploadContent",
+        "parameters": [
+          {
+            "name": "upload_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/octet-stream": {
+              "schema": {
+                "$ref": "#/components/schemas/BinaryBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Committed upload state after sending at most 10 MiB",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UploadOut"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Platform identity could not be verified",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdentityErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Current permissions do not allow this operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource was not found or is not visible",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Resource state changed or conflicts with this request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "File or selection exceeds the supported limit",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Storage rejected the operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A required platform service is unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/files/uploads/{upload_id}/parts": {
+      "put": {
+        "tags": [
+          "File transfer"
+        ],
+        "summary": "`PUT /files/uploads/{upload_id}/parts?offset=N` (fileApi): one range of a\nlarge upload, at the committed offset. The answer carries the new\n`received`; after a failure it carries the offset to resume from.",
+        "operationId": "putDriveUploadPart",
+        "parameters": [
+          {
+            "name": "upload_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "description": "Committed byte offset at which the part starts",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 0
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/octet-stream": {
+              "schema": {
+                "$ref": "#/components/schemas/BinaryBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Upload state after sending a part of at most 8 MiB, including the committed next offset",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UploadOut"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Missing or invalid offset query parameter",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Platform identity could not be verified",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdentityErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Current permissions do not allow this operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource was not found or is not visible",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Offset does not match the committed position, or upload state changed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Part exceeds 8 MiB",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Part is empty or would extend beyond the reserved file size",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A required platform service is unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/platform/notification-check": {
+      "post": {
+        "tags": [
+          "Platform callbacks"
+        ],
+        "summary": "`POST /platform/notification-check`: a `space:<id>` notification stays\nwhile the person may still open that space (a direct grant or one of the\ncurrent groups the call carries). Read-only.",
+        "operationId": "checkDriveNotifications",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NotificationCheckRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Notification group keys still visible to the user",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationCheckResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Malformed request",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Platform identity could not be verified",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdentityErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Only the platform may call this endpoint",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Unsupported content type",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid or unsupported request",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A required platform service is unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/file-access": {
+      "post": {
+        "tags": [
+          "Platform callbacks"
+        ],
+        "summary": "`POST /v1/file-access` (platformEndpoints.fileAccess): before sending the\nbytes of a download link, may this person still read the file? The same\nrule as the screen (`require_file_access`): the file is not in the trash,\nthe person still holds a role in its space (directly or through the\ncurrent groups the call carries), the file is visible to them and every\nfolder above it is.",
+        "operationId": "checkDriveDownloadAccess",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FileAccessRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Current permission to stream this Storage file",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FileAccessResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Malformed request",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Platform identity could not be verified",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdentityErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Only the platform may call this endpoint",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Unsupported content type",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid or unsupported request",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A required platform service is unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/search": {
+      "post": {
+        "tags": [
+          "Platform callbacks"
+        ],
+        "summary": "`POST /v1/search` (platformEndpoints.search): file names the person may\nopen now. The call cannot ask the directory; the person's current groups\ncome signed with it (`identity.context.groups`).",
+        "operationId": "searchDriveForPlatform",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PlatformSearchRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Readable links for platform search",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlatformSearchResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Malformed request",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Platform identity could not be verified",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdentityErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Only the platform may call this endpoint",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Unsupported content type",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid or unsupported request",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A required platform service is unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/spaces": {
+      "get": {
+        "tags": [
+          "Spaces"
+        ],
+        "summary": "`GET /v1/spaces`: the spaces the caller may open, by name.",
+        "operationId": "listDriveSpaces",
+        "responses": {
+          "200": {
+            "description": "Spaces visible to the current user",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SpacesResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Platform identity could not be verified",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdentityErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Directory service is unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Spaces"
+        ],
+        "summary": "`POST /v1/spaces`.",
+        "operationId": "createDriveSpace",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SpaceRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Created space",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SpaceOut"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Platform identity could not be verified",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdentityErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Current permissions do not allow this operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid space request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Resource ACL is unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/spaces/{space_id}": {
+      "delete": {
+        "tags": [
+          "Spaces"
+        ],
+        "summary": "`DELETE /v1/spaces/{space_id}` (space admins): the space, its folders,\nfiles and trash. The Core files are released after the commit.",
+        "operationId": "deleteDriveSpace",
+        "parameters": [
+          {
+            "name": "space_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Space deleted"
+          },
+          "401": {
+            "description": "Platform identity could not be verified",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdentityErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Current permissions do not allow this operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource was not found or is not visible",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A required platform service is unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "Spaces"
+        ],
+        "summary": "`PATCH /v1/spaces/{space_id}`: rename (space admins).",
+        "operationId": "renameDriveSpace",
+        "parameters": [
+          {
+            "name": "space_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SpaceRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Renamed space",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SpaceOut"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Platform identity could not be verified",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdentityErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Current permissions do not allow this operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource was not found or is not visible",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid or unsupported request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A required platform service is unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/spaces/{space_id}/files": {
+      "get": {
+        "tags": [
+          "Files and folders"
+        ],
+        "summary": "`GET /v1/spaces/{space_id}/files?folder_id=` (AI-DO `GET /files`).",
+        "operationId": "browseDriveFiles",
+        "parameters": [
+          {
+            "name": "space_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "folder_id",
+            "in": "query",
+            "description": "Omit for the space root",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Visible files, folders and current ingest policy",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FileBrowseResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Platform identity could not be verified",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdentityErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Current permissions do not allow this operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource was not found or is not visible",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A required platform service is unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/spaces/{space_id}/files/archive": {
+      "post": {
+        "tags": [
+          "Files and folders"
+        ],
+        "summary": "`POST /v1/spaces/{space_id}/files/archive`: AI-DO `list_archive_entries`\nand its limits. AI-DO streamed a ZIP; miy answers the planned entries and\nthe screen downloads each file with its own link (docs/PORTING.md §3.5).",
+        "operationId": "planDriveDownloads",
+        "parameters": [
+          {
+            "name": "space_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FileBulkRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Plan of accessible files for separate downloads",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ArchivePlanResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Platform identity could not be verified",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdentityErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Current permissions do not allow this operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource was not found or is not visible",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "File or selection exceeds the supported limit",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid or unsupported request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A required platform service is unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/spaces/{space_id}/files/bulk-delete": {
+      "post": {
+        "tags": [
+          "Files and folders"
+        ],
+        "summary": "`POST /v1/spaces/{space_id}/files/bulk-delete` (AI-DO `bulk_delete`).",
+        "operationId": "trashDriveSelection",
+        "parameters": [
+          {
+            "name": "space_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FileBulkRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Selection moved to the trash"
+          },
+          "401": {
+            "description": "Platform identity could not be verified",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdentityErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Current permissions do not allow this operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource was not found or is not visible",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Resource state changed or conflicts with this request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid or unsupported request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A required platform service is unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/spaces/{space_id}/files/folders": {
+      "post": {
+        "tags": [
+          "Files and folders"
+        ],
+        "summary": "`POST /v1/spaces/{space_id}/files/folders` (AI-DO `create_folder`).",
+        "operationId": "createDriveFolder",
+        "parameters": [
+          {
+            "name": "space_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FolderCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Created folder",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FileFolderItem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Platform identity could not be verified",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdentityErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Current permissions do not allow this operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource was not found or is not visible",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid or unsupported request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A required platform service is unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/spaces/{space_id}/files/folders/{folder_id}": {
+      "delete": {
+        "tags": [
+          "Files and folders"
+        ],
+        "summary": "`DELETE /v1/spaces/{space_id}/files/folders/{folder_id}`: to the trash.",
+        "operationId": "trashDriveFolder",
+        "parameters": [
+          {
+            "name": "space_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "folder_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Folder and its contents moved to the trash"
+          },
+          "401": {
+            "description": "Platform identity could not be verified",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdentityErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Current permissions do not allow this operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource was not found or is not visible",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Resource state changed or conflicts with this request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A required platform service is unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "Files and folders"
+        ],
+        "summary": "`PATCH /v1/spaces/{space_id}/files/folders/{folder_id}` (AI-DO\n`update_folder`: rename; visibility is fixed; miy adds a move).",
+        "operationId": "updateDriveFolder",
+        "parameters": [
+          {
+            "name": "space_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "folder_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FolderUpdateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Updated folder",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FileFolderItem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Platform identity could not be verified",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdentityErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Current permissions do not allow this operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource was not found or is not visible",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Resource state changed or conflicts with this request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid or unsupported request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A required platform service is unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/spaces/{space_id}/files/move": {
+      "post": {
+        "tags": [
+          "Files and folders"
+        ],
+        "summary": "`POST /v1/spaces/{space_id}/files/move` (보강): move a selection.",
+        "operationId": "moveDriveSelection",
+        "parameters": [
+          {
+            "name": "space_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MoveRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Selection moved"
+          },
+          "401": {
+            "description": "Platform identity could not be verified",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdentityErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Current permissions do not allow this operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource was not found or is not visible",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Resource state changed or conflicts with this request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid or unsupported request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A required platform service is unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/spaces/{space_id}/files/search": {
+      "post": {
+        "tags": [
+          "Search"
+        ],
+        "summary": "`POST /v1/spaces/{space_id}/files/search` (AI-DO `search_files`).",
+        "operationId": "searchDriveFiles",
+        "parameters": [
+          {
+            "name": "space_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FileSearchRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Ranked results containing only readable files",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FileSearchResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Platform identity could not be verified",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdentityErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Current permissions do not allow this operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource was not found or is not visible",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid input returns `validation_request_invalid`. Legacy requests that omit `strategy` or specify `semantic` or `hybrid` return `files_search_strategy_unsupported` when the other fields pass validation.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A required platform service is unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/spaces/{space_id}/files/uploads": {
+      "post": {
+        "tags": [
+          "File transfer"
+        ],
+        "summary": "`POST /v1/spaces/{space_id}/files/uploads`.",
+        "operationId": "reserveDriveUpload",
+        "parameters": [
+          {
+            "name": "space_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UploadRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Same reservation recovered by request ID",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UploadOut"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "New reservation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UploadOut"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Platform identity could not be verified",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdentityErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Current permissions do not allow this operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource was not found or is not visible",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Request ID conflict or Storage quota exceeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "File or selection exceeds the supported limit",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid or unsupported request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Storage rejected the operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A required platform service is unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/spaces/{space_id}/files/uploads/{upload_id}": {
+      "get": {
+        "tags": [
+          "File transfer"
+        ],
+        "summary": "`GET /v1/spaces/{space_id}/files/uploads/{upload_id}`: the committed\noffset to resume from.",
+        "operationId": "getDriveUpload",
+        "parameters": [
+          {
+            "name": "space_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "upload_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Upload and its committed byte offset",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UploadOut"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Platform identity could not be verified",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdentityErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Current permissions do not allow this operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource was not found or is not visible",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A required platform service is unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "File transfer"
+        ],
+        "summary": "`DELETE /v1/spaces/{space_id}/files/uploads/{upload_id}`: cancel an\nupload that has not completed. A completed upload is a file: delete it.",
+        "operationId": "cancelDriveUpload",
+        "parameters": [
+          {
+            "name": "space_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "upload_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Unfinished upload cancelled"
+          },
+          "401": {
+            "description": "Platform identity could not be verified",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdentityErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Current permissions do not allow this operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource was not found or is not visible",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Resource state changed or conflicts with this request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A required platform service is unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/spaces/{space_id}/files/uploads/{upload_id}/complete": {
+      "post": {
+        "tags": [
+          "File transfer"
+        ],
+        "summary": "`POST /v1/spaces/{space_id}/files/uploads/{upload_id}/complete`.",
+        "operationId": "completeDriveUpload",
+        "parameters": [
+          {
+            "name": "space_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "upload_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Published file after successful completion",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FileItem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Platform identity could not be verified",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdentityErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Current permissions do not allow this operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource was not found or is not visible",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Upload cancelled, incomplete or still finalizing. Retry finalizing with the same upload ID",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A required platform service is unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/spaces/{space_id}/files/{file_id}": {
+      "delete": {
+        "tags": [
+          "Files and folders"
+        ],
+        "summary": "`DELETE /v1/spaces/{space_id}/files/{file_id}` (AI-DO `delete_file`).",
+        "operationId": "trashDriveFile",
+        "parameters": [
+          {
+            "name": "space_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "file_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "File moved to the trash"
+          },
+          "401": {
+            "description": "Platform identity could not be verified",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdentityErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Current permissions do not allow this operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource was not found or is not visible",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Resource state changed or conflicts with this request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A required platform service is unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "Files and folders"
+        ],
+        "summary": "`PATCH /v1/spaces/{space_id}/files/{file_id}` (보강): rename or move.",
+        "operationId": "updateDriveFile",
+        "parameters": [
+          {
+            "name": "space_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "file_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FileUpdateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Updated file",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FileItem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Platform identity could not be verified",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdentityErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Current permissions do not allow this operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource was not found or is not visible",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Resource state changed or conflicts with this request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid or unsupported request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A required platform service is unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/spaces/{space_id}/files/{file_id}/download": {
+      "get": {
+        "tags": [
+          "File transfer"
+        ],
+        "summary": "`GET /v1/spaces/{space_id}/files/{file_id}/download` (AI-DO\n`get_file_download`): a five-minute link for `runtime.download`.",
+        "operationId": "getDriveDownloadLink",
+        "parameters": [
+          {
+            "name": "space_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "file_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Short-lived link bound to the current app frame",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FileDownloadResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Platform identity could not be verified",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdentityErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Current file access and an app frame are required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource was not found or is not visible",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Storage rejected the operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A required platform service is unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/spaces/{space_id}/files/{file_id}/versions": {
+      "get": {
+        "tags": [
+          "Files and folders"
+        ],
+        "summary": "`GET /v1/spaces/{space_id}/files/{file_id}/versions`.",
+        "operationId": "listDriveFileVersions",
+        "parameters": [
+          {
+            "name": "space_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "file_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "File and version list",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VersionsResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Platform identity could not be verified",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdentityErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Current permissions do not allow this operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource was not found or is not visible",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A required platform service is unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/spaces/{space_id}/files/{file_id}/versions/{version_id}/download": {
+      "get": {
+        "tags": [
+          "File transfer"
+        ],
+        "summary": "`GET /v1/spaces/{space_id}/files/{file_id}/versions/{version_id}/download`.",
+        "operationId": "getDriveVersionDownloadLink",
+        "parameters": [
+          {
+            "name": "space_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "file_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "version_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Short-lived version link bound to the current app frame",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FileDownloadResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Platform identity could not be verified",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdentityErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Current file access and an app frame are required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource was not found or is not visible",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Storage rejected the operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A required platform service is unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/spaces/{space_id}/sharing": {
+      "get": {
+        "tags": [
+          "Spaces"
+        ],
+        "summary": "`GET /v1/spaces/{space_id}/sharing` (space admins).",
+        "operationId": "getDriveSpaceSharing",
+        "parameters": [
+          {
+            "name": "space_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Sharing rules and current revision",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SharingSnapshot"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Platform identity could not be verified",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdentityErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Sharing management permission is required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource was not found or is not visible",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A required platform service is unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Spaces"
+        ],
+        "summary": "`PUT /v1/spaces/{space_id}/sharing` (space admins). People and groups\nadded get a `share` notification; people taken off lose it.",
+        "operationId": "replaceDriveSpaceSharing",
+        "parameters": [
+          {
+            "name": "space_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SharingRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Updated sharing snapshot",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SharingSnapshot"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Malformed request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Platform identity could not be verified",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdentityErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Sharing management permission is required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource was not found or is not visible",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "ACL revision or request ID conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid or unsupported request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A required platform service is unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/spaces/{space_id}/sharing/requests/{request_id}": {
+      "get": {
+        "tags": [
+          "Spaces"
+        ],
+        "summary": "`GET /v1/spaces/{space_id}/sharing/requests/{request_id}`: the result of a\nreplacement whose answer was lost.",
+        "operationId": "getDriveSharingResult",
+        "parameters": [
+          {
+            "name": "space_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "request_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Recorded result, or null when no result was recorded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/SharingSnapshot"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Malformed request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Platform identity could not be verified",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdentityErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Sharing management permission is required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource was not found or is not visible",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A required platform service is unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/spaces/{space_id}/trash": {
+      "get": {
+        "tags": [
+          "Trash"
+        ],
+        "summary": "`GET /v1/spaces/{space_id}/trash`: the trashed items the caller may\nrestore or delete (their own; everything for a space admin).",
+        "operationId": "listDriveTrash",
+        "parameters": [
+          {
+            "name": "space_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Trash entries the caller may manage",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TrashResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Platform identity could not be verified",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdentityErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Current permissions do not allow this operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource was not found or is not visible",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A required platform service is unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/spaces/{space_id}/trash/delete": {
+      "post": {
+        "tags": [
+          "Trash"
+        ],
+        "summary": "`POST /v1/spaces/{space_id}/trash/delete`: delete permanently.",
+        "operationId": "purgeDriveTrash",
+        "parameters": [
+          {
+            "name": "space_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FileBulkRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Trash selection permanently deleted"
+          },
+          "401": {
+            "description": "Platform identity could not be verified",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdentityErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Current permissions do not allow this operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource was not found or is not visible",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Resource state changed or conflicts with this request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid or unsupported request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A required platform service is unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/spaces/{space_id}/trash/empty": {
+      "post": {
+        "tags": [
+          "Trash"
+        ],
+        "summary": "`POST /v1/spaces/{space_id}/trash/empty`: permanently delete every trashed\nitem the caller may delete.",
+        "operationId": "emptyDriveTrash",
+        "parameters": [
+          {
+            "name": "space_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Accessible trash emptied"
+          },
+          "401": {
+            "description": "Platform identity could not be verified",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdentityErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Current permissions do not allow this operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource was not found or is not visible",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Resource state changed or conflicts with this request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A required platform service is unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/spaces/{space_id}/trash/restore": {
+      "post": {
+        "tags": [
+          "Trash"
+        ],
+        "summary": "`POST /v1/spaces/{space_id}/trash/restore`: back where they were, or to\nthe space root when that folder is gone or still in the trash.",
+        "operationId": "restoreDriveTrash",
+        "parameters": [
+          {
+            "name": "space_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FileBulkRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Trash selection restored"
+          },
+          "401": {
+            "description": "Platform identity could not be verified",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdentityErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Current permissions do not allow this operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource was not found or is not visible",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Resource state changed or conflicts with this request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid or unsupported request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A required platform service is unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "ArchiveEntryOut": {
+        "type": "object",
+        "required": [
+          "path",
+          "file_id",
+          "size_bytes"
+        ],
+        "properties": {
+          "file_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "path": {
+            "type": "string"
+          },
+          "size_bytes": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "ArchivePlanResponse": {
+        "type": "object",
+        "required": [
+          "entries",
+          "file_count",
+          "total_size"
+        ],
+        "properties": {
+          "entries": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ArchiveEntryOut"
+            }
+          },
+          "file_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "total_size": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "BinaryBody": {
+        "type": "string",
+        "format": "binary",
+        "description": "Binary bodies flow through the file gateway. This only describes their wire format."
+      },
+      "CheckItem": {
+        "type": "object",
+        "required": [
+          "groupKey"
+        ],
+        "properties": {
+          "groupKey": {
+            "type": "string"
+          },
+          "resourceId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "ErrorDetails": {
+        "type": "object",
+        "required": [
+          "code",
+          "message"
+        ],
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          }
+        }
+      },
+      "ErrorResponse": {
+        "type": "object",
+        "required": [
+          "error"
+        ],
+        "properties": {
+          "error": {
+            "$ref": "#/components/schemas/ErrorDetails"
+          }
+        }
+      },
+      "FileAccessRequest": {
+        "type": "object",
+        "required": [
+          "fileId"
+        ],
+        "properties": {
+          "fileId": {
+            "type": "string"
+          },
+          "reference": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "FileAccessResponse": {
+        "type": "object",
+        "required": [
+          "allowed"
+        ],
+        "properties": {
+          "allowed": {
+            "type": "boolean"
+          }
+        }
+      },
+      "FileBrowseResponse": {
+        "type": "object",
+        "required": [
+          "space",
+          "current_folder",
+          "breadcrumbs",
+          "folders",
+          "files",
+          "all_folders",
+          "can_ingest",
+          "ingest_block_reason"
+        ],
+        "properties": {
+          "all_folders": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FileFolderItem"
+            }
+          },
+          "breadcrumbs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FileFolderItem"
+            }
+          },
+          "can_ingest": {
+            "type": "boolean"
+          },
+          "current_folder": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/FileFolderItem"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "files": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FileItem"
+            }
+          },
+          "folders": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FileFolderItem"
+            }
+          },
+          "ingest_block_reason": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/IngestBlockReason"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "space": {
+            "$ref": "#/components/schemas/SpaceSummary"
+          }
+        }
+      },
+      "FileBulkRequest": {
+        "type": "object",
+        "properties": {
+          "file_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 500
+          },
+          "folder_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 500
+          }
+        }
+      },
+      "FileDownloadResponse": {
+        "type": "object",
+        "required": [
+          "url",
+          "expires_at"
+        ],
+        "properties": {
+          "expires_at": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          }
+        }
+      },
+      "FileFolderItem": {
+        "type": "object",
+        "required": [
+          "id",
+          "parent_id",
+          "name",
+          "visibility",
+          "owner_id",
+          "owner_name",
+          "can_manage",
+          "created_at",
+          "updated_at"
+        ],
+        "properties": {
+          "can_manage": {
+            "type": "boolean"
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "owner_id": {
+            "type": "string"
+          },
+          "owner_name": {
+            "type": "string"
+          },
+          "parent_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "updated_at": {
+            "type": "string"
+          },
+          "visibility": {
+            "$ref": "#/components/schemas/FileVisibility"
+          }
+        }
+      },
+      "FileItem": {
+        "type": "object",
+        "required": [
+          "id",
+          "folder_id",
+          "filename",
+          "content_type",
+          "size_bytes",
+          "visibility",
+          "owner_id",
+          "owner_name",
+          "can_delete",
+          "version_number",
+          "version_count",
+          "created_at",
+          "updated_at"
+        ],
+        "properties": {
+          "can_delete": {
+            "type": "boolean"
+          },
+          "content_type": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "filename": {
+            "type": "string"
+          },
+          "folder_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "owner_id": {
+            "type": "string"
+          },
+          "owner_name": {
+            "type": "string"
+          },
+          "size_bytes": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "updated_at": {
+            "type": "string"
+          },
+          "version_count": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "version_number": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "visibility": {
+            "$ref": "#/components/schemas/FileVisibility"
+          }
+        }
+      },
+      "FileSearchHit": {
+        "type": "object",
+        "required": [
+          "rank",
+          "file_id",
+          "filename",
+          "title",
+          "folder_id",
+          "content_type",
+          "size_bytes",
+          "score",
+          "methods",
+          "snippet",
+          "updated_at",
+          "source_kind",
+          "author",
+          "authored_at",
+          "department",
+          "document_type",
+          "source_updated_at"
+        ],
+        "properties": {
+          "author": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "authored_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "content_type": {
+            "type": "string"
+          },
+          "department": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "document_type": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "file_id": {
+            "type": "string"
+          },
+          "filename": {
+            "type": "string"
+          },
+          "folder_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "methods": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "rank": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "score": {
+            "type": "number",
+            "format": "double"
+          },
+          "size_bytes": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "snippet": {
+            "$ref": "#/components/schemas/Snippet"
+          },
+          "source_kind": {
+            "type": "string"
+          },
+          "source_updated_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "title": {
+            "type": "string"
+          },
+          "updated_at": {
+            "type": "string"
+          }
+        }
+      },
+      "FileSearchRequest": {
+        "type": "object",
+        "required": [
+          "query",
+          "strategy"
+        ],
+        "properties": {
+          "author": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Owner name (AI-DO: the source author)."
+          },
+          "authored_from": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Upload time range (AI-DO: the source authored time)."
+          },
+          "authored_to": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "department": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "document_type": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "A content type or its prefix (AI-DO: the source document type)."
+          },
+          "page": {
+            "type": "integer",
+            "format": "int32",
+            "description": "One-based page. The product of `page` and `page_size` must be at most 100.",
+            "default": 1,
+            "maximum": 100,
+            "minimum": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "format": "int32",
+            "default": 20,
+            "maximum": 50,
+            "minimum": 1
+          },
+          "query": {
+            "type": "string",
+            "description": "Search text containing at least one non-whitespace character.",
+            "maxLength": 2000,
+            "minLength": 1
+          },
+          "source_kind": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "strategy": {
+            "$ref": "#/components/schemas/FileSearchStrategy",
+            "description": "Searches file names and metadata. Legacy requests that omit this field\ndefault to `hybrid` and receive HTTP 422, as do explicit `semantic` and `hybrid` requests."
+          }
+        },
+        "additionalProperties": false
+      },
+      "FileSearchResponse": {
+        "type": "object",
+        "required": [
+          "query",
+          "strategy",
+          "page",
+          "page_size",
+          "hits",
+          "has_more",
+          "max_ranked_results",
+          "latency_ms",
+          "trace_id"
+        ],
+        "properties": {
+          "has_more": {
+            "type": "boolean"
+          },
+          "hits": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FileSearchHit"
+            }
+          },
+          "latency_ms": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "max_ranked_results": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "page": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "page_size": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "query": {
+            "type": "string"
+          },
+          "strategy": {
+            "$ref": "#/components/schemas/FileSearchStrategy"
+          },
+          "trace_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "FileSearchStrategy": {
+        "type": "string",
+        "enum": [
+          "keyword"
+        ]
+      },
+      "FileUpdateRequest": {
+        "type": "object",
+        "properties": {
+          "filename": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "folder_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "FileVisibility": {
+        "type": "string",
+        "enum": [
+          "private",
+          "workspace"
+        ]
+      },
+      "FolderCreateRequest": {
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "parent_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "visibility": {
+            "$ref": "#/components/schemas/FileVisibility"
+          }
+        }
+      },
+      "FolderUpdateRequest": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "parent_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "miy (보강): move under another folder (`null` = the space root)."
+          },
+          "visibility": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/FileVisibility"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "Highlight": {
+        "type": "object",
+        "required": [
+          "start",
+          "end"
+        ],
+        "properties": {
+          "end": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "start": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      },
+      "IdentityErrorDetails": {
+        "type": "object",
+        "required": [
+          "code"
+        ],
+        "properties": {
+          "code": {
+            "type": "string"
+          }
+        }
+      },
+      "IdentityErrorResponse": {
+        "type": "object",
+        "required": [
+          "error"
+        ],
+        "properties": {
+          "error": {
+            "$ref": "#/components/schemas/IdentityErrorDetails"
+          }
+        }
+      },
+      "IngestBlockReason": {
+        "type": "string",
+        "enum": [
+          "workspace_access_required",
+          "parent_manage_required"
+        ]
+      },
+      "MoveRequest": {
+        "type": "object",
+        "properties": {
+          "file_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 500
+          },
+          "folder_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 500
+          },
+          "target_folder_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "NotificationCheckRequest": {
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CheckItem"
+            }
+          }
+        }
+      },
+      "NotificationCheckResponse": {
+        "type": "object",
+        "required": [
+          "allowed"
+        ],
+        "properties": {
+          "allowed": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "PlatformSearchItem": {
+        "type": "object",
+        "required": [
+          "title",
+          "snippet",
+          "path",
+          "at",
+          "kind"
+        ],
+        "properties": {
+          "at": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "snippet": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
+        }
+      },
+      "PlatformSearchRequest": {
+        "type": "object",
+        "required": [
+          "query",
+          "limit"
+        ],
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "locale": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "query": {
+            "type": "string"
+          }
+        }
+      },
+      "PlatformSearchResponse": {
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PlatformSearchItem"
+            }
+          }
+        }
+      },
+      "Role": {
+        "type": "string",
+        "enum": [
+          "viewer",
+          "member",
+          "admin"
+        ]
+      },
+      "SharingEntry": {
+        "type": "object",
+        "required": [
+          "subject",
+          "role",
+          "protected"
+        ],
+        "properties": {
+          "protected": {
+            "type": "boolean"
+          },
+          "role": {
+            "type": "string"
+          },
+          "subject": {
+            "$ref": "#/components/schemas/SharingSubject"
+          }
+        }
+      },
+      "SharingGrant": {
+        "type": "object",
+        "required": [
+          "subject",
+          "role"
+        ],
+        "properties": {
+          "role": {
+            "type": "string"
+          },
+          "subject": {
+            "$ref": "#/components/schemas/SharingSubjectRef"
+          }
+        },
+        "additionalProperties": false
+      },
+      "SharingRequest": {
+        "type": "object",
+        "required": [
+          "expectedRevision",
+          "requestId",
+          "entries"
+        ],
+        "properties": {
+          "entries": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SharingGrant"
+            }
+          },
+          "expectedRevision": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "requestId": {
+            "type": "string"
+          }
+        }
+      },
+      "SharingRole": {
+        "type": "object",
+        "required": [
+          "id",
+          "label"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          }
+        }
+      },
+      "SharingSnapshot": {
+        "type": "object",
+        "required": [
+          "revision",
+          "entries",
+          "roles",
+          "defaultRole",
+          "canManage"
+        ],
+        "properties": {
+          "canManage": {
+            "type": "boolean"
+          },
+          "defaultRole": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "entries": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SharingEntry"
+            }
+          },
+          "revision": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "roles": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SharingRole"
+            }
+          }
+        }
+      },
+      "SharingSubject": {
+        "type": "object",
+        "required": [
+          "kind",
+          "id",
+          "name"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/SharingSubjectKind"
+          },
+          "name": {
+            "type": "string"
+          }
+        }
+      },
+      "SharingSubjectKind": {
+        "type": "string",
+        "enum": [
+          "user",
+          "group"
+        ]
+      },
+      "SharingSubjectRef": {
+        "type": "object",
+        "required": [
+          "kind",
+          "id"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/SharingSubjectKind"
+          }
+        },
+        "additionalProperties": false
+      },
+      "Snippet": {
+        "type": "object",
+        "required": [
+          "text",
+          "highlights"
+        ],
+        "properties": {
+          "highlights": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Highlight"
+            }
+          },
+          "text": {
+            "type": "string"
+          }
+        }
+      },
+      "SpaceOut": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "role",
+          "can_manage",
+          "can_upload",
+          "created_by",
+          "created_at",
+          "updated_at"
+        ],
+        "properties": {
+          "can_manage": {
+            "type": "boolean"
+          },
+          "can_upload": {
+            "type": "boolean"
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "created_by": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "role": {
+            "$ref": "#/components/schemas/Role"
+          },
+          "updated_at": {
+            "type": "string"
+          }
+        }
+      },
+      "SpaceRequest": {
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 120,
+            "minLength": 1
+          }
+        }
+      },
+      "SpaceSummary": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "role",
+          "can_manage"
+        ],
+        "properties": {
+          "can_manage": {
+            "type": "boolean"
+          },
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "role": {
+            "$ref": "#/components/schemas/Role"
+          }
+        }
+      },
+      "SpacesResponse": {
+        "type": "object",
+        "required": [
+          "user_id",
+          "spaces"
+        ],
+        "properties": {
+          "spaces": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SpaceOut"
+            }
+          },
+          "user_id": {
+            "type": "string",
+            "description": "The caller (for the share editor's \"you\" marker)."
+          }
+        }
+      },
+      "TrashItem": {
+        "type": "object",
+        "required": [
+          "kind",
+          "id",
+          "name",
+          "content_type",
+          "size_bytes",
+          "file_count",
+          "visibility",
+          "owner_id",
+          "owner_name",
+          "trashed_by",
+          "trashed_by_name",
+          "original_path",
+          "deleted_at"
+        ],
+        "properties": {
+          "content_type": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "deleted_at": {
+            "type": "string"
+          },
+          "file_count": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/TrashKind"
+          },
+          "name": {
+            "type": "string"
+          },
+          "original_path": {
+            "type": "string",
+            "description": "The folder path the item was in (`\"\"` for the space root)."
+          },
+          "owner_id": {
+            "type": "string"
+          },
+          "owner_name": {
+            "type": "string"
+          },
+          "size_bytes": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "trashed_by": {
+            "type": "string"
+          },
+          "trashed_by_name": {
+            "type": "string"
+          },
+          "visibility": {
+            "$ref": "#/components/schemas/FileVisibility"
+          }
+        }
+      },
+      "TrashKind": {
+        "type": "string",
+        "enum": [
+          "file",
+          "folder"
+        ]
+      },
+      "TrashResponse": {
+        "type": "object",
+        "required": [
+          "space",
+          "items"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TrashItem"
+            }
+          },
+          "space": {
+            "$ref": "#/components/schemas/SpaceSummary"
+          }
+        }
+      },
+      "UploadOut": {
+        "type": "object",
+        "required": [
+          "id",
+          "file_id",
+          "request_id",
+          "filename",
+          "content_type",
+          "size_bytes",
+          "transfer",
+          "status",
+          "received",
+          "part_size"
+        ],
+        "properties": {
+          "content_type": {
+            "type": "string"
+          },
+          "file_id": {
+            "type": "string"
+          },
+          "filename": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "part_size": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "received": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "request_id": {
+            "type": "string"
+          },
+          "size_bytes": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "status": {
+            "$ref": "#/components/schemas/UploadStatus",
+            "description": "`reserving`, `uploading`, `ready` (all bytes stored), `completed`\n(the file shows this version) or `cancelled`."
+          },
+          "transfer": {
+            "$ref": "#/components/schemas/UploadTransfer"
+          }
+        }
+      },
+      "UploadRequest": {
+        "type": "object",
+        "required": [
+          "request_id",
+          "filename",
+          "size_bytes"
+        ],
+        "properties": {
+          "content_type": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "file_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "miy (versions): upload a new version of this file."
+          },
+          "filename": {
+            "type": "string"
+          },
+          "folder_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "request_id": {
+            "type": "string"
+          },
+          "size_bytes": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "visibility": {
+            "$ref": "#/components/schemas/FileVisibility"
+          }
+        }
+      },
+      "UploadStatus": {
+        "type": "string",
+        "enum": [
+          "reserving",
+          "uploading",
+          "ready",
+          "completed",
+          "cancelled"
+        ]
+      },
+      "UploadTransfer": {
+        "type": "string",
+        "enum": [
+          "single",
+          "parts"
+        ]
+      },
+      "VersionOut": {
+        "type": "object",
+        "required": [
+          "id",
+          "version_number",
+          "filename",
+          "content_type",
+          "size_bytes",
+          "uploaded_by",
+          "uploader_name",
+          "sha256",
+          "is_current",
+          "created_at"
+        ],
+        "properties": {
+          "content_type": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "filename": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "is_current": {
+            "type": "boolean"
+          },
+          "sha256": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "size_bytes": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "uploaded_by": {
+            "type": "string"
+          },
+          "uploader_name": {
+            "type": "string"
+          },
+          "version_number": {
+            "type": "integer",
+            "format": "int32"
+          }
+        }
+      },
+      "VersionsResponse": {
+        "type": "object",
+        "required": [
+          "file",
+          "versions"
+        ],
+        "properties": {
+          "file": {
+            "$ref": "#/components/schemas/FileItem"
+          },
+          "versions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/VersionOut"
+            }
+          }
+        }
+      }
+    }
+  }
+}

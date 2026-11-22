@@ -12,7 +12,6 @@ use axum::{
     Extension, Json,
     extract::{Path, State},
     http::StatusCode,
-    response::IntoResponse,
 };
 use chrono::NaiveDateTime;
 use miy_app_sdk::Identity;
@@ -54,7 +53,7 @@ async fn lock_manager_changes(tx: &mut sqlx::Transaction<'_, sqlx::Postgres>) ->
     Ok(())
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct BoardMe {
     user_id: String,
@@ -62,6 +61,14 @@ pub struct BoardMe {
     can_bootstrap: bool,
 }
 
+#[utoipa::path(
+    get, path = "/v1/board/me", operation_id = "getBoardMe",
+    responses(
+        (status = 200, description = "Board access for the current user", body = BoardMe),
+        (status = 401, description = "Valid gateway identity required", body = crate::error::GatewayIdentityError),
+        (status = 500, description = "Internal error", body = crate::error::ErrorResponse)
+    )
+)]
 pub async fn me(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
@@ -77,10 +84,19 @@ pub async fn me(
     }))
 }
 
+#[utoipa::path(
+    post, path = "/v1/board/managers/bootstrap", operation_id = "bootstrapBoardManager",
+    responses(
+        (status = 201, description = "Created", body = BoardMe),
+        (status = 401, description = "Valid gateway identity required", body = crate::error::GatewayIdentityError),
+        (status = 409, description = "Current state conflicts with the request", body = crate::error::ErrorResponse),
+        (status = 500, description = "Internal error", body = crate::error::ErrorResponse)
+    )
+)]
 pub async fn bootstrap(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
-) -> ApiResult<impl IntoResponse> {
+) -> ApiResult<(StatusCode, Json<BoardMe>)> {
     let mut tx = state.pool.begin().await?;
     lock_manager_changes(&mut tx).await?;
     let any: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM board_managers)")
@@ -108,21 +124,32 @@ pub async fn bootstrap(
     ))
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ManagerOut {
     user_id: String,
+    #[schema(required = true)]
     name: Option<String>,
     granted_by: String,
     #[serde(serialize_with = "crate::time::serialize")]
+    #[schema(value_type = String, example = "2026-05-04T01:02:03")]
     created_at: NaiveDateTime,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, utoipa::ToSchema)]
 pub struct ManagersResponse {
     items: Vec<ManagerOut>,
 }
 
+#[utoipa::path(
+    get, path = "/v1/board/managers", operation_id = "listBoardManagers",
+    responses(
+        (status = 200, description = "Success", body = ManagersResponse),
+        (status = 401, description = "Valid gateway identity required", body = crate::error::GatewayIdentityError),
+        (status = 403, description = "Permission denied", body = crate::error::ErrorResponse),
+        (status = 500, description = "Internal error", body = crate::error::ErrorResponse)
+    )
+)]
 pub async fn list_managers(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
@@ -147,17 +174,29 @@ pub async fn list_managers(
     }))
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ManagerAddRequest {
     user_id: String,
 }
 
+#[utoipa::path(
+    post, path = "/v1/board/managers", operation_id = "addBoardManager",
+    request_body = ManagerAddRequest,
+    responses(
+        (status = 201, description = "Created"),
+        (status = 401, description = "Valid gateway identity required", body = crate::error::GatewayIdentityError),
+        (status = 400, description = "Invalid request for this resource", body = crate::error::ErrorResponse),
+        (status = 403, description = "Permission denied", body = crate::error::ErrorResponse),
+        (status = 422, description = "Request validation failed", body = crate::error::ErrorResponse),
+        (status = 500, description = "Internal error", body = crate::error::ErrorResponse)
+    )
+)]
 pub async fn add_manager(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
     ApiJson(payload): ApiJson<ManagerAddRequest>,
-) -> ApiResult<impl IntoResponse> {
+) -> ApiResult<StatusCode> {
     require_manager(&state.pool, &identity).await?;
     let user_id = payload.user_id.trim().to_string();
     if user_id.is_empty() || user_id.chars().count() > 256 {
@@ -189,6 +228,20 @@ pub async fn add_manager(
     Ok(StatusCode::CREATED)
 }
 
+#[utoipa::path(
+    delete, path = "/v1/board/managers/{user_id}", operation_id = "removeBoardManager",
+    params(
+        ("user_id" = String, Path),
+    ),
+    responses(
+        (status = 204, description = "No content"),
+        (status = 401, description = "Valid gateway identity required", body = crate::error::GatewayIdentityError),
+        (status = 403, description = "Permission denied", body = crate::error::ErrorResponse),
+        (status = 404, description = "Requested resource was not found", body = crate::error::ErrorResponse),
+        (status = 409, description = "Current state conflicts with the request", body = crate::error::ErrorResponse),
+        (status = 500, description = "Internal error", body = crate::error::ErrorResponse)
+    )
+)]
 pub async fn remove_manager(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,

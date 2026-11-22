@@ -376,6 +376,10 @@ class AppFrameSettingsTests(unittest.TestCase):
                                 '--binary', state / 'miy-server', '--user', getpass.getuser()],
                                check=True, capture_output=True)
                 candidate = (state / 'nginx-miy.conf').read_text()
+                live_route = candidate.split('location = /_miy/live {', 1)[1].split('}', 1)[0]
+                self.assertIn('proxy_set_header Upgrade $http_upgrade;', live_route)
+                self.assertRegex(live_route, r'proxy_set_header Connection \$\w+_connection_upgrade;')
+                self.assertIn('platform/files/[^/]+/(content|parts)$', candidate)
                 blocks = candidate.split('\nserver {')
                 live = '\n'.join(line.replace(f'; frame-src {sources} blob:', '')
                                  for line in '\nserver {'.join(blocks[:-1]).split('\n')

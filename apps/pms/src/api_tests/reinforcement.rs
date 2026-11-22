@@ -397,10 +397,19 @@ async fn custom_fields_check_values_and_filter_and_sort_tasks() {
         Method::PATCH,
         &format!("/v1/pms/custom-fields/{}", id_of(&tags)),
         Some(json!({"name": "Area", "options": ["Frontend", "API"],
+            "expected_options": ["UI", "API", "DB"],
             "option_renames": [{"from": "UI", "to": "Frontend"}]})),
     )
     .await;
     assert_eq!(updated["name"], "Area");
+    let stale = call(
+        &f.owner,
+        Method::PATCH,
+        &format!("/v1/pms/custom-fields/{}", id_of(&tags)),
+        Some(json!({"name": "Stale", "options": ["API"], "expected_options": ["UI", "API", "DB"]})),
+    )
+    .await;
+    assert_eq!(stale.status(), StatusCode::CONFLICT);
     let values = ok(
         &viewer,
         Method::GET,

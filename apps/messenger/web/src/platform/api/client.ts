@@ -1,5 +1,5 @@
 import type { AppRuntime } from '@miy/sdk';
-import { ApiError } from '@miy/sdk';
+import { isApiError } from '@miy/sdk';
 
 import { i18n } from '../i18n';
 
@@ -39,7 +39,7 @@ export function bindApiRuntime(runtime: BoundRuntime | null): void {
 }
 
 export function toApiRequestError(error: unknown): unknown {
-  if (!(error instanceof ApiError) || error.kind === 'abort') {
+  if (!isApiError(error) || error.kind === 'abort') {
     return error;
   }
   const status = error.status ?? 0;

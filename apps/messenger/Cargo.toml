@@ -19,6 +19,9 @@ tokio = { version = "1", features = ["full"] }
 unicode-normalization = "0.1"
 uuid = { version = "1", features = ["v4", "serde"] }
 
+utoipa = "=6.0.0"
+utoipa-axum = "=0.3.0"
+
 [dev-dependencies]
 tokio-tungstenite = "=0.29.0"
 jsonwebtoken = "9"

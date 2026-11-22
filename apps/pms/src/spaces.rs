@@ -10,10 +10,9 @@ use axum::{
     Extension, Json,
     extract::{Path, State},
     http::StatusCode,
-    response::IntoResponse,
 };
 use miy_app_sdk::Identity;
-use serde_json::{Value, json};
+use serde::Serialize;
 use sqlx::{PgConnection, PgPool};
 
 use crate::access::{self, MANAGER_ROLES, ensure_space_access, normalize_role};
@@ -26,19 +25,157 @@ use crate::users;
 
 const ROLE_CHOICES: &[&str] = &["owner", "admin", "viewer", "member"];
 
-fn serialize_space(space: &SpaceRow, member_count: i64, role: Option<&str>) -> Value {
-    json!({
-        "id": space.id,
-        "workspace_id": space.id,
-        "workspace_key": space.key,
-        "key": space.key,
-        "name": space.name,
-        "description": space.description,
-        "member_count": member_count,
-        "current_user_role": role,
-        "created_at": iso_datetime(&space.created_at),
-        "updated_at": iso_datetime(&space.updated_at),
-    })
+#[allow(dead_code)]
+#[derive(utoipa::ToSchema)]
+#[serde(rename_all = "snake_case")]
+enum SpaceRole {
+    Owner,
+    Admin,
+    Viewer,
+    Member,
+}
+
+#[derive(Serialize, utoipa::ToSchema)]
+pub struct SpaceItem {
+    id: String,
+    workspace_id: String,
+    workspace_key: String,
+    key: String,
+    name: String,
+    description: String,
+    member_count: i64,
+    #[schema(required, value_type = Option<SpaceRole>)]
+    current_user_role: Option<String>,
+    created_at: String,
+    updated_at: String,
+}
+
+#[derive(Serialize, utoipa::ToSchema)]
+pub struct SpacePreferenceItem {
+    space_id: String,
+    pinned: bool,
+    hidden: bool,
+}
+
+#[derive(Serialize, utoipa::ToSchema)]
+pub struct SpacePreferenceListResponse {
+    items: Vec<SpacePreferenceItem>,
+}
+
+#[allow(dead_code)]
+#[derive(utoipa::ToSchema)]
+#[serde(rename_all = "snake_case")]
+enum TaskListGroupBy {
+    None,
+    Status,
+    Assignee,
+    Label,
+}
+
+#[derive(Serialize, utoipa::ToSchema)]
+pub struct PmsViewPreferencesResponse {
+    #[schema(value_type = TaskListGroupBy)]
+    task_list_group_by: String,
+}
+
+#[derive(Clone, Serialize, utoipa::ToSchema)]
+pub struct SpaceMemberItem {
+    user_id: String,
+    /// The platform does not provide an email address here.
+    email: &'static str,
+    full_name: String,
+    #[schema(required)]
+    primary_org_unit_name: Option<String>,
+    /// Administrative access is represented by the app space role.
+    is_admin: bool,
+    #[schema(value_type = SpaceRole)]
+    role: String,
+    joined_at: String,
+}
+
+#[derive(Serialize, utoipa::ToSchema)]
+pub struct SpaceMemberListResponse {
+    items: Vec<SpaceMemberItem>,
+    total: usize,
+    page: i64,
+    page_size: i64,
+}
+
+#[derive(Serialize, utoipa::ToSchema)]
+pub struct SpaceMembersBulkCreateResponse {
+    items: Vec<SpaceMemberItem>,
+    skipped_count: usize,
+}
+
+// Request schemas describe the supported fields. The shared Body extractor
+// keeps the existing distinction between absent fields, null and invalid data.
+#[allow(dead_code)]
+#[derive(utoipa::ToSchema)]
+struct CreateSpaceRequest {
+    /// Trimmed to 2 through 120 characters.
+    name: String,
+    /// Defaults to an empty description. Trimmed to at most 1000 characters.
+    #[serde(default)]
+    description: String,
+}
+
+#[allow(dead_code)]
+#[derive(utoipa::ToSchema)]
+struct UpdateSpaceRequest {
+    /// Omit or send null to keep the name. Trimmed to 2 through 120 characters.
+    name: Option<String>,
+    /// Omit or send null to keep the description. Trimmed to at most 1000 characters.
+    description: Option<String>,
+}
+
+#[allow(dead_code)]
+#[derive(utoipa::ToSchema)]
+#[serde(deny_unknown_fields)]
+struct SpacePreferenceUpdateRequest {
+    /// Pinning a space unhides it. Use null to leave this field unchanged.
+    pinned: Option<crate::lists::BooleanInput>,
+    /// Hiding a space unpins it. Use null to leave this field unchanged.
+    hidden: Option<crate::lists::BooleanInput>,
+}
+
+#[allow(dead_code)]
+#[derive(utoipa::ToSchema)]
+struct AddSpaceMemberRequest {
+    user_id: String,
+    /// Defaults to member.
+    #[serde(default)]
+    role: SpaceRole,
+}
+
+#[allow(dead_code)]
+#[derive(utoipa::ToSchema)]
+struct AddSpaceMembersRequest {
+    #[schema(min_items = 1, max_items = 100)]
+    user_ids: Vec<String>,
+    /// Defaults to member.
+    #[serde(default)]
+    role: SpaceRole,
+}
+
+#[allow(dead_code)]
+#[derive(utoipa::ToSchema)]
+struct UpdateSpaceMemberRequest {
+    role: SpaceRole,
+}
+
+fn serialize_space(space: &SpaceRow, member_count: i64, role: Option<&str>) -> SpaceItem {
+    SpaceItem {
+        id: space.id.clone(),
+        workspace_id: space.id.clone(),
+        workspace_key: space.key.clone(),
+        key: space.key.clone(),
+        name: space.name.clone(),
+        description: space.description.clone(),
+        member_count,
+        current_user_role: role.map(str::to_string),
+        created_at: iso_datetime(&space.created_at),
+        updated_at: iso_datetime(&space.updated_at),
+    }
 }
 
 async fn member_count(conn: &mut PgConnection, space_id: &str) -> ApiResult<i64> {
@@ -51,10 +188,18 @@ async fn member_count(conn: &mut PgConnection, space_id: &str) -> ApiResult<i64>
 }
 
 /// `GET /v1/pms/spaces`: active spaces the caller is a member of, by name.
+#[utoipa::path(
+    get, path = "/v1/pms/spaces", operation_id = "listPmsSpaces", tag = "Spaces",
+    responses(
+        (status = 200, description = "Success", body = Vec<SpaceItem>),
+        (status = 401, description = "Platform identity could not be verified", body = crate::error::IdentityErrorResponse),
+        (status = 500, description = "Internal error", body = crate::error::ErrorResponse),
+    )
+)]
 pub async fn list_spaces(
     State(pool): State<PgPool>,
     Extension(identity): Extension<Identity>,
-) -> ApiResult<Json<Value>> {
+) -> ApiResult<Json<Vec<SpaceItem>>> {
     let rows: Vec<(
         String,
         String,
@@ -76,7 +221,7 @@ pub async fn list_spaces(
     .bind(access::ROLES)
     .fetch_all(&pool)
     .await?;
-    Ok(Json(Value::Array(
+    Ok(Json(
         rows.into_iter()
             .map(
                 |(id, key, name, description, active, created_at, updated_at, role, count)| {
@@ -93,15 +238,23 @@ pub async fn list_spaces(
                 },
             )
             .collect(),
-    )))
+    ))
 }
 
 /// `GET /v1/pms/space-preferences`: the caller's pinned/hidden spaces among
 /// those they can still open.
+#[utoipa::path(
+    get, path = "/v1/pms/space-preferences", operation_id = "listPmsSpacePreferences", tag = "Spaces",
+    responses(
+        (status = 200, description = "Success", body = SpacePreferenceListResponse),
+        (status = 401, description = "Platform identity could not be verified", body = crate::error::IdentityErrorResponse),
+        (status = 500, description = "Internal error", body = crate::error::ErrorResponse),
+    )
+)]
 pub async fn list_space_preferences(
     State(pool): State<PgPool>,
     Extension(identity): Extension<Identity>,
-) -> ApiResult<Json<Value>> {
+) -> ApiResult<Json<SpacePreferenceListResponse>> {
     let mut conn = pool.acquire().await?;
     let accessible = access::accessible_space_ids(&mut conn, &identity.user_id).await?;
     let rows: Vec<(String, bool, bool)> = sqlx::query_as(
@@ -112,20 +265,41 @@ pub async fn list_space_preferences(
     .bind(&accessible)
     .fetch_all(&mut *conn)
     .await?;
-    Ok(Json(json!({
-        "items": rows.into_iter().map(|(space_id, pinned, hidden)| json!({
-            "space_id": space_id, "pinned": pinned, "hidden": hidden,
-        })).collect::<Vec<_>>(),
-    })))
+    Ok(Json(SpacePreferenceListResponse {
+        items: rows
+            .into_iter()
+            .map(|(space_id, pinned, hidden)| SpacePreferenceItem {
+                space_id,
+                pinned,
+                hidden,
+            })
+            .collect(),
+    }))
 }
 
 /// `PATCH /v1/pms/spaces/{space_id}/preference`: pinning unhides, hiding unpins.
+#[utoipa::path(
+    patch, path = "/v1/pms/spaces/{space_id}/preference", operation_id = "updatePmsSpacePreference", tag = "Spaces",
+    description = "Pinning unhides the space and hiding unpins it. Both cannot be true.",
+    params(
+        ("space_id" = String, Path),
+    ),
+    request_body = SpacePreferenceUpdateRequest,
+    responses(
+        (status = 200, description = "Success", body = SpacePreferenceItem),
+        (status = 401, description = "Platform identity could not be verified", body = crate::error::IdentityErrorResponse),
+        (status = 403, description = "Current permissions do not allow the operation", body = crate::error::ErrorResponse),
+        (status = 404, description = "The space, task list, status, or user was not found", body = crate::error::ErrorResponse),
+        (status = 422, description = "Malformed input or invalid field value", body = crate::error::ErrorResponse),
+        (status = 500, description = "Internal error", body = crate::error::ErrorResponse),
+    )
+)]
 pub async fn update_space_preference(
     State(pool): State<PgPool>,
     Extension(identity): Extension<Identity>,
     Path(space_id): Path<String>,
     body: Body,
-) -> ApiResult<Json<Value>> {
+) -> ApiResult<Json<SpacePreferenceItem>> {
     body.forbid_extra(&["pinned", "hidden"])?;
     let pinned = body.opt_bool("pinned")?;
     let hidden = body.opt_bool("hidden")?;
@@ -159,9 +333,11 @@ pub async fn update_space_preference(
             .execute(&mut *tx)
             .await?;
         tx.commit().await?;
-        return Ok(Json(
-            json!({"space_id": space_id, "pinned": false, "hidden": false}),
-        ));
+        return Ok(Json(SpacePreferenceItem {
+            space_id,
+            pinned: false,
+            hidden: false,
+        }));
     }
     let now = utcnow();
     sqlx::query(
@@ -177,35 +353,56 @@ pub async fn update_space_preference(
     .execute(&mut *tx)
     .await?;
     tx.commit().await?;
-    Ok(Json(
-        json!({"space_id": space_id, "pinned": next_pinned, "hidden": next_hidden}),
-    ))
+    Ok(Json(SpacePreferenceItem {
+        space_id,
+        pinned: next_pinned,
+        hidden: next_hidden,
+    }))
 }
 
 const GROUP_BY_CHOICES: &[&str] = &["none", "status", "assignee", "label"];
 
 /// `GET /v1/pms/view-preferences`.
+#[utoipa::path(
+    get, path = "/v1/pms/view-preferences", operation_id = "getPmsViewPreferences", tag = "Spaces",
+    responses(
+        (status = 200, description = "Success", body = PmsViewPreferencesResponse),
+        (status = 401, description = "Platform identity could not be verified", body = crate::error::IdentityErrorResponse),
+        (status = 500, description = "Internal error", body = crate::error::ErrorResponse),
+    )
+)]
 pub async fn get_view_preferences(
     State(pool): State<PgPool>,
     Extension(identity): Extension<Identity>,
-) -> ApiResult<Json<Value>> {
+) -> ApiResult<Json<PmsViewPreferencesResponse>> {
     let value: Option<String> = sqlx::query_scalar(
         "SELECT task_list_group_by FROM pms_view_preferences WHERE user_id = $1",
     )
     .bind(&identity.user_id)
     .fetch_optional(&pool)
     .await?;
-    Ok(Json(
-        json!({"task_list_group_by": value.unwrap_or_else(|| "status".into())}),
-    ))
+    Ok(Json(PmsViewPreferencesResponse {
+        task_list_group_by: value.unwrap_or_else(|| "status".into()),
+    }))
 }
 
 /// `PATCH /v1/pms/view-preferences`.
+#[utoipa::path(
+    patch, path = "/v1/pms/view-preferences", operation_id = "updatePmsViewPreferences", tag = "Spaces",
+    description = "Updates the caller’s task-list grouping preference.",
+    request_body = PmsViewPreferencesResponse,
+    responses(
+        (status = 200, description = "Success", body = PmsViewPreferencesResponse),
+        (status = 401, description = "Platform identity could not be verified", body = crate::error::IdentityErrorResponse),
+        (status = 422, description = "Malformed input or invalid field value", body = crate::error::ErrorResponse),
+        (status = 500, description = "Internal error", body = crate::error::ErrorResponse),
+    )
+)]
 pub async fn update_view_preferences(
     State(pool): State<PgPool>,
     Extension(identity): Extension<Identity>,
     body: Body,
-) -> ApiResult<Json<Value>> {
+) -> ApiResult<Json<PmsViewPreferencesResponse>> {
     let group_by = body.req_str("task_list_group_by")?;
     crate::error::check_choice("task_list_group_by", &group_by, GROUP_BY_CHOICES)?;
     let now = utcnow();
@@ -219,16 +416,28 @@ pub async fn update_view_preferences(
     .bind(now)
     .execute(&pool)
     .await?;
-    Ok(Json(json!({"task_list_group_by": group_by})))
+    Ok(Json(PmsViewPreferencesResponse {
+        task_list_group_by: group_by,
+    }))
 }
 
 /// `POST /v1/pms/spaces`: the creator becomes the only owner; the default
 /// statuses are seeded with the space (AI-DO `_initialize_pms_space`).
+#[utoipa::path(
+    post, path = "/v1/pms/spaces", operation_id = "createPmsSpace", tag = "Spaces",
+    request_body = CreateSpaceRequest,
+    responses(
+        (status = 201, description = "Created", body = SpaceItem),
+        (status = 401, description = "Platform identity could not be verified", body = crate::error::IdentityErrorResponse),
+        (status = 422, description = "Malformed input or invalid field value", body = crate::error::ErrorResponse),
+        (status = 500, description = "Internal error", body = crate::error::ErrorResponse),
+    )
+)]
 pub async fn create_space(
     State(pool): State<PgPool>,
     Extension(identity): Extension<Identity>,
     body: Body,
-) -> ApiResult<impl IntoResponse> {
+) -> ApiResult<(StatusCode, Json<SpaceItem>)> {
     let name = body.req_str("name")?.trim().to_string();
     let description = body.str_or("description", "")?.trim().to_string();
     check_length("name", &name, 2, 120)?;
@@ -274,12 +483,27 @@ pub async fn create_space(
 }
 
 /// `PATCH /v1/pms/spaces/{space_id}`: owners and admins.
+#[utoipa::path(
+    patch, path = "/v1/pms/spaces/{space_id}", operation_id = "updatePmsSpace", tag = "Spaces",
+    params(
+        ("space_id" = String, Path),
+    ),
+    request_body = UpdateSpaceRequest,
+    responses(
+        (status = 200, description = "Success", body = SpaceItem),
+        (status = 401, description = "Platform identity could not be verified", body = crate::error::IdentityErrorResponse),
+        (status = 403, description = "Current permissions do not allow the operation", body = crate::error::ErrorResponse),
+        (status = 404, description = "The space, task list, status, or user was not found", body = crate::error::ErrorResponse),
+        (status = 422, description = "Malformed input or invalid field value", body = crate::error::ErrorResponse),
+        (status = 500, description = "Internal error", body = crate::error::ErrorResponse),
+    )
+)]
 pub async fn update_space(
     State(pool): State<PgPool>,
     Extension(identity): Extension<Identity>,
     Path(space_id): Path<String>,
     body: Body,
-) -> ApiResult<Json<Value>> {
+) -> ApiResult<Json<SpaceItem>> {
     let name = body.opt_str("name")?.map(|value| value.trim().to_string());
     let description = body
         .opt_str("description")?
@@ -312,6 +536,20 @@ pub async fn update_space(
 
 /// `DELETE /v1/pms/spaces/{space_id}`: archives the space (AI-DO
 /// `archive_app_space` sets it inactive; the data stays).
+#[utoipa::path(
+    delete, path = "/v1/pms/spaces/{space_id}", operation_id = "deletePmsSpace", tag = "Spaces",
+    description = "Archives the space and retracts its notifications. Archived space data is retained.",
+    params(
+        ("space_id" = String, Path),
+    ),
+    responses(
+        (status = 204, description = "Completed with no response body"),
+        (status = 401, description = "Platform identity could not be verified", body = crate::error::IdentityErrorResponse),
+        (status = 403, description = "Current permissions do not allow the operation", body = crate::error::ErrorResponse),
+        (status = 404, description = "The space, task list, status, or user was not found", body = crate::error::ErrorResponse),
+        (status = 500, description = "Internal error", body = crate::error::ErrorResponse),
+    )
+)]
 pub async fn delete_space(
     State(pool): State<PgPool>,
     Extension(identity): Extension<Identity>,
@@ -354,27 +592,45 @@ async fn load_membership(
     .await?)
 }
 
-fn serialize_member(member: &MemberRow, user: Option<&users::UserInfo>) -> Value {
-    json!({
-        "user_id": member.user_id,
-        "email": "",
-        "full_name": user.map(|u| u.name.clone()).unwrap_or_else(|| member.user_id.clone()),
-        "primary_org_unit_name": user.and_then(|u| u.primary_group_name.clone()),
-        // AI-DO showed the platform-admin flag; miy does not give apps other
-        // people's admin flags, and it grants nothing here.
-        "is_admin": false,
-        "role": member.role,
-        "joined_at": iso_datetime(&member.created_at),
-    })
+fn serialize_member(member: &MemberRow, user: Option<&users::UserInfo>) -> SpaceMemberItem {
+    SpaceMemberItem {
+        user_id: member.user_id.clone(),
+        email: "",
+        full_name: user
+            .map(|u| u.name.clone())
+            .unwrap_or_else(|| member.user_id.clone()),
+        primary_org_unit_name: user.and_then(|u| u.primary_group_name.clone()),
+        // The platform does not expose other users' admin flags to the app.
+        is_admin: false,
+        role: member.role.clone(),
+        joined_at: iso_datetime(&member.created_at),
+    }
 }
 
 /// `GET /v1/pms/spaces/{space_id}/members`: owners and admins first, then by name.
+#[utoipa::path(
+    get, path = "/v1/pms/spaces/{space_id}/members", operation_id = "listPmsSpaceMembers", tag = "Spaces",
+    description = "Lists space managers first and sorts each group by display name.",
+    params(
+        ("space_id" = String, Path),
+        ("page" = Option<i64>, Query, minimum = 1, description = "Page number (default 1)"),
+        ("page_size" = Option<i64>, Query, minimum = 1, maximum = 100, description = "Page size (default 20)"),
+    ),
+    responses(
+        (status = 200, description = "Success", body = SpaceMemberListResponse),
+        (status = 401, description = "Platform identity could not be verified", body = crate::error::IdentityErrorResponse),
+        (status = 403, description = "Current permissions do not allow the operation", body = crate::error::ErrorResponse),
+        (status = 404, description = "The space, task list, status, or user was not found", body = crate::error::ErrorResponse),
+        (status = 422, description = "Malformed input or invalid field value", body = crate::error::ErrorResponse),
+        (status = 500, description = "Internal error", body = crate::error::ErrorResponse),
+    )
+)]
 pub async fn list_space_members(
     State(pool): State<PgPool>,
     Extension(identity): Extension<Identity>,
     Path(space_id): Path<String>,
     params: Params,
-) -> ApiResult<Json<Value>> {
+) -> ApiResult<Json<SpaceMemberListResponse>> {
     let page = params.int("page", 1, 1, None)?;
     let page_size = params.int("page_size", 20, 1, Some(100))?;
     let mut conn = pool.acquire().await?;
@@ -396,14 +652,17 @@ pub async fn list_space_members(
                 .unwrap_or_else(|| member.user_id.to_lowercase()),
         )
     });
-    let items: Vec<Value> = members
+    let items: Vec<SpaceMemberItem> = members
         .iter()
         .map(|member| serialize_member(member, found.get(&member.user_id)))
         .collect();
     let (page_items, total) = paginate(&items, page, page_size);
-    Ok(Json(json!({
-        "items": page_items, "total": total, "page": page, "page_size": page_size,
-    })))
+    Ok(Json(SpaceMemberListResponse {
+        items: page_items,
+        total,
+        page,
+        page_size,
+    }))
 }
 
 async fn lock_space(conn: &mut PgConnection, user_id: &str, space_id: &str) -> ApiResult<String> {
@@ -517,12 +776,29 @@ fn role_input(body: &Body, required: bool) -> ApiResult<String> {
 }
 
 /// `POST /v1/pms/spaces/{space_id}/members`.
+#[utoipa::path(
+    post, path = "/v1/pms/spaces/{space_id}/members", operation_id = "addPmsSpaceMember", tag = "Spaces",
+    params(
+        ("space_id" = String, Path),
+    ),
+    request_body = AddSpaceMemberRequest,
+    responses(
+        (status = 201, description = "Created", body = SpaceMemberItem),
+        (status = 401, description = "Platform identity could not be verified", body = crate::error::IdentityErrorResponse),
+        (status = 403, description = "Current permissions do not allow the operation", body = crate::error::ErrorResponse),
+        (status = 404, description = "The space, task list, status, or user was not found", body = crate::error::ErrorResponse),
+        (status = 409, description = "Current resource state conflicts with the request", body = crate::error::ErrorResponse),
+        (status = 422, description = "Malformed input or invalid field value", body = crate::error::ErrorResponse),
+        (status = 500, description = "Internal error", body = crate::error::ErrorResponse),
+        (status = 503, description = "The platform directory is unavailable", body = crate::error::ErrorResponse),
+    )
+)]
 pub async fn add_space_member(
     State(pool): State<PgPool>,
     Extension(identity): Extension<Identity>,
     Path(space_id): Path<String>,
     body: Body,
-) -> ApiResult<impl IntoResponse> {
+) -> ApiResult<(StatusCode, Json<SpaceMemberItem>)> {
     let target = body.req_str("user_id")?;
     let role = role_input(&body, false)?;
     let mut tx = pool.begin().await?;
@@ -548,12 +824,29 @@ pub async fn add_space_member(
 
 /// `POST /v1/pms/spaces/{space_id}/members/bulk`: members already in the space
 /// are skipped, not rejected, so a department can be added again.
+#[utoipa::path(
+    post, path = "/v1/pms/spaces/{space_id}/members/bulk", operation_id = "addPmsSpaceMembers", tag = "Spaces",
+    description = "Skips users who are already space members and reports the number skipped.",
+    params(
+        ("space_id" = String, Path),
+    ),
+    request_body = AddSpaceMembersRequest,
+    responses(
+        (status = 201, description = "Created", body = SpaceMembersBulkCreateResponse),
+        (status = 401, description = "Platform identity could not be verified", body = crate::error::IdentityErrorResponse),
+        (status = 403, description = "Current permissions do not allow the operation", body = crate::error::ErrorResponse),
+        (status = 404, description = "The space, task list, status, or user was not found", body = crate::error::ErrorResponse),
+        (status = 422, description = "Malformed input or invalid field value", body = crate::error::ErrorResponse),
+        (status = 500, description = "Internal error", body = crate::error::ErrorResponse),
+        (status = 503, description = "The platform directory is unavailable", body = crate::error::ErrorResponse),
+    )
+)]
 pub async fn add_space_members(
     State(pool): State<PgPool>,
     Extension(identity): Extension<Identity>,
     Path(space_id): Path<String>,
     body: Body,
-) -> ApiResult<impl IntoResponse> {
+) -> ApiResult<(StatusCode, Json<SpaceMembersBulkCreateResponse>)> {
     let user_ids = body
         .opt_str_list("user_ids")?
         .ok_or_else(|| ApiError::validation("user_ids: Field required"))?;
@@ -585,23 +878,44 @@ pub async fn add_space_members(
         }
     }
     tx.commit().await?;
-    let items: Vec<Value> = members
+    let items: Vec<SpaceMemberItem> = members
         .iter()
         .map(|member| serialize_member(member, found.get(&member.user_id)))
         .collect();
     Ok((
         StatusCode::CREATED,
-        Json(json!({"items": items, "skipped_count": requested.len() - added.len()})),
+        Json(SpaceMembersBulkCreateResponse {
+            items,
+            skipped_count: requested.len() - added.len(),
+        }),
     ))
 }
 
 /// `PATCH /v1/pms/spaces/{space_id}/members/{user_id}`.
+#[utoipa::path(
+    patch, path = "/v1/pms/spaces/{space_id}/members/{user_id}", operation_id = "updatePmsSpaceMember", tag = "Spaces",
+    params(
+        ("space_id" = String, Path),
+        ("user_id" = String, Path),
+    ),
+    request_body = UpdateSpaceMemberRequest,
+    responses(
+        (status = 200, description = "Success", body = SpaceMemberItem),
+        (status = 401, description = "Platform identity could not be verified", body = crate::error::IdentityErrorResponse),
+        (status = 403, description = "Current permissions do not allow the operation", body = crate::error::ErrorResponse),
+        (status = 404, description = "The space, task list, status, or user was not found", body = crate::error::ErrorResponse),
+        (status = 409, description = "Current resource state conflicts with the request", body = crate::error::ErrorResponse),
+        (status = 422, description = "Malformed input or invalid field value", body = crate::error::ErrorResponse),
+        (status = 500, description = "Internal error", body = crate::error::ErrorResponse),
+        (status = 503, description = "The platform directory is unavailable", body = crate::error::ErrorResponse),
+    )
+)]
 pub async fn update_space_member(
     State(pool): State<PgPool>,
     Extension(identity): Extension<Identity>,
     Path((space_id, target)): Path<(String, String)>,
     body: Body,
-) -> ApiResult<Json<Value>> {
+) -> ApiResult<Json<SpaceMemberItem>> {
     let role = role_input(&body, true)?;
     let mut tx = pool.begin().await?;
     let actor_role = lock_space(&mut tx, &identity.user_id, &space_id).await?;
@@ -624,6 +938,22 @@ pub async fn update_space_member(
 /// `DELETE /v1/pms/spaces/{space_id}/members/{user_id}`: managers remove
 /// others; anyone may leave; the last owner must remain. The removed person's
 /// notifications for this space are retracted.
+#[utoipa::path(
+    delete, path = "/v1/pms/spaces/{space_id}/members/{user_id}", operation_id = "removePmsSpaceMember", tag = "Spaces",
+    description = "Removes a space member or lets the caller leave. The last owner must remain.",
+    params(
+        ("space_id" = String, Path),
+        ("user_id" = String, Path),
+    ),
+    responses(
+        (status = 204, description = "Completed with no response body"),
+        (status = 401, description = "Platform identity could not be verified", body = crate::error::IdentityErrorResponse),
+        (status = 403, description = "Current permissions do not allow the operation", body = crate::error::ErrorResponse),
+        (status = 404, description = "The space, task list, status, or user was not found", body = crate::error::ErrorResponse),
+        (status = 409, description = "Current resource state conflicts with the request", body = crate::error::ErrorResponse),
+        (status = 500, description = "Internal error", body = crate::error::ErrorResponse),
+    )
+)]
 pub async fn remove_space_member(
     State(pool): State<PgPool>,
     Extension(identity): Extension<Identity>,

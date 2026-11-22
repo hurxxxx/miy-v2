@@ -134,30 +134,171 @@ fn can_manage(filter: &FilterRow, user_id: &str, scope: &Scope) -> bool {
     filter.owner_id == user_id || (filter.shared && scope.manager())
 }
 
+#[allow(dead_code)]
+#[derive(utoipa::ToSchema)]
+#[schema(rename_all = "snake_case")]
+enum FilterArchivedState {
+    Active,
+    Archived,
+    All,
+}
+
+#[allow(dead_code)]
+#[derive(utoipa::ToSchema)]
+#[schema(rename_all = "snake_case")]
+enum FilterGroup {
+    None,
+    Status,
+    Assignee,
+    Label,
+}
+
+#[allow(dead_code)]
+#[derive(utoipa::ToSchema)]
+#[schema(rename_all = "snake_case")]
+enum FilterSortDirection {
+    Asc,
+    Desc,
+}
+
+#[allow(dead_code)]
+#[derive(utoipa::ToSchema)]
+struct SavedFilterSort {
+    field: String,
+    direction: FilterSortDirection,
+}
+
+#[allow(dead_code)]
+#[derive(utoipa::ToSchema)]
+#[serde(deny_unknown_fields)]
+struct SavedFilterParams {
+    #[schema(max_items = 50)]
+    status: Option<Vec<String>>,
+    priority: Option<String>,
+    assignee_id: Option<String>,
+    label_id: Option<String>,
+    milestone_id: Option<String>,
+    #[schema(format = Date)]
+    due_date_from: Option<String>,
+    #[schema(format = Date)]
+    due_date_to: Option<String>,
+    #[schema(format = Date)]
+    start_date_from: Option<String>,
+    #[schema(format = Date)]
+    start_date_to: Option<String>,
+    archived_state: Option<FilterArchivedState>,
+    /// Up to 50 custom field IDs mapped to their conditions.
+    custom_fields: Option<std::collections::BTreeMap<String, String>>,
+    /// Accepted for compatibility and never persisted.
+    q: Option<Value>,
+}
+
+#[derive(serde::Serialize, utoipa::ToSchema)]
+pub struct SavedFilterItem {
+    id: String,
+    name: String,
+    #[schema(value_type = SavedFilterParams)]
+    params: Value,
+    #[schema(required, value_type = Option<SavedFilterSort>)]
+    sort: Option<Value>,
+    #[schema(required, value_type = Option<FilterGroup>)]
+    group_by: Option<String>,
+    shared: bool,
+    space_id: String,
+    #[schema(required)]
+    list_id: Option<String>,
+    owner_id: String,
+    owner_name: String,
+    is_mine: bool,
+    is_default: bool,
+    can_manage: bool,
+    created_at: String,
+    updated_at: String,
+}
+
+#[derive(serde::Serialize, utoipa::ToSchema)]
+pub struct SavedFiltersResponse {
+    items: Vec<SavedFilterItem>,
+    #[schema(required)]
+    default_filter_id: Option<String>,
+}
+
+#[allow(dead_code)]
+#[derive(utoipa::ToSchema)]
+struct SavedFilterSortInput {
+    /// A task sort key or cf_<custom field ID>.
+    field: String,
+    /// Omit to sort ascending.
+    direction: Option<FilterSortDirection>,
+}
+
+/// Specify exactly one of list_id and space_id.
+#[allow(dead_code)]
+#[derive(utoipa::ToSchema)]
+#[serde(deny_unknown_fields)]
+struct SavedFilterCreateRequest {
+    list_id: Option<String>,
+    space_id: Option<String>,
+    #[schema(min_length = 1, max_length = 80)]
+    name: String,
+    /// The normalized filter is at most 8 KiB of JSON.
+    params: SavedFilterParams,
+    sort: Option<SavedFilterSortInput>,
+    group_by: Option<FilterGroup>,
+    shared: Option<crate::lists::BooleanInput>,
+}
+
+#[allow(dead_code)]
+#[derive(utoipa::ToSchema)]
+#[serde(deny_unknown_fields)]
+struct SavedFilterUpdateRequest {
+    #[schema(min_length = 1, max_length = 80)]
+    name: Option<String>,
+    params: Option<SavedFilterParams>,
+    /// Omit to keep the current sort, or send null to clear it.
+    sort: Option<SavedFilterSortInput>,
+    /// Omit to keep the current group, or send null to clear it.
+    group_by: Option<FilterGroup>,
+    shared: Option<crate::lists::BooleanInput>,
+}
+
+/// Specify exactly one of list_id and space_id.
+#[allow(dead_code)]
+#[derive(utoipa::ToSchema)]
+#[serde(deny_unknown_fields)]
+struct SavedFilterDefaultRequest {
+    list_id: Option<String>,
+    space_id: Option<String>,
+    /// Omit or send null to clear the current default.
+    filter_id: Option<String>,
+}
+
 fn serialize_filter(
     filter: &FilterRow,
     user_id: &str,
     scope: &Scope,
     owner_name: Option<&String>,
     default_id: Option<&str>,
-) -> Value {
-    json!({
-        "id": filter.id,
-        "name": filter.name,
-        "params": filter.params,
-        "sort": filter.sort,
-        "group_by": filter.group_by,
-        "shared": filter.shared,
-        "space_id": filter.team_id,
-        "list_id": filter.list_id,
-        "owner_id": filter.owner_id,
-        "owner_name": owner_name.cloned().unwrap_or_else(|| filter.owner_id.clone()),
-        "is_mine": filter.owner_id == user_id,
-        "is_default": default_id == Some(filter.id.as_str()),
-        "can_manage": can_manage(filter, user_id, scope),
-        "created_at": iso_datetime(&filter.created_at),
-        "updated_at": iso_datetime(&filter.updated_at),
-    })
+) -> SavedFilterItem {
+    SavedFilterItem {
+        id: filter.id.clone(),
+        name: filter.name.clone(),
+        params: filter.params.clone(),
+        sort: filter.sort.clone(),
+        group_by: filter.group_by.clone(),
+        shared: filter.shared,
+        space_id: filter.team_id.clone(),
+        list_id: filter.list_id.clone(),
+        owner_id: filter.owner_id.clone(),
+        owner_name: owner_name
+            .cloned()
+            .unwrap_or_else(|| filter.owner_id.clone()),
+        is_mine: filter.owner_id == user_id,
+        is_default: default_id == Some(filter.id.as_str()),
+        can_manage: can_manage(filter, user_id, scope),
+        created_at: iso_datetime(&filter.created_at),
+        updated_at: iso_datetime(&filter.updated_at),
+    }
 }
 
 /// The caller's filters and the shared ones of this view.
@@ -224,7 +365,7 @@ async fn filter_list(
     conn: &mut PgConnection,
     identity: &Identity,
     scope: &Scope,
-) -> ApiResult<Value> {
+) -> ApiResult<SavedFiltersResponse> {
     let filters = visible_filters(conn, &identity.user_id, scope).await?;
     // A default that is no longer visible (unshared, deleted) counts as none.
     let default_id = default_filter_id(conn, &identity.user_id, scope)
@@ -234,28 +375,46 @@ async fn filter_list(
     owners.sort();
     owners.dedup();
     let names = users::names(identity, &owners).await;
-    Ok(json!({
-        "items": filters
+    Ok(SavedFiltersResponse {
+        items: filters
             .iter()
-            .map(|filter| serialize_filter(
-                filter,
-                &identity.user_id,
-                scope,
-                names.get(&filter.owner_id),
-                default_id.as_deref(),
-            ))
-            .collect::<Vec<_>>(),
-        "default_filter_id": default_id,
-    }))
+            .map(|filter| {
+                serialize_filter(
+                    filter,
+                    &identity.user_id,
+                    scope,
+                    names.get(&filter.owner_id),
+                    default_id.as_deref(),
+                )
+            })
+            .collect(),
+        default_filter_id: default_id,
+    })
 }
 
 /// `GET /v1/pms/saved-filters?list_id=` or `?space_id=`: `{items,
 /// default_filter_id}`, by name.
+#[utoipa::path(
+    get, path = "/v1/pms/saved-filters", operation_id = "listPmsSavedFilters", tag = "Saved task filters",
+    params(
+        ("list_id" = Option<String>, Query, description = "Provide exactly one of list_id and space_id"),
+        ("space_id" = Option<String>, Query, description = "Provide exactly one of list_id and space_id")
+    ),
+    responses(
+        (status = 200, description = "Success", body = SavedFiltersResponse),
+        (status = 401, description = "Valid platform identity required", body = crate::error::IdentityErrorResponse),
+        (status = 403, description = "Current permissions do not allow this operation", body = crate::error::ErrorResponse),
+        (status = 404, description = "Resource is unavailable or does not exist", body = crate::error::ErrorResponse),
+        (status = 409, description = "Current resource state conflicts with the request", body = crate::error::ErrorResponse),
+        (status = 422, description = "Request validation failed", body = crate::error::ErrorResponse),
+        (status = 500, description = "Could not complete the request", body = crate::error::ErrorResponse)
+    )
+)]
 pub async fn list_saved_filters(
     State(pool): State<PgPool>,
     Extension(identity): Extension<Identity>,
     params: Params,
-) -> ApiResult<Json<Value>> {
+) -> ApiResult<Json<SavedFiltersResponse>> {
     let list_id = params.opt_string("list_id").filter(|id| !id.is_empty());
     let space_id = params.opt_string("space_id").filter(|id| !id.is_empty());
     let mut conn = pool.acquire().await?;
@@ -446,6 +605,19 @@ fn share_denied() -> ApiError {
 
 /// `POST /v1/pms/saved-filters`: `{list_id | space_id, name, params, sort?,
 /// group_by?, shared?}` (201). Only a space owner or admin may share.
+#[utoipa::path(
+    post, path = "/v1/pms/saved-filters", operation_id = "createPmsSavedFilter", tag = "Saved task filters",
+    request_body = SavedFilterCreateRequest,
+    responses(
+        (status = 201, description = "Created", body = SavedFilterItem),
+        (status = 401, description = "Valid platform identity required", body = crate::error::IdentityErrorResponse),
+        (status = 403, description = "Current permissions do not allow this operation", body = crate::error::ErrorResponse),
+        (status = 404, description = "Resource is unavailable or does not exist", body = crate::error::ErrorResponse),
+        (status = 409, description = "Current resource state conflicts with the request", body = crate::error::ErrorResponse),
+        (status = 422, description = "Request validation failed", body = crate::error::ErrorResponse),
+        (status = 500, description = "Could not complete the request", body = crate::error::ErrorResponse)
+    )
+)]
 pub async fn create_saved_filter(
     State(pool): State<PgPool>,
     Extension(identity): Extension<Identity>,
@@ -560,12 +732,28 @@ async fn lock_filter_scope(
 /// (`name`, `params`, `sort`, `group_by`), or share and unshare (`shared`, space
 /// owner or admin only). The owner manages a filter; space owners and admins
 /// also manage shared ones. A filter the caller cannot see is not found.
+#[utoipa::path(
+    patch, path = "/v1/pms/saved-filters/{filter_id}", operation_id = "updatePmsSavedFilter", tag = "Saved task filters",
+    params(
+        ("filter_id" = String, Path)
+    ),
+    request_body = SavedFilterUpdateRequest,
+    responses(
+        (status = 200, description = "Success", body = SavedFilterItem),
+        (status = 401, description = "Valid platform identity required", body = crate::error::IdentityErrorResponse),
+        (status = 403, description = "Current permissions do not allow this operation", body = crate::error::ErrorResponse),
+        (status = 404, description = "Resource is unavailable or does not exist", body = crate::error::ErrorResponse),
+        (status = 409, description = "Current resource state conflicts with the request", body = crate::error::ErrorResponse),
+        (status = 422, description = "Request validation failed", body = crate::error::ErrorResponse),
+        (status = 500, description = "Could not complete the request", body = crate::error::ErrorResponse)
+    )
+)]
 pub async fn update_saved_filter(
     State(pool): State<PgPool>,
     Extension(identity): Extension<Identity>,
     Path(filter_id): Path<String>,
     body: Body,
-) -> ApiResult<Json<Value>> {
+) -> ApiResult<Json<SavedFilterItem>> {
     body.forbid_extra(&["name", "params", "sort", "group_by", "shared"])?;
     let name = body.opt_str("name")?.map(|name| name.trim().to_string());
     if let Some(name) = &name {
@@ -640,6 +828,20 @@ pub async fn update_saved_filter(
 
 /// `DELETE /v1/pms/saved-filters/{filter_id}`: same managers as an update.
 /// Anyone's "open with" choice of it goes with it.
+#[utoipa::path(
+    delete, path = "/v1/pms/saved-filters/{filter_id}", operation_id = "deletePmsSavedFilter", tag = "Saved task filters",
+    params(
+        ("filter_id" = String, Path)
+    ),
+    responses(
+        (status = 204, description = "Completed with no response body"),
+        (status = 401, description = "Valid platform identity required", body = crate::error::IdentityErrorResponse),
+        (status = 403, description = "Current permissions do not allow this operation", body = crate::error::ErrorResponse),
+        (status = 404, description = "Resource is unavailable or does not exist", body = crate::error::ErrorResponse),
+        (status = 409, description = "Current resource state conflicts with the request", body = crate::error::ErrorResponse),
+        (status = 500, description = "Could not complete the request", body = crate::error::ErrorResponse)
+    )
+)]
 pub async fn delete_saved_filter(
     State(pool): State<PgPool>,
     Extension(identity): Extension<Identity>,
@@ -666,11 +868,24 @@ pub async fn delete_saved_filter(
 /// `PUT /v1/pms/saved-filters/default`: `{list_id | space_id, filter_id}` sets
 /// the filter the caller opens this view with (`null` clears it). The filter
 /// must be one the caller sees in that view. Answers the view's list.
+#[utoipa::path(
+    put, path = "/v1/pms/saved-filters/default", operation_id = "setPmsDefaultSavedFilter", tag = "Saved task filters",
+    request_body = SavedFilterDefaultRequest,
+    responses(
+        (status = 200, description = "Success", body = SavedFiltersResponse),
+        (status = 401, description = "Valid platform identity required", body = crate::error::IdentityErrorResponse),
+        (status = 403, description = "Current permissions do not allow this operation", body = crate::error::ErrorResponse),
+        (status = 404, description = "Resource is unavailable or does not exist", body = crate::error::ErrorResponse),
+        (status = 409, description = "Current resource state conflicts with the request", body = crate::error::ErrorResponse),
+        (status = 422, description = "Request validation failed", body = crate::error::ErrorResponse),
+        (status = 500, description = "Could not complete the request", body = crate::error::ErrorResponse)
+    )
+)]
 pub async fn set_default_saved_filter(
     State(pool): State<PgPool>,
     Extension(identity): Extension<Identity>,
     body: Body,
-) -> ApiResult<Json<Value>> {
+) -> ApiResult<Json<SavedFiltersResponse>> {
     body.forbid_extra(&["list_id", "space_id", "filter_id"])?;
     let list_id = body.opt_str("list_id")?;
     let space_id = body.opt_str("space_id")?;

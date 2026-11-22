@@ -18,7 +18,9 @@ use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 use std::collections::HashMap;
 
-use crate::error::{ApiError, ApiJson, ApiResult, check_length};
+use crate::error::{
+    ApiError, ApiErrorResponse, ApiJson, ApiResult, GatewayErrorResponse, check_length,
+};
 use crate::event_time::{
     normalize_time_zone, parse_event_bounds, parse_iso_or_date, serialize_event_bounds,
 };
@@ -48,16 +50,25 @@ const EVENT_COLUMNS: &str = "id, owner_id, title, description, location, time_zo
      start_has_time, end_has_time, start_at, end_at, created_at, updated_at";
 
 /// schemas.PlannerEventCreateRequest (camelCase, snake_case accepted).
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, utoipa::ToSchema)]
 pub struct PlannerEventCreateRequest {
+    #[schema(min_length = 1, max_length = 200)]
     pub title: String,
     #[serde(default)]
+    #[schema(max_length = 4000, default = "")]
     pub description: String,
     #[serde(default)]
+    #[schema(max_length = 240, default = "")]
     pub location: String,
+    /// The legacy spelling `all_day` is also accepted.
     #[serde(default, rename = "allDay", alias = "all_day")]
+    #[schema(default = false)]
     pub all_day: bool,
+    /// Date only, or an ISO datetime with a T separator for timed events.
+    #[schema(example = "2026-11-22T09:00:00+09:00")]
     pub start: String,
+    /// End boundary, strictly after the start. An all-day end date is exclusive.
+    #[schema(example = "2026-11-22T10:00:00+09:00")]
     pub end: String,
 }
 
@@ -69,15 +80,21 @@ impl PlannerEventCreateRequest {
     }
 }
 
-/// schemas.PlannerEventUpdateRequest. `null` means "not given", as in Pydantic.
-#[derive(Debug, Clone, Default, Deserialize)]
+/// Omitted or null fields keep their current values. A single supplied time
+/// boundary uses the stored value for the other boundary. When also changing
+/// allDay, supply both boundaries together or omit both.
+#[derive(Debug, Clone, Default, Deserialize, utoipa::ToSchema)]
 pub struct PlannerEventUpdateRequest {
     #[serde(default)]
+    #[schema(min_length = 1, max_length = 200)]
     pub title: Option<String>,
     #[serde(default)]
+    #[schema(max_length = 4000)]
     pub description: Option<String>,
     #[serde(default)]
+    #[schema(max_length = 240)]
     pub location: Option<String>,
+    /// The legacy spelling `all_day` is also accepted.
     #[serde(default, rename = "allDay", alias = "all_day")]
     pub all_day: Option<bool>,
     #[serde(default)]
@@ -102,7 +119,7 @@ impl PlannerEventUpdateRequest {
 }
 
 /// schemas.PlannerEventOut.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct PlannerEventOut {
     pub id: String,
@@ -115,13 +132,15 @@ pub struct PlannerEventOut {
     pub all_day: bool,
     pub start_has_time: bool,
     pub end_has_time: bool,
+    /// Date-only value when the event has no explicit start time, otherwise an ISO datetime.
     pub start: String,
+    /// Date-only value when the event has no explicit end time, otherwise an ISO datetime.
     pub end: String,
     pub created_at: String,
     pub updated_at: String,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
 pub struct PlannerEventsResponse {
     pub items: Vec<PlannerEventOut>,
 }
@@ -195,16 +214,14 @@ pub fn apply_planner_event_update(
 ) -> ApiResult<bool> {
     let mut changed = false;
     let next_all_day = command.all_day.unwrap_or(event.all_day);
-    let mut next_start = command.start.clone();
-    let mut next_end = command.end.clone();
-    if next_start.is_none() != next_end.is_none() {
+    if next_all_day != event.all_day && command.start.is_some() != command.end.is_some() {
         return Err(ApiError::bad_request(
             "planner.update_start_end_required",
             "Planner event updates must provide both start and end together.",
         ));
     }
-    if command.all_day.is_some() && next_start.is_none() {
-        let (start, end) = serialize_event_bounds(
+    if command.start.is_some() || command.end.is_some() || command.all_day.is_some() {
+        let (stored_start, stored_end) = serialize_event_bounds(
             next_all_day,
             event.start_at,
             event.end_at,
@@ -212,11 +229,12 @@ pub fn apply_planner_event_update(
             event.end_has_time,
             Some(&event.time_zone),
         );
-        next_start = Some(start);
-        next_end = Some(end);
-    }
-    if let (Some(start), Some(end)) = (&next_start, &next_end) {
-        let bounds = parse_event_bounds(next_all_day, start, end, Some(&event.time_zone))?;
+        let bounds = parse_event_bounds(
+            next_all_day,
+            command.start.as_deref().unwrap_or(&stored_start),
+            command.end.as_deref().unwrap_or(&stored_end),
+            Some(&event.time_zone),
+        )?;
         event.start_at = bounds.start_at;
         event.end_at = bounds.end_at;
         event.start_has_time = bounds.start_has_time;
@@ -429,7 +447,7 @@ pub async fn delete_event(pool: &PgPool, owner_id: &str, event_id: &str) -> ApiR
     Ok(())
 }
 
-fn parse_range_param(value: Option<&String>) -> ApiResult<Option<NaiveDateTime>> {
+fn parse_range_param(value: Option<&str>) -> ApiResult<Option<NaiveDateTime>> {
     value
         .map(|value| {
             parse_iso_or_date(value, None).map_err(|error| {
@@ -444,30 +462,85 @@ fn parse_range_param(value: Option<&String>) -> ApiResult<Option<NaiveDateTime>>
 
 // ── Router handlers (router.py) ─────────────────────────────────────────────
 
+#[derive(utoipa::IntoParams)]
+#[into_params(parameter_in = Query)]
+struct PlannerEventsQuery {
+    /// Inclusive lower bound. ISO date or datetime, with or without offset.
+    from: Option<String>,
+    /// Exclusive upper bound, at most 366 days after from. Supply both bounds or neither.
+    to: Option<String>,
+}
+
+#[derive(utoipa::IntoParams)]
+#[into_params(parameter_in = Query)]
+struct PlannerEventCreateQuery {
+    /// IANA time zone for the event. Missing or unknown values use Asia/Seoul.
+    #[param(rename = "timeZone", example = "Asia/Seoul")]
+    time_zone: Option<String>,
+}
+
+#[utoipa::path(
+    get, path = "/v1/planner/events", operation_id = "listPlannerEvents",
+    params(PlannerEventsQuery),
+    responses(
+        (status = 200, description = "Events owned by the current user", body = PlannerEventsResponse),
+        (status = 400, description = "Invalid date range", body = ApiErrorResponse),
+        (status = 401, description = "Platform identity could not be verified", body = GatewayErrorResponse),
+        (status = 500, description = "Could not read the events", body = ApiErrorResponse)
+    )
+)]
 pub async fn list_planner_events(
     State(pool): State<PgPool>,
     Extension(identity): Extension<Identity>,
-    Query(params): Query<HashMap<String, String>>,
+    Query(mut params): Query<HashMap<String, String>>,
 ) -> ApiResult<Json<PlannerEventsResponse>> {
-    let from_at = parse_range_param(params.get("from"))?;
-    let to_at = parse_range_param(params.get("to"))?;
+    let query = PlannerEventsQuery {
+        from: params.remove("from"),
+        to: params.remove("to"),
+    };
+    let from_at = parse_range_param(query.from.as_deref())?;
+    let to_at = parse_range_param(query.to.as_deref())?;
     Ok(Json(
         list_events(&pool, &identity.user_id, from_at, to_at).await?,
     ))
 }
 
+#[utoipa::path(
+    post, path = "/v1/planner/events", operation_id = "createPlannerEvent",
+    params(PlannerEventCreateQuery), request_body = PlannerEventCreateRequest,
+    responses(
+        (status = 201, description = "Created event", body = PlannerEventOut),
+        (status = 400, description = "Invalid event dates or times", body = ApiErrorResponse),
+        (status = 401, description = "Platform identity could not be verified", body = GatewayErrorResponse),
+        (status = 422, description = "Invalid event request", body = ApiErrorResponse),
+        (status = 500, description = "Could not create the event", body = ApiErrorResponse)
+    )
+)]
 pub async fn create_planner_event(
     State(pool): State<PgPool>,
     Extension(identity): Extension<Identity>,
-    Query(params): Query<HashMap<String, String>>,
+    Query(mut params): Query<HashMap<String, String>>,
     ApiJson(payload): ApiJson<PlannerEventCreateRequest>,
 ) -> ApiResult<impl IntoResponse> {
     payload.validate()?;
-    let time_zone = normalize_time_zone(params.get("timeZone").map(String::as_str));
+    let query = PlannerEventCreateQuery {
+        time_zone: params.remove("timeZone"),
+    };
+    let time_zone = normalize_time_zone(query.time_zone.as_deref());
     let created = create_event(&pool, &identity.user_id, &payload, &time_zone).await?;
     Ok((StatusCode::CREATED, Json(created)))
 }
 
+#[utoipa::path(
+    get, path = "/v1/planner/events/{event_id}", operation_id = "getPlannerEvent",
+    params(("event_id" = String, Path, description = "Planner event ID")),
+    responses(
+        (status = 200, description = "Planner event", body = PlannerEventOut),
+        (status = 401, description = "Platform identity could not be verified", body = GatewayErrorResponse),
+        (status = 404, description = "Event unavailable to the current user", body = ApiErrorResponse),
+        (status = 500, description = "Could not read the event", body = ApiErrorResponse)
+    )
+)]
 pub async fn get_planner_event(
     State(pool): State<PgPool>,
     Extension(identity): Extension<Identity>,
@@ -478,6 +551,19 @@ pub async fn get_planner_event(
     )))
 }
 
+#[utoipa::path(
+    patch, path = "/v1/planner/events/{event_id}", operation_id = "updatePlannerEvent",
+    params(("event_id" = String, Path, description = "Planner event ID")),
+    request_body = PlannerEventUpdateRequest,
+    responses(
+        (status = 200, description = "Updated event", body = PlannerEventOut),
+        (status = 400, description = "Invalid event dates or times", body = ApiErrorResponse),
+        (status = 401, description = "Platform identity could not be verified", body = GatewayErrorResponse),
+        (status = 404, description = "Event unavailable to the current user", body = ApiErrorResponse),
+        (status = 422, description = "Invalid event request", body = ApiErrorResponse),
+        (status = 500, description = "Could not update the event", body = ApiErrorResponse)
+    )
+)]
 pub async fn update_planner_event(
     State(pool): State<PgPool>,
     Extension(identity): Extension<Identity>,
@@ -490,6 +576,16 @@ pub async fn update_planner_event(
     ))
 }
 
+#[utoipa::path(
+    delete, path = "/v1/planner/events/{event_id}", operation_id = "deletePlannerEvent",
+    params(("event_id" = String, Path, description = "Planner event ID")),
+    responses(
+        (status = 204, description = "Event deleted"),
+        (status = 401, description = "Platform identity could not be verified", body = GatewayErrorResponse),
+        (status = 404, description = "Event unavailable to the current user", body = ApiErrorResponse),
+        (status = 500, description = "Could not delete the event", body = ApiErrorResponse)
+    )
+)]
 pub async fn delete_planner_event(
     State(pool): State<PgPool>,
     Extension(identity): Extension<Identity>,
@@ -575,18 +671,26 @@ mod tests {
     }
 
     #[test]
-    fn apply_planner_event_update_rejects_partial_bounds() {
+    fn apply_planner_event_update_merges_independent_bounds() {
         let mut event = stored_event();
-        let error = apply_planner_event_update(
+        apply_planner_event_update(
             &mut event,
             &PlannerEventUpdateRequest {
-                start: Some("2026-05-04".into()),
+                start: Some("2026-05-04T00:30:00Z".into()),
                 ..Default::default()
             },
         )
-        .unwrap_err();
-        assert_eq!(error.status, StatusCode::BAD_REQUEST);
-        assert_eq!(error.code, "planner_update_start_end_required");
+        .unwrap();
+        apply_planner_event_update(
+            &mut event,
+            &PlannerEventUpdateRequest {
+                end: Some("2026-05-04T02:30:00Z".into()),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(event.start_at, dt(2026, 5, 4, 0, 30));
+        assert_eq!(event.end_at, dt(2026, 5, 4, 2, 30));
     }
 
     #[test]

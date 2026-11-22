@@ -79,51 +79,96 @@ pub struct Version {
 const COLUMNS: &str = "id, page_id, revision, title, content_blocks, created_by_id, created_at, \
      restored_from_revision";
 
-fn version_item(version: &Version, name: &str, current: i64, with_content: bool) -> Value {
-    let mut item = json!({
-        "id": version.id,
-        "page_id": version.page_id,
-        "revision": version.revision,
-        "title": version.title,
-        "created_by_id": version.created_by_id,
-        "created_by_name": name,
-        "created_at": naive_iso(version.created_at),
-        "restored_from_revision": version.restored_from_revision,
-        "is_current": version.revision == current,
-    });
-    if with_content {
-        item["content_blocks"] = version.content_blocks.clone().unwrap_or(json!([]));
+#[derive(serde::Serialize, utoipa::ToSchema)]
+pub struct PageVersion {
+    id: String,
+    page_id: String,
+    revision: i64,
+    title: String,
+    created_by_id: String,
+    created_by_name: String,
+    created_at: String,
+    #[schema(required)]
+    restored_from_revision: Option<i64>,
+    is_current: bool,
+}
+
+#[derive(serde::Serialize, utoipa::ToSchema)]
+pub struct PageVersionDetail {
+    #[serde(flatten)]
+    version: PageVersion,
+    #[schema(value_type = Vec<std::collections::BTreeMap<String, Value>>)]
+    content_blocks: Value,
+}
+
+#[derive(serde::Serialize, utoipa::ToSchema)]
+pub struct PageVersionList {
+    items: Vec<PageVersion>,
+    current_revision: i64,
+    can_restore: bool,
+}
+
+fn version_item(version: &Version, name: &str, current: i64) -> PageVersion {
+    PageVersion {
+        id: version.id.clone(),
+        page_id: version.page_id.clone(),
+        revision: version.revision,
+        title: version.title.clone(),
+        created_by_id: version.created_by_id.clone(),
+        created_by_name: name.to_owned(),
+        created_at: naive_iso(version.created_at),
+        restored_from_revision: version.restored_from_revision,
+        is_current: version.revision == current,
     }
-    item
 }
 
 /// `GET /v1/docs/pages/{page_id}/versions`: newest first, without content.
+#[utoipa::path(
+    get, path = "/v1/docs/pages/{page_id}/versions", operation_id = "listDocsPageVersions", tag = "Page versions",
+    params(("page_id" = String, Path)),
+    responses(
+        (status = 200, description = "Success", body = PageVersionList),
+        (status = 401, description = "Valid platform identity required", body = crate::error::IdentityErrorResponse),
+        (status = 403, description = "Permission denied", body = crate::error::ErrorResponse),
+        (status = 404, description = "Resource is unavailable or does not exist", body = crate::error::ErrorResponse),
+        (status = 500, description = "Could not complete the request", body = crate::error::ErrorResponse),
+        (status = 503, description = "A required platform service is unavailable", body = crate::error::ErrorResponse)
+    )
+)]
 pub async fn list(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
     Path(page_id): Path<String>,
-) -> ApiResult<Json<Value>> {
+) -> ApiResult<Json<PageVersionList>> {
     let mut viewer = Viewer::new(&state, &identity);
     let context = access::page_or_403(&mut viewer, &page_id, Require::View).await?;
-    let sql = format!(
-        "SELECT {COLUMNS} FROM docs_page_versions WHERE page_id = $1 ORDER BY revision DESC"
-    );
-    let rows = sqlx::query_as::<_, Version>(&sql)
-        .bind(&context.page.id)
-        .fetch_all(&state.pool)
-        .await?;
+    let rows = sqlx::query_as::<_, Version>(
+        "SELECT id, page_id, revision, title, NULL::jsonb AS content_blocks, created_by_id, \
+         created_at, restored_from_revision FROM docs_page_versions \
+         WHERE page_id = $1 ORDER BY revision DESC",
+    )
+    .bind(&context.page.id)
+    .fetch_all(&state.pool)
+    .await?;
     let names =
         people::display_names(&identity, rows.iter().map(|row| row.created_by_id.clone())).await;
-    Ok(Json(json!({
-        "items": rows.iter().map(|row| version_item(
-            row,
-            names.get(&row.created_by_id).map(String::as_str).unwrap_or(""),
-            context.page.revision,
-            false,
-        )).collect::<Vec<_>>(),
-        "current_revision": context.page.revision,
-        "can_restore": context.access.can_edit,
-    })))
+    Ok(Json(PageVersionList {
+        items: rows
+            .iter()
+            .map(|row| {
+                version_item(
+                    row,
+                    names
+                        .get(&row.created_by_id)
+                        .map(String::as_str)
+                        .unwrap_or(""),
+                    context.page.revision,
+                )
+            })
+            .collect(),
+        current_revision: context.page.revision,
+        can_restore: context.access.can_edit,
+    }))
 }
 
 fn version_not_found() -> ApiError {
@@ -132,11 +177,23 @@ fn version_not_found() -> ApiError {
 
 /// `GET /v1/docs/pages/{page_id}/versions/{version_id}`: one version with its
 /// content, for a read-only preview.
+#[utoipa::path(
+    get, path = "/v1/docs/pages/{page_id}/versions/{version_id}", operation_id = "getDocsPageVersion", tag = "Page versions",
+    params(("page_id" = String, Path), ("version_id" = String, Path)),
+    responses(
+        (status = 200, description = "Success", body = PageVersionDetail),
+        (status = 401, description = "Valid platform identity required", body = crate::error::IdentityErrorResponse),
+        (status = 403, description = "Permission denied", body = crate::error::ErrorResponse),
+        (status = 404, description = "Resource is unavailable or does not exist", body = crate::error::ErrorResponse),
+        (status = 500, description = "Could not complete the request", body = crate::error::ErrorResponse),
+        (status = 503, description = "A required platform service is unavailable", body = crate::error::ErrorResponse)
+    )
+)]
 pub async fn get(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
     Path((page_id, version_id)): Path<(String, String)>,
-) -> ApiResult<Json<Value>> {
+) -> ApiResult<Json<PageVersionDetail>> {
     let mut viewer = Viewer::new(&state, &identity);
     let context = access::page_or_403(&mut viewer, &page_id, Require::View).await?;
     let sql = format!("SELECT {COLUMNS} FROM docs_page_versions WHERE id = $1 AND page_id = $2");
@@ -147,18 +204,20 @@ pub async fn get(
         .await?
         .ok_or_else(version_not_found)?;
     let names = people::display_names(&identity, [version.created_by_id.clone()]).await;
-    Ok(Json(version_item(
-        &version,
-        names
-            .get(&version.created_by_id)
-            .map(String::as_str)
-            .unwrap_or(""),
-        context.page.revision,
-        true,
-    )))
+    Ok(Json(PageVersionDetail {
+        version: version_item(
+            &version,
+            names
+                .get(&version.created_by_id)
+                .map(String::as_str)
+                .unwrap_or(""),
+            context.page.revision,
+        ),
+        content_blocks: version.content_blocks.unwrap_or(json!([])),
+    }))
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema)]
 pub struct RestoreRequest {
     expected_revision: i64,
 }
@@ -166,12 +225,27 @@ pub struct RestoreRequest {
 /// `POST /v1/docs/pages/{page_id}/versions/{version_id}/restore`: the
 /// version's content becomes a new revision of the page. The caller states
 /// the revision they are looking at; a newer one answers 409 like a save.
+#[utoipa::path(
+    post, path = "/v1/docs/pages/{page_id}/versions/{version_id}/restore", operation_id = "restoreDocsPageVersion", tag = "Page versions",
+    params(("page_id" = String, Path), ("version_id" = String, Path)),
+    request_body = RestoreRequest,
+    responses(
+        (status = 200, description = "Success", body = pages::PageItem),
+        (status = 401, description = "Valid platform identity required", body = crate::error::IdentityErrorResponse),
+        (status = 403, description = "Permission denied", body = crate::error::ErrorResponse),
+        (status = 404, description = "Resource is unavailable or does not exist", body = crate::error::ErrorResponse),
+        (status = 409, description = "Current resource state conflicts with the request", body = crate::error::ErrorResponse),
+        (status = 422, description = "Request validation failed", body = crate::error::ErrorResponse),
+        (status = 500, description = "Could not complete the request", body = crate::error::ErrorResponse),
+        (status = 503, description = "A required platform service is unavailable", body = crate::error::ErrorResponse)
+    )
+)]
 pub async fn restore(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
     Path((page_id, version_id)): Path<(String, String)>,
     ApiJson(payload): ApiJson<RestoreRequest>,
-) -> ApiResult<Json<Value>> {
+) -> ApiResult<Json<pages::PageItem>> {
     let mut tx = state.pool.begin().await?;
     let (context, page) = pages::lock_page_for_edit(&mut tx, &state, &identity, &page_id).await?;
     let sql = format!("SELECT {COLUMNS} FROM docs_page_versions WHERE id = $1 AND page_id = $2");

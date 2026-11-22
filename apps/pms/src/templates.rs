@@ -64,25 +64,166 @@ fn array_len(value: &Option<Value>) -> usize {
     value.as_ref().and_then(Value::as_array).map_or(0, Vec::len)
 }
 
-fn serialize_template(template: &TemplateRow) -> Value {
-    json!({
-        "id": template.id,
-        "team_id": template.team_id,
-        "name": template.name,
-        "title": template.title,
-        "description": template.description,
-        "description_blocks": template.description_blocks,
-        "default_status": template.default_status,
-        "default_priority": template.default_priority,
-        "checklist_items": template.checklist_items,
-        "labels": template.labels,
-        "subtasks": template.subtasks,
-        "subtask_count": array_len(&template.subtasks),
-        "checklist_count": array_len(&template.checklist_items),
-        "created_by_id": template.created_by_id,
-        "created_at": iso_datetime(&template.created_at),
-        "updated_at": iso_datetime(&template.updated_at),
-    })
+#[allow(dead_code)]
+#[derive(utoipa::ToSchema)]
+#[schema(rename_all = "snake_case")]
+enum TemplatePriority {
+    Low,
+    Medium,
+    High,
+    Critical,
+}
+
+#[allow(dead_code)]
+#[derive(utoipa::ToSchema)]
+struct TemplateChecklistItem {
+    #[schema(min_length = 1, max_length = 500)]
+    text: String,
+}
+
+#[allow(dead_code)]
+#[derive(utoipa::ToSchema)]
+struct TemplateLabelItem {
+    #[schema(min_length = 1, max_length = 48)]
+    name: String,
+    #[schema(max_length = 24)]
+    color: String,
+}
+
+#[allow(dead_code)]
+#[derive(utoipa::ToSchema)]
+struct TemplateSubtaskItem {
+    title: String,
+    description: String,
+    #[schema(required)]
+    description_blocks: Option<Vec<Value>>,
+    priority: TemplatePriority,
+    checklist_items: Vec<TemplateChecklistItem>,
+    labels: Vec<TemplateLabelItem>,
+}
+
+#[derive(serde::Serialize, utoipa::ToSchema)]
+pub struct TaskTemplateItem {
+    id: String,
+    team_id: String,
+    name: String,
+    title: String,
+    description: String,
+    #[schema(required, value_type = Option<Vec<std::collections::BTreeMap<String, Value>>>)]
+    description_blocks: Option<Value>,
+    default_status: String,
+    #[schema(value_type = TemplatePriority)]
+    default_priority: String,
+    #[schema(required, value_type = Option<Vec<TemplateChecklistItem>>)]
+    checklist_items: Option<Value>,
+    #[schema(required, value_type = Option<Vec<TemplateLabelItem>>)]
+    labels: Option<Value>,
+    #[schema(required, value_type = Option<Vec<TemplateSubtaskItem>>)]
+    subtasks: Option<Value>,
+    subtask_count: usize,
+    checklist_count: usize,
+    #[schema(required)]
+    created_by_id: Option<String>,
+    created_at: String,
+    updated_at: String,
+}
+
+#[derive(serde::Serialize, utoipa::ToSchema)]
+pub struct TaskTemplatesResponse {
+    items: Vec<TaskTemplateItem>,
+}
+
+fn serialize_template(template: &TemplateRow) -> TaskTemplateItem {
+    TaskTemplateItem {
+        id: template.id.clone(),
+        team_id: template.team_id.clone(),
+        name: template.name.clone(),
+        title: template.title.clone(),
+        description: template.description.clone(),
+        description_blocks: template.description_blocks.clone(),
+        default_status: template.default_status.clone(),
+        default_priority: template.default_priority.clone(),
+        checklist_items: template.checklist_items.clone(),
+        labels: template.labels.clone(),
+        subtasks: template.subtasks.clone(),
+        subtask_count: array_len(&template.subtasks),
+        checklist_count: array_len(&template.checklist_items),
+        created_by_id: template.created_by_id.clone(),
+        created_at: iso_datetime(&template.created_at),
+        updated_at: iso_datetime(&template.updated_at),
+    }
+}
+
+#[allow(dead_code)]
+#[derive(utoipa::ToSchema)]
+struct TemplateLabelInput {
+    #[schema(min_length = 1, max_length = 48)]
+    name: String,
+    #[schema(max_length = 24)]
+    color: Option<String>,
+}
+
+#[allow(dead_code)]
+#[derive(utoipa::ToSchema)]
+struct TemplateSubtaskInput {
+    #[schema(min_length = 2, max_length = 180)]
+    title: String,
+    #[schema(max_length = 4000)]
+    description: Option<String>,
+    description_blocks: Option<Vec<Value>>,
+    priority: Option<TemplatePriority>,
+    checklist_items: Option<Vec<TemplateChecklistItem>>,
+    labels: Option<Vec<TemplateLabelInput>>,
+}
+
+#[allow(dead_code)]
+#[derive(utoipa::ToSchema)]
+#[serde(deny_unknown_fields)]
+struct TemplateCreateRequest {
+    #[schema(min_length = 1, max_length = 140)]
+    name: String,
+    #[schema(required = false, value_type = String, max_length = 180)]
+    title: Option<String>,
+    #[schema(required = false, value_type = String, max_length = 4000)]
+    description: Option<String>,
+    description_blocks: Option<Vec<std::collections::BTreeMap<String, Value>>>,
+    #[schema(required = false, value_type = String, min_length = 1, max_length = 40)]
+    default_status: Option<String>,
+    #[schema(required = false, value_type = TemplatePriority)]
+    default_priority: Option<TemplatePriority>,
+    checklist_items: Option<Vec<TemplateChecklistItem>>,
+    labels: Option<Vec<TemplateLabelInput>>,
+    #[schema(max_items = 50)]
+    subtasks: Option<Vec<TemplateSubtaskInput>>,
+}
+
+#[allow(dead_code)]
+#[derive(utoipa::ToSchema)]
+#[serde(deny_unknown_fields)]
+struct TemplateUpdateRequest {
+    #[schema(min_length = 1, max_length = 140)]
+    name: Option<String>,
+    #[schema(max_length = 180)]
+    title: Option<String>,
+    #[schema(max_length = 4000)]
+    description: Option<String>,
+    /// Omit to keep the existing blocks, or send null to clear them.
+    description_blocks: Option<Vec<std::collections::BTreeMap<String, Value>>>,
+    #[schema(min_length = 1, max_length = 40)]
+    default_status: Option<String>,
+    default_priority: Option<TemplatePriority>,
+    checklist_items: Option<Vec<TemplateChecklistItem>>,
+    labels: Option<Vec<TemplateLabelInput>>,
+    #[schema(max_items = 50)]
+    subtasks: Option<Vec<TemplateSubtaskInput>>,
+}
+
+#[allow(dead_code)]
+#[derive(utoipa::ToSchema)]
+#[serde(deny_unknown_fields)]
+struct SaveTaskAsTemplateRequest {
+    #[schema(min_length = 1, max_length = 140)]
+    name: String,
 }
 
 // ── Content checks ─────────────────────────────────────────────────────
@@ -221,17 +362,33 @@ async fn space_templates(conn: &mut PgConnection, team_id: &str) -> ApiResult<Ve
     .await?)
 }
 
-fn template_list(templates: &[TemplateRow]) -> Json<Value> {
-    Json(json!({"items": templates.iter().map(serialize_template).collect::<Vec<_>>()}))
+fn template_list(templates: &[TemplateRow]) -> Json<TaskTemplatesResponse> {
+    Json(TaskTemplatesResponse {
+        items: templates.iter().map(serialize_template).collect(),
+    })
 }
 
 /// `GET /v1/pms/lists/{list_id}/templates`: the templates of the list's space,
 /// newest first (the new-task dialog knows the list).
+#[utoipa::path(
+    get, path = "/v1/pms/lists/{list_id}/templates", operation_id = "listPmsListTemplates", tag = "Task templates",
+    params(
+        ("list_id" = String, Path)
+    ),
+    responses(
+        (status = 200, description = "Success", body = TaskTemplatesResponse),
+        (status = 401, description = "Valid platform identity required", body = crate::error::IdentityErrorResponse),
+        (status = 403, description = "Current permissions do not allow this operation", body = crate::error::ErrorResponse),
+        (status = 404, description = "Resource is unavailable or does not exist", body = crate::error::ErrorResponse),
+        (status = 409, description = "Current resource state conflicts with the request", body = crate::error::ErrorResponse),
+        (status = 500, description = "Could not complete the request", body = crate::error::ErrorResponse)
+    )
+)]
 pub async fn list_list_templates(
     State(pool): State<PgPool>,
     Extension(identity): Extension<Identity>,
     Path(list_id): Path<String>,
-) -> ApiResult<Json<Value>> {
+) -> ApiResult<Json<TaskTemplatesResponse>> {
     let mut conn = pool.acquire().await?;
     let (list, _) = ensure_list_member(&mut conn, &identity.user_id, &list_id).await?;
     let team_id = list
@@ -241,11 +398,24 @@ pub async fn list_list_templates(
 }
 
 /// `GET /v1/pms/spaces/{space_id}/templates`.
+#[utoipa::path(
+    get, path = "/v1/pms/spaces/{space_id}/templates", operation_id = "listPmsSpaceTemplates", tag = "Task templates",
+    params(
+        ("space_id" = String, Path)
+    ),
+    responses(
+        (status = 200, description = "Success", body = TaskTemplatesResponse),
+        (status = 401, description = "Valid platform identity required", body = crate::error::IdentityErrorResponse),
+        (status = 403, description = "Current permissions do not allow this operation", body = crate::error::ErrorResponse),
+        (status = 404, description = "Resource is unavailable or does not exist", body = crate::error::ErrorResponse),
+        (status = 500, description = "Could not complete the request", body = crate::error::ErrorResponse)
+    )
+)]
 pub async fn list_space_templates(
     State(pool): State<PgPool>,
     Extension(identity): Extension<Identity>,
     Path(space_id): Path<String>,
-) -> ApiResult<Json<Value>> {
+) -> ApiResult<Json<TaskTemplatesResponse>> {
     let mut conn = pool.acquire().await?;
     let (space, _) = ensure_space_access(&mut conn, &identity.user_id, &space_id).await?;
     Ok(template_list(&space_templates(&mut conn, &space.id).await?))
@@ -262,11 +432,24 @@ async fn load_template(conn: &mut PgConnection, template_id: &str) -> ApiResult<
 }
 
 /// `GET /v1/pms/templates/{template_id}` (miy).
+#[utoipa::path(
+    get, path = "/v1/pms/templates/{template_id}", operation_id = "getPmsTemplate", tag = "Task templates",
+    params(
+        ("template_id" = String, Path)
+    ),
+    responses(
+        (status = 200, description = "Success", body = TaskTemplateItem),
+        (status = 401, description = "Valid platform identity required", body = crate::error::IdentityErrorResponse),
+        (status = 403, description = "Current permissions do not allow this operation", body = crate::error::ErrorResponse),
+        (status = 404, description = "Resource is unavailable or does not exist", body = crate::error::ErrorResponse),
+        (status = 500, description = "Could not complete the request", body = crate::error::ErrorResponse)
+    )
+)]
 pub async fn get_template(
     State(pool): State<PgPool>,
     Extension(identity): Extension<Identity>,
     Path(template_id): Path<String>,
-) -> ApiResult<Json<Value>> {
+) -> ApiResult<Json<TaskTemplateItem>> {
     let mut conn = pool.acquire().await?;
     let template = load_template(&mut conn, &template_id).await?;
     ensure_space_access(&mut conn, &identity.user_id, &template.team_id).await?;
@@ -308,6 +491,21 @@ async fn insert_template(conn: &mut PgConnection, template: &TemplateRow) -> Api
 }
 
 /// `POST /v1/pms/spaces/{space_id}/templates`: a template written by hand.
+#[utoipa::path(
+    post, path = "/v1/pms/spaces/{space_id}/templates", operation_id = "createPmsTemplate", tag = "Task templates",
+    params(
+        ("space_id" = String, Path)
+    ),
+    request_body = TemplateCreateRequest,
+    responses(
+        (status = 201, description = "Created", body = TaskTemplateItem),
+        (status = 401, description = "Valid platform identity required", body = crate::error::IdentityErrorResponse),
+        (status = 403, description = "Current permissions do not allow this operation", body = crate::error::ErrorResponse),
+        (status = 404, description = "Resource is unavailable or does not exist", body = crate::error::ErrorResponse),
+        (status = 422, description = "Request validation failed", body = crate::error::ErrorResponse),
+        (status = 500, description = "Could not complete the request", body = crate::error::ErrorResponse)
+    )
+)]
 pub async fn create_template(
     State(pool): State<PgPool>,
     Extension(identity): Extension<Identity>,
@@ -380,12 +578,27 @@ async fn template_for_editor(
 
 /// `PATCH /v1/pms/templates/{template_id}`: the fields sent with a value;
 /// `description_blocks: null` clears the formatted description.
+#[utoipa::path(
+    patch, path = "/v1/pms/templates/{template_id}", operation_id = "updatePmsTemplate", tag = "Task templates",
+    params(
+        ("template_id" = String, Path)
+    ),
+    request_body = TemplateUpdateRequest,
+    responses(
+        (status = 200, description = "Success", body = TaskTemplateItem),
+        (status = 401, description = "Valid platform identity required", body = crate::error::IdentityErrorResponse),
+        (status = 403, description = "Current permissions do not allow this operation", body = crate::error::ErrorResponse),
+        (status = 404, description = "Resource is unavailable or does not exist", body = crate::error::ErrorResponse),
+        (status = 422, description = "Request validation failed", body = crate::error::ErrorResponse),
+        (status = 500, description = "Could not complete the request", body = crate::error::ErrorResponse)
+    )
+)]
 pub async fn update_template(
     State(pool): State<PgPool>,
     Extension(identity): Extension<Identity>,
     Path(template_id): Path<String>,
     body: Body,
-) -> ApiResult<Json<Value>> {
+) -> ApiResult<Json<TaskTemplateItem>> {
     body.forbid_extra(TEMPLATE_FIELDS)?;
     let name = body.opt_str("name")?.map(|name| name.trim().to_string());
     check_opt_length("name", &name, 1, 140)?;
@@ -455,6 +668,19 @@ pub async fn update_template(
 }
 
 /// `DELETE /v1/pms/templates/{template_id}`.
+#[utoipa::path(
+    delete, path = "/v1/pms/templates/{template_id}", operation_id = "deletePmsTemplate", tag = "Task templates",
+    params(
+        ("template_id" = String, Path)
+    ),
+    responses(
+        (status = 204, description = "Completed with no response body"),
+        (status = 401, description = "Valid platform identity required", body = crate::error::IdentityErrorResponse),
+        (status = 403, description = "Current permissions do not allow this operation", body = crate::error::ErrorResponse),
+        (status = 404, description = "Resource is unavailable or does not exist", body = crate::error::ErrorResponse),
+        (status = 500, description = "Could not complete the request", body = crate::error::ErrorResponse)
+    )
+)]
 pub async fn delete_template(
     State(pool): State<PgPool>,
     Extension(identity): Extension<Identity>,
@@ -520,6 +746,22 @@ fn subtask_title(title: &str) -> String {
 /// direct subtasks that are not archived (each with its description, priority,
 /// checklist and labels), at most 50 subtasks and 100 checklist items each.
 /// Assignees, dates, attachments and comments are not part of a template.
+#[utoipa::path(
+    post, path = "/v1/pms/tasks/{task_id}/template", operation_id = "savePmsTaskAsTemplate", tag = "Task templates",
+    params(
+        ("task_id" = String, Path)
+    ),
+    request_body = SaveTaskAsTemplateRequest,
+    responses(
+        (status = 201, description = "Created", body = TaskTemplateItem),
+        (status = 401, description = "Valid platform identity required", body = crate::error::IdentityErrorResponse),
+        (status = 403, description = "Current permissions do not allow this operation", body = crate::error::ErrorResponse),
+        (status = 404, description = "Resource is unavailable or does not exist", body = crate::error::ErrorResponse),
+        (status = 409, description = "Current resource state conflicts with the request", body = crate::error::ErrorResponse),
+        (status = 422, description = "Request validation failed", body = crate::error::ErrorResponse),
+        (status = 500, description = "Could not complete the request", body = crate::error::ErrorResponse)
+    )
+)]
 pub async fn save_task_as_template(
     State(pool): State<PgPool>,
     Extension(identity): Extension<Identity>,

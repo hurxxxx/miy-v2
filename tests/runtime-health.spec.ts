@@ -3,6 +3,9 @@ import { test, expect, type Page } from "@playwright/test";
 import type { Installation } from "../packages/sdk/src/index";
 import { openNewTab } from "./new-tab";
 import { mockFrames, type FrameApi, type FrameMockOptions } from "./frame-mock";
+import { once } from "node:events";
+import { readFile } from "node:fs/promises";
+import { createServer } from "node:http";
 
 test("service health changes independently from process controls", async ({
   page,
@@ -608,7 +611,72 @@ test("approved frame features reach the iframe allow list and portalUrl names th
   await page.goto("/environments/dev/apps/upload-app");
   const frame = page.frameLocator("iframe.app-frame");
   await expect(frame.getByLabel("문서 제목")).toHaveValue("저장된 제목");
-  await expect(page.locator("iframe.app-frame")).toHaveAttribute("allow", "clipboard-write");
+  const frameOrigin = new URL(await frame.getByTestId("portal-url").evaluate((node) => node.ownerDocument.URL)).origin;
+  await expect(page.locator("iframe.app-frame")).toHaveAttribute("allow", `clipboard-write ${frameOrigin}`);
   const origin = new URL(page.url()).origin;
   await expect(frame.getByTestId("portal-url")).toHaveText(`${origin}/environments/dev/apps/upload-app/shared?x=1`);
+});
+
+test("a native frame download can recheck an unavailable receipt without downloading twice", async ({ page }) => {
+  await mockSurface(page);
+  await page.route("**/api/**", async (route) => {
+    const path = new URL(route.request().url()).pathname;
+    if (path === "/api/v1/me") return route.fulfill({ json: browserUser(route, { id: "u", name: "받기 사용자", admin: false, csrf: "u-csrf" }) });
+    if (path === "/api/v1/installations") return route.fulfill({ json: [uploadApp] });
+    return route.fulfill({ json: { title: "저장된 제목" } });
+  });
+  await mockFrames(page, () => [uploadApp], () => ({ json: { title: "저장된 제목" } }));
+  let downloads = 0;
+  let statusReads = 0;
+  let receipt: "pending" | "unavailable" | "sent" = "pending";
+  const server = createServer((request, response) => {
+    const url = new URL(request.url ?? "/", "http://127.0.0.1:18190");
+    if (url.pathname.endsWith("/status")) {
+      if (request.headers.authorization !== `Bearer miy_frame_${"t".repeat(43)}`) {
+        response.writeHead(401).end();
+        return;
+      }
+      statusReads += 1;
+      response.setHeader("Content-Type", "application/json");
+      if (receipt === "unavailable") {
+        response.writeHead(404).end(JSON.stringify({ error: { code: "not_found" } }));
+        return;
+      }
+      response.end(JSON.stringify({ status: receipt }));
+      return;
+    }
+    if (url.searchParams.get("track") !== "1") {
+      response.writeHead(400).end();
+      return;
+    }
+    downloads += 1;
+    response.setHeader("Content-Type", "application/octet-stream");
+    response.setHeader("Content-Disposition", 'attachment; filename="receipt.bin"');
+    response.end("receipt test");
+  });
+  // A browser's native download can bypass Playwright's routing hooks.
+  server.listen(18190, "127.0.0.1");
+  await once(server, "listening");
+  try {
+    await page.route("**/_miy/downloads/**", (route) => route.continue());
+    await page.goto("/environments/dev/apps/upload-app");
+    const frame = page.frameLocator("iframe.app-frame");
+    const received = page.waitForEvent("download");
+    await frame.getByRole("button", { name: "다운로드 확인", exact: true }).click();
+    await expect(frame.getByTestId("download-progress")).toHaveText("전송 확인 중");
+    const file = await received;
+    expect(file.suggestedFilename()).toBe("receipt.bin");
+    expect(await readFile(await file.path(), "utf8")).toBe("receipt test");
+    await expect.poll(() => statusReads).toBeGreaterThan(0);
+    receipt = "unavailable";
+    await expect(frame.getByTestId("download-progress")).toHaveText("전송 확인 실패");
+    receipt = "sent";
+    await frame.getByRole("button", { name: "다운로드 상태 다시 확인" }).click();
+    await expect(frame.getByTestId("download-progress")).toHaveText("전송 확인됨");
+    expect(downloads).toBe(1);
+  } finally {
+    server.close();
+    server.closeAllConnections();
+    await once(server, "close");
+  }
 });

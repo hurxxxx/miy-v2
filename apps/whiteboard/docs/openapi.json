@@ -1,0 +1,5275 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "화이트보드 API",
+    "version": "0.1.0"
+  },
+  "paths": {
+    "/files/whiteboard/items/{item_id}/files/{file_id}": {
+      "get": {
+        "tags": [
+          "Whiteboard files"
+        ],
+        "summary": "`GET /files/whiteboard/items/{item_id}/files/{file_id}`: the bytes, for\nanyone who may currently see the board.",
+        "description": "Use the authenticated frame file gateway. Rechecks current board access before streaming an available image, up to 10 MiB.",
+        "operationId": "downloadWhiteboardFile",
+        "parameters": [
+          {
+            "name": "item_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "file_id",
+            "in": "path",
+            "description": "Board file row ID returned as id by the reservation",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Stored image bytes",
+            "headers": {
+              "Content-Disposition": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Stored filename and download disposition"
+              },
+              "Content-Length": {
+                "schema": {
+                  "type": "integer",
+                  "format": "int64",
+                  "minimum": 0
+                },
+                "description": "Size of the response in bytes"
+              },
+              "Content-Security-Policy": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "sandbox"
+              },
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Storage object entity tag"
+              },
+              "X-Content-Type-Options": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "nosniff"
+              },
+              "X-Miy-File-Id": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Core storage file ID"
+              },
+              "X-Miy-File-Sha256": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "SHA-256 digest of the stored file"
+              },
+              "X-Miy-File-Version": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Core storage file version"
+              }
+            },
+            "content": {
+              "image/gif": {
+                "schema": {
+                  "$ref": "#/components/schemas/BinaryBody"
+                }
+              },
+              "image/jpeg": {
+                "schema": {
+                  "$ref": "#/components/schemas/BinaryBody"
+                }
+              },
+              "image/png": {
+                "schema": {
+                  "$ref": "#/components/schemas/BinaryBody"
+                }
+              },
+              "image/webp": {
+                "schema": {
+                  "$ref": "#/components/schemas/BinaryBody"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Platform identity could not be verified",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdentityErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The board or image is missing or is not visible",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The image could not be read or a required platform service is unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Whiteboard files"
+        ],
+        "summary": "`PUT /files/whiteboard/items/{item_id}/files/{file_id}`: the uploader\nstreams the reserved bytes while they may still edit the board. A repeat\nafter a lost answer reports the stored state.",
+        "description": "Use the authenticated frame file gateway. Send the exact number of reserved bytes, up to 10 MiB. Only the person who reserved the file may upload it, while they can edit the board.",
+        "operationId": "uploadWhiteboardFile",
+        "parameters": [
+          {
+            "name": "item_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "file_id",
+            "in": "path",
+            "description": "Board file row ID returned as id by the reservation",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/octet-stream": {
+              "schema": {
+                "$ref": "#/components/schemas/BinaryBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Current image file status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FileResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Platform identity could not be verified",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdentityErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller cannot edit this board",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The board or image is missing or is not available to the caller",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The image could not be stored or a required platform service is unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/platform/notification-check": {
+      "post": {
+        "tags": [
+          "Platform callbacks"
+        ],
+        "summary": "`POST /platform/notification-check`: which of the person's notification\ngroups still point at a board they may open now (also through a group's\nspace membership). Read-only.",
+        "operationId": "checkWhiteboardNotifications",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CheckRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Notification group keys the caller may still open",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CheckResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Platform identity could not be verified",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdentityErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Only the platform may call this endpoint",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid notification check request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Signed directory information is unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/search": {
+      "post": {
+        "tags": [
+          "Platform callbacks"
+        ],
+        "description": "Search titles of boards the person can open. Invalid JSON, missing or invalid search fields, and blank or overly long queries return an empty result. The platform's timeZone field is ignored.",
+        "operationId": "searchWhiteboardForPlatform",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SearchRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Currently readable search results",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SearchResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Platform identity could not be verified",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdentityErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Only the platform may call this endpoint",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Request body exceeds the application limit",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Signed directory information is unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/spaces": {
+      "get": {
+        "tags": [
+          "Spaces"
+        ],
+        "operationId": "listWhiteboardSpaces",
+        "responses": {
+          "200": {
+            "description": "Spaces visible to the current user",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SpacesResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Platform identity could not be verified",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdentityErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Current permissions do not allow space membership lookup",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A required platform service is unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Spaces"
+        ],
+        "operationId": "createWhiteboardSpace",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SpaceRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Created space",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SpaceOut"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The creator could not be added as an ACL subject",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Platform identity could not be verified",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdentityErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Current permissions do not allow this operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "An ACL resource already exists for the new ID",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid space request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A required platform service is unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/spaces/{space_id}": {
+      "delete": {
+        "tags": [
+          "Spaces"
+        ],
+        "summary": "A space that still holds boards (trashed ones too) is not deleted: its\nboards' images and shares would have to go with it. Empty the space first\n(docs/PORTING.md §4).",
+        "operationId": "deleteWhiteboardSpace",
+        "parameters": [
+          {
+            "name": "space_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Empty space deleted"
+          },
+          "401": {
+            "description": "Platform identity could not be verified",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdentityErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller cannot manage this space",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Space not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The space still contains boards",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A required platform service is unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "Spaces"
+        ],
+        "operationId": "updateWhiteboardSpace",
+        "parameters": [
+          {
+            "name": "space_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SpaceRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Updated space",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SpaceOut"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Platform identity could not be verified",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdentityErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller cannot manage this space",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Space not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid space request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A required platform service is unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/spaces/{space_id}/sharing": {
+      "get": {
+        "tags": [
+          "Spaces"
+        ],
+        "operationId": "getWhiteboardSpaceSharing",
+        "parameters": [
+          {
+            "name": "space_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Current space ACL and its revision",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SpaceShareSnapshot"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Platform identity could not be verified",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdentityErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller cannot manage this space",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Space not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A required platform service is unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Spaces"
+        ],
+        "operationId": "replaceWhiteboardSpaceSharing",
+        "parameters": [
+          {
+            "name": "space_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SharingRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Current space ACL and its revision",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SpaceShareSnapshot"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid ACL request, role or subject",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Platform identity could not be verified",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdentityErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller cannot manage this space",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Space not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Request or revision conflict, protected owner, or last manager",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid JSON request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A required platform service is unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/spaces/{space_id}/sharing/requests/{request_id}": {
+      "get": {
+        "tags": [
+          "Spaces"
+        ],
+        "operationId": "getWhiteboardSpaceSharingResult",
+        "parameters": [
+          {
+            "name": "space_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "request_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Recorded ACL replacement result, or null if it has not been recorded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/SpaceShareSnapshot"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid ACL request ID",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Platform identity could not be verified",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdentityErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller cannot manage this space",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Space not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A required platform service is unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/whiteboard/hub": {
+      "get": {
+        "tags": [
+          "Whiteboards"
+        ],
+        "summary": "`GET …/hub`: AI-DO `build_whiteboard_hub_response`. Boards of the current\nspace the caller may see, filtered and sorted like AI-DO.",
+        "operationId": "listWhiteboardHub",
+        "parameters": [
+          {
+            "name": "view",
+            "in": "query",
+            "description": "all, mine, recent, favorites, or archived. Takes precedence over category.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "category",
+            "in": "query",
+            "description": "Legacy filter: my, mine, recent, favorite, favorites, archived, or all.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "description": "One-based page. Defaults to 1.",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "maximum": 9007199254740991,
+              "minimum": 1
+            }
+          },
+          {
+            "name": "page_size",
+            "in": "query",
+            "description": "Defaults to 50.",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "maximum": 200,
+              "minimum": 1
+            }
+          },
+          {
+            "name": "sort_by",
+            "in": "query",
+            "description": "title, created_at, last_viewed_at, or target_sort_order. Defaults to updated_at for omitted or unrecognized values.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "sort_dir",
+            "in": "query",
+            "description": "asc or desc. Defaults to desc.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "source_app",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "source_kind",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "space_id",
+            "in": "query",
+            "description": "Filter by workspace ID.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "target_app",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "target_type",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "target_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Page of visible boards",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HubResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Platform identity could not be verified",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdentityErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Current permissions do not allow this operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The workspace or board is missing or is not visible",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A required platform service is unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/whiteboard/items": {
+      "post": {
+        "tags": [
+          "Whiteboards"
+        ],
+        "summary": "`POST …/items`: AI-DO `create_whiteboard_item` / `create_whiteboard_for_user`.",
+        "description": "The JSON request is limited to 4 MiB. Images can be reserved after the board is created.",
+        "operationId": "createWhiteboardItem",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Created board",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Detail"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Platform identity could not be verified",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdentityErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Current permissions do not allow this operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The workspace or board is missing or is not visible",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "The Excalidraw scene exceeds the supported size",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A required platform service is unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/whiteboard/items/{item_id}": {
+      "get": {
+        "tags": [
+          "Whiteboards"
+        ],
+        "summary": "`GET …/items/{item_id}`.",
+        "operationId": "getWhiteboardItem",
+        "parameters": [
+          {
+            "name": "item_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Board detail and Excalidraw scene",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Detail"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Platform identity could not be verified",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdentityErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The workspace or board is missing or is not visible",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A required platform service is unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Whiteboards"
+        ],
+        "summary": "`DELETE …/items/{item_id}`: move to the trash (AI-DO sets `trashed_at`).\nThe people it was shared with lose its notification.",
+        "operationId": "trashWhiteboardItem",
+        "parameters": [
+          {
+            "name": "item_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Board moved to the trash"
+          },
+          "401": {
+            "description": "Platform identity could not be verified",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdentityErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Current permissions do not allow this operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The workspace or board is missing or is not visible",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A required platform service is unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "Whiteboards"
+        ],
+        "summary": "`PATCH …/items/{item_id}`: AI-DO `update_whiteboard_item`\n(item_mutations.py). A scene save carries `base_revision`, the revision\nthe editor loaded or last saved. A changed scene from an older revision is\nrefused with 409 instead of overwriting (AI-DO merged concurrent editors\nwith Yjs). A scene equal to the stored one (ignoring per-viewer editor\nstate) changes nothing, whatever its revision.",
+        "description": "The JSON request is limited to 4 MiB. Scene saves require base_revision and use 409 for conflicting newer changes.",
+        "operationId": "updateWhiteboardItem",
+        "parameters": [
+          {
+            "name": "item_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Board detail after saving",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Detail"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Platform identity could not be verified",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdentityErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Current permissions do not allow this operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The workspace or board is missing or is not visible",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A different scene was saved since base_revision (whiteboard_revision_conflict)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "The Excalidraw scene exceeds the supported size",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A required platform service is unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/whiteboard/items/{item_id}/favorite": {
+      "patch": {
+        "tags": [
+          "Whiteboards"
+        ],
+        "summary": "`PATCH …/items/{item_id}/favorite`.",
+        "operationId": "toggleWhiteboardFavorite",
+        "parameters": [
+          {
+            "name": "item_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Current favorite state",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FavoriteResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Platform identity could not be verified",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdentityErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The workspace or board is missing or is not visible",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A required platform service is unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/whiteboard/items/{item_id}/files": {
+      "post": {
+        "tags": [
+          "Whiteboard files"
+        ],
+        "summary": "`POST …/items/{item_id}/files`: reserve a stored image of the board.\nNeeds edit access to the board. Repeating the same request ID with the\nsame file answers the same row (and its current status); another payload\nunder that request ID is a conflict.",
+        "operationId": "reserveWhiteboardFile",
+        "parameters": [
+          {
+            "name": "item_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReserveRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Image reservation and its current status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FileResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The image media type is unsupported",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Platform identity could not be verified",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdentityErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller cannot edit this board",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The workspace or board is missing or is not visible",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "This request ID already belongs to a different reservation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "File size must be between 1 byte and 10 MiB",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid image reservation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A required platform service is unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/whiteboard/items/{item_id}/permanent": {
+      "delete": {
+        "tags": [
+          "Whiteboards"
+        ],
+        "summary": "`DELETE …/items/{item_id}/permanent`: only from the trash. Its stored\nimages are released after the commit (files.rs).",
+        "operationId": "deleteWhiteboardItemPermanently",
+        "parameters": [
+          {
+            "name": "item_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Board permanently deleted"
+          },
+          "401": {
+            "description": "Platform identity could not be verified",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdentityErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Current permissions do not allow this operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The workspace or board is missing or is not visible",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Move the board to the trash before permanently deleting it",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A required platform service is unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/whiteboard/items/{item_id}/restore": {
+      "post": {
+        "tags": [
+          "Whiteboards"
+        ],
+        "summary": "`POST …/items/{item_id}/restore`.",
+        "operationId": "restoreWhiteboardItem",
+        "parameters": [
+          {
+            "name": "item_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Restored board detail",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Detail"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Platform identity could not be verified",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdentityErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Current permissions do not allow this operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The workspace or board is missing or is not visible",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A required platform service is unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/whiteboard/items/{item_id}/sharing": {
+      "get": {
+        "tags": [
+          "Whiteboards"
+        ],
+        "summary": "`GET …/items/{item_id}/sharing`: AI-DO `load_whiteboard_for_share_or_403`.",
+        "operationId": "getWhiteboardSharing",
+        "parameters": [
+          {
+            "name": "item_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Current board shares",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SharingResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Platform identity could not be verified",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdentityErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Current permissions do not allow this operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The workspace or board is missing or is not visible",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A required platform service is unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/whiteboard/items/{item_id}/sharing/users/{user_id}": {
+      "put": {
+        "tags": [
+          "Whiteboards"
+        ],
+        "summary": "`PUT …/items/{item_id}/sharing/users/{user_id}`: AI-DO\n`upsert_whiteboard_user_share`, plus a `share` notification to a person\nnewly given the board (miy).",
+        "operationId": "upsertWhiteboardUserShare",
+        "parameters": [
+          {
+            "name": "item_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "user_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UserShareRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Current board shares",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SharingResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Platform identity could not be verified",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdentityErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Current permissions do not allow this operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The workspace or board is missing or is not visible",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The user already owns the board or is not a member of its workspace",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A required platform service is unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Whiteboards"
+        ],
+        "summary": "`DELETE …/items/{item_id}/sharing/users/{user_id}`: the person also loses\nthe board's notification (miy).",
+        "operationId": "deleteWhiteboardUserShare",
+        "parameters": [
+          {
+            "name": "item_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "user_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Current board shares after removal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SharingResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Platform identity could not be verified",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdentityErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Current permissions do not allow this operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The workspace or board is missing or is not visible",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A required platform service is unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/whiteboard/items/{item_id}/target": {
+      "put": {
+        "tags": [
+          "Whiteboards"
+        ],
+        "summary": "`PUT …/items/{item_id}/target`: AI-DO `_upsert_primary_target`. The only\ntarget miy knows is the board's space (\"워크스페이스 공개\").",
+        "operationId": "updateWhiteboardTarget",
+        "parameters": [
+          {
+            "name": "item_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TargetPayload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Board detail after sharing with its workspace",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Detail"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Platform identity could not be verified",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdentityErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Current permissions do not allow this operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The workspace or board is missing or is not visible",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A required platform service is unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Whiteboards"
+        ],
+        "summary": "`DELETE …/items/{item_id}/target`: AI-DO `_delete_primary_target` (back to\n\"비공개\").",
+        "operationId": "deleteWhiteboardTarget",
+        "parameters": [
+          {
+            "name": "item_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Board detail after removing the workspace target",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Detail"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Platform identity could not be verified",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdentityErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Current permissions do not allow this operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The workspace or board is missing or is not visible",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A required platform service is unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/whiteboard/items/{item_id}/view": {
+      "post": {
+        "tags": [
+          "Whiteboards"
+        ],
+        "summary": "`POST …/items/{item_id}/view`: last viewed (AI-DO), and the board's share\nnotification for the caller is read (miy).",
+        "operationId": "recordWhiteboardView",
+        "parameters": [
+          {
+            "name": "item_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "View recorded"
+          },
+          "401": {
+            "description": "Platform identity could not be verified",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdentityErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The workspace or board is missing or is not visible",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A required platform service is unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/whiteboard/shareable-users": {
+      "get": {
+        "tags": [
+          "Whiteboards"
+        ],
+        "summary": "`GET …/shareable-users?q=`: AI-DO `list_whiteboard_shareable_users`.\nPeople of the current space (an app space: its direct members), not the\ncaller, at most 30.",
+        "operationId": "listWhiteboardShareableUsers",
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "description": "Filter workspace members by name. The trimmed query may contain up to 200 characters.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Up to 30 eligible people",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ShareableUser"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Platform identity could not be verified",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdentityErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Current permissions do not allow this operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Space not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The query exceeds 200 characters after trimming",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A required platform service is unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/workspaces/{space_id}/whiteboard/hub": {
+      "get": {
+        "tags": [
+          "Whiteboards"
+        ],
+        "summary": "`GET …/hub`: AI-DO `build_whiteboard_hub_response`. Boards of the current\nspace the caller may see, filtered and sorted like AI-DO.",
+        "operationId": "listWhiteboardHubInSpace",
+        "parameters": [
+          {
+            "name": "view",
+            "in": "query",
+            "description": "all, mine, recent, favorites, or archived. Takes precedence over category.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "category",
+            "in": "query",
+            "description": "Legacy filter: my, mine, recent, favorite, favorites, archived, or all.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "description": "One-based page. Defaults to 1.",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "maximum": 9007199254740991,
+              "minimum": 1
+            }
+          },
+          {
+            "name": "page_size",
+            "in": "query",
+            "description": "Defaults to 50.",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "maximum": 200,
+              "minimum": 1
+            }
+          },
+          {
+            "name": "sort_by",
+            "in": "query",
+            "description": "title, created_at, last_viewed_at, or target_sort_order. Defaults to updated_at for omitted or unrecognized values.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "sort_dir",
+            "in": "query",
+            "description": "asc or desc. Defaults to desc.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "source_app",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "source_kind",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "space_id",
+            "in": "query",
+            "description": "Filter by workspace ID.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "target_app",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "target_type",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "target_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "space_id",
+            "in": "path",
+            "description": "Whiteboard app space ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Page of visible boards",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HubResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Platform identity could not be verified",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdentityErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Current permissions do not allow this operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The workspace or board is missing or is not visible",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A required platform service is unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/workspaces/{space_id}/whiteboard/items": {
+      "post": {
+        "tags": [
+          "Whiteboards"
+        ],
+        "summary": "`POST …/items`: AI-DO `create_whiteboard_item` / `create_whiteboard_for_user`.",
+        "description": "The JSON request is limited to 4 MiB. Images can be reserved after the board is created.",
+        "operationId": "createWhiteboardItemInSpace",
+        "parameters": [
+          {
+            "name": "space_id",
+            "in": "path",
+            "description": "Whiteboard app space ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Created board",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Detail"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Platform identity could not be verified",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdentityErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Current permissions do not allow this operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The workspace or board is missing or is not visible",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "The Excalidraw scene exceeds the supported size",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A required platform service is unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/workspaces/{space_id}/whiteboard/items/{item_id}": {
+      "get": {
+        "tags": [
+          "Whiteboards"
+        ],
+        "summary": "`GET …/items/{item_id}`.",
+        "operationId": "getWhiteboardItemInSpace",
+        "parameters": [
+          {
+            "name": "item_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "space_id",
+            "in": "path",
+            "description": "Whiteboard app space ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Board detail and Excalidraw scene",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Detail"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Platform identity could not be verified",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdentityErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The workspace or board is missing or is not visible",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A required platform service is unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Whiteboards"
+        ],
+        "summary": "`DELETE …/items/{item_id}`: move to the trash (AI-DO sets `trashed_at`).\nThe people it was shared with lose its notification.",
+        "operationId": "trashWhiteboardItemInSpace",
+        "parameters": [
+          {
+            "name": "item_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "space_id",
+            "in": "path",
+            "description": "Whiteboard app space ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Board moved to the trash"
+          },
+          "401": {
+            "description": "Platform identity could not be verified",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdentityErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Current permissions do not allow this operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The workspace or board is missing or is not visible",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A required platform service is unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "Whiteboards"
+        ],
+        "summary": "`PATCH …/items/{item_id}`: AI-DO `update_whiteboard_item`\n(item_mutations.py). A scene save carries `base_revision`, the revision\nthe editor loaded or last saved. A changed scene from an older revision is\nrefused with 409 instead of overwriting (AI-DO merged concurrent editors\nwith Yjs). A scene equal to the stored one (ignoring per-viewer editor\nstate) changes nothing, whatever its revision.",
+        "description": "The JSON request is limited to 4 MiB. Scene saves require base_revision and use 409 for conflicting newer changes.",
+        "operationId": "updateWhiteboardItemInSpace",
+        "parameters": [
+          {
+            "name": "item_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "space_id",
+            "in": "path",
+            "description": "Whiteboard app space ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Board detail after saving",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Detail"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Platform identity could not be verified",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdentityErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Current permissions do not allow this operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The workspace or board is missing or is not visible",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A different scene was saved since base_revision (whiteboard_revision_conflict)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "The Excalidraw scene exceeds the supported size",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A required platform service is unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/workspaces/{space_id}/whiteboard/items/{item_id}/favorite": {
+      "patch": {
+        "tags": [
+          "Whiteboards"
+        ],
+        "summary": "`PATCH …/items/{item_id}/favorite`.",
+        "operationId": "toggleWhiteboardFavoriteInSpace",
+        "parameters": [
+          {
+            "name": "item_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "space_id",
+            "in": "path",
+            "description": "Whiteboard app space ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Current favorite state",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FavoriteResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Platform identity could not be verified",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdentityErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The workspace or board is missing or is not visible",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A required platform service is unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/workspaces/{space_id}/whiteboard/items/{item_id}/files": {
+      "post": {
+        "tags": [
+          "Whiteboard files"
+        ],
+        "summary": "`POST …/items/{item_id}/files`: reserve a stored image of the board.\nNeeds edit access to the board. Repeating the same request ID with the\nsame file answers the same row (and its current status); another payload\nunder that request ID is a conflict.",
+        "operationId": "reserveWhiteboardFileInSpace",
+        "parameters": [
+          {
+            "name": "item_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "space_id",
+            "in": "path",
+            "description": "Whiteboard app space ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReserveRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Image reservation and its current status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FileResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The image media type is unsupported",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Platform identity could not be verified",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdentityErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller cannot edit this board",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The workspace or board is missing or is not visible",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "This request ID already belongs to a different reservation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "File size must be between 1 byte and 10 MiB",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid image reservation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A required platform service is unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/workspaces/{space_id}/whiteboard/items/{item_id}/permanent": {
+      "delete": {
+        "tags": [
+          "Whiteboards"
+        ],
+        "summary": "`DELETE …/items/{item_id}/permanent`: only from the trash. Its stored\nimages are released after the commit (files.rs).",
+        "operationId": "deleteWhiteboardItemPermanentlyInSpace",
+        "parameters": [
+          {
+            "name": "item_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "space_id",
+            "in": "path",
+            "description": "Whiteboard app space ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Board permanently deleted"
+          },
+          "401": {
+            "description": "Platform identity could not be verified",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdentityErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Current permissions do not allow this operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The workspace or board is missing or is not visible",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Move the board to the trash before permanently deleting it",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A required platform service is unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/workspaces/{space_id}/whiteboard/items/{item_id}/restore": {
+      "post": {
+        "tags": [
+          "Whiteboards"
+        ],
+        "summary": "`POST …/items/{item_id}/restore`.",
+        "operationId": "restoreWhiteboardItemInSpace",
+        "parameters": [
+          {
+            "name": "item_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "space_id",
+            "in": "path",
+            "description": "Whiteboard app space ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Restored board detail",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Detail"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Platform identity could not be verified",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdentityErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Current permissions do not allow this operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The workspace or board is missing or is not visible",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A required platform service is unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/workspaces/{space_id}/whiteboard/items/{item_id}/sharing": {
+      "get": {
+        "tags": [
+          "Whiteboards"
+        ],
+        "summary": "`GET …/items/{item_id}/sharing`: AI-DO `load_whiteboard_for_share_or_403`.",
+        "operationId": "getWhiteboardSharingInSpace",
+        "parameters": [
+          {
+            "name": "item_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "space_id",
+            "in": "path",
+            "description": "Whiteboard app space ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Current board shares",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SharingResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Platform identity could not be verified",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdentityErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Current permissions do not allow this operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The workspace or board is missing or is not visible",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A required platform service is unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/workspaces/{space_id}/whiteboard/items/{item_id}/sharing/users/{user_id}": {
+      "put": {
+        "tags": [
+          "Whiteboards"
+        ],
+        "summary": "`PUT …/items/{item_id}/sharing/users/{user_id}`: AI-DO\n`upsert_whiteboard_user_share`, plus a `share` notification to a person\nnewly given the board (miy).",
+        "operationId": "upsertWhiteboardUserShareInSpace",
+        "parameters": [
+          {
+            "name": "item_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "user_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "space_id",
+            "in": "path",
+            "description": "Whiteboard app space ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UserShareRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Current board shares",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SharingResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Platform identity could not be verified",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdentityErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Current permissions do not allow this operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The workspace or board is missing or is not visible",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The user already owns the board or is not a member of its workspace",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A required platform service is unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Whiteboards"
+        ],
+        "summary": "`DELETE …/items/{item_id}/sharing/users/{user_id}`: the person also loses\nthe board's notification (miy).",
+        "operationId": "deleteWhiteboardUserShareInSpace",
+        "parameters": [
+          {
+            "name": "item_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "user_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "space_id",
+            "in": "path",
+            "description": "Whiteboard app space ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Current board shares after removal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SharingResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Platform identity could not be verified",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdentityErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Current permissions do not allow this operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The workspace or board is missing or is not visible",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A required platform service is unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/workspaces/{space_id}/whiteboard/items/{item_id}/target": {
+      "put": {
+        "tags": [
+          "Whiteboards"
+        ],
+        "summary": "`PUT …/items/{item_id}/target`: AI-DO `_upsert_primary_target`. The only\ntarget miy knows is the board's space (\"워크스페이스 공개\").",
+        "operationId": "updateWhiteboardTargetInSpace",
+        "parameters": [
+          {
+            "name": "item_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "space_id",
+            "in": "path",
+            "description": "Whiteboard app space ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TargetPayload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Board detail after sharing with its workspace",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Detail"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Platform identity could not be verified",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdentityErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Current permissions do not allow this operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The workspace or board is missing or is not visible",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A required platform service is unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Whiteboards"
+        ],
+        "summary": "`DELETE …/items/{item_id}/target`: AI-DO `_delete_primary_target` (back to\n\"비공개\").",
+        "operationId": "deleteWhiteboardTargetInSpace",
+        "parameters": [
+          {
+            "name": "item_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "space_id",
+            "in": "path",
+            "description": "Whiteboard app space ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Board detail after removing the workspace target",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Detail"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Platform identity could not be verified",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdentityErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Current permissions do not allow this operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The workspace or board is missing or is not visible",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A required platform service is unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/workspaces/{space_id}/whiteboard/items/{item_id}/view": {
+      "post": {
+        "tags": [
+          "Whiteboards"
+        ],
+        "summary": "`POST …/items/{item_id}/view`: last viewed (AI-DO), and the board's share\nnotification for the caller is read (miy).",
+        "operationId": "recordWhiteboardViewInSpace",
+        "parameters": [
+          {
+            "name": "item_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "space_id",
+            "in": "path",
+            "description": "Whiteboard app space ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "View recorded"
+          },
+          "401": {
+            "description": "Platform identity could not be verified",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdentityErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The workspace or board is missing or is not visible",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A required platform service is unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/workspaces/{space_id}/whiteboard/shareable-users": {
+      "get": {
+        "tags": [
+          "Whiteboards"
+        ],
+        "summary": "`GET …/shareable-users?q=`: AI-DO `list_whiteboard_shareable_users`.\nPeople of the current space (an app space: its direct members), not the\ncaller, at most 30.",
+        "operationId": "listWhiteboardShareableUsersInSpace",
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "description": "Filter workspace members by name. The trimmed query may contain up to 200 characters.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "space_id",
+            "in": "path",
+            "description": "Whiteboard app space ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Up to 30 eligible people",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ShareableUser"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Platform identity could not be verified",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdentityErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Current permissions do not allow this operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Space not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The query exceeds 200 characters after trimming",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A required platform service is unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "BinaryBody": {
+        "type": "string",
+        "format": "binary",
+        "description": "Bodies streamed through the file gateway."
+      },
+      "CheckItem": {
+        "type": "object",
+        "required": [
+          "groupKey"
+        ],
+        "properties": {
+          "groupKey": {
+            "type": "string"
+          },
+          "resourceId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "CheckRequest": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CheckItem"
+            },
+            "description": "The first 500 items are checked."
+          }
+        }
+      },
+      "CheckResponse": {
+        "type": "object",
+        "required": [
+          "allowed"
+        ],
+        "properties": {
+          "allowed": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "CreateRequest": {
+        "type": "object",
+        "description": "AI-DO `CreateWhiteboardRequest`.",
+        "required": [
+          "title"
+        ],
+        "properties": {
+          "generation_kind": {
+            "type": "string",
+            "description": "Defaults to `human`.",
+            "maxLength": 32,
+            "minLength": 1
+          },
+          "primary_target": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/TargetPayload"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "scene": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "description": "Excalidraw scene object. Omit or send null to start with an empty scene.",
+            "additionalProperties": {},
+            "propertyNames": {
+              "type": "string"
+            }
+          },
+          "source_app": {
+            "type": "string",
+            "description": "Defaults to `whiteboard`.",
+            "maxLength": 64,
+            "minLength": 1
+          },
+          "source_kind": {
+            "type": "string",
+            "description": "Defaults to `manual`.",
+            "maxLength": 64,
+            "minLength": 1
+          },
+          "source_ref": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 128
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 1
+          }
+        }
+      },
+      "Detail": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/HubItem"
+          },
+          {
+            "type": "object",
+            "required": [
+              "scene"
+            ],
+            "properties": {
+              "scene": {
+                "type": "object",
+                "description": "Excalidraw scene object. `files` references stored images by row ID.",
+                "additionalProperties": {},
+                "propertyNames": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "ErrorDetails": {
+        "type": "object",
+        "required": [
+          "code",
+          "message"
+        ],
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          }
+        }
+      },
+      "ErrorResponse": {
+        "type": "object",
+        "required": [
+          "error"
+        ],
+        "properties": {
+          "error": {
+            "$ref": "#/components/schemas/ErrorDetails"
+          }
+        }
+      },
+      "FavoriteResponse": {
+        "type": "object",
+        "required": [
+          "is_favorite"
+        ],
+        "properties": {
+          "is_favorite": {
+            "type": "boolean"
+          }
+        }
+      },
+      "FileResponse": {
+        "type": "object",
+        "required": [
+          "id",
+          "file_id",
+          "status"
+        ],
+        "properties": {
+          "file_id": {
+            "type": "string",
+            "description": "Excalidraw's file ID."
+          },
+          "id": {
+            "type": "string",
+            "description": "Board file row ID to save as `storage` in the scene."
+          },
+          "status": {
+            "$ref": "#/components/schemas/WhiteboardFileStatus"
+          }
+        }
+      },
+      "HubItem": {
+        "type": "object",
+        "description": "AI-DO `WhiteboardHubItem` plus `revision` (miy).",
+        "required": [
+          "id",
+          "workspace_id",
+          "workspace_key",
+          "source_app",
+          "source_type",
+          "source_id",
+          "source_kind",
+          "source_ref",
+          "generation_kind",
+          "location_label",
+          "target_label",
+          "primary_target",
+          "targets",
+          "source_badge",
+          "source_deeplink",
+          "title",
+          "created_by_id",
+          "created_by_name",
+          "created_at",
+          "updated_at",
+          "trashed_at",
+          "is_favorite",
+          "is_private",
+          "last_viewed_at",
+          "can_view",
+          "can_edit",
+          "can_share",
+          "can_manage",
+          "revision"
+        ],
+        "properties": {
+          "can_edit": {
+            "type": "boolean"
+          },
+          "can_manage": {
+            "type": "boolean"
+          },
+          "can_share": {
+            "type": "boolean"
+          },
+          "can_view": {
+            "type": "boolean"
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "created_by_id": {
+            "type": "string"
+          },
+          "created_by_name": {
+            "type": "string"
+          },
+          "generation_kind": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "is_favorite": {
+            "type": "boolean"
+          },
+          "is_private": {
+            "type": "boolean"
+          },
+          "last_viewed_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "location_label": {
+            "type": "string"
+          },
+          "primary_target": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/PrimaryTarget"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "revision": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Stored scene revision used for concurrent saves."
+          },
+          "source_app": {
+            "type": "string"
+          },
+          "source_badge": {
+            "type": "string"
+          },
+          "source_deeplink": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "source_id": {
+            "type": "string"
+          },
+          "source_kind": {
+            "type": "string"
+          },
+          "source_ref": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "source_type": {
+            "$ref": "#/components/schemas/WhiteboardSourceType"
+          },
+          "target_label": {
+            "type": "string"
+          },
+          "targets": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TargetItem"
+            }
+          },
+          "title": {
+            "type": "string"
+          },
+          "trashed_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "updated_at": {
+            "type": "string"
+          },
+          "workspace_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "workspace_key": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "HubResponse": {
+        "type": "object",
+        "required": [
+          "items",
+          "total",
+          "page",
+          "page_size"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/HubItem"
+            }
+          },
+          "page": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "page_size": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "total": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      },
+      "IdentityErrorDetails": {
+        "type": "object",
+        "required": [
+          "code"
+        ],
+        "properties": {
+          "code": {
+            "type": "string"
+          }
+        }
+      },
+      "IdentityErrorResponse": {
+        "type": "object",
+        "required": [
+          "error"
+        ],
+        "properties": {
+          "error": {
+            "$ref": "#/components/schemas/IdentityErrorDetails"
+          }
+        }
+      },
+      "PrimaryTarget": {
+        "type": "object",
+        "required": [
+          "app",
+          "type",
+          "id",
+          "sort_order"
+        ],
+        "properties": {
+          "app": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "sort_order": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "type": {
+            "type": "string"
+          }
+        }
+      },
+      "ReserveRequest": {
+        "type": "object",
+        "required": [
+          "request_id",
+          "file_id",
+          "name",
+          "mime",
+          "size"
+        ],
+        "properties": {
+          "file_id": {
+            "type": "string",
+            "description": "Excalidraw's file ID (the key in `scene.files`).",
+            "maxLength": 128,
+            "minLength": 1
+          },
+          "mime": {
+            "type": "string",
+            "description": "PNG, JPEG, GIF or WebP. The server trims and lowercases this value."
+          },
+          "name": {
+            "type": "string",
+            "description": "The trimmed filename may contain up to 255 characters and no control characters."
+          },
+          "request_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "size": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Exact size in bytes, up to 10 MiB.",
+            "maximum": 10485760,
+            "minimum": 1
+          }
+        }
+      },
+      "SearchItem": {
+        "type": "object",
+        "required": [
+          "title",
+          "snippet",
+          "path",
+          "at",
+          "kind"
+        ],
+        "properties": {
+          "at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "snippet": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
+        }
+      },
+      "SearchRequest": {
+        "type": "object",
+        "required": [
+          "query"
+        ],
+        "properties": {
+          "limit": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "Defaults to 5. Supplied values are clamped to the range 1 to 10."
+          },
+          "locale": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "query": {
+            "type": "string",
+            "description": "A trimmed query of 1 to 200 characters returns eligible matches."
+          }
+        }
+      },
+      "SearchResponse": {
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SearchItem"
+            }
+          }
+        }
+      },
+      "ShareableUser": {
+        "type": "object",
+        "description": "AI-DO `ShareableUserItem`; `email` is empty (the directory has none) and\n`primary_group` names the person's group.",
+        "required": [
+          "id",
+          "email",
+          "full_name",
+          "primary_group"
+        ],
+        "properties": {
+          "email": {
+            "type": "string"
+          },
+          "full_name": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "primary_group": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "SharingRequest": {
+        "type": "object",
+        "required": [
+          "expectedRevision",
+          "requestId",
+          "entries"
+        ],
+        "properties": {
+          "entries": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SpaceGrant"
+            }
+          },
+          "expectedRevision": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "requestId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      },
+      "SharingResponse": {
+        "type": "object",
+        "description": "AI-DO `WhiteboardSharingResponse`. Link shares are not offered in miy, so\n`link_share` is always null.",
+        "required": [
+          "whiteboard_id",
+          "owner_id",
+          "users",
+          "link_share"
+        ],
+        "properties": {
+          "link_share": {
+            "type": "null"
+          },
+          "owner_id": {
+            "type": "string"
+          },
+          "users": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/UserShareItem"
+            }
+          },
+          "whiteboard_id": {
+            "type": "string"
+          }
+        }
+      },
+      "SpaceGrant": {
+        "type": "object",
+        "required": [
+          "subject",
+          "role"
+        ],
+        "properties": {
+          "role": {
+            "type": "string"
+          },
+          "subject": {
+            "$ref": "#/components/schemas/SpaceSubjectRef"
+          }
+        },
+        "additionalProperties": false
+      },
+      "SpaceOut": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "description",
+          "createdBy",
+          "canManage",
+          "createdAt",
+          "updatedAt"
+        ],
+        "properties": {
+          "canManage": {
+            "type": "boolean"
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "createdBy": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "string"
+          }
+        }
+      },
+      "SpaceRequest": {
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "properties": {
+          "description": {
+            "type": "string",
+            "maxLength": 5000
+          },
+          "name": {
+            "type": "string",
+            "description": "The space name must contain a non-whitespace character.",
+            "maxLength": 120,
+            "minLength": 1
+          }
+        }
+      },
+      "SpaceShareEntry": {
+        "type": "object",
+        "required": [
+          "subject",
+          "role",
+          "protected"
+        ],
+        "properties": {
+          "protected": {
+            "type": "boolean"
+          },
+          "role": {
+            "type": "string"
+          },
+          "subject": {
+            "$ref": "#/components/schemas/SpaceShareSubject"
+          }
+        }
+      },
+      "SpaceShareRole": {
+        "type": "object",
+        "required": [
+          "id",
+          "label"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          }
+        }
+      },
+      "SpaceShareSnapshot": {
+        "type": "object",
+        "required": [
+          "revision",
+          "entries",
+          "roles",
+          "defaultRole",
+          "canManage"
+        ],
+        "properties": {
+          "canManage": {
+            "type": "boolean"
+          },
+          "defaultRole": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "entries": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SpaceShareEntry"
+            }
+          },
+          "revision": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "roles": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SpaceShareRole"
+            }
+          }
+        }
+      },
+      "SpaceShareSubject": {
+        "type": "object",
+        "required": [
+          "kind",
+          "id",
+          "name"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/SpaceSubjectKind"
+          },
+          "name": {
+            "type": "string"
+          }
+        }
+      },
+      "SpaceSubjectKind": {
+        "type": "string",
+        "enum": [
+          "user",
+          "group"
+        ]
+      },
+      "SpaceSubjectRef": {
+        "type": "object",
+        "required": [
+          "kind",
+          "id"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/SpaceSubjectKind"
+          }
+        },
+        "additionalProperties": false
+      },
+      "SpacesResponse": {
+        "type": "object",
+        "required": [
+          "spaces"
+        ],
+        "properties": {
+          "spaces": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SpaceOut"
+            }
+          }
+        }
+      },
+      "TargetItem": {
+        "type": "object",
+        "required": [
+          "app",
+          "type",
+          "id",
+          "sort_order",
+          "is_primary"
+        ],
+        "properties": {
+          "app": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "is_primary": {
+            "type": "boolean"
+          },
+          "sort_order": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "type": {
+            "type": "string"
+          }
+        }
+      },
+      "TargetPayload": {
+        "type": "object",
+        "required": [
+          "app",
+          "type",
+          "id"
+        ],
+        "properties": {
+          "app": {
+            "type": "string",
+            "description": "Use `whiteboard` for a board shared in its own workspace.",
+            "maxLength": 64,
+            "minLength": 1
+          },
+          "id": {
+            "type": "string",
+            "description": "The board's space ID, or `global` for the app-wide space.",
+            "maxLength": 128,
+            "minLength": 1
+          },
+          "sort_order": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Defaults to 0."
+          },
+          "type": {
+            "type": "string",
+            "description": "Use `workspace_sidebar` for a board shared in its own workspace.",
+            "maxLength": 64,
+            "minLength": 1
+          }
+        }
+      },
+      "UpdateRequest": {
+        "type": "object",
+        "properties": {
+          "base_revision": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "Integer scene revision. Required when `scene` is present, including null."
+          },
+          "scene": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "description": "Omit to leave the scene unchanged. An explicit null clears it.",
+            "additionalProperties": {},
+            "propertyNames": {
+              "type": "string"
+            }
+          },
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Omit or send null to leave the title unchanged.",
+            "maxLength": 200,
+            "minLength": 1
+          }
+        }
+      },
+      "UserShareAccess": {
+        "type": "string",
+        "enum": [
+          "read",
+          "edit"
+        ]
+      },
+      "UserShareItem": {
+        "type": "object",
+        "required": [
+          "user_id",
+          "email",
+          "full_name",
+          "access_level"
+        ],
+        "properties": {
+          "access_level": {
+            "$ref": "#/components/schemas/UserShareAccess"
+          },
+          "email": {
+            "type": "string"
+          },
+          "full_name": {
+            "type": "string"
+          },
+          "user_id": {
+            "type": "string"
+          }
+        }
+      },
+      "UserShareRequest": {
+        "type": "object",
+        "required": [
+          "access_level"
+        ],
+        "properties": {
+          "access_level": {
+            "$ref": "#/components/schemas/UserShareAccess"
+          }
+        }
+      },
+      "WhiteboardFileStatus": {
+        "type": "string",
+        "enum": [
+          "pending",
+          "ready",
+          "attached"
+        ]
+      },
+      "WhiteboardSourceType": {
+        "type": "string",
+        "enum": [
+          "whiteboard"
+        ]
+      }
+    }
+  }
+}

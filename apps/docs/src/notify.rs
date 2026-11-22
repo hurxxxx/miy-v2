@@ -15,7 +15,6 @@
 use axum::{Extension, Json, extract::State};
 use miy_app_sdk::{Identity, Notification};
 use serde::{Deserialize, Serialize};
-use serde_json::{Value, json};
 use sqlx::PgPool;
 use std::{collections::BTreeSet, time::Duration};
 
@@ -198,7 +197,7 @@ pub async fn readable_docs(
         .await?)
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct CheckItem {
     group_key: String,
@@ -206,13 +205,13 @@ pub struct CheckItem {
     resource_id: Option<String>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema)]
 pub struct CheckRequest {
     #[serde(default)]
     items: Vec<CheckItem>,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, utoipa::ToSchema)]
 pub struct CheckResponse {
     allowed: Vec<String>,
 }
@@ -255,6 +254,18 @@ pub async fn user_can_read_page(
 /// `comment:<id>` and `mention:<id>` need the comment (not deleted) on a live
 /// page of a doc the person may read. The resource ID must match the key.
 /// Read-only, app DB only.
+#[utoipa::path(
+    post, path = "/platform/notification-check", operation_id = "checkDocsNotifications", tag = "Platform callbacks",
+    request_body = CheckRequest,
+    responses(
+        (status = 200, description = "Success", body = CheckResponse),
+        (status = 401, description = "Valid platform identity required", body = crate::error::IdentityErrorResponse),
+        (status = 403, description = "Permission denied", body = crate::error::ErrorResponse),
+        (status = 422, description = "Request validation failed", body = crate::error::ErrorResponse),
+        (status = 500, description = "Could not complete the request", body = crate::error::ErrorResponse),
+        (status = 503, description = "A required platform service is unavailable", body = crate::error::ErrorResponse)
+    )
+)]
 pub async fn notification_check(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
@@ -318,20 +329,48 @@ pub async fn notification_check(
     Ok(Json(CheckResponse { allowed }))
 }
 
-#[derive(Deserialize, Default)]
+#[derive(Deserialize, Default, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct DisplayRequest {
     #[serde(default)]
     locale: Option<String>,
 }
 
+#[derive(Serialize, utoipa::ToSchema)]
+pub struct HomeCard {
+    title: &'static str,
+    #[schema(max_items = 5)]
+    items: Vec<HomeCardItem>,
+}
+
+#[derive(Serialize, utoipa::ToSchema)]
+struct HomeCardItem {
+    title: String,
+    #[schema(required)]
+    subtitle: Option<String>,
+    path: String,
+    #[schema(format = DateTime)]
+    at: String,
+}
+
 /// `POST /v1/home-card`: "최근 문서" — the pages the person opened last whose
 /// doc they may still read now (at most five, newest first). Read-only.
+#[utoipa::path(
+    post, path = "/v1/home-card", operation_id = "getDocsHomeCard", tag = "Platform callbacks",
+    request_body = Option<DisplayRequest>,
+    responses(
+        (status = 200, description = "Success", body = HomeCard),
+        (status = 401, description = "Valid platform identity required", body = crate::error::IdentityErrorResponse),
+        (status = 403, description = "Permission denied", body = crate::error::ErrorResponse),
+        (status = 413, description = "Request exceeds the size limit", body = String, content_type = "text/plain"),
+        (status = 500, description = "Could not complete the request", body = crate::error::ErrorResponse)
+    )
+)]
 pub async fn home_card(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
     body: axum::body::Bytes,
-) -> ApiResult<Json<Value>> {
+) -> ApiResult<Json<HomeCard>> {
     platform_only(&identity)?;
     let request: DisplayRequest = serde_json::from_slice(&body).unwrap_or_default();
     let english = request.locale.as_deref() == Some("en-US");
@@ -357,25 +396,34 @@ pub async fn home_card(
         .bind(signed_groups(&identity))
         .fetch_all(&state.pool)
         .await?;
-    Ok(Json(json!({
-        "title": if english { "Recent docs" } else { "최근 문서" },
-        "items": rows.into_iter().map(|(doc_id, doc_title, at, page_id, page_title)| {
-            let (title, subtitle) = match &page_title {
-                Some(page_title) if page_title != &doc_title => (page_title.clone(), Some(doc_title.clone())),
-                _ => (doc_title.clone(), None),
-            };
-            let mut path = items::doc_path(&doc_id);
-            if let Some(page_id) = page_id {
-                path.push_str(&format!("?page={}", items::urlencode_segment(&page_id)));
-            }
-            json!({
-                "title": shorten(&title, 160),
-                "subtitle": subtitle.map(|s| shorten(&s, 160)),
-                "path": path,
-                "at": utc_iso(at),
+    Ok(Json(HomeCard {
+        title: if english {
+            "Recent docs"
+        } else {
+            "최근 문서"
+        },
+        items: rows
+            .into_iter()
+            .map(|(doc_id, doc_title, at, page_id, page_title)| {
+                let (title, subtitle) = match &page_title {
+                    Some(page_title) if page_title != &doc_title => {
+                        (page_title.clone(), Some(doc_title.clone()))
+                    }
+                    _ => (doc_title.clone(), None),
+                };
+                let mut path = items::doc_path(&doc_id);
+                if let Some(page_id) = page_id {
+                    path.push_str(&format!("?page={}", items::urlencode_segment(&page_id)));
+                }
+                HomeCardItem {
+                    title: shorten(&title, 160),
+                    subtitle: subtitle.map(|s| shorten(&s, 160)),
+                    path,
+                    at: utc_iso(at),
+                }
             })
-        }).collect::<Vec<_>>(),
-    })))
+            .collect(),
+    }))
 }
 
 #[cfg(test)]

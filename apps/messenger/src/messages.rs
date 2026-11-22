@@ -39,6 +39,24 @@ pub struct MessageListQuery {
 
 /// `GET /v1/dm/conversations/{id}/messages`: the newest `limit` messages the
 /// caller may see (joined before), older than `before` when given.
+#[utoipa::path(
+    get, path = "/v1/dm/conversations/{conversation_id}/messages", operation_id = "listDmMessages",
+    params(
+        ("conversation_id" = String, Path),
+        ("limit" = Option<i64>, Query, minimum = 1, maximum = 100, description = "Maximum message count (default 50)"),
+        ("before" = Option<String>, Query, description = "Messages strictly before this UTC timestamp. Use one pagination cursor."),
+        ("before_sequence" = Option<i32>, Query, minimum = 1, description = "Messages with lower sequence numbers. Use one pagination cursor."),
+        ("ids" = Option<String>, Query, description = "Up to 50 comma-separated message IDs, without a pagination cursor."),
+    ),
+    responses(
+        (status = 200, description = "Success", body = DmMessageListResponse),
+        (status = 400, description = "Malformed query parameters", body = String, content_type = "text/plain"),
+        (status = 401, description = "Valid gateway identity required", body = crate::error::GatewayIdentityError),
+        (status = 404, description = "Requested resource was not found", body = crate::error::ErrorResponse),
+        (status = 422, description = "Request validation or domain policy rejected the operation", body = crate::error::ErrorResponse),
+        (status = 500, description = "Internal error", body = crate::error::ErrorResponse),
+    )
+)]
 pub async fn list_dm_messages(
     State(pool): State<PgPool>,
     Extension(identity): Extension<Identity>,
@@ -163,6 +181,21 @@ async fn attachments_to_link(
 }
 
 /// `POST /v1/dm/conversations/{id}/messages` (`message_delivery.send_message`).
+#[utoipa::path(
+    post, path = "/v1/dm/conversations/{conversation_id}/messages", operation_id = "sendDmMessage",
+    params(
+        ("conversation_id" = String, Path),
+    ),
+    request_body = DmSendMessageRequest,
+    responses(
+        (status = 200, description = "Success", body = DmMessageItem),
+        (status = 401, description = "Valid gateway identity required", body = crate::error::GatewayIdentityError),
+        (status = 403, description = "Permission denied", body = crate::error::ErrorResponse),
+        (status = 404, description = "Requested resource was not found", body = crate::error::ErrorResponse),
+        (status = 422, description = "Request validation or domain policy rejected the operation", body = crate::error::ErrorResponse),
+        (status = 500, description = "Internal error", body = crate::error::ErrorResponse),
+    )
+)]
 pub async fn send_dm_message(
     State(pool): State<PgPool>,
     Extension(identity): Extension<Identity>,
@@ -315,6 +348,22 @@ pub(crate) async fn render_one(
 /// miy: `PATCH /v1/dm/conversations/{id}/messages/{message_id}`. Only the
 /// author; not a hidden or deleted message. The replaced text stays in
 /// `dm_message_revisions`; the message shows "수정됨" (`edited_at`).
+#[utoipa::path(
+    patch, path = "/v1/dm/conversations/{conversation_id}/messages/{message_id}", operation_id = "editDmMessage",
+    params(
+        ("conversation_id" = String, Path),
+        ("message_id" = String, Path),
+    ),
+    request_body = DmEditMessageRequest,
+    responses(
+        (status = 200, description = "Success", body = DmMessageItem),
+        (status = 401, description = "Valid gateway identity required", body = crate::error::GatewayIdentityError),
+        (status = 403, description = "Permission denied", body = crate::error::ErrorResponse),
+        (status = 404, description = "Requested resource was not found", body = crate::error::ErrorResponse),
+        (status = 422, description = "Request validation or domain policy rejected the operation", body = crate::error::ErrorResponse),
+        (status = 500, description = "Internal error", body = crate::error::ErrorResponse),
+    )
+)]
 pub async fn edit_dm_message(
     State(pool): State<PgPool>,
     Extension(identity): Extension<Identity>,
@@ -410,6 +459,21 @@ pub async fn edit_dm_message(
 /// and the files are released after commit. While a report on the message
 /// is open, the body copy stays in the revision and the files stay attached
 /// until the report is resolved.
+#[utoipa::path(
+    delete, path = "/v1/dm/conversations/{conversation_id}/messages/{message_id}", operation_id = "deleteDmMessage",
+    params(
+        ("conversation_id" = String, Path),
+        ("message_id" = String, Path),
+    ),
+    responses(
+        (status = 200, description = "Success", body = DmMessageItem),
+        (status = 401, description = "Valid gateway identity required", body = crate::error::GatewayIdentityError),
+        (status = 403, description = "Permission denied", body = crate::error::ErrorResponse),
+        (status = 404, description = "Requested resource was not found", body = crate::error::ErrorResponse),
+        (status = 422, description = "Request validation or domain policy rejected the operation", body = crate::error::ErrorResponse),
+        (status = 500, description = "Internal error", body = crate::error::ErrorResponse),
+    )
+)]
 pub async fn delete_dm_message(
     State(pool): State<PgPool>,
     Extension(identity): Extension<Identity>,
@@ -494,4 +558,71 @@ pub async fn purge_deleted_copy(conn: &mut PgConnection, message_id: &str) -> Ap
         .execute(conn)
         .await?;
     Ok(true)
+}
+
+#[utoipa::path(
+    get, path = "/v1/dm/threads/{conversation_id}/messages", operation_id = "legacyListDmThreadMessages",
+    description = "Deprecated alias for GET /v1/dm/conversations/{conversation_id}/messages.",
+    params(
+        ("conversation_id" = String, Path),
+        ("limit" = Option<i64>, Query, minimum = 1, maximum = 100, description = "Maximum message count (default 50)"),
+        ("before" = Option<String>, Query, description = "Messages strictly before this UTC timestamp. Use one pagination cursor."),
+        ("before_sequence" = Option<i32>, Query, minimum = 1, description = "Messages with lower sequence numbers. Use one pagination cursor."),
+        ("ids" = Option<String>, Query, description = "Up to 50 comma-separated message IDs, without a pagination cursor."),
+    ),
+    responses(
+        (status = 200, description = "Success", body = DmMessageListResponse),
+        (status = 400, description = "Malformed query parameters", body = String, content_type = "text/plain"),
+        (status = 401, description = "Valid gateway identity required", body = crate::error::GatewayIdentityError),
+        (status = 404, description = "Requested resource was not found", body = crate::error::ErrorResponse),
+        (status = 422, description = "Request validation or domain policy rejected the operation", body = crate::error::ErrorResponse),
+        (status = 500, description = "Internal error", body = crate::error::ErrorResponse),
+    )
+)]
+#[deprecated(note = "Use the /v1/dm/conversations operation")]
+pub async fn legacy_list_dm_thread_messages(
+    State(pool): State<PgPool>,
+    Extension(identity): Extension<Identity>,
+    Path(conversation_id): Path<String>,
+    Query(query): Query<MessageListQuery>,
+) -> ApiResult<Json<DmMessageListResponse>> {
+    list_dm_messages(
+        State(pool),
+        Extension(identity),
+        Path(conversation_id),
+        Query(query),
+    )
+    .await
+}
+
+#[utoipa::path(
+    post, path = "/v1/dm/threads/{conversation_id}/messages", operation_id = "legacySendDmThreadMessage",
+    description = "Deprecated alias for POST /v1/dm/conversations/{conversation_id}/messages.",
+    params(
+        ("conversation_id" = String, Path),
+    ),
+    request_body = DmSendMessageRequest,
+    responses(
+        (status = 200, description = "Success", body = DmMessageItem),
+        (status = 401, description = "Valid gateway identity required", body = crate::error::GatewayIdentityError),
+        (status = 403, description = "Permission denied", body = crate::error::ErrorResponse),
+        (status = 404, description = "Requested resource was not found", body = crate::error::ErrorResponse),
+        (status = 422, description = "Request validation or domain policy rejected the operation", body = crate::error::ErrorResponse),
+        (status = 500, description = "Internal error", body = crate::error::ErrorResponse),
+    )
+)]
+#[deprecated(note = "Use the /v1/dm/conversations operation")]
+pub async fn legacy_send_dm_thread_message(
+    State(pool): State<PgPool>,
+    Extension(identity): Extension<Identity>,
+    Path(conversation_id): Path<String>,
+    ApiJson(request): ApiJson<DmSendMessageRequest>,
+) -> ApiResult<Json<DmMessageItem>> {
+    send_dm_message(
+        State(pool),
+        Extension(identity),
+        Path(conversation_id),
+        ApiJson(request),
+    )
+    .await
 }

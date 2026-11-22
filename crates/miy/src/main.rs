@@ -85,6 +85,8 @@ mod docker_storage;
 #[cfg(feature = "server")]
 mod domain;
 #[cfg(feature = "server")]
+mod download_tracking;
+#[cfg(feature = "server")]
 mod file_gateway;
 mod file_transaction;
 mod file_transfer;

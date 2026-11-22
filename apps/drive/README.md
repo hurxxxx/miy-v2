@@ -24,6 +24,8 @@
 
 ## API
 
+[OpenAPI 명세](docs/openapi.json)는 실제 Drive 라우터에서 생성한다. 요청·응답을 변경하면 `pnpm api:generate`로 명세와 [웹 타입](web/src/api.generated.ts)을 갱신한 뒤 앱 검사를 실행한다.
+
 UI는 `runtime.api('/v1/...')`로 부르고 게이트웨이가 `/api/v1/...`로 전달한다. 바이트 경로는 `runtime.fileApi('/<경로>')`가 `/api/files/<경로>`로 전달한다. 요청·응답 키는 AI-DO와 같은 snake_case다(공유 편집 경로만 SDK의 camelCase). 시각은 naive UTC(`2026-11-22T01:02:03`)다. 오류는 `{"error":{"code","message"}}`이며 코드는 AI-DO 코드의 `.`을 `_`로 바꾼 것이다(예: `files_folder_not_found`).
 
 ### 공간
@@ -64,7 +66,7 @@ UI는 `runtime.api('/v1/...')`로 부르고 게이트웨이가 `/api/v1/...`로 
 | `GET /v1/spaces/{id}/files/uploads/{uploadId}` | 상태와 커밋된 `received`(이어 보낼 위치) |
 | `PUT /files/uploads/{uploadId}/content` | (fileApi) `single` 바이트 |
 | `PUT /files/uploads/{uploadId}/parts?offset=N` | (fileApi) `parts`의 한 조각(8MiB까지). `offset`이 `received`와 다르면 409 `files_part_offset` |
-| `POST /v1/spaces/{id}/files/uploads/{uploadId}/complete` | 확정(되풀이해도 같음). 잠금 뒤 권한을 다시 확인하고 커밋한 다음 코어 파일을 연결한다. 파일 항목을 돌려준다 |
+| `POST /v1/spaces/{id}/files/uploads/{uploadId}/complete` | 확정. `files_upload_finalizing`(409)이면 같은 업로드 ID로 다시 확정한다. 잠금 뒤 권한을 다시 확인하고 커밋한 다음 코어 파일을 연결한다. 파일 항목을 돌려준다 |
 | `DELETE /v1/spaces/{id}/files/uploads/{uploadId}` | 끝나지 않은 업로드 취소(204). 완료된 업로드는 409 |
 
 ### 휴지통 (보강)

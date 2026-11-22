@@ -112,6 +112,10 @@ fn new_user() -> String {
 }
 
 fn identity(user: &str) -> String {
+    identity_with_platform(user, false)
+}
+
+fn identity_with_platform(user: &str, platform: bool) -> String {
     let exp = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
@@ -119,11 +123,55 @@ fn identity(user: &str) -> String {
         + 300;
     encode(
         &Header::default(),
-        &json!({"sub": user, "admin": false, "installation_id": INSTALLATION,
+        &json!({"sub": user, "admin": false, "platform": platform, "installation_id": INSTALLATION,
             "release_id": RELEASE, "iss": "miy", "aud": "miy-app", "exp": exp}),
         &EncodingKey::from_secret(SECRET.as_bytes()),
     )
     .unwrap()
+}
+
+#[tokio::test]
+#[ignore = "needs PLANNER_TEST_DATABASE_URL"]
+async fn platform_callbacks_preserve_their_http_contract() {
+    let user = new_user();
+    let title = format!("Todo {}", uuid::Uuid::new_v4());
+    create_todo(&user, &title).await;
+    create_todo(&new_user(), &title).await;
+
+    let body = json!({"query": title, "locale": "en-US"});
+    let forbidden = call(Some(&user), Method::POST, "/v1/search", Some(body.clone())).await;
+    assert_eq!(forbidden.status(), StatusCode::FORBIDDEN);
+    assert_eq!(
+        json_of(forbidden).await["error"]["code"],
+        "planner_platform_only"
+    );
+
+    let token = identity_with_platform(&user, true);
+    let client = Client::new();
+    let response = client
+        .post(format!("{}/api/v1/search", server()))
+        .header("x-miy-identity", &token)
+        .json(&body)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(
+        json_of(response).await,
+        json!({"items": [{"title": title, "snippet": null, "path": "/widgets/todos", "kind": "To-do"}]})
+    );
+
+    let card = client
+        .post(format!("{}/api/v1/home-card", server()))
+        .header("x-miy-identity", &token)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(card.status(), StatusCode::OK);
+    assert_eq!(
+        json_of(card).await,
+        json!({"title": "오늘 일정", "count": 0, "items": []})
+    );
 }
 
 async fn call(user: Option<&str>, method: Method, path: &str, body: Option<Value>) -> Response {
@@ -526,7 +574,7 @@ async fn planner_event_validation_and_business_errors() {
         Some(&user),
         Method::PATCH,
         &format!("/v1/planner/events/{}", created["id"].as_str().unwrap()),
-        Some(json!({"start": "2026-05-04"})),
+        Some(json!({"allDay": true, "start": "2026-05-04"})),
     )
     .await;
     assert_eq!(partial.status(), StatusCode::BAD_REQUEST);

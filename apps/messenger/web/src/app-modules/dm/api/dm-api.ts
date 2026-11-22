@@ -1,3 +1,4 @@
+import type { components, paths } from '../../../api.generated';
 import {
   DM_MAX_ATTACHMENT_BYTES,
   dmRoutes,
@@ -280,7 +281,7 @@ export function uploadDmAttachment(
     filename: file.name || 'clipboard-file',
     content_type: file.type || null,
     size_bytes: file.size,
-  });
+  } satisfies components['schemas']['DmAttachmentReserveRequest']);
   return limitUploads(async () => {
     const reserved = await retryUncertainUpload(() => fetchDmResponse(
       'dm:upload-attachment',
@@ -303,7 +304,7 @@ export function uploadDmAttachment(
     ));
     let value: unknown;
     try {
-      value = await readJson<unknown>(response);
+      value = await readJson<components['schemas']['DmMessageAttachmentItem']>(response);
     } catch (error) {
       throw toApiRequestError(error);
     }
@@ -476,7 +477,7 @@ export function acceptDmTerms(token: string, version: string): Promise<DmTermsAc
     'dm:terms-accept',
     dmRoutes.termsAccept(),
     token,
-    { method: 'POST', body: JSON.stringify({ version }) },
+    { method: 'POST', body: JSON.stringify({ version } satisfies components['schemas']['UgcTermsAcceptRequest']) },
     normalizeDmTermsAcceptResult,
   );
 }
@@ -487,8 +488,10 @@ export interface DmMe {
   manager: boolean;
 }
 
+type DmMeResponse = paths['/v1/dm/me']['get']['responses'][200]['content']['application/json'];
+
 export async function getDmMe(token: string): Promise<DmMe> {
-  const value = await apiFetchJson<{ user?: unknown; manager?: unknown }>(
+  const value = await apiFetchJson<DmMeResponse>(
     `${DM_API_PREFIX_PATH}/me`,
     token,
   );
@@ -516,7 +519,7 @@ export function editDmMessage(
     token,
     {
       method: 'PATCH',
-      body: JSON.stringify(mentions.length ? { body: trimmed, mentions } : { body: trimmed }),
+      body: JSON.stringify((mentions.length ? { body: trimmed, mentions } : { body: trimmed }) satisfies components['schemas']['DmEditMessageRequest']),
     },
     normalizeDmMessage,
   );
@@ -540,22 +543,8 @@ export function setDmReaction(
 }
 
 /** miy: one message search hit (text only, conversations the caller is in). */
-export interface DmSearchHit {
-  message_id: string;
-  conversation_id: string;
-  conversation_name: string;
-  conversation_type: 'direct' | 'group';
-  sequence: number;
-  sender_id: string;
-  sender_name: string;
-  snippet: string;
-  created_at: string;
-}
-
-export interface DmSearchPage {
-  items: DmSearchHit[];
-  next_cursor: string | null;
-}
+export type DmSearchHit = components['schemas']['SearchItem'];
+export type DmSearchPage = components['schemas']['SearchResponse'];
 
 function normalizeDmSearchPage(value: unknown): DmSearchPage | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
@@ -624,7 +613,7 @@ export function setDmConversationMuted(
     'dm:mute',
     dmRoutes.mute(conversationId),
     token,
-    { method: 'PUT', body: JSON.stringify({ muted }) },
+    { method: 'PUT', body: JSON.stringify({ muted } satisfies components['schemas']['DmMuteRequest']) },
     normalizeDmConversation,
   );
 }

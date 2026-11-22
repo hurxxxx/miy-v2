@@ -12,7 +12,10 @@ use axum::{
 };
 use chrono::NaiveDate;
 use miy_app_sdk::Identity;
-use serde_json::{Value, json};
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
+#[cfg(test)]
+use serde_json::json;
 use sqlx::{PgConnection, PgPool, Postgres, QueryBuilder};
 
 use crate::access::{
@@ -20,14 +23,17 @@ use crate::access::{
 };
 use crate::attachments;
 use crate::custom_fields;
-use crate::error::{ApiError, ApiResult, check_choice, check_length, check_range};
+use crate::error::{
+    ApiError, ApiResult, ErrorResponse, IdentityErrorResponse, check_choice, check_length,
+    check_range,
+};
 use crate::input::{Body, Params, check_list_length, check_opt_length};
 use crate::models::{
     ATTACHMENT_COLUMNS, AttachmentRow, ChecklistRow, CommentRow, TASK_COLUMNS, TaskListRow,
     TaskRow, iso_date, iso_datetime, new_id, paginate, task_columns, task_reference, utcnow,
 };
 use crate::notify::{self, Outgoing};
-use crate::summary::{self, TaskContext, serialize_task, serialize_tasks};
+use crate::summary::{self, TaskContext, TaskSummary, serialize_task, serialize_tasks};
 use crate::templates;
 use crate::users;
 use crate::workflow::{
@@ -443,16 +449,64 @@ async fn serialize_one(
     conn: &mut PgConnection,
     identity: &Identity,
     task_id: &str,
-) -> ApiResult<Value> {
+) -> ApiResult<TaskSummary> {
     let task = access::load_task(conn, task_id).await?;
-    Ok(serialize_tasks(conn, identity, std::slice::from_ref(&task))
-        .await?
-        .into_iter()
-        .next()
-        .unwrap_or_default())
+    let context = summary::load_context(conn, identity, std::slice::from_ref(&task)).await?;
+    Ok(serialize_task(&task, &context))
 }
 
 // ── Filters and order ──────────────────────────────────────────────────
+
+#[derive(Serialize, utoipa::ToSchema)]
+pub struct TaskPage {
+    items: Vec<TaskSummary>,
+    total: i64,
+    page: i64,
+    page_size: i64,
+}
+
+#[derive(Serialize, utoipa::ToSchema)]
+struct WidgetWorkspace {
+    id: String,
+    slug: String,
+    name: String,
+}
+
+#[allow(dead_code)]
+#[derive(utoipa::ToSchema)]
+#[schema(rename_all = "snake_case")]
+enum WidgetWorkspaceRole {
+    Viewer,
+    Member,
+    Admin,
+    Owner,
+}
+
+#[derive(Serialize, utoipa::ToSchema)]
+struct WidgetWorkspaceMembership {
+    #[serde(flatten)]
+    workspace: WidgetWorkspace,
+    #[schema(value_type = WidgetWorkspaceRole)]
+    role: String,
+}
+
+#[derive(Serialize, utoipa::ToSchema)]
+struct WidgetAssignedTask {
+    #[serde(flatten)]
+    task: TaskSummary,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[schema(value_type = WidgetWorkspace, required = false)]
+    workspace: Option<WidgetWorkspace>,
+}
+
+#[derive(Serialize, utoipa::ToSchema)]
+pub struct WidgetAssignmentsPage {
+    items: Vec<WidgetAssignedTask>,
+    total: usize,
+    page: i64,
+    page_size: i64,
+    workspaces: Vec<WidgetWorkspaceMembership>,
+}
 
 /// AI-DO `TaskFilters` (the export reads the same ones).
 #[derive(Debug, Default, Clone, PartialEq)]
@@ -678,12 +732,42 @@ fn sort_searched(tasks: &mut Vec<TaskRow>, sort_by: &str, descending: bool) {
 }
 
 /// `GET /v1/pms/lists/{list_id}/tasks`.
+#[utoipa::path(
+    get, path = "/v1/pms/lists/{list_id}/tasks", operation_id = "listPmsTasks", tag = "Tasks",
+    description = "Filter by fields with repeated status values and cf_<field ID>=value keys for custom fields.",
+    params(
+        ("list_id" = String, Path),
+        ("page" = Option<i64>, Query, minimum = 1, description = "Defaults to 1."), ("page_size" = Option<i64>, Query, minimum = 1, maximum = 100, description = "Defaults to 50."),
+        ("sort_by" = Option<String>, Query, description = "Sort key, including cf_<field ID> for a custom field. Defaults to board_position."),
+        ("sort_dir" = Option<TaskSortDirection>, Query, description = "Defaults to asc."),
+        ("q" = Option<String>, Query, description = "Search task titles, descriptions and references."),
+        ("status" = Option<Vec<String>>, Query, style = Form, explode = true, description = "Repeat status for multiple values."),
+        ("assignee_id" = Option<String>, Query),
+        ("priority" = Option<String>, Query),
+        ("label_id" = Option<String>, Query),
+        ("milestone_id" = Option<String>, Query),
+        ("archived" = Option<bool>, Query),
+        ("due_date_from" = Option<String>, Query, format = Date),
+        ("due_date_to" = Option<String>, Query, format = Date),
+        ("start_date_from" = Option<String>, Query, format = Date),
+        ("start_date_to" = Option<String>, Query, format = Date),
+    ),
+    responses(
+        (status = 200, description = "Visible tasks in the list", body = TaskPage),
+        (status = 401, description = "Platform identity could not be verified", body = IdentityErrorResponse),
+        (status = 403, description = "The caller lacks access", body = ErrorResponse),
+        (status = 404, description = "The requested resource was not found", body = ErrorResponse),
+        (status = 409, description = "The current list or resource state conflicts with the request", body = ErrorResponse),
+        (status = 422, description = "Invalid request", body = ErrorResponse),
+        (status = 500, description = "Internal error", body = ErrorResponse),
+    )
+)]
 pub async fn list_tasks(
     State(pool): State<PgPool>,
     Extension(identity): Extension<Identity>,
     Path(list_id): Path<String>,
     params: Params,
-) -> ApiResult<Json<Value>> {
+) -> ApiResult<Json<TaskPage>> {
     let page = params.int("page", 1, 1, None)?;
     let page_size = params.int("page_size", 50, 1, Some(100))?;
     let sort_by = params.string("sort_by", "board_position");
@@ -712,9 +796,12 @@ pub async fn list_tasks(
         base.push(" LIMIT ").push_bind(page_size);
         let tasks: Vec<TaskRow> = base.build_query_as().fetch_all(&mut *conn).await?;
         let items = serialize_tasks(&mut conn, &identity, &tasks).await?;
-        return Ok(Json(json!({
-            "items": items, "total": total, "page": page, "page_size": page_size,
-        })));
+        return Ok(Json(TaskPage {
+            items,
+            total,
+            page,
+            page_size,
+        }));
     }
     let mut tasks: Vec<TaskRow> = base.build_query_as().fetch_all(&mut *conn).await?;
     if sort_by == "title" {
@@ -729,9 +816,12 @@ pub async fn list_tasks(
     }
     let (page_tasks, total) = paginate(&tasks, page, page_size);
     let items = serialize_tasks(&mut conn, &identity, &page_tasks).await?;
-    Ok(Json(json!({
-        "items": items, "total": total, "page": page, "page_size": page_size,
-    })))
+    Ok(Json(TaskPage {
+        items,
+        total: total as i64,
+        page,
+        page_size,
+    }))
 }
 
 /// Open tasks assigned to the caller in their active lists, sorted by due
@@ -791,11 +881,25 @@ async fn with_names(
 }
 
 /// `GET /v1/pms/tasks/assigned`.
+#[utoipa::path(
+    get, path = "/v1/pms/tasks/assigned", operation_id = "listPmsAssignedTasks", tag = "Tasks",
+    params(
+        ("page" = Option<i64>, Query, minimum = 1, description = "Omit to use limit and return page 1."),
+        ("page_size" = Option<i64>, Query, minimum = 1, maximum = 100, description = "Used with an explicit page. Defaults to 50."),
+        ("limit" = Option<i64>, Query, minimum = 1, maximum = 50, description = "Used when page is omitted. Defaults to 10."),
+    ),
+    responses(
+        (status = 200, description = "Open tasks assigned to the caller", body = TaskPage),
+        (status = 401, description = "Platform identity could not be verified", body = IdentityErrorResponse),
+        (status = 422, description = "Invalid request", body = ErrorResponse),
+        (status = 500, description = "Internal error", body = ErrorResponse),
+    )
+)]
 pub async fn list_assigned_tasks(
     State(pool): State<PgPool>,
     Extension(identity): Extension<Identity>,
     params: Params,
-) -> ApiResult<Json<Value>> {
+) -> ApiResult<Json<TaskPage>> {
     let limit = params.opt_int("limit", 1, Some(50))?.or(Some(10));
     let page = params.opt_int("page", 1, None)?;
     let page_size = params.int("page_size", 50, 1, Some(100))?;
@@ -819,21 +923,34 @@ pub async fn list_assigned_tasks(
         Some(page) => (paginate(&tasks, page, page_size).0, page, page_size),
     };
     let context = with_names(&identity, &selected, context).await;
-    let items: Vec<Value> = selected
+    let items = selected
         .iter()
         .map(|task| serialize_task(task, &context))
         .collect();
-    Ok(Json(json!({
-        "items": items, "total": total, "page": page, "page_size": page_size,
-    })))
+    Ok(Json(TaskPage {
+        items,
+        total: total as i64,
+        page,
+        page_size,
+    }))
 }
 
 /// `GET /v1/pms/tasks/today-overdue?today=YYYY-MM-DD`.
+#[utoipa::path(
+    get, path = "/v1/pms/tasks/today-overdue", operation_id = "listPmsTodayOverdueTasks", tag = "Tasks",
+    params(("today" = String, Query, format = Date), ("page" = Option<i64>, Query, minimum = 1, description = "Defaults to 1."), ("page_size" = Option<i64>, Query, minimum = 1, maximum = 100, description = "Defaults to 50.")),
+    responses(
+        (status = 200, description = "Assigned tasks due today or overdue", body = TaskPage),
+        (status = 401, description = "Platform identity could not be verified", body = IdentityErrorResponse),
+        (status = 422, description = "Invalid request", body = ErrorResponse),
+        (status = 500, description = "Internal error", body = ErrorResponse),
+    )
+)]
 pub async fn list_today_overdue_tasks(
     State(pool): State<PgPool>,
     Extension(identity): Extension<Identity>,
     params: Params,
-) -> ApiResult<Json<Value>> {
+) -> ApiResult<Json<TaskPage>> {
     let today = params
         .opt_date("today")?
         .ok_or_else(|| ApiError::validation("today: Field required"))?;
@@ -844,22 +961,35 @@ pub async fn list_today_overdue_tasks(
     drop(conn);
     let (selected, total) = paginate(&tasks, page, page_size);
     let context = with_names(&identity, &selected, context).await;
-    let items: Vec<Value> = selected
+    let items = selected
         .iter()
         .map(|task| serialize_task(task, &context))
         .collect();
-    Ok(Json(json!({
-        "items": items, "total": total, "page": page, "page_size": page_size,
-    })))
+    Ok(Json(TaskPage {
+        items,
+        total: total as i64,
+        page,
+        page_size,
+    }))
 }
 
 /// `GET /v1/personal-widgets/pms/tasks/assigned`: the floating PMS widget's
 /// list across every space, each task with its space.
+#[utoipa::path(
+    get, path = "/v1/personal-widgets/pms/tasks/assigned", operation_id = "listPmsPersonalWidgetAssignedTasks", tag = "Tasks",
+    params(("page" = Option<i64>, Query, minimum = 1, description = "Defaults to 1."), ("page_size" = Option<i64>, Query, minimum = 1, maximum = 100, description = "Defaults to 50.")),
+    responses(
+        (status = 200, description = "Assigned tasks and active workspace memberships", body = WidgetAssignmentsPage),
+        (status = 401, description = "Platform identity could not be verified", body = IdentityErrorResponse),
+        (status = 422, description = "Invalid request", body = ErrorResponse),
+        (status = 500, description = "Internal error", body = ErrorResponse),
+    )
+)]
 pub async fn list_personal_widget_assigned_tasks(
     State(pool): State<PgPool>,
     Extension(identity): Extension<Identity>,
     params: Params,
-) -> ApiResult<Json<Value>> {
+) -> ApiResult<Json<WidgetAssignmentsPage>> {
     let page = params.int("page", 1, 1, None)?;
     let page_size = params.int("page_size", 50, 1, Some(100))?;
     let mut conn = pool.acquire().await?;
@@ -872,9 +1002,13 @@ pub async fn list_personal_widget_assigned_tasks(
     .fetch_all(&mut *conn)
     .await?;
     if spaces.is_empty() {
-        return Ok(Json(json!({
-            "items": [], "total": 0, "page": page, "page_size": page_size, "workspaces": [],
-        })));
+        return Ok(Json(WidgetAssignmentsPage {
+            items: Vec::new(),
+            total: 0,
+            page,
+            page_size,
+            workspaces: Vec::new(),
+        }));
     }
     let (tasks, context) = assigned_open_tasks(&mut conn, &identity.user_id, None).await?;
     drop(conn);
@@ -884,68 +1018,121 @@ pub async fn list_personal_widget_assigned_tasks(
         .iter()
         .map(|space| (space.0.as_str(), space))
         .collect();
-    let items: Vec<Value> = selected
+    let items = selected
         .iter()
         .map(|task| {
-            let mut value = serialize_task(task, &context);
-            let space = context
+            let workspace = context
                 .lists
                 .get(&task.list_id)
                 .and_then(|list| list.team_id.as_deref())
-                .and_then(|team| by_id.get(team));
-            if let (Some(space), Value::Object(map)) = (space, &mut value) {
-                map.insert(
-                    "workspace".into(),
-                    json!({"id": space.0, "slug": space.1, "name": space.2}),
-                );
+                .and_then(|team| by_id.get(team))
+                .map(|space| WidgetWorkspace {
+                    id: space.0.clone(),
+                    slug: space.1.clone(),
+                    name: space.2.clone(),
+                });
+            WidgetAssignedTask {
+                task: serialize_task(task, &context),
+                workspace,
             }
-            value
         })
         .collect();
-    Ok(Json(json!({
-        "items": items,
-        "total": total,
-        "page": page,
-        "page_size": page_size,
-        "workspaces": spaces.iter().map(|(id, key, name, role)| json!({
-            "id": id, "slug": key, "name": name,
-            "role": access::normalize_role(role).unwrap_or_else(|| role.clone()),
-        })).collect::<Vec<_>>(),
-    })))
+    let workspaces = spaces
+        .into_iter()
+        .map(|(id, slug, name, role)| WidgetWorkspaceMembership {
+            workspace: WidgetWorkspace { id, slug, name },
+            role: access::normalize_role(&role).unwrap_or(role),
+        })
+        .collect();
+    Ok(Json(WidgetAssignmentsPage {
+        items,
+        total,
+        page,
+        page_size,
+        workspaces,
+    }))
 }
 
 // ── Detail ─────────────────────────────────────────────────────────────
 
-pub fn serialize_comment(comment: &CommentRow, names: &HashMap<String, String>) -> Value {
-    json!({
-        "id": comment.id,
-        "task_id": comment.task_id,
-        "author_id": comment.author_id,
-        "author_name": names.get(&comment.author_id).cloned().unwrap_or_else(|| comment.author_id.clone()),
-        "body": comment.body,
-        "body_blocks": comment.body_blocks,
-        "created_at": iso_datetime(&comment.created_at),
-    })
+#[derive(Serialize, utoipa::ToSchema)]
+pub struct TaskComment {
+    id: String,
+    task_id: String,
+    author_id: String,
+    author_name: String,
+    body: String,
+    #[schema(value_type = Option<Vec<HashMap<String, Value>>>, required = true)]
+    body_blocks: Option<Value>,
+    created_at: String,
 }
 
-pub fn serialize_checklist_item(item: &ChecklistRow) -> Value {
-    json!({
-        "id": item.id,
-        "task_id": item.task_id,
-        "text": item.text,
-        "completed": item.completed,
-        "sort_order": item.sort_order,
-        "created_at": iso_datetime(&item.created_at),
-    })
+#[derive(Serialize, utoipa::ToSchema)]
+pub struct TaskChecklistItem {
+    id: String,
+    task_id: String,
+    text: String,
+    completed: bool,
+    sort_order: i32,
+    created_at: String,
+}
+
+#[derive(Serialize, utoipa::ToSchema)]
+pub struct TaskDetail {
+    task: TaskSummary,
+    comments: Vec<TaskComment>,
+    /// Currently empty. The task detail does not populate linked documents.
+    #[schema(max_items = 0)]
+    linked_docs: Vec<Value>,
+    subtasks: Vec<TaskSummary>,
+    attachments: Vec<attachments::TaskAttachment>,
+    checklist_items: Vec<TaskChecklistItem>,
+}
+
+pub fn serialize_comment(comment: &CommentRow, names: &HashMap<String, String>) -> TaskComment {
+    TaskComment {
+        id: comment.id.clone(),
+        task_id: comment.task_id.clone(),
+        author_id: comment.author_id.clone(),
+        author_name: names
+            .get(&comment.author_id)
+            .cloned()
+            .unwrap_or_else(|| comment.author_id.clone()),
+        body: comment.body.clone(),
+        body_blocks: comment.body_blocks.clone(),
+        created_at: iso_datetime(&comment.created_at),
+    }
+}
+
+pub fn serialize_checklist_item(item: &ChecklistRow) -> TaskChecklistItem {
+    TaskChecklistItem {
+        id: item.id.clone(),
+        task_id: item.task_id.clone(),
+        text: item.text.clone(),
+        completed: item.completed,
+        sort_order: item.sort_order,
+        created_at: iso_datetime(&item.created_at),
+    }
 }
 
 /// `GET /v1/pms/tasks/{task_id}`: the caller's notification line for this
 /// task is marked read (miy).
+#[utoipa::path(
+    get, path = "/v1/pms/tasks/{task_id}", operation_id = "getPmsTask", tag = "Tasks",
+    params(("task_id" = String, Path)),
+    responses(
+        (status = 200, description = "Task and its visible related records", body = TaskDetail),
+        (status = 401, description = "Platform identity could not be verified", body = IdentityErrorResponse),
+        (status = 403, description = "The caller lacks access", body = ErrorResponse),
+        (status = 404, description = "The requested resource was not found", body = ErrorResponse),
+        (status = 500, description = "Internal error", body = ErrorResponse),
+    )
+)]
 pub async fn get_task(
     State(pool): State<PgPool>,
     Extension(identity): Extension<Identity>,
     Path(task_id): Path<String>,
-) -> ApiResult<Json<Value>> {
+) -> ApiResult<Json<TaskDetail>> {
     let mut conn = pool.acquire().await?;
     let mut task = ensure_task_readable(&mut conn, &identity.user_id, &task_id).await?;
     if let Some(parent_id) = task.parent_id.as_deref()
@@ -993,20 +1180,184 @@ pub async fn get_task(
     people.sort();
     people.dedup();
     context.names = users::names(&identity, &people).await;
-    let response = json!({
-        "task": serialize_task(&task, &context),
-        "comments": comments.iter().map(|c| serialize_comment(c, &context.names)).collect::<Vec<_>>(),
-        // Docs links are not ported (the Docs app comes later).
-        "linked_docs": [],
-        "subtasks": subtasks.iter().map(|s| serialize_task(s, &context)).collect::<Vec<_>>(),
-        "attachments": attachment_rows.iter().map(|a| attachments::serialize(a, &context.names)).collect::<Vec<_>>(),
-        "checklist_items": checklist.iter().map(serialize_checklist_item).collect::<Vec<_>>(),
-    });
+    let response = TaskDetail {
+        task: serialize_task(&task, &context),
+        comments: comments
+            .iter()
+            .map(|c| serialize_comment(c, &context.names))
+            .collect(),
+        linked_docs: Vec::new(),
+        subtasks: subtasks
+            .iter()
+            .map(|s| serialize_task(s, &context))
+            .collect(),
+        attachments: attachment_rows
+            .iter()
+            .map(|a| attachments::serialize(a, &context.names))
+            .collect(),
+        checklist_items: checklist.iter().map(serialize_checklist_item).collect(),
+    };
     notify::mark_read(&pool, &identity, &task.id).await;
     Ok(Json(response))
 }
 
 // ── Create and update ──────────────────────────────────────────────────
+
+// `Body` retains the existing coercion and omitted-vs-null behavior. These
+// request schemas describe the canonical JSON to send through the API.
+#[allow(dead_code)]
+#[derive(utoipa::ToSchema)]
+#[schema(rename_all = "snake_case")]
+enum TaskPriorityInput {
+    Low,
+    Medium,
+    High,
+    Critical,
+}
+
+#[allow(dead_code)]
+#[derive(Deserialize, utoipa::ToSchema)]
+#[serde(deny_unknown_fields)]
+struct CreateTaskRequest {
+    #[schema(min_length = 2, max_length = 180)]
+    title: String,
+    #[schema(value_type = String, required = false, max_length = 4000)]
+    description: Option<String>,
+    description_blocks: Option<Vec<HashMap<String, Value>>>,
+    /// Defaults to `todo`.
+    #[schema(value_type = String, required = false)]
+    status: Option<String>,
+    /// Defaults to `medium`.
+    #[schema(value_type = TaskPriorityInput, required = false)]
+    priority: Option<String>,
+    assignee_id: Option<String>,
+    #[schema(max_items = 20)]
+    assignee_ids: Option<Vec<String>>,
+    milestone_id: Option<String>,
+    parent_id: Option<String>,
+    #[schema(format = Date)]
+    start_date: Option<String>,
+    #[schema(format = Date)]
+    due_date: Option<String>,
+    #[schema(format = Date)]
+    completed_date: Option<String>,
+    #[schema(max_length = 120)]
+    recurrence_rule: Option<String>,
+    label_ids: Option<Vec<String>>,
+    template_id: Option<String>,
+}
+
+#[allow(dead_code)]
+#[derive(Deserialize, utoipa::ToSchema)]
+#[serde(deny_unknown_fields)]
+struct UpdateTaskRequest {
+    #[schema(min_length = 2, max_length = 180)]
+    title: Option<String>,
+    #[schema(max_length = 4000)]
+    description: Option<String>,
+    description_blocks: Option<Vec<HashMap<String, Value>>>,
+    parent_id: Option<String>,
+    status: Option<String>,
+    #[schema(value_type = Option<TaskPriorityInput>)]
+    priority: Option<String>,
+    assignee_id: Option<String>,
+    #[schema(max_items = 20)]
+    assignee_ids: Option<Vec<String>>,
+    milestone_id: Option<String>,
+    #[schema(format = Date)]
+    start_date: Option<String>,
+    #[schema(format = Date)]
+    due_date: Option<String>,
+    #[schema(format = Date)]
+    completed_date: Option<String>,
+    board_position: Option<i64>,
+    archived: Option<bool>,
+    #[schema(max_length = 120)]
+    recurrence_rule: Option<String>,
+    label_ids: Option<Vec<String>>,
+}
+
+#[allow(dead_code)]
+#[derive(Deserialize, utoipa::ToSchema)]
+#[serde(deny_unknown_fields)]
+struct TaskMoveRequest {
+    task_id: String,
+    #[schema(minimum = 0)]
+    board_position: i64,
+    /// Omit to keep the current parent. Use null to move the task to the top level.
+    parent_id: Option<String>,
+}
+
+#[allow(dead_code)]
+#[derive(Deserialize, utoipa::ToSchema)]
+#[serde(deny_unknown_fields)]
+struct ReorderTasksRequest {
+    #[schema(min_items = 1, max_items = 500)]
+    items: Vec<TaskMoveRequest>,
+}
+
+#[allow(dead_code)]
+#[derive(utoipa::ToSchema)]
+#[schema(rename_all = "snake_case")]
+enum TaskSortDirection {
+    Asc,
+    Desc,
+}
+
+#[allow(dead_code)]
+#[derive(Deserialize, utoipa::ToSchema)]
+#[serde(deny_unknown_fields)]
+struct ReorderTasksByTitleRequest {
+    /// Defaults to `asc`.
+    #[schema(value_type = TaskSortDirection, required = false)]
+    sort_dir: Option<String>,
+}
+
+#[allow(dead_code)]
+#[derive(utoipa::ToSchema)]
+struct BulkUpdateTasksRequest {
+    #[schema(min_items = 1, max_items = 200)]
+    task_ids: Vec<String>,
+    status: Option<String>,
+    #[schema(value_type = Option<TaskPriorityInput>)]
+    priority: Option<String>,
+    assignee_id: Option<String>,
+    add_label_ids: Option<Vec<String>>,
+    remove_label_ids: Option<Vec<String>>,
+    archived: Option<bool>,
+    #[schema(format = Date)]
+    start_date: Option<String>,
+    #[schema(format = Date)]
+    due_date: Option<String>,
+    /// Defaults to false. If true, delete the selected tasks and their subtasks.
+    delete: Option<bool>,
+}
+
+#[allow(dead_code)]
+#[derive(utoipa::ToSchema)]
+struct CreateTaskCommentRequest {
+    /// Defaults to an empty string.
+    #[schema(value_type = String, required = false, max_length = 4000)]
+    body: Option<String>,
+    body_blocks: Option<Vec<HashMap<String, Value>>>,
+}
+
+#[derive(Serialize, utoipa::ToSchema)]
+pub struct ReorderTasksResponse {
+    updated_count: usize,
+    items: Vec<TaskSummary>,
+}
+
+#[derive(Serialize, utoipa::ToSchema)]
+pub struct ReorderTasksByTitleResponse {
+    updated_count: usize,
+}
+
+#[derive(Serialize, utoipa::ToSchema)]
+pub struct BulkUpdateTasksResponse {
+    updated_count: usize,
+    deleted_count: usize,
+}
 
 const CREATE_FIELDS: &[&str] = &[
     "title",
@@ -1029,6 +1380,21 @@ const CREATE_FIELDS: &[&str] = &[
 /// `POST /v1/pms/lists/{list_id}/tasks`. miy: with `template_id` (a template
 /// of the list's space) the task also gets the template's checklist, labels and
 /// subtasks; the other fields come from the request as usual.
+#[utoipa::path(
+    post, path = "/v1/pms/lists/{list_id}/tasks", operation_id = "createPmsTask", tag = "Tasks",
+    params(("list_id" = String, Path)),
+    request_body = CreateTaskRequest,
+    responses(
+        (status = 201, description = "Created task", body = TaskSummary),
+        (status = 400, description = "The selection or related fields are invalid", body = ErrorResponse),
+        (status = 401, description = "Platform identity could not be verified", body = IdentityErrorResponse),
+        (status = 403, description = "The caller lacks access", body = ErrorResponse),
+        (status = 404, description = "The requested resource was not found", body = ErrorResponse),
+        (status = 409, description = "The current list or resource state conflicts with the request", body = ErrorResponse),
+        (status = 422, description = "Invalid request", body = ErrorResponse),
+        (status = 500, description = "Internal error", body = ErrorResponse),
+    )
+)]
 pub async fn create_task(
     State(pool): State<PgPool>,
     Extension(identity): Extension<Identity>,
@@ -1407,7 +1773,7 @@ pub async fn apply_task_update(
     identity: &Identity,
     task_id: &str,
     update: TaskUpdate,
-) -> ApiResult<Value> {
+) -> ApiResult<TaskSummary> {
     let mut effective = update.provided.clone();
     if effective.contains("assignee_ids") {
         effective.insert("assignee_id".into());
@@ -1648,12 +2014,28 @@ pub async fn apply_task_update(
 }
 
 /// `PATCH /v1/pms/tasks/{task_id}`.
+#[utoipa::path(
+    patch, path = "/v1/pms/tasks/{task_id}", operation_id = "updatePmsTask", tag = "Tasks",
+    description = "Omitted fields retain their current values. Null clears nullable values such as assignees and due dates.",
+    params(("task_id" = String, Path)),
+    request_body = UpdateTaskRequest,
+    responses(
+        (status = 200, description = "Updated task", body = TaskSummary),
+        (status = 400, description = "The selection or related fields are invalid", body = ErrorResponse),
+        (status = 401, description = "Platform identity could not be verified", body = IdentityErrorResponse),
+        (status = 403, description = "The caller lacks access", body = ErrorResponse),
+        (status = 404, description = "The requested resource was not found", body = ErrorResponse),
+        (status = 409, description = "The current list or resource state conflicts with the request", body = ErrorResponse),
+        (status = 422, description = "Invalid request", body = ErrorResponse),
+        (status = 500, description = "Internal error", body = ErrorResponse),
+    )
+)]
 pub async fn update_task(
     State(pool): State<PgPool>,
     Extension(identity): Extension<Identity>,
     Path(task_id): Path<String>,
     body: Body,
-) -> ApiResult<Json<Value>> {
+) -> ApiResult<Json<TaskSummary>> {
     let update = TaskUpdate::parse(&body)?;
     Ok(Json(
         apply_task_update(&pool, &identity, &task_id, update).await?,
@@ -1663,12 +2045,27 @@ pub async fn update_task(
 // ── Reorder ────────────────────────────────────────────────────────────
 
 /// `PATCH /v1/pms/lists/{list_id}/tasks/reorder`.
+#[utoipa::path(
+    patch, path = "/v1/pms/lists/{list_id}/tasks/reorder", operation_id = "reorderPmsTasks", tag = "Tasks",
+    params(("list_id" = String, Path)),
+    request_body = ReorderTasksRequest,
+    responses(
+        (status = 200, description = "Number and current state of moved tasks", body = ReorderTasksResponse),
+        (status = 400, description = "The selection or related fields are invalid", body = ErrorResponse),
+        (status = 401, description = "Platform identity could not be verified", body = IdentityErrorResponse),
+        (status = 403, description = "The caller lacks access", body = ErrorResponse),
+        (status = 404, description = "The requested resource was not found", body = ErrorResponse),
+        (status = 409, description = "The current list or resource state conflicts with the request", body = ErrorResponse),
+        (status = 422, description = "Invalid request", body = ErrorResponse),
+        (status = 500, description = "Internal error", body = ErrorResponse),
+    )
+)]
 pub async fn reorder_tasks(
     State(pool): State<PgPool>,
     Extension(identity): Extension<Identity>,
     Path(list_id): Path<String>,
     body: Body,
-) -> ApiResult<Json<Value>> {
+) -> ApiResult<Json<ReorderTasksResponse>> {
     body.forbid_extra(&["items"])?;
     let items = match body.0.get("items") {
         Some(Value::Array(items)) => items.clone(),
@@ -1812,17 +2209,34 @@ pub async fn reorder_tasks(
         .collect();
     let items = serialize_tasks(&mut tx, &identity, &rows).await?;
     tx.commit().await?;
-    Ok(Json(json!({"updated_count": items.len(), "items": items})))
+    Ok(Json(ReorderTasksResponse {
+        updated_count: items.len(),
+        items,
+    }))
 }
 
 /// `PATCH /v1/pms/lists/{list_id}/tasks/reorder-by-title`: saves name order
 /// as the custom order (parents before their subtasks); `updated_at` kept.
+#[utoipa::path(
+    patch, path = "/v1/pms/lists/{list_id}/tasks/reorder-by-title", operation_id = "reorderPmsTasksByTitle", tag = "Tasks",
+    params(("list_id" = String, Path)),
+    request_body = ReorderTasksByTitleRequest,
+    responses(
+        (status = 200, description = "Number of changed positions", body = ReorderTasksByTitleResponse),
+        (status = 401, description = "Platform identity could not be verified", body = IdentityErrorResponse),
+        (status = 403, description = "The caller lacks access", body = ErrorResponse),
+        (status = 404, description = "The requested resource was not found", body = ErrorResponse),
+        (status = 409, description = "The current list or resource state conflicts with the request", body = ErrorResponse),
+        (status = 422, description = "Invalid request", body = ErrorResponse),
+        (status = 500, description = "Internal error", body = ErrorResponse),
+    )
+)]
 pub async fn reorder_tasks_by_title(
     State(pool): State<PgPool>,
     Extension(identity): Extension<Identity>,
     Path(list_id): Path<String>,
     body: Body,
-) -> ApiResult<Json<Value>> {
+) -> ApiResult<Json<ReorderTasksByTitleResponse>> {
     body.forbid_extra(&["sort_dir"])?;
     let sort_dir = body.str_or("sort_dir", "asc")?;
     check_choice("sort_dir", &sort_dir, &["asc", "desc"])?;
@@ -1858,7 +2272,9 @@ pub async fn reorder_tasks_by_title(
         }
     }
     tx.commit().await?;
-    Ok(Json(json!({"updated_count": moved})))
+    Ok(Json(ReorderTasksByTitleResponse {
+        updated_count: moved,
+    }))
 }
 
 /// Parents first, each followed by its subtasks, keeping the given order
@@ -1899,12 +2315,27 @@ pub fn tree_order(rows: &[TaskRow]) -> Vec<TaskRow> {
 pub const BULK_UPDATE_MAX_TASKS: usize = 200;
 
 /// `PATCH /v1/pms/lists/{list_id}/tasks/bulk`.
+#[utoipa::path(
+    patch, path = "/v1/pms/lists/{list_id}/tasks/bulk", operation_id = "bulkUpdatePmsTasks", tag = "Tasks",
+    params(("list_id" = String, Path)),
+    request_body = BulkUpdateTasksRequest,
+    responses(
+        (status = 200, description = "Numbers of updated and deleted tasks", body = BulkUpdateTasksResponse),
+        (status = 400, description = "The selection or related fields are invalid", body = ErrorResponse),
+        (status = 401, description = "Platform identity could not be verified", body = IdentityErrorResponse),
+        (status = 403, description = "The caller lacks access", body = ErrorResponse),
+        (status = 404, description = "The requested resource was not found", body = ErrorResponse),
+        (status = 409, description = "The current list or resource state conflicts with the request", body = ErrorResponse),
+        (status = 422, description = "Invalid request", body = ErrorResponse),
+        (status = 500, description = "Internal error", body = ErrorResponse),
+    )
+)]
 pub async fn bulk_update_tasks(
     State(pool): State<PgPool>,
     Extension(identity): Extension<Identity>,
     Path(list_id): Path<String>,
     body: Body,
-) -> ApiResult<Json<Value>> {
+) -> ApiResult<Json<BulkUpdateTasksResponse>> {
     let task_ids = body
         .opt_str_list("task_ids")?
         .ok_or_else(|| ApiError::validation("task_ids: Field required"))?;
@@ -1953,9 +2384,10 @@ pub async fn bulk_update_tasks(
         delete_task_rows(&mut tx, &deleted).await?;
         tx.commit().await?;
         after_tasks_deleted(&pool, &identity, &deleted).await;
-        return Ok(Json(
-            json!({"updated_count": 0, "deleted_count": deleted.len()}),
-        ));
+        return Ok(Json(BulkUpdateTasksResponse {
+            updated_count: 0,
+            deleted_count: deleted.len(),
+        }));
     }
     let workflow = list_workflow(&mut tx, &list.id).await?;
     let labels: HashSet<String> =
@@ -2187,7 +2619,10 @@ pub async fn bulk_update_tasks(
         }
     }
     tx.commit().await?;
-    Ok(Json(json!({"updated_count": updated, "deleted_count": 0})))
+    Ok(Json(BulkUpdateTasksResponse {
+        updated_count: updated,
+        deleted_count: 0,
+    }))
 }
 
 /// Find and lock the current descendants while the caller holds the list lock.
@@ -2231,6 +2666,18 @@ pub async fn after_tasks_deleted(pool: &PgPool, identity: &Identity, task_ids: &
 }
 
 /// `DELETE /v1/pms/tasks/{task_id}`.
+#[utoipa::path(
+    delete, path = "/v1/pms/tasks/{task_id}", operation_id = "deletePmsTask", tag = "Tasks",
+    params(("task_id" = String, Path)),
+    responses(
+        (status = 204, description = "Task and its subtask tree deleted"),
+        (status = 401, description = "Platform identity could not be verified", body = IdentityErrorResponse),
+        (status = 403, description = "The caller lacks access", body = ErrorResponse),
+        (status = 404, description = "The requested resource was not found", body = ErrorResponse),
+        (status = 409, description = "The current list or resource state conflicts with the request", body = ErrorResponse),
+        (status = 500, description = "Internal error", body = ErrorResponse),
+    )
+)]
 pub async fn delete_task(
     State(pool): State<PgPool>,
     Extension(identity): Extension<Identity>,
@@ -2316,6 +2763,20 @@ pub fn mentions_in_text(text: &str) -> Vec<String> {
 }
 
 /// `POST /v1/pms/tasks/{task_id}/comments`.
+#[utoipa::path(
+    post, path = "/v1/pms/tasks/{task_id}/comments", operation_id = "createPmsTaskComment", tag = "Tasks",
+    params(("task_id" = String, Path)),
+    request_body = CreateTaskCommentRequest,
+    responses(
+        (status = 201, description = "Created comment", body = TaskComment),
+        (status = 401, description = "Platform identity could not be verified", body = IdentityErrorResponse),
+        (status = 403, description = "The caller lacks access", body = ErrorResponse),
+        (status = 404, description = "The requested resource was not found", body = ErrorResponse),
+        (status = 409, description = "The current list or resource state conflicts with the request", body = ErrorResponse),
+        (status = 422, description = "Invalid request", body = ErrorResponse),
+        (status = 500, description = "Internal error", body = ErrorResponse),
+    )
+)]
 pub async fn create_comment(
     State(pool): State<PgPool>,
     Extension(identity): Extension<Identity>,

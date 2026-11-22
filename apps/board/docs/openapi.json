@@ -1,0 +1,5010 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "게시판 API",
+    "version": "0.1.0"
+  },
+  "paths": {
+    "/files/community/posts/{post_id}/media/{media_id}": {
+      "post": {
+        "summary": "`POST /files/community/posts/{post_id}/media/{id}`: AI-DO's\n`resolve_post_media_urls` for one image, answering the bytes. A secret\npost accepts its password here.",
+        "operationId": "getCommunityPostMedia",
+        "parameters": [
+          {
+            "name": "post_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "media_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PostMediaRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Image bytes",
+            "headers": {
+              "Content-Disposition": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Attachment filename"
+              },
+              "Content-Length": {
+                "schema": {
+                  "type": "integer",
+                  "format": "int64",
+                  "minimum": 0
+                },
+                "description": "Number of image bytes"
+              },
+              "Content-Security-Policy": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Sandbox policy"
+              },
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Stored file entity tag"
+              },
+              "X-Content-Type-Options": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "nosniff"
+              },
+              "X-Miy-File-Id": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Core file ID"
+              },
+              "X-Miy-File-Sha256": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "SHA-256 digest"
+              },
+              "X-Miy-File-Version": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Core file version"
+              }
+            },
+            "content": {
+              "image/png": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              },
+              "image/jpeg": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              },
+              "image/gif": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              },
+              "image/webp": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Valid gateway identity required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GatewayIdentityError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Permission denied",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Requested resource was not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Request body exceeds the size limit",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Request validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A required service is unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/files/media/{media_id}/content": {
+      "get": {
+        "summary": "`GET /files/media/{id}/content`: the uploader's own image (editor preview)\nor an image of a post or comment the caller can read without a password.",
+        "operationId": "getBoardMedia",
+        "parameters": [
+          {
+            "name": "media_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Image bytes",
+            "headers": {
+              "Content-Disposition": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Attachment filename"
+              },
+              "Content-Length": {
+                "schema": {
+                  "type": "integer",
+                  "format": "int64",
+                  "minimum": 0
+                },
+                "description": "Number of image bytes"
+              },
+              "Content-Security-Policy": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Sandbox policy"
+              },
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Stored file entity tag"
+              },
+              "X-Content-Type-Options": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "nosniff"
+              },
+              "X-Miy-File-Id": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Core file ID"
+              },
+              "X-Miy-File-Sha256": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "SHA-256 digest"
+              },
+              "X-Miy-File-Version": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Core file version"
+              }
+            },
+            "content": {
+              "image/png": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              },
+              "image/jpeg": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              },
+              "image/gif": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              },
+              "image/webp": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Valid gateway identity required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GatewayIdentityError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Requested resource was not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A required service is unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "summary": "`PUT /files/media/{id}/content`: the uploader streams the reserved bytes.",
+        "description": "Streams the raw bytes of a reserved image through the app file gateway. The reservation and stored image are limited to 10 MiB.",
+        "operationId": "uploadBoardMedia",
+        "parameters": [
+          {
+            "name": "media_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/octet-stream": {
+              "schema": {
+                "type": "string",
+                "format": "binary"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Image stored; status is ready",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UploadResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Valid gateway identity required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GatewayIdentityError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Requested resource was not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A required service is unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/platform/home-card": {
+      "post": {
+        "summary": "`POST /platform/home-card`: the person's notice card on the portal home.\nAt most five notices they may read, pinned first then newest. Read-only,\napp DB only (space membership through user grants or signed groups, as\nabove). The body\ncarries the person's display settings; only the language is used, for the\ncard and company labels (Korean unless `en-US`).",
+        "operationId": "getBoardHomeCard",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/HomeCardRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HomeCard"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Valid gateway identity required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GatewayIdentityError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Permission denied",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Request body exceeds the size limit",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A required service is unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/platform/notification-check": {
+      "post": {
+        "summary": "`POST /platform/notification-check`: which of the person's notification\ngroups still point at something they may open. Read-only and answered from\nthe app DB: a platform call carries no token for directory calls, so space\nmembership through a group uses the group IDs the Core signed into the\ncall (`identity.context.groups`; none without directory approval).",
+        "operationId": "checkBoardNotifications",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CheckRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CheckResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Valid gateway identity required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GatewayIdentityError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Permission denied",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Request validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A required service is unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/announcements": {
+      "get": {
+        "operationId": "listCompanyAnnouncements",
+        "parameters": [
+          {
+            "name": "scope",
+            "in": "query",
+            "description": "Supply company for the company-wide route",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/CompanyAnnouncementScope"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Page size (default 20)",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "maximum": 100,
+              "minimum": 1
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "description": "Results to skip (default 0)",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnnouncementsResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request for this resource",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Valid gateway identity required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GatewayIdentityError"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Request validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "createCompanyAnnouncement",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateCompanyAnnouncementRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnnouncementOut"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request for this resource",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Valid gateway identity required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GatewayIdentityError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Permission denied",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Request validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/announcements/{announcement_id}": {
+      "get": {
+        "operationId": "getCompanyAnnouncement",
+        "parameters": [
+          {
+            "name": "announcement_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnnouncementOut"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Valid gateway identity required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GatewayIdentityError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Requested resource was not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "deleteCompanyAnnouncement",
+        "parameters": [
+          {
+            "name": "announcement_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No content"
+          },
+          "401": {
+            "description": "Valid gateway identity required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GatewayIdentityError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Permission denied",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Requested resource was not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "operationId": "updateCompanyAnnouncement",
+        "parameters": [
+          {
+            "name": "announcement_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnnouncementOut"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Valid gateway identity required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GatewayIdentityError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Permission denied",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Requested resource was not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Request validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/board/managers": {
+      "get": {
+        "operationId": "listBoardManagers",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagersResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Valid gateway identity required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GatewayIdentityError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Permission denied",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "addBoardManager",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ManagerAddRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Created"
+          },
+          "400": {
+            "description": "Invalid request for this resource",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Valid gateway identity required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GatewayIdentityError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Permission denied",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Request validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/board/managers/bootstrap": {
+      "post": {
+        "operationId": "bootstrapBoardManager",
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BoardMe"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Valid gateway identity required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GatewayIdentityError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Current state conflicts with the request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/board/managers/{user_id}": {
+      "delete": {
+        "operationId": "removeBoardManager",
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No content"
+          },
+          "401": {
+            "description": "Valid gateway identity required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GatewayIdentityError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Permission denied",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Requested resource was not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Current state conflicts with the request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/board/me": {
+      "get": {
+        "operationId": "getBoardMe",
+        "responses": {
+          "200": {
+            "description": "Board access for the current user",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BoardMe"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Valid gateway identity required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GatewayIdentityError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/board/notices/recent": {
+      "get": {
+        "summary": "`GET /v1/board/notices/recent?limit=`: the newest notices the caller may\nread (company notices and notices of spaces they belong to), for the\nportal home notice card (M5). Read-only.",
+        "operationId": "listRecentBoardNotices",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Number of notices to return (default 5)",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "maximum": 20,
+              "minimum": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecentNoticesResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Valid gateway identity required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GatewayIdentityError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Permission denied",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Request validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A required service is unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/community/admin/channels": {
+      "get": {
+        "operationId": "listAdminCommunityChannels",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChannelsResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Valid gateway identity required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GatewayIdentityError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Permission denied",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "createCommunityChannel",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChannelRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChannelOut"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Valid gateway identity required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GatewayIdentityError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Permission denied",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Current state conflicts with the request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Request validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/community/admin/channels/{channel_key}": {
+      "delete": {
+        "operationId": "deleteCommunityChannel",
+        "parameters": [
+          {
+            "name": "channel_key",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No content"
+          },
+          "401": {
+            "description": "Valid gateway identity required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GatewayIdentityError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Permission denied",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Requested resource was not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Current state conflicts with the request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "operationId": "updateCommunityChannel",
+        "parameters": [
+          {
+            "name": "channel_key",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChannelRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChannelOut"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Valid gateway identity required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GatewayIdentityError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Permission denied",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Requested resource was not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Current state conflicts with the request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Request validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/community/admin/filter-terms": {
+      "get": {
+        "operationId": "listCommunityFilterTerms",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FilterTermList"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Valid gateway identity required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GatewayIdentityError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Permission denied",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "createCommunityFilterTerm",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FilterTermCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FilterTermItem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Valid gateway identity required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GatewayIdentityError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Permission denied",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Current state conflicts with the request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Request validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/community/admin/filter-terms/{term_id}": {
+      "delete": {
+        "operationId": "deleteCommunityFilterTerm",
+        "parameters": [
+          {
+            "name": "term_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No content"
+          },
+          "401": {
+            "description": "Valid gateway identity required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GatewayIdentityError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Permission denied",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Requested resource was not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/community/channels": {
+      "get": {
+        "operationId": "listCommunityChannels",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChannelsResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Valid gateway identity required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GatewayIdentityError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/community/channels/{channel_key}/posts": {
+      "get": {
+        "operationId": "listCommunityPosts",
+        "parameters": [
+          {
+            "name": "channel_key",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "description": "Page number (default 1)",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "page_size",
+            "in": "query",
+            "description": "Page size (default 10)",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "maximum": 100,
+              "minimum": 1
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "description": "Post title, author, or number",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 120
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostListResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Valid gateway identity required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GatewayIdentityError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Requested resource was not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Request validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "createCommunityPost",
+        "parameters": [
+          {
+            "name": "channel_key",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PostCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostOut"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request for this resource",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Valid gateway identity required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GatewayIdentityError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Permission denied",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Requested resource was not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Current state conflicts with the request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Request validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/community/posts/{post_id}": {
+      "get": {
+        "operationId": "getCommunityPost",
+        "parameters": [
+          {
+            "name": "post_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostDetail"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Valid gateway identity required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GatewayIdentityError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Requested resource was not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "deleteCommunityPost",
+        "parameters": [
+          {
+            "name": "post_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No content"
+          },
+          "401": {
+            "description": "Valid gateway identity required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GatewayIdentityError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Permission denied",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Requested resource was not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "operationId": "updateCommunityPost",
+        "parameters": [
+          {
+            "name": "post_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PostUpdateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostOut"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Valid gateway identity required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GatewayIdentityError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Permission denied",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Requested resource was not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Request validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/community/posts/{post_id}/comments": {
+      "post": {
+        "operationId": "createCommunityComment",
+        "parameters": [
+          {
+            "name": "post_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CommentCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommentOut"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Valid gateway identity required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GatewayIdentityError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Permission denied",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Requested resource was not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Request validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/community/posts/{post_id}/comments/{comment_id}": {
+      "delete": {
+        "operationId": "deleteCommunityComment",
+        "parameters": [
+          {
+            "name": "post_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "comment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No content"
+          },
+          "401": {
+            "description": "Valid gateway identity required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GatewayIdentityError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Permission denied",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Requested resource was not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "operationId": "updateCommunityComment",
+        "parameters": [
+          {
+            "name": "post_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "comment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CommentUpdateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommentOut"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Valid gateway identity required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GatewayIdentityError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Permission denied",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Requested resource was not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Request validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/community/posts/{post_id}/read": {
+      "post": {
+        "operationId": "markCommunityPostRead",
+        "parameters": [
+          {
+            "name": "post_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No content"
+          },
+          "401": {
+            "description": "Valid gateway identity required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GatewayIdentityError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Permission denied",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Requested resource was not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/community/posts/{post_id}/unlock": {
+      "post": {
+        "operationId": "unlockCommunityPost",
+        "parameters": [
+          {
+            "name": "post_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UnlockRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostDetail"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Valid gateway identity required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GatewayIdentityError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Permission denied",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Requested resource was not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Request validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/media/upload": {
+      "post": {
+        "operationId": "reserveBoardMedia",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UploadRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UploadResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request for this resource",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Valid gateway identity required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GatewayIdentityError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Current state conflicts with the request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Image exceeds 10 MiB",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Request validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A required service is unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/spaces": {
+      "get": {
+        "operationId": "listBoardSpaces",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SpacesResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Valid gateway identity required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GatewayIdentityError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Permission denied",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A required service is unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "createBoardSpace",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SpaceRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SpaceOut"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request for this resource",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Valid gateway identity required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GatewayIdentityError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Permission denied",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Current state conflicts with the request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Request validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A required service is unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/spaces/{space_id}": {
+      "delete": {
+        "operationId": "deleteBoardSpace",
+        "parameters": [
+          {
+            "name": "space_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No content"
+          },
+          "401": {
+            "description": "Valid gateway identity required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GatewayIdentityError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Permission denied",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Requested resource was not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A required service is unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "operationId": "updateBoardSpace",
+        "parameters": [
+          {
+            "name": "space_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SpaceRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SpaceOut"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Valid gateway identity required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GatewayIdentityError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Permission denied",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Requested resource was not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Request validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A required service is unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/spaces/{space_id}/announcements": {
+      "get": {
+        "operationId": "listSpaceAnnouncements",
+        "parameters": [
+          {
+            "name": "space_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "scope",
+            "in": "query",
+            "description": "Select workspace (default) or company notices in this space context",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/AnnouncementScope"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Page size (default 20)",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "maximum": 100,
+              "minimum": 1
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "description": "Results to skip (default 0)",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnnouncementsResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request for this resource",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Valid gateway identity required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GatewayIdentityError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Permission denied",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Requested resource was not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Request validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A required service is unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "createSpaceAnnouncement",
+        "parameters": [
+          {
+            "name": "space_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnnouncementOut"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request for this resource",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Valid gateway identity required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GatewayIdentityError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Permission denied",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Requested resource was not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Request validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A required service is unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/spaces/{space_id}/announcements/{announcement_id}": {
+      "get": {
+        "operationId": "getSpaceAnnouncement",
+        "parameters": [
+          {
+            "name": "space_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "announcement_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnnouncementOut"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Valid gateway identity required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GatewayIdentityError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Permission denied",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Requested resource was not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A required service is unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "deleteSpaceAnnouncement",
+        "parameters": [
+          {
+            "name": "space_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "announcement_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No content"
+          },
+          "401": {
+            "description": "Valid gateway identity required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GatewayIdentityError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Permission denied",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Requested resource was not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A required service is unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "operationId": "updateSpaceAnnouncement",
+        "parameters": [
+          {
+            "name": "space_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "announcement_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnnouncementOut"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Valid gateway identity required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GatewayIdentityError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Permission denied",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Requested resource was not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Request validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A required service is unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/spaces/{space_id}/sharing": {
+      "get": {
+        "operationId": "getBoardSpaceSharing",
+        "parameters": [
+          {
+            "name": "space_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SharingSnapshot"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Valid gateway identity required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GatewayIdentityError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Permission denied",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Requested resource was not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A required service is unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "operationId": "replaceBoardSpaceSharing",
+        "parameters": [
+          {
+            "name": "space_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SharingRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SharingSnapshot"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request for this resource",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Valid gateway identity required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GatewayIdentityError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Permission denied",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Requested resource was not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Current state conflicts with the request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Request validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A required service is unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/spaces/{space_id}/sharing/requests/{request_id}": {
+      "get": {
+        "operationId": "getBoardSpaceSharingResult",
+        "parameters": [
+          {
+            "name": "space_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "request_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/SharingSnapshot"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request for this resource",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Valid gateway identity required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GatewayIdentityError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Permission denied",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Requested resource was not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A required service is unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "AnnouncementOut": {
+        "type": "object",
+        "required": [
+          "id",
+          "workspaceId",
+          "authorId",
+          "authorName",
+          "scope",
+          "title",
+          "body",
+          "isPinned",
+          "canManage",
+          "createdAt",
+          "updatedAt"
+        ],
+        "properties": {
+          "authorId": {
+            "type": "string"
+          },
+          "authorName": {
+            "type": "string"
+          },
+          "body": {
+            "type": "string"
+          },
+          "canManage": {
+            "type": "boolean"
+          },
+          "createdAt": {
+            "type": "string",
+            "example": "2026-05-04T01:02:03"
+          },
+          "id": {
+            "type": "string"
+          },
+          "isPinned": {
+            "type": "boolean"
+          },
+          "scope": {
+            "$ref": "#/components/schemas/AnnouncementScope"
+          },
+          "title": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "string",
+            "example": "2026-05-04T01:02:03"
+          },
+          "workspaceId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "AnnouncementScope": {
+        "type": "string",
+        "enum": [
+          "company",
+          "workspace"
+        ]
+      },
+      "AnnouncementsResponse": {
+        "type": "object",
+        "required": [
+          "items",
+          "hasMore"
+        ],
+        "properties": {
+          "hasMore": {
+            "type": "boolean"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AnnouncementOut"
+            }
+          }
+        }
+      },
+      "BoardMe": {
+        "type": "object",
+        "required": [
+          "userId",
+          "isManager",
+          "canBootstrap"
+        ],
+        "properties": {
+          "canBootstrap": {
+            "type": "boolean"
+          },
+          "isManager": {
+            "type": "boolean"
+          },
+          "userId": {
+            "type": "string"
+          }
+        }
+      },
+      "BoardMediaStatus": {
+        "type": "string",
+        "enum": [
+          "pending",
+          "ready",
+          "attached",
+          "detaching",
+          "detached"
+        ]
+      },
+      "ChannelOut": {
+        "type": "object",
+        "required": [
+          "id",
+          "key",
+          "name",
+          "description",
+          "position",
+          "active",
+          "readOnly",
+          "forceAnonymous",
+          "adminOnlyContent",
+          "templateTitle",
+          "templateBody"
+        ],
+        "properties": {
+          "active": {
+            "type": "boolean"
+          },
+          "adminOnlyContent": {
+            "type": "boolean"
+          },
+          "description": {
+            "type": "string"
+          },
+          "forceAnonymous": {
+            "type": "boolean"
+          },
+          "id": {
+            "type": "string"
+          },
+          "key": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "position": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "readOnly": {
+            "type": "boolean"
+          },
+          "templateBody": {
+            "type": "string"
+          },
+          "templateTitle": {
+            "type": "string"
+          }
+        }
+      },
+      "ChannelRequest": {
+        "type": "object",
+        "required": [
+          "key",
+          "name"
+        ],
+        "properties": {
+          "active": {
+            "type": "boolean"
+          },
+          "adminOnlyContent": {
+            "type": "boolean"
+          },
+          "description": {
+            "type": "string"
+          },
+          "forceAnonymous": {
+            "type": "boolean"
+          },
+          "key": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "position": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "readOnly": {
+            "type": "boolean"
+          },
+          "templateBody": {
+            "type": "string"
+          },
+          "templateTitle": {
+            "type": "string"
+          }
+        }
+      },
+      "ChannelsResponse": {
+        "type": "object",
+        "required": [
+          "channels"
+        ],
+        "properties": {
+          "channels": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ChannelOut"
+            }
+          }
+        }
+      },
+      "CheckItem": {
+        "type": "object",
+        "required": [
+          "groupKey"
+        ],
+        "properties": {
+          "groupKey": {
+            "type": "string"
+          },
+          "resourceId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "CheckRequest": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CheckItem"
+            },
+            "description": "At most the first 500 items are considered."
+          }
+        }
+      },
+      "CheckResponse": {
+        "type": "object",
+        "required": [
+          "allowed"
+        ],
+        "properties": {
+          "allowed": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "CommentCreateRequest": {
+        "type": "object",
+        "required": [
+          "body"
+        ],
+        "properties": {
+          "body": {
+            "type": "string"
+          },
+          "isAnonymous": {
+            "type": "boolean"
+          },
+          "parentCommentId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "password": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "CommentOut": {
+        "type": "object",
+        "required": [
+          "id",
+          "body",
+          "isAnonymous",
+          "isDeleted",
+          "parentCommentId",
+          "authorName",
+          "anonSeq",
+          "canModify",
+          "createdAt",
+          "updatedAt"
+        ],
+        "properties": {
+          "anonSeq": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "authorName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "body": {
+            "type": "string"
+          },
+          "canModify": {
+            "type": "boolean"
+          },
+          "createdAt": {
+            "type": "string",
+            "example": "2026-05-04T01:02:03"
+          },
+          "id": {
+            "type": "string"
+          },
+          "isAnonymous": {
+            "type": "boolean"
+          },
+          "isDeleted": {
+            "type": "boolean"
+          },
+          "parentCommentId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "updatedAt": {
+            "type": "string",
+            "example": "2026-05-04T01:02:03"
+          }
+        }
+      },
+      "CommentUpdateRequest": {
+        "type": "object",
+        "required": [
+          "body"
+        ],
+        "properties": {
+          "body": {
+            "type": "string"
+          }
+        }
+      },
+      "CompanyAnnouncementScope": {
+        "type": "string",
+        "enum": [
+          "company"
+        ]
+      },
+      "CreateCompanyAnnouncementRequest": {
+        "type": "object",
+        "required": [
+          "title",
+          "scope"
+        ],
+        "properties": {
+          "body": {
+            "type": "string",
+            "maxLength": 20000
+          },
+          "isPinned": {
+            "type": "boolean"
+          },
+          "scope": {
+            "$ref": "#/components/schemas/CompanyAnnouncementScope"
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 1
+          }
+        }
+      },
+      "CreateRequest": {
+        "type": "object",
+        "required": [
+          "title"
+        ],
+        "properties": {
+          "body": {
+            "type": "string",
+            "maxLength": 20000
+          },
+          "isPinned": {
+            "type": "boolean"
+          },
+          "scope": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/AnnouncementScope",
+                "description": "Omit or send null to select workspace notices."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 1
+          }
+        }
+      },
+      "ErrorDetail": {
+        "type": "object",
+        "required": [
+          "code",
+          "message"
+        ],
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          }
+        }
+      },
+      "ErrorResponse": {
+        "type": "object",
+        "required": [
+          "error"
+        ],
+        "properties": {
+          "error": {
+            "$ref": "#/components/schemas/ErrorDetail"
+          }
+        }
+      },
+      "FilterTermCreateRequest": {
+        "type": "object",
+        "required": [
+          "term"
+        ],
+        "properties": {
+          "term": {
+            "type": "string",
+            "maxLength": 50,
+            "minLength": 1
+          }
+        },
+        "additionalProperties": false
+      },
+      "FilterTermItem": {
+        "type": "object",
+        "required": [
+          "id",
+          "term",
+          "created_at"
+        ],
+        "properties": {
+          "created_at": {
+            "type": "string",
+            "example": "2026-05-04T01:02:03"
+          },
+          "id": {
+            "type": "string"
+          },
+          "term": {
+            "type": "string"
+          }
+        }
+      },
+      "FilterTermList": {
+        "type": "object",
+        "required": [
+          "items",
+          "limit"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FilterTermItem"
+            }
+          },
+          "limit": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "GatewayIdentityError": {
+        "type": "object",
+        "required": [
+          "error"
+        ],
+        "properties": {
+          "error": {
+            "$ref": "#/components/schemas/GatewayIdentityErrorDetail"
+          }
+        }
+      },
+      "GatewayIdentityErrorDetail": {
+        "type": "object",
+        "required": [
+          "code"
+        ],
+        "properties": {
+          "code": {
+            "type": "string",
+            "example": "invalid_gateway_identity"
+          }
+        }
+      },
+      "HomeCard": {
+        "type": "object",
+        "required": [
+          "title",
+          "items"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/HomeCardItem"
+            },
+            "maxItems": 5
+          },
+          "title": {
+            "type": "string"
+          }
+        }
+      },
+      "HomeCardItem": {
+        "type": "object",
+        "required": [
+          "title",
+          "subtitle",
+          "path",
+          "at"
+        ],
+        "properties": {
+          "at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "path": {
+            "type": "string"
+          },
+          "subtitle": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
+        }
+      },
+      "HomeCardRequest": {
+        "type": "object",
+        "properties": {
+          "locale": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "English labels for en-US and Korean labels otherwise."
+          },
+          "timeZone": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Time zone preference supplied by the platform."
+          }
+        }
+      },
+      "LockedReason": {
+        "type": "string",
+        "enum": [
+          "password",
+          "admin_only"
+        ]
+      },
+      "ManagerAddRequest": {
+        "type": "object",
+        "required": [
+          "userId"
+        ],
+        "properties": {
+          "userId": {
+            "type": "string"
+          }
+        }
+      },
+      "ManagerOut": {
+        "type": "object",
+        "required": [
+          "userId",
+          "name",
+          "grantedBy",
+          "createdAt"
+        ],
+        "properties": {
+          "createdAt": {
+            "type": "string",
+            "example": "2026-05-04T01:02:03"
+          },
+          "grantedBy": {
+            "type": "string"
+          },
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "userId": {
+            "type": "string"
+          }
+        }
+      },
+      "ManagersResponse": {
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ManagerOut"
+            }
+          }
+        }
+      },
+      "PostCreateRequest": {
+        "type": "object",
+        "required": [
+          "title",
+          "body"
+        ],
+        "properties": {
+          "body": {
+            "type": "string"
+          },
+          "isAnonymous": {
+            "type": "boolean"
+          },
+          "isSecret": {
+            "type": "boolean"
+          },
+          "password": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "title": {
+            "type": "string"
+          }
+        }
+      },
+      "PostDetail": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/PostOut"
+          },
+          {
+            "type": "object",
+            "required": [
+              "comments"
+            ],
+            "properties": {
+              "comments": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/CommentOut"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "PostListResponse": {
+        "type": "object",
+        "required": [
+          "posts",
+          "total",
+          "page",
+          "pageSize"
+        ],
+        "properties": {
+          "page": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "pageSize": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "posts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PostOut"
+            }
+          },
+          "total": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "PostMediaRequest": {
+        "type": "object",
+        "properties": {
+          "password": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 200
+          }
+        }
+      },
+      "PostOut": {
+        "type": "object",
+        "required": [
+          "id",
+          "number",
+          "channelKey",
+          "title",
+          "body",
+          "isAnonymous",
+          "isSecret",
+          "locked",
+          "lockedReason",
+          "isRead",
+          "isMine",
+          "canModify",
+          "authorName",
+          "commentCount",
+          "createdAt",
+          "updatedAt"
+        ],
+        "properties": {
+          "authorName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "body": {
+            "type": "string"
+          },
+          "canModify": {
+            "type": "boolean"
+          },
+          "channelKey": {
+            "type": "string"
+          },
+          "commentCount": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "createdAt": {
+            "type": "string",
+            "example": "2026-05-04T01:02:03"
+          },
+          "id": {
+            "type": "string"
+          },
+          "isAnonymous": {
+            "type": "boolean"
+          },
+          "isMine": {
+            "type": "boolean"
+          },
+          "isRead": {
+            "type": "boolean"
+          },
+          "isSecret": {
+            "type": "boolean"
+          },
+          "locked": {
+            "type": "boolean"
+          },
+          "lockedReason": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/LockedReason"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "number": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "title": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "string",
+            "example": "2026-05-04T01:02:03"
+          }
+        }
+      },
+      "PostUpdateRequest": {
+        "type": "object",
+        "required": [
+          "title",
+          "body"
+        ],
+        "properties": {
+          "body": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
+        }
+      },
+      "RecentNotice": {
+        "type": "object",
+        "required": [
+          "id",
+          "scope",
+          "spaceId",
+          "spaceName",
+          "title",
+          "isPinned",
+          "authorName",
+          "path",
+          "createdAt"
+        ],
+        "properties": {
+          "authorName": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string",
+            "example": "2026-05-04T01:02:03"
+          },
+          "id": {
+            "type": "string"
+          },
+          "isPinned": {
+            "type": "boolean"
+          },
+          "path": {
+            "type": "string"
+          },
+          "scope": {
+            "$ref": "#/components/schemas/AnnouncementScope"
+          },
+          "spaceId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "spaceName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "title": {
+            "type": "string"
+          }
+        }
+      },
+      "RecentNoticesResponse": {
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RecentNotice"
+            }
+          }
+        }
+      },
+      "SharingEntry": {
+        "type": "object",
+        "required": [
+          "subject",
+          "role",
+          "protected"
+        ],
+        "properties": {
+          "protected": {
+            "type": "boolean"
+          },
+          "role": {
+            "type": "string"
+          },
+          "subject": {
+            "$ref": "#/components/schemas/SharingSubject"
+          }
+        }
+      },
+      "SharingGrant": {
+        "type": "object",
+        "required": [
+          "subject",
+          "role"
+        ],
+        "properties": {
+          "role": {
+            "type": "string"
+          },
+          "subject": {
+            "$ref": "#/components/schemas/SharingSubjectRef"
+          }
+        },
+        "additionalProperties": false
+      },
+      "SharingRequest": {
+        "type": "object",
+        "required": [
+          "expectedRevision",
+          "requestId",
+          "entries"
+        ],
+        "properties": {
+          "entries": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SharingGrant"
+            },
+            "maxItems": 100,
+            "minItems": 1
+          },
+          "expectedRevision": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "requestId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      },
+      "SharingRole": {
+        "type": "object",
+        "required": [
+          "id",
+          "label"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          }
+        }
+      },
+      "SharingSnapshot": {
+        "type": "object",
+        "required": [
+          "revision",
+          "entries",
+          "roles",
+          "defaultRole",
+          "canManage"
+        ],
+        "properties": {
+          "canManage": {
+            "type": "boolean"
+          },
+          "defaultRole": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "entries": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SharingEntry"
+            }
+          },
+          "revision": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "roles": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SharingRole"
+            }
+          }
+        }
+      },
+      "SharingSubject": {
+        "type": "object",
+        "required": [
+          "kind",
+          "id",
+          "name"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/SharingSubjectKind"
+          },
+          "name": {
+            "type": "string"
+          }
+        }
+      },
+      "SharingSubjectKind": {
+        "type": "string",
+        "enum": [
+          "user",
+          "group"
+        ]
+      },
+      "SharingSubjectRef": {
+        "type": "object",
+        "required": [
+          "kind",
+          "id"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/SharingSubjectKind"
+          }
+        },
+        "additionalProperties": false
+      },
+      "SpaceOut": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "description",
+          "createdBy",
+          "canManage",
+          "createdAt",
+          "updatedAt"
+        ],
+        "properties": {
+          "canManage": {
+            "type": "boolean"
+          },
+          "createdAt": {
+            "type": "string",
+            "example": "2026-05-04T01:02:03"
+          },
+          "createdBy": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "string",
+            "example": "2026-05-04T01:02:03"
+          }
+        }
+      },
+      "SpaceRequest": {
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "properties": {
+          "description": {
+            "type": "string",
+            "maxLength": 5000
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 120,
+            "minLength": 1
+          }
+        }
+      },
+      "SpacesResponse": {
+        "type": "object",
+        "required": [
+          "spaces"
+        ],
+        "properties": {
+          "spaces": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SpaceOut"
+            }
+          }
+        }
+      },
+      "UnlockRequest": {
+        "type": "object",
+        "required": [
+          "password"
+        ],
+        "properties": {
+          "password": {
+            "type": "string"
+          }
+        }
+      },
+      "UpdateRequest": {
+        "type": "object",
+        "properties": {
+          "body": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 20000
+          },
+          "isPinned": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 200,
+            "minLength": 1
+          }
+        }
+      },
+      "UploadRequest": {
+        "type": "object",
+        "required": [
+          "requestId",
+          "name",
+          "mime",
+          "size"
+        ],
+        "properties": {
+          "mime": {
+            "type": "string",
+            "description": "JPEG, PNG, GIF or WebP."
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 255,
+            "minLength": 1
+          },
+          "requestId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "size": {
+            "type": "integer",
+            "format": "int64",
+            "maximum": 10485760,
+            "minimum": 0
+          }
+        }
+      },
+      "UploadResponse": {
+        "type": "object",
+        "required": [
+          "id",
+          "url",
+          "status"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/BoardMediaStatus"
+          },
+          "url": {
+            "type": "string",
+            "description": "A media reference of the form `media:<id>`."
+          }
+        }
+      }
+    }
+  }
+}

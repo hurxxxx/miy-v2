@@ -1356,6 +1356,15 @@ async fn older_revision_conflicts_and_keep_resends_on_the_current_one() {
     )
     .await;
     assert_eq!(renamed["revision"], 3);
+    assert_eq!(renamed["scene"], scene_b);
+
+    let cleared = expect(
+        patch(&owner, &items, json!({"scene": null, "base_revision": 3})).await,
+        StatusCode::OK,
+    )
+    .await;
+    assert_eq!(cleared["scene"], crate::scene::empty_scene());
+    assert_eq!(cleared["revision"], 4);
 }
 
 async fn reserve(

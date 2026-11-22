@@ -17,7 +17,7 @@ export function DetailDrawer({
   description,
   children,
   actions,
-  closeLabel,
+  closeLabel = 'Close',
   contentClassName,
   embedded = false,
   side = 'right',

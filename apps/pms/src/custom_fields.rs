@@ -24,6 +24,7 @@ use crate::access::{
     task_for_editor,
 };
 use crate::error::{ApiError, ApiResult, check_choice, check_length};
+use crate::error::{ErrorResponse, IdentityErrorResponse};
 use crate::input::{Body, check_list_length};
 use crate::models::{TaskRow, new_id, utcnow};
 use crate::tasks::{natural_title_key, validate_member_users};
@@ -70,12 +71,106 @@ impl FieldRow {
     }
 }
 
-fn serialize_field(field: &FieldRow) -> Value {
-    json!({
-        "id": field.id, "list_id": field.list_id, "name": field.name,
-        "field_type": field.field_type, "options": field.options,
-        "sort_order": field.sort_order,
-    })
+#[allow(dead_code)]
+#[derive(utoipa::ToSchema)]
+#[schema(rename_all = "snake_case")]
+enum CustomFieldKind {
+    Text,
+    Number,
+    Date,
+    Select,
+    MultiSelect,
+    User,
+}
+
+#[derive(serde::Serialize, utoipa::ToSchema)]
+pub struct CustomFieldDefinition {
+    id: String,
+    list_id: String,
+    name: String,
+    #[schema(value_type = CustomFieldKind)]
+    field_type: String,
+    #[schema(value_type = Option<Vec<String>>, required = true)]
+    options: Option<Value>,
+    sort_order: i32,
+}
+
+#[derive(serde::Serialize, utoipa::ToSchema)]
+pub struct CustomFieldPage {
+    items: Vec<CustomFieldDefinition>,
+}
+
+#[derive(serde::Serialize, utoipa::ToSchema)]
+pub struct CustomFieldValue {
+    field_id: String,
+    /// Stored string. Multi-select values contain a JSON-encoded string array.
+    value: String,
+}
+
+#[allow(dead_code)]
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(deny_unknown_fields)]
+struct CreateCustomFieldRequest {
+    /// Trimmed name of 1 to 100 characters, unique in the list.
+    name: String,
+    /// Defaults to `text`.
+    #[schema(value_type = CustomFieldKind, required = false)]
+    field_type: Option<String>,
+    /// Required for `select` and `multi_select`. These fields allow 1 to 50 distinct options.
+    options: Option<Vec<String>>,
+    /// A field without an explicit order goes last.
+    sort_order: Option<i64>,
+}
+
+#[allow(dead_code)]
+#[derive(utoipa::ToSchema)]
+struct CustomFieldOptionRename {
+    from: String,
+    to: String,
+}
+
+#[allow(dead_code)]
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(deny_unknown_fields)]
+struct UpdateCustomFieldRequest {
+    /// Trimmed name of 1 to 100 characters, unique in the list.
+    name: Option<String>,
+    /// New select options. Supply `expected_options` in the same request.
+    #[schema(min_items = 1, max_items = 50)]
+    options: Option<Vec<String>>,
+    /// The complete option list read before editing, in order.
+    expected_options: Option<Vec<String>>,
+    #[schema(value_type = Option<Vec<CustomFieldOptionRename>>)]
+    option_renames: Option<Vec<Value>>,
+}
+
+#[allow(dead_code)]
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(deny_unknown_fields)]
+struct ReorderCustomFieldsRequest {
+    #[schema(min_items = 1, max_items = 50)]
+    field_ids: Vec<String>,
+}
+
+#[allow(dead_code)]
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(deny_unknown_fields)]
+struct SetCustomFieldValueRequest {
+    field_id: String,
+    /// An empty or omitted value clears the field. Multi-select values use a JSON-encoded string array.
+    #[schema(value_type = String, required = false)]
+    value: Option<String>,
+}
+
+fn serialize_field(field: &FieldRow) -> CustomFieldDefinition {
+    CustomFieldDefinition {
+        id: field.id.clone(),
+        list_id: field.list_id.clone(),
+        name: field.name.clone(),
+        field_type: field.field_type.clone(),
+        options: field.options.clone(),
+        sort_order: field.sort_order,
+    }
 }
 
 fn invalid(message: &str) -> ApiError {
@@ -96,17 +191,29 @@ pub async fn list_fields(conn: &mut PgConnection, list_id: &str) -> ApiResult<Ve
 }
 
 /// `GET /v1/pms/lists/{list_id}/custom-fields`.
+#[utoipa::path(
+    get, path = "/v1/pms/lists/{list_id}/custom-fields", operation_id = "listPmsCustomFields", tag = "Custom fields",
+    params(("list_id" = String, Path)),
+    responses(
+        (status = 200, description = "List custom field definitions", body = CustomFieldPage),
+        (status = 401, description = "Platform identity could not be verified", body = IdentityErrorResponse),
+        (status = 403, description = "The caller lacks access", body = ErrorResponse),
+        (status = 404, description = "The requested resource was not found", body = ErrorResponse),
+        (status = 409, description = "The current list or resource state conflicts with the request", body = ErrorResponse),
+        (status = 500, description = "Internal error", body = ErrorResponse),
+    )
+)]
 pub async fn list_custom_fields(
     State(pool): State<PgPool>,
     Extension(identity): Extension<Identity>,
     Path(list_id): Path<String>,
-) -> ApiResult<Json<Value>> {
+) -> ApiResult<Json<CustomFieldPage>> {
     let mut conn = pool.acquire().await?;
     ensure_list_member(&mut conn, &identity.user_id, &list_id).await?;
     let fields = list_fields(&mut conn, &list_id).await?;
-    Ok(Json(
-        json!({"items": fields.iter().map(serialize_field).collect::<Vec<_>>()}),
-    ))
+    Ok(Json(CustomFieldPage {
+        items: fields.iter().map(serialize_field).collect(),
+    }))
 }
 
 /// Options of a select field: trimmed, 1–100 characters, unique ignoring case,
@@ -158,6 +265,20 @@ async fn ensure_unique_name(
 /// `POST /v1/pms/lists/{list_id}/custom-fields`. miy: names are unique in a
 /// list (copying matches fields by name and type), select fields need options,
 /// and a field without an explicit order goes last.
+#[utoipa::path(
+    post, path = "/v1/pms/lists/{list_id}/custom-fields", operation_id = "createPmsCustomField", tag = "Custom fields",
+    params(("list_id" = String, Path)),
+    request_body = CreateCustomFieldRequest,
+    responses(
+        (status = 201, description = "Created custom field definition", body = CustomFieldDefinition),
+        (status = 401, description = "Platform identity could not be verified", body = IdentityErrorResponse),
+        (status = 403, description = "The caller lacks access", body = ErrorResponse),
+        (status = 404, description = "The requested resource was not found", body = ErrorResponse),
+        (status = 409, description = "The list is read-only, reached its field limit, or already has this field name", body = ErrorResponse),
+        (status = 422, description = "Invalid request", body = ErrorResponse),
+        (status = 500, description = "Internal error", body = ErrorResponse),
+    )
+)]
 pub async fn create_custom_field(
     State(pool): State<PgPool>,
     Extension(identity): Extension<Identity>,
@@ -267,20 +388,35 @@ pub fn remap_option_value(
 
 /// `PATCH /v1/pms/custom-fields/{field_id}` (miy): rename, or replace the
 /// options of a select field. `option_renames` (`[{from, to}]`) carries values
-/// over to a renamed option; values of removed options are cleared. The type
-/// never changes.
+/// over to a renamed option; values of removed options are cleared. An option
+/// edit must supply the unchanged options it was based on.
+#[utoipa::path(
+    patch, path = "/v1/pms/custom-fields/{field_id}", operation_id = "updatePmsCustomField", tag = "Custom fields",
+    params(("field_id" = String, Path)),
+    request_body = UpdateCustomFieldRequest,
+    responses(
+        (status = 200, description = "Updated custom field definition", body = CustomFieldDefinition),
+        (status = 401, description = "Platform identity could not be verified", body = IdentityErrorResponse),
+        (status = 403, description = "The caller lacks access", body = ErrorResponse),
+        (status = 404, description = "The requested resource was not found", body = ErrorResponse),
+        (status = 409, description = "The list is read-only, the name is already used, or the options changed since the editor loaded them", body = ErrorResponse),
+        (status = 422, description = "Invalid request", body = ErrorResponse),
+        (status = 500, description = "Internal error", body = ErrorResponse),
+    )
+)]
 pub async fn update_custom_field(
     State(pool): State<PgPool>,
     Extension(identity): Extension<Identity>,
     Path(field_id): Path<String>,
     body: Body,
-) -> ApiResult<Json<Value>> {
-    body.forbid_extra(&["name", "options", "option_renames"])?;
+) -> ApiResult<Json<CustomFieldDefinition>> {
+    body.forbid_extra(&["name", "options", "expected_options", "option_renames"])?;
     let name = body.opt_str("name")?.map(|name| name.trim().to_string());
     if let Some(name) = &name {
         check_length("name", name, 1, 100)?;
     }
     let options = body.opt_str_list("options")?;
+    let expected_options = body.opt_str_list("expected_options")?;
     let renames: Vec<(String, String)> = match body.0.get("option_renames") {
         None | Some(Value::Null) => Vec::new(),
         Some(Value::Array(items)) => items
@@ -316,6 +452,13 @@ pub async fn update_custom_field(
         }
         let options = normalize_options(&options)?;
         let previous = field.option_names();
+        if expected_options.as_ref() != Some(&previous) {
+            return Err(ApiError::new(
+                StatusCode::CONFLICT,
+                "pms.custom_field_options_changed",
+                "The options changed. Reload the custom fields before editing them again.",
+            ));
+        }
         let renames: HashMap<String, String> = renames
             .into_iter()
             .filter(|(from, to)| from != to && previous.contains(from) && options.contains(to))
@@ -359,12 +502,26 @@ pub async fn update_custom_field(
 /// `PATCH /v1/pms/lists/{list_id}/custom-fields/reorder` (miy): `field_ids`
 /// in the new order. Unknown ids are ignored; fields left out keep their
 /// relative order after the given ones.
+#[utoipa::path(
+    patch, path = "/v1/pms/lists/{list_id}/custom-fields/reorder", operation_id = "reorderPmsCustomFields", tag = "Custom fields",
+    params(("list_id" = String, Path)),
+    request_body = ReorderCustomFieldsRequest,
+    responses(
+        (status = 200, description = "Custom field definitions in the new order", body = CustomFieldPage),
+        (status = 401, description = "Platform identity could not be verified", body = IdentityErrorResponse),
+        (status = 403, description = "The caller lacks access", body = ErrorResponse),
+        (status = 404, description = "The requested resource was not found", body = ErrorResponse),
+        (status = 409, description = "The current list or resource state conflicts with the request", body = ErrorResponse),
+        (status = 422, description = "Invalid request", body = ErrorResponse),
+        (status = 500, description = "Internal error", body = ErrorResponse),
+    )
+)]
 pub async fn reorder_custom_fields(
     State(pool): State<PgPool>,
     Extension(identity): Extension<Identity>,
     Path(list_id): Path<String>,
     body: Body,
-) -> ApiResult<Json<Value>> {
+) -> ApiResult<Json<CustomFieldPage>> {
     body.forbid_extra(&["field_ids"])?;
     let field_ids = body
         .opt_str_list("field_ids")?
@@ -401,12 +558,24 @@ pub async fn reorder_custom_fields(
     }
     let fields = list_fields(&mut tx, &list_id).await?;
     tx.commit().await?;
-    Ok(Json(
-        json!({"items": fields.iter().map(serialize_field).collect::<Vec<_>>()}),
-    ))
+    Ok(Json(CustomFieldPage {
+        items: fields.iter().map(serialize_field).collect(),
+    }))
 }
 
 /// `DELETE /v1/pms/custom-fields/{field_id}`: its values go with it.
+#[utoipa::path(
+    delete, path = "/v1/pms/custom-fields/{field_id}", operation_id = "deletePmsCustomField", tag = "Custom fields",
+    params(("field_id" = String, Path)),
+    responses(
+        (status = 204, description = "Custom field deleted"),
+        (status = 401, description = "Platform identity could not be verified", body = IdentityErrorResponse),
+        (status = 403, description = "The caller lacks access", body = ErrorResponse),
+        (status = 404, description = "The requested resource was not found", body = ErrorResponse),
+        (status = 409, description = "The current list or resource state conflicts with the request", body = ErrorResponse),
+        (status = 500, description = "Internal error", body = ErrorResponse),
+    )
+)]
 pub async fn delete_custom_field(
     State(pool): State<PgPool>,
     Extension(identity): Extension<Identity>,
@@ -427,11 +596,22 @@ pub async fn delete_custom_field(
 }
 
 /// `GET /v1/pms/tasks/{task_id}/custom-field-values`.
+#[utoipa::path(
+    get, path = "/v1/pms/tasks/{task_id}/custom-field-values", operation_id = "listPmsCustomFieldValues", tag = "Custom fields",
+    params(("task_id" = String, Path)),
+    responses(
+        (status = 200, description = "Values stored on the task", body = [CustomFieldValue]),
+        (status = 401, description = "Platform identity could not be verified", body = IdentityErrorResponse),
+        (status = 403, description = "The caller lacks access", body = ErrorResponse),
+        (status = 404, description = "The requested resource was not found", body = ErrorResponse),
+        (status = 500, description = "Internal error", body = ErrorResponse),
+    )
+)]
 pub async fn list_custom_field_values(
     State(pool): State<PgPool>,
     Extension(identity): Extension<Identity>,
     Path(task_id): Path<String>,
-) -> ApiResult<Json<Value>> {
+) -> ApiResult<Json<Vec<CustomFieldValue>>> {
     let mut conn = pool.acquire().await?;
     let task = ensure_task_readable(&mut conn, &identity.user_id, &task_id).await?;
     let values: Vec<(String, String)> = sqlx::query_as(
@@ -440,12 +620,12 @@ pub async fn list_custom_field_values(
     .bind(&task.id)
     .fetch_all(&mut *conn)
     .await?;
-    Ok(Json(Value::Array(
+    Ok(Json(
         values
             .into_iter()
-            .map(|(field_id, value)| json!({"field_id": field_id, "value": value}))
+            .map(|(field_id, value)| CustomFieldValue { field_id, value })
             .collect(),
-    )))
+    ))
 }
 
 /// A number in one canonical spelling, so equal numbers are equal strings
@@ -508,12 +688,27 @@ pub fn normalize_value(field: &FieldRow, raw: &str) -> ApiResult<Option<String>>
 /// lock; the value is checked against the field type and stored in one
 /// spelling (a multi select is a JSON list in option order, a user field a
 /// current member of the space); an empty value removes it.
+#[utoipa::path(
+    put, path = "/v1/pms/tasks/{task_id}/custom-field-values", operation_id = "setPmsCustomFieldValue", tag = "Custom fields",
+    params(("task_id" = String, Path)),
+    request_body = SetCustomFieldValueRequest,
+    responses(
+        (status = 200, description = "Current value, or an empty string if cleared", body = CustomFieldValue),
+        (status = 400, description = "The selection or related fields are invalid", body = ErrorResponse),
+        (status = 401, description = "Platform identity could not be verified", body = IdentityErrorResponse),
+        (status = 403, description = "The caller lacks access", body = ErrorResponse),
+        (status = 404, description = "The requested resource was not found", body = ErrorResponse),
+        (status = 409, description = "The current list or resource state conflicts with the request", body = ErrorResponse),
+        (status = 422, description = "Invalid request", body = ErrorResponse),
+        (status = 500, description = "Internal error", body = ErrorResponse),
+    )
+)]
 pub async fn set_custom_field_value(
     State(pool): State<PgPool>,
     Extension(identity): Extension<Identity>,
     Path(task_id): Path<String>,
     body: Body,
-) -> ApiResult<Json<Value>> {
+) -> ApiResult<Json<CustomFieldValue>> {
     body.forbid_extra(&["field_id", "value"])?;
     let field_id = body.req_str("field_id")?;
     let raw = body.str_or("value", "")?;
@@ -563,9 +758,10 @@ pub async fn set_custom_field_value(
         }
     }
     tx.commit().await?;
-    Ok(Json(
-        json!({"field_id": field.id, "value": value.unwrap_or_default()}),
-    ))
+    Ok(Json(CustomFieldValue {
+        field_id: field.id,
+        value: value.unwrap_or_default(),
+    }))
 }
 
 /// Values of these tasks by task then field (task summaries carry them).

@@ -48,9 +48,19 @@ const SANDBOX =
  * launch (docs/APP-FRAMES.md 3.5). Set before the launch form navigates.
  */
 const DELEGABLE = new Set(["clipboard-write", "fullscreen"]);
-function frameAllow(features: string[] | undefined): string | undefined {
-  const allowed = (features ?? []).filter((feature) => DELEGABLE.has(feature));
-  return allowed.length ? allowed.join("; ") : undefined;
+function frameAllow(launch: AppFrameLaunch | null | undefined): string | undefined {
+  if (!launch) return undefined;
+  try {
+    const origin = new URL(launch.frameOrigin);
+    if (origin.origin !== launch.frameOrigin ||
+        !["https:", "http:"].includes(origin.protocol)) return undefined;
+    const allowed = (launch.allow ?? [])
+      .filter((feature) => DELEGABLE.has(feature))
+      .map((feature) => `${feature} ${origin.origin}`);
+    return allowed.length ? allowed.join("; ") : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 /** The leave-check message for a frame's state, in the current language; undefined when it may close. */
@@ -306,7 +316,7 @@ export function AppFrame({
         className={panel ? "app-frame app-frame-panel" : "app-frame"}
         sandbox={SANDBOX}
         referrerPolicy="no-referrer"
-        allow={frameAllow(launch?.allow)}
+        allow={frameAllow(launch)}
         hidden={!launch}
       />
       {launch && (

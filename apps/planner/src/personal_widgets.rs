@@ -13,7 +13,9 @@ use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 use std::collections::HashMap;
 
-use crate::error::{ApiError, ApiJson, ApiResult, check_length};
+use crate::error::{
+    ApiError, ApiErrorResponse, ApiJson, ApiResult, GatewayErrorResponse, check_length,
+};
 use crate::time::{now_utc, serialize_naive};
 
 pub const TODO_SORT_STEP: i32 = 1000;
@@ -40,51 +42,61 @@ pub struct PersonalMemo {
     pub updated_at: NaiveDateTime,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct PersonalTodoItemOut {
     pub id: String,
     pub title: String,
     pub completed: bool,
     pub sort_order: i32,
+    #[schema(required)]
     pub completed_at: Option<String>,
     pub created_at: String,
     pub updated_at: String,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
 pub struct PersonalTodoListResponse {
     pub items: Vec<PersonalTodoItemOut>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct PersonalMemoOut {
+    #[schema(required)]
     pub id: Option<String>,
     pub body: String,
+    #[schema(required)]
     pub created_at: Option<String>,
+    #[schema(required)]
     pub updated_at: Option<String>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, utoipa::ToSchema)]
 pub struct PersonalTodoCreateRequest {
+    /// Leading and trailing whitespace is stripped. The result must not be blank.
+    #[schema(min_length = 1, max_length = 240)]
     pub title: String,
 }
 
-#[derive(Debug, Clone, Default, Deserialize)]
+/// Omitted or null fields leave the corresponding values unchanged.
+#[derive(Debug, Clone, Default, Deserialize, utoipa::ToSchema)]
 pub struct PersonalTodoUpdateRequest {
     #[serde(default)]
+    #[schema(min_length = 1, max_length = 240)]
     pub title: Option<String>,
     #[serde(default)]
     pub completed: Option<bool>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct PersonalMemoUpdateRequest {
+    #[schema(max_length = 20000)]
     pub body: String,
-    // Required even for a first save, where the GET response has null.
+    /// Pass updatedAt from the last GET unchanged. For a first save, pass null.
     #[serde(deserialize_with = "Option::deserialize")]
+    #[schema(required, value_type = Option<String>)]
     pub expected_updated_at: Option<NaiveDateTime>,
 }
 
@@ -315,12 +327,33 @@ fn parse_query_bool(name: &str, value: &str) -> ApiResult<bool> {
 
 // ── Router handlers (router.py) ─────────────────────────────────────────────
 
+#[derive(utoipa::IntoParams)]
+#[into_params(parameter_in = Query)]
+struct PersonalTodosQuery {
+    /// Defaults to true. Accepted values are true/false, 1/0, yes/no, on/off, t/f and y/n.
+    #[param(example = "false")]
+    include_completed: Option<String>,
+}
+
+#[utoipa::path(
+    get, path = "/v1/personal-widgets/todos", operation_id = "listPersonalTodos",
+    params(PersonalTodosQuery),
+    responses(
+        (status = 200, description = "The current user's to-dos", body = PersonalTodoListResponse),
+        (status = 401, description = "Platform identity could not be verified", body = GatewayErrorResponse),
+        (status = 422, description = "Invalid include_completed filter", body = ApiErrorResponse),
+        (status = 500, description = "Could not read the to-dos", body = ApiErrorResponse)
+    )
+)]
 pub async fn list_personal_todos(
     State(pool): State<PgPool>,
     Extension(identity): Extension<Identity>,
-    Query(params): Query<HashMap<String, String>>,
+    Query(mut params): Query<HashMap<String, String>>,
 ) -> ApiResult<Json<PersonalTodoListResponse>> {
-    let include_completed = match params.get("include_completed") {
+    let query = PersonalTodosQuery {
+        include_completed: params.remove("include_completed"),
+    };
+    let include_completed = match query.include_completed.as_deref() {
         Some(value) => parse_query_bool("include_completed", value)?,
         None => true,
     };
@@ -329,6 +362,16 @@ pub async fn list_personal_todos(
     ))
 }
 
+#[utoipa::path(
+    post, path = "/v1/personal-widgets/todos", operation_id = "createPersonalTodo",
+    request_body = PersonalTodoCreateRequest,
+    responses(
+        (status = 201, description = "Created to-do", body = PersonalTodoItemOut),
+        (status = 401, description = "Platform identity could not be verified", body = GatewayErrorResponse),
+        (status = 422, description = "Invalid to-do request", body = ApiErrorResponse),
+        (status = 500, description = "Could not create the to-do", body = ApiErrorResponse)
+    )
+)]
 pub async fn create_personal_todo(
     State(pool): State<PgPool>,
     Extension(identity): Extension<Identity>,
@@ -339,6 +382,18 @@ pub async fn create_personal_todo(
     Ok((StatusCode::CREATED, Json(created)))
 }
 
+#[utoipa::path(
+    patch, path = "/v1/personal-widgets/todos/{todo_id}", operation_id = "updatePersonalTodo",
+    params(("todo_id" = String, Path, description = "To-do ID")),
+    request_body = PersonalTodoUpdateRequest,
+    responses(
+        (status = 200, description = "Updated to-do", body = PersonalTodoItemOut),
+        (status = 401, description = "Platform identity could not be verified", body = GatewayErrorResponse),
+        (status = 404, description = "To-do unavailable to the current user", body = ApiErrorResponse),
+        (status = 422, description = "Invalid to-do request", body = ApiErrorResponse),
+        (status = 500, description = "Could not update the to-do", body = ApiErrorResponse)
+    )
+)]
 pub async fn update_personal_todo(
     State(pool): State<PgPool>,
     Extension(identity): Extension<Identity>,
@@ -351,6 +406,16 @@ pub async fn update_personal_todo(
     ))
 }
 
+#[utoipa::path(
+    delete, path = "/v1/personal-widgets/todos/{todo_id}", operation_id = "deletePersonalTodo",
+    params(("todo_id" = String, Path, description = "To-do ID")),
+    responses(
+        (status = 204, description = "To-do deleted"),
+        (status = 401, description = "Platform identity could not be verified", body = GatewayErrorResponse),
+        (status = 404, description = "To-do unavailable to the current user", body = ApiErrorResponse),
+        (status = 500, description = "Could not delete the to-do", body = ApiErrorResponse)
+    )
+)]
 pub async fn delete_personal_todo(
     State(pool): State<PgPool>,
     Extension(identity): Extension<Identity>,
@@ -360,6 +425,14 @@ pub async fn delete_personal_todo(
     Ok(StatusCode::NO_CONTENT)
 }
 
+#[utoipa::path(
+    get, path = "/v1/personal-widgets/memo", operation_id = "getPersonalMemo",
+    responses(
+        (status = 200, description = "The current user's memo", body = PersonalMemoOut),
+        (status = 401, description = "Platform identity could not be verified", body = GatewayErrorResponse),
+        (status = 500, description = "Could not read the memo", body = ApiErrorResponse)
+    )
+)]
 pub async fn get_personal_memo(
     State(pool): State<PgPool>,
     Extension(identity): Extension<Identity>,
@@ -367,6 +440,17 @@ pub async fn get_personal_memo(
     Ok(Json(get_memo(&pool, &identity.user_id).await?))
 }
 
+#[utoipa::path(
+    put, path = "/v1/personal-widgets/memo", operation_id = "savePersonalMemo",
+    request_body = PersonalMemoUpdateRequest,
+    responses(
+        (status = 200, description = "Saved memo", body = PersonalMemoOut),
+        (status = 401, description = "Platform identity could not be verified", body = GatewayErrorResponse),
+        (status = 409, description = "The memo revision has changed", body = ApiErrorResponse),
+        (status = 422, description = "Invalid memo request", body = ApiErrorResponse),
+        (status = 500, description = "Could not save the memo", body = ApiErrorResponse)
+    )
+)]
 pub async fn save_personal_memo(
     State(pool): State<PgPool>,
     Extension(identity): Extension<Identity>,

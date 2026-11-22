@@ -5,6 +5,7 @@
   "type": "module",
   "packageManager": "pnpm@10.34.5",
   "scripts": {
+    "api:generate": "cargo run --locked --bin miy-app -- --write-openapi && node web/api-tools/generate.mjs",
     "build": "vite build",
     "typecheck": "tsc --noEmit",
     "build:preview": "vite build --config sdk/preview/vite.config.ts"

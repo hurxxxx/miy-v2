@@ -8,6 +8,7 @@ import type { PmsTask } from '../api/pms-api';
 
 function buildTask(overrides: Partial<PmsTask> = {}): PmsTask {
   return {
+    custom_fields: {},
     archived: false,
     assignee_id: null,
     assignee_ids: [],

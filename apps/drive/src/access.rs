@@ -37,7 +37,10 @@ pub const ACTION_READ: &str = "space.read";
 pub const ACTION_WRITE: &str = "files.write";
 pub const ACTION_ADMIN: &str = "space.admin";
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(
+    Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, utoipa::ToSchema,
+)]
+#[serde(rename_all = "snake_case")]
 pub enum Role {
     Viewer,
     Member,

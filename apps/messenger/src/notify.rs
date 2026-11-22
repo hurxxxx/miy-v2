@@ -25,8 +25,7 @@ use crate::{
 use axum::{Extension, Json, body::Bytes, extract::State};
 use chrono::NaiveDateTime;
 use miy_app_sdk::{Identity, Notification};
-use serde::Deserialize;
-use serde_json::{Value, json};
+use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 use std::{collections::BTreeMap, future::Future, time::Duration};
 
@@ -409,7 +408,7 @@ pub async fn report_created(
     .await;
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub struct CheckItem {
     #[serde(rename = "groupKey")]
     pub group_key: String,
@@ -417,18 +416,31 @@ pub struct CheckItem {
     pub resource_id: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub struct CheckRequest {
+    #[schema(max_items = 500)]
     pub items: Vec<CheckItem>,
 }
 
 /// `POST /platform/notification-check` (manifest `platformEndpoints`): the
 /// groups that still point at something this person may open. Read-only.
+#[utoipa::path(
+    post, path = "/platform/notification-check", operation_id = "notificationCheck",
+    description = "Read-only platform callback. Confirms notification groups remain accessible.",
+    request_body = CheckRequest,
+    responses(
+        (status = 200, description = "Success", body = CheckResponse),
+        (status = 401, description = "Valid gateway identity required", body = crate::error::GatewayIdentityError),
+        (status = 403, description = "Permission denied", body = crate::error::ErrorResponse),
+        (status = 422, description = "Request validation or domain policy rejected the operation", body = crate::error::ErrorResponse),
+        (status = 500, description = "Internal error", body = crate::error::ErrorResponse),
+    )
+)]
 pub async fn notification_check(
     State(pool): State<PgPool>,
     Extension(identity): Extension<Identity>,
     crate::error::ApiJson(request): crate::error::ApiJson<CheckRequest>,
-) -> ApiResult<Json<Value>> {
+) -> ApiResult<Json<CheckResponse>> {
     if !identity.context.platform {
         return Err(ApiError::forbidden(
             "platform_call_required",
@@ -522,11 +534,44 @@ pub async fn notification_check(
             allowed.extend(open.iter().map(|id| report_group_key(id)));
         }
     }
-    Ok(Json(json!({ "allowed": allowed })))
+    Ok(Json(CheckResponse { allowed }))
 }
 
-#[derive(Default, Deserialize)]
+#[derive(Serialize, utoipa::ToSchema)]
+pub struct CheckResponse {
+    allowed: Vec<String>,
+}
+
+#[allow(dead_code)]
+#[derive(utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
 struct HomeCardRequest {
+    /// English labels for en-US and Korean labels otherwise.
+    locale: Option<String>,
+    /// Time zone supplied by the platform. Messenger uses the locale for labels.
+    time_zone: Option<String>,
+}
+
+#[derive(Serialize, utoipa::ToSchema)]
+pub struct HomeCardResponse {
+    title: &'static str,
+    count: i64,
+    #[schema(max_items = 5)]
+    items: Vec<HomeCardItem>,
+}
+
+#[derive(Serialize, utoipa::ToSchema)]
+struct HomeCardItem {
+    title: String,
+    subtitle: String,
+    path: String,
+    #[schema(format = DateTime)]
+    at: String,
+}
+
+// The callback ignores timeZone and falls back for malformed input.
+#[derive(Default, Deserialize)]
+struct HomeCardLocale {
     locale: Option<String>,
 }
 
@@ -543,18 +588,30 @@ struct HomeUnread {
 /// person's unread conversations for the portal home, newest first, at most
 /// five, without message bodies. Read-only; names come from the app's cache
 /// (this call carries no token for further platform calls).
+#[utoipa::path(
+    post, path = "/platform/home-card", operation_id = "homeCard",
+    description = "Read-only platform callback. Lists unread conversations for the verified caller.",
+    request_body = Option<HomeCardRequest>,
+    responses(
+        (status = 200, description = "Success", body = HomeCardResponse),
+        (status = 401, description = "Valid gateway identity required", body = crate::error::GatewayIdentityError),
+        (status = 403, description = "Permission denied", body = crate::error::ErrorResponse),
+        (status = 413, description = "Request body exceeds the size limit", body = String, content_type = "text/plain"),
+        (status = 500, description = "Internal error", body = crate::error::ErrorResponse),
+    )
+)]
 pub async fn home_card(
     State(pool): State<PgPool>,
     Extension(identity): Extension<Identity>,
     body: Bytes,
-) -> ApiResult<Json<Value>> {
+) -> ApiResult<Json<HomeCardResponse>> {
     if !identity.context.platform {
         return Err(ApiError::forbidden(
             "platform_call_required",
             "Only the platform calls this endpoint.",
         ));
     }
-    let request: HomeCardRequest = serde_json::from_slice(&body).unwrap_or_default();
+    let request: HomeCardLocale = serde_json::from_slice(&body).unwrap_or_default();
     let english = request.locale.as_deref() == Some("en-US");
     let me = identity.user_id.as_str();
     // Conversation metadata and membership must agree with the unread check.
@@ -590,7 +647,7 @@ pub async fn home_card(
         ids.extend(conversation.active().map(|p| p.user_id.clone()));
     }
     let names = users::names(&pool, &identity, ids).await;
-    let items: Vec<Value> = rows
+    let items: Vec<HomeCardItem> = rows
         .iter()
         .zip(conversations.iter())
         .filter_map(|(row, conversation)| {
@@ -599,12 +656,12 @@ pub async fn home_card(
                 .chars()
                 .take(120)
                 .collect();
-            Some(json!({
-                "title": title,
-                "subtitle": home_subtitle(&names.name(&row.sender_id), row.unread, english),
-                "path": conversation_path(&row.conversation_id),
-                "at": format!("{}Z", crate::time::iso(row.created_at)),
-            }))
+            Some(HomeCardItem {
+                title,
+                subtitle: home_subtitle(&names.name(&row.sender_id), row.unread, english),
+                path: conversation_path(&row.conversation_id),
+                at: format!("{}Z", crate::time::iso(row.created_at)),
+            })
         })
         .collect();
     let title = if english {
@@ -612,9 +669,11 @@ pub async fn home_card(
     } else {
         "안 읽은 대화"
     };
-    Ok(Json(
-        json!({"title": title, "count": count, "items": items}),
-    ))
+    Ok(Json(HomeCardResponse {
+        title,
+        count,
+        items,
+    }))
 }
 
 #[cfg(test)]

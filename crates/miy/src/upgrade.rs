@@ -22,8 +22,10 @@ pub async fn run() -> Result<Value> {
     let old: Value = serde_json::from_slice(&read_input("miy.bundle.json", &mut expected_files)?)?;
     if old["bundleVersion"] == crate::bundle::VERSION {
         crate::cli_error::validation(crate::bundle::verify(Path::new(".")), "bundle_invalid")?;
-        let changes =
-            crate::cli_error::validation(crate::agent_tools::setup_changes(&root), "setup_failed")?;
+        let changes = crate::cli_error::validation(
+            crate::agent_tools::setup_changes(&root, None),
+            "setup_failed",
+        )?;
         let receipt = transaction.commit(changes)?;
         let setup = crate::agent_tools::setup_result(&root)?;
         return Ok(
@@ -103,7 +105,7 @@ pub async fn run() -> Result<Value> {
                 | "0.11.0"
         )
     ) {
-        let mut changes = crate::agent_tools::setup_changes(&root)?;
+        let mut changes = crate::agent_tools::setup_changes(&root, None)?;
         for (path, content) in crate::bundle::template() {
             if !protected.contains_key(path) {
                 continue;
@@ -334,7 +336,7 @@ pub async fn run() -> Result<Value> {
             &mut files,
         )?;
     }
-    let mut changes = crate::agent_tools::setup_changes(&root)?;
+    let mut changes = crate::agent_tools::setup_changes(&root, None)?;
     changes.extend(crate::cli_error::validation(
         resolve_sdk_lock(
             &root,

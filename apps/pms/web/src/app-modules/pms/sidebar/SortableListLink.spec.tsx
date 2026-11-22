@@ -106,7 +106,7 @@ function renderLink({
 }
 
 describe('SortableListLink', () => {
-  it.each(['owner', 'viewer'])(
+  it.each(['owner', 'viewer'] as const)(
     'keeps a %s list focusable and openable when dragging is disabled',
     (role) => {
       const { onNavigate, runtime } = renderLink({ list: taskList({ role }) });

@@ -11,7 +11,7 @@ use axum::{
 use chrono::NaiveDateTime;
 use miy_app_sdk::{
     Identity,
-    acl::{Grant, MANAGE, ShareSnapshot, SubjectKind},
+    acl::{Grant, MANAGE, ShareSnapshot, SubjectKind, SubjectRef},
 };
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeSet, HashMap};
@@ -25,17 +25,19 @@ use crate::{
     time::now_utc,
 };
 
-#[derive(Serialize)]
+#[derive(Serialize, utoipa::ToSchema)]
 pub struct SpaceOut {
     id: String,
     name: String,
-    role: &'static str,
+    role: Role,
     can_manage: bool,
     can_upload: bool,
     created_by: String,
     #[serde(serialize_with = "crate::time::serialize")]
+    #[schema(value_type = String)]
     created_at: NaiveDateTime,
     #[serde(serialize_with = "crate::time::serialize")]
+    #[schema(value_type = String)]
     updated_at: NaiveDateTime,
 }
 
@@ -43,7 +45,7 @@ fn space_out(space: &Space, role: Role) -> SpaceOut {
     SpaceOut {
         id: space.id.clone(),
         name: space.name.clone(),
-        role: role.id(),
+        role,
         can_manage: role == Role::Admin,
         can_upload: role >= Role::Member,
         created_by: space.created_by.clone(),
@@ -52,7 +54,7 @@ fn space_out(space: &Space, role: Role) -> SpaceOut {
     }
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, utoipa::ToSchema)]
 pub struct SpacesResponse {
     /// The caller (for the share editor's "you" marker).
     user_id: String,
@@ -60,6 +62,15 @@ pub struct SpacesResponse {
 }
 
 /// `GET /v1/spaces`: the spaces the caller may open, by name.
+#[utoipa::path(
+    get, path = "/v1/spaces", operation_id = "listDriveSpaces", tag = "Spaces",
+    responses(
+        (status = 200, description = "Spaces visible to the current user", body = SpacesResponse),
+        (status = 401, description = "Platform identity could not be verified", body = crate::error::IdentityErrorResponse),
+        (status = 500, description = "Internal error", body = crate::error::ErrorResponse),
+        (status = 503, description = "Directory service is unavailable", body = crate::error::ErrorResponse)
+    )
+)]
 pub async fn list_spaces(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
@@ -87,8 +98,9 @@ pub async fn list_spaces(
     }))
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema)]
 pub struct SpaceRequest {
+    #[schema(min_length = 1, max_length = 120)]
     name: String,
 }
 
@@ -105,6 +117,17 @@ fn validate_name(payload: &SpaceRequest) -> ApiResult<String> {
 }
 
 /// `POST /v1/spaces`.
+#[utoipa::path(
+    post, path = "/v1/spaces", operation_id = "createDriveSpace", tag = "Spaces", request_body = SpaceRequest,
+    responses(
+        (status = 201, description = "Created space", body = SpaceOut),
+        (status = 401, description = "Platform identity could not be verified", body = crate::error::IdentityErrorResponse),
+        (status = 403, description = "Current permissions do not allow this operation", body = crate::error::ErrorResponse),
+        (status = 422, description = "Invalid space request", body = crate::error::ErrorResponse),
+        (status = 500, description = "Internal error", body = crate::error::ErrorResponse),
+        (status = 503, description = "Resource ACL is unavailable", body = crate::error::ErrorResponse)
+    )
+)]
 pub async fn create_space(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
@@ -135,6 +158,20 @@ pub async fn create_space(
 }
 
 /// `PATCH /v1/spaces/{space_id}`: rename (space admins).
+#[utoipa::path(
+    patch, path = "/v1/spaces/{space_id}", operation_id = "renameDriveSpace", tag = "Spaces",
+    request_body = SpaceRequest,
+    params(("space_id" = String, Path)),
+    responses(
+        (status = 200, description = "Renamed space", body = SpaceOut),
+        (status = 401, description = "Platform identity could not be verified", body = crate::error::IdentityErrorResponse),
+        (status = 403, description = "Current permissions do not allow this operation", body = crate::error::ErrorResponse),
+        (status = 404, description = "Resource was not found or is not visible", body = crate::error::ErrorResponse),
+        (status = 422, description = "Invalid or unsupported request", body = crate::error::ErrorResponse),
+        (status = 500, description = "Internal error", body = crate::error::ErrorResponse),
+        (status = 503, description = "A required platform service is unavailable", body = crate::error::ErrorResponse),
+    )
+)]
 pub async fn update_space(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
@@ -166,6 +203,18 @@ pub async fn update_space(
 
 /// `DELETE /v1/spaces/{space_id}` (space admins): the space, its folders,
 /// files and trash. The Core files are released after the commit.
+#[utoipa::path(
+    delete, path = "/v1/spaces/{space_id}", operation_id = "deleteDriveSpace", tag = "Spaces",
+    params(("space_id" = String, Path)),
+    responses(
+        (status = 204, description = "Space deleted"),
+        (status = 401, description = "Platform identity could not be verified", body = crate::error::IdentityErrorResponse),
+        (status = 403, description = "Current permissions do not allow this operation", body = crate::error::ErrorResponse),
+        (status = 404, description = "Resource was not found or is not visible", body = crate::error::ErrorResponse),
+        (status = 500, description = "Internal error", body = crate::error::ErrorResponse),
+        (status = 503, description = "A required platform service is unavailable", body = crate::error::ErrorResponse),
+    )
+)]
 pub async fn delete_space(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
@@ -236,35 +285,166 @@ async fn direct_subjects(
 }
 
 /// `GET /v1/spaces/{space_id}/sharing` (space admins).
+#[utoipa::path(
+    get, path = "/v1/spaces/{space_id}/sharing", operation_id = "getDriveSpaceSharing", tag = "Spaces",
+    params(("space_id" = String, Path)),
+    responses(
+        (status = 200, description = "Sharing rules and current revision", body = SharingSnapshot),
+        (status = 401, description = "Platform identity could not be verified", body = crate::error::IdentityErrorResponse),
+        (status = 403, description = "Sharing management permission is required", body = crate::error::ErrorResponse),
+        (status = 404, description = "Resource was not found or is not visible", body = crate::error::ErrorResponse),
+        (status = 500, description = "Internal error", body = crate::error::ErrorResponse),
+        (status = 503, description = "A required platform service is unavailable", body = crate::error::ErrorResponse),
+    )
+)]
 pub async fn get_sharing(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
     Path(space_id): Path<String>,
-) -> ApiResult<Json<ShareSnapshot>> {
+) -> ApiResult<Json<SharingSnapshot>> {
     access::load_space(&state.pool, &space_id)
         .await?
         .ok_or_else(space_not_found)?;
     Ok(Json(
-        state.acl.sharing(&identity, &space_key(&space_id)).await?,
+        state
+            .acl
+            .sharing(&identity, &space_key(&space_id))
+            .await?
+            .into(),
     ))
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Serialize, utoipa::ToSchema)]
+#[serde(remote = "SubjectKind", rename_all = "lowercase")]
+enum SharingSubjectKind {
+    User,
+    Group,
+}
+
+#[derive(Deserialize, utoipa::ToSchema)]
+#[serde(deny_unknown_fields)]
+struct SharingSubjectRef {
+    #[serde(with = "SharingSubjectKind")]
+    #[schema(value_type = SharingSubjectKind)]
+    kind: SubjectKind,
+    id: String,
+}
+
+#[derive(Deserialize, utoipa::ToSchema)]
+#[serde(deny_unknown_fields)]
+struct SharingGrant {
+    subject: SharingSubjectRef,
+    role: String,
+}
+
+impl From<SharingGrant> for Grant {
+    fn from(value: SharingGrant) -> Self {
+        Self {
+            subject: SubjectRef {
+                kind: value.subject.kind,
+                id: value.subject.id,
+            },
+            role: value.role,
+        }
+    }
+}
+
+#[derive(Serialize, utoipa::ToSchema)]
+struct SharingSubject {
+    #[serde(with = "SharingSubjectKind")]
+    #[schema(value_type = SharingSubjectKind)]
+    kind: SubjectKind,
+    id: String,
+    name: String,
+}
+
+#[derive(Serialize, utoipa::ToSchema)]
+struct SharingEntry {
+    subject: SharingSubject,
+    role: String,
+    protected: bool,
+}
+
+#[derive(Serialize, utoipa::ToSchema)]
+struct SharingRole {
+    id: String,
+    label: String,
+}
+
+#[derive(Serialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct SharingSnapshot {
+    revision: i64,
+    entries: Vec<SharingEntry>,
+    roles: Vec<SharingRole>,
+    #[schema(required = true)]
+    default_role: Option<String>,
+    can_manage: bool,
+}
+
+impl From<ShareSnapshot> for SharingSnapshot {
+    fn from(value: ShareSnapshot) -> Self {
+        Self {
+            revision: value.revision,
+            entries: value
+                .entries
+                .into_iter()
+                .map(|entry| SharingEntry {
+                    subject: SharingSubject {
+                        kind: entry.subject.kind,
+                        id: entry.subject.id,
+                        name: entry.subject.name,
+                    },
+                    role: entry.role,
+                    protected: entry.protected,
+                })
+                .collect(),
+            roles: value
+                .roles
+                .into_iter()
+                .map(|role| SharingRole {
+                    id: role.id,
+                    label: role.label,
+                })
+                .collect(),
+            default_role: value.default_role,
+            can_manage: value.can_manage,
+        }
+    }
+}
+
+#[derive(Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct SharingRequest {
     expected_revision: i64,
     request_id: String,
-    entries: Vec<Grant>,
+    entries: Vec<SharingGrant>,
 }
 
 /// `PUT /v1/spaces/{space_id}/sharing` (space admins). People and groups
 /// added get a `share` notification; people taken off lose it.
+#[utoipa::path(
+    put, path = "/v1/spaces/{space_id}/sharing", operation_id = "replaceDriveSpaceSharing", tag = "Spaces",
+    request_body = SharingRequest,
+    params(("space_id" = String, Path)),
+    responses(
+        (status = 200, description = "Updated sharing snapshot", body = SharingSnapshot),
+        (status = 401, description = "Platform identity could not be verified", body = crate::error::IdentityErrorResponse),
+        (status = 400, description = "Malformed request", body = crate::error::ErrorResponse),
+        (status = 403, description = "Sharing management permission is required", body = crate::error::ErrorResponse),
+        (status = 404, description = "Resource was not found or is not visible", body = crate::error::ErrorResponse),
+        (status = 409, description = "ACL revision or request ID conflict", body = crate::error::ErrorResponse),
+        (status = 422, description = "Invalid or unsupported request", body = crate::error::ErrorResponse),
+        (status = 500, description = "Internal error", body = crate::error::ErrorResponse),
+        (status = 503, description = "A required platform service is unavailable", body = crate::error::ErrorResponse),
+    )
+)]
 pub async fn replace_sharing(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
     Path(space_id): Path<String>,
     ApiJson(payload): ApiJson<SharingRequest>,
-) -> ApiResult<Json<ShareSnapshot>> {
+) -> ApiResult<Json<SharingSnapshot>> {
     let space = access::load_space(&state.pool, &space_id)
         .await?
         .ok_or_else(space_not_found)?;
@@ -277,6 +457,7 @@ pub async fn replace_sharing(
         .into_iter()
         .collect();
     let mut tx = state.pool.begin().await?;
+    let grants: Vec<_> = payload.entries.into_iter().map(Grant::from).collect();
     let snapshot = state
         .acl
         .replace_in(
@@ -285,7 +466,7 @@ pub async fn replace_sharing(
             &space_key(&space_id),
             payload.expected_revision,
             &payload.request_id,
-            &payload.entries,
+            &grants,
         )
         .await?;
     tx.commit().await?;
@@ -322,16 +503,29 @@ pub async fn replace_sharing(
         .await;
     }
     notify::retract_for(&identity, &group_key, &removed).await;
-    Ok(Json(snapshot))
+    Ok(Json(snapshot.into()))
 }
 
 /// `GET /v1/spaces/{space_id}/sharing/requests/{request_id}`: the result of a
 /// replacement whose answer was lost.
+#[utoipa::path(
+    get, path = "/v1/spaces/{space_id}/sharing/requests/{request_id}", operation_id = "getDriveSharingResult", tag = "Spaces",
+    params(("space_id" = String, Path), ("request_id" = String, Path)),
+    responses(
+        (status = 200, description = "Recorded result, or null when no result was recorded", body = Option<SharingSnapshot>),
+        (status = 401, description = "Platform identity could not be verified", body = crate::error::IdentityErrorResponse),
+        (status = 400, description = "Malformed request", body = crate::error::ErrorResponse),
+        (status = 403, description = "Sharing management permission is required", body = crate::error::ErrorResponse),
+        (status = 404, description = "Resource was not found or is not visible", body = crate::error::ErrorResponse),
+        (status = 500, description = "Internal error", body = crate::error::ErrorResponse),
+        (status = 503, description = "A required platform service is unavailable", body = crate::error::ErrorResponse),
+    )
+)]
 pub async fn sharing_result(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
     Path((space_id, request_id)): Path<(String, String)>,
-) -> ApiResult<Json<Option<ShareSnapshot>>> {
+) -> ApiResult<Json<Option<SharingSnapshot>>> {
     access::load_space(&state.pool, &space_id)
         .await?
         .ok_or_else(space_not_found)?;
@@ -339,6 +533,7 @@ pub async fn sharing_result(
         state
             .acl
             .replacement_result(&identity, &space_key(&space_id), &request_id)
-            .await?,
+            .await?
+            .map(Into::into),
     ))
 }

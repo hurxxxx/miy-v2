@@ -19,6 +19,7 @@ import { loadRemote, registerRemotes } from "@module-federation/enhanced/runtime
 import {
   UI_CONTRACT,
   ApiError,
+  appTarget,
   checkedResponse,
   completeDirectoryPage,
   directoryQuery,
@@ -344,6 +345,47 @@ async function blob(path: string, init?: RequestInit): Promise<Blob> {
   return readBlob(await call(path, init), init);
 }
 
+function downloadPath(url: string): string {
+  if (!/^\/_miy\/downloads\/[A-Za-z0-9_-]{43}$/.test(url)) throw new Error("invalid_download_link");
+  return url;
+}
+
+function startNativeDownload(path: string) {
+  const anchor = document.createElement("a");
+  anchor.href = path;
+  anchor.download = "";
+  anchor.rel = "noopener";
+  anchor.hidden = true;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+}
+
+const downloadAndWait: NonNullable<AppRuntime["downloadAndWait"]> = async (url, signal, options) => {
+  if (signal?.aborted) throw new ApiError("abort", "request_aborted");
+  const path = downloadPath(url);
+  if (!options?.checkOnly) startNativeDownload(`${path}?track=1`);
+  const startDeadline = Date.now() + 30_000;
+  let streaming = false;
+  let failures = 0;
+  for (;;) {
+    try {
+      const { status } = await json<{ status: string }>(`${path}/status`, { signal });
+      if (status === "sent") return;
+      if (status === "failed") throw new ApiError("http", "file_download_failed");
+      if (status === "streaming") streaming = true;
+      else if (status !== "pending") throw new Error("file_download_status_invalid");
+      else if (streaming || Date.now() >= startDeadline) {
+        throw new Error("file_download_start_unconfirmed");
+      }
+      failures = 0;
+    } catch (error) {
+      if (!(error instanceof ApiError) || !error.retryable || ++failures >= 3) throw error;
+    }
+    await withAbort(new Promise<void>((resolve) => window.setTimeout(resolve, 1_000)), signal);
+  }
+};
+
 // Display settings. An app built before settings existed is never switched:
 // its document stays light and Korean, as it was written.
 const DARK = window.matchMedia("(prefers-color-scheme: dark)");
@@ -543,26 +585,13 @@ function FrameApp({ View }: { View: ComponentType<AppProps> }) {
           post({ type: "route.navigate", payload: { path, replace: !!options?.replace } });
         },
         // The full portal address of an app path, for links people share.
-        portalUrl: (path: string) => {
-          if (!relativePath(path)) throw new Error("Use an app-relative path");
-          return new URL(boot.basePath.replace(/\/$/, "") + path, boot.parentOrigin).href;
-        },
+        portalUrl: (path: string) => new URL(appTarget(boot.basePath, path), boot.parentOrigin).href,
         api: <T,>(path: string, init?: RequestInit) => json<T>("/_miy/api" + apiPath(path), init),
         apiBlob: (path: string, init?: RequestInit) => blob("/_miy/api" + apiPath(path), init),
         fileApi: async (path: string, init?: FileInit) =>
           checkedResponse(await call("/_miy/files" + apiPath(path), init), init),
-        download: (url: string) => {
-          // Only a link Core issued for this frame's origin; no other target.
-          if (!/^\/_miy\/downloads\/[A-Za-z0-9_-]{43}$/.test(url)) throw new Error("invalid_download_link");
-          const anchor = document.createElement("a");
-          anchor.href = url;
-          anchor.download = "";
-          anchor.rel = "noopener";
-          anchor.hidden = true;
-          document.body.appendChild(anchor);
-          anchor.click();
-          anchor.remove();
-        },
+        download: (url) => startNativeDownload(downloadPath(url)),
+        downloadAndWait,
         platformApi: async <T,>(resource: "directory", query?: DirectoryQuery, options?: DirectoryRequestOptions) => {
           if (resource !== "directory") throw new Error("unknown_platform_resource");
           return completeDirectoryPage(await json<T>("/_miy/platform/directory" + directoryQuery(query), options), query);

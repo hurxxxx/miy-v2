@@ -52,19 +52,48 @@ fn template_not_found() -> ApiError {
     ApiError::not_found("docs.template_not_found", "Template not found.")
 }
 
-fn item(template: &Template, name: &str, can_delete: bool) -> Value {
-    json!({
-        "id": template.id,
-        "space_id": template.space_id,
-        "title": template.title,
-        "description": template.description,
-        "source_page_id": template.source_page_id,
-        "created_by_id": template.created_by_id,
-        "created_by_name": name,
-        "created_at": naive_iso(template.created_at),
-        "updated_at": naive_iso(template.updated_at),
-        "can_delete": can_delete,
-    })
+#[derive(serde::Serialize, utoipa::ToSchema)]
+pub struct TemplateItem {
+    id: String,
+    space_id: String,
+    title: String,
+    description: String,
+    #[schema(required)]
+    source_page_id: Option<String>,
+    created_by_id: String,
+    created_by_name: String,
+    created_at: String,
+    updated_at: String,
+    can_delete: bool,
+}
+
+#[derive(serde::Serialize, utoipa::ToSchema)]
+pub struct TemplateDetail {
+    #[serde(flatten)]
+    template: TemplateItem,
+    #[schema(value_type = Vec<std::collections::BTreeMap<String, Value>>)]
+    content_blocks: Value,
+}
+
+#[derive(serde::Serialize, utoipa::ToSchema)]
+pub struct TemplateList {
+    items: Vec<TemplateItem>,
+    can_create: bool,
+}
+
+fn item(template: &Template, name: &str, can_delete: bool) -> TemplateItem {
+    TemplateItem {
+        id: template.id.clone(),
+        space_id: template.space_id.clone(),
+        title: template.title.clone(),
+        description: template.description.clone(),
+        source_page_id: template.source_page_id.clone(),
+        created_by_id: template.created_by_id.clone(),
+        created_by_name: name.to_owned(),
+        created_at: naive_iso(template.created_at),
+        updated_at: naive_iso(template.updated_at),
+        can_delete,
+    }
 }
 
 /// The content of a template for a new page or doc in `space_id`, decided
@@ -96,11 +125,24 @@ pub async fn content_for(
 }
 
 /// `GET /v1/docs/templates?space=`: the space's templates, by title.
+#[utoipa::path(
+    get, path = "/v1/docs/templates", operation_id = "listDocsTemplates", tag = "Templates",
+    params(SpaceQuery),
+    responses(
+        (status = 200, description = "Success", body = TemplateList),
+        (status = 400, description = "Invalid request", body = String, content_type = "text/plain"),
+        (status = 401, description = "Valid platform identity required", body = crate::error::IdentityErrorResponse),
+        (status = 403, description = "Permission denied", body = crate::error::ErrorResponse),
+        (status = 404, description = "Resource is unavailable or does not exist", body = crate::error::ErrorResponse),
+        (status = 500, description = "Could not complete the request", body = crate::error::ErrorResponse),
+        (status = 503, description = "A required platform service is unavailable", body = crate::error::ErrorResponse)
+    )
+)]
 pub async fn list(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
     Query(query): Query<SpaceQuery>,
-) -> ApiResult<Json<Value>> {
+) -> ApiResult<Json<TemplateList>> {
     let (space, role) = spaces::require_space(&state, &identity, query.space()).await?;
     let sql = format!(
         "SELECT {COLUMNS} FROM docs_templates WHERE space_id = $1 ORDER BY lower(title), created_at"
@@ -111,31 +153,54 @@ pub async fn list(
         .await?;
     let names =
         people::display_names(&identity, rows.iter().map(|row| row.created_by_id.clone())).await;
-    Ok(Json(json!({
-        "items": rows.iter().map(|row| item(
-            row,
-            names.get(&row.created_by_id).map(String::as_str).unwrap_or(""),
-            row.created_by_id == identity.user_id || role == SpaceRole::Admin,
-        )).collect::<Vec<_>>(),
-        "can_create": role >= SpaceRole::Member,
-    })))
+    Ok(Json(TemplateList {
+        items: rows
+            .iter()
+            .map(|row| {
+                item(
+                    row,
+                    names
+                        .get(&row.created_by_id)
+                        .map(String::as_str)
+                        .unwrap_or(""),
+                    row.created_by_id == identity.user_id || role == SpaceRole::Admin,
+                )
+            })
+            .collect(),
+        can_create: role >= SpaceRole::Member,
+    }))
 }
 
-#[derive(Deserialize)]
-pub struct CreateRequest {
+#[derive(Deserialize, utoipa::ToSchema)]
+pub struct TemplateCreateRequest {
     page_id: String,
     #[serde(default)]
+    #[schema(min_length = 1, max_length = 200)]
     title: Option<String>,
     #[serde(default)]
+    #[schema(max_length = 1000)]
     description: Option<String>,
 }
 
 /// `POST /v1/docs/templates`: save a page the caller can read as a template
 /// of the page's space. A member role in that space is required.
+#[utoipa::path(
+    post, path = "/v1/docs/templates", operation_id = "createDocsTemplate", tag = "Templates",
+    request_body = TemplateCreateRequest,
+    responses(
+        (status = 201, description = "Created", body = TemplateItem),
+        (status = 401, description = "Valid platform identity required", body = crate::error::IdentityErrorResponse),
+        (status = 403, description = "Permission denied", body = crate::error::ErrorResponse),
+        (status = 404, description = "Resource is unavailable or does not exist", body = crate::error::ErrorResponse),
+        (status = 422, description = "Request validation failed", body = crate::error::ErrorResponse),
+        (status = 500, description = "Could not complete the request", body = crate::error::ErrorResponse),
+        (status = 503, description = "A required platform service is unavailable", body = crate::error::ErrorResponse)
+    )
+)]
 pub async fn create(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
-    ApiJson(payload): ApiJson<CreateRequest>,
+    ApiJson(payload): ApiJson<TemplateCreateRequest>,
 ) -> ApiResult<impl IntoResponse> {
     if let Some(title) = &payload.title {
         check_length("title", title, 1, 200)?;
@@ -216,6 +281,18 @@ pub async fn create(
 }
 
 /// `DELETE /v1/docs/templates/{id}`: the creator or a space admin.
+#[utoipa::path(
+    delete, path = "/v1/docs/templates/{template_id}", operation_id = "deleteDocsTemplate", tag = "Templates",
+    params(("template_id" = String, Path)),
+    responses(
+        (status = 204, description = "Completed with no response body"),
+        (status = 401, description = "Valid platform identity required", body = crate::error::IdentityErrorResponse),
+        (status = 403, description = "Permission denied", body = crate::error::ErrorResponse),
+        (status = 404, description = "Resource is unavailable or does not exist", body = crate::error::ErrorResponse),
+        (status = 500, description = "Could not complete the request", body = crate::error::ErrorResponse),
+        (status = 503, description = "A required platform service is unavailable", body = crate::error::ErrorResponse)
+    )
+)]
 pub async fn delete(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
@@ -249,11 +326,22 @@ pub async fn delete(
 }
 
 /// The template itself with its content (preview before starting a page).
+#[utoipa::path(
+    get, path = "/v1/docs/templates/{template_id}", operation_id = "getDocsTemplate", tag = "Templates",
+    params(("template_id" = String, Path)),
+    responses(
+        (status = 200, description = "Success", body = TemplateDetail),
+        (status = 401, description = "Valid platform identity required", body = crate::error::IdentityErrorResponse),
+        (status = 404, description = "Resource is unavailable or does not exist", body = crate::error::ErrorResponse),
+        (status = 500, description = "Could not complete the request", body = crate::error::ErrorResponse),
+        (status = 503, description = "A required platform service is unavailable", body = crate::error::ErrorResponse)
+    )
+)]
 pub async fn get(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
     Path(template_id): Path<String>,
-) -> ApiResult<Json<Value>> {
+) -> ApiResult<Json<TemplateDetail>> {
     let sql = format!("SELECT {COLUMNS} FROM docs_templates WHERE id = $1");
     let template = sqlx::query_as::<_, Template>(&sql)
         .bind(&template_id)
@@ -267,7 +355,7 @@ pub async fn get(
         .await?
         .ok_or_else(template_not_found)?;
     let names = people::display_names(&identity, [template.created_by_id.clone()]).await;
-    let mut value = item(
+    let value = item(
         &template,
         names
             .get(&template.created_by_id)
@@ -275,6 +363,8 @@ pub async fn get(
             .unwrap_or(""),
         template.created_by_id == identity.user_id || role == SpaceRole::Admin,
     );
-    value["content_blocks"] = template.content_blocks.clone();
-    Ok(Json(value))
+    Ok(Json(TemplateDetail {
+        template: value,
+        content_blocks: template.content_blocks,
+    }))
 }

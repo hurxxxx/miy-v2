@@ -1,3 +1,4 @@
+import type { components } from '../../../api.generated';
 import { apiFetchJsonWithMappedError } from '../../../platform/api/client';
 import type { AppApi } from '../../../platform/runtime/runtime-context';
 
@@ -8,22 +9,10 @@ import type { AppApi } from '../../../platform/runtime/runtime-context';
  * board space in the path: `/v1/spaces/<id>/announcements`; company notices
  * are also reachable without a space (`/v1/announcements`).
  */
-export type AnnouncementScope = 'workspace' | 'company';
+export type AnnouncementScope = components['schemas']['AnnouncementScope'];
 
-/** AI-DO `ApiSchema<'AnnouncementOut'>`; workspaceId is the board space (null for company notices). */
-interface AnnouncementOut {
-  id: string;
-  workspaceId: string | null;
-  authorId: string;
-  authorName: string;
-  scope: AnnouncementScope;
-  title: string;
-  body: string;
-  isPinned: boolean;
-  canManage?: boolean;
-  createdAt: string;
-  updatedAt: string;
-}
+/** workspaceId is the board space (null for company notices). */
+type AnnouncementOut = components['schemas']['AnnouncementOut'];
 
 export type Announcement = Omit<AnnouncementOut, 'canManage'> & {
   canManage: boolean;
@@ -45,23 +34,13 @@ function toAnnouncement(value: AnnouncementOut): Announcement {
   };
 }
 
-export interface AnnouncementsResponse {
+type AnnouncementList = components['schemas']['AnnouncementsResponse'];
+
+export type AnnouncementsResponse = Omit<AnnouncementList, 'items'> & {
   items: Announcement[];
-  hasMore: boolean;
-}
-
-export interface AnnouncementCreateInput {
-  title: string;
-  body?: string;
-  scope?: AnnouncementScope;
-  isPinned?: boolean;
-}
-
-export interface AnnouncementUpdateInput {
-  title?: string;
-  body?: string;
-  isPinned?: boolean;
-}
+};
+export type AnnouncementCreateInput = components['schemas']['CreateRequest'];
+export type AnnouncementUpdateInput = components['schemas']['UpdateRequest'];
 
 export class AnnouncementApiError extends Error {
   status: number;
@@ -106,7 +85,7 @@ export async function listAnnouncements(
   if (options.limit) params.set('limit', String(options.limit));
   if (options.offset) params.set('offset', String(options.offset));
   const query = params.toString();
-  const response = await request<{ items: AnnouncementOut[]; hasMore: boolean }>(
+  const response = await request<AnnouncementList>(
     `${announcementsPath(spaceId)}${query ? `?${query}` : ''}`,
     api,
   );

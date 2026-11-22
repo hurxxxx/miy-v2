@@ -34,7 +34,8 @@ use std::collections::HashMap;
 
 use crate::{
     AppState,
-    error::{ApiError, ApiJson, ApiResult, check_length},
+    api_contract::BinaryBody,
+    error::{ApiError, ApiJson, ApiResult, ErrorResponse, IdentityErrorResponse, check_length},
     spaces,
     time::now_utc,
     whiteboard::{self, Board},
@@ -189,20 +190,38 @@ pub async fn detach_released(pool: &PgPool, identity: &Identity, released: &[Rel
 
 // ---------------------------------------------------------------- routes
 
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema)]
 pub struct ReserveRequest {
+    #[schema(format = "uuid")]
     request_id: String,
     /// Excalidraw's file ID (the key in `scene.files`).
+    #[schema(min_length = 1, max_length = 128)]
     file_id: String,
+    /// The trimmed filename may contain up to 255 characters and no control characters.
     name: String,
+    /// PNG, JPEG, GIF or WebP. The server trims and lowercases this value.
     mime: String,
+    /// Exact size in bytes, up to 10 MiB.
+    #[schema(minimum = 1, maximum = 10485760)]
     size: u64,
 }
 
-#[derive(Serialize)]
+#[allow(dead_code)]
+#[derive(utoipa::ToSchema)]
+#[schema(rename_all = "snake_case")]
+enum WhiteboardFileStatus {
+    Pending,
+    Ready,
+    Attached,
+}
+
+#[derive(Serialize, utoipa::ToSchema)]
 pub struct FileResponse {
+    /// Board file row ID to save as `storage` in the scene.
     id: String,
+    /// Excalidraw's file ID.
     file_id: String,
+    #[schema(value_type = WhiteboardFileStatus)]
     status: String,
 }
 
@@ -218,6 +237,23 @@ fn response(row: &StoredFile, status: &str) -> FileResponse {
 /// Needs edit access to the board. Repeating the same request ID with the
 /// same file answers the same row (and its current status); another payload
 /// under that request ID is a conflict.
+#[utoipa::path(
+    post, path = "/items/{item_id}/files", operation_id = "reserveWhiteboardFile", tag = "Whiteboard files",
+    params(("item_id" = String, Path)),
+    request_body = ReserveRequest,
+    responses(
+        (status = 201, description = "Image reservation and its current status", body = FileResponse),
+        (status = 400, description = "The image media type is unsupported", body = ErrorResponse),
+        (status = 401, description = "Platform identity could not be verified", body = IdentityErrorResponse),
+        (status = 403, description = "The caller cannot edit this board", body = ErrorResponse),
+        (status = 404, description = "The workspace or board is missing or is not visible", body = ErrorResponse),
+        (status = 409, description = "This request ID already belongs to a different reservation", body = ErrorResponse),
+        (status = 413, description = "File size must be between 1 byte and 10 MiB", body = ErrorResponse),
+        (status = 422, description = "Invalid image reservation", body = ErrorResponse),
+        (status = 500, description = "Internal error", body = ErrorResponse),
+        (status = 503, description = "A required platform service is unavailable", body = ErrorResponse),
+    )
+)]
 pub async fn reserve(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
@@ -358,6 +394,20 @@ async fn board_of(
 /// `PUT /files/whiteboard/items/{item_id}/files/{file_id}`: the uploader
 /// streams the reserved bytes while they may still edit the board. A repeat
 /// after a lost answer reports the stored state.
+#[utoipa::path(
+    put, path = "/files/whiteboard/items/{item_id}/files/{file_id}", operation_id = "uploadWhiteboardFile", tag = "Whiteboard files",
+    description = "Use the authenticated frame file gateway. Send the exact number of reserved bytes, up to 10 MiB. Only the person who reserved the file may upload it, while they can edit the board.",
+    params(("item_id" = String, Path), ("file_id" = String, Path, description = "Board file row ID returned as id by the reservation")),
+    request_body(content = BinaryBody, content_type = "application/octet-stream"),
+    responses(
+        (status = 200, description = "Current image file status", body = FileResponse),
+        (status = 401, description = "Platform identity could not be verified", body = IdentityErrorResponse),
+        (status = 403, description = "The caller cannot edit this board", body = ErrorResponse),
+        (status = 404, description = "The board or image is missing or is not available to the caller", body = ErrorResponse),
+        (status = 500, description = "Internal error", body = ErrorResponse),
+        (status = 503, description = "The image could not be stored or a required platform service is unavailable", body = ErrorResponse),
+    )
+)]
 pub async fn upload(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
@@ -413,6 +463,30 @@ pub async fn upload(
 
 /// `GET /files/whiteboard/items/{item_id}/files/{file_id}`: the bytes, for
 /// anyone who may currently see the board.
+#[utoipa::path(
+    get, path = "/files/whiteboard/items/{item_id}/files/{file_id}", operation_id = "downloadWhiteboardFile", tag = "Whiteboard files",
+    description = "Use the authenticated frame file gateway. Rechecks current board access before streaming an available image, up to 10 MiB.",
+    params(("item_id" = String, Path), ("file_id" = String, Path, description = "Board file row ID returned as id by the reservation")),
+    responses(
+        (status = 200, description = "Stored image bytes",
+            content((BinaryBody = "image/gif"), (BinaryBody = "image/jpeg"), (BinaryBody = "image/png"), (BinaryBody = "image/webp")),
+            headers(
+                ("Content-Length" = u64, description = "Size of the response in bytes"),
+                ("Content-Disposition" = String, description = "Stored filename and download disposition"),
+                ("ETag" = String, description = "Storage object entity tag"),
+                ("X-Miy-File-Id" = String, description = "Core storage file ID"),
+                ("X-Miy-File-Version" = String, description = "Core storage file version"),
+                ("X-Miy-File-Sha256" = String, description = "SHA-256 digest of the stored file"),
+                ("Content-Security-Policy" = String, description = "sandbox"),
+                ("X-Content-Type-Options" = String, description = "nosniff")
+            )
+        ),
+        (status = 401, description = "Platform identity could not be verified", body = IdentityErrorResponse),
+        (status = 404, description = "The board or image is missing or is not visible", body = ErrorResponse),
+        (status = 500, description = "Internal error", body = ErrorResponse),
+        (status = 503, description = "The image could not be read or a required platform service is unavailable", body = ErrorResponse),
+    )
+)]
 pub async fn download(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,

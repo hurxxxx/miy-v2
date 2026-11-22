@@ -15,6 +15,9 @@ sqlx = { version = "=0.8.6", features = ["runtime-tokio-rustls", "postgres", "uu
 tokio = { version = "1", features = ["full"] }
 uuid = { version = "1", features = ["v4", "serde"] }
 
+utoipa = "=6.0.0"
+utoipa-axum = "=0.3.0"
+
 [dev-dependencies]
 hex = "0.4"
 jsonwebtoken = "9"

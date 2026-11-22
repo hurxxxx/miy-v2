@@ -140,6 +140,13 @@ function deploy(dir: string) {
   cli(["deploy"], dir);
 }
 
+function useFixtureApi(dir: string) {
+  const path = join(dir, "manifest.json");
+  const manifest = JSON.parse(readFileSync(path, "utf8"));
+  delete manifest.apiContract;
+  writeFileSync(path, JSON.stringify(manifest, null, 2) + "\n");
+}
+
 test.describe.configure({ mode: "serial" });
 
 test.beforeAll(async ({ browser }) => {
@@ -154,10 +161,12 @@ test.beforeAll(async ({ browser }) => {
   const todo = await scaffold(browser, todoId, "할 일 실증 " + suffix);
   for (const part of ["src", "web/src", "migrations/0002_todos.sql"])
     cpSync(join(root, "examples/native-todo", part), join(todo, part), { recursive: true });
+  useFixtureApi(todo);
   deploy(todo);
   const probe = await scaffold(browser, probeId, "프레임 프로브 " + suffix);
   writeFileSync(join(probe, "web/src/AppRoot.tsx"), PROBE);
   writeFileSync(join(probe, "src/main.rs"), PROBE_RUST);
+  useFixtureApi(probe);
   deploy(probe);
   deploy(await scaffold(browser, plainId, "기본 앱 " + suffix));
   writeFileSync(deployed, JSON.stringify([todoId, probeId, plainId]));

@@ -1,0 +1,42 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "App API",
+    "version": "0.1.0"
+  },
+  "paths": {
+    "/ping": {
+      "get": {
+        "summary": "Check that the app API is reachable from its own frame.",
+        "operationId": "getPing",
+        "responses": {
+          "200": {
+            "description": "App is ready",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PingResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "PingResponse": {
+        "type": "object",
+        "required": [
+          "message"
+        ],
+        "properties": {
+          "message": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}

@@ -22,11 +22,6 @@ Commands:
   permissions   Inspect and explicitly approve installation/release external access
   mcp           Serve the project read-only JSON-RPC MCP interface over stdio
   app           
-  serve         
-  worker        
-  migrate       
-  catalog-sync  Import a trusted official app catalog into the configured Core database
-  seed          
   help          Print this message or the help of the given subcommand(s)
 
 Options:
@@ -1654,6 +1649,7 @@ Options:
           Possible values:
           - updates: Update the global CLI, each project's executable and agent MCP sessions
           - harness: Review component reuse, file recovery and the app integration checks
+          - api:     Read the app OpenAPI rules and generation commands
 
       --app <APP>
           
@@ -4936,211 +4932,6 @@ Print this message or the help of the given subcommand(s)
 Usage: miy app help help
 ```
 
-## miy serve
-
-```text
-Usage: miy serve [OPTIONS]
-
-Options:
-      --context <CONTEXT>
-          
-
-      --app <APP>
-          
-
-      --project <PROJECT>
-          
-
-      --no-input
-          
-
-      --yes
-          
-
-      --fields <FIELDS>
-          
-
-      --limit <LIMIT>
-          [default: 50]
-
-      --cursor <CURSOR>
-          
-
-      --output <OUTPUT>
-          Output for application commands: auto uses text on a terminal and JSON otherwise
-          
-          [default: auto]
-          [possible values: auto, text, json, jsonl]
-
-  -h, --help
-          Print help
-```
-
-## miy worker
-
-```text
-Usage: miy worker [OPTIONS]
-
-Options:
-      --context <CONTEXT>
-          
-
-      --app <APP>
-          
-
-      --project <PROJECT>
-          
-
-      --no-input
-          
-
-      --yes
-          
-
-      --fields <FIELDS>
-          
-
-      --limit <LIMIT>
-          [default: 50]
-
-      --cursor <CURSOR>
-          
-
-      --output <OUTPUT>
-          Output for application commands: auto uses text on a terminal and JSON otherwise
-          
-          [default: auto]
-          [possible values: auto, text, json, jsonl]
-
-  -h, --help
-          Print help
-```
-
-## miy migrate
-
-```text
-Usage: miy migrate [OPTIONS]
-
-Options:
-      --context <CONTEXT>
-          
-
-      --app <APP>
-          
-
-      --project <PROJECT>
-          
-
-      --no-input
-          
-
-      --yes
-          
-
-      --fields <FIELDS>
-          
-
-      --limit <LIMIT>
-          [default: 50]
-
-      --cursor <CURSOR>
-          
-
-      --output <OUTPUT>
-          Output for application commands: auto uses text on a terminal and JSON otherwise
-          
-          [default: auto]
-          [possible values: auto, text, json, jsonl]
-
-  -h, --help
-          Print help
-```
-
-## miy catalog-sync
-
-```text
-Import a trusted official app catalog into the configured Core database
-
-Usage: miy catalog-sync [OPTIONS] --file <PATH>
-
-Options:
-      --context <CONTEXT>
-          
-
-      --file <PATH>
-          Catalog JSON from the platform publisher
-
-      --app <APP>
-          
-
-      --project <PROJECT>
-          
-
-      --no-input
-          
-
-      --yes
-          
-
-      --fields <FIELDS>
-          
-
-      --limit <LIMIT>
-          [default: 50]
-
-      --cursor <CURSOR>
-          
-
-      --output <OUTPUT>
-          Output for application commands: auto uses text on a terminal and JSON otherwise
-          
-          [default: auto]
-          [possible values: auto, text, json, jsonl]
-
-  -h, --help
-          Print help
-```
-
-## miy seed
-
-```text
-Usage: miy seed [OPTIONS]
-
-Options:
-      --context <CONTEXT>
-          
-
-      --app <APP>
-          
-
-      --project <PROJECT>
-          
-
-      --no-input
-          
-
-      --yes
-          
-
-      --fields <FIELDS>
-          
-
-      --limit <LIMIT>
-          [default: 50]
-
-      --cursor <CURSOR>
-          
-
-      --output <OUTPUT>
-          Output for application commands: auto uses text on a terminal and JSON otherwise
-          
-          [default: auto]
-          [possible values: auto, text, json, jsonl]
-
-  -h, --help
-          Print help
-```
-
 ## miy help
 
 ```text
@@ -5163,11 +4954,6 @@ Commands:
   permissions   Inspect and explicitly approve installation/release external access
   mcp           Serve the project read-only JSON-RPC MCP interface over stdio
   app           
-  serve         
-  worker        
-  migrate       
-  catalog-sync  Import a trusted official app catalog into the configured Core database
-  seed          
   help          Print this message or the help of the given subcommand(s)
 ```
 
@@ -5880,38 +5666,6 @@ Usage: miy help app rename
 Record evidence for a dev release before promotion
 
 Usage: miy help app accept
-```
-
-## miy help serve
-
-```text
-Usage: miy help serve
-```
-
-## miy help worker
-
-```text
-Usage: miy help worker
-```
-
-## miy help migrate
-
-```text
-Usage: miy help migrate
-```
-
-## miy help catalog-sync
-
-```text
-Import a trusted official app catalog into the configured Core database
-
-Usage: miy help catalog-sync
-```
-
-## miy help seed
-
-```text
-Usage: miy help seed
 ```
 
 ## miy help help

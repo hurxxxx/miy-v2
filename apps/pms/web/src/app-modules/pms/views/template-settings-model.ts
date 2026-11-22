@@ -2,6 +2,7 @@ import type {
   PmsTaskTemplate,
   PmsTaskTemplateInput,
   PmsTemplateLabel,
+  PmsTemplatePriority,
   PmsTemplateSubtask,
 } from '../api/pms-api';
 
@@ -9,7 +10,7 @@ import type {
 export type TemplateDraft = {
   name: string;
   title: string;
-  defaultPriority: string;
+  defaultPriority: PmsTemplatePriority;
   defaultStatus: string;
   descriptionBlocks: Record<string, unknown>[] | null;
   checklist: string[];
