@@ -1,0 +1,116 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-11-22",
+  "status": "SOURCE_CHECKED",
+  "reviewBaseline": "4297062",
+  "platformCommit": "2802c37",
+  "webFixtureCommit": "538d1e7",
+  "scope": "M5 보조 패널 입력·프레임 슬롯·고정·홈 카드, M6 전환 권한 회수, M12 검색 입력·결과 접근, 플래너·메신저·게시판 보완과 PMS 포팅. M10은 코어 설계 초안을 계획에 반영했다.",
+  "appCommits": {
+    "pms": "da8313e",
+    "boardAndMessenger": "4a07569",
+    "planner": "ae8b64a"
+  },
+  "checks": [
+    {
+      "status": "FAIL",
+      "command": "pnpm typecheck",
+      "cause": "패널 이동 완료를 읽는 라우터 선택자의 타입이 위치 전체로 추론됐다. 선택자의 반환 타입을 수정했다."
+    },
+    {
+      "status": "PASS",
+      "command": "pnpm typecheck && pnpm exec playwright test -c scripts/runtime-regression/ui.config.ts tests/panels.spec.ts tests/search.spec.ts",
+      "scope": "11건. 릴리스 변경 중 초안 보존, 주 화면에서 이동 거절 후 패널 유지, 수락 후 닫기, 검색어 원문과 한글 조합, 제거된 앱의 검색 결과를 검사했다."
+    },
+    {
+      "status": "PASS",
+      "command": "bash scripts/check-static.sh rust",
+      "scope": "포맷, 쓰기 권한 검사, 기본/CLI 전용 Clippy와 단위 테스트. 플랫폼 소스 수정 뒤 재실행했다."
+    },
+    {
+      "status": "PASS",
+      "command": "MIY_CONFIG_DIR=<새 빈 디렉터리> bash scripts/check-static.sh scripts",
+      "scope": "문서 링크, API 타입, 스크립트·격리 프록시 등 전체."
+    },
+    {
+      "status": "PASS",
+      "command": "MIY_CONFIG_DIR=<새 빈 디렉터리> python3 scripts/runtime-regression/run.py",
+      "scope": "158건 통과, 정리 종료 코드 0. 콘솔 브라우저 전환, 관리자의 권한 회수 뒤 기존 전환 세션·프레임과 미사용 코드 종료, 재부여 뒤 이전 자격증명 거부, 프레임 동시 실행 및 같은 포털의 슬롯 반환과 대기 코드 취소를 포함한다.",
+      "evidenceRun": "miy-runtime-regression-3cewaiys"
+    },
+    {
+      "status": "FAIL",
+      "command": "bash scripts/check-static.sh web",
+      "scope": "포털 104건 통과, 4건 실패.",
+      "cause": "프레임 모의 서버가 새 슬롯 반환 DELETE를 처리하지 않아 기존 읽기 전용 모의 라우트에 도달했다. 프레임 모의 서버에서 반환 요청을 처리하도록 수정했다."
+    },
+    {
+      "status": "FAIL",
+      "command": "bash scripts/check-static.sh web",
+      "scope": "포털 97건 통과, 13건 실패.",
+      "cause": "모의 서버의 기존 갱신 횟수 객체에 사용하지 않는 종료 횟수를 추가해 객체 전체를 비교하는 검사가 실패했다. DELETE 처리를 유지하고 내부 횟수 객체의 원래 형식을 복구했다."
+    },
+    {
+      "status": "FAIL",
+      "command": "bash scripts/check-static.sh web",
+      "scope": "재실행에서 공용 UI 77건 통과, Dialog 닫기 1건 시간 초과. 웹 검사 구성 요소를 별도 실행했다."
+    },
+    {
+      "status": "PASS",
+      "command": "pnpm typecheck 및 플랫폼 production·fixtures reference/diagnosis Vite 빌드(--outDir .local/evidence/common-features-review-followup 하위)",
+      "scope": "검증 전용 경로의 빌드 3종과 TypeScript."
+    },
+    {
+      "status": "PASS",
+      "command": "pnpm exec playwright test -c packages/ui/tests/playwright.config.ts",
+      "scope": "전체 공용 UI 78건. 앞서 시간 초과된 Dialog도 통과했다."
+    },
+    {
+      "status": "PASS",
+      "command": "pnpm exec playwright test -c tests/cli-experience.config.ts 및 pnpm exec playwright test -c scripts/runtime-regression/http-ui.config.ts",
+      "scope": "CLI 웹 경험 15건, HTTP IPv4 포털 1건."
+    },
+    {
+      "status": "PASS",
+      "command": "pnpm exec playwright test -c scripts/runtime-regression/ui.config.ts 및 pnpm exec playwright test -c tests/surface-boundaries.config.ts",
+      "scope": "포털 110건, 출처·세션 경계 18건. 현재 프레임 종료 모의 응답, 미저장 입력·고정 해제·홈 카드 회수, 사용자 전환과 통합 검색을 포함한다."
+    },
+    {
+      "status": "FAIL",
+      "command": "apps/pms의 .miy-tools/miy app check --output json",
+      "cause": "기존 로컬 CLI가 현재 panels 및 search manifest를 읽지 못해 invalid_manifest로 종료했다."
+    },
+    {
+      "status": "PASS",
+      "command": "apps/{pms,planner,messenger,board}에서 MIY_CONFIG_DIR=<새 빈 디렉터리> ../../target/debug/miy app check",
+      "scope": "현재 소스에서 빌드한 CLI로 네 앱의 manifest, 보호 파일, migration, Rust, TypeScript와 연합 UI 산출물을 확인했다."
+    },
+    {
+      "status": "PASS",
+      "command": "apps/pms의 pnpm test, pnpm exec tsc --noEmit, cargo fmt --all -- --check, cargo test --locked -- --include-ignored --test-threads=1",
+      "scope": "Vitest 523건, 일회용 Unix 소켓 PostgreSQL 18에서 Rust·HTTP 52건. 잠금 대기 중 역할 회수, 하위 업무 접근과 요약 건수, 제거된 회원의 할당 업무, 첨부 확정의 권한을 확인했다."
+    },
+    {
+      "status": "PASS",
+      "command": "apps/planner의 cargo test --offline --locked -- --include-ignored, pnpm exec vitest run web/src/platform/personal-widgets web/src/AppRoot.spec.tsx, pnpm typecheck",
+      "scope": "일회용 Unix 소켓 PostgreSQL 18에서 48건, Vitest 18건. 서울 종일 일정, 새로고침 중 메모 초안, 동시 생성·변경 충돌을 포함한다."
+    },
+    {
+      "status": "PASS",
+      "command": "apps/board의 cargo test --locked --offline home_card_and_recent_notices_list_what_the_caller_may_read -- --ignored --test-threads=1, apps/messenger의 cargo test --locked --offline notification_check_mute_search_and_older_messages -- --ignored --test-threads=1, pnpm exec vitest run web/src/app-modules/dm/views/DMView.spec.tsx",
+      "scope": "일회용 Unix 소켓 PostgreSQL 18의 앱 HTTP 회귀 2건과 메신저 UI 19건. 회수된 공간의 새 공지 누락, 메시지 순번에 맞는 보낸 사람·시각과 영어 카드를 검사했다."
+    },
+    {
+      "status": "FAIL",
+      "command": "git diff --cached --check -- apps/pms",
+      "cause": "CLI가 생성한 명령 참조 3개에 출력 정렬을 위한 끝 공백이 있다. 보호 파일은 그대로 유지했다. 해당 3개 파일을 제외한 PMS 소스의 같은 검사는 PASS였다."
+    }
+  ],
+  "notRun": [
+    "실제 앱을 설치한 포털에서 플래너·메신저·게시판·PMS 프레임, 사용자 전환과 여러 앱의 검색 인수",
+    "보조 프레임 추가 메모리 재측정",
+    "M9 문서와 M11 화이트보드의 앱 검사. 작업본의 라우터와 UI가 아직 초기 연결 상태이다.",
+    "M10 Storage 소스 구현과 실제 대용량 전송 인수",
+    "서버 반영, core migration 28–32 적용, 공식 릴리스 및 push"
+  ]
+}
