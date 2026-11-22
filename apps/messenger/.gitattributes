@@ -1,0 +1,18 @@
+# Managed by miy app setup. Preserve SQL bytes across operating systems.
+/.gitattributes text eol=lf
+/sdk/** text eol=lf
+/Dockerfile text eol=lf
+/rust-toolchain.toml text eol=lf
+/AGENTS.md text eol=lf
+/CLAUDE.md text eol=lf
+/docs/CONTRACT.md text eol=lf
+/docs/CLI.md text eol=lf
+/docs/ACCEPTANCE.md text eol=lf
+/docs/CLI-REFERENCE.md text eol=lf
+/.agents/skills/** text eol=lf
+/.claude/skills/** text eol=lf
+/platform-components/** -text
+/miy.cli.json text eol=lf
+/miy.bundle.json text eol=lf
+/miy.components.json text eol=lf
+*.sql -text
