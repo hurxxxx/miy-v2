@@ -1,0 +1,19 @@
+/*
+ * miy-only overrides for the ported PMS styles.
+ *
+ * The app frame's baseline colours every link (`a { color: var(--ui-color-brand) }`)
+ * outside Tailwind's layers, so it beats preflight's `color: inherit` that AI-DO
+ * relied on, and even the colour utilities on the links themselves. PMS renders
+ * its sidebar, overview cards and task rows as links. `revert-layer` in this
+ * unlayered rule rolls the colour back to the layered styles (preflight and the
+ * Tailwind utilities on each link), which is how they looked in AI-DO.
+ */
+:root a {
+  color: revert-layer;
+  text-decoration: revert-layer;
+}
+
+/* FullCalendar day numbers, headers and list titles are links too (planner). */
+[data-unified-calendar] .fc a {
+  color: inherit;
+}
