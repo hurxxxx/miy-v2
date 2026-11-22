@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-11-22",
+  "status": "SOURCE_CHECKED",
+  "scope": "Official apps after the ports: drive port (M10), messenger live updates (M4) and mentions/reactions/search, docs trash/versions/comments/templates, PMS milestone/custom field/template screens and server saved filters, board and whiteboard adoption of the signed groups and group notifications, and the final 0.12.0 bundle re-sync of all seven apps. Source only; no catalog release, installation or deployment.",
+  "checks": [
+    {"status": "PASS", "command": "porting agents per app: cargo build; cargo test; cargo test -- --include-ignored on throwaway PostgreSQL containers (removed); cargo fmt --check; pnpm install --frozen-lockfile; pnpm exec tsc --noEmit; vitest; production vite build", "scope": "As reported by each agent: drive 38 DB tests, messenger 56, docs 48, PMS 70, board 61, whiteboard 26; vitest drive 77, messenger 207, docs 136, PMS 547, board 70, whiteboard 68. Earlier failures recorded in each app's report were fixed and rerun."},
+    {"status": "PASS", "command": "browser checks by the agents (bundle preview with the frame CSP, a stand-in platform, throwaway DB, Chromium)", "scope": "messenger 3/3 (mention, live reaction, search jump); docs 10/10 (trash, versions, comments, templates; 0 CSP violations)."},
+    {"status": "PASS", "command": "for each of planner, messenger, board, whiteboard, drive, docs, pms: re-sync protected files and miy.bundle.json from a fresh `target/debug/miy app init` (after 03fe146), then MIY_CONFIG_DIR=<scratch> ../../target/debug/miy app check", "scope": "All seven valid (11 checks each; storage_recovery_review advisory only)."}
+  ],
+  "notRun": [
+    "Any app in a real installed platform frame (CSP, Storage, live relay, integrated search, notifications, panels, home cards)",
+    "Catalog official releases, dev installation, acceptance and prod promotion of the apps",
+    "Firefox/WebKit for the new docs screens; mobile widths; English screens in a browser for most apps",
+    "Comment notifications to people who read a docs page only through a group (needs a per-user group check or a per-recipient send contract)"
+  ]
+}
