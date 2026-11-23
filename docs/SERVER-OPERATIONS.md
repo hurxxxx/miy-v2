@@ -2,12 +2,12 @@
 
 ## miy.works 호스트 (2026-11-16)
 
-`dwdcc.kr` 사내 호스트(현재 `portal.dwdcc.kr`, 이전 `v2.dwdcc.kr`)와 별도로 새로 설치한 서버다. 현재 사용자 결정은 **플랫폼 하나를 prod 작업본에서 직접 개발·사용하고, 실제 업무 운영 전에 플랫폼 자체의 dev를 분리**하는 것이다. 아래 앱 개발 포털은 이 플랫폼 내부의 앱 dev 환경이며 별도 플랫폼 코어 개발 서버가 아니다. 이전 호스트의 명령은 이 절의 실제 이름·경로로 검토 없이 실행하지 않는다.
+`dwdcc.kr` 사내 호스트(현재 `portal.dwdcc.kr`, 이전 `v2.dwdcc.kr`)와 별도로 설치한 서버다. 지금은 플랫폼 한 벌을 실행하고, 실제 업무 운영 전에 플랫폼 자체의 dev를 분리하기로 했다. 아래 앱 개발 포털은 현재 플랫폼 내부의 앱 dev 환경이다. 이 호스트의 관리 작업에는 아래 서비스명과 경로를 사용한다.
 
 | 항목 | 새 호스트 구성 |
 | --- | --- |
 | 서버 | `185.223.207.238`, Ubuntu 26.04.1 LTS, 3 vCPU, 약 12GiB RAM |
-| 소스 | 서빙 작업본 `/projects/miy-v2/prod`. Core·게시 CLI·웹·프레임 런타임 빌드 `9fe1eac`. Core/CLI 0.18.0, SDK 번들 0.13.0, schema 34 |
+| 배포 소스 | Core·worker·게시 CLI·웹·프레임 런타임 `9fe1eac`. Core/CLI 0.18.0, SDK 번들 0.13.0, schema 34 |
 | 업무 포털 | `https://portal.miy.works` |
 | 관리·CLI 승인·IdP | `https://console.miy.works` |
 | 내부 앱 개발 포털 | `https://dev.miy.works` |
@@ -21,9 +21,11 @@
 | DB·Keycloak | `miy-prod-postgres-1`, `miy-prod-keycloak-1`; loopback 15432, 18181 |
 | Core 내부 포트 | 업무 18080, 콘솔 18081, 앱 개발 18082, 프레임 18083; 모두 loopback |
 | Compose | `miy-prod-compose` wrapper; 프로젝트 `miy-prod`, 볼륨 `miy-prod_pgdata`, 네트워크 `miy-prod-app-runtime` |
-| Nginx | `/etc/nginx/conf.d/miy-prod.conf`, 정적 파일은 prod 작업본의 `web/platform/dist` |
+| Nginx | `/etc/nginx/conf.d/miy-prod.conf`, 정적 파일은 `/projects/miy-v2/prod/web/platform/dist` |
 | TLS | Let's Encrypt `*.miy.works`, `/etc/letsencrypt/live/miy.works/`, 만료 2027-02-14 |
-| 플랫폼 dev 작업본 | `/projects/miy-v2/dev`; 의존성만 설치. 별도 DB·서비스 미기동 |
+| 개발·빌드 작업본 | `/projects/miy-v2/dev`. 별도 플랫폼 DB·서비스 없이 코드를 개발하고 배포물을 빌드한다 |
+
+`prod` 디렉터리의 Git HEAD와 Nginx가 제공하는 웹 배포물의 소스는 각각 확인한다. 배포 버전과 복구 경로는 아래 반영 기록을 따른다.
 
 `miy.works` 루트 A 레코드는 2026-11-16 재확인 시 두 권한 DNS 모두 `185.223.207.238`을 반환했다. 최초 설치 때 다른 IP였다는 기록은 현재 DNS 상태가 아니다. DNS 일치만으로 다른 하위 도메인의 관리 주체까지 확인한 것은 아니며, 이 설치의 접속 주소는 위 하위 도메인이다. Docker는 실제 OS에 맞는 공식 `resolute` 패키지를 사용하며, SETUP.md의 Ubuntu 24.04용 `noble` 항목을 그대로 사용하지 않았다.
 
@@ -83,7 +85,11 @@ CLI 업데이트 안내 후속으로 Core·worker·웹과 CLI 0.12.1을 같은 �
 
 계정 관리의 기본 경로는 이제 콘솔이다. SSH의 Keycloak 내부 절차(SETUP §8)와 `miy-admin-password`는 콘솔을 쓸 수 없을 때의 복구 수단이다. 메일 서버는 연결하지 않았으므로 초대·재설정 주소는 관리자가 직접 전달한다.
 
+**2026-11-21 비밀번호 재설정 복구.** Core·worker·웹 `99f91c1`과 schema 27을 반영했다. 백업 복원본에서 migration을 리허설했고, 실제 Keycloak에서 초대·비밀번호 재설정·이전 SSO 종료를 확인했다. 당시 복구 범위와 검사 결과는 [배포 기록](releases/miy-works-password-reset-recovery-2026-11-21-deployment.json)에 있다.
+
 **2026-11-21 0.15.0·0.16.0.** 릴리스 소스 복구와 오프라인 하네스 안내를 순서대로 반영했다. 0.16.0(`a00f6cc`)은 SDK 0.11.0과 schema 27을 사용했다. 실행 파일·CLI 게시 파일의 복구 위치와 당시 검사 결과는 각 반영 기록에 있다. [0.15.0 반영 기록](releases/miy-works-0.15.0-2026-11-21-deployment.json) · [0.16.0 반영 기록](releases/miy-works-0.16.0-2026-11-21-deployment.json)
+
+**2026-11-22~23 0.17.0.** 백업 복원본에서 schema 27→34와 카탈로그를 리허설한 뒤 공통 기능과 코어·웹·프레임 런타임을 반영했다. CLI 0.17.0·SDK 0.12.0과 공용 UI 2.0.1을 게시했다. 이어서 관리자 콘솔, 포털의 환경 표시, 에이전트 설정 안내를 반영하는 동안 게시 CLI의 소스는 `5fd2a55`로 유지했다. [0.17.0 배포와 후속 반영 기록](releases/miy-works-0.17.0-2026-11-22-deployment.json)
 
 **2026-11-23 0.18.0.** 포털과 프레임 런타임을 먼저 반영했고 Core·worker, CLI 패키지 5종·helper 2종을 같은 출처로 갱신했다. 격리 복원을 확인한 백업과 배포 전 실행 파일·정적 진입 파일의 위치는 [배포 기록](releases/miy-works-0.18.0-2026-11-23-deployment.json)에 있다.
 
@@ -299,11 +305,11 @@ python3 scripts/check-db-connections.py
 
 ## 7. 배포 도구
 
-같은 schema의 일반 서버·UI 반영은 저장소에서 계속 관리하는 두 도구로 한다. 2026-11-07의 schema19→20·설정·issuer 전환은 검증한 전용 조정 도구로 수행했으며 [배포 기록](releases/internal-minimum-security-2026-11-07-deployment.json)을 따른다. 현재 `core-rollout.py`에는 대상 commit의 CI 확인과 고정된 migration 21~25의 한 단계 확장 예외가 구현되어 있다. 임의 migration·설정·issuer를 한꺼번에 전환하는 일반 도구는 미구현이다. 반영할 commit의 별도 clean checkout에 있는 사본을 실행하며, `scripts/test-core-ops.py`가 같은 파일의 실패 경계를 모의 시험한다. 배포별 증거 디렉터리의 이전 도구(`core-0.7.0-linux`, `core-0.7.0-7d3c66a-linux`, `core-review-20261104-linux`)는 실행 당시 기록이므로 고치거나 다시 쓰지 않는다.
+같은 schema의 일반 서버·UI 반영은 저장소에서 계속 관리하는 두 도구로 한다. 2026-11-07의 schema19→20·설정·issuer 전환은 검증한 전용 조정 도구로 수행했으며 [배포 기록](releases/internal-minimum-security-2026-11-07-deployment.json)을 따른다. 현재 `core-rollout.py`에는 대상 commit의 CI 확인과 `WIDEN_ONLY`에 고정한 migration의 한 단계 확장 예외가 구현되어 있다. 임의 migration·설정·issuer를 한꺼번에 전환하는 일반 도구는 미구현이다. 반영할 commit의 별도 clean checkout에 있는 사본을 실행하며, `scripts/test-core-ops.py`가 같은 파일의 실패 경계를 모의 시험한다. 배포별 증거 디렉터리의 이전 도구(`core-0.7.0-linux`, `core-0.7.0-7d3c66a-linux`, `core-review-20261104-linux`)는 실행 당시 기록이므로 고치거나 다시 쓰지 않는다.
 
 **서버 `scripts/core-rollout.py`**
 
-- **범위:** 기본은 core migration 집합이 운영 DB와 같은 소스의 서버 바이너리 교체다. 다른 schema는 `migration_rollout_not_supported`·`source_schema_older_than_live`로 거부한다. 예외인 `--widen-migration 21|22|23|24|25`(23은 `app_files`, 24는 `support_reports`, 25는 공식 제품·버전 표, 릴리스 출처 열과 검증 트리거를 추가)은 소스에 고정한 SQL 해시가 일치하고 현재 schema보다 정확히 한 단계 높을 때만 허용한다. 적용 전 실제 덤프를 별도 DB에 복원해 migration을 검사한다. rollback은 확장된 schema와 업무 데이터를 보존하며, 아래 호환성 검사를 통과한 이전 바이너리를 복구한다. 임의 migration이나 DB 하향 복구를 지원하는 기능은 아니다. PostgreSQL 연결 한도와 Keycloak 풀은 기대값(기본 200·10)과 같은지 확인만 하고 바꾸지 않는다. 일반 migration·설정 전환은 별도 구현·검증 과제다.
+- **범위:** 기본은 core migration 집합이 운영 DB와 같은 소스의 서버 바이너리 교체다. 다른 schema는 `migration_rollout_not_supported`·`source_schema_older_than_live`로 거부한다. `--widen-migration <번호>`는 [도구의 승인 목록](../scripts/core-rollout.py)에 있는 SQL 해시와 일치하고 현재 schema보다 정확히 한 단계 높을 때만 허용한다. 적용 전 실제 덤프를 별도 DB에 복원해 migration을 검사한다. rollback은 확장된 schema와 업무 데이터를 보존하며, 아래 호환성 검사를 통과한 이전 바이너리를 복구한다. 임의 migration이나 DB 하향 복구를 지원하는 기능은 아니다. PostgreSQL 연결 한도와 Keycloak 풀은 기대값(기본 200·10)과 같은지 확인만 하고 바꾸지 않는다. 일반 migration·설정 전환은 별도 구현·검증 과제다.
 - **CI gate(2026-11-09):** 사전 확인에서 `gh`로 대상 commit의 main push workflow(`web.yml`, `cli-foundation.yml`, `runtime-regression.yml`)의 최신 실행이 모두 completed/success이고 모든 job이 성공했는지 확인한다. 실패·누락·다른 branch면 `ci_not_successful`·`ci_jobs_not_successful`·`ci_source_mismatch`·`required_ci_missing`로 아무것도 바꾸지 않고 거부한다. 확인한 run ID·URL은 결과와 기록에 남긴다. 공식 앱 보호는 runtime workflow의 실제 PostgreSQL 서버 빌드·개발 DB 회귀로 검사한다. CLI 빌드 접수·복구는 Linux·macOS·Windows 클라이언트 workflow에서 각 OS용 바이너리로 검사한다.
 - **`inspect`(기본):** 바꾸지 않고 `apply`의 사전 확인만 한다. 소스 commit·clean 상태, 실행 중인 도구와 소스 사본의 일치, 후보 해시·버전, 설치 파일과 serve·worker 실제 실행 파일의 해시, schema, 연결 설정·예산, health·게시 CLI 안내, 대기 작업 0, 앱 컨테이너를 확인한다. 공개 주소는 설치된 `.local/server.json`의 검증된 `origin`에서 읽는다. 실제 PostgreSQL·Keycloak이 실행 중이며 재시작 정책이 `unless-stopped`인지도 확인하고, 서비스의 `Id`·`Slice`·cgroup 경로와 cgroup v2의 읽기 가능 여부를 중지 전에 점검한다.
 - **`apply`:** 같은 확인 후 코어를 멈추고 프로세스가 없음을 확인한 뒤 대기 작업을 다시 확인한다. 새 덤프를 일회용 PostgreSQL에 복원해 행 수와 후보의 migration(기본은 변경 없음, 위 확장 예외는 고정된 한 단계)을 확인해야 설치한다. 시작 후 health·게시 CLI 안내·실행 파일 해시·schema·주요 레코드 해시·앱 컨테이너·연결 예산을 확인한다.

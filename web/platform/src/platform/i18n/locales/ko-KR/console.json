@@ -387,6 +387,8 @@
     "remove": "빼기",
     "clearPrimary": "주 소속 해제",
     "appAccessLoadFailed": "앱 접근 설정을 불러오지 못했습니다",
+    "appChangeResult": "{{app}} · {{result}}",
+    "appChangeFailed": "{{app}}의 접근 설정을 변경하지 못했습니다. {{error}}",
     "appsLoadFailedWith": "앱 목록을 불러오지 못했습니다: {{error}}",
     "disableAppTitle": "앱 사용을 중지할까요?",
     "disableAppBody": "관리자를 포함한 모든 사용자가 이 앱을 사용할 수 없습니다. 개발 권한이 있는 사용자는 테스트 환경에서 앱을 고칠 수 있습니다.",

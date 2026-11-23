@@ -45,10 +45,12 @@ impl Transfer {
         receipts.retain(|_, (_, status, changed)| {
             matches!(status, Status::Pending | Status::Streaming) || changed.elapsed() < RETENTION
         });
-        if receipts.contains_key(&key) {
+        let previous = receipts.get(&key);
+        if previous.is_some_and(|(issuer, status, _)| *issuer != frame || *status != Status::Failed)
+        {
             return Err(ApiError::conflict("download_already_started"));
         }
-        if receipts.len() >= MAX_RECEIPTS {
+        if previous.is_none() && receipts.len() >= MAX_RECEIPTS {
             let oldest = receipts
                 .iter()
                 .filter(|(_, (_, status, _))| matches!(status, Status::Sent | Status::Failed))
@@ -165,5 +167,24 @@ mod tests {
                 .unwrap(),
         );
         assert!(matches!(status(&second, frame), Some(Status::Failed)));
+    }
+
+    #[tokio::test]
+    async fn the_same_frame_can_retry_a_failed_download_but_not_an_active_or_sent_one() {
+        let frame = Uuid::new_v4();
+        let key = Uuid::new_v4().to_string();
+        let initial = Transfer::start(key.clone(), frame).unwrap();
+        assert!(Transfer::start(key.clone(), frame).is_err());
+        drop(initial);
+        assert!(Transfer::start(key.clone(), Uuid::new_v4()).is_err());
+        let response = Transfer::start(key.clone(), frame)
+            .unwrap()
+            .wrap(response());
+        assert!(matches!(status(&key, frame), Some(Status::Streaming)));
+        assert!(Transfer::start(key.clone(), frame).is_err());
+        axum::body::to_bytes(response.unwrap().into_body(), 3)
+            .await
+            .unwrap();
+        assert!(Transfer::start(key, frame).is_err());
     }
 }

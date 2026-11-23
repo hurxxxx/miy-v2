@@ -5142,17 +5142,18 @@ async fn notification_contract(h: &mut Harness<'_>, admin: &Actor, user: &Actor)
     let other_proof = fresh_proof(h, user, &other)
         .await
         .context("notification step 34")?;
-    denied(
-        h.request(&other_proof, Method::POST, &other_base)
-            .json(
-                &json!({"requestId":Uuid::new_v4(),"recipients":[],"recipientGroups":[group],
+    let denied_group = h
+        .json(
+            &other_proof,
+            Method::POST,
+            &other_base,
+            json!({"requestId":Uuid::new_v4(),"recipients":[],"recipientGroups":[group],
                 "kind":"message","groupKey":"g","title":"그룹","path":"/g"}),
-            )
-            .send()
-            .await?,
-    )
-    .await
-    .context("notification step 35")?;
+            403,
+        )
+        .await
+        .context("notification step 35")?;
+    ensure!(denied_group["error"]["code"] == "installation_permission_denied");
     ensure!(
         reached["accepted"] == 1
             && !inbox(h, &user.id, &app)

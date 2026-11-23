@@ -10,6 +10,7 @@ import {
   X,
 } from 'lucide-react';
 import { useConfirm, useFeedback } from '@miy/ui';
+import { isApiError } from '@miy/sdk';
 import { useTranslation } from 'react-i18next';
 import { useNavigationDirty } from '../../../platform/runtime/navigation-state';
 import { useAppApi } from '../../../platform/runtime/runtime-context';
@@ -156,6 +157,7 @@ export function CustomFieldSettingsSection({
   const [editOptions, setEditOptions] = useState<CustomFieldOptionDraft[]>([]);
   const [originalName, setOriginalName] = useState("");
   const [originalOptions, setOriginalOptions] = useState<string[]>([]);
+  const [optionsConflict, setOptionsConflict] = useState(false);
   const [busy, setBusy] = useState(false);
   const loadRef = useRef(0);
   const onChangedRef = useRef(onFieldsChanged);
@@ -224,6 +226,7 @@ export function CustomFieldSettingsSection({
 
   const startEdit = (field: PmsCustomField) => {
     setEditingId(field.id);
+    setOptionsConflict(false);
     setEditName(field.name);
     setOriginalName(field.name);
     setOriginalOptions(field.options ?? []);
@@ -233,7 +236,7 @@ export function CustomFieldSettingsSection({
   };
 
   const handleSaveEdit = async (field: PmsCustomField) => {
-    if (!api || busy) return;
+    if (!api || busy || optionsConflict) return;
     const name = editName.trim();
     if (!name) return;
     const withOptions = customFieldHasOptions(field.field_type);
@@ -267,9 +270,14 @@ export function CustomFieldSettingsSection({
       setEditingId(null);
       await reload();
     } catch (caught) {
-      feedback.error(
-        apiErrorMessage(caught, t('pms.customFields.errors.updateFailed')),
-      );
+      if (isApiError(caught) && caught.status === 409 && caught.code === 'pms_custom_field_options_changed') {
+        setOptionsConflict(true);
+        await reload();
+      } else {
+        feedback.error(
+          apiErrorMessage(caught, t('pms.customFields.errors.updateFailed')),
+        );
+      }
     } finally {
       setBusy(false);
     }
@@ -362,7 +370,7 @@ export function CustomFieldSettingsSection({
                     type="button"
                     aria-label={t('common:actions.save')}
                     className="text-app-accent hover:opacity-80 disabled:opacity-40"
-                    disabled={busy || !editName.trim()}
+                    disabled={busy || optionsConflict || !editName.trim()}
                     onClick={() => void handleSaveEdit(field)}
                   >
                     {busy ? (
@@ -383,6 +391,11 @@ export function CustomFieldSettingsSection({
                 {customFieldHasOptions(field.field_type) ? (
                   <OptionsEditor drafts={editOptions} onChange={setEditOptions} />
                 ) : null}
+                {optionsConflict && (
+                  <p className="app-text-caption text-app-danger-text" role="alert">
+                    {t('errors:pms_custom_field_options_changed')}
+                  </p>
+                )}
               </div>
             ) : (
               <div
@@ -429,7 +442,8 @@ export function CustomFieldSettingsSection({
                     <button
                       type="button"
                       aria-label={t('pms.customFields.edit', { name: field.name })}
-                      className="text-app-ink/40 hover:text-app-ink"
+                      className="text-app-ink/40 hover:text-app-ink disabled:opacity-30"
+                      disabled={busy}
                       onClick={() => startEdit(field)}
                     >
                       <Pencil size={13} />

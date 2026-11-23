@@ -78,7 +78,7 @@ function AdminSection({ section, csrf, selfId }: { section: Section; csrf: strin
     users: <UserAdmin {...props} selfId={selfId} />,
     organization: <OrganizationAdmin {...props} />,
     groups: <PermissionGroupsAdmin {...props} />,
-    apps: <AdminApps {...props} />,
+    apps: <AdminApps csrf={csrf} />,
     launcher: <LauncherCategoriesAdmin csrf={csrf} />,
     audit: <AuditLog report={report} />,
     support: <SupportReports csrf={csrf} />,

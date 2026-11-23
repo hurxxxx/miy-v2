@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useTranslation } from "react-i18next";
 import { request, type Environment, type Group } from "@miy/sdk";
+import { useFeedback } from "@miy/ui";
 import { LoadError } from "../components/LoadState";
 import { useAdminAppRead } from "../data/admin-apps";
 import { Badge, Button, Field, Loading, Panel, useConfirm } from "../ui";
@@ -133,11 +134,12 @@ export function PreRegistrationGrant({ csrf, report }: AdminAccessProps) {
 
 export function AppAccessAdmin({
   appId,
+  appName,
   csrf,
-  report,
   refreshApp,
-}: AdminAccessProps & { appId: string; refreshApp: () => Promise<void> }) {
+}: { appId: string; appName: string; csrf: string; refreshApp: () => Promise<void> }) {
   const { t } = useTranslation("console");
+  const feedback = useFeedback();
   const base = `/api/v1/apps/${encodeURIComponent(appId)}`;
   const { data, error, refresh } = useAdminAppRead<Access>(`${base}/access`);
   const users = useAdminAppRead<Account[]>("/api/v1/users");
@@ -157,14 +159,14 @@ export function AppAccessAdmin({
     setSaving(true);
     try {
       await request(path, csrf, { method: "PUT", body: JSON.stringify(body) });
-      if (mounted.current) report(done);
+      feedback.success(t("access.appChangeResult", { app: appName, result: done }));
     } catch (failure) {
-      if (mounted.current) report(String(failure));
+      feedback.error(t("access.appChangeFailed", { app: appName, error: String(failure) }));
     } finally {
       if (mounted.current) {
         await refresh();
         if (changesApp) await refreshApp();
-        setSaving(false);
+        if (mounted.current) setSaving(false);
       }
     }
   }

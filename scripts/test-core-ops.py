@@ -868,13 +868,18 @@ class CoreRolloutTests(OfflineTest):
 
     def test_first_catalog_is_rehearsed_imported_and_retained_on_incompatible_rollback(self):
         self.pinned_migration_fixture(25)
+        planner = {'appId': 'planner', 'name': 'Planner', 'defaultInstall': True, 'releases': []}
+        messenger = {'appId': 'messenger', 'name': 'Messenger', 'defaultInstall': False,
+                     'releases': [{'version': '1.0.0', 'sourceCommit': 'a' * 40, 'archiveSha256': 'b' * 64}]}
+        (self.source / 'registry/apps/catalog.json').write_text(
+            json.dumps({'schemaVersion': 1, 'apps': [planner, messenger]}))
         code, result, release = self.run_tool(widen_migration=25)
         self.assertEqual((code, result['status']), (0, 'PASS'))
         self.assertEqual(self.host.events, ['stop', 'backup', 'verify', 'rehearse-catalog', 'migrate', 'sync', 'start'])
         record = json.loads((release / 'deployment.json').read_text())
-        self.assertEqual(record['officialCatalog']['receipt'], {'apps': 8, 'releasePins': 0})
+        self.assertEqual(record['officialCatalog']['receipt'], {'apps': 2, 'releasePins': 1})
         self.assertTrue(record['officialCatalogSynced'])
-        self.assertEqual(set(self.host.catalog_rows), {'planner', 'messenger', 'pms', 'plm', 'docs', 'drive', 'whiteboard', 'board'})
+        self.assertEqual(self.host.catalog_rows, {'planner': planner, 'messenger': messenger})
         events = list(self.host.events)
         code, result, _ = self.run_tool('rollback', release=release)
         self.assertEqual((code, result['failure']), (1, 'official_catalog_requires_compatible_core'))

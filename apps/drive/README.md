@@ -52,7 +52,7 @@ UI는 `runtime.api('/v1/...')`로 부르고 게이트웨이가 `/api/v1/...`로 
 | `DELETE /v1/spaces/{id}/files/{fileId}` | 휴지통으로(204) |
 | `POST /v1/spaces/{id}/files/bulk-delete` | `{file_ids, folder_ids}`(각 500개까지) 휴지통으로(204) |
 | `POST /v1/spaces/{id}/files/move` | `{file_ids, folder_ids, target_folder_id}` 이동(204, 보강) |
-| `POST /v1/spaces/{id}/files/archive` | 묶음 다운로드 계획 `{entries:[{path,file_id,size_bytes}], file_count, total_size}`(500개까지). 화면이 파일마다 다운로드 링크를 받는다 |
+| `POST /v1/spaces/{id}/files/archive` | 묶음 다운로드 계획 `{entries:[{path,file_id,size_bytes}], file_count, total_size}`(500개까지). 파일을 한 건씩 받아 전송을 확인한다. 브라우저가 자동 다운로드를 막거나 전송을 확인하지 못하면 해당 파일에서 일시정지한다. 전송만 다시 확인하거나, 해당 파일을 다시 다운로드하거나, 건너뛰어 계속할 수 있다 |
 | `GET /v1/spaces/{id}/files/{fileId}/download` | 5분짜리 다운로드 링크 `{url, expires_at}` → `runtime.download(url)` |
 | `GET /v1/spaces/{id}/files/{fileId}/versions` | 버전 목록(보강) |
 | `GET /v1/spaces/{id}/files/{fileId}/versions/{versionId}/download` | 그 버전의 다운로드 링크 |

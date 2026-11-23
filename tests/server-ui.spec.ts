@@ -150,8 +150,9 @@ test("a regular user gets only what the server allows", async ({ page }) => {
   await signIn(page, /사용자 A/, "/environments/dev/apps/missing-app", "dev_portal");
   await expect(page.getByRole("heading", { name: "앱에 접근할 수 없습니다" })).toBeVisible();
   for (const origin of [origins.portalOrigin, origins.devPortalOrigin]) {
-    expect((await page.request.get(origin + "/api/v1/admin/overview")).status()).toBe(403);
-    expect((await page.request.get(origin + "/api/v1/users/directory")).status()).toBe(403);
+    for (const path of ["/api/v1/users", "/api/v1/users/directory", "/api/v1/admin/overview"]) {
+      expect((await page.request.get(origin + path)).status()).toBe(403);
+    }
   }
   await page.goto("/environments/stage");
   await expect(page.getByText("존재하지 않는 실행 환경입니다")).toBeVisible();

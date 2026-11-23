@@ -32,14 +32,16 @@ describe('sendDownloadBatch', () => {
     expect(progress).toHaveBeenLastCalledWith({ remaining: [], sent: 2, total: 2 });
   });
 
-  it('issues a new link only after the server confirms a failed transfer', async () => {
-    const failure = new ApiError('http', 'file_download_failed');
+  it.each([
+    new ApiError('http', 'file_download_failed'),
+    new ApiError('http', 'not_found', 404),
+  ])('replaces an unusable link after $code', async (failure) => {
     const download = vi.fn<Download>().mockResolvedValueOnce(undefined).mockRejectedValueOnce(failure);
     const getLink = vi.fn(link);
     let pending = batch;
     const progress = (next: DownloadBatch) => { pending = next; };
     const signal = new AbortController().signal;
-    await expect(sendDownloadBatch(download, batch, getLink, signal, progress)).rejects.toThrow('file_download_failed');
+    await expect(sendDownloadBatch(download, batch, getLink, signal, progress)).rejects.toThrow(failure.code);
     expect(pending).toEqual({ remaining: [{ id: 'b', path: 'b.txt' }], sent: 1, total: 2 });
     await sendDownloadBatch(download, pending, getLink, signal, progress);
     expect(getLink.mock.calls).toEqual([['a'], ['b'], ['b']]);
@@ -70,5 +72,26 @@ describe('sendDownloadBatch', () => {
       ['b', signal, { checkOnly: true }],
     ]);
     expect(pending.sent).toBe(2);
+  });
+
+  it('explicitly retries the blocked download on its existing link and continues the batch', async () => {
+    const download = vi.fn<Download>()
+      .mockRejectedValueOnce(new Error('file_download_start_unconfirmed'))
+      .mockResolvedValue(undefined);
+    const getLink = vi.fn(link);
+    const signal = new AbortController().signal;
+    let pending = batch;
+    const progress = (next: DownloadBatch) => { pending = next; };
+
+    await expect(sendDownloadBatch(download, batch, getLink, signal, progress)).rejects.toThrow('file_download_start_unconfirmed');
+    await sendDownloadBatch(download, pending, getLink, signal, progress, true);
+
+    expect(getLink.mock.calls).toEqual([['a'], ['b']]);
+    expect(download.mock.calls).toEqual([
+      ['a', signal, { checkOnly: false }],
+      ['a', signal, { checkOnly: false }],
+      ['b', signal, { checkOnly: false }],
+    ]);
+    expect(pending).toEqual({ remaining: [], sent: 2, total: 2 });
   });
 });

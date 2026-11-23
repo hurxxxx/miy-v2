@@ -1,7 +1,7 @@
-import { Suspense, lazy, useCallback, useLayoutEffect, useMemo, type ReactNode } from 'react';
+import { Suspense, lazy, useCallback, useLayoutEffect, useMemo, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { LazyMotion, domAnimation } from 'motion/react';
-import type { AppProps, NavigationState } from '@miy/sdk';
+import type { AppProps, AppSettings, NavigationState } from '@miy/sdk';
 import { FeedbackProvider } from '@miy/ui';
 import './app.css';
 
@@ -54,21 +54,33 @@ const FloatingPmsWidget = lazy(() =>
  * The wide routes show AI-DO's PMS sidebar as the frame's left column.
  */
 export default function AppRoot({ runtime }: AppProps) {
-  // Display settings are portal choices delivered on every render (AI-DO
-  // synced the same stores from the signed-in user's profile).
   const { locale, dateFormat, timeZone } = runtime.settings;
+  const [dateSettings, setDateSettings] =
+    useState<Pick<AppSettings, 'dateFormat' | 'timeZone'>>();
   useLayoutEffect(() => {
     syncLocale(locale);
+  }, [locale]);
+  useLayoutEffect(() => {
     syncDateFormatPreference(dateFormat);
     syncTimeZonePreference(timeZone);
-  }, [locale, dateFormat, timeZone]);
+    setDateSettings({ dateFormat, timeZone });
+  }, [dateFormat, timeZone]);
+
+  // Existing formatters read the preference stores during render. Apply the
+  // settings before mounting screens and render again after each store update.
+  const appRuntime = useMemo(() => dateSettings && {
+    ...runtime,
+    settings: { ...runtime.settings, ...dateSettings },
+  }, [runtime, dateSettings]);
+  if (!appRuntime) return null;
+
   return (
-    <RuntimeProvider runtime={runtime}>
+    <RuntimeProvider runtime={appRuntime}>
       <AppFeedback>
         {/* AI-DO's shell (app/shell/AppContent.tsx) wrapped app screens in the
             same motion features; PMS uses `m.*` components. */}
         <LazyMotion features={domAnimation}>
-          <AppScreens runtime={runtime} />
+          <AppScreens runtime={appRuntime} />
         </LazyMotion>
       </AppFeedback>
     </RuntimeProvider>

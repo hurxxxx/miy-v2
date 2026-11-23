@@ -229,7 +229,7 @@ async fn commit(
             || (groups && !allows("platform:directory:read"))
             || used.is_some_and(|permission| !allows(permission))
         {
-            return Err(ApiError::forbidden());
+            return Err(crate::permissions::denied());
         }
     }
     crate::app_calls::current_origin(&mut tx, s.auth.development_login, p, context).await?;

@@ -402,6 +402,14 @@ async fn custom_fields_check_values_and_filter_and_sort_tasks() {
     )
     .await;
     assert_eq!(updated["name"], "Area");
+    let missing = call(
+        &f.owner,
+        Method::PATCH,
+        &format!("/v1/pms/custom-fields/{}", id_of(&tags)),
+        Some(json!({"options": ["API"]})),
+    )
+    .await;
+    assert_eq!(missing.status(), StatusCode::UNPROCESSABLE_ENTITY);
     let stale = call(
         &f.owner,
         Method::PATCH,

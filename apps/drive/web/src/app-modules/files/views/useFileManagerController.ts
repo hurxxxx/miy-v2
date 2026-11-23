@@ -607,7 +607,7 @@ export function useFileManagerController(spaceId: string) {
     }
   }
 
-  async function runDownloadBatch(plan: () => Promise<DownloadBatch>) {
+  async function runDownloadBatch(plan: () => Promise<DownloadBatch> | DownloadBatch, retryFirst = false) {
     const download = runtime.downloadAndWait;
     if (!download) {
       feedback.error(t('drive.download.unavailable'));
@@ -620,7 +620,9 @@ export function useFileManagerController(spaceId: string) {
     setBulkAction('download');
     let current: DownloadBatch | null = null;
     try {
-      current = await plan();
+      const planned = plan();
+      // A retry with a saved link can start in the user's click event.
+      current = planned instanceof Promise ? await planned : planned;
       if (signal.aborted) return;
       if (current.total === 0) {
         feedback.error(t('drive.bulkDownload.empty'));
@@ -633,6 +635,7 @@ export function useFileManagerController(spaceId: string) {
           current = next;
           setDownloadBatch(next);
         },
+        retryFirst,
       );
       setDownloadBatch(null);
       const result = t('drive.bulkDownload.finished', { sent: current.sent, total: current.total });
@@ -676,11 +679,12 @@ export function useFileManagerController(spaceId: string) {
     });
   }
 
-  function resumeDownloadBatch(skip = false) {
+  function resumeDownloadBatch(action: 'check' | 'retry' | 'skip') {
     if (!downloadBatch) return;
     const batch = downloadBatch;
-    void runDownloadBatch(async () =>
-      skip ? { ...batch, remaining: batch.remaining.slice(1) } : batch,
+    void runDownloadBatch(
+      () => action === 'skip' ? { ...batch, remaining: batch.remaining.slice(1) } : batch,
+      action === 'retry',
     );
   }
 

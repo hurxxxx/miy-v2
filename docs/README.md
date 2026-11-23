@@ -1,6 +1,6 @@
 # 문서 지도
 
-- 정리일: 2026-11-22
+- 정리일: 2026-11-23
 
 먼저 PLAN의 [완료 요약](PLAN.md#완료한-작업)·[일부 구현](PLAN.md#일부-구현된-작업)·[남은 구현 순서](PLAN.md#다음-우선-작업)·[검증과 반영 대기](PLAN.md#검증과-반영-대기)를 확인한다. 제품 범위가 필요하면 [PRD](PRD.md)를 읽는다. 작업에 해당하는 아래 담당 문서만 추가로 읽는다. 플랫폼 개발 규칙은 [AGENTS.md](../AGENTS.md)를 따른다.
 
@@ -32,7 +32,7 @@
 | CLI 후보·게시·패키징 | [CLI-RELEASE](CLI-RELEASE.md) | 소스와 게시 버전·후보 검사·배포물·릴리스 절차 |
 | Windows 설치·갱신·제거 인수 | [WINDOWS-ACCEPTANCE](WINDOWS-ACCEPTANCE.md) | 현재 후보·설치기 계약·사용자 수행 절차·NOT_RUN 범위 |
 
-공통 컴포넌트 전 [코어 준비 리뷰](reviews/CORE-PLATFORM-READINESS-2026-11-13.md)는 R01~R13의 검토 근거·인수 조건을 보존한다. 각 항목의 작업 묶음은 PLAN에 통합하며 리뷰를 두 번째 작업 순서표로 쓰지 않는다.
+이전 리뷰의 미해결 항목과 후속 인수 기준은 [PLAN의 이전 리뷰 후속 작업](PLAN.md#이전-리뷰-후속-작업)에서 찾는다.
 
 아키텍처 도식의 위치는 [architecture 안내](architecture/README.md), 외부 사례·선택 근거는 [조사 자료](reference/RESEARCH.md)에서 찾는다. 참고 자료의 제안을 구현 완료나 새로운 작업 순서로 해석하지 않는다.
 
@@ -40,12 +40,13 @@
 
 - [archive 목록](archive/README.md): 완료된 계획, 이전 CLI·Windows·독립 AI 인수, 기본 UI 이식, 누적 결과와 이전 도식.
 - [releases](releases/): 실행별 소스·환경·명령·PASS/FAIL/NOT_RUN, 배포·복원 기록과 당시 도구 사본.
+- 이전 리뷰 원문: [코어 준비](reviews/CORE-PLATFORM-READINESS-2026-11-13.md), [범용 기능 2차](reviews/COMMON-FEATURES-SECOND-REVIEW-2026-11-22.md), [범용 기능 전체](reviews/COMMON-FEATURES-FULL-REVIEW-2026-11-22.md), [최근 3일](reviews/RECENT-WORK-REVIEW-2026-11-23.md).
 
 이전 경로를 가리키는 JSON의 source/file/hash 값은 실행 당시 출처이므로 그대로 둔다. 문서의 새 위치는 archive 목록과 [정리 기록](releases/docs-cleanup-2026-11-13.json)에서 찾는다. 구 문서의 실패·미실행 결과는 새 문서 정리나 후속 PASS로 지우지 않는다.
 
 2026-11-14의 완료/잔여 통합·현재 상태 정정·운영 이력 분리는 [문서 통합 기록](releases/docs-consolidation-2026-11-14.json)에 있다. 업무 개발 지침·게시 컴포넌트·예제는 해당 버전의 계약으로 보존했다.
 
-2026-11-15의 [0.10.0 반영](releases/pilot-0.10.0-2026-11-15-deployment.json) 이후 [파일럿 리뷰 보완](releases/pilot-review-fixes-2026-11-15-validation.json)을 구현했고, dwdcc.kr에는 [0.12.1로 배포](releases/dwdcc-0.12.1-2026-11-17-deployment.json)했다. 공식 앱 카탈로그와 schema 25의 적용 결과는 [0.13.0 배포 기록](releases/dwdcc-0.13.0-2026-11-18-deployment.json)에 있다. miy.works의 0.13.0 동기화와 계정 발급(schema 26) 반영은 [동기화 기록](releases/miy-works-0.13.0-2026-11-20-deployment.json)과 [계정 링크 반영 기록](releases/account-links-2026-11-20-deployment.json)에 있다. 실제 복구·새 파일럿 인수의 진행 상태는 PLAN에서 관리한다.
+호스트별 적용 이력은 [서버 운영 안내](SERVER-OPERATIONS.md)에서 배포 기록으로 연결한다. 기능의 현재 상태와 남은 인수는 [PLAN](PLAN.md#검증과-반영-대기)에서 찾는다.
 
 ## 문서 작성 규칙
 

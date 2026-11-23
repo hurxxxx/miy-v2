@@ -64,13 +64,15 @@ CLI/번들 0.11.0에서 서버가 빌드한 산출물만 배포하도록 바꿨�
 - 번들 0.11.0은 0.10.0과 SDK·UI가 같고 보호 안내 문서(`AGENTS.md`, `CLAUDE.md`, `docs/CONTRACT.md`, `docs/CLI.md`, 앱 skill)만 다르다. 0.10.0 프로젝트는 `miy app upgrade`로 옮기고, 공용 UI 1.1.0(번들 0.10.0용 게시물)은 0.11.0에서도 호환으로 받는다.
 - 이전 CLI가 남긴 작업 기록(journal)은 읽는다. 로컬 이미지를 올리던 배포 기록의 `job resume`은 `local_image_deployment_removed`로 거부하고 `miy app build`를 안내한다.
 
-게시 순서는 종전과 같다: CI 후보 생성 → 서버·worker와 CLI·설치기를 한 기록으로 반영 → `cli-published.json`과 `contracts/api-v1.published.json` 갱신(GUI EXE도 게시할 때 `windows-candidate.json` 갱신). 다음 번들 버전을 준비할 때는 0.11.0 보호 파일 명세를 그 게시 소스의 바이트로 추가한다. 다음 번들 0.12.0(CLI 0.17.0)은 [범용 기능 계획 D0](COMMON-FEATURES-PLAN.md#d0-디자인설정-전달-기반)의 표시 설정 전달과 미리보기 토큰을 담아 소스에 준비돼 있다(미게시). `crates/miy/bundles/0.11.0.json`을 0.11.0 게시 소스의 바이트로 추가했다. 공용 UI 2.0.0은 이 번들에만 호환으로 게시한다.
+## SDK 번들과 게시 계약
+
+이미 게시한 번들의 보호 파일은 해당 배포 소스의 바이트로 고정한다. 게시할 때는 CI 후보를 만든 뒤 서버·worker와 CLI를 반영하고 `cli-published.json`과 `contracts/api-v1.published.json`을 갱신한다. GUI EXE도 게시하면 `windows-candidate.json`을 함께 갱신한다.
+
+SDK 번들 0.12.0은 표시 설정 전달과 미리보기 토큰을 추가했다. miy.works에 CLI 0.17.0과 함께 게시했다. 공용 UI 2.0.1을 게시했고 공식 앱 7개의 소스가 그 버전을 고정한다. [0.17.0 배포 기록](releases/miy-works-0.17.0-2026-11-22-deployment.json)
 
 새 Windows GUI 설치기를 게시하면 [Windows 후보 파일](releases/windows-candidate.json)을 그 CI 해시로 갱신한다. Windows 인수 검사기는 이 파일을 기대값으로 쓴다.
 
-번들 0.12.0 후보의 새 프로젝트와 공식 앱 7개는 공용 UI 2.0.1을 고정한다. 후보 원본과 공식 앱의 잠금 해시를 일치시킨 상태다.
-
-번들 0.13.0 소스는 내부 화면 이동에 대한 SDK 계약과 미리보기를 갱신한다. 0.12.0에서 `miy app upgrade`를 실행하면 보호된 SDK와 지침을 갱신하고 앱 코드·Rust 의존성·공용 UI 잠금은 보존한다. 새 프로젝트는 갱신된 예제에서 시작한다.
+게시 번들 0.13.0은 내부 화면 이동에 대한 SDK 계약과 미리보기를 갱신했다. 0.12.0에서 `miy app upgrade`를 실행하면 보호된 SDK와 지침을 갱신하고 앱 코드·Rust 의존성·공용 UI 잠금은 보존한다. 새 프로젝트는 갱신된 예제에서 시작한다.
 
 앱 개발 규칙을 개정할 때는 `crates/miy/src/cli_guidance.rs`의 `GUIDANCE_VERSION`을 올린다. 앱 생성 시점의 `templateVersion`은 내장 템플릿 전체에서 계산한 SHA-256이다. 두 값은 `miy.cli.json`에 기록하며 `miy app setup`은 호환 프로젝트의 지침과 `docs/API.md`를 갱신하고 최초 템플릿 값은 보존한다. `miy app check --harness-only`는 작업본과 현재 CLI의 버전을 비교해 표시한다.
 

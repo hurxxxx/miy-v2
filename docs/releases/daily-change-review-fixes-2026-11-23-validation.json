@@ -1,0 +1,125 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-11-23",
+  "status": "SOURCE_CHECKED",
+  "reviewBaseline": "f75a660",
+  "sourceBaseCommit": "f75a6601f68ebdf416a6c6922cf21b25cfbe32c4",
+  "workingTreeDirty": true,
+  "scope": [
+    "공식 카탈로그 핀 수를 테스트 입력에서 읽고 배포 도구 회귀를 검증했다.",
+    "콘솔 앱 접근 저장 알림에 원래 앱 이름을 표시하고 운영·테스트 포털의 관리자 API 403 검사를 복구했다.",
+    "개발자 조회 필터의 설명, 그룹 알림의 권한 거절 코드, 실패한 다운로드 증표의 재시도를 보완했다.",
+    "PMS 날짜 표시와 선택지 충돌 복구를 보완하고 PMS·메신저 manifest를 0.1.2로 올렸다."
+  ],
+  "checks": [
+    {
+      "command": "python3 scripts/test-core-ops.py",
+      "status": "PASS",
+      "tests": 108
+    },
+    {
+      "command": "bash scripts/check-static.sh rust",
+      "status": "PASS",
+      "scope": "포맷·쓰기 권한 검사·기본/CLI 전용 Clippy와 단위 검사. 기본 262건 통과·7건 제외, CLI 전용 145건 통과."
+    },
+    {
+      "command": "pnpm exec playwright test --config scripts/runtime-regression/ui.config.ts tests/admin-access.spec.ts",
+      "status": "FAIL",
+      "cause": "새 콘솔 성공 알림의 선택자가 화면 알림과 화면낭독 알림을 함께 선택했다.",
+      "recheck": "선택자를 좁힌 뒤 성공·실패 집중 검사 2건과 전체 웹 검사가 통과했다."
+    },
+    {
+      "command": "bash scripts/check-static.sh web",
+      "status": "PASS",
+      "scope": "타입·격리 Vite 빌드, 공용 UI 78건, 포털 127건, CLI 웹 15건, 출처 경계 20건, HTTP IP 포털 1건."
+    },
+    {
+      "command": "scripts/check-static.sh scripts의 검사 순서에서 check-server-config.py 호출만 제외해 실행",
+      "status": "PASS",
+      "scope": "문서 링크, 타입과 API 호환성, 토큰·번역, 배포 도구 등. 기본 Compose를 쓰는 프록시 검사는 이 호스트 지침에 따라 NOT_RUN."
+    },
+    {
+      "command": "python3 scripts/runtime-regression/run.py",
+      "status": "FAIL",
+      "functionalStatus": "PASS",
+      "functionalObservations": 163,
+      "cleanupStatus": "FAIL",
+      "cause": "병행 실행한 PMS 임시 PostgreSQL이 먼저 종료돼 기준 컨테이너 비교 한 건이 실패했다.",
+      "recheck": "기존 컨테이너 11개의 ID·이미지·상태·시작 시각이 동일하고 해당 실행 소유 Docker 자원이 남지 않았다.",
+      "evidenceRun": "miy-runtime-regression-hb54ht0b"
+    },
+    {
+      "command": "pnpm exec playwright test -g 'a regular user gets only what the server allows'",
+      "status": "PASS",
+      "scope": "별도 증거·상태 디렉터리와 일회용 PostgreSQL을 지정한 서버 UI 하네스에서 포털 요청의 403을 확인했다.",
+      "tests": 1,
+      "evidenceRun": "daily-review-server-ui.3ijc079c"
+    },
+    {
+      "command": "apps/pms에서 pnpm typecheck && pnpm test --maxWorkers=1 --silent",
+      "status": "PASS",
+      "tests": 554
+    },
+    {
+      "command": "apps/pms에서 cargo test --offline --locked -- --include-ignored --test-threads=1",
+      "status": "PASS",
+      "scope": "일회용 PostgreSQL 18.3 사용. 예상 선택지 누락 422와 오래된 선택지 409를 포함한다.",
+      "tests": 70
+    },
+    {
+      "command": "apps/messenger에서 pnpm typecheck && pnpm test --maxWorkers=1",
+      "status": "PASS",
+      "tests": 210
+    },
+    {
+      "command": "apps/pms와 apps/messenger에서 .miy-tools/miy app check",
+      "status": "FAIL",
+      "cause": "각 프로젝트의 0.17.0 실행 파일과 SDK 번들 0.13.0의 버전이 일치하지 않았다."
+    },
+    {
+      "command": "apps/pms와 apps/messenger에서 /home/miy/.local/bin/miy app fmt 및 app check",
+      "status": "PASS",
+      "scope": "설치 CLI 0.18.0으로 두 앱의 보호 파일과 OpenAPI·TypeScript·UI 산출물을 확인했다."
+    }
+  ],
+  "notRun": [
+    "변경 소스의 원격 GitHub Actions 재실행",
+    "기본 Compose를 사용하는 서버 프록시 검사",
+    "운영 반영과 공식 앱 0.1.2 게시·설치 인수"
+  ],
+  "reviewFollowup": {
+    "scope": [
+      "콘솔 등록·사전 권한 부여 메시지는 앱 카탈로그 화면에서 관리한다.",
+      "드라이브 일괄 다운로드는 전송 확인과 별도로 사용자가 다시 다운로드할 수 있다.",
+      "카탈로그 회귀에 앱 2개와 릴리스 핀 1개의 고정 입력을 써 접수 건수와 가져온 내용을 확인한다."
+    ],
+    "permissionDecision": "저장소·디렉터리·앱 연결·알림에서 유효한 앱 호출 체인에 기능 승인이 부족하면 installation_permission_denied를 쓴다.",
+    "checks": [
+      {
+        "command": "python3 scripts/test-core-ops.py -q",
+        "status": "PASS",
+        "tests": 108
+      },
+      {
+        "command": "pnpm typecheck && pnpm exec playwright test --config scripts/runtime-regression/ui.config.ts tests/admin-access.spec.ts tests/console-features.spec.ts",
+        "status": "PASS",
+        "tests": 28
+      },
+      {
+        "command": "apps/drive에서 pnpm typecheck && pnpm test --maxWorkers=1",
+        "status": "PASS",
+        "tests": 89
+      },
+      {
+        "command": "apps/drive에서 CLI 0.18.0으로 app check --harness-only, app fmt, app check",
+        "status": "PASS",
+        "scope": "보호 파일, Rust 단위 검사, OpenAPI, TypeScript와 UI 빌드."
+      }
+    ],
+    "previousRunScope": "PMS Rust 70건, 격리 런타임 기능 163건과 정리 실패, 서버 UI 권한 검사 1건은 최초 실행의 결과다.",
+    "notRun": [
+      "PMS Rust, 전체 격리 런타임, 서버 UI 하네스 재실행",
+      "설치 프레임에서 실제 브라우저의 자동 다운로드 차단과 수동 재시도 인수"
+    ]
+  }
+}

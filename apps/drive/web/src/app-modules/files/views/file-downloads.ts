@@ -26,11 +26,12 @@ export async function sendDownloadBatch(
   getLink: (fileId: string) => Promise<FileDownloadResponse>,
   signal: AbortSignal,
   saveProgress: (batch: DownloadBatch) => void,
+  retryFirst = false,
 ): Promise<void> {
   let current = batch;
-  for (const entry of batch.remaining) {
+  for (const [index, entry] of batch.remaining.entries()) {
     signal.throwIfAborted();
-    const checkOnly = entry.downloadUrl !== undefined;
+    const checkOnly = entry.downloadUrl !== undefined && !(retryFirst && index === 0);
     let url = entry.downloadUrl;
     if (url === undefined) {
       const link = await getLink(entry.id);
@@ -46,7 +47,7 @@ export async function sendDownloadBatch(
       await download(url, signal, { checkOnly });
     } catch (error) {
       signal.throwIfAborted();
-      if (isApiError(error) && error.code === 'file_download_failed') {
+      if (isApiError(error) && (error.code === 'file_download_failed' || error.status === 404)) {
         current = {
           ...current,
           remaining: [{ id: entry.id, path: entry.path }, ...current.remaining.slice(1)],

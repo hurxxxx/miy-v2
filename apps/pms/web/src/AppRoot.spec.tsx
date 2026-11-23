@@ -10,12 +10,15 @@ import { useState } from 'react';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { AppRuntime, AppSettings } from '@miy/sdk';
 import { ApiError } from '@miy/sdk';
+import { FeedbackProvider } from '@miy/ui';
 
 import AppRoot from './AppRoot';
 import { SpaceOrderEditorModal } from './app-modules/pms/sidebar/SpaceOrderEditorModal';
+import { CustomFieldSettingsSection } from './app-modules/pms/views/CustomFieldSettingsSection';
 import type { PmsTaskList } from './app-modules/pms/api/pms-api';
 import { syncLocale } from './platform/i18n';
 import { NavigationStateProvider } from './platform/runtime/navigation-state';
+import { RuntimeProvider } from './platform/runtime/runtime-context';
 import { createTestRuntime } from './test-utils/runtime';
 
 // Smoke tests of the frame entry with a fake runtime (miy). The screens are
@@ -176,6 +179,25 @@ describe('AppRoot', { timeout: 20_000 }, () => {
     });
   });
 
+  it('updates the open my-tasks panel date without fetching the tasks again', async () => {
+    const api = fakeApi({
+      '/v1/pms/lists?': { ...EMPTY_PAGE, items: [{ id: 'list-1', team_id: SPACE.id }], total: 1 },
+      '/v1/pms/tasks/assigned': {
+        ...EMPTY_PAGE, items: [{ ...TASK, due_date: '2026-11-23' }], total: 1,
+      },
+    });
+    const value = runtime('/widgets/my-tasks', api, { dateFormat: 'iso' });
+    const { rerender } = render(<AppRoot runtime={value} />);
+    expect(await screen.findByText('2026-11-23', {}, LAZY)).toBeTruthy();
+    const assignedReads = () => api.mock.calls.filter(([path]) => path.startsWith('/v1/pms/tasks/assigned'));
+
+    rerender(<AppRoot runtime={{ ...value, settings: { ...value.settings, dateFormat: 'us' } }} />);
+
+    expect(screen.getByText('11/23/2026')).toBeTruthy();
+    expect(screen.queryByText('2026-11-23')).toBeNull();
+    expect(assignedReads()).toHaveLength(1);
+  });
+
   it('sends a task link to its list when the list is readable', async () => {
     const api = fakeApi({
       '/v1/pms/tasks/task-1': TASK_DETAIL,
@@ -258,6 +280,45 @@ describe('AppRoot', { timeout: 20_000 }, () => {
     expect(screen.queryByRole('textbox', { name: '자재 검수' })).toBeNull();
     expect(value.navigate).not.toHaveBeenCalled();
   });
+});
+
+it('refreshes changed custom field options without silently rebasing the draft', async () => {
+  const field = { id: 'field-1', name: '분류', field_type: 'select', options: ['기존'] };
+  let options = field.options;
+  const api = vi.fn(async (_path: string, init?: RequestInit) => {
+    if (init?.method === 'PATCH') {
+      options = ['기존', '동시 변경'];
+      throw new ApiError('http', 'pms_custom_field_options_changed', 409);
+    }
+    return { items: [{ ...field, options }] };
+  });
+  const value = createTestRuntime({ api: api as unknown as AppRuntime['api'] });
+  render(
+    <FeedbackProvider labels={{ close: '닫기', item: '알림', region: '피드백' }}>
+      <RuntimeProvider runtime={value}>
+        <NavigationStateProvider report={value.setNavigationState} message="Unsaved work">
+          <CustomFieldSettingsSection taskListId="list-1" canManage />
+        </NavigationStateProvider>
+      </RuntimeProvider>
+    </FeedbackProvider>,
+  );
+
+  fireEvent.click(await screen.findByRole('button', { name: '분류 수정' }));
+  fireEvent.change(screen.getByRole('textbox', { name: '기존 선택지 이름' }), {
+    target: { value: '내 변경' },
+  });
+  fireEvent.click(screen.getByRole('button', { name: '저장' }));
+  expect((await screen.findByRole('alert')).textContent).toContain('다른 변경으로 선택지가 바뀌었습니다');
+  expect((screen.getByRole('textbox', { name: '기존 선택지 이름' }) as HTMLInputElement).value).toBe('내 변경');
+  expect((screen.getByRole('button', { name: '저장' }) as HTMLButtonElement).disabled).toBe(true);
+  await waitFor(() => expect(api).toHaveBeenCalledTimes(3));
+
+  fireEvent.click(screen.getByRole('button', { name: '취소' }));
+  const reopen = screen.getByRole('button', { name: '분류 수정' }) as HTMLButtonElement;
+  await waitFor(() => expect(reopen.disabled).toBe(false));
+  fireEvent.click(reopen);
+  expect(screen.getByRole('textbox', { name: '동시 변경 선택지 이름' })).toBeTruthy();
+  expect((screen.getByRole('button', { name: '저장' }) as HTMLButtonElement).disabled).toBe(false);
 });
 
 it('reports unsaved space ordering until its save finishes', async () => {

@@ -329,10 +329,11 @@ function FileManagerViewContent({
                 <div className="flex flex-wrap gap-2">
                   {bulkAction === null ? (
                     <>
-                      <Button onClick={() => resumeDownloadBatch()}>
-                        {t(pendingDownload?.downloadUrl ? 'drive.bulkDownload.checkAgain' : 'drive.bulkDownload.retry')}
-                      </Button>
-                      <Button onClick={() => resumeDownloadBatch(true)}>{t('drive.bulkDownload.skip')}</Button>
+                      {pendingDownload?.downloadUrl && (
+                        <Button onClick={() => resumeDownloadBatch('check')}>{t('drive.bulkDownload.checkAgain')}</Button>
+                      )}
+                      <Button onClick={() => resumeDownloadBatch('retry')}>{t('drive.bulkDownload.retry')}</Button>
+                      <Button onClick={() => resumeDownloadBatch('skip')}>{t('drive.bulkDownload.skip')}</Button>
                     </>
                   ) : null}
                   <Button onClick={stopDownloadBatch}>{t('drive.bulkDownload.stop')}</Button>

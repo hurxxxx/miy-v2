@@ -577,7 +577,7 @@ pub fn catalog() -> Value {
         ]}),
         json!({"id":"admin_user_directory","method":"GET","path":"/api/v1/users/directory","permission":CONSOLE_ADMIN,"consoleAdmin":true,"description":"User accounts ordered by case-insensitive name and ID and filtered by name or ID, role, status and primary organization. Descendant matching is a directory filter only.","output":response_schema::<crate::api_contract::AdminUserDirectoryPage>(),"parameters":[
             {"in":"query","name":"q","schema":{"type":"string"},"description":"Case-insensitive substring of name or ID. Trims surrounding whitespace and accepts up to 120 Unicode characters after trimming."},
-            {"in":"query","name":"role","schema":{"type":"string","enum":["admin","developer","member"]},"description":"admin selects administrators, developer selects accounts allowed to develop (including administrators), and member selects accounts with neither permission."},
+            {"in":"query","name":"role","schema":{"type":"string","enum":["admin","developer","member"]},"description":"admin selects administrators, developer selects accounts with canDevelop enabled, and member selects accounts with neither flag."},
             {"in":"query","name":"status","schema":{"type":"string","enum":["enabled","disabled"]}},
             {"in":"query","name":"organization","schema":{"type":"string"},"description":"Organization UUID or unassigned"},
             {"in":"query","name":"descendants","schema":{"type":"boolean","default":false},"description":"Include descendants when organization names a UUID. Ignored for an omitted organization or unassigned."},

@@ -22,15 +22,16 @@ const tabs = ["access", "installations", "runtime"] as const;
 const catalogPath = "/admin/apps";
 const refreshInterval = 3000;
 
-export function AdminApps(props: Props) {
+export function AdminApps({ csrf }: { csrf: string }) {
   const { appId, tab } = useParams({ strict: false }) as { appId?: string; tab?: string };
   return appId
-    ? <AdminAppDetail key={appId} appId={appId} tab={tab ?? "access"} {...props} />
-    : <AdminAppsCatalog {...props} />;
+    ? <AdminAppDetail key={appId} appId={appId} tab={tab ?? "access"} csrf={csrf} />
+    : <AdminAppsCatalog csrf={csrf} />;
 }
 
-function AdminAppsCatalog({ csrf, report }: Props) {
+function AdminAppsCatalog({ csrf }: { csrf: string }) {
   const { t, i18n } = useTranslation(["console", "portal"]);
+  const [message, report] = useState("");
   const [cursors, setCursors] = useState<string[]>([]);
   const [search, setSearch] = useState("");
   const cursor = cursors.at(-1);
@@ -48,6 +49,7 @@ function AdminAppsCatalog({ csrf, report }: Props) {
 
   return (
     <>
+      {message && <p role="status" className="status-message">{message}</p>}
       <Panel title={t("apps.catalog")}>
         <div className="access-toolbar">
           <Field label={t("apps.filterPage")}>
@@ -165,7 +167,7 @@ function RegistrationRequests({ csrf, report, onApproved }: Props & { onApproved
   );
 }
 
-function AdminAppDetail({ appId, tab, csrf, report }: Props & { appId: string; tab: string }) {
+function AdminAppDetail({ appId, tab, csrf }: { appId: string; tab: string; csrf: string }) {
   const { t } = useTranslation(["console", "portal"]);
   const detail = useAdminAppRead<AppDetail>(`/api/v1/apps/${encodeURIComponent(appId)}`, tab === "access" ? undefined : refreshInterval);
   const app = detail.data?.app.id === appId ? detail.data.app : undefined;
@@ -206,7 +208,7 @@ function AdminAppDetail({ appId, tab, csrf, report }: Props & { appId: string; t
               </Link>
             ))}
           </nav>
-          {tab === "access" && <AppAccessAdmin appId={appId} csrf={csrf} report={report} refreshApp={detail.refresh} />}
+          {tab === "access" && <AppAccessAdmin appId={appId} appName={app.name} csrf={csrf} refreshApp={detail.refresh} />}
           {tab === "installations" && (
             <InstallationView installations={installations} csrf={csrf} mode="installations" refresh={detail.refresh} />
           )}

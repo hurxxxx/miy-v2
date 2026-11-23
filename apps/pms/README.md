@@ -79,7 +79,7 @@ UI는 `runtime.api('/v1/...')`로 부르고 게이트웨이가 `/api/v1/...`로 
 | `POST /v1/pms/tasks/{id}/template` | `{name}`: 태스크(설명·상태·우선순위·체크리스트·라벨·보관 안 된 직계 하위 태스크)를 그 스페이스 템플릿으로 저장(member 이상) |
 | `GET`·`POST /v1/pms/lists/{id}/custom-fields` | 사용자 정의 필드(`field_type` `text`·`number`·`date`·`select`·`multi_select`·`user`, 선택 필드는 `options` 필수, 리스트 안 이름 유일, 최대 50개. owner·admin) |
 | `PATCH /v1/pms/lists/{id}/custom-fields/reorder` | `{field_ids}` 순서 저장(owner·admin) |
-| `PATCH`·`DELETE /v1/pms/custom-fields/{id}` | `{name?, options?, option_renames?: [{from,to}]}`(형식은 못 바꿈, 빠진 선택지의 값은 지움)·삭제(값도 삭제) |
+| `PATCH`·`DELETE /v1/pms/custom-fields/{id}` | `{name?, options?, expected_options?, option_renames?: [{from,to}]}`. `options`를 보낼 때 조회한 기존 선택지 배열을 순서대로 `expected_options`에 보낸다. 빠뜨리면 422, 현재 선택지와 다르면 409로 거절된다. 형식은 유지되며 제거한 선택지나 삭제한 필드의 값은 지운다. |
 | `GET /v1/pms/lists/{id}/export` | 엑셀(.xlsx). 리스트 태스크 질의와 같은 필터 |
 | `GET /v1/pms/dashboard/summary?list_id` | 요약 |
 

@@ -2,6 +2,8 @@
 
 **Ubuntu 24.04 LTS x86_64 전용 서버에 이 저장소를 clone한 뒤, PostgreSQL·Keycloak·Core·worker·포털·앱 프레임과 첫 앱까지 구성하는 절차다.** 기존 서버의 DB·사용자·앱을 옮기는 절차가 아니다. `v2.dwdcc.kr`의 파일·인증서·DB·CLI 게시물을 복사할 필요가 없다. §13~15는 이 안내로 설치한 서버의 최소 수동 관리 절차다.
 
+이미 설치한 Ubuntu 26.04의 miy.works 서버는 [miy.works 운영 안내](SERVER-OPERATIONS.md#miyworks-호스트-2026-11-16)를 따른다.
+
 명령은 새 서버의 **sudo 가능한 일반 사용자 한 명**으로 Bash에서 순서대로 실행한다. 이 사용자가 Core·worker의 서비스 계정이 된다. sudo/Docker 권한을 가진 계정으로 공개 요청을 받는 Core도 실행하는 개발 단계의 단순화이며, 서비스 권한을 분리한 구성은 아니다. root로 Cargo/pnpm을 실행하지 않는다. 이 저장소를 현재 운영하는 호스트에서는 아래 명령을 실행하지 않는다. 단계가 실패하면 그 원인을 해결한 뒤 이어가며, 볼륨을 지워 다시 시작하지 않는다.
 
 **검증 상태:** 이 문서 전체를 빈 Ubuntu 서버에서 설치→로그인→첫 앱→재부팅까지 실행한 결과는 아직 없다. 이번 보완에 추가한 갱신·백업/복원 명령도 `NOT_RUN`이며 사용자가 별도 VM에서 인수한다. 이전의 구문·격리 설정 검사는 전체 설치 성공을 뜻하지 않는다. 최초 설치 뒤의 최소 운영 절차도 §12~15에 함께 둔다.
@@ -460,7 +462,7 @@ docker compose --env-file "$MIY_STATE_DIR/compose.env" exec -T postgres \
   psql -U postgres -d miy_core -c 'SELECT version,success FROM _sqlx_migrations ORDER BY version;'
 ```
 
-세 HTTPS `/api/health`가 성공하고 migration의 `success`가 모두 참이어야 한다. 현재 소스는 schema 27이며 설치하는 checkout의 마지막 migration을 기준으로 확인한다. CLI 게시 전 `sourceCommit: null`, `downloads: 0`은 정상이다. CLI 게시물은 실행 중인 Core와 같은 버전을 사용한다.
+세 HTTPS `/api/health`가 성공하고 migration의 `success`가 모두 참이어야 한다. 설치하는 작업본의 [core migration 목록](../migrations/core/)을 기준으로 모든 버전이 적용됐는지 확인한다. CLI 게시 전 `sourceCommit: null`, `downloads: 0`은 정상이다. CLI 게시물은 실행 중인 Core와 같은 버전을 사용한다.
 
 브라우저에서 다음을 확인한다.
 

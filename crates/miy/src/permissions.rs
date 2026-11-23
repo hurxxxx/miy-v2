@@ -94,11 +94,12 @@ pub async fn require(
     {
         Ok(())
     } else {
-        Err(ApiError {
-            status: axum::http::StatusCode::FORBIDDEN,
-            code: "installation_permission_denied".into(),
-        })
+        Err(denied())
     }
+}
+
+pub(crate) fn denied() -> ApiError {
+    ApiError::forbidden_code("installation_permission_denied")
 }
 
 /// Approvals are an installation's operating record ([`AppAction::Observe`]): readable

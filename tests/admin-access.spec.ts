@@ -702,47 +702,79 @@ test("late HR membership responses cannot expose another group's removal action"
   }
 });
 
-test("an app mutation finishing after navigation stays scoped to its original app", async ({ page }) => {
-  const { apps, access, accessByApp } = await mock(page);
-  apps.push({ id: "other", name: "다른 앱" });
-  accessByApp.other = {
-    ...access,
-    appId: "other",
-    admission: { ...access.admission },
-    userGrants: [],
-    groupGrants: [],
-  };
-  const requested = deferred();
-  const release = deferred();
-  let otherReads = 0;
-  await page.route("**/api/v1/apps/other/access", async (route) => {
-    otherReads++;
-    await route.fallback();
-  });
-  await page.route("**/api/v1/apps/ledger/admission", async (route) => {
-    requested.resolve();
-    await release.promise;
-    await route.fallback();
-  });
-  try {
-    await page.goto("/admin/apps/ledger/access");
-    const panel = page.locator(".ui-panel").filter({
-      has: page.getByRole("heading", { name: "앱 접근", exact: true }),
+for (const outcome of ["success", "failure"] as const) {
+  test(`reports an app access ${outcome} after navigating to a different app`, async ({ page }) => {
+    const { apps, access, accessByApp } = await mock(page);
+    apps.push({ id: "other", name: "다른 앱" });
+    accessByApp.other = {
+      ...access,
+      appId: "other",
+      admission: { ...access.admission },
+      userGrants: [],
+      groupGrants: [],
+    };
+    const requested = deferred();
+    const release = deferred();
+    let otherReads = 0;
+    await page.route("**/api/v1/apps/other/access", async (route) => {
+      otherReads++;
+      await route.fallback();
     });
-    await panel.getByLabel("운영 입장 대상").selectOption("all");
-    await requested.promise;
-    await page.getByRole("link", { name: /앱 카탈로그/ }).click();
-    await page.getByRole("link", { name: "다른 앱", exact: true }).click();
-    await expect(panel.getByLabel("운영 입장 대상")).toHaveValue("selected");
-    release.resolve();
-    await expect.poll(() => access.admission.prod).toBe("all");
-    await renderResponses(page);
-    expect(otherReads).toBe(1);
-    await expect(page).toHaveURL(/\/admin\/apps\/other$/);
-    await expect(panel.getByLabel("운영 입장 대상")).toHaveValue("selected");
-  } finally {
-    release.resolve();
-  }
+    await page.route("**/api/v1/apps/ledger/admission", async (route) => {
+      requested.resolve();
+      await release.promise;
+      if (outcome === "failure") {
+        await route.fulfill({ status: 409, json: { error: { code: "fixture_admission_conflict" } } });
+      } else {
+        await route.fallback();
+      }
+    });
+    try {
+      await page.goto("/admin/apps/ledger/access");
+      const panel = page.locator(".ui-panel").filter({
+        has: page.getByRole("heading", { name: "앱 접근", exact: true }),
+      });
+      await panel.getByLabel("운영 입장 대상").selectOption("all");
+      await requested.promise;
+      await page.getByRole("link", { name: /앱 카탈로그/ }).click();
+      await page.getByRole("link", { name: "다른 앱", exact: true }).click();
+      await expect(panel.getByLabel("운영 입장 대상")).toHaveValue("selected");
+      release.resolve();
+      const message = outcome === "success"
+        ? /^장부 · 운영 입장 대상을 바꿨습니다\.$/
+        : /^장부의 접근 설정을 변경하지 못했습니다\./;
+      await expect(page.getByText(message)).toBeVisible();
+      expect(access.admission.prod).toBe(outcome === "success" ? "all" : "selected");
+      expect(otherReads).toBe(1);
+      await expect(page).toHaveURL(/\/admin\/apps\/other$/);
+      await expect(panel.getByLabel("운영 입장 대상")).toHaveValue("selected");
+    } finally {
+      release.resolve();
+    }
+  });
+}
+
+test("a registration decision message stays on the app catalog", async ({ page }) => {
+  await mock(page);
+  let approved = false;
+  await page.route("**/api/v1/app-registrations", (route) =>
+    route.fulfill({ json: approved ? [] : [{
+      id: "request-1", appId: "example", name: "신규 앱", requestedBy: "alice", status: "pending",
+    }] }),
+  );
+  await page.route("**/api/v1/app-registrations/request-1/decision", async (route) => {
+    expect(route.request().postDataJSON()).toEqual({ approve: true });
+    approved = true;
+    await route.fulfill({ json: {} });
+  });
+
+  await page.goto("/admin/apps");
+  await page.getByRole("button", { name: "승인", exact: true }).click();
+  const message = page.getByRole("status").filter({ hasText: "앱 등록을 승인했습니다." });
+  await expect(message).toBeVisible();
+  await page.getByRole("link", { name: "장부", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "장부", exact: true })).toBeVisible();
+  await expect(message).toHaveCount(0);
 });
 
 test("a membership mutation finishing after selection changes refreshes the current group", async ({ page }) => {

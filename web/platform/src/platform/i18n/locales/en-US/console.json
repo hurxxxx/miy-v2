@@ -397,6 +397,8 @@
     "remove": "Remove",
     "clearPrimary": "Clear primary group",
     "appAccessLoadFailed": "Could not load the app access settings",
+    "appChangeResult": "{{app}} · {{result}}",
+    "appChangeFailed": "Could not change access settings for {{app}}. {{error}}",
     "appsLoadFailedWith": "Could not load the app list: {{error}}",
     "disableAppTitle": "Disable this app?",
     "disableAppBody": "No one, administrators included, can use this app. Users with develop permission can still fix it in the test environment.",

@@ -26,14 +26,14 @@
 | 전역 권한·사용자·그룹·설치 승인 변경 | 위임되지 않은 현재 관리자와 기존 scope 조건. 같은 트랜잭션에서 검사·감사 | 앱 담당자에게 자동 부여하지 않음 |
 | 개인 CLI 인증 승인 | 본인 계정의 콘솔 인증 경로. 콘솔 사용 자체는 전역 관리 권한이 아님 | device 승인만 console에서 허용하고 portal/dev_portal 승인 거부. legacy 로그인은 410 종료, 일반 직원도 본인 device 승인 가능 |
 | 앱 내부 공간·자원 | 해당 앱의 원래 사용자 ACL | 플랫폼 admin을 앱 owner로 자동 변환하지 않음 |
-| 본인 개인 설정·브라우저 세션 | 위임되지 않은 활성 사용자가 본인 기록만(`PlatformAction::Personal`). 세 출처 모두 허용하고 쿠키 요청은 CSRF를 요구한다. 표시 이름 변경은 감사에 남는다. 현재 세션은 목록에서 끝낼 수 없고 로그아웃으로 끝낸다 | 소스 반영(미배포). `GET /api/v1/me`의 `preferences`, `PATCH /api/v1/me/preferences`, `GET /api/v1/me/sessions`, `DELETE /api/v1/me/sessions/{id}`. 설정 값(고정 앱·고정 패널 포함)은 표시용이며 판정 입력이 아니다 |
-| 런처 분류 | 읽기는 위임되지 않은 사용자 누구나(세 출처). 만들기·바꾸기·지우기·배치는 콘솔의 위임되지 않은 활성 관리자(`Administer`)이며, 존재하는 앱 ID만 한 분류에 하나씩 넣는다. 변경은 감사에 남는다. 분류는 앱을 묶어 보여 줄 뿐 입장 권한을 주지 않는다 | 소스 반영(미배포). `GET·POST /api/v1/launcher/categories`, `PATCH·DELETE /api/v1/launcher/categories/{id}`, `PUT /api/v1/launcher/categories/layout`. 관리자 판정을 앱 존재 확인보다 먼저 한다. 전체 배치 저장은 조회로 받은 `revision`을 `expectedRevision`으로 보내며, 다른 변경을 먼저 저장했다면 409로 돌려준다 |
+| 본인 개인 설정·브라우저 세션 | 위임되지 않은 활성 사용자가 본인 기록만(`PlatformAction::Personal`). 세 출처 모두 허용하고 쿠키 요청은 CSRF를 요구한다. 표시 이름 변경은 감사에 남는다. 현재 세션은 목록에서 끝낼 수 없고 로그아웃으로 끝낸다 | `GET /api/v1/me`의 `preferences`, `PATCH /api/v1/me/preferences`, `GET /api/v1/me/sessions`, `DELETE /api/v1/me/sessions/{id}`. 설정 값(고정 앱·고정 패널 포함)은 표시용이며 판정 입력이 아니다 |
+| 런처 분류 | 읽기는 위임되지 않은 사용자 누구나(세 출처). 만들기·바꾸기·지우기·배치는 콘솔의 위임되지 않은 활성 관리자(`Administer`)이며, 존재하는 앱 ID만 한 분류에 하나씩 넣는다. 변경은 감사에 남는다. 분류는 앱을 묶어 보여 줄 뿐 입장 권한을 주지 않는다 | `GET·POST /api/v1/launcher/categories`, `PATCH·DELETE /api/v1/launcher/categories/{id}`, `PUT /api/v1/launcher/categories/layout`. 관리자 판정을 앱 존재 확인보다 먼저 한다. 전체 배치 저장은 조회로 받은 `revision`을 `expectedRevision`으로 보내며, 다른 변경을 먼저 저장했다면 409로 돌려준다 |
 
 그룹에는 use·develop만, prod deploy는 사람별로 부여한다. 계층·상위 조직·책임자에게 권한을 자동 상속하지 않는다. 플랫폼 관리자의 prod 사용도 명시적 use 또는 전체 허용이 필요하다. 관리자가 자신의 use를 부여할 때에도 감사를 남기며 그 행위가 앱 내부 ACL을 부여하지는 않는다. 기존 관리자를 use로 자동 복사하지 않는다. 외부 지원자의 배포/호스트 권한은 데이터에 영향을 줄 수 있는 신뢰 경계이며 이 행렬만으로 데이터 기밀성을 보장하지 않는다.
 
 콘솔 사용자 화면의 `GET /api/v1/users/directory`는 현재 활성·비위임 관리자가 계정을 조회한다. 하위 조직을 포함할 때는 디렉터리 결과만 확장한다. 조직도는 주 소속을 배정하거나 해제할 때 `PUT /api/v1/users/{id}/primary-group`에 조회한 `expectedGroupId`를 보낸다. `null`은 미배정을 뜻한다. Core는 사용자 행을 잠그고 조회한 소속과 현재 소속이 다르면 `409 primary_group_changed`를 반환한다.
 
-**사용자 전환(M6, 소스 반영·미배포).** 콘솔의 위임되지 않은 활성 관리자(`Administer`, Origin·CSRF)가 사용자 화면에서 "이 사용자로 로그인"을 누르면 그 사용자의 업무 포털 또는 dev 포털 세션이 생긴다. 이후 판정은 그 사용자의 일반 세션과 같으며 관리자에게 use나 앱 ACL을 부여하지 않는다. 위 표의 '관리자 자동 입장 없음'과 'admin을 앱 owner로 변환하지 않음'의 명시적 예외다.
+**사용자 전환(M6).** 콘솔의 위임되지 않은 활성 관리자(`Administer`, Origin·CSRF)가 사용자 화면에서 "이 사용자로 로그인"을 누르면 그 사용자의 업무 포털 또는 dev 포털 세션이 생긴다. 이후 판정은 그 사용자의 일반 세션과 같으며 관리자에게 use나 앱 ACL을 부여하지 않는다. 위 표의 '관리자 자동 입장 없음'과 'admin을 앱 owner로 변환하지 않음'의 명시적 예외다.
 
 - 시작: `POST /api/v1/users/{id}/sign-in-as` `{environment}`가 60초짜리 1회용 코드를 만들고 관리 감사에 `user.sign_in_as`(관리자·대상·환경)를 남긴다. 본인, 없는 사용자, 사용 중지된 사용자, 비밀번호 재설정 중인 사용자는 거절한다.
 - 세션: 콘솔은 대상 포털의 `/switch-user`를 열어 코드를 주소 조각으로 전한다. 포털 화면이 주소에서 코드를 지운 뒤 같은 출처의 `POST /auth/switch`로 보내며, Core는 발급한 용도의 포털에서만 코드를 한 번 쓴다. 브라우저에서 그 포털에 이미 로그인한 세션을 끝내고 대상 사용자의 일반 세션(8시간, 같은 CSRF·로그아웃)을 만든다. 세션에는 시작한 관리자(`impersonator_user_id`)를 기록한다.
@@ -48,7 +48,7 @@ manifest의 `requestedPermissions`는 요구 사항이다. 지원하는 권한�
 
 앱 프레임의 업무 API는 프레임 토큰으로 발신 설치를 증명한다. 프레임은 자기 설치의 API만 직접 부르고, 다른 앱은 A의 설치 승인을 거친 연결(`callers=[A]`)로만 호출한다. 포털 쿠키는 업무 API에 쓰이지 않는다. 2026-11-12 운영 반영 전의 같은 페이지 MF에서는 발신 앱을 증명하지 못했다. 이 한계와 사내 승인 앱 신뢰는 APP-BOUNDARIES를 따르며 backend 연결 검증의 PASS를 브라우저 발신 앱 격리로 확대하지 않는다.
 
-승인 키는 `(installationId, releaseId)`다. dev와 prod, 서로 다른 설치, 새 릴리스 사이에 승인을 복사하지 않는다. 승인하지 않은 기능은 403 `installation_permission_denied`로 차단한다. 앱의 설치·배포 자체는 부분 승인 또는 승인 없음으로도 가능하다. 자체 DB의 준비·migration·연결은 기존 앱/환경 개발·배포 권한과 격리 정책을 따른다. `database`를 이 외부 호출 승인 목록에 추가해 다른 앱의 DB에 접근할 수는 없다.
+승인 키는 `(installationId, releaseId)`다. dev와 prod, 서로 다른 설치, 새 릴리스 사이에 승인을 복사하지 않는다. 승인하지 않은 기능은 403 `installation_permission_denied`로 차단한다. 유효한 앱 호출 체인의 현재 권한에 필요한 기능 승인이 없을 때도 저장소·디렉터리·앱 연결·알림은 같은 코드를 쓴다. 앱의 설치·배포 자체는 부분 승인 또는 승인 없음으로도 가능하다. 자체 DB의 준비·migration·연결은 기존 앱/환경 개발·배포 권한과 격리 정책을 따른다. `database`를 이 외부 호출 승인 목록에 추가해 다른 앱의 DB에 접근할 수는 없다.
 
 계획된 변경(미구현): 알림 발행 권한 `platform:notifications:write`를 허용 목록에 추가한다. 지금은 `unsupported_permission`으로 거부된다([범용 기능 계획 M2](COMMON-FEATURES-PLAN.md#m2-플랫폼앱-연결과-알림)).
 
@@ -163,7 +163,7 @@ runtime·DB 준비·서버 빌드·로그 작업에 원래 `delegation_id`를 �
 
 Core가 앱에 전달하는 서명된 identity에는 원래 사용자·수신 설치/릴리스·환경이 들어간다. 인증된 backend 후속 호출에서는 검증한 호출 설치/릴리스 순서와 유효 외부 권한도 보존한다. 브라우저의 identity·사용자·호출자 헤더를 신뢰하지 않으며, 현행 브라우저 발신 설치는 검증된 프레임 자격증명으로 판단한다. 발신 앱을 증명할 수 없었던 직접 요청은 전환 전 같은 페이지 MF 구조의 한계다.
 
-앱 서버가 사용자 요청 안에서 부르는 코어 알림 API와, 코어가 포털 사용자의 요청으로 앱이 선언한 읽기 전용 엔드포인트를 부르는 플랫폼 → 앱 호출은 [아래 절](#플랫폼-알림과-플랫폼--앱-호출)을 따른다(소스 반영, 미배포). 플랫폼 호출의 서명된 identity에는 `platform=true`가 들어가고 관리자 표시는 없다.
+앱 서버가 사용자 요청 안에서 부르는 코어 알림 API와, 코어가 포털 사용자의 요청으로 앱이 선언한 읽기 전용 엔드포인트를 부르는 플랫폼 → 앱 호출은 [아래 절](#플랫폼-알림과-플랫폼--앱-호출)을 따른다. 플랫폼 호출의 서명된 identity에는 `platform=true`가 들어가고 관리자 표시는 없다.
 
 앱이 가진 `MIY_GATEWAY_SECRET`은 자기 앱에서 Core의 요청을 확인하는 용도다. 앱이 이 키로 만든 JWT를 Core 인증이나 다른 사용자 위임으로 사용할 수 없다. 후속 호출에는 Core가 별도로 발급하고 hash만 저장한 `miy_call_` 증표가 필요하다. 이 증표는 원래 만료를 연장하지 않고 최대 30초 동안 유효하다.
 
@@ -179,7 +179,7 @@ Rust SDK의 `Identity.context`로 검증된 호출자 정보를 읽는다. `Iden
 
 ## 플랫폼 알림과 플랫폼 → 앱 호출
 
-[범용 기능 계획 M2](COMMON-FEATURES-PLAN.md#m2-플랫폼앱-연결과-알림)의 계약이다. 2026-11-22 정본으로 확정했고 구현은 소스 단계다(미배포).
+[범용 기능 계획 M2](COMMON-FEATURES-PLAN.md#m2-플랫폼앱-연결과-알림)의 코어 계약이다. 호스트별 반영은 [서버 운영 안내](SERVER-OPERATIONS.md)를 따른다.
 
 **알림 발행**
 
@@ -245,7 +245,7 @@ SDK 사용·마이그레이션 예시는 [앱 계약](../templates/rust-react/do
 
 ### 대용량 전송(M10)
 
-[범용 기능 계획 §2.3](COMMON-FEATURES-PLAN.md#23-파일-저장)의 코어 설계를 정본으로 확정했다. 2026-11-22 분할 예약·커밋된 오프셋·한 조각 쓰기·확정·한도, 다운로드 증표, 하위 디렉터리와 주기 무결성 확인을 소스에 반영했다(core schema 33·34, 미배포).
+[범용 기능 계획 §2.3](COMMON-FEATURES-PLAN.md#23-파일-저장)의 코어 설계를 정본으로 확정했다. 분할 전송·한도·다운로드 증표는 schema 33, 하위 디렉터리와 주기 무결성 확인은 schema 34에 해당한다. 호스트별 반영은 [서버 운영 안내](SERVER-OPERATIONS.md)를 따른다.
 
 - **전송 방식.** 예약(`POST platform/files`)에 `transfer`를 둔다. `single`(기본)은 지금의 10MiB 한 요청 업로드이고, `parts`는 2GiB까지 조각으로 보낸다. `single` 예약에 조각을, `parts` 예약에 한 요청 업로드를 보내면 409 `file_transfer_mismatch`다.
 - **조각.** `PUT platform/files/{id}/parts`에 `Content-Range: bytes S-E/T` 하나를 보낸다. `T`는 예약 크기, `S`는 커밋된 `received`와 같아야 하고(아니면 409 `file_part_offset`), 길이는 1B~8MiB다(프레임 파일 gateway의 10MiB 안). 파일 행을 잠근 채 디스크의 꼬리를 `S`로 잘라 쓰고 동기화한 뒤 새 오프셋을 커밋한다. 첫 생성은 부모 디렉터리까지 동기화한다. DB보다 디스크가 짧으면 503 `file_part_bytes_missing`으로 멈춘다. 응답을 잃으면 메타데이터의 `received`에서 이어 보낸다.
@@ -253,7 +253,7 @@ SDK 사용·마이그레이션 예시는 [앱 계약](../templates/rust-react/do
 - **한도.** 설치별 한도는 콘솔 관리자가 `GET·PUT·DELETE /api/v1/installations/{id}/file-quota`로 정하고 감사(`file.quota_set`)에 남긴다. 정하지 않으면 기본값(20GiB·100,000개)이다. 기존 파일은 그대로 두고 새 예약만 거절한다(409 `file_quota_exceeded`). 코어 전체에는 고정 총량이 없다. 새 예약은 직렬화하며, 아직 쓰지 않은 예약량을 더해도 파일 볼륨에 max(2GiB, 5%)의 여유와 inode가 남을 때만 받는다(503 `file_storage_low`).
 - **다운로드 증표.** 큰 파일은 메모리 Blob이 아니라 다운로드 증표로 받는다. 앱 backend가 파일 ACL을 판정한 뒤 `POST platform/files/{id}/download` `{reference?}`를 부르면 5분짜리 증표(`/_miy/downloads/<토큰>`)를 받는다. 이 요청은 그 설치의 프레임이 직접 시작한 호출 체인이어야 하고(아니면 403 `file_download_frame_required`), 릴리스가 `platformEndpoints.fileAccess`를 선언해야 한다(아니면 409 `file_access_endpoint_missing`). 첨부된 파일은 첨부 때의 참조와 같아야 한다. 증표는 프레임 세션·사용자·설치·릴리스·파일·참조에 묶여 저장된다(hash만). 프레임 출처의 GET·Range마다 같은 출처의 Fetch Metadata, 프레임과 부모 세션, 릴리스, 설치 `use`, 읽기 승인, 파일 상태와 참조를 다시 확인하고, 전송 직전 `fileAccess`로 소유 앱에 그 사람의 서명된 신원(`platform=true`)과 `{fileId, reference}`를 보내 `{allowed: true}`를 받아야 보낸다(아니면 403 `file_access_denied`). Range는 하나만 받고(여러 범위는 전체), ETag는 SHA-256, 응답은 `attachment`·`no-store`·sandbox·nosniff이며 프레임 listener의 로그는 꺼져 있다. 독립 예산(동시 8개)과 60초 무응답 한도를 둔다. backend의 `files_download`는 계속 10MiB까지다.
 - **배치.** 바이트는 `.files/<설치 UUID>/<파일 UUID 앞 두 자리>/<파일 UUID>.blob|.part`에 둔다. 새 쓰기는 항상 하위 디렉터리로 가고, 읽기는 하위 디렉터리에 없으면 이전 배치(`.files/<설치 UUID>/`)를 본다. worker가 매 정리 주기에 이전 배치의 파일을 그 파일의 행 잠금(쓰기·정리와 같은 잠금) 아래에서 옮기고 두 디렉터리를 동기화한다. 잠긴 행은 다음 주기로 미루고 행이 없는 파일은 그대로 둔다. 삭제는 두 배치를 모두 지운다.
-- **묶음 전송 확인.** 프레임의 `runtime.downloadAndWait`는 같은 증표로 전체 파일을 내려받고, 발급 프레임의 자격증명으로 `/_miy/downloads/<토큰>/status`를 조회한다. Core가 응답 본문의 마지막 바이트를 내보낸 뒤에 다음 파일을 시작할 수 있다. 중단된 스트림은 실패로 기록한다. 상태 조회가 끊긴 경우 `checkOnly` 옵션으로 같은 증표의 상태를 다시 확인할 수 있다. 확인값은 Core 프로세스의 단기 상태이며 기기의 디스크 저장 결과는 브라우저가 관리한다.
+- **묶음 전송 확인.** 프레임의 `runtime.downloadAndWait`는 같은 증표로 전체 파일을 내려받고, 발급 프레임의 자격증명으로 `/_miy/downloads/<토큰>/status`를 조회한다. `sent`는 Core가 응답 본문의 마지막 바이트까지 생성했다는 뜻이다. 마지막 바이트 전 중단되면 실패를 기록한다. 실패 후에는 발급 프레임이 만료 전 같은 증표로 다시 내려받을 수 있으며, 요청마다 현재 권한을 확인한다. 상태 조회가 끊긴 경우 `checkOnly` 옵션으로 같은 증표의 상태를 다시 확인할 수 있다. 브라우저 수신과 디스크 저장은 Core의 단기 확인값 범위 밖이다.
 - **무결성.** worker가 약 1시간마다 실행당 4GiB 안에서 가장 오래 확인하지 않은 `ready`·`attached` 파일의 SHA-256을 다시 계산한다(`verified_at`). 바이트가 없거나 합이 다르면 `corrupt_at`을 기록하고 플랫폼 행위로 감사(`file.corrupt`)에 남기며, 그 파일의 내려받기·다운로드 증표·첨부는 409 `file_corrupt`로 멈춘다. 복구는 백업에서 바이트를 되살린 뒤 운영자가 표시를 지우는 절차다(제품 기능 아님).
 
 ### 앱 간 업무 호출과 자동화

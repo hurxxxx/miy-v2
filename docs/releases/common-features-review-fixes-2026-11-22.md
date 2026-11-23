@@ -1,6 +1,6 @@
 # 범용 기능 리뷰 후속 개선 및 검증 — 2026-11-22
 
-[2차 리뷰](../reviews/COMMON-FEATURES-SECOND-REVIEW-2026-11-22.md)와 [전체 변경 리뷰](../reviews/COMMON-FEATURES-FULL-REVIEW-2026-11-22.md)의 보완을 소스에 반영했다. 두 리뷰의 관찰과 당시 실패 결과는 이력으로 유지한다. 착수 순서와 실제 인수 상태는 [추진 계획](../PLAN.md)이 관리한다.
+[2차 리뷰](../reviews/COMMON-FEATURES-SECOND-REVIEW-2026-11-22.md)와 [전체 변경 리뷰](../reviews/COMMON-FEATURES-FULL-REVIEW-2026-11-22.md)의 보완을 소스에 반영했다. 두 리뷰의 관찰과 당시 실패 결과는 이력으로 유지한다. 이 문서의 후보·대기·실행 결과는 2026-11-22 검증 시점의 기록이다. 이후 게시·서버 반영은 [0.17.0 반영 기록](miy-works-0.17.0-2026-11-22-deployment.json), 남은 작업은 [추진 계획](../PLAN.md)이 관리한다.
 
 ## 반영한 변경
 

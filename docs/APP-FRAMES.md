@@ -116,7 +116,7 @@ flowchart LR
 | `location` | `route.changed {pathname, search, hash}`. 부모의 뒤로·앞으로 가기와 직접 링크 | 부모→프레임 |
 | `navigate(relative, {replace})` | `route.navigate`. 부모는 앱 basePath 아래의 상대 경로만 받는다. 절대 URL과 다른 앱·플랫폼 경로는 거부한다 | 프레임→부모 |
 | `registerNavigationGuard` → 신규 `setNavigationState({dirty, message?})` | 앱이 입력·저장·진행 중 작업의 합산 상태를 바꿀 때 `guard.state`를 보낸다. 콜백을 부모가 동기 실행하는 기존 계약은 새 SDK에서 교체 | 프레임→부모 |
-| `settings` | `settings.changed`: 테마 선택(`system`·`light`·`dark`), 언어(`ko-KR`·`en-US`), 시간대, 날짜 형식. 초기값은 실행 form으로 받아 부트스트랩의 `settings`에 넣고, 이후 변경은 이 메시지로 보낸다. 표시용 값이며 권한 판정에 쓰지 않는다. 런타임은 부트스트랩의 `settingsAware`가 참인 앱(SDK 번들 0.12.0 이상으로 서버 빌드한 릴리스)에만 문서의 `dark` 클래스·`data-miy-theme`·`lang`을 적용하고, 그 이전 앱은 라이트·한국어로 둔다. 소스 구현(번들 0.12.0 미게시, 서버 미반영) | 부모→프레임 |
+| `settings` | `settings.changed`: 테마 선택(`system`·`light`·`dark`), 언어(`ko-KR`·`en-US`), 시간대, 날짜 형식. 초기값은 실행 form으로 받아 부트스트랩의 `settings`에 넣고, 이후 변경은 이 메시지로 보낸다. 표시용 값이며 권한 판정에 쓰지 않는다. 런타임은 부트스트랩의 `settingsAware`가 참인 앱(SDK 번들 0.12.0 이상으로 서버 빌드한 릴리스)에만 문서의 `dark` 클래스·`data-miy-theme`·`lang`을 적용하고, 그 이전 앱은 라이트·한국어로 둔다. | 부모→프레임 |
 | (신규) 플랫폼 단축키 | `shortcut {name: "commandPalette"}`. 프레임에 포커스가 있을 때 Ctrl/⌘+K를 프레임 런타임이 먼저 잡아(capture) 앱 처리 전에 부모에 알린다. 다른 키는 전달하지 않는다. 소스 구현([P1](COMMON-FEATURES-PLAN.md#p1-셸설정콘솔)) | 프레임→부모 |
 | `api`·`platformApi`·`directory`·`appApi`·`apiBlob`·`fileApi` | 브리지 미사용. 앱 출처로 직접 요청. JSON과 바이너리 응답을 구분 | 없음 |
 | (신규) 실행 상태 | `frame.ready`, `frame.error`, `release.changed` | 프레임→부모 |
@@ -204,7 +204,7 @@ flowchart LR
 
 ### 7.1 보조 프레임
 
-2026-11-22 [범용 기능 계획 M5](COMMON-FEATURES-PLAN.md#m5-보조-프레임과-홈개인-위젯)로 주 프레임 옆에 보조 프레임 하나를 패널로 띄우는 계약을 더했다(소스 구현, 서버 미반영).
+2026-11-22 [범용 기능 계획 M5](COMMON-FEATURES-PLAN.md#m5-보조-프레임과-홈개인-위젯)로 주 프레임 옆에 보조 프레임 하나를 패널로 띄우는 계약을 더했다. 실제 앱 인수는 [PLAN](PLAN.md#다음-우선-작업)을 따른다.
 
 | 항목 | 계약 |
 | --- | --- |

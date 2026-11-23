@@ -1,0 +1,93 @@
+{
+  "status": "PASS",
+  "date": "2026-11-22",
+  "origin": "https://portal.miy.works",
+  "version": "0.17.0",
+  "bundleVersion": "0.12.0",
+  "schema": 34,
+  "sourceCommit": "5fd2a553854e502aeebd4411400b35acedeb7460",
+  "mergeCommit": "10bc4864fdd7daa7de80760760c3caf852bcb0b6",
+  "cliReleaseRun": 45079896534,
+  "publishedUiVersion": "2.0.1",
+  "assetHashes": {
+    "serverSha256": "d52ef2297765f3f0fc501f98f1ae82f2e04de787873a9adf80305431f0b0c5ef",
+    "webSha256": "68775c87a4f1781029240aa3649e287a88683de221a1383beed34599efe1d29b",
+    "frameSha256": "e0e4486946329cb618c19680dad6d0711716df4af2543b9a3390770853c53032"
+  },
+  "databaseBackup": "/srv/miy-backups/online/20261122T231115Z",
+  "previousFiles": "/srv/miy-prod/evidence/api-contract-rollout.ShJaYu14/before-gvu70w53",
+  "checks": {
+    "migrationAndCatalogRehearsal": "PASS schema 27 to 34, exact official pins 5fd2a553854e502aeebd4411400b35acedeb7460 and preserved existing users, installations, releases",
+    "publicCliMcp": "PASS"
+  },
+  "evidenceDirectory": "/srv/miy-prod/evidence/api-contract-rollout.ShJaYu14",
+  "followups": [
+    {
+      "feature": "Admin console",
+      "date": "2026-11-23",
+      "status": "PASS",
+      "sourceCommit": "9156e6af1ea91e14f74e502481c70c25ac95f4b5",
+      "cliSourceCommit": "5fd2a553854e502aeebd4411400b35acedeb7460",
+      "schema": 34,
+      "assetHashes": {
+        "serverSha256": "a368cf9db9feff1ae1c68603fad80f66ccef0e4c479310b8cd5c56e0abf0334e",
+        "webSha256": "7ea69bfbd26aa54c087b08a58f60de7a4338bf04a4502442871b0151f636280a"
+      },
+      "previousFiles": "/srv/miy-prod/evidence/admin-console-rollout.z42hz2qV/before-puiuugl1",
+      "checks": {
+        "runtimeRegressionObservations": 163,
+        "runtimeRegressionAllPassed": true,
+        "liveBrowser": {
+          "status": "PASS",
+          "oidcDeepLink": true,
+          "typedAdminOperations": 2,
+          "consoleScreens": 3,
+          "portalAdminRequestsDenied": 4,
+          "existingInstallationsVisible": 4
+        }
+      },
+      "evidenceDirectory": "/srv/miy-prod/evidence/admin-console-rollout.z42hz2qV"
+    },
+    {
+      "feature": "Portal environment labels",
+      "date": "2026-11-23",
+      "status": "PASS",
+      "sourceCommit": "ae524392116bf135a195cbd45e6be2abbcd74520",
+      "webSha256": "ce120965ed7f26402df295b82cb9383a1a013b22ac25503d878699211d1f7763",
+      "previousIndex": "/srv/miy-prod/evidence/portal-environment-labels.UL3jajDp/before-1jbm8ait/index.html",
+      "servicePidsStable": true,
+      "checks": {
+        "liveBrowser": {
+          "status": "PASS",
+          "checked": [
+            {
+              "surface": "portal",
+              "desktop": true,
+              "mobile": true
+            },
+            {
+              "surface": "dev_portal",
+              "desktop": true,
+              "mobile": true
+            },
+            {
+              "surface": "console",
+              "environmentManagement": true
+            }
+          ]
+        }
+      },
+      "evidenceDirectory": "/srv/miy-prod/evidence/portal-environment-labels.UL3jajDp"
+    },
+    {
+      "feature": "Agent setup runbook",
+      "date": "2026-11-23",
+      "status": "PASS",
+      "sourceCommit": "1588a88116e95020c80b06158ce321e2f1ef18e5",
+      "cliSourceCommit": "5fd2a553854e502aeebd4411400b35acedeb7460",
+      "serverSha256": "2f77397c7a6ddc0235b608fa3b4bd62a9a647c560238da911ac2c7bade437809",
+      "previousServer": "/srv/miy-prod/evidence/agent-setup-link.82ylfqQf/before-a2d5npgp/miy-server",
+      "evidenceDirectory": "/srv/miy-prod/evidence/agent-setup-link.82ylfqQf"
+    }
+  ]
+}

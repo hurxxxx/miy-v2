@@ -20,7 +20,7 @@
 | DB 접근 | SQLx + 버전이 있는 SQL migration | 배포 상태 전이·작업 큐·권한 조회의 SQL과 트랜잭션을 명시적으로 관리 |
 | 관리 웹 | TypeScript strict + React + Vite + TanStack Router·Query | Rust API를 사용하는 SPA. 라우팅·서버 상태 관리와 타입을 일관되게 구성 |
 | 앱 UI 실행 | 설치별 출처 프레임의 MF·AppRoot + 브리지 v1 + 플랫폼 라우터 | 포털은 앱 프레임을 열고 경로·화면 상태를 동기화. 앱 추가에 플랫폼 재빌드를 요구하지 않음 |
-| 공통 UI | 게시된 `@miy/ui` 1.1.0은 일반 CSS와 React만 쓴다. 2.0.0은 AI-DO의 UI 패키지를 옮겨 Tailwind CSS 4·Radix UI를 쓴다(소스 구현, 미게시) | 필수 연동 컴포넌트를 버전이 있는 컴포넌트 패키지로 제공하고 업무별 화면은 확장. 토큰·글꼴은 프레임 런타임이 제공한다([범용 기능 계획 §5.4](COMMON-FEATURES-PLAN.md#54-적용-방식), 소스 구현·미반영) |
+| 공통 UI | 게시된 `@miy/ui` 1.1.0은 일반 CSS와 React만 쓴다. 2.x는 AI-DO에서 가져온 Tailwind CSS 4·Radix UI 구조를 쓴다 | 필수 연동 컴포넌트를 버전이 있는 컴포넌트 패키지로 제공하고 업무별 화면은 확장. 토큰·글꼴은 프레임 런타임이 제공한다([범용 기능 계획 §5.4](COMMON-FEATURES-PLAN.md#54-적용-방식)) |
 | API 계약·SDK | OpenAPI + utoipa + openapi-typescript·openapi-fetch | Rust API 스키마에서 TypeScript 타입·클라이언트 연결. manifest·공개 기능은 버전이 있는 JSON Schema로 검증 |
 | MCP | 공식 Rust SDK `rmcp` + Streamable HTTP | 사내 개발 담당자의 CLI·개발 에이전트에 맥락과 도구 제공. HTTP API와 같은 권한 서비스를 호출 |
 | CLI | Rust + clap + reqwest | 독립 실행 파일로 배포하며 초기화·로그인·검사·미리보기·릴리스·로그 명령 제공 |
@@ -41,7 +41,7 @@
 
 Axum은 Tokio·Tower와 결합하는 HTTP 라이브러리이며 SQLx는 비동기 SQL과 정적 쿼리 검증을 제공한다. 이 구성을 miy의 코어에 적용하는 것은 명시적 상태·트랜잭션 관리와 공통 API 정책을 위한 설계 판단이다. [Axum](https://docs.rs/axum/latest/axum/), [SQLx](https://github.com/transact-rs/sqlx)
 
-React 공식 안내는 Vite, TanStack Router·Query를 SPA 구성 선택지로 소개한다. 공통 부분은 각 앱이 별도 복사·수정하기보다 `@miy/ui`로 제공한다. 게시된 1.1.0은 Tailwind 없이 일반 CSS를 쓰고, 2.0.0은 AI-DO의 UI 패키지(Tailwind CSS 4·Radix UI)를 옮긴 것이다(소스 구현, 미게시). shadcn/ui는 쓰지 않는다. [React 구성 안내](https://react.dev/learn/build-a-react-app-from-scratch)
+React 공식 안내는 Vite, TanStack Router·Query를 SPA 구성 선택지로 소개한다. 공통 부분은 각 앱이 별도 복사·수정하기보다 `@miy/ui`로 제공한다. 게시된 1.1.0은 Tailwind 없이 일반 CSS를 쓰고, 2.x는 AI-DO의 UI 패키지(Tailwind CSS 4·Radix UI)를 옮긴 버전이다. 호스트별 게시 기록은 [CLI 릴리스](CLI-RELEASE.md#sdk-번들과-게시-계약)에 있다. shadcn/ui는 쓰지 않는다. [React 구성 안내](https://react.dev/learn/build-a-react-app-from-scratch)
 
 utoipa는 Rust 기반 OpenAPI 생성을, openapi-typescript는 OpenAPI의 TypeScript 타입 생성을 지원한다. 생성 타입은 런타임 입력 검증을 대신하지 않으므로 서버와 앱의 계약 검사를 별도로 둔다. [utoipa](https://github.com/juhaku/utoipa), [openapi-typescript](https://openapi-ts.dev/introduction)
 

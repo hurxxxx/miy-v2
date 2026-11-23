@@ -417,6 +417,15 @@ pub async fn update_custom_field(
     }
     let options = body.opt_str_list("options")?;
     let expected_options = body.opt_str_list("expected_options")?;
+    let option_update = match (options, expected_options) {
+        (Some(options), Some(expected)) => Some((options, expected)),
+        (Some(_), None) => {
+            return Err(ApiError::validation(
+                "expected_options: Required when changing options",
+            ));
+        }
+        (None, _) => None,
+    };
     let renames: Vec<(String, String)> = match body.0.get("option_renames") {
         None | Some(Value::Null) => Vec::new(),
         Some(Value::Array(items)) => items
@@ -444,7 +453,7 @@ pub async fn update_custom_field(
         ensure_unique_name(&mut tx, &field.list_id, &name, Some(&field.id)).await?;
         field.name = name;
     }
-    if let Some(options) = options {
+    if let Some((options, expected)) = option_update {
         if !field.has_options() {
             return Err(ApiError::validation(
                 "options: Only select fields have options",
@@ -452,7 +461,7 @@ pub async fn update_custom_field(
         }
         let options = normalize_options(&options)?;
         let previous = field.option_names();
-        if expected_options.as_ref() != Some(&previous) {
+        if expected != previous {
             return Err(ApiError::new(
                 StatusCode::CONFLICT,
                 "pms.custom_field_options_changed",

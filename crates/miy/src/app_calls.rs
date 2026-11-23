@@ -305,8 +305,11 @@ pub async fn require(
     id: Uuid,
     permission: &str,
 ) -> ApiResult<()> {
-    if c.installation_id != id || !current(s, p, c).await?.iter().any(|v| v == permission) {
+    if c.installation_id != id {
         return Err(ApiError::forbidden());
+    }
+    if !current(s, p, c).await?.iter().any(|v| v == permission) {
+        return Err(permissions::denied());
     }
     Ok(())
 }
