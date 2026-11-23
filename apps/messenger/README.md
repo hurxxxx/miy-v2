@@ -17,6 +17,8 @@
 | `/widgets/conversations[/{id}]` | 같은 화면의 좁은 폭(목록 ↔ 대화). manifest `panels`의 `conversations`로 포털 보조 패널에 뜬다 |
 | `/safety`, `/safety/reports/{id}` | 신고 검토·금칙어·이용규칙 설정·관리자 지정(메신저 관리자만). 관리자가 없으면 첫 사람이 맡는다 |
 
+대화 링크의 `?message={id}`는 메시지까지 이동하며 브라우저 기록으로 같은 링크를 다시 열면 위치를 다시 맞춘다. 대화를 오가도 작성 중인 첨부는 원래 대화에 남는다. 업로드가 다른 대화를 보는 동안 끝나도 결과를 원래 대화에 붙이고, 창을 나갈 때는 열린 대화 전체의 초안을 기준으로 미저장 상태를 알린다.
+
 ## API
 
 UI는 `runtime.api('/v1/...')`, 파일 바이트는 `runtime.fileApi('/dm/...')`로 부른다. 게이트웨이가 각각 `/api/v1/...`, `/api/files/...`로 Rust 서버에 전달한다. 시각은 naive UTC 문자열이다. 오류는 `{"error":{"code","message"}}`이며 코드는 AI-DO 코드의 `.`을 `_`로 바꾼 것이다(예: `dm_thread_not_found`).

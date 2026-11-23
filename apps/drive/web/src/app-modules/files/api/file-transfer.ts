@@ -24,8 +24,8 @@ import {
  *    failure the upload state is read again and the transfer resumes there;
  * 3. complete (`POST .../uploads/<id>/complete`), safe to repeat.
  *
- * `runtime.fileApi` uses `fetch`, which reports no upload progress, so
- * progress advances per part (a small file jumps to 100%).
+ * `runtime.fileApi` reports bytes sent within each request. Resume offsets
+ * still come from the server's committed `received` count.
  */
 export const SINGLE_UPLOAD_LIMIT = 10 * 1024 * 1024;
 export const MAX_UPLOAD_BYTES = 2 * 1024 * 1024 * 1024;
@@ -88,6 +88,16 @@ function throwIfAborted(signal?: AbortSignal) {
   if (signal?.aborted) {
     throw new ApiError('abort', 'request_aborted');
   }
+}
+
+function reportProgress(options: TransferOptions, loaded: number, total: number) {
+  if (options.signal?.aborted) return;
+  const bytes = Math.min(total, Math.max(0, loaded));
+  options.onProgress?.({
+    loaded: bytes,
+    total,
+    percent: total > 0 ? Math.round((bytes / total) * 100) : 100,
+  });
 }
 
 function spaceUploads(spaceId: string, tail = ''): string {
@@ -182,6 +192,9 @@ async function sendSingle(
           body: file,
           headers: { 'Content-Type': 'application/octet-stream' },
           signal: options.signal,
+          onUploadProgress: options.onProgress
+            ? (sent) => reportProgress(options, sent, file.size)
+            : undefined,
         },
       );
       state = await readJson<UploadState>(response, { signal: options.signal });
@@ -220,6 +233,9 @@ async function sendParts(
           body: file.slice(start, end),
           headers: { 'Content-Type': 'application/octet-stream' },
           signal: options.signal,
+          onUploadProgress: options.onProgress
+            ? (sent) => reportProgress(options, Math.min(start + sent, end), file.size)
+            : undefined,
         },
       );
       const next = await readJson<UploadState>(response, { signal: options.signal });
@@ -240,11 +256,7 @@ async function sendParts(
     if (stalled >= MAX_STALLED_ATTEMPTS) {
       throw new ApiError('http', 'files_part_offset', 409);
     }
-    options.onProgress?.({
-      loaded: state.received,
-      total: file.size,
-      percent: file.size > 0 ? Math.round((state.received / file.size) * 100) : 100,
-    });
+    reportProgress(options, state.received, file.size);
   }
   return state;
 }
@@ -288,7 +300,7 @@ export async function transferFile(
         options,
       );
     }
-    options.onProgress?.({ loaded: upload.received, total: file.size, percent: 0 });
+    reportProgress(options, upload.received, file.size);
     if (upload.status === 'uploading') {
       upload =
         upload.transfer === 'parts'
@@ -303,7 +315,7 @@ export async function transferFile(
       spaceUploads(spaceId, `/${encodeURIComponent(upload.id)}/complete`),
       options,
     );
-    options.onProgress?.({ loaded: file.size, total: file.size, percent: 100 });
+    reportProgress(options, file.size, file.size);
     return item;
   } catch (error) {
     throw mapTransportError(error);

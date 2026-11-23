@@ -1,4 +1,4 @@
-import { Suspense, lazy, useCallback, useMemo, type ReactNode } from 'react';
+import { Suspense, lazy, useCallback, useLayoutEffect, useMemo, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { LazyMotion, domAnimation } from 'motion/react';
 import type { AppProps, NavigationState } from '@miy/sdk';
@@ -56,9 +56,12 @@ const FloatingPmsWidget = lazy(() =>
 export default function AppRoot({ runtime }: AppProps) {
   // Display settings are portal choices delivered on every render (AI-DO
   // synced the same stores from the signed-in user's profile).
-  syncLocale(runtime.settings.locale);
-  syncDateFormatPreference(runtime.settings.dateFormat);
-  syncTimeZonePreference(runtime.settings.timeZone);
+  const { locale, dateFormat, timeZone } = runtime.settings;
+  useLayoutEffect(() => {
+    syncLocale(locale);
+    syncDateFormatPreference(dateFormat);
+    syncTimeZonePreference(timeZone);
+  }, [locale, dateFormat, timeZone]);
   return (
     <RuntimeProvider runtime={runtime}>
       <AppFeedback>

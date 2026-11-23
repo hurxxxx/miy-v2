@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import type { ApiErrorKind } from '@miy/sdk';
+import type { ApiErrorKind, FileRequestInit } from '@miy/sdk';
 
 import { FilesApiError, type DriveClient } from './files-api';
 import { PART_BYTES, retriable, transferFile, type UploadState } from './file-transfer';
@@ -64,8 +64,9 @@ function fakeBackend(size: number, options: {
     }
     throw new Error(`unexpected ${path}`);
   });
-  const fileApi = vi.fn(async (path: string, init?: RequestInit) => {
+  const fileApi = vi.fn(async (path: string, init?: FileRequestInit) => {
     const body = init?.body as Blob;
+    init?.onUploadProgress?.(Math.floor(body.size / 2), body.size);
     if (path.includes('/content')) {
       received = body.size;
       status = 'ready';
@@ -118,6 +119,7 @@ describe('transferFile', () => {
     expect(backend.parts).toEqual([0, PART_BYTES, PART_BYTES * 2]);
     expect(backend.reservations).toEqual(['00000000-0000-4000-8000-000000000001']);
     expect(handles).toEqual([null, 'upload-1']);
+    expect(progress).toEqual(expect.arrayContaining([PART_BYTES / 2, PART_BYTES + PART_BYTES / 2]));
     expect(progress.at(-1)).toBe(size);
   });
 
@@ -181,13 +183,16 @@ describe('transferFile', () => {
 
   it('reuses the request ID of a resumed attempt', async () => {
     const backend = fakeBackend(10, { transfer: 'single' });
+    const progress: number[] = [];
     await transferFile(backend.client, 's', bigFile(10), {
       folderId: 'f',
       visibility: 'workspace',
       resume: { spaceId: 's', requestId: 'req-earlier', uploadId: 'upload-1' },
+      onProgress: (value) => progress.push(value.loaded),
       sleep: noSleep,
     });
     expect(backend.reservations).toEqual(['req-earlier']);
+    expect(progress).toEqual([0, 5, 10]);
     expect(backend.fileApi).toHaveBeenCalledWith(
       '/uploads/upload-1/content',
       expect.objectContaining({ method: 'PUT' }),

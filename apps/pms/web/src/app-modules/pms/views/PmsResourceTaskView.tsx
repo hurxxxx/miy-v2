@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-import { useNavigate, useParams } from '../../../platform/router';
-import { useAppApi } from '../../../platform/runtime/runtime-context';
+import { useParams } from '../../../platform/router';
+import { useRuntime } from '../../../platform/runtime/runtime-context';
 import { AppRuntimeNotice } from '../../../platform/app-runtime/AppRuntimeNotice';
 import { getPmsTaskList, getTaskDetail, type PmsTask } from '../api/pms-api';
 import { TaskDetail } from './TaskDetail';
@@ -15,12 +15,11 @@ import { buildPmsTaskListToolPath } from './pms-view-route';
  * the task open (replacing this address), and a person who can read only this
  * task (a specific share) sees AI-DO's read-only single-task view.
  *
- * Specific task shares are read-only and never load a task-list or space directory.
+ * Specific task shares are read-only and never load the list or space directory.
  */
 export function PmsResourceTaskView() {
-  const api = useAppApi();
+  const { api, navigate } = useRuntime();
   const { taskId } = useParams();
-  const navigate = useNavigate();
   const [result, setResult] = useState<{
     taskId: string;
     task: PmsTask | null;
@@ -30,6 +29,7 @@ export function PmsResourceTaskView() {
     let cancelled = false;
     getTaskDetail(api, taskId)
       .then(async (detail) => {
+        if (cancelled) return;
         const listId = detail.task.list_id;
         const canOpenList = await getPmsTaskList(api, listId).then(
           () => true,

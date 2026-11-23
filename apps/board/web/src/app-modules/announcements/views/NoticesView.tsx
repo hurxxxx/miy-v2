@@ -49,7 +49,7 @@ export function NoticesView({ noticeId }: { noticeId: string | null }) {
   const requestedSpaceId = searchParams.get('space');
   const [spaces, setSpaces] = useState<BoardSpace[]>([]);
   const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState<string | null>(null);
+  const [loadFailed, setLoadFailed] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
   const [creating, setCreating] = useState(false);
   const [sharing, setSharing] = useState(false);
@@ -61,12 +61,12 @@ export function NoticesView({ noticeId }: { noticeId: string | null }) {
       .then((items) => {
         if (cancelled) return;
         setSpaces(items);
-        setLoadError(null);
+        setLoadFailed(false);
       })
       .catch(() => {
         if (cancelled) return;
         setSpaces([]);
-        setLoadError(t('board.spaces.loadFailed'));
+        setLoadFailed(true);
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -74,7 +74,7 @@ export function NoticesView({ noticeId }: { noticeId: string | null }) {
     return () => {
       cancelled = true;
     };
-  }, [api, reloadKey, t]);
+  }, [api, reloadKey]);
 
   const space =
     spaces.find((item) => item.id === requestedSpaceId) ?? spaces[0] ?? null;
@@ -170,7 +170,7 @@ export function NoticesView({ noticeId }: { noticeId: string | null }) {
             ) : (
               <section className="flex h-full flex-col justify-center rounded-lg border border-dashed border-app-border bg-app-surface p-4 text-center">
                 <p className="app-text-body text-app-ink/55">
-                  {loading ? t('board.loading') : (loadError ?? t('board.spaces.none'))}
+                  {loading ? t('board.loading') : t(loadFailed ? 'board.spaces.loadFailed' : 'board.spaces.none')}
                 </p>
               </section>
             )}

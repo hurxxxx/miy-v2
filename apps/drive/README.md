@@ -20,7 +20,7 @@
 | `/spaces/<id>?view=search&q=<검색어>&page=<n>` | 이름·메타데이터 검색 |
 | `/spaces/<id>/trash` | 휴지통 |
 
-그 밖의 경로는 `/`와 같다. 업로드 중이거나 대화상자에 입력이 있으면 `runtime.setNavigationState({dirty: true})`로 알린다.
+그 밖의 경로는 `/`와 같다. 한 앱 세션 안에서 공간 목록과 공통 레이아웃을 유지한다. 파일 목록은 공간과 폴더에 해당하는 화면을 조회하고, 검색 주소를 다시 열면 그 주소의 결과를 불러온다. 업로드·파일 변경·묶음 다운로드 중이거나 대화상자에 입력이 있으면 `runtime.setNavigationState({dirty: true})`로 알린다.
 
 ## API
 
@@ -65,7 +65,7 @@ UI는 `runtime.api('/v1/...')`로 부르고 게이트웨이가 `/api/v1/...`로 
 | `POST /v1/spaces/{id}/files/uploads` | 예약 `{request_id, filename, content_type, size_bytes, folder_id?, visibility, file_id?}`(201; 같은 `request_id`면 같은 업로드 200). 10MiB까지 `single`, 그보다 크면 `parts`(2GiB까지). `file_id`는 새 버전 |
 | `GET /v1/spaces/{id}/files/uploads/{uploadId}` | 상태와 커밋된 `received`(이어 보낼 위치) |
 | `PUT /files/uploads/{uploadId}/content` | (fileApi) `single` 바이트 |
-| `PUT /files/uploads/{uploadId}/parts?offset=N` | (fileApi) `parts`의 한 조각(8MiB까지). `offset`이 `received`와 다르면 409 `files_part_offset` |
+| `PUT /files/uploads/{uploadId}/parts?offset=N` | (fileApi) `parts`의 한 조각(8MiB까지). 화면은 요청별 전송 진행값을 표시하며 다시 보낼 위치는 서버가 확정한 `received`를 쓴다. `offset`이 `received`와 다르면 409 `files_part_offset` |
 | `POST /v1/spaces/{id}/files/uploads/{uploadId}/complete` | 확정. `files_upload_finalizing`(409)이면 같은 업로드 ID로 다시 확정한다. 잠금 뒤 권한을 다시 확인하고 커밋한 다음 코어 파일을 연결한다. 파일 항목을 돌려준다 |
 | `DELETE /v1/spaces/{id}/files/uploads/{uploadId}` | 끝나지 않은 업로드 취소(204). 완료된 업로드는 409 |
 

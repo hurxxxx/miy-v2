@@ -13,6 +13,7 @@ import {
   useNavigate,
   useLocation,
 } from '../../../platform/router';
+import { i18n } from '../../../platform/i18n';
 import {
   useAppRouteParams as useParams,
   useOptionalAppRuntime,
@@ -269,6 +270,7 @@ function usePMSViewElement(): ReactNode {
   const [taskLists, setTaskLists] = useState<PmsTaskList[]>([]);
   const [spaces, setSpaces] = useState<PmsSpace[]>([]);
   const [selectedTaskListId, setSelectedTaskListId] = useState<string>('');
+  const [loadedRouteListId, setLoadedRouteListId] = useState<string | null>(null);
   const [tasks, setIssues] = useState<PmsTask[]>([]);
   const [members, setMembers] = useState<PmsTaskListMember[]>([]);
   const [milestones, setMilestones] = useState<PmsMilestone[]>([]);
@@ -331,6 +333,8 @@ function usePMSViewElement(): ReactNode {
   const isAssignedTasksView = pmsRoute.kind === 'assigned';
   const isTodayView = pmsRoute.kind === 'today';
   const routeTaskListId = pmsRoute.kind === 'list' ? pmsRoute.taskListId : null;
+  const routeListPending =
+    routeTaskListId !== null && loadedRouteListId !== routeTaskListId;
   const spaceOverviewId =
     pmsRoute.kind === 'spaceOverview' ? pmsRoute.spaceId : null;
   const spaceTasksSpaceId =
@@ -885,6 +889,7 @@ function usePMSViewElement(): ReactNode {
   ]);
 
   const usesSpaceOverview = spaceOverviewId !== null;
+  const selectDefaultList = routeTaskListId === null && createTaskRequested;
   // The space overview loads the selected space in its own view.
   useEffect(() => {
     if (!api || usesSpaceOverview) return;
@@ -896,6 +901,20 @@ function usePMSViewElement(): ReactNode {
       setError(null);
 
       try {
+        if (routeTaskListId !== null) {
+          const taskList = await getPmsTaskList(
+            activeApi,
+            routeTaskListId,
+            currentWorkspaceSlug,
+          );
+          if (cancelled) return;
+          setTaskLists((current) =>
+            isSameListCollection(current, [taskList]) ? current : [taskList],
+          );
+          setSelectedTaskListId(routeTaskListId);
+          return;
+        }
+
         const [response, spaceItems] = await Promise.all([
           listAllPmsTaskLists(activeApi, undefined, currentWorkspaceSlug),
           listSpaces(activeApi, currentWorkspaceSlug),
@@ -905,27 +924,7 @@ function usePMSViewElement(): ReactNode {
         }
 
         setSpaces(spaceItems);
-        let nextTaskLists = response.items;
-        let requestedTaskListResolved = false;
-
-        if (routeTaskListId) {
-          requestedTaskListResolved = response.items.some(
-            (taskList) => taskList.id === routeTaskListId,
-          );
-          if (!requestedTaskListResolved) {
-            const requestedTaskList = await getPmsTaskList(
-              activeApi,
-              routeTaskListId,
-              currentWorkspaceSlug,
-            );
-            if (cancelled) {
-              return;
-            }
-            nextTaskLists = [...response.items, requestedTaskList];
-            requestedTaskListResolved = true;
-          }
-        }
-
+        const nextTaskLists = response.items;
         setTaskLists((current) =>
           isSameListCollection(current, nextTaskLists)
             ? current
@@ -935,10 +934,7 @@ function usePMSViewElement(): ReactNode {
           if (!shouldLoadSingleTaskList) {
             return '';
           }
-          if (routeTaskListId) {
-            return requestedTaskListResolved ? routeTaskListId : '';
-          }
-          if (createTaskRequested) {
+          if (selectDefaultList) {
             if (
               current &&
               nextTaskLists.some(
@@ -968,9 +964,12 @@ function usePMSViewElement(): ReactNode {
           return;
         }
         setSelectedTaskListId('');
-        setError(getErrorMessage(err, t('pms.errors.listLoadFailed')));
+        setError(
+          getErrorMessage(err, i18n.t('pms.errors.listLoadFailed', { ns: 'apps' })),
+        );
       } finally {
         if (!cancelled) {
+          setLoadedRouteListId(routeTaskListId);
           setLoading(false);
         }
       }
@@ -982,14 +981,13 @@ function usePMSViewElement(): ReactNode {
       cancelled = true;
     };
   }, [
-    createTaskRequested,
     currentWorkspaceSlug,
     getErrorMessage,
     routeTaskListId,
+    selectDefaultList,
     shouldLoadSingleTaskList,
     usesSpaceOverview,
     api,
-    t,
   ]);
 
   const reloadIssues = useCallback(
@@ -1056,14 +1054,18 @@ function usePMSViewElement(): ReactNode {
 
   const failTaskListDataLoad = useCallback(
     (err: unknown) => {
-      setError(getErrorMessage(err, t('pms.errors.listDataFailed')));
+      setError(
+        getErrorMessage(err, i18n.t('pms.errors.listDataFailed', { ns: 'apps' })),
+      );
     },
-    [getErrorMessage, t],
+    [getErrorMessage],
   );
 
   // Load tasks, members, milestones, labels, and statuses when the selected list changes.
   useEffect(() => {
-    if (!api || !selectedTaskListId || !shouldLoadSingleTaskList) return;
+    if (!api || !selectedTaskListId || !shouldLoadSingleTaskList || routeListPending) {
+      return;
+    }
     let cancelled = false;
     const selectedList = taskLists.find(
       (taskList) => taskList.id === selectedTaskListId,
@@ -1123,6 +1125,7 @@ function usePMSViewElement(): ReactNode {
     applyTaskListDataLoad,
     currentWorkspaceSlug,
     failTaskListDataLoad,
+    routeListPending,
     taskLists,
     api,
     selectedTaskListId,
@@ -1415,6 +1418,7 @@ function usePMSViewElement(): ReactNode {
   selectedIssueDraftRef.current = selectedIssueDraft;
 
   useEffect(() => {
+    if (routeListPending) return;
     const transition = resolveRequestedPmsTaskTransition({
       requestedTaskId,
       selectedTask: selectedIssueDraftRef.current,
@@ -1445,7 +1449,10 @@ function usePMSViewElement(): ReactNode {
         }
 
         setError(
-          getErrorMessage(caughtError, t('pms.errors.requestedIssueFailed')),
+          getErrorMessage(
+            caughtError,
+            i18n.t('pms.errors.requestedIssueFailed', { ns: 'apps' }),
+          ),
         );
       });
 
@@ -1458,9 +1465,9 @@ function usePMSViewElement(): ReactNode {
     getErrorMessage,
     prepareRequestedTaskLoad,
     requestedTaskId,
+    routeListPending,
     tasks,
     api,
-    t,
   ]);
 
   const consumeCreateTaskRequest = useCallback(
@@ -1548,6 +1555,9 @@ function usePMSViewElement(): ReactNode {
         workspaceSlug={currentWorkspaceSlug}
       />
     );
+  }
+  if (routeListPending) {
+    return <PmsCenteredLoadingState minHeightClassName="h-full" />;
   }
   if (isOverviewRoute) {
     if (loading) {

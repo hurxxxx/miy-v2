@@ -13,6 +13,7 @@ import { DM_REALTIME_EVENT_TYPES } from '../../../contracts/dm';
 
 import { ApiRequestError } from '../../../platform/api/client';
 import { i18n } from '../../../platform/i18n';
+import { NavigationStateProvider } from '../../../platform/runtime/navigation-state';
 
 import {
   acceptDmTerms,
@@ -28,7 +29,9 @@ import {
   sendDmMessage,
   setDmBlock,
   setDmReaction,
+  uploadDmAttachment,
   type DmMessage,
+  type DmMessageAttachment,
   type DmSafetyCapability,
   type DmTermsStatus,
   type DmThread,
@@ -98,6 +101,7 @@ vi.mock('../api/dm-api', async (importOriginal) => ({
   sendDmMessage: vi.fn(),
   setDmBlock: vi.fn(),
   setDmReaction: vi.fn(),
+  uploadDmAttachment: vi.fn(),
 }));
 
 const SAFETY: DmSafetyCapability = {
@@ -294,6 +298,53 @@ describe('DMEmbeddedView composer', () => {
     ).toBe(true);
   });
 
+  it('focuses a message again when browser history restores its query', async () => {
+    const scroll = vi.mocked(Element.prototype.scrollIntoView);
+    const at = (focusMessageId: string | null) => (
+      <DMEmbeddedView focusMessageId={focusMessageId} onThreadIdChange={vi.fn()} threadId="c1" />
+    );
+    const { rerender } = render(at('original'));
+    await waitFor(() => expect(scroll).toHaveBeenCalledTimes(1));
+    rerender(at(null));
+    rerender(at('original'));
+    await waitFor(() => expect(scroll).toHaveBeenCalledTimes(2));
+  });
+
+  it('keeps an unfinished attachment with its conversation across internal navigation', async () => {
+    let finishUpload!: (attachment: DmMessageAttachment) => void;
+    vi.mocked(uploadDmAttachment).mockImplementation(
+      () => new Promise((resolve) => { finishUpload = resolve; }),
+    );
+    const attachment: DmMessageAttachment = {
+      id: 'attachment', filename: 'draft.txt', conversation_id: 'c1',
+      content_type: 'text/plain', created_at: '2026-11-18T00:00:00Z',
+      download_url: '/draft.txt', is_image: false, message_id: null,
+      preview_url: null, size_bytes: 5,
+    };
+    const report = vi.fn();
+    const at = (id: string) => (
+      <NavigationStateProvider message="draft pending" report={report}>
+        {view(id)}
+      </NavigationStateProvider>
+    );
+    const { rerender } = render(at('c1'));
+    await screen.findByText(own().body);
+    fireEvent.change(screen.getByLabelText(i18n.t('apps:dm.attachFile'), { selector: 'input' }), {
+      target: { files: [new File(['draft'], attachment.filename)] },
+    });
+    expect(screen.getByText(attachment.filename)).toBeTruthy();
+    rerender(at('c2'));
+    await act(async () => finishUpload(attachment));
+    expect(screen.queryByText(attachment.filename)).toBeNull();
+    expect(report).toHaveBeenLastCalledWith({ dirty: true, message: 'draft pending' });
+    rerender(at('c1'));
+    expect(await screen.findByText(attachment.filename)).toBeTruthy();
+    vi.mocked(sendDmMessage).mockResolvedValue(message('sent', 'c1'));
+    fireEvent.keyDown(composer(), { key: 'Enter' });
+    await waitFor(() => expect(report).toHaveBeenLastCalledWith({ dirty: false, message: 'draft pending' }));
+    expect(sendDmMessage).toHaveBeenCalledWith('token', 'c1', '', ['attachment'], null, []);
+  });
+
   // miy (M4): live hints only trigger refetches through the API.
   it('refetches the list and the shown conversation on a live hint', async () => {
     render(view('c1'));
@@ -417,6 +468,27 @@ describe('DMEmbeddedView composer', () => {
     rerender(at(1));
     await waitFor(() => expect(screen.queryByText(older.body)).toBeNull());
     expect(listDmMessages).toHaveBeenCalledWith('token', 'c1', 50, null, ['oldest']);
+  });
+
+  it('allows loading an older page again after leaving during the previous request', async () => {
+    let finishPage!: (page: { items: DmMessage[] }) => void;
+    const newest = Array.from({ length: 50 }, (_, index) =>
+      message(`newest-${index}`, 'c1', { sequence: index + 2 }),
+    );
+    vi.mocked(listDmMessages).mockImplementation((_token, id, _limit, before) => {
+      if (id !== 'c1') return Promise.resolve({ items: [] });
+      if (!before) return Promise.resolve({ items: newest });
+      return new Promise((resolve) => { finishPage = resolve; });
+    });
+    const { rerender } = render(view('c1'));
+    const olderLabel = i18n.t('apps:dm.loadOlder');
+    fireEvent.click(await screen.findByRole('button', { name: olderLabel }));
+    rerender(view('c2'));
+    await act(async () => finishPage({ items: [message('old', 'c1')] }));
+    expect(screen.queryByText('old 본문')).toBeNull();
+    rerender(view('c1'));
+    const loadOlder = await screen.findByRole('button', { name: olderLabel }) as HTMLButtonElement;
+    expect(loadOlder.disabled).toBe(false);
   });
 });
 

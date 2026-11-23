@@ -253,6 +253,7 @@ export function useFileSearchController({
     searchAbortRef.current?.abort();
     searchSequenceRef.current += 1;
     downloadSequenceRef.current += 1;
+    lastSearchSignatureRef.current = '';
     setScopedResponse(null);
     setSearching(false);
     setBusyDownloadId(null);
@@ -266,6 +267,7 @@ export function useFileSearchController({
     }
     searchAbortRef.current?.abort();
     searchSequenceRef.current += 1;
+    lastSearchSignatureRef.current = '';
     setScopedResponse(null);
     setSearching(false);
   }, [urlSearch.query]);

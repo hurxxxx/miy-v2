@@ -1,10 +1,21 @@
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from '@testing-library/react';
+import { useState } from 'react';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { AppRuntime, AppSettings } from '@miy/sdk';
 import { ApiError } from '@miy/sdk';
 
 import AppRoot from './AppRoot';
+import { SpaceOrderEditorModal } from './app-modules/pms/sidebar/SpaceOrderEditorModal';
+import type { PmsTaskList } from './app-modules/pms/api/pms-api';
 import { syncLocale } from './platform/i18n';
+import { NavigationStateProvider } from './platform/runtime/navigation-state';
 import { createTestRuntime } from './test-utils/runtime';
 
 // Smoke tests of the frame entry with a fake runtime (miy). The screens are
@@ -181,6 +192,57 @@ describe('AppRoot', { timeout: 20_000 }, () => {
     );
   });
 
+  it('loads only the selected list and keeps it on query or display setting changes', async () => {
+    const api = fakeApi({
+      '/v1/pms/lists/list-1/statuses': { items: [] },
+      '/v1/pms/lists/list-1': { id: 'list-1', name: '납품 일정', role: 'admin' },
+    });
+    const value = runtime('/', api);
+    const { rerender } = render(<AppRoot runtime={value} />);
+    await screen.findByRole('heading', { name: 'PMS 개요' }, LAZY);
+    api.mockClear();
+
+    const listLocation = { ...value.location, pathname: '/lists/list-1' };
+    rerender(<AppRoot runtime={{ ...value, location: listLocation }} />);
+    await screen.findByText('납품 일정', {}, LAZY);
+    const boardLocation = { ...listLocation, search: '?tab=board' };
+    rerender(<AppRoot runtime={{ ...value, location: boardLocation }} />);
+    rerender(
+      <AppRoot runtime={{
+        ...value,
+        location: boardLocation,
+        settings: { ...value.settings, locale: 'en-US' },
+      }} />,
+    );
+
+    const paths = api.mock.calls.map(([path]) => path);
+    expect(paths.filter((path) => path === '/v1/pms/lists/list-1')).toHaveLength(1);
+    expect(paths.some((path) =>
+      path === '/v1/pms/me' || path === '/v1/pms/spaces' || path.startsWith('/v1/pms/lists?'),
+    )).toBe(false);
+  });
+
+  it('keeps a deep-link read on query changes and ignores it after leaving', async () => {
+    let finishTask!: (value: typeof TASK_DETAIL) => void;
+    const pending = new Promise<typeof TASK_DETAIL>((resolve) => {
+      finishTask = resolve;
+    });
+    const api = fakeApi({ '/v1/pms/tasks/task-1': pending });
+    const value = runtime('/tasks/task-1', api);
+    const { rerender } = render(<AppRoot runtime={value} />);
+    const taskReads = () => api.mock.calls.filter(([path]) => path === '/v1/pms/tasks/task-1');
+    await waitFor(() => expect(taskReads()).toHaveLength(1), LAZY);
+
+    rerender(<AppRoot runtime={{ ...value, location: { ...value.location, search: '?detail=1' } }} />);
+    expect(taskReads()).toHaveLength(1);
+
+    rerender(<AppRoot runtime={{ ...value, location: { ...value.location, pathname: '/' } }} />);
+    await screen.findByRole('heading', { name: 'PMS 개요' }, LAZY);
+    await act(async () => { finishTask(TASK_DETAIL); });
+    expect(api.mock.calls.some(([path]) => path === '/v1/pms/lists/list-1')).toBe(false);
+    expect(value.navigate).not.toHaveBeenCalled();
+  });
+
   it('shows a shared task read-only when its list is not readable', async () => {
     const api = fakeApi({
       '/v1/pms/tasks/task-1/activity-logs': EMPTY_PAGE,
@@ -196,4 +258,48 @@ describe('AppRoot', { timeout: 20_000 }, () => {
     expect(screen.queryByRole('textbox', { name: '자재 검수' })).toBeNull();
     expect(value.navigate).not.toHaveBeenCalled();
   });
+});
+
+it('reports unsaved space ordering until its save finishes', async () => {
+  syncLocale('en-US');
+  const report = vi.fn();
+  let finishSave!: () => void;
+  const onSave = vi.fn(() => new Promise<void>((resolve) => {
+    finishSave = resolve;
+  }));
+  const folder = {
+    id: 'folder-1', team_id: SPACE.id, name: 'Materials', sort_order: 0, list_count: 0,
+  };
+  const list = {
+    id: TASK.list_id, name: 'Inspections', folder_id: null, sort_order: 0,
+  } as PmsTaskList;
+  function Editor() {
+    const [open, setOpen] = useState(true);
+    return (
+      <SpaceOrderEditorModal
+        isOpen={open}
+        onClose={() => setOpen(false)}
+        spaceName={SPACE.name}
+        folders={[folder]}
+        lists={[list]}
+        onSave={onSave}
+      />
+    );
+  }
+  render(
+    <NavigationStateProvider report={report} message="Unsaved order">
+      <Editor />
+    </NavigationStateProvider>,
+  );
+  expect(report).toHaveBeenLastCalledWith({ dirty: false, message: 'Unsaved order' });
+
+  fireEvent.change(screen.getByRole('combobox'), { target: { value: folder.id } });
+  expect(report).toHaveBeenLastCalledWith({ dirty: true, message: 'Unsaved order' });
+  fireEvent.click(screen.getByRole('button', { name: /^Save$/ }));
+  expect(onSave).toHaveBeenCalledOnce();
+  expect(report).toHaveBeenLastCalledWith({ dirty: true, message: 'Unsaved order' });
+
+  await act(async () => { finishSave(); });
+  expect(screen.queryByRole('dialog')).toBeNull();
+  expect(report).toHaveBeenLastCalledWith({ dirty: false, message: 'Unsaved order' });
 });

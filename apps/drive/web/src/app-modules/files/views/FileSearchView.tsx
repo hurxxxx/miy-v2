@@ -30,6 +30,9 @@ import {
   type FileSearchControllerClient,
 } from './useFileSearchController';
 
+// The platform owns and renews the frame credential.
+const keepFrameSession = () => undefined;
+
 /**
  * AI-DO FileSearchView. miy: the space replaces the workspace, the client
  * wraps `runtime.api`, a download is a `runtime.download` link, and the
@@ -62,8 +65,7 @@ export function FileSearchView({ spaceId }: { spaceId: string }) {
   );
   const controller = useFileSearchController({
     client,
-    // The frame credential is renewed by the platform; nothing to sign out.
-    logout: () => undefined,
+    logout: keepFrameSession,
     openDownload,
     messages: {
       authMissing: t('files.search.errors.authMissing'),

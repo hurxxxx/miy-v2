@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { i18n } from '../../../platform/i18n';
 import {
   ArrowLeft,
   ChevronLeft,
@@ -241,9 +242,13 @@ export function CommunityView({ postId: routePostId }: { postId?: string | null 
     [t],
   );
 
+  const listScope = useMemo(
+    () => ({ activeChannelKey, search, pageSize }),
+    [activeChannelKey, search, pageSize],
+  );
   const view = useMemo(
-    () => ({ activeChannelKey, search, selectedPostId, pageSize }),
-    [activeChannelKey, search, selectedPostId, pageSize],
+    () => ({ listScope, selectedPostId }),
+    [listScope, selectedPostId],
   );
   const activeView = useRef<typeof view | null>(view);
   useLayoutEffect(() => {
@@ -297,22 +302,22 @@ export function CommunityView({ postId: routePostId }: { postId?: string | null 
 
   const loadPosts = useCallback(
     async (targetPage: number) => {
-      if (activeView.current !== view) return;
+      if (activeView.current?.listScope !== listScope) return;
       const request = ++listRequest.current;
-      const isCurrent = () => activeView.current === view && listRequest.current === request;
+      const isCurrent = () => activeView.current?.listScope === listScope && listRequest.current === request;
       setPostsLoading(true);
       setPostsError(null);
       try {
         const fetchPage = (page: number) =>
-          listCommunityPosts(api, view.activeChannelKey, {
+          listCommunityPosts(api, listScope.activeChannelKey, {
             page,
-            pageSize: view.pageSize,
-            search: view.search,
+            pageSize: listScope.pageSize,
+            search: listScope.search,
           });
         let response = await fetchPage(targetPage);
         if (!isCurrent()) return;
         if (response.posts.length === 0 && targetPage > 1) {
-          const lastPage = Math.max(1, Math.ceil(response.total / view.pageSize));
+          const lastPage = Math.max(1, Math.ceil(response.total / listScope.pageSize));
           response = await fetchPage(Math.min(targetPage - 1, lastPage));
           if (!isCurrent()) return;
         }
@@ -321,14 +326,14 @@ export function CommunityView({ postId: routePostId }: { postId?: string | null 
         setPage(response.page);
       } catch {
         if (!isCurrent()) return;
-        setPostsError(t('community.errors.postsFailed'));
+        setPostsError(i18n.t('apps:community.errors.postsFailed'));
         setPosts([]);
         setTotal(0);
       } finally {
         if (isCurrent()) setPostsLoading(false);
       }
     },
-    [api, t, view],
+    [api, listScope],
   );
 
   const applyPostSearch = useCallback(() => {
@@ -393,11 +398,8 @@ export function CommunityView({ postId: routePostId }: { postId?: string | null 
 
   useEffect(() => {
     setPage(1);
-    if (!selectedPostId) {
-      setDetail(null);
-    }
     void loadPosts(1);
-  }, [activeChannelKey, loadPosts, selectedPostId]);
+  }, [loadPosts]);
 
   useEffect(() => {
     if (!selectedPostId) {
@@ -441,7 +443,7 @@ export function CommunityView({ postId: routePostId }: { postId?: string | null 
       .catch(() => {
         if (cancelled) return;
         setDetail(null);
-        setDetailError(t('community.errors.detailFailed'));
+        setDetailError(i18n.t('apps:community.errors.detailFailed'));
       })
       .finally(() => {
         if (!cancelled) setDetailLoading(false);
@@ -454,7 +456,6 @@ export function CommunityView({ postId: routePostId }: { postId?: string | null 
     openPost,
     reloadDetail,
     selectedPostId,
-    t,
     api,
     unlockedPassword,
   ]);

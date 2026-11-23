@@ -29,14 +29,13 @@ export interface DmComposerAttachmentState {
 }
 
 export type DmComposerAttachmentAction =
-  | { type: 'reset' }
   | { type: 'add'; attachment: PendingAttachment }
   | { type: 'uploaded'; localId: string; attachment: DmMessageAttachment }
   | { type: 'failed'; localId: string; error: string }
   | { type: 'remove'; localId: string }
   | { type: 'dragging'; dragging: boolean }
   | { type: 'action'; attachmentId: string | null }
-  | { type: 'clearPending' };
+  | { type: 'sent'; attachmentIds: readonly string[] };
 
 export const DM_COMPOSER_ATTACHMENT_INITIAL_STATE: DmComposerAttachmentState = {
   pendingAttachments: [],
@@ -48,9 +47,6 @@ export function dmComposerAttachmentReducer(
   state: DmComposerAttachmentState,
   action: DmComposerAttachmentAction,
 ): DmComposerAttachmentState {
-  if (action.type === 'reset') {
-    return DM_COMPOSER_ATTACHMENT_INITIAL_STATE;
-  }
   if (action.type === 'add') {
     return {
       ...state,
@@ -93,7 +89,12 @@ export function dmComposerAttachmentReducer(
   if (action.type === 'action') {
     return { ...state, attachmentActionId: action.attachmentId };
   }
-  return { ...state, pendingAttachments: [] };
+  return {
+    ...state,
+    pendingAttachments: state.pendingAttachments.filter(
+      (item) => !item.attachment || !action.attachmentIds.includes(item.attachment.id),
+    ),
+  };
 }
 
 export function createUploadingPendingAttachment({

@@ -158,19 +158,7 @@ describe('PMS list route task data scope', () => {
         let data: unknown;
         if (route === '/view-preferences')
           data = { task_list_group_by: 'status' };
-        else if (route === '/lists')
-          data = { items: [taskList], total: 1, page: 1, page_size: 100 };
-        else if (route === '/spaces')
-          data = [
-            {
-              id: 'space-one',
-              workspace_id: 'space-one',
-              workspace_key: 'pms-one',
-              key: 'pms-one',
-              name: 'One',
-              current_user_role: 'owner',
-            },
-          ];
+        else if (route === '/lists/list-one') data = taskList;
         else if (route === '/lists/list-one/tasks')
           data = { items: [task(title)], total: 1, page: 1, page_size: 100 };
         else if (route === '/tasks/task-one' && init?.method === 'PATCH') {

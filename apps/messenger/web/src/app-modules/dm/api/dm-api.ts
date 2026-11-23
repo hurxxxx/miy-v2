@@ -490,10 +490,11 @@ export interface DmMe {
 
 type DmMeResponse = paths['/v1/dm/me']['get']['responses'][200]['content']['application/json'];
 
-export async function getDmMe(token: string): Promise<DmMe> {
+export async function getDmMe(token: string, signal?: AbortSignal): Promise<DmMe> {
   const value = await apiFetchJson<DmMeResponse>(
     `${DM_API_PREFIX_PATH}/me`,
     token,
+    { signal },
   );
   const user = normalizeDmUser(value?.user);
   if (!user) {

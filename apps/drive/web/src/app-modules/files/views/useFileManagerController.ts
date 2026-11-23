@@ -1,6 +1,7 @@
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -10,6 +11,7 @@ import {
 import { useTranslation } from 'react-i18next';
 import { useFeedback } from '@miy/ui';
 
+import { i18n as driveI18n } from '../../../platform/i18n';
 import { useAppSearchParams } from '../../../platform/runtime/app-location';
 import { useNavigationDirty } from '../../../platform/runtime/navigation-state';
 import { useRuntime } from '../../../platform/runtime/runtime-context';
@@ -34,10 +36,7 @@ import {
 } from '../api/files-api';
 import { MAX_UPLOAD_BYTES } from '../api/file-transfer';
 import { useFileUploadManager } from '../file-upload-provider';
-import {
-  FILES_CHANGED_EVENT,
-  FILES_UPLOAD_COMPLETED_EVENT,
-} from '../file-upload-session';
+import { FILES_CHANGED_EVENT } from '../file-upload-session';
 import {
   createEmptyFileManagerSelection,
   filterSelectionToVisibleItems,
@@ -81,6 +80,7 @@ function isFileDrag(event: DragEvent<HTMLElement>) {
 export function useFileManagerController(spaceId: string) {
   const { t, i18n } = useTranslation(['apps', 'common']);
   const runtime = useRuntime();
+  const { api, fileApi } = runtime;
   const [searchParams, setSearchParams] = useAppSearchParams();
   const feedback = useFeedback();
   const timeZone = normalizeTimeZone(runtime.settings.timeZone);
@@ -90,6 +90,9 @@ export function useFileManagerController(spaceId: string) {
   const loadAbortRef = useRef<AbortController | null>(null);
   const loadRequestSeqRef = useRef(0);
   const folderId = searchParams.get('folder');
+  const browseScope = useMemo(() => ({ api, spaceId, folderId }), [api, spaceId, folderId]);
+  const committedBrowseScope = useRef<typeof browseScope | null>(null);
+  const isCurrentBrowse = useCallback(() => committedBrowseScope.current === browseScope, [browseScope]);
   const [browseSnapshot, setBrowseSnapshot] = useState<{
     folderId: string | null;
     response: FileBrowseResponse;
@@ -109,6 +112,8 @@ export function useFileManagerController(spaceId: string) {
   const [selection, setSelection] = useState(createEmptyFileManagerSelection);
   const [imagePreview, setImagePreviewState] =
     useState<ImagePreviewState | null>(null);
+  const previewAbort = useRef<AbortController | null>(null);
+  const previewUrl = useRef<string | null>(null);
   const [folderDialog, setFolderDialog] = useState<FolderDialogState | null>(
     null,
   );
@@ -143,7 +148,8 @@ export function useFileManagerController(spaceId: string) {
 
   // An open folder dialog with input is unsaved work (miy contract).
   useNavigationDirty(
-    bulkAction === 'download' ||
+    bulkAction !== null ||
+      busyId !== null ||
       downloadBatch !== null ||
       savingFolder ||
       (folderDialog !== null &&
@@ -153,26 +159,27 @@ export function useFileManagerController(spaceId: string) {
   );
 
   const setImagePreview = useCallback((value: ImagePreviewState | null) => {
-    setImagePreviewState((current) => {
-      if (current && current.url !== value?.url) {
-        URL.revokeObjectURL(current.url);
-      }
-      return value;
-    });
+    if (previewUrl.current && previewUrl.current !== value?.url) {
+      URL.revokeObjectURL(previewUrl.current);
+    }
+    previewUrl.current = value?.url ?? null;
+    setImagePreviewState(value);
   }, []);
 
-  useEffect(
-    () => () => {
-      setImagePreviewState((current) => {
-        if (current) URL.revokeObjectURL(current.url);
-        return null;
-      });
-    },
-    [],
-  );
+  useLayoutEffect(() => {
+    committedBrowseScope.current = browseScope;
+    return () => {
+      committedBrowseScope.current = null;
+      previewAbort.current?.abort();
+      previewAbort.current = null;
+      if (previewUrl.current) URL.revokeObjectURL(previewUrl.current);
+      previewUrl.current = null;
+    };
+  }, [browseScope]);
 
   const load = useCallback(
     async (options: { silent?: boolean } = {}) => {
+      if (!isCurrentBrowse()) return false;
       const sequence = loadRequestSeqRef.current + 1;
       loadRequestSeqRef.current = sequence;
       loadAbortRef.current?.abort();
@@ -183,11 +190,11 @@ export function useFileManagerController(spaceId: string) {
         setLoadError(null);
       }
       try {
-        const response = await browseFiles(runtime, spaceId, folderId, {
+        const response = await browseFiles({ api }, spaceId, folderId, {
           signal: controller.signal,
         });
         if (
-          !controller.signal.aborted &&
+          isCurrentBrowse() && !controller.signal.aborted &&
           loadRequestSeqRef.current === sequence
         ) {
           setBrowseSnapshot({ folderId, response, spaceId });
@@ -196,12 +203,12 @@ export function useFileManagerController(spaceId: string) {
         }
         return false;
       } catch (caughtError) {
-        if (!controller.signal.aborted && loadRequestSeqRef.current === sequence) {
+        if (isCurrentBrowse() && !controller.signal.aborted && loadRequestSeqRef.current === sequence) {
           setLoadState('error');
           setLoadError(
             caughtError instanceof Error
               ? caughtError.message
-              : t('files.errors.loadFailed'),
+              : driveI18n.t('apps:files.errors.loadFailed'),
           );
         }
         return false;
@@ -211,7 +218,7 @@ export function useFileManagerController(spaceId: string) {
         }
       }
     },
-    [folderId, runtime, spaceId, t],
+    [api, folderId, isCurrentBrowse, spaceId],
   );
 
   useEffect(() => {
@@ -226,8 +233,10 @@ export function useFileManagerController(spaceId: string) {
     setRenameTarget(null);
     setMoveDialog(null);
     setVersionsTarget(null);
+    setImagePreview(null);
+    setPreviewBusyId(null);
     setSelection(createEmptyFileManagerSelection());
-  }, [folderId, spaceId]);
+  }, [browseScope, setImagePreview]);
 
   const openCreateFolder = useCallback(() => {
     if (!canIngest) {
@@ -240,7 +249,7 @@ export function useFileManagerController(spaceId: string) {
   }, [canIngest, effectiveUploadVisibility]);
 
   useEffect(() => {
-    const uploadCompletedHandler = (event: Event) => {
+    const filesChanged = (event: Event) => {
       const detail = (
         event as CustomEvent<{
           folderId?: string | null;
@@ -249,21 +258,14 @@ export function useFileManagerController(spaceId: string) {
       ).detail;
       if (
         detail?.spaceId !== spaceId ||
-        (detail.folderId ?? null) !== (folderId ?? null)
+        (detail.folderId !== undefined && detail.folderId !== folderId)
       ) {
         return;
       }
       void load({ silent: true });
     };
-    window.addEventListener(FILES_UPLOAD_COMPLETED_EVENT, uploadCompletedHandler);
-    window.addEventListener(FILES_CHANGED_EVENT, uploadCompletedHandler);
-    return () => {
-      window.removeEventListener(
-        FILES_UPLOAD_COMPLETED_EVENT,
-        uploadCompletedHandler,
-      );
-      window.removeEventListener(FILES_CHANGED_EVENT, uploadCompletedHandler);
-    };
+    window.addEventListener(FILES_CHANGED_EVENT, filesChanged);
+    return () => window.removeEventListener(FILES_CHANGED_EVENT, filesChanged);
   }, [folderId, load, spaceId]);
 
   const folders = useMemo(() => browse?.folders ?? [], [browse?.folders]);
@@ -294,7 +296,7 @@ export function useFileManagerController(spaceId: string) {
 
   const emitChanged = useCallback(() => {
     window.dispatchEvent(
-      new CustomEvent(FILES_CHANGED_EVENT, { detail: { spaceId, folderId: null } }),
+      new CustomEvent(FILES_CHANGED_EVENT, { detail: { spaceId } }),
     );
   }, [spaceId]);
 
@@ -369,11 +371,10 @@ export function useFileManagerController(spaceId: string) {
           name: folderName,
         });
       }
-      setFolderDialog(null);
+      if (isCurrentBrowse()) setFolderDialog(null);
       emitChanged();
-      await load({ silent: true });
     } catch (caughtError) {
-      setFolderError(
+      if (isCurrentBrowse()) setFolderError(
         caughtError instanceof Error
           ? caughtError.message
           : t('files.errors.saveFolderFailed'),
@@ -400,7 +401,7 @@ export function useFileManagerController(spaceId: string) {
         return;
       }
       const accepted = startUpload({
-        client: runtime,
+        client: { api, fileApi },
         files: selectedFilesValue,
         fileId,
         folderId,
@@ -417,7 +418,8 @@ export function useFileManagerController(spaceId: string) {
       folderId,
       startUpload,
       feedback,
-      runtime,
+      api,
+      fileApi,
       spaceId,
       t,
     ],
@@ -501,18 +503,26 @@ export function useFileManagerController(spaceId: string) {
   }
 
   async function handlePreview(file: FileItem) {
+    previewAbort.current?.abort();
+    const controller = new AbortController();
+    previewAbort.current = controller;
     setPreviewBusyId(file.id);
     try {
-      const blob = await getFilePreviewBlob(runtime, file.id);
+      const blob = await getFilePreviewBlob(runtime, file.id, { signal: controller.signal });
+      if (controller.signal.aborted || !isCurrentBrowse()) return;
       setImagePreview({ file, url: URL.createObjectURL(blob) });
     } catch (caughtError) {
+      if (controller.signal.aborted || !isCurrentBrowse()) return;
       feedback.error(
         caughtError instanceof Error
           ? caughtError.message
           : t('files.errors.previewFailed'),
       );
     } finally {
-      setPreviewBusyId(null);
+      if (previewAbort.current === controller) {
+        previewAbort.current = null;
+        setPreviewBusyId(null);
+      }
     }
   }
 
@@ -526,7 +536,6 @@ export function useFileManagerController(spaceId: string) {
     try {
       await deleteDriveFile(runtime, spaceId, file.id);
       emitChanged();
-      await load({ silent: true });
     } catch (caughtError) {
       feedback.error(
         caughtError instanceof Error
@@ -551,11 +560,9 @@ export function useFileManagerController(spaceId: string) {
     setBusyId(plan.busyId);
     try {
       await deleteFileFolder(runtime, spaceId, plan.folderId);
-      if (plan.afterSuccess.kind === 'navigate-root-and-clear-browse') {
+      if (isCurrentBrowse() && plan.afterSuccess.kind === 'navigate-root-and-clear-browse') {
         navigateToFolder(plan.afterSuccess.targetFolderId);
         setBrowseSnapshot(null);
-      } else {
-        await load({ silent: true });
       }
       emitChanged();
     } catch (caughtError) {
@@ -587,9 +594,8 @@ export function useFileManagerController(spaceId: string) {
     setBulkAction('delete');
     try {
       await bulkDeleteFileItems(runtime, spaceId, plan.payload);
-      clearSelection();
+      if (isCurrentBrowse()) clearSelection();
       emitChanged();
-      await load({ silent: true });
     } catch (caughtError) {
       feedback.error(
         caughtError instanceof Error
@@ -687,8 +693,8 @@ export function useFileManagerController(spaceId: string) {
     const updated = await updateDriveFile(runtime, spaceId, file.id, {
       filename,
     });
-    setRenameTarget(null);
-    await load({ silent: true });
+    if (isCurrentBrowse()) setRenameTarget(null);
+    emitChanged();
     return updated;
   }
 
@@ -708,15 +714,16 @@ export function useFileManagerController(spaceId: string) {
         folderIds: target.folderIds,
         targetFolderId,
       });
-      setMoveDialog(null);
-      clearSelection();
+      if (isCurrentBrowse()) {
+        setMoveDialog(null);
+        clearSelection();
+      }
       feedback.success(
         t('drive.move.done', {
           count: target.fileIds.length + target.folderIds.length,
         }),
       );
       emitChanged();
-      await load({ silent: true });
     } finally {
       setBulkAction(null);
     }

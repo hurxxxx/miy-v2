@@ -11,6 +11,7 @@ import type { AppRuntime, NavigationState } from '@miy/sdk';
 import { useMemo, useState } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { i18n } from '../../../platform/i18n';
 import { resolveAppRoute } from '../../../platform/runtime/app-location';
 import { NavigationStateProvider } from '../../../platform/runtime/navigation-state';
 import { RuntimeProvider } from '../../../platform/runtime/runtime-context';
@@ -180,6 +181,34 @@ describe('CommunityView', () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
+  });
+
+  it('keeps the current post page and skips list reads on detail and Back', async () => {
+    const post = await getCommunityPost(api, 'post-1');
+    vi.mocked(listCommunityPosts).mockImplementation(async (_api, _channel, options) => ({
+      page: options?.page ?? 1,
+      pageSize: 20,
+      posts: [{ ...post, isRead: true }],
+      total: 30,
+    }));
+    const initialPath = '/community?channel=general';
+    const { rerender } = render(<Harness initialPath={initialPath} />);
+    await screen.findByText('Post title');
+    const nextPage = screen.getByRole<HTMLButtonElement>('button', { name: '다음 페이지' });
+    fireEvent.click(nextPage);
+    await waitFor(() => expect(nextPage.disabled).toBe(true));
+    const listReads = vi.mocked(listCommunityPosts).mock.calls.length;
+    rerender(<Harness initialPath={initialPath} externalPath="/community/posts/post-1?channel=general" />);
+    await screen.findByRole('heading', { name: 'Post title' });
+    rerender(<Harness initialPath={initialPath} externalPath={initialPath} />);
+    expect(screen.getByRole<HTMLButtonElement>('button', { name: '다음 페이지' }).disabled).toBe(true);
+    try {
+      await act(() => i18n.changeLanguage('en-US'));
+      expect(screen.getByRole<HTMLButtonElement>('button', { name: 'Next page' }).disabled).toBe(true);
+      expect(listCommunityPosts).toHaveBeenCalledTimes(listReads);
+    } finally {
+      await act(() => i18n.changeLanguage('ko-KR'));
+    }
   });
 
   it('keeps the selected post when an earlier detail request resolves later', async () => {

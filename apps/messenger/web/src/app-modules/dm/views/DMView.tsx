@@ -117,6 +117,8 @@ import {
   isImageFile,
   readyDmAttachmentIds,
   uploadingDmAttachmentCount,
+  type DmComposerAttachmentAction,
+  type DmComposerAttachmentState,
 } from './dm-composer-attachments';
 import { uploadDmComposerAttachments } from './dm-composer-attachment-upload';
 import {
@@ -525,9 +527,32 @@ function useDMViewElement({
   >(null);
   const [threadNavigationHistory, setThreadNavigationHistory] =
     useState<DmThreadNavigationHistory>(DM_THREAD_NAVIGATION_INITIAL_STATE);
-  const [composerAttachmentState, dispatchComposerAttachments] = useReducer(
-    dmComposerAttachmentReducer,
-    DM_COMPOSER_ATTACHMENT_INITIAL_STATE,
+  const [attachmentsByThread, setAttachmentsByThread] = useState<
+    Record<string, DmComposerAttachmentState>
+  >({});
+  const updateThreadAttachments = useCallback(
+    (id: string, action: DmComposerAttachmentAction) => {
+      if (!id) return;
+      setAttachmentsByThread((current) => {
+        const previous = current[id];
+        if (!previous && action.type !== 'add' && action.type !== 'action' && action.type !== 'dragging') {
+          return current;
+        }
+        const next = dmComposerAttachmentReducer(
+          previous ?? DM_COMPOSER_ATTACHMENT_INITIAL_STATE,
+          action,
+        );
+        if (!next.pendingAttachments.length && !next.draggingFiles && !next.attachmentActionId) {
+          return omitDmThreadRecordValue(current, id);
+        }
+        return setDmThreadRecordValue(current, id, next);
+      });
+    },
+    [],
+  );
+  const dispatchComposerAttachments = useCallback(
+    (action: DmComposerAttachmentAction) => updateThreadAttachments(threadId, action),
+    [threadId, updateThreadAttachments],
   );
   const [imageViewer, setImageViewer] = useState<DmImageViewerWithSource | null>(
     null,
@@ -588,7 +613,7 @@ function useDMViewElement({
     [messages, timeZone],
   );
   const { attachmentActionId, draggingFiles, pendingAttachments } =
-    composerAttachmentState;
+    attachmentsByThread[threadId] ?? DM_COMPOSER_ATTACHMENT_INITIAL_STATE;
 
   selectedThreadIdRef.current = threadId;
   threadsRef.current = threads;
@@ -737,7 +762,7 @@ function useDMViewElement({
         setError: feedback.error,
         setImageViewer: openImageViewer,
       }),
-    [attachmentActionId, feedback, openImageViewer, t, token],
+    [attachmentActionId, dispatchComposerAttachments, feedback, openImageViewer, t, token],
   );
   const captureThreadScroll = useCallback(
     (captureThreadId: string | null) => {
@@ -945,9 +970,11 @@ function useDMViewElement({
       if (threadId === pending.to) setThreadNavigationHistory(pending.update);
     }
     setDraft(threadId ? (draftByThreadIdRef.current[threadId] ?? '') : '');
+    if (pendingJumpRef.current?.threadId !== threadId) pendingJumpRef.current = null;
     setReplyTarget(null);
     setEditing(null);
     setHighlightedMessageId(null);
+    olderAnchorRef.current = null;
     olderRefreshOffset.current = 0;
   }, [threadId]);
 
@@ -961,6 +988,7 @@ function useDMViewElement({
       validThreadIds,
     );
     setFailedDraftsByThread((current) => pruneDmThreadRecordValues(current, validThreadIds));
+    setAttachmentsByThread((current) => pruneDmThreadRecordValues(current, validThreadIds));
     messageCacheByThreadIdRef.current = pruneDmThreadRecordValues(
       messageCacheByThreadIdRef.current,
       validThreadIds,
@@ -1193,11 +1221,6 @@ function useDMViewElement({
     visibleReadMarkerMessageId,
   ]);
 
-  const resetThreadComposer = useCallback(() => {
-    dispatchComposerAttachments({ type: 'reset' });
-    dragDepthRef.current = 0;
-  }, []);
-
   const setSelectedThreadDraft = useCallback((nextDraft: string) => {
     setDraft(nextDraft);
     const activeThreadId = selectedThreadIdRef.current;
@@ -1245,8 +1268,9 @@ function useDMViewElement({
   useEffect(() => () => stopTyping(threadId), [stopTyping, threadId]);
 
   useEffect(() => {
-    resetThreadComposer();
-  }, [resetThreadComposer, threadId]);
+    dragDepthRef.current = 0;
+    return () => dispatchComposerAttachments({ type: 'dragging', dragging: false });
+  }, [dispatchComposerAttachments]);
 
   useEffect(() => {
     if (directGroupCreatePanelVisible) {
@@ -1719,7 +1743,7 @@ function useDMViewElement({
         fallbackErrorMessage: t('dm.errors.attachmentUploadFailed'),
       });
     },
-    [editTarget, feedback, sending, t, threadId, token],
+    [dispatchComposerAttachments, editTarget, feedback, sending, t, threadId, token],
   );
 
   const handleFileInputChange = (event: ChangeEvent<HTMLInputElement>) => {
@@ -2025,15 +2049,20 @@ function useDMViewElement({
         },
       }));
     } catch (caughtError) {
-      setOlderByThreadId((current) => ({
-        ...current,
-        [targetThreadId]: { loading: false, exhausted: false },
-      }));
-      feedback.error(
-        caughtError instanceof Error
-          ? caughtError.message
-          : t('dm.actionErrors.olderLoadFailed'),
-      );
+      if (selectedThreadIdRef.current === targetThreadId) {
+        feedback.error(
+          caughtError instanceof Error
+            ? caughtError.message
+            : t('dm.actionErrors.olderLoadFailed'),
+        );
+      }
+    } finally {
+      setOlderByThreadId((current) => {
+        const state = current[targetThreadId];
+        return state?.loading
+          ? { ...current, [targetThreadId]: { ...state, loading: false } }
+          : current;
+      });
     }
   };
 
@@ -2108,11 +2137,11 @@ function useDMViewElement({
         nextMessages,
       );
       writeCachedDmMessages(dmCacheKey, command.threadId, nextMessages);
+      updateThreadAttachments(command.threadId, { type: 'sent', attachmentIds: command.attachmentIds });
       if (activeThreadMatches) {
         scrollThreadToBottom(command.threadId);
         messagesRef.current = nextMessages;
         dispatchMessages({ type: 'replace', items: nextMessages });
-        dispatchComposerAttachments({ type: 'clearPending' });
         setReplyTarget((current) => (current?.id === command.replyToMessageId ? null : current));
       }
       requestAnimationFrame(() => {
@@ -2223,7 +2252,7 @@ function useDMViewElement({
     Boolean(draft.trim()) ||
       Object.values(draftByThreadIdRef.current).some((body) => Boolean(body.trim())) ||
       Object.values(failedDraftsByThread).some((drafts) => drafts.length > 0) ||
-      pendingAttachments.length > 0 ||
+      Object.values(attachmentsByThread).some((item) => item.pendingAttachments.length > 0) ||
       sending ||
       creatingGroup ||
       savingTitle ||
@@ -2309,8 +2338,9 @@ function useDMViewElement({
   const lastFocusRef = useRef<string | null>(null);
   useEffect(() => {
     const key = focusMessageId && threadId ? `${threadId}:${focusMessageId}` : null;
-    if (!key || key === lastFocusRef.current || !focusMessageId) return;
+    const previous = lastFocusRef.current;
     lastFocusRef.current = key;
+    if (!key || key === previous || !focusMessageId) return;
     requestJump(threadId, focusMessageId);
   }, [focusMessageId, requestJump, threadId]);
   useEffect(() => {

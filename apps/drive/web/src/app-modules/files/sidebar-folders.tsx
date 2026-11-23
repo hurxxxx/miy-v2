@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { FolderOpen } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
@@ -34,39 +34,36 @@ export function FilesSidebarFolders({
     folders: FileFolderItem[];
   } | null>(null);
 
-  const load = useCallback(
-    async (signal?: AbortSignal) => {
-      if (!spaceId) {
-        setState(null);
-        return;
-      }
+  useEffect(() => {
+    if (!spaceId) return;
+    let pending: AbortController | undefined;
+    async function load(id: string) {
+      pending?.abort();
+      pending = new AbortController();
+      const { signal } = pending;
       try {
-        const response = await browseFiles({ api }, spaceId, null, { signal });
-        if (!signal?.aborted) {
-          setState({ spaceId, folders: response.all_folders });
+        const response = await browseFiles({ api }, id, null, { signal });
+        if (!signal.aborted) {
+          setState({ spaceId: id, folders: response.all_folders });
         }
       } catch {
-        if (!signal?.aborted) {
-          setState({ spaceId, folders: [] });
+        if (!signal.aborted) {
+          setState({ spaceId: id, folders: [] });
         }
       }
-    },
-    [api, spaceId],
-  );
-
-  useEffect(() => {
-    const controller = new AbortController();
-    void load(controller.signal);
-    return () => controller.abort();
-  }, [load]);
-
-  useEffect(() => {
-    const handler = () => {
-      void load();
+    }
+    const handler = (event: Event) => {
+      if ((event as CustomEvent<{ spaceId?: string }>).detail?.spaceId === spaceId) {
+        void load(spaceId);
+      }
     };
+    void load(spaceId);
     window.addEventListener(FILES_CHANGED_EVENT, handler);
-    return () => window.removeEventListener(FILES_CHANGED_EVENT, handler);
-  }, [load]);
+    return () => {
+      pending?.abort();
+      window.removeEventListener(FILES_CHANGED_EVENT, handler);
+    };
+  }, [api, spaceId]);
 
   const folders = state?.spaceId === spaceId ? state.folders : [];
   const folderTreeModel = useMemo(

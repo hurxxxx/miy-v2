@@ -36,7 +36,7 @@ export function BoardSidebar({ route }: { route: AppRoute }) {
   const canManageChannels = useIsBoardManager();
   const [channels, setChannels] = useState<CommunityChannel[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [failed, setFailed] = useState(false);
   const [channelRevision, setChannelRevision] = useState(0);
   const activeChannelKey =
     route.kind === 'community'
@@ -52,7 +52,7 @@ export function BoardSidebar({ route }: { route: AppRoute }) {
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
-    setError(null);
+    setFailed(false);
     listCommunityChannels(api)
       .then((response) => {
         if (cancelled) return;
@@ -61,7 +61,7 @@ export function BoardSidebar({ route }: { route: AppRoute }) {
       .catch(() => {
         if (cancelled) return;
         setChannels([]);
-        setError(t('community.errors.channelsFailed'));
+        setFailed(true);
       })
       .finally(() => {
         if (cancelled) return;
@@ -70,7 +70,7 @@ export function BoardSidebar({ route }: { route: AppRoute }) {
     return () => {
       cancelled = true;
     };
-  }, [t, api, channelRevision]);
+  }, [api, channelRevision]);
 
   const channelHrefByKey = useMemo(() => {
     const hrefByKey = new Map<string, string>();
@@ -117,9 +117,9 @@ export function BoardSidebar({ route }: { route: AppRoute }) {
           </button>
         ))}
 
-        {error ? (
+        {failed ? (
           <div className="px-3 py-2 app-text-caption text-app-danger dark:text-app-danger-text">
-            {error}
+            {t('community.errors.channelsFailed')}
           </div>
         ) : null}
       </section>

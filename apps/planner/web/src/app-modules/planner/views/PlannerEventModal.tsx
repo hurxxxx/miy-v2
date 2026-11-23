@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { CalendarDays, Clock3 } from 'lucide-react';
 
 import { DateInput } from '../../../components/date/DateInput';
+import { i18n } from '../../../platform/i18n';
 import { useNavigationDirty } from '../../../platform/runtime/navigation-state';
 import { useAppApi } from '../../../platform/runtime/runtime-context';
 import {
@@ -130,13 +131,13 @@ function usePlannerEventModalElement({
         if (cancelled) return;
         dispatch({
           type: 'loadFailure',
-          error: err.message ?? t('apps:planner.loadFailed'),
+          error: err.message ?? i18n.t('apps:planner.loadFailed'),
         });
       });
     return () => {
       cancelled = true;
     };
-  }, [eventId, timeZone, token, t]);
+  }, [eventId, timeZone, token]);
 
   const canSave = useMemo(() => {
     return canSavePlannerEventModal(state);

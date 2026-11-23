@@ -54,28 +54,31 @@ export function DriveProvider({ children }: { children: ReactNode }) {
   const [userId, setUserId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<unknown>(null);
-  const sequence = useRef(0);
+  const pending = useRef<AbortController | null>(null);
 
   const reload = useCallback(async () => {
-    sequence.current += 1;
-    const current = sequence.current;
+    pending.current?.abort();
+    const controller = new AbortController();
+    pending.current = controller;
+    const { signal } = controller;
     setLoading(true);
     try {
-      const response = await listSpaces({ api });
-      if (sequence.current !== current) return;
+      const response = await listSpaces({ api }, { signal });
+      if (signal.aborted) return;
       setSpaces(response.spaces);
       setUserId(response.user_id);
       setError(null);
     } catch (caught) {
-      if (sequence.current !== current) return;
-      setError(caught);
+      if (!signal.aborted) setError(caught);
     } finally {
-      if (sequence.current === current) setLoading(false);
+      if (pending.current === controller) pending.current = null;
+      if (!signal.aborted) setLoading(false);
     }
   }, [api]);
 
   useEffect(() => {
     void reload();
+    return () => pending.current?.abort();
   }, [reload]);
 
   const value = useMemo(

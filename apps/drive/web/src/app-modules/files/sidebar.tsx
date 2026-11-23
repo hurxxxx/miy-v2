@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   FolderOpen,
@@ -31,6 +31,8 @@ import {
 } from './api/files-api';
 import { FilesSidebarFolders } from './sidebar-folders';
 
+type SpaceDialog = { kind: 'create' } | { kind: 'rename' | 'members'; spaceId: string };
+
 /**
  * AI-DO drew the Files navigation in the portal sidebar (manifest navItems
  * `files-all`, `files-search`, `files-chat` and the folder tree,
@@ -54,9 +56,10 @@ export function DriveSidebar({
   const { spaces } = useDrive();
   const spaceId = route.kind === 'home' ? null : route.spaceId;
   const space = spaces.find((item) => item.id === spaceId) ?? null;
-  const [dialog, setDialog] = useState<
-    'create' | 'rename' | 'members' | null
-  >(null);
+  const [dialog, setDialog] = useState<SpaceDialog | null>(null);
+  useEffect(() => {
+    setDialog((current) => current && current.kind !== 'create' && current.spaceId !== spaceId ? null : current);
+  }, [spaceId]);
 
   return (
     <aside className="flex w-60 shrink-0 flex-col border-r border-app-border bg-app-surface">
@@ -87,7 +90,7 @@ export function DriveSidebar({
           </select>
         </label>
         <div className="mt-2 flex flex-wrap gap-1">
-          <Button size="dense" variant="ghost" onClick={() => setDialog('create')}>
+          <Button size="dense" variant="ghost" onClick={() => setDialog({ kind: 'create' })}>
             <Plus size={14} />
             {t('drive.spaces.create')}
           </Button>
@@ -98,7 +101,7 @@ export function DriveSidebar({
                 variant="ghost"
                 title={t('drive.spaces.rename')}
                 aria-label={t('drive.spaces.rename')}
-                onClick={() => setDialog('rename')}
+                onClick={() => setDialog({ kind: 'rename', spaceId: space.id })}
               >
                 <Pencil size={14} />
               </Button>
@@ -107,7 +110,7 @@ export function DriveSidebar({
                 variant="ghost"
                 title={t('drive.spaces.members')}
                 aria-label={t('drive.spaces.members')}
-                onClick={() => setDialog('members')}
+                onClick={() => setDialog({ kind: 'members', spaceId: space.id })}
               >
                 <Users size={14} />
               </Button>
@@ -163,13 +166,13 @@ export function DriveSidebar({
         </nav>
       ) : null}
 
-      {dialog === 'create' ? (
+      {dialog?.kind === 'create' ? (
         <SpaceNameDialog mode="create" onClose={() => setDialog(null)} space={null} />
       ) : null}
-      {dialog === 'rename' && space ? (
+      {dialog?.kind === 'rename' && space?.id === dialog.spaceId ? (
         <SpaceNameDialog mode="rename" onClose={() => setDialog(null)} space={space} />
       ) : null}
-      {dialog === 'members' && space ? (
+      {dialog?.kind === 'members' && space?.id === dialog.spaceId ? (
         <SpaceMembersDialog onClose={() => setDialog(null)} space={space} />
       ) : null}
     </aside>
@@ -195,6 +198,11 @@ function SpaceNameDialog({
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const mounted = useRef(false);
+  useEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; };
+  }, []);
   useNavigationDirty(saving || deleting || name !== initial);
 
   const submit = async () => {
@@ -205,12 +213,14 @@ function SpaceNameDialog({
         const created = await createSpace(runtime, name.trim());
         await reload();
         feedback.success(t('drive.spaces.created', { name: created.name }));
-        onClose();
-        navigate(buildSpacePath(created.id));
+        if (mounted.current) {
+          onClose();
+          navigate(buildSpacePath(created.id));
+        }
       } else if (space) {
         await renameSpace(runtime, space.id, name.trim());
         await reload();
-        onClose();
+        if (mounted.current) onClose();
       }
     } catch (caught) {
       setError(
@@ -232,8 +242,10 @@ function SpaceNameDialog({
     try {
       await deleteSpace(runtime, space.id);
       await reload();
-      onClose();
-      navigate('/', { replace: true });
+      if (mounted.current) {
+        onClose();
+        navigate('/', { replace: true });
+      }
     } catch (caught) {
       setError(
         caught instanceof Error && caught.message

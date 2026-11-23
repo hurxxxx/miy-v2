@@ -117,10 +117,10 @@ describe('dm composer attachment model', () => {
     });
   });
 
-  it('removes, clears, and resets composer attachment state', () => {
+  it('removes individual attachments and clears only the submitted ones on send', () => {
     const state = {
       pendingAttachments: [
-        pending({ localId: 'local-1' }),
+        pending({ localId: 'local-1', status: 'ready', attachment: attachment('attachment-1') }),
         pending({ localId: 'local-2' }),
       ],
       attachmentActionId: 'attachment-1',
@@ -134,14 +134,11 @@ describe('dm composer attachment model', () => {
       }).pendingAttachments.map((item) => item.localId),
     ).toEqual(['local-2']);
     expect(
-      dmComposerAttachmentReducer(state, { type: 'clearPending' }),
+      dmComposerAttachmentReducer(state, { type: 'sent', attachmentIds: ['attachment-1'] }),
     ).toMatchObject({
-      pendingAttachments: [],
+      pendingAttachments: [pending({ localId: 'local-2' })],
       attachmentActionId: 'attachment-1',
     });
-    expect(dmComposerAttachmentReducer(state, { type: 'reset' })).toEqual(
-      DM_COMPOSER_ATTACHMENT_INITIAL_STATE,
-    );
   });
 
   it('derives ready ids and uploading count from pending attachments', () => {

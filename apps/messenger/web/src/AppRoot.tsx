@@ -82,16 +82,20 @@ function Session({ runtime }: AppProps) {
   const { t } = useTranslation('apps');
   const [me, setMe] = useState<{ id: string; full_name: string } | null>(null);
   const [failed, setFailed] = useState(false);
-  const load = useCallback(() => {
-    setFailed(false);
-    getDmMe(RUNTIME_TOKEN)
-      .then((value) => setMe({ id: value.user.id, full_name: value.user.full_name }))
-      .catch(() => setFailed(true));
-  }, []);
+  const [attempt, setAttempt] = useState(0);
+  const { api, settings } = runtime;
   useEffect(() => {
-    load();
-  }, [load, runtime.installationId]);
-  const { settings } = runtime;
+    const controller = new AbortController();
+    setFailed(false);
+    getDmMe(RUNTIME_TOKEN, controller.signal)
+      .then((value) => {
+        if (!controller.signal.aborted) setMe({ id: value.user.id, full_name: value.user.full_name });
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) setFailed(true);
+      });
+    return () => controller.abort();
+  }, [api, attempt]);
   const auth = useMemo(() => {
     const user: AuthUser | null = me
       ? {
@@ -109,7 +113,7 @@ function Session({ runtime }: AppProps) {
         <p className="app-text-body text-app-ink/65">{t('dm.errors.threadsLoadFailed')}</p>
         <button
           className="app-text-body-sm rounded-md border border-app-border px-3 py-1.5"
-          onClick={load}
+          onClick={() => setAttempt((current) => current + 1)}
           type="button"
         >
           {t('common:actions.retry', { defaultValue: 'Retry' })}

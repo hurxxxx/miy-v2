@@ -4,6 +4,7 @@ import { Button } from '@miy/ui';
 import { ArrowDown, ArrowUp, FolderOpen, List as ListIcon } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
+import { useNavigationDirty } from '../../../platform/runtime/navigation-state';
 import type { PmsFolder, PmsTaskList } from '../api/pms-api';
 import {
   createSpaceOrderDraft,
@@ -179,6 +180,7 @@ function useSpaceOrderEditorModalElement({
     [draft, lists],
   );
   const { changedCount, isDirty } = dirtySummary;
+  useNavigationDirty(isDirty || saving);
 
   function requestClose() {
     if (saving) return;
