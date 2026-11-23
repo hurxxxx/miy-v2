@@ -24,7 +24,7 @@
     "moduleEntry": "mf-manifest.json",
     "moduleExport": "./AppRoot"
   },
-  "version": "0.1.0",
+  "version": "0.1.1",
   "platformEndpoints": {
     "notificationCheck": "/platform/notification-check",
     "homeCard": "/platform/home-card",
