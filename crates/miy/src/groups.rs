@@ -55,8 +55,16 @@ pub struct Membership {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct PrimaryGroup {
     pub group_id: Option<Uuid>,
-    /// When set, reject changes if the user's current primary group differs.
-    pub expected_group_id: Option<Uuid>,
+    /// When present, require the user's current primary group to match. Null requires no current group.
+    #[serde(default, deserialize_with = "deserialize_expected_group")]
+    pub expected_group_id: Option<Option<Uuid>>,
+}
+
+fn deserialize_expected_group<'de, D>(deserializer: D) -> Result<Option<Option<Uuid>>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    Option::deserialize(deserializer).map(Some)
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
@@ -306,7 +314,7 @@ pub async fn set_primary_group(
         .ok_or_else(ApiError::not_found)?
         .get::<Option<Uuid>, _>("primary_group_id");
     if v.expected_group_id
-        .is_some_and(|expected| before != Some(expected))
+        .is_some_and(|expected| before != expected)
     {
         return Err(ApiError::conflict("primary_group_changed"));
     }
@@ -470,6 +478,34 @@ pub fn catalog() -> Vec<Value> {
 
 #[cfg(test)]
 mod tests {
+    use super::PrimaryGroup;
+
+    #[test]
+    fn expected_primary_group_distinguishes_absent_null_and_uuid() {
+        let new_group = uuid::Uuid::new_v4();
+        let old_group = uuid::Uuid::new_v4();
+        let parse = |value| {
+            serde_json::from_value::<PrimaryGroup>(value)
+                .unwrap()
+                .expected_group_id
+        };
+        assert_eq!(parse(serde_json::json!({"groupId": new_group})), None);
+        assert_eq!(
+            parse(serde_json::json!({"groupId": new_group, "expectedGroupId": null})),
+            Some(None),
+        );
+        assert_eq!(
+            parse(serde_json::json!({"groupId": new_group, "expectedGroupId": old_group})),
+            Some(Some(old_group)),
+        );
+        assert!(
+            serde_json::from_value::<PrimaryGroup>(serde_json::json!({
+                "groupId": new_group, "expectedGroupId": "invalid"
+            }))
+            .is_err()
+        );
+    }
+
     #[test]
     fn names_are_trimmed_bounded_and_printable() {
         assert_eq!(super::name("  영업 1팀 ").unwrap(), "영업 1팀");

@@ -1326,7 +1326,7 @@ pub async fn run(
     if let Err(error) = admin_overview(&mut h, suffix).await {
         stopped.push(format!("administrator overview: {error:#}"));
     } else {
-        passed.push("administrator overview counts current approvals, failed installations and pending registrations; ordinary users are denied".into());
+        passed.push("administrator overview pages outstanding approval decisions and runtime issues, distinguishes partial and empty decisions, and denies ordinary users".into());
     }
     ensure!(stopped.is_empty(), "{}", stopped.join("; "));
     Ok(passed)
@@ -1347,7 +1347,11 @@ async fn admin_overview(h: &mut Harness<'_>, suffix: &str) -> Result<()> {
         .app(
             format!("overview-app-{suffix}"),
             "dev",
-            &["database".into(), external.clone()],
+            &[
+                "database".into(),
+                external.clone(),
+                "platform:files:read".into(),
+            ],
         )
         .await?;
     sqlx::query("UPDATE releases SET image_id=$2 WHERE id=$1")
@@ -1392,7 +1396,8 @@ async fn admin_overview(h: &mut Harness<'_>, suffix: &str) -> Result<()> {
         .bind(app.installation)
         .execute(&h.state.pool)
         .await?;
-    h.replace(&admin, &app, app.release, &[external]).await?;
+    h.replace(&admin, &app, app.release, std::slice::from_ref(&external))
+        .await?;
     let approved = response(
         h.request(&admin.token, Method::GET, PATH).send().await?,
         200,
@@ -1400,11 +1405,129 @@ async fn admin_overview(h: &mut Harness<'_>, suffix: &str) -> Result<()> {
     .await?;
     ensure!(
         approved["pendingApprovals"] == before["pendingApprovals"],
-        "approved external permission or database remained pending"
+        "installation stayed pending after a partial approval decision"
     );
     ensure!(
         approved["runtimeIssues"] == before["runtimeIssues"],
         "an intentional stop was reported as an issue"
+    );
+
+    let mut fixtures = Vec::new();
+    for index in 0..6 {
+        let key = format!("overview-page-{suffix}-{index}");
+        let app = h
+            .app(key.clone(), "dev", std::slice::from_ref(&external))
+            .await?;
+        sqlx::query("UPDATE releases SET image_id=$1 WHERE id=$2")
+            .bind(format!("sha256:{}", hash(&key)))
+            .bind(app.release)
+            .execute(&h.state.pool)
+            .await?;
+        sqlx::query("UPDATE installations SET runtime_status='failed' WHERE id=$1")
+            .bind(app.installation)
+            .execute(&h.state.pool)
+            .await?;
+        fixtures.push((key, app));
+    }
+    let mut page = response(
+        h.request(&admin.token, Method::GET, PATH).send().await?,
+        200,
+    )
+    .await?;
+    ensure!(
+        page["pendingApprovals"].as_u64()
+            == before["pendingApprovals"].as_u64().map(|count| count + 6)
+    );
+    ensure!(
+        page["runtimeIssues"].as_u64() == before["runtimeIssues"].as_u64().map(|count| count + 6)
+    );
+    let approval_cursor = page["approvalNextCursor"]
+        .as_str()
+        .context("missing approval cursor")?;
+    response(
+        h.request(&admin.token, Method::GET, PATH)
+            .query(&[("runtimeCursor", approval_cursor)])
+            .send()
+            .await?,
+        400,
+    )
+    .await?;
+    let mut approvals = std::collections::BTreeSet::new();
+    let mut issues = std::collections::BTreeSet::new();
+    let mut scan_approvals = true;
+    let mut scan_issues = true;
+    let mut params = std::collections::BTreeMap::new();
+    for _ in 0..100 {
+        for (active, items, cursor, param, seen) in [
+            (
+                &mut scan_approvals,
+                "approvalExamples",
+                "approvalNextCursor",
+                "approvalCursor",
+                &mut approvals,
+            ),
+            (
+                &mut scan_issues,
+                "runtimeExamples",
+                "runtimeNextCursor",
+                "runtimeCursor",
+                &mut issues,
+            ),
+        ] {
+            if !*active {
+                continue;
+            }
+            let rows = page[items].as_array().context("missing overview page")?;
+            ensure!(rows.len() <= 5);
+            for row in rows {
+                let app = row["appId"].as_str().context("missing overview app")?;
+                let environment = row["environment"]
+                    .as_str()
+                    .context("missing overview environment")?;
+                ensure!(
+                    seen.insert(format!("{app}:{environment}")),
+                    "overview repeated an installation"
+                );
+            }
+            if let Some(next) = page[cursor].as_str() {
+                params.insert(param, next.to_owned());
+            } else {
+                *active = false;
+            }
+        }
+        if !scan_approvals && !scan_issues {
+            break;
+        }
+        page = response(
+            h.request(&admin.token, Method::GET, PATH)
+                .query(&params)
+                .send()
+                .await?,
+            200,
+        )
+        .await?;
+    }
+    ensure!(
+        !scan_approvals && !scan_issues,
+        "overview page traversal did not finish"
+    );
+    for (key, _) in &fixtures {
+        let key = format!("{key}:dev");
+        ensure!(
+            approvals.contains(&key) && issues.contains(&key),
+            "overview omitted a fixture"
+        );
+    }
+    let (_, declined) = fixtures.first().unwrap();
+    h.replace(&admin, declined, declined.release, &[]).await?;
+    let reviewed = response(
+        h.request(&admin.token, Method::GET, PATH).send().await?,
+        200,
+    )
+    .await?;
+    ensure!(
+        reviewed["pendingApprovals"].as_u64()
+            == before["pendingApprovals"].as_u64().map(|count| count + 5)
     );
     Ok(())
 }
@@ -4449,10 +4572,24 @@ async fn grant_and_primary_audit(
                 !removal_audited,
                 "stale organization removal committed an audit"
             );
-            // This can succeed only if the previous request left the team as primary.
+            for expected in [json!(null), json!(unit)] {
+                let stale = h
+                    .json(
+                        &operator.token,
+                        Method::PUT,
+                        &primary_path,
+                        json!({"groupId":unit,"expectedGroupId":expected}),
+                        409,
+                    )
+                    .await?;
+                ensure!(stale["error"]["code"] == "primary_group_changed");
+            }
+            // This can succeed only if the stale operations left the team as primary.
             json!({"groupId":null,"expectedGroupId":team})
+        } else if before == "none" {
+            json!({"groupId":after,"expectedGroupId":null})
         } else {
-            json!({"groupId":after})
+            json!({"groupId":after,"expectedGroupId":before})
         };
         h.json(&operator.token, Method::PUT, &primary_path, body, 200)
             .await?;

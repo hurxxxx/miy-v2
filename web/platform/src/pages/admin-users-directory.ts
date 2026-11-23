@@ -1,14 +1,6 @@
-import { request } from "@miy/sdk";
+import { request, type AdminDirectoryUser, type AdminUserDirectoryPage } from "@miy/sdk";
 
-export type AdminUser = {
-  id: string;
-  name: string;
-  admin: boolean;
-  canDevelop: boolean;
-  enabled: boolean;
-  primaryGroupId: string | null;
-  primaryGroupName: string | null;
-};
+export type AdminUser = AdminDirectoryUser;
 
 export type AdminUserFilters = {
   q?: string;
@@ -18,7 +10,6 @@ export type AdminUserFilters = {
   descendants?: boolean;
 };
 
-type UserDirectoryPage = { items: AdminUser[]; nextCursor: string | null };
 type UserDirectoryOptions = { cursor?: string | null; limit?: number; signal?: AbortSignal };
 
 export function fetchAdminUsers(filters: AdminUserFilters, options: UserDirectoryOptions = {}) {
@@ -28,5 +19,5 @@ export function fetchAdminUsers(filters: AdminUserFilters, options: UserDirector
     if (value !== undefined) params.set(key, String(value));
   }
   if (cursor) params.set("cursor", cursor);
-  return request<UserDirectoryPage>(`/api/v1/users/directory?${params}`, undefined, { signal });
+  return request<AdminUserDirectoryPage>(`/api/v1/users/directory?${params}`, undefined, { signal });
 }

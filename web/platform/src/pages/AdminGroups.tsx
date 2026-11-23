@@ -9,8 +9,22 @@ import { fetchAdminUsers } from "./admin-users-directory";
 
 type Props = { csrf: string; report: (message: string) => void };
 type Member = { id: string; name: string; enabled: boolean };
+type MemberChoice = DirectoryOption & { primaryGroupId: string | null };
+type AddFailures = { retry: MemberChoice[]; changed: MemberChoice[] };
 type Grant = { groupId: string; appId: string; environment: "dev" | "prod"; permission: "use" | "develop" };
 type Resource<T> = { path: string; data: T; error?: never } | { path: string; error: true; data?: never };
+
+function userLabel(user: { id: string; name: string }) {
+  return `${user.name} (${user.id})`;
+}
+
+function isMemberChoice(option: DirectoryOption): option is MemberChoice {
+  return "primaryGroupId" in option && (option.primaryGroupId === null || typeof option.primaryGroupId === "string");
+}
+
+function primaryGroupChanged(error: unknown) {
+  return isApiError(error) && error.code === "primary_group_changed";
+}
 
 function useResource<T>(path: string | null, revision: number) {
   const [resource, setResource] = useState<Resource<T>>();
@@ -96,7 +110,7 @@ function GroupDirectory({ csrf, report, source }: Props & { source: Group["sourc
     try {
       return await action();
     } catch (error) {
-      report(isApiError(error) && error.code === "primary_group_changed" ? t("groups.primaryChanged") : String(error));
+      report(primaryGroupChanged(error) ? t("groups.primaryChanged") : String(error));
       return undefined;
     } finally {
       pending.current = false;
@@ -192,19 +206,20 @@ function GroupDetails({ csrf, report, group, groups, revision, busy, mutate }: P
   const path = `/api/v1/groups/${encodeURIComponent(group.id)}`;
   const { resource: members, retry: retryMembers } = useResource<Member[]>(`${path}/members`, revision);
   const { resource: grants, retry: retryGrants } = useResource<Grant[]>("/api/v1/group-grants", revision);
-  const [picks, setPicks] = useState<DirectoryOption[]>([]);
-  const [failed, setFailed] = useState<DirectoryOption[]>([]);
+  const [picks, setPicks] = useState<MemberChoice[]>([]);
+  const [failed, setFailed] = useState<AddFailures>();
   const [formState, setFormState] = useState<"name" | "parent" | null>(null);
   const memberIds = useMemo(() => new Set(members?.data?.map((item) => item.id)), [members?.data]);
   const provider = useMemo<DirectoryProvider>(() => ({
     async load({ query, limit, cursor, signal }) {
       const page = await fetchAdminUsers({ q: query }, { limit, cursor, signal });
       return {
-        items: page.items.filter((user) => !memberIds.has(user.id)).map((user) => ({
+        items: page.items.filter((user) => !memberIds.has(user.id)).map((user): MemberChoice => ({
           kind: "user",
           id: user.id,
-          name: user.name,
+          name: userLabel(user),
           description: user.primaryGroupName ?? undefined,
+          primaryGroupId: user.primaryGroupId,
         })),
         nextCursor: page.nextCursor,
       };
@@ -250,31 +265,41 @@ function GroupDetails({ csrf, report, group, groups, revision, busy, mutate }: P
     if (!additions.length) return;
     if (isOrg && !await confirm({
       title: t("groups.assignTitle", { name: group.name }),
-      body: t("groups.assignBody"),
+      body: (
+        <>
+          <p>{t("groups.assignBody")}</p>
+          <ul className="mt-2 list-inside list-disc">
+            {additions.map((user) => <li key={user.id}>{user.name} · {user.description ?? t("users.unassigned")}</li>)}
+          </ul>
+        </>
+      ),
       confirmLabel: t("groups.setPrimary"),
     })) return;
     const failures = await mutate(async () => {
-      const rejected: DirectoryOption[] = [];
+      const rejected: AddFailures = { retry: [], changed: [] };
       for (const user of additions) {
         try {
-          if (isOrg) await write(`/api/v1/users/${encodeURIComponent(user.id)}/primary-group`, csrf, "PUT", { groupId: group.id });
+          if (isOrg) await write(`/api/v1/users/${encodeURIComponent(user.id)}/primary-group`, csrf, "PUT", {
+            groupId: group.id,
+            expectedGroupId: user.primaryGroupId,
+          });
           else await write(`${path}/members`, csrf, "PUT", { userId: user.id, member: true });
-        } catch {
-          rejected.push(user);
+        } catch (error) {
+          (primaryGroupChanged(error) ? rejected.changed : rejected.retry).push(user);
         }
       }
       return rejected;
     });
     if (!failures) return;
-    setPicks(failures);
+    setPicks(failures.retry);
     setFailed(failures);
-    const added = additions.length - failures.length;
+    const added = additions.length - failures.retry.length - failures.changed.length;
     if (added) report(t(isOrg ? "groups.primarySet" : "groups.memberAdded", { count: added }));
   }
 
   async function removeMember(member: Member) {
     if (!await confirm({
-      title: t(isOrg ? "groups.clearTitle" : "groups.removeTitle", { name: member.name }),
+      title: t(isOrg ? "groups.clearTitle" : "groups.removeTitle", { name: userLabel(member) }),
       body: t(isOrg ? "groups.clearBody" : "groups.removeBody"),
       confirmLabel: t(isOrg ? "groups.clearPrimary" : "groups.remove"),
       tone: "danger",
@@ -334,7 +359,7 @@ function GroupDetails({ csrf, report, group, groups, revision, busy, mutate }: P
                     label={t(isOrg ? "groups.userToMakePrimary" : "groups.userToAdd")}
                     provider={provider}
                     value={picks}
-                    onChange={(value) => { setPicks(value); setFailed([]); }}
+                    onChange={(value) => { setPicks(value.filter(isMemberChoice)); setFailed(undefined); }}
                     kinds={["user"]}
                     disabled={busy}
                     labels={{
@@ -353,12 +378,17 @@ function GroupDetails({ csrf, report, group, groups, revision, busy, mutate }: P
                   </Button>
                 </form>
               )}
-              {failed.length > 0 && <Notice role="alert" tone="danger">{t("groups.addFailed", { names: failed.map((user) => user.name).join(", ") })}</Notice>}
+              {!!failed?.changed.length && <Notice role="alert" tone="warning">
+                {t("groups.primaryChanged")} {failed.changed.map((user) => user.name).join(", ")}
+              </Notice>}
+              {!!failed?.retry.length && <Notice role="alert" tone="danger">
+                {t("groups.addFailed", { names: failed.retry.map((user) => user.name).join(", ") })}
+              </Notice>}
               {members.data.length === 0 ? <EmptyState title={t("groups.noMembers")} /> : (
                 <ul className="access-members">
                   {members.data.map((member) => (
                     <li key={member.id}>
-                      <span>{member.name} {!member.enabled && <Badge tone="warning">{t("groups.userDisabled")}</Badge>}</span>
+                      <span>{userLabel(member)} {!member.enabled && <Badge tone="warning">{t("groups.userDisabled")}</Badge>}</span>
                       <Button size="sm" disabled={busy} onClick={() => void removeMember(member)}>{t(isOrg ? "groups.clearPrimary" : "groups.remove")}</Button>
                     </li>
                   ))}

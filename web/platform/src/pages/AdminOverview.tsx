@@ -1,56 +1,59 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Link } from "@tanstack/react-router";
-import { request, type AuditPage } from "@miy/sdk";
+import { type AdminOverviewResponse, type AuditPage } from "@miy/sdk";
 import { useTranslation } from "react-i18next";
 import { LoadError } from "../components/LoadState";
+import { useAdminAppRead } from "../data/admin-apps";
 import { formatDateTime } from "../platform/time/time-utils";
-import { Badge, Loading, Panel } from "../ui";
+import { Badge, Button, Loading, Panel } from "../ui";
 import { describeAuditAction } from "./AdminAudit";
 
-type Installation = { appId: string; name: string; environment: "dev" | "prod" };
-type Issue = "failed" | "recovery_required" | "unreachable" | "unexpected_stop" | "degraded" | "unhealthy";
-type Overview = {
-  pendingRegistrations: number;
-  pendingApprovals: number;
-  runtimeIssues: number;
-  approvalExamples: Installation[];
-  runtimeExamples: (Installation & { issue: Issue })[];
-};
+function useOverviewPages() {
+  const [pages, setPages] = useState<string[]>([]);
+  return {
+    cursor: pages.at(-1),
+    previous: pages.length > 0 ? () => setPages((current) => current.slice(0, -1)) : undefined,
+    next: (cursor: string) => setPages((current) => current.at(-1) === cursor ? current : [...current, cursor]),
+  };
+}
+
+function OverviewPagination({ previous, next }: { previous?: () => void; next?: () => void }) {
+  const { t } = useTranslation("console");
+  if (!previous && !next) return null;
+  return (
+    <div className="mt-3 flex gap-2">
+      <Button size="sm" disabled={!previous} onClick={previous}>{t("overview.previousPage")}</Button>
+      <Button size="sm" disabled={!next} onClick={next}>{t("overview.nextPage")}</Button>
+    </div>
+  );
+}
 
 export function AdminOverview() {
   const { t, i18n } = useTranslation("console");
-  const [attempt, reload] = useState(0);
-  const [summary, setSummary] = useState<Overview | null | false>(null);
-  const [audit, setAudit] = useState<AuditPage | null | false>(null);
-
-  useEffect(() => {
-    const controller = new AbortController();
-    const { signal } = controller;
-    setSummary(null);
-    setAudit(null);
-    void request<Overview>("/api/v1/admin/overview", undefined, { signal }).then(setSummary, () => {
-      if (!signal.aborted) setSummary(false);
-    });
-    void request<AuditPage>("/api/v1/audit?limit=5", undefined, { signal }).then(setAudit, () => {
-      if (!signal.aborted) setAudit(false);
-    });
-    return () => controller.abort();
-  }, [attempt]);
-
-  const retry = () => reload((value) => value + 1);
+  const approvals = useOverviewPages();
+  const runtime = useOverviewPages();
+  const query = new URLSearchParams();
+  if (approvals.cursor) query.set("approvalCursor", approvals.cursor);
+  if (runtime.cursor) query.set("runtimeCursor", runtime.cursor);
+  const overview = useAdminAppRead<AdminOverviewResponse>(`/api/v1/admin/overview${query.size ? `?${query}` : ""}`);
+  const summary = overview.data;
+  const audit = useAdminAppRead<AuditPage>("/api/v1/audit?limit=5");
+  const approvalNext = summary?.approvalNextCursor;
+  const runtimeNext = summary?.runtimeNextCursor;
   const number = new Intl.NumberFormat(i18n.language);
   return (
     <div className="admin-overview">
-      {summary === false ? <LoadError message={t("overview.loadFailed")} onRetry={retry} />
-        : summary === null ? <Loading /> : (
+      {overview.error && <LoadError message={t("overview.loadFailed")} onRetry={overview.refresh} />}
+      {!overview.error && !summary && <Loading />}
+      {(summary || approvals.previous || runtime.previous) && (
           <div className="admin-overview-grid">
             <Panel title={t("overview.registrationQueue")}>
-              <p className="admin-metric">{number.format(summary.pendingRegistrations)}</p>
+              {summary && <p className="admin-metric">{number.format(summary.pendingRegistrations)}</p>}
               <Link to="/admin/apps" hash="registration-requests">{t("overview.openRegistrations")}</Link>
             </Panel>
             <Panel title={t("overview.permissionQueue")}>
-              <p className="admin-metric">{number.format(summary.pendingApprovals)}</p>
-              {summary.approvalExamples.length > 0 && <ul className="admin-overview-list">
+              {summary && <p className="admin-metric">{number.format(summary.pendingApprovals)}</p>}
+              {!!summary?.approvalExamples.length && <ul className="admin-overview-list">
                 {summary.approvalExamples.map((app) => (
                   <li key={`${app.appId}:${app.environment}`}>
                     <Link to="/admin/apps/$appId/$tab" params={{ appId: app.appId, tab: "installations" }}>{app.name}</Link>
@@ -58,10 +61,11 @@ export function AdminOverview() {
                   </li>
                 ))}
               </ul>}
+              <OverviewPagination previous={approvals.previous} next={approvalNext ? () => approvals.next(approvalNext) : undefined} />
             </Panel>
             <Panel title={t("overview.runtimeIssues")}>
-              <p className="admin-metric">{number.format(summary.runtimeIssues)}</p>
-              {summary.runtimeExamples.length > 0 && <ul className="admin-overview-list">
+              {summary && <p className="admin-metric">{number.format(summary.runtimeIssues)}</p>}
+              {!!summary?.runtimeExamples.length && <ul className="admin-overview-list">
                 {summary.runtimeExamples.map((app) => (
                   <li key={`${app.appId}:${app.environment}`}>
                     <Link to="/admin/apps/$appId/$tab" params={{ appId: app.appId, tab: "runtime" }}>{app.name}</Link>
@@ -70,16 +74,17 @@ export function AdminOverview() {
                   </li>
                 ))}
               </ul>}
+              <OverviewPagination previous={runtime.previous} next={runtimeNext ? () => runtime.next(runtimeNext) : undefined} />
             </Panel>
           </div>
         )}
       <Panel title={t("overview.recentAudit")} actions={<Link to="/admin/audit">{t("overview.openAudit")}</Link>}>
-        {audit === false ? <LoadError message={t("audit.loadFailed")} onRetry={retry} />
-          : audit === null ? <Loading /> : audit.entries.length === 0 ? (
+        {audit.error ? <LoadError message={t("audit.loadFailed")} onRetry={audit.refresh} />
+          : !audit.data ? <Loading /> : audit.data.entries.length === 0 ? (
             <p className="ui-empty-inline">{t("audit.empty")}</p>
           ) : (
             <ul className="admin-overview-list">
-              {audit.entries.map((entry) => (
+              {audit.data.entries.map((entry) => (
                 <li key={entry.id}>
                   <span>{describeAuditAction(t, entry.action)}</span>
                   <span>{entry.actorName ?? entry.actor ?? t("audit.system")}</span>

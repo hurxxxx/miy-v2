@@ -1,7 +1,10 @@
 //! Permission-filtered keyset pages. Cursors select a boundary, never authority.
 use crate::{
     State,
-    api_contract::{App, AppDetail, InstallationPage, RuntimeJobPage},
+    api_contract::{
+        AdminDirectoryUser, AdminUserDirectoryPage, App, AppDetail, InstallationPage,
+        RuntimeJobPage,
+    },
     auth::{BrowserPurpose, Principal},
     domain,
     http::{ApiError, ApiResult},
@@ -9,7 +12,7 @@ use crate::{
 };
 use axum::{
     Extension, Json,
-    extract::{Path, Query, State as S},
+    extract::{Path, Query, State as S, rejection::QueryRejection},
 };
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use serde::{Deserialize, Serialize};
@@ -77,7 +80,7 @@ impl Page {
             .unwrap(),
         )
     }
-    fn boundary(&self, scope: &str) -> ApiResult<String> {
+    pub(crate) fn boundary(&self, scope: &str) -> ApiResult<String> {
         let Some(raw) = &self.cursor else {
             return Ok(String::new());
         };
@@ -95,7 +98,7 @@ impl Page {
         Ok(cursor.boundary)
     }
 }
-fn encode(scope: &str, boundary: String) -> String {
+pub(crate) fn encode(scope: &str, boundary: String) -> String {
     URL_SAFE_NO_PAD.encode(
         serde_json::to_vec(&Cursor {
             version: 1,
@@ -137,9 +140,10 @@ pub(crate) struct UserDirectoryQuery {
 pub(crate) async fn user_directory(
     S(s): S<State>,
     Extension(p): Extension<Principal>,
-    Query(q): Query<UserDirectoryQuery>,
-) -> ApiResult<Json<Value>> {
+    query: Result<Query<UserDirectoryQuery>, QueryRejection>,
+) -> ApiResult<Json<AdminUserDirectoryPage>> {
     domain::admin(&s, &p).await?;
+    let Query(q) = query.map_err(|_| ApiError::bad("invalid_user_directory_query"))?;
     let page = Page {
         limit: q.limit,
         cursor: q.cursor,
@@ -193,10 +197,8 @@ pub(crate) async fn user_directory(
            SELECT child.id FROM groups child JOIN subtree parent ON child.parent_id = parent.id
            WHERE $2 AND child.source = 'hr'
          )
-         SELECT lower(u.name) AS sort_name, u.id, jsonb_build_object(
-           'id',u.id,'name',u.name,'admin',u.admin,'canDevelop',u.can_develop,'enabled',u.enabled,
-           'primaryGroupId',u.primary_group_id,'primaryGroupName',g.name
-         ) AS value
+         SELECT lower(u.name) AS sort_name, u.id, u.name, u.admin, u.can_develop, u.enabled,
+           u.primary_group_id, g.name AS primary_group_name
          FROM users u LEFT JOIN groups g ON g.id = u.primary_group_id
          WHERE ($1 IS NULL OR u.primary_group_id IN (SELECT id FROM subtree))
            AND (NOT $3 OR u.primary_group_id IS NULL)
@@ -229,9 +231,19 @@ pub(crate) async fn user_directory(
     }
     let items = rows
         .into_iter()
-        .map(|row| row.try_get::<Value, _>("value"))
-        .collect::<Result<Vec<_>, _>>()?;
-    Ok(Json(json!({"items": items, "nextCursor": next_cursor})))
+        .map(|row| {
+            Ok(AdminDirectoryUser {
+                id: row.try_get("id")?,
+                name: row.try_get("name")?,
+                admin: row.try_get("admin")?,
+                can_develop: row.try_get("can_develop")?,
+                enabled: row.try_get("enabled")?,
+                primary_group_id: row.try_get("primary_group_id")?,
+                primary_group_name: row.try_get("primary_group_name")?,
+            })
+        })
+        .collect::<Result<Vec<_>, sqlx::Error>>()?;
+    Ok(Json(AdminUserDirectoryPage { items, next_cursor }))
 }
 
 pub async fn page(s: &State, p: &Principal, kind: &str, q: Page) -> ApiResult<Value> {

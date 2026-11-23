@@ -471,7 +471,16 @@ pub(crate) fn grant_audit_target(
     format!("user:{user}:app:{app}:{environment}:{permission}:from:{before}:to:{after}")
 }
 pub use crate::contract::get_contract;
+
+fn response_schema<T: schemars::JsonSchema>() -> schemars::Schema {
+    schemars::generate::SchemaSettings::draft2020_12()
+        .for_serialize()
+        .into_generator()
+        .into_root_schema_for::<T>()
+}
+
 pub fn catalog() -> Value {
+    const CONSOLE_ADMIN: &str = "Enabled platform administrator using a console browser session or a non-delegated CLI bearer. Bearer requests must omit Origin and can use the portal or console API origin.";
     let mut catalog = json!([
         {"id":"development_session_create","method":"POST","path":"/api/v1/apps/{app}/dev-sessions","permission":"CLI session + develop in dev","description":"CLI app dev creates one leased server development DB session per app, with immutable SQL migration history; preparation is worker-owned","input":schemars::schema_for!(crate::development::NewSession)},
         {"id":"development_session_get","method":"GET","path":"/api/v1/dev-sessions/{id}","permission":"own CLI session + develop","description":"Inspect queued/preparing/ready/failed database preparation; no connection secrets returned"},
@@ -562,15 +571,18 @@ pub fn catalog() -> Value {
         .expect("catalog array")
         .extend(personal);
     catalog.as_array_mut().unwrap().extend([
-        json!({"id":"admin_overview","method":"GET","path":"/api/v1/admin/overview","permission":"admin","description":"Counts pending registrations, current installation approvals and runtime issues; includes up to five installations in each installation list."}),
-        json!({"id":"admin_user_directory","method":"GET","path":"/api/v1/users/directory","permission":"admin","description":"User accounts filtered by name or ID, role, status and primary organization. Descendant matching is a directory filter only.","parameters":[
-            {"in":"query","name":"q","schema":{"type":"string","maxLength":120}},
-            {"in":"query","name":"role","schema":{"enum":["admin","developer","member"]}},
-            {"in":"query","name":"status","schema":{"enum":["enabled","disabled"]}},
+        json!({"id":"admin_overview","method":"GET","path":"/api/v1/admin/overview","permission":CONSOLE_ADMIN,"consoleAdmin":true,"description":"Counts pending registrations, current installation approvals and runtime issues; returns an independent page of up to five installations for each queue.","output":response_schema::<crate::api_contract::AdminOverviewResponse>(),"parameters":[
+            {"in":"query","name":"approvalCursor","schema":{"type":"string","maxLength":4096},"description":"Opaque approvalNextCursor from this actor's preceding approval page on the same credential surface."},
+            {"in":"query","name":"runtimeCursor","schema":{"type":"string","maxLength":4096},"description":"Opaque runtimeNextCursor from this actor's preceding runtime page on the same credential surface."}
+        ]}),
+        json!({"id":"admin_user_directory","method":"GET","path":"/api/v1/users/directory","permission":CONSOLE_ADMIN,"consoleAdmin":true,"description":"User accounts ordered by case-insensitive name and ID and filtered by name or ID, role, status and primary organization. Descendant matching is a directory filter only.","output":response_schema::<crate::api_contract::AdminUserDirectoryPage>(),"parameters":[
+            {"in":"query","name":"q","schema":{"type":"string"},"description":"Case-insensitive substring of name or ID. Trims surrounding whitespace and accepts up to 120 Unicode characters after trimming."},
+            {"in":"query","name":"role","schema":{"type":"string","enum":["admin","developer","member"]},"description":"admin selects administrators, developer selects accounts allowed to develop (including administrators), and member selects accounts with neither permission."},
+            {"in":"query","name":"status","schema":{"type":"string","enum":["enabled","disabled"]}},
             {"in":"query","name":"organization","schema":{"type":"string"},"description":"Organization UUID or unassigned"},
-            {"in":"query","name":"descendants","schema":{"type":"boolean","default":false}},
-            {"in":"query","name":"limit","schema":{"type":"integer","minimum":1,"maximum":200}},
-            {"in":"query","name":"cursor","schema":{"type":"string"}}
+            {"in":"query","name":"descendants","schema":{"type":"boolean","default":false},"description":"Include descendants when organization names a UUID. Ignored for an omitted organization or unassigned."},
+            {"in":"query","name":"limit","schema":{"type":"integer","minimum":1,"maximum":200,"default":50}},
+            {"in":"query","name":"cursor","schema":{"type":"string","maxLength":4096},"description":"Opaque nextCursor from the previous page with the same filters, actor and credential surface."}
         ]}),
         json!({"id":"register_user","method":"POST","path":"/api/v1/users","permission":"admin","description":"Register a person by the identity provider's subject ID so they can sign in. Grants no app permission; 409 user_exists when already registered","input":schemars::schema_for!(crate::user_admin::Registration)}),
         json!({"id":"file_quota","method":"GET, PUT, DELETE","path":"/api/v1/installations/{id}/file-quota","permission":"admin (console)","description":"An installation's file storage limits and use. PUT sets maxBytes/maxFiles, DELETE returns to the defaults; existing files stay, new reservations above the limit are refused. Audited as file.quota_set","input":schemars::schema_for!(crate::storage::QuotaInput)}),

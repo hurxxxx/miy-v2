@@ -6,6 +6,12 @@ import type { DirectoryQuery, DirectoryReader, DirectoryRequestOptions } from ".
 export const UI_CONTRACT = "miy.ui/v1alpha1" as const;
 export type {
   AcceptanceRecord,
+  AdminApprovalExample,
+  AdminDirectoryUser,
+  AdminOverviewResponse,
+  AdminRuntimeExample,
+  AdminRuntimeIssue,
+  AdminUserDirectoryPage,
   App,
   AppDistribution,
   AppFrameLaunch,

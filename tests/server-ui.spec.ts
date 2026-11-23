@@ -79,7 +79,7 @@ test("organization changes appear in the linked user directory and audit", async
   await expect(page).toHaveURL(/\/admin\/organization\?group=[0-9a-f-]+$/);
   const detail = page.getByRole("region", { name: `${name} 구성원` });
   await detail.getByRole("combobox", { name: "주 소속으로 지정할 사용자" }).fill("alice");
-  await detail.getByRole("option", { name: "alice", exact: true }).click();
+  await detail.getByRole("option", { name: /^alice \(/ }).click();
   await detail.getByRole("button", { name: "주 소속 지정" }).click();
   await page.getByRole("dialog").getByRole("button", { name: "주 소속 지정" }).click();
   await expect(detail.getByRole("listitem")).toContainText("alice");
@@ -116,7 +116,9 @@ test("the overview opens the registration queue and approval opens app access", 
 test("admin grant form sends the session CSRF and shows the server's answer", async ({ page }) => {
   await signIn(page, /관리자로 시작/, "/admin/apps", "console");
   await page.getByText("앱 등록 전 개인 권한", { exact: true }).click();
-  await page.getByRole("combobox", { name: "사용자", exact: true }).selectOption({ label: "alice" });
+  const user = page.getByRole("combobox", { name: "사용자", exact: true });
+  const aliceId = await user.getByRole("option", { name: /^alice \(/ }).getAttribute("value");
+  await user.selectOption({ value: aliceId! });
   await page.getByLabel("앱 ID").fill("missing-app");
   const [response] = await Promise.all([
     page.waitForResponse((r) => r.url().endsWith("/api/v1/grants") && r.request().method() === "PUT"),

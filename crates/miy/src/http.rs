@@ -1475,6 +1475,13 @@ async fn openapi(
     S(s): S<State>,
     axum::Extension(purpose): axum::Extension<BrowserPurpose>,
 ) -> Json<Value> {
+    Json(openapi_document(
+        purpose,
+        &s.auth.cookie_name(purpose, "session"),
+    ))
+}
+
+fn openapi_document(purpose: BrowserPurpose, session_cookie: &str) -> Value {
     let mut paths = serde_json::Map::new();
     for item in domain::catalog().as_array().unwrap() {
         let method = item["method"].as_str().unwrap().to_lowercase();
@@ -1482,6 +1489,18 @@ async fn openapi(
         let mut operation = json!({"operationId":item["id"],"summary":item["description"],"security":[{"session":[]},{"bearer":[]}],"responses":{"200":{"description":"Success","content":{"application/json":{"schema":{}}}},"400":{"description":"Invalid contract/input"},"401":{"description":"Authentication required"},"403":{"description":"Permission denied"},"409":{"description":"Conflict"}}});
         if item["cookieOnly"] == true {
             operation["security"] = json!([{"session":[]}]);
+        }
+        if item["consoleAdmin"] == true {
+            operation["description"] = item["permission"].clone();
+            operation["security"] = if purpose == BrowserPurpose::Console {
+                json!([{"session":[]},{"bearer":[]}])
+            } else {
+                json!([{"bearer":[]}])
+            };
+        }
+        if !item["output"].is_null() {
+            operation["responses"]["200"]["content"]["application/json"]["schema"] =
+                item["output"].clone();
         }
         if let Some(status) = item["successStatus"].as_str() {
             operation["responses"]
@@ -1536,8 +1555,8 @@ async fn openapi(
     }
     let mut doc = json!({"openapi":"3.1.0","info":{"title":"miy V0-V1 validation API","version":"0.1.0"},"paths":paths});
     normalize(&mut doc, &mut definitions);
-    doc["components"] = json!({"schemas":definitions,"securitySchemes":{"session":{"type":"apiKey","in":"cookie","name":s.auth.cookie_name(purpose,"session")},"bearer":{"type":"http","scheme":"bearer"}}});
-    Json(doc)
+    doc["components"] = json!({"schemas":definitions,"securitySchemes":{"session":{"type":"apiKey","in":"cookie","name":session_cookie},"bearer":{"type":"http","scheme":"bearer"}}});
+    doc
 }
 
 async fn rename_app(
@@ -1552,6 +1571,64 @@ async fn rename_app(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn admin_read_api_documents_its_wire_types_and_credentials() {
+        let console = openapi_document(BrowserPurpose::Console, "console-session");
+        let portal = openapi_document(BrowserPurpose::Portal, "portal-session");
+        let catalog = domain::catalog();
+        for (path, cursor, item_schema) in [
+            (
+                "/admin/overview",
+                "approvalNextCursor",
+                "AdminApprovalExample",
+            ),
+            ("/users/directory", "nextCursor", "AdminDirectoryUser"),
+        ] {
+            let path = format!("/api/v1{path}");
+            let operation = &console["paths"][&path]["get"];
+            let response = &operation["responses"]["200"]["content"]["application/json"]["schema"];
+            assert_eq!(
+                response["properties"][cursor]["type"],
+                json!(["string", "null"])
+            );
+            assert_eq!(
+                console["components"]["schemas"][item_schema]["type"],
+                "object"
+            );
+            assert!(
+                response
+                    .to_string()
+                    .contains(&format!("#/components/schemas/{item_schema}"))
+            );
+            assert_eq!(
+                operation["security"],
+                json!([{"session": []}, {"bearer": []}])
+            );
+            assert_eq!(
+                portal["paths"][&path]["get"]["security"],
+                json!([{"bearer": []}])
+            );
+            let entry = catalog
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|entry| entry["path"] == path)
+                .unwrap();
+            assert_eq!(operation["description"], entry["permission"]);
+            assert!(
+                entry["permission"]
+                    .as_str()
+                    .unwrap()
+                    .contains("non-delegated CLI bearer")
+            );
+            assert!(entry["output"]["properties"].get(cursor).is_some());
+        }
+        assert_eq!(
+            console["components"]["securitySchemes"]["session"]["name"],
+            "console-session"
+        );
+    }
 
     fn headers(pairs: &[(&str, &str)]) -> HeaderMap {
         let mut headers = HeaderMap::new();

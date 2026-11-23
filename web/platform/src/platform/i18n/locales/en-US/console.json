@@ -26,6 +26,8 @@
     "openRegistrations": "View registration requests",
     "permissionQueue": "Installations awaiting release permissions",
     "runtimeIssues": "Installations with runtime issues",
+    "previousPage": "Previous page",
+    "nextPage": "Next page",
     "recentAudit": "Recent audit activity",
     "openAudit": "View audit log",
     "issues": {
@@ -113,6 +115,8 @@
     "loadFailed": "Could not load the permission approval.",
     "pending_one": "{{count}} awaiting approval",
     "pending_other": "{{count}} awaiting approval",
+    "reviewedWithExcluded_one": "Reviewed · {{count}} unapproved",
+    "reviewedWithExcluded_other": "Reviewed · {{count}} unapproved",
     "approved": "Approved",
     "approveAll": "Approve all requested",
     "save": "Save selection",

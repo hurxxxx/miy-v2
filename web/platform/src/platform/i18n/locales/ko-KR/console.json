@@ -26,6 +26,8 @@
     "openRegistrations": "등록 신청 보기",
     "permissionQueue": "릴리스 권한 승인 대기",
     "runtimeIssues": "실행 이상 설치",
+    "previousPage": "이전 페이지",
+    "nextPage": "다음 페이지",
     "recentAudit": "최근 감사",
     "openAudit": "감사 내역 보기",
     "issues": {
@@ -111,6 +113,7 @@
     "none": "이 릴리스는 플랫폼 권한을 요청하지 않습니다.",
     "loadFailed": "권한 승인 상태를 불러오지 못했습니다.",
     "pending": "승인 대기 {{count}}개",
+    "reviewedWithExcluded": "검토 완료 · 미승인 {{count}}개",
     "approved": "승인됨",
     "approveAll": "요청한 권한 모두 승인",
     "save": "선택한 대로 저장",

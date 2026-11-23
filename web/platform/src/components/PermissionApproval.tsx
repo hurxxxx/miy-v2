@@ -102,6 +102,7 @@ export function PermissionApproval({
   if (requested.length === 0)
     return <p className="ui-empty-inline">{t("permissionApproval.none")}</p>;
   const pending = pendingPermissions(approval);
+  const unreviewed = approval.revision === 0;
   const changed =
     selected.length !== approval.approvedPermissions.filter(external).length ||
     selected.some((permission) => !approval.approvedPermissions.includes(permission));
@@ -137,7 +138,9 @@ export function PermissionApproval({
       <legend>
         {t("permissionApproval.title")}{" "}
         {pending.length > 0 ? (
-          <Badge tone="warning">{t("permissionApproval.pending", { count: pending.length })}</Badge>
+          <Badge tone={unreviewed ? "warning" : "neutral"}>
+            {t(unreviewed ? "permissionApproval.pending" : "permissionApproval.reviewedWithExcluded", { count: pending.length })}
+          </Badge>
         ) : (
           <Badge tone="success">{t("permissionApproval.approved")}</Badge>
         )}
@@ -171,7 +174,7 @@ export function PermissionApproval({
             {t("permissionApproval.approveAll")}
           </Button>
         )}
-        <Button size="sm" disabled={saving || !changed} onClick={() => void save(selected)}>
+        <Button size="sm" disabled={saving || (!unreviewed && !changed)} onClick={() => void save(selected)}>
           {t("permissionApproval.save")}
         </Button>
       </div>

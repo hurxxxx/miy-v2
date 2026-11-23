@@ -163,7 +163,7 @@ async function mock(page: Page) {
         const userId = primary[1];
         const account = accounts.find((item) => item.id === userId);
         const current = groups.find((g) => g.source === "hr" && members[g.id].some((m) => m.id === userId));
-        if (body.expectedGroupId && current?.id !== body.expectedGroupId)
+        if ("expectedGroupId" in body && (current?.id ?? null) !== body.expectedGroupId)
           return route.fulfill({ status: 409, json: { error: { code: "primary_group_changed" } } });
         const details = account ?? members[current?.id ?? ""]?.find((m) => m.id === userId);
         if (current) {
@@ -352,7 +352,7 @@ test("an administrator creates a local group and manages its members", async ({ 
   await expect(page).toHaveURL(/\/admin\/groups\?group=g-1$/);
   const detail = page.getByRole("region", { name: "영업 1팀 구성원" });
   await detail.getByRole("combobox", { name: "추가할 사용자" }).fill("앨리스");
-  await detail.getByRole("option", { name: "앨리스" }).click();
+  await detail.getByRole("option", { name: "앨리스 (alice)", exact: true }).click();
   await detail.getByRole("button", { name: "추가", exact: true }).click();
   await expect(detail.getByRole("listitem")).toContainText("앨리스");
   await detail.getByRole("button", { name: "빼기" }).click();
@@ -369,31 +369,79 @@ test("an administrator creates a local group and manages its members", async ({ 
 });
 
 test("HR groups take members through the primary group, not manual membership", async ({ page }) => {
-  const { sent } = await mock(page);
+  const { sent, accounts } = await mock(page);
+  accounts.push({ ...accounts[1], id: "alice-other" });
   await page.goto("/admin/organization?group=g-hr");
   const detail = page.getByRole("region", { name: "본부 구성원" });
-  await detail.getByRole("combobox", { name: "주 소속으로 지정할 사용자" }).fill("앨리스");
-  await detail.getByRole("option", { name: "앨리스" }).click();
+  const picker = detail.getByRole("combobox", { name: "주 소속으로 지정할 사용자" });
+  await picker.fill("앨리스");
+  await detail.getByRole("option", { name: "앨리스 (alice)", exact: true }).click();
+  await detail.getByRole("option", { name: "앨리스 (alice-other)", exact: true }).click();
   await detail.getByRole("button", { name: "주 소속 지정" }).click();
-  await page.getByRole("dialog").getByRole("button", { name: "주 소속 지정" }).click();
-  await expect(detail.getByRole("listitem")).toContainText("앨리스");
+  const dialog = page.getByRole("dialog");
+  await expect(dialog).toContainText("앨리스 (alice)");
+  await expect(dialog).toContainText("앨리스 (alice-other)");
+  await dialog.getByRole("button", { name: "주 소속 지정" }).click();
+  const first = detail.getByRole("listitem").filter({ hasText: "앨리스 (alice)" });
+  const other = detail.getByRole("listitem").filter({ hasText: "앨리스 (alice-other)" });
+  await expect(first).toBeVisible();
+  await expect(other).toBeVisible();
+  expect(sent.slice(-2)).toMatchObject([
+    { method: "PUT", path: "/api/v1/users/alice/primary-group", body: { groupId: "g-hr", expectedGroupId: null } },
+    { method: "PUT", path: "/api/v1/users/alice-other/primary-group", body: { groupId: "g-hr", expectedGroupId: null } },
+  ]);
+  await other.getByRole("button", { name: "주 소속 해제" }).click();
+  await expect(dialog).toContainText("앨리스 (alice-other)");
+  await dialog.getByRole("button", { name: "주 소속 해제" }).click();
+  await expect(other).toHaveCount(0);
+  await expect(first).toBeVisible();
   expect(sent.at(-1)).toMatchObject({
-    method: "PUT",
-    path: "/api/v1/users/alice/primary-group",
-    body: { groupId: "g-hr" },
+    path: "/api/v1/users/alice-other/primary-group",
+    body: { groupId: null, expectedGroupId: "g-hr" },
   });
   await expect(page.getByRole("link", { name: "이 조직의 사용자 보기" })).toHaveAttribute("href", "/admin/users?organization=g-hr");
 });
 
+test("a stale primary assignment requires selecting the user again with the current organization", async ({ page }) => {
+  const { sent, accounts, groups, members } = await mock(page);
+  groups.push({ id: "g-other", name: "다른 조직", source: "hr", parentId: null, active: true, members: 0 });
+  members["g-other"] = [];
+  await page.goto("/admin/organization?group=g-hr");
+  const detail = page.getByRole("region", { name: "본부 구성원" });
+  const picker = detail.getByRole("combobox", { name: "주 소속으로 지정할 사용자" });
+  const assign = detail.getByRole("button", { name: "주 소속 지정" });
+  const dialog = page.getByRole("dialog");
+  await picker.fill("앨리스");
+  await detail.getByRole("option", { name: "앨리스 (alice)", exact: true }).click();
+  await assign.click();
+  accounts[1].primaryGroupId = "g-other";
+  members["g-other"].push({ id: "alice", name: "앨리스", enabled: true });
+  await dialog.getByRole("button", { name: "주 소속 지정" }).click();
+  await expect(detail.getByRole("alert")).toContainText("사용자의 주 소속이 변경되었습니다.");
+  await expect(assign).toBeDisabled();
+  expect(sent.at(-1)?.body).toEqual({ groupId: "g-hr", expectedGroupId: null });
+  expect(accounts[1].primaryGroupId).toBe("g-other");
+
+  await picker.click();
+  await detail.getByRole("option", { name: /앨리스 \(alice\).*다른 조직/ }).click();
+  await assign.click();
+  await expect(dialog).toContainText("앨리스 (alice) · 다른 조직");
+  await dialog.getByRole("button", { name: "주 소속 지정" }).click();
+  await expect(detail.getByRole("listitem")).toContainText("앨리스 (alice)");
+  expect(sent.at(-1)?.body).toEqual({ groupId: "g-hr", expectedGroupId: "g-other" });
+});
+
 test("the company switch asks first, and groups can receive use or develop but never deploy", async ({ page }) => {
-  const { sent, access, groups } = await mock(page);
+  const { sent, access, groups, accounts } = await mock(page);
+  accounts.push({ ...accounts[1], id: "alice-other" });
+  access.userGrants.push({ userId: "alice-other", environment: "prod", permission: "deploy" });
   groups.push({ id: "inactive", name: "비활성 그룹", source: "local", parentId: null, active: false, members: 0 });
   await page.goto("/admin/apps");
   await page.getByRole("link", { name: "장부", exact: true }).click();
   await expect(page).toHaveURL(/\/admin\/apps\/ledger$/);
   const panel = page.locator(".ui-panel").filter({ has: page.getByRole("heading", { name: "앱 접근" }) });
   await expect(panel.getByText("사용 중", { exact: true })).toBeVisible();
-  await expect(panel.getByText("앨리스 · 테스트 · 사용")).toBeVisible();
+  await expect(panel.getByText("앨리스 (alice) · 테스트 · 사용")).toBeVisible();
 
   await panel.getByRole("button", { name: "사용 중지" }).click();
   const dialog = page.getByRole("dialog", { name: "앱 사용을 중지할까요?" });
@@ -429,11 +477,13 @@ test("the company switch asks first, and groups can receive use or develop but n
     },
   });
   const userForm = panel.locator("form").filter({ has: page.getByRole("combobox", { name: "사용자", exact: true }) });
-  await userForm.getByRole("combobox", { name: "사용자", exact: true }).selectOption("alice");
+  const userSelect = userForm.getByRole("combobox", { name: "사용자", exact: true });
+  await expect(userSelect.getByRole("option", { name: "앨리스 (alice-other)", exact: true })).toHaveAttribute("value", "alice-other");
+  await userSelect.selectOption({ label: "앨리스 (alice)" });
   await userForm.getByRole("combobox", { name: "환경", exact: true }).selectOption("prod");
   await userForm.getByRole("combobox", { name: "권한", exact: true }).selectOption("deploy");
   await userForm.getByRole("button", { name: "부여" }).click();
-  const deploy = panel.getByRole("listitem").filter({ hasText: "앨리스 · 운영 · 배포" });
+  const deploy = panel.getByRole("listitem").filter({ hasText: "앨리스 (alice) · 운영 · 배포" });
   await expect(deploy).toBeVisible();
   expect(sent.at(-1)).toMatchObject({
     path: "/api/v1/grants",
@@ -441,6 +491,7 @@ test("the company switch asks first, and groups can receive use or develop but n
   });
   await deploy.getByRole("button", { name: "회수" }).click();
   await expect(deploy).toHaveCount(0);
+  await expect(panel.getByText("앨리스 (alice-other) · 운영 · 배포")).toBeVisible();
   expect(sent.at(-1)).toMatchObject({
     path: "/api/v1/grants",
     body: { appId: "ledger", userId: "alice", environment: "prod", permission: "deploy", enabled: false },
@@ -714,7 +765,7 @@ test("a membership mutation finishing after selection changes refreshes the curr
     await page.goto("/admin/organization?group=g-hr");
     const first = page.getByRole("region", { name: "본부 구성원" });
     await first.getByRole("combobox", { name: "주 소속으로 지정할 사용자" }).fill("앨리스");
-    await first.getByRole("option", { name: "앨리스" }).click();
+    await first.getByRole("option", { name: "앨리스 (alice)", exact: true }).click();
     await first.getByRole("button", { name: "주 소속 지정" }).click();
     await page.getByRole("dialog").getByRole("button", { name: "주 소속 지정" }).click();
     await requested.promise;

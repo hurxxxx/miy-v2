@@ -10,6 +10,54 @@ export interface AcceptanceRecord {
   structured: boolean;
 }
 
+/** A current installation with release permissions awaiting administrator approval. */
+export interface AdminApprovalExample {
+  appId: string;
+  environment: Environment;
+  name: string;
+}
+
+/** An administrator's account directory entry, including disabled accounts. */
+export interface AdminDirectoryUser {
+  admin: boolean;
+  canDevelop: boolean;
+  enabled: boolean;
+  id: string;
+  name: string;
+  primaryGroupId: string | null;
+  primaryGroupName: string | null;
+}
+
+/** `GET /api/v1/admin/overview`: totals and independent pages of installations. */
+export interface AdminOverviewResponse {
+  approvalExamples: AdminApprovalExample[];
+  /** Pass as `approvalCursor` to read the next page of pending approvals. */
+  approvalNextCursor: string | null;
+  pendingApprovals: number;
+  pendingRegistrations: number;
+  runtimeExamples: AdminRuntimeExample[];
+  runtimeIssues: number;
+  /** Pass as `runtimeCursor` to read the next page of runtime issues. */
+  runtimeNextCursor: string | null;
+}
+
+/** A current installation with a runtime problem. */
+export interface AdminRuntimeExample {
+  appId: string;
+  environment: Environment;
+  issue: AdminRuntimeIssue;
+  name: string;
+}
+
+export type AdminRuntimeIssue = "failed" | "recovery_required" | "unreachable" | "unexpected_stop" | "degraded" | "unhealthy";
+
+/** `GET /api/v1/users/directory`: an administrator's filtered account directory. */
+export interface AdminUserDirectoryPage {
+  items: AdminDirectoryUser[];
+  /** Pass as `cursor` with the same filters and credential context for the next page. */
+  nextCursor: string | null;
+}
+
 export interface App {
   /** The company's use switch applies even before the first installation. */
   disabled: boolean;

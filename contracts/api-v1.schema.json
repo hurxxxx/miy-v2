@@ -33,6 +33,180 @@
       ],
       "type": "object"
     },
+    "AdminApprovalExample": {
+      "description": "A current installation with release permissions awaiting administrator approval.",
+      "properties": {
+        "appId": {
+          "type": "string"
+        },
+        "environment": {
+          "$ref": "#/$defs/Environment"
+        },
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "appId",
+        "name",
+        "environment"
+      ],
+      "type": "object"
+    },
+    "AdminDirectoryUser": {
+      "description": "An administrator's account directory entry, including disabled accounts.",
+      "properties": {
+        "admin": {
+          "type": "boolean"
+        },
+        "canDevelop": {
+          "type": "boolean"
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "primaryGroupId": {
+          "format": "uuid",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "primaryGroupName": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "admin",
+        "canDevelop",
+        "enabled",
+        "primaryGroupId",
+        "primaryGroupName"
+      ],
+      "type": "object"
+    },
+    "AdminOverviewResponse": {
+      "description": "`GET /api/v1/admin/overview`: totals and independent pages of installations.",
+      "properties": {
+        "approvalExamples": {
+          "items": {
+            "$ref": "#/$defs/AdminApprovalExample"
+          },
+          "type": "array"
+        },
+        "approvalNextCursor": {
+          "description": "Pass as `approvalCursor` to read the next page of pending approvals.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "pendingApprovals": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "pendingRegistrations": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "runtimeExamples": {
+          "items": {
+            "$ref": "#/$defs/AdminRuntimeExample"
+          },
+          "type": "array"
+        },
+        "runtimeIssues": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "runtimeNextCursor": {
+          "description": "Pass as `runtimeCursor` to read the next page of runtime issues.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "pendingRegistrations",
+        "pendingApprovals",
+        "runtimeIssues",
+        "approvalExamples",
+        "runtimeExamples",
+        "approvalNextCursor",
+        "runtimeNextCursor"
+      ],
+      "type": "object"
+    },
+    "AdminRuntimeExample": {
+      "description": "A current installation with a runtime problem.",
+      "properties": {
+        "appId": {
+          "type": "string"
+        },
+        "environment": {
+          "$ref": "#/$defs/Environment"
+        },
+        "issue": {
+          "$ref": "#/$defs/AdminRuntimeIssue"
+        },
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "appId",
+        "name",
+        "environment",
+        "issue"
+      ],
+      "type": "object"
+    },
+    "AdminRuntimeIssue": {
+      "enum": [
+        "failed",
+        "recovery_required",
+        "unreachable",
+        "unexpected_stop",
+        "degraded",
+        "unhealthy"
+      ],
+      "type": "string"
+    },
+    "AdminUserDirectoryPage": {
+      "description": "`GET /api/v1/users/directory`: an administrator's filtered account directory.",
+      "properties": {
+        "items": {
+          "items": {
+            "$ref": "#/$defs/AdminDirectoryUser"
+          },
+          "type": "array"
+        },
+        "nextCursor": {
+          "description": "Pass as `cursor` with the same filters and credential context for the next page.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "items",
+        "nextCursor"
+      ],
+      "type": "object"
+    },
     "App": {
       "properties": {
         "disabled": {

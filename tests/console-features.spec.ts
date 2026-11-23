@@ -31,7 +31,7 @@ const installation = {
   ui: { entry: "/unused-manifest.json", export: "./AppRoot", contractVersion: "miy.ui/v1alpha1" },
 };
 
-async function open(page: Page, options: { locale?: string; conflict?: boolean; path?: string; extraUsers?: number } = {}) {
+async function open(page: Page, options: { locale?: string; conflict?: boolean; path?: string; extraUsers?: number; pagedOverview?: boolean } = {}) {
   await mockSurface(page, "console");
   const puts: unknown[] = [];
   const switches: { user: string; body: unknown; csrf: string | null }[] = [];
@@ -69,6 +69,20 @@ async function open(page: Page, options: { locale?: string; conflict?: boolean; 
       }
       return route.fulfill({ json: approval });
     }
+    if (path === "/api/v1/admin/overview" && options.pagedOverview) {
+      const items = Array.from({ length: 6 }, (_, index) => ({
+        appId: `task-${index + 1}`, name: `업무 ${index + 1}`, environment: "dev",
+      }));
+      const approvalsAfter = url.searchParams.get("approvalCursor") === "approvals-after-five";
+      const runtimeAfter = url.searchParams.get("runtimeCursor") === "runtime-after-five";
+      return route.fulfill({ json: {
+        pendingRegistrations: 0, pendingApprovals: 6, runtimeIssues: 6,
+        approvalExamples: approvalsAfter ? items.slice(5) : items.slice(0, 5),
+        runtimeExamples: (runtimeAfter ? items.slice(5) : items.slice(0, 5)).map((item) => ({ ...item, issue: "failed" })),
+        approvalNextCursor: approvalsAfter ? null : "approvals-after-five",
+        runtimeNextCursor: runtimeAfter ? null : "runtime-after-five",
+      } });
+    }
     const reply: Record<string, unknown> = {
       "/api/v1/installations": [],
       "/api/v1/runtime/installations": [installation],
@@ -79,9 +93,9 @@ async function open(page: Page, options: { locale?: string; conflict?: boolean; 
       "/api/v1/apps": { apps: [], nextCursor: null },
       "/api/v1/apps/ledger": { app: { id: "ledger", name: "장부", distribution: "organization", disabled: false }, installations: [installation] },
       "/api/v1/admin/overview": {
-        pendingRegistrations: 0, pendingApprovals: approval.approvedPermissions.length ? 0 : 1, runtimeIssues: 0,
-        approvalExamples: approval.approvedPermissions.length ? [] : [{ appId: "ledger", name: "장부", environment: "dev" }],
-        runtimeExamples: [],
+        pendingRegistrations: 0, pendingApprovals: approval.revision ? 0 : 1, runtimeIssues: 0,
+        approvalExamples: approval.revision ? [] : [{ appId: "ledger", name: "장부", environment: "dev" }],
+        runtimeExamples: [], approvalNextCursor: null, runtimeNextCursor: null,
       },
       "/api/v1/audit": { entries: [], nextCursor: null },
       "/api/v1/support/reports": { entries: [], nextCursor: null },
@@ -213,6 +227,33 @@ test("a stale approval is refused and the latest state is shown", async ({ page 
   const card = page.locator(".ui-panel").filter({ has: page.getByRole("heading", { name: "테스트", exact: true }) });
   await card.getByRole("button", { name: "요청한 권한 모두 승인" }).click();
   await expect(card.getByRole("alert")).toHaveText("다른 관리자가 먼저 바꿨습니다. 최신 상태를 다시 불러왔습니다.");
+});
+
+test("an administrator can record an explicit empty permission decision", async ({ page }) => {
+  const { puts } = await open(page, { path: "/admin/apps/ledger/installations" });
+  const card = page.locator(".ui-panel").filter({ has: page.getByRole("heading", { name: "테스트", exact: true }) });
+  await card.getByRole("button", { name: "선택한 대로 저장" }).click();
+  await expect(card.getByText("검토 완료 · 미승인 2개")).toBeVisible();
+  expect(puts).toEqual([{ body: { releaseId: installation.releaseId, expectedRevision: 0, permissions: [] }, csrf: "console-csrf" }]);
+  await page.getByRole("link", { name: "개요", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "릴리스 권한 승인 대기" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "장부", exact: true })).toHaveCount(0);
+});
+
+test("the overview can open the sixth approval and page runtime issues independently", async ({ page }) => {
+  await open(page, { pagedOverview: true });
+  const card = (name: string) => page.locator(".ui-panel").filter({ has: page.getByRole("heading", { name, exact: true }) });
+  const approvals = card("릴리스 권한 승인 대기");
+  const runtime = card("실행 이상 설치");
+  await expect(approvals.getByRole("link", { name: "업무 6" })).toHaveCount(0);
+  await approvals.getByRole("button", { name: "다음 페이지" }).click();
+  await expect(approvals.getByRole("link", { name: "업무 6" })).toHaveAttribute("href", "/admin/apps/task-6/installations");
+  await expect(runtime.getByRole("link", { name: "업무 1" })).toBeVisible();
+  await runtime.getByRole("button", { name: "다음 페이지" }).click();
+  await expect(runtime.getByRole("link", { name: "업무 6" })).toHaveAttribute("href", "/admin/apps/task-6/runtime");
+  await approvals.getByRole("button", { name: "이전 페이지" }).click();
+  await expect(approvals.getByRole("link", { name: "업무 1" })).toBeVisible();
+  await expect(runtime.getByRole("link", { name: "업무 6" })).toBeVisible();
 });
 
 test("the console speaks English when the saved language is English", async ({ page }) => {

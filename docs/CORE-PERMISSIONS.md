@@ -31,7 +31,7 @@
 
 그룹에는 use·develop만, prod deploy는 사람별로 부여한다. 계층·상위 조직·책임자에게 권한을 자동 상속하지 않는다. 플랫폼 관리자의 prod 사용도 명시적 use 또는 전체 허용이 필요하다. 관리자가 자신의 use를 부여할 때에도 감사를 남기며 그 행위가 앱 내부 ACL을 부여하지는 않는다. 기존 관리자를 use로 자동 복사하지 않는다. 외부 지원자의 배포/호스트 권한은 데이터에 영향을 줄 수 있는 신뢰 경계이며 이 행렬만으로 데이터 기밀성을 보장하지 않는다.
 
-콘솔 사용자 화면의 `GET /api/v1/users/directory`는 현재 활성·비위임 관리자가 계정을 조회한다. 하위 조직을 포함할 때는 디렉터리 결과만 확장한다. 조직도에서 현재 주 소속을 해제할 때 `PUT /api/v1/users/{id}/primary-group`에 `expectedGroupId`를 보내면 서버가 사용자 행 잠금 아래 현재 소속과 비교한다. 다른 관리자가 먼저 옮겼다면 `409 primary_group_changed`를 반환한다.
+콘솔 사용자 화면의 `GET /api/v1/users/directory`는 현재 활성·비위임 관리자가 계정을 조회한다. 하위 조직을 포함할 때는 디렉터리 결과만 확장한다. 조직도는 주 소속을 배정하거나 해제할 때 `PUT /api/v1/users/{id}/primary-group`에 조회한 `expectedGroupId`를 보낸다. `null`은 미배정을 뜻한다. Core는 사용자 행을 잠그고 조회한 소속과 현재 소속이 다르면 `409 primary_group_changed`를 반환한다.
 
 **사용자 전환(M6, 소스 반영·미배포).** 콘솔의 위임되지 않은 활성 관리자(`Administer`, Origin·CSRF)가 사용자 화면에서 "이 사용자로 로그인"을 누르면 그 사용자의 업무 포털 또는 dev 포털 세션이 생긴다. 이후 판정은 그 사용자의 일반 세션과 같으며 관리자에게 use나 앱 ACL을 부여하지 않는다. 위 표의 '관리자 자동 입장 없음'과 'admin을 앱 owner로 변환하지 않음'의 명시적 예외다.
 
@@ -80,7 +80,7 @@ miy --context platform permissions set --installation INSTALLATION_UUID --input 
 
 HTTP MCP의 `get_installation_permissions`, `set_installation_permissions`도 같은 정책과 승인 이력을 사용한다. 로컬 stdio MCP는 조회·안내 도구를 제공하며 변경은 명시적인 CLI 명령으로 수행한다.
 
-계획된 변경(미구현): 콘솔에 릴리스 권한 승인 화면을 추가한다. 같은 API·정책·승인 이력을 쓴다([범용 기능 계획 P1](COMMON-FEATURES-PLAN.md#p1-셸설정콘솔)).
+콘솔 앱 상세에서 같은 API로 릴리스 권한을 승인한다. 개요의 승인 대기는 외부 권한을 요청한 현재 설치 중 승인 기록이 없는 설치를 센다. 일부 승인이나 빈 목록 저장도 검토 완료로 기록된다. 승인 대기와 실행 이상 목록은 각각 페이지를 이동할 수 있다.
 
 ## 사용자·그룹의 앱 권한과 회사 사용 중지
 

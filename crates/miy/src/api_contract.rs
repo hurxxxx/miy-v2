@@ -238,6 +238,73 @@ pub struct AuditPage {
     pub next_cursor: Option<i64>,
 }
 
+/// A current installation with release permissions awaiting administrator approval.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct AdminApprovalExample {
+    pub app_id: String,
+    pub name: String,
+    pub environment: Environment,
+}
+
+/// A current installation with a runtime problem.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct AdminRuntimeExample {
+    pub app_id: String,
+    pub name: String,
+    pub environment: Environment,
+    pub issue: AdminRuntimeIssue,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum AdminRuntimeIssue {
+    Failed,
+    RecoveryRequired,
+    Unreachable,
+    UnexpectedStop,
+    Degraded,
+    Unhealthy,
+}
+
+/// `GET /api/v1/admin/overview`: totals and independent pages of installations.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct AdminOverviewResponse {
+    pub pending_registrations: i64,
+    pub pending_approvals: i64,
+    pub runtime_issues: i64,
+    pub approval_examples: Vec<AdminApprovalExample>,
+    pub runtime_examples: Vec<AdminRuntimeExample>,
+    /// Pass as `approvalCursor` to read the next page of pending approvals.
+    pub approval_next_cursor: Option<String>,
+    /// Pass as `runtimeCursor` to read the next page of runtime issues.
+    pub runtime_next_cursor: Option<String>,
+}
+
+/// An administrator's account directory entry, including disabled accounts.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct AdminDirectoryUser {
+    pub id: String,
+    pub name: String,
+    pub admin: bool,
+    pub can_develop: bool,
+    pub enabled: bool,
+    pub primary_group_id: Option<Uuid>,
+    pub primary_group_name: Option<String>,
+}
+
+/// `GET /api/v1/users/directory`: an administrator's filtered account directory.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct AdminUserDirectoryPage {
+    pub items: Vec<AdminDirectoryUser>,
+    /// Pass as `cursor` with the same filters and credential context for the next page.
+    pub next_cursor: Option<String>,
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct Group {
@@ -625,6 +692,8 @@ pub fn schema() -> serde_json::Value {
     generator.subschema_for::<AppDetail>();
     generator.subschema_for::<RuntimeJobPage>();
     generator.subschema_for::<AuditPage>();
+    generator.subschema_for::<AdminOverviewResponse>();
+    generator.subschema_for::<AdminUserDirectoryPage>();
     generator.subschema_for::<Vec<Group>>();
     generator.subschema_for::<DirectoryPage>();
     generator.subschema_for::<crate::storage_contract::StoredFile>();

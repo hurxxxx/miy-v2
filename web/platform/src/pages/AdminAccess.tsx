@@ -34,6 +34,10 @@ const environments = ["dev", "prod"] as const;
 const groupPermissions = ["use", "develop"] as const;
 const individualPermissions = [...groupPermissions, "deploy"] as const;
 
+function userLabel(user: DirectoryUser) {
+  return `${user.name} (${user.id})`;
+}
+
 function GrantScope({ individual = false }: { individual?: boolean }) {
   const { t } = useTranslation("console");
   return (
@@ -64,9 +68,9 @@ function AccountSelect({ accounts }: { accounts: Account[] | undefined }) {
     <Field label={t("admin.user")}>
       <select name="user" required defaultValue="" disabled={!accounts?.length}>
         <option value="" disabled>{t("access.chooseUser")}</option>
-        {[...(accounts ?? [])].sort((a, b) => a.name.localeCompare(b.name, i18n.language)).map((user) => (
+        {[...(accounts ?? [])].sort((a, b) => a.name.localeCompare(b.name, i18n.language) || a.id.localeCompare(b.id)).map((user) => (
           <option key={user.id} value={user.id}>
-            {user.name}{user.enabled ? "" : ` (${t("access.userDisabled")})`}
+            {userLabel(user)}{user.enabled ? "" : ` (${t("access.userDisabled")})`}
           </option>
         ))}
       </select>
@@ -276,20 +280,23 @@ export function AppAccessAdmin({
           <p className="ui-empty-inline">{t("access.noUserGrants")}</p>
         ) : (
           <ul className="access-members">
-            {access.userGrants.map((grant) => (
-              <li key={`${grant.userId}-${grant.environment}-${grant.permission}`}>
-                <span>
-                  {users.data?.find((user) => user.id === grant.userId)?.name ?? grant.userId} · {t(`environments.${grant.environment}`)} · {t(`access.permissions.${grant.permission}`)}
-                </span>
-                <Button
-                  size="sm"
-                  disabled={saving}
-                  onClick={() => void apply("/api/v1/grants", { ...grant, appId, enabled: false }, t("access.userRevoked"))}
-                >
-                  {t("admin.revoke")}
-                </Button>
-              </li>
-            ))}
+            {access.userGrants.map((grant) => {
+              const user = users.data?.find((account) => account.id === grant.userId);
+              return (
+                <li key={`${grant.userId}-${grant.environment}-${grant.permission}`}>
+                  <span>
+                    {user ? userLabel(user) : grant.userId} · {t(`environments.${grant.environment}`)} · {t(`access.permissions.${grant.permission}`)}
+                  </span>
+                  <Button
+                    size="sm"
+                    disabled={saving}
+                    onClick={() => void apply("/api/v1/grants", { ...grant, appId, enabled: false }, t("access.userRevoked"))}
+                  >
+                    {t("admin.revoke")}
+                  </Button>
+                </li>
+              );
+            })}
           </ul>
         )}
       </div>
