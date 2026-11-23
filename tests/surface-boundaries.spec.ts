@@ -82,6 +82,8 @@ test("portal shows business apps without management controls or operational meta
   await expect(
     page.getByRole("heading", { name: "운영 앱", exact: true }),
   ).toBeVisible();
+  await expect(page.getByText("운영 · PROD", { exact: true })).toBeVisible();
+  await expect(page.getByRole("navigation", { name: "실행 환경", includeHidden: true })).toHaveCount(0);
   const appLink = page.getByRole("link", { name: "앱 열기 →", exact: true });
   await expect(page.getByRole("region", { name: "기본 제공 앱" })).toContainText(app.name);
   await expect(page.getByRole("heading", { name: "공식 업무 앱", exact: true })).toHaveCount(0);
@@ -106,6 +108,11 @@ test("portal shows business apps without management controls or operational meta
     route.fulfill({ contentType: "text/html", body: "<p>관리 콘솔</p>" }),
   );
   await (await openNewTab(page, page.getByRole("link", { name: "관리 콘솔", exact: true }))).close();
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.getByRole("button", { name: "메뉴 열기" }).click();
+  await expect(page.locator("#platform-navigation")).toBeVisible();
+  await expect(page.getByText("운영 · PROD", { exact: true })).toBeVisible();
+  await expect(page.getByRole("navigation", { name: "실행 환경", includeHidden: true })).toHaveCount(0);
 });
 
 test("the portal groups visible releases by their catalog classification", async ({ page }) => {

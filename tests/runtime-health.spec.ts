@@ -459,19 +459,19 @@ test("health observations preserve SDK callbacks and unsaved input; release chan
   expect(apiCalls.length).toBe(reads);
 });
 
-// Environments are separate portal origins, so a late response can no longer cross
-// an environment inside one document; the switch opens the other portal instead.
-test("the environment switch on a portal opens the other environment's portal", async ({
+test("the dev portal identifies its environment without switching on desktop or mobile", async ({
   page,
 }) => {
   await appHarness(page);
-  const switcher = page
-    .getByRole("navigation", { name: "실행 환경" })
-    .filter({ visible: true });
-  const prod = switcher.getByRole("link", { name: "운영 영역" });
-  await expect(prod).toHaveAttribute("href", "https://portal.example.test/environments/prod");
-  await expect(prod).toHaveAttribute("target", "_blank");
-  await expect(switcher.getByRole("link", { name: "테스트 영역" })).not.toHaveAttribute("target");
+  const badge = page.getByText("테스트 · DEV", { exact: true });
+  const switcher = page.getByRole("navigation", { name: "실행 환경", includeHidden: true });
+  await expect(badge).toBeVisible();
+  await expect(switcher).toHaveCount(0);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.getByRole("button", { name: "메뉴 열기" }).click();
+  await expect(page.locator("#platform-navigation")).toBeVisible();
+  await expect(badge).toBeVisible();
+  await expect(switcher).toHaveCount(0);
 });
 
 for (const target of ["app"] as const) {

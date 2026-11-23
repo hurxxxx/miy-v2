@@ -264,6 +264,10 @@ button.rail-item {
   background: var(--ui-color-warning-bg);
   color: var(--ui-color-warning-text);
 }
+.env-badge {
+  display: inline-flex;
+  flex-shrink: 0;
+}
 .env-badge-mobile {
   display: none;
 }

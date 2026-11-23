@@ -100,7 +100,7 @@ CLI 업데이트 안내 후속으로 Core·worker·웹과 CLI 0.12.1을 같은 �
 
 현재 prod 포털·dev 포털·관리/로그인 콘솔은 같은 IP의 HTTPS 443을 공유하는 별도 호스트명이다. 업무 앱은 설치마다 `https://app-<키>.dwdcc.kr` 프레임에서 실행한다. 포털은 자기 환경 앱만 실행하고 콘솔은 관리·device CLI 승인·Keycloak을 제공한다. 세션 용도·Origin·CSRF를 서버가 확인하며 같은 사이트의 쿠키 간섭·프로세스 분리는 보장하지 않는다. 공개 서버를 사내 신뢰 범위로 자동 인정하지 않는다([경계 설계](APP-BOUNDARIES.md), [앱 프레임](APP-FRAMES.md)).
 
-포털 내부 앱 이동은 같은 탭, 포털↔콘솔·prod↔dev 포털 이동은 새 탭이다. 구 `https://v2.dwdcc.kr:9443`은 `https://console.dwdcc.kr`의 같은 경로로 바로 301 redirect한다. 나머지 옛 HTTPS `v2`·`v2-console`·`v2-dev`·`v2-app-*` 주소는 플랫폼 API 별칭으로 제공하지 않으며 기본 사이트의 410을 반환한다. 도메인 없는 배치는 [단일 IP·포트 프로필](APP-BOUNDARIES.md#배치-프로필-도메인권장과-포트-분리지원)을 따른다.
+포털 내부 앱 이동은 같은 탭이고, 포털과 콘솔 간 링크는 새 탭으로 연다. 다른 환경의 포털에 들어온 앱 주소는 해당 환경 주소로 같은 탭에서 이동한다. 구 `https://v2.dwdcc.kr:9443`은 `https://console.dwdcc.kr`의 같은 경로로 바로 301 redirect한다. 나머지 옛 HTTPS `v2`·`v2-console`·`v2-dev`·`v2-app-*` 주소는 플랫폼 API 별칭으로 제공하지 않으며 기본 사이트의 410을 반환한다. 도메인 없는 배치는 [단일 IP·포트 프로필](APP-BOUNDARIES.md#배치-프로필-도메인권장과-포트-분리지원)을 따른다.
 
 이전 날짜별 배포 수치·실패·복구 명령은 [정리 전 전체 운영 안내](archive/results/SERVER-OPERATIONS-2026-11-14.md)와 연결된 실행별 JSON에 보존했다. 아래 현재 상태와 복구 경로를 우선 사용하며 과거 PASS/NOT_RUN을 새 소스로 이월하지 않는다.
 

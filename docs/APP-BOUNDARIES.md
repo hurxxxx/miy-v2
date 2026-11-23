@@ -127,7 +127,7 @@ CLI 근거는 `cli_auth.rs`의 start/approve/exchange, `auth_sessions.rs`의 app
 
 - **집행:** Core는 dev 포털용 listener를 따로 열고(`devPortalOrigin`·`devPortalBind`, `MIY_DEV_PORTAL_ORIGIN`·`MIY_DEV_PORTAL_BIND_ADDR`) 세션 용도 `dev_portal`을 저장한다(migration `0021_dev_portal.sql`, 제약 확장만). 정책 한 곳(`policy.rs` `decide`)에서 포털 세션은 prod Use만, dev 포털 세션은 dev Use만 허용한다. 앱 API·UI 자산·directory·연결·목록·`canOpen`이 모두 이 판정을 따른다. 관리자도 prod 포털에서 dev 앱을 열 수 없다.
 - **dev 포털이 제공하지 않는 것:** 관리 API, CLI·MCP bearer, CLI 승인, `/identity`, OAuth 메타데이터. CLI·MCP·로컬 preview는 기존 포털 주소를 계속 쓴다.
-- **UI:** 포털이 dev 경로(게시 CLI가 출력하는 `/environments/dev/...`와 구 `/apps/...` 포함)를 받으면 로그인 확인이나 앱 import 전에 dev 포털로 같은 탭 이동한다. 환경 전환과 콘솔의 "포털에서 앱 열기"는 환경별 출처의 새 탭이다.
+- **UI:** 업무 포털과 dev 포털의 헤더는 현재 환경을 표시한다. 포털이 다른 환경의 앱 링크(게시 CLI가 출력하는 `/environments/dev/...`와 구 `/apps/...` 포함)를 받으면 로그인 확인이나 앱 import 전에 해당 포털로 같은 탭 이동한다. 콘솔에서는 환경별 설치를 관리하며 "포털에서 앱 열기"는 해당 환경의 포털을 새 탭으로 연다.
 - **포트 구분의 한계:** 포트 분리에서는 쿠키 심기(login CSRF)와 쿠키 대량 주입을 막지 못한다. 별도 호스트명을 권장하되 같은 상위 도메인의 `Domain=` 쿠키 영향은 남는다. 포트 환경용 우회 코드는 두지 않는다([배치 프로필](#배치-프로필-도메인권장과-포트-분리지원)).
 
 출처는 호스트 또는 포트로 나눌 수 있다. 도메인이 있으면 `v2.dwdcc.kr`과 `v2-console.dwdcc.kr`처럼 같은 IP의 기본 HTTPS 포트 443을 함께 사용할 수 있다. 운영 서버는 2026-11-07 처음에는 새 DNS 없이 `:9443`을 썼고, 2026-11-09 와일드카드 DNS·인증서로 `v2-console.dwdcc.kr`로 옮겼다. 포트 번호는 단일 IP 지원 정책이 강제하는 값이 아니다. 관리 하위 도메인 방식도 동일한 설정 계약을 사용한다.

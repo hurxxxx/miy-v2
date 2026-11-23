@@ -3,7 +3,7 @@ import { Link, Outlet, useLocation, useNavigate } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
 import { InstallationsProvider, installationsIn, useInstallations } from "../data/installations";
-import { useSession, useSurface, type LoginOptions, type Preferences, type User } from "../data/session";
+import { useSession, useSurface, type Preferences, type User } from "../data/session";
 import { consoleReturnPath, currentEnvironment, environmentOrigin, environmentPath, isAccountLinkPath, isAdminPath, isCliApprovalPath, isConsolePath, isAppPath, pathEnvironment, portalEnvironment, surfaceUrl, type Environment } from "../lib/paths";
 import { signOut } from "../lib/sign-out";
 import { LoadError } from "../components/LoadState";
@@ -124,39 +124,24 @@ const ENVIRONMENTS: Environment[] = ["dev", "prod"];
 function EnvironmentSwitch({
   environment,
   className,
-  options,
 }: {
   environment: Environment;
   className: string;
-  options: LoginOptions;
 }) {
   const { t } = useTranslation("portal");
-  const own = portalEnvironment(options.surface, options.legacyPortal);
   return (
     <nav aria-label={t("shell.environment")} className={`env-switch ${className}`}>
-      {ENVIRONMENTS.map((id) => ({ id, label: t(`shell.environments.${id}`) })).map((item) =>
-        // On a portal the other environment is another origin (a new tab); the
-        // console manages both environments in place.
-        own && item.id !== own ? (
-          <NewTabLink
-            key={item.id}
-            href={surfaceUrl(environmentOrigin(options, item.id), environmentPath(item.id))}
-            className={`env-option env-${item.id}`}
-          >
-            {item.label}
-          </NewTabLink>
-        ) : (
-          <Link
-            key={item.id}
-            to={environmentPath(item.id) as "/"}
-            activeOptions={{ exact: true }}
-            className={`env-option env-${item.id}`}
-            aria-current={item.id === environment ? "true" : undefined}
-          >
-            {item.label}
-          </Link>
-        ),
-      )}
+      {ENVIRONMENTS.map((id) => (
+        <Link
+          key={id}
+          to={environmentPath(id) as "/"}
+          activeOptions={{ exact: true }}
+          className={`env-option env-${id}`}
+          aria-current={id === environment ? "true" : undefined}
+        >
+          {t(`shell.environments.${id}`)}
+        </Link>
+      ))}
     </nav>
   );
 }
@@ -213,6 +198,7 @@ function SignedInLayout({ user, environment }: { user: User; environment: Enviro
   const { t } = useTranslation("portal");
   const options = useSurface();
   const isConsole = options.surface === "console";
+  const hasEnvironmentSwitch = isConsole || options.legacyPortal;
   const [menuOpen, setMenuOpen] = useState(false);
   const [tooltip, setTooltip] = useState<{ text: string; top: number } | null>(null);
   const location = useLocation();
@@ -354,7 +340,7 @@ function SignedInLayout({ user, environment }: { user: User; environment: Enviro
         <Link to="/" activeOptions={{ exact: true }} className="brand rail-brand" aria-label={t("shell.homeLabel")}>
           miy
         </Link>
-        <EnvironmentSwitch environment={environment} className="env-switch-drawer" options={options} />
+        {hasEnvironmentSwitch && <EnvironmentSwitch environment={environment} className="env-switch-drawer" />}
         <nav aria-label={t("shell.apps")} className="rail-section rail-apps">
           <RailLink
             to={environmentPath(environment)}
@@ -457,8 +443,8 @@ function SignedInLayout({ user, environment }: { user: User; environment: Enviro
             <span className="visually-hidden">{t(menuOpen ? "shell.closeMenu" : "shell.openMenu")}</span>
           </button>
           <div className="header-context">
-            <EnvironmentSwitch environment={environment} className="env-switch-header" options={options} />
-            <span className="env-badge-mobile">
+            {hasEnvironmentSwitch && <EnvironmentSwitch environment={environment} className="env-switch-header" />}
+            <span className={hasEnvironmentSwitch ? "env-badge env-badge-mobile" : "env-badge"}>
               <Badge tone={environment === "prod" ? "warning" : "info"}>{t(`shell.environmentBadges.${environment}`)}</Badge>
             </span>
             <p className="header-title">{pageTitle(t, pathname, environment, activeApp?.name, isConsole)}</p>
