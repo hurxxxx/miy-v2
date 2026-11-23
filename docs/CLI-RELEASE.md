@@ -8,7 +8,9 @@ CLI·Windows 설치기의 후보 빌드, 서버 다운로드 게시, 정식 GitH
 
 dwdcc.kr의 게시 버전은 **Core·CLI 0.13.0, SDK 번들 0.11.0, 코어 schema 25**다. CLI는 오프라인 `app source-pin`, 확인한 상태를 조건으로 한 배포·승격, 후임 담당자가 공식 릴리스 ID로 dev에 재배포하는 `app deploy --release`를 제공한다. 서버가 접수를 거절한 빌드는 같은 커밋으로 다시 요청할 수 있고, 응답만 유실된 요청은 기존 ID로 재개한다. [공식 앱 공급 절차](RUNNING.md#공식-앱-공급과-설치)
 
-miy.works의 게시 버전은 **Core·CLI 0.16.0, SDK 번들 0.11.0, 코어 schema 27**이다. 0.15.0은 릴리스 소스 복구를 추가했고 0.16.0은 오프라인 앱 하네스 안내와 검사를 추가했다. 0.16.0의 `a00f6cc`를 게시 CLI 버전 검사와 API 호환성 검사의 기준으로 사용한다. [0.15.0 반영 기록](releases/miy-works-0.15.0-2026-11-21-deployment.json) · [0.16.0 반영 기록](releases/miy-works-0.16.0-2026-11-21-deployment.json)
+miy.works의 게시 버전은 **Core·CLI 0.18.0, SDK 번들 0.13.0, 개발 지침 1.0.4, 코어 schema 34**다. 게시 CLI 버전과 API 호환성 검사는 `9fe1eac`를 기준으로 사용한다. [0.18.0 반영 기록](releases/miy-works-0.18.0-2026-11-23-deployment.json)
+
+0.15.0은 릴리스 소스 복구를 추가했고 0.16.0은 오프라인 앱 하네스 안내와 검사를 추가했다. [0.15.0 반영 기록](releases/miy-works-0.15.0-2026-11-21-deployment.json) · [0.16.0 반영 기록](releases/miy-works-0.16.0-2026-11-21-deployment.json)
 
 앞서 0.14.0의 `e5ee24f`는 여러 CLI·MCP 호출에서 동시에 로그인 갱신할 때 다른 명령이 `reauthentication_required`로 끝나는 문제를 고쳤다. 0.13.0의 `f8228e1`은 2026-11-20에 게시했다. [0.14.0 반영 기록](releases/miy-works-0.14.0-2026-11-21-deployment.json) · [0.13.0 반영 기록](releases/miy-works-0.13.0-2026-11-20-deployment.json)
 

@@ -1,0 +1,95 @@
+{
+  "status": "PASS",
+  "date": "2026-11-23",
+  "origin": "https://portal.miy.works",
+  "version": "0.18.0",
+  "bundleVersion": "0.13.0",
+  "guidanceVersion": "1.0.4",
+  "schema": 34,
+  "sourceCommit": "9fe1eac8208e9fa57230c44a895fd998bde1245c",
+  "cliReleaseRun": 45131808830,
+  "packages": {
+    "cliTargets": 5,
+    "linuxHelpers": 2,
+    "candidateVerification": "PASS",
+    "linuxOnlineInstall": "PASS",
+    "appInit": "PASS",
+    "installedStdioMcpAgainstLiveContract": "PASS"
+  },
+  "localChecks": {
+    "coreStatic": "PASS",
+    "pmsWebTests": 549,
+    "driveWebTests": 83,
+    "docsWebTests": 136,
+    "activeOfficialAppChecks": "PASS",
+    "bundledAppUpgradeCount": 7
+  },
+  "activeOfficialApps": {
+    "pms": {
+      "version": "0.1.1",
+      "sourceCommit": "ec0129e1d247ee59d3ead0cd563d70f7209c321c",
+      "archiveSha256": "86f424d7a42f829fc56bfcb8de1e86fa17af6c344a8171667cbffa09b646bfc3",
+      "releaseId": "af391d9d-09ac-45d9-9251-e7d2553fcbfb",
+      "dev": {
+        "browser": "PASS",
+        "sameInstallation": true,
+        "externalPermissions": 4,
+        "navigation": {
+          "tested": [
+            "assigned",
+            "back"
+          ],
+          "noticeFlashes": 0,
+          "repeatedMe": 0,
+          "frameRestarts": 0,
+          "installationReads": 0
+        }
+      },
+      "prod": {
+        "browser": "PASS",
+        "sameInstallation": true,
+        "externalPermissions": 4,
+        "navigation": {
+          "tested": [
+            "space",
+            "list",
+            "back-to-space",
+            "assigned",
+            "back"
+          ],
+          "noticeFlashes": 0,
+          "repeatedMe": 0,
+          "frameRestarts": 0,
+          "installationReads": 0
+        }
+      }
+    },
+    "messenger": {
+      "version": "0.1.1",
+      "sourceCommit": "ec0129e1d247ee59d3ead0cd563d70f7209c321c",
+      "archiveSha256": "8b518882ea5507424d65e8f8893a40553545121f10ed66e307abd5acf418210e",
+      "releaseId": "254260ae-5753-415c-b5ec-8d13b69e004d",
+      "dev": {
+        "browser": "PASS",
+        "sameInstallation": true,
+        "externalPermissions": 4,
+        "webSocketReady": true
+      },
+      "prod": {
+        "browser": "PASS",
+        "sameInstallation": true,
+        "externalPermissions": 4,
+        "webSocketReady": true
+      }
+    }
+  },
+  "rollback": {
+    "databaseBackup": "/srv/miy-backups/online/20261123T073408Z",
+    "coreCliAndIndex": "/srv/miy-prod/evidence/app-navigation-release.HH6S9Oqd/before-bejuwkrt",
+    "ui": "/srv/miy-prod/evidence/app-navigation-release.HH6S9Oqd/before-ui-a_y7_6tz"
+  },
+  "notRun": [
+    "macOS or Windows end-user installation on a real workstation",
+    "PMS test-portal workspace and list navigation (the test database had no visible rows)"
+  ]
+}

@@ -1,7 +1,7 @@
 {
   "publishedCli": {
-    "version": "0.16.0",
-    "sourceCommit": "a00f6cce68d67e2b15aff261881057fd0ce0827b"
+    "version": "0.18.0",
+    "sourceCommit": "9fe1eac8208e9fa57230c44a895fd998bde1245c"
   },
   "removable": [],
   "$defs": {
@@ -35,6 +35,180 @@
         "checks",
         "structured",
         "checkedAt"
+      ],
+      "type": "object"
+    },
+    "AdminApprovalExample": {
+      "description": "A current installation with release permissions awaiting administrator approval.",
+      "properties": {
+        "appId": {
+          "type": "string"
+        },
+        "environment": {
+          "$ref": "#/$defs/Environment"
+        },
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "appId",
+        "name",
+        "environment"
+      ],
+      "type": "object"
+    },
+    "AdminDirectoryUser": {
+      "description": "An administrator's account directory entry, including disabled accounts.",
+      "properties": {
+        "admin": {
+          "type": "boolean"
+        },
+        "canDevelop": {
+          "type": "boolean"
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "primaryGroupId": {
+          "format": "uuid",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "primaryGroupName": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "admin",
+        "canDevelop",
+        "enabled",
+        "primaryGroupId",
+        "primaryGroupName"
+      ],
+      "type": "object"
+    },
+    "AdminOverviewResponse": {
+      "description": "`GET /api/v1/admin/overview`: totals and independent pages of installations.",
+      "properties": {
+        "approvalExamples": {
+          "items": {
+            "$ref": "#/$defs/AdminApprovalExample"
+          },
+          "type": "array"
+        },
+        "approvalNextCursor": {
+          "description": "Pass as `approvalCursor` to read the next page of pending approvals.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "pendingApprovals": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "pendingRegistrations": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "runtimeExamples": {
+          "items": {
+            "$ref": "#/$defs/AdminRuntimeExample"
+          },
+          "type": "array"
+        },
+        "runtimeIssues": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "runtimeNextCursor": {
+          "description": "Pass as `runtimeCursor` to read the next page of runtime issues.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "pendingRegistrations",
+        "pendingApprovals",
+        "runtimeIssues",
+        "approvalExamples",
+        "runtimeExamples",
+        "approvalNextCursor",
+        "runtimeNextCursor"
+      ],
+      "type": "object"
+    },
+    "AdminRuntimeExample": {
+      "description": "A current installation with a runtime problem.",
+      "properties": {
+        "appId": {
+          "type": "string"
+        },
+        "environment": {
+          "$ref": "#/$defs/Environment"
+        },
+        "issue": {
+          "$ref": "#/$defs/AdminRuntimeIssue"
+        },
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "appId",
+        "name",
+        "environment",
+        "issue"
+      ],
+      "type": "object"
+    },
+    "AdminRuntimeIssue": {
+      "enum": [
+        "failed",
+        "recovery_required",
+        "unreachable",
+        "unexpected_stop",
+        "degraded",
+        "unhealthy"
+      ],
+      "type": "string"
+    },
+    "AdminUserDirectoryPage": {
+      "description": "`GET /api/v1/users/directory`: an administrator's filtered account directory.",
+      "properties": {
+        "items": {
+          "items": {
+            "$ref": "#/$defs/AdminDirectoryUser"
+          },
+          "type": "array"
+        },
+        "nextCursor": {
+          "description": "Pass as `cursor` with the same filters and credential context for the next page.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "items",
+        "nextCursor"
       ],
       "type": "object"
     },
@@ -95,6 +269,14 @@
     "AppFrameLaunch": {
       "description": "A one-time launch of one installation's app frame (`POST /api/v1/app-frames`).\nThe portal submits `code` in a form POST to `launchUrl` inside a new iframe.",
       "properties": {
+        "allow": {
+          "default": [],
+          "description": "Browser features the portal delegates to this frame (iframe `allow`):\n`clipboard-write`, `fullscreen`, from the release's approved `frame:*`\npermissions (docs/APP-FRAMES.md 3.5).",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
         "code": {
           "type": "string"
         },
@@ -130,7 +312,8 @@
         "frameOrigin",
         "launchUrl",
         "code",
-        "expiresAt"
+        "expiresAt",
+        "allow"
       ],
       "type": "object"
     },
@@ -254,6 +437,79 @@
         "nextCursor"
       ],
       "type": "object"
+    },
+    "BrowserSession": {
+      "description": "One of the signed-in person's live browser sessions (`GET /api/v1/me/sessions`).",
+      "properties": {
+        "createdAt": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "current": {
+          "description": "The session this request was made with.",
+          "type": "boolean"
+        },
+        "expiresAt": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "id": {
+          "format": "uuid",
+          "type": "string"
+        },
+        "lastSeenAt": {
+          "description": "Updated at most once a minute.",
+          "format": "date-time",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "surface": {
+          "description": "`portal`, `dev_portal` or `console`.",
+          "type": "string"
+        },
+        "userAgent": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "surface",
+        "createdAt",
+        "expiresAt",
+        "lastSeenAt",
+        "userAgent",
+        "current"
+      ],
+      "type": "object"
+    },
+    "BrowserSessionPage": {
+      "properties": {
+        "items": {
+          "items": {
+            "$ref": "#/$defs/BrowserSession"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "items"
+      ],
+      "type": "object"
+    },
+    "DateFormat": {
+      "enum": [
+        "korean",
+        "iso",
+        "us",
+        "european",
+        "locale"
+      ],
+      "type": "string"
     },
     "DetachFile": {
       "additionalProperties": false,
@@ -414,6 +670,21 @@
       ],
       "type": "string"
     },
+    "FileTransfer": {
+      "description": "How a reservation's bytes arrive.",
+      "oneOf": [
+        {
+          "const": "single",
+          "description": "One `PUT content` request, up to 10 MiB.",
+          "type": "string"
+        },
+        {
+          "const": "parts",
+          "description": "Contiguous `PUT parts` ranges of up to 8 MiB, then `POST complete`; up to 2 GiB.",
+          "type": "string"
+        }
+      ]
+    },
     "FrameBootstrap": {
       "description": "What the frame document carries for the platform frame runtime\n(`<script id=\"miy-frame-bootstrap\" type=\"application/json\">`).",
       "properties": {
@@ -467,6 +738,14 @@
           "format": "uuid",
           "type": "string"
         },
+        "settings": {
+          "$ref": "#/$defs/FrameSettings",
+          "description": "Display settings at launch. Later changes arrive as `settings.changed`."
+        },
+        "settingsAware": {
+          "description": "Whether this release was built with an SDK bundle that understands\ndisplay settings. The runtime keeps older apps light and Korean.",
+          "type": "boolean"
+        },
         "token": {
           "type": "string"
         },
@@ -491,7 +770,9 @@
         "assetBase",
         "moduleEntry",
         "moduleExport",
-        "contractVersion"
+        "contractVersion",
+        "settings",
+        "settingsAware"
       ],
       "type": "object"
     },
@@ -512,6 +793,31 @@
         "pathname",
         "search",
         "hash"
+      ],
+      "type": "object"
+    },
+    "FrameSettings": {
+      "description": "Display settings passed from the portal to an app frame. They decide how\nthings look and read; they are never an input to an access decision.",
+      "properties": {
+        "dateFormat": {
+          "$ref": "#/$defs/DateFormat"
+        },
+        "locale": {
+          "$ref": "#/$defs/Locale"
+        },
+        "theme": {
+          "$ref": "#/$defs/ThemePreference"
+        },
+        "timeZone": {
+          "description": "IANA time zone name. The reader falls back when it does not know the zone.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "theme",
+        "locale",
+        "timeZone",
+        "dateFormat"
       ],
       "type": "object"
     },
@@ -612,6 +918,104 @@
         }
       ]
     },
+    "HomeCard": {
+      "description": "An app's summary card on the portal home. `status` is `ok`, or\n`unavailable` when the app did not answer in time (shown as \"\uac00\uc838\uc624\uc9c0 \ubabb\ud568\").",
+      "properties": {
+        "appId": {
+          "type": "string"
+        },
+        "appName": {
+          "type": "string"
+        },
+        "count": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "installationId": {
+          "format": "uuid",
+          "type": "string"
+        },
+        "items": {
+          "items": {
+            "$ref": "#/$defs/HomeCardItem"
+          },
+          "type": "array"
+        },
+        "status": {
+          "type": "string"
+        },
+        "title": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "installationId",
+        "appId",
+        "appName",
+        "status",
+        "title",
+        "count",
+        "items"
+      ],
+      "type": "object"
+    },
+    "HomeCardItem": {
+      "description": "One line of a home summary card (display text only).",
+      "properties": {
+        "at": {
+          "format": "date-time",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "path": {
+          "description": "App-relative destination opened in the app's frame.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "subtitle": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "title": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "title",
+        "subtitle",
+        "path",
+        "at"
+      ],
+      "type": "object"
+    },
+    "HomeCardPage": {
+      "description": "`GET /api/v1/home/cards`.",
+      "properties": {
+        "cards": {
+          "items": {
+            "$ref": "#/$defs/HomeCard"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "cards"
+      ],
+      "type": "object"
+    },
     "Installation": {
       "description": "An installation as the installation lists, the runtime management list and the app\ndetail return it. `canOpen`, `canManage` and `canPromote` are the decisions this\ncredential would get.",
       "properties": {
@@ -701,6 +1105,14 @@
           "description": "The platform display name.",
           "type": "string"
         },
+        "panels": {
+          "default": [],
+          "description": "Side-panel screens the release declares (`panels` in its manifest).",
+          "items": {
+            "$ref": "#/$defs/InstallationPanel"
+          },
+          "type": "array"
+        },
         "releaseId": {
           "format": "uuid",
           "type": "string"
@@ -750,7 +1162,8 @@
         "appDisabled",
         "canOpen",
         "canManage",
-        "canPromote"
+        "canPromote",
+        "panels"
       ],
       "type": "object"
     },
@@ -779,6 +1192,27 @@
       "required": [
         "installations",
         "nextCursor"
+      ],
+      "type": "object"
+    },
+    "InstallationPanel": {
+      "description": "A side-panel screen of an installation's release.",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "path": {
+          "description": "App-relative path of the panel screen.",
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "title",
+        "path"
       ],
       "type": "object"
     },
@@ -827,6 +1261,267 @@
       ],
       "type": "object"
     },
+    "LauncherCategory": {
+      "description": "One launcher category with its apps in display order.",
+      "properties": {
+        "appIds": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "iconKey": {
+          "description": "Launcher icon name chosen by the administrator.",
+          "type": "string"
+        },
+        "id": {
+          "format": "uuid",
+          "type": "string"
+        },
+        "position": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "title": {
+          "type": "string"
+        },
+        "updatedAt": {
+          "format": "date-time",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "title",
+        "iconKey",
+        "position",
+        "appIds",
+        "updatedAt"
+      ],
+      "type": "object"
+    },
+    "LauncherCategoryPage": {
+      "description": "`GET /api/v1/launcher/categories` and the answer of every category change.",
+      "properties": {
+        "categories": {
+          "items": {
+            "$ref": "#/$defs/LauncherCategory"
+          },
+          "type": "array"
+        },
+        "revision": {
+          "description": "Compare before replacing the whole arrangement.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "categories",
+        "revision"
+      ],
+      "type": "object"
+    },
+    "Locale": {
+      "description": "Display languages the platform offers.",
+      "enum": [
+        "ko-KR",
+        "en-US"
+      ],
+      "type": "string"
+    },
+    "NotificationItem": {
+      "description": "One notification in the signed-in person's inbox of this environment.",
+      "properties": {
+        "appId": {
+          "type": "string"
+        },
+        "appName": {
+          "type": "string"
+        },
+        "createdAt": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "groupKey": {
+          "type": "string"
+        },
+        "id": {
+          "format": "uuid",
+          "type": "string"
+        },
+        "installationId": {
+          "format": "uuid",
+          "type": "string"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "path": {
+          "description": "App-relative destination, opened in the app's frame.",
+          "type": "string"
+        },
+        "readAt": {
+          "format": "date-time",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "resourceId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "title": {
+          "description": "Display text only; render as text.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "installationId",
+        "appId",
+        "appName",
+        "kind",
+        "groupKey",
+        "title",
+        "path",
+        "resourceId",
+        "createdAt",
+        "readAt"
+      ],
+      "type": "object"
+    },
+    "NotificationMute": {
+      "additionalProperties": false,
+      "description": "One kind of an app the person turned off; `*` is every kind of that app.",
+      "properties": {
+        "appId": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "appId",
+        "kind"
+      ],
+      "type": "object"
+    },
+    "NotificationPage": {
+      "description": "`GET /api/v1/notifications`: newest first, with the unread count.",
+      "properties": {
+        "items": {
+          "items": {
+            "$ref": "#/$defs/NotificationItem"
+          },
+          "type": "array"
+        },
+        "nextCursor": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "unread": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "items",
+        "unread",
+        "nextCursor"
+      ],
+      "type": "object"
+    },
+    "NotificationPublished": {
+      "description": "The answer of a notification publish (and of its request ID lookup).",
+      "properties": {
+        "accepted": {
+          "description": "How many recipients received it; who was left out is not disclosed.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "requestId": {
+          "format": "uuid",
+          "type": "string"
+        }
+      },
+      "required": [
+        "requestId",
+        "accepted"
+      ],
+      "type": "object"
+    },
+    "NotificationSettings": {
+      "additionalProperties": false,
+      "description": "`GET`/`PUT /api/v1/notifications/settings`; a PUT replaces the whole list.",
+      "properties": {
+        "mutes": {
+          "items": {
+            "$ref": "#/$defs/NotificationMute"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "mutes"
+      ],
+      "type": "object"
+    },
+    "Preferences": {
+      "description": "A person's own settings: `preferences` of `GET /api/v1/me` and the answer of\n`PATCH /api/v1/me/preferences`. Presentation only, never an access input.",
+      "properties": {
+        "dateFormat": {
+          "$ref": "#/$defs/DateFormat"
+        },
+        "jobTitle": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "locale": {
+          "$ref": "#/$defs/Locale"
+        },
+        "pinnedApps": {
+          "description": "App IDs pinned to the launcher, in display order.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "pinnedPanels": {
+          "description": "Side panels pinned to the header as `appId/panelId`, in display order.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "theme": {
+          "$ref": "#/$defs/ThemePreference"
+        },
+        "timeZone": {
+          "description": "IANA time zone name.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "theme",
+        "locale",
+        "timeZone",
+        "dateFormat",
+        "jobTitle",
+        "pinnedApps",
+        "pinnedPanels"
+      ],
+      "type": "object"
+    },
     "RecordedCheck": {
       "description": "A stored acceptance check, as the test acceptance request recorded it.",
       "properties": {
@@ -868,13 +1563,18 @@
           "format": "uint64",
           "minimum": 0,
           "type": "integer"
+        },
+        "transfer": {
+          "$ref": "#/$defs/FileTransfer",
+          "default": "single"
         }
       },
       "required": [
         "requestId",
         "name",
         "mime",
-        "size"
+        "size",
+        "transfer"
       ],
       "type": "object"
     },
@@ -993,6 +1693,100 @@
       ],
       "type": "object"
     },
+    "SearchGroup": {
+      "description": "One app's part of an integrated search. `status` is `ok`, or `unavailable`\nwhen the app did not answer in time (shown as \"\uac00\uc838\uc624\uc9c0 \ubabb\ud568\").",
+      "properties": {
+        "appId": {
+          "type": "string"
+        },
+        "appName": {
+          "type": "string"
+        },
+        "installationId": {
+          "format": "uuid",
+          "type": "string"
+        },
+        "items": {
+          "items": {
+            "$ref": "#/$defs/SearchItem"
+          },
+          "type": "array"
+        },
+        "status": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "installationId",
+        "appId",
+        "appName",
+        "status",
+        "items"
+      ],
+      "type": "object"
+    },
+    "SearchItem": {
+      "description": "One integrated search hit from an app (display text only).",
+      "properties": {
+        "at": {
+          "format": "date-time",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "kind": {
+          "description": "The app's own label for the kind of thing (for example \"\uc77c\uc815\").",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "path": {
+          "description": "App-relative destination opened in the app's frame.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "snippet": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "title": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "title",
+        "snippet",
+        "path",
+        "at",
+        "kind"
+      ],
+      "type": "object"
+    },
+    "SearchPage": {
+      "description": "`GET /api/v1/search?q=`.",
+      "properties": {
+        "groups": {
+          "items": {
+            "$ref": "#/$defs/SearchGroup"
+          },
+          "type": "array"
+        },
+        "query": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "query",
+        "groups"
+      ],
+      "type": "object"
+    },
     "StoredFile": {
       "properties": {
         "expiresAt": {
@@ -1015,6 +1809,12 @@
         },
         "name": {
           "type": "string"
+        },
+        "received": {
+          "description": "Bytes committed so far: a `parts` upload resumes from here.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
         },
         "reference": {
           "type": [
@@ -1040,6 +1840,9 @@
         "status": {
           "$ref": "#/$defs/FileStatus"
         },
+        "transfer": {
+          "$ref": "#/$defs/FileTransfer"
+        },
         "version": {
           "format": "uint32",
           "minimum": 0,
@@ -1057,9 +1860,20 @@
         "sha256",
         "status",
         "reference",
+        "transfer",
+        "received",
         "expiresAt"
       ],
       "type": "object"
+    },
+    "ThemePreference": {
+      "description": "A person's theme choice. `System` follows the browser.",
+      "enum": [
+        "system",
+        "light",
+        "dark"
+      ],
+      "type": "string"
     },
     "UiModule": {
       "description": "Where the platform loads the app's UI module.",

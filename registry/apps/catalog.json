@@ -2,8 +2,40 @@
   "schemaVersion": 1,
   "apps": [
     {"appId": "planner", "name": "플래너", "defaultInstall": true, "releases": []},
-    {"appId": "messenger", "name": "메신저", "defaultInstall": true, "releases": []},
-    {"appId": "pms", "name": "PMS", "defaultInstall": false, "releases": []},
+    {
+      "appId": "messenger",
+      "name": "메신저",
+      "defaultInstall": true,
+      "releases": [
+        {
+          "version": "0.1.0",
+          "sourceCommit": "5fd2a553854e502aeebd4411400b35acedeb7460",
+          "archiveSha256": "7be6cdcf14aa1e8773dd75dc312fb4d14a30859546acf6515bb8530a7159daf4"
+        },
+        {
+          "version": "0.1.1",
+          "sourceCommit": "ec0129e1d247ee59d3ead0cd563d70f7209c321c",
+          "archiveSha256": "8b518882ea5507424d65e8f8893a40553545121f10ed66e307abd5acf418210e"
+        }
+      ]
+    },
+    {
+      "appId": "pms",
+      "name": "PMS",
+      "defaultInstall": false,
+      "releases": [
+        {
+          "version": "0.1.0",
+          "sourceCommit": "5fd2a553854e502aeebd4411400b35acedeb7460",
+          "archiveSha256": "8a19c539d607a2811018b23a1e82c880de7f5e66be3081b58b0f57a0fc0ce01a"
+        },
+        {
+          "version": "0.1.1",
+          "sourceCommit": "ec0129e1d247ee59d3ead0cd563d70f7209c321c",
+          "archiveSha256": "86f424d7a42f829fc56bfcb8de1e86fa17af6c344a8171667cbffa09b646bfc3"
+        }
+      ]
+    },
     {"appId": "plm", "name": "PLM", "defaultInstall": false, "releases": []},
     {"appId": "docs", "name": "문서", "defaultInstall": false, "releases": []},
     {"appId": "drive", "name": "드라이브", "defaultInstall": false, "releases": []},

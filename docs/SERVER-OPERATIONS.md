@@ -7,7 +7,7 @@
 | 항목 | 새 호스트 구성 |
 | --- | --- |
 | 서버 | `185.223.207.238`, Ubuntu 26.04.1 LTS, 3 vCPU, 약 12GiB RAM |
-| 소스 | `/projects/miy-v2/prod`, Core·게시 CLI `e5ee24f`, 웹 `86f8c53`과 같은 빌드; Core/CLI 0.14.0, SDK 번들 0.11.0, schema 26 |
+| 소스 | 서빙 작업본 `/projects/miy-v2/prod`. Core·게시 CLI·웹·프레임 런타임 빌드 `9fe1eac`. Core/CLI 0.18.0, SDK 번들 0.13.0, schema 34 |
 | 업무 포털 | `https://portal.miy.works` |
 | 관리·CLI 승인·IdP | `https://console.miy.works` |
 | 내부 앱 개발 포털 | `https://dev.miy.works` |
@@ -15,7 +15,7 @@
 | 서비스·계정 | `miy-prod-serve`, `miy-prod-worker`, OS 사용자 `miy` |
 | 상태·바이너리 | `/srv/miy-prod`(0700), `/srv/miy-prod/bin/miy-server` |
 | CLI 설치 안내·HTTP MCP | `https://portal.miy.works/cli/install`, `https://portal.miy.works/mcp` |
-| 사용자 CLI | `/home/miy/.local/bin/miy` 0.14.0; `default` context → 업무 포털 |
+| 사용자 CLI | `/home/miy/.local/bin/miy` 0.18.0. `default` context → 업무 포털 |
 | 계정 발급 | 콘솔 **플랫폼 관리 → 사용자 초대**의 초대·재설정 링크. 로그인 서버 관리 호출은 loopback 18181, 서비스 클라이언트 `miy-accounts` |
 | 백업 | 매일 03:30 KST 무중단 `miy-prod-online-backup`(14일 보관), 변경 전 중지 백업 `miy-prod-backup` |
 | DB·Keycloak | `miy-prod-postgres-1`, `miy-prod-keycloak-1`; loopback 15432, 18181 |
@@ -83,7 +83,9 @@ CLI 업데이트 안내 후속으로 Core·worker·웹과 CLI 0.12.1을 같은 �
 
 계정 관리의 기본 경로는 이제 콘솔이다. SSH의 Keycloak 내부 절차(SETUP §8)와 `miy-admin-password`는 콘솔을 쓸 수 없을 때의 복구 수단이다. 메일 서버는 연결하지 않았으므로 초대·재설정 주소는 관리자가 직접 전달한다.
 
-**2026-11-21 0.15.0·0.16.0.** 릴리스 소스 복구와 오프라인 하네스 안내를 순서대로 반영했다. 현재 게시 Core·CLI는 0.16.0(`a00f6cc`)이며 SDK 0.11.0과 schema 27을 사용한다. 실행 파일·CLI 게시 파일의 복구 위치와 당시 검사 결과는 각 반영 기록에 있다. [0.15.0 반영 기록](releases/miy-works-0.15.0-2026-11-21-deployment.json) · [0.16.0 반영 기록](releases/miy-works-0.16.0-2026-11-21-deployment.json)
+**2026-11-21 0.15.0·0.16.0.** 릴리스 소스 복구와 오프라인 하네스 안내를 순서대로 반영했다. 0.16.0(`a00f6cc`)은 SDK 0.11.0과 schema 27을 사용했다. 실행 파일·CLI 게시 파일의 복구 위치와 당시 검사 결과는 각 반영 기록에 있다. [0.15.0 반영 기록](releases/miy-works-0.15.0-2026-11-21-deployment.json) · [0.16.0 반영 기록](releases/miy-works-0.16.0-2026-11-21-deployment.json)
+
+**2026-11-23 0.18.0.** 포털과 프레임 런타임을 먼저 반영했고 Core·worker, CLI 패키지 5종·helper 2종을 같은 출처로 갱신했다. 격리 복원을 확인한 백업과 배포 전 실행 파일·정적 진입 파일의 위치는 [배포 기록](releases/miy-works-0.18.0-2026-11-23-deployment.json)에 있다.
 
 `app.release-source.v1`을 반영한 서버에서는 `MIY_ARTIFACTS` 아래 `.builds/sources/`를 Core DB와 함께 비공개로 백업한다. Core DB에는 릴리스와 빌드 영수증이 있고 아카이브 바이트는 이 디렉터리에 있다. 복원 후 [릴리스 소스 다운로드](RUNNING.md#릴리스-소스-다운로드와-복구)로 SHA-256을 확인한다. 현재 구현은 성공한 빌드의 소스도 보관한다. 릴리스로 연결되지 않은 아카이브의 자동 만료 정책은 후속 범위다.
 
