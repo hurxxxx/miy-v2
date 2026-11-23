@@ -9,6 +9,7 @@
 - 후속 구현·검토 전에 [사용자 검증 보고서](docs/releases/user-test-20261121-131334/report.md)와 [공통 컴포넌트 후보](docs/PLATFORM-COMPONENT-CANDIDATES.md)를 확인한다. 작업이 끝나 더 이상 유지할 필요가 없는 문서는 링크와 함께 정리한다.
 - 범용 기능·통일 디자인 작업은 [범용 기능 구현 계획](docs/COMMON-FEATURES-PLAN.md)의 단계(§3)와 먼저 고칠 정본(§8)을 확인한다.
 - 제품 계약은 [PRD](docs/PRD.md), 권한 계약은 [코어 권한](docs/CORE-PERMISSIONS.md)이 기준이다. 구현된 동작은 코드와 테스트가 최종 기준이다.
+- 주요 아키텍처·설계, 설치·인증, CLI·MCP·API 또는 앱 개발 절차가 바뀌면 공개 에이전트 안내(`GET /api/v1/cli/agent-setup`)도 같은 변경에서 검토하고 필요한 내용을 갱신한다. [안내 원본](crates/miy/src/agent-setup.txt)의 명령·주소가 실제 게시 CLI와 템플릿에 맞는지 확인한다.
 
 - 앱 출처·세션·실행 계약을 바꿀 때 [사내 최소 보안 설계](docs/APP-BOUNDARIES.md)를 먼저 읽는다. 업무 앱 UI는 설치별 출처 iframe에서 실행하고([앱 프레임 설계](docs/APP-FRAMES.md)), 플랫폼 화면·통합 라우팅·단일 IP HTTPS는 유지한다. 업무 포털(prod)·dev 포털(dev)·관리/CLI 승인/Keycloak 콘솔의 세 출처와 `portal | dev_portal | console` 세션 용도를 사용한다. 공유 개발 로그인은 꺼져 있고 다른 출처 쿠키 요청은 거부하며 legacy CLI 로그인은 종료했다.
 - 현재 주소·배포 소스·schema와 복구 절차는 [서버 운영 안내](docs/SERVER-OPERATIONS.md), CLI·SDK 게시 상태는 [CLI 릴리스](docs/CLI-RELEASE.md)가 관리한다. 정식 GitHub Release·Windows 사용자 인수는 별도다. 프레임 최초 도입과 같은 schema의 후속 갱신·되돌리기는 [APP-FRAMES §9](docs/APP-FRAMES.md#9-운영-반영-계획)를 따르고 소스 구현·격리 검증·운영 반영을 구분해 기록한다.

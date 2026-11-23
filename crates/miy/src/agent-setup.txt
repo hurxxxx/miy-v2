@@ -1,0 +1,85 @@
+# MIY coding agent setup
+
+Use this runbook to set up an independent MIY app workspace for Codex or Claude Code. Execute the steps in the current user's workspace. Reuse the user's existing installation, account and project when they match this platform.
+
+- Platform and CLI context origin: @MIY_ORIGIN@
+- Published CLI versions, target archives, hashes and installer commands: @MIY_ORIGIN@/api/v1/cli/install
+- Server features: @MIY_ORIGIN@/api/v1/capabilities
+- Portal, test portal and console addresses: @MIY_ORIGIN@/auth/options
+
+## 1. Install the CLI and select the platform
+
+Read the installer metadata and compare its cliVersion to `miy --version`. Install or update if needed. Use the matching installer for Linux or macOS x64/arm64, or Windows x64. The platform installer verifies the published archive and executable.
+
+Linux or macOS
+
+```bash
+curl -fsSL @MIY_UNIX_URL@ | bash -s -- --no-modify-path
+```
+
+Use the executable path printed by the installer, normally `$HOME/.local/bin/miy`, or add that directory to the current shell PATH.
+
+Windows PowerShell
+
+```powershell
+& ([scriptblock]::Create((Invoke-RestMethod -Uri @MIY_WINDOWS_URL@)))
+```
+
+Check `miy context list --output json`. Use a context whose origin is @MIY_ORIGIN@. If one is missing, choose an unused name and run:
+
+```text
+miy context add CONTEXT --url @MIY_ORIGIN@
+```
+
+Replace CONTEXT with the selected name in the remaining commands. Use that explicit context to avoid acting on a different server. Preserve other contexts and TLS verification.
+
+## 2. Authenticate
+
+```text
+miy --context CONTEXT --output json --no-input auth status
+```
+
+If authentication is needed, start device login:
+
+```text
+miy --context CONTEXT --output json --no-input auth login --device-code --no-open --no-wait
+```
+
+Give the user `data.verificationUrl` and `data.userCode` and ask them to approve the request in their browser. After approval, use `data.loginId` in:
+
+```text
+miy --context CONTEXT --output json --no-input auth wait LOGIN_ID
+miy --context CONTEXT --output json --no-input doctor --for operate
+```
+
+Use the user's own account and the CLI's protected credential storage. The user completes any console approval or agent trust prompt.
+
+## 3. Prepare the project and its MCP
+
+- For an existing MIY app, open its project folder and check `miy context show --output json` there. Use the project when its selected origin matches this runbook. Ask before changing a context binding. Run `miy --context CONTEXT --no-input app setup` with the installed CLI and review any reported bundle or managed-file conflict.
+- For a new app, use the requested path, app ID and name. A setup-only request can use a new local workspace named `miy-agent-workspace`:
+
+```text
+miy --context CONTEXT --no-input app init ./miy-agent-workspace --id miy-agent-workspace --name "MIY agent workspace"
+```
+
+Run the following inside the app folder. Use its pinned Rust toolchain and its Node and pnpm requirements for local development.
+
+```text
+miy --context CONTEXT --no-input component sync
+miy --context CONTEXT --no-input app check --harness-only
+miy --context CONTEXT --no-input doctor --for develop
+```
+
+Open or restart Codex or Claude Code in that folder. The project settings register the `miy_app` stdio MCP using the project CLI (`.miy-tools/miy` or `.miy-tools/miy.exe`). Use the same OS user and context. After the user completes any required project trust prompt, check that the available tools include `miy_app`, then call:
+
+```text
+get_cli_help({"topic":"api"})
+get_contract({})
+```
+
+`miy describe --topic api` provides the API guidance if the current agent session cannot reload its tools. Direct HTTP MCP at @MIY_ORIGIN@/mcp uses separate OAuth; the generated workspace uses stdio.
+
+## 4. Work within the app contract
+
+Read the project's AGENTS.md or CLAUDE.md and follow its managed guidance. Give app APIs an OpenAPI contract and run the project's contract check. Use its own installation database and the platform SDK or approved APIs for cross-app access. Manifest permissions are requests. Registration, permission approval and deployment are separate operations; ask for them only when the requested work needs them.

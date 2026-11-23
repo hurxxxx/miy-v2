@@ -326,11 +326,34 @@ async fn install(State(origin): State<String>) -> ApiResult<Json<InstallGuide>> 
     guide(&origin).map(Json)
 }
 
+async fn agent_setup(State(origin): State<String>) -> ApiResult<impl axum::response::IntoResponse> {
+    let origin = crate::cli_client::origin(&origin)
+        .map_err(|_| ApiError::unavailable("invalid_platform_origin"))?;
+    let text = include_str!("agent-setup.txt")
+        .replace(
+            "@MIY_UNIX_URL@",
+            &shell_quote(&format!("{origin}/api/v1/cli/install.sh")),
+        )
+        .replace(
+            "@MIY_WINDOWS_URL@",
+            &powershell_quote(&format!("{origin}/api/v1/cli/install.ps1")),
+        )
+        .replace("@MIY_ORIGIN@", &origin);
+    Ok((
+        [
+            (header::CONTENT_TYPE, "text/plain; charset=utf-8"),
+            (header::CACHE_CONTROL, "no-store"),
+        ],
+        text,
+    ))
+}
+
 pub fn router<S: Clone + Send + Sync + 'static>(origin: String) -> Router<S> {
     let mut router = Router::new()
         .route("/api/v1/cli/install", get(install))
         .route("/api/v1/cli/install.sh", get(unix_script))
         .route("/api/v1/cli/install.ps1", get(windows_script))
+        .route("/api/v1/cli/agent-setup", get(agent_setup))
         .with_state(origin);
     if let Ok(root) = std::env::var("MIY_CLI_RELEASE_DIR") {
         router = router.nest_service("/cli/downloads", tower_http::services::ServeDir::new(root));
@@ -613,6 +636,40 @@ mod tests {
             "curl -fsSL 'https://configured.example/api/v1/cli/install.sh' | bash"
         );
         assert!(!body.to_string().contains("untrusted.example"));
+        let setup = reqwest::Client::new()
+            .get(format!("http://{address}/api/v1/cli/agent-setup"))
+            .header("host", "untrusted.example")
+            .header("x-forwarded-host", "other.example")
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(setup.status(), StatusCode::OK);
+        assert_eq!(
+            setup.headers()[header::CONTENT_TYPE],
+            "text/plain; charset=utf-8"
+        );
+        assert_eq!(setup.headers()[header::CACHE_CONTROL], "no-store");
+        let text = setup.text().await.unwrap();
+        for reference in [
+            "https://configured.example/api/v1/cli/install",
+            "'https://configured.example/api/v1/cli/install.sh'",
+            "'https://configured.example/api/v1/cli/install.ps1'",
+            "https://configured.example/mcp",
+            "auth login --device-code --no-open --no-wait",
+            "auth wait LOGIN_ID",
+            "app init ./miy-agent-workspace",
+            "app setup",
+            "get_cli_help({\"topic\":\"api\"})",
+            "get_contract({})",
+        ] {
+            assert!(
+                text.contains(reference),
+                "missing setup reference {reference}"
+            );
+        }
+        assert!(!text.contains("untrusted.example"));
+        assert!(!text.contains("other.example"));
+        assert!(!text.contains("@MIY_"));
         for extension in ["sh", "ps1"] {
             let response = reqwest::get(format!("http://{address}/api/v1/cli/install.{extension}"))
                 .await

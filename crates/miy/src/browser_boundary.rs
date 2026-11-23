@@ -24,6 +24,7 @@ pub fn access(route: &str, method: &Method) -> Option<Access> {
     let read = matches!(*method, Method::GET | Method::HEAD);
     let route = route.strip_prefix("/api/v1").unwrap_or(route);
     Some(match route {
+        "/cli/agent-setup" if read => Access::Public,
         "/support/reports" if *method == Method::POST => Access::Public,
         "/support/reports" | "/support/reports/{id}" => Access::Console,
         // The two anonymous account-link calls also require the console's own
@@ -215,6 +216,11 @@ mod tests {
                 }
             }
         }
+        assert_eq!(
+            access("/api/v1/cli/agent-setup", &Method::GET),
+            Some(Access::Public)
+        );
+        assert_eq!(access("/api/v1/cli/agent-setup", &Method::POST), None);
         assert_eq!(access("/api/v1/new-management-route", &Method::GET), None);
     }
 
