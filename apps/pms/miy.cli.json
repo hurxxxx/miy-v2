@@ -1,21 +1,21 @@
 {
   "protocol": "miy.cli-guidance/v1",
-  "cliVersion": "0.17.0",
-  "bundleVersion": "0.12.0",
-  "guidanceVersion": "1.0.3",
+  "cliVersion": "0.18.0",
+  "bundleVersion": "0.13.0",
+  "guidanceVersion": "1.0.4",
   "files": {
-    ".agents/skills/miy-cli/SKILL.md": "658b15b27d68783366b2b577a76bb439d97fb2c96ae4c2ea79b9af56481d6c66",
-    ".agents/skills/miy-cli/references/commands.md": "755b91b7f8fe125164b505b12cea6938b97816684980ad53748a0aeaa7df863e",
-    ".agents/skills/miy-cli/references/harness.md": "6356a9a81e278cdcf034ad2d6edda8f0d4888cdde4c3a7c077b80af670d83930",
+    ".agents/skills/miy-cli/SKILL.md": "a981cfdf9ba330e51c83297aec4f05e8a7cd42845c662bfd8be58363ddb844ba",
+    ".agents/skills/miy-cli/references/commands.md": "4eb6448705fed5aa1a381acadf8d7c71691185b05a1ed21a538d78d6d5b5e5c2",
+    ".agents/skills/miy-cli/references/harness.md": "d88a34e211079873c6918fea3a8e2bdbb465e99c48687572266c17a600c38ed1",
     ".agents/skills/miy-cli/references/updating.md": "c6148d44c05ff9b47677001b96b77480a5a5ff0988bd66a3d83e6b6c6ad4b8cd",
     ".agents/skills/miy-cli/references/workflow.md": "61fa488b11e5d913f369e8ad9fbb46815285057ab5a11a86f07a6c9a2bba52d4",
-    ".claude/skills/miy-cli/SKILL.md": "658b15b27d68783366b2b577a76bb439d97fb2c96ae4c2ea79b9af56481d6c66",
-    ".claude/skills/miy-cli/references/commands.md": "755b91b7f8fe125164b505b12cea6938b97816684980ad53748a0aeaa7df863e",
-    ".claude/skills/miy-cli/references/harness.md": "6356a9a81e278cdcf034ad2d6edda8f0d4888cdde4c3a7c077b80af670d83930",
+    ".claude/skills/miy-cli/SKILL.md": "a981cfdf9ba330e51c83297aec4f05e8a7cd42845c662bfd8be58363ddb844ba",
+    ".claude/skills/miy-cli/references/commands.md": "4eb6448705fed5aa1a381acadf8d7c71691185b05a1ed21a538d78d6d5b5e5c2",
+    ".claude/skills/miy-cli/references/harness.md": "d88a34e211079873c6918fea3a8e2bdbb465e99c48687572266c17a600c38ed1",
     ".claude/skills/miy-cli/references/updating.md": "c6148d44c05ff9b47677001b96b77480a5a5ff0988bd66a3d83e6b6c6ad4b8cd",
     ".claude/skills/miy-cli/references/workflow.md": "61fa488b11e5d913f369e8ad9fbb46815285057ab5a11a86f07a6c9a2bba52d4",
     ".gitattributes": "9dcd2e4a914ce272a4d34126bd555b3a91acd3b2362a9e1999faab96cd3d0078",
     "docs/API.md": "d266f4f33c2865d94208b493c1e6c2e45350df9d5880993082fbc2da283fbbdf",
-    "docs/CLI-REFERENCE.md": "01a17d53451137029e990ae24f675bde3eeb9128093db476d9e9af1fdb879fa1"
+    "docs/CLI-REFERENCE.md": "65f5b9f900e69eadb928810cd29a12d015a012f2735183fb29ace0c0acd2ae9b"
   }
 }
