@@ -126,11 +126,9 @@ function DocsSidebarSpaceLabel({ label }: { label: string | null }) {
 export function DocsSidebarExtras({
   currentSpaceId,
   route,
-  locationKey,
 }: {
   currentSpaceId: string | null;
   route: AppRoute;
-  locationKey: string;
 }) {
   const { t } = useTranslation('apps');
   const api = useAppApi();
@@ -168,7 +166,7 @@ export function DocsSidebarExtras({
     return () => {
       cancelled = true;
     };
-  }, [api, revision, locationKey]);
+  }, [api, revision]);
 
   const toggleSection = useCallback((sectionId: DocsSidebarSectionId) => {
     setExpandedSections((current) =>
@@ -300,12 +298,10 @@ export function DocsSidebar({
   route,
   spaceId,
   activeView,
-  locationKey,
 }: {
   route: AppRoute;
   spaceId: string;
   activeView: string;
-  locationKey: string;
 }) {
   const { t } = useTranslation('apps');
   const navigate = useAppNavigate();
@@ -398,7 +394,6 @@ export function DocsSidebar({
       <DocsSidebarExtras
         currentSpaceId={spaceId}
         route={route}
-        locationKey={locationKey}
       />
 
       {showSettings ? (

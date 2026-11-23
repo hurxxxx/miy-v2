@@ -884,9 +884,10 @@ function usePMSViewElement(): ReactNode {
     api,
   ]);
 
-  // Keep the task list catalog in sync with the route so newly created lists open immediately.
+  const usesSpaceOverview = spaceOverviewId !== null;
+  // The space overview loads the selected space in its own view.
   useEffect(() => {
-    if (!api) return;
+    if (!api || usesSpaceOverview) return;
     const activeApi = api;
     let cancelled = false;
 
@@ -986,6 +987,7 @@ function usePMSViewElement(): ReactNode {
     getErrorMessage,
     routeTaskListId,
     shouldLoadSingleTaskList,
+    usesSpaceOverview,
     api,
     t,
   ]);

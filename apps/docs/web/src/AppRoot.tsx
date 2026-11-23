@@ -102,7 +102,6 @@ function AppScreens({ runtime }: AppProps) {
           route={route}
           spaceId={spaceId}
           activeView={view}
-          locationKey={`${pathname}${search}`}
         />
         <div className="flex min-w-0 flex-1 flex-col">
           <Suspense

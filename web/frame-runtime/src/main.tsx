@@ -544,6 +544,42 @@ function remote(): ComponentType<AppProps> {
   });
 }
 
+// The bridge updates route and display state without replacing the frame's
+// API clients. These clients read the current token when making each request.
+const frameSession = {
+  installationId: boot.installationId,
+  appId: boot.appId,
+  releaseId: boot.releaseId,
+  basePath: boot.basePath,
+  navigate: (path: string, options?: { replace?: boolean }) => {
+    if (!relativePath(path)) throw new Error("Use an app-relative path");
+    post({ type: "route.navigate", payload: { path, replace: !!options?.replace } });
+  },
+  // The full portal address of an app path, for links people share.
+  portalUrl: (path: string) => new URL(appTarget(boot.basePath, path), boot.parentOrigin).href,
+  api: <T,>(path: string, init?: RequestInit) => json<T>("/_miy/api" + apiPath(path), init),
+  apiBlob: (path: string, init?: RequestInit) => blob("/_miy/api" + apiPath(path), init),
+  fileApi: async (path: string, init?: FileInit) =>
+    checkedResponse(await call("/_miy/files" + apiPath(path), init), init),
+  download: (url) => startNativeDownload(downloadPath(url)),
+  downloadAndWait,
+  platformApi: async <T,>(resource: "directory", query?: DirectoryQuery, options?: DirectoryRequestOptions) => {
+    if (resource !== "directory") throw new Error("unknown_platform_resource");
+    return completeDirectoryPage(await json<T>("/_miy/platform/directory" + directoryQuery(query), options), query);
+  },
+  directory: (query, options) => json("/_miy/platform/directory" + directoryQuery(query), options),
+  appApi: <T,>(target: string, path: string, init?: RequestInit) => {
+    if (!/^[a-z][a-z0-9-]{0,47}$/.test(target)) throw new Error("invalid_api_path");
+    return json<T>(`/_miy/connections/${target}/api${apiPath(path)}`, init);
+  },
+  live,
+  setNavigationState,
+  // Apps built with the 0.8 SDK still call this; see setNavigationState.
+  registerNavigationGuard,
+} satisfies Omit<AppRuntime, "location" | "theme" | "settings"> & {
+  registerNavigationGuard: typeof registerNavigationGuard;
+};
+
 function FrameApp({ View }: { View: ComponentType<AppProps> }) {
   const [location, setLocation] = useState<FrameLocation>(currentLocation);
   const [settings, setSettings] = useState<FrameSettings>(currentSettings);
@@ -572,42 +608,8 @@ function FrameApp({ View }: { View: ComponentType<AppProps> }) {
       routeListeners.delete(setLocation);
     };
   }, []);
-  const runtime = useMemo(
-    () =>
-      ({
-        installationId: boot.installationId,
-        appId: boot.appId,
-        releaseId: boot.releaseId,
-        basePath: boot.basePath,
-        location,
-        navigate: (path: string, options?: { replace?: boolean }) => {
-          if (!relativePath(path)) throw new Error("Use an app-relative path");
-          post({ type: "route.navigate", payload: { path, replace: !!options?.replace } });
-        },
-        // The full portal address of an app path, for links people share.
-        portalUrl: (path: string) => new URL(appTarget(boot.basePath, path), boot.parentOrigin).href,
-        api: <T,>(path: string, init?: RequestInit) => json<T>("/_miy/api" + apiPath(path), init),
-        apiBlob: (path: string, init?: RequestInit) => blob("/_miy/api" + apiPath(path), init),
-        fileApi: async (path: string, init?: FileInit) =>
-          checkedResponse(await call("/_miy/files" + apiPath(path), init), init),
-        download: (url) => startNativeDownload(downloadPath(url)),
-        downloadAndWait,
-        platformApi: async <T,>(resource: "directory", query?: DirectoryQuery, options?: DirectoryRequestOptions) => {
-          if (resource !== "directory") throw new Error("unknown_platform_resource");
-          return completeDirectoryPage(await json<T>("/_miy/platform/directory" + directoryQuery(query), options), query);
-        },
-        directory: (query, options) => json("/_miy/platform/directory" + directoryQuery(query), options),
-        appApi: <T,>(target: string, path: string, init?: RequestInit) => {
-          if (!/^[a-z][a-z0-9-]{0,47}$/.test(target)) throw new Error("invalid_api_path");
-          return json<T>(`/_miy/connections/${target}/api${apiPath(path)}`, init);
-        },
-        live,
-        setNavigationState,
-        // Apps built with the 0.8 SDK still call this; see setNavigationState.
-        registerNavigationGuard,
-        theme: display.theme,
-        settings: display,
-      }) satisfies AppRuntime & { registerNavigationGuard: typeof registerNavigationGuard },
+  const runtime = useMemo<AppRuntime>(
+    () => ({ ...frameSession, location, theme: display.theme, settings: display }),
     [location, display],
   );
   return <View runtime={runtime} />;

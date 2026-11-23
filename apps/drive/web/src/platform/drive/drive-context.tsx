@@ -49,7 +49,7 @@ export function rememberLastSpace(spaceId: string) {
 }
 
 export function DriveProvider({ children }: { children: ReactNode }) {
-  const runtime = useRuntime();
+  const { api } = useRuntime();
   const [spaces, setSpaces] = useState<DriveSpace[]>([]);
   const [userId, setUserId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -61,7 +61,7 @@ export function DriveProvider({ children }: { children: ReactNode }) {
     const current = sequence.current;
     setLoading(true);
     try {
-      const response = await listSpaces(runtime);
+      const response = await listSpaces({ api });
       if (sequence.current !== current) return;
       setSpaces(response.spaces);
       setUserId(response.user_id);
@@ -72,7 +72,7 @@ export function DriveProvider({ children }: { children: ReactNode }) {
     } finally {
       if (sequence.current === current) setLoading(false);
     }
-  }, [runtime]);
+  }, [api]);
 
   useEffect(() => {
     void reload();

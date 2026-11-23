@@ -341,9 +341,13 @@ test("the security settings start the password change on this origin only", asyn
   await expect(page.getByRole("button", { name: "비밀번호 변경" })).toHaveCount(0);
 });
 
-test("an app's own route change with unsaved input does not ask", async ({ page }) => {
+test("internal app navigation keeps the session read and unsaved input", async ({ page }) => {
   await mock(page, { me: () => ({ status: 200, json: user }), installations: () => ({ status: 200, json: [app] }) });
-  const frames = await mockFrames(page, () => [app], () => ({ json: { title: "저장된 제목" } }));
+  let documentReads = 0;
+  const frames = await mockFrames(page, () => [app], (_installation, path) => {
+    if (path === "/document") documentReads += 1;
+    return { json: { title: "저장된 제목" } };
+  });
   const dialogs: string[] = [];
   page.on("dialog", (dialog) => {
     dialogs.push(dialog.message());
@@ -359,13 +363,13 @@ test("an app's own route change with unsaved input does not ask", async ({ page 
   await expect(page).toHaveURL(/\/environments\/dev\/apps\/shell-app\/next$/);
   expect(dialogs).toEqual([]);
   expect(frames.launches).toBe(1);
-  // Browser history and portal links still ask while input is unsaved (this
-  // fixture reloads its document after a route change, so edit again).
-  await expect(input).toHaveValue("저장된 제목");
-  await input.fill("미저장 제목");
+  await expect(input).toHaveValue("미저장 제목");
+  // Browser history and portal links still ask while input is unsaved.
   await page.goBack();
   await expect.poll(() => dialogs.length).toBe(1);
   await page.locator("#platform-navigation").getByRole("link", { name: "홈", exact: true }).click();
   await expect.poll(() => dialogs.length).toBe(2);
   await expect(page).toHaveURL(/\/shell-app\/next$/);
+  await expect(input).toHaveValue("미저장 제목");
+  expect(documentReads).toBe(1);
 });

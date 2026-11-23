@@ -42,6 +42,7 @@ export function trashPayload(items: readonly TrashItem[], keys: ReadonlySet<stri
 export function TrashView({ spaceId }: { spaceId: string }) {
   const { t, i18n } = useTranslation(['apps', 'common']);
   const runtime = useRuntime();
+  const { api } = runtime;
   const feedback = useFeedback();
   const timeZone = normalizeTimeZone(runtime.settings.timeZone);
   const [state, setState] = useState<{ spaceId: string; data: TrashResponse } | null>(null);
@@ -58,7 +59,7 @@ export function TrashView({ spaceId }: { spaceId: string }) {
     setLoading(true);
     setLoadError(null);
     try {
-      const data = await listTrash(runtime, spaceId);
+      const data = await listTrash({ api }, spaceId);
       if (sequence.current !== current) return;
       setState({ spaceId, data });
     } catch (caught) {
@@ -69,7 +70,7 @@ export function TrashView({ spaceId }: { spaceId: string }) {
     } finally {
       if (sequence.current === current) setLoading(false);
     }
-  }, [runtime, spaceId, t]);
+  }, [api, spaceId, t]);
 
   useEffect(() => {
     setSelected(new Set());

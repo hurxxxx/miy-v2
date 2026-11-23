@@ -83,7 +83,7 @@ export function toFilesApiError(error: ApiRequestError): FilesApiError {
 }
 
 function request<T>(
-  client: DriveClient,
+  client: Pick<DriveClient, 'api'>,
   path: string,
   init: RequestInit = {},
 ): Promise<T> {
@@ -107,7 +107,7 @@ function toBulkRequest(payload: FileBulkPayload): Schemas['FileBulkRequest'] {
 }
 
 export function browseFiles(
-  client: DriveClient,
+  client: Pick<DriveClient, 'api'>,
   spaceId: string,
   folderId?: string | null,
   options: { signal?: AbortSignal } = {},
@@ -125,7 +125,7 @@ export function browseFiles(
 }
 
 export function searchFiles(
-  client: DriveClient,
+  client: Pick<DriveClient, 'api'>,
   spaceId: string,
   payload: FileSearchPayload,
   options: { signal?: AbortSignal } = {},
@@ -204,7 +204,7 @@ export function planFileArchive(
 }
 
 export function getFileDownloadUrl(
-  client: DriveClient,
+  client: Pick<DriveClient, 'api'>,
   spaceId: string,
   fileId: string,
 ): Promise<FileDownloadResponse> {
@@ -310,7 +310,7 @@ export function listFileVersions(
 // ------------------------------------------------------------------ spaces
 
 export function listSpaces(
-  client: DriveClient,
+  client: Pick<DriveClient, 'api'>,
   options: { signal?: AbortSignal } = {},
 ): Promise<DriveSpacesResponse> {
   return request<DriveSpacesResponse>(client, '/v1/spaces', {
@@ -439,7 +439,7 @@ export function directoryProvider(
 // ------------------------------------------------------------------- trash
 
 export function listTrash(
-  client: DriveClient,
+  client: Pick<DriveClient, 'api'>,
   spaceId: string,
   options: { signal?: AbortSignal } = {},
 ): Promise<TrashResponse> {

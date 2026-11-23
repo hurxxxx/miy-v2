@@ -83,3 +83,5 @@ get_contract({})
 ## 4. Work within the app contract
 
 Read the project's AGENTS.md or CLAUDE.md and follow its managed guidance. Give app APIs an OpenAPI contract and run the project's contract check. Use its own installation database and the platform SDK or approved APIs for cross-app access. Manifest permissions are requests. Registration, permission approval and deployment are separate operations; ask for them only when the requested work needs them.
+
+For UI work, follow the navigation lifecycle in MCP `get_contract`. In preview, check that internal navigation and Back preserve the app layout and do not repeat session initialization.

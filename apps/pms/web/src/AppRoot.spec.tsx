@@ -127,18 +127,26 @@ describe('AppRoot', { timeout: 20_000 }, () => {
   it('opens the PMS overview with the sidebar at the app root', async () => {
     const api = fakeApi();
     const value = runtime('/', api);
-    render(<AppRoot runtime={value} />);
+    const { rerender } = render(<AppRoot runtime={value} />);
     expect(
       await screen.findByRole('heading', { name: 'PMS 개요' }, LAZY),
     ).toBeTruthy();
-    expect(screen.getByRole('complementary', { name: 'PMS 탐색' })).toBeTruthy();
+    const sidebar = screen.getByRole('complementary', { name: 'PMS 탐색' });
     expect(screen.getByRole('link', { name: '내게 배정됨' })).toBeTruthy();
-    expect(api).toHaveBeenCalledWith('/v1/pms/me');
+    expect(api).toHaveBeenCalledWith('/v1/pms/me', { signal: expect.any(AbortSignal) });
     expect(api).toHaveBeenCalledWith('/v1/pms/spaces', {});
     expect(value.setNavigationState).toHaveBeenCalledWith({
       dirty: false,
       message: '저장되지 않은 작업이 있습니다. 이동하시겠습니까?',
     });
+
+    rerender(<AppRoot runtime={{ ...value, location: { ...value.location, pathname: '/assigned' } }} />);
+    await waitFor(() => expect(api).toHaveBeenCalledWith(
+      expect.stringMatching(/^\/v1\/pms\/tasks\/assigned/),
+      expect.anything(),
+    ), LAZY);
+    expect(screen.getByRole('complementary', { name: 'PMS 탐색' })).toBe(sidebar);
+    expect(api.mock.calls.filter(([path]) => path === '/v1/pms/me')).toHaveLength(1);
   });
 
   it('renders the my-tasks panel route in English without the sidebar', async () => {

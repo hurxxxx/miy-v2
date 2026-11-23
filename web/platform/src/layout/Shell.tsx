@@ -207,10 +207,15 @@ function SignedInLayout({ user, environment }: { user: User; environment: Enviro
   const toggle = useRef<HTMLButtonElement>(null);
   const navigation = useRef<HTMLElement>(null);
   const pathname = location.pathname;
+  const parts = pathname.split("/");
+  const activeAppId = parts[1] === "environments" && parts[3] === "apps"
+    ? parts[4]
+    : parts[1] === "apps" ? parts[2] : undefined;
+  const installationScope = activeAppId ? environmentPath(environment, activeAppId) : pathname;
   useEffect(() => setMenuOpen(false), [pathname]);
   useEffect(() => {
     if (!isConsole) void refresh();
-  }, [isConsole, refresh, pathname]);
+  }, [isConsole, refresh, installationScope]);
   const apps = useMemo(() => installationsIn(installations.items, environment), [installations.items, environment]);
   const marks = useMemo(() => monograms(apps.map((a) => ({ key: a.id, name: a.name }))), [apps]);
   // The launcher (ported from AI-DO's app bar): the rail lists the pinned apps,
@@ -309,8 +314,6 @@ function SignedInLayout({ user, environment }: { user: User; environment: Enviro
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
   }, [menuOpen]);
-  const parts = pathname.split("/");
-  const activeAppId = parts[1] === "environments" ? parts[4] : parts[1] === "apps" ? parts[2] : undefined;
   const activeApp = activeAppId ? apps.find((a) => a.appId === activeAppId) : undefined;
   const homeActive = pathname === "/" || pathname === environmentPath(environment);
 

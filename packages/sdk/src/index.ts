@@ -76,6 +76,10 @@ export interface LiveConnection {
   send: (data: string) => void;
   close: () => void;
 }
+/**
+ * Route and display updates produce a new runtime value. The methods keep
+ * their identity for the lifetime of the frame or local preview session.
+ */
 export interface AppRuntime {
   installationId: string;
   appId: string;

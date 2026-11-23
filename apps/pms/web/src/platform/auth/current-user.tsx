@@ -42,25 +42,23 @@ export function CurrentUserContextProvider({
   );
 }
 
-/** Loads `GET /v1/pms/me` once and renders the screens with the user. */
+/** Resolves the PMS user once for this app frame, independently of its route. */
 export function PmsCurrentUserProvider({ children }: { children: ReactNode }) {
   const { api } = useRuntime();
   const { t } = useTranslation('shell');
   const [state, setState] = useState<CurrentUserState>({ status: 'loading' });
   const [attempt, setAttempt] = useState(0);
   useEffect(() => {
-    let cancelled = false;
+    const controller = new AbortController();
     setState({ status: 'loading' });
-    api<PmsCurrentUser>('/v1/pms/me')
+    api<PmsCurrentUser>('/v1/pms/me', { signal: controller.signal })
       .then((user) => {
-        if (!cancelled) setState({ status: 'ready', user });
+        if (!controller.signal.aborted) setState({ status: 'ready', user });
       })
       .catch(() => {
-        if (!cancelled) setState({ status: 'error' });
+        if (!controller.signal.aborted) setState({ status: 'error' });
       });
-    return () => {
-      cancelled = true;
-    };
+    return () => controller.abort();
   }, [api, attempt]);
   if (state.status === 'loading') {
     return (

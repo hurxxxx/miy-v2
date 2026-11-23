@@ -38,26 +38,27 @@ import {
 export function FileSearchView({ spaceId }: { spaceId: string }) {
   const { t } = useTranslation(['apps', 'common']);
   const runtime = useRuntime();
+  const { api, download } = runtime;
   const [searchParams, setSearchParams] = useAppSearchParams();
   const feedback = useFeedback();
   const client = useMemo<FileSearchControllerClient>(
     () => ({
       download: (_token, space, fileId) =>
-        getFileDownloadUrl(runtime, space, fileId),
+        getFileDownloadUrl({ api }, space, fileId),
       search: (_token, space, payload, options) =>
-        searchFiles(runtime, space, payload, options),
+        searchFiles({ api }, space, payload, options),
     }),
-    [runtime],
+    [api],
   );
   const openDownload = useMemo(
     () => (url: string) => {
-      if (!runtime.download) {
+      if (!download) {
         feedback.error(t('drive.download.unavailable'));
         return;
       }
-      runtime.download(url);
+      download(url);
     },
-    [feedback, runtime, t],
+    [feedback, download, t],
   );
   const controller = useFileSearchController({
     client,

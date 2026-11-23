@@ -68,6 +68,8 @@ CLI/번들 0.11.0에서 서버가 빌드한 산출물만 배포하도록 바꿨�
 
 번들 0.12.0 후보의 새 프로젝트와 공식 앱 7개는 공용 UI 2.0.1을 고정한다. 후보 원본과 공식 앱의 잠금 해시를 일치시킨 상태다.
 
+번들 0.13.0 소스는 내부 화면 이동에 대한 SDK 계약과 미리보기를 갱신한다. 0.12.0에서 `miy app upgrade`를 실행하면 보호된 SDK와 지침을 갱신하고 앱 코드·Rust 의존성·공용 UI 잠금은 보존한다. 새 프로젝트는 갱신된 예제에서 시작한다.
+
 앱 개발 규칙을 개정할 때는 `crates/miy/src/cli_guidance.rs`의 `GUIDANCE_VERSION`을 올린다. 앱 생성 시점의 `templateVersion`은 내장 템플릿 전체에서 계산한 SHA-256이다. 두 값은 `miy.cli.json`에 기록하며 `miy app setup`은 호환 프로젝트의 지침과 `docs/API.md`를 갱신하고 최초 템플릿 값은 보존한다. `miy app check --harness-only`는 작업본과 현재 CLI의 버전을 비교해 표시한다.
 
 같은 커밋에서 `python3 scripts/check-api-compat.py --refresh 버전 소스커밋`으로 [게시 CLI 응답 계약](../contracts/api-v1.published.json)도 그 소스의 스키마로 갱신한다. 이후 서버 응답은 이 파일보다 필드를 추가만 할 수 있다(`check-static.sh scripts`). 이전 서버가 보내지 않는 필드는 CLI가 기본값으로 읽는다([계약 타입](../crates/miy/src/api_contract.rs)).

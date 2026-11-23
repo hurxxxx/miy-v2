@@ -45,6 +45,7 @@ pub async fn run() -> Result<Value> {
         Some("0.9.0") => include_str!("../bundles/0.9.0.json"),
         Some("0.10.0") => include_str!("../bundles/0.10.0.json"),
         Some("0.11.0") => include_str!("../bundles/0.11.0.json"),
+        Some("0.12.0") => include_str!("../bundles/0.12.0.json"),
         _ => anyhow::bail!(CliError::new(
             Category::Environment,
             "unsupported_old_bundle",
@@ -103,6 +104,7 @@ pub async fn run() -> Result<Value> {
                 | "0.9.0"
                 | "0.10.0"
                 | "0.11.0"
+                | "0.12.0"
         )
     ) {
         let mut changes = crate::agent_tools::setup_changes(&root, None)?;
@@ -140,14 +142,17 @@ pub async fn run() -> Result<Value> {
             )
             .expecting(expected_files.get("miy.bundle.json").cloned().flatten()),
         );
-        changes.extend(crate::cli_error::validation(
-            resolve_sdk_lock(
-                &root,
-                &transaction.workspace()?.join("rust-sdk-resolution"),
-                &mut expected_files,
-            ),
-            "sdk_upgrade_invalid",
-        )?);
+        // The 0.12.0 Rust SDK is byte-for-byte identical to this release.
+        if old["bundleVersion"] != "0.12.0" {
+            changes.extend(crate::cli_error::validation(
+                resolve_sdk_lock(
+                    &root,
+                    &transaction.workspace()?.join("rust-sdk-resolution"),
+                    &mut expected_files,
+                ),
+                "sdk_upgrade_invalid",
+            )?);
+        }
         let receipt = transaction.commit(changes)?;
         let setup = crate::agent_tools::setup_result(&root)?;
         return Ok(
@@ -639,6 +644,7 @@ mod tests {
             include_str!("../bundles/0.9.0.json"),
             include_str!("../bundles/0.10.0.json"),
             include_str!("../bundles/0.11.0.json"),
+            include_str!("../bundles/0.12.0.json"),
         ] {
             let old: Value = serde_json::from_str(previous).unwrap();
             for (path, hash) in &current {

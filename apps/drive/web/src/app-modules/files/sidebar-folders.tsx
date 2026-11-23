@@ -28,7 +28,7 @@ export function FilesSidebarFolders({
   spaceId: string | null;
 }) {
   const { t } = useTranslation('apps');
-  const runtime = useRuntime();
+  const { api } = useRuntime();
   const [state, setState] = useState<{
     spaceId: string;
     folders: FileFolderItem[];
@@ -41,7 +41,7 @@ export function FilesSidebarFolders({
         return;
       }
       try {
-        const response = await browseFiles(runtime, spaceId, null, { signal });
+        const response = await browseFiles({ api }, spaceId, null, { signal });
         if (!signal?.aborted) {
           setState({ spaceId, folders: response.all_folders });
         }
@@ -51,7 +51,7 @@ export function FilesSidebarFolders({
         }
       }
     },
-    [runtime, spaceId],
+    [api, spaceId],
   );
 
   useEffect(() => {

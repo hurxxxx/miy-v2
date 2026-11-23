@@ -292,6 +292,36 @@ test("FV-01/05/08: a real app runs in its own frame origin with routing, reload 
   await context.close();
 });
 
+test("a generated app keeps its startup request and frame across routes and display updates", async ({ browser }) => {
+  const { context, page } = await signIn(browser, "developer");
+  try {
+    await page.emulateMedia({ colorScheme: "light" });
+    let startupReads = 0;
+    let launches = 0;
+    page.on("request", (request) => {
+      const path = new URL(request.url()).pathname;
+      if (path === "/_miy/api/ping") startupReads += 1;
+      if (path === "/_miy/launch") launches += 1;
+    });
+    await page.goto(appPath(plainId));
+    const frame = await appFrame(page);
+    await expect(frame.getByRole("status")).toHaveText("개발 준비가 완료됐습니다.");
+
+    await frame.getByRole("button", { name: "상세", exact: true }).click();
+    await expect(page).toHaveURL(appPath(plainId) + "/detail");
+    await expect(frame.getByText("상세 화면입니다.")).toBeVisible();
+    await page.goBack();
+    await expect(page).toHaveURL(appPath(plainId));
+    await expect(frame.getByText("개요 화면입니다.")).toBeVisible();
+    await page.emulateMedia({ colorScheme: "dark" });
+    await expect(frame.locator("html")).toHaveAttribute("data-miy-theme", "dark");
+    expect(await appFrame(page)).toBe(frame);
+    expect({ startupReads, launches }).toEqual({ startupReads: 1, launches: 1 });
+  } finally {
+    await context.close();
+  }
+});
+
 test("FV-02: unsaved input in the frame asks before the portal leaves the app", async ({ browser }) => {
   const { context, page } = await signIn(browser, "developer");
   await page.goto(appPath(probeId));
