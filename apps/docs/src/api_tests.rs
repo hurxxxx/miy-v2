@@ -706,6 +706,11 @@ async fn native_docs_and_direct_user_share_grant_docs_access() {
 
     let shared = user("Docs Shared User");
     assert!(!hub_ids(&hub(&shared, "").await).contains(&doc_id.to_string()));
+    let reference_path = format!("/v1/docs/items/{doc_id}/reference");
+    assert_eq!(
+        get(&shared, &reference_path).await.status(),
+        StatusCode::NOT_FOUND
+    );
     let share = expect(
         put(
             &owner,
@@ -718,6 +723,11 @@ async fn native_docs_and_direct_user_share_grant_docs_access() {
     .await;
     assert_eq!(share["users"][0]["access_level"], "read");
     assert_eq!(share["users"][0]["full_name"], "Docs Shared User");
+    let reference = expect(get(&shared, &reference_path).await, StatusCode::OK).await;
+    assert_eq!(
+        reference,
+        json!({"id": doc_id, "title": "Private Plan", "space_id": "global"})
+    );
 
     let shared_hub = hub(&shared, "").await;
     let item = shared_hub["items"]
@@ -788,6 +798,21 @@ async fn native_docs_and_direct_user_share_grant_docs_access() {
     .await;
     assert_eq!(item["can_edit"], true);
     assert_eq!(item["can_manage"], false);
+    let target_path = format!("/v1/docs/items/{doc_id}/target");
+    assert_eq!(
+        put(
+            &shared,
+            &target_path,
+            json!({"app": "docs", "type": "workspace_sidebar", "id": "global"})
+        )
+        .await
+        .status(),
+        StatusCode::FORBIDDEN,
+    );
+    assert_eq!(
+        delete(&shared, &target_path).await.status(),
+        StatusCode::FORBIDDEN
+    );
     let rename = patch(
         &shared,
         &format!("/v1/docs/items/{doc_id}"),
@@ -807,6 +832,19 @@ async fn native_docs_and_direct_user_share_grant_docs_access() {
     .await;
     let gone = get(&shared, &format!("/v1/docs/items/{doc_id}")).await;
     assert_eq!(gone.status(), StatusCode::NOT_FOUND);
+    assert_eq!(
+        get(&shared, &reference_path).await.status(),
+        StatusCode::NOT_FOUND
+    );
+    expect(
+        delete(&owner, &format!("/v1/docs/items/{doc_id}")).await,
+        StatusCode::NO_CONTENT,
+    )
+    .await;
+    assert_eq!(
+        get(&owner, &reference_path).await.status(),
+        StatusCode::NOT_FOUND
+    );
 }
 
 #[tokio::test]
@@ -1013,6 +1051,12 @@ async fn named_spaces_use_viewer_member_and_admin_roles() {
     )
     .await;
     assert_eq!(as_group["can_edit"], true);
+    assert_eq!(
+        delete(&in_group, &format!("/v1/docs/items/{doc_id}/target"))
+            .await
+            .status(),
+        StatusCode::FORBIDDEN,
+    );
     let as_admin = expect(
         get(&manager, &format!("/v1/docs/items/{doc_id}")).await,
         StatusCode::OK,
@@ -1119,6 +1163,65 @@ async fn deleting_a_space_needs_it_empty_and_reclaims_its_attachments() {
     )
     .await;
     assert_eq!(protected["error"]["code"], "docs_global_space_protected");
+}
+
+#[tokio::test]
+#[ignore = "needs DOCS_TEST_DATABASE_URL"]
+async fn space_deletion_waits_for_a_document_writer_before_checking_for_live_docs() {
+    let manager = make_manager("Concurrent writer").await;
+    let space = create_space(&manager, "Concurrent deletion").await;
+    let pool = db().await;
+    let mut writer = pool.begin().await.unwrap();
+    crate::spaces::lock_space_for_document(&mut writer, &space)
+        .await
+        .unwrap()
+        .unwrap();
+
+    let remove_space = format!("/v1/spaces/{space}");
+    let owner = manager.clone();
+    let deletion = tokio::spawn(async move { delete(&owner, &remove_space).await });
+    tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        loop {
+            let waiting: bool = sqlx::query_scalar(
+                "SELECT EXISTS (SELECT 1 FROM pg_stat_activity WHERE datname = current_database() \
+                 AND wait_event_type = 'Lock' AND query LIKE '%docs_spaces WHERE id = $1%')",
+            )
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+            if waiting {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+        }
+    })
+    .await
+    .expect("space deletion should wait for the document writer");
+
+    let doc_id = uuid::Uuid::new_v4().to_string();
+    sqlx::query(
+        "INSERT INTO docs_native_docs (id, workspace_id, owner_id, title, created_at, updated_at) \
+         VALUES ($1, $2, $3, 'Just created', now(), now())",
+    )
+    .bind(&doc_id)
+    .bind(&space)
+    .bind(&manager)
+    .execute(&mut *writer)
+    .await
+    .unwrap();
+    writer.commit().await.unwrap();
+
+    let response = tokio::time::timeout(std::time::Duration::from_secs(5), deletion)
+        .await
+        .expect("space deletion should finish after the writer commits")
+        .unwrap();
+    let error = expect(response, StatusCode::CONFLICT).await;
+    assert_eq!(error["error"]["code"], "docs_space_not_empty");
+    expect(
+        get(&manager, &format!("/v1/docs/items/{doc_id}")).await,
+        StatusCode::OK,
+    )
+    .await;
 }
 
 #[tokio::test]
@@ -1325,6 +1428,48 @@ async fn page_mutations_update_metadata_and_trash_subtrees() {
 
 #[tokio::test]
 #[ignore = "needs DOCS_TEST_DATABASE_URL"]
+async fn metadata_only_page_listing_stays_small_with_large_page_bodies() {
+    let owner = user("Large document author");
+    let doc = create_doc(&owner, "Large document", None, false).await;
+    let doc_id = doc["id"].as_str().unwrap();
+    let page_path = format!("/v1/docs/items/{doc_id}/pages");
+    let blocks = json!([{"type": "paragraph", "content": [{"type": "text", "text": "x".repeat(1_500_000)}]}]);
+    for title in ["Part one", "Part two", "Part three"] {
+        expect(
+            post(
+                &owner,
+                &page_path,
+                json!({"title": title, "content_blocks": blocks}),
+            )
+            .await,
+            StatusCode::CREATED,
+        )
+        .await;
+    }
+    let response = get(&owner, &format!("{page_path}?metadata_only=true")).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let payload = response.bytes().await.unwrap();
+    assert!(payload.len() < 10_000);
+    let outlines: Value = serde_json::from_slice(&payload).unwrap();
+    let outlines = outlines["items"].as_array().unwrap();
+    assert_eq!(outlines.len(), 4);
+    assert!(outlines.iter().all(|page| page["content_blocks"].is_null()));
+    let detail_id = outlines
+        .iter()
+        .find(|page| page["title"] == "Part one")
+        .unwrap()["id"]
+        .as_str()
+        .unwrap();
+    let detail = expect(
+        get(&owner, &format!("/v1/docs/pages/{detail_id}")).await,
+        StatusCode::OK,
+    )
+    .await;
+    assert_eq!(detail["content_blocks"], blocks);
+}
+
+#[tokio::test]
+#[ignore = "needs DOCS_TEST_DATABASE_URL"]
 async fn content_saves_check_the_revision() {
     let owner = user("Editor A");
     let doc = create_doc(&owner, "Shared draft", None, true).await;
@@ -1343,6 +1488,18 @@ async fn content_saves_check_the_revision() {
     )
     .await;
     assert_eq!(saved["revision"], 2);
+    let outline = expect(
+        get(
+            &owner,
+            &format!("/v1/docs/items/{doc_id}/pages?metadata_only=true"),
+        )
+        .await,
+        StatusCode::OK,
+    )
+    .await;
+    assert_eq!(outline["items"][0]["revision"], 2);
+    assert_eq!(outline["items"][0]["content_blocks"], Value::Null);
+    assert_eq!(outline["items"][0]["content_text"], Value::Null);
     // Another person (global space member) saves against the old revision.
     let other = user("Editor B");
     let conflict = expect(
@@ -1407,9 +1564,10 @@ async fn content_saves_check_the_revision() {
 #[tokio::test]
 #[ignore = "needs DOCS_TEST_DATABASE_URL"]
 async fn duplicate_doc_via_read_share_creates_private_copy_for_recipient() {
-    let owner = user("Owner");
+    let owner = make_manager("Original author").await;
     let recipient = user("Recipient");
-    let original = create_doc(&owner, "Shared Plan", None, false).await;
+    let space = create_space(&owner, "Shared Plan Workspace").await;
+    let original = create_doc(&owner, "Shared Plan", Some(&space), true).await;
     let original_id = original["id"].as_str().unwrap();
     expect(
         post(
@@ -1444,8 +1602,12 @@ async fn duplicate_doc_via_read_share_creates_private_copy_for_recipient() {
     assert_eq!(duplicate["title"], "Shared Plan Copy");
     assert_eq!(duplicate["can_manage"], true);
     assert_eq!(duplicate["is_private"], true);
+    assert_eq!(duplicate["space_id"], "global");
+    assert_eq!(duplicate["primary_target"], Value::Null);
     assert_eq!(duplicate["page_count"], 2);
     assert_eq!(duplicate["created_by_id"], recipient);
+    let duplicate_id = duplicate["id"].as_str().unwrap();
+    assert!(hub_ids(&hub(&recipient, "?view=mine").await).contains(&duplicate_id.to_string()));
 }
 
 #[tokio::test]
@@ -2976,7 +3138,13 @@ async fn templates_are_saved_from_pages_and_start_new_pages_and_docs() {
         StatusCode::CREATED,
     )
     .await;
-    let new_page = first_page(&member, new_doc["id"].as_str().unwrap()).await;
+    let outline = first_page(&member, new_doc["id"].as_str().unwrap()).await;
+    let page_id = outline["id"].as_str().unwrap();
+    let new_page = expect(
+        get(&member, &format!("/v1/docs/pages/{page_id}")).await,
+        StatusCode::OK,
+    )
+    .await;
     assert_eq!(new_page["content_blocks"], blocks);
     // A template of another space cannot be used here.
     let elsewhere = post(

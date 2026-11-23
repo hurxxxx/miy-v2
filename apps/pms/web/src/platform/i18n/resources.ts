@@ -4,7 +4,7 @@
 // namespace from AI-DO's server catalog (core/i18n_catalog.py, codes with `.`
 // replaced by `_`; see platform/api/api-error.ts). miy additions:
 // apps.pms.{unsavedChanges, sidebarLabel, attachmentPreviewFailed,
-// milestoneSettings, customFields, templateSettings, savedFilters},
+// milestoneSettings, customFields, templateSettings, savedFilters, resourceLinks},
 // apps.pms.taskDetail.{sendComment, retryAttachments} and the reinforcement
 // error codes. Regenerate with scripts/gen-i18n-resources.py.
 export const resources = {
@@ -129,6 +129,30 @@ export const resources = {
     },
     apps: {
       pms: {
+        resourceLinks: {
+          docs: '연결된 문서',
+          boards: '연결된 화이트보드',
+          readFailed: '연결 목록을 불러올 수 없습니다.',
+          writeFailed: '연결을 변경하지 못했습니다. 연결 한도와 대상 앱의 사용 권한을 확인하세요.',
+          retry: '다시 시도',
+          loading: '불러오는 중…',
+          unlink: '연결 해제',
+          linkUnavailable: '열 수 없는 연결',
+          unlinkUnavailable: '열 수 없는 연결 해제',
+          installedOnly: '연결 기능은 포털에 설치된 PMS에서 사용할 수 있습니다.',
+          empty: '연결된 항목이 없습니다.',
+          cancel: '닫기',
+          pick: '기존 항목 선택',
+          replace: '연결된 보드 바꾸기',
+          space: '대상 공간',
+          global: '전체 공간',
+          search: '제목 검색',
+          targetUnavailable: '대상 앱을 열 수 없습니다. 설치 상태와 앱 연결 승인을 확인하세요.',
+          noMatches: '검색 결과가 없습니다.',
+          attach: '연결',
+          previous: '이전',
+          next: '다음',
+        },
         unsavedChanges: '저장되지 않은 작업이 있습니다. 이동하시겠습니까?',
         sidebarLabel: 'PMS 탐색',
         attachmentPreviewFailed: '첨부파일을 불러오지 못했습니다.',
@@ -1190,6 +1214,30 @@ export const resources = {
     },
     apps: {
       pms: {
+        resourceLinks: {
+          docs: 'Linked documents',
+          boards: 'Linked whiteboards',
+          readFailed: 'Could not load the linked items.',
+          writeFailed: 'Could not change the link. Check the link limit and access to the other app.',
+          retry: 'Retry',
+          loading: 'Loading…',
+          unlink: 'Unlink',
+          linkUnavailable: 'Unavailable link',
+          unlinkUnavailable: 'Remove unavailable link',
+          installedOnly: 'Use this feature in PMS installed on the portal.',
+          empty: 'No linked items.',
+          cancel: 'Close',
+          pick: 'Choose an existing item',
+          replace: 'Replace linked board',
+          space: 'Target space',
+          global: 'Company space',
+          search: 'Search titles',
+          targetUnavailable: 'Could not open the other app. Check its installation and the connection approval.',
+          noMatches: 'No matching items.',
+          attach: 'Link',
+          previous: 'Previous',
+          next: 'Next',
+        },
         unsavedChanges: 'You have unsaved changes. Leave anyway?',
         sidebarLabel: 'PMS navigation',
         attachmentPreviewFailed: 'Could not load the attachment.',

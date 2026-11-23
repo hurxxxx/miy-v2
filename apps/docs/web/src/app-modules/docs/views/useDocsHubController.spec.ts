@@ -42,8 +42,8 @@ function client(
     listDocsHub: vi.fn().mockResolvedValue({
       items: [doc()],
       total: 1,
-      limit: 20,
-      offset: 0,
+      page: 1,
+      page_size: 50,
     }),
     ...overrides,
   };
@@ -77,6 +77,8 @@ describe('useDocsHubController', () => {
         source_app: 'meeting',
         source_kind: 'minutes',
         space_id: 'space-1',
+        page: 1,
+        page_size: 50,
       },
       'hq',
     );
@@ -128,6 +130,39 @@ describe('useDocsHubController', () => {
     expect(testClient.listDocsHub).not.toHaveBeenCalled();
   });
 
+  it('loads another results page and resets to the first page on search', async () => {
+    const testClient = client({
+      listDocsHub: vi.fn().mockImplementation(async (_api, params) => ({
+        items: [doc({ id: `doc-page-${params.page}` })],
+        total: params.q ? 1 : 51,
+        page: params.page,
+        page_size: params.page_size,
+      })),
+    });
+    const { result } = renderHook(() =>
+      useDocsHubController({
+        api,
+        listEnabled: true,
+        activeCategory: 'all',
+        client: testClient,
+        searchDebounceMs: 0,
+      }),
+    );
+
+    await waitFor(() => expect(result.current.state.pageCount).toBe(2));
+    act(() => result.current.actions.setPage(2));
+    await waitFor(() => expect(result.current.state.docs[0]?.id).toBe('doc-page-2'));
+
+    act(() => result.current.actions.handleSearchChange('policy'));
+    await waitFor(() => expect(result.current.state.docs[0]?.id).toBe('doc-page-1'));
+    expect(testClient.listDocsHub).toHaveBeenLastCalledWith(
+      api,
+      expect.objectContaining({ page: 1, page_size: 50, q: 'policy' }),
+      undefined,
+    );
+    expect(result.current.state.pageCount).toBe(1);
+  });
+
   it('clears list state when hub loading fails', async () => {
     const testClient = client({
       listDocsHub: vi.fn().mockRejectedValue(new Error('failed')),
@@ -146,6 +181,7 @@ describe('useDocsHubController', () => {
 
     expect(result.current.state.docs).toEqual([]);
     expect(result.current.state.total).toBe(0);
+    expect(result.current.state.loadFailed).toBe(true);
   });
 
   it('keeps the newest list when an earlier request answers late (miy)', async () => {

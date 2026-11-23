@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   History,
+  Pencil,
   PencilRuler,
   Plus,
   Star,
@@ -29,7 +30,7 @@ import {
   useAppSearchParams,
   type AppRoute,
 } from '../../platform/runtime/app-location';
-import { useNavigationDirty } from '../../platform/runtime/navigation-state';
+import { useNavigateAfterEditorSave, useNavigationDirty } from '../../platform/runtime/navigation-state';
 import { useRuntime } from '../../platform/runtime/runtime-context';
 import {
   createSpace,
@@ -37,6 +38,7 @@ import {
   directoryProvider,
   listSpaces,
   spaceShareProvider,
+  updateSpace,
   type WhiteboardSpace,
 } from '../../platform/whiteboard/spaces-api';
 
@@ -71,14 +73,16 @@ export function WhiteboardSidebar({ route }: { route: AppRoute }) {
   const runtime = useRuntime();
   const { api } = runtime;
   const navigate = useAppNavigate();
+  const afterEditorSave = useNavigateAfterEditorSave();
   const feedback = useFeedback();
   const [searchParams] = useAppSearchParams();
   const spaceId = readSpaceId(searchParams);
   const activeView = route.kind === 'hub' ? viewFromSearch(searchParams.get('view')) : null;
   const [spaces, setSpaces] = useState<WhiteboardSpace[]>([]);
-  const [loadError, setLoadError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
   const [creating, setCreating] = useState(false);
+  const [editing, setEditing] = useState<WhiteboardSpace | null>(null);
   const [sharing, setSharing] = useState(false);
 
   useEffect(() => {
@@ -87,16 +91,16 @@ export function WhiteboardSidebar({ route }: { route: AppRoute }) {
       .then((items) => {
         if (cancelled) return;
         setSpaces(items);
-        setLoadError(null);
+        setLoadError(false);
       })
       .catch(() => {
         if (cancelled) return;
-        setLoadError(t('whiteboardApp.spaces.loadFailed'));
+        setLoadError(true);
       });
     return () => {
       cancelled = true;
     };
-  }, [api, reloadKey, t]);
+  }, [api, reloadKey]);
 
   const space = spaces.find((item) => item.id === spaceId) ?? null;
   const spaceOptions = useMemo(
@@ -107,7 +111,10 @@ export function WhiteboardSidebar({ route }: { route: AppRoute }) {
     [spaces, t],
   );
 
-  const go = useCallback((path: string) => navigate(path), [navigate]);
+  const go = useCallback(
+    (path: string) => afterEditorSave(() => navigate(path)),
+    [afterEditorSave, navigate],
+  );
 
   const removeSpace = async () => {
     if (!space) return;
@@ -140,7 +147,9 @@ export function WhiteboardSidebar({ route }: { route: AppRoute }) {
           onValueChange={(next) => go(hubPath(next, activeView ?? 'all'))}
         />
         {loadError ? (
-          <p className="px-2 app-text-caption text-app-danger dark:text-app-danger-text">{loadError}</p>
+          <p className="px-2 app-text-caption text-app-danger dark:text-app-danger-text">
+            {t('whiteboardApp.spaces.loadFailed')}
+          </p>
         ) : null}
         <div className="flex flex-wrap gap-1">
           <Button size="dense" variant="ghost" onClick={() => setCreating(true)}>
@@ -149,6 +158,10 @@ export function WhiteboardSidebar({ route }: { route: AppRoute }) {
           </Button>
           {space?.canManage ? (
             <>
+              <Button size="dense" variant="ghost" onClick={() => setEditing(space)}>
+                <Pencil size={14} />
+                {t('whiteboardApp.spaces.edit')}
+              </Button>
               <Button size="dense" variant="ghost" onClick={() => setSharing(true)}>
                 <Users size={14} />
                 {t('whiteboardApp.spaces.members')}
@@ -183,7 +196,7 @@ export function WhiteboardSidebar({ route }: { route: AppRoute }) {
         <button
           type="button"
           className="sidebar-submenu-item ml-1 w-[calc(100%-0.25rem)] text-left"
-          onClick={() => window.dispatchEvent(new CustomEvent('whiteboard:create'))}
+          onClick={() => afterEditorSave(() => window.dispatchEvent(new CustomEvent('whiteboard:create')))}
         >
           <Plus size={16} className="text-app-ink/55 dark:text-app-ink/65" />
           <span className="sidebar-submenu-label">{t('whiteboard.new')}</span>
@@ -191,12 +204,23 @@ export function WhiteboardSidebar({ route }: { route: AppRoute }) {
       </section>
 
       {creating ? (
-        <SpaceCreateDialog
+        <SpaceDetailsDialog
           onClose={() => setCreating(false)}
-          onCreated={(created) => {
+          onSaved={(created) => {
             setCreating(false);
             setReloadKey((key) => key + 1);
             go(hubPath(created.id, 'all'));
+          }}
+        />
+      ) : null}
+      {editing ? (
+        <SpaceDetailsDialog
+          space={editing}
+          onClose={() => setEditing(null)}
+          onSaved={(updated) => {
+            setEditing(null);
+            setSpaces((items) => items.map((item) => item.id === updated.id ? updated : item));
+            setReloadKey((key) => key + 1);
           }}
         />
       ) : null}
@@ -207,35 +231,44 @@ export function WhiteboardSidebar({ route }: { route: AppRoute }) {
   );
 }
 
-function SpaceCreateDialog({
+function SpaceDetailsDialog({
+  space,
   onClose,
-  onCreated,
+  onSaved,
 }: {
+  space?: WhiteboardSpace;
   onClose: () => void;
-  onCreated: (space: WhiteboardSpace) => void;
+  onSaved: (space: WhiteboardSpace) => void;
 }) {
   const { t } = useTranslation('apps');
   const { api } = useRuntime();
   const feedback = useFeedback();
-  const [name, setName] = useState('');
-  const [description, setDescription] = useState('');
+  const [name, setName] = useState(space?.name ?? '');
+  const [description, setDescription] = useState(space?.description ?? '');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  useNavigationDirty(saving || name.trim() !== '' || description.trim() !== '');
+  const dirty = name.trim() !== (space?.name ?? '') ||
+    description.trim() !== (space?.description ?? '');
+  useNavigationDirty(saving || dirty);
 
   const submit = async () => {
-    if (!name.trim() || saving) return;
+    if (!name.trim() || !dirty || saving) return;
     setSaving(true);
     setError(null);
     try {
-      const created = await createSpace(api, {
+      const input = {
         name: name.trim(),
         description: description.trim(),
-      });
-      feedback.success(t('whiteboardApp.spaces.created', { name: created.name }));
-      onCreated(created);
+      };
+      const saved = space ? await updateSpace(api, space.id, input) : await createSpace(api, input);
+      feedback.success(t(space ? 'whiteboardApp.spaces.updated' : 'whiteboardApp.spaces.created', {
+        name: saved.name,
+      }));
+      onSaved(saved);
     } catch (caught) {
-      setError(apiErrorMessage(caught, t('whiteboardApp.spaces.createFailed')));
+      setError(apiErrorMessage(caught, t(
+        space ? 'whiteboardApp.spaces.updateFailed' : 'whiteboardApp.spaces.createFailed',
+      )));
       setSaving(false);
     }
   };
@@ -244,21 +277,21 @@ function SpaceCreateDialog({
     <Dialog
       open
       onOpenChange={(open) => {
-        if (!open) onClose();
+        if (!open && !saving) onClose();
       }}
-      title={t('whiteboardApp.spaces.createTitle')}
+      title={t(space ? 'whiteboardApp.spaces.editTitle' : 'whiteboardApp.spaces.createTitle')}
       closeLabel={t('whiteboardApp.spaces.close')}
       actions={
         <>
-          <Button variant="ghost" onClick={onClose}>
+          <Button variant="ghost" disabled={saving} onClick={onClose}>
             {t('whiteboardApp.spaces.cancel')}
           </Button>
           <Button
-            disabled={!name.trim() || saving}
+            disabled={!name.trim() || !dirty || saving}
             variant="primary"
             onClick={() => void submit()}
           >
-            {t('whiteboardApp.spaces.create')}
+            {t(space ? 'common:actions.save' : 'whiteboardApp.spaces.create')}
           </Button>
         </>
       }
@@ -277,6 +310,7 @@ function SpaceCreateDialog({
           className="app-text-body w-full resize-none rounded-md border border-app-border bg-app-bg px-3 py-2 text-app-ink outline-none focus:border-app-accent"
           placeholder={t('whiteboardApp.spaces.descriptionPlaceholder')}
           rows={3}
+          maxLength={5000}
           value={description}
           onChange={(event) => setDescription(event.target.value)}
         />

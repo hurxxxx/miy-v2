@@ -1,3 +1,4 @@
+import { LinkedResources } from './LinkedResources';
 import {
   useCallback,
   useEffect,
@@ -837,6 +838,7 @@ function useSpaceOverviewViewElement({
             </div>
           </Card>
         </div>
+        <LinkedResources scope="space" ownerId={spaceId} canEdit={canEditSpaceOrder} />
       </main>
 
       <CreateTaskListModal

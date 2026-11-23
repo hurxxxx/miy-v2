@@ -567,6 +567,54 @@ export interface paths {
         patch: operations["updatePmsMilestone"];
         trace?: never;
     };
+    "/v1/pms/resource-links/{scope}/{owner_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["listPmsResourceLinks"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/pms/resource-links/{scope}/{owner_id}/links/{link_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete: operations["detachPmsResourceLink"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/pms/resource-links/{scope}/{owner_id}/{resource_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put: operations["attachPmsResourceLink"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/pms/saved-filters": {
         parameters: {
             query?: never;
@@ -1510,6 +1558,11 @@ export interface components {
             page_size: number;
             total: number;
         };
+        /** @enum {string} */
+        LinkScope: "task" | "space" | "list";
+        LinkedReference: components["schemas"]["Reference"] & {
+            link_id: string;
+        };
         MilestoneCreateRequest: {
             description?: string;
             /**
@@ -1580,6 +1633,16 @@ export interface components {
         };
         PmsViewPreferencesResponse: {
             task_list_group_by: components["schemas"]["TaskListGroupBy"];
+        };
+        Reference: {
+            id: string;
+            space_id: string;
+            title: string;
+        };
+        References: {
+            items: components["schemas"]["LinkedReference"][];
+            /** @description Opaque IDs for unavailable links, only returned to PMS editors. */
+            unavailable_links: string[];
         };
         ReorderChecklistRequest: {
             item_ids: string[];
@@ -5457,6 +5520,146 @@ export interface operations {
             };
             /** @description Could not complete the request */
             500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    listPmsResourceLinks: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                scope: components["schemas"]["LinkScope"];
+                owner_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["References"];
+                };
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            424: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    detachPmsResourceLink: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                scope: components["schemas"]["LinkScope"];
+                owner_id: string;
+                /** @description PMS association UUID */
+                link_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    attachPmsResourceLink: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                scope: components["schemas"]["LinkScope"];
+                owner_id: string;
+                /** @description Application resource UUID */
+                resource_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Reference"];
+                };
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            424: {
                 headers: {
                     [name: string]: unknown;
                 };

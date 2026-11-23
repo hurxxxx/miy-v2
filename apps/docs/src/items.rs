@@ -637,7 +637,7 @@ pub async fn list_hub(
         .collect();
     sort_items(&mut items, sort_by, sort_dir);
     let total = items.len();
-    let start = ((page - 1) * page_size) as usize;
+    let start = usize::try_from((page - 1).saturating_mul(page_size)).unwrap_or(usize::MAX);
     let page_items = items
         .into_iter()
         .skip(start)
@@ -822,12 +822,6 @@ pub async fn create_item(
         .filter(|id| !id.is_empty())
         .unwrap_or(spaces::GLOBAL_SPACE_ID)
         .to_string();
-    let space = spaces::load_space(&state.pool, &space_id)
-        .await?
-        .ok_or_else(spaces::space_not_found)?;
-    if let Some(target) = &payload.primary_target {
-        target_allowed(&space.id, target)?;
-    }
     let doc_type = payload.doc_type.clone().unwrap_or_else(|| {
         if source_app == "meeting" || source_kind == "meeting_notes" {
             "meeting_notes".into()
@@ -845,6 +839,12 @@ pub async fn create_item(
     let doc_id = uuid::Uuid::new_v4().to_string();
     let now = now_utc();
     let mut tx = state.pool.begin().await?;
+    let space = spaces::lock_space_for_document(&mut tx, &space_id)
+        .await?
+        .ok_or_else(spaces::space_not_found)?;
+    if let Some(target) = &payload.primary_target {
+        target_allowed(&space.id, target)?;
+    }
     // Entering the space is required, decided under the role locks.
     spaces::space_role_in(&mut tx, &state, &identity, &space)
         .await?
@@ -945,6 +945,41 @@ pub async fn get_item(
 ) -> ApiResult<Json<HubItem>> {
     let mut viewer = Viewer::new(&state, &identity);
     Ok(Json(lookup_item(&mut viewer, &item_id).await?))
+}
+
+#[derive(serde::Serialize, utoipa::ToSchema)]
+pub struct DocReference {
+    id: String,
+    title: String,
+    space_id: String,
+}
+
+#[utoipa::path(
+    get, path = "/v1/docs/items/{item_id}/reference", operation_id = "getDocsReference", tag = "Documents",
+    params(("item_id" = String, Path)),
+    responses(
+        (status = 200, description = "A readable, active document's ID, title and space", body = DocReference),
+        (status = 401, description = "Valid platform identity required", body = crate::error::IdentityErrorResponse),
+        (status = 404, description = "Resource is unavailable or does not exist", body = crate::error::ErrorResponse),
+        (status = 500, description = "Could not complete the request", body = crate::error::ErrorResponse),
+        (status = 503, description = "A required platform service is unavailable", body = crate::error::ErrorResponse)
+    )
+)]
+pub async fn get_reference(
+    State(state): State<AppState>,
+    Extension(identity): Extension<Identity>,
+    Path(item_id): Path<String>,
+) -> ApiResult<Json<DocReference>> {
+    let mut viewer = Viewer::new(&state, &identity);
+    let doc = access::doc_or_404(&mut viewer, &item_id).await?.doc;
+    if doc.trashed_at.is_some() {
+        return Err(access::doc_not_found());
+    }
+    Ok(Json(DocReference {
+        id: doc.id,
+        title: doc.title,
+        space_id: doc.workspace_id,
+    }))
 }
 
 /// Lock a doc for a write and apply AI-DO `native_doc_from_item_or_404`.
@@ -1122,6 +1157,16 @@ pub async fn duplicate_item(
     let mut tx = state.pool.begin().await?;
     let context = lock_item(&mut tx, &state, &identity, &item_id).await?;
     let source = &context.doc;
+    let role = if source.workspace_id == spaces::GLOBAL_SPACE_ID {
+        Some(SpaceRole::Member)
+    } else {
+        let space = spaces::lock_space_for_document(&mut tx, &source.workspace_id)
+            .await?
+            .ok_or_else(spaces::space_not_found)?;
+        spaces::space_role_in(&mut tx, &state, &identity, &space).await?
+    };
+    // A direct share can reach a document outside the caller's own spaces.
+    let destination_space = role.map_or(spaces::GLOBAL_SPACE_ID, |_| source.workspace_id.as_str());
     let duplicate_id = uuid::Uuid::new_v4().to_string();
     let now = now_utc();
     let doc_type = if DOC_TYPE_VALUES.contains(&source.doc_type.as_str()) {
@@ -1135,7 +1180,7 @@ pub async fn duplicate_item(
          source_ref, generation_kind, created_at, updated_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$10)",
     )
     .bind(&duplicate_id)
-    .bind(&source.workspace_id)
+    .bind(destination_space)
     .bind(&identity.user_id)
     .bind(&title)
     .bind(&doc_type)
@@ -1146,7 +1191,8 @@ pub async fn duplicate_item(
     .bind(now)
     .execute(&mut *tx)
     .await?;
-    for target in &context.targets {
+    let can_copy_targets = role.is_some_and(|role| role >= SpaceRole::Member);
+    for target in context.targets.iter().filter(|_| can_copy_targets) {
         sqlx::query(
             "INSERT INTO docs_doc_targets (id, doc_id, target_app, target_type, target_id, is_primary, sort_order, \
              created_at, updated_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$8)",
@@ -1238,8 +1284,8 @@ pub async fn update_target(
     validate_target(&payload)?;
     let mut tx = state.pool.begin().await?;
     let context = lock_item(&mut tx, &state, &identity, &item_id).await?;
-    if !context.access.can_edit {
-        return Err(doc_edit_required());
+    if !context.access.can_manage {
+        return Err(doc_manage_required());
     }
     target_allowed(&context.doc.workspace_id, &payload)?;
     insert_primary_target(&mut tx, &context.doc.id, &payload).await?;
@@ -1267,8 +1313,8 @@ pub async fn delete_target(
 ) -> ApiResult<Json<HubItem>> {
     let mut tx = state.pool.begin().await?;
     let context = lock_item(&mut tx, &state, &identity, &item_id).await?;
-    if !context.access.can_edit {
-        return Err(doc_edit_required());
+    if !context.access.can_manage {
+        return Err(doc_manage_required());
     }
     sqlx::query("DELETE FROM docs_doc_targets WHERE doc_id = $1 AND is_primary")
         .bind(&context.doc.id)
@@ -1830,7 +1876,7 @@ pub async fn upsert_user_share(
     if !context.access.can_share {
         return Err(share_required());
     }
-    if user_id == identity.user_id {
+    if user_id == context.doc.owner_id {
         return Err(ApiError::conflict(
             "docs.owner_already_has_full_access",
             "Owner already has full access.",

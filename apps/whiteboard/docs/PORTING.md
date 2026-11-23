@@ -102,15 +102,15 @@
 | AI-DO | miy |
 | --- | --- |
 | 앱 소유 모드의 전역 공간(`app_global`): 앱 접근이 있으면 바인딩 없이도 `member` | 예약 공간 `global`(화면 "전사 공간"): 앱 사용 권한이 있는 모든 사람이 `member`. API 경로 `/v1/whiteboard/...` |
-| 앱 공간(`app_space`)과 멤버 역할 | `whiteboard_spaces` + SDK 자원 ACL(kind `space`), 역할 `member`(`space.read`, `whiteboard.edit`)·`admin`(+`whiteboard.manage`, `acl.manage`). API 경로 `/v1/workspaces/{spaceId}/whiteboard/...` |
+| 앱 공간(`app_space`)과 멤버 역할 | `whiteboard_spaces` + SDK 자원 ACL(kind `space`), 역할 `viewer`(`space.read`)·`member`(+`whiteboard.edit`)·`admin`(+`whiteboard.manage`, `acl.manage`). API 경로 `/v1/workspaces/{spaceId}/whiteboard/...` |
 | 전역 공간의 `admin` 바인딩(플랫폼 관리자가 부여) | 없음. 플랫폼 관리자 표시는 아무 권한도 주지 않는다(시험으로 확인) |
 | 공간 만들기: 앱 설정에 따라 멤버 또는 관리자 | 앱 사용자 누구나. 만든 사람이 보호된 `admin` |
-| 보드 접근(`resolve_whiteboard_access`) | 그대로: 소유자 전체 권한, 직접 공유와 대상 수준 중 높은 쪽, 공유·관리는 대상 관리 권한(소유자 제외). 대상은 그 보드 공간의 `workspace_sidebar`만 판정하고 나머지는 권한 없음 |
+| 보드 접근(`resolve_whiteboard_access`) | 공간 역할을 먼저 확인한다. 현재 멤버에게 소유권, 직접 공유, 공간 대상의 읽기·편집·관리 수준을 적용한다. 공개 범위 변경에는 보드 관리 권한이 필요하다. 대상은 그 보드 공간의 `workspace_sidebar`를 판정한다 |
 | 현재 워크스페이스 필터 | 그대로: 항목 경로는 그 공간의 보드만, 목록·만들기·공유 대상 목록은 공간 멤버만(아니면 403 `whiteboard_workspace_context_required`) |
 
 - **잠금 뒤 재판정:** 쓰기 요청(수정·휴지통·복원·영구 삭제·대상·즐겨찾기·열람·공유·이미지 예약)은 보드 행을 `FOR UPDATE`로 잠그고 직접 공유·대상을 다시 읽으며, 공간 역할은 같은 트랜잭션에서 ACL 공유 잠금(`require_in`)으로 확인한다. 공간에서 빠진 사람은 다음 요청부터 바로 막힌다(시험).
 - 공간 삭제는 보드(휴지통 포함)가 남아 있으면 409 `whiteboard_space_not_empty`다. 보드 이미지·공유를 함께 정리하는 일을 공간 삭제가 떠맡지 않도록 했다.
-- 공간 화면(선택·만들기·멤버·삭제)은 AI-DO 포털 셸의 워크스페이스 전환 대신 앱 왼쪽 메뉴에 둔 miy 화면이다. 멤버 관리는 공용 UI `ShareEditor`.
+- 공간 화면(선택·만들기·이름 및 설명 수정·멤버·삭제)은 앱 왼쪽 메뉴에 있다. 멤버 관리는 공용 UI `ShareEditor`.
 
 ### 3.3 공유
 
@@ -212,11 +212,11 @@ AI-DO는 Excalidraw의 `files`(이미지 data URL)를 장면 JSON에 그대로 �
 
 - **실제 프레임 확인(계획 절차 9):** 설치된 플랫폼 프레임(다른 출처, 실제 CSP·sandbox·`runtime.fileApi` gateway)에서 Excalidraw·글꼴·이미지 업로드/내려받기·다운로드·이동 확인을 다시 확인해야 한다. 이번 확인은 같은 CSP를 붙인 로컬 미리보기였다.
 - AI-DO 기준 화면(가상 계정·가상 데이터)과의 나란한 비교, 카탈로그 공식 릴리스·dev 설치·권한 인수(특히 공유 회수), prod 승격.
-- 공간 이름 바꾸기는 API(`PATCH /v1/spaces/{id}`)만 있고 화면이 없다. 공간 멤버 편집기는 현재 사용자를 "본인"으로 표시하지 않는다(앱에 `/me`가 없음).
+- 공간 멤버 편집기는 현재 사용자를 "본인"으로 표시하지 않는다(앱에 `/me`가 없음).
 - **플랫폼 변경 필요(이 앱에서 하지 않음):**
   1. 다른 사람의 그룹 소속 확인(디렉터리의 그룹 구성원 조회 등): 지금은 그룹으로만 앱 공간에 든 사람을 사용자 공유 대상으로 고를 수 없다. 플랫폼 호출의 그룹 판정(알림 재확인·통합 검색)은 플랫폼의 서명된 그룹으로 해결되었다(`d7fbdfe`).
   2. SVG 글꼴 부분 집합 추출을 원하면 프레임 CSP에 `'wasm-unsafe-eval'`(주 스레드 경로, embind의 `new Function`은 여전히 `'unsafe-eval'` 필요) 또는 `worker-src 'self'`가 필요하다. 지금은 글꼴 조각 전체가 SVG에 들어간다.
   3. 받는 사람 언어별 알림 제목(또는 플랫폼이 번역하는 키+인자 형식).
   4. 서버 빌드가 새 npm 패키지(`@excalidraw/excalidraw` 0.18.1과 그 의존성)를 받을 수 있어야 한다(`pnpm-lock.yaml`에 고정). UI 산출물이 글꼴 때문에 약 23MB(426개 파일)로 이미지 한도(64MiB/파일, 256MiB·10,000개) 안이다.
   5. 카탈로그(`registry/apps/catalog.json`)의 `whiteboard` 항목에 릴리스를 기록하는 일(소스 고정 뒤).
-  6. PMS 연결을 되살리려면 PMS 앱이 공간·태스크 리스트의 현재 권한을 답하는 앱 간 API(`app:pms:read`)를 제공해야 한다.
+  6. 기존 보드를 연결하는 기능은 PMS 공간·리스트에서 제공한다. 화이트보드는 호출자가 지금 읽을 수 있는 보드의 메타데이터를 제공한다. PMS에서 보드를 바로 만드는 흐름과 화이트보드 허브의 PMS 대상 필터는 남아 있다. [포팅 대조 및 검증](../../../docs/releases/docs-whiteboard-port-parity-2026-11-23.md)

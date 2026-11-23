@@ -269,9 +269,22 @@ pub async fn lock_doc_for_write(
     identity: &Identity,
     doc_id: &str,
 ) -> ApiResult<DocContext> {
-    let sql = format!("SELECT {DOC_COLUMNS} FROM docs_native_docs WHERE id = $1 FOR UPDATE");
+    let space_id: String =
+        sqlx::query_scalar("SELECT workspace_id FROM docs_native_docs WHERE id = $1")
+            .bind(doc_id)
+            .fetch_optional(&mut **tx)
+            .await?
+            .ok_or_else(doc_not_found)?;
+    // Use the same space-first lock order as the operation that cascades doc deletion.
+    let space = spaces::lock_space_for_document(tx, &space_id)
+        .await?
+        .ok_or_else(doc_not_found)?;
+    let sql = format!(
+        "SELECT {DOC_COLUMNS} FROM docs_native_docs WHERE id = $1 AND workspace_id = $2 FOR UPDATE"
+    );
     let doc = sqlx::query_as::<_, NativeDoc>(&sql)
         .bind(doc_id)
+        .bind(&space_id)
         .fetch_optional(&mut **tx)
         .await?
         .ok_or_else(doc_not_found)?;
@@ -291,10 +304,7 @@ pub async fn lock_doc_for_write(
     let role = if doc.owner_id != identity.user_id
         && targets.iter().any(|target| is_space_sidebar(&doc, target))
     {
-        match spaces::load_space(&state.pool, &doc.workspace_id).await? {
-            Some(space) => spaces::space_role_in(tx, state, identity, &space).await?,
-            None => None,
-        }
+        spaces::space_role_in(tx, state, identity, &space).await?
     } else {
         None
     };

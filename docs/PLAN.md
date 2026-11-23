@@ -97,6 +97,8 @@
 
 [코어 준비 리뷰](reviews/CORE-PLATFORM-READINESS-2026-11-13.md), [범용 기능 2차 리뷰](reviews/COMMON-FEATURES-SECOND-REVIEW-2026-11-22.md), [범용 기능 전체 리뷰](reviews/COMMON-FEATURES-FULL-REVIEW-2026-11-22.md), [최근 3일 리뷰](reviews/RECENT-WORK-REVIEW-2026-11-23.md)의 후속을 위 작업 묶음에 연결했다. 2차·전체 리뷰의 구현 완료분은 [후속 검증](releases/common-features-review-fixes-2026-11-22.md)에 있다. 아래 항목은 현재 소스 기준의 재현이나 최종 인수가 남은 작업이다. 추정과 부분 보완의 근거는 최근 3일 리뷰에서 ID로 찾는다.
 
+M9 문서와 M11 화이트보드의 AI-DO 비교, 권한·편집 보완, PMS의 문서·보드 연결 및 남은 범위는 [포팅 대조 및 검증](releases/docs-whiteboard-port-parity-2026-11-23.md)에 기록했다. 설치된 앱 프레임에서의 편집과 연결 인수는 대기 중이다.
+
 | 추진 계획의 작업 | 리뷰 항목 | 후속 작업과 인수 조건 |
 | --- | --- | --- |
 | 2·3 계정·세션 | ACC-01~05·08·10, PLT-05·06·09, R04 | 비밀번호 변경·재설정과 초대 실패의 복구 및 감사 범위를 [ACCOUNTS](ACCOUNTS.md)에 정한다. 링크·CLI·전환 세션 회수 범위와 링크 발급 출처를 결정한다. 실제 IdP에서 발급자·대상자, 다른 탭, 중복 요청과 일시 장애를 각각 인수한다. CLI 갱신은 확정 거절과 재시도 가능한 실패를 구분한다. |

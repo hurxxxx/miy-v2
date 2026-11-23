@@ -264,6 +264,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/whiteboard/items/{item_id}/reference": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getWhiteboardReference"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/whiteboard/items/{item_id}/restore": {
         parameters: {
             query?: never;
@@ -517,6 +533,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/workspaces/{space_id}/whiteboard/items/{item_id}/reference": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getWhiteboardReferenceInSpace"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/workspaces/{space_id}/whiteboard/items/{item_id}/restore": {
         parameters: {
             query?: never;
@@ -650,6 +682,11 @@ export interface components {
          * @description Bodies streamed through the file gateway.
          */
         BinaryBody: string;
+        BoardReference: {
+            id: string;
+            space_id: string;
+            title: string;
+        };
         CheckItem: {
             groupKey: string;
             resourceId?: string | null;
@@ -737,6 +774,7 @@ export interface components {
             workspace_key: string | null;
         };
         HubResponse: {
+            can_publish: boolean;
             items: components["schemas"]["HubItem"][];
             /** Format: int64 */
             page: number;
@@ -2398,6 +2436,64 @@ export interface operations {
             };
         };
     };
+    getWhiteboardReference: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                item_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A readable, active board's ID and title */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BoardReference"];
+                };
+            };
+            /** @description Platform identity could not be verified */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IdentityErrorResponse"];
+                };
+            };
+            /** @description The workspace or board is missing or is not visible */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Internal error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description A required platform service is unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     restoreWhiteboardItem: {
         parameters: {
             query?: never;
@@ -3603,6 +3699,66 @@ export interface operations {
             };
             /** @description Move the board to the trash before permanently deleting it */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Internal error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description A required platform service is unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getWhiteboardReferenceInSpace: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                item_id: string;
+                /** @description Whiteboard app space ID */
+                space_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A readable, active board's ID and title */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BoardReference"];
+                };
+            };
+            /** @description Platform identity could not be verified */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IdentityErrorResponse"];
+                };
+            };
+            /** @description The workspace or board is missing or is not visible */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };

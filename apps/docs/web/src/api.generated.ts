@@ -259,6 +259,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/docs/items/{item_id}/reference": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getDocsReference"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/docs/items/{item_id}/sharing": {
         parameters: {
             query?: never;
@@ -924,6 +940,11 @@ export interface components {
         };
         /** @enum {string} */
         DocAccessLevel: "read" | "edit";
+        DocReference: {
+            id: string;
+            space_id: string;
+            title: string;
+        };
         DocSharing: {
             doc_id: string;
             link_share: components["schemas"]["NullValue"];
@@ -2671,7 +2692,10 @@ export interface operations {
     };
     listDocsPages: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Return page metadata with null body fields. Fetch an individual page for its body. */
+                metadata_only?: boolean;
+            };
             header?: never;
             path: {
                 item_id: string;
@@ -2789,6 +2813,64 @@ export interface operations {
             };
             /** @description Request validation failed */
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Could not complete the request */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description A required platform service is unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getDocsReference: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                item_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A readable, active document's ID, title and space */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocReference"];
+                };
+            };
+            /** @description Valid platform identity required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IdentityErrorResponse"];
+                };
+            };
+            /** @description Resource is unavailable or does not exist */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };

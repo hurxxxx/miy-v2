@@ -34,8 +34,9 @@ UI는 `runtime.api('/v1/...')`로 부르고 게이트웨이가 `/api/v1/...`로 
 | `GET /v1/docs/hub?space&view&q&sort_by&sort_dir&page&page_size` | 공간의 문서 중 볼 수 있는 것(AI-DO `DocsHubResponse`). 공간 역할이 없으면 403 `docs_requests_workspace_context_required` |
 | `POST /v1/docs/items?space` | 문서 만들기(201). `primary_target`이 `{app:"docs",type:"workspace_sidebar",id:<space>}`이면 공간 문서, 없으면 비공개. `template_id`이면 첫 페이지 본문을 그 공간의 템플릿에서 가져온다 |
 | `GET·PATCH·DELETE /v1/docs/items/{id}` | 문서, 이름·유형 변경(관리 권한), 휴지통으로 이동(204, 파일은 그대로 두고 공유·댓글 알림 회수) |
+| `GET /v1/docs/items/{id}/reference` | 연결용 `{id,title,space_id}`. 현재 사용자가 읽을 수 있는 활성 문서에만 응답 |
 | `POST /v1/docs/items/{id}/duplicate` | 복제(201, 볼 수 있으면, 복제한 사람이 소유자) |
-| `GET·POST /v1/docs/items/{id}/pages` | 페이지 목록·추가(201). `template_id`(본문 `content_blocks`와 함께 쓰면 400) |
+| `GET·POST /v1/docs/items/{id}/pages` | 페이지 목록·추가(201). 편집·전체 보기에서 쓰는 `metadata_only=true` 목록은 본문을 뺀다. 추가 요청의 `template_id`를 `content_blocks`와 함께 쓰면 400 |
 | `GET·PATCH·DELETE /v1/docs/pages/{id}` | 페이지, 수정, 하위 포함 휴지통으로 이동(204). 본문 저장은 `{content_blocks, expected_revision}`; 오래된 revision이면 409 `docs_page_revision_conflict`. 제목·부모·순서는 revision을 바꾸지 않는다. 본문을 저장할 때마다 버전이 남는다 |
 | `GET /v1/docs/pages/{id}/versions` | 버전 목록(최신 먼저, 본문 없이, 저장한 사람·시각, `current_revision`, `can_restore`) |
 | `GET /v1/docs/pages/{id}/versions/{versionId}` | 버전 하나와 본문(읽기 전용 미리 보기) |

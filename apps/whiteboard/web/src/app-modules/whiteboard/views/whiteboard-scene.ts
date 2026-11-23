@@ -57,6 +57,10 @@ export function sceneSignature(scene: WhiteboardScene): string {
   );
 }
 
+export function storedSceneSignature(scene: unknown): string {
+  return JSON.stringify(stableJsonValue(sceneForPersistence(scene)));
+}
+
 export function sceneForPersistence(scene: unknown): WhiteboardScene {
   const normalized = normalizeWhiteboardScene(scene);
   return {

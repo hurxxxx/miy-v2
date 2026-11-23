@@ -4291,6 +4291,208 @@
         }
       }
     },
+    "/v1/pms/resource-links/{scope}/{owner_id}": {
+      "get": {
+        "tags": [
+          "Linked resources"
+        ],
+        "operationId": "listPmsResourceLinks",
+        "parameters": [
+          {
+            "name": "scope",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/LinkScope"
+            }
+          },
+          {
+            "name": "owner_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/References"
+                }
+              }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "424": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/pms/resource-links/{scope}/{owner_id}/links/{link_id}": {
+      "delete": {
+        "tags": [
+          "Linked resources"
+        ],
+        "operationId": "detachPmsResourceLink",
+        "parameters": [
+          {
+            "name": "scope",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/LinkScope"
+            }
+          },
+          {
+            "name": "owner_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "link_id",
+            "in": "path",
+            "description": "PMS association UUID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {},
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/pms/resource-links/{scope}/{owner_id}/{resource_id}": {
+      "put": {
+        "tags": [
+          "Linked resources"
+        ],
+        "operationId": "attachPmsResourceLink",
+        "parameters": [
+          {
+            "name": "scope",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/LinkScope"
+            }
+          },
+          {
+            "name": "owner_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "resource_id",
+            "in": "path",
+            "description": "Application resource UUID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Reference"
+                }
+              }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "424": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/pms/saved-filters": {
       "get": {
         "tags": [
@@ -9845,6 +10047,32 @@
           }
         }
       },
+      "LinkScope": {
+        "type": "string",
+        "enum": [
+          "task",
+          "space",
+          "list"
+        ]
+      },
+      "LinkedReference": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/Reference"
+          },
+          {
+            "type": "object",
+            "required": [
+              "link_id"
+            ],
+            "properties": {
+              "link_id": {
+                "type": "string"
+              }
+            }
+          }
+        ]
+      },
       "MilestoneCreateRequest": {
         "type": "object",
         "required": [
@@ -10113,6 +10341,47 @@
         "properties": {
           "task_list_group_by": {
             "$ref": "#/components/schemas/TaskListGroupBy"
+          }
+        }
+      },
+      "Reference": {
+        "type": "object",
+        "required": [
+          "id",
+          "title",
+          "space_id"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "space_id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
+        }
+      },
+      "References": {
+        "type": "object",
+        "required": [
+          "items",
+          "unavailable_links"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LinkedReference"
+            }
+          },
+          "unavailable_links": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Opaque IDs for unavailable links, only returned to PMS editors."
           }
         }
       },

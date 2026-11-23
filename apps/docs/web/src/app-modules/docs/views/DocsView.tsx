@@ -1,10 +1,9 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   Copy,
   ExternalLink,
   FileText,
-  Filter,
   Globe,
   History,
   LayoutTemplate,
@@ -234,6 +233,7 @@ const renderDocsEditor = (props: any) => {
     loadError,
     locale,
     openShareModal,
+    pageBodyPlaceholder,
     pages,
     pagesById,
     resetDragState,
@@ -369,7 +369,8 @@ const renderDocsEditor = (props: any) => {
                 <button
                   type="button"
                   onClick={handlePrintDoc}
-                  className="app-text-control-sm flex w-full items-center gap-2 px-3 py-2 text-left text-app-ink hover:bg-app-surface-hover"
+                  disabled={Boolean(pageBodyPlaceholder)}
+                  className="app-text-control-sm flex w-full items-center gap-2 px-3 py-2 text-left text-app-ink hover:bg-app-surface-hover disabled:opacity-50"
                 >
                   <Printer size={14} />
                   <span>{t('apps:docs.print')}</span>
@@ -572,6 +573,7 @@ const renderDocsEditor = (props: any) => {
                         )
                       }
                       onKeyDown={(event) => {
+                        if (event.nativeEvent.isComposing) return;
                         if (event.key === 'Enter') {
                           event.preventDefault();
                           event.currentTarget.blur();
@@ -619,31 +621,33 @@ const renderDocsEditor = (props: any) => {
                     </span>
                   </div>
                 </div>
-                <div className="prose dark:prose-invert max-w-none pt-4">
-                  <DocsBlockMarkdownActions
-                    canImport={selectedDoc.can_edit && activePage.can_edit}
-                    exportLabel={t('apps:docs.blockMarkdown.export')}
-                    importLabel={t('apps:docs.blockMarkdown.import')}
-                    onExport={() => handleBlockMarkdownExport(activePage)}
-                    onImportFile={(file) =>
-                      void handleBlockMarkdownImportFile(activePage, file)
-                    }
-                  />
-                  <DocsBlockContentSurface
-                    page={activePage}
-                    canEdit={selectedDoc.can_edit && activePage.can_edit}
-                    contentEditorVersion={
-                      contentEditorVersions[activePage.id] ?? 0
-                    }
-                    uploadFile={activePageUploadFile}
-                    resolveFileUrl={resolveFileUrl}
-                    saveState={saveState}
-                    onBlocksChange={handleEditorChange}
-                    onReloadConflict={handleReloadConflict}
-                    onKeepMine={handleKeepMine}
-                    onRetrySave={handleRetrySave}
-                  />
-                </div>
+                {pageBodyPlaceholder ?? (
+                  <div className="prose dark:prose-invert max-w-none pt-4">
+                    <DocsBlockMarkdownActions
+                      canImport={selectedDoc.can_edit && activePage.can_edit}
+                      exportLabel={t('apps:docs.blockMarkdown.export')}
+                      importLabel={t('apps:docs.blockMarkdown.import')}
+                      onExport={() => handleBlockMarkdownExport(activePage)}
+                      onImportFile={(file) =>
+                        void handleBlockMarkdownImportFile(activePage, file)
+                      }
+                    />
+                    <DocsBlockContentSurface
+                      page={activePage}
+                      canEdit={selectedDoc.can_edit && activePage.can_edit}
+                      contentEditorVersion={
+                        contentEditorVersions[activePage.id] ?? 0
+                      }
+                      uploadFile={activePageUploadFile}
+                      resolveFileUrl={resolveFileUrl}
+                      saveState={saveState}
+                      onBlocksChange={handleEditorChange}
+                      onReloadConflict={handleReloadConflict}
+                      onKeepMine={handleKeepMine}
+                      onRetrySave={handleRetrySave}
+                    />
+                  </div>
+                )}
                 <DocsPageAttachments
                   key={activePage.source_page_id}
                   canEdit={selectedDoc.can_edit && activePage.can_edit}
@@ -695,6 +699,7 @@ const renderDocsShell = (props: any) => {
     docUrlFor,
     docs,
     editorView,
+    fetchDocs,
     handleChangeLocation,
     handleChangeUserAccess,
     handleCloseVersions,
@@ -713,6 +718,7 @@ const renderDocsShell = (props: any) => {
     inviteSuggestions,
     isListView,
     linkCopied,
+    listLoadFailed,
     loadingList,
     locale,
     locationOptions,
@@ -724,6 +730,9 @@ const renderDocsShell = (props: any) => {
     newPageTitle,
     openCreateModal,
     openDoc,
+    page,
+    pageBodyPlaceholder,
+    pageCount,
     pages,
     promptDialog,
     readModeOpen,
@@ -743,6 +752,7 @@ const renderDocsShell = (props: any) => {
     setNewDocTitle,
     setNewPageTemplateId,
     setNewPageTitle,
+    setPage,
     setReadModeOpen,
     setSearchOpen,
     setShareAccessLevel,
@@ -775,6 +785,7 @@ const renderDocsShell = (props: any) => {
           doc={selectedDoc}
           pages={pages}
           selectedPageId={selectedPageId}
+          pageBodyPlaceholder={pageBodyPlaceholder}
           onSelectPage={selectDocPage}
           onClose={() => setReadModeOpen(false)}
           resolveFileUrl={resolveFileUrl}
@@ -1160,13 +1171,6 @@ const renderDocsShell = (props: any) => {
             </div>
 
             <div className="flex flex-wrap items-center gap-3 border-b border-app-border pb-2">
-              <button
-                type="button"
-                className="app-text-control-sm flex items-center gap-1.5 rounded px-2 py-1 text-app-ink/55 hover:bg-app-surface-hover hover:text-app-ink"
-              >
-                <Filter size={14} />
-                <span>{t('pms.filter.filters')}</span>
-              </button>
               {hasActiveRefinement ? (
                 <button
                   type="button"
@@ -1216,6 +1220,17 @@ const renderDocsShell = (props: any) => {
               <div className="flex items-center justify-center py-20">
                 <Loader2 size={32} className="animate-spin text-app-accent" />
               </div>
+            ) : listLoadFailed ? (
+              <div role="alert" className="flex flex-col items-center gap-3 py-20 text-app-ink">
+                <p>{t('apps:docsApp.loadFailed')}</p>
+                <button
+                  type="button"
+                  className="app-text-control text-app-accent hover:underline"
+                  onClick={() => void fetchDocs()}
+                >
+                  {t('common:actions.retry')}
+                </button>
+              </div>
             ) : docs.length === 0 ? (
               <div className="flex-1 flex flex-col items-center justify-center py-20 text-center">
                 <div className="size-24 bg-app-surface-sidebar rounded-full flex items-center justify-center mb-6">
@@ -1237,7 +1252,7 @@ const renderDocsShell = (props: any) => {
               </div>
             ) : (
               <div className="border border-app-border rounded-lg overflow-hidden">
-                <table className="w-full">
+                <table aria-busy={loadingList} className="w-full">
                   <thead>
                     <tr className="border-b border-app-border bg-app-surface-sidebar">
                       <th
@@ -1426,6 +1441,29 @@ const renderDocsShell = (props: any) => {
                     })}
                   </tbody>
                 </table>
+                {pageCount > 1 ? (
+                  <div className="flex items-center justify-end gap-3 border-t border-app-border px-4 py-2">
+                    <button
+                      type="button"
+                      disabled={loadingList || page <= 1}
+                      onClick={() => setPage(page - 1)}
+                      className="app-text-control-sm rounded-md px-2 py-1 text-app-ink hover:bg-app-surface-hover disabled:opacity-50"
+                    >
+                      {t('common:actions.previous')}
+                    </button>
+                    <span aria-live="polite" className="app-text-caption text-app-ink/55">
+                      {t('apps:docsApp.pagePosition', { page, total: pageCount })}
+                    </span>
+                    <button
+                      type="button"
+                      disabled={loadingList || page >= pageCount}
+                      onClick={() => setPage(page + 1)}
+                      className="app-text-control-sm rounded-md px-2 py-1 text-app-ink hover:bg-app-surface-hover disabled:opacity-50"
+                    >
+                      {t('common:actions.next')}
+                    </button>
+                  </div>
+                ) : null}
               </div>
             )}
           </div>
@@ -1453,6 +1491,8 @@ export const DocsView = ({ docId }: { docId: string | null }) => {
   const { confirm, confirmDialog } = useConfirm();
   const { prompt, promptDialog } = usePrompt();
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [failedPageId, setFailedPageId] = useState<string | null>(null);
+  const [pageLoadAttempt, setPageLoadAttempt] = useState(0);
   // miy 보강: version history, templates for new docs and pages, and the
   // comment a notification points at (`?comment=`).
   const [versionsPageId, setVersionsPageId] = useState<string | null>(null);
@@ -1574,6 +1614,8 @@ export const DocsView = ({ docId }: { docId: string | null }) => {
   const activePage =
     pages.find((page) => page.id === selectedPageId) ?? pages[0] ?? null;
   const activePageId = activePage?.id ?? null;
+  const activePageRevision = activePage?.revision;
+  const needsPageBody = Boolean(activePage && activePage.content_blocks === null);
   const activeContentFormat = resolveDocsContentFormat(activePage);
   const activePageAuthorName = resolveDocsPageAuthorName(
     activePage,
@@ -1599,10 +1641,12 @@ export const DocsView = ({ docId }: { docId: string | null }) => {
     activeSourceApp,
     activeSourceKind,
   });
-  const { docs, loadingList, searchQuery, sortBy, sortDir, total } =
-    docsHubController.state;
-  const { fetchDocs, handleSearchChange, setDocs, setSortBy, setSortDir } =
-    docsHubController.actions;
+  const {
+    docs, loadFailed: listLoadFailed, loadingList, page, pageCount, searchQuery, sortBy, sortDir, total,
+  } = docsHubController.state;
+  const {
+    fetchDocs, handleSearchChange, setDocs, setPage, setSortBy, setSortDir,
+  } = docsHubController.actions;
   const docSpaceId = selectedDoc?.space_id ?? spaceId;
   const docSpace = useMemo(
     () => spaces.find((space) => space.id === docSpaceId) ?? null,
@@ -1668,8 +1712,15 @@ export const DocsView = ({ docId }: { docId: string | null }) => {
   useNavigationDirty(contentDirty);
 
   useEffect(() => {
-    for (const page of pages) setBaseRevision(page.id, page.revision);
-  }, [pages, setBaseRevision]);
+    for (const page of pages) {
+      if (
+        page.content_blocks !== null &&
+        (!hasDraft(page.id) || contentBaseRevision(page.id) === undefined)
+      ) {
+        setBaseRevision(page.id, page.revision);
+      }
+    }
+  }, [contentBaseRevision, hasDraft, pages, setBaseRevision]);
 
   const loadDoc = useCallback(
     async (itemId: string) => {
@@ -1682,16 +1733,21 @@ export const DocsView = ({ docId }: { docId: string | null }) => {
         ]);
         if (activeDocRef.current !== itemId) return;
         setSelectedDoc(item);
-        setPages((current) =>
-          // Pages with an unsaved local draft keep it (a reload must not
-          // throw away what the person typed).
-          pageResponse.items.map((page) => {
-            const local = current.find((candidate) => candidate.id === page.id);
-            return local && hasDraft(page.id)
-              ? { ...page, content_blocks: local.content_blocks }
-              : page;
-          }),
-        );
+        setPages((current) => {
+          const localPages = buildDocsPagesById(current);
+          return pageResponse.items.map((page) => {
+            const local = localPages.get(page.id);
+            // Keep the draft paired with the revision it was edited from.
+            if (local && (hasDraft(page.id) || local.revision >= page.revision)) {
+              return {
+                ...page,
+                revision: local.revision,
+                content_blocks: local.content_blocks,
+              };
+            }
+            return page;
+          });
+        });
         setManualExpandedNodes(new Set());
       } catch (error) {
         if (activeDocRef.current !== itemId) return;
@@ -1733,6 +1789,33 @@ export const DocsView = ({ docId }: { docId: string | null }) => {
     );
     void loadDoc(docId);
   }, [docId, loadDoc, setPages, setSelectedDoc]);
+
+  useEffect(() => {
+    if (!activePageId || !needsPageBody || selectedDoc?.id !== activeDocId) return;
+    const request = new AbortController();
+    setFailedPageId(null);
+    void getDocPage(api, activePageId, { signal: request.signal })
+      .then((loaded) => {
+        if (request.signal.aborted) return;
+        setPages((current) => current.map((page) =>
+          page.id === loaded.id && page.content_blocks === null
+            ? {
+                ...page,
+                can_edit: loaded.can_edit,
+                revision: loaded.revision,
+                updated_at: loaded.updated_at > page.updated_at ? loaded.updated_at : page.updated_at,
+                content_blocks: loaded.content_blocks ?? [],
+              }
+            : page,
+        ));
+      })
+      .catch(() => {
+        if (!request.signal.aborted) setFailedPageId(activePageId);
+      });
+    return () => request.abort();
+  }, [
+    activeDocId, activePageId, activePageRevision, api, needsPageBody, pageLoadAttempt, selectedDoc?.id, setPages,
+  ]);
 
   useEffect(() => {
     if (!activeDocId || !activePageId) return;
@@ -1992,10 +2075,8 @@ export const DocsView = ({ docId }: { docId: string | null }) => {
 
   const docUrlFor = (item: DocsHubItem): string => {
     const pageId = item.id === activeDocId ? activePageId : null;
-    return portalUrlFor(
-      runtime.basePath,
-      docPathFor(item.id, pageId, item.space_id),
-    );
+    const path = docPathFor(item.id, pageId, item.space_id);
+    return runtime.portalUrl?.(path) ?? portalUrlFor(runtime.basePath, path);
   };
 
   const handleCopyLink = async (item: DocsHubItem) => {
@@ -2060,7 +2141,10 @@ export const DocsView = ({ docId }: { docId: string | null }) => {
       setNewPageTitle('');
       if (activeDocRef.current !== docIdAtStart) return;
       setPages((current) => {
-        const nextPages = [...current, page];
+        const nextPages = [
+          ...current,
+          { ...page, content_blocks: page.content_blocks ?? [] },
+        ];
         const nextDocSummary = summarizeDocsPageCollection(nextPages);
         setSelectedDoc((currentDoc) =>
           currentDoc ? { ...currentDoc, ...nextDocSummary } : currentDoc,
@@ -2150,7 +2234,10 @@ export const DocsView = ({ docId }: { docId: string | null }) => {
     try {
       const latest = await getDocPage(api, page.id);
       resolveConflictReload(latest);
-      setPages((current) => applyUpdatedDocsPage(current, latest));
+      setPages((current) => applyUpdatedDocsPage(current, {
+        ...latest,
+        content_blocks: latest.content_blocks ?? [],
+      }));
       bumpContentEditorVersion(page.id);
     } catch (error) {
       feedback.error(
@@ -2252,7 +2339,10 @@ export const DocsView = ({ docId }: { docId: string | null }) => {
       );
       setBaseRevision(updated.id, updated.revision);
       if (activeDocRef.current === docIdAtStart) {
-        setPages((current) => applyUpdatedDocsPage(current, updated));
+        setPages((current) => applyUpdatedDocsPage(current, {
+          ...updated,
+          content_blocks: updated.content_blocks ?? [],
+        }));
         bumpContentEditorVersion(updated.id);
       }
       feedback.success(
@@ -2628,6 +2718,25 @@ export const DocsView = ({ docId }: { docId: string | null }) => {
     ],
   );
 
+  let pageBodyPlaceholder: ReactNode = null;
+  if (needsPageBody) {
+    pageBodyPlaceholder = failedPageId === activePageId ? (
+      <div role="alert" className="space-y-2 py-4 text-app-ink">
+        <p>{t('apps:docsApp.actionFailed')}</p>
+        <button
+          type="button"
+          className="app-text-control text-app-accent hover:underline"
+          onClick={() => setPageLoadAttempt((attempt) => attempt + 1)}
+        >
+          {t('common:actions.retry')}
+        </button>
+      </div>
+    ) : (
+      <div role="status" aria-label={t('apps:docsApp.loading')} className="py-6">
+        <Loader2 size={24} className="animate-spin text-app-accent" />
+      </div>
+    );
+  }
   const editorView = renderDocsEditor({
     activeContentFormat,
     activeDragId,
@@ -2670,6 +2779,7 @@ export const DocsView = ({ docId }: { docId: string | null }) => {
     loadError,
     locale,
     openShareModal,
+    pageBodyPlaceholder,
     pages,
     pagesById,
     resetDragState,
@@ -2696,6 +2806,7 @@ export const DocsView = ({ docId }: { docId: string | null }) => {
     docUrlFor,
     docs,
     editorView,
+    fetchDocs,
     handleChangeLocation,
     handleChangeUserAccess,
     handleCloseVersions,
@@ -2714,6 +2825,7 @@ export const DocsView = ({ docId }: { docId: string | null }) => {
     inviteSuggestions,
     isListView,
     linkCopied,
+    listLoadFailed,
     loadingList,
     locale,
     locationOptions,
@@ -2725,6 +2837,9 @@ export const DocsView = ({ docId }: { docId: string | null }) => {
     newPageTitle,
     openCreateModal,
     openDoc,
+    page,
+    pageBodyPlaceholder,
+    pageCount,
     pages,
     promptDialog,
     readModeOpen,
@@ -2744,6 +2859,7 @@ export const DocsView = ({ docId }: { docId: string | null }) => {
     setNewDocTitle,
     setNewPageTemplateId,
     setNewPageTitle,
+    setPage,
     setReadModeOpen,
     setSearchOpen,
     setShareAccessLevel,

@@ -9,11 +9,13 @@ import {
 } from 'react';
 import { getSceneVersion, serializeAsJSON } from '@excalidraw/excalidraw';
 import type { ExcalidrawProps } from '@excalidraw/excalidraw/types';
+import { isApiError } from '@miy/sdk';
 
 import type { AppApi } from '../../../platform/runtime/runtime-context';
 import { apiErrorMessage } from '../../../platform/api/api-error';
 import {
   WhiteboardApiError,
+  getWhiteboard,
   updateWhiteboard,
   type FileApi,
   type WhiteboardDetail,
@@ -24,7 +26,7 @@ import {
   storeSceneFiles,
   type WhiteboardFileStore,
 } from '../api/whiteboard-files';
-import { sceneFromExcalidraw, sceneSignature } from './whiteboard-scene';
+import { sceneFromExcalidraw, sceneSignature, storedSceneSignature } from './whiteboard-scene';
 import {
   WHITEBOARD_CLOSE_FLUSH_RETRY_MS,
   WHITEBOARD_LOCAL_CHANGE_FLUSH_MS,
@@ -149,6 +151,7 @@ export function useWhiteboardScenePersistence({
   const pendingSceneRef = useRef<WhiteboardScene | null>(null);
   const pendingSceneSignatureRef = useRef<string | null>(null);
   const lastSavedSceneSignatureRef = useRef<string | null>(null);
+  const uncertainSaveRef = useRef<{ revision: number; signature: string } | null>(null);
   const pendingLocalChangeRef = useRef<PendingWhiteboardEditorChange | null>(
     null,
   );
@@ -175,6 +178,7 @@ export function useWhiteboardScenePersistence({
     (scene: WhiteboardScene, revision: number) => {
       lastSavedSceneSignatureRef.current = sceneSignature(scene);
       revisionRef.current = revision;
+      uncertainSaveRef.current = null;
       pendingSceneRef.current = null;
       pendingSceneSignatureRef.current = null;
       pendingLocalChangeRef.current = null;
@@ -195,7 +199,7 @@ export function useWhiteboardScenePersistence({
       const scene = pendingSceneRef.current;
       const signature = pendingSceneSignatureRef.current;
       if (!scene || !signature) return true;
-      const baseRevision = revisionRef.current;
+      let baseRevision = revisionRef.current;
       if (baseRevision === null) return false;
       pendingSceneRef.current = null;
       pendingSceneSignatureRef.current = null;
@@ -204,6 +208,7 @@ export function useWhiteboardScenePersistence({
       setSaveStatus('saving');
       let saved = false;
       let conflicted = false;
+      let attemptedScene: WhiteboardScene | null = null;
       try {
         const storedScene = await storeSceneFiles(scene, fileStoreRef.current, {
           api,
@@ -211,6 +216,22 @@ export function useWhiteboardScenePersistence({
           boardId: resolvedBoardId,
           spaceId,
         });
+        const uncertain = uncertainSaveRef.current;
+        if (uncertain && uncertain.signature !== storedSceneSignature(storedScene)) {
+          // Re-sending the same scene is idempotent. Before sending newer
+          // edits, check whether the earlier save advanced our revision.
+          const latest = await getWhiteboard(api, resolvedBoardId, spaceId);
+          if (activeBoardIdRef.current !== resolvedBoardId) return false;
+          if (
+            latest.revision === uncertain.revision + 1 &&
+            storedSceneSignature(latest.scene) === uncertain.signature
+          ) {
+            baseRevision = latest.revision;
+            revisionRef.current = baseRevision;
+          }
+          uncertainSaveRef.current = null;
+        }
+        attemptedScene = storedScene;
         const updated = await updateWhiteboard(
           api,
           resolvedBoardId,
@@ -223,6 +244,7 @@ export function useWhiteboardScenePersistence({
         }
         lastSavedSceneSignatureRef.current = signature;
         revisionRef.current = updated.revision;
+        uncertainSaveRef.current = null;
         setActiveBoard((current) =>
           current && current.id === resolvedBoardId
             ? { ...current, ...updated, scene }
@@ -237,6 +259,15 @@ export function useWhiteboardScenePersistence({
         if (activeBoardIdRef.current !== resolvedBoardId) {
           return false;
         }
+        const uncertainResponse = err instanceof WhiteboardApiError
+          ? err.status < 400 || err.status === 408 || err.status >= 500
+          : isApiError(err) && err.kind === 'abort';
+        if (attemptedScene && uncertainResponse) {
+          uncertainSaveRef.current = {
+            revision: baseRevision,
+            signature: storedSceneSignature(attemptedScene),
+          };
+        }
         lastSaveFailedRef.current = true;
         // Keep the unsaved scene unless a newer one is already queued.
         if (pendingSceneRef.current === null) {
@@ -248,6 +279,7 @@ export function useWhiteboardScenePersistence({
           err.code === 'whiteboard_revision_conflict'
         ) {
           conflicted = true;
+          uncertainSaveRef.current = null;
           setConflictState(true);
         } else {
           setError(saveErrorMessage(err, translate));

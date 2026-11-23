@@ -28,6 +28,7 @@ import {
   useAppNavigate,
   useAppSearchParams,
 } from '../../../platform/runtime/app-location';
+import { useNavigateAfterEditorSave } from '../../../platform/runtime/navigation-state';
 import { useRuntime } from '../../../platform/runtime/runtime-context';
 import { normalizeTimeZone } from '../../../platform/time/time-utils';
 import {
@@ -90,6 +91,7 @@ function useWhiteboardViewElement({ whiteboardId, target }: WhiteboardViewProps)
   const { api } = runtime;
   const [searchParams] = useAppSearchParams();
   const navigate = useAppNavigate();
+  const afterEditorSave = useNavigateAfterEditorSave();
   const spaceId = readSpaceId(searchParams);
   const listSeqRef = useRef(0);
   const [query, setQuery] = useState('');
@@ -97,6 +99,7 @@ function useWhiteboardViewElement({ whiteboardId, target }: WhiteboardViewProps)
     useState<WhiteboardSortValue>('updated_desc');
   const [layoutMode, setLayoutMode] =
     useState<WhiteboardLayoutMode>(readStoredLayoutMode);
+  const [publishSpaceId, setPublishSpaceId] = useState<string | null>(null);
   const [state, dispatch] = useReducer(
     whiteboardViewReducer,
     WHITEBOARD_VIEW_INITIAL_STATE,
@@ -156,9 +159,11 @@ function useWhiteboardViewElement({ whiteboardId, target }: WhiteboardViewProps)
         spaceId,
       );
       if (seq !== listSeqRef.current) return;
+      setPublishSpaceId(response.can_publish ? spaceId : null);
       dispatch({ type: 'listLoaded', items: response.items });
     } catch (err) {
       if (seq !== listSeqRef.current) return;
+      setPublishSpaceId(null);
       dispatch({
         type: 'listFailed',
         error:
@@ -190,7 +195,7 @@ function useWhiteboardViewElement({ whiteboardId, target }: WhiteboardViewProps)
           spaceId,
         );
         dispatch({ type: 'upsertItem', item: created });
-        navigate(activePath(created.id));
+        afterEditorSave(() => navigate(activePath(created.id)));
       } catch (err) {
         dispatch({
           type: 'setError',
@@ -201,7 +206,7 @@ function useWhiteboardViewElement({ whiteboardId, target }: WhiteboardViewProps)
         });
       }
     },
-    [activePath, api, currentWorkspaceId, items.length, navigate, spaceId, t, targetFilter],
+    [activePath, afterEditorSave, api, currentWorkspaceId, items.length, navigate, spaceId, t, targetFilter],
   );
 
   const handleVisibilityChange = useCallback(
@@ -419,7 +424,7 @@ function useWhiteboardViewElement({ whiteboardId, target }: WhiteboardViewProps)
               timeZone={timeZone}
               archived={isTrashView}
               layoutMode={layoutMode}
-              onCreate={handleCreate}
+              onCreate={publishSpaceId === spaceId ? handleCreate : undefined}
               onOpen={openItem}
               onVisibilityChange={handleVisibilityChange}
             />
@@ -447,7 +452,7 @@ function WhiteboardSection({
   timeZone: string;
   archived: boolean;
   layoutMode: WhiteboardLayoutMode;
-  onCreate: (visibility: WhiteboardVisibility) => void;
+  onCreate?: (visibility: WhiteboardVisibility) => void;
   onOpen: (item: WhiteboardHubItem) => void;
   onVisibilityChange: (
     item: WhiteboardHubItem,
@@ -490,7 +495,7 @@ function WhiteboardSection({
             {items.length}
           </span>
         </div>
-        {!archived ? (
+        {!archived && onCreate ? (
           <button
             type="button"
             onClick={() => onCreate(visibility)}

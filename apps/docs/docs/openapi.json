@@ -1740,6 +1740,16 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "metadata_only",
+            "in": "query",
+            "description": "Return page metadata with null body fields. Fetch an individual page for its body.",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            }
           }
         ],
         "responses": {
@@ -1874,6 +1884,76 @@
           },
           "422": {
             "description": "Request validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Could not complete the request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A required platform service is unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/docs/items/{item_id}/reference": {
+      "get": {
+        "tags": [
+          "Documents"
+        ],
+        "operationId": "getDocsReference",
+        "parameters": [
+          {
+            "name": "item_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A readable, active document's ID, title and space",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocReference"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Valid platform identity required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdentityErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource is unavailable or does not exist",
             "content": {
               "application/json": {
                 "schema": {
@@ -6195,6 +6275,25 @@
           "read",
           "edit"
         ]
+      },
+      "DocReference": {
+        "type": "object",
+        "required": [
+          "id",
+          "title",
+          "space_id"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "space_id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
+        }
       },
       "DocSharing": {
         "type": "object",

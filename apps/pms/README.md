@@ -5,7 +5,8 @@
 - 범위: 스페이스 → 폴더 → 리스트 → 태스크 → 하위 태스크. 상태 흐름(스페이스 상속·리스트 자체 워크플로), 우선순위, 여러 담당자, 팔로워, 시작·마감·완료일, 라벨, 체크리스트, 첨부(파일당 10 MiB), 리스트·보드·캘린더·간트·표 보기, 내게 배정됨, 오늘 및 지연, 댓글·멘션, 변경 이력, 일괄 변경, 복사, 엑셀 내보내기, 보기 선호, 스페이스 고정·숨김.
 - 보강(계획 §2.2, [PORTING §10](docs/PORTING.md#10-보강-템플릿사용자-정의-필드마일스톤저장-필터)): 리스트 또는 스페이스 전체 마일스톤(만들기·수정·삭제, 진행률, 캘린더·간트 표시), 리스트별 사용자 정의 필드(텍스트·숫자·날짜·단일 선택·다중 선택·사용자; 순서·선택지 편집, 태스크 상세·표 보기에서 값 편집, 필터·정렬), 스페이스 태스크 템플릿(직접 작성 또는 태스크를 하위 태스크·체크리스트·라벨째 저장, 템플릿으로 새 태스크), 서버에 보관하는 저장 필터(사람별, 스페이스 owner·admin은 스페이스에 공유, 필터·정렬·그룹, 열 때 적용할 기본 필터). 화면은 리스트 설정의 `마일스톤`·`필드`·`템플릿` 탭, 새 태스크 창의 템플릿 메뉴(`템플릿 관리`), 태스크 상세의 `템플릿으로 저장`·사용자 정의 필드, 표 보기의 필드 열, 필터 막대의 `필드`·`저장됨`이다.
 - 권한: AI-DO와 같다. 누구나 스페이스를 만들고 그 소유자가 된다. 다른 스페이스는 직접 멤버(viewer·member·admin·owner)여야 읽는다. 앱 관리자나 플랫폼 관리자 표시는 멤버십을 대신하지 않는다(`Identity::admin`을 읽지 않는다). 단일 태스크 명시 공유(`pms_task_user_access`)는 그 태스크 읽기만 준다. 모든 판정은 서버가 요청마다 다시 한다.
-- 요청 권한: `database`, `platform:directory:read`(이름·사용자 선택), `platform:files:read`·`platform:files:write`(첨부), `platform:notifications:write`(알림).
+- 요청 권한: `database`, `platform:directory:read`(이름·사용자 선택), `platform:files:read`·`platform:files:write`(첨부), `platform:notifications:write`(알림), `app:docs:read`·`app:whiteboard:read`(연결된 자원 조회).
+- 문서·보드 연결은 설치된 PMS의 태스크 상세·공간 개요·리스트 머리글에서 관리한다. 세 앱은 같은 환경에 설치하고, PMS에 대상 앱 읽기 권한을, PMS와 대상 앱 양쪽에 `platform:directory:read`를 승인한다. PMS DB에는 연결 ID와 대상 ID를 저장하고, 열 때마다 양쪽 자원의 현재 권한을 확인한다. 대상 자원이 휴지통에 있거나 읽기 권한이 없으면 제목·주소는 숨기며 PMS 편집자는 그 연결 행을 해제할 수 있다.
 - 알림: 배정(`assigned`), 상태 변경(`status`), 댓글(`comment`), 댓글 멘션(`mention`)을 플랫폼 알림함으로 보낸다. 묶음 키는 태스크마다 `task:<id>`, 목적지는 `/tasks/<id>`. 태스크 삭제·멤버 제외·스페이스 삭제 때 회수하고, 태스크를 열면 읽음 처리한다. 지금 그 태스크를 읽을 수 있는 사람에게만 보낸다.
 
 ## 화면 경로
@@ -95,6 +96,9 @@ UI는 `runtime.api('/v1/...')`로 부르고 게이트웨이가 `/api/v1/...`로 
 | `GET /v1/pms/tasks/assigned` · `GET /v1/pms/tasks/today-overdue?today=` | 내 업무 |
 | `GET /v1/personal-widgets/pms/tasks/assigned` | AI-DO 위젯 경로(화면은 위 경로들을 조합해 쓴다) |
 | `GET`·`PATCH`·`DELETE /v1/pms/tasks/{id}` | 상세(댓글·하위·첨부·체크리스트; 내 알림 읽음 처리)·수정·삭제(하위 포함) |
+| `GET /v1/pms/resource-links/{scope}/{owner_id}` | 읽을 수 있는 연결의 `items` 목록. `task`는 문서, `space`·`list`는 화이트보드 |
+| `PUT /v1/pms/resource-links/{scope}/{owner_id}/{resource_id}` | 연결 추가. 태스크와 공간은 각각 최대 12개, 리스트 연결은 보드 한 개를 선택하거나 교체 |
+| `DELETE /v1/pms/resource-links/{scope}/{owner_id}/links/{link_id}` | PMS 연결 해제. 대상 앱의 자원은 유지 |
 | `POST /v1/pms/tasks/{id}/comments` | 댓글(멘션 알림) |
 | `GET /v1/pms/tasks/{id}/activity-logs` | 변경 이력 |
 | `POST /v1/pms/tasks/{id}/checklist`, `PATCH /v1/pms/tasks/{id}/checklist/reorder`, `PATCH`·`DELETE /v1/pms/checklist/{id}` | 체크리스트 |

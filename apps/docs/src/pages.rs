@@ -10,7 +10,7 @@
 //! not take part in the revision check.
 use axum::{
     Extension, Json,
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::StatusCode,
     response::IntoResponse,
 };
@@ -115,9 +115,18 @@ async fn page_items(identity: &Identity, pages: &[NativePage], can_edit: bool) -
         .collect()
 }
 
+#[derive(Deserialize, utoipa::IntoParams)]
+#[into_params(parameter_in = Query)]
+pub struct PageListQuery {
+    /// Return page metadata with null body fields. Fetch an individual page for its body.
+    #[serde(default)]
+    #[param(default = false)]
+    metadata_only: bool,
+}
+
 #[utoipa::path(
     get, path = "/v1/docs/items/{item_id}/pages", operation_id = "listDocsPages", tag = "Pages",
-    params(("item_id" = String, Path)),
+    params(("item_id" = String, Path), PageListQuery),
     responses(
         (status = 200, description = "Success", body = PageListResponse),
         (status = 401, description = "Valid platform identity required", body = crate::error::IdentityErrorResponse),
@@ -130,11 +139,20 @@ pub async fn list_pages(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
     Path(item_id): Path<String>,
+    Query(query): Query<PageListQuery>,
 ) -> ApiResult<Json<PageListResponse>> {
     let mut viewer = Viewer::new(&state, &identity);
     let context = access::doc_or_404(&mut viewer, &item_id).await?;
+    // The client gets the selected page body separately. A document can hold
+    // more content than fits in a single frame response.
+    let columns = if query.metadata_only {
+        "id, doc_id, parent_id, title, content_format, NULL::json AS content_blocks, \
+         NULL::text AS content_text, sort_order, created_by_id, created_at, updated_at, trashed_at, revision"
+    } else {
+        PAGE_COLUMNS
+    };
     let sql = format!(
-        "SELECT {PAGE_COLUMNS} FROM docs_native_doc_pages WHERE doc_id = $1 AND trashed_at IS NULL \
+        "SELECT {columns} FROM docs_native_doc_pages WHERE doc_id = $1 AND trashed_at IS NULL \
          ORDER BY COALESCE(parent_id, ''), sort_order, created_at"
     );
     let pages = sqlx::query_as::<_, NativePage>(&sql)

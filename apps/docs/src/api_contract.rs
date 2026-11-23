@@ -40,6 +40,7 @@ pub(crate) fn router() -> (Router<crate::AppState>, OpenApi) {
             items::delete_item
         ))
         .routes(routes!(items::duplicate_item))
+        .routes(routes!(items::get_reference))
         .routes(routes!(pages::list_pages, pages::create_page))
         .routes(routes!(items::update_target, items::delete_target))
         .routes(routes!(items::toggle_favorite))

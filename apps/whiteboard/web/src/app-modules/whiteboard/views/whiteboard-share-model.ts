@@ -26,15 +26,26 @@ export function buildWhiteboardSharePresenter(options: {
   const sharesByUserId = new Map(
     (sharing?.users ?? []).map((share) => [share.user_id, share]),
   );
+  const candidatesById = new Map(users.map((user) => [user.id, user]));
+  const currentRows = [...sharesByUserId.values()].map((share) => ({
+    user: candidatesById.get(share.user_id) ?? {
+      id: share.user_id,
+      full_name: share.full_name || share.email || share.user_id,
+      email: share.email,
+      primary_group: null,
+    },
+    currentShare: share,
+    shared: true,
+  }));
 
   return {
-    userRows: users.map((user) => {
-      const currentShare = sharesByUserId.get(user.id) ?? null;
-      return {
+    userRows: [
+      ...currentRows,
+      ...users.filter((user) => !sharesByUserId.has(user.id)).map((user) => ({
         user,
-        currentShare,
-        shared: currentShare !== null,
-      };
-    }),
+        currentShare: null,
+        shared: false,
+      })),
+    ],
   };
 }

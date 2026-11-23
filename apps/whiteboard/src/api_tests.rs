@@ -1043,6 +1043,7 @@ async fn user_shares_grant_access_and_notify() {
 async fn space_members_edit_and_admins_manage() {
     let owner = user("space owner");
     let member_user = user("member");
+    let viewer = user("viewer");
     let space_admin = user("space admin");
     let outsider = user("outsider");
     let grouped = user("group member");
@@ -1051,7 +1052,7 @@ async fn space_members_edit_and_admins_manage() {
     set_members(
         &owner,
         &space,
-        json!([member(&owner, "admin"), member(&member_user, "member"), member(&space_admin, "admin"),
+        json!([member(&owner, "admin"), member(&member_user, "member"), member(&viewer, "viewer"), member(&space_admin, "admin"),
             {"subject": {"kind": "group", "id": team}, "role": "member"}]),
     )
     .await;
@@ -1059,10 +1060,26 @@ async fn space_members_edit_and_admins_manage() {
     let created = create_board(&owner, Some(&space), "ACL Board", true).await;
     let id = id_of(&created);
     let items = format!("{base}/items/{id}");
+    let reference = format!("{items}/reference");
+    let unscoped_reference = format!("/v1/whiteboard/items/{id}/reference");
 
     let seen = expect(get(&member_user, &items).await, StatusCode::OK).await;
     assert_eq!(seen["can_edit"], true);
     assert_eq!(seen["can_manage"], false);
+    assert_eq!(
+        expect(get(&member_user, &reference).await, StatusCode::OK).await,
+        json!({"id": id, "title": "ACL Board", "space_id": space})
+    );
+    assert_eq!(
+        expect(get(&member_user, &unscoped_reference).await, StatusCode::OK).await,
+        json!({"id": id, "title": "ACL Board", "space_id": space})
+    );
+    expect(get(&outsider, &reference).await, StatusCode::NOT_FOUND).await;
+    expect(
+        get(&outsider, &unscoped_reference).await,
+        StatusCode::NOT_FOUND,
+    )
+    .await;
     expect(
         patch(
             &member_user,
@@ -1080,6 +1097,28 @@ async fn space_members_edit_and_admins_manage() {
     .await;
     let by_group = expect(get(&grouped, &items).await, StatusCode::OK).await;
     assert_eq!(by_group["can_edit"], true);
+    let read_only = expect(get(&viewer, &items).await, StatusCode::OK).await;
+    assert_eq!(read_only["can_view"], true);
+    assert_eq!(read_only["can_edit"], false);
+    assert_eq!(read_only["can_manage"], false);
+    let viewer_hub = expect(get(&viewer, &format!("{base}/hub")).await, StatusCode::OK).await;
+    assert_eq!(ids(&viewer_hub), vec![id.clone()]);
+    assert_eq!(viewer_hub["can_publish"], false);
+    expect(
+        patch(&viewer, &items, json!({"scene": null, "base_revision": 2})).await,
+        StatusCode::FORBIDDEN,
+    )
+    .await;
+    expect(
+        post(
+            &viewer,
+            &format!("{base}/items"),
+            json!({"title":"Viewer cannot publish","primary_target":{"app":"whiteboard","type":"workspace_sidebar","id":space}}),
+        )
+        .await,
+        StatusCode::FORBIDDEN,
+    )
+    .await;
 
     expect(get(&outsider, &items).await, StatusCode::NOT_FOUND).await;
     let hub = expect(
@@ -1136,7 +1175,36 @@ async fn space_members_edit_and_admins_manage() {
     assert!(people.contains(&member_user.as_str()));
     assert!(!people.contains(&outsider.as_str()));
 
-    // Losing the membership closes the board at once.
+    let private = create_board(&owner, Some(&space), "Restricted board", false).await;
+    let private_items = format!("{base}/items/{}", id_of(&private));
+    expect(
+        put(
+            &owner,
+            &format!("{private_items}/sharing/users/{member_user}"),
+            json!({"access_level": "edit"}),
+        )
+        .await,
+        StatusCode::OK,
+    )
+    .await;
+    expect(get(&member_user, &private_items).await, StatusCode::OK).await;
+    expect(
+        put(
+            &member_user,
+            &format!("{private_items}/target"),
+            json!({"app": "whiteboard", "type": "workspace_sidebar", "id": space}),
+        )
+        .await,
+        StatusCode::FORBIDDEN,
+    )
+    .await;
+    expect(
+        delete(&member_user, &format!("{items}/target")).await,
+        StatusCode::FORBIDDEN,
+    )
+    .await;
+
+    // Losing membership closes a board even when an explicit edit grant remains.
     set_members(
         &owner,
         &space,
@@ -1144,6 +1212,22 @@ async fn space_members_edit_and_admins_manage() {
     )
     .await;
     expect(get(&member_user, &items).await, StatusCode::NOT_FOUND).await;
+    expect(
+        get(&member_user, &private_items).await,
+        StatusCode::NOT_FOUND,
+    )
+    .await;
+    expect(get(&member_user, &reference).await, StatusCode::NOT_FOUND).await;
+    expect(
+        patch(
+            &member_user,
+            &format!("{private_items}/favorite"),
+            json!({}),
+        )
+        .await,
+        StatusCode::NOT_FOUND,
+    )
+    .await;
 
     // A space with boards is not deleted.
     let busy = expect(
@@ -1153,8 +1237,27 @@ async fn space_members_edit_and_admins_manage() {
     .await;
     assert_eq!(busy["error"]["code"], "whiteboard_space_not_empty");
     expect(delete(&owner, &items).await, StatusCode::NO_CONTENT).await;
+    expect(get(&owner, &reference).await, StatusCode::NOT_FOUND).await;
+    set_members(
+        &owner,
+        &space,
+        json!([member(&owner, "admin"), member(&member_user, "member")]),
+    )
+    .await;
+    let archive = expect(
+        get(&member_user, &format!("{base}/hub?view=archived")).await,
+        StatusCode::OK,
+    )
+    .await;
+    assert!(ids(&archive).is_empty());
     expect(
         delete(&owner, &format!("{items}/permanent")).await,
+        StatusCode::NO_CONTENT,
+    )
+    .await;
+    expect(delete(&owner, &private_items).await, StatusCode::NO_CONTENT).await;
+    expect(
+        delete(&owner, &format!("{private_items}/permanent")).await,
         StatusCode::NO_CONTENT,
     )
     .await;
@@ -1660,6 +1763,8 @@ async fn platform_check_and_search_follow_current_access() {
     )
     .await;
     let in_space = create_board(&owner, Some(&space), &format!("{token} space"), true).await;
+    let owned_by_viewer =
+        create_board(&viewer, Some(&space), &format!("{token} owned"), false).await;
     let pct = create_board(&owner, None, &format!("{token} 100% done"), true).await;
     expect(
         put(
@@ -1914,6 +2019,43 @@ async fn platform_check_and_search_follow_current_access() {
         )
         .await,
         StatusCode::FORBIDDEN,
+    )
+    .await;
+
+    expect(
+        put(
+            &owner,
+            &format!(
+                "{}/items/{}/sharing/users/{viewer}",
+                wb(Some(&space)),
+                id_of(&in_space)
+            ),
+            json!({"access_level": "read"}),
+        )
+        .await,
+        StatusCode::OK,
+    )
+    .await;
+    set_members(&owner, &space, json!([member(&owner, "admin")])).await;
+    assert_eq!(
+        check(&viewer, &[&in_space, &owned_by_viewer]).await["allowed"],
+        json!([])
+    );
+    assert_eq!(
+        search(&viewer, &format!("{token} space")).await["items"],
+        json!([])
+    );
+    assert_eq!(
+        search(&viewer, &format!("{token} owned")).await["items"],
+        json!([])
+    );
+    expect(
+        get(
+            &viewer,
+            &format!("/v1/whiteboard/items/{}/reference", id_of(&owned_by_viewer)),
+        )
+        .await,
+        StatusCode::NOT_FOUND,
     )
     .await;
 

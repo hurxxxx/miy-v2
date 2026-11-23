@@ -1,3 +1,4 @@
+import { LinkedResources } from './LinkedResources';
 import {
   type ReactNode,
   type SetStateAction,
@@ -1779,6 +1780,8 @@ function usePMSViewElement(): ReactNode {
               ) : null}
             </div>
           </div>
+
+          {selectedTaskList && <LinkedResources scope="list" ownerId={selectedTaskList.id} canEdit={canEditTaskList} />}
 
           <div className="hidden items-center gap-6 lg:flex">
             {PMS_VIEW_TABS.map((tab) => (

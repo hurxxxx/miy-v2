@@ -180,6 +180,17 @@ pub async fn load_space(pool: &PgPool, space_id: &str) -> ApiResult<Option<Space
         .await?)
 }
 
+pub(crate) async fn lock_space_for_document(
+    tx: &mut Transaction<'_, Postgres>,
+    space_id: &str,
+) -> ApiResult<Option<Space>> {
+    let sql = format!("SELECT {SPACE_COLUMNS} FROM docs_spaces WHERE id = $1 FOR SHARE");
+    Ok(sqlx::query_as::<_, Space>(&sql)
+        .bind(space_id)
+        .fetch_optional(&mut **tx)
+        .await?)
+}
+
 /// `Ok(true)` when the ACL allows `action`, `Ok(false)` when it denies it, the
 /// error when the check itself failed (directory unavailable).
 async fn allows(acl: &Acl, identity: &Identity, space_id: &str, action: &str) -> ApiResult<bool> {
@@ -516,9 +527,20 @@ pub async fn create_space(
 }
 
 async fn load_named_space(pool: &PgPool, space_id: &str) -> ApiResult<Space> {
-    let space = load_space(pool, space_id)
-        .await?
-        .ok_or_else(space_not_found)?;
+    require_named_space(load_space(pool, space_id).await?)
+}
+
+async fn lock_named_space(tx: &mut Transaction<'_, Postgres>, space_id: &str) -> ApiResult<Space> {
+    let sql = format!("SELECT {SPACE_COLUMNS} FROM docs_spaces WHERE id = $1 FOR UPDATE");
+    let space = sqlx::query_as::<_, Space>(&sql)
+        .bind(space_id)
+        .fetch_optional(&mut **tx)
+        .await?;
+    require_named_space(space)
+}
+
+fn require_named_space(space: Option<Space>) -> ApiResult<Space> {
+    let space = space.ok_or_else(space_not_found)?;
     if space.is_global() {
         // The global space has no ACL: its members are the app's users.
         return Err(ApiError::bad_request(
@@ -551,8 +573,8 @@ pub async fn update_space(
     ApiJson(payload): ApiJson<SpaceRequest>,
 ) -> ApiResult<Json<SpaceOut>> {
     let (name, description) = validate_space(&payload)?;
-    load_named_space(&state.pool, &space_id).await?;
     let mut tx = state.pool.begin().await?;
+    lock_named_space(&mut tx, &space_id).await?;
     state
         .acl
         .require_in(&mut tx, &identity, &space_key(&space_id), MANAGE)
@@ -595,13 +617,14 @@ pub async fn delete_space(
     Extension(identity): Extension<Identity>,
     Path(space_id): Path<String>,
 ) -> ApiResult<StatusCode> {
-    load_named_space(&state.pool, &space_id).await?;
+    let mut tx = state.pool.begin().await?;
+    // A document writer holds a shared lock on the space through its commit.
+    lock_named_space(&mut tx, &space_id).await?;
     let environment = identity
         .context
         .environment
         .clone()
         .ok_or_else(|| ApiError::forbidden("acl_denied", "acl_denied"))?;
-    let mut tx = state.pool.begin().await?;
     state
         .acl
         .require_in(&mut tx, &identity, &space_key(&space_id), MANAGE)

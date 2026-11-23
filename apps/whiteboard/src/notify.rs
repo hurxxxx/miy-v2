@@ -134,21 +134,21 @@ pub fn platform_only(identity: &Identity) -> ApiResult<()> {
 
 /// The SQL condition "the caller may open board `w` now", answerable from the
 /// app DB alone (a platform call carries no token for further platform calls).
-/// A space-visible board counts for the space's members: a direct user grant,
+/// A board in an app space requires current membership: a direct user grant,
 /// or a group grant for one of the person's current groups that the platform
 /// signed into the call (`identity.context.groups`, see [`signed_groups`]).
 /// Binds: `$2` caller, `$3` installation, `$4` environment, `$5` groups.
 pub fn readable_board_condition() -> String {
     format!(
-        "w.trashed_at IS NULL AND (w.owner_id = $2 \
-           OR EXISTS (SELECT 1 FROM whiteboard_user_shares s WHERE s.whiteboard_id = w.id AND s.user_id = $2) \
-           OR (EXISTS (SELECT 1 FROM whiteboard_targets t WHERE t.whiteboard_id = w.id \
-                 AND t.target_app = '{TARGET_APP}' AND t.target_type = '{TARGET_TYPE_WORKSPACE}' \
-                 AND t.target_id = w.workspace_id) \
-               AND (w.workspace_id = '{GLOBAL}' OR EXISTS (SELECT 1 FROM app.miy_acl_grants g \
+        "w.trashed_at IS NULL AND (w.workspace_id = '{GLOBAL}' OR EXISTS (SELECT 1 FROM app.miy_acl_grants g \
                  WHERE g.installation_id = $3::uuid AND g.environment = $4 AND g.kind = '{kind}' \
                    AND g.resource_id = w.workspace_id AND ((g.subject_kind = 'user' AND g.subject_id = $2) \
-                     OR (g.subject_kind = 'group' AND g.subject_id = ANY($5::text[])))))))",
+                     OR (g.subject_kind = 'group' AND g.subject_id = ANY($5::text[]))))) \
+         AND (w.owner_id = $2 \
+           OR EXISTS (SELECT 1 FROM whiteboard_user_shares s WHERE s.whiteboard_id = w.id AND s.user_id = $2) \
+           OR EXISTS (SELECT 1 FROM whiteboard_targets t WHERE t.whiteboard_id = w.id \
+                 AND t.target_app = '{TARGET_APP}' AND t.target_type = '{TARGET_TYPE_WORKSPACE}' \
+                 AND t.target_id = w.workspace_id))",
         kind = spaces::SPACE_KIND,
     )
 }

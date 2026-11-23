@@ -27,6 +27,7 @@ fn whiteboard_routes() -> OpenApiRouter<AppState> {
             whiteboard::trash_item
         ))
         .routes(routes!(whiteboard::restore_item))
+        .routes(routes!(whiteboard::get_reference))
         .routes(routes!(whiteboard::delete_item_permanently))
         .routes(routes!(
             whiteboard::update_target,

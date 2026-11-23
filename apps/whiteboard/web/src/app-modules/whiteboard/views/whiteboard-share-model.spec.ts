@@ -11,19 +11,24 @@ function user(id: string, fullName: string): ShareableUserItem {
     id,
     email: `${id}@ai-do.local`,
     full_name: fullName,
-  } as ShareableUserItem;
+    primary_group: null,
+  };
 }
 
 function sharing(): WhiteboardSharingResponse {
   return {
     link_share: null,
+    owner_id: 'owner',
+    whiteboard_id: 'board',
     users: [
       {
         access_level: 'edit',
         user_id: 'user-2',
+        full_name: 'Grace Hopper',
+        email: '',
       },
     ],
-  } as unknown as WhiteboardSharingResponse;
+  };
 }
 
 describe('whiteboard share model', () => {
@@ -34,17 +39,31 @@ describe('whiteboard share model', () => {
     });
 
     expect(presenter.userRows.map((row) => row.user.id)).toEqual([
-      'user-1',
       'user-2',
+      'user-1',
     ]);
-    expect(presenter.userRows[0]).toMatchObject({
+    expect(presenter.userRows[1]).toMatchObject({
       currentShare: null,
       shared: false,
     });
-    expect(presenter.userRows[1]).toMatchObject({
+    expect(presenter.userRows[0]).toMatchObject({
       currentShare: { access_level: 'edit', user_id: 'user-2' },
       shared: true,
     });
+  });
+
+  it('keeps existing grants manageable outside the candidate page', () => {
+    const grants = sharing();
+    grants.users.push({
+      user_id: 'removed-user',
+      access_level: 'read',
+      full_name: '',
+      email: '',
+    });
+    const presenter = buildWhiteboardSharePresenter({ sharing: grants, users: [] });
+
+    expect(presenter.userRows.map(({ user, shared }) => [user.full_name, shared]))
+      .toEqual([['Grace Hopper', true], ['removed-user', true]]);
   });
 
   it('returns empty sharing state before the response loads', () => {

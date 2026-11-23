@@ -50,6 +50,7 @@ struct FakeCore {
     retracted: Vec<Value>,
     read: Vec<(String, String)>,
     files: HashMap<String, (Value, Vec<u8>)>,
+    references: HashMap<(String, String, String), Value>,
 }
 
 fn core() -> &'static Mutex<FakeCore> {
@@ -182,6 +183,27 @@ async fn fake_file_content(Path((_, id)): Path<(String, String)>) -> impl IntoRe
     }
 }
 
+async fn fake_reference(
+    headers: HeaderMap,
+    Path((_, app, module, id)): Path<(String, String, String, String)>,
+) -> impl IntoResponse {
+    if app != module {
+        return AxumStatus::NOT_FOUND.into_response();
+    }
+    match core()
+        .lock()
+        .unwrap()
+        .references
+        .get(&(caller(&headers), app, id))
+    {
+        Some(item) if item.get("error").is_some() => {
+            (AxumStatus::FORBIDDEN, Json(item.clone())).into_response()
+        }
+        Some(item) => Json(item.clone()).into_response(),
+        None => AxumStatus::NOT_FOUND.into_response(),
+    }
+}
+
 fn start_core() -> String {
     CORE.get_or_init(|| {
         let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
@@ -215,6 +237,10 @@ fn start_core() -> String {
                     .route(
                         &format!("{base}/files/{{id}}/detach"),
                         post(fake_file_release),
+                    )
+                    .route(
+                        "/api/v1/installations/{installation}/connections/{app}/api/v1/{module}/items/{id}/reference",
+                        get(fake_reference),
                     )
                     .with_state(());
                 let listener = tokio::net::TcpListener::from_std(listener).unwrap();
@@ -476,6 +502,124 @@ async fn fixture() -> Fixture {
         .unwrap()
         .to_string();
     Fixture { owner, space, list }
+}
+
+#[tokio::test]
+#[ignore = "needs PMS_TEST_DATABASE_URL"]
+async fn linked_resources_hold_only_ids_and_require_current_access_to_both_apps() {
+    let Fixture { owner, space, list } = fixture().await;
+    let reader = new_user("PMS reader");
+    let outsider = new_user("Docs reader");
+    add_member(&owner, &space, &reader, "viewer").await;
+    let task = create_task(&owner, &list, json!({"title": "Release"})).await;
+    let task_id = task["id"].as_str().unwrap();
+    let task_path = format!("/v1/pms/resource-links/task/{task_id}");
+    let doc_id = uuid::Uuid::new_v4().to_string();
+    let doc_key = |user: &str| (user.to_owned(), "docs".to_owned(), doc_id.clone());
+    let metadata = json!({"id": doc_id, "title": "Design", "space_id": "engineering"});
+    let doc_path = format!("{task_path}/{doc_id}");
+    assert_eq!(
+        call(&owner, Method::PUT, &doc_path, None).await.status(),
+        StatusCode::NOT_FOUND
+    );
+    {
+        let mut state = core().lock().unwrap();
+        state.references.insert(doc_key(&owner), metadata.clone());
+        state
+            .references
+            .insert(doc_key(&outsider), metadata.clone());
+    }
+    assert_eq!(ok(&owner, Method::PUT, &doc_path, None).await, metadata);
+    assert_eq!(ok(&owner, Method::PUT, &doc_path, None).await, metadata);
+    let visible = ok(&owner, Method::GET, &task_path, None).await;
+    assert_eq!(visible["items"].as_array().unwrap().len(), 1);
+    assert_eq!(visible["items"][0]["id"], doc_id);
+    assert_eq!(visible["items"][0]["title"], "Design");
+    let link_id = visible["items"][0]["link_id"].as_str().unwrap();
+    assert_ne!(link_id, doc_id);
+    let unlink = format!("{task_path}/links/{link_id}");
+    assert_eq!(
+        ok(&reader, Method::GET, &task_path, None).await,
+        json!({"items": [], "unavailable_links": []})
+    );
+    assert!(
+        !call(&outsider, Method::GET, &task_path, None)
+            .await
+            .status()
+            .is_success()
+    );
+    core()
+        .lock()
+        .unwrap()
+        .references
+        .insert(doc_key(&reader), metadata.clone());
+    assert_eq!(
+        ok(&reader, Method::GET, &task_path, None).await["items"],
+        visible["items"]
+    );
+    assert!(
+        !call(&reader, Method::DELETE, &unlink, None)
+            .await
+            .status()
+            .is_success()
+    );
+    core().lock().unwrap().references.insert(
+        doc_key(&owner),
+        json!({"error": {"code": "installation_permission_denied"}}),
+    );
+    assert_eq!(
+        call(&owner, Method::GET, &task_path, None).await.status(),
+        StatusCode::FAILED_DEPENDENCY,
+    );
+    core().lock().unwrap().references.remove(&doc_key(&owner));
+    assert_eq!(
+        ok(&owner, Method::GET, &task_path, None).await,
+        json!({"items": [], "unavailable_links": [link_id]})
+    );
+    ok(&owner, Method::DELETE, &unlink, None).await;
+    assert_eq!(
+        ok(&reader, Method::GET, &task_path, None).await["items"],
+        json!([])
+    );
+
+    let first_board = uuid::Uuid::new_v4().to_string();
+    let second_board = uuid::Uuid::new_v4().to_string();
+    for (id, title) in [(&first_board, "Planning"), (&second_board, "Roadmap")] {
+        core().lock().unwrap().references.insert(
+            (owner.clone(), "whiteboard".into(), id.clone()),
+            json!({"id": id, "title": title, "space_id": "global"}),
+        );
+    }
+    let list_path = format!("/v1/pms/resource-links/list/{list}");
+    let space_path = format!("/v1/pms/resource-links/space/{space}");
+    ok(
+        &owner,
+        Method::PUT,
+        &format!("{list_path}/{first_board}"),
+        None,
+    )
+    .await;
+    ok(
+        &owner,
+        Method::PUT,
+        &format!("{space_path}/{first_board}"),
+        None,
+    )
+    .await;
+    ok(
+        &owner,
+        Method::PUT,
+        &format!("{list_path}/{second_board}"),
+        None,
+    )
+    .await;
+    let list_items = ok(&owner, Method::GET, &list_path, None).await;
+    assert_eq!(list_items["items"].as_array().unwrap().len(), 1);
+    assert_eq!(list_items["items"][0]["id"], second_board);
+    assert_eq!(
+        ok(&owner, Method::GET, &space_path, None).await["items"][0]["id"],
+        first_board
+    );
 }
 
 fn notifications_for(task_id: &str) -> Vec<Value> {

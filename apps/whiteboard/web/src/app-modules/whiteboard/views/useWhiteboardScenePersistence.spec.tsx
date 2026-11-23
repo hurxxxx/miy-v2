@@ -155,4 +155,23 @@ describe('whiteboard scene persistence', () => {
     });
     expect(hook.result.current.activeBoard?.title).toBe('Board');
   });
+
+  it('recovers a committed save with a lost response before saving newer edits', async () => {
+    const committed = { ...scene, elements: [element('a', 1)] };
+    const api = vi.fn()
+      .mockRejectedValueOnce(new ApiError('network', 'network_error', null))
+      .mockResolvedValueOnce({ ...board, revision: 5, scene: committed })
+      .mockResolvedValueOnce({ ...board, revision: 6 });
+    const { hook } = setup(api);
+
+    await change(hook, [element('a', 1)]);
+    await change(hook, [element('a', 2)]);
+
+    expect(api).toHaveBeenCalledTimes(3);
+    expect(api.mock.calls[1][1]?.method ?? 'GET').toBe('GET');
+    expect(sentBody(api, 2).base_revision).toBe(5);
+    expect(sentBody(api, 2).scene.elements).toEqual([element('a', 2)]);
+    expect(hook.result.current.persistence.conflict).toBe(false);
+    expect(hook.result.current.persistence.hasUnsavedScene()).toBe(false);
+  });
 });

@@ -1,6 +1,6 @@
 import type { components, paths } from '../../api.generated';
 /**
- * Spaces of the whiteboard app (AI-DO app spaces): list, create, delete and
+ * Spaces of the whiteboard app (AI-DO app spaces): list, create, update, delete and
  * the members editor's providers (SDK resource ACL). Same contract as the
  * board app's spaces (apps/board/web/src/platform/board/board-api.ts).
  */
@@ -19,6 +19,7 @@ type SpaceOperations = paths['/v1/spaces'];
 type SpacesResponse = SpaceOperations['get']['responses'][200]['content']['application/json'];
 export type WhiteboardSpace = SpaceOperations['post']['responses'][201]['content']['application/json'];
 type CreateSpaceInput = SpaceOperations['post']['requestBody']['content']['application/json'];
+type UpdateSpaceInput = paths['/v1/spaces/{space_id}']['patch']['requestBody']['content']['application/json'];
 type ServerShareSnapshot = components['schemas']['SpaceShareSnapshot'];
 type ReplaceSpaceSharingInput = components['schemas']['SharingRequest'];
 type SharingResult = paths['/v1/spaces/{space_id}/sharing/requests/{request_id}']['get']['responses'][200]['content']['application/json'];
@@ -49,6 +50,17 @@ export function deleteSpace(
 ): Promise<void> {
   return apiFetchJson<void>(`/v1/spaces/${encodeURIComponent(spaceId)}`, api, {
     method: 'DELETE',
+  });
+}
+
+export function updateSpace(
+  api: AppApi | null | undefined,
+  spaceId: string,
+  input: UpdateSpaceInput,
+): Promise<WhiteboardSpace> {
+  return apiFetchJson<WhiteboardSpace>(`/v1/spaces/${encodeURIComponent(spaceId)}`, api, {
+    method: 'PATCH',
+    body: JSON.stringify(input),
   });
 }
 

@@ -87,7 +87,7 @@ impl Target {
 // ---------------------------------------------------------------- access
 
 /// AI-DO `WhiteboardAccess`.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Access {
     pub access_level: Option<&'static str>,
     pub can_view: bool,
@@ -121,15 +121,11 @@ fn max_level(left: Option<&'static str>, right: Option<&'static str>) -> Option<
     }
 }
 
-/// Does the board have a target whose access depends on the board's space?
-pub fn needs_space_role(board: &Board, targets: &[Target]) -> bool {
-    targets.iter().any(|target| target.is_workspace_of(board))
-}
-
-/// AI-DO `resolve_whiteboard_access` with `target_access_level`. The owner
-/// has every right. Others take the higher of their direct share and the
+/// AI-DO `resolve_whiteboard_access` with `target_access_level`. The current
+/// space membership is required for ownership and direct shares to grant
+/// access. The owner has every right. Others take the higher of their direct share and the
 /// targets: the board's space target (AI-DO `workspace_sidebar`) gives space
-/// members edit and space admins manage (AI-DO `project_app_workspace_target_access`).
+/// viewers read, members edit, and admins manage (AI-DO `project_app_workspace_target_access`).
 /// Other targets (PMS spaces and task lists, meetings) project nothing in
 /// miy, as unknown targets did in AI-DO.
 pub fn resolve_access(
@@ -139,6 +135,9 @@ pub fn resolve_access(
     targets: &[Target],
     space_role: SpaceRole,
 ) -> Access {
+    if space_role == SpaceRole::None {
+        return Access::default();
+    }
     if board.owner_id == user_id {
         return Access {
             access_level: Some("edit"),
@@ -155,6 +154,7 @@ pub fn resolve_access(
             match space_role {
                 SpaceRole::Admin => (true, true, true),
                 SpaceRole::Member => (true, true, false),
+                SpaceRole::Viewer => (true, false, false),
                 SpaceRole::None => (false, false, false),
             }
         } else {
@@ -263,13 +263,17 @@ pub async fn load_for_user(
         .fetch_optional(&state.pool)
         .await?
         .ok_or_else(not_found)?;
+    load_visible_board(state, identity, board).await
+}
+
+async fn load_visible_board(
+    state: &AppState,
+    identity: &Identity,
+    board: Board,
+) -> ApiResult<Loaded> {
     let targets = targets_of(&state.pool, std::slice::from_ref(&board.id)).await?;
     let share = direct_share(&state.pool, &board.id, &identity.user_id).await?;
-    let role = if board.owner_id != identity.user_id && needs_space_role(&board, &targets) {
-        spaces::role(&state.acl, identity, &board.workspace_id).await?
-    } else {
-        SpaceRole::None
-    };
+    let role = spaces::role(&state.acl, identity, &board.workspace_id).await?;
     let access = resolve_access(&board, &identity.user_id, share.as_deref(), &targets, role);
     if !access.can_view || (board.trashed_at.is_some() && !access.can_manage) {
         return Err(not_found());
@@ -302,11 +306,7 @@ pub async fn lock_for_user(
         .ok_or_else(not_found)?;
     let targets = targets_of(&mut **tx, std::slice::from_ref(&board.id)).await?;
     let share = direct_share(&mut **tx, &board.id, &identity.user_id).await?;
-    let role = if board.owner_id != identity.user_id && needs_space_role(&board, &targets) {
-        spaces::role_in(tx, &state.acl, identity, &board.workspace_id).await?
-    } else {
-        SpaceRole::None
-    };
+    let role = spaces::role_in(tx, &state.acl, identity, &board.workspace_id).await?;
     let access = resolve_access(&board, &identity.user_id, share.as_deref(), &targets, role);
     if !access.can_view || (board.trashed_at.is_some() && !access.can_manage) {
         return Err(not_found());
@@ -688,6 +688,7 @@ pub struct HubResponse {
     total: usize,
     page: i64,
     page_size: i64,
+    can_publish: bool,
 }
 
 fn int_param(
@@ -783,18 +784,16 @@ pub async fn hub(
     let target_id = non_empty(&query, "target_id");
 
     let role = require_workspace(&state, &identity, &space_id).await?;
-    let member = role >= SpaceRole::Member;
     // AI-DO `load_accessible_whiteboards`, with the access predicate in SQL.
     let sql = format!(
         "SELECT {BOARD_COLUMNS} FROM whiteboards w WHERE w.workspace_id = $1 AND (w.owner_id = $2 \
            OR EXISTS (SELECT 1 FROM whiteboard_user_shares s WHERE s.whiteboard_id = w.id AND s.user_id = $2) \
-           OR ($3 AND EXISTS (SELECT 1 FROM whiteboard_targets t WHERE t.whiteboard_id = w.id \
-                AND t.target_app = '{TARGET_APP}' AND t.target_type = '{TARGET_TYPE_WORKSPACE}' AND t.target_id = w.workspace_id)))"
+           OR EXISTS (SELECT 1 FROM whiteboard_targets t WHERE t.whiteboard_id = w.id \
+                AND t.target_app = '{TARGET_APP}' AND t.target_type = '{TARGET_TYPE_WORKSPACE}' AND t.target_id = w.workspace_id))"
     );
     let boards = sqlx::query_as::<_, Board>(&sql)
         .bind(&space_id)
         .bind(&identity.user_id)
-        .bind(member)
         .fetch_all(&state.pool)
         .await?;
     let ids: Vec<String> = boards.iter().map(|board| board.id.clone()).collect();
@@ -843,7 +842,7 @@ pub async fn hub(
             &mine,
             role,
         );
-        if !access.can_view {
+        if !access.can_view || (board.trashed_at.is_some() && !access.can_manage) {
             continue;
         }
         owners.insert(board.owner_id.clone());
@@ -924,6 +923,7 @@ pub async fn hub(
         total,
         page,
         page_size,
+        can_publish: role >= SpaceRole::Member,
     }))
 }
 
@@ -1184,6 +1184,49 @@ pub async fn get_item(
     spaces::ensure_exists(&state.pool, &space_id).await?;
     let loaded = load_for_user(&state, &identity, &space_id, &item_id).await?;
     Ok(Json(detail(&state, &identity, &loaded).await?))
+}
+
+#[derive(Serialize, utoipa::ToSchema)]
+pub struct BoardReference {
+    id: String,
+    title: String,
+    space_id: String,
+}
+
+#[utoipa::path(
+    get, path = "/items/{item_id}/reference", operation_id = "getWhiteboardReference", tag = "Whiteboards",
+    params(("item_id" = String, Path)),
+    responses(
+        (status = 200, description = "A readable, active board's ID and title", body = BoardReference),
+        (status = 401, description = "Platform identity could not be verified", body = IdentityErrorResponse),
+        (status = 404, description = "The workspace or board is missing or is not visible", body = ErrorResponse),
+        (status = 500, description = "Internal error", body = ErrorResponse),
+        (status = 503, description = "A required platform service is unavailable", body = ErrorResponse),
+    )
+)]
+pub async fn get_reference(
+    State(state): State<AppState>,
+    Extension(identity): Extension<Identity>,
+    Path(params): Path<HashMap<String, String>>,
+) -> ApiResult<Json<BoardReference>> {
+    let item_id = item_param(&params)?;
+    let sql = format!(
+        "SELECT {BOARD_COLUMNS} FROM whiteboards WHERE id = $1 AND trashed_at IS NULL \
+         AND ($2::text IS NULL OR workspace_id = $2)"
+    );
+    let board = sqlx::query_as::<_, Board>(&sql)
+        .bind(item_id)
+        .bind(params.get("space_id"))
+        .fetch_optional(&state.pool)
+        .await?
+        .ok_or_else(not_found)?;
+    spaces::ensure_exists(&state.pool, &board.workspace_id).await?;
+    let loaded = load_visible_board(&state, &identity, board).await?;
+    Ok(Json(BoardReference {
+        id: loaded.board.id,
+        title: loaded.board.title,
+        space_id: loaded.board.workspace_id,
+    }))
 }
 
 fn revision_conflict() -> ApiError {
@@ -1496,8 +1539,8 @@ pub async fn update_target(
     spaces::ensure_exists(&state.pool, &space_id).await?;
     let mut tx = state.pool.begin().await?;
     let loaded = lock_for_user(&mut tx, &state, &identity, &space_id, &item_id).await?;
-    if !loaded.access.can_edit {
-        return Err(edit_required());
+    if !loaded.access.can_manage {
+        return Err(manage_required());
     }
     let role = spaces::role_in(&mut tx, &state.acl, &identity, &loaded.board.workspace_id).await?;
     if !target_write_allowed(
@@ -1568,8 +1611,8 @@ pub async fn delete_target(
     spaces::ensure_exists(&state.pool, &space_id).await?;
     let mut tx = state.pool.begin().await?;
     let loaded = lock_for_user(&mut tx, &state, &identity, &space_id, &item_id).await?;
-    if !loaded.access.can_edit {
-        return Err(edit_required());
+    if !loaded.access.can_manage {
+        return Err(manage_required());
     }
     let now = now_utc();
     sqlx::query("DELETE FROM whiteboard_targets WHERE whiteboard_id = $1 AND is_primary")
@@ -1607,11 +1650,7 @@ async fn access_in(
         .await?;
     let targets = targets_of(&mut **tx, std::slice::from_ref(&board.id)).await?;
     let share = direct_share(&mut **tx, &board.id, &identity.user_id).await?;
-    let role = if board.owner_id != identity.user_id && needs_space_role(&board, &targets) {
-        spaces::role_in(tx, &state.acl, identity, &board.workspace_id).await?
-    } else {
-        SpaceRole::None
-    };
+    let role = spaces::role_in(tx, &state.acl, identity, &board.workspace_id).await?;
     Ok(resolve_access(
         &board,
         &identity.user_id,
@@ -2067,7 +2106,7 @@ mod tests {
     #[test]
     fn owner_has_every_right() {
         let b = board("owner");
-        let access = resolve_access(&b, "owner", None, &[], SpaceRole::None);
+        let access = resolve_access(&b, "owner", None, &[], SpaceRole::Member);
         assert!(access.can_view && access.can_edit && access.can_share && access.can_manage);
     }
 
@@ -2082,7 +2121,7 @@ mod tests {
     #[test]
     fn direct_shares_and_space_roles_combine_like_ai_do() {
         let b = board("owner");
-        let read = resolve_access(&b, "other", Some("read"), &[], SpaceRole::None);
+        let read = resolve_access(&b, "other", Some("read"), &[], SpaceRole::Member);
         assert_eq!(read.access_level, Some("read"));
         assert!(read.can_view && !read.can_edit && !read.can_share);
         let target = vec![workspace_target(&b)];
@@ -2092,6 +2131,10 @@ mod tests {
         assert!(admin.can_edit && admin.can_manage && admin.can_share);
         let outsider = resolve_access(&b, "other", None, &target, SpaceRole::None);
         assert!(!outsider.can_view);
+        let removed_viewer = resolve_access(&b, "other", Some("read"), &[], SpaceRole::None);
+        assert_eq!(removed_viewer, Access::default());
+        let removed_owner = resolve_access(&b, "owner", None, &target, SpaceRole::None);
+        assert_eq!(removed_owner, Access::default());
         let mut foreign = workspace_target(&b);
         foreign.target_app = "pms".into();
         foreign.target_type = "space".into();

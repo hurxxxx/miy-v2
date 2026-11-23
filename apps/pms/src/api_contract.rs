@@ -1,6 +1,6 @@
 use crate::{
-    attachments, copy, custom_fields, export, home_card, lists, milestones, notify, saved_filters,
-    search, spaces, statuses, task_items, tasks, templates, users,
+    attachments, copy, custom_fields, export, home_card, lists, milestones, notify, resource_links,
+    saved_filters, search, spaces, statuses, task_items, tasks, templates, users,
 };
 use axum::Router;
 use std::{fs, path::Path};
@@ -12,6 +12,9 @@ use utoipa_axum::{router::OpenApiRouter, routes};
 
 pub(crate) fn router() -> (Router<sqlx::PgPool>, OpenApi) {
     let (router, mut spec) = OpenApiRouter::new()
+        .routes(routes!(resource_links::list))
+        .routes(routes!(resource_links::attach))
+        .routes(routes!(resource_links::detach))
         .routes(routes!(users::me))
         .routes(routes!(users::list_users))
         .routes(routes!(spaces::list_spaces, spaces::create_space))
@@ -157,6 +160,10 @@ pub(crate) fn router() -> (Router<sqlx::PgPool>, OpenApi) {
             (
                 notify::CheckItem::name().into_owned(),
                 notify::CheckItem::schema(),
+            ),
+            (
+                resource_links::LinkScope::name().into_owned(),
+                resource_links::LinkScope::schema(),
             ),
         ]);
     (router, spec)

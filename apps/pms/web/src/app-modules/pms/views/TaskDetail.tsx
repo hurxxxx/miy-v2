@@ -47,6 +47,7 @@ import {
 import { InlineSaveError, MetaLabel, UserRolePicker } from './TaskDetailFields';
 import { useTaskDetailAttachments } from './useTaskDetailAttachments';
 import { TaskDetailActivityPanel } from './TaskDetailActivityPanel';
+import { LinkedResources } from './LinkedResources';
 import { PmsAttachmentThumbnail } from './PmsAttachmentThumbnail';
 import { useNavigationDirty } from '../../../platform/runtime/navigation-state';
 import { useTaskDetailChecklist } from './useTaskDetailChecklist';
@@ -1265,6 +1266,7 @@ function TaskDetailContent({
                 </Button>
               ) : null}
             </div>
+            <LinkedResources scope="task" ownerId={task.id} canEdit={canEdit} />
           </div>
         </div>
 

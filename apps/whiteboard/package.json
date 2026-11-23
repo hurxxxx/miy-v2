@@ -8,7 +8,7 @@
     "api:generate": "cargo run --locked --bin miy-app -- --write-openapi && node web/api-tools/generate.mjs",
     "build": "vite build",
     "typecheck": "tsc --noEmit",
-    "build:preview": "vite build --config sdk/preview/vite.config.ts",
+    "build:preview": "vite build --config vite.preview.config.ts",
     "test": "vitest run"
   },
   "dependencies": {

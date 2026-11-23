@@ -1909,6 +1909,76 @@
         }
       }
     },
+    "/v1/whiteboard/items/{item_id}/reference": {
+      "get": {
+        "tags": [
+          "Whiteboards"
+        ],
+        "operationId": "getWhiteboardReference",
+        "parameters": [
+          {
+            "name": "item_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A readable, active board's ID and title",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BoardReference"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Platform identity could not be verified",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdentityErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The workspace or board is missing or is not visible",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A required platform service is unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/whiteboard/items/{item_id}/restore": {
       "post": {
         "tags": [
@@ -3541,6 +3611,85 @@
         }
       }
     },
+    "/v1/workspaces/{space_id}/whiteboard/items/{item_id}/reference": {
+      "get": {
+        "tags": [
+          "Whiteboards"
+        ],
+        "operationId": "getWhiteboardReferenceInSpace",
+        "parameters": [
+          {
+            "name": "item_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "space_id",
+            "in": "path",
+            "description": "Whiteboard app space ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A readable, active board's ID and title",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BoardReference"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Platform identity could not be verified",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdentityErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The workspace or board is missing or is not visible",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A required platform service is unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/workspaces/{space_id}/whiteboard/items/{item_id}/restore": {
       "post": {
         "tags": [
@@ -4328,6 +4477,25 @@
         "format": "binary",
         "description": "Bodies streamed through the file gateway."
       },
+      "BoardReference": {
+        "type": "object",
+        "required": [
+          "id",
+          "title",
+          "space_id"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "space_id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
+        }
+      },
       "CheckItem": {
         "type": "object",
         "required": [
@@ -4672,9 +4840,13 @@
           "items",
           "total",
           "page",
-          "page_size"
+          "page_size",
+          "can_publish"
         ],
         "properties": {
+          "can_publish": {
+            "type": "boolean"
+          },
           "items": {
             "type": "array",
             "items": {

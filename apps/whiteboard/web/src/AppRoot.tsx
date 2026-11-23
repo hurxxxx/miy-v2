@@ -1,6 +1,6 @@
 // Before anything loads Excalidraw: self-hosted fonts under the frame CSP.
 import './platform/excalidraw/self-hosted-assets';
-import { Suspense, lazy, useCallback, useMemo } from 'react';
+import { Suspense, lazy, useCallback, useLayoutEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { AppProps, NavigationState } from '@miy/sdk';
 import { FeedbackProvider } from '@miy/ui';
@@ -30,10 +30,12 @@ const WhiteboardView = lazy(() =>
  * - `/<id>?space=` — one board (AI-DO `/w/:workspaceSlug/whiteboard/:id`).
  */
 export default function AppRoot({ runtime }: AppProps) {
-  // Display settings are portal choices delivered on every render.
-  syncLocale(runtime.settings.locale);
-  syncDateFormatPreference(runtime.settings.dateFormat);
-  syncTimeZonePreference(runtime.settings.timeZone);
+  const { locale, dateFormat, timeZone } = runtime.settings;
+  useLayoutEffect(() => {
+    syncLocale(locale);
+    syncDateFormatPreference(dateFormat);
+    syncTimeZonePreference(timeZone);
+  }, [locale, dateFormat, timeZone]);
   return (
     <RuntimeProvider runtime={runtime}>
       <Feedback>

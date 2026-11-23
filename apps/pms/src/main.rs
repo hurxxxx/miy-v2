@@ -18,6 +18,7 @@ mod lists;
 mod milestones;
 mod models;
 mod notify;
+mod resource_links;
 mod saved_filters;
 mod search;
 mod spaces;

@@ -269,7 +269,7 @@ export function listDocPages(
   itemId: string,
 ): Promise<DocsPageListResponse> {
   return request<Models['PageListResponse']>(
-    `/v1/docs/items/${segment(itemId)}/pages`,
+    `/v1/docs/items/${segment(itemId)}/pages?metadata_only=true`,
     api,
   );
 }
@@ -277,8 +277,9 @@ export function listDocPages(
 export function getDocPage(
   api: AppApi | null | undefined,
   pageId: string,
+  init?: RequestInit,
 ): Promise<DocsPageItem> {
-  return request<Models['PageItem']>(`/v1/docs/pages/${segment(pageId)}`, api);
+  return request<Models['PageItem']>(`/v1/docs/pages/${segment(pageId)}`, api, init);
 }
 
 export function createDocPage(

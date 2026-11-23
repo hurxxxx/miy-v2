@@ -6,6 +6,7 @@ import {
   useState,
   type CSSProperties,
   type PointerEvent,
+  type ReactNode,
   type WheelEvent,
 } from 'react';
 import {
@@ -64,6 +65,7 @@ export interface DocsFullscreenReadModalProps {
   doc: DocsHubItem;
   pages: DocsPageItem[];
   selectedPageId: string | null;
+  pageBodyPlaceholder?: ReactNode;
   onSelectPage: (pageId: string | null) => void;
   onClose: () => void;
   resolveFileUrl?: (url: string) => Promise<string>;
@@ -89,6 +91,7 @@ export function DocsFullscreenReadModal({
   doc,
   pages,
   selectedPageId,
+  pageBodyPlaceholder,
   onSelectPage,
   onClose,
   resolveFileUrl,
@@ -97,6 +100,7 @@ export function DocsFullscreenReadModal({
     doc,
     pages,
     selectedPageId,
+    pageBodyPlaceholder,
     onSelectPage,
     onClose,
     resolveFileUrl,
@@ -107,6 +111,7 @@ function useDocsFullscreenReadModalElement({
   doc,
   pages,
   selectedPageId,
+  pageBodyPlaceholder,
   onSelectPage,
   onClose,
   resolveFileUrl,
@@ -545,12 +550,14 @@ function useDocsFullscreenReadModalElement({
                   {doc.title} · {activeLabel}
                 </p>
               </div>
-              <BlockViewer
-                key={activePage.id}
-                content={(activePage.content_blocks as BlockContent) ?? []}
-                resolveFileUrl={resolveFileUrl}
-                className="text-app-ink"
-              />
+              {pageBodyPlaceholder ?? (
+                <BlockViewer
+                  key={activePage.id}
+                  content={(activePage.content_blocks as BlockContent) ?? []}
+                  resolveFileUrl={resolveFileUrl}
+                  className="text-app-ink"
+                />
+              )}
             </article>
           </div>
 
@@ -559,7 +566,7 @@ function useDocsFullscreenReadModalElement({
             ref={canvasRef}
             className={cn(
               'absolute inset-0 h-full w-full',
-              tool === 'cursor' ? 'pointer-events-none' : 'pointer-events-auto',
+              tool === 'cursor' || pageBodyPlaceholder ? 'pointer-events-none' : 'pointer-events-auto',
               tool === 'pen' && 'cursor-crosshair',
             )}
             onPointerDown={handlePointerDown}

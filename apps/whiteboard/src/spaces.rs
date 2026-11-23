@@ -11,7 +11,7 @@
 //!   grants nothing in miy.
 //! - A row of `whiteboard_spaces` is an app space. Its members are the SDK
 //!   resource ACL (kind `space`) with AI-DO's two roles: `member` edits the
-//!   space's shared boards, `admin` also manages them (rename, trash, share)
+//!   space's shared boards, `viewer` may read them, and `admin` also manages them (rename, trash, share)
 //!   and the members. Any app user may create a space and becomes its
 //!   protected admin.
 use axum::{
@@ -44,6 +44,11 @@ pub const ACTION_MANAGE_BOARDS: &str = "whiteboard.manage";
 pub fn acl_roles() -> Vec<RoleDefinition> {
     vec![
         RoleDefinition {
+            id: "viewer".into(),
+            label: "보기 전용".into(),
+            actions: vec![ACTION_READ.into()],
+        },
+        RoleDefinition {
             id: "member".into(),
             label: "멤버".into(),
             actions: vec![ACTION_READ.into(), ACTION_EDIT.into()],
@@ -72,6 +77,7 @@ pub fn space_key(space_id: &str) -> ResourceKey {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum SpaceRole {
     None,
+    Viewer,
     Member,
     Admin,
 }
@@ -157,17 +163,21 @@ pub async fn role(acl: &Acl, identity: &Identity, space_id: &str) -> ApiResult<S
         return Ok(SpaceRole::Member);
     }
     let key = space_key(space_id);
-    match acl.require(identity, &key, ACTION_MANAGE_BOARDS).await {
-        Ok(()) => return Ok(SpaceRole::Admin),
-        Err(error) if is_denied(&error) => {}
-        Err(error) => return Err(error.into()),
+    for (action, role) in ROLE_ACTIONS {
+        match acl.require(identity, &key, action).await {
+            Ok(()) => return Ok(role),
+            Err(error) if is_denied(&error) => {}
+            Err(error) => return Err(error.into()),
+        }
     }
-    match acl.require(identity, &key, ACTION_READ).await {
-        Ok(()) => Ok(SpaceRole::Member),
-        Err(error) if is_denied(&error) => Ok(SpaceRole::None),
-        Err(error) => Err(error.into()),
-    }
+    Ok(SpaceRole::None)
 }
+
+const ROLE_ACTIONS: [(&str, SpaceRole); 3] = [
+    (ACTION_MANAGE_BOARDS, SpaceRole::Admin),
+    (ACTION_EDIT, SpaceRole::Member),
+    (ACTION_READ, SpaceRole::Viewer),
+];
 
 /// [`role`] inside a write transaction: the ACL share lock is held until the
 /// business write commits, so a concurrent member change waits for it.
@@ -181,19 +191,14 @@ pub async fn role_in(
         return Ok(SpaceRole::Member);
     }
     let key = space_key(space_id);
-    match acl
-        .require_in(tx, identity, &key, ACTION_MANAGE_BOARDS)
-        .await
-    {
-        Ok(()) => return Ok(SpaceRole::Admin),
-        Err(error) if is_denied(&error) => {}
-        Err(error) => return Err(error.into()),
+    for (action, role) in ROLE_ACTIONS {
+        match acl.require_in(tx, identity, &key, action).await {
+            Ok(()) => return Ok(role),
+            Err(error) if is_denied(&error) => {}
+            Err(error) => return Err(error.into()),
+        }
     }
-    match acl.require_in(tx, identity, &key, ACTION_READ).await {
-        Ok(()) => Ok(SpaceRole::Member),
-        Err(error) if is_denied(&error) => Ok(SpaceRole::None),
-        Err(error) => Err(error.into()),
-    }
+    Ok(SpaceRole::None)
 }
 
 /// Every space ID the caller can act on, in the ACL's own SQL filter.
@@ -622,20 +627,23 @@ mod tests {
     use super::*;
 
     #[tokio::test]
-    async fn roles_build_an_acl_with_member_as_the_default_role() {
+    async fn roles_build_an_acl_with_read_only_as_the_least_privileged_role() {
         let pool = sqlx::postgres::PgPoolOptions::new()
             .connect_lazy("postgres://localhost/unused")
             .unwrap();
         let acl = Acl::new(pool, acl_roles()).unwrap();
         drop(acl);
         let roles = acl_roles();
+        assert_eq!(roles[0].actions, [ACTION_READ]);
         assert!(
-            roles[0]
+            roles[1]
                 .actions
                 .iter()
-                .all(|a| roles[1].actions.contains(a))
+                .all(|a| roles[2].actions.contains(a))
         );
-        assert!(!roles[0].actions.iter().any(|a| a == MANAGE));
-        assert!(SpaceRole::Admin > SpaceRole::Member && SpaceRole::Member > SpaceRole::None);
+        assert!(!roles[1].actions.iter().any(|a| a == MANAGE));
+        assert!(SpaceRole::Admin > SpaceRole::Member);
+        assert!(SpaceRole::Member > SpaceRole::Viewer);
+        assert!(SpaceRole::Viewer > SpaceRole::None);
     }
 }

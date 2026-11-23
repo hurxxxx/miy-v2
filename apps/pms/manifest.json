@@ -18,6 +18,8 @@
     "search": "/v1/search"
   },
   "requestedPermissions": [
+    "app:docs:read",
+    "app:whiteboard:read",
     "database",
     "platform:directory:read",
     "platform:files:read",

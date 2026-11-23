@@ -20,7 +20,7 @@
 | 실시간 공동편집·커서 | `collab.py`, `collab_codec.py`, `realtime_protocol.py`, `docs_collab_documents`, `/docs/collab/pages/{ref}/session·snapshot`, WS 경로, `CollaborativeBlockEditor`, `useDocsCollabSnapshotSaveController`(+spec), 페이지 트리 실시간 이벤트(`docsPagesChanged`) | 계획 §2.2 제외(후속). §3.3의 단일 편집으로 대체 |
 | HTML 페이지 | `content_format='html'`, `docs-html-*`, `DocsHtmlRenderPage`, `/:docId/html/:pageId`, HTML 업로드·편집·렌더링 | 계획 §2.2 제외(프레임 `frame-src 'none'`) |
 | 링크 공유(내부 링크) | `docs_native_doc_link_shares`, `/sharing/link`, `/shared-links/{token}`, `public_router`의 `share_token` 경로, `/docs/shared/:token` | 계획 §2.2 "익명 링크" 제외. AI-DO 링크는 로그인한 내부 사용자 누구나 토큰으로 여는 bearer 권한이라 기본 거부·명시 승인 모델과 맞지 않는다. 사용자 공유만 옮김 |
-| PMS 태스크 연결·PMS 공간 대상 | `/items/{id}/pms-tasks`, `pms_task_doc_links`, `TaskPickerModal`, `space:<id>` 위치(`pms/space` 대상), 허브 `space_id` 필터, `pms_rehome.py` | PMS는 별도 앱이다. 연결 표가 PMS 도메인에 있고 앱 간 호출 계약(`app:pms:*`)과 PMS 쪽 엔드포인트가 필요하다(§7). 요청 권한에도 없다 |
+| PMS 태스크 연결·PMS 공간 대상 | `/items/{id}/pms-tasks`, `pms_task_doc_links`, `TaskPickerModal`, `space:<id>` 위치(`pms/space` 대상), 허브 `space_id` 필터, `pms_rehome.py` | 태스크에서 기존 문서를 연결하는 흐름은 PMS가 제공한다(§7). 문서 화면에서 태스크를 연결하는 흐름과 PMS 공간을 문서 저장 위치로 쓰는 방식은 남아 있다 |
 | 회의록·회의 노트 | `minutes.py`, `docs_meeting_access`, `access_grants.py`, 회의 노트 보기 | 회의 앱 데이터(회의 앱 미운영). `meeting_notes` 보기 값은 API에 남지만 항상 비어 있고 사이드바에서 뺐다 |
 | AI 도구·RAG·검색 투영 | `tools.py`, `rag_sync.py`, `search_projection.py`, `search_hooks.py`, `source_access.py`, `partitioning.py`, `rag_scope`·`retrieval_partition_id` 컬럼, "AI에게 묻기" 버튼 | M13 범위. 통합 검색은 §3.6의 SQL 검색 |
 | 컬렉션 | `docs_collections`, `/docs/collections*` | AI-DO 화면에서 쓰지 않던 API 전용 기능. 응답의 `collection`은 `null`, 요청의 `collection_id`는 404 |
@@ -110,7 +110,7 @@
 | 요청마다 URL의 워크스페이스에 묶고 그 워크스페이스 문서만 로드 | 공간 범위 경로(허브·만들기·즐겨찾기 `scope=space`)만 `?space=`. 문서·페이지·첨부 경로는 문서의 공간을 스스로 찾는다(AI-DO의 공유 토큰·리소스 경로와 같은 동작) |
 
 - **문서 접근(`resolve_native_doc_access`) 그대로:** 소유자는 모든 권한. 그 밖에는 사용자 공유(`read`/`edit`)와 문서 대상(`docs/workspace_sidebar/<문서의 공간>`)을 통한 공간 역할 투영 중 높은 것. 대상 투영: `viewer` → 읽기, `member` → 편집, `admin` → 편집·관리·공유. 관리·공유는 대상의 `admin`만(소유자 제외). 보이지 않는 문서와 관리할 수 없는 보관 문서는 404, 페이지 읽기 실패는 403 `docs_page_access_required`, 편집 실패는 403 `docs_doc_edit_access_required`.
-- **AI-DO 규칙 그대로 둔 것:** 대상 변경(`PUT/DELETE …/target`)은 편집 권한으로 된다(화면은 관리 권한일 때만 보인다). 공간의 `viewer`도 그 공간에 문서를 만들 수 있다. 공유받은 사람은 그 문서가 있는 공간에 들어가지 않아도 문서를 연다(목록에는 공간에 들어갈 때만 보인다, AI-DO ADR 0027). 공유받은 사람의 복제본은 원본 공간에 그 사람 소유로 생긴다.
+- **대상 변경과 복제:** 공개 범위 변경(`PUT/DELETE …/target`)은 문서 관리 권한이 필요하다. 공간의 `viewer`도 그 공간에 개인 문서를 만들 수 있다. 공유받은 사람은 그 문서가 있는 공간에 들어가지 않아도 문서를 연다(목록에는 공간에 들어갈 때만 보인다, AI-DO ADR 0027). 공간 밖에서 공유받아 복제하면 전역 공간에 비공개 문서로 저장한다. 공간 공개 대상은 원본 공간에서 쓰기 역할을 가진 경우에만 복제본에 유지한다.
 - **SDK ACL을 쓴 곳과 안 쓴 곳:** 공간 멤버는 ACL을 쓴다(그룹 부여·감사·revision·`ShareEditor` 재사용). 문서별 사용자 공유는 AI-DO 모델(`docs_native_doc_user_shares`)을 그대로 옮겼다. AI-DO 공유는 사람 한 명씩 `PUT/DELETE …/sharing/users/{id}`로 바꾸고, 소유자는 목록에 없으며, 공간 관리자도 목록과 무관하게 공유할 수 있다. ACL의 전체 교체(`replace_in`, 생성자가 항상 관리자 항목으로 남아야 함)는 이 REST 형태와 화면에 맞지 않는다.
 - **공유 대상 확인:** AI-DO는 같은 워크스페이스 멤버만 공유 대상으로 받았다(`docs.shared_users_workspace_required`). miy는 디렉터리에서 지금 활성인 사람이면 받고, 앱을 쓸 수 없는 사람은 플랫폼이 알림에서 빼고 앱도 열 수 없다. 그룹 공유는 AI-DO에 없어 두지 않았다.
 - **잠금 뒤 재확인(리뷰 반영):** 모든 쓰기는 문서 행을 `FOR UPDATE`로 잡은 뒤 같은 트랜잭션에서 공유·대상·공간 역할을 다시 판정한다. 공간 역할은 ACL `require_in`(자원 공유 잠금) 또는 문서 관리자 행 `FOR SHARE`로 판정해 커밋까지 회수가 끼어들지 못한다. 페이지 추가·이동·삭제는 문서 행 잠금으로 직렬화된다(AI-DO의 형제 수 기반 `sort_order`).
@@ -262,7 +262,7 @@ AI-DO의 블록 페이지는 「편집 시작」 뒤 Yjs 공동편집기(y-webso
   2. **포털 주소:** 프레임이 포털 링크를 만들 수단(예: 부트스트랩의 포털 출처를 `runtime`에 노출하거나 `runtime.portalUrl(path)`). Firefox는 `ancestorOrigins`를 no-referrer로 가려 지금은 포털 기준 경로만 복사된다.
   3. **다른 사람의 읽기 권한(그룹):** 플랫폼 호출의 그룹 문제는 서명된 그룹(d7fbdfe)으로 풀렸다(§3.6). 남은 것은 댓글 알림의 받는 사람 판정이다. 디렉터리는 호출자 자신의 그룹만 알려 주므로 앱이 다른 사람이 그룹으로 페이지를 읽을 수 있는지 알 수 없어, 그룹으로만 읽는 사람은 `comment`·`mention` 알림에서 빠진다(§8.3). 특정 사용자의 그룹 소속 확인(예: `is_member(user, group)`)이나 받는 사람마다 앱에 읽기 가능 여부를 묻는 발송 계약이 있으면 풀린다.
   4. **받는 사람 언어별 알림 제목**(게시판과 같음). 지금은 한국어로만 보낸다.
-  5. **PMS 연결:** 문서 ↔ PMS 태스크 연결은 PMS 앱의 연결 표·검색 엔드포인트와 앱 간 호출 승인(`app:pms:read`·`app:pms:write`)이 필요하다. 계약이 생기면 화면의 "연관 PMS" 섹션을 되살린다.
+  5. **PMS 연결:** PMS 앱이 태스크의 연결을 소유한다. 문서의 `GET /v1/docs/items/{id}/reference`는 현재 호출자가 읽을 수 있는 활성 문서의 ID·제목·공간을 돌려준다. 문서 UI의 역방향 연결은 앱 간 권한과 호출 계약을 추가로 확정해야 한다. [포팅 대조 및 검증](../../../docs/releases/docs-whiteboard-port-parity-2026-11-23.md)
   6. **실시간 공동편집·트리 갱신:** `runtime.live`(M4) 위에 공동편집을 올리는 설계(계획의 후속).
   7. **공용 편집기 컴포넌트:** PMS와 문서가 같은 BlockNote 래퍼(`components/editor`)를 각자 갖고 있다. 공용 UI 후보([공통 컴포넌트 후보](../../../docs/PLATFORM-COMPONENT-CANDIDATES.md))로 검토.
   8. 서버 빌드가 npm 패키지(BlockNote·Mantine·dnd-kit·motion)를 받을 수 있어야 한다(`pnpm-lock.yaml`에 고정). 편집기 화면 청크가 약 1MB(gzip 302KB)다.

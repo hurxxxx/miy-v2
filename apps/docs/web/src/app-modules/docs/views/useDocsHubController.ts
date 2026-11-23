@@ -8,6 +8,8 @@ import {
 } from '../api/docs-api';
 import type { DocsViewCategory } from './docs-view-model';
 
+const PAGE_SIZE = 50;
+
 export interface DocsHubControllerClient {
   listDocsHub(
     api: AppApi | null | undefined,
@@ -19,6 +21,8 @@ export interface DocsHubControllerClient {
       source_app?: string;
       source_kind?: string;
       space_id?: string;
+      page?: number;
+      page_size?: number;
     },
     spaceId?: string | null,
   ): Promise<DocsHubResponse>;
@@ -39,7 +43,10 @@ export interface DocsHubControllerOptions {
 export interface DocsHubController {
   state: {
     docs: DocsHubItem[];
+    loadFailed: boolean;
     loadingList: boolean;
+    page: number;
+    pageCount: number;
     searchQuery: string;
     sortBy: string;
     sortDir: 'asc' | 'desc';
@@ -51,6 +58,7 @@ export interface DocsHubController {
     setDocs(
       value: DocsHubItem[] | ((current: DocsHubItem[]) => DocsHubItem[]),
     ): void;
+    setPage(page: number): void;
     setSortBy(value: string): void;
     setSortDir(
       value: 'asc' | 'desc' | ((current: 'asc' | 'desc') => 'asc' | 'desc'),
@@ -76,9 +84,27 @@ export function useDocsHubController({
   const [docs, setDocs] = useState<DocsHubItem[]>([]);
   const [total, setTotal] = useState(0);
   const [loadingList, setLoadingList] = useState(true);
+  const [loadFailed, setLoadFailed] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [sortBy, setSortBy] = useState('updated_at');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
+  const filterKey = JSON.stringify([
+    spaceId,
+    activeCategory,
+    activeSourceApp,
+    activeSourceKind,
+    activeSpaceId,
+    searchQuery,
+    sortBy,
+    sortDir,
+  ]);
+  const [pagination, setPagination] = useState({ filterKey, page: 1 });
+  const page = pagination.filterKey === filterKey ? pagination.page : 1;
+  if (pagination.filterKey !== filterKey) setPagination({ filterKey, page: 1 });
+  const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const setPage = (nextPage: number) => {
+    setPagination({ filterKey, page: Math.max(1, Math.min(pageCount, nextPage)) });
+  };
   const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // miy: only the newest request may replace the list, so a slow answer for
   // an earlier space, view or query never paints over the current one.
@@ -89,6 +115,7 @@ export function useDocsHubController({
     const seq = requestSeqRef.current + 1;
     requestSeqRef.current = seq;
     setLoadingList(true);
+    setLoadFailed(false);
     try {
       const response = await client.listDocsHub(
         api,
@@ -100,16 +127,24 @@ export function useDocsHubController({
           source_app: activeSourceApp,
           source_kind: activeSourceKind,
           space_id: activeSpaceId,
+          page,
+          page_size: PAGE_SIZE,
         },
         spaceId,
       );
       if (seq !== requestSeqRef.current) return;
+      const lastPage = Math.max(1, Math.ceil(response.total / PAGE_SIZE));
+      if (page > lastPage) {
+        setPagination({ filterKey, page: lastPage });
+        return;
+      }
       setDocs(response.items);
       setTotal(response.total);
     } catch {
       if (seq !== requestSeqRef.current) return;
       setDocs([]);
       setTotal(0);
+      setLoadFailed(true);
     } finally {
       if (seq === requestSeqRef.current) setLoadingList(false);
     }
@@ -119,6 +154,8 @@ export function useDocsHubController({
     activeSourceApp,
     activeSourceKind,
     client,
+    filterKey,
+    page,
     searchQuery,
     sortBy,
     sortDir,
@@ -158,7 +195,10 @@ export function useDocsHubController({
   return {
     state: {
       docs,
+      loadFailed,
       loadingList,
+      page,
+      pageCount,
       searchQuery,
       sortBy,
       sortDir,
@@ -168,6 +208,7 @@ export function useDocsHubController({
       fetchDocs,
       handleSearchChange,
       setDocs,
+      setPage,
       setSortBy,
       setSortDir,
     },

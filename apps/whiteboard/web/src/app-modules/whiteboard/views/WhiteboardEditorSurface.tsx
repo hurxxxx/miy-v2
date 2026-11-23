@@ -45,7 +45,12 @@ import { useTranslation } from 'react-i18next';
 
 import { cn } from '../../../lib/utils';
 import { downloadBlobAsFile } from '../../../platform/browser/browser-download';
-import { useNavigationDirty } from '../../../platform/runtime/navigation-state';
+import { i18n } from '../../../platform/i18n/i18n';
+import {
+  useNavigateAfterEditorSave,
+  useNavigationDirty,
+  usePrepareToLeaveEditor,
+} from '../../../platform/runtime/navigation-state';
 import { useRuntime } from '../../../platform/runtime/runtime-context';
 import {
   deleteWhiteboard,
@@ -199,38 +204,55 @@ function useWhiteboardShareDialogElement({
   const [users, setUsers] = useState<ShareableUserItem[]>([]);
   const [query, setQuery] = useState('');
   const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-  const loadSeqRef = useRef(0);
-
-  const load = useCallback(async () => {
-    if (!open) return;
-    const seq = ++loadSeqRef.current;
-    setBusy(true);
-    setError(null);
-    try {
-      const [sharingResponse, usersResponse] = await Promise.all([
-        getWhiteboardSharing(api, board.id, spaceId),
-        listWhiteboardShareableUsers(api, query, spaceId),
-      ]);
-      if (seq !== loadSeqRef.current) return;
-      setSharing(sharingResponse);
-      setUsers(usersResponse);
-    } catch (err) {
-      if (seq !== loadSeqRef.current) return;
-      setError(
-        err instanceof Error ? err.message : t('whiteboard.shareLoadFailed'),
-      );
-    } finally {
-      if (seq === loadSeqRef.current) setBusy(false);
-    }
-  }, [api, board.id, open, query, spaceId, t]);
+  const [candidateError, setCandidateError] = useState<string | null>(null);
+  const [loadingShares, setLoadingShares] = useState(true);
+  const [loadingCandidates, setLoadingCandidates] = useState(false);
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    void load();
-  }, [load]);
+    if (!open) return;
+    let active = true;
+    setSharing(null);
+    setLoadingShares(true);
+    setError(null);
+    void getWhiteboardSharing(api, board.id, spaceId)
+      .then((response) => {
+        if (active) setSharing(response);
+      })
+      .catch((err: unknown) => {
+        if (active) {
+          setError(err instanceof Error ? err.message : i18n.t('apps:whiteboard.shareLoadFailed'));
+        }
+      })
+      .finally(() => {
+        if (active) setLoadingShares(false);
+      });
+    return () => { active = false; };
+  }, [api, board.id, open, spaceId]);
+
+  useEffect(() => {
+    if (!open) return;
+    let active = true;
+    setUsers([]);
+    setLoadingCandidates(true);
+    setCandidateError(null);
+    void listWhiteboardShareableUsers(api, query, spaceId)
+      .then((response) => {
+        if (active) setUsers(response);
+      })
+      .catch((err: unknown) => {
+        if (active) {
+          setCandidateError(err instanceof Error ? err.message : i18n.t('apps:whiteboard.shareLoadFailed'));
+        }
+      })
+      .finally(() => {
+        if (active) setLoadingCandidates(false);
+      });
+    return () => { active = false; };
+  }, [api, open, query, spaceId]);
 
   async function run(action: () => Promise<WhiteboardSharingResponse>) {
-    setBusy(true);
+    setSaving(true);
     setError(null);
     try {
       setSharing(await action());
@@ -239,7 +261,7 @@ function useWhiteboardShareDialogElement({
         err instanceof Error ? err.message : t('whiteboard.shareSaveFailed'),
       );
     } finally {
-      setBusy(false);
+      setSaving(false);
     }
   }
 
@@ -289,13 +311,16 @@ function useWhiteboardShareDialogElement({
             />
           </div>
 
-          {busy && !sharing ? (
+          {candidateError ? (
+            <p role="status" className="text-sm text-app-danger">{candidateError}</p>
+          ) : null}
+          {loadingShares || (loadingCandidates && sharePresenter.userRows.length === 0) ? (
             <div className="flex h-20 items-center justify-center text-app-ink/40">
               <Loader2 size={16} className="animate-spin" />
             </div>
           ) : (
             <div className="max-h-72 overflow-y-auto rounded-md border border-app-border">
-              {users.length === 0 ? (
+              {sharePresenter.userRows.length === 0 ? (
                 <div className="px-4 py-6 text-center text-sm text-app-ink/45">
                   {t('whiteboard.noShareableUsers')}
                 </div>
@@ -318,8 +343,9 @@ function useWhiteboardShareDialogElement({
                         {shared && currentShare ? (
                           <div className="flex shrink-0 items-center gap-2">
                             <select
+                              aria-label={t('whiteboard.accessLevelFor', { name: user.full_name })}
                               value={currentShare.access_level}
-                              disabled={busy}
+                              disabled={saving}
                               onChange={(event) => {
                                 void run(() =>
                                   upsertWhiteboardUserShare(
@@ -343,7 +369,7 @@ function useWhiteboardShareDialogElement({
                             <Button
                               variant="ghost"
                               size="dense"
-                              disabled={busy}
+                              disabled={saving}
                               onClick={() => {
                                 void run(() =>
                                   deleteWhiteboardUserShare(
@@ -362,7 +388,7 @@ function useWhiteboardShareDialogElement({
                           <Button
                             variant="secondary"
                             size="dense"
-                            disabled={busy}
+                            disabled={saving || !sharing}
                             onClick={() => {
                               void run(() =>
                                 upsertWhiteboardUserShare(
@@ -425,9 +451,11 @@ function useWhiteboardEditorSurfaceElement({
   const [gridModeEnabled, setGridModeEnabled] = useState(false);
   const [selectedElementsCount, setSelectedElementsCount] = useState(0);
   const [closePending, setClosePending] = useState(false);
+  const afterEditorSave = useNavigateAfterEditorSave();
   const apiRef = useRef<ExcalidrawImperativeAPI | null>(null);
   const activeBoardRef = useRef<WhiteboardDetail | null>(null);
   const activeBoardIdRef = useRef<string | null>(null);
+  const titleSaveRef = useRef<{ title: string; result: Promise<boolean> } | null>(null);
   const fileStoreRef = useRef<WhiteboardFileStore>(createWhiteboardFileStore());
   const loadSeqRef = useRef(0);
   const canEditCanvas = Boolean(
@@ -504,11 +532,11 @@ function useWhiteboardEditorSurfaceElement({
       setTitleDraft(board.title);
       setGridModeEnabled(Boolean(board.scene.appState.gridModeEnabled));
       if (loaded.failedImages > 0) {
-        setError(t('whiteboardApp.imageLoadFailed'));
+        setError(i18n.t('apps:whiteboardApp.imageLoadFailed'));
       }
       onBoardLoaded?.(board);
     },
-    [onBoardLoaded, resetLoadedScene, t],
+    [onBoardLoaded, resetLoadedScene],
   );
 
   const loadBoard = useCallback(async () => {
@@ -520,14 +548,14 @@ function useWhiteboardEditorSurfaceElement({
       applyLoaded(loaded);
       void recordWhiteboardView(api, boardId, spaceId).catch(() => undefined);
     } catch (err) {
-      setError(err instanceof Error ? err.message : t('whiteboard.loadFailed'));
+      setError(err instanceof Error ? err.message : i18n.t('apps:whiteboard.loadFailed'));
       setActiveBoard(null);
       setGridModeEnabled(false);
       setSelectedElementsCount(0);
     } finally {
       setLoading(false);
     }
-  }, [api, applyLoaded, boardId, fetchBoard, spaceId, t]);
+  }, [api, applyLoaded, boardId, fetchBoard, spaceId]);
 
   useEffect(() => {
     void loadBoard();
@@ -622,29 +650,34 @@ function useWhiteboardEditorSurfaceElement({
     const board = activeBoardRef.current;
     if (!board || !board.can_manage) return true;
     const nextTitle = titleDraft.trim();
-    if (!nextTitle || nextTitle === board.title) return true;
+    const inFlight = titleSaveRef.current;
+    if (inFlight?.title === nextTitle) return inFlight.result;
+    if (inFlight) await inFlight.result;
+    if (!nextTitle || nextTitle === activeBoardRef.current?.title) return true;
+    const result = updateWhiteboard(api, board.id, { title: nextTitle }, spaceId)
+      .then((updated) => {
+        const current = activeBoardRef.current;
+        if (current?.id !== board.id) return true;
+        // The title answer carries the stored scene; keep the editor's.
+        const title = { title: updated.title, updated_at: updated.updated_at };
+        activeBoardRef.current = { ...current, ...title };
+        setActiveBoard((current) =>
+          current?.id === board.id ? { ...current, ...title } : current,
+        );
+        onBoardUpdated?.({ ...board, ...title });
+        return true;
+      })
+      .catch((err: unknown) => {
+        if (activeBoardIdRef.current === board.id) {
+          setError(err instanceof Error ? err.message : t('whiteboard.renameFailed'));
+        }
+        return false;
+      });
+    titleSaveRef.current = { title: nextTitle, result };
     try {
-      const updated = await updateWhiteboard(
-        api,
-        board.id,
-        { title: nextTitle },
-        spaceId,
-      );
-      if (activeBoardIdRef.current !== board.id) return true;
-      // The title answer carries the stored scene; keep the editor's.
-      setActiveBoard((current) =>
-        current && current.id === board.id
-          ? { ...current, title: updated.title, updated_at: updated.updated_at }
-          : current,
-      );
-      onBoardUpdated?.({ ...board, title: updated.title, updated_at: updated.updated_at });
-      return true;
-    } catch (err) {
-      if (activeBoardIdRef.current !== board.id) return false;
-      setError(
-        err instanceof Error ? err.message : t('whiteboard.renameFailed'),
-      );
-      return false;
+      return await result;
+    } finally {
+      if (titleSaveRef.current?.result === result) titleSaveRef.current = null;
     }
   }, [api, onBoardUpdated, spaceId, titleDraft, t]);
 
@@ -875,31 +908,24 @@ function useWhiteboardEditorSurfaceElement({
     });
   }, [canEditCanvas, queueLocalChange]);
 
-  const handleClose = useCallback(async () => {
-    if (!onClose || closePending) return;
-    if (!activeBoard?.can_edit && !activeBoard?.can_manage) {
-      onClose();
-      return;
-    }
-
+  const prepareToLeave = useCallback(async () => {
+    if (!activeBoard?.can_edit && !activeBoard?.can_manage) return true;
     setClosePending(true);
-    const titleSaved = await saveTitle();
-    const sceneSaved = titleSaved
-      ? await flushPendingSceneBeforeClose()
-      : false;
-    if (titleSaved && sceneSaved) {
-      onClose();
-      return;
+    try {
+      return (await saveTitle()) && (await flushPendingSceneBeforeClose());
+    } catch (err) {
+      setError(err instanceof Error ? err.message : i18n.t('apps:whiteboard.saveFailed'));
+      return false;
+    } finally {
+      setClosePending(false);
     }
-    setClosePending(false);
   }, [
     activeBoard?.can_edit,
     activeBoard?.can_manage,
-    closePending,
     flushPendingSceneBeforeClose,
-    onClose,
     saveTitle,
   ]);
+  usePrepareToLeaveEditor(prepareToLeave);
 
   // Built once per board: Excalidraw reads initialData only when it mounts.
   const initialData = useMemo<ExcalidrawInitialDataState | null>(() => {
@@ -979,7 +1005,7 @@ function useWhiteboardEditorSurfaceElement({
               onKeyDown={(event) => {
                 if (event.key === 'Enter') event.currentTarget.blur();
               }}
-              disabled={!activeBoard.can_manage}
+              disabled={!activeBoard.can_manage || closePending}
               maxLength={200}
               className="app-text-title-md min-w-0 flex-1 rounded-md bg-transparent px-2 py-1 text-app-ink outline-none transition-colors enabled:hover:bg-app-surface-hover enabled:focus:bg-app-bg"
             />
@@ -1180,7 +1206,7 @@ function useWhiteboardEditorSurfaceElement({
                 <div className="mx-1 h-6 w-px bg-app-border" />
                 <button
                   type="button"
-                  onClick={() => void handleClose()}
+                  onClick={() => afterEditorSave(onClose)}
                   disabled={closePending}
                   className="inline-flex size-8 items-center justify-center rounded-md text-app-ink/60 hover:bg-app-surface-hover hover:text-app-ink disabled:cursor-wait disabled:opacity-60"
                   title={
