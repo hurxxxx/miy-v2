@@ -13,6 +13,13 @@ Use the platform-supplied `Identity` in the server and `runtime.api`,
 `runtime.setNavigationState`. Use the UI `requestId()` utility for browser-generated
 IDs. It works in internal IP-based HTTP frames as well as HTTPS.
 
+## Navigation
+
+Keep app initialization and the shared layout mounted during internal navigation.
+Depend on the SDK method and the route parameters a query uses. Show pending
+state in the affected view and cancel or ignore stale reads. In preview, test
+list → detail → Back and confirm the initial API call runs once.
+
 ## App APIs
 
 Read `docs/API.md`, `miy describe --topic api`, or MCP `get_cli_help`
