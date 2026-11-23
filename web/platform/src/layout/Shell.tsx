@@ -4,7 +4,7 @@ import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
 import { InstallationsProvider, installationsIn, useInstallations } from "../data/installations";
 import { useSession, useSurface, type LoginOptions, type Preferences, type User } from "../data/session";
-import { currentEnvironment, environmentOrigin, environmentPath, isAccountLinkPath, isCliApprovalPath, isConsolePath, isAppPath, pathEnvironment, portalEnvironment, surfaceUrl, type Environment } from "../lib/paths";
+import { consoleReturnPath, currentEnvironment, environmentOrigin, environmentPath, isAccountLinkPath, isAdminPath, isCliApprovalPath, isConsolePath, isAppPath, pathEnvironment, portalEnvironment, surfaceUrl, type Environment } from "../lib/paths";
 import { signOut } from "../lib/sign-out";
 import { LoadError } from "../components/LoadState";
 import { NewTabLink } from "../components/NewTabLink";
@@ -31,11 +31,9 @@ export function Shell() {
   const location = useLocation();
   useEffect(() => {
     if (state.status === "ready" && options?.surface === "console" && location.pathname === "/") {
-      const target = sessionStorage.getItem("miy.returnTo");
-      if (isCliApprovalPath(target)) {
-        sessionStorage.removeItem("miy.returnTo");
-        window.location.assign(target!);
-      }
+      const target = consoleReturnPath(sessionStorage.getItem("miy.returnTo"), window.location.origin);
+      sessionStorage.removeItem("miy.returnTo");
+      if (target) window.location.replace(target);
     }
   }, [state.status, options?.surface, location.pathname]);
   // The end of a user switch runs before any session: it replaces it.
@@ -200,7 +198,7 @@ function RailLink({
 }
 
 function pageTitle(t: TFunction<"portal">, pathname: string, environment: Environment, appName?: string, console = false) {
-  if (pathname === "/admin") return t("shell.titles.admin");
+  if (isAdminPath(pathname)) return t("shell.titles.admin");
   if (pathname === "/cli/install") return t("shell.titles.cliInstall");
   if (isCliApprovalPath(pathname)) return t("shell.titles.cliApproval");
   if (pathname === "/cli/sessions") return t("shell.titles.cliSessions");
@@ -225,8 +223,8 @@ function SignedInLayout({ user, environment }: { user: User; environment: Enviro
   const pathname = location.pathname;
   useEffect(() => setMenuOpen(false), [pathname]);
   useEffect(() => {
-    void refresh();
-  }, [refresh, pathname]);
+    if (!isConsole) void refresh();
+  }, [isConsole, refresh, pathname]);
   const apps = useMemo(() => installationsIn(installations.items, environment), [installations.items, environment]);
   const marks = useMemo(() => monograms(apps.map((a) => ({ key: a.id, name: a.name }))), [apps]);
   // The launcher (ported from AI-DO's app bar): the rail lists the pinned apps,
@@ -381,7 +379,7 @@ function SignedInLayout({ user, environment }: { user: User; environment: Enviro
               active={item.id === activeAppId}
             />
           ))}
-          {installations.items === null && (
+          {!isConsole && installations.items === null && (
             <p className="rail-note">
               {t(installations.status === "error" ? "shell.appsLoadFailed" : "shell.appsLoading")}
             </p>
@@ -389,7 +387,7 @@ function SignedInLayout({ user, environment }: { user: User; environment: Enviro
         </nav>
         <nav aria-label={t("shell.platform")} className="rail-section rail-platform">
           {isConsole && user.admin && (
-            <RailLink to="/admin" label={t("shell.administration")} short={t("shell.administrationShort")} icon={<SettingsIcon />} active={pathname === "/admin"} />
+            <RailLink to="/admin" label={t("shell.administration")} short={t("shell.administrationShort")} icon={<SettingsIcon />} active={isAdminPath(pathname)} />
           )}
           {isConsole && <RailLink to="/cli/sessions" label={t("shell.myCliSessions")} icon={<TerminalIcon />} active={pathname === "/cli/sessions"} />}
           {!isConsole && <NewTabLink className="rail-item" aria-label={t(user.canManageConsole ? "shell.console" : "shell.myCliSessions")}

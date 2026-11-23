@@ -40,6 +40,7 @@
 | --- | --- | --- |
 | 앱 개발·배포 기본 흐름 | CLI/MCP, 프로젝트 생성, native preview·서버 dev DB, 원격 빌드, dev 배포, 승인한 동일 산출물의 prod 승격, 실행 제어·DB 보존 | 사용 계약은 [RUNNING](RUNNING.md). 모든 OS·새 서버·독립 반복 인수와 구분 |
 | 기본 화면·접근 권한 | AI-DO 기반 UI-1~5, G1~G3, 등록 승인·회사 사용 중지, 사용자 위임·설치/릴리스 연결 승인, A1 기본 감사 | UI-1~5는 아래 공통 UI U1~U6 완료가 아님. 앱 내부 ACL은 아래 공통 업무 기능, 플랫폼 상세 감사는 후속 |
+| P1 플랫폼 관리자 콘솔 포팅 | 개요, 사용자·조직도·권한 그룹, 앱·권한, 포털 런처, 감사·지원 신고를 콘솔 하위 경로로 분리했다. 사용자 디렉터리의 서버 검색·소속 필터·페이지와 조직 이동 경합 보호를 구현했다. | [기능·책임 대응](AI-DO-COMMON-MIGRATION.md#45-관리-콘솔-대응) · [검증 기록](releases/admin-console-port-2026-11-23.md). 실제 콘솔 배포·Keycloak 인수는 대기 |
 | 사용·관리 경계와 앱 프레임 | prod/dev 포털·콘솔 및 세션 분리, 콘솔 CLI 승인, prod Use/관리 분리, 설치별 출처 프레임·브리지·릴리스 결합·입력 보호 | 경계·프레임 구현과 필수 격리 실증·개발 서버 반영 완료. [APP-BOUNDARIES](APP-BOUNDARIES.md)·[APP-FRAMES](APP-FRAMES.md)의 잔여 인수는 아래에서 추적 |
 | 구조 기반·최소 데이터 보호 | worker 제어/빌드 분리, 권한 판정 단일화·트랜잭션 재확인, API 생성 계약 첫 묶음, CI 회귀·정확한 배포 SHA 확인, core DB 백업·별도 복원, 디스크 하한·DB 연결 예산 | 종전 순서 0·1·기반의 완료분. 전체 자원 예약·통합 백업·host updater와 구분. [코어 안정화](CORE-HARDENING.md) |
 | 응답·자원 보호 | 앱 응답 4MiB·바이트 수명에 결합한 64개 슬롯, 업무 401 자동 재전송 금지(R01·R02), Keycloak 2GiB, 회귀 작업물 자동 정리·스트리밍 해시 | 개발 서버 반영 범위는 [응답 보완](releases/app-api-response-2026-11-13-deployment.json)·[자원 보완](releases/resource-usage-2026-11-12-validation.json). 전체 RSS·복합 부하는 별도 |

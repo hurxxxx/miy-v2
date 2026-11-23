@@ -282,14 +282,104 @@
 }
 
 /* Admin */
-.admin-grid {
+.admin-workspace {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  gap: var(--ui-space-4);
+  grid-template-columns: minmax(178px, 210px) minmax(0, 1fr);
+  gap: var(--ui-space-6);
   align-items: start;
 }
-.admin-grid > .ui-panel + .ui-panel {
+.admin-navigation {
+  display: grid;
+  gap: var(--ui-space-4);
+  padding: var(--ui-space-3);
+  border: 1px solid var(--ui-color-border);
+  border-radius: var(--ui-radius-lg);
+  background: var(--ui-color-surface);
+}
+.admin-navigation-group {
+  display: grid;
+  gap: var(--ui-space-1);
+}
+.admin-navigation-group p {
+  margin: 0 var(--ui-space-2) var(--ui-space-1);
+  color: var(--ui-color-ink-subtle);
+  font-size: var(--ui-text-caption);
+  font-weight: 600;
+}
+.admin-navigation-link {
+  display: flex;
+  align-items: center;
+  gap: var(--ui-space-2);
+  min-height: 40px;
+  padding: var(--ui-space-1) var(--ui-space-2);
+  border-radius: var(--ui-radius-md);
+  color: var(--ui-color-ink);
+  font-weight: 600;
+  text-decoration: none;
+}
+.admin-navigation-link:hover {
+  background: var(--ui-color-surface-subtle);
+}
+.admin-navigation-link[data-status="active"] {
+  background: var(--ui-color-brand-weak);
+  color: var(--ui-color-brand);
+}
+.admin-navigation-link:focus-visible {
+  outline: none;
+  box-shadow: var(--ui-shadow-focus-ring);
+}
+.admin-workspace-content {
+  min-width: 0;
+}
+.admin-overview-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(205px, 100%), 1fr));
+  gap: var(--ui-space-4);
+  margin-bottom: var(--ui-space-4);
+}
+.admin-overview-grid > .ui-panel + .ui-panel {
   margin-top: 0;
+}
+.admin-metric {
+  margin: 0 0 var(--ui-space-2);
+  font-size: 2rem;
+  font-weight: 750;
+  font-variant-numeric: tabular-nums;
+}
+.admin-overview-list {
+  display: grid;
+  gap: var(--ui-space-2);
+  margin: var(--ui-space-2) 0 0;
+  padding: 0;
+  list-style: none;
+}
+.admin-overview-list li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ui-space-2);
+  align-items: center;
+  padding-top: var(--ui-space-2);
+  border-top: 1px solid var(--ui-color-border);
+  overflow-wrap: anywhere;
+}
+.admin-overview-list time {
+  margin-inline-start: auto;
+  color: var(--ui-color-ink-subtle);
+  font-variant-numeric: tabular-nums;
+}
+@media (max-width: 900px) {
+  .admin-workspace {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .admin-navigation {
+    display: flex;
+    flex-wrap: wrap;
+  }
+  .admin-navigation-group {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+  }
 }
 .registration-row {
   display: flex;
@@ -356,10 +446,6 @@
   flex-wrap: wrap;
   gap: var(--ui-space-2);
 }
-/* Account links: the invitation panel spans both columns above the account list. */
-.admin-grid > .account-links {
-  grid-column: 1 / -1;
-}
 .account-link-issued {
   margin-top: var(--ui-space-4);
   padding: var(--ui-space-4);
@@ -410,11 +496,6 @@
 .ui-empty-inline {
   margin: 0;
   color: var(--ui-color-ink-subtle);
-}
-@media (max-width: 1023px) {
-  .admin-grid {
-    grid-template-columns: minmax(0, 1fr);
-  }
 }
 @media (max-width: 480px) {
   .grant-form {

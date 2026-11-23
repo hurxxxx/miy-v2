@@ -1,23 +1,18 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
-import { request } from "@miy/sdk";
+import { useLocation, useNavigate } from "@tanstack/react-router";
+import { request, type Group } from "@miy/sdk";
+import { usePrompt } from "@miy/ui";
 import { formatDateTime } from "../platform/time/time-utils";
 import { Badge, Button, Field, Loading, Notice, Panel, useConfirm, type Tone } from "../ui";
-import type { DirectoryUser } from "./AdminAccess";
-
-// The identity provider only authenticates. A person can sign in once their account
-// is registered here: by accepting an administrator's invitation link, or after an
-// administrator registers an account that already exists in the identity provider.
-// A registered person holds no app permission until one is granted below.
-export type Account = DirectoryUser & { admin: boolean; canDevelop: boolean; enabled: boolean };
+import { AdminOrganizationTree } from "./AdminOrganizationTree";
+import { fetchAdminUsers, type AdminUser, type AdminUserFilters } from "./admin-users-directory";
 
 type Props = {
   csrf: string;
   selfId: string;
-  users: Account[] | null;
   report: (message: string) => void;
-  refresh: () => void;
 };
 
 type LinkKind = "invitation" | "password_reset";
@@ -72,7 +67,23 @@ function when(value: string) {
   return formatDateTime(value, { dateStyle: "short", timeStyle: "short" });
 }
 
-type UserFilter = "all" | "admin" | "developer" | "disabled";
+type DirectoryPage = Awaited<ReturnType<typeof fetchAdminUsers>>;
+type DirectoryResult = { key: string; page?: DirectoryPage; failed?: true };
+const FIRST_PAGE = [null];
+
+function readFilters(search: string): AdminUserFilters {
+  const params = new URLSearchParams(search);
+  const role = params.get("role");
+  const status = params.get("status");
+  const organization = params.get("organization") || undefined;
+  return {
+    q: params.get("q")?.trim().slice(0, 120) || undefined,
+    role: role === "admin" || role === "developer" || role === "member" ? role : undefined,
+    status: status === "enabled" || status === "disabled" ? status : undefined,
+    organization,
+    descendants: organization && organization !== "unassigned" && params.get("descendants") === "true" ? true : undefined,
+  };
+}
 
 /** A spreadsheet-safe CSV cell: quoted, and never read as a formula. */
 function cell(value: string) {
@@ -80,10 +91,10 @@ function cell(value: string) {
   return `"${text.replaceAll('"', '""')}"`;
 }
 
-function downloadCsv(t: TFunction<"console">, users: Account[]) {
-  const header = ["id", "name", "admin", "canDevelop", "enabled"].map(cell).join(",");
+function downloadCsv(t: TFunction<"console">, users: AdminUser[]) {
+  const header = ["id", "name", "admin", "canDevelop", "enabled", "primaryGroupId", "primaryGroupName"].map(cell).join(",");
   const rows = users.map((user) =>
-    [user.id, user.name, String(user.admin), String(user.canDevelop), String(user.enabled)].map(cell).join(","),
+    [user.id, user.name, String(user.admin), String(user.canDevelop), String(user.enabled), user.primaryGroupId ?? "", user.primaryGroupName ?? ""].map(cell).join(","),
   );
   // The byte order mark lets spreadsheet programs read Korean names as UTF-8.
   const blob = new Blob(["\ufeff" + [header, ...rows].join("\r\n") + "\r\n"], { type: "text/csv;charset=utf-8" });
@@ -95,28 +106,83 @@ function downloadCsv(t: TFunction<"console">, users: Account[]) {
   URL.revokeObjectURL(url);
 }
 
-export function UserAdmin({ csrf, selfId, users, report, refresh }: Props) {
+export function UserAdmin({ csrf, selfId, report }: Props) {
   const { t } = useTranslation("console");
   const { confirm, dialog } = useConfirm();
-  const [query, setQuery] = useState("");
-  const [filter, setFilter] = useState<UserFilter>("all");
-  const shown = useMemo(() => {
-    const needle = query.trim().toLowerCase();
-    return (users ?? []).filter(
-      (user) =>
-        (!needle || user.name.toLowerCase().includes(needle) || user.id.includes(needle)) &&
-        (filter === "all" ||
-          (filter === "admin" && user.admin) ||
-          (filter === "developer" && user.canDevelop) ||
-          (filter === "disabled" && !user.enabled)),
-    );
-  }, [users, query, filter]);
+  const { prompt, promptDialog } = usePrompt();
+  const search = useLocation({ select: (location) => location.searchStr });
+  const navigate = useNavigate();
+  const filters = useMemo(() => readFilters(search), [search]);
+  const [query, setQuery] = useState(filters.q ?? "");
+  const [paging, setPaging] = useState<{ search: string; cursors: (string | null)[] } | null>(null);
+  const [result, setResult] = useState<DirectoryResult | null>(null);
+  const [revision, setRevision] = useState(0);
+  const [organizations, setOrganizations] = useState<Group[] | null>(null);
+  const [organizationsFailed, setOrganizationsFailed] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const exportRequest = useRef<AbortController | null>(null);
+  const cursors = paging?.search === search ? paging.cursors : FIRST_PAGE;
+  const cursor = cursors.at(-1) ?? null;
+  const key = JSON.stringify([search, cursor, revision]);
+  const visible = result?.key === key ? result : null;
+  const page = visible?.page;
+  const shown = page?.items ?? [];
+  const refresh = () => setRevision((value) => value + 1);
   const [busy, setBusy] = useState(false);
   const [links, setLinks] = useState<AccountLink[] | null>(null);
   const [available, setAvailable] = useState<boolean | null>(null);
   const [issued, setIssued] = useState<Issued | null>(null);
   const [copied, setCopied] = useState("");
   const issuedBox = useRef<HTMLDivElement>(null);
+
+  useEffect(() => setQuery(filters.q ?? ""), [filters.q]);
+  useEffect(() => () => exportRequest.current?.abort(), []);
+  useEffect(() => {
+    const controller = new AbortController();
+    fetchAdminUsers(filters, { cursor, signal: controller.signal })
+      .then((page) => { if (!controller.signal.aborted) setResult({ key, page }); })
+      .catch(() => { if (!controller.signal.aborted) setResult({ key, failed: true }); });
+    return () => controller.abort();
+  }, [cursor, filters, key]);
+  useEffect(() => {
+    const controller = new AbortController();
+    request<Group[]>("/api/v1/groups", undefined, { signal: controller.signal })
+      .then((groups) => { if (!controller.signal.aborted) setOrganizations(groups); })
+      .catch(() => { if (!controller.signal.aborted) setOrganizationsFailed(true); });
+    return () => controller.abort();
+  }, []);
+
+  function updateFilters(change: Partial<AdminUserFilters>) {
+    const next = { ...filters, ...change };
+    setPaging(null);
+    void navigate({ to: "/admin/users", search: next });
+  }
+
+  function selectOrganization(organization: string | undefined) {
+    updateFilters({ organization, descendants: organization && organization !== "unassigned" ? filters.descendants : undefined });
+  }
+
+  async function exportDirectory() {
+    if (exportRequest.current) return;
+    const controller = new AbortController();
+    exportRequest.current = controller;
+    setExporting(true);
+    try {
+      const users = new Map<string, AdminUser>();
+      let nextCursor: string | null = null;
+      do {
+        const result = await fetchAdminUsers(filters, { cursor: nextCursor, limit: 200, signal: controller.signal });
+        for (const user of result.items) users.set(user.id, user);
+        nextCursor = result.nextCursor;
+      } while (nextCursor);
+      if (!controller.signal.aborted) downloadCsv(t, [...users.values()]);
+    } catch {
+      if (!controller.signal.aborted) report(t("users.exportFailed"));
+    } finally {
+      exportRequest.current = null;
+      if (!controller.signal.aborted) setExporting(false);
+    }
+  }
 
   const loadLinks = useCallback(async () => {
     try {
@@ -187,7 +253,7 @@ export function UserAdmin({ csrf, selfId, users, report, refresh }: Props) {
     if (ok) form.reset();
   }
 
-  async function resetPassword(user: Account) {
+  async function resetPassword(user: AdminUser) {
     const ok = await confirm({
       title: t("users.resetConfirmTitle"),
       body: (
@@ -246,7 +312,21 @@ export function UserAdmin({ csrf, selfId, users, report, refresh }: Props) {
     if (ok) form.reset();
   }
 
-  async function setAdmin(user: Account) {
+  async function rename(user: AdminUser) {
+    const name = await prompt({
+      title: t("users.renameTitle"),
+      description: t("users.renameDescription"),
+      placeholder: t("users.displayName"),
+      defaultValue: user.name,
+      submitLabel: t("common:actions.save"),
+      cancelLabel: t("common:actions.cancel"),
+    });
+    if (name && name !== user.name) {
+      await send(`/api/v1/users/${encodeURIComponent(user.id)}`, "PATCH", { name }, t("users.renamed"));
+    }
+  }
+
+  async function setAdmin(user: AdminUser) {
     const next = !user.admin;
     const ok = await confirm({
       title: t(next ? "users.makeAdminTitle" : "users.removeAdminTitle"),
@@ -267,7 +347,7 @@ export function UserAdmin({ csrf, selfId, users, report, refresh }: Props) {
     await send(`/api/v1/users/${encodeURIComponent(user.id)}`, "PATCH", { admin: next }, t(next ? "users.madeAdmin" : "users.removedAdmin"));
   }
 
-  async function setEnabled(user: Account) {
+  async function setEnabled(user: AdminUser) {
     const next = !user.enabled;
     if (!next) {
       const ok = await confirm({
@@ -287,7 +367,7 @@ export function UserAdmin({ csrf, selfId, users, report, refresh }: Props) {
 
   // User switch (docs/CORE-PERMISSIONS.md "사용자 전환"): a new tab signs in
   // to the chosen portal as this person with a one-time link.
-  async function signInAs(user: Account) {
+  async function signInAs(user: AdminUser) {
     const choice = { environment: "prod" as "prod" | "dev" };
     const ok = await confirm({
       title: t("users.signInAsTitle", { name: user.name }),
@@ -346,94 +426,234 @@ export function UserAdmin({ csrf, selfId, users, report, refresh }: Props) {
   const recent = (links ?? []).filter(active).concat((links ?? []).filter((link) => !active(link)));
   return (
     <>
-      <Panel
-        title={t("users.invite")}
-        className="account-links"
-        actions={links && <Badge tone="neutral">{t("users.unusedLinks", { count: links.filter((link) => link.state === "pending").length })}</Badge>}
-      >
-        {available === null ? (
-          <Loading />
-        ) : available ? (
-          <form className="grant-form user-form" onSubmit={invite}>
-            <Field label={t("users.name")} hint={t("users.nameHint")}>
-              <input name="name" required maxLength={120} autoComplete="off" />
-            </Field>
-            <Field label={t("users.appRequests")}>
-              <select name="canDevelop" defaultValue="false">
-                <option value="false">{t("users.notAllowed")}</option>
-                <option value="true">{t("users.allowed")}</option>
-              </select>
-            </Field>
-            <Field label={t("users.linkLifetime")}>
-              <select name="expiresInHours" defaultValue="168">
-                <option value="24">{t("users.days", { count: 1 })}</option>
-                <option value="72">{t("users.days", { count: 3 })}</option>
-                <option value="168">{t("users.days", { count: 7 })}</option>
-                <option value="720">{t("users.days", { count: 30 })}</option>
-              </select>
-            </Field>
-            <div className="grant-form-actions">
-              <Button type="submit" variant="primary" disabled={busy}>
-                {t("users.createInvitation")}
-              </Button>
-            </div>
-          </form>
-        ) : (
-          <Notice tone="warning">{t("users.linksUnavailable")}</Notice>
-        )}
-        {issued && (
-          <div className="account-link-issued" role="group" aria-label={t("users.issuedLink")} tabIndex={-1} ref={issuedBox}>
-            <p>
-              {t(issued.kind === "invitation" ? "users.issuedInvitation" : "users.issuedReset", {
-                name: issued.name ?? t("users.thisUser"),
-                until: when(issued.expiresAt),
-              })}
-            </p>
-            <pre aria-label={t("users.linkAddress")}>
-              <code>{issued.url}</code>
-            </pre>
-            <p className="account-link-warning">
-              {t(issued.kind === "invitation" ? "users.invitationWarning" : "users.resetWarning")}
-            </p>
-            <div className="account-link-issued-actions">
-              <Button variant="primary" onClick={copy}>
-                {t("users.copyAddress")}
-              </Button>
-              <Button onClick={() => setIssued(null)}>{t("users.close")}</Button>
-              {copied && <span role="status">{copied}</span>}
-            </div>
+      <div className="admin-users-directory">
+        <Panel title={t("users.organizationTree")} className="admin-users-organizations">
+          <div className="admin-org-scope" aria-label={t("users.organizationFilter")} role="group">
+            <button className="admin-org-choice" type="button" aria-current={filters.organization === undefined || undefined} onClick={() => selectOrganization(undefined)}>
+              {t("users.allOrganizations")}
+            </button>
+            <button className="admin-org-choice" type="button" aria-current={filters.organization === "unassigned" || undefined} onClick={() => selectOrganization("unassigned")}>
+              {t("users.unassigned")}
+            </button>
           </div>
-        )}
-        {recent.length > 0 && (
-          <ul className="user-accounts account-link-list" aria-label={t("users.issuedLinks")}>
-            {recent.map((link) => (
-              <li key={link.id} className="user-account">
-                <div className="user-account-name">
-                  <strong>{link.name ?? t("users.noName")}</strong>
-                  <span>
-                    {t(link.kind === "invitation" ? "users.kindInvitation" : "users.kindReset")} ·{" "}
-                    {t("users.issuedBy", { name: link.createdByName })} ·{" "}
-                    {link.state === "completed" && link.completedAt
-                      ? t("users.usedAt", { when: when(link.completedAt) })
-                      : t("users.expiresAt", { when: when(link.expiresAt) })}
-                  </span>
-                </div>
-                <div className="user-account-badges">
-                  <Badge tone={states[link.state]}>{t(`users.linkStates.${link.state}`)}</Badge>
-                  {link.kind === "invitation" && link.canDevelop && <Badge tone="neutral">{t("users.developer")}</Badge>}
-                </div>
-                {revocable(link) && (
-                  <div className="user-account-actions">
-                    <Button size="sm" disabled={busy} onClick={() => void revoke(link)}>
-                      {t("users.revokeLink")}
-                    </Button>
+          {organizations && (
+            <AdminOrganizationTree groups={organizations} selected={filters.organization ?? null} onSelect={selectOrganization} />
+          )}
+          {!organizations && (organizationsFailed ? (
+            <Notice role="alert" tone="warning">{t("users.organizationsLoadFailed")}</Notice>
+          ) : <Loading />)}
+          {filters.organization && filters.organization !== "unassigned" && (
+            <label className="admin-org-descendants">
+              <input type="checkbox" checked={filters.descendants ?? false} onChange={(event) => updateFilters({ descendants: event.target.checked || undefined })} />
+              {t("users.includeDescendants")}
+            </label>
+          )}
+        </Panel>
+        <Panel
+          title={t("users.accounts")}
+          actions={
+            <div className="admin-users-actions">
+              <Button size="sm" onClick={() => void exportDirectory()} disabled={exporting || !page || (shown.length === 0 && cursors.length === 1)}>
+                {t(exporting ? "users.exporting" : "users.exportCsv")}
+              </Button>
+              <a href="#invite-users" className="ui-button ui-button-primary ui-button-sm">{t("users.invite")}</a>
+            </div>
+          }
+        >
+          <form className="user-filters" role="search" onSubmit={(event) => {
+            event.preventDefault();
+            updateFilters({ q: query.trim() || undefined });
+          }}>
+            <input
+              type="search"
+              aria-label={t("users.search")}
+              placeholder={t("users.searchPlaceholder")}
+              value={query}
+              maxLength={120}
+              onChange={(event) => setQuery(event.target.value)}
+            />
+            <Button type="submit" size="sm">{t("users.submitSearch")}</Button>
+            <select aria-label={t("users.roleFilter")} value={filters.role ?? ""} onChange={(event) => updateFilters({ role: (event.target.value || undefined) as AdminUserFilters["role"] })}>
+              <option value="">{t("users.allRoles")}</option>
+              <option value="admin">{t("users.filters.admin")}</option>
+              <option value="developer">{t("users.filters.developer")}</option>
+              <option value="member">{t("users.memberRole")}</option>
+            </select>
+            <select aria-label={t("users.statusFilter")} value={filters.status ?? ""} onChange={(event) => updateFilters({ status: (event.target.value || undefined) as AdminUserFilters["status"] })}>
+              <option value="">{t("users.allStatuses")}</option>
+              <option value="enabled">{t("users.enabledStatus")}</option>
+              <option value="disabled">{t("users.filters.disabled")}</option>
+            </select>
+          </form>
+          {visible?.failed && (
+            <Notice role="alert" tone="danger" actions={<Button size="sm" onClick={refresh}>{t("users.retryDirectory")}</Button>}>
+              {t("users.directoryLoadFailed")}
+            </Notice>
+          )}
+          {!visible && <Loading />}
+          {page && (
+            <>
+              {shown.length === 0 && <p className="admin-users-muted">{t("users.noMatchingUsers")}</p>}
+              <ul className="user-accounts">
+                {shown.map((user) => (
+                  <li key={user.id} className="user-account">
+                    <div className="user-account-name">
+                      <strong>{user.name}</strong>
+                      <code>{user.id}</code>
+                      <span className="admin-users-muted">{user.primaryGroupName ?? t("users.unassigned")}</span>
+                    </div>
+                    <div className="user-account-badges">
+                      {user.admin && <Badge tone="info">{t("users.admin")}</Badge>}
+                      {user.canDevelop && <Badge tone="neutral">{t("users.developer")}</Badge>}
+                      {!user.enabled && <Badge tone="danger">{t("users.disabledBadge")}</Badge>}
+                    </div>
+                    <div className="user-account-actions">
+                      <Button size="sm" disabled={busy} onClick={() => void rename(user)}>{t("users.rename")}</Button>
+                      <Button size="sm" disabled={busy} onClick={() => void setAdmin(user)}>
+                        {t(user.admin ? "users.removeAdmin" : "users.makeAdmin")}
+                      </Button>
+                      <Button
+                        size="sm"
+                        disabled={busy}
+                        onClick={() =>
+                          void send(
+                            `/api/v1/users/${encodeURIComponent(user.id)}`,
+                            "PATCH",
+                            { canDevelop: !user.canDevelop },
+                            t(user.canDevelop ? "users.developerRemoved" : "users.developerGranted"),
+                          )
+                        }
+                      >
+                        {t(user.canDevelop ? "users.removeDeveloper" : "users.allowDeveloper")}
+                      </Button>
+                      {available && user.enabled && (
+                        <Button size="sm" disabled={busy} onClick={() => void resetPassword(user)}>
+                          {t("users.resetLink")}
+                        </Button>
+                      )}
+                      {user.enabled && user.id !== selfId && (
+                        <Button size="sm" disabled={busy} onClick={() => void signInAs(user)}>
+                          {t("users.signInAs")}
+                        </Button>
+                      )}
+                      <Button size="sm" disabled={busy} onClick={() => void setEnabled(user)}>
+                        {t(user.enabled ? "users.disable" : "users.enable")}
+                      </Button>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+              <div className="admin-users-pagination" aria-label={t("users.directoryPagination")} role="group">
+                <span aria-live="polite">{t("users.directoryPage", { page: cursors.length })} · {t("users.people", { count: shown.length })}</span>
+                <Button
+                  size="sm"
+                  disabled={cursors.length <= 1}
+                  onClick={() => setPaging({ search, cursors: cursors.slice(0, -1) })}
+                >
+                  {t("users.previousPage")}
+                </Button>
+                <Button
+                  size="sm"
+                  disabled={!page.nextCursor}
+                  onClick={() => setPaging({ search, cursors: [...cursors, page.nextCursor] })}
+                >
+                  {t("users.nextPage")}
+                </Button>
+              </div>
+            </>
+          )}
+        </Panel>
+      </div>
+      <div id="invite-users">
+        <Panel
+          title={t("users.invite")}
+          className="account-links"
+          actions={links && <Badge tone="neutral">{t("users.unusedLinks", { count: links.filter((link) => link.state === "pending").length })}</Badge>}
+        >
+          {available === null ? (
+            <Loading />
+          ) : available ? (
+            <form className="grant-form user-form" onSubmit={invite}>
+              <Field label={t("users.name")} hint={t("users.nameHint")}>
+                <input name="name" required maxLength={120} autoComplete="off" />
+              </Field>
+              <Field label={t("users.appRequests")}>
+                <select name="canDevelop" defaultValue="false">
+                  <option value="false">{t("users.notAllowed")}</option>
+                  <option value="true">{t("users.allowed")}</option>
+                </select>
+              </Field>
+              <Field label={t("users.linkLifetime")}>
+                <select name="expiresInHours" defaultValue="168">
+                  <option value="24">{t("users.days", { count: 1 })}</option>
+                  <option value="72">{t("users.days", { count: 3 })}</option>
+                  <option value="168">{t("users.days", { count: 7 })}</option>
+                  <option value="720">{t("users.days", { count: 30 })}</option>
+                </select>
+              </Field>
+              <div className="grant-form-actions">
+                <Button type="submit" variant="primary" disabled={busy}>
+                  {t("users.createInvitation")}
+                </Button>
+              </div>
+            </form>
+          ) : (
+            <Notice tone="warning">{t("users.linksUnavailable")}</Notice>
+          )}
+          {issued && (
+            <div className="account-link-issued" role="group" aria-label={t("users.issuedLink")} tabIndex={-1} ref={issuedBox}>
+              <p>
+                {t(issued.kind === "invitation" ? "users.issuedInvitation" : "users.issuedReset", {
+                  name: issued.name ?? t("users.thisUser"),
+                  until: when(issued.expiresAt),
+                })}
+              </p>
+              <pre aria-label={t("users.linkAddress")}>
+                <code>{issued.url}</code>
+              </pre>
+              <p className="account-link-warning">
+                {t(issued.kind === "invitation" ? "users.invitationWarning" : "users.resetWarning")}
+              </p>
+              <div className="account-link-issued-actions">
+                <Button variant="primary" onClick={copy}>
+                  {t("users.copyAddress")}
+                </Button>
+                <Button onClick={() => setIssued(null)}>{t("users.close")}</Button>
+                {copied && <span role="status">{copied}</span>}
+              </div>
+            </div>
+          )}
+          {recent.length > 0 && (
+            <ul className="user-accounts account-link-list" aria-label={t("users.issuedLinks")}>
+              {recent.map((link) => (
+                <li key={link.id} className="user-account">
+                  <div className="user-account-name">
+                    <strong>{link.name ?? t("users.noName")}</strong>
+                    <span>
+                      {t(link.kind === "invitation" ? "users.kindInvitation" : "users.kindReset")} ·{" "}
+                      {t("users.issuedBy", { name: link.createdByName })} ·{" "}
+                      {link.state === "completed" && link.completedAt
+                        ? t("users.usedAt", { when: when(link.completedAt) })
+                        : t("users.expiresAt", { when: when(link.expiresAt) })}
+                    </span>
                   </div>
-                )}
-              </li>
-            ))}
-          </ul>
-        )}
-      </Panel>
+                  <div className="user-account-badges">
+                    <Badge tone={states[link.state]}>{t(`users.linkStates.${link.state}`)}</Badge>
+                    {link.kind === "invitation" && link.canDevelop && <Badge tone="neutral">{t("users.developer")}</Badge>}
+                  </div>
+                  {revocable(link) && (
+                    <div className="user-account-actions">
+                      <Button size="sm" disabled={busy} onClick={() => void revoke(link)}>
+                        {t("users.revokeLink")}
+                      </Button>
+                    </div>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+        </Panel>
+      </div>
       <Panel title={t("users.directRegistration")}>
         <form className="grant-form user-form" onSubmit={register}>
           <Field label={t("users.loginId")} hint={t("users.loginIdHint")}>
@@ -455,90 +675,8 @@ export function UserAdmin({ csrf, selfId, users, report, refresh }: Props) {
           </div>
         </form>
       </Panel>
-      <Panel
-        title={t("users.accounts")}
-        actions={
-          users && (
-            <>
-              <Badge tone="neutral">{t("users.people", { count: users.length })}</Badge>
-              <Button size="sm" onClick={() => downloadCsv(t, shown)} disabled={shown.length === 0}>
-                {t("users.exportCsv")}
-              </Button>
-            </>
-          )
-        }
-      >
-        {users === null ? (
-          <Loading />
-        ) : (
-          <>
-          <div className="user-filters" role="search">
-            <input
-              type="search"
-              aria-label={t("users.search")}
-              placeholder={t("users.searchPlaceholder")}
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-            />
-            <select aria-label={t("users.filter")} value={filter} onChange={(event) => setFilter(event.target.value as UserFilter)}>
-              <option value="all">{t("users.filters.all")}</option>
-              <option value="admin">{t("users.filters.admin")}</option>
-              <option value="developer">{t("users.filters.developer")}</option>
-              <option value="disabled">{t("users.filters.disabled")}</option>
-            </select>
-            {shown.length !== users.length && <span role="status">{t("users.shown", { count: shown.length })}</span>}
-          </div>
-          <ul className="user-accounts">
-            {shown.map((user) => (
-              <li key={user.id} className="user-account">
-                <div className="user-account-name">
-                  <strong>{user.name}</strong>
-                  <code>{user.id}</code>
-                </div>
-                <div className="user-account-badges">
-                  {user.admin && <Badge tone="info">{t("users.admin")}</Badge>}
-                  {user.canDevelop && <Badge tone="neutral">{t("users.developer")}</Badge>}
-                  {!user.enabled && <Badge tone="danger">{t("users.disabledBadge")}</Badge>}
-                </div>
-                <div className="user-account-actions">
-                  <Button size="sm" disabled={busy} onClick={() => void setAdmin(user)}>
-                    {t(user.admin ? "users.removeAdmin" : "users.makeAdmin")}
-                  </Button>
-                  <Button
-                    size="sm"
-                    disabled={busy}
-                    onClick={() =>
-                      void send(
-                        `/api/v1/users/${encodeURIComponent(user.id)}`,
-                        "PATCH",
-                        { canDevelop: !user.canDevelop },
-                        t(user.canDevelop ? "users.developerRemoved" : "users.developerGranted"),
-                      )
-                    }
-                  >
-                    {t(user.canDevelop ? "users.removeDeveloper" : "users.allowDeveloper")}
-                  </Button>
-                  {available && user.enabled && (
-                    <Button size="sm" disabled={busy} onClick={() => void resetPassword(user)}>
-                      {t("users.resetLink")}
-                    </Button>
-                  )}
-                  {user.enabled && user.id !== selfId && (
-                    <Button size="sm" disabled={busy} onClick={() => void signInAs(user)}>
-                      {t("users.signInAs")}
-                    </Button>
-                  )}
-                  <Button size="sm" disabled={busy} onClick={() => void setEnabled(user)}>
-                    {t(user.enabled ? "users.disable" : "users.enable")}
-                  </Button>
-                </div>
-              </li>
-            ))}
-          </ul>
-          </>
-        )}
-      </Panel>
       {dialog}
+      {promptDialog}
     </>
   );
 }

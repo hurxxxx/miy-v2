@@ -64,9 +64,26 @@ export function isCliApprovalPath(path: string | null | undefined) {
 
 export function isConsolePath(path: string) {
   const normalized = path.replace(/\/+$/, "");
-  return normalized === "/admin" || normalized === "/cli/sessions" ||
+  return isAdminPath(normalized) || normalized === "/cli/sessions" ||
     isAccountLinkPath(normalized) ||
     /^\/cli\/(authorize|device)(?:\/|$)/.test(normalized);
+}
+
+export function isAdminPath(path: string) {
+  return path === "/admin" || path.startsWith("/admin/");
+}
+
+/** Resume an interrupted console navigation after OAuth, on the current origin. */
+export function consoleReturnPath(target: string | null, origin: string) {
+  if (!target?.startsWith("/")) return null;
+  try {
+    const url = new URL(target, origin);
+    if (url.origin !== origin) return null;
+    if (isCliApprovalPath(url.pathname)) return url.pathname;
+    return isAdminPath(url.pathname) ? `${url.pathname}${url.search}${url.hash}` : null;
+  } catch {
+    return null;
+  }
 }
 
 /** Invitation and password reset pages: public, and served by the console only. */

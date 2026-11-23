@@ -1,246 +1,92 @@
-import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { useState } from "react";
+import { Link, useLocation } from "@tanstack/react-router";
+import { AppWindow, ClipboardList, LayoutDashboard, LayoutGrid, LifeBuoy, Network, UserRound, UsersRound } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import { request } from "@miy/sdk";
-import { useInstallations, useManagedInstallations } from "../data/installations";
-import { useUser, useSurface } from "../data/session";
-import { environmentPath, surfaceUrl } from "../lib/paths";
-import { NewTabLink } from "../components/NewTabLink";
-import { LoadError, StaleNotice } from "../components/LoadState";
-import { RuntimeHealth } from "../components/RuntimeHealth";
-import { RuntimeControls } from "../components/RuntimeControls";
-import { PermissionApproval } from "../components/PermissionApproval";
-import { FileQuota } from "../components/FileQuota";
-import { Badge, Button, EmptyState, Field, Loading, Panel } from "../ui";
-import { AppAccessAdmin, GroupAdmin, useGroups } from "./AdminAccess";
+import { useSurface, useUser } from "../data/session";
+import { Panel } from "../ui";
+import { AdminApps } from "./AdminApps";
 import { AuditLog } from "./AdminAudit";
+import { OrganizationAdmin, PermissionGroupsAdmin } from "./AdminGroups";
 import { LauncherCategoriesAdmin } from "./AdminLauncher";
+import { AdminOverview } from "./AdminOverview";
 import { SupportReports } from "./AdminReports";
-import { UserAdmin, type Account } from "./AdminUsers";
+import { UserAdmin } from "./AdminUsers";
 
-type Registration = { id: string; appId: string; name: string; status: string; requester: string };
+const sections = [
+  { label: null, items: [{ id: "overview", to: "/admin", icon: LayoutDashboard }] },
+  { label: "directory", items: [
+    { id: "users", to: "/admin/users", icon: UserRound },
+    { id: "organization", to: "/admin/organization", icon: Network },
+    { id: "groups", to: "/admin/groups", icon: UsersRound },
+  ] },
+  { label: "platform", items: [
+    { id: "apps", to: "/admin/apps", icon: AppWindow },
+    { id: "launcher", to: "/admin/launcher", icon: LayoutGrid },
+  ] },
+  { label: "operations", items: [
+    { id: "audit", to: "/admin/audit", icon: ClipboardList },
+    { id: "support", to: "/admin/support", icon: LifeBuoy },
+  ] },
+] as const;
+
+type Section = (typeof sections)[number]["items"][number]["id"];
 
 export function Admin() {
   const { t } = useTranslation("console");
   const user = useUser();
-  if (!user.admin)
-    return (
-      <Panel title={t("admin.adminRequired")}>
-        <p>{t("admin.signInAsAdmin")}</p>
-      </Panel>
-    );
-  return <AdminConsole csrf={user.csrf} selfId={user.id} />;
+  const { surface } = useSurface();
+  const pathname = useLocation({ select: (location) => location.pathname });
+  if (surface !== "console" || !user.admin) {
+    return <Panel title={t("admin.adminRequired")}><p>{t("admin.signInAsAdmin")}</p></Panel>;
+  }
+
+  const section = sections.flatMap(({ items }) => [...items]).find(({ to }) =>
+    pathname === to || (to !== "/admin" && pathname.startsWith(`${to}/`)),
+  )?.id ?? "overview";
+
+  return (
+    <div className="admin-workspace">
+      <nav aria-label={t("admin.title")} className="admin-navigation">
+        {sections.map(({ label, items }) => (
+          <div key={label ?? "overview"} className="admin-navigation-group">
+            {label && <p>{t(`navigation.categories.${label}`)}</p>}
+            {items.map(({ id, to, icon: Icon }) => (
+              <Link key={id} to={to} activeOptions={{ exact: id !== "apps", includeSearch: false }}
+                className="admin-navigation-link">
+                <Icon size={17} aria-hidden="true" />
+                {t(`navigation.sections.${id}`)}
+              </Link>
+            ))}
+          </div>
+        ))}
+      </nav>
+      <div className="admin-workspace-content">
+        <div className="page-header">
+          <h1>{section === "overview" ? t("admin.title") : t(`navigation.sections.${section}`)}</h1>
+        </div>
+        <AdminSection key={section} section={section} csrf={user.csrf} selfId={user.id} />
+      </div>
+    </div>
+  );
 }
 
-function AdminConsole({ csrf, selfId }: { csrf: string; selfId: string }) {
-  const { t } = useTranslation("console");
-  const surface = useSurface();
-  // Installations whose release asks for platform permissions not yet approved.
-  const [pendingApprovals, setPendingApprovals] = useState<Record<string, number>>({});
-  const pendingApproval = useCallback(
-    (id: string, count: number) => setPendingApprovals((current) => (current[id] === count ? current : { ...current, [id]: count })),
-    [],
-  );
-  // The runtime panel uses the management list; the shared list feeds the rail.
-  const installations = useInstallations();
-  const managed = useManagedInstallations();
-  const [requests, setRequests] = useState<Registration[] | null>(null);
-  const [users, setUsers] = useState<Account[] | null>(null);
-  const [loadError, setLoadError] = useState(false);
-  const [message, setMessage] = useState("");
-  const groups = useGroups(setMessage);
-  const loadDirectory = useCallback(async () => {
-    try {
-      const [nextRequests, nextUsers] = await Promise.all([
-        request<Registration[]>("/api/v1/app-registrations"),
-        request<Account[]>("/api/v1/users"),
-      ]);
-      setRequests(nextRequests);
-      setUsers(nextUsers);
-      setLoadError(false);
-    } catch {
-      setLoadError(true);
-    }
-  }, []);
-  const refresh = useCallback(() => {
-    void loadDirectory();
-    void installations.refresh();
-    void managed.refresh();
-  }, [loadDirectory, installations.refresh, managed.refresh]);
-  useEffect(() => {
-    void loadDirectory();
-    const timer = setInterval(() => void loadDirectory(), 3000);
-    return () => clearInterval(timer);
-  }, [loadDirectory]);
-  async function decide(id: string, approve: boolean) {
-    try {
-      await request(`/api/v1/app-registrations/${id}/decision`, csrf, {
-        method: "POST",
-        body: JSON.stringify({ approve }),
-      });
-      setMessage(t(approve ? "admin.registrationApproved" : "admin.registrationRejected"));
-      refresh();
-    } catch (e) {
-      setMessage(String(e));
-    }
-  }
-  async function grant(e: FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    const form = new FormData(e.currentTarget);
-    try {
-      await request("/api/v1/grants", csrf, {
-        method: "PUT",
-        body: JSON.stringify({
-          userId: form.get("user"),
-          appId: form.get("app"),
-          environment: form.get("environment"),
-          permission: form.get("permission"),
-          enabled: form.get("enabled") === "true",
-        }),
-      });
-      setMessage(t("admin.grantChanged"));
-    } catch (e) {
-      setMessage(String(e));
-    }
-  }
-  const pending = requests?.filter((r) => r.status === "pending") ?? [];
+function AdminSection({ section, csrf, selfId }: { section: Section; csrf: string; selfId: string }) {
+  const [message, report] = useState("");
+  const props = { csrf, report };
+  const pages = {
+    overview: <AdminOverview />,
+    users: <UserAdmin {...props} selfId={selfId} />,
+    organization: <OrganizationAdmin {...props} />,
+    groups: <PermissionGroupsAdmin {...props} />,
+    apps: <AdminApps {...props} />,
+    launcher: <LauncherCategoriesAdmin csrf={csrf} />,
+    audit: <AuditLog report={report} />,
+    support: <SupportReports csrf={csrf} />,
+  };
   return (
     <>
-      <div className="page-header">
-        <div>
-          <h1>{t("admin.title")}</h1>
-          <p>{t("admin.description")}</p>
-        </div>
-      </div>
-      {loadError && <LoadError message={t("admin.directoryLoadFailed")} onRetry={refresh} />}
-      {Object.values(pendingApprovals).some((count) => count > 0) && (
-        <p role="status" className="status-message">
-          {t("admin.approvalsWaiting", { count: Object.values(pendingApprovals).filter((count) => count > 0).length })}
-        </p>
-      )}
-      {message && (
-        <p role="status" className="status-message">
-          {message}
-        </p>
-      )}
-      <div className="admin-grid">
-        <Panel title={t("admin.registrations")} actions={requests && <Badge tone={pending.length ? "info" : "neutral"}>{t("admin.count", { count: pending.length })}</Badge>}>
-          {requests === null ? (
-            !loadError && <Loading />
-          ) : pending.length === 0 ? (
-            <p className="ui-empty-inline">{t("admin.noPendingRegistrations")}</p>
-          ) : (
-            pending.map((r) => (
-              <div key={r.id} className="registration-row">
-                <p>
-                  <strong>{r.name}</strong> · <code>{r.appId}</code>
-                </p>
-                <div className="registration-actions">
-                  <Button size="sm" variant="primary" onClick={() => decide(r.id, true)}>
-                    {t("admin.approve")}
-                  </Button>
-                  <Button size="sm" onClick={() => decide(r.id, false)}>
-                    {t("admin.reject")}
-                  </Button>
-                </div>
-              </div>
-            ))
-          )}
-        </Panel>
-        <Panel title={t("admin.grants")}>
-          <form className="grant-form" onSubmit={grant}>
-            <Field label={t("admin.user")}>
-              <select name="user" disabled={users === null}>
-                {(users ?? []).map((u) => (
-                  <option key={u.id} value={u.id}>
-                    {u.name}
-                  </option>
-                ))}
-              </select>
-            </Field>
-            <Field label={t("admin.appId")}>
-              <input name="app" required pattern="[a-z][a-z0-9-]*" autoComplete="off" />
-            </Field>
-            <Field label={t("admin.environment")}>
-              <select name="environment">
-                <option value="dev">{t("environments.dev")}</option>
-                <option value="prod">{t("environments.prod")}</option>
-              </select>
-            </Field>
-            <Field label={t("admin.permission")}>
-              <select name="permission">
-                <option value="use">{t("admin.permissions.use")}</option>
-                <option value="develop">{t("admin.permissions.develop")}</option>
-                <option value="deploy">{t("admin.permissions.deploy")}</option>
-              </select>
-            </Field>
-            <Field label={t("admin.grantOrRevoke")}>
-              <select name="enabled">
-                <option value="true">{t("admin.grant")}</option>
-                <option value="false">{t("admin.revoke")}</option>
-              </select>
-            </Field>
-            <div className="grant-form-actions">
-              <Button type="submit" variant="primary" disabled={users === null}>
-                {t("admin.applyGrant")}
-              </Button>
-            </div>
-          </form>
-        </Panel>
-      </div>
-      <h2 className="page-section-title">{t("admin.accounts")}</h2>
-      <div className="admin-grid">
-        <UserAdmin csrf={csrf} selfId={selfId} users={users} report={setMessage} refresh={refresh} />
-      </div>
-      <h2 className="page-section-title">{t("admin.access")}</h2>
-      <div className="admin-grid">
-        <GroupAdmin csrf={csrf} users={users} report={setMessage} directory={groups} />
-        <AppAccessAdmin csrf={csrf} users={users} report={setMessage} directory={groups} />
-      </div>
-      <LauncherCategoriesAdmin csrf={csrf} />
-      <SupportReports csrf={csrf} />
-      <AuditLog users={users} report={setMessage} />
-      <h2 className="page-section-title">{t("admin.runtime")}</h2>
-      {managed.items === null ? (
-        managed.status === "error" ? (
-          <LoadError message={t("admin.appsLoadFailed")} onRetry={refresh} />
-        ) : (
-          <Loading>{t("admin.appsLoading")}</Loading>
-        )
-      ) : (
-        <>
-          {managed.status === "error" && <StaleNotice updatedAt={managed.updatedAt} onRetry={refresh} />}
-          {managed.items.filter((a) => a.kind === "docker_app").length === 0 ? (
-            <EmptyState title={t("admin.noDeployedApps")} />
-          ) : (
-            <div className="card-grid">
-              {managed.items
-                .filter((a) => a.kind === "docker_app")
-                .map((a) => (
-                  <Panel
-                    key={a.id}
-                    title={`${a.name} · ${a.environment}`}
-                    actions={a.appDisabled && <Badge tone="warning">{t("admin.companyDisabled")}</Badge>}
-                  >
-                    <p>
-                      {a.version} · DB {a.dbStatus}
-                    </p>
-                    {a.canOpen ? (
-                      <NewTabLink href={surfaceUrl(a.environment === "prod" ? surface.portalOrigin : surface.devPortalOrigin, environmentPath(a.environment, a.appId))}>{t("admin.openInPortal")}</NewTabLink>
-                    ) : (
-                      <p className="ui-empty-inline">
-                        {t(a.appDisabled ? "admin.disabledCannotOpen" : "admin.cannotOpen")}
-                      </p>
-                    )}
-                    <RuntimeHealth app={a} />
-                    {a.canManage && <RuntimeControls app={a} csrf={csrf} refresh={refresh} />}
-                    <PermissionApproval installationId={a.id} releaseId={a.releaseId} csrf={csrf} onChange={(count) => pendingApproval(a.id, count)} />
-                    <FileQuota installationId={a.id} csrf={csrf} />
-                  </Panel>
-                ))}
-            </div>
-          )}
-        </>
-      )}
+      {message && <p role="status" className="status-message">{message}</p>}
+      {pages[section]}
     </>
   );
 }

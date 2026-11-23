@@ -106,6 +106,134 @@ fn encode(scope: &str, boundary: String) -> String {
     )
 }
 
+#[derive(Clone, Copy, Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+enum UserRole {
+    Admin,
+    Developer,
+    Member,
+}
+
+#[derive(Clone, Copy, Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+enum UserStatus {
+    Enabled,
+    Disabled,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct UserDirectoryQuery {
+    q: Option<String>,
+    role: Option<UserRole>,
+    status: Option<UserStatus>,
+    organization: Option<String>,
+    #[serde(default)]
+    descendants: bool,
+    limit: Option<i64>,
+    cursor: Option<String>,
+}
+
+pub(crate) async fn user_directory(
+    S(s): S<State>,
+    Extension(p): Extension<Principal>,
+    Query(q): Query<UserDirectoryQuery>,
+) -> ApiResult<Json<Value>> {
+    domain::admin(&s, &p).await?;
+    let page = Page {
+        limit: q.limit,
+        cursor: q.cursor,
+        ..Page::default()
+    };
+    let limit = page.limit()?;
+    let search = q.q.as_deref().unwrap_or_default().trim();
+    if search.chars().count() > 120 || search.contains('\0') {
+        return Err(ApiError::bad("invalid_user_search"));
+    }
+    let unassigned = q.organization.as_deref() == Some("unassigned");
+    let organization = q
+        .organization
+        .as_deref()
+        .filter(|_| !unassigned)
+        .map(str::parse::<uuid::Uuid>)
+        .transpose()
+        .map_err(|_| ApiError::bad("invalid_organization"))?;
+    let descendants = organization.is_some() && q.descendants;
+    let scope = crate::contract::hash(serde_json::to_vec(&json!([
+        "admin-user-directory",
+        p.id,
+        p.browser_purpose.map(BrowserPurpose::as_str),
+        search,
+        q.role,
+        q.status,
+        organization,
+        unassigned,
+        descendants,
+    ]))?);
+    let boundary = page.boundary(&scope)?;
+    let after = if boundary.is_empty() {
+        None
+    } else {
+        Some(
+            serde_json::from_str::<(String, String)>(&boundary)
+                .map_err(|_| ApiError::bad("invalid_cursor"))?,
+        )
+    };
+    let (admins, developers) = match q.role {
+        Some(UserRole::Admin) => (Some(true), None),
+        Some(UserRole::Developer) => (None, Some(true)),
+        Some(UserRole::Member) => (Some(false), Some(false)),
+        None => (None, None),
+    };
+    let enabled = q.status.map(|status| matches!(status, UserStatus::Enabled));
+    let mut rows = sqlx::query(
+        "WITH RECURSIVE subtree(id) AS (
+           SELECT id FROM groups WHERE id = $1 AND source = 'hr'
+           UNION
+           SELECT child.id FROM groups child JOIN subtree parent ON child.parent_id = parent.id
+           WHERE $2 AND child.source = 'hr'
+         )
+         SELECT lower(u.name) AS sort_name, u.id, jsonb_build_object(
+           'id',u.id,'name',u.name,'admin',u.admin,'canDevelop',u.can_develop,'enabled',u.enabled,
+           'primaryGroupId',u.primary_group_id,'primaryGroupName',g.name
+         ) AS value
+         FROM users u LEFT JOIN groups g ON g.id = u.primary_group_id
+         WHERE ($1 IS NULL OR u.primary_group_id IN (SELECT id FROM subtree))
+           AND (NOT $3 OR u.primary_group_id IS NULL)
+           AND ($4 = '' OR strpos(lower(u.id), lower($4)) > 0 OR strpos(lower(u.name), lower($4)) > 0)
+           AND ($5::boolean IS NULL OR u.admin = $5)
+           AND ($6::boolean IS NULL OR u.can_develop = $6)
+           AND ($7::boolean IS NULL OR u.enabled = $7)
+           AND ($8::text IS NULL OR (lower(u.name), u.id) > ($8, $9::text))
+         ORDER BY lower(u.name), u.id LIMIT $10",
+    )
+    .bind(organization)
+    .bind(descendants)
+    .bind(unassigned)
+    .bind(search)
+    .bind(admins)
+    .bind(developers)
+    .bind(enabled)
+    .bind(after.as_ref().map(|(name, _)| name))
+    .bind(after.as_ref().map(|(_, id)| id))
+    .bind(limit + 1)
+    .fetch_all(&s.pool)
+    .await?;
+    let mut next_cursor = None;
+    if rows.len() > limit as usize {
+        rows.pop();
+        if let Some(last) = rows.last() {
+            let key: (&str, &str) = (last.try_get("sort_name")?, last.try_get("id")?);
+            next_cursor = Some(encode(&scope, serde_json::to_string(&key)?));
+        }
+    }
+    let items = rows
+        .into_iter()
+        .map(|row| row.try_get::<Value, _>("value"))
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(Json(json!({"items": items, "nextCursor": next_cursor})))
+}
+
 pub async fn page(s: &State, p: &Principal, kind: &str, q: Page) -> ApiResult<Value> {
     page_for(s, p, kind, q, false).await
 }

@@ -1303,6 +1303,11 @@ pub async fn run(
     groups(&mut h, suffix, &mut passed).await?;
     // Independent fixtures: a failing check here does not hide the others.
     let mut stopped = Vec::new();
+    if let Err(error) = admin_user_directory(&h, suffix).await {
+        stopped.push(format!("administrator user directory: {error:#}"));
+    } else {
+        passed.push("administrator user directory scopes literal search, organization and role filters, and cursor continuation".into());
+    }
     if let Err(error) = policy_snapshot(&mut h, suffix, &mut passed).await {
         stopped.push(format!("policy snapshot: {error:#}"));
     }
@@ -1318,8 +1323,90 @@ pub async fn run(
     if let Err(error) = app_write_revocations(&mut h, suffix, &mut passed).await {
         stopped.push(format!("app write revocations: {error:#}"));
     }
+    if let Err(error) = admin_overview(&mut h, suffix).await {
+        stopped.push(format!("administrator overview: {error:#}"));
+    } else {
+        passed.push("administrator overview counts current approvals, failed installations and pending registrations; ordinary users are denied".into());
+    }
     ensure!(stopped.is_empty(), "{}", stopped.join("; "));
     Ok(passed)
+}
+
+async fn admin_overview(h: &mut Harness<'_>, suffix: &str) -> Result<()> {
+    const PATH: &str = "/api/v1/admin/overview";
+    let admin = h.actor(true).await?;
+    let user = h.actor(false).await?;
+    response(h.request(&user.token, Method::GET, PATH).send().await?, 403).await?;
+    let before = response(
+        h.request(&admin.token, Method::GET, PATH).send().await?,
+        200,
+    )
+    .await?;
+    let external = "platform:directory:read".to_owned();
+    let app = h
+        .app(
+            format!("overview-app-{suffix}"),
+            "dev",
+            &["database".into(), external.clone()],
+        )
+        .await?;
+    sqlx::query("UPDATE releases SET image_id=$2 WHERE id=$1")
+        .bind(app.release)
+        .bind(format!("sha256:{}", hash(suffix)))
+        .execute(&h.state.pool)
+        .await?;
+    sqlx::query("UPDATE installations SET runtime_status='failed' WHERE id=$1")
+        .bind(app.installation)
+        .execute(&h.state.pool)
+        .await?;
+    sqlx::query("INSERT INTO app_registrations(id,app_id,name,actor) VALUES($1,$2,'Overview pending request',$3)")
+        .bind(Uuid::new_v4()).bind(format!("overview-pending-{suffix}")).bind(&user.id).execute(&h.state.pool).await?;
+    let after = response(
+        h.request(&admin.token, Method::GET, PATH).send().await?,
+        200,
+    )
+    .await?;
+    for key in ["pendingRegistrations", "pendingApprovals", "runtimeIssues"] {
+        ensure!(
+            after[key].as_u64() == before[key].as_u64().map(|count| count + 1),
+            "overview {key} did not count the new record"
+        );
+    }
+    for runtime_status in ["unreachable", "stopped"] {
+        sqlx::query("UPDATE installations SET runtime_status=$2 WHERE id=$1")
+            .bind(app.installation)
+            .bind(runtime_status)
+            .execute(&h.state.pool)
+            .await?;
+        let summary = response(
+            h.request(&admin.token, Method::GET, PATH).send().await?,
+            200,
+        )
+        .await?;
+        ensure!(
+            summary["runtimeIssues"] == after["runtimeIssues"],
+            "unexpected {runtime_status} was hidden from the overview"
+        );
+    }
+    sqlx::query("UPDATE installations SET desired_state='stopped' WHERE id=$1")
+        .bind(app.installation)
+        .execute(&h.state.pool)
+        .await?;
+    h.replace(&admin, &app, app.release, &[external]).await?;
+    let approved = response(
+        h.request(&admin.token, Method::GET, PATH).send().await?,
+        200,
+    )
+    .await?;
+    ensure!(
+        approved["pendingApprovals"] == before["pendingApprovals"],
+        "approved external permission or database remained pending"
+    );
+    ensure!(
+        approved["runtimeIssues"] == before["runtimeIssues"],
+        "an intentional stop was reported as an issue"
+    );
+    Ok(())
 }
 
 async fn storage_contract(
@@ -2796,6 +2883,119 @@ async fn policy_snapshot(
     Ok(())
 }
 
+async fn admin_user_directory(h: &Harness<'_>, suffix: &str) -> Result<()> {
+    let lead = h.actor(true).await?;
+    let child_user = h.actor(false).await?;
+    let unassigned = h.actor(false).await?;
+    let wildcard_match = h.actor(false).await?;
+    let root = Uuid::new_v4();
+    let child = Uuid::new_v4();
+    let name = format!("directory-{suffix} %_");
+    sqlx::query("INSERT INTO groups (id, name, source, parent_id) VALUES ($1, 'Division', 'hr', NULL), ($2, 'Team', 'hr', $1)")
+        .bind(root)
+        .bind(child)
+        .execute(&h.state.pool)
+        .await?;
+    for (actor, primary, enabled, can_develop) in [
+        (&lead, Some(root), true, false),
+        (&child_user, Some(child), true, true),
+        (&unassigned, None, false, false),
+    ] {
+        sqlx::query(
+            "UPDATE users SET name=$2, primary_group_id=$3, enabled=$4, can_develop=$5 WHERE id=$1",
+        )
+        .bind(&actor.id)
+        .bind(&name)
+        .bind(primary)
+        .bind(enabled)
+        .bind(can_develop)
+        .execute(&h.state.pool)
+        .await?;
+    }
+    sqlx::query("UPDATE users SET name=$2, primary_group_id=$3 WHERE id=$1")
+        .bind(&wildcard_match.id)
+        .bind(format!("directory-{suffix} XX"))
+        .bind(root)
+        .execute(&h.state.pool)
+        .await?;
+    const PATH: &str = "/api/v1/users/directory";
+    let denied = h
+        .request(&child_user.token, Method::GET, PATH)
+        .send()
+        .await?;
+    response(denied, 403).await?;
+    let read = |params: &[(&str, &str)]| {
+        h.request(&lead.token, Method::GET, PATH)
+            .query(&[("q", name.as_str())])
+            .query(params)
+            .send()
+    };
+    let root_id = root.to_string();
+    let direct = response(read(&[("organization", &root_id)]).await?, 200).await?;
+    ensure!(direct["items"].as_array().unwrap().len() == 1 && direct["items"][0]["id"] == lead.id);
+    let first = response(
+        read(&[
+            ("organization", &root_id),
+            ("descendants", "true"),
+            ("limit", "1"),
+        ])
+        .await?,
+        200,
+    )
+    .await?;
+    let cursor = first["nextCursor"]
+        .as_str()
+        .context("missing user directory cursor")?;
+    let second = response(
+        read(&[
+            ("organization", &root_id),
+            ("descendants", "true"),
+            ("cursor", cursor),
+        ])
+        .await?,
+        200,
+    )
+    .await?;
+    let mut ids = [lead.id.as_str(), child_user.id.as_str()];
+    ids.sort_unstable();
+    ensure!(
+        first["items"][0]["id"] == ids[0]
+            && second["items"][0]["id"] == ids[1]
+            && second["nextCursor"].is_null()
+    );
+    response(
+        read(&[("organization", &root_id), ("cursor", cursor)]).await?,
+        400,
+    )
+    .await?;
+    let developers = response(
+        read(&[("role", "developer"), ("status", "enabled")]).await?,
+        200,
+    )
+    .await?;
+    ensure!(
+        developers["items"].as_array().unwrap().len() == 1
+            && developers["items"][0]["id"] == child_user.id
+            && developers["items"][0]["primaryGroupName"] == "Team"
+    );
+    let inactive = response(
+        read(&[
+            ("organization", "unassigned"),
+            ("role", "member"),
+            ("status", "disabled"),
+        ])
+        .await?,
+        200,
+    )
+    .await?;
+    ensure!(
+        inactive["items"].as_array().unwrap().len() == 1
+            && inactive["items"][0]["id"] == unassigned.id
+            && inactive["items"][0]["primaryGroupId"].is_null()
+    );
+    Ok(())
+}
+
 /// Groups and app access (V1-G1, V1-G2): permissions are computed from current
 /// memberships on every request and never copied into user grants.
 async fn groups(h: &mut Harness<'_>, suffix: &str, passed: &mut Vec<String>) -> Result<()> {
@@ -3236,7 +3436,7 @@ async fn groups(h: &mut Harness<'_>, suffix: &str, passed: &mut Vec<String>) -> 
     mutation_revocation(h, &app, &local, &unit, &team, &dave, &erin, suffix).await?;
     passed.push("all group/access mutations, personal grants, user state changes and registration decisions roll back without domain audit when an administrator is revoked or disabled during a PostgreSQL lock wait".into());
     grant_and_primary_audit(h, &operator, &app, &unit, &team).await?;
-    passed.push("personal grant changes (including registration approval), user state changes and primary-group assignments retain their exact before/after targets in the same transaction audit".into());
+    passed.push("personal grant changes (including registration approval), user state changes and primary-group assignments retain their exact before/after targets in the same transaction audit; stale organization removals preserve the new primary group".into());
     primary_group_lock_order(h).await?;
     passed.push("opposing administrators update primary groups with ordered user locks, preserving the unlocked target and completing without deadlock".into());
     Ok(())
@@ -4224,15 +4424,38 @@ async fn grant_and_primary_audit(
         );
     }
     let mut before = "none";
+    let primary_path = format!("/api/v1/users/{}/primary-group", user.id);
     for after in [Some(unit), Some(team), None] {
-        h.json(
-            &operator.token,
-            Method::PUT,
-            &format!("/api/v1/users/{}/primary-group", user.id),
-            json!({"groupId":after}),
-            200,
-        )
-        .await?;
+        let body = if after.is_none() {
+            let stale = h
+                .json(
+                    &operator.token,
+                    Method::PUT,
+                    &primary_path,
+                    json!({"groupId":null,"expectedGroupId":unit}),
+                    409,
+                )
+                .await?;
+            ensure!(
+                stale["error"]["code"] == "primary_group_changed",
+                "stale organization removal returned an unexpected error"
+            );
+            let removal_audited: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM audit WHERE actor=$1 AND action='user.primary_group_set' AND target=$2)")
+                .bind(&operator.id)
+                .bind(format!("user:{}:from:{team}:to:none", user.id))
+                .fetch_one(&h.state.pool)
+                .await?;
+            ensure!(
+                !removal_audited,
+                "stale organization removal committed an audit"
+            );
+            // This can succeed only if the previous request left the team as primary.
+            json!({"groupId":null,"expectedGroupId":team})
+        } else {
+            json!({"groupId":after})
+        };
+        h.json(&operator.token, Method::PUT, &primary_path, body, 200)
+            .await?;
         let target = format!(
             "user:{}:from:{before}:to:{}",
             user.id,

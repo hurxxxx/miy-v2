@@ -46,7 +46,9 @@ test("service health changes independently from process controls", async ({
           ? [app]
           : url.pathname === "/api/v1/runtime/installations"
             ? [{ ...app, appDisabled: false, canOpen: true }]
-            : url.pathname === "/api/v1/apps" ? { apps: [], nextCursor: null } : [];
+            : url.pathname === "/api/v1/apps/health-probe"
+              ? { app: { id: app.appId, name: app.name, distribution: "organization", disabled: false }, installations: [{ ...app, canOpen: true }] }
+              : url.pathname === "/api/v1/apps" ? { apps: [], nextCursor: null } : [];
     await route.fulfill({ json: value });
   });
   await page.goto("/environments/dev");
@@ -75,7 +77,7 @@ test("service health changes independently from process controls", async ({
     path: testInfo.outputPath("unhealthy.png"),
     fullPage: true,
   });
-  await page.goto("/admin");
+  await page.goto("/admin/apps/health-probe/runtime");
   await expect(status).toContainText("서비스: 응답 비정상");
   app.health = {
     ...app.health!,

@@ -55,6 +55,8 @@ pub struct Membership {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct PrimaryGroup {
     pub group_id: Option<Uuid>,
+    /// When set, reject changes if the user's current primary group differs.
+    pub expected_group_id: Option<Uuid>,
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
@@ -303,6 +305,11 @@ pub async fn set_primary_group(
         .find(|row| row.get::<String, _>("id") == user)
         .ok_or_else(ApiError::not_found)?
         .get::<Option<Uuid>, _>("primary_group_id");
+    if v.expected_group_id
+        .is_some_and(|expected| before != Some(expected))
+    {
+        return Err(ApiError::conflict("primary_group_changed"));
+    }
     sqlx::query("UPDATE users SET primary_group_id=$2 WHERE id=$1")
         .bind(user)
         .bind(v.group_id)

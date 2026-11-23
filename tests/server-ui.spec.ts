@@ -39,9 +39,15 @@ test("admin signs in, sees an empty launcher, real directory data and survives r
   await expect(consolePage.getByRole("heading", { name: "내가 관리하는 앱", exact: true })).toBeVisible();
   await consolePage.locator("#platform-navigation").getByRole("link", { name: "플랫폼 관리", exact: true }).click();
   await expect(consolePage.getByRole("heading", { name: "플랫폼 관리" })).toBeVisible();
-  await expect(consolePage.getByRole("combobox", { name: "사용자", exact: true })).toContainText("alice");
-  await expect(consolePage.getByText("대기 중인 신청이 없습니다.")).toBeVisible();
-  await expect(consolePage.getByText("배포된 앱이 없습니다.")).toBeVisible();
+  const adminNav = consolePage.getByRole("navigation", { name: "플랫폼 관리" });
+  await expect(consolePage.getByRole("heading", { name: "앱 등록 승인 대기" })).toBeVisible();
+  await expect(consolePage.getByRole("heading", { name: "릴리스 권한 승인 대기" })).toBeVisible();
+  await adminNav.getByRole("link", { name: "사용자", exact: true }).click();
+  await expect(consolePage).toHaveURL(/\/admin\/users$/);
+  await expect(consolePage.getByText("alice", { exact: true })).toBeVisible();
+  await consolePage.reload();
+  await expect(consolePage.getByText("alice", { exact: true })).toBeVisible();
+  await adminNav.getByRole("link", { name: "개요", exact: true }).click();
   await consolePage.reload();
   await expect(consolePage.getByRole("heading", { name: "플랫폼 관리" })).toBeVisible();
   await consolePage.getByRole("link", { name: "운영 영역", exact: true }).click();
@@ -53,8 +59,63 @@ test("admin signs in, sees an empty launcher, real directory data and survives r
   await consolePage.close();
 });
 
-test("admin grant form sends the session CSRF and shows the server's answer", async ({ page }) => {
+test("organization changes appear in the linked user directory and audit", async ({ page }) => {
+  const { consoleOrigin } = await serverOrigins(page);
+  const address = `${consoleOrigin}/admin/users?q=alice`;
+  const listingReads: string[] = [];
+  page.on("request", (request) => {
+    if (new URL(request.url()).pathname === "/api/v1/runtime/installations") listingReads.push(request.url());
+  });
+  await page.goto(address);
+  await page.getByRole("button", { name: /관리자로 시작/ }).click();
+  await expect(page).toHaveURL(address);
+  await expect(page.locator(".user-account")).toHaveCount(1);
+  await expect(page.locator(".user-account")).toContainText("alice");
+  await page.getByRole("link", { name: "조직도", exact: true }).click();
+  const name = "브라우저 검증 조직";
+  await page.getByRole("button", { name: "조직 만들기" }).click();
+  await page.getByLabel("이름", { exact: true }).fill(name);
+  await page.getByRole("button", { name: "만들기", exact: true }).click();
+  await expect(page).toHaveURL(/\/admin\/organization\?group=[0-9a-f-]+$/);
+  const detail = page.getByRole("region", { name: `${name} 구성원` });
+  await detail.getByRole("combobox", { name: "주 소속으로 지정할 사용자" }).fill("alice");
+  await detail.getByRole("option", { name: "alice", exact: true }).click();
+  await detail.getByRole("button", { name: "주 소속 지정" }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "주 소속 지정" }).click();
+  await expect(detail.getByRole("listitem")).toContainText("alice");
+  await page.getByRole("link", { name: "이 조직의 사용자 보기" }).click();
+  await expect(page).toHaveURL(/\/admin\/users\?organization=[0-9a-f-]+$/);
+  await expect(page.locator(".user-account")).toHaveCount(1);
+  await expect(page.locator(".user-account")).toContainText("alice");
+  await page.getByRole("link", { name: "감사", exact: true }).click();
+  await expect(page.getByText("주 소속 지정", { exact: true })).toBeVisible();
+  expect(listingReads).toHaveLength(0);
+});
+
+test("the overview opens the registration queue and approval opens app access", async ({ page }) => {
   await signIn(page, /관리자로 시작/, "/admin", "console");
+  const { consoleOrigin } = await serverOrigins(page);
+  const { csrf } = await (await page.request.get(consoleOrigin + "/api/v1/me")).json();
+  const registration = await page.request.post(consoleOrigin + "/api/v1/app-registrations", {
+    data: { id: "console-regression-app", name: "등록 승인 검증 앱" },
+    headers: { origin: consoleOrigin, "x-miy-csrf": csrf },
+  });
+  expect(registration.ok()).toBeTruthy();
+  await page.reload();
+  await expect(page.getByRole("heading", { name: "앱 등록 승인 대기" })).toBeVisible();
+  await page.getByRole("link", { name: "등록 신청 보기" }).click();
+  await expect(page).toHaveURL(/\/admin\/apps#registration-requests$/);
+  const pending = page.locator(".registration-row").filter({ hasText: "등록 승인 검증 앱" });
+  await pending.getByRole("button", { name: "승인", exact: true }).click();
+  await expect(pending).toHaveCount(0);
+  await page.getByRole("link", { name: "등록 승인 검증 앱", exact: true }).click();
+  await expect(page).toHaveURL(/\/admin\/apps\/console-regression-app$/);
+  await expect(page.getByRole("heading", { name: "앱 접근", exact: true })).toBeVisible();
+});
+
+test("admin grant form sends the session CSRF and shows the server's answer", async ({ page }) => {
+  await signIn(page, /관리자로 시작/, "/admin/apps", "console");
+  await page.getByText("앱 등록 전 개인 권한", { exact: true }).click();
   await page.getByRole("combobox", { name: "사용자", exact: true }).selectOption({ label: "alice" });
   await page.getByLabel("앱 ID").fill("missing-app");
   const [response] = await Promise.all([
@@ -70,19 +131,26 @@ test("admin grant form sends the session CSRF and shows the server's answer", as
 test("a regular user gets only what the server allows", async ({ page }) => {
   await signIn(page, /사용자 A/);
   await expect(page.locator("#platform-navigation").getByRole("link", { name: "플랫폼 관리" })).toHaveCount(0);
-  await page.goto("/admin");
+  await page.goto("/admin/apps/absent/access");
+  await expect(page).toHaveURL((await serverOrigins(page)).consoleOrigin + "/admin/apps/absent/access");
   await page.getByRole("button", { name: /사용자 A/ }).click();
   await expect(page.getByRole("button", { name: "로그아웃" })).toBeVisible();
   await page.goto((await serverOrigins(page)).consoleOrigin + "/admin");
   await expect(page.getByRole("heading", { name: "관리자 권한이 필요합니다" })).toBeVisible();
-  expect((await page.request.get((await serverOrigins(page)).consoleOrigin + "/api/v1/users")).status()).toBe(403);
+  const origins = await serverOrigins(page);
+  for (const path of ["/api/v1/users", "/api/v1/users/directory", "/api/v1/admin/overview"]) {
+    expect((await page.request.get(origins.consoleOrigin + path)).status()).toBe(403);
+  }
   // Dev apps live on the dev portal only: the prod portal moves the path there,
   // and the dev portal has its own sign-in.
   await page.goto("/environments/dev/apps/missing-app");
   await expect(page).toHaveURL((await serverOrigins(page)).devPortalOrigin + "/environments/dev/apps/missing-app");
   await signIn(page, /사용자 A/, "/environments/dev/apps/missing-app", "dev_portal");
   await expect(page.getByRole("heading", { name: "앱에 접근할 수 없습니다" })).toBeVisible();
-  expect((await page.request.get((await serverOrigins(page)).devPortalOrigin + "/api/v1/users")).status()).toBe(403);
+  for (const origin of [origins.portalOrigin, origins.devPortalOrigin]) {
+    expect((await page.request.get(origin + "/api/v1/admin/overview")).status()).toBe(403);
+    expect((await page.request.get(origin + "/api/v1/users/directory")).status()).toBe(403);
+  }
   await page.goto("/environments/stage");
   await expect(page.getByText("존재하지 않는 실행 환경입니다")).toBeVisible();
 });
@@ -154,7 +222,7 @@ test("anonymous reports persist once, stay private and support administrator tri
     expect((await page.request.get(origins.consoleOrigin + endpoint)).status()).toBe(403);
     await page.getByRole("button", { name: "로그아웃" }).click();
     await expect(page.getByRole("heading", { name: "로그인", exact: true })).toBeVisible();
-    await signIn(page, /관리자로 시작/, "/admin", "console");
+    await signIn(page, /관리자로 시작/, "/admin/support", "console");
     await page.getByRole("button", { name: "신고 조회", exact: true }).click();
     const report = page.locator("details.support-report").filter({ hasText: input.id });
     await report.locator(":scope > summary").click();

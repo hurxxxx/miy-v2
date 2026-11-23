@@ -562,6 +562,16 @@ pub fn catalog() -> Value {
         .expect("catalog array")
         .extend(personal);
     catalog.as_array_mut().unwrap().extend([
+        json!({"id":"admin_overview","method":"GET","path":"/api/v1/admin/overview","permission":"admin","description":"Counts pending registrations, current installation approvals and runtime issues; includes up to five installations in each installation list."}),
+        json!({"id":"admin_user_directory","method":"GET","path":"/api/v1/users/directory","permission":"admin","description":"User accounts filtered by name or ID, role, status and primary organization. Descendant matching is a directory filter only.","parameters":[
+            {"in":"query","name":"q","schema":{"type":"string","maxLength":120}},
+            {"in":"query","name":"role","schema":{"enum":["admin","developer","member"]}},
+            {"in":"query","name":"status","schema":{"enum":["enabled","disabled"]}},
+            {"in":"query","name":"organization","schema":{"type":"string"},"description":"Organization UUID or unassigned"},
+            {"in":"query","name":"descendants","schema":{"type":"boolean","default":false}},
+            {"in":"query","name":"limit","schema":{"type":"integer","minimum":1,"maximum":200}},
+            {"in":"query","name":"cursor","schema":{"type":"string"}}
+        ]}),
         json!({"id":"register_user","method":"POST","path":"/api/v1/users","permission":"admin","description":"Register a person by the identity provider's subject ID so they can sign in. Grants no app permission; 409 user_exists when already registered","input":schemars::schema_for!(crate::user_admin::Registration)}),
         json!({"id":"file_quota","method":"GET, PUT, DELETE","path":"/api/v1/installations/{id}/file-quota","permission":"admin (console)","description":"An installation's file storage limits and use. PUT sets maxBytes/maxFiles, DELETE returns to the defaults; existing files stay, new reservations above the limit are refused. Audited as file.quota_set","input":schemars::schema_for!(crate::storage::QuotaInput)}),
         json!({"id":"sign_in_as_user","method":"POST","path":"/api/v1/users/{id}/sign-in-as","permission":"console administrator browser session","cookieOnly":true,"description":"Start a user switch: a 60-second one-time link that signs this browser in to the prod or dev portal as that person. Audited as user.sign_in_as; the session ends when the starting administrator is disabled or loses administration","input":schemars::schema_for!(crate::user_switch::Start)}),

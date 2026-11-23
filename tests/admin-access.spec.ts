@@ -1,6 +1,7 @@
 import { browserUser, mockSurface } from "./browser-surface";
 import { test, expect, type Page } from "@playwright/test";
 import { openNewTab } from "./new-tab";
+import { mockAdminUserPage } from "./admin-users-fixture";
 
 // Admin UI for users, groups and app access with mocked APIs. These checks cover the
 // requests the screen sends and what it shows; server authorization is covered by the
@@ -51,8 +52,8 @@ async function mock(page: Page) {
     }[],
   };
   const accounts = [
-    { id: "admin", name: "관리자", admin: true, canDevelop: false, enabled: true },
-    { id: "alice", name: "앨리스", admin: false, canDevelop: false, enabled: true },
+    { id: "admin", name: "관리자", admin: true, canDevelop: false, enabled: true, primaryGroupId: null as string | null },
+    { id: "alice", name: "앨리스", admin: false, canDevelop: false, enabled: true, primaryGroupId: null as string | null },
   ];
   const apps = [{ id: "ledger", name: "장부" }];
   // Account links (GET/POST /api/v1/account-links); a test may turn the feature off.
@@ -98,6 +99,9 @@ async function mock(page: Page) {
     const url = new URL(request.url());
     const path = url.pathname;
     const method = request.method();
+    if (path === "/api/v1/users/directory" && method === "GET") {
+      return route.fulfill({ json: mockAdminUserPage(accounts, groups, url.searchParams) });
+    }
     if (path === "/api/v1/audit") {
       auditQueries.push(url.searchParams);
       const cursor = url.searchParams.get("cursor");
@@ -154,6 +158,25 @@ async function mock(page: Page) {
         groups.find((g) => g.id === member[1])!.members = list.length;
         return route.fulfill({ status: 200, json: { updated: true } });
       }
+      const primary = path.match(/^\/api\/v1\/users\/([^/]+)\/primary-group$/);
+      if (primary) {
+        const userId = primary[1];
+        const account = accounts.find((item) => item.id === userId);
+        const current = groups.find((g) => g.source === "hr" && members[g.id].some((m) => m.id === userId));
+        if (body.expectedGroupId && current?.id !== body.expectedGroupId)
+          return route.fulfill({ status: 409, json: { error: { code: "primary_group_changed" } } });
+        const details = account ?? members[current?.id ?? ""]?.find((m) => m.id === userId);
+        if (current) {
+          members[current.id] = members[current.id].filter((m) => m.id !== userId);
+          current.members = members[current.id].length;
+        }
+        if (body.groupId && details) {
+          members[body.groupId].push({ id: userId, name: details.name, enabled: details.enabled });
+          groups.find((g) => g.id === body.groupId)!.members = members[body.groupId].length;
+        }
+        if (account) Object.assign(account, { primaryGroupId: body.groupId });
+        return route.fulfill({ json: { userId, groupId: body.groupId } });
+      }
       if (path === "/api/v1/account-links" && method === "POST") {
         if (!links.available)
           return route.fulfill({ status: 503, json: { error: { code: "account_links_unavailable" } } });
@@ -193,7 +216,7 @@ async function mock(page: Page) {
       if (path === "/api/v1/users" && method === "POST") {
         if (accounts.some((account) => account.id === body.id))
           return route.fulfill({ status: 409, json: { error: { code: "user_exists" } } });
-        const created = { id: body.id, name: body.name, admin: false, canDevelop: body.canDevelop, enabled: true };
+        const created = { id: body.id, name: body.name, admin: false, canDevelop: body.canDevelop, enabled: true, primaryGroupId: null };
         accounts.push(created);
         return route.fulfill({ status: 200, json: created });
       }
@@ -228,8 +251,33 @@ async function mock(page: Page) {
             (g) => g.groupId !== body.groupId || g.environment !== body.environment || g.permission !== body.permission,
           );
       }
+      if (path === "/api/v1/grants" && accessByApp[body.appId]) {
+        const target = accessByApp[body.appId];
+        target.userGrants = target.userGrants.filter(
+          (g) => g.userId !== body.userId || g.environment !== body.environment || g.permission !== body.permission,
+        );
+        if (body.enabled) target.userGrants.push({
+          userId: body.userId,
+          environment: body.environment,
+          permission: body.permission,
+        });
+      }
       return route.fulfill({ status: 200, json: { updated: true } });
     }
+    const appView = path.match(/^\/api\/v1\/apps\/([^/]+)$/);
+    if (appView) {
+      const app = apps.find(({ id }) => id === appView[1]);
+      return route.fulfill(app ? {
+        status: 200,
+        json: {
+          app: { ...app, distribution: "organization", disabled: accessByApp[app.id]?.disabled ?? false },
+          installations: managed.filter((installation) => installation.appId === app.id),
+        },
+      } : { status: 404, json: { error: { code: "not_found" } } });
+    }
+    if (path === "/api/v1/group-grants")
+      return route.fulfill({ json: Object.entries(accessByApp).flatMap(([appId, value]) =>
+        value.groupGrants.map((grant) => ({ appId, ...grant }))) });
     const reply =
       path === "/api/v1/me"
         ? browserUser(route, admin)
@@ -289,12 +337,11 @@ async function renderResponses(page: Page) {
 }
 
 test("an administrator creates a local group and manages its members", async ({ page }) => {
-  const { sent } = await mock(page);
-  await page.goto("/admin");
-  const panel = page.locator(".ui-panel").filter({ has: page.getByRole("heading", { name: "그룹", exact: true }) });
-  await panel.getByLabel("이름").fill("영업 1팀");
-  await expect(panel.getByLabel("상위 조직").first()).toBeDisabled();
-  await panel.getByRole("button", { name: "만들기" }).click();
+  const { sent, access } = await mock(page);
+  await page.goto("/admin/groups");
+  await page.getByRole("button", { name: "그룹 만들기" }).click();
+  await page.getByLabel("이름", { exact: true }).fill("영업 1팀");
+  await page.getByRole("button", { name: "만들기", exact: true }).click();
   await expect(page.getByRole("status")).toHaveText("그룹을 만들었습니다.");
   expect(sent.at(-1)).toMatchObject({
     method: "POST",
@@ -302,47 +349,49 @@ test("an administrator creates a local group and manages its members", async ({ 
     body: { name: "영업 1팀", source: "local", parentId: null },
     csrf: "fixture-csrf",
   });
-  const row = panel.getByRole("row", { name: /영업 1팀/ });
-  await row.getByRole("button", { name: "구성원" }).click();
+  await expect(page).toHaveURL(/\/admin\/groups\?group=g-1$/);
   const detail = page.getByRole("region", { name: "영업 1팀 구성원" });
-  await detail.getByLabel("추가할 사용자").selectOption("alice");
-  await detail.getByRole("button", { name: "추가" }).click();
+  await detail.getByRole("combobox", { name: "추가할 사용자" }).fill("앨리스");
+  await detail.getByRole("option", { name: "앨리스" }).click();
+  await detail.getByRole("button", { name: "추가", exact: true }).click();
   await expect(detail.getByRole("listitem")).toContainText("앨리스");
   await detail.getByRole("button", { name: "빼기" }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "빼기" }).click();
   await expect(detail.getByText("구성원이 없습니다.")).toBeVisible();
   expect(sent.filter((s) => s.path.endsWith("/members")).map((s) => (s.body as { member: boolean }).member)).toEqual([true, false]);
 
-  const appPanel = page.locator(".ui-panel").filter({
-    has: page.getByRole("heading", { name: "앱 접근", exact: true }),
-  });
-  await appPanel.getByRole("combobox", { name: "앱", exact: true }).selectOption("ledger");
-  await appPanel.getByRole("combobox", { name: "그룹", exact: true }).selectOption({ label: "영업 1팀" });
-  await appPanel.getByRole("button", { name: "부여", exact: true }).click();
-  await expect(appPanel.getByText("영업 1팀 · 테스트 · 사용")).toBeVisible();
-  await row.getByRole("button", { name: "비활성화", exact: true }).click();
-  await expect(appPanel.getByRole("combobox", { name: "그룹", exact: true }).locator("option", { hasText: "영업 1팀" })).toHaveCount(0);
+  access.groupGrants.push({ groupId: "g-1", environment: "dev", permission: "use" });
+  await page.reload();
+  await expect(page.getByRole("link", { name: "ledger" })).toHaveAttribute("href", "/admin/apps/ledger/access");
+  await page.getByRole("button", { name: "비활성화", exact: true }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "비활성화", exact: true }).click();
+  await expect(page.getByRole("status")).toHaveText("비활성화했습니다.");
 });
 
 test("HR groups take members through the primary group, not manual membership", async ({ page }) => {
   const { sent } = await mock(page);
-  await page.goto("/admin");
-  const panel = page.locator(".ui-panel").filter({ has: page.getByRole("heading", { name: "그룹", exact: true }) });
-  await panel.getByRole("row", { name: /본부/ }).getByRole("button", { name: "구성원" }).click();
+  await page.goto("/admin/organization?group=g-hr");
   const detail = page.getByRole("region", { name: "본부 구성원" });
-  await detail.getByLabel("주 소속으로 지정할 사용자").selectOption("alice");
+  await detail.getByRole("combobox", { name: "주 소속으로 지정할 사용자" }).fill("앨리스");
+  await detail.getByRole("option", { name: "앨리스" }).click();
   await detail.getByRole("button", { name: "주 소속 지정" }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "주 소속 지정" }).click();
+  await expect(detail.getByRole("listitem")).toContainText("앨리스");
   expect(sent.at(-1)).toMatchObject({
     method: "PUT",
     path: "/api/v1/users/alice/primary-group",
     body: { groupId: "g-hr" },
   });
+  await expect(page.getByRole("link", { name: "이 조직의 사용자 보기" })).toHaveAttribute("href", "/admin/users?organization=g-hr");
 });
 
 test("the company switch asks first, and groups can receive use or develop but never deploy", async ({ page }) => {
-  const { sent, access } = await mock(page);
-  await page.goto("/admin");
+  const { sent, access, groups } = await mock(page);
+  groups.push({ id: "inactive", name: "비활성 그룹", source: "local", parentId: null, active: false, members: 0 });
+  await page.goto("/admin/apps");
+  await page.getByRole("link", { name: "장부", exact: true }).click();
+  await expect(page).toHaveURL(/\/admin\/apps\/ledger$/);
   const panel = page.locator(".ui-panel").filter({ has: page.getByRole("heading", { name: "앱 접근" }) });
-  await panel.getByRole("combobox", { name: /^앱/ }).selectOption("ledger");
   await expect(panel.getByText("사용 중", { exact: true })).toBeVisible();
   await expect(panel.getByText("앨리스 · 테스트 · 사용")).toBeVisible();
 
@@ -359,10 +408,15 @@ test("the company switch asks first, and groups can receive use or develop but n
   await panel.getByLabel("운영 입장 대상").selectOption("all");
   await expect.poll(() => access.admission.prod).toBe("all");
 
-  const permission = panel.getByLabel("권한");
-  await expect(permission.locator("option")).toHaveText(["사용", "개발"]);
+  const groupForm = panel.locator("form").filter({ has: page.getByRole("combobox", { name: "그룹", exact: true }) });
+  const groupSelect = groupForm.getByRole("combobox", { name: "그룹", exact: true });
+  await groupSelect.selectOption("g-hr");
+  await expect(groupSelect.locator("option[value=inactive]")).toHaveCount(0);
+  const permission = groupForm.getByLabel("권한");
+  await expect(permission.locator("option")).toHaveCount(2);
+  await expect(permission.locator("option[value=deploy]")).toHaveCount(0);
   await permission.selectOption("develop");
-  await panel.getByRole("button", { name: "부여" }).click();
+  await groupForm.getByRole("button", { name: "부여" }).click();
   await expect(panel.getByText("본부 · 테스트 · 개발")).toBeVisible();
   expect(sent.at(-1)).toMatchObject({
     path: "/api/v1/group-grants",
@@ -374,11 +428,28 @@ test("the company switch asks first, and groups can receive use or develop but n
       enabled: true,
     },
   });
+  const userForm = panel.locator("form").filter({ has: page.getByRole("combobox", { name: "사용자", exact: true }) });
+  await userForm.getByRole("combobox", { name: "사용자", exact: true }).selectOption("alice");
+  await userForm.getByRole("combobox", { name: "환경", exact: true }).selectOption("prod");
+  await userForm.getByRole("combobox", { name: "권한", exact: true }).selectOption("deploy");
+  await userForm.getByRole("button", { name: "부여" }).click();
+  const deploy = panel.getByRole("listitem").filter({ hasText: "앨리스 · 운영 · 배포" });
+  await expect(deploy).toBeVisible();
+  expect(sent.at(-1)).toMatchObject({
+    path: "/api/v1/grants",
+    body: { appId: "ledger", userId: "alice", environment: "prod", permission: "deploy", enabled: true },
+  });
+  await deploy.getByRole("button", { name: "회수" }).click();
+  await expect(deploy).toHaveCount(0);
+  expect(sent.at(-1)).toMatchObject({
+    path: "/api/v1/grants",
+    body: { appId: "ledger", userId: "alice", environment: "prod", permission: "deploy", enabled: false },
+  });
 });
 
 test("the audit log pages backwards and filters by actor, action and period", async ({ page }) => {
   const { auditQueries, audit } = await mock(page);
-  await page.goto("/admin");
+  await page.goto("/admin/audit");
   const panel = page.locator(".ui-panel").filter({ has: page.getByRole("heading", { name: "감사 기록" }) });
   const rows = panel.getByRole("row");
   await expect(rows).toHaveCount(3);
@@ -425,7 +496,8 @@ test("the audit log pages backwards and filters by actor, action and period", as
 });
 
 test("a company-disabled app stays in runtime management but is not offered for opening", async ({ page }) => {
-  const { sent, managed } = await mock(page);
+  const { sent, managed, access } = await mock(page);
+  access.disabled = true;
   const ledger = {
     appId: "ledger",
     name: "장부",
@@ -443,15 +515,15 @@ test("a company-disabled app stays in runtime management but is not offered for 
     { ...ledger, id: "ledger-dev", environment: "dev", canOpen: true },
     { ...ledger, id: "ledger-prod", environment: "prod", canOpen: false },
   );
-  await page.goto("/admin");
+  await page.goto("/admin/apps/ledger/runtime");
   const panel = (title: string) =>
     page.locator(".ui-panel").filter({ has: page.getByRole("heading", { name: title, exact: true }) });
-  const prod = panel("장부 · prod");
+  const prod = panel("운영");
   await expect(prod.getByText("회사 사용 중지", { exact: true })).toBeVisible();
   await expect(prod.getByRole("link", { name: "포털에서 앱 열기" })).toHaveCount(0);
   await expect(prod).toContainText("회사 사용 중지 중이라 열 수 없습니다.");
-  await expect(panel("장부 · dev").getByRole("link", { name: "포털에서 앱 열기" })).toBeVisible();
-  const openDev = panel("장부 · dev").getByRole("link", { name: "포털에서 앱 열기" });
+  await expect(panel("테스트").getByRole("link", { name: "포털에서 앱 열기" })).toBeVisible();
+  const openDev = panel("테스트").getByRole("link", { name: "포털에서 앱 열기" });
   // Dev apps open on the dev portal origin.
   await page.context().route("https://dev-portal.example.test/**", (route) =>
     route.fulfill({ contentType: "text/html", body: "<p>업무 앱</p>" }),
@@ -473,49 +545,27 @@ test("a company-disabled app stays in runtime management but is not offered for 
 test("switching HR groups uses the selected group's parent, including after a change", async ({ page }) => {
   const { groups, members, sent } = await mock(page);
   groups.push(
-    {
-      id: "g-a",
-      name: "조직 A",
-      source: "hr",
-      parentId: "g-hr",
-      active: true,
-      members: 0,
-    },
-    {
-      id: "g-b",
-      name: "조직 B",
-      source: "hr",
-      parentId: null,
-      active: true,
-      members: 0,
-    },
+    { id: "g-a", name: "조직 A", source: "hr", parentId: "g-hr", active: true, members: 0 },
+    { id: "g-b", name: "조직 B", source: "hr", parentId: null, active: true, members: 0 },
   );
   members["g-a"] = [];
   members["g-b"] = [];
-  await page.goto("/admin");
-  const panel = page.locator(".ui-panel").filter({ has: page.getByRole("heading", { name: "그룹", exact: true }) });
-  await panel
-    .getByRole("row", { name: /조직 A/ })
-    .getByRole("button", { name: "구성원" })
-    .click();
-  await expect(page.getByRole("region", { name: "조직 A 구성원" }).getByLabel("상위 조직")).toHaveValue("g-hr");
-  await panel
-    .getByRole("row", { name: /조직 B/ })
-    .getByRole("button", { name: "구성원" })
-    .click();
-  const detail = page.getByRole("region", { name: "조직 B 구성원" });
-  await expect(detail.getByLabel("상위 조직")).toHaveValue("");
-  await detail.getByRole("button", { name: "상위 조직 변경" }).click();
-  await expect
-    .poll(() => sent.at(-1))
-    .toMatchObject({
-      path: "/api/v1/groups/g-b/parent",
-      body: { parentId: null },
-    });
-  await detail.getByLabel("상위 조직").selectOption("g-hr");
-  await detail.getByRole("button", { name: "상위 조직 변경" }).click();
+  await page.goto("/admin/organization?group=g-a");
+  await page.getByRole("button", { name: "상위 조직 변경" }).click();
+  await expect(page.getByLabel("상위 조직")).toHaveValue("g-hr");
+  await page.getByRole("button", { name: "조직 B", exact: true }).click();
+  await page.getByRole("button", { name: "상위 조직 변경" }).click();
+  await expect(page.getByLabel("상위 조직")).toHaveValue("");
+  await page.getByLabel("상위 조직").selectOption("g-hr");
+  await page.getByRole("button", { name: "저장", exact: true }).click();
   await expect.poll(() => groups.find((g) => g.id === "g-b")?.parentId).toBe("g-hr");
-  await expect(detail.getByLabel("상위 조직")).toHaveValue("g-hr");
+  expect(sent.at(-1)).toMatchObject({
+    path: "/api/v1/groups/g-b/parent",
+    body: { parentId: "g-hr" },
+  });
+  await page.getByRole("button", { name: "상위 조직 변경" }).click();
+  await expect(page.getByLabel("상위 조직")).toHaveValue("g-hr");
+  await expect(page.getByLabel("상위 조직").getByRole("option", { name: "조직 B" })).toHaveCount(0);
 });
 
 test("late app access responses cannot replace the selected app or change its revoke target", async ({ page }) => {
@@ -530,23 +580,24 @@ test("late app access responses cannot replace the selected app or change its re
   };
   const requested = deferred();
   const release = deferred();
+  const completed = deferred();
   await page.route("**/api/v1/apps/ledger/access", async (route) => {
     requested.resolve();
     await release.promise;
-    await route.fulfill({ json: access });
+    await route.fulfill({ json: access }).catch(() => {});
+    completed.resolve();
   });
   try {
-    await page.goto("/admin");
+    await page.goto("/admin/apps/ledger/access");
     const panel = page.locator(".ui-panel").filter({
       has: page.getByRole("heading", { name: "앱 접근", exact: true }),
     });
-    await panel.getByRole("combobox", { name: "앱", exact: true }).selectOption("ledger");
     await requested.promise;
-    await panel.getByRole("combobox", { name: "앱", exact: true }).selectOption("other");
+    await page.getByRole("link", { name: /앱 카탈로그/ }).click();
+    await page.getByRole("link", { name: "다른 앱", exact: true }).click();
     await expect(panel.getByText("본부 · 운영 · 사용")).toBeVisible();
-    const response = page.waitForResponse("**/api/v1/apps/ledger/access");
     release.resolve();
-    await (await response).finished();
+    await completed.promise;
     await renderResponses(page);
     await expect(panel.getByText("본부 · 테스트 · 개발")).toHaveCount(0);
     await expect(panel.getByText("본부 · 운영 · 사용")).toBeVisible();
@@ -570,56 +621,37 @@ test("late app access responses cannot replace the selected app or change its re
 
 test("late HR membership responses cannot expose another group's removal action", async ({ page }) => {
   const { groups, members, sent } = await mock(page);
-  groups.push({
-    id: "g-b",
-    name: "조직 B",
-    source: "hr",
-    parentId: null,
-    active: true,
-    members: 1,
-  });
+  groups.push({ id: "g-b", name: "조직 B", source: "hr", parentId: null, active: true, members: 1 });
   members["g-b"] = [{ id: "bob", name: "밥", enabled: true }];
   const requested = deferred();
   const release = deferred();
   await page.route("**/api/v1/groups/g-hr/members", async (route) => {
     requested.resolve();
     await release.promise;
-    await route.fulfill({
-      json: [{ id: "alice", name: "앨리스", enabled: true }],
-    });
+    await route.fulfill({ json: [{ id: "alice", name: "앨리스", enabled: true }] });
   });
   try {
-    await page.goto("/admin");
-    const panel = page.locator(".ui-panel").filter({
-      has: page.getByRole("heading", { name: "그룹", exact: true }),
-    });
-    await panel.getByRole("row", { name: /본부/ }).getByRole("button", { name: "구성원" }).click();
+    await page.goto("/admin/organization?group=g-hr");
     await requested.promise;
-    await panel
-      .getByRole("row", { name: /조직 B/ })
-      .getByRole("button", { name: "구성원" })
-      .click();
+    await page.getByRole("button", { name: "조직 B", exact: true }).click();
     const detail = page.getByRole("region", { name: "조직 B 구성원" });
     await expect(detail.getByRole("listitem")).toContainText("밥");
-    const response = page.waitForResponse("**/api/v1/groups/g-hr/members");
     release.resolve();
-    await (await response).finished();
     await renderResponses(page);
     await expect(detail.getByRole("listitem")).toContainText("밥");
     await expect(detail.getByRole("listitem")).not.toContainText("앨리스");
     await detail.getByRole("button", { name: "주 소속 해제" }).click();
-    await expect
-      .poll(() => sent.at(-1))
-      .toMatchObject({
-        path: "/api/v1/users/bob/primary-group",
-        body: { groupId: null },
-      });
+    await page.getByRole("dialog").getByRole("button", { name: "주 소속 해제" }).click();
+    await expect.poll(() => sent.at(-1)).toMatchObject({
+      path: "/api/v1/users/bob/primary-group",
+      body: { groupId: null, expectedGroupId: "g-b" },
+    });
   } finally {
     release.resolve();
   }
 });
 
-test("an app mutation finishing after selection changes refreshes the current app", async ({ page }) => {
+test("an app mutation finishing after navigation stays scoped to its original app", async ({ page }) => {
   const { apps, access, accessByApp } = await mock(page);
   apps.push({ id: "other", name: "다른 앱" });
   accessByApp.other = {
@@ -642,18 +674,20 @@ test("an app mutation finishing after selection changes refreshes the current ap
     await route.fallback();
   });
   try {
-    await page.goto("/admin");
+    await page.goto("/admin/apps/ledger/access");
     const panel = page.locator(".ui-panel").filter({
       has: page.getByRole("heading", { name: "앱 접근", exact: true }),
     });
-    await panel.getByRole("combobox", { name: "앱", exact: true }).selectOption("ledger");
     await panel.getByLabel("운영 입장 대상").selectOption("all");
     await requested.promise;
-    await panel.getByRole("combobox", { name: "앱", exact: true }).selectOption("other");
+    await page.getByRole("link", { name: /앱 카탈로그/ }).click();
+    await page.getByRole("link", { name: "다른 앱", exact: true }).click();
     await expect(panel.getByLabel("운영 입장 대상")).toHaveValue("selected");
     release.resolve();
-    await expect.poll(() => otherReads).toBe(2);
-    await expect(panel.getByRole("combobox", { name: "앱", exact: true })).toHaveValue("other");
+    await expect.poll(() => access.admission.prod).toBe("all");
+    await renderResponses(page);
+    expect(otherReads).toBe(1);
+    await expect(page).toHaveURL(/\/admin\/apps\/other$/);
     await expect(panel.getByLabel("운영 입장 대상")).toHaveValue("selected");
   } finally {
     release.resolve();
@@ -662,14 +696,7 @@ test("an app mutation finishing after selection changes refreshes the current ap
 
 test("a membership mutation finishing after selection changes refreshes the current group", async ({ page }) => {
   const { groups, members } = await mock(page);
-  groups.push({
-    id: "g-b",
-    name: "조직 B",
-    source: "hr",
-    parentId: null,
-    active: true,
-    members: 1,
-  });
+  groups.push({ id: "g-b", name: "조직 B", source: "hr", parentId: null, active: true, members: 1 });
   members["g-b"] = [{ id: "bob", name: "밥", enabled: true }];
   const requested = deferred();
   const release = deferred();
@@ -684,19 +711,14 @@ test("a membership mutation finishing after selection changes refreshes the curr
     await route.fallback();
   });
   try {
-    await page.goto("/admin");
-    const panel = page.locator(".ui-panel").filter({
-      has: page.getByRole("heading", { name: "그룹", exact: true }),
-    });
-    await panel.getByRole("row", { name: /본부/ }).getByRole("button", { name: "구성원" }).click();
+    await page.goto("/admin/organization?group=g-hr");
     const first = page.getByRole("region", { name: "본부 구성원" });
-    await first.getByLabel("주 소속으로 지정할 사용자").selectOption("alice");
+    await first.getByRole("combobox", { name: "주 소속으로 지정할 사용자" }).fill("앨리스");
+    await first.getByRole("option", { name: "앨리스" }).click();
     await first.getByRole("button", { name: "주 소속 지정" }).click();
+    await page.getByRole("dialog").getByRole("button", { name: "주 소속 지정" }).click();
     await requested.promise;
-    await panel
-      .getByRole("row", { name: /조직 B/ })
-      .getByRole("button", { name: "구성원" })
-      .click();
+    await page.getByRole("button", { name: "조직 B", exact: true }).click();
     const detail = page.getByRole("region", { name: "조직 B 구성원" });
     await expect(detail.getByRole("listitem")).toContainText("밥");
     release.resolve();
@@ -721,7 +743,7 @@ test("failed audit filters discard the previous cursor and retry from the new fi
       });
     return route.fulfill({ json: { entries: [audit[2]], nextCursor: null } });
   });
-  await page.goto("/admin");
+  await page.goto("/admin/audit");
   const panel = page.locator(".ui-panel").filter({
     has: page.getByRole("heading", { name: "감사 기록", exact: true }),
   });
@@ -743,14 +765,14 @@ test("failed audit filters discard the previous cursor and retry from the new fi
 
 test("an administrator registers a person, sets roles and suspends the account", async ({ page }) => {
   const { sent } = await mock(page);
-  await page.goto("/admin");
+  await page.goto("/admin/users");
   const subject = "3f0e2c5a-9d1b-4c7e-8a55-0123456789ab";
   const form = page.locator(".ui-panel").filter({ has: page.getByRole("heading", { name: "로그인 서버 계정 직접 등록", exact: true }) });
   await form.getByLabel("로그인 계정 ID").fill(subject);
   await form.getByLabel("표시 이름").fill("새 직원");
   await form.getByLabel("새 앱 등록 신청").selectOption("true");
   await form.getByRole("button", { name: "사용자 등록" }).click();
-  await expect(page.getByRole("status")).toHaveText("사용자를 등록했습니다. 앱 권한은 아래에서 따로 부여하세요.");
+  await expect(page.getByRole("status")).toHaveText("사용자를 등록했습니다. 앱별 접근 설정에서 권한을 부여할 수 있습니다.");
   expect(sent.at(-1)).toMatchObject({
     method: "POST",
     path: "/api/v1/users",
@@ -768,6 +790,12 @@ test("an administrator registers a person, sets roles and suspends the account",
   const row = list.getByRole("listitem").filter({ hasText: "새 직원" });
   await expect(row).toContainText(subject);
   await expect(row.getByText("앱 개발", { exact: true })).toBeVisible();
+  await row.getByRole("button", { name: "이름 변경" }).click();
+  const renameDialog = page.getByRole("dialog", { name: "사용자 이름 변경" });
+  await renameDialog.getByPlaceholder("표시 이름").fill("갱신한 직원");
+  await renameDialog.getByRole("button", { name: "저장" }).click();
+  await expect(list.getByRole("listitem").filter({ hasText: subject })).toContainText("갱신한 직원");
+  expect(sent.at(-1)).toMatchObject({ method: "PATCH", path: `/api/v1/users/${subject}`, body: { name: "갱신한 직원" } });
 
   // The same ID again is refused by the server and explained.
   await form.getByLabel("로그인 계정 ID").fill(subject);
@@ -775,33 +803,34 @@ test("an administrator registers a person, sets roles and suspends the account",
   await form.getByRole("button", { name: "사용자 등록" }).click();
   await expect(page.getByRole("status")).toHaveText("이미 등록된 로그인 계정 ID입니다.");
 
-  await row.getByRole("button", { name: "관리자 지정" }).click();
+  const updatedRow = list.getByRole("listitem").filter({ hasText: "갱신한 직원" });
+  await updatedRow.getByRole("button", { name: "관리자 지정" }).click();
   const dialog = page.getByRole("dialog");
   await expect(dialog).toContainText("모든 앱의 배포·제어");
   await dialog.getByRole("button", { name: "취소" }).click();
-  expect(sent.filter((item) => item.method === "PATCH" && item.path === `/api/v1/users/${subject}`)).toHaveLength(0);
-  await row.getByRole("button", { name: "관리자 지정" }).click();
+  expect(sent.filter((item) => item.method === "PATCH" && item.path === `/api/v1/users/${subject}`)).toHaveLength(1);
+  await updatedRow.getByRole("button", { name: "관리자 지정" }).click();
   await dialog.getByRole("button", { name: "관리자 지정" }).click();
   await expect(page.getByRole("status")).toHaveText("관리자로 지정했습니다.");
   expect(sent.at(-1)).toMatchObject({ method: "PATCH", path: `/api/v1/users/${subject}`, body: { admin: true } });
-  await expect(row.getByText("관리자", { exact: true })).toBeVisible();
+  await expect(updatedRow.getByText("관리자", { exact: true })).toBeVisible();
 
-  await row.getByRole("button", { name: "앱 개발 해제" }).click();
+  await updatedRow.getByRole("button", { name: "앱 개발 해제" }).click();
   await expect(page.getByRole("status")).toHaveText("앱 개발 신청 자격을 해제했습니다.");
   expect(sent.at(-1)).toMatchObject({ method: "PATCH", path: `/api/v1/users/${subject}`, body: { canDevelop: false } });
 
-  await row.getByRole("button", { name: "사용 중지" }).click();
+  await updatedRow.getByRole("button", { name: "사용 중지" }).click();
   await expect(dialog).toContainText("로그인·CLI·진행 중인 작업이 모두 차단");
   await dialog.getByRole("button", { name: "사용 중지" }).click();
   await expect(page.getByRole("status")).toHaveText("계정 사용을 중지했습니다.");
   expect(sent.at(-1)).toMatchObject({ method: "POST", path: `/api/v1/users/${subject}/state`, body: { enabled: false } });
-  await expect(row.getByText("사용 중지", { exact: true }).first()).toBeVisible();
-  await expect(row.getByRole("button", { name: "사용 재개" })).toBeVisible();
+  await expect(updatedRow.getByText("사용 중지", { exact: true }).first()).toBeVisible();
+  await expect(updatedRow.getByRole("button", { name: "사용 재개" })).toBeVisible();
 });
 
 test("an administrator issues an invitation and a reset link, sees each address once and revokes a link", async ({ page }) => {
   const { sent, links } = await mock(page);
-  await page.goto("/admin");
+  await page.goto("/admin/users");
   const panel = page.locator(".ui-panel").filter({ has: page.getByRole("heading", { name: "사용자 초대", exact: true }) });
   await expect(panel.getByText("사용 전 0건")).toBeVisible();
   await panel.getByLabel("이름").fill("새 팀원");
@@ -867,7 +896,7 @@ test("an administrator issues an invitation and a reset link, sees each address 
 test("a server without account links offers direct registration only", async ({ page }) => {
   const { links, sent } = await mock(page);
   links.available = false;
-  await page.goto("/admin");
+  await page.goto("/admin/users");
   const panel = page.locator(".ui-panel").filter({ has: page.getByRole("heading", { name: "사용자 초대", exact: true }) });
   await expect(panel).toContainText("이 서버에는 계정 링크 발급이 설정되지 않았습니다");
   await expect(panel.getByRole("button", { name: "초대 링크 만들기" })).toHaveCount(0);

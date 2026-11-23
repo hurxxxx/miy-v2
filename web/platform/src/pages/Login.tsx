@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Link } from "@tanstack/react-router";
 import { request } from "@miy/sdk";
-import { isCliApprovalPath } from "../lib/paths";
+import { consoleReturnPath } from "../lib/paths";
 import { LoginRecovery } from "./LoginRecovery";
 import { useSurface } from "../data/session";
 
@@ -11,6 +11,9 @@ export function Login() {
   const options = useSurface();
   const [busy, setBusy] = useState<string>();
   const [error, setError] = useState("");
+  const returnTo = () => options.surface === "console"
+    ? consoleReturnPath(`${window.location.pathname}${window.location.search}${window.location.hash}`, window.location.origin)
+    : null;
   async function enter(account: string) {
     setBusy(account);
     setError("");
@@ -19,7 +22,7 @@ export function Login() {
         method: "POST",
         body: JSON.stringify({ account }),
       });
-      window.location.assign(isCliApprovalPath(window.location.pathname) ? window.location.href : result.redirect);
+      window.location.assign(returnTo() ?? result.redirect);
     } catch {
       setError(t("login.failed"));
       setBusy(undefined);
@@ -54,8 +57,10 @@ export function Login() {
         <a
           className={`login-primary ${options?.developmentLogin ? "oauth-link" : ""}`}
           onClick={() => {
-            if (isCliApprovalPath(window.location.pathname))
-              sessionStorage.setItem("miy.returnTo", window.location.pathname);
+            if (options.surface !== "console") return;
+            const target = returnTo();
+            if (target) sessionStorage.setItem("miy.returnTo", target);
+            else sessionStorage.removeItem("miy.returnTo");
           }}
           href={options?.oauthUrl || "/auth/login"}
         >

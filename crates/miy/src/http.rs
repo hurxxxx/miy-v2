@@ -278,6 +278,10 @@ pub fn router_for(state: State, purpose: BrowserPurpose) -> Router {
             axum::routing::post(decide_registration),
         )
         .route("/users", axum::routing::get(users).post(register_user))
+        .route(
+            "/users/directory",
+            axum::routing::get(crate::read_api::user_directory),
+        )
         .route("/users/{id}", axum::routing::patch(update_user))
         .route("/users/{id}/state", axum::routing::post(set_user_state))
         .route(
@@ -302,6 +306,10 @@ pub fn router_for(state: State, purpose: BrowserPurpose) -> Router {
             axum::routing::get(crate::read_api::grants).put(grant),
         )
         .route("/audit", axum::routing::get(audit_list))
+        .route(
+            "/admin/overview",
+            axum::routing::get(crate::admin_overview::read),
+        )
         .route("/support/reports", axum::routing::get(crate::support::list))
         .route(
             "/support/reports/{id}",

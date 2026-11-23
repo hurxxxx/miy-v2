@@ -203,6 +203,8 @@ for (const [path, portal] of [
 
 for (const path of [
   "/admin",
+  "/admin/users",
+  "/admin/apps/ledger/access",
   "/cli/authorize/fixture-id",
   "/cli/device/fixture-id",
   "/cli/sessions",

@@ -2,7 +2,6 @@ import { lazy, Suspense, type ReactNode } from "react";
 import { createRootRoute, createRoute, createRouter, defaultParseSearch, defaultStringifySearch } from "@tanstack/react-router";
 import { Shell } from "./layout/Shell";
 import { Home } from "./pages/Home";
-import { Admin } from "./pages/Admin";
 import { CliInstall } from "./pages/CliInstall";
 import { CliAuthorize, CliDeviceApprove } from "./pages/CliAuthorize";
 import { useSurface } from "./data/session";
@@ -15,10 +14,15 @@ import { Loading } from "./ui";
 // The console never imports the remote runtime module, including through a direct
 // business-app URL. Shell rejects those URLs before rendering this route.
 const AppView = lazy(() => import("./app/AppView").then((module) => ({ default: module.AppView })));
+const Admin = lazy(() => import("./pages/Admin").then((module) => ({ default: module.Admin })));
 function AppRoute() {
   const { surface } = useSurface();
   if (surface === "console") return null;
   return <Suspense fallback={<Loading />}><AppView /></Suspense>;
+}
+function AdminRoute() {
+  if (useSurface().surface !== "console") return null;
+  return <Suspense fallback={<Loading />}><Admin /></Suspense>;
 }
 function SearchRoute() {
   // The console has no business apps to search.
@@ -58,7 +62,16 @@ export const router = createRouter({
     page("/cli/authorize/$id", CliAuthorize),
     page("/cli/device/$id", CliDeviceApprove),
     page("/cli/sessions", CliSessions),
-    page("/admin", Admin),
+    page("/admin", AdminRoute),
+    page("/admin/users", AdminRoute),
+    page("/admin/organization", AdminRoute),
+    page("/admin/groups", AdminRoute),
+    page("/admin/apps", AdminRoute),
+    page("/admin/apps/$appId", AdminRoute),
+    page("/admin/apps/$appId/$tab", AdminRoute),
+    page("/admin/launcher", AdminRoute),
+    page("/admin/audit", AdminRoute),
+    page("/admin/support", AdminRoute),
     page("/settings", SettingsPage),
     page("/settings/$section", SettingsPage),
     page("/search", SearchRoute),

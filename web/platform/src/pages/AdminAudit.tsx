@@ -3,8 +3,8 @@ import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
 import { formatDateTime } from "../platform/time/time-utils";
 import { request, type AuditEntry as Entry, type AuditPage as Page } from "@miy/sdk";
+import { LoadError } from "../components/LoadState";
 import { Button, Field, Loading, Panel } from "../ui";
-import type { DirectoryUser } from "./AdminAccess";
 
 type Filter = { actor: string; action: string; from: string; to: string };
 
@@ -43,7 +43,7 @@ const KNOWN_ACTIONS = new Set([
   "user.profile.rename",
 ]);
 
-function describe(t: TFunction<"console">, action: string) {
+export function describeAuditAction(t: TFunction<"console">, action: string) {
   const request = action.match(/^([A-Z]+):(\d{3})$/);
   if (request) return t("audit.request", { method: request[1], status: request[2] });
   return KNOWN_ACTIONS.has(action) ? t(`audit.actions.${action.replaceAll(".", "_")}`) : action;
@@ -64,12 +64,23 @@ function query(filter: Filter, cursor: number | null) {
   return `/api/v1/audit?${params}`;
 }
 
-export function AuditLog({ users, report }: { users: DirectoryUser[] | null; report: (message: string) => void }) {
+export function AuditLog({ report }: { report: (message: string) => void }) {
   const { t } = useTranslation("console");
+  const [users, setUsers] = useState<{ id: string; name: string }[] | null | false>(null);
+  const [directoryAttempt, retryDirectory] = useState(0);
   const [result, setResult] = useState<(Page & { filter: Filter }) | null>(null);
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState(false);
   const sequence = useRef(0);
+  useEffect(() => {
+    const controller = new AbortController();
+    setUsers(null);
+    void request<{ id: string; name: string }[]>("/api/v1/users", undefined, { signal: controller.signal })
+      .then(setUsers, () => {
+        if (!controller.signal.aborted) setUsers(false);
+      });
+    return () => controller.abort();
+  }, [directoryAttempt]);
   const load = useCallback(
     async (current: Filter, cursor: number | null) => {
       const requestId = ++sequence.current;
@@ -114,11 +125,12 @@ export function AuditLog({ users, report }: { users: DirectoryUser[] | null; rep
   const entries = result?.entries ?? null;
   return (
     <Panel title={t("audit.title")}>
+      {users === false && <LoadError message={t("audit.actorLoadFailed")} onRetry={() => retryDirectory((attempt) => attempt + 1)} />}
       <form className="access-toolbar" onSubmit={apply} aria-label={t("audit.conditions")}>
         <Field label={t("audit.actor")}>
           <select name="actor" defaultValue="">
             <option value="">{t("audit.kinds.all")}</option>
-            {(users ?? []).map((u) => (
+            {(users || []).map((u) => (
               <option key={u.id} value={u.id}>
                 {u.name}
               </option>
@@ -168,7 +180,7 @@ export function AuditLog({ users, report }: { users: DirectoryUser[] | null; rep
                 <tr key={e.id}>
                   <td>{formatDateTime(e.at, { dateStyle: "medium", timeStyle: "medium" })}</td>
                   <td>{e.actorName ?? e.actor ?? t("audit.system")}</td>
-                  <td>{describe(t, e.action)}</td>
+                  <td>{describeAuditAction(t, e.action)}</td>
                   <td>
                     <code>{e.target ?? "—"}</code>
                   </td>

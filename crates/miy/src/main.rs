@@ -8,6 +8,8 @@ mod acceptance_contract;
 mod accounts;
 #[cfg(all(test, feature = "server"))]
 mod accounts_regression;
+#[cfg(feature = "server")]
+mod admin_overview;
 mod agent_tools;
 mod api_contract;
 mod api_error;

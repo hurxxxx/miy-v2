@@ -151,15 +151,18 @@ AI-DO 관리 콘솔의 등록 ID(`web:platform/admin/admin-sections.ts:3`)를 v2
 
 | AI-DO 섹션 | v2 위치 | 비고 |
 | --- | --- | --- |
-| general | v2 관리 요약 | `web:platform/admin/admin-console.tsx:158`의 사용자·관리자·감사 요약은 기존 v2 지표로 구성할 후보. 전역 workspace 집계는 옮기지 않음 |
-| people | v2 콘솔 사용자 관리 | `web:platform/admin/admin-people-section.tsx:522`의 비밀번호 초기화는 IdP 책임, `web:platform/admin/admin-people-section.tsx:540`의 임시 비밀번호 토스트는 이식 제외. 같은 위치의 가장 로그인은 [PLAN 결정 10](PLAN.md#확정된-결정)으로 채택했다. 관리자가 그 사용자로 로그인하는 기능이며 [범용 기능 계획 M6](COMMON-FEATURES-PLAN.md#m6-사용자-전환)을 따른다. 로그인 차단·필터 결과 CSV·검색 표는 기존 사용자 관리에 맞출 후보 |
-| groups·apps(앱 접근·표시 그룹) | v2 그룹·접근(`v2:web/platform/src/pages/AdminAccess.tsx:79`)·관리 앱 | **기반 있음.** 그룹·앱 목록/편집 표현을 재사용. everyone 기본값·조직 하위 자동 포함은 제외(C01) |
-| audit | v2 감사(`v2:web/platform/src/pages/AdminAudit.tsx`) | C09 |
+| general | `/admin` 개요 | 승인 대기 등록·설치와 실행 이상은 코어 운영 기록으로 집계한다. 최근 감사와 조치 대상 화면으로 연결한다. |
+| people | `/admin/users` 사용자 | 조직 트리, 이름·ID 검색, 역할·활성·소속 필터, 커서 목록과 필터 결과 CSV를 제공한다. 계정 발급과 재설정은 [ACCOUNTS](ACCOUNTS.md), 사용자 전환은 [M6](COMMON-FEATURES-PLAN.md#m6-사용자-전환)을 따른다. |
+| groups | `/admin/organization` 조직도, `/admin/groups` 권한 그룹 | 부서 계층과 현재 주 소속, 직접 멤버를 편집한다. 디렉터리의 하위 조직 조회는 [V1-G1](V1-ADOPTION.md#33-조직그룹-권한-ui-7-2)의 직접 멤버십 판정과 독립이다. |
+| apps(플랫폼 앱·앱바) | `/admin/apps` 앱·권한, `/admin/launcher` 포털 런처 | 앱 등록·카탈로그, 앱별 사용자·그룹 접근, 환경별 설치·릴리스 승인과 실행·저장소를 제공한다. 런처 분류와 배치는 표시 정책이다. |
+| audit | `/admin/audit` 감사 | 기존 행위자·동작·기간 필터와 커서 목록을 사용한다(C09). 플랫폼 지원 접수는 `/admin/support`에서 처리한다. |
 | api-keys | 후속 서비스 주체 | C11·A2. 원본 API 키 scope를 그대로 옮기지 않음 |
 | usage | 이번 범위 제외(PLAN 결정 10) | C12 |
-| hr·department-policies | 그룹 정본과 인사 커넥터 | C14 |
+| hr·department-policies | 조직 디렉터리·인사 커넥터·업무 앱 | 코어의 주 소속·조직 계층을 콘솔에서 관리한다. ERP·그룹웨어 동기화는 커넥터, 부서장·결재선은 업무 앱이 담당한다(C14). |
 | workspaces | 각 업무 앱의 공간 관리 | S07·C02. 콘솔의 전역 공간 관리로 옮기지 않음 |
-| batches·document-processing·community | 해당 업무 앱 | 콘솔 공통 기능이 아님 |
+| community·dm-safety | 해당 업무 앱 | 게시판 채널과 메신저 신고·금칙어·증거 관리 |
+| batches | 회사 연동·해당 업무 앱 | ERP·그룹웨어·뉴스 등 원본 작업은 해당 소유자가 담당한다. miy 설치·실행 상태는 콘솔 앱 상세에서 다룬다. |
+| document-processing | 내장 AI 서비스의 입력 처리 | 원본의 OCR·임베딩·인덱스 준비 상태를 서비스가 도입될 때 검토한다. |
 | llm·model-monitoring·ai-security | 내장 AI 서비스 | routing/providers/models/images는 llm 내부 탭(`web:platform/admin/admin-llm-management-section.tsx:13`). PLAN 4-1·5에서 서비스와 함께 적용 |
 
 ## 5. 그대로 옮기면 안 되는 의존성과 원본의 공백

@@ -282,7 +282,7 @@ async function openConsole(page: Page, options: { locale?: string } = {}) {
     if (path in reply) return route.fulfill({ json: reply[path] });
     await route.fulfill({ status: 404, json: { error: { code: "not_found" } } });
   });
-  await page.goto("/admin");
+  await page.goto("/admin/launcher");
   return { sent };
 }
 
