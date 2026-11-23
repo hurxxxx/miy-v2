@@ -1,6 +1,6 @@
-# miy application bundle v0.12.0
+# miy application bundle v0.13.0
 
-This describes bundle 0.12.0 and Rust SDK 0.4.0 with typed directory reads, app-owned resource ACLs and bounded attachments. 0.12.0 adds display settings (theme, language, time zone, date format) and platform-served design tokens; see "Display settings and tokens". The default common UI is 2.0.0: AI-DO's UI package (Tailwind CSS 4 and Radix UI) with the directory, sharing and attachment components. It needs the npm packages listed in `package.json`; `miy component sync` and `miy app check` name any that are missing. Tailwind's reset removes browser defaults for headings, paragraphs and lists, so give text its own utilities. Since 0.11.0 the server runs only images it built itself: `app build` builds on the server and there is no local release build or image upload. The UI runs in its own cross-origin frame (see "Frame execution"). Manifest and UI contract versions remain unchanged. Existing apps must follow their installed protected SDK and use an explicit bundle upgrade before adopting new SDK methods. The upgrade resolves the SDK's Rust dependency lock before committing any project changes; update the installed UI explicitly to use its new components. Project stdio MCP reports the installed bundle; the server HTTP contract describes the latest bundle.
+This describes bundle 0.13.0 and Rust SDK 0.4.0 with typed directory reads, app-owned resource ACLs and bounded attachments. 0.13.0 defines the same app session lifecycle in a deployed frame and in local preview. 0.12.0 adds display settings (theme, language, time zone, date format) and platform-served design tokens; see "Display settings and tokens". The default common UI is 2.0.1: AI-DO's UI package (Tailwind CSS 4 and Radix UI) with the directory, sharing and attachment components. It needs the npm packages listed in `package.json`; `miy component sync` and `miy app check` name any that are missing. Tailwind's reset removes browser defaults for headings, paragraphs and lists, so give text its own utilities. Since 0.11.0 the server runs only images it built itself: `app build` builds on the server and there is no local release build or image upload. The UI runs in its own cross-origin frame (see "Frame execution"). Manifest and UI contract versions remain unchanged. Existing apps must follow their installed protected SDK and use an explicit bundle upgrade before adopting new SDK methods. When the Rust SDK changes, the upgrade resolves its dependency lock before committing any project changes; update the installed UI explicitly to use its new components. Project stdio MCP reports the installed bundle; the server HTTP contract describes the latest bundle.
 
 Backend: Rust 1.99.1, Axum 0.8.9, SQLx 0.8.6. UI: React 19.3.1, Vite 8.3.5, Module Federation.
 Keep manifest.json `miy.app/v1alpha1`, runtime `rust-web-v1`, UI `miy.ui/v1alpha1`, export `./AppRoot`.
@@ -111,6 +111,15 @@ directory with its own version/hash lock. Import `@miy/components/NAME` and keep
 business extensions outside that directory. App check/build verifies both locks.
 
 ## Navigation and application lifecycle
+
+Within one app frame or local preview session, runtime methods (including
+`api`, `appApi`, and `navigate`) keep the same reference when the route, query,
+hash, or display settings change. API calls use the session's current
+credentials. The `runtime` object itself changes to deliver route and settings
+updates. Use `[api]` for session-level reads and `[api, resourceId]` for a view
+that loads one resource. Keep the shared layout mounted, show loading in the
+affected view, and cancel or ignore stale responses. The generated
+`web/src/AppRoot.tsx` shows one initial read and internal navigation.
 
 Report unsaved input or in-flight work with `runtime.setNavigationState` whenever
 it changes. The portal decides synchronously from the last reported state, so

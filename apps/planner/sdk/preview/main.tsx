@@ -1,5 +1,5 @@
 import { createBrowserHistory } from "@tanstack/history";
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { createRoot } from "react-dom/client";
 import "./preview.css";
 import AppRoot from "../../web/src/AppRoot";
@@ -104,44 +104,21 @@ history.block({
   blockerFn: () => !appNavigation && !guards.confirmNavigation(),
   enableBeforeUnload: () => !!guards.message(),
 });
-function Preview() {
-  const [context, setContext] = useState<{
-    csrf: string;
-    appId: string;
-    installationId: string;
-    releaseId: string;
-    user: { name: string };
-  }>();
-  const [error, setError] = useState("");
-  const [location, setLocation] = useState(history.location.href);
-  const [settings, setSettings] = useState(browserSettings);
-  useEffect(() => {
-    const changed = () => setSettings(browserSettings());
-    DARK.addEventListener("change", changed);
-    return () => DARK.removeEventListener("change", changed);
-  }, []);
-  useEffect(() => applyDocumentSettings(settings), [settings]);
-  useEffect(() => {
-    void request<typeof context>("/__miy/context")
-      .then(setContext)
-      .catch((e) => setError(String(e)));
-    const update = () => setLocation(history.location.href);
-    return history.subscribe(update);
-  }, []);
-  if (error) return <p role="alert">{error}</p>;
-  if (!context) return <p>Connecting to local preview…</p>;
-  const uri = new URL(location, window.location.origin);
+type PreviewContext = {
+  csrf: string;
+  appId: string;
+  installationId: string;
+  releaseId: string;
+  user: { name: string };
+};
+
+function previewSession(context: PreviewContext) {
   const basePath = "/apps/" + context.appId;
-  const runtime: AppRuntime = {
+  return {
     appId: context.appId,
     installationId: context.installationId,
     releaseId: context.releaseId,
     basePath,
-    location: {
-      pathname: uri.pathname.slice(basePath.length) || "/",
-      search: uri.search,
-      hash: uri.hash,
-    },
     navigate: (path, options) => {
       const to = appTarget(basePath, path);
       appNavigation = true;
@@ -180,6 +157,38 @@ function Preview() {
     live: previewLive,
     setNavigationState: (state) => {
       navigationState = state;
+    },
+  } satisfies Omit<AppRuntime, "location" | "theme" | "settings">;
+}
+
+function Preview() {
+  const [context, setContext] = useState<PreviewContext>();
+  const [error, setError] = useState("");
+  const [location, setLocation] = useState(history.location.href);
+  const [settings, setSettings] = useState(browserSettings);
+  useEffect(() => {
+    const changed = () => setSettings(browserSettings());
+    DARK.addEventListener("change", changed);
+    return () => DARK.removeEventListener("change", changed);
+  }, []);
+  useEffect(() => applyDocumentSettings(settings), [settings]);
+  useEffect(() => {
+    void request<typeof context>("/__miy/context")
+      .then(setContext)
+      .catch((e) => setError(String(e)));
+    const update = () => setLocation(history.location.href);
+    return history.subscribe(update);
+  }, []);
+  const session = useMemo(() => context && previewSession(context), [context]);
+  if (error) return <p role="alert">{error}</p>;
+  if (!context || !session) return <p>Connecting to local preview…</p>;
+  const uri = new URL(location, window.location.origin);
+  const runtime: AppRuntime = {
+    ...session,
+    location: {
+      pathname: uri.pathname.slice(session.basePath.length) || "/",
+      search: uri.search,
+      hash: uri.hash,
     },
     theme: settings.theme,
     settings,
