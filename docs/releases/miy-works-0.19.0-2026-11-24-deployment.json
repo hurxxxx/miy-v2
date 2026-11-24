@@ -44,9 +44,38 @@
       "unsignedEditingSession": "denied",
       "blockNoteImageRoundTrip": "PASS",
       "buildId": "a349fd78-ac8f-4bc3-a91e-03b1080644dc",
-      "environment": "dev",
-      "releaseAcceptance": "awaiting_acceptance",
-      "approvedPermissions": []
+      "releaseAcceptance": "accepted",
+      "installations": {
+        "dev": {
+          "installationId": "2a8a5aca-475a-46f6-911b-0a4f762d29be",
+          "runtimeJobId": "ce2752e5-24c3-4947-a649-19f2ac9c7467",
+          "health": "healthy",
+          "database": "ready",
+          "approvedPermissions": [
+            "platform:directory:read"
+          ],
+          "permissionRevision": 1,
+          "portalEntry": "https://dev.miy.works/environments/dev/apps/docs",
+          "unsignedEditingSessionStatus": 401
+        },
+        "prod": {
+          "installationId": "358d416c-a034-4a28-9f65-823bcfbd0cd7",
+          "runtimeJobId": "46d72427-851d-4f9c-a877-26be64ff6e7c",
+          "health": "healthy",
+          "database": "ready",
+          "approvedPermissions": [
+            "platform:directory:read"
+          ],
+          "permissionRevision": 1,
+          "portalEntry": "https://portal.miy.works/environments/prod/apps/docs",
+          "unsignedEditingSessionStatus": 401
+        }
+      },
+      "separateDevProdDatabases": true,
+      "prodAdmissionAtPromotion": {
+        "prodAdmission": "selected",
+        "enabledAccountsWithProdUse": 0
+      }
     },
     "whiteboard": {
       "releaseId": "d375ddf9-32e9-48ee-8751-ab24ae44d28b",
@@ -60,9 +89,38 @@
       "devPortalEntry": "PASS",
       "unsignedEditingSession": "denied",
       "buildId": "dc323ce6-be34-4ca7-b8f9-2e2813fd39cb",
-      "environment": "dev",
-      "releaseAcceptance": "awaiting_acceptance",
-      "approvedPermissions": []
+      "releaseAcceptance": "accepted",
+      "installations": {
+        "dev": {
+          "installationId": "db3983c5-917f-445b-a97e-d29ebcb9b681",
+          "runtimeJobId": "c48a73f2-3e80-4292-a940-1b97a85625aa",
+          "health": "healthy",
+          "database": "ready",
+          "approvedPermissions": [
+            "platform:directory:read"
+          ],
+          "permissionRevision": 1,
+          "portalEntry": "https://dev.miy.works/environments/dev/apps/whiteboard",
+          "unsignedEditingSessionStatus": 401
+        },
+        "prod": {
+          "installationId": "7f7cca3d-fac9-45c8-ad42-28151d11fff7",
+          "runtimeJobId": "cef3bb36-b409-4266-b6e0-fc62c96db427",
+          "health": "healthy",
+          "database": "ready",
+          "approvedPermissions": [
+            "platform:directory:read"
+          ],
+          "permissionRevision": 1,
+          "portalEntry": "https://portal.miy.works/environments/prod/apps/whiteboard",
+          "unsignedEditingSessionStatus": 401
+        }
+      },
+      "separateDevProdDatabases": true,
+      "prodAdmissionAtPromotion": {
+        "prodAdmission": "selected",
+        "enabledAccountsWithProdUse": 0
+      }
     }
   },
   "checks": [
@@ -116,6 +174,28 @@
       "command": "python3 scripts/official-apps.py install",
       "result": "PASS",
       "environment": "dev, exact source pin and server-built image for each app"
+    },
+    {
+      "command": "cargo test --locked --offline --bin miy-app api_tests::<test> -- --exact --ignored",
+      "environment": "Isolated PostgreSQL, pinned app source",
+      "docs": [
+        "named_spaces_use_viewer_member_and_admin_roles",
+        "editing_sessions_share_initial_state_and_recheck_resource_access"
+      ],
+      "whiteboard": [
+        "space_members_edit_and_admins_manage",
+        "editing_sessions_share_initial_state_and_recheck_resource_access"
+      ],
+      "passed": 4
+    },
+    {
+      "command": "miy app accept and python3 scripts/official-apps.py promote --confirm-prod",
+      "apps": [
+        "docs",
+        "whiteboard"
+      ],
+      "result": "PASS",
+      "scope": "Same accepted release and immutable image in dev and prod, separate installation databases, healthy app runtimes, portal entry asset, directory permission readback, unsigned editing-session rejection."
     }
   ],
   "correctedFailures": [
@@ -146,10 +226,12 @@
     "preServerFixBackup": "/srv/miy-backups/online/20261124T024706Z",
     "coreRestoreCheckedForBoth": true,
     "platformBefore019": "/srv/miy-prod/evidence/realtime-editing.GJxQmoWL/before-5upl4ecb",
-    "serverBeforeExportFix": "/srv/miy-prod/evidence/realtime-editing.GJxQmoWL/before-server-fix-re03gn3u/miy-server"
+    "serverBeforeExportFix": "/srv/miy-prod/evidence/realtime-editing.GJxQmoWL/before-server-fix-re03gn3u/miy-server",
+    "preAppPermissionApprovalAndPromotion": "/srv/miy-backups/online/20261124T055317Z",
+    "prePromotionBackupDatabaseCount": 15,
+    "prePromotionCoreRestoreVerified": true
   },
   "notRun": [
-    "Two signed-in end users editing together on the installed dev portal. The two-user browser checks ran in isolation.",
-    "App prod promotion and production end-user acceptance."
+    "Two signed-in end users editing together on the installed dev and prod portals. Two interactive logins were unavailable. The two-user browser checks ran in isolation."
   ]
 }

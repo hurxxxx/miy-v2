@@ -97,7 +97,7 @@
 
 [코어 준비 리뷰](reviews/CORE-PLATFORM-READINESS-2026-11-13.md), [범용 기능 2차 리뷰](reviews/COMMON-FEATURES-SECOND-REVIEW-2026-11-22.md), [범용 기능 전체 리뷰](reviews/COMMON-FEATURES-FULL-REVIEW-2026-11-22.md), [최근 3일 리뷰](reviews/RECENT-WORK-REVIEW-2026-11-23.md)의 후속을 위 작업 묶음에 연결했다. 2차·전체 리뷰의 구현 완료분은 [후속 검증](releases/common-features-review-fixes-2026-11-22.md)에 있다. 아래 항목은 현재 소스 기준의 재현이나 최종 인수가 남은 작업이다. 추정과 부분 보완의 근거는 최근 3일 리뷰에서 ID로 찾는다.
 
-M9 문서와 M11 화이트보드의 AI-DO 비교, 권한·편집 보완, PMS의 문서·보드 연결 및 남은 범위는 [포팅 대조 및 검증](releases/docs-whiteboard-port-parity-2026-11-23.md)에 기록했다. miy.works dev에는 두 앱 0.2.0을 설치했다. 격리 브라우저의 두 사용자 공동편집 결과와 dev 설치 검증은 [0.19.0 배포 기록](releases/miy-works-0.19.0-2026-11-24-deployment.json)에 있다. 실제 dev 포털에서 두 사용자가 함께 편집하는 인수는 대기 중이다.
+M9 문서와 M11 화이트보드의 AI-DO 비교, 권한·편집 보완, PMS의 문서·보드 연결 및 남은 범위는 [포팅 대조 및 검증](releases/docs-whiteboard-port-parity-2026-11-23.md)에 기록했다. miy.works에서는 두 앱 0.2.0의 dev 검증과 prod 승격을 마쳤다. 두 사용자의 공동편집은 격리 브라우저에서 확인했고 실제 dev·prod 포털에서의 두 계정 인수는 대기 중이다. [0.19.0 배포 기록](releases/miy-works-0.19.0-2026-11-24-deployment.json)
 
 | 추진 계획의 작업 | 리뷰 항목 | 후속 작업과 인수 조건 |
 | --- | --- | --- |
