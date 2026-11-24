@@ -229,7 +229,8 @@
     "claudeSteps": "Open Claude Code in the folder where you want to develop the app. The MIY CLI configures the MCP connection in <code>.mcp.json</code> and supplies project instructions through <code>CLAUDE.md</code>. Review the project MCP approval prompt when it appears.",
     "agentRequest": "Request for {{agent}}",
     "agentPrompt": "Read the MIY guide below and connect {{agent}} to this platform.\n{{url}}\nCheck the CLI version and selected server, and install the CLI if needed. Ask me to approve any sign-in in my browser. For an existing MIY project use miy app setup. For a new app, confirm its location and name with me. Tell me if I need to reopen the agent in the same folder, then verify the connection by calling get_contract on miy_app.",
-    "verifyAgent": "After setup, reopen the agent in the same project and ask it to “call <code>get_contract</code> on <code>miy_app</code> and show me the app contract.” A returned contract confirms the connection."
+    "verifyAgent": "After setup, reopen the agent in the same project and ask it to “call <code>get_contract</code> on <code>miy_app</code> and show me the app contract.” A returned contract confirms the connection.",
+    "signupLead": "New to this platform? Request an account, then use the link from your administrator to set your password before signing in with the CLI."
   },
   "cliSessions": {
     "title": "My CLI connections",

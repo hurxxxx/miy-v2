@@ -60,6 +60,7 @@ test("public installation guide uses server configuration and copies exact comma
   await expect.poll(() => page.evaluate(() => (window as typeof window & { copiedCommand?: string }).copiedCommand)).toBe(guide.commands.windows);
   await page.getByRole("button", { name: "CLI 로그인 명령 복사", exact: true }).click();
   await expect.poll(() => page.evaluate(() => (window as typeof window & { copiedCommand?: string }).copiedCommand)).toBe(guide.commands.login);
+  await expect(page.getByRole("link", { name: "회원가입 신청" })).toHaveAttribute("href", serverUrl + "/signup");
   const agentUrl = serverUrl + "/api/v1/cli/agent-setup";
   await expect(page.getByRole("link", { name: "에이전트용 원본 안내문 열기" })).toHaveAttribute("href", agentUrl);
   for (const agent of ["Codex", "Claude Code"]) {

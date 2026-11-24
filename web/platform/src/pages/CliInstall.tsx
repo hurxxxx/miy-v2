@@ -91,6 +91,7 @@ export function CliInstall() {
             </>}
           </details>
           <Panel title={t("cliInstall.loginTitle")}>
+            <p>{t("cliInstall.signupLead")} <a href={new URL("/signup", guide.serverUrl).href}>{t("signup.title")}</a></p>
             <p>{t("cliInstall.loginRegisters")}</p>
             {guide.serverUrl.startsWith("http://") && <p>{t("cliInstall.httpWarning")}</p>}
             <p>{t("cliInstall.loginWhen")}</p>

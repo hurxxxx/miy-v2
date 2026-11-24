@@ -244,6 +244,7 @@ test("narrow screens open the app at the panel's path instead", async ({ page })
   await page.getByRole("button", { name: "보조 패널" }).click();
   await page.getByRole("list", { name: "보조 패널" }).getByRole("button", { name: "할 일 플래너", exact: true }).click();
   await expect(page).toHaveURL(/\/environments\/prod\/apps\/planner\/widgets\/todos$/);
+  await expect(page.frameLocator("iframe.app-frame:visible").getByLabel("문서 제목")).toHaveValue("저장된 제목");
   await expect(page.locator("iframe.app-frame-panel")).toHaveCount(0);
 });
 

@@ -229,7 +229,8 @@
     "claudeSteps": "앱을 개발할 폴더에서 Claude Code를 여세요. MIY CLI가 프로젝트의 <code>.mcp.json</code>에 MCP 연결을 설정하고 <code>CLAUDE.md</code>로 개발 지침을 제공합니다. 프로젝트의 MCP 서버 승인 요청이 뜨면 내용을 확인하세요.",
     "agentRequest": "{{agent}}에 보낼 요청문",
     "agentPrompt": "아래 MIY 안내문을 읽고 {{agent}}에서 이 플랫폼에 연결하도록 설정해 줘.\n{{url}}\n현재 CLI 버전과 연결된 서버를 확인하고 필요한 경우 CLI를 설치해 줘. 로그인이 필요하면 내가 브라우저에서 승인할 수 있게 알려 줘. 기존 MIY 앱 폴더라면 miy app setup을 사용하고, 새 앱이라면 만들 위치와 이름을 먼저 확인해 줘. 설정이 끝나면 같은 폴더에서 에이전트를 다시 열어야 하는지 알려 주고, miy_app의 get_contract 호출로 연결을 확인해 줘.",
-    "verifyAgent": "설정 후 같은 앱 폴더에서 에이전트를 다시 열고 “<code>miy_app</code>의 <code>get_contract</code>를 호출해서 이 프로젝트의 앱 계약을 보여 줘”라고 요청하세요. 플랫폼의 앱 계약이 반환되면 연결된 것입니다."
+    "verifyAgent": "설정 후 같은 앱 폴더에서 에이전트를 다시 열고 “<code>miy_app</code>의 <code>get_contract</code>를 호출해서 이 프로젝트의 앱 계약을 보여 줘”라고 요청하세요. 플랫폼의 앱 계약이 반환되면 연결된 것입니다.",
+    "signupLead": "계정이 처음이라면 가입을 신청하세요. 관리자가 승인한 링크에서 비밀번호를 설정한 뒤 CLI에 로그인할 수 있습니다."
   },
   "cliSessions": {
     "title": "내 CLI 연결",

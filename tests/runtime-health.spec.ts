@@ -246,7 +246,7 @@ for (const stage of ["portal", "exchange"] as const) {
       await expect(page.getByText(failure.notice, { exact: false })).toBeVisible();
       await expect(input).toHaveValue("갱신 거부 중 작성 내용");
       const reads = apiCalls.length;
-      const probe = retained.getByRole("button", { name: "API 확인" });
+      const probe = retained.locator("button").filter({ hasText: "API 확인" });
       if (failure.status === 403) {
         await expect(page.locator("iframe.app-frame")).toBeHidden();
         await probe.evaluate(button => (button as HTMLButtonElement).click());
