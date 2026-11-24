@@ -3,7 +3,7 @@ import react from "@vitejs/plugin-react";
 import { federation } from "@module-federation/vite";
 import tailwindcss from "@tailwindcss/vite";
 import { resolve } from "node:path";
-import { excalidrawFonts } from "./vite.excalidraw-fonts.ts";
+import { excalidrawFonts } from "./web/vite.excalidraw-fonts.ts";
 
 export default defineConfig({
   base: "./",

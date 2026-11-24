@@ -85,6 +85,21 @@ export const resources = {
       }
     },
     "apps": {
+      collaboration: {
+        rejected: '저장할 수 없는 변경이 있습니다. 편집 내용을 복사한 뒤 다시 여세요.',
+        connecting: '연결 중',
+        reconnecting: '재연결 중',
+        saving: '저장 중',
+        saved: '저장됨',
+        failed: '저장 실패',
+        revoked: '편집 권한이 회수되었습니다',
+        replaced: '새 버전으로 교체되었습니다',
+        start: '편집 시작',
+        end: '편집 종료',
+        history: '버전 기록',
+        restore: '복원',
+        empty: '저장된 버전이 없습니다',
+      },
       "whiteboard": {
         "actionsMenu": "화이트보드 설정",
         "cardView": "카드 보기",
@@ -364,6 +379,21 @@ export const resources = {
       }
     },
     "apps": {
+      collaboration: {
+        rejected: 'This change could not be saved. Copy your edits before reopening.',
+        connecting: 'Connecting',
+        reconnecting: 'Reconnecting',
+        saving: 'Saving',
+        saved: 'Saved',
+        failed: 'Save failed',
+        revoked: 'Edit access revoked',
+        replaced: 'A new version replaced this session',
+        start: 'Start editing',
+        end: 'Finish editing',
+        history: 'Version history',
+        restore: 'Restore',
+        empty: 'No saved versions',
+      },
       "whiteboard": {
         "actionsMenu": "Whiteboard settings",
         "cardView": "Card view",

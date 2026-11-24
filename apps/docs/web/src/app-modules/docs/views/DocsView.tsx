@@ -219,6 +219,7 @@ const renderDocsEditor = (props: any) => {
     handleDragStart,
     handleDuplicateDoc,
     handleEditorChange,
+    handleLivePageChange,
     handleKeepMine,
     handleOpenInNewTab,
     handleOpenVersions,
@@ -642,6 +643,7 @@ const renderDocsEditor = (props: any) => {
                       resolveFileUrl={resolveFileUrl}
                       saveState={saveState}
                       onBlocksChange={handleEditorChange}
+                      onLiveChange={handleLivePageChange}
                       onReloadConflict={handleReloadConflict}
                       onKeepMine={handleKeepMine}
                       onRetrySave={handleRetrySave}
@@ -2214,6 +2216,10 @@ export const DocsView = ({ docId }: { docId: string | null }) => {
     }
   };
 
+  const handleLivePageChange = useCallback((pageId: string, update: Partial<Pick<DocsPageItem, 'content_blocks' | 'revision'>>) => {
+    setPages(current => current.map(item => item.id === pageId ? { ...item, ...update } : item));
+  }, [setPages]);
+
   const handleEditorChange = (
     pageId: string,
     blocks: Record<string, unknown>[],
@@ -2765,6 +2771,7 @@ export const DocsView = ({ docId }: { docId: string | null }) => {
     handleDragStart,
     handleDuplicateDoc,
     handleEditorChange,
+    handleLivePageChange,
     handleKeepMine,
     handleOpenInNewTab,
     handleOpenVersions,

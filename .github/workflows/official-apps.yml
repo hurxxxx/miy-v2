@@ -40,6 +40,13 @@ jobs:
           node-version: "22"
           cache: pnpm
           cache-dependency-path: apps/${{ matrix.app }}/pnpm-lock.yaml
+      - name: Check types, test and build
+        run: |
+          pnpm install --frozen-lockfile
+          node web/api-tools/generate.mjs --check
+          pnpm typecheck
+          pnpm test --maxWorkers=1
+          pnpm build
       - name: Check formatting and test against PostgreSQL
         env:
           APP: ${{ matrix.app }}
@@ -50,10 +57,3 @@ jobs:
           cargo fmt --all -- --check
           cargo test --locked -- --include-ignored --test-threads=1
           cargo run --locked --bin miy-app -- --check-openapi
-      - name: Check types, test and build
-        run: |
-          pnpm install --frozen-lockfile
-          node web/api-tools/generate.mjs --check
-          pnpm typecheck
-          pnpm test --maxWorkers=1
-          pnpm build

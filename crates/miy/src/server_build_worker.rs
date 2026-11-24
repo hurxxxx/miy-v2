@@ -452,6 +452,8 @@ async fn execute(pool: &sqlx::PgPool, row: &PgRow, recovering: bool) -> Result<(
         let command = vec![
             "build".into(),
             "--progress=plain".into(),
+            "--target".into(),
+            manifest.runtime.profile.clone(),
             "--pull".into(),
             "--platform".into(),
             row.get("platform"),
@@ -878,14 +880,15 @@ mod tests {
         // integration tests/build.rs and frontend public assets. Narrow COPY
         // lists can silently turn a real cargo test suite into zero tests.
         assert_eq!(RECIPE.lines().filter(|line| *line == "COPY . .").count(), 2);
-        assert!(
-            RECIPE
-                .lines()
-                .filter(|l| l.starts_with("FROM ")
-                    && !l.ends_with("AS backend")
-                    && !l.ends_with("AS frontend"))
-                .all(|l| l.contains("@sha256:"))
-        );
+        let mut stages = std::collections::BTreeSet::new();
+        for line in RECIPE.lines().filter(|line| line.starts_with("FROM ")) {
+            let tokens: Vec<_> = line.split_ascii_whitespace().collect();
+            let base = tokens[1];
+            assert!(stages.contains(base) || base.contains("@sha256:"), "{line}");
+            if tokens.get(2) == Some(&"AS") {
+                stages.insert(tokens[3]);
+            }
+        }
     }
     #[test]
     fn docker_has_only_fixed_environment_and_no_secret_mounts() {

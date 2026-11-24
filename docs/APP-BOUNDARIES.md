@@ -338,3 +338,7 @@ archive·실행 결과·게시 번들은 보존한다. 이전 iframe·보안 후
 - [HTML origin](https://html.spec.whatwg.org/multipage/browsers.html#origin), [cookie와 port](https://httpwg.org/specs/rfc6265.html#weak-confidentiality), [CSP sandbox](https://www.w3.org/TR/CSP3/#directive-sandbox), [Clear-Site-Data](https://www.w3.org/TR/clear-site-data/), [서비스워커](https://www.w3.org/TR/service-workers/).
 - [Keycloak hostname](https://www.keycloak.org/server/hostname), [reverse proxy](https://www.keycloak.org/server/reverseproxy), [공인 인증서의 IP 제한](https://cabforum.org/working-groups/server/baseline-requirements/requirements/).
 - 기존 [브라우저 관찰](releases/browser-boundary-review-2026-11-06-validation.json), [최초 정리](releases/app-boundaries-docs-2026-11-06-validation.json), [통합](releases/app-boundaries-consolidation-2026-11-06-validation.json), [15건 보완](releases/app-boundaries-review-fixes-2026-11-06-validation.json), [noiframe·PLM 검토](releases/noiframe-security-plm-review-2026-11-06-validation.json). 당시 결과 범위를 보존한다.
+
+### 공동편집 바이너리 전송 (0.14.0 번들)
+
+프레임과 preview는 인증 완료 뒤 같은 실시간 경로에서 바이너리를 전송한다. 설치별 서명 신원, 64 KiB 메시지 한도와 연결 예산을 적용한다. 앱은 리소스 권한을 검증하고 논리 메시지를 순서대로 분할한다. 앱 종료 코드 4410(리소스 접근 종료)과 4411(방 세대 변경)은 해당 연결의 재시도를 끝낸다.

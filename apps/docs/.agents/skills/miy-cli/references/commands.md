@@ -1,6 +1,6 @@
 # MIY CLI command reference
 
-Generated from MIY CLI 0.18.0, SDK bundle 0.13.0. Do not edit this generated file.
+Generated from MIY CLI 0.19.0, SDK bundle 0.14.0. Do not edit this generated file.
 
 ## miy
 

@@ -29,7 +29,7 @@ RUN --network=none pnpm install --offline --frozen-lockfile \
     && if [ "$MIY_CHECK_APP_API" = 1 ]; then node web/api-tools/generate.mjs --check; fi \
     && pnpm typecheck && pnpm build
 
-FROM debian:bookworm-slim@sha256:7ff6ba31527b9e336162fa061746c366c4b2032f4d2cff2078bea43f78efe3f8
+FROM debian:bookworm-slim@sha256:7ff6ba31527b9e336162fa061746c366c4b2032f4d2cff2078bea43f78efe3f8 AS rust-web-v1
 ARG MIY_APP_ID
 ARG MIY_SOURCE_COMMIT
 ARG MIY_SOURCE_HASH
@@ -43,3 +43,10 @@ COPY .miy-server-build.json /miy/build.json
 USER 10001:10001
 EXPOSE 8080
 ENTRYPOINT ["/usr/local/bin/miy-app"]
+
+FROM node:22-bookworm-slim@sha256:e9f565d32859f0cbfb52125eafe8be39390f24dac302dc3cdf566e8ba3ab21ee AS node-runtime
+FROM rust-web-v1 AS rust-web-node-v1
+COPY --from=node-runtime /usr/local/bin/node /usr/local/bin/node
+COPY --from=frontend /build/dist/server /miy/server
+
+FROM rust-web-v1 AS default-app

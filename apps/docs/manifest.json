@@ -21,7 +21,7 @@
     "database": "postgresql"
   },
   "runtime": {
-    "profile": "rust-web-v1"
+    "profile": "rust-web-node-v1"
   },
   "ui": {
     "contractVersion": "miy.ui/v1alpha1",
@@ -29,6 +29,6 @@
     "moduleEntry": "mf-manifest.json",
     "moduleExport": "./AppRoot"
   },
-  "version": "0.1.0",
+  "version": "0.2.0",
   "apiContract": "openapi-v1"
 }

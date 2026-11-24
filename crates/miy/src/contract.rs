@@ -126,7 +126,10 @@ pub fn safe_relative(s: &str) -> bool {
 }
 pub fn validate(m: &Manifest) -> Result<(), String> {
     if m.contract_version != VERSION
-        || m.runtime.profile != "rust-web-v1"
+        || !matches!(
+            m.runtime.profile.as_str(),
+            "rust-web-v1" | "rust-web-node-v1"
+        )
         || m.ui.contract_version != "miy.ui/v1alpha1"
     {
         return Err("unsupported_contract".into());

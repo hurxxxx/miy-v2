@@ -47,6 +47,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/live": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["docsLive"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/platform/notification-check": {
         parameters: {
             query?: never;
@@ -64,6 +80,22 @@ export interface paths {
          *     Read-only, app DB only.
          */
         post: operations["checkDocsNotifications"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/collaboration/{resource}/session": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["openDocsEditingSession"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1173,6 +1205,17 @@ export interface components {
         SearchResponse: {
             items: components["schemas"]["SearchHit"][];
         };
+        Session: {
+            generation: string;
+            name: string;
+            /** Format: int64 */
+            revision: number;
+            roomId: string;
+            sessionId: string;
+        };
+        SessionRequest: {
+            session?: string | null;
+        };
         ShareSummary: {
             link_access_level: components["schemas"]["NullValue"];
             link_active: boolean;
@@ -1649,6 +1692,31 @@ export interface operations {
             };
         };
     };
+    docsLive: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Authenticated binary editing connection */
+            101: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Invalid identity */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     checkDocsNotifications: {
         parameters: {
             query?: never;
@@ -1709,6 +1777,49 @@ export interface operations {
             };
             /** @description A required platform service is unavailable */
             503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    openDocsEditingSession: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                resource: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SessionRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Session"];
+                };
+            };
+            /** @description Edit access required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Room ownership or generation changed */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };

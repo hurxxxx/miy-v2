@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { MantineProvider } from '@mantine/core';
 import { BlockNoteView } from '@blocknote/mantine';
+import { withCollaboration, type CollaborationOptions } from '@blocknote/core/yjs';
 import { useCreateBlockNote } from '@blocknote/react';
 import '@mantine/core/styles.css';
 import '@blocknote/core/fonts/inter.css';
@@ -11,6 +12,7 @@ import { blockNoteInteractionPolicy } from './blocknote-interaction-policy';
 import type { BlockContent } from './types';
 
 export interface BlockEditorProps {
+  collaboration?: CollaborationOptions;
   initialContent?: BlockContent;
   onChange?: (content: BlockContent) => void;
   editable?: boolean;
@@ -21,6 +23,7 @@ export interface BlockEditorProps {
 }
 
 export function BlockEditor({
+  collaboration,
   initialContent,
   onChange,
   editable = true,
@@ -31,7 +34,7 @@ export function BlockEditor({
 }: BlockEditorProps) {
   const theme = useResolvedTheme();
 
-  const editor = useCreateBlockNote({
+  const options = {
     schema: fullSchema,
     initialContent: initialContent?.length
       ? (initialContent as never)
@@ -40,7 +43,8 @@ export function BlockEditor({
     pasteHandler: blockNoteInteractionPolicy.preferRichTextPaste,
     uploadFile,
     resolveFileUrl,
-  });
+  };
+  const editor = useCreateBlockNote(collaboration ? withCollaboration({ ...options, collaboration }) : options);
 
   useEffect(() => {
     if (!onChange) return;

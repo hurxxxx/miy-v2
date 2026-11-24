@@ -252,6 +252,22 @@
         }
       }
     },
+    "/live": {
+      "get": {
+        "tags": [
+          "Collaboration"
+        ],
+        "operationId": "whiteboardLive",
+        "responses": {
+          "101": {
+            "description": "Authenticated binary editing connection"
+          },
+          "401": {
+            "description": "Invalid identity"
+          }
+        }
+      }
+    },
     "/platform/notification-check": {
       "post": {
         "tags": [
@@ -322,6 +338,185 @@
           },
           "503": {
             "description": "Signed directory information is unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/boards/{id}/versions": {
+      "get": {
+        "tags": [
+          "Versions"
+        ],
+        "operationId": "listBoardVersions",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Item"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/boards/{id}/versions/{version}": {
+      "get": {
+        "tags": [
+          "Versions"
+        ],
+        "operationId": "getBoardVersion",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "version",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/boards/{id}/versions/{version}/restore": {
+      "post": {
+        "tags": [
+          "Versions"
+        ],
+        "operationId": "restoreBoardVersion",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "version",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Restore"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "integer",
+                  "format": "int64"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Board changed"
+          }
+        }
+      }
+    },
+    "/v1/collaboration/{resource}/session": {
+      "post": {
+        "tags": [
+          "Collaboration"
+        ],
+        "operationId": "openWhiteboardEditingSession",
+        "parameters": [
+          {
+            "name": "resource",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SessionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Session"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Edit access required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Room ownership or generation changed",
             "content": {
               "application/json": {
                 "schema": {
@@ -4889,6 +5084,30 @@
           }
         }
       },
+      "Item": {
+        "type": "object",
+        "required": [
+          "id",
+          "revision",
+          "author",
+          "created_at"
+        ],
+        "properties": {
+          "author": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "revision": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
       "PrimaryTarget": {
         "type": "object",
         "required": [
@@ -4947,6 +5166,18 @@
             "description": "Exact size in bytes, up to 10 MiB.",
             "maximum": 10485760,
             "minimum": 1
+          }
+        }
+      },
+      "Restore": {
+        "type": "object",
+        "required": [
+          "expected_revision"
+        ],
+        "properties": {
+          "expected_revision": {
+            "type": "integer",
+            "format": "int64"
           }
         }
       },
@@ -5015,6 +5246,45 @@
             "items": {
               "$ref": "#/components/schemas/SearchItem"
             }
+          }
+        }
+      },
+      "Session": {
+        "type": "object",
+        "required": [
+          "roomId",
+          "generation",
+          "sessionId",
+          "revision",
+          "name"
+        ],
+        "properties": {
+          "generation": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "revision": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "roomId": {
+            "type": "string"
+          },
+          "sessionId": {
+            "type": "string"
+          }
+        }
+      },
+      "SessionRequest": {
+        "type": "object",
+        "properties": {
+          "session": {
+            "type": [
+              "string",
+              "null"
+            ]
           }
         }
       },

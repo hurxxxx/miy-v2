@@ -182,8 +182,14 @@ pub async fn relay<F, Fut>(
                     Some(Ok(tungstenite::Message::Text(text))) => Message::Text(text.as_str().into()),
                     Some(Ok(tungstenite::Message::Binary(bytes))) => Message::Binary(bytes),
                     Some(Ok(tungstenite::Message::Ping(_) | tungstenite::Message::Pong(_) | tungstenite::Message::Frame(_))) => continue,
-                    Some(Ok(tungstenite::Message::Close(_))) => {
-                        close_with(&mut client, 1000, "app_closed").await;
+                    Some(Ok(tungstenite::Message::Close(frame))) => {
+                        let (code, reason) = match frame.map(|frame| u16::from(frame.code)) {
+                            Some(4410) => (4410, "resource_access_revoked"),
+                            Some(4411) => (4411, "resource_replaced"),
+                            Some(4412) => (4412, "invalid_live_message"),
+                            _ => (1000, "app_closed"),
+                        };
+                        close_with(&mut client, code, reason).await;
                         return;
                     }
                     Some(Err(_)) | None => {

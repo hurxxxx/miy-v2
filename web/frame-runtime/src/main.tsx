@@ -35,6 +35,8 @@ import {
   type FrameBootstrap,
   type LiveConnection,
   type LiveHandlers,
+  connectBinary,
+  type BinaryHandlers,
   type NavigationState,
   type DirectoryQuery,
   type DirectoryRequestOptions,
@@ -573,6 +575,16 @@ const frameSession = {
     return json<T>(`/_miy/connections/${target}/api${apiPath(path)}`, init);
   },
   live,
+  liveBinary: (handlers: BinaryHandlers) => connectBinary(handlers, async () => {
+    if (Date.now() > tokenExpiresAt - 5_000) await renew();
+    const url = new URL("/_miy/live", window.location.href);
+    url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
+    return { url: url.href, auth: JSON.stringify({ type: "auth", token }) };
+  }, () => !!stopped, (code) => {
+    if (code === 4401) renewalError("frame_session_ended");
+    if (code === 4403) renewalError("frame_access_denied");
+    if (code === 4409) renewalError("release_changed_reload_required");
+  }),
   setNavigationState,
   // Apps built with the 0.8 SDK still call this; see setNavigationState.
   registerNavigationGuard,

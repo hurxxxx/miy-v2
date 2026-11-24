@@ -265,3 +265,11 @@ v2.dwdcc.kr은 개발 단계 서버이므로 짧은 중단·재로그인은 허�
 - iframe 기반 앱 플랫폼: [Shopify App Home](https://shopify.dev/docs/api/app-home/latest), [Shopify 세션 토큰](https://shopify.dev/docs/apps/build/authentication-authorization/id-tokens), [Forge Custom UI](https://developer.atlassian.com/platform/forge/custom-ui/iframe/), [Teams 탭](https://learn.microsoft.com/en-us/microsoftteams/platform/tabs/what-are-tabs?tabs=desktop), [Figma 플러그인 네트워크 요청(null origin)](https://developers.figma.com/docs/plugins/making-network-requests). 같은 페이지 실행의 격리 강화 사례: [Grafana 프런트엔드 샌드박스](https://grafana.com/whats-new/2025-01-14-plugin-frontend-sandbox/). 사례마다 실행 구조가 다르므로 일반화하지 않는다.
 - 브라우저 규칙: [메시지 보안](https://html.spec.whatwg.org/multipage/web-messaging.html#security), [iframe sandbox](https://html.spec.whatwg.org/multipage/iframe-embed-object.html#attr-iframe-sandbox), [same-origin policy](https://developer.mozilla.org/en-US/docs/Web/Security/Defenses/Same-origin_policy), [쿠키와 포트](https://www.rfc-editor.org/rfc/rfc6265.html#section-8.5), [TLS 이름 일치(와일드카드는 한 단계)](https://www.rfc-editor.org/rfc/rfc9525.html#section-6.3), [Chromium 프로세스 모델과 사이트 격리](https://chromium.googlesource.com/chromium/src/+/main/docs/process_model_and_site_isolation.md).
 - 제3자 쿠키: [CHIPS](https://privacysandbox.google.com/cookies/chips). Safari 지원이 버전에 따라 켜지고 꺼진 기록이 있다([WebKit 버그 292975](https://bugs.webkit.org/show_bug.cgi?id=292975)). AF-03이 쿠키에 의존하지 않는 이유다.
+
+### 공동편집 바이너리 전송 (0.14.0 번들)
+
+프레임과 preview는 인증 완료 뒤 같은 실시간 경로에서 바이너리를 전송한다. 설치별 서명 신원, 64 KiB 메시지 한도와 연결 예산을 적용한다. 앱은 리소스 권한을 검증하고 논리 메시지를 순서대로 분할한다. 앱 종료 코드 4410(리소스 접근 종료)과 4411(방 세대 변경)은 해당 연결의 재시도를 끝낸다.
+
+Docs와 Whiteboard는 이 경로를 쓰는 앱 구현이다. 브라우저는 앱의 `POST /v1/collaboration/{resource}/session`으로 편집 권한과 세대를 확인한 뒤 `runtime.liveBinary`로 연결한다. 초기 본문도 바이너리 연결에서 상태 벡터의 차이로 받는다. Docs는 `rust-web-node-v1` 프로필로 같은 BlockNote 스키마의 Node 변환기를 이미지에 넣는다. Whiteboard는 `rust-web-v1`에서 도형별 상태를 장면 JSON으로 변환한다.
+
+다른 앱도 번들의 `sdk/collab/client.ts`와 Rust 크레이트 `sdk/collab`를 선택해 사용할 수 있다. 앱은 자신의 DB, 편집 권한 검사, 저장 및 JSON 변환을 구현한다. 현재 같은 방은 앱 프로세스 하나가 맡고 DB 임대로 소유자를 확인한다. 같은 DB를 쓰는 여러 인스턴스에 동시 접속자를 분산하려면 같은 방을 소유자에게 라우팅하거나 별도 중계를 추가해야 한다. [Docs의 저장 구현](../apps/docs/src/collaboration.rs) · [Whiteboard의 저장 구현](../apps/whiteboard/src/collaboration.rs)

@@ -28,6 +28,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/live": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["whiteboardLive"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/platform/notification-check": {
         parameters: {
             query?: never;
@@ -43,6 +59,70 @@ export interface paths {
          *     space membership). Read-only.
          */
         post: operations["checkWhiteboardNotifications"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/boards/{id}/versions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["listBoardVersions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/boards/{id}/versions/{version}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getBoardVersion"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/boards/{id}/versions/{version}/restore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["restoreBoardVersion"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/collaboration/{resource}/session": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["openWhiteboardEditingSession"];
         delete?: never;
         options?: never;
         head?: never;
@@ -788,6 +868,13 @@ export interface components {
         IdentityErrorResponse: {
             error: components["schemas"]["IdentityErrorDetails"];
         };
+        Item: {
+            author: string;
+            created_at: string;
+            id: string;
+            /** Format: int64 */
+            revision: number;
+        };
         PrimaryTarget: {
             app: string;
             id: string;
@@ -810,6 +897,10 @@ export interface components {
              */
             size: number;
         };
+        Restore: {
+            /** Format: int64 */
+            expected_revision: number;
+        };
         SearchItem: {
             /** Format: date-time */
             at: string;
@@ -830,6 +921,17 @@ export interface components {
         };
         SearchResponse: {
             items: components["schemas"]["SearchItem"][];
+        };
+        Session: {
+            generation: string;
+            name: string;
+            /** Format: int64 */
+            revision: number;
+            roomId: string;
+            sessionId: string;
+        };
+        SessionRequest: {
+            session?: string | null;
         };
         /**
          * @description AI-DO `ShareableUserItem`; `email` is empty (the directory has none) and
@@ -1117,6 +1219,31 @@ export interface operations {
             };
         };
     };
+    whiteboardLive: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Authenticated binary editing connection */
+            101: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Invalid identity */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     checkWhiteboardNotifications: {
         parameters: {
             query?: never;
@@ -1177,6 +1304,125 @@ export interface operations {
             };
             /** @description Signed directory information is unavailable */
             503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    listBoardVersions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Item"][];
+                };
+            };
+        };
+    };
+    getBoardVersion: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+                version: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never>;
+                };
+            };
+        };
+    };
+    restoreBoardVersion: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+                version: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Restore"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/plain": number;
+                };
+            };
+            /** @description Board changed */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    openWhiteboardEditingSession: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                resource: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SessionRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Session"];
+                };
+            };
+            /** @description Edit access required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Room ownership or generation changed */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };

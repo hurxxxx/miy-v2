@@ -85,6 +85,11 @@ pub(crate) fn router() -> (Router<AppState>, OpenApi) {
         .routes(routes!(files::upload, files::download))
         .layer(DefaultBodyLimit::max(IMAGE_BODY_LIMIT));
     let (router, mut spec) = OpenApiRouter::new()
+        .routes(routes!(crate::versions::list))
+        .routes(routes!(crate::versions::get))
+        .routes(routes!(crate::versions::restore))
+        .routes(routes!(crate::collab_api::session))
+        .routes(routes!(crate::collab_api::live))
         .routes(routes!(spaces::list_spaces, spaces::create_space))
         .routes(routes!(spaces::update_space, spaces::delete_space))
         .routes(routes!(spaces::get_sharing, spaces::replace_sharing))

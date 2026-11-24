@@ -88,22 +88,13 @@ import {
   selectedElementCount,
   type WhiteboardElement,
 } from './whiteboard-scene';
-import { safeFilename, saveLabel } from './whiteboard-editor-utils';
+import { safeFilename } from './whiteboard-editor-utils';
 import { buildWhiteboardSharePresenter } from './whiteboard-share-model';
-import { useWhiteboardScenePersistence } from './useWhiteboardScenePersistence';
+import { BoardRoom, type BoardChange } from './board-room';
+import type { RoomStatus } from '../../../../../sdk/collab/client';
+import { BoardHistory } from './BoardHistory';
 import { buildWhiteboardVisibilityMenuItems } from './WhiteboardViewParts';
 
-/**
- * AI-DO views/WhiteboardEditorSurface.tsx.
- *
- * Not ported: the Yjs collaboration (live status, collaborators, pointers,
- * remote scene merging), link shares and the shared-link editor, and the
- * detach action of other apps' context slots. "편집 시작" now turns on
- * single-editor editing on the latest saved scene; saves carry the revision
- * and a conflict shows reload / keep mine (useWhiteboardScenePersistence).
- * Images are stored apart from the scene (whiteboard-files.ts). Web embeds
- * are disabled: the frame CSP blocks every iframe (`frame-src 'none'`).
- */
 type ExcalidrawOnChange = NonNullable<ExcalidrawProps['onChange']>;
 type ExcalidrawLibraryFile = {
   library?: unknown;
@@ -433,7 +424,8 @@ function useWhiteboardEditorSurfaceElement({
   onRestored,
   onClose,
 }: WhiteboardEditorSurfaceProps): ReactNode {
-  const { api, fileApi } = useRuntime();
+  const runtime = useRuntime();
+  const { api, fileApi } = runtime;
   const { t } = useTranslation('apps');
   const [activeBoard, setActiveBoard] = useState<WhiteboardDetail | null>(null);
   const [editorFiles, setEditorFiles] = useState<Record<string, unknown>>({});
@@ -442,6 +434,7 @@ function useWhiteboardEditorSurfaceElement({
   const [error, setError] = useState<string | null>(null);
   const [editingBoardId, setEditingBoardId] = useState<string | null>(null);
   const [startingEdit, setStartingEdit] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
   const excalidrawTheme = useSyncExternalStore(
     subscribeExcalidrawTheme,
@@ -458,49 +451,36 @@ function useWhiteboardEditorSurfaceElement({
   const titleSaveRef = useRef<{ title: string; result: Promise<boolean> } | null>(null);
   const fileStoreRef = useRef<WhiteboardFileStore>(createWhiteboardFileStore());
   const loadSeqRef = useRef(0);
-  const canEditCanvas = Boolean(
-    activeBoard?.can_edit &&
-      !activeBoard.trashed_at &&
-      editingBoardId === activeBoard.id,
-  );
   const currentSpaceId = spaceId;
-
-  const {
-    conflict,
-    flushPendingSceneBeforeClose,
-    hasUnsavedScene,
-    keepLocalSceneOver,
-    queueLocalChange,
-    rebaseline,
-    resetLoadedScene,
-    retrySave,
-    saveStatus,
-  } = useWhiteboardScenePersistence({
-    activeBoard,
-    activeBoardIdRef,
-    activeBoardRef,
-    api,
-    fileApi,
-    fileStoreRef,
-    onBoardUpdated,
-    setActiveBoard,
-    setError,
-    spaceId,
-    translate: t,
-  });
+  const room = useRef<BoardRoom | null>(null);
+  const [status, setStatus] = useState<RoomStatus>();
+  const terminal = status?.phase === 'revoked' || status?.phase === 'replaced' || status?.phase === 'rejected';
+  const canEditCanvas = Boolean(activeBoard?.can_edit && !activeBoard.trashed_at &&
+    activeBoard.id === editingBoardId && status?.ready && !terminal && !closePending);
+  const queueLocalChange = useCallback((change: BoardChange) => room.current?.change(change), []);
+  useEffect(() => () => { room.current?.destroy(); room.current = null; }, [boardId]);
+  const finishEditing = useCallback(async () => {
+    const current = room.current;
+    if (!current) return true;
+    try {
+      await current.end();
+      current.destroy();
+      room.current = null;
+      setEditingBoardId(null);
+      setStatus(undefined);
+      return true;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t('whiteboard.saveFailed'));
+      return false;
+    }
+  }, [t]);
 
   const titleDirty = Boolean(
     activeBoard?.can_manage &&
       titleDraft.trim() &&
       titleDraft.trim() !== activeBoard.title,
   );
-  useNavigationDirty(
-    titleDirty ||
-      conflict ||
-      saveStatus === 'dirty' ||
-      saveStatus === 'saving' ||
-      saveStatus === 'error',
-  );
+  useNavigationDirty(titleDirty || Boolean(status?.dirty && !terminal));
 
   useEffect(() => {
     activeBoardIdRef.current = activeBoard?.id ?? null;
@@ -525,7 +505,6 @@ function useWhiteboardEditorSurfaceElement({
     (loaded: LoadedBoard) => {
       const { board } = loaded;
       fileStoreRef.current = createWhiteboardFileStore(board.scene);
-      resetLoadedScene(board.scene, board.revision);
       setSelectedElementsCount(0);
       setEditorFiles(loaded.files);
       setActiveBoard(board);
@@ -536,7 +515,7 @@ function useWhiteboardEditorSurfaceElement({
       }
       onBoardLoaded?.(board);
     },
-    [onBoardLoaded, resetLoadedScene],
+    [onBoardLoaded],
   );
 
   const loadBoard = useCallback(async () => {
@@ -565,18 +544,6 @@ function useWhiteboardEditorSurfaceElement({
     };
   }, [loadBoard]);
 
-  /** The editor's current scene is the saved one (see `rebaseline`). */
-  const rebaselineFromEditor = useCallback(() => {
-    const editor = apiRef.current;
-    if (!editor) return;
-    rebaseline({
-      elements:
-        editor.getSceneElementsIncludingDeleted() as Parameters<ExcalidrawOnChange>[0],
-      appState: editor.getAppState(),
-      files: editor.getFiles(),
-    });
-  }, [rebaseline]);
-
   /** Put a freshly loaded scene into the mounted editor. */
   const applySceneToEditor = useCallback(
     (loaded: LoadedBoard) => {
@@ -594,9 +561,8 @@ function useWhiteboardEditorSurfaceElement({
         } as never,
         captureUpdate: CaptureUpdateAction.NEVER,
       });
-      rebaselineFromEditor();
     },
-    [rebaselineFromEditor],
+    [],
   );
 
   /** Reload in place: the latest saved scene replaces the editor's. */
@@ -625,7 +591,10 @@ function useWhiteboardEditorSurfaceElement({
         applySceneToEditor(loaded);
       }
       if (loaded.board.can_edit && !loaded.board.trashed_at) {
-        rebaselineFromEditor();
+        const editor = apiRef.current;
+        if (!editor || room.current) return;
+        setStatus({phase: 'connecting', ready: false, dirty: false, revision: loaded.board.revision});
+        room.current = new BoardRoom(runtime, board.id, spaceId, editor, fileStoreRef.current, setStatus, setError);
         setEditingBoardId(loaded.board.id);
       }
     } catch (err) {
@@ -633,18 +602,7 @@ function useWhiteboardEditorSurfaceElement({
     } finally {
       setStartingEdit(false);
     }
-  }, [applyLoaded, applySceneToEditor, fetchBoard, rebaselineFromEditor, startingEdit, t]);
-
-  /** Keep mine: save the editor's scene over the latest saved revision. */
-  const keepMine = useCallback(async () => {
-    try {
-      const latest = await getWhiteboard(api, boardId, spaceId);
-      if (latest.id !== activeBoardIdRef.current) return;
-      keepLocalSceneOver(latest.revision);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : t('whiteboard.loadFailed'));
-    }
-  }, [api, boardId, keepLocalSceneOver, spaceId, t]);
+  }, [applyLoaded, applySceneToEditor, fetchBoard, runtime, spaceId, startingEdit, t]);
 
   const saveTitle = useCallback(async (): Promise<boolean> => {
     const board = activeBoardRef.current;
@@ -685,7 +643,7 @@ function useWhiteboardEditorSurfaceElement({
     const board = activeBoardRef.current;
     if (!board || !board.can_manage) return;
     // Unsaved work is saved first; trashing a board mid-save would lose it.
-    if (hasUnsavedScene() && !(await flushPendingSceneBeforeClose())) return;
+    if (!(await finishEditing())) return;
     try {
       await deleteWhiteboard(api, board.id, spaceId);
       if (activeBoardIdRef.current === board.id) onArchived?.(board.id);
@@ -694,7 +652,7 @@ function useWhiteboardEditorSurfaceElement({
         err instanceof Error ? err.message : t('whiteboard.archiveFailed'),
       );
     }
-  }, [api, flushPendingSceneBeforeClose, hasUnsavedScene, onArchived, spaceId, t]);
+  }, [api, finishEditing, onArchived, spaceId, t]);
 
   const handlePermanentDelete = useCallback(async () => {
     const board = activeBoardRef.current;
@@ -912,7 +870,7 @@ function useWhiteboardEditorSurfaceElement({
     if (!activeBoard?.can_edit && !activeBoard?.can_manage) return true;
     setClosePending(true);
     try {
-      return (await saveTitle()) && (await flushPendingSceneBeforeClose());
+      return (await saveTitle()) && (await finishEditing());
     } catch (err) {
       setError(err instanceof Error ? err.message : i18n.t('apps:whiteboard.saveFailed'));
       return false;
@@ -922,7 +880,7 @@ function useWhiteboardEditorSurfaceElement({
   }, [
     activeBoard?.can_edit,
     activeBoard?.can_manage,
-    flushPendingSceneBeforeClose,
+    finishEditing,
     saveTitle,
   ]);
   usePrepareToLeaveEditor(prepareToLeave);
@@ -942,7 +900,7 @@ function useWhiteboardEditorSurfaceElement({
     };
   }, [activeBoard?.id]);
 
-  const label = saveLabel(saveStatus, t);
+  const label = status && t('collaboration.' + status.phase);
   const activeBoardVisibility: WhiteboardVisibility = activeBoard?.is_private
     ? 'personal'
     : 'workspace';
@@ -957,30 +915,6 @@ function useWhiteboardEditorSurfaceElement({
       {error ? (
         <div className="border-b border-app-danger-border bg-app-danger-bg px-4 py-2 text-sm text-app-danger-text dark:border-app-danger-border dark:bg-app-danger-bg dark:text-app-danger-text">
           {error}
-        </div>
-      ) : null}
-
-      {conflict ? (
-        <div
-          role="alert"
-          className="flex flex-wrap items-center justify-between gap-3 border-b border-app-warning/40 bg-app-warning/10 px-4 py-2"
-        >
-          <div className="min-w-0">
-            <p className="app-text-body-sm font-semibold text-app-ink">
-              {t('whiteboardApp.conflict.title')}
-            </p>
-            <p className="app-text-caption text-app-ink/60">
-              {t('whiteboardApp.conflict.description')}
-            </p>
-          </div>
-          <div className="flex shrink-0 gap-2">
-            <Button size="dense" variant="secondary" onClick={() => void reloadLatest()}>
-              {t('whiteboardApp.conflict.reload')}
-            </Button>
-            <Button size="dense" variant="primary" onClick={() => void keepMine()}>
-              {t('whiteboardApp.conflict.keep')}
-            </Button>
-          </div>
         </div>
       ) : null}
 
@@ -1009,30 +943,15 @@ function useWhiteboardEditorSurfaceElement({
               maxLength={200}
               className="app-text-title-md min-w-0 flex-1 rounded-md bg-transparent px-2 py-1 text-app-ink outline-none transition-colors enabled:hover:bg-app-surface-hover enabled:focus:bg-app-bg"
             />
-            {label ? (
-              saveStatus === 'error' && !conflict ? (
-                <button
-                  type="button"
-                  onClick={retrySave}
-                  className="app-text-caption shrink-0 rounded px-1 text-rose-500 underline-offset-2 hover:underline"
-                  title={t('common:actions.retry')}
-                >
-                  {label}
-                </button>
-              ) : (
-                <span
-                  className={cn(
-                    'app-text-caption shrink-0',
-                    saveStatus === 'error' ? 'text-rose-500' : 'text-app-ink/45',
-                  )}
-                >
-                  {label}
-                </span>
-              )
-            ) : null}
+            {label && <span role="status" className="app-text-caption">{label}</span>}
+            {editingBoardId === activeBoard.id && <button type="button" disabled={closePending}
+              onClick={async () => { setClosePending(true); try { if (await finishEditing()) await reloadLatest(); } finally { setClosePending(false); } }}>
+              {t('collaboration.end')}
+            </button>}
+            <button type="button" onClick={() => setHistoryOpen(true)}>{t('collaboration.history')}</button>
             {activeBoard.can_edit &&
             !activeBoard.trashed_at &&
-            !canEditCanvas ? (
+            editingBoardId !== activeBoard.id ? (
               <button
                 type="button"
                 onClick={() => void startEditing()}
@@ -1158,8 +1077,8 @@ function useWhiteboardEditorSurfaceElement({
             />
             <button
               type="button"
-              onClick={() => void (conflict || saveStatus === 'idle' || saveStatus === 'saved' ? reloadLatest() : undefined)}
-              disabled={!(conflict || saveStatus === 'idle' || saveStatus === 'saved')}
+              onClick={() => void reloadLatest()}
+              disabled={editingBoardId === activeBoard.id}
               className="inline-flex size-8 items-center justify-center rounded-md text-app-ink/60 hover:bg-app-surface-hover hover:text-app-ink disabled:opacity-35"
               title={t('common:actions.reload')}
             >
@@ -1255,6 +1174,8 @@ function useWhiteboardEditorSurfaceElement({
                     files,
                   });
                 }}
+                onPointerUpdate={canEditCanvas ? room.current?.pointer : undefined}
+                isCollaborating={canEditCanvas}
                 viewModeEnabled={!canEditCanvas}
                 theme={excalidrawTheme}
                 aiEnabled={false}
@@ -1271,6 +1192,9 @@ function useWhiteboardEditorSurfaceElement({
             ) : null}
           </div>
 
+          {historyOpen && <BoardHistory board={activeBoard} onClose={() => setHistoryOpen(false)}
+            canRestore={activeBoard.can_edit && !activeBoard.trashed_at && !room.current}
+            onRestored={reloadLatest} />}
           {shareOpen ? (
             <WhiteboardShareDialog
               board={activeBoard}

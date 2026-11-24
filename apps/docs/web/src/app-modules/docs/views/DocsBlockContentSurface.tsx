@@ -1,3 +1,4 @@
+import { CollaborativePage } from './CollaborativePage';
 import { useTranslation } from 'react-i18next';
 import { AlertTriangle, Loader2 } from 'lucide-react';
 
@@ -9,15 +10,6 @@ import {
 import type { DocsPageItem } from '../api/docs-api';
 import type { DocsSaveState } from './useDocsPageContentSaveController';
 
-/**
- * AI-DO DocsBlockContentSurface without real-time co-editing. AI-DO showed a
- * viewer with 「편집 시작」 that opened the Yjs collaborative editor, and fell
- * back to the standalone `BlockEditor` (autosaved through the page PATCH)
- * when a page had no collaboration. miy always takes that standalone path:
- * one editor per person, saved with the page revision. A save that meets a
- * newer revision shows the conflict notice with "reload" and "keep mine";
- * the person's draft stays in the editor until they choose.
- */
 interface DocsBlockContentSurfaceProps {
   page: DocsPageItem;
   canEdit: boolean;
@@ -26,6 +18,7 @@ interface DocsBlockContentSurfaceProps {
   resolveFileUrl?: (url: string) => Promise<string>;
   saveState: DocsSaveState;
   onBlocksChange: (pageId: string, blocks: Record<string, unknown>[]) => void;
+  onLiveChange: (pageId: string, update: Partial<Pick<DocsPageItem, 'content_blocks' | 'revision'>>) => void;
   onReloadConflict: (page: DocsPageItem) => void;
   onKeepMine: (page: DocsPageItem) => void;
   onRetrySave: () => void;
@@ -39,6 +32,7 @@ export function DocsBlockContentSurface({
   resolveFileUrl,
   saveState,
   onBlocksChange,
+  onLiveChange,
   onReloadConflict,
   onKeepMine,
   onRetrySave,
@@ -56,6 +50,10 @@ export function DocsBlockContentSurface({
         resolveFileUrl={resolveFileUrl}
       />
     );
+  }
+
+  if (page.realtime_collab) {
+    return <CollaborativePage key={surfaceKey} page={page} onLiveChange={onLiveChange} uploadFile={uploadFile} resolveFileUrl={resolveFileUrl} onFinished={() => onReloadConflict(page)} />;
   }
 
   return (

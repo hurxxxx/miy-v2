@@ -3173,3 +3173,61 @@ async fn templates_are_saved_from_pages_and_start_new_pages_and_docs() {
         StatusCode::NOT_FOUND
     );
 }
+
+async fn shared_editors() -> (String, String, String, String, String) {
+    let owner = make_manager("Room owner").await;
+    let editor = user("Room editor");
+    let space = create_space(&owner, "Shared writing").await;
+    set_space_members(&owner, &space, &[("user", &editor, "member")]).await;
+    let doc = create_doc(&owner, "Live page", Some(&space), true).await;
+    let item = doc["id"].as_str().unwrap().to_owned();
+    let page = first_page(&owner, &item).await;
+    let key = page["id"].as_str().unwrap().to_owned();
+    (owner, editor, space, item, key)
+}
+
+#[tokio::test]
+#[ignore = "requires a disposable PostgreSQL database"]
+async fn editing_sessions_share_initial_state_and_recheck_resource_access() {
+    let (owner, editor, space, _, key) = shared_editors().await;
+    let path = format!("/v1/collaboration/{key}/session");
+    let (a, b) = tokio::join!(
+        post(&owner, &path, json!({})),
+        post(&editor, &path, json!({}))
+    );
+    let a = expect(a, StatusCode::OK).await;
+    let b = expect(b, StatusCode::OK).await;
+    assert_eq!(a["roomId"], key);
+    assert_eq!(a["generation"], b["generation"]);
+    assert_ne!(a["sessionId"], b["sessionId"]);
+    let rows: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM collab_rooms WHERE resource_id=$1 AND octet_length(state)>0",
+    )
+    .bind(&key)
+    .fetch_one(&db().await)
+    .await
+    .unwrap();
+    assert_eq!(rows, 1);
+    set_space_members(&owner, &space, &[("user", &editor, "viewer")]).await;
+    assert_eq!(
+        post(&editor, &path, json!({"session":b["sessionId"]}))
+            .await
+            .status(),
+        StatusCode::FORBIDDEN
+    );
+    let pool = db().await;
+    let (lease, generation): (uuid::Uuid, uuid::Uuid) =
+        sqlx::query_as("SELECT owner,generation FROM collab_rooms WHERE resource_id=$1")
+            .bind(&key)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    expect(patch(&owner,&format!("/v1/docs/pages/{key}"),json!({
+         "content_blocks":[{"type":"paragraph","content":"replacement"}],"expected_revision":a["revision"]})).await,StatusCode::OK).await;
+    let mut late = pool.begin().await.unwrap();
+    let error =
+        miy_app_collab::db::claim_save(&mut late, &key, lease, generation, Some(&[0, 0]), false)
+            .await
+            .unwrap_err();
+    assert_eq!(error.to_string(), "generation_changed");
+}

@@ -8,7 +8,7 @@
     "api:generate": "cargo run --locked --bin miy-app -- --write-openapi && node web/api-tools/generate.mjs",
     "build": "vite build",
     "typecheck": "tsc --noEmit",
-    "build:preview": "vite build --config vite.preview.config.ts",
+    "build:preview": "vite build --config web/vite.preview.config.ts",
     "test": "vitest run"
   },
   "dependencies": {
@@ -26,13 +26,16 @@
     "class-variance-authority": "0.7.1",
     "clsx": "2.1.1",
     "i18next": "26.0.8",
+    "lib0": "0.2.114",
     "lucide-react": "0.546.0",
     "react": "19.3.1",
     "react-dom": "19.3.1",
     "react-i18next": "17.0.6",
     "react-is": "18.3.1",
     "recharts": "3.8.1",
-    "tailwind-merge": "3.5.0"
+    "tailwind-merge": "3.5.0",
+    "y-protocols": "1.0.7",
+    "yjs": "13.6.29"
   },
   "devDependencies": {
     "@module-federation/vite": "1.23.5",

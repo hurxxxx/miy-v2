@@ -344,19 +344,21 @@ async fn serve_preview(
     let executable = if runtime == Runtime::Native {
         Some(crate::native_preview::build()?)
     } else {
-        app_cli::run(
-            "docker",
-            &[
-                "build",
-                "--build-arg",
-                &format!("MIY_APP_ID={}", m.id),
-                "--build-arg",
-                "MIY_SOURCE_COMMIT=0000000000000000000000000000000000000000",
-                "-t",
-                &image,
-                ".",
-            ],
-        )?;
+        let app_id = format!("MIY_APP_ID={}", m.id);
+        let mut build = vec!["build"];
+        if m.runtime.profile == "rust-web-node-v1" {
+            build.extend(["--target", "rust-web-node-v1"]);
+        }
+        build.extend([
+            "--build-arg",
+            &app_id,
+            "--build-arg",
+            "MIY_SOURCE_COMMIT=0000000000000000000000000000000000000000",
+            "-t",
+            &image,
+            ".",
+        ]);
+        app_cli::run("docker", &build)?;
         None
     };
     if *shutdown.borrow() != Shutdown::Running {

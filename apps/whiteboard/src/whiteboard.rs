@@ -1017,7 +1017,7 @@ fn scene_file_invalid() -> ApiError {
 }
 
 /// The scene's files name stored images of this board (scene.rs).
-async fn check_scene_files<'e>(
+pub(crate) async fn check_scene_files<'e>(
     executor: impl sqlx::PgExecutor<'e>,
     board_id: Option<&str>,
     value: &Value,
@@ -1361,6 +1361,8 @@ pub async fn update_item(
             if base_revision != Some(loaded.board.revision) {
                 return Err(revision_conflict());
             }
+            crate::versions::record(&mut tx, &loaded.board, &stored, &identity.user_id).await?;
+            miy_app_collab::db::invalidate(&mut tx, &loaded.board.id).await?;
             sqlx::query(
                 "UPDATE whiteboards SET scene = $2, revision = revision + 1, updated_at = $3 WHERE id = $1",
             )
@@ -1371,6 +1373,8 @@ pub async fn update_item(
             .await?;
             changed = true;
             scene_changed = true;
+        } else if base_revision == Some(loaded.board.revision) {
+            miy_app_collab::db::invalidate(&mut tx, &loaded.board.id).await?;
         }
     }
     if changed && !scene_changed {

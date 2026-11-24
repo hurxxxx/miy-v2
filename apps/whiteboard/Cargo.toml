@@ -5,8 +5,10 @@ edition = "2024"
 rust-version = "1.99"
 
 [dependencies]
+async-trait = "0.1"
+miy-app-collab = { path = "sdk/collab" }
 anyhow = "1"
-axum = { version = "=0.8.9", features = ["macros"] }
+axum = { version = "=0.8.9", features = ["macros","ws"] }
 chrono = { version = "0.4", features = ["serde"] }
 miy-app-sdk = { path = "sdk/rust" }
 serde = { version = "1", features = ["derive"] }

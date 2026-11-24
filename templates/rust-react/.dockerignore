@@ -12,3 +12,6 @@ dist/image.json
 .claude
 .agents
 .mcp.json
+
+!dist/server/node_modules
+!dist/server/node_modules/**

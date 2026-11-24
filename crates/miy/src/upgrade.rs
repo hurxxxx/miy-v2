@@ -45,6 +45,7 @@ pub async fn run() -> Result<Value> {
         Some("0.9.0") => include_str!("../bundles/0.9.0.json"),
         Some("0.10.0") => include_str!("../bundles/0.10.0.json"),
         Some("0.11.0") => include_str!("../bundles/0.11.0.json"),
+        Some("0.13.0") => include_str!("../bundles/0.13.0.json"),
         Some("0.12.0") => include_str!("../bundles/0.12.0.json"),
         _ => anyhow::bail!(CliError::new(
             Category::Environment,
@@ -105,6 +106,7 @@ pub async fn run() -> Result<Value> {
                 | "0.10.0"
                 | "0.11.0"
                 | "0.12.0"
+                | "0.13.0"
         )
     ) {
         let mut changes = crate::agent_tools::setup_changes(&root, None)?;
@@ -142,8 +144,7 @@ pub async fn run() -> Result<Value> {
             )
             .expecting(expected_files.get("miy.bundle.json").cloned().flatten()),
         );
-        // The 0.12.0 Rust SDK is byte-for-byte identical to this release.
-        if old["bundleVersion"] != "0.12.0" {
+        {
             changes.extend(crate::cli_error::validation(
                 resolve_sdk_lock(
                     &root,
@@ -372,6 +373,8 @@ fn validate_guidance_change(path: &str, unchanged: bool) -> Result<()> {
             path,
             "AGENTS.md"
                 | "CLAUDE.md"
+                | "Dockerfile"
+                | "sdk/browser/live-binary.ts"
                 | "sdk/browser/index.ts"
                 | "sdk/browser/api.gen.ts"
                 | "sdk/browser/directory.ts"
@@ -390,7 +393,8 @@ fn validate_guidance_change(path: &str, unchanged: bool) -> Result<()> {
                 | "sdk/rust/Cargo.toml"
                 | "sdk/ui/index.tsx"
                 | "miy.components.json"
-        ) || path.starts_with("docs/")
+        ) || path.starts_with("sdk/collab/")
+            || path.starts_with("docs/")
             || path.starts_with(".agents/skills/")
             || path.starts_with(".claude/skills/"),
         CliError::new(

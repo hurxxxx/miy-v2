@@ -17,8 +17,7 @@ import type { AppApi, AppFileApi } from '../../../platform/runtime/runtime-conte
  *   rewrote paths to `/api/v1/workspaces/{slug}/docs/...`; the space-scoped
  *   calls here add `?space=<id>` instead (`spaceId` in place of
  *   `workspaceSlug`).
- * - Link shares (`share_token`, `/docs/shared/...`), the Yjs collaboration
- *   session/snapshot calls and PMS task links are not ported.
+ * - The collaborative editor opens a separate per-page session.
  * - Page content saves send `expected_revision`; the server answers 409
  *   `docs_page_revision_conflict` for a save against an older revision.
  * - Attachments and body images go through the platform file gateway

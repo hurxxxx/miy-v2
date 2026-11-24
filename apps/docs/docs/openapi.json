@@ -400,6 +400,22 @@
         }
       }
     },
+    "/live": {
+      "get": {
+        "tags": [
+          "Collaboration"
+        ],
+        "operationId": "docsLive",
+        "responses": {
+          "101": {
+            "description": "Authenticated binary editing connection"
+          },
+          "401": {
+            "description": "Invalid identity"
+          }
+        }
+      }
+    },
     "/platform/notification-check": {
       "post": {
         "tags": [
@@ -470,6 +486,65 @@
           },
           "503": {
             "description": "A required platform service is unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/collaboration/{resource}/session": {
+      "post": {
+        "tags": [
+          "Collaboration"
+        ],
+        "operationId": "openDocsEditingSession",
+        "parameters": [
+          {
+            "name": "resource",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SessionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Session"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Edit access required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Room ownership or generation changed",
             "content": {
               "application/json": {
                 "schema": {
@@ -7220,6 +7295,45 @@
               "$ref": "#/components/schemas/SearchHit"
             },
             "maxItems": 10
+          }
+        }
+      },
+      "Session": {
+        "type": "object",
+        "required": [
+          "roomId",
+          "generation",
+          "sessionId",
+          "revision",
+          "name"
+        ],
+        "properties": {
+          "generation": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "revision": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "roomId": {
+            "type": "string"
+          },
+          "sessionId": {
+            "type": "string"
+          }
+        }
+      },
+      "SessionRequest": {
+        "type": "object",
+        "properties": {
+          "session": {
+            "type": [
+              "string",
+              "null"
+            ]
           }
         }
       },

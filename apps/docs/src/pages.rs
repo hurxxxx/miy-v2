@@ -89,7 +89,7 @@ fn page_item(page: &NativePage, can_edit: bool, creator_name: &str) -> PageItem 
         updated_at: naive_iso(page.updated_at),
         trashed_at: page.trashed_at.map(naive_iso),
         can_edit,
-        realtime_collab: false,
+        realtime_collab: can_edit && page.content_format == "block",
         revision: page.revision,
     }
 }
@@ -406,6 +406,20 @@ pub async fn write_content(
     user_id: &str,
     restored_from: Option<i64>,
 ) -> ApiResult<(NativePage, Vec<media::Linked>)> {
+    crate::collaboration::checkpoint(tx, page, user_id).await?;
+    miy_app_collab::db::invalidate(tx, &page.id).await?;
+    let (updated, linked) = write_projection(tx, doc, page, blocks, user_id).await?;
+    versions::record(tx, &updated, user_id, restored_from).await?;
+    Ok((updated, linked))
+}
+
+pub async fn write_projection(
+    tx: &mut Transaction<'_, Postgres>,
+    doc: &access::NativeDoc,
+    page: &NativePage,
+    blocks: &Option<Value>,
+    user_id: &str,
+) -> ApiResult<(NativePage, Vec<media::Linked>)> {
     let sql = format!(
         "UPDATE docs_native_doc_pages SET updated_at = $2, content_blocks = $3, content_text = NULL, \
          search_text = $4, revision = revision + 1 WHERE id = $1 RETURNING {PAGE_COLUMNS}"
@@ -419,7 +433,6 @@ pub async fn write_content(
         .await?;
     let body = blocks.as_ref().map(Value::to_string).unwrap_or_default();
     let linked = media::sync_embedded_media(tx, &body, &updated.id, user_id).await?;
-    versions::record(tx, &updated, user_id, restored_from).await?;
     touch_doc(tx, doc).await?;
     Ok((updated, linked))
 }
@@ -549,6 +562,11 @@ pub async fn update_page(
             }
             content = Some(blocks.clone());
             changed = true;
+        } else if payload
+            .expected_revision
+            .is_none_or(|revision| revision == page.revision)
+        {
+            miy_app_collab::db::invalidate(&mut tx, &page.id).await?;
         }
     }
     if payload.content_text.is_some() {
@@ -736,7 +754,7 @@ mod tests {
         let value = serde_json::to_value(page_item(&page("p", None), true, "Kim")).unwrap();
         assert_eq!(value["source_type"], "native_doc_page");
         assert_eq!(value["source_page_id"], "p");
-        assert_eq!(value["realtime_collab"], false);
+        assert_eq!(value["realtime_collab"], value["can_edit"]);
         assert_eq!(value["revision"], 1);
         assert_eq!(value["created_by_name"], "Kim");
     }

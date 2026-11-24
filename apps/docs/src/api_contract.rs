@@ -31,6 +31,8 @@ impl utoipa::ToSchema for NullValue {}
 
 pub(crate) fn router() -> (Router<crate::AppState>, OpenApi) {
     let (router, mut spec) = OpenApiRouter::new()
+        .routes(routes!(crate::collab_api::session))
+        .routes(routes!(crate::collab_api::live))
         .routes(routes!(managers::me))
         .routes(routes!(items::list_hub))
         .routes(routes!(items::create_item))
