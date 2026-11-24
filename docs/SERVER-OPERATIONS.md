@@ -45,7 +45,9 @@ Cargo·pnpm은 OS 사용자 `miy`로 실행한다. 검증 웹 빌드는 별도 o
 
 최초 설치 검사에서 `pilot-69697002` 앱을 서버 빌드·앱 dev 배포·HTTPS 프레임까지 확인한 뒤 중지했다. DB·앱 기록은 보존했다. 예시 계정 `developer`·`alice`·`bob`은 Core와 Keycloak 양쪽에서 비활성화했다.
 
-주소 변경은 `/srv/miy-backups/prod-20261116T052653Z`의 전체 백업을 별도 PostgreSQL에 복원하고 프레임 이전 SQL을 리허설한 뒤 수행했다. 기존 프레임 주소는 예약을 남기고 연결만 해제했다. 당시 실행 중이던 `pilot-69697002`의 dev 설치는 같은 서버 빌드 이미지로 컨테이너를 재생성해 `MIY_CORE_ORIGIN`도 새 포털로 변경했으며, 설치·릴리스·DB ID와 스키마는 유지했다. 이 앱은 현재 실행 중이다. Keycloak의 realm·사용자 subject·활성 상태·클라이언트 내부 ID와 비밀도 보존했다. 실제 OIDC·CLI device 승인·MCP OAuth/도구 호출·프레임 실행 검사는 [주소 전환 기록](releases/miy-works-address-move-2026-11-16.json)에 있다.
+주소 변경은 `/srv/miy-backups/prod-20261116T052653Z`의 전체 백업을 별도 PostgreSQL에 복원하고 프레임 이전 SQL을 리허설한 뒤 수행했다. 기존 프레임 주소는 예약을 남기고 연결만 해제했다. 당시 실행 중이던 `pilot-69697002`의 dev 설치는 같은 서버 빌드 이미지로 컨테이너를 재생성해 `MIY_CORE_ORIGIN`도 새 포털로 변경했으며, 설치·릴리스·DB ID와 스키마는 유지했다. Keycloak의 realm·사용자 subject·활성 상태·클라이언트 내부 ID와 비밀도 보존했다. 실제 OIDC·CLI device 승인·MCP OAuth/도구 호출·프레임 실행 검사는 [주소 전환 기록](releases/miy-works-address-move-2026-11-16.json)에 있다.
+
+2026-11-24에 파일럿 인수 앱 3개의 dev 설치와 User test codex·claude의 dev·prod 설치를 제거하고 카탈로그 등록을 정리했다. 보존된 앱 DB 7개의 덤프와 첨부파일 4개의 복구본은 `/srv/miy-backups/retired-apps/20261124T070846Z`에 있다.
 
 서버 사용자 `miy`의 CLI `default` context는 새 포털로 변경했다. 외부 개발 PC는 자동 변경되지 않으므로 새 context를 등록하고 재로그인한다. 프로젝트 stdio MCP는 로컬 CLI context를 확인하고, 직접 HTTP MCP 연결은 새 URL로 재인증한다. 브라우저도 새 주소에서 다시 로그인한다.
 
