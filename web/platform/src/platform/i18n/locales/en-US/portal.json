@@ -116,7 +116,7 @@
     "tabs": "Open apps",
     "closeTab": "Close {{name}}",
     "unsaved": "Save unconfirmed",
-    "full": "Up to 10 app frames can be open across your windows. Close an app or panel and try again.",
+    "full": "Up to 10 app frames can be open across your windows. Close an app or panel and try again. If a browser was force-closed, end its web session in Security settings to free its slots.",
     "leaveUnknown": "The app's save state cannot be confirmed. Leave anyway?",
     "leaveDirty": "You have unsaved changes. Leave anyway?",
     "checkConnectionTitle": "Check the app connection",
@@ -126,7 +126,8 @@
     "accessDenied": "Your permission to use the app could not be confirmed. Check what you were writing, then reopen the app.",
     "reloadRequired": "The app needs to be reopened. Check what you were writing, then reopen the app.",
     "failed": "Reopen the app or contact an administrator.",
-    "opening": "Opening the app…"
+    "opening": "Opening the app…",
+    "manageSessions": "Manage web sessions"
   },
   "loadState": {
     "stale": "Could not check the latest app status.",

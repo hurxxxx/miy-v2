@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { useLocation, useRouter } from "@tanstack/react-router";
+import { Link, useLocation, useRouter } from "@tanstack/react-router";
 import { UI_CONTRACT, createNavigationGuards, type Installation } from "@miy/sdk";
 import { Button, Loading, Notice, Panel } from "../ui";
 import { useInstallations } from "../data/installations";
@@ -93,7 +93,9 @@ export function AppView({ environment, paths, onPanelOpened }: {
         <button type="button" aria-label={t("appFrame.closeTab", { name: tab.app.name })} onClick={() => close(tab)}>×</button>
       </div>)}
     </nav>}
-    {limit && <Notice tone="warning" role="alert">{t("appFrame.full")}</Notice>}
+    {limit && <Notice tone="warning" role="alert" actions={
+      <Link to="/settings/$section" params={{ section: "security" }}>{t("appFrame.manageSessions")}</Link>
+    }>{t("appFrame.full")}</Notice>}
     {appId && !available && (installs.items === null
       ? installs.status === "error" ? <Panel title={t("appView.loadFailedTitle")}><Button onClick={() => void installs.refresh()}>{t("common:actions.retry")}</Button></Panel> : <Loading />
       : <Panel title={t(!requested ? "appView.noAccessTitle" : requested.ui.contractVersion !== UI_CONTRACT ? "appView.unsupportedTitle" : "appView.notRunningTitle")} />)}

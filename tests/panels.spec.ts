@@ -372,6 +372,7 @@ test("a full account keeps the previous tab, draft, and URL", async ({ page }) =
   await page.route("**/api/v1/app-frames", route => route.fulfill({ status: 409, json: { error: { code: "frame_limit_reached" } } }));
   await page.locator("#platform-navigation").getByRole("link", { name: "플래너", exact: true }).click();
   await expect(page.getByRole("alert")).toContainText("10개");
+  await expect(page.getByRole("link", { name: "웹 세션 관리" })).toHaveAttribute("href", "/settings/security");
   await expect(page).toHaveURL(/\/ledger\/reports$/);
   await expect(input).toHaveValue("보존할 입력");
   await expect(page.locator("iframe.app-frame")).toHaveCount(1);

@@ -911,6 +911,26 @@ test("an administrator registers a person, sets roles and suspends the account",
   await expect(updatedRow.getByRole("button", { name: "사용 재개" })).toBeVisible();
 });
 
+test("an administrator can turn a signup request into a one-time invitation", async ({ page }) => {
+  const { sent, links } = await mock(page);
+  const id = "45d26607-2825-4461-b272-3f695f587cf9";
+  await page.route("**/api/v1/account-links", (route) => {
+    if (route.request().method() === "POST") return route.fallback();
+    return route.fulfill({ json: {
+      available: true, links: links.items,
+      signupRequests: [{ id, name: "가입 신청자", email: "new@example.test", createdAt: "2026-11-24T00:00:00Z", linkId: links.items[0]?.id ?? null }],
+    } });
+  });
+  await page.goto("/admin/users");
+  const panel = page.locator(".ui-panel").filter({ has: page.getByRole("heading", { name: "회원가입 신청", exact: true }) });
+  await expect(panel).toContainText("new@example.test");
+  await panel.getByRole("button", { name: "승인 및 링크 발급" }).click();
+  await expect(page.getByRole("group", { name: "방금 만든 링크" })).toContainText("/join#");
+  expect(sent.at(-1)).toMatchObject({ path: "/api/v1/account-links", csrf: "fixture-csrf",
+    body: { kind: "invitation", name: "가입 신청자", signupRequestId: id, previousLinkId: null } });
+  await expect(panel.getByRole("button", { name: "가입 링크 재발급" })).toBeVisible();
+});
+
 test("an administrator issues an invitation and a reset link, sees each address once and revokes a link", async ({ page }) => {
   const { sent, links } = await mock(page);
   await page.goto("/admin/users");
