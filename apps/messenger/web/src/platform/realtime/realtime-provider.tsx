@@ -6,9 +6,10 @@ import {
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
   type ReactNode,
 } from 'react';
-import type { LiveConnection, LiveHandlers } from '@miy/sdk';
+import type { AppRuntime, LiveConnection, LiveHandlers } from '@miy/sdk';
 
 /**
  * AI-DO pushed DM changes over its realtime WebSocket (`useRealtimeEvent`)
@@ -44,6 +45,8 @@ type Listener = (event: RealtimeEvent) => void;
 type ConnectionState = 'connecting' | 'live' | 'retrying' | 'ended';
 
 interface RealtimeState {
+  tabActive: boolean;
+  isTabActive: () => boolean;
   status: RealtimeStatus;
   reconnectSeq: number;
   /** Send a client message on the open connection; false when not open. */
@@ -51,7 +54,12 @@ interface RealtimeState {
   subscribe: (type: string, listener: Listener) => () => void;
 }
 
+const alwaysActive = () => true;
+const noSubscription = () => () => {};
+
 const RealtimeContext = createContext<RealtimeState>({
+  tabActive: true,
+  isTabActive: alwaysActive,
   status: 'offline',
   reconnectSeq: 0,
   send: () => false,
@@ -76,6 +84,7 @@ export function parseLiveHint(text: string): RealtimeEvent | null {
 
 export function LiveProvider({
   children,
+  activity,
   intervalMs = POLL_INTERVAL_MS,
   live,
   safetyIntervalMs = LIVE_SAFETY_INTERVAL_MS,
@@ -83,10 +92,13 @@ export function LiveProvider({
   children: ReactNode;
   intervalMs?: number;
   live?: LiveOpener;
+  activity?: AppRuntime['activity'];
   safetyIntervalMs?: number;
 }) {
   // One connection per frame: the opener is taken once (a new runtime object
   // arrives on every settings change).
+  const isTabActive = activity?.getSnapshot ?? alwaysActive;
+  const tabActive = useSyncExternalStore(activity?.subscribe ?? noSubscription, isTabActive);
   const liveRef = useRef(live);
   const [reconnectSeq, setReconnectSeq] = useState(0);
   const [state, setState] = useState<ConnectionState>(
@@ -98,7 +110,7 @@ export function LiveProvider({
 
   useEffect(() => {
     const opener = liveRef.current;
-    if (!opener) return undefined;
+    if (!opener || !tabActive) return undefined;
     let disposed = false;
     const current = opener({
       onOpen: () => {
@@ -108,7 +120,7 @@ export function LiveProvider({
         setReconnectSeq((value) => value + 1);
       },
       onMessage: (data) => {
-        if (disposed) return;
+        if (disposed || !isTabActive()) return;
         const event = parseLiveHint(data);
         if (!event) return;
         listeners.current.get(event.type)?.forEach((listener) => listener(event));
@@ -126,10 +138,10 @@ export function LiveProvider({
       connection.current = null;
       current.close();
     };
-  }, []);
+  }, [tabActive, isTabActive]);
 
   useEffect(() => {
-    if (state === 'ended') return undefined;
+    if (!tabActive || state === 'ended') return undefined;
     const every = state === 'live' ? safetyIntervalMs : intervalMs;
     let timer: number | null = null;
     const visible = () => document.visibilityState === 'visible';
@@ -148,17 +160,17 @@ export function LiveProvider({
       if (timer !== null) window.clearInterval(timer);
       document.removeEventListener('visibilitychange', onVisibility);
     };
-  }, [intervalMs, safetyIntervalMs, state]);
+  }, [intervalMs, safetyIntervalMs, state, tabActive]);
 
   const send = useCallback((message: Record<string, unknown>) => {
-    if (!openRef.current || !connection.current) return false;
+    if (!isTabActive() || !openRef.current || !connection.current) return false;
     try {
       connection.current.send(JSON.stringify(message));
       return true;
     } catch {
       return false;
     }
-  }, []);
+  }, [isTabActive]);
 
   const subscribe = useCallback((type: string, listener: Listener) => {
     const set = listeners.current.get(type) ?? new Set<Listener>();
@@ -171,12 +183,14 @@ export function LiveProvider({
 
   const value = useMemo<RealtimeState>(
     () => ({
-      status: state === 'live' ? 'live' : 'offline',
+      tabActive,
+      isTabActive,
+      status: tabActive && state === 'live' ? 'live' : 'offline',
       reconnectSeq,
       send,
       subscribe,
     }),
-    [reconnectSeq, send, state, subscribe],
+    [reconnectSeq, send, state, subscribe, tabActive, isTabActive],
   );
   return (
     <RealtimeContext.Provider value={value}>{children}</RealtimeContext.Provider>

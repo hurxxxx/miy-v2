@@ -15,6 +15,8 @@ import {
   type AppSettings,
   type LiveConnection,
   type LiveHandlers,
+  connectBinary,
+  type BinaryHandlers,
   type NavigationState,
 } from "../browser";
 // Preview has no portal settings: it follows this browser. A deployed app
@@ -155,6 +157,11 @@ function previewSession(context: PreviewContext) {
         init,
       ),
     live: previewLive,
+    liveBinary: (handlers: BinaryHandlers) => connectBinary(handlers, async () => {
+      const url = new URL("/__miy/live", window.location.href);
+      url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
+      return { url: url.href };
+    }, () => false, () => {}),
     setNavigationState: (state) => {
       navigationState = state;
     },

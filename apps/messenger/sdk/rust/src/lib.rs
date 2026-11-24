@@ -528,6 +528,13 @@ pub async fn database() -> anyhow::Result<PgPool> {
         .await?)
 }
 pub async fn serve(api: Router) -> anyhow::Result<()> {
+    serve_with_shutdown(api, async { Ok(()) }).await
+}
+
+pub async fn serve_with_shutdown(
+    api: Router,
+    drain: impl std::future::Future<Output = anyhow::Result<()>> + Send + 'static,
+) -> anyhow::Result<()> {
     // No direct browser identity headers are trusted. API access always passes through the gateway.
     anyhow::ensure!(
         std::env::var("MIY_GATEWAY_SECRET")?.len() >= 32,
@@ -541,8 +548,19 @@ pub async fn serve(api: Router) -> anyhow::Result<()> {
     let address = std::env::var("MIY_BIND_ADDR").unwrap_or_else(|_| "0.0.0.0:8080".into());
     let listener = tokio::net::TcpListener::bind(address).await?;
     axum::serve(listener, app)
-        .with_graceful_shutdown(async {
+        .with_graceful_shutdown(async move {
+            #[cfg(unix)]
+            {
+                let mut term =
+                    tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+                        .expect("install SIGTERM listener");
+                tokio::select! { _ = tokio::signal::ctrl_c() => {}, _ = term.recv() => {} }
+            }
+            #[cfg(not(unix))]
             let _ = tokio::signal::ctrl_c().await;
+            if let Err(error) = drain.await {
+                eprintln!("application drain failed: {error}");
+            }
         })
         .await?;
     Ok(())

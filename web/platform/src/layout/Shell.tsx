@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode, type SyntheticEvent } from "react";
-import { Link, Outlet, useLocation, useNavigate } from "@tanstack/react-router";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type ReactNode, type SyntheticEvent } from "react";
+import { Link, Outlet, useLocation, useNavigate, useRouter } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
 import { InstallationsProvider, installationsIn, useInstallations } from "../data/installations";
@@ -15,6 +15,7 @@ import { PANEL_MEDIA, SidePanel, panelKey, type OpenPanel } from "../components/
 import { leaveMessage, type FrameInput } from "../app/AppFrame";
 import { request } from "@miy/sdk";
 import { Login } from "../pages/Login";
+import { Signup } from "../pages/Signup";
 import { CliInstall } from "../pages/CliInstall";
 import { Join } from "../pages/Join";
 import { SwitchUser } from "../pages/SwitchUser";
@@ -24,6 +25,9 @@ import { AppBarEditor } from "./AppBarEditor";
 import { AppBarLauncherMenu, AppLauncherButton } from "./AppBarLauncherMenus";
 import type { AppBarAppItem } from "./app-bar-model";
 import { useAppBarController } from "./useAppBarController";
+
+import { TabPaths } from "../app/tab-paths";
+const AppView = lazy(() => import("../app/AppView").then(module => ({ default: module.AppView })));
 
 export function Shell() {
   const { t } = useTranslation("portal");
@@ -57,6 +61,7 @@ export function Shell() {
   // Invitation and password reset links need no session. They live on the console,
   // next to the sign-in page; a portal sends these paths there like other console
   // pages, without forwarding any input.
+  if (options?.surface === "console" && /^\/signup\/?$/.test(location.pathname)) return <Signup />;
   if (options?.surface === "console" && isAccountLinkPath(location.pathname)) return <Join />;
   const ownEnvironment = options ? portalEnvironment(options.surface, options.legacyPortal) : null;
   if (options && options.surface !== "console" && isConsolePath(location.pathname))
@@ -106,7 +111,7 @@ export function Shell() {
       </main>
     );
   return (
-    <InstallationsProvider>
+    <InstallationsProvider key={state.user.id + ":" + environment}>
       <SignedInLayout user={state.user} environment={environment} />
     </InstallationsProvider>
   );
@@ -203,7 +208,12 @@ function SignedInLayout({ user, environment }: { user: User; environment: Enviro
   const [tooltip, setTooltip] = useState<{ text: string; top: number } | null>(null);
   const location = useLocation();
   const installations = useInstallations();
-  const refresh = installations.refresh;
+  const [openedPromotion, setOpenedPromotion] = useState<string>();
+  const paths = useMemo(() => new Map<string, string>(), []);
+  const appHref = useCallback((id: string) => {
+    const base = environmentPath(environment, id);
+    return paths.get(base) ?? base;
+  }, [paths, environment]);
   const toggle = useRef<HTMLButtonElement>(null);
   const navigation = useRef<HTMLElement>(null);
   const pathname = location.pathname;
@@ -211,11 +221,7 @@ function SignedInLayout({ user, environment }: { user: User; environment: Enviro
   const activeAppId = parts[1] === "environments" && parts[3] === "apps"
     ? parts[4]
     : parts[1] === "apps" ? parts[2] : undefined;
-  const installationScope = activeAppId ? environmentPath(environment, activeAppId) : pathname;
   useEffect(() => setMenuOpen(false), [pathname]);
-  useEffect(() => {
-    if (!isConsole) void refresh();
-  }, [isConsole, refresh, installationScope]);
   const apps = useMemo(() => installationsIn(installations.items, environment), [installations.items, environment]);
   const marks = useMemo(() => monograms(apps.map((a) => ({ key: a.id, name: a.name }))), [apps]);
   // The launcher (ported from AI-DO's app bar): the rail lists the pinned apps,
@@ -230,6 +236,7 @@ function SignedInLayout({ user, environment }: { user: User; environment: Enviro
   const [paletteOpen, setPaletteOpen] = useState(false);
   const openPalette = useCallback(() => setPaletteOpen(true), []);
   useCommandPaletteShortcut(openPalette);
+  const routerHistory = useRouter().history;
   const commands = useMemo<Command[]>(() => {
     const go = (to: string) => () => void navigate({ to: to as "/" });
     return [
@@ -238,13 +245,13 @@ function SignedInLayout({ user, environment }: { user: User; environment: Enviro
         id: `app-${item.id}`,
         label: item.title,
         hint: t("commandPalette.appHint"),
-        run: go(environmentPath(environment, item.id)),
+        run: () => routerHistory.push(appHref(item.id)),
       })),
       { id: "settings", label: t("commandPalette.settings"), run: go("/settings") },
       ...(isConsole && user.admin ? [{ id: "admin", label: t("commandPalette.admin"), run: go("/admin") }] : []),
       ...(isConsole ? [{ id: "cli-sessions", label: t("commandPalette.cliSessions"), run: go("/cli/sessions") }] : []),
     ];
-  }, [appItems, environment, isConsole, navigate, t, user.admin]);
+  }, [appItems, appHref, routerHistory, environment, isConsole, navigate, t, user.admin]);
   // Side panels (M5): one secondary frame beside the main one; the address
   // follows the main frame only. Narrow screens open the app instead.
   const { updateUser } = useSession();
@@ -362,7 +369,7 @@ function SignedInLayout({ user, environment }: { user: User; environment: Enviro
           {launcher.pinnedItems.map((item) => (
             <RailLink
               key={item.id}
-              to={environmentPath(environment, item.id)}
+              to={appHref(item.id)}
               label={item.title}
               icon={<AppMark mark={item.mark} colorKey={item.id} />}
               active={item.id === activeAppId}
@@ -408,7 +415,7 @@ function SignedInLayout({ user, environment }: { user: User; environment: Enviro
           contextLabel={t(`shell.environments.${environment}`)}
           currentPathname={pathname}
           items={appItems}
-          linkFor={(appId) => environmentPath(environment, appId)}
+          linkFor={appHref}
           menuRef={launcher.menuRef}
           onClose={launcher.onCloseLauncherMenus}
           onOpenEditor={launcher.onOpenEditor}
@@ -483,7 +490,10 @@ function SignedInLayout({ user, environment }: { user: User; environment: Enviro
           </div>
         </header>
         <main id="platform-main" tabIndex={-1}>
-          <Outlet />
+          <TabPaths.Provider value={paths}>
+            {!isConsole && <Suspense fallback={null}><AppView environment={environment} paths={paths} onPanelOpened={setOpenedPromotion} /></Suspense>}
+            <Outlet />
+          </TabPaths.Provider>
         </main>
         <CommandPalette
           open={paletteOpen}
@@ -494,6 +504,7 @@ function SignedInLayout({ user, environment }: { user: User; environment: Enviro
       </div>
       {openPanel && (
         <SidePanel
+          completedPromotion={openedPromotion}
           key={panelKey(openPanel)}
           open={openPanel}
           environment={environment}

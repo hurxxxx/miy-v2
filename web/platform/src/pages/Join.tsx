@@ -11,6 +11,7 @@ type LinkKind = "invitation" | "password_reset";
 type AccountLink = {
   kind: LinkKind;
   name: string | null;
+  email?: string | null;
   expiresAt: string;
   passwordMinLength: number;
   portalOrigin: string;
@@ -222,7 +223,7 @@ export function Join() {
                   <input name="name" required maxLength={120} defaultValue={phase.link.name ?? ""} autoComplete="name" />
                 </Field>
                 <Field label={t("join.email")}>
-                  <input name="email" type="email" required maxLength={254} autoComplete="email" />
+                  <input name="email" defaultValue={phase.link.email ?? ""} readOnly={!!phase.link.email} type="email" required maxLength={254} autoComplete="email" />
                 </Field>
               </>
             ) : (

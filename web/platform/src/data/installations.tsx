@@ -63,8 +63,9 @@ function useServerList<T>(path: string) {
 
 // Keep polls sequential: a slow response must be allowed to settle before another
 // poll supersedes it. Explicit refreshes still use latest-wins.
-function usePolling(refresh: () => Promise<void>, intervalMs: number) {
+function usePolling(refresh: () => Promise<void>, intervalMs: number, enabled = true) {
   useEffect(() => {
+    if (!enabled) return;
     let active = true;
     let timer: ReturnType<typeof setTimeout>;
     async function poll() {
@@ -76,12 +77,15 @@ function usePolling(refresh: () => Promise<void>, intervalMs: number) {
       active = false;
       clearTimeout(timer);
     };
-  }, [refresh, intervalMs]);
+  }, [refresh, intervalMs, enabled]);
 }
 
 export function InstallationsProvider({ children }: { children: ReactNode }) {
   const { surface } = useSurface();
   const value = useServerList<Installation>(surface === "console" ? "/api/v1/runtime/installations" : "/api/v1/installations");
+  const { refresh } = value;
+  useEffect(() => { if (surface !== "console") void refresh(); }, [surface, refresh]);
+  usePolling(refresh, 3000, surface !== "console");
   return <InstallationsContext.Provider value={value}>{children}</InstallationsContext.Provider>;
 }
 
@@ -89,12 +93,6 @@ export function useInstallations() {
   const value = useContext(InstallationsContext);
   if (!value) throw new Error("useInstallations outside InstallationsProvider");
   return value;
-}
-
-/** Keep the shared list fresh while a status screen is mounted. */
-export function useInstallationPolling(intervalMs = 3000) {
-  const { refresh } = useInstallations();
-  usePolling(refresh, intervalMs);
 }
 
 /** Manageable runtime list, loaded on mount and kept fresh while mounted. */

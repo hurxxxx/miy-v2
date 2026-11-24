@@ -2,6 +2,7 @@
 
 Use this runbook to set up an independent MIY app workspace for Codex or Claude Code. Execute the steps in the current user's workspace. Reuse the user's existing installation, account and project when they match this platform.
 
+- Human setup page with install commands and copyable agent requests: @MIY_ORIGIN@/cli/install
 - Platform and CLI context origin: @MIY_ORIGIN@
 - Published CLI versions, target archives, hashes and installer commands: @MIY_ORIGIN@/api/v1/cli/install
 - Server features: @MIY_ORIGIN@/api/v1/capabilities

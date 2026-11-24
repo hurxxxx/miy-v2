@@ -179,6 +179,8 @@ export class EditingRoom {
     }
   }
 
+  get snapshot(): Readonly<RoomStatus> { return this.status; }
+
   async end() {
     if (!this.joined || this.finish) throw new Error("room_not_ready");
     return new Promise<void>((resolve, reject) => {

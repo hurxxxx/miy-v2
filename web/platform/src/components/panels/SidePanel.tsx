@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { useLocation, useNavigate } from "@tanstack/react-router";
+import { useNavigate } from "@tanstack/react-router";
 import { ExternalLink, X } from "lucide-react";
 import { createNavigationGuards, type Installation, type InstallationPanel } from "@miy/sdk";
 import { AppFrame, leaveMessage, type FrameInput } from "../../app/AppFrame";
@@ -31,8 +31,10 @@ export function SidePanel({
   csrf,
   input,
   onClose,
+  completedPromotion,
 }: {
   open: OpenPanel;
+  completedPromotion?: string;
   environment: string;
   csrf: string;
   input: React.MutableRefObject<FrameInput>;
@@ -42,9 +44,6 @@ export function SidePanel({
   const navigate = useNavigate();
   const [location, setLocation] = useState(() => locationOf(open.panel.path));
   const pendingPromotion = useRef<string>(undefined);
-  const completedPromotion = useLocation({
-    select: ({ state }) => (state as { sidePanelPromotion?: string }).sidePanelPromotion,
-  });
   const basePath = environmentPath(environment, open.app.appId);
   const guards = useMemo(() => {
     const created = createNavigationGuards();

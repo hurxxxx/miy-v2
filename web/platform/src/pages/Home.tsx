@@ -1,8 +1,9 @@
+import { useTabPath } from "../app/tab-paths";
 import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { Link, useLocation } from "@tanstack/react-router";
 import type { Installation } from "@miy/sdk";
-import { distributionLabelKeys, installationsIn, useInstallationPolling, useInstallations } from "../data/installations";
+import { distributionLabelKeys, installationsIn, useInstallations } from "../data/installations";
 import { currentEnvironment, environmentPath, portalEnvironment } from "../lib/paths";
 import { useSurface } from "../data/session";
 import { LoadError, StaleNotice } from "../components/LoadState";
@@ -12,7 +13,6 @@ import { AppMark, EmptyState, Loading, Panel, monograms } from "../ui";
 export function Home() {
   const { t } = useTranslation("portal");
   const installations = useInstallations();
-  useInstallationPolling();
   const location = useLocation();
   const surface = useSurface();
   const environment = currentEnvironment(
@@ -76,6 +76,7 @@ function AppCard({
   environment: string;
 }) {
   const { t } = useTranslation("portal");
+  const href = useTabPath(environment, a.appId);
   const openable = a.kind !== "docker_app" || a.runtimeStatus === "running";
   return (
     <Panel
@@ -88,7 +89,7 @@ function AppCard({
       }
     >
       {openable && (
-        <Link className="app-card-open" to={environmentPath(environment, a.appId) as "/"}>
+        <Link className="app-card-open" to={href as "/"}>
           {t("home.open")}
         </Link>
       )}

@@ -56,6 +56,7 @@ export const DEFAULT_SETTINGS: FrameSettings = {
 
 /** Messages the portal sends into a frame. */
 export type ParentMessage =
+  | { type: "activity.changed"; payload: { active: boolean } }
   | { type: "route.changed"; payload: FrameLocation }
   | { type: "settings.changed"; payload: FrameSettings }
   | { type: "token.code"; payload: { code: string } }
@@ -151,6 +152,8 @@ export function readParentMessage(data: unknown): ParentMessage | null {
   if (!m) return null;
   const p = m.payload;
   switch (m.type) {
+    case "activity.changed":
+      return object(p) && typeof p.active === "boolean" ? { type: m.type, payload: { active: p.active } } : null;
     case "route.changed":
       return location(p) ? { type: m.type, payload: { pathname: p.pathname, search: p.search, hash: p.hash } } : null;
     case "settings.changed": {

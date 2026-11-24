@@ -1012,6 +1012,81 @@ pub async fn run(
     }
     passed
         .push("newer history cannot hide older links that administrators can still revoke".into());
+    let signup = json!({"name":"Signup applicant","email":"signup-test@accounts.invalid"});
+    let users_before = h.users().await?;
+    for _ in 0..2 {
+        let reply = h
+            .page("/api/v1/signup-requests", signup.clone())
+            .send()
+            .await?;
+        ensure!(
+            reply.status() == 202 && reply.json::<Value>().await? == json!({"status":"received"}),
+            "signup receipt"
+        );
+    }
+    let requests: Vec<Uuid> =
+        sqlx::query_scalar("SELECT id FROM signup_requests WHERE email=$1 AND status='pending'")
+            .bind("signup-test@accounts.invalid")
+            .fetch_all(&state.pool)
+            .await?;
+    ensure!(
+        requests.len() == 1 && h.users().await? == users_before,
+        "pending signup must not register an account"
+    );
+    let path = format!("/api/v1/signup-requests/{}/reject", requests[0]);
+    ensure!(
+        h.signed(Method::POST, &path, &ordinary)
+            .send()
+            .await?
+            .status()
+            == 403,
+        "ordinary user rejected a signup"
+    );
+    ensure!(
+        h.signed(Method::POST, &path, &admin).send().await?.status() == 200,
+        "admin rejection failed"
+    );
+    let issue_signup =
+        |id: Uuid| json!({"kind":"invitation","name":"Signup applicant","signupRequestId":id});
+    ensure!(
+        h.signed(Method::POST, "/api/v1/account-links", &admin)
+            .json(&issue_signup(requests[0]))
+            .send()
+            .await?
+            .status()
+            == 409,
+        "rejected signup was approved"
+    );
+    h.page("/api/v1/signup-requests", signup)
+        .send()
+        .await?
+        .error_for_status()?;
+    let signup_id: Uuid =
+        sqlx::query_scalar("SELECT id FROM signup_requests WHERE email=$1 AND status='pending'")
+            .bind("signup-test@accounts.invalid")
+            .fetch_one(&state.pool)
+            .await?;
+    let first = h.issue(&admin, issue_signup(signup_id)).await?;
+    let mut again = issue_signup(signup_id);
+    again["previousLinkId"] = json!(first.id);
+    let replacement = h.issue(&admin, again).await?;
+    ensure!(
+        h.refused(&first).await?
+            && h.inspect(&replacement).await?.1["email"] == "signup-test@accounts.invalid",
+        "signup reissue failed"
+    );
+    let mut person = person("signup-test", "signup-password-123");
+    person["email"] = json!("different@accounts.invalid");
+    ensure!(
+        h.complete(&replacement, person.clone()).await?.0 == 400,
+        "signup email could be changed"
+    );
+    person["email"] = json!("signup-test@accounts.invalid");
+    ensure!(
+        h.complete(&replacement, person).await?.0 == 200 && h.users().await? == users_before + 1,
+        "signup completion failed"
+    );
+    passed.push("signup requests are deduplicated and require an administrator decision; rejection and replacement are final and only the approved email can register".into());
     Ok(passed)
 }
 

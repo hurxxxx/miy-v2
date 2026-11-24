@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Link } from "@tanstack/react-router";
 import { request } from "@miy/sdk";
-import { consoleReturnPath } from "../lib/paths";
+import { consoleReturnPath, surfaceUrl } from "../lib/paths";
 import { LoginRecovery } from "./LoginRecovery";
 import { useSurface } from "../data/session";
 
@@ -70,6 +70,7 @@ export function Login() {
           {t("login.help")}
         </p>
         <div className="login-footer">
+          <a href={surfaceUrl(options.consoleOrigin, "/signup")}>{t("signup.title")}</a>
           <Link to={"/cli/install" as "/"} className="cli-install-link">
             {t("login.cliInstall")}
           </Link>

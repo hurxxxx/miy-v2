@@ -130,7 +130,7 @@ pub(crate) async fn active_locked(connection: &mut PgConnection, user: &str) -> 
 
 /// The first entry is always a global limit. Commit rejected attempts as well,
 /// and stop before inserting attacker-controlled keys after that limit is hit.
-async fn limits(pool: &PgPool, entries: &[(&str, &str, i32)]) -> ApiResult<()> {
+pub(crate) async fn limits(pool: &PgPool, entries: &[(&str, &str, i32)]) -> ApiResult<()> {
     let mut tx = pool.begin().await?;
     sqlx::query("SELECT pg_advisory_xact_lock(73490126)")
         .execute(&mut *tx)

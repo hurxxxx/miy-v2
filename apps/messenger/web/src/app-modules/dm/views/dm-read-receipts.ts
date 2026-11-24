@@ -23,9 +23,10 @@ export interface MarkVisibleDmThreadReadInput extends Omit<MarkDmThreadReadInput
 
 export function currentDmReadPresenceFromBrowser(
   browser: DmReadReceiptBrowser,
+  tabActive = true,
 ): DmReadPresenceInput {
   return {
-    visible: browser.visibilityState === 'visible',
+    visible: tabActive && browser.visibilityState === 'visible',
     focused: browser.hasFocus(),
   };
 }

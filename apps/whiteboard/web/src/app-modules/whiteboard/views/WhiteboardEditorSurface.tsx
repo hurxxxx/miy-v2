@@ -1,3 +1,4 @@
+import { useTabEditing } from '../../../../../sdk/collab/tab-editing';
 import {
   type ReactNode,
   useCallback,
@@ -455,15 +456,17 @@ function useWhiteboardEditorSurfaceElement({
   const room = useRef<BoardRoom | null>(null);
   const [status, setStatus] = useState<RoomStatus>();
   const terminal = status?.phase === 'revoked' || status?.phase === 'replaced' || status?.phase === 'rejected';
-  const canEditCanvas = Boolean(activeBoard?.can_edit && !activeBoard.trashed_at &&
-    activeBoard.id === editingBoardId && status?.ready && !terminal && !closePending);
   const queueLocalChange = useCallback((change: BoardChange) => room.current?.change(change), []);
   useEffect(() => () => { room.current?.destroy(); room.current = null; }, [boardId]);
-  const finishEditing = useCallback(async () => {
+  const finishPromise = useRef<Promise<boolean> | null>(null);
+  const finishEditing = useCallback((): Promise<boolean> => {
+    if (finishPromise.current) return finishPromise.current;
     const current = room.current;
-    if (!current) return true;
+    if (!current) return Promise.resolve(true);
+    const finish = async () => {
     try {
       await current.end();
+      if (room.current !== current) return false;
       current.destroy();
       room.current = null;
       setEditingBoardId(null);
@@ -473,6 +476,9 @@ function useWhiteboardEditorSurfaceElement({
       setError(err instanceof Error ? err.message : t('whiteboard.saveFailed'));
       return false;
     }
+    };
+    finishPromise.current = finish().finally(() => { finishPromise.current = null; });
+    return finishPromise.current;
   }, [t]);
 
   const titleDirty = Boolean(
@@ -480,7 +486,7 @@ function useWhiteboardEditorSurfaceElement({
       titleDraft.trim() &&
       titleDraft.trim() !== activeBoard.title,
   );
-  useNavigationDirty(titleDirty || Boolean(status?.dirty && !terminal));
+
 
   useEffect(() => {
     activeBoardIdRef.current = activeBoard?.id ?? null;
@@ -578,14 +584,26 @@ function useWhiteboardEditorSurfaceElement({
     }
   }, [applyLoaded, applySceneToEditor, fetchBoard, t]);
 
+  const editAttempt = useRef(0);
+  const departure = useTabEditing(runtime.activity, () => {
+    ++editAttempt.current;
+    return Boolean(room.current);
+  }, () => terminal && status?.dirty ? Promise.resolve(false) : finishEditing(), () => {
+    if (!titleDirty) void reloadLatest();
+  });
+  useNavigationDirty(titleDirty || Boolean(status?.dirty || departure.unconfirmed));
+  const canEditCanvas = Boolean(activeBoard?.can_edit && !activeBoard.trashed_at &&
+    activeBoard.id === editingBoardId && status?.ready && !terminal && !closePending && !departure.pending);
+
   const startEditing = useCallback(async () => {
     const board = activeBoardRef.current;
-    if (!board?.can_edit || startingEdit) return;
+    if (!board?.can_edit || startingEdit || departure.pending || runtime.activity?.getSnapshot() === false) return;
+    const attempt = ++editAttempt.current;
     setStartingEdit(true);
     try {
       // Edit the latest saved scene: someone may have saved since loading.
       const loaded = await fetchBoard();
-      if (!loaded || loaded.board.id !== board.id) return;
+      if (!loaded || loaded.board.id !== board.id || attempt !== editAttempt.current) return;
       if (loaded.board.revision !== board.revision) {
         applyLoaded(loaded);
         applySceneToEditor(loaded);
@@ -602,7 +620,7 @@ function useWhiteboardEditorSurfaceElement({
     } finally {
       setStartingEdit(false);
     }
-  }, [applyLoaded, applySceneToEditor, fetchBoard, runtime, spaceId, startingEdit, t]);
+  }, [applyLoaded, applySceneToEditor, fetchBoard, runtime, spaceId, startingEdit, departure.pending, t]);
 
   const saveTitle = useCallback(async (): Promise<boolean> => {
     const board = activeBoardRef.current;

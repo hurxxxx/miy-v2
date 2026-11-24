@@ -1558,7 +1558,7 @@ pub async fn run(
     passed.push("frame launches list as delegated browser features only the release's requested frame permissions an administrator approved".into());
 
     frame_limit(&mut h, &suffix).await?;
-    passed.push("a person keeps at most 16 live frame sessions: openings retire the oldest even when concurrent; only the issuing portal can return a slot or cancel its pending launch".into());
+    passed.push("ten account-wide slots include pending openings; concurrent launches preserve existing frames and only the issuing portal can release its slot".into());
 
     live_connections(&mut h, &suffix).await?;
     passed.push("live connections: only the frame's own Origin upgrades, the frame token arrives in the first message, the app receives the person's signed identity and both directions relay, a bad first message closes with 4400 and losing use closes with 4403".into());
@@ -1770,14 +1770,14 @@ async fn frame_permissions(h: &mut Harness<'_>, suffix: &str) -> Result<()> {
 }
 
 /// Main frames, side panels and other tabs share one per-person limit; the
-/// oldest live frame session gives way to a new one.
+/// existing frames survive when another launch is refused.
 async fn frame_limit(h: &mut Harness<'_>, suffix: &str) -> Result<()> {
     let app = h.app(&format!("frame-limit-{suffix}"), &[]).await?;
     let user = h.user().await?;
     h.grant(&user, &app).await?;
     let portal = h.session(&user, auth::BrowserPurpose::DevPortal).await?;
     let mut frames = Vec::new();
-    for _ in 0..17 {
+    for _ in 0..10 {
         frames.push(h.open(&portal, &app).await?);
     }
     let live: Vec<Uuid> = sqlx::query_scalar(
@@ -1786,27 +1786,18 @@ async fn frame_limit(h: &mut Harness<'_>, suffix: &str) -> Result<()> {
     .bind(&user)
     .fetch_all(&h.state.pool)
     .await?;
-    let expected: Vec<Uuid> = frames[1..].iter().map(|frame| frame.id).collect();
-    ensure!(
-        live == expected,
-        "the frame limit did not retire exactly the oldest frame"
-    );
-    let oldest = frames[0]
-        .request(Method::GET, "/_miy/platform/directory")
-        .send()
-        .await?
-        .status()
-        .as_u16();
-    let kept = frames[1]
-        .request(Method::GET, "/_miy/platform/directory")
-        .send()
-        .await?
-        .status()
-        .as_u16();
-    ensure!(
-        oldest == 401 && kept != 401,
-        "the retired frame kept working ({oldest}) or a kept frame was refused ({kept})"
-    );
+    let expected: Vec<Uuid> = frames.iter().map(|frame| frame.id).collect();
+    ensure!(live == expected, "an existing frame lost its slot");
+    let issue = || {
+        launch_code(
+            h.client,
+            h.state,
+            &portal,
+            auth::BrowserPurpose::DevPortal,
+            app.installation,
+        )
+    };
+    status(issue().await?, 409).await?;
     let other = h.session(&user, auth::BrowserPurpose::DevPortal).await?;
     let close = |session: &PortalSession, id: Uuid| {
         h.client
@@ -1824,7 +1815,7 @@ async fn frame_limit(h: &mut Harness<'_>, suffix: &str) -> Result<()> {
             .header("origin", &session.origin)
             .header("x-miy-csrf", &session.csrf)
     };
-    status(close(&other, frames[16].id).send().await?, 204).await?;
+    status(close(&other, frames[9].id).send().await?, 204).await?;
     let revoked = |id| {
         sqlx::query_scalar::<_, bool>(
             "SELECT revoked_at IS NOT NULL FROM app_frame_sessions WHERE id=$1",
@@ -1833,35 +1824,24 @@ async fn frame_limit(h: &mut Harness<'_>, suffix: &str) -> Result<()> {
         .fetch_one(&h.state.pool)
     };
     ensure!(
-        !revoked(frames[16].id).await?,
+        !revoked(frames[9].id).await?,
         "another portal closed a frame it did not own"
     );
-    status(close(&portal, frames[16].id).send().await?, 204).await?;
-    status(close(&portal, frames[16].id).send().await?, 204).await?;
+    status(close(&portal, frames[9].id).send().await?, 204).await?;
+    status(close(&portal, frames[9].id).send().await?, 204).await?;
     ensure!(
-        revoked(frames[16].id).await?,
+        revoked(frames[9].id).await?,
         "closing the frame did not release its slot"
     );
-    let (first, second) = tokio::try_join!(h.open(&portal, &app), h.open(&portal, &app))?;
-    let count: i64 = sqlx::query_scalar(
-        "SELECT count(*) FROM app_frame_sessions WHERE user_id=$1 AND revoked_at IS NULL",
-    )
-    .bind(&user)
-    .fetch_one(&h.state.pool)
-    .await?;
-    ensure!(
-        count == 16 && !revoked(first.id).await? && !revoked(second.id).await?,
-        "concurrent launches did not respect the user's frame limit"
-    );
-    let pending = launch_code(
-        h.client,
-        h.state,
-        &portal,
-        auth::BrowserPurpose::DevPortal,
-        app.installation,
-    )
-    .await?;
-    let pending: AppFrameLaunch = pending.error_for_status()?.json().await?;
+    let (first, second) = tokio::try_join!(issue(), issue())?;
+    let (accepted, denied) = if first.status().is_success() {
+        (first, second)
+    } else {
+        (second, first)
+    };
+    status(denied, 409).await?;
+    let pending: AppFrameLaunch = accepted.error_for_status()?.json().await?;
+    ensure!(!revoked(frames[0].id).await?, "oldest frame was evicted");
     status(close(&portal, pending.frame_id).send().await?, 204).await?;
     let canceled = submit_launch(
         h.client,

@@ -812,3 +812,27 @@
 .file-quota-error {
   color: var(--ui-color-danger-text);
 }
+
+.open-app-tabs {
+  display: flex;
+  gap: .25rem;
+  overflow-x: auto;
+  margin-bottom: .5rem;
+}
+.open-app-tab {
+  display: inline-flex;
+  flex-shrink: 0;
+  border-bottom: 2px solid transparent;
+}
+.open-app-tab[data-active="true"] { border-color: var(--ui-color-primary, currentColor); }
+.open-app-tab button {
+  background: transparent;
+  color: inherit;
+  border: 0;
+  padding: .3rem .5rem;
+  cursor: pointer;
+}
+
+.setup-sections { display: flex; flex-wrap: wrap; gap: 1rem; margin-block: 1rem; }
+.cli-install section[id] { scroll-margin-block-start: 1rem; }
+#agent-setup .cli-install-command pre { white-space: pre-wrap; overflow-wrap: anywhere; }

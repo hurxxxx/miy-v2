@@ -293,6 +293,10 @@ pub fn router_for(state: State, purpose: BrowserPurpose) -> Router {
             axum::routing::get(crate::accounts::list).post(crate::accounts::create),
         )
         .route(
+            "/signup-requests/{id}/reject",
+            axum::routing::post(crate::accounts::reject_signup),
+        )
+        .route(
             "/account-links/{id}/revoke",
             axum::routing::post(crate::accounts::revoke),
         )

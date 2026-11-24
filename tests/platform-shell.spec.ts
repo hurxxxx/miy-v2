@@ -106,7 +106,7 @@ test("installation polling settles when every response is slower than the pollin
   ).toHaveCount(0);
 });
 
-test("an older installation response cannot restore an app after a newer permission revocation", async ({
+test("one shared poll observes permission revocation across navigation", async ({
   page,
 }) => {
   let reads = 0;
@@ -147,20 +147,13 @@ test("an older installation response cannot restore an app after a newer permiss
       page.getByRole("link", { name: app.name, exact: true }),
     ).toBeVisible();
     await olderStarted;
-    // The navigation refresh observes revoked access while the earlier poll
-    // still holds a snapshot taken before revocation. (The environment switch is
-    // another portal origin now; same-origin navigation exercises the refresh.)
     const rail = page.locator("#platform-navigation");
-    await rail.getByRole("link", { name: "CLI 설치", exact: true }).click();
-    await expect(
-      page.getByRole("link", { name: app.name, exact: true }),
-    ).toHaveCount(0);
+    await rail.getByRole("link", { name: "통합 설치", exact: true }).click();
     await rail.getByRole("link", { name: "홈", exact: true }).click();
-    await expect(
-      page.getByText("이 실행 환경에서 사용할 수 있는 앱이 없습니다."),
-    ).toBeVisible();
+    expect(reads).toBe(2);
     releaseOlder();
     await olderFinished;
+    await expect(page.getByText("이 실행 환경에서 사용할 수 있는 앱이 없습니다.")).toBeVisible();
     await page.evaluate(
       () =>
         new Promise<void>((resolve) =>
@@ -293,20 +286,24 @@ test("unsaved app input guards app switching and logout through the shell", asyn
   );
   await (await openNewTab(page, rail.getByRole("link", { name: "관리 콘솔", exact: true }))).close();
   await expect(input).toHaveValue("미저장 제목");
-  page.once("dialog", async (dialog) => {
+  await rail.getByRole("link", { name: "홈", exact: true }).click();
+  await expect(page).toHaveURL(/\/environments\/dev$/);
+  await expect(page.locator("iframe.app-frame")).toBeHidden();
+  page.once("dialog", (dialog) => dialog.dismiss());
+  await page.getByRole("button", { name: "로그아웃" }).click();
+  expect(logouts).toEqual([]);
+  const tabs = page.getByRole("navigation", { name: "열린 앱" });
+  await tabs.getByRole("button", { name: /셸 검증 앱/, exact: false }).first().click();
+  await expect(input).toHaveValue("미저장 제목");
+  page.once("dialog", async dialog => {
     expect(dialog.message()).toContain("저장하지 않은 제목");
     await dialog.dismiss();
   });
-  await rail.getByRole("link", { name: "홈", exact: true }).click();
-  await expect(page).toHaveURL(/\/environments\/dev\/apps\/shell-app$/);
+  await tabs.getByRole("button", { name: "셸 검증 앱 닫기" }).click();
   await expect(input).toHaveValue("미저장 제목");
-  page.once("dialog", (dialog) => dialog.dismiss());
-  await page.getByRole("button", { name: "로그아웃" }).click();
-  await expect(input).toHaveValue("미저장 제목");
-  expect(logouts).toEqual([]);
-  page.once("dialog", (dialog) => dialog.accept());
-  await rail.getByRole("link", { name: "홈", exact: true }).click();
-  await expect(page).toHaveURL(/\/environments\/dev$/);
+  page.once("dialog", dialog => dialog.accept());
+  await tabs.getByRole("button", { name: "셸 검증 앱 닫기" }).click();
+  await expect(page.locator("iframe.app-frame")).toHaveCount(0);
 });
 
 test("the security settings start the password change on this origin only", async ({ page }) => {
@@ -368,8 +365,10 @@ test("internal app navigation keeps the session read and unsaved input", async (
   await page.goBack();
   await expect.poll(() => dialogs.length).toBe(1);
   await page.locator("#platform-navigation").getByRole("link", { name: "홈", exact: true }).click();
-  await expect.poll(() => dialogs.length).toBe(2);
+  await expect(page).toHaveURL(/\/environments\/dev$/);
+  await page.getByRole("navigation", { name: "열린 앱" }).getByRole("button").first().click();
   await expect(page).toHaveURL(/\/shell-app\/next$/);
+  expect(dialogs).toHaveLength(1);
   await expect(input).toHaveValue("미저장 제목");
   expect(documentReads).toBe(1);
 });

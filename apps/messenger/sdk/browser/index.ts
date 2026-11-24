@@ -1,3 +1,5 @@
+import type { BinaryHandlers, BinaryConnection } from "./live-binary";
+export { connectBinary, type BinaryHandlers, type BinaryConnection } from "./live-binary";
 export { createNavigationGuards, type NavigationGuard } from "./navigation";
 export { ApiError, isApiError, checkedResponse, fetchResponse, readJson, readBlob, request, requestBlob, requestResponse, requestHeaders, withAbort,
   type ApiErrorKind } from "./transport";
@@ -54,6 +56,8 @@ export interface LiveConnection {
  * their identity for the lifetime of the frame or local preview session.
  */
 export interface AppRuntime {
+  /** Portal tab activity, independent of browser visibility. Preview defaults to active. */
+  activity?: { getSnapshot(): boolean; subscribe(listener: () => void): () => void };
   installationId: string;
   appId: string;
   releaseId: string;
@@ -106,6 +110,7 @@ export interface AppRuntime {
    * platform with the person's verified identity). Use it for updates that
    * should arrive at once; keep reads and writes on `api`.
    */
+  liveBinary: (handlers: BinaryHandlers) => BinaryConnection;
   live: (handlers: LiveHandlers) => LiveConnection;
   /** Same as `settings.theme`. */
   theme: "light" | "dark";

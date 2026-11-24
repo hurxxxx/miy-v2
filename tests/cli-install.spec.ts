@@ -46,9 +46,9 @@ test("public installation guide uses server configuration and copies exact comma
     });
   });
   await page.goto("/");
-  await page.getByRole("link", { name: "CLI 설치 안내" }).click();
+  await page.getByRole("link", { name: "통합 설치" }).click();
   await expect(page).toHaveURL(/\/cli\/install$/);
-  await expect(page.getByRole("heading", { name: "CLI 설치", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "통합 설치", exact: true })).toBeVisible();
   await expect(page.getByTestId("cli-install-server")).toHaveText(serverUrl);
   expect(new URL(page.url()).origin).not.toBe(serverUrl);
   await expect(page.getByLabel("Linux·macOS 설치 명령", { exact: true })).toHaveText(guide.commands.unix);
@@ -60,6 +60,16 @@ test("public installation guide uses server configuration and copies exact comma
   await expect.poll(() => page.evaluate(() => (window as typeof window & { copiedCommand?: string }).copiedCommand)).toBe(guide.commands.windows);
   await page.getByRole("button", { name: "CLI 로그인 명령 복사", exact: true }).click();
   await expect.poll(() => page.evaluate(() => (window as typeof window & { copiedCommand?: string }).copiedCommand)).toBe(guide.commands.login);
+  const agentUrl = serverUrl + "/api/v1/cli/agent-setup";
+  await expect(page.getByRole("link", { name: "에이전트용 원본 안내문 열기" })).toHaveAttribute("href", agentUrl);
+  for (const agent of ["Codex", "Claude Code"]) {
+    const label = agent + "에 보낼 요청문";
+    const prompt = await page.getByLabel(label, { exact: true }).innerText();
+    expect(prompt).toContain(agentUrl);
+    expect(prompt).toContain("get_contract");
+    await page.getByRole("button", { name: label + " 복사" }).click();
+    await expect.poll(() => page.evaluate(() => (window as typeof window & { copiedCommand?: string }).copiedCommand)).toBe(prompt);
+  }
   await page.screenshot({ path: testInfo.outputPath("cli-install-desktop.png"), fullPage: true });
   await page.setViewportSize({ width: 390, height: 844 });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
@@ -71,7 +81,7 @@ test("public installation guide uses server configuration and copies exact comma
 test("signed-in users can open installation guidance from the platform menu", async ({ page }) => {
   await setup(page, true);
   await page.goto("/environments/dev");
-  await page.getByRole("link", { name: "CLI 설치", exact: true }).click();
+  await page.getByRole("link", { name: "통합 설치", exact: true }).click();
   await expect(page.getByTestId("cli-install-server")).toHaveText(serverUrl);
   await expect(page.locator("header")).toContainText("설치 사용자");
 });

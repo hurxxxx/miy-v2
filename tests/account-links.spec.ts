@@ -202,5 +202,24 @@ test("the sign-in page says how to get an account or a new password", async ({ p
   await mock(page, null);
   await page.goto("/");
   await expect(page.getByRole("link", { name: "로그인", exact: true })).toBeVisible();
-  await expect(page.getByText("관리자에게 초대 링크 또는 비밀번호 재설정 링크를 요청하세요.")).toBeVisible();
+  await expect(page.getByRole("link", { name: "회원가입 신청" })).toBeVisible();
+  await expect(page.getByText("비밀번호를 잊었다면 관리자에게 재설정 링크를 요청하세요.")).toBeVisible();
+});
+
+test("a public signup requests approval before the applicant sets a password", async ({ page }) => {
+  await mock(page, null);
+  const applications: unknown[] = [];
+  await page.route("**/api/v1/signup-requests", route => {
+    applications.push(route.request().postDataJSON());
+    return route.fulfill({ status: 202, json: { status: "received" } });
+  });
+  await page.goto("/");
+  await page.getByRole("link", { name: "회원가입 신청" }).click();
+  await expect(page).toHaveURL(/\/signup$/);
+  await field(page, "name").fill("가입 신청자");
+  await field(page, "email").fill("applicant@example.test");
+  await expect(page.locator('input[type="password"]')).toHaveCount(0);
+  await page.getByRole("button", { name: "가입 신청하기" }).click();
+  await expect(page.getByRole("heading", { name: "가입 신청을 접수했습니다" })).toBeVisible();
+  expect(applications).toEqual([{ name: "가입 신청자", email: "applicant@example.test" }]);
 });

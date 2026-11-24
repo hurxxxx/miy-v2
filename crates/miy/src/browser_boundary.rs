@@ -29,7 +29,9 @@ pub fn access(route: &str, method: &Method) -> Option<Access> {
         "/support/reports" | "/support/reports/{id}" => Access::Console,
         // The two anonymous account-link calls also require the console's own
         // page as Origin in their handlers; the portals never serve them.
-        "/account-links"
+        "/signup-requests"
+        | "/signup-requests/{id}/reject"
+        | "/account-links"
         | "/account-links/inspect"
         | "/account-links/complete"
         | "/account-links/{id}/revoke" => Access::Console,

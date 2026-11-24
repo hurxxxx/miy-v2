@@ -196,8 +196,8 @@ test("logout ends the server session and returns to the login screen", async ({ 
 
 test("signed-in CLI install page reads the server guide", async ({ page }) => {
   await signIn(page, /사용자 B/);
-  await page.locator("#platform-navigation").getByRole("link", { name: "CLI 설치", exact: true }).click();
-  await expect(page.getByRole("heading", { name: "CLI 설치", exact: true })).toBeVisible();
+  await page.locator("#platform-navigation").getByRole("link", { name: "통합 설치", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "통합 설치", exact: true })).toBeVisible();
   await expect(page.getByTestId("cli-install-server")).toHaveText("http://127.0.0.1:18148");
 });
 

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useTabEditing } from '../../../../../sdk/collab/tab-editing';
 import { EditingRoom, type RoomStatus } from '../../../../../sdk/collab/client';
 import {
   BlockEditor,
@@ -37,7 +38,9 @@ export function CollaborativePage({
     status?.phase === 'revoked' ||
     status?.phase === 'replaced' ||
     status?.phase === 'rejected';
-  useNavigationDirty(Boolean(status?.dirty && !terminal));
+  const inFlight = useRef<Promise<boolean> | null>(null);
+  const departure = useTabEditing(runtime.activity, () => Boolean(room.current), () => finish(false), onFinished);
+  useNavigationDirty(Boolean(status?.dirty || departure.unconfirmed));
   useEffect(
     () => () => {
       room.current?.destroy();
@@ -56,7 +59,7 @@ export function CollaborativePage({
   );
 
   function start() {
-    if (room.current) return;
+    if (room.current || runtime.activity?.getSnapshot() === false || departure.pending) return;
     let revision = page.revision;
     const session = new EditingRoom(
       runtime,
@@ -79,21 +82,32 @@ export function CollaborativePage({
     session.start();
   }
 
-  async function finish() {
+  function finish(manual: boolean): Promise<boolean> {
     const session = room.current;
-    if (!session || ending) return;
+    if (!session) return Promise.resolve(true);
+    if (inFlight.current) return inFlight.current;
+    const current = session.snapshot;
+    if (terminal && current.dirty && !manual) return Promise.resolve(false);
     setEnding(true);
-    try {
-      if (!terminal && (status?.ready || status?.dirty)) await session.end();
-      session.destroy();
-      room.current = null;
-      setStatus(undefined);
-      onFinished();
-    } catch {
-      setStatus((s) => s && { ...s, phase: 'failed' });
-    } finally {
+    const work = async () => {
+      try {
+        if (!terminal && (current.ready || current.dirty)) await session.end();
+        if (room.current !== session) return false;
+        session.destroy();
+        room.current = null;
+        setStatus(undefined);
+        if (manual) onFinished();
+        return true;
+      } catch {
+        if (room.current === session) setStatus(s => s && { ...s, phase: 'failed' });
+        return false;
+      }
+    };
+    inFlight.current = work().finally(() => {
+      inFlight.current = null;
       setEnding(false);
-    }
+    });
+    return inFlight.current;
   }
 
   const session = room.current;
@@ -106,8 +120,8 @@ export function CollaborativePage({
         <button
           type="button"
           className="rounded-md border border-app-border px-3 py-1.5"
-          disabled={ending}
-          onClick={() => (session ? void finish() : start())}
+          disabled={ending || departure.pending}
+          onClick={() => (session ? void finish(true) : start())}
         >
           {t(session ? 'collaboration.end' : 'collaboration.start')}
         </button>
@@ -120,7 +134,7 @@ export function CollaborativePage({
             provider: session,
             user: session.awareness.getLocalState()?.user,
           }}
-          editable={!terminal && !ending}
+          editable={!terminal && !ending && !departure.pending}
           uploadFile={uploadFile}
           resolveFileUrl={resolveFileUrl}
         />

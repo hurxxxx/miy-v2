@@ -1,21 +1,21 @@
 {
   "protocol": "miy.cli-guidance/v1",
-  "cliVersion": "0.19.0",
-  "bundleVersion": "0.14.0",
+  "cliVersion": "0.20.0",
+  "bundleVersion": "0.15.0",
   "guidanceVersion": "1.0.4",
   "files": {
-    ".agents/skills/miy-cli/SKILL.md": "c2e10b084571f34e816fa8d882cba9dbf5be11e207cbe001c459d501e848755f",
-    ".agents/skills/miy-cli/references/commands.md": "0ce67be05ce1d86b1a77b2dc6e28ce352357bf282cb3ed3031e9647728621dea",
+    ".agents/skills/miy-cli/SKILL.md": "3db91efc1d9f607e3c0233a469668ffbd9ec00ac53f7b8bb1d0b50a19f1f6896",
+    ".agents/skills/miy-cli/references/commands.md": "d689ca4071d7b5d4d12e60f4631df593faf15a1881bc475c031af1cf6a953999",
     ".agents/skills/miy-cli/references/harness.md": "d88a34e211079873c6918fea3a8e2bdbb465e99c48687572266c17a600c38ed1",
     ".agents/skills/miy-cli/references/updating.md": "c6148d44c05ff9b47677001b96b77480a5a5ff0988bd66a3d83e6b6c6ad4b8cd",
     ".agents/skills/miy-cli/references/workflow.md": "61fa488b11e5d913f369e8ad9fbb46815285057ab5a11a86f07a6c9a2bba52d4",
-    ".claude/skills/miy-cli/SKILL.md": "c2e10b084571f34e816fa8d882cba9dbf5be11e207cbe001c459d501e848755f",
-    ".claude/skills/miy-cli/references/commands.md": "0ce67be05ce1d86b1a77b2dc6e28ce352357bf282cb3ed3031e9647728621dea",
+    ".claude/skills/miy-cli/SKILL.md": "3db91efc1d9f607e3c0233a469668ffbd9ec00ac53f7b8bb1d0b50a19f1f6896",
+    ".claude/skills/miy-cli/references/commands.md": "d689ca4071d7b5d4d12e60f4631df593faf15a1881bc475c031af1cf6a953999",
     ".claude/skills/miy-cli/references/harness.md": "d88a34e211079873c6918fea3a8e2bdbb465e99c48687572266c17a600c38ed1",
     ".claude/skills/miy-cli/references/updating.md": "c6148d44c05ff9b47677001b96b77480a5a5ff0988bd66a3d83e6b6c6ad4b8cd",
     ".claude/skills/miy-cli/references/workflow.md": "61fa488b11e5d913f369e8ad9fbb46815285057ab5a11a86f07a6c9a2bba52d4",
     ".gitattributes": "9dcd2e4a914ce272a4d34126bd555b3a91acd3b2362a9e1999faab96cd3d0078",
     "docs/API.md": "d266f4f33c2865d94208b493c1e6c2e45350df9d5880993082fbc2da283fbbdf",
-    "docs/CLI-REFERENCE.md": "e195824d3eaf9248e91f35b44d8e2567e1e6e40de33a33c5eec9b7c76b1998c5"
+    "docs/CLI-REFERENCE.md": "8d7f79ed05c1eef6c87f615b37e009a51ac442d9400e955dde8094456c9ac60f"
   }
 }

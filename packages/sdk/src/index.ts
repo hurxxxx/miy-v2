@@ -83,6 +83,8 @@ export interface LiveConnection {
  * their identity for the lifetime of the frame or local preview session.
  */
 export interface AppRuntime {
+  /** Portal tab activity, independent of browser visibility. Preview defaults to active. */
+  activity?: { getSnapshot(): boolean; subscribe(listener: () => void): () => void };
   installationId: string;
   appId: string;
   releaseId: string;

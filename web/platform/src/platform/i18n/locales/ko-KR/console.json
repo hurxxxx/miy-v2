@@ -140,7 +140,8 @@
       "password_reset_in_progress": "이 계정의 재설정이 진행 중입니다. 잠시 뒤 다시 시도하세요.",
       "user_disabled": "사용 중지된 계정에는 재설정 링크를 발급할 수 없습니다.",
       "invalid_account_link": "입력한 값을 확인해 주세요.",
-      "cannot_switch_to_self": "본인 계정으로는 전환할 수 없습니다."
+      "cannot_switch_to_self": "본인 계정으로는 전환할 수 없습니다.",
+      "signup_decided": "이미 처리된 신청입니다. 목록을 다시 확인하세요."
     },
     "linkStates": {
       "pending": "사용 전",
@@ -268,7 +269,14 @@
     "signInAsDevPortal": "dev 포털",
     "signInAsConfirm": "로그인",
     "signInAsStarted": "새 탭에서 {{name}}(으)로 로그인합니다.",
-    "popupBlocked": "브라우저가 새 탭을 막았습니다. 이 사이트의 팝업을 허용한 뒤 다시 시도하세요."
+    "popupBlocked": "브라우저가 새 탭을 막았습니다. 이 사이트의 팝업을 허용한 뒤 다시 시도하세요.",
+    "signupRequests": "회원가입 신청",
+    "noSignups": "처리할 가입 신청이 없습니다.",
+    "signupDelivery": "신청자 확인 후 승인하고, 화면에 표시된 일회용 링크를 신청 이메일로 직접 전달하세요. 재발급하면 이전 링크는 만료됩니다.",
+    "approveSignup": "승인 및 링크 발급",
+    "reissueSignup": "가입 링크 재발급",
+    "rejectSignup": "가입 신청 거절",
+    "signupRejected": "가입 신청을 거절했습니다."
   },
   "groups": {
     "tree": "조직도",

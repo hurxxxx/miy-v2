@@ -29,6 +29,7 @@ type AccountLink = {
   expiresAt: string;
   completedAt: string | null;
 };
+type SignupRequest = { id: string; name: string; email: string; createdAt: string; linkId: string | null };
 type Issued = { kind: LinkKind; name: string | null; url: string; expiresAt: string };
 
 const SUBJECT = "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}";
@@ -44,6 +45,7 @@ const states: Record<LinkState, Tone> = {
 const revocable = (link: AccountLink) => link.state === "pending" || link.state === "inactive";
 
 const FAILURES = [
+  "signup_decided",
   "user_exists",
   "invalid_user_id",
   "invalid_user_name",
@@ -129,6 +131,7 @@ export function UserAdmin({ csrf, selfId, report }: Props) {
   const shown = page?.items ?? [];
   const refresh = () => setRevision((value) => value + 1);
   const [busy, setBusy] = useState(false);
+  const [signups, setSignups] = useState<SignupRequest[]>([]);
   const [links, setLinks] = useState<AccountLink[] | null>(null);
   const [available, setAvailable] = useState<boolean | null>(null);
   const [issued, setIssued] = useState<Issued | null>(null);
@@ -186,7 +189,8 @@ export function UserAdmin({ csrf, selfId, report }: Props) {
 
   const loadLinks = useCallback(async () => {
     try {
-      const data = await request<{ available: boolean; links: AccountLink[] }>("/api/v1/account-links");
+      const data = await request<{ available: boolean; links: AccountLink[]; signupRequests?: SignupRequest[] }>("/api/v1/account-links");
+      setSignups(data.signupRequests ?? []);
       setLinks(data.links);
       setAvailable(data.available);
     } catch {
@@ -564,6 +568,27 @@ export function UserAdmin({ csrf, selfId, report }: Props) {
           )}
         </Panel>
       </div>
+      {available && <Panel title={t("users.signupRequests")}>
+        {signups.length === 0 ? <p>{t("users.noSignups")}</p> : <>
+          <p>{t("users.signupDelivery")}</p>
+          <ul className="user-accounts">{signups.map((signup) => <li key={signup.id} className="user-account">
+            <div className="user-account-name"><strong>{signup.name}</strong><span>{signup.email} · {when(signup.createdAt)}</span></div>
+            <div className="user-account-actions">
+              <Button size="sm" disabled={busy} onClick={() => void issue({
+                kind: "invitation", name: signup.name, signupRequestId: signup.id, previousLinkId: signup.linkId,
+              }, signup.name, t("users.invitationIssued"))}>
+                {t(signup.linkId ? "users.reissueSignup" : "users.approveSignup")}
+              </Button>
+              {!signup.linkId && <Button size="sm" disabled={busy} onClick={async () => {
+                if (await confirm({ title: t("users.rejectSignup"), body: signup.email, confirmLabel: t("users.rejectSignup"), tone: "danger" })) {
+                  await send(`/api/v1/signup-requests/${signup.id}/reject`, "POST", {}, t("users.signupRejected"));
+                  await loadLinks();
+                }
+              }}>{t("users.rejectSignup")}</Button>}
+            </div>
+          </li>)}</ul>
+        </>}
+      </Panel>}
       <div id="invite-users">
         <Panel
           title={t("users.invite")}

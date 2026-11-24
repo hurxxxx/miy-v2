@@ -67,7 +67,7 @@ vi.mock('../../../platform/auth/auth-provider', () => ({
 vi.mock('../../../platform/realtime/realtime-provider', async () => {
   const React = await import('react');
   return {
-    useRealtime: () => ({ reconnectSeq: 0, status: 'live' }),
+    useRealtime: () => ({ reconnectSeq: 0, status: 'live', tabActive: true, isTabActive: () => true }),
     useRealtimeEvent: (type: string, handler: (event: unknown) => void) => {
       const handlerRef = React.useRef(handler);
       handlerRef.current = handler;

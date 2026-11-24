@@ -424,13 +424,27 @@ applyDocumentSettings(appSettings(currentSettings, DARK.matches));
 
 // The bridge listener: only the parent window at the expected origin, only
 // validated messages. Route changes reach the app through a subscription.
+let tabActive = true;
+const activityListeners = new Set<() => void>();
+const activity = {
+  getSnapshot: () => tabActive,
+  subscribe(listener: () => void) {
+    activityListeners.add(listener);
+    return () => { activityListeners.delete(listener); };
+  },
+};
 const routeListeners = new Set<(location: FrameLocation) => void>();
 let currentLocation: FrameLocation = boot.location;
 window.addEventListener("message", (event) => {
   if (event.source !== window.parent || event.origin !== boot.parentOrigin) return;
   const message = readParentMessage(event.data);
   if (!message) return;
-  if (message.type === "route.changed") {
+  if (message.type === "activity.changed") {
+    if (tabActive !== message.payload.active) {
+      tabActive = message.payload.active;
+      for (const listener of activityListeners) listener();
+    }
+  } else if (message.type === "route.changed") {
     currentLocation = message.payload;
     for (const listener of routeListeners) listener(message.payload);
   } else if (message.type === "settings.changed") {
@@ -549,6 +563,7 @@ function remote(): ComponentType<AppProps> {
 // The bridge updates route and display state without replacing the frame's
 // API clients. These clients read the current token when making each request.
 const frameSession = {
+  activity,
   installationId: boot.installationId,
   appId: boot.appId,
   releaseId: boot.releaseId,

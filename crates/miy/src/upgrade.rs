@@ -45,6 +45,7 @@ pub async fn run() -> Result<Value> {
         Some("0.9.0") => include_str!("../bundles/0.9.0.json"),
         Some("0.10.0") => include_str!("../bundles/0.10.0.json"),
         Some("0.11.0") => include_str!("../bundles/0.11.0.json"),
+        Some("0.14.0") => include_str!("../bundles/0.14.0.json"),
         Some("0.13.0") => include_str!("../bundles/0.13.0.json"),
         Some("0.12.0") => include_str!("../bundles/0.12.0.json"),
         _ => anyhow::bail!(CliError::new(
@@ -107,6 +108,7 @@ pub async fn run() -> Result<Value> {
                 | "0.11.0"
                 | "0.12.0"
                 | "0.13.0"
+                | "0.14.0"
         )
     ) {
         let mut changes = crate::agent_tools::setup_changes(&root, None)?;
@@ -144,6 +146,10 @@ pub async fn run() -> Result<Value> {
             )
             .expecting(expected_files.get("miy.bundle.json").cloned().flatten()),
         );
+        // Browser-only upgrades do not need to resolve the application's Cargo
+        // graph (which may legitimately use the bundled collaboration crate).
+        if hashes.get("sdk/rust/Cargo.toml").and_then(Value::as_str)
+            != protected.get("sdk/rust/Cargo.toml").map(String::as_str)
         {
             changes.extend(crate::cli_error::validation(
                 resolve_sdk_lock(

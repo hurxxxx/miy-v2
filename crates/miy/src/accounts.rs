@@ -317,7 +317,7 @@ fn invalid() -> ApiError {
 
 /// A link works only while it is unused and unexpired, its issuer is still an
 /// enabled administrator and, for a reset, its account is still enabled.
-const USABLE: &str = "SELECT l.id,l.kind,l.name,l.can_develop,l.user_id,l.created_by,l.expires_at,u.name AS user_name \
+const USABLE: &str = "SELECT l.id,l.kind,l.name,l.can_develop,l.user_id,l.created_by,l.expires_at,u.name AS user_name,(SELECT email FROM signup_requests WHERE link_id=l.id) AS signup_email \
     FROM account_links l \
     JOIN users c ON c.id=l.created_by AND c.admin AND c.enabled \
     LEFT JOIN users u ON u.id=l.user_id \
@@ -337,9 +337,76 @@ fn console_page(state: &State, purpose: BrowserPurpose, headers: &HeaderMap) -> 
 
 pub fn public_router() -> Router<State> {
     Router::new()
+        .route("/api/v1/signup-requests", post(request_signup))
         .route("/api/v1/account-links/inspect", post(inspect))
         .route("/api/v1/account-links/complete", post(complete))
         .layer(DefaultBodyLimit::max(8 * 1024))
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Signup {
+    name: String,
+    email: String,
+}
+
+async fn request_signup(
+    S(s): S<State>,
+    Extension(purpose): Extension<BrowserPurpose>,
+    headers: HeaderMap,
+    Json(input): Json<Signup>,
+) -> ApiResult<(StatusCode, Json<Value>)> {
+    console_page(&s, purpose, &headers)?;
+    configured(&s)?;
+    let name = crate::user_admin::display_name(&input.name)?;
+    let email = input.email.trim();
+    if !valid_email(email) {
+        return Err(ApiError::bad("invalid_email"));
+    }
+    crate::auth_sessions::limits(&s.pool, &[("signup", "global", 30)]).await?;
+    let mut tx = s.pool.begin().await?;
+    sqlx::query("SELECT pg_advisory_xact_lock(76432935)")
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query("DELETE FROM signup_requests WHERE created_at < now()-interval '30 days' AND status <> 'approved'").execute(&mut *tx).await?;
+    let pending: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM signup_requests WHERE status='pending'")
+            .fetch_one(&mut *tx)
+            .await?;
+    if pending >= 1000 {
+        return Err(ApiError::unavailable("signup_queue_full"));
+    }
+    sqlx::query(
+        "INSERT INTO signup_requests(id,name,email) SELECT $1,$2,$3 WHERE NOT EXISTS (
+        SELECT 1 FROM signup_requests s JOIN account_links l ON l.id=s.link_id
+        WHERE lower(s.email)=lower($3) AND l.status='pending' AND l.expires_at>now()
+    ) ON CONFLICT DO NOTHING",
+    )
+    .bind(Uuid::new_v4())
+    .bind(name)
+    .bind(email)
+    .execute(&mut *tx)
+    .await?;
+    tx.commit().await?;
+    Ok((StatusCode::ACCEPTED, Json(json!({"status":"received"}))))
+}
+
+pub async fn reject_signup(
+    S(s): S<State>,
+    Extension(p): Extension<Principal>,
+    Path(id): Path<Uuid>,
+) -> ApiResult<Json<Value>> {
+    crate::domain::admin(&s, &p).await?;
+    let mut tx = Write::begin(&s.pool).await?;
+    let result = sqlx::query("UPDATE signup_requests SET status='rejected',decided_at=now(),decided_by=$2 WHERE id=$1 AND status='pending'")
+        .bind(id).bind(&p.id).execute(&mut *tx).await?;
+    if result.rows_affected() == 0 {
+        return Err(ApiError::conflict("signup_decided"));
+    }
+    let mut tx = tx.decide_platform(&p, PlatformAction::Administer).await?;
+    crate::audit::record(&mut tx, &p.id, "signup.rejected", &id.to_string()).await?;
+    tx.commit().await?;
+    Ok(Json(json!({"status":"rejected"})))
 }
 
 #[derive(Deserialize)]
@@ -372,7 +439,7 @@ async fn inspect(
         row.get("user_name")
     };
     Ok(Json(json!({
-        "kind": kind, "name": name,
+        "kind": kind, "name": name, "email": row.get::<Option<String>,_>("signup_email"),
         "expiresAt": row.get::<DateTime<Utc>, _>("expires_at"),
         "passwordMinLength": PASSWORD_MIN,
         "portalOrigin": s.auth.origin,
@@ -418,7 +485,11 @@ async fn complete(
         if !valid_username(username) {
             return Err(ApiError::bad("invalid_username"));
         }
-        if !valid_email(email) {
+        if !valid_email(email)
+            || link
+                .get::<Option<String>, _>("signup_email")
+                .is_some_and(|bound| bound != email)
+        {
             return Err(ApiError::bad("invalid_email"));
         }
         let name = crate::user_admin::display_name(input.name.as_deref().unwrap_or_default())?;
@@ -716,6 +787,9 @@ pub struct NewLink {
     pub user_id: Option<String>,
     /// Invitation 1-720 (default 168), password reset 1-72 (default 24).
     pub expires_in_hours: Option<i32>,
+    /// Issue the invitation for this pending signup. Reissuing requires its current link ID.
+    pub signup_request_id: Option<Uuid>,
+    pub previous_link_id: Option<Uuid>,
 }
 
 pub async fn create(
@@ -726,7 +800,13 @@ pub async fn create(
     crate::domain::admin(&s, &p).await?;
     configured(&s)?;
     let bad = || ApiError::bad("invalid_account_link");
-    let (name, can_develop, user, hours, page) = match input.kind.as_str() {
+    if (input.signup_request_id.is_some()
+        && (input.kind != "invitation" || input.can_develop == Some(true)))
+        || (input.previous_link_id.is_some() && input.signup_request_id.is_none())
+    {
+        return Err(bad());
+    }
+    let (mut name, can_develop, user, hours, page) = match input.kind.as_str() {
         "invitation" if input.user_id.is_none() => (
             Some(crate::user_admin::display_name(
                 input.name.as_deref().unwrap_or_default(),
@@ -758,6 +838,32 @@ pub async fn create(
         .bind(crate::user_admin::ACCOUNT_LOCK)
         .execute(&mut *tx)
         .await?;
+    if let Some(signup) = input.signup_request_id {
+        let entry = sqlx::query("SELECT s.name,s.status,s.link_id,l.status AS link_status FROM signup_requests s LEFT JOIN account_links l ON l.id=s.link_id WHERE s.id=$1 FOR UPDATE OF s")
+            .bind(signup).fetch_optional(&mut *tx).await?.ok_or_else(ApiError::not_found)?;
+        let status: String = entry.get("status");
+        let old: Option<Uuid> = entry.get("link_id");
+        if old != input.previous_link_id
+            || !(status == "pending"
+                || (status == "approved"
+                    && entry.get::<Option<String>, _>("link_status").as_deref()
+                        != Some("completed")))
+        {
+            return Err(ApiError::conflict("signup_decided"));
+        }
+        if let Some(old) = old {
+            let updated = sqlx::query(
+                "UPDATE account_links SET status='revoked' WHERE id=$1 AND status<>'completed'",
+            )
+            .bind(old)
+            .execute(&mut *tx)
+            .await?;
+            if updated.rows_affected() == 0 {
+                return Err(ApiError::conflict("signup_decided"));
+            }
+        }
+        name = Some(entry.get("name"));
+    }
     if let Some(user) = &user {
         let enabled: Option<bool> =
             sqlx::query_scalar("SELECT enabled FROM users WHERE id=$1 FOR SHARE")
@@ -801,9 +907,16 @@ pub async fn create(
     .bind(hours)
     .fetch_one(&mut *tx)
     .await?;
+    if let Some(signup) = input.signup_request_id {
+        sqlx::query("UPDATE signup_requests SET status='approved',decided_at=now(),decided_by=$2,link_id=$3 WHERE id=$1")
+            .bind(signup).bind(&p.id).bind(id).execute(&mut *tx).await?;
+    }
     // Decided after the insert: a link whose administrator was revoked meanwhile
     // rolls back together with its audit row.
     let mut tx = tx.decide_platform(&p, PlatformAction::Administer).await?;
+    if let Some(signup) = input.signup_request_id {
+        crate::audit::record(&mut tx, &p.id, "signup.approved", &signup.to_string()).await?;
+    }
     let target = match &user {
         Some(user) => format!("password_reset:{id}:user:{user}"),
         None => format!("invitation:{id}:developer:{can_develop}"),
@@ -865,7 +978,15 @@ pub async fn list(S(s): S<State>, Extension(p): Extension<Principal>) -> ApiResu
             })
         })
         .collect();
+    let requests = sqlx::query("SELECT s.id,s.name,s.email,s.created_at,s.link_id FROM signup_requests s LEFT JOIN account_links l ON l.id=s.link_id
+        WHERE s.status='pending' OR (s.status='approved' AND l.status<>'completed' AND s.decided_at > now()-interval '30 days')
+        ORDER BY (s.status='pending') DESC,s.created_at")
+        .fetch_all(&s.pool).await?.into_iter().map(|r| json!({
+            "id":r.get::<Uuid,_>("id"), "name":r.get::<String,_>("name"), "email":r.get::<String,_>("email"),
+            "createdAt":r.get::<DateTime<Utc>,_>("created_at"), "linkId":r.get::<Option<Uuid>,_>("link_id")
+        })).collect::<Vec<_>>();
     Ok(Json(json!({
+        "signupRequests": requests,
         "available": s.auth.accounts.is_some(),
         "links": links,
     })))

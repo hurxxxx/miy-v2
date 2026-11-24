@@ -47,7 +47,7 @@ export default function AppRoot({ runtime }: AppProps) {
   return (
     <RuntimeProvider runtime={runtime}>
       <Feedback>
-        <LiveProvider live={runtime.live}>
+        <LiveProvider live={runtime.live} activity={runtime.activity}>
           <Session runtime={runtime} />
         </LiveProvider>
       </Feedback>

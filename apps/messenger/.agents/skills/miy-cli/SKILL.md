@@ -26,4 +26,4 @@ Report actual checks, release/image IDs and unresolved failures. Acceptance reco
 
 Local development defaults to native Rust plus the built React preview and an in-process tunnel to the server dev DB. Docker Desktop, WSL and local PostgreSQL are not needed for `app dev` or `doctor --for develop`. Explicit `--runtime docker` selects the container workflow for local testing only. `app build` always builds on the selected server's Linux Docker engine with the existing login; no client needs local Docker or SSH, and only a server build can be deployed. A local preview, native or Docker, is not a releasable image.
 
-Installed CLI: 0.18.0. SDK bundle: 0.13.0. Development guidance: 1.0.4.
+Installed CLI: 0.20.0. SDK bundle: 0.15.0. Development guidance: 1.0.4.

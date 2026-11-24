@@ -40,8 +40,8 @@
     "myCliSessions": "My CLI connections",
     "console": "Admin console",
     "portal": "Work portal",
-    "cliInstall": "Install the CLI",
-    "cliInstallShort": "CLI",
+    "cliInstall": "Setup guide",
+    "cliInstallShort": "Setup",
     "openMenu": "Open menu",
     "closeMenu": "Close menu",
     "mySettings": "My settings",
@@ -67,7 +67,7 @@
     "toDev": "Go to test",
     "titles": {
       "admin": "Platform administration",
-      "cliInstall": "Install the CLI",
+      "cliInstall": "Setup guide",
       "cliApproval": "Approve CLI sign-in",
       "cliSessions": "My CLI connections",
       "settings": "My settings",
@@ -113,6 +113,10 @@
     "changed": "Check what you were writing, then reopen the app in its latest state. API calls from this screen are stopped."
   },
   "appFrame": {
+    "tabs": "Open apps",
+    "closeTab": "Close {{name}}",
+    "unsaved": "Save unconfirmed",
+    "full": "Up to 10 app frames can be open across your windows. Close an app or panel and try again.",
     "leaveUnknown": "The app's save state cannot be confirmed. Leave anyway?",
     "leaveDirty": "You have unsaved changes. Leave anyway?",
     "checkConnectionTitle": "Check the app connection",
@@ -184,8 +188,8 @@
     "copyLabel": "Copy {{label}}",
     "copy": "Copy",
     "loadFailed": "Could not load the CLI installation details. Please come back shortly.",
-    "title": "Install the CLI",
-    "lead": "Develop apps from your terminal and AI tools and deploy them to this platform.",
+    "title": "Setup guide",
+    "lead": "Install the MIY CLI and connect Codex or Claude Code to this platform from your app project.",
     "loading": "Loading the installation details…",
     "server": "Server to connect to:",
     "oneLineTitle": "1. Install with one command",
@@ -215,7 +219,17 @@
     "httpWarning": "This server uses an internal HTTP setup, so traffic is not encrypted.",
     "loginWhen": "Run this the first time you authenticate or when an error says you need to authenticate again. In the browser that opens, check the account and verification code, then approve the connection.",
     "loginCommand": "CLI sign-in command",
-    "contextList": "If you already have connections, check the server to sign in to with <code>miy context list</code> first."
+    "contextList": "If you already have connections, check the server to sign in to with <code>miy context list</code> first.",
+    "sections": "Setup sections",
+    "cliSection": "CLI installation and sign-in",
+    "agentSection": "Connect a coding agent",
+    "agentGuide": "Open the setup instructions for agents",
+    "agentIntro": "Open your project and paste the request below into your agent. It includes the setup instructions for this server. If prompted, approve the connection in your own browser.",
+    "codexSteps": "Open Codex in the folder where you want to develop the app. The MIY CLI configures the MCP connection in <code>.codex/config.toml</code> and provides project guidance in <code>AGENTS.md</code>.",
+    "claudeSteps": "Open Claude Code in the folder where you want to develop the app. The MIY CLI configures the MCP connection in <code>.mcp.json</code> and supplies project instructions through <code>CLAUDE.md</code>. Review the project MCP approval prompt when it appears.",
+    "agentRequest": "Request for {{agent}}",
+    "agentPrompt": "Read the MIY guide below and connect {{agent}} to this platform.\n{{url}}\nCheck the CLI version and selected server, and install the CLI if needed. Ask me to approve any sign-in in my browser. For an existing MIY project use miy app setup. For a new app, confirm its location and name with me. Tell me if I need to reopen the agent in the same folder, then verify the connection by calling get_contract on miy_app.",
+    "verifyAgent": "After setup, reopen the agent in the same project and ask it to “call <code>get_contract</code> on <code>miy_app</code> and show me the app contract.” A returned contract confirms the connection."
   },
   "cliSessions": {
     "title": "My CLI connections",
@@ -275,8 +289,8 @@
     "connecting": "Signing in…",
     "oauth": "Sign in with OAuth",
     "signIn": "Sign in",
-    "help": "If you do not have an account or forgot your password, ask an administrator for an invitation link or a password reset link.",
-    "cliInstall": "CLI installation guide"
+    "help": "If you forgot your password, ask an administrator for a reset link.",
+    "cliInstall": "Setup guide"
   },
   "join": {
     "errors": {
@@ -412,5 +426,14 @@
     "emptyTitle": "No results for '{{query}}'.",
     "emptyHint": "Try other terms or look in the app itself.",
     "unavailable": "Could not fetch"
+  },
+  "signup": {
+    "title": "Request an account",
+    "received": "Request received",
+    "next": "Once approved, an administrator will send a signup link to your email address. Open it to set your sign-in name and password.",
+    "lead": "Enter your name and contact email. After an administrator approves your request, use the one-time link to create your account.",
+    "submit": "Submit request",
+    "busy": "There are too many requests. Please try again later.",
+    "failed": "Your request could not be submitted. Please try again."
   }
 }

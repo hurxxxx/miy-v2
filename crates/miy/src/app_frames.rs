@@ -35,7 +35,7 @@ pub const TOKEN_PREFIX: &str = "miy_frame_";
 pub const PROTOCOL: &str = "miy.frame/v1";
 const CODE_SECONDS: i32 = 60;
 /// Live frame sessions per person (docs/APP-FRAMES.md "보조 프레임").
-const MAX_LIVE_FRAMES: i64 = 16;
+const MAX_LIVE_FRAMES: i64 = 10;
 const TOKEN_MINUTES: i32 = 10;
 const LAUNCH_BODY: usize = 16 * 1024;
 
@@ -390,6 +390,21 @@ pub async fn launch_code(
     }
     if !running_or_fixture(&inst) {
         return Err(ApiError::unavailable("app_runtime_not_running"));
+    }
+    // Reserve the slot before returning a launch code. Consuming the code and
+    // creating its session are separate transactions: count it until the
+    // session exists, the caller cancels it, or its one-minute lifetime ends.
+    lock_frame_slots(&mut tx, &p.id).await?;
+    let occupied: i64 = sqlx::query_scalar(
+        "SELECT (SELECT count(*) FROM app_frame_sessions WHERE user_id=$1 AND revoked_at IS NULL AND expires_at>clock_timestamp()) +
+                (SELECT count(*) FROM app_frame_codes c WHERE c.user_id=$1 AND c.purpose='launch' AND c.expires_at>clock_timestamp()
+                 AND NOT EXISTS(SELECT 1 FROM app_frame_sessions f WHERE f.id=c.frame_id))",
+    )
+    .bind(&p.id)
+    .fetch_one(&mut *tx)
+    .await?;
+    if occupied >= MAX_LIVE_FRAMES {
+        return Err(ApiError::conflict("frame_limit_reached"));
     }
     let frame_origin = ensure_origin(&mut tx, &s.auth.frames, input.installation_id).await?;
     let code = crate::auth::random();
@@ -1571,18 +1586,14 @@ async fn open_frame(
     let (app, env): (String, String) = (inst.get("app_id"), inst.get("environment"));
     let ui: serde_json::Value = inst.get("ui");
     let id: Uuid = row.get("frame_id");
-    // Each person keeps at most MAX_LIVE_FRAMES frame sessions (main frames,
-    // side panels, other tabs). A new one retires the oldest beyond that; its
-    // frame then asks to be reopened, like any ended frame session.
-    sqlx::query(
-        "UPDATE app_frame_sessions SET revoked_at=clock_timestamp() WHERE id IN (\
-         SELECT id FROM app_frame_sessions WHERE user_id=$1 AND revoked_at IS NULL \
-         AND expires_at>clock_timestamp() ORDER BY created_at DESC,id DESC OFFSET $2)",
-    )
-    .bind(&user)
-    .bind(MAX_LIVE_FRAMES - 1)
-    .execute(&mut *tx)
-    .await?;
+    // Also enforce the limit for launch codes issued before an upgrade.
+    let live: i64 = sqlx::query_scalar("SELECT count(*) FROM app_frame_sessions WHERE user_id=$1 AND revoked_at IS NULL AND expires_at>clock_timestamp()")
+        .bind(&user)
+        .fetch_one(&mut *tx)
+        .await?;
+    if live >= MAX_LIVE_FRAMES {
+        return Err(ApiError::conflict("frame_limit_reached"));
+    }
     let token = format!("{TOKEN_PREFIX}{}", crate::auth::random());
     let capability = crate::auth::random();
     let token_expires_at: DateTime<Utc> = sqlx::query_scalar(

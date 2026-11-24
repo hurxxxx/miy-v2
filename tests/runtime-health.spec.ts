@@ -106,7 +106,7 @@ test("service health changes independently from process controls", async ({
   expect(writes).toBe(0);
 });
 
-const app = (page: Page) => page.frameLocator("iframe.app-frame");
+const app = (page: Page) => page.frameLocator("iframe.app-frame:visible");
 // Load a real Federation module in its frame, with synthetic API data and no platform writes.
 async function appHarness(page: Page, options: FrameMockOptions = {}, api?: FrameApi) {
   await mockSurface(page);
@@ -238,15 +238,20 @@ for (const stage of ["portal", "exchange"] as const) {
           ? { status: failure.status, json: { error: { code: failure.code } } }
           : undefined,
       });
-      const input = app(page).getByLabel("문서 제목");
+      const retained = page.frameLocator("iframe.app-frame");
+      const input = retained.getByLabel("문서 제목");
       await input.fill("갱신 거부 중 작성 내용");
       // Exercise the runtime's scheduled renewal, not a synthetic frame.error.
       await page.clock.fastForward(30_100);
       await expect(page.getByText(failure.notice, { exact: false })).toBeVisible();
       await expect(input).toHaveValue("갱신 거부 중 작성 내용");
       const reads = apiCalls.length;
-      await app(page).getByRole("button", { name: "API 확인" }).click();
-      await expect(app(page).getByTestId("api-error")).toContainText(failure.expected);
+      const probe = retained.getByRole("button", { name: "API 확인" });
+      if (failure.status === 403) {
+        await expect(page.locator("iframe.app-frame")).toBeHidden();
+        await probe.evaluate(button => (button as HTMLButtonElement).click());
+      } else await probe.click();
+      await expect(retained.getByTestId("api-error")).toContainText(failure.expected);
       expect(apiCalls).toHaveLength(reads);
       expect(frames).toEqual({ launches: 1, portal: 1, exchange: stage === "exchange" ? 1 : 0 });
       if (failure.status !== 409) {

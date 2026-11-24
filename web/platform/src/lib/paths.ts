@@ -64,7 +64,7 @@ export function isCliApprovalPath(path: string | null | undefined) {
 
 export function isConsolePath(path: string) {
   const normalized = path.replace(/\/+$/, "");
-  return isAdminPath(normalized) || normalized === "/cli/sessions" ||
+  return isAdminPath(normalized) || normalized === "/cli/sessions" || normalized === "/signup" ||
     isAccountLinkPath(normalized) ||
     /^\/cli\/(authorize|device)(?:\/|$)/.test(normalized);
 }

@@ -2,7 +2,7 @@ import { useEffect, useState, type FormEvent } from "react";
 import { useTranslation } from "react-i18next";
 import { Link, useLocation, useNavigate } from "@tanstack/react-router";
 import { request, type SearchPage } from "@miy/sdk";
-import { useInstallationPolling, useInstallations } from "../data/installations";
+import { useInstallations } from "../data/installations";
 import { useSurface } from "../data/session";
 import { appLink, environmentPath, portalEnvironment } from "../lib/paths";
 import { formatDateTime } from "../platform/time/time-utils";
@@ -26,7 +26,6 @@ export function Search() {
   const location = useLocation();
   const environment = portalEnvironment(surface.surface, surface.legacyPortal) ?? "dev";
   const { items: installations } = useInstallations();
-  useInstallationPolling();
   const { q } = location.search;
   const query = typeof q === "string" ? q.trim() : "";
   const [draft, setDraft] = useState(query);

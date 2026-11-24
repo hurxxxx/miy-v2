@@ -465,7 +465,7 @@ function useDMViewElement({
   threadId: string;
 }): ReactNode {
   const { token, user } = useAuth();
-  const { reconnectSeq, status: realtimeState, send: sendLive } = useRealtime();
+  const { reconnectSeq, status: realtimeState, send: sendLive, tabActive, isTabActive } = useRealtime();
   const { i18n, t } = useTranslation('apps');
   const timeZone = user?.time_zone;
   const dmCacheKey = useMemo(() => dmCacheScopeKey(user?.id), [user?.id]);
@@ -1080,7 +1080,7 @@ function useDMViewElement({
         onThreadRead: (thread) => {
           if (!cancelled) applyReadThread(thread);
         },
-        presence: currentDmReadPresenceFromBrowser(document),
+        presence: currentDmReadPresenceFromBrowser(document, isTabActive()),
         selectedThreadId: threadId,
         token,
       });
@@ -1292,7 +1292,7 @@ function useDMViewElement({
         messages: messagesRef.current,
         selectedConversationId: selectedThreadIdRef.current || null,
         currentUserId: user?.id,
-        ...currentDmReadPresenceFromBrowser(document),
+        ...currentDmReadPresenceFromBrowser(document, isTabActive()),
       });
       if (!result) {
         return;
@@ -1378,7 +1378,7 @@ function useDMViewElement({
       ) {
         selectThreadId(null);
       }
-      if (token && result.markReadConversationId) {
+      if (isTabActive() && token && result.markReadConversationId) {
         const markReadConversationId = result.markReadConversationId;
         void markDmThreadReadAndApply({
           conversationId: markReadConversationId,
@@ -1471,7 +1471,7 @@ function useDMViewElement({
               markVisibleDmThreadReadAndApply({
                 markThreadRead: markDmThreadRead,
                 onThreadRead: applyReadThread,
-                presence: currentDmReadPresenceFromBrowser(document),
+                presence: currentDmReadPresenceFromBrowser(document, isTabActive()),
                 selectedThreadId: selectedThreadIdRef.current,
                 token,
               }),
@@ -1501,13 +1501,13 @@ function useDMViewElement({
   useRealtimeEvent('typing', handleTypingHint);
   const typingActive = Object.keys(typingByThreadId).length > 0;
   useEffect(() => {
-    if (!typingActive) return undefined;
+    if (!tabActive || !typingActive) return undefined;
     const timer = window.setInterval(
       () => setTypingByThreadId((current) => pruneDmTyping(current, Date.now())),
       1000,
     );
     return () => window.clearInterval(timer);
-  }, [typingActive]);
+  }, [typingActive, tabActive]);
 
   // miy (M4): the server sends typing hints only to frames that show the
   // conversation (rechecking participation); report the shown one after every
@@ -1523,7 +1523,7 @@ function useDMViewElement({
       void markVisibleDmThreadReadAndApply({
         markThreadRead: markDmThreadRead,
         onThreadRead: applyReadThread,
-        presence: currentDmReadPresenceFromBrowser(document),
+        presence: currentDmReadPresenceFromBrowser(document, isTabActive()),
         selectedThreadId: selectedThreadIdRef.current,
         token,
       }).catch(() => undefined);

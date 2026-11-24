@@ -6,6 +6,7 @@ import {
   envelope,
   readFrameMessage,
   renewalFailure,
+  type FrameLocation,
   type InputState,
   type ParentMessage,
 } from "@miy/frame-protocol";
@@ -83,8 +84,16 @@ export function AppFrame({
   input,
   onReleaseChanged,
   panel,
+  active = true,
+  tabLocation,
+  onSlot,
+  onInput,
 }: {
   app: Installation;
+  active?: boolean;
+  tabLocation?: FrameLocation;
+  onSlot?: (result: "opened" | "full" | "failed") => void;
+  onInput?: (state: FrameInput) => void;
   basePath: string;
   csrf: string;
   input: React.MutableRefObject<FrameInput>;
@@ -101,13 +110,15 @@ export function AppFrame({
   const [launch, setLaunch] = useState<AppFrameLaunch>();
   const [failure, setFailure] = useState<string>();
   const name = `miy-app-${app.id}-${run}${panel ? "-panel" : ""}`;
-  const relative = panel
+  const handlers = useRef({ active, onSlot, onInput });
+  handlers.current = { active, onSlot, onInput };
+  const relative = tabLocation ?? (panel
     ? panel.location
     : {
         pathname: location.pathname.slice(basePath.length) || "/",
         search: location.searchStr,
         hash: location.hash ? `#${location.hash}` : "",
-      };
+      });
   const panelRouting = useRef(panel);
   panelRouting.current = panel;
   const current = useRef(relative);
@@ -149,6 +160,7 @@ export function AppFrame({
         if (active) {
           frameId = value.frameId;
           setLaunch(value);
+          handlers.current.onSlot?.("opened");
         } else close(value.frameId);
       })
       .catch((error: Error) => {
@@ -156,6 +168,7 @@ export function AppFrame({
         // No frame ran, so there is no input to lose: leaving needs no question.
         input.current = { state: "clean" };
         setFailure(error.message);
+        handlers.current.onSlot?.(error.message.includes("frame_limit_reached") ? "full" : "failed");
       });
     return () => {
       active = false;
@@ -185,6 +198,11 @@ export function AppFrame({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [relative.pathname, relative.search, relative.hash, launch]);
 
+  useEffect(() => {
+    send({ type: "activity.changed", payload: { active } });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [active, launch]);
+
   // Display settings: the launch form carries the first value, later changes follow.
   const { settings } = useDisplaySettings();
   const latestSettings = useRef(settings);
@@ -210,10 +228,12 @@ export function AppFrame({
       switch (message.type) {
         case "frame.ready":
           ready.current = true;
+          send({ type: "activity.changed", payload: { active: handlers.current.active } });
           send({ type: "route.changed", payload: current.current });
           send({ type: "settings.changed", payload: latestSettings.current });
           break;
         case "route.navigate": {
+          if (!handlers.current.active) return;
           let href: string;
           try {
             href = appTarget(basePath, message.payload.path);
@@ -234,6 +254,7 @@ export function AppFrame({
         }
         case "guard.state":
           input.current = { state: message.payload.state, message: message.payload.message };
+          handlers.current.onInput?.(input.current);
           break;
         case "token.renew":
           // The renewal target is this portal's own launch, never a frame claim.
@@ -267,6 +288,7 @@ export function AppFrame({
             setFailure(message.payload.code);
           break;
         case "shortcut":
+          if (!handlers.current.active) return;
           // Keys typed in the frame never reach this document; the shell listens.
           window.dispatchEvent(new CustomEvent(COMMAND_PALETTE_EVENT));
           break;
@@ -295,7 +317,7 @@ export function AppFrame({
           >
             <p>
               {t(
-                failure === "frame_session_ended"
+                failure.includes("frame_limit_reached") ? "appFrame.full" : failure === "frame_session_ended"
                   ? "appFrame.sessionEnded"
                   : failure === "frame_access_denied"
                     ? "appFrame.accessDenied"
@@ -317,7 +339,7 @@ export function AppFrame({
         sandbox={SANDBOX}
         referrerPolicy="no-referrer"
         allow={frameAllow(launch)}
-        hidden={!launch}
+        hidden={!launch || failure === "frame_access_denied"}
       />
       {launch && (
         <form ref={form} method="post" action={launch.launchUrl} target={name} hidden>

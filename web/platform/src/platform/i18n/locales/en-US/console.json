@@ -143,7 +143,8 @@
       "password_reset_in_progress": "A reset for this account is in progress. Try again shortly.",
       "user_disabled": "A reset link cannot be issued for a disabled account.",
       "invalid_account_link": "Check the values you entered.",
-      "cannot_switch_to_self": "You cannot switch to your own account."
+      "cannot_switch_to_self": "You cannot switch to your own account.",
+      "signup_decided": "This request has already been processed. Check the list again."
     },
     "linkStates": {
       "pending": "Unused",
@@ -274,7 +275,14 @@
     "signInAsDevPortal": "Dev portal",
     "signInAsConfirm": "Sign in",
     "signInAsStarted": "Signing in as {{name}} in a new tab.",
-    "popupBlocked": "The browser blocked the new tab. Allow pop-ups for this site and try again."
+    "popupBlocked": "The browser blocked the new tab. Allow pop-ups for this site and try again.",
+    "signupRequests": "Signup requests",
+    "noSignups": "No signup requests to review.",
+    "signupDelivery": "Verify the applicant, approve their request, and send the one-time link to their email address yourself. Reissuing replaces the previous link.",
+    "approveSignup": "Approve and issue link",
+    "reissueSignup": "Reissue signup link",
+    "rejectSignup": "Reject signup",
+    "signupRejected": "Signup request rejected."
   },
   "groups": {
     "tree": "Organization chart",

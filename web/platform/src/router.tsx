@@ -13,13 +13,9 @@ import { Loading } from "./ui";
 
 // The console never imports the remote runtime module, including through a direct
 // business-app URL. Shell rejects those URLs before rendering this route.
-const AppView = lazy(() => import("./app/AppView").then((module) => ({ default: module.AppView })));
 const Admin = lazy(() => import("./pages/Admin").then((module) => ({ default: module.Admin })));
-function AppRoute() {
-  const { surface } = useSurface();
-  if (surface === "console") return null;
-  return <Suspense fallback={<Loading />}><AppView /></Suspense>;
-}
+// The authenticated shell owns the persistent app frames.
+function AppRoute() { return null; }
 function AdminRoute() {
   if (useSurface().surface !== "console") return null;
   return <Suspense fallback={<Loading />}><Admin /></Suspense>;
@@ -78,6 +74,7 @@ export const router = createRouter({
     // The end of a user switch; the shell renders it before any session check.
     page("/switch-user", () => null),
     // Public account-link pages; the shell renders them before any session check.
+    page("/signup", () => null),
     page("/join", () => null),
     page("/reset-password", () => null),
   ]),

@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { browserUser, defaultPreferences, mockSurface } from "./browser-surface";
 import { test, expect, type Page, type Route } from "@playwright/test";
 import type { Installation } from "../packages/sdk/src/index";
@@ -65,7 +66,7 @@ async function open(page: Page, options: {
     if (path === "/api/v1/launcher/categories") return route.fulfill({ json: { categories: [] } });
     await route.fulfill({ status: 404, json: { error: { code: "not_found" } } });
   });
-  await mockFrames(page, () => [planner, ledger], options.frameApi ?? (() => ({ json: { title: "저장된 제목" } })));
+  await mockFrames(page, options.installations ?? (() => [planner, ledger]), options.frameApi ?? (() => ({ json: { title: "저장된 제목" } })));
   return { patches, launches };
 }
 
@@ -224,21 +225,16 @@ test("promoting a panel closes it only when the main frame accepts navigation", 
   await expect(panel).toHaveValue("저장된 제목");
   await main.fill("미저장 주 화면 제목");
   await panel.fill("미저장 패널 제목");
-  let confirmations = 0;
-  const declineMain = async (dialog: import("@playwright/test").Dialog) => {
-    if (++confirmations === 1) await dialog.accept();
-    else await dialog.dismiss();
-  };
-  page.on("dialog", declineMain);
+  page.once("dialog", dialog => dialog.dismiss());
   await page.getByRole("button", { name: "앱에서 열기", exact: true }).click();
-  await expect.poll(() => confirmations).toBe(2);
-  page.off("dialog", declineMain);
   await expect(page).toHaveURL(/\/apps\/ledger\/reports$/);
   await expect(panel).toHaveValue("미저장 패널 제목");
   page.on("dialog", (dialog) => dialog.accept());
   await page.getByRole("button", { name: "앱에서 열기", exact: true }).click();
   await expect(page).toHaveURL(/\/apps\/planner\/widgets\/todos$/);
   await expect(page.locator("iframe.app-frame-panel")).toHaveCount(0);
+  await page.getByRole("navigation", { name: "열린 앱" }).getByRole("button", { name: /장부/ }).first().click();
+  await expect(page.frameLocator("iframe.app-frame:visible").getByLabel("문서 제목")).toHaveValue("미저장 주 화면 제목");
 });
 
 test("narrow screens open the app at the panel's path instead", async ({ page }) => {
@@ -303,4 +299,79 @@ test("an installation removed from the portal no longer displays its cached home
   apps = [ledger];
   await expect(page.getByText("주간 회의")).toHaveCount(0);
   await expect(page.getByRole("main").getByText("장부", { exact: true })).toBeVisible();
+});
+
+test("opened apps reuse their frames over thirty round trips", async ({ page }) => {
+  test.setTimeout(120_000);
+  await page.setViewportSize({ width: 1400, height: 900 });
+  const { launches } = await open(page);
+  await page.goto("/environments/prod/apps/ledger/reports");
+  const input = (title: string) => page.frameLocator(`iframe[title="${title}"]`).getByLabel("문서 제목");
+  await expect(input("장부")).toBeVisible();
+  const times: number[] = [];
+  for (let round = 0; round < 30; round++) {
+    for (const title of ["플래너", "장부"]) {
+      const start = performance.now();
+      await page.locator(".rail-apps").getByRole("link", { name: title, exact: true }).click();
+      await input(title).waitFor({ state: "visible" });
+      times.push(performance.now() - start);
+    }
+  }
+  console.log(JSON.stringify({ switches: times.length, launches: launches.length,
+    p95Ms: Math.round(times.sort((a,b) => a-b)[Math.ceil(times.length*.95)-1]!) }));
+  expect(launches).toHaveLength(2);
+  await expect(page).toHaveURL(/ledger\/reports$/);
+});
+
+for (const count of [1, 5, 10]) {
+  test(`idle cost with ${count} resident app frames`, async ({ page, browser }) => {
+    test.skip(process.env.MIY_MEASURE_TAB_COST !== "1", "Five-minute resource measurement");
+    test.setTimeout(420_000);
+    await page.setViewportSize({ width: 1400, height: 1000 });
+    const apps = Array.from({ length: count }, (_, i) => ({
+      ...ledger, id: `40000000-0000-4000-8000-${String(i+1).padStart(12, "0")}`,
+      appId: `bench-${i}`, name: `Bench ${i}`,
+    }));
+    let polls = 0, requests = 0, sockets = 0;
+    page.on("request", r => {
+      ++requests;
+      if (new URL(r.url()).pathname === "/api/v1/installations") ++polls;
+    });
+    page.on("websocket", ws => { ++sockets; ws.on("close", () => --sockets); });
+    await open(page, { installations: () => apps });
+    await page.goto("/environments/prod/apps/bench-0");
+    for (const app of apps) {
+      await page.locator(".rail-apps").getByRole("link", { name: app.name, exact: true }).click();
+      await page.frameLocator(`iframe[title="${app.name}"]`).getByLabel("문서 제목").waitFor();
+    }
+    const cdp = await browser.newBrowserCDPSession();
+    async function rendererCost() {
+      const { processInfo } = await cdp.send("SystemInfo.getProcessInfo");
+      const renderers = processInfo.filter(p => p.type.toLowerCase() === "renderer");
+      const rssKiB = renderers.reduce((sum, p) => sum + Number(/^VmRSS:\s+(\d+)/m.exec(readFileSync(`/proc/${p.id}/status`, "utf8"))?.[1] ?? 0), 0);
+      return { rssMiB: Math.round(rssKiB / 1024), cpuSeconds: renderers.reduce((sum,p) => sum+p.cpuTime, 0) };
+    }
+    requests=0; polls=0;
+    const start = await rendererCost();
+    await page.waitForTimeout(300_000);
+    const end = await rendererCost();
+    console.log(JSON.stringify({ resident: count, seconds: 300, rssMiB: end.rssMiB, cpuSeconds: end.cpuSeconds - start.cpuSeconds, requests, polls, sockets }));
+    expect(polls).toBeGreaterThan(80);
+    expect(polls).toBeLessThanOrEqual(102);
+    await expect(page.locator("iframe.app-frame")).toHaveCount(count);
+    await cdp.detach();
+  });
+}
+
+test("a full account keeps the previous tab, draft, and URL", async ({ page }) => {
+  await open(page);
+  await page.goto("/environments/prod/apps/ledger/reports");
+  const input = page.frameLocator("iframe.app-frame:visible").getByLabel("문서 제목");
+  await input.fill("보존할 입력");
+  await page.route("**/api/v1/app-frames", route => route.fulfill({ status: 409, json: { error: { code: "frame_limit_reached" } } }));
+  await page.locator("#platform-navigation").getByRole("link", { name: "플래너", exact: true }).click();
+  await expect(page.getByRole("alert")).toContainText("10개");
+  await expect(page).toHaveURL(/\/ledger\/reports$/);
+  await expect(input).toHaveValue("보존할 입력");
+  await expect(page.locator("iframe.app-frame")).toHaveCount(1);
 });
